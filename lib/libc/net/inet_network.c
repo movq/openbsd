@@ -1,4 +1,3 @@
-/*	$OpenBSD: inet_network.c,v 1.13 2015/10/22 23:55:51 mmcc Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: inet_network.c,v 1.7 1997/07/09 01:08:37 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -39,12 +46,13 @@
  * network numbers.
  */
 in_addr_t
-inet_network(const char *cp)
+inet_network(cp)
+	register const char *cp;
 {
-	in_addr_t val, base, n;
-	u_char c;
+	register in_addr_t val, base, n;
+	register char c;
 	in_addr_t parts[4], *pp = parts;
-	int i;
+	register int i;
 
 again:
 	val = 0; base = 10;
@@ -71,7 +79,7 @@ again:
 		*pp++ = val, cp++;
 		goto again;
 	}
-	if (*cp && !isspace((unsigned char)*cp))
+	if (*cp && !isspace(*cp))
 		return (INADDR_NONE);
 	*pp++ = val;
 	n = pp - parts;
@@ -82,4 +90,3 @@ again:
 	}
 	return (val);
 }
-DEF_WEAK(inet_network);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: display.c,v 1.18 2016/02/01 07:29:25 mestre Exp $	*/
+/*	$OpenBSD: display.c,v 1.6 1999/03/23 17:00:38 millert Exp $	*/
 /*	$NetBSD: display.c,v 1.3 1994/12/09 02:14:13 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,28 +34,33 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)display.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: display.c,v 1.6 1999/03/23 17:00:38 millert Exp $";
+#endif /* not lint */
+
 /*
  * The window 'manager', initializes curses and handles the actual
  * displaying of text
  */
-#include <ctype.h>
-
 #include "talk.h"
+#include <ctype.h>
 
 xwin_t	my_win;
 xwin_t	his_win;
 WINDOW	*line_win;
 
-int	curses_initialized;
-int	high_print;
-bool	smooth_scroll;
+int	curses_initialized = 0;
 
 /*
  * max HAS to be a function, it is called with
- * an argument of the form --foo at least once.
+ * a argument of the form --foo at least once.
  */
 int
-max(int a, int b)
+max(a,b)
+	int a, b;
 {
 
 	return (a > b ? a : b);
@@ -62,9 +71,12 @@ max(int a, int b)
  * characters while we are at it.
  */
 void
-display(xwin_t *win, char *text, int size)
+display(win, text, size)
+	register xwin_t *win;
+	register char *text;
+	int size;
 {
-	int i;
+	register int i;
 	char cch;
 
 	for (i = 0; i < size; i++) {
@@ -137,9 +149,7 @@ display(xwin_t *win, char *text, int size)
 			/* check for wraparound */
 			xscroll(win, 0);
 		}
-		if (*text != '\t' &&
-		    ((!high_print && !isprint((unsigned char)*text)) ||
-		      iscntrl((unsigned char)*text))) {
+		if (!isprint(*text) && *text != '\t') {
 			waddch(win->x_win, '^');
 			getyx(win->x_win, win->x_line, win->x_col);
 			if (win->x_col == COLS-1) /* check for wraparound */
@@ -147,7 +157,7 @@ display(xwin_t *win, char *text, int size)
 			cch = (*text & 63) + 64;
 			waddch(win->x_win, cch);
 		} else
-			waddch(win->x_win, (unsigned char)(*text));
+			waddch(win->x_win, *text);
 		getyx(win->x_win, win->x_line, win->x_col);
 		text++;
 	}
@@ -158,10 +168,12 @@ display(xwin_t *win, char *text, int size)
  * Read the character at the indicated position in win
  */
 int
-readwin(WINDOW *win, int line, int col)
+readwin(win, line, col)
+	WINDOW *win;
+	int line, col;
 {
 	int oldline, oldcol;
-	int c;
+	register int c;
 
 	getyx(win, oldline, oldcol);
 	wmove(win, line, col);
@@ -175,7 +187,9 @@ readwin(WINDOW *win, int line, int col)
  * so that the current position is obvious
  */
 void
-xscroll(xwin_t *win, int flag)
+xscroll(win, flag)
+	register xwin_t *win;
+	int flag;
 {
 
 	if (flag == -1) {
@@ -184,19 +198,11 @@ xscroll(xwin_t *win, int flag)
 		win->x_col = 0;
 		return;
 	}
+	win->x_line = (win->x_line + 1) % win->x_nlines;
 	win->x_col = 0;
-	if (smooth_scroll) {
-		if (++win->x_line == win->x_nlines) {
-			--win->x_line;
-			scroll(win->x_win);
-		}
-	} else {
-		win->x_line = (win->x_line + 1) % win->x_nlines;
-		wmove(win->x_win, win->x_line, win->x_col);
-		wclrtoeol(win->x_win);
-		wmove(win->x_win, (win->x_line + 1) % win->x_nlines,
-		    win->x_col);
-		wclrtoeol(win->x_win);
-	}
+	wmove(win->x_win, win->x_line, win->x_col);
+	wclrtoeol(win->x_win);
+	wmove(win->x_win, (win->x_line + 1) % win->x_nlines, win->x_col);
+	wclrtoeol(win->x_win);
 	wmove(win->x_win, win->x_line, win->x_col);
 }

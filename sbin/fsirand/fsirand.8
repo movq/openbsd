@@ -1,20 +1,31 @@
-.\" $OpenBSD: fsirand.8,v 1.31 2015/11/23 19:44:57 mmcc Exp $
-.\"
 .\" Copyright (c) 1997 Todd C. Miller <Todd.Miller@courtesan.com>
+.\" All rights reserved.
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\" THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+.\" INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+.\" AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+.\" THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+.\" EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+.\" PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+.\" OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+.\" WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+.\" OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+.\" ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 23 2015 $
+.\"	$OpenBSD: fsirand.8,v 1.17 1999/07/04 18:59:39 aaron Exp $
+.\"
+.Dd January 25, 1997
 .Dt FSIRAND 8
 .Os
 .Sh NAME
@@ -22,8 +33,11 @@
 .Nd randomize inode generation numbers
 .Sh SYNOPSIS
 .Nm fsirand
-.Op Fl bfp
-.Ar special ...
+.Op Fl b
+.Op Fl f
+.Op Fl p
+.Ar special
+.Op Ar "special ..."
 .Sh DESCRIPTION
 The
 .Nm
@@ -35,15 +49,15 @@ it difficult to
 .Dq guess
 filehandles.
 .Pp
-.Em Note :
+.Em Note:
 .Xr newfs 8
 now does the equivalent of
 .Nm
 itself so it is no longer necessary to
 run
 .Nm
-by hand on a new filesystem.
-It is only used to re-randomize or report on an existing filesystem.
+by hand on a new filesystem.  It is only used to
+re-randomize or report on an existing filesystem.
 .Pp
 .Nm
 should only be used on an unmounted filesystem that
@@ -55,9 +69,9 @@ may be used on the root filesystem in single-user mode
 but the system should be rebooted via
 .Dq reboot -n
 afterwards.
-.Pp
-The options are as follows:
-.Bl -tag -width Ds
+.Sh OPTIONS
+.Bl -tag -width indent
+The available options are as follows:
 .It Fl b
 Use the default block size (usually 512 bytes) instead
 of the value gleaned from the disklabel.
@@ -71,11 +85,16 @@ is not marked as clean.
 Print the current generation numbers for all inodes instead of
 generating new ones.
 .El
+.Sh CAVEATS
+Since
+.Nm
+allocates enough memory to hold all the inodes in
+a given cylinder group, it may use a large amount
+of memory for large disks with few cylinder groups.
 .Sh SEE ALSO
 .Xr fs 5 ,
 .Xr fsck 8 ,
-.Xr newfs 8 ,
-.Xr reboot 8
+.Xr newfs 8
 .Sh HISTORY
 The
 .Nm
@@ -84,11 +103,5 @@ This version of
 .Nm
 first appeared in
 .Ox 2.1 .
-.Sh AUTHORS
-.An Todd C. Miller
-.Sh CAVEATS
-Since
-.Nm
-allocates enough memory to hold all the inodes in
-a given cylinder group, it may use a large amount
-of memory for large disks with few cylinder groups.
+.Sh AUTHOR
+Todd C. Miller <Todd.Miller@courtesan.com>

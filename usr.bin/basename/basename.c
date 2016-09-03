@@ -1,4 +1,4 @@
-/*	$OpenBSD: basename.c,v 1.13 2015/12/24 17:11:47 mmcc Exp $	*/
+/*	$OpenBSD: basename.c,v 1.3 1997/08/17 21:25:01 millert Exp $	*/
 /*	$NetBSD: basename.c,v 1.9 1995/09/02 05:29:46 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,54 +34,88 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <libgen.h>
-#include <locale.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)basename.c	8.4 (Berkeley) 5/4/95";
+#endif
+static char rcsid[] = "$OpenBSD: basename.c,v 1.3 1997/08/17 21:25:01 millert Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
 #include <unistd.h>
 
-void usage(void);
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch;
 	char *p;
 
 	setlocale(LC_ALL, "");
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
-	while ((ch = getopt(argc, argv, "")) != -1) {
-		switch (ch) {
-		default:
-			usage();
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc != 1 && argc != 2)
+	if (argc != 2 && argc != 3)
 		usage();
+	argc--;
+	argv++;
 
-	if (**argv == '\0') {
-		(void)puts("");
-		exit(0);
-	}
-	p = basename(*argv);
-	if (p == NULL)
-		err(1, "%s", *argv);
 	/*
-	 * If the suffix operand is present, is not identical to the
-	 * characters remaining in string, and is identical to a suffix
-	 * of the characters remaining in string, the suffix suffix
-	 * shall be removed from string.
+	 * (1) If string is // it is implementation defined whether steps (2)
+	 *     through (5) are skipped or processed.
+	 *
+	 * (2) If string consists entirely of slash characters, string shall
+	 *     be set to a single slash character.  In this case, skip steps
+	 *     (3) through (5).
+	 */
+	for (p = *argv;; ++p) {
+		if (!*p) {
+			if (p > *argv)
+				(void)putchar('/');
+			(void)putchar('\n');
+			exit(0);
+		}
+		if (*p != '/')
+			break;
+	}
+
+	/*
+	 * (3) If there are any trailing slash characters in string, they
+	 *     shall be removed.
+	 */
+	for (; *p; ++p)
+		continue;
+	while (*--p == '/')
+		continue;
+	*++p = '\0';
+
+	/*
+	 * (4) If there are any slash characters remaining in string, the
+	 *     prefix of string up to an including the last slash character
+	 *     in string shall be removed.
+	 */
+	while (--p >= *argv)
+		if (*p == '/')
+			break;
+	++p;
+
+	/*
+	 * (5) If the suffix operand is present, is not identical to the
+	 *     characters remaining in string, and is identical to a suffix
+	 *     of the characters remaining in string, the suffix suffix
+	 *     shall be removed from string.
 	 */
 	if (*++argv) {
-		size_t suffixlen, stringlen, off;
+		int suffixlen, stringlen, off;
 
 		suffixlen = strlen(*argv);
 		stringlen = strlen(p);
@@ -89,14 +127,13 @@ main(int argc, char *argv[])
 		}
 	}
 	(void)puts(p);
-	return 0;
+	exit(0);
 }
 
-extern char *__progname;
 void
-usage(void)
+usage()
 {
 
-	(void)fprintf(stderr, "usage: %s string [suffix]\n", __progname);
+	(void)fprintf(stderr, "usage: basename string [suffix]\n");
 	exit(1);
 }

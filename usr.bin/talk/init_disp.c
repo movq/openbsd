@@ -1,4 +1,4 @@
-/*	$OpenBSD: init_disp.c,v 1.22 2016/02/01 07:29:25 mestre Exp $	*/
+/*	$OpenBSD: init_disp.c,v 1.10 1999/03/23 17:00:38 millert Exp $	*/
 /*	$NetBSD: init_disp.c,v 1.6 1994/12/09 02:14:17 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,26 +34,32 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)init_disp.c	8.2 (Berkeley) 2/16/94";
+#endif
+static char rcsid[] = "$OpenBSD: init_disp.c,v 1.10 1999/03/23 17:00:38 millert Exp $";
+#endif /* not lint */
+
 /*
  * Initialization code for the display package,
  * as well as the signal handling routines.
  */
 
+#include "talk.h"
 #include <sys/ioctl.h>
-
+#include <sys/ioctl_compat.h>
 #include <err.h>
-#include <stdlib.h>
+#include <signal.h>
 #include <termios.h>
 #include <unistd.h>
-
-#include "talk.h"
 
 /*
  * Set up curses, catch the appropriate signals,
  * and build the various windows.
  */
 void
-init_display(void)
+init_display()
 {
 	struct sigaction sa;
 
@@ -65,19 +75,18 @@ init_display(void)
 	cbreak();
 	signal(SIGINT, sig_sent);
 	signal(SIGPIPE, sig_sent);
-	signal(SIGWINCH, sig_winch);
 	/* curses takes care of ^Z */
 	my_win.x_nlines = LINES / 2;
 	my_win.x_ncols = COLS;
 	my_win.x_win = newwin(my_win.x_nlines, my_win.x_ncols, 0, 0);
-	scrollok(my_win.x_win, smooth_scroll);
+	scrollok(my_win.x_win, FALSE);
 	wclear(my_win.x_win);
 
 	his_win.x_nlines = LINES / 2 - 1;
 	his_win.x_ncols = COLS;
 	his_win.x_win = newwin(his_win.x_nlines, his_win.x_ncols,
 	    my_win.x_nlines+1, 0);
-	scrollok(his_win.x_win, smooth_scroll);
+	scrollok(his_win.x_win, FALSE);
 	wclear(his_win.x_win);
 
 	line_win = newwin(1, COLS, my_win.x_nlines, 0);
@@ -97,13 +106,13 @@ init_display(void)
  * connection are the three edit characters.
  */
 void
-set_edit_chars(void)
+set_edit_chars()
 {
 	u_char buf[3];
 	int cc;
 	struct termios tty;
 	
-	tcgetattr(STDIN_FILENO, &tty);
+	tcgetattr(0, &tty);
 	buf[0] = my_win.cerase = (tty.c_cc[VERASE] == (u_char)_POSIX_VDISABLE)
 	    ? CERASE : tty.c_cc[VERASE];
 	buf[1] = my_win.kill = (tty.c_cc[VKILL] == (u_char)_POSIX_VDISABLE)
@@ -122,24 +131,20 @@ set_edit_chars(void)
 }
 
 void
-sig_sent(int dummy)
+sig_sent(dummy)
+	int dummy;
 {
 
 	quit("Connection closing.  Exiting", 0);
-}
-
-void
-sig_winch(int dummy)
-{
-
-	gotwinch = 1;
 }
 
 /*
  * All done talking...hang up the phone and reset terminal thingy's
  */
 void
-quit(char *warning, int do_perror)
+quit(warning, do_perror)
+	char *warning;
+	int do_perror;
 {
 
 	if (curses_initialized) {
@@ -152,55 +157,9 @@ quit(char *warning, int do_perror)
 		send_delete();
 	if (warning) {
 		if (do_perror)
-			warn("%s", warning);
+			warn(warning);
 		else
-			warnx("%s", warning);
+			warnx(warning);
 	}
 	exit(0);
-}
-
-/*
- * If we get SIGWINCH, recompute both window sizes and refresh things.
- */
-void
-resize_display(void)
-{
-	struct winsize ws;
-
-	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 ||
-	    (ws.ws_row == LINES && ws.ws_col == COLS))
-		return;
-
-	/* Update curses' internal state with new window size. */
-	resizeterm(ws.ws_row, ws.ws_col);
-
-	/*
-	 * Resize each window but wait to refresh the screen until
-	 * everything has been drawn so the cursor is in the right spot.
-	 */
-	my_win.x_nlines = LINES / 2;
-	my_win.x_ncols = COLS;
-	wresize(my_win.x_win, my_win.x_nlines, my_win.x_ncols);
-	mvwin(my_win.x_win, 0, 0);
-	clearok(my_win.x_win, TRUE);
-
-	his_win.x_nlines = LINES / 2 - 1;
-	his_win.x_ncols = COLS;
-	wresize(his_win.x_win, his_win.x_nlines, his_win.x_ncols);
-	mvwin(his_win.x_win, my_win.x_nlines + 1, 0);
-	clearok(his_win.x_win, TRUE);
-
-	wresize(line_win, 1, COLS);
-	mvwin(line_win, my_win.x_nlines, 0);
-#if defined(NCURSES_VERSION) || defined(whline)
-	whline(line_win, '-', COLS);
-#else
-	wmove(line_win, my_win.x_nlines, 0);
-	box(line_win, '-', '-');
-#endif
-
-	/* Now redraw the screen. */
-	wrefresh(his_win.x_win);
-	wrefresh(line_win);
-	wrefresh(my_win.x_win);
 }

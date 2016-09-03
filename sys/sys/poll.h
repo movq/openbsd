@@ -1,4 +1,4 @@
-/*	$OpenBSD: poll.h,v 1.15 2016/06/07 06:12:37 deraadt Exp $ */
+/*	$OpenBSD: poll.h,v 1.4 1998/08/12 17:34:29 deraadt Exp $ */
 
 /*
  * Copyright (c) 1996 Theo de Raadt
@@ -12,6 +12,8 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -28,13 +30,11 @@
 #ifndef	_SYS_POLL_H_
 #define	_SYS_POLL_H_
 
-typedef struct pollfd {
+struct pollfd {
 	int 	fd;
 	short	events;
 	short	revents;
-} pollfd_t;
-
-typedef unsigned int	nfds_t;
+};
 
 #define	POLLIN		0x0001
 #define	POLLPRI		0x0002
@@ -43,47 +43,12 @@ typedef unsigned int	nfds_t;
 #define	POLLHUP		0x0010
 #define	POLLNVAL	0x0020
 #define	POLLRDNORM	0x0040
-#define POLLNORM	POLLRDNORM
 #define POLLWRNORM      POLLOUT
 #define	POLLRDBAND	0x0080
 #define	POLLWRBAND	0x0100
-#ifdef _KERNEL
-#define	POLL_NOHUP	0x1000		/* internal use only */
-#endif
-
-#define INFTIM		(-1)
 
 #ifndef _KERNEL
-#include <sys/cdefs.h>
-
-#if __BSD_VISIBLE
-#include <sys/_types.h>
-
-#ifndef _SIGSET_T_DEFINED_
-#define _SIGSET_T_DEFINED_
-typedef unsigned int	sigset_t;
-#endif
-
-#ifndef _TIME_T_DEFINED_
-#define _TIME_T_DEFINED_
-typedef __time_t	time_t;
-#endif
-
-#ifndef _TIMESPEC_DECLARED
-#define _TIMESPEC_DECLARED
-struct timespec {
-	time_t	tv_sec;		/* seconds */
-	long	tv_nsec;	/* and nanoseconds */
-};
-#endif
-#endif /* __BSD_VISIBLE */
-
-__BEGIN_DECLS
-int   poll(struct pollfd[], nfds_t, int);
-#if __BSD_VISIBLE
-int   ppoll(struct pollfd[], nfds_t, const struct timespec *, const sigset_t *);
-#endif /* __BSD_VISIBLE */
-__END_DECLS
+int   poll __P((struct pollfd[], int, int));
 #endif /* _KERNEL */
 
 #endif /* !_SYS_POLL_H_ */

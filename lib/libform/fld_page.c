@@ -1,6 +1,7 @@
-/*	$OpenBSD: fld_page.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: fld_page.c,v 1.3 1999/05/17 03:04:15 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: fld_page.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: fld_page.c,v 1.4 1999/05/16 17:19:37 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -45,16 +46,13 @@ MODULE_ID("$Id: fld_page.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |   Return Values :  E_OK         - success
 |                    E_CONNECTED  - field is connected
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_new_page(FIELD *field, bool new_page_flag)
+int set_new_page(FIELD * field, bool new_page_flag)
 {
-  T((T_CALLED("set_new_page(%p,%d)"), field, new_page_flag));
-
   Normalize_Field(field);
-  if (field->form)
+  if (field->form) 
     RETURN(E_CONNECTED);
 
-  if (new_page_flag)
+  if (new_page_flag) 
     field->status |= _NEWPAGE;
   else
     field->status &= ~_NEWPAGE;
@@ -72,12 +70,9 @@ set_new_page(FIELD *field, bool new_page_flag)
 |   Return Values :  TRUE  - field starts a new page
 |                    FALSE - field doesn't start a new page
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(bool)
-new_page(const FIELD *field)
+bool new_page(const FIELD * field)
 {
-  T((T_CALLED("new_page(%p)"), field));
-
-  returnBool((Normalize_Field(field)->status & _NEWPAGE) ? TRUE : FALSE);
+  return (Normalize_Field(field)->status & _NEWPAGE)  ? TRUE : FALSE;
 }
 
 /* fld_page.c ends here */

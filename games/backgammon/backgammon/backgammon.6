@@ -1,4 +1,4 @@
-.\"	$OpenBSD: backgammon.6,v 1.21 2015/12/02 20:05:01 tb Exp $
+.\"	$OpenBSD: backgammon.6,v 1.5 1999/07/09 13:35:54 aaron Exp $
 .\"
 .\" Copyright (c) 1980, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,7 +33,7 @@
 .\"
 .\"	@(#)backgammon.6	8.1 (Berkeley) 5/31/93
 .\"
-.Dd $Mdocdate: December 2 2015 $
+.Dd May 31, 1993
 .Dt BACKGAMMON 6
 .Os
 .Sh NAME
@@ -37,83 +41,110 @@
 .Nd the game of backgammon
 .Sh SYNOPSIS
 .Nm backgammon
-.Op Fl bdnrw
+.Op Fl
+.Op Fl nrwb
+.Op Fl p Ar [r | w | b]
+.Op Fl t Ar term
 .Op Fl s Ar file
 .Sh DESCRIPTION
 This program lets you play backgammon against the computer
 or against a
 .Sq friend .
-All commands are only one letter,
+All commands only are one letter,
 so you don't need to type a carriage return,
 except at the end of a move.
-The program is mostly self-explanatory:
+The program is mostly self documenting:
 a question mark (?) will usually get some help.
 If you answer
 .Sq y
 when the program asks if you want the rules,
 you will get text explaining the rules of the game,
 some hints on strategy,
-instructions on how to use the program,
+instruction on how to use the program,
 and a tutorial consisting of a practice game against the computer.
 A description of how to use the program can be
 obtained by answering
 .Sq y
 when it asks if you want instructions.
 .Pp
-The possible arguments for
-.Nm
-are described below.
-In each case
-.Fl n
-is implied.
+The possible arguments for backgammon
+(most are unnecessary but some are very convenient)
+consist of:
 .Bl -tag -width indent
-.It Fl b
-Two players, red and white.
-.It Fl d
-Play without doubling.
 .It Fl n
-Don't ask for rules or instructions.
+don't ask for rules or instructions
 .It Fl r
-Player is red.
-.It Fl s Ar file
-Recover previously saved game from
-.Ar file .
+player is red (implies n)
 .It Fl w
-Player is white.
+player is white (implies n)
+.It Fl b
+two players, red and white (implies n)
+.It Fl p Ar r
+print the board before red's turn
+.It Fl p Ar w
+print the board before white's turn
+.It Fl p Ar b
+print the board before any turn
+.It Fl t Ar term
+terminal is type
+.Ar term ,
+using /etc/termcap
+.It Fl s Ar file
+recover previously saved game from
+.Ar file .
 .El
+.Pp
+.\"
+An argument of
+.Fl h
+gets a description of possible arguments.
+.Pp
+If
+.Ar term
+has capabilities for direct cursor movement (see
+.Xr termcap 5 )
+.Nm
+.Dq fixes
+the board after each move,
+so the board does not need to be reprinted
+unless the screen suffers some horrendous malady.
+Also, any
+.Fl p
+option will be ignored.
+(The
+.Fl t
+option is not necessary unless the terminal type does not match
+the entry in the
+.Pa /etc/termcap
+data base.)
 .Sh QUICK REFERENCE
 When the program prompts by typing only your color,
-type a space or carriage return to roll,
-or one of the following:
-.Pp
-.Bl -tag -width Ds -offset indent -compact
+type a space or carriage return to roll, or
+.Bl -tag -width indent
 .It Ic d
 to double
-.It Ic q
-to quit
 .It Ic r
 to redraw the board
+.It Ic q
+to quit
 .It Ic s
 to save the game for later
 .El
 .Pp
-When the program prompts with 'Move:',
-type one of the following:
-.Pp
-.Bl -tag -width Ds -offset indent -compact
-.It Ic q
-to quit
+When the program prompts with 'Move:', type
+.Bl -tag -width indent
 .It Ic r
 to redraw the board
+.It Ic q
+to quit
 .It Ic s
 to save the game
 .El
 .Pp
-Or a
+or a
 .Em move ,
-which is a sequence of one of the following:
-.Pp
-.Bl -tag -width Ds -offset indent -compact
+which is a sequence of
+.Bl -tag -width indent
 .It Ic s-f
 move from
 .Ic s
@@ -125,9 +156,8 @@ move one man on
 the roll
 .Ic r
 separated by commas or spaces and ending with a newline.
-Available abbreviations are as follows:
-.Pp
-.Bl -tag -width "s-f1-f2XXX" -offset indent -compact
+Available abbreviations are
+.Bl -tag -width indent
 .It Ic s-f1-f2
 means
 .Ic s-f1,f1-f2
@@ -143,22 +173,14 @@ for bar and
 .Ic h
 for home,
 or 0 or 25 as appropriate.
+.Sh AUTHOR
+Alan Char
 .Sh FILES
 .Bl -tag -width /usr/games/teachgammon -compact
 .It Pa /usr/games/teachgammon
 rules and tutorial
+.It Pa /etc/termcap
+terminal capabilities
 .El
-.Sh HISTORY
-The game
-.Nm
-first appeared in
-.Bx 3 .
-.Sh AUTHORS
-.An -nosplit
-.An Alan Char
-.Pp
-The strategy is the
-.Dq pubeval
-algorithm of
-.An Gerry Tesauro ,
-with minimal doubling logic added.
+.Sh BUGS
+The program's strategy needs much work.

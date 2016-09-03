@@ -1,7 +1,7 @@
-/*	$OpenBSD: machdep.c,v 1.9 2004/04/07 18:24:20 mickey Exp $	*/
+/*	$OpenBSD: machdep.c,v 1.5 1999/05/03 22:46:38 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2004 Michael Shalayeff
+ * Copyright (c) 1998 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,18 +12,22 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <sys/param.h>
@@ -36,8 +40,7 @@
 #include "dev_hppa.h"
 
 extern struct	stable_storage sstor;	/* contents of Stable Storage */
-int howto;
-dev_t bootdev;
+int howto, bootdev;
 
 void
 machdep()
@@ -50,7 +53,7 @@ machdep()
 
 #ifdef PDCDEBUG
 	if (debug) {
-		int i;
+		register int i;
 
 		printf("SSTOR:\n");
 		printf("pri_boot=");	DEVPATH_PRINT(&sstor.ss_pri_boot);
@@ -70,7 +73,7 @@ machdep()
 		       PAGE0->ivec_toclen, PAGE0->ivec_rendz,
 		       PAGE0->mem_10msec);
 		printf ("mem: cont=%u, phys=%u, pdc_spa=%u, resv=%u, free=%x\n"
-			"cpu_hpa=%x, pdc=%p, imm_hpa=%p[%u,%u], soft=%u\n",
+			"cpu_hpa=%p, pdc=%p, imm_hpa=%p[%u,%u], soft=%u\n",
 		       PAGE0->memc_cont, PAGE0->memc_phsize, PAGE0->memc_adsize,
 		       PAGE0->memc_resv, PAGE0->mem_free, PAGE0->mem_hpa,
 		       PAGE0->mem_pdc, PAGE0->imm_hpa, PAGE0->imm_spa_size,

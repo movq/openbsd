@@ -1,4 +1,4 @@
-/*	$OpenBSD: tcp_fsm.h,v 1.8 2004/07/06 13:52:31 markus Exp $	*/
+/*	$OpenBSD: tcp_fsm.h,v 1.4 1997/11/08 19:54:12 deraadt Exp $	*/
 /*	$NetBSD: tcp_fsm.h,v 1.6 1994/10/14 16:01:48 mycroft Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,9 +35,6 @@
  *
  *	@(#)tcp_fsm.h	8.1 (Berkeley) 6/10/93
  */
-
-#ifndef _NETINET_TCP_FSM_H_
-#define _NETINET_TCP_FSM_H_
 
 /*
  * TCP FSM state definitions.
@@ -71,19 +72,18 @@
 u_char	tcp_outflags[TCP_NSTATES] = {
     TH_RST|TH_ACK, 0, TH_SYN, TH_SYN|TH_ACK,
     TH_ACK, TH_ACK,
-    TH_FIN|TH_ACK, TH_FIN|TH_ACK, TH_FIN|TH_ACK, TH_ACK, TH_ACK,
+    TH_FIN|TH_ACK, TH_ACK, TH_FIN|TH_ACK, TH_ACK, TH_ACK,
 };
-#endif /* TCPOUTFLAGS */
+#endif
 
 #ifdef KPROF
 int	tcp_acounts[TCP_NSTATES][PRU_NREQ];
-#endif /* KPROF */
+#endif
 
 #ifdef	TCPSTATES
-const char *tcpstates[] = {
+char *tcpstates[] = {
 	"CLOSED",	"LISTEN",	"SYN_SENT",	"SYN_RCVD",
 	"ESTABLISHED",	"CLOSE_WAIT",	"FIN_WAIT_1",	"CLOSING",
 	"LAST_ACK",	"FIN_WAIT_2",	"TIME_WAIT",
 };
-#endif /* TCPSTATES */
-#endif /* _NETINET_TCP_FSM_H_ */
+#endif

@@ -1,10 +1,9 @@
-/*	$OpenBSD: uvm_meter.c,v 1.36 2015/03/14 03:38:53 jsg Exp $	*/
-/*	$NetBSD: uvm_meter.c,v 1.21 2001/07/14 06:36:03 matt Exp $	*/
+/*	$NetBSD: uvm_meter.c,v 1.7 1998/08/09 22:36:39 perry Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * Copyright (c) 1982, 1986, 1989, 1993
- *      The Regents of the University of California.
+ *      The Regents of the University of California.  
  *
  * All rights reserved.
  *
@@ -16,7 +15,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor,
+ *      Washington University, and the University of California, Berkeley 
+ *      and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -37,34 +41,22 @@
  */
 
 #include <sys/param.h>
+#include <sys/proc.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/proc.h>
+#include <vm/vm.h>
 #include <sys/sysctl.h>
-#include <sys/vmmeter.h>
-#include <uvm/uvm.h>
-
-#ifdef UVM_SWAP_ENCRYPT
-#include <uvm/uvm_swap.h>
-#include <uvm/uvm_swap_encrypt.h>
-#endif
+#include <sys/exec.h>
 
 /*
- * The time for a process to be blocked before being very swappable.
- * This is a number of seconds which the system takes as being a non-trivial
- * amount of real time.  You probably shouldn't change this;
- * it is used in subtle ways (fractions and multiples of it are, that is, like
- * half of a ``long time'', almost a long time, etc.)
- * It is related to human patience and other factors which don't really
- * change over time.
+ * maxslp: ???? XXXCDC
  */
-#define	MAXSLP	20
 
 int maxslp = MAXSLP;	/* patchable ... */
-struct loadavg averunnable;
+struct loadavg averunnable; /* decl. */
 
 /*
- * constants for averages over 1, 5, and 15 minutes when sampling at
+ * constants for averages over 1, 5, and 15 minutes when sampling at 
  * 5 second intervals.
  */
 
@@ -74,96 +66,70 @@ static fixpt_t cexp[3] = {
 	0.9944598480048967 * FSCALE,	/* exp(-1/180) */
 };
 
+/*
+ * prototypes
+ */
 
-static void uvm_loadav(struct loadavg *);
-void uvm_total(struct vmtotal *);
+static void uvm_loadav __P((struct loadavg *));
 
 /*
  * uvm_meter: calculate load average and wake up the swapper (if needed)
  */
 void
-uvm_meter(void)
+uvm_meter()
 {
-	if ((time_second % 5) == 0)
+	if ((time.tv_sec % 5) == 0)
 		uvm_loadav(&averunnable);
 	if (proc0.p_slptime > (maxslp / 2))
-		wakeup(&proc0);
+		wakeup((caddr_t)&proc0);
 }
 
 /*
- * uvm_loadav: compute a tenex style load average of a quantity on
- * 1, 5, and 15 minute intervals.
+ * uvm_loadav: compute a tenex style load average of a quantity on 
+ * 1, 5, and 15 minute internvals.
  */
 static void
-uvm_loadav(struct loadavg *avg)
+uvm_loadav(avg)
+	struct loadavg *avg;
 {
-	CPU_INFO_ITERATOR cii;
-	struct cpu_info *ci;
 	int i, nrun;
 	struct proc *p;
-	int nrun_cpu[MAXCPUS];
 
-	nrun = 0;
-	memset(nrun_cpu, 0, sizeof(nrun_cpu));
-
-	LIST_FOREACH(p, &allproc, p_list) {
+	for (nrun = 0, p = allproc.lh_first; p != 0; p = p->p_list.le_next) {
 		switch (p->p_stat) {
 		case SSLEEP:
 			if (p->p_priority > PZERO || p->p_slptime > 1)
 				continue;
-		/* FALLTHROUGH */
+		/* fall through */
 		case SRUN:
-		case SONPROC:
-			if (p == p->p_cpu->ci_schedstate.spc_idleproc)
-				continue;
 		case SIDL:
 			nrun++;
-			if (p->p_cpu)
-				nrun_cpu[CPU_INFO_UNIT(p->p_cpu)]++;
 		}
 	}
-
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 3; i++)
 		avg->ldavg[i] = (cexp[i] * avg->ldavg[i] +
 		    nrun * FSCALE * (FSCALE - cexp[i])) >> FSHIFT;
-	}
-
-	CPU_INFO_FOREACH(cii, ci) {
-		struct schedstate_percpu *spc = &ci->ci_schedstate;
-
-		if (nrun_cpu[CPU_INFO_UNIT(ci)] == 0)
-			continue;
-		spc->spc_ldavg = (cexp[0] * spc->spc_ldavg +
-		    nrun_cpu[CPU_INFO_UNIT(ci)] * FSCALE *
-		    (FSCALE - cexp[0])) >> FSHIFT;
-	}		
 }
 
 /*
  * uvm_sysctl: sysctl hook into UVM system.
  */
 int
-uvm_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
-    size_t newlen, struct proc *p)
+uvm_sysctl(name, namelen, oldp, oldlenp, newp, newlen, p)
+	int *name;
+	u_int namelen;
+	void *oldp;
+	size_t *oldlenp;
+	void *newp;
+	size_t newlen;
+	struct proc *p;
 {
-	struct process *pr = p->p_p;
 	struct vmtotal vmtotals;
-	int rv, t;
+	struct _ps_strings _ps = { PS_STRINGS };
 
-	switch (name[0]) {
-	case VM_SWAPENCRYPT:
-#ifdef UVM_SWAP_ENCRYPT
-		return (swap_encrypt_ctl(name + 1, namelen - 1, oldp, oldlenp,
-					 newp, newlen, p));
-#else
-		return (EOPNOTSUPP);
-#endif
-	default:
-		/* all sysctl names at this level are terminal */
-		if (namelen != 1)
-			return (ENOTDIR);		/* overloaded */
-		break;
-	}
+	/* all sysctl names at this level are terminal */
+	if (namelen != 1)
+		return (ENOTDIR);		/* overloaded */
 
 	switch (name[0]) {
 	case VM_LOADAVG:
@@ -179,57 +145,9 @@ uvm_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 		return (sysctl_rdstruct(oldp, oldlenp, newp, &uvmexp,
 		    sizeof(uvmexp)));
 
-	case VM_NKMEMPAGES:
-		return (sysctl_rdint(oldp, oldlenp, newp, nkmempages));
-
 	case VM_PSSTRINGS:
-		return (sysctl_rdstruct(oldp, oldlenp, newp, &pr->ps_strings,
-		    sizeof(pr->ps_strings)));
-
-	case VM_ANONMIN:
-		t = uvmexp.anonminpct;
-		rv = sysctl_int(oldp, oldlenp, newp, newlen, &t);
-		if (rv) {
-			return rv;
-		}
-		if (t + uvmexp.vtextminpct + uvmexp.vnodeminpct > 95 || t < 0) {
-			return EINVAL;
-		}
-		uvmexp.anonminpct = t;
-		uvmexp.anonmin = t * 256 / 100;
-		return rv;
-
-	case VM_VTEXTMIN:
-		t = uvmexp.vtextminpct;
-		rv = sysctl_int(oldp, oldlenp, newp, newlen, &t);
-		if (rv) {
-			return rv;
-		}
-		if (uvmexp.anonminpct + t + uvmexp.vnodeminpct > 95 || t < 0) {
-			return EINVAL;
-		}
-		uvmexp.vtextminpct = t;
-		uvmexp.vtextmin = t * 256 / 100;
-		return rv;
-
-	case VM_VNODEMIN:
-		t = uvmexp.vnodeminpct;
-		rv = sysctl_int(oldp, oldlenp, newp, newlen, &t);
-		if (rv) {
-			return rv;
-		}
-		if (uvmexp.anonminpct + uvmexp.vtextminpct + t > 95 || t < 0) {
-			return EINVAL;
-		}
-		uvmexp.vnodeminpct = t;
-		uvmexp.vnodemin = t * 256 / 100;
-		return rv;
-
-	case VM_MAXSLP:
-		return (sysctl_rdint(oldp, oldlenp, newp, maxslp));
-
-	case VM_USPACE:
-		return (sysctl_rdint(oldp, oldlenp, newp, USPACE));
+		return (sysctl_rdstruct(oldp, oldlenp, newp, &_ps,
+		    sizeof(_ps)));
 
 	default:
 		return (EOPNOTSUPP);
@@ -241,19 +159,23 @@ uvm_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
  * uvm_total: calculate the current state of the system.
  */
 void
-uvm_total(struct vmtotal *totalp)
+uvm_total(totalp)
+	struct vmtotal *totalp;
 {
 	struct proc *p;
 #if 0
-	struct vm_map_entry *	entry;
-	struct vm_map *map;
+	vm_map_entry_t	entry;
+	vm_map_t map;
 	int paging;
 #endif
 
-	memset(totalp, 0, sizeof *totalp);
+	bzero(totalp, sizeof *totalp);
 
-	/* calculate process statistics */
-	LIST_FOREACH(p, &allproc, p_list) {
+	/*
+	 * calculate process statistics
+	 */
+
+	for (p = allproc.lh_first; p != 0; p = p->p_list.le_next) {
 		if (p->p_flag & P_SYSTEM)
 			continue;
 		switch (p->p_stat) {
@@ -262,17 +184,23 @@ uvm_total(struct vmtotal *totalp)
 
 		case SSLEEP:
 		case SSTOP:
-			if (p->p_priority <= PZERO)
-				totalp->t_dw++;
-			else if (p->p_slptime < maxslp)
-				totalp->t_sl++;
+			if (p->p_flag & P_INMEM) {
+				if (p->p_priority <= PZERO)
+					totalp->t_dw++;
+				else if (p->p_slptime < maxslp)
+					totalp->t_sl++;
+			} else if (p->p_slptime < maxslp)
+				totalp->t_sw++;
 			if (p->p_slptime >= maxslp)
 				continue;
 			break;
+
 		case SRUN:
 		case SIDL:
-		case SONPROC:
-			totalp->t_rq++;
+			if (p->p_flag & P_INMEM)
+				totalp->t_rq++;
+			else
+				totalp->t_sw++;
 			if (p->p_stat == SIDL)
 				continue;
 			break;

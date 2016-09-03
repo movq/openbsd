@@ -1,4 +1,4 @@
-/*	$OpenBSD: domacro.c,v 1.18 2015/10/18 03:04:11 mmcc Exp $	*/
+/*	$OpenBSD: domacro.c,v 1.7 1997/07/25 21:56:19 millert Exp $	*/
 /*	$NetBSD: domacro.c,v 1.10 1997/07/20 09:45:45 lukem Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,13 @@
  * SUCH DAMAGE.
  */
 
-#ifndef SMALL
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)domacro.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: domacro.c,v 1.7 1997/07/25 21:56:19 millert Exp $";
+#endif
+#endif /* not lint */
 
 #include <ctype.h>
 #include <signal.h>
@@ -40,14 +50,16 @@
 #include "ftp_var.h"
 
 void
-domacro(int argc, char *argv[])
+domacro(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int i, j, count = 2, loopflg = 0;
-	char *cp1, *cp2, line2[FTPBUFLEN];
+	char *cp1, *cp2, line2[200];
 	struct cmd *c;
 
 	if (argc < 2 && !another(&argc, &argv, "macro name")) {
-		fprintf(ttyout, "usage: %s macro-name\n", argv[0]);
+		fprintf(ttyout, "usage: %s macro_name\n", argv[0]);
 		code = -1;
 		return;
 	}
@@ -61,11 +73,11 @@ domacro(int argc, char *argv[])
 		code = -1;
 		return;
 	}
-	(void)strlcpy(line2, line, sizeof(line2));
+	(void)strcpy(line2, line);
 TOP:
 	cp1 = macros[i].mac_start;
 	while (cp1 != macros[i].mac_end) {
-		while (isspace((unsigned char)*cp1)) {
+		while (isspace(*cp1)) {
 			cp1++;
 		}
 		cp2 = line;
@@ -75,15 +87,14 @@ TOP:
 				 *cp2++ = *++cp1;
 				 break;
 			    case '$':
-				 if (isdigit((unsigned char)*(cp1 + 1))) {
+				 if (isdigit(*(cp1+1))) {
 				    j = 0;
-				    while (isdigit((unsigned char)*++cp1)) {
+				    while (isdigit(*++cp1)) {
 					  j = 10*j +  *cp1 - '0';
 				    }
 				    cp1--;
 				    if (argc - 2 >= j) {
-					(void)strlcpy(cp2, argv[j+1],
-					    sizeof(line) - (cp2 - line));
+					(void)strcpy(cp2, argv[j+1]);
 					cp2 += strlen(argv[j+1]);
 				    }
 				    break;
@@ -92,13 +103,12 @@ TOP:
 					loopflg = 1;
 					cp1++;
 					if (count < argc) {
-					   (void)strlcpy(cp2, argv[count],
-					       sizeof(line) - (cp2 - line));
+					   (void)strcpy(cp2, argv[count]);
 					   cp2 += strlen(argv[count]);
 					}
 					break;
 				}
-				/* FALLTHROUGH */
+				/* intentional drop through */
 			    default:
 				*cp2++ = *cp1;
 				break;
@@ -131,7 +141,7 @@ TOP:
 			if (bell && c->c_bell) {
 				(void)putc('\007', ttyout);
 			}
-			(void)strlcpy(line, line2, sizeof(line));
+			(void)strcpy(line, line2);
 			makeargv();
 			argc = margc;
 			argv = margv;
@@ -144,6 +154,3 @@ TOP:
 		goto TOP;
 	}
 }
-
-#endif /* !SMALL */
-

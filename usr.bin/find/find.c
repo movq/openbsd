@@ -1,4 +1,4 @@
-/*	$OpenBSD: find.c,v 1.20 2015/10/10 20:35:00 deraadt Exp $	*/
+/*	$OpenBSD: find.c,v 1.7 1999/10/04 21:17:32 millert Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,19 +36,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)find.c	8.1 (Berkeley) 6/6/93";*/
+static char rcsid[] = "$OpenBSD: find.c,v 1.7 1999/10/04 21:17:32 millert Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
 #include <err.h>
 #include <errno.h>
 #include <fts.h>
-#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
-
-int	mayexecve;
 
 #include "find.h"
 
@@ -54,7 +59,8 @@ int	mayexecve;
  *	command arguments.
  */
 PLAN *
-find_formplan(char **argv)
+find_formplan(argv)
+	char **argv;
 {
 	PLAN *plan, *tail, *new;
 
@@ -92,16 +98,16 @@ find_formplan(char **argv)
 	 */
 	if (!isoutput) {
 		if (plan == NULL) {
-			new = c_print(NULL, NULL, 0);
+			new = c_print();
 			tail = plan = new;
 		} else {
-			new = c_openparen(NULL, NULL, 0);
+			new = c_openparen();
 			new->next = plan;
 			plan = new;
-			new = c_closeparen(NULL, NULL, 0);
+			new = c_closeparen();
 			tail->next = new;
 			tail = new;
-			new = c_print(NULL, NULL, 0);
+			new = c_print();
 			tail->next = new;
 			tail = new;
 		}
@@ -146,34 +152,17 @@ FTS *tree;			/* pointer to top of FTS hierarchy */
 
 FTSENT *entry;			/* shared with SIGINFO handler */
 
-int
-find_execute(PLAN *plan,	/* search plan */
-    char **paths)		/* array of pathnames to traverse */
+void
+find_execute(plan, paths)
+	PLAN *plan;		/* search plan */
+	char **paths;		/* array of pathnames to traverse */
 {
-	sigset_t fullset, oset;
-	int r, rval;
 	PLAN *p;
-
-	if (mayexecve == 0)
-		if (pledge("stdio rpath getpw", NULL) == -1)
-			err(1, "pledge");
-
-	rval = 0;
     
 	if (!(tree = fts_open(paths, ftsoptions, NULL)))
-		err(1, "fts_open");
+		err(1, "ftsopen");
 
-	sigfillset(&fullset);
-	for (;;) {
-		(void)sigprocmask(SIG_BLOCK, &fullset, &oset);
-		entry = fts_read(tree);
-		(void)sigprocmask(SIG_SETMASK, &oset, NULL);
-		if (entry == NULL) {
-			if (errno)
-				err(1, "fts_read");
-			break;
-		}
-
+	while ((entry = fts_read(tree))) {
 		switch (entry->fts_info) {
 		case FTS_D:
 			if (isdepth)
@@ -187,15 +176,13 @@ find_execute(PLAN *plan,	/* search plan */
 		case FTS_ERR:
 		case FTS_NS:
 			(void)fflush(stdout);
-			warnc(entry->fts_errno, "%s", entry->fts_path);
-			rval = 1;
+			warn("%s", entry->fts_path);
 			continue;
 		}
 #define	BADCH	" \t\n\\'\""
 		if (isxargs && strpbrk(entry->fts_path, BADCH)) {
 			(void)fflush(stdout);
 			warnx("%s: illegal path", entry->fts_path);
-			rval = 1;
 			continue;
 		}
 
@@ -208,45 +195,4 @@ find_execute(PLAN *plan,	/* search plan */
 		    ;
 	}
 	(void)fts_close(tree);
-
-	/*
-	 * Cleanup any plans with leftover state.
-	 * Keep the last non-zero return value.
-	 */
-	if ((r = find_traverse(plan, plan_cleanup, NULL)) != 0)
-		rval = r;
-	return (rval);
-}
-
-/*
- * find_traverse --
- *	traverse the plan tree and execute func() on all plans.  This
- *	does not evaluate each plan's eval() function; it is intended
- *	for operations that must run on all plans, such as state
- *	cleanup.
- *
- *	If any func() returns non-zero, then so will find_traverse().
- */
-int
-find_traverse(PLAN *plan, int (*func)(PLAN *, void *), void *arg)
-{
-	PLAN *p;
-	int r, rval;
-
-	rval = 0;
-	for (p = plan; p; p = p->next) {
-		if ((r = func(p, arg)) != 0)
-			rval = r;
-		if (p->type == N_EXPR || p->type == N_OR) {
-			if (p->p_data[0])
-				if ((r = find_traverse(p->p_data[0],
-					    func, arg)) != 0)
-					rval = r;
-			if (p->p_data[1])
-				if ((r = find_traverse(p->p_data[1],
-					    func, arg)) != 0)
-					rval = r;
-		}
-	}
-	return rval;
 }

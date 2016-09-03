@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcap-namedb.h,v 1.8 2014/04/11 04:08:58 lteo Exp $	*/
+/*	$OpenBSD: pcap-namedb.h,v 1.5 1999/07/20 04:49:55 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1994, 1996
@@ -31,6 +31,8 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ * @(#) $Header: /home/mike/src/cvs/openbsd/src/lib/libpcap/pcap-namedb.h,v 1.5 1999/07/20 04:49:55 deraadt Exp $ (LBL)
  */
 
 #ifndef lib_pcap_ethers_h
@@ -55,16 +57,11 @@ u_char *pcap_ether_hostton(const char*);
 u_char *pcap_ether_aton(const char *);
 
 bpf_u_int32 **pcap_nametoaddr(const char *);
-#ifdef INET6
-struct addrinfo *pcap_nametoaddrinfo(const char *);
-#endif
 bpf_u_int32 pcap_nametonetaddr(const char *);
 
 int	pcap_nametoport(const char *, int *, int *);
 int	pcap_nametoproto(const char *);
 int	pcap_nametoeproto(const char *);
-int	pcap_nametollc(const char *);
-
 /*
  * If a protocol is unknown, PROTO_UNDEF is returned.
  * Also, pcap_nametoport() returns the protocol along with the port number.

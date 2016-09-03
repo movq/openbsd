@@ -1,5 +1,4 @@
-#Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1999
-#Free Software Foundation, Inc.
+#Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -42,10 +41,9 @@ man7dir = $(mandir)/man7
 man8dir = $(mandir)/man8
 man9dir = $(mandir)/man9
 infodir = @infodir@
-htmldir = $(prefix)/html
 includedir = @includedir@
 
-SHELL = @SHELL@
+SHELL = /bin/sh
 
 INSTALL = @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -117,8 +115,6 @@ check:
 info dvi:
 install-info:
 clean-info:
-html:
-install-html:
 
 gdbserve.nlm:	gdbserve.O $(srcdir)/gdbserve.def
 	${NLMCONV_FOR_TARGET} -T $(srcdir)/gdbserve.def
@@ -130,7 +126,7 @@ gdbserve.O: prelude.o gdbserve.o $(TDEPFILES)
 # specific routine gets the one for the correct machine.
 # The xyzzy stuff below deals with empty DEPFILES
 TAGS:	${TAGFILES}
-	etags `find ${srcdir}/../config -name $(DEPRECATED_TM_FILE) -print` \
+	etags `find ${srcdir}/../config -name $(TM_FILE) -print` \
 	  `find ${srcdir}/../config -name ${XM_FILE} -print` \
 	  `find ${srcdir}/../config -name ${NAT_FILE} -print` \
 	  `for i in yzzy ${DEPFILES}; do \

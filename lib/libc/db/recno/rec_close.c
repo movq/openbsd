@@ -1,4 +1,4 @@
-/*	$OpenBSD: rec_close.c,v 1.12 2015/07/16 04:27:33 tedu Exp $	*/
+/*	$OpenBSD: rec_close.c,v 1.6 1999/02/15 05:11:25 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)rec_close.c	8.6 (Berkeley) 8/18/94";
+#else
+static char rcsid[] = "$OpenBSD: rec_close.c,v 1.6 1999/02/15 05:11:25 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
 
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -51,7 +63,8 @@
  *	RET_ERROR, RET_SUCCESS
  */
 int
-__rec_close(DB *dbp)
+__rec_close(dbp)
+	DB *dbp;
 {
 	BTREE *t;
 	int status;
@@ -69,17 +82,17 @@ __rec_close(DB *dbp)
 
 	/* Committed to closing. */
 	status = RET_SUCCESS;
+	if (F_ISSET(t, R_MEMMAPPED) && munmap(t->bt_smap, t->bt_msize))
+		status = RET_ERROR;
 
 	if (!F_ISSET(t, R_INMEM)) {
 		if (F_ISSET(t, R_CLOSEFP)) {
 			if (fclose(t->bt_rfp))
 				status = RET_ERROR;
-		} else {
+		} else
 			if (close(t->bt_rfd))
 				status = RET_ERROR;
-		}
 	}
-
 	if (__bt_close(dbp) == RET_ERROR)
 		status = RET_ERROR;
 
@@ -96,7 +109,9 @@ __rec_close(DB *dbp)
  *	RET_SUCCESS, RET_ERROR.
  */
 int
-__rec_sync(const DB *dbp, u_int flags)
+__rec_sync(dbp, flags)
+	const DB *dbp;
+	u_int flags;
 {
 	struct iovec iov[2];
 	BTREE *t;
@@ -146,7 +161,7 @@ __rec_sync(const DB *dbp, u_int flags)
 			status = (dbp->seq)(dbp, &key, &data, R_NEXT);
 		}
 	} else {
-		iov[1].iov_base = &t->bt_bval;
+		iov[1].iov_base = (void *) &t->bt_bval;
 		iov[1].iov_len = 1;
 
 		status = (dbp->seq)(dbp, &key, &data, R_FIRST);

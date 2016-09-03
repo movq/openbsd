@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-fddi.c,v 1.17 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1991, 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,23 +19,33 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-fddi.c,v 1.8 1999/09/16 20:58:46 brad Exp $ (LBL)";
+#endif
+
 #ifdef HAVE_FDDI
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
 
+#ifdef __STDC__
 struct mbuf;
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 
 #include <ctype.h>
 #include <netdb.h>
 #include <pcap.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -198,7 +206,7 @@ print_fddi_fc(u_char fc)
 static inline void
 extract_fddi_addrs(const struct fddi_header *fddip, char *fsrc, char *fdst)
 {
-	int i;
+	register int i;
 
 	if (fddi_bitswap) {
 		/*
@@ -220,8 +228,8 @@ extract_fddi_addrs(const struct fddi_header *fddip, char *fsrc, char *fdst)
  * Print the FDDI MAC header
  */
 static inline void
-fddi_print(const struct fddi_header *fddip, u_int length,
-	   const u_char *fsrc, const u_char *fdst)
+fddi_print(register const struct fddi_header *fddip, register u_int length,
+	   register const u_char *fsrc, register const u_char *fdst)
 {
 	char *srcname, *dstname;
 
@@ -255,12 +263,12 @@ fddi_smt_print(const u_char *p, u_int length)
  */
 void
 fddi_if_print(u_char *pcap, const struct pcap_pkthdr *h,
-	      const u_char *p)
+	      register const u_char *p)
 {
 	u_int caplen = h->caplen;
 	u_int length = h->len;
-	u_short extracted_ethertype;
 	const struct fddi_header *fddip = (struct fddi_header *)p;
+	extern u_short extracted_ethertype;
 	struct ether_header ehdr;
 
 	ts_print(&h->ts);
@@ -338,7 +346,7 @@ out:
 #include "interface.h"
 void
 fddi_if_print(u_char *pcap, const struct pcap_pkthdr *h,
-	      const u_char *p)
+	      register const u_char *p)
 {
 
 	error("not configured for fddi");

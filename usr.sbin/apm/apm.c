@@ -1,4 +1,4 @@
-/*	$OpenBSD: apm.c,v 1.32 2015/11/01 14:13:30 deraadt Exp $	*/
+/*	$OpenBSD: apm.c,v 1.3 1998/10/29 18:21:44 mickey Exp $	*/
 
 /*
  *  Copyright (c) 1996 John T. Kohl
@@ -29,19 +29,19 @@
  * 
  */
 
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <err.h>
+#include <string.h>
 #include <sys/types.h>
-#include <sys/sysctl.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/ioctl.h>
 #include <machine/apmvar.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <err.h>
-#include <string.h>
 #include "pathnames.h"
 #include "apm-proto.h"
 
@@ -49,369 +49,250 @@
 #define TRUE 1
 
 extern char *__progname;
+extern char *optarg;
+extern int optind;
+extern int optopt;
+extern int opterr;
+extern int optreset;
 
 void usage(void);
 void zzusage(void);
-int do_zzz(int, enum apm_action action);
+int do_zzz(const char *pn, enum apm_action action);
 int open_socket(const char *pn);
-int send_command(int fd, struct apm_command *cmd, struct apm_reply *reply);
+int send_command(int fd,
+		 struct apm_command *cmd,
+		 struct apm_reply *reply);
 
 void
 usage(void)
 {
-	fprintf(stderr,"usage: %s [-AabHLlmPSvZz] [-f sockname]\n",
+    fprintf(stderr,"usage: %s [-v] [-z | -S] [-slbam] [-f socket]\n",
 	    __progname);
-	exit(1);
+    exit(1);
 }
 
 void
 zzusage(void)
 {
-	fprintf(stderr,"usage: %s [-SZz] [-f sockname]\n",
+    fprintf(stderr,"usage: %s [-z | -S] [-f socket]\n",
 	    __progname);
-	exit(1);
+    exit(1);
 }
 
 int
-send_command(int fd, struct apm_command *cmd, struct apm_reply *reply)
+send_command(int fd,
+	     struct apm_command *cmd,
+	     struct apm_reply *reply)
 {
-	/* send a command to the apm daemon */
-	cmd->vno = APMD_VNO;
+    /* send a command to the apm daemon */
+    cmd->vno = APMD_VNO;
 
-	if (send(fd, cmd, sizeof(*cmd), 0) == sizeof(*cmd)) {
-		if (recv(fd, reply, sizeof(*reply), 0) != sizeof(*reply)) {
-			warn("invalid reply from APM daemon");
-			return (1);
-		}
-	} else {
-		warn("invalid send to APM daemon");
-		return (1);
+    if (send(fd, cmd, sizeof(*cmd), 0) == sizeof(*cmd)) {
+	if (recv(fd, reply, sizeof(*reply), 0) != sizeof(*reply)) {
+	    warn("invalid reply from APM daemon");
+	    return 1;
 	}
-	return (0);
+    } else {
+	warn("invalid send to APM daemon");
+	return 1;
+    }
+    return 0;
 }
 
 int
-do_zzz(int fd, enum apm_action action)
+do_zzz(const char *pn, enum apm_action action)
 {
-	struct apm_command command;
-	struct apm_reply reply;
-	char *msg;
+    struct apm_command command;
+    struct apm_reply reply;
+    int fd;
 
-	switch (action) {
-	case NONE:
-	case SUSPEND:
-		command.action = SUSPEND;
-		msg = "Suspending system";
-		break;
-	case STANDBY:
-		command.action = STANDBY;
-		msg = "System standing by";
-		break;
-	case HIBERNATE:
-		command.action = HIBERNATE;
-		msg = "Hibernating system";
-		break;
-	default:
-		zzusage();
-	}
+    switch (action) {
+    case NONE:
+    case SUSPEND:
+	command.action = SUSPEND;
+	break;
+    case STANDBY:
+	command.action = STANDBY;
+	break;
+    default:
+	zzusage();
+    }
+    fd = open_socket(pn);
 
-	printf("%s...\n", msg);
-	exit(send_command(fd, &command, &reply));
+    if (fd == -1)
+	err(1, "cannot open connection to APM daemon");
+    printf("Suspending system...\n");
+    exit(send_command(fd, &command, &reply));
 }
 
 int
 open_socket(const char *sockname)
 {
-	int sock, errr;
-	struct sockaddr_un s_un;
+    int sock, errr;
+    struct sockaddr_un s_un;
 
-	sock = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (sock == -1)
-		err(1, "cannot create local socket");
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock == -1)
+	err(1, "cannot create local socket");
 
-	s_un.sun_family = AF_UNIX;
-	strlcpy(s_un.sun_path, sockname, sizeof(s_un.sun_path));
-	if (connect(sock, (struct sockaddr *)&s_un, sizeof(s_un)) == -1) {
-		errr = errno;
-		close(sock);
-		errno = errr;
-		sock = -1;
-	}
-	return (sock);
+    s_un.sun_family = AF_UNIX;
+    strncpy(s_un.sun_path, sockname, sizeof(s_un.sun_path));
+    s_un.sun_len = SUN_LEN(&s_un);
+    if (connect(sock, (struct sockaddr *)&s_un, s_un.sun_len) == -1) {
+	errr = errno;
+	close(sock);
+	errno = errr;
+	return -1;
+    }
+    return sock;
 }
 
 int
 main(int argc, char *argv[])
 {
-	const char *sockname = _PATH_APM_SOCKET;
-	int doac = FALSE;
-	int dopct = FALSE;
-	int dobstate = FALSE;
-	int domin = FALSE;
-	int doperf = FALSE;
-	int verbose = FALSE;
-	int ch, fd, rval;
-	enum apm_action action = NONE;
-	struct apm_command command;
-	struct apm_reply reply;
-	int cpuspeed_mib[] = { CTL_HW, HW_CPUSPEED }, cpuspeed;
-	size_t cpuspeed_sz = sizeof(cpuspeed);
+    char *sockname = _PATH_APM_SOCKET;
+    int ch;
+    int dostatus = FALSE;
+    int doac = FALSE;
+    int dopct = FALSE;
+    int dobstate = FALSE;
+    int domin = FALSE;
+    int fd;
+    int rval;
+    int verbose = FALSE;
+    enum apm_action action = NONE;
+    struct apm_command command;
+    struct apm_reply reply;
 
-	if (sysctl(cpuspeed_mib, 2, &cpuspeed, &cpuspeed_sz, NULL, 0) < 0)
-		err(1, "sysctl hw.cpuspeed");
-
-	while ((ch = getopt(argc, argv, "ACHLlmbvaPSzZf:")) != -1) {
-		switch (ch) {
-		case 'v':
-			verbose = TRUE;
-			break;
-		case 'f':
-			sockname = optarg;
-			break;
-		case 'z':
-			if (action != NONE)
-				usage();
-			action = SUSPEND;
-			break;
-		case 'S':
-			if (action != NONE)
-				usage();
-			action = STANDBY;
-			break;
-		case 'Z':
-			if (action != NONE)
-				usage();
-			action = HIBERNATE;
-			break;
-		case 'A':
-			if (action != NONE)
-				usage();
-			action = SETPERF_AUTO;
-			break;
-		case 'C':
-			if (action != NONE)
-				usage();
-			action = SETPERF_COOL;
-			break;
-		case 'H':
-			if (action != NONE)
-				usage();
-			action = SETPERF_HIGH;
-			break;
-		case 'L':
-			if (action != NONE)
-				usage();
-			action = SETPERF_LOW;
-			break;
-		case 'b':
-			if (action != NONE && action != GETSTATUS)
-				usage();
-			dobstate = TRUE;
-			action = GETSTATUS;
-			break;
-		case 'l':
-			if (action != NONE && action != GETSTATUS)
-				usage();
-			dopct = TRUE;
-			action = GETSTATUS;
-			break;
-		case 'm':
-			if (action != NONE && action != GETSTATUS)
-				usage();
-			domin = TRUE;
-			action = GETSTATUS;
-			break;
-		case 'a':
-			if (action != NONE && action != GETSTATUS)
-				usage();
-			doac = TRUE;
-			action = GETSTATUS;
-			break;
-		case 'P':
-			if (action != NONE && action != GETSTATUS)
-				usage();
-			doperf = TRUE;
-			action = GETSTATUS;
-			break;
-		default:
-			if (!strcmp(__progname, "zzz") || !strcmp(__progname, "ZZZ"))
-				zzusage();
-			else
-				usage();
-		}
-	}
-
-	fd = open_socket(sockname);
-
-	if (fd != -1) {
-		if (pledge("stdio rpath wpath cpath", NULL) == -1)
-			err(1, "pledge");
-	}
-
-	if (!strcmp(__progname, "zzz")) {
-		if (fd < 0)
-			err(1, "cannot connect to apmd");
-		else
-			return (do_zzz(fd, action));
-	} else if (!strcmp(__progname, "ZZZ")) {
-		if (fd < 0)
-			err(1, "cannot connect to apmd");
-		else
-			return (do_zzz(fd, HIBERNATE));
-	}
-
-
-	bzero(&reply, sizeof reply);
-	reply.batterystate.battery_state = APM_BATT_UNKNOWN;
-	reply.batterystate.ac_state = APM_AC_UNKNOWN;
-	reply.perfmode = PERF_MANUAL;
-	reply.cpuspeed = cpuspeed;
-
-	switch (action) {
-	case SETPERF_LOW:
-	case SETPERF_HIGH:
-	case SETPERF_AUTO:
-	case SETPERF_COOL:
-		if (fd == -1)
-			errx(1, "cannot connect to apmd, "
-			    "not changing performance adjustment mode");
-		goto balony;
-	case NONE:
-		action = GETSTATUS;
-		verbose = doac = dopct = dobstate = domin = doperf = TRUE;
-		/* FALLTHROUGH */
-	case GETSTATUS:
-		if (fd == -1) {
-			/* open the device directly and get status */
-			fd = open(_PATH_APM_NORMAL, O_RDONLY);
-			if (ioctl(fd, APM_IOC_GETPOWER,
-			    &reply.batterystate) == 0)
-				goto printval;
-		}
-		/* FALLTHROUGH */
-balony:
-	case SUSPEND:
-	case STANDBY:
-	case HIBERNATE:
-		command.action = action;
-		break;
-	default:
+    while ((ch = getopt(argc, argv, "lmbvadsSzf:")) != -1)
+	switch(ch) {
+	case 'v':
+	    verbose = TRUE;
+	    break;
+	case 'f':
+	    sockname = optarg;
+	    break;
+	case 'z':
+	    if (action != NONE)
 		usage();
+	    action = SUSPEND;
+	    break;
+	case 'S':
+	    if (action != NONE)
+		usage();
+	    action = STANDBY;
+	    break;
+	case 's':
+	    if (action != NONE && action != GETSTATUS)
+		usage();
+	    dostatus = TRUE;
+	    action = GETSTATUS;
+	    break;
+	case 'b':
+	    if (action != NONE && action != GETSTATUS)
+		usage();
+	    dobstate = TRUE;
+	    action = GETSTATUS;
+	    break;
+	case 'l':
+	    if (action != NONE && action != GETSTATUS)
+		usage();
+	    dopct = TRUE;
+	    action = GETSTATUS;
+	    break;
+	case 'm':
+	    if (action != NONE && action != GETSTATUS)
+		usage();
+	    domin = TRUE;
+	    action = GETSTATUS;
+	    break;
+	case 'a':
+	    if (action != NONE && action != GETSTATUS)
+		usage();
+	    doac = TRUE;
+	    action = GETSTATUS;
+	    break;
+	case '?':
+	default:
+	    usage();
 	}
 
-	if (fd != -1 && (rval = send_command(fd, &command, &reply)) != 0)
-		errx(rval, "cannot get reply from APM daemon");
+    if (!strcmp(__progname, "zzz")) {
+	return (do_zzz(sockname, action));
+    }
 
+    fd = open_socket(sockname);
+
+    switch (action) {
+    case NONE:
+	verbose = doac = dopct = dobstate = dostatus = domin = TRUE;
+	action = GETSTATUS;
+	/* fallthrough */
+    case GETSTATUS:
+	if (fd == -1) {
+	    /* open the device directly and get status */
+	    fd = open(_PATH_APM_NORMAL, O_RDONLY);
+	    if (fd == -1) {
+		err(1, "cannot contact APM daemon and cannot open " _PATH_APM_NORMAL);
+	    }
+	    if (ioctl(fd, APM_IOC_GETPOWER, &reply.batterystate) == 0)
+		goto printval;
+	}
+    case SUSPEND:
+    case STANDBY:
+	command.action = action;
+	break;
+    default:
+	usage();
+    }
+    
+    if ((rval = send_command(fd, &command, &reply)) == 0) {
 	switch (action) {
 	case GETSTATUS:
-	printval:
-		if (!verbose) {
-			if (dobstate)
-				printf("%d\n",
-				    reply.batterystate.battery_state);
-			if (dopct)
-				printf("%d\n",
-				    reply.batterystate.battery_life);
-			if (domin) {
-				if (reply.batterystate.minutes_left ==
-				    (u_int)-1)
-					printf("unknown\n");
-				else
-					printf("%d\n",
-					    reply.batterystate.minutes_left);
-			}
-			if (doac)
-				printf("%d\n",
-				    reply.batterystate.ac_state);
-			if (doperf)
-				printf("%d\n", reply.perfmode);
-			break;
-		}
-
-		if (dobstate) {
-			printf("Battery state: %s",
-			    battstate(reply.batterystate.battery_state));
-			if (!dopct && !domin)
-				printf("\n");
-		}
-
-		if (dopct && !dobstate)
-			printf("Battery remaining: %d percent",
-			    reply.batterystate.battery_life);
-		else if (dopct)
-			printf(", %d%% remaining",
-			    reply.batterystate.battery_life);
-		if (dopct && !domin)
-			printf("\n");
-
-		if (domin && !dobstate && !dopct) {
-#ifdef __powerpc__
-			if (reply.batterystate.battery_state ==
-			    APM_BATT_CHARGING)
-				printf("Remaining battery recharge "
-				    "time estimate: %d minutes\n",
-				    reply.batterystate.minutes_left);
-			else if (reply.batterystate.minutes_left == 0 &&
-			    reply.batterystate.battery_life > 10)
-				printf("Battery life estimate: "
-				    "not available\n");
-			else
-#endif
-			{
-				printf("Battery life estimate: ");
-				if (reply.batterystate.minutes_left ==
-				    (u_int)-1)
-					printf("unknown\n");
-				else
-					printf("%d minutes\n",
-					    reply.batterystate.minutes_left);
-			}
-		} else if (domin) {
-#ifdef __powerpc__
-			if (reply.batterystate.battery_state ==
-			    APM_BATT_CHARGING)
-				printf(", %d minutes recharge time estimate\n",
-				    reply.batterystate.minutes_left);
-			else if (reply.batterystate.minutes_left == 0 &&
-			    reply.batterystate.battery_life > 10)
-				printf(", unknown life estimate\n");
-			else
-#endif
-			{
-				if (reply.batterystate.minutes_left ==
-				    (u_int)-1)
-					printf(", unknown");
-				else
-					printf(", %d minutes",
-					    reply.batterystate.minutes_left);
-				printf(" life estimate\n");
-			}
-		}
-
+    printval:
+	    if (verbose) {
+		if (dobstate)
+		    printf("Battery state: %s\n",
+			   battstate(reply.batterystate.battery_state));
+		if (dopct)
+		    printf("Battery remaining: %d percent\n",
+			   reply.batterystate.battery_life);
+		if (domin)
+		    printf("Battery life estimate: %d minutes\n",
+			   reply.batterystate.minutes_left);
 		if (doac)
-			printf("A/C adapter state: %s\n",
-			    ac_state(reply.batterystate.ac_state));
-
-		if (doperf)
-			printf("Performance adjustment mode: %s (%d MHz)\n",
-			    perf_mode(reply.perfmode), reply.cpuspeed);
-		break;
+		    printf("A/C adapter state: %s\n",
+			   ac_state(reply.batterystate.ac_state));
+		if (dostatus)
+		    printf("Power management enabled\n");
+	    } else {
+		if (dobstate)
+		    printf("%d\n", reply.batterystate.battery_state);
+		if (dopct)
+		    printf("%d\n", reply.batterystate.battery_life);
+		if (domin)
+		    printf("%d\n", reply.batterystate.minutes_left);
+		if (doac)
+		    printf("%d\n", reply.batterystate.ac_state);
+		if (dostatus)
+		    printf("1\n");
+	    }
+	    break;
 	default:
-		break;
+	    break;
 	}
-
 	switch (reply.newstate) {
 	case SUSPEND:
-		printf("System will enter suspend mode momentarily.\n");
-		break;
+	    printf("System will enter suspend mode momentarily.\n");
+	    break;
 	case STANDBY:
-		printf("System will enter standby mode momentarily.\n");
-		break;
-	case HIBERNATE:
-		printf("System will enter hibernate mode momentarily.\n");
-		break;
+	    printf("System will enter standby mode momentarily.\n");
+	    break;
 	default:
-		break;
+	    break;
 	}
-	return (0);
+    } else
+	errx(rval, "cannot get reply from APM daemon");
+
+    return (0);
 }

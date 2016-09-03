@@ -1,4 +1,4 @@
-/*	$OpenBSD: isadma.c,v 1.34 2015/03/14 03:38:47 jsg Exp $	*/
+/*	$OpenBSD: isadma.c,v 1.22 1999/01/11 01:49:00 millert Exp $	*/
 /*	$NetBSD: isadma.c,v 1.32 1997/09/05 01:48:33 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -37,12 +44,14 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/proc.h>
 #include <sys/device.h>
 
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
 #include <machine/bus.h>
 
+#include <dev/isa/isareg.h>
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
 #include <dev/isa/isadmareg.h>
@@ -81,8 +90,8 @@ static u_int8_t dmamode[4] = {
 	DMA37MD_WRITE | DMA37MD_SINGLE | DMA37MD_LOOP
 };
 
-int isadmamatch(struct device *, void *, void *);
-void isadmaattach(struct device *, struct device *, void *);
+int isadmamatch __P((struct device *, void *, void *));
+void isadmaattach __P((struct device *, struct device *, void *));
 
 struct cfattach isadma_ca = {
 	sizeof(struct device), isadmamatch, isadmaattach
@@ -119,8 +128,7 @@ isadmaattach(parent, self, aux)
 	for (i = 0; i < 8; i++) {
 		sz = (i & 4) ? 1 << 17 : 1 << 16;
 		if ((bus_dmamap_create(sc->sc_dmat, sz, 1, sz, sz,
-		    BUS_DMA_24BIT|BUS_DMA_NOWAIT|BUS_DMA_ALLOCNOW,
-		    &isadma_dmam[i])) != 0)
+		    BUS_DMA_NOWAIT|BUS_DMA_ALLOCNOW, &isadma_dmam[i])) != 0)
 			panic("isadmaattach: can not create DMA map");
 	}
 #endif
@@ -130,8 +138,8 @@ isadmaattach(parent, self, aux)
 	printf("\n");
 }
 
-static inline void isa_dmaunmask(struct isa_softc *, int);
-static inline void isa_dmamask(struct isa_softc *, int);
+static inline void isa_dmaunmask __P((struct isa_softc *, int));
+static inline void isa_dmamask __P((struct isa_softc *, int));
 
 static inline void
 isa_dmaunmask(sc, chan)
@@ -344,12 +352,10 @@ isa_dmastart(isadev, chan, addr, nbytes, p, flags, busdmaflags)
 #endif
 
 	if (flags & DMAMODE_READ) {
-		bus_dmamap_sync(sc->sc_dmat, dmam, 0, dmam->dm_mapsize,
-		    BUS_DMASYNC_PREREAD);
+		bus_dmamap_sync(sc->sc_dmat, dmam, BUS_DMASYNC_PREREAD);
 		sc->sc_dmareads |= (1 << chan);
 	} else {
-		bus_dmamap_sync(sc->sc_dmat, dmam, 0, dmam->dm_mapsize,
-		    BUS_DMASYNC_PREWRITE);
+		bus_dmamap_sync(sc->sc_dmat, dmam, BUS_DMASYNC_PREWRITE);
 		sc->sc_dmareads &= ~(1 << chan);
 	}
 
@@ -525,7 +531,7 @@ isa_dmadone(isadev, chan)
 		printf("%s: isa_dmadone: channel %d not finished\n",
 		    sc->sc_dev.dv_xname, chan);
 
-	bus_dmamap_sync(sc->sc_dmat, dmam, 0, dmam->dm_mapsize,
+	bus_dmamap_sync(sc->sc_dmat, dmam,
 	    (sc->sc_dmareads & (1 << chan)) ? BUS_DMASYNC_POSTREAD :
 	    BUS_DMASYNC_POSTWRITE);
 
@@ -675,7 +681,7 @@ isa_malloc(isadev, chan, size, pool, flags)
 	int bflags;
 	struct isa_mem *m;
 
-	bflags = flags & M_NOWAIT ? BUS_DMA_NOWAIT : BUS_DMA_WAITOK;
+	bflags = flags & M_WAITOK ? BUS_DMA_WAITOK : BUS_DMA_NOWAIT;
 
 	if (isa_dmamem_alloc(isadev, chan, size, &addr, bflags))
 		return 0;
@@ -711,19 +717,19 @@ isa_free(addr, pool)
 		;
 	m = *mp;
 	if (!m) {
-		printf("isa_free: freeing unallocated memory\n");
+		printf("isa_free: freeing unallocted memory\n");
 		return;
 	}
 	*mp = m->next;
 	isa_dmamem_unmap(m->isadev, m->chan, kva, m->size);
 	isa_dmamem_free(m->isadev, m->chan, m->addr, m->size);
-	free(m, pool, 0);
+	free(m, pool);
 }
 
-paddr_t
+int
 isa_mappage(mem, off, prot)
 	void *mem;
-	off_t off;
+	int off;
 	int prot;
 {
 	struct isa_mem *m;
@@ -731,7 +737,7 @@ isa_mappage(mem, off, prot)
 	for(m = isa_mem_head; m && m->kva != (caddr_t)mem; m = m->next)
 		;
 	if (!m) {
-		printf("isa_mappage: mapping unallocated memory\n");
+		printf("isa_mappage: mapping unallocted memory\n");
 		return -1;
 	}
 	return (isa_dmamem_mmap(m->isadev, m->chan, m->addr, m->size, off,

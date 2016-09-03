@@ -1,6 +1,7 @@
-/*	$OpenBSD: fld_type.c,v 1.8 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: fld_type.c,v 1.5 1999/05/17 03:04:15 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: fld_type.c,v 1.8 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: fld_type.c,v 1.9 1999/05/16 17:19:59 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -46,33 +47,30 @@ MODULE_ID("$Id: fld_type.c,v 1.8 2015/01/23 22:48:51 krw Exp $")
 |   Return Values :  E_OK           - success
 |                    E_SYSTEM_ERROR - system error
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-set_field_type(FIELD *field, FIELDTYPE *type,...)
+int set_field_type(FIELD *field,FIELDTYPE *type, ...)
 {
   va_list ap;
   int res = E_SYSTEM_ERROR;
   int err = 0;
 
-  T((T_CALLED("set_field_type(%p,%p)"), field, type));
-
-  va_start(ap, type);
+  va_start(ap,type);
 
   Normalize_Field(field);
   _nc_Free_Type(field);
 
   field->type = type;
-  field->arg = (void *)_nc_Make_Argument(field->type, &ap, &err);
+  field->arg  = (void *)_nc_Make_Argument(field->type,&ap,&err);
 
   if (err)
     {
-      _nc_Free_Argument(field->type, (TypeArgument *)(field->arg));
+      _nc_Free_Argument(field->type,(TypeArgument *)(field->arg));
       field->type = (FIELDTYPE *)0;
-      field->arg = (void *)0;
+      field->arg  = (void *)0;
     }
   else
     {
       res = E_OK;
-      if (field->type)
+      if (field->type) 
 	field->type->ref++;
     }
 
@@ -88,11 +86,9 @@ set_field_type(FIELD *field, FIELDTYPE *type,...)
 |
 |   Return Values :  Pointer to fieldtype of NULL if none is defined.
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(FIELDTYPE *)
-field_type(const FIELD *field)
+FIELDTYPE *field_type(const FIELD * field)
 {
-  T((T_CALLED("field_type(%p)"), field));
-  returnFieldType(Normalize_Field(field)->type);
+  return Normalize_Field(field)->type;
 }
 
 /* fld_type.c ends here */

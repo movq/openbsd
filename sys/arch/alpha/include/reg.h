@@ -1,4 +1,4 @@
-/*	$OpenBSD: reg.h,v 1.7 2014/09/08 01:47:05 guenther Exp $	*/
+/*	$OpenBSD: reg.h,v 1.3 1996/10/30 22:39:25 niklas Exp $	*/
 /*	$NetBSD: reg.h,v 1.2 1995/03/28 18:14:07 jtc Exp $	*/
 
 /*
@@ -28,15 +28,15 @@
  * rights to redistribute these changes.
  */
 
-#ifndef _MACHINE_REG_H_
-#define	_MACHINE_REG_H_
+#ifndef _ALPHA_REG_H_
+#define	_ALPHA_REG_H_
 
 /*
  * XXX where did this info come from?
  */
 
 /*
- * Struct reg, used for ptrace and in signal contexts
+ * Struct reg, used for procfs and in signal contexts
  * Note that in signal contexts, it's represented as an array.
  * That array has to look exactly like 'struct reg' though.
  */
@@ -74,7 +74,7 @@
 #define	R_ZERO	31
 
 struct reg {
-	u_long	r_regs[32];
+	u_int64_t	r_regs[32];
 };
 
 /*
@@ -87,15 +87,15 @@ struct reg {
  * That array has to look exactly like 'struct reg' though.
  */
 struct fpreg {
-	u_long	fpr_regs[32];
-	u_long	fpr_cr;
+	u_int64_t	fpr_regs[32];
+	u_int64_t	fpr_cr;
 };
 
 #ifdef _KERNEL
-void	restorefpstate(struct fpreg *);
-void	savefpstate(struct fpreg *);
-void	frametoreg(struct trapframe *, struct reg *);
-void	regtoframe(struct reg *, struct trapframe *);
+void	restorefpstate __P((struct fpreg *));
+void	savefpstate __P((struct fpreg *));
+void	frametoreg __P((struct trapframe *, struct reg *));
+void	regtoframe __P((struct reg *, struct trapframe *));
 #endif
 
-#endif /* _MACHINE_REG_H_ */
+#endif /* _ALPHA_REG_H_ */

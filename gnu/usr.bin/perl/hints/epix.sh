@@ -2,7 +2,7 @@
 # Hint file for EP/IX on CDC RISC boxes.
 #
 # From: Stanley Donald Capelik <sd9sdc@hp100.den.mmc.com>
-# Modified by Andy Dougherty   <doughera@lafayette.edu>
+# Modified by Andy Dougherty   <doughera@lafcol.lafayette.edu>
 # Last modified:  Mon May  8 15:29:18 EDT 1995
 #
 #  This hint file appears to be based on the svr4 hints for perl5.000,
@@ -31,7 +31,7 @@ libc='/svr4/usr/lib/libc.a'
 glibpth="/svr4/usr/lib /svr4/usr/lib/cmplrs/cc /usr/ccs/lib /svr4/lib /svr4/usr/ucblib $glibpth"
 osname='epix2'
 archname='epix2'
-d_suidsafe='define'	# "./Configure -d" can't figure this out easily
+d_suidsafe='define'	# "./Configure -d" can't figure this out easilly
 d_flock='undef'
 
 # Old version had this, but I'm not sure why since the old version
@@ -43,9 +43,9 @@ d_flock='undef'
 # of libswanted excludes some libraries found there.  You may want to
 # prevent "ucb" from being removed from libswanted and see if perl will
 # build on your system.
-ldflags="$ldflags -non_shared -systype svr4 -L/svr4/usr/lib -L/svr4/usr/lib/cmplrs/cc -L/usr/ccs/lib -L/svr4/usr/ucblib"
-ccflags="$ccflags -systype svr4 -D__STDC__=0 -I/svr4/usr/include -I/svr4/usr/ucbinclude"
-cppflags="$ccflags -D__STDC__=0 -I/svr4/usr/include -I/svr4/usr/ucbinclude"
+ldflags='-non_shared -systype svr4 -L/svr4/usr/lib -L/svr4/usr/lib/cmplrs/cc -L/usr/ccs/lib -L/svr4/usr/ucblib'
+ccflags='-systype svr4 -D__STDC__=0 -I/svr4/usr/include -I/svr4/usr/ucbinclude'
+cppflags='-D__STDC__=0 -I/svr4/usr/include -I/svr4/usr/ucbinclude'
 
 # Don't use problematic libraries:
 
@@ -64,3 +64,12 @@ lddlflags="-G $ldflags"	# Probably needed for dynamic loading
 # We _do_ want the -L paths in ldflags, but we don't want the -non_shared.
 lddlflags=`echo $lddlflags | sed 's/-non_shared//'`
 
+cat <<'EOM' >&4
+
+If you wish to use dynamic linking, you must use 
+	LD_LIBRARY_PATH=`pwd`; export LD_LIBRARY_PATH
+or
+	setenv LD_LIBRARY_PATH `pwd`
+before running make.
+
+EOM

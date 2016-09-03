@@ -1,4 +1,4 @@
-/*	$OpenBSD: search.h,v 1.10 2014/07/18 04:16:09 matthew Exp $	*/
+/*	$OpenBSD: search.h,v 1.3 1997/09/21 10:45:49 niklas Exp $	*/
 /*	$NetBSD: search.h,v 1.9 1995/08/08 21:14:45 jtc Exp $	*/
 
 /*
@@ -8,18 +8,17 @@
 
 #ifndef _SEARCH_H_
 #define _SEARCH_H_
-
 #include <sys/cdefs.h>
-#include <machine/_types.h>
+#include <machine/ansi.h>
 
-#ifndef	_SIZE_T_DEFINED_
-#define	_SIZE_T_DEFINED_
-typedef	__size_t	size_t;
+#ifdef	_BSD_SIZE_T_
+typedef	_BSD_SIZE_T_	size_t;
+#undef	_BSD_SIZE_T_
 #endif
 
 typedef struct entry {
 	char *key;
-	void *data;
+	char *data;
 } ENTRY;
 
 typedef enum {
@@ -34,24 +33,26 @@ typedef enum {
 } VISIT;
 
 __BEGIN_DECLS
-int	 hcreate(size_t);
-void	 hdestroy(void);
-ENTRY	*hsearch(ENTRY, ACTION);
+extern void	*bsearch __P((const void *, const void *, size_t, size_t,
+			      int (*)(const void *, const void *)));
+extern int	 hcreate __P((unsigned int));
+extern void	 hdestroy __P((void));
+extern ENTRY	*hsearch __P((ENTRY, ACTION));
 
-void	*lfind(const void *, const void *, size_t *, size_t,
-	    int (*)(const void *, const void *));
-void	*lsearch(const void *, void *, size_t *, size_t,
-	    int (*)(const void *, const void *));
-void	 insque(void *, void *);
-void	 remque(void *);
+extern void	*lfind __P((const void *, const void *, size_t *, size_t,
+			      int (*)(const void *, const void *)));
+extern void	*lsearch __P((const void *, const void *, size_t *, size_t,
+			      int (*)(const void *, const void *)));
+extern void	 insque __P((void *, void *));
+extern void	 remque __P((void *));
 
-void	*tdelete(const void * __restrict, void ** __restrict,
-	    int (*)(const void *, const void *));
-void	*tfind(const void *, void * const *,
-	    int (*)(const void *, const void *));
-void	*tsearch(const void *, void **, 
-	    int (*)(const void *, const void *));
-void      twalk(const void *, void (*)(const void *, VISIT, int));
+extern void	*tdelete __P((const void *, void **,
+			      int (*)(const void *, const void *)));
+extern void	*tfind __P((const void *, void * const *,
+			      int (*)(const void *, const void *)));
+extern void	*tsearch __P((const void *, void **, 
+			      int (*)(const void *, const void *)));
+extern void      twalk __P((const void *, void (*)(const void *, VISIT, int)));
 __END_DECLS
 
-#endif /* !_SEARCH_H_ */
+#endif

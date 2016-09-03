@@ -1,4 +1,4 @@
-/*	$OpenBSD: rec_open.c,v 1.12 2015/07/16 04:27:33 tedu Exp $	*/
+/*	$OpenBSD: rec_open.c,v 1.5 1999/02/15 05:11:25 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,14 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)rec_open.c	8.10 (Berkeley) 9/1/94";
+#else
+static char rcsid[] = "$OpenBSD: rec_open.c,v 1.5 1999/02/15 05:11:25 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -47,8 +59,10 @@
 #include "recno.h"
 
 DB *
-__rec_open(const char *fname, int flags, int mode, const RECNOINFO *openinfo,
-    int dflags)
+__rec_open(fname, flags, mode, openinfo, dflags)
+	const char *fname;
+	int flags, mode, dflags;
+	const RECNOINFO *openinfo;
 {
 	BTREE *t;
 	BTREEINFO btopeninfo;
@@ -138,10 +152,39 @@ slow:			if ((t->bt_rfp = fdopen(rfd, "r")) == NULL)
 
 			if (fstat(rfd, &sb))
 				goto err;
+			/*
+			 * Kluge -- we'd like to test to see if the file is too
+			 * big to mmap.  Since, we don't know what size or type
+			 * off_t's or size_t's are, what the largest unsigned
+			 * integral type is, or what random insanity the local
+			 * C compiler will perpetrate, doing the comparison in
+			 * a portable way is flatly impossible.  Hope that mmap
+			 * fails if the file is too large.
+			 */
 			if (sb.st_size == 0)
 				F_SET(t, R_EOF);
 			else {
+#ifdef MMAP_NOT_AVAILABLE
+				/*
+				 * XXX
+				 * Mmap doesn't work correctly on many current
+				 * systems.  In particular, it can fail subtly,
+				 * with cache coherency problems.  Don't use it
+				 * for now.
+				 */
+				t->bt_msize = sb.st_size;
+				if ((t->bt_smap = mmap(NULL, t->bt_msize,
+				    PROT_READ, MAP_PRIVATE, rfd,
+				    (off_t)0)) == (caddr_t)-1)
+					goto slow;
+				t->bt_cmap = t->bt_smap;
+				t->bt_emap = t->bt_smap + sb.st_size;
+				t->bt_irec = F_ISSET(t, R_FIXLEN) ?
+				    __rec_fmap : __rec_vmap;
+				F_SET(t, R_MEMMAPPED);
+#else
 				goto slow;
+#endif
 			}
 		}
 	}
@@ -182,7 +225,8 @@ err:	sverrno = errno;
 }
 
 int
-__rec_fd(const DB *dbp)
+__rec_fd(dbp)
+	const DB *dbp;
 {
 	BTREE *t;
 

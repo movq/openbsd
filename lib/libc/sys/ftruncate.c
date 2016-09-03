@@ -1,4 +1,3 @@
-/*	$OpenBSD: ftruncate.c,v 1.17 2015/09/11 13:26:20 guenther Exp $ */
 /*
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,21 +31,34 @@
  * SUCH DAMAGE.
  */
 
+#if defined(SYSLIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ftruncate.c,v 1.7 1998/11/20 11:18:52 d Exp $";
+#endif /* SYSLIBC_SCCS and not lint */
+
+#include <sys/types.h>
 #include <sys/syscall.h>
-#include <unistd.h>
+#include "thread_private.h"
 
-int	__syscall(quad_t, ...);
-PROTO_NORMAL(__syscall);
-
-DEF_SYS(ftruncate);
+#ifdef lint
+quad_t __syscall(quad_t, ...);
+#endif
 
 /*
  * This function provides 64-bit offset padding that
  * is not supplied by GCC 1.X but is supplied by GCC 2.X.
  */
 int
-ftruncate(int fd, off_t length)
+ftruncate(fd, length)
+	int	fd;
+	off_t	length;
 {
-	return (__syscall(SYS_ftruncate, fd, 0, length));
+	int retval;
+
+	if (_FD_LOCK(fd, FD_RDWR, NULL) != 0) {
+		retval = -1;
+	} else {
+		retval = __syscall((quad_t)SYS_ftruncate, fd, 0, length);
+		_FD_UNLOCK(fd, FD_RDWR);
+	}
+	return retval;
 }
-DEF_WEAK(ftruncate);

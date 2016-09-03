@@ -1,4 +1,4 @@
-/*	$OpenBSD: bootp.c,v 1.15 2014/11/19 19:58:40 miod Exp $	*/
+/*	$OpenBSD: bootp.c,v 1.7 1998/02/23 20:32:21 niklas Exp $	*/
 /*	$NetBSD: bootp.c,v 1.10 1996/10/13 02:28:59 christos Exp $	*/
 
 /*
@@ -41,15 +41,15 @@
  */
 
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 
 #include "stand.h"
 #include "net.h"
 #include "netif.h"
 #include "bootp.h"
 
-static u_int32_t	nmask, smask;
+static n_long	nmask, smask;
 
 static time_t	bot;
 
@@ -57,39 +57,40 @@ static	char vm_rfc1048[4] = VM_RFC1048;
 static	char vm_cmu[4] = VM_CMU;
 
 /* Local forwards */
-static	ssize_t bootpsend(struct iodesc *, void *, size_t);
-static	ssize_t bootprecv(struct iodesc *, void *, size_t, time_t);
-static	void vend_cmu(const u_char *);
-static	void vend_rfc1048(const u_char *, u_int);
+static	ssize_t bootpsend __P((struct iodesc *, void *, size_t));
+static	ssize_t bootprecv __P((struct iodesc *, void *, size_t, time_t));
+static	void vend_cmu __P((u_char *));
+static	void vend_rfc1048 __P((u_char *, u_int));
 
-/* Fetch required bootp information */
+/* Fetch required bootp infomation */
 void
-bootp(int sock)
+bootp(sock)
+	int sock;
 {
 	struct iodesc *d;
-	struct bootp *bp;
+	register struct bootp *bp;
 	struct {
-		struct packet_header header;
+		u_char header[HEADER_SIZE];
 		struct bootp wbootp;
 	} wbuf;
 	struct {
-		struct packet_header header;
+		u_char header[HEADER_SIZE];
 		struct bootp rbootp;
 	} rbuf;
 
 #ifdef BOOTP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("bootp: socket=%d\n", sock);
 #endif
 	if (!bot)
 		bot = getsecs();
-
+	
 	if (!(d = socktodesc(sock))) {
 		printf("bootp: bad socket. %d\n", sock);
 		return;
 	}
 #ifdef BOOTP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("bootp: d=%x\n", (u_int)d);
 #endif
 
@@ -119,9 +120,12 @@ bootp(int sock)
 
 /* Transmit a bootp request */
 static ssize_t
-bootpsend(struct iodesc *d, void *pkt, size_t len)
+bootpsend(d, pkt, len)
+	register struct iodesc *d;
+	register void *pkt;
+	register size_t len;
 {
-	struct bootp *bp;
+	register struct bootp *bp;
 
 #ifdef BOOTP_DEBUG
 	if (debug)
@@ -141,10 +145,14 @@ bootpsend(struct iodesc *d, void *pkt, size_t len)
 
 /* Returns 0 if this is the packet we're waiting for else -1 (and errno == 0) */
 static ssize_t
-bootprecv(struct iodesc *d, void *pkt, size_t len, time_t tleft)
+bootprecv(d, pkt, len, tleft)
+	register struct iodesc *d;
+	register void *pkt;
+	register size_t len;
+	time_t tleft;
 {
-	ssize_t n;
-	struct bootp *bp;
+	register ssize_t n;
+	register struct bootp *bp;
 
 #ifdef BOOTP_DEBUG
 	if (debug)
@@ -260,28 +268,33 @@ bad:
 }
 
 static void
-vend_cmu(const u_char *cp)
+vend_cmu(cp)
+	u_char *cp;
 {
-	const struct cmu_vend *vp;
+	register struct cmu_vend *vp;
 
 #ifdef BOOTP_DEBUG
 	if (debug)
 		printf("vend_cmu bootp info.\n");
 #endif
-	vp = (const struct cmu_vend *)cp;
+	vp = (struct cmu_vend *)cp;
 
-	if (vp->v_smask.s_addr != 0)
+	if (vp->v_smask.s_addr != 0) {
 		smask = vp->v_smask.s_addr;
-	if (vp->v_dgate.s_addr != 0)
+	}
+	if (vp->v_dgate.s_addr != 0) {
 		gateip = vp->v_dgate;
+	}
 }
 
 static void
-vend_rfc1048(const u_char *cp, u_int len)
+vend_rfc1048(cp, len)
+	register u_char *cp;
+	u_int len;
 {
-	const u_char *ep;
-	int size;
-	u_char tag;
+	register u_char *ep;
+	register int size;
+	register u_char tag;
 
 #ifdef BOOTP_DEBUG
 	if (debug)
@@ -298,14 +311,18 @@ vend_rfc1048(const u_char *cp, u_int len)
 		if (tag == TAG_END)
 			break;
 
-		if (tag == TAG_SUBNET_MASK)
+		if (tag == TAG_SUBNET_MASK) {
 			bcopy(cp, &smask, sizeof(smask));
-		if (tag == TAG_GATEWAY)
+		}
+		if (tag == TAG_GATEWAY) {
 			bcopy(cp, &gateip.s_addr, sizeof(gateip.s_addr));
-		if (tag == TAG_SWAPSERVER)
+		}
+		if (tag == TAG_SWAPSERVER) {
 			bcopy(cp, &swapip.s_addr, sizeof(swapip.s_addr));
-		if (tag == TAG_DOMAIN_SERVER)
+		}
+		if (tag == TAG_DOMAIN_SERVER) {
 			bcopy(cp, &nameip.s_addr, sizeof(nameip.s_addr));
+		}
 		if (tag == TAG_ROOTPATH) {
 			strncpy(rootpath, (char *)cp, sizeof(rootpath));
 			rootpath[size] = '\0';

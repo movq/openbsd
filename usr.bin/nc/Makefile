@@ -1,8 +1,7 @@
-#	$OpenBSD: Makefile,v 1.7 2015/09/11 21:07:01 beck Exp $
+#	$OpenBSD: Makefile,v 1.2 1997/09/21 11:50:13 deraadt Exp $
 
+CFLAGS+= -DTELNET
 PROG=	nc
-SRCS=	netcat.c atomicio.c socks.c
-LDADD+= -ltls -lssl -lcrypto
-DPADD+=  ${LIBTLS} ${LIBSSL} ${LIBCRYPTO}
+SRCS=	netcat.c
 
 .include <bsd.prog.mk>

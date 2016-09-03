@@ -1,8 +1,8 @@
-/*	$OpenBSD: io.c,v 1.14 2015/09/27 17:00:46 guenther Exp $	*/
+/*	$OpenBSD: io.c,v 1.3 1997/07/25 22:00:46 mickey Exp $	*/
 
 /*
  * Copyright (c) 1985 Sun Microsystems, Inc.
- * Copyright (c) 1980, 1993 The Regents of the University of California.
+ * Copyright (c) 1980 The Regents of the University of California.
  * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * All rights reserved.
  *
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,27 +35,32 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)io.c	5.15 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$OpenBSD: io.c,v 1.3 1997/07/25 22:00:46 mickey Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include <err.h>
 #include "indent_globs.h"
 
 
 int         comment_open;
-static int  paren_target;
+static      paren_target;
 
 void
-dump_line(void)
+dump_line()
 {				/* dump_line is the routine that actually
 				 * effects the printing of the new source. It
 				 * prints the label section, followed by the
 				 * code section with the appropriate nesting
 				 * level, followed by any comments */
-    int         cur_col, target_col;
-    static int  not_first_line;
+    register int cur_col,
+                target_col;
+    static      not_first_line;
 
     if (ps.procname[0]) {
 	if (troff) {
@@ -75,15 +84,15 @@ dump_line(void)
     else if (!inhibit_formatting) {
 	suppress_blanklines = 0;
 	ps.bl_line = false;
-	if (prefix_blankline_requested && not_first_line) {
+	if (prefix_blankline_requested && not_first_line)
 	    if (swallow_optional_blanklines) {
 		if (n_real_blanklines == 1)
 		    n_real_blanklines = 0;
-	    } else {
+	    }
+	    else {
 		if (n_real_blanklines == 0)
 		    n_real_blanklines = 1;
 	    }
-	}
 	while (--n_real_blanklines >= 0)
 	    putc('\n', output);
 	n_real_blanklines = 0;
@@ -106,19 +115,17 @@ dump_line(void)
 	    cur_col = pad_output(1, compute_label_target());
 	    if (s_lab[0] == '#' && (strncmp(s_lab, "#else", 5) == 0
 				    || strncmp(s_lab, "#endif", 6) == 0)) {
-		char *s = s_lab;
-		if (e_lab[-1] == '\n')
-			e_lab--;
-		do
-			putc(*s++, output);
+		register char *s = s_lab;
+		if (e_lab[-1] == '\n') e_lab--;
+		do putc(*s++, output);
 		while (s < e_lab && 'a' <= *s && *s<='z');
 		while ((*s == ' ' || *s == '\t') && s < e_lab)
 		    s++;
 		if (s < e_lab)
 		    fprintf(output, s[0]=='/' && s[1]=='*' ? "\t%.*s" : "\t/* %.*s */",
-			    (int)(e_lab - s), s);
+			    e_lab - s, s);
 	    }
-	    else fprintf(output, "%.*s", (int)(e_lab - s_lab), s_lab);
+	    else fprintf(output, "%.*s", e_lab - s_lab, s_lab);
 	    cur_col = count_spaces(cur_col, s_lab);
 	}
 	else
@@ -127,7 +134,7 @@ dump_line(void)
 	ps.pcase = false;
 
 	if (s_code != e_code) {	/* print code section, if any */
-	    char *p;
+	    register char *p;
 
 	    if (comment_open) {
 		comment_open = 0;
@@ -135,7 +142,7 @@ dump_line(void)
 	    }
 	    target_col = compute_code_target();
 	    {
-		int  i;
+		register    i;
 
 		for (i = 0; i < ps.p_l_follow; i++)
 		    if (ps.paren_indents[i] >= 0)
@@ -149,10 +156,10 @@ dump_line(void)
 		    putc(*p, output);
 	    cur_col = count_spaces(cur_col, s_code);
 	}
-	if (s_com != e_com) {
+	if (s_com != e_com)
 	    if (troff) {
-		int   all_here = 0;
-		char *p;
+		int         all_here = 0;
+		register char *p;
 
 		if (e_com[-1] == '/' && e_com[-2] == '*')
 		    e_com -= 2, all_here++;
@@ -178,7 +185,7 @@ dump_line(void)
 		    if ('a' <= *p && *p <= 'z')
 			*p = *p + 'A' - 'a';
 		    if (e_com - p < 50 && all_here == 2) {
-			char *follow = p;
+			register char *follow = p;
 			fprintf(output, "\n.nr C! \\w\1");
 			while (follow < e_com) {
 			    switch (*follow) {
@@ -206,9 +213,10 @@ dump_line(void)
 			putc(BACKSLASH, output);
 		    putc(*p++, output);
 		}
-	    } else {		/* print comment, if any */
-		int   target = ps.com_col;
-		char *com_st = s_com;
+	    }
+	    else {		/* print comment, if any */
+		register    target = ps.com_col;
+		register char *com_st = s_com;
 
 		target += ps.comment_delta;
 		while (*com_st == '\t')
@@ -226,23 +234,21 @@ dump_line(void)
 		    cur_col = 1;
 		    ++ps.out_lines;
 		}
-		while (e_com > com_st && isspace((unsigned char)e_com[-1]))
+		while (e_com > com_st && isspace(e_com[-1]))
 		    e_com--;
 		cur_col = pad_output(cur_col, target);
 		if (!ps.box_com) {
-		    if (star_comment_cont && (com_st[1] != '*' || e_com <= com_st + 1)) {
+		    if (star_comment_cont && (com_st[1] != '*' || e_com <= com_st + 1))
 			if (com_st[1] == ' ' && com_st[0] == ' ' && e_com > com_st + 1)
 			    com_st[1] = '*';
 			else
 			    fwrite(" * ", com_st[0] == '\t' ? 2 : com_st[0] == '*' ? 1 : 3, 1, output);
-		    }
 		}
 		fwrite(com_st, e_com - com_st, 1, output);
 		ps.comment_delta = ps.n_comment_delta;
 		cur_col = count_spaces(cur_col, com_st);
 		++ps.com_lines;	/* count lines with comments */
 	    }
-	}
 	if (ps.use_ff)
 	    putc('\014', output);
 	else
@@ -278,17 +284,16 @@ inhibit_newline:
 }
 
 int
-compute_code_target(void)
+compute_code_target()
 {
-    int target_col;
+    register    target_col = ps.ind_size * ps.ind_level + 1;
 
-    target_col = ps.ind_size * ps.ind_level + 1;
     if (ps.paren_level)
 	if (!lineup_to_parens)
 	    target_col += continuation_indent * ps.paren_level;
 	else {
-	    int    w;
-	    int    t = paren_target;
+	    register    w;
+	    register    t = paren_target;
 
 	    if ((w = count_spaces(t, s_code) - max_col) > 0
 		    && count_spaces(target_col, s_code) <= max_col) {
@@ -305,7 +310,7 @@ compute_code_target(void)
 }
 
 int
-compute_label_target(void)
+compute_label_target()
 {
     return
 	ps.pcase ? (int) (case_ind * ps.ind_size) + 1
@@ -330,11 +335,11 @@ compute_label_target(void)
  * 
  */
 void
-fill_buffer(void)
+fill_buffer()
 {				/* this routine reads stuff from the input */
-    char *p, *buf2;
-    int i;
-    FILE *f = input;
+    register char *p;
+    register int i;
+    register FILE *f = input;
 
     if (bp_save != 0) {		/* there is a partly filled input buffer left */
 	buf_ptr = bp_save;	/* dont read anything, just switch buffers */
@@ -346,12 +351,11 @@ fill_buffer(void)
     }
     for (p = in_buffer;;) {
 	if (p >= in_buffer_limit) {
-	    int size = (in_buffer_limit - in_buffer) * 2 + 10;
-	    int offset = p - in_buffer;
-	    buf2 = realloc(in_buffer, size);
-	    if (buf2 == NULL)
+	    register size = (in_buffer_limit - in_buffer) * 2 + 10;
+	    register offset = p - in_buffer;
+	    in_buffer = (char *) realloc(in_buffer, size);
+	    if (in_buffer == 0)
 		errx(1, "input line too long");
-	    in_buffer = buf2;
 	    p = in_buffer + offset;
 	    in_buffer_limit = in_buffer + size - 2;
 	}
@@ -367,7 +371,7 @@ fill_buffer(void)
     }
     buf_ptr = in_buffer;
     buf_end = p;
-    if (p - 3 >= in_buffer && p[-2] == '/' && p[-3] == '*') {
+    if (p[-2] == '/' && p[-3] == '*') {
 	if (in_buffer[3] == 'I' && strncmp(in_buffer, "/**INDENT**", 11) == 0)
 	    fill_buffer();	/* flush indent error message */
 	else {
@@ -387,12 +391,11 @@ fill_buffer(void)
 			p++;
 		    if (*p == '*')
 			com = 1;
-		    else if (*p == 'O') {
+		    else if (*p == 'O')
 			if (*++p == 'N')
 			    p++, com = 1;
 			else if (*p == 'F' && *++p == 'F')
 			    p++, com = 2;
-		    }
 		    while (*p == ' ' || *p == '\t')
 			p++;
 		    if (p[0] == '*' && p[1] == '/' && p[2] == '\n' && com) {
@@ -432,7 +435,7 @@ fill_buffer(void)
  * ALGORITHM: Put tabs and/or blanks into pobuf, then write pobuf.
  * 
  * PARAMETERS: current		integer		The current column target
- *             target 		integer		The desired column
+ * nteger		The desired column
  * 
  * RETURNS: Integer value of the new column.  (If current >= target, no action is
  * taken, and current is returned.
@@ -447,10 +450,14 @@ fill_buffer(void)
  * 
  */
 int
-pad_output(int current, int target)
+pad_output(current, target)	/* writes tabs and blanks (if necessary) to
+				 * get the current output position up to the
+				 * target column */
+    int         current;	/* the current column value */
+    int         target;		/* position we want it at */
 {
-    int curr;		/* internal column pointer */
-    int tcur;
+    register int curr;		/* internal column pointer */
+    register int tcur;
 
     if (troff)
 	fprintf(output, "\\h'|%dp'", (target - 1) * 7);
@@ -458,11 +465,9 @@ pad_output(int current, int target)
 	if (current >= target)
 	    return (current);	/* line is already long enough */
 	curr = current;
-	if (use_tabs) {
-		while ((tcur = ((curr - 1) & tabmask) + tabsize + 1) <= target) {
-			putc('\t', output);
-			curr = tcur;
-		}
+	while ((tcur = ((curr - 1) & tabmask) + tabsize + 1) <= target) {
+	    putc('\t', output);
+	    curr = tcur;
 	}
 	while (curr++ < target)
 	    putc(' ', output);	/* pad with final blanks */
@@ -491,10 +496,16 @@ pad_output(int current, int target)
  * 
  */
 int
-count_spaces(int current, char *buffer)
+count_spaces(current, buffer)
+/*
+ * this routine figures out where the character position will be after
+ * printing the text in buffer starting at column "current"
+ */
+    int         current;
+    char       *buffer;
 {
-    char *buf;		/* used to look thru buffer */
-    int cur;		/* current character counter */
+    register char *buf;		/* used to look thru buffer */
+    register int cur;		/* current character counter */
 
     cur = current;
 
@@ -523,37 +534,38 @@ count_spaces(int current, char *buffer)
 }
 
 int	found_err;
-
+/* VARARGS2 */
 void
-diag(int level, const char *msg, ...)
+diag(level, msg, a, b)
+	char *msg;
 {
-    va_list ap;
-
-    va_start(ap, msg);
     if (level)
 	found_err = 1;
     if (output == stdout) {
 	fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	vfprintf(stdout, msg, ap);
+	fprintf(stdout, msg, a, b);
 	fprintf(stdout, " */\n");
     }
     else {
 	fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	vfprintf(stderr, msg, ap);
+	fprintf(stderr, msg, a, b);
 	fprintf(stderr, "\n");
     }
-    va_end(ap);
 }
 
 void
-writefdef(struct fstate *f, int nm)
+writefdef(f, nm)
+    register struct fstate *f;
 {
     fprintf(output, ".ds f%c %s\n.nr s%c %d\n",
 	    nm, f->font, nm, f->size);
 }
 
 char       *
-chfont(struct fstate *of, struct fstate *nf, char *s)
+chfont(of, nf, s)
+    register struct fstate *of,
+               *nf;
+    char       *s;
 {
     if (of->font[0] != nf->font[0]
 	    || of->font[1] != nf->font[1]) {
@@ -583,15 +595,17 @@ chfont(struct fstate *of, struct fstate *nf, char *s)
 }
 
 void
-parsefont(struct fstate *f, char *s0)
+parsefont(f, s0)
+    register struct fstate *f;
+    char       *s0;
 {
-    char *s = s0;
+    register char *s = s0;
     int         sizedelta = 0;
     bzero(f, sizeof *f);
     while (*s) {
-	if (isdigit((unsigned char)*s))
+	if (isdigit(*s))
 	    f->size = f->size * 10 + *s - '0';
-	else if (isupper((unsigned char)*s))
+	else if (isupper(*s))
 	    if (f->font[0])
 		f->font[1] = *s;
 	    else
@@ -602,8 +616,10 @@ parsefont(struct fstate *f, char *s0)
 	    sizedelta++;
 	else if (*s == '-')
 	    sizedelta--;
-	else
-	    errx(1, "bad font specification: %s", s0);
+	else {
+	    fprintf(stderr, "indent: bad font specification: %s\n", s0);
+	    exit(1);
+	}
 	s++;
     }
     if (f->font[0] == 0)

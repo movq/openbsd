@@ -1,17 +1,15 @@
 /* dl_dlopen.xs
  * 
  * Platform:	SunOS/Solaris, possibly others which use dlopen.
- * Author:	Paul Marquess (Paul.Marquess@btinternet.com)
+ * Author:	Paul Marquess (pmarquess@bfsec.bt.co.uk)
  * Created:	10th July 1994
  *
  * Modified:
- * 15th July 1994     - Added code to explicitly save any error messages.
- * 3rd August 1994    - Upgraded to v3 spec.
- * 9th August 1994    - Changed to use IV
- * 10th August 1994   - Tim Bunce: Added RTLD_LAZY, switchable debugging,
- *                      basic FreeBSD support, removed ClearError
- * 29th February 2000 - Alan Burlison: Added functionality to close dlopen'd
- *                      files when the interpreter exits
+ * 15th July 1994   - Added code to explicitly save any error messages.
+ * 3rd August 1994  - Upgraded to v3 spec.
+ * 9th August 1994  - Changed to use IV
+ * 10th August 1994 - Tim Bunce: Added RTLD_LAZY, switchable debugging,
+ *                    basic FreeBSD support, removed ClearError
  *
  */
 
@@ -39,17 +37,6 @@
      RTLD_LAZY (==2) on Solaris 2.
 
 
-   dlclose
-   -------
-     int
-     dlclose(handle)
-     void * handle;
-
-     This function takes the handle returned by a previous invocation of
-     dlopen and closes the associated dynamic object file.  It returns zero
-     on success, and non-zero on failure.
-
-
    dlsym
    ------
      void *
@@ -70,7 +57,7 @@
      Returns a null-terminated string which describes the last error
      that occurred with either dlopen or dlsym. After each call to
      dlerror the error message will be reset to a null pointer. The
-     SaveError function is used to save the error as soon as it happens.
+     SaveError function is used to save the error as soo as it happens.
 
 
    Return Types
@@ -112,11 +99,9 @@
 	    SaveError("%s",dlerror()) ;
 
    Note that SaveError() takes a printf format string. Use a "%s" as
-   the first parameter if the error may contain any % characters.
+   the first parameter if the error may contain and % characters.
 
 */
-
-#define PERL_NO_GET_CONTEXT
 
 #include "EXTERN.h"
 #include "perl.h"
@@ -146,99 +131,68 @@
 
 
 static void
-dl_private_init(pTHX)
+dl_private_init()
 {
-    (void)dl_generic_private_init(aTHX);
+    (void)dl_generic_private_init();
 }
 
 MODULE = DynaLoader	PACKAGE = DynaLoader
 
 BOOT:
-    (void)dl_private_init(aTHX);
+    (void)dl_private_init();
 
 
-void
+void *
 dl_load_file(filename, flags=0)
     char *	filename
     int		flags
-  PREINIT:
+    PREINIT:
     int mode = RTLD_LAZY;
-    void *handle;
-  CODE:
-{
-#if defined(DLOPEN_WONT_DO_RELATIVE_PATHS)
-    char pathbuf[PATH_MAX + 2];
-    if (*filename != '/' && strchr(filename, '/')) {
-	if (getcwd(pathbuf, PATH_MAX - strlen(filename))) {
-	    my_strlcat(pathbuf, "/", sizeof(pathbuf));
-	    my_strlcat(pathbuf, filename, sizeof(pathbuf));
-	    filename = pathbuf;
-	}
-    }
-#endif
+    CODE:
 #ifdef RTLD_NOW
-    {
-	dMY_CXT;
-	if (dl_nonlazy)
-	    mode = RTLD_NOW;
-    }
+    if (dl_nonlazy)
+	mode = RTLD_NOW;
 #endif
     if (flags & 0x01)
 #ifdef RTLD_GLOBAL
 	mode |= RTLD_GLOBAL;
 #else
-	Perl_warn(aTHX_ "Can't make loaded symbols global on this platform while loading %s",filename);
+	warn("Can't make loaded symbols global on this platform while loading %s",filename);
 #endif
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s,%x):\n", filename,flags));
-    handle = dlopen(filename, mode) ;
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " libref=%lx\n", (unsigned long) handle));
+    DLDEBUG(1,PerlIO_printf(PerlIO_stderr(), "dl_load_file(%s,%x):\n", filename,flags));
+    RETVAL = dlopen(filename, mode) ;
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), " libref=%lx\n", (unsigned long) RETVAL));
     ST(0) = sv_newmortal() ;
-    if (handle == NULL)
-	SaveError(aTHX_ "%s",dlerror()) ;
+    if (RETVAL == NULL)
+	SaveError("%s",dlerror()) ;
     else
-	sv_setiv( ST(0), PTR2IV(handle));
-}
+	sv_setiv( ST(0), (IV)RETVAL);
 
 
-int
-dl_unload_file(libref)
-    void *	libref
-  CODE:
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_unload_file(%lx):\n", PTR2ul(libref)));
-    RETVAL = (dlclose(libref) == 0 ? 1 : 0);
-    if (!RETVAL)
-        SaveError(aTHX_ "%s", dlerror()) ;
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " retval = %d\n", RETVAL));
-  OUTPUT:
-    RETVAL
-
-
-void
+void *
 dl_find_symbol(libhandle, symbolname)
     void *	libhandle
     char *	symbolname
-    PREINIT:
-    void *sym;
     CODE:
 #ifdef DLSYM_NEEDS_UNDERSCORE
-    symbolname = Perl_form_nocontext("_%s", symbolname);
+    symbolname = form("_%s", symbolname);
 #endif
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
+    DLDEBUG(2, PerlIO_printf(PerlIO_stderr(),
 			     "dl_find_symbol(handle=%lx, symbol=%s)\n",
 			     (unsigned long) libhandle, symbolname));
-    sym = dlsym(libhandle, symbolname);
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
-			     "  symbolref = %lx\n", (unsigned long) sym));
+    RETVAL = dlsym(libhandle, symbolname);
+    DLDEBUG(2, PerlIO_printf(PerlIO_stderr(),
+			     "  symbolref = %lx\n", (unsigned long) RETVAL));
     ST(0) = sv_newmortal() ;
-    if (sym == NULL)
-	SaveError(aTHX_ "%s",dlerror()) ;
+    if (RETVAL == NULL)
+	SaveError("%s",dlerror()) ;
     else
-	sv_setiv( ST(0), PTR2IV(sym));
+	sv_setiv( ST(0), (IV)RETVAL);
 
 
 void
 dl_undef_symbols()
-    CODE:
+    PPCODE:
 
 
 
@@ -248,39 +202,18 @@ void
 dl_install_xsub(perl_name, symref, filename="$Package")
     char *		perl_name
     void *		symref 
-    const char *	filename
+    char *		filename
     CODE:
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, "dl_install_xsub(name=%s, symref=%"UVxf")\n",
-		perl_name, PTR2UV(symref)));
-    ST(0) = sv_2mortal(newRV((SV*)newXS_flags(perl_name,
-					      DPTR2FPTR(XSUBADDR_t, symref),
-					      filename, NULL,
-					      XS_DYNAMIC_FILENAME)));
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), "dl_install_xsub(name=%s, symref=%lx)\n",
+		perl_name, (unsigned long) symref));
+    ST(0)=sv_2mortal(newRV((SV*)newXS(perl_name, (void(*)_((CV *)))symref, filename)));
 
 
 char *
 dl_error()
     CODE:
-    dMY_CXT;
-    RETVAL = dl_last_error ;
+    RETVAL = LastError ;
     OUTPUT:
     RETVAL
-
-#if defined(USE_ITHREADS)
-
-void
-CLONE(...)
-    CODE:
-    MY_CXT_CLONE;
-
-    PERL_UNUSED_VAR(items);
-
-    /* MY_CXT_CLONE just does a memcpy on the whole structure, so to avoid
-     * using Perl variables that belong to another thread, we create our 
-     * own for this thread.
-     */
-    MY_CXT.x_dl_last_error = newSVpvn("", 0);
-
-#endif
 
 # end.

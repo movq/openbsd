@@ -1,4 +1,4 @@
-.\"	$OpenBSD: ypmatch.1,v 1.13 2014/09/08 01:27:55 schwarze Exp $
+.\"	$OpenBSD: ypmatch.1,v 1.6 1999/06/05 01:21:52 aaron Exp $
 .\"	$NetBSD: ypmatch.1,v 1.5 1996/05/13 02:43:41 thorpej Exp $
 .\"
 .\" Copyright (c) 1993 Winning Strategies, Inc.
@@ -29,19 +29,20 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.\"	$Id: ypmatch.1,v 1.13 2014/09/08 01:27:55 schwarze Exp $
+.\"	$Id: ypmatch.1,v 1.6 1999/06/05 01:21:52 aaron Exp $
 .\"
-.Dd $Mdocdate: September 8 2014 $
+.Dd December 3, 1993
 .Dt YPMATCH 1
 .Os
 .Sh NAME
 .Nm ypmatch
-.Nd print the values of one or more keys in a YP database
+.Nd "print the values of one or more keys in a YP database"
 .Sh SYNOPSIS
 .Nm ypmatch
 .Op Fl kt
 .Op Fl d Ar domainname
-.Ar key ... mapname
+.Ar key ...
+.Ar mapname
 .Nm ypmatch
 .Fl x
 .Sh DESCRIPTION
@@ -53,7 +54,7 @@ database specified by
 which may be a map name or a map nickname.
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width indent
 .It Fl d Ar domainname
 Specify a domain other than the default domain.
 .It Fl k
@@ -74,5 +75,5 @@ Display the map nickname table.
 .Xr ypbind 8 ,
 .Xr yppoll 8 ,
 .Xr ypset 8
-.Sh AUTHORS
-.An Theo de Raadt
+.Sh AUTHOR
+Theo De Raadt

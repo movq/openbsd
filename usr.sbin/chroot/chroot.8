@@ -1,7 +1,5 @@
-.\"	$OpenBSD: chroot.8,v 1.16 2015/09/12 15:52:37 schwarze Exp $
-.\"
-.\" Copyright (c) 1988, 1991, 1993
-.\"	The Regents of the University of California.  All rights reserved.
+.\" Copyright (c) 1988, 1991 The Regents of the University of California.
+.\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions
@@ -11,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,9 +29,10 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\"     from: @(#)chroot.8	8.1 (Berkeley) 6/9/93
+.\"     from: @(#)chroot.8	5.3 (Berkeley) 3/16/91
+.\"	$Id: chroot.8,v 1.3 1999/05/23 14:11:32 aaron Exp $
 .\"
-.Dd $Mdocdate: September 12 2015 $
+.Dd March 16, 1991
 .Dt CHROOT 8
 .Os
 .Sh NAME
@@ -37,53 +40,23 @@
 .Nd change root directory
 .Sh SYNOPSIS
 .Nm chroot
-.Op Fl g Ar group Ns Op Pf , Ar group Ns Op Pf , Ar ...
-.Op Fl u Ar user
 .Ar newroot
 .Op Ar command
 .Sh DESCRIPTION
 The
-.Nm
+.Nm chroot
 command changes its root directory to the supplied directory
 .Ar newroot
 and executes
 .Ar command ,
-if supplied, or an interactive copy of the user's shell.
+if supplied, or an interactive copy of your shell.
 .Pp
-The
-.Nm
-command is restricted to the superuser.
-.Pp
-The options are as follows:
-.Bl -tag -width Ds
-.It Fl g Ar group Ns Op Pf , Ar group Ns Op Pf , Ar ...
-Override the primary and supplemental group IDs.
-The primary group ID is set to the first group in the list.
-Any remaining groups are placed in the supplemental group ID vector.
-Each group listed must exist in the
-.Xr group 5
-databases.
-.It Fl u Ar user
-Set user ID to
-.Ar user
-(which must exist in the
-.Xr passwd 5
-database).
-The primary and supplemental group IDs will be set based on the user's
-entries in the
-.Xr passwd 5
-and
-.Xr group 5
-databases unless overridden by the
-.Fl g
-option.
-Additional settings may be applied as specified in
-.Xr login.conf 5
-depending on
-.Ar user Ns 's
-login class.
-.El
+Note,
+.Ar command
+or the shell are run as your real user ID.
 .Sh ENVIRONMENT
+The following environment variable is referenced by
+.Nm chroot :
 .Bl -tag -width SHELL
 .It Ev SHELL
 If set,
@@ -98,17 +71,11 @@ is not set,
 is used.
 .El
 .Sh SEE ALSO
-.Xr ldd 1 ,
-.Xr group 5 ,
-.Xr login.conf 5 ,
-.Xr passwd 5 ,
+.Xr chdir 2 ,
+.Xr chroot 2 ,
 .Xr environ 7
 .Sh HISTORY
 The
 .Nm
-utility first appeared in
-.Bx 4.3 Reno .
-.Sh CAVEATS
-.Nm
-should never be installed setuid root, as it would then be possible
-to exploit the program to gain root privileges.
+command is
+.Ud

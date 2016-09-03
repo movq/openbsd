@@ -1,4 +1,4 @@
-/*	$OpenBSD: comvar.h,v 1.51 2012/05/12 18:02:33 kettenis Exp $	*/
+/*	$OpenBSD: comvar.h,v 1.14 1999/08/08 01:34:15 niklas Exp $	*/
 /*	$NetBSD: comvar.h,v 1.5 1996/05/05 19:50:47 christos Exp $	*/
 
 /*
@@ -12,6 +12,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Jason Downs for the
+ *      OpenBSD system.
+ * 4. Neither the name(s) of the author(s) nor the name OpenBSD
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -55,8 +62,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/timeout.h>
-
 struct commulti_attach_args {
 	int		ca_slave;		/* slave number */
 
@@ -66,7 +71,7 @@ struct commulti_attach_args {
 	int		ca_noien;
 };
 
-#define	COM_IBUFSIZE	(32 * 512)
+#define	COM_IBUFSIZE	(2 * 512)
 #define	COM_IHIGHWATER	((3 * COM_IBUFSIZE) / 4)
 
 struct com_softc {
@@ -74,9 +79,6 @@ struct com_softc {
 	void *sc_ih;
 	bus_space_tag_t sc_iot;
 	struct tty *sc_tty;
-	struct timeout sc_dtr_tmo;
-	struct timeout sc_diag_tmo;
-	void *sc_si;
 
 	int sc_overflows;
 	int sc_floods;
@@ -84,10 +86,14 @@ struct com_softc {
 
 	int sc_halt;
 
-	bus_addr_t sc_iobase;
-	int sc_frequency;
+	int sc_iobase;
+#ifdef COM_HAYESP
+	int sc_hayespbase;
+#endif
 
 	bus_space_handle_t sc_ioh;
+	bus_space_handle_t sc_hayespioh;
+	isa_chipset_tag_t sc_ic;
 
 	u_char sc_uarttype;
 #define COM_UART_UNKNOWN	0x00		/* unknown */
@@ -98,24 +104,19 @@ struct com_softc {
 #define COM_UART_ST16650	0x05		/* no working fifo */
 #define COM_UART_ST16650V2	0x06		/* 32 byte fifo */
 #define COM_UART_TI16750	0x07		/* 64 byte fifo */
-#define	COM_UART_ST16C654	0x08		/* 64 bytes fifo */
 #define	COM_UART_XR16850	0x10		/* 128 byte fifo */
-#define COM_UART_PXA2X0		0x11		/* 16 byte fifo */
-#define	COM_UART_OX16C950	0x12		/* 128 byte fifo */
 
 	u_char sc_hwflags;
 #define	COM_HW_NOIEN	0x01
 #define	COM_HW_FIFO	0x02
-#define	COM_HW_SIR	0x20
+#define	COM_HW_HAYESP	0x04
 #define	COM_HW_CONSOLE	0x40
-#define	COM_HW_KGDB	0x80
 	u_char sc_swflags;
 #define	COM_SW_SOFTCAR	0x01
 #define	COM_SW_CLOCAL	0x02
 #define	COM_SW_CRTSCTS	0x04
 #define	COM_SW_MDMBUF	0x08
 #define	COM_SW_PPS	0x10
-#define	COM_SW_DEAD	0x20
 	int	sc_fifolen;
 	u_char sc_msr, sc_mcr, sc_lcr, sc_ier;
 	u_char sc_dtr;
@@ -128,54 +129,37 @@ struct com_softc {
 	u_char sc_ibufs[2][COM_IBUFSIZE];
 
 	/* power management hooks */
-	int (*enable)(struct com_softc *);
-	void (*disable)(struct com_softc *);
+	int (*enable) __P((struct com_softc *));
+	void (*disable) __P((struct com_softc *));
 	int enabled;
 };
 
-int	comprobe1(bus_space_tag_t, bus_space_handle_t);
-int	comstop(struct tty *, int);
-int	comintr(void *);
-int	com_detach(struct device *, int);
-int	com_activate(struct device *, int);
-void	com_resume(struct com_softc *);
+int	comprobe1 __P((bus_space_tag_t, bus_space_handle_t));
+void	cominit __P((bus_space_tag_t, bus_space_handle_t, int));
+int	comintr __P((void *));
+int	com_detach __P((struct device *, int));
+int	com_activate __P((struct device *, enum devact));
 
-void	comdiag(void *);
-int	comspeed(long, long);
-u_char	com_cflag2lcr(tcflag_t); /* XXX undefined */
-int	comparam(struct tty *, struct termios *);
-void	comstart(struct tty *);
-void	comsoft(void *);
+#ifdef COM_HAYESP
+int comprobeHAYESP __P((bus_space_handle_t hayespioh, struct com_softc *sc));
+#endif
+void	comdiag		__P((void *));
+int	comspeed	__P((long));
+int	comparam	__P((struct tty *, struct termios *));
+void	comstart	__P((struct tty *));
+void	compoll		__P((void *));
 
 struct consdev;
-int	comcnattach(bus_space_tag_t, bus_addr_t, int, int, tcflag_t);
-void	comcnprobe(struct consdev *);
-void	comcninit(struct consdev *);
-int	comcngetc(dev_t);
-void	comcnputc(dev_t, int);
-void	comcnpollc(dev_t, int);
-int	com_common_getc(bus_space_tag_t, bus_space_handle_t);
-void	com_common_putc(bus_space_tag_t, bus_space_handle_t, int);
-void	com_raisedtr(void *);
-
-#ifdef KGDB
-extern bus_addr_t com_kgdb_addr;
-extern bus_space_tag_t com_kgdb_iot;
-extern bus_space_handle_t com_kgdb_ioh;
-
-int	com_kgdb_attach(bus_space_tag_t, bus_addr_t, int, int, tcflag_t);
-int	kgdbintr(void *);
-#endif
-
-void com_attach_subr(struct com_softc *);
+void	comcnprobe	__P((struct consdev *));
+void	comcninit	__P((struct consdev *));
+int	comcngetc	__P((dev_t));
+void	comcnputc	__P((dev_t, int));
+void	comcnpollc	__P((dev_t, int));
 
 extern int comdefaultrate;
-extern int comconsrate;
-extern int comconsfreq;
-extern bus_addr_t comconsaddr;
-extern bus_addr_t comsiraddr;
+extern int comconsaddr;
+extern int comconsinit;
 extern int comconsattached;
 extern bus_space_tag_t comconsiot;
 extern bus_space_handle_t comconsioh;
-extern int comconsunit;
 extern tcflag_t comconscflag;

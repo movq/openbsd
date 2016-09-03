@@ -1,7 +1,7 @@
-/* $OpenBSD: add_tries.c,v 1.4 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: add_tries.c,v 1.1 1999/01/18 19:10:12 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey            1998-on                             *
+ *  Author: Thomas E. Dickey <dickey@clark.net> 1998                        *
  ****************************************************************************/
 
 /*
@@ -41,82 +41,86 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: add_tries.c,v 1.4 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: add_tries.c,v 1.1 1998/11/08 00:04:18 tom Exp $")
 
 #define SET_TRY(dst,src) if ((dst->ch = *src++) == 128) dst->ch = '\0'
 #define CMP_TRY(a,b) ((a)? (a == b) : (b == 128))
 
-NCURSES_EXPORT(int)
-_nc_add_to_try(TRIES ** tree, const char *str, unsigned code)
+void _nc_add_to_try(struct tries **tree, char *str, unsigned short code)
 {
-    TRIES *ptr, *savedptr;
-    unsigned const char *txt = (unsigned const char *) str;
+	static bool     out_of_memory = FALSE;
+	struct tries    *ptr, *savedptr;
+	unsigned char	*txt = (unsigned char *)str;
 
-    T((T_CALLED("_nc_add_to_try(%p, %s, %u)"), *tree, _nc_visbuf(str), code));
-    if (txt == 0 || *txt == '\0' || code == 0)
-	returnCode(ERR);
+	if (txt == 0 || *txt == '\0' || out_of_memory || code == 0)
+		return;
 
-    if ((*tree) != 0) {
-	ptr = savedptr = (*tree);
+	if ((*tree) != 0) {
+		ptr = savedptr = (*tree);
 
-	for (;;) {
-	    unsigned char cmp = *txt;
+		for (;;) {
+			unsigned char cmp = *txt;
 
-	    while (!CMP_TRY(ptr->ch, cmp)
-		   && ptr->sibling != 0)
-		ptr = ptr->sibling;
+			while (!CMP_TRY(ptr->ch, cmp)
+			       &&  ptr->sibling != 0)
+				ptr = ptr->sibling;
+	
+			if (CMP_TRY(ptr->ch, cmp)) {
+				if (*(++txt) == '\0') {
+					ptr->value = code;
+					return;
+				}
+				if (ptr->child != 0)
+					ptr = ptr->child;
+				else
+					break;
+			} else {
+				if ((ptr->sibling = typeCalloc(struct tries,1)) == 0) {
+					out_of_memory = TRUE;
+					return;
+				}
 
-	    if (CMP_TRY(ptr->ch, cmp)) {
-		if (*(++txt) == '\0') {
-		    ptr->value = code;
-		    returnCode(OK);
+				savedptr = ptr = ptr->sibling;
+				SET_TRY(ptr,txt);
+				ptr->value = 0;
+
+				break;
+			}
+		} /* end for (;;) */
+	} else {   /* (*tree) == 0 :: First sequence to be added */
+		savedptr = ptr = (*tree) = typeCalloc(struct tries,1);
+
+		if (ptr == 0) {
+			out_of_memory = TRUE;
+			return;
 		}
-		if (ptr->child != 0)
-		    ptr = ptr->child;
-		else
-		    break;
-	    } else {
-		if ((ptr->sibling = typeCalloc(TRIES, 1)) == 0) {
-		    returnCode(ERR);
-		}
 
-		savedptr = ptr = ptr->sibling;
-		SET_TRY(ptr, txt);
+		SET_TRY(ptr,txt);
 		ptr->value = 0;
-
-		break;
-	    }
-	}			/* end for (;;) */
-    } else {			/* (*tree) == 0 :: First sequence to be added */
-	savedptr = ptr = (*tree) = typeCalloc(TRIES, 1);
-
-	if (ptr == 0) {
-	    returnCode(ERR);
 	}
 
-	SET_TRY(ptr, txt);
-	ptr->value = 0;
-    }
+	    /* at this point, we are adding to the try.  ptr->child == 0 */
 
-    /* at this point, we are adding to the try.  ptr->child == 0 */
+	while (*txt) {
+		ptr->child = typeCalloc(struct tries,1);
 
-    while (*txt) {
-	ptr->child = typeCalloc(TRIES, 1);
+		ptr = ptr->child;
 
-	ptr = ptr->child;
+		if (ptr == 0) {
+			out_of_memory = TRUE;
 
-	if (ptr == 0) {
-	    while ((ptr = savedptr) != 0) {
-		savedptr = ptr->child;
-		free(ptr);
-	    }
-	    returnCode(ERR);
+			while ((ptr = savedptr) != 0) {
+				savedptr = ptr->child;
+				free(ptr);
+			}
+
+			return;
+		}
+
+		SET_TRY(ptr,txt);
+		ptr->value = 0;
 	}
 
-	SET_TRY(ptr, txt);
-	ptr->value = 0;
-    }
-
-    ptr->value = code;
-    returnCode(OK);
+	ptr->value = code;
+	return;
 }

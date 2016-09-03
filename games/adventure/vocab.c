@@ -1,4 +1,4 @@
-/*	$OpenBSD: vocab.c,v 1.15 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: vocab.c,v 1.7 1998/11/29 19:45:10 pjanzen Exp $	*/
 /*	$NetBSD: vocab.c,v 1.2 1995/03/21 12:05:13 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,23 +39,32 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)vocab.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: vocab.c,v 1.7 1998/11/29 19:45:10 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*	Re-coding of advent in C: data structure routines		*/
 
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
 void
-dstroy(int object)
+dstroy(object)
+	int	object;
 {
 	move(object, 0);
 }
 
 void
-juggle(int object)
+juggle(object)
+	int	object;
 {
 	int	i, j;
 
@@ -63,7 +76,8 @@ juggle(int object)
 
 
 void
-move(int object, int where)
+move(object, where)
+	int	object, where;
 {
 	int	from;
 
@@ -78,7 +92,8 @@ move(int object, int where)
 
 
 int
-put(int object, int where, int pval)
+put(object, where, pval)
+	int	object, where, pval;
 {
 	move(object, where);
 	return (-1 - pval);
@@ -86,7 +101,8 @@ put(int object, int where, int pval)
 
 
 void
-carry(int object, int where)
+carry(object, where)
+	int	object, where;
 {
 	int	temp;
 
@@ -107,7 +123,8 @@ carry(int object, int where)
 
 
 void
-drop(int object, int where)
+drop(object, where)
+	int	object, where;
 {
 	if (object > 100)
 		fixed[object - 100] = where;
@@ -122,13 +139,12 @@ drop(int object, int where)
 	atloc[where] = object;
 }
 
-/*
- * Look up or store a word
- * type: -2 for store, -1 for user word, >=0 for canned lookup
- * value: used for storing only
- */
+
 int
-vocab(const char *word, int type, int value)	
+vocab(word, type, value)	/* look up or store a word	*/
+	char	*word;
+	int	type;		/* -2 for store, -1 for user word, >=0 for canned lookup*/
+	int	value;		/* used for storing only	*/
 {
 	int	adr;
 	const char *s;
@@ -151,11 +167,11 @@ vocab(const char *word, int type, int value)
 				goto exitloop2;
 			h->val = value;
 			if ((h->atab = malloc(length(word))) == NULL)
-				err(1, NULL);
+				errx(1, "Out of memory!");
 			for (s = word, t = h->atab; *s;)
 				*t++ = *s++ ^ '=';
 			*t = 0 ^ '=';
-			/* obfuscate slightly to frustrate core reader	*/
+			/* encrypt slightly to thwart core reader	*/
 		/*	printf("Stored \"%s\" (%d ch) as entry %d\n",	*/
 		/*		word, length(word), adr);		*/
 			return (0);	/* entry unused			*/
@@ -182,13 +198,13 @@ vocab(const char *word, int type, int value)
 		}
 
 exitloop2:			/* hashed entry does not match	*/
-		if (adr + 1 == hash || hash == 0)
+		if (adr + 1 == hash || (adr == HTSIZE && hash == 0))
 			errx(1, "Hash table overflow");
 	}
 }
 
 void
-prht(void)				/* print hash table		*/
+prht()					/* print hash table		*/
 {
 	int	i, j, l;
 	char	*c;

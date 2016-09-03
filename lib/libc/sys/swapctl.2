@@ -1,4 +1,3 @@
-.\"	$OpenBSD: swapctl.2,v 1.22 2015/07/15 02:57:02 jasper Exp $
 .\"	$NetBSD: swapctl.2,v 1.10 1998/08/29 17:11:09 mrg Exp $
 .\"
 .\" Copyright (c) 1997 Matthew R. Green
@@ -13,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,28 +32,26 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: July 15 2015 $
+.Dd June 20, 1997
 .Dt SWAPCTL 2
 .Os
 .Sh NAME
 .Nm swapctl
 .Nd modify swap configuration
 .Sh SYNOPSIS
-.In sys/param.h
-.In sys/swap.h
-.In unistd.h
+.Fd #include <unistd.h>
+.Fd #include <sys/swap.h>
 .Ft int
 .Fn swapctl "int cmd" "const void *arg" "int misc"
 .Sh DESCRIPTION
 The
 .Fn swapctl
-function is used to add and delete swap devices, modify their configuration or
-query their statistics.
+function is used to add and delete swap devices, and modify their
+configuration.
 .Pp
 The
 .Fa cmd
-parameter specifies the operation to be performed.
-The
+parameter specifies the operation to be performed.  The
 .Fa arg
 and
 .Fa misc
@@ -63,8 +64,7 @@ If
 .Fa cmd
 is
 .Dv SWAP_NSWAP ,
-the current number of swap devices in the system is returned.
-The
+the current number of swap devices in the system is returned.  The
 .Fa arg
 and
 .Fa misc
@@ -76,11 +76,9 @@ is
 .Dv SWAP_STATS ,
 the current statistics for swap devices are returned in the
 .Fa arg
-parameter.
-No more than
+parameter.  No more than
 .Fa misc
-swap devices are returned.
-The
+swap devices are returned.  The
 .Fa arg
 parameter should point to an array of at least
 .Fa misc
@@ -92,7 +90,7 @@ struct swapent {
 	int	se_nblks;		/* total blocks */
 	int	se_inuse;		/* blocks in use */
 	int	se_priority;		/* priority */
-	char	se_path[PATH_MAX];	/* path to entry */
+	char	se_path[PATH_MAX+1];	/* path to entry */
 };
 .Ed
 .Pp
@@ -103,12 +101,6 @@ The flags are defined as
 	SWF_BUSY        busy: I/O happening here
 	SWF_FAKE        fake: still being built
 .Ed
-.Pp
-All but
-.Dv SWAP_NSWAP
-and
-.Dv SWAP_STATS
-require superuser privileges.
 .It
 If
 .Fa cmd
@@ -146,8 +138,8 @@ case, except that they change the priority of a currently enabled swap device.
 .El
 .Pp
 When swapping is enabled on a block device, the first portion of the disk is
-left unused to prevent any disklabel present from being overwritten.
-This space is allocated from the swap device when the
+left unused to prevent any disklable present from being overwritten.  This
+space is allocated from the swap device when the
 .Dv SWAP_ON
 command is used.
 .Sh RETURN VALUES
@@ -158,12 +150,10 @@ parameter is
 or
 .Dv SWAP_STATS ,
 .Fn swapctl
-returns the number of swap devices, if successful.
-The
+returns the number of swap devices, if successful.  The
 .Dv SWAP_NSWAP
-command is always successful.
-Otherwise it returns 0 on success and \-1 on failure,
-setting the global variable
+command is always successful.  Otherwise it returns 0 on success and \-1
+on failure, setting the global variable
 .Va errno
 to indicate the error.
 .Sh ERRORS
@@ -175,13 +165,11 @@ A component of the path prefix is not a directory.
 .It Bq Er ENAMETOOLONG
 A component of a pathname exceeded
 .Dv NAME_MAX
-characters, or an entire pathname (including the terminating NUL)
-exceeded
+characters, or an entire path name exceeded
 .Dv PATH_MAX
-bytes.
+characters.
 .It Bq Er ENOENT
-The named device does not exist.
-For the
+The named device does not exist.  For the
 .Dv SWAP_CTL
 command, the named device is not currently enabled for swapping.
 .It Bq Er EACCES
@@ -189,7 +177,7 @@ Search permission is denied for a component of the path prefix.
 .It Bq Er ELOOP
 Too many symbolic links were encountered in translating the pathname.
 .It Bq Er EPERM
-The caller is not the superuser.
+The caller is not the super-user.
 .It Bq Er EBUSY
 The device specified by
 .Fa arg
@@ -214,6 +202,17 @@ points outside the process' allocated address space.
 .Sh SEE ALSO
 .Xr config 8 ,
 .Xr swapctl 8
+.Sh BUGS
+The
+.Dv SWAP_OFF
+command is currently unimplemented by the
+.Nx
+kernel.
+.Sh AUTHOR
+The current swap system was designed and implemented by Matthew Green
+<mrg@eterna.com.au>, with help from Paul Kranenburg <pk@NetBSD.ORG>
+and Leo Weppelman <leo@NetBSD.ORG>, and insights from Jason R. Thorpe
+<thorpej@NetBSD.ORG>.
 .Sh HISTORY
 The
 .Fn swapctl
@@ -222,18 +221,8 @@ function call appeared in
 The
 .Fa se_path
 member was added to
-.Vt struct swapent
+.Li struct swapent
 in
 .Nx 1.4 ,
 when the header file was also moved from
-.In vm/vm_swap.h .
-.Sh AUTHORS
-.An -nosplit
-The current swap system was designed and implemented by
-.An Matthew Green Aq Mt mrg@eterna.com.au ,
-with help from
-.An Paul Kranenburg Aq Mt pk@NetBSD.ORG
-and
-.An Leo Weppelman Aq Mt leo@NetBSD.ORG ,
-and insights from
-.An Jason R. Thorpe Aq Mt thorpej@NetBSD.ORG .
+.Aq Pa vm/vm_swap.h .

@@ -1,91 +1,33 @@
-/*	$OpenBSD: hack.do.c,v 1.10 2016/01/09 18:33:15 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.do.c,v 1.3 1995/03/23 08:29:53 cgd Exp $";
+#endif /* not lint */
 
 /* Contains code for 'd', 'D' (drop), '>', '<' (up, down) and 't' (throw) */
 
-#include <stdlib.h>
-#include <unistd.h>
-
 #include "hack.h"
 
+extern struct obj *splitobj(), *addinv();
+extern boolean hmon();
 extern boolean level_exists[];
 extern struct monst youmonst;
+extern char *Doname();
 extern char *nomovemsg;
 
-static int drop(struct obj *);
+static int drop();
 
-int
-dodrop(void)
-{
+dodrop() {
 	return(drop(getobj("0$#", "drop")));
 }
 
 static int
-drop(struct obj *obj)
-{
+drop(obj) register struct obj *obj; {
 	if(!obj) return(0);
 	if(obj->olet == '$') {		/* pseudo object */
-		long amount = OGOLD(obj);
+		register long amount = OGOLD(obj);
 
 		if(amount == 0)
 			pline("You didn't drop any gold pieces.");
@@ -95,7 +37,7 @@ drop(struct obj *obj)
 				amount, plur(amount));
 			if(Invisible) newsym(u.ux, u.uy);
 		}
-		free(obj);
+		free((char *) obj);
 		return(1);
 	}
 	if(obj->owornmask & (W_ARMOR | W_RING)){
@@ -115,15 +57,15 @@ drop(struct obj *obj)
 }
 
 /* Called in several places - should not produce texts */
-void
-dropx(struct obj *obj)
+dropx(obj)
+register struct obj *obj;
 {
 	freeinv(obj);
 	dropy(obj);
 }
 
-void
-dropy(struct obj *obj)
+dropy(obj)
+register struct obj *obj;
 {
 	if(obj->otyp == CRYSKNIFE)
 		obj->otyp = WORM_TOOTH;
@@ -137,14 +79,11 @@ dropy(struct obj *obj)
 }
 
 /* drop several things */
-int
-doddrop(void)
-{
+doddrop() {
 	return(ggetobj("drop", drop, 0));
 }
 
-int
-dodown(void)
+dodown()
 {
 	if(u.ux != xdnstair || u.uy != ydnstair) {
 		pline("You can't go down here.");
@@ -163,8 +102,7 @@ dodown(void)
 	return(1);
 }
 
-int
-doup(void)
+doup()
 {
 	if(u.ux != xupstair || u.uy != yupstair) {
 		pline("You can't go up here.");
@@ -183,18 +121,19 @@ doup(void)
 	return(1);
 }
 
-void
-goto_level(int newlevel, boolean at_stairs)
+goto_level(newlevel, at_stairs)
+register int newlevel;
+register boolean at_stairs;
 {
-	int fd;
-	boolean up = (newlevel < dlevel);
+	register fd;
+	register boolean up = (newlevel < dlevel);
 
 	if(newlevel <= 0) done("escaped");    /* in fact < 0 is impossible */
 	if(newlevel > MAXLEVEL) newlevel = MAXLEVEL;	/* strange ... */
 	if(newlevel == dlevel) return;	      /* this can happen */
 
 	glo(dlevel);
-	fd = open(lock, O_CREAT | O_TRUNC | O_WRONLY, FMASK);
+	fd = creat(lock, FMASK);
 	if(fd < 0) {
 		/*
 		 * This is not quite impossible: e.g., we may have
@@ -227,7 +166,7 @@ goto_level(int newlevel, boolean at_stairs)
 		maxdlevel = dlevel;
 	glo(dlevel);
 
-	if(!level_exists[(int)dlevel])
+	if(!level_exists[dlevel])
 		mklev();
 	else {
 		extern int hackpid;
@@ -269,7 +208,7 @@ goto_level(int newlevel, boolean at_stairs)
 			selftouch("Falling, you");
 		}
 	    }
-	    { struct monst *mtmp = m_at(u.ux, u.uy);
+	    { register struct monst *mtmp = m_at(u.ux, u.uy);
 	      if(mtmp)
 		mnexto(mtmp);
 	    }
@@ -277,7 +216,7 @@ goto_level(int newlevel, boolean at_stairs)
 	    do {
 		u.ux = rnd(COLNO-1);
 		u.uy = rn2(ROWNO);
-	    } while(levl[(int)u.ux][(int)u.uy].typ != ROOM ||
+	    } while(levl[u.ux][u.uy].typ != ROOM ||
 			m_at(u.ux,u.uy));
 	    if(Punished){
 		if(uwep != uball && !up /* %% */ && rn2(5)){
@@ -292,9 +231,8 @@ goto_level(int newlevel, boolean at_stairs)
 	initrack();
 
 	losedogs();
-	{ struct monst *mtmp;
-	  if ((mtmp = m_at(u.ux, u.uy)))
-		  mnexto(mtmp);	/* riv05!a3 */
+	{ register struct monst *mtmp;
+	  if(mtmp = m_at(u.ux, u.uy)) mnexto(mtmp);	/* riv05!a3 */
 	}
 	flags.nscrinh = 0;
 	setsee();
@@ -304,26 +242,22 @@ goto_level(int newlevel, boolean at_stairs)
 	read_engr_at(u.ux,u.uy);
 }
 
-int
-donull(void)
-{
+donull() {
 	return(1);	/* Do nothing, but let other things happen */
 }
 
-int
-dopray(void)
-{
+dopray() {
 	nomovemsg = "You finished your prayer.";
 	nomul(-3);
 	return(1);
 }
 
-int
-dothrow(void)
+struct monst *bhit(), *boomhit();
+dothrow()
 {
-	struct obj *obj;
-	struct monst *mon;
-	int tmp;
+	register struct obj *obj;
+	register struct monst *mon;
+	register tmp;
 
 	obj = getobj("#)", "throw");   /* it is also possible to throw food */
 				       /* (or jewels, or iron balls ... ) */
@@ -393,7 +327,8 @@ dothrow(void)
 
 		mon = bhit(u.dx, u.dy, (obj->otyp == ICE_BOX) ? 1 :
 			(!Punished || obj != uball) ? 8 : !u.ustuck ? 5 : 1,
-			obj->olet, NULL, NULL, obj);
+			obj->olet,
+			(int (*)()) 0, (int (*)()) 0, obj);
 	}
 	if(mon) {
 		/* awake monster if sleeping */
@@ -416,7 +351,7 @@ dothrow(void)
 				  /* mon still alive */
 #ifndef NOWORM
 				  cutworm(mon,bhitpos.x,bhitpos.y,obj->otyp);
-#endif /* NOWORM */
+#endif NOWORM
 				} else mon = 0;
 				/* weapons thrown disappear sometimes */
 				if(obj->otyp < BOOMERANG && rn2(3)) {
@@ -484,7 +419,7 @@ dothrow(void)
 			if(u.utraptype == TT_PIT)
 				pline("The ball pulls you out of the pit!");
 			else {
-			    long side =
+			    register long side =
 				rn2(3) ? LEFT_SIDE : RIGHT_SIDE;
 			    pline("The ball pulls you out of the bear trap.");
 			    pline("Your %s leg is severely damaged.",
@@ -509,10 +444,8 @@ dothrow(void)
 /* split obj so that it gets size num */
 /* remainder is put in the object structure delivered by this call */
 struct obj *
-splitobj(struct obj *obj, int num)
-{
-	struct obj *otmp;
-
+splitobj(obj, num) register struct obj *obj; register int num; {
+register struct obj *otmp;
 	otmp = newobj(0);
 	*otmp = *obj;		/* copies whole structure */
 	otmp->o_id = flags.ident++;
@@ -526,8 +459,8 @@ splitobj(struct obj *obj, int num)
 	return(otmp);
 }
 
-void
-more_experienced(int exp, int rexp)
+more_experienced(exp,rexp)
+register int exp, rexp;
 {
 	extern char pl_character[];
 
@@ -538,8 +471,9 @@ more_experienced(int exp, int rexp)
 		flags.beginner = 0;
 }
 
-void
-set_wounded_legs(long side, int timex)
+set_wounded_legs(side, timex)
+register long side;
+register int timex;
 {
 	if(!Wounded_legs || (Wounded_legs & TIMEOUT))
 		Wounded_legs |= side + timex;
@@ -547,8 +481,7 @@ set_wounded_legs(long side, int timex)
 		Wounded_legs |= side;
 }
 
-void
-heal_legs(void)
+heal_legs()
 {
 	if(Wounded_legs) {
 		if((Wounded_legs & BOTH_SIDES) == BOTH_SIDES)

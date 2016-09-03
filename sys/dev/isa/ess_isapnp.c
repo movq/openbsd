@@ -1,4 +1,4 @@
-/*	$OpenBSD: ess_isapnp.c,v 1.7 2013/11/15 16:46:27 brad Exp $	*/
+/*	$OpenBSD: ess_isapnp.c,v 1.1 1999/06/22 16:20:03 niklas Exp $	*/
 /*	$NetBSD: ess_isa.c,v 1.4 1999/03/18 20:57:11 mycroft Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -34,7 +41,6 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/timeout.h>
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
@@ -50,23 +56,29 @@
 #define DPRINTF(x)
 #endif
 
-int ess_isapnp_probe(struct device *, void *, void *);
-void ess_isapnp_attach(struct device *, struct device *, void *);
+int ess_isapnp_probe __P((struct device *, void *, void *));
+void ess_isapnp_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ess_isapnp_ca = {
 	sizeof(struct ess_softc), ess_isapnp_probe, ess_isapnp_attach
 };
 
 int
-ess_isapnp_probe(struct device *parent, void *match, void *aux)
+ess_isapnp_probe(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	return 1;
 }
 
-void ess_isapnp_attach(struct device *parent, struct device *self, void *aux)
+void ess_isapnp_attach(parent, self, aux)
+	 struct device *parent, *self;
+	 void *aux;
 {
 	struct ess_softc *sc = (void *)self;
 	struct isa_attach_args *ia = aux;
+
+	printf("\n");
 
 	sc->sc_ic = ia->ia_ic;
 	sc->sc_iot = ia->ia_iot;
@@ -83,9 +95,11 @@ void ess_isapnp_attach(struct device *parent, struct device *self, void *aux)
 	sc->sc_isa = parent->dv_parent;
 
 	if (!essmatch(sc)) {
-		printf(": essmatch failed\n");
+		printf("%s: essmatch failed\n", sc->sc_dev.dv_xname);
 		return;
 	}
+
+	printf("%s:", sc->sc_dev.dv_xname);
 
 	essattach(sc);
 }

@@ -1,5 +1,3 @@
-/*	$OpenBSD: options.c,v 1.22 2016/08/01 18:27:35 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,10 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)options.c	10.51 (Berkeley) 10/14/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
@@ -20,7 +22,6 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
-#include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,9 +31,9 @@
 #include "../vi/vi.h"
 #include "pathnames.h"
 
-static int	 	 opts_abbcmp(const void *, const void *);
-static int	 	 opts_cmp(const void *, const void *);
-static int	 	 opts_print(SCR *, OPTLIST const *);
+static int	 	 opts_abbcmp __P((const void *, const void *));
+static int	 	 opts_cmp __P((const void *, const void *));
+static int	 	 opts_print __P((SCR *, OPTLIST const *));
 
 /*
  * O'Reilly noted options and abbreviations are from "Learning the VI Editor",
@@ -63,6 +64,8 @@ OPTLIST const optlist[] = {
 	{"columns",	f_columns,	OPT_NUM,	OPT_NOSAVE},
 /* O_COMMENT	  4.4BSD */
 	{"comment",	NULL,		OPT_0BOOL,	0},
+/* O_DIRECTORY	    4BSD */
+	{"directory",	NULL,		OPT_STR,	0},
 /* O_EDCOMPATIBLE   4BSD */
 	{"edcompatible",NULL,		OPT_0BOOL,	0},
 /* O_ESCAPETIME	  4.4BSD */
@@ -76,7 +79,7 @@ OPTLIST const optlist[] = {
 /* O_FILEC	  4.4BSD */
 	{"filec",	NULL,		OPT_STR,	0},
 /* O_FLASH	    HPUX */
-	{"flash",	NULL,		OPT_0BOOL,	0},
+	{"flash",	NULL,		OPT_1BOOL,	0},
 /* O_HARDTABS	    4BSD */
 	{"hardtabs",	NULL,		OPT_NUM,	0},
 /* O_ICLOWER	  4.4BSD */
@@ -118,12 +121,14 @@ OPTLIST const optlist[] = {
  *	mixing code and data.  Don't add it, or I will kill you.
  */
 	{"modeline",	NULL,		OPT_0BOOL,	OPT_NOSET},
+/* O_MSGCAT	  4.4BSD */
+	{"msgcat",	f_msgcat,	OPT_STR,	0},
 /* O_NOPRINT	  4.4BSD */
-	{"noprint",	f_print,	OPT_STR,	OPT_EARLYSET},
+	{"noprint",	f_print,	OPT_STR,	0},
 /* O_NUMBER	    4BSD */
 	{"number",	f_reformat,	OPT_0BOOL,	0},
 /* O_OCTAL	  4.4BSD */
-	{"octal",	f_print,	OPT_0BOOL,	OPT_EARLYSET},
+	{"octal",	f_print,	OPT_0BOOL,	0},
 /* O_OPEN	    4BSD */
 	{"open",	NULL,		OPT_1BOOL,	0},
 /* O_OPTIMIZE	    4BSD */
@@ -133,7 +138,7 @@ OPTLIST const optlist[] = {
 /* O_PATH	  4.4BSD */
 	{"path",	NULL,		OPT_STR,	0},
 /* O_PRINT	  4.4BSD */
-	{"print",	f_print,	OPT_STR,	OPT_EARLYSET},
+	{"print",	f_print,	OPT_STR,	0},
 /* O_PROMPT	    4BSD */
 	{"prompt",	NULL,		OPT_1BOOL,	0},
 /* O_READONLY	    4BSD (undocumented) */
@@ -235,6 +240,7 @@ static OABBREV const abbrev[] = {
 	{"aw",		O_AUTOWRITE},		/*     4BSD */
 	{"bf",		O_BEAUTIFY},		/*     4BSD */
 	{"co",		O_COLUMNS},		/*   4.4BSD */
+	{"dir",		O_DIRECTORY},		/*     4BSD */
 	{"eb",		O_ERRORBELLS},		/*     4BSD */
 	{"ed",		O_EDCOMPATIBLE},	/*     4BSD */
 	{"ex",		O_EXRC},		/* System V (undocumented) */
@@ -273,15 +279,17 @@ static OABBREV const abbrev[] = {
  * opts_init --
  *	Initialize some of the options.
  *
- * PUBLIC: int opts_init(SCR *, int *);
+ * PUBLIC: int opts_init __P((SCR *, int *));
  */
 int
-opts_init(SCR *sp, int *oargs)
+opts_init(sp, oargs)
+	SCR *sp;
+	int *oargs;
 {
 	ARGS *argv[2], a, b;
 	OPTLIST const *op;
 	u_long v;
-	int optindx;
+	int cnt, optindx;
 	char *s, b1[1024];
 
 	a.bp = b1;
@@ -292,11 +300,11 @@ opts_init(SCR *sp, int *oargs)
 
 	/* Set numeric and string default values. */
 #define	OI(indx, str) {							\
-	if ((str) != b1)	/* GCC puts strings in text-space. */	\
-		(void)strlcpy(b1, (str), sizeof(b1));			\
+	if (str != b1)		/* GCC puts strings in text-space. */	\
+		(void)strcpy(b1, str);					\
 	a.len = strlen(b1);						\
 	if (opts_set(sp, argv, NULL)) {					\
-		optindx = indx;						\
+		 optindx = indx;					\
 		goto err;						\
 	}								\
 }
@@ -305,35 +313,39 @@ opts_init(SCR *sp, int *oargs)
 	 * terminal, lines, columns first, they're used by other options.
 	 * Note, don't set the flags until we've set up the indirection.
 	 */
-	if (o_set(sp, O_TERM, 0, NULL, GO_TERM)) {
-		optindx = O_TERM;
+	if (o_set(sp, O_TERM, 0, NULL, GO_TERM))
 		goto err;
-	}
 	F_SET(&sp->opts[O_TERM], OPT_GLOBAL);
-	if (o_set(sp, O_LINES, 0, NULL, GO_LINES)) {
-		optindx = O_LINES;
+	if (o_set(sp, O_LINES, 0, NULL, GO_LINES))
 		goto err;
-	}
 	F_SET(&sp->opts[O_LINES], OPT_GLOBAL);
-	if (o_set(sp, O_COLUMNS, 0, NULL, GO_COLUMNS)) {
-		optindx = O_COLUMNS;
+	if (o_set(sp, O_COLUMNS, 0, NULL, GO_COLUMNS))
 		goto err;
-	}
 	F_SET(&sp->opts[O_COLUMNS], OPT_GLOBAL);
-	if (o_set(sp, O_SECURE, 0, NULL, GO_SECURE)) {
-		optindx = O_SECURE;
+	if (o_set(sp, O_SECURE, 0, NULL, GO_SECURE))
 		goto err;
-	}
 	F_SET(&sp->opts[O_SECURE], OPT_GLOBAL);
 
 	/* Initialize string values. */
 	(void)snprintf(b1, sizeof(b1),
 	    "cdpath=%s", (s = getenv("CDPATH")) == NULL ? ":" : s);
 	OI(O_CDPATH, b1);
+
+	/*
+	 * !!!
+	 * Vi historically stored temporary files in /var/tmp.  We store them
+	 * in /tmp by default, hoping it's a memory based file system.  There
+	 * are two ways to change this -- the user can set either the directory
+	 * option or the TMPDIR environmental variable.
+	 */
+	(void)snprintf(b1, sizeof(b1),
+	    "directory=%s", (s = getenv("TMPDIR")) == NULL ? _PATH_TMP : s);
+	OI(O_DIRECTORY, b1);
 	OI(O_ESCAPETIME, "escapetime=1");
-	OI(O_FILEC, "filec=\t");
 	OI(O_KEYTIME, "keytime=6");
 	OI(O_MATCHTIME, "matchtime=7");
+	(void)snprintf(b1, sizeof(b1), "msgcat=%s", _PATH_MSGCAT);
+	OI(O_MSGCAT, b1);
 	OI(O_REPORT, "report=5");
 	OI(O_PARAGRAPHS, "paragraphs=IPLPPPQPP LIpplpipbp");
 	(void)snprintf(b1, sizeof(b1), "path=%s", "");
@@ -385,20 +397,20 @@ opts_init(SCR *sp, int *oargs)
 	 * Set boolean default values, and copy all settings into the default
 	 * information.  OS_NOFREE is set, we're copying, not replacing.
 	 */
-	for (op = optlist, optindx = 0; op->name != NULL; ++op, ++optindx)
+	for (op = optlist, cnt = 0; op->name != NULL; ++op, ++cnt)
 		switch (op->type) {
 		case OPT_0BOOL:
 			break;
 		case OPT_1BOOL:
-			O_SET(sp, optindx);
-			O_D_SET(sp, optindx);
+			O_SET(sp, cnt);
+			O_D_SET(sp, cnt);
 			break;
 		case OPT_NUM:
-			o_set(sp, optindx, OS_DEF, NULL, O_VAL(sp, optindx));
+			o_set(sp, cnt, OS_DEF, NULL, O_VAL(sp, cnt));
 			break;
 		case OPT_STR:
-			if (O_STR(sp, optindx) != NULL && o_set(sp, optindx,
-			    OS_DEF | OS_NOFREE | OS_STRDUP, O_STR(sp, optindx), 0))
+			if (O_STR(sp, cnt) != NULL && o_set(sp, cnt,
+			    OS_DEF | OS_NOFREE | OS_STRDUP, O_STR(sp, cnt), 0))
 				goto err;
 			break;
 		default:
@@ -417,7 +429,7 @@ opts_init(SCR *sp, int *oargs)
 #undef OI
 
 err:	msgq(sp, M_ERR,
-	    "Unable to set default %s option", optlist[optindx].name);
+	    "031|Unable to set default %s option", optlist[optindx].name);
 	return (1);
 }
 
@@ -425,10 +437,13 @@ err:	msgq(sp, M_ERR,
  * opts_set --
  *	Change the values of one or more options.
  *
- * PUBLIC: int opts_set(SCR *, ARGS *[], char *);
+ * PUBLIC: int opts_set __P((SCR *, ARGS *[], char *));
  */
 int
-opts_set(SCR *sp, ARGS *argv[], char *usage)
+opts_set(sp, argv, usage)
+	SCR *sp;
+	ARGS *argv[];
+	char *usage;
 {
 	enum optdisp disp;
 	enum nresult nret;
@@ -456,7 +471,7 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 				if (p == name) {
 					if (usage != NULL)
 						msgq(sp, M_ERR,
-						    "Usage: %s", usage);
+						    "032|Usage: %s", usage);
 					return (1);
 				}
 				sep = p;
@@ -507,7 +522,7 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 			/* Some options may not be reset. */
 			if (F_ISSET(op, OPT_NOUNSET) && turnoff) {
 				msgq_str(sp, M_ERR, name,
-			    "set: the %s option may not be turned off");
+			    "291|set: the %s option may not be turned off");
 				rval = 1;
 				break;
 			}
@@ -515,14 +530,14 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 			/* Some options may not be set. */
 			if (F_ISSET(op, OPT_NOSET) && !turnoff) {
 				msgq_str(sp, M_ERR, name,
-			    "set: the %s option may never be turned on");
+			    "313|set: the %s option may never be turned on");
 				rval = 1;
 				break;
 			}
 
 			if (equals) {
 				msgq_str(sp, M_ERR, name,
-			    "set: [no]%s option doesn't take a value");
+			    "034|set: [no]%s option doesn't take a value");
 				rval = 1;
 				break;
 			}
@@ -537,7 +552,7 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 			 * Do nothing if the value is unchanged, the underlying
 			 * functions can be expensive.
 			 */
-			if (!F_ISSET(op, OPT_ALWAYS)) {
+			if (!F_ISSET(op, OPT_ALWAYS))
 				if (turnoff) {
 					if (!O_ISSET(sp, offset))
 						break;
@@ -545,19 +560,10 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 					if (O_ISSET(sp, offset))
 						break;
 				}
-			}
-
-			if (F_ISSET(op, OPT_EARLYSET)) {
-			    /* Set the value. */
-			    if (turnoff)
-				O_CLR(sp, offset);
-			    else
-				O_SET(sp, offset);
-			}
 
 			/* Report to subsystems. */
-			if ((op->func != NULL &&
-			    op->func(sp, spo, NULL, &turnoff)) ||
+			if (op->func != NULL &&
+			    op->func(sp, spo, NULL, &turnoff) ||
 			    ex_optchange(sp, offset, NULL, &turnoff) ||
 			    v_optchange(sp, offset, NULL, &turnoff) ||
 			    sp->gp->scr_optchange(sp, offset, NULL, &turnoff)) {
@@ -565,18 +571,16 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 				break;
 			}
 
-			if (!F_ISSET(op, OPT_EARLYSET)) {
-			    /* Set the value. */
-			    if (turnoff)
+			/* Set the value. */
+			if (turnoff)
 				O_CLR(sp, offset);
-			    else
+			else
 				O_SET(sp, offset);
-			}
 			break;
 		case OPT_NUM:
 			if (turnoff) {
 				msgq_str(sp, M_ERR, name,
-				    "set: %s option isn't a boolean");
+				    "035|set: %s option isn't a boolean");
 				rval = 1;
 				break;
 			}
@@ -596,11 +600,11 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 				switch (nret) {
 				case NUM_ERR:
 					msgq(sp, M_SYSERR,
-					    "set: %s option: %s", p, t);
+					    "036|set: %s option: %s", p, t);
 					break;
 				case NUM_OVER:
 					msgq(sp, M_ERR,
-			    "set: %s option: %s: value overflow", p, t);
+			    "037|set: %s option: %s: value overflow", p, t);
 					break;
 				case NUM_OK:
 				case NUM_UNDER:
@@ -617,7 +621,7 @@ opts_set(SCR *sp, ARGS *argv[], char *usage)
 badnum:				p = msg_print(sp, name, &nf);
 				t = msg_print(sp, sep, &nf2);
 				msgq(sp, M_ERR,
-		    "set: %s option: %s is an illegal number", p, t);
+		    "038|set: %s option: %s is an illegal number", p, t);
 				if (nf)
 					FREE_SPACE(sp, p, 0);
 				if (nf2)
@@ -629,7 +633,7 @@ badnum:				p = msg_print(sp, name, &nf);
 			/* Some options may never be set to zero. */
 			if (F_ISSET(op, OPT_NOZERO) && value == 0) {
 				msgq_str(sp, M_ERR, name,
-			    "set: the %s option may never be set to 0");
+			    "314|set: the %s option may never be set to 0");
 				rval = 1;
 				break;
 			}
@@ -642,17 +646,9 @@ badnum:				p = msg_print(sp, name, &nf);
 			    O_VAL(sp, offset) == value)
 				break;
 
-			if (F_ISSET(op, OPT_EARLYSET)) {
-			    /* Set the value. */
-			    if (o_set(sp, offset, 0, NULL, value)) {
-				rval = 1;
-				break;
-			    }
-			}
-
 			/* Report to subsystems. */
-			if ((op->func != NULL &&
-			    op->func(sp, spo, sep, &value)) ||
+			if (op->func != NULL &&
+			    op->func(sp, spo, sep, &value) ||
 			    ex_optchange(sp, offset, sep, &value) ||
 			    v_optchange(sp, offset, sep, &value) ||
 			    sp->gp->scr_optchange(sp, offset, sep, &value)) {
@@ -660,16 +656,14 @@ badnum:				p = msg_print(sp, name, &nf);
 				break;
 			}
 
-			if (!F_ISSET(op, OPT_EARLYSET)) {
-			    /* Set the value. */
-			    if (o_set(sp, offset, 0, NULL, value))
+			/* Set the value. */
+			if (o_set(sp, offset, 0, NULL, value))
 				rval = 1;
-			}
 			break;
 		case OPT_STR:
 			if (turnoff) {
 				msgq_str(sp, M_ERR, name,
-				    "set: %s option isn't a boolean");
+				    "039|set: %s option isn't a boolean");
 				rval = 1;
 				break;
 			}
@@ -689,17 +683,9 @@ badnum:				p = msg_print(sp, name, &nf);
 			    !strcmp(O_STR(sp, offset), sep))
 				break;
 
-			if (F_ISSET(op, OPT_EARLYSET)) {
-			    /* Set the value. */
-			    if (o_set(sp, offset, OS_STRDUP, sep, 0)) {
-				rval = 1;
-				break;
-			    }
-			}
-
 			/* Report to subsystems. */
-			if ((op->func != NULL &&
-			    op->func(sp, spo, sep, NULL)) ||
+			if (op->func != NULL &&
+			    op->func(sp, spo, sep, NULL) ||
 			    ex_optchange(sp, offset, sep, NULL) ||
 			    v_optchange(sp, offset, sep, NULL) ||
 			    sp->gp->scr_optchange(sp, offset, sep, NULL)) {
@@ -707,11 +693,9 @@ badnum:				p = msg_print(sp, name, &nf);
 				break;
 			}
 
-			if (!F_ISSET(op, OPT_EARLYSET)) {
-			    /* Set the value. */
-			    if (o_set(sp, offset, OS_STRDUP, sep, 0))
+			/* Set the value. */
+			if (o_set(sp, offset, OS_STRDUP, sep, 0))
 				rval = 1;
-			}
 			break;
 		default:
 			abort();
@@ -726,10 +710,15 @@ badnum:				p = msg_print(sp, name, &nf);
  * o_set --
  *	Set an option's value.
  *
- * PUBLIC: int o_set(SCR *, int, u_int, char *, u_long);
+ * PUBLIC: int o_set __P((SCR *, int, u_int, char *, u_long));
  */
 int
-o_set(SCR *sp, int opt, u_int flags, char *str, u_long val)
+o_set(sp, opt, flags, str, val)
+	SCR *sp;
+	int opt;
+	u_int flags;
+	char *str;
+	u_long val;
 {
 	OPTION *op;
 
@@ -744,7 +733,7 @@ o_set(SCR *sp, int opt, u_int flags, char *str, u_long val)
 	}
 
 	/* Free the previous string, if requested, and set the value. */
-	if (LF_ISSET(OS_DEF))
+	if LF_ISSET(OS_DEF)
 		if (LF_ISSET(OS_STR | OS_STRDUP)) {
 			if (!LF_ISSET(OS_NOFREE) && op->o_def.str != NULL)
 				free(op->o_def.str);
@@ -765,17 +754,19 @@ o_set(SCR *sp, int opt, u_int flags, char *str, u_long val)
  * opts_empty --
  *	Return 1 if the string option is invalid, 0 if it's OK.
  *
- * PUBLIC: int opts_empty(SCR *, int, int);
+ * PUBLIC: int opts_empty __P((SCR *, int, int));
  */
 int
-opts_empty(SCR *sp, int off, int silent)
+opts_empty(sp, off, silent)
+	SCR *sp;
+	int off, silent;
 {
 	char *p;
 
 	if ((p = O_STR(sp, off)) == NULL || p[0] == '\0') {
 		if (!silent)
 			msgq_str(sp, M_ERR, optlist[off].name,
-			    "No %s edit option specified");
+			    "305|No %s edit option specified");
 		return (1);
 	}
 	return (0);
@@ -785,10 +776,12 @@ opts_empty(SCR *sp, int off, int silent)
  * opts_dump --
  *	List the current values of selected options.
  *
- * PUBLIC: void opts_dump(SCR *, enum optdisp);
+ * PUBLIC: void opts_dump __P((SCR *, enum optdisp));
  */
 void
-opts_dump(SCR *sp, enum optdisp type)
+opts_dump(sp, type)
+	SCR *sp;
+	enum optdisp type;
 {
 	OPTLIST const *op;
 	int base, b_num, cnt, col, colwidth, curlen, s_num;
@@ -843,8 +836,8 @@ opts_dump(SCR *sp, enum optdisp type)
 				break;
 			case OPT_STR:
 				if (O_STR(sp, cnt) == O_D_STR(sp, cnt) ||
-				    (O_D_STR(sp, cnt) != NULL &&
-				    !strcmp(O_STR(sp, cnt), O_D_STR(sp, cnt))))
+				    O_D_STR(sp, cnt) != NULL &&
+				    !strcmp(O_STR(sp, cnt), O_D_STR(sp, cnt)))
 					continue;
 				break;
 			}
@@ -920,7 +913,9 @@ opts_dump(SCR *sp, enum optdisp type)
  *	Print out an option.
  */
 static int
-opts_print(SCR *sp, OPTLIST const *op)
+opts_print(sp, op)
+	SCR *sp;
+	OPTLIST const *op;
 {
 	int curlen, offset;
 
@@ -947,10 +942,12 @@ opts_print(SCR *sp, OPTLIST const *op)
  * opts_save --
  *	Write the current configuration to a file.
  *
- * PUBLIC: int opts_save(SCR *, FILE *);
+ * PUBLIC: int opts_save __P((SCR *, FILE *));
  */
 int
-opts_save(SCR *sp, FILE *fp)
+opts_save(sp, fp)
+	SCR *sp;
+	FILE *fp;
 {
 	OPTLIST const *op;
 	int ch, cnt;
@@ -1002,10 +999,11 @@ opts_save(SCR *sp, FILE *fp)
  * opts_search --
  *	Search for an option.
  *
- * PUBLIC: OPTLIST const *opts_search(char *);
+ * PUBLIC: OPTLIST const *opts_search __P((char *));
  */
 OPTLIST const *
-opts_search(char *name)
+opts_search(name)
+	char *name;
 {
 	OPTLIST const *op, *found;
 	OABBREV atmp, *ap;
@@ -1047,23 +1045,27 @@ opts_search(char *name)
  * opts_nomatch --
  *	Standard nomatch error message for options.
  *
- * PUBLIC: void opts_nomatch(SCR *, char *);
+ * PUBLIC: void opts_nomatch __P((SCR *, char *));
  */
 void
-opts_nomatch(SCR *sp, char *name)
+opts_nomatch(sp, name)
+	SCR *sp;
+	char *name;
 {
 	msgq_str(sp, M_ERR, name,
-	    "set: no %s option: 'set all' gives all option values");
+	    "033|set: no %s option: 'set all' gives all option values");
 }
 
 static int
-opts_abbcmp(const void *a, const void *b)
+opts_abbcmp(a, b)
+        const void *a, *b;
 {
         return(strcmp(((OABBREV *)a)->name, ((OABBREV *)b)->name));
 }
 
 static int
-opts_cmp(const void *a, const void *b)
+opts_cmp(a, b)
+        const void *a, *b;
 {
         return(strcmp(((OPTLIST *)a)->name, ((OPTLIST *)b)->name));
 }
@@ -1072,10 +1074,11 @@ opts_cmp(const void *a, const void *b)
  * opts_copy --
  *	Copy a screen's OPTION array.
  *
- * PUBLIC: int opts_copy(SCR *, SCR *);
+ * PUBLIC: int opts_copy __P((SCR *, SCR *));
  */
 int
-opts_copy(SCR *orig, SCR *sp)
+opts_copy(orig, sp)
+	SCR *orig, *sp;
 {
 	int cnt, rval;
 
@@ -1118,10 +1121,11 @@ nomem:			msgq(orig, M_SYSERR, NULL);
  * opts_free --
  *	Free all option strings
  *
- * PUBLIC: void opts_free(SCR *);
+ * PUBLIC: void opts_free __P((SCR *));
  */
 void
-opts_free(SCR *sp)
+opts_free(sp)
+	SCR *sp;
 {
 	int cnt;
 

@@ -1,5 +1,3 @@
-/*	$OpenBSD: rwalld.c,v 1.15 2016/04/25 15:43:34 deraadt Exp $	*/
-
 /*
  * Copyright (c) 1993 Christopher G. Demetriou
  * All rights reserved.
@@ -29,17 +27,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char rcsid[] = "$Id: rwalld.c,v 1.2 1996/12/22 03:41:18 tholo Exp $";
+#endif /* not lint */
+
+#include <unistd.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
 #include <pwd.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
 #include <errno.h>
-#include <unistd.h>
+#include <sys/socket.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <rpc/rpc.h>
 #include <rpcsvc/rwall.h>
 
@@ -49,34 +50,38 @@
 #define WALL_CMD "/usr/bin/wall -n"
 #endif
 
-void wallprog_1(struct svc_req *, SVCXPRT *);
+void wallprog_1();
 
 int from_inetd = 1;
 
-static void
-cleanup(int signo)
+void
+cleanup()
 {
-	(void) pmap_unset(WALLPROG, WALLVERS);		/* XXX signal race */
-	_exit(0);
+	(void) pmap_unset(WALLPROG, WALLVERS);
+	exit(0);
 }
 
-int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int sock = 0, proto = 0;
-	socklen_t fromlen;
-	struct sockaddr_storage from;
 	SVCXPRT *transp;
+	int sock = 0;
+	int proto = 0;
+	struct sockaddr_in from;
+	int fromlen;
 
-	struct passwd *pw = getpwnam("_rwalld");
-	if (pw == NULL) {
-		syslog(LOG_ERR, "no such user _rwalld");
-		exit(1);
+	if (geteuid() == 0) {
+		struct passwd *pep = getpwnam("nobody");
+		if (pep) {
+			seteuid(pep->pw_uid);
+			setuid(pep->pw_uid);
+		}
+		else {
+			seteuid(getuid());
+			setuid(getuid());
+		}
 	}
-
-	setgroups(1, &pw->pw_gid);
-	setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid);
-	setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid);
 
 	/*
 	 * See if inetd started us
@@ -106,8 +111,7 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 	if (!svc_register(transp, WALLPROG, WALLVERS, wallprog_1, proto)) {
-		syslog(LOG_ERR, "unable to register (WALLPROG, WALLVERS, %s).",
-		    proto ? "udp" : "(inetd)");
+		syslog(LOG_ERR, "unable to register (WALLPROG, WALLVERS, %s).", proto?"udp":"(inetd)");
 		exit(1);
 	}
 
@@ -118,7 +122,9 @@ main(int argc, char *argv[])
 }
 
 void *
-wallproc_wall_1_svc(char **s, struct svc_req *rqstp)
+wallproc_wall_1_svc(s, rqstp )
+	char **s;
+	struct svc_req *rqstp;
 {
 	FILE *pfp;
 
@@ -132,14 +138,16 @@ wallproc_wall_1_svc(char **s, struct svc_req *rqstp)
 }
 
 void
-wallprog_1(struct svc_req *rqstp, SVCXPRT *transp)
+wallprog_1(rqstp, transp)
+	struct svc_req *rqstp;
+	SVCXPRT *transp;
 {
-	char *(*local)(char **, struct svc_req *);
-	xdrproc_t xdr_argument, xdr_result;
 	union {
 		char *wallproc_wall_1_arg;
 	} argument;
 	char *result;
+	xdrproc_t xdr_argument, xdr_result;
+	char *(*local) __P((char **, struct svc_req *));
 
 	switch (rqstp->rq_proc) {
 	case NULLPROC:
@@ -149,8 +157,8 @@ wallprog_1(struct svc_req *rqstp, SVCXPRT *transp)
 	case WALLPROC_WALL:
 		xdr_argument = (xdrproc_t)xdr_wrapstring;
 		xdr_result = (xdrproc_t)xdr_void;
-		local = (char *(*)(char **, struct svc_req *))
-		    wallproc_wall_1_svc;
+		local = (char *(*) __P((char **, struct svc_req *)))
+			wallproc_wall_1_svc;
 		break;
 
 	default:

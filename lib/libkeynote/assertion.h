@@ -1,4 +1,4 @@
-/* $OpenBSD: assertion.h,v 1.5 2003/06/26 23:19:53 deraadt Exp $ */
+/* $OpenBSD: assertion.h,v 1.2 1999/05/31 20:09:58 angelos Exp $ */
 /*
  * The author of this code is Angelos D. Keromytis (angelos@dsl.cis.upenn.edu)
  *
@@ -7,7 +7,7 @@
  *
  * Copyright (C) 1998, 1999 by Angelos D. Keromytis.
  *	
- * Permission to use, copy, and modify this software with or without fee
+ * Permission to use, copy, and modify this software without fee
  * is hereby granted, provided that this entire notice is included in
  * all copies of any software which is or includes a copy or
  * modification of this software. 
@@ -74,8 +74,8 @@ struct assertion
     int			as_signeralgorithm;
     int                 as_result;
     int			as_error;
-    unsigned char	as_flags;
-    unsigned char	as_internalflags;
+    u_char		as_flags;
+    u_char 		as_internalflags;
     char		as_kresult;
     char                as_sigresult;
     struct keylist     *as_keylist;
@@ -135,16 +135,15 @@ extern int keynote_errno;
 extern int knlineno;
 
 /* Function prototypes */
-extern int keynote_env_add(char *, char *, struct environment **,
-                           unsigned int, int);
-extern char *keynote_env_lookup(char *, struct environment **, unsigned int);
-extern int keynote_env_delete(char *, struct environment **, unsigned int);
+extern int keynote_env_add(char *, char *, struct environment **, u_int, int);
+extern char *keynote_env_lookup(char *, struct environment **, u_int);
+extern int keynote_env_delete(char *, struct environment **, u_int);
 extern struct keylist *keynote_keylist_find(struct keylist *, char *);
 extern struct environment *keynote_get_envlist(char *, char *, int);
 extern struct assertion *keynote_parse_assertion(char *, int, int);
 extern int keynote_evaluate_authorizer(struct assertion *, int);
 extern struct assertion *keynote_find_assertion(void *, int, int);
-extern void keynote_env_cleanup(struct environment **, unsigned int);
+extern void keynote_env_cleanup(struct environment **, u_int);
 extern int keynote_get_key_algorithm(char *, int *, int *);
 extern int keynote_sigverify_assertion(struct assertion *);
 extern int keynote_evaluate_assertion(struct assertion *);
@@ -158,7 +157,7 @@ extern void keynote_keylist_free(struct keylist *);
 extern void keynote_free_env(struct environment *);
 extern int  keynote_in_authorizers(void *, int);
 extern int  keynote_sremove_assertion(int, int);
-extern unsigned int keynote_stringhash(char *, unsigned int);
+extern u_int keynote_stringhash(char *, u_int);
 extern char *keynote_get_private_key(char *);
 extern void keynote_free_key(void *, int);
 extern int keynote_evaluate_query(void);
@@ -167,6 +166,6 @@ extern void keynote_lex_remove(void *);
 extern void keynote_cleanup_kth(void);
 extern int keynote_retindex(char *);
 extern void knerror(char *);
-extern int knparse(void);
-extern int knlex(void);
+extern int knparse();
+extern int knlex();
 #endif /* __ASSERTION_H__ */

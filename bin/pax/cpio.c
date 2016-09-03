@@ -1,4 +1,4 @@
-/*	$OpenBSD: cpio.c,v 1.30 2016/08/26 04:11:16 guenther Exp $	*/
+/*	$OpenBSD: cpio.c,v 1.5 1997/07/25 18:58:28 mickey Exp $	*/
 /*	$NetBSD: cpio.c,v 1.5 1995/03/21 09:07:13 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,9 +38,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cpio.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: cpio.c,v 1.5 1997/07/25 18:58:28 mickey Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/stat.h>
-#include <limits.h>
+#include <sys/param.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -45,9 +58,9 @@
 #include "cpio.h"
 #include "extern.h"
 
-static int rd_nm(ARCHD *, int);
-static int rd_ln_nm(ARCHD *);
-static int com_rd(ARCHD *);
+static int rd_nm __P((register ARCHD *, int));
+static int rd_ln_nm __P((register ARCHD *));
+static int com_rd __P((register ARCHD *));
 
 /*
  * Routines which support the different cpio versions
@@ -66,8 +79,13 @@ static int swp_head;		/* binary cpio header byte swap */
  *      0 if ok -1 otherwise (the return values of lnk_start())
  */
 
+#ifdef __STDC__
 int
 cpio_strd(void)
+#else
+int
+cpio_strd()
+#endif
 {
 	return(lnk_start());
 }
@@ -79,11 +97,17 @@ cpio_strd(void)
  *	mode; looking for a valid header), and cnt (which starts at zero)
  *	which is used to count the number of empty blocks we have seen so far.
  * Return:
- *	0 if a valid trailer, -1 if not a valid trailer,
+ *	0 if a valid trailer, -1 if not a valid trailer, 
  */
 
+#ifdef __STDC__
 int
-cpio_trail(ARCHD *arcn, char *notused, int notused2, int *notused3)
+cpio_trail(register ARCHD *arcn)
+#else
+int
+cpio_trail(arcn)
+	register ARCHD *arcn;
+#endif
 {
 	/*
 	 * look for trailer id in file we are about to process
@@ -100,13 +124,19 @@ cpio_trail(ARCHD *arcn, char *notused, int notused2, int *notused3)
  *	0
  */
 
+#ifdef __STDC__
 static int
-com_rd(ARCHD *arcn)
+com_rd(register ARCHD *arcn)
+#else
+static int
+com_rd(arcn)
+	register ARCHD *arcn;
+#endif
 {
 	arcn->skip = 0;
 	arcn->pat = NULL;
 	arcn->org_name = arcn->name;
-	switch (arcn->sb.st_mode & C_IFMT) {
+	switch(arcn->sb.st_mode & C_IFMT) {
 	case C_ISFIFO:
 		arcn->type = PAX_FIF;
 		break;
@@ -143,14 +173,19 @@ com_rd(ARCHD *arcn)
 }
 
 /*
- * cpio_endwr()
+ * cpio_end_wr()
  *	write the special file with the name trailer in the proper format
  * Return:
  *	result of the write of the trailer from the cpio specific write func
  */
 
+#ifdef __STDC__
 int
 cpio_endwr(void)
+#else
+int
+cpio_endwr()
+#endif
 {
 	ARCHD last;
 
@@ -161,19 +196,26 @@ cpio_endwr(void)
 	last.nlen = sizeof(TRAILER) - 1;
 	last.type = PAX_REG;
 	last.sb.st_nlink = 1;
-	(void)strlcpy(last.name, TRAILER, sizeof(last.name));
+	(void)strcpy(last.name, TRAILER);
 	return((*frmt->wr)(&last));
 }
 
 /*
- * rd_nm()
+ * rd_nam()
  *	read in the file name which follows the cpio header
  * Return:
  *	0 if ok, -1 otherwise
  */
 
+#ifdef __STDC__
 static int
-rd_nm(ARCHD *arcn, int nsz)
+rd_nm(register ARCHD *arcn, int nsz)
+#else
+static int
+rd_nm(arcn, nsz)
+	register ARCHD *arcn;
+	int nsz;
+#endif
 {
 	/*
 	 * do not even try bogus values
@@ -202,16 +244,27 @@ rd_nm(ARCHD *arcn, int nsz)
  *	0 if ok, -1 otherwise
  */
 
+#ifdef __STDC__
 static int
-rd_ln_nm(ARCHD *arcn)
+rd_ln_nm(register ARCHD *arcn)
+#else
+static int
+rd_ln_nm(arcn)
+	register ARCHD *arcn;
+#endif
 {
 	/*
 	 * check the length specified for bogus values
 	 */
 	if ((arcn->sb.st_size == 0) ||
 	    (arcn->sb.st_size >= sizeof(arcn->ln_name))) {
-		paxwarn(1, "Cpio link name length is invalid: %llu",
+#		ifdef NET2_STAT
+		paxwarn(1, "Cpio link name length is invalid: %lu",
 		    arcn->sb.st_size);
+#		else
+		paxwarn(1, "Cpio link name length is invalid: %qu",
+		    arcn->sb.st_size);
+#		endif
 		return(-1);
 	}
 
@@ -248,8 +301,15 @@ rd_ln_nm(ARCHD *arcn)
  *      0 if a valid header, -1 otherwise
  */
 
+#ifdef __STDC__
 int
 cpio_id(char *blk, int size)
+#else
+int
+cpio_id(blk, size)
+	char *blk;
+	int size;
+#endif
 {
 	if ((size < sizeof(HD_CPIO)) ||
 	    (strncmp(blk, AMAGIC, sizeof(AMAGIC) - 1) != 0))
@@ -265,12 +325,18 @@ cpio_id(char *blk, int size)
  *	0 if a valid header, -1 otherwise.
  */
 
+#ifdef __STDC__
 int
-cpio_rd(ARCHD *arcn, char *buf)
+cpio_rd(register ARCHD *arcn, register char *buf)
+#else
+int
+cpio_rd(arcn, buf)
+	register ARCHD *arcn;
+	register char *buf;
+#endif
 {
-	int nsz;
-	unsigned long long val;
-	HD_CPIO *hd;
+	register int nsz;
+	register HD_CPIO *hd;
 
 	/*
 	 * check that this is a valid header, if not return -1
@@ -283,7 +349,7 @@ cpio_rd(ARCHD *arcn, char *buf)
 	 * byte oriented cpio (posix) does not have padding! extract the octal
 	 * ascii fields from the header
 	 */
-	arcn->pad = 0;
+	arcn->pad = 0L;
 	arcn->sb.st_dev = (dev_t)asc_ul(hd->c_dev, sizeof(hd->c_dev), OCT);
 	arcn->sb.st_ino = (ino_t)asc_ul(hd->c_ino, sizeof(hd->c_ino), OCT);
 	arcn->sb.st_mode = (mode_t)asc_ul(hd->c_mode, sizeof(hd->c_mode), OCT);
@@ -292,15 +358,16 @@ cpio_rd(ARCHD *arcn, char *buf)
 	arcn->sb.st_nlink = (nlink_t)asc_ul(hd->c_nlink, sizeof(hd->c_nlink),
 	    OCT);
 	arcn->sb.st_rdev = (dev_t)asc_ul(hd->c_rdev, sizeof(hd->c_rdev), OCT);
-	val = asc_ull(hd->c_mtime, sizeof(hd->c_mtime), OCT);
-	if ((time_t)val < 0 || (time_t)val != val)
-		arcn->sb.st_mtime = INT_MAX;			/* XXX 2038 */
-	else
-		arcn->sb.st_mtime = val;
-	arcn->sb.st_mtim.tv_nsec = 0;
-	arcn->sb.st_ctim = arcn->sb.st_atim = arcn->sb.st_mtim;
-	arcn->sb.st_size = (off_t)asc_ull(hd->c_filesize,sizeof(hd->c_filesize),
+	arcn->sb.st_mtime = (time_t)asc_ul(hd->c_mtime, sizeof(hd->c_mtime),
 	    OCT);
+	arcn->sb.st_ctime = arcn->sb.st_atime = arcn->sb.st_mtime;
+#	ifdef NET2_STAT
+	arcn->sb.st_size = (off_t)asc_ul(hd->c_filesize,sizeof(hd->c_filesize),
+	    OCT);
+#	else
+	arcn->sb.st_size = (off_t)asc_uqd(hd->c_filesize,sizeof(hd->c_filesize),
+	    OCT);
+#	endif
 
 	/*
 	 * check name size and if valid, read in the name of this entry (name
@@ -314,8 +381,8 @@ cpio_rd(ARCHD *arcn, char *buf)
 
 	if (((arcn->sb.st_mode&C_IFMT) != C_ISLNK)||(arcn->sb.st_size == 0)) {
 		/*
-		 * no link name to read for this file
-		 */
+	 	 * no link name to read for this file
+	 	 */
 		arcn->ln_nlen = 0;
 		arcn->ln_name[0] = '\0';
 		return(com_rd(arcn));
@@ -341,10 +408,15 @@ cpio_rd(ARCHD *arcn, char *buf)
  *      size of trailer header in this format
  */
 
+#ifdef __STDC__
 off_t
 cpio_endrd(void)
+#else
+off_t
+cpio_endrd()
+#endif
 {
-	return sizeof(HD_CPIO) + sizeof(TRAILER);
+	return((off_t)(sizeof(HD_CPIO) + sizeof(TRAILER)));
 }
 
 /*
@@ -354,8 +426,13 @@ cpio_endrd(void)
  *	0 if ok, -1 otherwise (what dev_start() returns)
  */
 
+#ifdef __STDC__
 int
 cpio_stwr(void)
+#else
+int
+cpio_stwr()
+#endif
 {
 	return(dev_start());
 }
@@ -369,34 +446,45 @@ cpio_stwr(void)
  *	data to write after the header, -1 if archive write failed
  */
 
+#ifdef __STDC__
 int
-cpio_wr(ARCHD *arcn)
+cpio_wr(register ARCHD *arcn)
+#else
+int
+cpio_wr(arcn)
+	register ARCHD *arcn;
+#endif
 {
-	HD_CPIO *hd;
-	int nsz;
+	register HD_CPIO *hd;
+	register int nsz;
 	char hdblk[sizeof(HD_CPIO)];
 
 	/*
 	 * check and repair truncated device and inode fields in the header
 	 */
-	if (map_dev(arcn, CPIO_MASK, CPIO_MASK) < 0)
+	if (map_dev(arcn, (u_long)CPIO_MASK, (u_long)CPIO_MASK) < 0)
 		return(-1);
 
-	arcn->pad = 0;
+	arcn->pad = 0L;
 	nsz = arcn->nlen + 1;
 	hd = (HD_CPIO *)hdblk;
 	if ((arcn->type != PAX_BLK) && (arcn->type != PAX_CHR))
 		arcn->sb.st_rdev = 0;
 
-	switch (arcn->type) {
+	switch(arcn->type) {
 	case PAX_CTG:
 	case PAX_REG:
 	case PAX_HRG:
 		/*
 		 * set data size for file data
 		 */
-		if (ull_asc(arcn->sb.st_size, hd->c_filesize,
+#		ifdef NET2_STAT
+		if (ul_asc((u_long)arcn->sb.st_size, hd->c_filesize,
 		    sizeof(hd->c_filesize), OCT)) {
+#		else
+		if (uqd_asc((u_quad_t)arcn->sb.st_size, hd->c_filesize,
+		    sizeof(hd->c_filesize), OCT)) {
+#		endif
 			paxwarn(1,"File is too large for cpio format %s",
 			    arcn->org_name);
 			return(1);
@@ -406,7 +494,7 @@ cpio_wr(ARCHD *arcn)
 		/*
 		 * set data size to hold link name
 		 */
-		if (ul_asc(arcn->ln_nlen, hd->c_filesize,
+		if (ul_asc((u_long)arcn->ln_nlen, hd->c_filesize,
 		    sizeof(hd->c_filesize), OCT))
 			goto out;
 		break;
@@ -414,7 +502,8 @@ cpio_wr(ARCHD *arcn)
 		/*
 		 * all other file types have no file data
 		 */
-		if (ul_asc(0, hd->c_filesize, sizeof(hd->c_filesize), OCT))
+		if (ul_asc((u_long)0, hd->c_filesize, sizeof(hd->c_filesize),
+		     OCT))
 			goto out;
 		break;
 	}
@@ -422,17 +511,24 @@ cpio_wr(ARCHD *arcn)
 	/*
 	 * copy the values to the header using octal ascii
 	 */
-	if (ul_asc(MAGIC, hd->c_magic, sizeof(hd->c_magic), OCT) ||
-	    ul_asc(arcn->sb.st_dev, hd->c_dev, sizeof(hd->c_dev), OCT) ||
-	    ul_asc(arcn->sb.st_ino, hd->c_ino, sizeof(hd->c_ino), OCT) ||
-	    ul_asc(arcn->sb.st_mode, hd->c_mode, sizeof(hd->c_mode), OCT) ||
-	    ul_asc(arcn->sb.st_uid, hd->c_uid, sizeof(hd->c_uid), OCT) ||
-	    ul_asc(arcn->sb.st_gid, hd->c_gid, sizeof(hd->c_gid), OCT) ||
-	    ul_asc(arcn->sb.st_nlink, hd->c_nlink, sizeof(hd->c_nlink), OCT) ||
-	    ul_asc(arcn->sb.st_rdev, hd->c_rdev, sizeof(hd->c_rdev), OCT) ||
-	    ull_asc(arcn->sb.st_mtime < 0 ? 0 : arcn->sb.st_mtime, hd->c_mtime,
-		sizeof(hd->c_mtime), OCT) ||
-	    ul_asc(nsz, hd->c_namesize, sizeof(hd->c_namesize), OCT))
+	if (ul_asc((u_long)MAGIC, hd->c_magic, sizeof(hd->c_magic), OCT) ||
+	    ul_asc((u_long)arcn->sb.st_dev, hd->c_dev, sizeof(hd->c_dev),
+		OCT) ||
+	    ul_asc((u_long)arcn->sb.st_ino, hd->c_ino, sizeof(hd->c_ino),
+		OCT) ||
+	    ul_asc((u_long)arcn->sb.st_mode, hd->c_mode, sizeof(hd->c_mode),
+		OCT) ||
+	    ul_asc((u_long)arcn->sb.st_uid, hd->c_uid, sizeof(hd->c_uid),
+		OCT) ||
+	    ul_asc((u_long)arcn->sb.st_gid, hd->c_gid, sizeof(hd->c_gid),
+		OCT) ||
+	    ul_asc((u_long)arcn->sb.st_nlink, hd->c_nlink, sizeof(hd->c_nlink),
+		 OCT) ||
+	    ul_asc((u_long)arcn->sb.st_rdev, hd->c_rdev, sizeof(hd->c_rdev),
+		OCT) ||
+	    ul_asc((u_long)arcn->sb.st_mtime,hd->c_mtime,sizeof(hd->c_mtime),
+		OCT) ||
+	    ul_asc((u_long)nsz, hd->c_namesize, sizeof(hd->c_namesize), OCT))
 		goto out;
 
 	/*
@@ -448,7 +544,8 @@ cpio_wr(ARCHD *arcn)
 	 * if this file has data, we are done. The caller will write the file
 	 * data, if we are link tell caller we are done, go to next file
 	 */
-	if (PAX_IS_REG(arcn->type) || (arcn->type == PAX_HRG))
+	if ((arcn->type == PAX_CTG) || (arcn->type == PAX_REG) ||
+	    (arcn->type == PAX_HRG))
 		return(0);
 	if (arcn->type != PAX_SLK)
 		return(1);
@@ -479,14 +576,21 @@ cpio_wr(ARCHD *arcn)
 /*
  * vcpio_id()
  *      determine if a block given to us is a valid system VR4 cpio header
- *	WITHOUT crc. WATCH it the magic cookies are in OCTAL, the header
+ *	WITHOUT crc. WATCH it the magic cookies are in OCTAL, the header 
  *	uses HEX
  * Return:
  *      0 if a valid header, -1 otherwise
  */
 
+#ifdef __STDC__
 int
 vcpio_id(char *blk, int size)
+#else
+int
+vcpio_id(blk, size)
+	char *blk;
+	int size;
+#endif
 {
 	if ((size < sizeof(HD_VCPIO)) ||
 	    (strncmp(blk, AVMAGIC, sizeof(AVMAGIC) - 1) != 0))
@@ -502,8 +606,15 @@ vcpio_id(char *blk, int size)
  *      0 if a valid header, -1 otherwise
  */
 
+#ifdef __STDC__
 int
 crc_id(char *blk, int size)
+#else
+int
+crc_id(blk, size)
+	char *blk;
+	int size;
+#endif
 {
 	if ((size < sizeof(HD_VCPIO)) ||
 	    (strncmp(blk, AVCMAGIC, sizeof(AVCMAGIC) - 1) != 0))
@@ -518,8 +629,13 @@ crc_id(char *blk, int size)
  *      0 if ok -1 otherwise (the return values of lnk_start())
  */
 
+#ifdef __STDC__
 int
 crc_strd(void)
+#else
+int
+crc_strd()
+#endif
 {
 	docrc = 1;
 	return(lnk_start());
@@ -533,13 +649,20 @@ crc_strd(void)
  *	0 if a valid header, -1 otherwise.
  */
 
+#ifdef __STDC__
 int
-vcpio_rd(ARCHD *arcn, char *buf)
+vcpio_rd(register ARCHD *arcn, register char *buf)
+#else
+int
+vcpio_rd(arcn, buf)
+	register ARCHD *arcn;
+	register char *buf;
+#endif
 {
-	HD_VCPIO *hd;
+	register HD_VCPIO *hd;
 	dev_t devminor;
 	dev_t devmajor;
-	int nsz;
+	register int nsz;
 
 	/*
 	 * during the id phase it was determined if we were using CRC, use the
@@ -554,7 +677,7 @@ vcpio_rd(ARCHD *arcn, char *buf)
 	}
 
 	hd = (HD_VCPIO *)buf;
-	arcn->pad = 0;
+	arcn->pad = 0L;
 
 	/*
 	 * extract the hex ascii fields from the header
@@ -564,10 +687,14 @@ vcpio_rd(ARCHD *arcn, char *buf)
 	arcn->sb.st_uid = (uid_t)asc_ul(hd->c_uid, sizeof(hd->c_uid), HEX);
 	arcn->sb.st_gid = (gid_t)asc_ul(hd->c_gid, sizeof(hd->c_gid), HEX);
 	arcn->sb.st_mtime = (time_t)asc_ul(hd->c_mtime,sizeof(hd->c_mtime),HEX);
-	arcn->sb.st_mtim.tv_nsec = 0;
-	arcn->sb.st_ctim = arcn->sb.st_atim = arcn->sb.st_mtim;
-	arcn->sb.st_size = (off_t)asc_ull(hd->c_filesize,
+	arcn->sb.st_ctime = arcn->sb.st_atime = arcn->sb.st_mtime;
+#	ifdef NET2_STAT
+	arcn->sb.st_size = (off_t)asc_ul(hd->c_filesize,
 	    sizeof(hd->c_filesize), HEX);
+#	else
+	arcn->sb.st_size = (off_t)asc_uqd(hd->c_filesize,
+	    sizeof(hd->c_filesize), HEX);
+#	endif
 	arcn->sb.st_nlink = (nlink_t)asc_ul(hd->c_nlink, sizeof(hd->c_nlink),
 	    HEX);
 	devmajor = (dev_t)asc_ul(hd->c_maj, sizeof(hd->c_maj), HEX);
@@ -589,9 +716,9 @@ vcpio_rd(ARCHD *arcn, char *buf)
 		return(-1);
 
 	/*
-	 * skip padding. header + filename is aligned to 4 byte boundaries
+	 * skip padding. header + filename is aligned to 4 byte boundries
 	 */
-	if (rd_skip(VCPIO_PAD(sizeof(HD_VCPIO) + nsz)) < 0)
+	if (rd_skip((off_t)(VCPIO_PAD(sizeof(HD_VCPIO) + nsz))) < 0)
 		return(-1);
 
 	/*
@@ -612,7 +739,7 @@ vcpio_rd(ARCHD *arcn, char *buf)
 	 * read in the link name and skip over the padding
 	 */
 	if ((rd_ln_nm(arcn) < 0) ||
-	    (rd_skip(VCPIO_PAD(arcn->sb.st_size)) < 0))
+	    (rd_skip((off_t)(VCPIO_PAD(arcn->sb.st_size))) < 0))
 		return(-1);
 
 	/*
@@ -628,11 +755,16 @@ vcpio_rd(ARCHD *arcn, char *buf)
  *      size of trailer header in this format
  */
 
+#ifdef __STDC__
 off_t
 vcpio_endrd(void)
+#else
+off_t
+vcpio_endrd()
+#endif
 {
-	return sizeof(HD_VCPIO) + sizeof(TRAILER) +
-		(VCPIO_PAD(sizeof(HD_VCPIO) + sizeof(TRAILER)));
+	return((off_t)(sizeof(HD_VCPIO) + sizeof(TRAILER) +
+		(VCPIO_PAD(sizeof(HD_VCPIO) + sizeof(TRAILER)))));
 }
 
 /*
@@ -642,8 +774,13 @@ vcpio_endrd(void)
  *	0 if ok, -1 otherwise (what dev_start() returns)
  */
 
+#ifdef __STDC__
 int
 crc_stwr(void)
+#else
+int
+crc_stwr()
+#endif
 {
 	docrc = 1;
 	return(dev_start());
@@ -658,10 +795,16 @@ crc_stwr(void)
  *	NO data to write after the header, -1 if archive write failed
  */
 
+#ifdef __STDC__
 int
-vcpio_wr(ARCHD *arcn)
+vcpio_wr(register ARCHD *arcn)
+#else
+int
+vcpio_wr(arcn)
+	register ARCHD *arcn;
+#endif
 {
-	HD_VCPIO *hd;
+	register HD_VCPIO *hd;
 	unsigned int nsz;
 	char hdblk[sizeof(HD_VCPIO)];
 
@@ -669,7 +812,7 @@ vcpio_wr(ARCHD *arcn)
 	 * check and repair truncated device and inode fields in the cpio
 	 * header
 	 */
-	if (map_dev(arcn, VCPIO_MASK, VCPIO_MASK) < 0)
+	if (map_dev(arcn, (u_long)VCPIO_MASK, (u_long)VCPIO_MASK) < 0)
 		return(-1);
 	nsz = arcn->nlen + 1;
 	hd = (HD_VCPIO *)hdblk;
@@ -681,16 +824,19 @@ vcpio_wr(ARCHD *arcn)
 	 * file data crc's, and the crc if needed.
 	 */
 	if (docrc) {
-		if (ul_asc(VCMAGIC, hd->c_magic, sizeof(hd->c_magic), OCT) ||
-		    ul_asc(arcn->crc,hd->c_chksum,sizeof(hd->c_chksum), HEX))
+		if (ul_asc((u_long)VCMAGIC, hd->c_magic, sizeof(hd->c_magic),
+	    		OCT) ||
+		    ul_asc((u_long)arcn->crc,hd->c_chksum,sizeof(hd->c_chksum),
+	    		HEX))
 			goto out;
 	} else {
-		if (ul_asc(VMAGIC, hd->c_magic, sizeof(hd->c_magic), OCT) ||
-		    ul_asc(0, hd->c_chksum, sizeof(hd->c_chksum),HEX))
+		if (ul_asc((u_long)VMAGIC, hd->c_magic, sizeof(hd->c_magic),
+	    		OCT) ||
+		    ul_asc((u_long)0L, hd->c_chksum, sizeof(hd->c_chksum),HEX))
 			goto out;
 	}
 
-	switch (arcn->type) {
+	switch(arcn->type) {
 	case PAX_CTG:
 	case PAX_REG:
 	case PAX_HRG:
@@ -699,8 +845,13 @@ vcpio_wr(ARCHD *arcn)
 		 * much to pad.
 		 */
 		arcn->pad = VCPIO_PAD(arcn->sb.st_size);
-		if (ull_asc(arcn->sb.st_size, hd->c_filesize,
+#		ifdef NET2_STAT
+		if (ul_asc((u_long)arcn->sb.st_size, hd->c_filesize,
 		    sizeof(hd->c_filesize), HEX)) {
+#		else
+		if (uqd_asc((u_quad_t)arcn->sb.st_size, hd->c_filesize,
+		    sizeof(hd->c_filesize), HEX)) {
+#		endif
 			paxwarn(1,"File is too large for sv4cpio format %s",
 			    arcn->org_name);
 			return(1);
@@ -711,8 +862,8 @@ vcpio_wr(ARCHD *arcn)
 		 * no file data for the caller to process, the file data has
 		 * the size of the link
 		 */
-		arcn->pad = 0;
-		if (ul_asc(arcn->ln_nlen, hd->c_filesize,
+		arcn->pad = 0L;
+		if (ul_asc((u_long)arcn->ln_nlen, hd->c_filesize,
 		    sizeof(hd->c_filesize), HEX))
 			goto out;
 		break;
@@ -720,8 +871,9 @@ vcpio_wr(ARCHD *arcn)
 		/*
 		 * no file data for the caller to process
 		 */
-		arcn->pad = 0;
-		if (ul_asc(0, hd->c_filesize, sizeof(hd->c_filesize), HEX))
+		arcn->pad = 0L;
+		if (ul_asc((u_long)0L, hd->c_filesize, sizeof(hd->c_filesize),
+		    HEX))
 			goto out;
 		break;
 	}
@@ -729,18 +881,27 @@ vcpio_wr(ARCHD *arcn)
 	/*
 	 * set the other fields in the header
 	 */
-	if (ul_asc(arcn->sb.st_ino, hd->c_ino, sizeof(hd->c_ino), HEX) ||
-	    ul_asc(arcn->sb.st_mode, hd->c_mode, sizeof(hd->c_mode), HEX) ||
-	    ul_asc(arcn->sb.st_uid, hd->c_uid, sizeof(hd->c_uid), HEX) ||
-	    ul_asc(arcn->sb.st_gid, hd->c_gid, sizeof(hd->c_gid), HEX) ||
-	    ul_asc(arcn->sb.st_mtime < 0 ? 0 : arcn->sb.st_mtime, hd->c_mtime,
-		sizeof(hd->c_mtime), HEX) ||
-	    ul_asc(arcn->sb.st_nlink, hd->c_nlink, sizeof(hd->c_nlink), HEX) ||
-	    ul_asc(MAJOR(arcn->sb.st_dev),hd->c_maj, sizeof(hd->c_maj), HEX) ||
-	    ul_asc(MINOR(arcn->sb.st_dev),hd->c_min, sizeof(hd->c_min), HEX) ||
-	    ul_asc(MAJOR(arcn->sb.st_rdev),hd->c_rmaj,sizeof(hd->c_maj), HEX) ||
-	    ul_asc(MINOR(arcn->sb.st_rdev),hd->c_rmin,sizeof(hd->c_min), HEX) ||
-	    ul_asc(nsz, hd->c_namesize, sizeof(hd->c_namesize), HEX))
+	if (ul_asc((u_long)arcn->sb.st_ino, hd->c_ino, sizeof(hd->c_ino),
+		HEX) ||
+	    ul_asc((u_long)arcn->sb.st_mode, hd->c_mode, sizeof(hd->c_mode),
+		HEX) ||
+	    ul_asc((u_long)arcn->sb.st_uid, hd->c_uid, sizeof(hd->c_uid),
+		HEX) ||
+	    ul_asc((u_long)arcn->sb.st_gid, hd->c_gid, sizeof(hd->c_gid),
+    		HEX) ||
+	    ul_asc((u_long)arcn->sb.st_mtime, hd->c_mtime, sizeof(hd->c_mtime),
+    		HEX) ||
+	    ul_asc((u_long)arcn->sb.st_nlink, hd->c_nlink, sizeof(hd->c_nlink),
+    		HEX) ||
+	    ul_asc((u_long)MAJOR(arcn->sb.st_dev),hd->c_maj, sizeof(hd->c_maj),
+		HEX) ||
+	    ul_asc((u_long)MINOR(arcn->sb.st_dev),hd->c_min, sizeof(hd->c_min),
+		HEX) ||
+	    ul_asc((u_long)MAJOR(arcn->sb.st_rdev),hd->c_rmaj,sizeof(hd->c_maj),
+		HEX) ||
+	    ul_asc((u_long)MINOR(arcn->sb.st_rdev),hd->c_rmin,sizeof(hd->c_min),
+		HEX) ||
+	    ul_asc((u_long)nsz, hd->c_namesize, sizeof(hd->c_namesize), HEX))
 		goto out;
 
 	/*
@@ -748,7 +909,7 @@ vcpio_wr(ARCHD *arcn)
 	 */
 	if ((wr_rdbuf(hdblk, (int)sizeof(HD_VCPIO)) < 0) ||
 	    (wr_rdbuf(arcn->name, (int)nsz) < 0)  ||
-	    (wr_skip(VCPIO_PAD(sizeof(HD_VCPIO) + nsz)) < 0)) {
+	    (wr_skip((off_t)(VCPIO_PAD(sizeof(HD_VCPIO) + nsz))) < 0)) {
 		paxwarn(1,"Could not write sv4cpio header for %s",arcn->org_name);
 		return(-1);
 	}
@@ -756,7 +917,8 @@ vcpio_wr(ARCHD *arcn)
 	/*
 	 * if we have file data, tell the caller we are done, copy the file
 	 */
-	if (PAX_IS_REG(arcn->type) || (arcn->type == PAX_HRG))
+	if ((arcn->type == PAX_CTG) || (arcn->type == PAX_REG) ||
+	    (arcn->type == PAX_HRG))
 		return(0);
 
 	/*
@@ -769,7 +931,7 @@ vcpio_wr(ARCHD *arcn)
 	 * write the link name, tell the caller we are done.
 	 */
 	if ((wr_rdbuf(arcn->ln_name, arcn->ln_nlen) < 0) ||
-	    (wr_skip(VCPIO_PAD(arcn->ln_nlen)) < 0)) {
+	    (wr_skip((off_t)(VCPIO_PAD(arcn->ln_nlen))) < 0)) {
 		paxwarn(1,"Could not write sv4cpio link name for %s",
 		    arcn->org_name);
 		return(-1);
@@ -796,8 +958,15 @@ vcpio_wr(ARCHD *arcn)
  *      0 if a valid header, -1 otherwise
  */
 
+#ifdef __STDC__
 int
 bcpio_id(char *blk, int size)
+#else
+int
+bcpio_id(blk, size)
+	char *blk;
+	int size;
+#endif
 {
 	if (size < sizeof(HD_BCPIO))
 		return(-1);
@@ -824,11 +993,18 @@ bcpio_id(char *blk, int size)
  *	0 if a valid header, -1 otherwise.
  */
 
+#ifdef __STDC__
 int
-bcpio_rd(ARCHD *arcn, char *buf)
+bcpio_rd(register ARCHD *arcn, register char *buf)
+#else
+int
+bcpio_rd(arcn, buf)
+	register ARCHD *arcn;
+	register char *buf;
+#endif
 {
-	HD_BCPIO *hd;
-	int nsz;
+	register HD_BCPIO *hd;
+	register int nsz;
 
 	/*
 	 * check the header
@@ -836,11 +1012,11 @@ bcpio_rd(ARCHD *arcn, char *buf)
 	if (bcpio_id(buf, sizeof(HD_BCPIO)) < 0)
 		return(-1);
 
-	arcn->pad = 0;
+	arcn->pad = 0L;
 	hd = (HD_BCPIO *)buf;
 	if (swp_head) {
 		/*
-		 * header has swapped bytes on 16 bit boundaries
+		 * header has swapped bytes on 16 bit boundries
 		 */
 		arcn->sb.st_dev = (dev_t)(RSHRT_EXT(hd->h_dev));
 		arcn->sb.st_ino = (ino_t)(RSHRT_EXT(hd->h_ino));
@@ -872,8 +1048,7 @@ bcpio_rd(ARCHD *arcn, char *buf)
 			((off_t)(SHRT_EXT(hd->h_filesize_2)));
 		nsz = (int)(SHRT_EXT(hd->h_namesize));
 	}
-	arcn->sb.st_mtim.tv_nsec = 0;
-	arcn->sb.st_ctim = arcn->sb.st_atim = arcn->sb.st_mtim;
+	arcn->sb.st_ctime = arcn->sb.st_atime = arcn->sb.st_mtime;
 
 	/*
 	 * check the file name size, if bogus give up. otherwise read the file
@@ -886,9 +1061,9 @@ bcpio_rd(ARCHD *arcn, char *buf)
 		return(-1);
 
 	/*
-	 * header + file name are aligned to 2 byte boundaries, skip if needed
+	 * header + file name are aligned to 2 byte boundries, skip if needed
 	 */
-	if (rd_skip(BCPIO_PAD(sizeof(HD_BCPIO) + nsz)) < 0)
+	if (rd_skip((off_t)(BCPIO_PAD(sizeof(HD_BCPIO) + nsz))) < 0)
 		return(-1);
 
 	/*
@@ -906,7 +1081,7 @@ bcpio_rd(ARCHD *arcn, char *buf)
 	}
 
 	if ((rd_ln_nm(arcn) < 0) ||
-	    (rd_skip(BCPIO_PAD(arcn->sb.st_size)) < 0))
+	    (rd_skip((off_t)(BCPIO_PAD(arcn->sb.st_size))) < 0))
 		return(-1);
 
 	/*
@@ -922,29 +1097,40 @@ bcpio_rd(ARCHD *arcn, char *buf)
  *      size of trailer header in this format
  */
 
+#ifdef __STDC__
 off_t
 bcpio_endrd(void)
+#else
+off_t
+bcpio_endrd()
+#endif
 {
-	return sizeof(HD_BCPIO) + sizeof(TRAILER) +
-		(BCPIO_PAD(sizeof(HD_BCPIO) + sizeof(TRAILER)));
+	return((off_t)(sizeof(HD_BCPIO) + sizeof(TRAILER) +
+		(BCPIO_PAD(sizeof(HD_BCPIO) + sizeof(TRAILER)))));
 }
 
 /*
  * bcpio_wr()
  *	copy the data in the ARCHD to buffer in old binary cpio format
  *	There is a real chance of field overflow with this critter. So we
- *	always check the conversion is ok. nobody in their right mind
- *	should write an archive in this format...
+ *	always check the conversion is ok. nobody in his their right mind
+ *	should write an achive in this format...
  * Return
  *      0 if file has data to be written after the header, 1 if file has NO
  *	data to write after the header, -1 if archive write failed
  */
 
+#ifdef __STDC__
 int
-bcpio_wr(ARCHD *arcn)
+bcpio_wr(register ARCHD *arcn)
+#else
+int
+bcpio_wr(arcn)
+	register ARCHD *arcn;
+#endif
 {
-	HD_BCPIO *hd;
-	int nsz;
+	register HD_BCPIO *hd;
+	register int nsz;
 	char hdblk[sizeof(HD_BCPIO)];
 	off_t t_offt;
 	int t_int;
@@ -954,14 +1140,14 @@ bcpio_wr(ARCHD *arcn)
 	 * check and repair truncated device and inode fields in the cpio
 	 * header
 	 */
-	if (map_dev(arcn, BCPIO_MASK, BCPIO_MASK) < 0)
+	if (map_dev(arcn, (u_long)BCPIO_MASK, (u_long)BCPIO_MASK) < 0)
 		return(-1);
 
 	if ((arcn->type != PAX_BLK) && (arcn->type != PAX_CHR))
 		arcn->sb.st_rdev = 0;
 	hd = (HD_BCPIO *)hdblk;
 
-	switch (arcn->type) {
+	switch(arcn->type) {
 	case PAX_CTG:
 	case PAX_REG:
 	case PAX_HRG:
@@ -987,7 +1173,7 @@ bcpio_wr(ARCHD *arcn)
 		 * no file data for the caller to process, the file data has
 		 * the size of the link
 		 */
-		arcn->pad = 0;
+		arcn->pad = 0L;
 		hd->h_filesize_1[0] = CHR_WR_0(arcn->ln_nlen);
 		hd->h_filesize_1[1] = CHR_WR_1(arcn->ln_nlen);
 		hd->h_filesize_2[0] = CHR_WR_2(arcn->ln_nlen);
@@ -1001,7 +1187,7 @@ bcpio_wr(ARCHD *arcn)
 		/*
 		 * no file data for the caller to process
 		 */
-		arcn->pad = 0;
+		arcn->pad = 0L;
 		hd->h_filesize_1[0] = (char)0;
 		hd->h_filesize_1[1] = (char)0;
 		hd->h_filesize_2[0] = (char)0;
@@ -1042,19 +1228,14 @@ bcpio_wr(ARCHD *arcn)
 	hd->h_rdev[1] = CHR_WR_3(arcn->sb.st_rdev);
 	if (arcn->sb.st_rdev != (dev_t)(SHRT_EXT(hd->h_rdev)))
 		goto out;
-	if (arcn->sb.st_mtime > 0) {
-		hd->h_mtime_1[0] = CHR_WR_0(arcn->sb.st_mtime);
-		hd->h_mtime_1[1] = CHR_WR_1(arcn->sb.st_mtime);
-		hd->h_mtime_2[0] = CHR_WR_2(arcn->sb.st_mtime);
-		hd->h_mtime_2[1] = CHR_WR_3(arcn->sb.st_mtime);
-		t_timet = (time_t)SHRT_EXT(hd->h_mtime_1);
-		t_timet =  t_timet << 16 | (time_t)SHRT_EXT(hd->h_mtime_2);
-		if (arcn->sb.st_mtime != t_timet)
-			goto out;
-	} else {
-		hd->h_mtime_1[0] = hd->h_mtime_1[1] = 0;
-		hd->h_mtime_2[0] = hd->h_mtime_2[1] = 0;
-	}
+	hd->h_mtime_1[0] = CHR_WR_0(arcn->sb.st_mtime);
+	hd->h_mtime_1[1] = CHR_WR_1(arcn->sb.st_mtime);
+	hd->h_mtime_2[0] = CHR_WR_2(arcn->sb.st_mtime);
+	hd->h_mtime_2[1] = CHR_WR_3(arcn->sb.st_mtime);
+	t_timet = (time_t)(SHRT_EXT(hd->h_mtime_1));
+	t_timet =  (t_timet << 16) | ((time_t)(SHRT_EXT(hd->h_mtime_2)));
+	if (arcn->sb.st_mtime != t_timet)
+		goto out;
 	nsz = arcn->nlen + 1;
 	hd->h_namesize[0] = CHR_WR_2(nsz);
 	hd->h_namesize[1] = CHR_WR_3(nsz);
@@ -1066,7 +1247,7 @@ bcpio_wr(ARCHD *arcn)
 	 */
 	if ((wr_rdbuf(hdblk, (int)sizeof(HD_BCPIO)) < 0) ||
 	    (wr_rdbuf(arcn->name, nsz) < 0) ||
-	    (wr_skip(BCPIO_PAD(sizeof(HD_BCPIO) + nsz)) < 0)) {
+	    (wr_skip((off_t)(BCPIO_PAD(sizeof(HD_BCPIO) + nsz))) < 0)) {
 		paxwarn(1, "Could not write bcpio header for %s", arcn->org_name);
 		return(-1);
 	}
@@ -1074,7 +1255,8 @@ bcpio_wr(ARCHD *arcn)
 	/*
 	 * if we have file data, tell the caller we are done
 	 */
-	if (PAX_IS_REG(arcn->type) || (arcn->type == PAX_HRG))
+	if ((arcn->type == PAX_CTG) || (arcn->type == PAX_REG) ||
+	    (arcn->type == PAX_HRG))
 		return(0);
 
 	/*
@@ -1087,7 +1269,7 @@ bcpio_wr(ARCHD *arcn)
 	 * write the link name, tell the caller we are done.
 	 */
 	if ((wr_rdbuf(arcn->ln_name, arcn->ln_nlen) < 0) ||
-	    (wr_skip(BCPIO_PAD(arcn->ln_nlen)) < 0)) {
+	    (wr_skip((off_t)(BCPIO_PAD(arcn->ln_nlen))) < 0)) {
 		paxwarn(1,"Could not write bcpio link name for %s",arcn->org_name);
 		return(-1);
 	}

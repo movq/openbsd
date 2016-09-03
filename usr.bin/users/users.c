@@ -1,4 +1,4 @@
-/*	$OpenBSD: users.c,v 1.13 2015/10/09 01:37:09 deraadt Exp $	*/
+/*	$OpenBSD: users.c,v 1.3 1997/01/15 23:43:30 millert Exp $	*/
 /*	$NetBSD: users.c,v 1.5 1994/12/20 15:58:19 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,31 +34,41 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1987, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-#include <err.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)users.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: users.c,v 1.3 1997/01/15 23:43:30 millert Exp $";
+#endif /* not lint */
+
+#include <sys/types.h>
+#include <utmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <utmp.h>
+#include <err.h>
 
 typedef char	namebuf[UT_NAMESIZE];
 
-int scmp(const void *, const void *);
+int scmp __P((const void *, const void *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	namebuf *names = NULL;
-	int ncnt = 0;
-	int nmax = 0;
+	register int ncnt = 0;
+	register int nmax = 0;
 	int cnt;
 	struct utmp utmp;
 	int ch;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	while ((ch = getopt(argc, argv, "")) != -1)
 		switch(ch) {
@@ -74,18 +88,14 @@ main(int argc, char *argv[])
 	while (fread((char *)&utmp, sizeof(utmp), 1, stdin) == 1) {
 		if (*utmp.ut_name) {
 			if (ncnt >= nmax) {
-				size_t newmax = nmax + 32;
-				namebuf *newnames;
+				nmax += 32;
+				names = realloc(names, 
+					sizeof (*names) * nmax);
 
-				newnames = reallocarray(names, newmax,
-				    sizeof(*names));
-
-				if (newnames == NULL) {
+				if (!names) {
 					err(1, NULL);
 					/* NOTREACHED */
 				}
-				names = newnames;
-				nmax = newmax;
 			}
 
 			(void)strncpy(names[ncnt], utmp.ut_name, UT_NAMESIZE);
@@ -105,7 +115,8 @@ main(int argc, char *argv[])
 }
 
 int
-scmp(const void *p, const void *q)
+scmp(p, q)
+	const void *p, *q;
 {
 	return(strncmp((char *) p, (char *) q, UT_NAMESIZE));
 }

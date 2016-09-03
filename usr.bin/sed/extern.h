@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.h,v 1.11 2015/10/26 14:08:47 mmcc Exp $ */
+/* *	$OpenBSD: extern.h,v 1.2 1996/06/26 05:39:06 deraadt Exp $*/
 /*-
  * Copyright (c) 1992 Diomidis Spinellis.
  * Copyright (c) 1992, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,21 +43,18 @@ extern struct s_appends *appends;
 extern regmatch_t *match;
 extern size_t maxnsub;
 extern u_long linenum;
-extern size_t appendnum;
-extern int Eflag, aflag, eflag, nflag;
-extern const char *fname, *outfname;
-extern FILE *infile, *outfile;
+extern int appendnum;
+extern int lastline;
+extern int aflag, eflag, nflag;
+extern char *fname;
 
-void	 cfclose(struct s_command *, struct s_command *);
-void	 compile(void);
-void	 cspace(SPACE *, const char *, size_t, enum e_spflag);
-char	*cu_fgets(char **, size_t *);
-void	 error(int, const char *, ...);
-int	 mf_fgets(SPACE *, enum e_spflag);
-int	 lastline(void);
-void	 process(void);
-void	 resetranges(void);
-char	*strregerror(int, regex_t *);
-void	*xmalloc(size_t);
-void	*xreallocarray(void *, size_t, size_t);
-void	*xrealloc(void *, size_t);
+void	 cfclose __P((struct s_command *, struct s_command *));
+void	 compile __P((void));
+void	 cspace __P((SPACE *, char *, size_t, enum e_spflag));
+char	*cu_fgets __P((char *, int));
+void	 err __P((int, const char *, ...));
+int	 mf_fgets __P((SPACE *, enum e_spflag));
+void	 process __P((void));
+char	*strregerror __P((int, regex_t *));
+void	*xmalloc __P((u_int));
+void	*xrealloc __P((void *, u_int));

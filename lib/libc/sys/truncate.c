@@ -1,4 +1,3 @@
-/*	$OpenBSD: truncate.c,v 1.14 2015/09/11 13:26:20 guenther Exp $ */
 /*
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,22 +31,26 @@
  * SUCH DAMAGE.
  */
 
+#if defined(SYSLIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: truncate.c,v 1.6 1997/04/26 08:50:13 tholo Exp $";
+#endif /* SYSLIBC_SCCS and not lint */
+
+#include <sys/types.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 
-int	__syscall(quad_t, ...);
-PROTO_NORMAL(__syscall);
-
-DEF_SYS(truncate);
-
+#ifdef lint
+quad_t __syscall(quad_t, ...);
+#endif
 
 /*
  * This function provides 64-bit offset padding that
  * is not supplied by GCC 1.X but is supplied by GCC 2.X.
  */
 int
-truncate(const char *path, off_t length)
+truncate(path, length)
+	const char *path;
+	off_t length;
 {
-	return (__syscall(SYS_truncate, path, 0, length));
+
+	return(__syscall((quad_t)SYS_truncate, path, 0, length));
 }
-DEF_WEAK(truncate);

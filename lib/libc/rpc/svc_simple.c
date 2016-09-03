@@ -1,39 +1,41 @@
-/*	$OpenBSD: svc_simple.c,v 1.13 2015/09/01 19:54:01 deraadt Exp $ */
-
 /*
- * Copyright (c) 2010, Oracle America, Inc.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the "Oracle America, Inc." nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *   COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- *   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- *   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
+ * unrestricted use provided that this legend is included on all tape
+ * media and as a part of the software program in whole or part.  Users
+ * may copy or modify Sun RPC without charge, but are not authorized
+ * to license or distribute it to anyone else except as part of a product or
+ * program developed by the user.
+ * 
+ * SUN RPC IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING THE
+ * WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
+ * 
+ * Sun RPC is provided with no support and without any obligation on the
+ * part of Sun Microsystems, Inc. to assist in its use, correction,
+ * modification or enhancement.
+ * 
+ * SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+ * INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY SUN RPC
+ * OR ANY PART THEREOF.
+ * 
+ * In no event will Sun Microsystems, Inc. be liable for any lost revenue
+ * or profits or other special, indirect and consequential damages, even if
+ * Sun has been advised of the possibility of such damages.
+ * 
+ * Sun Microsystems, Inc.
+ * 2550 Garcia Avenue
+ * Mountain View, California  94043
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: svc_simple.c,v 1.6 1998/11/22 07:38:25 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 /* 
  * svc_simple.c
  * Simplified front end to rpc.
+ *
+ * Copyright (C) 1984, Sun Microsystems, Inc.
  */
 
 #include <stdio.h>
@@ -51,29 +53,41 @@ static struct proglst {
 	xdrproc_t p_inproc, p_outproc;
 	struct proglst *p_nxt;
 } *proglst;
-static void universal(struct svc_req *, SVCXPRT *);
+static void universal();
 static SVCXPRT *transp;
+struct proglst *pl;
 
 int
-registerrpc(int prognum, int versnum, int procnum, char *(*progname)(),
-    xdrproc_t inproc, xdrproc_t outproc)
+registerrpc(prognum, versnum, procnum, progname, inproc, outproc)
+	int prognum, versnum, procnum;
+	char *(*progname)();
+	xdrproc_t inproc, outproc;
 {
-	struct proglst *pl;
 	
-	if (procnum == NULLPROC)
+	if (procnum == NULLPROC) {
+		(void) fprintf(stderr,
+		    "can't reassign procedure number %u\n", NULLPROC);
 		return (-1);
-	if (transp == NULL) {
+	}
+	if (transp == 0) {
 		transp = svcudp_create(RPC_ANYSOCK);
-		if (transp == NULL)
+		if (transp == NULL) {
+			(void) fprintf(stderr, "couldn't create an rpc server\n");
 			return (-1);
+		}
 	}
 	(void) pmap_unset((u_long)prognum, (u_long)versnum);
 	if (!svc_register(transp, (u_long)prognum, (u_long)versnum, 
-	    universal, IPPROTO_UDP))
+	    universal, IPPROTO_UDP)) {
+	    	(void) fprintf(stderr, "couldn't register prog %d vers %d\n",
+		    prognum, versnum);
 		return (-1);
-	pl = malloc(sizeof(struct proglst));
-	if (pl == NULL)
+	}
+	pl = (struct proglst *)malloc(sizeof(struct proglst));
+	if (pl == NULL) {
+		(void) fprintf(stderr, "registerrpc: out of memory\n");
 		return (-1);
+	}
 	pl->p_progname = progname;
 	pl->p_prognum = prognum;
 	pl->p_procnum = procnum;
@@ -85,7 +99,9 @@ registerrpc(int prognum, int versnum, int procnum, char *(*progname)(),
 }
 
 static void
-universal(struct svc_req *rqstp, SVCXPRT *transp)
+universal(rqstp, transp)
+	struct svc_req *rqstp;
+	SVCXPRT *transp;
 {
 	int prog, proc;
 	char *outdata;
@@ -96,8 +112,10 @@ universal(struct svc_req *rqstp, SVCXPRT *transp)
 	 * enforce "procnum 0 is echo" convention
 	 */
 	if (rqstp->rq_proc == NULLPROC) {
-		if (svc_sendreply(transp, xdr_void, NULL) == FALSE)
+		if (svc_sendreply(transp, xdr_void, NULL) == FALSE) {
+			(void) fprintf(stderr, "xxx\n");
 			exit(1);
+		}
 		return;
 	}
 	prog = rqstp->rq_prog;
@@ -115,12 +133,17 @@ universal(struct svc_req *rqstp, SVCXPRT *transp)
 			    pl->p_outproc != xdr_void)
 				/* there was an error */
 				return;
-			if (!svc_sendreply(transp, pl->p_outproc, outdata))
+			if (!svc_sendreply(transp, pl->p_outproc, outdata)) {
+				(void) fprintf(stderr,
+				    "trouble replying to prog %d\n",
+				    pl->p_prognum);
 				exit(1);
+			}
 			/* free the decoded arguments */
 			(void)svc_freeargs(transp, pl->p_inproc, xdrbuf);
 			return;
 		}
+	(void) fprintf(stderr, "never registered prog %d\n", prog);
 	exit(1);
 }
 

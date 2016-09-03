@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.11 2016/03/30 06:38:46 jmc Exp $
+#	$OpenBSD: Makefile,v 1.8 1997/09/21 11:49:50 deraadt Exp $
 
 PROG=	mail
 SRCS=	version.c aux.c cmd1.c cmd2.c cmd3.c cmdtab.c collect.c \
@@ -7,11 +7,18 @@ SRCS=	version.c aux.c cmd1.c cmd2.c cmd3.c cmdtab.c collect.c \
 SFILES=	mail.help mail.tildehelp
 EFILES=	mail.rc
 LINKS=	${BINDIR}/mail ${BINDIR}/Mail ${BINDIR}/mail ${BINDIR}/mailx
+MLINKS=	mail.1 Mail.1 mail.1 mailx.1
+
+beforeinstall:
+	cd ${.CURDIR}/misc; ${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} \
+	    -m 444 ${SFILES} ${DESTDIR}/usr/share/misc
 
 distribution:
 	cd ${.CURDIR}/misc; ${INSTALL} ${INSTALL_COPY} -o root -g wheel \
 	    -m 644 ${EFILES} ${DESTDIR}/etc
-	cd ${.CURDIR}/misc; ${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} \
-	    -m 444 ${SFILES} ${DESTDIR}/usr/share/misc
+
+.if make(install)
+SUBDIR+= USD.doc
+.endif
 
 .include <bsd.prog.mk>

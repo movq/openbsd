@@ -1,4 +1,4 @@
-/*	$OpenBSD: isa_machdep.h,v 1.25 2009/08/22 02:54:50 mk Exp $	*/
+/*	$OpenBSD: isa_machdep.h,v 1.15 1999/01/13 07:26:00 niklas Exp $	*/
 /*	$NetBSD: isa_machdep.h,v 1.7 1997/06/06 23:28:42 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -46,7 +53,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -76,11 +87,6 @@
 #include <machine/bus.h>
 
 /*
- * ISA can only DMA to 0-16M.
- */
-#define	ISA_DMA_BOUNCE_THRESHOLD	0x00ffffff
-
-/*
  * XXX THIS FILE IS A MESS.  copyright: berkeley's probably.
  * contents from isavar.h and isareg.h, mostly the latter.
  * perhaps charles's?
@@ -99,27 +105,26 @@ struct isabus_attach_args;	/* XXX */
 /*
  * Functions provided to machine-independent ISA code.
  */
-void	isa_attach_hook(struct device *, struct device *,
-	    struct isabus_attach_args *);
-int	isa_intr_alloc(isa_chipset_tag_t, int, int, int *);
-int	isa_intr_check(isa_chipset_tag_t, int, int);
-void	*isa_intr_establish(isa_chipset_tag_t ic, int irq, int type,
-	    int level, int (*ih_fun)(void *), void *ih_arg,
-	    const char *ih_what);
-void	isa_intr_disestablish(isa_chipset_tag_t ic, void *handler);
+void	isa_attach_hook __P((struct device *, struct device *,
+	    struct isabus_attach_args *));
+int	isa_intr_alloc __P((isa_chipset_tag_t, int, int, int *));
+int	isa_intr_check __P((isa_chipset_tag_t, int, int));
+void	*isa_intr_establish __P((isa_chipset_tag_t ic, int irq, int type,
+	    int level, int (*ih_fun)(void *), void *ih_arg, char *ih_what));
+void	isa_intr_disestablish __P((isa_chipset_tag_t ic, void *handler));
 
 /*
  * ALL OF THE FOLLOWING ARE MACHINE-DEPENDENT, AND SHOULD NOT BE USED
  * BY PORTABLE CODE.
  */
 
-extern struct bus_dma_tag isa_bus_dma_tag;
+extern struct i386_bus_dma_tag isa_bus_dma_tag;
 
 /*
  * Cookie used by ISA dma.  A pointer to one of these it stashed in
  * the DMA map.
  */
-struct isa_dma_cookie {
+struct i386_isa_dma_cookie {
 	int	id_flags;		/* flags; see below */
 
 	void	*id_origbuf;		/* pointer to orig buffer if
@@ -186,7 +191,7 @@ struct isa_dma_cookie {
 #define	DMA_BOUNCE_LOW  16		/* number of pages if memory <= 16M */
 #endif
 
-extern vaddr_t isaphysmem;
+extern vm_offset_t isaphysmem;
 extern int isaphysmempgs;
 
 
@@ -209,5 +214,11 @@ extern u_long atdevbase;           /* kernel virtual address of "hole" */
  * return a kernel virtual address.
  */
 #define ISA_HOLE_VADDR(p)  ((void *) ((u_long)(p) - IOM_BEGIN + atdevbase))
+
+
+/*
+ * Miscellanous functions.
+ */
+void sysbeep __P((int, int));		/* beep with the system speaker */
 
 #endif /* _I386_ISA_MACHDEP_H_ XXX */

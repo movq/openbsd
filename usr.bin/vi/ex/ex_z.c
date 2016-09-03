@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_z.c,v 1.8 2015/03/29 01:04:23 bcallah Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_z.c	10.10 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,12 +28,14 @@
  * ex_z -- :[line] z [^-.+=] [count] [flags]
  *	Adjust window.
  *
- * PUBLIC: int ex_z(SCR *, EXCMD *);
+ * PUBLIC: int ex_z __P((SCR *, EXCMD *));
  */
 int
-ex_z(SCR *sp, EXCMD *cmdp)
+ex_z(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
-	MARK mark_abs;
+	MARK abs;
 	recno_t cnt, equals, lno;
 	int eofcheck;
 
@@ -51,7 +55,11 @@ ex_z(SCR *sp, EXCMD *cmdp)
 	if (FL_ISSET(cmdp->iflags, E_C_COUNT))
 		cnt = cmdp->count;
 	else
+#ifdef HISTORIC_PRACTICE
+		cnt = O_VAL(sp, O_SCROLL) * 2;
+#else
 		cnt = O_VAL(sp, O_WINDOW) - 1;
+#endif
 
 	equals = 0;
 	eofcheck = 0;
@@ -88,9 +96,9 @@ ex_z(SCR *sp, EXCMD *cmdp)
 		 * !!!
 		 * Historically, z. set the absolute cursor mark.
 		 */
-		mark_abs.lno = sp->lno;
-		mark_abs.cno = sp->cno;
-		(void)mark_set(sp, ABSMARK1, &mark_abs, 1);
+		abs.lno = sp->lno;
+		abs.cno = sp->cno;
+		(void)mark_set(sp, ABSMARK1, &abs, 1);
 		break;
 	case E_C_EQUAL:		/* Center with hyphens. */
 		/*

@@ -1,24 +1,13 @@
 .\" David Leonard, 1998. Placed in the public domain.
-.\" $OpenBSD: ndbm.3,v 1.20 2016/05/07 23:35:45 naddy Exp $
-.Dd $Mdocdate: May 7 2016 $
-.Dt DBM_OPEN 3
+.\" $OpenBSD: ndbm.3,v 1.9 1999/07/09 13:35:15 aaron Exp $
+.Dd May 13, 1998
+.Dt NDBM 3
 .Os
 .Sh NAME
-.Nm dbm_clearerr ,
-.Nm dbm_close ,
-.Nm dbm_delete ,
-.Nm dbm_dirfno ,
-.Nm dbm_error ,
-.Nm dbm_fetch ,
-.Nm dbm_firstkey ,
-.Nm dbm_nextkey ,
-.Nm dbm_open ,
-.Nm dbm_pagfno ,
-.Nm dbm_rdonly ,
-.Nm dbm_store
+.Nm ndbm
 .Nd database access methods
 .Sh SYNOPSIS
-.In ndbm.h
+.Fd #include <ndbm.h>
 .Ft int
 .Fn dbm_clearerr "DBM *db"
 .Ft void
@@ -36,17 +25,15 @@
 .Ft datum
 .Fn dbm_nextkey "DBM *db"
 .Ft "DBM *"
-.Fn dbm_open "const char *file" "int flags" "mode_t mode"
+.Fn dbm_open "const char *file" "int flags" "int mode"
 .Ft int
 .Fn dbm_pagfno "DBM *db"
-.Ft int
-.Fn dbm_rdonly "DBM *db"
 .Ft int
 .Fn dbm_store "DBM *db" "datum key" "datum content" "int store_mode"
 .Sh DESCRIPTION
 These functions provide a ndbm-compatible interface to the
 database access methods described in
-.Xr dbopen 3 .
+.Xr db 3 .
 Each unique record in the database is a key/content pair,
 the components of which may be any arbitrary binary data.
 The key and the content data are described by the
@@ -54,9 +41,9 @@ The key and the content data are described by the
 data structure:
 .Bd -literal -offset indent
 typedef struct {
-	void *dptr;
-	size_t dsize;
-} datum;
+	char *dptr;
+	int dsize;
+} datum
 .Ed
 .Pp
 The
@@ -73,11 +60,7 @@ Access to this file depends on the
 parameter (see
 .Xr open 2 ) .
 Read-only access may be indicated by specifying
-.Dv DBM_RDONLY .
-The
-.Fn dbm_rdonly
-function may be used to determine if a database is opened for read-only
-access.
+.Dv DBM_READONLY .
 .Pp
 Once the database is open,
 .Fn dbm_fetch
@@ -94,11 +77,11 @@ When storing, the
 parameter must be one of:
 .Bl -tag -width DBM_REPLACE -offset indent
 .It Dv DBM_INSERT
-Only insert new keys into the database.
-Existing key/content pairs are untouched.
+Only insert new keys into the database. Existing key/content pairs
+are untouched.
 .It Dv DBM_REPLACE
-Replace any existing entry with the same key.
-Any previously stored records with the same key are lost.
+Replace any existing entry with the same key. Any previously
+stored records with the same key are lost.
 .El
 .Pp
 The
@@ -119,9 +102,8 @@ function returns the first record of the database, and thereafter
 .Fn dbm_nextkey
 returns the following records.
 The following code traverses the entire database:
-.Bd -literal -offset indent
-for (key = dbm_firstkey(db); key.dptr != NULL;
-    key = dbm_nextkey(db))
+.Bd -literal
+  for (key = dbm_firstkey(db); key.dptr != NULL; key = dbm_nextkey(db))
 .Ed
 .Pp
 The behaviour of
@@ -140,23 +122,23 @@ function clears the error condition of the database.
 The
 .Fn dbm_dirfno
 function is used to find the file descriptor associated with the
-directory file of an open database.
-Since a directory bitmap file is not used in this implementation,
-this function returns the file descriptor of the database file opened with
+directory file of an open database. Since a directory bitmap file is
+not used in this implementation,
+this function returns the file descriptor of the datbase file opened with
 .Fn dbm_open .
 .Pp
 The
 .Fn dbm_pagfno
 function is used to find the file descriptor associated with the
-page file of an open database.
-Since a page file is not used in this implementation, this function
+page file of an open database. Since a page file is not used in
+this implementation,
+this function
 is implemented as a macro that always returns the (undefined) value
 .Dv DBM_PAGFNO_NOT_AVAILABLE .
 .Pp
 The database is closed with the
 .Fn dbm_close
-function.
-Thereafter, the
+function. Thereafter, the
 .Fa db
 handle is invalid.
 .Ss Implementation notes
@@ -202,8 +184,8 @@ and a record with the specified key already exists.
 If an error occurs, the error can be retrieved with
 .Fn dbm_error
 and corresponds to those errors described in
-.Xr dbopen 3 .
+.Xr db 3 .
 .Sh SEE ALSO
 .Xr open 2 ,
-.Xr dbopen 3 ,
+.Xr db 3 ,
 .Xr hash 3

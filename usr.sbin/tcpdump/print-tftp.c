@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-tftp.c,v 1.12 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1990, 1991, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -23,6 +21,12 @@
  * Format and print trivial file transfer protocol packets.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-tftp.c,v 1.6 1999/09/16 20:58:47 brad Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 
 #include <netinet/in.h>
@@ -66,12 +70,12 @@ static struct tok err2str[] = {
  * Print trivial file transfer program requests
  */
 void
-tftp_print(const u_char *bp, u_int length)
+tftp_print(register const u_char *bp, u_int length)
 {
-	const struct tftphdr *tp;
-	const char *cp;
-	const u_char *p;
-	int opcode, i;
+	register const struct tftphdr *tp;
+	register const char *cp;
+	register const u_char *p;
+	register int opcode, i;
 	static char tstr[] = " [|tftp]";
 
 	tp = (const struct tftphdr *)bp;
@@ -120,7 +124,6 @@ tftp_print(const u_char *bp, u_int length)
 		printf(" %s ", tok2str(err2str, "tftp-err-#%d \"",
 				       ntohs(tp->th_code)));
 		/* Print error message string */
-		putchar('"');
 		i = fn_print((const u_char *)tp->th_data, snapend);
 		putchar('"');
 		if (i)

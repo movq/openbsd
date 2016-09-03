@@ -1,5 +1,3 @@
-/*	$OpenBSD: cl_read.c,v 1.21 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,15 +9,21 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)cl_read.c	10.15 (Berkeley) 9/24/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
 #include <sys/time.h>
 
 #include <bitstring.h>
-#include <curses.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <poll.h>
+#include <curses.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,18 +35,22 @@
 #include "../ex/script.h"
 #include "cl.h"
 
-static input_t	cl_read(SCR *,
-		    u_int32_t, CHAR_T *, size_t, int *, struct timeval *);
-static int	cl_resize(SCR *, size_t, size_t);
+static input_t	cl_read __P((SCR *,
+    u_int32_t, CHAR_T *, size_t, int *, struct timeval *));
+static int	cl_resize __P((SCR *, size_t, size_t));
 
 /*
  * cl_event --
  *	Return a single event.
  *
- * PUBLIC: int cl_event(SCR *, EVENT *, u_int32_t, int);
+ * PUBLIC: int cl_event __P((SCR *, EVENT *, u_int32_t, int));
  */
 int
-cl_event(SCR *sp, EVENT *evp, u_int32_t flags, int ms)
+cl_event(sp, evp, flags, ms)
+	SCR *sp;
+	EVENT *evp;
+	u_int32_t flags;
+	int ms;
 {
 	struct timeval t, *tp;
 	CL_PRIVATE *clp;
@@ -123,15 +131,22 @@ retest:	if (LF_ISSET(EC_INTERRUPT) || F_ISSET(clp, CL_SIGINT)) {
  *	Read characters from the input.
  */
 static input_t
-cl_read(SCR *sp, u_int32_t flags, CHAR_T *bp, size_t blen, int *nrp,
-    struct timeval *tp)
+cl_read(sp, flags, bp, blen, nrp, tp)
+	SCR *sp;
+	u_int32_t flags;
+	CHAR_T *bp;
+	size_t blen;
+	int *nrp;
+	struct timeval *tp;
 {
 	struct termios term1, term2;
+	struct timeval poll;
 	CL_PRIVATE *clp;
 	GS *gp;
-	struct pollfd pfd[1];
+	SCR *tsp;
+	fd_set rdfd;
 	input_t rval;
-	int nr, term_reset, timeout;
+	int maxfd, nr, term_reset;
 
 	gp = sp->gp;
 	clp = CLP(sp);
@@ -160,12 +175,13 @@ cl_read(SCR *sp, u_int32_t flags, CHAR_T *bp, size_t blen, int *nrp,
 	 * 2: A read with an associated timeout, e.g., trying to complete
 	 *    a map sequence.  If input exists, we fall into #3.
 	 */
-tty_retry:
+	FD_ZERO(&rdfd);
+	poll.tv_sec = 0;
+	poll.tv_usec = 0;
 	if (tp != NULL) {
-		pfd[0].fd = STDIN_FILENO;
-		pfd[0].events = POLLIN;
-		timeout = tp ? (tp->tv_sec * 1000) + (tp->tv_usec / 1000) : 0;
-		switch (poll(pfd, 1, timeout)) {
+		FD_SET(STDIN_FILENO, &rdfd);
+		switch (select(STDIN_FILENO + 1,
+		    &rdfd, NULL, NULL, tp == NULL ? &poll : tp)) {
 		case 0:
 			return (INP_TIMEOUT);
 		case -1:
@@ -206,8 +222,29 @@ tty_retry:
 	 * the only way to keep from locking out scripting windows.
 	 */
 	if (F_ISSET(gp, G_SCRWIN)) {
-		if (sscr_check_input(sp))
+loop:		FD_ZERO(&rdfd);
+		FD_SET(STDIN_FILENO, &rdfd);
+		maxfd = STDIN_FILENO;
+		for (tsp = gp->dq.cqh_first;
+		    tsp != (void *)&gp->dq; tsp = tsp->q.cqe_next)
+			if (F_ISSET(sp, SC_SCRIPT)) {
+				FD_SET(sp->script->sh_master, &rdfd);
+				if (sp->script->sh_master > maxfd)
+					maxfd = sp->script->sh_master;
+			}
+		switch (select(maxfd + 1, &rdfd, NULL, NULL, NULL)) {
+		case 0:
+			abort();
+		case -1:
 			goto err;
+		default:
+			break;
+		}
+		if (!FD_ISSET(STDIN_FILENO, &rdfd)) {
+			if (sscr_input(sp))
+				return (INP_ERR);
+			goto loop;
+		}
 	}
 
 	/*
@@ -247,8 +284,6 @@ tty_retry:
 	case -1:				/* Error or interrupt. */
 err:		if (errno == EINTR)
 			rval = INP_INTR;
-		else if (errno == EAGAIN)
-			goto tty_retry;
 		else {
 			rval = INP_ERR;
 			msgq(sp, M_SYSERR, "input");
@@ -274,7 +309,9 @@ err:		if (errno == EINTR)
  *	Reset the options for a resize event.
  */
 static int
-cl_resize(SCR *sp, size_t lines, size_t columns)
+cl_resize(sp, lines, columns)
+	SCR *sp;
+	size_t lines, columns;
 {
 	ARGS *argv[2], a, b;
 	char b1[1024];

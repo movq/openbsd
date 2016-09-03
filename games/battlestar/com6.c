@@ -1,4 +1,4 @@
-/*	$OpenBSD: com6.c,v 1.22 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: com6.c,v 1.11 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: com6.c,v 1.5 1995/04/27 21:30:23 mycroft Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,17 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <errno.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)com6.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: com6.c,v 1.11 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
+#include "pathnames.h"
 
 int
-launch(void)
+launch()
 {
 	if (TestBit(location[position].objects, VIPER) && !notes[CANTLAUNCH]) {
 		if (fuel > 4) {
@@ -60,7 +66,7 @@ launch(void)
 }
 
 int
-land(void)
+land()
 {
 	if (notes[LAUNCHED] && TestBit(location[position].objects, LAND) &&
 	    location[position].down) {
@@ -76,17 +82,17 @@ land(void)
 	return (0);
 }
 
-/* endgame */
 void
-die(int sigraised)
-{
+die(sigraised)
+	int     sigraised;
+{ 				/* endgame */
 	printf("bye.\nYour rating was %s.\n", rate());
 	post(' ');
 	exit(0);
 }
 
 void
-live(void)
+live()
 {
 	puts("\nYou win!");
 	post('!');
@@ -96,25 +102,15 @@ live(void)
 static FILE *score_fp;
 
 void
-open_score_file(void)
+open_score_file()
 {
-	char		 scorefile[PATH_MAX];
-	const char	*home;
-	int		 ret;
-
-	home = getenv("HOME");
-	if (home == NULL || *home == '\0')
-		err(1, "getenv");
-	ret = snprintf(scorefile, sizeof(scorefile), "%s/%s", home,
-	    ".battlestar.scores");
-	if (ret < 0 || ret >= PATH_MAX)
-		errc(1, ENAMETOOLONG, "%s/%s", home, ".battlestar.scores");
-	if ((score_fp = fopen(scorefile, "a")) == NULL)
-		warn("can't append to high scores file (%s)", scorefile);
+	if ((score_fp = fopen(_PATH_SCORE, "a")) == NULL)
+		warn("can't append to high scores file (%s)", _PATH_SCORE);
 }
 
 void
-post(char ch)
+post(ch)
+	char    ch;
 {
 	time_t tv;
 	char   *date;
@@ -128,7 +124,7 @@ post(char ch)
 	date[24] = '\0';
 
 	if (score_fp != NULL) {
-		fprintf(score_fp, "%s  %31s  %c%20s", date, username, ch, rate());
+		fprintf(score_fp, "%s  %8s  %c%20s", date, username, ch, rate());
 		if (wiz)
 			fprintf(score_fp, "   wizard\n");
 		else
@@ -141,7 +137,7 @@ post(char ch)
 }
 
 const char   *
-rate(void)
+rate()
 {
 	int     score;
 
@@ -153,8 +149,7 @@ rate(void)
 			return ("junior voyeur");
 		else if (score < 35)
 			return ("Don Juan");
-		else
-			return ("Marquis De Sade");
+		else return ("Marquis De Sade");
 	} else
 		if (score == power) {
 			if (score < 5)
@@ -165,8 +160,7 @@ rate(void)
 				return ("Klingon");
 			else if (score < 22)
 				return ("Darth Vader");
-			else
-				return ("Sauron the Great");
+			else return ("Sauron the Great");
 		} else{
 			if (score < 5)
 				return ("Polyanna");
@@ -174,13 +168,12 @@ rate(void)
 				return ("philanthropist");
 			else if (score < 20)
 				return ("Tattoo");
-			else
-				return ("Mr. Roarke");
+			else return ("Mr. Roarke");
 		}
 }
 
 int
-drive(void)
+drive()
 {
 	if (TestBit(location[position].objects, CAR)) {
 		puts("You hop in the car and turn the key.  There is a perceptible grating noise,");
@@ -197,14 +190,13 @@ drive(void)
 }
 
 int
-ride(void)
+ride()
 {
 	if (TestBit(location[position].objects, HORSE)) {
 		puts("You climb onto the stallion and kick it in the guts.  The stupid steed launches");
 		puts("forward through bush and fern.  You are thrown and the horse gallops off.");
 		ClearBit(location[position].objects, HORSE);
-		while (!(position = rnd(NUMOFROOMS + 1)) || !OUTSIDE || !beenthere[position] || location[position].flyhere)
-			;
+		while (!(position = rnd(NUMOFROOMS + 1)) || !OUTSIDE || !beenthere[position] || location[position].flyhere);
 		SetBit(location[position].objects, HORSE);
 		if (location[position].north)
 			position = location[position].north;
@@ -221,7 +213,7 @@ ride(void)
 }
 
 void
-light(void)
+light()
 {				/* synonyms = {strike, smoke} */
 	if (TestBit(inven, MATCHES) && matchcount) {
 		puts("Your match splutters to life.");
@@ -234,37 +226,4 @@ light(void)
 		}
 	} else
 		puts("You're out of matches.");
-}
-
-void
-dooropen(void)
-{				/* synonyms = {open, unlock} */
-	wordnumber++;
-	if (wordnumber <= wordcount && wordtype[wordnumber] == NOUNS
-	    && wordvalue[wordnumber] == DOOR) {
-		switch(position) {
-		case 189:
-		case 231:
-			if (location[189].north == 231)
-				puts("The door is already open.");
-			else
-				puts("The door does not budge.");
-			break;
-		case 30:
-			if (location[30].west == 25)
-				puts("The door is gone.");
-			else
-				puts("The door is locked tight.");
-			break;
-		case 31:
-			puts("That's one immovable door.");
-			break;
-		case 20:
-			puts("The door is already ajar.");
-			break;
-		default:
-			puts("What door?");
-		}
-	} else
-		puts("That doesn't open.");
 }

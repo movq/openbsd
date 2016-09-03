@@ -1,38 +1,40 @@
-/*	$OpenBSD: xdr.c,v 1.14 2015/09/13 15:36:56 guenther Exp $ */
-
 /*
- * Copyright (c) 2010, Oracle America, Inc.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the "Oracle America, Inc." nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *   COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- *   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- *   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
+ * unrestricted use provided that this legend is included on all tape
+ * media and as a part of the software program in whole or part.  Users
+ * may copy or modify Sun RPC without charge, but are not authorized
+ * to license or distribute it to anyone else except as part of a product or
+ * program developed by the user.
+ * 
+ * SUN RPC IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING THE
+ * WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
+ * 
+ * Sun RPC is provided with no support and without any obligation on the
+ * part of Sun Microsystems, Inc. to assist in its use, correction,
+ * modification or enhancement.
+ * 
+ * SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+ * INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY SUN RPC
+ * OR ANY PART THEREOF.
+ * 
+ * In no event will Sun Microsystems, Inc. be liable for any lost revenue
+ * or profits or other special, indirect and consequential damages, even if
+ * Sun has been advised of the possibility of such damages.
+ * 
+ * Sun Microsystems, Inc.
+ * 2550 Garcia Avenue
+ * Mountain View, California  94043
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: xdr.c,v 1.5 1998/03/19 00:27:27 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * xdr.c, Generic XDR routines implementation.
+ *
+ * Copyright (C) 1986, Sun Microsystems, Inc.
  *
  * These are the "generic" xdr routines used to serialize and de-serialize
  * most common data items.  See xdr.h for more info on the interface to
@@ -63,34 +65,36 @@ static char xdr_zero[BYTES_PER_XDR_UNIT] = { 0, 0, 0, 0 };
  * Not a filter, but a convenient utility nonetheless
  */
 void
-xdr_free(xdrproc_t proc, char *objp)
+xdr_free(proc, objp)
+	xdrproc_t proc;
+	char *objp;
 {
 	XDR x;
 	
 	x.x_op = XDR_FREE;
 	(*proc)(&x, objp);
 }
-DEF_WEAK(xdr_free);
 
 /*
  * XDR nothing
  */
 bool_t
-xdr_void(void)
+xdr_void(/* xdrs, addr */)
 	/* XDR *xdrs; */
 	/* caddr_t addr; */
 {
 
 	return (TRUE);
 }
-DEF_WEAK(xdr_void);
 
 
 /*
  * XDR integers
  */
 bool_t
-xdr_int(XDR *xdrs, int *ip)
+xdr_int(xdrs, ip)
+	XDR *xdrs;
+	int *ip;
 {
 	long l;
 
@@ -112,13 +116,14 @@ xdr_int(XDR *xdrs, int *ip)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_int);
 
 /*
  * XDR unsigned integers
  */
 bool_t
-xdr_u_int(XDR *xdrs, u_int *up)
+xdr_u_int(xdrs, up)
+	XDR *xdrs;
+	u_int *up;
 {
 	u_long l;
 
@@ -140,7 +145,6 @@ xdr_u_int(XDR *xdrs, u_int *up)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_u_int);
 
 
 /*
@@ -148,7 +152,9 @@ DEF_WEAK(xdr_u_int);
  * same as xdr_u_long - open coded to save a proc call!
  */
 bool_t
-xdr_long(XDR *xdrs, long int *lp)
+xdr_long(xdrs, lp)
+	register XDR *xdrs;
+	long *lp;
 {
 	switch (xdrs->x_op) {
 	case XDR_ENCODE:
@@ -161,14 +167,15 @@ xdr_long(XDR *xdrs, long int *lp)
 
 	return (FALSE);
 }
-DEF_WEAK(xdr_long);
 
 /*
  * XDR unsigned long integers
  * same as xdr_long - open coded to save a proc call!
  */
 bool_t
-xdr_u_long(XDR *xdrs, u_long *ulp)
+xdr_u_long(xdrs, ulp)
+	register XDR *xdrs;
+	u_long *ulp;
 {
 	switch (xdrs->x_op) {
 	case XDR_ENCODE:
@@ -180,7 +187,6 @@ xdr_u_long(XDR *xdrs, u_long *ulp)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_u_long);
 
 
 /*
@@ -188,7 +194,9 @@ DEF_WEAK(xdr_u_long);
  * same as xdr_u_int32_t - open coded to save a proc call!
  */
 bool_t
-xdr_int32_t(XDR *xdrs, int32_t *int32_p)
+xdr_int32_t(xdrs, int32_p)
+	register XDR *xdrs;
+	int32_t *int32_p;
 {
 	long l;
 
@@ -216,7 +224,9 @@ xdr_int32_t(XDR *xdrs, int32_t *int32_p)
  * same as xdr_int32_t - open coded to save a proc call!
  */
 bool_t
-xdr_u_int32_t(XDR *xdrs, u_int32_t *u_int32_p)
+xdr_u_int32_t(xdrs, u_int32_p)
+	register XDR *xdrs;
+	u_int32_t *u_int32_p;
 {
 	u_long l;
 
@@ -238,14 +248,15 @@ xdr_u_int32_t(XDR *xdrs, u_int32_t *u_int32_p)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_u_int32_t);
 
 
 /*
  * XDR short integers
  */
 bool_t
-xdr_short(XDR *xdrs, short int *sp)
+xdr_short(xdrs, sp)
+	register XDR *xdrs;
+	short *sp;
 {
 	long l;
 
@@ -267,13 +278,14 @@ xdr_short(XDR *xdrs, short int *sp)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_short);
 
 /*
  * XDR unsigned short integers
  */
 bool_t
-xdr_u_short(XDR *xdrs, u_short *usp)
+xdr_u_short(xdrs, usp)
+	register XDR *xdrs;
+	u_short *usp;
 {
 	u_long l;
 
@@ -295,14 +307,15 @@ xdr_u_short(XDR *xdrs, u_short *usp)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_u_short);
 
 
 /*
  * XDR 16-bit integers
  */
 bool_t
-xdr_int16_t(XDR *xdrs, int16_t *int16_p)
+xdr_int16_t(xdrs, int16_p)
+	register XDR *xdrs;
+	int16_t *int16_p;
 {
 	long l;
 
@@ -329,7 +342,9 @@ xdr_int16_t(XDR *xdrs, int16_t *int16_p)
  * XDR unsigned 16-bit integers
  */
 bool_t
-xdr_u_int16_t(XDR *xdrs, u_int16_t *u_int16_p)
+xdr_u_int16_t(xdrs, u_int16_p)
+	register XDR *xdrs;
+	u_int16_t *u_int16_p;
 {
 	u_long l;
 
@@ -357,7 +372,9 @@ xdr_u_int16_t(XDR *xdrs, u_int16_t *u_int16_p)
  * XDR a char
  */
 bool_t
-xdr_char(XDR *xdrs, char *cp)
+xdr_char(xdrs, cp)
+	XDR *xdrs;
+	char *cp;
 {
 	int i;
 
@@ -373,7 +390,9 @@ xdr_char(XDR *xdrs, char *cp)
  * XDR an unsigned char
  */
 bool_t
-xdr_u_char(XDR *xdrs, u_char *cp)
+xdr_u_char(xdrs, cp)
+	XDR *xdrs;
+	u_char *cp;
 {
 	u_int u;
 
@@ -389,7 +408,9 @@ xdr_u_char(XDR *xdrs, u_char *cp)
  * XDR booleans
  */
 bool_t
-xdr_bool(XDR *xdrs, int32_t *bp)
+xdr_bool(xdrs, bp)
+	register XDR *xdrs;
+	bool_t *bp;
 {
 	long lb;
 
@@ -411,14 +432,16 @@ xdr_bool(XDR *xdrs, int32_t *bp)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_bool);
 
 /*
  * XDR enumerations
  */
 bool_t
-xdr_enum(XDR *xdrs, int32_t *ep)
+xdr_enum(xdrs, ep)
+	XDR *xdrs;
+	enum_t *ep;
 {
+#ifndef lint
 	enum sizecheck { SIZEVAL };	/* used to find the size of an enum */
 
 	/*
@@ -433,8 +456,12 @@ xdr_enum(XDR *xdrs, int32_t *ep)
 	} else {
 		return (FALSE);
 	}
+#else
+	(void) (xdr_short(xdrs, (short *)ep));
+	(void) (xdr_int(xdrs, (int *)ep));
+	return (xdr_long(xdrs, (long *)ep));
+#endif
 }
-DEF_WEAK(xdr_enum);
 
 /*
  * XDR opaque data
@@ -442,9 +469,12 @@ DEF_WEAK(xdr_enum);
  * cp points to the opaque object and cnt gives the byte length.
  */
 bool_t
-xdr_opaque(XDR *xdrs, caddr_t cp, u_int cnt)
+xdr_opaque(xdrs, cp, cnt)
+	register XDR *xdrs;
+	caddr_t cp;
+	register u_int cnt;
 {
-	u_int rndup;
+	register u_int rndup;
 	static int crud[BYTES_PER_XDR_UNIT];
 
 	/*
@@ -484,7 +514,6 @@ xdr_opaque(XDR *xdrs, caddr_t cp, u_int cnt)
 
 	return (FALSE);
 }
-DEF_WEAK(xdr_opaque);
 
 /*
  * XDR counted bytes
@@ -492,10 +521,14 @@ DEF_WEAK(xdr_opaque);
  * If *cpp is NULL maxsize bytes are allocated
  */
 bool_t
-xdr_bytes(XDR *xdrs, char **cpp, u_int *sizep, u_int maxsize)
+xdr_bytes(xdrs, cpp, sizep, maxsize)
+	register XDR *xdrs;
+	char **cpp;
+	register u_int *sizep;
+	u_int maxsize;
 {
-	char *sp = *cpp;  /* sp is the actual string pointer */
-	u_int nodesize;
+	register char *sp = *cpp;  /* sp is the actual string pointer */
+	register u_int nodesize;
 
 	/*
 	 * first deal with the length since xdr bytes are counted
@@ -520,8 +553,10 @@ xdr_bytes(XDR *xdrs, char **cpp, u_int *sizep, u_int maxsize)
 		if (sp == NULL) {
 			*cpp = sp = (char *)mem_alloc(nodesize);
 		}
-		if (sp == NULL)
+		if (sp == NULL) {
+			(void) fprintf(stderr, "xdr_bytes: out of memory\n");
 			return (FALSE);
+		}
 		/* fall into ... */
 
 	case XDR_ENCODE:
@@ -536,13 +571,14 @@ xdr_bytes(XDR *xdrs, char **cpp, u_int *sizep, u_int maxsize)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_bytes);
 
 /*
  * Implemented here due to commonality of the object.
  */
 bool_t
-xdr_netobj(XDR *xdrs, struct netobj *np)
+xdr_netobj(xdrs, np)
+	XDR *xdrs;
+	struct netobj *np;
 {
 
 	return (xdr_bytes(xdrs, &np->n_bytes, &np->n_len, MAX_NETOBJ_SZ));
@@ -560,13 +596,14 @@ xdr_netobj(XDR *xdrs, struct netobj *np)
  * If there is no specific or default routine an error is returned.
  */
 bool_t
-xdr_union(XDR *xdrs,
-    int32_t *dscmp,		/* enum to decide which arm to work on */
-    char *unp,			/* the union itself */
-    struct xdr_discrim *choices,	/* [value, xdr proc] for each arm */
-    xdrproc_t dfault)		/* default xdr routine */
+xdr_union(xdrs, dscmp, unp, choices, dfault)
+	register XDR *xdrs;
+	enum_t *dscmp;		/* enum to decide which arm to work on */
+	char *unp;		/* the union itself */
+	struct xdr_discrim *choices;	/* [value, xdr proc] for each arm */
+	xdrproc_t dfault;	/* default xdr routine */
 {
-	enum_t dscm;
+	register enum_t dscm;
 
 	/*
 	 * we deal with the discriminator;  it's an enum
@@ -580,7 +617,7 @@ xdr_union(XDR *xdrs,
 	 * search choices for a value that matches the discriminator.
 	 * if we find one, execute the xdr routine for that value.
 	 */
-	for (; choices->proc != NULL; choices++) {
+	for (; choices->proc != NULL_xdrproc_t; choices++) {
 		if (choices->value == dscm)
 			return ((*(choices->proc))(xdrs, unp));
 	}
@@ -588,10 +625,9 @@ xdr_union(XDR *xdrs,
 	/*
 	 * no match - execute the default xdr routine if there is one
 	 */
-	return ((dfault == NULL) ? FALSE :
+	return ((dfault == NULL_xdrproc_t) ? FALSE :
 	    (*dfault)(xdrs, unp));
 }
-DEF_WEAK(xdr_union);
 
 
 /*
@@ -609,9 +645,12 @@ DEF_WEAK(xdr_union);
  * of the string as specified by a protocol.
  */
 bool_t
-xdr_string(XDR *xdrs, char **cpp, u_int maxsize)
+xdr_string(xdrs, cpp, maxsize)
+	register XDR *xdrs;
+	char **cpp;
+	u_int maxsize;
 {
-	char *sp = *cpp;  /* sp is the actual string pointer */
+	register char *sp = *cpp;  /* sp is the actual string pointer */
 	u_int size;
 	u_int nodesize;
 
@@ -647,8 +686,10 @@ xdr_string(XDR *xdrs, char **cpp, u_int maxsize)
 		}
 		if (sp == NULL)
 			*cpp = sp = (char *)mem_alloc(nodesize);
-		if (sp == NULL)
+		if (sp == NULL) {
+			(void) fprintf(stderr, "xdr_string: out of memory\n");
 			return (FALSE);
+		}
 		sp[size] = 0;
 		/* fall into ... */
 
@@ -662,68 +703,15 @@ xdr_string(XDR *xdrs, char **cpp, u_int maxsize)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_string);
 
 /* 
  * Wrapper for xdr_string that can be called directly from 
  * routines like clnt_call
  */
 bool_t
-xdr_wrapstring(XDR *xdrs, char **cpp)
+xdr_wrapstring(xdrs, cpp)
+	XDR *xdrs;
+	char **cpp;
 {
 	return xdr_string(xdrs, cpp, LASTUNSIGNED);
-}
-
-bool_t
-xdr_int64_t(XDR *xdrs, int64_t *llp)
-{
-	u_long ul[2];
-
-	switch (xdrs->x_op) {
-	case XDR_ENCODE:
-		ul[0] = (u_long)((u_int64_t)*llp >> 32) & 0xffffffff;
-		ul[1] = (u_long)((u_int64_t)*llp) & 0xffffffff;
-		if (XDR_PUTLONG(xdrs, (long *)&ul[0]) == FALSE)
-			return (FALSE);
-		return (XDR_PUTLONG(xdrs, (long *)&ul[1]));
-	case XDR_DECODE:
-		if (XDR_GETLONG(xdrs, (long *)&ul[0]) == FALSE)
-			return (FALSE);
-		if (XDR_GETLONG(xdrs, (long *)&ul[1]) == FALSE)
-			return (FALSE);
-		*llp = (int64_t)
-		    (((u_int64_t)ul[0] << 32) | ((u_int64_t)ul[1]));
-		return (TRUE);
-	case XDR_FREE:
-		return (TRUE);
-	}
-	/* NOTREACHED */
-	return (FALSE);
-}
-
-bool_t
-xdr_u_int64_t(XDR *xdrs, u_int64_t *ullp)
-{
-	u_long ul[2];
-
-	switch (xdrs->x_op) {
-	case XDR_ENCODE:
-		ul[0] = (u_long)(*ullp >> 32) & 0xffffffff;
-		ul[1] = (u_long)(*ullp) & 0xffffffff;
-		if (XDR_PUTLONG(xdrs, (long *)&ul[0]) == FALSE)
-			return (FALSE);
-		return (XDR_PUTLONG(xdrs, (long *)&ul[1]));
-	case XDR_DECODE:
-		if (XDR_GETLONG(xdrs, (long *)&ul[0]) == FALSE)
-			return (FALSE);
-		if (XDR_GETLONG(xdrs, (long *)&ul[1]) == FALSE)
-			return (FALSE);
-		*ullp = (u_int64_t)
-		    (((u_int64_t)ul[0] << 32) | ((u_int64_t)ul[1]));
-		return (TRUE);
-	case XDR_FREE:
-		return (TRUE);
-	}
-	/* NOTREACHED */
-	return (FALSE);
 }

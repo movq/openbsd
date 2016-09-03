@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.10 2015/11/25 23:18:11 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.6 1998/07/24 00:10:19 millert Exp $
 
 PROG=	battlestar
 SRCS=	battlestar.c com1.c com2.c com3.c com4.c com5.c com6.c com7.c \
@@ -7,5 +7,15 @@ SRCS=	battlestar.c com1.c com2.c com3.c com4.c com5.c com6.c com7.c \
 MAN=	battlestar.6
 DPADD=	${LIBCURSES}
 LDADD=	-lcurses
+HIDEGAME=hidegame
+BINGRP=	games
+
+beforeinstall: 
+	@if [ ! -f ${DESTDIR}/var/games/battlestar.log ]; then \
+	    ${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 664 \
+		/dev/null ${DESTDIR}/var/games/battlestar.log ; \
+	else \
+                true ; \
+        fi
 
 .include <bsd.prog.mk>

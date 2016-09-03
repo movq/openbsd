@@ -1,5 +1,5 @@
-/* $OpenBSD: doi.c,v 1.11 2013/03/21 04:30:14 deraadt Exp $	 */
-/* $EOM: doi.c,v 1.4 1999/04/02 00:57:36 niklas Exp $	 */
+/*	$OpenBSD: doi.c,v 1.5 1999/04/19 19:54:53 niklas Exp $	*/
+/*	$EOM: doi.c,v 1.4 1999/04/02 00:57:36 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -29,31 +34,34 @@
  * This code was written under funding by Ericsson Radio Systems.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
+
+#include "sysdep.h"
 
 #include "doi.h"
 
-static
-LIST_HEAD(doi_list, doi) doi_tab;
+static LIST_HEAD (doi_list, doi) doi_tab;
 
 void
-doi_init(void)
+doi_init ()
 {
-	LIST_INIT(&doi_tab);
+  LIST_INIT (&doi_tab);
 }
 
 struct doi *
-doi_lookup(u_int8_t doi_id)
+doi_lookup (u_int8_t doi_id)
 {
-	struct doi     *doi;
+  struct doi *doi;
 
-	for (doi = LIST_FIRST(&doi_tab); doi && doi->id != doi_id;
-	    doi = LIST_NEXT(doi, link));
-	return doi;
+  for (doi = LIST_FIRST (&doi_tab); doi && doi->id != doi_id;
+       doi = LIST_NEXT (doi, link))
+    ;
+  return doi;
 }
 
 void
-doi_register(struct doi *doi)
+doi_register (struct doi *doi)
 {
-	LIST_INSERT_HEAD(&doi_tab, doi, link);
+  LIST_INSERT_HEAD (&doi_tab, doi, link);
 }
+

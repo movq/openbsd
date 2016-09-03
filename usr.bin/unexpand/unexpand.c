@@ -1,4 +1,4 @@
-/*	$OpenBSD: unexpand.c,v 1.12 2015/11/11 02:52:46 deraadt Exp $	*/
+/*	$OpenBSD: unexpand.c,v 1.3 1999/02/11 23:08:25 deraadt Exp $	*/
 /*	$NetBSD: unexpand.c,v 1.5 1994/12/24 17:08:05 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,29 +34,37 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)unexpand.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: unexpand.c,v 1.3 1999/02/11 23:08:25 deraadt Exp $";
+#endif /* not lint */
+
 /*
  * unexpand - put tabs into a file replacing blanks
  */
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 char	genbuf[BUFSIZ];
 char	linebuf[BUFSIZ];
 int	all;
 
-void tabify(char);
+void tabify __P((char));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	char *cp;
-
-	if (pledge("stdio rpath", NULL) == -1) {
-		perror("pledge");
-		exit(1);
-	}
+	register char *cp;
 
 	argc--, argv++;
 	if (argc > 0 && argv[0][0] == '-') {
@@ -84,19 +96,16 @@ main(int argc, char *argv[])
 }
 
 void
-tabify(char c)
+tabify(c)
+	char c;
 {
-	char *cp, *dp;
-	int dcol;
+	register char *cp, *dp;
+	register int dcol;
 	int ocol;
-	size_t len;
 
 	ocol = 0;
 	dcol = 0;
-	cp = genbuf;
-	dp = linebuf;
-	len = sizeof linebuf;
-
+	cp = genbuf, dp = linebuf;
 	for (;;) {
 		switch (*cp) {
 
@@ -113,28 +122,20 @@ tabify(char c)
 			while (((ocol + 8) &~ 07) <= dcol) {
 				if (ocol + 1 == dcol)
 					break;
-				if (len > 1) {
-					*dp++ = '\t';
-					len--;
-				}
+				*dp++ = '\t';
 				ocol += 8;
 				ocol &= ~07;
 			}
 			while (ocol < dcol) {
-				if (len > 1) {
-					*dp++ = ' ';
-					len--;
-				}
+				*dp++ = ' ';
 				ocol++;
 			}
 			if (*cp == 0 || c == 0) {
-				strlcpy(dp, cp, len);
+				strcpy(dp, cp);
 				return;
 			}
 			*dp++ = *cp;
-			len--;
-			ocol++;
-			dcol++;
+			ocol++, dcol++;
 		}
 		cp++;
 	}

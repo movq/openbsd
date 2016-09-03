@@ -1,4 +1,3 @@
-/*	$OpenBSD: mrand48.c,v 1.6 2015/08/27 04:33:31 guenther Exp $ */
 /*
  * Copyright (c) 1993 Martin Birgmeier
  * All rights reserved.
@@ -12,13 +11,17 @@
  * to anyone/anything when using this software.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: mrand48.c,v 1.2 1996/08/19 08:33:39 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "rand48.h"
+
+extern unsigned short __rand48_seed[3];
 
 long
 mrand48(void)
 {
-	if (__rand48_deterministic == 0)
-		return (int)arc4random();
 	__dorand48(__rand48_seed);
 	return ((long) __rand48_seed[2] << 16) + (long) __rand48_seed[1];
 }

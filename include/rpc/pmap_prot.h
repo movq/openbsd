@@ -1,35 +1,33 @@
-/*	$OpenBSD: pmap_prot.h,v 1.6 2010/09/01 14:43:34 millert Exp $	*/
+/*	$OpenBSD: pmap_prot.h,v 1.3 1998/02/10 06:25:32 deraadt Exp $	*/
 /*	$NetBSD: pmap_prot.h,v 1.4 1994/10/26 00:57:00 cgd Exp $	*/
 
 /*
- * Copyright (c) 2010, Oracle America, Inc.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the "Oracle America, Inc." nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *   COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- *   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- *   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
+ * unrestricted use provided that this legend is included on all tape
+ * media and as a part of the software program in whole or part.  Users
+ * may copy or modify Sun RPC without charge, but are not authorized
+ * to license or distribute it to anyone else except as part of a product or
+ * program developed by the user.
+ * 
+ * SUN RPC IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING THE
+ * WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
+ * 
+ * Sun RPC is provided with no support and without any obligation on the
+ * part of Sun Microsystems, Inc. to assist in its use, correction,
+ * modification or enhancement.
+ * 
+ * SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+ * INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY SUN RPC
+ * OR ANY PART THEREOF.
+ * 
+ * In no event will Sun Microsystems, Inc. be liable for any lost revenue
+ * or profits or other special, indirect and consequential damages, even if
+ * Sun has been advised of the possibility of such damages.
+ * 
+ * Sun Microsystems, Inc.
+ * 2550 Garcia Avenue
+ * Mountain View, California  94043
  *
  *	from: @(#)pmap_prot.h 1.14 88/02/08 SMI 
  *	@(#)pmap_prot.h	2.1 88/07/29 4.0 RPCSRC
@@ -38,6 +36,8 @@
 /*
  * pmap_prot.h
  * Protocol for the local binder service, or pmap.
+ *
+ * Copyright (C) 1984, Sun Microsystems, Inc.
  *
  * The following procedures are supported by the protocol:
  *
@@ -74,17 +74,17 @@
 #define _RPC_PMAPPROT_H
 #include <sys/cdefs.h>
 
-#define PMAPPORT		((unsigned short)111)
-#define PMAPPROG		((unsigned long)100000)
-#define PMAPVERS		((unsigned long)2)
-#define PMAPVERS_PROTO		((unsigned long)2)
-#define PMAPVERS_ORIG		((unsigned long)1)
-#define PMAPPROC_NULL		((unsigned long)0)
-#define PMAPPROC_SET		((unsigned long)1)
-#define PMAPPROC_UNSET		((unsigned long)2)
-#define PMAPPROC_GETPORT	((unsigned long)3)
-#define PMAPPROC_DUMP		((unsigned long)4)
-#define PMAPPROC_CALLIT		((unsigned long)5)
+#define PMAPPORT		((u_short)111)
+#define PMAPPROG		((u_long)100000)
+#define PMAPVERS		((u_long)2)
+#define PMAPVERS_PROTO		((u_long)2)
+#define PMAPVERS_ORIG		((u_long)1)
+#define PMAPPROC_NULL		((u_long)0)
+#define PMAPPROC_SET		((u_long)1)
+#define PMAPPROC_UNSET		((u_long)2)
+#define PMAPPROC_GETPORT	((u_long)3)
+#define PMAPPROC_DUMP		((u_long)4)
+#define PMAPPROC_CALLIT		((u_long)5)
 
 struct pmap {
 	unsigned long pm_prog;
@@ -99,8 +99,8 @@ struct pmaplist {
 };
 
 __BEGIN_DECLS
-extern bool_t xdr_pmap(XDR *, struct pmap *);
-extern bool_t xdr_pmaplist(XDR *, struct pmaplist **);
+extern bool_t xdr_pmap		__P((XDR *, struct pmap *));
+extern bool_t xdr_pmaplist	__P((XDR *, struct pmaplist **));
 __END_DECLS
 
 #endif /* !_RPC_PMAPPROT_H */

@@ -1,64 +1,61 @@
-#!./perl -w
+#!./perl
 
 #
 # Verify which OP= operators warn if their targets are undefined.
 # Based on redef.t, contributed by Graham Barr <Graham.Barr@tiuk.ti.com>
-#	-- Robin Barker 
+#	-- Robin Barker <rmb@cise.npl.co.uk>
 #
-# Now almost completely rewritten.
 
 BEGIN {
     chdir 't' if -d 't';
     @INC = '../lib';
-    require './test.pl';
 }
 
 use strict;
 
-my (%should_warn, %should_not);
-++$should_warn{$_} foreach qw(* / x & ** << >>);
-++$should_not{$_} foreach qw(+ - . | ^ && ||);
+$^W = 1;
+my $warn = "";
+$SIG{q(__WARN__)} = sub { print $warn; $warn .= join("",@_) };
 
-my %integer;
-$integer{$_} = 0 foreach qw(* / % + -);
+sub ok { print $_[1] ? "ok " : "not ok ", $_[0], "\n"; }
 
-sub TIESCALAR { my $x; bless \$x }
-sub FETCH { ${$_[0]} }
-sub STORE { ${$_[0]} = $_[1] }
+sub uninitialized { $warn =~ s/Use of uninitialized value[^\n]+\n//s; }
+    
+print "1..23\n";
 
-sub test_op {
-    my ($tie, $int, $op_seq, $warn) = @_;
-    my $code = "sub {\n";
-    $code .= "use integer;" if $int;
-    $code .= "my \$x;\n";
-    $code .= "tie \$x, 'main';\n" if $tie;
-    $code .= "$op_seq;\n}\n";
+{ my $x; $x ++;     ok  1, ! uninitialized; }
+{ my $x; $x --;     ok  2, ! uninitialized; }
+{ my $x; ++ $x;     ok  3, ! uninitialized; }
+{ my $x; -- $x;	    ok  4, ! uninitialized; }
 
-    my $sub = eval $code;
-    is($@, '', "Can eval code for $op_seq");
-    if ($warn) {
-	warning_like($sub, qr/^Use of uninitialized value/,
-		     "$op_seq$tie$int warns");
-    } else {
-	warning_is($sub, undef, "$op_seq$tie$int does not warn");
-    }
-}
+{ my $x; $x **= 1;  ok  5,  uninitialized; }
 
-# go through all tests once normally and once with tied $x
-for my $tie ("", ", tied") {
-    foreach my $integer ('', ', int') {
-	test_op($tie, $integer, $_, 0) foreach qw($x++ $x-- ++$x --$x);
-    }
+{ my $x; $x += 1;   ok  6, ! uninitialized; }
+{ my $x; $x -= 1;   ok  7, ! uninitialized; }
 
-    foreach (keys %should_warn, keys %should_not) {
-	test_op($tie, '', "\$x $_= 1", $should_warn{$_});
-	next unless exists $integer{$_};
-	test_op($tie, ', int', "\$x $_= 1", $should_warn{$_});
-    }
+{ my $x; $x .= 1;   ok  8, ! uninitialized; }
 
-    foreach (qw(| ^ &)) {
-	test_op($tie, '', "\$x $_= 'x'", $should_warn{$_});
-    }
-}
+{ my $x; $x *= 1;   ok  9,  uninitialized; }
+{ my $x; $x /= 1;   ok 10,  uninitialized; }
+{ my $x; $x %= 1;   ok 11,  uninitialized; }
 
-done_testing();
+{ my $x; $x x= 1;   ok 12,  uninitialized; }
+
+{ my $x; $x &= 1;   ok 13,  uninitialized; }
+{ my $x; $x |= 1;   ok 14, ! uninitialized; }
+{ my $x; $x ^= 1;   ok 15, ! uninitialized; }
+
+{ my $x; $x &&= 1;  ok 16, ! uninitialized; }
+{ my $x; $x ||= 1;  ok 17, ! uninitialized; }
+
+{ my $x; $x <<= 1;  ok 18,  uninitialized; }
+{ my $x; $x >>= 1;  ok 19,  uninitialized; }
+
+{ my $x; $x &= "x"; ok 20,  uninitialized; }
+{ my $x; $x |= "x"; ok 21, ! uninitialized; }
+{ my $x; $x ^= "x"; ok 22, ! uninitialized; }
+
+ok 23, $warn eq '';
+
+# If we got any errors that we were not expecting, then print them
+print map "#$_\n", split /\n/, $warn if length $warn;

@@ -1,5 +1,3 @@
-/*	$OpenBSD: vs_line.c,v 1.16 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)vs_line.c	10.19 (Berkeley) 9/26/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -33,18 +35,21 @@
  * vs_line --
  *	Update one line on the screen.
  *
- * PUBLIC: int vs_line(SCR *, SMAP *, size_t *, size_t *);
+ * PUBLIC: int vs_line __P((SCR *, SMAP *, size_t *, size_t *));
  */
 int
-vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
+vs_line(sp, smp, yp, xp)
+	SCR *sp;
+	SMAP *smp;
+	size_t *xp, *yp;
 {
 	CHAR_T *kp;
 	GS *gp;
 	SMAP *tsmp;
-	size_t chlen = 0, cno_cnt, cols_per_screen, len, nlen;
+	size_t chlen, cno_cnt, cols_per_screen, len, nlen;
 	size_t offset_in_char, offset_in_line, oldx, oldy;
 	size_t scno, skip_cols, skip_screens;
-	int ch = 0, dne, is_cached, is_partial, is_tab, no_draw;
+	int ch, dne, is_cached, is_partial, is_tab;
 	int list_tab, list_dollar;
 	char *p, *cbp, *ecbp, cbuf[128];
 
@@ -56,11 +61,10 @@ vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
 	 * If ex modifies the screen after ex output is already on the screen,
 	 * don't touch it -- we'll get scrolling wrong, at best.
 	 */
-	no_draw = 0;
 	if (!F_ISSET(sp, SC_TINPUT_INFO) && VIP(sp)->totalcount > 1)
-		no_draw = 1;
+		return (0);
 	if (F_ISSET(sp, SC_SCR_EXWROTE) && smp - HMAP != LASTLINE(sp))
-		no_draw = 1;
+		return (0);
 
 	/*
 	 * Assume that, if the cache entry for the line is filled in, the
@@ -69,7 +73,7 @@ vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
 	 * cursor position, we can just return.
 	 */
 	is_cached = SMAP_CACHE(smp);
-	if (yp == NULL && (is_cached || no_draw))
+	if (yp == NULL && is_cached)
 		return (0);
 
 	/*
@@ -134,8 +138,8 @@ vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
 		if (O_ISSET(sp, O_NUMBER)) {
 			cols_per_screen -= O_NUMBER_LENGTH;
 			if ((!dne || smp->lno == 1) && skip_cols == 0) {
-				nlen = snprintf(cbuf, sizeof(cbuf),
-				    O_NUMBER_FMT, (ulong)smp->lno);
+				nlen = snprintf(cbuf,
+				    sizeof(cbuf), O_NUMBER_FMT, smp->lno);
 				if (nlen >= sizeof(cbuf))
 					nlen = sizeof(cbuf) - 1;
 				(void)gp->scr_addstr(sp, cbuf, nlen);
@@ -156,7 +160,7 @@ vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
 		}
 
 		/* If the line is on the screen, quit. */
-		if (is_cached || no_draw)
+		if (is_cached)
 			goto ret1;
 
 		/* Set line cache information. */
@@ -167,7 +171,7 @@ vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
 		 * Lots of special cases for empty lines, but they only apply
 		 * if we're displaying the first screen of the line.
 		 */
-		if (skip_cols == 0) {
+		if (skip_cols == 0)
 			if (dne) {
 				if (smp->lno == 1) {
 					if (list_dollar) {
@@ -184,7 +188,6 @@ vs_line(SCR *sp, SMAP *smp, size_t *yp, size_t *xp)
 empty:					(void)gp->scr_addstr(sp,
 					    KEY_NAME(sp, ch), KEY_LEN(sp, ch));
 				}
-		}
 
 		(void)gp->scr_clrtoeol(sp);
 		(void)gp->scr_move(sp, oldy, oldx);
@@ -321,14 +324,13 @@ display:
 	    offset_in_line + cols_per_screen < sp->cno) {
 		cno_cnt = 0;
 		/* If the line is on the screen, quit. */
-		if (is_cached || no_draw)
+		if (is_cached)
 			goto ret1;
 	} else
 		cno_cnt = (sp->cno - offset_in_line) + 1;
 
-	ecbp = (cbp = cbuf) + sizeof(cbuf) - 1;
-
 	/* This is the loop that actually displays characters. */
+	ecbp = (cbp = cbuf) + sizeof(cbuf) - 1;
 	for (is_partial = 0, scno = 0;
 	    offset_in_line < len; ++offset_in_line, offset_in_char = 0) {
 		if ((ch = *(u_char *)p++) == '\t' && !list_tab) {
@@ -377,12 +379,9 @@ display:
 		if (cno_cnt &&
 		    --cno_cnt == 0 && (F_ISSET(sp, SC_TINPUT) || !is_partial)) {
 			*yp = smp - HMAP;
-			if (F_ISSET(sp, SC_TINPUT)) {
-				if (is_partial)
-					*xp = scno - smp->c_ecsize;
-				else
-					*xp = scno - chlen;
-			} else
+			if (F_ISSET(sp, SC_TINPUT))
+				*xp = scno - chlen;
+			else
 				*xp = scno - 1;
 			if (O_ISSET(sp, O_NUMBER) &&
 			    !F_ISSET(sp, SC_TINPUT_INFO) && skip_cols == 0)
@@ -397,11 +396,11 @@ display:
 		if (is_cached)
 			continue;
 
-#define	FLUSH(gp, sp, cbp, cbuf) do {					\
-	*(cbp) = '\0';							\
-	(void)(gp)->scr_addstr((sp), (cbuf), (cbp) - (cbuf));		\
-	(cbp) = (cbuf);							\
-} while (0)
+#define	FLUSH {								\
+	*cbp = '\0';							\
+	(void)gp->scr_addstr(sp, cbuf, cbp - cbuf);			\
+	cbp = cbuf;							\
+}
 		/*
 		 * Display the character.  We do tab expansion here because
 		 * the screen interface doesn't have any way to set the tab
@@ -412,19 +411,19 @@ display:
 		if (is_tab)
 			while (chlen--) {
 				if (cbp >= ecbp)
-					FLUSH(gp, sp, cbp, cbuf);
+					FLUSH;
 				*cbp++ = TABCH;
 			}
 		else {
 			if (cbp + chlen >= ecbp)
-				FLUSH(gp, sp, cbp, cbuf);
+				FLUSH;
 			for (kp = KEY_NAME(sp, ch) + offset_in_char; chlen--;)
 				*cbp++ = *kp++;
 		}
 	}
 
 	if (scno < cols_per_screen) {
-		/* If we didn't paint the whole line, update the cache. */
+		/* If didn't paint the whole line, update the cache. */
 		smp->c_ecsize = smp->c_eclen = KEY_LEN(sp, ch);
 		smp->c_eboff = len - 1;
 
@@ -438,7 +437,7 @@ display:
 
 			chlen = KEY_LEN(sp, '$');
 			if (cbp + chlen >= ecbp)
-				FLUSH(gp, sp, cbp, cbuf);
+				FLUSH;
 			for (kp = KEY_NAME(sp, '$'); chlen--;)
 				*cbp++ = *kp++;
 		}
@@ -450,7 +449,7 @@ display:
 
 	/* Flush any buffered characters. */
 	if (cbp > cbuf)
-		FLUSH(gp, sp, cbp, cbuf);
+		FLUSH;
 
 ret1:	(void)gp->scr_move(sp, oldy, oldx);
 	return (0);
@@ -460,18 +459,21 @@ ret1:	(void)gp->scr_move(sp, oldy, oldx);
  * vs_number --
  *	Repaint the numbers on all the lines.
  *
- * PUBLIC: int vs_number(SCR *);
+ * PUBLIC: int vs_number __P((SCR *));
  */
 int
-vs_number(SCR *sp)
+vs_number(sp)
+	SCR *sp;
 {
 	GS *gp;
 	SMAP *smp;
+	VI_PRIVATE *vip;
 	size_t len, oldy, oldx;
 	int exist;
 	char nbuf[10];
 
 	gp = sp->gp;
+	vip = VIP(sp);
 
 	/* No reason to do anything if we're in input mode on the info line. */
 	if (F_ISSET(sp, SC_TINPUT_INFO))
@@ -506,7 +508,7 @@ vs_number(SCR *sp)
 			break;
 
 		(void)gp->scr_move(sp, smp - HMAP, 0);
-		len = snprintf(nbuf, sizeof(nbuf), O_NUMBER_FMT, (ulong)smp->lno);
+		len = snprintf(nbuf, sizeof(nbuf), O_NUMBER_FMT, smp->lno);
 		if (len >= sizeof(nbuf))
 			len = sizeof(nbuf) - 1;
 		(void)gp->scr_addstr(sp, nbuf, len);

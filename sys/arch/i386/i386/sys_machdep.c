@@ -1,4 +1,3 @@
-/*	$OpenBSD: sys_machdep.c,v 1.37 2016/03/24 04:56:08 guenther Exp $	*/
 /*	$NetBSD: sys_machdep.c,v 1.28 1996/05/03 19:42:29 christos Exp $	*/
 
 /*-
@@ -17,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,19 +45,23 @@
 #include <sys/file.h>
 #include <sys/time.h>
 #include <sys/proc.h>
-#include <sys/signalvar.h>
 #include <sys/user.h>
 #include <sys/uio.h>
 #include <sys/kernel.h>
 #include <sys/mtio.h>
 #include <sys/buf.h>
+#include <sys/trace.h>
 #include <sys/signal.h>
-#include <sys/malloc.h>
 
 #include <sys/mount.h>
 #include <sys/syscallargs.h>
 
+#include <vm/vm.h>
+#include <vm/vm_kern.h>
+
+#if defined(UVM)
 #include <uvm/uvm_extern.h>
+#endif
 
 #include <machine/cpu.h>
 #include <machine/cpufunc.h>
@@ -67,22 +74,304 @@
 #include <machine/vm86.h>
 #endif
 
-extern struct vm_map *kernel_map;
+extern vm_map_t kernel_map;
 
-int i386_iopl(struct proc *, void *, register_t *);
+#ifdef USER_LDT
+int i386_get_ldt __P((struct proc *, char *, register_t *));
+int i386_set_ldt __P((struct proc *, char *, register_t *));
+#endif
+int i386_iopl __P((struct proc *, char *, register_t *));
+int i386_get_ioperm __P((struct proc *, char *, register_t *));
+int i386_set_ioperm __P((struct proc *, char *, register_t *));
+
+#ifdef TRACE
+int	nvualarm;
+
+void
+vdoualarm(arg)
+	int arg;
+{
+	register struct proc *p;
+
+	p = pfind(arg);
+	if (p)
+		psignal(p, 16);
+	nvualarm--;
+}
+
+int
+sys_vtrace(p, v, retval)
+	struct proc *p;
+	void *v;
+	register_t *retval;
+{
+	register struct sys_vtrace_args /* {
+		syscallarg(int) request;
+		syscallarg(int) value;
+	} */ *uap = v;
+
+	switch (SCARG(uap, request)) {
+
+	case VTR_DISABLE:		/* disable a trace point */
+	case VTR_ENABLE:		/* enable a trace point */
+		if (SCARG(uap, value) < 0 || SCARG(uap, value) >= TR_NFLAGS)
+			return (EINVAL);
+		*retval = traceflags[SCARG(uap, value)];
+		traceflags[SCARG(uap, value)] = SCARG(uap, request);
+		break;
+
+	case VTR_VALUE:		/* return a trace point setting */
+		if (SCARG(uap, value) < 0 || SCARG(uap, value) >= TR_NFLAGS)
+			return (EINVAL);
+		*retval = traceflags[SCARG(uap, value)];
+		break;
+
+	case VTR_UALARM:	/* set a real-time ualarm, less than 1 min */
+		if (SCARG(uap, value) <= 0 || SCARG(uap, value) > 60 * hz ||
+		    nvualarm > 5)
+			return (EINVAL);
+		nvualarm++;
+		timeout(vdoualarm, (caddr_t)p->p_pid, SCARG(uap, value));
+		break;
+
+	case VTR_STAMP:
+		trace(TR_STAMP, SCARG(uap, value), p->p_pid);
+		break;
+	}
+	return (0);
+}
+#endif
+
+#ifdef USER_LDT
+/*
+ * If the process has a local LDT, deallocate it, and restore the default from
+ * proc0.     
+ */   
+void
+i386_user_cleanup(pcb)
+	struct pcb *pcb;
+{
+
+	ldt_free(pcb);
+	pcb->pcb_ldt_sel = GSEL(GLDT_SEL, SEL_KPL);
+	if (pcb == curpcb)
+		lldt(pcb->pcb_ldt_sel);
+#if defined(UVM)
+	uvm_km_free(kernel_map, (vaddr_t)pcb->pcb_ldt,
+	    (pcb->pcb_ldt_len * sizeof(union descriptor))); 
+#else
+	kmem_free(kernel_map, (vm_offset_t)pcb->pcb_ldt,
+	    (pcb->pcb_ldt_len * sizeof(union descriptor))); 
+#endif
+	pcb->pcb_ldt = 0;
+}
+
+int
+i386_get_ldt(p, args, retval)
+	struct proc *p;
+	char *args;
+	register_t *retval;
+{
+	int error;
+	struct pcb *pcb = &p->p_addr->u_pcb;
+	int nldt, num;
+	union descriptor *lp;
+	struct i386_get_ldt_args ua;
+
+	if ((error = copyin(args, &ua, sizeof(ua))) != 0)
+		return (error);
+
+#ifdef	DEBUG
+	printf("i386_get_ldt: start=%d num=%d descs=%x\n", ua.start,
+	    ua.num, ua.desc);
+#endif
+
+	if (ua.start < 0 || ua.num < 0)
+		return (EINVAL);
+
+	if (pcb->pcb_flags & PCB_USER_LDT) {
+		nldt = pcb->pcb_ldt_len;
+		lp = pcb->pcb_ldt;
+	} else {
+		nldt = NLDT;
+		lp = ldt;
+	}
+
+	if (ua.start > nldt)
+		return (EINVAL);
+
+	lp += ua.start;
+	num = min(ua.num, nldt - ua.start);
+
+	error = copyout(lp, ua.desc, num * sizeof(union descriptor));
+	if (error)
+		return (error);
+
+	*retval = num;
+	return (0);
+}
+
+int
+i386_set_ldt(p, args, retval)
+	struct proc *p;
+	char *args;
+	register_t *retval;
+{
+	int error, i, n;
+	struct pcb *pcb = &p->p_addr->u_pcb;
+	int fsslot, gsslot;
+	int s;
+	struct i386_set_ldt_args ua;
+	union descriptor desc;
+
+	if ((error = copyin(args, &ua, sizeof(ua))) != 0)
+		return (error);
+
+#ifdef	DEBUG
+	printf("i386_set_ldt: start=%d num=%d descs=%x\n", ua.start,
+	    ua.num, ua.desc);
+#endif
+
+	if (ua.start < 0 || ua.num < 0)
+		return (EINVAL);
+	if (ua.start > 8192 || (ua.start + ua.num) > 8192)
+		return (EINVAL);
+
+	/* allocate user ldt */
+	if (pcb->pcb_ldt == 0 || (ua.start + ua.num) > pcb->pcb_ldt_len) {
+		size_t old_len, new_len;
+		union descriptor *old_ldt, *new_ldt;
+
+		if (pcb->pcb_flags & PCB_USER_LDT) {
+			old_len = pcb->pcb_ldt_len * sizeof(union descriptor);
+			old_ldt = pcb->pcb_ldt;
+		} else {
+			old_len = NLDT * sizeof(union descriptor);
+			old_ldt = ldt;
+			pcb->pcb_ldt_len = 512;
+		}
+		while ((ua.start + ua.num) > pcb->pcb_ldt_len)
+			pcb->pcb_ldt_len *= 2;
+		new_len = pcb->pcb_ldt_len * sizeof(union descriptor);
+#if defined(UVM)
+		new_ldt = (union descriptor *)uvm_km_alloc(kernel_map, new_len);
+#else
+		new_ldt = (union descriptor *)kmem_alloc(kernel_map, new_len);
+#endif
+		bcopy(old_ldt, new_ldt, old_len);
+		bzero((caddr_t)new_ldt + old_len, new_len - old_len);
+		pcb->pcb_ldt = new_ldt;
+
+		if (pcb->pcb_flags & PCB_USER_LDT)
+			ldt_free(pcb);
+		else
+			pcb->pcb_flags |= PCB_USER_LDT;
+		ldt_alloc(pcb, new_ldt, new_len);
+		if (pcb == curpcb)
+			lldt(pcb->pcb_ldt_sel);
+
+		if (old_ldt != ldt)
+#if defined(UVM)
+			uvm_km_free(kernel_map, (vaddr_t)old_ldt, old_len);
+#else
+			kmem_free(kernel_map, (vm_offset_t)old_ldt, old_len);
+#endif
+#ifdef DEBUG
+		printf("i386_set_ldt(%d): new_ldt=%x\n", p->p_pid, new_ldt);
+#endif
+	}
+
+	if (pcb == curpcb)
+		savectx(curpcb);
+	fsslot = IDXSEL(pcb->pcb_fs);
+	gsslot = IDXSEL(pcb->pcb_gs);
+	error = 0;
+
+	/* Check descriptors for access violations. */
+	for (i = 0, n = ua.start; i < ua.num; i++, n++) {
+		if ((error = copyin(&ua.desc[i], &desc, sizeof(desc))) != 0)
+			return (error);
+
+		switch (desc.sd.sd_type) {
+		case SDT_SYSNULL:
+			desc.sd.sd_p = 0;
+			break;
+		case SDT_SYS286CGT:
+		case SDT_SYS386CGT:
+			/* Can't replace in use descriptor with gate. */
+			if (n == fsslot || n == gsslot)
+				return (EBUSY);
+			break;
+		case SDT_MEMEC:
+		case SDT_MEMEAC:
+		case SDT_MEMERC:
+		case SDT_MEMERAC:
+			/* Must be "present" if executable and conforming. */
+			if (desc.sd.sd_p == 0)
+				return (EACCES);
+			break;
+		case SDT_MEMRO:
+		case SDT_MEMROA:
+		case SDT_MEMRW:
+		case SDT_MEMRWA:
+		case SDT_MEMROD:
+		case SDT_MEMRODA:
+		case SDT_MEME:
+		case SDT_MEMEA:
+		case SDT_MEMER:
+		case SDT_MEMERA:
+			break;
+		default:
+			/* Only care if it's present. */
+			if (desc.sd.sd_p != 0)
+				return (EACCES);
+			break;
+		}
+
+		if (desc.sd.sd_p != 0) {
+			/* Only user (ring-3) descriptors may be present. */
+			if (desc.sd.sd_dpl != SEL_UPL)
+				return (EACCES);
+		} else {
+			/* Must be "present" if in use. */
+			if (n == fsslot || n == gsslot)
+				return (EBUSY);
+		}
+	}
+
+	s = splhigh();
+
+	/* Now actually replace the descriptors. */
+	for (i = 0, n = ua.start; i < ua.num; i++, n++) {
+		if ((error = copyin(&ua.desc[i], &desc, sizeof(desc))) != 0)
+			goto out;
+
+		pcb->pcb_ldt[n] = desc;
+	}
+
+	*retval = ua.start;
+
+out:
+	splx(s);
+	return (error);
+}
+#endif	/* USER_LDT */
 
 #ifdef APERTURE
 extern int allowaperture;
 #endif
 
 int
-i386_iopl(struct proc *p, void *args, register_t *retval)
+i386_iopl(p, args, retval)
+	struct proc *p;
+	char *args;
+	register_t *retval;
 {
 	int error;
 	struct trapframe *tf = p->p_md.md_regs;
 	struct i386_iopl_args ua;
 
-	if ((error = suser(p, 0)) != 0)
+	if ((error = suser(p->p_ucred, &p->p_acflag)) != 0)
 		return error;
 #ifdef APERTURE
 	if (!allowaperture && securelevel > 0)
@@ -103,50 +392,74 @@ i386_iopl(struct proc *p, void *args, register_t *retval)
 	return 0;
 }
 
-uint32_t
-i386_get_threadbase(struct proc *p, int which)
+int
+i386_get_ioperm(p, args, retval)
+	struct proc *p;
+	char *args;
+	register_t *retval;
 {
-	struct segment_descriptor *sdp =
-	    &p->p_addr->u_pcb.pcb_threadsegs[which];
-	return sdp->sd_hibase << 24 | sdp->sd_lobase;
+	int error;
+	struct pcb *pcb = &p->p_addr->u_pcb;
+	struct i386_get_ioperm_args ua;
+
+	if ((error = copyin(args, &ua, sizeof(ua))) != 0)
+		return (error);
+
+	return copyout(pcb->pcb_iomap, ua.iomap, sizeof(pcb->pcb_iomap));
 }
 
 int
-i386_set_threadbase(struct proc *p, uint32_t base, int which)
+i386_set_ioperm(p, args, retval)
+	struct proc *p;
+	char *args;
+	register_t *retval;
 {
-	struct segment_descriptor *sdp;
+	int error;
+	struct pcb *pcb = &p->p_addr->u_pcb;
+	struct i386_set_ioperm_args ua;
 
-	/*
-	 * We can't place a limit on the segment used by the library
-	 * thread register (%gs) because the ELF ABI for i386 places
-	 * data structures both before and after base pointer, using
-	 * negative offsets for some bits (the static (load-time)
-	 * TLS slots) and non-negative for others (the TCB block,
-	 * including the pointer to the TLS dynamic thread vector).
-	 * Protection must be provided by the paging subsystem.
-	 */
-	sdp = &p->p_addr->u_pcb.pcb_threadsegs[which];
-	setsegment(sdp, (void *)base, 0xfffff, SDT_MEMRWA, SEL_UPL, 1, 1);
+	if ((error = suser(p->p_ucred, &p->p_acflag)) != 0)
+		return error;
 
-	if (p == curproc) {
-		curcpu()->ci_gdt[which == TSEG_FS ? GUFS_SEL : GUGS_SEL].sd
-		    = *sdp;
-	}
-	return 0;
+	if ((error = copyin(args, &ua, sizeof(ua))) != 0)
+		return (error);
+
+	return copyin(ua.iomap, pcb->pcb_iomap, sizeof(pcb->pcb_iomap));
 }
 
 int
-sys_sysarch(struct proc *p, void *v, register_t *retval)
+sys_sysarch(p, v, retval)
+	struct proc *p;
+	void *v;
+	register_t *retval;
 {
 	struct sys_sysarch_args /* {
 		syscallarg(int) op;
-		syscallarg(void *) parms;
+		syscallarg(char *) parms;
 	} */ *uap = v;
 	int error = 0;
 
 	switch(SCARG(uap, op)) {
-	case I386_IOPL:
+#ifdef	USER_LDT
+	case I386_GET_LDT: 
+		error = i386_get_ldt(p, SCARG(uap, parms), retval);
+		break;
+
+	case I386_SET_LDT: 
+		error = i386_set_ldt(p, SCARG(uap, parms), retval);
+		break;
+#endif
+
+	case I386_IOPL: 
 		error = i386_iopl(p, SCARG(uap, parms), retval);
+		break;
+
+	case I386_GET_IOPERM: 
+		error = i386_get_ioperm(p, SCARG(uap, parms), retval);
+		break;
+
+	case I386_SET_IOPERM: 
+		error = i386_set_ioperm(p, SCARG(uap, parms), retval);
 		break;
 
 #ifdef VM86
@@ -154,42 +467,6 @@ sys_sysarch(struct proc *p, void *v, register_t *retval)
 		error = i386_vm86(p, SCARG(uap, parms), retval);
 		break;
 #endif
-
-	case I386_GET_FSBASE:
-	      {
-		uint32_t base = i386_get_threadbase(p, TSEG_FS);
-
-		error = copyout(&base, SCARG(uap, parms), sizeof(base));
-		break;
-	      }
-
-	case I386_SET_FSBASE:
-	      {
-		uint32_t base;
-
-		if ((error = copyin(SCARG(uap, parms), &base, sizeof(base))))
-			break;
-		error = i386_set_threadbase(p, base, TSEG_FS);
-		break;
-	      }
-
-	case I386_GET_GSBASE:
-	      {
-		uint32_t base = i386_get_threadbase(p, TSEG_GS);
-
-		error = copyout(&base, SCARG(uap, parms), sizeof(base));
-		break;
-	      }
-
-	case I386_SET_GSBASE:
-	      {
-		uint32_t base;
-
-		if ((error = copyin(SCARG(uap, parms), &base, sizeof(base))))
-			break;
-		error = i386_set_threadbase(p, base, TSEG_GS);
-		break;
-	      }
 
 	default:
 		error = EINVAL;

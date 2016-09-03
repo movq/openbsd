@@ -1,5 +1,4 @@
-/*	$OpenBSD: uvm_vnode.h,v 1.14 2014/12/16 18:30:04 tedu Exp $	*/
-/*	$NetBSD: uvm_vnode.h,v 1.9 2000/03/26 20:54:48 kleink Exp $	*/
+/*	$NetBSD: uvm_vnode.h,v 1.6 1998/08/13 02:11:04 eeh Exp $	*/
 
 /*
  *
@@ -45,17 +44,16 @@
  */
 
 /*
- * the uvm_vnode structure.
+ * the uvm_vnode structure.   put at the top of the vnode data structure.
+ * this allows:
+ *   (struct vnode *) == (struct uvm_vnode *) == (struct uvm_object *)
  */
-
-struct vnode;
 
 struct uvm_vnode {
 	struct uvm_object u_obj;	/* the actual VM object */
-	struct vnode *u_vnode;		/* pointer back to vnode */
 	int u_flags;			/* flags */
 	int u_nio;			/* number of running I/O requests */
-	voff_t u_size;			/* size of object */
+	vsize_t u_size;		/* size of object */
 
 	/* the following entry is locked by uvn_wl_lock */
 	LIST_ENTRY(uvm_vnode) u_wlist;	/* list of writeable vnode objects */
@@ -90,5 +88,19 @@ struct uvm_vnode {
  * touching the vnode [set WANTED and sleep to wait for it to clear]
  */
 #define UVM_VNODE_BLOCKED (UVM_VNODE_ALOCK|UVM_VNODE_DYING|UVM_VNODE_RELKILL)
+
+
+/*
+ * prototypes
+ */
+
+#if 0
+/*
+ * moved uvn_attach to uvm_extern.h because uvm_vnode.h is needed to
+ * include sys/vnode.h, and files that include sys/vnode.h don't know
+ * what a vm_prot_t is.
+ */
+struct uvm_object  *uvn_attach __P((void *, vm_prot_t));
+#endif
 
 #endif /* _UVM_UVM_VNODE_H_ */

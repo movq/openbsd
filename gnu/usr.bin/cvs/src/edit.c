@@ -81,7 +81,7 @@ watch_onoff (argc, argv)
     argv += optind;
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	start_server ();
 
@@ -98,7 +98,7 @@ watch_onoff (argc, argv)
 
     setting_default = (argc <= 0);
 
-    lock_tree_for_write (argc, argv, local, W_LOCAL, 0);
+    lock_tree_for_write (argc, argv, local, 0);
 
     err = start_recursion (onoff_fileproc, onoff_filesdoneproc,
 			   (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
@@ -174,7 +174,7 @@ ncheck_fileproc (callerdat, finfo)
 	return 0;
     }
 
-    while (get_line (&line, &line_len, fp) > 0)
+    while (getline (&line, &line_len, fp) > 0)
     {
 	notif_type = line[0];
 	if (notif_type == '\0')
@@ -235,7 +235,7 @@ send_notifications (argc, argv, local)
     /* OK, we've done everything which needs to happen on the client side.
        Now we can try to contact the server; if we fail, then the
        notifications stay in CVSADM_NOTIFY to be sent next time.  */
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	if (strcmp (command_name, "release") != 0)
 	{
@@ -259,7 +259,7 @@ send_notifications (argc, argv, local)
     {
 	/* Local.  */
 
-	lock_tree_for_write (argc, argv, local, W_LOCAL, 0);
+	lock_tree_for_write (argc, argv, local, 0);
 	err += start_recursion (ncheck_fileproc, (FILESDONEPROC) NULL,
 				(DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 				argc, argv, local, W_LOCAL, 0, 0, (char *)NULL,
@@ -301,8 +301,6 @@ edit_fileproc (callerdat, finfo)
     (void) time (&now);
     ascnow = asctime (gmtime (&now));
     ascnow[24] = '\0';
-    /* Fix non-standard format.  */
-    if (ascnow[8] == '0') ascnow[8] = ' ';
     fprintf (fp, "E%s\t%s GMT\t%s\t%s\t", finfo->file,
 	     ascnow, hostname, CurDir);
     if (setting_tedit)
@@ -429,15 +427,6 @@ edit (argc, argv)
 	setting_tcommit = 1;
     }
 
-    if (strpbrk (hostname, "+,>;=\t\n") != NULL)
-	error (1, 0,
-	       "host name (%s) contains an invalid character (+,>;=\\t\\n)",
-	       hostname);
-    if (strpbrk (CurDir, "+,>;=\t\n") != NULL)
-	error (1, 0,
-"current directory (%s) contains an invalid character (+,>;=\\t\\n)",
-	       CurDir);
-
     /* No need to readlock since we aren't doing anything to the
        repository.  */
     err = start_recursion (edit_fileproc, (FILESDONEPROC) NULL,
@@ -495,8 +484,6 @@ unedit_fileproc (callerdat, finfo)
     (void) time (&now);
     ascnow = asctime (gmtime (&now));
     ascnow[24] = '\0';
-    /* Fix non-standard format.  */
-    if (ascnow[8] == '0') ascnow[8] = ' ';
     fprintf (fp, "U%s\t%s GMT\t%s\t%s\t\n", finfo->file,
 	     ascnow, hostname, CurDir);
 
@@ -566,15 +553,6 @@ unedit_fileproc (callerdat, finfo)
     return 0;
 }
 
-static const char *const unedit_usage[] =
-{
-    "Usage: %s %s [-lR] [files...]\n",
-    "-l: Local directory only, not recursive\n",
-    "-R: Process directories recursively\n",
-    "(Specify the --help global option for a list of other help options)\n",
-    NULL
-};
-
 int
 unedit (argc, argv)
     int argc;
@@ -585,7 +563,7 @@ unedit (argc, argv)
     int err;
 
     if (argc == -1)
-	usage (unedit_usage);
+	usage (edit_usage);
 
     optind = 0;
     while ((c = getopt (argc, argv, "+lR")) != -1)
@@ -600,7 +578,7 @@ unedit (argc, argv)
 		break;
 	    case '?':
 	    default:
-		usage (unedit_usage);
+		usage (edit_usage);
 		break;
 	}
     }
@@ -873,11 +851,11 @@ notify_do (type, filename, who, val, watches, repository)
 	    size_t line_len = 0;
 
 	    args.notifyee = NULL;
-	    usersname = xmalloc (strlen (current_parsed_root->directory)
+	    usersname = xmalloc (strlen (CVSroot_directory)
 				 + sizeof CVSROOTADM
 				 + sizeof CVSROOTADM_USERS
 				 + 20);
-	    strcpy (usersname, current_parsed_root->directory);
+	    strcpy (usersname, CVSroot_directory);
 	    strcat (usersname, "/");
 	    strcat (usersname, CVSROOTADM);
 	    strcat (usersname, "/");
@@ -887,7 +865,7 @@ notify_do (type, filename, who, val, watches, repository)
 		error (0, errno, "cannot read %s", usersname);
 	    if (fp != NULL)
 	    {
-		while (get_line (&line, &line_len, fp) >= 0)
+		while (getline (&line, &line_len, fp) >= 0)
 		{
 		    if (strncmp (line, p, len) == 0
 			&& line[len] == ':')
@@ -991,7 +969,7 @@ notify_check (repository, update_dir)
 	    error (0, errno, "cannot open %s", CVSADM_NOTIFY);
 	return;
     }
-    while (get_line (&line, &line_len, fp) > 0)
+    while (getline (&line, &line_len, fp) > 0)
     {
 	int notif_type;
 	char *filename;
@@ -1082,7 +1060,6 @@ editors_fileproc (callerdat, finfo)
 	cvs_output ("\n", 1);
     }
   out:;
-    free (them);
     return 0;
 }
 
@@ -1118,7 +1095,7 @@ editors (argc, argv)
     argv += optind;
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	start_server ();
 	ign_setup ();

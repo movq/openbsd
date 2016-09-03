@@ -1,4 +1,4 @@
-/*	$OpenBSD: bootxx.c,v 1.10 2004/07/05 19:59:17 deraadt Exp $	*/
+/*	$OpenBSD: bootxx.c,v 1.8 1998/03/06 05:17:19 millert Exp $	*/
 /*	$NetBSD: bootxx.c,v 1.4 1997/01/18 00:28:59 cgd Exp $	*/
 
 /*
@@ -133,7 +133,7 @@ main()
 {
 	struct bbinfo *bbinfop;
 	char *loadaddr;
-	void (*entry)(void);
+	void (*entry) __P((void));
 
 	/* Init prom callback vector. */
 	init_prom_calls();
@@ -147,9 +147,7 @@ main()
 		return;
 	}
 
-#if 0
 	puts("Jumping to entry point...\n");
-#endif
 	entry = (void (*)())loadaddr;
 	(*entry)();
 	puts("SECONDARY BOOT BLOCK RETURNED!\n");

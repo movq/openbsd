@@ -65,15 +65,14 @@ open_module ()
     char *mfile;
     DBM *retval;
 
-    if (current_parsed_root == NULL)
+    if (CVSroot_original == NULL)
     {
 	error (0, 0, "must set the CVSROOT environment variable");
 	error (1, 0, "or specify the '-d' global option");
     }
-    mfile = xmalloc (strlen (current_parsed_root->directory)
-		     + sizeof (CVSROOTADM)
-		     + sizeof (CVSROOTADM_MODULES) + 3);
-    (void) sprintf (mfile, "%s/%s/%s", current_parsed_root->directory,
+    mfile = xmalloc (strlen (CVSroot_directory) + sizeof (CVSROOTADM)
+		     + sizeof (CVSROOTADM_MODULES) + 20);
+    (void) sprintf (mfile, "%s/%s/%s", CVSroot_directory,
 		    CVSROOTADM, CVSROOTADM_MODULES);
     retval = dbm_open (mfile, O_RDONLY, 0666);
     free (mfile);
@@ -97,8 +96,8 @@ close_module (db)
  * It runs the post checkout or post tag proc from the modules file
  */
 int
-do_module (db, mname, m_type, msg, callback_proc, where, shorten,
-	   local_specified, run_module_prog, build_dirs, extra_arg)
+do_module (db, mname, m_type, msg, callback_proc, where,
+	   shorten, local_specified, run_module_prog, extra_arg)
     DBM *db;
     char *mname;
     enum mtype m_type;
@@ -108,7 +107,6 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
     int shorten;
     int local_specified;
     int run_module_prog;
-    int build_dirs;
     char *extra_arg;
 {
     char *checkin_prog = NULL;
@@ -122,9 +120,10 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
     int modargc;
     int xmodargc;
     char **modargv;
-    char **xmodargv = NULL;
+    char **xmodargv;
     /* Found entry from modules file, including options and such.  */
     char *value = NULL;
+    char *zvalue = NULL;
     char *mwhere = NULL;
     char *mfile = NULL;
     char *spec_opt = NULL;
@@ -159,24 +158,6 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
     }
 #endif
 
-    /* Don't process absolute directories.  Anything else could be a security
-     * problem.  Before this check was put in place:
-     *
-     *   $ cvs -d:fork:/cvsroot co /foo
-     *   cvs server: warning: cannot make directory CVS in /: Permission denied
-     *   cvs [server aborted]: cannot make directory /foo: Permission denied
-     *   $
-     */
-    if (isabsolute (mname))
-	error (1, 0, "Absolute module reference invalid: `%s'", mname);
-
-    /* Similarly for directories that attempt to step above the root of the
-     * repository.
-     */
-    if (pathname_levels (mname) > 0)
-	error (1, 0, "up-level in module reference (`..') invalid: `%s'.",
-               mname);
-
     /* if this is a directory to ignore, add it to that list */
     if (mname[0] == '!' && mname[1] != '\0')
     {
@@ -205,21 +186,25 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 	val.dptr = NULL;
     if (val.dptr != NULL)
     {
-	/* copy and null terminate the value */
-	value = xmalloc (val.dsize + 1);
-	memcpy (value, val.dptr, val.dsize);
-	value[val.dsize] = '\0';
+	/* null terminate the value  XXX - is this space ours? */
+	val.dptr[val.dsize] = '\0';
 
 	/* If the line ends in a comment, strip it off */
-	if ((cp = strchr (value, '#')) != NULL)
-	    *cp = '\0';
+	if ((cp = strchr (val.dptr, '#')) != NULL)
+	{
+	    do
+		*cp-- = '\0';
+	    while (isspace ((unsigned char) *cp));
+	}
 	else
-	    cp = value + val.dsize;
+	{
+	    /* Always strip trailing spaces */
+	    cp = strchr (val.dptr, '\0');
+	    while (cp > val.dptr && isspace ((unsigned char) *--cp))
+		*cp = '\0';
+	}
 
-	/* Always strip trailing spaces */
-	while (cp > value && isspace ((unsigned char) *--cp))
-	    *cp = '\0';
-
+	value = val.dptr;
 	mwhere = xstrdup (mname);
 	goto found;
     }
@@ -231,21 +216,19 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 	int is_found = 0;
 
 	/* check to see if mname is a directory or file */
-	file = xmalloc (strlen (current_parsed_root->directory)
-			+ strlen (mname) + sizeof(RCSEXT) + 2);
-	(void) sprintf (file, "%s/%s", current_parsed_root->directory, mname);
-	attic_file = xmalloc (strlen (current_parsed_root->directory)
-			      + strlen (mname)
-			      + sizeof (CVSATTIC) + sizeof (RCSEXT) + 3);
+	file = xmalloc (strlen (CVSroot_directory) + strlen (mname) + 10);
+	(void) sprintf (file, "%s/%s", CVSroot_directory, mname);
+	attic_file = xmalloc (strlen (CVSroot_directory) + strlen (mname)
+			      + sizeof (CVSATTIC) + sizeof (RCSEXT) + 15);
 	if ((acp = strrchr (mname, '/')) != NULL)
 	{
 	    *acp = '\0';
-	    (void) sprintf (attic_file, "%s/%s/%s/%s%s", current_parsed_root->directory,
+	    (void) sprintf (attic_file, "%s/%s/%s/%s%s", CVSroot_directory,
 			    mname, CVSATTIC, acp + 1, RCSEXT);
 	    *acp = '/';
 	}
 	else
-	    (void) sprintf (attic_file, "%s/%s/%s%s", current_parsed_root->directory,
+	    (void) sprintf (attic_file, "%s/%s/%s%s", CVSroot_directory,
 			    CVSATTIC, mname, RCSEXT);
 
 	if (isdir (file))
@@ -314,7 +297,7 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 		error_exit ();
 	    cwd_saved = 1;
 
-	    err += callback_proc (modargc, modargv, where, mwhere, mfile,
+	    err += callback_proc (&modargc, modargv, where, mwhere, mfile,
 				  shorten,
 				  local_specified, mname, msg);
 
@@ -349,20 +332,17 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 	{
 	    char *cp2;
 
-	    /* copy and null terminate the value */
-	    value = xmalloc (val.dsize + 1);
-	    memcpy (value, val.dptr, val.dsize);
-	    value[val.dsize] = '\0';
+	    /* null terminate the value XXX - is this space ours? */
+	    val.dptr[val.dsize] = '\0';
 
 	    /* If the line ends in a comment, strip it off */
-	    if ((cp2 = strchr (value, '#')) != NULL)
-		*cp2 = '\0';
-	    else
-		cp2 = value + val.dsize;
-
-	    /* Always strip trailing spaces */
-	    while (cp2 > value  &&  isspace ((unsigned char) *--cp2))
-		*cp2 = '\0';
+	    if ((cp2 = strchr (val.dptr, '#')) != NULL)
+	    {
+		do
+		    *cp2-- = '\0';
+		while (isspace ((unsigned char) *cp2));
+	    }
+	    value = val.dptr;
 
 	    /* mwhere gets just the module name */
 	    mwhere = xstrdup (mname);
@@ -395,7 +375,11 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 	error_exit ();
     cwd_saved = 1;
 
+    /* copy value to our own string since if we go recursive we'll be
+       really screwed if we do another dbm lookup */
     assert (value != NULL);
+    zvalue = xstrdup (value);
+    value = zvalue;
 
     /* search the value for the special delimiter and save for later */
     if ((cp = strchr (value, CVSMODULE_SPEC)) != NULL)
@@ -403,9 +387,62 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 	*cp = '\0';			/* null out the special char */
 	spec_opt = cp + 1;		/* save the options for later */
 
-	/* strip whitespace if necessary */
-	while (cp > value  &&  isspace ((unsigned char) *--cp))
-	    *cp = '\0';
+	if (cp != value)		/* strip whitespace if necessary */
+	    while (isspace ((unsigned char) *--cp))
+		*cp = '\0';
+
+	if (cp == value)
+	{
+	    /*
+	     * we had nothing but special options, so skip arg
+	     * parsing and regular stuff entirely
+	     *
+	     * If there were only special ones though, we must
+	     * make the appropriate directory and cd to it
+	     */
+	    char *dir;
+
+	    /* XXX - XXX - MAJOR HACK - DO NOT SHIP - this needs to
+	       be !pipeout, but we don't know that here yet */
+	    if (!run_module_prog)
+		goto out;
+
+	    dir = where ? where : mname;
+	    /* XXX - think about making null repositories at each dir here
+		     instead of just at the bottom */
+	    make_directories (dir);
+	    if ( CVS_CHDIR (dir) < 0)
+	    {
+		error (0, errno, "cannot chdir to %s", dir);
+		spec_opt = NULL;
+		err++;
+		goto out;
+	    }
+	    if (!isfile (CVSADM))
+	    {
+		char *nullrepos;
+
+		nullrepos = emptydir_name ();
+
+		Create_Admin (".", dir,
+			      nullrepos, (char *) NULL, (char *) NULL, 0, 0);
+		if (!noexec)
+		{
+		    FILE *fp;
+
+		    fp = open_file (CVSADM_ENTSTAT, "w+");
+		    if (fclose (fp) == EOF)
+			error (1, errno, "cannot close %s", CVSADM_ENTSTAT);
+#ifdef SERVER_SUPPORT
+		    if (server_active)
+			server_set_entstat (dir, nullrepos);
+#endif
+		}
+		free (nullrepos);
+	    }
+	  out:
+	    goto do_special;
+	}
     }
 
     /* don't do special options only part of a module was specified */
@@ -422,9 +459,8 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
      */
 
     /* Put the value on a line with XXX prepended for getopt to eat */
-    line = xmalloc (strlen (value) + 5);
-    strcpy(line, "XXX ");
-    strcpy(line + 4, value);
+    line = xmalloc (strlen (value) + 10);
+    (void) sprintf (line, "%s %s", "XXX", value);
 
     /* turn the line into an argv[] array */
     line2argv (&xmodargc, &xmodargv, line, " \t");
@@ -442,56 +478,56 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 		alias = 1;
 		break;
 	    case 'd':
+		nonalias_opt = 1;
 		if (mwhere)
 		    free (mwhere);
 		mwhere = xstrdup (optarg);
-		nonalias_opt = 1;
 		break;
 	    case 'i':
+		nonalias_opt = 1;
 		if (checkin_prog)
 		    free (checkin_prog);
 		checkin_prog = xstrdup (optarg);
-		nonalias_opt = 1;
 		break;
 	    case 'l':
-		local_specified = 1;
 		nonalias_opt = 1;
+		local_specified = 1;
 		break;
 	    case 'o':
+		nonalias_opt = 1;
 		if (checkout_prog)
 		    free (checkout_prog);
 		checkout_prog = xstrdup (optarg);
-		nonalias_opt = 1;
 		break;
 	    case 'e':
+		nonalias_opt = 1;
 		if (export_prog)
 		    free (export_prog);
 		export_prog = xstrdup (optarg);
-		nonalias_opt = 1;
 		break;
 	    case 't':
+		nonalias_opt = 1;
 		if (tag_prog)
 		    free (tag_prog);
 		tag_prog = xstrdup (optarg);
-		nonalias_opt = 1;
 		break;
 	    case 'u':
+		nonalias_opt = 1;
 		if (update_prog)
 		    free (update_prog);
 		update_prog = xstrdup (optarg);
-		nonalias_opt = 1;
 		break;
 	    case '?':
 		error (0, 0,
 		       "modules file has invalid option for key %s value %s",
-		       key.dptr, value);
+		       key.dptr, val.dptr);
 		err++;
 		goto do_module_return;
 	}
     }
     modargc -= optind;
     modargv += optind;
-    if (modargc == 0  &&  spec_opt == NULL)
+    if (modargc == 0)
     {
 	error (0, 0, "modules file missing directory for module %s", mname);
 	++err;
@@ -524,7 +560,7 @@ do_module (db, mname, m_type, msg, callback_proc, where, shorten,
 	    else
 		err += do_module (db, modargv[i], m_type, msg, callback_proc,
 				  where, shorten, local_specified,
-				  run_module_prog, build_dirs, extra_arg);
+				  run_module_prog, extra_arg);
 	}
 	goto do_module_return;
     }
@@ -539,63 +575,14 @@ module `%s' is a request for a file in a module which is not a directory",
     }
 
     /* otherwise, process this module */
-    if (modargc > 0)
-    {
-	err += callback_proc (modargc, modargv, where, mwhere, mfile, shorten,
-			      local_specified, mname, msg);
-    }
-    else
-    {
-	/*
-	 * we had nothing but special options, so we must
-	 * make the appropriate directory and cd to it
-	 */
-	char *dir;
+    err += callback_proc (&modargc, modargv, where, mwhere, mfile, shorten,
+			  local_specified, mname, msg);
 
-	if (!build_dirs)
-	    goto do_special;
-
-	dir = where ? where : (mwhere ? mwhere : mname);
-	/* XXX - think about making null repositories at each dir here
-		 instead of just at the bottom */
-	make_directories (dir);
-	if ( CVS_CHDIR (dir) < 0)
-	{
-	    error (0, errno, "cannot chdir to %s", dir);
-	    spec_opt = NULL;
-	    err++;
-	    goto do_special;
-	}
-	if (!isfile (CVSADM))
-	{
-	    char *nullrepos;
-
-	    nullrepos = emptydir_name ();
-
-	    Create_Admin (".", dir,
-			  nullrepos, (char *) NULL, (char *) NULL, 0, 0, 1);
-	    if (!noexec)
-	    {
-		FILE *fp;
-
-		fp = open_file (CVSADM_ENTSTAT, "w+");
-		if (fclose (fp) == EOF)
-		    error (1, errno, "cannot close %s", CVSADM_ENTSTAT);
-#ifdef SERVER_SUPPORT
-		if (server_active)
-		    server_set_entstat (dir, nullrepos);
-#endif
-	    }
-	    free (nullrepos);
-	}
-    }
+    free_names (&xmodargc, xmodargv);
 
     /* if there were special include args, process them now */
 
   do_special:
-
-    free_names (&xmodargc, xmodargv);
-    xmodargv = NULL;
 
     /* blow off special options if -l was specified */
     if (local_specified)
@@ -648,7 +635,7 @@ module `%s' is a request for a file in a module which is not a directory",
 	    /* strip whitespace off the end */
 	    do
 		*cp = '\0';
-	    while (cp > spec_opt  &&  isspace ((unsigned char) *--cp));
+	    while (isspace ((unsigned char) *--cp));
 	}
 	else
 	    next_opt = NULL;
@@ -663,7 +650,7 @@ module `%s' is a request for a file in a module which is not a directory",
 	else
 	    err += do_module (db, spec_opt, m_type, msg, callback_proc,
 			      (char *) NULL, 0, local_specified,
-			      run_module_prog, build_dirs, extra_arg);
+			      run_module_prog, extra_arg);
 	spec_opt = next_opt;
     }
 
@@ -758,7 +745,6 @@ module `%s' is a request for a file in a module which is not a directory",
 		    cvs_output (": Executing '", 0);
 		    run_print (stdout);
 		    cvs_output ("'\n", 0);
-		    cvs_flushout ();
 		}
 		err += run_exec (RUN_TTY, RUN_TTY, RUN_TTY, RUN_NORMAL);
 		free (expanded_path);
@@ -769,8 +755,6 @@ module `%s' is a request for a file in a module which is not a directory",
 
  do_module_return:
     /* clean up */
-    if (xmodargv != NULL)
-	free_names (&xmodargc, xmodargv);
     if (mwhere)
 	free (mwhere);
     if (checkin_prog)
@@ -785,8 +769,8 @@ module `%s' is a request for a file in a module which is not a directory",
 	free (update_prog);
     if (cwd_saved)
 	free_cwd (&cwd);
-    if (value != NULL)
-	free (value);
+    if (zvalue != NULL)
+	free (zvalue);
 
     if (xvalue != NULL)
 	free (xvalue);
@@ -1003,11 +987,6 @@ cat_module (status)
 	wid = 0;
 	while ((c = getopt (argc, argv, CVSMODULE_OPTS)) != -1)
 	{
-	    if (c == '?') {
-		error (0, 0, "invalid module line");
-		return;
-	    }
-
 	    if (!status)
 	    {
 		if (c == 'a' || c == 'l')

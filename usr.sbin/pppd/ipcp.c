@@ -1,59 +1,44 @@
-/*	$OpenBSD: ipcp.c,v 1.15 2015/12/14 03:25:59 mmcc Exp $	*/
+/*	$OpenBSD: ipcp.c,v 1.6 1998/05/08 04:52:23 millert Exp $	*/
 
 /*
  * ipcp.c - PPP IP Control Protocol.
  *
- * Copyright (c) 1984-2000 Carnegie Mellon University. All rights reserved.
+ * Copyright (c) 1989 Carnegie Mellon University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name "Carnegie Mellon University" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For permission or any legal
- *    details, please contact
- *      Office of Technology Transfer
- *      Carnegie Mellon University
- *      5000 Forbes Avenue
- *      Pittsburgh, PA  15213-3890
- *      (412) 268-4387, fax: (412) 268-7395
- *      tech-transfer@andrew.cmu.edu
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Computing Services
- *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
- *
- * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
- * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Carnegie Mellon University.  The name of the
+ * University may not be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: ipcp.c,v 1.34 1998/04/28 23:38:09 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: ipcp.c,v 1.6 1998/05/08 04:52:23 millert Exp $";
+#endif
+#endif
 
 /*
  * TODO:
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <netdb.h>
+#include <sys/param.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #include "pppd.h"
 #include "fsm.h"
@@ -74,17 +59,17 @@ static int proxy_arp_set[NUM_PPP];	/* Have created proxy arp entry */
 /*
  * Callbacks for fsm code.  (CI = Configuration Information)
  */
-static void ipcp_resetci(fsm *);	/* Reset our CI */
-static int  ipcp_cilen(fsm *);	        /* Return length of our CI */
-static void ipcp_addci(fsm *, u_char *, int *);	/* Add our CI */
-static int  ipcp_ackci(fsm *, u_char *, int);	/* Peer ack'd our CI */
-static int  ipcp_nakci(fsm *, u_char *, int);	/* Peer nak'd our CI */
-static int  ipcp_rejci(fsm *, u_char *, int);	/* Peer rej'd our CI */
-static int  ipcp_reqci(fsm *, u_char *, int *, int); /* Rcv CI */
-static void ipcp_up(fsm *);		/* We're UP */
-static void ipcp_down(fsm *);		/* We're DOWN */
-static void ipcp_script(fsm *, char *); /* Run an up/down script */
-static void ipcp_finished(fsm *);	/* Don't need lower layer */
+static void ipcp_resetci __P((fsm *));	/* Reset our CI */
+static int  ipcp_cilen __P((fsm *));	        /* Return length of our CI */
+static void ipcp_addci __P((fsm *, u_char *, int *)); /* Add our CI */
+static int  ipcp_ackci __P((fsm *, u_char *, int));	/* Peer ack'd our CI */
+static int  ipcp_nakci __P((fsm *, u_char *, int));	/* Peer nak'd our CI */
+static int  ipcp_rejci __P((fsm *, u_char *, int));	/* Peer rej'd our CI */
+static int  ipcp_reqci __P((fsm *, u_char *, int *, int)); /* Rcv CI */
+static void ipcp_up __P((fsm *));		/* We're UP */
+static void ipcp_down __P((fsm *));		/* We're DOWN */
+static void ipcp_script __P((fsm *, char *)); /* Run an up/down script */
+static void ipcp_finished __P((fsm *));	/* Don't need lower layer */
 
 fsm ipcp_fsm[NUM_PPP];		/* IPCP fsm structure */
 
@@ -109,17 +94,18 @@ static fsm_callbacks ipcp_callbacks = { /* IPCP callback routines */
 /*
  * Protocol entry points from main code.
  */
-static void ipcp_init(int);
-static void ipcp_open(int);
-static void ipcp_close(int, char *);
-static void ipcp_lowerup(int);
-static void ipcp_lowerdown(int);
-static void ipcp_input(int, u_char *, int);
-static void ipcp_protrej(int);
-static int  ipcp_printpkt(u_char *, int, void (*)(void *, char *, ...), void *);
-static void ip_check_options(void);
-static int  ip_demand_conf(int);
-static int  ip_active_pkt(u_char *, int);
+static void ipcp_init __P((int));
+static void ipcp_open __P((int));
+static void ipcp_close __P((int, char *));
+static void ipcp_lowerup __P((int));
+static void ipcp_lowerdown __P((int));
+static void ipcp_input __P((int, u_char *, int));
+static void ipcp_protrej __P((int));
+static int  ipcp_printpkt __P((u_char *, int,
+			       void (*) __P((void *, char *, ...)), void *));
+static void ip_check_options __P((void));
+static int  ip_demand_conf __P((int));
+static int  ip_active_pkt __P((u_char *, int));
 
 struct protent ipcp_protent = {
     PPP_IPCP,
@@ -139,7 +125,7 @@ struct protent ipcp_protent = {
     ip_active_pkt
 };
 
-static void ipcp_clear_addrs(int);
+static void ipcp_clear_addrs __P((int));
 
 /*
  * Lengths of configuration options.
@@ -166,7 +152,7 @@ u_int32_t ipaddr;
 
     ipaddr = ntohl(ipaddr);
 
-    snprintf(b, sizeof b, "%d.%d.%d.%d",
+    sprintf(b, "%d.%d.%d.%d",
 	    (u_char)(ipaddr >> 24),
 	    (u_char)(ipaddr >> 16),
 	    (u_char)(ipaddr >> 8),
@@ -806,7 +792,7 @@ ipcp_reqci(f, inp, len, reject_if_disagree)
     next = inp;
     while (l) {
 	orc = CONFACK;			/* Assume success */
-	cip = p = next;			/* Remember beginning of CI */
+	cip = p = next;			/* Remember begining of CI */
 	if (l < 2 ||			/* Not enough data for CI header or */
 	    p[1] < 2 ||			/*  CI length too small or */
 	    p[1] > l) {			/*  CI length too big? */
@@ -860,7 +846,7 @@ ipcp_reqci(f, inp, len, reject_if_disagree)
 	     * If he doesn't know our address, or if we both have our address
 	     * but disagree about it, then NAK it with our idea.
 	     */
-	    GETLONG(tl, p);		/* Parse destination address (ours) */
+	    GETLONG(tl, p);		/* Parse desination address (ours) */
 	    ciaddr2 = htonl(tl);
 	    IPCPDEBUG((LOG_INFO, "%s)", ip_ntoa(ciaddr2)));
 	    if (ciaddr2 != wo->ouraddr) {
@@ -1360,11 +1346,9 @@ ipcp_script(f, script)
     char strspeed[32], strlocal[32], strremote[32];
     char *argv[8];
 
-    snprintf(strspeed, sizeof strspeed, "%d", baud_rate);
-    strlcpy(strlocal, ip_ntoa(ipcp_gotoptions[f->unit].ouraddr),
-	sizeof strlocal);
-    strlcpy(strremote, ip_ntoa(ipcp_hisoptions[f->unit].hisaddr),
-	sizeof strremote);
+    sprintf(strspeed, "%d", baud_rate);
+    strcpy(strlocal, ip_ntoa(ipcp_gotoptions[f->unit].ouraddr));
+    strcpy(strremote, ip_ntoa(ipcp_hisoptions[f->unit].hisaddr));
 
     argv[0] = script;
     argv[1] = ifname;
@@ -1389,7 +1373,7 @@ static int
 ipcp_printpkt(p, plen, printer, arg)
     u_char *p;
     int plen;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     int code, id, len, olen;

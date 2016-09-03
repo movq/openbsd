@@ -1,4 +1,4 @@
-/*	$OpenBSD: ftree.c,v 1.40 2016/08/26 04:17:48 guenther Exp $	*/
+/*	$OpenBSD: ftree.c,v 1.9 1998/06/09 07:28:41 deraadt Exp $	*/
 /*	$NetBSD: ftree.c,v 1.4 1995/03/21 09:07:21 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,30 +38,27 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ftree.c	8.2 (Berkeley) 4/18/94";
+#else
+static char rcsid[] = "$OpenBSD: ftree.c,v 1.9 1998/06/09 07:28:41 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/stat.h>
-#include <errno.h>
-#include <fts.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <sys/param.h>
 #include <unistd.h>
-
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <fts.h>
 #include "pax.h"
+#include "ftree.h"
 #include "extern.h"
-
-/*
- * Data structure used to store the file args to be handed to fts().
- * It keeps track of which args generated a "selected" member.
- */
-typedef struct ftree {
-	char		*fname;		/* file tree name */
-	int		refcnt;		/* has tree had a selected file? */
-	int		newercnt;	/* skipped due to -u/-D */
-	int		chflg;		/* change directory flag */
-	struct ftree	*fow;		/* pointer to next entry on list */
-} FTREE;
-
 
 /*
  * routines to interface with the fts library function.
@@ -73,7 +74,7 @@ typedef struct ftree {
  * pax, they are read from stdin
  */
 
-static FTS *ftsp = NULL;		/* current FTS handle */
+static FTS *ftsp = NULL;		/* curent FTS handle */
 static int ftsopts;			/* options to be used on fts_open */
 static char *farray[2];			/* array for passing each arg to fts */
 static FTREE *fthead = NULL;		/* head of linked list of file args */
@@ -82,8 +83,7 @@ static FTREE *ftcur = NULL;		/* current file arg being processed */
 static FTSENT *ftent = NULL;		/* current file tree entry */
 static int ftree_skip;			/* when set skip to next file arg */
 
-static int ftree_arg(void);
-static char *getpathname(char *, int);
+static int ftree_arg __P((void));
 
 /*
  * ftree_start()
@@ -95,8 +95,13 @@ static char *getpathname(char *, int);
  *	0 if there is at least one valid file arg to process, -1 otherwise
  */
 
+#ifdef __STDC__
 int
 ftree_start(void)
+#else
+int
+ftree_start()
+#endif
 {
 	/*
 	 * set up the operation mode of fts, open the first file arg. We must
@@ -121,7 +126,11 @@ ftree_start(void)
 	else
 		ftsopts |= FTS_PHYSICAL;
 	if (Hflag)
+#	ifdef NET2_FTS
+		paxwarn(0, "The -H flag is not supported on this version");
+#	else
 		ftsopts |= FTS_COMFOLLOW;
+#	endif
 	if (Xflag)
 		ftsopts |= FTS_XDEV;
 
@@ -145,17 +154,24 @@ ftree_start(void)
  *	0 if added to the linked list, -1 if failed
  */
 
+#ifdef __STDC__
 int
-ftree_add(char *str, int chflg)
+ftree_add(register char *str, int chflg)
+#else
+int
+ftree_add(str, chflg)
+	register char *str;
+	int chflg;
+#endif
 {
-	FTREE *ft;
-	int len;
+	register FTREE *ft;
+	register int len;
 
 	/*
 	 * simple check for bad args
 	 */
 	if ((str == NULL) || (*str == '\0')) {
-		paxwarn(0, "Invalid file name argument");
+		paxwarn(0, "Invalid file name arguement");
 		return(-1);
 	}
 
@@ -164,7 +180,7 @@ ftree_add(char *str, int chflg)
 	 * processed in the same order they were passed to pax). Get rid of any
 	 * trailing / the user may pass us. (watch out for / by itself).
 	 */
-	if ((ft = malloc(sizeof(FTREE))) == NULL) {
+	if ((ft = (FTREE *)malloc(sizeof(FTREE))) == NULL) {
 		paxwarn(0, "Unable to allocate memory for filename");
 		return(-1);
 	}
@@ -173,7 +189,6 @@ ftree_add(char *str, int chflg)
 		str[len] = '\0';
 	ft->fname = str;
 	ft->refcnt = 0;
-	ft->newercnt = 0;
 	ft->chflg = chflg;
 	ft->fow = NULL;
 	if (fthead == NULL) {
@@ -191,8 +206,14 @@ ftree_add(char *str, int chflg)
  *	-n and -d processing.
  */
 
+#ifdef __STDC__
 void
-ftree_sel(ARCHD *arcn)
+ftree_sel(register ARCHD *arcn)
+#else
+void
+ftree_sel(arcn)
+	register ARCHD *arcn;
+#endif
 {
 	/*
 	 * set reference bit for this pattern. This linked list is only used
@@ -219,29 +240,21 @@ ftree_sel(ARCHD *arcn)
 }
 
 /*
- * ftree_skipped_newer()
- *	file has been skipped because a newer file exists and -u/-D given
- */
-
-void
-ftree_skipped_newer(ARCHD *arcn)
-{
-	/* skipped due to -u/-D, mark accordingly */
-	if (ftcur != NULL)
-		ftcur->newercnt = 1;
-}
-
-/*
  * ftree_chk()
  *	called at end on pax execution. Prints all those file args that did not
  *	have a selected member (reference count still 0)
  */
 
+#ifdef __STDC__
 void
 ftree_chk(void)
+#else
+void
+ftree_chk()
+#endif
 {
-	FTREE *ft;
-	int wban = 0;
+	register FTREE *ft;
+	register int wban = 0;
 
 	/*
 	 * make sure all dir access times were reset.
@@ -254,7 +267,7 @@ ftree_chk(void)
 	 * that never had a match
 	 */
 	for (ft = fthead; ft != NULL; ft = ft->fow) {
-		if ((ft->refcnt > 0) || ft->newercnt > 0 || ft->chflg)
+		if ((ft->refcnt > 0) || ft->chflg)
 			continue;
 		if (wban == 0) {
 			paxwarn(1,"WARNING! These file names were not selected:");
@@ -274,9 +287,15 @@ ftree_chk(void)
  *	stdin).
  */
 
+#ifdef __STDC__
 static int
 ftree_arg(void)
+#else
+static int
+ftree_arg()
+#endif
 {
+	register char *pt;
 
 	/*
 	 * close off the current file tree
@@ -290,17 +309,19 @@ ftree_arg(void)
 	 * keep looping until we get a valid file tree to process. Stop when we
 	 * reach the end of the list (or get an eof on stdin)
 	 */
-	for (;;) {
+	for(;;) {
 		if (fthead == NULL) {
 			/*
 			 * the user didn't supply any args, get the file trees
-			 * to process from stdin;
+			 * to process from stdin; 
 			 */
-			if (getpathname(farray[0], PAXPATHLEN+1) == NULL)
+			if (fgets(farray[0], PAXPATHLEN+1, stdin) == NULL)
 				return(-1);
+			if ((pt = strchr(farray[0], '\n')) != NULL)
+				*pt = '\0';
 		} else {
 			/*
-			 * the user supplied the file args as arguments to pax
+			 * the user supplied the file args as arguements to pax
 			 */
 			if (ftcur == NULL)
 				ftcur = fthead;
@@ -327,7 +348,7 @@ ftree_arg(void)
 		 * watch it, fts wants the file arg stored in a array of char
 		 * ptrs, with the last one a null. we use a two element array
 		 * and set farray[0] to point at the buffer with the file name
-		 * in it. We cannot pass all the file args to fts at one shot
+		 * in it. We cannnot pass all the file args to fts at one shot
 		 * as we need to keep a handle on which file arg generates what
 		 * files (the -n and -d flags need this). If the open is
 		 * successful, return a 0.
@@ -345,15 +366,23 @@ ftree_arg(void)
  *	0 when contents of arcn have been set with the next file, -1 when done.
  */
 
+#ifdef __STDC__
 int
-next_file(ARCHD *arcn)
+next_file(register ARCHD *arcn)
+#else
+int
+next_file(arcn)
+	register ARCHD *arcn;
+#endif
 {
-	int cnt;
+	register int cnt;
+	time_t atime;
+	time_t mtime;
 
 	/*
 	 * ftree_sel() might have set the ftree_skip flag if the user has the
 	 * -n option and a file was selected from this file arg tree. (-n says
-	 * only one member is matched for each pattern) ftree_skip being 1
+	 * only one member is matched for each pattern) ftree_skip being 1 
 	 * forces us to go to the next arg now.
 	 */
 	if (ftree_skip) {
@@ -368,10 +397,8 @@ next_file(ARCHD *arcn)
 	/*
 	 * loop until we get a valid file to process
 	 */
-	for (;;) {
+	for(;;) {
 		if ((ftent = fts_read(ftsp)) == NULL) {
-			if (errno)
-				syswarn(1, errno, "next_file");
 			/*
 			 * out of files in this tree, go to next arg, if none
 			 * we are done
@@ -384,7 +411,7 @@ next_file(ARCHD *arcn)
 		/*
 		 * handle each type of fts_read() flag
 		 */
-		switch (ftent->fts_info) {
+		switch(ftent->fts_info) {
 		case FTS_D:
 		case FTS_DEFAULT:
 		case FTS_F:
@@ -403,10 +430,15 @@ next_file(ARCHD *arcn)
 			 * remember to force the time (this is -t on a read
 			 * directory, not a created directory).
 			 */
-			if (!tflag)
+#			ifdef NET2_FTS
+			if (!tflag || (get_atdir(ftent->fts_statb.st_dev,
+			    ftent->fts_statb.st_ino, &mtime, &atime) < 0))
+#			else
+			if (!tflag || (get_atdir(ftent->fts_statp->st_dev,
+			    ftent->fts_statp->st_ino, &mtime, &atime) < 0))
+#			endif
 				continue;
-			do_atdir(ftent->fts_path, ftent->fts_statp->st_dev,
-			    ftent->fts_statp->st_ino);
+			set_ftime(ftent->fts_path, mtime, atime, 1);
 			continue;
 		case FTS_DC:
 			/*
@@ -415,16 +447,28 @@ next_file(ARCHD *arcn)
 			paxwarn(1,"File system cycle found at %s",ftent->fts_path);
 			continue;
 		case FTS_DNR:
+#			ifdef NET2_FTS
+			syswarn(1, errno,
+#			else
 			syswarn(1, ftent->fts_errno,
+#			endif
 			    "Unable to read directory %s", ftent->fts_path);
 			continue;
 		case FTS_ERR:
+#			ifdef NET2_FTS
+			syswarn(1, errno,
+#			else
 			syswarn(1, ftent->fts_errno,
+#			endif
 			    "File system traversal error");
 			continue;
 		case FTS_NS:
 		case FTS_NSOK:
+#			ifdef NET2_FTS
+			syswarn(1, errno,
+#			else
 			syswarn(1, ftent->fts_errno,
+#			endif
 			    "Unable to access %s", ftent->fts_path);
 			continue;
 		}
@@ -437,7 +481,11 @@ next_file(ARCHD *arcn)
 		arcn->pad = 0;
 		arcn->ln_nlen = 0;
 		arcn->ln_name[0] = '\0';
-		memcpy(&arcn->sb, ftent->fts_statp, sizeof(arcn->sb));
+#		ifdef NET2_FTS
+		arcn->sb = ftent->fts_statb;
+#		else
+		arcn->sb = *(ftent->fts_statp);
+#		endif
 
 		/*
 		 * file type based set up and copy into the arcn struct
@@ -449,14 +497,14 @@ next_file(ARCHD *arcn)
 		 * end in case we cut short a file tree traversal). However
 		 * there is no way to reset access times on symlinks.
 		 */
-		switch (S_IFMT & arcn->sb.st_mode) {
+		switch(S_IFMT & arcn->sb.st_mode) {
 		case S_IFDIR:
 			arcn->type = PAX_DIR;
 			if (!tflag)
 				break;
 			add_atdir(ftent->fts_path, arcn->sb.st_dev,
-			    arcn->sb.st_ino, &arcn->sb.st_mtim,
-			    &arcn->sb.st_atim);
+			    arcn->sb.st_ino, arcn->sb.st_mtime,
+			    arcn->sb.st_atime);
 			break;
 		case S_IFCHR:
 			arcn->type = PAX_CHR;
@@ -487,7 +535,7 @@ next_file(ARCHD *arcn)
 			}
 			/*
 			 * set link name length, watch out readlink does not
-			 * NUL terminate the link path
+			 * always NUL terminate the link path
 			 */
 			arcn->ln_name[cnt] = '\0';
 			arcn->ln_nlen = cnt;
@@ -510,57 +558,8 @@ next_file(ARCHD *arcn)
 	/*
 	 * copy file name, set file name length
 	 */
-	arcn->nlen = strlcpy(arcn->name, ftent->fts_path, sizeof(arcn->name));
-	if (arcn->nlen >= sizeof(arcn->name))
-		arcn->nlen = sizeof(arcn->name) - 1; /* XXX truncate? */
+	arcn->nlen = l_strncpy(arcn->name, ftent->fts_path, sizeof(arcn->name) - 1);
+	arcn->name[arcn->nlen] = '\0';
 	arcn->org_name = ftent->fts_path;
 	return(0);
-}
-
-/*
- * getpathname()
- *	Reads a pathname from stdin, handling NUL- or newline-termination.
- * Return:
- *	NULL at end of file, otherwise the NUL-terminated buffer.
- */
-
-static char *
-getpathname(char *buf, int buflen)
-{
-	char *bp, *ep;
-	int ch, term;
-
-	if (zeroflag) {
-		/*
-		 * Read a NUL-terminated pathname, being especially
-		 * paranoid about proper termination and pathname length.
-		 */
-		for (bp = buf, ep = buf + buflen; bp < ep; bp++) {
-			if ((ch = getchar()) == EOF) {
-				if (bp != buf)
-					paxwarn(1, "Ignoring unterminated "
-					    "pathname at EOF");
-				return(NULL);
-			}
-			if ((*bp = ch) == '\0')
-				return(buf);
-		}
-		/* Too long - skip this path */
-		*--bp = '\0';
-		term = '\0';
-	} else {
-		if (fgets(buf, buflen, stdin) == NULL)
-			return(NULL);
-		if ((bp = strchr(buf, '\n')) != NULL || feof(stdin)) {
-			if (bp != NULL)
-				*bp = '\0';
-			return(buf);
-		}
-		/* Too long - skip this path */
-		term = '\n';
-	}
-	while ((ch = getchar()) != term && ch != EOF)
-		continue;
-	paxwarn(1, "Ignoring too-long pathname: %s", buf);
-	return(NULL);
 }

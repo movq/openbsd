@@ -1,4 +1,4 @@
-/*	$OpenBSD: pl_1.c,v 1.12 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: pl_1.c,v 1.5 1999/01/18 21:53:22 pjanzen Exp $	*/
 /*	$NetBSD: pl_1.c,v 1.3 1995/04/22 10:37:07 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,15 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/wait.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pl_1.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: pl_1.c,v 1.5 1999/01/18 21:53:22 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include <errno.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <unistd.h>
-
-#include "extern.h"
 #include "player.h"
+#include <sys/types.h>
+#include <errno.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #ifndef __GNUC__
 #define __attribute__(x)
@@ -53,13 +61,14 @@
  * because of a Sync() failure.
  */
 void
-leave(int conditions)
+leave(conditions)
+	int conditions;
 {
 	(void) signal(SIGHUP, SIG_IGN);
 	(void) signal(SIGINT, SIG_IGN);
 	(void) signal(SIGQUIT, SIG_IGN);
 	(void) signal(SIGALRM, SIG_IGN);
-	(void) signal(SIGCHLD, SIG_DFL);
+	(void) signal(SIGCHLD, SIG_IGN);
 
 	if (done_curses) {
 		Msg("It looks like you've had it!");
@@ -116,21 +125,23 @@ leave(int conditions)
 }
 
 void
-choke(int n __attribute__((unused)))
+choke(n)
+	int n __attribute__((unused));
 {
 	leave(LEAVE_QUIT);
 }
 
 void
-child(int n __attribute__((unused)))
+child(n)
+	int n __attribute__((unused));
 {
-	int status;
+	union wait status;
 	int pid;
 	int save_errno = errno;
 	
-	(void) signal(SIGCHLD, SIG_DFL);
+	(void) signal(SIGCHLD, SIG_IGN);
 	do {
-		pid = waitpid((pid_t)-1, &status, WNOHANG);
+		pid = wait3((int *)&status, WNOHANG, (struct rusage *)0);
 		if (pid < 0 || (pid > 0 && !WIFSTOPPED(status)))
 			hasdriver = 0;
 	} while (pid > 0);

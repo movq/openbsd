@@ -1,11 +1,9 @@
-/*	$OpenBSD: igrp.h,v 1.4 2000/10/03 14:31:55 ho Exp $	*/
-
 /* Cisco IGRP definitions */
 
 /* IGRP Header */
 
 struct igrphdr {
-#ifdef WORDS_BIGENDIAN
+#if BYTE_ORDER == BIG_ENDIAN
 	u_char ig_v:4;		/* protocol version number */
 	u_char ig_op:4;		/* opcode */
 #else

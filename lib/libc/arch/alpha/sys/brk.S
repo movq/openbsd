@@ -1,4 +1,4 @@
-/*	$OpenBSD: brk.S,v 1.8 2015/09/10 13:29:09 guenther Exp $	*/
+/*	$OpenBSD: brk.S,v 1.4 1996/11/13 22:05:10 niklas Exp $	*/
 /*	$NetBSD: brk.S,v 1.4 1996/10/17 03:08:15 cgd Exp $	*/
 
 /*
@@ -30,25 +30,27 @@
 
 #include "SYS.h"
 
+#if defined(SYSLIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: brk.S,v 1.4 1996/11/13 22:05:10 niklas Exp $"
+#endif /* SYSLIBC_SCCS */
+
 	.globl	_end
-IMPORT(__curbrk, 8)
+IMPORT(curbrk, 8)
 
 	.data
-__minbrk:
+EXPORT(minbrk)
 	.quad	_end
-	.size	__minbrk, . - __minbrk
-	.type	__minbrk,@object
 
 	.text
-	.weak	brk
 LEAF(brk, 1)
 	br	pv, L1				/* XXX profiling */
 L1:	LDGP(pv)
-	ldq	v0, __minbrk
+	ldq	v0, minbrk
 	cmpult  a0, v0, t0
 	cmovne  t0, v0, a0
 	CALLSYS_ERROR(break)
-	stq	a0, __curbrk
+	stq	a0, curbrk
 	mov	zero, v0
 	RET
 END(brk)

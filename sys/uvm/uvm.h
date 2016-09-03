@@ -1,7 +1,7 @@
-/*	$OpenBSD: uvm.h,v 1.61 2016/08/11 01:17:33 dlg Exp $	*/
-/*	$NetBSD: uvm.h,v 1.24 2000/11/27 08:40:02 chs Exp $	*/
+/*	$NetBSD: uvm.h,v 1.14 1999/03/25 18:48:49 mrg Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -32,14 +38,30 @@
 #define _UVM_UVM_H_
 
 #include <uvm/uvm_extern.h>
+
+#include <uvm/uvm_stat.h>
+
+/*
+ * pull in prototypes
+ */
+
 #include <uvm/uvm_amap.h>
 #include <uvm/uvm_aobj.h>
 #include <uvm/uvm_fault.h>
 #include <uvm/uvm_glue.h>
 #include <uvm/uvm_km.h>
+#include <uvm/uvm_loan.h>
+#include <uvm/uvm_map.h>
+#include <uvm/uvm_object.h>
+#include <uvm/uvm_page.h>
+#include <uvm/uvm_pager.h>
+#include <uvm/uvm_pdaemon.h>
 #include <uvm/uvm_swap.h>
 
-#include <uvm/uvm_pmemrange.h>
+/*
+ * pull in VM_NFREELIST
+ */
+#include <machine/vmparam.h>
 
 /*
  * uvm structure (vm global state: collected in one structure for ease
@@ -48,35 +70,53 @@
 
 struct uvm {
 	/* vm_page related parameters */
-
-	/* vm_page queues */
+		/* vm_page queues */
+	struct pglist page_free[VM_NFREELIST];	/* unallocated pages */
 	struct pglist page_active;	/* allocated pages, in use */
 	struct pglist page_inactive_swp;/* pages inactive (reclaim or free) */
 	struct pglist page_inactive_obj;/* pages inactive (reclaim or free) */
-	/* Lock order: pageqlock, then fpageqlock. */
-	struct mutex pageqlock;		/* lock for active/inactive page q */
-	struct mutex fpageqlock;	/* lock for free page q  + pdaemon */
-	boolean_t page_init_done;	/* TRUE if uvm_page_init() finished */
-	struct uvm_pmr_control pmr_control; /* pmemrange data */
-
+	simple_lock_data_t pageqlock;	/* lock for active/inactive page q */
+	simple_lock_data_t fpageqlock;	/* lock for free page q */
 		/* page daemon trigger */
 	int pagedaemon;			/* daemon sleeps on this */
 	struct proc *pagedaemon_proc;	/* daemon's pid */
+	simple_lock_data_t pagedaemon_lock;
+		/* page hash */
+	struct pglist *page_hash;	/* page hash table (vp/off->page) */
+	int page_nhash;			/* number of buckets */
+	int page_hashmask;		/* hash mask */
+	simple_lock_data_t hashlock;	/* lock on page_hash array */
 
-		/* aiodone daemon trigger */
-	int aiodoned;			/* daemon sleeps on this */
-	struct proc *aiodoned_proc;	/* daemon's pid */
-	struct mutex aiodoned_lock;
+	/* anon stuff */
+	struct vm_anon *afree;		/* anon free list */
+	simple_lock_data_t afreelock; 	/* lock on anon free list */
 
 	/* static kernel map entry pool */
-	SLIST_HEAD(, vm_map_entry) kentry_free; /* free page pool */
+	vm_map_entry_t kentry_free;	/* free page pool */
+	simple_lock_data_t kentry_lock;
 
-	/* aio_done is locked by uvm.aiodoned_lock. */
-	TAILQ_HEAD(, buf) aio_done;		/* done async i/o reqs */
+	/* aio_done is locked by uvm.pagedaemon_lock and splbio! */
+	struct uvm_aiohead aio_done;	/* done async i/o reqs */
+
+	/* pager VM area bounds */
+	vaddr_t pager_sva;		/* start of pager VA area */
+	vaddr_t pager_eva;		/* end of pager VA area */
+
+	/* swap-related items */
+	simple_lock_data_t swap_data_lock;
 
 	/* kernel object: to support anonymous pageable kernel memory */
 	struct uvm_object *kernel_object;
 };
+
+extern struct uvm uvm;
+
+/*
+ * historys
+ */
+
+UVMHIST_DECL(maphist);
+UVMHIST_DECL(pdhist);
 
 /*
  * vm_map_entry etype bits:
@@ -86,59 +126,55 @@ struct uvm {
 #define UVM_ET_SUBMAP		0x02	/* it is a vm_map submap */
 #define UVM_ET_COPYONWRITE 	0x04	/* copy_on_write */
 #define UVM_ET_NEEDSCOPY	0x08	/* needs_copy */
-#define UVM_ET_HOLE		0x10	/* no backend */
-#define UVM_ET_NOFAULT		0x20	/* don't fault */
-#define UVM_ET_FREEMAPPED	0x80	/* map entry is on free list (DEBUG) */
 
 #define UVM_ET_ISOBJ(E)		(((E)->etype & UVM_ET_OBJ) != 0)
 #define UVM_ET_ISSUBMAP(E)	(((E)->etype & UVM_ET_SUBMAP) != 0)
 #define UVM_ET_ISCOPYONWRITE(E)	(((E)->etype & UVM_ET_COPYONWRITE) != 0)
 #define UVM_ET_ISNEEDSCOPY(E)	(((E)->etype & UVM_ET_NEEDSCOPY) != 0)
-#define UVM_ET_ISHOLE(E)	(((E)->etype & UVM_ET_HOLE) != 0)
-#define UVM_ET_ISNOFAULT(E)	(((E)->etype & UVM_ET_NOFAULT) != 0)
-
-#ifdef _KERNEL
 
 /*
- * holds all the internal UVM data
+ * macros
  */
-extern struct uvm uvm;
 
 /*
- * UVM_WAIT: wait... wrapper around the tsleep() function.
+ * UVM_UNLOCK_AND_WAIT: atomic unlock+wait... front end for the 
+ * (poorly named) thread_sleep_msg function.
  */
 
-#define	UVM_WAIT(event, intr, msg, timo)				\
-do {									\
-	tsleep(event, PVM|(intr ? PCATCH : 0), msg, timo);		\
-} while (0)
+#if defined(MULTIPROCESSOR) || defined(LOCKDEBUG)
+
+#define UVM_UNLOCK_AND_WAIT(event,lock,intr,msg, timo) \
+	thread_sleep_msg(event,lock,intr,msg, timo)
+
+#else
+
+#define UVM_UNLOCK_AND_WAIT(event,lock,intr,msg, timo) \
+	thread_sleep_msg(event,NULL,intr,msg, timo)
+
+#endif
 
 /*
  * UVM_PAGE_OWN: track page ownership (only if UVM_PAGE_TRKOWN)
  */
 
 #if defined(UVM_PAGE_TRKOWN)
+
 #define UVM_PAGE_OWN(PG, TAG) uvm_page_own(PG, TAG)
-#else
+
+#else /* UVM_PAGE_TRKOWN */
+
 #define UVM_PAGE_OWN(PG, TAG) /* nothing */
+
 #endif /* UVM_PAGE_TRKOWN */
 
 /*
- * uvm_map internal functions.
- * Used by uvm_map address selectors.
+ * pull in inlines
  */
-struct vm_map_entry	*uvm_map_entrybyaddr(struct uvm_map_addr *, vaddr_t);
-int			 uvm_map_isavail(struct vm_map *,
-			    struct uvm_addr_state *,
-			    struct vm_map_entry **, struct vm_map_entry**,
-			    vaddr_t, vsize_t);
-struct uvm_addr_state	*uvm_map_uaddr(struct vm_map *, vaddr_t);
-struct uvm_addr_state	*uvm_map_uaddr_e(struct vm_map *, struct vm_map_entry *);
 
-#define VMMAP_FREE_START(_entry)	((_entry)->end + (_entry)->guard)
-#define VMMAP_FREE_END(_entry)		((_entry)->end + (_entry)->guard + \
-					    (_entry)->fspace)
-
-#endif /* _KERNEL */
+#include <uvm/uvm_amap_i.h>
+#include <uvm/uvm_fault_i.h>
+#include <uvm/uvm_map_i.h>
+#include <uvm/uvm_page_i.h>
+#include <uvm/uvm_pager_i.h>
 
 #endif /* _UVM_UVM_H_ */

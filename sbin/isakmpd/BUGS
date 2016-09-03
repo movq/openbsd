@@ -1,5 +1,5 @@
-$OpenBSD: BUGS,v 1.15 2006/06/02 19:35:55 hshoexer Exp $
-$EOM: BUGS,v 1.38 2000/02/18 08:47:35 niklas Exp $
+$OpenBSD: BUGS,v 1.12 1999/10/01 14:09:31 niklas Exp $
+$EOM: BUGS,v 1.37 1999/09/30 12:44:40 niklas Exp $
 
 Until we have a bug-tracking system setup, we might just add bugs to this
 file:
@@ -87,14 +87,11 @@ file:
 
 * Wrong error message when policy check fails.
 
-* Retransmit of QM (packet 1) after INFO/PAYLOAD_MALFORMED was received.
+* Restransmit of QM (packet 1) after INFO/PAYLOAD_MALFORMED was received.
 
 * SIGSEGV after sa_enter: sa added to sa list, trigged by DELETE notify (Linux)
 
 * Passive connections, undefined local&remote IDs will cause IKE peer IDs
-  to be used.
+  to be used. 
 
 * host route support in KLIPS does not work properly
-
-* When not having compiled in support for a certain crypto algorithm and
-  the config file still tells us to propose it, we segfault.

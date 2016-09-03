@@ -1,4 +1,4 @@
-/*	$OpenBSD: ether.c,v 1.10 2014/11/19 20:28:56 miod Exp $	*/
+/*	$OpenBSD: ether.c,v 1.5 1998/02/23 20:32:23 niklas Exp $	*/
 /*	$NetBSD: ether.c,v 1.8 1996/10/13 02:29:00 christos Exp $	*/
 
 /*
@@ -47,6 +47,7 @@
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 
 #include "stand.h"
@@ -55,13 +56,18 @@
 
 /* Caller must leave room for ethernet header in front!! */
 ssize_t
-sendether(struct iodesc *d, void *pkt, size_t len, u_char *dea, int etype)
+sendether(d, pkt, len, dea, etype)
+	struct iodesc *d;
+	void *pkt;
+	size_t len;
+	u_char *dea;
+	int etype;
 {
-	ssize_t n;
-	struct ether_header *eh;
+	register ssize_t n;
+	register struct ether_header *eh;
 
 #ifdef ETHER_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("sendether: called\n");
 #endif
 
@@ -86,14 +92,18 @@ sendether(struct iodesc *d, void *pkt, size_t len, u_char *dea, int etype)
  * NOTE: Caller must leave room for the Ether header.
  */
 ssize_t
-readether(struct iodesc *d, void *pkt, size_t len, time_t tleft,
-    u_int16_t *etype)
+readether(d, pkt, len, tleft, etype)
+	register struct iodesc *d;
+	register void *pkt;
+	register size_t len;
+	time_t tleft;
+	register u_int16_t *etype;
 {
-	ssize_t n;
-	struct ether_header *eh;
+	register ssize_t n;
+	register struct ether_header *eh;
 
 #ifdef ETHER_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("readether: called\n");
 #endif
 
@@ -123,13 +133,14 @@ readether(struct iodesc *d, void *pkt, size_t len, time_t tleft,
 /*
  * Convert Ethernet address to printable (loggable) representation.
  */
-static const char digits[] = "0123456789abcdef";
-const char *
-ether_sprintf(const u_char *ap)
+static char digits[] = "0123456789abcdef";
+char *
+ether_sprintf(ap)
+        register u_char *ap;
 {
-	int i;
+	register int i;
 	static char etherbuf[18];
-	char *cp = etherbuf;
+	register char *cp = etherbuf;
 
 	for (i = 0; i < 6; i++) {
 		*cp++ = digits[*ap >> 4];

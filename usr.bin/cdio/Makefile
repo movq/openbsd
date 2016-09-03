@@ -1,9 +1,7 @@
-#	$OpenBSD: Makefile,v 1.6 2008/11/29 08:57:10 jakemsr Exp $
+#	$OpenBSD: Makefile,v 1.1 1996/08/23 23:42:28 downsj Exp $
 
 PROG=	cdio
-DPADD=	${LIBUTIL} ${LIBEDIT} ${LIBTERMCAP}
-LDADD=	-lutil -ledit -ltermcap -lsndio
-SRCS=	cdio.c cddb.c mmc.c rip.c
-CDIAGFLAGS=-Wall -W -Wmissing-prototypes -pedantic
+DPADD=	${LIBUTIL}
+LDADD=	-lutil
 
 .include <bsd.prog.mk>

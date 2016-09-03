@@ -1,6 +1,5 @@
 /* VMS object file format
-   Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 2000,
-   2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1989,90,91,94,95,1996 Free Software Foundation, Inc.
 
 This file is part of GAS, the GNU Assembler.
 
@@ -14,10 +13,9 @@ WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
 the GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with GAS; see the file COPYING.  If not, write to the Free
-Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-02111-1307, USA.  */
+You should have received a copy of the GNU General Public
+License along with GAS; see the file COPYING.  If not, write
+to the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 /* Tag to validate a.out object file format processing */
 #define OBJ_VMS 1
@@ -33,8 +31,8 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
  * Doing the alignment here (on initialized data) can
  * mess up the calculation of global data PSECT sizes.
  */
-#define SUB_SEGMENT_ALIGN(SEG, FRCHAIN)	\
-  (((SEG) == data_section) ? 0 : LONGWORD_ALIGNMENT)
+#define SUB_SEGMENT_ALIGN(SEG)	\
+		(((SEG) == data_section) ? 0 : LONGWORD_ALIGNMENT)
 
 /* This flag is used to remember whether we are in the const or the
    data section.  By and large they are identical, but we set a no-write
@@ -48,7 +46,7 @@ extern unsigned char const_flag;
 
 #define IN_DEFAULT_SECTION 0x80
 
-/* These are defined in obj-vms.c.  */
+/* These are defined in obj-vms.c. */
 extern const short seg_N_TYPE[];
 extern const segT N_TYPE_seg[];
 
@@ -59,7 +57,7 @@ enum reloc_type
   };
 
 #define N_BADMAG(x)	(0)
-#define N_TXTOFF(x)	( sizeof (struct exec) )
+#define N_TXTOFF(x)	( sizeof(struct exec) )
 #define N_DATOFF(x)	( N_TXTOFF(x) + (x).a_text )
 #define N_TROFF(x)	( N_DATOFF(x) + (x).a_data )
 #define N_DROFF(x)	( N_TROFF(x) + (x).a_trsize )
@@ -84,7 +82,7 @@ struct exec
 typedef struct
   {
     struct exec header;		/* a.out header */
-    long string_table_size;	/* names + '\0' + sizeof (int) */
+    long string_table_size;	/* names + '\0' + sizeof(int) */
   }
 object_headers;
 
@@ -127,7 +125,7 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 /*
  *  Macros to extract information from a symbol table entry.
- *  This syntactic indirection allows independence regarding a.out or coff.
+ *  This syntaxic indirection allows independence regarding a.out or coff.
  *  The argument (s) of all these macros is a pointer to a symbol table entry.
  */
 
@@ -139,19 +137,13 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 #define S_IS_COMMON(s)	(S_GET_TYPE(s) == N_UNDF && S_GET_VALUE(s) != 0)
 
-/* Return true for symbols that should not be reduced to section
-   symbols or eliminated from expressions, because they may be
-   overridden by the linker.  */
-#define S_FORCE_RELOC(s, strict) \
-  (!SEG_NORMAL (S_GET_SEGMENT (s)))
-
 #define S_IS_REGISTER(s)	((s)->sy_symbol.n_type == N_REGISTER)
 
 /* True if a debug special symbol entry */
 #define S_IS_DEBUG(s)		((s)->sy_symbol.n_type & N_STAB)
 /* True if a symbol is local symbol name */
 /* A symbol name whose name begin with ^A is a gas internal pseudo symbol
-   nameless symbols come from .stab directives.  */
+   nameless symbols come from .stab directives. */
 #define S_IS_LOCAL(s)		(S_GET_NAME(s) && \
 				 !S_IS_DEBUG(s) && \
 				 (strchr(S_GET_NAME(s), '\001') != 0 || \
@@ -197,6 +189,7 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 /* Set the n_type expression value */
 #define S_SET_TYPE(s,v)		((s)->sy_symbol.n_type = (v))
 
+
 /* File header macro and type definition */
 
 #define H_GET_TEXT_SIZE(h)		((h)->header.a_text)
@@ -209,28 +202,29 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 #define H_SET_STRING_SIZE(h,v)		((h)->string_table_size = (v))
 #define H_SET_SYMBOL_TABLE_SIZE(h,v)	((h)->header.a_syms = (v) * \
-					 sizeof (struct nlist))
+					 sizeof(struct nlist))
 
-/* line numbering stuff.  */
+/* line numbering stuff. */
 #define OBJ_EMIT_LINENO(a, b, c)	{;}
 
 #define obj_symbol_new_hook(s)	{;}
 
 /* Force structure tags into scope so that their use in prototypes
-   will never be their first occurrence.  */
+   will never be their first occurance.  */
 struct fix;
+struct symbol;
 struct frag;
 
 /* obj-vms routines visible to the rest of gas.  */
 
 extern void tc_aout_fix_to_chars PARAMS ((char *,struct fix *,relax_addressT));
 
-extern int vms_resolve_symbol_redef PARAMS ((symbolS *));
+extern int vms_resolve_symbol_redef PARAMS ((struct symbol *));
 #define RESOLVE_SYMBOL_REDEFINITION(X)	vms_resolve_symbol_redef(X)
 
-/* Compiler-generated label "__vax_g_doubles" is used to augment .stabs.  */
-extern void vms_check_for_special_label PARAMS ((symbolS *));
-#define obj_frob_label(X) vms_check_for_special_label(X)
+/* Compiler-generated label "__vax_g_doubles" is used to augment .stabs. */
+extern void vms_check_for_special_label PARAMS ((struct symbol *));
+#define tc_frob_label(X) vms_check_for_special_label(X)
 
 extern void vms_check_for_main PARAMS ((void));
 
@@ -552,3 +546,5 @@ extern void vms_write_object_file PARAMS ((unsigned,unsigned,unsigned,
 #define DBG_S_C_COMPLEX_ARRAY		DST_K_TS_ARRAY
 
 #endif	/* WANT_VMS_OBJ_DEFS */
+
+/* end of obj-vms.h */

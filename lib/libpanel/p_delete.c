@@ -1,7 +1,7 @@
-/* $OpenBSD: p_delete.c,v 1.6 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_delete.c,v 1.2 1998/07/24 17:08:08 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -38,22 +38,18 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_delete.c,v 1.6 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_delete.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-del_panel(PANEL * pan)
+int
+del_panel(PANEL *pan)
 {
-  int err = OK;
-
-  T((T_CALLED("del_panel(%p)"), pan));
-  if (pan)
+  if(pan)
     {
       dBug(("--> del_panel %s", USER_PTR(pan->user)));
-      HIDE_PANEL(pan, err, OK);
+      if(_nc_panel_is_linked(pan))
+	(void)hide_panel(pan);
       free((void *)pan);
+      return(OK);
     }
-  else
-    err = ERR;
-
-  returnCode(err);
+  return(ERR);
 }

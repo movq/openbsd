@@ -9,8 +9,6 @@
 # Mostly rewritten on
 # Tue Jan 19 23:00:00 CET 1999
 # by Francois Desarmenien <desar@club-internet.fr>
-# Modified by Boyd Gerber <gerberb@zenez.com>
-# Tue Sep 21 1999
 ###############################################################
 #
 # To use cc,  use   sh Configure
@@ -46,7 +44,7 @@
 # -Even optimized for speed, gcc generated code is smaller (!!!)
 # -gcc is free
 # -I use ld to link which is distributed with the core OS distribution, so you
-#  don't need to buy the development kit, just find someone kind enough to
+#  don't need to buy the developement kit, just find someone kind enough to
 #  give you a binary release of gcc.
 #
 #
@@ -84,7 +82,6 @@ case `/bin/uname -X | egrep '3\.2v'` in
    echo "" >&4
    echo "" >&4
    echo "  For UnixWare, use svr4.sh hints instead" >&4
-   echo "  For UnixWare 7.*, use svr5.sh hints instead" >&4
    echo "" >&4
    echo "***********************************************************" >&4
    exit
@@ -105,19 +102,19 @@ if test "$scorls" = "3"
 then 
     dlext=''
     case "$cc" in
-        *gcc*)  optimize='-O2' ;;
+        gcc)    optimize='-O2' ;;
         *)      ccflags="$ccflags -W0 -quiet"
                 optimize='-O' ;;
     esac
 else
     ###############################################################
-    # Need this in release 5 because of changed fpu exception rules
-    ccflags="$ccflags -D HAS_FPSETMASK"
+    # Need this in release 5 because of changed fpu exeption rules
+    ccflags="$ccflags -D PERL_SCO5"
 
     ###############################################################
     # In Release 5, always compile ELF objects
     case "$cc" in
-        *gcc*)
+        gcc)
             ccflags="$ccflags -melf"
             optimize='-O2'
         ;;
@@ -142,13 +139,13 @@ else
     if test "$usedl" != "n"; then
         ld='ld'
         case "$cc" in
-            *gcc*)
+            gcc)
                 ccdlflags='-Xlinker -Bexport -L/usr/local/lib'
                 cccdlflags='-fpic'
                 lddlflags='-G -L/usr/local/lib'
             ;;
             *)
-                ccdlflags='-Wl,-Bexport -L/usr/local/lib'
+                ccdlflags='-Bexport -L/usr/local/lib'
                 cccdlflags='-Kpic'
                 lddlflags='-G -L/usr/local/lib'
             ;;
@@ -162,7 +159,7 @@ else
 
         ###############################################################
         # Force to define those symbols, as they are #defines and not
-        # caught by Configure, and they are useful
+        # catched by Configure, and they are useful
         d_dlopen='define'
         d_dlerror='define'
     fi
@@ -181,13 +178,6 @@ shift
 libswanted="$*"
 
 ###############################################################
-# Remove libbind because it conflicts with libsocket.
-libswanted=`echo " $libswanted " | sed -e 's/ bind / /'`
-set X $libswanted
-shift
-libswanted="$*"
-
-###############################################################
 # Try to use libintl.a since it has strcoll and strxfrm
 libswanted="intl $libswanted"
 
@@ -199,15 +189,6 @@ if test -f /usr/lib/libdbm.nfs.a ; then
     shift
     libswanted="$*"
 fi
-
-###############################################################
-# At least for ORS5.0.2, prefer sprintf() over gcvt(), since gcvt()
-# used to cause a SIGFPE and a core dump when passed a NaN.
-# This may not be an issue in perl-5.8.x and later since we
-# try to trap SIGFPE.  However, preferring sprintf() should be
-# safe anyway, so let's go ahead and set it.  See the bugs database
-# item [perl #3100].   --A.D. 12/2004.
-	gconvert_preference='sprintf'
 
 ###############################################################
 # We disable ODBM_File if OSR5 because it's mostly broken
@@ -244,6 +225,7 @@ nm_opt='-p'
 ###############################################################
 # Perl 5.003_05 and later try to include both <time.h> and <sys/select.h>
 # in pp_sys.c, but that fails due to a redefinition of struct timeval.
+# This will generate a WHOA THERE.  Accept the default.
 i_sysselct=$undef
 
 

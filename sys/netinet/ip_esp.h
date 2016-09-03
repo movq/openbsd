@@ -1,11 +1,12 @@
-/*	$OpenBSD: ip_esp.h,v 1.43 2016/09/02 09:39:32 vgross Exp $	*/
+/*	$OpenBSD: ip_esp.h,v 1.23 1999/04/11 19:41:38 niklas Exp $	*/
+
 /*
  * The authors of this code are John Ioannidis (ji@tla.org),
- * Angelos D. Keromytis (kermit@csd.uch.gr) and
+ * Angelos D. Keromytis (kermit@csd.uch.gr) and 
  * Niels Provos (provos@physnet.uni-hamburg.de).
  *
- * The original version of this code was written by John Ioannidis
- * for BSD/OS in Athens, Greece, in November 1995.
+ * This code was written by John Ioannidis for BSD/OS in Athens, Greece, 
+ * in November 1995.
  *
  * Ported to OpenBSD and NetBSD, with additional transforms, in December 1996,
  * by Angelos D. Keromytis.
@@ -17,12 +18,11 @@
  *
  * Copyright (C) 1995, 1996, 1997, 1998, 1999 by John Ioannidis,
  * Angelos D. Keromytis and Niels Provos.
- * Copyright (c) 2001 Angelos D. Keromytis.
- *
- * Permission to use, copy, and modify this software with or without fee
+ *	
+ * Permission to use, copy, and modify this software without fee
  * is hereby granted, provided that this entire notice is included in
  * all copies of any software which is or includes a copy or
- * modification of this software.
+ * modification of this software. 
  * You may use this code under the GNU public license if you so wish. Please
  * contribute changes back to the authors under this freer than GPL license
  * so that we may further the use of strong encryption without limitations to
@@ -35,65 +35,67 @@
  * PURPOSE.
  */
 
-#ifndef _NETINET_IP_ESP_H_
-#define _NETINET_IP_ESP_H_
+/*
+ * Encapsulation Security Payload Processing
+ * Per RFC1827 (Atkinson, 1995)
+ */
+
+/* Various defines for the "new" ESP */
+#define ESP_NEW_ALEN		12	/* 96bits authenticator */
+
+struct esp_old
+{
+    u_int32_t	esp_spi;	/* Security Parameters Index */
+    u_int8_t	esp_iv[8];	/* iv[4] may actually be data! */
+};
+
+#define ESP_OLD_FLENGTH    12
+#define ESP_NEW_FLENGTH    16
+
+struct esp_new
+{
+    u_int32_t   esp_spi;        /* Security Parameter Index */
+    u_int32_t   esp_rpl;        /* Sequence Number, Replay Counter */
+    u_int8_t    esp_iv[8];      /* Data may start already at iv[0]! */
+};
 
 struct espstat
 {
-    u_int32_t	esps_hdrops;	/* Packet shorter than header shows */
-    u_int32_t	esps_nopf;	/* Protocol family not supported */
+    u_int32_t	esps_hdrops;	/* packet shorter than header shows */
     u_int32_t	esps_notdb;
     u_int32_t	esps_badkcr;
     u_int32_t	esps_qfull;
     u_int32_t	esps_noxform;
     u_int32_t	esps_badilen;
     u_int32_t   esps_wrap;	/* Replay counter wrapped around */
-    u_int32_t   esps_badenc;	/* Bad encryption detected */
     u_int32_t	esps_badauth;	/* Only valid for transforms with auth */
     u_int32_t   esps_replay;	/* Possible packet replay detected */
     u_int32_t	esps_input;	/* Input ESP packets */
     u_int32_t 	esps_output;	/* Output ESP packets */
-    u_int32_t	esps_invalid;	/* Trying to use an invalid TDB */
-    u_int64_t	esps_ibytes;	/* Input bytes */
-    u_int64_t	esps_obytes;	/* Output bytes */
-    u_int32_t	esps_toobig;	/* Packet got larger than IP_MAXPACKET */
-    u_int32_t	esps_pdrops;	/* Packet blocked due to policy */
-    u_int32_t	esps_crypto;	/* Crypto processing failure */
-    u_int32_t	esps_udpencin;  /* Input ESP-in-UDP packets */
-    u_int32_t	esps_udpencout; /* Output ESP-in-UDP packets */
-    u_int32_t	esps_udpinval;  /* Invalid input ESP-in-UDP packets */
-    u_int32_t	esps_udpneeded; /* Trying to use a ESP-in-UDP TDB */
+    u_int32_t	esps_invalid;   /* Trying to use an invalid TDB */
+    u_int64_t	esps_ibytes;	/* input bytes */
+    u_int64_t   esps_obytes;	/* output bytes */
+    u_int32_t	esps_toobig;	/* packet got larger than IP_MAXPACKET */
+    u_int32_t	esps_pdrops;	/* packet blocked due to policy */
 };
 
 /*
  * Names for ESP sysctl objects
  */
-#define	ESPCTL_ENABLE		1	/* Enable ESP processing */
-#define	ESPCTL_UDPENCAP_ENABLE	2	/* Enable ESP over UDP */
-#define	ESPCTL_UDPENCAP_PORT	3	/* UDP port for encapsulation */
-#define	ESPCTL_STATS		4	/* ESP Stats */
-#define ESPCTL_MAXID		5
+#define	ESPCTL_ENABLE	1		/* Enable ESP processing */
+#define ESPCTL_MAXID	2
 
 #define ESPCTL_NAMES { \
 	{ 0, 0 }, \
 	{ "enable", CTLTYPE_INT }, \
-	{ "udpencap", CTLTYPE_INT }, \
-	{ "udpencap_port", CTLTYPE_INT }, \
-	{ "stats", CTLTYPE_STRUCT }, \
-}
-
-#define ESPCTL_VARS { \
-	NULL, \
-	&esp_enable, \
-	&udpencap_enable, \
-	&udpencap_port, \
-	NULL \
 }
 
 #ifdef _KERNEL
+void	esp_input __P((struct mbuf *, ...));
+int	esp_output __P((struct mbuf *, struct sockaddr_encap *,
+    struct tdb *, struct mbuf **));
+int	esp_sysctl __P((int *, u_int, void *, size_t *, void *, size_t));
+
 extern int esp_enable;
-extern int udpencap_enable;
-extern int udpencap_port;
-extern struct espstat espstat;
-#endif /* _KERNEL */
-#endif /* _NETINET_IP_ESP_H_ */
+struct espstat espstat;
+#endif /* _Kernel */

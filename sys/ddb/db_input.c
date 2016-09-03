@@ -1,28 +1,28 @@
-/*	$OpenBSD: db_input.c,v 1.16 2016/04/19 12:23:25 mpi Exp $	*/
+/*	$OpenBSD: db_input.c,v 1.7 1997/07/19 22:31:18 niklas Exp $	*/
 /*	$NetBSD: db_input.c,v 1.7 1996/02/05 01:57:02 christos Exp $	*/
 
-/*
+/* 
  * Mach Operating System
  * Copyright (c) 1993,1992,1991,1990 Carnegie Mellon University
  * All Rights Reserved.
- *
+ * 
  * Permission to use, copy, modify and distribute this software and its
  * documentation is hereby granted, provided that both the copyright
  * notice and this permission notice appear in all copies of the
  * software, derivative works or modified versions, and any portions
  * thereof, and that both notices appear in supporting documentation.
- *
+ * 
  * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
  * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND FOR
  * ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
- *
+ * 
  * Carnegie Mellon requests users of this software to return to
- *
+ * 
  *  Software Distribution Coordinator  or  Software.Distribution@CS.CMU.EDU
  *  School of Computer Science
  *  Carnegie Mellon University
  *  Pittsburgh PA 15213-3890
- *
+ * 
  * any improvements or extensions that they make and grant Carnegie Mellon
  * the rights to redistribute these changes.
  *
@@ -31,12 +31,15 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+#include <sys/proc.h>
+
+#include <vm/vm.h>
 
 #include <machine/db_machdep.h>
 
 #include <ddb/db_var.h>
 #include <ddb/db_output.h>
+#include <ddb/db_command.h>
 #include <ddb/db_sym.h>
 #include <ddb/db_extern.h>
 
@@ -45,12 +48,6 @@
 /*
  * Character input and editing.
  */
-
-void db_putstring(char *, int);
-void db_putnchars(int, int);
-void db_delete(int, int);
-void db_delete_line(void);
-int db_inputchar(int);
 
 /*
  * We don't track output position while editing input,
@@ -68,22 +65,28 @@ char *  db_history_curr = db_history;	/* start of current line */
 char *  db_history_last = db_history;	/* start of last line */
 char *  db_history_prev = (char *) 0;	/* start of previous line */
 #endif
-
+	
 
 #define	CTRL(c)		((c) & 0x1f)
 #define	isspace(c)	((c) == ' ' || (c) == '\t')
 #define	BLANK		' '
 #define	BACKUP		'\b'
 
+static int cnmaygetc __P((void));
+
 void
-db_putstring(char *s, int count)
+db_putstring(s, count)
+	char	*s;
+	int	count;
 {
 	while (--count >= 0)
 	    cnputc(*s++);
 }
 
 void
-db_putnchars(int c, int count)
+db_putnchars(c, count)
+	int	c;
+	int	count;
 {
 	while (--count >= 0)
 	    cnputc(c);
@@ -95,9 +98,11 @@ db_putnchars(int c, int count)
 #define	DEL_FWD		0
 #define	DEL_BWD		1
 void
-db_delete(int n, int bwd)
+db_delete(n, bwd)
+	int	n;
+	int	bwd;
 {
-	char *p;
+	register char *p;
 
 	if (bwd) {
 	    db_lc -= n;
@@ -136,10 +141,11 @@ db_delete_line(void)
 			db_history_size - 1; \
 	} while (0)
 #endif
-
+		
 /* returns TRUE at end-of-line */
 int
-db_inputchar(int c)
+db_inputchar(c)
+	int	c;
 {
 	switch (c) {
 	    case CTRL('b'):
@@ -220,7 +226,7 @@ db_inputchar(int c)
 			INC_DB_CURR();
 			db_le = db_lc = db_lbuf_start;
 		} else {
-			char *p;
+			register char *p;
 			INC_DB_CURR();
 			for (p = db_history_curr, db_le = db_lbuf_start;*p; ) {
 				*db_le++ = *p++;
@@ -241,7 +247,7 @@ db_inputchar(int c)
 			INC_DB_CURR();
 			db_delete_line();
 			if (db_history_curr != db_history_last) {
-				char *p;
+				register char *p;
 				for (p = db_history_curr,
 				     db_le = db_lbuf_start; *p;) {
 					*db_le++ = *p++;
@@ -270,7 +276,7 @@ db_inputchar(int c)
 		 * save it.
 		 */
 		if (db_history_curr == db_history_prev) {
-			char *pp, *pc;
+			register char *pp, *pc;
 
 			/*
 			 * Is it the same?
@@ -293,7 +299,7 @@ db_inputchar(int c)
 			}
 		}
 		if (db_le != db_lbuf_start) {
-			char *p;
+			register char *p;
 			db_history_prev = db_history_last;
 			for (p = db_lbuf_start; p != db_le; p++) {
 				*db_history_last++ = *p;
@@ -312,7 +318,7 @@ db_inputchar(int c)
 		    cnputc('\007');
 		}
 		else if (c >= ' ' && c <= '~') {
-		    char *p;
+		    register char *p;
 
 		    for (p = db_le; p > db_lc; p--)
 			*p = *(p-1);
@@ -328,7 +334,9 @@ db_inputchar(int c)
 }
 
 int
-db_readline(char *lstart, int lsize)
+db_readline(lstart, lsize)
+	char *	lstart;
+	int	lsize;
 {
 	db_force_whitespace();	/* synch output position */
 
@@ -344,4 +352,39 @@ db_readline(char *lstart, int lsize)
 
 	*db_le = 0;
 	return (db_le - db_lbuf_start);
+}
+
+void
+db_check_interrupt(void)
+{
+	register int	c;
+
+	c = cnmaygetc();
+	switch (c) {
+	    case -1:		/* no character */
+		return;
+
+	    case CTRL('c'):
+		db_error((char *)0);
+		/*NOTREACHED*/
+
+	    case CTRL('s'):
+		do {
+		    c = cnmaygetc();
+		    if (c == CTRL('c'))
+			db_error(NULL);
+			/*NOTREACHED*/
+		} while (c != CTRL('q'));
+		break;
+
+	    default:
+		/* drop on floor */
+		break;
+	}
+}
+
+static int
+cnmaygetc ()
+{
+	return (-1);
 }

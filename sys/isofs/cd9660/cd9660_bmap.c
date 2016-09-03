@@ -1,4 +1,4 @@
-/*	$OpenBSD: cd9660_bmap.c,v 1.8 2014/12/16 18:30:03 tedu Exp $	*/
+/*	$OpenBSD: cd9660_bmap.c,v 1.3 1997/11/08 17:21:05 niklas Exp $	*/
 /*	$NetBSD: cd9660_bmap.c,v 1.7 1997/01/24 00:27:29 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,7 +46,6 @@
 #include <sys/buf.h>
 #include <sys/file.h>
 #include <sys/vnode.h>
-#include <sys/lock.h>
 #include <sys/mount.h>
 
 #include <isofs/cd9660/iso.h>
@@ -58,7 +61,13 @@ int
 cd9660_bmap(v)
 	void *v;
 {
-	struct vop_bmap_args *ap = v;
+	struct vop_bmap_args /* {
+		struct vnode *a_vp;
+		daddr_t  a_bn;
+		struct vnode **a_vpp;
+		daddr_t *a_bnp;
+		int *a_runp;
+	} */ *ap = v;
 	struct iso_node *ip = VTOI(ap->a_vp);
 	daddr_t lblkno = ap->a_bn;
 	int bshift;

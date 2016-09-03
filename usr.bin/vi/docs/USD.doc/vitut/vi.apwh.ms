@@ -1,5 +1,3 @@
-.\"	$OpenBSD: vi.apwh.ms,v 1.5 2004/01/24 12:29:13 jmc Exp $
-.\"
 .\" Copyright (c) 1980, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -11,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,10 +31,6 @@
 .\"
 .\"	@(#)vi.apwh.ms	8.2 (Berkeley) 8/18/96
 .\"
-.if n \{\
-.po 5n
-.ll 70n
-.\}
 .nr LL 6.5i
 .nr FL 6.5i
 .TL
@@ -41,7 +39,7 @@ Vi Command & Function Reference
 Alan P.W. Hewett
 .sp
 Revised for version 2.12 by Mark Horton
-.\" .CB
+.CB
 .NH 1
 Author's Disclaimer
 .LP
@@ -87,7 +85,7 @@ be denoted using the \fIupper case\fR character, but
 example, \fB<^D>\fR is equal to \fB<^d>\fR.
 The most common character abbreviations
 used in this list are as follows:
-.RS
+.VL 8
 .IP <esc> 8
 escape, octal 033
 .IP <cr> 8
@@ -108,7 +106,7 @@ formfeed, ^L, octal 014
 space, octal 040
 .IP <del> 8
 delete, octal 0177
-.RE
+.LE
 .sp 1
 .NH 1
 Basics
@@ -126,7 +124,8 @@ Bourne Shell
 .LP
 To manually set your terminal type to 2621 you would type:
 .DS
-export TERM=2621
+TERM=2621
+export TERM
 .DE
 .PP
 There are various ways of having this automatically or
@@ -219,7 +218,7 @@ be necessary to type <esc> first.
 .NH 2
 Cursor and Page Motion
 .LP
-.RS
+.VL 16
 .B NOTE:
 The arrow keys (see the next four commands)
 on certain kinds of terminals will not work with the
@@ -230,23 +229,23 @@ the arrow keys, since they do not require memorization of which hjkl
 key is which.
 The mnemonic value of hjkl is clear from looking at the keyboard of an adm3a.
 .sp
-.IP "[cnt]h or [cnt]^H" 16
+.IP "[cnt]<bs> or [cnt]h or [cnt]\(<-" 16
 .br
 Move the cursor to the left one character.  Cursor stops at the left
 margin of the page.
 If cnt is given, these commands move that many spaces.
-.IP "[cnt]^N or [cnt]j or [cnt]^J" 16
+.IP "[cnt]^N or [cnt]j or [cnt]\(da or [cnt]<lf>" 16
 .br
 Move down one line.
 Moving off the screen scrolls the window to force a new line
 onto the screen.
 Mnemonic: \fBN\fRext
-.IP "[cnt]^P or [cnt]k" 16
+.IP "[cnt]^P or [cnt]k or [cnt]\(ua" 16
 .br
 Move up one line.
 Moving off the top of the screen forces new text onto the screen.
 Mnemonic: \fBP\fRrevious
-.IP "[cnt]<sp> or [cnt]l" 16
+.IP "[cnt]<sp> or [cnt]l or [cnt]\(->" 16
 .br
 Move to the right one character.
 Cursor will not go beyond the end of the line.
@@ -275,18 +274,18 @@ position the cursor at the beginning of the word.
 Mnemonic: next-\fBw\fRord
 .IP "[cnt]W" 16
 Move the cursor to the beginning of the next word which follows
-a "whitespace" (<sp>,<tab>, or <nl>).  Ignore other punctuation.
+a "white space" (<sp>,<tab>, or <nl>).  Ignore other punctuation.
 .IP "[cnt]b" 16
 Move the cursor to the preceding word.  Mnemonic: \fBb\fRackup-word
 .IP "[cnt]B" 16
 Move the cursor to the preceding word that is separated from the
-current word by a "whitespace" (<sp>,<tab>, or <nl>).
+current word by a "white space" (<sp>,<tab>, or <nl>).
 .IP "[cnt]e" 16
 Move the cursor to the end of the current word or the end of the
 "cnt"'th word hence.  Mnemonic: \fBe\fRnd-of-word
 .IP "[cnt]E" 16
 Move the cursor to the end of the current word which is delimited by
-"whitespace" (<sp>,<tab>, or <nl>).
+"white space" (<sp>,<tab>, or <nl>).
 .IP "[line number]G" 16
 .br
 Move the cursor to the line specified.  Of particular use are the
@@ -381,12 +380,12 @@ cursor or scrolling the screen.
 .IP "\(ga\(ga" 16
 Move the cursor back to the exact spot on the line where it was located
 before the last "non-relative" move.
-.RE
+.LE
 .NH 2
 Searches
 .LP
 The following commands allow you to search for items in a file.
-.RS
+.VL 16
 .IP [cnt]f{chr} 16
 .sp 1
 Search forward on the line for the next or "cnt"'th occurrence of
@@ -434,7 +433,7 @@ direction.
 .sp 1
 Using the \fB:\fR syntax it is possible to do global searches ala the
 standard UNIX "ed" editor.
-.RE
+.LE
 .NH 2
 Text Insertion
 .LP
@@ -443,7 +442,7 @@ text insertions are terminated with an <esc> character.
 The last change
 can always be \fBundone\fR by typing a \fBu\fR.
 The text insert in insertion mode can contain newlines.
-.RS
+.VL 16
 .IP a{text}<esc> 16
 Insert text immediately following the cursor position.
 Mnemonic: \fBa\fRppend
@@ -461,13 +460,13 @@ insert text there.  Mnemonic:  \fBo\fRpen new line
 .IP O{text}<esc> 16
 Insert a new line preceding the line on which the cursor appears
 and insert text there.
-.RE
+.LE
 .NH 2
 Text Deletion
 .LP
 The following commands allow the user to delete text in various ways.
 All changes can always be \fBundone\fR by typing the \fBu\fR command.
-.RS
+.VL 16
 .IP "[cnt]x" 16
 Delete the character or characters starting at the cursor position.
 .IP "[cnt]X" 16
@@ -481,14 +480,14 @@ Mnemonic: \fBD\fRelete the rest of line
 Deletes one or more occurrences of the specified motion.
 Any motion from sections 4.1 and 4.2 can be used here.
 The d can be stuttered (e.g. [cnt]dd) to delete cnt lines.
-.RE
+.LE
 .NH 2
 Text Replacement
 .LP
 The following commands allow the user to simultaneously delete and
 insert new text.  All such actions can be \fBundone\fR by typing
 \fBu\fR following the command.
-.RS
+.VL 16
 .IP "r<chr>" 16
 Replaces the character at the current cursor position with <chr>.  This
 is a one character replacement.  No <esc> is required for termination.
@@ -513,7 +512,7 @@ insertion text.  A "$" will appear at the end of the last item
 that is being deleted unless the deletion involves whole lines.
 Motion's can be any motion from sections 4.1 or 4.2.
 Stuttering the c (e.g. [cnt]cc) changes cnt lines.
-.RE
+.LE
 .NH 2
 Moving Text
 .LP
@@ -537,7 +536,7 @@ in such a buffer is appended to it instead of replacing it.
 .FE
 There are two more basic commands and
 some variations useful in getting and putting text into a file.
-.RS
+.VL 16
 .IP ["<a-z>][cnt]y{motion} 16
 .sp 1
 Yank the specified item or "cnt" items and put in the "undo" buffer or
@@ -583,20 +582,17 @@ The text is shifted by one \fBshiftwidth\fR.  (See section 6.)
 \fB<<\fR means left shift the current line or lines.
 Once the line has reached the left margin it is not further affected.
 .IP [cnt]={motion} 16
-.\" Prettyprints the indicated area according to
-.\" .B lisp
-.\" conventions.
-.\" The area should be a lisp s-expression.
-Displays the line number.
-If no prefix is specified,the line number of the last line in the file
-is displayed.
-.RE
+Prettyprints the indicated area according to
+.B lisp
+conventions.
+The area should be a lisp s-expression.
+.LE
 .NH 2
 Miscellaneous Commands
 .LP
 \fBVi\fR has a number of miscellaneous commands that are very
 useful.  They are:
-.RS
+.VL 16
 .IP ZZ 16
 This is the normal way to exit from vi.
 If any changes have been made, the file is written out.
@@ -636,10 +632,10 @@ Switch to \fBex\fR editing mode.
 In this mode \fBvi\fR will behave very much like \fBed\fR.
 The editor in this mode will operate on single lines normally and
 will not attempt to keep the "window" up to date.
-.\" Once in this mode it is also possible to switch to the \fBopen\fR
-.\" mode of editing.  By entering the command \fB[line number]open<nl>\fR
-.\" you enter this mode.  It is similar to the normal visual mode
-.\" except the window is only \fBone\fR line long.
+Once in this mode it is also possible to switch to the \fBopen\fR
+mode of editing.  By entering the command \fB[line number]open<nl>\fR
+you enter this mode.  It is similar to the normal visual mode
+except the window is only \fBone\fR line long.
 Mnemonic: \fBQ\fRuit visual mode
 .IP ^] 16
 An abbreviation for a tag command.
@@ -652,7 +648,7 @@ Any UNIX filter
 (e.g. command that reads the standard input and outputs something
 to the standard output) can be sent a section of the current file and
 have the output of the command replace the original text.  Useful
-examples are programs like \fBsort\fR and
+examples are programs like \fBcb\fR, \fBsort\fR, and
 \fBnroff\fR.  For instance, using \fBsort\fR it would be possible to
 sort a section of the current file into a new list.
 Using \fB!!\fR means take a line or lines starting at the line the
@@ -662,13 +658,13 @@ To just escape to the shell for one command,
 use :!{cmd}<nl>, see section 5.
 .IP z{cnt}<nl> 16
 This resets the current window size to "cnt" lines and redraws the screen.
-.RE
+.LE
 .NH 2
 Special Insert Characters
 .LP
 There are some characters that have special meanings during
 insert modes.  They are:
-.RS
+.VL 16
 .IP ^V 16
 During inserts, typing a ^V allows you to quote control characters
 into the file.  Any character typed after the ^V will be inserted
@@ -692,7 +688,7 @@ Mnemonic: erase \fBW\fRord
 The backspace always serves as an erase during insert modes in addition
 to your normal "erase" character.  To insert a <bs> into your file, use
 the <^V> to quote it.
-.RE
+.LE
 .NH 1
 \fB:\fR Commands
 .LP
@@ -702,7 +698,7 @@ the bottom on the screen in preparation for a command.  In the
 also from this mode that you exit from \fBvi\fR or switch to different
 files.  All commands of this variety are terminated by a <nl>, <cr>,
 or <esc>.
-.RS
+.VL 16
 .IP ":w[!] [file]" 16
 Causes \fBvi\fR to write out the current text to the disk.  It is
 written to the file you are editing unless "file" is supplied.  If
@@ -773,7 +769,7 @@ programs so that by saying
 \fB:ta function<nl>\fR you will be switched to that function.
 It could also be useful when editing multi-file documents, though the
 \fBtags\fR file would have to be generated manually.
-.RE
+.LE
 .NH 1
 Special Arrangements for Startup
 .PP
@@ -871,7 +867,7 @@ These are usually placed in your .profile or .login.
 If you are running a system without environments (such as version 6)
 you can place the set command in the file .exrc in your home
 directory.
-.RS
+.VL 16
 .IP autoindent\ ai 16
 Default: noai Type: toggle
 .br
@@ -904,7 +900,7 @@ Default: noeb Type: toggle
 .br
 Error messages are preceded by a <bell>.
 .IP hardtabs\ ht 16
-Default: hardtabs=0 Type: numeric
+Default: hardtabs=8 Type: numeric
 .br
 This option contains the value of hardware tabs in your terminal, or
 of software tabs expanded by the Unix system.
@@ -913,11 +909,11 @@ Default: noic Type: toggle
 .br
 All upper case characters are mapped to lower case in regular expression
 matching.
-.\" .IP lisp 16
-.\" Default: nolisp Type: toggle
-.\" .br
-.\" Autoindent for \fBlisp\fR code.  The commands \fB( ) [[\fR and \fB]]\fR
-.\" are modified appropriately to affect s-expressions and functions.
+.IP lisp 16
+Default: nolisp Type: toggle
+.br
+Autoindent for \fBlisp\fR code.  The commands \fB( ) [[\fR and \fB]]\fR
+are modified appropriately to affect s-expressions and functions.
 .IP list 16
 Default: nolist Type: toggle
 .br
@@ -944,7 +940,7 @@ option prevents automatic <cr>s from taking place,
 and speeds up output of indented lines,
 at the expense of losing typeahead on some versions of UNIX.
 .IP paragraphs\ para 16
-Default: para=IPLPPPQPP LIpplpipbp Type: string
+Default: para=IPLPPPQPP\ bp Type: string
 .br
 Each pair of characters in the string indicate \fBnroff\fR macros
 which are to be treated as the beginning of a paragraph for the
@@ -983,7 +979,7 @@ Default: scroll={1/2 window} Type: numeric
 This is the number of lines that the screen scrolls up or down when
 using the <^U> and <^D> commands.
 .IP sections 16
-Default: sections=NHSHH HUnhsh Type: string
+Default: sections=SHNHH HU Type: string
 .br
 Each two character pair of this string specify \fBnroff\fR macro names
 which are to be treated as the beginning of a section by the
@@ -1006,11 +1002,11 @@ Default: nosm Type: toggle
 .br
 When a \fB)\fR or \fB}\fR is typed, show the matching \fB(\fR or \fB{\fR
 by moving the cursor to it for one second if it is on the current screen.
-.\" .IP slowopen\ slow 16
-.\" Default: terminal dependent Type: toggle
-.\" .br
-.\" On terminals that are slow and unintelligent, this option prevents the
-.\" updating of the screen some of the time to improve speed.
+.IP slowopen\ slow 16
+Default: terminal dependent Type: toggle
+.br
+On terminals that are slow and unintelligent, this option prevents the
+updating of the screen some of the time to improve speed.
 .IP tabstop\ ts 16
 Default: ts=8 Type: numeric
 .br
@@ -1029,10 +1025,10 @@ set term command, and do ``vi.'' to get back into visual.
 Or exit vi, fix $TERM, and reenter.
 The definitions that drive a particular
 terminal type are found in the file \fB/etc/termcap\fR.
-.\" .IP terse 16
-.\" Default: terse Type: toggle
-.\" .br
-.\" When set, the error diagnostics are short.
+.IP terse 16
+Default: terse Type: toggle
+.br
+When set, the error diagnostics are short.
 .IP warn 16
 Default: warn Type: toggle
 .br
@@ -1082,4 +1078,4 @@ Default: nowa Type: toggle
 \fBVi\fR normally makes a number of checks before it writes out a file.
 This prevents the user from inadvertently destroying a file.  When the
 "writeany" option is enabled, \fBvi\fR no longer makes these checks.
-.RE
+.LE

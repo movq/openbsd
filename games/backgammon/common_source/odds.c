@@ -1,4 +1,4 @@
-/*	$OpenBSD: odds.c,v 1.7 2016/01/08 13:40:05 tb Exp $	*/
+/*	$OpenBSD: odds.c,v 1.2 1998/03/19 11:13:22 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,10 +33,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)odds.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: odds.c,v 1.2 1998/03/19 11:13:22 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 
 void
-odds(int r1, int r2, int val)
+odds(r1, r2, val)
+	int     r1, r2, val;
 {
 	int     i, j;
 
@@ -56,7 +69,7 @@ odds(int r1, int r2, int val)
 }
 
 int
-count(void)
+count()
 {
 	int     i, j, total;
 
@@ -68,7 +81,8 @@ count(void)
 }
 
 int
-canhit(int i, int c)
+canhit(i, c)
+	int     i, c;
 {
 	int     j, k, b;
 	int     a, diff, place, addon, menstuck;
@@ -88,7 +102,7 @@ canhit(int i, int c)
 		if (board[j] * a > 0) {
 			diff = abs(j - i);
 			addon = place + ((board[j] * a > 2 || j == b) ? 5 : 0);
-			if ((j == b && menstuck == 1) ||
+			if ((j == b && menstuck == 1) &&
 			    (j != b && menstuck == 0))
 				for (k = 1; k < diff; k++)
 					if (k < 7 && diff - k < 7 &&

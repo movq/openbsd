@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-wb.c,v 1.9 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1993, 1994, 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -20,6 +18,11 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-wb.c,v 1.5 1996/12/12 16:22:24 bitblt Exp $ (LBL)";
+#endif
 
 #include <sys/types.h>
 #include <sys/time.h>
@@ -302,7 +305,7 @@ wb_dops(const struct dophdr *dh, u_int32_t ss, u_int32_t es)
 {
 	printf(" <");
 	for ( ; ss <= es; ++ss) {
-		int t = dh->dh_type;
+		register int t = dh->dh_type;
 
 		if (t > DT_MAXTYPE)
 			printf(" dop-%d!", t);
@@ -376,9 +379,9 @@ wb_drawop(const struct pkt_dop *dop, u_int len)
  * Print whiteboard multicast packets.
  */
 void
-wb_print(const void *hdr, u_int len)
+wb_print(register const void *hdr, register u_int len)
 {
-	const struct pkt_hdr *ph;
+	register const struct pkt_hdr *ph;
 
 	ph = (const struct pkt_hdr *)hdr;
 	len -= sizeof(*ph);

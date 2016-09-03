@@ -1,43 +1,55 @@
-/*	$OpenBSD: dirname.c,v 1.15 2013/09/30 12:02:33 millert Exp $	*/
+/*	$OpenBSD: dirname.c,v 1.4 1999/05/30 17:10:30 espie Exp $	*/
 
 /*
- * Copyright (c) 1997, 2004 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1997 Todd C. Miller <Todd.Miller@courtesan.com>
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+ * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#ifndef lint
+static char rcsid[] = "$OpenBSD: dirname.c,v 1.4 1999/05/30 17:10:30 espie Exp $";
+#endif /* not lint */
 
 #include <errno.h>
 #include <libgen.h>
-#include <limits.h>
 #include <string.h>
-
-/* A slightly modified copy of this file exists in libexec/ld.so */
+#include <sys/param.h>
 
 char *
-dirname(const char *path)
+dirname(path)
+	const char *path;
 {
-	static char dname[PATH_MAX];
-	size_t len;
-	const char *endp;
+	static char bname[MAXPATHLEN];
+	register const char *endp;
 
 	/* Empty or NULL string gets treated as "." */
 	if (path == NULL || *path == '\0') {
-		dname[0] = '.';
-		dname[1] = '\0';
-		return (dname);
+		(void)strcpy(bname, ".");
+		return(bname);
 	}
 
-	/* Strip any trailing slashes */
+	/* Strip trailing slashes */
 	endp = path + strlen(path) - 1;
 	while (endp > path && *endp == '/')
 		endp--;
@@ -48,22 +60,19 @@ dirname(const char *path)
 
 	/* Either the dir is "/" or there are no slashes */
 	if (endp == path) {
-		dname[0] = *endp == '/' ? '/' : '.';
-		dname[1] = '\0';
-		return (dname);
+		(void)strcpy(bname, *endp == '/' ? "/" : ".");
+		return(bname);
 	} else {
-		/* Move forward past the separating slashes */
 		do {
 			endp--;
 		} while (endp > path && *endp == '/');
 	}
 
-	len = endp - path + 1;
-	if (len >= sizeof(dname)) {
+	if (endp - path + 1 > sizeof(bname)) {
 		errno = ENAMETOOLONG;
-		return (NULL);
+		return(NULL);
 	}
-	memcpy(dname, path, len);
-	dname[len] = '\0';
-	return (dname);
+	(void)strncpy(bname, path, endp - path + 1);
+	bname[endp - path + 1] = '\0';
+	return(bname);
 }

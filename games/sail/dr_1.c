@@ -1,4 +1,4 @@
-/*	$OpenBSD: dr_1.c,v 1.9 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: dr_1.c,v 1.2 1999/01/18 06:20:51 pjanzen Exp $	*/
 /*	$NetBSD: dr_1.c,v 1.4 1995/04/24 12:25:10 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dr_1.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: dr_1.c,v 1.2 1999/01/18 06:20:51 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "driver.h"
-#include "extern.h"
-#include "player.h"
+#include <stdlib.h>
 
 void
-unfoul(void)
+unfoul()
 {
 	struct ship *sp;
 	struct ship *to;
@@ -62,7 +69,7 @@ unfoul(void)
 }
 
 void
-boardcomp(void)
+boardcomp()
 {
 	int crew[3];
 	struct ship *sp, *sq;
@@ -127,7 +134,9 @@ boardcomp(void)
 }
 
 int
-fightitout(struct ship *from, struct ship *to, int key)
+fightitout(from, to, key)
+	struct ship *from, *to;
+	int key;
 {
 	struct ship *fromcap, *tocap;
 	int crewfrom[3], crewto[3], menfrom, mento;
@@ -181,8 +190,7 @@ fightitout(struct ship *from, struct ship *to, int key)
 		subtract(from, totalfrom, crewfrom, fromcap, pcfrom);
 		subtract(to, totalto, crewto, tocap, pcto);
 		makemsg(from, "boarders from %s repelled", to->shipname);
-		(void) snprintf(message, sizeof message,
-			"killed in melee: %d.  %s: %d",
+		(void) sprintf(message, "killed in melee: %d.  %s: %d",
 			totalto, from->shipname, totalfrom);
 		Writestr(W_SIGNAL, to, message);
 		if (key)
@@ -214,12 +222,10 @@ fightitout(struct ship *from, struct ship *to, int key)
 				subtract(to, mento, crewto, tocap, pcto);
 				subtract(from, - mento, crewfrom, to, 0);
 			}
-			(void) snprintf(message, sizeof message,
-				"captured by the %s!",
+			(void) sprintf(message, "captured by the %s!",
 				to->shipname);
 			Writestr(W_SIGNAL, from, message);
-			(void) snprintf(message, sizeof message,
-				"killed in melee: %d.  %s: %d",
+			(void) sprintf(message, "killed in melee: %d.  %s: %d",
 				totalto, from->shipname, totalfrom);
 			Writestr(W_SIGNAL, to, message);
 			mento = 0;
@@ -230,7 +236,7 @@ fightitout(struct ship *from, struct ship *to, int key)
 }
 
 void
-resolve(void)
+resolve()
 {
 	int thwart;
 	struct ship *sp, *sq;
@@ -261,7 +267,7 @@ resolve(void)
 }
 
 void
-compcombat(void)
+compcombat()
 {
 	int n;
 	struct ship *sp;
@@ -393,7 +399,7 @@ compcombat(void)
 }
 
 int
-next(void)
+next()
 {
 	if (++turn % 55 == 0) {
 		if (alive)
@@ -414,14 +420,14 @@ next(void)
 				bestship = s;
 			}
 		}
-		if (bestship) {
+		if (best > 0.0) {
 			char *tp = getenv("WOTD");
 			const char *p;
 			if (tp == 0)
 				p = "Driver";
 			else {
-				if (islower((unsigned char)*tp))
-					*tp = toupper((unsigned char)*tp);
+				if (islower(*tp))
+					*tp = toupper(*tp);
 				p = tp;
 			}
 			(void) strncpy(bestship->file->captain, p,

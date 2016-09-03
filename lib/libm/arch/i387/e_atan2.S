@@ -1,4 +1,3 @@
-/*	$OpenBSD: e_atan2.S,v 1.3 2008/09/07 20:36:08 martynas Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
@@ -6,7 +5,9 @@
 
 #include <machine/asm.h>
 
-ENTRY(atan2)
+RCSID("$NetBSD: e_atan2.S,v 1.4 1995/05/08 23:46:28 jtc Exp $")
+
+ENTRY(__ieee754_atan2)
 	fldl	 4(%esp)
 	fldl	12(%esp)
 	fpatan

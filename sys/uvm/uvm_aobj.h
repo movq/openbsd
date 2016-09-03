@@ -1,5 +1,4 @@
-/*	$OpenBSD: uvm_aobj.h,v 1.16 2014/07/11 16:35:40 jsg Exp $	*/
-/*	$NetBSD: uvm_aobj.h,v 1.10 2000/01/11 06:57:49 chs Exp $	*/
+/*	$NetBSD: uvm_aobj.h,v 1.7 1999/03/25 18:48:50 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers, Charles D. Cranor and
@@ -14,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -47,30 +52,23 @@
 /* flags for uao_create: can only be used one time (at bootup) */
 #define UAO_FLAG_KERNOBJ	0x1	/* create kernel object */
 #define UAO_FLAG_KERNSWAP	0x2	/* enable kernel swap */
-#define UAO_FLAG_CANFAIL	0x4	/* creation can fail */
 
 /* internal flags */
+#define UAO_FLAG_KILLME		0x4	/* aobj should die when last released
+					 * page is no longer PG_BUSY ... */
 #define UAO_FLAG_NOSWAP		0x8	/* aobj can't swap (kernel obj only!) */
-
-#ifdef _KERNEL
 
 /*
  * prototypes
  */
 
-void uao_init(void);
-int uao_set_swslot(struct uvm_object *, int, int);
-int uao_dropswap(struct uvm_object *, int);
-int uao_swap_off(int, int);
-int uao_shrink(struct uvm_object *, int);
-int uao_grow(struct uvm_object *, int);
+int uao_set_swslot __P((struct uvm_object *, int, int));
+void uao_dropswap __P((struct uvm_object *, int));
 
 /*
  * globals
  */
 
 extern struct uvm_pagerops aobj_pager;
-
-#endif /* _KERNEL */
 
 #endif /* _UVM_UVM_AOBJ_H_ */

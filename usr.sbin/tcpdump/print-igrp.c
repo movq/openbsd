@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-igrp.c,v 1.8 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -23,10 +21,17 @@
  * Initial contribution from Francis Dupont (francis.dupont@inria.fr)
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-igrp.c,v 1.2 1999/09/16 20:58:47 brad Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/types.h>			/* concession to AIX */
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
@@ -41,9 +46,10 @@
 #include "extract.h"			/* must come after interface.h */
 
 static void
-igrp_entry_print(struct igrprte *igr, int is_interior, int is_exterior)
+igrp_entry_print(register struct igrprte *igr, register int is_interior,
+    register int is_exterior)
 {
-	u_int delay, bandwidth;
+	register u_int delay, bandwidth;
 	u_int metric, mtu;
 
 	if (is_interior)
@@ -76,11 +82,11 @@ static struct tok op2str[] = {
 };
 
 void
-igrp_print(const u_char *bp, u_int length, const u_char *bp2)
+igrp_print(register const u_char *bp, u_int length, register const u_char *bp2)
 {
-	struct igrphdr *hdr;
-	struct ip *ip;
-	u_char *cp;
+	register struct igrphdr *hdr;
+	register struct ip *ip;
+	register u_char *cp;
 	u_int nint, nsys, next;
 
 	hdr = (struct igrphdr *)bp;

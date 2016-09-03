@@ -1,60 +1,48 @@
-/*	$OpenBSD: rmd160.h,v 1.17 2012/12/05 23:19:57 deraadt Exp $	*/
-/*
- * Copyright (c) 2001 Markus Friedl.  All rights reserved.
+/*	$OpenBSD: rmd160.h,v 1.4 1999/08/16 09:59:04 millert Exp $	*/
+
+/********************************************************************\
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *      FILE:     rmd160.h
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-#ifndef  _RMD160_H
+ *      CONTENTS: Header file for a sample C-implementation of the
+ *                RIPEMD-160 hash-function. 
+ *      TARGET:   any computer with an ANSI C compiler
+ *
+ *      AUTHOR:   Antoon Bosselaers, ESAT-COSIC
+ *      DATE:     1 March 1996
+ *      VERSION:  1.0
+ *
+ *      Copyright (c) Katholieke Universiteit Leuven
+ *      1996, All Rights Reserved
+ *
+\********************************************************************/
+
+#ifndef  _RMD160_H	/* make sure this file is read only once */
 #define  _RMD160_H
 
-#define	RMD160_BLOCK_LENGTH		64
-#define	RMD160_DIGEST_LENGTH		20
-#define	RMD160_DIGEST_STRING_LENGTH	(RMD160_DIGEST_LENGTH * 2 + 1)
+/********************************************************************/
 
-/* RMD160 context. */
-typedef struct RMD160Context {
-	u_int32_t state[5];			/* state */
-	u_int64_t count;			/* number of bits, mod 2^64 */
-	u_int8_t buffer[RMD160_BLOCK_LENGTH];	/* input buffer */
+/* structure definitions */
+
+typedef struct {
+	u_int32_t state[5];	/* state (ABCDE) */
+	u_int32_t length[2];	/* number of bits */
+	u_char	bbuffer[64];    /* overflow buffer */
+	u_int32_t buflen;	/* number of chars in bbuffer */
 } RMD160_CTX;
 
-__BEGIN_DECLS
-void	 RMD160Init(RMD160_CTX *);
-void	 RMD160Transform(u_int32_t [5], const u_int8_t [RMD160_BLOCK_LENGTH])
-		__attribute__((__bounded__(__minbytes__,1,5)))
-		__attribute__((__bounded__(__minbytes__,2,RMD160_BLOCK_LENGTH)));
-void	 RMD160Update(RMD160_CTX *, const u_int8_t *, size_t)
-		__attribute__((__bounded__(__string__,2,3)));
-void	 RMD160Pad(RMD160_CTX *);
-void	 RMD160Final(u_int8_t [RMD160_DIGEST_LENGTH], RMD160_CTX *)
-		__attribute__((__bounded__(__minbytes__,1,RMD160_DIGEST_LENGTH)));
-char	*RMD160End(RMD160_CTX *, char *)
-		__attribute__((__bounded__(__minbytes__,2,RMD160_DIGEST_STRING_LENGTH)));
-char	*RMD160File(const char *, char *)
-		__attribute__((__bounded__(__minbytes__,2,RMD160_DIGEST_STRING_LENGTH)));
-char	*RMD160FileChunk(const char *, char *, off_t, off_t)
-		__attribute__((__bounded__(__minbytes__,2,RMD160_DIGEST_STRING_LENGTH)));
-char	*RMD160Data(const u_int8_t *, size_t, char *)
-		__attribute__((__bounded__(__string__,1,2)))
-		__attribute__((__bounded__(__minbytes__,3,RMD160_DIGEST_STRING_LENGTH)));
-__END_DECLS
+/********************************************************************/
+
+/* function prototypes */
+
+void RMD160Init __P((RMD160_CTX *context));
+void RMD160Transform __P((u_int32_t state[5], const u_int32_t block[16]));
+void RMD160Update __P((RMD160_CTX *context, const u_char *data, u_int32_t nbytes));
+void RMD160Final __P((u_char digest[20], RMD160_CTX *context));
+char *RMD160End __P((RMD160_CTX *, char *));
+char *RMD160File __P((char *, char *));
+char *RMD160Data __P((const u_char *, size_t, char *));
 
 #endif  /* _RMD160_H */
+
+/*********************** end of file rmd160.h ***********************/

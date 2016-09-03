@@ -1,4 +1,4 @@
-#	$OpenBSD: sys.mk,v 1.76 2016/05/26 20:13:44 zhuk Exp $
+#	$OpenBSD: sys.mk,v 1.21 1999/09/23 08:25:01 deraadt Exp $
 #	$NetBSD: sys.mk,v 1.27 1996/04/10 05:47:19 mycroft Exp $
 #	@(#)sys.mk	5.11 (Berkeley) 3/13/91
 
@@ -9,15 +9,17 @@
 .endif
 
 unix=		We run OpenBSD.
-OSMAJOR=	6
-OSMINOR=	0
+OSMAJOR=	2
+OSMINOR=	6
 OSREV=		$(OSMAJOR).$(OSMINOR)
 OSrev=		$(OSMAJOR)$(OSMINOR)
 
-.SUFFIXES: .out .a .o .c .cc .C .cxx .cpp .F .f .r .y .l .s .S .cl .p .h .sh .m4
+.SUFFIXES: .out .a .ln .o .c .cc .C .cxx .F .f .r .y .l .s .S .cl .p .h .sh .m4
+
+.LIBS:		.a
 
 AR?=		ar
-ARFLAGS?=	r
+ARFLAGS?=	rl
 RANLIB?=	ranlib
 LORDER?=	lorder
 
@@ -30,16 +32,18 @@ LINK.S?=	${CC} ${AFLAGS} ${CPPFLAGS} ${LDFLAGS}
 
 CC?=		cc
 
-PIPE?=		-pipe
-
+.if (${MACHINE_ARCH} == "m88k")
+CFLAGS?=	-O0 ${PIPE} ${DEBUG}
+.else
 CFLAGS?=	-O2 ${PIPE} ${DEBUG}
+.endif
 COMPILE.c?=	${CC} ${CFLAGS} ${CPPFLAGS} -c
 LINK.c?=	${CC} ${CFLAGS} ${CPPFLAGS} ${LDFLAGS}
 
 HOSTCC?=	cc
 
 CXX?=		c++
-CXXFLAGS?=	-O2 ${PIPE} ${DEBUG}
+CXXFLAGS?=	${CFLAGS}
 COMPILE.cc?=	${CXX} ${CXXFLAGS} ${CPPFLAGS} -c
 LINK.cc?=	${CXX} ${CXXFLAGS} ${CPPFLAGS} ${LDFLAGS}
 
@@ -47,7 +51,7 @@ CPP?=		cpp
 CPPFLAGS?=	
 
 FC?=		f77
-FFLAGS?=	-O2
+FFLAGS?=		-O2
 RFLAGS?=
 COMPILE.f?=	${FC} ${FFLAGS} -c
 LINK.f?=	${FC} ${FFLAGS} ${LDFLAGS}
@@ -61,7 +65,10 @@ LFLAGS?=
 LEX.l?=		${LEX} ${LFLAGS}
 
 LD?=		ld
-LDFLAGS+=	${DEBUG}
+LDFLAGS?=
+
+LINT?=		lint
+LINTFLAGS?=	-chapbx
 
 MAKE?=		make
 
@@ -85,10 +92,14 @@ CTAGS?=		/usr/bin/ctags
 	${LINK.c} -o ${.TARGET} ${.IMPSRC} ${LDLIBS}
 .c.o:
 	${COMPILE.c} ${.IMPSRC}
+.if (${MACHINE_ARCH} != "alpha")
 .c.a:
 	${COMPILE.c} ${.IMPSRC}
 	${AR} ${ARFLAGS} $@ $*.o
 	rm -f $*.o
+.endif
+.c.ln:
+	${LINT} ${LINTFLAGS} ${CFLAGS:M-[IDU]*} -i ${.IMPSRC}
 
 # C++
 .cc:
@@ -114,15 +125,6 @@ CTAGS?=		/usr/bin/ctags
 .cxx.o:
 	${COMPILE.cc} ${.IMPSRC}
 .cxx.a:
-	${COMPILE.cc} ${.IMPSRC}
-	${AR} ${ARFLAGS} $@ $*.o
-	rm -f $*.o
-
-.cpp:
-	${LINK.cc} -o ${.TARGET} ${.IMPSRC} ${LDLIBS}
-.cpp.o:
-	${COMPILE.cc} ${.IMPSRC}
-.cpp.a:
 	${COMPILE.cc} ${.IMPSRC}
 	${AR} ${ARFLAGS} $@ $*.o
 	rm -f $*.o

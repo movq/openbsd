@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-#	$OpenBSD: adduser.perl,v 1.63 2014/10/01 09:56:36 mpi Exp $
+#	$OpenBSD: adduser.perl,v 1.19 1999/09/06 16:48:41 alex Exp $
 #
 # Copyright (c) 1995-1996 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
 # All rights reserved.
@@ -29,25 +29,20 @@
 # $From: adduser.perl,v 1.22 1996/12/07 21:25:12 ache Exp $
 
 use IPC::Open2;
-use Fcntl qw(:DEFAULT :flock);
 
 ################
 # main
 #
+$test = 0;			# test mode, only for development
 $check_only = 0;
-
-$SIG{'INT'} = 'cleanup';
-$SIG{'QUIT'} = 'cleanup';
-$SIG{'HUP'} = 'cleanup';
-$SIG{'TERM'} = 'cleanup';
 
 &check_root;			# you must be root to run this script!
 &variables;			# initialize variables
 &config_read(@ARGV);		# read variables from config-file
 &parse_arguments(@ARGV);	# parse arguments
 
-if (!$check_only && $#batch < 0) {
-    &hints;
+if (!$check_only &&  $#batch < 0) {
+    &copyright; &hints;
 }
 
 # check
@@ -55,7 +50,6 @@ $changes = 0;
 &variable_check;		# check for valid variables
 &passwd_check;			# check for valid passwdb
 &shells_read;			# read /etc/shells
-&login_conf_read;		# read /etc/login.conf
 &passwd_read;			# read /etc/master.passwd
 &group_read;			# read /etc/group
 &group_check;			# check for incon*
@@ -71,78 +65,74 @@ exit(!&batch(@batch)) if $#batch >= 0; # batch mode
 
 
 # Set adduser "default" variables internally before groking config file
-# Adduser.conf supersedes these
+# Adduser.conf supercedes these
 sub variables {
     $verbose = 1;		# verbose = [0-2]
     $defaultpasswd = "yes";	# use password for new users
-    $dotdir = "/etc/skel";	# copy dotfiles from this dir
+    $dotdir = "/usr/share/skel"; # copy dotfiles from this dir
     $dotdir_bak = $dotdir;
-    $send_message = "no"; 	# send message to new user
-    $message_file = "/etc/adduser.message";
+    $send_message = "no"; # send message to new user
+    $send_message_bak = '/etc/adduser.message';
     $config = "/etc/adduser.conf"; # config file for adduser
     $config_read = 1;		# read config file
     $logfile = "/var/log/adduser"; # logfile
     $home = "/home";		# default HOME
     $etc_shells = "/etc/shells";
     $etc_passwd = "/etc/master.passwd";
-    $etc_ptmp = "/etc/ptmp";
     $group = "/etc/group";
-    $etc_login_conf = "/etc/login.conf";
-    @pwd_mkdb = ("pwd_mkdb", "-p");	# program for building passwd database
-    $encryptionmethod = "auto";
+    $pwd_mkdb = "pwd_mkdb -p";	# program for building passwd database
+    $encryptionmethod = "blowfish";
 
     # List of directories where shells located
     @path = ('/bin', '/usr/bin', '/usr/local/bin');
     # common shells, first element has higher priority
     @shellpref = ('csh', 'sh', 'bash', 'tcsh', 'ksh');
 
-    @encryption_methods = ('auto', 'blowfish' );
+    @encryption_methods = ('blowfish', 'md5', 'des', 'old');
 
-    $defaultshell = 'ksh';	# defaultshell if not empty
+    $defaultshell = 'sh';	# defaultshell if not empty
     $group_uniq = 'USER';
     $defaultgroup = $group_uniq;# login groupname, $group_uniq means username
-    $defaultclass = 'default';  # default user login class
 
     $uid_start = 1000;		# new users get this uid
-    $uid_end   = 2147483647;	# max. uid
+    $uid_end   = 2147483648;	# max. uid
 
     # global variables
     # passwd
-    %username = ();		# $username{username} = uid
-    %uid = ();			# $uid{uid} = username
-    %pwgid = ();		# $pwgid{pwgid} = username; gid from passwd db
+    $username = '';		# $username{username} = uid
+    $uid = '';			# $uid{uid} = username
+    $pwgid = '';		# $pwgid{pwgid} = username; gid from passwd db
 
     $password = '';		# password for new users
 
     # group
-    %groupname = ();		# $groupname{groupname} = gid
-    %groupmembers = ();		# $groupmembers{gid} = members of group/kommalist
-    %gid = ();			# $gid{gid} = groupname;    gid from group db
+    $groupname ='';		# $groupname{groupname} = gid
+    $groupmembers = '';		# $groupmembers{gid} = members of group/kommalist
+    $gid = '';			# $gid{gid} = groupname;    gid form group db
 
     # shell
-    %shell = ();		# $shell{`basename sh`} = sh
+    $shell = '';		# $shell{`basename sh`} = sh
+
+    # only for me (=Wolfram)
+    if ($test) {
+	$home = "/home/w/tmp/adduser/home";
+	$etc_shells = "./shells";
+	$etc_passwd = "./master.passwd";
+	$group = "./group";
+	$pwd_mkdb = "pwd_mkdb -p -d .";
+	$config = "adduser.conf";
+	$send_message = "./adduser.message";
+	$logfile = "./log.adduser";
+    }
 
     umask 022;			# don't give login group write access
 
-    # regexs used in determining user supplied yes/no
-    $yes = qr/^(yes|YES|y|Y)$/;
-    $no = qr/^(no|NO|n|N)$/;
-
     $ENV{'PATH'} = "/sbin:/bin:/usr/sbin:/usr/bin";
-    @passwd_backup = ();
-    @group_backup = ();
-    @message_buffer = ();
-    @login_classes = ();
-    @user_variable_list = ();	# user variables in /etc/adduser.conf
+    @passwd_backup = '';
+    @group_backup = '';
+    @message_buffer = '';
+    @user_variable_list = '';	# user variables in /etc/adduser.conf
     $do_not_delete = '## DO NOT DELETE THIS LINE!';
-}
-
-sub login_conf_read {
-     foreach (`getcap -f $etc_login_conf -a -s localcipher`) {
-	chomp;
-	s/:.*//;
-	push(@login_classes, $_);
-     }
 }
 
 # read shell database, see also: shells(5)
@@ -151,7 +141,7 @@ sub shells_read {
     local($err) = 0;
 
     print "Reading $etc_shells\n" if $verbose;
-    open(S, $etc_shells) || die "$etc_shells: $!\n";
+    open(S, $etc_shells) || die "$etc_shells:$!\n";
 
     while(<S>) {
 	if (/^\s*\//) {
@@ -165,7 +155,6 @@ sub shells_read {
 	    }
 	}
     }
-    close(S);
 
     push(@list, "/sbin/nologin");
     &shell_pref_add("nologin");
@@ -241,8 +230,8 @@ sub shell_default_valid {
     return $s;
 }
 
-# return default home partition (e.g. "/home")
-# create base directory if necessary
+# return default home partition (f.e. "/home")
+# create base directory if nesseccary
 sub home_partition {
     local($home) = @_;
     $home = &stripdir($home);
@@ -265,7 +254,7 @@ sub home_partition_valid {
 
     $h = &stripdir($h);
     # all right (I hope)
-    return $h if $h =~ "^/" && -e $h && -w _ && (-d _ || -l $h);
+    return $h if $h =~ "^/" && -e $h && -w $h && (-d $h || -l $h);
 
     # Errors or todo
     if ($h !~ "^/") {
@@ -288,20 +277,16 @@ sub home_partition_valid {
 
 # check for valid passwddb
 sub passwd_check {
-    system(@pwd_mkdb, "-c", $etc_passwd);
+    system("$pwd_mkdb -c $etc_passwd");
     die "\nInvalid $etc_passwd - cannot add any users!\n" if $?;
 }
 
 # read /etc/passwd
 sub passwd_read {
-    local($p_username, $pw, $p_uid, $p_gid, $sh);
+    local($p_username, $pw, $p_uid, $p_gid, $sh, %shlist);
 
     print "Check $etc_passwd\n" if $verbose;
-    open(P, "$etc_passwd") || die "$etc_passwd: $!\n";
-
-    # we only use this to lock the password file
-    sysopen(PTMP, $etc_ptmp, O_RDWR|O_CREAT|O_EXCL, 0600) ||
-	die "Password file busy\n";
+    open(P, "$etc_passwd") || die "$passwd: $!\n";
 
     while(<P>) {
 	chop;
@@ -317,7 +302,7 @@ sub passwd_read {
 	    if ($verbose && $sh &&
 		!$shell{&basename($sh)} &&
 		$p_username !~ /^(news|xten|bin|nobody|uucp)$/ &&
-		$sh !~ /\/pppd$/);
+		$sh !~ /\/(pppd|sliplogin)$/);
 	$uid{$p_uid} = $p_username;
 	$pwgid{$p_gid} = $p_username;
     }
@@ -336,7 +321,7 @@ sub group_read {
 	($g_groupname, $pw, $g_gid, $memb) = (split(/:/, $_))[0..3];
 
 	$groupmembers{$g_gid} = $memb;
-	warn "Groupname exists twice: $g_groupname:$g_gid -> $g_groupname:$groupname{$g_groupname}\n"
+	warn "Groupname exists twice: $g_groupname:$g_gid ->  $g_groupname:$groupname{$g_groupname}\n"
 	    if $groupname{$g_groupname} && $verbose;
 	$groupname{$g_groupname} = $g_gid;
 	warn "Groupid exists twice:   $g_groupname:$g_gid -> $gid{$g_gid}:$g_gid\n"
@@ -368,9 +353,9 @@ sub new_users_name {
     local($name);
 
     while(1) {
-	$name = &confirm_list("Enter username", 1, "", "");
-	if (length($name) > 31) {
-	    warn "Username is longer than 31 characters\a\n";
+	$name = &confirm_list("Enter username", 1, "a-z0-9_", "");
+	if (length($name) > 8) {
+	    warn "Username is longer than 8 chars\a\n";
 	    next;
 	}
 	last if (&new_users_name_valid($name) eq $name);
@@ -381,9 +366,9 @@ sub new_users_name {
 sub new_users_name_valid {
     local($name) = @_;
 
-    if ($name !~ /^[a-zA-Z0-9_\.][a-zA-Z0-9_\.\-]*\$?$/ || $name eq "") {
-	warn "Illegal username. " .
-	    "Please see the restrictions section of the man page.\a\n";
+    if ($name !~ /^[a-z0-9_][a-z0-9_\-]*$/ || $name eq "a-z0-9_-") {
+	warn "Wrong username. " .
+	    "Please use only lowercase characters or digits\a\n";
 	return 0;
     } elsif ($username{$name}) {
 	warn "Username ``$name'' already exists!\a\n"; return 0;
@@ -421,13 +406,6 @@ sub new_users_shell {
     return $shell{$sh};
 }
 
-sub new_users_login_class {
-    local($log_cl);
-	
-    $log_cl = &confirm_list("Login class", 0, $defaultclass, @login_classes);
-    return($log_cl);
-}
-
 # return free uid and gid
 sub new_users_id {
     local($name) = @_;
@@ -456,20 +434,20 @@ sub add_group {
     local($gid, $name) = @_;
 
     return 0 if
-	$groupmembers{$gid} =~ /^(.*,)?$name(,.*)?$/;
+	$groupmembers{$gid} =~ /^(.+,)?$name(,.+)?$/;
 
     $groupmembers_bak{$gid} = $groupmembers{$gid};
     $groupmembers{$gid} .= "," if $groupmembers{$gid};
     $groupmembers{$gid} .= "$name";
 
     local(@l) = split(',', $groupmembers{$gid});
-    # group(5): A group cannot have more than 200 members.
-    # The maximum line length of /etc/group is 1024 characters.
-    # Longer lines will be skipped.
-    if ($#l >= 200 ||
+    # group(5): A group cannot have more than 200 members. 
+    # The maximum line length of /etc/group is 1024 characters. 
+    # Longer lines will be skiped.
+    if ($#l >= 200 || 
 	length($groupmembers{$gid}) > 1024 - 50) { # 50 is for group name
-	warn "WARNING, group line ``$gid{$gid}'' is either too long or has\n" .
-	    "too many users in the group, see group(5)\a\n";
+	warn "WARNING, maybe group line ``$gid{$gid}'' is to long or to\n" .
+	    "much users in group, see group(5)\a\n";
     }
     return $name;
 }
@@ -591,20 +569,19 @@ sub new_users_groups_valid {
     return ($flag, $new_groups);
 }
 
-# your last chance
+# your last change
 sub new_users_ok {
 
     print <<EOF;
 
-Name:	     $name
-Password:    ****
-Fullname:    $fullname
-Uid:	     $u_id
-Gid:	     $g_id ($group_login)
-Groups:	     $group_login $new_groups
-Login Class: $log_cl
-HOME:	     $home/$name
-Shell:	     $sh
+Name:	  $name
+Password: ****
+Fullname: $fullname
+Uid:	  $u_id
+Gid:	  $g_id ($group_login)
+Groups:	  $group_login $new_groups
+HOME:	  $home/$name
+Shell:	  $sh
 EOF
 
     return &confirm_yn("OK?", "yes");
@@ -613,23 +590,22 @@ EOF
 # make password database
 sub new_users_pwdmkdb {
     local($last) = @_;
-    local($user);
 
-    $user = (split(/:/, $last))[0];
-    system(@pwd_mkdb, "-u", $user, $etc_passwd);
+    system("$pwd_mkdb $etc_passwd");
     if ($?) {
 	warn "$last\n";
-	warn "``pwd_mkdb'' failed\n";
+	warn "``$pwd_mkdb'' failed\n";
 	exit($? >> 8);
     }
 }
 
 # update group database
 sub new_users_group_update {
-    local($e, $n, $a, @a);
+    local($e, @a);
 
     # Add *new* group
-    if (!defined($groupname{$group_login}) && !defined($gid{$g_id})) {
+    if (!defined($groupname{$group_login}) &&
+	!defined($gid{$groupname{$group_login}})) {
 	push(@group_backup, "$group_login:*:$g_id:");
 	$groupname{$group_login} = $g_id;
 	$gid{$g_id} = $group_login;
@@ -643,26 +619,8 @@ sub new_users_group_update {
 	# new login group is already in name space
 	rename($group, "$group.bak");
 	#warn "$group_login $groupname{$group_login} $groupmembers{$groupname{$group_login}}\n";
-	foreach (@group_backup) {
-            ($n, $e) = (split(/:/, $_))[0,2];
-	    # special handling of YP entries
-	    if (substr($n, 0, 1) eq "+") {
-		# remember and skip the empty group
-		if (length($n) == 1) {
-			$a = $_;
-			next;
-		}
-		# pass other groups
-		push(@a, $_);
-	    }
-	    # group membership might have changed
-	    else {
-		push(@a, "$gid{$e}:*:$e:$groupmembers{$e}");
-	    }
-	}
-	# append empty YP group
-	if ($a) {
-	    push(@a, $a);
+	foreach $e (sort {$a <=> $b} (keys %gid)) {
+	    push(@a, "$gid{$e}:*:$e:$groupmembers{$e}");
 	}
 	&append_file($group, @a);
     } else {
@@ -683,12 +641,15 @@ sub new_users_passwd_update {
 sub new_users_sendmessage {
     return 1 if $send_message eq "no";
 
-    return 1 if !&confirm_yn("Send welcome message to ``$name''", "yes");
+    local($cc) =
+	&confirm_list("Send message to ``$name'' and:",
+		      1, "no", ("root", "second_mail_address", 
+		      "no carbon copy"));
+    local($e);
+    $cc = "" if $cc eq "no";
 
     @message_buffer = ();
-    message_read ($message_file);
-
-    local($e);
+    message_read ($send_message);
 
     foreach $e (@message_buffer) {
 	print eval "\"$e\"";
@@ -696,7 +657,7 @@ sub new_users_sendmessage {
     print "\n";
 
     local(@message_buffer_append) = ();
-    if (!&confirm_yn("Add anything to the message", "no")) {
+    if (!&confirm_yn("Add anything to default message", "no")) {
 	print "Use ``.'' or ^D alone on a line to finish your message.\n";
 	push(@message_buffer_append, "\n");
 	while($read = <STDIN>) {
@@ -704,13 +665,9 @@ sub new_users_sendmessage {
 	    push(@message_buffer_append, $read);
 	}
     }
-    local($cc) =
-	&confirm_list("Copy message to another user?:",
-		      1, "no", ("root", "second_mail_address",
-		      "no"));
-    $cc = "" if $cc eq "no";
 
-    &sendmessage("$name $cc", (@message_buffer, @message_buffer_append));
+    &sendmessage("$name $cc", (@message_buffer, @message_buffer_append))
+	if (&confirm_yn("Send message", "yes"));
 }
 
 sub sendmessage {
@@ -725,7 +682,6 @@ sub sendmessage {
 	    print M eval "\"$e\"";
 	}
 	close M;
-	print "Mail sent!\n" if $verbose;
     }
 }
 
@@ -738,19 +694,19 @@ sub new_users_password {
     local($password);
 
     while(1) {
-	system("stty", "-echo");
+	system("stty -echo");
 	$password = &confirm_list("Enter password", 1, "", "");
-	system("stty", "echo");
+	system("stty echo");
 	print "\n";
 	if ($password ne "") {
-	    system("stty", "-echo");
+	    system("stty -echo");
 	    $newpass = &confirm_list("Enter password again", 1, "", "");
-	    system("stty", "echo");
+	    system("stty echo");
 	    print "\n";
 	    last if $password eq $newpass;
 	    print "They didn't match, please try again\n";
 	}
-	elsif (!&confirm_yn("Disable password logins for the user?", "no")) {
+	elsif (&confirm_yn("Use an empty password?", "yes")) {
 	    last;
 	}
     }
@@ -763,7 +719,7 @@ sub new_users {
 
     print "\n" if $verbose;
     print "Ok, let's go.\n" .
-	  "Don't worry about mistakes. There will be a chance later to " .
+	  "Don't worry about mistakes. I will give you the chance later to " .
 	  "correct any input.\n" if $verbose;
 
     # name: Username
@@ -773,13 +729,12 @@ sub new_users {
     # g_id: group id
     # group_login: groupname of g_id
     # new_groups: some other groups
-    # log_cl: login class
-    local($name, $group_login, $fullname, $sh, $u_id, $g_id, $new_groups,
-	$log_cl);
+    local($name, $group_login, $fullname, $sh, $u_id, $g_id, $new_groups);
     local($groupmembers_bak, $cryptpwd);
     local($new_users_ok) = 1;
 
 
+    $new_groups = "no";
     $new_groups = "no" unless $groupname{$new_groups};
 
     while(1) {
@@ -793,7 +748,6 @@ sub new_users {
 	$g_id = $groupname{$group_login} if (defined($groupname{$group_login}));
 
 	$new_groups = &new_users_groups($name, $new_groups);
-	$log_cl = &new_users_login_class;
 	$password = &new_users_password;
 
 
@@ -802,11 +756,10 @@ sub new_users {
 
 	    $cryptpwd = "*";	# Locked by default
 	    $cryptpwd = encrypt($password, &salt) if ($password ne "");
-	    $log_cl = "" if ($log_cl eq "default");
 
 	    # obscure perl bug
 	    $new_entry = "$name\:" . "$cryptpwd" .
-		"\:$u_id\:$g_id\:$log_cl:0:0:$fullname:$home/$name:$sh";
+		"\:$u_id\:$g_id\::0:0:$fullname:$home/$name:$sh";
 	    &append_file($etc_passwd, "$new_entry");
 	    &new_users_pwdmkdb("$new_entry");
 	    &new_users_group_update;
@@ -832,7 +785,6 @@ sub batch {
     $defaultshell = &shell_default_valid($defaultshell);
     return 0 unless $home = &home_partition_valid($home);
     return 0 if $dotdir ne &dotdir_default_valid($dotdir);
-    $message_file = &choosetxt_yn_default($send_message, $message_file);
     $send_message = &message_default;
 
     return 0 if $name ne &new_users_name_valid($name);
@@ -843,7 +795,6 @@ sub batch {
     $g_id = $groupname{$group_login} if (defined($groupname{$group_login}));
     ($flag, $new_groups) = &new_users_groups_valid($groups);
     return 0 if $flag;
-    $log_cl = ($defaultclass eq "default") ? "" : $defaultclass;
 
     $cryptpwd = "*";	# Locked by default
     if ($password ne "" && $password ne "*") {
@@ -852,7 +803,7 @@ sub batch {
     }
     # obscure perl bug
     $new_entry = "$name\:" . "$cryptpwd" .
-	"\:$u_id\:$g_id\:$log_cl:0:0:$fullname:$home/$name:$sh";
+	"\:$u_id\:$g_id\::0:0:$fullname:$home/$name:$sh";
     &append_file($etc_passwd, "$new_entry");
     &new_users_pwdmkdb("$new_entry");
     &new_users_group_update;
@@ -879,22 +830,11 @@ sub encryption_default {
     local($m) = "";
     if ($verbose) {
 	while (&encryption_check($m) == 0) {
-            $m = &confirm_list("Default encryption method for passwords:", 1,
+            $m = &confirm_list("Default encryption method for passwords", 1,
                               $encryption_methods[0], @encryption_methods);
 	}
     }
     return($m);
-}
-
-sub class_default {
-    local($c) = $defaultclass;
-
-    if ($verbose) {
-	$c = &confirm_list("Default login class:", 0,
-		$defaultclass, @login_classes);
-	$changes++ if $c ne $defaultclass;
-    }
-    return($c);
 }
 
 # Confirm that we have a valid encryption method
@@ -904,14 +844,14 @@ sub encryption_check {
     foreach $i (@encryption_methods) {
         if ($m eq $i) { return 1; }
     }
-
+    
     if ($m =~ /^blowfish,(\d+)$/) { return 1; }
     return 0;
 }
 
 # misc
 sub check_root {
-    die "You are not root!\n" if $<;
+    die "You are not root!\n" if $< && !$test;
 }
 
 sub usage {
@@ -923,7 +863,6 @@ usage: adduser
     [-dotdir dotdir]
     [-e|-encryption method]
     [-group login_group]
-    [-class login_class]
     [-h|-help]
     [-home home]
     [-message message_file]
@@ -936,8 +875,7 @@ usage: adduser
     [-v|-verbose]
 
 home=$home shell=$defaultshell dotdir=$dotdir login_group=$defaultgroup
-login_class=$defaultclass uid_start=$uid_start uid_end=$uid_end 
-send_message=$send_message message_file=$message_file
+message_file=$send_message uid_start=$uid_start uid_end=$uid_end
 USAGE
     exit 1;
 }
@@ -945,7 +883,7 @@ USAGE
 # uniq(1)
 sub uniq {
     local(@list) = @_;
-    local($e, $last = "", @array);
+    local($e, $last, @array);
 
     foreach $e (sort @list) {
 	push(@array, $e) unless $e eq $last;
@@ -958,18 +896,29 @@ sub uniq {
 # That may be a DES salt or a blowfish rotation count
 sub salt {
     local($salt);		# initialization
-    if ($encryptionmethod eq "auto") {
+    if ($encryptionmethod eq "des" || $encryptionmethod eq "old") {
+        local($i, $rand);
+        local(@itoa64) = ( 0 .. 9, a .. z, A .. Z ); # 0 .. 63
+
+        warn "calculate salt\n" if $verbose > 1;
+
+        for ($i = 0; $i < 8; $i++) {
+	    srand(time + $rand + $$); 
+	    $rand = rand(25*29*17 + $rand);
+	    $salt .=  $itoa64[$rand & $#itoa64];
+        }
+    } elsif ($encryptionmethod eq "md5") {
         $salt = "";
     } elsif ($encryptionmethod =~ /^blowfish/ ) {
         ($encryptionmethod, $salt) = split(/\,/, $encryptionmethod);
-	$salt = 7 unless $salt;		# default rounds if unspecified
+	if ($salt eq "") { $salt = 7; }	# default rounds inf unspecified
     } else {
         warn "$encryptionmethod encryption method invalid\n" if ($verbose > 0);
 	warn "Falling back to blowfish,7...\n" if ($verbose > 0);
 	$encryptionmethod = "blowfish";
 	$salt = 7;
     }
-
+        
     warn "Salt is: $salt\n" if $verbose > 1;
 
     return $salt;
@@ -978,15 +927,18 @@ sub salt {
 # Encrypt a password using the selected method
 sub encrypt {
     local($pass, $salt) = ($_[0], $_[1]);
-    local(@args, $crypt);
+    local($args, $crypt);
+    local($goodpass);
 
-    if ($encryptionmethod eq "blowfish") {
-        @args = ("-b", $salt);
-    } elsif ($encryptionmethod eq "auto") {
-        @args = ("-c", $log_cl);
+    if ($encryptionmethod eq "des" || $encryptionmethod eq "old") {
+        $args = "-s $salt";
+    } elsif ($encryptionmethod eq "md5") {
+        $args = "-m";
+    } elsif ($encryptionmethod eq "blowfish") {
+        $args = "-b $salt";
     }
 
-    open2(\*ENCRD, \*ENCWR, "/usr/bin/encrypt", @args);
+    open2(\*ENCRD, \*ENCWR, "/usr/bin/encrypt $args");
     print ENCWR "$pass\n";
     close ENCWR;
     $crypt = <ENCRD>;
@@ -994,6 +946,11 @@ sub encrypt {
     chomp $crypt;
     die "encrypt failed" if (wait == -1 || $? != 0);
     return($crypt);
+}
+
+# print banner
+sub copyright {
+    return;
 }
 
 # hints
@@ -1017,23 +974,20 @@ sub parse_arguments {
 	elsif (/^--?(h|help|\?)$/)	{ &usage }
 	elsif (/^--?(home)$/)	 { $home = $argv[0]; shift @argv }
 	elsif (/^--?(shell)$/)	 { $defaultshell = $argv[0]; shift @argv }
-	elsif (/^--?(class)$/)	 { $defaultclass = $argv[0]; shift @argv }
 	elsif (/^--?(dotdir)$/)	 { $dotdir = $argv[0]; shift @argv }
 	elsif (/^--?(uid_start)$/)	 { $uid_start = $argv[0]; shift @argv }
 	elsif (/^--?(uid_end)$/)	 { $uid_end = $argv[0]; shift @argv }
 	elsif (/^--?(group)$/)	 { $defaultgroup = $argv[0]; shift @argv }
 	elsif (/^--?(check_only)$/) { $check_only = 1 }
-	elsif (/^--?(message)$/) {
-	    $send_message = $argv[0]; shift @argv;
-	    $message_file = &choosetxt_yn_default($send_message, $message_file);
-	}
+	elsif (/^--?(message)$/) { $send_message = $argv[0]; shift @argv;
+				   $sendmessage = 1; }
 	elsif (/^--?(unencrypted)$/)	{ $unencrypted = 1 }
 	elsif (/^--?(batch)$/)	 {
 	    @batch = splice(@argv, 0, 4); $verbose = 0;
 	    die "batch: too few arguments\n" if $#batch < 0;
 	}
 	# see &config_read
-	elsif (/^--?(config_create)$/)	{ &hints; &create_conf; exit(0); }
+	elsif (/^--?(config_create)$/)	{ &copyright; &hints; &create_conf; exit(0); }
 	elsif (/^--?(noconfig)$/)	{ $config_read = 0; }
 	elsif (/^--?(e|encryption)$/) {
 	    $encryptionmethod = $argv[0];
@@ -1061,7 +1015,7 @@ sub dirname {
 
 # return 1 if $file is a readable file or link
 sub filetest {
-    local($file, $verbose) = @_;
+    local($file, $verb) = @_;
 
     if (-e $file) {
 	if (-f $file || -l $file) {
@@ -1081,14 +1035,17 @@ sub create_conf {
     &shells_read;			# Pull in /etc/shells info
     &shells_add;			# maybe add some new shells
     $defaultshell = &shell_default;	# enter default shell
-    &login_conf_read;			# read /etc/login.conf
-    $defaultclass = &class_default;	# default login.conf class
     $home = &home_partition($home);	# find HOME partition
     $dotdir = &dotdir_default;		# check $dotdir
     $send_message = &message_default;   # send message to new user
     $defaultpasswd = &password_default; # maybe use password
     $defaultencryption = &encryption_default;	# Encryption method
 
+    if ($send_message ne 'no') {
+	&message_create($send_message);
+    } else {
+	&message_create($send_message_bak);
+    }
     &config_write(1);
 }
 
@@ -1100,10 +1057,9 @@ sub adduser_log {
     return 1 if $logfile eq "no";
 
     local($sec, $min, $hour, $mday, $mon, $year) = localtime;
-    $year += 1900;
     $mon++;
 
-    foreach $e ('sec', 'min', 'hour', 'mday', 'mon') {
+    foreach $e ('sec', 'min', 'hour', 'mday', 'mon', 'year') {
 	# '7' -> '07'
 	eval "\$$e = 0 . \$$e" if (eval "\$$e" < 10);
     }
@@ -1122,7 +1078,7 @@ sub home_create {
     }
 
     if ($dotdir eq 'no') {
-	if (!mkdir("$homedir", 0755)) {
+	if (!mkdir("$homedir",0755)) {
 	    warn "mkdir $homedir: $!\n"; return 0;
 	}
 	system 'chown', "$name:$group", $homedir;
@@ -1132,9 +1088,9 @@ sub home_create {
     # copy files from  $dotdir to $homedir
     # rename 'dot.foo' files to '.foo'
     print "Copy files from $dotdir to $homedir\n" if $verbose;
-    system("cp", "-R", $dotdir, $homedir);
-    system("chmod", "-R", "u+wrX,go-w", $homedir);
-    system("chown", "-R", "$name:$group", $homedir);
+    system("cp -r $dotdir $homedir");
+    system("chmod -R u+wrX,go-w $homedir");
+    system("chown -R $name:$group $homedir");
 
     # security
     opendir(D, $homedir);
@@ -1216,7 +1172,7 @@ sub mkdirhier {
 }
 
 # stript unused '/'
-# e.g.: //usr///home// -> /usr/home
+# F.i.: //usr///home// -> /usr/home
 sub stripdir {
     local($dir) = @_;
 
@@ -1226,8 +1182,8 @@ sub stripdir {
     return '/';
 }
 
-# Read one of the elements from @list. $confirm is the default.
-# If !$allow then accept only elements from @list.
+# Read one of the elements from @list. $confirm is default.
+# If !$allow accept only elements from @list.
 sub confirm_list {
     local($message, $allow, $confirm, @list) = @_;
     local($read, $c, $print);
@@ -1254,46 +1210,14 @@ sub confirm_list {
     return &confirm_list($message, $allow, $confirm, @list);
 }
 
-# YES, NO, DEFAULT or userstring
-# 1. return "" if "no" or no string is provided by the user.
-# 2. return the $default parameter if "yes" or "default" provided.
-# otherwise return user provided string.
-sub confirm_yn_default {
-    local($message, $confirm, $default) = @_;
-
-    print "$message [$confirm]: ";
-    chop($read = <STDIN>);
-    $read =~ s/^\s*//;
-    $read =~ s/\s*$//;
-    return "" unless $read;
-
-    return choosetxt_yn_default($read, $default);
-}
-
-sub choosetxt_yn_default {
-    local($read, $default) = @_;
-
-    if ($read =~ "$no") {
-	return "";
-    }
-    if ($read eq "default") {
-	return $default;
-    }
-    if ($read =~ "$yes") {
-	if ($verbose == 1) {
-	    return $read;
-	}
-	return $default;
-    }
-    return $read;
-}
-
 # YES or NO question
 # return 1 if &confirm("message", "yes") and answer is yes
-#	or if &confirm("message", "no") and answer is no
-# otherwise return 0
+#	or if &confirm("message", "no") an answer is no
+# otherwise 0
 sub confirm_yn {
     local($message, $confirm) = @_;
+    local($yes) = '^(yes|YES|y|Y)$';
+    local($no) = '^(no|NO|n|N)$';
     local($read, $c);
 
     if ($confirm && ($confirm =~ "$yes" || $confirm == 1)) {
@@ -1347,62 +1271,30 @@ sub dotdir_default_valid {
 
 # ask for messages to new users
 sub message_default {
-    local($tmp_message_file) = $message_file;
+    local($file) = $send_message;
+    local(@d) = ($file, $send_message_bak, "no");
 
     while($verbose) {
-	$send_message = "no";
+	$file = &confirm_list("Send message from file:", 1, $file, @d);
+	last if $file eq "no";
+	last if &filetest($file, 1);
 
-	$message_file = &confirm_yn_default(
-			    "Send welcome message?: /path/file default no",
-				"no", $tmp_message_file);
-	if ($message_file eq "") {
-	    $message_file = $tmp_message_file;
-	    last;
-	}
-	if ($message_file =~ $yes) {
-	    $message_file = &confirm_yn_default(
-		 	     "Really? Type the filepath, 'default' or 'no'",
-			     "no", $tmp_message_file);
-	    if ($message_file eq "") {
-	        $message_file = $tmp_message_file;
-	        last;
-	    }
-	}
-
-	# try and create the message file
-	if (&filetest($message_file, 0)) {
-	    if (&confirm_yn("File ``$message_file'' exists. Overwrite?:",
-			    "no")) {
-	        print "Retry: choose a different location\n";
-	        next;
-	    }
-	    if (&message_create($message_file)) {
-		print "Message file ``$message_file'' overwritten\n"
-		    if $verbose;
-	    }
-	} else {
-	    if (&message_create($message_file)) {
-		print "Message file ``$message_file'' created\n" if $verbose;
-	    }
-	}
-
-	if (&filetest($message_file, 0)) {
-	    $send_message = "yes";
-	    last;
-	}
-	last if !&confirm_yn("Unable to create ``$message_file'', try again?",
+	# maybe create message file
+	&message_create($file) if &confirm_yn("Create ``$file''?", "yes");
+	last if &filetest($file, 0);
+	last if !&confirm_yn("File ``$file'' does not exist, try again?",
 			     "yes");
     }
 
-    if ($send_message eq "no" || !&filetest($message_file, 0)) {
-	warn "Do not send message(s)\n" if $verbose;
-	$send_message = "no";
+    if ($file eq "no" || !&filetest($file, 0)) {
+	warn "Do not send message\n" if $verbose;
+	$file = "no";
     } else {
-	&message_read($message_file);
+	&message_read($file);
     }
 
-    $changes++ if $tmp_message_file ne $message_file && $verbose;
-    return $send_message;
+    $changes++ if $file ne $send_message && $verbose;
+    return $file;
 }
 
 # create message file
@@ -1451,18 +1343,21 @@ sub message_read {
 sub append_file {
     local($file,@list) = @_;
     local($e);
+    local($LOCK_EX) = 2;
+    local($LOCK_NB) = 4;
+    local($LOCK_UN) = 8;
 
     open(F, ">> $file") || die "$file: $!\n";
     print "Lock $file.\n" if $verbose > 1;
-    while(!flock(F, LOCK_EX | LOCK_NB)) {
+    while(!flock(F, $LOCK_EX | $LOCK_NB)) {
 	warn "Cannot lock file: $file\a\n";
-	die "Sorry, gave up\n"
+	die "Sorry, give up\n"
 	    unless &confirm_yn("Try again?", "yes");
     }
     print F join("\n", @list) . "\n";
-    print "Unlock $file.\n" if $verbose > 1;
-    flock(F, LOCK_UN);
     close F;
+    print "Unlock $file.\n" if $verbose > 1;
+    flock(F, $LOCK_UN);
 }
 
 # return free uid+gid
@@ -1484,7 +1379,7 @@ sub next_id {
 	$gid_start = $groupname{$group};
     }
     # gid is in use, looking for another gid.
-    # Note: uid and gid are not equal
+    # Note: uid an gid are not equal
     elsif ($gid{$uid_start}) {
 	while($gid{$gid_start} || $uid{$gid_start}) {
 	    $gid_start--;
@@ -1496,7 +1391,7 @@ sub next_id {
 
 # read config file - typically /etc/adduser.conf
 sub config_read {
-    local($opt) = join " ", @_;
+    local($opt) = @_;
     local($user_flag) = 0;
 
     # don't read config file
@@ -1554,16 +1449,15 @@ sub config_write {
     local($shpref) = "'" . join("', '", @shellpref) . "'";
     local($shpath) = "'" . join("', '", @path) . "'";
     local($user_var) = join('', @user_variable_list);
-    local($def_lc) = "'" . join("', '", @login_classes) . "'";
 
     print C <<EOF;
 #
+# $OpenBSD: adduser.perl,v 1.19 1999/09/06 16:48:41 alex Exp $
 # $config - automatic generated by adduser(8)
 #
-# Note: adduser reads *and* writes this file.
+# Note: adduser read *and* write this file.
 #	You may change values, but don't add new things before the
 #	line ``$do_not_delete''
-#	Also, unquoted strings may cause warnings
 #
 
 # verbose = [0-2]
@@ -1571,20 +1465,17 @@ verbose = $verbose
 
 # Get new password for new users
 # defaultpasswd =  yes | no
-defaultpasswd = "$defaultpasswd"
+defaultpasswd = $defaultpasswd
 
-# Default encryption method for user passwords
-# Methods are all those listed in login.conf(5)
+# Default encryption method for user passwords 
+# Methods are all those listed in passwd.conf(5)
 encryptionmethod = "$defaultencryption"
 
-# copy dotfiles from this dir ("/etc/skel" or "no")
+# copy dotfiles from this dir ("/usr/share/skel" or "no")
 dotdir = "$dotdir"
 
-# send message to user? ("yes" or "no")
+# send this file to new user ("/etc/adduser.message" or "no")
 send_message = "$send_message"
-
-# send this file to new user ("/etc/adduser.message")
-message_file = "$message_file"
 
 # config file for adduser ("/etc/adduser.conf")
 config = "$config"
@@ -1607,18 +1498,11 @@ shellpref = ($shpref)
 defaultshell = "$defaultshell"
 
 # defaultgroup ('USER' for same as username or any other valid group)
-defaultgroup = "$defaultgroup"
+defaultgroup = $defaultgroup
 
 # new users get this uid
 uid_start = $uid_start
 uid_end = $uid_end
-
-# default login.conf(5) login class
-defaultclass = "$defaultclass"
-
-# login classes available from login.conf(5)
-# login_classes = ('default', 'daemon', 'staff')
-login_classes = ($def_lc)
 
 $do_not_delete
 ## your own variables, see /etc/adduser.message
@@ -1630,6 +1514,8 @@ EOF
 
 # check for sane variables
 sub variable_check {
+	local($abort) = 0;
+
 	# Check uid_start & uid_end
 	warn "WARNING: uid_start < 1000!\n" if($uid_start < 1000);
 	die "ERROR: uid_start >= uid_end!\n" if($uid_start >= $uid_end);
@@ -1638,17 +1524,3 @@ sub variable_check {
 	    if($#batch < 0 && $unencrypted);
 }
 
-sub cleanup {
-    local($sig) = @_;
-
-    print STDERR "Caught signal SIG$sig -- cleaning up.\n";
-    system("stty", "echo");
-    exit(0);
-}
-
-END {
-    if (-e $etc_ptmp && defined(fileno(PTMP))) {
-	    close PTMP;
-	    unlink($etc_ptmp) || warn "Error: unable to remove $etc_ptmp: $!\nPlease verify that $etc_ptmp no longer exists!\n";
-    }
-}

@@ -1,4 +1,3 @@
-/*	$OpenBSD: erand48.c,v 1.5 2015/09/14 13:30:17 guenther Exp $ */
 /*
  * Copyright (c) 1993 Martin Birgmeier
  * All rights reserved.
@@ -12,7 +11,10 @@
  * to anyone/anything when using this software.
  */
 
-#include <math.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: erand48.c,v 1.2 1996/08/19 08:33:29 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "rand48.h"
 
 double
@@ -23,4 +25,3 @@ erand48(unsigned short xseed[3])
 	       ldexp((double) xseed[1], -32) +
 	       ldexp((double) xseed[2], -16);
 }
-DEF_WEAK(erand48);

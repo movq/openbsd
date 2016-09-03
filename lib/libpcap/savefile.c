@@ -1,4 +1,4 @@
-/*	$OpenBSD: savefile.c,v 1.16 2015/12/22 19:51:04 mmcc Exp $	*/
+/*	$OpenBSD: savefile.c,v 1.7 1999/07/20 04:49:56 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994, 1995, 1996, 1997
@@ -30,13 +30,18 @@
  * dependent values so we can print the dump file on any architecture.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/lib/libpcap/savefile.c,v 1.7 1999/07/20 04:49:56 deraadt Exp $ (LBL)";
+#endif
+
 #include <sys/types.h>
 #include <sys/time.h>
 
 #include <errno.h>
+#include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #ifdef HAVE_OS_PROTO_H
@@ -101,8 +106,22 @@ swap_hdr(struct pcap_file_header *hp)
 pcap_t *
 pcap_open_offline(const char *fname, char *errbuf)
 {
-	pcap_t *p;
-	FILE *fp;
+	register pcap_t *p;
+	register FILE *fp;
+	struct pcap_file_header hdr;
+	int linklen;
+
+	p = (pcap_t *)malloc(sizeof(*p));
+	if (p == NULL) {
+		strlcpy(errbuf, "out of swap", PCAP_ERRBUF_SIZE);
+		return (NULL);
+	}
+
+	memset((char *)p, 0, sizeof(*p));
+	/*
+	 * Set this field so we don't close stdin in pcap_close!
+	 */
+	p->fd = -1;
 
 	if (fname[0] == '-' && fname[1] == '\0')
 		fp = stdin;
@@ -111,35 +130,9 @@ pcap_open_offline(const char *fname, char *errbuf)
 		if (fp == NULL) {
 			snprintf(errbuf, PCAP_ERRBUF_SIZE, "%s: %s", fname,
 			    pcap_strerror(errno));
-			return (NULL);
+			goto bad;
 		}
 	}
-	p = pcap_fopen_offline(fp, errbuf);
-	if (p == NULL) {
-		if (fp != stdin)
-			fclose(fp);
-	}
-	return (p);
-}
-
-pcap_t *
-pcap_fopen_offline(FILE *fp, char *errbuf)
-{
-	pcap_t *p;
-	struct pcap_file_header hdr;
-	int linklen;
-
-	p = calloc(1, sizeof(*p));
-	if (p == NULL) {
-		strlcpy(errbuf, "out of swap", PCAP_ERRBUF_SIZE);
-		return (NULL);
-	}
-
-	/*
-	 * Set this field so we don't double-close in pcap_close!
-	 */
-	p->fd = -1;
-
 	if (fread((char *)&hdr, sizeof(hdr), 1, fp) != 1) {
 		snprintf(errbuf, PCAP_ERRBUF_SIZE, "fread: %s",
 		    pcap_strerror(errno));
@@ -184,7 +177,7 @@ pcap_fopen_offline(FILE *fp, char *errbuf)
 
 	if (p->bufsize < 0)
 		p->bufsize = BPF_MAXBUFSIZE;
-	p->sf.base = malloc(p->bufsize + BPF_ALIGNMENT);
+	p->sf.base = (u_char *)malloc(p->bufsize + BPF_ALIGNMENT);
 	if (p->sf.base == NULL) {
 		strlcpy(errbuf, "out of swap", PCAP_ERRBUF_SIZE);
 		goto bad;
@@ -257,8 +250,9 @@ sf_next_packet(pcap_t *p, struct pcap_pkthdr *hdr, u_char *buf, int buflen)
 
 		if (tsize < hdr->caplen) {
 			tsize = ((hdr->caplen + 1023) / 1024) * 1024;
-			free(tp);
-			tp = malloc(tsize);
+			if (tp != NULL)
+				free((u_char *)tp);
+			tp = (u_char *)malloc(tsize);
 			if (tp == NULL) {
 				tsize = 0;
 				snprintf(p->errbuf, PCAP_ERRBUF_SIZE,
@@ -331,25 +325,12 @@ pcap_offline_read(pcap_t *p, int cnt, pcap_handler callback, u_char *user)
 void
 pcap_dump(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 {
-	FILE *f;
+	register FILE *f;
 
 	f = (FILE *)user;
 	/* XXX we should check the return status */
 	(void)fwrite((char *)h, sizeof(*h), 1, f);
 	(void)fwrite((char *)sp, h->caplen, 1, f);
-}
-
-static pcap_dumper_t *
-pcap_setup_dump(pcap_t *p, FILE *f, const char *fname)
-{
-	if (sf_write_header(f, p->linktype, p->tzoff, p->snapshot) == -1) {
-		snprintf(p->errbuf, PCAP_ERRBUF_SIZE, "Can't write to %s: %s",
-		    fname, pcap_strerror(errno));
-		if (f != stdout)
-			(void)fclose(f);
-		return (NULL);
-	}
-	return ((pcap_dumper_t *)f);
 }
 
 /*
@@ -369,38 +350,8 @@ pcap_dump_open(pcap_t *p, const char *fname)
 			return (NULL);
 		}
 	}
-	return (pcap_setup_dump(p, f, fname));
-}
-
-/*
- * Initialize so that sf_write() will output to the given stream.
- */
-pcap_dumper_t *
-pcap_dump_fopen(pcap_t *p, FILE *f)
-{	
-	return (pcap_setup_dump(p, f, "stream"));
-}
-
-FILE *
-pcap_dump_file(pcap_dumper_t *p)
-{
-	return ((FILE *)p);
-}
-
-long
-pcap_dump_ftell(pcap_dumper_t *p)
-{
-	return (ftell((FILE *)p));
-}
-
-int
-pcap_dump_flush(pcap_dumper_t *p)
-{
-
-	if (fflush((FILE *)p) == EOF)
-		return (-1);
-	else
-		return (0);
+	(void)sf_write_header(f, p->linktype, p->tzoff, p->snapshot);
+	return ((pcap_dumper_t *)f);
 }
 
 void

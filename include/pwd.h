@@ -1,4 +1,4 @@
-/*	$OpenBSD: pwd.h,v 1.24 2015/11/18 16:44:46 tedu Exp $	*/
+/*	$OpenBSD: pwd.h,v 1.8 1999/09/03 18:13:37 deraadt Exp $	*/
 /*	$NetBSD: pwd.h,v 1.9 1996/05/15 21:36:45 jtc Exp $	*/
 
 /*-
@@ -19,7 +19,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,8 +47,9 @@
 
 #include <sys/types.h>
 
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	_PATH_PASSWD		"/etc/passwd"
+#define _PATH_PASSWDCONF	"/etc/passwd.conf"
 #define	_PATH_MASTERPASSWD	"/etc/master.passwd"
 #define	_PATH_MASTERPASSWD_LOCK	"/etc/ptmp"
 
@@ -61,19 +66,12 @@
 
 #define	_PASSWORD_EFMT1		'_'	/* extended encryption format */
 
-#define	_PASSWORD_LEN		128	/* max length, not counting NUL */
-#define	_PW_NAME_LEN		31	/* max length, not counting NUL */
-					/* Should be MAXLOGNAME - 1 */
-#define _PW_BUF_LEN		1024	/* length of getpw*_r buffer */
+#define	_PASSWORD_LEN		128	/* max length, not counting NULL */
 
 #define _PASSWORD_NOUID		0x01	/* flag for no specified uid. */
 #define _PASSWORD_NOGID		0x02	/* flag for no specified gid. */
 #define _PASSWORD_NOCHG		0x04	/* flag for no specified change. */
 #define _PASSWORD_NOEXP		0x08	/* flag for no specified expire. */
-
-/* Flags for pw_mkdb(3) */
-#define	_PASSWORD_SECUREONLY	0x01	/* only generate spwd.db file */
-#define	_PASSWORD_OMITV7	0x02	/* don't generate v7 passwd file */
 
 #endif
 
@@ -81,7 +79,7 @@ struct passwd {
 	char	*pw_name;		/* user name */
 	char	*pw_passwd;		/* encrypted password */
 	uid_t	pw_uid;			/* user uid */
-	gid_t	pw_gid;			/* user gid */
+	uid_t	pw_gid;			/* user gid */
 	time_t	pw_change;		/* password change time */
 	char	*pw_class;		/* user access class */
 	char	*pw_gecos;		/* Honeywell login info */
@@ -90,28 +88,20 @@ struct passwd {
 	time_t	pw_expire;		/* account expiration */
 };
 
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-struct passwd	*getpwuid(uid_t);
-struct passwd	*getpwnam(const char *);
-struct passwd	*getpwuid_shadow(uid_t);
-struct passwd	*getpwnam_shadow(const char *);
-int		getpwnam_r(const char *, struct passwd *, char *, size_t,
-		    struct passwd **result);
-int		getpwuid_r(uid_t uid, struct passwd *, char *buf, size_t buflen,
-		    struct passwd **result);
-#if __BSD_VISIBLE || __XPG_VISIBLE
-struct passwd	*getpwent(void);
-void		 setpwent(void);
-void		 endpwent(void);
+struct passwd	*getpwuid __P((uid_t));
+struct passwd	*getpwnam __P((const char *));
+#ifndef _POSIX_SOURCE
+struct passwd	*getpwent __P((void));
+#ifndef _XOPEN_SOURCE
+int		 setpassent __P((int));
+char		*user_from_uid __P((uid_t, int));
+char		*bcrypt_gensalt __P((u_int8_t));
 #endif
-#if __BSD_VISIBLE
-int		 setpassent(int);
-char		*user_from_uid(uid_t, int);
-char		*bcrypt_gensalt(u_int8_t);
-char		*bcrypt(const char *, const char *);
-int		bcrypt_newhash(const char *, int, char *, size_t);
-int		bcrypt_checkpass(const char *, const char *);
-struct passwd	*pw_dup(const struct passwd *);
+void		 setpwent __P((void));
+void		 endpwent __P((void));
 #endif
 __END_DECLS
 

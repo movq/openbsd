@@ -1,4 +1,4 @@
-/*	$OpenBSD: readdir.c,v 1.9 2014/11/19 20:28:56 miod Exp $	*/
+/*	$OpenBSD: readdir.c,v 1.4 1997/07/21 15:43:54 mickey Exp $	*/
 
 /*
  * Copyright (c) 1996 Michael Shalayeff
@@ -12,9 +12,14 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -36,11 +41,13 @@
 #undef _KERNEL
 #include "stand.h"
 
+
 int
-opendir(const char *name)
+opendir(name)
+	char *name;
 {
-	struct stat sb;
 	int fd;
+	struct stat sb;
 
 	if (stat(name, &sb) < 0)
 		return -1;
@@ -56,16 +63,18 @@ opendir(const char *name)
 		olseek(fd, 0, 0);
 #else
 	if ((fd = open(name, O_RDONLY)) >= 0)
-		lseek(fd, 0, SEEK_SET);
+		lseek(fd, 0, 0);
 #endif
 
 	return fd;
 }
-
+	
 int
-readdir(int fd, char *dest)
+readdir(fd, dest)
+	int fd;
+	char *dest;
 {
-	struct open_file *f = &files[fd];
+	register struct open_file *f = &files[fd];
 
 	if (fd < 0 || fd >= SOPEN_MAX ||
 	    !((f = &files[fd])->f_flags & F_READ)) {
@@ -84,7 +93,8 @@ readdir(int fd, char *dest)
 }
 
 void
-closedir(int fd)
+closedir(fd)
+	int fd;
 {
 #ifdef __INTERNAL_LIBSA_CREAD
 	oclose(fd);

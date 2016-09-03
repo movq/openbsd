@@ -17,13 +17,6 @@
  * GNU General Public License for more details.
  */
 
-#ifndef __VMS_VER
-#define __VMS_VER 0
-#endif
-#ifndef __DECC_VER
-#define __DECC_VER 0
-#endif
-
 #include <varargs.h>
 #include <rms.h>
 #include <descrip.h>
@@ -99,7 +92,7 @@ typedef struct
 } VMS_DIR;
 
 DIR *
-vms_opendir (infilename, filepattern)
+opendir (infilename, filepattern)
      char *infilename;	/* name of directory */
      char *filepattern;
 {
@@ -178,7 +171,7 @@ vms_opendir (infilename, filepattern)
      now, by trying to read the first entry.  */
   if (vms_low_readdir ((DIR *) dirp) == (struct direct *) -1)
     {
-      vms_closedir (dirp);		/* was: xfree (dirp);  */
+      closedir (dirp);		/* was: xfree (dirp);  */
       errno = ENOENT;
       return 0;
     }
@@ -189,8 +182,8 @@ vms_opendir (infilename, filepattern)
 }
 
 int
-vms_closedir (dirp)
-     register DIR *dirp;		/* stream from vms_opendir */
+closedir (dirp)
+     register DIR *dirp;		/* stream from opendir */
 {
   {
     VMS_DIR *vms_dirp = (VMS_DIR *) dirp;
@@ -294,8 +287,8 @@ vms_low_readdir (dirp)
 
 /* ARGUSED */
 struct direct *
-vms_readdir (dirp)
-     register DIR *dirp;	/* stream from vms_opendir */
+readdir (dirp)
+     register DIR *dirp;	/* stream from opendir */
 {
   register struct direct *dp;
 

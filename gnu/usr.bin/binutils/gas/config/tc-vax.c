@@ -1,6 +1,5 @@
 /* tc-vax.c - vax-specific -
-   Copyright 1987, 1991, 1992, 1993, 1994, 1995, 1998, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1991, 1992, 1994, 1995 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,29 +14,23 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "as.h"
 
 #include "vax-inst.h"
 #include "obstack.h"		/* For FRAG_APPEND_1_CHAR macro in "frags.h" */
-#include "subsegs.h"
-
-#ifdef OBJ_ELF
-#include "elf/vax.h"
-#endif
 
 /* These chars start a comment anywhere in a source file (except inside
    another comment */
 const char comment_chars[] = "#";
 
-/* These chars only start a comment at the beginning of a line.  */
-/* Note that for the VAX the are the same as comment_chars above.  */
+/* These chars only start a comment at the beginning of a line. */
+/* Note that for the VAX the are the same as comment_chars above. */
 const char line_comment_chars[] = "#";
 
-const char line_separator_chars[] = ";";
+const char line_separator_chars[] = "";
 
 /* Chars that can be used to separate mant from exp in floating point nums */
 const char EXP_CHARS[] = "eE";
@@ -55,28 +48,18 @@ const char FLT_CHARS[] = "dDfFgGhH";
 static expressionS exp_of_operand[VIT_MAX_OPERANDS];
 static segT seg_of_operand[VIT_MAX_OPERANDS];
 
-/* A vax instruction after decoding.  */
+/* A vax instruction after decoding. */
 static struct vit v;
 
-/* Hold details of big operands.  */
+/* Hold details of big operands. */
 LITTLENUM_TYPE big_operand_bits[VIT_MAX_OPERANDS][SIZE_OF_LARGE_NUMBER];
 FLONUM_TYPE float_operand[VIT_MAX_OPERANDS];
-/* Above is made to point into big_operand_bits by md_begin().  */
-
-#ifdef OBJ_ELF
-#define GLOBAL_OFFSET_TABLE_NAME	"_GLOBAL_OFFSET_TABLE_"
-#define PROCEDURE_LINKAGE_TABLE_NAME	"_PROCEDURE_LINKAGE_TABLE_"
-symbolS *GOT_symbol;		/* Pre-defined "_GLOBAL_OFFSET_TABLE_" */
-symbolS *PLT_symbol;		/* Pre-defined "_PROCEDURE_LINKAGE_TABLE_" */
-#endif
+/* Above is made to point into big_operand_bits by md_begin(). */
 
 int flag_hash_long_names;	/* -+ */
 int flag_one;			/* -1 */
 int flag_show_after_trunc;	/* -H */
 int flag_no_hash_mixed_case;	/* -h NUM */
-#ifdef OBJ_ELF
-int flag_want_pic;		/* -k */
-#endif
 
 /*
  * For VAX, relative addresses of "just the right length" are easy.
@@ -128,6 +111,8 @@ int flag_want_pic;		/* -k */
  bbcs		e3
  bbsc		e4
  bbcc		e5
+ bbssi		e6
+ bbcci		e7
  Always, you complement 0th bit to reverse condition.
  Always, 1-byte opcde, longword-address, byte-address, 1-byte-displacement
 
@@ -186,18 +171,17 @@ int flag_want_pic;		/* -k */
 
 /* These displacements are relative to the start address of the
    displacement.  The first letter is Byte, Word.  2nd letter is
-   Forward, Backward.  */
+   Forward, Backward. */
 #define BF (1+ 127)
 #define BB (1+-128)
 #define WF (2+ 32767)
 #define WB (2+-32768)
 /* Dont need LF, LB because they always reach. [They are coded as 0.] */
 
+
 #define C(a,b) ENCODE_RELAX(a,b)
-/* This macro has no side-effects.  */
+/* This macro has no side-effects. */
 #define ENCODE_RELAX(what,length) (((what) << 2) + (length))
-#define RELAX_STATE(s) ((s) >> 2)
-#define RELAX_LENGTH(s) ((s) & 3)
 
 const relax_typeS md_relax_table[] =
 {
@@ -205,31 +189,25 @@ const relax_typeS md_relax_table[] =
   {1, 1, 0, 0},			/* unused	    0,1	*/
   {1, 1, 0, 0},			/* unused	    0,2	*/
   {1, 1, 0, 0},			/* unused	    0,3	*/
-
   {BF + 1, BB + 1, 2, C (1, 1)},/* B^"foo"	    1,0 */
   {WF + 1, WB + 1, 3, C (1, 2)},/* W^"foo"	    1,1 */
   {0, 0, 5, 0},			/* L^"foo"	    1,2 */
   {1, 1, 0, 0},			/* unused	    1,3 */
-
   {BF, BB, 1, C (2, 1)},	/* b<cond> B^"foo"  2,0 */
   {WF + 2, WB + 2, 4, C (2, 2)},/* br.+? brw X	    2,1 */
   {0, 0, 7, 0},			/* br.+? jmp X	    2,2 */
   {1, 1, 0, 0},			/* unused	    2,3 */
-
   {BF, BB, 1, C (3, 1)},	/* brb B^foo	    3,0 */
   {WF, WB, 2, C (3, 2)},	/* brw W^foo	    3,1 */
   {0, 0, 5, 0},			/* Jmp L^foo	    3,2 */
   {1, 1, 0, 0},			/* unused	    3,3 */
-
   {1, 1, 0, 0},			/* unused	    4,0 */
   {WF, WB, 2, C (4, 2)},	/* acb_ ^Wfoo	    4,1 */
   {0, 0, 10, 0},		/* acb_,br,jmp L^foo4,2 */
   {1, 1, 0, 0},			/* unused	    4,3 */
-
   {BF, BB, 1, C (5, 1)},	/* Xob___,,foo      5,0 */
   {WF + 4, WB + 4, 6, C (5, 2)},/* Xob.+2,brb.+3,brw5,1 */
   {0, 0, 9, 0},			/* Xob.+2,brb.+6,jmp5,2 */
-  {1, 1, 0, 0},			/* unused	    5,3 */
 };
 
 #undef C
@@ -238,7 +216,7 @@ const relax_typeS md_relax_table[] =
 #undef WF
 #undef WB
 
-void float_cons PARAMS ((int));
+void float_cons ();
 
 const pseudo_typeS md_pseudo_table[] =
 {
@@ -246,12 +224,12 @@ const pseudo_typeS md_pseudo_table[] =
   {"ffloat", float_cons, 'f'},
   {"gfloat", float_cons, 'g'},
   {"hfloat", float_cons, 'h'},
-  {NULL, NULL, 0},
+  {0},
 };
 
 #define STATE_PC_RELATIVE		(1)
 #define STATE_CONDITIONAL_BRANCH	(2)
-#define STATE_ALWAYS_BRANCH		(3)	/* includes BSB...  */
+#define STATE_ALWAYS_BRANCH		(3)	/* includes BSB... */
 #define STATE_COMPLEX_BRANCH	        (4)
 #define STATE_COMPLEX_HOP		(5)
 
@@ -260,18 +238,16 @@ const pseudo_typeS md_pseudo_table[] =
 #define STATE_LONG			(2)
 #define STATE_UNDF			(3)	/* Symbol undefined in pass1 */
 
+
 #define min(a, b)	((a) < (b) ? (a) : (b))
 
 int flonum_gen2vax PARAMS ((char format_letter, FLONUM_TYPE * f,
 			    LITTLENUM_TYPE * words));
 static const char *vip_begin PARAMS ((int, const char *, const char *,
 				      const char *));
-static void vip_op_1 PARAMS ((int, const char *));
 static void vip_op_defaults PARAMS ((const char *, const char *, const char *));
 static void vip_op PARAMS ((char *, struct vop *));
 static void vip PARAMS ((struct vit *, char *));
-
-static int vax_reg_parse PARAMS ((char, char, char, char));
 
 void
 md_begin ()
@@ -282,7 +258,7 @@ md_begin ()
 
   if ((errtxt = vip_begin (1, "$", "*", "`")) != 0)
     {
-      as_fatal (_("VIP_BEGIN error:%s"), errtxt);
+      as_fatal ("VIP_BEGIN error:%s", errtxt);
     }
 
   for (i = 0, fP = float_operand;
@@ -306,30 +282,19 @@ md_number_to_chars (con, value, nbytes)
 /* Fix up some data or instructions after we find out the value of a symbol
    that they reference.  */
 
-void				/* Knows about order of bytes in address.  */
-md_apply_fix3 (fixP, valueP, seg)
+void				/* Knows about order of bytes in address. */
+md_apply_fix (fixP, value)
      fixS *fixP;
-     valueT *valueP;
-     segT seg ATTRIBUTE_UNUSED;
+     long value;
 {
-  valueT value = * valueP;
-#ifdef BFD_ASSEMBLER
-  if (((fixP->fx_addsy == NULL && fixP->fx_subsy == NULL)
-       && fixP->fx_r_type != BFD_RELOC_32_PLT_PCREL
-       && fixP->fx_r_type != BFD_RELOC_32_GOT_PCREL)
-      || fixP->fx_r_type == NO_RELOC)
-#endif
-    number_to_chars_littleendian (fixP->fx_where + fixP->fx_frag->fr_literal,
-				  value, fixP->fx_size);
-
-  if (fixP->fx_addsy == NULL && fixP->fx_pcrel == 0)
-    fixP->fx_done = 1;
+  number_to_chars_littleendian (fixP->fx_where + fixP->fx_frag->fr_literal,
+				(valueT) value, fixP->fx_size);
 }
 
 long
 md_chars_to_number (con, nbytes)
-     unsigned char con[];	/* Low order byte 1st.  */
-     int nbytes;		/* Number of bytes in the input.  */
+     unsigned char con[];	/* Low order byte 1st. */
+     int nbytes;		/* Number of bytes in the input. */
 {
   long retval;
   for (retval = 0, con += nbytes - 1; nbytes--; con--)
@@ -344,21 +309,19 @@ md_chars_to_number (con, nbytes)
 
 void
 md_assemble (instruction_string)
-     char *instruction_string;	/* A string: assemble 1 instruction.  */
+     char *instruction_string;	/* A string: assemble 1 instruction. */
 {
-  /* Non-zero if operand expression's segment is not known yet.  */
+  /* Non-zero if operand expression's segment is not known yet. */
   int is_undefined;
-  /* Non-zero if operand expression's segment is absolute.  */
-  int is_absolute;
 
   int length_code;
   char *p;
-  /* An operand. Scans all operands.  */
+  /* An operand. Scans all operands. */
   struct vop *operandP;
   char *save_input_line_pointer;
-			/* What used to live after an expression.  */
+			/* What used to live after an expression. */
   char c_save;
-  /* 1: instruction_string bad for all passes.  */
+  /* 1: instruction_string bad for all passes. */
   int goofed;
   /* Points to slot just after last operand.  */
   struct vop *end_operandP;
@@ -366,28 +329,28 @@ md_assemble (instruction_string)
   expressionS *expP;
   segT *segP;
 
-  /* These refer to an instruction operand expression.  */
+  /* These refer to an instruction operand expression. */
   /* Target segment of the address.	 */
   segT to_seg;
   valueT this_add_number;
-  /* Positive (minuend) symbol.  */
-  symbolS *this_add_symbol;
-  /* As a number.  */
+  /* Positive (minuend) symbol. */
+  struct symbol *this_add_symbol;
+  /* As a number. */
   long opcode_as_number;
-  /* Least significant byte 1st.  */
+  /* Least significant byte 1st. */
   char *opcode_as_chars;
-  /* As an array of characters.  */
+  /* As an array of characters. */
   /* Least significant byte 1st */
   char *opcode_low_byteP;
-  /* length (bytes) meant by vop_short.  */
+  /* length (bytes) meant by vop_short. */
   int length;
-  /* 0, or 1 if '@' is in addressing mode.  */
+  /* 0, or 1 if '@' is in addressing mode. */
   int at;
   /* From vop_nbytes: vax_operand_width (in bytes) */
   int nbytes;
   FLONUM_TYPE *floatP;
   LITTLENUM_TYPE literal_float[8];
-  /* Big enough for any floating point literal.  */
+  /* Big enough for any floating point literal. */
 
   vip (&v, instruction_string);
 
@@ -400,7 +363,7 @@ md_assemble (instruction_string)
    */
   if ((goofed = (*v.vit_error)) != 0)
     {
-      as_fatal (_("Ignoring statement due to \"%s\""), v.vit_error);
+      as_warn ("Ignoring statement due to \"%s\"", v.vit_error);
     }
   /*
    * We need to use expression() and friends, which require us to diddle
@@ -419,18 +382,18 @@ md_assemble (instruction_string)
     {				/* for each operand */
       if (operandP->vop_error)
 	{
-	  as_fatal (_("Aborting because statement has \"%s\""), operandP->vop_error);
+	  as_warn ("Ignoring statement because \"%s\"", operandP->vop_error);
 	  goofed = 1;
 	}
       else
 	{
-	  /* Statement has no syntax goofs: let's sniff the expression.  */
-	  int can_be_short = 0;	/* 1 if a bignum can be reduced to a short literal.  */
+	  /* statement has no syntax goofs: lets sniff the expression */
+	  int can_be_short = 0;	/* 1 if a bignum can be reduced to a short literal. */
 
 	  input_line_pointer = operandP->vop_expr_begin;
 	  c_save = operandP->vop_expr_end[1];
 	  operandP->vop_expr_end[1] = '\0';
-	  /* If to_seg == SEG_PASS1, expression() will have set need_pass_2 = 1.  */
+	  /* If to_seg == SEG_PASS1, expression() will have set need_pass_2 = 1. */
 	  *segP = expression (expP);
 	  switch (expP->X_op)
 	    {
@@ -466,11 +429,11 @@ md_assemble (instruction_string)
 	       * instruction operands.
 	       */
 	      need_pass_2 = 1;
-	      as_fatal (_("Can't relocate expression"));
+	      as_warn ("Can't relocate expression");
 	      break;
 
 	    case O_big:
-	      /* Preserve the bits.  */
+	      /* Preserve the bits. */
 	      if (expP->X_add_number > 0)
 		{
 		  bignum_copy (generic_bignum, expP->X_add_number,
@@ -533,20 +496,20 @@ md_assemble (instruction_string)
 		      && operandP->vop_reg == 0xF
 		      && (operandP->vop_mode & 0xE) == 0x8))
 		{
-		  /* Saw a '#'.  */
+		  /* Saw a '#'. */
 		  if (operandP->vop_short == ' ')
 		    {
-		      /* We must chose S^ or I^.  */
+		      /* We must chose S^ or I^. */
 		      if (expP->X_add_number > 0)
 			{
-			  /* Bignum: Short literal impossible.  */
+			  /* Bignum: Short literal impossible. */
 			  operandP->vop_short = 'i';
 			  operandP->vop_mode = 8;
-			  operandP->vop_reg = 0xF;	/* VAX PC.  */
+			  operandP->vop_reg = 0xF;	/* VAX PC. */
 			}
 		      else
 			{
-			  /* Flonum: Try to do it.  */
+			  /* Flonum: Try to do it. */
 			  if (can_be_short)
 			    {
 			      operandP->vop_short = 's';
@@ -562,29 +525,29 @@ md_assemble (instruction_string)
 			      operandP->vop_reg = 0xF;	/* VAX PC */
 			    }
 			}	/* bignum or flonum ? */
-		    }		/*  if #, but no S^ or I^ seen.  */
-		  /* No more ' ' case: either 's' or 'i'.  */
+		    }		/*  if #, but no S^ or I^ seen. */
+		  /* No more ' ' case: either 's' or 'i'. */
 		  if (operandP->vop_short == 's')
 		    {
-		      /* Wants to be a short literal.  */
+		      /* Wants to be a short literal. */
 		      if (expP->X_add_number > 0)
 			{
-			  as_warn (_("Bignum not permitted in short literal. Immediate mode assumed."));
+			  as_warn ("Bignum not permitted in short literal. Immediate mode assumed.");
 			  operandP->vop_short = 'i';
 			  operandP->vop_mode = 8;
-			  operandP->vop_reg = 0xF;	/* VAX PC.  */
+			  operandP->vop_reg = 0xF;	/* VAX PC. */
 			}
 		      else
 			{
 			  if (!can_be_short)
 			    {
-			      as_warn (_("Can't do flonum short literal: immediate mode used."));
+			      as_warn ("Can't do flonum short literal: immediate mode used.");
 			      operandP->vop_short = 'i';
 			      operandP->vop_mode = 8;
-			      operandP->vop_reg = 0xF;	/* VAX PC.  */
+			      operandP->vop_reg = 0xF;	/* VAX PC. */
 			    }
 			  else
-			    {	/* Encode short literal now.  */
+			    {	/* Encode short literal now. */
 			      int temp = 0;
 
 			      switch (-expP->X_add_number)
@@ -614,18 +577,18 @@ md_assemble (instruction_string)
 			}	/* flonum or bignum ? */
 		    }
 		  else
-		    {		/* I^# seen: set it up if float.  */
+		    {		/* I^# seen: set it up if float. */
 		      if (expP->X_add_number < 0)
 			{
 			  memcpy (floatP->low, literal_float, sizeof (literal_float));
 			}
-		    }		/* if S^# seen.  */
+		    }		/* if S^# seen. */
 		}
 	      else
 		{
-		  as_warn (_("A bignum/flonum may not be a displacement: 0x%lx used"),
+		  as_warn ("A bignum/flonum may not be a displacement: 0x%lx used",
 			   (expP->X_add_number = 0x80000000L));
-		  /* Chosen so luser gets the most offset bits to patch later.  */
+		  /* Chosen so luser gets the most offset bits to patch later. */
 		}
 	      expP->X_add_number = floatP->low[0]
 		| ((LITTLENUM_MASK & (floatP->low[1])) << LITTLENUM_NUMBER_OF_BITS);
@@ -644,7 +607,7 @@ md_assemble (instruction_string)
 	    }
 	  if (input_line_pointer != operandP->vop_expr_end + 1)
 	    {
-	      as_fatal ("Junk at end of expression \"%s\"", input_line_pointer);
+	      as_warn ("Junk at end of expression \"%s\"", input_line_pointer);
 	      goofed = 1;
 	    }
 	  operandP->vop_expr_end[1] = c_save;
@@ -658,8 +621,9 @@ md_assemble (instruction_string)
       return;
     }
 
-  /* Emit op-code.  */
-  /* Remember where it is, in case we want to modify the op-code later.  */
+
+  /* Emit op-code. */
+  /* Remember where it is, in case we want to modify the op-code later. */
   opcode_low_byteP = frag_more (v.vit_opcode_nbytes);
   memcpy (opcode_low_byteP, v.vit_opcode, v.vit_opcode_nbytes);
   opcode_as_number = md_chars_to_number (opcode_as_chars = v.vit_opcode, 4);
@@ -683,17 +647,11 @@ md_assemble (instruction_string)
 	  FRAG_APPEND_1_CHAR (0x40 + operandP->vop_ndx);
 	}			/* if(vop_ndx>=0) */
 
-      /* Here to make main operand frag(s).  */
+      /* Here to make main operand frag(s). */
       this_add_number = expP->X_add_number;
       this_add_symbol = expP->X_add_symbol;
       to_seg = *segP;
-#ifdef BFD_ASSEMBLER
-      is_undefined = (to_seg == undefined_section);
-      is_absolute = (to_seg == absolute_section);
-#else
       is_undefined = (to_seg == SEG_UNKNOWN);
-      is_absolute = (to_seg == SEG_ABSOLUTE);
-#endif
       at = operandP->vop_mode & 1;
       length = (operandP->vop_short == 'b'
 		? 1 : (operandP->vop_short == 'w'
@@ -704,7 +662,7 @@ md_assemble (instruction_string)
 	{
 	  if (to_seg == now_seg || is_undefined)
 	    {
-	      /* If is_undefined, then it might BECOME now_seg.  */
+	      /* If is_undefined, then it might BECOME now_seg. */
 	      if (nbytes)
 		{
 		  p = frag_more (nbytes);
@@ -762,20 +720,16 @@ md_assemble (instruction_string)
 	      /*
 	       * --- SEG FLOAT MAY APPEAR HERE ----
 	       */
-	      if (is_absolute)
+	      if (to_seg == SEG_ABSOLUTE)
 		{
 		  if (nbytes)
 		    {
 		      know (!(opcode_as_number & VIT_OPCODE_SYNTHETIC));
 		      p = frag_more (nbytes);
-		      /* Conventional relocation.  */
-		      fix_new (frag_now, p - frag_now->fr_literal, nbytes,
-#ifdef BFD_ASSEMBLER
-			       section_symbol (absolute_section),
-#else
-			       &abs_symbol,
-#endif
-			       this_add_number, 1, NO_RELOC);
+		      /* Conventional relocation. */
+		      fix_new (frag_now, p - frag_now->fr_literal,
+			       nbytes, &abs_symbol, this_add_number,
+			       1, NO_RELOC);
 		    }
 		  else
 		    {
@@ -788,9 +742,9 @@ md_assemble (instruction_string)
 			      *opcode_low_byteP = opcode_as_chars[0] + VAX_WIDEN_LONG;
 			      know (opcode_as_chars[1] == 0);
 			      p = frag_more (5);
-			      p[0] = VAX_ABSOLUTE_MODE;	/* @#...  */
+			      p[0] = VAX_ABSOLUTE_MODE;	/* @#... */
 			      md_number_to_chars (p + 1, this_add_number, 4);
-			      /* Now (eg) JMP @#foo or JSB @#foo.  */
+			      /* Now (eg) JMP @#foo or JSB @#foo. */
 			    }
 			  else
 			    {
@@ -802,7 +756,7 @@ md_assemble (instruction_string)
 				  p[2] = VAX_BRB;
 				  p[3] = 6;
 				  p[4] = VAX_JMP;
-				  p[5] = VAX_ABSOLUTE_MODE;	/* @#...  */
+				  p[5] = VAX_ABSOLUTE_MODE;	/* @#... */
 				  md_number_to_chars (p + 6, this_add_number, 4);
 				  /*
 				   * Now (eg)	ACBx	1f
@@ -819,7 +773,7 @@ md_assemble (instruction_string)
 				  p[1] = VAX_BRB;
 				  p[2] = 6;
 				  p[3] = VAX_JMP;
-                                  p[4] = VAX_ABSOLUTE_MODE;     /* @#...  */
+				  p[4] = VAX_PC_RELATIVE_MODE + 1;	/* @#... */
 				  md_number_to_chars (p + 5, this_add_number, 4);
 				  /*
 				   * Now (eg)	xOBxxx	1f
@@ -835,11 +789,11 @@ md_assemble (instruction_string)
 			  /* b<cond> */
 			  *opcode_low_byteP ^= 1;
 			  /* To reverse the condition in a VAX branch,
-			     complement the lowest order bit.  */
+			     complement the lowest order bit. */
 			  p = frag_more (7);
 			  p[0] = 6;
 			  p[1] = VAX_JMP;
-			  p[2] = VAX_ABSOLUTE_MODE;	/* @#...  */
+			  p[2] = VAX_ABSOLUTE_MODE;	/* @#... */
 			  md_number_to_chars (p + 3, this_add_number, 4);
 			  /*
 			   * Now (eg)	BLEQ	1f
@@ -851,19 +805,15 @@ md_assemble (instruction_string)
 		}
 	      else
 		{
-		  /* to_seg != now_seg && !is_undefinfed && !is_absolute */
+		  /* to_seg != now_seg && to_seg != SEG_UNKNOWN && to_Seg != SEG_ABSOLUTE */
 		  if (nbytes > 0)
 		    {
-		      /* Pc-relative. Conventional relocation.  */
+		      /* Pc-relative. Conventional relocation. */
 		      know (!(opcode_as_number & VIT_OPCODE_SYNTHETIC));
 		      p = frag_more (nbytes);
-		      fix_new (frag_now, p - frag_now->fr_literal, nbytes,
-#ifdef BFD_ASSEMBLER
-			       section_symbol (absolute_section),
-#else
-			       &abs_symbol,
-#endif
-			       this_add_number, 1, NO_RELOC);
+		      fix_new (frag_now, p - frag_now->fr_literal,
+			       nbytes, &abs_symbol, this_add_number,
+			       1, NO_RELOC);
 		    }
 		  else
 		    {
@@ -881,7 +831,7 @@ md_assemble (instruction_string)
 				       p + 1 - frag_now->fr_literal, 4,
 				       this_add_symbol,
 				       this_add_number, 1, NO_RELOC);
-			      /* Now eg JMP foo or JSB foo.  */
+			      /* Now eg JMP foo or JSB foo. */
 			    }
 			  else
 			    {
@@ -930,7 +880,7 @@ md_assemble (instruction_string)
 		      else
 			{
 			  know (operandP->vop_width == VAX_WIDTH_CONDITIONAL_JUMP);
-			  *opcode_low_byteP ^= 1;	/* Reverse branch condition.  */
+			  *opcode_low_byteP ^= 1;	/* Reverse branch condition. */
 			  p = frag_more (7);
 			  p[0] = 6;
 			  p[1] = VAX_JMP;
@@ -945,8 +895,8 @@ md_assemble (instruction_string)
 	}
       else
 	{
-	  know (operandP->vop_access != 'b');	/* So it is ordinary operand.  */
-	  know (operandP->vop_access != ' ');	/* ' ' target-independent: elsewhere.  */
+	  know (operandP->vop_access != 'b');	/* So it is ordinary operand. */
+	  know (operandP->vop_access != ' ');	/* ' ' target-independent: elsewhere. */
 	  know (operandP->vop_access == 'a'
 		|| operandP->vop_access == 'm'
 		|| operandP->vop_access == 'r'
@@ -954,11 +904,11 @@ md_assemble (instruction_string)
 		|| operandP->vop_access == 'w');
 	  if (operandP->vop_short == 's')
 	    {
-	      if (is_absolute)
+	      if (to_seg == SEG_ABSOLUTE)
 		{
 		  if (this_add_number >= 64)
 		    {
-		      as_warn (_("Short literal overflow(%ld.), immediate mode assumed."),
+		      as_warn ("Short literal overflow(%ld.), immediate mode assumed.",
 			       (long) this_add_number);
 		      operandP->vop_short = 'i';
 		      operandP->vop_mode = 8;
@@ -967,7 +917,7 @@ md_assemble (instruction_string)
 		}
 	      else
 		{
-		  as_warn (_("Forced short literal to immediate mode. now_seg=%s to_seg=%s"),
+		  as_warn ("Forced short literal to immediate mode. now_seg=%s to_seg=%s",
 			   segment_name (now_seg), segment_name (to_seg));
 		  operandP->vop_short = 'i';
 		  operandP->vop_mode = 8;
@@ -977,10 +927,10 @@ md_assemble (instruction_string)
 	  if (operandP->vop_reg >= 0 && (operandP->vop_mode < 8
 		  || (operandP->vop_reg != 0xF && operandP->vop_mode < 10)))
 	    {
-	      /* One byte operand.  */
+	      /* One byte operand. */
 	      know (operandP->vop_mode > 3);
 	      FRAG_APPEND_1_CHAR (operandP->vop_mode << 4 | operandP->vop_reg);
-	      /* All 1-bytes except S^# happen here.  */
+	      /* All 1-bytes except S^# happen here. */
 	    }
 	  else
 	    {
@@ -993,14 +943,8 @@ md_assemble (instruction_string)
 		      if (length == 0)
 			{
 			  know (operandP->vop_short == ' ');
-			  length_code = STATE_BYTE;
-#ifdef OBJ_ELF
-			  if (S_IS_EXTERNAL (this_add_symbol)
-			      || S_IS_WEAK (this_add_symbol))
-			    length_code = STATE_UNDF;
-#endif
 			  p = frag_var (rs_machine_dependent, 10, 2,
-			       ENCODE_RELAX (STATE_PC_RELATIVE, length_code),
+			       ENCODE_RELAX (STATE_PC_RELATIVE, STATE_BYTE),
 					this_add_symbol, this_add_number,
 					opcode_low_byteP);
 			  know (operandP->vop_mode == 10 + at);
@@ -1008,7 +952,7 @@ md_assemble (instruction_string)
 			  /* At is the only context we need to carry
 			     to other side of relax() process.  Must
 			     be in the correct bit position of VAX
-			     operand spec. byte.  */
+			     operand spec. byte. */
 			}
 		      else
 			{
@@ -1025,14 +969,14 @@ md_assemble (instruction_string)
 		    {		/* to_seg != now_seg */
 		      if (this_add_symbol == NULL)
 			{
-			  know (is_absolute);
-			  /* Do @#foo: simpler relocation than foo-.(pc) anyway.  */
+			  know (to_seg == SEG_ABSOLUTE);
+			  /* Do @#foo: simpler relocation than foo-.(pc) anyway. */
 			  p = frag_more (5);
-			  p[0] = VAX_ABSOLUTE_MODE;	/* @#...  */
+			  p[0] = VAX_ABSOLUTE_MODE;	/* @#... */
 			  md_number_to_chars (p + 1, this_add_number, 4);
 			  if (length && length != 4)
 			    {
-			      as_warn (_("Length specification ignored. Address mode 9F used"));
+			      as_warn ("Length specification ignored. Address mode 9F used");
 			    }
 			}
 		      else
@@ -1040,29 +984,17 @@ md_assemble (instruction_string)
 			  /* {@}{q^}other_seg */
 			  know ((length == 0 && operandP->vop_short == ' ')
 			     || (length > 0 && operandP->vop_short != ' '));
-			  if (is_undefined
-#ifdef OBJ_ELF
-			      || S_IS_WEAK(this_add_symbol)
-			      || S_IS_EXTERNAL(this_add_symbol)
-#endif
-			      )
+			  if (is_undefined)
 			    {
-			      switch (length)
-				{
-				default: length_code = STATE_UNDF; break;
-				case 1: length_code = STATE_BYTE; break;
-				case 2: length_code = STATE_WORD; break;
-				case 4: length_code = STATE_LONG; break;
-				}
 			      /*
 			       * We have a SEG_UNKNOWN symbol. It might
 			       * turn out to be in the same segment as
 			       * the instruction, permitting relaxation.
 			       */
 			      p = frag_var (rs_machine_dependent, 5, 2,
-			       ENCODE_RELAX (STATE_PC_RELATIVE, length_code),
+			       ENCODE_RELAX (STATE_PC_RELATIVE, STATE_UNDF),
 					    this_add_symbol, this_add_number,
-					    opcode_low_byteP);
+					    0);
 			      p[0] = at << 4;
 			    }
 			  else
@@ -1070,7 +1002,7 @@ md_assemble (instruction_string)
 			      if (length == 0)
 				{
 				  know (operandP->vop_short == ' ');
-				  length = 4;	/* Longest possible.  */
+				  length = 4;	/* Longest possible. */
 				}
 			      p = frag_more (length + 1);
 			      p[0] = 0xF | ((at + "?\12\14?\16"[length]) << 4);
@@ -1092,16 +1024,15 @@ md_assemble (instruction_string)
 		      if (operandP->vop_access == 'v'
 			  || operandP->vop_access == 'a')
 			{
-			  if (operandP->vop_access == 'v')
-			    as_warn (_("Invalid operand:  immediate value used as base address."));
-			  else
-			    as_warn (_("Invalid operand:  immediate value used as address."));
+			  as_warn (
+			"Invalid operand:  immediate value used as %saddress.",
+				   operandP->vop_access == 'v' ? "base " : "");
 			  /* gcc 2.6.3 is known to generate these in at least
 			     one case.  */
 			}
 		      if (length == 0
-			  && is_absolute && (expP->X_op != O_big)
-			  && operandP->vop_mode == 8	/* No '@'.  */
+			  && to_seg == SEG_ABSOLUTE && (expP->X_op != O_big)
+			  && operandP->vop_mode == 8	/* No '@'. */
 			  && this_add_number < 64)
 			{
 			  operandP->vop_short = 's';
@@ -1112,19 +1043,12 @@ md_assemble (instruction_string)
 			}
 		      else
 			{
-			  /* I^#...  */
+			  /* I^#... */
 			  know (nbytes);
 			  p = frag_more (nbytes + 1);
 			  know (operandP->vop_reg == 0xF);
-#ifdef OBJ_ELF
-			  if (flag_want_pic && operandP->vop_mode == 8
-				&& this_add_symbol != NULL)
-			    {
-			      as_warn (_("Symbol used as immediate operand in PIC mode."));
-			    }
-#endif
 			  p[0] = (operandP->vop_mode << 4) | 0xF;
-			  if ((is_absolute) && (expP->X_op != O_big))
+			  if ((to_seg == SEG_ABSOLUTE) && (expP->X_op != O_big))
 			    {
 			      /*
 			       * If nbytes > 4, then we are scrod. We
@@ -1132,7 +1056,7 @@ md_assemble (instruction_string)
 			       * are to be 0xFF or 0x00.  BSD4.2 & RMS
 			       * say use 0x00. OK --- but this
 			       * assembler needs ANOTHER rewrite to
-			       * cope properly with this bug.  */
+			       * cope properly with this bug. */
 			      md_number_to_chars (p + 1, this_add_number, min (4, nbytes));
 			      if (nbytes > 4)
 				{
@@ -1147,7 +1071,7 @@ md_assemble (instruction_string)
 				   * Problem here is to get the bytes
 				   * in the right order.  We stored
 				   * our constant as LITTLENUMs, not
-				   * bytes.  */
+				   * bytes. */
 				  LITTLENUM_TYPE *lP;
 
 				  lP = floatP->low;
@@ -1179,7 +1103,7 @@ md_assemble (instruction_string)
 			    || (length > 0 && operandP->vop_short != ' '));
 		      if (length == 0)
 			{
-			  if (is_absolute)
+			  if (to_seg == SEG_ABSOLUTE)
 			    {
 			      long test;
 
@@ -1201,7 +1125,7 @@ md_assemble (instruction_string)
 		      know (operandP->vop_reg >= 0);
 		      p[0] = operandP->vop_reg
 			| ((at | "?\12\14?\16"[length]) << 4);
-		      if (is_absolute)
+		      if (to_seg == SEG_ABSOLUTE)
 			{
 			  md_number_to_chars (p + 1, this_add_number, length);
 			}
@@ -1218,155 +1142,127 @@ md_assemble (instruction_string)
     }				/* for(operandP) */
 }				/* vax_assemble() */
 
-/* md_estimate_size_before_relax(), called just before relax().
-   Any symbol that is now undefined will not become defined.
-   Return the correct fr_subtype in the frag and the growth beyond
-   fr_fix.  */
+/*
+ *			md_estimate_size_before_relax()
+ *
+ * Called just before relax().
+ * Any symbol that is now undefined will not become defined.
+ * Return the correct fr_subtype in the frag.
+ * Return the initial "guess for fr_var" to caller.
+ * The guess for fr_var is ACTUALLY the growth beyond fr_fix.
+ * Whatever we do to grow fr_fix or fr_var contributes to our returned value.
+ * Although it may not be explicit in the frag, pretend fr_var starts with a
+ * 0 value.
+ */
 int
 md_estimate_size_before_relax (fragP, segment)
      fragS *fragP;
      segT segment;
 {
-  if (RELAX_LENGTH (fragP->fr_subtype) == STATE_UNDF)
+  char *p;
+  int old_fr_fix;
+
+  old_fr_fix = fragP->fr_fix;
+  switch (fragP->fr_subtype)
     {
-      if (S_GET_SEGMENT (fragP->fr_symbol) != segment
-#ifdef OBJ_ELF
-	  || S_IS_WEAK (fragP->fr_symbol)
-	  || S_IS_EXTERNAL (fragP->fr_symbol)
-#endif
-	  )
-	{
-	  /* Non-relaxable cases.  */
-	  int reloc_type = NO_RELOC;
-	  char *p;
-	  int old_fr_fix;
-
-	  old_fr_fix = fragP->fr_fix;
-	  p = fragP->fr_literal + old_fr_fix;
-#ifdef OBJ_ELF
-	  /* If this is to an undefined symbol, then if it's an indirect
-	     reference indicate that is can mutated into a GLOB_DAT or
-	     JUMP_SLOT by the loader.  We restrict ourselves to no offset
-	     due to a limitation in the NetBSD linker.  */
-
-	  if (GOT_symbol == NULL)
-	    GOT_symbol = symbol_find (GLOBAL_OFFSET_TABLE_NAME);
-	  if (PLT_symbol == NULL)
-	    PLT_symbol = symbol_find (PROCEDURE_LINKAGE_TABLE_NAME);
-	  if ((GOT_symbol == NULL || fragP->fr_symbol != GOT_symbol)
-	      && (PLT_symbol == NULL || fragP->fr_symbol != PLT_symbol)
-	      && fragP->fr_symbol != NULL
-	      && flag_want_pic
-	      && (!S_IS_DEFINED (fragP->fr_symbol)
-	          || S_IS_WEAK (fragP->fr_symbol)
-	          || S_IS_EXTERNAL (fragP->fr_symbol)))
-	    {
-	      if (p[0] & 0x10)
-		{
-		  if (flag_want_pic)
-		    as_fatal ("PIC reference to %s is indirect.\n",
-			      S_GET_NAME (fragP->fr_symbol));
-		}
-	      else
-		{
-		  if (((unsigned char *) fragP->fr_opcode)[0] == VAX_CALLS
-		      || ((unsigned char *) fragP->fr_opcode)[0] == VAX_CALLG
-		      || ((unsigned char *) fragP->fr_opcode)[0] == VAX_JSB
-		      || ((unsigned char *) fragP->fr_opcode)[0] == VAX_JMP
-		      || S_IS_FUNCTION (fragP->fr_symbol))
-		    reloc_type = BFD_RELOC_32_PLT_PCREL;
-		  else
-		    reloc_type = BFD_RELOC_32_GOT_PCREL;
-		}
-	    }
-#endif
-	  switch (RELAX_STATE (fragP->fr_subtype))
-	    {
-	    case STATE_PC_RELATIVE:
-	      p[0] |= VAX_PC_RELATIVE_MODE;	/* Preserve @ bit.  */
-	      fragP->fr_fix += 1 + 4;
-	      fix_new (fragP, old_fr_fix + 1, 4, fragP->fr_symbol,
-		       fragP->fr_offset, 1, reloc_type);
-	      break;
-
-	    case STATE_CONDITIONAL_BRANCH:
-	      *fragP->fr_opcode ^= 1;		/* Reverse sense of branch.  */
-	      p[0] = 6;
-	      p[1] = VAX_JMP;
-	      p[2] = VAX_PC_RELATIVE_MODE;	/* ...(PC) */
-	      fragP->fr_fix += 1 + 1 + 1 + 4;
-	      fix_new (fragP, old_fr_fix + 3, 4, fragP->fr_symbol,
-		       fragP->fr_offset, 1, NO_RELOC);
-	      break;
-
-	    case STATE_COMPLEX_BRANCH:
-	      p[0] = 2;
-	      p[1] = 0;
-	      p[2] = VAX_BRB;
-	      p[3] = 6;
-	      p[4] = VAX_JMP;
-	      p[5] = VAX_PC_RELATIVE_MODE;	/* ...(pc) */
-	      fragP->fr_fix += 2 + 2 + 1 + 1 + 4;
-	      fix_new (fragP, old_fr_fix + 6, 4, fragP->fr_symbol,
-		       fragP->fr_offset, 1, NO_RELOC);
-	      break;
-
-	    case STATE_COMPLEX_HOP:
-	      p[0] = 2;
-	      p[1] = VAX_BRB;
-	      p[2] = 6;
-	      p[3] = VAX_JMP;
-	      p[4] = VAX_PC_RELATIVE_MODE;	/* ...(pc) */
-	      fragP->fr_fix += 1 + 2 + 1 + 1 + 4;
-	      fix_new (fragP, old_fr_fix + 5, 4, fragP->fr_symbol,
-		       fragP->fr_offset, 1, NO_RELOC);
-	      break;
-
-	    case STATE_ALWAYS_BRANCH:
-	      *fragP->fr_opcode += VAX_WIDEN_LONG;
-	      p[0] = VAX_PC_RELATIVE_MODE;	/* ...(PC) */
-	      fragP->fr_fix += 1 + 4;
-	      fix_new (fragP, old_fr_fix + 1, 4, fragP->fr_symbol,
-		       fragP->fr_offset, 1, NO_RELOC);
-	      break;
-
-	    default:
-	      abort ();
-	    }
-	  frag_wane (fragP);
-
-	  /* Return the growth in the fixed part of the frag.  */
-	  return fragP->fr_fix - old_fr_fix;
-	}
-
-      /* Relaxable cases.  Set up the initial guess for the variable
-	 part of the frag.  */
-      switch (RELAX_STATE (fragP->fr_subtype))
-	{
-	case STATE_PC_RELATIVE:
+    case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment)
+	{			/* A relaxable case. */
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_PC_RELATIVE, STATE_BYTE);
-	  break;
-	case STATE_CONDITIONAL_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_BYTE);
-	  break;
-	case STATE_COMPLEX_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_COMPLEX_BRANCH, STATE_WORD);
-	  break;
-	case STATE_COMPLEX_HOP:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_COMPLEX_HOP, STATE_BYTE);
-	  break;
-	case STATE_ALWAYS_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_BYTE);
-	  break;
 	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  p[0] |= VAX_PC_RELATIVE_MODE;	/* Preserve @ bit. */
+	  fragP->fr_fix += 1 + 4;
+	  fix_new (fragP, old_fr_fix + 1, 4, fragP->fr_symbol,
+		   fragP->fr_offset, 1, NO_RELOC);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_BYTE);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  *fragP->fr_opcode ^= 1;	/* Reverse sense of branch. */
+	  p[0] = 6;
+	  p[1] = VAX_JMP;
+	  p[2] = VAX_PC_RELATIVE_MODE;	/* ...(PC) */
+	  fragP->fr_fix += 1 + 1 + 1 + 4;
+	  fix_new (fragP, old_fr_fix + 3, 4, fragP->fr_symbol,
+		   fragP->fr_offset, 1, NO_RELOC);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_COMPLEX_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_COMPLEX_BRANCH, STATE_WORD);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  p[0] = 2;
+	  p[1] = 0;
+	  p[2] = VAX_BRB;
+	  p[3] = 6;
+	  p[4] = VAX_JMP;
+	  p[5] = VAX_PC_RELATIVE_MODE;	/* ...(pc) */
+	  fragP->fr_fix += 2 + 2 + 1 + 1 + 4;
+	  fix_new (fragP, old_fr_fix + 6, 4, fragP->fr_symbol,
+		   fragP->fr_offset, 1, NO_RELOC);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_COMPLEX_HOP, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_COMPLEX_HOP, STATE_BYTE);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  p[0] = 2;
+	  p[1] = VAX_BRB;
+	  p[2] = 6;
+	  p[3] = VAX_JMP;
+	  p[4] = VAX_PC_RELATIVE_MODE;	/* ...(pc) */
+	  fragP->fr_fix += 1 + 2 + 1 + 1 + 4;
+	  fix_new (fragP, old_fr_fix + 5, 4, fragP->fr_symbol,
+		   fragP->fr_offset, 1, NO_RELOC);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_BYTE);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  *fragP->fr_opcode += VAX_WIDEN_LONG;
+	  p[0] = VAX_PC_RELATIVE_MODE;	/* ...(PC) */
+	  fragP->fr_fix += 1 + 4;
+	  fix_new (fragP, old_fr_fix + 1, 4, fragP->fr_symbol,
+		   fragP->fr_offset, 1, NO_RELOC);
+	  frag_wane (fragP);
+	}
+      break;
+
+    default:
+      break;
     }
-
-  if (fragP->fr_subtype >= sizeof (md_relax_table) / sizeof (md_relax_table[0]))
-    abort ();
-
-  /* Return the size of the variable part of the frag.  */
-  return md_relax_table[fragP->fr_subtype].rlx_length;
-}
+  return (fragP->fr_var + fragP->fr_fix - old_fr_fix);
+}				/* md_estimate_size_before_relax() */
 
 /*
  *			md_convert_frag();
@@ -1379,110 +1275,101 @@ md_estimate_size_before_relax (fragP, segment)
  * Out:	Any fixSs and constants are set up.
  *	Caller will turn frag into a ".space 0".
  */
-#ifdef BFD_ASSEMBLER
 void
 md_convert_frag (headers, seg, fragP)
-     bfd *headers ATTRIBUTE_UNUSED;
-     segT seg ATTRIBUTE_UNUSED;
+     object_headers *headers;
+     segT seg;
      fragS *fragP;
-#else
-void
-md_convert_frag (headers, seg, fragP)
-     object_headers *headers ATTRIBUTE_UNUSED;
-     segT seg ATTRIBUTE_UNUSED;
-     fragS *fragP;
-#endif
 {
-  char *addressP;		/* -> _var to change.  */
-  char *opcodeP;		/* -> opcode char(s) to change.  */
-  short int extension = 0;	/* Size of relaxed address.  */
-  /* Added to fr_fix: incl. ALL var chars.  */
+  char *addressP;		/* -> _var to change. */
+  char *opcodeP;		/* -> opcode char(s) to change. */
+  short int length_code;	/* 2=long 1=word 0=byte */
+  short int extension = 0;	/* Size of relaxed address. */
+  /* Added to fr_fix: incl. ALL var chars. */
   symbolS *symbolP;
   long where;
+  long address_of_var;
+  /* Where, in file space, is _var of *fragP? */
+  long target_address = 0;
+  /* Where, in file space, does addr point? */
 
   know (fragP->fr_type == rs_machine_dependent);
+  length_code = fragP->fr_subtype & 3;	/* depends on ENCODE_RELAX() */
+  know (length_code >= 0 && length_code < 3);
   where = fragP->fr_fix;
   addressP = fragP->fr_literal + where;
   opcodeP = fragP->fr_opcode;
   symbolP = fragP->fr_symbol;
   know (symbolP);
+  target_address = S_GET_VALUE (symbolP) + fragP->fr_offset;
+  address_of_var = fragP->fr_address + where;
 
   switch (fragP->fr_subtype)
     {
 
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_BYTE):
-      know (*addressP == 0 || *addressP == 0x10);	/* '@' bit.  */
+      know (*addressP == 0 || *addressP == 0x10);	/* '@' bit. */
       addressP[0] |= 0xAF;	/* Byte displacement. */
-      fix_new (fragP, fragP->fr_fix + 1, 1, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      addressP[1] = target_address - (address_of_var + 2);
       extension = 2;
       break;
 
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_WORD):
-      know (*addressP == 0 || *addressP == 0x10);	/* '@' bit.  */
+      know (*addressP == 0 || *addressP == 0x10);	/* '@' bit. */
       addressP[0] |= 0xCF;	/* Word displacement. */
-      fix_new (fragP, fragP->fr_fix + 1, 2, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 1, target_address - (address_of_var + 3), 2);
       extension = 3;
       break;
 
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_LONG):
-      know (*addressP == 0 || *addressP == 0x10);	/* '@' bit.  */
+      know (*addressP == 0 || *addressP == 0x10);	/* '@' bit. */
       addressP[0] |= 0xEF;	/* Long word displacement. */
-      fix_new (fragP, fragP->fr_fix + 1, 4, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 1, target_address - (address_of_var + 5), 4);
       extension = 5;
       break;
 
     case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_BYTE):
-      fix_new (fragP, fragP->fr_fix, 1, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      addressP[0] = target_address - (address_of_var + 1);
       extension = 1;
       break;
 
     case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_WORD):
-      opcodeP[0] ^= 1;		/* Reverse sense of test.  */
+      opcodeP[0] ^= 1;		/* Reverse sense of test. */
       addressP[0] = 3;
-      addressP[1] = VAX_BRW;
-      fix_new (fragP, fragP->fr_fix + 2, 2, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      addressP[1] = VAX_BRB + VAX_WIDEN_WORD;
+      md_number_to_chars (addressP + 2, target_address - (address_of_var + 4), 2);
       extension = 4;
       break;
 
     case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_LONG):
-      opcodeP[0] ^= 1;		/* Reverse sense of test.  */
+      opcodeP[0] ^= 1;		/* Reverse sense of test. */
       addressP[0] = 6;
       addressP[1] = VAX_JMP;
       addressP[2] = VAX_PC_RELATIVE_MODE;
-      fix_new (fragP, fragP->fr_fix + 3, 4, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 3, target_address, 4);
       extension = 7;
       break;
 
     case ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_BYTE):
-      fix_new (fragP, fragP->fr_fix, 1, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      addressP[0] = target_address - (address_of_var + 1);
       extension = 1;
       break;
 
     case ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_WORD):
       opcodeP[0] += VAX_WIDEN_WORD;	/* brb -> brw, bsbb -> bsbw */
-      fix_new (fragP, fragP->fr_fix, 2, fragP->fr_symbol, fragP->fr_offset,
-	       1, NO_RELOC);
+      md_number_to_chars (addressP, target_address - (address_of_var + 2), 2);
       extension = 2;
       break;
 
     case ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_LONG):
       opcodeP[0] += VAX_WIDEN_LONG;	/* brb -> jmp, bsbb -> jsb */
       addressP[0] = VAX_PC_RELATIVE_MODE;
-      fix_new (fragP, fragP->fr_fix + 1, 4, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 1, target_address - (address_of_var + 5), 4);
       extension = 5;
       break;
 
     case ENCODE_RELAX (STATE_COMPLEX_BRANCH, STATE_WORD):
-      fix_new (fragP, fragP->fr_fix, 2, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP, target_address - (address_of_var + 2), 2);
       extension = 2;
       break;
 
@@ -1493,14 +1380,12 @@ md_convert_frag (headers, seg, fragP)
       addressP[3] = 6;
       addressP[4] = VAX_JMP;
       addressP[5] = VAX_PC_RELATIVE_MODE;
-      fix_new (fragP, fragP->fr_fix + 6, 4, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 6, target_address, 4);
       extension = 10;
       break;
 
     case ENCODE_RELAX (STATE_COMPLEX_HOP, STATE_BYTE):
-      fix_new (fragP, fragP->fr_fix, 1, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      addressP[0] = target_address - (address_of_var + 1);
       extension = 1;
       break;
 
@@ -1509,8 +1394,7 @@ md_convert_frag (headers, seg, fragP)
       addressP[1] = VAX_BRB;
       addressP[2] = 3;
       addressP[3] = VAX_BRW;
-      fix_new (fragP, fragP->fr_fix + 4, 2, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 4, target_address - (address_of_var + 6), 2);
       extension = 6;
       break;
 
@@ -1520,8 +1404,7 @@ md_convert_frag (headers, seg, fragP)
       addressP[2] = 6;
       addressP[3] = VAX_JMP;
       addressP[4] = VAX_PC_RELATIVE_MODE;
-      fix_new (fragP, fragP->fr_fix + 5, 4, fragP->fr_symbol,
-	       fragP->fr_offset, 1, NO_RELOC);
+      md_number_to_chars (addressP + 5, target_address, 4);
       extension = 9;
       break;
 
@@ -1537,7 +1420,7 @@ md_convert_frag (headers, seg, fragP)
    On vax: first 4 bytes are normal unsigned long, next three bytes
    are symbolnum, least sig. byte first.  Last byte is broken up with
    the upper nibble as nuthin, bit 3 as extern, bits 2 & 1 as length, and
-   bit 0 as pcrel.  */
+   bit 0 as pcrel. */
 #ifdef comment
 void
 md_ri_to_chars (the_bytes, ri)
@@ -1556,9 +1439,7 @@ md_ri_to_chars (the_bytes, ri)
 
 #endif /* comment */
 
-#ifdef OBJ_AOUT
-#ifndef BFD_ASSEMBLER
-void
+void 
 tc_aout_fix_to_chars (where, fixP, segment_address_in_file)
      char *where;
      fixS *fixP;
@@ -1589,8 +1470,6 @@ tc_aout_fix_to_chars (where, fixP, segment_address_in_file)
 	      | ((nbytes_r_length[fixP->fx_size] << 1) & 0x06)
 	      | (((fixP->fx_pcrel << 0) & 0x01) & 0x0f));
 }
-#endif /* !BFD_ASSEMBLER */
-#endif /* OBJ_AOUT */
 
 /*
  *       BUGS, GRIPES,  APOLOGIA, etc.
@@ -1670,23 +1549,25 @@ static struct hash_control *op_hash;
 
 static const short int vax_operand_width_size[256] =
 {
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 1, 0, 8, 0, 4, 8, 16, 0, 0, 0, 4, 0, 0,16,	/* ..b.d.fgh...l..o  */
-  0, 8, 0, 0, 0, 0, 0, 2,  0, 0, 0, 0, 0, 0, 0, 0,	/* .q.....w........  */
-  0, 0, 1, 0, 8, 0, 4, 8, 16, 0, 0, 0, 4, 0, 0,16,	/* ..b.d.fgh...l..o  */
-  0, 8, 0, 0, 0, 0, 0, 2,  0, 0, 0, 0, 0, 0, 0, 0,	/* .q.....w........  */
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
-};
+
+#define _ 0
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, 1, _, 8, _, 4, 8, 16, _, _, _, 4, _, _, 16,	/* ..b.d.fgh...l..o */
+  _, 8, _, _, _, _, _, 2, _, _, _, _, _, _, _, _,	/* .q.....w........ */
+  _, _, 1, _, 8, _, 4, 8, 16, _, _, _, 4, _, _, 16,	/* ..b.d.fgh...l..o */
+  _, 8, _, _, _, _, _, 2, _, _, _, _, _, _, _, _,	/* .q.....w........ */
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+  _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _};
+#undef _
 
 /*
  * This perversion encodes all the vax opcodes as a bunch of strings.
@@ -1784,6 +1665,8 @@ static const struct vot
   {"jbcs",	{"rlvbb?", 0x800000e3}},
   {"jbsc",	{"rlvbb?", 0x800000e4}},
   {"jbcc",	{"rlvbb?", 0x800000e5}},
+  {"jbssi",	{"rlvbb?", 0x800000e6}},
+  {"jbcci",	{"rlvbb?", 0x800000e7}},
   {"jlbs",	{"rlb?", 0x800000e8}},
   {"jlbc",	{"rlb?", 0x800000e9}},
 
@@ -1792,8 +1675,8 @@ static const struct vot
   {"jsobgeq",	{"mlb:", 0xC00000f4}},
   {"jsobgtr",	{"mlb:", 0xC00000f5}},
 
-/* CASEx has no branch addresses in our conception of it.  */
-/* You should use ".word ..." statements after the "case ...".  */
+/* CASEx has no branch addresses in our conception of it. */
+/* You should use ".word ..." statements after the "case ...". */
 
   {"",	{"", 0}}			/* empty is end sentinel */
 
@@ -1812,7 +1695,7 @@ static const struct vot
 
 static const char *
 vip_begin (synthetic_too, immediate, indirect, displen)
-     int synthetic_too;		/* 1 means include jXXX op-codes.  */
+     int synthetic_too;		/* 1 means include jXXX op-codes. */
      const char *immediate, *indirect, *displen;
 {
   const struct vot *vP;		/* scan votstrs */
@@ -1833,6 +1716,7 @@ vip_begin (synthetic_too, immediate, indirect, displen)
 
   return retval;
 }
+
 
 /*
  *                  v i p ( )
@@ -1860,10 +1744,10 @@ vip_begin (synthetic_too, immediate, indirect, displen)
 
 static void
 vip (vitP, instring)
-     struct vit *vitP;		/* We build an exploded instruction here.  */
-     char *instring;		/* Text of a vax instruction: we modify.  */
+     struct vit *vitP;		/* We build an exploded instruction here. */
+     char *instring;		/* Text of a vax instruction: we modify. */
 {
-  /* How to bit-encode this opcode.  */
+  /* How to bit-encode this opcode. */
   struct vot_wot *vwP;
   /* 1/skip whitespace.2/scan vot_how */
   char *p;
@@ -1874,19 +1758,19 @@ vip (vitP, instring)
   struct vop *operandp;
   /* error over all operands */
   const char *alloperr;
-  /* Remember char, (we clobber it with '\0' temporarily).  */
+  /* Remember char, (we clobber it with '\0' temporarily). */
   char c;
-  /* Op-code of this instruction.  */
+  /* Op-code of this instruction. */
   vax_opcodeT oc;
 
   if (*instring == ' ')
-    ++instring;			/* Skip leading whitespace.  */
-  for (p = instring; *p && *p != ' '; p++);;	/* MUST end in end-of-string or exactly 1 space.  */
-  /* Scanned up to end of operation-code.  */
-  /* Operation-code is ended with whitespace.  */
+    ++instring;			/* Skip leading whitespace. */
+  for (p = instring; *p && *p != ' '; p++);;	/* MUST end in end-of-string or exactly 1 space. */
+  /* Scanned up to end of operation-code. */
+  /* Operation-code is ended with whitespace. */
   if (p - instring == 0)
     {
-      vitP->vit_error = _("No operator");
+      vitP->vit_error = "No operator";
       count = 0;
       memset (vitP->vit_opcode, '\0', sizeof (vitP->vit_opcode));
     }
@@ -1900,19 +1784,19 @@ vip (vitP, instring)
        * We trust instring points to an op-name, with no whitespace.
        */
       vwP = (struct vot_wot *) hash_find (op_hash, instring);
-      *p = c;			/* Restore char after op-code.  */
+      *p = c;			/* Restore char after op-code. */
       if (vwP == 0)
 	{
-	  vitP->vit_error = _("Unknown operator");
+	  vitP->vit_error = "Unknown operator";
 	  count = 0;
 	  memset (vitP->vit_opcode, '\0', sizeof (vitP->vit_opcode));
 	}
       else
 	{
 	  /*
-	   * We found a match! So let's pick up as many operands as the
+	   * We found a match! So lets pick up as many operands as the
 	   * instruction wants, and even gripe if there are too many.
-	   * We expect comma to separate each operand.
+	   * We expect comma to seperate each operand.
 	   * We let instring track the text, while p tracks a part of the
 	   * struct vot.
 	   */
@@ -1923,7 +1807,7 @@ vip (vitP, instring)
 	   * we return 32 bits of opcode, including bucky bits, BUT
 	   * an opcode length is either 8 or 16 bits for vit_opcode_nbytes.
 	   */
-	  oc = vwP->vot_code;	/* The op-code.  */
+	  oc = vwP->vot_code;	/* The op-code. */
 	  vitP->vit_opcode_nbytes = (oc & 0xFF) >= 0xFD ? 2 : 1;
 	  md_number_to_chars (vitP->vit_opcode, oc, 4);
 	  count = 0;		/* no operands seen yet */
@@ -1938,7 +1822,7 @@ vip (vitP, instring)
 	       * past any one ',' that marks the end of this operand.
 	       */
 	      if (!howp[1])
-		as_fatal (_("odd number of bytes in operand description"));
+		as_fatal ("odd number of bytes in operand description");
 	      else if (*instring)
 		{
 		  for (q = instring; (c = *q) && c != ','; q++)
@@ -1952,21 +1836,21 @@ vip (vitP, instring)
 		  operandp->vop_nbytes = vax_operand_width_size[(unsigned) howp[1]];
 		  operandp->vop_access = howp[0];
 		  vip_op (instring, operandp);
-		  *q = c;	/* Restore input text.  */
+		  *q = c;	/* Restore input text. */
 		  if (operandp->vop_error)
-		    alloperr = _("Bad operand");
+		    alloperr = "Bad operand";
 		  instring = q + (c ? 1 : 0);	/* next operand (if any) */
 		  count++;	/*  won another argument, may have an operr */
 		}
 	      else
-		alloperr = _("Not enough operands");
+		alloperr = "Not enough operands";
 	    }
 	  if (!*alloperr)
 	    {
 	      if (*instring == ' ')
-		instring++;	/* Skip whitespace.  */
+		instring++;	/* Skip whitespace. */
 	      if (*instring)
-		alloperr = _("Too many operands");
+		alloperr = "Too many operands";
 	    }
 	  vitP->vit_error = alloperr;
 	}
@@ -1985,7 +1869,7 @@ char answer[100];		/* human types a line of vax assembler here */
 char *mybug;			/* "" or an internal logic diagnostic */
 int mycount;			/* number of operands */
 struct vop *myvop;		/* scan operands from myvit */
-int mysynth;			/* 1 means want synthetic opcodes.  */
+int mysynth;			/* 1 means want synthetic opcodes. */
 char my_immediate[200];
 char my_indirect[200];
 char my_displen[200];
@@ -2064,7 +1948,7 @@ main ()
 
 /* vax_reg_parse.c - convert a VAX register name to a number */
 
-/* Copyright (C) 1987 Free Software Foundation, Inc. A part of GNU.  */
+/* Copyright (C) 1987 Free Software Foundation, Inc. A part of GNU. */
 
 /*
  *          v a x _ r e g _ p a r s e ( )
@@ -2098,48 +1982,28 @@ main ()
  *
  */
 
-#include "safe-ctype.h"
+#include <ctype.h>
 #define AP (12)
 #define FP (13)
 #define SP (14)
 #define PC (15)
 
 int				/* return -1 or 0:15 */
-vax_reg_parse (c1, c2, c3, c4)	/* 3 chars of register name */
-     char c1, c2, c3, c4;	/* c3 == 0 if 2-character reg name */
+vax_reg_parse (c1, c2, c3)	/* 3 chars of register name */
+     char c1, c2, c3;		/* c3 == 0 if 2-character reg name */
 {
   int retval;		/* return -1:15 */
 
   retval = -1;
 
-#ifdef OBJ_ELF
-  if (c1 != '%')	/* register prefixes are mandatory for ELF */
-    return retval;
-  c1 = c2;
-  c2 = c3;
-  c3 = c4;
-#endif
-#ifdef OBJ_VMS
-  if (c4 != 0)		/* register prefixes are not allowed under VMS */
-    return retval;
-#endif
-#ifdef OBJ_AOUT
-  if (c1 == '%')	/* register prefixes are optional under a.out */
-    {
-      c1 = c2;
-      c2 = c3;
-      c3 = c4;
-    }
-  else if (c3 && c4)	/* can't be 4 characters long.  */
-    return retval;
-#endif
-
-  c1 = TOLOWER (c1);
-  c2 = TOLOWER (c2);
-  if (ISDIGIT (c2) && c1 == 'r')
+  if (isupper (c1))
+    c1 = tolower (c1);
+  if (isupper (c2))
+    c2 = tolower (c2);
+  if (isdigit (c2) && c1 == 'r')
     {
       retval = c2 - '0';
-      if (ISDIGIT (c3))
+      if (isdigit (c3))
 	{
 	  retval = retval * 10 + c3 - '0';
 	  retval = (retval > 15) ? -1 : retval;
@@ -2201,7 +2065,7 @@ vax_reg_parse (c1, c2, c3, c4)	/* 3 chars of register name */
  * There were a number of 'mismatched argument type' bugs to vip_op.
  * The most general solution is to typedef each (of many) arguments.
  * We used instead a typedef'd argument block. This is less modular
- * than using separate return pointers for each result, but runs faster
+ * than using seperate return pointers for each result, but runs faster
  * on most engines, and seems to keep programmers happy. It will have
  * to be done properly if we ever want to use vip_op as a general-purpose
  * module (it was designed to be).
@@ -2270,6 +2134,7 @@ vax_reg_parse (c1, c2, c3, c4)	/* 3 chars of register name */
  * if the other outputs are to be taken seriously.
  */
 
+
 /*
  * Because this module is useful for both VMS and UN*X style assemblers
  * and because of the variety of UN*X assemblers we must recognise
@@ -2337,7 +2202,7 @@ vip_op_1 (bit, syms)
 }
 
 /* Can be called any time.  More arguments may appear in future.  */
-static void
+static void 
 vip_op_defaults (immediate, indirect, displen)
      const char *immediate;
      const char *indirect;
@@ -2385,7 +2250,7 @@ vip_op_defaults (immediate, indirect, displen)
  * We don't limit your choice of width character.
  *
  * DEC operands are hard work to parse. For example, '@' as the first
- * character means indirect (deferred) mode but elsewhere it is a shift
+ * character means indirect (deferred) mode but elswhere it is a shift
  * operator.
  * The long-winded explanation of how this is supposed to work is
  * cancelled. Read a DEC vax manual.
@@ -2416,7 +2281,7 @@ vip_op (optext, vopP)
      /* Input fields: vop_access, vop_width.
 	Output fields: _ndx, _reg, _mode, _short, _warn,
 	_error _expr_begin, _expr_end, _nbytes.
-	vop_nbytes : number of bytes in a datum.  */
+	vop_nbytes : number of bytes in a datum. */
      struct vop *vopP;
 {
   /* track operand text forward */
@@ -2439,7 +2304,7 @@ vip_op (optext, vopP)
   int ndx = 0;
   /* report illegal operand, ""==OK */
   /* " " is a FAKE error: means we won */
-  /* ANY err that begins with ' ' is a fake.  */
+  /* ANY err that begins with ' ' is a fake. */
   /* " " is converted to "" before return */
   const char *err;
   /* warn about weird modes pf address */
@@ -2455,8 +2320,8 @@ vip_op (optext, vopP)
    * get the types wrong below, we lose at compile time rather than at
    * lint or run time.
    */
-  char access_mode;		/* vop_access.  */
-  char width;			/* vop_width.  */
+  char access_mode;		/* vop_access. */
+  char width;			/* vop_width. */
 
   access_mode = vopP->vop_access;
   width = vopP->vop_width;
@@ -2466,13 +2331,13 @@ vip_op (optext, vopP)
 
   p = optext;
 
-  if (*p == ' ')		/* Expect all whitespace reduced to ' '.  */
+  if (*p == ' ')		/* Expect all whitespace reduced to ' '. */
     p++;			/* skip over whitespace */
 
   if ((at = INDIRECTP (*p)) != 0)
     {				/* 1 if *p=='@'(or '*' for Un*x) */
       p++;			/* at is determined */
-      if (*p == ' ')		/* Expect all whitespace reduced to ' '.  */
+      if (*p == ' ')		/* Expect all whitespace reduced to ' '. */
 	p++;			/* skip over whitespace */
     }
 
@@ -2485,14 +2350,15 @@ vip_op (optext, vopP)
     char c;
 
     c = *p;
-    c = TOLOWER (c);
+    if (isupper (c))
+      c = tolower (c);
     if (DISPLENP (p[1]) && strchr ("bilws", len = c))
       p += 2;			/* skip (letter) '^' */
     else			/* no (letter) '^' seen */
       len = ' ';		/* len is determined */
   }
 
-  if (*p == ' ')		/* Expect all whitespace reduced to ' '.  */
+  if (*p == ' ')		/* Expect all whitespace reduced to ' '. */
     p++;			/* skip over whitespace */
 
   if ((hash = IMMEDIATEP (*p)) != 0)	/* 1 if *p=='#' ('$' for Un*x) */
@@ -2510,7 +2376,7 @@ vip_op (optext, vopP)
     ;
   q--;				/* now q points at last char of text */
 
-  if (*q == ' ' && q >= p)	/* Expect all whitespace reduced to ' '.  */
+  if (*q == ' ' && q >= p)	/* Expect all whitespace reduced to ' '. */
     q--;
   /* reverse over whitespace, but don't */
   /* run back over *p */
@@ -2529,7 +2395,7 @@ vip_op (optext, vopP)
 	q--;
       /* either q<p or we got matching '[' */
       if (q < p)
-	err = _("no '[' to match ']'");
+	err = "no '[' to match ']'";
       else
 	{
 	  /*
@@ -2537,11 +2403,9 @@ vip_op (optext, vopP)
 	   * name error. So again we don't need to check for early '\0'.
 	   */
 	  if (q[3] == ']')
-	    ndx = vax_reg_parse (q[1], q[2], 0, 0);
+	    ndx = vax_reg_parse (q[1], q[2], 0);
 	  else if (q[4] == ']')
-	    ndx = vax_reg_parse (q[1], q[2], q[3], 0);
-	  else if (q[5] == ']')
-	    ndx = vax_reg_parse (q[1], q[2], q[3], q[4]);
+	    ndx = vax_reg_parse (q[1], q[2], q[3]);
 	  else
 	    ndx = -1;
 	  /*
@@ -2549,9 +2413,9 @@ vip_op (optext, vopP)
 	   * If luser hasn't given us one: be rude.
 	   */
 	  if (ndx < 0)
-	    err = _("bad register in []");
+	    err = "bad register in []";
 	  else if (ndx == PC)
-	    err = _("[PC] index banned");
+	    err = "[PC] index banned";
 	  else
 	    q--;		/* point q just before "[...]" */
 	}
@@ -2565,7 +2429,7 @@ vip_op (optext, vopP)
    * Otherwise, ndx is index register number, and q points before "[...]".
    */
 
-  if (*q == ' ' && q >= p)	/* Expect all whitespace reduced to ' '.  */
+  if (*q == ' ' && q >= p)	/* Expect all whitespace reduced to ' '. */
     q--;
   /* reverse over whitespace, but don't */
   /* run back over *p */
@@ -2586,7 +2450,7 @@ vip_op (optext, vopP)
 	    q--;
 	  /* either q<p or we got matching '(' */
 	  if (q < p)
-	    err = _("no '(' to match ')'");
+	    err = "no '(' to match ')'";
 	  else
 	    {
 	      /*
@@ -2594,11 +2458,9 @@ vip_op (optext, vopP)
 	       * name error. So again we don't need to check for early '\0'.
 	       */
 	      if (q[3] == ')')
-		reg = vax_reg_parse (q[1], q[2], 0, 0);
+		reg = vax_reg_parse (q[1], q[2], 0);
 	      else if (q[4] == ')')
-		reg = vax_reg_parse (q[1], q[2], q[3], 0);
-	      else if (q[5] == ')')
-		reg = vax_reg_parse (q[1], q[2], q[3], q[4]);
+		reg = vax_reg_parse (q[1], q[2], q[3]);
 	      else
 		reg = -1;
 	      /*
@@ -2609,7 +2471,7 @@ vip_op (optext, vopP)
 	       */
 	      if (reg < 0)
 		{
-		  /* JF allow parenthesized expressions.  I hope this works */
+		  /* JF allow parenthasized expressions.  I hope this works */
 		  paren = 0;
 		  while (*q != ')')
 		    q++;
@@ -2664,15 +2526,12 @@ vip_op (optext, vopP)
 	   */
 	  if (!paren)
 	    {
-	      if (*q == ' ' && q >= p)	/* Expect all whitespace reduced to ' '.  */
+	      if (*q == ' ' && q >= p)	/* Expect all whitespace reduced to ' '. */
 		q--;
 	      /* reverse over whitespace, but don't */
 	      /* run back over *p */
-	      /* room for Rn or Rnn (include prefix) exactly? */
-	      if (q > p && q < p + 4)
-		reg = vax_reg_parse (p[0], p[1],
-		  q < p + 2 ? 0 : p[2],
-		  q < p + 3 ? 0 : p[3]);
+	      if (q > p && q < p + 3)	/* room for Rn or Rnn exactly? */
+		reg = vax_reg_parse (p[0], p[1], q < p + 2 ? 0 : p[2]);
 	      else
 		reg = -1;	/* always comes here if no register at all */
 	      /*
@@ -2726,12 +2585,12 @@ vip_op (optext, vopP)
   if ((!err || !*err) && access_mode == 'b')
     {
       if (at || hash || sign || paren || ndx >= 0 || reg >= 0 || len != ' ')
-	err = _("invalid branch operand");
+	err = "invalid branch operand";
       else
 	err = " ";
     }
 
-  /* Since nobody seems to use it: comment this 'feature'(?) out for now.  */
+  /* Since nobody seems to use it: comment this 'feature'(?) out for now. */
 #ifdef NEVER
   /*
    * Case of stand-alone operand. e.g. ".long foo"
@@ -2755,24 +2614,24 @@ vip_op (optext, vopP)
   if ((!err || !*err) && access_mode == ' ')
     {
       if (at)
-	err = _("address prohibits @");
+	err = "address prohibits @";
       else if (hash)
-	err = _("address prohibits #");
+	err = "address prohibits #";
       else if (sign)
 	{
 	  if (sign < 0)
-	    err = _("address prohibits -()");
+	    err = "address prohibits -()";
 	  else
-	    err = _("address prohibits ()+");
+	    err = "address prohibits ()+";
 	}
       else if (paren)
-	err = _("address prohibits ()");
+	err = "address prohibits ()";
       else if (ndx >= 0)
-	err = _("address prohibits []");
+	err = "address prohibits []";
       else if (reg >= 0)
-	err = _("address prohibits register");
+	err = "address prohibits register";
       else if (len != ' ')
-	err = _("address prohibits displacement length specifier");
+	err = "address prohibits displacement length specifier";
       else
 	{
 	  err = " ";	/* succeed */
@@ -2802,7 +2661,7 @@ vip_op (optext, vopP)
   if ((!err || !*err) && len == 's')
     {
       if (!hash || paren || at || ndx >= 0)
-	err = _("invalid operand of S^#");
+	err = "invalid operand of S^#";
       else
 	{
 	  if (reg >= 0)
@@ -2819,14 +2678,14 @@ vip_op (optext, vopP)
 	   * We have all the expression we will ever get.
 	   */
 	  if (p > q)
-	    err = _("S^# needs expression");
+	    err = "S^# needs expression";
 	  else if (access_mode == 'r')
 	    {
 	      err = " ";	/* WIN! */
 	      mode = 0;
 	    }
 	  else
-	    err = _("S^# may only read-access");
+	    err = "S^# may only read-access";
 	}
     }
 
@@ -2851,15 +2710,15 @@ vip_op (optext, vopP)
   if ((!err || !*err) && sign < 0)
     {
       if (len != ' ' || hash || at || p <= q)
-	err = _("invalid operand of -()");
+	err = "invalid operand of -()";
       else
 	{
 	  err = " ";		/* win */
 	  mode = 7;
 	  if (reg == PC)
-	    wrn = _("-(PC) unpredictable");
+	    wrn = "-(PC) unpredictable";
 	  else if (reg == ndx)
-	    wrn = _("[]index same as -()register: unpredictable");
+	    wrn = "[]index same as -()register: unpredictable";
 	}
     }
 
@@ -2895,15 +2754,15 @@ vip_op (optext, vopP)
   if ((!err || !*err) && sign > 0)
     {
       if (len != ' ' || hash || p <= q)
-	err = _("invalid operand of ()+");
+	err = "invalid operand of ()+";
       else
 	{
 	  err = " ";		/* win */
 	  mode = 8 + (at ? 1 : 0);
 	  if (reg == PC)
-	    wrn = _("(PC)+ unpredictable");
+	    wrn = "(PC)+ unpredictable";
 	  else if (reg == ndx)
-	    wrn = _("[]index same as ()+register: unpredictable");
+	    wrn = "[]index same as ()+register: unpredictable";
 	}
     }
 
@@ -2928,9 +2787,9 @@ vip_op (optext, vopP)
   if ((!err || !*err) && hash)
     {
       if (len != 'i' && len != ' ')
-	err = _("# conflicts length");
+	err = "# conflicts length";
       else if (paren)
-	err = _("# bars register");
+	err = "# bars register";
       else
 	{
 	  if (reg >= 0)
@@ -2952,7 +2811,7 @@ vip_op (optext, vopP)
 	  mode = (at ? 9 : 8);
 	  reg = PC;
 	  if ((access_mode == 'm' || access_mode == 'w') && !at)
-	    wrn = _("writing or modifying # is unpredictable");
+	    wrn = "writing or modifying # is unpredictable";
 	}
     }
   /*
@@ -2961,7 +2820,7 @@ vip_op (optext, vopP)
    */
 
   /*
-   * Case of Rn. We separate this one because it has a few special
+   * Case of Rn. We seperate this one because it has a few special
    * errors the remaining modes lack.
    *
    * in:  at       optional
@@ -2982,16 +2841,16 @@ vip_op (optext, vopP)
   if ((!err || !*err) && !paren && reg >= 0)
     {
       if (len != ' ')
-	err = _("length not needed");
+	err = "length not needed";
       else if (at)
 	{
 	  err = " ";		/* win */
 	  mode = 6;		/* @Rn */
 	}
       else if (ndx >= 0)
-	err = _("can't []index a register, because it has no address");
+	err = "can't []index a register, because it has no address";
       else if (access_mode == 'a')
-	err = _("a register has no address");
+	err = "a register has no address";
       else
 	{
 	  /*
@@ -3002,7 +2861,7 @@ vip_op (optext, vopP)
 	   * Compute highest byte affected, compare to PC0.
 	   */
 	  if ((vopP->vop_nbytes + reg * 4) > 60)
-	    wrn = _("PC part of operand unpredictable");
+	    wrn = "PC part of operand unpredictable";
 	  err = " ";		/* win */
 	  mode = 5;		/* Rn */
 	}
@@ -3084,7 +2943,7 @@ vip_op (optext, vopP)
 
   */
 
-#ifdef TEST			/* #Define to use this testbed.  */
+#ifdef TEST			/* #Define to use this testbed. */
 
 /*
  * Follows a test program for this function.
@@ -3221,54 +3080,42 @@ const int md_reloc_size = 8;	/* Size of relocation record */
 void
 md_create_short_jump (ptr, from_addr, to_addr, frag, to_symbol)
      char *ptr;
-     addressT from_addr;
-     addressT to_addr ATTRIBUTE_UNUSED;
-     fragS *frag ATTRIBUTE_UNUSED;
-     symbolS *to_symbol ATTRIBUTE_UNUSED;
+     addressT from_addr, to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
 {
   valueT offset;
 
-  /* This former calculation was off by two:
-      offset = to_addr - (from_addr + 1);
-     We need to account for the one byte instruction and also its
-     two byte operand.  */
-  offset = to_addr - (from_addr + 1 + 2);
-  *ptr++ = VAX_BRW;		/* branch with word (16 bit) offset */
+  offset = to_addr - (from_addr + 1);
+  *ptr++ = 0x31;
   md_number_to_chars (ptr, offset, 2);
 }
 
 void
 md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
      char *ptr;
-     addressT from_addr ATTRIBUTE_UNUSED;
-     addressT to_addr;
+     addressT from_addr, to_addr;
      fragS *frag;
      symbolS *to_symbol;
 {
   valueT offset;
 
   offset = to_addr - S_GET_VALUE (to_symbol);
-  *ptr++ = VAX_JMP;		/* arbitrary jump */
-  *ptr++ = VAX_ABSOLUTE_MODE;
+  *ptr++ = 0x17;
+  *ptr++ = 0x9F;
   md_number_to_chars (ptr, offset, 4);
   fix_new (frag, ptr - frag->fr_literal, 4, to_symbol, (long) 0, 0, NO_RELOC);
 }
 
 #ifdef OBJ_VMS
-const char *md_shortopts = "d:STt:V+1h:Hv::";
-#elif defined(OBJ_ELF)
-const char *md_shortopts = "d:STt:VkKQ:";
+CONST char *md_shortopts = "d:STt:V+1h:Hv::";
 #else
-const char *md_shortopts = "d:STt:V";
+CONST char *md_shortopts = "d:STt:V";
 #endif
 struct option md_longopts[] = {
-#ifdef OBJ_ELF
-#define OPTION_PIC (OPTION_MD_BASE)
-  {"pic", no_argument, NULL, OPTION_PIC},
-#endif
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+size_t md_longopts_size = sizeof(md_longopts);
 
 int
 md_parse_option (c, arg)
@@ -3278,27 +3125,27 @@ md_parse_option (c, arg)
   switch (c)
     {
     case 'S':
-      as_warn (_("SYMBOL TABLE not implemented"));
+      as_warn ("SYMBOL TABLE not implemented");
       break;
 
     case 'T':
-      as_warn (_("TOKEN TRACE not implemented"));
+      as_warn ("TOKEN TRACE not implemented");
       break;
 
     case 'd':
-      as_warn (_("Displacement length %s ignored!"), arg);
+      as_warn ("Displacement length %s ignored!", arg);
       break;
 
     case 't':
-      as_warn (_("I don't need or use temp. file \"%s\"."), arg);
+      as_warn ("I don't need or use temp. file \"%s\".", arg);
       break;
 
     case 'V':
-      as_warn (_("I don't use an interpass file! -V ignored"));
+      as_warn ("I don't use an interpass file! -V ignored");
       break;
 
 #ifdef OBJ_VMS
-    case '+':			/* For g++.  Hash any name > 31 chars long.  */
+    case '+':			/* For g++.  Hash any name > 31 chars long. */
       flag_hash_long_names = 1;
       break;
 
@@ -3328,18 +3175,6 @@ md_parse_option (c, arg)
       break;
 #endif
 
-#ifdef OBJ_ELF
-    case OPTION_PIC:
-    case 'k':
-      flag_want_pic = 1;
-      break;			/* -pic, Position Independent Code */
-
-     /* -Qy, -Qn: SVR4 arguments controlling whether a .comment
-	section should be emitted or not.  FIXME: Not implemented.  */
-    case 'Q':
-      break;
-#endif
-
     default:
       return 0;
     }
@@ -3351,31 +3186,32 @@ void
 md_show_usage (stream)
      FILE *stream;
 {
-  fprintf (stream, _("\
+  fprintf(stream, "\
 VAX options:\n\
 -d LENGTH		ignored\n\
 -J			ignored\n\
 -S			ignored\n\
 -t FILE			ignored\n\
 -T			ignored\n\
--V			ignored\n"));
+-V			ignored\n");
 #ifdef OBJ_VMS
-  fprintf (stream, _("\
+  fprintf (stream, "\
 VMS options:\n\
 -+			hash encode names longer than 31 characters\n\
 -1			`const' handling compatible with gcc 1.x\n\
 -H			show new symbol after hash truncation\n\
 -h NUM			don't hash mixed-case names, and adjust case:\n\
 			0 = upper, 2 = lower, 3 = preserve case\n\
--v\"VERSION\"		code being assembled was produced by compiler \"VERSION\"\n"));
+-v\"VERSION\"		code being assembled was produced by compiler \"VERSION\"\n");
 #endif
 }
 
 /* We have no need to default values of symbols.  */
 
+/* ARGSUSED */
 symbolS *
 md_undefined_symbol (name)
-     char *name ATTRIBUTE_UNUSED;
+     char *name;
 {
   return 0;
 }
@@ -3383,7 +3219,7 @@ md_undefined_symbol (name)
 /* Round up a section size to the appropriate boundary.  */
 valueT
 md_section_align (segment, size)
-     segT segment ATTRIBUTE_UNUSED;
+     segT segment;
      valueT size;
 {
   return size;			/* Byte alignment is fine */
@@ -3391,104 +3227,12 @@ md_section_align (segment, size)
 
 /* Exactly what point is a PC-relative offset relative TO?
    On the vax, they're relative to the address of the offset, plus
-   its size. */
+   its size. (??? Is this right?  FIXME-SOON) */
 long
 md_pcrel_from (fixP)
      fixS *fixP;
 {
   return fixP->fx_size + fixP->fx_where + fixP->fx_frag->fr_address;
 }
-
-#ifdef OBJ_AOUT
-#ifndef BFD_ASSEMBLER
-void
-tc_headers_hook(headers)
-     object_headers *headers;
-{
-#if defined(TE_NetBSD) || defined(TE_OpenBSD)
-  N_SET_INFO(headers->header, OMAGIC, M_VAX4K_NETBSD, 0);
-  headers->header.a_info = htonl(headers->header.a_info);
-#endif
-}
-#endif /* !BFD_ASSEMBLER */
-#endif /* OBJ_AOUT */
-
-#ifdef BFD_ASSEMBLER
-arelent *
-tc_gen_reloc (section, fixp)
-     asection *section ATTRIBUTE_UNUSED;
-     fixS *fixp;
-{
-  arelent *reloc;
-  bfd_reloc_code_real_type code;
-
-  if (fixp->fx_tcbit)
-    abort();
-
-  if (fixp->fx_r_type != BFD_RELOC_NONE)
-    {
-      code = fixp->fx_r_type;
-
-      if (fixp->fx_pcrel)
-	{
-	  switch (code)
-	    {
-	    case BFD_RELOC_8_PCREL:
-	    case BFD_RELOC_16_PCREL:
-	    case BFD_RELOC_32_PCREL:
-#ifdef OBJ_ELF
-	    case BFD_RELOC_8_GOT_PCREL:
-	    case BFD_RELOC_16_GOT_PCREL:
-	    case BFD_RELOC_32_GOT_PCREL:
-	    case BFD_RELOC_8_PLT_PCREL:
-	    case BFD_RELOC_16_PLT_PCREL:
-	    case BFD_RELOC_32_PLT_PCREL:
-#endif
-	      break;
-	    default:
-	      as_bad_where (fixp->fx_file, fixp->fx_line,
-			    _("Cannot make %s relocation PC relative"),
-			    bfd_get_reloc_code_name (code));
-	    }
-	}
-    }
-  else
-    {
-#define F(SZ,PCREL)		(((SZ) << 1) + (PCREL))
-      switch (F (fixp->fx_size, fixp->fx_pcrel))
-	{
-#define MAP(SZ,PCREL,TYPE)	case F(SZ,PCREL): code = (TYPE); break
-	  MAP (1, 0, BFD_RELOC_8);
-	  MAP (2, 0, BFD_RELOC_16);
-	  MAP (4, 0, BFD_RELOC_32);
-	  MAP (1, 1, BFD_RELOC_8_PCREL);
-	  MAP (2, 1, BFD_RELOC_16_PCREL);
-	  MAP (4, 1, BFD_RELOC_32_PCREL);
-	default:
-	  abort ();
-	}
-    }
-#undef F
-#undef MAP
-
-  reloc = (arelent *) xmalloc (sizeof (arelent));
-  reloc->sym_ptr_ptr = (asymbol **) xmalloc (sizeof (asymbol *));
-  *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixp->fx_addsy);
-  reloc->address = fixp->fx_frag->fr_address + fixp->fx_where;
-#ifndef OBJ_ELF
-  if (fixp->fx_pcrel)
-    reloc->addend = fixp->fx_addnumber;
-  else
-    reloc->addend = 0;
-#else
-  reloc->addend = fixp->fx_offset;
-#endif
-
-  reloc->howto = bfd_reloc_type_lookup (stdoutput, code);
-  assert (reloc->howto != 0);
-
-  return reloc;
-}
-#endif	/* BFD_ASSEMBLER */
 
 /* end of tc-vax.c */

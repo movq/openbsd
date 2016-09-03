@@ -1,7 +1,7 @@
-/* $OpenBSD: p_move.c,v 1.6 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_move.c,v 1.2 1998/07/24 17:08:12 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -38,21 +38,24 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_move.c,v 1.6 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_move.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-move_panel(PANEL * pan, int starty, int startx)
+int
+move_panel(PANEL *pan, int starty, int startx)
 {
-  T((T_CALLED("move_panel(%p,%d,%d)"), pan, starty, startx));
+  WINDOW *win;
 
-  if (!pan)
-    returnCode(ERR);
-
-  if (IS_LINKED(pan))
-    {
-      Touchpan(pan);
-      PANEL_UPDATE(pan, (PANEL *) 0);
-    }
-
-  returnCode(mvwin(pan->win, starty, startx));
+  if(!pan)
+    return(ERR);
+  if(_nc_panel_is_linked(pan))
+    _nc_override(pan,P_TOUCH);
+  win = pan->win;
+  if(mvwin(win,starty,startx))
+    return(ERR);
+  getbegyx(win, pan->wstarty, pan->wstartx);
+  pan->wendy = pan->wstarty + getmaxy(win);
+  pan->wendx = pan->wstartx + getmaxx(win);
+  if(_nc_panel_is_linked(pan))
+    _nc_calculate_obscure();
+  return(OK);
 }

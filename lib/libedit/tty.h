@@ -1,5 +1,5 @@
-/*	$OpenBSD: tty.h,v 1.12 2016/04/11 20:43:33 schwarze Exp $	*/
-/*	$NetBSD: tty.h,v 1.20 2016/04/11 00:50:13 christos Exp $	*/
+/*	$OpenBSD: tty.h,v 1.4 1997/06/29 23:40:53 millert Exp $	*/
+/*	$NetBSD: tty.h,v 1.4 1997/04/11 21:38:02 christos Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,13 +43,13 @@
  * el.tty.h: Local terminal header
  */
 #ifndef _h_el_tty
-#define	_h_el_tty
+#define _h_el_tty
 
+#include "histedit.h"
 #include <termios.h>
-#include <unistd.h>
 
 /* Define our own since everyone gets it wrong! */
-#define	CONTROL(A)	((A) & 037)
+#define CONTROL(A)	((A) & 037)	
 
 /*
  * Aix compatible names
@@ -404,78 +408,76 @@
 # endif /* NUMCC */
 #endif /* !POSIX */
 
-#define	C_INTR		 0
-#define	C_QUIT		 1
-#define	C_ERASE		 2
-#define	C_KILL		 3
-#define	C_EOF		 4
-#define	C_EOL		 5
-#define	C_EOL2		 6
-#define	C_SWTCH		 7
-#define	C_DSWTCH	 8
-#define	C_ERASE2	 9
-#define	C_START		10
-#define	C_STOP		11
-#define	C_WERASE	12
-#define	C_SUSP		13
-#define	C_DSUSP		14
-#define	C_REPRINT	15
-#define	C_DISCARD	16
-#define	C_LNEXT		17
-#define	C_STATUS	18
-#define	C_PAGE		19
-#define	C_PGOFF		20
-#define	C_KILL2		21
-#define	C_BRK		22
-#define	C_MIN		23
-#define	C_TIME		24
-#define	C_NCC		25
-#define	C_SH(A)		(1 << (A))
+#define C_INTR		 0
+#define C_QUIT		 1
+#define C_ERASE		 2
+#define C_KILL		 3
+#define C_EOF		 4
+#define C_EOL		 5
+#define C_EOL2		 6
+#define C_SWTCH		 7
+#define C_DSWTCH	 8
+#define C_ERASE2	 9
+#define C_START		10
+#define C_STOP		11
+#define C_WERASE	12
+#define C_SUSP		13
+#define C_DSUSP		14
+#define C_REPRINT	15
+#define C_DISCARD	16
+#define C_LNEXT		17
+#define C_STATUS	18
+#define C_PAGE		19
+#define C_PGOFF		20
+#define C_KILL2		21
+#define C_BRK		22
+#define C_MIN		23
+#define C_TIME		24
+#define C_NCC		25
+#define C_SH(A)		(1 << (A))
 
 /*
  * Terminal dependend data structures
  */
-#define	EX_IO	0	/* while we are executing	*/
-#define	ED_IO	1	/* while we are editing		*/
-#define	TS_IO	2	/* new mode from terminal	*/
-#define	QU_IO	2	/* used only for quoted chars	*/
-#define	NN_IO	3	/* The number of entries	*/
+#define EX_IO	0	/* while we are executing	*/
+#define ED_IO	1	/* while we are editing		*/
+#define TS_IO	2	/* new mode from terminal	*/
+#define QU_IO	2	/* used only for quoted chars	*/
+#define NN_IO	3	/* The number of entries	*/
 
-/* Don't re-order */
-#define	MD_INP	0
-#define	MD_OUT	1
-#define	MD_CTL	2
-#define	MD_LIN	3
-#define	MD_CHAR	4
-#define	MD_NN	5
+#define M_INP	0
+#define M_OUT	1
+#define M_CTL	2
+#define M_LIN	3
+#define M_CHAR	4
+#define M_NN	5
 
-typedef struct {
-	const char	*t_name;
-	unsigned int	 t_setmask;
-	unsigned int	 t_clrmask;
-} ttyperm_t[NN_IO][MD_NN];
+typedef struct { 
+    char *t_name;
+    u_int t_setmask;
+    u_int t_clrmask;
+} ttyperm_t[NN_IO][M_NN];
 
 typedef unsigned char ttychar_t[NN_IO][C_NCC];
 
-protected int	tty_init(EditLine *);
-protected void	tty_end(EditLine *);
-protected int	tty_stty(EditLine *, int, const wchar_t **);
-protected int	tty_rawmode(EditLine *);
-protected int	tty_cookedmode(EditLine *);
-protected int	tty_quotemode(EditLine *);
-protected int	tty_noquotemode(EditLine *);
-protected void	tty_bind_char(EditLine *, int);
+protected int	tty_init	__P((EditLine *));
+protected void	tty_end		__P((EditLine *));
+protected int	tty_stty	__P((EditLine *, int, char**));
+protected int	tty_rawmode	__P((EditLine *));
+protected int	tty_cookedmode	__P((EditLine *));
+protected int	tty_quotemode	__P((EditLine *));
+protected int	tty_noquotemode	__P((EditLine *));
+protected void	tty_bind_char	__P((EditLine *, int));
 
 typedef struct {
     ttyperm_t t_t;
     ttychar_t t_c;
-    struct termios t_or, t_ex, t_ed, t_ts;
+    struct termios t_ex, t_ed, t_ts;
     int t_tabs;
     int t_eight;
     speed_t t_speed;
-    unsigned char t_mode;
+    int t_mode;
     unsigned char t_vdisable;
-    unsigned char t_initialized;
 } el_tty_t;
 
 

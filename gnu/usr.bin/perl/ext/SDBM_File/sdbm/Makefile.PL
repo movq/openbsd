@@ -1,6 +1,6 @@
 use ExtUtils::MakeMaker;
 
-my $define = '-DSDBM -DDUFF';
+$define = '-DSDBM -DDUFF';
 $define .= ' -DWIN32 -DPERL_STATIC_SYMS' if ($^O eq 'MSWin32');
 
 if ($^O eq 'VMS') {  # Old VAXC compiler can't handle Duff's device
@@ -13,6 +13,7 @@ WriteMakefile(
 #    LINKTYPE  => 'static',
     DEFINE    => $define,
     INC       => '-I$(PERL_INC)', # force PERL_INC dir ahead of system -I's
+    INST_ARCHLIB => '.',
     SKIP      => [qw(dynamic dynamic_lib dlsyms)],
     OBJECT    => '$(O_FILES)',
     clean     => {'FILES' => 'dbu libsdbm.a dbd dba dbe x-dbu *.dir *.pag'},
@@ -21,12 +22,23 @@ WriteMakefile(
 );
 
 sub MY::constants {
-    package MY;
-    my $self = shift;
+  package MY;
+  my $r = shift->SUPER::constants();
+  if ($^O eq 'VMS') {
+    $r =~ s/^INST_STATIC =.*$/INST_STATIC = libsdbm\$(LIB_EXT)/m
+  }
+  return $r;
+}
 
-    $self->{INST_STATIC} = 'libsdbm$(LIB_EXT)';
-
-    return $self->SUPER::constants();
+sub MY::post_constants {
+  package MY;
+  if ($^O eq 'VMS') {
+    shift->SUPER::post_constants();
+  } else {
+'
+INST_STATIC = libsdbm$(LIB_EXT)
+'
+  }
 }
 
 sub MY::top_targets {

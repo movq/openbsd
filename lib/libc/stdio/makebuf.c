@@ -1,4 +1,3 @@
-/*	$OpenBSD: makebuf.c,v 1.9 2015/01/13 07:18:21 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: makebuf.c,v 1.3 1998/11/25 05:18:49 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -46,10 +53,11 @@
  * optimisation) right after the fstat() that finds the buffer size.
  */
 void
-__smakebuf(FILE *fp)
+__smakebuf(fp)
+	register FILE *fp;
 {
-	void *p;
-	int flags;
+	register void *p;
+	register int flags;
 	size_t size;
 	int couldbetty;
 
@@ -65,6 +73,7 @@ __smakebuf(FILE *fp)
 		fp->_bf._size = 1;
 		return;
 	}
+	__cleanup = _cleanup;
 	flags |= __SMBF;
 	fp->_bf._base = fp->_p = p;
 	fp->_bf._size = size;
@@ -77,7 +86,10 @@ __smakebuf(FILE *fp)
  * Internal routine to determine `proper' buffering for a file.
  */
 int
-__swhatbuf(FILE *fp, size_t *bufsize, int *couldbetty)
+__swhatbuf(fp, bufsize, couldbetty)
+	register FILE *fp;
+	size_t *bufsize;
+	int *couldbetty;
 {
 	struct stat st;
 
@@ -99,8 +111,10 @@ __swhatbuf(FILE *fp, size_t *bufsize, int *couldbetty)
 	 * __sseek is mainly paranoia.)  It is safe to set _blksize
 	 * unconditionally; it will only be used if __SOPT is also set.
 	 */
-	*bufsize = st.st_blksize;
-	fp->_blksize = st.st_blksize;
+	if ((fp->_flags & __SSTR) == 0) {
+		*bufsize = st.st_blksize;
+		fp->_blksize = st.st_blksize;
+	}
 	return ((st.st_mode & S_IFMT) == S_IFREG && fp->_seek == __sseek ?
 	    __SOPT : __SNPT);
 }

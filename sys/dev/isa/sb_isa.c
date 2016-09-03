@@ -1,4 +1,4 @@
-/*	$OpenBSD: sb_isa.c,v 1.10 2015/05/12 16:35:23 ratchov Exp $	*/
+/*	$OpenBSD: sb_isa.c,v 1.4 1999/01/02 01:33:39 niklas Exp $	*/
 /*	$NetBSD: sb_isa.c,v 1.15 1997/11/30 15:32:25 drochner Exp $	*/
 
 /*
@@ -41,12 +41,14 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 
 #include <machine/bus.h>
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
 #include <dev/midi_if.h>
+#include <dev/mulaw.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
@@ -56,10 +58,15 @@
 
 #include <dev/isa/sbdspvar.h>
 
-static	int sbfind(struct device *, struct sbdsp_softc *, struct isa_attach_args *);
+static	int sbfind __P((struct device *, struct sbdsp_softc *, struct isa_attach_args *));
 
-int	sb_isa_match(struct device *, void *, void *);
-void	sb_isa_attach(struct device *, struct device *, void *);
+#define __BROKEN_INDIRECT_CONFIG /* XXX */
+#ifdef __BROKEN_INDIRECT_CONFIG
+int	sb_isa_match __P((struct device *, void *, void *));
+#else
+int	sb_isa_match __P((struct device *, struct cfdata *, void *));
+#endif
+void	sb_isa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach sb_isa_ca = {
 	sizeof(struct sbdsp_softc), sb_isa_match, sb_isa_attach
@@ -75,14 +82,22 @@ struct cfattach sb_isa_ca = {
 int
 sb_isa_match(parent, match, aux)
 	struct device *parent;
+#ifdef __BROKEN_INDIRECT_CONFIG
 	void *match;
+#else
+	struct cfdata *match;
+#endif
 	void *aux;
 {
 	struct sbdsp_softc probesc, *sc = &probesc;
 
 	bzero(sc, sizeof *sc);
+#ifdef __BROKEN_INDIRECT_CONFIG
 	sc->sc_dev.dv_cfdata = ((struct device *)match)->dv_cfdata;
-	strlcpy(sc->sc_dev.dv_xname, "sb", sizeof sc->sc_dev.dv_xname);
+#else
+	sc->sc_dev.dv_cfdata = match;
+#endif
+	strcpy(sc->sc_dev.dv_xname, "sb");
 	return sbfind(parent, sc, aux);
 }
 
@@ -99,7 +114,7 @@ sbfind(parent, sc, ia)
 
 	sc->sc_iot = ia->ia_iot;
 
-	/* Map i/o space [we map 24 ports which is the max of the sb and pro] */
+	/* Map i/o space [we map 24 ports which is the max of the sb and pro */
 	if (bus_space_map(sc->sc_iot, ia->ia_iobase, SBP_NPORT, 0,
 	    &sc->sc_ioh))
 		return 0;

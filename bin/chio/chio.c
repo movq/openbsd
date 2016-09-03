@@ -1,4 +1,4 @@
-/*	$OpenBSD: chio.c,v 1.25 2014/03/16 18:38:30 guenther Exp $	*/
+/*	$OpenBSD: chio.c,v 1.8 1998/06/23 18:26:36 millert Exp $	*/
 /*	$NetBSD: chio.c,v 1.1.1.1 1996/04/03 00:34:38 thorpej Exp $	*/
 
 /*
@@ -33,9 +33,8 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/ioctl.h>
-#include <sys/mtio.h>
 #include <sys/chio.h>
 #include <err.h>
 #include <errno.h>
@@ -45,31 +44,27 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <util.h>
 
 #include "defs.h"
 #include "pathnames.h"
 
-#define _PATH_CH_CONF	"/etc/chio.conf"
-extern	char *parse_tapedev(const char *, const char *, int); /* parse.y */
 extern	char *__progname;	/* from crt0.o */
 
-static	void usage(void);
-static	int parse_element_type(char *);
-static	int parse_element_unit(char *);
-static	int parse_special(char *);
-static	int is_special(char *);
-static	char *bits_to_string(int, const char *);
-static	void find_voltag(char *, int *, int *);
-static	void check_source_drive(int);
+static	void usage __P((void));
+static	void cleanup __P((void));
+static	int parse_element_type __P((char *));
+static	int parse_element_unit __P((char *));
+static	int parse_special __P((char *));
+static	int is_special __P((char *));
+static	char *bits_to_string __P((int, const char *));
 
-static	int do_move(char *, int, char **);
-static	int do_exchange(char *, int, char **);
-static	int do_position(char *, int, char **);
-static	int do_params(char *, int, char **);
-static	int do_getpicker(char *, int, char **);
-static	int do_setpicker(char *, int, char **);
-static	int do_status(char *, int, char **);
+static	int do_move __P((char *, int, char **));
+static	int do_exchange __P((char *, int, char **));
+static	int do_position __P((char *, int, char **));
+static	int do_params __P((char *, int, char **));
+static	int do_getpicker __P((char *, int, char **));
+static	int do_setpicker __P((char *, int, char **));
+static	int do_status __P((char *, int, char **));
 
 /* Valid changer element types. */
 const struct element_type elements[] = {
@@ -102,11 +97,11 @@ const struct special_word specials[] = {
 
 static	int changer_fd;
 static	char *changer_name;
-static int avoltag;
-static int pvoltag;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	int ch, i;
 
@@ -115,6 +110,7 @@ main(int argc, char *argv[])
 		case 'f':
 			changer_name = optarg;
 			break;
+
 		default:
 			usage();
 		}
@@ -134,6 +130,10 @@ main(int argc, char *argv[])
 	if ((changer_fd = open(changer_name, O_RDWR, 0600)) == -1)
 		err(1, "%s: open", changer_name);
 
+	/* Register cleanup function. */
+	if (atexit(cleanup))
+		err(1, "can't register cleanup function");
+
 	/* Find the specified command. */
 	for (i = 0; commands[i].cc_name != NULL; ++i)
 		if (strcmp(*argv, commands[i].cc_name) == 0)
@@ -148,11 +148,16 @@ main(int argc, char *argv[])
 	if (commands[i].cc_name == NULL)
 		errx(1, "unknown command: %s", *argv);
 
-	exit((*commands[i].cc_handler)(commands[i].cc_name, argc, argv));
+	/* Skip over the command name and call handler. */
+	++argv; --argc;
+	exit ((*commands[i].cc_handler)(commands[i].cc_name, argc, argv));
 }
 
 static int
-do_move(char *cname, int argc, char *argv[])
+do_move(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
 	struct changer_move cmd;
 	int val;
@@ -164,9 +169,6 @@ do_move(char *cname, int argc, char *argv[])
 	 *
 	 * where ET == element type and EU == element unit.
 	 */
-
-	++argv; --argc;
-
 	if (argc < 4) {
 		warnx("%s: too few arguments", cname);
 		goto usage;
@@ -176,30 +178,19 @@ do_move(char *cname, int argc, char *argv[])
 	}
 	bzero(&cmd, sizeof(cmd));
 
-	/*
-	 * Get the from ET and EU - we search for it if the ET is
-	 * "voltag", otherwise, we just use the ET and EU given to us.
-	 */
-	if (strcmp(*argv, "voltag") == 0) {
-		++argv; --argc;
-		find_voltag(*argv, &cmd.cm_fromtype, &cmd.cm_fromunit);
-		++argv; --argc;
-	} else {
-		cmd.cm_fromtype = parse_element_type(*argv);
-		++argv; --argc;
-		cmd.cm_fromunit = parse_element_unit(*argv);
-		++argv; --argc;
-	}
+	/* <from ET>  */
+	cmd.cm_fromtype = parse_element_type(*argv);
+	++argv; --argc;
 
-	if (cmd.cm_fromtype == CHET_DT)
-		check_source_drive(cmd.cm_fromunit);
+	/* <from EU> */
+	cmd.cm_fromunit = parse_element_unit(*argv);
+	++argv; --argc;
 
-	/*
-	 * Don't allow voltag on the to ET, using a volume
-	 * as a destination makes no sense on a move
-	 */
+	/* <to ET> */
 	cmd.cm_totype = parse_element_type(*argv);
 	++argv; --argc;
+
+	/* <to EU> */
 	cmd.cm_tounit = parse_element_unit(*argv);
 	++argv; --argc;
 
@@ -219,7 +210,7 @@ do_move(char *cname, int argc, char *argv[])
 	}
 
 	/* Send command to changer. */
-	if (ioctl(changer_fd, CHIOMOVE, &cmd))
+	if (ioctl(changer_fd, CHIOMOVE, (char *)&cmd))
 		err(1, "%s: CHIOMOVE", changer_name);
 
 	return (0);
@@ -231,7 +222,10 @@ do_move(char *cname, int argc, char *argv[])
 }
 
 static int
-do_exchange(char *cname, int argc, char *argv[])
+do_exchange(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
 	struct changer_exchange cmd;
 	int val;
@@ -243,9 +237,6 @@ do_exchange(char *cname, int argc, char *argv[])
 	 *
 	 * where ET == element type and EU == element unit.
 	 */
-
-	++argv; --argc;
-
 	if (argc < 4) {
 		warnx("%s: too few arguments", cname);
 		goto usage;
@@ -312,7 +303,7 @@ do_exchange(char *cname, int argc, char *argv[])
 	}
 
 	/* Send command to changer. */
-	if (ioctl(changer_fd, CHIOEXCHANGE, &cmd))
+	if (ioctl(changer_fd, CHIOEXCHANGE, (char *)&cmd))
 		err(1, "%s: CHIOEXCHANGE", changer_name);
 
 	return (0);
@@ -325,7 +316,10 @@ do_exchange(char *cname, int argc, char *argv[])
 }
 
 static int
-do_position(char *cname, int argc, char *argv[])
+do_position(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
 	struct changer_position cmd;
 	int val;
@@ -337,9 +331,6 @@ do_position(char *cname, int argc, char *argv[])
 	 *
 	 * where ET == element type and EU == element unit.
 	 */
-
-	++argv; --argc;
-
 	if (argc < 2) {
 		warnx("%s: too few arguments", cname);
 		goto usage;
@@ -373,7 +364,7 @@ do_position(char *cname, int argc, char *argv[])
 	}
 
 	/* Send command to changer. */
-	if (ioctl(changer_fd, CHIOPOSITION, &cmd))
+	if (ioctl(changer_fd, CHIOPOSITION, (char *)&cmd))
 		err(1, "%s: CHIOPOSITION", changer_name);
 
 	return (0);
@@ -385,14 +376,14 @@ do_position(char *cname, int argc, char *argv[])
 }
 
 static int
-do_params(char *cname, int argc, char *argv[])
+do_params(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
 	struct changer_params data;
 
 	/* No arguments to this command. */
-
-	++argv; --argc;
-
 	if (argc) {
 		warnx("%s: no arguments expected", cname);
 		goto usage;
@@ -400,7 +391,7 @@ do_params(char *cname, int argc, char *argv[])
 
 	/* Get params from changer and display them. */
 	bzero(&data, sizeof(data));
-	if (ioctl(changer_fd, CHIOGPARAMS, &data))
+	if (ioctl(changer_fd, CHIOGPARAMS, (char *)&data))
 		err(1, "%s: CHIOGPARAMS", changer_name);
 
 	printf("%s: %d slot%s, %d drive%s, %d picker%s",
@@ -421,21 +412,21 @@ do_params(char *cname, int argc, char *argv[])
 }
 
 static int
-do_getpicker(char *cname, int argc, char *argv[])
+do_getpicker(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
 	int picker;
 
 	/* No arguments to this command. */
-
-	++argv; --argc;
-
 	if (argc) {
 		warnx("%s: no arguments expected", cname);
 		goto usage;
 	}
 
 	/* Get current picker from changer and display it. */
-	if (ioctl(changer_fd, CHIOGPICKER, &picker))
+	if (ioctl(changer_fd, CHIOGPICKER, (char *)&picker))
 		err(1, "%s: CHIOGPICKER", changer_name);
 
 	printf("%s: current picker: %d\n", changer_name, picker);
@@ -448,11 +439,12 @@ do_getpicker(char *cname, int argc, char *argv[])
 }
 
 static int
-do_setpicker(char *cname, int argc, char *argv[])
+do_setpicker(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
 	int picker;
-
-	++argv; --argc;
 
 	if (argc < 1) {
 		warnx("%s: too few arguments", cname);
@@ -465,7 +457,7 @@ do_setpicker(char *cname, int argc, char *argv[])
 	picker = parse_element_unit(*argv);
 
 	/* Set the changer picker. */
-	if (ioctl(changer_fd, CHIOSPICKER, &picker))
+	if (ioctl(changer_fd, CHIOSPICKER, (char *)&picker))
 		err(1, "%s: CHIOSPICKER", changer_name);
 
 	return (0);
@@ -476,34 +468,21 @@ do_setpicker(char *cname, int argc, char *argv[])
 }
 
 static int
-do_status(char *cname, int argc, char *argv[])
+do_status(cname, argc, argv)
+	char *cname;
+	int argc;
+	char **argv;
 {
-	struct changer_element_status_request cmd;
+	struct changer_element_status cmd;
 	struct changer_params data;
-	int i, chet, schet, echet, c;
+	u_int8_t *statusp;
+	int i, count, chet, schet, echet;
 	char *description;
-	size_t count;
 
-	optreset = 1;
-	optind = 1;
-	while ((c = getopt(argc, argv, "vVa")) != -1) {
-		switch (c) {
-		case 'v':
-			pvoltag = 1;
-			break;
-		case 'V':
-			avoltag = 1;
-			break;
-		case 'a':
-			pvoltag = avoltag = 1;
-			break;
-		default:
-			goto usage;
-		}
-	}
-
-	argc -= optind;
-	argv += optind;
+#ifdef lint
+	count = 0;
+	description = NULL;
+#endif
 
 	/*
 	 * On a status command, we expect the following:
@@ -525,7 +504,7 @@ do_status(char *cname, int argc, char *argv[])
 	 * counts.
 	 */
 	bzero(&data, sizeof(data));
-	if (ioctl(changer_fd, CHIOGPARAMS, &data))
+	if (ioctl(changer_fd, CHIOGPARAMS, (char *)&data))
 		err(1, "%s: CHIOGPARAMS", changer_name);
 
 	if (argc)
@@ -568,39 +547,28 @@ do_status(char *cname, int argc, char *argv[])
 			}
 		}
 
+		/* Allocate storage for the status bytes. */
+		if ((statusp = (u_int8_t *)malloc(count)) == NULL)
+			errx(1, "can't allocate status storage");
+
+		bzero(statusp, count);
 		bzero(&cmd, sizeof(cmd));
 
-		cmd.cesr_type = chet;
-		/* Allocate storage for the status info. */
-		cmd.cesr_data = calloc(count, sizeof(*cmd.cesr_data));
-		if ((cmd.cesr_data) == NULL)
-			errx(1, "can't allocate status storage");
-		if (avoltag || pvoltag)
-			cmd.cesr_flags |= CESR_VOLTAGS;
+		cmd.ces_type = chet;
+		cmd.ces_data = statusp;
 
-		if (ioctl(changer_fd, CHIOGSTATUS, &cmd)) {
-			free(cmd.cesr_data);
+		if (ioctl(changer_fd, CHIOGSTATUS, (char *)&cmd)) {
+			free(statusp);
 			err(1, "%s: CHIOGSTATUS", changer_name);
 		}
 
 		/* Dump the status for each element of this type. */
 		for (i = 0; i < count; ++i) {
-			struct changer_element_status *ces =
-			         &(cmd.cesr_data[i]);
-			printf("%s %d: %s", description, i,
-			    bits_to_string(ces->ces_flags, CESTATUS_BITS));
-			if (pvoltag)
-				printf(" voltag: <%s:%d>",
-				       ces->ces_pvoltag.cv_volid,
-				       ces->ces_pvoltag.cv_serial);
-			if (avoltag)
-				printf(" avoltag: <%s:%d>",
-				       ces->ces_avoltag.cv_volid,
-				       ces->ces_avoltag.cv_serial);
-			printf("\n");
+			printf("%s %d: %s\n", description, i,
+			    bits_to_string(statusp[i], CESTATUS_BITS));
 		}
 
-		free(cmd.cesr_data);
+		free(statusp);
 	}
 
 	return (0);
@@ -611,150 +579,9 @@ do_status(char *cname, int argc, char *argv[])
 	return (1);
 }
 
-/*
- * Check a drive unit as the source for a move or exchange
- * operation. If the drive is not accessible, we attempt
- * to unmount the tape in it before moving to avoid
- * errors in "disconnected" type pickers where the drive
- * is on a separate target from the changer.
- */
-static void
-check_source_drive(int unit)
-{
-	struct mtop mtoffl =  { MTOFFL, 1 };
-	struct changer_element_status_request cmd;
-	struct changer_element_status *ces;
-	struct changer_params data;
-	size_t count = 0;
-	int mtfd;
-	char *tapedev;
-
-	/*
-	 * Get params from changer.  Specifically, we need the element
-	 * counts.
-	 */
-	bzero(&data, sizeof(data));
-	if (ioctl(changer_fd, CHIOGPARAMS, &data))
-		err(1, "%s: CHIOGPARAMS", changer_name);
-
-	count = data.cp_ndrives;
-	if (unit < 0 || unit >= count)
-		err(1, "%s: invalid drive: drive %d", changer_name, unit);
-
-	bzero(&cmd, sizeof(cmd));
-	cmd.cesr_type = CHET_DT;
-	/* Allocate storage for the status info. */
-	cmd.cesr_data = calloc(count, sizeof(*cmd.cesr_data));
-	if ((cmd.cesr_data) == NULL)
-		errx(1, "can't allocate status storage");
-
-	if (ioctl(changer_fd, CHIOGSTATUS, &cmd)) {
-		free(cmd.cesr_data);
-		err(1, "%s: CHIOGSTATUS", changer_name);
-	}
-	ces = &(cmd.cesr_data[unit]);
-
-	if ((ces->ces_flags & CESTATUS_FULL) != CESTATUS_FULL)
-		err(1, "%s: drive %d is empty!", changer_name, unit);
-
-	if ((ces->ces_flags & CESTATUS_ACCESS) == CESTATUS_ACCESS)
-		return; /* changer thinks all is well - trust it */
-
-	/*
-	 * Otherwise, drive is FULL, but not accessible.
-	 * Try to make it accessible by doing an mt offline.
-	 */
-	tapedev = parse_tapedev(_PATH_CH_CONF, changer_name, unit);
-	mtfd = opendev(tapedev, O_RDONLY, 0, NULL);
-	if (mtfd == -1)
-		err(1, "%s drive %d (%s): open", changer_name, unit, tapedev);
-	if (ioctl(mtfd, MTIOCTOP, &mtoffl) == -1)
-		err(1, "%s drive %d (%s): rewoffl", changer_name, unit,
-		    tapedev);
-	close(mtfd);
-}
-
-void
-find_voltag(char *voltag, int *type, int *unit)
-{
-	struct changer_element_status_request cmd;
-	struct changer_params data;
-	int i, chet, schet, echet, found;
-	size_t count = 0;
-
-	/*
-	 * Get params from changer.  Specifically, we need the element
-	 * counts.
-	 */
-	bzero(&data, sizeof(data));
-	if (ioctl(changer_fd, CHIOGPARAMS, &data))
-		err(1, "%s: CHIOGPARAMS", changer_name);
-
-	found = 0;
-	schet = CHET_MT;
-	echet = CHET_DT;
-
-	/*
-	 * For each type of element, iterate through each one until
-	 * we find the correct volume id.
-	 */
-	for (chet = schet; chet <= echet; ++chet) {
-		switch (chet) {
-		case CHET_MT:
-			count = data.cp_npickers;
-			break;
-		case CHET_ST:
-			count = data.cp_nslots;
-			break;
-		case CHET_IE:
-			count = data.cp_nportals;
-			break;
-		case CHET_DT:
-			count = data.cp_ndrives;
-			break;
-		}
-		if (count == 0 || found)
-			continue;
-
-		bzero(&cmd, sizeof(cmd));
-		cmd.cesr_type = chet;
-		/* Allocate storage for the status info. */
-		cmd.cesr_data = calloc(count, sizeof(*cmd.cesr_data));
-		if ((cmd.cesr_data) == NULL)
-			errx(1, "can't allocate status storage");
-		cmd.cesr_flags |= CESR_VOLTAGS;
-
-		if (ioctl(changer_fd, CHIOGSTATUS, &cmd)) {
-			free(cmd.cesr_data);
-			err(1, "%s: CHIOGSTATUS", changer_name);
-		}
-
-		/*
-		 * look through each element to see if it has our desired
-		 * volume tag.
-		 */
-		for (i = 0; i < count; ++i) {
-			struct changer_element_status *ces =
-			    &(cmd.cesr_data[i]);
-			if ((ces->ces_flags & CESTATUS_FULL) != CESTATUS_FULL)
-				continue; /* no tape in drive */
-			if (strcasecmp(voltag, ces->ces_pvoltag.cv_volid)
-			    == 0) {
-				*type = chet;
-				*unit = i;
-				found = 1;
-				free(cmd.cesr_data);
-				return;
-			}
-		}
-		free(cmd.cesr_data);
-	}
-	errx(1, "%s: unable to locate voltag: %s", changer_name, voltag);
-}
-
-
 static int
-parse_element_type(char *cp)
+parse_element_type(cp)
+	char *cp;
 {
 	int i;
 
@@ -766,7 +593,8 @@ parse_element_type(char *cp)
 }
 
 static int
-parse_element_unit(char *cp)
+parse_element_unit(cp)
+	char *cp;
 {
 	int i;
 	char *p;
@@ -779,7 +607,8 @@ parse_element_unit(char *cp)
 }
 
 static int
-parse_special(char *cp)
+parse_special(cp)
+	char *cp;
 {
 	int val;
 
@@ -791,7 +620,8 @@ parse_special(char *cp)
 }
 
 static int
-is_special(char *cp)
+is_special(cp)
+	char *cp;
 {
 	int i;
 
@@ -803,10 +633,13 @@ is_special(char *cp)
 }
 
 static char *
-bits_to_string(int v, const char *cp)
+bits_to_string(v, cp)
+	int v;
+	const char *cp;
 {
 	const char *np;
 	char f, sep, *bp;
+	size_t n;
 	static char buf[128];
 
 	bp = buf;
@@ -818,7 +651,7 @@ bits_to_string(int v, const char *cp)
 		if ((v & (1 << (f - 1))) == 0)
 			continue;
 		(void)snprintf(bp, sizeof(buf) - (bp - &buf[0]),
-		    "%c%.*s", sep, (int)(np - cp), cp);
+			       "%c%.*s", sep, np - cp, cp);
 		bp += strlen(bp);
 		sep = ',';
 	}
@@ -829,11 +662,19 @@ bits_to_string(int v, const char *cp)
 }
 
 static void
-usage(void)
+cleanup()
+{
+
+	/* Simple enough... */
+	(void)close(changer_fd);
+}
+
+static void
+usage()
 {
 	int i;
 
-	fprintf(stderr, "usage: %s [-f changer] command [arg ...]\n",
+	fprintf(stderr, "usage: %s [-f device] command [args ...]\n",
 	    __progname);
 	fprintf(stderr, "commands:");
 	for (i = 0; commands[i].cc_name; i++)

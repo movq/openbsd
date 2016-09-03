@@ -1,6 +1,5 @@
 /* bignum_copy.c - copy a bignum
-   Copyright 1987, 1990, 1991, 1992, 1993, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1990, 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -16,7 +15,7 @@
 
    You should have received a copy of the GNU General Public License
    along with GAS; see the file COPYING.  If not, write to
-   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 #include "as.h"
 
@@ -33,17 +32,18 @@
 
 /* void */
 int
-bignum_copy (register LITTLENUM_TYPE *in,
-	     register int in_length,	/* in sizeof(littlenum)s */
-	     register LITTLENUM_TYPE *out,
-	     register int out_length	/* in sizeof(littlenum)s */)
+bignum_copy (in, in_length, out, out_length)
+     register LITTLENUM_TYPE *in;
+     register int in_length;	/* in sizeof(littlenum)s */
+     register LITTLENUM_TYPE *out;
+     register int out_length;	/* in sizeof(littlenum)s */
 {
   int significant_littlenums_dropped;
 
   if (out_length < in_length)
     {
       LITTLENUM_TYPE *p;	/* -> most significant (non-zero) input
-				      littlenum.  */
+				      littlenum. */
 
       memcpy ((void *) out, (void *) in,
 	      (unsigned int) out_length << LITTLENUM_SHIFT);

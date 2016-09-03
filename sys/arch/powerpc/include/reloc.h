@@ -1,4 +1,3 @@
-/*	$OpenBSD: reloc.h,v 1.4 2011/03/23 16:54:36 pirofti Exp $	*/
 /*	$NetBSD: reloc.h,v 1.1 1996/09/30 16:34:33 ws Exp $	*/
 
 /*-
@@ -31,8 +30,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef	_POWERPC_RELOC_H_
-#define	_POWERPC_RELOC_H_
+#ifndef	_MACH_RELOC_H_
+#define	_MACH_RELOC_H_
 
 /*
  * Quite a number of relocation types
@@ -72,20 +71,7 @@ enum reloc_type {
 	RELOC_PLT16_HA,
     /* ABI defines this as 32nd entry, but we ignore this, at least for now */
 	RELOC_SDAREL,
-
-	RELOC_TLSC = 67,
-	RELOC_DTPMOD32,
-	RELOC_TPREL16,
-	RELOC_TPREL16_LO,
-	RELOC_TPREL16_HI,
-	RELOC_TPREL16_HA,
-	RELOC_TPREL32,
-	RELOC_DTPREL16,
-	RELOC_DTPREL16_LO,
-	RELOC_DTPREL16_HI,
-	RELOC_DTPREL16_HA,
-	RELOC_DTPREL32,
 	RELOC_MAX
 };
 
-#endif	/* _POWERPC_RELOC_H_ */
+#endif	/* _MACH_RELOC_H_ */

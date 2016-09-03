@@ -1,7 +1,7 @@
-/* dir.c -- how to build a special "dir" node from "localdir" files.
-   $Id: dir.c,v 1.5 2013/08/05 17:02:24 guenther Exp $
+/* dir.c -- How to build a special "dir" node from "localdir" files.
+   $Id: dir.c,v 1.2 1999/01/11 16:38:06 espie Exp $
 
-   Copyright (C) 1993, 1997, 1998, 2004 Free Software Foundation, Inc.
+   Copyright (C) 1993, 97 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,11 +28,7 @@
    with the addition of the menus of every file named in the array
    dirs_to_add which are found in INFOPATH. */
 
-static void add_menu_to_file_buffer (char *contents, long int size,
-    FILE_BUFFER *fb);
-static void insert_text_into_fb_at_binding (FILE_BUFFER *fb,
-    SEARCH_BINDING *binding, char *text, int textlen);
-void maybe_build_dir_node (char *dirname);
+static void add_menu_to_file_buffer (), insert_text_into_fb_at_binding ();
 
 static char *dirs_to_add[] = {
   "dir", "localdir", (char *)NULL
@@ -44,12 +40,13 @@ static char *dirs_to_add[] = {
 
 typedef struct
 {
-  dev_t device;
-  ino_t inode;
+  unsigned long device;
+  unsigned long inode;
 } dir_file_list_entry_type;
 
 static int
-new_dir_file_p (struct stat *test)
+new_dir_file_p (test)
+    struct stat *test;
 {
   static unsigned dir_file_list_len = 0;
   static dir_file_list_entry_type *dir_file_list = NULL;
@@ -73,7 +70,8 @@ new_dir_file_p (struct stat *test)
 
 
 void
-maybe_build_dir_node (char *dirname)
+maybe_build_dir_node (dirname)
+     char *dirname;
 {
   int path_index, update_tags;
   char *this_dir;
@@ -127,7 +125,7 @@ maybe_build_dir_node (char *dirname)
           char *fullpath = xmalloc (3 + strlen (this_dir) + namelen);
           
           strcpy (fullpath, this_dir);
-          if (!IS_SLASH (fullpath[strlen (fullpath) - 1]))
+          if (fullpath[strlen (fullpath) - 1] != '/')
             strcat (fullpath, "/");
           strcat (fullpath, from_file);
 
@@ -137,9 +135,8 @@ maybe_build_dir_node (char *dirname)
           if (statable && S_ISREG (finfo.st_mode) && new_dir_file_p (&finfo))
             {
               long filesize;
-	      int compressed;
               char *contents = filesys_read_info_file (fullpath, &filesize,
-                                                       &finfo, &compressed);
+                                                       &finfo);
               if (contents)
                 {
                   update_tags++;
@@ -164,7 +161,10 @@ maybe_build_dir_node (char *dirname)
    to the menu found in FB->contents.  Second argument SIZE is the total
    size of CONTENTS. */
 static void
-add_menu_to_file_buffer (char *contents, long int size, FILE_BUFFER *fb)
+add_menu_to_file_buffer (contents, size, fb)
+     char *contents;
+     long size;
+     FILE_BUFFER *fb;
 {
   SEARCH_BINDING contents_binding, fb_binding;
   long contents_offset, fb_offset;
@@ -270,8 +270,11 @@ add_menu_to_file_buffer (char *contents, long int size, FILE_BUFFER *fb)
 }
 
 static void
-insert_text_into_fb_at_binding (FILE_BUFFER *fb,
-    SEARCH_BINDING *binding, char *text, int textlen)
+insert_text_into_fb_at_binding (fb, binding, text, textlen)
+     FILE_BUFFER *fb;
+     SEARCH_BINDING *binding;
+     char *text;
+     int textlen;
 {
   char *contents;
   long start, end;

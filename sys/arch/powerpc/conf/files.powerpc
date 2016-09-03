@@ -1,45 +1,102 @@
-#	$OpenBSD: files.powerpc,v 1.54 2016/03/05 17:41:55 mpi Exp $
 #
+# powerpc-specific configuration info
+#
+maxpartitions 16
 
-file	arch/powerpc/powerpc/setjmp.S			ddb
+maxusers 2 8 64
+
+file	arch/powerpc/powerpc/Locore.c
+file	arch/powerpc/powerpc/autoconf.c
+file	arch/powerpc/powerpc/bcopy.c
+file	arch/powerpc/powerpc/clock.c
+file	arch/powerpc/powerpc/conf.c
+file	arch/powerpc/powerpc/copyinstr.c
+file	arch/powerpc/powerpc/copyoutstr.c
 file	arch/powerpc/powerpc/copystr.c
-file	arch/powerpc/powerpc/cpu_subr.c
+file	arch/powerpc/powerpc/disksubr.c		disk
 file	arch/powerpc/powerpc/fpu.c
+file	arch/powerpc/powerpc/fubyte.c
+file	arch/powerpc/powerpc/fuswintr.c
 file	arch/powerpc/powerpc/in_cksum.c
-file	arch/powerpc/powerpc/bus_dma.c
-file	arch/powerpc/powerpc/bus_space.c
+file	arch/powerpc/powerpc/ipkdb_glue.c	ipkdb
+file	arch/powerpc/powerpc/machdep.c
+file	arch/powerpc/powerpc/mem.c
+file	arch/powerpc/powerpc/ofw_machdep.c
+file	arch/powerpc/powerpc/openfirm.c
 file	arch/powerpc/powerpc/pmap.c
 file	arch/powerpc/powerpc/process_machdep.c
+file	arch/powerpc/powerpc/subyte.c
+file	arch/powerpc/powerpc/suword.c
+file	arch/powerpc/powerpc/suswintr.c
 file	arch/powerpc/powerpc/sys_machdep.c
 file	arch/powerpc/powerpc/trap.c
 file	arch/powerpc/powerpc/vm_machdep.c
-file	arch/powerpc/powerpc/mutex.c
-file	arch/powerpc/powerpc/lock_machdep.c		multiprocessor
-file	arch/powerpc/powerpc/intr.c
-file	arch/powerpc/powerpc/softintr.c
+file	dev/cons.c
+file	dev/cninit.c
+file    arch/powerpc/powerpc/setjmp.S                   ddb
+file    arch/powerpc/powerpc/db_memrw.c                 ddb
+file    arch/powerpc/powerpc/db_disasm.c                ddb
+file    arch/powerpc/powerpc/db_interface.c             ddb
+file    arch/powerpc/powerpc/db_trace.c                 ddb
 
-file	arch/powerpc/ddb/db_memrw.c			ddb
-file	arch/powerpc/ddb/db_disasm.c			ddb
-file	arch/powerpc/ddb/db_trace.c			ddb
-file	arch/powerpc/ddb/db_interface.c			ddb
+file    arch/powerpc/powerpc/ofwreal.S
 
-# quad support is necessary for 32 bit architectures
-file	lib/libkern/adddi3.c
-file	lib/libkern/anddi3.c
-file	lib/libkern/ashldi3.c
-file	lib/libkern/ashrdi3.c
-file	lib/libkern/cmpdi2.c
-file	lib/libkern/divdi3.c
-file	lib/libkern/iordi3.c
-file	lib/libkern/lshldi3.c
-file	lib/libkern/lshrdi3.c
-file	lib/libkern/moddi3.c
-file	lib/libkern/muldi3.c
-file	lib/libkern/negdi2.c
-file	lib/libkern/notdi2.c
-file	lib/libkern/qdivrem.c
-file	lib/libkern/subdi3.c
-file	lib/libkern/ucmpdi2.c
-file	lib/libkern/udivdi3.c
-file	lib/libkern/umoddi3.c
-file	lib/libkern/xordi3.c
+#
+# Openfirmware support
+#
+
+define	mainbus {}
+device	mainbus
+attach	mainbus at root
+file	arch/powerpc/powerpc/mainbus.c	mainbus
+
+device	cpu
+attach	cpu at mainbus
+file	arch/powerpc/powerpc/cpu.c
+
+include "../../../dev/ofw/files.ofw"
+file	arch/powerpc/powerpc/opendev.c ofcons | ofnet | ofdisk | ofrtc
+major	{ ofdisk = 4 }
+
+pseudo-device rd
+file dev/ramdisk.c			rd needs-flag
+file arch/powerpc/powerpc/rd_root.c	ramdisk_hooks
+major   {rd = 17}
+
+include	"../../../dev/pci/files.pci"
+
+device	mpcpcibr {} : pcibus
+attach	mpcpcibr at mainbus
+file	arch/powerpc/pci/mpcpcibus.c	mpcpcibr
+
+device	isabr {} : isabus
+attach	isabr at mainbus, pci
+file	arch/powerpc/isa/isabus.c	isabr
+include "../../../scsi/files.scsi"
+major	{sd = 2}		# hey this was 0 but at slot 2 in bdevsw XXX
+major	{cd = 3}
+
+define	pcmcia {}			# XXX dummy decl...
+include	"../../../dev/isa/files.isa"
+major	{ wd = 5 }		# Not even in bdevsw XXX
+
+device	pckbc { } 
+attach	pckbc at isa
+file	arch/powerpc/isa/pcppi.c	pckbc
+
+device	pckbd
+attach	pckbd at pckbc
+file	arch/powerpc/isa/pckbd.c	pckbd
+
+device	pms
+attach	pms at pckbc
+file	arch/powerpc/isa/pms.c		pms
+
+include "../../../dev/isa/files.isapnp"
+file    arch/powerpc/isa/isapnp_machdep.c   isapnp   
+
+#
+# "wprkstation cpnsole" routines
+#
+
+include "dev/wscons/files.wscons"

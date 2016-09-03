@@ -1,4 +1,3 @@
-.\"	$OpenBSD: ttys.5,v 1.11 2008/10/22 22:16:16 mpf Exp $
 .\" Copyright (c) 1985, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -10,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,31 +30,30 @@
 .\" SUCH DAMAGE.
 .\"
 .\"     from: @(#)ttys.5	8.1 (Berkeley) 6/4/93
+.\"	$Id: ttys.5,v 1.4 1999/07/09 13:35:50 aaron Exp $
 .\"
-.Dd $Mdocdate: October 22 2008 $
+.Dd June 4, 1993
 .Dt TTYS 5
 .Os
 .Sh NAME
 .Nm ttys
 .Nd terminal initialization information
 .Sh DESCRIPTION
-The
-.Nm
-file contains information that is used by various routines to initialize
+The file
+.Nm ttys
+contains information that is used by various routines to initialize
 and control the use of terminal special files.
 This information is read with the
 .Xr getttyent 3
 library routines.
 There is one line in the
-.Nm
+.Nm ttys
 file per special device file.
 Fields are separated by tabs and/or spaces.
-Fields comprised of more than one word should be enclosed in double quotes
-.Pq Ql \&" .
+Fields comprised of more than one word should be enclosed in double
+quotes (``"'').
 Blank lines and comments may appear anywhere in the file; comments
-are delimited by hash marks
-.Pq Ql #
-and newlines.
+are delimited by hash marks (``#'') and new lines.
 Any unspecified fields will default to null.
 .Pp
 The first field is the
@@ -70,12 +72,13 @@ the start up for a window system terminal emulator or some other
 daemon process, and can contain multiple words if quoted.
 .Pp
 The third field is the type of terminal usually connected to that
-TTY line, normally the one found in the
+tty line, normally the one found in the
 .Xr termcap 5
-database file.
+data base file.
 The environment variable
 .Dv TERM
-is initialized with the value by either
+is initialized with the value by
+either
 .Xr getty 8
 or
 .Xr login 1 .
@@ -87,29 +90,24 @@ entry (see
 or specify a window system process that
 .Xr init 8
 will maintain for the terminal line.
-The following is a list of permitted flags for each TTY:
+The following is a list of permitted flags for each tty:
 .Bl -tag -width xxxxxxx
 .It Ar on
 Specify that
-.Xr init 8
+.Xr init
 should execute the command given in the second field.
 .It Ar off
 The opposite of on.
 .It Ar secure
-If
+if
 .Ar on
-is also specified, allows users with a UID of 0 to log in on this line.
-If set for the
-.Ar console
-entry, then
-.Xr init 8
-will start a single-user shell without asking for the superuser password.
+is also specified, allows users with a uid of 0 to login on
+this line.
 .El
 .Pp
 Additionally, the following flags modify the default behavior of
-the terminal line.
-Some of these flags may not be supported by a terminal line driver.
-The flag fields should not be quoted.
+the terminal line.  Some of these flags may not be supported by a
+terminal line driver.  The flag fields should not be quoted.
 .Bl -tag -width xxxxxxx
 .It Ar local
 Treat the line as if it is locally connected.
@@ -125,14 +123,10 @@ Ignore hardware carrier on the line.
 The string
 .Ar window=
 may be followed by a quoted command string which
-.Xr init 8
+.Xr init
 will execute
 .Em before
 starting the command specified by the second field.
-.Sh FILES
-.Bl -tag -width /etc/ttys -compact
-.It Pa /etc/ttys
-.El
 .Sh EXAMPLES
 .Bd -literal
 # root login on console at 1200 baud
@@ -149,6 +143,10 @@ ttyv0	"/usr/new/xterm -L :0"		vs100	on window="/usr/new/Xvs100 0"
 ttyp0	none	network
 ttyp1	none	network	off
 .Ed
+.Sh FILES
+.Bl -tag -width /etc/ttys -compact
+.It Pa /etc/ttys
+.El
 .Sh SEE ALSO
 .Xr login 1 ,
 .Xr getttyent 3 ,

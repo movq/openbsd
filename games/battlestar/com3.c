@@ -1,4 +1,4 @@
-/*	$OpenBSD: com3.c,v 1.14 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: com3.c,v 1.6 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: com3.c,v 1.3 1995/03/21 15:07:00 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,12 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)com3.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: com3.c,v 1.6 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
 void
-dig(void)
+dig()
 {
 	if (TestBit(inven, SHOVEL)) {
 		puts("OK");
@@ -59,7 +69,7 @@ dig(void)
 }
 
 int
-jump(void)
+jump()
 {
 	int     n;
 
@@ -78,7 +88,7 @@ jump(void)
 		position = 145;
 		break;
 	case 232:
-		position = FINAL;
+		position = 275;
 		break;
 	case 3:
 		position = 1;
@@ -99,13 +109,12 @@ jump(void)
 }
 
 void
-bury(void)
+bury()
 {
 	int     value;
 
 	if (TestBit(inven, SHOVEL)) {
-		while (wordtype[++wordnumber] != OBJECT && wordtype[wordnumber] != NOUNS && wordnumber <= wordcount)
-			;
+		while (wordtype[++wordnumber] != OBJECT && wordtype[wordnumber] != NOUNS && wordnumber < wordcount);
 		value = wordvalue[wordnumber];
 		if (wordtype[wordnumber] == NOUNS && (TestBit(location[position].objects, value) || value == BODY))
 			switch (value) {
@@ -162,7 +171,7 @@ bury(void)
 }
 
 void
-drink(void)
+drink()
 {
 	int     n;
 
@@ -182,27 +191,28 @@ drink(void)
 }
 
 int
-shoot(void)
+shoot()
 {
 	int     firstnumber, value;
+	int     n;
 
 	firstnumber = wordnumber;
 	if (!TestBit(inven, LASER))
 		puts("You aren't holding a blaster.");
 	else {
-		wordnumber++;
+		while(wordtype[++wordnumber] == ADJS);
 		while(wordnumber <= wordcount && wordtype[wordnumber] == OBJECT) {
 			value = wordvalue[wordnumber];
 			printf("%s:\n", objsht[value]);
+			for (n=0; objsht[value][n]; n++);
 			if (TestBit(location[position].objects, value)) {
 				ClearBit(location[position].objects, value);
 				ourtime++;
-				printf("The %s explode%s\n", objsht[value],
-				    (IS_PLURAL(value) ? "." : "s."));
+				printf("The %s explode%s\n", objsht[value], (objsht[value][n-1]=='s' ? (objsht[value][n-2]=='s' ? "s." : ".") : "s."));
 				if (value == BOMB)
 					die(0);
 			} else
-				printf("I don't see any %s around here.\n", objsht[value]);
+				printf("I dont see any %s around here.\n", objsht[value]);
 			if (wordnumber < wordcount - 1 && wordvalue[++wordnumber] == AND)
 				wordnumber++;
 			else
@@ -241,7 +251,6 @@ shoot(void)
 				break;
 
 			case NORMGOD:
-			case BATHGOD:
 				if (TestBit(location[position].objects, BATHGOD)) {
 					puts("The goddess is hit in the chest and splashes back against the rocks.");
 					puts("Dark blood oozes from the charred blast hole.  Her naked body floats in the");

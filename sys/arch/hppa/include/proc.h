@@ -1,4 +1,4 @@
-/*	$OpenBSD: proc.h,v 1.5 2011/11/08 15:39:50 kettenis Exp $	*/
+/*	$OpenBSD: proc.h,v 1.1 1998/07/07 21:32:44 mickey Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,15 +39,9 @@
  * Machine-dependent part of the proc structure for hppa.
  */
 struct mdproc {
-	struct trapframe *md_regs;	/* registers on current frame */
-	volatile int md_astpending;	/* AST pending for this process */
+	struct	trapframe *md_regs;	/* registers on current frame */
 	int	md_flags;		/* machine-dependent flags */
-
-	vaddr_t md_bpva;
-	u_int	md_bpsave[2];
 };
-
-#define __HAVE_MD_TCB
 
 /* md_flags */
 

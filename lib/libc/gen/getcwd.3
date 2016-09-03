@@ -1,4 +1,4 @@
-.\"	$OpenBSD: getcwd.3,v 1.16 2014/01/21 03:15:45 schwarze Exp $
+.\"	$OpenBSD: getcwd.3,v 1.7 1999/07/09 13:35:16 aaron Exp $
 .\"
 .\" Copyright (c) 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,7 +31,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: January 21 2014 $
+.Dd December 11, 1993
 .Dt GETCWD 3
 .Os
 .Sh NAME
@@ -35,7 +39,7 @@
 .Nm getwd
 .Nd get working directory pathname
 .Sh SYNOPSIS
-.In unistd.h
+.Fd #include <unistd.h>
 .Ft char *
 .Fn getcwd "char *buf" "size_t size"
 .Ft char *
@@ -68,14 +72,14 @@ is a compatibility routine which calls
 with its
 .Fa buf
 argument and a size of
-.Dv PATH_MAX
+.Dv MAXPATHLEN
 (as defined in the include
 file
-.In limits.h ) .
+.Aq Pa sys/param.h ) .
 Obviously,
 .Fa buf
 should be at least
-.Dv PATH_MAX
+.Dv MAXPATHLEN
 bytes in length.
 .Pp
 These routines have traditionally been used by programs to save the
@@ -100,7 +104,8 @@ into the memory referenced by
 .Sh ERRORS
 The
 .Fn getwd
-function will fail if:
+function
+will fail if:
 .Bl -tag -width Er
 .It Bq Er EACCES
 Read or search permission was denied for a component of the pathname.
@@ -119,7 +124,6 @@ argument is greater than zero but smaller than the length of the pathname
 plus 1.
 .El
 .Sh SEE ALSO
-.Xr pwd 1 ,
 .Xr chdir 2 ,
 .Xr fchdir 2 ,
 .Xr malloc 3 ,
@@ -127,23 +131,21 @@ plus 1.
 .Sh STANDARDS
 The
 .Fn getcwd
-function conforms to
-.St -p1003.1-2001 .
+function
+conforms to
+.St -ansiC .
 The ability to specify a null pointer and have
 .Fn getcwd
 allocate memory as necessary is an extension.
 .Sh HISTORY
 The
 .Fn getwd
-function first appeared in
-.Bx 4.0 ,
-and
-.Fn getcwd
-in
-.Bx 4.3 Net2 .
+function appeared in
+.Bx 4.0 .
 .Sh BUGS
 The
 .Fn getwd
-function does not do sufficient error checking and is not able to return very
+function
+does not do sufficient error checking and is not able to return very
 long, but valid, paths.
 It is provided for compatibility.

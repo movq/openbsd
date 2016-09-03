@@ -1,4 +1,4 @@
-/*	$OpenBSD: trpt.c,v 1.33 2016/08/27 01:50:07 guenther Exp $	*/
+/*	$OpenBSD: trpt.c,v 1.7 1998/07/08 22:13:32 deraadt Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -42,7 +49,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -59,14 +70,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+char copyright[] =
+"@(#) Copyright (c) 1983, 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+static char sccsid[] = "@(#)trpt.c	8.1 (Berkeley) 6/6/93";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/queue.h>
-#include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/socketvar.h>
 #define PRUREQUESTS
 #include <sys/protosw.h>
-#define _KERNEL
-#include <sys/timeout.h>		/* to get timeout_pending() and such */
-#undef _KERNEL
 #include <sys/file.h>
 
 #include <net/route.h>
@@ -101,15 +120,12 @@
 #include <unistd.h>
 
 struct nlist nl[] = {
-#define	N_TCP_DEBUG	0		/* no sysctl */
+#define	N_TCP_DEBUG	0
 	{ "_tcp_debug" },
-#define	N_TCP_DEBX	1		/* no sysctl */
+#define	N_TCP_DEBX	1
 	{ "_tcp_debx" },
 	{ NULL },
 };
-
-int	tcp_debx;
-struct	tcp_debug tcp_debug[TCP_NDEBUG];
 
 static caddr_t tcp_pcbs[TCP_NDEBUG];
 static n_time ntime;
@@ -117,57 +133,59 @@ static int aflag, follow, sflag, tflag;
 
 extern	char *__progname;
 
-void	dotrace(caddr_t);
-void	tcp_trace(short, short, struct tcpcb *, struct tcpiphdr *,
-	    struct tcpipv6hdr *, int);
-int	numeric(const void *, const void *);
-void	usage(void);
+int	main __P((int, char *[]));
+void	dotrace __P((caddr_t));
+void	tcp_trace __P((short, short, struct tcpcb *, struct tcpcb *,
+	    struct tcpiphdr *, int));
+int	numeric __P((const void *, const void *));
+void	usage __P((void));
 
 kvm_t	*kd;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	char *sys = NULL, *core = NULL, *cp, errbuf[_POSIX2_LINE_MAX];
-	int ch, i, jflag = 0, npcbs = 0;
-	unsigned long l;
-	gid_t gid;
+	int ch, i, jflag, npcbs;
+	char *system, *core, *cp, errbuf[_POSIX2_LINE_MAX];
 
-	while ((ch = getopt(argc, argv, "afjM:N:p:st")) != -1) {
+	system = core = NULL;
+
+	jflag = npcbs = 0;
+	while ((ch = getopt(argc, argv, "afjp:st")) != -1) {
 		switch (ch) {
 		case 'a':
-			aflag = 1;
+			++aflag;
 			break;
 		case 'f':
-			follow = 1;
-			setvbuf(stdout, NULL, _IOLBF, 0);
+			++follow;
+			setlinebuf(stdout);
 			break;
 		case 'j':
-			jflag = 1;
+			++jflag;
 			break;
 		case 'p':
 			if (npcbs >= TCP_NDEBUG)
 				errx(1, "too many pcbs specified");
 			errno = 0;
-			l = strtoul(optarg, &cp, 16);
-			tcp_pcbs[npcbs] = (caddr_t)l;
-			if (*optarg == '\0' || *cp != '\0' || errno ||
-			    (unsigned long)tcp_pcbs[npcbs] != l)
+			tcp_pcbs[npcbs++] = (caddr_t)strtoul(optarg, &cp, 16);
+			if (*cp != '\0' || errno == ERANGE)
 				errx(1, "invalid address: %s", optarg);
-			npcbs++;
 			break;
 		case 's':
-			sflag = 1;
+			++sflag;
 			break;
 		case 't':
-			tflag = 1;
+			++tflag;
 			break;
 		case 'N':
-			sys = optarg;
+			system = optarg;
 			break;
 		case 'M':
 			core = optarg;
 			break;
+		case '?':
 		default:
 			usage();
 			/* NOTREACHED */
@@ -183,24 +201,20 @@ main(int argc, char *argv[])
 	 * Discard setgid privileged if not the running kernel so that bad
 	 * guys can't print interesting stuff from kernel memory.
 	 */
-	gid = getgid();
-	if (core != NULL || sys != NULL)
-		if (setresgid(gid, gid, gid) == -1)
-			err(1, "setresgid");
+	if (core != NULL || system != NULL) {
+		setegid(getgid());
+		setgid(getgid());
+	}
 
-	kd = kvm_openfiles(sys, core, NULL, O_RDONLY, errbuf);
+	kd = kvm_openfiles(system, core, NULL, O_RDONLY, errbuf);
 	if (kd == NULL)
 		errx(1, "can't open kmem: %s", errbuf);
 
-	if (core == NULL && sys == NULL)
-		if (setresgid(gid, gid, gid) == -1)
-			err(1, "setresgid");
+	setegid(getgid());
+	setgid(getgid());
 
 	if (kvm_nlist(kd, nl))
-		errx(2, "%s: no namelist", sys ? sys : _PATH_UNIX);
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+		errx(2, "%s: no namelist", system ? system : _PATH_UNIX);
 
 	if (kvm_read(kd, nl[N_TCP_DEBX].n_value, (char *)&tcp_debx,
 	    sizeof(tcp_debx)) != sizeof(tcp_debx))
@@ -251,7 +265,8 @@ main(int argc, char *argv[])
 }
 
 void
-dotrace(caddr_t tcpcb)
+dotrace(tcpcb)
+	caddr_t tcpcb;
 {
 	struct tcp_debug *td;
 	int prev_debx = tcp_debx;
@@ -266,8 +281,8 @@ dotrace(caddr_t tcpcb)
 			continue;
 		ntime = ntohl(td->td_time);
 		tcp_trace(td->td_act, td->td_ostate,
-		    &td->td_cb, &td->td_ti,
-		    &td->td_ti6, td->td_req);
+		    (struct tcpcb *)td->td_tcb, &td->td_cb, &td->td_ti,
+		    td->td_req);
 		if (i == tcp_debx)
 			goto done;
 	}
@@ -277,8 +292,8 @@ dotrace(caddr_t tcpcb)
 			continue;
 		ntime = ntohl(td->td_time);
 		tcp_trace(td->td_act, td->td_ostate,
-		    &td->td_cb, &td->td_ti,
-		    &td->td_ti6, td->td_req);
+		    (struct tcpcb *)td->td_tcb, &td->td_cb, &td->td_ti,
+		    td->td_req);
 	}
  done:
 	if (follow) {
@@ -306,18 +321,14 @@ dotrace(caddr_t tcpcb)
  */
 /*ARGSUSED*/
 void
-tcp_trace(short act, short ostate, struct tcpcb *tp,
-    struct tcpiphdr *ti, struct tcpipv6hdr *ti6, int req)
+tcp_trace(act, ostate, atp, tp, ti, req)
+	short act, ostate;
+	struct tcpcb *atp, *tp;
+	struct tcpiphdr *ti;
+	int req;
 {
 	tcp_seq seq, ack;
 	int flags, len, win, timer;
-	struct tcphdr *th;
-	char hbuf[INET6_ADDRSTRLEN];
-
-	if (ti->ti_src.s_addr)
-		th = &ti->ti_t;
-	else
-		th = &ti6->ti6_t;
 
 	printf("%03d %s:%s ", (ntime/10) % 1000, tcpstates[ostate],
 	    tanames[act]);
@@ -326,32 +337,23 @@ tcp_trace(short act, short ostate, struct tcpcb *tp,
 	case TA_OUTPUT:
 	case TA_DROP:
 		if (aflag) {
-			if (ti->ti_src.s_addr) {
-				printf("(src=%s,%u, ",
-				    inet_ntoa(ti->ti_src), ntohs(ti->ti_sport));
-				printf("dst=%s,%u)",
-				    inet_ntoa(ti->ti_dst), ntohs(ti->ti_dport));
-			} else {
-				printf("(src=%s,%u, ",
-				    inet_ntop(AF_INET6, &ti6->ti6_src,
-				    hbuf, sizeof(hbuf)), ntohs(ti->ti_sport));
-				printf("dst=%s,%u)",
-				    inet_ntop(AF_INET6, &ti6->ti6_dst,
-				    hbuf, sizeof(hbuf)), ntohs(ti->ti_dport));
-			}
+			printf("(src=%s,%u, ",
+			    inet_ntoa(ti->ti_src), ntohs(ti->ti_sport));
+			printf("dst=%s,%u)",
+			    inet_ntoa(ti->ti_dst), ntohs(ti->ti_dport));
 		}
-		seq = th->th_seq;
-		ack = th->th_ack;
-		if (ti->ti_src.s_addr)
-			len = ti->ti_len;
-		else
-			len = ti6->ti6_plen;	/*XXX intermediate header*/
-		win = th->th_win;
+		seq = ti->ti_seq;
+		ack = ti->ti_ack;
+		len = ti->ti_len;
+		win = ti->ti_win;
 		if (act == TA_OUTPUT) {
 			NTOHL(seq);
 			NTOHL(ack);
+			NTOHS(len);
 			NTOHS(win);
 		}
+		if (act == TA_OUTPUT)
+			len -= sizeof(struct tcphdr);
 		if (len)
 			printf("[%x..%x)", seq, seq + len);
 		else
@@ -359,11 +361,11 @@ tcp_trace(short act, short ostate, struct tcpcb *tp,
 		printf("@%x", ack);
 		if (win)
 			printf("(win=%x)", win);
-		flags = th->th_flags;
+		flags = ti->ti_flags;
 		if (flags) {
-			char *cp = "<";
+			register char *cp = "<";
 #define	pf(flag, string) { \
-	if (th->th_flags & flag) { \
+	if (ti->ti_flags&flag) { \
 		(void)printf("%s%s", cp, string); \
 		cp = ","; \
 	} \
@@ -397,14 +399,13 @@ tcp_trace(short act, short ostate, struct tcpcb *tp,
 	}
 	/* print out timers? */
 	if (tflag) {
-		char *cp = "\t";
-		int i;
+		register char *cp = "\t";
+		register int i;
 
 		for (i = 0; i < TCPT_NTIMERS; i++) {
-			if (timeout_pending(&tp->t_timer[i]))
+			if (tp->t_timer[i] == 0)
 				continue;
-			printf("%s%s=%d", cp, tcptimers[i],
-			    tp->t_timer[i].to_time);
+			printf("%s%s=%d", cp, tcptimers[i], tp->t_timer[i]);
 			if (i == TCPT_REXMT)
 				printf(" (t_rxtshft=%d)", tp->t_rxtshift);
 			cp = ", ";
@@ -415,7 +416,8 @@ tcp_trace(short act, short ostate, struct tcpcb *tp,
 }
 
 int
-numeric(const void *v1, const void *v2)
+numeric(v1, v2)
+	const void *v1, *v2;
 {
 	const caddr_t *c1 = v1;
 	const caddr_t *c2 = v2;
@@ -432,10 +434,10 @@ numeric(const void *v1, const void *v2)
 }
 
 void
-usage(void)
+usage()
 {
 
-	(void) fprintf(stderr, "usage: %s [-afjst] [-M core]"
-	    " [-N system] [-p hex-address]\n", __progname);
+	(void) fprintf(stderr, "usage: %s [-afjst] [-p hex-address]"
+	    " [-N system] [-M core]\n", __progname);
 	exit(1);
 }

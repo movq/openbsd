@@ -1,4 +1,4 @@
-/*	$OpenBSD: vm86.h,v 1.10 2011/06/25 19:20:41 jsg Exp $	*/
+/*	$OpenBSD: vm86.h,v 1.7 1996/05/30 09:30:11 deraadt Exp $	*/
 /*	$NetBSD: vm86.h,v 1.8 1996/05/03 19:26:32 christos Exp $	*/
 
 #undef	VM86_USE_VIF
@@ -18,6 +18,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -74,15 +81,15 @@ struct vm86_struct {
 #define VCPU_586		5
 
 #ifdef _KERNEL
-int i386_vm86(struct proc *, char *, register_t *);
-void vm86_gpfault(struct proc *, int);
-void vm86_return(struct proc *, int);
-static __inline void clr_vif(struct proc *);
-static __inline void set_vif(struct proc *);
-static __inline void set_vflags(struct proc *, int);
-static __inline int get_vflags(struct proc *);
-static __inline void set_vflags_short(struct proc *, int);
-static __inline int get_vflags_short(struct proc *);
+int i386_vm86 __P((struct proc *, char *, register_t *));
+void vm86_gpfault __P((struct proc *, int));
+void vm86_return __P((struct proc *, int));
+static __inline void clr_vif __P((struct proc *));
+static __inline void set_vif __P((struct proc *));
+static __inline void set_vflags __P((struct proc *, int));
+static __inline int get_vflags __P((struct proc *));
+static __inline void set_vflags_short __P((struct proc *, int));
+static __inline int get_vflags_short __P((struct proc *));
 
 static __inline void
 clr_vif(p)
@@ -98,7 +105,8 @@ clr_vif(p)
 }
 
 static __inline void
-set_vif(struct proc *p)
+set_vif(p)
+	struct proc *p;
 {
 	struct pcb *pcb = &p->p_addr->u_pcb;
 
@@ -113,7 +121,9 @@ set_vif(struct proc *p)
 }
 
 static __inline void
-set_vflags(struct proc *p, int flags)
+set_vflags(p, flags)
+	struct proc *p;
+	int flags;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	struct pcb *pcb = &p->p_addr->u_pcb;
@@ -130,7 +140,8 @@ set_vflags(struct proc *p, int flags)
 }
 
 static __inline int
-get_vflags(struct proc *p)
+get_vflags(p)
+	struct proc *p;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	struct pcb *pcb = &p->p_addr->u_pcb;
@@ -142,7 +153,9 @@ get_vflags(struct proc *p)
 }
 
 static __inline void
-set_vflags_short(struct proc *p, int flags)
+set_vflags_short(p, flags)
+	struct proc *p;
+	int flags;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	struct pcb *pcb = &p->p_addr->u_pcb;
@@ -157,7 +170,8 @@ set_vflags_short(struct proc *p, int flags)
 }
 
 static __inline int
-get_vflags_short(struct proc *p)
+get_vflags_short(p)
+	struct proc *p;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	struct pcb *pcb = &p->p_addr->u_pcb;
@@ -168,5 +182,5 @@ get_vflags_short(struct proc *p)
 	return (flags);
 }
 #else
-int i386_vm86(struct vm86_struct *vmcp);
+int i386_vm86 __P((struct vm86_struct *vmcp));
 #endif

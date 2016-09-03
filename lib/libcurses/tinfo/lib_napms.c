@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_napms.c,v 1.8 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_napms.c,v 1.2 1999/06/06 15:55:17 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,44 +33,60 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
 /*
  *	lib_napms.c
  *
  *	The routine napms.
  *
- *	(This file was originally written by Eric Raymond; however except for
- *	comments, none of the original code remains - T.Dickey).
  */
 
 #include <curses.priv.h>
 
 #if HAVE_NANOSLEEP
 #include <time.h>
+#elif USE_FUNC_POLL
+#include <stropts.h>
+#include <poll.h>
 #if HAVE_SYS_TIME_H
-#include <sys/time.h>		/* needed for MacOS X DP3 */
+#include <sys/time.h>
+#endif
+#elif HAVE_SELECT
+#if HAVE_SYS_TIME_H && HAVE_SYS_TIME_SELECT
+#include <sys/time.h>
+#endif
+#if HAVE_SYS_SELECT_H
+#include <sys/select.h>
 #endif
 #endif
 
-MODULE_ID("$Id: lib_napms.c,v 1.8 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_napms.c,v 1.5 1999/06/06 00:42:47 R.Lindsay.Todd Exp $")
 
-NCURSES_EXPORT(int)
-napms(int ms)
+int napms(int ms)
 {
-    T((T_CALLED("napms(%d)"), ms));
+	T((T_CALLED("napms(%d)"), ms));
 
 #if HAVE_NANOSLEEP
-    {
-	struct timespec request, remaining;
-	request.tv_sec = ms / 1000;
-	request.tv_nsec = (ms % 1000) * 1000000;
-	while (nanosleep(&request, &remaining) == -1
-	       && errno == EINTR) {
-	    request = remaining;
+	{
+		struct timespec ts;
+		ts.tv_sec = ms / 1000;
+		ts.tv_nsec = (ms % 1000) * 1000000;
+		nanosleep(&ts, NULL);
 	}
-    }
-#else
-    _nc_timed_wait(0, 0, ms, (int *) 0 EVENTLIST_2nd(0));
+#elif HAVE_USLEEP
+	usleep(1000*(unsigned)ms);
+#elif USE_FUNC_POLL
+	{
+		struct pollfd fds[1];
+		poll(fds, 0, ms);
+	}
+#elif HAVE_SELECT
+	{
+		struct timeval tval;
+		tval.tv_sec = ms / 1000;
+		tval.tv_usec = (ms % 1000) * 1000;
+		select(0, NULL, NULL, NULL, &tval);
+	}
 #endif
-
-    returnCode(OK);
+	returnCode(OK);
 }

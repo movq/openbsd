@@ -1,19 +1,19 @@
 package Opcode;
 
-use 5.006_001;
+require 5.002;
+
+use vars qw($VERSION $XS_VERSION @ISA @EXPORT_OK);
+
+$VERSION = "1.04";
+$XS_VERSION = "1.03";
 
 use strict;
-
-our($VERSION, @ISA, @EXPORT_OK);
-
-$VERSION = "1.27";
-
 use Carp;
 use Exporter ();
-use XSLoader;
+use DynaLoader ();
+@ISA = qw(Exporter DynaLoader);
 
 BEGIN {
-    @ISA = qw(Exporter);
     @EXPORT_OK = qw(
 	opset ops_to_opset
 	opset_to_ops opset_to_hex invert_opset
@@ -28,7 +28,7 @@ sub opset_to_hex ($);
 sub opdump (;$);
 use subs @EXPORT_OK;
 
-XSLoader::load();
+bootstrap Opcode $XS_VERSION;
 
 _init_optags();
 
@@ -65,7 +65,7 @@ sub _init_optags {
 
 	# Split into lines, keep only indented lines
 	my @lines = grep { m/^\s/    } split(/\n/);
-	foreach (@lines) { s/(?:\t|--).*//  } # delete comments
+	foreach (@lines) { s/--.*//  } # delete comments
 	my @ops   = map  { split ' ' } @lines; # get op words
 
 	foreach(@ops) {
@@ -130,7 +130,7 @@ Your mileage will vary. If in any doubt B<do not use it>.
 =head1 Operator Names and Operator Lists
 
 The canonical list of operator names is the contents of the array
-PL_op_name defined and initialised in file F<opcode.h> of the Perl
+op_name defined and initialised in file F<opcode.h> of the Perl
 source distribution (and installed into the perl library).
 
 Each operator has both a terse name (its opname) and a more verbose or
@@ -163,7 +163,7 @@ accumulated set of ops at that point.
 
 =item an operator set (opset)
 
-An I<opset> as a binary string of approximately 44 bytes which holds a
+An I<opset> as a binary string of approximately 43 bytes which holds a
 set or zero or more operators.
 
 The opset and opset_to_ops functions can be used to convert from
@@ -185,7 +185,7 @@ tags and sets. All are available for export by the package.
 =item opcodes
 
 In a scalar context opcodes returns the number of opcodes in this
-version of perl (around 350 for perl-5.7.0).
+version of perl (around 340 for perl5.002).
 
 In a list context it returns a list of all the operator names.
 (Not yet implemented, use @names = opset_to_ops(full_opset).)
@@ -288,8 +288,8 @@ invert_opset function.
 
 =head1 TO DO (maybe)
 
-    $bool = opset_eq($opset1, $opset2)	true if opsets are logically
-					equivalent
+    $bool = opset_eq($opset1, $opset2)	true if opsets are logically eqiv
+
     $yes = opset_can($opset, @ops)	true if $opset has all @ops set
 
     @diff = opset_diff($opset1, $opset2) => ('foo', '!bar', ...)
@@ -308,15 +308,13 @@ invert_opset function.
 
     rv2sv sassign
 
-    rv2av aassign aelem aelemfast aelemfast_lex aslice kvaslice
-    av2arylen
+    rv2av aassign aelem aelemfast aslice av2arylen
 
-    rv2hv helem hslice kvhslice each values keys exists delete
-    aeach akeys avalues reach rvalues rkeys
+    rv2hv helem hslice each values keys exists delete
 
-    preinc i_preinc predec i_predec postinc i_postinc
-    postdec i_postdec int hex oct abs pow multiply i_multiply
-    divide i_divide modulo i_modulo add i_add subtract i_subtract
+    preinc i_preinc predec i_predec postinc i_postinc postdec i_postdec
+    int hex oct abs pow multiply i_multiply divide i_divide
+    modulo i_modulo add i_add subtract i_subtract
 
     left_shift right_shift bit_and bit_xor bit_or negate i_negate
     not complement
@@ -326,24 +324,21 @@ invert_opset function.
 
     substr vec stringify study pos length index rindex ord chr
 
-    ucfirst lcfirst uc lc fc quotemeta trans transr chop schop
-    chomp schomp
+    ucfirst lcfirst uc lc quotemeta trans chop schop chomp schomp
 
     match split qr
 
     list lslice splice push pop shift unshift reverse
 
-    cond_expr flip flop andassign orassign dorassign and or dor xor
+    cond_expr flip flop andassign orassign and or xor
 
-    warn die lineseq nextstate scope enter leave
+    warn die lineseq nextstate unstack scope enter leave
 
-    rv2cv anoncode prototype coreargs
+    rv2cv anoncode prototype
 
-    entersub leavesub leavesublv return method method_named
-     -- XXX loops via recursion?
+    entersub leavesub return method -- XXX loops via recursion?
 
-    leaveeval -- needed for Safe to operate, is safe
-		 without entereval
+    leaveeval -- needed for Safe to operate, is safe without entereval
 
 =item :base_mem
 
@@ -355,7 +350,7 @@ available memory).
 
     anonlist anonhash
 
-Note that despite the existence of this optag a memory resource attack
+Note that despite the existance of this optag a memory resource attack
 may still be possible using only :base_core ops.
 
 Disabling these ops is a I<very> heavy handed way to attempt to prevent
@@ -370,7 +365,7 @@ used to implement a resource attack (e.g., consume all available CPU time).
     grepstart grepwhile
     mapstart mapwhile
     enteriter iter
-    enterloop leaveloop unstack
+    enterloop leaveloop
     last next redo
     goto
 
@@ -378,15 +373,14 @@ used to implement a resource attack (e.g., consume all available CPU time).
 
 These ops enable I<filehandle> (rather than filename) based input and
 output. These are safe on the assumption that only pre-existing
-filehandles are available for use.  Usually, to create new filehandles
-other ops such as open would need to be enabled, if you don't take into
-account the magical open of ARGV.
+filehandles are available for use.  To create new filehandles other ops
+such as open would need to be enabled.
 
     readline rcatline getc read
 
     formline enterwrite leavewrite
 
-    print say sysread syswrite send recv
+    print sysread syswrite send recv
 
     eof tell seek sysseek
 
@@ -398,14 +392,11 @@ These are a hotchpotch of opcodes still waiting to be considered
 
     gvsv gv gelem
 
-    padsv padav padhv padcv padany padrange introcv clonecv
-
-    once
+    padsv padav padhv padany
 
     rv2gv refgen srefgen ref
 
-    bless -- could be used to change ownership of objects
-	     (reblessing)
+    bless -- could be used to change ownership of objects (reblessing)
 
     pushre regcmaybe regcreset regcomp subst substcont
 
@@ -419,17 +410,9 @@ These are a hotchpotch of opcodes still waiting to be considered
     sselect select
     pipe_op sockpair
 
-    getppid getpgrp setpgrp getpriority setpriority
-    localtime gmtime
+    getppid getpgrp setpgrp getpriority setpriority localtime gmtime
 
     entertry leavetry -- can be used to 'hide' fatal errors
-
-    entergiven leavegiven
-    enterwhen leavewhen
-    break continue
-    smartmatch
-
-    custom -- where should this go
 
 =item :base_math
 
@@ -448,28 +431,26 @@ beyond the scope of the compartment.
 
 These ops are related to multi-threading.
 
-    lock
+    lock threadsv
 
 =item :default
 
 A handy tag name for a I<reasonable> default set of ops.  (The current ops
 allowed are unstable while development continues. It will change.)
 
-    :base_core :base_mem :base_loop :base_orig :base_thread
-
-This list used to contain :base_io prior to Opcode 1.07.
+    :base_core :base_mem :base_loop :base_io :base_orig :base_thread
 
 If safety matters to you (and why else would you be using the Opcode module?)
 then you should not rely on the definition of this, or indeed any other, optag!
+
 
 =item :filesys_read
 
     stat lstat readlink
 
-    ftatime ftblk ftchr ftctime ftdir fteexec fteowned
-    fteread ftewrite ftfile ftis ftlink ftmtime ftpipe
-    ftrexec ftrowned ftrread ftsgid ftsize ftsock ftsuid
-    fttty ftzero ftrwrite ftsvtx
+    ftatime ftblk ftchr ftctime ftdir fteexec fteowned fteread
+    ftewrite ftfile ftis ftlink ftmtime ftpipe ftrexec ftrowned
+    ftrread ftsgid ftsize ftsock ftsuid fttty ftzero ftrwrite ftsvtx
 
     fttext ftbinary
 
@@ -513,8 +494,7 @@ information about your system but not be able to change it.
 
     utime chmod chown
 
-    fcntl -- not strictly filesys related, but possibly as
-	     dangerous?
+    fcntl -- not strictly filesys related, but possibly as dangerous?
 
 =item :subprocess
 
@@ -545,14 +525,6 @@ SystemV Interprocess Communications:
 
     shmctl shmget shmread shmwrite
 
-=item :load
-
-This tag holds opcodes related to loading modules and getting information
-about calling environment and args.
-
-    require dofile 
-    caller runcv
-
 =item :still_to_be_decided
 
     chdir
@@ -566,9 +538,10 @@ about calling environment and args.
     tied -- can be used to access object implementing a tie
     pack unpack -- can be used to create/use memory pointers
 
-    hintseval -- constant op holding eval hints
-
     entereval -- can be used to hide code from initial compile
+    require dofile 
+
+    caller -- get info about calling environment and args
 
     reset
 
@@ -577,17 +550,18 @@ about calling environment and args.
 =item :dangerous
 
 This tag is simply a bucket for opcodes that are unlikely to be used via
-a tag name but need to be tagged for completeness and documentation.
+a tag name but need to be tagged for completness and documentation.
 
     syscall dump chroot
+
 
 =back
 
 =head1 SEE ALSO
 
-L<ops> -- perl pragma interface to Opcode module.
+ops(3) -- perl pragma interface to Opcode module.
 
-L<Safe> -- Opcode and namespace limited execution compartments
+Safe(3) -- Opcode and namespace limited execution compartments
 
 =head1 AUTHORS
 

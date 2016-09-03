@@ -1,4 +1,4 @@
-/*	$OpenBSD: move.c,v 1.17 2016/01/08 18:09:59 mestre Exp $	*/
+/*	$OpenBSD: move.c,v 1.6 1999/09/30 03:23:59 pjanzen Exp $	*/
 /*	$NetBSD: move.c,v 1.4 1995/03/24 05:01:57 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,21 +34,30 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#ifdef DEBUG
-#include <err.h>
-#include <limits.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)move.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: move.c,v 1.6 1999/09/30 03:23:59 pjanzen Exp $";
 #endif
-#include <string.h>
+#endif /* not lint */
 
-#include "mille.h"
+#ifdef DEBUG
+#include <sys/param.h>
+#endif
+
+#include <termios.h>
+#include	"mille.h"
 
 /*
  * @(#)move.c	1.2 (Berkeley) 3/28/83
  */
 
+#undef	CTRL
+#define	CTRL(c)		(c - 'A' + 1)
+
 void
-domove(void)
+domove()
 {
 	PLAY	*pp;
 	int	i, j;
@@ -66,7 +79,7 @@ domove(void)
 				else
 					error("no card there");
 			} else {
-				if (is_safety(pp->hand[Card_no])) {
+				if (issafety(pp->hand[Card_no])) {
 					error("discard a safety?");
 					goodplay = FALSE;
 					break;
@@ -99,7 +112,7 @@ domove(void)
 acc:
 			if (Play == COMP) {
 				account(*Topcard);
-				if (is_safety(*Topcard))
+				if (issafety(*Topcard))
 					pp->safety[*Topcard-S_CONV] = S_IN_HAND;
 			}
 			if (pp->hand[1] == C_INIT && Topcard > Deck) {
@@ -129,11 +142,11 @@ acc:
 	else
 		for (i = 1; i < HAND_SZ; i++)
 			if (pp->hand[i] == C_INIT) {
-				for (j = 0; (j < HAND_SZ) &&
-					 (pp->hand[j] == C_INIT); j++)
-					;	
-				if (j == HAND_SZ)
-					j = 0;
+				for (j = 0; pp->hand[j] == C_INIT; j++)
+					if (j >= HAND_SZ) {
+						j = 0;
+						break;
+					}
 				pp->hand[i] = pp->hand[j];
 				pp->hand[j] = C_INIT;
 			}
@@ -148,7 +161,7 @@ acc:
  * the game is over
  */
 void
-check_go(void)
+check_go()
 {
 	CARD	card;
 	PLAY	*pp, *op;
@@ -158,11 +171,11 @@ check_go(void)
 		op = (pp == &Player[COMP] ? &Player[PLAYER] : &Player[COMP]);
 		for (i = 0; i < HAND_SZ; i++) {
 			card = pp->hand[i];
-			if (is_safety(card) || canplay(pp, op, card)) {
+			if (issafety(card) || canplay(pp, op, card)) {
 #ifdef DEBUG
 				if (Debug) {
 					fprintf(outf, "CHECK_GO: can play %s (%d), ", C_name[card], card);
-					fprintf(outf, "is_safety(card) = %d, ", is_safety(card));
+					fprintf(outf, "issafety(card) = %d, ", issafety(card));
 					fprintf(outf, "canplay(pp, op, card) = %d\n", canplay(pp, op, card));
 				}
 #endif
@@ -179,7 +192,8 @@ check_go(void)
 }
 
 int
-playcard(PLAY *pp)
+playcard(pp)
+	PLAY	*pp;
 {
 	int	v;
 	CARD	card;
@@ -234,7 +248,7 @@ mustpick:
 
 	  case C_GO:
 		if (pp->battle != C_INIT && pp->battle != C_STOP
-		    && !is_repair(pp->battle))
+		    && !isrepair(pp->battle))
 			return error("cannot play \"Go\" on a \"%s\"",
 			    C_name[pp->battle]);
 		if (pp->safety[S_RIGHT_WAY] == S_PLAYED)
@@ -276,13 +290,21 @@ protected:
 
 	  case C_GAS_SAFE:	case C_SPARE_SAFE:
 	  case C_DRIVE_SAFE:	case C_RIGHT_WAY:
-		if ((pp->new_battle && pp->battle == opposite(card))
-		    || (pp->new_speed && card == C_RIGHT_WAY)) {
-			/* coup fourre */
-			pp->coups[card - S_CONV] = TRUE;
-			pp->total += SC_COUP;
-			pp->hand_tot += SC_COUP;
-			pp->coupscore += SC_COUP;
+		if (pp->battle == opposite(card)
+		    || (card == C_RIGHT_WAY && pp->speed == C_LIMIT)) {
+			if (!(card == C_RIGHT_WAY && !isrepair(pp->battle))) {
+				pp->battle = C_GO;
+				pp->can_go = TRUE;
+			}
+			if (card == C_RIGHT_WAY && pp->speed == C_LIMIT)
+				pp->speed = C_INIT;
+			if (pp->new_battle
+			    || (pp->new_speed && card == C_RIGHT_WAY)) {
+				pp->coups[card - S_CONV] = TRUE;
+				pp->total += SC_COUP;
+				pp->hand_tot += SC_COUP;
+				pp->coupscore += SC_COUP;
+			}
 		}
 		/*
 		 * if not coup, must pick first
@@ -296,15 +318,14 @@ protected:
 			pp->total += SC_ALL_SAFE;
 			pp->hand_tot += SC_ALL_SAFE;
 		}
-		if (pp->battle == opposite(card)) {
-			pp->battle = C_GO;
-			pp->can_go = TRUE;
-		}
 		if (card == C_RIGHT_WAY) {
 			if (pp->speed == C_LIMIT)
 				pp->speed = C_INIT;
-			if (pp->battle == C_STOP || pp->battle == C_INIT ||
-			    (!pp->can_go && is_repair(pp->battle))) {
+			if (pp->battle == C_STOP || pp->battle == C_INIT) {
+				pp->can_go = TRUE;
+				pp->battle = C_GO;
+			}
+			if (!pp->can_go && isrepair(pp->battle)) {
 				pp->can_go = TRUE;
 				pp->battle = C_GO;
 			}
@@ -325,7 +346,7 @@ protected:
 }
 
 void
-getmove(void)
+getmove()
 {
 	char	c;
 #ifdef DEBUG
@@ -346,9 +367,9 @@ getmove(void)
 		refresh();
 		while ((c = readch()) == killchar() || c == erasechar())
 			continue;
-		if (islower((unsigned char)c))
-			c = toupper((unsigned char)c);
-		if (isprint((unsigned char)c) && !isspace((unsigned char)c)) {
+		if (islower(c))
+			c = toupper(c);
+		if (isprint(c) && !isspace(c)) {
 			addch(c);
 			refresh();
 		}
@@ -415,7 +436,7 @@ getmove(void)
 #ifdef DEBUG
 		  case 'Z':		/* Debug code */
 			if (!Debug && outf == NULL) {
-				char	buf[PATH_MAX];
+				char	buf[MAXPATHLEN];
 over:
 				prompt(FILEPROMPT);
 				leaveok(Board, FALSE);
@@ -443,7 +464,7 @@ over:
 				leaveok(Board, TRUE);
 				if ((outf = fopen(buf, "w")) == NULL)
 					warn("%s", buf);
-				setvbuf(outf, NULL, _IONBF, 0);
+				setbuf(outf, (char *)NULL);
 			}
 			Debug = !Debug;
 			break;
@@ -461,7 +482,8 @@ ret:
  * return whether or not the player has picked
  */
 int
-haspicked(const PLAY *pp)
+haspicked(pp)
+	const PLAY	*pp;
 {
 	int	card;
 
@@ -480,7 +502,8 @@ haspicked(const PLAY *pp)
 }
 
 void
-account(CARD card)
+account(card)
+	CARD	card;
 {
 	CARD	oppos;
 
@@ -505,7 +528,8 @@ account(CARD card)
 }
 
 void
-prompt(int promptno)
+prompt(promptno)
+	int	promptno;
 {
 	static const char	*const names[] = {
 				">>:Move:",
@@ -536,7 +560,8 @@ prompt(int promptno)
 }
 
 void
-sort(CARD *hand)
+sort(hand)
+	CARD	*hand;
 {
 	CARD	*cp, *tp;
 	CARD	temp;

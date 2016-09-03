@@ -1,81 +1,73 @@
 /* Sysroff object format dumper.
-   Copyright 1994, 1995, 1998, 1999, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+ Copyright (C) 1994 Free Software Foundation, Inc.
 
-   This file is part of GNU Binutils.
+This file is part of GNU Binutils.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 
 /* Written by Steve Chamberlain <sac@cygnus.com>.
 
  This program reads a SYSROFF object file and prints it in an
- almost human readable form to stdout.  */
+ almost human readable form to stdout. */
 
 #include "bfd.h"
 #include "bucomm.h"
-#include "safe-ctype.h"
 
 #include <stdio.h>
-#include "libiberty.h"
-#include "getopt.h"
+#include <ctype.h>
+#include <libiberty.h>
+#include <getopt.h>
 #include "sysroff.h"
 
+#define PROGRAM_VERSION "1.0"
+static int h8300;
+static int sh;
 static int dump = 1;
 static int segmented_p;
 static int code;
-static int addrsize = 4;
 static FILE *file;
 
-static void dh (unsigned char *, int);
-static void itheader (char *, int);
-static void p (void);
-static void tabout (void);
-static void pbarray (barray *);
-static int getone (int);
-static int opt (int);
-static void must (int);
-static void tab (int, char *);
-static void dump_symbol_info (void);
-static void derived_type (void);
-static void module (void);
-static void show_usage (FILE *, int);
-
-extern char *getCHARS (unsigned char *, int *, int, int);
-extern int fillup (char *);
-extern barray getBARRAY (unsigned char *, int *, int, int);
-extern int getINT (unsigned char *, int *, int, int);
-extern int getBITS (char *, int *, int, int);
-extern void sysroff_swap_tr_in (void);
-extern void sysroff_print_tr_out (void);
-extern int main (int, char **);
+static char *
+xcalloc (a, b)
+     int a;
+     int b;
+{
+  char *r = xmalloc (a * b);
+  memset (r, 0, a * b);
+  return r;
+}
 
 char *
-getCHARS (unsigned char *ptr, int *idx, int size, int max)
+getCHARS (ptr, idx, size, max)
+     unsigned char *ptr;
+     int *idx;
+     int size;
+     int max;
 {
   int oc = *idx / 8;
   char *r;
   int b = size;
-
   if (b >= max)
-    return "*undefined*";
+    {
+      return "*undefined*";
+    }
 
   if (b == 0)
     {
-      /* Got to work out the length of the string from self.  */
+      /* Got to work out the length of the string from self */
       b = ptr[oc++];
       (*idx) += 8;
     }
@@ -84,12 +76,13 @@ getCHARS (unsigned char *ptr, int *idx, int size, int max)
   r = xcalloc (b + 1, 1);
   memcpy (r, ptr + oc, b);
   r[b] = 0;
-
   return r;
 }
 
 static void
-dh (unsigned char *ptr, int size)
+dh (ptr, size)
+     unsigned char *ptr;
+     int size;
 {
   int i;
   int j;
@@ -101,42 +94,42 @@ dh (unsigned char *ptr, int size)
     {
       for (j = 0; j < span; j++)
 	{
-	  if (j + i < size)
+	  if (j + i < size) 
 	    printf ("%02x ", ptr[i + j]);
-	  else
-	    printf ("   ");
+          else
+            printf ("   ");
 	}
 
       for (j = 0; j < span && j + i < size; j++)
 	{
 	  int c = ptr[i + j];
-
 	  if (c < 32 || c > 127)
 	    c = '.';
 	  printf ("%c", c);
 	}
-
       printf ("\n");
     }
 }
 
 int
-fillup (char *ptr)
+fillup (ptr)
+     char *ptr;
 {
   int size;
   int sum;
   int i;
-
   size = getc (file) - 2;
   fread (ptr, 1, size, file);
   sum = code + size + 2;
-
   for (i = 0; i < size; i++)
-    sum += ptr[i];
+    {
+      sum += ptr[i];
+    }
 
   if ((sum & 0xff) != 0xff)
-    printf ("SUM IS %x\n", sum);
-
+    {
+      printf ("SUM IS %x\n", sum);
+    }
   if (dump)
     dh (ptr, size);
 
@@ -144,38 +137,43 @@ fillup (char *ptr)
 }
 
 barray
-getBARRAY (unsigned char *ptr, int *idx, int dsize ATTRIBUTE_UNUSED,
-	   int max ATTRIBUTE_UNUSED)
+getBARRAY (ptr, idx, dsize, max)
+     unsigned char *ptr;
+     int *idx;
+     int dsize;
+     int max;
 {
   barray res;
   int i;
   int byte = *idx / 8;
   int size = ptr[byte++];
-
   res.len = size;
   res.data = (unsigned char *) xmalloc (size);
-
   for (i = 0; i < size; i++)
-    res.data[i] = ptr[byte++];
-
+    {
+      res.data[i] = ptr[byte++];
+    }
   return res;
 }
 
 int
-getINT (unsigned char *ptr, int *idx, int size, int max)
+getINT (ptr, idx, size, max)
+     unsigned char *ptr;
+     int *idx;
+     int size;
+     int max;
 {
   int n = 0;
   int byte = *idx / 8;
 
   if (byte >= max)
-    return 0;
-
+    {
+      return 0;
+    }
   if (size == -2)
-    size = addrsize;
-
+    size = 4;
   if (size == -1)
     size = 0;
-
   switch (size)
     {
     case 0:
@@ -192,19 +190,18 @@ getINT (unsigned char *ptr, int *idx, int size, int max)
     default:
       abort ();
     }
-
   *idx += size * 8;
   return n;
 }
 
 int
-getBITS (char *ptr, int *idx, int size, int max)
+getBITS (ptr, idx, size)
+     char *ptr;
+     int *idx;
+     int size;
 {
   int byte = *idx / 8;
   int bit = *idx % 8;
-
-  if (byte >= max)
-    return 0;
 
   *idx += size;
 
@@ -212,41 +209,41 @@ getBITS (char *ptr, int *idx, int size, int max)
 }
 
 static void
-itheader (char *name, int code)
+itheader (name, code)
+     char *name;
+     int code;
 {
   printf ("\n%s 0x%02x\n", name, code);
 }
 
 static int indent;
-
 static void
-p (void)
+p ()
 {
   int i;
-
   for (i = 0; i < indent; i++)
-    printf ("| ");
-
+    {
+      printf ("| ");
+    }
   printf ("> ");
 }
 
 static void
-tabout (void)
+tabout ()
 {
   p ();
 }
 
 static void
-pbarray (barray *y)
+pbarray (y)
+     barray *y;
 {
   int x;
-
   printf ("%d (", y->len);
-
   for (x = 0; x < y->len; x++)
-    printf ("(%02x %c)", y->data[x],
-	    ISPRINT (y->data[x]) ? y->data[x] : '.');
-
+    {
+      printf ("(%02x %c)", y->data[x], isprint (y->data[x]) ? y->data[x] : '.');
+    }
   printf (")\n");
 }
 
@@ -255,33 +252,34 @@ pbarray (barray *y)
 
 #include "sysroff.c"
 
-/* FIXME: sysinfo, which generates sysroff.[ch] from sysroff.info, can't
-   hack the special case of the tr block, which has no contents.  So we
-   implement our own functions for reading in and printing out the tr
-   block.  */
+/* 
+ * FIXME: sysinfo, which generates sysroff.[ch] from sysroff.info, can't
+ * hack the special case of the tr block, which has no contents.  So we
+ * implement our own functions for reading in and printing out the tr
+ * block.
+ */
 
 #define IT_tr_CODE	0x7f
-
 void
-sysroff_swap_tr_in (void)
+sysroff_swap_tr_in()
 {
-  char raw[255];
+	char raw[255];
 
-  memset (raw, 0, 255);
-  fillup (raw);
+	memset(raw, 0, 255);
+	fillup(raw);
 }
 
 void
-sysroff_print_tr_out (void)
+sysroff_print_tr_out()
 {
-  itheader ("tr", IT_tr_CODE);
+	itheader("tr", IT_tr_CODE);
 }
 
 static int
-getone (int type)
+getone (type)
+     int type;
 {
   int c = getc (file);
-
   code = c;
 
   if ((c & 0x7f) != type)
@@ -299,7 +297,6 @@ getone (int type)
 	sysroff_print_cs_out (&dummy);
       }
       break;
-
     case IT_dln_CODE:
       {
 	struct IT_dln dummy;
@@ -307,16 +304,13 @@ getone (int type)
 	sysroff_print_dln_out (&dummy);
       }
       break;
-
     case IT_hd_CODE:
       {
 	struct IT_hd dummy;
 	sysroff_swap_hd_in (&dummy);
-	addrsize = dummy.afl;
 	sysroff_print_hd_out (&dummy);
       }
       break;
-
     case IT_dar_CODE:
       {
 	struct IT_dar dummy;
@@ -324,7 +318,6 @@ getone (int type)
 	sysroff_print_dar_out (&dummy);
       }
       break;
-
     case IT_dsy_CODE:
       {
 	struct IT_dsy dummy;
@@ -332,7 +325,6 @@ getone (int type)
 	sysroff_print_dsy_out (&dummy);
       }
       break;
-
     case IT_dfp_CODE:
       {
 	struct IT_dfp dummy;
@@ -340,7 +332,6 @@ getone (int type)
 	sysroff_print_dfp_out (&dummy);
       }
       break;
-
     case IT_dso_CODE:
       {
 	struct IT_dso dummy;
@@ -348,7 +339,6 @@ getone (int type)
 	sysroff_print_dso_out (&dummy);
       }
       break;
-
     case IT_dpt_CODE:
       {
 	struct IT_dpt dummy;
@@ -356,7 +346,6 @@ getone (int type)
 	sysroff_print_dpt_out (&dummy);
       }
       break;
-
     case IT_den_CODE:
       {
 	struct IT_den dummy;
@@ -364,7 +353,6 @@ getone (int type)
 	sysroff_print_den_out (&dummy);
       }
       break;
-
     case IT_dbt_CODE:
       {
 	struct IT_dbt dummy;
@@ -372,7 +360,6 @@ getone (int type)
 	sysroff_print_dbt_out (&dummy);
       }
       break;
-
     case IT_dty_CODE:
       {
 	struct IT_dty dummy;
@@ -380,7 +367,6 @@ getone (int type)
 	sysroff_print_dty_out (&dummy);
       }
       break;
-
     case IT_un_CODE:
       {
 	struct IT_un dummy;
@@ -388,7 +374,6 @@ getone (int type)
 	sysroff_print_un_out (&dummy);
       }
       break;
-
     case IT_sc_CODE:
       {
 	struct IT_sc dummy;
@@ -396,7 +381,6 @@ getone (int type)
 	sysroff_print_sc_out (&dummy);
       }
       break;
-
     case IT_er_CODE:
       {
 	struct IT_er dummy;
@@ -404,7 +388,6 @@ getone (int type)
 	sysroff_print_er_out (&dummy);
       }
       break;
-
     case IT_ed_CODE:
       {
 	struct IT_ed dummy;
@@ -412,7 +395,6 @@ getone (int type)
 	sysroff_print_ed_out (&dummy);
       }
       break;
-
     case IT_sh_CODE:
       {
 	struct IT_sh dummy;
@@ -420,7 +402,6 @@ getone (int type)
 	sysroff_print_sh_out (&dummy);
       }
       break;
-
     case IT_ob_CODE:
       {
 	struct IT_ob dummy;
@@ -428,7 +409,6 @@ getone (int type)
 	sysroff_print_ob_out (&dummy);
       }
       break;
-
     case IT_rl_CODE:
       {
 	struct IT_rl dummy;
@@ -436,7 +416,6 @@ getone (int type)
 	sysroff_print_rl_out (&dummy);
       }
       break;
-
     case IT_du_CODE:
       {
 	struct IT_du dummy;
@@ -445,7 +424,6 @@ getone (int type)
 	sysroff_print_du_out (&dummy);
       }
       break;
-
     case IT_dus_CODE:
       {
 	struct IT_dus dummy;
@@ -453,7 +431,6 @@ getone (int type)
 	sysroff_print_dus_out (&dummy);
       }
       break;
-
     case IT_dul_CODE:
       {
 	struct IT_dul dummy;
@@ -461,7 +438,6 @@ getone (int type)
 	sysroff_print_dul_out (&dummy);
       }
       break;
-
     case IT_dss_CODE:
       {
 	struct IT_dss dummy;
@@ -469,7 +445,6 @@ getone (int type)
 	sysroff_print_dss_out (&dummy);
       }
       break;
-
     case IT_hs_CODE:
       {
 	struct IT_hs dummy;
@@ -477,7 +452,6 @@ getone (int type)
 	sysroff_print_hs_out (&dummy);
       }
       break;
-
     case IT_dps_CODE:
       {
 	struct IT_dps dummy;
@@ -485,42 +459,36 @@ getone (int type)
 	sysroff_print_dps_out (&dummy);
       }
       break;
-
     case IT_tr_CODE:
-      sysroff_swap_tr_in ();
-      sysroff_print_tr_out ();
+      {
+	sysroff_swap_tr_in ();
+	sysroff_print_tr_out ();
+      }
       break;
-
     case IT_dds_CODE:
       {
 	struct IT_dds dummy;
-
 	sysroff_swap_dds_in (&dummy);
 	sysroff_print_dds_out (&dummy);
       }
       break;
-
     default:
       printf ("GOT A %x\n", c);
       return 0;
       break;
     }
-
   return 1;
 }
 
 static int
-opt (int x)
+opt (x)
+     int x;
 {
   return getone (x);
 }
 
-#if 0
-
-/* This is no longer used.  */
-
 static void
-unit_info_list (void)
+unit_info_list ()
 {
   while (opt (IT_un_CODE))
     {
@@ -537,14 +505,8 @@ unit_info_list (void)
     }
 }
 
-#endif
-
-#if 0
-
-/* This is no longer used.  */
-
 static void
-object_body_list (void)
+object_body_list ()
 {
   while (getone (IT_sh_CODE))
     {
@@ -555,20 +517,22 @@ object_body_list (void)
     }
 }
 
-#endif
-
 static void
-must (int x)
+must (x)
+     int x;
 {
   if (!getone (x))
-    printf ("WANTED %x!!\n", x);
+    {
+      printf ("WANTED %x!!\n", x);
+    }
 }
 
 static void
-tab (int i, char *s)
+tab (i, s)
+     int i;
+     char *s;
 {
   indent += i;
-
   if (s)
     {
       p ();
@@ -577,11 +541,12 @@ tab (int i, char *s)
     }
 }
 
+static void derived_type ();
+
 static void
-dump_symbol_info (void)
+dump_symbol_info ()
 {
   tab (1, "SYMBOL INFO");
-
   while (opt (IT_dsy_CODE))
     {
       if (opt (IT_dty_CODE))
@@ -591,15 +556,13 @@ dump_symbol_info (void)
 	  must (IT_dty_CODE);
 	}
     }
-
   tab (-1, "");
 }
 
 static void
-derived_type (void)
+derived_type ()
 {
   tab (1, "DERIVED TYPE");
-
   while (1)
     {
       if (opt (IT_dpp_CODE))
@@ -649,12 +612,8 @@ derived_type (void)
   tab (-1, "");
 }
 
-#if 0
-
-/* This is no longer used.  */
-
 static void
-program_structure (void)
+program_structure ()
 {
   tab (1, "PROGRAM STRUCTURE");
   while (opt (IT_dps_CODE))
@@ -667,14 +626,8 @@ program_structure (void)
   tab (-1, "");
 }
 
-#endif
-
-#if 0
-
-/* This is no longer used.  */
-
 static void
-debug_list (void)
+debug_list ()
 {
   tab (1, "DEBUG LIST");
 
@@ -686,10 +639,8 @@ debug_list (void)
   tab (-1, "");
 }
 
-#endif
-
 static void
-module (void)
+module ()
 {
   int c = 0;
   int l = 0;
@@ -735,21 +686,26 @@ module (void)
 char *program_name;
 
 static void
-show_usage (FILE *file, int status)
+show_usage (file, status)
+     FILE *file;
+     int status;
 {
-  fprintf (file, _("Usage: %s [option(s)] in-file\n"), program_name);
-  fprintf (file, _("Print a human readable interpretation of a SYSROFF object file\n"));
-  fprintf (file, _(" The options are:\n\
-  -h --help        Display this information\n\
-  -v --version     Print the program's version number\n"));
-
-  if (status == 0)
-    fprintf (file, _("Report bugs to %s\n"), REPORT_BUGS_TO);
+  fprintf (file, "Usage: %s [-hV] in-file\n", program_name);
   exit (status);
 }
 
+static void
+show_help ()
+{
+  printf ("%s: Print a human readable interpretation of a SYSROFF object file\n",
+	  program_name);
+  show_usage (stdout, 0);
+}
+
 int
-main (int ac, char **av)
+main (ac, av)
+     int ac;
+     char **av;
 {
   char *input_file = NULL;
   int opt;
@@ -760,31 +716,18 @@ main (int ac, char **av)
     {NULL, no_argument, 0, 0}
   };
 
-#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
-  setlocale (LC_MESSAGES, "");
-#endif
-#if defined (HAVE_SETLOCALE)
-  setlocale (LC_CTYPE, "");
-#endif
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
   program_name = av[0];
   xmalloc_set_program_name (program_name);
 
-  expandargv (&ac, &av);
-
-  while ((opt = getopt_long (ac, av, "HhVv", long_options, (int *) NULL)) != EOF)
+  while ((opt = getopt_long (ac, av, "hV", long_options, (int *) NULL)) != EOF)
     {
       switch (opt)
 	{
-	case 'H':
 	case 'h':
-	  show_usage (stdout, 0);
+	  show_help ();
 	  /*NOTREACHED*/
-	case 'v':
 	case 'V':
-	  print_version ("sysdump");
+	  printf ("GNU %s version %s\n", program_name, PROGRAM_VERSION);
 	  exit (0);
 	  /*NOTREACHED*/
 	case 0:
@@ -798,15 +741,24 @@ main (int ac, char **av)
   /* The input and output files may be named on the command line.  */
 
   if (optind < ac)
-    input_file = av[optind];
+    {
+      input_file = av[optind];
+    }
 
   if (!input_file)
-    fatal (_("no input file specified"));
+    {
+      fprintf (stderr, "%s: no input file specified\n",
+	       program_name);
+      exit (1);
+    }
 
   file = fopen (input_file, FOPEN_RB);
-
   if (!file)
-    fatal (_("cannot open input file %s"), input_file);
+    {
+      fprintf (stderr, "%s: cannot open input file %s\n",
+	       program_name, input_file);
+      exit (1);
+    }
 
   module ();
   return 0;

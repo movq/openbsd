@@ -1,4 +1,4 @@
-/*	$OpenBSD: logwtmp.c,v 1.10 2016/08/30 14:44:45 guenther Exp $	*/
+/*	$OpenBSD: logwtmp.c,v 1.4 1999/08/17 09:13:13 millert Exp $	*/
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,11 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+/* from: static char sccsid[] = "@(#)logwtmp.c	8.1 (Berkeley) 6/4/93"; */
+static char *rcsid = "$Id: logwtmp.c,v 1.4 1999/08/17 09:13:13 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -40,20 +49,21 @@
 #include "util.h"
 
 void
-logwtmp(const char *line, const char *name, const char *host)
+logwtmp(line, name, host)
+	const char *line, *name, *host;
 {
-	struct stat buf;
 	struct utmp ut;
+	struct stat buf;
 	int fd;
 
-	if ((fd = open(_PATH_WTMP, O_WRONLY|O_APPEND|O_CLOEXEC)) < 0)
+	if ((fd = open(_PATH_WTMP, O_WRONLY|O_APPEND, 0)) < 0)
 		return;
 	if (fstat(fd, &buf) == 0) {
 		(void) strncpy(ut.ut_line, line, sizeof(ut.ut_line));
 		(void) strncpy(ut.ut_name, name, sizeof(ut.ut_name));
 		(void) strncpy(ut.ut_host, host, sizeof(ut.ut_host));
 		(void) time(&ut.ut_time);
-		if (write(fd, &ut, sizeof(struct utmp)) !=
+		if (write(fd, (char *)&ut, sizeof(struct utmp)) !=
 		    sizeof(struct utmp))
 			(void) ftruncate(fd, buf.st_size);
 	}

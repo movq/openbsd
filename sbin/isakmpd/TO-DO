@@ -1,5 +1,5 @@
-$OpenBSD: TO-DO,v 1.26 2003/08/28 14:43:35 markus Exp $
-$EOM: TO-DO,v 1.45 2000/04/07 22:47:38 niklas Exp $
+$OpenBSD: TO-DO,v 1.18 1999/08/26 22:30:46 niklas Exp $
+$EOM: TO-DO,v 1.44 1999/08/12 22:34:26 niklas Exp $
 
 This file mixes small nitpicks with large projects to be done.
 
@@ -34,11 +34,11 @@ This file mixes small nitpicks with large projects to be done.
 
 * Finish main mode exchange [done]
 
-* Separation of key exchange from the IPsec DOI, i.e. factor out IKE details.
+* Separation of key exchange from the IPSEC DOI, i.e. factor out IKE details.
 
-* Setup the IPsec situation field in the main mode. [done]
+* Setup the IPSEC situation field in the main mode. [done]
 
-* Kernel interface for IPsec parameter passing. [done]
+* Kernel interface for IPSEC parameter passing. [done]
 
 * Notify of unsupported situations.
 
@@ -75,7 +75,7 @@ This file mixes small nitpicks with large projects to be done.
   bottlenecks.
 
 * Rescan interfaces on SIGHUP and on reception of messages on the INADDR_ANY
-  listener socket. [done]
+  listener socket.
 
 * Validate the configuration file.
 
@@ -85,7 +85,7 @@ This file mixes small nitpicks with large projects to be done.
 
 * IPsec rekeying. [done]
 
-* Store tunnels into SPD, and handle acquire SA events. [done]
+* Store tunnels into SPD, and handle acquire SA events. [pf_encap done]
 
 * If an exchange is on-going when a rekey event happens, drop the request.
   [done]
@@ -101,9 +101,12 @@ This file mixes small nitpicks with large projects to be done.
 
 * Flexible identification.
 
-* Remove referring flows when a SPI is removed. [done]
+* Remove referring flows when a SPI is removed.
 
 * IPCOMP.
+
+* Remove log_fatals from policy code, if error in policy file reading fall
+  back to check policy against connections.
 
 * Acknowledged notification exchange.
 
@@ -118,7 +121,7 @@ This file mixes small nitpicks with large projects to be done.
 
 * Base mode.
 
-* IKECFG [protocol done, configuration controls remain]
+* IKECFG
 
 * XAUTH framework.
 
@@ -134,12 +137,4 @@ This file mixes small nitpicks with large projects to be done.
 
 * Replace ui's fifo with a slightly more versatile interface.
 
-* Report current configuration. [done]
-
-* IPv6 [done]
-
-* AES in phase 1 [done]
-
-* x509_certreq_validate needs implementing.
-
-* Smartcard support.
+* Report current configuration.

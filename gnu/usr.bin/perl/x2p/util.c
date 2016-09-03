@@ -1,10 +1,11 @@
-/*    util.c
+/* $RCSfile: util.c,v $$Revision: 4.1 $$Date: 92/08/07 18:29:29 $
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1999,
- *    2000, 2001, 2005 by Larry Wall and others
+ *    Copyright (c) 1991-1997, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
+ *
+ * $Log:	util.c,v $
  */
 
 #include "EXTERN.h"
@@ -15,7 +16,7 @@
 #include <stdarg.h>
 #define FLUSH
 
-static const char nomem[] = "Out of memory!\n";
+static char nomem[] = "Out of memory!\n";
 
 /* paranoid version of malloc */
 
@@ -32,7 +33,7 @@ safemalloc(MEM_SIZE size)
 	fprintf(stderr,"0x%lx: (%05d) malloc %ld bytes\n",(unsigned long)ptr,
     	    	an++,(long)size);
 #endif
-    if (ptr != NULL)
+    if (ptr != Nullch)
 	return ptr;
     else {
 	fputs(nomem,stdout) FLUSH;
@@ -57,7 +58,7 @@ saferealloc(Malloc_t where, MEM_SIZE size)
 	fprintf(stderr,"0x%lx: (%05d) realloc %ld bytes\n",(unsigned long)ptr,an++,(long)size);
     }
 #endif
-    if (ptr != NULL)
+    if (ptr != Nullch)
 	return ptr;
     else {
 	fputs(nomem,stdout) FLUSH;
@@ -79,10 +80,23 @@ safefree(Malloc_t where)
     free(where);
 }
 
+/* safe version of string copy */
+
+char *
+safecpy(char *to, register char *from, register int len)
+{
+    register char *dest = to;
+
+    if (from != Nullch) 
+	for (len--; len && (*dest++ = *from++); len--) ;
+    *dest = '\0';
+    return to;
+}
+
 /* copy a string up to some (non-backslashed) delimiter, if any */
 
 char *
-cpytill(char *to, char *from, int delim)
+cpytill(register char *to, register char *from, register int delim)
 {
     for (; *from; from++,to++) {
 	if (*from == '\\') {
@@ -101,7 +115,7 @@ cpytill(char *to, char *from, int delim)
 
 
 char *
-cpy2(char *to, char *from, int delim)
+cpy2(register char *to, register char *from, register int delim)
 {
     for (; *from; from++,to++) {
 	if (*from == '\\')
@@ -119,30 +133,29 @@ cpy2(char *to, char *from, int delim)
 /* return ptr to little string in big string, NULL if not found */
 
 char *
-instr(char *big, const char *little)
+instr(char *big, char *little)
 {
-    char *t, *x;
-    const char *s;
+    register char *t, *s, *x;
 
     for (t = big; *t; t++) {
 	for (x=t,s=little; *s; x++,s++) {
 	    if (!*x)
-		return NULL;
+		return Nullch;
 	    if (*s != *x)
 		break;
 	}
 	if (!*s)
 	    return t;
     }
-    return NULL;
+    return Nullch;
 }
 
 /* copy a string to a safe spot */
 
 char *
-savestr(const char *str)
+savestr(char *str)
 {
-    char * const newaddr = (char *) safemalloc((MEM_SIZE)(strlen(str)+1));
+    register char *newaddr = (char *) safemalloc((MEM_SIZE)(strlen(str)+1));
 
     (void)strcpy(newaddr,str);
     return newaddr;
@@ -163,32 +176,41 @@ growstr(char **strptr, int *curlen, int newlen)
 }
 
 void
-fatal(const char *pat,...)
+croak(char *pat,...)
 {
 #if defined(HAS_VPRINTF)
     va_list args;
 
     va_start(args, pat);
     vfprintf(stderr,pat,args);
-    va_end(args);
 #else
     fprintf(stderr,pat,a1,a2,a3,a4);
 #endif
     exit(1);
 }
 
-#if defined(DARWIN)
-__private_extern__	/* warn() conflicts with libc */
-#endif
 void
-warn(const char *pat,...)
+fatal(char *pat,...)
 {
 #if defined(HAS_VPRINTF)
     va_list args;
 
     va_start(args, pat);
     vfprintf(stderr,pat,args);
-    va_end(args);
+#else
+    fprintf(stderr,pat,a1,a2,a3,a4);
+#endif
+    exit(1);
+}
+
+void
+warn(char *pat,...)
+{
+#if defined(HAS_VPRINTF)
+    va_list args;
+
+    va_start(args, pat);
+    vfprintf(stderr,pat,args);
 #else
     fprintf(stderr,pat,a1,a2,a3,a4);
 #endif

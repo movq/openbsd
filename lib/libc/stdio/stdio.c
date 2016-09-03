@@ -1,4 +1,3 @@
-/*	$OpenBSD: stdio.c,v 1.9 2005/08/08 08:05:36 espie Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: stdio.c,v 1.3 1997/11/09 23:40:41 flipk Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -40,11 +47,13 @@
  * Small standard I/O/seek/close functions.
  * These maintain the `known seek offset' for seek optimisation.
  */
-int
-__sread(void *cookie, char *buf, int n)
+__sread(cookie, buf, n)
+	void *cookie;
+	char *buf;
+	int n;
 {
-	FILE *fp = cookie;
-	int ret;
+	register FILE *fp = cookie;
+	register int ret;
 	
 	ret = read(fp->_file, buf, n);
 	/* if the read succeeded, update the current offset */
@@ -55,10 +64,12 @@ __sread(void *cookie, char *buf, int n)
 	return (ret);
 }
 
-int
-__swrite(void *cookie, const char *buf, int n)
+__swrite(cookie, buf, n)
+	void *cookie;
+	char const *buf;
+	int n;
 {
-	FILE *fp = cookie;
+	register FILE *fp = cookie;
 
 	if (fp->_flags & __SAPP)
 		(void) lseek(fp->_file, (off_t)0, SEEK_END);
@@ -67,10 +78,13 @@ __swrite(void *cookie, const char *buf, int n)
 }
 
 fpos_t
-__sseek(void *cookie, fpos_t offset, int whence)
+__sseek(cookie, offset, whence)
+	void *cookie;
+	fpos_t offset;
+	int whence;
 {
-	FILE *fp = cookie;
-	off_t ret;
+	register FILE *fp = cookie;
+	register off_t ret;
 	
 	ret = lseek(fp->_file, (off_t)offset, whence);
 	if (ret == (off_t)-1)
@@ -82,8 +96,9 @@ __sseek(void *cookie, fpos_t offset, int whence)
 	return (ret);
 }
 
-int
-__sclose(void *cookie)
+__sclose(cookie)
+	void *cookie;
 {
+
 	return (close(((FILE *)cookie)->_file));
 }

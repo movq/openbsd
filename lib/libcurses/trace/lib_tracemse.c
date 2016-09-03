@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_tracemse.c,v 1.5 2010/01/12 23:22:07 nicm Exp $ */
+/*	$OpenBSD: lib_tracemse.c,v 1.1 1999/01/18 19:10:24 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,9 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
+
 
 /*
  *	lib_tracemse.c - Tracing/Debugging routines (mouse events)
@@ -40,92 +41,57 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_tracemse.c,v 1.5 2010/01/12 23:22:07 nicm Exp $")
+MODULE_ID("$From: lib_tracemse.c,v 1.6 1998/11/16 14:28:17 Alexander.V.Lukyanov Exp $")
 
 #ifdef TRACE
 
-#define my_buffer sp->tracemse_buf
-
-NCURSES_EXPORT(char *)
-_nc_tracemouse(SCREEN *sp, MEVENT const *ep)
+char *_tracemouse(MEVENT const *ep)
 {
-	(void) snprintf(my_buffer, TRACEMSE_MAX, TRACEMSE_FMT,
-		   ep->id,
-		   ep->x,
-		   ep->y,
-		   ep->z,
-		   (unsigned long) ep->bstate);
+	static char buf[80];
 
-#define SHOW(m, s) \
-    if ((ep->bstate & m) == m) {		\
-	strlcat(my_buffer, s, TRACEMSE_MAX);	\
-	strlcat(my_buffer, ", ", TRACEMSE_MAX);	\
-}
+	(void) sprintf(buf, "id %2d  at (%2d, %2d, %2d) state %4lx = {",
+		       ep->id, ep->x, ep->y, ep->z, ep->bstate);
 
-    SHOW(BUTTON1_RELEASED, "release-1");
-    SHOW(BUTTON1_PRESSED, "press-1");
-    SHOW(BUTTON1_CLICKED, "click-1");
-    SHOW(BUTTON1_DOUBLE_CLICKED, "doubleclick-1");
-    SHOW(BUTTON1_TRIPLE_CLICKED, "tripleclick-1");
-#if NCURSES_MOUSE_VERSION == 1
-    SHOW(BUTTON1_RESERVED_EVENT, "reserved-1");
-#endif
-
-    SHOW(BUTTON2_RELEASED, "release-2");
-    SHOW(BUTTON2_PRESSED, "press-2");
-    SHOW(BUTTON2_CLICKED, "click-2");
-    SHOW(BUTTON2_DOUBLE_CLICKED, "doubleclick-2");
-    SHOW(BUTTON2_TRIPLE_CLICKED, "tripleclick-2");
-#if NCURSES_MOUSE_VERSION == 1
-    SHOW(BUTTON2_RESERVED_EVENT, "reserved-2");
-#endif
-
-    SHOW(BUTTON3_RELEASED, "release-3");
-    SHOW(BUTTON3_PRESSED, "press-3");
-    SHOW(BUTTON3_CLICKED, "click-3");
-    SHOW(BUTTON3_DOUBLE_CLICKED, "doubleclick-3");
-    SHOW(BUTTON3_TRIPLE_CLICKED, "tripleclick-3");
-#if NCURSES_MOUSE_VERSION == 1
-    SHOW(BUTTON3_RESERVED_EVENT, "reserved-3");
-#endif
-
-    SHOW(BUTTON4_RELEASED, "release-4");
-    SHOW(BUTTON4_PRESSED, "press-4");
-    SHOW(BUTTON4_CLICKED, "click-4");
-    SHOW(BUTTON4_DOUBLE_CLICKED, "doubleclick-4");
-    SHOW(BUTTON4_TRIPLE_CLICKED, "tripleclick-4");
-#if NCURSES_MOUSE_VERSION == 1
-    SHOW(BUTTON4_RESERVED_EVENT, "reserved-4");
-#endif
-
-#if NCURSES_MOUSE_VERSION == 2
-    SHOW(BUTTON5_RELEASED, "release-5");
-    SHOW(BUTTON5_PRESSED, "press-5");
-    SHOW(BUTTON5_CLICKED, "click-5");
-    SHOW(BUTTON5_DOUBLE_CLICKED, "doubleclick-5");
-    SHOW(BUTTON5_TRIPLE_CLICKED, "tripleclick-5");
-#endif
-
-    SHOW(BUTTON_CTRL, "ctrl");
-    SHOW(BUTTON_SHIFT, "shift");
-    SHOW(BUTTON_ALT, "alt");
-    SHOW(ALL_MOUSE_EVENTS, "all-events");
-    SHOW(REPORT_MOUSE_POSITION, "position");
-
+#define SHOW(m, s) if ((ep->bstate & m)==m) {strcat(buf,s); strcat(buf, ", ");}
+	SHOW(BUTTON1_RELEASED,		"release-1")
+	SHOW(BUTTON1_PRESSED,		"press-1")
+	SHOW(BUTTON1_CLICKED,		"click-1")
+	SHOW(BUTTON1_DOUBLE_CLICKED,	"doubleclick-1")
+	SHOW(BUTTON1_TRIPLE_CLICKED,	"tripleclick-1")
+	SHOW(BUTTON1_RESERVED_EVENT,	"reserved-1")
+	SHOW(BUTTON2_RELEASED,		"release-2")
+	SHOW(BUTTON2_PRESSED,		"press-2")
+	SHOW(BUTTON2_CLICKED,		"click-2")
+	SHOW(BUTTON2_DOUBLE_CLICKED,	"doubleclick-2")
+	SHOW(BUTTON2_TRIPLE_CLICKED,	"tripleclick-2")
+	SHOW(BUTTON2_RESERVED_EVENT,	"reserved-2")
+	SHOW(BUTTON3_RELEASED,		"release-3")
+	SHOW(BUTTON3_PRESSED,		"press-3")
+	SHOW(BUTTON3_CLICKED,		"click-3")
+	SHOW(BUTTON3_DOUBLE_CLICKED,	"doubleclick-3")
+	SHOW(BUTTON3_TRIPLE_CLICKED,	"tripleclick-3")
+	SHOW(BUTTON3_RESERVED_EVENT,	"reserved-3")
+	SHOW(BUTTON4_RELEASED,		"release-4")
+	SHOW(BUTTON4_PRESSED,		"press-4")
+	SHOW(BUTTON4_CLICKED,		"click-4")
+	SHOW(BUTTON4_DOUBLE_CLICKED,	"doubleclick-4")
+	SHOW(BUTTON4_TRIPLE_CLICKED,	"tripleclick-4")
+	SHOW(BUTTON4_RESERVED_EVENT,	"reserved-4")
+	SHOW(BUTTON_CTRL,		"ctrl")
+	SHOW(BUTTON_SHIFT,		"shift")
+	SHOW(BUTTON_ALT,		"alt")
+	SHOW(ALL_MOUSE_EVENTS,		"all-events")
+	SHOW(REPORT_MOUSE_POSITION,	"position")
 #undef SHOW
 
-    if (my_buffer[strlen(my_buffer) - 1] == ' ')
-	my_buffer[strlen(my_buffer) - 2] = '\0';
-    (void) strlcat(my_buffer, "}", TRACEMSE_MAX);
-    return (my_buffer);
-}
-
-NCURSES_EXPORT(char *)
-_tracemouse(MEVENT const *ep)
-{
-    return _nc_tracemouse(SP, ep);
+	if (buf[strlen(buf)-1] == ' ')
+		buf[strlen(buf)-2] = '\0';
+	(void) strcat(buf, "}");
+	return(buf);
 }
 
 #else /* !TRACE */
-EMPTY_MODULE(_nc_lib_tracemouse)
+/* don't make empty module */
+void _nc_lib_tracemouse(void);
+void _nc_lib_tracemouse(void) {}
 #endif

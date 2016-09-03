@@ -1,4 +1,4 @@
-/*	$OpenBSD: essvar.h,v 1.5 2002/03/14 03:16:05 millert Exp $	*/
+/*	$OpenBSD: essvar.h,v 1.2 1999/09/30 22:13:52 kstailey Exp $	*/
 /*	$NetBSD: essvar.h,v 1.14 1999/03/18 06:03:31 mycroft Exp $	*/
 /*
  * Copyright 1997
@@ -34,7 +34,7 @@
  */
 
 /*
-** @(#) $RCSfile: essvar.h,v $ $Revision: 1.5 $ (SHARK) $Date: 2002/03/14 03:16:05 $
+** @(#) $RCSfile: essvar.h,v $ $Revision: 1.2 $ (SHARK) $Date: 1999/09/30 22:13:52 $
 **
 **++
 **
@@ -46,16 +46,16 @@
 **
 **  MODULE DESCRIPTION:
 **
-**	This module contains the structure definitions and function
-**	prototypes for the ESS Technologies 1887/888 sound chip
-**	driver.
+**      This module contains the structure definitions and function
+**      prototypes for the ESS Technologies 1887/888 sound chip
+**      driver.
 **
 **  AUTHORS:
 **
 **	Blair Fidler	Software Engineering Australia
 **			Gold Coast, Australia.
 **
-**  CREATION DATE:
+**  CREATION DATE:  
 **
 **	May 12, 1997.
 **
@@ -103,7 +103,7 @@ struct ess_audio_channel
 	int	ist;
 	void	*ih;			/* interrupt vectoring */
 	u_long	nintr;			/* number of interrupts taken */
-	void	(*intr)(void *);	/* ISR for DMA complete */
+	void	(*intr)__P((void*));	/* ISR for DMA complete */
 	void	*arg;			/* arg for intr() */
 
 	/* Status information */
@@ -125,23 +125,22 @@ struct ess_softc
 	isa_chipset_tag_t sc_ic;
 	bus_space_tag_t sc_iot;		/* tag */
 	bus_space_handle_t sc_ioh;	/* handle */
-	struct timeout sc_tmo1, sc_tmo2;
 
 	int	sc_iobase;		/* I/O port base address */
 
 	u_short	sc_open;		/* reference count of open calls */
 
-	int ndevs;
+	int ndevs; 
 	u_char	gain[ESS_MAX_NDEVS][2];	/* kept in input levels */
 #define ESS_LEFT 0
 #define ESS_RIGHT 1
-
+	
 	u_int	out_port;		/* output port */
 	u_int	in_mask;		/* input ports */
 	u_int	in_port;		/* XXX needed for MI interface */
 
 	u_int	spkr_state;		/* non-null is on */
-
+	
 	struct ess_audio_channel sc_audio1; /* audio channel for record */
 	struct ess_audio_channel sc_audio2; /* audio channel for playback */
 
@@ -159,6 +158,6 @@ struct ess_softc
 	u_int	sc_version;		/* Legacy ES688/ES1688 ID */
 };
 
-int	essmatch(struct ess_softc *);
-void	essattach(struct ess_softc *);
+int	essmatch __P((struct ess_softc *));
+void	essattach __P((struct ess_softc *));
 

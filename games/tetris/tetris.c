@@ -1,4 +1,4 @@
-/*	$OpenBSD: tetris.c,v 1.31 2016/06/10 13:07:07 tb Exp $	*/
+/*	$OpenBSD: tetris.c,v 1.7 1999/03/22 07:38:28 pjanzen Exp $	*/
 /*	$NetBSD: tetris.c,v 1.2 1995/04/22 07:42:47 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,12 +39,20 @@
  *	@(#)tetris.c	8.1 (Berkeley) 5/31/93
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1992, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
 /*
  * Tetris (or however it is spelled).
  */
 
+#include <sys/time.h>
+#include <sys/types.h>
+
 #include <err.h>
-#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,20 +64,11 @@
 #include "screen.h"
 #include "tetris.h"
 
-cell	board[B_SIZE];
-int	Rows, Cols;
-const struct shape *curshape;
-const struct shape *nextshape;
-long	fallrate;
-int	score;
-char	key_msg[100];
-int	showpreview, classic;
-
-static void		 elide(void);
-void			 onintr(int);
-const struct shape	*randshape(void);
-static void		 setup_board(void);
-__dead void		 usage(void);
+static void	elide __P((void));
+static void	setup_board __P((void));
+struct shape	*randshape __P((void));
+void	onintr __P((int));
+void	usage __P((void));
 
 /*
  * Set up the initial board.  The bottom display row is completely set,
@@ -73,10 +76,10 @@ __dead void		 usage(void);
  * right edges are set.
  */
 static void
-setup_board(void)
+setup_board()
 {
-	int i;
-	cell *p;
+	register int i;
+	register cell *p;
 
 	p = board;
 	for (i = B_SIZE; i; i--)
@@ -87,11 +90,10 @@ setup_board(void)
  * Elide any full active rows.
  */
 static void
-elide(void)
+elide()
 {
-	int rows = 0;
-	int i, j, base;
-	cell *p;
+	register int i, j, base;
+	register cell *p;
 
 	for (i = A_FIRST; i < A_LAST; i++) {
 		base = i * B_COLS + 1;
@@ -99,85 +101,60 @@ elide(void)
 		for (j = B_COLS - 2; *p++ != 0;) {
 			if (--j <= 0) {
 				/* this row is to be elided */
-				rows++;
 				memset(&board[base], 0, B_COLS - 2);
 				scr_update();
 				tsleep();
 				while (--base != 0)
 					board[base + B_COLS] = board[base];
-				memset(&board[1], 0, B_COLS - 2);
 				scr_update();
 				tsleep();
 				break;
 			}
 		}
 	}
-	switch (rows) {
-	case 1:
-		score += 10;
-		break;
-	case 2:
-		score += 30;
-		break;
-	case 3:
-		score += 70;
-		break;
-	case 4:
-		score += 150;
-		break;
-	default:
-		break;
-	}
 }
 
-const struct shape *
-randshape(void)
+struct shape *
+randshape()
 {
-	const struct shape *tmp;
+	struct shape *tmp;
 	int i, j;
 
-	tmp = &shapes[arc4random_uniform(7)];
-	j = arc4random_uniform(4);
+	tmp = &shapes[random() % 7];
+	j = random() % 4;
 	for (i = 0; i < j; i++)
-		tmp = &shapes[classic? tmp->rotc : tmp->rot];
+		tmp = &shapes[tmp->rot];
 	return (tmp);
 }
 	
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int pos, c;
-	char *keys;
-	int level = 2;
+	register int pos, c;
+	register char *keys;
+	register int level = 2;
 	char key_write[6][10];
-	const char *errstr;
 	int ch, i, j;
-
-	if (pledge("stdio rpath wpath cpath tty", NULL) == -1)
-		err(1, "pledge");
 
 	keys = "jkl pq";
 
-	classic = showpreview = 0;
-	while ((ch = getopt(argc, argv, "ck:l:ps")) != -1)
+	gid = getgid();
+	egid = getegid();
+	setegid(gid);
+
+	showpreview = 0;
+	while ((ch = getopt(argc, argv, "hk:l:ps")) != -1)
 		switch(ch) {
-		case 'c':
-			/*
-			 * this means:
-			 *	- rotate the other way;
-			 *	- no reverse video.
-			 */
-			classic = 1;
-			break;
 		case 'k':
 			if (strlen(keys = optarg) != 6)
 				usage();
 			break;
 		case 'l':
-			level = (int)strtonum(optarg, MINLEVEL, MAXLEVEL,
-			    &errstr);
-			if (errstr)
+			level = atoi(optarg);
+			if (level < MINLEVEL || level > MAXLEVEL)
 				errx(1, "level must be from %d to %d",
 				    MINLEVEL, MAXLEVEL);
 			break;
@@ -186,7 +163,9 @@ main(int argc, char *argv[])
 			break;
 		case 's':
 			showscores(0);
-			return 0;
+			exit(0);
+		case '?':
+		case 'h':
 		default:
 			usage();
 		}
@@ -205,14 +184,14 @@ main(int argc, char *argv[])
 				errx(1, "duplicate command keys specified.");
 		}
 		if (keys[i] == ' ')
-			strlcpy(key_write[i], "<space>", sizeof key_write[i]);
+			strcpy(key_write[i], "<space>");
 		else {
 			key_write[i][0] = keys[i];
 			key_write[i][1] = '\0';
 		}
 	}
 
-	snprintf(key_msg, sizeof key_msg,
+	sprintf(key_msg,
 "%s - left   %s - rotate   %s - right   %s - drop   %s - pause   %s - quit",
 		key_write[0], key_write[1], key_write[2], key_write[3],
 		key_write[4], key_write[5]);
@@ -221,6 +200,7 @@ main(int argc, char *argv[])
 	scr_init();
 	setup_board();
 
+	srandom(getpid());
 	scr_set();
 
 	pos = A_FIRST*B_COLS + (B_COLS/2)-1;
@@ -294,8 +274,7 @@ main(int argc, char *argv[])
 		}
 		if (c == keys[1]) {
 			/* turn */
-			const struct shape *new = &shapes[
-			    classic? curshape->rotc : curshape->rot];
+			struct shape *new = &shapes[curshape->rot];
 
 			if (fits_in(new, pos))
 				curshape = new;
@@ -343,21 +322,21 @@ main(int argc, char *argv[])
 
 	showscores(level);
 
-	return 0;
+	exit(0);
 }
 
 void
-onintr(int signo)
+onintr(signo)
+	int signo;
 {
-	scr_clear();		/* XXX signal race */
-	scr_end();		/* XXX signal race */
-	_exit(0);
+	scr_clear();
+	scr_end();
+	exit(0);
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [-cps] [-k keys] "
-	    "[-l level]\n", getprogname());
+	(void)fprintf(stderr, "usage: tetris [-ps] [-k keys] [-l level]\n");
 	exit(1);
 }

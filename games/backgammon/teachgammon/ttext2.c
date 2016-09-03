@@ -1,4 +1,4 @@
-/*	$OpenBSD: ttext2.c,v 1.8 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: ttext2.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ttext2.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: ttext2.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "back.h"
 #include "tutor.h"
@@ -114,7 +126,8 @@ const char   *const lastch[] = {
 	0};
 
 int
-text(const char  *const *txt)
+text(txt)
+	const char  *const *txt;
 {
 	const char  *const *begin;
 	const char   *a;
@@ -122,22 +135,28 @@ text(const char  *const *txt)
 	const char   *c;
 	int     i;
 
+	fixtty(&noech);
 	begin = txt;
 	while (*txt) {
 		a = *(txt++);
 		if (*a != '\0') {
 			c = a;
 			for (i = 0; *(c++) != '\0'; i--);
-			printw("%s\n", a);
+			writel(a);
+			writec('\n');
 		} else {
-			addstr(prompt);
+			fixtty(&raw);
+			writel(prompt);
 			/* if begscr is set we're past the rules screens */
 			if (!begscr) {
 				for (;;) {
 					if ((b = readc()) == '?') {
-						clear();
+						if (tflag)
+							clear();
+						else
+							writec('\n');
 						text(list);
-						addstr(prompt);
+						writel(prompt);
 						continue;
 					}
 					i = 0;
@@ -149,7 +168,7 @@ text(const char  *const *txt)
 						i++;
 					}
 					if (i == 11)
-						beep();
+						writec('\007');
 					else
 						break;
 				}
@@ -157,16 +176,22 @@ text(const char  *const *txt)
 				b = readc();
 				i = 0;
 			}
-			if (begscr) {
-				move(18, 0);
-				clrtobot();
+			if (tflag) {
+				if (begscr) {
+					curmove(18, 0);
+					clend();
+				} else
+					clear();
 			} else
-				clear();
+				writec('\n');
 			if (i)
 				return(i);
-			/* move to start of current line? */
+			fixtty(&noech);
+			if (tflag)
+				curmove(curr, 0);
 			begin = txt;
 		}
 	}
+	fixtty(&raw);
 	return(0);
 }

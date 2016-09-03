@@ -1,4 +1,4 @@
-/*	$OpenBSD: iostat.c,v 1.45 2015/01/16 00:03:37 deraadt Exp $	*/
+/*	$OpenBSD: iostat.c,v 1.10 1997/12/19 09:03:32 deraadt Exp $	*/
 /*	$NetBSD: iostat.c,v 1.5 1996/05/10 23:16:35 thorpej Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,227 +34,305 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/mount.h>
-#include <sys/signal.h>
-#include <sys/sched.h>
-#include <sys/sysctl.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)iostat.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: iostat.c,v 1.10 1997/12/19 09:03:32 deraadt Exp $";
+#endif not lint
+
+#include <sys/param.h>
+#include <sys/dkstat.h>
+#include <sys/buf.h>
 #include <sys/time.h>
 
 #include <string.h>
 #include <stdlib.h>
+#include <nlist.h>
 #include <paths.h>
 #include "systat.h"
+#include "extern.h"
 
 #include "dkstats.h"
-extern struct _disk	cur, last;
-struct bcachestats	bclast, bccur;
+extern struct _disk	cur;
 
-static double etime;
+static  int linesperregion;
+static  double etime;
+static  int numbers = 0;		/* default display bar graphs */
+static  int secs = 0;			/* default seconds shown */
 
-void showtotal(void);
-void showdrive(int);
-void print_io(void);
-int read_io(void);
-int select_io(void);
-void showbcache(void);
-
-#define ATIME(x,y) ((double)x[y].tv_sec + \
-        ((double)x[y].tv_usec / (double)1000000))
+static int barlabels __P((int));
+static void histogram __P((double, int, double));
+static int numlabels __P((int));
+static int stats __P((int, int, int));
+static void stat1 __P((int, int));
 
 
-field_def fields_io[] = {
-	{"DEVICE", 8, 16, 1, FLD_ALIGN_LEFT, -1, 0, 0, 0},
-	{"READ", 5, 8, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"WRITE", 5, 8, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"RTPS", 5, 8, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"WTPS", 5, 8, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"SEC", 5, 8, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"", 8, 19, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"STATS", 12, 15, 1, FLD_ALIGN_LEFT, -1, 0, 0, 0}
-};
-
-#define FLD_IO_DEVICE	FIELD_ADDR(fields_io,0)
-#define FLD_IO_READ	FIELD_ADDR(fields_io,1)
-#define FLD_IO_WRITE	FIELD_ADDR(fields_io,2)
-#define FLD_IO_RTPS	FIELD_ADDR(fields_io,3)
-#define FLD_IO_WTPS	FIELD_ADDR(fields_io,4)
-#define FLD_IO_SEC	FIELD_ADDR(fields_io,5)
-
-/* This is a hack that stuffs bcache statistics to the last two columns! */
-#define FLD_IO_SVAL	FIELD_ADDR(fields_io,6)
-#define FLD_IO_SSTR	FIELD_ADDR(fields_io,7)
-
-/* Define views */
-field_def *view_io_0[] = {
-	FLD_IO_DEVICE, FLD_IO_READ, FLD_IO_WRITE, FLD_IO_RTPS,
-	FLD_IO_WTPS, FLD_IO_SEC, FLD_IO_SVAL, FLD_IO_SSTR, NULL
-};
-
-
-/* Define view managers */
-struct view_manager iostat_mgr = {
-	"Iostat", select_io, read_io, NULL, print_header,
-	print_io, keyboard_callback, NULL, NULL
-};
-
-
-field_view views_io[] = {
-	{view_io_0, "iostat", '2', &iostat_mgr},
-	{NULL, NULL, 0, NULL}
-};
-
-
-int
-select_io(void)
+WINDOW *
+openiostat()
 {
-	num_disp = cur.dk_ndrive + 1;
-	return (0);
+	return (subwin(stdscr, LINES-1-5, 0, 5, 0));
 }
-
-int
-read_io(void)
-{
-	int mib[3];
-	size_t size;
-
-	dkreadstats();
-	dkswap();
-	num_disp = cur.dk_ndrive + 1;
-
-	bclast = bccur;
-	mib[0] = CTL_VFS;
-	mib[1] = VFS_GENERIC;
-	mib[2] = VFS_BCACHESTAT;
-	size = sizeof(bccur);
-
-	if (sysctl(mib, 3, &bccur, &size, NULL, 0) < 0)
-		error("cannot get vfs.bcachestat");
-
-	if (bclast.numbufs == 0)
-		bclast = bccur;
-
-	return 0;
-}
-
 
 void
-print_io(void)
+closeiostat(w)
+	WINDOW *w;
 {
-	int n, count = 0;
-
-	int curr;
-	etime = naptime;
-
-	/* XXX engine internals: save and restore curr_line for bcache */
-	curr = curr_line;
-
-	for (n = dispstart; n < num_disp - 1; n++) {
-		showdrive(n);
-		count++;
-		if (maxprint > 0 && count >= maxprint)
-			break;
-	}
-
-
-	if (maxprint == 0 || count < maxprint)
-		showtotal();
-
-	curr_line = curr;
-	showbcache();
+	if (w == NULL)
+		return;
+	wclear(w);
+	wrefresh(w);
+	delwin(w);
 }
 
 int
-initiostat(void)
+initiostat()
 {
-	field_view *v;
-
 	dkinit(1);
 	dkreadstats();
-
-	bzero(&bccur, sizeof(bccur));
-
-	for (v = views_io; v->name != NULL; v++)
-		add_view(v);
-
-	return(1);
+	return (1);
 }
 
 void
-showtotal(void)
+fetchiostat()
 {
-	double rsum, wsum, rtsum, wtsum, mssum;
-	int dn;
+	if (dk_ndrive == 0)
+		return;
+	dkreadstats();
+}
 
-	rsum = wsum = rtsum = wtsum = mssum = 0.0;
+#define	INSET	10
 
-	for (dn = 0; dn < cur.dk_ndrive; dn++) {
-		rsum += cur.dk_rbytes[dn] / etime;
-		wsum += cur.dk_wbytes[dn] / etime;
-		rtsum += cur.dk_rxfer[dn] / etime;
-		wtsum += cur.dk_wxfer[dn] / etime;
-		mssum += ATIME(cur.dk_time, dn) / etime;
+void
+labeliostat()
+{
+	int row;
+
+	row = 0;
+	wmove(wnd, row, 0); wclrtobot(wnd);
+	mvwaddstr(wnd, row++, INSET,
+	    "/0   /10  /20  /30  /40  /50  /60  /70  /80  /90  /100");
+	mvwaddstr(wnd, row++, 0, "cpu  user|");
+	mvwaddstr(wnd, row++, 0, "     nice|");
+	mvwaddstr(wnd, row++, 0, "   system|");
+	mvwaddstr(wnd, row++, 0, "interrupt|");
+	mvwaddstr(wnd, row++, 0, "     idle|");
+	if (numbers)
+		row = numlabels(row + 1);
+	else
+		row = barlabels(row + 1);
+}
+
+static int
+numlabels(row)
+	int row;
+{
+	int i, col, regions, ndrives;
+
+	if (dk_ndrive == 0) {
+		mvwaddstr(wnd, row++, INSET, "No drives attached.");
+		return (row);
 	}
-
-	print_fld_str(FLD_IO_DEVICE, "Totals");
-	print_fld_size(FLD_IO_READ, rsum);
-	print_fld_size(FLD_IO_WRITE, wsum);
-	print_fld_size(FLD_IO_RTPS, rtsum);
-	print_fld_size(FLD_IO_WTPS, wtsum);
-	print_fld_float(FLD_IO_SEC, mssum, 1);
-
-	end_line();
+#define COLWIDTH	14
+#define DRIVESPERLINE	((wnd->_maxx - INSET) / COLWIDTH)
+	for (ndrives = 0, i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i])
+			ndrives++;
+	regions = howmany(ndrives, DRIVESPERLINE);
+	/*
+	 * Deduct -regions for blank line after each scrolling region.
+	 */
+	linesperregion = (wnd->_maxy - row - regions) / regions;
+	/*
+	 * Minimum region contains space for two
+	 * label lines and one line of statistics.
+	 */
+	if (linesperregion < 3)
+		linesperregion = 3;
+	col = 0;
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i] /*&& cur.dk_bytes[i] != 0.0*/) {
+			if (col + COLWIDTH >= wnd->_maxx - INSET) {
+				col = 0, row += linesperregion + 1;
+				if (row > wnd->_maxy - (linesperregion + 1))
+					break;
+			}
+			mvwaddstr(wnd, row, col + 4, cur.dk_name[i]);
+			mvwaddstr(wnd, row + 1, col, "Kps tps  sec");
+			col += COLWIDTH;
+		}
+	if (col)
+		row += linesperregion + 1;
+	return (row);
 }
 
-void
-showdrive(int dn)
+static int
+barlabels(row)
+	int row;
 {
-	print_fld_str(FLD_IO_DEVICE, cur.dk_name[dn]);
-	print_fld_size(FLD_IO_READ, cur.dk_rbytes[dn]/etime);
-	print_fld_size(FLD_IO_WRITE, cur.dk_wbytes[dn]/ etime);
-	print_fld_size(FLD_IO_RTPS, cur.dk_rxfer[dn] / etime);
-	print_fld_size(FLD_IO_WTPS, cur.dk_wxfer[dn] / etime);
-	print_fld_float(FLD_IO_SEC, ATIME(cur.dk_time, dn) / etime, 1);
+	int i;
 
-	end_line();
+	if (dk_ndrive == 0) {
+		mvwaddstr(wnd, row++, INSET, "No drives attached.");
+		return (row);
+	}
+	mvwaddstr(wnd, row++, INSET,
+	    "/0   /10  /20  /30  /40  /50  /60  /70  /80  /90  /100");
+	linesperregion = 2 + secs;
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i] /*&& cur.dk_bytes[i] != 0.0*/) {
+			if (row > wnd->_maxy - linesperregion)
+				break;
+			mvwprintw(wnd, row++, 0, "%4.4s  Kps|", cur.dk_name[i]);
+			mvwaddstr(wnd, row++, 0, "      tps|");
+			if (secs)
+				mvwaddstr(wnd, row++, 0, "     msec|");
+		}
+	return (row);
 }
 
+
 void
-showbcache(void)
+showiostat()
 {
-	print_fld_str(FLD_IO_SSTR, "total pages");
-	print_fld_ssize(FLD_IO_SVAL, bccur.numbufpages);
-	end_line();
+	register int i, row, col;
 
-	print_fld_str(FLD_IO_SSTR, "dirty pages");
-	print_fld_ssize(FLD_IO_SVAL, bccur.numdirtypages);
-	end_line();
+	dkswap();
 
-	print_fld_str(FLD_IO_SSTR, "delwri bufs");
-	print_fld_ssize(FLD_IO_SVAL, bccur.delwribufs);
-	end_line();
+	etime = 0;
+	for(i = 0; i < CPUSTATES; i++) {
+		etime += cur.cp_time[i];
+	}
+	if (etime == 0.0)
+		etime = 1.0;
+	etime /= (float) hz;
+	row = 1;
 
-	print_fld_str(FLD_IO_SSTR, "busymap bufs");
-	print_fld_ssize(FLD_IO_SVAL, bccur.busymapped);
-	end_line();
+	/*
+	 * Interrupt CPU state not calculated yet.
+	 */ 
+	for (i = 0; i < CPUSTATES; i++)
+		stat1(row++, i);
 
-	print_fld_str(FLD_IO_SSTR, "avail kvaslots");
-	print_fld_ssize(FLD_IO_SVAL, bccur.kvaslots_avail);
-	end_line();
+	if (dk_ndrive == 0)
+		return;
 
-	print_fld_str(FLD_IO_SSTR, "kvaslots");
-	print_fld_ssize(FLD_IO_SVAL, bccur.kvaslots);
-	end_line();
+	if (!numbers) {
+		row += 2;
+		for (i = 0; i < dk_ndrive; i++)
+			if (cur.dk_select[i] /*&& cur.dk_bytes[i] != 0.0*/) {
+				if (row > wnd->_maxy - linesperregion)
+					break;
+				row = stats(row, INSET, i);
+			}
+		return;
+	}
+	col = 0;
+	wmove(wnd, row + linesperregion, 0);
+	wdeleteln(wnd);
+	wmove(wnd, row + 3, 0);
+	winsertln(wnd);
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i] /*&& cur.dk_bytes[i] != 0.0*/) {
+			if (col + COLWIDTH >= wnd->_maxx) {
+				col = 0, row += linesperregion + 1;
+				if (row > wnd->_maxy - (linesperregion + 1))
+					break;
+				wmove(wnd, row + linesperregion, 0);
+				wdeleteln(wnd);
+				wmove(wnd, row + 3, 0);
+				winsertln(wnd);
+			}
+			(void) stats(row + 3, col, i);
+			col += COLWIDTH;
+		}
+}
 
-	print_fld_str(FLD_IO_SSTR, "pending writes");
-	print_fld_ssize(FLD_IO_SVAL, bccur.pendingwrites);
-	end_line();
+static int
+stats(row, col, dn)
+	int row, col, dn;
+{
+	double atime, words;
 
-	print_fld_str(FLD_IO_SSTR, "pending reads");
-	print_fld_ssize(FLD_IO_SVAL, bccur.pendingreads);
-	end_line();
+	/* time busy in disk activity */
+	atime = (double)cur.dk_time[dn].tv_sec +
+		((double)cur.dk_time[dn].tv_usec / (double)1000000);
 
-	print_fld_str(FLD_IO_SSTR, "cache hits");
-	print_fld_ssize(FLD_IO_SVAL, bccur.cachehits - bclast.cachehits);
-	end_line();
+	words = cur.dk_bytes[dn] / 1024.0;	/* # of K transferred */
+	if (numbers) {
+		mvwprintw(wnd, row, col, "%3.0f%4.0f%5.1f",
+		    words / etime, cur.dk_xfer[dn] / etime, atime / etime);
+		return (row);
+	}
+	wmove(wnd, row++, col);
+	histogram(words / etime, 50, 0.5);
+	wmove(wnd, row++, col);
+	histogram(cur.dk_xfer[dn] / etime, 50, 0.5);
+	if (secs) {
+		wmove(wnd, row++, col);
+		atime *= 1000;	/* In milliseconds */
+		histogram(atime / etime, 50, 0.5);
+	}
+	return (row);
+}
+
+static void
+stat1(row, o)
+	int row, o;
+{
+	register int i;
+	double time;
+
+	time = 0;
+	for (i = 0; i < CPUSTATES; i++)
+		time += cur.cp_time[i];
+	if (time == 0.0)
+		time = 1.0;
+	wmove(wnd, row, INSET);
+#define CPUSCALE	0.5
+	histogram(100.0 * cur.cp_time[o] / time, 50, CPUSCALE);
+}
+
+static void
+histogram(val, colwidth, scale)
+	double val;
+	int colwidth;
+	double scale;
+{
+	char buf[10];
+	register int k;
+	register int v = (int)(val * scale) + 0.5;
+
+	k = MIN(v, colwidth);
+	if (v > colwidth) {
+		snprintf(buf, sizeof buf, "%4.1f", val);
+		k -= strlen(buf);
+		while (k--)
+			waddch(wnd, 'X');
+		waddstr(wnd, buf);
+		wclrtoeol(wnd);
+		return;
+	}
+	while (k--)
+		waddch(wnd, 'X');
+	wclrtoeol(wnd);
+}
+
+int
+cmdiostat(cmd, args)
+	char *cmd, *args;
+{
+
+	if (prefix(cmd, "secs"))
+		secs = !secs;
+	else if (prefix(cmd, "numbers"))
+		numbers = 1;
+	else if (prefix(cmd, "bars"))
+		numbers = 0;
+	else if (!dkcmd(cmd, args))
+		return (0);
+	wclear(wnd);
+	labeliostat();
+	refresh();
+	return (1);
 }

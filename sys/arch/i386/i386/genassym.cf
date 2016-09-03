@@ -1,4 +1,4 @@
-#	$OpenBSD: genassym.cf,v 1.39 2016/03/15 03:17:51 guenther Exp $
+#	$OpenBSD: genassym.cf,v 1.7 1999/02/26 04:28:50 art Exp $
 #
 # Copyright (c) 1982, 1990 The Regents of the University of California.
 # All rights reserved.
@@ -11,7 +11,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the University nor the names of its contributors
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by the University of
+#	California, Berkeley and its contributors.
+# 4. Neither the name of the University nor the names of its contributors
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
@@ -35,21 +39,30 @@ include <sys/proc.h>
 include <sys/resourcevar.h>
 include <sys/device.h>
 include <sys/user.h>
+ifdef INET
 include <sys/mbuf.h>
-include <sys/socketvar.h>
-include <netinet/in.h>
-include <netinet/ip.h>
-include <netinet/ip_var.h>
+endif
 
+include <vm/vm.h>
+
+ifdef UVM
 include <uvm/uvm_extern.h>
+endif
 
 include <machine/trap.h>
 include <machine/pmap.h>
 include <machine/vmparam.h>
-include <machine/mutex.h>
 
-if MULTIPROCESSOR
-include <machine/cpu.h>
+if COMPAT_SVR4 > 0
+include <compat/svr4/svr4_ucontext.h>
+endif
+
+if COMPAT_LINUX > 0
+include <machine/linux_machdep.h>
+endif
+
+if COMPAT_FREEBSD > 0
+include <machine/freebsd_machdep.h>
 endif
 
 include "isa.h"
@@ -57,120 +70,100 @@ if NISA > 0
 include <i386/isa/isa_machdep.h>
 endif
 
-export	SRUN
-export	SONPROC
+define	SRUN		SRUN
 
 # values for page tables
-export	PDSLOT_KERN
-export	PDSLOT_PTE
-export	PDSLOT_APTE
-export	NKPTP_MIN
+define	PTDPTDI		PTDPTDI
+define	KPTDI		KPTDI
+define	NKPDE		NKPDE
+define	APTDPTDI	APTDPTDI
 
 # values for virtual memory
-export	VM_MAXUSER_ADDRESS
+define	VM_MAXUSER_ADDRESS VM_MAXUSER_ADDRESS
 
 # proc fields and values
-struct	proc
-member	p_addr
-member	p_priority
-member	p_stat
-member	p_wchan
-member	p_vmspace
-member	p_flag
-member	p_cpu
-member	P_MD_ASTPENDING	p_md.md_astpending
+define	P_ADDR		offsetof(struct proc, p_addr)
+define	P_BACK		offsetof(struct proc, p_back)
+define	P_FORW		offsetof(struct proc, p_forw)
+define	P_PRIORITY	offsetof(struct proc, p_priority)
+define	P_STAT		offsetof(struct proc, p_stat)
+define	P_WCHAN		offsetof(struct proc, p_wchan)
+define	P_VMSPACE	offsetof(struct proc, p_vmspace)
+define	P_FLAG		offsetof(struct proc, p_flag)
 
-export	P_SYSTEM
+define	P_SYSTEM	P_SYSTEM
 
 # interrupt/fault metering
-struct	uvmexp		V_
-member	TRAP		traps
-member	INTR		intrs
+ifdef UVM
+define	V_TRAP			offsetof(struct uvmexp, traps)
+define	V_INTR			offsetof(struct uvmexp, intrs)
+else
+define	V_TRAP		offsetof(struct vmmeter, v_trap)
+define	V_INTR		offsetof(struct vmmeter, v_intr)
+endif
 
 # pcb fields
-struct	pcb
-member	pcb_cr3
-member	pcb_ebp
-member	pcb_esp
-member	pcb_cr0
-member	pcb_onfault
-member	pcb_fpcpu
-member	pcb_flags
-member	pcb_pmap
-export	PCB_SAVECTX
+define	PCB_CR3		offsetof(struct pcb, pcb_cr3)
+define	PCB_EBP		offsetof(struct pcb, pcb_ebp)
+define	PCB_ESP		offsetof(struct pcb, pcb_esp)
+define	PCB_FS		offsetof(struct pcb, pcb_fs)
+define	PCB_GS		offsetof(struct pcb, pcb_gs)
+define	PCB_CR0		offsetof(struct pcb, pcb_cr0)
+define	PCB_LDT_SEL	offsetof(struct pcb, pcb_ldt_sel)
+define	PCB_TSS_SEL	offsetof(struct pcb, pcb_tss_sel)
+define	PCB_ONFAULT	offsetof(struct pcb, pcb_onfault)
 
 # frame definitions
-struct	trapframe
-member	tf_cs
-member	tf_trapno
-member	tf_eflags
-member	tf_eip
-member	tf_err
-member	tf_eax
-member	tf_esp
+define	TF_CS		offsetof(struct trapframe, tf_cs)
+define	TF_TRAPNO	offsetof(struct trapframe, tf_trapno)
+define	TF_EFLAGS	offsetof(struct trapframe, tf_eflags)
+define	TF_EIP		offsetof(struct trapframe, tf_eip)
+define	TF_ERR		offsetof(struct trapframe, tf_err)
+
 define	FRAMESIZE	sizeof(struct trapframe)
 
-# interrupt frame definitions
-struct intrframe
-member if_ppl
-
 # signal handling
-struct	sigframe	SIGF_
-member	HANDLER		sf_handler
-member	SC		sf_sc
-struct	sigcontext
+define	SIGF_HANDLER	offsetof(struct sigframe, sf_handler)
+define	SIGF_SC		offsetof(struct sigframe, sf_sc)
+define	SC_FS		offsetof(struct sigcontext, sc_fs)
+define	SC_GS		offsetof(struct sigcontext, sc_gs)
+define	SC_EFLAGS	offsetof(struct sigcontext, sc_eflags)
 
 # mbuf fields
-struct	mbuf
-member	m_next
-member	m_data
-member	m_len
+ifdef INET
+define	M_NEXT		offsetof(struct mbuf, m_next)
+define	M_DATA		offsetof(struct mbuf, m_data)
+define	M_LEN		offsetof(struct mbuf, m_len)
+endif
+
+# SVR4 frame offsets
+ifdef COMPAT_SVR4
+define	SVR4_SIGF_HANDLER	offsetof(struct svr4_sigframe, sf_handler)
+define	SVR4_SIGF_UC	offsetof(struct svr4_sigframe, sf_uc)
+define	SVR4_UC_FS	offsetof(struct svr4_ucontext, uc_mcontext.greg[SVR4_X86_FS])
+define	SVR4_UC_GS	offsetof(struct svr4_ucontext, uc_mcontext.greg[SVR4_X86_GS])
+define	SVR4_UC_EFLAGS	offsetof(struct svr4_ucontext, uc_mcontext.greg[SVR4_X86_EFL])
+endif
+
+# Linux frame offsets
+ifdef COMPAT_LINUX
+define	LINUX_SIGF_HANDLER	offsetof(struct linux_sigframe, sf_handler)
+define	LINUX_SIGF_SC	offsetof(struct linux_sigframe, sf_sc)
+define	LINUX_SC_FS	offsetof(struct linux_sigcontext, sc_fs)
+define	LINUX_SC_GS	offsetof(struct linux_sigcontext, sc_gs)
+define	LINUX_SC_EFLAGS	offsetof(struct linux_sigcontext, sc_eflags)
+endif
+
+# FreeBSD frame offsets
+ifdef COMPAT_FREEBSD
+define	FREEBSD_SIGF_HANDLER	offsetof(struct freebsd_sigframe, sf_handler)
+define	FREEBSD_SIGF_SC	offsetof(struct freebsd_sigframe, sf_sc)
+endif
 
 # Interrupt metering
 if NISA > 0
-struct	intrhand
-member	ih_fun
-member	ih_arg
-member	IH_COUNT		ih_count.ec_count
-member	ih_next
+define	IH_FUN		offsetof(struct intrhand, ih_fun)
+define	IH_ARG		offsetof(struct intrhand, ih_arg)
+define	IH_COUNT	offsetof(struct intrhand, ih_count)
+define	IH_NEXT		offsetof(struct intrhand, ih_next)
 endif
-
-struct mutex
-member	mtx_lock
-member	mtx_wantipl
-member	mtx_oldipl
-member	mtx_owner
-
-define	IP_SRC			offsetof(struct ip, ip_src)
-define	IP_DST			offsetof(struct ip, ip_dst)
-
-define	P_MD_TSS_SEL		offsetof(struct proc, p_md.md_tss_sel)
-
-define	CPU_INFO_SELF		offsetof(struct cpu_info, ci_self)
-define	CPU_INFO_APICID		offsetof(struct cpu_info, ci_apicid)
-define	CPU_INFO_CURPROC	offsetof(struct cpu_info, ci_curproc)
-define	CPU_INFO_CURPCB		offsetof(struct cpu_info, ci_curpcb)
-define	CPU_INFO_NAME		offsetof(struct cpu_info, ci_dev.dv_xname)
-define	CPU_INFO_IDLE_PCB	offsetof(struct cpu_info, ci_idle_pcb)
-define	CPU_INFO_IDLE_TSS_SEL	offsetof(struct cpu_info, ci_idle_tss_sel)
-define	CPU_INFO_LEVEL		offsetof(struct cpu_info, ci_level)
-define	CPU_INFO_VENDOR		offsetof(struct cpu_info, ci_vendor[0])
-define	CPU_INFO_SIGNATURE	offsetof(struct cpu_info, ci_signature)
-define	CPU_INFO_RESCHED	offsetof(struct cpu_info, ci_want_resched)
-define	CPU_INFO_GDT		offsetof(struct cpu_info, ci_gdt)
-define	CPU_INFO_IPENDING	offsetof(struct cpu_info, ci_ipending)
-define	CPU_INFO_IMASK		offsetof(struct cpu_info, ci_imask)
-define	CPU_INFO_IUNMASK	offsetof(struct cpu_info, ci_iunmask)
-define	CPU_INFO_ILEVEL		offsetof(struct cpu_info, ci_ilevel)
-define	CPU_INFO_IDEPTH		offsetof(struct cpu_info, ci_idepth)
-define	CPU_INFO_ISOURCES	offsetof(struct cpu_info, ci_isources)
-ifdef DIAGNOSTIC
-define	CPU_INFO_MUTEX_LEVEL	offsetof(struct cpu_info, ci_mutex_level)
-endif
-define	CPU_INFO_CURPMAP	offsetof(struct cpu_info, ci_curpmap)
-
-struct pmap
-member pm_pdirpa
-
-define	SIZEOF_CPU_INFO		sizeof(struct cpu_info)
-

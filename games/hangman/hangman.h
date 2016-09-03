@@ -1,4 +1,4 @@
-/*	$OpenBSD: hangman.h,v 1.11 2015/12/31 15:20:36 mestre Exp $	*/
+/*	$OpenBSD: hangman.h,v 1.4 1999/09/25 20:51:53 pjanzen Exp $	*/
 /*	$NetBSD: hangman.h,v 1.5 1995/04/24 12:23:44 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,9 +36,17 @@
  *	@(#)hangman.h	8.1 (Berkeley) 5/31/93
  */
 
-#include <stdbool.h>
-#include <stdio.h>
-
+#include	<sys/types.h>
+#include	<sys/stat.h>
+#include	<ctype.h>
+#include	<curses.h>
+#include	<err.h>
+#include	<signal.h>
+#include	<stdlib.h>
+#include	<string.h>
+#include	<unistd.h>
+#include	"pathnames.h"
+ 
 #define	MAXBADWORDS	100
 
 #define	MINLEN	6
@@ -62,7 +74,7 @@ typedef struct {
 
 extern bool Guessed[];
 
-extern char Word[BUFSIZ], Known[BUFSIZ];
+extern char Word[], Known[];
 extern const char *const Noose_pict[];
 
 extern int Errors, Wordnum;
@@ -77,19 +89,13 @@ extern FILE *Dict;
 
 extern off_t Dict_size;
 
-extern int syms;
-extern int symfd;
-extern off_t symoffs, symsize;
-
-__dead void	die(int);
-void	endgame(void);
-void	getguess(void);
-void	getword(void);
-void	sym_getword(void);
-int	sym_setup(void);
-void	playgame(void);
-void	prdata(void);
-void	prman(void);
-void	prword(void);
-unsigned char	readch(void);
-void	setup(void);
+void	die __P((int));
+void	endgame __P((void));
+void	getguess __P((void));
+void	getword __P((void));
+void	playgame __P((void));
+void	prdata __P((void));
+void	prman __P((void));
+void	prword __P((void));
+int	readch __P((void));
+void	setup __P((void));

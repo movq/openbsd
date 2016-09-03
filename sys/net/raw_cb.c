@@ -1,4 +1,4 @@
-/*	$OpenBSD: raw_cb.c,v 1.9 2015/03/14 03:38:51 jsg Exp $	*/
+/*	$OpenBSD: raw_cb.c,v 1.2 1996/03/03 21:07:16 niklas Exp $	*/
 /*	$NetBSD: raw_cb.c,v 1.9 1996/02/13 22:00:39 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,6 +45,8 @@
 #include <sys/protosw.h>
 #include <sys/errno.h>
 
+#include <net/if.h>
+#include <net/route.h>
 #include <net/raw_cb.h>
 #include <netinet/in.h>
 
@@ -55,16 +61,17 @@
 
 u_long	raw_sendspace = RAWSNDQ;
 u_long	raw_recvspace = RAWRCVQ;
-struct rawcbhead rawcb;
 
 /*
  * Allocate a control block and a nominal amount
  * of buffer space for the socket.
  */
 int
-raw_attach(struct socket *so, int proto)
+raw_attach(so, proto)
+	register struct socket *so;
+	int proto;
 {
-	struct rawcb *rp = sotorawcb(so);
+	register struct rawcb *rp = sotorawcb(so);
 	int error;
 
 	/*
@@ -88,7 +95,8 @@ raw_attach(struct socket *so, int proto)
  * socket resources.
  */
 void
-raw_detach(struct rawcb *rp)
+raw_detach(rp)
+	register struct rawcb *rp;
 {
 	struct socket *so = rp->rcb_socket;
 
@@ -100,14 +108,15 @@ raw_detach(struct rawcb *rp)
 		m_freem(dtom(rp->rcb_laddr));
 	rp->rcb_laddr = 0;
 #endif
-	free((caddr_t)(rp), M_PCB, 0);
+	free((caddr_t)(rp), M_PCB);
 }
 
 /*
  * Disconnect and possibly release resources.
  */
 void
-raw_disconnect(struct rawcb *rp)
+raw_disconnect(rp)
+	struct rawcb *rp;
 {
 
 #ifdef notdef
@@ -121,10 +130,12 @@ raw_disconnect(struct rawcb *rp)
 
 #ifdef notdef
 int
-raw_bind(struct socket *so, struct mbuf *nam)
+raw_bind(so, nam)
+	register struct socket *so;
+	struct mbuf *nam;
 {
 	struct sockaddr *addr = mtod(nam, struct sockaddr *);
-	struct rawcb *rp;
+	register struct rawcb *rp;
 
 	if (ifnet == 0)
 		return (EADDRNOTAVAIL);

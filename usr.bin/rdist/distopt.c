@@ -1,4 +1,4 @@
-/*	$OpenBSD: distopt.c,v 1.13 2015/01/20 09:00:16 guenther Exp $	*/
+/*	$OpenBSD: distopt.c,v 1.5 1999/02/04 23:18:57 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,63 +33,65 @@
  * SUCH DAMAGE.
  */
 
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: distopt.c,v 6.10 1996/01/30 01:52:07 mcooper Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: distopt.c,v 1.5 1999/02/04 23:18:57 millert Exp $";
+#endif
 
-#include "client.h"
+static char sccsid[] = "@(#)distopt.c";
+
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* !lint */
 
 /*
  * Dist Option functions
  */
 
+#include "defs.h"
 
 /*
  * Distfile Option Information
  */
-struct distoptinfo {
-	opt_t		do_value;
-	char	       *do_name;
-	char	       *do_arg;
-	size_t	       arg_size;
-} distoptinfo[] = {
-	{ DO_CHKNFS,		"chknfs", 	NULL,		0},
-	{ DO_CHKREADONLY,	"chkreadonly",	NULL,		0},
-	{ DO_CHKSYM,		"chksym",	NULL,		0},
-	{ DO_COMPARE,		"compare", 	NULL,		0},
-	{ DO_DEFGROUP,		"defgroup",	defgroup,	sizeof(defgroup) },
-	{ DO_DEFOWNER,		"defowner",	defowner,	sizeof(defowner) },
-	{ DO_FOLLOW,		"follow", 	NULL,		0},
-	{ DO_HISTORY,		"history", 	NULL,		0},
-	{ DO_IGNLNKS,		"ignlnks",	NULL,		0},
-	{ DO_NOCHKGROUP,	"nochkgroup",	NULL,		0},
-	{ DO_NOCHKMODE,		"nochkmode",	NULL,		0},
-	{ DO_NOCHKOWNER,	"nochkowner",	NULL,		0},
-	{ DO_NODESCEND,		"nodescend",	NULL,		0},
-	{ DO_NOEXEC,		"noexec",	NULL,		0},
-	{ DO_NUMCHKGROUP,	"numchkgroup",	NULL,		0},
-	{ DO_NUMCHKOWNER,	"numchkowner",	NULL,		0},
-	{ DO_QUIET,		"quiet",	NULL,		0},
-	{ DO_REMOVE,		"remove",	NULL,		0},
-	{ DO_SAVETARGETS,	"savetargets",	NULL,		0},
-	{ DO_SPARSE,		"sparse",	NULL,		0},
-	{ DO_UPDATEPERM,	"updateperm",	NULL,		0},
-	{ DO_VERIFY,		"verify",	NULL,		0},
-	{ DO_WHOLE,		"whole",	NULL,		0},
-	{ DO_YOUNGER,		"younger",	NULL,		0},
+DISTOPTINFO distoptinfo[] = {
+	{ DO_CHKNFS,		"chknfs" },
+	{ DO_CHKREADONLY,	"chkreadonly" },
+	{ DO_CHKSYM,		"chksym" },
+	{ DO_COMPARE,		"compare" },
+	{ DO_FOLLOW,		"follow" },
+	{ DO_IGNLNKS,		"ignlnks" },
+	{ DO_NOCHKGROUP,	"nochkgroup" },
+	{ DO_NOCHKMODE,		"nochkmode" },
+	{ DO_NOCHKOWNER,	"nochkowner" },
+	{ DO_NODESCEND,		"nodescend" },
+	{ DO_NOEXEC,		"noexec" },
+	{ DO_NUMCHKGROUP,	"numchkgroup" },
+	{ DO_NUMCHKOWNER,	"numchkowner" },
+	{ DO_QUIET,		"quiet" },
+	{ DO_REMOVE,		"remove" },
+	{ DO_SAVETARGETS,	"savetargets" },
+	{ DO_SPARSE,            "sparse" },
+	{ DO_VERIFY,		"verify" },
+	{ DO_WHOLE,		"whole" },
+	{ DO_YOUNGER,		"younger" },
 	{ 0 },
 };
 
 /*
  * Get a Distfile Option entry named "name".
  */
-static struct distoptinfo *
-getdistopt(char *name, int *len)
+extern DISTOPTINFO *getdistopt(name)
+	char *name;
 {
-	int i;
+	register int i;
 
 	for (i = 0; distoptinfo[i].do_name; ++i)
-		if (strncasecmp(name, distoptinfo[i].do_name,
-				*len = strlen(distoptinfo[i].do_name)) == 0)
+		if (strcasecmp(name, distoptinfo[i].do_name) == 0)
 			return(&distoptinfo[i]);
 
 	return(NULL);
@@ -96,33 +102,38 @@ getdistopt(char *name, int *len)
  * If doerrs is true, print out own error message.  Returns
  * 0 on success.
  */
-int
-parsedistopts(char *str, opt_t *optptr, int doerrs)
+extern int parsedistopts(str, optptr, doerrs)
+	char *str;
+	opt_t *optptr;
+	int doerrs;
 {
-	char *string, *optstr;
-	struct distoptinfo *distopt;
-	int len;
+	register char *string, *optstr;
+	DISTOPTINFO *distopt;
+	int negate;
 
-	/* strtok() is destructive */
+	/* strtok() is harmful */
 	string = xstrdup(str);
 
 	for (optstr = strtok(string, ","); optstr;
 	     optstr = strtok(NULL, ",")) {
-		/* Try Yes */
-		if ((distopt = getdistopt(optstr, &len)) != NULL) {
+		if (strncasecmp(optstr, "no", 2) == 0)
+			negate = TRUE;
+		else
+			negate = FALSE;
+
+		/*
+		 * Try looking up option name.  If that fails
+		 * and the option starts with "no", strip "no"
+		 * from option and retry lookup.
+		 */
+		if ((distopt = getdistopt(optstr))) {
 			FLAG_ON(*optptr, distopt->do_value);
-			if (distopt->do_arg && optstr[len] == '=')
-				(void) strlcpy(distopt->do_arg,
-				    &optstr[len + 1], distopt->arg_size);
 			continue;
 		}
-
-		/* Try No */
-		if ((distopt = getdistopt(optstr+2, &len)) != NULL) {
+		if (negate && (distopt = getdistopt(optstr+2))) {
 			FLAG_OFF(*optptr, distopt->do_value);
 			continue;
 		}
-
 		if (doerrs)
 			error("Dist option \"%s\" is not valid.", optstr);
 	}
@@ -136,18 +147,17 @@ parsedistopts(char *str, opt_t *optptr, int doerrs)
 /*
  * Get a list of the Distfile Option Entries.
  */
-char *
-getdistoptlist(void)
+extern char *getdistoptlist()
 {
-	int i;
+	register int i;
 	static char buf[1024];
 
 	for (i = 0, buf[0] = CNULL; distoptinfo[i].do_name; ++i) {
 		if (buf[0] == CNULL)
-			(void) strlcpy(buf, distoptinfo[i].do_name, sizeof buf);
+			(void) strcpy(buf, distoptinfo[i].do_name);
 		else {
-			(void) strlcat(buf, ",", sizeof buf);
-			(void) strlcat(buf, distoptinfo[i].do_name, sizeof buf);
+			(void) strcat(buf, ",");
+			(void) strcat(buf, distoptinfo[i].do_name);
 		}
 	}
 
@@ -158,10 +168,10 @@ getdistoptlist(void)
  * Get a list of the Distfile Option Entries for each enabled 
  * value in "opts".
  */
-char *
-getondistoptlist(opt_t opts)
+extern char *getondistoptlist(opts)
+	opt_t opts;
 {
-	int i;
+	register int i;
 	static char buf[1024];
 
 	for (i = 0, buf[0] = CNULL; distoptinfo[i].do_name; ++i) {
@@ -169,14 +179,10 @@ getondistoptlist(opt_t opts)
 			continue;
 
 		if (buf[0] == CNULL)
-			(void) strlcpy(buf, distoptinfo[i].do_name, sizeof buf);
+			(void) strcpy(buf, distoptinfo[i].do_name);
 		else {
-			(void) strlcat(buf, ",", sizeof buf);
-			(void) strlcat(buf, distoptinfo[i].do_name, sizeof buf);
-		}
-		if (distoptinfo[i].do_arg) {
-			(void) strlcat(buf, "=", sizeof buf);
-			(void) strlcat(buf, distoptinfo[i].do_arg, sizeof buf);
+			(void) strcat(buf, ",");
+			(void) strcat(buf, distoptinfo[i].do_name);
 		}
 	}
 

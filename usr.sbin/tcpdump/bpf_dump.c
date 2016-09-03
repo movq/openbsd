@@ -1,5 +1,3 @@
-/*	$OpenBSD: bpf_dump.c,v 1.8 2009/10/27 23:59:55 deraadt Exp $	*/
-
 /*
  * Copyright (c) 1992, 1993, 1994, 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -20,6 +18,10 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/bpf_dump.c,v 1.5 1996/12/12 16:22:57 bitblt Exp $ (LBL)";
+#endif
 
 #include <sys/types.h>
 #include <sys/time.h>

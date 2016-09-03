@@ -1,4 +1,4 @@
-.\"	$OpenBSD: i386_vm86.2,v 1.13 2015/09/10 17:55:21 schwarze Exp $
+.\"	$OpenBSD: i386_vm86.2,v 1.5 1999/07/09 13:35:14 aaron Exp $
 .\"	$NetBSD: i386_vm86.2,v 1.1 1996/02/21 00:21:52 jtk Exp $
 .\"
 .\" Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -15,6 +15,13 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	   This product includes software developed by the NetBSD
+.\"	  Foundation, Inc. and its contributors.
+.\" 4. Neither the name of The NetBSD Foundation nor the names of its
+.\"    contributors may be used to endorse or promote products derived
+.\"    from this software without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
 .\" ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -30,18 +37,18 @@
 .\"
 .\"     from: @(#)fork.2	6.5 (Berkeley) 3/10/91
 .\"
-.Dd $Mdocdate: September 10 2015 $
-.Dt I386_VM86 2 i386
+.Dd February 20, 1996
+.Dt I386_VM86 2
 .Os
 .Sh NAME
 .Nm i386_vm86
 .Nd set virtual 8086 processor registers and mode
 .Sh SYNOPSIS
-.In sys/types.h
-.In signal.h
-.In machine/segments.h
-.In machine/sysarch.h
-.In machine/vm86.h
+.Fd #include <sys/types.h>
+.Fd #include <signal.h>
+.Fd #include <machine/segments.h>
+.Fd #include <machine/sysarch.h>
+.Fd #include <machine/vm86.h>
 .Ft int
 .Fn i386_vm86 "struct vm86_struct *vmcp"
 .Sh DESCRIPTION
@@ -58,22 +65,20 @@ The kernel keeps a pointer to the context, and uses the tables stored at
 .Ar vmcp->int_byuser
 and
 .Ar vmcp->int21_byuser
-for fast virtual interrupt handling.
-If the
-.Ar n Ns Li th
+for fast virtual interrupt handling.  If the
+.Ar n th
 bit is clear in the first of
 these arrays, then the kernel may directly emulate the real-mode x86 INT
 .Ar n
-instruction handling.
-If the
-.Ar n Ns Li th
-bit is set, then the process is
+instruction handling.  If the
+.Ar n
+th bit is set, then the process is
 delivered a signal when an INT instruction is executed.
 .Pp
 Since MS-DOS puts many DOS functions onto interrupt 21, it is handled
-specially: the
-.Ar k Ns Li th
-bit in the
+specially:  the
+.Ar k
+th bit in the
 .Ar vmcp->int21_byuser
 array is checked when INT
 .Ar 21
@@ -81,16 +86,9 @@ is requested and the
 .Ar ah
 register is
 .Ar k .
-.Pp
-.Sy Note:
-Code using the
-.Fn i386_vm86
-function must be compiled using
-.Cm -li386 .
 .Sh RETURN VALUES
 This routine does not normally return: 32-bit mode will be restored by
-the delivery of a signal to the process.
-In case of an error in setting
+the delivery of a signal to the process.  In case of an error in setting
 the VM86 mode, a value of \-1 is returned and the global variable
 .Va errno
 is set to indicate the error.
@@ -102,9 +100,5 @@ will fail if:
 The state at
 .Ar vmcp
 was not readable to the user process.
-.El
 .Sh REFERENCES
-.Rs
-.%A Intel
-.%T i386 Microprocessor Programmer's Reference Manual
-.Re
+i386 Microprocessor Programmer's Reference Manual, Intel

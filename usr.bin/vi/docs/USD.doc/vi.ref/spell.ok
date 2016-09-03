@@ -6,6 +6,8 @@ BRE's
 Bostic
 Bourne
 CDPATH
+CSCOPE
+Cscope
 DIRS
 DOUBLEQUOTE
 Dq
@@ -111,7 +113,7 @@ brev
 bsd
 bugs.current
 c2w
-caret
+carat
 cd
 cdpath
 cdy
@@ -126,6 +128,7 @@ count2
 creens
 cs
 cs.berkeley.edu
+cscope
 ctags
 cw
 db
@@ -224,6 +227,7 @@ modeful
 modeline
 modelines
 ms
+msgcat
 ndo
 nex
 nexrc

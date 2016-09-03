@@ -1,5 +1,7 @@
-/*	$OpenBSD: isa_machdep.c,v 1.82 2015/09/27 10:12:09 semarie Exp $	*/
+/*	$OpenBSD: isa_machdep.c,v 1.34 1999/07/23 13:18:04 niklas Exp $	*/
 /*	$NetBSD: isa_machdep.c,v 1.22 1997/06/12 23:57:32 thorpej Exp $	*/
+
+#define ISA_DMA_STATS
 
 /*-
  * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
@@ -17,6 +19,50 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*-
+ * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Jason R. Thorpe of the Numerical Aerospace Simulation Facility,
+ * NASA Ames Research Center.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -48,7 +94,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -74,70 +124,77 @@
 #include <sys/malloc.h>
 #include <sys/proc.h>
 
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
-#include "ioapic.h"
-
-#if NIOAPIC > 0
-#include <machine/i82093var.h>
-#include <machine/mpbiosvar.h>
-#endif
-
+#define _I386_BUS_DMA_PRIVATE
 #include <machine/bus.h>
 
-#include <machine/intr.h>
 #include <machine/pio.h>
 #include <machine/cpufunc.h>
-#include <machine/i8259.h>
 
 #include <dev/isa/isareg.h>
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
 #include <i386/isa/isa_machdep.h>
+#include <i386/isa/icu.h>
+
+#include <vm/vm.h>
 
 #include "isadma.h"
 
-extern	paddr_t avail_end;
+/*
+ * ISA can only DMA to 0-16M.
+ */
+#define	ISA_DMA_BOUNCE_THRESHOLD	0x00ffffff
+
+extern	vm_offset_t avail_end;
 
 #define	IDTVEC(name)	__CONCAT(X,name)
 /* default interrupt vector table entries */
-typedef int (*vector)(void);
-extern vector IDTVEC(intr)[];
-void isa_strayintr(int);
-void intr_calculatemasks(void);
-int fakeintr(void *);
+typedef int (*vector) __P((void));
+extern vector IDTVEC(intr)[], IDTVEC(fast)[];
+void isa_strayintr __P((int));
+void intr_calculatemasks __P((void));
+int fakeintr __P((void *));
 
 #if NISADMA > 0
-int	_isa_bus_dmamap_create(bus_dma_tag_t, bus_size_t, int,
-	    bus_size_t, bus_size_t, int, bus_dmamap_t *);
-void	_isa_bus_dmamap_destroy(bus_dma_tag_t, bus_dmamap_t);
-int	_isa_bus_dmamap_load(bus_dma_tag_t, bus_dmamap_t, void *,
-	    bus_size_t, struct proc *, int);
-int	_isa_bus_dmamap_load_mbuf(bus_dma_tag_t, bus_dmamap_t,
-	    struct mbuf *, int);
-int	_isa_bus_dmamap_load_uio(bus_dma_tag_t, bus_dmamap_t,
-	    struct uio *, int);
-int	_isa_bus_dmamap_load_raw(bus_dma_tag_t, bus_dmamap_t,
-	    bus_dma_segment_t *, int, bus_size_t, int);
-void	_isa_bus_dmamap_unload(bus_dma_tag_t, bus_dmamap_t);
-void	_isa_bus_dmamap_sync(bus_dma_tag_t, bus_dmamap_t,
-	    bus_addr_t, bus_size_t, int);
+int	_isa_bus_dmamap_create __P((bus_dma_tag_t, bus_size_t, int,
+	    bus_size_t, bus_size_t, int, bus_dmamap_t *));
+void	_isa_bus_dmamap_destroy __P((bus_dma_tag_t, bus_dmamap_t));
+int	_isa_bus_dmamap_load __P((bus_dma_tag_t, bus_dmamap_t, void *,
+	    bus_size_t, struct proc *, int));
+int	_isa_bus_dmamap_load_mbuf __P((bus_dma_tag_t, bus_dmamap_t,
+	    struct mbuf *, int));
+int	_isa_bus_dmamap_load_uio __P((bus_dma_tag_t, bus_dmamap_t,
+	    struct uio *, int));
+int	_isa_bus_dmamap_load_raw __P((bus_dma_tag_t, bus_dmamap_t,
+	    bus_dma_segment_t *, int, bus_size_t, int));
+void	_isa_bus_dmamap_unload __P((bus_dma_tag_t, bus_dmamap_t));
+void	_isa_bus_dmamap_sync __P((bus_dma_tag_t, bus_dmamap_t,
+	    bus_dmasync_op_t));
 
-int	_isa_bus_dmamem_alloc(bus_dma_tag_t, bus_size_t, bus_size_t,
-	    bus_size_t, bus_dma_segment_t *, int, int *, int);
+int	_isa_bus_dmamem_alloc __P((bus_dma_tag_t, bus_size_t, bus_size_t,
+	    bus_size_t, bus_dma_segment_t *, int, int *, int));
+void	_isa_bus_dmamem_free __P((bus_dma_tag_t,
+	    bus_dma_segment_t *, int));
+int	_isa_bus_dmamem_map __P((bus_dma_tag_t, bus_dma_segment_t *,
+	    int, size_t, caddr_t *, int));
+void	_isa_bus_dmamem_unmap __P((bus_dma_tag_t, caddr_t, size_t));
+int	_isa_bus_dmamem_mmap __P((bus_dma_tag_t, bus_dma_segment_t *,
+	    int, int, int, int));
 
-int	_isa_dma_check_buffer(void *, bus_size_t, int, bus_size_t,
-	    struct proc *);
-int	_isa_dma_alloc_bouncebuf(bus_dma_tag_t, bus_dmamap_t,
-	    bus_size_t, int);
-void	_isa_dma_free_bouncebuf(bus_dma_tag_t, bus_dmamap_t);
+int	_isa_dma_check_buffer __P((void *, bus_size_t, int, bus_size_t,
+	    struct proc *));
+int	_isa_dma_alloc_bouncebuf __P((bus_dma_tag_t, bus_dmamap_t,
+	    bus_size_t, int));
+void	_isa_dma_free_bouncebuf __P((bus_dma_tag_t, bus_dmamap_t));
 
 /*
  * Entry points for ISA DMA.  These are mostly wrappers around
  * the generic functions that understand how to deal with bounce
  * buffers, if necessary.
  */
-struct bus_dma_tag isa_bus_dma_tag = {
+struct i386_bus_dma_tag isa_bus_dma_tag = {
 	NULL,			/* _cookie */
 	_isa_bus_dmamap_create,
 	_isa_bus_dmamap_destroy,
@@ -148,11 +205,10 @@ struct bus_dma_tag isa_bus_dma_tag = {
 	_isa_bus_dmamap_unload,
 	_isa_bus_dmamap_sync,
 	_isa_bus_dmamem_alloc,
-	_bus_dmamem_alloc_range,
-	_bus_dmamem_free,
-	_bus_dmamem_map,
-	_bus_dmamem_unmap,
-	_bus_dmamem_mmap,
+	_isa_bus_dmamem_free,
+	_isa_bus_dmamem_map,
+	_isa_bus_dmamem_unmap,
+	_isa_bus_dmamem_mmap,
 };
 #endif /* NISADMA > 0 */
 
@@ -161,14 +217,14 @@ struct bus_dma_tag isa_bus_dma_tag = {
  * during configuration of kernel, setup interrupt control unit
  */
 void
-isa_defaultirq(void)
+isa_defaultirq()
 {
 	int i;
 
 	/* icu vectors */
 	for (i = 0; i < ICU_LEN; i++)
-		setgate(&idt[ICU_OFFSET + i], IDTVEC(intr)[i], 0,
-		    SDT_SYS386IGT, SEL_KPL, GICODE_SEL);
+		setgate(&idt[ICU_OFFSET + i], IDTVEC(intr)[i], 0, SDT_SYS386IGT,
+		    SEL_KPL, GICODE_SEL);
   
 	/* initialize 8259's */
 	outb(IO_ICU1, 0x11);		/* reset; program device, four bytes */
@@ -204,20 +260,21 @@ isa_defaultirq(void)
  * return true to panic system, false to ignore.
  */
 int
-isa_nmi(void)
+isa_nmi()
 {
+
 	/* This is historic garbage; these ports are not readable */
 	log(LOG_CRIT, "No-maskable interrupt, may be parity error\n");
 	return(0);
 }
 
-u_long  intrstray[ICU_LEN];
-
+u_long	intrstray[ICU_LEN] = {0};
 /*
  * Caught a stray interrupt, notify
  */
 void
-isa_strayintr(int irq)
+isa_strayintr(irq)
+	int irq;
 {
         /*
          * Stray interrupts on irq 7 occur when an interrupt line is raised
@@ -230,12 +287,9 @@ isa_strayintr(int irq)
 		    intrstray[irq] >= 5 ? "; stopped logging" : "");
 }
 
+int fastvec;
 int intrtype[ICU_LEN], intrmask[ICU_LEN], intrlevel[ICU_LEN];
-int iminlevel[ICU_LEN], imaxlevel[ICU_LEN];
 struct intrhand *intrhand[ICU_LEN];
-
-int imask[NIPL];	/* Bitmask telling what interrupts are blocked. */
-int iunmask[NIPL];	/* Bitmask telling what interrupts are accepted. */
 
 /*
  * Recalculate the interrupt masks from scratch.
@@ -244,81 +298,59 @@ int iunmask[NIPL];	/* Bitmask telling what interrupts are accepted. */
  * happen very much anyway.
  */
 void
-intr_calculatemasks(void)
+intr_calculatemasks()
 {
-	int irq, level, unusedirqs;
+	int irq, level;
 	struct intrhand *q;
 
 	/* First, figure out which levels each IRQ uses. */
-	unusedirqs = 0xffff;
 	for (irq = 0; irq < ICU_LEN; irq++) {
-		int levels = 0;
+		register int levels = 0;
 		for (q = intrhand[irq]; q; q = q->ih_next)
-			levels |= 1 << IPL(q->ih_level);
+			levels |= 1 << q->ih_level;
 		intrlevel[irq] = levels;
-		if (levels)
-			unusedirqs &= ~(1 << irq);
 	}
 
 	/* Then figure out which IRQs use each level. */
-	for (level = 0; level < NIPL; level++) {
-		int irqs = 0;
+	for (level = 0; level < 5; level++) {
+		register int irqs = 0;
 		for (irq = 0; irq < ICU_LEN; irq++)
 			if (intrlevel[irq] & (1 << level))
 				irqs |= 1 << irq;
-		imask[level] = irqs | unusedirqs;
+		imask[level] = irqs | SIR_ALLMASK;
 	}
 
 	/*
-	 * Initialize soft interrupt masks to block themselves.
+	 * There are tty, network and disk drivers that use free() at interrupt
+	 * time, so imp > (tty | net | bio).
 	 */
-	IMASK(IPL_SOFTCLOCK) |= 1 << SIR_CLOCK;
-	IMASK(IPL_SOFTNET) |= 1 << SIR_NET;
-	IMASK(IPL_SOFTTTY) |= 1 << SIR_TTY;
+	imask[IPL_IMP] |= imask[IPL_TTY] | imask[IPL_NET] | imask[IPL_BIO];
+	imask[IPL_AUDIO] |= imask[IPL_IMP];
 
 	/*
 	 * Enforce a hierarchy that gives slow devices a better chance at not
 	 * dropping data.
 	 */
-	for (level = 0; level < NIPL - 1; level++)
-		imask[level + 1] |= imask[level];
+	imask[IPL_TTY] |= imask[IPL_NET] | imask[IPL_BIO];
+	imask[IPL_NET] |= imask[IPL_BIO];
+
+	/*
+	 * These are pseudo-levels.
+	 */
+	imask[IPL_NONE] = 0x00000000;
+	imask[IPL_HIGH] = 0xffffffff;
 
 	/* And eventually calculate the complete masks. */
 	for (irq = 0; irq < ICU_LEN; irq++) {
-		int irqs = 1 << irq;
-		int minlevel = IPL_NONE;
-		int maxlevel = IPL_NONE;
-
-		if (intrhand[irq] == NULL) {
-			maxlevel = IPL_HIGH;
-			irqs = IMASK(IPL_HIGH);
-		} else {
-			for (q = intrhand[irq]; q; q = q->ih_next) {
-				irqs |= IMASK(q->ih_level);
-				if (minlevel == IPL_NONE ||
-				    q->ih_level < minlevel)
-					minlevel = q->ih_level;
-				if (q->ih_level > maxlevel)
-					maxlevel = q->ih_level;
-			}
-		}
-		if (irqs != IMASK(maxlevel))
-			panic("irq %d level %x mask mismatch: %x vs %x", irq,
-			    maxlevel, irqs, IMASK(maxlevel));
-
-		intrmask[irq] = irqs;
-		iminlevel[irq] = minlevel;
-		imaxlevel[irq] = maxlevel;
-
-#if 0
-		printf("irq %d: level %x, mask 0x%x (%x)\n", irq,
-		    imaxlevel[irq], intrmask[irq], IMASK(imaxlevel[irq]));
-#endif
+		register int irqs = 1 << irq;
+		for (q = intrhand[irq]; q; q = q->ih_next)
+			irqs |= imask[q->ih_level];
+		intrmask[irq] = irqs | SIR_ALLMASK;
 	}
 
 	/* Lastly, determine which IRQs are actually in use. */
 	{
-		int irqs = 0;
+		register int irqs = 0;
 		for (irq = 0; irq < ICU_LEN; irq++)
 			if (intrhand[irq])
 				irqs |= 1 << irq;
@@ -327,23 +359,24 @@ intr_calculatemasks(void)
 		imen = ~irqs;
 		SET_ICUS();
 	}
-
-	/* For speed of splx, provide the inverse of the interrupt masks. */
-	for (irq = 0; irq < ICU_LEN; irq++)
-		iunmask[irq] = ~imask[irq];
 }
 
 int
 fakeintr(arg)
 	void *arg;
 {
+
 	return 0;
 }
 
 #define	LEGAL_IRQ(x)	((x) >= 0 && (x) < ICU_LEN && (x) != 2)
 
 int
-isa_intr_alloc(isa_chipset_tag_t ic, int mask, int type, int *irq)
+isa_intr_alloc(ic, mask, type, irq)
+	isa_chipset_tag_t ic;
+	int mask;
+	int type;
+	int *irq;
 {
 	int i, bestirq, count;
 	int tmp;
@@ -419,7 +452,10 @@ isa_intr_alloc(isa_chipset_tag_t ic, int mask, int type, int *irq)
  * 2 = interrupt all to ourself
  */
 int
-isa_intr_check(isa_chipset_tag_t ic, int irq, int type)
+isa_intr_check(ic, irq, type)
+	isa_chipset_tag_t ic;	/* Not used. */
+	int irq;
+	int type;
 {
 	if (!LEGAL_IRQ(irq) || type == IST_NONE)
 		return (0);
@@ -446,74 +482,36 @@ isa_intr_check(isa_chipset_tag_t ic, int irq, int type)
  * XXX PRONE TO RACE CONDITIONS, UGLY, 'INTERESTING' INSERTION ALGORITHM.
  */
 void *
-isa_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level,
-    int (*ih_fun)(void *), void *ih_arg, const char *ih_what)
+isa_intr_establish(ic, irq, type, level, ih_fun, ih_arg, ih_what)
+	isa_chipset_tag_t ic;
+	int irq;
+	int type;
+	int level;
+	int (*ih_fun) __P((void *));
+	void *ih_arg;
+	char *ih_what;
 {
 	struct intrhand **p, *q, *ih;
 	static struct intrhand fakehand = {fakeintr};
-	int flags;
-
-#if NIOAPIC > 0
-	struct mp_intr_map *mip;
-
- 	if (mp_busses != NULL) {
- 		int mpspec_pin = irq;
- 		int airq;
-
-		if (mp_isa_bus == NULL)
-			panic("no isa bus");
-
- 		for (mip = mp_isa_bus->mb_intrs; mip != NULL;
- 		    mip = mip->next) {
- 			if (mip->bus_pin == mpspec_pin) {
- 				airq = mip->ioapic_ih | irq;
- 				break;
- 			}
- 		}
-		if (mip == NULL && mp_eisa_bus) {
-			for (mip = mp_eisa_bus->mb_intrs; mip != NULL;
-			    mip = mip->next) {
-				if (mip->bus_pin == mpspec_pin) {
-					airq = mip->ioapic_ih | irq;
-					break;
-				}
-			}
-		}
-
-		/* no MP mapping found -- invent! */
- 		if (mip == NULL)
-			airq = mpbios_invent(irq, type, mp_isa_bus->mb_idx);
-
-		return (apic_intr_establish(airq, type, level, ih_fun,
-		    ih_arg, ih_what));
- 	}
-#endif
-
-	flags = level & IPL_MPSAFE;
-	level &= ~IPL_MPSAFE;
-
-	KASSERT(level <= IPL_TTY || level >= IPL_CLOCK || flags & IPL_MPSAFE);
+	extern int cold;
 
 	/* no point in sleeping unless someone can free memory. */
 	ih = malloc(sizeof *ih, M_DEVBUF, cold ? M_NOWAIT : M_WAITOK);
 	if (ih == NULL) {
 		printf("%s: isa_intr_establish: can't malloc handler info\n",
 		    ih_what);
-		return (NULL);
+		return NULL;
 	}
 
 	if (!LEGAL_IRQ(irq) || type == IST_NONE) {
-		printf("%s: isa_intr_establish: bogus irq or type\n", ih_what);
-		free(ih, M_DEVBUF, sizeof *ih);
-		return (NULL);
+		printf("%s: intr_establish: bogus irq or type\n", ih_what);
+		return NULL;
 	}
 	switch (intrtype[irq]) {
 	case IST_NONE:
 		intrtype[irq] = type;
 		break;
 	case IST_EDGE:
-		intr_shared_edge = 1;
-		/* FALLTHROUGH */
 	case IST_LEVEL:
 		if (type == intrtype[irq])
 			break;
@@ -522,8 +520,7 @@ isa_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level,
 			/*printf("%s: intr_establish: can't share %s with %s, irq %d\n",
 			    ih_what, isa_intr_typename(intrtype[irq]),
 			    isa_intr_typename(type), irq);*/
-			free(ih, M_DEVBUF, sizeof *ih);
-			return (NULL);
+			return NULL;
 		}
 		break;
 	}
@@ -551,11 +548,11 @@ isa_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level,
 	 */
 	ih->ih_fun = ih_fun;
 	ih->ih_arg = ih_arg;
+	ih->ih_count = 0;
 	ih->ih_next = NULL;
 	ih->ih_level = level;
-	ih->ih_flags = flags;
 	ih->ih_irq = irq;
-	evcount_attach(&ih->ih_count, ih_what, &ih->ih_irq);
+	ih->ih_what = ih_what;
 	*p = ih;
 
 	return (ih);
@@ -565,21 +562,16 @@ isa_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level,
  * Deregister an interrupt handler.
  */
 void
-isa_intr_disestablish(isa_chipset_tag_t ic, void *arg)
+isa_intr_disestablish(ic, arg)
+	isa_chipset_tag_t ic;
+	void *arg;
 {
 	struct intrhand *ih = arg;
 	int irq = ih->ih_irq;
 	struct intrhand **p, *q;
 
-#if NIOAPIC > 0
-	if (irq & APIC_INT_VIA_APIC) {
-		apic_intr_disestablish(arg);
-		return;
-	}
-#endif
-
 	if (!LEGAL_IRQ(irq))
-		panic("intr_disestablish: bogus irq %d", irq);
+		panic("intr_disestablish: bogus irq");
 
 	/*
 	 * Remove the handler from the chain.
@@ -591,8 +583,7 @@ isa_intr_disestablish(isa_chipset_tag_t ic, void *arg)
 		*p = q->ih_next;
 	else
 		panic("intr_disestablish: handler not registered");
-	evcount_detach(&ih->ih_count);
-	free(ih, M_DEVBUF, sizeof *ih);
+	free(ih, M_DEVBUF);
 
 	intr_calculatemasks();
 
@@ -601,8 +592,9 @@ isa_intr_disestablish(isa_chipset_tag_t ic, void *arg)
 }
 
 void
-isa_attach_hook(struct device *parent, struct device *self,
-    struct isabus_attach_args *iba)
+isa_attach_hook(parent, self, iba)
+	struct device *parent, *self;
+	struct isabus_attach_args *iba;
 {
 	extern int isa_has_been_seen;
 
@@ -640,10 +632,16 @@ u_long	isa_dma_stats_nbouncebufs;
  * Create an ISA DMA map.
  */
 int
-_isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
-    bus_size_t maxsegsz, bus_size_t boundary, int flags, bus_dmamap_t *dmamp)
+_isa_bus_dmamap_create(t, size, nsegments, maxsegsz, boundary, flags, dmamp)
+	bus_dma_tag_t t;
+	bus_size_t size;
+	int nsegments;
+	bus_size_t maxsegsz;
+	bus_size_t boundary;
+	int flags;
+	bus_dmamap_t *dmamp;
 {
-	struct isa_dma_cookie *cookie;
+	struct i386_isa_dma_cookie *cookie;
 	bus_dmamap_t map;
 	int error, cookieflags;
 	void *cookiestore;
@@ -658,7 +656,7 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	map = *dmamp;
 	map->_dm_cookie = NULL;
 
-	cookiesize = sizeof(struct isa_dma_cookie);
+	cookiesize = sizeof(struct i386_isa_dma_cookie);
 
 	/*
 	 * ISA only has 24-bits of address space.  This means
@@ -667,7 +665,7 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * in memory below the 16M boundary.  On DMA reads,
 	 * DMA happens to the bounce buffers, and is copied into
 	 * the caller's buffer.  On writes, data is copied into
-	 * the bounce buffer, and the DMA happens from those
+	 * but bounce buffer, and the DMA happens from those
 	 * pages.  To software using the DMA mapping interface,
 	 * this looks simply like a data cache.
 	 *
@@ -694,11 +692,12 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	 * Allocate our cookie.
 	 */
 	if ((cookiestore = malloc(cookiesize, M_DEVBUF,
-	    ((flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)|M_ZERO)) == NULL) {
+	    (flags & BUS_DMA_NOWAIT) ? M_NOWAIT : M_WAITOK)) == NULL) {
 		error = ENOMEM;
 		goto out;
 	}
-	cookie = (struct isa_dma_cookie *)cookiestore;
+	bzero(cookiestore, cookiesize);
+	cookie = (struct i386_isa_dma_cookie *)cookiestore;
 	cookie->id_flags = cookieflags;
 	map->_dm_cookie = cookie;
 
@@ -715,7 +714,8 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 
  out:
 	if (error) {
-		free(map->_dm_cookie, M_DEVBUF, cookiesize);
+		if (map->_dm_cookie != NULL)
+			free(map->_dm_cookie, M_DEVBUF);
 		_bus_dmamap_destroy(t, map);
 	}
 	return (error);
@@ -725,9 +725,11 @@ _isa_bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
  * Destroy an ISA DMA map.
  */
 void
-_isa_bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
+_isa_bus_dmamap_destroy(t, map)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
 {
-	struct isa_dma_cookie *cookie = map->_dm_cookie;
+	struct i386_isa_dma_cookie *cookie = map->_dm_cookie;
 
 	/*
 	 * Free any bounce pages this map might hold.
@@ -735,7 +737,7 @@ _isa_bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 	if (cookie->id_flags & ID_HAS_BOUNCE)
 		_isa_dma_free_bouncebuf(t, map);
 
-	free(cookie, M_DEVBUF, 0);
+	free(cookie, M_DEVBUF);
 	_bus_dmamap_destroy(t, map);
 }
 
@@ -743,10 +745,15 @@ _isa_bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
  * Load an ISA DMA map with a linear buffer.
  */
 int
-_isa_bus_dmamap_load(bus_dma_tag_t t, bus_dmamap_t map, void *buf,
-    bus_size_t buflen, struct proc *p, int flags)
+_isa_bus_dmamap_load(t, map, buf, buflen, p, flags)
+	bus_dma_tag_t t;
+	bus_dmamap_t map; 
+	void *buf;
+	bus_size_t buflen;
+	struct proc *p;
+	int flags;
 {
-	struct isa_dma_cookie *cookie = map->_dm_cookie;
+	struct i386_isa_dma_cookie *cookie = map->_dm_cookie;
 	int error;
 
 	STAT_INCR(isa_dma_stats_loads);
@@ -810,8 +817,11 @@ _isa_bus_dmamap_load(bus_dma_tag_t t, bus_dmamap_t map, void *buf,
  * Like _isa_bus_dmamap_load(), but for mbufs.
  */
 int
-_isa_bus_dmamap_load_mbuf(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m,
-    int flags)
+_isa_bus_dmamap_load_mbuf(t, map, m, flags)  
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
+	struct mbuf *m;
+	int flags;
 {
 
 	panic("_isa_bus_dmamap_load_mbuf: not implemented");
@@ -821,8 +831,11 @@ _isa_bus_dmamap_load_mbuf(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m,
  * Like _isa_bus_dmamap_load(), but for uios.
  */
 int
-_isa_bus_dmamap_load_uio(bus_dma_tag_t t, bus_dmamap_t map, struct uio *uio,
-    int flags)
+_isa_bus_dmamap_load_uio(t, map, uio, flags)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
+	struct uio *uio;
+	int flags;
 {
 
 	panic("_isa_bus_dmamap_load_uio: not implemented");
@@ -833,8 +846,13 @@ _isa_bus_dmamap_load_uio(bus_dma_tag_t t, bus_dmamap_t map, struct uio *uio,
  * bus_dmamem_alloc().
  */
 int
-_isa_bus_dmamap_load_raw(bus_dma_tag_t t, bus_dmamap_t map,
-    bus_dma_segment_t *segs, int nsegs, bus_size_t size, int flags)
+_isa_bus_dmamap_load_raw(t, map, segs, nsegs, size, flags)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
+	bus_dma_segment_t *segs;
+	int nsegs;
+	bus_size_t size;
+	int flags;
 {
 
 	panic("_isa_bus_dmamap_load_raw: not implemented");
@@ -844,9 +862,11 @@ _isa_bus_dmamap_load_raw(bus_dma_tag_t t, bus_dmamap_t map,
  * Unload an ISA DMA map.
  */
 void
-_isa_bus_dmamap_unload(bus_dma_tag_t t, bus_dmamap_t map)
+_isa_bus_dmamap_unload(t, map)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
 {
-	struct isa_dma_cookie *cookie = map->_dm_cookie;
+	struct i386_isa_dma_cookie *cookie = map->_dm_cookie;
 
 	/*
 	 * If we have bounce pages, free them, unless they're
@@ -868,71 +888,130 @@ _isa_bus_dmamap_unload(bus_dma_tag_t t, bus_dmamap_t map)
  * Synchronize an ISA DMA map.
  */
 void
-_isa_bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
-    bus_size_t len, int op)
+_isa_bus_dmamap_sync(t, map, op)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
+	bus_dmasync_op_t op;
 {
-	struct isa_dma_cookie *cookie = map->_dm_cookie;
+	struct i386_isa_dma_cookie *cookie = map->_dm_cookie;
 
-#ifdef DEBUG
-	if ((op & (BUS_DMASYNC_PREWRITE|BUS_DMASYNC_POSTREAD)) != 0) {
-		if (offset >= map->dm_mapsize)
-			panic("_isa_bus_dmamap_sync: bad offset");
-		if (len == 0 || (offset + len) > map->dm_mapsize)
-			panic("_isa_bus_dmamap_sync: bad length");
-	}
-#endif
-#ifdef DIAGNOSTIC
-	if ((op & (BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE)) != 0 &&
-	    (op & (BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE)) != 0)
-		panic("_isa_bus_dmamap_sync: mix PRE and POST");
-#endif /* DIAGNOSTIC */
+	switch (op) {
+	case BUS_DMASYNC_PREREAD:
+		/*
+		 * Nothing to do for pre-read.
+		 */
+		break;
 
-	/* PREREAD and POSTWRITE are no-ops */
-	if (op & BUS_DMASYNC_PREWRITE) {
+	case BUS_DMASYNC_PREWRITE:
 		/*
 		 * If we're bouncing this transfer, copy the
 		 * caller's buffer to the bounce buffer.
 		 */
 		if (cookie->id_flags & ID_IS_BOUNCING)
-			memcpy(cookie->id_bouncebuf + offset,
-			    (char *)cookie->id_origbuf + offset, len);
-	}
+			bcopy(cookie->id_origbuf, cookie->id_bouncebuf,
+			    cookie->id_origbuflen);
+		break;
 
-	_bus_dmamap_sync(t, map, offset, len, op);
-
-	if (op & BUS_DMASYNC_POSTREAD) {
+	case BUS_DMASYNC_POSTREAD:
 		/*
 		 * If we're bouncing this transfer, copy the
 		 * bounce buffer to the caller's buffer.
 		 */
 		if (cookie->id_flags & ID_IS_BOUNCING)
-			memcpy(cookie->id_origbuf + offset,
-			    (char *)cookie->id_bouncebuf + offset, len);
+			bcopy(cookie->id_bouncebuf, cookie->id_origbuf,
+			    cookie->id_origbuflen);
+		break;
+
+	case BUS_DMASYNC_POSTWRITE:
+		/*
+		 * Nothing to do for post-write.
+		 */
+		break;
 	}
+
+#if 0
+	/* This is a noop anyhow, so why bother calling it? */
+	_bus_dmamap_sync(t, map, op);
+#endif
 }
 
 /*
  * Allocate memory safe for ISA DMA.
  */
 int
-_isa_bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
-    bus_size_t boundary, bus_dma_segment_t *segs, int nsegs, int *rsegs,
-    int flags)
+_isa_bus_dmamem_alloc(t, size, alignment, boundary, segs, nsegs, rsegs, flags)
+	bus_dma_tag_t t;
+	bus_size_t size, alignment, boundary;
+	bus_dma_segment_t *segs;
+	int nsegs;
+	int *rsegs;
+	int flags;
 {
-	int error;
+	vm_offset_t high;
 
-	/* Try in ISA addressable region first */
-	error = _bus_dmamem_alloc_range(t, size, alignment, boundary,
-	    segs, nsegs, rsegs, flags, 0, ISA_DMA_BOUNCE_THRESHOLD);
-	if (!error)
-		return (error);
+	if (avail_end > ISA_DMA_BOUNCE_THRESHOLD)
+		high = trunc_page(ISA_DMA_BOUNCE_THRESHOLD);
+	else
+		high = trunc_page(avail_end);
 
-	/* Otherwise try anywhere (we'll bounce later) */
-	error = _bus_dmamem_alloc_range(t, size, alignment, boundary,
-	    segs, nsegs, rsegs, flags, (bus_addr_t)0, (bus_addr_t)-1);
-	return (error);
+	return (_bus_dmamem_alloc_range(t, size, alignment, boundary,
+	    segs, nsegs, rsegs, flags, 0, high));
 }
 
+/*
+ * Free memory safe for ISA DMA.
+ */
+void
+_isa_bus_dmamem_free(t, segs, nsegs)
+	bus_dma_tag_t t;
+	bus_dma_segment_t *segs;
+	int nsegs;
+{
+
+	_bus_dmamem_free(t, segs, nsegs);
+}
+
+/*
+ * Map ISA DMA-safe memory into kernel virtual address space.
+ */
+int
+_isa_bus_dmamem_map(t, segs, nsegs, size, kvap, flags)
+	bus_dma_tag_t t;
+	bus_dma_segment_t *segs;
+	int nsegs;
+	size_t size;
+	caddr_t *kvap;
+	int flags;
+{
+
+	return (_bus_dmamem_map(t, segs, nsegs, size, kvap, flags));
+}
+
+/*
+ * Unmap ISA DMA-safe memory from kernel virtual address space.
+ */
+void
+_isa_bus_dmamem_unmap(t, kva, size)
+	bus_dma_tag_t t;
+	caddr_t kva;
+	size_t size;
+{
+
+	_bus_dmamem_unmap(t, kva, size);
+}
+
+/*
+ * mmap(2) ISA DMA-safe memory.
+ */
+int
+_isa_bus_dmamem_mmap(t, segs, nsegs, off, prot, flags)
+	bus_dma_tag_t t;
+	bus_dma_segment_t *segs;
+	int nsegs, off, prot, flags;
+{
+
+	return (_bus_dmamem_mmap(t, segs, nsegs, off, prot, flags));
+}
 
 /**********************************************************************
  * ISA DMA utility functions
@@ -943,12 +1022,15 @@ _isa_bus_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
  * range RAM.
  */
 int
-_isa_dma_check_buffer(void *buf, bus_size_t buflen, int segcnt,
-    bus_size_t boundary, struct proc *p)
+_isa_dma_check_buffer(buf, buflen, segcnt, boundary, p)
+	void *buf;
+	bus_size_t buflen;
+	int segcnt;
+	bus_size_t boundary;
+	struct proc *p;
 {
-	vaddr_t vaddr = (vaddr_t)buf;
-	vaddr_t endva;
-	paddr_t pa, lastpa;
+	vm_offset_t vaddr = (vm_offset_t)buf;
+	vm_offset_t pa, lastpa, endva;
 	u_long pagemask = ~(boundary - 1);
 	pmap_t pmap;
 	int nsegs;
@@ -967,7 +1049,7 @@ _isa_dma_check_buffer(void *buf, bus_size_t buflen, int segcnt,
 		/*
 		 * Get physical address for this segment.
 		 */
-		pmap_extract(pmap, (vaddr_t)vaddr, &pa);
+		pa = pmap_extract(pmap, (vm_offset_t)vaddr);
 		pa = trunc_page(pa);
 
 		/*
@@ -1000,25 +1082,28 @@ _isa_dma_check_buffer(void *buf, bus_size_t buflen, int segcnt,
 }
 
 int
-_isa_dma_alloc_bouncebuf(bus_dma_tag_t t, bus_dmamap_t map, bus_size_t size, int flags)
+_isa_dma_alloc_bouncebuf(t, map, size, flags)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
+	bus_size_t size;
+	int flags;
 {
-	struct isa_dma_cookie *cookie = map->_dm_cookie;
+	struct i386_isa_dma_cookie *cookie = map->_dm_cookie;
 	int error = 0;
 
 	cookie->id_bouncebuflen = round_page(size);
-	error = _bus_dmamem_alloc_range(t, cookie->id_bouncebuflen,
+	error = _isa_bus_dmamem_alloc(t, cookie->id_bouncebuflen,
 	    NBPG, map->_dm_boundary, cookie->id_bouncesegs,
-	    map->_dm_segcnt, &cookie->id_nbouncesegs, flags,
-	    0, ISA_DMA_BOUNCE_THRESHOLD);
+	    map->_dm_segcnt, &cookie->id_nbouncesegs, flags);
 	if (error)
 		goto out;
-	error = _bus_dmamem_map(t, cookie->id_bouncesegs,
+	error = _isa_bus_dmamem_map(t, cookie->id_bouncesegs,
 	    cookie->id_nbouncesegs, cookie->id_bouncebuflen,
 	    (caddr_t *)&cookie->id_bouncebuf, flags);
 
  out:
 	if (error) {
-		_bus_dmamem_free(t, cookie->id_bouncesegs,
+		_isa_bus_dmamem_free(t, cookie->id_bouncesegs,
 		    cookie->id_nbouncesegs);
 		cookie->id_bouncebuflen = 0;
 		cookie->id_nbouncesegs = 0;
@@ -1031,18 +1116,122 @@ _isa_dma_alloc_bouncebuf(bus_dma_tag_t t, bus_dmamap_t map, bus_size_t size, int
 }
 
 void
-_isa_dma_free_bouncebuf(bus_dma_tag_t t, bus_dmamap_t map)
+_isa_dma_free_bouncebuf(t, map)
+	bus_dma_tag_t t;
+	bus_dmamap_t map;
 {
-	struct isa_dma_cookie *cookie = map->_dm_cookie;
+	struct i386_isa_dma_cookie *cookie = map->_dm_cookie;
 
 	STAT_DECR(isa_dma_stats_nbouncebufs);
 
-	_bus_dmamem_unmap(t, cookie->id_bouncebuf,
+	_isa_bus_dmamem_unmap(t, cookie->id_bouncebuf,
 	    cookie->id_bouncebuflen);
-	_bus_dmamem_free(t, cookie->id_bouncesegs,
+	_isa_bus_dmamem_free(t, cookie->id_bouncesegs,
 	    cookie->id_nbouncesegs);
 	cookie->id_bouncebuflen = 0;
 	cookie->id_nbouncesegs = 0;
 	cookie->id_flags &= ~ID_HAS_BOUNCE;
 }
+
+#ifdef __ISADMA_COMPAT
+/*
+ * setup (addr, nbytes) for an ISA dma transfer.
+ * flags&ISADMA_MAP_WAITOK	may wait
+ * flags&ISADMA_MAP_BOUNCE	may use a bounce buffer if necessary
+ * flags&ISADMA_MAP_CONTIG	result must be physically contiguous
+ * flags&ISADMA_MAP_8BIT	must not cross 64k boundary
+ * flags&ISADMA_MAP_16BIT	must not cross 128k boundary
+ *
+ * returns the number of used phys entries, 0 on failure.
+ * if flags&ISADMA_MAP_CONTIG result is 1 on sucess!
+ */
+int
+isadma_map(addr, nbytes, phys, flags)
+	caddr_t addr;
+	vm_size_t nbytes;
+	struct isadma_seg *phys;
+	int flags;
+{
+	bus_dma_tag_t dmat = ((struct isa_softc *)isa_dev)->sc_dmat;
+	bus_dmamap_t dmam;
+	int i;
+
+/* XXX if this turns out to be too low, convert the driver to real bus_dma */
+#define ISADMA_MAX_SEGMENTS 64
+#define ISADMA_MAX_SEGSZ 0xffffff
+
+	if (bus_dmamap_create(dmat, nbytes,
+	    (flags & ISADMA_MAP_CONTIG) ? 1 : ISADMA_MAX_SEGMENTS,
+	    ISADMA_MAX_SEGSZ,
+	    (flags & ISADMA_MAP_8BIT) ? 0xffff :
+	    ((flags & ISADMA_MAP_16BIT) ? 0x1ffff : 0),
+	    (flags & ISADMA_MAP_WAITOK) ? BUS_DMA_WAITOK : BUS_DMA_NOWAIT,
+	    &dmam) != 0)
+		return (0);
+	if (bus_dmamap_load(dmat, dmam, addr, nbytes, 0,
+	    (flags & ISADMA_MAP_WAITOK) ? BUS_DMA_WAITOK : BUS_DMA_NOWAIT) !=
+	     0) {
+		bus_dmamap_destroy(dmat, dmam);
+		return (0);
+	}
+	for (i = 0; i < dmam->dm_nsegs; i++) {
+		phys[i].addr = dmam->dm_segs[i].ds_addr;
+		phys[i].length = dmam->dm_segs[i].ds_len;
+	}
+	phys[0].dmam = dmam;
+	return (dmam->dm_nsegs);
+}
+
+/*
+ * undo a ISA dma mapping. Simply return the bounced segments to the pool.
+ */
+void
+isadma_unmap(addr, nbytes, nphys, phys)
+	caddr_t addr;
+	vm_size_t nbytes;
+	int nphys;
+	struct isadma_seg *phys;
+{
+	bus_dma_tag_t dmat = ((struct isa_softc *)isa_dev)->sc_dmat;
+	bus_dmamap_t dmam = phys[0].dmam;
+
+	if (dmam == NULL)
+		return;
+	bus_dmamap_unload(dmat, dmam);
+	bus_dmamap_destroy(dmat, dmam);
+	phys[0].dmam = NULL;
+}
+
+/*
+ * copy bounce buffer to buffer where needed
+ */
+void
+isadma_copyfrombuf(addr, nbytes, nphys, phys)
+	caddr_t addr;
+	vm_size_t nbytes;
+	int nphys;
+	struct isadma_seg *phys;
+{
+	bus_dma_tag_t dmat = ((struct isa_softc *)isa_dev)->sc_dmat;
+	bus_dmamap_t dmam = phys[0].dmam;
+
+	bus_dmamap_sync(dmat, dmam, BUS_DMASYNC_POSTREAD);
+}
+
+/*
+ * copy buffer to bounce buffer where needed
+ */
+void
+isadma_copytobuf(addr, nbytes, nphys, phys)
+	caddr_t addr;
+	vm_size_t nbytes;
+	int nphys;
+	struct isadma_seg *phys;
+{
+	bus_dma_tag_t dmat = ((struct isa_softc *)isa_dev)->sc_dmat;
+	bus_dmamap_t dmam = phys[0].dmam;
+
+	bus_dmamap_sync(dmat, dmam, BUS_DMASYNC_PREWRITE);
+}
+#endif /* __ISADMA_COMPAT */
 #endif /* NISADMA > 0 */

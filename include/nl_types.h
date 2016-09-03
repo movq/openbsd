@@ -1,4 +1,4 @@
-/*	$OpenBSD: nl_types.h,v 1.8 2008/06/26 05:42:04 ray Exp $	*/
+/*	$OpenBSD: nl_types.h,v 1.6 1997/09/21 10:45:45 niklas Exp $	*/
 /*	$NetBSD: nl_types.h,v 1.6 1996/05/13 23:11:15 jtc Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -83,9 +90,9 @@ typedef struct _nl_catd {
 typedef long	nl_item;
 
 __BEGIN_DECLS
-extern nl_catd 	catopen(const char *, int);
-extern char    *catgets(nl_catd, int, int, const char *);
-extern int	catclose(nl_catd);
+extern nl_catd 	catopen __P((const char *, int));
+extern char    *catgets __P((nl_catd, int, int, const char *));
+extern int	catclose __P((nl_catd));
 __END_DECLS
 
 #endif	/* _NL_TYPES_H_ */

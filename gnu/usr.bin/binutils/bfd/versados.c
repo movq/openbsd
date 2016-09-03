@@ -1,9 +1,9 @@
 /* BFD back-end for VERSAdos-E objects.
-   Copyright 1995, 1996, 1998, 1999, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
-   Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
    Versados is a Motorola trademark.
+
+   Copyright 1995 Free Software Foundation, Inc.
+   Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -23,19 +23,20 @@
 
 /*
    SUBSECTION
-   VERSAdos-E relocatable object file format
+   VERSAdos-E relocateable object file format
 
    DESCRIPTION
 
-   This module supports reading of VERSAdos relocatable
+   This module supports reading of VERSAdos relocateable
    object files.
 
    A VERSAdos file looks like contains
 
-   o Identification Record
+   o Indentification Record
    o External Symbol Definition Record
-   o Object Text Record
+   o Object Text Recrod
    o End Record
+
 
  */
 
@@ -44,34 +45,17 @@
 #include "libbfd.h"
 #include "libiberty.h"
 
-static bfd_boolean versados_mkobject PARAMS ((bfd *));
-static bfd_boolean versados_scan PARAMS ((bfd *));
+
+static boolean versados_mkobject PARAMS ((bfd *));
+static boolean versados_scan PARAMS ((bfd *));
 static const bfd_target *versados_object_p PARAMS ((bfd *));
-static asymbol *versados_new_symbol
-  PARAMS ((bfd *, int, const char *, bfd_vma, asection *));
-static char *new_symbol_string PARAMS ((bfd *, const char *));
-static const bfd_target *versados_object_p PARAMS ((bfd *));
-static bfd_boolean versados_pass_2 PARAMS ((bfd *));
-static bfd_boolean versados_get_section_contents
-  PARAMS ((bfd *, asection *, void *, file_ptr, bfd_size_type));
-static bfd_boolean versados_set_section_contents
-  PARAMS ((bfd *, sec_ptr, const void *, file_ptr, bfd_size_type));
-static int versados_sizeof_headers PARAMS ((bfd *, bfd_boolean));
-static long int versados_get_symtab_upper_bound PARAMS ((bfd *));
-static long int versados_canonicalize_symtab PARAMS ((bfd *, asymbol **));
-static void versados_get_symbol_info
-  PARAMS ((bfd *, asymbol *, symbol_info *));
-static void versados_print_symbol
-  PARAMS ((bfd *, PTR, asymbol *, bfd_print_symbol_type));
-static long versados_get_reloc_upper_bound
-  PARAMS ((bfd *, sec_ptr));
-static long versados_canonicalize_reloc
-  PARAMS ((bfd *, sec_ptr, arelent **, asymbol **));
+
 
 #define VHEADER '1'
 #define VESTDEF '2'
 #define VOTR '3'
 #define VEND '4'
+
 
 #define ES_BASE 17		/* first symbol has esdid 17 */
 
@@ -162,39 +146,38 @@ union ext_any
     struct ext_otr otr;
   };
 
-static int get_record PARAMS ((bfd *, union ext_any *));
-static int get_4 PARAMS ((unsigned char **));
-static void get_10 PARAMS ((unsigned char **, char *));
-static void process_esd PARAMS ((bfd *, struct ext_esd *, int));
-static int get_offset PARAMS ((int, unsigned char *));
-static void process_otr PARAMS ((bfd *, struct ext_otr *, int));
+/* Initialize by filling in the hex conversion array. */
 
-/* Initialize by filling in the hex conversion array.  */
+
+
+
 
 /* Set up the tdata information.  */
 
-static bfd_boolean
+static boolean
 versados_mkobject (abfd)
      bfd *abfd;
 {
   if (abfd->tdata.versados_data == NULL)
     {
-      bfd_size_type amt = sizeof (tdata_type);
-      tdata_type *tdata = (tdata_type *) bfd_alloc (abfd, amt);
+      tdata_type *tdata = (tdata_type *) bfd_alloc (abfd, sizeof (tdata_type));
       if (tdata == NULL)
-	return FALSE;
+	return false;
       abfd->tdata.versados_data = tdata;
       tdata->symbols = NULL;
       VDATA (abfd)->alert = 0x12345678;
     }
 
   bfd_default_set_arch_mach (abfd, bfd_arch_m68k, 0);
-  return TRUE;
+  return true;
 }
+
 
 /* Report a problem in an S record file.  FIXME: This probably should
    not call fprintf, but we really do need some mechanism for printing
    error messages.  */
+
+
 
 static asymbol *
 versados_new_symbol (abfd, snum, name, val, sec)
@@ -213,19 +196,19 @@ versados_new_symbol (abfd, snum, name, val, sec)
   return n;
 }
 
+
 static int
 get_record (abfd, ptr)
      bfd *abfd;
      union ext_any *ptr;
 {
-  if (bfd_bread (&ptr->size, (bfd_size_type) 1, abfd) != 1
-      || (bfd_bread ((char *) ptr + 1, (bfd_size_type) ptr->size, abfd)
-	  != ptr->size))
+  bfd_read (&ptr->size, 1, 1, abfd);
+  if (bfd_read ((char *) ptr + 1, 1, ptr->size, abfd) != ptr->size)
     return 0;
   return 1;
 }
 
-static int
+int
 get_4 (pp)
      unsigned char **pp;
 {
@@ -234,7 +217,7 @@ get_4 (pp)
   return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | (p[3] << 0);
 }
 
-static void
+void
 get_10 (pp, name)
      unsigned char **pp;
      char *name;
@@ -254,13 +237,14 @@ get_10 (pp, name)
 static char *
 new_symbol_string (abfd, name)
      bfd *abfd;
-     const char *name;
+     char *name;
 {
   char *n = VDATA (abfd)->strings;
   strcpy (VDATA (abfd)->strings, name);
   VDATA (abfd)->strings += strlen (VDATA (abfd)->strings) + 1;
   return n;
 }
+
 
 static void
 process_esd (abfd, esd, pass)
@@ -305,13 +289,14 @@ process_esd (abfd, esd, pass)
 		int esidx;
 		asymbol *s;
 		char *n = new_symbol_string (abfd, name);
-		s = versados_new_symbol (abfd, snum, n, (bfd_vma) 0,
-					 bfd_und_section_ptr);
+		s = versados_new_symbol (abfd, snum, n, 0,
+					 &bfd_und_section, scn);
 		esidx = VDATA (abfd)->es_done++;
 		RDATA (abfd, esidx - ES_BASE) = s;
 	      }
 	  }
 	  break;
+
 
 	case ESD_ABS:
 	  size = get_4 (&ptr);
@@ -329,7 +314,7 @@ process_esd (abfd, esd, pass)
 	case ESD_XDEF_IN_SEC:
 	  {
 	    int snum = VDATA (abfd)->def_idx++;
-	    bfd_vma val;
+	    long val;
 	    get_10 (&ptr, name);
 	    val = get_4 (&ptr);
 	    if (pass == 1)
@@ -341,8 +326,7 @@ process_esd (abfd, esd, pass)
 	      {
 		asymbol *s;
 		char *n = new_symbol_string (abfd, name);
-		s = versados_new_symbol (abfd, snum + VDATA (abfd)->nrefs, n,
-					 val, sec);
+		s = versados_new_symbol (abfd, snum + VDATA (abfd)->nrefs, n, val, sec, scn);
 		s->flags |= BSF_GLOBAL;
 	      }
 	  }
@@ -358,20 +342,21 @@ process_esd (abfd, esd, pass)
 
 reloc_howto_type versados_howto_table[] =
 {
-  HOWTO (R_RELWORD, 0, 1, 16, FALSE,
+  HOWTO (R_RELWORD, 0, 1, 16, false,
 	 0, complain_overflow_dont, 0,
-	 "+v16", TRUE, 0x0000ffff, 0x0000ffff, FALSE),
-  HOWTO (R_RELLONG, 0, 2, 32, FALSE,
+	 "+v16", true, 0x0000ffff, 0x0000ffff, false),
+  HOWTO (R_RELLONG, 0, 2, 32, false,
 	 0, complain_overflow_dont, 0,
-	 "+v32", TRUE, 0xffffffff, 0xffffffff, FALSE),
+	 "+v32", true, 0xffffffff, 0xffffffff, false),
 
-  HOWTO (R_RELWORD_NEG, 0, -1, 16, FALSE,
+  HOWTO (R_RELWORD_NEG, 0, -1, 16, false,
 	 0, complain_overflow_dont, 0,
-	 "-v16", TRUE, 0x0000ffff, 0x0000ffff, FALSE),
-  HOWTO (R_RELLONG_NEG, 0, -2, 32, FALSE,
+	 "-v16", true, 0x0000ffff, 0x0000ffff, false),
+  HOWTO (R_RELLONG_NEG, 0, -2, 32, false,
 	 0, complain_overflow_dont, 0,
-	 "-v32", TRUE, 0xffffffff, 0xffffffff, FALSE),
+	 "-v32", true, 0xffffffff, 0xffffffff, false),
 };
+
 
 static int
 get_offset (len, ptr)
@@ -411,7 +396,7 @@ process_otr (abfd, otr, pass)
   int need_contents = 0;
   unsigned int dst_idx = esdid->pc;
 
-  for (shift = ((unsigned long) 1 << 31); shift && srcp < endp; shift >>= 1)
+  for (shift = (1 << 31); shift && srcp < endp; shift >>= 1)
     {
       if (bits & shift)
 	{
@@ -420,6 +405,7 @@ process_otr (abfd, otr, pass)
 	  int sizeinwords = ((flag >> 3) & 1) ? 2 : 1;
 	  int offsetlen = flag & 0x7;
 	  int j;
+
 
 	  if (esdids == 0)
 	    {
@@ -448,7 +434,7 @@ process_otr (abfd, otr, pass)
 		      int rn = EDATA (abfd, otr->esdid - 1).relocs++;
 		      if (pass == 1)
 			{
-			  /* this is the first pass over the data,
+			  /* this is the first pass over the data, 
 			     just remember that we need a reloc */
 			}
 		      else
@@ -484,13 +470,12 @@ process_otr (abfd, otr, pass)
   EDATA (abfd, otr->esdid - 1).pc = dst_idx;
 
   if (!contents && need_contents)
-    {
-      bfd_size_type size = esdid->section->_raw_size;
-      esdid->contents = (unsigned char *) bfd_alloc (abfd, size);
-    }
+    esdid->contents = (unsigned char *) bfd_alloc (abfd, esdid->section->_raw_size);
+
+
 }
 
-static bfd_boolean
+static boolean
 versados_scan (abfd)
      bfd *abfd;
 {
@@ -498,20 +483,17 @@ versados_scan (abfd)
   int i;
   int j;
   int nsecs = 0;
-  bfd_size_type amt;
 
-  VDATA (abfd)->stringlen = 0;
   VDATA (abfd)->nrefs = 0;
   VDATA (abfd)->ndefs = 0;
   VDATA (abfd)->ref_idx = 0;
   VDATA (abfd)->def_idx = 0;
-  VDATA (abfd)->pass_2_done = 0;
 
   while (loop)
     {
       union ext_any any;
       if (!get_record (abfd, &any))
-	return TRUE;
+	return true;
       switch (any.header.type)
 	{
 	case VHEADER:
@@ -542,8 +524,8 @@ versados_scan (abfd)
       struct esdid *esdid = &EDATA (abfd, i);
       if (esdid->section)
 	{
-	  amt = (bfd_size_type) esdid->relocs * sizeof (arelent);
-	  esdid->section->relocation = (arelent *) bfd_alloc (abfd, amt);
+	  esdid->section->relocation
+	    = (arelent *) bfd_alloc (abfd, sizeof (arelent) * esdid->relocs);
 
 	  esdid->pc = 0;
 
@@ -564,16 +546,14 @@ versados_scan (abfd)
 
   abfd->symcount += nsecs;
 
-  amt = abfd->symcount;
-  amt *= sizeof (asymbol);
-  VDATA (abfd)->symbols = (asymbol *) bfd_alloc (abfd, amt);
+  VDATA (abfd)->symbols = (asymbol *) bfd_alloc (abfd,
+				       sizeof (asymbol) * (abfd->symcount));
 
-  amt = VDATA (abfd)->stringlen;
-  VDATA (abfd)->strings = bfd_alloc (abfd, amt);
+  VDATA (abfd)->strings = bfd_alloc (abfd, VDATA (abfd)->stringlen);
 
   if ((VDATA (abfd)->symbols == NULL && abfd->symcount > 0)
       || (VDATA (abfd)->strings == NULL && VDATA (abfd)->stringlen > 0))
-    return FALSE;
+    return false;
 
   /* Actually fill in the section symbols,
      we stick them at the end of the table */
@@ -605,6 +585,8 @@ versados_scan (abfd)
   return 1;
 }
 
+
+
 /* Check whether an existing file is a versados  file.  */
 
 static const bfd_target *
@@ -613,19 +595,18 @@ versados_object_p (abfd)
 {
   struct ext_vheader ext;
   unsigned char len;
-  tdata_type *tdata_save;
 
   if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)
     return NULL;
 
-  if (bfd_bread (&len, (bfd_size_type) 1, abfd) != 1)
+  if (bfd_read (&len, 1, 1, abfd) != 1)
     {
       if (bfd_get_error () != bfd_error_system_call)
 	bfd_set_error (bfd_error_wrong_format);
       return NULL;
     }
 
-  if (bfd_bread (&ext.type, (bfd_size_type) len, abfd) != len)
+  if (bfd_read (&ext.type, 1, len, abfd) != len)
     {
       if (bfd_get_error () != bfd_error_system_call)
 	bfd_set_error (bfd_error_wrong_format);
@@ -644,17 +625,15 @@ versados_object_p (abfd)
 
   /* OK, looks like a record, build the tdata and read in.  */
 
-  tdata_save = abfd->tdata.versados_data;
-  if (!versados_mkobject (abfd) || !versados_scan (abfd))
-    {
-      abfd->tdata.versados_data = tdata_save;
-      return NULL;
-    }
+  if (!versados_mkobject (abfd)
+      || !versados_scan (abfd))
+    return NULL;
 
   return abfd->xvec;
 }
 
-static bfd_boolean
+
+static boolean
 versados_pass_2 (abfd)
      bfd *abfd;
 {
@@ -663,10 +642,11 @@ versados_pass_2 (abfd)
   if (VDATA (abfd)->pass_2_done)
     return 1;
 
-  if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)
+  if (bfd_seek (abfd, 0, SEEK_SET) != 0)
     return 0;
 
   VDATA (abfd)->es_done = ES_BASE;
+
 
   /* read records till we get to where we want to be */
 
@@ -688,7 +668,7 @@ versados_pass_2 (abfd)
     }
 }
 
-static bfd_boolean
+static boolean
 versados_get_section_contents (abfd, section, location, offset, count)
      bfd *abfd;
      asection *section;
@@ -697,35 +677,47 @@ versados_get_section_contents (abfd, section, location, offset, count)
      bfd_size_type count;
 {
   if (!versados_pass_2 (abfd))
-    return FALSE;
+    return false;
 
   memcpy (location,
 	  EDATA (abfd, section->target_index).contents + offset,
 	  (size_t) count);
 
-  return TRUE;
+  return true;
 }
 
 #define versados_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
 
-static bfd_boolean
+static boolean
 versados_set_section_contents (abfd, section, location, offset, bytes_to_do)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     sec_ptr section ATTRIBUTE_UNUSED;
-     const PTR location ATTRIBUTE_UNUSED;
-     file_ptr offset ATTRIBUTE_UNUSED;
-     bfd_size_type bytes_to_do ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     sec_ptr section;
+     PTR location;
+     file_ptr offset;
+     bfd_size_type bytes_to_do;
 {
-  return FALSE;
+  return false;
 }
 
+
+/*ARGSUSED */
 static int
 versados_sizeof_headers (abfd, exec)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     bfd_boolean exec ATTRIBUTE_UNUSED;
+     bfd *abfd;
+     boolean exec;
 {
   return 0;
+}
+
+static asymbol *
+versados_make_empty_symbol (abfd)
+     bfd *abfd;
+{
+  asymbol *new = (asymbol *) bfd_zalloc (abfd, sizeof (asymbol));
+  if (new)
+    new->the_bfd = abfd;
+  return new;
 }
 
 /* Return the amount of memory needed to read the symbol table.  */
@@ -740,7 +732,7 @@ versados_get_symtab_upper_bound (abfd)
 /* Return the symbol table.  */
 
 static long
-versados_canonicalize_symtab (abfd, alocation)
+versados_get_symtab (abfd, alocation)
      bfd *abfd;
      asymbol **alocation;
 {
@@ -762,18 +754,20 @@ versados_canonicalize_symtab (abfd, alocation)
   return symcount;
 }
 
-static void
+/*ARGSUSED */
+void
 versados_get_symbol_info (ignore_abfd, symbol, ret)
-     bfd *ignore_abfd ATTRIBUTE_UNUSED;
+     bfd *ignore_abfd;
      asymbol *symbol;
      symbol_info *ret;
 {
   bfd_symbol_info (symbol, ret);
 }
 
-static void
-versados_print_symbol (abfd, afile, symbol, how)
-     bfd *abfd;
+/*ARGSUSED */
+void
+versados_print_symbol (ignore_abfd, afile, symbol, how)
+     bfd *ignore_abfd;
      PTR afile;
      asymbol *symbol;
      bfd_print_symbol_type how;
@@ -785,7 +779,7 @@ versados_print_symbol (abfd, afile, symbol, how)
       fprintf (file, "%s", symbol->name);
       break;
     default:
-      bfd_print_symbol_vandf (abfd, (PTR) file, symbol);
+      bfd_print_symbol_vandf ((PTR) file, symbol);
       fprintf (file, " %-5s %s",
 	       symbol->section->name,
 	       symbol->name);
@@ -793,15 +787,16 @@ versados_print_symbol (abfd, afile, symbol, how)
     }
 }
 
-static long
+long
 versados_get_reloc_upper_bound (abfd, asect)
-     bfd *abfd ATTRIBUTE_UNUSED;
+     bfd *abfd;
      sec_ptr asect;
 {
   return (asect->reloc_count + 1) * sizeof (arelent *);
 }
 
-static long
+
+long
 versados_canonicalize_reloc (abfd, section, relptr, symbols)
      bfd *abfd;
      sec_ptr section;
@@ -855,10 +850,9 @@ versados_canonicalize_reloc (abfd, section, relptr, symbols)
 #define versados_bfd_free_cached_info _bfd_generic_bfd_free_cached_info
 #define versados_new_section_hook _bfd_generic_new_section_hook
 
-#define versados_bfd_is_local_label_name bfd_generic_is_local_label_name
+#define versados_bfd_is_local_label bfd_generic_is_local_label
 #define versados_get_lineno _bfd_nosymbols_get_lineno
 #define versados_find_nearest_line _bfd_nosymbols_find_nearest_line
-#define versados_make_empty_symbol _bfd_generic_make_empty_symbol
 #define versados_bfd_make_debug_symbol _bfd_nosymbols_bfd_make_debug_symbol
 #define versados_read_minisymbols _bfd_generic_read_minisymbols
 #define versados_minisymbol_to_symbol _bfd_generic_minisymbol_to_symbol
@@ -870,13 +864,8 @@ versados_canonicalize_reloc (abfd, section, relptr, symbols)
 #define versados_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define versados_bfd_relax_section bfd_generic_relax_section
-#define versados_bfd_gc_sections bfd_generic_gc_sections
-#define versados_bfd_merge_sections bfd_generic_merge_sections
-#define versados_bfd_discard_group bfd_generic_discard_group
 #define versados_bfd_link_hash_table_create _bfd_generic_link_hash_table_create
-#define versados_bfd_link_hash_table_free _bfd_generic_link_hash_table_free
 #define versados_bfd_link_add_symbols _bfd_generic_link_add_symbols
-#define versados_bfd_link_just_syms _bfd_generic_link_just_syms
 #define versados_bfd_final_link _bfd_generic_final_link
 #define versados_bfd_link_split_section _bfd_generic_link_split_section
 
@@ -929,8 +918,6 @@ const bfd_target versados_vec =
   BFD_JUMP_TABLE_WRITE (versados),
   BFD_JUMP_TABLE_LINK (versados),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
-
-  NULL,
 
   (PTR) 0
 };

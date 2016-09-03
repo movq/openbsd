@@ -1,4 +1,4 @@
-/*	$OpenBSD: io.c,v 1.21 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: io.c,v 1.7 1998/11/29 19:45:10 pjanzen Exp $	*/
 /*	$NetBSD: io.c,v 1.3 1995/04/24 12:21:37 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,39 +39,50 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)io.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: io.c,v 1.7 1998/11/29 19:45:10 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*	Re-coding of advent in C: file i/o and user i/o			*/
 
 #include <err.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
-
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
-/* Get command from user. No prompt, usually.	*/
+
 void
-getin(char *wrd1, size_t siz1, char *wrd2, size_t siz2)	
+getin(wrd1, wrd2)		/* get command from user	*/
+	char **wrd1, **wrd2;	/* no prompt, usually		*/
 {
-	char   *s, *slast;
-	int     ch, first;
+	char   *s;
+	static char wd1buf[MAXSTR], wd2buf[MAXSTR];
+	int     first, numch;
 
-	*wrd2 = 0;		/* in case it isn't set here	*/
-	for (s = wrd1, first = 1, slast = wrd1 + siz1 - 1;;) {
-		if ((ch = getchar()) >= 'A' && ch <= 'Z')
-			ch = ch - ('A' - 'a');
+	*wrd1 = wd1buf;		/* return ptr to internal string*/
+	*wrd2 = wd2buf;
+	wd2buf[0] = 0;		/* in case it isn't set here	*/
+	for (s = wd1buf, first = 1, numch = 0;;) {
+		if ((*s = getchar()) >= 'A' && *s <= 'Z')
+			*s = *s - ('A' - 'a');
 		/* convert to upper case	*/
-		switch (ch) {	/* start reading from user	*/
+		switch (*s) {	/* start reading from user	*/
 		case '\n':
 			*s = 0;
 			return;
 		case ' ':
-			if (s == wrd1 || s == wrd2)	/* initial blank  */
+			if (s == wd1buf || s == wd2buf)	/* initial blank  */
 				continue;
 			*s = 0;
 			if (first) {		/* finished 1st wd; start 2nd */
-				first = 0;
-				s = wrd2;
-				slast = wrd2 + siz2 - 1;
+				first = numch = 0;
+				s = wd2buf;
 				break;
 			} else {		/* finished 2nd word */
 				FLUSHLINE;
@@ -78,13 +93,13 @@ getin(char *wrd1, size_t siz1, char *wrd2, size_t siz2)
 			printf("user closed input stream, quitting...\n");
 			exit(0);
 		default:
-			if (s == slast) {	/* string too long */
+			if (++numch >= MAXSTR) {	/* string too long */
 				printf("Give me a break!!\n");
-				*wrd1 = *wrd2 = 0;
+				wd1buf[0] = wd2buf[0] = 0;
 				FLUSHLINE;
 				return;
 			}
-			*s++ = ch;
+			s++;
 		}
 	}
 }
@@ -92,7 +107,8 @@ getin(char *wrd1, size_t siz1, char *wrd2, size_t siz2)
 
 #if 0		/* Not used */
 int
-confirm(char *mesg)		/* confirm irreversible action	*/
+confirm(mesg)			/* confirm irreversible action	*/
+	char	*mesg;
 {
 	int     result;
 	int     ch;
@@ -111,7 +127,8 @@ confirm(char *mesg)		/* confirm irreversible action	*/
 #endif
 
 int
-yes(int x, int y, int z)	/* confirm with rspeak		*/
+yes(x, y, z)			/* confirm with rspeak		*/
+	int     x, y, z;
 {
 	int     result;
 	int     ch;
@@ -126,8 +143,7 @@ yes(int x, int y, int z)	/* confirm with rspeak		*/
 			printf("user closed input stream, quitting...\n");
 			exit(0);
 		}
-		if (ch != '\n')
-			FLUSHLINE;
+		FLUSHLINE;
 		if (ch == 'y' || ch == 'n')
 			break;
 		printf("Please answer the question.\n");
@@ -140,23 +156,23 @@ yes(int x, int y, int z)	/* confirm with rspeak		*/
 }
 
 int
-yesm(int x, int y, int z)	/* confirm with mspeak		*/
+yesm(x, y, z)			/* confirm with mspeak		*/
+	int     x, y, z;
 {
 	int     result;
-	int    ch;
+	char    ch;
 
 	for (;;) {
 		mspeak(x);	/* tell him what we want	*/
 		if ((ch = getchar()) == 'y')
 			result = TRUE;
-		else if (ch == 'n')
+		else if (ch=='n')
 			result = FALSE;
 		else if (ch == EOF) {
 			printf("user closed input stream, quitting...\n");
 			exit(0);
 		}
-		if (ch != '\n')
-			FLUSHLINE;
+		FLUSHLINE;
 		if (ch == 'y' || ch == 'n')
 			break;
 		printf("Please answer the question.\n");
@@ -175,18 +191,18 @@ char   *inptr;			/* Pointer into virtual disk	*/
 int     outsw = 0;		/* putting stuff to data file?	*/
 
 const char iotape[] = "Ax3F'\003tt$8h\315qer*h\017nGKrX\207:!l";
-const char *tape = iotape;	/* pointer to obfuscation tape	*/
+const char *tape = iotape;	/* pointer to encryption tape	*/
 
 int
-next(void)			/* next virtual char, bump adr	*/
+next()				/* next virtual char, bump adr	*/
 {
 	int ch;
 
-	ch=(*inptr ^ random()) & 0xFF;	/* Deobfuscate input data	*/
-	if (outsw) {			/* putting data in tmp file	*/
+	ch=(*inptr ^ random()) & 0xFF;	/* Decrypt input data		*/
+	if (outsw) {		/* putting data in tmp file	*/
 		if (*tape == 0)
-			tape = iotape;	/* rewind obfuscation tape	*/
-		*inptr = ch ^ *tape++;	/* re-obfuscate and replace value */
+			tape = iotape;	/* rewind encryption tape	*/
+		*inptr = ch ^ *tape++;	/* re-encrypt and replace value */
 	}
 	inptr++;
 	return (ch);
@@ -195,12 +211,13 @@ next(void)			/* next virtual char, bump adr	*/
 char	breakch;		/* tell which char ended rnum	*/
 
 void
-rdata(void)			/* "read" data from virtual file */
+rdata()			/* "read" data from virtual file */
 {
 	int     sect;
 	char    ch;
 
 	inptr = data_file;	/* Pointer to virtual data file */
+	srandom(SEED);		/* which is lightly encrypted.	*/
 
 	clsses = 1;
 	for (;;) {		/* read data sections		*/
@@ -271,11 +288,11 @@ char	nbf[12];
 
 
 int
-rnum(void)			/* read initial location num	*/
+rnum()				/* read initial location num	*/
 {
 	char	*s;
 
-	tape = iotape;		/* restart obfuscation tape	*/
+	tape = iotape;		/* restart encryption tape	*/
 	for (s = nbf, *s = 0;; s++)
 		if ((*s = next()) == TAB || *s == '\n' || *s == LF)
 			break;
@@ -289,7 +306,8 @@ rnum(void)			/* read initial location num	*/
 char	*seekhere;
 
 void
-rdesc(int sect)			/* read description-format msgs */
+rdesc(sect)			/* read description-format msgs */
+	int     sect;
 {
 	int     locc;
 	char   *seekstart, *maystart;
@@ -315,7 +333,7 @@ rdesc(int sect)			/* read description-format msgs */
 				ptext[oldloc].txtlen = maystart - seekstart;
 				break;
 			case 6:	/* random messages		*/
-				if (oldloc >= RTXSIZ)
+				if (oldloc > RTXSIZ)
 					errx(1, "Too many random msgs");
 				rtext[oldloc].seekadr = seekhere;
 				rtext[oldloc].txtlen = maystart - seekstart;
@@ -326,7 +344,7 @@ rdesc(int sect)			/* read description-format msgs */
 				cval[clsses++] = oldloc;
 				break;
 			case 12:/* magic messages		*/
-				if (oldloc >= MAGSIZ)
+				if (oldloc > MAGSIZ)
 					errx(1, "Too many magic msgs");
 				mtext[oldloc].seekadr = seekhere;
 				mtext[oldloc].txtlen = maystart - seekstart;
@@ -352,7 +370,7 @@ rdesc(int sect)			/* read description-format msgs */
 
 
 void
-rtrav(void)				/* read travel table		*/
+rtrav()				/* read travel table		*/
 {
 	int     locc;
 	struct travlist *t;
@@ -369,9 +387,9 @@ rtrav(void)				/* read travel table		*/
 		if (locc == -1)
 			return;
 		if (locc != oldloc) {	/* getting a new entry		*/
-			t = travel[locc] = calloc(1, sizeof(*t));
+			t = travel[locc] = (struct travlist *) malloc(sizeof (struct travlist));
 			if (t == NULL)
-				err(1, NULL);
+				errx(1, "Out of memory!");
 		/*	printf("New travel list for %d\n", locc);	*/
 			entries = 0;
 			oldloc = locc;
@@ -391,13 +409,10 @@ rtrav(void)				/* read travel table		*/
 			m = atoi(buf);
 		}
 		while (breakch != LF) {	/* only do one line at a time	*/
-			if (t ==  NULL)
-				errx(1, "corrupt file");
 			if (entries++) {
-				t->next = calloc(1, sizeof (*t->next));
-				if (t->next == NULL)
-					err(1, NULL);
-				t = t->next;
+				t = t->next = (struct travlist *) malloc(sizeof (struct travlist));
+				if (t == NULL)
+					errx(1, "Out of memory!");
 			}
 			t->tverb = rnum();/* get verb from the file	*/
 			t->tloc = n;	/* table entry mod 1000		*/
@@ -410,7 +425,8 @@ rtrav(void)				/* read travel table		*/
 #ifdef DEBUG
 
 void
-twrite(int loq)			/* travel options from this loc */
+twrite(loq)			/* travel options from this loc */
+	int     loq;
 {
 	struct	travlist *t;
 
@@ -428,10 +444,10 @@ twrite(int loq)			/* travel options from this loc */
 		printf("under conditions %d\n", t->conditions);
 	}
 }
-#endif /* DEBUG */
+#endif DEBUG
 
 void
-rvoc(void)
+rvoc()
 {
 	char   *s;		/* read the vocabulary		*/
 	int     index;
@@ -457,7 +473,7 @@ rvoc(void)
 
 
 void
-rlocs(void)				/* initial object locations	*/
+rlocs()				/* initial object locations	*/
 {
 	for (;;) {
 		if ((obj = rnum()) < 0)
@@ -471,7 +487,7 @@ rlocs(void)				/* initial object locations	*/
 }
 
 void
-rdflt(void)			/* default verb messages	*/
+rdflt()				/* default verb messages	*/
 {
 	for (;;) {
 		if ((verb = rnum()) < 0)
@@ -481,7 +497,7 @@ rdflt(void)			/* default verb messages	*/
 }
 
 void
-rliq(void)			/* liquid assets &c: cond bits	*/
+rliq()				/* liquid assets &c: cond bits	*/
 {
 	int bitnum;
 
@@ -497,7 +513,7 @@ rliq(void)			/* liquid assets &c: cond bits	*/
 }
 
 void
-rhints(void)
+rhints()
 {
 	int     hintnum, i;
 
@@ -514,7 +530,8 @@ rhints(void)
 
 
 void
-rspeak(int msg)
+rspeak(msg)
+	int     msg;
 {
 	if (msg != 0)
 		speak(&rtext[msg]);
@@ -522,25 +539,25 @@ rspeak(int msg)
 
 
 void
-mspeak(int msg)
+mspeak(msg)
+	int     msg;
 {
 	if (msg != 0)
 		speak(&mtext[msg]);
 }
 
-/*
- * Read, deobfuscate, and print a message (not ptext)
- * msg is a pointer to seek address and length of mess
- */
+
 void
-speak(const struct text *msg)	
+speak(msg)	/* read, decrypt, and print a message (not ptext)	*/
+	const struct text *msg; /* msg is a pointer to seek address and length
+				 * of mess */
 {
 	char   *s, nonfirst;
 
 	s = msg->seekadr;
 	nonfirst = 0;
 	while (s - msg->seekadr < msg->txtlen) { /* read a line at a time */
-		tape = iotape;		/* restart deobfuscation tape	*/
+		tape = iotape;		/* restart decryption tape	*/
 		while ((*s++ ^ *tape++) != TAB); /* read past loc num	*/
 		/* assume tape is longer than location number		*/
 		/*  plus the lookahead put together			*/
@@ -558,13 +575,11 @@ speak(const struct text *msg)
 	}
 }
 
-/*
- * Read, deobfuscate, and print a ptext message
- * msg is the number of all the p msgs for this place
- * assumes object 1 doesn't have prop 1, obj 2 no prop 2 &c
- */
+
 void
-pspeak(int m, int skip) 
+pspeak(m, skip) /* read, decrypt an print a ptext message	      */
+	int     m;	/* msg is the number of all the p msgs for this place */
+	int     skip;	/* assumes object 1 doesn't have prop 1, obj 2 no prop 2 &c*/
 {
 	char   *s, nonfirst;
 	char   *numst, save;
@@ -572,19 +587,19 @@ pspeak(int m, int skip)
 	char   *tbuf;
 
 	msg = &ptext[m];
-	if ((tbuf = malloc(msg->txtlen + 1)) == 0)
-		err(1, NULL);
+	if ((tbuf = (char *) malloc(msg->txtlen + 1)) == 0)
+		errx(1, "Out of memory!");
 	memcpy(tbuf, msg->seekadr, msg->txtlen + 1);	/* Room to null */
 	s = tbuf;
 
 	nonfirst = 0;
 	while (s - tbuf < msg->txtlen) {	/* read line at a time	*/
-		tape = iotape;			/* restart dobfuscation tape */
+		tape = iotape;		/* restart decryption tape	*/
 		for (numst = s; (*s ^= *tape++) != TAB; s++)
 			; /* get number	*/
 
 		save = *s; /* Temporarily trash the string (cringe)	*/
-		*s++ = 0; /* deobfuscation number within the string	*/
+		*s++ = 0; /* decrypting number within the string	*/
 
 		if (atoi(numst) != 100 * skip && skip >= 0) {
 			while ((*s++ ^ * tape++) != LF) /* flush the line */

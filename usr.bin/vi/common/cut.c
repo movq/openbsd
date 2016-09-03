@@ -1,5 +1,3 @@
-/*	$OpenBSD: cut.c,v 1.16 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)cut.c	10.10 (Berkeley) 9/15/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,7 +27,7 @@
 
 #include "common.h"
 
-static void	cb_rotate(SCR *);
+static void	cb_rotate __P((SCR *));
 
 /*
  * cut --
@@ -59,13 +61,17 @@ static void	cb_rotate(SCR *);
  * replacing the contents.  Hopefully it's not worth getting right, and here
  * we just treat the numeric buffers like any other named buffer.
  *
- * PUBLIC: int cut(SCR *, CHAR_T *, MARK *, MARK *, int);
+ * PUBLIC: int cut __P((SCR *, CHAR_T *, MARK *, MARK *, int));
  */
 int
-cut(SCR *sp, CHAR_T *namep, MARK *fm, MARK *tm, int flags)
+cut(sp, namep, fm, tm, flags)
+	SCR *sp;
+	CHAR_T *namep;
+	MARK *fm, *tm;
+	int flags;
 {
 	CB *cbp;
-	CHAR_T name = '1';	/* default numeric buffer */
+	CHAR_T name;
 	recno_t lno;
 	int append, copy_one, copy_def;
 
@@ -94,8 +100,8 @@ cut(SCR *sp, CHAR_T *namep, MARK *fm, MARK *tm, int flags)
 	append = copy_one = copy_def = 0;
 	if (namep != NULL) {
 		name = *namep;
-		if (LF_ISSET(CUT_NUMREQ) || (LF_ISSET(CUT_NUMOPT) &&
-		    (LF_ISSET(CUT_LINEMODE) || fm->lno != tm->lno))) {
+		if (LF_ISSET(CUT_NUMREQ) || LF_ISSET(CUT_NUMOPT) &&
+		    (LF_ISSET(CUT_LINEMODE) || fm->lno != tm->lno)) {
 			copy_one = 1;
 			cb_rotate(sp);
 		}
@@ -105,9 +111,9 @@ cut(SCR *sp, CHAR_T *namep, MARK *fm, MARK *tm, int flags)
 			name = tolower(name);
 		}
 namecb:		CBNAME(sp, cbp, name);
-	} else if (LF_ISSET(CUT_NUMREQ) || (LF_ISSET(CUT_NUMOPT) &&
-	    (LF_ISSET(CUT_LINEMODE) || fm->lno != tm->lno))) {
-		/* Copy into numeric buffer 1. */
+	} else if (LF_ISSET(CUT_NUMREQ) || LF_ISSET(CUT_NUMOPT) &&
+	    (LF_ISSET(CUT_LINEMODE) || fm->lno != tm->lno)) {
+		name = '1';
 		cb_rotate(sp);
 		goto namecb;
 	} else
@@ -119,9 +125,9 @@ copyloop:
 	 * Otherwise, if it's not an append, free its current contents.
 	 */
 	if (cbp == NULL) {
-		CALLOC_RET(sp, cbp, 1, sizeof(CB));
+		CALLOC_RET(sp, cbp, CB *, 1, sizeof(CB));
 		cbp->name = name;
-		TAILQ_INIT(&cbp->textq);
+		CIRCLEQ_INIT(&cbp->textq);
 		LIST_INSERT_HEAD(&sp->gp->cutq, cbp, q);
 	} else if (!append) {
 		text_lfree(&cbp->textq);
@@ -130,24 +136,25 @@ copyloop:
 	}
 
 
+#define	ENTIRE_LINE	0
 	/* In line mode, it's pretty easy, just cut the lines. */
 	if (LF_ISSET(CUT_LINEMODE)) {
 		cbp->flags |= CB_LMODE;
 		for (lno = fm->lno; lno <= tm->lno; ++lno)
-			if (cut_line(sp, lno, 0, CUT_LINE_TO_EOL, cbp))
+			if (cut_line(sp, lno, 0, 0, cbp))
 				goto cut_line_err;
 	} else {
 		/*
-		 * Get the first line.  A length of CUT_LINE_TO_EOL causes
-		 * cut_line() to cut from the MARK to the end of the line.
+		 * Get the first line.  A length of 0 causes cut_line
+		 * to cut from the MARK to the end of the line.
 		 */
 		if (cut_line(sp, fm->lno, fm->cno, fm->lno != tm->lno ?
-		    CUT_LINE_TO_EOL : (tm->cno - fm->cno) + 1, cbp))
+		    ENTIRE_LINE : (tm->cno - fm->cno) + 1, cbp))
 			goto cut_line_err;
 
 		/* Get the intermediate lines. */
 		for (lno = fm->lno; ++lno < tm->lno;)
-			if (cut_line(sp, lno, 0, CUT_LINE_TO_EOL, cbp))
+			if (cut_line(sp, lno, 0, ENTIRE_LINE, cbp))
 				goto cut_line_err;
 
 		/* Get the last line. */
@@ -160,6 +167,7 @@ copyloop:
 	sp->gp->dcbp = cbp;	/* Repoint the default buffer on each pass. */
 
 	if (copy_one) {		/* Copy into numeric buffer 1. */
+		name = '1';
 		CBNAME(sp, cbp, name);
 		copy_one = 0;
 		goto copyloop;
@@ -183,12 +191,13 @@ cut_line_err:
  *	Rotate the numbered buffers up one.
  */
 static void
-cb_rotate(SCR *sp)
+cb_rotate(sp)
+	SCR *sp;
 {
 	CB *cbp, *del_cbp;
 
 	del_cbp = NULL;
-	LIST_FOREACH(cbp, &sp->gp->cutq, q)
+	for (cbp = sp->gp->cutq.lh_first; cbp != NULL; cbp = cbp->q.le_next)
 		switch(cbp->name) {
 		case '1':
 			cbp->name = '2';
@@ -229,10 +238,14 @@ cb_rotate(SCR *sp)
  * cut_line --
  *	Cut a portion of a single line.
  *
- * PUBLIC: int cut_line(SCR *, recno_t, size_t, size_t, CB *);
+ * PUBLIC: int cut_line __P((SCR *, recno_t, size_t, size_t, CB *));
  */
 int
-cut_line(SCR *sp, recno_t lno, size_t fcno, size_t clen, CB *cbp)
+cut_line(sp, lno, fcno, clen, cbp)
+	SCR *sp;
+	recno_t lno;
+	size_t fcno, clen;
+	CB *cbp;
 {
 	TEXT *tp;
 	size_t len;
@@ -251,14 +264,14 @@ cut_line(SCR *sp, recno_t lno, size_t fcno, size_t clen, CB *cbp)
 	 * copy the portion we want, and reset the TEXT length.
 	 */
 	if (len != 0) {
-		if (clen == CUT_LINE_TO_EOL)
+		if (clen == 0)
 			clen = len - fcno;
 		memcpy(tp->lb, p + fcno, clen);
 		tp->len = clen;
 	}
 
 	/* Append to the end of the cut buffer. */
-	TAILQ_INSERT_TAIL(&cbp->textq, tp, q);
+	CIRCLEQ_INSERT_TAIL(&cbp->textq, tp, q);
 	cbp->len += tp->len;
 
 	return (0);
@@ -268,16 +281,17 @@ cut_line(SCR *sp, recno_t lno, size_t fcno, size_t clen, CB *cbp)
  * cut_close --
  *	Discard all cut buffers.
  *
- * PUBLIC: void cut_close(GS *);
+ * PUBLIC: void cut_close __P((GS *));
  */
 void
-cut_close(GS *gp)
+cut_close(gp)
+	GS *gp;
 {
 	CB *cbp;
 
 	/* Free cut buffer list. */
-	while ((cbp = LIST_FIRST(&gp->cutq)) != NULL) {
-		if (!TAILQ_EMPTY(&cbp->textq))
+	while ((cbp = gp->cutq.lh_first) != NULL) {
+		if (cbp->textq.cqh_first != (void *)&cbp->textq)
 			text_lfree(&cbp->textq);
 		LIST_REMOVE(cbp, q);
 		free(cbp);
@@ -285,7 +299,7 @@ cut_close(GS *gp)
 
 	/* Free default cut storage. */
 	cbp = &gp->dcb_store;
-	if (!TAILQ_EMPTY(&cbp->textq))
+	if (cbp->textq.cqh_first != (void *)&cbp->textq)
 		text_lfree(&cbp->textq);
 }
 
@@ -293,19 +307,22 @@ cut_close(GS *gp)
  * text_init --
  *	Allocate a new TEXT structure.
  *
- * PUBLIC: TEXT *text_init(SCR *, const char *, size_t, size_t);
+ * PUBLIC: TEXT *text_init __P((SCR *, const char *, size_t, size_t));
  */
 TEXT *
-text_init(SCR *sp, const char *p, size_t len, size_t total_len)
+text_init(sp, p, len, total_len)
+	SCR *sp;
+	const char *p;
+	size_t len, total_len;
 {
 	TEXT *tp;
 
-	CALLOC(sp, tp, 1, sizeof(TEXT));
+	CALLOC(sp, tp, TEXT *, 1, sizeof(TEXT));
 	if (tp == NULL)
 		return (NULL);
 	/* ANSI C doesn't define a call to malloc(3) for 0 bytes. */
 	if ((tp->lb_len = total_len) != 0) {
-		MALLOC(sp, tp->lb, tp->lb_len);
+		MALLOC(sp, tp->lb, CHAR_T *, tp->lb_len);
 		if (tp->lb == NULL) {
 			free(tp);
 			return (NULL);
@@ -321,15 +338,16 @@ text_init(SCR *sp, const char *p, size_t len, size_t total_len)
  * text_lfree --
  *	Free a chain of text structures.
  *
- * PUBLIC: void text_lfree(TEXTH *);
+ * PUBLIC: void text_lfree __P((TEXTH *));
  */
 void
-text_lfree(TEXTH *headp)
+text_lfree(headp)
+	TEXTH *headp;
 {
 	TEXT *tp;
 
-	while ((tp = TAILQ_FIRST(headp))) {
-		TAILQ_REMOVE(headp, tp, q);
+	while ((tp = headp->cqh_first) != (void *)headp) {
+		CIRCLEQ_REMOVE(headp, tp, q);
 		text_free(tp);
 	}
 }
@@ -338,10 +356,11 @@ text_lfree(TEXTH *headp)
  * text_free --
  *	Free a text structure.
  *
- * PUBLIC: void text_free(TEXT *);
+ * PUBLIC: void text_free __P((TEXT *));
  */
 void
-text_free(TEXT *tp)
+text_free(tp)
+	TEXT *tp;
 {
 	if (tp->lb != NULL)
 		free(tp->lb);

@@ -10,22 +10,16 @@
  * of any kind. I shall in no event be liable for anything that happens
  * to anyone/anything when using this software.
  *
- *	$OpenBSD: rand48.h,v 1.6 2015/09/14 13:30:17 guenther Exp $
+ *	$OpenBSD: rand48.h,v 1.2 1996/08/19 08:33:45 tholo Exp $
  */
 
 #ifndef _RAND48_H_
 #define _RAND48_H_
 
+#include <math.h>
 #include <stdlib.h>
 
-__BEGIN_HIDDEN_DECLS
-extern unsigned short __rand48_seed[3];
-extern unsigned short __rand48_mult[3];
-extern unsigned short __rand48_add;
-
-void		__dorand48(unsigned short[3]);
-extern int	__rand48_deterministic;
-__END_HIDDEN_DECLS
+void		__dorand48 __P((unsigned short[3]));
 
 #define	RAND48_SEED_0	(0x330e)
 #define	RAND48_SEED_1	(0xabcd)

@@ -1,4 +1,4 @@
-.\" $OpenBSD: 0.t,v 1.4 2003/06/02 23:36:53 millert Exp $
+.\" $OpenBSD: 0.t,v 1.2 1997/01/17 15:54:15 millert Exp $
 .\"
 .\" Copyright (c) 1983, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -31,9 +35,9 @@
 .\"
 .if n .ND
 .TL
-OpenBSD Line Printer Spooler Manual
-.EH 'SMM:7-%''OpenBSD Line Printer Spooler Manual'
-.OH 'OpenBSD Line Printer Spooler Manual''SMM:7-%'
+4.3BSD Line Printer Spooler Manual
+.EH 'SMM:7-%''4.3BSD Line Printer Spooler Manual'
+.OH '4.3BSD Line Printer Spooler Manual''SMM:7-%'
 .AU
 Ralph Campbell
 .AI
@@ -43,16 +47,20 @@ Department of Electrical Engineering and Computer Science
 University of California, Berkeley
 Berkeley, CA  94720
 .AB
+.FS
+* UNIX is a trademark of Bell Laboratories.
+.FE
 This document describes the structure and installation procedure
-for the line printer spooling system included with the OpenBSD
-operating system.
+for the line printer spooling system
+developed for the 4.3BSD version
+of the UNIX* operating system.
 .de D?
 .ie \\n(.$>1 Revised \\$1 \\$2 \\$3
 .el DRAFT of \n(mo/\n(dy/\n(yr
 ..
 .sp 2
 .LP
-.D? May 31, 2002
+.D? June 8, 1993
 .AE
 .de IR
 \fI\\$1\fP\\$2

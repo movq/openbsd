@@ -1,81 +1,19 @@
-/*	$OpenBSD: hack.pri.c,v 1.13 2016/01/09 18:33:15 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-#include <curses.h>
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.pri.c,v 1.4 1995/03/23 08:31:20 cgd Exp $";
+#endif /* not lint */
 
 #include "hack.h"
-
+#include <stdio.h>
 xchar scrlx, scrhx, scrly, scrhy;	/* corners of new area on screen */
 
 extern char *hu_stat[];	/* in eat.c */
 extern char *CD;
 
-static void cornbot(int);
-
-void
-swallowed(void)
+swallowed()
 {
 	char ulook[] = "|@|";
 	ulook[1] = u.usym;
@@ -96,34 +34,31 @@ swallowed(void)
 }
 
 
+/*VARARGS1*/
 boolean panicking;
 
-void
-panic(const char *str, ...)
+panic(str,a1,a2,a3,a4,a5,a6)
+char *str;
 {
-	va_list ap;
-
 	if(panicking++) exit(1);    /* avoid loops - this should never happen*/
 	home();
 	puts(" Suddenly, the dungeon collapses.");
 	fputs(" ERROR:  ", stdout);
-	va_start(ap, str);
-	vprintf(str, ap);
-	va_end(ap);
+	printf(str,a1,a2,a3,a4,a5,a6);
 #ifdef DEBUG
 #ifdef UNIX
 	if(!fork())
 		abort();	/* generate core dump */
-#endif /* UNIX */
-#endif /* DEBUG */
+#endif UNIX
+#endif DEBUG
 	more();			/* contains a fflush() */
 	done("panicked");
 }
 
-void
-atl(int x, int y, int ch)
+atl(x,y,ch)
+register x,y;
 {
-	struct rm *crm = &levl[x][y];
+	register struct rm *crm = &levl[x][y];
 
 	if(x<0 || x>COLNO-1 || y<0 || y>ROWNO-1){
 		impossible("atl(%d,%d,%c)",x,y,ch);
@@ -135,8 +70,8 @@ atl(int x, int y, int ch)
 	on_scr(x,y);
 }
 
-void
-on_scr(int x, int y)
+on_scr(x,y)
+register x,y;
 {
 	if(x < scrlx) scrlx = x;
 	if(x > scrhx) scrhx = x;
@@ -145,17 +80,15 @@ on_scr(int x, int y)
 }
 
 /* call: (x,y) - display
- *	(-1,0) - close (leave last symbol)
- *	(-1,-1)- close (undo last symbol)
- *	(-1,let)-open: initialize symbol
- *	(-2,let)-change let
- */
-void
-tmp_at(schar x, schar y)
-{
-	static schar prevx, prevy;
-	static char let;
+	(-1,0) - close (leave last symbol)
+	(-1,-1)- close (undo last symbol)
+	(-1,let)-open: initialize symbol
+	(-2,let)-change let
+*/
 
+tmp_at(x,y) schar x,y; {
+static schar prevx, prevy;
+static char let;
 	if((int)x == -2){	/* change let call */
 		let = y;
 		return;
@@ -168,7 +101,7 @@ tmp_at(schar x, schar y)
 	if(prevx >= 0 && cansee(prevx,prevy)) {
 		delay_output(50);
 		prl(prevx, prevy);	/* in case there was a monster */
-		at(prevx, prevy, levl[(int)prevx][(int)prevy].scrsym);
+		at(prevx, prevy, levl[prevx][prevy].scrsym);
 	}
 	if(x >= 0){	/* normal call */
 		if(cansee(x,y)) at(x,y,let);
@@ -181,14 +114,11 @@ tmp_at(schar x, schar y)
 }
 
 /* like the previous, but the symbols are first erased on completion */
-void
-Tmp_at(schar x, schar y)
-{
-	static char let;
-	static xchar cnt;
-	static coord tc[COLNO];		/* but watch reflecting beams! */
-	int xx,yy;
-
+Tmp_at(x,y) schar x,y; {
+static char let;
+static xchar cnt;
+static coord tc[COLNO];		/* but watch reflecting beams! */
+register xx,yy;
 	if((int)x == -1) {
 		if(y > 0) {	/* open call */
 			let = y;
@@ -197,8 +127,8 @@ Tmp_at(schar x, schar y)
 		}
 		/* close call (do not distinguish y==0 and y==-1) */
 		while(cnt--) {
-			xx = tc[(int)cnt].x;
-			yy = tc[(int)cnt].y;
+			xx = tc[cnt].x;
+			yy = tc[cnt].y;
 			prl(xx, yy);
 			at(xx, yy, levl[xx][yy].scrsym);
 		}
@@ -213,27 +143,29 @@ Tmp_at(schar x, schar y)
 	if(cansee(x,y)) {
 		if(cnt) delay_output(50);
 		at(x,y,let);
-		tc[(int)cnt].x = x;
-		tc[(int)cnt].y = y;
+		tc[cnt].x = x;
+		tc[cnt].y = y;
 		if(++cnt >= COLNO) panic("Tmp_at overflow?");
-		levl[(int)x][(int)y].new = 0;	/* prevent pline-nscr erasing --- */
+		levl[x][y].new = 0;	/* prevent pline-nscr erasing --- */
 	}
 }
 
-void
-setclipped(void)
-{
+setclipped(){
 	error("Hack needs a screen of size at least %d by %d.\n",
 		ROWNO+2, COLNO);
 }
 
-void
-at(xchar x, xchar y, char ch)
+at(x,y,ch)
+register xchar x,y;
+char ch;
 {
+#ifndef lint
+	/* if xchar is unsigned, lint will complain about  if(x < 0)  */
 	if(x < 0 || x > COLNO-1 || y < 0 || y > ROWNO-1) {
 		impossible("At gets 0%o at %d %d.", ch, x, y);
 		return;
 	}
+#endif lint
 	if(!ch) {
 		impossible("At gets null at %d %d.", x, y);
 		return;
@@ -244,25 +176,21 @@ at(xchar x, xchar y, char ch)
 	curx++;
 }
 
-void
-prme(void)
-{
+prme(){
 	if(!Invisible) at(u.ux,u.uy,u.usym);
 }
 
-int
-doredraw(void)
+doredraw()
 {
 	docrt();
 	return(0);
 }
 
-void
-docrt(void)
+docrt()
 {
-	int x,y;
-	struct rm *room;
-	struct monst *mtmp;
+	register x,y;
+	register struct rm *room;
+	register struct monst *mtmp;
 
 	if(u.uswallow) {
 		swallowed();
@@ -272,8 +200,8 @@ docrt(void)
 
 /* Some ridiculous code to get display of @ and monsters (almost) right */
 	if(!Invisible) {
-		levl[(int)(u.udisx = u.ux)][(int)(u.udisy = u.uy)].scrsym = u.usym;
-		levl[(int)u.udisx][(int)u.udisy].seen = 1;
+		levl[(u.udisx = u.ux)][(u.udisy = u.uy)].scrsym = u.usym;
+		levl[u.udisx][u.udisy].seen = 1;
 		u.udispl = 1;
 	} else	u.udispl = 0;
 
@@ -297,12 +225,10 @@ docrt(void)
 	bot();
 }
 
-void
-docorner(int xmin, int ymax)
-{
-	int x,y;
-	struct rm *room;
-	struct monst *mtmp;
+docorner(xmin,ymax) register xmin,ymax; {
+	register x,y;
+	register struct rm *room;
+	register struct monst *mtmp;
 
 	if(u.uswallow) {	/* Can be done more efficiently */
 		swallowed();
@@ -339,14 +265,11 @@ docorner(int xmin, int ymax)
 	}
 }
 
-void
-curs_on_u(void)
-{
+curs_on_u(){
 	curs(u.ux, u.uy+2);
 }
 
-void
-pru(void)
+pru()
 {
 	if(u.udispl && (Invisible || u.udisx != u.ux || u.udisy != u.uy))
 		/* if(! levl[u.udisx][u.udisy].new) */
@@ -362,20 +285,20 @@ pru(void)
 		u.udisx = u.ux;
 		u.udisy = u.uy;
 	}
-	levl[(int)u.ux][(int)u.uy].seen = 1;
+	levl[u.ux][u.uy].seen = 1;
 }
 
 #ifndef NOWORM
+#include	"def.wseg.h"
 extern struct wseg *m_atseg;
-#endif /* NOWORM */
+#endif NOWORM
 
 /* print a position that is visible for @ */
-void
-prl(int x, int y)
+prl(x,y)
 {
-	struct rm *room;
-	struct monst *mtmp;
-	struct obj *otmp;
+	register struct rm *room;
+	register struct monst *mtmp;
+	register struct obj *otmp;
 
 	if(x == u.ux && y == u.uy && (!Invisible)) {
 		pru();
@@ -384,7 +307,7 @@ prl(int x, int y)
 	if(!isok(x,y)) return;
 	room = &levl[x][y];
 	if((!room->typ) ||
-	   (IS_ROCK(room->typ) && levl[(int)u.ux][(int)u.uy].typ == CORR))
+	   (IS_ROCK(room->typ) && levl[u.ux][u.uy].typ == CORR))
 		return;
 	if((mtmp = m_at(x,y)) && !mtmp->mhide &&
 		(!mtmp->minvis || See_invisible)) {
@@ -392,7 +315,7 @@ prl(int x, int y)
 		if(m_atseg)
 			pwseg(m_atseg);
 		else
-#endif /* NOWORM */
+#endif NOWORM
 		pmon(mtmp);
 	}
 	else if((otmp = o_at(x,y)) && room->typ != POOL)
@@ -413,14 +336,15 @@ prl(int x, int y)
 }
 
 char
-news0(xchar x, xchar y)
+news0(x,y)
+register xchar x,y;
 {
-	struct obj *otmp;
-	struct trap *ttmp;
+	register struct obj *otmp;
+	register struct trap *ttmp;
 	struct rm *room;
-	char tmp;
+	register char tmp;
 
-	room = &levl[(int)x][(int)y];
+	room = &levl[x][y];
 	if(!room->seen) tmp = ' ';
 	else if(room->typ == POOL) tmp = POOL_SYM;
 	else if(!Blind && (otmp = o_at(x,y))) tmp = otmp->olet;
@@ -461,18 +385,18 @@ news0(xchar x, xchar y)
 	return(tmp);
 }
 
-void
-newsym(int x, int y)
+newsym(x,y)
+register x,y;
 {
 	atl(x,y,news0(x,y));
 }
 
 /* used with wand of digging (or pick-axe): fill scrsym and force display */
 /* also when a POOL evaporates */
-void
-mnewsym(int x, int y)
+mnewsym(x,y)
+register x,y;
 {
-	struct rm *room;
+	register struct rm *room;
 	char newscrsym;
 
 	if(!vism_at(x,y)) {
@@ -485,10 +409,10 @@ mnewsym(int x, int y)
 	}
 }
 
-void
-nosee(int x, int y)
+nosee(x,y)
+register x,y;
 {
-	struct rm *room;
+	register struct rm *room;
 
 	if(!isok(x,y)) return;
 	room = &levl[x][y];
@@ -500,8 +424,8 @@ nosee(int x, int y)
 }
 
 #ifndef QUEST
-void
-prl1(int x, int y)
+prl1(x,y)
+register x,y;
 {
 	if(u.dx) {
 		if(u.dy) {
@@ -522,8 +446,8 @@ prl1(int x, int y)
 	}
 }
 
-void
-nose1(int x, int y)
+nose1(x,y)
+register x,y;
 {
 	if(u.dx) {
 		if(u.dy) {
@@ -543,12 +467,12 @@ nose1(int x, int y)
 		nosee(x+1,y);
 	}
 }
-#endif /* QUEST */
+#endif QUEST
 
-int
-vism_at(int x, int y)
+vism_at(x,y)
+register x,y;
 {
-	struct monst *mtmp;
+	register struct monst *mtmp;
 
 	return((x == u.ux && y == u.uy && !Invisible)
 			? 1 :
@@ -557,9 +481,27 @@ vism_at(int x, int y)
 		0);
 }
 
-void
-unpobj(struct obj *obj)
-{
+#ifdef NEWSCR
+pobj(obj) register struct obj *obj; {
+register int show = (!obj->oinvis || See_invisible) &&
+		cansee(obj->ox,obj->oy);
+	if(obj->odispl){
+		if(obj->odx != obj->ox || obj->ody != obj->oy || !show)
+		if(!vism_at(obj->odx,obj->ody)){
+			newsym(obj->odx, obj->ody);
+			obj->odispl = 0;
+		}
+	}
+	if(show && !vism_at(obj->ox,obj->oy)){
+		atl(obj->ox,obj->oy,obj->olet);
+		obj->odispl = 1;
+		obj->odx = obj->ox;
+		obj->ody = obj->oy;
+	}
+}
+#endif NEWSCR
+
+unpobj(obj) register struct obj *obj; {
 /* 	if(obj->odispl){
 		if(!vism_at(obj->odx, obj->ody))
 			newsym(obj->odx, obj->ody);
@@ -570,11 +512,8 @@ unpobj(struct obj *obj)
 		newsym(obj->ox,obj->oy);
 }
 
-void
-seeobjs(void)
-{
-	struct obj *obj, *obj2;
-
+seeobjs(){
+register struct obj *obj, *obj2;
 	for(obj = fobj; obj; obj = obj2) {
 		obj2 = obj->nobj;
 		if(obj->olet == FOOD_SYM && obj->otyp >= CORPSE
@@ -589,27 +528,21 @@ seeobjs(void)
 	}
 }
 
-void
-seemons(void)
-{
-	struct monst *mtmp;
-
+seemons(){
+register struct monst *mtmp;
 	for(mtmp = fmon; mtmp; mtmp = mtmp->nmon){
 		if(mtmp->data->mlet == ';')
 			mtmp->minvis = (u.ustuck != mtmp &&
-					levl[(int)mtmp->mx][(int)mtmp->my].typ == POOL);
+					levl[mtmp->mx][mtmp->my].typ == POOL);
 		pmon(mtmp);
 #ifndef NOWORM
 		if(mtmp->wormno) wormsee(mtmp->wormno);
-#endif /* NOWORM */
+#endif NOWORM
 	}
 }
 
-void
-pmon(struct monst *mon)
-{
-	int show = (Blind && Telepat) || canseemon(mon);
-
+pmon(mon) register struct monst *mon; {
+register int show = (Blind && Telepat) || canseemon(mon);
 	if(mon->mdispl){
 		if(mon->mdx != mon->mx || mon->mdy != mon->my || !show)
 			unpmon(mon);
@@ -625,20 +558,17 @@ pmon(struct monst *mon)
 	}
 }
 
-void
-unpmon(struct monst *mon)
-{
+unpmon(mon) register struct monst *mon; {
 	if(mon->mdispl){
 		newsym(mon->mdx, mon->mdy);
 		mon->mdispl = 0;
 	}
 }
 
-void
-nscr(void)
+nscr()
 {
-	int x,y;
-	struct rm *room;
+	register x,y;
+	register struct rm *room;
 
 	if(u.uswallow || u.ux == FAR || flags.nscrinh) return;
 	pru();
@@ -655,9 +585,8 @@ nscr(void)
 
 /* 100 suffices for bot(); no relation with COLNO */
 char oldbot[100], newbot[100];
-
-static void
-cornbot(int lth)
+cornbot(lth)
+register int lth;
 {
 	if(lth < sizeof(oldbot)) {
 		oldbot[lth] = 0;
@@ -665,50 +594,39 @@ cornbot(int lth)
 	}
 }
 
-void
-bot(void)
+bot()
 {
-	char *ob = oldbot, *nb = newbot, *bp;
-	int i;
-
+register char *ob = oldbot, *nb = newbot;
+register int i;
+extern char *eos();
 	if(flags.botlx) *ob = 0;
 	flags.botl = flags.botlx = 0;
 #ifdef GOLD_ON_BOTL
-	(void) snprintf(newbot, sizeof newbot,
+	(void) sprintf(newbot,
 		"Level %-2d  Gold %-5lu  Hp %3d(%d)  Ac %-2d  Str ",
 		dlevel, u.ugold, u.uhp, u.uhpmax, u.uac);
 #else
-	(void) snprintf(newbot, sizeof newbot,
+	(void) sprintf(newbot,
 		"Level %-2d   Hp %3d(%d)   Ac %-2d   Str ",
 		dlevel,  u.uhp, u.uhpmax, u.uac);
-#endif /* GOLD_ON_BOTL */
+#endif GOLD_ON_BOTL
 	if(u.ustr>18) {
 	    if(u.ustr>117)
-		(void) strlcat(newbot,"18/**",sizeof newbot);
-	    else {
-		bp = eos(newbot);
-		(void) snprintf(bp, newbot + sizeof newbot - bp,
-		  "18/%02d",u.ustr-18);
-	    }
-	} else {
-	    bp = eos(newbot);
-	    (void) snprintf(bp, newbot + sizeof newbot - bp, "%-2d   ",u.ustr);
-	}
-	bp = eos(newbot);
+		(void) strcat(newbot,"18/**");
+	    else
+		(void) sprintf(eos(newbot), "18/%02d",u.ustr-18);
+	} else
+	    (void) sprintf(eos(newbot), "%-2d   ",u.ustr);
 #ifdef EXP_ON_BOTL
-	(void) snprintf(bp, newbot + sizeof newbot - bp,
-	  "  Exp %2d/%-5lu ", u.ulevel,u.uexp);
+	(void) sprintf(eos(newbot), "  Exp %2d/%-5lu ", u.ulevel,u.uexp);
 #else
-	(void) snprintf(bp, newbot + sizeof newbot - bp,
-	  "   Exp %2u  ", u.ulevel);
-#endif /* EXP_ON_BOTL */
-	(void) strlcat(newbot, hu_stat[u.uhs], sizeof newbot);
-	if(flags.time) {
-	    bp = eos(newbot);
-	    (void) snprintf(bp, newbot + sizeof newbot - bp, "  %ld", moves);
-	}
+	(void) sprintf(eos(newbot), "   Exp %2u  ", u.ulevel);
+#endif EXP_ON_BOTL
+	(void) strcat(newbot, hu_stat[u.uhs]);
+	if(flags.time)
+	    (void) sprintf(eos(newbot), "  %ld", moves);
 	if(strlen(newbot) >= COLNO) {
-		char *bp0, *bp1;
+		register char *bp0, *bp1;
 		bp0 = bp1 = newbot;
 		do {
 			if(*bp0 != ' ' || bp0[1] != ' ' || bp0[2] != ' ')
@@ -724,26 +642,24 @@ bot(void)
 		if(*ob) ob++;
 		if(*nb) nb++;
 	}
-	(void) strlcpy(oldbot, newbot, sizeof oldbot);
+	(void) strcpy(oldbot, newbot);
 }
 
 #ifdef WAN_PROBING
-mstatusline(mtmp) struct monst *mtmp; {
+mstatusline(mtmp) register struct monst *mtmp; {
 	pline("Status of %s: ", monnam(mtmp));
 	pline("Level %-2d  Gold %-5lu  Hp %3d(%d)  Ac %-2d  Dam %d",
 	    mtmp->data->mlevel, mtmp->mgold, mtmp->mhp, mtmp->mhpmax,
 	    mtmp->data->ac, (mtmp->data->damn + 1) * (mtmp->data->damd + 1));
 }
-#endif /* WAN_PROBING */
+#endif WAN_PROBING
 
-void
-cls(void)
-{
+cls(){
 	if(flags.toplin == 1)
 		more();
 	flags.toplin = 0;
 
-	clr_screen();
+	clear_screen();
 
 	flags.botlx = 1;
 }

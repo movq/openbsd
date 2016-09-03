@@ -1,4 +1,4 @@
-/*	$OpenBSD: getpar.c,v 1.15 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: getpar.c,v 1.4 1999/07/31 18:48:58 pjanzen Exp $	*/
 /*	$NetBSD: getpar.c,v 1.4 1995/04/24 12:25:57 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,23 +34,31 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)getpar.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: getpar.c,v 1.4 1999/07/31 18:48:58 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
+#include <string.h>
 #include "getpar.h"
 #include "trek.h"
 
-static int testterm(void);
+static int testterm __P((void));
 
 /**
  **	get integer parameter
  **/
 
 int
-getintpar(const char *s)
+getintpar(s)
+	const char	*s;
 {
-	int	i, n;
+	register int	i;
+	int		n;
 
 	while (1)
 	{
@@ -67,10 +79,11 @@ getintpar(const char *s)
  **/
 
 double
-getfltpar(const char *s)
+getfltpar(s)
+	const char	*s;
 {
-	int		i;
-	double		d;
+	register int		i;
+	double			d;
 
 	while (1)
 	{
@@ -98,7 +111,8 @@ const struct cvntab	Yntab[] =
 };
 
 int
-getynpar(const char *s)
+getynpar(s)
+	const char	*s;
 {
 	const struct cvntab	*r;
 
@@ -112,7 +126,9 @@ getynpar(const char *s)
  **/
 
 const struct cvntab *
-getcodpar(const char *s, const struct cvntab tab[])
+getcodpar(s, tab)
+	const char		*s;
+	const struct cvntab	tab[];
 {
 	char				input[100];
 	const struct cvntab		*r;
@@ -130,7 +146,7 @@ getcodpar(const char *s, const struct cvntab tab[])
 		if (f)
 			getchar();		/* throw out the newline */
 		scanf("%*[ \t;]");
-		if ((c = scanf("%99[^ \t;\n]", input)) < 0)
+		if ((c = scanf("%[^ \t;\n]", input)) < 0)
 			exit(1);
 		if (c == 0)
 			continue;
@@ -142,8 +158,8 @@ getcodpar(const char *s, const struct cvntab tab[])
 			c = 4;
 			for (r = tab; r->abrev; r++)
 			{
-				strlcpy(input, r->abrev, sizeof input);
-				strlcat(input, r->full, sizeof input);
+				strcpy(input, r->abrev);
+				strcat(input, r->full);
 				printf("%14.14s", input);
 				if (--c > 0)
 					continue;
@@ -189,14 +205,19 @@ getcodpar(const char *s, const struct cvntab tab[])
  **/
 
 void
-getstrpar(const char *s, char *r, int l, const char *t)
+getstrpar(s, r, l, t)
+	const char	*s;
+	char		*r;
+	int		l;
+	const char	*t;
 {
-	int	i, f;
-	char	format[20];
+	register int	i;
+	char		format[20];
+	register int	f;
 
 	if (t == 0)
 		t = " \t\n;";
-	(void)snprintf(format, sizeof format, "%%%d[^%s]", l, t);
+	(void)sprintf(format, "%%%d[^%s]", l, t);
 	while (1)
 	{
 		if ((f = testnl()) && s)
@@ -218,14 +239,14 @@ getstrpar(const char *s, char *r, int l, const char *t)
  **/
 
 int
-testnl(void)
+testnl()
 {
-	int	c;
+	register char		c;
 
 	while ((c = getchar()) != '\n')
 		if ((c >= '0' && c <= '9') || c == '.' || c == '!' ||
 				(c >= 'A' && c <= 'Z') ||
-				(c >= 'a' && c <= 'z') || c == '-' || c == EOF)
+				(c >= 'a' && c <= 'z') || c == '-')
 		{
 			ungetc(c, stdin);
 			return(0);
@@ -240,7 +261,8 @@ testnl(void)
  **/
 
 void
-skiptonl(int c)
+skiptonl(c)
+	char	c;
 {
 	while (c != '\n')
 		if (!(c = getchar()))
@@ -255,9 +277,9 @@ skiptonl(int c)
  **/
 
 static int
-testterm(void)
+testterm()
 {
-	int	c;
+	char		c;
 
 	if (!(c = getchar()))
 		return (1);
@@ -278,9 +300,10 @@ testterm(void)
 */
 
 int
-readdelim(int d)
+readdelim(d)
+	char	d;
 {
-	int	c;
+	register char	c;
 
 	while ((c = getchar()))
 	{

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ip_icmp.h,v 1.27 2016/03/07 19:33:26 mmcc Exp $	*/
+/*	$OpenBSD: ip_icmp.h,v 1.9 1999/01/07 09:20:17 deraadt Exp $	*/
 /*	$NetBSD: ip_icmp.h,v 1.10 1996/02/13 23:42:28 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,27 +36,17 @@
  *	@(#)ip_icmp.h	8.1 (Berkeley) 6/10/93
  */
 
-#ifndef _NETINET_IP_ICMP_H_
-#define _NETINET_IP_ICMP_H_
-
 /*
  * Interface Control Message Protocol Definitions.
  * Per RFC 792, September 1981.
- * RFC 950, August 1985. (Address Mask Request / Reply)
- * RFC 1256, September 1991. (Router Advertisement and Solicitation)
- * RFC 1108, November 1991. (Param Problem, Missing Req. Option)
- * RFC 1393, January 1993. (Traceroute)
- * RFC 1475, June 1993. (Datagram Conversion Error)
- * RFC 1812, June 1995. (adm prohib, host precedence, precedence cutoff)
- * RFC 2002, October 1996. (Mobility changes to Router Advertisement)
  */
 
 /*
  * ICMP Router Advertisement data
  */
 struct icmp_ra_addr {
-	u_int32_t ira_addr;
-	u_int32_t ira_preference;
+	n_long ira_addr;
+	n_long ira_preference;
 };
 
 /*
@@ -63,32 +57,27 @@ struct icmp {
 	u_int8_t  icmp_code;		/* type sub code */
 	u_int16_t icmp_cksum;		/* ones complement cksum of struct */
 	union {
-		u_int8_t  ih_pptr;	/* ICMP_PARAMPROB */
-		struct ih_exthdr {	/* RFC4884 extended header */
-			u_int8_t  iex_pad;
-			u_int8_t  iex_length;
-		} ih_exthdr;
+		u_int8_t  ih_pptr;		/* ICMP_PARAMPROB */
 		struct in_addr ih_gwaddr;	/* ICMP_REDIRECT */
 		struct ih_idseq {
-			  u_int16_t icd_id;
-			  u_int16_t icd_seq;
+			  n_short icd_id;
+			  n_short icd_seq;
 		} ih_idseq;
 		int32_t   ih_void;
 
 		/* ICMP_UNREACH_NEEDFRAG -- Path MTU Discovery (RFC1191) */
 		struct ih_pmtu {
-			  u_int16_t ipm_void;
-			  u_int16_t ipm_nextmtu;
+			  n_short ipm_void;    
+			  n_short ipm_nextmtu;
 		} ih_pmtu;
 
 		struct ih_rtradv {
 			u_int8_t irt_num_addrs;
 			u_int8_t irt_wpa;
-			u_int16_t irt_lifetime;
+			n_short irt_lifetime;
 		} ih_rtradv;
 	} icmp_hun;
 #define	icmp_pptr	  icmp_hun.ih_pptr
-#define	icmp_length	  icmp_hun.ih_exthdr.iex_length
 #define	icmp_gwaddr	  icmp_hun.ih_gwaddr
 #define	icmp_id		  icmp_hun.ih_idseq.icd_id
 #define	icmp_seq	  icmp_hun.ih_idseq.icd_seq
@@ -100,9 +89,9 @@ struct icmp {
 #define	icmp_lifetime	  icmp_hun.ih_rtradv.irt_lifetime
 	union {
 		struct id_ts {
-			  u_int32_t its_otime;
-			  u_int32_t its_rtime;
-			  u_int32_t its_ttime;
+			  n_time its_otime;
+			  n_time its_rtime;
+			  n_time its_ttime;
 		} id_ts;
 		struct id_ip  {
 			  struct ip idi_ip;
@@ -119,25 +108,6 @@ struct icmp {
 #define	icmp_data	  icmp_dun.id_data
 };
 
-struct icmp_ext_hdr {
-	u_int8_t  ieh_version;		/* only high nibble used */
-	u_int8_t  ieh_res;		/* reserved, must be zero */
-	u_int16_t ieh_cksum;		/* ones complement cksum of ext hdr */
-};
-
-#define ICMP_EXT_HDR_VERSION	0x20
-#define ICMP_EXT_HDR_VMASK	0xf0
-#define ICMP_EXT_OFFSET		128
-
-struct icmp_ext_obj_hdr {
-	u_int16_t ieo_length;		/* length of obj incl this header */
-	u_int8_t  ieo_cnum;		/* class number */
-	u_int8_t  ieo_ctype;		/* sub class type */
-};
-
-#define ICMP_EXT_MPLS		1
-#define ICMP_EXT_IFINFO		2
-
 /*
  * For IPv6 transition related ICMP errors.
  */
@@ -147,13 +117,13 @@ struct icmp_ext_obj_hdr {
 /*
  * Lower bounds on packet lengths for various types.
  * For the error advice packets must first insure that the
- * packet is large enough to contain the returned ip header.
+ * packet is large enought to contain the returned ip header.
  * Only then can we do the check to see if 64 bits of packet
  * data have been returned, since we need to check the returned
  * ip header length.
  */
 #define	ICMP_MINLEN	8				/* abs minimum */
-#define	ICMP_TSLEN	(8 + 3 * sizeof (u_int32_t))	/* timestamp */
+#define	ICMP_TSLEN	(8 + 3 * sizeof (n_time))	/* timestamp */
 #define	ICMP_MASKLEN	12				/* address mask */
 #define	ICMP_ADVLENMIN	(8 + sizeof (struct ip) + 8)	/* min */
 #define	ICMP_ADVLEN(p)	(8 + ((p)->icmp_ip.ip_hl << 2) + 8)
@@ -161,7 +131,6 @@ struct icmp_ext_obj_hdr {
 
 /*
  * Definition of type and code field values.
- *	https://www.iana.org/assignments/icmp-parameters
  */
 #define	ICMP_ECHOREPLY		0		/* echo reply */
 #define	ICMP_UNREACH		3		/* dest unreachable, codes: */
@@ -187,39 +156,22 @@ struct icmp_ext_obj_hdr {
 #define		ICMP_REDIRECT_HOST	1		/* for host */
 #define		ICMP_REDIRECT_TOSNET	2		/* for tos and net */
 #define		ICMP_REDIRECT_TOSHOST	3		/* for tos and host */
-#define	ICMP_ALTHOSTADDR	6		/* alternate host address */
 #define	ICMP_ECHO		8		/* echo service */
 #define	ICMP_ROUTERADVERT	9		/* router advertisement */
-#define		ICMP_ROUTERADVERT_NORMAL		0	/* normal advertisement */
-#define		ICMP_ROUTERADVERT_NOROUTE_COMMON	16	/* selective routing */
 #define	ICMP_ROUTERSOLICIT	10		/* router solicitation */
 #define	ICMP_TIMXCEED		11		/* time exceeded, code: */
 #define		ICMP_TIMXCEED_INTRANS	0		/* ttl==0 in transit */
 #define		ICMP_TIMXCEED_REASS	1		/* ttl==0 in reass */
 #define	ICMP_PARAMPROB		12		/* ip header bad */
-#define		ICMP_PARAMPROB_ERRATPTR 0		/* req. opt. absent */
 #define		ICMP_PARAMPROB_OPTABSENT 1		/* req. opt. absent */
-#define		ICMP_PARAMPROB_LENGTH	2		/* bad length */
 #define	ICMP_TSTAMP		13		/* timestamp request */
 #define	ICMP_TSTAMPREPLY	14		/* timestamp reply */
 #define	ICMP_IREQ		15		/* information request */
 #define	ICMP_IREQREPLY		16		/* information reply */
 #define	ICMP_MASKREQ		17		/* address mask request */
 #define	ICMP_MASKREPLY		18		/* address mask reply */
-#define	ICMP_TRACEROUTE		30		/* traceroute */
-#define	ICMP_DATACONVERR	31		/* data conversion error */
-#define	ICMP_MOBILE_REDIRECT	32		/* mobile host redirect */
-#define	ICMP_IPV6_WHEREAREYOU	33		/* IPv6 where-are-you */
-#define	ICMP_IPV6_IAMHERE	34		/* IPv6 i-am-here */
-#define	ICMP_MOBILE_REGREQUEST	35		/* mobile registration req */
-#define	ICMP_MOBILE_REGREPLY	36		/* mobile registration reply */
-#define	ICMP_SKIP		39		/* SKIP */
-#define	ICMP_PHOTURIS		40		/* Photuris */
-#define		ICMP_PHOTURIS_UNKNOWN_INDEX	1	/* unknown sec index */
-#define		ICMP_PHOTURIS_AUTH_FAILED	2	/* auth failed */
-#define		ICMP_PHOTURIS_DECRYPT_FAILED	3	/* decrypt failed */
 
-#define	ICMP_MAXTYPE		40
+#define	ICMP_MAXTYPE		18
 
 #define	ICMP_INFOTYPE(type) \
 	((type) == ICMP_ECHOREPLY || (type) == ICMP_ECHO || \
@@ -229,17 +181,9 @@ struct icmp_ext_obj_hdr {
 	(type) == ICMP_MASKREQ || (type) == ICMP_MASKREPLY)
 
 #ifdef _KERNEL
-struct mbuf *
-	icmp_do_error(struct mbuf *, int, int, u_int32_t, int);
-void	icmp_error(struct mbuf *, int, int, u_int32_t, int);
-void	icmp_input(struct mbuf *, ...);
-void	icmp_init(void);
-int	icmp_reflect(struct mbuf *, struct mbuf **, struct in_ifaddr *);
-void	icmp_send(struct mbuf *, struct mbuf *);
-int	icmp_sysctl(int *, u_int, void *, size_t *, void *, size_t);
-struct rtentry *
-	icmp_mtudisc_clone(struct in_addr, u_int);
-void	icmp_mtudisc(struct icmp *, u_int);
-int	icmp_do_exthdr(struct mbuf *, u_int16_t, u_int8_t, void *, size_t);
-#endif /* _KERNEL */
-#endif /* _NETINET_IP_ICMP_H_ */
+void	icmp_error __P((struct mbuf *, int, int, n_long, struct ifnet *));
+void	icmp_input __P((struct mbuf *, ...));
+void	icmp_reflect __P((struct mbuf *));
+void	icmp_send __P((struct mbuf *, struct mbuf *));
+int	icmp_sysctl __P((int *, u_int, void *, size_t *, void *, size_t));
+#endif

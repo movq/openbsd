@@ -1,75 +1,54 @@
-/*	$OpenBSD: seekdir.c,v 1.13 2015/09/12 13:34:22 guenther Exp $ */
 /*
- * Copyright (c) 2013 Ingo Schwarze <schwarze@openbsd.org>
+ * Copyright (c) 1983, 1993
+ *	The Regents of the University of California.  All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
-#include <dirent.h>
-#include <unistd.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: seekdir.c,v 1.3 1997/09/22 05:09:39 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
 
-#include "thread_private.h"
-#include "telldir.h"
+#include <sys/param.h>
+#include <dirent.h>
+
+void __seekdir __P((DIR *, long));
 
 /*
  * Seek to an entry in a directory.
- * Only values returned by "telldir" should be passed to seekdir.
+ * __seekdir is in telldir.c so that it can share opaque data structures.
  */
 void
-seekdir(DIR *dirp, long loc)
+seekdir(dirp, loc)
+	DIR *dirp;
+	long loc;
 {
-	struct dirent *dp;
 
-	/*
-	 * First check whether the directory entry to seek for
-	 * is still buffered in the directory structure in memory.
-	 */
-
-	_MUTEX_LOCK(&dirp->dd_lock);
-	if (dirp->dd_size && dirp->dd_bufpos == loc) {
-		dirp->dd_loc = 0;
-		dirp->dd_curpos = loc;
-		_MUTEX_UNLOCK(&dirp->dd_lock);
-		return;
-	}
-
-	for (dirp->dd_loc = 0;
-	     dirp->dd_loc < dirp->dd_size;
-	     dirp->dd_loc += dp->d_reclen) {
-		dp = (struct dirent *)(dirp->dd_buf + dirp->dd_loc);
-		if (dp->d_off != loc)
-			continue;
-
-		/*
-		 * Entry found in the buffer, use it.  If readdir(3)
-		 * follows, this will save us a getdents(2) syscall.
-		 * Note that d_off is the offset of the _next_ entry,
-		 * so advance dd_loc.
-		 */
-
-		dirp->dd_loc += dp->d_reclen;
-		dirp->dd_curpos = loc;
-		_MUTEX_UNLOCK(&dirp->dd_lock);
-		return;
-	}
-
-	/*
-	 * The entry is not in the buffer, prepare a call to getdents(2).
-	 * In particular, invalidate dd_loc.
-	 */
-
-	dirp->dd_loc = dirp->dd_size;
-	dirp->dd_bufpos = dirp->dd_curpos = lseek(dirp->dd_fd, loc, SEEK_SET);
-	_MUTEX_UNLOCK(&dirp->dd_lock);
+	__seekdir(dirp, loc);
 }
-DEF_WEAK(seekdir);

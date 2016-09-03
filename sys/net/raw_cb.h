@@ -1,4 +1,4 @@
-/*	$OpenBSD: raw_cb.h,v 1.9 2013/10/24 18:50:16 deraadt Exp $	*/
+/*	$OpenBSD: raw_cb.h,v 1.2 1996/03/03 21:07:17 niklas Exp $	*/
 /*	$NetBSD: raw_cb.h,v 1.9 1996/02/13 22:00:41 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,9 +36,6 @@
  *	@(#)raw_cb.h	8.1 (Berkeley) 6/10/93
  */
 
-#ifndef _NET_RAW_CB_H_
-#define _NET_RAW_CB_H_
-
 /*
  * Raw protocol interface control block.  Used
  * to tie a socket to the generic raw interface.
@@ -47,6 +48,8 @@ struct rawcb {
 	struct	sockproto rcb_proto;	/* protocol family, protocol */
 };
 
+#define	sotorawcb(so)		((struct rawcb *)(so)->so_pcb)
+
 /*
  * Nominal space allocated to a raw socket.
  */
@@ -54,18 +57,15 @@ struct rawcb {
 #define	RAWRCVQ		8192
 
 #ifdef _KERNEL
+LIST_HEAD(, rawcb) rawcb;		/* head of list */
 
-extern LIST_HEAD(rawcbhead, rawcb) rawcb;		/* head of list */
+int	 raw_attach __P((struct socket *, int));
+void	 *raw_ctlinput __P((int, struct sockaddr *, void *));
+void	 raw_detach __P((struct rawcb *));
+void	 raw_disconnect __P((struct rawcb *));
+void	 raw_init __P((void));
+void	 raw_input __P((struct mbuf *, ...));
+int	 raw_usrreq __P((struct socket *,
+	    int, struct mbuf *, struct mbuf *, struct mbuf *));
 
-#define	sotorawcb(so)		((struct rawcb *)(so)->so_pcb)
-int	 raw_attach(struct socket *, int);
-void	 *raw_ctlinput(int, struct sockaddr *, u_int, void *);
-void	 raw_detach(struct rawcb *);
-void	 raw_disconnect(struct rawcb *);
-void	 raw_init(void);
-void	 raw_input(struct mbuf *, ...);
-int	 raw_usrreq(struct socket *,
-	    int, struct mbuf *, struct mbuf *, struct mbuf *, struct proc *);
 #endif /* _KERNEL */
-
-#endif /* _NET_RAW_CB_H_ */

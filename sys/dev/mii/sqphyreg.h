@@ -1,4 +1,4 @@
-/*	$OpenBSD: sqphyreg.h,v 1.5 2008/08/31 09:54:32 jsg Exp $	*/
+/*	$OpenBSD: sqphyreg.h,v 1.2 1999/03/09 00:02:45 jason Exp $	*/
 /*	$NetBSD: sqphyreg.h,v 1.1 1998/11/03 23:51:29 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -36,6 +43,8 @@
 
 /*
  * Seeq 80220 Register definitions.
+ * Further documentation can be found at:
+ *	http://www.seeq.com/80220.html
  */
 
 #define	MII_SQPHY_CONFIG1	0x10	/* Configuration 1 Register */
@@ -92,7 +101,7 @@
 #define	MII_SQPHY_STATUS	0x12	/* Status Output Register */
 #define	STATUS_INT		0x8000	/* Interrupt Detect */
 #define	STATUS_LNK_FAIL		0x4000	/* Link Fail */
-#define	STATUS_LOSS_SYNC	0x2000	/* Descrambler lost synchronization */
+#define	STATUS_LOSS_SYNC	0x2000	/* Descrabler lost synchronization */
 #define	STATUS_CWRD		0x1000	/* Codeword Error */
 #define	STATUS_SSD		0x0800	/* Start of Stream Error */
 #define	STATUS_ESD		0x0400	/* End of Stream Error */

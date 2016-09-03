@@ -5,14 +5,6 @@
 #define CLIENT_SUPPORT 1
 #undef SERVER_SUPPORT
 
-/* Set up for other #if's which follow */
-#ifndef __DECC_VER
-#define __DECC_VER  0
-#endif
-#ifndef __VMS_VER
-#define __VMS_VER   0
-#endif
-
 /* VMS is case insensitive */
 /* #define FOLD_FN_CHAR(c) tolower(c) */
 
@@ -134,9 +126,7 @@
 /* #undef HAVE_ERRNO_H */
 
 /* Define if you have the <fcntl.h> header file.  */
-#if __DECC_VER >= 50700000
-# define HAVE_FCNTL_H 1
-#endif
+/* #undef HAVE_FCNTL_H */
 
 /* Define if you have the <memory.h> header file.  */
 /* #undef HAVE_MEMORY_H */
@@ -147,17 +137,15 @@
 /* Define if you have the <string.h> header file.  */
 #define HAVE_STRING_H 1
 
-/* Define to force lib/regex.c to use malloc instead of alloca.  */
-#define REGEX_MALLOC 1
-
-/* Define to force lib/regex.c to define re_comp et al.  */
-#define _REGEX_RE_COMP 1
-
 /* Define if you have the <sys/select.h> header file.  */
 /* #undef HAVE_SYS_SELECT_H */
 
 /* Define this if your <sys/socket.h> defines select() */
 #define SYS_SOCKET_H_DEFINES_SELECT 1
+
+/* Define if you have the <sys/timeb.h> header file.  */
+#define HAVE_SYS_TIMEB_H 1
+#define HAVE_TIMEB_H 1
 
 /* Define if you have the <unistd.h> header file.  */
 #define HAVE_UNISTD_H 1
@@ -202,12 +190,6 @@ extern void fnfold (char *FILENAME);
 #define optarg cvs_optarg
 #define opterr cvs_opterr
 
-/* Avoid open/read/closedir name conflicts with DEC C 5.7 libraries,
-   and fix the problem with readdir() retaining the trailing period.  */
-#define CVS_OPENDIR  vms_opendir
-#define CVS_READDIR  vms_readdir
-#define CVS_CLOSEDIR vms_closedir
-
 /* argv[0] in VMS is the full pathname which would look really ugly in error
    messages.  Even if we stripped out the directory and ".EXE;5", it would
    still be misleading, as if one has used "OLDCVS :== ...CVS-JULY.EXE",
@@ -216,5 +198,3 @@ extern void fnfold (char *FILENAME);
    might be worth messing with, but it also seems fine to just always call
    it "cvs".  */
 #define ARGV0_NOT_PROGRAM_NAME
-
-#define CVS_UNLINK vms_unlink

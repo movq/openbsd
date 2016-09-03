@@ -1,4 +1,4 @@
-/*	$OpenBSD: assert.h,v 1.13 2011/06/26 21:11:41 espie Exp $	*/
+/*	$OpenBSD: assert.h,v 1.2 1997/09/21 10:45:25 niklas Exp $	*/
 /*	$NetBSD: assert.h,v 1.6 1994/10/26 00:55:44 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,27 +46,23 @@
  * multiple times, with and without NDEBUG defined.
  */
 
-#include <sys/cdefs.h>
-
 #undef assert
 #undef _assert
 
 #ifdef NDEBUG
-# define	assert(e)	((void)0)
-# define	_assert(e)	((void)0)
+#define	assert(e)	((void)0)
+#define	_assert(e)	((void)0)
 #else
-# define	_assert(e)	assert(e)
-# if __ISO_C_VISIBLE >= 1999
-#  define	assert(e)	((e) ? (void)0 : __assert2(__FILE__, __LINE__, __func__, #e))
-# else
-#  define	assert(e)	((e) ? (void)0 : __assert(__FILE__, __LINE__, #e))
-# endif
+#define	_assert(e)	assert(e)
+#ifdef __STDC__
+#define	assert(e)	((e) ? (void)0 : __assert(__FILE__, __LINE__, #e))
+#else	/* PCC */
+#define	assert(e)	((e) ? (void)0 : __assert(__FILE__, __LINE__, "e"))
+#endif
 #endif
 
-#ifndef _ASSERT_H_
-#define _ASSERT_H_
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-__dead void __assert(const char *, int, const char *);
-__dead void __assert2(const char *, int, const char *, const char *);
+void __assert __P((const char *, int, const char *));
 __END_DECLS
-#endif

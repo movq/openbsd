@@ -1,23 +1,11 @@
-/*	$OpenBSD: io.c,v 1.9 2016/01/10 13:35:09 mestre Exp $	*/
+/*	$OpenBSD: io.c,v 1.4 1998/11/29 19:56:57 pjanzen Exp $	*/
 /*	$NetBSD: io.c,v 1.2 1995/03/24 03:58:50 cgd Exp $	*/
 
 /*
  * io.c - input/output routines for Phantasia
  */
 
-#include <ctype.h>
-#include <curses.h>
-#include <math.h>
-#include <setjmp.h>
-#include <signal.h>
-#include <string.h>
-#include <unistd.h>
-
-#include "macros.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
-
-static jmp_buf Timeoenv;	/* used for timing out waiting for input */
+#include "include.h"
 
 /************************************************************************
 /
@@ -55,7 +43,9 @@ static jmp_buf Timeoenv;	/* used for timing out waiting for input */
 *************************************************************************/
 
 void
-getstring(char *cp, int mx)
+getstring(cp, mx)
+	char   *cp;
+	int     mx;
 {
 	char   *inptr;		/* pointer into string for next string */
 	int     x, y;		/* original x, y coordinates on screen */
@@ -129,7 +119,8 @@ getstring(char *cp, int mx)
 *************************************************************************/
 
 void
-more(int where)
+more(where)
+	int     where;
 {
 	mvaddstr(where, 0, "-- more --");
 	getanswer(" ", FALSE);
@@ -161,7 +152,7 @@ more(int where)
 *************************************************************************/
 
 double
-infloat(void)
+infloat()
 {
 	double  result;		/* return value */
 
@@ -199,7 +190,7 @@ infloat(void)
 *************************************************************************/
 
 int
-inputoption(void)
+inputoption()
 {
 	++Player.p_age;		/* increase age */
 
@@ -242,13 +233,20 @@ inputoption(void)
 *************************************************************************/
 
 void
-interrupt(void)
+interrupt()
 {
 	char    line[81];	/* a place to store data already on screen */
 	int     loop;		/* counter */
 	int     x, y;		/* coordinates on screen */
 	int     ch;		/* input */
 	unsigned savealarm;	/* to save alarm value */
+
+#ifdef SYS3
+	signal(SIGINT, SIG_IGN);
+#endif
+#ifdef SYS5
+	signal(SIGINT, SIG_IGN);
+#endif
 
 	savealarm = alarm(0);	/* turn off any alarms */
 
@@ -267,16 +265,25 @@ interrupt(void)
 		ch = getanswer("NY", FALSE);
 		if (ch == 'Y')
 			death("Bailing out");
+		/* NOTREACHED */
 	} else {
 		mvaddstr(4, 0, "Do you really want to quit ? ");
 		ch = getanswer("NY", FALSE);
 		if (ch == 'Y')
 			leavegame();
+		/* NOTREACHED */
 	}
 
 	mvaddstr(4, 0, line);	/* restore data on screen */
 	move(y, x);		/* restore cursor */
 	refresh();
+
+#ifdef SYS3
+	signal(SIGINT, interrupt);
+#endif
+#ifdef SYS5
+	signal(SIGINT, interrupt);
+#endif
 
 	alarm(savealarm);	/* restore alarm */
 }
@@ -314,15 +321,20 @@ interrupt(void)
 *************************************************************************/
 
 int
-getanswer(char *choices, bool def)
+getanswer(choices, def)
+	char   *choices;
+	bool    def;
 {
-	         int ch;	 /* input */
-	volatile int loop;	 /* counter */
-	volatile int oldx, oldy; /* original coordinates on screen */
+	int     ch;		/* input */
+	int     loop;		/* counter */
+	int     oldx, oldy;	/* original coordinates on screen */
 
 	getyx(stdscr, oldy, oldx);
 	alarm(0);		/* make sure alarm is off */
 
+#if __GNUC__
+	(void)&loop;		/* XXX quiet gcc */
+#endif
 	for (loop = 3; loop; --loop)
 	for (loop = 3; loop; --loop)
 		/* try for 3 times */
@@ -341,7 +353,11 @@ getanswer(char *choices, bool def)
 		{
 			clrtoeol();
 			refresh();
+#ifdef BSD41
+			sigset(SIGALRM, catchalarm);
+#else
 			signal(SIGALRM, catchalarm);
+#endif
 			/* set timeout */
 			if (Timeout)
 				alarm(7);	/* short */
@@ -412,7 +428,8 @@ getanswer(char *choices, bool def)
 *************************************************************************/
 
 void
-catchalarm(int dummy)
+catchalarm(dummy)
+	int dummy;
 {
 	longjmp(Timeoenv, 1);
 }

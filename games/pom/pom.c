@@ -1,4 +1,4 @@
-/*	$OpenBSD: pom.c,v 1.23 2016/08/27 02:02:44 guenther Exp $	*/
+/*	$OpenBSD: pom.c,v 1.6 1998/09/06 12:29:25 pjanzen Exp $	*/
 /*    $NetBSD: pom.c,v 1.6 1996/02/06 22:47:29 jtc Exp $      */
 
 /*
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pom.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: pom.c,v 1.6 1998/09/06 12:29:25 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*
  * Phase of the Moon.  Calculates the current phase of the moon.
  * Based on routines from `Practical Astronomy with Your Calculator',
@@ -45,12 +63,13 @@
  */
 
 #include <sys/time.h>
+#include <sys/types.h>
 #include <ctype.h>
-#include <err.h>
-#include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include <err.h>
+#include <tzfile.h>
 #include <unistd.h>
 
 #ifndef M_PI
@@ -65,16 +84,16 @@
 #define	Pzero	  36.340410	/* lunar mean long of perigee at EPOCH */
 #define	Nzero	  318.510107	/* lunar mean long of node at EPOCH */
 
-#define	isleap(y) (((y) % 4) == 0 && (((y) % 100) != 0 || ((y) % 400) == 0))
-
-void	adj360(double *);
-double	dtor(double);
-double	potm(double);
-time_t	parsetime(char *);
-__dead void	badformat(void);
+void	adj360 __P((double *));
+double	dtor __P((double));
+double	potm __P((double));
+time_t	parsetime __P((char *));
+void	badformat __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct timeval tp;
 	struct timezone tzp;
@@ -84,8 +103,9 @@ main(int argc, char *argv[])
 	int cnt;
 	char buf[1024];
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
 	if (argc > 1) {
 		tmpt = parsetime(argv[1]);
@@ -101,10 +121,10 @@ main(int argc, char *argv[])
 	days = (GMT->tm_yday + 1) + ((GMT->tm_hour +
 	    (GMT->tm_min / 60.0) + (GMT->tm_sec / 3600.0)) / 24.0);
 	for (cnt = EPOCH; cnt < GMT->tm_year; ++cnt)
-		days += isleap(cnt + 1900) ? 366 : 365;
+		days += isleap(cnt + TM_YEAR_BASE) ? 366 : 365;
 	/* Selected time could be before EPOCH */
 	for (cnt = GMT->tm_year; cnt < EPOCH; ++cnt)
-		days -= isleap(cnt + 1900) ? 366 : 365;
+		days -= isleap(cnt + TM_YEAR_BASE) ? 366 : 365;
 	today = potm(days) + 0.5;
 	(void)printf("The Moon is ");
 	if ((int)today == 100)
@@ -131,7 +151,7 @@ main(int argc, char *argv[])
 				    today);
 		}
 	}
-	return 0;
+	exit(0);
 }
 
 /*
@@ -139,7 +159,8 @@ main(int argc, char *argv[])
  *	return phase of the moon
  */
 double
-potm(double days)
+potm(days)
+	double days;
 {
 	double N, Msol, Ec, LambdaSol, l, Mm, Ev, Ac, A3, Mmprime;
 	double A4, lprime, V, ldprime, D, Nm;
@@ -175,7 +196,8 @@ potm(double days)
  *	convert degrees to radians
  */
 double
-dtor(double deg)
+dtor(deg)
+	double deg;
 {
 	return(deg * M_PI / 180);
 }
@@ -185,7 +207,8 @@ dtor(double deg)
  *	adjust value so 0 <= deg <= 360
  */
 void
-adj360(double *deg)
+adj360(deg)
+	double *deg;
 {
 	for (;;)
 		if (*deg < 0.0)
@@ -198,7 +221,8 @@ adj360(double *deg)
 
 #define	ATOI2(ar)	((ar)[0] - '0') * 10 + ((ar)[1] - '0'); (ar) += 2;
 time_t
-parsetime(char *p)
+parsetime(p)
+	char *p;
 {
 	struct tm *lt;
 	int bigyear;
@@ -207,7 +231,7 @@ parsetime(char *p)
 	char *t;
 	
 	for (t = p; *t; ++t) {
-		if (isdigit((unsigned char)*t))
+		if (isdigit(*t))
 			continue;
 		badformat();
 	}
@@ -220,14 +244,14 @@ parsetime(char *p)
 	switch (strlen(p)) {
 	case 10:				/* yyyy */
 		bigyear = ATOI2(p);
-		lt->tm_year = (bigyear * 100) - 1900;
+		lt->tm_year = bigyear * 100 - TM_YEAR_BASE;
 		yearset = 1;
 		/* FALLTHROUGH */
 	case 8:					/* yy */
 		if (yearset) {
 			lt->tm_year += ATOI2(p);
 		} else {
-			lt->tm_year = ATOI2(p);
+			lt->tm_year = ATOI2(p) + 1900 - TM_YEAR_BASE;
 			if (lt->tm_year < 69)		/* hack for 2000 */
 				lt->tm_year += 100;
 		}
@@ -259,10 +283,9 @@ parsetime(char *p)
 }
 
 void
-badformat(void)
+badformat()
 {
 	warnx("illegal time format");
-	(void)fprintf(stderr, "usage: %s [[[[[cc]yy]mm]dd]HH]\n",
-	    getprogname());
+	(void)fprintf(stderr, "usage: pom [[[[[cc]yy]mm]dd]HH]\n");
 	exit(1);
 }

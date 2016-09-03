@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypinternal.h,v 1.11 2016/05/29 22:42:24 guenther Exp $	 */
+/*	$OpenBSD: ypinternal.h,v 1.2 1996/09/15 09:32:00 tholo Exp $	 */
 
 /*
  * Copyright (c) 1992, 1993, 1996 Theo de Raadt <deraadt@theos.com>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -44,13 +49,30 @@ struct dom_binding {
 #define BINDINGDIR	"/var/yp/binding"
 #define YPBINDLOCK	"/var/run/ypbind.lock"
 
-__BEGIN_HIDDEN_DECLS
+int (*ypresp_allfn) __P((u_long, char *, int, char *, int, void *));
+void *ypresp_data;
+
 extern struct dom_binding *_ypbindlist;
-extern char _yp_domain[HOST_NAME_MAX+1];
+extern char _yp_domain[MAXHOSTNAMELEN];
 extern int _yplib_timeout;
 
-void	_yp_unbind(struct dom_binding *);
-__END_HIDDEN_DECLS
+void _yp_unbind __P((struct dom_binding *));
+int _yp_check __P((char **));
 
-int	_yp_check(char **);
-PROTO_NORMAL(_yp_check);
+#ifdef YPMATCHCACHE
+
+static bool_t ypmatch_add __P((const char *, const char *,
+    u_int, char *, u_int));
+static bool_t ypmatch_find __P((const char *, const char *,
+    u_int, char **, u_int *));
+
+static struct ypmatch_ent {
+	struct ypmatch_ent 	*next;
+	char     		*map, *key;
+	char           		*val;
+	int             	 keylen, vallen;
+	time_t          	 expire_t;
+} *ypmc;
+extern int _yplib_cache;
+
+#endif

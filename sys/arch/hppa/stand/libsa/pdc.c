@@ -1,7 +1,7 @@
-/*	$OpenBSD: pdc.c,v 1.21 2013/03/23 16:08:28 deraadt Exp $	*/
+/*	$OpenBSD: pdc.c,v 1.10 1999/05/06 02:27:44 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2004 Michael Shalayeff
+ * Copyright (c) 1998 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,39 +12,43 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 /*
- * Copyright 1996 1995 by Open Software Foundation, Inc.
- *              All Rights Reserved
- *
- * Permission to use, copy, modify, and distribute this software and
- * its documentation for any purpose and without fee is hereby granted,
- * provided that the above copyright notice appears in all copies and
- * that both the copyright notice and this permission notice appear in
- * supporting documentation.
- *
- * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE
- * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE.
- *
- * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR
- * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
- * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT,
- * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION
- * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
+ * Copyright 1996 1995 by Open Software Foundation, Inc.   
+ *              All Rights Reserved 
+ *  
+ * Permission to use, copy, modify, and distribute this software and 
+ * its documentation for any purpose and without fee is hereby granted, 
+ * provided that the above copyright notice appears in all copies and 
+ * that both the copyright notice and this permission notice appear in 
+ * supporting documentation. 
+ *  
+ * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+ * 
  */
 /*
  * Copyright (c) 1990 mt Xinu, Inc.  All rights reserved.
@@ -59,7 +63,6 @@
  *	Utah $Hdr: pdc.c 1.8 92/03/14$
  */
 
-#include <sys/param.h>
 #include <sys/time.h>
 #include "libsa.h"
 #include <sys/reboot.h>
@@ -69,6 +72,7 @@
 #include <machine/pdc.h>
 #include <machine/iomod.h>
 #include <machine/nvm.h>
+#include <machine/param.h>
 #include <machine/cpufunc.h>
 
 #include "dev_hppa.h"
@@ -115,8 +119,8 @@ pdc_init()
 	/*
 	 * Clear the FAULT light (so we know when we get a real one)
 	 */
-	(*pdc)(PDC_CHASSIS, PDC_CHASSIS_DISP,
-	    PDC_OSTAT(PDC_OSTAT_BOOT) | 0xCEC0);
+	(void) (*pdc)(PDC_CHASSIS, PDC_CHASSIS_DISP,
+		      PDC_OSTAT(PDC_OSTAT_BOOT) | 0xCEC0);
 }
 
 /*
@@ -128,26 +132,25 @@ int
 iodcstrategy(devdata, rw, blk, size, buf, rsize)
 	void *devdata;
 	int rw;
-	daddr32_t blk;
+	daddr_t blk;
 	size_t size;
 	void *buf;
 	size_t *rsize;
 {
 	struct hppa_dev *dp = devdata;
 	struct pz_device *pzdev = dp->pz_dev;
-	int	offset, xfer, ret;
+	register int	offset, xfer, ret;
 
 #ifdef PDCDEBUG
 	if (debug)
 		printf("iodcstrategy(%p, %s, %u, %u, %p, %p)\n", devdata,
-		    rw==F_READ? "READ" : "WRITE", blk, size, buf, rsize);
+		       rw==F_READ?"READ":"WRITE", blk, size, buf, rsize);
 
 	if (debug > 1)
 		PZDEV_PRINT(pzdev);
 #endif
 
-	blk += dp->fsoff;
-	blk *= DEV_BSIZE;
+	blk <<= DEV_BSHIFT;
 	if ((pzdev->pz_class & PCL_CLASS_MASK) == PCL_SEQU) {
 		/* rewind and re-read to seek */
 		if (blk < dp->last_blk) {
@@ -155,9 +158,10 @@ iodcstrategy(devdata, rw, blk, size, buf, rsize)
 			if (debug)
 				printf("iodc: rewind ");
 #endif
-			if ((ret = ((iodcio_t)pzdev->pz_iodc_io)(pzdev->pz_hpa,
-			    IODC_IO_READ, pzdev->pz_spa, pzdev->pz_layers,
-			    pdcbuf, 0, dp->buf, 0, 0)) < 0) {
+			twiddle();
+			if ((ret = (pzdev->pz_iodc_io)(pzdev->pz_hpa,
+				IODC_IO_READ, pzdev->pz_spa, pzdev->pz_layers,
+				pdcbuf, 0, dp->buf, 0, 0)) < 0) {
 #ifdef DEBUG
 				if (debug)
 					printf("IODC_IO: %d\n", ret);
@@ -177,10 +181,10 @@ iodcstrategy(devdata, rw, blk, size, buf, rsize)
 		     dp->last_read = ret) {
 			twiddle();
 			dp->last_blk += dp->last_read;
-			if ((ret = ((iodcio_t)pzdev->pz_iodc_io)(pzdev->pz_hpa,
-			    IODC_IO_READ, pzdev->pz_spa, pzdev->pz_layers,
-			    pdcbuf, dp->last_blk, dp->buf, IODC_IOSIZ,
-			    IODC_IOSIZ)) < 0) {
+			if ((ret = (pzdev->pz_iodc_io)(pzdev->pz_hpa,
+				IODC_IO_READ, pzdev->pz_spa, pzdev->pz_layers,
+				pdcbuf, dp->last_blk, dp->buf, IODC_MAXIOSIZ,
+				IODC_MAXIOSIZ)) < 0) {
 #ifdef DEBUG
 				if (debug)
 					printf("IODC_IO: %d\n", ret);
@@ -211,7 +215,7 @@ iodcstrategy(devdata, rw, blk, size, buf, rsize)
 #ifdef PDCDEBUG
 		if (debug)
 			printf("off=%d,xfer=%d,size=%d,blk=%d\n",
-			    offset, xfer, size, blk);
+			       offset, xfer, size, blk);
 #endif
 		bcopy(dp->buf + offset, buf, xfer);
 		buf += xfer;
@@ -221,15 +225,17 @@ iodcstrategy(devdata, rw, blk, size, buf, rsize)
 	 * double buffer it all the time, to cache
 	 */
 	for (; size; size -= ret, buf += ret, blk += ret, xfer += ret) {
+		twiddle();
 		offset = blk & IOPGOFSET;
-		if ((ret = ((iodcio_t)pzdev->pz_iodc_io)(pzdev->pz_hpa,
-		    (rw == F_READ? IODC_IO_READ: IODC_IO_WRITE),
-		    pzdev->pz_spa, pzdev->pz_layers, pdcbuf,
-		    blk - offset, dp->buf, IODC_IOSIZ, IODC_IOSIZ)) < 0) {
+		if ((ret = (pzdev->pz_iodc_io)(pzdev->pz_hpa,
+				(rw == F_READ? IODC_IO_READ: IODC_IO_WRITE),
+				pzdev->pz_spa, pzdev->pz_layers, pdcbuf,
+				blk - offset, dp->buf, IODC_MAXIOSIZ,
+				IODC_MAXIOSIZ)) < 0) {
 #ifdef DEBUG
 			if (debug)
 				printf("iodc_read(%d,%d): %d\n",
-				    blk - offset, IODC_IOSIZ, ret);
+					blk - offset, IODC_MAXIOSIZ, ret);
 #endif
 			if (xfer)
 				break;
@@ -246,7 +252,7 @@ iodcstrategy(devdata, rw, blk, size, buf, rsize)
 #ifdef PDCDEBUG
 		if (debug)
 			printf("read %d(%d,%d)@%x ", ret,
-			    dp->last_blk, dp->last_read, (u_int)buf);
+			       dp->last_blk, dp->last_read, (u_int)buf);
 #endif
 	    }
 
@@ -270,16 +276,16 @@ pdc_findev(unit, class)
 {
 	static struct pz_device pz;
 	int layers[sizeof(pz.pz_layers)/sizeof(pz.pz_layers[0])];
-	struct iomod *io;
-	iodcio_t iodc;
-	int err = 0;
+	register iodcio_t iodc;
+	register struct iomod *io;
+	register int err = 0;
 
 #ifdef	PDCDEBUG
 	if (debug)
 		printf("pdc_finddev(%d, %x)\n", unit, class);
 #endif
 	iodc = (iodcio_t)(PAGE0->mem_free + IODC_MAXSIZE);
-	io = (struct iomod *)PAGE0->mem_boot.pz_hpa;
+	io = PAGE0->mem_boot.pz_hpa;
 
 	/* quick hack for boot device */
 	if (PAGE0->mem_boot.pz_class == class &&
@@ -288,7 +294,7 @@ pdc_findev(unit, class)
 		bcopy (&PAGE0->mem_boot.pz_dp, &pz.pz_dp, sizeof(pz.pz_dp));
 		bcopy (pz.pz_layers, layers, sizeof(layers));
 		if ((err = (pdc)(PDC_IODC, PDC_IODC_READ, pdcbuf, io,
-		    IODC_INIT, iodc, IODC_MAXSIZE)) < 0) {
+				  IODC_INIT, iodc, IODC_MAXSIZE)) < 0) {
 #ifdef DEBUG
 			if (debug)
 				printf("IODC_READ: %d\n", err);
@@ -298,7 +304,7 @@ pdc_findev(unit, class)
 	} else {
 		struct pdc_memmap memmap;
 		struct iodc_data mptr;
-		int i, stp;
+		register int i, stp;
 
 		for (i = 0; i < 0xf; i++) {
 			pz.pz_bc[0] = pz.pz_bc[1] =
@@ -307,18 +313,18 @@ pdc_findev(unit, class)
 			pz.pz_bc[5] = 0;	/* core bus */
 			pz.pz_mod = i;
 			if ((pdc)(PDC_MEMMAP, PDC_MEMMAP_HPA, &memmap,
-			    &pz.pz_dp) < 0)
+				  &pz.pz_dp) < 0)
 				continue;
 #ifdef PDCDEBUG
 			if (debug)
 				printf("memap: %d.%d.%d, hpa=%x, mpgs=%x\n",
-				    pz.pz_bc[4], pz.pz_bc[5], pz.pz_mod,
-				    memmap.hpa, memmap.morepages);
+				       pz.pz_bc[4], pz.pz_bc[5], pz.pz_mod,
+				       memmap.hpa, memmap.morepages);
 #endif
 			io = (struct iomod *) memmap.hpa;
 
 			if ((err = (pdc)(PDC_IODC, PDC_IODC_READ, &pdcbuf, io,
-			    IODC_DATA, &mptr, sizeof(mptr))) < 0) {
+				   IODC_DATA, &mptr, sizeof(mptr))) < 0) {
 #ifdef DEBUG
 				if (debug)
 					printf("IODC_DATA: %d\n", err);
@@ -327,7 +333,7 @@ pdc_findev(unit, class)
 			}
 
 			if ((err = (pdc)(PDC_IODC, PDC_IODC_READ, pdcbuf, io,
-			    IODC_INIT, iodc, IODC_MAXSIZE)) < 0) {
+					  IODC_INIT, iodc, IODC_MAXSIZE)) < 0) {
 #ifdef DEBUG
 				if (debug)
 					printf("IODC_READ: %d\n", err);
@@ -337,24 +343,24 @@ pdc_findev(unit, class)
 
 			stp = IODC_INIT_FIRST;
 			do {
-				if ((err = (iodc)((u_int)io, stp, io->io_spa,
-				    layers, pdcbuf, 0, 0, 0, 0)) < 0) {
+				if ((err = (iodc)(io, stp, io->io_spa, layers,
+						  pdcbuf, 0, 0, 0, 0)) < 0) {
 #ifdef DEBUG
 					if (debug && err != PDC_ERR_EOD)
 						printf("IODC_INIT_%s: %d\n",
-						    stp==IODC_INIT_FIRST?
-						    "FIRST":"NEXT", err);
+						       stp==IODC_INIT_FIRST?
+						       "FIRST":"NEXT", err);
 #endif
 					break;
 				}
 #ifdef PDCDEBUG
 				if (debug)
 					printf("[%x,%x,%x,%x,%x,%x], "
-					    "[%x,%x,%x,%x,%x,%x]\n",
-					    pdcbuf[0], pdcbuf[1], pdcbuf[2],
-					    pdcbuf[3], pdcbuf[4], pdcbuf[5],
-					    layers[0], layers[1], layers[2],
-					    layers[3], layers[4], layers[5]);
+					       "[%x,%x,%x,%x,%x,%x]\n",
+					       pdcbuf[0], pdcbuf[1], pdcbuf[2],
+					       pdcbuf[3], pdcbuf[4], pdcbuf[5],
+					       layers[0], layers[1], layers[2],
+					       layers[3], layers[4], layers[5]);
 #endif
 				stp = IODC_INIT_NEXT;
 
@@ -368,8 +374,8 @@ pdc_findev(unit, class)
 
 	if (err >= 0) {
 		/* init device */
-		if (0  && (err = (iodc)((u_int)io, IODC_INIT_DEV, io->io_spa,
-		    layers, pdcbuf, 0, 0, 0, 0)) < 0) {
+		if (0  && (err = (iodc)(io, IODC_INIT_DEV, io->io_spa,
+				  layers, pdcbuf, 0, 0, 0, 0)) < 0) {
 #ifdef DEBUG
 			if (debug)
 				printf("INIT_DEV: %d\n", err);
@@ -379,7 +385,7 @@ pdc_findev(unit, class)
 
 		/* read i/o entry code */
 		if ((err = (pdc)(PDC_IODC, PDC_IODC_READ, pdcbuf, io,
-		    IODC_IO, iodc, IODC_MAXSIZE)) < 0) {
+			  	IODC_IO, iodc, IODC_MAXSIZE)) < 0) {
 #ifdef DEBUG
 			if (debug)
 				printf("IODC_READ: %d\n", err);
@@ -389,9 +395,9 @@ pdc_findev(unit, class)
 
 		pz.pz_flags = 0;
 		bcopy(layers, pz.pz_layers, sizeof(pz.pz_layers));
-		pz.pz_hpa = (u_int)io;
+		pz.pz_hpa = io;
 /* XXX		pz.pz_spa = io->io_spa; */
-		pz.pz_iodc_io = (u_int)iodc;
+		pz.pz_iodc_io = iodc;
 		pz.pz_class = class;
 
 		return &pz;
@@ -401,9 +407,10 @@ pdc_findev(unit, class)
 }
 
 static __inline void
-fall(int c_base, int c_count, int c_loop, int c_stride, int data)
+fall(c_base, c_count, c_loop, c_stride, data)
+	int c_base, c_count, c_loop, c_stride, data; 
 {
-        int loop;                  /* Internal vars */
+        register int loop;                  /* Internal vars */
 
         for (; c_count--; c_base += c_stride)
                 for (loop = c_loop; loop--; )
@@ -411,6 +418,7 @@ fall(int c_base, int c_count, int c_loop, int c_stride, int data)
 				fdce(0, c_base);
 			else
 				fice(0, c_base);
+        
 }
 
 /*
@@ -420,10 +428,10 @@ fall(int c_base, int c_count, int c_loop, int c_stride, int data)
  */
 struct pdc_cache pdc_cacheinfo PDC_ALIGNMENT;
 
-void
+void 
 fcacheall()
 {
-	int err;
+	register int err;
 
         if ((err = (*pdc)(PDC_CACHE, PDC_CACHE_DFLT, &pdc_cacheinfo)) < 0) {
 #ifdef DEBUG
@@ -436,20 +444,21 @@ fcacheall()
 	if (debug)
 		printf("pdc_cache:\nic={%u,%x,%x,%u,%u,%u}\n"
 		       "dc={%u,%x,%x,%u,%u,%u}\n",
-		       pdc_cacheinfo.ic_size, *(u_int *)&pdc_cacheinfo.ic_conf,
-		       pdc_cacheinfo.ic_base, pdc_cacheinfo.ic_stride,
+		       pdc_cacheinfo.ic_size, *(u_int*)&pdc_cacheinfo.ic_conf, 
+		       pdc_cacheinfo.ic_base, pdc_cacheinfo.ic_stride, 
 		       pdc_cacheinfo.ic_count, pdc_cacheinfo.ic_loop,
-		       pdc_cacheinfo.dc_size, *(u_int *)&pdc_cacheinfo.ic_conf,
-		       pdc_cacheinfo.dc_base, pdc_cacheinfo.dc_stride,
+		       pdc_cacheinfo.dc_size, *(u_int*)&pdc_cacheinfo.ic_conf, 
+		       pdc_cacheinfo.dc_base, pdc_cacheinfo.dc_stride, 
 		       pdc_cacheinfo.dc_count, pdc_cacheinfo.dc_loop);
 #endif
         /*
          * Flush the instruction, then data cache.
          */
-        fall(pdc_cacheinfo.ic_base, pdc_cacheinfo.ic_count,
-	     pdc_cacheinfo.ic_loop, pdc_cacheinfo.ic_stride, 0);
+        fall (pdc_cacheinfo.ic_base, pdc_cacheinfo.ic_count,
+	      pdc_cacheinfo.ic_loop, pdc_cacheinfo.ic_stride, 0);
 	sync_caches();
-        fall(pdc_cacheinfo.dc_base, pdc_cacheinfo.dc_count,
-	     pdc_cacheinfo.dc_loop, pdc_cacheinfo.dc_stride, 1);
+        fall (pdc_cacheinfo.dc_base, pdc_cacheinfo.dc_count,
+	      pdc_cacheinfo.dc_loop, pdc_cacheinfo.dc_stride, 1);
 	sync_caches();
 }
+

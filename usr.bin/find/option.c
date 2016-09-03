@@ -1,4 +1,4 @@
-/*	$OpenBSD: option.c,v 1.19 2015/10/05 15:25:16 deraadt Exp $	*/
+/*	$OpenBSD: option.c,v 1.8 1997/11/28 09:39:17 deraadt Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,11 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)option.c	8.1 (Berkeley) 6/6/93";*/
+static char rcsid[] = "$OpenBSD: option.c,v 1.8 1997/11/28 09:39:17 deraadt Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -42,9 +51,6 @@
 #include <string.h>
 
 #include "find.h"
-#include "extern.h"
-
-int typecompare(const void *, const void *);
 
 /* NB: the following table must be sorted lexically. */
 static OPTION options[] = {
@@ -54,20 +60,16 @@ static OPTION options[] = {
 	{ "-a",		N_AND,		NULL,		O_NONE },
 	{ "-amin",	N_AMIN,		c_amin,		O_ARGV },
 	{ "-and",	N_AND,		NULL,		O_NONE },
-	{ "-anewer",	N_ANEWER,	c_anewer,	O_ARGV },
 	{ "-atime",	N_ATIME,	c_atime,	O_ARGV },
 	{ "-cmin",	N_CMIN,		c_cmin,		O_ARGV },
-	{ "-cnewer",	N_CNEWER,	c_cnewer,	O_ARGV },
 	{ "-ctime",	N_CTIME,	c_ctime,	O_ARGV },
 	{ "-depth",	N_DEPTH,	c_depth,	O_ZERO },
 	{ "-empty",	N_EMPTY,	c_empty,	O_ZERO },
 	{ "-exec",	N_EXEC,		c_exec,		O_ARGVP },
 	{ "-execdir",	N_EXECDIR,	c_execdir,	O_ARGVP },
-	{ "-flags",	N_FLAGS,	c_flags,	O_ARGV },
 	{ "-follow",	N_FOLLOW,	c_follow,	O_ZERO },
 	{ "-fstype",	N_FSTYPE,	c_fstype,	O_ARGV },
 	{ "-group",	N_GROUP,	c_group,	O_ARGV },
-	{ "-iname",	N_INAME,	c_iname,	O_ARGV },
 	{ "-inum",	N_INUM,		c_inum,		O_ARGV },
 	{ "-links",	N_LINKS,	c_links,	O_ARGV },
 	{ "-ls",	N_LS,		c_ls,		O_ZERO },
@@ -103,9 +105,10 @@ static OPTION options[] = {
  *	this switch stuff.
  */
 PLAN *
-find_create(char ***argvp)
+find_create(argvp)
+	char ***argvp;
 {
-	OPTION *p;
+	register OPTION *p;
 	PLAN *new;
 	char **argv;
 
@@ -122,14 +125,13 @@ find_create(char ***argvp)
 		new = NULL;
 		break;
 	case O_ZERO:
-		new = (p->create)(NULL, NULL, 0);
+		new = (p->create)();
 		break;
 	case O_ARGV:
-		new = (p->create)(*argv++, NULL, 0);
+		new = (p->create)(*argv++);
 		break;
 	case O_ARGVP:
-		new = (p->create)(NULL, &argv, p->token == N_OK);
-		mayexecve = 1;
+		new = (p->create)(&argv, p->token == N_OK);
 		break;
 	default:
 		abort();
@@ -139,9 +141,11 @@ find_create(char ***argvp)
 }
 
 OPTION *
-option(char *name)
+option(name)
+	char *name;
 {
 	OPTION tmp;
+	int typecompare __P((const void *, const void *));
 
 	tmp.name = name;
 	return ((OPTION *)bsearch(&tmp, options,
@@ -149,7 +153,8 @@ option(char *name)
 }
 
 int
-typecompare(const void *a, const void *b)
+typecompare(a, b)
+	const void *a, *b;
 {
 	return (strcmp(((OPTION *)a)->name, ((OPTION *)b)->name));
 }

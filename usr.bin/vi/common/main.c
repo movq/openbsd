@@ -1,5 +1,3 @@
-/*	$OpenBSD: main.c,v 1.38 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,17 +9,27 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char copyright[] =
+"@(#) Copyright (c) 1992, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n\
+@(#) Copyright (c) 1992, 1993, 1994, 1995, 1996\n\
+	Keith Bostic.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+static const char sccsid[] = "@(#)main.c	10.48 (Berkeley) 10/11/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 
 #include <bitstring.h>
-#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <paths.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,20 +37,23 @@
 
 #include "common.h"
 #include "../vi/vi.h"
+#include "pathnames.h"
 
-#ifdef DEBUG
-static void	 attach(GS *);
-#endif
-static int	 v_obsolete(char *[]);
+static void	 attach __P((GS *));
+static void	 v_estr __P((char *, int, char *));
+static int	 v_obsolete __P((char *, char *[]));
 
 /*
  * editor --
  *	Main editor routine.
  *
- * PUBLIC: int editor(GS *, int, char *[]);
+ * PUBLIC: int editor __P((GS *, int, char *[]));
  */
 int
-editor(GS *gp, int argc, char *argv[])
+editor(gp, argc, argv)
+	GS *gp;
+	int argc;
+	char *argv[];
 {
 	extern int optind;
 	extern char *optarg;
@@ -55,24 +66,6 @@ editor(GS *gp, int argc, char *argv[])
 	int ch, flagchk, lflag, secure, startup, readonly, rval, silent;
 	char *tag_f, *wsizearg, path[256];
 
-	static const char *optstr[3] = {
-#ifdef DEBUG
-		"c:D:FlRrSsT:t:vw:",
-		"c:D:eFlRrST:t:w:",
-		"c:D:eFlrST:t:w:"
-#else
-		"c:FlRrSst:vw:",
-		"c:eFlRrSt:w:",
-		"c:eFlrSt:w:"
-#endif
-	};
-
-	if (pledge("stdio rpath wpath cpath fattr flock getpw tty proc exec",
-	    NULL) == -1) {
-		perror("pledge");
-		goto err;
-	}
-
 	/* Initialize the busy routine, if not defined by the screen. */
 	if (gp->scr_busy == NULL)
 		gp->scr_busy = vs_busy;
@@ -81,26 +74,26 @@ editor(GS *gp, int argc, char *argv[])
 		gp->scr_msg = vs_msg;
 
 	/* Common global structure initialization. */
-	TAILQ_INIT(&gp->dq);
-	TAILQ_INIT(&gp->hq);
+	CIRCLEQ_INIT(&gp->dq);
+	CIRCLEQ_INIT(&gp->hq);
 	LIST_INIT(&gp->ecq);
 	LIST_INSERT_HEAD(&gp->ecq, &gp->excmd, q);
 	gp->noprint = DEFAULT_NOPRINT;
 
 	/* Structures shared by screens so stored in the GS structure. */
-	TAILQ_INIT(&gp->frefq);
-	TAILQ_INIT(&gp->dcb_store.textq);
+	CIRCLEQ_INIT(&gp->frefq);
+	CIRCLEQ_INIT(&gp->dcb_store.textq);
 	LIST_INIT(&gp->cutq);
 	LIST_INIT(&gp->seqq);
 
 	/* Set initial screen type and mode based on the program name. */
 	readonly = 0;
-	if (!strcmp(getprogname(), "ex") || !strcmp(getprogname(), "nex"))
+	if (!strcmp(gp->progname, "ex") || !strcmp(gp->progname, "nex"))
 		LF_INIT(SC_EX);
 	else {
 		/* Nview, view are readonly. */
-		if (!strcmp(getprogname(), "nview") ||
-		    !strcmp(getprogname(), "view"))
+		if (!strcmp(gp->progname, "nview") ||
+		    !strcmp(gp->progname, "view"))
 			readonly = 1;
 		
 		/* Vi is the default. */
@@ -108,7 +101,7 @@ editor(GS *gp, int argc, char *argv[])
 	}
 
 	/* Convert old-style arguments into new-style ones. */
-	if (v_obsolete(argv))
+	if (v_obsolete(gp->progname, argv))
 		return (1);
 
 	/* Parse the arguments. */
@@ -120,15 +113,11 @@ editor(GS *gp, int argc, char *argv[])
 	/* Set the file snapshot flag. */
 	F_SET(gp, G_SNAPSHOT);
 
-	pmode = MODE_EX;
-	if (!strcmp(getprogname(), "ex"))
-		pmode = MODE_EX;
-	else if (!strcmp(getprogname(), "vi"))
-		pmode = MODE_VI;
-	else if (!strcmp(getprogname(), "view"))
-		pmode = MODE_VIEW;
-
-	while ((ch = getopt(argc, argv, optstr[pmode])) != -1)
+#ifdef DEBUG
+	while ((ch = getopt(argc, argv, "c:D:eFlRrSsT:t:vw:")) != -1)
+#else
+	while ((ch = getopt(argc, argv, "c:eFlRrSst:vw:")) != -1)
+#endif
 		switch (ch) {
 		case 'c':		/* Run the command. */
 			/*
@@ -136,7 +125,8 @@ editor(GS *gp, int argc, char *argv[])
 			 * We should support multiple -c options.
 			 */
 			if (gp->c_option != NULL) {
-				warnx("only one -c command may be specified.");
+				v_estr(gp->progname, 0,
+				    "only one -c command may be specified.");
 				return (1);
 			}
 			gp->c_option = optarg;
@@ -151,7 +141,8 @@ editor(GS *gp, int argc, char *argv[])
 				attach(gp);
 				break;
 			default:
-				warnx("-D requires s or w argument.");
+				v_estr(gp->progname, 0,
+				    "usage: -D requires s or w argument.");
 				return (1);
 			}
 			break;
@@ -171,7 +162,7 @@ editor(GS *gp, int argc, char *argv[])
 			break;
 		case 'r':		/* Recover. */
 			if (flagchk == 't') {
-				warnx(
+				v_estr(gp->progname, 0,
 				    "only one of -r and -t may be specified.");
 				return (1);
 			}
@@ -186,7 +177,7 @@ editor(GS *gp, int argc, char *argv[])
 #ifdef DEBUG
 		case 'T':		/* Trace. */
 			if ((gp->tracefp = fopen(optarg, "w")) == NULL) {
-				warn("%s", optarg);
+				v_estr(gp->progname, errno, optarg);
 				goto err;
 			}
 			(void)fprintf(gp->tracefp,
@@ -195,12 +186,13 @@ editor(GS *gp, int argc, char *argv[])
 #endif
 		case 't':		/* Tag. */
 			if (flagchk == 'r') {
-				warnx(
+				v_estr(gp->progname, 0,
 				    "only one of -r and -t may be specified.");
 				return (1);
 			}
 			if (flagchk == 't') {
-				warnx("only one tag file may be specified.");
+				v_estr(gp->progname, 0,
+				    "only one tag file may be specified.");
 				return (1);
 			}
 			flagchk = 't';
@@ -221,19 +213,13 @@ editor(GS *gp, int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (secure)
-		if (pledge("stdio rpath wpath cpath fattr flock getpw tty", NULL) == -1) {
-			perror("pledge");
-			goto err;
-		}
-
 	/*
 	 * -s option is only meaningful to ex.
 	 *
 	 * If not reading from a terminal, it's like -s was specified.
 	 */
 	if (silent && !LF_ISSET(SC_EX)) {
-		warnx("-s option is only applicable to ex.");
+		v_estr(gp->progname, 0, "-s option is only applicable to ex.");
 		goto err;
 	}
 	if (LF_ISSET(SC_EX) && F_ISSET(gp, G_SCRIPTED))
@@ -250,11 +236,11 @@ editor(GS *gp, int argc, char *argv[])
 	 */
 	if (screen_init(gp, NULL, &sp)) {
 		if (sp != NULL)
-			TAILQ_INSERT_HEAD(&gp->dq, sp, q);
+			CIRCLEQ_INSERT_HEAD(&gp->dq, sp, q);
 		goto err;
 	}
 	F_SET(sp, SC_EX);
-	TAILQ_INSERT_HEAD(&gp->dq, sp, q);
+	CIRCLEQ_INSERT_HEAD(&gp->dq, sp, q);
 
 	if (v_key_init(sp))		/* Special key initialization. */
 		goto err;
@@ -355,14 +341,14 @@ editor(GS *gp, int argc, char *argv[])
 	 */
 	if (*argv != NULL) {
 		if (sp->frp != NULL) {
-			size_t l;
 			/* Cheat -- we know we have an extra argv slot. */
-			l = strlen(sp->frp->name) + 1;
-			if ((*--argv = malloc(l)) == NULL) {
-				warn(NULL);
+			MALLOC_NOMSG(sp,
+			    *--argv, char *, strlen(sp->frp->name) + 1);
+			if (*argv == NULL) {
+				v_estr(gp->progname, errno, NULL);
 				goto err;
 			}
-			(void)strlcpy(*argv, sp->frp->name, l);
+			(void)strcpy(*argv, sp->frp->name);
 		}
 		sp->argv = sp->cargv = argv;
 		F_SET(sp, SC_ARGNOFREE);
@@ -414,8 +400,8 @@ editor(GS *gp, int argc, char *argv[])
 			if (v_event_get(sp, &ev, 0, 0))
 				goto err;
 			if (ev.e_event == E_INTERRUPT ||
-			    (ev.e_event == E_CHARACTER &&
-			    (ev.e_value == K_CR || ev.e_value == K_NL)))
+			    ev.e_event == E_CHARACTER &&
+			    (ev.e_value == K_CR || ev.e_value == K_NL))
 				break;
 			(void)gp->scr_bell(sp);
 		}
@@ -447,10 +433,11 @@ err:		rval = 1;
  * v_end --
  *	End the program, discarding screens and most of the global area.
  *
- * PUBLIC: void v_end(GS *);
+ * PUBLIC: void v_end __P((GS *));
  */
 void
-v_end(GS *gp)
+v_end(gp)
+	GS *gp;
 {
 	MSGS *mp;
 	SCR *sp;
@@ -460,16 +447,20 @@ v_end(GS *gp)
 		(void)file_end(gp->ccl_sp, NULL, 1);
 		(void)screen_end(gp->ccl_sp);
 	}
-	while ((sp = TAILQ_FIRST(&gp->dq)))
-		(void)screen_end(sp);	/* Removes sp from the queue. */
-	while ((sp = TAILQ_FIRST(&gp->hq)))
-		(void)screen_end(sp);	/* Removes sp from the queue. */
+	while ((sp = gp->dq.cqh_first) != (void *)&gp->dq)
+		(void)screen_end(sp);
+	while ((sp = gp->hq.cqh_first) != (void *)&gp->hq)
+		(void)screen_end(sp);
 
-#if defined(DEBUG) || defined(PURIFY)
+#ifdef HAVE_PERL_INTERP
+	perl_end(gp);
+#endif
+
+#if defined(DEBUG) || defined(PURIFY) || defined(LIBRARY)
 	{ FREF *frp;
 		/* Free FREF's. */
-		while ((frp = TAILQ_FIRST(&gp->frefq))) {
-			TAILQ_REMOVE(&gp->frefq, frp, q);
+		while ((frp = gp->frefq.cqh_first) != (FREF *)&gp->frefq) {
+			CIRCLEQ_REMOVE(&gp->frefq, frp, q);
 			if (frp->name != NULL)
 				free(frp->name);
 			if (frp->tname != NULL)
@@ -490,6 +481,9 @@ v_end(GS *gp)
 
 	/* Free default buffer storage. */
 	(void)text_lfree(&gp->dcb_store.textq);
+
+	/* Close message catalogs. */
+	msg_close(gp);
 #endif
 
 	/* Ring the bell if scheduled. */
@@ -502,17 +496,17 @@ v_end(GS *gp)
 	 * it's possible that the user is sourcing a file that exits from the
 	 * editor).
 	 */
-	while ((mp = LIST_FIRST(&gp->msgq)) != NULL) {
+	while ((mp = gp->msgq.lh_first) != NULL) {
 		(void)fprintf(stderr, "%s%.*s",
 		    mp->mtype == M_ERR ? "ex/vi: " : "", (int)mp->len, mp->buf);
 		LIST_REMOVE(mp, q);
-#if defined(DEBUG) || defined(PURIFY)
+#if defined(DEBUG) || defined(PURIFY) || defined(LIBRARY)
 		free(mp->buf);
 		free(mp);
 #endif
 	}
 
-#if defined(DEBUG) || defined(PURIFY)
+#if defined(DEBUG) || defined(PURIFY) || defined(LIBRARY)
 	/* Free any temporary space. */
 	if (gp->tmp_bp != NULL)
 		free(gp->tmp_bp);
@@ -530,7 +524,8 @@ v_end(GS *gp)
  *	Convert historic arguments into something getopt(3) will like.
  */
 static int
-v_obsolete(char *argv[])
+v_obsolete(name, argv)
+	char *name, *argv[];
 {
 	size_t len;
 	char *p;
@@ -551,48 +546,51 @@ v_obsolete(char *argv[])
 	while (*++argv && strcmp(argv[0], "--"))
 		if (argv[0][0] == '+') {
 			if (argv[0][1] == '\0') {
-				argv[0] = strdup("-c$");
+				MALLOC_NOMSG(NULL, argv[0], char *, 4);
 				if (argv[0] == NULL)
 					goto nomem;
+				(void)strcpy(argv[0], "-c$");
 			} else  {
 				p = argv[0];
 				len = strlen(argv[0]);
-				if ((argv[0] = malloc(len + 2)) == NULL)
+				MALLOC_NOMSG(NULL, argv[0], char *, len + 2);
+				if (argv[0] == NULL)
 					goto nomem;
 				argv[0][0] = '-';
 				argv[0][1] = 'c';
-				(void)strlcpy(argv[0] + 2, p + 1, len);
+				(void)strcpy(argv[0] + 2, p + 1);
 			}
-		} else if (argv[0][0] == '-') {
+		} else if (argv[0][0] == '-')
 			if (argv[0][1] == '\0') {
-				argv[0] = strdup("-s");
+				MALLOC_NOMSG(NULL, argv[0], char *, 3);
 				if (argv[0] == NULL) {
-nomem:					warn(NULL);
+nomem:					v_estr(name, errno, NULL);
 					return (1);
 				}
+				(void)strcpy(argv[0], "-s");
 			} else
 				if ((argv[0][1] == 'c' || argv[0][1] == 'T' ||
 				    argv[0][1] == 't' || argv[0][1] == 'w') &&
 				    argv[0][2] == '\0')
 					++argv;
-		}
 	return (0);
 }
 
 #ifdef DEBUG
 static void
-attach(GS *gp)
+attach(gp)
+	GS *gp;
 {
 	int fd;
 	char ch;
 
 	if ((fd = open(_PATH_TTY, O_RDONLY, 0)) < 0) {
-		warn("%s", _PATH_TTY);
+		v_estr(gp->progname, errno, _PATH_TTY);
 		return;
 	}
 
-	(void)printf("process %ld waiting, enter <CR> to continue: ",
-	    (long)getpid());
+	(void)printf("process %lu waiting, enter <CR> to continue: ",
+	    (u_long)getpid());
 	(void)fflush(stdout);
 
 	do {
@@ -604,3 +602,16 @@ attach(GS *gp)
 	(void)close(fd);
 }
 #endif
+
+static void
+v_estr(name, eno, msg)
+	char *name, *msg;
+	int eno;
+{
+	(void)fprintf(stderr, "%s", name);
+	if (msg != NULL)
+		(void)fprintf(stderr, ": %s", msg);
+	if (eno)
+		(void)fprintf(stderr, ": %s", strerror(errno));
+	(void)fprintf(stderr, "\n");
+}

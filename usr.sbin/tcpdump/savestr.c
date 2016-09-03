@@ -1,5 +1,3 @@
-/*	$OpenBSD: savestr.c,v 1.10 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,12 +19,18 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/savestr.c,v 1.2 1999/07/29 13:12:34 jakob Exp $ (LBL)";
+#endif
+
 #include <sys/types.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "gnuc.h"
 #ifdef HAVE_OS_PROTO_H
 #include "os-proto.h"
 #endif
@@ -35,25 +39,25 @@
 
 /* A replacement for strdup() that cuts down on malloc() overhead */
 char *
-savestr(const char *str)
+savestr(register const char *str)
 {
-	size_t size;
-	char *p;
+	register u_int size;
+	register char *p;
 	static char *strptr = NULL;
-	static size_t strsize = 0;
+	static u_int strsize = 0;
 
 	size = strlen(str) + 1;
 	if (size > strsize) {
 		strsize = 1024;
 		if (strsize < size)
 			strsize = size;
-		strptr = malloc(strsize);
+		strptr = (char *)malloc(strsize);
 		if (strptr == NULL) {
 			fprintf(stderr, "savestr: malloc\n");
 			exit(1);
 		}
 	}
-	(void)strlcpy(strptr, str, size);
+	(void)strcpy(strptr, str);
 	p = strptr;
 	strptr += size;
 	strsize -= size;

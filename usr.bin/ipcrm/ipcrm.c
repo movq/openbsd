@@ -1,4 +1,4 @@
-/*	$OpenBSD: ipcrm.c,v 1.12 2015/07/26 22:17:34 chl Exp $*/
+/*	$OpenBSD: ipcrm.c,v 1.3 1997/09/11 07:59:01 deraadt Exp $*/
 
 /*
  * Copyright (c) 1994 Adam Glass
@@ -39,7 +39,6 @@
 #include <sys/shm.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <limits.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <err.h>
@@ -51,24 +50,24 @@
 
 int signaled;
 
-void	usage(void);
-int	msgrm(key_t, int);
-int	shmrm(key_t, int);
-int	semrm(key_t, int);
-void	not_configured(int);
+void	usage __P((void));
+int	msgrm __P((key_t, int));
+int	shmrm __P((key_t, int));
+int	semrm __P((key_t, int));
+void	not_configured __P((int));
 
 void
-usage(void)
+usage()
 {
-	extern char *__progname;
-	fprintf(stderr, "usage: %s [-M shmkey] [-m shmid] [-Q msgkey]\n"
-			"         [-q msqid] [-S semkey] [-s semid] ...\n",
-		__progname);
+        fprintf(stderr, "usage: ipcrm [ [-q msqid] [-m shmid] [-s semid]\n");
+	fprintf(stderr, "        [-Q msgkey] [-M shmkey] [-S semkey] ...]\n");
 	exit(1);
 }
 
 int
-msgrm(key_t key, int id)
+msgrm(key, id)
+	key_t key;
+	int id;
 {
 	if (key) {
 		id = msgget(key, 0);
@@ -79,18 +78,22 @@ msgrm(key_t key, int id)
 }
 
 int
-shmrm(key_t key, int id)
+shmrm(key, id)
+	key_t key;
+	int id;
 {
 	if (key) {
 		id = shmget(key, 0, 0);
 		if (id == -1)
 			return (-1);
-	}
+	    }
 	return (shmctl(id, IPC_RMID, NULL));
 }
 
 int
-semrm(key_t key, int id)
+semrm(key, id)
+	key_t key;
+	int id;
 {
 	union semun arg;
 
@@ -102,18 +105,19 @@ semrm(key_t key, int id)
 	return (semctl(id, 0, IPC_RMID, arg));
 }
 
-/* ARGSUSED */
 void
-not_configured(int signo)
+not_configured(sig)
+	int sig;
 {
 	signaled++;
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int c, result, errflg, target_id;
-	const char *errstr;
 	key_t target_key;
 
 	errflg = 0;
@@ -124,9 +128,7 @@ main(int argc, char *argv[])
 		case 'q':
 		case 'm':
 		case 's':
-			target_id = strtonum(optarg, 0, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-%c %s: %s\n", c, optarg, errstr);
+			target_id = atoi(optarg);
 			if (c == 'q')
 				result = msgrm(0, target_id);
 			else if (c == 'm')
@@ -136,7 +138,7 @@ main(int argc, char *argv[])
 			if (result < 0) {
 				errflg++;
 				if (!signaled)
-					warn("%sid(%d)",
+					warn("%sid(%d): ",
 					    IPC_TO_STR(toupper(c)), target_id);
 				else
 					warnx("%ss are not configured in the running kernel",
@@ -160,7 +162,7 @@ main(int argc, char *argv[])
 			if (result < 0) {
 				errflg++;
 				if (!signaled)
-					warn("%skey(%ld)", IPC_TO_STR(c),
+					warn("%skey(%ld): ", IPC_TO_STR(c),
 					    target_key);
 				else
 					warnx("%ss are not configured in the running kernel",
@@ -168,16 +170,16 @@ main(int argc, char *argv[])
 			}
 			break;
 		case ':':
-			warnx("option -%c requires an argument", optopt);
+			fprintf(stderr, "option -%c requires an argument\n", optopt);
 			usage();
 		default:
-			warnx("unrecognized option: -%c", optopt);
+			fprintf(stderr, "unrecognized option: -%c\n", optopt);
 			usage();
 		}
 	}
 
 	if (optind != argc) {
-		warnx("unknown argument: %s", argv[optind]);
+		fprintf(stderr, "unknown argument: %s\n", argv[optind]);
 		usage();
 	}
 	exit(errflg);

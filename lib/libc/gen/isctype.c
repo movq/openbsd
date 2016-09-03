@@ -1,4 +1,3 @@
-/*	$OpenBSD: isctype.c,v 1.12 2015/09/13 11:38:08 guenther Exp $ */
 /*
  * Copyright (c) 1989 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,131 +36,137 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: isctype.c,v 1.2 1996/08/19 08:24:38 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #define _ANSI_LIBRARY
 #include <ctype.h>
-#include <stdio.h>
 
 #undef isalnum
 int
-isalnum(int c)
+isalnum(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & (_U|_L|_N)));
+	return((_ctype_ + 1)[c] & (_U|_L|_N));
 }
-DEF_STRONG(isalnum);
 
 #undef isalpha
 int
-isalpha(int c)
+isalpha(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & (_U|_L)));
+	return((_ctype_ + 1)[c] & (_U|_L));
 }
-DEF_STRONG(isalpha);
 
 #undef isblank
 int
-isblank(int c)
+isblank(c)
+	int c;
 {
-	return (c == ' ' || c == '\t');
+	return(c == ' ' || c == '\t');
 }
-DEF_STRONG(isblank);
 
 #undef iscntrl
 int
-iscntrl(int c)
+iscntrl(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & _C));
+	return((_ctype_ + 1)[c] & _C);
 }
-DEF_STRONG(iscntrl);
 
 #undef isdigit
 int
-isdigit(int c)
+isdigit(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & _N));
+	return((_ctype_ + 1)[c] & _N);
 }
-DEF_STRONG(isdigit);
 
 #undef isgraph
 int
-isgraph(int c)
+isgraph(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & (_P|_U|_L|_N)));
+	return((_ctype_ + 1)[c] & (_P|_U|_L|_N));
 }
-DEF_STRONG(isgraph);
 
 #undef islower
 int
-islower(int c)
+islower(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & _L));
+	return((_ctype_ + 1)[c] & _L);
 }
-DEF_STRONG(islower);
 
 #undef isprint
 int
-isprint(int c)
+isprint(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & (_P|_U|_L|_N|_B)));
+	return((_ctype_ + 1)[c] & (_P|_U|_L|_N|_B));
 }
-DEF_STRONG(isprint);
 
 #undef ispunct
 int
-ispunct(int c)
+ispunct(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & _P));
+	return((_ctype_ + 1)[c] & _P);
 }
-DEF_STRONG(ispunct);
 
 #undef isspace
 int
-isspace(int c)
+isspace(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & _S));
+	return((_ctype_ + 1)[c] & _S);
 }
-DEF_STRONG(isspace);
 
 #undef isupper
 int
-isupper(int c)
+isupper(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & _U));
+	return((_ctype_ + 1)[c] & _U);
 }
-DEF_STRONG(isupper);
 
 #undef isxdigit
 int
-isxdigit(int c)
+isxdigit(c)
+	int c;
 {
-	return (c == EOF ? 0 : ((_ctype_ + 1)[(unsigned char)c] & (_N|_X)));
+	return((_ctype_ + 1)[c] & (_N|_X));
 }
-DEF_STRONG(isxdigit);
 
 #undef isascii
 int
-isascii(int c)
+isascii(c)
+	int c;
 {
-	return ((unsigned int)c <= 0177);
+	return ((unsigned)(c) <= 0177);
 }
-DEF_WEAK(isascii);
 
 #undef toascii
 int
-toascii(int c)
+toascii(c)
+	int c;
 {
-	return (c & 0177);
+	return ((c) & 0177);
 }
 
 #undef _toupper
 int
-_toupper(int c)
+_toupper(c)
+	int c;
 {
 	return (c - 'a' + 'A');
 }
 
 #undef _tolower
 int
-_tolower(int c)
+_tolower(c)
+	int c;
 {
 	return (c - 'A' + 'a');
 }

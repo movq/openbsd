@@ -1,4 +1,3 @@
-/*	$OpenBSD: scandir.c,v 1.20 2015/08/20 21:49:29 deraadt Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: scandir.c,v 1.4 1998/08/14 21:39:32 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 /*
  * Scan the directory dirname calling select to make a list of selected
  * directory entries then sort using qsort and compare routine dcomp.
@@ -38,13 +45,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#include <errno.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "telldir.h"
-
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
 
 /*
  * The DIRSIZ macro is the minimum record length which will hold the directory
@@ -58,93 +60,83 @@
 	    (((dp)->d_namlen + 1 + 3) &~ 3))
 
 int
-scandir(const char *dirname, struct dirent ***namelist,
-    int (*select)(const struct dirent *),
-    int (*dcomp)(const struct dirent **, const struct dirent **))
+scandir(dirname, namelist, select, dcomp)
+	const char *dirname;
+	struct dirent ***namelist;
+	int (*select) __P((struct dirent *));
+	int (*dcomp) __P((const void *, const void *));
 {
-	struct dirent *d, *p, **names = NULL;
-	size_t nitems = 0;
+	register struct dirent *d, *p, **names;
+	register size_t nitems;
 	struct stat stb;
 	long arraysz;
 	DIR *dirp;
 
 	if ((dirp = opendir(dirname)) == NULL)
-		return (-1);
+		return(-1);
 	if (fstat(dirp->dd_fd, &stb) < 0)
-		goto fail;
+		return(-1);
 
 	/*
 	 * estimate the array size by taking the size of the directory file
 	 * and dividing it by a multiple of the minimum size entry. 
 	 */
-	arraysz = MAXIMUM(stb.st_size / 24, 16);
-	if (arraysz > SIZE_MAX / sizeof(struct dirent *)) {
-		errno = ENOMEM;
-		goto fail;
-	}
-	names = calloc(arraysz, sizeof(struct dirent *));
+	arraysz = (stb.st_size / 24);
+	names = (struct dirent **)malloc(arraysz * sizeof(struct dirent *));
 	if (names == NULL)
-		goto fail;
+		return(-1);
 
+	nitems = 0;
 	while ((d = readdir(dirp)) != NULL) {
 		if (select != NULL && !(*select)(d))
 			continue;	/* just selected names */
-
-		/*
-		 * Check to make sure the array has space left and
-		 * realloc the maximum size.
-		 */
-		if (nitems >= arraysz) {
-			struct dirent **nnames;
-			
-			if (fstat(dirp->dd_fd, &stb) < 0)
-				goto fail;
-
-			arraysz *= 2;
-			if (SIZE_MAX / sizeof(struct dirent *) < arraysz)
-				goto fail;
-			nnames = reallocarray(names,
-			    arraysz, sizeof(struct dirent *));
-			if (nnames == NULL)
-				goto fail;
-
-			names = nnames;
-		}
-
 		/*
 		 * Make a minimum size copy of the data
 		 */
-		p = malloc(DIRSIZ(d));
+		p = (struct dirent *)malloc(DIRSIZ(d));
 		if (p == NULL)
-			goto fail;
-
+			return(-1);
 		p->d_ino = d->d_ino;
 		p->d_type = d->d_type;
 		p->d_reclen = d->d_reclen;
 		p->d_namlen = d->d_namlen;
 		bcopy(d->d_name, p->d_name, p->d_namlen + 1);
-		names[nitems++] = p;
+		/*
+		 * Check to make sure the array has space left and
+		 * realloc the maximum size.
+		 */
+		if (++nitems >= arraysz) {
+			register struct dirent **nnames;
+			
+			if (fstat(dirp->dd_fd, &stb) < 0)
+				return(-1);	/* just might have grown */
+			arraysz = stb.st_size / 12;
+			nnames = (struct dirent **)realloc((char *)names,
+				arraysz * sizeof(struct dirent *));
+			if (nnames == NULL) {
+				if (names)
+					free(names);
+				return(-1);
+			}
+			names = nnames;
+		}
+		names[nitems-1] = p;
 	}
 	closedir(dirp);
 	if (nitems && dcomp != NULL)
-		qsort(names, nitems, sizeof(struct dirent *),
-		    (int(*)(const void *, const void *))dcomp);
+		qsort(names, nitems, sizeof(struct dirent *), dcomp);
 	*namelist = names;
-	return (nitems);
-
-fail:
-	while (nitems > 0)
-		free(names[--nitems]);
-	free(names);
-	closedir(dirp);
-	return (-1);
+	return(nitems);
 }
 
 /*
  * Alphabetic order comparison routine for those who want it.
  */
 int
-alphasort(const struct dirent **d1, const struct dirent **d2)
+alphasort(d1, d2)
+	const void *d1;
+	const void *d2;
 {
-	return(strcmp((*d1)->d_name, (*d2)->d_name));
+	return(strcmp((*(struct dirent **)d1)->d_name,
+	    (*(struct dirent **)d2)->d_name));
 }

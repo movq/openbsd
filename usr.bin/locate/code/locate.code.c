@@ -1,5 +1,5 @@
 /*
- *	$OpenBSD: locate.code.c,v 1.19 2015/11/15 07:38:29 deraadt Exp $
+ *	$OpenBSD: locate.code.c,v 1.7 1997/01/15 23:42:42 millert Exp $
  *
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,8 +35,22 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * 	$Id: locate.code.c,v 1.19 2015/11/15 07:38:29 deraadt Exp $
+ * 	$Id: locate.code.c,v 1.7 1997/01/15 23:42:42 millert Exp $
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)locate.code.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: locate.code.c,v 1.7 1997/01/15 23:42:42 millert Exp $";
+#endif
+#endif /* not lint */
 
 /*
  * PURPOSE:	sorted list compressor (works with a modified 'find'
@@ -64,34 +82,32 @@
  *	128-255 bigram codes (128 most common, as determined by 'updatedb')
  *	32-127  single character (printable) ascii residue (ie, literal)
  *
- * The locate database store any character except newline ('\n')
+ * The locate database store any character except newline ('\n') 
  * and NUL ('\0'). The 8-bit character support don't wast extra
  * space until you have characters in file names less than 32
- * or greater than 127.
- *
+ * or greather than 127.
+ * 
  *
  * SEE ALSO:	updatedb.sh, ../bigram/locate.bigram.c
  *
  * AUTHOR:	James A. Woods, Informatics General Corp.,
  *		NASA Ames Research Center, 10/82
- *              8-bit file names characters:
+ *              8-bit file names characters: 
  *              	Wolfram Schneider, Berlin September 1996
  */
 
+#include <sys/param.h>
 #include <err.h>
 #include <errno.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <limits.h>
-
+#include <stdio.h>
 #include "locate.h"
 
 #define	BGBUFSIZE	(NBG * 2)	/* size of bigram buffer */
 
-u_char buf1[PATH_MAX] = " ";
-u_char buf2[PATH_MAX];
+u_char buf1[MAXPATHLEN] = " ";	
+u_char buf2[MAXPATHLEN];
 u_char bigrams[BGBUFSIZE + 1] = { 0 };
 
 #define LOOKUP 1 /* use a lookup array instead a function, 3x faster */
@@ -103,27 +119,26 @@ bg_t big[UCHAR_MAX + 1][UCHAR_MAX + 1];
 #else
 #define BGINDEX(x) bgindex(x)
 typedef int bg_t;
-int	bgindex(char *);
+int	bgindex __P((char *));
 #endif /* LOOKUP */
 
 
-void	usage(void);
+void	usage __P((void));
 extern int optind;
 extern int optopt;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	u_char *cp, *oldpath, *path;
+	register u_char *cp, *oldpath, *path;
 	int ch, code, count, diffcount, oldcount;
 	FILE *fp;
-	int i, j;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
+	register int i, j;
 
 	while ((ch = getopt(argc, argv, "")) != -1)
-		switch (ch) {
+		switch(ch) {
 		default:
 			usage();
 		}
@@ -136,28 +151,21 @@ main(int argc, char *argv[])
 	if ((fp = fopen(argv[0], "r")) == NULL)
 		err(1, "%s", argv[0]);
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
 	/* First copy bigram array to stdout. */
-	if (fgets(bigrams, sizeof(bigrams), fp) == NULL)
-		err(1, "fgets");
+	(void)fgets(bigrams, BGBUFSIZE + 1, fp);
 
-	if (strlen(bigrams) != BGBUFSIZE)
-		errx(1, "bigram array too small to build db, index more files");
-
-	if (fputs(bigrams, stdout) == EOF)
+	if (fwrite(bigrams, 1, BGBUFSIZE, stdout) != BGBUFSIZE)
 		err(1, "stdout");
 	(void)fclose(fp);
 
 #ifdef LOOKUP
 	/* init lookup table */
 	for (i = 0; i < UCHAR_MAX + 1; i++)
-	    	for (j = 0; j < UCHAR_MAX + 1; j++)
+	    	for (j = 0; j < UCHAR_MAX + 1; j++) 
 			big[i][j] = (bg_t)-1;
 
 	for (cp = bigrams, i = 0; *cp != '\0'; i += 2, cp += 2)
-		big[(u_char)*cp][(u_char)*(cp + 1)] = (bg_t)i;
+	        big[(u_char)*cp][(u_char)*(cp + 1)] = (bg_t)i;
 
 #endif /* LOOKUP */
 
@@ -200,26 +208,30 @@ main(int argc, char *argv[])
 			if ((code = BGINDEX(cp)) != (bg_t)-1) {
 				/*
 				 * print *one* as bigram
-				 * Found, so mark byte with
-				 *  parity bit.
+				 * Found, so mark byte with 
+				 *  parity bit. 
 				 */
 				if (putchar((code / 2) | PARITY) == EOF)
 					err(1, "stdout");
 				cp += 2;
-			} else {
+			}
+
+			else {
 				for (i = 0; i < 2; i++) {
 					if (*cp == '\0')
 						break;
 
 					/* print umlauts in file names */
-					if (*cp < ASCII_MIN ||
+					if (*cp < ASCII_MIN || 
 					    *cp > ASCII_MAX) {
 						if (putchar(UMLAUT) == EOF ||
 						    putchar(*cp++) == EOF)
 							err(1, "stdout");
-					} else {
+					} 
+
+					else {
 						/* normal character */
-						if (putchar(*cp++) == EOF)
+						if(putchar(*cp++) == EOF)
 							err(1, "stdout");
 					}
 				}
@@ -243,9 +255,10 @@ main(int argc, char *argv[])
 
 #ifndef LOOKUP
 int
-bgindex(char *bg)			/* Return location of bg in bigrams or -1. */
+bgindex(bg)			/* Return location of bg in bigrams or -1. */
+	char *bg;
 {
-	char bg0, bg1, *p;
+	register char bg0, bg1, *p;
 
 	bg0 = bg[0];
 	bg1 = bg[1];
@@ -257,7 +270,7 @@ bgindex(char *bg)			/* Return location of bg in bigrams or -1. */
 #endif /* !LOOKUP */
 
 void
-usage(void)
+usage()
 {
 	(void)fprintf(stderr,
 	    "usage: locate.code common_bigrams < list > squozen_list\n");

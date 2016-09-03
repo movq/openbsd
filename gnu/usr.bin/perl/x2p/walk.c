@@ -1,10 +1,11 @@
-/*    walk.c
+/* $RCSfile: walk.c,v $$Revision: 4.1 $$Date: 92/08/07 18:29:31 $
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1997, 1998, 1999,
- *    2000, 2001, 2002, 2005 by Larry Wall and others
+ *    Copyright (c) 1991-1997, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
+ *
+ * $Log:	walk.c,v $
  */
 
 #include "EXTERN.h"
@@ -19,34 +20,35 @@ bool saw_FNR = FALSE;
 bool saw_argv0 = FALSE;
 bool saw_fh = FALSE;
 int maxtmp = 0;
-const char *lparen;
-const char *rparen;
-const char *limit;
+char *lparen;
+char *rparen;
+char *limit;
 STR *subs;
-STR *curargs = NULL;
+STR *curargs = Nullstr;
 
-static void addsemi ( STR *str );
-static void emit_split ( STR *str, int level );
-static void fixtab ( STR *str, int lvl );
-static void numericize ( int node );
-static void tab ( STR *str, int lvl );
+static void addsemi _(( STR *str ));
+static void emit_split _(( STR *str, int level ));
+static void fixtab _(( STR *str, int lvl ));
+static void numericize _(( int node ));
+static void tab _(( STR *str, int lvl ));
 
-int prewalk ( int numit, int level, int node, int *numericptr );
-STR * walk ( int useval, int level, int node, int *numericptr, int minprec );
-#ifdef NETWARE
-char *savestr(char *str);
-char *cpytill(char *to, char *from, int delim);
-char *instr(char *big, const char *little);
-#endif
+int prewalk _(( int numit, int level, int node, int *numericptr ));
+STR * walk _(( int useval, int level, int node, int *numericptr, int minprec ));
+
 
 STR *
-walk(int useval, int level, int node, int *numericptr, int minprec)
+walk(int useval, int level, register int node, int *numericptr, int minprec)
+           
+          
+                  
+                
+            			/* minimum precedence without parens */
 {
-    int len;
-    STR *str;
-    int type;
-    int i;
-    STR *tmpstr;
+    register int len;
+    register STR *str;
+    register int type;
+    register int i;
+    register STR *tmpstr;
     STR *tmp2str;
     STR *tmp3str;
     char *t;
@@ -67,12 +69,12 @@ walk(int useval, int level, int node, int *numericptr, int minprec)
     case OPROG:
 	arymax = 0;
 	if (namelist) {
-	    while (isALPHA(*namelist)) {
+	    while (isalpha(*namelist)) {
 		for (d = tokenbuf,s=namelist;
-		  isWORDCHAR(*s);
+		  isalpha(*s) || isdigit(*s) || *s == '_';
 		  *d++ = *s++) ;
 		*d = '\0';
-		while (*s && !isALPHA(*s)) s++;
+		while (*s && !isalpha(*s)) s++;
 		namelist = s;
 		nameary[++arymax] = savestr(tokenbuf);
 	    }
@@ -84,6 +86,11 @@ walk(int useval, int level, int node, int *numericptr, int minprec)
 	str = walk(0,level,ops[node+1].ival,&numarg,P_MIN);
 	if (do_split && need_entire && !absmaxfld)
 	    split_to_array = TRUE;
+	if (do_split && split_to_array)
+	    set_array_base = TRUE;
+	if (set_array_base) {
+	    str_cat(str,"$[ = 1;\t\t\t# set array base to 1\n");
+	}
 	if (fswitch && !const_FS)
 	    const_FS = fswitch;
 	if (saw_FS > 1 || saw_RS)
@@ -234,7 +241,7 @@ sub Pick {\n\
 	tmpstr=walk(0,level,ops[node+1].ival,&numarg,P_MIN);
 	/* translate \nnn to [\nnn] */
 	for (s = tmpstr->str_ptr, d = tokenbuf; *s; s++, d++) {
-	    if (*s == '\\' && isDIGIT(s[1]) && isDIGIT(s[2]) && isDIGIT(s[3])){
+	    if (*s == '\\' && isdigit(s[1]) && isdigit(s[2]) && isdigit(s[3])){
 		*d++ = '[';
 		*d++ = *s++;
 		*d++ = *s++;
@@ -247,7 +254,7 @@ sub Pick {\n\
 	}
 	*d = '\0';
 	for (d=tokenbuf; *d; d++)
-           *d += (char)128;
+	    *d += 128;
 	str_cat(str,tokenbuf);
 	str_free(tmpstr);
 	str_cat(str,"/");
@@ -582,9 +589,9 @@ sub Pick {\n\
 		s = savestr(tokenbuf);
 		for (t = tokenbuf; *t; t++) {
 		    *t &= 127;
-		    if (isLOWER(*t))
-			*t = toUPPER(*t);
-		    if (!isALPHANUMERIC(*t))
+		    if (islower(*t))
+			*t = toupper(*t);
+		    if (!isalpha(*t) && !isdigit(*t))
 			*t = '_';
 		}
 		if (!strchr(tokenbuf,'_'))
@@ -645,15 +652,16 @@ sub Pick {\n\
 	str_set(str,"substr(");
 	str_scat(str,fstr=walk(1,level,ops[node+1].ival,&numarg,P_COMMA+1));
 	str_free(fstr);
-	str_cat(str,", (");
+	str_cat(str,", ");
 	str_scat(str,fstr=walk(1,level,ops[node+2].ival,&numarg,P_COMMA+1));
 	str_free(fstr);
-	str_cat(str,")-1");
+	str_cat(str,", ");
 	if (len == 3) {
-	    str_cat(str,", ");
 	    str_scat(str,fstr=walk(1,level,ops[node+3].ival,&numarg,P_COMMA+1));
 	    str_free(fstr);
 	}
+	else
+	    str_cat(str,"999999");
 	str_cat(str,")");
 	break;
     case OSTRING:
@@ -662,7 +670,7 @@ sub Pick {\n\
 	break;
     case OSPLIT:
 	str = str_new(0);
-	limit = ", -1)";
+	limit = ", 9999)";
 	numeric = 1;
 	tmpstr = walk(1,level,ops[node+2].ival,&numarg,P_MIN);
 	if (useval)
@@ -708,13 +716,13 @@ sub Pick {\n\
 	break;
     case OINDEX:
 	str = str_new(0);
-	str_set(str,"(1+index(");
+	str_set(str,"index(");
 	str_scat(str,fstr=walk(1,level,ops[node+1].ival,&numarg,P_COMMA+1));
 	str_free(fstr);
 	str_cat(str,", ");
 	str_scat(str,fstr=walk(1,level,ops[node+2].ival,&numarg,P_COMMA+1));
 	str_free(fstr);
-	str_cat(str,"))");
+	str_cat(str,")");
 	numeric = 1;
 	break;
     case OMATCH:
@@ -725,7 +733,7 @@ sub Pick {\n\
 	str_cat(str," =~ ");
 	str_scat(str,fstr=walk(1,level,ops[node+2].ival,&numarg,P_MATCH+1));
 	str_free(fstr);
-	str_cat(str," ? scalar($RLENGTH = length($&), $RSTART = length($`)+1) : 0");
+	str_cat(str," && ($RLENGTH = length($&), $RSTART = length($`)+1)");
 	numeric = 1;
 	break;
     case OUSERDEF:
@@ -737,12 +745,12 @@ sub Pick {\n\
 	str_cat(curargs,",");
 	tmp2str=walk(1,level,ops[node+5].ival,&numarg,P_MIN);
 	str_free(curargs);
-	curargs = NULL;
+	curargs = Nullstr;
 	level--;
 	subretnum |= numarg;
-	s = NULL;
+	s = Nullch;
 	t = tmp2str->str_ptr;
-	while ((t = instr(t,"return ")))
+	while (t = instr(t,"return "))
 	    s = t++;
 	if (s) {
 	    i = 0;
@@ -814,8 +822,11 @@ sub Pick {\n\
 	str_cat(str,")");
 	break;
     case OGSUB:
-    case OSUB: {
-	int gsub = type == OGSUB ? 1 : 0;
+    case OSUB:
+	if (type == OGSUB)
+	    s = "g";
+	else
+	    s = "";
 	str = str_new(0);
 	tmpstr = str_new(0);
 	i = 0;
@@ -834,31 +845,26 @@ sub Pick {\n\
 	len = type >> 8;
 	type &= 255;
 	tmp3str = str_new(0);
-	{
-	  const char *s;
-	  if (type == OSTR) {
+	if (type == OSTR) {
 	    tmp2str=walk(1,level,ops[ops[node+2].ival+1].ival,&numarg,P_MIN);
 	    for (t = tmp2str->str_ptr, d=tokenbuf; *t; d++,t++) {
 		if (*t == '&')
-                   *d++ = '$' + (char)128;
-		else if (*t == '$' || *t == '/')
-                   *d++ = '\\' + (char)128;
+		    *d++ = '$' + 128;
+		else if (*t == '$')
+		    *d++ = '\\' + 128;
 		*d = *t + 128;
 	    }
 	    *d = '\0';
 	    str_set(tmp2str,tokenbuf);
-	    s = (gsub ? "/g" : "/");
-	  }
-	  else {
+	}
+	else {
 	    tmp2str=walk(1,level,ops[node+2].ival,&numarg,P_MIN);
 	    str_set(tmp3str,"($s_ = '\"'.(");
 	    str_scat(tmp3str,tmp2str);
 	    str_cat(tmp3str,").'\"') =~ s/&/\\$&/g, ");
 	    str_set(tmp2str,"eval $s_");
-	    s = (gsub ? "/ge" : "/e");
+	    s = (*s == 'g' ? "ge" : "e");
 	    i++;
-	  }
-	  str_cat(tmp2str,s);
 	}
 	type = ops[ops[node+1].ival].ival;
 	len = type >> 8;
@@ -871,6 +877,8 @@ sub Pick {\n\
 	    str_scat(str,tmpstr);
 	    str_scat(str,fstr);
 	    str_scat(str,tmp2str);
+	    str_cat(str,"/");
+	    str_cat(str,s);
 	}
 	else if ((type == OFLD && !split_to_array) || (type == OVAR && len == 1)) {
 	    if (useval && i)
@@ -881,6 +889,8 @@ sub Pick {\n\
 	    str_scat(str,fstr);
 	    str_cat(str,"/");
 	    str_scat(str,tmp2str);
+	    str_cat(str,"/");
+	    str_cat(str,s);
 	}
 	else {
 	    i++;
@@ -893,6 +903,8 @@ sub Pick {\n\
 	    str_scat(str,tmpstr);
 	    str_cat(str,"/$s/");
 	    str_scat(str,tmp2str);
+	    str_cat(str,"/");
+	    str_cat(str,s);
 	}
 	if (useval && i)
 	    str_cat(str,")");
@@ -901,16 +913,15 @@ sub Pick {\n\
 	str_free(tmp2str);
 	str_free(tmp3str);
 	numeric = 1;
-	break; }
+	break;
     case ONUM:
 	str = walk(1,level,ops[node+1].ival,&numarg,P_MIN);
 	numeric = 1;
 	break;
     case OSTR:
 	tmpstr = walk(1,level,ops[node+1].ival,&numarg,P_MIN);
-	{
-	  const char *s = "'";
-	  for (t = tmpstr->str_ptr, d=tokenbuf; *t; d++,t++) {
+	s = "'";
+	for (t = tmpstr->str_ptr, d=tokenbuf; *t; d++,t++) {
 	    if (*t == '\'')
 		s = "\"";
 	    else if (*t == '\\') {
@@ -920,18 +931,17 @@ sub Pick {\n\
 		case '\\': case '"': case 'n': case 't': case '$':
 		    break;
 		default:	/* hide this from perl */
-                   *d++ = '\\' + (char)128;
+		    *d++ = '\\' + 128;
 		}
 	    }
 	    *d = *t + 128;
-	  }
-	  *d = '\0';
-	  str = str_new(0);
-	  str_set(str,s);
-	  str_cat(str,tokenbuf);
-	  str_free(tmpstr);
-	  str_cat(str,s);
 	}
+	*d = '\0';
+	str = str_new(0);
+	str_set(str,s);
+	str_cat(str,tokenbuf);
+	str_free(tmpstr);
+	str_cat(str,s);
 	break;
     case ODEFINED:
 	prec = P_UNI;
@@ -966,12 +976,12 @@ sub Pick {\n\
 	    }
 	    else if (strEQ(str->str_ptr,"$NF")) {
 		numeric = 1;
-		str_set(str,"($#Fld+1)");
+		str_set(str,"$#Fld");
 	    }
 	    else if (strEQ(str->str_ptr,"$0"))
 		str_set(str,"$_");
 	    else if (strEQ(str->str_ptr,"$ARGC"))
-		str_set(str,"($#ARGV+2)");
+		str_set(str,"($#ARGV+1)");
 	}
 	else {
 #ifdef NOTDEF
@@ -984,7 +994,7 @@ sub Pick {\n\
 	    str_cat(tmpstr,"[]");
 	    tmp2str = hfetch(symtab,tmpstr->str_ptr);
 	    if (tmp2str && atoi(tmp2str->str_ptr))
-		str_cat(str,"[(");
+		str_cat(str,"[");
 	    else
 		str_cat(str,"{");
 	    str_scat(str,fstr=walk(1,level,ops[node+2].ival,&numarg,P_MIN));
@@ -995,10 +1005,10 @@ sub Pick {\n\
 	    }
 	    else {
 		if (tmp2str && atoi(tmp2str->str_ptr))
-		    strcpy(tokenbuf,")-1]");
+		    strcpy(tokenbuf,"]");
 		else
 		    strcpy(tokenbuf,"}");
-               *tokenbuf += (char)128;
+		*tokenbuf += 128;
 		str_cat(str,tokenbuf);
 	    }
 	}
@@ -1008,10 +1018,10 @@ sub Pick {\n\
 	str = str_new(0);
 	if (split_to_array) {
 	    str_set(str,"$Fld");
-	    str_cat(str,"[(");
+	    str_cat(str,"[");
 	    str_scat(str,fstr=walk(1,level,ops[node+1].ival,&numarg,P_MIN));
 	    str_free(fstr);
-	    str_cat(str,")-1]");
+	    str_cat(str,"]");
 	}
 	else {
 	    i = atoi(walk(1,level,ops[node+1].ival,&numarg,P_MIN)->str_ptr);
@@ -1050,7 +1060,7 @@ sub Pick {\n\
 	str_set(str,";");
 	tmpstr = walk(0,level,ops[node+1].ival,&numarg,P_MIN);
 	for (s = tmpstr->str_ptr; *s && *s != '\n'; s++)
-           *s += (char)128;
+	    *s += 128;
 	str_scat(str,tmpstr);
 	str_free(tmpstr);
 	tab(str,level);
@@ -1059,7 +1069,7 @@ sub Pick {\n\
 	str = str_new(0);
 	tmpstr = walk(0,level,ops[node+1].ival,&numarg,P_MIN);
 	for (s = tmpstr->str_ptr; *s && *s != '\n'; s++)
-           *s += (char)128;
+	    *s += 128;
 	str_scat(str,tmpstr);
 	str_free(tmpstr);
 	tab(str,level);
@@ -1110,9 +1120,9 @@ sub Pick {\n\
 	    s = savestr(tokenbuf);
 	    for (t = tokenbuf; *t; t++) {
 		*t &= 127;
-		if (isLOWER(*t))
-		    *t = toUPPER(*t);
-		if (!isALPHANUMERIC(*t))
+		if (islower(*t))
+		    *t = toupper(*t);
+		if (!isalpha(*t) && !isdigit(*t))
 		    *t = '_';
 	    }
 	    if (!strchr(tokenbuf,'_'))
@@ -1147,9 +1157,9 @@ sub Pick {\n\
 		s = savestr(tokenbuf);
 		for (t = tokenbuf; *t; t++) {
 		    *t &= 127;
-		    if (isLOWER(*t))
-			*t = toUPPER(*t);
-		    if (!isALPHANUMERIC(*t))
+		    if (islower(*t))
+			*t = toupper(*t);
+		    if (!isalpha(*t) && !isdigit(*t))
 			*t = '_';
 		}
 		if (!strchr(tokenbuf,'_'))
@@ -1209,7 +1219,7 @@ sub Pick {\n\
 	}
 	tmpstr = walk(1+(type==OPRINT),level,ops[node+1].ival,&numarg,P_MIN);
 	if (!*tmpstr->str_ptr && lval_field) {
-	    const char *t = (saw_OFS ? "$," : "' '");
+	    t = saw_OFS ? "$," : "' '";
 	    if (split_to_array) {
 		sprintf(tokenbuf,"join(%s,@Fld)",t);
 		str_cat(tmpstr,tokenbuf);
@@ -1282,10 +1292,10 @@ sub Pick {\n\
 	if (len > 0)
 	    tmpstr = walk(1,level,ops[node+1].ival,&numarg,P_MIN);
 	else
-	    tmpstr = str_new(0);
+	    tmpstr = str_new(0);;
 	if (!tmpstr->str_ptr || !*tmpstr->str_ptr) {
 	    if (lval_field) {
-		const char *t = (saw_OFS ? "$," : "' '");
+		t = saw_OFS ? "$," : "' '";
 		if (split_to_array) {
 		    sprintf(tokenbuf,"join(%s,@Fld)",t);
 		    str_cat(tmpstr,tokenbuf);
@@ -1407,7 +1417,7 @@ sub Pick {\n\
 	str_scat(str,fstr=walk(1,level,ops[node+1].ival,&numarg,P_MIN));
 	str_free(fstr);
 	if (str->str_ptr[str->str_cur - 1] == '\n')
-	    --str->str_cur;
+	    --str->str_cur;;
 	str_cat(str," while (");
 	str_scat(str,fstr=walk(0,level,ops[node+2].ival,&numarg,P_MIN));
 	str_free(fstr);
@@ -1420,7 +1430,7 @@ sub Pick {\n\
 	i = numarg;
 	if (i) {
 	    t = s = tmpstr->str_ptr;
-	    while (isWORDCHAR(*t) || *t == '$')
+	    while (isalpha(*t) || isdigit(*t) || *t == '$' || *t == '_')
 		t++;
 	    i = t - s;
 	    if (i < 2)
@@ -1453,7 +1463,7 @@ sub Pick {\n\
 	if (!s)
 	    fatal("Illegal for loop: %s",d);
 	*s++ = '\0';
-	for (t = s; (i = *t); t++) {
+	for (t = s; i = *t; t++) {
 	    i &= 127;
 	    if (i == '}' || i == ']')
 		break;
@@ -1466,7 +1476,7 @@ sub Pick {\n\
 	tmp2str = hfetch(symtab,str->str_ptr);
 	if (tmp2str && atoi(tmp2str->str_ptr)) {
 	    sprintf(tokenbuf,
-	      "foreach %s (0 .. $#%s) ",
+	      "foreach %s ($[ .. $#%s) ",
 	      s,
 	      d+1);
 	}
@@ -1512,7 +1522,7 @@ sub Pick {\n\
 	    }
 	}
 	else {
-	    str = NULL;
+	    str = Nullstr;
 	}
 	break;
     }
@@ -1546,7 +1556,7 @@ sub Pick {\n\
 }
 
 static void
-tab(STR *str, int lvl)
+tab(register STR *str, register int lvl)
 {
     while (lvl > 1) {
 	str_cat(str,"\t");
@@ -1557,9 +1567,9 @@ tab(STR *str, int lvl)
 }
 
 static void
-fixtab(STR *str, int lvl)
+fixtab(register STR *str, register int lvl)
 {
-    char *s;
+    register char *s;
 
     /* strip trailing white space */
 
@@ -1575,9 +1585,9 @@ fixtab(STR *str, int lvl)
 }
 
 static void
-addsemi(STR *str)
+addsemi(register STR *str)
 {
-    char *s;
+    register char *s;
 
     s = str->str_ptr+str->str_cur - 1;
     while (s >= str->str_ptr && (*s == ' ' || *s == '\t' || *s == '\n'))
@@ -1587,9 +1597,9 @@ addsemi(STR *str)
 }
 
 static void
-emit_split(STR *str, int level)
+emit_split(register STR *str, int level)
 {
-    int i;
+    register int i;
 
     if (split_to_array)
 	str_cat(str,"@Fld");
@@ -1609,22 +1619,22 @@ emit_split(STR *str, int level)
 	str_cat(str,tokenbuf);
     }
     if (const_FS) {
-	sprintf(tokenbuf," = split(/[%c\\n]/, $_, -1);\n",const_FS);
+	sprintf(tokenbuf," = split(/[%c\\n]/, $_, 9999);\n",const_FS);
 	str_cat(str,tokenbuf);
     }
     else if (saw_FS)
-	str_cat(str," = split($FS, $_, -1);\n");
+	str_cat(str," = split($FS, $_, 9999);\n");
     else
-	str_cat(str," = split(' ', $_, -1);\n");
+	str_cat(str," = split(' ', $_, 9999);\n");
     tab(str,level);
 }
 
 int
-prewalk(int numit, int level, int node, int *numericptr)
+prewalk(int numit, int level, register int node, int *numericptr)
 {
-    int len;
-    int type;
-    int i;
+    register int len;
+    register int type;
+    register int i;
     int numarg;
     int numeric = FALSE;
     STR *tmpstr;
@@ -2037,10 +2047,10 @@ prewalk(int numit, int level, int node, int *numericptr)
 }
 
 static void
-numericize(int node)
+numericize(register int node)
 {
-    int len;
-    int type;
+    register int len;
+    register int type;
     STR *tmpstr;
     STR *tmp2str;
     int numarg;

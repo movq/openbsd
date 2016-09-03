@@ -1,4 +1,4 @@
-/*	$OpenBSD: fingerd.c,v 1.39 2015/11/13 01:26:33 deraadt Exp $	*/
+/*	$OpenBSD: fingerd.c,v 1.16 1999/08/02 17:42:39 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1983, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,47 +33,58 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "from: @(#)fingerd.c	8.1 (Berkeley) 6/4/93";
+#else
+static char rcsid[] = "$OpenBSD: fingerd.c,v 1.16 1999/08/02 17:42:39 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
-#include <err.h>
 #include <unistd.h>
 #include <syslog.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
-#include <limits.h>
 #include "pathnames.h"
 
-__dead void logerr(const char *, ...);
-__dead void usage(void);
+void err __P((const char *, ...));
+void usage __P((void));
 
 void
-usage(void)
+usage()
 {
 	syslog(LOG_ERR,
-	    "usage: fingerd [-lMmpSsu] [-P filename]");
+	    "usage: fingerd [-slumMpS] [-P filename]");
 	exit(2);
 }
 
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	FILE *fp;
-	int ch, ac = 2;
+	register FILE *fp;
+	register int ch, ac = 2;
 	int p[2], logging, secure, user_required, short_list;
+	size_t linesiz;
 #define	ENTRIES	50
-	char **comp, *prog;
-	char **ap, *av[ENTRIES + 1], line[8192], *lp, *hname;
-	char hostbuf[HOST_NAME_MAX+1];
-
-	if (pledge("stdio inet dns proc exec", NULL) == -1)
-		err(1, "pledge");
+	char **ap, *av[ENTRIES + 1], **comp, *line, *prog, *lp, *hname;
+	char hostbuf[MAXHOSTNAMELEN];
 
 	prog = _PATH_FINGER;
 	logging = secure = user_required = short_list = 0;
@@ -90,60 +105,62 @@ main(int argc, char *argv[])
 			user_required = 1;
 			break;
 		case 'S':
-			if (ac < ENTRIES) {
-				short_list = 1;
-				av[ac++] = "-s";
-			}
+			short_list = 1;
+			av[ac++] = "-s";
 			break;
 		case 'm':
-			if (ac < ENTRIES)
-				av[ac++] = "-m";
+			av[ac++] = "-m";
 			break;
 		case 'M':
-			if (ac < ENTRIES)
-				av[ac++] = "-M";
+			av[ac++] = "-M";
 			break;
 		case 'p':
-			if (ac < ENTRIES)
-				av[ac++] = "-p";
+			av[ac++] = "-p";
 			break;
+		case '?':
 		default:
 			usage();
 		}
 
 	if (logging) {
 		struct sockaddr_storage ss;
-		struct sockaddr *sa;
-		socklen_t sval;
+		int sval;
 
 		sval = sizeof(ss);
 		if (getpeername(0, (struct sockaddr *)&ss, &sval) < 0)
-			err(1, "getpeername");
-		sa = (struct sockaddr *)&ss;
-
-		if (pledge("stdio dns proc exec", NULL) == -1)
-			err(1, "pledge");
-
-		if (getnameinfo(sa, sa->sa_len, hostbuf, sizeof(hostbuf),
-		    NULL, 0, 0) != 0) {
-			strlcpy(hostbuf, "?", sizeof(hostbuf));
-		}
+			err("getpeername: %s", strerror(errno));
+		(void)getnameinfo((struct sockaddr *)&ss, ss.ss_len,
+		    hostbuf, sizeof(hostbuf), NULL, 0, 0);
 		hname = hostbuf;
 	}
 
-	if (pledge("stdio proc exec", NULL) == -1)
-		err(1, "pledge");
-
-	if (fgets(line, sizeof(line), stdin) == NULL) {
+	if ((lp = fgetln(stdin, &linesiz)) == NULL) {
 		if (logging)
 			syslog(LOG_NOTICE, "query from %s: %s", hname,
 			    feof(stdin) ? "EOF" : strerror(errno));
 		exit(1);
 	}
+	if ((line = malloc(linesiz + 1)) == NULL)
+		err("Out of memory");
+	memcpy(line, lp, linesiz);
+	line[linesiz] = '\0';
 
-	if (logging)
-		syslog(LOG_NOTICE, "query from %s: `%.*s'", hname,
-		    (int)strcspn(line, "\r\n"), line);
+	if (logging) {
+		char *tline;
+
+		if ((tline = strdup(line)) == NULL)
+			err("Out of memory");
+		/* Replace NULL, \r and \n with ' ' */
+		for (ch = 0; ch < linesiz; ch++) {
+			if (tline[ch] == '\0' || tline[ch] == '\r' ||
+			    tline[ch] == '\n')
+				tline[ch] = ' ';
+		}
+		for (lp = tline + linesiz - 1; lp >= tline && *lp == ' '; lp--)
+			*lp = '\0';
+		syslog(LOG_NOTICE, "query from %s: `%s'", hname, tline);
+		free(tline);
+	}
 
 	/*
 	 * Note: we assume that finger(1) will treat "--" as end of
@@ -152,8 +169,6 @@ main(int argc, char *argv[])
 	av[ac++] = "--";
 	comp = &av[1];
 	for (lp = line, ap = &av[ac]; ac < ENTRIES;) {
-		size_t len;
-
 		if ((*ap = strtok(lp, " \t\r\n")) == NULL)
 			break;
 		lp = NULL;
@@ -162,9 +177,9 @@ main(int argc, char *argv[])
 			exit(1);
 		}
 
-		len = strlen(*ap);
-		while (len > 0 && (*ap)[len - 1] == '@')
-			(*ap)[--len] = '\0';
+		ch = strlen(*ap);
+		while ((*ap)[ch-1] == '@')
+			(*ap)[--ch] = '\0';
 		if (**ap == '\0')
 			continue;
 
@@ -187,8 +202,7 @@ main(int argc, char *argv[])
 		*comp = prog;
 
 	if (user_required) {
-		for (ap = comp + 1; strcmp("--", *(ap++)); )
-			;
+		for (ap = comp + 1; strcmp("--", *(ap++)); );
 		if (*ap == NULL) {
 			(void) puts("must provide username\r");
 			exit(1);
@@ -196,9 +210,9 @@ main(int argc, char *argv[])
 	}
 
 	if (pipe(p) < 0)
-		logerr("pipe: %s", strerror(errno));
+		err("pipe: %s", strerror(errno));
 
-	switch (vfork()) {
+	switch(vfork()) {
 	case 0:
 		(void) close(p[0]);
 		if (p[1] != 1) {
@@ -206,17 +220,14 @@ main(int argc, char *argv[])
 			(void) close(p[1]);
 		}
 		execv(prog, comp);
-		syslog(LOG_ERR, "execv: %s: %s", prog, strerror(errno));
+		err("execv: %s: %s", prog, strerror(errno));
 		_exit(1);
 	case -1:
-		logerr("fork: %s", strerror(errno));
+		err("fork: %s", strerror(errno));
 	}
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
 	(void) close(p[1]);
 	if (!(fp = fdopen(p[0], "r")))
-		logerr("fdopen: %s", strerror(errno));
+		err("fdopen: %s", strerror(errno));
 	while ((ch = getc(fp)) != EOF) {
 		if (ch == '\n')
 			putchar('\r');
@@ -225,13 +236,29 @@ main(int argc, char *argv[])
 	exit(0);
 }
 
+#ifdef __STDC__
+#include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
+
 void
-logerr(const char *fmt, ...)
+#ifdef __STDC__
+err(const char *fmt, ...)
+#else
+err(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	(void) vsyslog(LOG_ERR, fmt, ap);
 	va_end(ap);
 	exit(1);
+	/* NOTREACHED */
 }

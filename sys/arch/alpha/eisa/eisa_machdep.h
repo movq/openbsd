@@ -1,4 +1,4 @@
-/*	$OpenBSD: eisa_machdep.h,v 1.8 2009/08/22 02:54:50 mk Exp $	*/
+/*	$OpenBSD: eisa_machdep.h,v 1.3 1996/10/30 22:38:47 niklas Exp $	*/
 /*	$NetBSD: eisa_machdep.h,v 1.1 1996/04/12 05:39:51 cgd Exp $	*/
 
 /*
@@ -36,16 +36,16 @@ typedef int eisa_intr_handle_t;
 
 struct alpha_eisa_chipset {
 	void	*ec_v;
-	int	ec_maxslots;
 
-	void	(*ec_attach_hook)(struct device *, struct device *,
-		    struct eisabus_attach_args *);
-	int	(*ec_intr_map)(void *, u_int,
-		    eisa_intr_handle_t *);
-	const char *(*ec_intr_string)(void *, eisa_intr_handle_t);
-	void	*(*ec_intr_establish)(void *, eisa_intr_handle_t,
-		    int, int, int (*)(void *), void *, const char *);
-	void	(*ec_intr_disestablish)(void *, void *);
+	void	(*ec_attach_hook) __P((struct device *, struct device *,
+		    struct eisabus_attach_args *));
+	int	(*ec_maxslots) __P((void *));
+	int	(*ec_intr_map) __P((void *, u_int,
+		    eisa_intr_handle_t *));
+	const char *(*ec_intr_string) __P((void *, eisa_intr_handle_t));
+	void	*(*ec_intr_establish) __P((void *, eisa_intr_handle_t,
+		    int, int, int (*)(void *), void *, char *));
+	void	(*ec_intr_disestablish) __P((void *, void *));
 };
 
 /*
@@ -54,7 +54,7 @@ struct alpha_eisa_chipset {
 #define	eisa_attach_hook(p, s, a)					\
     (*(a)->eba_ec->ec_attach_hook)((p), (s), (a))
 #define	eisa_maxslots(c)						\
-    ((c)->ec_maxslots)
+    (*(c)->ec_maxslots)((c)->ec_v)
 #define	eisa_intr_map(c, i, hp)						\
     (*(c)->ec_intr_map)((c)->ec_v, (i), (hp))
 #define	eisa_intr_string(c, h)						\
@@ -63,9 +63,3 @@ struct alpha_eisa_chipset {
     (*(c)->ec_intr_establish)((c)->ec_v, (h), (t), (l), (f), (a), (nm))
 #define	eisa_intr_disestablish(c, h)					\
     (*(c)->ec_intr_disestablish)((c)->ec_v, (h))
-
-/*
- * Internal functions, NOT TO BE USED BY MACHINE-INDEPENDENT CODE!
- */
-
-void	eisa_init(eisa_chipset_tag_t);

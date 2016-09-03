@@ -1,4 +1,4 @@
-/*	$OpenBSD: i8253reg.h,v 1.3 2003/06/02 23:28:02 millert Exp $	*/
+/*	$OpenBSD: i8253reg.h,v 1.1 1999/01/02 00:02:42 niklas Exp $	*/
 /*	$NetBSD: i8253reg.h,v 1.5 1998/01/19 11:38:00 drochner Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by the University of
+ *      California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,7 +45,7 @@
  * register.  (Why are hardware interfaces always so braindead?).
  *
  * To write a value into the countdown register, the mode register
- * is first programmed with a command indicating which byte of
+ * is first programmed with a command indicating the which byte of
  * the two byte register is to be modified.  The three possibilities
  * are load msb (TMR_MR_MSB), load lsb (TMR_MR_LSB), or load lsb then
  * msb (TMR_MR_BOTH).

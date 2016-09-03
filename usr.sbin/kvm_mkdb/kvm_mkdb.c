@@ -1,4 +1,4 @@
-/*	$OpenBSD: kvm_mkdb.c,v 1.28 2016/04/25 16:03:57 deraadt Exp $	*/
+/*	$OpenBSD: kvm_mkdb.c,v 1.10 1999/04/18 17:11:11 espie Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,10 +33,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "from: @(#)kvm_mkdb.c	8.3 (Berkeley) 5/4/95";
+#else
+static char *rcsid = "$OpenBSD: kvm_mkdb.c,v 1.10 1999/04/18 17:11:11 espie Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/resource.h>
 
 #include <db.h>
 #include <err.h>
@@ -44,12 +60,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <grp.h>
+
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #include "extern.h"
 
-__dead void usage(void);
-int kvm_mkdb(int, const char *, char *, char *, gid_t, int);
+void usage __P((void));
+int kvm_mkdb __P((int, char *, char *, int));
 
 HASHINFO openinfo = {
 	4096,		/* bsize */
@@ -61,26 +80,13 @@ HASHINFO openinfo = {
 };
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct rlimit rl;
-	struct group *gr;
-	gid_t kvm_gid = -1;
 	int fd, rval, ch, verbose = 0;
 	char *nlistpath, *nlistname;
-	char dbdir[PATH_MAX];
-
-	if (pledge("stdio rpath wpath cpath fattr getpw flock id", NULL) == -1)
-		err(1, "pledge");
-
-	/* Try to use the kmem group to be able to fchown() in kvm_mkdb(). */
-	if ((gr = getgrnam("kmem")) == NULL) {
-		warn("can't find kmem group");
-	} else {
-		kvm_gid = gr->gr_gid;
-		if (setresgid(kvm_gid, kvm_gid, kvm_gid) == -1)
-			err(1, "setegid");
-	}
 
 	/* Increase our data size to the max if we can. */
 	if (getrlimit(RLIMIT_DATA, &rl) == 0) {
@@ -89,22 +95,10 @@ main(int argc, char *argv[])
 			warn("can't set rlimit data size");
 	}
 
-	if (pledge("stdio rpath wpath cpath fattr flock", NULL) == -1)
-		err(1, "pledge");
-
-	strlcpy(dbdir, _PATH_VARDB, sizeof(dbdir));
-	while ((ch = getopt(argc, argv, "vo:")) != -1)
+	while ((ch = getopt(argc, argv, "v")) != -1)
 		switch (ch) {
 		case 'v':
 			verbose = 1;
-			break;
-		case 'o':
-			rval = strlcpy(dbdir, optarg, sizeof(dbdir));
-			if (rval == 0 || rval + 1 >= sizeof(dbdir))
-				errx(1, "Invalid directory");
-			/* Make sure there is a '/' at the end of the path */
-			if (dbdir[strlen(dbdir) - 1] != '/')
-				strlcat(dbdir, "/", sizeof(dbdir));
 			break;
 		default:
 			usage();
@@ -121,46 +115,37 @@ main(int argc, char *argv[])
 		nlistname = basename(nlistpath);
 		if ((fd = open(nlistpath, O_RDONLY, 0)) == -1)
 			err(1, "can't open %s", nlistpath);
-		rval = kvm_mkdb(fd, dbdir, nlistpath, nlistname, kvm_gid,
-		    verbose);
+		rval = kvm_mkdb(fd, nlistpath, nlistname, verbose);
 	} else {
 		nlistname = basename(_PATH_UNIX);
 		if ((fd = open((nlistpath = _PATH_KSYMS), O_RDONLY, 0)) == -1 ||
-		    (rval = kvm_mkdb(fd, dbdir, nlistpath, nlistname, kvm_gid,
-		    verbose)) != 0) {
+		    (rval = kvm_mkdb(fd, nlistpath, nlistname, verbose)) != 0) {
 			if (fd == -1) 
 				warnx("can't open %s", _PATH_KSYMS);
 			else
 				warnx("will try again using %s instead", _PATH_UNIX);
 			if ((fd = open((nlistpath = _PATH_UNIX), O_RDONLY, 0)) == -1)
 				err(1, "can't open %s", nlistpath);
-			rval = kvm_mkdb(fd, dbdir, nlistpath, nlistname,
-			    kvm_gid, verbose);
+			rval = kvm_mkdb(fd, nlistpath, nlistname, verbose);
 		}
 	}
 	exit(rval);
 }
 
 int
-kvm_mkdb(int fd, const char *dbdir, char *nlistpath, char *nlistname, gid_t gid, 
-    int verbose)
+kvm_mkdb(fd, nlistpath, nlistname, verbose)
+	int fd;
+	char *nlistpath;
+	char *nlistname;
+	int verbose;
 {
 	DB *db;
-	char dbtemp[PATH_MAX], dbname[PATH_MAX];
-	int r;
+	char dbtemp[MAXPATHLEN], dbname[MAXPATHLEN];
 
-	r = snprintf(dbtemp, sizeof(dbtemp), "%skvm_%s.tmp",
-	    dbdir, nlistname);
-	if (r < 0 || r >= sizeof(dbtemp)) {
-		warnx("Directory name too long");
-		return (1);
-	}
-	r = snprintf(dbname, sizeof(dbname), "%skvm_%s.db",
-	    dbdir, nlistname);
-	if (r < 0 || r >= sizeof(dbtemp)) {
-		warnx("Directory name too long");
-		return (1);
-	}
+	(void)snprintf(dbtemp, sizeof(dbtemp), "%skvm_%s.tmp",
+	    _PATH_VARDB, nlistname);
+	(void)snprintf(dbname, sizeof(dbname), "%skvm_%s.db",
+	    _PATH_VARDB, nlistname);
 
 	/* If the existing db file matches the currently running kernel, exit */
 	if (testdb(dbname)) {
@@ -172,21 +157,14 @@ kvm_mkdb(int fd, const char *dbdir, char *nlistpath, char *nlistname, gid_t gid,
 
 	(void)umask(0);
 	db = dbopen(dbtemp, O_CREAT | O_EXLOCK | O_TRUNC | O_RDWR,
-	    S_IRUSR | S_IWUSR | S_IRGRP, DB_HASH, &openinfo);
+	    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, DB_HASH, &openinfo);
 	if (db == NULL) {
 		warn("can't dbopen %s", dbtemp);
 		return(1);
 	}
-
-	if (gid != -1 && fchown(db->fd(db), -1, gid) == -1) {
-		warn("can't chown %s", dbtemp);
-		(void)unlink(dbtemp);
-		return(1);
-	}
-
 	if (create_knlist(nlistpath, fd, db) != 0) {
-		warn("cannot determine executable type of %s", nlistpath);
 		(void)unlink(dbtemp);
+		warn("cannot determine executable type of %s", nlistpath);
 		return(1);
 	}
 	if (db->close(db)) {
@@ -194,7 +172,6 @@ kvm_mkdb(int fd, const char *dbdir, char *nlistpath, char *nlistname, gid_t gid,
 		(void)unlink(dbtemp);
 		return(1);
 	}
-
 	if (rename(dbtemp, dbname)) {
 		warn("rename %s to %s", dbtemp, dbname);
 		(void)unlink(dbtemp);
@@ -204,9 +181,9 @@ kvm_mkdb(int fd, const char *dbdir, char *nlistpath, char *nlistname, gid_t gid,
 	return(0);
 }
 
-__dead void
-usage(void)
+void
+usage()
 {
-	(void)fprintf(stderr, "usage: kvm_mkdb [-v] [-o directory] [file]\n");
+	(void)fprintf(stderr, "usage: kvm_mkdb [-v] [file]\n");
 	exit(1);
 }

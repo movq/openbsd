@@ -1,7 +1,7 @@
-/* $OpenBSD: tty_display.h,v 1.4 2010/01/12 23:22:07 nicm Exp $ */
+/*	$OpenBSD: tty_display.h,v 1.1 1999/01/18 19:10:27 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,23 +31,20 @@
 #ifndef TTY_DISPLAY_H
 #define TTY_DISPLAY_H 1
 
-/*
- * $Id: tty_display.h,v 1.4 2010/01/12 23:22:07 nicm Exp $
- */
-extern NCURSES_EXPORT(bool) _nc_tty_beep (void);
-extern NCURSES_EXPORT(bool) _nc_tty_check_resize (void);
-extern NCURSES_EXPORT(bool) _nc_tty_cursor (int);
-extern NCURSES_EXPORT(bool) _nc_tty_flash (void);
-extern NCURSES_EXPORT(bool) _nc_tty_init_color (int,int,int,int);
-extern NCURSES_EXPORT(bool) _nc_tty_init_pair (int,int,int);
-extern NCURSES_EXPORT(bool) _nc_tty_slk_hide (bool);
-extern NCURSES_EXPORT(bool) _nc_tty_slk_update (int,const char *);
-extern NCURSES_EXPORT(bool) _nc_tty_start_color (void);
-extern NCURSES_EXPORT(void) _nc_tty_display_resume (void);
-extern NCURSES_EXPORT(void) _nc_tty_display_suspend (void);
-extern NCURSES_EXPORT(void) _nc_tty_dispose (void);	/* frees SP->_term */
-extern NCURSES_EXPORT(void) _nc_tty_switch_to (void);
-extern NCURSES_EXPORT(void) _nc_tty_update (void);
+extern bool _nc_tty_beep(void);
+extern bool _nc_tty_check_resize(void);
+extern bool _nc_tty_cursor(int);
+extern bool _nc_tty_flash(void);
+extern bool _nc_tty_init_color(int,int,int,int);
+extern bool _nc_tty_init_pair(int,int,int);
+extern bool _nc_tty_slk_hide(bool);
+extern bool _nc_tty_slk_update(int,const char *);
+extern bool _nc_tty_start_color(void);
+extern void _nc_tty_display_resume(void);
+extern void _nc_tty_display_suspend(void);
+extern void _nc_tty_dispose(void);	/* frees SP->_term */
+extern void _nc_tty_switch_to(void);
+extern void _nc_tty_update(void);
 
 struct tty_display_data {
 	int             _fifohold;      /* set if breakout marked           */
@@ -116,11 +113,11 @@ struct tty_display_data {
 		: ((enter_insert_mode && exit_insert_mode) \
 		  ? D->_smir_cost + D->_rmir_cost + (D->_ip_cost * count) \
 		  : ((insert_character != 0) \
-		    ? ((D->_ich1_cost + D->_ip_cost) * count) \
+		    ? (D->_ich1_cost * count) \
 		    : INFINITY)))
 
 #if USE_XMC_SUPPORT
-#define UpdateAttrs(c)	if (!SameAttrOf(D->_current_attr, AttrOf(c))) { \
+#define UpdateAttrs(c)	if (D->_current_attr != AttrOf(c)) { \
 				attr_t chg = D->_current_attr; \
 				vidattr(AttrOf(c)); \
 				if (magic_cookie_glitch > 0 \
@@ -133,9 +130,18 @@ struct tty_display_data {
 				} \
 			}
 #else
-#define UpdateAttrs(c)	if (!SameAttrOf(D->_current_attr, AttrOf(c))) \
+#define UpdateAttrs(c)	if (D->_current_attr != AttrOf(c)) \
 				vidattr(AttrOf(c));
 #endif
+
+/*
+ * Check whether the given character can be output by clearing commands.  This
+ * includes test for being a space and not including any 'bad' attributes, such
+ * as A_REVERSE.  All attribute flags which don't affect appearance of a space
+ * or can be output by clearing (A_COLOR in case of bce-terminal) are excluded.
+ */
+#define can_clear_with(ch) \
+	((ch & ~(NONBLANK_ATTR|(back_color_erase ? A_COLOR:0))) == BLANK)
 
 #define XMC_CHANGES(c) ((c) & D->_xmc_suppress)
 

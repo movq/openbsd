@@ -1,4 +1,4 @@
-/*	$OpenBSD: biosdev.h,v 1.34 2015/09/02 04:09:24 yasuoka Exp $	*/
+/*	$OpenBSD: biosdev.h,v 1.24 1997/11/30 21:51:40 mickey Exp $	*/
 
 /*
  * Copyright (c) 1996 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
@@ -27,46 +32,32 @@
  *
  */
 
-/*
- * Extension support bitmap definition (returned by 41h)
- */
-#define EXT_BM_EDA	0x01	/* Extended disk access functions	*/
-				/*  (42h-44h, 47h and 48h) supported.	*/
-#define EXT_BM_RDC	0x02	/* Removable drive controller functions	*/
-				/*  (45h, 46h, 48h, 49h and INT 15 52h)	*/
-				/*  supported.				*/
-#define EXT_BM_EDD	0x04	/* Enhanced disk drive functions	*/
-				/*  (48h and 4eh) supported.		*/
-#define EXT_BM_RSV	0xf8	/* Reserved (0)				*/
-
 struct consdev;
 struct open_file;
-struct diskinfo;
 
 /* biosdev.c */
 extern const char *biosdevs[];
-int biosstrategy(void *, int, daddr32_t, size_t, void *, size_t *);
-int biosopen(struct open_file *, ...);
-int biosclose(struct open_file *);
-int biosioctl(struct open_file *, u_long, void *);
-int bios_getdiskinfo(int, bios_diskinfo_t *);
-int biosd_diskio(int, struct diskinfo *, u_int, int, void *);
-const char * bios_getdisklabel(bios_diskinfo_t *, struct disklabel *);
+int biosstrategy __P((void *, int, daddr_t, size_t, void *, size_t *));
+int biosopen __P((struct open_file *, ...));
+int biosclose __P((struct open_file *));
+int biosioctl __P((struct open_file *, u_long, void *));
+int bios_getdiskinfo __P((int, bios_diskinfo_t *));
+int biosd_io __P((int, int, int, int, int, int, void*));
+const char * bios_getdisklabel __P((bios_diskinfo_t *, struct disklabel *));
 
 /* diskprobe.c */
-struct diskinfo *dklookup(int);
-bios_diskinfo_t *bios_dklookup(int);
+struct diskinfo *dklookup __P((int));
+bios_diskinfo_t *bios_dklookup __P((int));
 
 /* bioscons.c */
-void pc_probe(struct consdev *);
-void pc_init(struct consdev *);
-int pc_getc(dev_t);
-int pc_getshifts(dev_t);
-void pc_putc(dev_t, int);
-void pc_pollc(dev_t, int);
-void com_probe(struct consdev *);
-void com_init(struct consdev *);
-int comspeed(dev_t, int);
-int com_getc(dev_t);
-void com_putc(dev_t, int);
-void com_pollc(dev_t, int);
+void pc_probe __P((struct consdev *));
+void pc_init __P((struct consdev *));
+int pc_getc __P((dev_t));
+void pc_putc __P((dev_t, int));
+void pc_pollc __P((dev_t, int));
+void com_probe __P((struct consdev *));
+void com_init __P((struct consdev *));
+int com_setsp __P((int));
+int com_getc __P((dev_t));
+void com_putc __P((dev_t, int));
+void com_pollc __P((dev_t, int));

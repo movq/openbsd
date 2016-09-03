@@ -1,4 +1,4 @@
-/*	$OpenBSD: mbuf.c,v 1.37 2016/04/04 16:26:00 sthen Exp $	*/
+/*	$OpenBSD: mbuf.c,v 1.7 1999/02/27 21:22:19 deraadt Exp $	*/
 /*	$NetBSD: mbuf.c,v 1.9 1996/05/07 02:55:03 thorpej Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,31 +34,27 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/socket.h>
-#include <sys/queue.h>
-#include <sys/mbuf.h>
-#include <sys/protosw.h>
-#include <sys/pool.h>
-#include <sys/sysctl.h>
-#include <net/if.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "from: @(#)mbuf.c	8.1 (Berkeley) 6/6/93";
+#else
+static char *rcsid = "$OpenBSD: mbuf.c,v 1.7 1999/02/27 21:22:19 deraadt Exp $";
+#endif
+#endif /* not lint */
 
-#include <errno.h>
+#include <sys/param.h>
+#include <sys/protosw.h>
+#include <sys/socket.h>
+#include <sys/mbuf.h>
+
 #include <limits.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 #include "netstat.h"
 
 #define	YES	1
 typedef int bool;
 
 struct	mbstat mbstat;
-struct kinfo_pool mbpool, mclpools[MCLPOOLS];
-int	mclp;
-char	*mclnames[] = {
-	"mcl2k", "mcl4k", "mcl8k", "mcl9k", "mcl12k", "mcl16k", "mcl64k"
-};
-char	**mclnamep = mclnames;
 
 static struct mbtypes {
 	int	mt_type;
@@ -64,9 +64,16 @@ static struct mbtypes {
 	{ MT_OOBDATA,	"oob data" },
 	{ MT_CONTROL,	"ancillary data" },
 	{ MT_HEADER,	"packet headers" },
+	{ MT_SOCKET,	"socket structures" },			/* XXX */
+	{ MT_PCB,	"protocol control blocks" },		/* XXX */
+	{ MT_RTABLE,	"routing table entries" },		/* XXX */
+	{ MT_HTABLE,	"IMP host table entries" },		/* XXX */
+	{ MT_ATABLE,	"address resolution tables" },
 	{ MT_FTABLE,	"fragment reassembly queue headers" },	/* XXX */
 	{ MT_SONAME,	"socket names and addresses" },
 	{ MT_SOOPTS,	"socket options" },
+	{ MT_RIGHTS,	"access rights" },
+	{ MT_IFADDR,	"interface addresses" },		/* XXX */
 	{ 0, 0 }
 };
 
@@ -77,87 +84,36 @@ bool seen[256];			/* "have we seen this type yet?" */
  * Print mbuf statistics.
  */
 void
-mbpr(void)
+mbpr(mbaddr)
+	u_long mbaddr;
 {
-	unsigned long totmem, totused, totmbufs;
-	int totpct;
-	int i, mib[4], npools;
-	struct kinfo_pool pool;
-	struct mbtypes *mp;
-	size_t size;
+	register int totmem, totfree, totmbufs;
+	register int i;
+	register struct mbtypes *mp;
 
 	if (nmbtypes != 256) {
 		fprintf(stderr,
 		    "%s: unexpected change to mbstat; check source\n",
+		        __progname);
+		return;
+	}
+	if (mbaddr == 0) {
+		fprintf(stderr, "%s: mbstat: symbol not in namelist\n",
 		    __progname);
 		return;
 	}
-
-	mib[0] = CTL_KERN;
-	mib[1] = KERN_MBSTAT;
-	size = sizeof(mbstat);
-
-	if (sysctl(mib, 2, &mbstat, &size, NULL, 0) < 0) {
-		printf("Can't retrieve mbuf statistics from the kernel: %s\n",
-		    strerror(errno));
+	if (kread(mbaddr, (char *)&mbstat, sizeof (mbstat)))
 		return;
-	}
-
-	mib[0] = CTL_KERN;
-	mib[1] = KERN_POOL;
-	mib[2] = KERN_POOL_NPOOLS;
-	size = sizeof(npools);
-
-	if (sysctl(mib, 3, &npools, &size, NULL, 0) < 0) {
-		printf("Can't figure out number of pools in kernel: %s\n",
-		    strerror(errno));
-		return;
-	}
-
-	for (i = 1; npools; i++) {
-		char name[32];
-
-		mib[0] = CTL_KERN;
-		mib[1] = KERN_POOL;
-		mib[2] = KERN_POOL_POOL;
-		mib[3] = i;
-		size = sizeof(pool);
-		if (sysctl(mib, 4, &pool, &size, NULL, 0) < 0) {
-			if (errno == ENOENT)
-				continue;
-			printf("error getting pool: %s\n",
-			    strerror(errno));
-			return;
-		}
-		npools--;
-		mib[2] = KERN_POOL_NAME;
-		size = sizeof(name);
-		if (sysctl(mib, 4, &name, &size, NULL, 0) < 0) {
-			printf("error getting pool name: %s\n",
-			    strerror(errno));
-			return;
-		}
-
-		if (!strncmp(name, "mbufpl", strlen("mbufpl")))
-			bcopy(&pool, &mbpool, sizeof(pool));
-		else if (mclp < sizeof(mclpools) / sizeof(mclpools[0]) &&
-		    !strncmp(name, *mclnamep, strlen(*mclnamep))) {
-			bcopy(&pool, &mclpools[mclp++],
-			    sizeof(pool));
-			mclnamep++;
-		}
-	}
-
 	totmbufs = 0;
 	for (mp = mbtypes; mp->mt_name; mp++)
-		totmbufs += (unsigned int)mbstat.m_mtypes[mp->mt_type];
-	printf("%lu mbuf%s in use:\n", totmbufs, plural(totmbufs));
+		totmbufs += mbstat.m_mtypes[mp->mt_type];
+	printf("%u mbuf%s in use:\n", totmbufs, plural(totmbufs));
 	for (mp = mbtypes; mp->mt_name; mp++)
 		if (mbstat.m_mtypes[mp->mt_type]) {
 			seen[mp->mt_type] = YES;
 			printf("\t%u mbuf%s allocated to %s\n",
 			    mbstat.m_mtypes[mp->mt_type],
-			    plural(mbstat.m_mtypes[mp->mt_type]),
+			    plural((int)mbstat.m_mtypes[mp->mt_type]),
 			    mp->mt_name);
 		}
 	seen[MT_FREE] = YES;
@@ -165,26 +121,15 @@ mbpr(void)
 		if (!seen[i] && mbstat.m_mtypes[i]) {
 			printf("\t%u mbuf%s allocated to <mbuf type %d>\n",
 			    mbstat.m_mtypes[i],
-			    plural(mbstat.m_mtypes[i]), i);
+			    plural((int)mbstat.m_mtypes[i]), i);
 		}
-	totmem = (mbpool.pr_npages * mbpool.pr_pgsize);
-	totused = mbpool.pr_nout * mbpool.pr_size;
-	for (i = 0; i < mclp; i++) {
-		printf("%u/%lu/%lu mbuf %d byte clusters in use"
-		    " (current/peak/max)\n",
-		    mclpools[i].pr_nout,
-		    (unsigned long)
-			(mclpools[i].pr_hiwat * mclpools[i].pr_itemsperpage),
-		    (unsigned long)
-			(mclpools[i].pr_maxpages * mclpools[i].pr_itemsperpage),
-		    mclpools[i].pr_size);
-		totmem += (mclpools[i].pr_npages * mclpools[i].pr_pgsize);
-		totused += mclpools[i].pr_nout * mclpools[i].pr_size;
-	}
-
-	totpct = (totmem == 0) ? 0 : (totused/(totmem / 100));
-	printf("%lu Kbytes allocated to network (%d%% in use)\n",
-	    totmem / 1024, totpct);
+	printf("%lu/%lu mapped pages in use\n",
+		mbstat.m_clusters - mbstat.m_clfree, mbstat.m_clusters);
+	totmem = totmbufs * MSIZE + mbstat.m_clusters * MCLBYTES;
+	totfree = mbstat.m_clfree * MCLBYTES;
+	printf("%u Kbytes allocated to network (%d%% in use)\n",
+	    totmem / 1024,
+	    totmem ? (totmem - totfree) * 100 / totmem : 100);
 	printf("%lu requests for memory denied\n", mbstat.m_drops);
 	printf("%lu requests for memory delayed\n", mbstat.m_wait);
 	printf("%lu calls to protocol drain routines\n", mbstat.m_drain);

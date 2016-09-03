@@ -1,8 +1,9 @@
 /* BFD COFF object file private structure.
-   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 91, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
    Written by Cygnus Support.
+
+** NOTE: libcoff.h is a GENERATED file.  Don't change it; instead,
+** change libcoff-in.h or coffcode.h.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -41,7 +42,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define obj_coff_strings(bfd)	(coff_data (bfd)->strings)
 #define obj_coff_keep_strings(bfd) (coff_data (bfd)->keep_strings)
 #define obj_coff_sym_hashes(bfd) (coff_data (bfd)->sym_hashes)
-#define obj_coff_strings_written(bfd) (coff_data (bfd)->strings_written)
 
 #define obj_coff_local_toc_table(bfd) (coff_data(bfd)->local_toc_sym_map)
 
@@ -55,7 +55,7 @@ typedef struct coff_tdata
   file_ptr sym_filepos;
 
   struct coff_ptr_struct *raw_syments;
-  unsigned long raw_syment_count;
+  unsigned int raw_syment_count;
 
   /* These are only valid once writing has begun */
   long int relocbase;
@@ -74,16 +74,14 @@ typedef struct coff_tdata
   /* The unswapped external symbols.  May be NULL.  Read by
      _bfd_coff_get_external_symbols.  */
   PTR external_syms;
-  /* If this is TRUE, the external_syms may not be freed.  */
-  bfd_boolean keep_syms;
+  /* If this is true, the external_syms may not be freed.  */
+  boolean keep_syms;
 
   /* The string table.  May be NULL.  Read by
      _bfd_coff_read_string_table.  */
   char *strings;
-  /* If this is TRUE, the strings may not be freed.  */
-  bfd_boolean keep_strings;
-  /* If this is TRUE, the strings have been written out already.  */
-  bfd_boolean strings_written;
+  /* If this is true, the strings may not be freed.  */
+  boolean keep_strings;
 
   /* is this a PE format coff file */
   int pe;
@@ -97,17 +95,6 @@ typedef struct coff_tdata
 
   /* Used by coff_find_nearest_line.  */
   PTR line_info;
-
-  /* A place to stash dwarf2 info for this bfd. */
-  PTR dwarf2_find_line_info;
-
-  /* The timestamp from the COFF file header.  */
-  long timestamp;
-
-  /* Copy of some of the f_flags bits in the COFF filehdr structure,
-     used by ARM code.  */
-  flagword flags;
-
 } coff_data_type;
 
 /* Tdata for pe image files. */
@@ -117,10 +104,8 @@ typedef struct pe_tdata
   struct internal_extra_pe_aouthdr pe_opthdr;
   int dll;
   int has_reloc_section;
-  bfd_boolean (*in_reloc_p) PARAMS((bfd *, reloc_howto_type *));
+  boolean (*in_reloc_p) PARAMS((bfd *, reloc_howto_type *));
   flagword real_flags;
-  int target_subsystem;
-  bfd_boolean force_minimum_alignment;
 } pe_data_type;
 
 #define pe_data(bfd)		((bfd)->tdata.pe_obj_data)
@@ -132,11 +117,8 @@ struct xcoff_tdata
   /* Basic COFF information.  */
   coff_data_type coff;
 
-  /* TRUE if this is an XCOFF64 file. */
-  bfd_boolean xcoff64;
-
-  /* TRUE if a large a.out header should be generated.  */
-  bfd_boolean full_aouthdr;
+  /* True if a large a.out header should be generated.  */
+  boolean full_aouthdr;
 
   /* TOC value.  */
   bfd_vma toc;
@@ -160,10 +142,10 @@ struct xcoff_tdata
   short cputype;
 
   /* maxdata from optional header.  */
-  bfd_vma maxdata;
+  bfd_size_type maxdata;
 
   /* maxstack from optional header.  */
-  bfd_vma maxstack;
+  bfd_size_type maxstack;
 
   /* Used by the XCOFF backend linker.  */
   asection **csects;
@@ -173,7 +155,7 @@ struct xcoff_tdata
 
 #define xcoff_data(abfd) ((abfd)->tdata.xcoff_obj_data)
 
-/* We take the address of the first element of an asymbol to ensure that the
+/* We take the address of the first element of a asymbol to ensure that the
  * macro is only ever applied to an asymbol.  */
 #define coffsymbol(asymbol) ((coff_symbol_type *)(&((asymbol)->the_bfd)))
 
@@ -184,12 +166,12 @@ struct coff_section_tdata
 {
   /* The relocs, swapped into COFF internal form.  This may be NULL.  */
   struct internal_reloc *relocs;
-  /* If this is TRUE, the relocs entry may not be freed.  */
-  bfd_boolean keep_relocs;
+  /* If this is true, the relocs entry may not be freed.  */
+  boolean keep_relocs;
   /* The section contents.  This may be NULL.  */
   bfd_byte *contents;
-  /* If this is TRUE, the contents entry may not be freed.  */
-  bfd_boolean keep_contents;
+  /* If this is true, the contents entry may not be freed.  */
+  boolean keep_contents;
   /* Information cached by coff_find_nearest_line.  */
   bfd_vma offset;
   unsigned int i;
@@ -225,14 +207,12 @@ struct xcoff_section_tdata
 #define xcoff_section_data(abfd, sec) \
   ((struct xcoff_section_tdata *) coff_section_data ((abfd), (sec))->tdata)
 
-/* Tdata for sections in PE files.  */
+/* Tdata for sections in PEI image files.  */
 
 struct pei_section_tdata
 {
   /* The virtual size of the section.  */
   bfd_size_type virt_size;
-  /* The PE section flags.  */
-  long pe_flags;
 };
 
 /* An accessor macro for the pei_section_tdata structure.  */
@@ -263,11 +243,6 @@ struct coff_link_hash_entry
 
   /* Pointer to array of auxiliary entries, if any.  */
   union internal_auxent *aux;
-
-  /* Flag word; legal values follow.  */
-  unsigned short coff_link_hash_flags;
-  /* Symbol is a PE section symbol.  */
-#define COFF_LINK_HASH_PE_SECTION_SYMBOL (01)
 };
 
 /* COFF linker hash table.  */
@@ -291,7 +266,7 @@ struct coff_link_hash_table
 #define coff_link_hash_traverse(table, func, info)			\
   (bfd_link_hash_traverse						\
    (&(table)->root,							\
-    (bfd_boolean (*) PARAMS ((struct bfd_link_hash_entry *, PTR))) (func), \
+    (boolean (*) PARAMS ((struct bfd_link_hash_entry *, PTR))) (func),	\
     (info)))
 
 /* Get the COFF linker hash table from a link_info structure.  */
@@ -299,64 +274,49 @@ struct coff_link_hash_table
 #define coff_hash_table(p) ((struct coff_link_hash_table *) ((p)->hash))
 
 /* Functions in coffgen.c.  */
-extern const bfd_target *coff_object_p
-  PARAMS ((bfd *));
-extern struct bfd_section *coff_section_from_bfd_index
-  PARAMS ((bfd *, int));
-extern long coff_get_symtab_upper_bound
-  PARAMS ((bfd *));
-extern long coff_canonicalize_symtab
-  PARAMS ((bfd *, asymbol **));
-extern int coff_count_linenumbers
-  PARAMS ((bfd *));
-extern struct coff_symbol_struct *coff_symbol_from
-  PARAMS ((bfd *, asymbol *));
-extern bfd_boolean coff_renumber_symbols
-  PARAMS ((bfd *, int *));
-extern void coff_mangle_symbols
-  PARAMS ((bfd *));
-extern bfd_boolean coff_write_symbols
-  PARAMS ((bfd *));
-extern bfd_boolean coff_write_linenumbers
-  PARAMS ((bfd *));
-extern alent *coff_get_lineno
-  PARAMS ((bfd *, asymbol *));
-extern asymbol *coff_section_symbol
-  PARAMS ((bfd *, char *));
-extern bfd_boolean _bfd_coff_get_external_symbols
-  PARAMS ((bfd *));
-extern const char *_bfd_coff_read_string_table
-  PARAMS ((bfd *));
-extern bfd_boolean _bfd_coff_free_symbols
-  PARAMS ((bfd *));
-extern struct coff_ptr_struct *coff_get_normalized_symtab
-  PARAMS ((bfd *));
-extern long coff_get_reloc_upper_bound
-  PARAMS ((bfd *, sec_ptr));
-extern asymbol *coff_make_empty_symbol
-  PARAMS ((bfd *));
-extern void coff_print_symbol
-  PARAMS ((bfd *, PTR filep, asymbol *, bfd_print_symbol_type));
-extern void coff_get_symbol_info
-  PARAMS ((bfd *, asymbol *, symbol_info *ret));
-extern bfd_boolean _bfd_coff_is_local_label_name
-  PARAMS ((bfd *, const char *));
-extern asymbol *coff_bfd_make_debug_symbol
-  PARAMS ((bfd *, PTR, unsigned long));
-extern bfd_boolean coff_find_nearest_line
-  PARAMS ((bfd *, asection *, asymbol **, bfd_vma, const char **,
-	   const char **, unsigned int *));
-extern int coff_sizeof_headers
-  PARAMS ((bfd *, bfd_boolean));
-extern bfd_boolean bfd_coff_reloc16_relax_section
-  PARAMS ((bfd *, asection *, struct bfd_link_info *, bfd_boolean *));
+extern const bfd_target *coff_object_p PARAMS ((bfd *));
+extern struct sec *coff_section_from_bfd_index PARAMS ((bfd *, int));
+extern long coff_get_symtab_upper_bound PARAMS ((bfd *));
+extern long coff_get_symtab PARAMS ((bfd *, asymbol **));
+extern int coff_count_linenumbers PARAMS ((bfd *));
+extern struct coff_symbol_struct *coff_symbol_from PARAMS ((bfd *, asymbol *));
+extern boolean coff_renumber_symbols PARAMS ((bfd *, int *));
+extern void coff_mangle_symbols PARAMS ((bfd *));
+extern boolean coff_write_symbols PARAMS ((bfd *));
+extern boolean coff_write_linenumbers PARAMS ((bfd *));
+extern alent *coff_get_lineno PARAMS ((bfd *, asymbol *));
+extern asymbol *coff_section_symbol PARAMS ((bfd *, char *));
+extern boolean _bfd_coff_get_external_symbols PARAMS ((bfd *));
+extern const char *_bfd_coff_read_string_table PARAMS ((bfd *));
+extern boolean _bfd_coff_free_symbols PARAMS ((bfd *));
+extern struct coff_ptr_struct *coff_get_normalized_symtab PARAMS ((bfd *));
+extern long coff_get_reloc_upper_bound PARAMS ((bfd *, sec_ptr));
+extern asymbol *coff_make_empty_symbol PARAMS ((bfd *));
+extern void coff_print_symbol PARAMS ((bfd *, PTR filep, asymbol *,
+				       bfd_print_symbol_type how));
+extern void coff_get_symbol_info PARAMS ((bfd *, asymbol *,
+					  symbol_info *ret));
+extern asymbol *coff_bfd_make_debug_symbol PARAMS ((bfd *, PTR,
+						    unsigned long));
+extern boolean coff_find_nearest_line PARAMS ((bfd *,
+					       asection *,
+					       asymbol **,
+					       bfd_vma offset,
+					       CONST char **filename_ptr,
+					       CONST char **functionname_ptr,
+					       unsigned int *line_ptr));
+extern int coff_sizeof_headers PARAMS ((bfd *, boolean reloc));
+extern boolean bfd_coff_reloc16_relax_section
+  PARAMS ((bfd *, asection *, struct bfd_link_info *, boolean *));
 extern bfd_byte *bfd_coff_reloc16_get_relocated_section_contents
   PARAMS ((bfd *, struct bfd_link_info *, struct bfd_link_order *,
-	   bfd_byte *, bfd_boolean, asymbol **));
-extern bfd_vma bfd_coff_reloc16_get_value
-   PARAMS ((arelent *, struct bfd_link_info *, asection *));
-extern void bfd_perform_slip
-  PARAMS ((bfd *, unsigned int, asection *, bfd_vma));
+	   bfd_byte *, boolean relocateable, asymbol **));
+extern bfd_vma bfd_coff_reloc16_get_value PARAMS ((arelent *,
+						   struct bfd_link_info *,
+						   asection *));
+extern void bfd_perform_slip PARAMS ((bfd *abfd, unsigned int slip,
+				      asection *input_section,
+				      bfd_vma val));
 
 /* Functions and types in cofflink.c.  */
 
@@ -434,7 +394,7 @@ struct coff_debug_merge_hash_table
    bfd_hash_lookup (&(table)->root, (string), (create), (copy)))
 
 /* Information we keep for each section in the output file when doing
-   a relocatable link.  */
+   a relocateable link.  */
 
 struct coff_link_section_info
 {
@@ -454,14 +414,10 @@ struct coff_final_link_info
   /* Output BFD.  */
   bfd *output_bfd;
   /* Used to indicate failure in traversal routine.  */
-  bfd_boolean failed;
-  /* If doing "task linking" set only during the time when we want the
-     global symbol writer to convert the storage class of defined global
-     symbols from global to static. */
-  bfd_boolean global_to_static;
+  boolean failed;
   /* Hash table for long symbol names.  */
   struct bfd_strtab_hash *strtab;
-  /* When doing a relocatable link, an array of information kept for
+  /* When doing a relocateable link, an array of information kept for
      each output section, indexed by the target_index field.  */
   struct coff_link_section_info *section_info;
   /* Symbol index of last C_FILE symbol (-1 if none).  */
@@ -495,44 +451,9 @@ struct coff_final_link_info
   struct internal_reloc *internal_relocs;
 };
 
-/* Most COFF variants have no way to record the alignment of a
-   section.  This struct is used to set a specific alignment based on
-   the name of the section.  */
-
-struct coff_section_alignment_entry
-{
-  /* The section name.  */
-  const char *name;
-
-  /* This is either (unsigned int) -1, indicating that the section
-     name must match exactly, or it is the number of letters which
-     must match at the start of the name.  */
-  unsigned int comparison_length;
-
-  /* These macros may be used to fill in the first two fields in a
-     structure initialization.  */
-#define COFF_SECTION_NAME_EXACT_MATCH(name) (name), ((unsigned int) -1)
-#define COFF_SECTION_NAME_PARTIAL_MATCH(name) (name), (sizeof (name) - 1)
-
-  /* Only use this entry if the default section alignment for this
-     target is at least that much (as a power of two).  If this field
-     is COFF_ALIGNMENT_FIELD_EMPTY, it should be ignored.  */
-  unsigned int default_alignment_min;
-
-  /* Only use this entry if the default section alignment for this
-     target is no greater than this (as a power of two).  If this
-     field is COFF_ALIGNMENT_FIELD_EMPTY, it should be ignored.  */
-  unsigned int default_alignment_max;
-
-#define COFF_ALIGNMENT_FIELD_EMPTY ((unsigned int) -1)
-
-  /* The desired alignment for this section (as a power of two).  */
-  unsigned int alignment_power;
-};
-
 extern struct bfd_hash_entry *_bfd_coff_link_hash_newfunc
   PARAMS ((struct bfd_hash_entry *, struct bfd_hash_table *, const char *));
-extern bfd_boolean _bfd_coff_link_hash_table_init
+extern boolean _bfd_coff_link_hash_table_init
   PARAMS ((struct coff_link_hash_table *, bfd *,
 	   struct bfd_hash_entry *(*) (struct bfd_hash_entry *,
 				       struct bfd_hash_table *,
@@ -541,26 +462,24 @@ extern struct bfd_link_hash_table *_bfd_coff_link_hash_table_create
   PARAMS ((bfd *));
 extern const char *_bfd_coff_internal_syment_name
   PARAMS ((bfd *, const struct internal_syment *, char *));
-extern bfd_boolean _bfd_coff_link_add_symbols
+extern boolean _bfd_coff_link_add_symbols
   PARAMS ((bfd *, struct bfd_link_info *));
-extern bfd_boolean _bfd_coff_final_link
+extern boolean _bfd_coff_final_link
   PARAMS ((bfd *, struct bfd_link_info *));
 extern struct internal_reloc *_bfd_coff_read_internal_relocs
-  PARAMS ((bfd *, asection *, bfd_boolean, bfd_byte *, bfd_boolean,
+  PARAMS ((bfd *, asection *, boolean, bfd_byte *, boolean,
 	   struct internal_reloc *));
-extern bfd_boolean _bfd_coff_generic_relocate_section
+extern boolean _bfd_coff_generic_relocate_section
   PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *, bfd_byte *,
 	   struct internal_reloc *, struct internal_syment *, asection **));
 
 extern struct bfd_hash_entry *_bfd_coff_debug_merge_hash_newfunc
   PARAMS ((struct bfd_hash_entry *, struct bfd_hash_table *, const char *));
-extern bfd_boolean _bfd_coff_write_global_sym
+extern boolean _bfd_coff_write_global_sym
   PARAMS ((struct coff_link_hash_entry *, PTR));
-extern bfd_boolean _bfd_coff_write_task_globals
-  PARAMS ((struct coff_link_hash_entry *, PTR));
-extern bfd_boolean _bfd_coff_link_input_bfd
+extern boolean _bfd_coff_link_input_bfd
   PARAMS ((struct coff_final_link_info *, bfd *));
-extern bfd_boolean _bfd_coff_reloc_link_order
+extern boolean _bfd_coff_reloc_link_order
   PARAMS ((bfd *, struct coff_final_link_info *, asection *,
 	   struct bfd_link_order *));
 
@@ -570,31 +489,21 @@ extern bfd_boolean _bfd_coff_reloc_link_order
 
 /* Functions in xcofflink.c.  */
 
-extern long _bfd_xcoff_get_dynamic_symtab_upper_bound
-  PARAMS ((bfd *));
+extern long _bfd_xcoff_get_dynamic_symtab_upper_bound PARAMS ((bfd *));
 extern long _bfd_xcoff_canonicalize_dynamic_symtab
   PARAMS ((bfd *, asymbol **));
-extern long _bfd_xcoff_get_dynamic_reloc_upper_bound
-  PARAMS ((bfd *));
+extern long _bfd_xcoff_get_dynamic_reloc_upper_bound PARAMS ((bfd *));
 extern long _bfd_xcoff_canonicalize_dynamic_reloc
   PARAMS ((bfd *, arelent **, asymbol **));
 extern struct bfd_link_hash_table *_bfd_xcoff_bfd_link_hash_table_create
   PARAMS ((bfd *));
-extern void _bfd_xcoff_bfd_link_hash_table_free
-  PARAMS ((struct bfd_link_hash_table *));
-extern bfd_boolean _bfd_xcoff_bfd_link_add_symbols
+extern boolean _bfd_xcoff_bfd_link_add_symbols
   PARAMS ((bfd *, struct bfd_link_info *));
-extern bfd_boolean _bfd_xcoff_bfd_final_link
+extern boolean _bfd_xcoff_bfd_final_link
   PARAMS ((bfd *, struct bfd_link_info *));
-extern bfd_boolean _bfd_ppc_xcoff_relocate_section
+extern boolean _bfd_ppc_xcoff_relocate_section
   PARAMS ((bfd *, struct bfd_link_info *, bfd *, asection *, bfd_byte *,
 	   struct internal_reloc *, struct internal_syment *, asection **));
 
-/* Functions in coff-ppc.c.  FIXME: These are called be pe.em in the
-   linker, and so should start with bfd and be declared in bfd.h.  */
-
-extern bfd_boolean ppc_allocate_toc_section
-  PARAMS ((struct bfd_link_info *));
-extern bfd_boolean ppc_process_before_allocation
-  PARAMS ((bfd *, struct bfd_link_info *));
+/* And more taken from the source .. */
 

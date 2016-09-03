@@ -47,7 +47,7 @@ typedef struct {
 #define sdbm_pagfno(db)	((db)->pagf)
 
 typedef struct {
-	const char *dptr;
+	char *dptr;
 	int dsize;
 } datum;
 
@@ -79,13 +79,12 @@ extern int sdbm_delete proto((DBM *, datum));
 extern int sdbm_store proto((DBM *, datum, datum, int));
 extern datum sdbm_firstkey proto((DBM *));
 extern datum sdbm_nextkey proto((DBM *));
-extern int sdbm_exists proto((DBM *, datum));
 
 /*
  * other
  */
 extern DBM *sdbm_prep proto((char *, char *, int, int));
-extern long sdbm_hash proto((const char *, int));
+extern long sdbm_hash proto((char *, int));
 
 #ifndef SDBM_ONLY
 #define dbm_open sdbm_open
@@ -99,12 +98,8 @@ extern long sdbm_hash proto((const char *, int));
 #define dbm_clearerr sdbm_clearerr
 #endif
 
-/* Most of the following is stolen from perl.h.  We don't include
-   perl.h here because we just want the portability parts of perl.h,
-   not everything else.
-*/
+/* Most of the following is stolen from perl.h. */
 #ifndef H_PERL  /* Include guard */
-#include "embed.h"  /* Follow all the global renamings. */
 
 /*
  * The following contortions are brought to you on behalf of all the
@@ -173,33 +168,32 @@ extern long sdbm_hash proto((const char *, int));
 /* This comes after <stdlib.h> so we don't try to change the standard
  * library prototypes; we'll use our own instead. */
 
-#if defined(MYMALLOC) && !defined(PERL_POLLUTE_MALLOC)
-#  define malloc  Perl_malloc
-#  define calloc  Perl_calloc
-#  define realloc Perl_realloc
-#  define free    Perl_mfree
+#if defined(MYMALLOC) && (defined(HIDEMYMALLOC) || defined(EMBEDMYMALLOC))
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#   ifdef HIDEMYMALLOC
+#	define malloc  Mymalloc
+#	define calloc  Mycalloc
+#	define realloc Myremalloc
+#	define free    Myfree
+#   endif
+#   ifdef EMBEDMYMALLOC
+#	define malloc  Perl_malloc
+#	define calloc  Perl_calloc
+#	define realloc Perl_realloc
+#	define free    Perl_free
+#   endif
 
-Malloc_t Perl_malloc proto((MEM_SIZE nbytes));
-Malloc_t Perl_calloc proto((MEM_SIZE elements, MEM_SIZE size));
-Malloc_t Perl_realloc proto((Malloc_t where, MEM_SIZE nbytes));
-Free_t   Perl_mfree proto((Malloc_t where));
+    Malloc_t malloc proto((MEM_SIZE nbytes));
+    Malloc_t calloc proto((MEM_SIZE elements, MEM_SIZE size));
+    Malloc_t realloc proto((Malloc_t where, MEM_SIZE nbytes));
+    Free_t   free proto((Malloc_t where));
 
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* MYMALLOC */
+#endif /* MYMALLOC && (HIDEMYMALLOC || EMBEDMYMALLOC) */
 
 #ifdef I_STRING
-# ifndef __ultrix__
-#  include <string.h>
-# endif
+#include <string.h>
 #else
-# include <strings.h>
+#include <strings.h>
 #endif
 
 #ifdef I_MEMORY
@@ -254,12 +248,16 @@ Free_t   Perl_mfree proto((Malloc_t where));
 #    endif
 #  endif
 #  ifdef BUGGY_MSC
-#    pragma function(memcmp)
+  #  pragma function(memcmp)
 #  endif
 #else
 #   ifndef memcmp
 	/* maybe we should have included the full embedding header... */
-#	define memcmp Perl_my_memcmp
+#	ifdef NO_EMBED
+#	    define memcmp my_memcmp
+#	else
+#	    define memcmp Perl_my_memcmp
+#	endif
 #ifndef __cplusplus
 	extern int memcmp proto((char*, char*, int));
 #endif

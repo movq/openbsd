@@ -1,4 +1,3 @@
-/*	$OpenBSD: fclose.c,v 1.10 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,22 +34,25 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fclose.c,v 1.2 1996/08/19 08:32:19 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "local.h"
 
 int
-fclose(FILE *fp)
+fclose(fp)
+	register FILE *fp;
 {
-	int r;
+	register int r;
 
 	if (fp->_flags == 0) {	/* not open! */
 		errno = EBADF;
 		return (EOF);
 	}
-	FLOCKFILE(fp);
-	WCIO_FREE(fp);
 	r = fp->_flags & __SWR ? __sflush(fp) : 0;
 	if (fp->_close != NULL && (*fp->_close)(fp->_cookie) < 0)
 		r = EOF;
@@ -56,9 +62,7 @@ fclose(FILE *fp)
 		FREEUB(fp);
 	if (HASLB(fp))
 		FREELB(fp);
-	fp->_r = fp->_w = 0;	/* Mess up if reaccessed. */
 	fp->_flags = 0;		/* Release this FILE for reuse. */
-	FUNLOCKFILE(fp);
+	fp->_r = fp->_w = 0;	/* Mess up if reaccessed. */
 	return (r);
 }
-DEF_STRONG(fclose);

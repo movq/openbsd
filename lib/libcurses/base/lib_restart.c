@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_restart.c,v 1.5 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_restart.c,v 1.2 1999/08/15 11:40:55 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,69 +31,62 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
 
 /*
  * Terminfo-only terminal setup routines:
  *
  *		int restartterm(const char *, int, int *)
+ *		TERMINAL *set_curterm(TERMINAL *)
+ *		int del_curterm(TERMINAL *)
  */
 
 #include <curses.priv.h>
 
-#if SVR4_TERMIO && !defined(_POSIX_SOURCE)
+#if defined(SVR4_TERMIO) && !defined(_POSIX_SOURCE)
 #define _POSIX_SOURCE
 #endif
 
-#include <term.h>		/* lines, columns, cur_term */
+#include <term.h>	/* lines, columns, cur_term */
 
-MODULE_ID("$Id: lib_restart.c,v 1.5 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_restart.c,v 1.2 1999/07/24 20:10:04 tom Exp $")
 
-NCURSES_EXPORT(int)
-restartterm(NCURSES_CONST char *termp, int filenum, int *errret)
+int restartterm(NCURSES_CONST char *termp, int filenum, int *errret)
 {
-    int result;
+int saveecho = SP->_echo;
+int savecbreak = SP->_cbreak;
+int saveraw = SP->_raw;
+int savenl = SP->_nl;
 
-    T((T_CALLED("restartterm(%s,%d,%p)"), termp, filenum, errret));
+	T((T_CALLED("restartterm(%s,%d,%p)"), termp, filenum, errret));
 
-    if (setupterm(termp, filenum, errret) != OK) {
-	result = ERR;
-    } else if (SP != 0) {
-	int saveecho = SP->_echo;
-	int savecbreak = SP->_cbreak;
-	int saveraw = SP->_raw;
-	int savenl = SP->_nl;
+	setupterm(termp, filenum, errret);
 
 	if (saveecho)
-	    echo();
+		echo();
 	else
-	    noecho();
+		noecho();
 
 	if (savecbreak) {
-	    cbreak();
-	    noraw();
+		cbreak();
+		noraw();
 	} else if (saveraw) {
-	    nocbreak();
-	    raw();
+		nocbreak();
+		raw();
 	} else {
-	    nocbreak();
-	    noraw();
+		nocbreak();
+		noraw();
 	}
 	if (savenl)
-	    nl();
+		nl();
 	else
-	    nonl();
+		nonl();
 
 	reset_prog_mode();
 
 #if USE_SIZECHANGE
-	_nc_update_screensize(SP);
+	_nc_update_screensize();
 #endif
 
-	result = OK;
-    } else {
-	result = ERR;
-    }
-    returnCode(result);
+	returnCode(OK);
 }

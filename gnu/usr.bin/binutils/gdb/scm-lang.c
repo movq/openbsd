@@ -1,24 +1,21 @@
 /* Scheme/Guile language support routines for GDB, the GNU debugger.
+   Copyright 1995 Free Software Foundation, Inc.
 
-   Copyright 1995, 1996, 1998, 2000, 2001, 2002, 2003, 2004 Free Software
-   Foundation, Inc.
+This file is part of GDB.
 
-   This file is part of GDB.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
 #include "symtab.h"
@@ -30,37 +27,40 @@
 #include "c-lang.h"
 #include "scm-lang.h"
 #include "scm-tags.h"
-#include "source.h"
 #include "gdb_string.h"
 #include "gdbcore.h"
-#include "infcall.h"
 
-extern void _initialize_scheme_language (void);
-static struct value *evaluate_subexp_scm (struct type *, struct expression *,
-				      int *, enum noside);
-static struct value *scm_lookup_name (char *);
-static int in_eval_c (void);
-static void scm_printstr (struct ui_file * stream, char *string,
-			  unsigned int length, int width,
-			  int force_ellipses);
+static value_ptr evaluate_subexp_scm PARAMS ((struct type *, struct expression *,
+					      int *, enum noside));
+static value_ptr scm_lookup_name PARAMS ((char *));
+static int in_eval_c PARAMS ((void));
+static void scm_printstr PARAMS ((GDB_FILE *, char *, unsigned int, int));
+
+extern struct type ** CONST_PTR (c_builtin_types[]);
 
 struct type *builtin_type_scm;
 
 void
-scm_printchar (int c, struct ui_file *stream)
+scm_printchar (c, stream)
+     int c;
+     GDB_FILE *stream;
 {
   fprintf_filtered (stream, "#\\%c", c);
 }
 
 static void
-scm_printstr (struct ui_file *stream, char *string, unsigned int length,
-	      int width, int force_ellipses)
+scm_printstr (stream, string, length, force_ellipses)
+     GDB_FILE *stream;
+     char *string;
+     unsigned int length;
+     int force_ellipses;
 {
   fprintf_filtered (stream, "\"%s\"", string);
 }
 
 int
-is_scmvalue_type (struct type *type)
+is_scmvalue_type (type)
+     struct type *type;
 {
   if (TYPE_CODE (type) == TYPE_CODE_INT
       && TYPE_NAME (type) && strcmp (TYPE_NAME (type), "SCM") == 0)
@@ -74,7 +74,9 @@ is_scmvalue_type (struct type *type)
    of the 0'th one.  */
 
 LONGEST
-scm_get_field (LONGEST svalue, int index)
+scm_get_field (svalue, index)
+     LONGEST svalue;
+     int index;
 {
   char buffer[20];
   read_memory (SCM2PTR (svalue) + index * TYPE_LENGTH (builtin_type_scm),
@@ -87,7 +89,10 @@ scm_get_field (LONGEST svalue, int index)
    or Boolean (CONTEXT == TYPE_CODE_BOOL).  */
 
 LONGEST
-scm_unpack (struct type *type, const char *valaddr, enum type_code context)
+scm_unpack (type, valaddr, context)
+     struct type *type;
+     char *valaddr;
+     enum type_code context;
 {
   if (is_scmvalue_type (type))
     {
@@ -99,17 +104,16 @@ scm_unpack (struct type *type, const char *valaddr, enum type_code context)
 	  else
 	    return 1;
 	}
-      switch (7 & (int) svalue)
+      switch (7 & svalue)
 	{
-	case 2:
-	case 6:		/* fixnum */
+	case 2:  case 6: /* fixnum */
 	  return svalue >> 2;
-	case 4:		/* other immediate value */
-	  if (SCM_ICHRP (svalue))	/* character */
+	case 4: /* other immediate value */
+	  if (SCM_ICHRP (svalue)) /* character */
 	    return SCM_ICHR (svalue);
 	  else if (SCM_IFLAGP (svalue))
 	    {
-	      switch ((int) svalue)
+	      switch (svalue)
 		{
 #ifndef SICP
 		case SCM_EOL:
@@ -132,13 +136,11 @@ scm_unpack (struct type *type, const char *valaddr, enum type_code context)
 /* True if we're correctly in Guile's eval.c (the evaluator and apply). */
 
 static int
-in_eval_c (void)
+in_eval_c ()
 {
-  struct symtab_and_line cursal = get_current_source_symtab_and_line ();
-  
-  if (cursal.symtab && cursal.symtab->filename)
+  if (current_source_symtab && current_source_symtab->filename)
     {
-      char *filename = cursal.symtab->filename;
+      char *filename = current_source_symtab->filename;
       int len = strlen (filename);
       if (len >= 6 && strcmp (filename + len - 6, "eval.c") == 0)
 	return 1;
@@ -150,13 +152,13 @@ in_eval_c (void)
    First lookup in Scheme context (using the scm_lookup_cstr inferior
    function), then try lookup_symbol for compiled variables. */
 
-static struct value *
-scm_lookup_name (char *str)
+static value_ptr
+scm_lookup_name (str)
+     char *str;
 {
-  struct value *args[3];
+  value_ptr args[3];
   int len = strlen (str);
-  struct value *func;
-  struct value *val;
+  value_ptr func, val;
   struct symbol *sym;
   args[0] = value_allocate_space_in_inferior (len);
   args[1] = value_from_longest (builtin_type_int, len);
@@ -165,7 +167,7 @@ scm_lookup_name (char *str)
   if (in_eval_c ()
       && (sym = lookup_symbol ("env",
 			       expression_context_block,
-			       VAR_DOMAIN, (int *) NULL,
+			       VAR_NAMESPACE, (int *) NULL,
 			       (struct symtab **) NULL)) != NULL)
     args[2] = value_of_variable (sym, expression_context_block);
   else
@@ -179,18 +181,19 @@ scm_lookup_name (char *str)
 
   sym = lookup_symbol (str,
 		       expression_context_block,
-		       VAR_DOMAIN, (int *) NULL,
+		       VAR_NAMESPACE, (int *) NULL,
 		       (struct symtab **) NULL);
   if (sym)
     return value_of_variable (sym, NULL);
-  error ("No symbol \"%s\" in current context.", str);
+  error ("No symbol \"%s\" in current context.");
 }
 
-struct value *
-scm_evaluate_string (char *str, int len)
+value_ptr
+scm_evaluate_string (str, len)
+     char *str; int len;
 {
-  struct value *func;
-  struct value *addr = value_allocate_space_in_inferior (len + 1);
+  value_ptr func;
+  value_ptr addr = value_allocate_space_in_inferior (len + 1);
   LONGEST iaddr = value_as_long (addr);
   write_memory (iaddr, str, len);
   /* FIXME - should find and pass env */
@@ -199,13 +202,15 @@ scm_evaluate_string (char *str, int len)
   return call_function_by_hand (func, 1, &addr);
 }
 
-static struct value *
-evaluate_subexp_scm (struct type *expect_type, struct expression *exp,
-		     int *pos, enum noside noside)
+static value_ptr
+evaluate_subexp_scm (expect_type, exp, pos, noside)
+     struct type *expect_type;
+     register struct expression *exp;
+     register int *pos;
+     enum noside noside;
 {
   enum exp_opcode op = exp->elts[*pos].opcode;
-  int len, pc;
-  char *str;
+  int len, pc;  char *str;
   switch (op)
     {
     case OP_NAME:
@@ -224,59 +229,41 @@ evaluate_subexp_scm (struct type *expect_type, struct expression *exp,
 	goto nosideret;
       str = &exp->elts[pc + 2].string;
       return scm_evaluate_string (str, len);
-    default:;
+    default: ;
     }
   return evaluate_subexp_standard (expect_type, exp, pos, noside);
-nosideret:
+ nosideret:
   return value_from_longest (builtin_type_long, (LONGEST) 1);
 }
 
-const struct exp_descriptor exp_descriptor_scm = 
-{
-  print_subexp_standard,
-  operator_length_standard,
-  op_name_standard,
-  dump_subexp_body_standard,
-  evaluate_subexp_scm
-};
-
-const struct language_defn scm_language_defn =
-{
+const struct language_defn scm_language_defn = {
   "scheme",			/* Language name */
   language_scm,
-  NULL,
+  c_builtin_types,
   range_check_off,
   type_check_off,
-  case_sensitive_off,
-  array_row_major,
-  &exp_descriptor_scm,
   scm_parse,
   c_error,
-  null_post_parser,
-  scm_printchar,		/* Print a character constant */
+  evaluate_subexp_scm,
+  scm_printchar,			/* Print a character constant */
   scm_printstr,			/* Function to print string constant */
-  NULL,				/* Function to print a single character */
-  NULL,				/* Create fundamental type in this language */
+  NULL,	/* Create fundamental type in this language */
   c_print_type,			/* Print a type using appropriate syntax */
   scm_val_print,		/* Print a value using appropriate syntax */
   scm_value_print,		/* Print a top-level value */
-  NULL,				/* Language specific skip_trampoline */
-  value_of_this,		/* value_of_this */
-  basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
-  basic_lookup_transparent_type,/* lookup_transparent_type */
-  NULL,				/* Language specific symbol demangler */
-  NULL,				/* Language specific class_name_from_physname */
+  {"",     "",    "",  ""},	/* Binary format info */
+  {"#o%lo",  "#o",   "o", ""},	/* Octal format info */
+  {"%ld",   "",    "d", ""},	/* Decimal format info */
+  {"#x%lX", "#X",  "X", ""},	/* Hex format info */
   NULL,				/* expression operators for printing */
   1,				/* c-style arrays */
   0,				/* String lower bound */
-  NULL,
-  default_word_break_characters,
-  c_language_arch_info,
+  &builtin_type_char,		/* Type of string elements */ 
   LANG_MAGIC
 };
 
 void
-_initialize_scheme_language (void)
+_initialize_scheme_language ()
 {
   add_language (&scm_language_defn);
   builtin_type_scm = init_type (TYPE_CODE_INT,

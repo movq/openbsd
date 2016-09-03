@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkboot.c,v 1.20 2014/10/26 10:32:30 miod Exp $	*/
+/*	$OpenBSD: mkboot.c,v 1.7 1999/05/23 17:19:22 aaron Exp $	*/
 
 /*
  * Copyright (c) 1990, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,19 +35,31 @@
  *	@(#)mkboot.c	8.1 (Berkeley) 7/15/93
  */
 
+#if 0
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+static char rcsid[] = "$OpenBSD: mkboot.c,v 1.7 1999/05/23 17:19:22 aaron Exp $";
+#endif /* not lint */
+#endif
+
 #include <sys/param.h>
-#include <sys/exec.h>
-#include <sys/exec_elf.h>
 #include <sys/file.h>
 #include <sys/stat.h>
-
-#include <ctype.h>
-#include <err.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
-#include <time.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
+#ifdef __OpenBSD__
+#include <err.h>
+#endif
+
+#include <sys/exec_aout.h>
+#include <sys/exec_elf.h>
 
 #ifndef hppa
 /* hack for cross compile XXX */
@@ -52,15 +68,21 @@
 #include <sys/disklabel.h>
 #endif
 
-int putfile(char *, int);
-void __dead usage(void);
-void bcddate(char *, char *);
-char *lifname(char *);
-int cksum(int, int *, int);
+#include <stdio.h>
+#include <ctype.h>
+
+int putfile __P((char *, int));
+void __dead usage __P((void));
+void bcddate __P((char *, char *));
+char *lifname __P((char *));
+int cksum __P((int, int *, int));
 
 char *to_file;
 int loadpoint, verbose;
 u_long entry;
+#ifndef __OpenBSD__
+char *__progname = "mkboot";
+#endif
 
 /*
  * Old Format:
@@ -79,7 +101,8 @@ u_long entry;
  *	sector 32-:	LIF file 0, LIF file 1, etc.
  */
 int
-main(int argc, char **argv)
+main(argc, argv)
+	char **argv;
 {
 	int to;
 	register int n, pos, c;
@@ -110,7 +133,7 @@ main(int argc, char **argv)
 
 	bzero(buf, sizeof(buf));
 	/* clear possibly unused directory entries */
-	memset(lifd[1].dir_name, ' ', sizeof lifd[1].dir_name);
+	memset(lifd[1].dir_name, ' ', 10);
 	lifd[1].dir_type = -1;
 	lifd[1].dir_addr = 0;
 	lifd[1].dir_length = 0;
@@ -151,8 +174,7 @@ main(int argc, char **argv)
 			lifd[1].dir_implement = htobe32(loadpoint + entry);
 		}
 
-		strlcpy(lifd[optind].dir_name, lifname(argv[optind]),
-		    sizeof lifd[optind].dir_name);
+		strcpy(lifd[optind].dir_name, lifname(argv[optind]));
 		lifd[optind].dir_length = htobe32(n);
 		bcddate(argv[optind], lifd[optind].dir_toc);
 		lifd[optind].dir_flag = htobe16(LIF_DIR_FLAG);
@@ -170,13 +192,15 @@ main(int argc, char **argv)
 	lseek(to, 0, SEEK_END);
 
 	if (close(to) < 0)
-		err(1, "%s", to_file);
+		err(1, to_file);
 
-	return (0);
+	return(0);
 }
 
 int
-putfile(char *from_file, int to)
+putfile(from_file, to)
+	char *from_file;
+	int to;
 {
 	struct exec ex;
 	register int n, total;
@@ -185,7 +209,7 @@ putfile(char *from_file, int to)
 	struct lif_load load;
 
 	if ((from = open(from_file, O_RDONLY)) < 0)
-		err(1, "%s", from_file);
+		err(1, from_file);
 
 	n = read(from, &ex, sizeof(ex));
 	if (n != sizeof(ex))
@@ -197,18 +221,17 @@ putfile(char *from_file, int to)
 	else if (IS_ELF(*(Elf32_Ehdr *)&ex)) {
 		Elf32_Ehdr elf_header;
 		Elf32_Phdr *elf_segments;
-		int i, header_count, memory_needed, elf_load_image_segment;
+		int i,header_count, memory_needed, elf_load_image_segment;
 
 		(void) lseek(from, 0, SEEK_SET);
-		n = read(from, &elf_header, sizeof(elf_header));
+		n = read(from, &elf_header, sizeof (elf_header));
 		if (n != sizeof (elf_header))
 			err(1, "%s: reading ELF header", from_file);
 		header_count = ntohs(elf_header.e_phnum);
-		elf_segments = reallocarray(NULL, header_count,
-		    sizeof(*elf_segments));
+		memory_needed = header_count * sizeof (Elf32_Phdr);
+		elf_segments = (Elf32_Phdr *)malloc(memory_needed);
 		if (elf_segments == NULL)
 			err(1, "malloc");
-		memory_needed = header_count * sizeof(*elf_segments);
 		(void) lseek(from, ntohl(elf_header.e_phoff), SEEK_SET);
 		n = read(from, elf_segments, memory_needed);
 		if (n != memory_needed)
@@ -221,17 +244,16 @@ putfile(char *from_file, int to)
 					errx(1, "%s: more than one ELF program segment", from_file);
 				elf_load_image_segment = i;
 			}
+			if (elf_load_image_segment == -1)
+				errx(1, "%s: no suitable ELF program segment", from_file);
 		}
-		if (elf_load_image_segment == -1)
-			errx(1, "%s: no suitable ELF program segment", from_file);
 		entry = ntohl(elf_header.e_entry) +
 			ntohl(elf_segments[elf_load_image_segment].p_offset) -
 			ntohl(elf_segments[elf_load_image_segment].p_vaddr);
-		free(elf_segments);
 	} else if (*(u_char *)&ex == 0x1f && ((u_char *)&ex)[1] == 0x8b) {
 		entry = 0;
 	} else
-		errx(1, "%s: bad magic number", from_file);
+		errx(1, "%s: bad magic number\n", from_file);
 
 	entry += sizeof(load);
 	lseek(to, sizeof(load), SEEK_CUR);
@@ -241,12 +263,12 @@ putfile(char *from_file, int to)
 	for (lseek(from, 0, 0); ; n = sizeof(buf)) {
 		bzero(buf, sizeof(buf));
 		if ((n = read(from, buf, n)) < 0)
-			err(1, "%s", from_file);
+			err(1, from_file);
 		else if (n == 0)
 			break;
 
 		if (write(to, buf, n) != n)
-			err(1, "%s", to_file);
+			err(1, to_file);
 
 		total += n;
 		check_sum = cksum(check_sum, (int *)buf, n);
@@ -264,7 +286,7 @@ putfile(char *from_file, int to)
 	/* insert the header */
 	lseek(to, -total, SEEK_CUR);
 	if (write(to, &load, sizeof(load)) != sizeof(load))
-		err(1, "%s", to_file);
+		err(1, to_file);
 	lseek(to, total - sizeof(load), SEEK_CUR);
 
 	bzero(buf, sizeof(buf));
@@ -272,7 +294,7 @@ putfile(char *from_file, int to)
 	n = sizeof(int) - total % sizeof(int);
 	if (total % sizeof(int)) {
 		if (write(to, buf, n) != n)
-			err(1, "%s", to_file);
+			err(1, to_file);
 		else
 			total += n;
 	}
@@ -293,21 +315,24 @@ putfile(char *from_file, int to)
 
 	check_sum = htobe32(-check_sum);
 	if (write(to, &check_sum, sizeof(int)) != sizeof(int))
-		err(1, "%s", to_file);
+		err(1, to_file);
 
 	n -= sizeof(int);
 
 	if (write(to, buf, n) != n)
-		err(1, "%s", to_file);
+		err(1, to_file);
 
 	if (close(from) < 0 )
-		err(1, "%s", from_file);
+		err(1, from_file);
 
 	return total;
 }
 
 int
-cksum(int ck, int *p, int size)
+cksum(ck, p, size)
+	int ck;
+	int *p;
+	int size;
 {
 	/* we assume size is int-aligned */
 	for (size = (size + sizeof(int) - 1) / sizeof(int); size--; p++ )
@@ -317,7 +342,7 @@ cksum(int ck, int *p, int size)
 }
 
 void __dead
-usage(void)
+usage()
 {
 	extern char *__progname;
 	fprintf(stderr,
@@ -327,7 +352,8 @@ usage(void)
 }
 
 char *
-lifname(char *str)
+lifname(str)
+	char *str;
 {
 	static char lname[10] = "XXXXXXXXXX";
 	register int i;
@@ -348,10 +374,26 @@ lifname(char *str)
 
 
 void
-bcddate(char *file, char *toc)
+bcddate(file, toc)
+	char *file;
+	char *toc;
 {
 	struct stat statb;
+#ifndef __OpenBSD__
+	struct tm {
+		int tm_sec;    /* second (0-61, allows for leap seconds) */
+		int tm_min;    /* minute (0-59) */
+		int tm_hour;   /* hour (0-23) */
+		int tm_mday;   /* day of the month (1-31) */
+		int tm_mon;    /* month (0-11) */
+		int tm_year;   /* years since 1900 */
+		int tm_wday;   /* day of the week (0-6) */
+		int tm_yday;   /* day of the year (0-365) */
+		int tm_isdst;  /* non-0 if daylight savings time is in effect */
+	} *tm;
+#else
 	struct tm *tm;
+#endif
 
 	stat(file, &statb);
 	tm = localtime(&statb.st_ctime);
@@ -368,3 +410,23 @@ bcddate(char *file, char *toc)
 	*toc = (tm->tm_sec / 10) << 4;
 	*toc |= tm->tm_sec % 10;
 }
+
+#ifndef __OpenBSD__
+int
+err(ex, str)
+	int ex;
+	char *str;
+{
+	perror(str);
+	exit(ex);
+}
+
+int
+errx(ex, str)
+	int ex;
+	char *str;
+{
+	perror(str);
+	exit(ex);
+}
+#endif

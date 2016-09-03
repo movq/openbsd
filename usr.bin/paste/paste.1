@@ -1,5 +1,4 @@
-.\"	$OpenBSD: paste.1,v 1.14 2010/09/03 11:09:29 jmc Exp $
-.\"
+.\"	$OpenBSD: paste.1,v 1.4 1999/06/05 01:21:36 aaron Exp $
 .\" Copyright (c) 1989, 1990 The Regents of the University of California.
 .\" All rights reserved.
 .\"
@@ -15,7 +14,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -33,7 +36,7 @@
 .\"
 .\"	from: @(#)paste.1	5.6 (Berkeley) 7/27/91
 .\"
-.Dd $Mdocdate: September 3 2010 $
+.Dd July 27, 1991
 .Dt PASTE 1
 .Os
 .Sh NAME
@@ -43,7 +46,7 @@
 .Nm paste
 .Op Fl s
 .Op Fl d Ar list
-.Ar
+.Ar file Op Ar ...
 .Sh DESCRIPTION
 The
 .Nm paste
@@ -55,8 +58,8 @@ still contain data, the file is treated as if it were an endless source
 of empty lines.
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
-.It Fl d Ar list
+.Bl -tag -width Fl
+.It Fl d  Ar list
 Use one or more of the provided characters to replace the newline
 characters instead of the default tab.
 The characters in
@@ -102,44 +105,20 @@ option.
 .El
 .Pp
 If
-.Dq -
+.Ql Fl
 is specified for one or more of the input files, the standard
 input is used; standard input is read one line at a time, circularly,
 for each instance of
-.Dq - .
-.Sh EXIT STATUS
-.Ex -std paste
-.Sh EXAMPLES
-List the files in the current directory in three columns:
+.Ql Fl .
 .Pp
-.Dl "$ ls | paste - - -"
-.Pp
-Combine pairs of lines from
-.Ar file
-into single lines:
-.Pp
-.Dl "$ paste -s -d '\et\en' file"
-.Pp
-Number the lines in
-.Ar file ,
-similar to
-.Ql cat -n :
-.Pp
-.Dl "$ sed = file | paste -s -d '\et\en' - -"
-.Pp
-Create a colon-separated list of directories named
-.Pa bin ,
-suitable
-for use in the
-.Ev PATH
-environment variable:
-.Pp
-.Dl "$ find / -name bin -type d | paste -s -d : -"
+The
+.Nm paste
+utility exits 0 on success or >0 if an error occurred.
 .Sh SEE ALSO
 .Xr cut 1
 .Sh STANDARDS
 The
-.Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification.
+.Nm paste
+utility is expected to be
+.St -p1003.2
+compatible.

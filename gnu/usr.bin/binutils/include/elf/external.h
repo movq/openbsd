@@ -1,6 +1,5 @@
 /* ELF support for BFD.
-   Copyright 1991, 1992, 1993, 1995, 1997, 1998, 1999, 2001
-   Free Software Foundation, Inc.
+   Copyright (C) 1991, 1992 Free Software Foundation, Inc.
 
    Written by Fred Fish @ Cygnus Support, from information published
    in "UNIX System V Release 4, Programmers Guide: ANSI C and
@@ -26,9 +25,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 /* This file is part of ELF support for BFD, and contains the portions
    that describe how ELF is represented externally by the BFD library.
    I.E. it describes the in-file representation of ELF.  It requires
-   the elf/common.h file which contains the portions that are common to
+   the elf-common.h file which contains the portions that are common to
    both the internal and external representations. */
-
+   
 /* The 64-bit stuff is kind of random.  Perhaps someone will publish a
    spec someday.  */
 
@@ -143,10 +142,6 @@ typedef struct {
   unsigned char	st_size[8];		/* Associated symbol size */
 } Elf64_External_Sym;
 
-typedef struct {
-  unsigned char est_shndx[4];		/* Section index */
-} Elf_External_Sym_Shndx;
-
 /* Note segments */
 
 typedef struct {
@@ -196,81 +191,5 @@ typedef struct {
     unsigned char	d_ptr[8];
   } d_un;
 } Elf64_External_Dyn;
-
-/* The version structures are currently size independent.  They are
-   named without a 32 or 64.  If that ever changes, these structures
-   will need to be renamed.  */
-
-/* This structure appears in a SHT_GNU_verdef section.  */
-
-typedef struct {
-  unsigned char		vd_version[2];
-  unsigned char		vd_flags[2];
-  unsigned char		vd_ndx[2];
-  unsigned char		vd_cnt[2];
-  unsigned char		vd_hash[4];
-  unsigned char		vd_aux[4];
-  unsigned char		vd_next[4];
-} Elf_External_Verdef;
-
-/* This structure appears in a SHT_GNU_verdef section.  */
-
-typedef struct {
-  unsigned char		vda_name[4];
-  unsigned char		vda_next[4];
-} Elf_External_Verdaux;
-
-/* This structure appears in a SHT_GNU_verneed section.  */
-
-typedef struct {
-  unsigned char		vn_version[2];
-  unsigned char		vn_cnt[2];
-  unsigned char		vn_file[4];
-  unsigned char		vn_aux[4];
-  unsigned char		vn_next[4];
-} Elf_External_Verneed;
-
-/* This structure appears in a SHT_GNU_verneed section.  */
-
-typedef struct {
-  unsigned char		vna_hash[4];
-  unsigned char		vna_flags[2];
-  unsigned char		vna_other[2];
-  unsigned char		vna_name[4];
-  unsigned char		vna_next[4];
-} Elf_External_Vernaux;
-
-/* This structure appears in a SHT_GNU_versym section.  This is not a
-   standard ELF structure; ELF just uses Elf32_Half.  */
-
-typedef struct {
-  unsigned char		vs_vers[2];
-}
-#ifdef __GNUC__
-  __attribute__ ((packed))
-#endif
-  Elf_External_Versym;
-
-/* Structure for syminfo section.  */
-typedef struct
-{
-  unsigned char		si_boundto[2];
-  unsigned char		si_flags[2];
-} Elf_External_Syminfo;
-
-
-/* This structure appears on the stack and in NT_AUXV core file notes.  */
-typedef struct
-{
-  unsigned char		a_type[4];
-  unsigned char		a_val[4];
-} Elf32_External_Auxv;
-
-typedef struct
-{
-  unsigned char		a_type[8];
-  unsigned char		a_val[8];
-} Elf64_External_Auxv;
-
 
 #endif /* _ELF_EXTERNAL_H */

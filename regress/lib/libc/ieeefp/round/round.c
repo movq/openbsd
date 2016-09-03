@@ -1,4 +1,3 @@
-/*	$OpenBSD: round.c,v 1.3 2003/07/31 21:48:03 deraadt Exp $	*/
 /*	$NetBSD: round.c,v 1.1 1995/04/26 00:27:28 jtc Exp $	*/
 
 /*
@@ -12,7 +11,7 @@
 #include <float.h>
 
 int
-main(int argc, char *argv[])
+main()
 {
 	/*
 	 * This test would be better if it actually performed some

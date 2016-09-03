@@ -1,4 +1,4 @@
-/*	$OpenBSD: query.c,v 1.7 2016/01/04 17:33:24 mestre Exp $	*/
+/*	$OpenBSD: query.c,v 1.2 1998/07/09 04:34:21 pjanzen Exp $	*/
 /*	$NetBSD: query.c,v 1.3 1995/04/22 10:09:05 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,17 +34,26 @@
  * SUCH DAMAGE.
  */
 
-#include "robots.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)query.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: query.c,v 1.2 1998/07/09 04:34:21 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include	"robots.h"
 
 /*
  * query:
  *	Ask a question and get a yes or no answer.  Default is "no".
  */
 int
-query(char *prompt)
+query(prompt)
+	char	*prompt;
 {
-	int	c, retval;
-	int	y, x;
+	register int	c, retval;
+	register int	y, x;
 
 	getyx(stdscr, y, x);
 	move(Y_PROMPT, X_PROMPT);

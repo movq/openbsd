@@ -1,4 +1,4 @@
-/*	$OpenBSD: malloc.h,v 1.113 2016/07/20 09:15:28 bluhm Exp $	*/
+/*	$OpenBSD: malloc.h,v 1.24 1999/08/09 03:47:56 fgsch Exp $	*/
 /*	$NetBSD: malloc.h,v 1.39 1998/07/12 19:52:01 augustss Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,78 +39,67 @@
 #ifndef _SYS_MALLOC_H_
 #define	_SYS_MALLOC_H_
 
-#include <sys/queue.h>
-
-#define KERN_MALLOC_BUCKETS	1
-#define KERN_MALLOC_BUCKET	2
-#define KERN_MALLOC_KMEMNAMES	3
-#define KERN_MALLOC_KMEMSTATS	4
-#define KERN_MALLOC_MAXID	5
-
-#define CTL_KERN_MALLOC_NAMES { \
-	{ 0, 0 }, \
-	{ "buckets", CTLTYPE_STRING }, \
-	{ "bucket", CTLTYPE_NODE }, \
-	{ "kmemnames", CTLTYPE_STRING }, \
-	{ "kmemstat", CTLTYPE_NODE }, \
-}
-
 /*
  * flags to malloc
  */
-#define	M_WAITOK	0x0001
-#define	M_NOWAIT	0x0002
-#define	M_CANFAIL	0x0004
-#define	M_ZERO		0x0008
+#define	M_WAITOK	0x0000
+#define	M_NOWAIT	0x0001
 
 /*
  * Types of memory to be allocated
  */
 #define	M_FREE		0	/* should be on free list */
-/* 1 - free */
+#define	M_MBUF		1	/* mbuf */
 #define	M_DEVBUF	2	/* device driver memory */
-#define M_DEBUG		3	/* debug chunk */
+#define	M_SOCKET	3	/* socket structure */
 #define	M_PCB		4	/* protocol control block */
 #define	M_RTABLE	5	/* routing tables */
-/* 6 - free */
+#define	M_HTABLE	6	/* IMP host tables */
 #define	M_FTABLE	7	/* fragment reassembly header */
-/* 8 - free */
+#define	M_ZOMBIE	8	/* zombie proc status */
 #define	M_IFADDR	9	/* interface address */
 #define	M_SOOPTS	10	/* socket options */
-#define	M_SYSCTL	11	/* sysctl buffers (persistent storage) */
-/* 12 - free */
-/* 13 - free */
+#define	M_SONAME	11	/* socket name */
+#define	M_NAMEI		12	/* namei path name buffer */
+#define	M_GPROF		13	/* kernel profiling buffer */
 #define	M_IOCTLOPS	14	/* ioctl data buffer */
-/* 15-18 - free */
+#define	M_MAPMEM	15	/* mapped memory descriptors */
+#define	M_CRED		16	/* credentials */
+#define	M_PGRP		17	/* process group header */
+#define	M_SESSION	18	/* session header */
 #define	M_IOV		19	/* large iov's */
 #define	M_MOUNT		20	/* vfs mount struct */
-/* 21 - free */
+#define	M_FHANDLE	21	/* network file handle */
 #define	M_NFSREQ	22	/* NFS request header */
 #define	M_NFSMNT	23	/* NFS mount structure */
-/* 24 - free */
+#define	M_NFSNODE	24	/* NFS vnode private part */
 #define	M_VNODE		25	/* Dynamically allocated vnodes */
 #define	M_CACHE		26	/* Dynamically allocated cache entries */
 #define	M_DQUOT		27	/* UFS quota entries */
 #define	M_UFSMNT	28	/* UFS mount structure */
 #define	M_SHM		29	/* SVID compatible shared memory segments */
 #define	M_VMMAP		30	/* VM map structures */
-#define	M_SEM		31	/* SVID compatible semaphores */
-#define	M_DIRHASH	32	/* UFS dirhash */
-#define M_ACPI		33	/* ACPI */
+#define	M_VMMAPENT	31	/* VM map entry structures */
+#define	M_VMOBJ		32	/* VM object structure */
+#define	M_VMOBJHASH	33	/* VM object hash structure */
 #define	M_VMPMAP	34	/* VM pmap */
-/* 35-37 - free */
+#define	M_VMPVENT	35	/* VM phys-virt mapping entry */
+#define	M_VMPAGER	36	/* XXX: VM pager struct */
+#define	M_VMPGDATA	37	/* XXX: VM pager private data */
 #define	M_FILE		38	/* Open file structure */
 #define	M_FILEDESC	39	/* Open file descriptor table */
-/* 40 - free */
+#define	M_LOCKF		40	/* Byte-range locking structures */
 #define	M_PROC		41	/* Proc structures */
 #define	M_SUBPROC	42	/* Proc sub-structures */
-#define	M_VCLUSTER	43	/* Cluster for VFS */
-/* 45-46 - free */
+#define	M_SEGMENT	43	/* Segment for LFS */
+#define	M_LFSNODE	44	/* LFS vnode private part */
+#define	M_FFSNODE	45	/* FFS vnode private part */
 #define	M_MFSNODE	46	/* MFS vnode private part */
-/* 47-48 - free */
+#define	M_NQLEASE	47	/* Nqnfs lease */
+#define	M_NQMHOST	48	/* Nqnfs host address table */
 #define	M_NETADDR	49	/* Export host address structure */
 #define	M_NFSSVC	50	/* Nfs server structure */
-/* 51 - free */
+#define	M_NFSUID	51	/* Nfs uid mapping structure */
 #define	M_NFSD		52	/* Nfs server daemon structure */
 #define	M_IPMOPTS	53	/* internet multicast options */
 #define	M_IPMADDR	54	/* internet multicast address */
@@ -120,122 +113,108 @@
 #define	M_TTYS		62	/* allocated tty structures */
 #define	M_EXEC		63	/* argument lists & other mem used by exec */
 #define	M_MISCFSMNT	64	/* miscfs mount structures */
-#define	M_FUSEFS	65	/* fusefs mount structures */
-/* 66-73 - free */
+#define	M_MISCFSNODE	65	/* miscfs vnode private part */
+#define	M_ADOSFSMNT	66	/* adosfs mount structures */
+#define	M_ADOSFSNODE	67	/* adosfs vnode private part */
+#define	M_ANODE		68	/* adosfs anode structures and tables. */
+#define	M_IPQ		69	/* IP packet queue entry */
+#define	M_AFS		70	/* Andrew File System */
+#define	M_ADOSFSBITMAP	71	/* adosfs bitmap */
+#define	M_EXT2FSNODE	72	/* EXT2FS vnode private part */
+#define	M_PFIL		73	/* packer filter */
 #define	M_PFKEY		74	/* pfkey data */
 #define	M_TDB		75	/* Transforms database */
 #define	M_XDATA		76	/* IPsec data */
-/* 77 - free */
+#define M_VFS           77      /* VFS file systems */
+
 #define	M_PAGEDEP	78	/* File page dependencies */
 #define	M_INODEDEP	79	/* Inode dependencies */
 #define	M_NEWBLK	80	/* New block allocation */
-/* 81-82 - free */
+#define	M_BMSAFEMAP	81	/* Block or frag allocated from cyl group map */
+#define	M_ALLOCDIRECT	82	/* Block or frag dependency for an inode */
 #define	M_INDIRDEP	83	/* Indirect block dependencies */
-/* 84-91 - free */
+#define	M_ALLOCINDIR	84	/* Block dependency for an indirect block */
+#define	M_FREEFRAG	85	/* Previously used frag for an inode */
+#define	M_FREEBLKS	86	/* Blocks freed from an inode */
+#define	M_FREEFILE	87	/* Inode deallocated */
+#define	M_DIRADD	88	/* New directory entry */
+#define	M_MKDIR		89	/* New directory */
+#define	M_DIRREM	90	/* Directory entry deleted */
+#define M_VMPBUCKET	91	/* VM page buckets */
 #define M_VMSWAP	92	/* VM swap structures */
-/* 93-97 - free */
-#define M_UVMAMAP	98	/* UVM amap and related */
-#define M_UVMAOBJ	99	/* UVM aobj and related */
-/* 100 - free */
+
+#define M_DISCQ		93	/* IPv6 discq */
+#define M_FRAGQ		94	/* IPv6 fragq */
+#define M_SECA		95	/* Sec Assoc */
+#define M_I6IFP		96	/* IPv6 if info */
+
+#define	M_RAIDFRAME	97	/* Raidframe data */
+
+#define M_UVMAMAP	98	/* UVM amap and realted */
+#define M_UVMAOBJ	99	/* UVM aobj and realted */
+#define M_POOL		100	/* Pool memory */
+
 #define	M_USB		101	/* USB general */
 #define	M_USBDEV	102	/* USB device driver */
 #define	M_USBHC		103	/* USB host controller */
-/* 104 - free */
-#define M_MEMDESC	105	/* Memory range */
-/* 106-107 - free */
-#define M_CRYPTO_DATA	108	/* Crypto framework data buffers (keys etc.) */
-/* 109 - free */
-#define M_CREDENTIALS	110	/* IPsec-related credentials and ID info */
-/* 111-113 - free */
-#define	M_EMULDATA	114	/* Per-process emulation data */
-/* 115-122 - free */
 
-/* KAME IPv6 */
-#define	M_IP6OPT	123	/* IPv6 options */
-#define	M_IP6NDP	124	/* IPv6 Neighbour Discovery */
-/* 125-126 - free */
 #define	M_TEMP		127	/* misc temporary data buffers */
+#define M_LAST          128     /* Must be last type + 1 */
 
-#define	M_NTFSMNT	128	/* NTFS mount structure */
-#define	M_NTFSNTNODE	129	/* NTFS ntnode information */
-#define	M_NTFSFNODE	130	/* NTFS fnode information */
-#define	M_NTFSDIR	131	/* NTFS dir buffer */
-#define	M_NTFSNTHASH	132	/* NTFS ntnode hash tables */
-#define	M_NTFSNTVATTR	133	/* NTFS file attribute information */
-#define	M_NTFSRDATA	134	/* NTFS resident data */
-#define	M_NTFSDECOMP	135	/* NTFS decompression temporary */
-#define	M_NTFSRUN	136	/* NTFS vrun storage */
-
-#define	M_KEVENT	137	/* kqueue related */
-
-	/*		138	   free */
-#define	M_SYNCACHE	139	/* syn cache hash array */
-
-#define M_UDFMOUNT	140	/* UDF mount */
-#define M_UDFFENTRY	141	/* UDF file entry */
-#define M_UDFFID	142	/* UDF file id */
-
-	/*		143	   free */
-
-#define M_AGP		144	/* AGP Memory */
-
-#define M_DRM		145	/* Direct Rendering Manager */
-
-#define	M_LAST		146	/* Must be last type + 1 */
 
 #define	INITKMEMNAMES { \
 	"free",		/* 0 M_FREE */ \
-	NULL, \
+	"mbuf",		/* 1 M_MBUF */ \
 	"devbuf",	/* 2 M_DEVBUF */ \
-	"debug", 	/* 3 M_DEBUG */ \
+	"socket",	/* 3 M_SOCKET */ \
 	"pcb",		/* 4 M_PCB */ \
-	"rtable",	/* 5 M_RTABLE */ \
-	NULL,		/* 6 */ \
+	"routetbl",	/* 5 M_RTABLE */ \
+	"hosttbl",	/* 6 M_HTABLE */ \
 	"fragtbl",	/* 7 M_FTABLE */ \
-	NULL, \
+	"zombie",	/* 8 M_ZOMBIE */ \
 	"ifaddr",	/* 9 M_IFADDR */ \
 	"soopts",	/* 10 M_SOOPTS */ \
-	"sysctl",	/* 11 M_SYSCTL */ \
-	NULL, \
-	NULL, \
+	"soname",	/* 11 M_SONAME */ \
+	"namei",	/* 12 M_NAMEI */ \
+	"gprof",	/* 13 M_GPROF */ \
 	"ioctlops",	/* 14 M_IOCTLOPS */ \
-	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
+	"mapmem",	/* 15 M_MAPMEM */ \
+	"cred",		/* 16 M_CRED */ \
+	"pgrp",		/* 17 M_PGRP */ \
+	"session",	/* 18 M_SESSION */ \
 	"iov",		/* 19 M_IOV */ \
 	"mount",	/* 20 M_MOUNT */ \
-	NULL, \
+	"fhandle",	/* 21 M_FHANDLE */ \
 	"NFS req",	/* 22 M_NFSREQ */ \
 	"NFS mount",	/* 23 M_NFSMNT */ \
-	NULL, \
+	"NFS node",	/* 24 M_NFSNODE */ \
 	"vnodes",	/* 25 M_VNODE */ \
 	"namecache",	/* 26 M_CACHE */ \
 	"UFS quota",	/* 27 M_DQUOT */ \
 	"UFS mount",	/* 28 M_UFSMNT */ \
 	"shm",		/* 29 M_SHM */ \
 	"VM map",	/* 30 M_VMMAP */ \
-	"sem",		/* 31 M_SEM */ \
-	"dirhash",	/* 32 M_DIRHASH */ \
-	"ACPI", 	/* 33 M_ACPI */ \
+	"VM mapent",	/* 31 M_VMMAPENT */ \
+	"VM object",	/* 32 M_VMOBJ */ \
+	"VM objhash",	/* 33 M_VMOBJHASH */ \
 	"VM pmap",	/* 34 M_VMPMAP */ \
-	NULL,	/* 35 */ \
-	NULL,	/* 36 */ \
-	NULL,	/* 37 */ \
+	"VM pvmap",	/* 35 M_VMPVENT */ \
+	"VM pager",	/* 36 M_VMPAGER */ \
+	"VM pgdata",	/* 37 M_VMPGDATA */ \
 	"file",		/* 38 M_FILE */ \
 	"file desc",	/* 39 M_FILEDESC */ \
-	NULL,	/* 40 */ \
+	"lockf",	/* 40 M_LOCKF */ \
 	"proc",		/* 41 M_PROC */ \
 	"subproc",	/* 42 M_SUBPROC */ \
-	"VFS cluster",	/* 43 M_VCLUSTER */ \
-	NULL, \
-	NULL, \
+	"LFS segment",	/* 43 M_SEGMENT */ \
+	"LFS node",	/* 44 M_LFSNODE */ \
+	"FFS node",	/* 45 M_FFSNODE */ \
 	"MFS node",	/* 46 M_MFSNODE */ \
-	NULL, \
-	NULL, \
+	"NQNFS Lease",	/* 47 M_NQLEASE */ \
+	"NQNFS Host",	/* 48 M_NQMHOST */ \
 	"Export Host",	/* 49 M_NETADDR */ \
 	"NFS srvsock",	/* 50 M_NFSSVC */ \
-	NULL, \
+	"NFS uid",	/* 51 M_NFSUID */ \
 	"NFS daemon",	/* 52 M_NFSD */ \
 	"ip_moptions",	/* 53 M_IPMOPTS */ \
 	"in_multi",	/* 54 M_IPMADDR */ \
@@ -249,71 +228,51 @@
 	"ttys",		/* 62 M_TTYS */ \
 	"exec",		/* 63 M_EXEC */ \
 	"miscfs mount",	/* 64 M_MISCFSMNT */ \
-	"fusefs mount", /* 65 M_FUSEFS */ \
-	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
-	NULL, \
-	"pfkey data",	/* 74 M_PFKEY */ \
+	"miscfs node",	/* 65 M_MISCFSNODE */ \
+	"adosfs mount",	/* 66 M_ADOSFSMNT */ \
+	"adosfs node",	/* 67 M_ADOSFSNODE */ \
+	"adosfs anode",	/* 68 M_ANODE */ \
+	"IP queue ent", /* 69 M_IPQ */ \
+	"afs",		/* 70 M_AFS */ \
+	"adosfs bitmap", /* 71 M_ADOSFSBITMAP */ \
+	"EXT2FS node",	/* 72 M_EXT2FSNODE */ \
+	"pfil",		/* 73 M_PFIL */ \
+	"pfkey data",   /* 74 M_PFKEY */ \
 	"tdb",		/* 75 M_TDB */ \
 	"xform_data",	/* 76 M_XDATA */ \
-	NULL, \
-	"pagedep",	/* 78 M_PAGEDEP */ \
-	"inodedep",	/* 79 M_INODEDEP */ \
-	"newblk",	/* 80 M_NEWBLK */ \
-	NULL, \
-	NULL, \
-	"indirdep",	/* 83 M_INDIRDEP */ \
-	NULL, NULL, NULL, NULL, \
-	NULL, NULL, NULL, NULL, \
+	"vfs",          /* 77 M_VFS */ \
+ 	"pagedep",	/* 78 M_PAGEDEP */ \
+ 	"inodedep",	/* 79 M_INODEDEP */ \
+ 	"newblk",	/* 80 M_NEWBLK */ \
+ 	"bmsafemap",	/* 81 M_BMSAFEMAP */ \
+ 	"allocdirect",	/* 82 M_ALLOCDIRECT */ \
+ 	"indirdep",	/* 83 M_INDIRDEP */ \
+ 	"allocindir",	/* 84 M_ALLOCINDIR */ \
+ 	"freefrag",	/* 85 M_FREEFRAG */ \
+ 	"freeblks",	/* 86 M_FREEBLKS */ \
+ 	"freefile",	/* 87 M_FREEFILE */ \
+ 	"diradd",	/* 88 M_DIRADD */ \
+ 	"mkdir",	/* 89 M_MKDIR */ \
+ 	"dirrem",	/* 90 M_DIRREM */ \
+ 	"VM page bucket", /* 91 M_VMPBUCKET */ \
 	"VM swap",	/* 92 M_VMSWAP */ \
-	NULL, NULL, NULL, NULL, NULL, \
+	"IPv6 discq",	/* 93 M_DISCQ */ \
+	"IPv6 fragq",	/* 94 M_FRAGQ */ \
+	"Sec Assoc",	/* 95 M_SECA */ \
+	"IPv6 if info",	/* 96 M_I6IFP */ \
+	"RaidFrame data", /* 97 M_RAIDFRAME */ \
 	"UVM amap",	/* 98 M_UVMAMAP */ \
 	"UVM aobj",	/* 99 M_UVMAOBJ */ \
-	NULL, \
+	"pool",		/* 100 M_POOL */ \
 	"USB",		/* 101 M_USB */ \
 	"USB device",	/* 102 M_USBDEV */ \
 	"USB HC",	/* 103 M_USBHC */ \
-	NULL, \
-	"memdesc",	/* 105 M_MEMDESC */ \
-	NULL,	/* 106 */ \
-	NULL, \
-	"crypto data",	/* 108 M_CRYPTO_DATA */ \
-	NULL, \
-	"IPsec creds",	/* 110 M_CREDENTIALS */ \
-	NULL, \
-	NULL, \
-	NULL, \
-	"emuldata",	/* 114 M_EMULDATA */ \
-	NULL, NULL, NULL, NULL, \
-	NULL, NULL, NULL, NULL, \
-	"ip6_options",	/* 123 M_IP6OPT */ \
-	"NDP",		/* 124 M_IP6NDP */ \
-	NULL, \
-	NULL, \
+	NULL, NULL, NULL, \
+	NULL, NULL, NULL, NULL, NULL, \
+	NULL, NULL, NULL, NULL, NULL, \
+	NULL, NULL, NULL, NULL, NULL, \
+	NULL, NULL, NULL, NULL, NULL, \
 	"temp",		/* 127 M_TEMP */ \
-	"NTFS mount",	/* 128 M_NTFSMNT */ \
-	"NTFS node",	/* 129 M_NTFSNTNODE */ \
-	"NTFS fnode",	/* 130 M_NTFSFNODE */ \
-	"NTFS dir",	/* 131 M_NTFSDIR */ \
-	"NTFS hash",	/* 132 M_NTFSNTHASH */ \
-	"NTFS attr",	/* 133 M_NTFSNTVATTR */ \
-	"NTFS data",	/* 134 M_NTFSRDATA */ \
-	"NTFS decomp",	/* 135 M_NTFSDECOMP */ \
-	"NTFS vrun",	/* 136 M_NTFSRUN */ \
-	"kqueue",	/* 137 M_KEVENT */ \
-	NULL,	/* 138 free */ \
-	"SYN cache",	/* 139 M_SYNCACHE */ \
-	"UDF mount",	/* 140 M_UDFMOUNT */ \
-	"UDF file entry",	/* 141 M_UDFFENTRY */ \
-	"UDF file id",	/* 142 M_UDFFID */ \
-	NULL,	/* 143 free */ \
-	"AGP Memory",	/* 144 M_AGP */ \
-	"DRM",	/* 145 M_DRM */ \
 }
 
 struct kmemstats {
@@ -341,78 +300,109 @@ struct kmemusage {
 #define	ku_freecnt ku_un.freecnt
 #define	ku_pagecnt ku_un.pagecnt
 
-struct kmem_freelist;
-
 /*
  * Set of buckets for each size of memory block that is retained
  */
 struct kmembuckets {
-	XSIMPLEQ_HEAD(, kmem_freelist) kb_freelist; /* list of free blocks */
-	u_int64_t kb_calls;	/* total calls to allocate this size */
-	u_int64_t kb_total;	/* total number of blocks allocated */
-	u_int64_t kb_totalfree;	/* # of free elements in this bucket */
-	u_int64_t kb_elmpercl;	/* # of elements in this sized allocation */
-	u_int64_t kb_highwat;	/* high water mark */
-	u_int64_t kb_couldfree;	/* over high water mark and could free */
+	caddr_t kb_next;	/* list of free blocks */
+	caddr_t kb_last;	/* last free block */
+	long	kb_calls;	/* total calls to allocate this size */
+	long	kb_total;	/* total number of blocks allocated */
+	long	kb_totalfree;	/* # of free elements in this bucket */
+	long	kb_elmpercl;	/* # of elements in this sized allocation */
+	long	kb_highwat;	/* high water mark */
+	long	kb_couldfree;	/* over high water mark and could free */
 };
 
-/*
- * Constants for setting the parameters of the kernel memory allocator.
- *
- * 2 ** MINBUCKET is the smallest unit of memory that will be
- * allocated. It must be at least large enough to hold a pointer.
- *
- * Units of memory less or equal to MAXALLOCSAVE will permanently
- * allocate physical memory; requests for these size pieces of
- * memory are quite fast. Allocations greater than MAXALLOCSAVE must
- * always allocate and free physical memory; requests for these
- * size allocations should be done infrequently as they will be slow.
- *
- * Constraints: PAGE_SIZE <= MAXALLOCSAVE <= 2 ** (MINBUCKET + 14), and
- * MAXALLOCSIZE must be a power of two.
- */
-#define MINBUCKET	4		/* 4 => min allocation of 16 bytes */
-
 #ifdef _KERNEL
-
 #define	MINALLOCSIZE	(1 << MINBUCKET)
-#define	MAXALLOCSAVE	(2 * PAGE_SIZE)
+#define	BUCKETINDX(size) \
+	((size) <= (MINALLOCSIZE * 128) \
+		? (size) <= (MINALLOCSIZE * 8) \
+			? (size) <= (MINALLOCSIZE * 2) \
+				? (size) <= (MINALLOCSIZE * 1) \
+					? (MINBUCKET + 0) \
+					: (MINBUCKET + 1) \
+				: (size) <= (MINALLOCSIZE * 4) \
+					? (MINBUCKET + 2) \
+					: (MINBUCKET + 3) \
+			: (size) <= (MINALLOCSIZE* 32) \
+				? (size) <= (MINALLOCSIZE * 16) \
+					? (MINBUCKET + 4) \
+					: (MINBUCKET + 5) \
+				: (size) <= (MINALLOCSIZE * 64) \
+					? (MINBUCKET + 6) \
+					: (MINBUCKET + 7) \
+		: (size) <= (MINALLOCSIZE * 2048) \
+			? (size) <= (MINALLOCSIZE * 512) \
+				? (size) <= (MINALLOCSIZE * 256) \
+					? (MINBUCKET + 8) \
+					: (MINBUCKET + 9) \
+				: (size) <= (MINALLOCSIZE * 1024) \
+					? (MINBUCKET + 10) \
+					: (MINBUCKET + 11) \
+			: (size) <= (MINALLOCSIZE * 8192) \
+				? (size) <= (MINALLOCSIZE * 4096) \
+					? (MINBUCKET + 12) \
+					: (MINBUCKET + 13) \
+				: (size) <= (MINALLOCSIZE * 16384) \
+					? (MINBUCKET + 14) \
+					: (MINBUCKET + 15))
 
 /*
- * Turn virtual addresses into kmem map indices
+ * Turn virtual addresses into kmem map indicies
  */
-#define	kmemxtob(alloc)	(kmembase + (alloc) * PAGE_SIZE)
-#define	btokmemx(addr)	(((caddr_t)(addr) - kmembase) / PAGE_SIZE)
-#define	btokup(addr)	(&kmemusage[((caddr_t)(addr) - kmembase) >> PAGE_SHIFT])
+#define	kmemxtob(alloc)	(kmembase + (alloc) * NBPG)
+#define	btokmemx(addr)	(((caddr_t)(addr) - kmembase) / NBPG)
+#define	btokup(addr)	(&kmemusage[((caddr_t)(addr) - kmembase) >> CLSHIFT])
+
+/*
+ * Macro versions for the usual cases of malloc/free
+ */
+#if defined(KMEMSTATS) || defined(DIAGNOSTIC) || defined(_LKM)
+#define	MALLOC(space, cast, size, type, flags) \
+	(space) = (cast)malloc((u_long)(size), type, flags)
+#define	FREE(addr, type) free((caddr_t)(addr), type)
+
+#else /* do not collect statistics */
+#define	MALLOC(space, cast, size, type, flags) do { \
+	register struct kmembuckets *kbp = &bucket[BUCKETINDX(size)]; \
+	long s = splimp(); \
+	if (kbp->kb_next == NULL) { \
+		(space) = (cast)malloc((u_long)(size), type, flags); \
+	} else { \
+		(space) = (cast)kbp->kb_next; \
+		kbp->kb_next = *(caddr_t *)(space); \
+	} \
+	splx(s); \
+} while (0)
+
+#define	FREE(addr, type) do { \
+	register struct kmembuckets *kbp; \
+	register struct kmemusage *kup = btokup(addr); \
+	long s = splimp(); \
+	if (1 << kup->ku_indx > MAXALLOCSAVE) { \
+		free((caddr_t)(addr), type); \
+	} else { \
+		kbp = &bucket[kup->ku_indx]; \
+		if (kbp->kb_next == NULL) \
+			kbp->kb_next = (caddr_t)(addr); \
+		else \
+			*(caddr_t *)(kbp->kb_last) = (caddr_t)(addr); \
+		*(caddr_t *)(addr) = NULL; \
+		kbp->kb_last = (caddr_t)(addr); \
+	} \
+	splx(s); \
+} while(0)
+#endif /* do not collect statistics */
 
 extern struct kmemstats kmemstats[];
 extern struct kmemusage *kmemusage;
 extern char *kmembase;
 extern struct kmembuckets bucket[];
 
-void	*malloc(size_t, int, int);
-void	*mallocarray(size_t, size_t, int, int);
-void	free(void *, int, size_t);
-int	sysctl_malloc(int *, u_int, void *, size_t *, void *, size_t,
-	    struct proc *);
+extern void *malloc __P((unsigned long size, int type, int flags));
+extern void free __P((void *addr, int type));
 
-size_t malloc_roundup(size_t);
-void	malloc_printit(int (*)(const char *, ...));
-
-void	poison_mem(void *, size_t);
-int	poison_check(void *, size_t, size_t *, uint32_t *);
-uint32_t poison_value(void *);
-
-#ifdef MALLOC_DEBUG
-int	debug_malloc(unsigned long, int, int, void **);
-int	debug_free(void *, int);
-void	debug_malloc_init(void);
-void	debug_malloc_assert_allocated(void *, const char *);
-#define DEBUG_MALLOC_ASSERT_ALLOCATED(addr) 			\
-	debug_malloc_assert_allocated(addr, __func__)
-
-void	debug_malloc_print(void);
-void	debug_malloc_printit(int (*)(const char *, ...), vaddr_t);
-#endif /* MALLOC_DEBUG */
 #endif /* _KERNEL */
 #endif /* !_SYS_MALLOC_H_ */

@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_termcap.c,v 1.10 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_termcap.c,v 1.2 1999/03/02 06:23:29 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,36 +31,25 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
- *                                                                          *
- * some of the code in here was contributed by:                             *
- * Magnus Bengtsson, d6mbeng@dtek.chalmers.se (Nov'93)                      *
- * (but it has changed a lot)                                               *
  ****************************************************************************/
 
-#define __INTERNAL_CAPS_VISIBLE
 #include <curses.priv.h>
 
 #include <termcap.h>
 #include <tic.h>
-#include <ctype.h>
 
+#define __INTERNAL_CAPS_VISIBLE
 #include <term_entry.h>
 
-MODULE_ID("$Id: lib_termcap.c,v 1.10 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_termcap.c,v 1.28 1999/02/27 22:12:58 tom Exp $")
 
-NCURSES_EXPORT_VAR(char *) UP = 0;
-NCURSES_EXPORT_VAR(char *) BC = 0;
+/*
+   some of the code in here was contributed by:
+   Magnus Bengtsson, d6mbeng@dtek.chalmers.se
+*/
 
-#define MyCache  _nc_globals.tgetent_cache
-#define CacheInx _nc_globals.tgetent_index
-#define CacheSeq _nc_globals.tgetent_sequence
-
-#define FIX_SGR0 MyCache[CacheInx].fix_sgr0
-#define LAST_TRM MyCache[CacheInx].last_term
-#define LAST_BUF MyCache[CacheInx].last_bufp
-#define LAST_USE MyCache[CacheInx].last_used
-#define LAST_SEQ MyCache[CacheInx].sequence
+char *UP;
+char *BC;
 
 /***************************************************************************
  *
@@ -77,97 +66,29 @@ NCURSES_EXPORT_VAR(char *) BC = 0;
  *
  ***************************************************************************/
 
-NCURSES_EXPORT(int)
-tgetent(char *bufp, const char *name)
+int tgetent(char *bufp GCC_UNUSED, const char *name)
 {
-    int errcode;
-    int n;
-    bool found_cache = FALSE;
+int errcode;
 
-    START_TRACE();
-    T((T_CALLED("tgetent()")));
+	T((T_CALLED("tgetent()")));
 
-    _nc_setupterm((NCURSES_CONST char *) name, STDOUT_FILENO, &errcode, TRUE);
+	setupterm((NCURSES_CONST char *)name, STDOUT_FILENO, &errcode);
 
-    /*
-     * In general we cannot tell if the fixed sgr0 is still used by the
-     * caller, but if tgetent() is called with the same buffer, that is
-     * good enough, since the previous data would be invalidated by the
-     * current call.
-     *
-     * bufp may be a null pointer, e.g., GNU termcap.  That allocates data,
-     * which is good until the next tgetent() call.  The conventional termcap
-     * is inconvenient because of the fixed buffer size, but because it uses
-     * caller-supplied buffers, can have multiple terminal descriptions in
-     * use at a given time.
-     */
-    for (n = 0; n < TGETENT_MAX; ++n) {
-	bool same_result = (MyCache[n].last_used && MyCache[n].last_bufp == bufp);
-	if (same_result) {
-	    CacheInx = n;
-	    if (FIX_SGR0 != 0) {
-		FreeAndNull(FIX_SGR0);
-	    }
-	    /*
-	     * Also free the terminfo data that we loaded (much bigger leak).
-	     */
-	    if (LAST_TRM != 0 && LAST_TRM != cur_term) {
-		TERMINAL *trm = LAST_TRM;
-		del_curterm(LAST_TRM);
-		for (CacheInx = 0; CacheInx < TGETENT_MAX; ++CacheInx)
-		    if (LAST_TRM == trm)
-			LAST_TRM = 0;
-		CacheInx = n;
-	    }
-	    found_cache = TRUE;
-	    break;
-	}
-    }
-    if (!found_cache) {
-	int best = 0;
+	if (errcode == 1) {
 
-	for (CacheInx = 0; CacheInx < TGETENT_MAX; ++CacheInx) {
-	    if (LAST_SEQ < MyCache[best].sequence) {
-		best = CacheInx;
-	    }
-	}
-	CacheInx = best;
-    }
-    LAST_TRM = cur_term;
-    LAST_SEQ = ++CacheSeq;
+		if (cursor_left)
+		    if ((backspaces_with_bs = !strcmp(cursor_left, "\b")) == 0)
+			backspace_if_not_bs = cursor_left;
 
-    PC = 0;
-    UP = 0;
-    BC = 0;
-    FIX_SGR0 = 0;		/* don't free it - application may still use */
+		/* we're required to export these */
+		if (pad_char != NULL)
+			PC = pad_char[0];
+		if (cursor_up != NULL)
+			UP = cursor_up;
+		if (backspace_if_not_bs != NULL)
+			BC = backspace_if_not_bs;
 
-    if (errcode == 1) {
-
-	if (cursor_left)
-	    if ((backspaces_with_bs = (char) !strcmp(cursor_left, "\b")) == 0)
-		backspace_if_not_bs = cursor_left;
-
-	/* we're required to export these */
-	if (pad_char != NULL)
-	    PC = pad_char[0];
-	if (cursor_up != NULL)
-	    UP = cursor_up;
-	if (backspace_if_not_bs != NULL)
-	    BC = backspace_if_not_bs;
-
-	if ((FIX_SGR0 = _nc_trim_sgr0(&(cur_term->type))) != 0) {
-	    if (!strcmp(FIX_SGR0, exit_attribute_mode)) {
-		if (FIX_SGR0 != exit_attribute_mode) {
-		    free(FIX_SGR0);
-		}
-		FIX_SGR0 = 0;
-	    }
-	}
-	LAST_BUF = bufp;
-	LAST_USE = TRUE;
-
-	SetNoPadding(SP);
-	(void) baudrate();	/* sets ospeed as a side-effect */
+		(void) baudrate();	/* sets ospeed as a side-effect */
 
 /* LINT_PREPRO
 #if 0*/
@@ -175,8 +96,8 @@ tgetent(char *bufp, const char *name)
 /* LINT_PREPRO
 #endif*/
 
-    }
-    returnCode(errcode);
+	}
+	returnCode(errcode);
 }
 
 /***************************************************************************
@@ -188,23 +109,22 @@ tgetent(char *bufp, const char *name)
  *
  ***************************************************************************/
 
-NCURSES_EXPORT(int)
-tgetflag(NCURSES_CONST char *id)
+int tgetflag(NCURSES_CONST char *id)
 {
-    unsigned i;
+int i;
 
-    T((T_CALLED("tgetflag(%s)"), id));
-    if (cur_term != 0) {
-	TERMTYPE *tp = &(cur_term->type);
-	for_each_boolean(i, tp) {
-	    const char *capname = ExtBoolname(tp, i, boolcodes);
-	    if (!strncmp(id, capname, 2)) {
-		/* setupterm forces invalid booleans to false */
-		returnCode(tp->Booleans[i]);
+	T((T_CALLED("tgetflag(%s)"), id));
+	if (cur_term != 0) {
+	    TERMTYPE *tp = &(cur_term->type);
+	    for_each_boolean(i, tp) {
+		const char *capname = ExtBoolname(tp, i, boolcodes);
+		if (!strncmp(id, capname, 2)) {
+		    /* setupterm forces invalid booleans to false */
+		    returnCode(tp->Booleans[i]);
+		}
 	    }
 	}
-    }
-    returnCode(0);		/* Solaris does this */
+	returnCode(0);	/* Solaris does this */
 }
 
 /***************************************************************************
@@ -216,24 +136,23 @@ tgetflag(NCURSES_CONST char *id)
  *
  ***************************************************************************/
 
-NCURSES_EXPORT(int)
-tgetnum(NCURSES_CONST char *id)
+int tgetnum(NCURSES_CONST char *id)
 {
-    unsigned i;
+int i;
 
-    T((T_CALLED("tgetnum(%s)"), id));
-    if (cur_term != 0) {
-	TERMTYPE *tp = &(cur_term->type);
-	for_each_number(i, tp) {
-	    const char *capname = ExtNumname(tp, i, numcodes);
-	    if (!strncmp(id, capname, 2)) {
-		if (!VALID_NUMERIC(tp->Numbers[i]))
-		    returnCode(ABSENT_NUMERIC);
-		returnCode(tp->Numbers[i]);
+	T((T_CALLED("tgetnum(%s)"), id));
+	if (cur_term != 0) {
+	    TERMTYPE *tp = &(cur_term->type);
+	    for_each_number(i, tp) {
+		const char *capname = ExtNumname(tp, i, numcodes);
+		if (!strncmp(id, capname, 2)) {
+		    if (!VALID_NUMERIC(tp->Numbers[i]))
+			return -1;
+		    returnCode(tp->Numbers[i]);
+		}
 	    }
 	}
-    }
-    returnCode(ABSENT_NUMERIC);
+	returnCode(ERR);
 }
 
 /***************************************************************************
@@ -245,50 +164,37 @@ tgetnum(NCURSES_CONST char *id)
  *
  ***************************************************************************/
 
-NCURSES_EXPORT(char *)
-tgetstr(NCURSES_CONST char *id, char **area)
+char *tgetstr(NCURSES_CONST char *id, char **area GCC_UNUSED)
 {
-    unsigned i;
-    char *result = NULL, *base;
+int i;
 
-    if (area != 0 && *area != 0)
-        base = *area;
-    T((T_CALLED("tgetstr(%s,%p)"), id, area));
-    if (cur_term != 0) {
-	TERMTYPE *tp = &(cur_term->type);
-	for_each_string(i, tp) {
-	    const char *capname = ExtStrname(tp, i, strcodes);
-	    if (!strncmp(id, capname, 2)) {
-		result = tp->Strings[i];
-		TR(TRACE_DATABASE, ("found match : %s", _nc_visbuf(result)));
-		/* setupterm forces canceled strings to null */
-		if (VALID_STRING(result)) {
-		    if (result == exit_attribute_mode
-			&& FIX_SGR0 != 0) {
-			result = FIX_SGR0;
-			TR(TRACE_DATABASE, ("altered to : %s", _nc_visbuf(result)));
-		    }
-		    if (area != 0 && *area != 0) {
-			(void) strlcpy(*area, result, 1024 - (*area - base));
-			result = *area;
-			*area += strlen(*area) + 1;
-		    }
+	T((T_CALLED("tgetstr(%s,%p)"), id, area));
+	if (cur_term != 0) {
+	    TERMTYPE *tp = &(cur_term->type);
+	    for_each_string(i, tp) {
+		const char *capname = ExtStrname(tp, i, strcodes);
+		T(("trying %s", capname));
+		if (!strncmp(id, capname, 2)) {
+		    T(("found match : %s", _nc_visbuf(tp->Strings[i])));
+		    /* setupterm forces cancelled strings to null */
+		    returnPtr(tp->Strings[i]);
 		}
-		break;
 	    }
 	}
-    }
-    returnPtr(result);
+	returnPtr(NULL);
 }
 
-#if NO_LEAKS
-NCURSES_EXPORT(void)
-_nc_tgetent_leaks(void)
+/*
+ *	char *
+ *	tgoto(string, x, y)
+ *
+ *	Retained solely for upward compatibility.  Note the intentional
+ *	reversing of the last two arguments.
+ *
+ */
+
+char *tgoto(const char *string, int x, int y)
 {
-    for (CacheInx = 0; CacheInx < TGETENT_MAX; ++CacheInx) {
-	FreeIfNeeded(FIX_SGR0);
-	if (LAST_TRM != 0)
-	    del_curterm(LAST_TRM);
-    }
+	T((T_CALLED("tgoto(%s,%d,%d)"), string, x, y));
+	returnPtr(tparm((NCURSES_CONST char *)string, y, x));
 }
-#endif

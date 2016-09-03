@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.22 2016/08/27 02:00:10 guenther Exp $	*/
+/*	$OpenBSD: main.c,v 1.6 1998/11/29 19:56:57 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.3 1995/04/24 12:24:37 cgd Exp $	*/
 
 /*
@@ -28,22 +28,11 @@
  * AT&T is in no way connected with this game.
  */
 
-#include <curses.h>
-#include <err.h>
-#include <math.h>
+#include <sys/types.h>
 #include <pwd.h>
-#include <stdlib.h>
-#include <string.h>
 #ifdef TERMIOS
 #include <termios.h>
 #endif
-#include <time.h>
-#include <unistd.h>
-
-#include "macros.h"
-#include "pathnames.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
 
 /*
  * The program allocates as much file space as it needs to store characters,
@@ -65,9 +54,13 @@
  * to be updated.
  */
 
+/**/
+
 /*
  * main.c	Main routines for Phantasia
  */
+
+#include "include.h"
 
 /***************************************************************************
 / FUNCTION NAME: main()
@@ -86,8 +79,8 @@
 /	throneroom(), checkbattle(), readmessage(), changestats(), writerecord(), 
 /	tradingpost(), adjuststats(), recallplayer(), displaystats(), checktampered(), 
 /	fabs(), rollnewplayer(), time(), exit(), sqrt(), floor(), wmove(), 
-/	signal(), strlcat(), purgeoldplayers(), getuid(), isatty(), wclear(), 
-/	strlcpy(), system(), altercoordinates(), cleanup(), waddstr(), procmain(), 
+/	signal(), strcat(), purgeoldplayers(), getuid(), isatty(), wclear(), 
+/	strcpy(), system(), altercoordinates(), cleanup(), waddstr(), procmain(), 
 /	playinit(), leavegame(), localtime(), getanswer(), neatstuff(), initialstate(), 
 /	scorelist(), titlelist()
 /
@@ -103,7 +96,9 @@
 ****************************************************************************/
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+	int     argc;
+	char  **argv;
 {
 	bool    noheader = FALSE;	/* set if don't want header */
 	bool    headeronly = FALSE;	/* set if only want header */
@@ -127,10 +122,12 @@ main(int argc, char **argv)
 		case 'a':	/* all users */
 			activelist();
 			cleanup(TRUE);
+			/* NOTREACHED */
 
 		case 'p':	/* purge old players */
 			purgeoldplayers();
 			cleanup(TRUE);
+			/* NOTREACHED */
 
 		case 'S':	/* set 'Wizard' */
 			Wizard = !getuid();
@@ -143,20 +140,24 @@ main(int argc, char **argv)
 		case 'm':	/* monsters */
 			monstlist();
 			cleanup(TRUE);
+			/* NOTREACHED */
 
 		case 'b':	/* scoreboard */
 			scorelist();
 			cleanup(TRUE);
+			/* NOTREACHED */
 		}
 
 	if (!isatty(0))		/* don't let non-tty's play */
 		cleanup(TRUE);
+	/* NOTREACHED */
 
 	playinit();		/* set up to catch signals, init curses */
 
 	if (examine) {
 		changestats(FALSE);
 		cleanup(TRUE);
+		/* NOTREACHED */
 	}
 	if (!noheader) {
 		titlelist();
@@ -164,6 +165,7 @@ main(int argc, char **argv)
 	}
 	if (headeronly)
 		cleanup(TRUE);
+	/* NOTREACHED */
 
 	do
 		/* get the player structure filled */
@@ -179,6 +181,7 @@ main(int argc, char **argv)
 
 		case 'Q':
 			cleanup(TRUE);
+			/* NOTREACHED */
 
 		default:
 			Fileloc = rollnewplayer();
@@ -193,13 +196,27 @@ main(int argc, char **argv)
 		Timeout = TRUE;
 
 	/* update some important player statistics */
-	strlcpy(Player.p_login, Login, LOGIN_NAME_MAX);
+	strcpy(Player.p_login, Login);
 	time(&seconds);
 	Player.p_lastused = localtime(&seconds)->tm_yday;
 	Player.p_status = S_PLAYING;
 	writerecord(&Player, Fileloc);
 
 	Statptr = &Stattable[Player.p_type];	/* initialize pointer */
+
+	/* catch interrupts */
+#ifdef	BSD41
+	sigset(SIGINT, interrupt);
+#endif
+#ifdef	BSD42
+	signal(SIGINT, interrupt);
+#endif
+#ifdef	SYS3
+	signal(SIGINT, interrupt);
+#endif
+#ifdef	SYS5
+	signal(SIGINT, interrupt);
+#endif
 
 	altercoordinates(Player.p_x, Player.p_y, A_FORCED);	/* set some flags */
 
@@ -297,7 +314,8 @@ main(int argc, char **argv)
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: fopen(), error(), getuid(), getlogin(), getpwuid()
+/ MODULES CALLED: time(), fopen(), srandom(), error(), getuid(), getlogin(), 
+/	getpwuid()
 /
 / GLOBAL INPUTS: 
 /
@@ -311,7 +329,7 @@ main(int argc, char **argv)
 *************************************************************************/
 
 void
-initialstate(void)
+initialstate()
 {
 #ifdef TERMIOS
     struct termios tty;
@@ -327,17 +345,6 @@ initialstate(void)
 	Windows = FALSE;
 	Echo = TRUE;
 
-	/* setup login name */
-	if ((Login = getlogin()) == NULL) {
-		struct passwd *gpwd;
-
-		gpwd = getpwuid(getuid());
-		if (gpwd != NULL)
-			Login = gpwd->pw_name;
-		else
-			errx(1, "Who are you?");
-	}
-
 #ifdef TERMIOS
 	/* setup terminal keys */
 	if (tcgetattr(0, &tty) == 0) {
@@ -352,18 +359,28 @@ initialstate(void)
 	Ch_Kill = CH_KILL;
 #endif
 
+	/* setup login name */
+	if ((Login = getlogin()) == NULL)
+		Login = getpwuid(getuid())->pw_name;
+
 	/* open some files */
 	if ((Playersfp = fopen(_PATH_PEOPLE, "r+")) == NULL)
 		error(_PATH_PEOPLE);
+	/* NOTREACHED */
 
 	if ((Monstfp = fopen(_PATH_MONST, "r+")) == NULL)
 		error(_PATH_MONST);
+	/* NOTREACHED */
 
 	if ((Messagefp = fopen(_PATH_MESS, "r")) == NULL)
 		error(_PATH_MESS);
+	/* NOTREACHED */
 
 	if ((Energyvoidfp = fopen(_PATH_VOID, "r+")) == NULL)
 		error(_PATH_VOID);
+	/* NOTREACHED */
+
+	srandom((unsigned) time(NULL));	/* prime random numbers */
 }
 /**/
 /************************************************************************
@@ -392,7 +409,7 @@ initialstate(void)
 *************************************************************************/
 
 long
-rollnewplayer(void)
+rollnewplayer()
 {
 	int     chartype;	/* character type */
 	int     ch;		/* input */
@@ -509,7 +526,7 @@ rollnewplayer(void)
 *************************************************************************/
 
 void
-procmain(void)
+procmain()
 {
 	int     ch;		/* input */
 	double  x;		/* desired new x coordinate */
@@ -617,6 +634,7 @@ procmain(void)
 
 	case '5':		/* good-bye */
 		leavegame();
+		/* NOTREACHED */
 
 	case '6':		/* cloak */
 		if (Player.p_level < MEL_CLOAK || Player.p_magiclvl < ML_CLOAK)
@@ -729,8 +747,8 @@ procmain(void)
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: fread(), fseek(), fopen(), fgets(), wmove(), strlcpy(), 
-/	fclose(), strlen(), waddstr(), snprintf(), wrefresh()
+/ MODULES CALLED: fread(), fseek(), fopen(), fgets(), wmove(), strcpy(), 
+/	fclose(), strlen(), waddstr(), sprintf(), wrefresh()
 /
 / GLOBAL INPUTS: Lines, Other, *stdscr, Databuf[], *Playersfp
 /
@@ -742,7 +760,7 @@ procmain(void)
 *************************************************************************/
 
 void
-titlelist(void)
+titlelist()
 {
 	FILE   *fp;		/* used for opening various files */
 	bool    councilfound = FALSE;	/* set if we find a member of the
@@ -764,14 +782,13 @@ titlelist(void)
 		fclose(fp);
 	}
 	/* search for king */
-	fseek(Playersfp, 0L, SEEK_SET);
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+	fseek(Playersfp, 0L, 0);
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 		if (Other.p_specialtype == SC_KING &&
 		    Other.p_status != S_NOTUSED)
 			/* found the king */
 		{
-			snprintf(Databuf, sizeof Databuf,
-			    "The present ruler is %s  Level:%.0f",
+			sprintf(Databuf, "The present ruler is %s  Level:%.0f",
 			    Other.p_name, Other.p_level);
 			mvaddstr(4, 40 - strlen(Databuf) / 2, Databuf);
 			kingfound = TRUE;
@@ -781,21 +798,19 @@ titlelist(void)
 		mvaddstr(4, 24, "There is no ruler at this time.");
 
 	/* search for valar */
-	fseek(Playersfp, 0L, SEEK_SET);
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+	fseek(Playersfp, 0L, 0);
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 		if (Other.p_specialtype == SC_VALAR && Other.p_status != S_NOTUSED)
 			/* found the valar */
 		{
-			snprintf(Databuf, sizeof Databuf,
-			    "The Valar is %s   Login:  %s", Other.p_name,
-			    Other.p_login);
+			sprintf(Databuf, "The Valar is %s   Login:  %s", Other.p_name, Other.p_login);
 			mvaddstr(6, 40 - strlen(Databuf) / 2, Databuf);
 			break;
 		}
 	/* search for council of the wise */
-	fseek(Playersfp, 0L, SEEK_SET);
+	fseek(Playersfp, 0L, 0);
 	Lines = 10;
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 		if (Other.p_specialtype == SC_COUNCIL && Other.p_status != S_NOTUSED)
 			/* found a member of the council */
 		{
@@ -804,8 +819,7 @@ titlelist(void)
 				councilfound = TRUE;
 			}
 			/* This assumes a finite (<=5) number of C.O.W.: */
-			snprintf(Databuf, sizeof Databuf,
-			    "%s   Login:  %s", Other.p_name, Other.p_login);
+			sprintf(Databuf, "%s   Login:  %s", Other.p_name, Other.p_login);
 			mvaddstr(Lines++, 40 - strlen(Databuf) / 2, Databuf);
 		}
 	/* search for the two highest players */
@@ -813,8 +827,8 @@ titlelist(void)
 	hiexp = 0.0;
 	nxtlvl = hilvl = 0;
 
-	fseek(Playersfp, 0L, SEEK_SET);
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+	fseek(Playersfp, 0L, 0);
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 		if (Other.p_experience > hiexp && Other.p_specialtype <= SC_KING && Other.p_status != S_NOTUSED)
 			/* highest found so far */
 		{
@@ -822,8 +836,8 @@ titlelist(void)
 			hiexp = Other.p_experience;
 			nxtlvl = hilvl;
 			hilvl = Other.p_level;
-			strlcpy(nxtname, hiname, sizeof nxtname);
-			strlcpy(hiname, Other.p_name, sizeof hiname);
+			strcpy(nxtname, hiname);
+			strcpy(hiname, Other.p_name);
 		} else
 			if (Other.p_experience > nxtexp
 			    && Other.p_specialtype <= SC_KING
@@ -832,11 +846,10 @@ titlelist(void)
 			{
 				nxtexp = Other.p_experience;
 				nxtlvl = Other.p_level;
-				strlcpy(nxtname, Other.p_name, sizeof nxtname);
+				strcpy(nxtname, Other.p_name);
 			}
 	mvaddstr(15, 28, "Highest characters are:");
-	snprintf(Databuf, sizeof Databuf,
-	    "%s  Level:%.0f   and   %s  Level:%.0f",
+	sprintf(Databuf, "%s  Level:%.0f   and   %s  Level:%.0f",
 	    hiname, hilvl, nxtname, nxtlvl);
 	mvaddstr(17, 40 - strlen(Databuf) / 2, Databuf);
 
@@ -876,7 +889,7 @@ titlelist(void)
 *************************************************************************/
 
 long
-recallplayer(void)
+recallplayer()
 {
 	long    loc = 0L;	/* location in player file */
 	int     loop;		/* loop counter */
@@ -916,8 +929,10 @@ recallplayer(void)
 						Player.p_status = S_HUNGUP;
 						writerecord(&Player, loc);
 						cleanup(TRUE);
+						/* NOTREACHED */
 					}
 					death("Stupidity");
+					/* NOTREACHED */
 				}
 				return (loc);
 			} else
@@ -957,7 +972,7 @@ recallplayer(void)
 *************************************************************************/
 
 void
-neatstuff(void)
+neatstuff()
 {
 	double  temp;		/* for temporary calculations */
 	int     ch;		/* input */
@@ -1081,7 +1096,8 @@ neatstuff(void)
 *************************************************************************/
 
 void
-genchar(int type)
+genchar(type)
+	int     type;
 {
 	int     subscript;	/* used for subscripting into Stattable */
 	struct charstats *statptr;	/* for pointing into Stattable */
@@ -1128,7 +1144,7 @@ genchar(int type)
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: signal(), wclear(), noecho(), cbreak(), initscr(), 
+/ MODULES CALLED: signal(), wclear(), noecho(), crmode(), initscr(), 
 /	wrefresh()
 /
 / GLOBAL INPUTS: *stdscr, ill_sig()
@@ -1141,11 +1157,80 @@ genchar(int type)
 *************************************************************************/
 
 void
-playinit(void)
+playinit()
 {
+	/* catch/ignore signals */
+
+#ifdef	BSD41
+	sigignore(SIGQUIT);
+	sigignore(SIGALRM);
+	sigignore(SIGTERM);
+	sigignore(SIGTSTP);
+	sigignore(SIGTTIN);
+	sigignore(SIGTTOU);
+	sighold(SIGINT);
+	sigset(SIGHUP, ill_sig);
+	sigset(SIGTRAP, ill_sig);
+	sigset(SIGIOT, ill_sig);
+	sigset(SIGEMT, ill_sig);
+	sigset(SIGFPE, ill_sig);
+	sigset(SIGBUS, ill_sig);
+	sigset(SIGSEGV, ill_sig);
+	sigset(SIGSYS, ill_sig);
+	sigset(SIGPIPE, ill_sig);
+#endif
+#ifdef	BSD42
+	signal(SIGQUIT, ill_sig);
+	signal(SIGALRM, SIG_IGN);
+	signal(SIGTERM, SIG_IGN);
+	signal(SIGTSTP, SIG_IGN);
+	signal(SIGTTIN, SIG_IGN);
+	signal(SIGTTOU, SIG_IGN);
+	signal(SIGINT, ill_sig);
+	signal(SIGHUP, SIG_DFL);
+	signal(SIGTRAP, ill_sig);
+	signal(SIGIOT, ill_sig);
+	signal(SIGEMT, ill_sig);
+	signal(SIGFPE, ill_sig);
+	signal(SIGBUS, ill_sig);
+	signal(SIGSEGV, ill_sig);
+	signal(SIGSYS, ill_sig);
+	signal(SIGPIPE, ill_sig);
+#endif
+#ifdef	SYS3
+	signal(SIGINT, SIG_IGN);
+	signal(SIGQUIT, SIG_IGN);
+	signal(SIGTERM, SIG_IGN);
+	signal(SIGALRM, SIG_IGN);
+	signal(SIGHUP, ill_sig);
+	signal(SIGTRAP, ill_sig);
+	signal(SIGIOT, ill_sig);
+	signal(SIGEMT, ill_sig);
+	signal(SIGFPE, ill_sig);
+	signal(SIGBUS, ill_sig);
+	signal(SIGSEGV, ill_sig);
+	signal(SIGSYS, ill_sig);
+	signal(SIGPIPE, ill_sig);
+#endif
+#ifdef	SYS5
+	signal(SIGINT, SIG_IGN);
+	signal(SIGQUIT, SIG_IGN);
+	signal(SIGTERM, SIG_IGN);
+	signal(SIGALRM, SIG_IGN);
+	signal(SIGHUP, ill_sig);
+	signal(SIGTRAP, ill_sig);
+	signal(SIGIOT, ill_sig);
+	signal(SIGEMT, ill_sig);
+	signal(SIGFPE, ill_sig);
+	signal(SIGBUS, ill_sig);
+	signal(SIGSEGV, ill_sig);
+	signal(SIGSYS, ill_sig);
+	signal(SIGPIPE, ill_sig);
+#endif
+
 	initscr();		/* turn on curses */
 	noecho();		/* do not echo input */
-	cbreak();		/* do not process erase, kill */
+	crmode();		/* do not process erase, kill */
 	clear();
 	refresh();
 	Windows = TRUE;		/* mark the state */
@@ -1164,7 +1249,7 @@ playinit(void)
 /
 / RETURN VALUE: none
 /
-/ MODULES CALLED: exit(), wmove(), fclose(), endwin(), nocbreak(), wrefresh()
+/ MODULES CALLED: exit(), wmove(), fclose(), endwin(), nocrmode(), wrefresh()
 /
 / GLOBAL INPUTS: *Energyvoidfp, LINES, *stdscr, Windows, *Monstfp, 
 /	*Messagefp, *Playersfp
@@ -1178,12 +1263,13 @@ playinit(void)
 *************************************************************************/
 
 void
-cleanup(int doexit)
+cleanup(doexit)
+	int	doexit;
 {
 	if (Windows) {
 		move(LINES - 2, 0);
 		refresh();
-		nocbreak();
+		nocrmode();
 		endwin();
 	}
 

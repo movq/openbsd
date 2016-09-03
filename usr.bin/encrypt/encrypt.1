@@ -1,4 +1,4 @@
-.\"	$OpenBSD: encrypt.1,v 1.25 2014/12/24 22:04:26 tedu Exp $
+.\"	$OpenBSD: encrypt.1,v 1.12 1999/07/04 11:53:53 aaron Exp $
 .\"
 .\" Copyright (c) 1996, Jason Downs.  All rights reserved.
 .\"
@@ -23,7 +23,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: December 24 2014 $
+.Dd May 18, 1999
 .Dt ENCRYPT 1
 .Os
 .Sh NAME
@@ -31,43 +31,49 @@
 .Nd encrypt passwords from the command line or standard input
 .Sh SYNOPSIS
 .Nm encrypt
+.Op Fl k
 .Op Fl b Ar rounds
-.Op Fl c Ar class
+.Op Fl m
+.Op Fl s Ar salt
 .Op Fl p | Ar string
+.Nm makekey
 .Sh DESCRIPTION
 .Nm
 prints the encrypted form of
 .Ar string
-to the standard output.
-This is mostly useful for encrypting passwords from within scripts.
+to the standard output.  This is mostly useful for encrypting passwords
+from within scripts.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
+The following options are supported:
+.Bl -tag -width XxXXXXXXX
+.It Fl k
+Run in
+.Nm makekey
+compatible mode; a single combined key and salt are read from standard
+input and the DES encrypted result is written to standard output without a
+terminating newline.
 .It Fl b Ar rounds
-Encrypt the string using Blowfish hashing with the specified number of
+Encrypt the string using Blowfish hashing with the specified
 .Ar rounds .
-May also specify 'a' to request a variable number of rounds scaled to the
-machine's CPU capabilities.
-.It Fl c Ar class
-Use the cipher type specified in the given user login class.
-See
-.Xr login.conf 5
-for more information.
+.It Fl m
+Encrypt the string using MD5.
 .It Fl p
 Prompt for a single string with echo turned off.
+.It Fl s Ar salt
+Encrypt the string using DES, with the specified
+.Ar salt .
 .El
 .Pp
 If no
 .Ar string
 is specified,
 .Nm
-reads one string per line from standard input, encrypting each one.
-In the case where no specific algorithm or specific user login class was given
-as a command line option, the algorithm specified in the default class in
-.Pa /etc/login.conf
-will be used.
+reads one string per line from standard input, encrypting each one
+with the chosen algorithm from above. In case that no specific algorithm
+was given as a command line option, the default will be looked up from
+.Pa /etc/passwd.conf .
 .Pp
-For Blowfish, a new random salt is automatically generated for each
+For MD5 and Blowfish a new random salt is automatically generated for each
 password.
 .Pp
 Specifying the
@@ -75,13 +81,19 @@ Specifying the
 on the command line should be discouraged; using the
 standard input is more secure.
 .Sh FILES
-.Bl -tag -width /etc/login.conf -compact
-.It Pa /etc/login.conf
+.Bl -tag -width /etc/passwd.conf -compact
+.It Pa /etc/passwd.conf
 .El
 .Sh SEE ALSO
-.Xr crypt_newhash 3 ,
-.Xr login.conf 5
+.Xr crypt 3 ,
+.Xr pw_getconf 3 ,
+.Xr passwd.conf 5
 .Sh HISTORY
 .Nm
 first appeared in
 .Ox 1.2 .
+.Pp
+A
+.Nm makekey
+command appeared in
+.At v7 .

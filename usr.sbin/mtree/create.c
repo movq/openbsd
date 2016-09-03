@@ -1,5 +1,5 @@
 /*	$NetBSD: create.c,v 1.11 1996/09/05 09:24:19 mycroft Exp $	*/
-/*	$OpenBSD: create.c,v 1.32 2016/08/16 16:41:46 krw Exp $	*/
+/*	$OpenBSD: create.c,v 1.11 1997/11/05 20:31:26 flipk Exp $	*/
 
 /*-
  * Copyright (c) 1989, 1993
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)create.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: create.c,v 1.11 1997/11/05 20:31:26 flipk Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <fcntl.h>
@@ -39,14 +52,10 @@
 #include <pwd.h>
 #include <errno.h>
 #include <unistd.h>
-#include <limits.h>
 #include <stdio.h>
-#include <stdarg.h>
-#include <vis.h>
 #include <md5.h>
-#include <rmd160.h>
 #include <sha1.h>
-#include <sha2.h>
+#include <rmd160.h>
 #include "mtree.h"
 #include "extern.h"
 
@@ -57,24 +66,24 @@ extern u_int32_t crc_total;
 extern int ftsoptions;
 extern int dflag, iflag, nflag, sflag;
 extern u_int keys;
-extern char fullpath[PATH_MAX];
+extern char fullpath[MAXPATHLEN];
 
 static gid_t gid;
 static uid_t uid;
 static mode_t mode;
 
-static void	output(int, int *, const char *, ...)
-		    __attribute__((__format__ (printf, 3, 4)));
-static int	statd(FTS *, FTSENT *, uid_t *, gid_t *, mode_t *);
-static void	statf(int, FTSENT *);
+static int	dsort __P((const FTSENT **, const FTSENT **));
+static void	output __P((int, int *, const char *, ...));
+static int	statd __P((FTS *, FTSENT *, uid_t *, gid_t *, mode_t *));
+static void	statf __P((int, FTSENT *));
 
 void
-cwalk(void)
+cwalk()
 {
-	FTS *t;
-	FTSENT *p;
+	register FTS *t;
+	register FTSENT *p;
 	time_t clock;
-	char *argv[2], host[HOST_NAME_MAX+1];
+	char *argv[2], host[MAXHOSTNAMELEN];
 	int indent = 0;
 
 	(void)time(&clock);
@@ -116,6 +125,7 @@ cwalk(void)
 			if (!dflag)
 				statf(indent, p);
 			break;
+			
 		}
 	}
 	(void)fts_close(t);
@@ -125,28 +135,19 @@ cwalk(void)
 }
 
 static void
-statf(int indent, FTSENT *p)
+statf(indent, p)
+	int indent;
+	FTSENT *p;
 {
 	struct group *gr;
 	struct passwd *pw;
 	u_int32_t len, val;
 	int fd, offset;
-	char *name, *escaped_name;
-	size_t esc_len;
-
-	esc_len = p->fts_namelen * 4 + 1;
-	escaped_name = malloc(esc_len);
-	if (escaped_name == NULL)
-		error("statf: %s", strerror(errno));
-	strnvis(escaped_name, p->fts_name, esc_len,
-	    VIS_WHITE | VIS_OCTAL | VIS_GLOB);
 
 	if (iflag || S_ISDIR(p->fts_statp->st_mode))
-		offset = printf("%*s%s", indent, "", escaped_name);
+		offset = printf("%*s%s", indent, "", p->fts_name);
 	else
-		offset = printf("%*s    %s", indent, "", escaped_name);
-
-	free(escaped_name);
+		offset = printf("%*s    %s", indent, "", p->fts_name);
 
 	if (offset > (INDENTNAMELEN + indent))
 		offset = MAXLINELEN;
@@ -184,21 +185,20 @@ statf(int indent, FTSENT *p)
 	if (keys & F_NLINK && p->fts_statp->st_nlink != 1)
 		output(indent, &offset, "nlink=%u", p->fts_statp->st_nlink);
 	if (keys & F_SIZE && S_ISREG(p->fts_statp->st_mode))
-		output(indent, &offset, "size=%lld",
-		    (long long)p->fts_statp->st_size);
+		output(indent, &offset, "size=%qd", p->fts_statp->st_size);
 	if (keys & F_TIME)
-		output(indent, &offset, "time=%lld.%ld",
-		    (long long)p->fts_statp->st_mtimespec.tv_sec,
+		output(indent, &offset, "time=%ld.%ld",
+		    p->fts_statp->st_mtimespec.tv_sec,
 		    p->fts_statp->st_mtimespec.tv_nsec);
 	if (keys & F_CKSUM && S_ISREG(p->fts_statp->st_mode)) {
-		if ((fd = open(p->fts_accpath, MTREE_O_FLAGS, 0)) < 0 ||
+		if ((fd = open(p->fts_accpath, O_RDONLY, 0)) < 0 ||
 		    crc(fd, &val, &len))
 			error("%s: %s", p->fts_accpath, strerror(errno));
 		(void)close(fd);
-		output(indent, &offset, "cksum=%u", val);
+		output(indent, &offset, "cksum=%lu", val);
 	}
 	if (keys & F_MD5 && S_ISREG(p->fts_statp->st_mode)) {
-		char *md5digest, buf[MD5_DIGEST_STRING_LENGTH];
+		char *md5digest, buf[33];
 
 		md5digest = MD5File(p->fts_accpath,buf);
 		if (!md5digest)
@@ -207,7 +207,7 @@ statf(int indent, FTSENT *p)
 			output(indent, &offset, "md5digest=%s", md5digest);
 	}
 	if (keys & F_RMD160 && S_ISREG(p->fts_statp->st_mode)) {
-		char *rmd160digest, buf[RMD160_DIGEST_STRING_LENGTH];
+		char *rmd160digest, buf[41];
 
 		rmd160digest = RMD160File(p->fts_accpath,buf);
 		if (!rmd160digest)
@@ -216,7 +216,7 @@ statf(int indent, FTSENT *p)
 			output(indent, &offset, "rmd160digest=%s", rmd160digest);
 	}
 	if (keys & F_SHA1 && S_ISREG(p->fts_statp->st_mode)) {
-		char *sha1digest, buf[SHA1_DIGEST_STRING_LENGTH];
+		char *sha1digest, buf[41];
 
 		sha1digest = SHA1File(p->fts_accpath,buf);
 		if (!sha1digest)
@@ -224,38 +224,9 @@ statf(int indent, FTSENT *p)
 		else
 			output(indent, &offset, "sha1digest=%s", sha1digest);
 	}
-	if (keys & F_SHA256 && S_ISREG(p->fts_statp->st_mode)) {
-		char *sha256digest, buf[SHA256_DIGEST_STRING_LENGTH];
-
-		sha256digest = SHA256File(p->fts_accpath,buf);
-		if (!sha256digest)
-			error("%s: %s", p->fts_accpath, strerror(errno));
-		else
-			output(indent, &offset, "sha256digest=%s", sha256digest);
-	}
 	if (keys & F_SLINK &&
-	    (p->fts_info == FTS_SL || p->fts_info == FTS_SLNONE)) {
-		name = rlink(p->fts_accpath);
-		esc_len = strlen(name) * 4 + 1;
-		escaped_name = malloc(esc_len);
-		if (escaped_name == NULL)
-			error("statf: %s", strerror(errno));
-		strnvis(escaped_name, name, esc_len, VIS_WHITE | VIS_OCTAL);
-		output(indent, &offset, "link=%s", escaped_name);
-		free(escaped_name);
-	}
-	if (keys & F_FLAGS && !S_ISLNK(p->fts_statp->st_mode)) {
-		char *file_flags;
-
-		file_flags = fflagstostr(p->fts_statp->st_flags);
-		if (file_flags == NULL)
-			error("%s", strerror(errno));
-		if (*file_flags != '\0')
-			output(indent, &offset, "flags=%s", file_flags);
-		else
-			output(indent, &offset, "flags=none");
-		free(file_flags);
-	}
+	    (p->fts_info == FTS_SL || p->fts_info == FTS_SLNONE))
+		output(indent, &offset, "link=%s", rlink(p->fts_accpath));
 	(void)putchar('\n');
 }
 
@@ -264,12 +235,17 @@ statf(int indent, FTSENT *p)
 #define	MAXMODE	MBITS + 1
 
 static int
-statd(FTS *t, FTSENT *parent, uid_t *puid, gid_t *pgid, mode_t *pmode)
+statd(t, parent, puid, pgid, pmode)
+	FTS *t;
+	FTSENT *parent;
+	uid_t *puid;
+	gid_t *pgid;
+	mode_t *pmode;
 {
-	FTSENT *p;
-	gid_t sgid;
-	uid_t suid;
-	mode_t smode;
+	register FTSENT *p;
+	register gid_t sgid;
+	register uid_t suid;
+	register mode_t smode;
 	struct group *gr;
 	struct passwd *pw;
 	gid_t savegid = *pgid;
@@ -326,20 +302,18 @@ statd(FTS *t, FTSENT *parent, uid_t *puid, gid_t *pgid, mode_t *pmode)
 			(void)printf("/set type=dir");
 		else
 			(void)printf("/set type=file");
-		if (keys & F_UNAME) {
+		if (keys & F_UNAME)
 			if ((pw = getpwuid(saveuid)) != NULL)
 				(void)printf(" uname=%s", pw->pw_name);
 			else
 				error("could not get uname for uid=%u", saveuid);
-		}
 		if (keys & F_UID)
 			(void)printf(" uid=%u", saveuid);
-		if (keys & F_GNAME) {
+		if (keys & F_GNAME)
 			if ((gr = getgrgid(savegid)) != NULL)
 				(void)printf(" gname=%s", gr->gr_name);
 			else
 				error("could not get gname for gid=%u", savegid);
-		}
 		if (keys & F_GID)
 			(void)printf(" gid=%u", savegid);
 		if (keys & F_MODE)
@@ -354,8 +328,9 @@ statd(FTS *t, FTSENT *parent, uid_t *puid, gid_t *pgid, mode_t *pmode)
 	return (0);
 }
 
-int
-dsort(const FTSENT **a, const FTSENT **b)
+static int
+dsort(a, b)
+	const FTSENT **a, **b;
 {
 	if (S_ISDIR((*a)->fts_statp->st_mode)) {
 		if (!S_ISDIR((*b)->fts_statp->st_mode))
@@ -365,13 +340,30 @@ dsort(const FTSENT **a, const FTSENT **b)
 	return (strcmp((*a)->fts_name, (*b)->fts_name));
 }
 
+#ifdef __STDC__
+#include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
+
 void
+#ifdef __STDC__
 output(int indent, int *offset, const char *fmt, ...)
+#else
+output(indent, offset, fmt, va_alist)
+	int indent;
+	int *offset;
+	char *fmt;
+        va_dcl
+#endif
 {
 	va_list ap;
 	char buf[1024];
-
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	(void)vsnprintf(buf, sizeof(buf), fmt, ap);
 	va_end(ap);
 

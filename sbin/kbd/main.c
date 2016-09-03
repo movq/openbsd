@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.8 2007/12/30 13:50:43 sobrado Exp $	*/
+/*	$OpenBSD: main.c,v 1.3 1997/09/14 10:37:58 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1996 Juergen Hannken-Illjes
@@ -34,44 +34,53 @@
 
 #include <unistd.h>
 #include <stdio.h>
-#include <stdlib.h>
 
-extern void kbd_list(void);
-extern void kbd_set(char *, int);
+extern void kbd_list __P((void));
+extern void kbd_set __P((char *, int));
 
 extern char *__progname;
 
 static void
-usage(void)
+usage()
 {
-	fprintf(stderr, "usage: %s -l\n", __progname);
-	fprintf(stderr, "       %s [-q] name\n", __progname);
+	fprintf(stderr, "usage: %s -l  or  %s [-q] name\n",
+		__progname, __progname);
 	exit(1);
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	char *optstring = "lq";
-	int ch, list_tables = 0, verbose = 1;
+	int ch, list_tables, verbose;
+
+	list_tables = 0;
+	verbose = 1;
 
 	while ((ch = getopt(argc, argv, optstring)) != -1)
 		switch (ch) {
 		case 'l':
 			list_tables = 1;
 			break;
+
 		case 'q':
 			verbose = 0;
 			break;
+
+		case '?':
 		default:
 			usage();
 		}
 	if (argc != optind + list_tables ? 0 : 1)
 		usage();
 
-	if (list_tables)
+	if (list_tables) {
 		kbd_list();
-	else
+	} else {
 		kbd_set(argv[optind], verbose);
+	}
+
 	exit(0);
 }

@@ -1,9 +1,8 @@
-#	$OpenBSD: Makefile,v 1.84 2014/01/22 03:09:31 deraadt Exp $
-#	$EOM: Makefile,v 1.78 2000/10/15 21:33:42 niklas Exp $
+#	$OpenBSD: Makefile,v 1.22 1999/10/16 20:09:22 angelos Exp $
+#	$EOM: Makefile,v 1.58 1999/08/26 11:21:48 niklas Exp $
 
 #
-# Copyright (c) 1998, 1999, 2000, 2001 Niklas Hallqvist.  All rights reserved.
-# Copyright (c) 2000, 2001 Håkan Olsson.  All rights reserved.
+# Copyright (c) 1998, 1999 Niklas Hallqvist.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -13,6 +12,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by Ericsson Radio Systems.
+# 4. The name of the author may not be used to endorse or promote products
+#    derived from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
 # IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -30,20 +34,32 @@
 # This code was written under funding by Ericsson Radio Systems.
 #
 
-.PATH:		${.CURDIR}/sysdep/openbsd
+#
+# This makefile is a "pmake" one, i.e. the make variant commonly found in
+# BSD derived systems, where it is indeed named "make".  Other systems
+# may provide this make variant as "pmake" or maybe "bsdmake".
+#
+
+# openbsd means 2.5 or newer, openbsd-encap is for older kernels with PF_ENCAP
+# linux is the name for Linux with FreeS/WAN integrated
+OS=		openbsd
+#OS=		openbsd-encap
+#OS=		linux
+
+.PATH:		${.CURDIR}/sysdep/${OS}
 
 PROG=		isakmpd
-SRCS=		app.c attribute.c cert.c connection.c constants.c conf.c \
-		cookie.c crypto.c dh.c doi.c exchange.c exchange_num.c \
-		field.c hash.c if.c ike_auth.c ike_main_mode.c \
-		ike_phase_1.c ike_quick_mode.c init.c ipsec.c ipsec_fld.c \
-		ipsec_num.c isakmpd.c isakmp_doi.c isakmp_fld.c isakmp_num.c \
-		key.c libcrypto.c log.c message.c \
-		prf.c sa.c sysdep.c timer.c transport.c virtual.c udp.c \
-		ui.c util.c x509.c \
-		pf_key_v2.c policy.c ike_aggressive.c isakmp_cfg.c \
-		dpd.c monitor.c monitor_fdpass.c nat_traversal.c udp_encap.c \
-		vendor.c
+BINDIR?=	/sbin
+LDSTATIC?=	-static
+SRCS=		app.c attribute.c cert.c connection.c \
+		constants.c conf.c cookie.c crypto.c dh.c doi.c exchange.c \
+		exchange_num.c field.c gmp_util.c hash.c if.c ike_auth.c \
+		ike_aggressive.c ike_main_mode.c ike_phase_1.c \
+		ike_quick_mode.c init.c ipsec.c ipsec_fld.c ipsec_num.c \
+		isakmpd.c isakmp_doi.c isakmp_fld.c isakmp_num.c libcrypto.c \
+		log.c message.c math_2n.c math_ec2n.c math_group.c \
+		prf.c sa.c sysdep.c timer.c transport.c udp.c ui.c \
+		util.c
 
 GENERATED=	exchange_num.h ipsec_fld.h ipsec_num.h isakmp_fld.h \
 		isakmp_num.h
@@ -51,25 +67,85 @@ CLEANFILES=	exchange_num.c exchange_num.h ipsec_num.c ipsec_num.h \
 		isakmp_num.c isakmp_num.h ipsec_fld.c ipsec_fld.h \
 		isakmp_fld.c isakmp_fld.h
 MAN=		isakmpd.8 isakmpd.conf.5 isakmpd.policy.5
-CFLAGS+=	-Wall -Wstrict-prototypes -Wmissing-prototypes \
-		-Wmissing-declarations -I${.CURDIR} -I.
+CFLAGS+=	-Wall -DNEED_SYSDEP_APP \
+		-I${.CURDIR} -I${.CURDIR}/sysdep/${OS} -I.
+
+# Different debugging & profiling suggestions
 
 # Include symbolic debugging info
-#DEBUG=		-g
+DEBUG=		-g
+
+# Do execution time profiles
+#CFLAGS+=	-pg
 
 # If you have ElectricFence available, you can spot abuses of the heap.
 # (/usr/ports/devel/ElectricFence)
 #LDADD+=		-L/usr/local/lib -lefence
 #DPADD+=		/usr/local/lib/libefence.a
 
-# Enable for DNSSEC use
-#CFLAGS+=	USE_DNSSEC
-#SRCS+=		dnssec.c
-#LWRESLIB=      /usr/local/lib/liblwres.a
-#DNSSEC_CFLAGS= -I/usr/local/include -DLWRES
+# If you like to use Boehm's garbage collector (/usr/ports/devel/boehm-gc).
+#LDADD+=		-L/usr/local/lib -lgc
+#DPADD+=		/usr/local/lib/libgc.a
 
-LDADD+=		${LWRESLIB} -lkeynote -lcrypto -lm
-DPADD+=		${LWRESLIB} ${LIBKEYNOTE} ${LIBCRYPTO} ${LIBM}
+# You can also use Boehm's garbage collector as a means to find leaks.
+# XXX The defines below are GCC-specific.  I think it is OK to require
+# XXX GCC if you are debugging isakmpd in this way.
+#LDADD+=		-L/usr/local/lib -lleak
+#DPADD+=		/usr/local/lib/libleak.a
+#CFLAGS+=	-D'malloc(x)=({ \
+#		  void *GC_debug_malloc (size_t, char *, int); \
+#		  GC_debug_malloc ((x), __FILE__, __LINE__); \
+#		})' \
+#		-D'realloc(x,y)=({ \
+#		  void *GC_debug_realloc (void *, size_t, char *, int); \
+#		  GC_debug_realloc ((x), (y), __FILE__, __LINE__); \
+#		})' \
+#		-D'free(x)=({ \
+#		  void GC_debug_free (void *); \
+#		  GC_debug_free (x); \
+#		})' \
+#		-D'calloc(x,y)=malloc((x) * (y))' \
+#		-D'strdup(x)=({ \
+#		  char *strcpy (char *, const char *); \
+#		  const char *_x_ = (x); \
+#		  char *_y_ = malloc (strlen (_x_) + 1); \
+#		  strcpy (_y_, _x_); \
+#		})'
+
+SUBDIR=		apps
+.if !make(install)
+SUBDIR+=	regress
+.endif
+
+.include "sysdep/${OS}/Makefile.sysdep"
+
+.ifdef HAVE_DLOPEN
+X509=		x509.c
+POLICY=		policy.c
+CFLAGS+=	-DHAVE_DLOPEN
+SRCS+=		dyn.c
+.endif
+
+.ifdef USE_KEYNOTE
+USE_LIBCRYPTO=	yes
+POLICY=		policy.c
+LDADD+=		-lkeynote -lm
+DPADD+=		${LIBKEYNOTE} ${LIBM}
+CFLAGS+=	-DUSE_KEYNOTE
+.endif
+
+.ifdef USE_LIBCRYPTO
+X509=		x509.c
+CFLAGS+=	-DUSE_LIBCRYPTO
+LDADD+=		-lcrypto
+DPADD+=		${LIBCRYPTO}
+.endif
+
+SRCS+=		${IPSEC_SRCS} ${X509} ${POLICY}
+CFLAGS+=	${IPSEC_CFLAGS}
+
+LDADD+=		${DESLIB}
+DPADD+=		${DESLIBDEP}
 
 exchange_num.c exchange_num.h: genconstants.sh exchange_num.cst
 	/bin/sh ${.CURDIR}/genconstants.sh ${.CURDIR}/exchange_num

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: asp.4,v 1.17 2015/09/10 15:16:43 schwarze Exp $
+.\"	$OpenBSD: asp.4,v 1.3 1999/06/05 13:18:40 aaron Exp $
 .\"
 .\"
 .\" Copyright (c) 1999 Michael Shalayeff
@@ -12,6 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by Michael Shalayeff.
+.\" 4. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
 .\" IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -24,20 +29,21 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: September 10 2015 $
-.Dt ASP 4 hppa
+.Dd April 1, 1999
+.Dt ASP 4
 .Os
 .Sh NAME
 .Nm asp
-.Nd core bus controller as present on older HP 9000/700 machines
+.Nd "Core" bus controller as present on HP9000
+715/33, 715/50, 725/50
+workstations
 .Sh SYNOPSIS
 .Cd "asp0    at mainbus? irq 28"
-.Cd "gsc* at asp?"
-.Sh DESCRIPTION
-The supported Core bus controllers are those present on older
-.Tn PA-RISC
-workstations, and include:
+.Cd "gscbus* at asp?"
 .Pp
+.Sh INTRODUCTION
+The supported Core bus controllers are those present on older PA-RISC(tm)
+workstations, and include:
 .Bl -bullet -compact
 .It
 Core bus controller
@@ -46,49 +52,18 @@ System Clock
 .It
 Interrupt Controller
 .It
-DMA Controller
-.It
 Real Time Clock Interface
 .It
 RAM and EEPROM controllers
 .El
 .Pp
-The irq level supplied is hardwired to the CPU pin, so changing the value
-would not produce any noticeable results (except lost interrupts for the whole
+The irq level supplied is hardwired to the cpu pin, so changing the value
+would not produce any noticable results (except lost interrupts for the whole
 I/O subsystem).
-.Sh MACHINES
-An incomplete list of machines that use the
-.Tn ASP
-bus controller:
-.Pp
-.Bl -bullet -compact
-.It
-705, 710
-.It
-715/{33,50,75}
-.It
-725/{50,75}
-.It
-720, 730, 750
-.It
-735/*
-.It
-745i/{50,75}
-.It
-747i/{50,75}
-.It
-755/*
-.El
 .Sh SEE ALSO
 .Xr gsc 4 ,
 .Xr intro 4 ,
-.Xr io 4
-.Rs
-.%T "Hardball I/O Subsystem ERS"
-.%N Revision 1.1
-.%D 30 September 1991
-.%Q Hewlett-Packard
-.Re
+.Xr lasi 4
 .Sh HISTORY
 The
 .Nm

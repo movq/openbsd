@@ -1,6 +1,5 @@
 # Makefile for regression testing the GNU debugger.
-# Copyright 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2002, 2003, 2004
-# Free Software Foundation, Inc.
+# Copyright (C) 1992, 1993, 1994, 1995 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -31,14 +30,9 @@ host_canonical = @host@
 target_canonical = @target@
 target_cpu = @gdb_target_cpu@
 
-SHELL = @SHELL@
-EXEEXT = @EXEEXT@
+SHELL = /bin/sh
 SUBDIRS = @subdirs@
 RPATH_ENVVAR = @RPATH_ENVVAR@
-ALL_SUBDIRS = gdb.ada gdb.arch gdb.asm gdb.base gdb.cp gdb.disasm \
-	gdb.dwarf2 \
-	gdb.fortran gdb.java gdb.mi gdb.objc gdb.threads gdb.trace \
-	$(SUBDIRS)
 
 EXPECT = `if [ -f $${rootme}/../../expect/expect ] ; then \
           echo $${rootme}/../../expect/expect ; \
@@ -71,6 +65,10 @@ TARGET_FLAGS_TO_PASS = \
         'CC=$$(CC_FOR_TARGET)' \
         "CC_FOR_TARGET=$(CC_FOR_TARGET)" \
         "CFLAGS=$(TESTSUITE_CFLAGS)" \
+        "CHILLFLAGS=$(CHILLFLAGS)" \
+        'CHILL=$$(CHILL_FOR_TARGET)' \
+        "CHILL_FOR_TARGET=$(CHILL_FOR_TARGET)" \
+        "CHILL_LIB=$(CHILL_LIB)" \
         'CXX=$$(CXX_FOR_TARGET)' \
         "CXX_FOR_TARGET=$(CXX_FOR_TARGET)" \
         "CXXFLAGS=$(CXXFLAGS)" \
@@ -91,8 +89,6 @@ INFODIRS=doc
 info:
 install-info:
 dvi:
-html:
-install-html:
 
 install:
 
@@ -127,7 +123,6 @@ just-check:
 	rootme=`pwd`; export rootme; \
 	srcdir=${srcdir} ; export srcdir ; \
 	EXPECT=${EXPECT} ; export EXPECT ; \
-	EXEEXT=${EXEEXT} ; export EXEEXT ; \
         $(RPATH_ENVVAR)=$$rootme/../../expect:$$rootme/../../libstdc++:$$rootme/../../tk/unix:$$rootme/../../tcl/unix:$$rootme/../../bfd:$$rootme/../../opcodes:$$$(RPATH_ENVVAR); \
 	export $(RPATH_ENVVAR); \
 	if [ -f $${rootme}/../../expect/expect ] ; then  \
@@ -149,7 +144,7 @@ subdir_do: force
 force:;
 
 subdirs:
-	for dir in ${ALL_SUBDIRS} ; \
+	for dir in ${SUBDIRS} ; \
 	do \
 		echo "$$dir:" ; \
 		if [ -d $$dir ] ; then \
@@ -161,8 +156,8 @@ subdirs:
 
 clean mostlyclean:
 	-rm -f *~ core *.o a.out xgdb *.x *.grt
-	if [ x"${ALL_SUBDIRS}" != x ] ; then \
-	    for dir in ${ALL_SUBDIRS}; \
+	if [ x"${SUBDIRS}" != x ] ; then \
+	    for dir in ${SUBDIRS}; \
 	    do \
 		    echo "$$dir:"; \
 		    if [ -d $$dir ]; then \
@@ -175,8 +170,8 @@ distclean maintainer-clean realclean: clean
 	-rm -f *~ core
 	-rm -f Makefile config.status *-init.exp
 	-rm -fr *.log summary detail *.plog *.sum *.psum site.*
-	if [ x"${ALL_SUBDIRS}" != x ] ; then \
-	    for dir in ${ALL_SUBDIRS}; \
+	if [ x"${SUBDIRS}" != x ] ; then \
+	    for dir in ${SUBDIRS}; \
 	    do \
 		    echo "$$dir:"; \
 		    if [ -d $$dir ]; then \

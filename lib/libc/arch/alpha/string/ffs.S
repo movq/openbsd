@@ -1,4 +1,3 @@
-/*	$OpenBSD: ffs.S,v 1.3 2015/08/31 02:53:56 guenther Exp $	*/
 /*	$NetBSD: ffs.S,v 1.3 1996/10/17 03:08:13 cgd Exp $	*/
 
 /*
@@ -32,7 +31,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "SYS.h"
+#include <machine/asm.h>
 
 LEAF(ffs, 1)
 	addl	a0, 0, t0
@@ -89,4 +88,4 @@ Ldone:
 Lallzero:
 	bis	zero, zero, v0
 	RET
-END_WEAK(ffs)
+END(ffs)

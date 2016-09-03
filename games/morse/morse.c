@@ -1,4 +1,4 @@
-/*	$OpenBSD: morse.c,v 1.22 2016/03/07 12:07:56 mestre Exp $	*/
+/*	$OpenBSD: morse.c,v 1.7 1998/12/13 07:53:03 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1988, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,11 +33,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)morse.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: morse.c,v 1.7 1998/12/13 07:53:03 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <ctype.h>
-#include <err.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 static char
@@ -82,7 +97,6 @@ struct punc {
 	char c;
 	char *morse;
 } other[] = {
-	{ 'e', "..-.." },	/* accented e - only decodes */
 	{ ',', "--..--" },
 	{ '.', ".-.-.-" },
 	{ '?', "..--.." },
@@ -90,63 +104,48 @@ struct punc {
 	{ '-', "-....-" },
 	{ ':', "---..." },
 	{ ';', "-.-.-." },
-	{ '(', "-.--." },	/* KN */
-	{ ')', "-.--.-" },
+	{ '(', "-.--.-." },	/* When converting from Morse, can't tell */
+	{ ')', "-.--.-." },	/* '(' and ')' apart                      */
 	{ '"', ".-..-." },
 	{ '`', ".-..-." },
 	{ '\'', ".----." },
-	{ '+', ".-.-." },	/* AR \n\n\n */
-	{ '=', "-...-" },	/* BT \n\n */
-	{ '@', ".--.-." },
-	{ '\n', ".-.-" },	/* AA (will only decode) */
+	{ '+', ".-.-." },	/* AR */
+	{ '=', "-...-" },	/* BT */
+	{ '@', "...-.-" },	/* SK */
 	{ '\0', NULL }
 };
 
-struct prosign {
-	char *c;
-	char *morse;
-} ps[] = {
-	{ "<AS>", ".-..." },	/* wait */
-	{ "<CL>", "-.-..-.." },
-	{ "<CT>", "-.-.-" },	/* start */
-	{ "<EE5>", "......" },	/* error */
-	{ "<EE5>", "......." },
-	{ "<EE5>", "........" },
-	{ "<SK>", "...-.-" },
-	{ "<SN>", "...-." },	/* understood */
-	{ "<SOS>", "...---..." },
-	{ NULL, NULL }
-};
-
-void	morse(int);
-void	decode(char *);
-void	show(char *);
+void	morse __P((int));
+void	decode __P((char *));
+void	show __P((char *));
 
 static int sflag = 0;
 static int dflag = 0;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	int ch;
 	char *p;
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
 	while ((ch = getopt(argc, argv, "dsh")) != -1)
-		switch(ch) {
+		switch((char)ch) {
 		case 'd':
 			dflag = 1;
 			break;
 		case 's':
 			sflag = 1;
 			break;
-		case 'h':
+		case '?': case 'h':
 		default:
-			fprintf(stderr, "usage: %s [-d | -s] [string ...]\n",
-			    getprogname());
-			return 1;
+			fprintf(stderr, "usage: morse [-ds] [string ...]\n");
+			exit(1);
 		}
 	argc -= optind;
 	argv += optind;
@@ -202,11 +201,12 @@ main(int argc, char *argv[])
 			morse(ch);
 		show("...-.-");	/* SK */
 	}
-	return 0;
+	exit(0);
 }
 
 void
-morse(int c)
+morse(c)
+	int c;
 {
 	int i;
 
@@ -229,7 +229,8 @@ morse(int c)
 }
 
 void
-decode(char *s)
+decode(s)
+	char *s;
 {
 	int i;
 	
@@ -252,22 +253,14 @@ decode(char *s)
 		}
 		i++;
 	}
-	i = 0;
-	while (ps[i].c) {
-		/* put whitespace around prosigns */
-		if (strcmp(ps[i].morse, s) == 0) {
-			printf(" %s ", ps[i].c);
-			return;
-		}
-		i++;
-	}
 	putchar('x');	/* line noise */
 }
 
 
 
 void
-show(char *s)
+show(s)
+	char *s;
 {
 	if (sflag)
 		printf(" %s", s);

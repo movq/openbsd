@@ -13,7 +13,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,23 +33,24 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\"	$OpenBSD: ldiv.3,v 1.13 2016/08/14 23:18:03 guenther Exp $
+.\"	$OpenBSD: ldiv.3,v 1.4 1999/06/29 18:36:21 aaron Exp $
 .\"
-.Dd $Mdocdate: August 14 2016 $
+.Dd June 29, 1991
 .Dt LDIV 3
 .Os
 .Sh NAME
 .Nm ldiv
 .Nd return quotient and remainder from division
 .Sh SYNOPSIS
-.In stdlib.h
+.Fd #include <stdlib.h>
 .Ft ldiv_t
 .Fn ldiv "long num" "long denom"
 .Sh DESCRIPTION
 The
 .Fn ldiv
-function computes the value
-.Fa num Ns / Ns Fa denom
+function
+computes the value
+.Fa num Ns No / Ns Fa denom
 and returns the quotient and remainder in a structure named
 .Li ldiv_t
 that contains two
@@ -56,16 +61,11 @@ and
 .Fa rem .
 .Sh SEE ALSO
 .Xr div 3 ,
-.Xr imaxdiv 3 ,
-.Xr lldiv 3
+.Xr math 3 ,
+.Xr qdiv 3
 .Sh STANDARDS
 The
 .Fn ldiv
-function conforms to
+function
+conforms to
 .St -ansiC .
-.Sh HISTORY
-An
-.Fn ldiv
-function with similar functionality, but a different calling convention,
-first appeared in
-.At v4 .

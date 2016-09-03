@@ -1,4 +1,4 @@
-.\"	$OpenBSD: mailwrapper.8,v 1.13 2015/12/14 02:56:07 sunil Exp $
+.\"	$OpenBSD: mailwrapper.8,v 1.1 1999/08/02 19:50:07 jakob Exp $
 .\"	$NetBSD: mailwrapper.8,v 1.5 1999/03/22 18:44:01 garbled Exp $
 .\"
 .\" Copyright (c) 1998
@@ -30,15 +30,15 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: December 14 2015 $
+.\" The following requests are required for all man pages.
+.Dd December 16, 1998
 .Dt MAILWRAPPER 8
 .Os
 .Sh NAME
 .Nm mailwrapper
 .Nd invoke appropriate MTA software based on configuration file
 .Sh SYNOPSIS
-Special.
-See below.
+Special. See below.
 .Sh DESCRIPTION
 At one time, the only Mail Transfer Agent (MTA) software easily available
 was
@@ -65,23 +65,21 @@ in
 .Pp
 .Xr sendmail 8
 also typically has aliases named
-.Xr mailq 8
+.Xr mailq 1
 and
-.Xr newaliases 8
-linked to it.
-The program knows to behave differently when its
+.Xr newaliases 1
+linked to it. The program knows to behave differently when its
 .Va argv[0]
 is
 .Dq mailq
 or
 .Dq newaliases
-and behaves appropriately.
-Typically, replacement MTAs provide similar
+and behaves appropriately. Typically, replacement MTAs provide similar 
 functionality, either through a program that also switches behavior
 based on calling name, or through a set of programs that provide
 similar functionality.
 .Pp
-Although having drop-in replacements for
+Although having replacement programs that plug replace
 .Xr sendmail 8
 helps in installing alternative MTAs, it essentially makes the
 configuration of the system depend on hard installing new programs in
@@ -90,7 +88,7 @@ This leads to configuration problems for many administrators, since
 they may wish to install a new MTA without altering the system
 provided
 .Pa /usr .
-(This may be, for example, to avoid having upgrade problems when a new
+(This may be, for example, to avoid having upgrade problems when a new 
 version of the system is installed over the old.)
 They may also have a shared
 .Pa /usr
@@ -108,38 +106,34 @@ and to invoke an appropriate MTA instead of
 based on configuration information placed in
 .Pa /etc/mailer.conf .
 This permits the administrator to configure which MTA is to be invoked on
-the system at run time.
+the system at run time. 
 .Sh FILES
 Configuration for
 .Nm
 is kept in
 .Pa /etc/mailer.conf .
-.Pa /usr/sbin/sendmail
+.Pa /usr/sbin/sendmail 
 is typically set up as a symlink to
 .Nm
 which is not usually invoked on its own.
 .Sh DIAGNOSTICS
 .Nm
-will invoke
-.Xr smtpd 8
-if its configuration file is missing.
-It will return an error value and print a diagnostic if its configuration
-file is malformed, or does not contain a mapping for the name under which
+will return an error value and print a diagnostic if its configuration 
+file is missing or malformed, or does not contain a mapping for the
+name under which
 .Nm
 was invoked.
 .Sh SEE ALSO
 .Xr mail 1 ,
+.Xr mailq 1 ,
+.Xr newaliases 1 ,
 .Xr mailer.conf 5 ,
-.Xr mailq 8 ,
-.Xr newaliases 8 ,
-.Xr sendmail 8 ,
-.Xr smtpd 8
+.Xr sendmail 8
 .Sh AUTHORS
-.An Perry E. Metzger Aq Mt perry@piermont.com
+Perry E. Metzger <perry@piermont.com>
 .Sh BUGS
-The entire reason this program exists is a crock.
-Instead, a command
+The entire reason this program exists is a crock. Instead, a command
 for how to submit mail should be standardized, and all the "behave
 differently if invoked with a different name" behavior of things like
-.Xr mailq 8
+.Xr mailq 1
 should go away.

@@ -67,7 +67,7 @@ cvsstatus (argc, argv)
     wrap_setup ();
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	start_server ();
 
@@ -123,7 +123,6 @@ status_fileproc (callerdat, finfo)
     Ctype status;
     char *sstat;
     Vers_TS *vers;
-    Node *node;
 
     status = Classify_File (finfo, (char *) NULL, (char *) NULL, (char *) NULL,
 			    1, 0, &vers, 0);
@@ -136,9 +135,11 @@ status_fileproc (callerdat, finfo)
 	case T_CHECKOUT:
 	    sstat = "Needs Checkout";
 	    break;
+#ifdef SERVER_SUPPORT
 	case T_PATCH:
 	    sstat = "Needs Patch";
 	    break;
+#endif
 	case T_CONFLICT:
 	    /* I _think_ that "unresolved" is correct; that if it has
 	       been resolved then the status will change.  But I'm not
@@ -225,20 +226,6 @@ status_fileproc (callerdat, finfo)
 	cvs_output ("\t", 0);
 	cvs_output (vers->srcfile->path, 0);
 	cvs_output ("\n", 0);
-
-	node = findnode(vers->srcfile->versions,vers->vn_rcs);
-	if (node)
-	{
-	    RCSVers *v;
-	    v=(RCSVers*)node->data;
-	    node = findnode(v->other_delta,"commitid");
-	    cvs_output("   Commit Identifier:\t", 0);
-	    if(node && node->data)
-		cvs_output(node->data, 0);
-	    else
-		cvs_output("(none)",0);
-	    cvs_output("\n",0);
-	}
     }
 
     if (vers->entdata)

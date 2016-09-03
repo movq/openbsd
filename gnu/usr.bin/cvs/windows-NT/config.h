@@ -154,9 +154,6 @@
    this function in the code anyway, hmm.  */
 #undef HAVE_TIMEZONE
 
-/* Define if you have the usleep function.  */
-#define HAVE_USLEEP 1
-
 /* Define if you have the vfork function.  */
 #undef HAVE_VFORK
 
@@ -212,6 +209,9 @@
 /* Define if you have the <sys/time.h> header file.  */
 #undef HAVE_SYS_TIME_H
 
+/* Define if you have the <sys/timeb.h> header file.  */
+#define HAVE_SYS_TIMEB_H 1
+
 /* Define if you have the <unistd.h> header file.  */
 #undef HAVE_UNISTD_H
 
@@ -255,8 +255,6 @@ extern pid_t getpid (void);
 
 /* This is just a call to the Win32 Sleep function.  */
 unsigned int sleep (unsigned int);
-/* So is this */
-int usleep (unsigned long);
 
 /* Don't worry, Microsoft, it's okay for these functions to
    be in our namespace.  */
@@ -293,7 +291,7 @@ extern void wnt_shutdown_server (int fd);
 
 #define SYSTEM_INITIALIZE(pargc,pargv) init_winsock()
 extern void init_winsock();
-#define SYSTEM_CLEANUP() wnt_cleanup()
+#define SYSTEM_CLEANUP() wnt_cleanup
 extern void wnt_cleanup (void);
 
 #define HAVE_WINSOCK_H
@@ -327,8 +325,3 @@ extern char *sock_strerror (int errnum);
    moot since the use of buffer.c ensures that writes will only be as big
    as the buffers).  */
 #define SEND_NEVER_PARTIAL 1
-
-/* Force lib/regex.c to use malloc instead of messing around with alloca
-   and define the old re_comp routines that we use.  */
-#define REGEX_MALLOC 1
-#define _REGEX_RE_COMP 1

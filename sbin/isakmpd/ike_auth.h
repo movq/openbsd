@@ -1,5 +1,5 @@
-/* $OpenBSD: ike_auth.h,v 1.5 2004/04/15 18:39:25 deraadt Exp $	 */
-/* $EOM: ike_auth.h,v 1.5 1998/08/16 19:55:24 provos Exp $	 */
+/*	$OpenBSD: ike_auth.h,v 1.3 1998/11/17 11:10:12 niklas Exp $	*/
+/*	$EOM: ike_auth.h,v 1.5 1998/08/16 19:55:24 provos Exp $	*/
 
 /*
  * Copyright (c) 1998 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -37,12 +42,12 @@
 struct exchange;
 
 struct ike_auth {
-	u_int16_t       id;
-	u_int8_t       *(*gen_skeyid) (struct exchange *, size_t *);
-	int             (*decode_hash) (struct message *);
-	int             (*encode_hash) (struct message *);
+  u_int16_t id;
+  u_int8_t *(*gen_skeyid) (struct exchange *, size_t *);
+  int (*decode_hash) (struct message *);
+  int (*encode_hash) (struct message *);
 };
 
-extern struct ike_auth *ike_auth_get(u_int16_t);
+extern struct ike_auth *ike_auth_get (u_int16_t);
 
-#endif				/* _IKE_AUTH_H_ */
+#endif /* _IKE_AUTH_H_ */

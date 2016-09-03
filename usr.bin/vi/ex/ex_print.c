@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_print.c,v 1.13 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,29 +9,40 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)ex_print.c	10.18 (Berkeley) 5/12/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
 #include <ctype.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
+#ifdef __STDC__
+#include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
+
 #include "../common/common.h"
 
-static int ex_prchars(SCR *, const char *, size_t *, size_t, u_int, int);
+static int ex_prchars __P((SCR *, const char *, size_t *, size_t, u_int, int));
 
 /*
  * ex_list -- :[line [,line]] l[ist] [count] [flags]
  *
  *	Display the addressed lines such that the output is unambiguous.
  *
- * PUBLIC: int ex_list(SCR *, EXCMD *);
+ * PUBLIC: int ex_list __P((SCR *, EXCMD *));
  */
 int
-ex_list(SCR *sp, EXCMD *cmdp)
+ex_list(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	if (ex_print(sp, cmdp,
 	    &cmdp->addr1, &cmdp->addr2, cmdp->iflags | E_C_LIST))
@@ -48,10 +57,12 @@ ex_list(SCR *sp, EXCMD *cmdp)
  *
  *	Display the addressed lines with a leading line number.
  *
- * PUBLIC: int ex_number(SCR *, EXCMD *);
+ * PUBLIC: int ex_number __P((SCR *, EXCMD *));
  */
 int
-ex_number(SCR *sp, EXCMD *cmdp)
+ex_number(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	if (ex_print(sp, cmdp,
 	    &cmdp->addr1, &cmdp->addr2, cmdp->iflags | E_C_HASH))
@@ -66,10 +77,12 @@ ex_number(SCR *sp, EXCMD *cmdp)
  *
  *	Display the addressed lines.
  *
- * PUBLIC: int ex_pr(SCR *, EXCMD *);
+ * PUBLIC: int ex_pr __P((SCR *, EXCMD *));
  */
 int
-ex_pr(SCR *sp, EXCMD *cmdp)
+ex_pr(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	if (ex_print(sp, cmdp, &cmdp->addr1, &cmdp->addr2, cmdp->iflags))
 		return (1);
@@ -82,17 +95,23 @@ ex_pr(SCR *sp, EXCMD *cmdp)
  * ex_print --
  *	Print the selected lines.
  *
- * PUBLIC: int ex_print(SCR *, EXCMD *, MARK *, MARK *, u_int32_t);
+ * PUBLIC: int ex_print __P((SCR *, EXCMD *, MARK *, MARK *, u_int32_t));
  */
 int
-ex_print(SCR *sp, EXCMD *cmdp, MARK *fp, MARK *tp, u_int32_t flags)
+ex_print(sp, cmdp, fp, tp, flags)
+	SCR *sp;
+	EXCMD *cmdp;
+	MARK *fp, *tp;
+	u_int32_t flags;
 {
+	GS *gp;
 	recno_t from, to;
 	size_t col, len;
 	char *p, buf[10];
 
 	NEEDFILE(sp, cmdp);
 
+	gp = sp->gp;
 	for (from = fp->lno, to = tp->lno; from <= to; ++from) {
 		col = 0;
 
@@ -103,7 +122,7 @@ ex_print(SCR *sp, EXCMD *cmdp, MARK *fp, MARK *tp, u_int32_t flags)
 		 */
 		if (LF_ISSET(E_C_HASH)) {
 			if (from <= 999999) {
-				snprintf(buf, sizeof(buf), "%6lu  ", (ulong)from);
+				snprintf(buf, sizeof(buf), "%6ld  ", from);
 				p = buf;
 			} else
 				p = "TOOBIG  ";
@@ -134,10 +153,14 @@ ex_print(SCR *sp, EXCMD *cmdp, MARK *fp, MARK *tp, u_int32_t flags)
  * ex_ldisplay --
  *	Display a line without any preceding number.
  *
- * PUBLIC: int ex_ldisplay(SCR *, const char *, size_t, size_t, u_int);
+ * PUBLIC: int ex_ldisplay __P((SCR *, const char *, size_t, size_t, u_int));
  */
 int
-ex_ldisplay(SCR *sp, const char *p, size_t len, size_t col, u_int flags)
+ex_ldisplay(sp, p, len, col, flags)
+	SCR *sp;
+	const char *p;
+	size_t len, col;
+	u_int flags;
 {
 	if (len > 0 && ex_prchars(sp, p, &col, len, LF_ISSET(E_C_LIST), 0))
 		return (1);
@@ -155,10 +178,12 @@ ex_ldisplay(SCR *sp, const char *p, size_t len, size_t col, u_int flags)
  * ex_scprint --
  *	Display a line for the substitute with confirmation routine.
  *
- * PUBLIC: int ex_scprint(SCR *, MARK *, MARK *);
+ * PUBLIC: int ex_scprint __P((SCR *, MARK *, MARK *));
  */
 int
-ex_scprint(SCR *sp, MARK *fp, MARK *tp)
+ex_scprint(sp, fp, tp)
+	SCR *sp;
+	MARK *fp, *tp;
 {
 	const char *p;
 	size_t col, len;
@@ -181,7 +206,7 @@ ex_scprint(SCR *sp, MARK *fp, MARK *tp)
 		return (1);
 	if (INTERRUPTED(sp))
 		return (1);
-	p = "[ynq]";
+	p = "[ynq]";		/* XXX: should be msg_cat. */
 	if (ex_prchars(sp, p, &col, 5, 0, 0))
 		return (1);
 	(void)ex_fflush(sp);
@@ -193,14 +218,20 @@ ex_scprint(SCR *sp, MARK *fp, MARK *tp)
  *	Local routine to dump characters to the screen.
  */
 static int
-ex_prchars(SCR *sp, const char *p, size_t *colp, size_t len, u_int flags,
-    int repeatc)
+ex_prchars(sp, p, colp, len, flags, repeatc)
+	SCR *sp;
+	const char *p;
+	size_t *colp, len;
+	u_int flags;
+	int repeatc;
 {
 	CHAR_T ch, *kp;
+	GS *gp;
 	size_t col, tlen, ts;
 
 	if (O_ISSET(sp, O_LIST))
 		LF_SET(E_C_LIST);
+	gp = sp->gp;
 	ts = O_VAL(sp, O_TABSTOP);
 	for (col = *colp; len--;)
 		if ((ch = *p++) == '\t' && !LF_ISSET(E_C_LIST))
@@ -237,10 +268,17 @@ intr:	*colp = col;
  * ex_printf --
  *	Ex's version of printf.
  *
- * PUBLIC: int ex_printf(SCR *, const char *, ...);
+ * PUBLIC: int ex_printf __P((SCR *, const char *, ...));
  */
 int
+#ifdef __STDC__
 ex_printf(SCR *sp, const char *fmt, ...)
+#else
+ex_printf(sp, fmt, va_alist)
+	SCR *sp;
+	const char *fmt;
+	va_dcl
+#endif
 {
 	EX_PRIVATE *exp;
 	va_list ap;
@@ -248,13 +286,14 @@ ex_printf(SCR *sp, const char *fmt, ...)
 
 	exp = EXP(sp);
 
+#ifdef __STDC__
 	va_start(ap, fmt);
-	n = vsnprintf(exp->obp + exp->obp_len,
+#else
+	va_start(ap);
+#endif
+	exp->obp_len += n = vsnprintf(exp->obp + exp->obp_len,
 	    sizeof(exp->obp) - exp->obp_len, fmt, ap);
 	va_end(ap);
-	if (n >= sizeof(exp->obp) - exp->obp_len)
-		n = sizeof(exp->obp) - exp->obp_len - 1;
-	exp->obp_len += n;
 
 	/* Flush when reach a <newline> or half the buffer. */
 	if (exp->obp[exp->obp_len - 1] == '\n' ||
@@ -267,10 +306,12 @@ ex_printf(SCR *sp, const char *fmt, ...)
  * ex_puts --
  *	Ex's version of puts.
  *
- * PUBLIC: int ex_puts(SCR *, const char *);
+ * PUBLIC: int ex_puts __P((SCR *, const char *));
  */
 int
-ex_puts(SCR *sp, const char *str)
+ex_puts(sp, str)
+	SCR *sp;
+	const char *str;
 {
 	EX_PRIVATE *exp;
 	int doflush, n;
@@ -293,10 +334,11 @@ ex_puts(SCR *sp, const char *str)
  * ex_fflush --
  *	Ex's version of fflush.
  *
- * PUBLIC: int ex_fflush(SCR *sp);
+ * PUBLIC: int ex_fflush __P((SCR *sp));
  */
 int
-ex_fflush(SCR *sp)
+ex_fflush(sp)
+	SCR *sp;
 {
 	EX_PRIVATE *exp;
 

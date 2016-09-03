@@ -1,4 +1,3 @@
-/*	$OpenBSD: SYS.h,v 1.23 2016/06/16 03:21:09 guenther Exp $*/
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,124 +35,45 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)SYS.h	5.5 (Berkeley) 5/7/91
+ *	$Id: SYS.h,v 1.1 1998/12/15 07:10:29 smurph Exp $
  */
 
 #include <sys/syscall.h>
 #include <machine/asm.h>
 
-/*
- * We define a hidden alias with the prefix "_libc_" for each global symbol
- * that may be used internally.  By referencing _libc_x instead of x, other
- * parts of libc prevent overriding by the application and avoid unnecessary
- * relocations.
- */
-#define _HIDDEN(x)		_libc_##x
-#define _HIDDEN_ALIAS(x,y)			\
-	STRONG_ALIAS(_HIDDEN(x),y);		\
-	.hidden _HIDDEN(x)
-#define _HIDDEN_FALIAS(x,y)			\
-	_HIDDEN_ALIAS(x,y);			\
-	.type _HIDDEN(x),@function
+#ifdef __STDC__
 
-/*
- * For functions implemented in ASM that aren't syscalls.
- *   END_STRONG(x)	Like DEF_STRONG() in C; for standard/reserved C names
- *   END_WEAK(x)	Like DEF_WEAK() in C; for non-ISO C names
- */
-#define	END_STRONG(x)	END(x); _HIDDEN_FALIAS(x,x); END(_HIDDEN(x))
-#define	END_WEAK(x)	END_STRONG(x); .weak x
+#define	SYSCALL(x)	align 8; \
+			ENTRY(x); \
+			ld r10,r31,32; \
+			ld r11,r31,36; \
+			ld r12,r31,40; \
+			or r13,r0, SYS_ ## x; \
+			tb0 0, r0, 128; \
+			br cerror
+#define	RSYSCALL(x)	SYSCALL(x) ;\
+			jmp r1
+#define	PSEUDO(x,y)	ENTRY(x); ;\
+			or r13,r0, SYS_ ## y; \
+			tb0 0,r0,128; or r0,r0,r0;jmp r1
 
+#else /* !__STDC__ */
 
-#define	__CONCAT(p,x)		p##x
-#define	__ENTRY(p,x)		ENTRY(__CONCAT(p,x))
-#define	__END(p,x)		END(__CONCAT(p,x)); \
-				_HIDDEN_ALIAS(x,__CONCAT(p,x)); \
-				END(_HIDDEN(x))
-#define	__SYSCALLNAME(p,x)	__CONCAT(p,x)
-#define	__ALIAS(prefix,name)	WEAK_ALIAS(name,__CONCAT(prefix,name))
-
-#ifdef __PIC__
-#define	CERROR	__cerror#plt
-#define	PIC_SAVE(reg)		or reg, %r25, %r0
-#define	PIC_RESTORE(reg)	or %r25, reg, %r0
-#define	PIC_SETUP							\
-	or	%r11, %r0,  %r1;					\
-	or.u	%r25, %r0,  %hi16(.Lpic#abdiff);			\
-	bsr.n	.Lpic;							\
-	 or	%r25, %r25, %lo16(.Lpic#abdiff);			\
-.Lpic:	add	%r25, %r25, %r1;					\
-	or	%r1,  %r0,  %r11
-#if __PIC__ > 1
-#define	PIC_LOAD(reg,sym)						\
-	or.u	%r11, %r0,  %hi16(__CONCAT(sym,#got_rel));		\
-	or	%r11, %r11, %lo16(__CONCAT(sym,#got_rel));		\
-	ld	reg,  %r25, %r11
-#define	PIC_STORE(reg,sym)						\
-	or.u	%r11, %r0,  %hi16(__CONCAT(sym,#got_rel));		\
-	or	%r11, %r11, %lo16(__CONCAT(sym,#got_rel));		\
-	st	reg,  %r25, %r11
-#else		/* -fpic */
-#define	PIC_LOAD(reg,sym)						\
-	ld	%r11, %r25, __CONCAT(sym,#got_rel);			\
-	ld	reg,  %r11, %r0
-#define	PIC_STORE(reg,sym)						\
-	ld	%r11, %r25, __CONCAT(sym,#got_rel);			\
-	st	reg,  %r11, %r0
-#endif
-#else
-#define	CERROR	__cerror
-#endif
-
-#define	__DO_SYSCALL(x)							\
-	or %r13, %r0, __SYSCALLNAME(SYS_,x);				\
-	tb0 0, %r0, 450
-
-#define	__SYSCALL__NOERROR(p,x,y)					\
-	__ENTRY(p,x);							\
-	__ALIAS(p,x);							\
-	__DO_SYSCALL(y)
-#define	__SYSCALL_HIDDEN__NOERROR(p,x,y)				\
-	__ENTRY(p,x);							\
-	__DO_SYSCALL(y)
-
-#define	__SYSCALL(p,x,y)						\
-	__SYSCALL__NOERROR(p,x,y);					\
-	br CERROR
-#define	__SYSCALL_HIDDEN(p,x,y)						\
-	__SYSCALL_HIDDEN__NOERROR(p,x,y);				\
-	br CERROR
-
-#define	__PSEUDO_NOERROR(p,x,y)						\
-	__SYSCALL__NOERROR(p,x,y);					\
-	or %r0, %r0, %r0;						\
-	jmp %r1;							\
-	__END(p,x); END(x)
-
-#define	__PSEUDO(p,x,y)							\
-	__SYSCALL(p,x,y);						\
-	jmp %r1;							\
-	__END(p,x); END(x)
-#define	__PSEUDO_HIDDEN(p,x,y)						\
-	__SYSCALL_HIDDEN(p,x,y);					\
-	jmp %r1;							\
-	__END(p,x)
-
-/*
- * System calls entry points are really named _thread_sys_{syscall},
- * and weakly aliased to the name {syscall}. This allows the thread
- * library to replace system calls at link time.
- */
-#define	SYSCALL(x)		__SYSCALL(_thread_sys_,x,x)
-#define	RSYSCALL(x)		__PSEUDO(_thread_sys_,x,x)
-#define	RSYSCALL_HIDDEN(x)	__PSEUDO_HIDDEN(_thread_sys_,x,x)
-#define	PSEUDO(x,y)		__PSEUDO(_thread_sys_,x,y)
-#define	PSEUDO_NOERROR(x,y)	__PSEUDO_NOERROR(_thread_sys_,x,y)
-#define	SYSENTRY_HIDDEN(x)	__ENTRY(_thread_sys_,x)
-#define	SYSENTRY(x)		SYSENTRY_HIDDEN(x);		\
-				__ALIAS(_thread_sys_,x)
-#define	SYSCALL_END_HIDDEN(x)	__END(_thread_sys_,x)
-#define	SYSCALL_END(x)		SYSCALL_END_HIDDEN(x); END(x)
+#define	SYSCALL(x)	align 8; \
+			ENTRY(x); \
+			ld r10,r31,32; \
+			ld r11,r31,36; \
+			ld r12,r31,40; \
+			or r13,r0, SYS_/**/x; \
+			tb0 0, r0, 128; \
+			br cerror
+#define	RSYSCALL(x)	SYSCALL(x); \
+			jmp r1
+#define	PSEUDO(x,y)	ENTRY(x); \
+			or r13,r0, SYS_/**/y; \
+			tb0 0,r0,128; or r0,r0,r0; jmp r1
+#endif /* !__STDC__ */
 
 #define	ASMSTR		.asciz
 
-	.globl	__cerror
+	.globl	cerror

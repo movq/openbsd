@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkswap.c,v 1.15 2015/01/16 06:40:16 deraadt Exp $	*/
+/*	$OpenBSD: mkswap.c,v 1.7 1996/11/12 08:37:58 niklas Exp $	*/
 /*	$NetBSD: mkswap.c,v 1.5 1996/08/31 20:58:27 mycroft Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,25 +45,23 @@
  *	from: @(#)mkswap.c	8.1 (Berkeley) 6/6/93
  */
 
-#include <sys/param.h>	/* NODEV */
-
+#include <sys/param.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
 #include "sem.h"
 
-static int mkoneswap(struct config *);
+static int mkoneswap __P((struct config *));
 
 /*
  * Make the various swap*.c files.  Nothing to do for generic swap.
  */
 int
-mkswap(void)
+mkswap()
 {
-	struct config *cf;
+	register struct config *cf;
 
 	for (cf = allcf; cf != NULL; cf = cf->cf_next)
 		if (cf->cf_root != NULL && mkoneswap(cf))
@@ -68,26 +70,28 @@ mkswap(void)
 }
 
 static char *
-mkdevstr(dev_t d)
+mkdevstr(d)
+dev_t d;
 {
 	static char buf[32];
 
 	if (d == NODEV)
-		(void)snprintf(buf, sizeof buf, "NODEV");
+		(void)sprintf(buf, "NODEV");
 	else
-		(void)snprintf(buf, sizeof buf, "makedev(%d, %d)",
-		    major(d), minor(d));
+		(void)sprintf(buf, "makedev(%d, %d)", major(d), minor(d));
 	return buf;
 }
 
 static int
-mkoneswap(struct config *cf)
+mkoneswap(cf)
+	register struct config *cf;
 {
-	char fname[200], *mountroot;
-	struct nvlist *nv;
-	FILE *fp;
+	register struct nvlist *nv;
+	register FILE *fp;
+	char fname[200];
+	char *mountroot;
 
-	(void)snprintf(fname, sizeof fname, "swap%s.c", cf->cf_name);
+	(void)sprintf(fname, "swap%s.c", cf->cf_name);
 	if ((fp = fopen(fname, "w")) == NULL) {
 		(void)fprintf(stderr, "config: cannot write %s: %s\n",
 		    fname, strerror(errno));
@@ -109,14 +113,14 @@ mkoneswap(struct config *cf)
 	if (fputs("\nstruct\tswdevt swdevt[] = {\n", fp) < 0)
 		goto wrerror;
 	for (nv = cf->cf_swap; nv != NULL; nv = nv->nv_next)
-		if (fprintf(fp, "\t{ %s,\t0 },\t/* %s */\n",
+		if (fprintf(fp, "\t{ %s,\t0,\t0 },\t/* %s */\n",
 		    mkdevstr(nv->nv_int), nv->nv_str) < 0)
 			goto wrerror;
-	if (fputs("\t{ NODEV, 0 }\n};\n\n", fp) < 0)
+	if (fputs("\t{ NODEV, 0, 0 }\n};\n\n", fp) < 0)
 		goto wrerror;
 	mountroot =
 	    cf->cf_root->nv_str == s_nfs ? "nfs_mountroot" : "dk_mountroot";
-	if (fprintf(fp, "int (*mountroot)(void) = %s;\n", mountroot) < 0)
+	if (fprintf(fp, "int (*mountroot) __P((void)) = %s;\n", mountroot) < 0)
 		goto wrerror;
 
 	if (fclose(fp)) {

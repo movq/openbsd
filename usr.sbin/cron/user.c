@@ -1,115 +1,119 @@
-/*	$OpenBSD: user.c,v 1.19 2016/08/30 14:08:16 millert Exp $	*/
-
 /* Copyright 1988,1990,1993,1994 by Paul Vixie
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
- * Copyright (c) 1997,2000 by Internet Software Consortium, Inc.
+ * All rights reserved
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Distribute freely, except: don't remove my name from the source or
+ * documentation (don't take credit for my work), mark your changes (don't
+ * get me blamed for your possible bugs), don't alter or remove this
+ * notice.  May be sold if buildable source is provided to buyer.  No
+ * warrantee of any kind, express or implied, is included with this
+ * software; use at your own risk, responsibility for damages (if any) to
+ * anyone resulting from the use of this software rests entirely with the
+ * user.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Send bug reports, bug fixes, enhancements, requests, flames, etc., and
+ * I'll try to keep a version up to date.  I can be reached as follows:
+ * Paul Vixie          <paul@vix.com>          uunet!decwrl!vixie!paul
  */
 
-#include <sys/types.h>
+#if !defined(lint) && !defined(LINT)
+static char rcsid[] = "$Id: user.c,v 1.2 1996/11/01 23:27:39 millert Exp $";
+#endif
 
-#include <bitstring.h>		/* for structs.h */
-#include <ctype.h>
-#include <errno.h>
-#include <pwd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <syslog.h>
-#include <time.h>		/* for structs.h */
+/* vix 26jan87 [log is in RCS file]
+ */
 
-#include "macros.h"
-#include "structs.h"
-#include "funcs.h"
+
+#include "cron.h"
+
 
 void
-free_user(user *u)
+free_user(u)
+	user	*u;
 {
-	entry *e;
+	entry	*e, *ne;
 
-	while ((e = SLIST_FIRST(&u->crontab))) {
-		SLIST_REMOVE_HEAD(&u->crontab, entries);
+	free(u->name);
+	for (e = u->crontab;  e != NULL;  e = ne) {
+		ne = e->next;
 		free_entry(e);
 	}
-	free(u->name);
 	free(u);
 }
 
+
 user *
-load_user(int crontab_fd, struct passwd	*pw, const char *name)
+load_user(crontab_fd, pw, name)
+	int		crontab_fd;
+	struct passwd	*pw;		/* NULL implies syscrontab */
+	char		*name;
 {
-	char envstr[MAX_ENVSTR];
-	FILE *file;
-	user *u;
-	entry *e;
-	int status, save_errno;
-	char **envp = NULL, **tenvp;
+	char	envstr[MAX_ENVSTR];
+	FILE	*file;
+	user	*u;
+	entry	*e;
+	int	status;
+	char	**envp, **tenvp;
 
 	if (!(file = fdopen(crontab_fd, "r"))) {
-		syslog(LOG_ERR, "(%s) FDOPEN (%m)", pw->pw_name);
-		return (NULL);
+		perror("fdopen on crontab_fd in load_user");
+		return NULL;
 	}
+
+	Debug(DPARS, ("load_user()\n"))
 
 	/* file is open.  build user entry, then read the crontab file.
 	 */
-	if ((u = malloc(sizeof(user))) == NULL)
-		goto done;
-	if ((u->name = strdup(name)) == NULL) {
-		save_errno = errno;
-		free(u);
-		u = NULL;
-		errno = save_errno;
-		goto done;
+	if ((u = (user *) malloc(sizeof(user))) == NULL) {
+		errno = ENOMEM;
+		return NULL;
 	}
-	SLIST_INIT(&u->crontab);
+	if ((u->name = strdup(name)) == NULL) {
+		free(u);
+		errno = ENOMEM;
+		return NULL;
+	}
+	u->crontab = NULL;
 
-	/* init environment.  this will be copied/augmented for each entry.
+	/* 
+	 * init environment.  this will be copied/augmented for each entry.
 	 */
 	if ((envp = env_init()) == NULL) {
-		save_errno = errno;
-		free_user(u);
-		u = NULL;
-		errno = save_errno;
-		goto done;
+		free(u->name);
+		free(u);
+		return NULL;
 	}
 
-	/* load the crontab
+	/*
+	 * load the crontab
 	 */
-	while ((status = load_env(envstr, file)) >= 0) {
+	while ((status = load_env(envstr, file)) >= OK) {
 		switch (status) {
+		case ERR:
+			free_user(u);
+			u = NULL;
+			goto done;
 		case FALSE:
-			/* Not an env variable, parse as crontab entry. */
 			e = load_entry(file, NULL, pw, envp);
-			if (e)
-				SLIST_INSERT_HEAD(&u->crontab, e, entries);
+			if (e) {
+				e->next = u->crontab;
+				u->crontab = e;
+			}
 			break;
 		case TRUE:
-			if ((tenvp = env_set(envp, envstr)) == NULL) {
-				save_errno = errno;
+			if ((tenvp = env_set(envp, envstr))) {
+				envp = tenvp;
+			} else {
 				free_user(u);
 				u = NULL;
-				errno = save_errno;
 				goto done;
 			}
-			envp = tenvp;
 			break;
 		}
 	}
 
  done:
-	if (envp != NULL)
-		env_free(envp);
+	env_free(envp);
 	fclose(file);
-	return (u);
+	Debug(DPARS, ("...load_user() done\n"))
+	return u;
 }

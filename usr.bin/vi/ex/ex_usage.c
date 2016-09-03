@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_usage.c,v 1.8 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_usage.c	10.13 (Berkeley) 5/3/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -29,10 +31,12 @@
  * ex_help -- :help
  *	Display help message.
  *
- * PUBLIC: int ex_help(SCR *, EXCMD *);
+ * PUBLIC: int ex_help __P((SCR *, EXCMD *));
  */
 int
-ex_help(SCR *sp, EXCMD *cmdp)
+ex_help(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	(void)ex_puts(sp,
 	    "To see the list of vi commands, enter \":viusage<CR>\"\n");
@@ -50,10 +54,12 @@ ex_help(SCR *sp, EXCMD *cmdp)
  * ex_usage -- :exusage [cmd]
  *	Display ex usage strings.
  *
- * PUBLIC: int ex_usage(SCR *, EXCMD *);
+ * PUBLIC: int ex_usage __P((SCR *, EXCMD *));
  */
 int
-ex_usage(SCR *sp, EXCMD *cmdp)
+ex_usage(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	ARGS *ap;
 	EXCMDLIST const *cp;
@@ -71,7 +77,7 @@ ex_usage(SCR *sp, EXCMD *cmdp)
 		for (cp = cmds; cp->name != NULL &&
 		    memcmp(ap->bp, cp->name, ap->len); ++cp);
 		if (cp->name == NULL ||
-		    (newscreen && !F_ISSET(cp, E_NEWSCREEN))) {
+		    newscreen && !F_ISSET(cp, E_NEWSCREEN)) {
 			if (newscreen)
 				ap->bp[0] = toupper(ap->bp[0]);
 			(void)ex_printf(sp, "The %.*s command is unknown\n",
@@ -131,14 +137,18 @@ ex_usage(SCR *sp, EXCMD *cmdp)
  * ex_viusage -- :viusage [key]
  *	Display vi usage strings.
  *
- * PUBLIC: int ex_viusage(SCR *, EXCMD *);
+ * PUBLIC: int ex_viusage __P((SCR *, EXCMD *));
  */
 int
-ex_viusage(SCR *sp, EXCMD *cmdp)
+ex_viusage(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
+	GS *gp;
 	VIKEYS const *kp;
 	int key;
 
+	gp = sp->gp;
 	switch (cmdp->argc) {
 	case 1:
 		if (cmdp->argv[0]->len != 1) {

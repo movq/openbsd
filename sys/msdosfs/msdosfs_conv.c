@@ -1,4 +1,4 @@
-/*	$OpenBSD: msdosfs_conv.c,v 1.19 2015/10/23 10:45:31 krw Exp $	*/
+/*	$OpenBSD: msdosfs_conv.c,v 1.8 1998/01/11 20:39:06 provos Exp $	*/
 /*	$NetBSD: msdosfs_conv.c,v 1.24 1997/10/17 11:23:54 ws Exp $	*/
 
 /*-
@@ -34,17 +34,17 @@
  */
 /*
  * Written by Paul Popelka (paulp@uts.amdahl.com)
- *
+ * 
  * You can do anything you want with this software, just don't say you wrote
  * it, and don't remove this notice.
- *
+ * 
  * This software is provided "as is".
- *
+ * 
  * The author supplies this software to be publicly redistributed on the
  * understanding that the author is not responsible for the correct
  * functioning of this software in any circumstances and is not liable for
  * any damages caused by this software.
- *
+ * 
  * October 1992
  */
 
@@ -57,7 +57,6 @@
 #include <sys/kernel.h>		/* defines tz */
 #include <sys/dirent.h>
 #include <sys/vnode.h>
-#include <sys/lock.h>
 
 /*
  * MSDOSFS include files.
@@ -68,7 +67,7 @@
 /*
  * Days in each month in a regular year.
  */
-const u_short regyear[] = {
+u_short regyear[] = {
 	31, 28, 31, 30, 31, 30,
 	31, 31, 30, 31, 30, 31
 };
@@ -76,7 +75,7 @@ const u_short regyear[] = {
 /*
  * Days in each month in a leap year.
  */
-const u_short leapyear[] = {
+u_short leapyear[] = {
 	31, 29, 31, 30, 31, 30,
 	31, 31, 30, 31, 30, 31
 };
@@ -85,8 +84,8 @@ const u_short leapyear[] = {
  * Variables used to remember parts of the last time conversion.  Maybe we
  * can avoid a full conversion.
  */
-time_t lasttime;
-uint32_t lastday;
+u_long lasttime;
+u_long lastday;
 u_short lastddate;
 u_short lastdtime;
 
@@ -95,31 +94,26 @@ u_short lastdtime;
  * file timestamps. The passed in unix time is assumed to be in GMT.
  */
 void
-unix2dostime(struct timespec *tsp, u_int16_t *ddp, u_int16_t *dtp, u_int8_t *dhp)
+unix2dostime(tsp, ddp, dtp, dhp)
+	struct timespec *tsp;
+	u_int16_t *ddp;
+	u_int16_t *dtp;
+	u_int8_t *dhp;
 {
-	time_t t;
-	uint32_t days;
-	uint32_t inc;
-	uint32_t year;
-	uint32_t month;
-	const u_short *months;
+	u_long t;
+	u_long days;
+	u_long inc;
+	u_long year;
+	u_long month;
+	u_short *months;
 
 	/*
 	 * If the time from the last conversion is the same as now, then
 	 * skip the computations and use the saved result.
 	 */
 	t = tsp->tv_sec - (tz.tz_minuteswest * 60)
-	     /* +- daylight saving time correction */ ;
+	     /* +- daylight savings time correction */ ;
 	t &= ~1;
-	/*
-	 * Before 1/1/1980 there is only a timeless void. After 12/31/2107
-	 * there is only Cthulhu.
-	 */
-#define DOSEPOCH 315532800LL
-#define DOSENDTIME 4354775999LL
-	if (t < DOSEPOCH || t > DOSENDTIME)
-		t = DOSEPOCH;
-
 	if (lasttime != t) {
 		lasttime = t;
 		lastdtime = (((t / 2) % 30) << DT_2SECONDS_SHIFT)
@@ -174,7 +168,7 @@ unix2dostime(struct timespec *tsp, u_int16_t *ddp, u_int16_t *dtp, u_int8_t *dhp
 #define	SECONDSTO1980	(((8 * 365) + (2 * 366)) * (24 * 60 * 60))
 
 u_short lastdosdate;
-uint32_t lastseconds;
+u_long lastseconds;
 
 /*
  * Convert from dos' idea of time to unix'. This will probably only be
@@ -182,13 +176,17 @@ uint32_t lastseconds;
  * not be too efficient.
  */
 void
-dos2unixtime(u_int dd, u_int dt, u_int dh, struct timespec *tsp)
+dos2unixtime(dd, dt, dh, tsp)
+	u_int dd;
+	u_int dt;
+	u_int dh;
+	struct timespec *tsp;
 {
-	uint32_t seconds;
-	uint32_t m, month;
-	uint32_t y, year;
-	uint32_t days;
-	const u_short *months;
+	u_long seconds;
+	u_long m, month;
+	u_long y, year;
+	u_long days;
+	u_short *months;
 
 	if (dd == 0) {
 		/*
@@ -219,7 +217,7 @@ dos2unixtime(u_int dd, u_int dt, u_int dh, struct timespec *tsp)
 		 */
 		month = (dd & DD_MONTH_MASK) >> DD_MONTH_SHIFT;
 		if (month == 0) {
-			printf("dos2unixtime(): month value out of range (%u)\n",
+			printf("dos2unixtime(): month value out of range (%ld)\n",
 			    month);
 			month = 1;
 		}
@@ -229,11 +227,11 @@ dos2unixtime(u_int dd, u_int dt, u_int dh, struct timespec *tsp)
 		lastseconds = (days * 24 * 60 * 60) + SECONDSTO1980;
 	}
 	tsp->tv_sec = seconds + lastseconds + (tz.tz_minuteswest * 60)
-	     /* -+ daylight saving time correction */ ;
+	     /* -+ daylight savings time correction */ ;
 	tsp->tv_nsec = (dh % 100) * 10000000;
 }
 
-static const u_char
+static u_char
 unix2dos[256] = {
 	0,    0,    0,    0,    0,    0,    0,    0,	/* 00-07 */
 	0,    0,    0,    0,    0,    0,    0,    0,	/* 08-0f */
@@ -269,7 +267,7 @@ unix2dos[256] = {
 	0x9d, 0xeb, 0xe9, 0xea, 0x9a, 0xed, 0xe8, 0x98,	/* f8-ff */
 };
 
-static const u_char
+static u_char
 dos2unix[256] = {
 	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,	/* 00-07 */
 	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,	/* 08-0f */
@@ -305,7 +303,7 @@ dos2unix[256] = {
 	0xb0, 0xa8, 0xb7, 0xb9, 0xb3, 0xb2, 0x3f, 0x3f,	/* f8-ff */
 };
 
-static const u_char
+static u_char
 u2l[256] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, /* 00-07 */
 	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, /* 08-0f */
@@ -354,7 +352,10 @@ u2l[256] = {
  * null.
  */
 int
-dos2unixfn(u_char dn[11], u_char *un, int lower)
+dos2unixfn(dn, un, lower)
+	u_char dn[11];
+	u_char *un;
+	int lower;
 {
 	int i;
 	int thislong = 1;
@@ -372,7 +373,7 @@ dos2unixfn(u_char dn[11], u_char *un, int lower)
 		c = dos2unix[*dn];
 	*un++ = lower ? u2l[c] : c;
 	dn++;
-
+	
 	/*
 	 * Copy the name portion into the unix filename string.
 	 */
@@ -382,7 +383,7 @@ dos2unixfn(u_char dn[11], u_char *un, int lower)
 		thislong++;
 	}
 	dn += 8 - i;
-
+	
 	/*
 	 * Now, if there is an extension then put in a period and copy in
 	 * the extension.
@@ -413,20 +414,25 @@ dos2unixfn(u_char dn[11], u_char *un, int lower)
  *	3 if conversion was successful and generation number was inserted
  */
 int
-unix2dosfn(u_char *un, u_char dn[11], int unlen, u_int gen)
+unix2dosfn(un, dn, unlen, gen)
+	u_char *un;
+	u_char dn[12];
+	int unlen;
+	u_int gen;
 {
 	int i, j, l;
 	int conv = 1;
 	u_char *cp, *dp, *dp1;
 	u_char gentext[6];
-
+	
 	/*
 	 * Fill the dos filename string with blanks. These are DOS's pad
 	 * characters.
 	 */
 	for (i = 0; i < 11; i++)
 		dn[i] = ' ';
-
+	dn[11] = 0;
+	
 	/*
 	 * The filenames "." and ".." are handled specially, since they
 	 * don't follow dos filename rules.
@@ -449,7 +455,7 @@ unix2dosfn(u_char *un, u_char dn[11], int unlen, u_int gen)
 			break;
 	if (i < 0)
 		return 0;
-
+	
 	/*
 	 * Now find the extension
 	 * Note: dot as first char doesn't start extension
@@ -471,7 +477,7 @@ unix2dosfn(u_char *un, u_char dn[11], int unlen, u_int gen)
 			break;
 		}
 	}
-
+	
 	/*
 	 * Now convert it
 	 */
@@ -517,14 +523,14 @@ unix2dosfn(u_char *un, u_char dn[11], int unlen, u_int gen)
 	 */
 	if (!j)
 		dn[0] = '_';
-
+	
 	/*
 	 * The first character cannot be E5,
 	 * because that means a deleted entry
 	 */
 	if (dn[0] == 0xe5)
 		dn[0] = SLOT_E5;
-
+	
 	/*
 	 * If there wasn't any char dropped,
 	 * there is no place for generation numbers
@@ -534,7 +540,7 @@ unix2dosfn(u_char *un, u_char dn[11], int unlen, u_int gen)
 			return 0;
 		return conv;
 	}
-
+	
 	/*
 	 * Now insert the generation number into the filename part
 	 */
@@ -557,7 +563,12 @@ unix2dosfn(u_char *un, u_char dn[11], int unlen, u_int gen)
  *	 i.e. doesn't consist solely of blanks and dots
  */
 int
-unix2winfn(u_char *un, int unlen, struct winentry *wep, int cnt, int chksum)
+unix2winfn(un, unlen, wep, cnt, chksum)
+	u_char *un;
+	int unlen;
+	struct winentry *wep;
+	int cnt;
+	int chksum;
 {
 	u_int8_t *cp;
 	int i;
@@ -569,7 +580,7 @@ unix2winfn(u_char *un, int unlen, struct winentry *wep, int cnt, int chksum)
 
 	un += (cnt - 1) * WIN_CHARS;
 	unlen -= (cnt - 1) * WIN_CHARS;
-
+	
 	/*
 	 * Initialize winentry to some useful default
 	 */
@@ -579,7 +590,7 @@ unix2winfn(u_char *un, int unlen, struct winentry *wep, int cnt, int chksum)
 	wep->weReserved1 = 0;
 	wep->weChksum = chksum;
 	wep->weReserved2 = 0;
-
+	
 	/*
 	 * Now convert the filename parts
 	 */
@@ -617,11 +628,15 @@ done:
  * Returns the checksum or -1 if no match
  */
 int
-winChkName(u_char *un, int unlen, struct winentry *wep, int chksum)
+winChkName(un, unlen, wep, chksum)
+	u_char *un;
+	int unlen;
+	struct winentry *wep;
+	int chksum;
 {
 	u_int8_t *cp;
 	int i;
-
+	
 	/*
 	 * First compare checksums
 	 */
@@ -631,7 +646,7 @@ winChkName(u_char *un, int unlen, struct winentry *wep, int chksum)
 		chksum = -1;
 	if (chksum == -1)
 		return -1;
-
+	
 	/*
 	 * Offset of this entry
 	 */
@@ -639,10 +654,7 @@ winChkName(u_char *un, int unlen, struct winentry *wep, int chksum)
 	if ((unlen -= i) <= 0)
 		return -1;
 	un += i;
-
-	if ((wep->weCnt&WIN_LAST) && unlen > WIN_CHARS)
-		return -1;
-
+	
 	/*
 	 * Compare the name parts
 	 */
@@ -681,7 +693,10 @@ winChkName(u_char *un, int unlen, struct winentry *wep, int chksum)
  * Returns the checksum or -1 if impossible
  */
 int
-win2unixfn(struct winentry *wep, struct dirent *dp, int chksum)
+win2unixfn(wep, dp, chksum)
+	struct winentry *wep;
+	struct dirent *dp;
+	int chksum;
 {
 	u_int8_t *cp;
 	u_int8_t *np, *ep = dp->d_name + WIN_MAXLEN;
@@ -690,7 +705,7 @@ win2unixfn(struct winentry *wep, struct dirent *dp, int chksum)
 	if ((wep->weCnt&WIN_CNT) > howmany(WIN_MAXLEN, WIN_CHARS)
 	    || !(wep->weCnt&WIN_CNT))
 		return -1;
-
+	
 	/*
 	 * First compare checksums
 	 */
@@ -704,13 +719,13 @@ win2unixfn(struct winentry *wep, struct dirent *dp, int chksum)
 		chksum = -1;
 	if (chksum == -1)
 		return -1;
-
+	
 	/*
 	 * Offset of this entry
 	 */
 	i = ((wep->weCnt&WIN_CNT) - 1) * WIN_CHARS;
 	np = (u_int8_t *)dp->d_name + i;
-
+	
 	/*
 	 * Convert the name parts
 	 */
@@ -784,11 +799,12 @@ win2unixfn(struct winentry *wep, struct dirent *dp, int chksum)
  * Compute the checksum of a DOS filename for Win95 use
  */
 u_int8_t
-winChksum(u_int8_t *name)
+winChksum(name)
+	u_int8_t *name;
 {
 	int i;
 	u_int8_t s;
-
+	
 	for (s = 0, i = 11; --i >= 0; s += *name++)
 		s = (s << 7)|(s >> 1);
 	return s;
@@ -798,7 +814,9 @@ winChksum(u_int8_t *name)
  * Determine the number of slots necessary for Win95 names
  */
 int
-winSlotCnt(u_char *un, int unlen)
+winSlotCnt(un, unlen)
+	u_char *un;
+	int unlen;
 {
 	for (un += unlen; unlen > 0; unlen--)
 		if (*--un != ' ' && *un != '.')

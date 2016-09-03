@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_tputs.c,v 1.12 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_tputs.c,v 1.2 1999/03/02 06:23:29 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,8 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
 
 /*
  *	tputs.c
@@ -44,234 +44,202 @@
 
 #include <curses.priv.h>
 #include <ctype.h>
-#include <term.h>		/* padding_baud_rate, xon_xoff */
-#include <termcap.h>		/* ospeed */
+#include <term.h>	/* padding_baud_rate, xon_xoff */
+#include <termcap.h>	/* ospeed */
 #include <tic.h>
 
-MODULE_ID("$Id: lib_tputs.c,v 1.12 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_tputs.c,v 1.39 1999/02/25 10:44:29 tom Exp $")
 
-NCURSES_EXPORT_VAR(char) PC = 0;              /* used by termcap library */
-NCURSES_EXPORT_VAR(NCURSES_OSPEED) ospeed = 0;        /* used by termcap library */
+#define OUTPUT ((SP != 0) ? SP->_ofp : stdout)
 
-NCURSES_EXPORT_VAR(int) _nc_nulls_sent = 0;   /* used by 'tack' program */
+char PC;		/* used by termcap library */
+speed_t ospeed;		/* used by termcap library */
 
-#if NCURSES_NO_PADDING
-NCURSES_EXPORT(void)
-_nc_set_no_padding(SCREEN *sp)
+int _nc_nulls_sent;	/* used by 'tack' program */
+
+static int (*my_outch)(int c) = _nc_outch;
+
+int delay_output(int ms)
 {
-    bool no_padding = (getenv("NCURSES_NO_PADDING") != 0);
+	T((T_CALLED("delay_output(%d)"), ms));
 
-    if (sp)
-	sp->_no_padding = no_padding;
-    else
-	_nc_prescreen._no_padding = no_padding;
+	if (no_pad_char)
+		napms(ms);
+	else {
+		register int	nullcount;
 
-    TR(TRACE_CHARPUT | TRACE_MOVE, ("padding will%s be used",
-				    GetNoPadding(sp) ? " not" : ""));
-}
-#endif
+		nullcount = (ms * _nc_baudrate(ospeed)) / 10000;
+		for (_nc_nulls_sent += nullcount; nullcount > 0; nullcount--)
+			my_outch(PC);
+		if (my_outch == _nc_outch)
+			(void) fflush(OUTPUT);
+	}
 
-static int (*my_outch) (int c) = _nc_outch;
-
-NCURSES_EXPORT(int)
-delay_output(int ms)
-{
-    T((T_CALLED("delay_output(%d)"), ms));
-
-    if (no_pad_char) {
-	_nc_flush();
-	napms(ms);
-    } else {
-	register int nullcount;
-
-	nullcount = (ms * _nc_baudrate(ospeed)) / (BAUDBYTE * 1000);
-	for (_nc_nulls_sent += nullcount; nullcount > 0; nullcount--)
-	    my_outch(PC);
-	if (my_outch == _nc_outch)
-	    _nc_flush();
-    }
-
-    returnCode(OK);
+	returnCode(OK);
 }
 
-NCURSES_EXPORT(void)
-_nc_flush(void)
+int _nc_outch(int ch)
 {
-    (void) fflush(NC_OUTPUT);
+#ifdef TRACE
+    	_nc_outchars++;
+#endif /* TRACE */
+
+	putc(ch, OUTPUT);
+	return OK;
 }
 
-NCURSES_EXPORT(int)
-_nc_outch(int ch)
+int putp(const char *string)
 {
-    COUNT_OUTCHARS(1);
-
-    if (SP != 0
-	&& SP->_cleanup) {
-	char tmp = ch;
-	/*
-	 * POSIX says write() is safe in a signal handler, but the
-	 * buffered I/O is not.
-	 */
-	write(fileno(NC_OUTPUT), &tmp, 1);
-    } else {
-	putc(ch, NC_OUTPUT);
-    }
-    return OK;
+	return tputs(string, 1, _nc_outch);
 }
 
-NCURSES_EXPORT(int)
-putp(const char *string)
+int tputs(const char *string, int affcnt, int (*outc)(int))
 {
-    return tputs(string, 1, _nc_outch);
-}
-
-NCURSES_EXPORT(int)
-tputs(const char *string, int affcnt, int (*outc) (int))
-{
-    bool always_delay;
-    bool normal_delay;
-    int number;
-#if BSD_TPUTS
-    int trailpad;
+bool	always_delay;
+bool	normal_delay;
+int	number;
+#ifdef BSD_TPUTS
+int	trailpad;
 #endif /* BSD_TPUTS */
 
 #ifdef TRACE
-    char addrbuf[32];
+char	addrbuf[32];
 
-    if (USE_TRACEF(TRACE_TPUTS)) {
-	if (outc == _nc_outch)
-	    (void) strlcpy(addrbuf, "_nc_outch", sizeof(addrbuf));
-	else
-	    (void) snprintf(addrbuf, sizeof(addrbuf), "%p", outc);
-	if (_nc_tputs_trace) {
-	    _tracef("tputs(%s = %s, %d, %s) called", _nc_tputs_trace,
-		    _nc_visbuf(string), affcnt, addrbuf);
-	} else {
-	    _tracef("tputs(%s, %d, %s) called", _nc_visbuf(string), affcnt, addrbuf);
+	if (_nc_tracing & TRACE_TPUTS)
+	{
+		if (outc == _nc_outch)
+			(void) strcpy(addrbuf, "_nc_outch");
+		else
+			(void) sprintf(addrbuf, "%p", outc);
+		if (_nc_tputs_trace) {
+			TR(TRACE_MAXIMUM, ("tputs(%s = %s, %d, %s) called", _nc_tputs_trace, _nc_visbuf(string), affcnt, addrbuf));
+		}
+		else {
+			TR(TRACE_MAXIMUM, ("tputs(%s, %d, %s) called", _nc_visbuf(string), affcnt, addrbuf));
+		}
+		_nc_tputs_trace = (char *)NULL;
 	}
-	TPUTS_TRACE(NULL);
-	_nc_unlock_global(tracef);
-    }
 #endif /* TRACE */
+	
+	if (!VALID_STRING(string))
+		return ERR;
 
-    if (!VALID_STRING(string))
-	return ERR;
-
-    if (cur_term == 0) {
-	always_delay = FALSE;
-	normal_delay = TRUE;
-    } else {
-	always_delay = (string == bell) || (string == flash_screen);
-	normal_delay =
-	    !xon_xoff
-	    && padding_baud_rate
-#if NCURSES_NO_PADDING
-	    && !GetNoPadding(SP)
+	if (cur_term == 0) {
+		always_delay = FALSE;
+		normal_delay = TRUE;
+	} else {
+		always_delay = (string == bell) || (string == flash_screen);
+		normal_delay =
+		 !xon_xoff
+		 && padding_baud_rate
+#ifdef NCURSES_NO_PADDING
+		 && (SP == 0 || !(SP->_no_padding))
 #endif
-	    && (_nc_baudrate(ospeed) >= padding_baud_rate);
-    }
-
-#if BSD_TPUTS
-    /*
-     * This ugly kluge deals with the fact that some ancient BSD programs
-     * (like nethack) actually do the likes of tputs("50") to get delays.
-     */
-    trailpad = 0;
-    if (isdigit(UChar(*string))) {
-	while (isdigit(UChar(*string))) {
-	    trailpad = trailpad * 10 + (*string - '0');
-	    string++;
-	}
-	trailpad *= 10;
-	if (*string == '.') {
-	    string++;
-	    if (isdigit(UChar(*string))) {
-		trailpad += (*string - '0');
-		string++;
-	    }
-	    while (isdigit(UChar(*string)))
-		string++;
+		 && (_nc_baudrate(ospeed) >= padding_baud_rate);
 	}
 
-	if (*string == '*') {
-	    trailpad *= affcnt;
-	    string++;
-	}
-    }
-#endif /* BSD_TPUTS */
-
-    my_outch = outc;		/* redirect delay_output() */
-    while (*string) {
-	if (*string != '$')
-	    (*outc) (*string);
-	else {
-	    string++;
-	    if (*string != '<') {
-		(*outc) ('$');
-		if (*string)
-		    (*outc) (*string);
-	    } else {
-		bool mandatory;
-
-		string++;
-		if ((!isdigit(UChar(*string)) && *string != '.')
-		    || !strchr(string, '>')) {
-		    (*outc) ('$');
-		    (*outc) ('<');
-		    continue;
+#ifdef BSD_TPUTS
+	/*
+	 * This ugly kluge deals with the fact that some ancient BSD programs
+	 * (like nethack) actually do the likes of tputs("50") to get delays.
+	 */
+	trailpad = 0;
+	if (isdigit(*string)) {
+		while (isdigit(*string)) {
+			trailpad = trailpad * 10 + (*string - '0');
+			string++;
 		}
-
-		number = 0;
-		while (isdigit(UChar(*string))) {
-		    number = number * 10 + (*string - '0');
-		    string++;
-		}
-		number *= 10;
+		trailpad *= 10;
 		if (*string == '.') {
-		    string++;
-		    if (isdigit(UChar(*string))) {
-			number += (*string - '0');
 			string++;
-		    }
-		    while (isdigit(UChar(*string)))
-			string++;
+			if (isdigit(*string)) {
+				trailpad += (*string - '0');
+				string++;
+			}
+			while (isdigit(*string))
+				string++;
 		}
 
-		mandatory = FALSE;
-		while (*string == '*' || *string == '/') {
-		    if (*string == '*') {
-			number *= affcnt;
+		if (*string == '*') {
+			trailpad *= affcnt;
 			string++;
-		    } else {	/* if (*string == '/') */
-			mandatory = TRUE;
-			string++;
-		    }
 		}
-
-		if (number > 0
-		    && (always_delay
-			|| normal_delay
-			|| mandatory))
-		    delay_output(number / 10);
-
-	    }			/* endelse (*string == '<') */
-	}			/* endelse (*string == '$') */
-
-	if (*string == '\0')
-	    break;
-
-	string++;
-    }
-
-#if BSD_TPUTS
-    /*
-     * Emit any BSD-style prefix padding that we've accumulated now.
-     */
-    if (trailpad > 0
-	&& (always_delay || normal_delay))
-	delay_output(trailpad / 10);
+	}
 #endif /* BSD_TPUTS */
 
-    my_outch = _nc_outch;
-    return OK;
+	my_outch = outc;	/* redirect delay_output() */
+	while (*string) {
+		if (*string != '$')
+			(*outc)(*string);
+		else {
+			string++;
+			if (*string != '<') {
+				(*outc)('$');
+				if (*string)
+				    (*outc)(*string);
+			} else {
+				bool mandatory;
+
+				string++;
+				if ((!isdigit(*string) && *string != '.') || !strchr(string, '>')) {
+					(*outc)('$');
+					(*outc)('<');
+					continue;
+				}
+
+				number = 0;
+				while (isdigit(*string)) {
+					number = number * 10 + (*string - '0');
+					string++;
+				}
+				number *= 10;
+				if (*string == '.') {
+					string++;
+					if (isdigit(*string)) {
+						number += (*string - '0');
+						string++;
+					}
+					while (isdigit(*string))
+						string++;
+				}
+
+				mandatory = FALSE;
+				while (*string == '*' || *string == '/')
+				{
+					if (*string == '*') {
+						number *= affcnt;
+						string++;
+					}
+					else /* if (*string == '/') */ {
+						mandatory = TRUE;
+						string++;
+					}
+				}
+
+				if (number > 0
+				 && (always_delay
+				  || normal_delay
+				  || mandatory))
+					delay_output(number/10);
+
+			} /* endelse (*string == '<') */
+		} /* endelse (*string == '$') */
+
+		if (*string == '\0')
+			break;
+
+		string++;
+	}
+
+#ifdef BSD_TPUTS
+	/*
+	 * Emit any BSD-style prefix padding that we've accumulated now.
+	 */
+	if (trailpad > 0
+	 && (always_delay || normal_delay))
+		delay_output(trailpad/10);
+#endif /* BSD_TPUTS */
+
+	my_outch = _nc_outch;
+	return OK;
 }

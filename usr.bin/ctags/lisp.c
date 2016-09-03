@@ -1,4 +1,4 @@
-/*	$OpenBSD: lisp.c,v 1.8 2013/11/26 13:18:55 deraadt Exp $	*/
+/*	$OpenBSD: lisp.c,v 1.2 1996/06/26 05:32:29 deraadt Exp $	*/
 /*	$NetBSD: lisp.c,v 1.3 1995/03/26 20:14:09 glass Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lisp.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: lisp.c,v 1.2 1996/06/26 05:32:29 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -42,7 +54,7 @@
  * just look for (def or (DEF
  */
 void
-l_entries(void)
+l_entries()
 {
 	int	special;
 	char	*cp;
@@ -67,9 +79,9 @@ l_entries(void)
 			if (cicmp("wrapper") || cicmp("whopper"))
 				special = YES;
 		}
-		for (; !isspace((unsigned char)*lbp); ++lbp)
+		for (; !isspace(*lbp); ++lbp)
 			continue;
-		for (; isspace((unsigned char)*lbp); ++lbp)
+		for (; isspace(*lbp); ++lbp)
 			continue;
 		for (cp = lbp; *cp && *cp != '\n'; ++cp)
 			continue;
@@ -91,9 +103,9 @@ l_entries(void)
 				continue;
 		savedc = *cp;
 		*cp = EOS;
-		(void)strlcpy(tok, lbp, sizeof tok);
+		(void)strcpy(tok, lbp);
 		*cp = savedc;
-		get_line();
+		getline();
 		pfnote(tok, lineno);
 	}
 	/*NOTREACHED*/

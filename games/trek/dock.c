@@ -1,4 +1,4 @@
-/*	$OpenBSD: dock.c,v 1.7 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: dock.c,v 1.2 1998/08/19 07:41:26 pjanzen Exp $	*/
 /*	$NetBSD: dock.c,v 1.3 1995/04/22 10:58:45 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,15 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dock.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: dock.c,v 1.2 1998/08/19 07:41:26 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <stdio.h>
 #include "trek.h"
 
 /*
@@ -50,11 +61,12 @@
 */
 
 void
-dock(int v)
+dock(v)
+	int v;
 {
-	int		i, j;
-	int		ok;
-	struct event	*e;
+	register int		i, j;
+	int			ok;
+	register struct event	*e;
 
 	if (Ship.cond == DOCKED)
 	{
@@ -123,10 +135,11 @@ dock(int v)
 */
 
 void
-undock(int v)
+undock(v)
+	int v;
 {
-	struct event	*e;
-	int		i;
+	register struct event	*e;
+	register int		i;
 
 	if (Ship.cond != DOCKED)
 	{

@@ -1,5 +1,3 @@
-/*	$OpenBSD: arptab.c,v 1.28 2016/08/27 01:42:37 guenther Exp $ */
-
 /*
  * Copyright (c) 1984, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -15,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,15 +34,25 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1984, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+static char sccsid[] = "@(#)arp.c	8.2 (Berkeley) 1/2/94";
+#endif /* not lint */
+
 /*
  * set arp table entries
  */
 
 
+#include <sys/param.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
-#include <sys/time.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -54,58 +66,55 @@
 
 #include <netdb.h>
 #include <errno.h>
+#include <nlist.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <paths.h>
 #include <syslog.h>
 #include <string.h>
-#include <err.h>
 
-/* ROUNDUP() is nasty, but it is identical to what's in the kernel. */
-#define ROUNDUP(a)					\
-	((a) > 0 ? (1 + (((a) - 1) | (sizeof(long) - 1))) : sizeof(long))
-
-static pid_t pid;
+extern int errno;
+static int pid;
 static int s = -1;
 
-int rtget(struct sockaddr_inarp **, struct sockaddr_dl **);
-
 void
-arptab_init(void)
+getsocket()
 {
 	s = socket(PF_ROUTE, SOCK_RAW, 0);
-	if (s < 0)
-		err(1, "arp: socket");
+	if (s < 0) {
+		perror("arp: socket");
+		exit(1);
+	}
 }
 
 struct	sockaddr_in so_mask = {8, 0, 0, { 0xffffffff}};
 struct	sockaddr_inarp blank_sin = {sizeof(blank_sin), AF_INET }, sin_m;
 struct	sockaddr_dl blank_sdl = {sizeof(blank_sdl), AF_LINK }, sdl_m;
-struct	sockaddr_dl ifp_m = {sizeof(&ifp_m), AF_LINK};
-time_t	expire_time;
-int	flags, export_only, doing_proxy;
-
+int	expire_time, flags, export_only, doing_proxy;
 struct	{
 	struct	rt_msghdr m_rtm;
 	char	m_space[512];
-} m_rtmsg;
+}	m_rtmsg;
 
-int	arptab_set(u_char *, u_int32_t);
-int	rtmsg(int);
+int	arptab_set __P((u_char *, u_int32_t));
+int	rtmsg __P((int));
 
 /*
  * Set an individual arp entry
  */
 int
-arptab_set(u_char *eaddr, u_int32_t host)
+arptab_set(eaddr, host)
+	u_char *eaddr;
+	u_int32_t host;
 {
-	struct sockaddr_inarp *sin = &sin_m;
-	struct rt_msghdr *rtm = &(m_rtmsg.m_rtm);
-	struct sockaddr_dl *sdl;
-	struct timeval now;
+	register struct sockaddr_inarp *sin = &sin_m;
+	register struct sockaddr_dl *sdl;
+	register struct rt_msghdr *rtm = &(m_rtmsg.m_rtm);
+	struct timeval time;
 	int rt;
 
+	getsocket();
 	pid = getpid();
 
 	sdl_m = blank_sdl;
@@ -113,39 +122,39 @@ arptab_set(u_char *eaddr, u_int32_t host)
 	sin->sin_addr.s_addr = host;
 	memcpy((u_char *)LLADDR(&sdl_m), (char *)eaddr, 6);
 	sdl_m.sdl_alen = 6;
-	expire_time = 0;
-	doing_proxy = flags = export_only = 0;
-	gettimeofday(&now, 0);
-	expire_time = now.tv_sec + 20 * 60;
+	doing_proxy = flags = export_only = expire_time = 0;
+	gettimeofday(&time, 0);
+	expire_time = time.tv_sec + 20 * 60;
 
 tryagain:
-	if (rtget(&sin, &sdl)) {
+	if (rtmsg(RTM_GET) < 0) {
 		syslog(LOG_ERR,"%s: %m", inet_ntoa(sin->sin_addr));
+		close(s);
+		s = -1;
 		return (1);
 	}
-
+	sin = (struct sockaddr_inarp *)(rtm + 1);
+	sdl = (struct sockaddr_dl *)(sin->sin_len + (char *)sin);
 	if (sin->sin_addr.s_addr == sin_m.sin_addr.s_addr) {
 		if (sdl->sdl_family == AF_LINK &&
 		    (rtm->rtm_flags & RTF_LLINFO) &&
-		    !(rtm->rtm_flags & RTF_GATEWAY))
-			switch (sdl->sdl_type) {
-			case IFT_ETHER:
-			case IFT_FDDI:
-			case IFT_ISO88023:
-			case IFT_ISO88024:
-			case IFT_ISO88025:
-				goto overwrite;
-			default:
-				break;
+		    !(rtm->rtm_flags & RTF_GATEWAY)) switch (sdl->sdl_type) {
+		case IFT_ETHER: case IFT_FDDI: case IFT_ISO88023:
+		case IFT_ISO88024: case IFT_ISO88025:
+			goto overwrite;
 		}
 		if (doing_proxy == 0) {
 			syslog(LOG_ERR, "arptab_set: can only proxy for %s",
 			    inet_ntoa(sin->sin_addr));
+			close(s);
+			s = -1;
 			return (1);
 		}
 		if (sin_m.sin_other & SIN_PROXY) {
 			syslog(LOG_ERR,
 			    "arptab_set: proxy entry exists for non 802 device");
+			close(s);
+			s = -1;
 			return(1);
 		}
 		sin_m.sin_other = SIN_PROXY;
@@ -157,23 +166,28 @@ overwrite:
 		syslog(LOG_ERR,
 		    "arptab_set: cannot intuit interface index and type for %s",
 		    inet_ntoa(sin->sin_addr));
+		close(s);
+		s = -1;
 		return (1);
 	}
 	sdl_m.sdl_type = sdl->sdl_type;
 	sdl_m.sdl_index = sdl->sdl_index;
 	rt = rtmsg(RTM_ADD);
+	close(s);
+	s = -1;
 	return (rt);
 }
 
 int
-rtmsg(int cmd)
+rtmsg(cmd)
+	int cmd;
 {
 	static int seq;
-	struct rt_msghdr *rtm = &m_rtmsg.m_rtm;
-	char *cp = m_rtmsg.m_space;
-	int l;
+	int rlen;
+	register struct rt_msghdr *rtm = &m_rtmsg.m_rtm;
+	register char *cp = m_rtmsg.m_space;
+	register int l;
 
-retry:
 	errno = 0;
 	if (cmd == RTM_DELETE)
 		goto doit;
@@ -201,7 +215,7 @@ retry:
 		}
 		/* FALLTHROUGH */
 	case RTM_GET:
-		rtm->rtm_addrs |= (RTA_DST | RTA_IFP);
+		rtm->rtm_addrs |= RTA_DST;
 	}
 #define NEXTADDR(w, s) \
 	if (rtm->rtm_addrs & (w)) { \
@@ -212,69 +226,22 @@ retry:
 	NEXTADDR(RTA_DST, sin_m);
 	NEXTADDR(RTA_GATEWAY, sdl_m);
 	NEXTADDR(RTA_NETMASK, so_mask);
-	NEXTADDR(RTA_IFP, ifp_m);
 
 	rtm->rtm_msglen = cp - (char *)&m_rtmsg;
 doit:
 	l = rtm->rtm_msglen;
 	rtm->rtm_seq = ++seq;
 	rtm->rtm_type = cmd;
-	if (write(s, (char *)&m_rtmsg, l) < 0) {
+	if ((rlen = write(s, (char *)&m_rtmsg, l)) < 0) {
 		if (errno != ESRCH && errno != EEXIST) {
 			syslog(LOG_ERR, "writing to routing socket: %m");
 			return (-1);
 		}
 	}
 	do {
-		l = recv(s, (char *)&m_rtmsg, sizeof(m_rtmsg), MSG_DONTWAIT);
-	} while (l > 0 && (rtm->rtm_version != RTM_VERSION ||
-	    rtm->rtm_seq != seq || rtm->rtm_pid != pid));
-	if (l < 0) {
-		if (errno == EAGAIN || errno == EINTR)
-			goto retry;
+		l = read(s, (char *)&m_rtmsg, sizeof(m_rtmsg));
+	} while (l > 0 && (rtm->rtm_seq != seq || rtm->rtm_pid != pid));
+	if (l < 0)
 		syslog(LOG_ERR, "arptab_set: read from routing socket: %m");
-	}
-	return (0);
-}
-
-int
-rtget(struct sockaddr_inarp **sinp, struct sockaddr_dl **sdlp)
-{
-	struct rt_msghdr *rtm = &(m_rtmsg.m_rtm);
-	struct sockaddr_inarp *sin = NULL;
-	struct sockaddr_dl *sdl = NULL;
-	struct sockaddr *sa;
-	char *cp;
-	unsigned int i;
-
-	if (rtmsg(RTM_GET) < 0)
-		return (1);
-
-	if (rtm->rtm_addrs) {
-		cp = ((char *)rtm + rtm->rtm_hdrlen);
-		for (i = 1; i; i <<= 1) {
-			if (i & rtm->rtm_addrs) {
-				sa = (struct sockaddr *)cp;
-				switch (i) {
-				case RTA_DST:
-					sin = (struct sockaddr_inarp *)sa;
-					break;
-				case RTA_IFP:
-					sdl = (struct sockaddr_dl *)sa;
-					break;
-				default:
-					break;
-				}
-				cp += ROUNDUP(sa->sa_len);
-			}
-		}
-	}
-
-	if (sin == NULL || sdl == NULL)
-		return (1);
-
-	*sinp = sin;
-	*sdlp = sdl;
-
 	return (0);
 }

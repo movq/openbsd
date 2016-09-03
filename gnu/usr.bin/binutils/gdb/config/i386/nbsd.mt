@@ -1,4 +1,3 @@
-# Target: NetBSD/i386
-TDEPFILES= i386-tdep.o i387-tdep.o i386bsd-tdep.o i386nbsd-tdep.o nbsd-tdep.o \
-	corelow.o solib.o solib-svr4.o
-DEPRECATED_TM_FILE= solib.h
+# Target: Intel 386 running NetBSD
+TDEPFILES= i386-tdep.o i387-tdep.o solib.o
+TM_FILE= tm-nbsd.h

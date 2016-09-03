@@ -1,4 +1,4 @@
-/*	$OpenBSD: fat.h,v 1.11 2015/10/23 10:45:31 krw Exp $	*/
+/*	$OpenBSD: fat.h,v 1.4 1998/01/11 20:39:05 provos Exp $	*/
 /*	$NetBSD: fat.h,v 1.11 1997/10/17 11:23:49 ws Exp $	*/
 
 /*-
@@ -34,17 +34,17 @@
  */
 /*
  * Written by Paul Popelka (paulp@uts.amdahl.com)
- *
+ * 
  * You can do anything you want with this software, just don't say you wrote
  * it, and don't remove this notice.
- *
+ * 
  * This software is provided "as is".
- *
+ * 
  * The author supplies this software to be publicly redistributed on the
  * understanding that the author is not responsible for the correct
  * functioning of this software in any circumstances and is not liable for
  * any damages caused by this software.
- *
+ * 
  * October 1992
  */
 
@@ -71,6 +71,11 @@
  * than 4078 ((CLUST_RSRVS - CLUST_FIRST) & FAT12_MASK) then we've got a
  * 16 bit fat filesystem. While mounting, the result of this test is stored
  * in pm_fatentrysize.
+ * GEMDOS-flavour (atari):
+ * If the filesystem is on floppy we've got a 12 bit fat filesystem, otherwise
+ * 16 bit. We check the d_type field in the disklabel struct while mounting
+ * and store the result in the pm_fatentrysize. Note that this kind of
+ * detection gets flakey when mounting a vnd-device.
  */
 #define	FAT12(pmp)	(pmp->pm_fatmask == FAT12_MASK)
 #define	FAT16(pmp)	(pmp->pm_fatmask == FAT16_MASK)
@@ -92,13 +97,13 @@
  */
 #define	DE_CLEAR	1	/* Zero out the blocks allocated */
 
-int pcbmap(struct denode *, uint32_t, daddr_t *, uint32_t *, int *);
-int clusterfree(struct msdosfsmount *, uint32_t, uint32_t *);
-int clusteralloc(struct msdosfsmount *, uint32_t, uint32_t, uint32_t, uint32_t *, uint32_t *);
-int extendfile(struct denode *, uint32_t, struct buf **, uint32_t *, int);
-int fatentry(int, struct msdosfsmount *, uint32_t, uint32_t *, uint32_t);
-void fc_purge(struct denode *, u_int);
-void fc_lookup(struct denode *, uint32_t, uint32_t *, uint32_t *);
-int fillinusemap(struct msdosfsmount *);
-int freeclusterchain(struct msdosfsmount *, uint32_t);
+int pcbmap __P((struct denode *, u_long, daddr_t *, u_long *, int *));
+int clusterfree __P((struct msdosfsmount *, u_long, u_long *));
+int clusteralloc __P((struct msdosfsmount *, u_long, u_long, u_long, u_long *, u_long *));
+int extendfile __P((struct denode *, u_long, struct buf **, u_long *, int));
+int fatentry __P((int, struct msdosfsmount *, u_long, u_long *, u_long));
+void fc_purge __P((struct denode *, u_int));
+void fc_lookup __P((struct denode *, u_long, u_long *, u_long *));
+int fillinusemap __P((struct msdosfsmount *));
+int freeclusterchain __P((struct msdosfsmount *, u_long));
 #endif	/* _KERNEL */

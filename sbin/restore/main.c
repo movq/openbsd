@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.25 2016/07/28 21:37:10 tedu Exp $	*/
+/*	$OpenBSD: main.c,v 1.9 1997/07/05 20:51:23 millert Exp $	*/
 /*	$NetBSD: main.c,v 1.13 1997/07/01 05:37:51 lukem Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.3 (Berkeley) 9/13/94";
+#else
+static char rcsid[] = "$NetBSD: main.c,v 1.11 1996/03/15 22:39:39 scottr Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 
@@ -43,8 +62,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <limits.h>
 
 #include "restore.h"
 #include "extern.h"
@@ -63,17 +80,19 @@ time_t	dumpdate;
 FILE 	*terminal;
 char	*tmpdir;
 
-static void obsolete(int *, char **[]);
-static void usage(void);
+static void obsolete __P((int *, char **[]));
+static void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int ch;
 	ino_t ino;
 	char *inputdev;
 	char *symtbl = "./restoresymtable";
-	char *p, name[PATH_MAX];
+	char *p, name[MAXPATHLEN];
 
 	/* Temp files should *not* be readable.  We set permissions later. */
 	(void)umask(077);
@@ -81,14 +100,14 @@ main(int argc, char *argv[])
 	if (argc < 2)
 		usage();
 
-	if ((inputdev = getenv("TAPE")) == NULL || *inputdev == '\0')
+	if ((inputdev = getenv("TAPE")) == NULL)
 		inputdev = _PATH_DEFTAPE;
-	if ((tmpdir = getenv("TMPDIR")) == NULL || *tmpdir == '\0')
+	if ((tmpdir = getenv("TMPDIR")) == NULL)
 		tmpdir = _PATH_TMP;
 	if ((tmpdir = strdup(tmpdir)) == NULL)
 		err(1, NULL);
 	for (p = tmpdir + strlen(tmpdir) - 1; p >= tmpdir && *p == '/'; p--)
-		continue;
+		;
 	obsolete(&argc, &argv);
 	while ((ch = getopt(argc, argv, "b:cdf:himNRrs:tvxy")) != -1)
 		switch(ch) {
@@ -157,7 +176,7 @@ main(int argc, char *argv[])
 		(void)signal(SIGINT, SIG_IGN);
 	if (signal(SIGTERM, onintr) == SIG_IGN)
 		(void)signal(SIGTERM, SIG_IGN);
-	setvbuf(stderr, NULL, _IOLBF, 0);
+	setlinebuf(stderr);
 
 	atexit(cleanup);
 
@@ -236,7 +255,7 @@ main(int argc, char *argv[])
 		extractdirs(0);
 		initsymtable(NULL);
 		while (argc--) {
-			canon(*argv++, name, sizeof name);
+			canon(*argv++, name);
 			ino = dirlookup(name);
 			if (ino == 0)
 				continue;
@@ -251,7 +270,7 @@ main(int argc, char *argv[])
 		extractdirs(1);
 		initsymtable(NULL);
 		while (argc--) {
-			canon(*argv++, name, sizeof name);
+			canon(*argv++, name);
 			ino = dirlookup(name);
 			if (ino == 0)
 				continue;
@@ -266,14 +285,19 @@ main(int argc, char *argv[])
 			checkrestore();
 		break;
 	}
-	return (0);
+	exit(0);
+	/* NOTREACHED */
 }
 
 static void
-usage(void)
+usage()
 {
 
-	(void)fprintf(stderr, "usage: %s [-chimRrtvxy] [-b blocksize] [-f file] [-s fileno] [file ...]\n", __progname);
+	(void)fprintf(stderr, "usage: %s -i [-chmvy] [-b blocksize] [-f file] [-s fileno]\n", __progname);
+	(void)fprintf(stderr, "       %s -R [-cvy] [-b blocksize] [-f file] [-s fileno]\n", __progname);
+	(void)fprintf(stderr, "       %s -r [-cvy] [-b blocksize] [-f file] [-s fileno]\n", __progname);
+	(void)fprintf(stderr, "       %s -t [-chvy] [-b blocksize] [-f file] [-s fileno] [file ...]\n", __progname);
+	(void)fprintf(stderr, "       %s -x [-chmvy] [-b blocksize] [-f file] [-s fileno] [file ...]\n", __progname);
 	exit(1);
 }
 
@@ -283,11 +307,12 @@ usage(void)
  *	getopt(3) will like.
  */
 static void
-obsolete(int *argcp, char **argvp[])
+obsolete(argcp, argvp)
+	int *argcp;
+	char **argvp[];
 {
 	int argc, flags;
 	char *ap, **argv, *flagsp, **nargv, *p;
-	size_t len;
 
 	/* Setup. */
 	argv = *argvp;
@@ -299,7 +324,7 @@ obsolete(int *argcp, char **argvp[])
 		return;
 
 	/* Allocate space for new arguments. */
-	if ((*argvp = nargv = calloc(argc + 1, sizeof(char *))) == NULL ||
+	if ((*argvp = nargv = malloc((argc + 1) * sizeof(char *))) == NULL ||
 	    (p = flagsp = malloc(strlen(ap) + 2)) == NULL)
 		err(1, NULL);
 
@@ -315,12 +340,11 @@ obsolete(int *argcp, char **argvp[])
 				warnx("option requires an argument -- %c", *ap);
 				usage();
 			}
-			len = strlen(*argv) + 2 + 1;
-			if ((nargv[0] = malloc(len)) == NULL)
+			if ((nargv[0] = malloc(strlen(*argv) + 2 + 1)) == NULL)
 				err(1, NULL);
 			nargv[0][0] = '-';
 			nargv[0][1] = *ap;
-			(void)strlcpy(&nargv[0][2], *argv, len-2);
+			(void)strcpy(&nargv[0][2], *argv);
 			++argv;
 			++nargv;
 			break;
@@ -338,13 +362,11 @@ obsolete(int *argcp, char **argvp[])
 	if (flags) {
 		*p = '\0';
 		*nargv++ = flagsp;
-	} else {
-		free(flagsp);
 	}
 
 	/* Copy remaining arguments. */
 	while ((*nargv++ = *argv++))
-		continue;
+		;
 
 	/* Update argument count. */
 	*argcp = nargv - *argvp - 1;

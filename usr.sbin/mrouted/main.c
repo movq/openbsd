@@ -20,47 +20,68 @@
 
 
 #include "defs.h"
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 #include <fcntl.h>
-#include <poll.h>
-#include <err.h>
+
+#ifdef SNMP
+#include "snmp.h"
+#endif
+
+#ifndef lint
+static char rcsid[] =
+	"@(#) $Id: main.c,v 1.4 1996/09/11 19:15:33 deraadt Exp $";
+#endif
 
 extern char *configfilename;
 char versionstring[100];
 
+static char pidfilename[]  = _PATH_MROUTED_PID;
 static char dumpfilename[] = _PATH_MROUTED_DUMP;
 static char cachefilename[] = _PATH_MROUTED_CACHE;
 static char genidfilename[] = _PATH_MROUTED_GENID;
 
-int cache_lifetime	= DEFAULT_CACHE_LIFETIME;
-int max_prune_lifetime	= DEFAULT_CACHE_LIFETIME * 2;
+int cache_lifetime 	= DEFAULT_CACHE_LIFETIME;
+int max_prune_lifetime 	= DEFAULT_CACHE_LIFETIME * 2;
 
 int debug = 0;
 u_char pruning = 1;	/* Enable pruning by default */
 
+#ifdef SNMP
+#define NHANDLERS	34
+#else
 #define NHANDLERS	2
+#endif
 
 static struct ihandler {
-    int fd;			/* File descriptor		*/
-    ihfunc_t func;		/* Function to call		*/
+    int fd;			/* File descriptor		 */
+    ihfunc_t func;		/* Function to call with &fd_set */
 } ihandlers[NHANDLERS];
 static int nhandlers = 0;
 
 /*
  * Forward declarations.
  */
-static void fasttimer(int);
-static void done(int);
-static void dump(int);
-static void fdump(int);
-static void cdump(int);
-static void restart(int);
-static void timer(void);
-static void cleanup(void);
-static void resetlogging(void *);
+static void fasttimer __P((int));
+static void done __P((int));
+static void dump __P((int));
+static void fdump __P((int));
+static void cdump __P((int));
+static void restart __P((int));
+static void timer __P((void));
+static void cleanup __P((void));
+static void resetlogging __P((void *));
+
+/* To shut up gcc -Wstrict-prototypes */
+int main __P((int argc, char **argv));
 
 int
-register_input_handler(int fd, ihfunc_t func)
+register_input_handler(fd, func)
+    int fd;
+    ihfunc_t func;
 {
     if (nhandlers >= NHANDLERS)
 	return -1;
@@ -72,53 +93,63 @@ register_input_handler(int fd, ihfunc_t func)
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+    int argc;
+    char *argv[];
 {
-    int recvlen;
+    register int recvlen;
+    register int omask;
     int dummy;
     FILE *fp;
-    struct timeval now;
+    struct timeval tv;
     u_int32_t prev_genid;
-    struct pollfd *pfd;
-    int vers, n, i, ch;
-    sigset_t mask, omask;
-    const char *errstr;
+    int vers;
+    fd_set rfds, readers;
+    int nfds, n, i;
+#ifdef SNMP
+    struct timeval  timeout, *tvp = &timeout;
+    struct timeval  sched, *svp = &sched, now, *nvp = &now;
+    int index, block;
+#endif
 
     if (geteuid() != 0) {
 	fprintf(stderr, "must be root\n");
 	exit(1);
     }
-    setvbuf(stderr, NULL, _IOLBF, 0);
+    setlinebuf(stderr);
 
-    while ((ch = getopt(argc, argv, "c:d::p")) != -1) {
-	    switch (ch) {
-	    case 'c':
-		    configfilename = optarg;
-		    break;
-	    case 'd':
-		    if (!optarg)
-			    debug = DEFAULT_DEBUG;
-		    else {
-			    debug = strtonum(optarg, 0, 3, &errstr);
-			    if (errstr) {
-				    warnx("debug level %s", errstr);
-				    debug = DEFAULT_DEBUG;
-			    }
-		    }
-		    break;
-	    case 'p':
-		    pruning = 0;
-		    break;
-	    default:
-		    goto usage;
-	    }
+    argv++, argc--;
+    while (argc > 0 && *argv[0] == '-') {
+	if (strcmp(*argv, "-d") == 0) {
+	    if (argc > 1 && isdigit(*(argv + 1)[0])) {
+		argv++, argc--;
+		debug = atoi(*argv);
+	    } else
+		debug = DEFAULT_DEBUG;
+	} else if (strcmp(*argv, "-c") == 0) {
+	    if (argc > 1) {
+		argv++, argc--;
+		configfilename = *argv;
+	    } else
+		goto usage;
+	} else if (strcmp(*argv, "-p") == 0) {
+	    pruning = 0;
+#ifdef SNMP
+   } else if (strcmp(*argv, "-P") == 0) {
+	    if (argc > 1 && isdigit(*(argv + 1)[0])) {
+		argv++, argc--;
+		dest_port = atoi(*argv);
+	    } else
+		dest_port = DEFAULT_PORT;
+#endif
+	} else
+	    goto usage;
+	argv++, argc--;
     }
-    argc -= optind;
-    argv += optind;
-    
+
     if (argc > 0) {
-usage:	fprintf(stderr,
-		"usage: mrouted [-p] [-c config_file] [-d [debug_level]]\n");
+usage:	fprintf(stderr, 
+		"usage: mrouted [-p] [-c configfile] [-d [debug_level]]\n");
 	exit(1);
     }
 
@@ -132,14 +163,14 @@ usage:	fprintf(stderr,
 	(void)close(0);
 	(void)close(1);
 	(void)close(2);
-	(void)open("/dev/null", O_RDONLY);
+	(void)open("/", 0);
 	(void)dup2(0, 1);
 	(void)dup2(0, 2);
 #ifdef SYSV
 	(void)setpgrp();
 #else
 #ifdef TIOCNOTTY
-	t = open("/dev/tty", O_RDWR);
+	t = open("/dev/tty", 2);
 	if (t >= 0) {
 	    (void)ioctl(t, TIOCNOTTY, (char *)0);
 	    (void)close(t);
@@ -159,16 +190,22 @@ usage:	fprintf(stderr,
 #else
     (void)openlog("mrouted", LOG_PID);
 #endif
-    snprintf(versionstring, sizeof versionstring, "mrouted version %d.%d",
+    sprintf(versionstring, "mrouted version %d.%d",
 			PROTOCOL_VERSION, MROUTED_VERSION);
 
-    logit(LOG_NOTICE, 0, "%s", versionstring);
+    log(LOG_NOTICE, 0, "%s", versionstring);
+
+#ifdef SYSV
+    srand48(time(NULL));
+#else
+    srandom(gethostid());
+#endif
 
     /*
-     * Get generation id
+     * Get generation id 
      */
-    gettimeofday(&now, NULL);
-    dvmrp_genid = (u_int32_t)now.tv_sec;	/* for a while after 2038 */
+    gettimeofday(&tv, 0);
+    dvmrp_genid = tv.tv_sec;
 
     fp = fopen(genidfilename, "r");
     if (fp != NULL) {
@@ -197,10 +234,24 @@ usage:	fprintf(stderr,
      */
     if ((((vers >> 8) & 0xff) != 3) ||
 	 ((vers & 0xff) != 5))
-	logit(LOG_ERR, 0, "kernel (v%d.%d)/mrouted (v%d.%d) version mismatch",
+	log(LOG_ERR, 0, "kernel (v%d.%d)/mrouted (v%d.%d) version mismatch",
 		(vers >> 8) & 0xff, vers & 0xff,
 		PROTOCOL_VERSION, MROUTED_VERSION);
 #endif
+
+#ifdef SNMP
+    if (i = snmp_init())
+       return i;
+
+    gettimeofday(nvp, 0);
+    if (nvp->tv_usec < 500000L){
+   svp->tv_usec = nvp->tv_usec + 500000L;
+   svp->tv_sec = nvp->tv_sec;
+    } else {
+   svp->tv_usec = nvp->tv_usec - 500000L;
+   svp->tv_sec = nvp->tv_sec + 1;
+    }
+#endif /* SNMP */
 
     init_vifs();
 
@@ -208,15 +259,23 @@ usage:	fprintf(stderr,
     rsrr_init();
 #endif /* RSRR */
 
+#if defined(__STDC__) || defined(__GNUC__)
     /*
      * Allow cleanup if unexpected exit.  Apparently some architectures
      * have a kernel bug where closing the socket doesn't do an
      * ip_mrouter_done(), so we attempt to do it on exit.
      */
     atexit(cleanup);
+#endif
 
     if (debug)
 	fprintf(stderr, "pruning %s\n", pruning ? "on" : "off");
+
+    fp = fopen(pidfilename, "w");		
+    if (fp != NULL) {
+	fprintf(fp, "%d\n", (int)getpid());
+	(void) fclose(fp);
+    }
 
     (void)signal(SIGALRM, fasttimer);
 
@@ -228,12 +287,13 @@ usage:	fprintf(stderr,
     if (debug != 0)
 	(void)signal(SIGQUIT, dump);
 
-    pfd = calloc(sizeof(struct pollfd), 1 + nhandlers);
-    pfd[0].fd = igmp_socket;
-    pfd[0].events = POLLIN;
+    FD_ZERO(&readers);
+    FD_SET(igmp_socket, &readers);
+    nfds = igmp_socket + 1;
     for (i = 0; i < nhandlers; i++) {
-	pfd[i + 1].fd = ihandlers[i].fd;
-	pfd[i + 1].events = POLLIN;
+	FD_SET(ihandlers[i].fd, &readers);
+	if (ihandlers[i].fd >= nfds)
+	    nfds = ihandlers[i].fd + 1;
     }
 
     /*
@@ -254,32 +314,76 @@ usage:	fprintf(stderr,
      */
     dummy = 0;
     for(;;) {
-	if ((n = poll(pfd, nhandlers + 1, -1)) < 0) {
+#ifdef SYSV
+	sigset_t block, oblock;
+#endif
+	bcopy((char *)&readers, (char *)&rfds, sizeof(rfds));
+#ifdef SNMP
+   gettimeofday(nvp, 0);
+   if (nvp->tv_sec > svp->tv_sec
+       || (nvp->tv_sec == svp->tv_sec && nvp->tv_usec > svp->tv_usec)){
+       alarmTimer(nvp);
+       eventTimer(nvp);
+       if (nvp->tv_usec < 500000L){
+      svp->tv_usec = nvp->tv_usec + 500000L;
+      svp->tv_sec = nvp->tv_sec;
+       } else {
+      svp->tv_usec = nvp->tv_usec - 500000L;
+      svp->tv_sec = nvp->tv_sec + 1;
+       }
+   }
+
+	tvp =  &timeout;
+	tvp->tv_sec = 0;
+	tvp->tv_usec = 500000L;
+
+	block = 0;
+	snmp_select_info(&nfds, &rfds, tvp, &block);
+	if (block == 1)
+		tvp = NULL; /* block without timeout */
+	if ((n = select(nfds, &rfds, NULL, NULL, tvp)) < 0) 
+#else
+	if ((n = select(nfds, &rfds, NULL, NULL, NULL)) < 0) 
+#endif
+   {
             if (errno != EINTR) /* SIGALRM is expected */
-                logit(LOG_WARNING, errno, "poll failed");
+                log(LOG_WARNING, errno, "select failed");
             continue;
         }
 
-	if (pfd[0].revents & POLLIN) {
+	if (FD_ISSET(igmp_socket, &rfds)) {
 	    recvlen = recvfrom(igmp_socket, recv_buf, RECV_BUF_SIZE,
 			       0, NULL, &dummy);
 	    if (recvlen < 0) {
-		if (errno != EINTR) logit(LOG_ERR, errno, "recvfrom");
+		if (errno != EINTR) log(LOG_ERR, errno, "recvfrom");
 		continue;
 	    }
-	    (void)sigemptyset(&mask);
-	    (void)sigaddset(&mask, SIGALRM);
-	    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0)
-		    logit(LOG_ERR, errno, "sigprocmask");
+#ifdef SYSV
+	    (void)sigemptyset(&block);
+	    (void)sigaddset(&block, SIGALRM);
+	    if (sigprocmask(SIG_BLOCK, &block, &oblock) < 0)
+		    log(LOG_ERR, errno, "sigprocmask");
+#else
+	    omask = sigblock(sigmask(SIGALRM));
+#endif
 	    accept_igmp(recvlen);
-	    (void)sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef SYSV
+	    (void)sigprocmask(SIG_SETMASK, &oblock, (sigset_t *)NULL);
+#else
+	    (void)sigsetmask(omask);
+#endif
         }
 
 	for (i = 0; i < nhandlers; i++) {
-	    if (pfd[i + 1].revents & POLLIN) {
-		(*ihandlers[i].func)(ihandlers[i].fd);
+	    if (FD_ISSET(ihandlers[i].fd, &rfds)) {
+		(*ihandlers[i].func)(ihandlers[i].fd, &rfds);
 	    }
 	}
+
+#ifdef SNMP
+	snmp_read(&rfds); 
+	snmp_timeout(); /* poll */
+#endif
     }
 }
 
@@ -291,21 +395,21 @@ usage:	fprintf(stderr,
  * seconds.  Also, every TIMER_INTERVAL seconds it calls timer() to
  * do all the other time-based processing.
  */
-/* XXX signal race */
 static void
-fasttimer(int i)
+fasttimer(i)
+    int i;
 {
     static unsigned int tlast;
     static unsigned int nsent;
-    unsigned int t = tlast + 1;
-    int n;
+    register unsigned int t = tlast + 1;
+    register int n;
 
     /*
      * if we're in the last second, send everything that's left.
      * otherwise send at least the fraction we should have sent by now.
      */
     if (t >= ROUTE_REPORT_INTERVAL) {
-	int nleft = nroutes - nsent;
+	register int nleft = nroutes - nsent;
 	while (nleft > 0) {
 	    if ((n = report_next_chunk()) <= 0)
 		break;
@@ -314,7 +418,7 @@ fasttimer(int i)
 	tlast = 0;
 	nsent = 0;
     } else {
-	unsigned int ncum = nroutes * t / ROUTE_REPORT_INTERVAL;
+	register unsigned int ncum = nroutes * t / ROUTE_REPORT_INTERVAL;
 	while (nsent < ncum) {
 	    if ((n = report_next_chunk()) <= 0)
 		break;
@@ -326,7 +430,7 @@ fasttimer(int i)
 	timer();
 
     age_callout_queue();/* Advance the timer for the callout queue
-				for groups */
+				for groups */	
     alarm(1);
 }
 
@@ -356,7 +460,7 @@ static u_long virtual_time = 0;
  * virtual interface data structures.
  */
 static void
-timer(void)
+timer()
 {
     age_routes();	/* Advance the timers in the route entries     */
     age_vifs();		/* Advance the timers for neighbors */
@@ -393,6 +497,10 @@ timer(void)
 	report_to_all_neighbors(CHANGED_ROUTES);
     }
 
+#ifdef SNMP
+    sync_timer();
+#endif
+
     /*
      * Advance virtual time
      */
@@ -403,20 +511,19 @@ timer(void)
 /*
  * On termination, let everyone know we're going away.
  */
-/* XXX signal race */
 static void
-done(int i)
+done(i)
+    int i;
 {
-    logit(LOG_NOTICE, 0, "%s exiting", versionstring);
+    log(LOG_NOTICE, 0, "%s exiting", versionstring);
     cleanup();
     _exit(1);
 }
 
-/* XXX signal race, atexit race */
 static void
-cleanup(void)
+cleanup()
 {
-    static int in_cleanup = 0;
+    static in_cleanup = 0;
 
     if (!in_cleanup) {
 	in_cleanup++;
@@ -433,9 +540,9 @@ cleanup(void)
 /*
  * Dump internal data structures to stderr.
  */
-/* XXX signal race */
 static void
-dump(int i)
+dump(i)
+    int i;
 {
     dump_vifs(stderr);
     dump_routes(stderr);
@@ -446,7 +553,8 @@ dump(int i)
  * Dump internal data structures to a file.
  */
 static void
-fdump(int i)
+fdump(i)
+    int i;
 {
     FILE *fp;
 
@@ -462,15 +570,15 @@ fdump(int i)
 /*
  * Dump local cache contents to a file.
  */
-/* XXX signal race */
 static void
-cdump(int i)
+cdump(i)
+    int i;
 {
     FILE *fp;
 
     fp = fopen(cachefilename, "w");
     if (fp != NULL) {
-	dump_cache(fp);
+	dump_cache(fp); 
 	(void) fclose(fp);
     }
 }
@@ -479,21 +587,28 @@ cdump(int i)
 /*
  * Restart mrouted
  */
-/* XXX signal race */
 static void
-restart(int i)
+restart(i)
+    int i;
 {
-    sigset_t mask, omask;
+    register int omask;
+#ifdef SYSV
+    sigset_t block, oblock;
+#endif
 
-    logit(LOG_NOTICE, 0, "%s restart", versionstring);
+    log(LOG_NOTICE, 0, "%s restart", versionstring);
 
     /*
      * reset all the entries
      */
-    (void)sigemptyset(&mask);
-    (void)sigaddset(&mask, SIGALRM);
-    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0)
-	logit(LOG_ERR, errno, "sigprocmask");
+#ifdef SYSV
+    (void)sigemptyset(&block);
+    (void)sigaddset(&block, SIGALRM);
+    if (sigprocmask(SIG_BLOCK, &block, &oblock) < 0)
+	log(LOG_ERR, errno, "sigprocmask");
+#else
+    omask = sigblock(sigmask(SIGALRM));
+#endif
     free_all_prunes();
     free_all_routes();
     stop_all_vifs();
@@ -514,7 +629,11 @@ restart(int i)
     k_init_dvmrp();		/* enable DVMRP routing in kernel */
     init_installvifs();
 
-    (void)sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef SYSV
+    (void)sigprocmask(SIG_SETMASK, &oblock, (sigset_t *)NULL);
+#else
+    (void)sigsetmask(omask);
+#endif
 }
 
 #define LOG_MAX_MSGS	20	/* if > 20/minute then shut up for a while */
@@ -522,7 +641,8 @@ restart(int i)
 static int log_nmsgs = 0;
 
 static void
-resetlogging(void *arg)
+resetlogging(arg)
+    void *arg;
 {
     int nxttime = 60;
     void *narg = NULL;
@@ -544,8 +664,9 @@ resetlogging(void *arg)
  * according to the severity of the message and the current debug level.
  * For errors of severity LOG_ERR or worse, terminate the program.
  */
+#ifdef __STDC__
 void
-logit(int severity, int syserr, char *format, ...)
+log(int severity, int syserr, char *format, ...)
 {
     va_list ap;
     static char fmt[211] = "warning - ";
@@ -556,7 +677,25 @@ logit(int severity, int syserr, char *format, ...)
     time_t t;
 
     va_start(ap, format);
-    vsnprintf(&fmt[10], sizeof fmt - 10, format, ap);
+#else
+/*VARARGS3*/
+void
+log(severity, syserr, format, va_alist)
+    int severity, syserr;
+    char *format;
+    va_dcl
+{
+    va_list ap;
+    static char fmt[211] = "warning - ";
+    char *msg;
+    char tbuf[20];
+    struct timeval now;
+    struct tm *thyme;
+    time_t t;
+
+    va_start(ap);
+#endif
+    vsprintf(&fmt[10], format, ap);
     va_end(ap);
     msg = (severity == LOG_WARNING) ? fmt : &fmt[10];
 
@@ -588,13 +727,15 @@ logit(int severity, int syserr, char *format, ...)
 		syslog(severity, "%s", msg);
 	}
 
-	if (severity <= LOG_ERR) exit(1);
+	if (severity <= LOG_ERR) exit(-1);
     }
 }
 
 #ifdef DEBUG_MFC
 void
-md_logit(int what, u_int32_t origin, u_int32_t mcastgrp)
+md_log(what, origin, mcastgrp)
+    int what;
+    u_int32_t origin, mcastgrp;
 {
     static FILE *f = NULL;
     struct timeval tv;
@@ -602,7 +743,7 @@ md_logit(int what, u_int32_t origin, u_int32_t mcastgrp)
 
     if (!f) {
 	if ((f = fopen("/tmp/mrouted.clog", "w")) == NULL) {
-	    logit(LOG_ERR, errno, "open /tmp/mrouted.clog");
+	    log(LOG_ERR, errno, "open /tmp/mrouted.clog");
 	}
     }
 

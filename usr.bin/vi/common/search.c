@@ -1,5 +1,3 @@
-/*	$OpenBSD: search.c,v 1.14 2016/08/14 21:47:16 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)search.c	10.25 (Berkeley) 6/30/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,16 +29,20 @@
 
 typedef enum { S_EMPTY, S_EOF, S_NOPREV, S_NOTFOUND, S_SOF, S_WRAP } smsg_t;
 
-static void	search_msg(SCR *, smsg_t);
-static int	search_init(SCR *, dir_t, char *, size_t, char **, u_int);
+static void	search_msg __P((SCR *, smsg_t));
+static int	search_init __P((SCR *, dir_t, char *, size_t, char **, u_int));
 
 /*
  * search_init --
  *	Set up a search.
  */
 static int
-search_init(SCR *sp, dir_t dir, char *ptrn, size_t plen, char **epp,
-    u_int flags)
+search_init(sp, dir, ptrn, plen, epp, flags)
+	SCR *sp;
+	dir_t dir;
+	char *ptrn, **epp;
+	size_t plen;
+	u_int flags;
 {
 	recno_t lno;
 	int delim;
@@ -119,7 +125,8 @@ prev:			if (sp->re == NULL) {
 	if (re_compile(sp, ptrn, plen, &sp->re, &sp->re_len, &sp->re_c,
 	    RE_C_SEARCH |
 	    (LF_ISSET(SEARCH_MSG) ? 0 : RE_C_SILENT) |
-	    (LF_ISSET(SEARCH_TAG) ? RE_C_TAG : 0)))
+	    (LF_ISSET(SEARCH_TAG) ? RE_C_TAG : 0) |
+	    (LF_ISSET(SEARCH_CSCOPE) ? RE_C_CSCOPE : 0)))
 		return (1);
 
 	/* Set the search direction. */
@@ -133,17 +140,22 @@ prev:			if (sp->re == NULL) {
  * f_search --
  *	Do a forward search.
  *
- * PUBLIC: int f_search(SCR *, MARK *, MARK *, char *, size_t, char **, u_int);
+ * PUBLIC: int f_search __P((SCR *,
+ * PUBLIC:    MARK *, MARK *, char *, size_t, char **, u_int));
  */
 int
-f_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
-    u_int flags)
+f_search(sp, fm, rm, ptrn, plen, eptrn, flags)
+	SCR *sp;
+	MARK *fm, *rm;
+	char *ptrn, **eptrn;
+	size_t plen;
+	u_int flags;
 {
 	busy_t btype;
 	recno_t lno;
 	regmatch_t match[1];
 	size_t coff, len;
-	int cnt, eval, rval, wrapped = 0;
+	int cnt, eval, rval, wrapped;
 	char *l;
 
 	if (search_init(sp, FORWARD, ptrn, plen, eptrn, flags))
@@ -182,14 +194,13 @@ f_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 					return (1);
 				}
 				lno = 1;
-				wrapped = 1;
 			}
 		} else
 			coff = fm->cno + 1;
 	}
 
 	btype = BUSY_ON;
-	for (cnt = INTERRUPT_CHECK, rval = 1;; ++lno, coff = 0) {
+	for (cnt = INTERRUPT_CHECK, rval = 1, wrapped = 0;; ++lno, coff = 0) {
 		if (cnt-- == 0) {
 			if (INTERRUPTED(sp))
 				break;
@@ -199,7 +210,7 @@ f_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 			}
 			cnt = INTERRUPT_CHECK;
 		}
-		if ((wrapped && lno > fm->lno) || db_get(sp, lno, 0, &l, &len)) {
+		if (wrapped && lno > fm->lno || db_get(sp, lno, 0, &l, &len)) {
 			if (wrapped) {
 				if (LF_ISSET(SEARCH_MSG))
 					search_msg(sp, S_NOTFOUND);
@@ -223,6 +234,10 @@ f_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 		match[0].rm_so = coff;
 		match[0].rm_eo = len;
 
+#if defined(DEBUG) && 0
+		TRACE(sp, "F search: %lu from %u to %u\n",
+		    lno, coff, len != 0 ? len - 1 : len);
+#endif
 		/* Search the line. */
 		eval = regexec(&sp->re_c, l, 1, match,
 		    (match[0].rm_so == 0 ? 0 : REG_NOTBOL) | REG_STARTEND);
@@ -240,6 +255,10 @@ f_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 		if (wrapped && LF_ISSET(SEARCH_WMSG))
 			search_msg(sp, S_WRAP);
 
+#if defined(DEBUG) && 0
+		TRACE(sp, "F search: %qu to %qu\n",
+		    match[0].rm_so, match[0].rm_eo);
+#endif
 		rm->lno = lno;
 		rm->cno = match[0].rm_so;
 
@@ -265,11 +284,16 @@ f_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
  * b_search --
  *	Do a backward search.
  *
- * PUBLIC: int b_search(SCR *, MARK *, MARK *, char *, size_t, char **, u_int);
+ * PUBLIC: int b_search __P((SCR *,
+ * PUBLIC:    MARK *, MARK *, char *, size_t, char **, u_int));
  */
 int
-b_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
-    u_int flags)
+b_search(sp, fm, rm, ptrn, plen, eptrn, flags)
+	SCR *sp;
+	MARK *fm, *rm;
+	char *ptrn, **eptrn;
+	size_t plen;
+	u_int flags;
 {
 	busy_t btype;
 	recno_t lno;
@@ -318,7 +342,7 @@ b_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 			}
 			cnt = INTERRUPT_CHECK;
 		}
-		if ((wrapped && lno < fm->lno) || lno == 0) {
+		if (wrapped && lno < fm->lno || lno == 0) {
 			if (wrapped) {
 				if (LF_ISSET(SEARCH_MSG))
 					search_msg(sp, S_NOTFOUND);
@@ -348,6 +372,9 @@ b_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 		match[0].rm_so = 0;
 		match[0].rm_eo = len;
 
+#if defined(DEBUG) && 0
+		TRACE(sp, "B search: %lu from 0 to %qu\n", lno, match[0].rm_eo);
+#endif
 		/* Search the line. */
 		eval = regexec(&sp->re_c, l, 1, match,
 		    (match[0].rm_eo == len ? 0 : REG_NOTEOL) | REG_STARTEND);
@@ -369,6 +396,10 @@ b_search(SCR *sp, MARK *fm, MARK *rm, char *ptrn, size_t plen, char **eptrn,
 		if (wrapped && LF_ISSET(SEARCH_WMSG))
 			search_msg(sp, S_WRAP);
 
+#if defined(DEBUG) && 0
+		TRACE(sp, "B found: %qu to %qu\n",
+		    match[0].rm_so, match[0].rm_eo);
+#endif
 		/*
 		 * We now have the first match on the line.  Step through the
 		 * line character by character until find the last acceptable
@@ -416,28 +447,30 @@ err:	if (LF_ISSET(SEARCH_MSG))
  *	Display one of the search messages.
  */
 static void
-search_msg(SCR *sp, smsg_t msg)
+search_msg(sp, msg)
+	SCR *sp;
+	smsg_t msg;
 {
 	switch (msg) {
 	case S_EMPTY:
-		msgq(sp, M_ERR, "File empty; nothing to search");
+		msgq(sp, M_ERR, "072|File empty; nothing to search");
 		break;
 	case S_EOF:
 		msgq(sp, M_ERR,
-		    "Reached end-of-file without finding the pattern");
+		    "073|Reached end-of-file without finding the pattern");
 		break;
 	case S_NOPREV:
-		msgq(sp, M_ERR, "No previous search pattern");
+		msgq(sp, M_ERR, "074|No previous search pattern");
 		break;
 	case S_NOTFOUND:
-		msgq(sp, M_ERR, "Pattern not found");
+		msgq(sp, M_ERR, "075|Pattern not found");
 		break;
 	case S_SOF:
 		msgq(sp, M_ERR,
-		    "Reached top-of-file without finding the pattern");
+		    "076|Reached top-of-file without finding the pattern");
 		break;
 	case S_WRAP:
-		msgq(sp, M_ERR, "Search wrapped");
+		msgq(sp, M_ERR, "077|Search wrapped");
 		break;
 	default:
 		abort();
@@ -448,10 +481,12 @@ search_msg(SCR *sp, smsg_t msg)
  * search_busy --
  *	Put up the busy searching message.
  *
- * PUBLIC: void search_busy(SCR *, busy_t);
+ * PUBLIC: void search_busy __P((SCR *, busy_t));
  */
 void
-search_busy(SCR *sp, busy_t btype)
+search_busy(sp, btype)
+	SCR *sp;
+	busy_t btype;
 {
-	sp->gp->scr_busy(sp, "Searching...", btype);
+	sp->gp->scr_busy(sp, "078|Searching...", btype);
 }

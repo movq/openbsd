@@ -11,7 +11,8 @@ char *progname;
 extern void oops();
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+char **argv;
 {
 	int n;
 	char *p;
@@ -22,9 +23,6 @@ main(int argc, char **argv)
 
 	if (p = argv[1]) {
 		name = (char *) malloc((n = strlen(p)) + 5);
-		if (!name)
-		    oops("cannot get memory");
-
 		strcpy(name, p);
 		strcpy(name + n, ".pag");
 
@@ -39,14 +37,14 @@ main(int argc, char **argv)
 	return 0;
 }
 
-void
-sdump(int pagf)
+sdump(pagf)
+int pagf;
 {
-	int b;
-	int n = 0;
-	int t = 0;
-	int o = 0;
-	int e;
+	register b;
+	register n = 0;
+	register t = 0;
+	register o = 0;
+	register e;
 	char pag[PBLKSIZ];
 
 	while ((b = read(pagf, pag, PBLKSIZ)) > 0) {
@@ -69,12 +67,12 @@ sdump(int pagf)
 		oops("read failed: block %d", n);
 }
 
-int
-pagestat(char *pag)
+pagestat(pag)
+char *pag;
 {
-	int n;
-	int free;
-	short *ino = (short *) pag;
+	register n;
+	register free;
+	register short *ino = (short *) pag;
 
 	if (!(n = ino[0]))
 		printf("no entries.\n");

@@ -1,5 +1,5 @@
-/*	$OpenBSD: lca_bus_io.c,v 1.5 2001/11/06 19:53:13 miod Exp $	*/
-/* $NetBSD: lca_bus_io.c,v 1.8 1997/09/02 13:19:31 thorpej Exp $ */
+/*	$OpenBSD: lca_bus_io.c,v 1.2 1997/11/10 15:53:12 niklas Exp $	*/
+/*	$NetBSD: lca_bus_io.c,v 1.1 1996/11/25 03:42:14 cgd Exp $	*/
 
 /*
  * Copyright (c) 1996 Carnegie-Mellon University.
@@ -33,8 +33,7 @@
 #include <sys/malloc.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
 #include <machine/bus.h>
 
@@ -52,4 +51,4 @@
 #define	CHIP_IO_W1_SYS_START(v)	LCA_PCI_SIO
 #define	CHIP_IO_W1_SYS_END(v)	(LCA_PCI_SIO + ((0x00ffffffUL + 1) << 5) - 1)
 
-#include <alpha/pci/pci_swiz_bus_io_chipdep.c>
+#include "pcs_bus_io_common.c"

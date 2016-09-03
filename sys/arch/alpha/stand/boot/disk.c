@@ -1,4 +1,4 @@
-/*	$OpenBSD: disk.c,v 1.17 2015/10/01 16:08:19 krw Exp $	*/
+/*	$OpenBSD: disk.c,v 1.8 1998/09/04 16:59:06 millert Exp $	*/
 /*	$NetBSD: disk.c,v 1.6 1997/04/06 08:40:33 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -54,8 +58,13 @@ struct	disk_softc {
 };
 
 int
-diskstrategy(void *devdata, int rw, daddr32_t bn, size_t reqcnt, void *addrvoid,
-    size_t *cnt)
+diskstrategy(devdata, rw, bn, reqcnt, addrvoid, cnt)
+	void *devdata;
+	int rw;
+	daddr_t bn;
+	size_t reqcnt;
+	void *addrvoid;
+	size_t *cnt;	/* out: number of bytes transfered */
 {
 	char *addr = addrvoid;
 	struct disk_softc *sc;
@@ -66,7 +75,7 @@ diskstrategy(void *devdata, int rw, daddr32_t bn, size_t reqcnt, void *addrvoid,
 	if ((reqcnt & 0xffffff) != reqcnt ||
 	    reqcnt == 0)
 		asm("call_pal 0");
-
+	    
 	twiddle();
 
 	/* Partial-block transfers not handled. */
@@ -86,7 +95,9 @@ diskstrategy(void *devdata, int rw, daddr32_t bn, size_t reqcnt, void *addrvoid,
 }
 
 int
-diskopen(struct open_file *f, int ctlr, int unit, int part)
+diskopen(f, ctlr, unit, part)
+	struct open_file *f;
+	int ctlr, unit, part;
 {
 	struct disklabel *lp;
 	prom_return_t ret;
@@ -97,7 +108,7 @@ diskopen(struct open_file *f, int ctlr, int unit, int part)
 
 	if (unit >= 16 || part >= MAXPARTITIONS)
 		return (ENXIO);
-	/*
+	/* 
 	 * XXX
 	 * We don't know what device names look like yet,
 	 * so we can't change them.
@@ -125,38 +136,36 @@ diskopen(struct open_file *f, int ctlr, int unit, int part)
 	lp->d_secsize = DEV_BSIZE;
 	lp->d_secpercyl = 1;
 	lp->d_npartitions = MAXPARTITIONS;
-	DL_SETPOFFSET(&lp->d_partitions[part], 0);
-	DL_SETPSIZE(&lp->d_partitions[part], 0x7fffffff);
+	lp->d_partitions[part].p_offset = 0;
+	lp->d_partitions[part].p_size = 0x7fffffff;
 	i = diskstrategy(sc, F_READ,
-	    (daddr32_t)LABELSECTOR, DEV_BSIZE, buf, &cnt);
+	    (daddr_t)LABELSECTOR, DEV_BSIZE, buf, &cnt);
 	if (i || cnt != DEV_BSIZE) {
 		printf("disk%d: error reading disk label\n", unit);
 		goto bad;
-	} else if (((struct disklabel *)(buf + LABELOFFSET))->d_magic !=
-		    DISKMAGIC) {
+	} else if (lp->d_magic != DISKMAGIC) {
 		/* No label at all.  Fake all partitions as whole disk. */
 		for (i = 0; i < MAXPARTITIONS; i++) {
-			DL_SETPOFFSET(&lp->d_partitions[part], 0);
-			DL_SETPSIZE(&lp->d_partitions[part], 0x7fffffff);
+			lp->d_partitions[part].p_offset = 0;
+			lp->d_partitions[part].p_size = 0x7fffffff;
 		}
 	} else {
-		msg = getdisklabel(buf + LABELOFFSET, lp);
+		msg = getdisklabel(buf, lp);
 		if (msg) {
 			printf("disk%d: %s\n", unit, msg);
 			goto bad;
 		}
 	}
 
-	if (part >= lp->d_npartitions ||
-	    DL_GETPSIZE(&lp->d_partitions[part]) == 0) {
+	if (part >= lp->d_npartitions || lp->d_partitions[part].p_size == 0) {
 bad:		free(sc, sizeof(struct disk_softc));
 		return (ENXIO);
 	}
 	return (0);
 }
 
-int
-diskclose(struct open_file *f)
+diskclose(f)
+	struct open_file *f;
 {
 	struct disk_softc *sc;
 

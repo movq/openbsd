@@ -1,5 +1,3 @@
-/*	$OpenBSD: vi.h,v 1.11 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -25,9 +23,9 @@ typedef struct _vicmd {
 	u_long	count2;			/* Second count (only used by z). */
 	EVENT	ev;			/* Associated event. */
 
-#define	ISCMD(p, key)	((p) == &vikeys[(key)])
+#define	ISCMD(p, key)	((p) == &vikeys[key])
 	VIKEYS const *kp;		/* Command/Motion VIKEYS entry. */
-#define	ISMOTION(vp)	((vp)->rkp != NULL && F_ISSET((vp)->rkp, V_MOTION))
+#define	ISMOTION(vp)	(vp->rkp != NULL && F_ISSET(vp->rkp, V_MOTION))
 	VIKEYS const *rkp;		/* Related C/M VIKEYS entry. */
 
 	/*
@@ -128,7 +126,7 @@ typedef struct _vicmd {
 
 /* Vi command table structure. */
 struct _vikeys {			/* Underlying function. */
-	int	 (*func)(SCR *, VICMD *);
+	int	 (*func) __P((SCR *, VICMD *));
 #define	V_ABS		0x00004000	/* Absolute movement, set '' mark. */
 #define	V_ABS_C		0x00008000	/* V_ABS: if the line/column changed. */
 #define	V_ABS_L		0x00010000	/* V_ABS: if the line changed. */
@@ -163,12 +161,12 @@ typedef struct _vcs {
 	int	 cs_flags;		/* Return flags. */
 } VCS;
 
-int	cs_bblank(SCR *, VCS *);
-int	cs_fblank(SCR *, VCS *);
-int	cs_fspace(SCR *, VCS *);
-int	cs_init(SCR *, VCS *);
-int	cs_next(SCR *, VCS *);
-int	cs_prev(SCR *, VCS *);
+int	cs_bblank __P((SCR *, VCS *));
+int	cs_fblank __P((SCR *, VCS *));
+int	cs_fspace __P((SCR *, VCS *));
+int	cs_init __P((SCR *, VCS *));
+int	cs_next __P((SCR *, VCS *));
+int	cs_prev __P((SCR *, VCS *));
 
 /*
  * We use a single "window" for each set of vi screens.  The model would be
@@ -218,7 +216,7 @@ typedef struct _smap {
 typedef enum { CNOTSET, FSEARCH, fSEARCH, TSEARCH, tSEARCH } cdir_t;
 
 typedef enum { AB_NOTSET, AB_NOTWORD, AB_INWORD } abb_t;
-typedef enum { Q_NOTSET, Q_VNEXT, Q_VTHIS } quote_t;
+typedef enum { Q_NOTSET, Q_BNEXT, Q_BTHIS, Q_VNEXT, Q_VTHIS } quote_t;
 
 /* Vi private, per-screen memory. */
 typedef struct _vi_private {
@@ -255,7 +253,7 @@ typedef struct _vi_private {
 	size_t	busy_fx;	/* Busy character x coordinate. */
 	size_t	busy_oldy;	/* Saved y coordinate. */
 	size_t	busy_oldx;	/* Saved x coordinate. */
-	struct timespec busy_ts;/* Busy timer. */
+	struct timeval busy_tv;	/* Busy timer. */
 
 	char   *ps;		/* Paragraph plus section list. */
 
@@ -293,7 +291,7 @@ typedef struct _vi_private {
 
 	recno_t	ss_lno;	/* 1-N: vi_opt_screens cached line number. */
 	size_t	ss_screens;	/* vi_opt_screens cached return value. */
-#define	VI_SCR_CFLUSH(vip)	((vip)->ss_lno = OOBLNO)
+#define	VI_SCR_CFLUSH(vip)	vip->ss_lno = OOBLNO
 
 	size_t	srows;		/* 1-N: rows in the terminal/window. */
 	recno_t	olno;		/* 1-N: old cursor file line. */
@@ -319,7 +317,7 @@ typedef struct _vi_private {
 #define	O_NUMBER_FMT	"%7lu "			/* O_NUMBER format, length. */
 #define	O_NUMBER_LENGTH	8
 #define	SCREEN_COLS(sp)				/* Screen columns. */	\
-	((O_ISSET((sp), O_NUMBER) ? (sp)->cols - O_NUMBER_LENGTH : (sp)->cols))
+	((O_ISSET(sp, O_NUMBER) ? (sp)->cols - O_NUMBER_LENGTH : (sp)->cols))
 
 /*
  * LASTLINE is the zero-based, last line in the screen.  Note that it is correct
@@ -354,7 +352,9 @@ typedef struct _vi_private {
 #define	TAB_OFF(c)	COL_OFF((c), O_VAL(sp, O_TABSTOP))
 
 /* If more than one screen being shown. */
-#define	IS_SPLIT(sp)	(TAILQ_NEXT((sp), q) || TAILQ_PREV((sp), _dqh, q))
+#define	IS_SPLIT(sp)							\
+	((sp)->q.cqe_next != (void *)&(sp)->gp->dq ||			\
+	(sp)->q.cqe_prev != (void *)&(sp)->gp->dq)
 
 /* Screen adjustment operations. */
 typedef enum { A_DECREASE, A_INCREASE, A_SET } adj_t;

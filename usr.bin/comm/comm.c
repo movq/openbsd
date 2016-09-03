@@ -1,4 +1,4 @@
-/*	$OpenBSD: comm.c,v 1.10 2015/10/09 01:37:07 deraadt Exp $	*/
+/*	$OpenBSD: comm.c,v 1.3 1999/02/17 03:35:49 deraadt Exp $	*/
 /*	$NetBSD: comm.c,v 1.10 1995/09/05 19:57:43 jtc Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)comm.c	8.4 (Berkeley) 5/4/95";
+#endif
+static char rcsid[] = "$OpenBSD: comm.c,v 1.3 1999/02/17 03:35:49 deraadt Exp $";
+#endif /* not lint */
+
 #include <err.h>
 #include <limits.h>
 #include <locale.h>
@@ -45,24 +62,23 @@
 
 char *tabs[] = { "", "\t", "\t\t" };
 
-FILE   *file(const char *);
-void	show(FILE *, char *, char *);
-void	usage(void);
+FILE   *file __P((const char *));
+void	show __P((FILE *, char *, char *));
+void	usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	int comp, file1done, file2done, read1, read2;
 	int ch, flag1, flag2, flag3;
 	FILE *fp1, *fp2;
 	char *col1, *col2, *col3;
 	char **p, line1[MAXLINELEN], line2[MAXLINELEN];
-	int (*compare)(const char * ,const char *);
+	int (*compare) __P((const char * ,const char *));
 
 	setlocale(LC_ALL, "");
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	flag1 = flag2 = flag3 = 1;
 	compare = strcoll;
@@ -154,14 +170,17 @@ main(int argc, char *argv[])
 }
 
 void
-show(FILE *fp, char *offset, char *buf)
+show(fp, offset, buf)
+	FILE *fp;
+	char *offset, *buf;
 {
 	while (printf("%s%s", offset, buf) >= 0 && fgets(buf, MAXLINELEN, fp))
 		;
 }
 
 FILE *
-file(const char *name)
+file(name)
+	const char *name;
 {
 	FILE *fp;
 
@@ -173,8 +192,9 @@ file(const char *name)
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: comm [-123f] file1 file2\n");
+
+	(void)fprintf(stderr, "usage: comm [-123] file1 file2\n");
 	exit(1);
 }

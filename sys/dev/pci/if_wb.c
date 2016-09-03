@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_wb.c,v 1.67 2016/04/13 10:34:32 mpi Exp $	*/
+/*	$OpenBSD: if_wb.c,v 1.3 1999/09/27 18:17:01 jason Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998
@@ -31,7 +31,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
  * THE POSSIBILITY OF SUCH DAMAGE.
  *
- * $FreeBSD: src/sys/pci/if_wb.c,v 1.26 1999/09/25 17:29:02 wpaul Exp $
+ *	$FreeBSD: if_wb.c,v 1.13 1999/07/11 00:56:07 wpaul Exp $
  */
 
 /*
@@ -69,9 +69,9 @@
  * closed ring.
  *
  * For transmission, the driver creates a linked list of 'super descriptors'
- * which each contain several individual descriptors linked together.
+ * which each contain several individual descriptors linked toghether.
  * Each 'super descriptor' contains WB_MAXFRAGS descriptors, which we
- * abuse as fragment pointers. This allows us to use a buffer management
+ * abuse as fragment pointers. This allows us to use a buffer managment
  * scheme very similar to that used in the ThunderLAN and Etherlink XL
  * drivers.
  *
@@ -80,7 +80,7 @@
  *
  * Note: the author of the Linux driver for the Winbond chip alludes
  * to some sort of flaw in the chip's design that seems to mandate some
- * drastic workaround which significantly impairs transmit performance.
+ * drastic workaround which signigicantly impairs transmit performance.
  * I have no idea what he's on about: transmit performance with all
  * three of my test boards seems fine.
  */
@@ -95,13 +95,18 @@
 #include <sys/kernel.h>
 #include <sys/socket.h>
 #include <sys/device.h>
-#include <sys/queue.h>
-#include <sys/timeout.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #include <net/if_media.h>
 
@@ -109,11 +114,11 @@
 #include <net/bpf.h>
 #endif
 
-#include <uvm/uvm_extern.h>		/* for vtophys */
-#define	VTOPHYS(v)	vtophys((vaddr_t)(v))
+#include <vm/vm.h>		/* for vtophys */
+#include <vm/pmap.h>		/* for vtophys */
+#include <vm/vm_kern.h>
+#include <vm/vm_extern.h>
 
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
@@ -124,46 +129,64 @@
 
 #include <dev/pci/if_wbreg.h>
 
-int wb_probe(struct device *, void *, void *);
-void wb_attach(struct device *, struct device *, void *);
+/*
+ * Various supported PHY vendors/types and their names. Note that
+ * this driver will work with pretty much any MII-compliant PHY,
+ * so failure to positively identify the chip is not a fatal error.
+ */
 
-void wb_bfree(caddr_t, u_int, void *);
-void wb_newbuf(struct wb_softc *, struct wb_chain_onefrag *);
-int wb_encap(struct wb_softc *, struct wb_chain *, struct mbuf *);
+struct wb_type wb_phys[] = {
+	{ TI_PHY_VENDORID, TI_PHY_10BT, "<TI ThunderLAN 10BT (internal)>" },
+	{ TI_PHY_VENDORID, TI_PHY_100VGPMI, "<TI TNETE211 100VG Any-LAN>" },
+	{ NS_PHY_VENDORID, NS_PHY_83840A, "<National Semiconductor DP83840A>"},
+	{ LEVEL1_PHY_VENDORID, LEVEL1_PHY_LXT970, "<Level 1 LXT970>" }, 
+	{ INTEL_PHY_VENDORID, INTEL_PHY_82555, "<Intel 82555>" },
+	{ SEEQ_PHY_VENDORID, SEEQ_PHY_80220, "<SEEQ 80220>" },
+	{ 0, 0, "<MII-compliant physical interface>" }
+};
 
-void wb_rxeof(struct wb_softc *);
-void wb_rxeoc(struct wb_softc *);
-void wb_txeof(struct wb_softc *);
-void wb_txeoc(struct wb_softc *);
-int wb_intr(void *);
-void wb_tick(void *);
-void wb_start(struct ifnet *);
-int wb_ioctl(struct ifnet *, u_long, caddr_t);
-void wb_init(void *);
-void wb_stop(struct wb_softc *);
-void wb_watchdog(struct ifnet *);
-int wb_ifmedia_upd(struct ifnet *);
-void wb_ifmedia_sts(struct ifnet *, struct ifmediareq *);
+int wb_probe		__P((struct device *, void *, void *));
+void wb_attach		__P((struct device *, struct device *, void *));
 
-void wb_eeprom_putbyte(struct wb_softc *, int);
-void wb_eeprom_getword(struct wb_softc *, int, u_int16_t *);
-void wb_read_eeprom(struct wb_softc *, caddr_t, int, int, int);
-void wb_mii_sync(struct wb_softc *);
-void wb_mii_send(struct wb_softc *, u_int32_t, int);
-int wb_mii_readreg(struct wb_softc *, struct wb_mii_frame *);
-int wb_mii_writereg(struct wb_softc *, struct wb_mii_frame *);
+int wb_newbuf		__P((struct wb_softc *, struct wb_chain_onefrag *,
+    struct mbuf *));
+int wb_encap		__P((struct wb_softc *, struct wb_chain *,
+    struct mbuf *));
 
-void wb_setcfg(struct wb_softc *, uint64_t);
-u_int8_t wb_calchash(caddr_t);
-void wb_setmulti(struct wb_softc *);
-void wb_reset(struct wb_softc *);
-void wb_fixmedia(struct wb_softc *);
-int wb_list_rx_init(struct wb_softc *);
-int wb_list_tx_init(struct wb_softc *);
+void wb_rxeof		__P((struct wb_softc *));
+void wb_rxeoc		__P((struct wb_softc *));
+void wb_txeof		__P((struct wb_softc *));
+void wb_txeoc		__P((struct wb_softc *));
+int wb_intr		__P((void *));
+void wb_start		__P((struct ifnet *));
+int wb_ioctl		__P((struct ifnet *, u_long, caddr_t));
+void wb_init		__P((void *));
+void wb_stop		__P((struct wb_softc *));
+void wb_watchdog	__P((struct ifnet *));
+void wb_shutdown	__P((void *));
+int wb_ifmedia_upd	__P((struct ifnet *));
+void wb_ifmedia_sts	__P((struct ifnet *, struct ifmediareq *));
 
-int wb_miibus_readreg(struct device *, int, int);
-void wb_miibus_writereg(struct device *, int, int, int);
-void wb_miibus_statchg(struct device *);
+void wb_eeprom_putbyte	__P((struct wb_softc *, int));
+void wb_eeprom_getword	__P((struct wb_softc *, int, u_int16_t *));
+void wb_read_eeprom	__P((struct wb_softc *, caddr_t, int, int, int));
+void wb_mii_sync	__P((struct wb_softc *));
+void wb_mii_send	__P((struct wb_softc *, u_int32_t, int));
+int wb_mii_readreg	__P((struct wb_softc *, struct wb_mii_frame *));
+int wb_mii_writereg	__P((struct wb_softc *, struct wb_mii_frame *));
+void wb_phy_writereg	__P((struct wb_softc *, int, int));
+u_int16_t wb_phy_readreg	__P((struct wb_softc *, int));
+
+void wb_autoneg_xmit	__P((struct wb_softc *));
+void wb_autoneg_mii	__P((struct wb_softc *, int, int));
+void wb_setmode_mii	__P((struct wb_softc *, int));
+void wb_getmode_mii	__P((struct wb_softc *));
+void wb_setcfg		__P((struct wb_softc *, int));
+u_int8_t wb_calchash	__P((caddr_t));
+void wb_setmulti	__P((struct wb_softc *));
+void wb_reset		__P((struct wb_softc *));
+int wb_list_rx_init	__P((struct wb_softc *));
+int wb_list_tx_init	__P((struct wb_softc *));
 
 #define WB_SETBIT(sc, reg, x)				\
 	CSR_WRITE_4(sc, reg,				\
@@ -188,12 +211,12 @@ void wb_eeprom_putbyte(sc, addr)
 	struct wb_softc		*sc;
 	int			addr;
 {
-	int			d, i;
+	register int		d, i;
 
 	d = addr | WB_EECMD_READ;
 
 	/*
-	 * Feed in each bit and strobe the clock.
+	 * Feed in each bit and stobe the clock.
 	 */
 	for (i = 0x400; i; i >>= 1) {
 		if (d & i) {
@@ -219,7 +242,7 @@ void wb_eeprom_getword(sc, addr, dest)
 	int			addr;
 	u_int16_t		*dest;
 {
-	int			i;
+	register int		i;
 	u_int16_t		word = 0;
 
 	/* Enter EEPROM access mode. */
@@ -283,7 +306,7 @@ void wb_read_eeprom(sc, dest, off, cnt, swap)
 void wb_mii_sync(sc)
 	struct wb_softc		*sc;
 {
-	int			i;
+	register int		i;
 
 	SIO_SET(WB_SIO_MII_DIR|WB_SIO_MII_DATAIN);
 
@@ -332,7 +355,7 @@ int wb_mii_readreg(sc, frame)
 {
 	int			i, ack, s;
 
-	s = splnet();
+	s = splimp();
 
 	/*
 	 * Set up frame for RX.
@@ -370,9 +393,9 @@ int wb_mii_readreg(sc, frame)
 	/* Check for ack */
 	SIO_CLR(WB_SIO_MII_CLK);
 	DELAY(1);
-	ack = CSR_READ_4(sc, WB_SIO) & WB_SIO_MII_DATAOUT;
 	SIO_SET(WB_SIO_MII_CLK);
 	DELAY(1);
+	ack = CSR_READ_4(sc, WB_SIO) & WB_SIO_MII_DATAOUT;
 	SIO_CLR(WB_SIO_MII_CLK);
 	DELAY(1);
 	SIO_SET(WB_SIO_MII_CLK);
@@ -428,7 +451,7 @@ int wb_mii_writereg(sc, frame)
 {
 	int			s;
 
-	s = splnet();
+	s = splimp();
 	/*
 	 * Set up frame for TX.
 	 */
@@ -467,34 +490,31 @@ int wb_mii_writereg(sc, frame)
 	return(0);
 }
 
-int
-wb_miibus_readreg(dev, phy, reg)
-	struct device *dev;
-	int phy, reg;
+u_int16_t wb_phy_readreg(sc, reg)
+	struct wb_softc		*sc;
+	int			reg;
 {
-	struct wb_softc *sc = (struct wb_softc *)dev;
-	struct wb_mii_frame frame;
+	struct wb_mii_frame	frame;
 
-	bzero(&frame, sizeof(frame));
+	bzero((char *)&frame, sizeof(frame));
 
-	frame.mii_phyaddr = phy;
+	frame.mii_phyaddr = sc->wb_phy_addr;
 	frame.mii_regaddr = reg;
 	wb_mii_readreg(sc, &frame);
 
 	return(frame.mii_data);
 }
 
-void
-wb_miibus_writereg(dev, phy, reg, data)
-	struct device *dev;
-	int phy, reg, data;
+void wb_phy_writereg(sc, reg, data)
+	struct wb_softc		*sc;
+	int			reg;
+	int			data;
 {
-	struct wb_softc *sc = (struct wb_softc *)dev;
-	struct wb_mii_frame frame;
+	struct wb_mii_frame	frame;
 
-	bzero(&frame, sizeof(frame));
+	bzero((char *)&frame, sizeof(frame));
 
-	frame.mii_phyaddr = phy;
+	frame.mii_phyaddr = sc->wb_phy_addr;
 	frame.mii_regaddr = reg;
 	frame.mii_data = data;
 
@@ -503,13 +523,35 @@ wb_miibus_writereg(dev, phy, reg, data)
 	return;
 }
 
-void
-wb_miibus_statchg(dev)
-	struct device *dev;
+u_int8_t wb_calchash(addr)
+	caddr_t			addr;
 {
-	struct wb_softc *sc = (struct wb_softc *)dev;
+	u_int32_t		crc, carry;
+	int			i, j;
+	u_int8_t		c;
 
-	wb_setcfg(sc, sc->sc_mii.mii_media_active);
+	/* Compute CRC for the address value. */
+	crc = 0xFFFFFFFF; /* initial value */
+
+	for (i = 0; i < 6; i++) {
+		c = *(addr + i);
+		for (j = 0; j < 8; j++) {
+			carry = ((crc & 0x80000000) ? 1 : 0) ^ (c & 0x01);
+			crc <<= 1;
+			c >>= 1;
+			if (carry)
+				crc = (crc ^ 0x04c11db6) | carry;
+		}
+	}
+
+	/*
+	 * return the filter bit position
+	 * Note: I arrived at the following nonsense
+	 * through experimentation. It's not the usual way to
+	 * generate the bit position but it's the only thing
+	 * I could come up with that works.
+	 */
+	return(~(crc >> 26) & 0x0000003F);
 }
 
 /*
@@ -531,9 +573,6 @@ void wb_setmulti(sc)
 
 	rxfilt = CSR_READ_4(sc, WB_NETCFG);
 
-	if (ac->ac_multirangecnt > 0)
-		ifp->if_flags |= IFF_ALLMULTI;
-
 	if (ifp->if_flags & IFF_ALLMULTI || ifp->if_flags & IFF_PROMISC) {
 		rxfilt |= WB_NETCFG_RX_MULTI;
 		CSR_WRITE_4(sc, WB_NETCFG, rxfilt);
@@ -549,7 +588,7 @@ void wb_setmulti(sc)
 	/* now program new ones */
 	ETHER_FIRST_MULTI(step, ac, enm);
 	while (enm != NULL) {
-		h = ~(ether_crc32_be(enm->enm_addrlo, ETHER_ADDR_LEN) >> 26);
+		h = wb_calchash(enm->enm_addrlo);
 		if (h < 32)
 			hashes[0] |= (1 << h);
 		else
@@ -571,14 +610,302 @@ void wb_setmulti(sc)
 }
 
 /*
+ * Initiate an autonegotiation session.
+ */
+void wb_autoneg_xmit(sc)
+	struct wb_softc		*sc;
+{
+	u_int16_t		phy_sts;
+
+	wb_phy_writereg(sc, PHY_BMCR, PHY_BMCR_RESET);
+	DELAY(500);
+	while(wb_phy_readreg(sc, PHY_BMCR)
+			& PHY_BMCR_RESET);
+
+	phy_sts = wb_phy_readreg(sc, PHY_BMCR);
+	phy_sts |= PHY_BMCR_AUTONEGENBL|PHY_BMCR_AUTONEGRSTR;
+	wb_phy_writereg(sc, PHY_BMCR, phy_sts);
+
+	return;
+}
+
+/*
+ * Invoke autonegotiation on a PHY.
+ */
+void wb_autoneg_mii(sc, flag, verbose)
+	struct wb_softc		*sc;
+	int			flag;
+	int			verbose;
+{
+	u_int16_t		phy_sts = 0, media, advert, ability;
+	struct ifnet		*ifp;
+	struct ifmedia		*ifm;
+
+	ifm = &sc->ifmedia;
+	ifp = &sc->arpcom.ac_if;
+
+	ifm->ifm_media = IFM_ETHER | IFM_AUTO;
+
+	/*
+	 * The 100baseT4 PHY on the 3c905-T4 has the 'autoneg supported'
+	 * bit cleared in the status register, but has the 'autoneg enabled'
+	 * bit set in the control register. This is a contradiction, and
+	 * I'm not sure how to handle it. If you want to force an attempt
+	 * to autoneg for 100baseT4 PHYs, #define FORCE_AUTONEG_TFOUR
+	 * and see what happens.
+	 */
+#ifndef FORCE_AUTONEG_TFOUR
+	/*
+	 * First, see if autoneg is supported. If not, there's
+	 * no point in continuing.
+	 */
+	phy_sts = wb_phy_readreg(sc, PHY_BMSR);
+	if (!(phy_sts & PHY_BMSR_CANAUTONEG)) {
+		if (verbose)
+			printf("%s: autonegotiation not supported\n",
+			    sc->sc_dev.dv_xname);
+		ifm->ifm_media = IFM_ETHER|IFM_10_T|IFM_HDX;	
+		return;
+	}
+#endif
+
+	switch (flag) {
+	case WB_FLAG_FORCEDELAY:
+		/*
+	 	 * XXX Never use this option anywhere but in the probe
+	 	 * routine: making the kernel stop dead in its tracks
+ 		 * for three whole seconds after we've gone multi-user
+		 * is really bad manners.
+	 	 */
+		wb_autoneg_xmit(sc);
+		DELAY(5000000);
+		break;
+	case WB_FLAG_SCHEDDELAY:
+		/*
+		 * Wait for the transmitter to go idle before starting
+		 * an autoneg session, otherwise wb_start() may clobber
+	 	 * our timeout, and we don't want to allow transmission
+		 * during an autoneg session since that can screw it up.
+	 	 */
+		if (sc->wb_cdata.wb_tx_head != NULL) {
+			sc->wb_want_auto = 1;
+			return;
+		}
+		wb_autoneg_xmit(sc);
+		ifp->if_timer = 5;
+		sc->wb_autoneg = 1;
+		sc->wb_want_auto = 0;
+		return;
+		break;
+	case WB_FLAG_DELAYTIMEO:
+		ifp->if_timer = 0;
+		sc->wb_autoneg = 0;
+		break;
+	default:
+		printf("%s: invalid autoneg flag: %d\n",
+		    sc->sc_dev.dv_xname, flag);
+		return;
+	}
+
+	if (wb_phy_readreg(sc, PHY_BMSR) & PHY_BMSR_AUTONEGCOMP) {
+		if (verbose)
+			printf("%s: autoneg complete, ", sc->sc_dev.dv_xname);
+		phy_sts = wb_phy_readreg(sc, PHY_BMSR);
+	} else {
+		if (verbose)
+			printf("%s: autoneg not complete, ",
+			    sc->sc_dev.dv_xname);
+	}
+
+	media = wb_phy_readreg(sc, PHY_BMCR);
+
+	/* Link is good. Report modes and set duplex mode. */
+	if (wb_phy_readreg(sc, PHY_BMSR) & PHY_BMSR_LINKSTAT) {
+		if (verbose)
+			printf("link status good ");
+		advert = wb_phy_readreg(sc, PHY_ANAR);
+		ability = wb_phy_readreg(sc, PHY_LPAR);
+
+		if (advert & PHY_ANAR_100BT4 && ability & PHY_ANAR_100BT4) {
+			ifm->ifm_media = IFM_ETHER|IFM_100_T4;
+			media |= PHY_BMCR_SPEEDSEL;
+			media &= ~PHY_BMCR_DUPLEX;
+			printf("(100baseT4)\n");
+		} else if (advert & PHY_ANAR_100BTXFULL &&
+			ability & PHY_ANAR_100BTXFULL) {
+			ifm->ifm_media = IFM_ETHER|IFM_100_TX|IFM_FDX;
+			media |= PHY_BMCR_SPEEDSEL;
+			media |= PHY_BMCR_DUPLEX;
+			printf("(full-duplex, 100Mbps)\n");
+		} else if (advert & PHY_ANAR_100BTXHALF &&
+			ability & PHY_ANAR_100BTXHALF) {
+			ifm->ifm_media = IFM_ETHER|IFM_100_TX|IFM_HDX;
+			media |= PHY_BMCR_SPEEDSEL;
+			media &= ~PHY_BMCR_DUPLEX;
+			printf("(half-duplex, 100Mbps)\n");
+		} else if (advert & PHY_ANAR_10BTFULL &&
+			ability & PHY_ANAR_10BTFULL) {
+			ifm->ifm_media = IFM_ETHER|IFM_10_T|IFM_FDX;
+			media &= ~PHY_BMCR_SPEEDSEL;
+			media |= PHY_BMCR_DUPLEX;
+			printf("(full-duplex, 10Mbps)\n");
+		} else /* if (advert & PHY_ANAR_10BTHALF &&
+			ability & PHY_ANAR_10BTHALF) */ {
+			ifm->ifm_media = IFM_ETHER|IFM_10_T|IFM_HDX;
+			media &= ~PHY_BMCR_SPEEDSEL;
+			media &= ~PHY_BMCR_DUPLEX;
+			printf("(half-duplex, 10Mbps)\n");
+		}
+
+		media &= ~PHY_BMCR_AUTONEGENBL;
+
+		/* Set ASIC's duplex mode to match the PHY. */
+		wb_setcfg(sc, media);
+		wb_phy_writereg(sc, PHY_BMCR, media);
+	} else {
+		if (verbose)
+			printf("no carrier\n");
+	}
+
+	if (flag != WB_FLAG_FORCEDELAY)
+		wb_init(sc);
+
+	if (sc->wb_tx_pend) {
+		sc->wb_autoneg = 0;
+		sc->wb_tx_pend = 0;
+		wb_start(ifp);
+	}
+
+	return;
+}
+
+void wb_getmode_mii(sc)
+	struct wb_softc		*sc;
+{
+	u_int16_t		bmsr;
+	struct ifnet		*ifp;
+
+	ifp = &sc->arpcom.ac_if;
+
+	bmsr = wb_phy_readreg(sc, PHY_BMSR);
+
+	/* fallback */
+	sc->ifmedia.ifm_media = IFM_ETHER|IFM_10_T|IFM_HDX;
+
+	if (bmsr & PHY_BMSR_10BTHALF) {
+		ifmedia_add(&sc->ifmedia,
+			IFM_ETHER|IFM_10_T|IFM_HDX, 0, NULL);
+		ifmedia_add(&sc->ifmedia, IFM_ETHER|IFM_10_T, 0, NULL);
+	}
+
+	if (bmsr & PHY_BMSR_10BTFULL) {
+		ifmedia_add(&sc->ifmedia,
+			IFM_ETHER|IFM_10_T|IFM_FDX, 0, NULL);
+		sc->ifmedia.ifm_media = IFM_ETHER|IFM_10_T|IFM_FDX;
+	}
+
+	if (bmsr & PHY_BMSR_100BTXHALF) {
+		ifp->if_baudrate = 100000000;
+		ifmedia_add(&sc->ifmedia, IFM_ETHER|IFM_100_TX, 0, NULL);
+		ifmedia_add(&sc->ifmedia,
+			IFM_ETHER|IFM_100_TX|IFM_HDX, 0, NULL);
+		sc->ifmedia.ifm_media = IFM_ETHER|IFM_100_TX|IFM_HDX;
+	}
+
+	if (bmsr & PHY_BMSR_100BTXFULL) {
+		ifp->if_baudrate = 100000000;
+		ifmedia_add(&sc->ifmedia,
+			IFM_ETHER|IFM_100_TX|IFM_FDX, 0, NULL);
+		sc->ifmedia.ifm_media = IFM_ETHER|IFM_100_TX|IFM_FDX;
+	}
+
+	/* Some also support 100BaseT4. */
+	if (bmsr & PHY_BMSR_100BT4) {
+		ifp->if_baudrate = 100000000;
+		ifmedia_add(&sc->ifmedia, IFM_ETHER|IFM_100_T4, 0, NULL);
+		sc->ifmedia.ifm_media = IFM_ETHER|IFM_100_T4;
+#ifdef FORCE_AUTONEG_TFOUR
+		ifmedia_add(&sc->ifmedia, IFM_ETHER|IFM_AUTO, 0 NULL):
+		sc->ifmedia.ifm_media = IFM_ETHER|IFM_AUTO;
+#endif
+	}
+
+	if (bmsr & PHY_BMSR_CANAUTONEG) {
+		ifmedia_add(&sc->ifmedia, IFM_ETHER|IFM_AUTO, 0, NULL);
+		sc->ifmedia.ifm_media = IFM_ETHER|IFM_AUTO;
+	}
+
+	return;
+}
+
+/*
+ * Set speed and duplex mode.
+ */
+void wb_setmode_mii(sc, media)
+	struct wb_softc		*sc;
+	int			media;
+{
+	u_int16_t		bmcr;
+	struct ifnet		*ifp;
+
+	ifp = &sc->arpcom.ac_if;
+
+	/*
+	 * If an autoneg session is in progress, stop it.
+	 */
+	if (sc->wb_autoneg) {
+		printf("%s: canceling autoneg session\n", sc->sc_dev.dv_xname);
+		ifp->if_timer = sc->wb_autoneg = sc->wb_want_auto = 0;
+		bmcr = wb_phy_readreg(sc, PHY_BMCR);
+		bmcr &= ~PHY_BMCR_AUTONEGENBL;
+		wb_phy_writereg(sc, PHY_BMCR, bmcr);
+	}
+
+	printf("%s: selecting MII, ", sc->sc_dev.dv_xname);
+
+	bmcr = wb_phy_readreg(sc, PHY_BMCR);
+
+	bmcr &= ~(PHY_BMCR_AUTONEGENBL|PHY_BMCR_SPEEDSEL|
+			PHY_BMCR_DUPLEX|PHY_BMCR_LOOPBK);
+
+	if (IFM_SUBTYPE(media) == IFM_100_T4) {
+		printf("100Mbps/T4, half-duplex\n");
+		bmcr |= PHY_BMCR_SPEEDSEL;
+		bmcr &= ~PHY_BMCR_DUPLEX;
+	}
+
+	if (IFM_SUBTYPE(media) == IFM_100_TX) {
+		printf("100Mbps, ");
+		bmcr |= PHY_BMCR_SPEEDSEL;
+	}
+
+	if (IFM_SUBTYPE(media) == IFM_10_T) {
+		printf("10Mbps, ");
+		bmcr &= ~PHY_BMCR_SPEEDSEL;
+	}
+
+	if ((media & IFM_GMASK) == IFM_FDX) {
+		printf("full duplex\n");
+		bmcr |= PHY_BMCR_DUPLEX;
+	} else {
+		printf("half duplex\n");
+		bmcr &= ~PHY_BMCR_DUPLEX;
+	}
+
+	wb_setcfg(sc, bmcr);
+	wb_phy_writereg(sc, PHY_BMCR, bmcr);
+
+	return;
+}
+
+/*
  * The Winbond manual states that in order to fiddle with the
  * 'full-duplex' and '100Mbps' bits in the netconfig register, we
  * first have to put the transmit and/or receive logic in the idle state.
  */
-void
-wb_setcfg(sc, media)
-	struct wb_softc *sc;
-	uint64_t media;
+void wb_setcfg(sc, bmcr)
+	struct wb_softc		*sc;
+	int			bmcr;
 {
 	int			i, restart = 0;
 
@@ -598,12 +925,12 @@ wb_setcfg(sc, media)
 				"rx to idle state\n", sc->sc_dev.dv_xname);
 	}
 
-	if (IFM_SUBTYPE(media) == IFM_10_T)
-		WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_100MBPS);
-	else
+	if (bmcr & PHY_BMCR_SPEEDSEL)
 		WB_SETBIT(sc, WB_NETCFG, WB_NETCFG_100MBPS);
+	else
+		WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_100MBPS);
 
-	if ((media & IFM_GMASK) == IFM_FDX)
+	if (bmcr & PHY_BMCR_DUPLEX)
 		WB_SETBIT(sc, WB_NETCFG, WB_NETCFG_FULLDUPLEX);
 	else
 		WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_FULLDUPLEX);
@@ -614,19 +941,11 @@ wb_setcfg(sc, media)
 	return;
 }
 
-void
-wb_reset(sc)
-	struct wb_softc *sc;
+void wb_reset(sc)
+	struct wb_softc		*sc;
 {
-	int i;
-	struct mii_data *mii = &sc->sc_mii;
+	register int		i;
 
-	CSR_WRITE_4(sc, WB_NETCFG, 0);
-	CSR_WRITE_4(sc, WB_BUSCTL, 0);
-	CSR_WRITE_4(sc, WB_TXADDR, 0);
-	CSR_WRITE_4(sc, WB_RXADDR, 0);
-
-	WB_SETBIT(sc, WB_BUSCTL, WB_BUSCTL_RESET);
 	WB_SETBIT(sc, WB_BUSCTL, WB_BUSCTL_RESET);
 
 	for (i = 0; i < WB_TIMEOUT; i++) {
@@ -640,40 +959,12 @@ wb_reset(sc)
 	/* Wait a little while for the chip to get its brains in order. */
 	DELAY(1000);
 
-	if (mii->mii_instance) {
-		struct mii_softc *miisc;
-		LIST_FOREACH(miisc, &mii->mii_phys, mii_list)
-			mii_phy_reset(miisc);
-	}
+	/* Reset the damn PHY too. */
+	if (sc->wb_pinfo != NULL)
+		wb_phy_writereg(sc, PHY_BMCR, PHY_BMCR_RESET);
+
+        return;
 }
-
-void
-wb_fixmedia(sc)
-	struct wb_softc *sc;
-{
-	struct mii_data *mii = &sc->sc_mii;
-	uint64_t media;
-
-	if (LIST_FIRST(&mii->mii_phys) == NULL)
-		return;
-
-	mii_pollstat(mii);
-	if (IFM_SUBTYPE(mii->mii_media_active) == IFM_10_T) {
-		media = mii->mii_media_active & ~IFM_10_T;
-		media |= IFM_100_TX;
-	} if (IFM_SUBTYPE(mii->mii_media_active) == IFM_100_TX) {
-		media = mii->mii_media_active & ~IFM_100_TX;
-		media |= IFM_10_T;
-	} else
-		return;
-
-	ifmedia_set(&mii->mii_media, media);
-}
-
-const struct pci_matchid wb_devices[] = {
-	{ PCI_VENDOR_WINBOND, PCI_PRODUCT_WINBOND_W89C840F },
-	{ PCI_VENDOR_COMPEX, PCI_PRODUCT_COMPEX_RL100ATX },
-};
 
 /*
  * Probe for a Winbond chip. Check the PCI vendor and device
@@ -684,8 +975,23 @@ wb_probe(parent, match, aux)
 	struct device *parent;
 	void *match, *aux;
 {
-	return (pci_matchbyid((struct pci_attach_args *)aux, wb_devices,
-	    nitems(wb_devices)));
+	struct pci_attach_args *pa = (struct pci_attach_args *)aux;
+
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_WINBOND) {
+		switch (PCI_PRODUCT(pa->pa_id)) {
+		case PCI_PRODUCT_WINBOND_W89C840F:
+			return (1);
+		}
+	}
+
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_COMPEX) {
+		switch (PCI_PRODUCT(pa->pa_id)) {
+		case PCI_PRODUCT_COMPEX_RL100ATX:
+			return (1);
+		}
+	}
+
+	return (0);
 }
 
 /*
@@ -703,36 +1009,92 @@ wb_attach(parent, self, aux)
 	pci_intr_handle_t ih;
 	const char *intrstr = NULL;
 	struct ifnet *ifp = &sc->arpcom.ac_if;
-	bus_size_t size;
-	int rseg;
-	bus_dma_segment_t seg;
-	bus_dmamap_t dmamap;
-	caddr_t kva;
+	bus_addr_t iobase;
+	bus_size_t iosize;
+	int i, media = IFM_ETHER|IFM_100_TX|IFM_FDX, s;
+	u_int round;
+	caddr_t roundptr;
+	u_int16_t phy_vid, phy_did, phy_sts;
+	struct wb_type		*p;
+	u_int32_t command;
 
-	pci_set_powerstate(pa->pa_pc, pa->pa_tag, PCI_PMCSR_STATE_D0);
+	s = splimp();
+
+	/*
+	 * Handle power management nonsense.
+	 */
+
+	command = pci_conf_read(pc, pa->pa_tag, WB_PCI_CAPID) & 0x000000FF;
+	if (command == 0x01) {
+
+		command = pci_conf_read(pc, pa->pa_tag, WB_PCI_PWRMGMTCTRL);
+		if (command & WB_PSTATE_MASK) {
+			u_int32_t		io, mem, irq;
+
+			/* Save important PCI config data. */
+			io = pci_conf_read(pc, pa->pa_tag, WB_PCI_LOIO);
+			mem = pci_conf_read(pc, pa->pa_tag, WB_PCI_LOMEM);
+			irq = pci_conf_read(pc, pa->pa_tag, WB_PCI_INTLINE);
+
+			/* Reset the power state. */
+			printf("%s: chip is in D%d power mode "
+			    "-- setting to D0\n", sc->sc_dev.dv_xname,
+			    command & WB_PSTATE_MASK);
+			command &= 0xFFFFFFFC;
+			pci_conf_write(pc, pa->pa_tag, WB_PCI_PWRMGMTCTRL,
+			    command);
+
+			/* Restore PCI config data. */
+			pci_conf_write(pc, pa->pa_tag, WB_PCI_LOIO, io);
+			pci_conf_write(pc, pa->pa_tag, WB_PCI_LOMEM, mem);
+			pci_conf_write(pc, pa->pa_tag, WB_PCI_INTLINE, irq);
+		}
+	}
 
 	/*
 	 * Map control/status registers.
 	 */
+	command = pci_conf_read(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG);
+	command |= PCI_COMMAND_IO_ENABLE | PCI_COMMAND_MEM_ENABLE |
+	    PCI_COMMAND_MASTER_ENABLE;
+	pci_conf_write(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG, command);
+	command = pci_conf_read(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG);
 
 #ifdef WB_USEIOSPACE
-	if (pci_mapreg_map(pa, WB_PCI_LOIO, PCI_MAPREG_TYPE_IO, 0,
-	    &sc->wb_btag, &sc->wb_bhandle, NULL, &size, 0)) {
+	if (!(command & PCI_COMMAND_IO_ENABLE)) {
+		printf(": failed to enable I/O ports!\n");
+		goto fail;
+	}
+	if (pci_io_find(pc, pa->pa_tag, WB_PCI_LOIO, &iobase, &iosize)) {
+		printf(": can't find i/o space\n");
+		goto fail;
+	}
+	if (bus_space_map(pa->pa_iot, iobase, iosize, 0, &sc->wb_bhandle)) {
 		printf(": can't map i/o space\n");
-		return;
+		goto fail;
 	}
+	sc->wb_btag = pa->pa_iot;
 #else
-	if (pci_mapreg_map(pa, WB_PCI_LOMEM, PCI_MAPREG_TYPE_MEM, 0,
-	    &sc->wb_btag, &sc->wb_bhandle, NULL, &size, 0)){
-		printf(": can't map mem space\n");
-		return;
+	if (!(command & PCI_COMMAND_MEM_ENABLE)) {
+		printf(": failed to enable memory mapping!\n");
+		goto fail;
 	}
+	if (pci_mem_find(pc, pa->pa_tag, WB_PCI_LOMEM, &iobase, &iosize, NULL)){
+		printf(": can't find mem space\n");
+		goto fail;
+	}
+	if (bus_space_map(pa->pa_memt, iobase, iosize, 0, &sc->wb_bhandle)) {
+		printf(": can't map mem space\n");
+		goto fail;
+	}
+	sc->wb_btag = pa->pa_memt;
 #endif
 
 	/* Allocate interrupt */
-	if (pci_intr_map(pa, &ih)) {
+	if (pci_intr_map(pc, pa->pa_intrtag, pa->pa_intrpin,
+	    pa->pa_intrline, &ih)) {
 		printf(": couldn't map interrupt\n");
-		goto fail_1;
+		goto fail;
 	}
 	intrstr = pci_intr_string(pc, ih);
 	sc->sc_ih = pci_intr_establish(pc, ih, IPL_NET, wb_intr, sc,
@@ -742,11 +1104,9 @@ wb_attach(parent, self, aux)
 		if (intrstr != NULL)
 			printf(" at %s", intrstr);
 		printf("\n");
-		goto fail_1;
+		goto fail;
 	}
 	printf(": %s", intrstr);
-
-	sc->wb_cachesize = pci_conf_read(pc, pa->pa_tag, WB_PCI_CACHELEN)&0xff;
 
 	/* Reset the adapter. */
 	wb_reset(sc);
@@ -755,80 +1115,99 @@ wb_attach(parent, self, aux)
 	 * Get station address from the EEPROM.
 	 */
 	wb_read_eeprom(sc, (caddr_t)&sc->arpcom.ac_enaddr, 0, 3, 0);
-	printf(", address %s\n", ether_sprintf(sc->arpcom.ac_enaddr));
+	printf(" address %s\n", ether_sprintf(sc->arpcom.ac_enaddr));
 
-	if (bus_dmamem_alloc(pa->pa_dmat, sizeof(struct wb_list_data),
-	    PAGE_SIZE, 0, &seg, 1, &rseg, BUS_DMA_NOWAIT | BUS_DMA_ZERO)) {
-		printf(": can't alloc list data\n");
-		goto fail_2;
+	sc->wb_ldata_ptr = malloc(sizeof(struct wb_list_data) + 8,
+				M_DEVBUF, M_NOWAIT);
+	if (sc->wb_ldata_ptr == NULL) {
+		printf("%s: no memory for list buffers!\n",sc->sc_dev.dv_xname);
+		goto fail;
 	}
-	if (bus_dmamem_map(pa->pa_dmat, &seg, rseg,
-	    sizeof(struct wb_list_data), &kva, BUS_DMA_NOWAIT)) {
-		printf(": can't map list data, size %zd\n",
-		    sizeof(struct wb_list_data));
-		goto fail_3;
+
+	sc->wb_ldata = (struct wb_list_data *)sc->wb_ldata_ptr;
+#ifdef __alpha__
+	round = (u_int64_t)sc->wb_ldata_ptr & 0xF;
+#endif
+#ifdef __i386__
+	round = (u_int32_t)sc->wb_ldata_ptr & 0xF;
+#endif
+	roundptr = sc->wb_ldata_ptr;
+	for (i = 0; i < 8; i++) {
+		if (round % 8) {
+			round++;
+			roundptr++;
+		} else
+			break;
 	}
-	if (bus_dmamap_create(pa->pa_dmat, sizeof(struct wb_list_data), 1,
-	    sizeof(struct wb_list_data), 0, BUS_DMA_NOWAIT, &dmamap)) {
-		printf(": can't create dma map\n");
-		goto fail_4;
-	}
-	if (bus_dmamap_load(pa->pa_dmat, dmamap, kva,
-	    sizeof(struct wb_list_data), NULL, BUS_DMA_NOWAIT)) {
-		printf(": can't load dma map\n");
-		goto fail_5;
-	}
-	sc->wb_ldata = (struct wb_list_data *)kva;
+	sc->wb_ldata = (struct wb_list_data *)roundptr;
+	bzero(sc->wb_ldata, sizeof(struct wb_list_data));
 
 	ifp->if_softc = sc;
+	ifp->if_mtu = ETHERMTU;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_ioctl = wb_ioctl;
+	ifp->if_output = ether_output;
 	ifp->if_start = wb_start;
 	ifp->if_watchdog = wb_watchdog;
-	IFQ_SET_MAXLEN(&ifp->if_snd, WB_TX_LIST_CNT - 1);
-
+	ifp->if_baudrate = 10000000;
+	ifp->if_snd.ifq_maxlen = WB_TX_LIST_CNT - 1;
 	bcopy(sc->sc_dev.dv_xname, ifp->if_xname, IFNAMSIZ);
+
+	for (i = WB_PHYADDR_MIN; i < WB_PHYADDR_MAX + 1; i++) {
+		sc->wb_phy_addr = i;
+		wb_phy_writereg(sc, PHY_BMCR, PHY_BMCR_RESET);
+		DELAY(500);
+		while(wb_phy_readreg(sc, PHY_BMCR)
+				& PHY_BMCR_RESET);
+		if ((phy_sts = wb_phy_readreg(sc, PHY_BMSR)))
+			break;
+	}
+	if (phy_sts) {
+		phy_vid = wb_phy_readreg(sc, PHY_VENID);
+		phy_did = wb_phy_readreg(sc, PHY_DEVID);
+		p = wb_phys;
+		while(p->wb_vid) {
+			if (phy_vid == p->wb_vid &&
+				(phy_did | 0x000F) == p->wb_did) {
+				sc->wb_pinfo = p;
+				break;
+			}
+			p++;
+		}
+		if (sc->wb_pinfo == NULL)
+			sc->wb_pinfo = &wb_phys[PHY_UNKNOWN];
+	} else {
+		printf("%s: MII without any phy!\n", sc->sc_dev.dv_xname);
+		goto fail;
+	}
 
 	/*
 	 * Do ifmedia setup.
 	 */
+	ifmedia_init(&sc->ifmedia, 0, wb_ifmedia_upd, wb_ifmedia_sts);
+
+	wb_getmode_mii(sc);
+	wb_autoneg_mii(sc, WB_FLAG_FORCEDELAY, 1);
+	media = sc->ifmedia.ifm_media;
 	wb_stop(sc);
 
-	ifmedia_init(&sc->sc_mii.mii_media, 0, wb_ifmedia_upd, wb_ifmedia_sts);
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = wb_miibus_readreg;
-	sc->sc_mii.mii_writereg = wb_miibus_writereg;
-	sc->sc_mii.mii_statchg = wb_miibus_statchg;
-	mii_attach(self, &sc->sc_mii, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY,
-	    0);
-	if (LIST_FIRST(&sc->sc_mii.mii_phys) == NULL) {
-		ifmedia_add(&sc->sc_mii.mii_media, IFM_ETHER|IFM_NONE,0,NULL);
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_NONE);
-	} else
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_AUTO);
+	ifmedia_set(&sc->ifmedia, media);
 
 	/*
 	 * Call MI attach routines.
 	 */
 	if_attach(ifp);
 	ether_ifattach(ifp);
+
+#if NBPFILTER > 0
+	bpfattach(&sc->arpcom.ac_if.if_bpf, ifp,
+	    DLT_EN10MB, sizeof(struct ether_header));
+#endif
+	shutdownhook_establish(wb_shutdown, sc);
+
+fail:
+	splx(s);
 	return;
-
-fail_5:
-	bus_dmamap_destroy(pa->pa_dmat, dmamap);
-
-fail_4:
-	bus_dmamem_unmap(pa->pa_dmat, kva,
-	    sizeof(struct wb_list_data));
-
-fail_3:
-	bus_dmamem_free(pa->pa_dmat, &seg, rseg);
-
-fail_2:
-	pci_intr_disestablish(pc, sc->sc_ih);
-
-fail_1:
-	bus_space_unmap(sc->wb_btag, sc->wb_bhandle, size);
 }
 
 /*
@@ -880,17 +1259,17 @@ int wb_list_rx_init(sc)
 	for (i = 0; i < WB_RX_LIST_CNT; i++) {
 		cd->wb_rx_chain[i].wb_ptr =
 			(struct wb_desc *)&ld->wb_rx_list[i];
-		cd->wb_rx_chain[i].wb_buf = (void *)&ld->wb_rxbufs[i];
-		wb_newbuf(sc, &cd->wb_rx_chain[i]);
+		if (wb_newbuf(sc, &cd->wb_rx_chain[i], NULL) == ENOBUFS)
+			return(ENOBUFS);
 		if (i == (WB_RX_LIST_CNT - 1)) {
 			cd->wb_rx_chain[i].wb_nextdesc = &cd->wb_rx_chain[0];
 			ld->wb_rx_list[i].wb_next = 
-					VTOPHYS(&ld->wb_rx_list[0]);
+					vtophys(&ld->wb_rx_list[0]);
 		} else {
 			cd->wb_rx_chain[i].wb_nextdesc =
 					&cd->wb_rx_chain[i + 1];
 			ld->wb_rx_list[i].wb_next =
-					VTOPHYS(&ld->wb_rx_list[i + 1]);
+					vtophys(&ld->wb_rx_list[i + 1]);
 		}
 	}
 
@@ -902,14 +1281,39 @@ int wb_list_rx_init(sc)
 /*
  * Initialize an RX descriptor and attach an MBUF cluster.
  */
-void
-wb_newbuf(sc, c)
+int
+wb_newbuf(sc, c, m)
 	struct wb_softc *sc;
 	struct wb_chain_onefrag *c;
+	struct mbuf *m;
 {
-	c->wb_ptr->wb_data = VTOPHYS(c->wb_buf + sizeof(u_int64_t));
-	c->wb_ptr->wb_ctl = WB_RXCTL_RLINK | ETHER_MAX_DIX_LEN;
+	struct mbuf		*m_new = NULL;
+
+	if (m == NULL) {
+		MGETHDR(m_new, M_DONTWAIT, MT_DATA);
+		if (m_new == NULL)
+			return(ENOBUFS);
+
+		MCLGET(m_new, M_DONTWAIT);
+		if (!(m_new->m_flags & M_EXT)) {
+			m_freem(m_new);
+			return(ENOBUFS);
+		}
+		m_new->m_len = m_new->m_pkthdr.len = MCLBYTES;
+	} else {
+		m_new = m;
+		m_new->m_len = m_new->m_pkthdr.len = MCLBYTES;
+		m_new->m_data = m_new->m_ext.ext_buf;
+	}
+
+	m_adj(m_new, sizeof(u_int64_t));
+
+	c->wb_mbuf = m_new;
+	c->wb_ptr->wb_data = vtophys(mtod(m_new, caddr_t));
+	c->wb_ptr->wb_ctl = WB_RXCTL_RLINK | (MCLBYTES - 1);
 	c->wb_ptr->wb_status = WB_RXSTAT;
+
+	return(0);
 }
 
 /*
@@ -919,7 +1323,8 @@ wb_newbuf(sc, c)
 void wb_rxeof(sc)
 	struct wb_softc		*sc;
 {
-	struct mbuf_list	ml = MBUF_LIST_INITIALIZER();
+        struct ether_header	*eh;
+        struct mbuf		*m;
         struct ifnet		*ifp;
 	struct wb_chain_onefrag	*cur_rx;
 	int			total_len = 0;
@@ -929,29 +1334,27 @@ void wb_rxeof(sc)
 
 	while(!((rxstat = sc->wb_cdata.wb_rx_head->wb_ptr->wb_status) &
 							WB_RXSTAT_OWN)) {
-		struct mbuf *m;
+		struct mbuf *m0 = NULL;
 
 		cur_rx = sc->wb_cdata.wb_rx_head;
 		sc->wb_cdata.wb_rx_head = cur_rx->wb_nextdesc;
+		m = cur_rx->wb_mbuf;
 
-		if ((rxstat & WB_RXSTAT_MIIERR) ||
-		    (WB_RXBYTES(cur_rx->wb_ptr->wb_status) < WB_MIN_FRAMELEN) ||
-		    (WB_RXBYTES(cur_rx->wb_ptr->wb_status) > ETHER_MAX_DIX_LEN) ||
-		    !(rxstat & WB_RXSTAT_LASTFRAG) ||
-		    !(rxstat & WB_RXSTAT_RXCMP)) {
+		if ((rxstat & WB_RXSTAT_MIIERR)
+			 || WB_RXBYTES(cur_rx->wb_ptr->wb_status) == 0) {
 			ifp->if_ierrors++;
-			wb_newbuf(sc, cur_rx);
+			wb_reset(sc);
 			printf("%s: receiver babbling: possible chip "
 				"bug, forcing reset\n", sc->sc_dev.dv_xname);
-			wb_fixmedia(sc);
-			wb_init(sc);
-			break;
+			ifp->if_flags |= IFF_OACTIVE;
+			ifp->if_timer = 2;
+			return;
 		}
 
 		if (rxstat & WB_RXSTAT_RXERR) {
 			ifp->if_ierrors++;
-			wb_newbuf(sc, cur_rx);
-			break;
+			wb_newbuf(sc, cur_rx, m);
+			continue;
 		}
 
 		/* No errors; receive the packet. */	
@@ -966,18 +1369,32 @@ void wb_rxeof(sc)
 		 */
 		total_len -= ETHER_CRC_LEN;
 
-		m = m_devget(cur_rx->wb_buf + sizeof(u_int64_t), total_len,
-		    ETHER_ALIGN);
-		wb_newbuf(sc, cur_rx);
-		if (m == NULL) {
+		m0 = m_devget(mtod(m, char *) - ETHER_ALIGN,
+		    total_len + ETHER_ALIGN, 0, ifp, NULL);
+		wb_newbuf(sc, cur_rx, m);
+		if (m0 == NULL) {
 			ifp->if_ierrors++;
-			break;
+			continue;
 		}
+		m_adj(m0, ETHER_ALIGN);
+		m = m0;
 
-		ml_enqueue(&ml, m);
+		ifp->if_ipackets++;
+		eh = mtod(m, struct ether_header *);
+
+#if NBPFILTER > 0
+		/*
+		 * Handle BPF listeners. Let the BPF user see the packet.
+		 */
+		if (ifp->if_bpf)
+			bpf_mtap(ifp->if_bpf, m);
+#endif
+		/* Remove header from mbuf and pass it on. */
+		m_adj(m, sizeof(struct ether_header));
+		ether_input(ifp, eh, m);
 	}
 
-	if_input(ifp, &ml);
+	return;
 }
 
 void wb_rxeoc(sc)
@@ -986,7 +1403,7 @@ void wb_rxeoc(sc)
 	wb_rxeof(sc);
 
 	WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_RX_ON);
-	CSR_WRITE_4(sc, WB_RXADDR, VTOPHYS(&sc->wb_ldata->wb_rx_list[0]));
+	CSR_WRITE_4(sc, WB_RXADDR, vtophys(&sc->wb_ldata->wb_rx_list[0]));
 	WB_SETBIT(sc, WB_NETCFG, WB_NETCFG_RX_ON);
 	if (CSR_READ_4(sc, WB_ISR) & WB_RXSTATE_SUSPEND)
 		CSR_WRITE_4(sc, WB_RXSTART, 0xFFFFFFFF);
@@ -1064,8 +1481,10 @@ void wb_txeoc(sc)
 	ifp->if_timer = 0;
 
 	if (sc->wb_cdata.wb_tx_head == NULL) {
-		ifq_clr_oactive(&ifp->if_snd);
+		ifp->if_flags &= ~IFF_OACTIVE;
 		sc->wb_cdata.wb_tx_tail = NULL;
+		if (sc->wb_want_auto)
+			wb_autoneg_mii(sc, WB_FLAG_SCHEDDELAY, 1);
 	} else {
 		if (WB_TXOWN(sc->wb_cdata.wb_tx_head) == WB_UNSENT) {
 			WB_TXOWN(sc->wb_cdata.wb_tx_head) = WB_TXSTAT_OWN;
@@ -1105,20 +1524,20 @@ int wb_intr(arg)
 
 		r = 1;
 
-		if ((status & WB_ISR_RX_NOBUF) || (status & WB_ISR_RX_ERR)) {
-			ifp->if_ierrors++;
-			wb_reset(sc);
-			if (status & WB_ISR_RX_ERR)
-				wb_fixmedia(sc);
-			wb_init(sc);
-			continue;
-		}
-
 		if (status & WB_ISR_RX_OK)
 			wb_rxeof(sc);
 
 		if (status & WB_ISR_RX_IDLE)
 			wb_rxeoc(sc);
+
+		if ((status & WB_ISR_RX_NOBUF) || (status & WB_ISR_RX_ERR)) {
+			ifp->if_ierrors++;
+#ifdef foo
+			wb_stop(sc);
+			wb_reset(sc);
+			wb_init(sc);
+#endif
+		}
 
 		if (status & WB_ISR_TX_OK)
 			wb_txeof(sc);
@@ -1145,31 +1564,21 @@ int wb_intr(arg)
 			WB_SETBIT(sc, WB_NETCFG, WB_NETCFG_TX_ON);
 		}
 
-		if (status & WB_ISR_BUS_ERR)
+		if (status & WB_ISR_BUS_ERR) {
+			wb_reset(sc);
 			wb_init(sc);
+		}
+
 	}
 
 	/* Re-enable interrupts. */
 	CSR_WRITE_4(sc, WB_IMR, WB_INTRS);
 
-	if (!IFQ_IS_EMPTY(&ifp->if_snd)) {
+	if (ifp->if_snd.ifq_head != NULL) {
 		wb_start(ifp);
 	}
 
 	return (r);
-}
-
-void
-wb_tick(xsc)
-	void *xsc;
-{
-	struct wb_softc *sc = xsc;
-	int s;
-
-	s = splnet();
-	mii_tick(&sc->sc_mii);
-	splx(s);
-	timeout_add_sec(&sc->wb_tick_tmo, 1);
 }
 
 /*
@@ -1206,8 +1615,8 @@ int wb_encap(sc, c, m_head)
 				f->wb_status = 0;
 			} else
 				f->wb_status = WB_TXSTAT_OWN;
-			f->wb_next = VTOPHYS(&c->wb_ptr->wb_frag[frag + 1]);
-			f->wb_data = VTOPHYS(mtod(m, vaddr_t));
+			f->wb_next = vtophys(&c->wb_ptr->wb_frag[frag + 1]);
+			f->wb_data = vtophys(mtod(m, vm_offset_t));
 			frag++;
 		}
 	}
@@ -1240,7 +1649,7 @@ int wb_encap(sc, c, m_head)
 		m_head = m_new;
 		f = &c->wb_ptr->wb_frag[0];
 		f->wb_status = 0;
-		f->wb_data = VTOPHYS(mtod(m_new, caddr_t));
+		f->wb_data = vtophys(mtod(m_new, caddr_t));
 		f->wb_ctl = total_len = m_new->m_len;
 		f->wb_ctl |= WB_TXCTL_TLINK|WB_TXCTL_FIRSTFRAG;
 		frag = 1;
@@ -1249,7 +1658,7 @@ int wb_encap(sc, c, m_head)
 	if (total_len < WB_MIN_FRAMELEN) {
 		f = &c->wb_ptr->wb_frag[frag];
 		f->wb_ctl = WB_MIN_FRAMELEN - total_len;
-		f->wb_data = VTOPHYS(&sc->wb_cdata.wb_pad);
+		f->wb_data = vtophys(&sc->wb_cdata.wb_pad);
 		f->wb_ctl |= WB_TXCTL_TLINK;
 		f->wb_status = WB_TXSTAT_OWN;
 		frag++;
@@ -1258,7 +1667,7 @@ int wb_encap(sc, c, m_head)
 	c->wb_mbuf = m_head;
 	c->wb_lastdesc = frag - 1;
 	WB_TXCTL(c) |= WB_TXCTL_LASTFRAG;
-	WB_TXNEXT(c) = VTOPHYS(&c->wb_nextdesc->wb_ptr->wb_frag[0]);
+	WB_TXNEXT(c) = vtophys(&c->wb_nextdesc->wb_ptr->wb_frag[0]);
 
 	return(0);
 }
@@ -1279,19 +1688,24 @@ void wb_start(ifp)
 
 	sc = ifp->if_softc;
 
+	if (sc->wb_autoneg) {
+		sc->wb_tx_pend = 1;
+		return;
+	}
+
 	/*
 	 * Check for an available queue slot. If there are none,
 	 * punt.
 	 */
 	if (sc->wb_cdata.wb_tx_free->wb_mbuf != NULL) {
-		ifq_set_oactive(&ifp->if_snd);
+		ifp->if_flags |= IFF_OACTIVE;
 		return;
 	}
 
 	start_tx = sc->wb_cdata.wb_tx_free;
 
 	while(sc->wb_cdata.wb_tx_free->wb_mbuf == NULL) {
-		IFQ_DEQUEUE(&ifp->if_snd, m_head);
+		IF_DEQUEUE(&ifp->if_snd, m_head);
 		if (m_head == NULL)
 			break;
 
@@ -1311,8 +1725,7 @@ void wb_start(ifp)
 		 * to him.
 		 */
 		if (ifp->if_bpf)
-			bpf_mtap(ifp->if_bpf, cur_tx->wb_mbuf,
-			    BPF_DIRECTION_OUT);
+			bpf_mtap(ifp->if_bpf, cur_tx->wb_mbuf);
 #endif
 	}
 
@@ -1326,7 +1739,7 @@ void wb_start(ifp)
 	 * Place the request for the upload interrupt
 	 * in the last descriptor in the chain. This way, if
 	 * we're chaining several packets at once, we'll only
-	 * get an interrupt once for the whole chain rather than
+	 * get an interupt once for the whole chain rather than
 	 * once for each packet.
 	 */
 	WB_TXCTL(cur_tx) |= WB_TXCTL_FINT;
@@ -1364,11 +1777,18 @@ void wb_start(ifp)
 void wb_init(xsc)
 	void			*xsc;
 {
-	struct wb_softc *sc = xsc;
-	struct ifnet *ifp = &sc->arpcom.ac_if;
-	int s, i;
+	struct wb_softc		*sc = xsc;
+	struct ifnet		*ifp = &sc->arpcom.ac_if;
+	int			s, i;
+	u_int16_t		phy_bmcr = 0;
 
-	s = splnet();
+	if (sc->wb_autoneg)
+		return;
+
+	s = splimp();
+
+	if (sc->wb_pinfo != NULL)
+		phy_bmcr = wb_phy_readreg(sc, PHY_BMCR);
 
 	/*
 	 * Cancel pending I/O and free all RX/TX buffers.
@@ -1381,32 +1801,14 @@ void wb_init(xsc)
 	/*
 	 * Set cache alignment and burst length.
 	 */
-#ifdef foo
 	CSR_WRITE_4(sc, WB_BUSCTL, WB_BUSCTL_CONFIG);
 	WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_TX_THRESH);
 	WB_SETBIT(sc, WB_NETCFG, WB_TXTHRESH(sc->wb_txthresh));
-#endif
-
-	CSR_WRITE_4(sc, WB_BUSCTL, WB_BUSCTL_MUSTBEONE|WB_BUSCTL_ARBITRATION);
-	WB_SETBIT(sc, WB_BUSCTL, WB_BURSTLEN_16LONG);
-	switch(sc->wb_cachesize) {
-	case 32:
-		WB_SETBIT(sc, WB_BUSCTL, WB_CACHEALIGN_32LONG);
-		break;
-	case 16:
-		WB_SETBIT(sc, WB_BUSCTL, WB_CACHEALIGN_16LONG);
-		break;
-	case 8:
-		WB_SETBIT(sc, WB_BUSCTL, WB_CACHEALIGN_8LONG);
-		break;
-	case 0:
-	default:
-		WB_SETBIT(sc, WB_BUSCTL, WB_CACHEALIGN_NONE);
-		break;
-	}
 
 	/* This doesn't tend to work too well at 100Mbps. */
 	WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_TX_EARLY_ON);
+
+	wb_setcfg(sc, phy_bmcr);
 
 	/* Init our MAC address */
 	for (i = 0; i < ETHER_ADDR_LEN; i++) {
@@ -1418,7 +1820,7 @@ void wb_init(xsc)
 		printf("%s: initialization failed: no "
 			"memory for rx buffers\n", sc->sc_dev.dv_xname);
 		wb_stop(sc);
-		splx(s);
+		(void)splx(s);
 		return;
 	}
 
@@ -1450,7 +1852,7 @@ void wb_init(xsc)
 	 * Load the address of the RX list.
 	 */
 	WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_RX_ON);
-	CSR_WRITE_4(sc, WB_RXADDR, VTOPHYS(&sc->wb_ldata->wb_rx_list[0]));
+	CSR_WRITE_4(sc, WB_RXADDR, vtophys(&sc->wb_ldata->wb_rx_list[0]));
 
 	/*
 	 * Enable interrupts.
@@ -1463,16 +1865,17 @@ void wb_init(xsc)
 	CSR_WRITE_4(sc, WB_RXSTART, 0xFFFFFFFF);
 
 	WB_CLRBIT(sc, WB_NETCFG, WB_NETCFG_TX_ON);
-	CSR_WRITE_4(sc, WB_TXADDR, VTOPHYS(&sc->wb_ldata->wb_tx_list[0]));
+	CSR_WRITE_4(sc, WB_TXADDR, vtophys(&sc->wb_ldata->wb_tx_list[0]));
 	WB_SETBIT(sc, WB_NETCFG, WB_NETCFG_TX_ON);
 
+	/* Restore state of BMCR */
+	if (sc->wb_pinfo != NULL)
+		wb_phy_writereg(sc, PHY_BMCR, phy_bmcr);
+
 	ifp->if_flags |= IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
+	ifp->if_flags &= ~IFF_OACTIVE;
 
-	splx(s);
-
-	timeout_set(&sc->wb_tick_tmo, wb_tick, sc);
-	timeout_add_sec(&sc->wb_tick_tmo, 1);
+	(void)splx(s);
 
 	return;
 }
@@ -1480,14 +1883,22 @@ void wb_init(xsc)
 /*
  * Set media options.
  */
-int
-wb_ifmedia_upd(ifp)
-	struct ifnet *ifp;
+int wb_ifmedia_upd(ifp)
+	struct ifnet		*ifp;
 {
-	struct wb_softc *sc = ifp->if_softc;
+	struct wb_softc		*sc;
+	struct ifmedia		*ifm;
 
-	if (ifp->if_flags & IFF_UP)
-		wb_init(sc);
+	sc = ifp->if_softc;
+	ifm = &sc->ifmedia;
+
+	if (IFM_TYPE(ifm->ifm_media) != IFM_ETHER)
+		return(EINVAL);
+
+	if (IFM_SUBTYPE(ifm->ifm_media) == IFM_AUTO)
+		wb_autoneg_mii(sc, WB_FLAG_SCHEDDELAY, 1);
+	else
+		wb_setmode_mii(sc, ifm->ifm_media);
 
 	return(0);
 }
@@ -1495,17 +1906,49 @@ wb_ifmedia_upd(ifp)
 /*
  * Report current media status.
  */
-void
-wb_ifmedia_sts(ifp, ifmr)
+void wb_ifmedia_sts(ifp, ifmr)
 	struct ifnet		*ifp;
 	struct ifmediareq	*ifmr;
 {
-	struct wb_softc *sc = ifp->if_softc;
-	struct mii_data *mii = &sc->sc_mii;
+	struct wb_softc		*sc;
+	u_int16_t		advert = 0, ability = 0;
 
-	mii_pollstat(mii);
-	ifmr->ifm_active = mii->mii_media_active;
-	ifmr->ifm_status = mii->mii_media_status;
+	sc = ifp->if_softc;
+
+	ifmr->ifm_active = IFM_ETHER;
+
+	if (!(wb_phy_readreg(sc, PHY_BMCR) & PHY_BMCR_AUTONEGENBL)) {
+		if (wb_phy_readreg(sc, PHY_BMCR) & PHY_BMCR_SPEEDSEL)
+			ifmr->ifm_active = IFM_ETHER|IFM_100_TX;
+		else
+			ifmr->ifm_active = IFM_ETHER|IFM_10_T;
+		if (wb_phy_readreg(sc, PHY_BMCR) & PHY_BMCR_DUPLEX)
+			ifmr->ifm_active |= IFM_FDX;
+		else
+			ifmr->ifm_active |= IFM_HDX;
+		return;
+	}
+
+	ability = wb_phy_readreg(sc, PHY_LPAR);
+	advert = wb_phy_readreg(sc, PHY_ANAR);
+	if (advert & PHY_ANAR_100BT4 &&
+		ability & PHY_ANAR_100BT4) {
+		ifmr->ifm_active = IFM_ETHER|IFM_100_T4;
+	} else if (advert & PHY_ANAR_100BTXFULL &&
+		ability & PHY_ANAR_100BTXFULL) {
+		ifmr->ifm_active = IFM_ETHER|IFM_100_TX|IFM_FDX;
+	} else if (advert & PHY_ANAR_100BTXHALF &&
+		ability & PHY_ANAR_100BTXHALF) {
+		ifmr->ifm_active = IFM_ETHER|IFM_100_TX|IFM_HDX;
+	} else if (advert & PHY_ANAR_10BTFULL &&
+		ability & PHY_ANAR_10BTFULL) {
+		ifmr->ifm_active = IFM_ETHER|IFM_10_T|IFM_FDX;
+	} else if (advert & PHY_ANAR_10BTHALF &&
+		ability & PHY_ANAR_10BTHALF) {
+		ifmr->ifm_active = IFM_ETHER|IFM_10_T|IFM_HDX;
+	}
+
+	return;
 }
 
 int wb_ioctl(ifp, command, data)
@@ -1515,16 +1958,29 @@ int wb_ioctl(ifp, command, data)
 {
 	struct wb_softc		*sc = ifp->if_softc;
 	struct ifreq		*ifr = (struct ifreq *) data;
+	struct ifaddr		*ifa = (struct ifaddr *)data;
 	int			s, error = 0;
 
-	s = splnet();
+	s = splimp();
+
+	if ((error = ether_ioctl(ifp, &sc->arpcom, command, data)) > 0) {
+		splx(s);
+		return (error);
+	}
 
 	switch(command) {
 	case SIOCSIFADDR:
 		ifp->if_flags |= IFF_UP;
-		wb_init(sc);
-		break;
-
+		switch (ifa->ifa_addr->sa_family) {
+#ifdef INET
+		case AF_INET:
+			wb_init(sc);
+			arp_ifinit(&sc->arpcom, ifa);
+			break;
+#endif /* INET */
+		default:
+			wb_init(sc);
+		}
 	case SIOCSIFFLAGS:
 		if (ifp->if_flags & IFF_UP) {
 			wb_init(sc);
@@ -1534,23 +1990,22 @@ int wb_ioctl(ifp, command, data)
 		}
 		error = 0;
 		break;
-
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		wb_setmulti(sc);
+		error = 0;
+		break;
 	case SIOCGIFMEDIA:
 	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_mii.mii_media, command);
+		error = ifmedia_ioctl(ifp, ifr, &sc->ifmedia, command);
 		break;
-
 	default:
-		error = ether_ioctl(ifp, &sc->arpcom, command, data);
+		error = EINVAL;
+		break;
 	}
 
-	if (error == ENETRESET) {
-		if (ifp->if_flags & IFF_RUNNING)
-			wb_setmulti(sc);
-		error = 0;
-	}
+	(void)splx(s);
 
-	splx(s);
 	return(error);
 }
 
@@ -1561,17 +2016,23 @@ void wb_watchdog(ifp)
 
 	sc = ifp->if_softc;
 
+	if (sc->wb_autoneg) {
+		wb_autoneg_mii(sc, WB_FLAG_DELAYTIMEO, 1);
+		return;
+	}
+
 	ifp->if_oerrors++;
 	printf("%s: watchdog timeout\n", sc->sc_dev.dv_xname);
 
-#ifdef foo
 	if (!(wb_phy_readreg(sc, PHY_BMSR) & PHY_BMSR_LINKSTAT))
 		printf("%s: no carrier - transceiver cable problem?\n",
 		    sc->sc_dev.dv_xname);
-#endif
+
+	wb_stop(sc);
+	wb_reset(sc);
 	wb_init(sc);
 
-	if (!IFQ_IS_EMPTY(&ifp->if_snd))
+	if (ifp->if_snd.ifq_head != NULL)
 		wb_start(ifp);
 
 	return;
@@ -1584,16 +2045,11 @@ void wb_watchdog(ifp)
 void wb_stop(sc)
 	struct wb_softc		*sc;
 {
-	int			i;
+	register int		i;
 	struct ifnet		*ifp;
 
 	ifp = &sc->arpcom.ac_if;
 	ifp->if_timer = 0;
-
-	timeout_del(&sc->wb_tick_tmo);
-
-	ifp->if_flags &= ~IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
 
 	WB_CLRBIT(sc, WB_NETCFG, (WB_NETCFG_RX_ON|WB_NETCFG_TX_ON));
 	CSR_WRITE_4(sc, WB_IMR, 0x00000000);
@@ -1603,7 +2059,14 @@ void wb_stop(sc)
 	/*
 	 * Free data in the RX lists.
 	 */
-	bzero(&sc->wb_ldata->wb_rx_list, sizeof(sc->wb_ldata->wb_rx_list));
+	for (i = 0; i < WB_RX_LIST_CNT; i++) {
+		if (sc->wb_cdata.wb_rx_chain[i].wb_mbuf != NULL) {
+			m_freem(sc->wb_cdata.wb_rx_chain[i].wb_mbuf);
+			sc->wb_cdata.wb_rx_chain[i].wb_mbuf = NULL;
+		}
+	}
+	bzero((char *)&sc->wb_ldata->wb_rx_list,
+		sizeof(sc->wb_ldata->wb_rx_list));
 
 	/*
 	 * Free the TX list buffers.
@@ -1615,7 +2078,26 @@ void wb_stop(sc)
 		}
 	}
 
-	bzero(&sc->wb_ldata->wb_tx_list, sizeof(sc->wb_ldata->wb_tx_list));
+	bzero((char *)&sc->wb_ldata->wb_tx_list,
+		sizeof(sc->wb_ldata->wb_tx_list));
+
+	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+
+	return;
+}
+
+/*
+ * Stop all chip I/O so that the kernel's probe routines don't
+ * get confused by errant DMAs when rebooting.
+ */
+void wb_shutdown(arg)
+	void			*arg;
+{
+	struct wb_softc		*sc = (struct wb_softc *)arg;
+
+	wb_stop(sc);
+
+	return;
 }
 
 struct cfattach wb_ca = {
@@ -1623,5 +2105,5 @@ struct cfattach wb_ca = {
 };
 
 struct cfdriver wb_cd = {
-	NULL, "wb", DV_IFNET
+	0, "wb", DV_IFNET
 };

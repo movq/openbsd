@@ -1,4 +1,3 @@
-/*	$OpenBSD: srand48.c,v 1.6 2015/09/13 08:31:48 guenther Exp $ */
 /*
  * Copyright (c) 1993 Martin Birgmeier
  * All rights reserved.
@@ -12,21 +11,19 @@
  * to anyone/anything when using this software.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: srand48.c,v 1.2 1996/08/19 08:33:49 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include "rand48.h"
 
-int     __rand48_deterministic;
+extern unsigned short __rand48_seed[3];
+extern unsigned short __rand48_mult[3];
+extern unsigned short __rand48_add;
 
 void
 srand48(long seed)
 {
-	srand48_deterministic(seed);
-	__rand48_deterministic = 0;
-}
-
-void
-srand48_deterministic(long seed)
-{
-	__rand48_deterministic = 1;
 	__rand48_seed[0] = RAND48_SEED_0;
 	__rand48_seed[1] = (unsigned short) seed;
 	__rand48_seed[2] = (unsigned short) (seed >> 16);
@@ -35,4 +32,3 @@ srand48_deterministic(long seed)
 	__rand48_mult[2] = RAND48_MULT_2;
 	__rand48_add = RAND48_ADD;
 }
-DEF_WEAK(srand48_deterministic);

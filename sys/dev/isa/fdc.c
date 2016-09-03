@@ -1,4 +1,4 @@
-/*	$OpenBSD: fdc.c,v 1.20 2015/03/14 03:38:47 jsg Exp $	*/
+/*	$OpenBSD: fdc.c,v 1.12 1999/01/07 06:14:48 niklas Exp $	*/
 /*	$NetBSD: fd.c,v 1.90 1996/05/12 23:12:03 mycroft Exp $	*/
 
 /*-
@@ -23,7 +23,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -49,6 +53,7 @@
 #include <sys/ioctl.h>
 #include <sys/device.h>
 #include <sys/disklabel.h>
+#include <sys/dkstat.h>
 #include <sys/disk.h>
 #include <sys/buf.h>
 #include <sys/malloc.h>
@@ -56,7 +61,6 @@
 #include <sys/mtio.h>
 #include <sys/syslog.h>
 #include <sys/queue.h>
-#include <sys/timeout.h>
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
@@ -65,9 +69,10 @@
 #include <machine/ioctl_fd.h>
 
 #include <dev/isa/isavar.h>
+#include <dev/isa/isadmavar.h>
 #include <dev/isa/fdreg.h>
 
-#if defined(__i386__) || defined(__amd64__)	/* XXX */
+#if defined(i386)
 #include <dev/ic/mc146818reg.h>			/* for NVRAM access */
 #include <i386/isa/nvram.h>
 #endif
@@ -77,8 +82,8 @@
 #include "fd.h"
 
 /* controller driver configuration */
-int fdcprobe(struct device *, void *, void *);
-void fdcattach(struct device *, struct device *, void *);
+int fdcprobe __P((struct device *, void *, void *));
+void fdcattach __P((struct device *, struct device *, void *));
 
 struct cfattach fdc_ca = {
 	sizeof(struct fdc_softc), fdcprobe, fdcattach
@@ -88,11 +93,13 @@ struct cfdriver fdc_cd = {
 	NULL, "fdc", DV_DULL
 };
 
-int fddprint(void *, const char *);
-int fdcintr(void *);
+int fddprint __P((void *, const char *));
+int fdcintr __P((void *));
 
 int
-fdcprobe(struct device *parent, void *match, void *aux)
+fdcprobe(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	register struct isa_attach_args *ia = aux;
 	bus_space_tag_t iot;
@@ -132,7 +139,9 @@ fdcprobe(struct device *parent, void *match, void *aux)
 }
 
 void
-fdcattach(struct device *parent, struct device *self, void *aux)
+fdcattach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct fdc_softc *fdc = (void *)self;
 	bus_space_tag_t iot;
@@ -163,7 +172,7 @@ fdcattach(struct device *parent, struct device *self, void *aux)
 	fdc->sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,
 	    IPL_BIO, fdcintr, fdc, fdc->sc_dev.dv_xname);
 
-#if defined(__i386__) || defined(__amd64__)
+#if defined(i386)
 	/*
 	 * The NVRAM info only tells us about the first two disks on the
 	 * `primary' floppy controller.
@@ -173,8 +182,6 @@ fdcattach(struct device *parent, struct device *self, void *aux)
 	else
 #endif
 		type = -1;
-
-	timeout_set(&fdc->fdcpseudointr_to, fdcpseudointr, fdc);
 
 	/* physical limit: four drives per controller. */
 	for (fa.fa_drive = 0; fa.fa_drive < 4; fa.fa_drive++) {
@@ -199,7 +206,9 @@ fdcattach(struct device *parent, struct device *self, void *aux)
  * avoid printing `fdN not configured' messages.
  */
 int
-fddprint(void *aux, const char *fdc)
+fddprint(aux, fdc)
+	void *aux;
+	const char *fdc;
 {
 	register struct fdc_attach_args *fa = aux;
 
@@ -209,7 +218,8 @@ fddprint(void *aux, const char *fdc)
 }
 
 int
-fdcresult(struct fdc_softc *fdc)
+fdcresult(fdc)
+	struct fdc_softc *fdc;
 {
 	bus_space_tag_t iot = fdc->sc_iot;
 	bus_space_handle_t ioh = fdc->sc_ioh;
@@ -231,11 +241,15 @@ fdcresult(struct fdc_softc *fdc)
 		}
 		delay(10);
 	}
+	log(LOG_ERR, "fdcresult: timeout\n");
 	return -1;
 }
 
 int
-out_fdc(bus_space_tag_t iot, bus_space_handle_t ioh, u_char x)
+out_fdc(iot, ioh, x)
+	bus_space_tag_t iot;
+	bus_space_handle_t ioh;
+	u_char x;
 {
 	int i = 100000;
 
@@ -250,7 +264,8 @@ out_fdc(bus_space_tag_t iot, bus_space_handle_t ioh, u_char x)
 }
 
 void
-fdcstart(struct fdc_softc *fdc)
+fdcstart(fdc)
+	struct fdc_softc *fdc;
 {
 
 #ifdef DIAGNOSTIC
@@ -265,7 +280,10 @@ fdcstart(struct fdc_softc *fdc)
 }
 
 void
-fdcstatus(struct device *dv, int n, char *s)
+fdcstatus(dv, n, s)
+	struct device *dv;
+	int n;
+	char *s;
 {
 	struct fdc_softc *fdc = (void *)dv->dv_parent;
 
@@ -302,7 +320,8 @@ fdcstatus(struct device *dv, int n, char *s)
 }
 
 void
-fdcpseudointr(void *arg)
+fdcpseudointr(arg)
+	void *arg;
 {
 	int s;
 
@@ -313,11 +332,12 @@ fdcpseudointr(void *arg)
 }
 
 int
-fdcintr(void *arg)
+fdcintr(arg)
+	void *arg;
 {
 #if NFD > 0
 	struct fdc_softc *fdc = arg;
-	extern int fdintr(struct fdc_softc *);
+	extern int fdintr __P((struct fdc_softc *));
 
 	/* Will switch on device type, shortly. */
 	return (fdintr(fdc));

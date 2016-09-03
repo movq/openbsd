@@ -1,4 +1,3 @@
-/*	$OpenBSD: xdr_ypbind_resp.c,v 1.7 2015/01/16 16:48:51 deraadt Exp $ */
 /*
  * Copyright (c) 1992, 1993 Theo de Raadt <deraadt@theos.com>
  * All rights reserved.
@@ -11,6 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -25,13 +29,26 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: xdr_ypbind_resp.c,v 1.3 1996/08/19 08:35:01 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 #include <rpc/rpc.h>
 #include <rpc/xdr.h>
 #include <rpcsvc/yp.h>
+#include <rpcsvc/ypclnt.h>
 
 bool_t
-xdr_ypbind_resp(XDR *xdrs, struct ypbind_resp *objp)
+xdr_ypbind_resp(xdrs, objp)
+XDR *xdrs;
+struct ypbind_resp *objp;
 {
 	if (!xdr_ypbind_resptype(xdrs, &objp->ypbind_status)) {
 		return FALSE;
@@ -42,7 +59,7 @@ xdr_ypbind_resp(XDR *xdrs, struct ypbind_resp *objp)
 		return xdr_u_int(xdrs,
 		    (u_int *)&objp->ypbind_resp_u.ypbind_error);
 	case YPBIND_SUCC_VAL:
-		return xdr_ypbind_binding(xdrs,
+		return xdr_ypbind_binding(xdrs, 
 		    &objp->ypbind_resp_u.ypbind_bindinfo);
 	default:
 		return FALSE;

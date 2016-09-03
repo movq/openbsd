@@ -18,15 +18,15 @@ the law!
 %
 10.0 times 0.1 is hardly ever 1.0.
 %
-100 buckets of bits on the bus
+100 buckets of bits on the bus	
 100 buckets of bits
 Take one down, short it to ground
-FF buckets of bits on the bus
+FF buckets of bits on the bus	
 
-FF buckets of bits on the bus
+FF buckets of bits on the bus	
 FF buckets of bits
 Take one down, short it to ground
-FE buckets of bits on the bus
+FE buckets of bits on the bus	
 
 ad infinitum...
 %
@@ -117,7 +117,8 @@ placed in the fairway at a point equal to the distance it carried or
 rolled into the rough.  Such veering right or left frequently results
 from friction between the face of the club and the cover of the ball
 and the player should not be penalized for the erratic behavior of the
-ball resulting from such uncontrollable physical phenomena.
+ball resulting from such uncontrollable physical
+phenomena.
 		-- Donald A. Metz
 %
 A baby is an alimentary canal with a loud voice at one end and no
@@ -230,7 +231,7 @@ you will look forward to the trip.
 eating his morning meal.  "I would like to give you this personality
 test", said the outsider, "because I want you to be happy."
 	Drescher took the paper that was offered him and put it into
-the toaster -- "I wish the toaster to be happy too."
+the toaster -- "I wish the toaster to be happy too".
 %
 A diva who specializes in risqu'e arias is an off-coloratura soprano ...
 %
@@ -295,7 +296,7 @@ favored by God with an extraordinary genius for swathing the bitter
 facts of life in bandages of self-illusion.
 		-- H. L. Mencken
 %
-A general leading the State Department resembles a dragon commanding
+A general leading the State Department resembles  a dragon commanding
 ducks.
 		-- New York Times, Jan. 20, 1981
 %
@@ -460,20 +461,6 @@ paper reports, "The pilots fly out to sea and directly to the penguin
 colony and overfly it.  Heads go up, up, up, and ten thousand penguins
 fall over gently onto their backs.
 		-- Audubon Society Magazine
-
-[From the BBC, 2001-02-02:
-	For five weeks, a team from the British Antarctic Survey (BAS)
-monitored 1,000 king penguins on the island of South Georgia as Lynx
-helicopters passed overhead.
-	"Not one king penguin fell over when the helicopters came over,"
-said team leader Dr. Richard Stone.
-	"As the aircraft approached, the birds went quiet and stopped
-calling to each other, and adolescent birds that were not associated
-with nests began walking away from the noise. Pure animal instinct,
-really."
-	The conclusion, said Dr. Stone, is that flights over 305 metres
-(1,000 feet) caused "only minor and transitory ecological effects" on
-king penguins.]
 %
 	A musician of more ambition than talent composed an elegy at
 the death of composer Edward MacDowell.  She played the elegy for the
@@ -544,7 +531,7 @@ A physicist is an atom's way of knowing about atoms.
 %
 A pig is a jolly companion,
 Boar, sow, barrow, or gilt --
-A pig is a pal, who'll boost your morale,
+A pig is a pal, who'll boost your morale, 
 Though mountains may topple and tilt.
 When they've blackballed, bamboozled, and burned you,
 When they've turned on you, Tory and Whig,
@@ -998,7 +985,7 @@ to commit.
 %
 Ah say, son, you're about as sharp as a bowlin' ball.
 %
-Ah, but the choice of dreams to live,
+Ah, but the choice of dreams to live, 
 there's the rub.
 
 For all dreams are not equal,
@@ -1431,7 +1418,7 @@ sufficiently slippery.
 %
 		Another Glitch in the Call
 		------- ------ -- --- ----
-	(Sung to the tune of the classic Pink Floyd song.)
+	(Sung to the tune of a recent Pink Floyd song.)
 
 We don't need no indirection
 We don't need no flow control
@@ -1479,6 +1466,9 @@ Corollary:
 Antonym, n.:
 	The opposite of the word you're trying to think of.
 %
+Any clod can have the facts, but having an opinion is an art.
+		-- Charles McCabe
+%
 Any clod can have the facts, but having opinions is an art.
 		-- Charles McCabe
 %
@@ -1520,7 +1510,6 @@ Any sufficiently advanced bug is indistinguishable from a feature.
 %
 Any sufficiently advanced technology is indistinguishable from a rigged
 demo.
-		-- Andy Finkel, Commodore-Amiga, Inc.
 %
 Any sufficiently advanced technology is indistinguishable from magic.
 		-- Arthur C. Clarke
@@ -1568,6 +1557,8 @@ tried taking candy from a baby.
 		-- Robin Hood
 %
 Anything free is worth what you pay for it.
+%
+Anything is good and useful if it's made of chocolate.
 %
 Anything is good if it's made of chocolate.
 %
@@ -1969,9 +1960,9 @@ away.
 Beifeld's Principle:
 	The probability of a young man meeting a desirable and
 	receptive young female increases by pyramidal progression
-	when he is already in the company of:
-	(1) a date,
-	(2) his wife,
+	when he is already in the company of: 
+	(1) a date, 
+	(2) his wife, 
 	(3) a better looking and richer male friend.
 %
 "Being disintegrated makes me ve-ry an-gry!"  <huff, huff>
@@ -2013,7 +2004,7 @@ lpr why
 santa claus < north pole > town
 
 cat /etc/passwd > list
-ncheck list
+ncheck list 
 ncheck list
 cat list | grep naughty > nogiftlist
 cat list | grep nice > giftlist
@@ -2121,7 +2112,7 @@ Bolub's Fourth Law of Computerdom:
 Bombeck's Rule of Medicine:
 	Never go to a doctor whose office plants have died.
 %
-BOO!  We changed Coke again!  BLEAH!  BLEAH!
+BOO!  We changed Coke again!  BLEAH!  BLEAH! 
 %
 Boob's Law:
 	You always find something in the last place you look.
@@ -2388,7 +2379,7 @@ invent.
 		   misconstrue all these misquotations?!?"]
 %
 By the time they had diminished from 50 to 8, the other dwarves began
-to suspect "Hungry" ...
+to suspect 'Hungry' ...
 		-- Gary Larson, "The Far Side"
 %
 By trying, we can easily learn to endure adversity -- another man's, I
@@ -2692,7 +2683,7 @@ Cogito cogito ergo cogito sum --
 "Cogito ergo I'm right and you're wrong."
 		-- Blair Houghton
 %
-Coincidence, n.:
+Coincidence, n.: 
 	You weren't paying attention to the other half of what was
 	going on.
 %
@@ -2951,8 +2942,8 @@ Dawn, n.:
 %
 Day of inquiry.  You will be subpoenaed.
 %
-%DCL-E-MEMBAD, bad memory
--VMS-F-PDGERS, pudding between the ears
+%DCL-MEM-BAD, bad memory
+VMS-F-PDGERS, pudding between the ears
 %
 Dealing with failure is easy: work hard to improve.  Success is also
 easy to handle: you've solved the wrong problem.  Work hard to
@@ -3000,10 +2991,10 @@ Answer: Yes.
 Dear Mister Language Person: What is the purpose of the apostrophe?
 
 Answer: The apostrophe is used mainly in hand-lettered small business
-signs to alert the reader that an "S" is coming up at the end of a
+signs to alert the reader than an "S" is coming up at the end of a
 word, as in: WE DO NOT EXCEPT PERSONAL CHECK'S, or: NOT RESPONSIBLE FOR
 ANY ITEM'S.  Another important grammar concept to bear in mind when
-creating hand-lettered small-business signs is that you should put
+creating hand- lettered small-business signs is that you should put
 quotation marks around random words for decoration, as in "TRY" OUR HOT
 DOG'S, or even TRY "OUR" HOT DOG'S.
 		-- Dave Barry, "Tips for Writer's"
@@ -3063,7 +3054,7 @@ come of nothing: speak again." -- King Lear.
 		-- Stan Kelly-Bootle, "The Devil's DP Dictionary"
 %
 #define BITCOUNT(x)	(((BX_(x)+(BX_(x)>>4)) & 0x0F0F0F0F) % 255)
-#define BX_(x)		((x) - (((x)>>1)&0x77777777)	\
+#define  BX_(x)		((x) - (((x)>>1)&0x77777777)	\
 			     - (((x)>>2)&0x33333333)	\
 			     - (((x)>>3)&0x11111111))
 
@@ -3086,7 +3077,7 @@ buttered on.
 Demand the establishment of the government
 in its rightful home at Disneyland.
 %
-Democracy is a device that ensures we shall be governed no better than
+Democracy is a device that insures we shall be governed no better than
 we deserve.
 		-- George Bernard Shaw
 %
@@ -3112,22 +3103,19 @@ Democracy is the recurrent suspicion that more than half of the people
 are right more than half of the time.
 		-- E. B. White
 %
-Democracy:
-	A government of the masses.
-	Authority derived through mass meeting or any other form of
-"direct" expression.
-	Results in mobocracy.
-	Attitude toward property is communistic - negating property
-rights.
-	Attitude toward law is that the will of the majority shall
-regulate, whether it is based upon deliberation or governed by passion,
+Democracy, n.:
+	A government of the masses.  Authority derived through mass
+meeting or any other form of direct expression.  Results in mobocracy.
+Attitude toward property is communistic... negating property rights.
+Attitude toward law is that the will of the majority shall regulate,
+whether it is based upon deliberation or governed by passion,
 prejudice, and impulse, without restraint or regard to consequences.
-	Results in demagogism, license, agitation, discontent, anarchy.
-		-- U.S. Army Training Manual No. 2000-25 (1928),
+Result is demagogism, license, agitation, discontent, anarchy.
+		-- U. S. Army Training Manual No. 2000-25 (1928-1932),
 		   since withdrawn.
 %
 Demographic polls show that you have lost credibility across the
-board.  Especially with those 14 year-old Valley girls.
+board.  Especially with  those 14 year-old Valley girls.
 %
 Dentist, n.:
 	A Prestidigitator who, putting metal in one's mouth, pulls
@@ -3388,7 +3376,7 @@ W. C.:	It's almost impossible.
 		   E. Whipsnade and other Tarradiddles"
 %
 		Double Bucky
-	(Sung to the tune of "Rubber Duckie")
+	(Sung to the tune of "Rubber Duckie")	
 
 Double bucky, you're the one!
 You make my keyboard lots of fun
@@ -3398,7 +3386,7 @@ Control and Meta side by side,
 Augmented ASCII, nine bits wide!
 	Double bucky, a half a thousand glyphs, plus a few!
 
-Oh, I sure wish that I,
+Oh, I sure wish that I,   
 Had a couple of bits more!
 Perhaps a set of pedals to make the number of bits four.
 
@@ -3490,9 +3478,9 @@ the plastic underneath -- black.  According to the instructions, this
 means the puzzle is solved.
 		-- Steve Rubenstein
 %
-Eat, drink, and be merry, for tomorrow they may make it illegal.
+ Eat drink and be merry, for tomorrow they may make it illegal.
 %
-Eat, drink, and be merry, for tomorrow you may work.
+"Eat, drink, and be merry, for tomorrow you may work."
 %
 Economics is extremely useful as a form of employment for economists.
 		-- John Kenneth Galbraith
@@ -3528,7 +3516,7 @@ people wonder where the word "eggnog" comes from.  The first syllable
 comes from the English word "egg", meaning "egg".  I don't know where
 the "nog" comes from.
 
-To make eggnog, you'll need rum, whiskey, wine, gin and, if they are in
+To make eggnog, you'll need rum, whiskey, wine gin and, if they are in
 season, eggs...
 %
 Egotism is the anesthetic given by a kindly nature to relieve the pain
@@ -3564,7 +3552,7 @@ It's nearly done
 Look at him working, fixing the bugs in the night when there's
 	nobody there.
 What does he care?
-
+ 
 All the lonely users, where do they all come from?
 All the lonely users, why does it take so long?
 Ah, look at all the lonely users.
@@ -3657,7 +3645,7 @@ exactly, make people laugh.  That's why they were called "wise men."
 All the other prehistoric people were out puncturing each other with
 spears, and the wise men were back in the cave saying: "How about:
 Would you please take my wife?  No.  How about: Here is my wife, please
-take her right now.  No.  How about:  Would you like to take something?
+take her right now.  No How about:  Would you like to take something?
 My wife is available.  No.  How about ..."
 		-- Dave Barry, "Why Humor is Funny"
 %
@@ -3708,7 +3696,7 @@ Every little picofarad has a nanohenry all its own.
 Every man is as God made him, ay, and often worse.
 		-- Miguel de Cervantes
 %
-Every morning, I get up and look through the "Forbes" list of the
+Every morning, I get up and look through the 'Forbes' list of the
 richest people in America.  If I'm not there, I go to work.
 		-- Robert Orben
 %
@@ -3842,7 +3830,7 @@ left hand corner of Prize Claim Form) and affix it to the 3x5 card
 below your address label. (d) Then print on your 3x5 card, above your
 computer-printed name and address the words "CARTER & VAN PEEL
 SWEEPSTAKES" (Use all capital letters.)  (e) Finally place 3x5 card
-(without bending) into a plain envelope [NOTE: do NOT use the
+(without bending) into a plain envelope [NOTE: do NOT use the the
 Official Prize Claim and CVP Perfume Reply Envelope or you may be
 disqualified], and mail to: CVP, Box 1320, Westbury, NY 11595.  Print
 this address correctly.  Comply with above instructions carefully and
@@ -4133,7 +4121,7 @@ Food for thought is no substitute for the real thing.
 %
 For 20 dollars, I'll give you a good fortune next time ...
 %
-For a good time, call (510) 642-9483
+For a good time, call (415) 642-9483
 %
 For a man to truly understand rejection, he must first be ignored by a
 cat.
@@ -4349,7 +4337,7 @@ Corollary:
 %
 Fourth Law of Revision:
 	It is usually impractical to worry beforehand about
-	interferences -- if you have none, someone will make
+	interferences -- if you have none, someone will make 
 	one for you.
 %
 Fourth Law of Thermodynamics:  If the probability of success is not
@@ -4375,7 +4363,7 @@ So are they all, all cool cats, --
 Come I to make this gig at Caesar's laying down.
 %
 Frisbeetarianism, n.:
-	The belief that when you die, your soul goes up on the roof and
+	The belief that when you die, your soul goes up the on roof and
 	gets stuck.
 %
 Frobnicate, v.:
@@ -4746,7 +4734,7 @@ God isn't dead, he just couldn't find a parking place.
 %
 God made machine language; all the rest is the work of man.
 %
-God made the Idiot for practice, and then He made the School Board.
+God made the Idiot for practice, and then He made the School Board
 		-- Mark Twain
 %
 God made the integers; all else is the work of Man.
@@ -4859,7 +4847,7 @@ Graduate life: It's not just a job.  It's an indenture.
 Grandpa Charnock's Law:
 	You never really learn to swear until you learn to drive.
 %
-Gravity is a myth: the Earth sucks.
+Gravity is a myth:  the Earth sucks.
 %
 Gray's Law of Programming:
 	`_n+1' trivial tasks are expected to be accomplished in the same
@@ -5094,7 +5082,7 @@ I mean.  The answer is hot tubs.  A hot tub is a redwood container
 filled with water that you sit in naked with members of the opposite
 sex, none of whom is necessarily your spouse.  After a few hours in
 their hot tubs, Californians don't give a damn about earthquakes or
-mass murderers.  They don't give a damn about anything, which is why
+mass murderers.  They don't give a damn about anything , which is why
 they are able to produce "Laverne and Shirley" week after week.
 		-- Dave Barry, "The Taming of the Screw"
 %
@@ -5151,7 +5139,7 @@ He was a fiddler, and consequently a rogue.
 "He was a modest, good-humored boy.  It was Oxford that made him
 insufferable."
 %
-He was so narrow minded he could see through a keyhole with both eyes.
+He was so narrow minded he could see through a keyhole with both eyes. 
 %
 He who attacks the fundamentals of the American broadcasting industry
 attacks democracy itself.
@@ -5319,20 +5307,20 @@ experience and training, there's no reason why you shouldn't come out
 of this thing with at least a cabin cruiser.
 
 "Remember, at the Preston A. Mantis Consumers Retail Law Outlet, our
-motto is:  `It is very difficult to disprove certain kinds of pain.'"
+motto is:  'It is very difficult to disprove certain kinds of pain.'"
 		-- Dave Barry, "Pain and Suffering"
 %
-Hier liegt ein Mann ganz ohnegleich;
-Im Leibe dick, an Suenden reich.
+Hier liegt ein Mann ganz obnegleich;
+Im Leibe dick, an Suden reich.
 Wir haben ihn in das Grab gesteckt,	Here lies a man with sundry flaws
-Weil es uns duenkt, er sei verreckt.	And numerous Sins upon his head;
+Weil es uns dunkt er sei verreckt.	And numerous Sins upon his head;
 					We buried him today because
 					As far as we can tell, he's dead.
-		-- PDQ Bach's epitaph, as requested by his cousin Betty-Sue
-		   Bach and written by the local doggerel catcher;
+		-- PDQ Bach's epitaph, as requested by his cousin Betty
+		   Sue Bach and written by the local doggerel catcher;
 		   "The Definitive Biography of PDQ Bach", Peter Schickele
 %
-Higgledy Piggledy,
+Higgeldy Piggeldy,
 Hamlet of Elsinore
 Ruffled the critics by
 Dropping this bomb:
@@ -5399,7 +5387,7 @@ because they are too busy applying little price stickers to every
 object -- every board, washer, nail and screw -- in the entire store ...
 	Let's say a piece in your toilet tank breaks, so you remove the
 broken part, take it to the home center, and ask an employee if he has
-a replacement.  The employee, who has never in his life even seen the
+a replacement.  The employee, who has never is his life even seen the
 inside of a toilet tank, will peer at the broken part in very much the
 same way that a member of a primitive Amazon jungle tribe would look at
 an electronic calculator, and then say, "We're expecting a shipment of
@@ -5457,7 +5445,7 @@ How cheerfully he seems to grin,
 	How neatly spreads his claws,
 And welcomes little fishes in,
 	With gently smiling jaws!
-		-- Lewis Carroll, "Alice in Wonderland"
+		-- Lewis Carrol, "Alice in Wonderland"
 %
 How doth the VAX's C compiler
 Improve its object code.
@@ -5468,17 +5456,6 @@ How patiently it seems to run
 And spit out error flags,
 While users, with frustration, all
 Tear their clothes to rags.
-%
-How I love to watch the morn,
-	With golden sun that shines,
-Up above to nicely warm
-	These frosty toes of mine.
-
-The wind doth taste of bittersweet,
-	Like Jasper wine and sugar,
-I bet it's blown through others' feet,
-	Like those of ... Caspar Weinberger.
-		-- P. Opus (Bloom County)
 %
 How long a minute is depends on which side of the bathroom door you're on.
 %
@@ -5502,8 +5479,8 @@ back on the tray and bite another one and go, "Darn it!  Another
 cheese!" and so on.
 		-- Dave Barry, "The Stuff of Etiquette"
 %
-	How many seconds are there in a year?  If I tell you there are
-3.155 x 10^7, you won't even try to remember it.  On the other hand,
+	How many seconds are there in a year?  If I tell you there  are
+3.155  x  10^7, you won't even try to remember it.  On the other hand,
 who could forget that, to within half a percent, pi seconds is a
 nanocentury.
 		-- Tom Duff, Bell Labs
@@ -5585,7 +5562,7 @@ What are our schools for if not indoctrination against Communism?
 have included encapsulated time released cat urine in their products.
 This technology must be what prevented its distribution during my mom's
 reign.  My carpet smells like piss, and I don't have a cat.  Better go
-buy some more."
+by some more."
 		-- timw@zeb.USWest.COM
 %
 I am more bored than you could ever possibly be.  Go back to work.
@@ -5805,7 +5782,7 @@ less."
 so many different things."
 	"The question is," said Humpty Dumpty, "which is to be master--
 that's all."
-		-- Lewis Carroll, "Through the Looking Glass"
+		-- Lewis Carrol, "Through the Looking Glass"
 %
 I don't like spinach, and I'm glad I don't, because if I liked it I'd
 eat it, and I just hate it.
@@ -5888,7 +5865,7 @@ And think of the places my get-up has been.
 		-- Pete Seeger
 %
 I had to censor everything my sons watched ... even on the Mary Tyler
-Moore show I heard the word "damn"!
+Moore show I heard the word 'damn'!
 		-- Mary Lou Bax
 %
 I had to hit him -- he was starting to make sense.
@@ -5932,7 +5909,7 @@ of an insult than as a reflection on your ancestry.
 %
 I have learned
 To spell hors d'oeuvres
-Which still grates on
+Which still grates on 
 Some people's n'oeuvres.
 		-- Warren Knox
 %
@@ -6056,7 +6033,7 @@ more simply -- `Never imagine yourself not to be otherwise than what it
 might appear to others that what you were or might have been was not
 otherwise than what you had been would have appeared to them to be
 otherwise.'"
-		-- Lewis Carroll, "Alice in Wonderland"
+		-- Lewis Carrol, "Alice in Wonderland"
 %
 I realize that the MX missile is none of our concern.  I realize that
 the whole point of living in a democracy is that we pay professional
@@ -6116,7 +6093,7 @@ I tried to turn the handle, But ...
 
 	"Is that all?" asked Alice.
 	"That is all." said Humpty Dumpty. "Goodbye."
-		-- Lewis Carroll, "Through the Looking Glass"
+		-- Lewis Carrol, "Through the Looking Glass"
 %
 I shot an arrow into the air, and it stuck.
 		-- Graffito in Los Angeles
@@ -6168,7 +6145,7 @@ They went this morning with the dawn.
 A logging firm from out of town
 Came and chopped the trees all down.
 But I will trick those dirty skunks
-And write a brand new poem called "Trunks".
+And write a brand new poem called 'Trunks'.
 %
 I think the sky is blue because it's a shift from black through purple
 to blue, and it has to do with where the light is.  You know, the
@@ -6273,7 +6250,7 @@ the point where it would not run at all.
 		   Holes and the Fate of Stars"
 %
 I went to a job interview the other day, the guy asked me if I had any
-questions, I said yes, just one, if you're in a car traveling at the
+questions , I said yes, just one, if you're in a car traveling at the
 speed of light and you turn your headlights on, does anything happen?
 
 He said he couldn't answer that, I told him sorry, but I couldn't work
@@ -6342,7 +6319,7 @@ transplant."
 "I'd love to go out with you, but the last time I went out, I never
 came back."
 %
-"I'd love to go out with you, but the man on television told me to stay
+"I'd love to go out with you, but the man on television told me to say
 tuned."
 %
 "I'd love to go out with you, but there are important world issues that
@@ -6433,7 +6410,7 @@ I'm proud to be paying taxes in the United States.  The only thing is
 %
 I'm rated PG-34!!
 %
-"I'm really enjoying not talking to you ...
+"I'm really enjoying not talking to you ... 
 Let's not talk again ____REAL soon ..."
 %
 I'm returning this note to you, instead of your paper, because it
@@ -6899,7 +6876,7 @@ If you had any brains, you'd be dangerous.
 %
 If you have a procedure with 10 parameters, you probably missed some.
 %
-If you have to hate, hate gently.
+If you have to hate, hate gently
 %
 If you just try long enough and hard enough, you can always manage to
 boot yourself in the posterior.
@@ -6942,7 +6919,7 @@ the sucker.
 If you stand on your head, you will get footprints in your hair.
 %
 If you stick a stock of liquor in your locker,
-It is slick to stick a lock upon your stock.
+It is slick to stick a lock upon your stock. 
 	Or some joker who is slicker,
 	Will trick you of your liquor,
 If you fail to lock your liquor with a lock.
@@ -7060,7 +7037,7 @@ Il brilgue: les t^oves libricilleux
 	Se gyrent et frillant dans le guave,
 Enm^im'es sont les gougebosquex,
 	Et le m^omerade horgrave.
-		-- Lewis Carroll, "Through the Looking Glass"
+		-- Lewis Carrol, "Through the Looking Glass"
 %
 Iles's Law:
 	There is always an easier way to do it.  When looking directly
@@ -7332,7 +7309,7 @@ from now the Mississippi will be only a mile and three-quarters long.
 ... There is something fascinating about science.  One gets such
 wholesome returns of conjecture out of such a trifling investment of
 fact.
-		-- Mark Twain
+		-- Mark Twain 
 %
 In the Top 40, half the songs are secret messages to the teen world to
 drop out, turn on, and groove with the chemicals and light shows at
@@ -7346,7 +7323,7 @@ my advice.
 In Tulsa, Oklahoma, it is against the law to open a soda bottle without
 the supervision of a licensed engineer.
 %
-In West Union, Ohio, no married man can go flying without his spouse
+In West Union, Ohio, No married man can go flying without his spouse
 along at any time, unless he has been married for more than 12 months.
 %
 Incumbent, n.:
@@ -7384,7 +7361,7 @@ Ink, n.:
 	water, chiefly used to facilitate the infection of idiocy and
 	promote intellectual crime.
 		-- Ambrose Bierce, "The Devil's Dictionary"
-		[alternately attributed to H. L. Mencken]
+		[alternately attributed to H.L. Mencken]
 %
 Innovation is hard to schedule.
 		-- Dan Fylstra
@@ -7510,7 +7487,7 @@ conversely, the dolphins had always believed that they were far more
 intelligent than man -- for precisely the same reasons.
 
 Curiously enough, the dolphins had long known of the impending
-destruction of the planet Earth and had made many attempts to
+destruction of the of the planet Earth and had made many attempts to
 alert mankind to the danger; but most of their communications were
 misinterpreted ...
 		-- Douglas Adams "The Hitch-Hikers' Guide To The
@@ -7931,7 +7908,7 @@ get a prompt, type like hell.
 %
 Just once, I wish we would encounter an alien menace that wasn't
 immune to bullets
-		-- The Brigadier, "Dr. Who"
+		-- The Brigader, "Dr. Who"
 %
 "Just out of curiosity does this actually mean something or have some
 of the few remaining bits of your brain just evaporated?"
@@ -7978,7 +7955,7 @@ Katz' Law:
 Keep America beautiful.  Swallow your beer cans.
 %
 Keep Cool, but Don't Freeze
-		-- Hellman's Mayonnaise
+		- Hellman's Mayonnaise
 %
 Keep emotionally active.  Cater to your favorite neurosis.
 %
@@ -7991,7 +7968,7 @@ Keep in mind always the two constant Laws of Frisbee:
 	(2) Never precede any maneuver by a comment more predictive
 	    than "Watch this!"
 %
-Keep your Eye on the Ball,
+Keep you Eye on the Ball,
 Your Shoulder to the Wheel,
 Your Nose to the Grindstone,
 Your Feet on the Ground,
@@ -8018,7 +7995,7 @@ teenager stomp up to his branch and slam the leaves.
 		-- Dave Barry, "Kids Today: They Don't Know Dum Diddly Do"
 %
 Kin, n.:
-	An affliction of the blood.
+	An affliction of the blood
 %
 Kinkler's First Law:
 	Responsibility always exceeds authority.
@@ -8291,7 +8268,7 @@ Life is like a simile.
 %
 Life is like an analogy.
 %
-Life is like an onion: you peel off layer after layer,
+Life is like an onion: you peel off layer after layer, 
 and then you find there is nothing in it.
 		-- James Huneker
 %
@@ -8393,7 +8370,7 @@ to pay income taxes, too?
 %
 Loose bits sink chips.
 %
-Losing your drivers' license is just God's way of saying
+Losing your drivers' license is just God's way of saying 
 "BOOGA, BOOGA!"
 %
 Lost interest?  It's so bad I've lost apathy.
@@ -8423,7 +8400,7 @@ Any kiddie in school can love like a fool,
 But Hating, my boy, is an Art.
 		-- Ogden Nash
 %
-Love is an ideal thing, marriage a real thing; a confusion of the real with
+Love is an ideal thing, marriage a real thing; a confusion of the real with 
 the ideal never goes unpunished.
 		-- Goethe
 %
@@ -8441,11 +8418,11 @@ Love your enemies: they'll go crazy trying to figure out what you're up to.
 %
 	Love's Drug
 
-My love is like an iron wand
+My love is like an iron wand 
 	That conks me on the head,
-My love is like the valium
+My love is like the valium 
 	That I take before my bed,
-My love is like the pint of scotch
+My love is like the pint of scotch 
 	That I drink when I be dry;
 And I shall love thee still, my dear,
 	Until my wife is wise.
@@ -8522,7 +8499,7 @@ might be taught to talk.
 %
 Maier's Law:
 	If the facts don't conform to the theory, they must be disposed of.
-		-- N. R. Maier, "American Psychologist", March 1960
+		-- N.R. Maier, "American Psychologist", March 1960
 
 Corollaries:
 	(1) The bigger the theory, the better.
@@ -8558,7 +8535,7 @@ the message-of-the-day telling users to clean up their files.
 Malek's Law:
 	Any simple idea will be worded in the most complicated way.
 %
-Man 1:	Ask me what the most important thing about telling a good
+Man 1:	Ask me the what the most important thing about telling a good
 	joke is.
 
 Man 2:	OK, what is the most impo --
@@ -8616,7 +8593,7 @@ Manual, n.:
 	information you need is in the others.
 		-- Ray Simard
 %
-Many years ago in a period commonly known as Next Friday Afternoon,
+Many years ago in a period commonly know as Next Friday Afternoon,
 there lived a King who was very Gloomy on Tuesday mornings because he
 was so Sad thinking about how Unhappy he had been on Monday and how
 completely Mournful he would be on Wednesday ...
@@ -8959,7 +8936,7 @@ Truman Henry Safford] flew around the room like a top, pulled his
 pantaloons over the tops of his boots, bit his hands, rolled his eyes
 in their sockets, sometimes smiling and talking, and then seeming to be
 in an agony, until, in not more than one minute, said he,
-133,491,850,208,566,925,016,658,299,941,583,225!"  An electronic
+133,491,850,208,566,925,016,658,299,941,583,255!"  An electronic
 computer might do the job a little faster but it wouldn't be as much
 fun to watch.
 		-- James R. Newman (The World of Mathematics)
@@ -9122,7 +9099,7 @@ villagers gathered around to hear what had passed.  "At this time,"
 said Nasrudin, "I only want to say that the King spoke to me."  All the
 villagers but the stupidest ran off to spread the wonderful news.  The
 remaining villager asked, "What did the King say to you?"  "What he
-said -- and quite distinctly, for everyone to hear -- was `Get out of
+said -- and quite distinctly, for everyone to hear -- was 'Get out of
 my way!'" The simpleton was overjoyed; he had heard words actually
 spoken by the King, and seen the very man they were spoken to.
 %
@@ -9306,7 +9283,7 @@ Ninety-Ninety Rule of Project Schedules:
 	The first ninety percent of the task takes ninety percent of the
 	time, and the last ten percent takes the other ninety percent.
 %
-Nirvana?  That's the place where the powers that be and their friends
+Nirvana?  Thats the place where the powers that be and their friends
 hang out.
 		-- Zonker Harris
 %
@@ -9549,7 +9526,7 @@ direct sunlight.
 Nuclear war can ruin your whole compile.
 		-- Karl Lehenbauer
 %
-Nuclear war would mean abolition of most comforts, and disruption of
+Nuclear war would mean abolition of most comforts, and disruption of 
 normal routines, for children and adults alike.
 		-- Willard F. Libby, "You *Can* Survive Atomic Attack"
 %
@@ -9720,7 +9697,7 @@ On the subject of C program indentation:
 		-- Blair P. Houghton
 %
 On two occasions I have been asked [by members of Parliament!], `Pray,
-Mr. Babbage, if you put into the machine wrong figures, will the right
+Mr.  Babbage, if you put into the machine wrong figures, will the right
 answers come out?'  I am not able rightly to apprehend the kind of
 confusion of ideas that could provoke such a question.
 		-- Charles Babbage
@@ -9753,7 +9730,7 @@ Once Law was sitting on the bench
 	And Mercy knelt a-weeping.
 "Clear out!" he cried, "disordered wench!
 	Nor come before me creeping.
-Upon your knees if you appear,
+Upon you knees if you appear,
 'Tis plain you have no standing here."
 
 Then Justice came.  His Honor cried:
@@ -10124,7 +10101,7 @@ Parker's Law:
 	Beauty is only skin deep, but ugly goes clean to the bone.
 %
 Parkinson's Fifth Law:
-	If there is a way to delay an important decision, the good
+	If there is a way to delay in important decision, the good
 	bureaucracy, public or private, will find it.
 %
 Parkinson's Fourth Law:
@@ -10246,7 +10223,7 @@ Peter's Law of Substitution:
 Philadelphia is not dull -- it just seems so
 because it is next to exciting Camden, New Jersey.
 %
-Philogeny recapitulates erogeny; erogeny recapitulates philogeny.
+Philogyny recapitulates erogeny; erogeny recapitulates philogyny.
 %
 Philosophy will clip an angel's wings.
 		-- John Keats
@@ -10509,7 +10486,7 @@ Proof techniques #2: Proof by Oddity.
 (2) They have two legs in back and fore legs in front.
 (3) This makes a total of six legs, which certainly is an odd number of
     legs for a horse.
-(4) But the only number that is both odd and even is infinity.
+(4) But the only number that is both odd and even is infinity. 
 (5) Therefore, horses must have an infinite number of legs.
 
 Topics to be covered in future issues include proof by:
@@ -10563,11 +10540,11 @@ POPI	Punch Operator Immediately
 PVLC	Punch Variable Length Card
 RASC	Read And Shred Card
 RPM	Read Programmers Mind
-RSSC	reduce speed, step carefully (for improved accuracy)
+RSSC	reduce speed, step carefully  (for improved accuracy)
 RTAB	Rewind tape and break
 RWDSK	rewind disk
 RWOC	Read Writing On Card
-SCRBL	scribble to disk - faster than a write
+SCRBL	scribble to disk  - faster than a write
 SLC	Search for Lost Chord
 SPSW	Scramble Program Status Word
 SRSD	Seek Record and Scar Disk
@@ -10614,10 +10591,10 @@ A:  One per person.
 Q:  How did you get into artificial intelligence?
 A:  Seemed logical -- I didn't have any real intelligence.
 %
-Q:  How many DEC repairmen does it take to fix a flat?
+Q:  How many DEC repairman does it take to fix a flat ?
 A:  Five; four to hold the car up and one to swap tires.
 %
-Q:  How many DEC repairmen does it take to fix a flat?
+Q:  How many DEC repairman does it take to fix a flat?
 A:  Five; four to hold the car up and one to swap tires.
 
 Q:  How long does it take?
@@ -10720,7 +10697,7 @@ Quick!!  Act as if nothing has happened!
 %
 Quick, sing me the BUDAPEST NATIONAL ANTHEM!!
 %
-Quidquid latine dictum est, altum videtur.
+Quidquid latine dictum sit, altum viditur.
 
 (Whatever is said in Latin sounds profound.)
 %
@@ -10971,7 +10948,7 @@ Remember:  Silly is a state of Mind, Stupid is a way of Life.
 Renning's Maxim:
 	Man is the highest animal.  Man does the classifying.
 %
-Reporter (to Mahatma Gandhi):
+Reporter (to Mahatma Gandhi): 
 	Mr. Gandhi, what do you think of Western Civilization?
 Gandhi:	I think it would be a good idea.
 %
@@ -10981,7 +10958,7 @@ Reporter, n.:
 		-- Ambrose Bierce, "The Devil's Dictionary"
 %
 REPORTER: Senator, are you for or against the MX missile system?
-
+ 
 SENATOR: Bob, the MX missile system reminds me of an old saying that
 the country folk in my state like to say.  It goes like this: "You can
 carry a pig for six miles, but if you set it down it might run away."
@@ -10990,7 +10967,7 @@ of chemical pollutant in their drinking water.  That is why I pledge to
 do all that I can to protect the environment of this great nation of
 ours, and put prayer back in the schools, where it belongs.  What we
 need is jobs, not empty promises.  I realize I'm risking my political
-career by being so outspoken on a sensitive issue such as the MX, but
+career be being so outspoken on a sensitive issue such as the MX, but
 that's just the kind of straight-talking honest person I am, and I
 can't help it.
 		-- Dave Barry, "On Presidential Politics"
@@ -11063,7 +11040,7 @@ Rule of Defactualization:
 %
 Rule of Feline Frustration:
 	When your cat has fallen asleep on your lap and looks utterly
-	content and adorable, you will suddenly have to go to the bathroom.
+	content and adorable, you will suddenly have to go to the bathroom.  
 %
 Rule of the Great:
 	When people you greatly admire appear to be thinking deep
@@ -11682,7 +11659,7 @@ For he can thoroughly enjoy
 	The pepper when he pleases!
 
 	Wow!  wow!  wow!
-		-- Lewis Carroll, "Alice in Wonderland"
+		-- Lewis Carrol, "Alice in Wonderland"
 %
 Speak roughly to your little VAX,
 	And boot it when it crashes;
@@ -11788,7 +11765,7 @@ Stult's Report:
 	Our problems are mostly behind us.
 	What we have to do now is fight the solutions.
 %
-Stupid, adj.:
+Stupid, n.:
 	Losing $25 on the game and $25 on the instant replay.
 %
 Stupidity got us into this mess -- why can't it get us out?
@@ -11888,7 +11865,7 @@ Every now and then when your life gets complicated and the weasels
 start closing in, the only cure is to load up on heinous chemicals and
 then drive like a bastard from Hollywood to Las Vegas ... with the
 music at top volume and at least a pint of ether.
-		-- H. S. Thompson, "Fear and Loathing in Las Vegas"
+		-- H.S. Thompson, "Fear and Loathing in Las Vegas"
 %
 T:	One big monster, he called TROLL.
 	He don't rock, and he don't roll;
@@ -12052,7 +12029,7 @@ The advertisement is the most truthful part of a newspaper
 		-- Thomas Jefferson
 %
 The Advertising Agency Song:
-
+ 
 	When your client's hopping mad,
 	Put his picture in the ad.
 	If he still should prove refractory,
@@ -12127,7 +12104,7 @@ Lover's Patties would be compressed into wads and sold as "Nuggets."
 The best book on programming for the layman is "Alice in Wonderland";
 but that's because it's the best book on anything for the layman.
 %
-The best cure for insomnia is to get a lot of sleep.
+The best cure for insomnia is to get a  lot of sleep.
 		-- W. C. Fields
 %
 The best defense against logic is ignorance.
@@ -12145,7 +12122,7 @@ wags it.  That is the only thing which the mind can never exhaust,
 never alienate, never be tortured by, never fear or distrust, and never
 dream of regretting.  Learning is the only thing for you.  Look what a
 lot of things there are to learn."
-		-- T. H. White, "The Once and Future King"
+		-- T.H. White, "The Once and Future King"
 %
 The best way to make a fire with two sticks is to make sure one of them
 is a match.
@@ -12513,7 +12490,7 @@ who have seen it, as one of the finest spectacles in nature.
 		-- Benjamin Franklin.
 %
 The Great Bald Swamp Hedgehog:
-	The Great Bald Swamp Hedgehog of Billericay displays, in courtship,
+	The Gerat Bald Swamp Hedgehog of Billericay displays, in courtship,
 	his single prickle and does impressions of Holiday Inn desk clerks.
 	Since this means him standing motionless for enormous periods of
 	time he is often eaten in full display by The Great Bald Swamp
@@ -12652,7 +12629,7 @@ The lawgiver, of all beings, most owes the law allegiance.  He of all
 men should behave as though the law compelled him.  But it is the
 universal weakness of mankind that what we are given to administer we
 presently imagine we own.
-		-- H. G. Wells
+		-- H.G. Wells
 %
 	THE LESSER-KNOWN PROGRAMMING LANGUAGES #10: SIMPLE
 
@@ -12865,16 +12842,16 @@ The moving cursor writes, and having written, blinks on.
 %
 ... the MYSTERIANS are in here with my CORDUROY SOAP DISH!!
 %
-	"... The name of the song is called `Haddocks' Eyes'!"
+	"... The name of the song is called 'Haddocks' Eyes'!"
 	"Oh, that's the name of the song, is it?" Alice said, trying to
 feel interested.
 	"No, you don't understand," the Knight said, looking a little
-vexed.  "That's what the name is called.  The name really is, `The Aged
+vexed.  "That's what the name is called.  The name really is, 'The Aged
 Aged Man.'"
 	"Then I ought to have said "That's what the song is called'?"
 Alice corrected herself.
 	"No, you oughtn't:  that's quite another thing!  The song is
-called `Ways and Means':  but that's only what it is called you know!"
+called 'Ways and Means':  but that's only what it is called you know!"
 	"Well, what is the song then?" said Alice, who was by this time
 completely bewildered.
 	"I was coming to that," the Knight said.  "The song really is
@@ -13226,9 +13203,9 @@ The scum also rises.
 		-- Dr. Hunter S. Thompson
 %
 The seven deadly sins ... Food, clothing, firing, rent, taxes,
-respectability and children.  Nothing can lift those seven millstones
-from Man's neck but money; and the spirit cannot soar until the
-millstones are lifted.
+respectability and children.  Nothing can lift those seven milestones
+from man's neck but money; and the spirit cannot soar until the
+milestones are lifted.
 		-- George Bernard Shaw
 %
 	The seven eyes of Ningauble the Wizard floated back to his hood
@@ -13441,7 +13418,7 @@ annoying than the piano when played by a sister or near relation.
 %
 The United States also has its native Fascists who say that they are
 "100 percent American"...
-		-- U.S. Army (1945)
+		-- U. S. Army (1945)
 %
 The United States is like the guy at the party who gives cocaine to
 everybody and still nobody likes him.
@@ -13497,6 +13474,12 @@ that would be clearly understood."
 %
 The way to make a small fortune in the commodities market is to start
 with a large fortune.
+%
+The wind doth taste so bitter sweet,
+	Like Jaspar wine and sugar,
+It must have blown through someone's feet,
+	Like those of Caspar Weinberger.
+		-- P. Opus
 %
 	THE WOMBAT
 
@@ -13665,7 +13648,7 @@ sleep better, but the bad seem to enjoy the waking hours much more.
 		-- Woody Allen
 %
 "There are two ways of constructing a software design: One way is to
-make it so simple that there are obviously no deficiencies, and the
+make is so simple that there are obviously no deficiencies, and the
 other way is to make it so complicated that there are no obvious
 deficiencies."
 		-- C. A. R. Hoare
@@ -13752,14 +13735,14 @@ There is no time like the present for postponing what you ought to be
 doing.
 %
 There is no TRUTH.  There is no REALITY.  There is no CONSISTENCY.
-There are no ABSOLUTE STATEMENTS.  I'm very probably wrong.
+There are no ABSOLUTE STATEMENTS   I'm very probably wrong.
 %
 "There is nothing which cannot be answered by means of my doctrine,"
 said a monk, coming into a teahouse where Nasrudin sat.
 	"And yet just a short time ago, I was challenged by a scholar
 with an unanswerable question," said Nasrudin.
 	"I could have answered it if I had been there."
-	"Very well.  He asked, `Why are you breaking into my house in
+	"Very well.  He asked, 'Why are you breaking into my house in
 the middle of the night?'"
 %
 There is nothing wrong with Southern California that a rise in the
@@ -13969,9 +13952,9 @@ April, June, and no wonder.
 all the rest have peanut butter
 except my father who wears red suspenders."
 %
-This Fortune Examined By INSPECTOR NO. 2-14
+This Fortue Examined By INSPECTOR NO. 2-14
 %
-This fortune cookie program is out of order.  For those in desperate need,
+This fortune cookie program out of order.  For those in desperate need,
 please use the program "________randchar".  This program generates random
 characters, and, given enough time, will undoubtedly come up with
 something profound.  It will, however, take it no time at all to be
@@ -14322,7 +14305,7 @@ And where does it go after it leaves the toaster?
 		-- Dave Barry, "What is Electricity?"
 %
 Today's thrilling story has been brought to you by Mushies, the great new
-cereal that gets soggy even without milk or cream.  Join us soon for more
+cereal that gets soggy even without milk or cream.  Join us soon for more 
 spectacular adventure starring ... Tippy, the Wonder Dog!
 		-- Bob & Ray
 %
@@ -14365,7 +14348,7 @@ Follow these simple suggestions:
 (2)  Use tape, magnets, or glue instead of paperweights.
 (3)  Give up skiing and skydiving for more horizontal sports like
      curling.
-(4)  Avoid showers ... take baths instead.
+(4)  Avoid showers .. take baths instead.
 (5)  Don't hang all your clothes in the closet ... Keep them in one big
      pile.
 (6)  Stop flipping pancakes
@@ -15655,8 +15638,8 @@ Worst Vegetable of the Year:
 "That depends a good deal on where you want to get to," said the Cat.
 		-- Lewis Carroll
 %
-Wouldn't the sentence "I want to put a hyphen between the words Fish
-and And and And and Chips in my Fish-And-Chips sign" have been clearer
+Wouldn't the sentence 'I want to put a hyphen between the words Fish
+and And and And and Chips in my Fish-And-Chips sign' have been clearer
 if quotation marks had been placed before Fish, and between Fish and
 and, and and and And, and And and and, and and and And, and And and
 and, and and and Chips, as well as after Chips?
@@ -15730,7 +15713,7 @@ Yinkel, n.:
 %
 You are a very redundant person, that's what kind of person you are.
 %
-You are here:
+You are here:   
 		***
 		***
 	     *********
@@ -15760,7 +15743,7 @@ And yet you incessantly stand on your head --
 	"I feared it might injure the brain;
 But, now that I'm perfectly sure I have none,
 	Why, I do it again and again."
-		-- Lewis Carroll
+		-- Lewis Carrol
 %
 "You are old," said the youth, "and I'm told by my peers
 	That your lectures bore people to death.
@@ -15781,7 +15764,7 @@ Yet you finished the goose, with the bones and the beak --
 	And argued each case with my wife;
 And the muscular strength which it gave to my jaw,
 	Has lasted the rest of my life."
-		-- Lewis Carroll
+		-- Lewis Carrol
 %
 "You are old," said the youth, "and your programs don't run,
 	And there isn't one language you like;
@@ -15802,7 +15785,7 @@ Yet you turned a back-somersault in at the door --
 	"I kept all my limbs very supple
 By the use of this ointment -- one shilling the box --
 	Allow me to sell you a couple?"
-		-- Lewis Carroll
+		-- Lewis Carrol
 %
 "You are old," said the youth, "as I mentioned before,
 	And make errors few people could bear;
@@ -15823,7 +15806,7 @@ Yet you balanced an eel on the end of your nose --
 	Said his father.  "Don't give yourself airs!
 Do you think I can listen all day to such stuff?
 	Be off, or I'll kick you down stairs!"
-		-- Lewis Carroll
+		-- Lewis Carrol
 %
 You are only young once, but you can stay immature indefinitely.
 %
@@ -15847,7 +15830,7 @@ pound some old, hard fruit into it with a mallet.  Be sure to wear
 safety glasses.
 		-- Dave Barry, "Simple, Homespun Gifts"
 %
-You can bring any calculator you like to the midterm, as long as it
+You can bring any calculator you like to the midterm, as long as it 
 doesn't dim the lights when you turn it on.
 		-- Hepler, Systems Design 182
 %
@@ -16076,7 +16059,7 @@ another $2 if he claims it will be His Pleasure to serve you and
 another $2 for each "special" he describes involving confusing terms
 such as "shallots," and $4 if the menu contains the word "fixin's."  In
 many restaurants, this means the waiter will actually owe you money.
-If you are traveling with a child aged six months to three years, you
+If you are traveling with a child  aged six months to three years, you
 should leave an additional amount equal to twice the bill to compensate
 for the fact that they will have to take the banquette out and burn it
 because the cracks are wedged solid with gobbets made of partially

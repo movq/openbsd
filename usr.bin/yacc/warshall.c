@@ -1,5 +1,5 @@
-/* $OpenBSD: warshall.c,v 1.11 2014/03/13 01:18:22 tedu Exp $	 */
-/* $NetBSD: warshall.c,v 1.4 1996/03/19 03:21:51 jtc Exp $	 */
+/*	$OpenBSD: warshall.c,v 1.3 1996/06/26 05:44:40 deraadt Exp $	*/
+/*	$NetBSD: warshall.c,v 1.4 1996/03/19 03:21:51 jtc Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,68 +37,93 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)warshall.c	5.4 (Berkeley) 5/24/93";
+#else
+static char rcsid[] = "$OpenBSD: warshall.c,v 1.3 1996/06/26 05:44:40 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include "defs.h"
 
-void transitive_closure(unsigned int *, int);
-
-void
-transitive_closure(unsigned int *R, int n)
+transitive_closure(R, n)
+unsigned *R;
+int n;
 {
-	int rowsize;
-	unsigned int i;
-	unsigned int *rowj, *rp, *rend, *ccol, *relend, *cword, *rowi;
+    register int rowsize;
+    register unsigned i;
+    register unsigned *rowj;
+    register unsigned *rp;
+    register unsigned *rend;
+    register unsigned *ccol;
+    register unsigned *relend;
+    register unsigned *cword;
+    register unsigned *rowi;
 
-	rowsize = WORDSIZE(n);
-	relend = R + n * rowsize;
+    rowsize = WORDSIZE(n);
+    relend = R + n*rowsize;
 
-	cword = R;
-	i = 0;
-	rowi = R;
-	while (rowi < relend) {
-		ccol = cword;
-		rowj = R;
+    cword = R;
+    i = 0;
+    rowi = R;
+    while (rowi < relend)
+    {
+	ccol = cword;
+	rowj = R;
 
-		while (rowj < relend) {
-			if (*ccol & (1 << i)) {
-				rp = rowi;
-				rend = rowj + rowsize;
-				while (rowj < rend)
-					*rowj++ |= *rp++;
-			} else {
-				rowj += rowsize;
-			}
+	while (rowj < relend)
+	{
+	    if (*ccol & (1 << i))
+	    {
+		rp = rowi;
+		rend = rowj + rowsize;
+		while (rowj < rend)
+		    *rowj++ |= *rp++;
+	    }
+	    else
+	    {
+		rowj += rowsize;
+	    }
 
-			ccol += rowsize;
-		}
-
-		if (++i >= BITS_PER_WORD) {
-			i = 0;
-			cword++;
-		}
-		rowi += rowsize;
+	    ccol += rowsize;
 	}
+
+	if (++i >= BITS_PER_WORD)
+	{
+	    i = 0;
+	    cword++;
+	}
+
+	rowi += rowsize;
+    }
 }
 
-void
-reflexive_transitive_closure(unsigned int *R, int n)
+reflexive_transitive_closure(R, n)
+unsigned *R;
+int n;
 {
-	int rowsize;
-	unsigned int i;
-	unsigned int *rp, *relend;
+    register int rowsize;
+    register unsigned i;
+    register unsigned *rp;
+    register unsigned *relend;
 
-	transitive_closure(R, n);
+    transitive_closure(R, n);
 
-	rowsize = WORDSIZE(n);
-	relend = R + n * rowsize;
+    rowsize = WORDSIZE(n);
+    relend = R + n*rowsize;
 
-	i = 0;
-	rp = R;
-	while (rp < relend) {
-		*rp |= (1 << i);
-		if (++i >= BITS_PER_WORD) {
-			i = 0;
-			rp++;
-		}
-		rp += rowsize;
+    i = 0;
+    rp = R;
+    while (rp < relend)
+    {
+	*rp |= (1 << i);
+	if (++i >= BITS_PER_WORD)
+	{
+	    i = 0;
+	    rp++;
 	}
+
+	rp += rowsize;
+    }
 }

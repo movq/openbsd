@@ -1,4 +1,4 @@
-/*	$OpenBSD: etherent.c,v 1.9 2015/11/17 21:39:23 mmcc Exp $	*/
+/*	$OpenBSD: etherent.c,v 1.6 1999/07/20 04:49:54 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1990, 1993, 1994, 1995, 1996
@@ -21,9 +21,15 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/lib/libpcap/etherent.c,v 1.6 1999/07/20 04:49:54 deraadt Exp $ (LBL)";
+#endif
+
 #include <sys/types.h>
 
 #include <ctype.h>
+#include <memory.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -41,7 +47,7 @@ static __inline int skip_line(FILE *);
 /* Hex digit to integer. */
 static __inline int
 xdtoi(c)
-	int c;
+	register int c;
 {
 	if (isdigit(c))
 		return c - '0';
@@ -80,7 +86,7 @@ skip_line(f)
 struct pcap_etherent *
 pcap_next_etherent(FILE *fp)
 {
-	int c, d, i;
+	register int c, d, i;
 	char *bp;
 	static struct pcap_etherent e;
 

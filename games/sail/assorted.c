@@ -1,4 +1,4 @@
-/*	$OpenBSD: assorted.c,v 1.8 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: assorted.c,v 1.2 1999/01/18 06:20:51 pjanzen Exp $	*/
 /*	$NetBSD: assorted.c,v 1.3 1995/04/22 10:36:45 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,26 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)assorted.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: assorted.c,v 1.2 1999/01/18 06:20:51 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
+#include <sys/cdefs.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <err.h>
 
-static void strike(struct ship *, struct ship *);
+static void strike __P((struct ship *, struct ship *));
 
 void
-table(int rig, int shot, int hittable, struct ship *on, struct ship *from,
-    int roll)
+table(rig, shot, hittable, on, from, roll)
+	struct ship *on, *from;
+	int rig, shot, hittable, roll;
 {
 	int hhits = 0, chits = 0, ghits = 0, rhits = 0;
 	int Ghit = 0, Hhit = 0, Rhit = 0, Chit = 0;
@@ -156,7 +170,7 @@ table(int rig, int shot, int hittable, struct ship *on, struct ship *from,
 	default:
 		errx(1, "Unknown shot type %d", shot);
 	}
-	makesignal(from, "%s", on, message);
+	makesignal(from, message, on);
 	if (roll == 6 && rig) {
 		switch(Rhit) {
 		case 0:
@@ -183,7 +197,7 @@ table(int rig, int shot, int hittable, struct ship *on, struct ship *from,
 		default:
 			errx(1, "Bad Rhit = %d", Rhit);
 		}
-		makemsg(on, "%s", message);
+		makemsg(on, message);
 	} else if (roll == 6) {
 		switch (Hhit) {
 		case 0:
@@ -211,7 +225,7 @@ table(int rig, int shot, int hittable, struct ship *on, struct ship *from,
 		default:
 			errx(1, "Bad Hhit = %d", Hhit);
 		}
-		makemsg(on, "%s", message);
+		makemsg(on, message);
 	}
 	/*
 	if (Chit > 1 && on->file->readyL&R_INITIAL && on->file->readyR&R_INITIAL) {
@@ -230,7 +244,9 @@ table(int rig, int shot, int hittable, struct ship *on, struct ship *from,
 }
 
 void
-Cleansnag(struct ship *from, struct ship *to, int all, int flag)
+Cleansnag(from, to, all, flag)
+	struct ship *from, *to;
+	char all, flag;
 {
 	if (flag & 1) {
 		Write(W_UNGRAP, from, to->file->index, all, 0, 0);
@@ -255,7 +271,8 @@ Cleansnag(struct ship *from, struct ship *to, int all, int flag)
 }
 
 static void
-strike(struct ship *ship, struct ship *from)
+strike(ship, from)
+	struct ship *ship, *from;
 {
 	int points;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: gencode.h,v 1.16 2014/04/11 04:08:58 lteo Exp $	*/
+/*	$OpenBSD: gencode.h,v 1.6 1999/07/20 04:49:54 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1992, 1993, 1994, 1995, 1996
@@ -19,6 +19,8 @@
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * @(#) $Header: /home/mike/src/cvs/openbsd/src/lib/libpcap/gencode.h,v 1.6 1999/07/20 04:49:54 deraadt Exp $ (LBL)
  */
 
 /* Address qualifiers. */
@@ -28,7 +30,6 @@
 #define Q_PORT		3
 #define Q_GATEWAY	4
 #define Q_PROTO		5
-#define Q_PROTOCHAIN	6
 
 /* Protocol qualifiers. */
 
@@ -50,35 +51,18 @@
 #define	Q_MOPRC		14
 #define	Q_MOPDL		15
 
-
-#define Q_IPV6		16
-#define Q_ICMPV6	17
-#define Q_AH		18
-#define Q_ESP		19
-
-#define Q_PIM		20
-#define Q_STP		21
-
 /* Directional qualifiers. */
 
 #define Q_SRC		1
 #define Q_DST		2
 #define Q_OR		3
 #define Q_AND		4
-#define Q_ADDR1		5
-#define Q_ADDR2		6
-#define Q_ADDR3		7
-#define Q_ADDR4		8
 
 #define Q_DEFAULT	0
 #define Q_UNDEF		255
 
-struct slist;
-
 struct stmt {
 	int code;
-	struct slist *jt;	/*only for relative jump in block*/
-	struct slist *jf;	/*only for relative jump in block*/
 	bpf_int32 k;
 };
 
@@ -165,9 +149,6 @@ void gen_not(struct block *);
 struct block *gen_scode(const char *, struct qual);
 struct block *gen_ecode(const u_char *, struct qual);
 struct block *gen_mcode(const char *, const char *, int, struct qual);
-#ifdef INET6
-struct block *gen_mcode6(const char *, const char *, int, struct qual);
-#endif
 struct block *gen_ncode(const char *, bpf_u_int32, struct qual);
 struct block *gen_proto_abbrev(int);
 struct block *gen_relation(int, struct arth *, struct arth *, int);
@@ -178,22 +159,11 @@ struct block *gen_broadcast(int);
 struct block *gen_multicast(int);
 struct block *gen_inbound(int);
 
-struct block *gen_vlan(int);
-
-struct block *gen_pf_ifname(char *);
-struct block *gen_pf_rnr(int);
-struct block *gen_pf_srnr(int);
-struct block *gen_pf_ruleset(char *);
-struct block *gen_pf_reason(int);
-struct block *gen_pf_action(int);
-struct block *gen_pf_dir(int);
-
-struct block *gen_p80211_type(int, int);
-struct block *gen_p80211_fcdir(int);
-
 void bpf_optimize(struct block **);
+#ifdef __STDC__
 __dead void bpf_error(const char *, ...)
-    __attribute__((volatile, __format__ (printf, 1, 2)));
+    __attribute__((volatile, format (printf, 1, 2)));
+#endif
 
 void finish_parse(struct block *);
 char *sdup(const char *);
@@ -206,5 +176,3 @@ void sappend(struct slist *, struct slist *);
 /* XXX */
 #define JT(b)  ((b)->et.succ)
 #define JF(b)  ((b)->ef.succ)
-
-extern int no_optimize;

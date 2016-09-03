@@ -1,4 +1,4 @@
-/*	$OpenBSD: one.c,v 1.7 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: one.c,v 1.2 1998/03/19 11:13:23 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,10 +33,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)one.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: one.c,v 1.2 1998/03/19 11:13:23 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 
 int
-makmove(int i)
+makmove(i)
+	int     i;
 {
 	int     n, d;
 	int     max;
@@ -50,8 +63,11 @@ makmove(int i)
 	} else {
 		if (n == max ? D0 < n && D1 < n : D0 != n && D1 != n)
 			return(checkd(d) + 1);
-		if (n == max ? D0 < n : D0 != n)
+		if (n == max ? D0 < n : D0 != n) {
+			if (d0)
+				return (checkd(d) + 1);
 			swap;
+		}
 	}
 	if (g[i] == home && *offptr < 0)
 		return(checkd(d) + 4);
@@ -82,22 +98,30 @@ makmove(int i)
 }
 
 void
-moverr(int i)
+moverr(i)
+	int     i;
 {
 	int     j;
 
-	mvprintw(20, 0, "Error:  ");
+	if (tflag)
+		curmove(20, 0);
+	else
+		writec('\n');
+	writel("Error:  ");
 	for (j = 0; j <= i; j++) {
-		printw("%d-%d", p[j], g[j]);
+		wrint(p[j]);
+		writec('-');
+		wrint(g[j]);
 		if (j < i)
-			addch(',');
+			writec(',');
 	}
-	addstr("... ");
+	writel("... ");
 	movback(i);
 }
 
 int
-checkd(int d)
+checkd(d)
+	int     d;
 {
 	if (d0 != d)
 		swap;
@@ -105,7 +129,7 @@ checkd(int d)
 }
 
 int
-last(void)
+last()
 {
 	int     i;
 
@@ -116,7 +140,8 @@ last(void)
 }
 
 void
-movback(int i)
+movback(i)
+	int     i;
 {
 	int     j;
 
@@ -125,7 +150,8 @@ movback(int i)
 }
 
 void
-backone(int i)
+backone(i)
+	int     i;
 {
 	board[p[i]] += cturn;
 	if (g[i] != home) {

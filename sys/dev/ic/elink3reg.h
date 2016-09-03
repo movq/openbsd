@@ -1,4 +1,4 @@
-/*	$OpenBSD: elink3reg.h,v 1.16 2015/02/28 11:25:49 miod Exp $	*/
+/*	$OpenBSD: elink3reg.h,v 1.10 1999/08/06 20:11:18 deraadt Exp $	*/
 /*	$NetBSD: elink3reg.h,v 1.13 1997/04/27 09:42:34 veego Exp $	*/
 
 /*
@@ -34,7 +34,7 @@
 
 /*
  * These define the EEPROM data structure.  They are used in the probe
- * function to verify the existence of the adapter after having sent
+ * function to verify the existance of the adapter after having sent
  * the ID_Sequence.
  *
  * There are others but only the ones we use are defined here.
@@ -46,12 +46,11 @@
 #define EEPROM_MFG_ID		0x7	/* 0x6d50 */
 #define EEPROM_ADDR_CFG		0x8	/* Base addr */
 #define EEPROM_RESOURCE_CFG	0x9     /* IRQ. Bits 12-15 */
-#define	EEPROM_OEM_ADDR0	0xa
 #define EEPROM_PNP		0x13	/* PNP mode and such? */
 
 /*
  * These are the registers for the 3Com 3c509 and their bit patterns when
- * applicable.  They have been taken out of the "EtherLink III Parallel
+ * applicable.  They have been taken out the the "EtherLink III Parallel
  * Tasking EISA and ISA Technical Reference" "Beta Draft 10/30/92" manual
  * from 3com.
  */
@@ -85,12 +84,6 @@
 #define EP_W1_RX_STATUS		0x08
 #define EP_W1_RX_PIO_RD_2	0x02
 #define EP_W1_RX_PIO_RD_1	0x00
-
-/* Special registers used by the RoadRunner.  These are used to program
- * a FIFO buffer to reduce the PCMCIA->PCI bridge latency during PIO.
- */
-#define EP_W1_RUNNER_RDCTL	0x16
-#define EP_W1_RUNNER_WRCTL	0x1c
 
 /*
  * Window 2 registers. Station Address Setup/Read
@@ -129,15 +122,6 @@
 #define EP_W4_TX_DIAG		0x00
 
 /*
- * Window 4 offset 8 is the PHY Management register on the
- * 3c90x.
- */
-#define EP_W4_BOOM_PHYSMGMT	0x08
-#define PHYSMGMT_CLK		0x0001
-#define PHYSMGMT_DATA		0x0002
-#define PHYSMGMT_DIR		0x0004
-
-/*
  * Window 5 Registers.  Results and Internal status.
  */
 	/* Read */
@@ -163,6 +147,18 @@
 #define TX_AFTER_X_COLLISIONS	0x02
 #define TX_NO_SQE		0x01
 #define TX_CD_LOST		0x00
+
+/*
+ * Window 7 registers.
+ * Address and length for a single bus-master DMA transfer.
+ */
+#define EP_W7_MASTER_ADDDRES	0x00
+#define EP_W7_RX_ERROR		0x04
+#define EP_W7_MASTER_LEN	0x06
+#define EP_W7_RX_STATUS		0x08
+#define EP_W7_TIMER		0x0a
+#define EP_W7_TX_STATUS		0x0b
+#define EP_W7_MASTER_STATUS	0x0c
 
 /*
  * Window 7 registers.
@@ -356,7 +352,7 @@
  *     20-22:   selected media type
  *        21:   unused
  *        24:  (nonvolatile) driver should autoselect media
- *     25-31: reserved
+ *     25-31: reseerved
  *
  * The low-order 16 bits should generally not be changed by software.
  * Offsets defined for two 16-bit words, to help out 16-bit busses.
@@ -378,11 +374,6 @@
 #define	CONFIG_MEDIAMASK	(u_short) 0x0070
 #define	CONFIG_MEDIAMASK_SHIFT	(u_short)      4
 
-/*
- * MAC_CONTROL (Window 3)
- */
-#define MAC_CONTROL_FDX		0x20	/* full-duplex mode */
-
 /* Active media in EP_W3_RESET_OPTIONS mediamask bits */
 
 #define EPMEDIA_10BASE_T		(u_short)   0x00
@@ -399,7 +390,7 @@
 #define	CONFIG_AUTOSELECT_SHIFT	(u_short)      8
 
 /*
- * RESET_OPTIONS (Window 4, on Demon/Vortex/Boomerang only)
+ * RESET_OPTIONS (Window 4, on Demon/Vortex/Bomerang only)
  * also mapped to PCI configuration space on PCI adaptors.
  *
  * (same register as  Vortex EP_W3_RESET_OPTIONS, mapped to pci-config space)
@@ -413,9 +404,6 @@
 #define EP_PCI_AUI 			(1<<5)
 #define EP_PCI_100BASE_MII		(1<<6)
 #define EP_PCI_INTERNAL_VCO		(1<<8)
-
-#define EP_RUNNER_MII_RESET		0x4000
-#define EP_RUNNER_ENABLE_MII		0x8000
 
 /*
  * FIFO Status (Window 4)
@@ -469,11 +457,6 @@
 #define EEPROM_TST_MODE			(1<<14)
 #define READ_EEPROM			(1<<7)
 
-/* For the RoadRunner chips... */
-#define WRITE_EEPROM_RR			0x100
-#define READ_EEPROM_RR			0x200
-#define ERASE_EEPROM_RR			0x300
-
 /* window 4, MEDIA_STATUS bits */
 #define SQE_ENABLE			0x08	/* Enables SQE on AUI ports */
 #define JABBER_GUARD_ENABLE		0x40
@@ -481,7 +464,6 @@
 #define ENABLE_UTP			(JABBER_GUARD_ENABLE|LINKBEAT_ENABLE)
 #define DISABLE_UTP			0x0
 #define LINKBEAT_DETECT			0x800
-#define MEDIA_LED			0x0001	/* Link LED for 3C589E */
 
 /*
  * ep_connectors softc media-preset bitflags

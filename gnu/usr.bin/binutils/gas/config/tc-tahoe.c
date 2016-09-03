@@ -1,62 +1,45 @@
-/* This file is tc-tahoe.c
+/* tc-tahoe.c
+   Not part of GAS yet. */
 
-   Copyright 1987, 1988, 1989, 1990, 1991, 1992, 1995, 2000, 2001, 2002
-   Free Software Foundation, Inc.
-
-   This file is part of GAS, the GNU Assembler.
-
-   GAS is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
-
-   GAS is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
 #include "as.h"
-#include "safe-ctype.h"
 #include "obstack.h"
 
-/* This bit glommed from tahoe-inst.h.  */
+/* this bit glommed from tahoe-inst.h */
 
 typedef unsigned char byte;
 typedef byte tahoe_opcodeT;
 
-/* This is part of tahoe-ins-parse.c & friends.
-   We want to parse a tahoe instruction text into a tree defined here.  */
+/*
+ * This is part of tahoe-ins-parse.c & friends.
+ * We want to parse a tahoe instruction text into a tree defined here.
+ */
 
 #define TIT_MAX_OPERANDS (4)	/* maximum number of operands in one
 				   single tahoe instruction */
 
 struct top			/* tahoe instruction operand */
-  {
-    int top_ndx;		/* -1, or index register. eg 7=[R7] */
-    int top_reg;		/* -1, or register number. eg 7 = R7 or (R7) */
-    byte top_mode;		/* Addressing mode byte. This byte, defines
-				   which of the 11 modes opcode is.  */
+{
+  int top_ndx;			/* -1, or index register. eg 7=[R7] */
+  int top_reg;			/* -1, or register number. eg 7 = R7 or (R7) */
+  byte top_mode;		/* Addressing mode byte. This byte, defines
+				   which of the 11 modes opcode is. */
 
-    char top_access;		/* Access type wanted for this operand
+  char top_access;		/* Access type wanted for this opperand
 				   'b'branch ' 'no-instruction 'amrvw' */
-    char top_width;		/* Operand width expected, one of "bwlq?-:!" */
+  char top_width;		/* Operand width expected, one of "bwlq?-:!" */
 
-    char * top_error;		/* Say if operand is inappropriate         */
+  char *top_error;		/* Say if operand is inappropriate         */
 
-    segT seg_of_operand;	/* segment as returned by expression()*/
+  segT seg_of_operand;		/* segment as returned by expression()*/
 
-    expressionS exp_of_operand;	/* The expression as parsed by expression()*/
+  expressionS exp_of_operand;	/* The expression as parsed by expression()*/
 
-    byte top_dispsize;		/* Number of bytes in the displacement if we
+  byte top_dispsize;		/* Number of bytes in the displacement if we
 				   can figure it out */
-  };
+};
 
-/* The addressing modes for an operand. These numbers are the actual values
-   for certain modes, so be careful if you screw with them.  */
+/* The addressing modes for an operand. These numbers are the acutal values
+   for certain modes, so be carefull if you screw with them. */
 #define TAHOE_DIRECT_REG (0x50)
 #define TAHOE_REG_DEFERRED (0x60)
 
@@ -75,32 +58,32 @@ struct top			/* tahoe instruction operand */
 #define TAHOE_AUTO_DEC (0x7E)
 #define TAHOE_AUTO_INC (0x8E)
 #define TAHOE_AUTO_INC_DEFERRED (0x9E)
-/* INDEXED_REG is decided by the existence or lack of a [reg].  */
+/* INDEXED_REG is decided by the existance or lack of a [reg] */
 
 /* These are encoded into top_width when top_access=='b'
-   and it's a psuedo op.  */
+   and it's a psuedo op.*/
 #define TAHOE_WIDTH_ALWAYS_JUMP      '-'
 #define TAHOE_WIDTH_CONDITIONAL_JUMP '?'
 #define TAHOE_WIDTH_BIG_REV_JUMP     '!'
 #define TAHOE_WIDTH_BIG_NON_REV_JUMP ':'
 
 /* The hex code for certain tahoe commands and modes.
-   This is just for readability.  */
+   This is just for readability. */
 #define TAHOE_JMP (0x71)
 #define TAHOE_PC_REL_LONG (0xEF)
 #define TAHOE_BRB (0x11)
 #define TAHOE_BRW (0x13)
 /* These, when 'ored' with, or added to, a register number,
-   set up the number for the displacement mode.  */
+   set up the number for the displacement mode. */
 #define TAHOE_PC_OR_BYTE (0xA0)
 #define TAHOE_PC_OR_WORD (0xC0)
 #define TAHOE_PC_OR_LONG (0xE0)
 
-struct tit			/* Get it out of the sewer, it stands for
-				   tahoe instruction tree (Geeze!).  */
+struct tit			/* get it out of the sewer, it stands for
+				   tahoe instruction tree (Geeze!) */
 {
-  tahoe_opcodeT tit_opcode;	/* The opcode.  */
-  byte tit_operands;		/* How many operands are here.  */
+  tahoe_opcodeT tit_opcode;	/* The opcode. */
+  byte tit_operands;		/* How many operands are here. */
   struct top tit_operand[TIT_MAX_OPERANDS];	/* Operands */
   char *tit_error;		/* "" or fatal error text */
 };
@@ -117,10 +100,10 @@ struct tit			/* Get it out of the sewer, it stands for
 long omagic = OMAGIC;
 
 /* These chars start a comment anywhere in a source file (except inside
-   another comment or a quoted string.  */
+   another comment or a quoted string. */
 const char comment_chars[] = "#;";
 
-/* These chars only start a comment at the beginning of a line.  */
+/* These chars only start a comment at the beginning of a line. */
 const char line_comment_chars[] = "#";
 
 /* Chars that can be used to separate mant from exp in floating point nums */
@@ -130,7 +113,7 @@ const char EXP_CHARS[] = "eE";
    as in 0f123.456
    or    0d1.234E-12 (see exp chars above)
    Note: The Tahoe port doesn't support floating point constants. This is
-         consistent with 'as' If it's needed, I can always add it later.  */
+         consistant with 'as' If it's needed, I can always add it later. */
 const char FLT_CHARS[] = "df";
 
 /* Also be aware that MAXIMUM_NUMBER_OF_CHARS_FOR_FLOAT may have to be
@@ -139,11 +122,11 @@ const char FLT_CHARS[] = "df";
    (The tahoe has plenty of room, so the change currently isn't needed.)
    */
 
-static struct tit t;		/* A tahoe instruction after decoding.  */
+static struct tit t;		/* A tahoe instruction after decoding. */
 
 void float_cons ();
 /* A table of pseudo ops (sans .), the function called, and an integer op
-   that the function is called with.  */
+   that the function is called with. */
 
 const pseudo_typeS md_pseudo_table[] =
 {
@@ -181,6 +164,7 @@ States for Tahoe address relaxing.
 	Always, 1 byte opcode, then displacement/absolute.
 	If word or longword, change opcode to brw or jmp.
 
+	
 2.	TAHOE_WIDTH_CONDITIONAL_JUMP (?)
 	J<cond> where <cond> is a simple flag test.
 	Format: "b?"
@@ -236,7 +220,7 @@ pc_rel_disp? That sort of thing.) */
    to them. (WF + length(word))
 
    The first letter is Byte, Word.
-   2nd letter is Forward, Backward.  */
+   2nd letter is Forward, Backward. */
 #define BF (1+ 127)
 #define BB (1+-128)
 #define WF (2+ 32767)
@@ -244,10 +228,10 @@ pc_rel_disp? That sort of thing.) */
 /* Dont need LF, LB because they always reach. [They are coded as 0.] */
 
 #define C(a,b) ENCODE_RELAX(a,b)
-/* This macro has no side-effects.  */
+/* This macro has no side-effects. */
 #define ENCODE_RELAX(what,length) (((what) << 2) + (length))
-#define RELAX_STATE(s) ((s) >> 2)
-#define RELAX_LENGTH(s) ((s) & 3)
+#define RELAX_STATE(what) ((what) >> 2)
+#define RELAX_LENGTH(length) ((length) && 3)
 
 #define STATE_ALWAYS_BRANCH             (1)
 #define STATE_CONDITIONAL_BRANCH        (2)
@@ -262,7 +246,7 @@ pc_rel_disp? That sort of thing.) */
 
 /* This is the table used by gas to figure out relaxing modes. The fields are
    forward_branch reach, backward_branch reach, number of bytes it would take,
-   where the next biggest branch is.  */
+   where the next biggest branch is. */
 const relax_typeS md_relax_table[] =
 {
   {
@@ -293,7 +277,7 @@ const relax_typeS md_relax_table[] =
   },				/* unused	    1,3 */
 /* Reversible Conditional Branch. If the branch won't reach, reverse
      it, and jump over a brw or a jmp that will reach. The relax part is the
-     actual address.  */
+     actual address. */
   {
     BF, BB, 1, C (2, 1)
   },				/* b<cond> B`foo    2,0 */
@@ -306,8 +290,8 @@ const relax_typeS md_relax_table[] =
   {
     1, 1, 0, 0
   },				/* unused	    2,3 */
-/* Another type of reversible branch. But this only has a word
-     displacement.  */
+/* Another type of reversable branch. But this only has a word
+     displacement. */
   {
     1, 1, 0, 0
   },				/* unused	    3,0 */
@@ -320,11 +304,11 @@ const relax_typeS md_relax_table[] =
   {
     1, 1, 0, 0
   },				/* unused	    3,3 */
-/* These are the non reversible branches, all of which have a word
+/* These are the non reversable branches, all of which have a word
      displacement. If I can't reach, branch over a byte branch, to a
      jump that will reach. The jumped branch jumps over the reaching
      branch, to continue with the flow of the program. It's like playing
-     leap frog.  */
+     leap frog. */
   {
     1, 1, 0, 0
   },				/* unused	    4,0 */
@@ -339,7 +323,7 @@ const relax_typeS md_relax_table[] =
   },				/* unused	    4,3 */
 /* Normal displacement mode, no jumping or anything like that.
      The relax points to one byte before the address, thats why all
-     the numbers are up by one.  */
+     the numbers are up by one. */
   {
     BF + 1, BB + 1, 2, C (5, 1)
   },				/* B^"foo"	    5,0 */
@@ -365,13 +349,13 @@ const relax_typeS md_relax_table[] =
    md_begin() will crash.  */
 static struct hash_control *op_hash;
 
-/* Init function. Build the hash table.  */
+/* Init function. Build the hash table. */
 void
 md_begin ()
 {
   struct tot *tP;
   char *errorval = 0;
-  int synthetic_too = 1;	/* If 0, just use real opcodes.  */
+  int synthetic_too = 1;	/* If 0, just use real opcodes. */
 
   op_hash = hash_new ();
 
@@ -386,11 +370,11 @@ md_begin ()
     as_fatal (errorval);
 }
 
-const char *md_shortopts = "ad:STt:V";
+CONST char *md_shortopts = "ad:STt:V";
 struct option md_longopts[] = {
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+size_t md_longopts_size = sizeof(md_longopts);
 
 int
 md_parse_option (c, arg)
@@ -400,27 +384,27 @@ md_parse_option (c, arg)
   switch (c)
     {
     case 'a':
-      as_warn (_("The -a option doesn't exist. (Despite what the man page says!"));
+      as_warn ("The -a option doesn't exist. (Despite what the man page says!");
       break;
 
     case 'd':
-      as_warn (_("Displacement length %s ignored!"), arg);
+      as_warn ("Displacement length %s ignored!", arg);
       break;
 
     case 'S':
-      as_warn (_("SYMBOL TABLE not implemented"));
+      as_warn ("SYMBOL TABLE not implemented");
       break;
 
     case 'T':
-      as_warn (_("TOKEN TRACE not implemented"));
+      as_warn ("TOKEN TRACE not implemented");
       break;
 
     case 't':
-      as_warn (_("I don't need or use temp. file \"%s\"."), arg);
+      as_warn ("I don't need or use temp. file \"%s\".", arg);
       break;
 
     case 'V':
-      as_warn (_("I don't use an interpass file! -V ignored"));
+      as_warn ("I don't use an interpass file! -V ignored");
       break;
 
     default:
@@ -434,7 +418,7 @@ void
 md_show_usage (stream)
      FILE *stream;
 {
-  fprintf (stream, _("\
+  fprintf(stream, "\
 Tahoe options:\n\
 -a			ignored\n\
 -d LENGTH		ignored\n\
@@ -442,27 +426,27 @@ Tahoe options:\n\
 -S			ignored\n\
 -t FILE			ignored\n\
 -T			ignored\n\
--V			ignored\n"));
+-V			ignored\n");
 }
 
 /* The functions in this section take numbers in the machine format, and
    munges them into Tahoe byte order.
-   They exist primarily for cross assembly purpose.  */
-void				/* Knows about order of bytes in address.  */
+   They exist primarily for cross assembly purpose. */
+void				/* Knows about order of bytes in address. */
 md_number_to_chars (con, value, nbytes)
-     char con[];		/* Return 'nbytes' of chars here.  */
-     valueT value;		/* The value of the bits.  */
-     int nbytes;		/* Number of bytes in the output.  */
+     char con[];		/* Return 'nbytes' of chars here. */
+     valueT value;		/* The value of the bits. */
+     int nbytes;		/* Number of bytes in the output. */
 {
   number_to_chars_bigendian (con, value, nbytes);
 }
 
 #ifdef comment
-void				/* Knows about order of bytes in address.  */
+void				/* Knows about order of bytes in address. */
 md_number_to_imm (con, value, nbytes)
-     char con[];		/* Return 'nbytes' of chars here.  */
-     long int value;		/* The value of the bits.  */
-     int nbytes;		/* Number of bytes in the output.  */
+     char con[];		/* Return 'nbytes' of chars here. */
+     long int value;		/* The value of the bits. */
+     int nbytes;		/* Number of bytes in the output. */
 {
   md_number_to_chars (con, value, nbytes);
 }
@@ -470,29 +454,28 @@ md_number_to_imm (con, value, nbytes)
 #endif /* comment */
 
 void
-md_apply_fix3 (fixP, valP, seg)
-     fixS *fixP ATTRIBUTE_UNUSED;
-     valueT * valP ATTRIBUTE_UNUSED;
-     segT seg ATTRIBUTE_UNUSED:
+tc_apply_fix (fixP, val)
+     fixS *fixP;
+     long val;
 {
-  /* Should never be called.  */
+  /* should never be called */
   know (0);
 }
 
-void				/* Knows about order of bytes in address.  */
+void				/* Knows about order of bytes in address. */
 md_number_to_disp (con, value, nbytes)
-     char con[];		/* Return 'nbytes' of chars here.  */
-     long int value;		/* The value of the bits.  */
-     int nbytes;		/* Number of bytes in the output.  */
+     char con[];		/* Return 'nbytes' of chars here. */
+     long int value;		/* The value of the bits. */
+     int nbytes;		/* Number of bytes in the output. */
 {
   md_number_to_chars (con, value, nbytes);
 }
 
-void				/* Knows about order of bytes in address.  */
+void				/* Knows about order of bytes in address. */
 md_number_to_field (con, value, nbytes)
-     char con[];		/* Return 'nbytes' of chars here.  */
-     long int value;		/* The value of the bits.  */
-     int nbytes;		/* Number of bytes in the output.  */
+     char con[];		/* Return 'nbytes' of chars here. */
+     long int value;		/* The value of the bits. */
+     int nbytes;		/* Number of bytes in the output. */
 {
   md_number_to_chars (con, value, nbytes);
 }
@@ -503,7 +486,7 @@ md_number_to_field (con, value, nbytes)
    next three bytes are symbolnum, in kind of 3 byte big endian (least sig. byte last).
    The last byte is broken up with bit 7 as pcrel,
    	bits 6 & 5 as length,
-	bit 4 as extern and the last nibble as 'undefined'.  */
+	bit 4 as extern and the last nibble as 'undefined'. */
 
 #if comment
 void
@@ -512,7 +495,7 @@ md_ri_to_chars (ri_p, ri)
 {
   byte the_bytes[sizeof (struct relocation_info)];
   /* The reason I can't just encode these directly into ri_p is that
-     ri_p may point to ri.  */
+     ri_p may point to ri. */
 
   /* This is easy */
   md_number_to_chars (the_bytes, ri.r_address, sizeof (ri.r_address));
@@ -535,9 +518,9 @@ md_ri_to_chars (ri_p, ri)
    next three bytes are symbolnum, in kind of 3 byte big endian (least sig. byte last).
    The last byte is broken up with bit 7 as pcrel,
    	bits 6 & 5 as length,
-	bit 4 as extern and the last nibble as 'undefined'.  */
+	bit 4 as extern and the last nibble as 'undefined'. */
 
-void
+void 
 tc_aout_fix_to_chars (where, fixP, segment_address_in_file)
      char *where;
      fixS *fixP;
@@ -571,7 +554,7 @@ tc_aout_fix_to_chars (where, fixP, segment_address_in_file)
 
 /* Relocate byte stuff */
 
-/* This is for broken word.  */
+/* This is for broken word. */
 const int md_short_jump_size = 3;
 
 void
@@ -606,113 +589,136 @@ md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
   md_number_to_chars (ptr, offset, 4);
 }
 
-/* md_estimate_size_before_relax(), called just before relax().
-   Any symbol that is now undefined will not become defined.
-   Return the correct fr_subtype in the frag and the growth beyond
-   fr_fix.  */
+/*
+ *			md_estimate_size_before_relax()
+ *
+ * Called just before relax().
+ * Any symbol that is now undefined will not become defined, so we assumed
+ * that it will be resolved by the linker.
+ * Return the correct fr_subtype in the frag, for relax()
+ * Return the initial "guess for fr_var" to caller. (How big I think this
+ * will be.)
+ * The guess for fr_var is ACTUALLY the growth beyond fr_fix.
+ * Whatever we do to grow fr_fix or fr_var contributes to our returned value.
+ * Although it may not be explicit in the frag, pretend fr_var starts with a
+ * 0 value.
+ */
 int
 md_estimate_size_before_relax (fragP, segment_type)
      register fragS *fragP;
-     segT segment_type;		/* N_DATA or N_TEXT.  */
+     segT segment_type;		/* N_DATA or N_TEXT. */
 {
-  if (RELAX_LENGTH (fragP->fr_subtype) == STATE_UNDF)
+  register char *p;
+  register int old_fr_fix;
+  /*  int pc_rel; FIXME: remove this */
+
+  old_fr_fix = fragP->fr_fix;
+  switch (fragP->fr_subtype)
     {
-      if (S_GET_SEGMENT (fragP->fr_symbol) != segment)
+    case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
 	{
-	  /* Non-relaxable cases.  */
-	  char *p;
-	  int old_fr_fix;
-
-	  old_fr_fix = fragP->fr_fix;
-	  p = fragP->fr_literal + old_fr_fix;
-	  switch (RELAX_STATE (fragP->fr_subtype))
-	    {
-	    case STATE_PC_RELATIVE:
-	      *p |= TAHOE_PC_OR_LONG;
-	      /* We now know how big it will be, one long word.  */
-	      fragP->fr_fix += 1 + 4;
-	      fix_new (fragP, old_fr_fix + 1, fragP->fr_symbol,
-		       fragP->fr_offset, FX_PCREL32, NULL);
-	      break;
-
-	    case STATE_CONDITIONAL_BRANCH:
-	      *fragP->fr_opcode ^= 0x10;	/* Reverse sense of branch.  */
-	      *p++ = 6;
-	      *p++ = TAHOE_JMP;
-	      *p++ = TAHOE_PC_REL_LONG;
-	      fragP->fr_fix += 1 + 1 + 1 + 4;
-	      fix_new (fragP, old_fr_fix + 3, fragP->fr_symbol,
-		       fragP->fr_offset, FX_PCREL32, NULL);
-	      break;
-
-	    case STATE_BIG_REV_BRANCH:
-	      *fragP->fr_opcode ^= 0x10;	/* Reverse sense of branch.  */
-	      *p++ = 0;
-	      *p++ = 6;
-	      *p++ = TAHOE_JMP;
-	      *p++ = TAHOE_PC_REL_LONG;
-	      fragP->fr_fix += 2 + 2 + 4;
-	      fix_new (fragP, old_fr_fix + 4, fragP->fr_symbol,
-		       fragP->fr_offset, FX_PCREL32, NULL);
-	      break;
-
-	    case STATE_BIG_NON_REV_BRANCH:
-	      *p++ = 2;
-	      *p++ = 0;
-	      *p++ = TAHOE_BRB;
-	      *p++ = 6;
-	      *p++ = TAHOE_JMP;
-	      *p++ = TAHOE_PC_REL_LONG;
-	      fragP->fr_fix += 2 + 2 + 2 + 4;
-	      fix_new (fragP, old_fr_fix + 6, fragP->fr_symbol,
-		       fragP->fr_offset, FX_PCREL32, NULL);
-	      break;
-
-	    case STATE_ALWAYS_BRANCH:
-	      *fragP->fr_opcode = TAHOE_JMP;
-	      *p++ = TAHOE_PC_REL_LONG;
-	      fragP->fr_fix += 1 + 4;
-	      fix_new (fragP, old_fr_fix + 1, fragP->fr_symbol,
-		       fragP->fr_offset, FX_PCREL32, NULL);
-	      break;
-
-	    default:
-	      abort ();
-	    }
-	  frag_wane (fragP);
-
-	  /* Return the growth in the fixed part of the frag.  */
-	  return fragP->fr_fix - old_fr_fix;
-	}
-
-      /* Relaxable cases.  Set up the initial guess for the variable
-	 part of the frag.  */
-      switch (RELAX_STATE (fragP->fr_subtype))
-	{
-	case STATE_PC_RELATIVE:
+	  /* The symbol was in the same segment as the opcode, and it's
+	 a real pc_rel case so it's a relaxable case. */
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_PC_RELATIVE, STATE_BYTE);
-	  break;
-	case STATE_CONDITIONAL_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_BYTE);
-	  break;
-	case STATE_BIG_REV_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_BIG_REV_BRANCH, STATE_WORD);
-	  break;
-	case STATE_BIG_NON_REV_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_BIG_NON_REV_BRANCH, STATE_WORD);
-	  break;
-	case STATE_ALWAYS_BRANCH:
-	  fragP->fr_subtype = ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_BYTE);
-	  break;
 	}
+      else
+	{
+	  /* This case is still undefined, so asume it's a long word for the
+	 linker to fix. */
+	  p = fragP->fr_literal + old_fr_fix;
+	  *p |= TAHOE_PC_OR_LONG;
+	  /* We now know how big it will be, one long word. */
+	  fragP->fr_fix += 1 + 4;
+	  fix_new (fragP, old_fr_fix + 1, fragP->fr_symbol,
+		   fragP->fr_offset, FX_PCREL32, NULL);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_BYTE);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  *fragP->fr_opcode ^= 0x10;	/* Reverse sense of branch. */
+	  *p++ = 6;
+	  *p++ = TAHOE_JMP;
+	  *p++ = TAHOE_PC_REL_LONG;
+	  fragP->fr_fix += 1 + 1 + 1 + 4;
+	  fix_new (fragP, old_fr_fix + 3, fragP->fr_symbol,
+		   fragP->fr_offset, FX_PCREL32, NULL);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_BIG_REV_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
+	{
+	  fragP->fr_subtype =
+	    ENCODE_RELAX (STATE_BIG_REV_BRANCH, STATE_WORD);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  *fragP->fr_opcode ^= 0x10;	/* Reverse sense of branch. */
+	  *p++ = 0;
+	  *p++ = 6;
+	  *p++ = TAHOE_JMP;
+	  *p++ = TAHOE_PC_REL_LONG;
+	  fragP->fr_fix += 2 + 2 + 4;
+	  fix_new (fragP, old_fr_fix + 4, fragP->fr_symbol,
+		   fragP->fr_offset, FX_PCREL32, NULL);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_BIG_NON_REV_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_BIG_NON_REV_BRANCH, STATE_WORD);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  *p++ = 2;
+	  *p++ = 0;
+	  *p++ = TAHOE_BRB;
+	  *p++ = 6;
+	  *p++ = TAHOE_JMP;
+	  *p++ = TAHOE_PC_REL_LONG;
+	  fragP->fr_fix += 2 + 2 + 2 + 4;
+	  fix_new (fragP, old_fr_fix + 6, fragP->fr_symbol,
+		   fragP->fr_offset, FX_PCREL32, NULL);
+	  frag_wane (fragP);
+	}
+      break;
+
+    case ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_UNDF):
+      if (S_GET_SEGMENT (fragP->fr_symbol) == segment_type)
+	{
+	  fragP->fr_subtype = ENCODE_RELAX (STATE_ALWAYS_BRANCH, STATE_BYTE);
+	}
+      else
+	{
+	  p = fragP->fr_literal + old_fr_fix;
+	  *fragP->fr_opcode = TAHOE_JMP;
+	  *p++ = TAHOE_PC_REL_LONG;
+	  fragP->fr_fix += 1 + 4;
+	  fix_new (fragP, old_fr_fix + 1, fragP->fr_symbol,
+		   fragP->fr_offset, FX_PCREL32, NULL);
+	  frag_wane (fragP);
+	}
+      break;
+
+    default:
+      break;
     }
-
-  if (fragP->fr_subtype >= sizeof (md_relax_table) / sizeof (md_relax_table[0]))
-    abort ();
-
-  /* Return the size of the variable part of the frag.  */
-  return md_relax_table[fragP->fr_subtype].rlx_length;
-}
+  return (fragP->fr_var + fragP->fr_fix - old_fr_fix);
+}				/* md_estimate_size_before_relax() */
 
 /*
  *			md_convert_frag();
@@ -731,10 +737,11 @@ md_convert_frag (headers, seg, fragP)
      segT seg;
      register fragS *fragP;
 {
-  register char *addressP;	/* -> _var to change.  */
-  register char *opcodeP;	/* -> opcode char(s) to change.  */
+  register char *addressP;	/* -> _var to change. */
+  register char *opcodeP;	/* -> opcode char(s) to change. */
+  register short int length_code;	/* 2=long 1=word 0=byte */
   register short int extension = 0;	/* Size of relaxed address.
-				   Added to fr_fix: incl. ALL var chars.  */
+				   Added to fr_fix: incl. ALL var chars. */
   register symbolS *symbolP;
   register long int where;
   register long int address_of_var;
@@ -743,6 +750,8 @@ md_convert_frag (headers, seg, fragP)
   /* Where, in file space, does addr point? */
 
   know (fragP->fr_type == rs_machine_dependent);
+  length_code = RELAX_LENGTH (fragP->fr_subtype);
+  know (length_code >= 0 && length_code < 3);
   where = fragP->fr_fix;
   addressP = fragP->fr_literal + where;
   opcodeP = fragP->fr_opcode;
@@ -755,21 +764,21 @@ md_convert_frag (headers, seg, fragP)
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_BYTE):
       /* *addressP holds the registers number, plus 0x10, if it's deferred
        mode. To set up the right mode, just OR the size of this displacement */
-      /* Byte displacement.  */
+      /* Byte displacement. */
       *addressP++ |= TAHOE_PC_OR_BYTE;
       *addressP = target_address - (address_of_var + 2);
       extension = 2;
       break;
 
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_WORD):
-      /* Word displacement.  */
+      /* Word displacement. */
       *addressP++ |= TAHOE_PC_OR_WORD;
       md_number_to_chars (addressP, target_address - (address_of_var + 3), 2);
       extension = 3;
       break;
 
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_LONG):
-      /* Long word displacement.  */
+      /* Long word displacement. */
       *addressP++ |= TAHOE_PC_OR_LONG;
       md_number_to_chars (addressP, target_address - (address_of_var + 5), 4);
       extension = 5;
@@ -781,7 +790,7 @@ md_convert_frag (headers, seg, fragP)
       break;
 
     case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_WORD):
-      *opcodeP ^= 0x10;		/* Reverse sense of test.  */
+      *opcodeP ^= 0x10;		/* Reverse sense of test. */
       *addressP++ = 3;		/* Jump over word branch */
       *addressP++ = TAHOE_BRW;
       md_number_to_chars (addressP, target_address - (address_of_var + 4), 2);
@@ -789,7 +798,7 @@ md_convert_frag (headers, seg, fragP)
       break;
 
     case ENCODE_RELAX (STATE_CONDITIONAL_BRANCH, STATE_LONG):
-      *opcodeP ^= 0x10;		/* Reverse sense of test.  */
+      *opcodeP ^= 0x10;		/* Reverse sense of test. */
       *addressP++ = 6;
       *addressP++ = TAHOE_JMP;
       *addressP++ = TAHOE_PC_REL_LONG;
@@ -854,7 +863,7 @@ md_convert_frag (headers, seg, fragP)
 }				/* md_convert_frag */
 
 
-/* This is the stuff for md_assemble.  */
+/* This is the stuff for md_assemble. */
 #define FP_REG 13
 #define SP_REG 14
 #define PC_REG 15
@@ -876,7 +885,7 @@ md_convert_frag (headers, seg, fragP)
  */
 int
 tahoe_reg_parse (start)
-     char **start;		/* A pointer to the string to parse.  */
+     char **start;		/* A pointer to the string to parse. */
 {
   register char *regpoint = *start;
   register int regnum = -1;
@@ -884,16 +893,16 @@ tahoe_reg_parse (start)
   switch (*regpoint++)
     {
     case '%':			/* Registers can start with a %,
-				   R or r, and then a number.  */
+				   R or r, and then a number. */
     case 'R':
     case 'r':
-      if (ISDIGIT (*regpoint))
+      if (isdigit (*regpoint))
 	{
-	  /* Got the first digit.  */
+	  /* Got the first digit. */
 	  regnum = *regpoint++ - '0';
-	  if ((regnum == 1) && ISDIGIT (*regpoint))
+	  if ((regnum == 1) && isdigit (*regpoint))
 	    {
-	      /* Its a two digit number.  */
+	      /* Its a two digit number. */
 	      regnum = 10 + (*regpoint++ - '0');
 	      if (regnum > BIGGESTREG)
 		{		/* Number too big? */
@@ -947,8 +956,8 @@ tahoe_reg_parse (start)
  * make the command look cute. ie: * foo ( r1 ) [  r0 ]
  * If you like doing a lot of typing, try COBOL!
  * Actually, this parser is a little weak all around. It's designed to be
- * used with compliers, so I emphasize correct decoding of valid code quickly
- * rather that catching every possible error.
+ * used with compliers, so I emphisise correct decoding of valid code quickly
+ * rather that catching every possable error.
  * Note: This uses the expression function, so save input_line_pointer before
  * calling.
  *
@@ -971,9 +980,9 @@ tahoe_reg_parse (start)
  *     l         longword
  *     q         quadword (Even regs < 14 allowed) (if 12, you get a warning)
  *     -	 unconditional synthetic jbr operand
- *     ?	 simple synthetic reversible branch operand
- *     !	 complex synthetic reversible branch operand
- *     :	 complex synthetic non-reversible branch operand
+ *     ?	 simple synthetic reversable branch operand
+ *     !	 complex synthetic reversable branch operand
+ *     :	 complex synthetic non-reversable branch operand
  *
  * The '-?!:' letter 2's are not for external consumption. They are used
  * by GAS for psuedo ops relaxing code.
@@ -984,12 +993,12 @@ tahoe_reg_parse (start)
  *   top_reg:        -1, or register number. eg 7 = R7 or (R7)
  *   top_mode:       The addressing mode byte. This byte, defines which of
  *                   the 11 modes opcode is.
- *   top_access:     Access type wanted for this operand 'b'branch ' '
+ *   top_access:     Access type wanted for this opperand 'b'branch ' '
  *                   no-instruction 'amrvw'
  *   top_width:      Operand width expected, one of "bwlq?-:!"
  *   exp_of_operand: The expression as parsed by expression()
  *   top_dispsize:   Number of bytes in the displacement if we can figure it
- *                   out and it's relevant.
+ *                   out and it's relavent.
  *
  * Need syntax checks built.
  */
@@ -1002,18 +1011,18 @@ tip_op (optex, topP)
 			 out: ndx, reg, mode, error, dispsize */
 
 {
-  int mode = 0;			/* This operand's mode.  */
-  char segfault = *optex;	/* To keep the back parsing from freaking.  */
-  char *point = optex + 1;	/* Parsing from front to back.  */
-  char *end;			/* Parsing from back to front.  */
+  int mode = 0;			/* This operand's mode. */
+  char segfault = *optex;	/* To keep the back parsing from freaking. */
+  char *point = optex + 1;	/* Parsing from front to back. */
+  char *end;			/* Parsing from back to front. */
   int reg = -1;			/* major register, -1 means absent */
   int imreg = -1;		/* Major register in immediate mode */
   int ndx = -1;			/* index register number, -1 means absent */
   char dec_inc = ' ';		/* Is the SP auto-incremented '+' or
-				   auto-decremented '-' or neither ' '.  */
+				   auto-decremented '-' or neither ' '. */
   int immediate = 0;		/* 1 if '$' immediate mode */
   int call_width = 0;		/* If the caller casts the displacement */
-  int abs_width = 0;		/* The width of the absolute displacement */
+  int abs_width = 0;		/* The width of the absolute displacment */
   int com_width = 0;		/* Displacement width required by branch */
   int deferred = 0;		/* 1 if '*' deferral is used */
   byte disp_size = 0;		/* How big is this operand. 0 == don't know */
@@ -1021,14 +1030,14 @@ tip_op (optex, topP)
 
   char *tp, *temp, c;		/* Temporary holders */
 
-  char access = topP->top_access;	/* Save on a deref.  */
+  char access = topP->top_access;	/* Save on a deref. */
   char width = topP->top_width;
 
   int really_none = 0;		/* Empty expressions evaluate to 0
 				   but I need to know if it's there or not */
   expressionS *expP;		/* -> expression values for this operand */
 
-  /* Does this command restrict the displacement size.  */
+  /* Does this command restrict the displacement size. */
   if (access == 'b')
     com_width = (width == 'b' ? 1 :
 		 (width == 'w' ? 2 :
@@ -1045,7 +1054,7 @@ tip_op (optex, topP)
   /* Force words into a certain mode */
   /* Bitch, Bitch, Bitch! */
   /*
-   * Using the ^ operator is ambiguous. If I have an absolute label
+   * Using the ^ operator is ambigous. If I have an absolute label
    * called 'w' set to, say 2, and I have the expression 'w^1', do I get
    * 1, forced to be in word displacement mode, or do I get the value of
    * 'w' or'ed with 1 (3 in this case).
@@ -1063,10 +1072,10 @@ tip_op (optex, topP)
       case 'l':
       case 'L':
 	if (com_width)
-	  as_warn (_("Casting a branch displacement is bad form, and is ignored."));
+	  as_warn ("Casting a branch displacement is bad form, and is ignored.");
 	else
 	  {
-	    c = TOLOWER (*point);
+	    c = (isupper (*point) ? tolower (*point) : *point);
 	    call_width = ((c == 'b') ? 1 :
 			  ((c == 'w') ? 2 : 4));
 	  }
@@ -1086,7 +1095,7 @@ tip_op (optex, topP)
    * yank.
    */
 
-  for (end = point; *end != '\0'; end++)	/* Move to the end.  */
+  for (end = point; *end != '\0'; end++)	/* Move to the end. */
     ;
 
   if (end != point)		/* Null string? */
@@ -1095,38 +1104,38 @@ tip_op (optex, topP)
   if (end > point && *end == ' ' && end[-1] != '\'')
     end--;			/* Hop white space */
 
-  /* Is this an index reg.  */
+  /* Is this an index reg. */
   if ((*end == ']') && (end[-1] != '\''))
     {
       temp = end;
 
-      /* Find opening brace.  */
+      /* Find opening brace. */
       for (--end; (*end != '[' && end != point); end--)
 	;
 
-      /* If I found the opening brace, get the index register number.  */
+      /* If I found the opening brace, get the index register number. */
       if (*end == '[')
 	{
-	  tp = end + 1;		/* tp should point to the start of a reg.  */
+	  tp = end + 1;		/* tp should point to the start of a reg. */
 	  ndx = tahoe_reg_parse (&tp);
 	  if (tp != temp)
-	    {			/* Reg. parse error.  */
+	    {			/* Reg. parse error. */
 	      ndx = -1;
 	    }
 	  else
 	    {
-	      end--;		/* Found it, move past brace.  */
+	      end--;		/* Found it, move past brace. */
 	    }
 	  if (ndx == -1)
 	    {
-	      op_bad = _("Couldn't parse the [index] in this operand.");
-	      end = point;	/* Force all the rest of the tests to fail.  */
+	      op_bad = "Couldn't parse the [index] in this operand.";
+	      end = point;	/* Force all the rest of the tests to fail. */
 	    }
 	}
       else
 	{
-	  op_bad = _("Couldn't find the opening '[' for the index of this operand.");
-	  end = point;		/* Force all the rest of the tests to fail.  */
+	  op_bad = "Couldn't find the opening '[' for the index of this operand.";
+	  end = point;		/* Force all the rest of the tests to fail. */
 	}
     }
 
@@ -1143,30 +1152,30 @@ tip_op (optex, topP)
     {
       temp = end;
 
-      /* Find opening paren.  */
+      /* Find opening paren. */
       for (--end; (*end != '(' && end != point); end--)
 	;
 
-      /* If I found the opening paren, get the register number.  */
+      /* If I found the opening paren, get the register number. */
       if (*end == '(')
 	{
 	  tp = end + 1;
 	  reg = tahoe_reg_parse (&tp);
 	  if (tp != temp)
 	    {
-	      /* Not a register, but could be part of the expression.  */
+	      /* Not a register, but could be part of the expression. */
 	      reg = -1;
 	      end = temp;	/* Rest the pointer back */
 	    }
 	  else
 	    {
-	      end--;		/* Found the reg. move before opening paren.  */
+	      end--;		/* Found the reg. move before opening paren. */
 	    }
 	}
       else
 	{
-	  op_bad = _("Couldn't find the opening '(' for the deref of this operand.");
-	  end = point;		/* Force all the rest of the tests to fail.  */
+	  op_bad = "Couldn't find the opening '(' for the deref of this operand.";
+	  end = point;		/* Force all the rest of the tests to fail. */
 	}
     }
 
@@ -1175,7 +1184,7 @@ tip_op (optex, topP)
     {
       if (dec_inc != ' ')
 	{
-	  op_bad = _("Operand can't be both pre-inc and post-dec.");
+	  op_bad = "Operand can't be both pre-inc and post-dec.";
 	  end = point;
 	}
       else
@@ -1199,13 +1208,13 @@ tip_op (optex, topP)
 				      if it is there.*/
   if (*point != '\0')
     {
-      /* If there is junk after point, then the it's not immediate reg.  */
+      /* If there is junk after point, then the it's not immediate reg. */
       point = tp;
       imreg = -1;
     }
 
   if (imreg != -1 && reg != -1)
-    op_bad = _("I parsed 2 registers in this operand.");
+    op_bad = "I parsed 2 registers in this operand.";
 
   /*
    * Evaluate whats left of the expression to see if it's valid.
@@ -1215,7 +1224,7 @@ tip_op (optex, topP)
 
   if (*op_bad == '\0')
     {
-      /* Statement has no syntax goofs yet: let's sniff the expression.  */
+      /* statement has no syntax goofs yet: lets sniff the expression */
       input_line_pointer = point;
       expP = &(topP->exp_of_operand);
       topP->seg_of_operand = expression (expP);
@@ -1228,10 +1237,10 @@ tip_op (optex, topP)
 	  expP->X_add_number = 0;
 	  really_none = 1;
 	case O_constant:
-	  /* for SEG_ABSOLUTE, we shouldn't need to set X_op_symbol,
-	     X_add_symbol to any particular value.  */
+	  /* for SEG_ABSOLUTE, we shouldnt need to set X_op_symbol,
+	     X_add_symbol to any particular value. */
 	  /* But, we will program defensively. Since this situation occurs
-	     rarely so it costs us little to do so.  */
+	     rarely so it costs us little to do so. */
 	  expP->X_add_symbol = NULL;
 	  expP->X_op_symbol = NULL;
 	  /* How many bytes are needed to express this abs value? */
@@ -1246,28 +1255,28 @@ tip_op (optex, topP)
 
 	default:
 	  /*
-	   * Major bug. We can't handle the case of an operator
+	   * Major bug. We can't handle the case of a operator
 	   * expression in a synthetic opcode variable-length
 	   * instruction.  We don't have a frag type that is smart
-	   * enough to relax an operator, and so we just force all
+	   * enough to relax a operator, and so we just force all
 	   * operators to behave like SEG_PASS1s.  Clearly, if there is
 	   * a demand we can invent a new or modified frag type and
 	   * then coding up a frag for this case will be easy.
 	   */
 	  need_pass_2 = 1;
-	  op_bad = _("Can't relocate expression error.");
+	  op_bad = "Can't relocate expression error.";
 	  break;
 
 	case O_big:
 	  /* This is an error. Tahoe doesn't allow any expressions
 	     bigger that a 32 bit long word. Any bigger has to be referenced
-	     by address.  */
-	  op_bad = _("Expression is too large for a 32 bits.");
+	     by address. */
+	  op_bad = "Expression is too large for a 32 bits.";
 	  break;
 	}
       if (*input_line_pointer != '\0')
 	{
-	  op_bad = _("Junk at end of expression.");
+	  op_bad = "Junk at end of expression.";
 	}
     }
 
@@ -1275,6 +1284,7 @@ tip_op (optex, topP)
 
   /* I'm done, so restore optex */
   *optex = segfault;
+
 
   /*
    * At this point in the game, we (in theory) have all the components of
@@ -1306,26 +1316,26 @@ tip_op (optex, topP)
 	  mode = TAHOE_DIRECT_REG;
 	  if (deferred || immediate || (dec_inc != ' ') ||
 	      (reg != -1) || !really_none)
-	    op_bad = _("Syntax error in direct register mode.");
+	    op_bad = "Syntax error in direct register mode.";
 	  else if (ndx != -1)
-	    op_bad = _("You can't index a register in direct register mode.");
+	    op_bad = "You can't index a register in direct register mode.";
 	  else if (imreg == SP_REG && access == 'r')
 	    op_bad =
-	      _("SP can't be the source operand with direct register addressing.");
+	      "SP can't be the source operand with direct register addressing.";
 	  else if (access == 'a')
-	    op_bad = _("Can't take the address of a register.");
+	    op_bad = "Can't take the address of a register.";
 	  else if (access == 'b')
-	    op_bad = _("Direct Register can't be used in a branch.");
+	    op_bad = "Direct Register can't be used in a branch.";
 	  else if (width == 'q' && ((imreg % 2) || (imreg > 13)))
-	    op_bad = _("For quad access, the register must be even and < 14.");
+	    op_bad = "For quad access, the register must be even and < 14.";
 	  else if (call_width)
-	    op_bad = _("You can't cast a direct register.");
+	    op_bad = "You can't cast a direct register.";
 
 	  if (*op_bad == '\0')
 	    {
 	      /* No errors, check for warnings */
 	      if (width == 'q' && imreg == 12)
-		as_warn (_("Using reg 14 for quadwords can tromp the FP register."));
+		as_warn ("Using reg 14 for quadwords can tromp the FP register.");
 
 	      reg = imreg;
 	    }
@@ -1337,49 +1347,49 @@ tip_op (optex, topP)
 	  /* -(SP) */
 	  mode = TAHOE_AUTO_DEC;
 	  if (deferred || immediate || !really_none)
-	    op_bad = _("Syntax error in auto-dec mode.");
+	    op_bad = "Syntax error in auto-dec mode.";
 	  else if (ndx != -1)
-	    op_bad = _("You can't have an index auto dec mode.");
+	    op_bad = "You can't have an index auto dec mode.";
 	  else if (access == 'r')
-	    op_bad = _("Auto dec mode cant be used for reading.");
+	    op_bad = "Auto dec mode cant be used for reading.";
 	  else if (reg != SP_REG)
-	    op_bad = _("Auto dec only works of the SP register.");
+	    op_bad = "Auto dec only works of the SP register.";
 	  else if (access == 'b')
-	    op_bad = _("Auto dec can't be used in a branch.");
+	    op_bad = "Auto dec can't be used in a branch.";
 	  else if (width == 'q')
-	    op_bad = _("Auto dec won't work with quadwords.");
+	    op_bad = "Auto dec won't work with quadwords.";
 
 	  /* We know: imm = -1, dec_inc != '-' */
 	}
       else if (dec_inc == '+')
 	{
 	  if (immediate || !really_none)
-	    op_bad = _("Syntax error in one of the auto-inc modes.");
+	    op_bad = "Syntax error in one of the auto-inc modes.";
 	  else if (deferred)
 	    {
 	      /* *(SP)+ */
 	      mode = TAHOE_AUTO_INC_DEFERRED;
 	      if (reg != SP_REG)
-		op_bad = _("Auto inc deferred only works of the SP register.");
+		op_bad = "Auto inc deferred only works of the SP register.";
 	      else if (ndx != -1)
-		op_bad = _("You can't have an index auto inc deferred mode.");
+		op_bad = "You can't have an index auto inc deferred mode.";
 	      else if (access == 'b')
-		op_bad = _("Auto inc can't be used in a branch.");
+		op_bad = "Auto inc can't be used in a branch.";
 	    }
 	  else
 	    {
 	      /* (SP)+ */
 	      mode = TAHOE_AUTO_INC;
 	      if (access == 'm' || access == 'w')
-		op_bad = _("You can't write to an auto inc register.");
+		op_bad = "You can't write to an auto inc register.";
 	      else if (reg != SP_REG)
-		op_bad = _("Auto inc only works of the SP register.");
+		op_bad = "Auto inc only works of the SP register.";
 	      else if (access == 'b')
-		op_bad = _("Auto inc can't be used in a branch.");
+		op_bad = "Auto inc can't be used in a branch.";
 	      else if (width == 'q')
-		op_bad = _("Auto inc won't work with quadwords.");
+		op_bad = "Auto inc won't work with quadwords.";
 	      else if (ndx != -1)
-		op_bad = _("You can't have an index in auto inc mode.");
+		op_bad = "You can't have an index in auto inc mode.";
 	    }
 
 	  /* We know: imm = -1, dec_inc == ' ' */
@@ -1387,13 +1397,13 @@ tip_op (optex, topP)
       else if (reg != -1)
 	{
 	  if ((ndx != -1) && (reg == SP_REG))
-	    op_bad = _("You can't index the sp register.");
+	    op_bad = "You can't index the sp register.";
 	  if (deferred)
 	    {
 	      /* *<disp>(Rn) */
 	      mode = TAHOE_REG_DISP_DEFERRED;
 	      if (immediate)
-		op_bad = _("Syntax error in register displaced mode.");
+		op_bad = "Syntax error in register displaced mode.";
 	    }
 	  else if (really_none)
 	    {
@@ -1412,7 +1422,7 @@ tip_op (optex, topP)
       else
 	{
 	  if (really_none)
-	    op_bad = _("An offest is needed for this operand.");
+	    op_bad = "An offest is needed for this operand.";
 	  if (deferred && immediate)
 	    {
 	      /* *$<ADDR> */
@@ -1424,10 +1434,10 @@ tip_op (optex, topP)
 	      /* $<disp> */
 	      mode = TAHOE_IMMEDIATE;
 	      if (ndx != -1)
-		op_bad = _("You can't index a register in immediate mode.");
+		op_bad = "You can't index a register in immediate mode.";
 	      if (access == 'a')
-		op_bad = _("Immediate access can't be used as an address.");
-	      /* ponder the wisdom of a cast because it doesn't do any good.  */
+		op_bad = "Immediate access can't be used as an address.";
+	      /* ponder the wisdom of a cast because it doesn't do any good. */
 	    }
 	  else if (deferred)
 	    {
@@ -1444,7 +1454,7 @@ tip_op (optex, topP)
 
   /*
    * At this point, all the errors we can do have be checked for.
-   * We can build the 'top'.  */
+   * We can build the 'top'. */
 
   topP->top_ndx = ndx;
   topP->top_reg = reg;
@@ -1470,29 +1480,29 @@ tip_op (optex, topP)
 
 static void
 tip (titP, instring)
-     struct tit *titP;		/* We build an exploded instruction here.  */
-     char *instring;		/* Text of a vax instruction: we modify.  */
+     struct tit *titP;		/* We build an exploded instruction here. */
+     char *instring;		/* Text of a vax instruction: we modify. */
 {
-  register struct tot_wot *twP = NULL;	/* How to bit-encode this opcode.  */
+  register struct tot_wot *twP = NULL;	/* How to bit-encode this opcode. */
   register char *p;		/* 1/skip whitespace.2/scan vot_how */
   register char *q;		/*  */
   register unsigned char count;	/* counts number of operands seen */
   register struct top *operandp;/* scan operands in struct tit */
   register char *alloperr = "";	/* error over all operands */
   register char c;		/* Remember char, (we clobber it
-				   with '\0' temporarily).  */
+				   with '\0' temporarily). */
   char *save_input_line_pointer;
 
   if (*instring == ' ')
-    ++instring;			/* Skip leading whitespace.  */
+    ++instring;			/* Skip leading whitespace. */
   for (p = instring; *p && *p != ' '; p++)
     ;				/* MUST end in end-of-string or
-				   exactly 1 space.  */
-  /* Scanned up to end of operation-code.  */
-  /* Operation-code is ended with whitespace.  */
+				   exactly 1 space. */
+  /* Scanned up to end of operation-code. */
+  /* Operation-code is ended with whitespace. */
   if (p == instring)
     {
-      titP->tit_error = _("No operator");
+      titP->tit_error = "No operator";
       count = 0;
       titP->tit_opcode = 0;
     }
@@ -1506,19 +1516,19 @@ tip (titP, instring)
      * We trust instring points to an op-name, with no whitespace.
      */
       twP = (struct tot_wot *) hash_find (op_hash, instring);
-      *p = c;			/* Restore char after op-code.  */
+      *p = c;			/* Restore char after op-code. */
       if (twP == 0)
 	{
-	  titP->tit_error = _("Unknown operator");
+	  titP->tit_error = "Unknown operator";
 	  count = 0;
 	  titP->tit_opcode = 0;
 	}
       else
 	{
 	  /*
-       * We found a match! So let's pick up as many operands as the
+       * We found a match! So lets pick up as many operands as the
        * instruction wants, and even gripe if there are too many.
-       * We expect comma to separate each operand.
+       * We expect comma to seperate each operand.
        * We let instring track the text, while p tracks a part of the
        * struct tot.
        */
@@ -1537,7 +1547,7 @@ tip (titP, instring)
 	 * past any one ',' that marks the end of this operand.
 	 */
 	      if (!p[1])
-		as_fatal (_("Compiler bug: ODD number of bytes in arg structure %s."),
+		as_fatal ("Compiler bug: ODD number of bytes in arg structure %s.",
 			  twP->args);
 	      else if (*instring)
 		{
@@ -1555,7 +1565,7 @@ tip (titP, instring)
 		  operandp->top_access = p[0];
 		  operandp->top_width = p[1];
 		  tip_op (instring - 1, operandp);
-		  *q = c;	/* Restore input text.  */
+		  *q = c;	/* Restore input text. */
 		  if (*(operandp->top_error))
 		    {
 		      alloperr = operandp->top_error;
@@ -1564,56 +1574,56 @@ tip (titP, instring)
 		  count++;	/*  won another argument, may have an operr */
 		}
 	      else
-		alloperr = _("Not enough operands");
+		alloperr = "Not enough operands";
 	    }
-	  /* Restore the pointer.  */
+	  /* Restore the pointer. */
 	  input_line_pointer = save_input_line_pointer;
 
 	  if (!*alloperr)
 	    {
 	      if (*instring == ' ')
-		instring++;	/* Skip whitespace.  */
+		instring++;	/* Skip whitespace. */
 	      if (*instring)
-		alloperr = _("Too many operands");
+		alloperr = "Too many operands";
 	    }
 	  titP->tit_error = alloperr;
 	}
     }
 
-  titP->tit_opcode = twP->code;	/* The op-code.  */
+  titP->tit_opcode = twP->code;	/* The op-code. */
   titP->tit_operands = count;
 }				/* tip */
 
 /* md_assemble() emit frags for 1 instruction */
 void
 md_assemble (instruction_string)
-     char *instruction_string;	/* A string: assemble 1 instruction.  */
+     char *instruction_string;	/* A string: assemble 1 instruction. */
 {
   char *p;
-  register struct top *operandP;/* An operand. Scans all operands.  */
-  /*  char c_save;	fixme: remove this line *//* What used to live after an expression.  */
-  /*  struct frag *fragP;	fixme: remove this line *//* Fragment of code we just made.  */
+  register struct top *operandP;/* An operand. Scans all operands. */
+  /*  char c_save;	fixme: remove this line *//* What used to live after an expression. */
+  /*  struct frag *fragP;	fixme: remove this line *//* Fragment of code we just made. */
   /*  register struct top *end_operandP; fixme: remove this line *//* -> slot just after last operand
-					Limit of the for (each operand).  */
+					Limit of the for (each operand). */
   register expressionS *expP;	/* -> expression values for this operand */
 
-  /* These refer to an instruction operand expression.  */
+  /* These refer to an instruction operand expression. */
   segT to_seg;			/* Target segment of the address.	 */
 
   register valueT this_add_number;
-  register symbolS *this_add_symbol;	/* +ve (minuend) symbol.  */
+  register struct symbol *this_add_symbol;	/* +ve (minuend) symbol. */
 
-  /*  tahoe_opcodeT opcode_as_number; fixme: remove this line *//* The opcode as a number.  */
-  char *opcodeP;		/* Where it is in a frag.  */
-  /*  char *opmodeP;	fixme: remove this line *//* Where opcode type is, in a frag.  */
+  /*  tahoe_opcodeT opcode_as_number; fixme: remove this line *//* The opcode as a number. */
+  char *opcodeP;		/* Where it is in a frag. */
+  /*  char *opmodeP;	fixme: remove this line *//* Where opcode type is, in a frag. */
 
   int dispsize;			/* From top_dispsize: tahoe_operand_width
 				   (in bytes) */
   int is_undefined;		/* 1 if operand expression's
-				   segment not known yet.  */
+				   segment not known yet. */
   int pc_rel;			/* Is this operand pc relative? */
 
-  /* Decode the operand.  */
+  /* Decode the operand. */
   tip (&t, instruction_string);
 
   /*
@@ -1625,16 +1635,16 @@ md_assemble (instruction_string)
    */
   if (*t.tit_error)
     {
-      as_warn (_("Ignoring statement due to \"%s\""), t.tit_error);
+      as_warn ("Ignoring statement due to \"%s\"", t.tit_error);
     }
   else
     {
       /* We saw no errors in any operands - try to make frag(s) */
-      /* Emit op-code.  */
-      /* Remember where it is, in case we want to modify the op-code later.  */
+      /* Emit op-code. */
+      /* Remember where it is, in case we want to modify the op-code later. */
       opcodeP = frag_more (1);
       *opcodeP = t.tit_opcode;
-      /* Now do each operand.  */
+      /* Now do each operand. */
       for (operandP = t.tit_operand;
 	   operandP < t.tit_operand + t.tit_operands;
 	   operandP++)
@@ -1647,7 +1657,7 @@ md_assemble (instruction_string)
 	      FRAG_APPEND_1_CHAR (0x40 + operandP->top_ndx);
 	    }			/* if(top_ndx>=0) */
 
-	  /* Here to make main operand frag(s).  */
+	  /* Here to make main operand frag(s). */
 	  this_add_number = expP->X_add_number;
 	  this_add_symbol = expP->X_add_symbol;
 	  to_seg = operandP->seg_of_operand;
@@ -1657,22 +1667,22 @@ md_assemble (instruction_string)
 		to_seg == SEG_TEXT || \
 		to_seg == SEG_BSS);
 	  is_undefined = (to_seg == SEG_UNKNOWN);
-	  /* Do we know how big this operand is? */
+	  /* Do we know how big this opperand is? */
 	  dispsize = operandP->top_dispsize;
 	  pc_rel = 0;
-	  /* Deal with the branch possibilities. (Note, this doesn't include
+	  /* Deal with the branch possabilities. (Note, this doesn't include
 	 jumps.)*/
 	  if (operandP->top_access == 'b')
 	    {
 	      /* Branches must be expressions. A psuedo branch can also jump to
-	   an absolute address.  */
+	   an absolute address. */
 	      if (to_seg == now_seg || is_undefined)
 		{
-		  /* If is_undefined, then it might BECOME now_seg by relax time.  */
+		  /* If is_undefined, then it might BECOME now_seg by relax time. */
 		  if (dispsize)
 		    {
 		      /* I know how big the branch is supposed to be (it's a normal
-	       branch), so I set up the frag, and let GAS do the rest.  */
+	       branch), so I set up the frag, and let GAS do the rest. */
 		      p = frag_more (dispsize);
 		      fix_new (frag_now, p - frag_now->fr_literal,
 			       this_add_symbol, this_add_number,
@@ -1683,7 +1693,7 @@ md_assemble (instruction_string)
 		    {
 		      /* (to_seg==now_seg || to_seg == SEG_UNKNOWN) && dispsize==0 */
 		      /* If we don't know how big it is, then its a synthetic branch,
-	       so we set up a simple relax state.  */
+	       so we set up a simple relax state. */
 		      switch (operandP->top_width)
 			{
 			case TAHOE_WIDTH_CONDITIONAL_JUMP:
@@ -1698,13 +1708,13 @@ md_assemble (instruction_string)
 			  break;
 			case TAHOE_WIDTH_ALWAYS_JUMP:
 			  /* Simple (unconditional) jump. I may have to convert this to
-		 a word branch, or an absolute jump.  */
+		 a word branch, or an absolute jump. */
 			  frag_var (rs_machine_dependent, 5, 1,
 				    ENCODE_RELAX (STATE_ALWAYS_BRANCH,
 				    is_undefined ? STATE_UNDF : STATE_BYTE),
 				 this_add_symbol, this_add_number, opcodeP);
 			  break;
-			  /* The smallest size for the next 2 cases is word.  */
+			  /* The smallest size for the next 2 cases is word. */
 			case TAHOE_WIDTH_BIG_REV_JUMP:
 			  frag_var (rs_machine_dependent, 8, 2,
 				    ENCODE_RELAX (STATE_BIG_REV_BRANCH,
@@ -1720,7 +1730,7 @@ md_assemble (instruction_string)
 				    opcodeP);
 			  break;
 			default:
-			  as_fatal (_("Compliler bug: Got a case (%d) I wasn't expecting."),
+			  as_fatal ("Compliler bug: Got a case (%d) I wasn't expecting.",
 				    operandP->top_width);
 			}
 		    }
@@ -1729,19 +1739,19 @@ md_assemble (instruction_string)
 		{
 		  /* to_seg != now_seg && to_seg != seg_unknown (still in branch)
 	     In other words, I'm jumping out of my segment so extend the
-	     branches to jumps, and let GAS fix them.  */
+	     branches to jumps, and let GAS fix them. */
 
 		  /* These are "branches" what will always be branches around a jump
-	     to the correct address in real life.
+	     to the correct addresss in real life.
 	     If to_seg is SEG_ABSOLUTE, just encode the branch in,
-	     else let GAS fix the address.  */
+	     else let GAS fix the address. */
 
 		  switch (operandP->top_width)
 		    {
 		      /* The theory:
 	       For SEG_ABSOLUTE, then mode is ABSOLUTE_ADDR, jump
-	       to that address (not pc_rel).
-	       For other segs, address is a long word PC rel jump.  */
+	       to that addresss (not pc_rel).
+	       For other segs, address is a long word PC rel jump. */
 		    case TAHOE_WIDTH_CONDITIONAL_JUMP:
 		      /* b<cond> */
 		      /* To reverse the condition in a TAHOE branch,
@@ -1814,10 +1824,10 @@ md_assemble (instruction_string)
 		      break;
 		    case 'b':
 		    case 'w':
-		      as_warn (_("Real branch displacements must be expressions."));
+		      as_warn ("Real branch displacements must be expressions.");
 		      break;
 		    default:
-		      as_fatal (_("Complier error: I got an unknown synthetic branch :%c"),
+		      as_fatal ("Complier error: I got an unknown synthetic branch :%c",
 				operandP->top_width);
 		      break;
 		    }
@@ -1825,11 +1835,11 @@ md_assemble (instruction_string)
 	    }
 	  else
 	    {
-	      /* It ain't a branch operand.  */
+	      /* It ain't a branch operand. */
 	      switch (operandP->top_mode)
 		{
 		  /* Auto-foo access, only works for one reg (SP)
-	     so the only thing needed is the mode.  */
+	     so the only thing needed is the mode. */
 		case TAHOE_AUTO_DEC:
 		case TAHOE_AUTO_INC:
 		case TAHOE_AUTO_INC_DEFERRED:
@@ -1844,7 +1854,7 @@ md_assemble (instruction_string)
 		  break;
 
 		  /* An absolute address. It's size is always 5 bytes.
-	     (mode_type + 4 byte address).  */
+	     (mode_type + 4 byte address). */
 		case TAHOE_ABSOLUTE_ADDR:
 		  know ((this_add_symbol == NULL));
 		  p = frag_more (5);
@@ -1853,7 +1863,7 @@ md_assemble (instruction_string)
 		  break;
 
 		  /* Immediate data. If the size isn't known, then it's an address
-	     + and offset, which is 4 bytes big.  */
+	     + and offset, which is 4 bytes big. */
 		case TAHOE_IMMEDIATE:
 		  if (this_add_symbol != NULL)
 		    {
@@ -1865,7 +1875,7 @@ md_assemble (instruction_string)
 		    }
 		  else
 		    {
-		      /* It's an integer, and I know it's size.  */
+		      /* It's a integer, and I know it's size. */
 		      if ((unsigned) this_add_number < 0x40)
 			{
 			  /* Will it fit in a literal? */
@@ -1896,7 +1906,7 @@ md_assemble (instruction_string)
 		  /* Distance from the PC. If the size isn't known, we have to relax
 	     into it. The difference between this and disp(sp) is that
 	     this offset is pc_rel, and disp(sp) isn't.
-	     Note the drop through code.  */
+	     Note the drop through code. */
 
 		case TAHOE_DISPLACED_RELATIVE:
 		case TAHOE_DISP_REL_DEFERRED:
@@ -1905,20 +1915,20 @@ md_assemble (instruction_string)
 
 		  /* Register, plus a displacement mode. Save the register number,
 	     and weather its deffered or not, and relax the size if it isn't
-	     known.  */
+	     known. */
 		case TAHOE_REG_DISP:
 		case TAHOE_REG_DISP_DEFERRED:
 		  if (operandP->top_mode == TAHOE_DISP_REL_DEFERRED ||
 		      operandP->top_mode == TAHOE_REG_DISP_DEFERRED)
 		    operandP->top_reg += 0x10;	/* deffered mode is always 0x10 higher
-					  than it's non-deffered sibling.  */
+					  than it's non-deffered sibling. */
 
 		  /* Is this a value out of this segment?
 	     The first part of this conditional is a cludge to make gas
 	     produce the same output as 'as' when there is a lable, in
-	     the current segment, displacing a register. It's strange,
+	     the current segment, displaceing a register. It's strange,
 	     and no one in their right mind would do it, but it's easy
-	     to cludge.  */
+	     to cludge. */
 		  if ((dispsize == 0 && !pc_rel) ||
 		      (to_seg != now_seg && !is_undefined && to_seg != SEG_ABSOLUTE))
 		    dispsize = 4;
@@ -1938,7 +1948,7 @@ md_assemble (instruction_string)
 		    }
 		  else
 		    {
-		      /* Either this is an abs, or a cast.  */
+		      /* Either this is an abs, or a cast. */
 		      p = frag_more (dispsize + 1);
 		      switch (dispsize)
 			{
@@ -1958,15 +1968,17 @@ md_assemble (instruction_string)
 		    }
 		  break;
 		default:
-		  as_fatal (_("Barf, bad mode %x\n"), operandP->top_mode);
+		  as_fatal ("Barf, bad mode %x\n", operandP->top_mode);
 		}
 	    }
 	}			/* for(operandP) */
     }				/* if(!need_pass_2 && !goofed) */
 }				/* tahoe_assemble() */
 
-/* We have no need to default values of symbols.  */
 
+/* We have no need to default values of symbols. */
+
+/* ARGSUSED */
 symbolS *
 md_undefined_symbol (name)
      char *name;
@@ -1974,7 +1986,7 @@ md_undefined_symbol (name)
   return 0;
 }				/* md_undefined_symbol() */
 
-/* Round up a section size to the appropriate boundary.  */
+/* Round up a section size to the appropriate boundary. */
 valueT
 md_section_align (segment, size)
      segT segment;
@@ -1987,7 +1999,7 @@ md_section_align (segment, size)
    On the sparc, they're relative to the address of the offset, plus
    its size.  This gets us to the following instruction.
    (??? Is this right?  FIXME-SOON) */
-long
+long 
 md_pcrel_from (fixP)
      fixS *fixP;
 {
@@ -2003,7 +2015,7 @@ md_pcrel_from (fixP)
 		 : 0))) + fixP->fx_where + fixP->fx_frag->fr_address);
 }				/* md_pcrel_from() */
 
-int
+int 
 tc_is_pcrel (fixP)
      fixS *fixP;
 {
@@ -2011,3 +2023,5 @@ tc_is_pcrel (fixP)
   know (0);
   return (0);
 }				/* tc_is_pcrel() */
+
+/* end of tc-tahoe.c */

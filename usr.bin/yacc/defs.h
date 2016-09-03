@@ -1,4 +1,4 @@
-/*	$OpenBSD: defs.h,v 1.18 2014/12/02 15:56:22 millert Exp $	*/
+/*	$OpenBSD: defs.h,v 1.6 1999/08/04 18:31:25 millert Exp $	*/
 /*	$NetBSD: defs.h,v 1.6 1996/03/19 03:21:30 jtc Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,7 +43,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
+
 
 /*  machine-dependent definitions			*/
 /*  the following definitions are for the Tahoe		*/
@@ -125,6 +129,7 @@
 /*  character macros  */
 
 #define IS_IDENT(c)	(isalnum(c) || (c) == '_' || (c) == '.' || (c) == '$')
+#define	IS_OCTAL(c)	((c) >= '0' && (c) <= '7')
 #define	NUMERIC_VALUE(c)	((c) - '0')
 
 
@@ -136,72 +141,81 @@
 
 /*  storage allocation macros  */
 
+#define CALLOC(k,n)	(calloc((unsigned)(k),(unsigned)(n)))
+#define	FREE(x)		(free((char*)(x)))
+#define MALLOC(n)	(malloc((unsigned)(n)))
 #define	NEW(t)		((t*)allocate(sizeof(t)))
-#define	NEW2(n,t)	((t*)allocate((n)*sizeof(t)))
+#define	NEW2(n,t)	((t*)allocate((unsigned)((n)*sizeof(t))))
+#define REALLOC(p,n)	(realloc((char*)(p),(unsigned)(n)))
 
 
 /*  the structure of a symbol table entry  */
 
 typedef struct bucket bucket;
-struct bucket {
-	struct bucket *link;
-	struct bucket *next;
-	char *name;
-	char *tag;
-	short value;
-	short index;
-	short prec;
-	char class;
-	char assoc;
+struct bucket
+{
+    struct bucket *link;
+    struct bucket *next;
+    char *name;
+    char *tag;
+    short value;
+    short index;
+    short prec;
+    char class;
+    char assoc;
 };
 
 
 /*  the structure of the LR(0) state machine  */
 
 typedef struct core core;
-struct core {
-	struct core *next;
-	struct core *link;
-	short number;
-	short accessing_symbol;
-	short nitems;
-	short items[1];
+struct core
+{
+    struct core *next;
+    struct core *link;
+    short number;
+    short accessing_symbol;
+    short nitems;
+    short items[1];
 };
 
 
 /*  the structure used to record shifts  */
 
 typedef struct shifts shifts;
-struct shifts {
-	struct shifts *next;
-	short number;
-	short nshifts;
-	short shift[1];
+struct shifts
+{
+    struct shifts *next;
+    short number;
+    short nshifts;
+    short shift[1];
 };
 
 
 /*  the structure used to store reductions  */
 
 typedef struct reductions reductions;
-struct reductions {
-	struct reductions *next;
-	short number;
-	short nreds;
-	short rules[1];
+struct reductions
+{
+    struct reductions *next;
+    short number;
+    short nreds;
+    short rules[1];
 };
 
 
 /*  the structure used to represent parser actions  */
 
 typedef struct action action;
-struct action {
-	struct action *next;
-	short symbol;
-	short number;
-	short prec;
-	char action_code;
-	char assoc;
-	char suppressed;
+struct action
+{
+    struct action *next;
+    short symbol;
+    short number;
+    short prec;
+    char action_code;
+    char assoc;
+    char suppressed;
 };
 
 
@@ -299,68 +313,21 @@ extern short final_state;
 
 /* global functions */
 
-extern void *allocate(size_t);
-extern bucket *lookup(char *);
-extern bucket *make_bucket(char *);
-extern void set_first_derives(void);
-extern void closure(short *, int);
-extern void finalize_closure(void);
-
-extern __dead void fatal(char *);
-
-extern void reflexive_transitive_closure(unsigned *, int);
-extern __dead void done(int);
-
-extern __dead void no_space(void);
-extern __dead void open_error(char *);
-extern __dead void open_write_error(char *);
-extern __dead void unexpected_EOF(void);
-extern void print_pos(char *, char *);
-extern __dead void syntax_error(int, char *, char *);
-extern __dead void unterminated_comment(int, char *, char *);
-extern __dead void unterminated_string(int, char *, char *);
-extern __dead void unterminated_text(int, char *, char *);
-extern __dead void unterminated_union(int, char *, char *);
-extern __dead void over_unionized(char *);
-extern __dead void illegal_tag(int, char *, char *);
-extern __dead void illegal_character(char *);
-extern __dead void used_reserved(char *);
-extern __dead void tokenized_start(char *);
-extern void retyped_warning(char *);
-extern void reprec_warning(char *);
-extern void revalued_warning(char *);
-extern __dead void terminal_start(char *);
-extern void restarted_warning(void);
-extern __dead void no_grammar(void);
-extern __dead void terminal_lhs(int);
-extern void prec_redeclared(void);
-extern __dead void unterminated_action(int, char *, char *);
-extern void dollar_warning(int, int);
-extern __dead void dollar_error(int, char *, char *);
-extern __dead void untyped_lhs(void);
-extern __dead void untyped_rhs(int, char *);
-extern __dead void unknown_rhs(int);
-extern void default_action_warning(void);
-extern __dead void undefined_goal(char *);
-extern void undefined_symbol_warning(char *);
-
-extern void lalr(void);
-
-extern void reader(void);
-extern void lr0(void);
-extern void free_nullable(void);
-extern void free_derives(void);
-extern void make_parser(void);
-extern void verbose(void);
-extern void output(void);
-extern void free_parser(void);
-extern void write_section(char *[]);
-
-extern void create_symbol_table(void);
-extern void free_symbol_table(void);
-extern void free_symbols(void);
+extern char *allocate();
+extern bucket *lookup();
+extern bucket *make_bucket();
 
 
 /* system variables */
 
+extern int errno;
 extern char *__progname;
+
+
+/* system functions */
+
+extern void free();
+extern char *calloc();
+extern char *malloc();
+extern char *realloc();
+extern char *strcpy();

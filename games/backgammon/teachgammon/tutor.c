@@ -1,4 +1,4 @@
-/*	$OpenBSD: tutor.c,v 1.8 2016/01/08 13:40:05 tb Exp $	*/
+/*	$OpenBSD: tutor.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,13 +33,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)tutor.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: tutor.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 #include "tutor.h"
 
 static const char better[] = "That is a legal move, but there is a better one.\n";
 
 void
-tutor(void)
+tutor()
 {
 	int     i, j, k;
 	int     wrongans;
@@ -58,7 +70,8 @@ tutor(void)
 	while (1) {
 		if (!brdeq(test[i].brd, board)) {
 			wrongans++;
-			move(18, 0);
+			if (tflag && curr == 23)
+				curmove(18, 0);
 			if (wrongans >= 3) {
 				wrongans = 0;
 				text(*test[i].ans);
@@ -71,20 +84,23 @@ tutor(void)
 				for (j = 0; j < 19; j++)
 					k += (board[j] > 0 ? board[j] : 0);
 				*offopp = k - 30;  /* -15 at start */
-				moveplayers();
-				clrest();
+				if (tflag) {
+					refresh();
+					clrest();
+				}
 			} else {
-				addstr(better);
+				writel(better);
 				nexturn();
 				movback(mvlim);
-				moveplayers();
-				clrest();
-				getyx(stdscr, j, k);
-				if (j == 19) {
+				if (tflag) {
+					refresh();
+					clrest();
+				}
+				if ((!tflag) || curr == 19) {
 					proll();
-					addch('\t');
+					writec('\t');
 				} else
-					move(j > 19 ? j - 2 : j + 4, 25);
+					curmove(curr > 19 ? curr - 2 : curr + 4, 25);
 				getmove();
 				if (cturn == 0)
 					leave();
@@ -92,9 +108,13 @@ tutor(void)
 			}
 		} else
 			wrongans = 0;
-		move(18, 0);
+		if (tflag)
+			curmove(18, 0);
 		text(*test[i].com);
-		move(19, 0);
+		if (!tflag)
+			writec('\n');
+		else
+			curmove(19, 0);
 		if (i == maxmoves)
 			break;
 		D0 = test[i].roll1;
@@ -111,8 +131,9 @@ tutor(void)
 		if (mvlim)
 			for (j = 0; j < mvlim; j++)
 				if (makmove(j))
-					addstr("AARGH!!!\n");
-		moveplayers();
+					writel("AARGH!!!\n");
+		if (tflag)
+			refresh();
 		nexturn();
 		D0 = test[i].new1;
 		D1 = test[i].new2;
@@ -120,11 +141,13 @@ tutor(void)
 		i++;
 		mvlim = movallow();
 		if (mvlim) {
-			clrest();
+			if (tflag)
+				clrest();
 			proll();
-			addch('\t');
+			writec('\t');
 			getmove();
-			moveplayers();
+			if (tflag)
+				refresh();
 			if (cturn == 0)
 				leave();
 		}
@@ -133,16 +156,17 @@ tutor(void)
 }
 
 void
-clrest(void)
+clrest()
 {
 	int     r, c, j;
 
-	getyx(stdscr, r, c);
+	r = curr;
+	c = curc;
 	for (j = r + 1; j < 24; j++) {
-		move(j, 0);
-		clrtoeol();
+		curmove(j, 0);
+		cline();
 	}
-	move(r, c);
+	curmove(r, c);
 }
 
 int

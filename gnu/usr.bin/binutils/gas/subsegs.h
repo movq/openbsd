@@ -1,6 +1,5 @@
 /* subsegs.h -> subsegs.c
-   Copyright 1987, 1992, 1993, 1994, 1995, 1996, 1998, 2000
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
  * For every sub-segment the user mentions in the ASsembler program,
@@ -45,7 +43,7 @@ struct frchain			/* control building of a frag chain */
   struct frag *frch_root;	/* 1st struct frag in chain, or NULL */
   struct frag *frch_last;	/* last struct frag in chain, or NULL */
   struct frchain *frch_next;	/* next in chain of struct frchain-s */
-  segT frch_seg;		/* SEG_TEXT or SEG_DATA.  */
+  segT frch_seg;		/* SEG_TEXT or SEG_DATA. */
   subsegT frch_subseg;		/* subsegment number of this chain */
 #ifdef BFD_ASSEMBLER
   fixS *fix_root;		/* Root of fixups for this subsegment.  */
@@ -61,10 +59,12 @@ typedef struct frchain frchainS;
 extern frchainS *frchain_root;
 
 /* Frchain we are assembling into now.  That is, the current segment's
-   frag chain, even if it contains no (complete) frags.  */
+   frag chain, even if it contains no (complete) frags. */
 extern frchainS *frchain_now;
 
-typedef struct segment_info_struct {
+
+typedef struct
+{
   frchainS *frchainP;
   unsigned int hadone : 1;
 
@@ -102,12 +102,13 @@ typedef struct segment_info_struct {
   symbolS *sym;
 #endif
 
-  union {
-    /* Current size of section holding stabs strings.  */
-    unsigned long stab_string_size;
-    /* Initial frag for ELF.  */
-    char *p;
-  }
+  union
+    {
+      /* Current size of section holding stabs strings.  */
+      unsigned long stab_string_size;
+      /* Initial frag for ELF.  */
+      char *p;
+    }
   stabu;
 
 #ifdef NEED_LITERAL_POOL
@@ -121,8 +122,8 @@ typedef struct segment_info_struct {
 
 #ifdef BFD_ASSEMBLER
 
-extern segment_info_type *seg_info (segT);
-extern symbolS *section_symbol (segT);
+extern segment_info_type *seg_info PARAMS ((segT));
+extern symbolS *section_symbol PARAMS ((segT));
 
 #else /* ! BFD_ASSEMBLER */
 
@@ -152,4 +153,6 @@ struct seg_info_trash {
 
 #endif /* ! BFD_ASSEMBLER */
 
-extern void subsegs_print_statistics (FILE *);
+extern void subsegs_print_statistics PARAMS ((FILE *));
+
+/* end of subsegs.h */

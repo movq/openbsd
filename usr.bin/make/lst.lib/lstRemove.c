@@ -1,4 +1,4 @@
-/*	$OpenBSD: lstRemove.c,v 1.19 2010/07/19 19:46:44 espie Exp $	*/
+/*	$OpenBSD: lstRemove.c,v 1.4 1998/12/05 00:06:32 espie Exp $	*/
 /*	$NetBSD: lstRemove.c,v 1.5 1996/11/06 17:59:50 christos Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,48 +37,102 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lstRemove.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: lstRemove.c,v 1.4 1998/12/05 00:06:32 espie Exp $";
+#endif
+#endif /* not lint */
+
 /*-
  * LstRemove.c --
  *	Remove an element from a list
  */
 
 #include	"lstInt.h"
-#include	<stdlib.h>
-
 
 /*-
  *-----------------------------------------------------------------------
  * Lst_Remove --
  *	Remove the given node from the given list.
  *
+ * Results:
+ *	SUCCESS or FAILURE.
+ *
  * Side Effects:
- *	The list's firstPtr will be set to NULL if ln is the last
+ *	The list's firstPtr will be set to NilListNode if ln is the last
  *	node on the list. firsPtr and lastPtr will be altered if ln is
  *	either the first or last node, respectively, on the list.
  *
  *-----------------------------------------------------------------------
  */
-void
-Lst_Remove(Lst l, LstNode ln)
+ReturnStatus
+Lst_Remove (l, ln)
+    Lst	    	  	l;
+    LstNode	  	ln;
 {
-	if (ln == NULL)
-		return;
+    register List 	list = (List) l;
+    register ListNode	lNode = (ListNode) ln;
 
-	/* unlink it from the list */
-	if (ln->nextPtr != NULL)
-		ln->nextPtr->prevPtr = ln->prevPtr;
-	if (ln->prevPtr != NULL)
-		ln->prevPtr->nextPtr = ln->nextPtr;
+    if (!LstValid (l) ||
+	!LstNodeValid (ln, l)) {
+	    return (FAILURE);
+    }
 
-	/* if either the firstPtr or lastPtr of the list point to this node,
-	 * adjust them accordingly */
-	if (l->firstPtr == ln)
-		l->firstPtr = ln->nextPtr;
-	if (l->lastPtr == ln)
-		l->lastPtr = ln->prevPtr;
+    /*
+     * unlink it from the list
+     */
+    if (lNode->nextPtr != NilListNode) {
+	lNode->nextPtr->prevPtr = lNode->prevPtr;
+    }
+    if (lNode->prevPtr != NilListNode) {
+	lNode->prevPtr->nextPtr = lNode->nextPtr;
+    }
 
-	/* note that the datum is unmolested. The caller must free it as
-	 * necessary and as expected.  */
-	free(ln);
+    /*
+     * if either the firstPtr or lastPtr of the list point to this node,
+     * adjust them accordingly
+     */
+    if (list->firstPtr == lNode) {
+	list->firstPtr = lNode->nextPtr;
+    }
+    if (list->lastPtr == lNode) {
+	list->lastPtr = lNode->prevPtr;
+    }
+
+    /*
+     * Sequential access stuff. If the node we're removing is the current
+     * node in the list, reset the current node to the previous one. If the
+     * previous one was non-existent (prevPtr == NilListNode), we set the
+     * end to be Unknown, since it is.
+     */
+    if (list->isOpen && (list->curPtr == lNode)) {
+	list->curPtr = list->prevPtr;
+	if (list->curPtr == NilListNode) {
+	    list->atEnd = Unknown;
+	}
+    }
+
+    /*
+     * the only way firstPtr can still point to ln is if ln is the last
+     * node on the list (the list is circular, so lNode->nextptr == lNode in
+     * this case). The list is, therefore, empty and is marked as such
+     */
+    if (list->firstPtr == lNode) {
+	list->firstPtr = NilListNode;
+    }
+
+    /*
+     * note that the datum is unmolested. The caller must free it as
+     * necessary and as expected.
+     */
+    if (lNode->useCount == 0) {
+	free ((Address)ln);
+    } else {
+	lNode->flags |= LN_DELETED;
+    }
+
+    return (SUCCESS);
 }
 

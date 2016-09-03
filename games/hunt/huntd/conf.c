@@ -1,16 +1,17 @@
-/*	$OpenBSD: conf.c,v 1.11 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: conf.c,v 1.3 1999/08/30 23:35:50 d Exp $	*/
 /* David Leonard <d@openbsd.org>, 1999. Public domain. */
 
-#include <sys/select.h>
-#include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
-#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <dirent.h>
+#include <stdlib.h>
+#include <ctype.h>
 #include <syslog.h>
+#include <errno.h>
 
 #include "hunt.h"
 #include "server.h"
+#include "conf.h"
 
 /* Configuration option variables for the server: */
 
@@ -117,11 +118,15 @@ static struct kwvar keywords[] = {
 	{ "mindshot",		&conf_mindshot,		Vint },
 	{ "simstep",		&conf_simstep,		Vint },
 
-	{ NULL, NULL, Vint }
+	{ NULL }
 };
 
 static char *
-parse_int(char *p, struct kwvar *kvp, const char *fnm, int *linep)
+parse_int(p, kvp, fnm, linep)
+	char *p;
+	struct kwvar *kvp;
+	const char *fnm;
+	int *linep;
 {
 	char *valuestart, *digitstart;
 	char savec;
@@ -132,10 +137,9 @@ parse_int(char *p, struct kwvar *kvp, const char *fnm, int *linep)
 	if (*p == '-') 
 		p++;
 	digitstart = p;
-	while (isdigit((unsigned char)*p))
+	while (*p && isdigit(*p))
 		p++;
-	if ((*p == '\0' || isspace((unsigned char)*p) || *p == '#') &&
-	    digitstart != p) {
+	if ((*p == '\0' || isspace(*p) || *p == '#') && digitstart != p) {
 		savec = *p;
 		*p = '\0';
 		newval = atoi(valuestart);
@@ -152,7 +156,11 @@ parse_int(char *p, struct kwvar *kvp, const char *fnm, int *linep)
 }
 
 static char *
-parse_value(char *p, struct kwvar *kvp, const char *fnm, int *linep)
+parse_value(p, kvp, fnm, linep)
+	char *p;
+	struct kwvar *kvp;
+	const char *fnm;
+	int *linep;
 {
 
 	switch (kvp->type) {
@@ -168,7 +176,10 @@ parse_value(char *p, struct kwvar *kvp, const char *fnm, int *linep)
 }
 
 static void
-parse_line(char *buf, char *fnm, int *line)
+parse_line(buf, fnm, line)
+	char *buf;
+	char *fnm;
+	int *line;
 {
 	char *p;
 	char *word;
@@ -179,7 +190,7 @@ parse_line(char *buf, char *fnm, int *line)
 	p = buf;
 
 	/* skip leading white */
-	while (isspace((unsigned char)*p))
+	while (*p && isspace(*p))
 		p++;
 	/* allow blank lines and comment lines */
 	if (*p == '\0' || *p == '#')
@@ -187,9 +198,9 @@ parse_line(char *buf, char *fnm, int *line)
 
 	/* walk to the end of the word: */
 	word = p;
-	if (isalpha((unsigned char)*p) || *p == '_') {
+	if (*p && (isalpha(*p) || *p == '_')) {
 		p++;
-		while (isalpha((unsigned char)*p) || isdigit((unsigned char)*p) || *p == '_')
+		while (*p && (isalpha(*p) || isdigit(*p) || *p == '_'))
 			p++;
 	}
 	endword = p;
@@ -216,16 +227,16 @@ parse_line(char *buf, char *fnm, int *line)
 	}
 
 	/* skip whitespace */
-	while (isspace((unsigned char)*p))
+	while (*p && isspace(*p))
 		p++;
 
 	if (*p++ != '=') {
-		logx(LOG_ERR, "%s:%d: expected `=' after %s", fnm, *line, word);
+		logx(LOG_ERR, "%s:%d: expected `='", fnm, *line);
 		return;
 	}
 
 	/* skip whitespace */
-	while (isspace((unsigned char)*p))
+	while (*p && isspace(*p))
 		p++;
 
 	/* parse the value */
@@ -234,7 +245,7 @@ parse_line(char *buf, char *fnm, int *line)
 		return;
 
 	/* skip trailing whitespace */
-	while (isspace((unsigned char)*p))
+	while (*p && isspace(*p))
 		p++;
 
 	if (*p && *p != '#') {
@@ -245,7 +256,9 @@ parse_line(char *buf, char *fnm, int *line)
 
 
 static void
-load_config(FILE *f, char *fnm)
+load_config(f, fnm)
+	FILE *	f;
+	char *	fnm;
 {
 	char buf[BUFSIZ];
 	size_t len;
@@ -272,7 +285,7 @@ load_config(FILE *f, char *fnm)
  * overwrite earlier values
  */
 void
-config(void)
+config()
 {
 	char *home;
 	char nm[MAXNAMLEN + 1];
@@ -296,17 +309,6 @@ config(void)
 			fclose(f);
 		} 
 		else if (errno != ENOENT)
-			logit(LOG_WARNING, "%s", nm);
+			log(LOG_WARNING, "%s", nm);
 	}
-}
-
-/*
- * Parse a single configuration argument given on the command line
- */
-void
-config_arg( char *arg)
-{
-	int line = 0;
-
-	parse_line(arg, "*Initialisation*", &line);
 }

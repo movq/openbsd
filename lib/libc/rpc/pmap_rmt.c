@@ -1,40 +1,42 @@
-/*	$OpenBSD: pmap_rmt.c,v 1.34 2015/12/28 22:08:18 mmcc Exp $ */
-
 /*
- * Copyright (c) 2010, Oracle America, Inc.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the "Oracle America, Inc." nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *   COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- *   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- *   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
+ * unrestricted use provided that this legend is included on all tape
+ * media and as a part of the software program in whole or part.  Users
+ * may copy or modify Sun RPC without charge, but are not authorized
+ * to license or distribute it to anyone else except as part of a product or
+ * program developed by the user.
+ * 
+ * SUN RPC IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING THE
+ * WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
+ * 
+ * Sun RPC is provided with no support and without any obligation on the
+ * part of Sun Microsystems, Inc. to assist in its use, correction,
+ * modification or enhancement.
+ * 
+ * SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+ * INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY SUN RPC
+ * OR ANY PART THEREOF.
+ * 
+ * In no event will Sun Microsystems, Inc. be liable for any lost revenue
+ * or profits or other special, indirect and consequential damages, even if
+ * Sun has been advised of the possibility of such damages.
+ * 
+ * Sun Microsystems, Inc.
+ * 2550 Garcia Avenue
+ * Mountain View, California  94043
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: pmap_rmt.c,v 1.16 1998/08/14 21:39:37 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * pmap_rmt.c
  * Client interface to pmap rpc service.
  * remote call and broadcast service
+ *
+ * Copyright (C) 1984, Sun Microsystems, Inc.
  */
 
 #include <rpc/rpc.h>
@@ -50,7 +52,6 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
-#include <ifaddrs.h>
 #define MAX_BROADCAST_SIZE 1400
 
 static struct timeval timeout = { 3, 0 };
@@ -64,19 +65,23 @@ static struct timeval timeout = { 3, 0 };
  * programs to do a lookup and call in one step.
 */
 enum clnt_stat
-pmap_rmtcall(struct sockaddr_in *addr, u_long prog, u_long vers, u_long proc,
-    xdrproc_t xdrargs, caddr_t argsp, xdrproc_t xdrres, caddr_t resp,
-    struct timeval tout, u_long *port_ptr)
+pmap_rmtcall(addr, prog, vers, proc, xdrargs, argsp, xdrres, resp, tout, port_ptr)
+	struct sockaddr_in *addr;
+	u_long prog, vers, proc;
+	xdrproc_t xdrargs, xdrres;
+	caddr_t argsp, resp;
+	struct timeval tout;
+	u_long *port_ptr;
 {
 	int sock = -1;
-	CLIENT *client;
+	register CLIENT *client;
 	struct rmtcallargs a;
 	struct rmtcallres r;
 	enum clnt_stat stat;
 
 	addr->sin_port = htons(PMAPPORT);
 	client = clntudp_create(addr, PMAPPROG, PMAPVERS, timeout, &sock);
-	if (client != NULL) {
+	if (client != (CLIENT *)NULL) {
 		a.prog = prog;
 		a.vers = vers;
 		a.proc = proc;
@@ -91,6 +96,8 @@ pmap_rmtcall(struct sockaddr_in *addr, u_long prog, u_long vers, u_long proc,
 	} else {
 		stat = RPC_FAILED;
 	}
+	if (sock != -1)
+		(void)close(sock);
 	addr->sin_port = 0;
 	return (stat);
 }
@@ -101,7 +108,9 @@ pmap_rmtcall(struct sockaddr_in *addr, u_long prog, u_long vers, u_long proc,
  * written for XDR_ENCODE direction only
  */
 bool_t
-xdr_rmtcall_args(XDR *xdrs, struct rmtcallargs *cap)
+xdr_rmtcall_args(xdrs, cap)
+	register XDR *xdrs;
+	register struct rmtcallargs *cap;
 {
 	u_int lenposition, argposition, position;
 
@@ -124,14 +133,15 @@ xdr_rmtcall_args(XDR *xdrs, struct rmtcallargs *cap)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_rmtcall_args);
 
 /*
  * XDR remote call results
  * written for XDR_DECODE direction only
  */
 bool_t
-xdr_rmtcallres(XDR *xdrs, struct rmtcallres *crp)
+xdr_rmtcallres(xdrs, crp)
+	register XDR *xdrs;
+	register struct rmtcallres *crp;
 {
 	caddr_t port_ptr;
 
@@ -143,7 +153,6 @@ xdr_rmtcallres(XDR *xdrs, struct rmtcallres *crp)
 	}
 	return (FALSE);
 }
-DEF_WEAK(xdr_rmtcallres);
 
 
 /*
@@ -151,119 +160,149 @@ DEF_WEAK(xdr_rmtcallres);
  * Someday a large, complicated system will replace these trivial 
  * routines which only support udp/ip .
  */
+
 static int
-newgetbroadcastnets(struct in_addr **addrsp)
+newgetbroadcastnets(addrsp, sock)
+	struct in_addr **addrsp;
+	int sock;  /* any valid socket will do */
 {
-	struct ifaddrs *ifap, *ifa;
+	char *inbuf = NULL, *ninbuf;
+	struct ifconf ifc;
+	struct ifreq ifreq, *ifr;
 	struct sockaddr_in *sin;
+	char *cp, *cplim;
+	int inbuflen = 256;
 	struct in_addr *addrs;
-	int i = 0, n = 0;
+	int i = 0;
 
-	if (getifaddrs(&ifap) != 0)
-		return 0;
-
-	for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-		if (ifa->ifa_addr->sa_family != AF_INET)
-			continue;
-		if ((ifa->ifa_flags & IFF_BROADCAST) &&
-		    (ifa->ifa_flags & IFF_UP) &&
-		    ifa->ifa_broadaddr &&
-		    ifa->ifa_broadaddr->sa_family == AF_INET) {
-			n++;
+	while (1) {
+		ifc.ifc_len = inbuflen;
+		ninbuf = realloc(inbuf, inbuflen);
+		if (ninbuf == NULL) {
+			if (inbuf)
+				free(inbuf);
+			return (0);
 		}
+		ifc.ifc_buf = inbuf = ninbuf;
+		if (ioctl(sock, SIOCGIFCONF, (char *)&ifc) < 0) {
+			perror("broadcast: ioctl (get interface configuration)");
+			free(inbuf);
+			return (0);
+		}
+		if (ifc.ifc_len + sizeof(ifreq) < inbuflen)
+			break;
+		inbuflen *= 2;
 	}
-
-	addrs = calloc(n, sizeof(*addrs));
+	addrs = (struct in_addr *)malloc((inbuflen / sizeof *sin) * sizeof sin);
 	if (addrs == NULL) {
-		freeifaddrs(ifap);
-		return 0;
+		*addrsp = NULL;
+		free(inbuf);
+		return (0);
 	}
 
-	for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-		if (ifa->ifa_addr->sa_family != AF_INET)
+#define max(a, b) (a > b ? a : b)
+#define size(p)	max((p).sa_len, sizeof(p))
+	cplim = inbuf + ifc.ifc_len; /*skip over if's with big ifr_addr's */
+	for (cp = inbuf; cp < cplim;
+	    cp += sizeof (ifr->ifr_name) + size(ifr->ifr_addr)) {
+		ifr = (struct ifreq *)cp;
+		if (ifr->ifr_addr.sa_family != AF_INET)
 			continue;
-		if ((ifa->ifa_flags & IFF_BROADCAST) &&
-		    (ifa->ifa_flags & IFF_UP) &&
-		    ifa->ifa_broadaddr &&
-		    ifa->ifa_broadaddr->sa_family == AF_INET) {
-			sin = (struct sockaddr_in *)ifa->ifa_broadaddr;
-			addrs[i++] = sin->sin_addr;
+		ifreq = *ifr;
+		if (ioctl(sock, SIOCGIFFLAGS, (char *)&ifreq) < 0) {
+			perror("broadcast: ioctl (get interface flags)");
+			continue;
+		}
+		if ((ifreq.ifr_flags & IFF_BROADCAST) &&
+		    (ifreq.ifr_flags & IFF_UP)) {
+			sin = (struct sockaddr_in *)&ifr->ifr_addr;
+			if (ioctl(sock, SIOCGIFBRDADDR, (char *)&ifreq) < 0) {
+				addrs[i++] =
+				    inet_makeaddr(inet_netof(sin->sin_addr),
+				    INADDR_ANY);
+			} else {
+				addrs[i++] = ((struct sockaddr_in*)
+				  &ifreq.ifr_addr)->sin_addr;
+			}
 		}
 	}
-
-	freeifaddrs(ifap);
+	free(inbuf);
 	*addrsp = addrs;
-	return i;
+	return (i);
 }
 
-typedef bool_t (*resultproc_t)(caddr_t, struct sockaddr_in *);
+typedef bool_t (*resultproc_t)();
 
 enum clnt_stat 
-clnt_broadcast(u_long prog,	/* program number */
-    u_long vers,		/* version number */
-    u_long proc,		/* procedure number */
-    xdrproc_t xargs,		/* xdr routine for args */
-    caddr_t argsp,		/* pointer to args */
-    xdrproc_t xresults,		/* xdr routine for results */
-    caddr_t resultsp,		/* pointer to results */
-    resultproc_t eachresult)	/* call with each result obtained */
+clnt_broadcast(prog, vers, proc, xargs, argsp, xresults, resultsp, eachresult)
+	u_long		prog;		/* program number */
+	u_long		vers;		/* version number */
+	u_long		proc;		/* procedure number */
+	xdrproc_t	xargs;		/* xdr routine for args */
+	caddr_t		argsp;		/* pointer to args */
+	xdrproc_t	xresults;	/* xdr routine for results */
+	caddr_t		resultsp;	/* pointer to results */
+	resultproc_t	eachresult;	/* call with each result obtained */
 {
 	enum clnt_stat stat;
-	AUTH *unix_auth;
+	AUTH *unix_auth = authunix_create_default();
 	XDR xdr_stream;
-	XDR *xdrs = &xdr_stream;
-	int outlen, inlen, nets;
-	socklen_t fromlen;
-	int sock = -1;
+	register XDR *xdrs = &xdr_stream;
+	int outlen, inlen, fromlen, nets;
+	register int sock = -1;
 	int on = 1;
-	struct pollfd pfd[1];
-	int i;
-	int timo;
+	fd_set *fds, readfds;
+	register int i;
 	bool_t done = FALSE;
-	u_long xid;
+	register u_long xid;
 	u_long port;
-	struct in_addr *addrs = NULL;
+	struct in_addr *addrs;
 	struct sockaddr_in baddr, raddr; /* broadcast and response addresses */
 	struct rmtcallargs a;
 	struct rmtcallres r;
 	struct rpc_msg msg;
+	struct timeval t; 
 	char outbuf[MAX_BROADCAST_SIZE], inbuf[UDPMSGSIZE];
-
-	if ((unix_auth = authunix_create_default()) == NULL) {
-		stat = RPC_AUTHERROR;
-		goto done_broad;
-	}
 
 	/*
 	 * initialization: create a socket, a broadcast address, and
 	 * preserialize the arguments into a send buffer.
 	 */
 	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+		perror("Cannot create socket for broadcast rpc");
 		stat = RPC_CANTSEND;
 		goto done_broad;
 	}
 #ifdef SO_BROADCAST
 	if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof (on)) < 0) {
+		perror("Cannot set socket option SO_BROADCAST");
 		stat = RPC_CANTSEND;
 		goto done_broad;
 	}
 #endif /* def SO_BROADCAST */
 
-	pfd[0].fd = sock;
-	pfd[0].events = POLLIN;
-
-	nets = newgetbroadcastnets(&addrs);
-	if (nets == 0) {
-		stat = RPC_CANTSEND;
-		goto done_broad;
+	if (sock+1 > FD_SETSIZE) {
+		int bytes = howmany(sock+1, NFDBITS) * sizeof(fd_mask);
+		fds = (fd_set *)malloc(bytes);
+		if (fds == NULL) {
+			stat = RPC_CANTSEND;
+			goto done_broad;
+		}
+		memset(fds, 0, bytes);
+	} else {
+		fds = &readfds;
+		FD_ZERO(fds);
 	}
 
+	nets = newgetbroadcastnets(&addrs, sock);
 	memset(&baddr, 0, sizeof (baddr));
 	baddr.sin_len = sizeof(struct sockaddr_in);
 	baddr.sin_family = AF_INET;
 	baddr.sin_port = htons(PMAPPORT);
 	baddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	(void)gettimeofday(&t, (struct timezone *)0);
 	msg.rm_xid = xid = arc4random();
+	t.tv_usec = 0;
 	msg.rm_direction = CALL;
 	msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
 	msg.rm_call.cb_prog = PMAPPROG;
@@ -297,12 +336,13 @@ clnt_broadcast(u_long prog,	/* program number */
 	 * the intended function of sending them slowly over half a
 	 * minute or so
 	 */
-	for (timo = 4000; timo <= 14000; timo += 2000) {
+	for (t.tv_sec = 4; t.tv_sec <= 14; t.tv_sec += 2) {
 		for (i = 0; i < nets; i++) {
 			baddr.sin_addr = addrs[i];
 			if (sendto(sock, outbuf, outlen, 0,
 			    (struct sockaddr *)&baddr,
 			    sizeof (struct sockaddr)) != outlen) {
+				perror("Cannot send broadcast packet");
 				stat = RPC_CANTSEND;
 				goto done_broad;
 			}
@@ -316,21 +356,16 @@ clnt_broadcast(u_long prog,	/* program number */
 		msg.acpted_rply.ar_results.where = (caddr_t)&r;
 		msg.acpted_rply.ar_results.proc = xdr_rmtcallres;
 
-		switch (poll(pfd, 1, timo)) {
+		/* XXX we know the other bits are still clear */
+		FD_SET(sock, fds);
+		switch (select(sock+1, fds, NULL, NULL, &t)) {
 		case 0:  /* timed out */
 			stat = RPC_TIMEDOUT;
 			continue;
-		case 1:
-			if (pfd[0].revents & POLLNVAL)
-				errno = EBADF;
-			else if (pfd[0].revents & POLLERR)
-				errno = EIO;
-			else
-				break;
-			/* FALLTHROUGH */
 		case -1:  /* some kind of error */
 			if (errno == EINTR)
 				goto recv_again;
+			perror("Broadcast select problem");
 			stat = RPC_CANTRECV;
 			goto done_broad;
 		}
@@ -341,6 +376,7 @@ clnt_broadcast(u_long prog,	/* program number */
 		if (inlen < 0) {
 			if (errno == EINTR)
 				goto try_again;
+			perror("Cannot receive reply to broadcast");
 			stat = RPC_CANTRECV;
 			goto done_broad;
 		}
@@ -373,10 +409,12 @@ clnt_broadcast(u_long prog,	/* program number */
 		}
 	}
 done_broad:
-	free(addrs);
+	if (addrs)
+		free(addrs);
+	if (fds != &readfds)
+		free(fds);
 	if (sock >= 0)
 		(void)close(sock);
-	if (unix_auth != NULL)
-		AUTH_DESTROY(unix_auth);
+	AUTH_DESTROY(unix_auth);
 	return (stat);
 }

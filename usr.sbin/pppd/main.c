@@ -1,60 +1,37 @@
-/*	$OpenBSD: main.c,v 1.54 2016/03/17 19:40:43 krw Exp $	*/
+/*	$OpenBSD: main.c,v 1.27 1999/08/06 20:41:07 deraadt Exp $	*/
 
 /*
  * main.c - Point-to-Point Protocol main module
  *
- * Copyright (c) 1984-2000 Carnegie Mellon University. All rights reserved.
+ * Copyright (c) 1989 Carnegie Mellon University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name "Carnegie Mellon University" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For permission or any legal
- *    details, please contact
- *      Office of Technology Transfer
- *      Carnegie Mellon University
- *      5000 Forbes Avenue
- *      Pittsburgh, PA  15213-3890
- *      (412) 268-4387, fax: (412) 268-7395
- *      tech-transfer@andrew.cmu.edu
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Computing Services
- *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
- *
- * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
- * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Carnegie Mellon University.  The name of the
+ * University may not be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <net/if.h>
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: main.c,v 1.49 1998/05/05 05:24:17 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.27 1999/08/06 20:41:07 deraadt Exp $";
+#endif
+#endif
+
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -62,6 +39,14 @@
 #include <netdb.h>
 #include <utmp.h>
 #include <pwd.h>
+#include <sys/param.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <net/if.h>
 
 #include "pppd.h"
 #include "magic.h"
@@ -82,6 +67,9 @@
 extern char *strerror();
 #endif
 
+#ifdef IPX_CHANGE
+#include "ipxcp.h"
+#endif /* IPX_CHANGE */
 #ifdef AT_CHANGE
 #include "atcp.h"
 #endif
@@ -90,12 +78,13 @@ extern char *strerror();
 char ifname[IFNAMSIZ];		/* Interface name */
 int ifunit;			/* Interface unit number */
 
-char hostname[HOST_NAME_MAX+1];	/* Our hostname */
-static char default_devnam[PATH_MAX];	/* name of default device */
+char *progname;			/* Name of this program */
+char hostname[MAXHOSTNAMELEN];	/* Our hostname */
+static char pidfilename[MAXPATHLEN];	/* name of pid file */
+static char default_devnam[MAXPATHLEN];	/* name of default device */
 static pid_t pid;		/* Our pid */
 static uid_t uid;		/* Our real user-id */
 static int conn_running;	/* we have a [dis]connector running */
-static int crashed = 0;
 
 int ttyfd = -1;			/* Serial port file descriptor */
 mode_t tty_mode = -1;		/* Original access permissions to tty */
@@ -123,26 +112,27 @@ char *no_ppp_msg = "Sorry - this system lacks PPP kernel support\n";
 
 /* Prototypes for procedures local to this file. */
 
-static void cleanup(void);
-static void close_tty(void);
-static void get_input(void);
-static void calltimeout(void);
-static struct timeval *timeleft(struct timeval *);
-static void kill_my_pg(int);
-static void hup(int);
-static void term(int);
-static void chld(int);
-static void toggle_debug(int);
-static void open_ccp(int);
-static void bad_signal(int);
-static void holdoff_end(void *);
-static int device_script(char *, int, int);
-static void reap_kids(void);
-static void pr_log(void *, char *, ...);
+static void create_pidfile __P((void));
+static void cleanup __P((void));
+static void close_tty __P((void));
+static void get_input __P((void));
+static void calltimeout __P((void));
+static struct timeval *timeleft __P((struct timeval *));
+static void kill_my_pg __P((int));
+static void hup __P((int));
+static void term __P((int));
+static void chld __P((int));
+static void toggle_debug __P((int));
+static void open_ccp __P((int));
+static void bad_signal __P((int));
+static void holdoff_end __P((void *));
+static int device_script __P((char *, int, int));
+static void reap_kids __P((void));
+static void pr_log __P((void *, char *, ...));
 
-extern	char	*ttyname(int);
-extern	char	*getlogin(void);
-int main(int, char *[]);
+extern	char	*ttyname __P((int));
+extern	char	*getlogin __P((void));
+int main __P((int, char *[]));
 
 #ifdef ultrix
 #undef	O_NONBLOCK
@@ -167,6 +157,9 @@ struct protent *protocols[] = {
 #endif
     &ipcp_protent,
     &ccp_protent,
+#ifdef IPX_CHANGE
+    &ipxcp_protent,
+#endif
 #ifdef AT_CHANGE
     &atcp_protent,
 #endif
@@ -191,8 +184,8 @@ main(argc, argv)
     phase = PHASE_INITIALIZE;
     p = ttyname(0);
     if (p)
-	strlcpy(devnam, p, PATH_MAX);
-    strlcpy(default_devnam, devnam, sizeof default_devnam);
+	strcpy(devnam, p);
+    strcpy(default_devnam, devnam);
 
     script_env = NULL;
 
@@ -211,7 +204,7 @@ main(argc, argv)
 
     uid = getuid();
     privileged = uid == 0;
-    snprintf(numbuf, sizeof numbuf, "%u", uid);
+    sprintf(numbuf, "%u", uid);
     script_setenv("UID", numbuf);
 
     /*
@@ -221,6 +214,8 @@ main(argc, argv)
      */
     for (i = 0; (protp = protocols[i]) != NULL; ++i)
 	(*protp->init)(0);
+
+    progname = *argv;
 
     if (!options_from_file(_PATH_SYSOPTIONS, !privileged, 0, 1)
 	|| !options_from_user())
@@ -258,7 +253,7 @@ main(argc, argv)
     }
 
     script_setenv("DEVICE", devnam);
-    snprintf(numbuf, sizeof numbuf, "%d", baud_rate);
+    sprintf(numbuf, "%d", baud_rate);
     script_setenv("SPEED", numbuf);
 
     /*
@@ -335,9 +330,7 @@ main(argc, argv)
     SIGNAL(SIGILL, bad_signal);
     SIGNAL(SIGPIPE, bad_signal);
     SIGNAL(SIGQUIT, bad_signal);
-#if SIGSEGV_CHECK
     SIGNAL(SIGSEGV, bad_signal);
-#endif
 #ifdef SIGBUS
     SIGNAL(SIGBUS, bad_signal);
 #endif
@@ -383,8 +376,10 @@ main(argc, argv)
 	open_ppp_loopback();
 
 	syslog(LOG_INFO, "Using interface ppp%d", ifunit);
-	(void) snprintf(ifname, sizeof ifname, "ppp%d", ifunit);
+	(void) sprintf(ifname, "ppp%d", ifunit);
 	script_setenv("IFNAME", ifname);
+
+	create_pidfile();	/* write pid to file */
 
 	/*
 	 * Configure the interface and mark it up, etc.
@@ -495,7 +490,9 @@ main(argc, argv)
 	    sleep(1);		/* give it time to set up its terminal */
 	}
 
-	set_up_tty(ttyfd, 0);
+	/* clear CLOCAL if modem option set and we set CLOCAL above */
+	if (modem && !modem_chat)
+		set_up_tty(ttyfd, 0);
 
 	/* reopen tty if necessary to wait for carrier */
 	if (connector == NULL && modem) {
@@ -520,8 +517,10 @@ main(argc, argv)
 	if (!demand) {
 
 	    syslog(LOG_INFO, "Using interface ppp%d", ifunit);
-	    (void) snprintf(ifname, sizeof ifname, "ppp%d", ifunit);
+	    (void) sprintf(ifname, "ppp%d", ifunit);
 	    script_setenv("IFNAME", ifname);
+
+	    create_pidfile();	/* write pid to file */
 	}
 
 	/*
@@ -580,6 +579,13 @@ main(argc, argv)
 	    locked = 0;
 	}
 
+	if (!demand) {
+	    if (pidfilename[0] != 0
+		&& unlink(pidfilename) < 0 && errno != ENOENT)
+		syslog(LOG_WARNING, "unable to delete pid file: %m");
+	    pidfilename[0] = 0;
+	}
+
 	if (!persist)
 	    die(1);
 
@@ -618,6 +624,27 @@ detach()
     }
     detached = 1;
     pid = getpid();
+    /* update pid file if it has been written already */
+    if (pidfilename[0])
+	create_pidfile();
+}
+
+/*
+ * Create a file containing our process ID.
+ */
+static void
+create_pidfile()
+{
+    FILE *pidfile;
+
+    (void) sprintf(pidfilename, "%s%s.pid", _PATH_VARRUN, ifname);
+    if ((pidfile = fopen(pidfilename, "w")) != NULL) {
+	fprintf(pidfile, "%d\n", pid);
+	(void) fclose(pidfile);
+    } else {
+	syslog(LOG_ERR, "Failed to create pid file %s: %m", pidfilename);
+	pidfilename[0] = 0;
+    }
 }
 
 /*
@@ -725,11 +752,9 @@ void
 die(status)
     int status;
 {
-    struct syslog_data sdata = SYSLOG_DATA_INIT;
-
     cleanup();
-    syslog_r(LOG_INFO, &sdata, "Exit.");
-    _exit(status);
+    syslog(LOG_INFO, "Exit.");
+    exit(status);
 }
 
 /*
@@ -743,6 +768,10 @@ cleanup()
 
     if (ttyfd >= 0)
 	close_tty();
+
+    if (pidfilename[0] != 0 && unlink(pidfilename) < 0 && errno != ENOENT)
+	syslog(LOG_WARNING, "unable to delete pid file: %m");
+    pidfilename[0] = 0;
 
     if (locked)
 	unlock();
@@ -769,7 +798,7 @@ close_tty()
     restore_tty(ttyfd);
 
     if (tty_mode != (mode_t) -1)
-	fchmod(ttyfd, tty_mode);
+	chmod(devnam, tty_mode);
 
     close(ttyfd);
     ttyfd = -1;
@@ -779,7 +808,7 @@ close_tty()
 struct	callout {
     struct timeval	c_time;		/* time at which to call routine */
     void		*c_arg;		/* argument to routine */
-    void		(*c_func)(void *); /* routine */
+    void		(*c_func) __P((void *)); /* routine */
     struct		callout *c_next;
 };
 
@@ -794,7 +823,7 @@ static struct timeval timenow;		/* Current time */
  */
 void
 timeout(func, arg, time)
-    void (*func)(void *);
+    void (*func) __P((void *));
     void *arg;
     int time;
 {
@@ -834,7 +863,7 @@ timeout(func, arg, time)
  */
 void
 untimeout(func, arg)
-    void (*func)(void *);
+    void (*func) __P((void *));
     void *arg;
 {
     struct callout **copp, *freep;
@@ -933,17 +962,11 @@ static void
 hup(sig)
     int sig;
 {
-    int save_errno = errno;
-    struct syslog_data sdata = SYSLOG_DATA_INIT;
-
-    if (crashed)
-	_exit(127);
-    syslog_r(LOG_INFO, &sdata, "Hangup (SIGHUP)");
+    syslog(LOG_INFO, "Hangup (SIGHUP)");
     kill_link = 1;
     if (conn_running)
 	/* Send the signal to the [dis]connector process(es) also */
 	kill_my_pg(sig);
-    errno = save_errno;
 }
 
 
@@ -957,18 +980,12 @@ static void
 term(sig)
     int sig;
 {
-    int save_errno = errno;
-    struct syslog_data sdata = SYSLOG_DATA_INIT;
-
-    if (crashed)
-	_exit(127);
-    syslog_r(LOG_INFO, &sdata, "Terminating on signal %d.", sig);
+    syslog(LOG_INFO, "Terminating on signal %d.", sig);
     persist = 0;		/* don't try to restart */
     kill_link = 1;
     if (conn_running)
 	/* Send the signal to the [dis]connector process(es) also */
 	kill_my_pg(sig);
-    errno = save_errno;
 }
 
 
@@ -982,7 +999,7 @@ chld(sig)
 {
     int save_errno = errno;
 
-    reap_kids();		/* XXX somewhat unsafe */
+    reap_kids();
     errno = save_errno;
 }
 
@@ -999,9 +1016,9 @@ toggle_debug(sig)
 {
     debug = !debug;
     if (debug) {
-	setlogmask(LOG_UPTO(LOG_DEBUG));	/* XXX safe, but wrong */
+	setlogmask(LOG_UPTO(LOG_DEBUG));
     } else {
-	setlogmask(LOG_UPTO(LOG_WARNING));	/* XXX safe, but wrong */
+	setlogmask(LOG_UPTO(LOG_WARNING));
     }
 }
 
@@ -1027,15 +1044,15 @@ static void
 bad_signal(sig)
     int sig;
 {
-    struct syslog_data sdata = SYSLOG_DATA_INIT;
+    static int crashed = 0;
 
     if (crashed)
 	_exit(127);
     crashed = 1;
-    syslog_r(LOG_ERR, &sdata, "Fatal signal %d", sig);
+    syslog(LOG_ERR, "Fatal signal %d", sig);
     if (conn_running)
 	kill_my_pg(SIGTERM);
-    die(1);					/* XXX unsafe! */
+    die(1);
 }
 
 
@@ -1048,11 +1065,9 @@ device_script(program, in, out)
     char *program;
     int in, out;
 {
-    pid_t pid;
+    int pid;
     int status;
     int errfd;
-    gid_t gid;
-    uid_t uid;
 
     conn_running = 1;
     pid = fork();
@@ -1092,16 +1107,12 @@ device_script(program, in, out)
 		close(errfd);
 	    }
 	}
-
 	/* revoke privs */
-	gid = getgid();
-	uid = getuid();
-	if (setresgid(gid, gid, gid) == -1 || setresuid(uid, uid, uid) == -1) {
-		syslog(LOG_ERR, "revoke privileges: %s", strerror(errno));
-		_exit(1);
-	}
-
-	execl("/bin/sh", "sh", "-c", program, (char *)NULL);
+	seteuid(getuid());
+	setuid(getuid());
+	setegid(getgid());
+	setgid(getgid());
+	execl("/bin/sh", "sh", "-c", program, (char *)0);
 	syslog(LOG_ERR, "could not exec /bin/sh: %m");
 	_exit(99);
 	/* NOTREACHED */
@@ -1131,9 +1142,7 @@ run_program(prog, args, must_exist)
     char **args;
     int must_exist;
 {
-    pid_t pid;
-    uid_t uid;
-    gid_t gid;
+    int pid;
 
     pid = fork();
     if (pid == -1) {
@@ -1147,14 +1156,8 @@ run_program(prog, args, must_exist)
 	(void) setsid();    /* No controlling tty. */
 	(void) umask (S_IRWXG|S_IRWXO);
 	(void) chdir ("/"); /* no current directory. */
-
-	/* revoke privs */
-	uid = getuid();
-	gid = getgid();
-	if (setresgid(gid, gid, gid) == -1 || setresuid(uid, uid, uid) == -1) {
-		syslog(LOG_ERR, "revoke privileges: %s", strerror(errno));
-		_exit(1);
-	}
+	setuid(geteuid());
+	setgid(getegid());
 
 	/* Ensure that nothing of our device environment is inherited. */
 	sys_close();
@@ -1175,9 +1178,11 @@ run_program(prog, args, must_exist)
 	    dup2 (0, 2); /* stderr -> /dev/null */
 	}
 
+#ifdef BSD
 	/* Force the priority back to zero if pppd is running higher. */
 	if (setpriority (PRIO_PROCESS, 0, 0) < 0)
 	    syslog (LOG_WARNING, "can't reset priority to 0: %m");
+#endif
 
 	/* SysV recommends a second fork at this point. */
 
@@ -1185,9 +1190,9 @@ run_program(prog, args, must_exist)
 	execve(prog, args, script_env);
 	if (must_exist || errno != ENOENT)
 	    syslog(LOG_WARNING, "Can't execute %s: %m", prog);
-	_exit(1);
+	_exit(-1);
     }
-    MAINDEBUG((LOG_DEBUG, "Script %s started; pid = %ld", prog, (long)pid));
+    MAINDEBUG((LOG_DEBUG, "Script %s started; pid = %d", prog, pid));
     ++n_children;
     return 0;
 }
@@ -1200,8 +1205,7 @@ run_program(prog, args, must_exist)
 static void
 reap_kids()
 {
-    int status;
-    pid_t pid;
+    int pid, status;
 
     if (n_children == 0)
 	return;
@@ -1213,8 +1217,8 @@ reap_kids()
     if (pid > 0) {
 	--n_children;
 	if (WIFSIGNALED(status)) {
-	    syslog(LOG_WARNING, "Child process %ld terminated with signal %d",
-		   (long)pid, WTERMSIG(status));
+	    syslog(LOG_WARNING, "Child process %d terminated with signal %d",
+		   pid, WTERMSIG(status));
 	}
     }
 }
@@ -1234,7 +1238,7 @@ log_packet(p, len, prefix, level)
     char *prefix;
     int level;
 {
-    strlcpy(line, prefix, sizeof line);
+    strcpy(line, prefix);
     linep = line + strlen(line);
     format_packet(p, len, pr_log, NULL);
     if (linep != line)
@@ -1249,7 +1253,7 @@ void
 format_packet(p, len, printer, arg)
     u_char *p;
     int len;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     int i, n;
@@ -1282,13 +1286,21 @@ format_packet(p, len, printer, arg)
 }
 
 static void
-pr_log(void *arg, char *fmt, ...)
+pr_log __V((void *arg, char *fmt, ...))
 {
     int n;
     va_list pvar;
     char buf[256];
 
+#ifdef __STDC__
     va_start(pvar, fmt);
+#else
+    void *arg;
+    char *fmt;
+    va_start(pvar);
+    arg = va_arg(pvar, void *);
+    fmt = va_arg(pvar, char *);
+#endif
 
     n = vfmtmsg(buf, sizeof(buf), fmt, pvar);
     va_end(pvar);
@@ -1297,7 +1309,7 @@ pr_log(void *arg, char *fmt, ...)
 	syslog(LOG_DEBUG, "%s", line);
 	linep = line;
     }
-    strlcpy(linep, buf, line + sizeof line - linep);
+    strcpy(linep, buf);
     linep += n;
 }
 
@@ -1309,7 +1321,7 @@ void
 print_string(p, len, printer, arg)
     char *p;
     int len;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     int c;
@@ -1352,19 +1364,29 @@ novm(msg)
 }
 
 /*
- * fmtmsg - format a message into a buffer.  Like snprintf except we
+ * fmtmsg - format a message into a buffer.  Like sprintf except we
  * also specify the length of the output buffer, and we handle
- * %m (error message) and %I (IP address) formats.
+ * %r (recursive format), %m (error message) and %I (IP address) formats.
  * Doesn't do floating-point formats.
  * Returns the number of chars put into buf.
  */
 int
-fmtmsg(char *buf, int buflen, char *fmt, ...)
+fmtmsg __V((char *buf, int buflen, char *fmt, ...))
 {
     va_list args;
     int n;
 
+#ifdef __STDC__
     va_start(args, fmt);
+#else
+    char *buf;
+    int buflen;
+    char *fmt;
+    va_start(args);
+    buf = va_arg(args, char *);
+    buflen = va_arg(args, int);
+    fmt = va_arg(args, char *);
+#endif
     n = vfmtmsg(buf, buflen, fmt, args);
     va_end(args);
     return n;
@@ -1477,6 +1499,17 @@ vfmtmsg(buf, buflen, fmt, args)
 	case 'I':
 	    str = ip_ntoa(va_arg(args, u_int32_t));
 	    break;
+	case 'r':
+	    f = va_arg(args, char *);
+#ifndef __powerpc__
+	    n = vfmtmsg(buf, buflen + 1, f, va_arg(args, va_list));
+#else
+	    /* On the powerpc, a va_list is an array of 1 structure */
+	    n = vfmtmsg(buf, buflen + 1, f, va_arg(args, void *));
+#endif
+	    buf += n;
+	    buflen -= n;
+	    continue;
 	case 't':
 	    time(&t);
 	    str = ctime(&t);
@@ -1591,8 +1624,12 @@ script_setenv(var, value)
     int i;
     char *p, *newstring;
 
-    if (asprintf(&newstring, "%s=%s", var, value) == -1)
-	novm("script_setenv");
+    newstring = (char *) malloc(vl + strlen(value) + 2);
+    if (newstring == 0)
+	return;
+    strcpy(newstring, var);
+    newstring[vl] = '=';
+    strcpy(newstring+vl+1, value);
 
     /* check if this variable is already set */
     if (script_env != 0) {
@@ -1605,23 +1642,47 @@ script_setenv(var, value)
 	}
     } else {
 	i = 0;
-	script_env = (char **) calloc(16, sizeof(char *));
+	script_env = (char **) malloc(16 * sizeof(char *));
 	if (script_env == 0)
-	    novm("script_setenv");
+	    return;
 	s_env_nalloc = 16;
     }
 
     /* reallocate script_env with more space if needed */
     if (i + 1 >= s_env_nalloc) {
 	int new_n = i + 17;
-	char **newenv = reallocarray(script_env,
-	    new_n, sizeof(char *));
+	char **newenv = (char **) realloc((void *)script_env,
+					  new_n * sizeof(char *));
 	if (newenv == 0)
-	    novm("script_setenv");
+	    return;
 	script_env = newenv;
 	s_env_nalloc = new_n;
     }
 
     script_env[i] = newstring;
     script_env[i+1] = 0;
+}
+
+/*
+ * script_unsetenv - remove a variable from the environment
+ * for scripts.
+ */
+void
+script_unsetenv(var)
+    char *var;
+{
+    int vl = strlen(var);
+    int i;
+    char *p;
+
+    if (script_env == 0)
+	return;
+    for (i = 0; (p = script_env[i]) != 0; ++i) {
+	if (strncmp(p, var, vl) == 0 && p[vl] == '=') {
+	    free(p);
+	    while ((script_env[i] = script_env[i+1]) != 0)
+		++i;
+	    break;
+	}
+    }
 }

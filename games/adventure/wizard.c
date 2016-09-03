@@ -1,4 +1,4 @@
-/*	$OpenBSD: wizard.c,v 1.19 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: wizard.c,v 1.7 1998/08/31 02:29:47 pjanzen Exp $	*/
 /*	$NetBSD: wizard.c,v 1.3 1995/04/24 12:21:41 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,19 +39,27 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)wizard.c	8.1 (Berkeley) 6/2/93";
+#else
+static char rcsid[] = "$OpenBSD: wizard.c,v 1.7 1998/08/31 02:29:47 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 /*	Re-coding of advent in C: privileged operations			*/
 
-#include <limits.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <time.h>
-
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
 #if 0
 void
-datime(int *d, int *t)
+datime(d, t)
+	int    *d, *t;
 {
 	time_t  tvec;
 	struct tm *tptr;
@@ -66,14 +78,14 @@ datime(int *d, int *t)
 char    magic[6];
 
 void
-poof(void)
+poof()
 {
-	strlcpy(magic, DECR(d,w,a,r,f), sizeof magic);
+	strcpy(magic, DECR(d,w,a,r,f));
 	latncy = 45;
 }
 
 int
-Start(void)
+Start()
 {
 	time_t  t, delay;
 
@@ -84,7 +96,7 @@ Start(void)
 	if (delay >= latncy)
 		return (FALSE);
 	printf("This adventure was suspended a mere %d minute%s ago.",
-		(int)delay, delay == 1 ? "" : "s");
+		delay, delay == 1 ? "" : "s");
 	if (delay <= latncy / 3) {
 		mspeak(2);
 		exit(0);
@@ -98,13 +110,15 @@ Start(void)
 }
 
 int
-wizard(void)		/* not as complex as advent/10 (for now)	*/
+wizard()		/* not as complex as advent/10 (for now)	*/
 {
+	char   *word, *x;
+
 	if (!yesm(16, 0, 7))
 		return (FALSE);
 	mspeak(17);
-	getin(wd1, sizeof(wd1), wd2, sizeof(wd2));
-	if (!weq(wd1, magic)) {
+	getin(&word, &x);
+	if (!weq(word, magic)) {
 		mspeak(20);
 		return (FALSE);
 	}
@@ -113,23 +127,16 @@ wizard(void)		/* not as complex as advent/10 (for now)	*/
 }
 
 void
-ciao(void)
+ciao()
 {
-	int	ch;
 	char   *c;
-	char    fname[PATH_MAX];
+	char    fname[80];
 
 	printf("What would you like to call the saved version?\n");
-	for (c = fname; c - fname < sizeof(fname); c++) {
-		if ((ch = getchar()) == '\n' || ch == EOF)
+	for (c = fname;; c++)
+		if ((*c = getchar()) == '\n' || *c == EOF)
 			break;
-		*c = ch;
-	}
-	if (c - fname == sizeof(fname)) {
-		c--;
-		FLUSHLINE;
-	}
-	*c = '\0';
+	*c = 0;
 	if (save(fname) != 0)
 		return;		/* Save failed */
 	printf("To resume, say \"adventure %s\".\n", fname);
@@ -139,7 +146,11 @@ ciao(void)
 
 
 int
-ran(int range)
+ran(range)
+	int     range;
 {
-	return (arc4random_uniform(range));
+	long    i;
+
+	i = random() % range;
+	return (i);
 }

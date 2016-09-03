@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-ip.c,v 1.45 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,17 +19,24 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-ip.c,v 1.8 1999/10/06 01:46:40 deraadt Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
-#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,9 +128,9 @@ struct tr_resp {
 #define TR_PROTO_PIM	3
 #define TR_PROTO_CBT	4
 
-static void print_mtrace(const u_char *bp, u_int len)
+static void print_mtrace(register const u_char *bp, register u_int len)
 {
-	struct tr_query *tr = (struct tr_query *)(bp + 8);
+	register struct tr_query *tr = (struct tr_query *)(bp + 8);
 
 	printf("mtrace %d: %s to %s reply-to %s", tr->tr_qid,
 		ipaddr_string(&tr->tr_src), ipaddr_string(&tr->tr_dst),
@@ -134,9 +139,9 @@ static void print_mtrace(const u_char *bp, u_int len)
 		printf(" with-ttl %d", tr->tr_rttl);
 }
 
-static void print_mresp(const u_char *bp, u_int len)
+static void print_mresp(register const u_char *bp, register u_int len)
 {
-	struct tr_query *tr = (struct tr_query *)(bp + 8);
+	register struct tr_query *tr = (struct tr_query *)(bp + 8);
 
 	printf("mresp %d: %s to %s reply-to %s", tr->tr_qid,
 		ipaddr_string(&tr->tr_src), ipaddr_string(&tr->tr_dst),
@@ -146,9 +151,10 @@ static void print_mresp(const u_char *bp, u_int len)
 }
 
 static void
-igmp_print(const u_char *bp, u_int len, const u_char *bp2)
+igmp_print(register const u_char *bp, register u_int len,
+	   register const u_char *bp2)
 {
-	const struct ip *ip;
+	register const struct ip *ip;
 
 	ip = (const struct ip *)bp2;
         (void)printf("%s > %s: ",
@@ -225,10 +231,10 @@ trunc:
  * print the recorded route in an IP RR, LSRR or SSRR option.
  */
 static void
-ip_printroute(const char *type, const u_char *cp, u_int length)
+ip_printroute(const char *type, register const u_char *cp, u_int length)
 {
-	u_int ptr = cp[2] - 1;
-	u_int len;
+	register u_int ptr = cp[2] - 1;
+	register u_int len;
 
 	printf(" %s{", type);
 	if ((length + 1) & 3)
@@ -250,14 +256,13 @@ ip_printroute(const char *type, const u_char *cp, u_int length)
  * print IP options.
  */
 static void
-ip_optprint(const u_char *cp, u_int length)
+ip_optprint(register const u_char *cp, u_int length)
 {
-	u_int len;
-	int tt;
+	register u_int len;
 
 	for (; length > 0; cp += len, length -= len) {
-		TCHECK(cp[1]);
-		tt = *cp;
+		int tt = *cp;
+
 		len = (tt == IPOPT_NOP || tt == IPOPT_EOL) ? 1 : cp[1];
 		if (len <= 0) {
 			printf("[|ip op len %d]", len);
@@ -305,83 +310,59 @@ ip_optprint(const u_char *cp, u_int length)
 			break;
 		}
 	}
-	return;
-
-trunc:
-	printf("[|ip]");
 }
 
 /*
  * compute an IP header checksum.
  * don't modifiy the packet.
  */
-u_short
-in_cksum(const u_short *addr, int len, int csum)
+static int
+in_cksum(const struct ip *ip)
 {
-	int nleft = len;
-	const u_short *w = addr;
-	u_short answer;
-	int sum = csum;
-
- 	/*
-	 *  Our algorithm is simple, using a 32 bit accumulator (sum),
-	 *  we add sequential 16 bit words to it, and at the end, fold
-	 *  back all the carry bits from the top 16 bits into the lower
-	 *  16 bits.
- 	 */
-	while (nleft > 1)  {
-		sum += *w++;
-		nleft -= 2;
-	}
-	if (nleft == 1)
-		sum += htons(*(u_char *)w<<8);
+	register const u_short *sp = (u_short *)ip;
+	register u_int32_t sum = 0;
+	register int count;
 
 	/*
-	 * add back carry outs from top 16 bits to low 16 bits
+	 * No need for endian conversions.
 	 */
-	sum = (sum >> 16) + (sum & 0xffff);	/* add hi 16 to low 16 */
-	sum += (sum >> 16);			/* add carry */
-	answer = ~sum;				/* truncate to 16 bits */
-	return (answer);
+	for (count = ip->ip_hl * 2; --count >= 0; )
+		sum += *sp++;
+	while (sum > 0xffff)
+		sum = (sum & 0xffff) + (sum >> 16);
+	sum = ~sum & 0xffff;
+
+	return (sum);
 }
 
 /*
  * print an IP datagram.
  */
 void
-ip_print(const u_char *bp, u_int length)
+ip_print(register const u_char *bp, register u_int length)
 {
-	const struct ip *ip;
-	u_int hlen, len, off;
-	const u_char *cp;
-	const u_char *pktp = packetp;
-	const u_char *send = snapend;
+	register const struct ip *ip;
+	register u_int hlen, len, off;
+	register const u_char *cp;
 
 	ip = (const struct ip *)bp;
-	if ((u_char *)(ip + 1) > snapend) {
-		printf("[|ip]");
-		return;
-	}
-
+#ifdef LBL_ALIGN
 	/*
 	 * If the IP header is not aligned, copy into abuf.
-	 * This will never happen with BPF.  It does happen with raw packet
+	 * This will never happen with BPF.  It does happen raw packet
 	 * dumps from -r.
 	 */
-	if ((intptr_t)ip & (sizeof(u_int32_t)-1)) {
+	if ((long)ip & 3) {
 		static u_char *abuf = NULL;
 		static int didwarn = 0;
-		int clen = snapend - bp;
 
-		if (clen > snaplen)
-			clen = snaplen;
 		if (abuf == NULL) {
-			abuf = malloc(snaplen);
+			abuf = (u_char *)malloc(snaplen);
 			if (abuf == NULL)
 				error("ip_print: malloc");
 		}
-		memmove((char *)abuf, (char *)ip, min(length, clen));
-		snapend = abuf + clen;
+		memcpy((char *)abuf, (char *)ip, min(length, snaplen));
+		snapend += abuf - (u_char *)ip;
 		packetp = abuf;
 		ip = (struct ip *)abuf;
 		/* We really want libpcap to give us aligned packets */
@@ -390,26 +371,21 @@ ip_print(const u_char *bp, u_int length)
 			++didwarn;
 		}
 	}
-
-	TCHECK(*ip);
-	if (ip->ip_v != IPVERSION) {
-		(void)printf("bad-ip-version %u", ip->ip_v);
-		goto out;
+#endif
+	if ((u_char *)(ip + 1) > snapend) {
+		printf("[|ip]");
+		return;
 	}
+	if (length < sizeof (struct ip)) {
+		(void)printf("truncated-ip %d", length);
+		return;
+	}
+	hlen = ip->ip_hl * 4;
 
 	len = ntohs(ip->ip_len);
-	if (length < len) {
+	if (length < len)
 		(void)printf("truncated-ip - %d bytes missing!",
 			len - length);
-		len = length;
-	}
-
-	hlen = ip->ip_hl * 4;
-	if (hlen < sizeof(struct ip) || hlen > len) {
-		(void)printf("bad-hlen %d", hlen);
-		goto out;
-	}
-
 	len -= hlen;
 
 	/*
@@ -430,7 +406,7 @@ ip_print(const u_char *bp, u_int length)
 			break;
 
 		case IPPROTO_ICMP:
-			icmp_print(cp, len, (const u_char *)ip);
+			icmp_print(cp, (const u_char *)ip);
 			break;
 
 #ifndef IPPROTO_IGRP
@@ -444,6 +420,10 @@ ip_print(const u_char *bp, u_int length)
 			(void)printf("%s > %s:", ipaddr_string(&ip->ip_src),
 				ipaddr_string(&ip->ip_dst));
 			(void)printf(" nd %d", len);
+			break;
+
+		case IPPROTO_EGP:
+			egp_print(cp, len, (const u_char *)ip);
 			break;
 
 #ifndef IPPROTO_OSPF
@@ -460,10 +440,10 @@ ip_print(const u_char *bp, u_int length)
 			igmp_print(cp, len, (const u_char *)ip);
 			break;
 
-#ifndef IPPROTO_IPIP
-#define IPPROTO_IPIP 4
+#ifndef IPPROTO_ENCAP
+#define IPPROTO_ENCAP 4
 #endif
-		case IPPROTO_IPIP:
+		case IPPROTO_ENCAP:
 			/* ip-in-ip encapsulation */
 			if (vflag)
 				(void)printf("%s > %s: ",
@@ -472,27 +452,9 @@ ip_print(const u_char *bp, u_int length)
 			ip_print(cp, len);
 			if (! vflag) {
 				printf(" (encap)");
-				goto out;
+				return;
 			}
 			break;
-
-#ifdef INET6
-#ifndef IPPROTO_IPV6
-#define IPPROTO_IPV6
-#endif
-		case IPPROTO_IPV6:
-			/* ip6-in-ip encapsulation */
-			if (vflag)
-				(void)printf("%s > %s: ",
-					     ipaddr_string(&ip->ip_src),
-					     ipaddr_string(&ip->ip_dst));
-			ip6_print(cp, len);
-			if (! vflag) {
- 				printf(" (encap)");
-				goto out;
- 			}
- 			break;
-#endif /*INET6*/
 
 #ifndef IPPROTO_GRE
 #define IPPROTO_GRE 47
@@ -506,7 +468,7 @@ ip_print(const u_char *bp, u_int length)
 			gre_print(cp, len);
 			if (! vflag) {
 				printf(" (gre encap)");
-				goto out;
+				return;
   			}
   			break;
 
@@ -522,64 +484,6 @@ ip_print(const u_char *bp, u_int length)
 #endif
 		case IPPROTO_AH:
 			ah_print(cp, len, (const u_char *)ip);
-			break;
-
-#ifndef IPPROTO_MOBILE
-#define IPPROTO_MOBILE 55
-#endif
-		case IPPROTO_MOBILE:
-			if (vflag)
-				(void)printf("mobile %s > %s: ",
-					     ipaddr_string(&ip->ip_src),
-					     ipaddr_string(&ip->ip_dst));
-			mobile_print(cp, len);
-			if (! vflag) {
-				printf(" (mobile encap)");
-				goto out;
-			}
-			break;
-
-#ifndef IPPROTO_ETHERIP
-#define IPPROTO_ETHERIP	97
-#endif
-		case IPPROTO_ETHERIP:
-			etherip_print(cp, snapend - cp, len,
-			    (const u_char *)ip);
-			break;
-
-#ifndef	IPPROTO_IPCOMP
-#define	IPPROTO_IPCOMP	108
-#endif
-		case IPPROTO_IPCOMP:
-			ipcomp_print(cp, len, (const u_char *)ip);
-			break;
-
-#ifndef IPPROTO_CARP  
-#define IPPROTO_CARP 112
-#endif
-		case IPPROTO_CARP:
-			if (packettype == PT_VRRP) {
-				if (vflag)
-					(void)printf("vrrp %s > %s: ",
-					     ipaddr_string(&ip->ip_src),
-					     ipaddr_string(&ip->ip_dst));
-				vrrp_print(cp, len, ip->ip_ttl);
-			} else {
-				if (vflag)
-					(void)printf("carp %s > %s: ",
-					     ipaddr_string(&ip->ip_src),
-					     ipaddr_string(&ip->ip_dst));
-				carp_print(cp, len, ip->ip_ttl);
-			}
-			break;
-
-#ifndef IPPROTO_PFSYNC  
-#define IPPROTO_PFSYNC 240
-#endif
-		case IPPROTO_PFSYNC:
-			pfsync_ip_print(cp,
-			    (int)(snapend - (u_char *)ip) - hlen,
-			    (const u_char *)ip);
 			break;
 
 		default:
@@ -605,8 +509,7 @@ ip_print(const u_char *bp, u_int length)
 		(void)printf(" (frag %d:%d@%d%s)", ntohs(ip->ip_id), len,
 			(off & 0x1fff) * 8,
 			(off & IP_MF)? "+" : "");
-	} 
-	if (off & IP_DF)
+	} else if (off & IP_DF)
 		(void)printf(" (DF)");
 
 	if (ip->ip_tos) {
@@ -630,6 +533,7 @@ ip_print(const u_char *bp, u_int length)
 		(void)printf(" [ttl %d]", (int)ip->ip_ttl);
 
 	if (vflag) {
+		int sum;
 		char *sep = "";
 
 		printf(" (");
@@ -641,30 +545,18 @@ ip_print(const u_char *bp, u_int length)
 			(void)printf("%sid %d", sep, (int)ntohs(ip->ip_id));
 			sep = ", ";
 		}
-		(void)printf("%slen %u", sep, ntohs(ip->ip_len));
-		sep = ", ";
 		if ((u_char *)ip + hlen <= snapend) {
-			u_int16_t sum, ip_sum;
-			sum = in_cksum((const u_short *)ip, hlen, 0);
+			sum = in_cksum(ip);
 			if (sum != 0) {
-				ip_sum = EXTRACT_16BITS(&ip->ip_sum);
-				(void)printf("%sbad ip cksum %x! -> %x", sep, ip_sum,
-					     in_cksum_shouldbe(ip_sum, sum));
+				(void)printf("%sbad cksum %x!", sep,
+					     ntohs(ip->ip_sum));
 				sep = ", ";
 			}
 		}
-		if (hlen > sizeof(struct ip)) {
-			hlen -= sizeof(struct ip);
+		if ((hlen -= sizeof(struct ip)) > 0) {
 			(void)printf("%soptlen=%d", sep, hlen);
 			ip_optprint((u_char *)(ip + 1), hlen);
 		}
 		printf(")");
 	}
-out:
-	packetp = pktp;
-	snapend = send;
-	return;
-
-trunc:
-	printf("[|ip]");
 }

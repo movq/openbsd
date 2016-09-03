@@ -1,4 +1,4 @@
-/*	$OpenBSD: telnet_locl.h,v 1.9 2014/07/20 08:12:46 guenther Exp $	*/
+/*	$OpenBSD: telnet_locl.h,v 1.1 1998/03/12 04:57:44 art Exp $	*/
 /* $KTH: telnet_locl.h,v 1.13 1997/11/03 21:37:55 assar Exp $ */
 
 /*
@@ -39,12 +39,54 @@
  * SUCH DAMAGE.
  */
 
-#include <setjmp.h>
-#include <signal.h>
+
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <ctype.h>
+#include <signal.h>
+#include <errno.h>
+#include <setjmp.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+/* termios.h *must* be included before curses.h */
 #include <termios.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <pwd.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <time.h>
+#include <sys/param.h>
+#include <sys/ioctl.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <sys/file.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
+
+#include <arpa/telnet.h>
+
+#if	defined(AUTHENTICATION) || defined(ENCRYPTION)
+#include <libtelnet/auth.h>
+#include <libtelnet/encrypt.h>
+#endif
+#include <libtelnet/misc.h>
+#include <libtelnet/misc-proto.h>
+
+#define LINEMODE
 
 #include "ring.h"
 #include "externs.h"
 #include "defines.h"
+#include "types.h"
+
+#undef AF_INET6 /* XXX - it has not been tested and it doesn't exist yet */
+
+/* prototypes */
 

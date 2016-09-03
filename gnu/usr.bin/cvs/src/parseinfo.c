@@ -10,8 +10,6 @@
 #include "getline.h"
 #include <assert.h>
 
-extern char *logHistory;
-
 /*
  * Parse the INFOFILE file for the specified REPOSITORY.  Invoke CALLPROC for
  * the first line in the file that matches the REPOSITORY, or if ALL != 0, any lines
@@ -34,10 +32,10 @@ Parse_Info (infofile, repository, callproc, all)
     char *default_value = NULL;
     char *expanded_value= NULL;
     int callback_done, line_number;
-    char *cp, *exp, *value, *srepos, bad;
+    char *cp, *exp, *value, *srepos;
     const char *regex_err;
 
-    if (current_parsed_root == NULL)
+    if (CVSroot_original == NULL)
     {
 	/* XXX - should be error maybe? */
 	error (0, 0, "CVSROOT variable not set");
@@ -45,11 +43,11 @@ Parse_Info (infofile, repository, callproc, all)
     }
 
     /* find the info file and open it */
-    infopath = xmalloc (strlen (current_parsed_root->directory)
+    infopath = xmalloc (strlen (CVSroot_directory)
 			+ strlen (infofile)
 			+ sizeof (CVSROOTADM)
-			+ 3);
-    (void) sprintf (infopath, "%s/%s/%s", current_parsed_root->directory,
+			+ 10);
+    (void) sprintf (infopath, "%s/%s/%s", CVSroot_directory,
 		    CVSROOTADM, infofile);
     fp_info = CVS_FOPEN (infopath, "r");
     if (fp_info == NULL)
@@ -70,7 +68,7 @@ Parse_Info (infofile, repository, callproc, all)
 
     /* search the info file for lines that match */
     callback_done = line_number = 0;
-    while (get_line (&line, &line_allocated, fp_info) >= 0)
+    while (getline (&line, &line_allocated, fp_info) >= 0)
     {
 	line_number++;
 
@@ -112,6 +110,10 @@ Parse_Info (infofile, repository, callproc, all)
 	if (expanded_value != NULL)
 	    free (expanded_value);
 	expanded_value = expand_path (value, infofile, line_number);
+	if (!expanded_value)
+	{
+	    continue;
+	}
 
 	/*
 	 * At this point, exp points to the regular expression, and value
@@ -125,10 +127,9 @@ Parse_Info (infofile, repository, callproc, all)
 	{
 	    /* Is it OK to silently ignore all but the last DEFAULT
                expression?  */
-	    if (default_value != NULL && default_value != &bad)
+	    if (default_value != NULL)
 		free (default_value);
-	    default_value = (expanded_value != NULL ?
-			     xstrdup (expanded_value) : &bad);
+	    default_value = xstrdup (expanded_value);
 	    continue;
 	}
 
@@ -139,13 +140,11 @@ Parse_Info (infofile, repository, callproc, all)
 	 */
 	if (strcmp (exp, "ALL") == 0)
 	{
-	    if (!all)
-		error(0, 0, "Keyword `ALL' is ignored at line %d in %s file",
-		      line_number, infofile);
-	    else if (expanded_value != NULL)
+	    if (all)
 		err += callproc (repository, expanded_value);
 	    else
-		err++;
+		error(0, 0, "Keyword `ALL' is ignored at line %d in %s file",
+		      line_number, infofile);
 	    continue;
 	}
 
@@ -164,10 +163,7 @@ Parse_Info (infofile, repository, callproc, all)
 	    continue;				/* no match */
 
 	/* it did, so do the callback and note that we did one */
-	if (expanded_value != NULL)
-	    err += callproc (repository, expanded_value);
-	else
-	    err++;
+	err += callproc (repository, expanded_value);
 	callback_done = 1;
     }
     if (ferror (fp_info))
@@ -177,15 +173,10 @@ Parse_Info (infofile, repository, callproc, all)
 
     /* if we fell through and didn't callback at all, do the default */
     if (callback_done == 0 && default_value != NULL)
-    {
-	if (default_value != &bad)
-	    err += callproc (repository, default_value);
-	else
-	    err++;
-    }
+	err += callproc (repository, default_value);
 
     /* free up space if necessary */
-    if (default_value != NULL && default_value != &bad)
+    if (default_value != NULL)
 	free (default_value);
     if (expanded_value != NULL)
 	free (expanded_value);
@@ -204,7 +195,7 @@ Parse_Info (infofile, repository, callproc, all)
    KEYWORD=VALUE.  There is currently no way to have a multi-line
    VALUE (would be nice if there was, probably).
 
-   CVSROOT is the $CVSROOT directory (current_parsed_root->directory might not be
+   CVSROOT is the $CVSROOT directory (CVSroot_directory might not be
    set yet).
 
    Returns 0 for success, negative value for failure.  Call
@@ -259,7 +250,7 @@ parse_config (cvsroot)
 	return 0;
     }
 
-    while (get_line (&line, &line_allocated, fp_info) >= 0)
+    while (getline (&line, &line_allocated, fp_info) >= 0)
     {
 	/* Skip comments.  */
 	if (line[0] == '#')
@@ -346,17 +337,6 @@ parse_config (cvsroot)
 	else if (strcmp (line, "umask") == 0) {
 	    cvsumask = (mode_t)(strtol(p, NULL, 8) & 0777);
 	}
-	else if (strcmp (line, "DisableMdocdate") == 0) {
-	    if (strcmp (p, "no") == 0)
-		disable_mdocdate = 0;
-	    else if (strcmp (p, "yes") == 0)
-		disable_mdocdate = 1;
-	    else 
-	    {
-		error (0, 0, "unrecognized value '%s' for DisableMdocdate", p);
-		goto error_return;
-	    }
-	}
 	else if (strcmp (line, "dlimit") == 0) {
 #ifdef BSD
 #include <sys/resource.h>
@@ -369,29 +349,6 @@ parse_config (cvsroot)
 		(void) setrlimit(RLIMIT_DATA, &rl);
 	    }
 #endif /* BSD */
-	}
-	else if (strcmp (line, "DisableXProg") == 0)
-	{
-	    if (strcmp (p, "no") == 0)
-#ifdef AUTH_SERVER_SUPPORT
-		disable_x_prog = 0;
-#else
-		/* Still parse the syntax but ignore the
-		   option.  That way the same config file can
-		   be used for local and server.  */
-		;
-#endif
-	    else if (strcmp (p, "yes") == 0)
-#ifdef AUTH_SERVER_SUPPORT
-		disable_x_prog = 1;
-#else
-		;
-#endif
-	    else
-	    {
-		error (0, 0, "unrecognized value '%s' for DisableXProg", p);
-		goto error_return;
-	    }
 	}
 	else if (strcmp (line, "PreservePermissions") == 0)
 	{
@@ -433,14 +390,6 @@ warning: this CVS does not support PreservePermissions");
 	    /* Could try some validity checking, like whether we can
 	       opendir it or something, but I don't see any particular
 	       reason to do that now rather than waiting until lock.c.  */
-	}
-	else if (strcmp (line, "LogHistory") == 0)
-	{
-	    if (strcmp (p, "all") != 0)
-	    {
-		logHistory=malloc(strlen (p) + 1);
-		strcpy (logHistory, p);
-	    }
 	}
 	else
 	{

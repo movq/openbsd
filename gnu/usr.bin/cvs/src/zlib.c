@@ -72,7 +72,7 @@ compress_error (status, zstatus, zstr, msg)
     zmsg = zstr->msg;
     if (zmsg == NULL)
     {
-        snprintf (buf, sizeof buf, "error %d", zstatus);
+        sprintf (buf, "error %d", zstatus);
 	zmsg = buf;
     }
 
@@ -467,9 +467,9 @@ gunzip_and_write (fd, fullname, buf, size)
     if (buf[3] & 4)
 	pos += buf[pos] + (buf[pos + 1] << 8) + 2;
     if (buf[3] & 8)
-	pos += strlen ((char *) buf + pos) + 1;
+	pos += strlen (buf + pos) + 1;
     if (buf[3] & 16)
-	pos += strlen ((char *) buf + pos) + 1;
+	pos += strlen (buf + pos) + 1;
     if (buf[3] & 2)
 	pos += 2;
 

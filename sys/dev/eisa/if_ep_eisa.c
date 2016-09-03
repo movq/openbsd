@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ep_eisa.c,v 1.26 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_ep_eisa.c,v 1.11 1998/09/19 10:08:04 maja Exp $	*/
 /*	$NetBSD: if_ep_eisa.c,v 1.13 1997/04/18 00:50:33 cgd Exp $	*/
 
 /*
@@ -41,26 +41,31 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
-#include <sys/timeout.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/netisr.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
-#include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>     
+#include <netinet/ip.h>
+#include <netinet/if_ether.h>   
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
 #include <machine/intr.h>
-
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 
 #include <dev/ic/elink3var.h>
 #include <dev/ic/elink3reg.h>
@@ -69,8 +74,8 @@
 #include <dev/eisa/eisavar.h>
 #include <dev/eisa/eisadevs.h>
 
-int ep_eisa_match(struct device *, void *, void *);
-void ep_eisa_attach(struct device *, struct device *, void *);
+int ep_eisa_match __P((struct device *, void *, void *));
+void ep_eisa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ep_eisa_ca = {
 	sizeof(struct ep_softc), ep_eisa_match, ep_eisa_attach
@@ -90,13 +95,9 @@ ep_eisa_match(parent, match, aux)
 	struct eisa_attach_args *ea = aux;
 
 	/* must match one of our known ID strings */
-	if (strcmp(ea->ea_idstring, "TCM5090") &&
-	    strcmp(ea->ea_idstring, "TCM5091") &&
+	if (strcmp(ea->ea_idstring, "TCM5091") &&
 	    strcmp(ea->ea_idstring, "TCM5092") &&
 	    strcmp(ea->ea_idstring, "TCM5093") &&
-	    strcmp(ea->ea_idstring, "TCM5094") &&
-	    strcmp(ea->ea_idstring, "TCM5095") &&
-	    strcmp(ea->ea_idstring, "TCM5098") &&
 	    strcmp(ea->ea_idstring, "TCM5920") &&
 	    strcmp(ea->ea_idstring, "TCM5970") &&
 	    strcmp(ea->ea_idstring, "TCM5971") &&
@@ -125,14 +126,18 @@ ep_eisa_attach(parent, self, aux)
 	/* Map i/o space. */
 	if (bus_space_map(iot, EISA_SLOT_ADDR(ea->ea_slot),
 	    EISA_SLOT_SIZE, 0, &ioh))
-		panic(": can't map i/o space");
+		panic("ep_eisa_attach: can't map i/o space");
 
 	sc->bustype = EP_BUS_EISA;
 	sc->sc_ioh = ioh;
 	sc->sc_iot = iot;
 
+	/* Reset card. */
+	bus_space_write_1(iot, ioh, EISA_CONTROL, EISA_ENABLE | EISA_RESET);
+	delay(10);
 	bus_space_write_1(iot, ioh, EISA_CONTROL, EISA_ENABLE);
-	delay(4000);
+	/* Wait for reset? */
+	delay(1000);
 
 	/* XXX What is this doing?!  Reading the i/o address? */
 	k = bus_space_read_2(iot, ioh, EP_W0_ADDRESS_CFG);
@@ -142,58 +147,48 @@ ep_eisa_attach(parent, self, aux)
 	irq = bus_space_read_2(iot, ioh, EP_W0_RESOURCE_CFG) >> 12;
 
 	chipset = EP_CHIPSET_3C509;	/* assume dumb chipset */
-	if (strcmp(ea->ea_idstring, "TCM5090") == 0)
-		model = EISA_PRODUCT_TCM5090;
-	else if (strcmp(ea->ea_idstring, "TCM5091") == 0)
+	if (strcmp(ea->ea_idstring, "TCM5091") == 0)
 		model = EISA_PRODUCT_TCM5091;
 	else if (strcmp(ea->ea_idstring, "TCM5092") == 0)
 		model = EISA_PRODUCT_TCM5092;
 	else if (strcmp(ea->ea_idstring, "TCM5093") == 0)
 		model = EISA_PRODUCT_TCM5093;
-	else if (strcmp(ea->ea_idstring, "TCM5094") == 0)
-		model = EISA_PRODUCT_TCM5094;
-	else if (strcmp(ea->ea_idstring, "TCM5095") == 0)
-		model = EISA_PRODUCT_TCM5095;
-	else if (strcmp(ea->ea_idstring, "TCM5098") == 0)
-		model = EISA_PRODUCT_TCM5098;
 	else if (strcmp(ea->ea_idstring, "TCM5920") == 0) {
 		model = EISA_PRODUCT_TCM5920;
 		chipset = EP_CHIPSET_VORTEX;
-	} else if (strcmp(ea->ea_idstring, "TCM5970") == 0) {
+	}
+	else if (strcmp(ea->ea_idstring, "TCM5970") == 0) {
 		model = EISA_PRODUCT_TCM5970;
 		chipset = EP_CHIPSET_VORTEX;
-	} else if (strcmp(ea->ea_idstring, "TCM5971") == 0) {
+	}
+	else if (strcmp(ea->ea_idstring, "TCM5971") == 0) {
 		model = EISA_PRODUCT_TCM5971;
 		chipset = EP_CHIPSET_VORTEX;
-	} else if (strcmp(ea->ea_idstring, "TCM5972") == 0) {
+	}
+	else if (strcmp(ea->ea_idstring, "TCM5972") == 0) {
 		model = EISA_PRODUCT_TCM5972;
 		chipset = EP_CHIPSET_VORTEX;
-	} else
+	}
+	else
 		model = "unknown model!";
+	printf(": %s", model);
 
 	if (eisa_intr_map(ec, irq, &ih)) {
-		printf(": couldn't map interrupt (%u)\n", irq);
-		bus_space_unmap(iot, ioh, EISA_SLOT_SIZE);
+		printf("couldn't map interrupt (%u)\n", irq);
 		return;
 	}
 	intrstr = eisa_intr_string(ec, ih);
 	sc->sc_ih = eisa_intr_establish(ec, ih, IST_EDGE, IPL_NET,
 	    epintr, sc, sc->sc_dev.dv_xname);
 	if (sc->sc_ih == NULL) {
-		printf(": couldn't establish interrupt");
+		printf("couldn't establish interrupt");
 		if (intrstr != NULL)
 			printf(" at %s", intrstr);
 		printf("\n");
-		bus_space_unmap(iot, ioh, EISA_SLOT_SIZE);
 		return;
 	}
-
-	printf(": %s,", model);
 	if (intrstr != NULL)
-		printf(" %s,", intrstr);
+		printf("%s ", intrstr);
 
 	epconfig(sc, chipset, NULL);
-	/* XXX because epconfig() will not print a newline for vortex chips */
-	if (chipset == EP_CHIPSET_VORTEX)
-		printf("\n");
 }

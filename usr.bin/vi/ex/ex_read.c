@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_read.c,v 1.13 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_read.c	10.38 (Berkeley) 8/12/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -35,10 +37,12 @@
  * !!!
  * Historical vi wouldn't undo a filter read, for no apparent reason.
  *
- * PUBLIC: int ex_read(SCR *, EXCMD *);
+ * PUBLIC: int ex_read __P((SCR *, EXCMD *));
  */
 int
-ex_read(SCR *sp, EXCMD *cmdp)
+ex_read(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	enum { R_ARG, R_EXPANDARG, R_FILTER } which;
 	struct stat sb;
@@ -62,8 +66,6 @@ ex_read(SCR *sp, EXCMD *cmdp)
 	switch (cmdp->argc) {
 	case 0:
 		which = R_ARG;
-		arg = NULL;	/* unused */
-		arglen = 0;	/* unused */
 		break;
 	case 1:
 		arg = cmdp->argv[0]->bp;
@@ -237,9 +239,6 @@ ex_read(SCR *sp, EXCMD *cmdp)
 		
 		}
 		break;
-	default:
-		abort();
-		/* NOTREACHED */
 	}
 
 	/*
@@ -257,13 +256,13 @@ ex_read(SCR *sp, EXCMD *cmdp)
 	if (!S_ISFIFO(sb.st_mode) && !S_ISREG(sb.st_mode)) {
 		(void)fclose(fp);
 		msgq(sp, M_ERR,
-		    "Only regular files and named pipes may be read");
+		    "145|Only regular files and named pipes may be read");
 		return (1);
 	}
 
 	/* Try and get a lock. */
 	if (file_lock(sp, NULL, NULL, fileno(fp), 0) == LOCK_UNAVAIL)
-		msgq(sp, M_ERR, "%s: read lock was unavailable", name);
+		msgq(sp, M_ERR, "146|%s: read lock was unavailable", name);
 
 	rval = ex_readfp(sp, name, fp, &cmdp->addr1, &nlines, 0);
 
@@ -289,11 +288,16 @@ ex_read(SCR *sp, EXCMD *cmdp)
  * ex_readfp --
  *	Read lines into the file.
  *
- * PUBLIC: int ex_readfp(SCR *, char *, FILE *, MARK *, recno_t *, int);
+ * PUBLIC: int ex_readfp __P((SCR *, char *, FILE *, MARK *, recno_t *, int));
  */
 int
-ex_readfp(SCR *sp, char *name, FILE *fp, MARK *fm, recno_t *nlinesp,
-    int silent)
+ex_readfp(sp, name, fp, fm, nlinesp, silent)
+	SCR *sp;
+	char *name;
+	FILE *fp;
+	MARK *fm;
+	recno_t *nlinesp;
+	int silent;
 {
 	EX_PRIVATE *exp;
 	GS *gp;
@@ -312,7 +316,7 @@ ex_readfp(SCR *sp, char *name, FILE *fp, MARK *fm, recno_t *nlinesp,
 	 */
 	ccnt = 0;
 	lcnt = 0;
-	p = "Reading...";
+	p = "147|Reading...";
 	for (lno = fm->lno; !ex_getline(sp, fp, &len); ++lno, ++lcnt) {
 		if ((lcnt + 1) % INTERRUPT_CHECK == 0) {
 			if (INTERRUPTED(sp))
@@ -338,7 +342,7 @@ ex_readfp(SCR *sp, char *name, FILE *fp, MARK *fm, recno_t *nlinesp,
 	if (!silent) {
 		p = msg_print(sp, name, &nf);
 		msgq(sp, M_INFO,
-		    "%s: %lu lines, %lu characters", p, lcnt, ccnt);
+		    "148|%s: %lu lines, %lu characters", p, lcnt, ccnt);
 		if (nf)
 			FREE_SPACE(sp, p, 0);
 	}

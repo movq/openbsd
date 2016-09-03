@@ -1,4 +1,4 @@
-/*	$OpenBSD: ipc.h,v 1.13 2014/11/15 21:42:50 guenther Exp $	*/
+/*	$OpenBSD: ipc.h,v 1.6 1998/11/15 19:19:53 deraadt Exp $	*/
 /*	$NetBSD: ipc.h,v 1.15 1996/02/09 18:25:12 christos Exp $	*/
 
 /*
@@ -23,7 +23,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -48,8 +52,6 @@
 #ifndef _SYS_IPC_H_
 #define _SYS_IPC_H_
 
-#include <sys/types.h>
-
 struct ipc_perm {
 	uid_t		cuid;	/* creator user id */
 	gid_t		cgid;	/* creator group id */
@@ -59,6 +61,18 @@ struct ipc_perm {
 	unsigned short	seq;	/* sequence # (to generate unique msg/sem/shm id) */
 	key_t		key;	/* user specified msg/sem/shm key */
 };
+
+#ifdef _KERNEL
+struct oipc_perm {
+	unsigned short	cuid;	/* creator user id */
+	unsigned short	cgid;	/* creator group id */
+	unsigned short	uid;	/* user id */
+	unsigned short	gid;	/* group id */
+	unsigned short	mode;	/* r/w permission */
+	unsigned short	seq;	/* sequence # (to generate unique msg/sem/shm id) */
+	key_t		key;	/* user specified msg/sem/shm key */
+};
+#endif
 
 /* common mode bits */
 #define	IPC_R		000400	/* read permission */
@@ -82,14 +96,16 @@ struct ipc_perm {
 #define	IPCID_TO_SEQ(id)	(((id) >> 16) & 0xffff)
 #define	IXSEQ_TO_IPCID(ix,perm)	(((perm.seq) << 16) | (ix & 0xffff))
 
-struct ucred;
+int ipcperm __P((struct ucred *, struct ipc_perm *, int));
+void ipc_n2o __P((struct ipc_perm *, struct oipc_perm *));
+void ipc_o2n __P((struct oipc_perm *, struct ipc_perm *));
+#endif /* _KERNEL */
 
-int ipcperm(struct ucred *, struct ipc_perm *, int);
-
-#else /* !_KERNEL */
+#ifndef _KERNEL
+#include <sys/cdefs.h>
 
 __BEGIN_DECLS
-key_t	ftok(const char *, int);
+key_t	ftok __P((const char *, int));
 __END_DECLS
 #endif
 #endif /* !_SYS_IPC_H_ */

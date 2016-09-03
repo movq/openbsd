@@ -1,4 +1,4 @@
-/*	$OpenBSD: mv.c,v 1.43 2015/11/17 18:34:00 tedu Exp $	*/
+/*	$OpenBSD: mv.c,v 1.14 1999/07/26 21:29:45 aaron Exp $	*/
 /*	$NetBSD: mv.c,v 1.9 1995/03/21 09:06:52 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)mv.c	8.2 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: mv.c,v 1.14 1999/07/26 21:29:45 aaron Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -45,33 +64,29 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 #include <pwd.h>
 #include <grp.h>
 
 #include "pathnames.h"
 
-extern char *__progname;
-
 int fflg, iflg;
 int stdin_ok;
 
-extern int cpmain(int argc, char **argv);
-extern int rmmain(int argc, char **argv);
-
-int	mvcopy(char *, char *);
-int	do_move(char *, char *);
-int	fastcopy(char *, char *, struct stat *);
-void	usage(void);
+int	copy __P((char *, char *));
+int	do_move __P((char *, char *));
+int	fastcopy __P((char *, char *, struct stat *));
+void	usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int baselen, len, rval;
-	char *p, *endp;
+	register int baselen, len, rval;
+	register char *p, *endp;
 	struct stat sb;
 	int ch;
-	char path[PATH_MAX];
+	char path[MAXPATHLEN];
 
 	while ((ch = getopt(argc, argv, "if")) != -1)
 		switch (ch) {
@@ -105,8 +120,9 @@ main(int argc, char *argv[])
 	}
 
 	/* It's a directory, move each file into it. */
-	if (strlcpy(path, argv[argc - 1], sizeof path) >= sizeof path)
+	if (strlen(argv[argc - 1]) > sizeof path - 1)
 		errx(1, "%s: destination pathname too long", *argv);
+	(void)strcpy(path, argv[argc - 1]);
 	baselen = strlen(path);
 	endp = &path[baselen];
 	if (*(endp - 1) != '/') {
@@ -137,7 +153,7 @@ main(int argc, char *argv[])
 			p++;
 		}
 
-		if ((baselen + (len = strlen(p))) >= PATH_MAX) {
+		if ((baselen + (len = strlen(p))) >= MAXPATHLEN) {
 			warnx("%s: destination pathname too long", *argv);
 			rval = 1;
 		} else {
@@ -150,22 +166,17 @@ main(int argc, char *argv[])
 }
 
 int
-do_move(char *from, char *to)
+do_move(from, to)
+	char *from, *to;
 {
-	struct stat sb, fsb;
+	struct stat sb;
 	char modep[15];
-
-	/* Source path must exist (symlink is OK). */
-	if (lstat(from, &fsb)) {
-		warn("%s", from);
-		return (1);
-	}
 
 	/*
 	 * (1)	If the destination path exists, the -f option is not specified
 	 *	and either of the following conditions are true:
 	 *
-	 *	(a) The permissions of the destination path do not permit
+	 *	(a) The perimissions of the destination path do not permit
 	 *	    writing and the standard input is a terminal.
 	 *	(b) The -i option is specified.
 	 *
@@ -213,24 +224,22 @@ do_move(char *from, char *to)
 	if (!rename(from, to))
 		return (0);
 
-	if (errno != EXDEV) {
-		warn("rename %s to %s", from, to);
-		return (1);
-	}
-
-	/* Disallow moving a mount point. */
-	if (S_ISDIR(fsb.st_mode)) {
+	if (errno == EXDEV) {
 		struct statfs sfs;
-		char path[PATH_MAX];
+		char path[MAXPATHLEN];
 
+		/* Can't mv(1) a mount point. */
 		if (realpath(from, path) == NULL) {
-			warnx("cannot resolve %s", from);
+			warnx("cannot resolve %s: %s", from, path);
 			return (1);
 		}
 		if (!statfs(path, &sfs) && !strcmp(path, sfs.f_mntonname)) {
 			warnx("cannot rename a mount point");
 			return (1);
 		}
+	} else {
+		warn("rename %s to %s", from, to);
+		return (1);
 	}
 
 	/*
@@ -239,7 +248,7 @@ do_move(char *from, char *to)
 	 *	message to the standard error and do nothing more with the
 	 *	current source file...
 	 */
-	if (!lstat(to, &sb)) {
+	if (!stat(to, &sb)) {
 		if ((S_ISDIR(sb.st_mode)) ? rmdir(to) : unlink(to)) {
 			warn("can't remove %s", to);
 			return (1);
@@ -248,29 +257,26 @@ do_move(char *from, char *to)
 
 	/*
 	 * (5)	The file hierarchy rooted in source_file shall be duplicated
-	 *	as a file hierarchy rooted in the destination path...
+	 *	as a file hiearchy rooted in the destination path...
 	 */
-	return (S_ISREG(fsb.st_mode) ?
-	    fastcopy(from, to, &fsb) : mvcopy(from, to));
+	if (stat(from, &sb)) {
+		warn("%s", from);
+		return (1);
+	}
+	return (S_ISREG(sb.st_mode) ?
+	    fastcopy(from, to, &sb) : copy(from, to));
 }
 
 int
-fastcopy(char *from, char *to, struct stat *sbp)
+fastcopy(from, to, sbp)
+	char *from, *to;
+	struct stat *sbp;
 {
-	struct timespec ts[2];
-	static u_int32_t blen;
+	struct timeval tval[2];
+	static u_int blen;
 	static char *bp;
-	int nread, from_fd, to_fd;
-	int badchown = 0, serrno = 0;
-
-	if (!blen) {
-		blen = sbp->st_blksize;
-		if ((bp = malloc(blen)) == NULL) {
-			warn(NULL);
-			blen = 0;
-			return (1);
-		}
-	}
+	register int nread, from_fd, to_fd;
+	int badchown = 0, serrno;
 
 	if ((from_fd = open(from, O_RDONLY, 0)) < 0) {
 		warn("%s", from);
@@ -288,6 +294,10 @@ fastcopy(char *from, char *to, struct stat *sbp)
 	}
 	(void) fchmod(to_fd, sbp->st_mode & ~(S_ISUID|S_ISGID));
 
+	if (!blen && !(bp = malloc(blen = sbp->st_blksize))) {
+		warn(NULL);
+		return (1);
+	}
 	while ((nread = read(from_fd, bp, blen)) > 0)
 		if (write(to_fd, bp, nread) != nread) {
 			warn("%s", to);
@@ -304,32 +314,21 @@ err:		if (unlink(to))
 	(void)close(from_fd);
 
 	if (badchown) {
+		errno = serrno;
 		if ((sbp->st_mode & (S_ISUID|S_ISGID)))  {
-			warnc(serrno,
-			    "%s: set owner/group; not setting setuid/setgid",
+			warn("%s: set owner/group; not setting setuid/setgid",
 			    to);
 			sbp->st_mode &= ~(S_ISUID|S_ISGID);
 		} else if (!fflg)
-			warnc(serrno, "%s: set owner/group", to);
+			warn("%s: set owner/group", to);
 	}
 	if (fchmod(to_fd, sbp->st_mode))
 		warn("%s: set mode", to);
 
-	/*
-	 * XXX
-	 * NFS doesn't support chflags; ignore errors unless there's reason
-	 * to believe we're losing bits.  (Note, this still won't be right
-	 * if the server supports flags and we were trying to *remove* flags
-	 * on a file that we copied, i.e., that we didn't create.)
-	 */
-	errno = 0;
-	if (fchflags(to_fd, sbp->st_flags))
-		if (errno != EOPNOTSUPP || sbp->st_flags != 0)
-			warn("%s: set flags", to);
-
-	ts[0] = sbp->st_atim;
-	ts[1] = sbp->st_mtim;
-	if (futimens(to_fd, ts))
+	tval[0].tv_sec = sbp->st_atime;
+	tval[1].tv_sec = sbp->st_mtime;
+	tval[0].tv_usec = tval[1].tv_usec = 0;
+	if (utimes(to, tval))
 		warn("%s: set times", to);
 
 	if (close(to_fd)) {
@@ -345,33 +344,56 @@ err:		if (unlink(to))
 }
 
 int
-mvcopy(char *from, char *to)
+copy(from, to)
+	char *from, *to;
 {
-	char *argv[3];
+	int status;
+	pid_t pid;
 
-	argv[0] = from;
-	argv[1] = to;
-	argv[2] = NULL;
-	if (cpmain(2, argv)) {
-		warn("cp failed");
+	if ((pid = vfork()) == 0) {
+		execl(_PATH_CP, "mv", "-PRp", from, to, NULL);
+		warn("%s", _PATH_CP);
 		_exit(1);
 	}
-
-	argv[0] = from;
-	argv[1] = NULL;
-	if (rmmain(1, argv)) {
-		warn("rm failed");
+	if (waitpid(pid, &status, 0) == -1) {
+		warn("%s: waitpid", _PATH_CP);
+		return (1);
+	}
+	if (!WIFEXITED(status)) {
+		warn("%s: did not terminate normally", _PATH_CP);
+		return (1);
+	}
+	if (WEXITSTATUS(status)) {
+		warn("%s: terminated with %d (non-zero) status",
+		    _PATH_CP, WEXITSTATUS(status));
+		return (1);
+	}
+	if (!(pid = vfork())) {
+		execl(_PATH_RM, "mv", "-rf", from, NULL);
+		warn("%s", _PATH_RM);
 		_exit(1);
 	}
-
+	if (waitpid(pid, &status, 0) == -1) {
+		warn("%s: waitpid", _PATH_RM);
+		return (1);
+	}
+	if (!WIFEXITED(status)) {
+		warn("%s: did not terminate normally", _PATH_RM);
+		return (1);
+	}
+	if (WEXITSTATUS(status)) {
+		warn("%s: terminated with %d (non-zero) status",
+		    _PATH_RM, WEXITSTATUS(status));
+		return (1);
+	}
 	return (0);
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s [-fi] source target\n", __progname);
-	(void)fprintf(stderr, "       %s [-fi] source ... directory\n",
-	    __progname);
+
+	(void)fprintf(stderr, "usage: mv [-fi] source target\n");
+	(void)fprintf(stderr, "       mv [-fi] source ... directory\n");
 	exit(1);
 }

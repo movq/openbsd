@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)sfs_ops.c	8.1 (Berkeley) 6/6/93
- *	$Id: sfs_ops.c,v 1.6 2016/03/16 15:41:11 krw Exp $
+ *	$Id: sfs_ops.c,v 1.1.1.1 1995/10/18 08:47:12 deraadt Exp $
  */
 
 #include "am.h"
@@ -54,8 +58,8 @@
 /*
  * SFS needs a link.
  */
-static char *
-sfs_match(am_opts *fo)
+static char *sfs_match(fo)
+am_opts *fo;
 {
 	if (!fo->opt_fs) {
 		plog(XLOG_USER, "link: no fs specified");
@@ -84,12 +88,13 @@ sfs_match(am_opts *fo)
 			if (*link == '/')
 				fullpath = strdup(link);
 			else
-				fullpath = str3cat(NULL, fo->opt_fs, "/", link);
+				fullpath = str3cat((char *)0, fo->opt_fs, "/", link);
 		} else {
 			fullpath = strdup(fo->opt_fs);
 		}
 
-		free(fo->opt_sublink);
+		if (fo->opt_sublink)
+			free(fo->opt_sublink);
 		fo->opt_sublink = fullpath;
 		fo->opt_fs = str3cat(fo->opt_fs, ".", fullpath, "");
 	}
@@ -99,8 +104,10 @@ sfs_match(am_opts *fo)
 #endif
 
 #ifdef HAS_SFSX
-static int
-sfsx_mount(am_node *mp)
+/*ARGUSED*/
+static int sfsx_mount P((am_node *mp));
+static int sfsx_mount(mp)
+am_node *mp;
 {
 	/*
 	 * Check for existence of target.
@@ -126,8 +133,9 @@ sfsx_mount(am_node *mp)
 #endif
 
 #ifdef HAS_SFS
-static int
-sfs_fmount(mntfs *mf)
+/*ARGUSED*/
+static int sfs_fmount(mf)
+mntfs *mf;
 {
 	/*
 	 * Wow - this is hard to implement!
@@ -138,8 +146,9 @@ sfs_fmount(mntfs *mf)
 #endif
 
 #ifdef NEED_SFS_UMOUNT
-static int
-sfs_fumount(mntfs *mf)
+/*ARGUSED*/
+static int sfs_fumount(mf)
+mntfs *mf;
 {
 	return 0;
 }

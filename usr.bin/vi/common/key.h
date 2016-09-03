@@ -1,5 +1,3 @@
-/*	$OpenBSD: key.h,v 1.8 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -15,11 +13,16 @@
  * Fundamental character types.
  *
  * CHAR_T	An integral type that can hold any character.
+ * ARG_CHAR_T	The type of a CHAR_T when passed as an argument using
+ *		traditional promotion rules.  It should also be able
+ *		to be compared against any CHAR_T for equality without
+ *		problems.
  * MAX_CHAR_T	The maximum value of any character.
  *
  * If no integral type can hold a character, don't even try the port.
  */
 typedef	u_char		CHAR_T;
+typedef	u_int		ARG_CHAR_T;
 #define	MAX_CHAR_T	0xff
 
 /* The maximum number of columns any character can take up on a screen. */
@@ -129,7 +132,20 @@ extern KEYLIST keylist[];
 #define	KEYS_WAITING(sp)	((sp)->gp->i_cnt != 0)
 #define	MAPPED_KEYS_WAITING(sp)						\
 	(KEYS_WAITING(sp) &&						\
-	    F_ISSET(&(sp)->gp->i_event[(sp)->gp->i_next].e_ch, CH_MAPPED))
+	    F_ISSET(&sp->gp->i_event[sp->gp->i_next].e_ch, CH_MAPPED))
+
+/*
+ * Ex/vi commands are generally separated by whitespace characters.  We
+ * can't use the standard isspace(3) macro because it returns true for
+ * characters like ^K in the ASCII character set.  The 4.4BSD isblank(3)
+ * macro does exactly what we want, but it's not portable yet.
+ *
+ * XXX
+ * Note side effect, ch is evaluated multiple times.
+ */
+#ifndef isblank
+#define	isblank(ch)	((ch) == ' ' || (ch) == '\t')
+#endif
 
 /* The "standard" tab width, for displaying things to users. */
 #define	STANDARD_TAB	6
@@ -158,7 +174,7 @@ extern KEYLIST keylist[];
 #define	INTERRUPT_CHECK	100
 #define	INTERRUPTED(sp)							\
 	(F_ISSET((sp)->gp, G_INTERRUPTED) ||				\
-	(!v_event_get((sp), NULL, 0, EC_INTERRUPT) &&			\
+	(!v_event_get(sp, NULL, 0, EC_INTERRUPT) &&			\
 	F_ISSET((sp)->gp, G_INTERRUPTED)))
 #define	CLR_INTERRUPT(sp)						\
 	F_CLR((sp)->gp, G_INTERRUPTED)

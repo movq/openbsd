@@ -1,4 +1,3 @@
-/*	$OpenBSD: perror.c,v 1.9 2015/08/31 02:53:57 guenther Exp $ */
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: perror.c,v 1.3 1998/09/10 06:44:53 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -35,11 +42,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+/*
+ * Since perror() is not allowed to change the contents of strerror()'s
+ * static buffer, both functions supply their own buffers to the
+ * internal function __strerror().
+ */
+
+extern char *__strerror __P((int , char *));
 
 void
-perror(const char *s)
+perror(s)
+	const char *s;
 {
-	struct iovec *v;
+	register struct iovec *v;
 	struct iovec iov[4];
 	char buf[NL_TEXTMAX];
 
@@ -52,12 +67,10 @@ perror(const char *s)
 		v->iov_len = 2;
 		v++;
 	}
-	(void)strerror_r(errno, buf, sizeof(buf));
-	v->iov_base = buf;
+	v->iov_base = __strerror(errno, buf);
 	v->iov_len = strlen(v->iov_base);
 	v++;
 	v->iov_base = "\n";
 	v->iov_len = 1;
 	(void)writev(STDERR_FILENO, iov, (v - iov) + 1);
 }
-DEF_STRONG(perror);

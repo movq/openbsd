@@ -1,4 +1,4 @@
-/*	$OpenBSD: docmd.c,v 1.32 2015/01/20 09:00:16 guenther Exp $	*/
+/*	$OpenBSD: docmd.c,v 1.8 1999/02/04 23:18:57 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,45 +33,50 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <paths.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: docmd.c,v 6.86 1996/01/30 02:29:43 mcooper Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: docmd.c,v 1.8 1999/02/04 23:18:57 millert Exp $";
+#endif
 
-#include "client.h"
-#include "y.tab.h"
+static char sccsid[] = "@(#)docmd.c	5.1 (Berkeley) 6/6/85";
+
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
 
 /*
  * Functions for rdist that do command (cmd) related activities.
  */
 
+#include "defs.h"
+#include "y.tab.h"
+#include <sys/socket.h>
+#include <netdb.h>
+
 struct subcmd	       *subcmds;		/* list of sub-commands for 
 						   current cmd */
 struct namelist	       *filelist;		/* list of source files */
+extern struct cmd      *cmds;			/* Initialized by yyparse() */
 time_t			lastmod;		/* Last modify time */
 
-static void closeconn(void);
-static void notify(char *, struct namelist *, time_t);
-static void checkcmd(struct cmd *);
-static void markfailed(struct cmd *, struct cmd *);
-static int remotecmd(char *, char *, char *, char *);
-static int makeconn(char *);
-static void doarrow(struct cmd *, char **);
-static void rcmptime(struct stat *, struct subcmd *, char **);
-static void cmptime(char *, struct subcmd *, char **);
-static void dodcolon(struct cmd *, char **);
-static void docmdhost(struct cmd *, char **);
-static void docmd(struct cmd *, int, char **);
+extern char 		target[];
+extern char 	       *ptarget;
+extern int		activechildren;
+extern int		maxchildren;
+extern int		amchild;
+extern char	       *path_rdistd;
+
+static void cmptime();
 
 /*
  * Signal end of connection.
  */
-static void
-closeconn(void)
+static void closeconn()
 {
 	debugmsg(DM_CALL, "closeconn() called\n");
 
@@ -88,15 +97,16 @@ closeconn(void)
  * rhost == NULL if we are mailing a list of changes compared to at time
  * stamp file.
  */
-static void
-notify(char *rhost, struct namelist *to, time_t lmod)
+static void notify(rhost, to, lmod)
+	char *rhost;
+	register struct namelist *to;
+	time_t lmod;
 {
-	int fd;
-	ssize_t len;
-	FILE *pf;
+	register int fd, len;
+	FILE *pf, *popen();
 	struct stat stb;
 	static char buf[BUFSIZ];
-	char *file, *user;
+	char *file;
 
 	if (IS_ON(options, DO_VERIFY) || to == NULL)
 		return;
@@ -129,11 +139,11 @@ notify(char *rhost, struct namelist *to, time_t lmod)
 		return;
 	}
 	/*
-	 * Create a pipe to mailing program.
+	 * Create a pipe to mailling program.
 	 * Set IFS to avoid possible security problem with users
 	 * setting "IFS=/".
 	 */
-	(void) snprintf(buf, sizeof(buf), "IFS=\" \t\"; export IFS; %s -oi -t", 
+	(void) sprintf(buf, "IFS=\" \t\"; export IFS; %s -oi -t", 
 		       _PATH_SENDMAIL);
 	pf = popen(buf, "w");
 	if (pf == NULL) {
@@ -145,7 +155,6 @@ notify(char *rhost, struct namelist *to, time_t lmod)
 	/*
 	 * Output the proper header information.
 	 */
-	(void) fprintf(pf, "Auto-Submitted: auto-generated\n");
 	(void) fprintf(pf, "From: rdist (Remote distribution program)\n");
 	(void) fprintf(pf, "To:");
 	if (!any('@', to->n_name) && rhost != NULL)
@@ -161,20 +170,15 @@ notify(char *rhost, struct namelist *to, time_t lmod)
 		to = to->n_next;
 	}
 	(void) putc('\n', pf);
-
-	if ((user = getlogin()) == NULL)
-		user = locuser;
-
 	if (rhost != NULL)
 		(void) fprintf(pf, 
-			 "Subject: files updated by %s from %s to %s\n",
-			 locuser, host, rhost);
+			     "Subject: files updated by rdist from %s to %s\n",
+			       host, rhost);
 	else
 		(void) fprintf(pf, "Subject: files updated after %s\n", 
 			       ctime(&lmod));
 	(void) putc('\n', pf);
 	(void) putc('\n', pf);
-	(void) fprintf(pf, "Options: %s\n\n", getondistoptlist(options));
 
 	while ((len = read(fd, buf, sizeof(buf))) > 0)
 		(void) fwrite(buf, 1, len, pf);
@@ -190,8 +194,8 @@ notify(char *rhost, struct namelist *to, time_t lmod)
  * skipping files that are on an NFS filesystem is
  * bypassed.  We always strip '+' to be consistent.
  */
-static void
-checkcmd(struct cmd *cmd)
+static void checkcmd(cmd)
+	struct cmd *cmd;
 {
 	int l;
 
@@ -213,10 +217,11 @@ checkcmd(struct cmd *cmd)
  * Mark all other entries for this command (cmd)
  * as assigned.
  */
-void
-markassigned(struct cmd *cmd, struct cmd *cmdlist)
+extern void markassigned(cmd, cmdlist)
+	struct cmd *cmd;
+	struct cmd *cmdlist;
 {
-	struct cmd *pcmd;
+	register struct cmd *pcmd;
 	
 	for (pcmd = cmdlist; pcmd; pcmd = pcmd->c_next) {
 		checkcmd(pcmd);
@@ -229,10 +234,11 @@ markassigned(struct cmd *cmd, struct cmd *cmdlist)
 /*
  * Mark the command "cmd" as failed for all commands in list cmdlist.
  */
-static void
-markfailed(struct cmd *cmd, struct cmd *cmdlist)
+static void markfailed(cmd, cmdlist)
+	struct cmd *cmd;
+	struct cmd *cmdlist;
 {
-	struct cmd *pc;
+	register struct cmd *pc;
 
 	if (!cmd) {
 		debugmsg(DM_MISC, "markfailed() NULL cmd parameter");
@@ -249,10 +255,15 @@ markfailed(struct cmd *cmd, struct cmd *cmdlist)
 	}
 }
 
-static int
-remotecmd(char *rhost, char *luser, char *ruser, char *cmd)
+static int remotecmd(rhost, luser, ruser, cmd)
+	char *rhost;
+	char *luser, *ruser;
+	char *cmd;
 {
 	int desc;
+#if	defined(DIRECT_RCMD)
+	static int port = -1;
+#endif	/* DIRECT_RCMD */
 
 	debugmsg(DM_MISC, "local user = %s remote user = %s\n", luser, ruser);
 	debugmsg(DM_MISC, "Remote command = '%s'\n", cmd);
@@ -262,12 +273,30 @@ remotecmd(char *rhost, char *luser, char *ruser, char *cmd)
 	(void) signal(SIGALRM, sighandler);
 	(void) alarm(RTIMEOUT);
 
+#if	defined(DIRECT_RCMD)
+	(void) signal(SIGPIPE, sighandler);
+
+	if (port < 0) {
+		struct servent *sp;
+		
+		if ((sp = getservbyname("shell", "tcp")) == NULL)
+				fatalerr("shell/tcp: unknown service");
+		port = sp->s_port;
+	}
+
+	if (becomeroot() != 0)
+		exit(1);
+	desc = rcmd(&rhost, port, luser, ruser, cmd, 0);
+	if (becomeuser() != 0)
+		exit(1);
+#else	/* !DIRECT_RCMD */
 	debugmsg(DM_MISC, "Remote shell command = '%s'\n",
 	    path_remsh ? path_remsh : "default");
 	(void) signal(SIGPIPE, SIG_IGN);
 	desc = rcmdsh(&rhost, -1, luser, ruser, cmd, path_remsh);
 	if (desc > 0)
 		(void) signal(SIGPIPE, sighandler);
+#endif	/* DIRECT_RCMD */
 
 	(void) alarm(0);
 
@@ -278,13 +307,16 @@ remotecmd(char *rhost, char *luser, char *ruser, char *cmd)
  * Create a connection to the rdist server on the machine rhost.
  * Return 0 if the connection fails or 1 if it succeeds.
  */
-static int
-makeconn(char *rhost)
+static int makeconn(rhost)
+	char *rhost;
 {
-	char *ruser, *cp;
+	register char *ruser, *cp;
 	static char *cur_host = NULL;
+	extern char *locuser;
+	extern long min_freefiles, min_freespace;
+	extern char *remotemsglist;
 	char tuser[BUFSIZ], buf[BUFSIZ];
-	u_char respbuff[BUFSIZ];
+	u_char respbuff[BUFSIZ] = "";
 	int n;
 
 	debugmsg(DM_CALL, "makeconn(%s)", rhost);
@@ -308,7 +340,7 @@ makeconn(char *rhost)
 		char c = *cp;
 
 		*cp = CNULL;
-		(void) strlcpy((char *)tuser, rhost, sizeof(tuser));
+		(void) strncpy((char *)tuser, rhost, sizeof(tuser)-1);
 		*cp = c;
 		rhost = cp + 1;
 		ruser = tuser;
@@ -322,8 +354,7 @@ makeconn(char *rhost)
 	if (!IS_ON(options, DO_QUIET))
 		message(MT_VERBOSE, "updating host %s", rhost);
 
-	(void) snprintf(buf, sizeof(buf), "%.*s -S",
-			(int)(sizeof(buf)-5), path_rdistd);
+	(void) sprintf(buf, "%.*s -S", sizeof(buf)-5, path_rdistd);
 		
 	if ((rem_r = rem_w = remotecmd(rhost, locuser, ruser, buf)) < 0)
 		return(0);
@@ -331,13 +362,9 @@ makeconn(char *rhost)
 	/*
 	 * First thing received should be S_VERSION
 	 */
-	respbuff[0] = '\0';
 	n = remline(respbuff, sizeof(respbuff), TRUE);
 	if (n <= 0 || respbuff[0] != S_VERSION) {
-		if (n > 0)
-		    error("Unexpected input from server: \"%s\".", respbuff);
-		else
-		    error("No input from server.");
+		error("Unexpected input from server: \"%s\".", respbuff);
 		closeconn();
 		return(0);
 	}
@@ -359,7 +386,7 @@ makeconn(char *rhost)
 		/*
 		 * The server sent it's version number to us
 		 */
-		int proto_version = atoi(&respbuff[1]);
+		proto_version = atoi(&respbuff[1]);
 		if (proto_version != VERSION) {
 			fatalerr(
 		  "Server version (%d) is not the same as local version (%d).",
@@ -377,29 +404,19 @@ makeconn(char *rhost)
 			return(0);
 	}
 	if (min_freespace) {
-		(void) sendcmd(C_SETCONFIG, "%c%lld", SC_FREESPACE, 
+		(void) sendcmd(C_SETCONFIG, "%c%d", SC_FREESPACE, 
 			       min_freespace);
 		if (response() < 0)
 			return(0);
 	}
 	if (min_freefiles) {
-		(void) sendcmd(C_SETCONFIG, "%c%lld", SC_FREEFILES, 
+		(void) sendcmd(C_SETCONFIG, "%c%d", SC_FREEFILES, 
 			       min_freefiles);
 		if (response() < 0)
 			return(0);
 	}
 	if (remotemsglist) {
 		(void) sendcmd(C_SETCONFIG, "%c%s", SC_LOGGING, remotemsglist);
-		if (response() < 0)
-			return(0);
-	}
-	if (strcmp(defowner, "bin") != 0) {
-		(void) sendcmd(C_SETCONFIG, "%c%s", SC_DEFOWNER, defowner);
-		if (response() < 0)
-			return(0);
-	}
-	if (strcmp(defgroup, "bin") != 0) {
-		(void) sendcmd(C_SETCONFIG, "%c%s", SC_DEFGROUP, defgroup);
 		if (response() < 0)
 			return(0);
 	}
@@ -410,18 +427,23 @@ makeconn(char *rhost)
 /*
  * Process commands for sending files to other machines.
  */
-static void
-doarrow(struct cmd *cmd, char **filev)
+static void doarrow(cmd, filev)
+	struct cmd *cmd;
+	char **filev;
 {
-	struct namelist *f;
-	struct subcmd *sc;
-	char **cpp;
-	int n, ddir, destdir;
-	volatile opt_t opts = options;
+	register struct namelist *f;
+	register struct subcmd *sc;
+	register char **cpp;
+	int n, ddir, destdir, opts = options;
 	struct namelist *files;
 	struct subcmd *sbcmds;
 	char *rhost;
-	volatile int didupdate = 0;
+	int didupdate = 0;
+
+#ifdef __GNUC__
+	(void)&didupdate;
+	(void)&opts;
+#endif
 
         if (setjmp_ok) {
 		error("reentrant call to doarrow");
@@ -443,7 +465,7 @@ doarrow(struct cmd *cmd, char **filev)
 		return;
 	}
 
-	debugmsg(DM_CALL, "doarrow(%p, %s, %p) start", 
+	debugmsg(DM_CALL, "doarrow(%x, %s, %x) start", 
 		 files, A(rhost), sbcmds);
 
 	if (nflag)
@@ -507,7 +529,7 @@ doarrow(struct cmd *cmd, char **filev)
  		destdir = ddir;
 
 	debugmsg(DM_MISC,
-		 "Debug files->n_next= %p, destdir=%d, ddir=%d",
+		 "Debug files->n_next= %d, destdir=%d, ddir=%d",
 		 files->n_next, destdir, ddir);
  
 	if (!sc->sc_name || !*sc->sc_name) {
@@ -516,7 +538,7 @@ doarrow(struct cmd *cmd, char **filev)
 	}
 
 	debugmsg(DM_MISC,
-		 "Debug sc->sc_name=%p, destdir=%d, ddir=%d",
+		 "Debug sc->sc_name=%x, destdir=%d, ddir=%d",
 		 sc->sc_name, destdir, ddir);
 
 	for (f = files; f != NULL; f = f->n_next) {
@@ -551,11 +573,12 @@ doarrow(struct cmd *cmd, char **filev)
 		}
 	}
 
+done:
 	/*
 	 * Run any commands for the entire cmd
 	 */
 	if (didupdate > 0) {
-		runcmdspecial(cmd, opts);
+		runcmdspecial(cmd, filev, opts);
 		didupdate = 0;
 	}
 
@@ -567,7 +590,7 @@ doarrow(struct cmd *cmd, char **filev)
 			notify(rhost, sc->sc_args, (time_t) 0);
 
 	if (!nflag) {
-		struct linkbuf *nextl, *l;
+		register struct linkbuf *nextl, *l;
 
 		for (l = ihead; l != NULL; freelinkinfo(l), l = nextl) {
 			nextl = l->nextp;
@@ -585,10 +608,11 @@ doarrow(struct cmd *cmd, char **filev)
 }
 
 int
-okname(char *name)
+okname(name)
+	register char *name;
 {
-	char *cp = name;
-	int c, isbad;
+	register char *cp = name;
+	register int c, isbad;
 
 	for (isbad = FALSE; *cp && !isbad; ++cp) {
 		c = *cp;
@@ -605,16 +629,18 @@ okname(char *name)
 	return(1);
 }
 
-static void
-rcmptime(struct stat *st, struct subcmd *sbcmds, char **env)
+static void rcmptime(st, sbcmds, env)
+	struct stat *st;
+	struct subcmd *sbcmds;
+	char **env;
 {
-	DIR *d;
-	struct dirent *dp;
-	char *cp;
+	register DIR *d;
+	register DIRENTRY *dp;
+	register char *cp;
 	char *optarget;
 	int len;
 
-	debugmsg(DM_CALL, "rcmptime(%p) start", st);
+	debugmsg(DM_CALL, "rcmptime(%x) start", st);
 
 	if ((d = opendir((char *) target)) == NULL) {
 		error("%s: open directory failed: %s", target, SYSERR);
@@ -622,7 +648,7 @@ rcmptime(struct stat *st, struct subcmd *sbcmds, char **env)
 	}
 	optarget = ptarget;
 	len = ptarget - target;
-	while ((dp = readdir(d)) != NULL) {
+	while ((dp = readdir(d))) {
 		if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, ".."))
 			continue;
 		if (len + 1 + (int)strlen(dp->d_name) >= BUFSIZ - 1) {
@@ -632,7 +658,7 @@ rcmptime(struct stat *st, struct subcmd *sbcmds, char **env)
 		ptarget = optarget;
 		*ptarget++ = '/';
 		cp = dp->d_name;
-		while ((*ptarget++ = *cp++) != '\0')
+		while ((*ptarget++ = *cp++))
 			;
 		ptarget--;
 		cmptime(target, sbcmds, env);
@@ -645,11 +671,14 @@ rcmptime(struct stat *st, struct subcmd *sbcmds, char **env)
 /*
  * Compare the mtime of file to the list of time stamps.
  */
-static void
-cmptime(char *name, struct subcmd *sbcmds, char **env)
+static void cmptime(name, sbcmds, env)
+	char *name;
+	struct subcmd *sbcmds;
+	char **env;
 {
 	struct subcmd *sc;
 	struct stat stb;
+	int inlist();
 
 	debugmsg(DM_CALL, "cmptime(%s)", name);
 
@@ -665,7 +694,7 @@ cmptime(char *name, struct subcmd *sbcmds, char **env)
 	 * first time cmptime() is called?
 	 */
 	if (ptarget == NULL) {
-		if (exptilde(target, name, sizeof(target)) == NULL)
+		if (exptilde(target, name) == NULL)
 			return;
 		ptarget = name = target;
 		while (*ptarget)
@@ -692,14 +721,16 @@ cmptime(char *name, struct subcmd *sbcmds, char **env)
 				continue;
 			if (sc->sc_args != NULL && !inlist(sc->sc_args, name))
 				continue;
-			(void) snprintf(buf, sizeof(buf), "%s=%s;%s", 
-				        E_LOCFILE, name, sc->sc_name);
+			(void) sprintf(buf, "%s=%s;%s", 
+				       E_LOCFILE, name, sc->sc_name);
 			message(MT_CHANGE, "special \"%s\"", buf);
 			if (*env) {
-				size_t len = strlen(*env) + strlen(name) + 2;
-				*env = xrealloc(*env, len);
-				(void) strlcat(*env, name, len);
-				(void) strlcat(*env, ":", len);
+				int len = strlen(*env);
+				*env = (char *) xrealloc(*env, len +
+							 strlen(name) + 2);
+				*env[len] = CNULL;
+				(void) strcat(*env, name);
+				(void) strcat(*env, ":");
 			}
 			if (IS_ON(options, DO_VERIFY))
 				continue;
@@ -712,12 +743,13 @@ cmptime(char *name, struct subcmd *sbcmds, char **env)
 /*
  * Process commands for comparing files to time stamp files.
  */
-static void
-dodcolon(struct cmd *cmd, char **filev)
+static void dodcolon(cmd, filev)
+	struct cmd *cmd;
+	char **filev;
 {
-	struct subcmd *sc;
-	struct namelist *f;
-	char *cp, **cpp;
+	register struct subcmd *sc;
+	register struct namelist *f;
+	register char *cp, **cpp;
 	struct stat stb;
 	struct namelist *files = cmd->c_files;
 	struct subcmd *sbcmds = cmd->c_cmds;
@@ -735,14 +767,13 @@ dodcolon(struct cmd *cmd, char **filev)
 		return;
 	}
 
-	debugmsg(DM_MISC, "%s: mtime %lld\n", stamp, (long long)stb.st_mtime);
+	debugmsg(DM_MISC, "%s: mtime %d\n", stamp, stb.st_mtime);
 
 	env = NULL;
 	for (sc = sbcmds; sc != NULL; sc = sc->sc_next) {
 		if (sc->sc_type == CMDSPECIAL) {
-			env = xmalloc(sizeof(E_FILES) + 3);
-			(void) snprintf(env, sizeof(E_FILES) + 3,
-					"%s='", E_FILES);
+			env = (char *) xmalloc(sizeof(E_FILES) + 3);
+			(void) sprintf(env, "%s='", E_FILES);
 			break;
 		}
 	}
@@ -773,13 +804,16 @@ dodcolon(struct cmd *cmd, char **filev)
 		if (sc->sc_type == NOTIFY)
 			notify(NULL, sc->sc_args, (time_t)lastmod);
 		else if (sc->sc_type == CMDSPECIAL && env) {
-			size_t len = strlen(env);
-			if (env[len - 1] == ':')
-				env[--len] = CNULL;
-			len += 2 + strlen(sc->sc_name) + 1;
-			env = xrealloc(env, len);
-			(void) strlcat(env, "';", len);
-			(void) strlcat(env, sc->sc_name, len);
+			char *p;
+			int len = strlen(env);
+
+			env = xrealloc(env, 
+				       len + strlen(sc->sc_name) + 2);
+			env[len] = CNULL;
+			if (*(p = &env[len - 1]) == ':')
+				*p = CNULL;
+			(void) strcat(env, "';");
+			(void) strcat(env, sc->sc_name);
 			message(MT_CHANGE, "cmdspecial \"%s\"", env);
 			if (!nflag && IS_OFF(options, DO_VERIFY))
 				runcommand(env);
@@ -794,11 +828,11 @@ dodcolon(struct cmd *cmd, char **filev)
 /*
  * Return TRUE if file is in the exception list.
  */
-int
-except(char *file)
+extern int except(file)
+	char *file;
 {
-	struct	subcmd *sc;
-	struct	namelist *nl;
+	register struct	subcmd *sc;
+	register struct	namelist *nl;
 
 	debugmsg(DM_CALL, "except(%s)", file);
 
@@ -811,31 +845,15 @@ except(char *file)
 		}
 		if (sc->sc_type == PATTERN) {
 			for (nl = sc->sc_args; nl != NULL; nl = nl->n_next) {
-				char ebuf[BUFSIZ];
-				int ecode = 0;
+				char *cp, *re_comp();
 
-				/* allocate and compile n_regex as needed */
-				if (nl->n_regex == NULL) {
-					nl->n_regex = xmalloc(sizeof(regex_t));
-					ecode = regcomp(nl->n_regex, nl->n_name,
-							REG_NOSUB);
-				}
-				if (ecode == 0) {
-					ecode = regexec(nl->n_regex, file, 0,
-					    NULL, 0);
-				}
-				switch (ecode) {
-				case REG_NOMATCH:
-					break;
-				case 0:
-					return(1);	/* match! */
-				default:
-					regerror(ecode, nl->n_regex, ebuf,
-						 sizeof(ebuf));
+				if ((cp = re_comp(nl->n_name)) != NULL) {
 					error("Regex error \"%s\" for \"%s\".",
-					      ebuf, nl->n_name);
+					      cp, nl->n_name);
 					return(0);
 				}
+				if (re_exec(file) > 0)
+  					return(1);
 			}
 		}
 	}
@@ -845,8 +863,9 @@ except(char *file)
 /*
  * Do a specific command for a specific host
  */
-static void
-docmdhost(struct cmd *cmd, char **filev)
+static void docmdhost(cmd, filev)
+	struct cmd *cmd;
+	char **filev;
 {
 	checkcmd(cmd);
 
@@ -855,7 +874,7 @@ docmdhost(struct cmd *cmd, char **filev)
 	 * new child process.
 	 */
 	if (do_fork && !amchild) {
-		pid_t pid;
+		int pid;
 
 		/*
 		 * If we're at maxchildren, wait for number of active
@@ -881,7 +900,9 @@ docmdhost(struct cmd *cmd, char **filev)
 
 	if (!nflag) {
 		currenthost = (cmd->c_name) ? cmd->c_name : "<unknown>";
+#if	defined(SETARGS) || defined(HAVE_SETPROCTITLE)
 		setproctitle("update %s", currenthost);
+#endif 	/* SETARGS || HAVE_SETPROCTITLE */
 	}
 
 	switch (cmd->c_type) {
@@ -899,11 +920,13 @@ docmdhost(struct cmd *cmd, char **filev)
 /*
  * Do a specific command (cmd)
  */
-static void
-docmd(struct cmd *cmd, int argc, char **argv)
+static void docmd(cmd, argc, argv)
+	struct cmd *cmd;
+	int argc;
+	char **argv;
 {
-	struct namelist *f;
-	int i;
+	register struct namelist *f;
+	register int i;
 
 	if (argc) {
 		for (i = 0; i < argc; i++) {
@@ -941,12 +964,14 @@ docmd(struct cmd *cmd, int argc, char **argv)
 /*
  * Do the commands in cmds (initialized by yyparse).
  */
-void
-docmds(struct namelist *hostlist, int argc, char **argv)
+extern void docmds(hostlist, argc, argv)
+	struct namelist *hostlist;
+	int argc;
+	char **argv;
 {
-	struct cmd *c;
-	char *cp;
-	int i;
+	register struct cmd *c;
+	register char *cp;
+	register int i;
 
 	(void) signal(SIGHUP, sighandler);
 	(void) signal(SIGINT, sighandler);
@@ -954,7 +979,22 @@ docmds(struct namelist *hostlist, int argc, char **argv)
 	(void) signal(SIGTERM, sighandler);
 
 	if (!nflag)
-		setvbuf(stdout, NULL, _IOLBF, 0);
+		mysetlinebuf(stdout);	/* Make output (mostly) clean */
+
+#if	defined(USE_STATDB)
+	if (!nflag && (dostatdb || juststatdb)) {
+		extern long reccount;
+		message(MT_INFO, "Making stat database [%s] ... \n", 
+			       gettimestr());
+		if (mkstatdb() < 0)
+			error("Warning: Make stat database failed.");
+		message(MT_INFO,
+			      "Stat database created: %d files stored [%s].\n",
+			       reccount, gettimestr());
+		if (juststatdb)
+			return;
+	}
+#endif	/* USE_STATDB */
 
 	/*
 	 * Print errors for any command line targets we didn't find.
@@ -999,7 +1039,7 @@ docmds(struct namelist *hostlist, int argc, char **argv)
 
 		if (hostlist) {
 			/* Do specific hosts as specified on command line */
-			struct namelist *nlptr;
+			register struct namelist *nlptr;
 
 			for (nlptr = hostlist; nlptr; nlptr = nlptr->n_next)
 				/*
@@ -1026,7 +1066,7 @@ docmds(struct namelist *hostlist, int argc, char **argv)
 				message(MT_VERBOSE, "updating of %s finished", 
 					currenthost);
 			closeconn();
-			cleanup(0);
+			cleanup();
 			exit(nerrs);
 		}
 
@@ -1044,6 +1084,6 @@ docmds(struct namelist *hostlist, int argc, char **argv)
 		 * We're single-threaded so close down current connection
 		 */
 		closeconn();
-		cleanup(0);
+		cleanup();
 	}
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: frame.h,v 1.7 2006/01/06 18:53:05 millert Exp $	*/
+/*	$OpenBSD: frame.h,v 1.4 1997/10/13 10:53:44 pefo Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -30,8 +30,10 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef	_POWERPC_FRAME_H_
-#define	_POWERPC_FRAME_H_
+#ifndef	_MACHINE_FRAME_H_
+#define	_MACHINE_FRAME_H_
+
+#include <machine/types.h>
 
 /*
  * This is to ensure alignment of the stackpointer
@@ -71,9 +73,4 @@ struct sigframe {
 	struct sigcontext sf_sc;
 	siginfo_t sf_si;
 };
-
-struct fpsig {
-	double f[14]; /* f0 - f13 are volatile */
-	double fpscr;
-};
-#endif	/* _POWERPC_FRAME_H_ */
+#endif	/* _MACHINE_FRAME_H_ */

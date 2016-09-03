@@ -1,5 +1,4 @@
-/*	$OpenBSD: uvm_page.h,v 1.61 2016/03/09 16:45:43 deraadt Exp $	*/
-/*	$NetBSD: uvm_page.h,v 1.19 2000/12/28 08:24:55 chs Exp $	*/
+/*	$NetBSD: uvm_page.h,v 1.10 1998/08/13 02:11:02 eeh Exp $	*/
 
 /* 
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -18,7 +17,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Charles D. Cranor,
+ *      Washington University, the University of California, Berkeley and 
+ *      its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -70,235 +74,55 @@
  */
 
 /*
- *	Resident memory system definitions.
+ * macros
  */
+
+#define uvm_lock_pageq()	simple_lock(&uvm.pageqlock)
+#define uvm_unlock_pageq()	simple_unlock(&uvm.pageqlock)
+#define uvm_lock_fpageq()	simple_lock(&uvm.fpageqlock)
+#define uvm_unlock_fpageq()	simple_unlock(&uvm.fpageqlock)
+
+#define uvm_pagehash(obj,off) \
+	(((unsigned long)obj+(unsigned long)atop(off)) & uvm.page_hashmask)
 
 /*
- *	Management of resident (logical) pages.
- *
- *	A small structure is kept for each resident
- *	page, indexed by page number.  Each structure
- *	contains a list used for manipulating pages, and
- *	a tree structure for in object/offset lookups
- *
- *	In addition, the structure contains the object
- *	and offset to which this page belongs (for pageout),
- *	and sundry status bits.
- *
- *	Fields in this structure are possibly locked by the lock on the page
- *	queues (P).
+ * handle inline options
  */
 
-TAILQ_HEAD(pglist, vm_page);
-
-struct vm_page {
-	TAILQ_ENTRY(vm_page)	pageq;		/* queue info for FIFO
-						 * queue or free list (P) */
-	RB_ENTRY(vm_page)	objt;		/* object tree */
-
-	struct vm_anon		*uanon;		/* anon (P) */
-	struct uvm_object	*uobject;	/* object (P) */
-	voff_t			offset;		/* offset into object (P) */
-
-	u_int			pg_flags;	/* object flags [P] */
-
-	u_int			pg_version;	/* version count */
-	u_int			wire_count;	/* wired down map refs [P] */
-
-	paddr_t			phys_addr;	/* physical address of page */
-	psize_t			fpgsz;		/* free page range size */
-
-	struct vm_page_md	mdpage;		/* pmap-specific data */
-
-#if defined(UVM_PAGE_TRKOWN)
-	/* debugging fields to track page ownership */
-	pid_t			owner;		/* proc that set PG_BUSY */
-	char			*owner_tag;	/* why it was set busy */
-#endif
-};
-
-/*
- * These are the flags defined for vm_page.
- *
- * Note: PG_FILLED and PG_DIRTY are added for the filesystems.
- */
-
-/*
- * locking rules:
- *   PQ_ ==> lock by page queue lock 
- *   PQ_FREE is locked by free queue lock and is mutex with all other PQs
- *   pg_flags may only be changed using the atomic operations.
- *
- * PG_ZERO is used to indicate that a page has been pre-zero'd.  This flag
- * is only set when the page is on no queues, and is cleared when the page
- * is placed on the free list.
- */
-
-#define	PG_BUSY		0x00000001	/* page is locked */
-#define	PG_WANTED	0x00000002	/* someone is waiting for page */
-#define	PG_TABLED	0x00000004	/* page is in VP table  */
-#define	PG_CLEAN	0x00000008	/* page has not been modified */
-#define PG_CLEANCHK	0x00000010	/* clean bit has been checked */
-#define PG_RELEASED	0x00000020	/* page released while paging */
-#define	PG_FAKE		0x00000040	/* page is not yet initialized */
-#define PG_RDONLY	0x00000080	/* page must be mapped read-only */
-#define PG_ZERO		0x00000100	/* page is pre-zero'd */
-#define PG_DEV		0x00000200	/* page is in device space, lay off */
-
-#define PG_PAGER1	0x00001000	/* pager-specific flag */
-#define PG_MASK		0x0000ffff
-
-#define PQ_FREE		0x00010000	/* page is on free list */
-#define PQ_INACTIVE	0x00020000	/* page is in inactive list */
-#define PQ_ACTIVE	0x00040000	/* page is in active list */
-#define PQ_ANON		0x00100000	/* page is part of an anon, rather
-					   than an uvm_object */
-#define PQ_AOBJ		0x00200000	/* page is part of an anonymous
-					   uvm_object */
-#define PQ_SWAPBACKED	(PQ_ANON|PQ_AOBJ)
-#define	PQ_ENCRYPT	0x00400000	/* page needs {en,de}cryption */
-#define PQ_MASK		0x00ff0000
-
-#define PG_PMAP0	0x01000000	/* Used by some pmaps. */
-#define PG_PMAP1	0x02000000	/* Used by some pmaps. */
-#define PG_PMAP2	0x04000000	/* Used by some pmaps. */
-#define PG_PMAP3	0x08000000	/* Used by some pmaps. */
-#define PG_PMAP4	0x10000000	/* Used by some pmaps. */
-#define PG_PMAP5	0x20000000	/* Used by some pmaps. */
-#define PG_PMAPMASK	0x3f000000
-
-/*
- * physical memory layout structure
- *
- * MD vmparam.h must #define:
- *   VM_PHYSEG_MAX = max number of physical memory segments we support
- *		   (if this is "1" then we revert to a "contig" case)
- *   VM_PHYSSEG_STRAT: memory sort/search options (for VM_PHYSEG_MAX > 1)
- * 	- VM_PSTRAT_RANDOM:   linear search (random order)
- *	- VM_PSTRAT_BSEARCH:  binary search (sorted by address)
- *	- VM_PSTRAT_BIGFIRST: linear search (sorted by largest segment first)
- *      - others?
- *   XXXCDC: eventually we should purge all left-over global variables...
- */
-#define VM_PSTRAT_RANDOM	1
-#define VM_PSTRAT_BSEARCH	2
-#define VM_PSTRAT_BIGFIRST	3
-
-/*
- * vm_physmemseg: describes one segment of physical memory
- */
-struct vm_physseg {
-	paddr_t	start;			/* PF# of first page in segment */
-	paddr_t	end;			/* (PF# of last page in segment) + 1 */
-	paddr_t	avail_start;		/* PF# of first free page in segment */
-	paddr_t	avail_end;		/* (PF# of last free page in segment) +1  */
-	struct	vm_page *pgs;		/* vm_page structures (from start) */
-	struct	vm_page *lastpg;	/* vm_page structure for end */
-};
-
-#ifdef _KERNEL
-
-/*
- * globals
- */
-
-extern boolean_t vm_page_zero_enable;
-
-/*
- * physical memory config is stored in vm_physmem.
- */
-
-extern struct vm_physseg vm_physmem[VM_PHYSSEG_MAX];
-extern int vm_nphysseg;
+#ifdef UVM_PAGE_INLINE
+#define PAGE_INLINE static __inline
+#else 
+#define PAGE_INLINE /* nothing */
+#endif /* UVM_PAGE_INLINE */
 
 /*
  * prototypes: the following prototypes define the interface to pages
  */
 
-void		uvm_page_init(vaddr_t *, vaddr_t *);
+void uvm_page_init __P((vaddr_t *, vaddr_t *));
 #if defined(UVM_PAGE_TRKOWN)
-void		uvm_page_own(struct vm_page *, char *);
+void uvm_page_own __P((struct vm_page *, char *));
 #endif
 #if !defined(PMAP_STEAL_MEMORY)
-boolean_t	uvm_page_physget(paddr_t *);
+boolean_t uvm_page_physget __P((paddr_t *));
 #endif
+void uvm_page_rehash __P((void));
 
-void		uvm_pageactivate(struct vm_page *);
-vaddr_t		uvm_pageboot_alloc(vsize_t);
-void		uvm_pagecopy(struct vm_page *, struct vm_page *);
-void		uvm_pagedeactivate(struct vm_page *);
-void		uvm_pagefree(struct vm_page *);
-void		uvm_page_unbusy(struct vm_page **, int);
-struct vm_page	*uvm_pagelookup(struct uvm_object *, voff_t);
-void		uvm_pageunwire(struct vm_page *);
-void		uvm_pagewait(struct vm_page *, int);
-void		uvm_pagewake(struct vm_page *);
-void		uvm_pagewire(struct vm_page *);
-void		uvm_pagezero(struct vm_page *);
-void		uvm_pagealloc_pg(struct vm_page *, struct uvm_object *,
-		    voff_t, struct vm_anon *);
+PAGE_INLINE void uvm_pageactivate __P((struct vm_page *));
+vaddr_t uvm_pageboot_alloc __P((vsize_t));
+PAGE_INLINE void uvm_pagecopy __P((struct vm_page *, struct vm_page *));
+PAGE_INLINE void uvm_pagedeactivate __P((struct vm_page *));
+void uvm_pagefree __P((struct vm_page *));
+PAGE_INLINE struct vm_page *uvm_pagelookup 
+					__P((struct uvm_object *, vaddr_t));
+void uvm_pageremove __P((struct vm_page *));
+/* uvm_pagerename: not needed */
+PAGE_INLINE void uvm_pageunwire __P((struct vm_page *));
+PAGE_INLINE void uvm_pagewait __P((struct vm_page *, int));
+PAGE_INLINE void uvm_pagewake __P((struct vm_page *));
+PAGE_INLINE void uvm_pagewire __P((struct vm_page *));
+PAGE_INLINE void uvm_pagezero __P((struct vm_page *));
 
-struct uvm_constraint_range; /* XXX move to uvm_extern.h? */
-psize_t		uvm_pagecount(struct uvm_constraint_range*);
-
-#if  VM_PHYSSEG_MAX == 1
-/*
- * Inline functions for archs where function calls are expensive.
- */
-/*
- * vm_physseg_find: find vm_physseg structure that belongs to a PA
- */
-static __inline int
-vm_physseg_find(paddr_t pframe, int *offp)
-{
-	/* 'contig' case */
-	if (pframe >= vm_physmem[0].start && pframe < vm_physmem[0].end) {
-		if (offp)
-			*offp = pframe - vm_physmem[0].start;
-		return(0);
-	}
-	return(-1);
-}
-
-/*
- * PHYS_TO_VM_PAGE: find vm_page for a PA.   used by MI code to get vm_pages
- * back from an I/O mapping (ugh!).   used in some MD code as well.
- */
-static __inline struct vm_page *
-PHYS_TO_VM_PAGE(paddr_t pa)
-{
-	paddr_t pf = atop(pa);
-	int	off;
-	int	psi;
-
-	psi = vm_physseg_find(pf, &off);
-
-	return ((psi == -1) ? NULL : &vm_physmem[psi].pgs[off]);
-}
-#else
-/* if VM_PHYSSEG_MAX > 1 they're not inline, they're in uvm_page.c. */
-struct vm_page	*PHYS_TO_VM_PAGE(paddr_t);
-int		vm_physseg_find(paddr_t, int *);
-#endif
-
-/*
- * macros
- */
-
-#define uvm_lock_pageq()	mtx_enter(&uvm.pageqlock)
-#define uvm_unlock_pageq()	mtx_leave(&uvm.pageqlock)
-#define uvm_lock_fpageq()	mtx_enter(&uvm.fpageqlock)
-#define uvm_unlock_fpageq()	mtx_leave(&uvm.fpageqlock)
-
-#define	UVM_PAGEZERO_TARGET	(uvmexp.free / 8)
-
-#define VM_PAGE_TO_PHYS(entry)	((entry)->phys_addr)
-
-#define VM_PAGE_IS_FREE(entry)  ((entry)->pg_flags & PQ_FREE)
-
-#define	PADDR_IS_DMA_REACHABLE(paddr)	\
-	(dma_constraint.ucr_low <= paddr && dma_constraint.ucr_high > paddr)
-
-#endif /* _KERNEL */
+PAGE_INLINE int uvm_page_lookup_freelist __P((struct vm_page *));
 
 #endif /* _UVM_UVM_PAGE_H_ */

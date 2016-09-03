@@ -1,8 +1,11 @@
-#	$OpenBSD: Makefile,v 1.21 2014/01/20 08:49:58 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.8 1998/02/24 22:06:36 weingart Exp $
 
-.if ${MACHINE} == "i386"
-SUBDIR=	mbr cdbr
-.endif
-SUBDIR+=biosboot boot cdboot fdboot pxeboot
+SUBDIR=	etc libsa libz biosboot installboot boot mbr
+
+test-fd0:
+	sudo mount /dev/fd0a /mnt
+	sudo cp /usr/mdec/boot /mnt
+	sudo /usr/mdec/installboot -v /mnt/boot /usr/mdec/biosboot fd0
+	sudo umount /mnt
 
 .include <bsd.subdir.mk>

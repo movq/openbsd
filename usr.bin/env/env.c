@@ -1,4 +1,4 @@
-/*	$OpenBSD: env.c,v 1.16 2015/10/10 21:19:14 deraadt Exp $	*/
+/*	$OpenBSD: env.c,v 1.4 1997/06/20 04:54:59 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1988, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,18 +33,31 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <errno.h>
-#include <locale.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-__dead void usage(void);
+#ifndef lint
+/*static char sccsid[] = "@(#)env.c	8.3 (Berkeley) 4/2/94";*/
+static char rcsid[] = "$OpenBSD: env.c,v 1.4 1997/06/20 04:54:59 deraadt Exp $";
+#endif /* not lint */
+
+#include <err.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <locale.h>
+#include <errno.h>
+
+static void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	extern char **environ;
 	extern int optind;
@@ -49,38 +66,28 @@ main(int argc, char *argv[])
 
 	setlocale(LC_ALL, "");
 
-	if (pledge("stdio exec", NULL) == -1)
-		err(1, "pledge");
-
-	while ((ch = getopt(argc, argv, "i-")) != -1)
-		switch(ch) {
+	while ((ch = getopt(argc, argv, "-i")) != -1)
+		switch((char)ch) {
 		case '-':			/* obsolete */
 		case 'i':
-			if ((environ = calloc(1, sizeof(char *))) == NULL)
-				err(126, "calloc");
+			if ((environ = (char **)calloc(1, sizeof(char *))) == NULL)
+				err(1, "calloc");
 			break;
+		case '?':
 		default:
 			usage();
 		}
-	argc -= optind;
-	argv += optind;
 
-	for (; *argv && (p = strchr(*argv, '=')); ++argv) {
-		*p++ = '\0';
-		if (setenv(*argv, p, 1) == -1) {
-			/* reuse 126, it matches the problem most */
-			err(126, "setenv");
-		}
-	}
+	for (argv += optind; *argv && (p = strchr(*argv, '=')); ++argv)
+		(void)setenv(*argv, ++p, 1);
 
 	if (*argv) {
-		/*
-		 * return 127 if the command to be run could not be
-		 * found; 126 if the command was found but could
-		 * not be invoked
-		 */
+		/* return 127 if the command to be run could not be found; 126
+		   if the command was was found but could not be invoked */
+
 		execvp(*argv, argv);
 		err((errno == ENOENT) ? 127 : 126, "%s", *argv);
+		/* NOTREACHED */
 	}
 
 	for (ep = environ; *ep; ep++)
@@ -89,12 +96,9 @@ main(int argc, char *argv[])
 	exit(0);
 }
 
-void
-usage(void)
+static void
+usage ()
 {
-	extern char *__progname;
-
-	(void)fprintf(stderr, "usage: %s [-i] [name=value ...] "
-	    "[utility [argument ...]]\n", __progname);
-	exit(1);
+	(void) fprintf(stderr, "usage: env [-i] [name=value ...] [command]\n");
+	exit (1);
 }

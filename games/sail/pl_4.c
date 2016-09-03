@@ -1,4 +1,4 @@
-/*	$OpenBSD: pl_4.c,v 1.7 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: pl_4.c,v 1.2 1999/01/18 06:20:53 pjanzen Exp $	*/
 /*	$NetBSD: pl_4.c,v 1.4 1995/04/24 12:25:17 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,13 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pl_4.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: pl_4.c,v 1.2 1999/01/18 06:20:53 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "extern.h"
 #include "player.h"
 
 void
-changesail(void)
+changesail()
 {
 	int rig, full;
 
@@ -63,7 +72,7 @@ changesail(void)
 }
 
 void
-acceptsignal(void)
+acceptsignal()
 {
 	char buf[60];
 	char *p = buf;
@@ -78,7 +87,7 @@ acceptsignal(void)
 }
 
 void
-lookout(void)
+lookout()
 {
 	struct ship *sp;
 	char buf[3];
@@ -87,7 +96,7 @@ lookout(void)
 	sgetstr("What ship? ", buf, sizeof buf);
 	foreachship(sp) {
 		c = *countryname[sp->nationality];
-		if ((c == *buf || tolower((unsigned char)c) == *buf || colours(sp) == *buf)
+		if ((c == *buf || tolower(c) == *buf || colours(sp) == *buf)
 		    && (sp->file->stern == buf[1] || sterncolour(sp) == buf[1]
 			|| buf[1] == '?')) {
 			eyeball(sp);
@@ -96,7 +105,9 @@ lookout(void)
 }
 
 const char *
-saywhat(struct ship *sp, int flag)
+saywhat(sp, flag)
+	struct ship *sp;
+	char flag;
 {
 	if (sp->file->captain[0])
 		return sp->file->captain;
@@ -111,7 +122,8 @@ saywhat(struct ship *sp, int flag)
 }
 
 void
-eyeball(struct ship *ship)
+eyeball(ship)
+	struct ship *ship;
 {
 	int i;
 

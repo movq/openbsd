@@ -1,4 +1,4 @@
-/*	$OpenBSD: ufs_vfsops.c,v 1.19 2015/03/14 03:38:53 jsg Exp $	*/
+/*	$OpenBSD: ufs_vfsops.c,v 1.6 1997/11/06 05:59:28 csapuntz Exp $	*/
 /*	$NetBSD: ufs_vfsops.c,v 1.4 1996/02/09 22:36:12 christos Exp $	*/
 
 /*
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -40,18 +44,17 @@
 #include <sys/param.h>
 #include <sys/mbuf.h>
 #include <sys/mount.h>
+#include <sys/proc.h>
+#include <sys/buf.h>
 #include <sys/vnode.h>
 #include <sys/malloc.h>
-#include <sys/specdev.h>
+
+#include <miscfs/specfs/specdev.h>
 
 #include <ufs/ufs/quota.h>
 #include <ufs/ufs/inode.h>
 #include <ufs/ufs/ufsmount.h>
 #include <ufs/ufs/ufs_extern.h>
-#ifdef UFS_DIRHASH
-#include <ufs/ufs/dir.h>
-#include <ufs/ufs/dirhash.h>
-#endif
 
 /*
  * Make a filesystem operational.
@@ -59,8 +62,12 @@
  */
 /* ARGSUSED */
 int
-ufs_start(struct mount *mp, int flags, struct proc *p)
+ufs_start(mp, flags, p)
+	struct mount *mp;
+	int flags;
+	struct proc *p;
 {
+
 	return (0);
 }
 
@@ -68,27 +75,137 @@ ufs_start(struct mount *mp, int flags, struct proc *p)
  * Return the root of a filesystem.
  */
 int
-ufs_root(struct mount *mp, struct vnode **vpp)
+ufs_root(mp, vpp)
+	struct mount *mp;
+	struct vnode **vpp;
 {
 	struct vnode *nvp;
 	int error;
 
-	if ((error = VFS_VGET(mp, ROOTINO, &nvp)) != 0)
+	if ((error = VFS_VGET(mp, (ino_t)ROOTINO, &nvp)) != 0)
 		return (error);
 	*vpp = nvp;
 	return (0);
 }
 
 /*
- * Verify a remote client has export rights and return these rights via.
- * exflagsp and credanonp.
+ * Do operations associated with quotas
  */
 int
-ufs_check_export(struct mount *mp, struct mbuf *nam, int *exflagsp,
-    struct ucred **credanonp) 
+ufs_quotactl(mp, cmds, uid, arg, p)
+	struct mount *mp;
+	int cmds;
+	uid_t uid;
+	caddr_t arg;
+	struct proc *p;
 {
-	struct netcred *np;
-	struct ufsmount *ump = VFSTOUFS(mp);
+
+#ifndef QUOTA
+	return (EOPNOTSUPP);
+#else
+	int cmd, type, error;
+
+	if (uid == -1)
+		uid = p->p_cred->p_ruid;
+	cmd = cmds >> SUBCMDSHIFT;
+
+	switch (cmd) {
+	case Q_SYNC:
+		break;
+	case Q_GETQUOTA:
+		if (uid == p->p_cred->p_ruid)
+			break;
+		/* fall through */
+	default:
+		if ((error = suser(p->p_ucred, &p->p_acflag)) != 0)
+			return (error);
+	}
+
+	type = cmds & SUBCMDMASK;
+	if ((u_int)type >= MAXQUOTAS)
+		return (EINVAL);
+
+	if (vfs_busy(mp, LK_NOWAIT, 0, p))
+		return (0);
+ 
+
+	switch (cmd) {
+
+	case Q_QUOTAON:
+		error = quotaon(p, mp, type, arg);
+		break;
+
+	case Q_QUOTAOFF:
+		error = quotaoff(p, mp, type);
+		break;
+
+	case Q_SETQUOTA:
+		error = setquota(mp, uid, type, arg) ;
+		break;
+
+	case Q_SETUSE:
+		error = setuse(mp, uid, type, arg);
+		break;
+
+	case Q_GETQUOTA:
+		error = getquota(mp, uid, type, arg);
+		break;
+
+	case Q_SYNC:
+		error = qsync(mp);
+		break;
+
+	default:
+		error = EINVAL;
+		break;
+	}
+
+	vfs_unbusy(mp, p);
+	return (error);
+#endif
+}
+
+
+/*
+ * Initial UFS filesystems, done only once.
+ */
+int
+ufs_init(vfsp)
+	struct vfsconf *vfsp;
+{
+	static int done;
+
+	if (done)
+		return (0);
+	done = 1;
+	ufs_ihashinit();
+#ifdef QUOTA
+	dqinit();
+#endif
+	return (0);
+}
+
+/*
+ * This is the generic part of fhtovp called after the underlying
+ * filesystem has validated the file handle.
+ *
+ * Verify that a host should have access to a filesystem, and if so
+ * return a vnode for the presented file handle.
+ */
+int
+ufs_check_export(mp, ufhp, nam, vpp, exflagsp, credanonp)
+	register struct mount *mp;
+	struct ufid *ufhp;
+	struct mbuf *nam;
+	struct vnode **vpp;
+	int *exflagsp;
+	struct ucred **credanonp;
+{
+	register struct inode *ip;
+	register struct netcred *np;
+	register struct ufsmount *ump = VFSTOUFS(mp);
+	struct vnode *nvp;
+	int error;
 
 	/*
 	 * Get the export permission structure for this <mp, client> tuple.
@@ -97,52 +214,18 @@ ufs_check_export(struct mount *mp, struct mbuf *nam, int *exflagsp,
 	if (np == NULL)
 		return (EACCES);
 
-	*exflagsp = np->netc_exflags;
-	*credanonp = &np->netc_anon;
-	return (0);
-}
-
-/*
- * Initialize UFS file systems, done only once.
- */
-int
-ufs_init(struct vfsconf *vfsp)
-{
-	static int done;
-
-	if (done)
-		return (0);
-	done = 1;
-	ufs_ihashinit();
-	ufs_quota_init();
-#ifdef UFS_DIRHASH
-	ufsdirhash_init();
-#endif
-
-	return (0);
-}
-
-/*
- * This is the generic part of fhtovp called after the underlying
- * filesystem has validated the file handle.
- */
-int
-ufs_fhtovp(struct mount *mp, struct ufid *ufhp, struct vnode **vpp)
-{
-	struct inode *ip;
-	struct vnode *nvp;
-	int error;
-
 	if ((error = VFS_VGET(mp, ufhp->ufid_ino, &nvp)) != 0) {
 		*vpp = NULLVP;
 		return (error);
 	}
 	ip = VTOI(nvp);
-	if (DIP(ip, mode) == 0 || DIP(ip, gen) != ufhp->ufid_gen) {
+	if (ip->i_ffs_mode == 0 || ip->i_ffs_gen != ufhp->ufid_gen) {
 		vput(nvp);
 		*vpp = NULLVP;
 		return (ESTALE);
 	}
 	*vpp = nvp;
+	*exflagsp = np->netc_exflags;
+	*credanonp = &np->netc_anon;
 	return (0);
 }

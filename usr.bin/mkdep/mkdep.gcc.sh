@@ -1,6 +1,6 @@
 #!/bin/sh -
 #
-#	$OpenBSD: mkdep.gcc.sh,v 1.17 2012/08/30 22:06:43 halex Exp $
+#	$OpenBSD: mkdep.gcc.sh,v 1.8 1998/09/02 06:40:07 deraadt Exp $
 #	$NetBSD: mkdep.gcc.sh,v 1.9 1994/12/23 07:34:59 jtc Exp $
 #
 # Copyright (c) 1991, 1993
@@ -14,7 +14,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the University nor the names of its contributors
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by the University of
+#	California, Berkeley and its contributors.
+# 4. Neither the name of the University nor the names of its contributors
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
@@ -32,24 +36,6 @@
 #
 #	@(#)mkdep.gcc.sh	8.1 (Berkeley) 6/6/93
 #
-
-#
-# Scan for a -o option in the arguments and record the filename given.
-# This is needed, since "cc -M -o out" writes to the file "out", not to
-# stdout.
-#
-scanfordasho() {
-	while [ $# != 0 ]
-	do case "$1" in
-		-o)	
-			file="$2"; shift; shift ;;
-		-o*)
-			file="${1#-o}"; shift ;;
-		*)
-			shift ;;
-		esac
-	done
-}
 
 D=.depend			# default dependency file is .depend
 append=0
@@ -78,52 +64,50 @@ while :
 done
 
 if [ $# = 0 ] ; then
-	echo 'usage: mkdep [-ap] [-f file] [flags] file ...'
+	echo 'usage: mkdep [-p] [-f depend_file] [cc_flags] file ...'
 	exit 1
 fi
 
-scanfordasho "$@"
+DTMP=/tmp/mkdep$$
+TMP=$DTMP/mkdep
 
-TMP=`mktemp /tmp/mkdep.XXXXXXXXXX` || exit 1
+um=`umask`
+umask 022
+if ! mkdir $DTMP ; then
+	echo failed to create tmp dir $DTMP
+	exit 1
+fi
 
-trap 'rm -f $TMP ; trap 2 ; kill -2 $$' 1 2 3 13 15
+umask $um
+trap 'rm -rf $DTMP ; trap 2 ; kill -2 $$' 1 2 3 13 15
 
-if [ "x$file" = x ]; then
-	${CC:-cc} -M "$@" > $TMP
+if [ x$pflag = x ]; then
+	${CC:-cc} -M "$@" | sed -e 's; \./; ;g' > $TMP
 else
-	${CC:-cc} -M "$@" && cat -- "$file" > $TMP
+	${CC:-cc} -M "$@" | sed -e 's;\.o :; :;' -e 's; \./; ;g' > $TMP
 fi
 
 if [ $? != 0 ]; then
 	echo 'mkdep: compile failed.'
-	rm -f $TMP
+	rm -rf $DTMP
 	exit 1
 fi
 
-postproc() {
-	in=$1
-	if [ x$pflag = x ]; then
-		sed -e 's; \./; ;g' $in
-	else
-		sed -e 's;\.o[ ]*:; :;' -e 's; \./; ;g' $in
-	fi
-}
-
 if [ $append = 1 ]; then
-	postproc $TMP >> $D
+	cat $TMP >> $D
 	if [ $? != 0 ]; then
 		echo 'mkdep: append failed.'
-		rm -f $TMP
+		rm -rf $DTMP
 		exit 1
 	fi
 else
-	postproc $TMP > $D
+	mv $TMP $D
 	if [ $? != 0 ]; then
 		echo 'mkdep: rename failed.'
-		rm -f $TMP
+		rm -rf $DTMP
 		exit 1
 	fi
 fi
 
-rm -f $TMP
+rm -rf $DTMP
 exit 0

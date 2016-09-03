@@ -26,43 +26,36 @@
 #include "perl.h"
 #include "XSUB.h"
 
-typedef struct {
-    AV *	x_resolve_using;
-} my_cxtx_t;		/* this *must* be named my_cxtx_t */
 
-#define DL_CXT_EXTRA	/* ask for dl_cxtx to be defined in dlutils.c */
 #include "dlutils.c"	/* for SaveError() etc */
 
-#define dl_resolve_using	(dl_cxtx.x_resolve_using)
+static AV *dl_resolve_using = Nullav;
+
 
 static void
-dl_private_init(pTHX)
+dl_private_init()
 {
-    (void)dl_generic_private_init(aTHX);
-    {
-	dMY_CXT;
-	dl_resolve_using = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
-    }
+    (void)dl_generic_private_init();
+    dl_resolve_using = perl_get_av("DynaLoader::dl_resolve_using", 0x4);
 }
 
 MODULE = DynaLoader     PACKAGE = DynaLoader
 
 BOOT:
-    (void)dl_private_init(aTHX);
+    (void)dl_private_init();
 
 
-void
+void *
 dl_load_file(filename, flags=0)
     char *	filename
     int		flags
     PREINIT:
     shl_t obj = NULL;
     int	i, max, bind_type;
-    dMY_CXT;
     CODE:
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s,%x):\n", filename,flags));
+    DLDEBUG(1,PerlIO_printf(PerlIO_stderr(), "dl_load_file(%s,%x):\n", filename,flags));
     if (flags & 0x01)
-	Perl_warn(aTHX_ "Can't make loaded symbols global on this platform while loading %s",filename);
+	warn("Can't make loaded symbols global on this platform while loading %s",filename);
     if (dl_nonlazy) {
       bind_type = BIND_IMMEDIATE|BIND_VERBOSE;
     } else {
@@ -83,51 +76,37 @@ dl_load_file(filename, flags=0)
     max = AvFILL(dl_resolve_using);
     for (i = 0; i <= max; i++) {
 	char *sym = SvPVX(*av_fetch(dl_resolve_using, i, 0));
-	DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s) (dependent)\n", sym));
+	DLDEBUG(1,PerlIO_printf(PerlIO_stderr(), "dl_load_file(%s) (dependent)\n", sym));
 	obj = shl_load(sym, bind_type, 0L);
 	if (obj == NULL) {
 	    goto end;
 	}
     }
 
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s): ", filename));
+    DLDEBUG(1,PerlIO_printf(PerlIO_stderr(), "dl_load_file(%s): ", filename));
     obj = shl_load(filename, bind_type, 0L);
 
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " libref=%x\n", obj));
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), " libref=%x\n", obj));
 end:
     ST(0) = sv_newmortal() ;
     if (obj == NULL)
-        SaveError(aTHX_ "%s",Strerror(errno));
+        SaveError("%s",Strerror(errno));
     else
-        sv_setiv( ST(0), PTR2IV(obj) );
+        sv_setiv( ST(0), (IV)obj);
 
 
-int
-dl_unload_file(libref)
-    void *	libref
-  CODE:
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_unload_file(%lx):\n", PTR2ul(libref)));
-    RETVAL = (shl_unload(libref) == 0 ? 1 : 0);
-    if (!RETVAL)
-	SaveError(aTHX_ "%s", Strerror(errno));
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " retval = %d\n", RETVAL));
-  OUTPUT:
-    RETVAL
-
-
-void
+void *
 dl_find_symbol(libhandle, symbolname)
     void *	libhandle
     char *	symbolname
-    PREINIT:
+    CODE:
     shl_t obj = (shl_t) libhandle;
     void *symaddr = NULL;
     int status;
-    CODE:
 #ifdef __hp9000s300
-    symbolname = Perl_form_nocontext("_%s", symbolname);
+    symbolname = form("_%s", symbolname);
 #endif
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
+    DLDEBUG(2, PerlIO_printf(PerlIO_stderr(),
 			     "dl_find_symbol(handle=%lx, symbol=%s)\n",
 			     (unsigned long) libhandle, symbolname));
 
@@ -135,23 +114,23 @@ dl_find_symbol(libhandle, symbolname)
     errno = 0;
 
     status = shl_findsym(&obj, symbolname, TYPE_PROCEDURE, &symaddr);
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, "  symbolref(PROCEDURE) = %x\n", symaddr));
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), "  symbolref(PROCEDURE) = %x\n", symaddr));
 
     if (status == -1 && errno == 0) {	/* try TYPE_DATA instead */
 	status = shl_findsym(&obj, symbolname, TYPE_DATA, &symaddr);
-	DLDEBUG(2,PerlIO_printf(Perl_debug_log, "  symbolref(DATA) = %x\n", symaddr));
+	DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), "  symbolref(DATA) = %x\n", symaddr));
     }
 
     if (status == -1) {
-	SaveError(aTHX_ "%s",(errno) ? Strerror(errno) : "Symbol not found") ;
+	SaveError("%s",(errno) ? Strerror(errno) : "Symbol not found") ;
     } else {
-	sv_setiv( ST(0), PTR2IV(symaddr) );
+	sv_setiv( ST(0), (IV)symaddr);
     }
 
 
 void
 dl_undef_symbols()
-    CODE:
+    PPCODE:
 
 
 
@@ -161,39 +140,18 @@ void
 dl_install_xsub(perl_name, symref, filename="$Package")
     char *	perl_name
     void *	symref 
-    const char *	filename
+    char *	filename
     CODE:
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, "dl_install_xsub(name=%s, symref=%x)\n",
+    DLDEBUG(2,PerlIO_printf(PerlIO_stderr(), "dl_install_xsub(name=%s, symref=%x)\n",
 	    perl_name, symref));
-    ST(0) = sv_2mortal(newRV((SV*)newXS_flags(perl_name,
-					      (void(*)(pTHX_ CV *))symref,
-					      filename, NULL,
-					      XS_DYNAMIC_FILENAME)));
+    ST(0)=sv_2mortal(newRV((SV*)newXS(perl_name, (void(*)())symref, filename)));
+
 
 char *
 dl_error()
     CODE:
-    dMY_CXT;
-    RETVAL = dl_last_error ;
+    RETVAL = LastError ;
     OUTPUT:
     RETVAL
-
-#if defined(USE_ITHREADS)
-
-void
-CLONE(...)
-    CODE:
-    MY_CXT_CLONE;
-
-    PERL_UNUSED_VAR(items);
-
-    /* MY_CXT_CLONE just does a memcpy on the whole structure, so to avoid
-     * using Perl variables that belong to another thread, we create our 
-     * own for this thread.
-     */
-    MY_CXT.x_dl_last_error = newSVpvn("", 0);
-    dl_resolve_using = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
-
-#endif
 
 # end.

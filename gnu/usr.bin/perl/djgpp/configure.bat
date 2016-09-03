@@ -27,7 +27,7 @@ goto end
 
 :shell_ok
 sh -c 'if test ! -d /tmp; then mkdir /tmp; fi'
-cp djgpp.[hc] config.over ..
+cp djgpp.c config.over ..
 cd ..
 echo Running sed...
 sh djgpp/djgppsed.sh

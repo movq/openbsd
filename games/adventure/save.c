@@ -1,4 +1,4 @@
-/*	$OpenBSD: save.c,v 1.11 2016/03/08 10:48:39 mestre Exp $	*/
+/*	$OpenBSD: save.c,v 1.5 1998/08/31 02:29:43 pjanzen Exp $	*/
 /*	$NetBSD: save.c,v 1.2 1995/03/21 12:05:08 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,11 +39,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)save.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: save.c,v 1.5 1998/08/31 02:29:43 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "extern.h"
 #include "hdr.h"
+#include "extern.h"
 
 struct savestruct
 {
@@ -112,12 +123,9 @@ struct savestruct save_array[] =
 	{NULL,    0}
 };
 
-/*
- * Two passes on data: first to get checksum, second
- * to output the data using checksum to start random #s
- */
 int
-save(const char *outfile)	
+save(outfile)	/* Two passes on data: first to get checksum, second */
+	const char *outfile;  /* to output the data using checksum to start random #s */
 {
 	FILE   *out;
 	struct savestruct *p;
@@ -128,7 +136,7 @@ save(const char *outfile)
 	crc_start();
 	for (p = save_array; p->address != NULL; p++)
 		sum = crc(p->address, p->width);
-	srandom_deterministic((int) sum);
+	srandom((int) sum);
 
 	if ((out = fopen(outfile, "wb")) == NULL) {
 		fprintf(stderr,
@@ -140,7 +148,7 @@ save(const char *outfile)
 	fwrite(&sum, sizeof(sum), 1, out);	/* Here's the random() key */
 	for (p = save_array; p->address != NULL; p++) {
 		for (s = p->address, i = 0; i < p->width; i++, s++)
-			*s = (*s ^ random()) & 0xFF;	/* Slightly obfuscate */
+			*s = (*s ^ random()) & 0xFF;	/* Lightly encrypt */
 		fwrite(p->address, p->width, 1, out);
 	}
 	fclose(out);
@@ -148,7 +156,8 @@ save(const char *outfile)
 }
 
 int
-restore(const char *infile)
+restore(infile)
+	const char *infile;
 {
 	FILE   *in;
 	struct savestruct *p;
@@ -164,11 +173,11 @@ restore(const char *infile)
 	}
 
 	fread(&sum, sizeof(sum), 1, in);	/* Get the seed */
-	srandom_deterministic((unsigned int) sum);
+	srandom((unsigned int) sum);
 	for (p = save_array; p->address != NULL; p++) {
 		fread(p->address, p->width, 1, in);
 		for (s = p->address, i = 0; i < p->width; i++, s++)
-			*s = (*s ^ random()) & 0xFF;	/* deobfuscate */
+			*s = (*s ^ random()) & 0xFF;	/* Lightly decrypt */
 	}
 	fclose(in);
 

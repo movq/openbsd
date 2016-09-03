@@ -1,5 +1,5 @@
-#	$OpenBSD: Makefile,v 1.8 2014/09/15 22:25:57 matthieu Exp $
+#	$OpenBSD: Makefile,v 1.4 1998/07/07 18:36:45 art Exp $
 
-SUBDIR+=	mkhybrid
+SUBDIR+=	mkisofs
 
 .include <bsd.subdir.mk>

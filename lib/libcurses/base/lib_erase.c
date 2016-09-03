@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_erase.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_erase.c,v 1.1 1999/01/18 19:09:42 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000,2001 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,8 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
 
 /*
 **	lib_erase.c
@@ -43,52 +43,33 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_erase.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_erase.c,v 1.11 1998/02/11 12:13:54 tom Exp $")
 
-NCURSES_EXPORT(int)
-werase(WINDOW *win)
+int  werase(WINDOW	*win)
 {
-    int code = ERR;
-    int y;
-    NCURSES_CH_T blank;
-    NCURSES_CH_T *sp, *end, *start;
+int     code = ERR;
+int	y;
+chtype	blank;
+chtype	*sp, *end, *start;
 
-    T((T_CALLED("werase(%p)"), win));
+	T((T_CALLED("werase(%p)"), win));
 
-    if (win) {
-	blank = win->_nc_bkgd;
-	for (y = 0; y <= win->_maxy; y++) {
+	if (win) {
+	  blank = _nc_background(win);
+	  for (y = 0; y <= win->_maxy; y++) {
 	    start = win->_line[y].text;
 	    end = &start[win->_maxx];
-
-	    /*
-	     * If this is a derived window, we have to handle the case where
-	     * a multicolumn character extends into the window that we are
-	     * erasing.
-	     */
-	    if_WIDEC({
-		if (isWidecExt(start[0])) {
-		    int x = (win->_parent != 0) ? (win->_begx) : 0;
-		    while (x-- > 0) {
-			if (isWidecBase(start[-1])) {
-			    --start;
-			    break;
-			}
-			--start;
-		    }
-		}
-	    });
-
+	    
 	    for (sp = start; sp <= end; sp++)
-		*sp = blank;
-
+	      *sp = blank;
+	    
 	    win->_line[y].firstchar = 0;
 	    win->_line[y].lastchar = win->_maxx;
+	  }
+	  win->_curx = win->_cury = 0;
+	  win->_flags &= ~_WRAPPED;
+	  _nc_synchook(win);
+	  code = OK;
 	}
-	win->_curx = win->_cury = 0;
-	win->_flags &= ~_WRAPPED;
-	_nc_synchook(win);
-	code = OK;
-    }
-    returnCode(code);
+	returnCode(code);
 }

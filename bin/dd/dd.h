@@ -1,4 +1,4 @@
-/*	$OpenBSD: dd.h,v 1.7 2016/08/16 16:44:55 krw Exp $	*/
+/*	$OpenBSD: dd.h,v 1.3 1997/02/14 07:05:20 millert Exp $	*/
 /*	$NetBSD: dd.h,v 1.4 1995/03/21 09:04:08 cgd Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -50,7 +54,7 @@ typedef struct {
 #define	NOREAD		0x08		/* not readable */
 	u_int	flags;
 
-	char	*name;			/* name */
+	char 	*name;			/* name */
 	int	fd;			/* file descriptor */
 	off_t	offset;			/* # of blocks to skip */
 
@@ -68,7 +72,7 @@ typedef struct {
 	size_t	trunc;			/* # of truncated records */
 	size_t	swab;			/* # of odd-length swab blocks */
 	off_t	bytes;			/* # of bytes written */
-	struct	timeval	startv;		/* start time of dd */
+	time_t	start;			/* start time of dd */
 } STAT;
 
 /* Flags (in ddflags). */
@@ -93,6 +97,3 @@ typedef struct {
 #define	C_UCASE		0x40000
 #define	C_UNBLOCK	0x80000
 #define	C_OSYNC		0x100000
-#define	C_STATUS	0x200000
-#define	C_NOXFER	0x400000
-#define	C_NOINFO	0x800000

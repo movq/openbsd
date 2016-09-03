@@ -1,19 +1,19 @@
-/*	$OpenBSD: bpb.h,v 1.7 2015/10/23 10:45:31 krw Exp $	*/
+/*	$OpenBSD: bpb.h,v 1.3 1998/01/11 20:39:03 provos Exp $	*/
 /*	$NetBSD: bpb.h,v 1.6 1997/10/17 11:23:35 ws Exp $	*/
 
 /*
  * Written by Paul Popelka (paulp@uts.amdahl.com)
- *
+ * 
  * You can do anything you want with this software, just don't say you wrote
  * it, and don't remove this notice.
- *
+ * 
  * This software is provided "as is".
- *
+ * 
  * The author supplies this software to be publicly redistributed on the
  * understanding that the author is not responsible for the correct
  * functioning of this software in any circumstances and is not liable for
  * any damages caused by this software.
- *
+ * 
  * October 1992
  */
 
@@ -81,6 +81,28 @@ struct bpb710 {
 	/* There is a 12 byte filler here, but we ignore it */
 };
 
+#ifdef	atari
+/*
+ * BPB for gemdos filesystems. Atari leaves the obsolete stuff undefined.
+ * Currently there is no need for a separate BPB structure.
+ */
+#if 0
+struct bpb_a {
+	u_int16_t	bpbBytesPerSec;	/* bytes per sector		*/
+	u_int8_t	bpbSecPerClust;	/* sectors per cluster		*/
+	u_int16_t	bpbResSectors;	/* number of reserved sectors	*/
+	u_int8_t	bpbFATs;	/* number of FATs		*/
+	u_int16_t	bpbRootDirEnts;	/* number of root directory entries */
+	u_int16_t	bpbSectors;	/* total number of sectors	*/
+	u_int8_t	bpbUseless1;	/* meaningless on gemdos fs	*/
+	u_int16_t	bpbFATsecs;	/* number of sectors per FAT	*/
+	u_int16_t	bpbUseless2;	/* meaningless for harddisk fs	*/
+	u_int16_t	bpbUseless3;	/* meaningless for harddisk fs	*/
+	u_int16_t	bpbHiddenSecs;	/* the TOS-BIOS ignores this	*/
+};
+#endif
+#endif	/* atari */
+
 /*
  * The following structures represent how the bpb's look on disk.  shorts
  * and longs are just character arrays of the appropriate length.  This is
@@ -91,8 +113,8 @@ struct bpb710 {
  * 16-bit and 32-bit quantities on byte boundaries.  If this is not true,
  * use the macros for the big-endian case.
  */
-#include <sys/endian.h>
-#if (BYTE_ORDER == LITTLE_ENDIAN) && !defined(__STRICT_ALIGNMENT)
+#include <machine/endian.h>
+#if (BYTE_ORDER == LITTLE_ENDIAN) && defined(UNALIGNED_ACCESS)
 #define	getushort(x)	*((u_int16_t *)(x))
 #define	getulong(x)	*((u_int32_t *)(x))
 #define	putushort(p, v)	(*((u_int16_t *)(p)) = (v))

@@ -1,16 +1,16 @@
-.\"	$OpenBSD: catopen.3,v 1.8 2013/06/05 03:39:23 tedu Exp $
+.\"	$OpenBSD: catopen.3,v 1.5 1999/08/31 16:52:34 aaron Exp $
 .\"
 .\" Written by J.T. Conklin <jtc@netbsd.org>.
 .\" Public domain.
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd May 29, 1994
 .Dt CATOPEN 3
 .Os
 .Sh NAME
 .Nm catopen
 .Nd open message catalog
 .Sh SYNOPSIS
-.In nl_types.h
+.Fd #include <nl_types.h>
 .Ft nl_catd
 .Fn catopen "const char *name" "int oflag"
 .Sh DESCRIPTION
@@ -33,18 +33,9 @@ is used with
 substituted for
 .Ql \&%N .
 .Pp
-If the
+The
 .Fa oflag
-argument is
-.Dv NL_CAT_LOCALE ,
-the
-.Ev LC_MESSAGES
-environment variable is used to select the message catalog.
-If the
-.Fa oflag
-argument is zero, the
-.Ev LANG
-environment variable is used to select the message catalog.
+argument is reserved for future use and should be set to zero.
 .Sh RETURN VALUES
 Upon successful completion,
 .Fn catopen
@@ -52,6 +43,11 @@ returns a message catalog descriptor.
 Otherwise, \-1 is returned and
 .Va errno
 is set to indicate the error.
+.Sh ERRORS
+.Bl -tag -width Er
+.It Bq Er ENOMEM
+Insufficient memory available.
+.El
 .Sh SEE ALSO
 .Xr catclose 3 ,
 .Xr catgets 3
@@ -59,4 +55,4 @@ is set to indicate the error.
 The
 .Fn catopen
 function conforms to
-.St -p1003.1-2008 .
+.St -xpg3 .

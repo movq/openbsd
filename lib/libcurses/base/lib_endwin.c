@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_endwin.c,v 1.4 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_endwin.c,v 1.2 1999/06/14 02:29:15 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,6 +33,7 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
 /*
 **	lib_endwin.c
 **
@@ -43,20 +44,20 @@
 #include <curses.priv.h>
 #include <term.h>
 
-MODULE_ID("$Id: lib_endwin.c,v 1.4 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_endwin.c,v 1.17 1999/06/12 23:01:46 tom Exp $")
 
-NCURSES_EXPORT(int)
+int
 endwin(void)
 {
-    T((T_CALLED("endwin()")));
+	T((T_CALLED("endwin()")));
 
-    if (SP) {
-	SP->_endwin = TRUE;
-	SP->_mouse_wrap(SP);
-	_nc_screen_wrap();
-	_nc_mvcur_wrap();	/* wrap up cursor addressing */
-	returnCode(reset_shell_mode());
-    }
+	if (SP) {
+		SP->_endwin = TRUE;
+		SP->_mouse_wrap(SP);
+		_nc_screen_wrap();
+		_nc_mvcur_wrap();	/* wrap up cursor addressing */
+		returnCode(reset_shell_mode());
+	}
 
-    returnCode(ERR);
+	returnCode(ERR);
 }

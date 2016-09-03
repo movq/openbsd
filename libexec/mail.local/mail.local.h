@@ -1,4 +1,4 @@
-/*	$OpenBSD: mail.local.h,v 1.5 2006/04/01 22:48:57 deraadt Exp $	*/
+/*	$OpenBSD: mail.local.h,v 1.1 1998/08/15 21:04:35 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,11 +36,11 @@
 #define	FATAL		1
 #define	NOTFATAL	0
 
-void	baditem(char *);
-int	deliver(int, char *, int);
-void	merr(int, const char *, ...);
-int	getlock(char *, struct passwd *);
-void	notifybiff(char *);
-void	rellock(void);
-int	storemail(char *);
-void	usage(void);
+void	baditem	__P((char *));
+int	deliver __P((int, char *, int));
+void	err __P((int, const char *, ...));
+int	getlock __P((char *, struct passwd *));
+void	notifybiff __P((char *));
+void	rellock __P((void));
+int	store __P((char *));
+void	usage __P((void));

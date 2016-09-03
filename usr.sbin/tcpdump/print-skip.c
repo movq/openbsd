@@ -1,4 +1,4 @@
-/*	$OpenBSD: print-skip.c,v 1.6 2015/11/16 00:16:39 mmcc Exp $	*/
+/*	$OpenBSD: print-skip.c,v 1.2 1996/07/13 11:01:29 mickey Exp $	*/
 
 /*
  * Copyright (c) 1995 Sun Microsystems, Inc.
@@ -24,13 +24,16 @@
  * UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 */
 
+#include <sys/param.h> 
 #include <sys/time.h> 
 #include <sys/types.h>
  
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,7 +164,8 @@ unsigned char   old_skip_mid_sizes[MAX_ALGS] = {
                           8,    /* simplecrypt */
                 };
 
-void skip_print_old(const u_char *bp, int length, const u_char *bp2)
+void skip_print_old(register const u_char *bp, register int length, 
+							const u_char *bp2)
 {
 	struct ip *ip;
 	const u_char *end;
@@ -588,7 +592,8 @@ void skip_print_next(u_char nxt, const u_char *p, int len, const u_char *bp2)
     }
 }
 
-void skip_print(const u_char *bp, int length, const u_char *bp2)
+void skip_print(register const u_char *bp, register int length, 
+							const u_char *bp2)
 {
 	struct ip *ip;
 	const u_char *end;
@@ -751,7 +756,8 @@ void skip_print(const u_char *bp, int length, const u_char *bp2)
 
 
 
-void ah_print(const u_char *bp, int length, const u_char *bp2)
+void ah_print(register const u_char *bp, register int length, 
+							const u_char *bp2)
 {
 	struct ip *ip;
 	const u_char *end;
@@ -842,7 +848,8 @@ void ah_print(const u_char *bp, int length, const u_char *bp2)
 }
 
 
-void esp_print(const u_char *bp, int length, const u_char *bp2)
+void esp_print(register const u_char *bp, register int length, 
+							const u_char *bp2)
 {
 	struct ip *ip;
 	const u_char *end;
@@ -897,7 +904,7 @@ void esp_print(const u_char *bp, int length, const u_char *bp2)
 	    return;
         }
 
-        printf("SKIP-ESP: Initialization Vector\t");
+        printf("SKIP-ESP: Initalization Vector\t");
 	if (len) {
 	    for (i = 0; i < len; i++) {
 		    printf("%02x ", (unsigned char) *p++);

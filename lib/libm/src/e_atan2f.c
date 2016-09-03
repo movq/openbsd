@@ -13,10 +13,18 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_atan2f.c,v 1.4 1995/05/10 20:44:53 jtc Exp $";
+#endif
+
 #include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const float 
+#else
+static float 
+#endif
 tiny  = 1.0e-30,
 zero  = 0.0,
 pi_o_4  = 7.8539818525e-01, /* 0x3f490fdb */
@@ -24,8 +32,12 @@ pi_o_2  = 1.5707963705e+00, /* 0x3fc90fdb */
 pi      = 3.1415925026e+00, /* 0x40490fda */
 pi_lo   = 1.5099578832e-07; /* 0x34222168 */
 
-float
-atan2f(float y, float x)
+#ifdef __STDC__
+	float __ieee754_atan2f(float y, float x)
+#else
+	float __ieee754_atan2f(y,x)
+	float  y,x;
+#endif
 {  
 	float z;
 	int32_t k,m,hx,hy,ix,iy;

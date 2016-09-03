@@ -1,4 +1,5 @@
-#	$OpenBSD: list2sh.awk,v 1.21 2014/02/21 19:14:23 deraadt Exp $
+#	$OpenBSD: list2sh.awk,v 1.5 1997/05/05 16:31:36 grr Exp $
+#	$NetBSD: list2sh.awk,v 1.2 1996/05/04 15:45:31 pk Exp $
 
 BEGIN {
 	printf("cd ${OBJDIR}\n");
@@ -10,26 +11,14 @@ BEGIN {
 }
 $1 == "COPY" {
 	printf("echo '%s'\n", $0);
-	printf("test -f ${TARGDIR}/%s && rm -fr ${TARGDIR}/%s\n", $3, $3);
+	printf("rm -f ${TARGDIR}/%s\n", $3);
 	printf("cp %s ${TARGDIR}/%s\n", $2, $3);
-	next;
-}
-$1 == "REMOVE" {
-	printf("echo '%s'\n", $0);
-	printf("rm -f ${TARGDIR}/%s\n", $2);
-	next;
-}
-$1 == "STRIP" {
-	printf("echo '%s'\n", $0);
-	printf("test -f ${TARGDIR}/%s && rm -fr ${TARGDIR}/%s\n", $3, $3);
-	printf("cp %s ${TARGDIR}/%s\n", $2, $3);
-	printf("strip ${TARGDIR}/%s\n", $3);
 	next;
 }
 $1 == "LINK" {
 	printf("echo '%s'\n", $0);
 	for (i = 3; i <= NF; i++) {
-		printf("test -f ${TARGDIR}/%s && rm -f ${TARGDIR}/%s\n", $i, $i);
+		printf("rm -f ${TARGDIR}/%s\n", $i);
 		printf("(cd ${TARGDIR}; ln %s %s)\n", $2, $i);
 	}
 	next;
@@ -37,7 +26,7 @@ $1 == "LINK" {
 $1 == "SYMLINK" {
 	printf("echo '%s'\n", $0);
 	for (i = 3; i <= NF; i++) {
-		printf("test -f ${TARGDIR}/%s && rm -f ${TARGDIR}/%s\n", $i, $i);
+		printf("rm -f ${TARGDIR}/%s\n", $i);
 		printf("(cd ${TARGDIR}; ln -s %s %s)\n", $2, $i);
 	}
 	next;
@@ -50,17 +39,8 @@ $1 == "SRCDIRS" {
 	# crunchgen directive; ignored here
 	next;
 }
-$1 == "LIBS" {
-	# crunchgen directive; ignored here
-	next;
-}
 $1 == "CRUNCHSPECIAL" {
 	# crunchgen directive; ignored here
-	next;
-}
-$1 == "TZ" {
-	printf("echo '%s'\n", $0);
-	printf("(cd ${TARGDIR}; sh $UTILS/maketz.sh $DESTDIR)\n");
 	next;
 }
 $1 == "COPYDIR" {
@@ -81,20 +61,6 @@ $1 == "SPECIAL" {
 	work=$0;
 	sub("^[ 	]*" $1 "[ 	]*", "", work);
 	printf("(cd ${TARGDIR}; %s)\n", work);
-	next;
-}
-$1 == "TERMCAP" {
-# tic -r flag may generate harmless warning about pccon+base:
-#     "terminal 'pccon+base': enter_reverse_mode but no exit_attribute_mode"
-	printf("echo '%s'\n", $0);
-	printf("(cd ${TARGDIR}; tic -C -x -r -e %s ${UTILS}/../../share/termtypes/termtypes.master | sed -e '/^#.*/d' -e '/^$$/d' > %s)\n",
-	    $2, $3);
-	next;
-}
-$1 == "SCRIPT" {
-	printf("echo '%s'\n", $0);
-	printf("sed -e '/^[ 	]*#[ 	].*$/d' -e '/^[ 	]*#$/d' < %s > ${TARGDIR}/%s\n",
-	    $2, $3);
 	next;
 }
 {

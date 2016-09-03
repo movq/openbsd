@@ -10,6 +10,10 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: s_logb.c,v 1.8 1995/05/10 20:47:50 jtc Exp $";
+#endif
+
 /*
  * double logb(x)
  * IEEE 754 logb. Included to pass IEEE test suite. Not recommend.
@@ -19,8 +23,12 @@
 #include "math.h"
 #include "math_private.h"
 
-double
-logb(double x)
+#ifdef __STDC__
+	double logb(double x)
+#else
+	double logb(x)
+	double x;
+#endif
 {
 	int32_t lx,ix;
 	EXTRACT_WORDS(ix,lx,x);

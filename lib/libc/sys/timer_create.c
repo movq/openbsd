@@ -1,4 +1,6 @@
-/*	$OpenBSD: timer_create.c,v 1.7 2015/09/12 13:13:34 guenther Exp $ */
+#if defined(SYSLIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: timer_create.c,v 1.4 1998/02/07 20:50:54 tholo Exp $";
+#endif /* SYSLIBC_SCCS and not lint */
 
 #include <signal.h>
 #include <time.h>
@@ -6,11 +8,12 @@
 
 struct sigevent;
 
-int	timer_create(clockid_t, struct sigevent *, timer_t *);
-PROTO_DEPRECATED(timer_create);
-
+/* ARGSUSED */
 int
-timer_create(clockid_t clock_id, struct sigevent *evp, timer_t *timerid)
+timer_create(clock_id, evp, timerid)
+	clockid_t clock_id;
+	struct sigevent *evp;
+	timer_t *timerid;
 {
 	errno = ENOSYS;
 	return -1;

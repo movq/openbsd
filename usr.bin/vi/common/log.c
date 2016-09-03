@@ -1,5 +1,3 @@
-/*	$OpenBSD: log.c,v 1.10 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,10 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)log.c	10.8 (Berkeley) 3/6/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
@@ -18,7 +20,6 @@
 #include <bitstring.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <libgen.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,10 +62,10 @@
  * behaved that way.
  */
 
-static int	log_cursor1(SCR *, int);
-static void	log_err(SCR *, char *, int);
+static int	log_cursor1 __P((SCR *, int));
+static void	log_err __P((SCR *, char *, int));
 #if defined(DEBUG) && 0
-static void	log_trace(SCR *, char *, recno_t, u_char *);
+static void	log_trace __P((SCR *, char *, recno_t, u_char *));
 #endif
 
 /* Try and restart the log on failure, i.e. if we run out of memory. */
@@ -77,10 +78,12 @@ static void	log_trace(SCR *, char *, recno_t, u_char *);
  * log_init --
  *	Initialize the logging subsystem.
  *
- * PUBLIC: int log_init(SCR *, EXF *);
+ * PUBLIC: int log_init __P((SCR *, EXF *));
  */
 int
-log_init(SCR *sp, EXF *ep)
+log_init(sp, ep)
+	SCR *sp;
+	EXF *ep;
 {
 	/*
 	 * !!!
@@ -99,7 +102,7 @@ log_init(SCR *sp, EXF *ep)
 	ep->log = dbopen(NULL, O_CREAT | O_NONBLOCK | O_RDWR,
 	    S_IRUSR | S_IWUSR, DB_RECNO, NULL);
 	if (ep->log == NULL) {
-		msgq(sp, M_SYSERR, "Log file");
+		msgq(sp, M_SYSERR, "009|Log file");
 		F_SET(ep, F_NOLOG);
 		return (1);
 	}
@@ -111,10 +114,12 @@ log_init(SCR *sp, EXF *ep)
  * log_end --
  *	Close the logging subsystem.
  *
- * PUBLIC: int log_end(SCR *, EXF *);
+ * PUBLIC: int log_end __P((SCR *, EXF *));
  */
 int
-log_end(SCR *sp, EXF *ep)
+log_end(sp, ep)
+	SCR *sp;
+	EXF *ep;
 {
 	/*
 	 * !!!
@@ -139,10 +144,11 @@ log_end(SCR *sp, EXF *ep)
  * log_cursor --
  *	Log the current cursor position, starting an event.
  *
- * PUBLIC: int log_cursor(SCR *);
+ * PUBLIC: int log_cursor __P((SCR *));
  */
 int
-log_cursor(SCR *sp)
+log_cursor(sp)
+	SCR *sp;
 {
 	EXF *ep;
 
@@ -169,7 +175,9 @@ log_cursor(SCR *sp)
  *	Actually push a cursor record out.
  */
 static int
-log_cursor1(SCR *sp, int type)
+log_cursor1(sp, type)
+	SCR *sp;
+	int type;
 {
 	DBT data, key;
 	EXF *ep;
@@ -201,10 +209,13 @@ log_cursor1(SCR *sp, int type)
  * log_line --
  *	Log a line change.
  *
- * PUBLIC: int log_line(SCR *, recno_t, u_int);
+ * PUBLIC: int log_line __P((SCR *, recno_t, u_int));
  */
 int
-log_line(SCR *sp, recno_t lno, u_int action)
+log_line(sp, lno, action)
+	SCR *sp;
+	recno_t lno;
+	u_int action;
 {
 	DBT data, key;
 	EXF *ep;
@@ -298,10 +309,12 @@ log_line(SCR *sp, recno_t lno, u_int action)
  *	would mean that undo operations would only reset marks, and not
  *	cause any other change.
  *
- * PUBLIC: int log_mark(SCR *, LMARK *);
+ * PUBLIC: int log_mark __P((SCR *, LMARK *));
  */
 int
-log_mark(SCR *sp, LMARK *lmp)
+log_mark(sp, lmp)
+	SCR *sp;
+	LMARK *lmp;
 {
 	DBT data, key;
 	EXF *ep;
@@ -342,10 +355,12 @@ log_mark(SCR *sp, LMARK *lmp)
  * Log_backward --
  *	Roll the log backward one operation.
  *
- * PUBLIC: int log_backward(SCR *, MARK *);
+ * PUBLIC: int log_backward __P((SCR *, MARK *));
  */
 int
-log_backward(SCR *sp, MARK *rp)
+log_backward(sp, rp)
+	SCR *sp;
+	MARK *rp;
 {
 	DBT key, data;
 	EXF *ep;
@@ -358,12 +373,12 @@ log_backward(SCR *sp, MARK *rp)
 	ep = sp->ep;
 	if (F_ISSET(ep, F_NOLOG)) {
 		msgq(sp, M_ERR,
-		    "Logging not being performed, undo not possible");
+		    "010|Logging not being performed, undo not possible");
 		return (1);
 	}
 
 	if (ep->l_cur == 1) {
-		msgq(sp, M_BERR, "No changes to undo");
+		msgq(sp, M_BERR, "011|No changes to undo");
 		return (1);
 	}
 
@@ -446,10 +461,11 @@ err:	F_CLR(ep, F_NOLOG);
  * then move back on and do a 'U', the line will be restored to the way
  * it was before the original change.
  *
- * PUBLIC: int log_setline(SCR *);
+ * PUBLIC: int log_setline __P((SCR *));
  */
 int
-log_setline(SCR *sp)
+log_setline(sp)
+	SCR *sp;
 {
 	DBT key, data;
 	EXF *ep;
@@ -461,7 +477,7 @@ log_setline(SCR *sp)
 	ep = sp->ep;
 	if (F_ISSET(ep, F_NOLOG)) {
 		msgq(sp, M_ERR,
-		    "Logging not being performed, undo not possible");
+		    "012|Logging not being performed, undo not possible");
 		return (1);
 	}
 
@@ -532,10 +548,12 @@ err:	F_CLR(ep, F_NOLOG);
  * Log_forward --
  *	Roll the log forward one operation.
  *
- * PUBLIC: int log_forward(SCR *, MARK *);
+ * PUBLIC: int log_forward __P((SCR *, MARK *));
  */
 int
-log_forward(SCR *sp, MARK *rp)
+log_forward(sp, rp)
+	SCR *sp;
+	MARK *rp;
 {
 	DBT key, data;
 	EXF *ep;
@@ -548,12 +566,12 @@ log_forward(SCR *sp, MARK *rp)
 	ep = sp->ep;
 	if (F_ISSET(ep, F_NOLOG)) {
 		msgq(sp, M_ERR,
-	    "Logging not being performed, roll-forward not possible");
+	    "013|Logging not being performed, roll-forward not possible");
 		return (1);
 	}
 
 	if (ep->l_cur == ep->l_high) {
-		msgq(sp, M_BERR, "No changes to re-do");
+		msgq(sp, M_BERR, "014|No changes to re-do");
 		return (1);
 	}
 
@@ -632,20 +650,27 @@ err:	F_CLR(ep, F_NOLOG);
  *	Try and restart the log on failure, i.e. if we run out of memory.
  */
 static void
-log_err(SCR *sp, char *file, int line)
+log_err(sp, file, line)
+	SCR *sp;
+	char *file;
+	int line;
 {
 	EXF *ep;
 
-	msgq(sp, M_SYSERR, "%s/%d: log put error", basename(file), line);
+	msgq(sp, M_SYSERR, "015|%s/%d: log put error", tail(file), line);
 	ep = sp->ep;
 	(void)ep->log->close(ep->log);
 	if (!log_init(sp, ep))
-		msgq(sp, M_ERR, "Log restarted");
+		msgq(sp, M_ERR, "267|Log restarted");
 }
 
 #if defined(DEBUG) && 0
 static void
-log_trace(SCR *sp, char *msg, recno_t rno, u_char *p)
+log_trace(sp, msg, rno, p)
+	SCR *sp;
+	char *msg;
+	recno_t rno;
+	u_char *p;
 {
 	LMARK lm;
 	MARK m;

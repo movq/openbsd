@@ -1,74 +1,50 @@
 package Tie::Hash;
 
-our $VERSION = '1.05';
-
 =head1 NAME
 
-Tie::Hash, Tie::StdHash, Tie::ExtraHash - base class definitions for tied hashes
+Tie::Hash, Tie::StdHash - base class definitions for tied hashes
 
 =head1 SYNOPSIS
 
     package NewHash;
     require Tie::Hash;
-
-    @ISA = qw(Tie::Hash);
-
+    
+    @ISA = (Tie::Hash);
+    
     sub DELETE { ... }		# Provides needed method
     sub CLEAR { ... }		# Overrides inherited method
-
-
+    
+    
     package NewStdHash;
     require Tie::Hash;
-
-    @ISA = qw(Tie::StdHash);
-
-    # All methods provided by default, define
-    # only those needing overrides
-    # Accessors access the storage in %{$_[0]};
-    # TIEHASH should return a reference to the actual storage
+    
+    @ISA = (Tie::StdHash);
+    
+    # All methods provided by default, define only those needing overrides
     sub DELETE { ... }
-
-    package NewExtraHash;
-    require Tie::Hash;
-
-    @ISA = qw(Tie::ExtraHash);
-
-    # All methods provided by default, define 
-    # only those needing overrides
-    # Accessors access the storage in %{$_[0][0]};
-    # TIEHASH should return an array reference with the first element
-    # being the reference to the actual storage 
-    sub DELETE { 
-      $_[0][1]->('del', $_[0][0], $_[1]); # Call the report writer
-      delete $_[0][0]->{$_[1]};		  #  $_[0]->SUPER::DELETE($_[1])
-    }
-
-
+    
+    
     package main;
-
+    
     tie %new_hash, 'NewHash';
     tie %new_std_hash, 'NewStdHash';
-    tie %new_extra_hash, 'NewExtraHash',
-	sub {warn "Doing \U$_[1]\E of $_[2].\n"};
 
 =head1 DESCRIPTION
 
 This module provides some skeletal methods for hash-tying classes. See
 L<perltie> for a list of the functions required in order to tie a hash
 to a package. The basic B<Tie::Hash> package provides a C<new> method, as well
-as methods C<TIEHASH>, C<EXISTS> and C<CLEAR>. The B<Tie::StdHash> and
-B<Tie::ExtraHash> packages
-provide most methods for hashes described in L<perltie> (the exceptions
-are C<UNTIE> and C<DESTROY>).  They cause tied hashes to behave exactly like standard hashes,
-and allow for selective overwriting of methods.  B<Tie::Hash> grandfathers the
-C<new> method: it is used if C<TIEHASH> is not defined
-in the case a class forgets to include a C<TIEHASH> method.
+as methods C<TIEHASH>, C<EXISTS> and C<CLEAR>. The B<Tie::StdHash> package
+provides most methods required for hashes in L<perltie>. It inherits from
+B<Tie::Hash>, and causes tied hashes to behave exactly like standard hashes,
+allowing for selective overloading of methods. The C<new> method is provided
+as grandfathering in the case a class forgets to include a C<TIEHASH> method.
 
 For developers wishing to write their own tied hashes, the required methods
 are briefly defined below. See the L<perltie> section for more detailed
 descriptive, as well as example code:
 
-=over 4
+=over
 
 =item TIEHASH classname, LIST
 
@@ -87,17 +63,15 @@ Retrieve the datum in I<key> for the tied hash I<this>.
 
 =item FIRSTKEY this
 
-Return the first key in the hash.
+Return the (key, value) pair for the first key in the hash.
 
 =item NEXTKEY this, lastkey
 
-Return the next key in the hash.
+Return the next key for the hash.
 
 =item EXISTS this, key
 
 Verify that I<key> exists with the tied hash I<this>.
-
-The B<Tie::Hash> implementation is a stub that simply croaks.
 
 =item DELETE this, key
 
@@ -107,76 +81,14 @@ Delete the key I<key> from the tied hash I<this>.
 
 Clear all values from the tied hash I<this>.
 
-=item SCALAR this
-
-Returns what evaluating the hash in scalar context yields.
-
-B<Tie::Hash> does not implement this method (but B<Tie::StdHash>
-and B<Tie::ExtraHash> do).
-
 =back
 
-=head1 Inheriting from B<Tie::StdHash>
+=head1 CAVEATS
 
-The accessor methods assume that the actual storage for the data in the tied
-hash is in the hash referenced by C<tied(%tiedhash)>.  Thus overwritten
-C<TIEHASH> method should return a hash reference, and the remaining methods
-should operate on the hash referenced by the first argument:
-
-  package ReportHash;
-  our @ISA = 'Tie::StdHash';
-
-  sub TIEHASH  {
-    my $storage = bless {}, shift;
-    warn "New ReportHash created, stored in $storage.\n";
-    $storage
-  }
-  sub STORE    {
-    warn "Storing data with key $_[1] at $_[0].\n";
-    $_[0]{$_[1]} = $_[2]
-  }
-
-
-=head1 Inheriting from B<Tie::ExtraHash>
-
-The accessor methods assume that the actual storage for the data in the tied
-hash is in the hash referenced by C<(tied(%tiedhash))-E<gt>[0]>.  Thus overwritten
-C<TIEHASH> method should return an array reference with the first
-element being a hash reference, and the remaining methods should operate on the
-hash C<< %{ $_[0]->[0] } >>:
-
-  package ReportHash;
-  our @ISA = 'Tie::ExtraHash';
-
-  sub TIEHASH  {
-    my $class = shift;
-    my $storage = bless [{}, @_], $class;
-    warn "New ReportHash created, stored in $storage.\n";
-    $storage;
-  }
-  sub STORE    {
-    warn "Storing data with key $_[1] at $_[0].\n";
-    $_[0][0]{$_[1]} = $_[2]
-  }
-
-The default C<TIEHASH> method stores "extra" arguments to tie() starting
-from offset 1 in the array referenced by C<tied(%tiedhash)>; this is the
-same storage algorithm as in TIEHASH subroutine above.  Hence, a typical
-package inheriting from B<Tie::ExtraHash> does not need to overwrite this
-method.
-
-=head1 C<SCALAR>, C<UNTIE> and C<DESTROY>
-
-The methods C<UNTIE> and C<DESTROY> are not defined in B<Tie::Hash>,
-B<Tie::StdHash>, or B<Tie::ExtraHash>.  Tied hashes do not require
-presence of these methods, but if defined, the methods will be called in
-proper time, see L<perltie>.
-
-C<SCALAR> is only defined in B<Tie::StdHash> and B<Tie::ExtraHash>.
-
-If needed, these methods should be defined by the package inheriting from
-B<Tie::Hash>, B<Tie::StdHash>, or B<Tie::ExtraHash>. See L<perltie/"SCALAR">
-to find out what happens when C<SCALAR> does not exist.
+The L<perltie> documentation includes a method called C<DESTROY> as
+a necessary method for tied hashes. Neither B<Tie::Hash> nor B<Tie::StdHash>
+define a default for this method. This is a standard for class packages,
+but may be omitted in favor of a simple default.
 
 =head1 MORE INFORMATION
 
@@ -188,7 +100,6 @@ good working examples.
 =cut
 
 use Carp;
-use warnings::register;
 
 sub new {
     my $pkg = shift;
@@ -199,20 +110,10 @@ sub new {
 
 sub TIEHASH {
     my $pkg = shift;
-    my $pkg_new = $pkg -> can ('new');
-
-    if ($pkg_new and $pkg ne __PACKAGE__) {
-        my $my_new = __PACKAGE__ -> can ('new');
-        if ($pkg_new == $my_new) {  
-            #
-            # Prevent recursion
-            #
-            croak "$pkg must define either a TIEHASH() or a new() method";
-        }
-
-	warnings::warnif ("WARNING: calling ${pkg}->new since " .
-                          "${pkg}->TIEHASH is missing");
-	$pkg -> new (@_);
+    if (defined &{"${pkg}::new"}) {
+	carp "WARNING: calling ${pkg}->new since ${pkg}->TIEHASH is missing"
+	    if $^W;
+	$pkg->new(@_);
     }
     else {
 	croak "$pkg doesn't define a TIEHASH method";
@@ -243,7 +144,7 @@ sub CLEAR {
 # alter some parts of their behaviour.
 
 package Tie::StdHash;
-# @ISA = qw(Tie::Hash);		# would inherit new() only
+@ISA = qw(Tie::Hash);
 
 sub TIEHASH  { bless {}, $_[0] }
 sub STORE    { $_[0]->{$_[1]} = $_[2] }
@@ -253,18 +154,5 @@ sub NEXTKEY  { each %{$_[0]} }
 sub EXISTS   { exists $_[0]->{$_[1]} }
 sub DELETE   { delete $_[0]->{$_[1]} }
 sub CLEAR    { %{$_[0]} = () }
-sub SCALAR   { scalar %{$_[0]} }
-
-package Tie::ExtraHash;
-
-sub TIEHASH  { my $p = shift; bless [{}, @_], $p }
-sub STORE    { $_[0][0]{$_[1]} = $_[2] }
-sub FETCH    { $_[0][0]{$_[1]} }
-sub FIRSTKEY { my $a = scalar keys %{$_[0][0]}; each %{$_[0][0]} }
-sub NEXTKEY  { each %{$_[0][0]} }
-sub EXISTS   { exists $_[0][0]->{$_[1]} }
-sub DELETE   { delete $_[0][0]->{$_[1]} }
-sub CLEAR    { %{$_[0][0]} = () }
-sub SCALAR   { scalar %{$_[0][0]} }
 
 1;

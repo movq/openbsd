@@ -1,5 +1,5 @@
-/* $OpenBSD: shared_intr.c,v 1.22 2015/09/02 14:07:43 deraadt Exp $ */
-/* $NetBSD: shared_intr.c,v 1.13 2000/03/19 01:46:18 thorpej Exp $ */
+/*	$OpenBSD: shared_intr.c,v 1.7 1999/02/08 18:14:11 millert Exp $	*/
+/*	$NetBSD: shared_intr.c,v 1.1 1996/11/17 02:03:08 cgd Exp $	*/
 
 /*
  * Copyright (c) 1996 Carnegie-Mellon University.
@@ -33,7 +33,6 @@
  */
 
 #include <sys/param.h>
-#include <sys/kernel.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
 #include <sys/syslog.h>
@@ -41,7 +40,9 @@
 
 #include <machine/intr.h>
 
-static const char *intr_typename(int);
+extern int cold;
+
+static const char *intr_typename __P((int));
 
 static const char *
 intr_typename(type)
@@ -70,7 +71,7 @@ alpha_shared_intr_alloc(n)
 	struct alpha_shared_intr *intr;
 	unsigned int i;
 
-	intr = mallocarray(n, sizeof(struct alpha_shared_intr), M_DEVBUF,
+	intr = malloc(n * sizeof (struct alpha_shared_intr), M_DEVBUF,
 	    cold ? M_NOWAIT : M_WAITOK);
 	if (intr == NULL)
 		panic("alpha_shared_intr_alloc: couldn't malloc intr");
@@ -81,7 +82,6 @@ alpha_shared_intr_alloc(n)
 		intr[i].intr_dfltsharetype = IST_NONE;
 		intr[i].intr_nstrays = 0;
 		intr[i].intr_maxstrays = 5;
-		intr[i].intr_private = NULL;
 	}
 
 	return (intr);
@@ -95,13 +95,10 @@ alpha_shared_intr_dispatch(intr, num)
 	struct alpha_shared_intrhand *ih;
 	int rv, handled;
 
+	ih = intr[num].intr_q.tqh_first;
 	handled = 0;
-	TAILQ_FOREACH(ih, &intr[num].intr_q, ih_q) {
-#if defined(MULTIPROCESSOR)
-		/* XXX Need to support IPL_MPSAFE eventually. */
-		if (ih->ih_level < IPL_CLOCK)
-			__mp_lock(&kernel_lock);
-#endif
+	while (ih != NULL) {
+
 		/*
 		 * The handler returns one of three values:
 		 *   0:	This interrupt wasn't for me.
@@ -110,18 +107,44 @@ alpha_shared_intr_dispatch(intr, num)
 		 *      for sure.
 		 */
 		rv = (*ih->ih_fn)(ih->ih_arg);
-		if (rv)
-			ih->ih_count.ec_count++;
-#if defined(MULTIPROCESSOR)
-		if (ih->ih_level < IPL_CLOCK)
-			__mp_unlock(&kernel_lock);
-#endif
+
 		handled = handled || (rv != 0);
-		if (intr_shared_edge == 0 && rv == 1)
-			break;
+		ih = ih->ih_q.tqe_next;
 	}
 
 	return (handled);
+}
+
+/*
+ * Just check to see if an IRQ is available/can be shared.
+ * 0 = interrupt not available
+ * 1 = interrupt shareable
+ * 2 = interrupt all to ourself
+ */
+int
+alpha_shared_intr_check(intr, num, type)
+	struct alpha_shared_intr *intr;
+	unsigned int num;
+	int type;
+{
+
+	switch (intr[num].intr_sharetype) {
+	case IST_UNUSABLE:
+		return (0);
+		break;
+	case IST_NONE:
+		return (2);
+		break;
+	case IST_LEVEL:
+		if (type == intr[num].intr_sharetype)
+			break;
+	case IST_EDGE:
+	case IST_PULSE:
+		if ((type != IST_NONE) && (intr[num].intr_q.tqh_first != NULL))
+			return (0);
+	}
+
+	return (1);
 }
 
 void *
@@ -129,7 +152,7 @@ alpha_shared_intr_establish(intr, num, type, level, fn, arg, basename)
 	struct alpha_shared_intr *intr;
 	unsigned int num;
 	int type, level;
-	int (*fn)(void *);
+	int (*fn) __P((void *));
 	void *arg;
 	const char *basename;
 {
@@ -153,14 +176,12 @@ alpha_shared_intr_establish(intr, num, type, level, fn, arg, basename)
 
 	switch (intr[num].intr_sharetype) {
 	case IST_EDGE:
-		intr_shared_edge = 1;
-		/* FALLTHROUGH */
 	case IST_LEVEL:
 		if (type == intr[num].intr_sharetype)
 			break;
 	case IST_PULSE:
 		if (type != IST_NONE) {
-			if (TAILQ_EMPTY(&intr[num].intr_q)) {
+			if (intr[num].intr_q.tqh_first == NULL) {
 				printf("alpha_shared_intr_establish: %s %d: warning: using %s on %s\n",
 				    basename, num, intr_typename(type),
 				    intr_typename(intr[num].intr_sharetype));
@@ -178,34 +199,14 @@ alpha_shared_intr_establish(intr, num, type, level, fn, arg, basename)
 		break;
 	}
 
-	ih->ih_intrhead = intr;
 	ih->ih_fn = fn;
 	ih->ih_arg = arg;
 	ih->ih_level = level;
-	ih->ih_num = num;
-	evcount_attach(&ih->ih_count, basename, &ih->ih_num);
 
 	intr[num].intr_sharetype = type;
 	TAILQ_INSERT_TAIL(&intr[num].intr_q, ih, ih_q);
 
 	return (ih);
-}
-
-void
-alpha_shared_intr_disestablish(intr, cookie)
-	struct alpha_shared_intr *intr;
-	void *cookie;
-{
-	struct alpha_shared_intrhand *ih = cookie;
-	unsigned int num = ih->ih_num;
-
-	/*
-	 * Just remove it from the list and free the entry.  We let
-	 * the caller deal with resetting the share type, if appropriate.
-	 */
-	evcount_detach(&ih->ih_count);
-	TAILQ_REMOVE(&intr[num].intr_q, ih, ih_q);
-	free(ih, M_DEVBUF, sizeof *ih);
 }
 
 int
@@ -223,15 +224,7 @@ alpha_shared_intr_isactive(intr, num)
 	unsigned int num;
 {
 
-	return (!TAILQ_EMPTY(&intr[num].intr_q));
-}
-
-int
-alpha_shared_intr_firstactive(struct alpha_shared_intr *intr, unsigned int num)
-{
-
-	return (!TAILQ_EMPTY(&intr[num].intr_q) &&
-		TAILQ_NEXT(intr[num].intr_q.tqh_first, ih_q) == NULL);
+	return (intr[num].intr_q.tqh_first != NULL);
 }
 
 void
@@ -256,22 +249,13 @@ alpha_shared_intr_set_maxstrays(intr, num, newmaxstrays)
 	unsigned int num;
 	int newmaxstrays;
 {
-	int s = splhigh();
+
+#ifdef DIAGNOSTIC
+	if (alpha_shared_intr_isactive(intr, num))
+		panic("alpha_shared_intr_set_maxstrays on active intr");
+#endif
+
 	intr[num].intr_maxstrays = newmaxstrays;
-	intr[num].intr_nstrays = 0;
-	splx(s);
-}
-
-void
-alpha_shared_intr_reset_strays(intr, num)
-	struct alpha_shared_intr *intr;
-	unsigned int num;
-{
-
-	/*
-	 * Don't bother blocking interrupts; this doesn't have to be
-	 * precise, but it does need to be fast.
-	 */
 	intr[num].intr_nstrays = 0;
 }
 
@@ -291,23 +275,4 @@ alpha_shared_intr_stray(intr, num, basename)
 		log(LOG_ERR, "stray %s %d%s\n", basename, num,
 		    intr[num].intr_nstrays >= intr[num].intr_maxstrays ?
 		      "; stopped logging" : "");
-}
-
-void
-alpha_shared_intr_set_private(intr, num, v)
-	struct alpha_shared_intr *intr;
-	unsigned int num;
-	void *v;
-{
-
-	intr[num].intr_private = v;
-}
-
-void *
-alpha_shared_intr_get_private(intr, num)
-	struct alpha_shared_intr *intr;
-	unsigned int num;
-{
-
-	return (intr[num].intr_private);
 }

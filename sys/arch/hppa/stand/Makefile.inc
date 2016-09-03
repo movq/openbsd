@@ -1,39 +1,43 @@
-#	$OpenBSD: Makefile.inc,v 1.20 2016/07/04 18:01:44 guenther Exp $
+#	$OpenBSD: Makefile.inc,v 1.5 1999/04/20 20:15:13 mickey Exp $
 
-CFLAGS=${DEBUG} -Os -Wall -Werror
+CFLAGS=${DEBUG} -O2 -g -Wall -Werror
 CPPFLAGS+=-I${S} -I. -I${.CURDIR}
-SACFLAGS=-nostdinc -fno-builtin -D_STANDALONE -I${STANDIR}/libsa
-SACFLAGS+=-mdisable-fpregs -mfast-indirect-calls -mpa-risc-1-1
-SACFLAGS+=-fno-stack-protector
-#DEBUGFLAGS=-DDEBUG
+SACFLAGS=-nostdinc -fno-builtin -D_STANDALONE -I${SADIR}/libsa
+SACFLAGS+=-mdisable-fpregs -mfast-indirect-calls -mpa-risc-1-0
+DEBUGFLAGS=-DDEBUG
 #DEBUGFLAGS+=-DPDCDEBUG
 #DEBUGFLAGS+=-DLIFDEBUG
-#DEBUGFLAGS+=-DEXEC_DEBUG
-#DEBUGFLAGS+=-DALLOC_TRACE
-LINKADDR=0xf80000
-LOADADDR=0xf80000
-HEAP_LIMIT=0xff8000
+DEBUGFLAGS+=-DEXEC_DEBUG
+# DEBUGFLAGS+=-DALLOC_TRACE
+LINKADDR=0x700000
+LOADADDR=0x700000
+HEAP_LIMIT=0x7c0000
 CLEANFILES+=	machine
 
-.if !make(libdep) && !make(sadep) && !make(salibdir) && !make(obj) && !(defined(PROG) && ${PROG} == "mkboot")
+.if !make(libdep) && !make(sadep) && !make(salibdir) && !make(kernlibdir) && !make(obj) && !(defined(PROG) && ${PROG} == "mkboot")
 .BEGIN:
 	@([ -h machine ] || ln -s $(S)/arch/hppa/include machine)
 .endif
 
-.if exists(${STANDIR}/libsa/libsa.a)
-LIBSA=${STANDIR}/libsa/libsa.a
+.if exists(${SADIR}/libsa/libsa.a)
+LIBSA=${SADIR}/libsa/libsa.a
 .else
-LIBSA=${STANDIR}/libsa/${__objdir}/libsa.a
+LIBSA=${SADIR}/libsa/${__objdir}/libsa.a
 .endif
-.if exists(${STANDIR}/libz/libz.a)
-LIBZ=${STANDIR}/libz/libz.a
+.if exists(${SADIR}/libkern/libkern.a)
+LIBKERN=${SADIR}/libkern/libkern.a
 .else
-LIBZ=${STANDIR}/libz/${__objdir}/libz.a
+LIBKERN=${SADIR}/libkern/${__objdir}/libkern.a
 .endif
-.if exists(${STANDIR}/mkboot/mkboot)
-MKBOOT=${STANDIR}/mkboot/mkboot
+.if exists(${SADIR}/libz/libz.a)
+LIBZ=${SADIR}/libz/libz.a
 .else
-MKBOOT=${STANDIR}/mkboot/${__objdir}/mkboot
+LIBZ=${SADIR}/libz/${__objdir}/libz.a
+.endif
+.if exists(${SADIR}/mkboot/mkboot)
+MKBOOT=${SADIR}/mkboot/mkboot
+.else
+MKBOOT=${SADIR}/mkboot/${__objdir}/mkboot
 .endif
 
 BINDIR=	/usr/mdec

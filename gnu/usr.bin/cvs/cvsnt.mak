@@ -79,6 +79,7 @@ CLEAN :
 	-@erase ".\WinRel\ignore.obj"
 	-@erase ".\WinRel\expand_path.obj"
 	-@erase ".\WinRel\repos.obj"
+	-@erase ".\WinRel\rtag.obj"
 	-@erase ".\WinRel\valloc.obj"
 	-@erase ".\WinRel\cvsrc.obj"
 	-@erase ".\WinRel\lock.obj"
@@ -195,7 +196,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/myndbm.obj" \
 	"$(INTDIR)/savecwd.obj" \
 	"$(INTDIR)/client.obj" \
-	"$(INTDIR)/2/diff.obj" \
+	".\WinRel\1\diff.obj" \
 	"$(INTDIR)/scramble.obj" \
 	"$(INTDIR)/filesubr.obj" \
 	"$(INTDIR)/infutil.obj" \
@@ -208,6 +209,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/ignore.obj" \
 	"$(INTDIR)/expand_path.obj" \
 	"$(INTDIR)/repos.obj" \
+	"$(INTDIR)/rtag.obj" \
 	"$(INTDIR)/valloc.obj" \
 	"$(INTDIR)/cvsrc.obj" \
 	"$(INTDIR)/lock.obj" \
@@ -218,11 +220,11 @@ LINK32_OBJS= \
 	"$(INTDIR)/commit.obj" \
 	"$(INTDIR)/patch.obj" \
 	"$(INTDIR)/classify.obj" \
-	"$(INTDIR)/1/diff.obj" \
+	".\WinRel\2\diff.obj" \
 	"$(INTDIR)/history.obj" \
 	"$(INTDIR)/add.obj" \
 	"$(INTDIR)/update.obj" \
-	"$(INTDIR)/2/version.obj" \
+	".\WinRel\2\version.obj" \
 	"$(INTDIR)/uncompr.obj" \
 	"$(INTDIR)/buffer.obj" \
 	"$(INTDIR)/rcmd.obj" \
@@ -262,7 +264,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/inftrees.obj" \
 	"$(INTDIR)/regex.obj" \
 	"$(INTDIR)/io.obj" \
-	"$(INTDIR)/1/version.obj" \
+	".\WinRel\1\version.obj" \
 	"$(INTDIR)/vers_ts.obj" \
 	"$(INTDIR)/checkout.obj" \
 	"$(INTDIR)/stripslash.obj" \
@@ -304,12 +306,12 @@ INTDIR=.\WinDebug
 ALL : "$(OUTDIR)\cvs.exe"
 
 CLEAN : 
-	-@erase ".\WinDebug\vc60.pdb"
-	-@erase ".\WinDebug\vc60.idb"
-	-@erase ".\WinDebug\1\vc60.pdb"
-	-@erase ".\WinDebug\1\vc60.idb"
-	-@erase ".\WinDebug\2\vc60.pdb"
-	-@erase ".\WinDebug\2\vc60.idb"
+	-@erase ".\WinDebug\vc40.pdb"
+	-@erase ".\WinDebug\vc40.idb"
+	-@erase ".\WinDebug\1\vc40.pdb"
+	-@erase ".\WinDebug\1\vc40.idb"
+	-@erase ".\WinDebug\2\vc40.pdb"
+	-@erase ".\WinDebug\2\vc40.idb"
 	-@erase ".\WinDebug\cvs.exe"
 	-@erase ".\WinDebug\regex.obj"
 	-@erase ".\WinDebug\normal.obj"
@@ -375,6 +377,7 @@ CLEAN :
 	-@erase ".\WinDebug\mkdir.obj"
 	-@erase ".\WinDebug\uncompr.obj"
 	-@erase ".\WinDebug\ignore.obj"
+	-@erase ".\WinDebug\rtag.obj"
 	-@erase ".\WinDebug\root.obj"
 	-@erase ".\WinDebug\trees.obj"
 	-@erase ".\WinDebug\checkin.obj"
@@ -465,7 +468,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/parseinfo.obj" \
 	"$(INTDIR)/login.obj" \
 	"$(INTDIR)/hash.obj" \
-	"$(INTDIR)/1/version.obj" \
+	".\WinDebug\1\version.obj" \
 	"$(INTDIR)/subr.obj" \
 	"$(INTDIR)/fncase.obj" \
 	"$(INTDIR)/fileattr.obj" \
@@ -496,7 +499,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/infblock.obj" \
 	"$(INTDIR)/inftrees.obj" \
 	"$(INTDIR)/deflate.obj" \
-	"$(INTDIR)/2/diff.obj" \
+	".\WinDebug\1\diff.obj" \
 	"$(INTDIR)/analyze.obj" \
 	"$(INTDIR)/gzio.obj" \
 	"$(INTDIR)/patch.obj" \
@@ -506,6 +509,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/mkdir.obj" \
 	"$(INTDIR)/uncompr.obj" \
 	"$(INTDIR)/ignore.obj" \
+	"$(INTDIR)/rtag.obj" \
 	"$(INTDIR)/root.obj" \
 	"$(INTDIR)/trees.obj" \
 	"$(INTDIR)/checkin.obj" \
@@ -523,7 +527,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/commit.obj" \
 	"$(INTDIR)/diff3.obj" \
 	"$(INTDIR)/expand_path.obj" \
-	"$(INTDIR)/1/diff.obj" \
+	".\WinDebug\2\diff.obj" \
 	"$(INTDIR)/update.obj" \
 	"$(INTDIR)/waitpid.obj" \
 	"$(INTDIR)/adler32.obj" \
@@ -535,7 +539,7 @@ LINK32_OBJS= \
 	"$(INTDIR)/getopt.obj" \
 	"$(INTDIR)/entries.obj" \
 	"$(INTDIR)/getopt1.obj" \
-	"$(INTDIR)/2/version.obj" \
+	".\WinDebug\2\version.obj" \
 	"$(INTDIR)/yesno.obj" \
 	"$(INTDIR)/compress.obj" \
 	"$(INTDIR)/io.obj" \
@@ -595,7 +599,6 @@ DEP_CPP_MKMOD=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -633,7 +636,6 @@ DEP_CPP_SUBR_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -670,7 +672,6 @@ DEP_CPP_ADMIN=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -719,8 +720,6 @@ DEP_CPP_SERVE=\
 	".\lib\regex.h"\
 	".\lib\getopt.h"\
 	".\lib\wait.h"\
-	".\lib\xselect.h"\
-	".\lib\xtime.h"\
 	".\src\rcs.h"\
 	".\src\update.h"\
 	".\src\server.h"\
@@ -750,7 +749,6 @@ DEP_CPP_DIFF_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -770,7 +768,7 @@ NODEP_CPP_DIFF_=\
 	".\src\popen.h"\
 	".\lib\tcpip.h"\
 	
-INTDIR_SRC=$(INTDIR)/1
+INTDIR_SRC=.\WinRel\1
 "$(INTDIR_SRC)" :
     if not exist "$(INTDIR_SRC)/$(NULL)" mkdir "$(INTDIR_SRC)"
 
@@ -813,7 +811,6 @@ DEP_CPP_CLIEN=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -850,7 +847,6 @@ DEP_CPP_CHECK=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -887,14 +883,12 @@ DEP_CPP_NO_DI=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
 	".\lib\regex.h"\
 	".\lib\getopt.h"\
 	".\lib\wait.h"\
-	".\lib\xtime.h"\
 	".\src\rcs.h"\
 	".\src\update.h"\
 	".\src\server.h"\
@@ -926,7 +920,6 @@ DEP_CPP_ENTRI=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -964,7 +957,6 @@ DEP_CPP_TAG_C=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -993,6 +985,42 @@ NODEP_CPP_TAG_C=\
 ################################################################################
 # Begin Source File
 
+SOURCE=.\src\rtag.c
+DEP_CPP_RTAG_=\
+	".\src\cvs.h"\
+	".\windows-NT\config.h"\
+	".\windows-NT\options.h"\
+	".\lib\fnmatch.h"\
+	".\windows-NT\pwd.h"\
+	".\lib\system.h"\
+	".\src\hash.h"\
+	".\src\client.h"\
+	".\src\myndbm.h"\
+	".\lib\regex.h"\
+	".\lib\getopt.h"\
+	".\lib\wait.h"\
+	".\src\rcs.h"\
+	".\src\update.h"\
+	".\src\server.h"\
+	{$(INCLUDE)}"\sys\Types.h"\
+	{$(INCLUDE)}"\sys\Stat.h"\
+	{$(INCLUDE)}"\sys\Timeb.h"\
+	{$(INCLUDE)}"\sys\Utime.h"\
+	".\windows-NT\ndir.h"\
+	
+NODEP_CPP_RTAG_=\
+	".\src\popen.h"\
+	".\lib\tcpip.h"\
+	
+
+"$(INTDIR)\rtag.obj" : $(SOURCE) $(DEP_CPP_RTAG_) "$(INTDIR)"
+   $(CPP) $(CPP_PROJ) $(SOURCE)
+
+
+# End Source File
+################################################################################
+# Begin Source File
+
 SOURCE=.\src\status.c
 DEP_CPP_STATU=\
 	".\src\cvs.h"\
@@ -1001,7 +1029,6 @@ DEP_CPP_STATU=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1039,7 +1066,6 @@ DEP_CPP_ROOT_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1077,7 +1103,6 @@ DEP_CPP_MYNDB=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1114,7 +1139,6 @@ DEP_CPP_HASH_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1152,7 +1176,6 @@ DEP_CPP_REPOS=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1190,7 +1213,6 @@ DEP_CPP_PARSE=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1227,7 +1249,6 @@ DEP_CPP_VERS_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1266,7 +1287,6 @@ DEP_CPP_CHECKI=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1307,7 +1327,6 @@ DEP_CPP_COMMI=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1344,7 +1363,6 @@ DEP_CPP_VERSI=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1364,7 +1382,7 @@ NODEP_CPP_VERSI=\
 	".\src\popen.h"\
 	".\lib\tcpip.h"\
 	
-INTDIR_SRC=$(INTDIR)/1
+INTDIR_SRC=.\WinRel\1
 "$(INTDIR_SRC)" :
     if not exist "$(INTDIR_SRC)/$(NULL)" mkdir "$(INTDIR_SRC)"
 
@@ -1404,7 +1422,6 @@ DEP_CPP_CVSRC=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1441,7 +1458,6 @@ DEP_CPP_REMOV=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1492,8 +1508,6 @@ DEP_CPP_UPDAT=\
 	".\lib\regex.h"\
 	".\lib\getopt.h"\
 	".\lib\wait.h"\
-	".\lib\xselect.h"\
-	".\lib\xtime.h"\
 	".\src\rcs.h"\
 	".\src\update.h"\
 	".\src\server.h"\
@@ -1525,7 +1539,6 @@ DEP_CPP_LOGMS=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1562,7 +1575,6 @@ DEP_CPP_CLASS=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1600,7 +1612,6 @@ DEP_CPP_HISTO=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1639,7 +1650,6 @@ DEP_CPP_ADD_C=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1676,7 +1686,6 @@ DEP_CPP_LOCK_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1716,7 +1725,6 @@ DEP_CPP_RECUR=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1754,7 +1762,6 @@ DEP_CPP_MODUL=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1791,7 +1798,6 @@ DEP_CPP_FIND_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1830,7 +1836,6 @@ DEP_CPP_RCS_C=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1867,7 +1872,6 @@ DEP_CPP_CREAT=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1904,7 +1908,6 @@ DEP_CPP_MAIN_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1942,7 +1945,6 @@ DEP_CPP_PATCH=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -1981,7 +1983,6 @@ DEP_CPP_RELEA=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2018,7 +2019,6 @@ DEP_CPP_RCSCM=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2035,7 +2035,7 @@ DEP_CPP_RCSCM=\
 	".\windows-NT\ndir.h"\
 	
 NODEP_CPP_RCSCM=\
-	".\diff\diffrun.h"\
+	".\src\diffrun.h"\
 	".\src\popen.h"\
 	".\lib\tcpip.h"\
 	
@@ -2045,7 +2045,7 @@ NODEP_CPP_RCSCM=\
 
 "$(INTDIR)\rcscmds.obj" : $(SOURCE) $(DEP_CPP_RCSCM) "$(INTDIR)"
    $(CPP) /nologo /ML /W3 /GX /Ob1 /I "windows-NT" /I "lib" /I "src" /I "zlib"\
- /I "diff" /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "HAVE_CONFIG_H"\
+ /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "HAVE_CONFIG_H"\
  /Fp"$(INTDIR)/cvsnt.pch" /YX /Fo"$(INTDIR)/" /c $(SOURCE)
 
 
@@ -2074,7 +2074,6 @@ DEP_CPP_IMPOR=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2112,7 +2111,6 @@ DEP_CPP_IGNOR=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2149,7 +2147,6 @@ DEP_CPP_LOG_C=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2187,7 +2184,6 @@ DEP_CPP_WRAPP=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2224,7 +2220,6 @@ DEP_CPP_ERROR=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2262,7 +2257,6 @@ DEP_CPP_EXPAN=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2302,7 +2296,6 @@ DEP_CPP_EDIT_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2341,7 +2334,6 @@ DEP_CPP_FILEA=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2381,7 +2373,6 @@ DEP_CPP_WATCH=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2419,7 +2410,6 @@ DEP_CPP_LOGIN=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2456,7 +2446,6 @@ DEP_CPP_SCRAM=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2494,7 +2483,6 @@ DEP_CPP_BUFFE=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2533,7 +2521,6 @@ DEP_CPP_ZLIB_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2579,7 +2566,6 @@ SOURCE=.\lib\sighandle.c
 DEP_CPP_SIGHA=\
 	".\windows-NT\config.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	{$(INCLUDE)}"\sys\Types.h"\
 	{$(INCLUDE)}"\sys\Stat.h"\
 	{$(INCLUDE)}"\sys\Timeb.h"\
@@ -2671,7 +2657,6 @@ SOURCE=.\lib\valloc.c
 DEP_CPP_VALLO=\
 	".\windows-NT\config.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	{$(INCLUDE)}"\sys\Types.h"\
 	{$(INCLUDE)}"\sys\Stat.h"\
 	{$(INCLUDE)}"\sys\Timeb.h"\
@@ -2694,7 +2679,6 @@ SOURCE=.\lib\xgetwd.c
 DEP_CPP_XGETW=\
 	".\windows-NT\config.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	{$(INCLUDE)}"\sys\Types.h"\
 	{$(INCLUDE)}"\sys\Stat.h"\
 	{$(INCLUDE)}"\sys\Timeb.h"\
@@ -2739,7 +2723,6 @@ SOURCE=.\lib\fnmatch.c
 DEP_CPP_FNMAT=\
 	".\windows-NT\config.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\lib\fnmatch.h"\
 	{$(INCLUDE)}"\sys\Types.h"\
 	{$(INCLUDE)}"\sys\Stat.h"\
@@ -2762,7 +2745,6 @@ NODEP_CPP_FNMAT=\
 SOURCE=.\lib\getdate.c
 DEP_CPP_GETDA=\
 	".\windows-NT\config.h"\
-	".\lib\xtime.h"\
 	{$(INCLUDE)}"\sys\Types.h"\
 	{$(INCLUDE)}"\sys\Timeb.h"\
 	
@@ -2811,7 +2793,6 @@ DEP_CPP_MKDIR=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2848,7 +2829,6 @@ DEP_CPP_RUN_C=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2898,7 +2878,6 @@ DEP_CPP_FILES=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -2935,7 +2914,6 @@ DEP_CPP_WIN32=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -3012,7 +2990,6 @@ DEP_CPP_RCMD_=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -3049,7 +3026,6 @@ DEP_CPP_START=\
 	".\lib\fnmatch.h"\
 	".\windows-NT\pwd.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	".\src\hash.h"\
 	".\src\client.h"\
 	".\src\myndbm.h"\
@@ -3399,28 +3375,28 @@ DEP_CPP_DIFF_=\
 	{$(INCLUDE)}"\sys\Stat.h"\
 	".\windows-NT\ndir.h"\
 	
-INTDIR_DIFF=$(INTDIR)/2
-"$(INTDIR_DIFF)" :
-    if not exist "$(INTDIR_DIFF)/$(NULL)" mkdir "$(INTDIR_DIFF)"
+INTDIR_SRC=.\WinRel\2
+"$(INTDIR_SRC)" :
+    if not exist "$(INTDIR_SRC)/$(NULL)" mkdir "$(INTDIR_SRC)"
 
 !IF  "$(CFG)" == "cvsnt - Win32 Release"
 
 # PROP Intermediate_Dir "WinRel\2"
 
-".\WinRel\2\diff.obj" : $(SOURCE) $(DEP_CPP_DIFF_) "$(INTDIR_DIFF)"
+".\WinRel\2\diff.obj" : $(SOURCE) $(DEP_CPP_DIFF_) "$(INTDIR_SRC)"
    $(CPP) /nologo /ML /W3 /GX /Ob1 /I "windows-NT" /I "lib" /I "src" /I "zlib"\
  /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "HAVE_CONFIG_H" /Fp"WinRel/cvsnt.pch"\
- /YX /Fo"$(INTDIR_DIFF)/" /c $(SOURCE)
+ /YX /Fo"$(INTDIR_SRC)/" /c $(SOURCE)
 
 
 !ELSEIF  "$(CFG)" == "cvsnt - Win32 Debug"
 
 # PROP Intermediate_Dir "WinDebug\2"
 
-".\WinDebug\2\diff.obj" : $(SOURCE) $(DEP_CPP_DIFF_) "$(INTDIR_DIFF)"
+".\WinDebug\2\diff.obj" : $(SOURCE) $(DEP_CPP_DIFF_) "$(INTDIR_SRC)"
    $(CPP) /nologo /MLd /W3 /Gm /GX /Zi /Ob1 /I "windows-NT" /I "lib" /I "src"\
  /I "zlib" /D "_DEBUG" /D "WIN32" /D "_CONSOLE" /D "HAVE_CONFIG_H"\
- /Fp"WinDebug/cvsnt.pch" /YX /Fo"$(INTDIR_DIFF)/" /Fd"$(INTDIR_DIFF)/" /c\
+ /Fp"WinDebug/cvsnt.pch" /YX /Fo"$(INTDIR_SRC)/" /Fd"$(INTDIR_SRC)/" /c\
  $(SOURCE)
 
 
@@ -3594,28 +3570,28 @@ SOURCE=.\diff\version.c
 DEP_CPP_VERSI=\
 	".\windows-NT\config.h"\
 	
-INTDIR_DIFF=$(INTDIR)/2
-"$(INTDIR_DIFF)" :
-    if not exist "$(INTDIR_DIFF)/$(NULL)" mkdir "$(INTDIR_DIFF)"
+INTDIR_SRC=.\WinRel\2
+"$(INTDIR_SRC)" :
+    if not exist "$(INTDIR_SRC)/$(NULL)" mkdir "$(INTDIR_SRC)"
 
 !IF  "$(CFG)" == "cvsnt - Win32 Release"
 
 # PROP Intermediate_Dir "WinRel\2"
 
-".\WinRel\2\version.obj" : $(SOURCE) $(DEP_CPP_VERSI) "$(INTDIR_DIFF)"
+".\WinRel\2\version.obj" : $(SOURCE) $(DEP_CPP_VERSI) "$(INTDIR_SRC)"
    $(CPP) /nologo /ML /W3 /GX /Ob1 /I "windows-NT" /I "lib" /I "src" /I "zlib"\
  /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "HAVE_CONFIG_H" /Fp"WinRel/cvsnt.pch"\
- /YX /Fo"$(INTDIR_DIFF)/" /c $(SOURCE)
+ /YX /Fo"$(INTDIR_SRC)/" /c $(SOURCE)
 
 
 !ELSEIF  "$(CFG)" == "cvsnt - Win32 Debug"
 
 # PROP Intermediate_Dir "WinDebug\2"
 
-".\WinDebug\2\version.obj" : $(SOURCE) $(DEP_CPP_VERSI) "$(INTDIR_DIFF)"
+".\WinDebug\2\version.obj" : $(SOURCE) $(DEP_CPP_VERSI) "$(INTDIR_SRC)"
    $(CPP) /nologo /MLd /W3 /Gm /GX /Zi /Ob1 /I "windows-NT" /I "lib" /I "src"\
  /I "zlib" /D "_DEBUG" /D "WIN32" /D "_CONSOLE" /D "HAVE_CONFIG_H"\
- /Fp"WinDebug/cvsnt.pch" /YX /Fo"$(INTDIR_DIFF)/" /Fd"$(INTDIR_DIFF)/" /c\
+ /Fp"WinDebug/cvsnt.pch" /YX /Fo"$(INTDIR_SRC)/" /Fd"$(INTDIR_SRC)/" /c\
  $(SOURCE)
 
 
@@ -3629,7 +3605,6 @@ SOURCE=.\lib\fncase.c
 DEP_CPP_FNCAS=\
 	".\windows-NT\config.h"\
 	".\lib\system.h"\
-	".\lib\xtime.h"\
 	{$(INCLUDE)}"\sys\Types.h"\
 	{$(INCLUDE)}"\sys\Stat.h"\
 	{$(INCLUDE)}"\sys\Timeb.h"\

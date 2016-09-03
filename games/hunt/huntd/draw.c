@@ -1,54 +1,27 @@
-/*	$OpenBSD: draw.c,v 1.10 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: draw.c,v 1.3 1999/01/29 07:30:35 d Exp $	*/
 /*	$NetBSD: draw.c,v 1.2 1997/10/10 16:33:04 lukem Exp $	*/
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/select.h>
-#include <string.h>
-
-#include "conf.h"
 #include "hunt.h"
 #include "server.h"
+#include "conf.h"
 
-static char	translate(char);
-static int	player_sym(PLAYER *, int, int);
-static void	drawstatus(PLAYER *);
-static void	see(PLAYER *, int);
+static char	translate __P((char));
+static int	player_sym __P((PLAYER *, int, int));
+static void	drawstatus __P((PLAYER *));
+static void	see __P((PLAYER *, int));
 
 /*
  * drawmaze:
  *	Draw the entire maze on a player's screen.
  */
 void
-drawmaze(PLAYER *pp)
+drawmaze(pp)
+	PLAYER	*pp;
 {
 	int	x;
 	char	*sp;
@@ -68,7 +41,7 @@ drawmaze(PLAYER *pp)
 				if (pp->p_x == x && pp->p_y == y)
 					outch(pp, translate(*sp));
 				/* Possibly draw other players as team nrs */
-				else if (is_player(*sp))
+				else if (isplayer(*sp))
 					outch(pp, player_sym(pp, y, x));
 				else
 					outch(pp, *sp);
@@ -85,7 +58,8 @@ drawmaze(PLAYER *pp)
  *		size is 80x24 with the maze being 64x24)
  */
 static void
-drawstatus(PLAYER *pp)
+drawstatus(pp)
+	PLAYER	*pp;
 {
 	int	i;
 	PLAYER	*np;
@@ -124,7 +98,8 @@ drawstatus(PLAYER *pp)
  *	check and update the visible area around the player
  */
 void
-look(PLAYER *pp)
+look(pp)
+	PLAYER	*pp;
 {
 	int	x, y;
 
@@ -182,7 +157,9 @@ look(PLAYER *pp)
  *	is a simulation of visibility from the player's perspective.
  */
 static void
-see(PLAYER *pp, int face)
+see(pp, face)
+	PLAYER	*pp;
+	int	face;
 {
 	char	*sp;
 	int	y, x;
@@ -222,7 +199,9 @@ see(PLAYER *pp, int face)
  *	Ensure it is shown properly on their screen.
  */
 void
-check(PLAYER *pp, int y, int x)
+check(pp, y, x)
+	PLAYER	*pp;
+	int	y, x;
 {
 	int	index;
 	int	ch;
@@ -243,7 +222,7 @@ check(PLAYER *pp, int y, int x)
 		cgoto(rpp, y, x);
 		if (x == rpp->p_x && y == rpp->p_y)
 			outch(rpp, translate(ch));
-		else if (is_player(ch))
+		else if (isplayer(ch))
 			outch(rpp, player_sym(rpp, y, x));
 		else
 			outch(rpp, ch);
@@ -256,7 +235,8 @@ check(PLAYER *pp, int y, int x)
  *	Update the status of a player on everyone's screen
  */
 void
-showstat(PLAYER *pp)
+showstat(pp)
+	PLAYER	*pp;
 {
 
 	outyx(ALL_PLAYERS, 
@@ -272,7 +252,9 @@ showstat(PLAYER *pp)
  *	be drawn instead of the player; effectively un-drawing the player.
  */
 void
-drawplayer(PLAYER *pp, FLAG draw)
+drawplayer(pp, draw)
+	PLAYER	*pp;
+	FLAG	draw;
 {
 	PLAYER	*newp;
 	int	x, y;
@@ -328,7 +310,9 @@ drawplayer(PLAYER *pp, FLAG draw)
  *	Write a message at the bottom of the screen.
  */
 void
-message(PLAYER *pp, char *s)
+message(pp, s)
+	PLAYER	*pp;
+	char	*s;
 {
 	cgoto(pp, HEIGHT, 0);
 	outstr(pp, s, strlen(s));
@@ -341,7 +325,8 @@ message(PLAYER *pp, char *s)
  *	ie: {,},!,i becomes <,>,v,^
  */
 static char
-translate(char ch)
+translate(ch)
+	char	ch;
 {
 	switch (ch) {
 	  case LEFTS:
@@ -364,7 +349,9 @@ translate(char ch)
  *	    - teamed players see other players on their team, as a digit
  */
 static int
-player_sym(PLAYER *pp, int y, int x)
+player_sym(pp, y, x)
+	PLAYER	*pp;
+	int	y, x;
 {
 	PLAYER	*npp;
 

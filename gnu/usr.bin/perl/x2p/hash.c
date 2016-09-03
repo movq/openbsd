@@ -1,10 +1,11 @@
-/*    hash.c
+/* $RCSfile: hash.c,v $$Revision: 4.1 $$Date: 92/08/07 18:29:20 $
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1999, 2000, 2001, 2002,
- *    2005 by Larry Wall and others
+ *    Copyright (c) 1991-1997, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
+ *
+ * $Log:	hash.c,v $
  */
 
 #include <stdio.h>
@@ -12,20 +13,16 @@
 #include "a2p.h"
 #include "util.h"
 
-#ifdef NETWARE
-char *savestr(char *str);
-#endif
-
 STR *
-hfetch(HASH *tb, char *key)
+hfetch(register HASH *tb, char *key)
 {
-    char *s;
-    int i;
-    int hash;
-    HENT *entry;
+    register char *s;
+    register int i;
+    register int hash;
+    register HENT *entry;
 
     if (!tb)
-	return NULL;
+	return Nullstr;
     for (s=key,		i=0,	hash = 0;
       /* while */ *s;
 	 s++,		i++,	hash *= 5) {
@@ -39,17 +36,17 @@ hfetch(HASH *tb, char *key)
 	    continue;
 	return entry->hent_val;
     }
-    return NULL;
+    return Nullstr;
 }
 
 bool
-hstore(HASH *tb, char *key, STR *val)
+hstore(register HASH *tb, char *key, STR *val)
 {
-    char *s;
-    int i;
-    int hash;
-    HENT *entry;
-    HENT **oentry;
+    register char *s;
+    register int i;
+    register int hash;
+    register HENT *entry;
+    register HENT **oentry;
 
     if (!tb)
 	return FALSE;
@@ -90,19 +87,59 @@ hstore(HASH *tb, char *key, STR *val)
     return FALSE;
 }
 
+#ifdef NOTUSED
+bool
+hdelete(tb,key)
+register HASH *tb;
+char *key;
+{
+    register char *s;
+    register int i;
+    register int hash;
+    register HENT *entry;
+    register HENT **oentry;
+
+    if (!tb)
+	return FALSE;
+    for (s=key,		i=0,	hash = 0;
+      /* while */ *s;
+	 s++,		i++,	hash *= 5) {
+	hash += *s * coeff[i];
+    }
+
+    oentry = &(tb->tbl_array[hash & tb->tbl_max]);
+    entry = *oentry;
+    i = 1;
+    for (; entry; i=0, oentry = &entry->hent_next, entry = entry->hent_next) {
+	if (entry->hent_hash != hash)		/* strings can't be equal */
+	    continue;
+	if (strNE(entry->hent_key,key))	/* is this it? */
+	    continue;
+	safefree((char*)entry->hent_val);
+	safefree(entry->hent_key);
+	*oentry = entry->hent_next;
+	safefree((char*)entry);
+	if (i)
+	    tb->tbl_fill--;
+	return TRUE;
+    }
+    return FALSE;
+}
+#endif
+
 void
 hsplit(HASH *tb)
 {
-    const int oldsize = tb->tbl_max + 1;
-    int newsize = oldsize * 2;
-    int i;
-    HENT **a;
-    HENT **b;
-    HENT *entry;
-    HENT **oentry;
+    int oldsize = tb->tbl_max + 1;
+    register int newsize = oldsize * 2;
+    register int i;
+    register HENT **a;
+    register HENT **b;
+    register HENT *entry;
+    register HENT **oentry;
 
     a = (HENT**) saferealloc((char*)tb->tbl_array, newsize * sizeof(HENT*));
-    memset(&a[oldsize], 0, oldsize * sizeof(HENT*)); /* zero second half */
+    bzero((char*)&a[oldsize], oldsize * sizeof(HENT*)); /* zero second half */
     tb->tbl_max = --newsize;
     tb->tbl_array = a;
 
@@ -130,20 +167,66 @@ hsplit(HASH *tb)
 HASH *
 hnew(void)
 {
-    HASH *tb = (HASH*)safemalloc(sizeof(HASH));
+    register HASH *tb = (HASH*)safemalloc(sizeof(HASH));
 
     tb->tbl_array = (HENT**) safemalloc(8 * sizeof(HENT*));
     tb->tbl_fill = 0;
     tb->tbl_max = 7;
     hiterinit(tb);	/* so each() will start off right */
-    memset(tb->tbl_array, 0, 8 * sizeof(HENT*));
+    bzero((char*)tb->tbl_array, 8 * sizeof(HENT*));
     return tb;
 }
 
+#ifdef NOTUSED
+hshow(tb)
+register HASH *tb;
+{
+    fprintf(stderr,"%5d %4d (%2d%%)\n",
+	tb->tbl_max+1,
+	tb->tbl_fill,
+	tb->tbl_fill * 100 / (tb->tbl_max+1));
+}
+#endif
+
 int
-hiterinit(HASH *tb)
+hiterinit(register HASH *tb)
 {
     tb->tbl_riter = -1;
-    tb->tbl_eiter = (HENT*)NULL;
+    tb->tbl_eiter = Null(HENT*);
     return tb->tbl_fill;
+}
+
+HENT *
+hiternext(register HASH *tb)
+{
+    register HENT *entry;
+
+    entry = tb->tbl_eiter;
+    do {
+	if (entry)
+	    entry = entry->hent_next;
+	if (!entry) {
+	    tb->tbl_riter++;
+	    if (tb->tbl_riter > tb->tbl_max) {
+		tb->tbl_riter = -1;
+		break;
+	    }
+	    entry = tb->tbl_array[tb->tbl_riter];
+	}
+    } while (!entry);
+
+    tb->tbl_eiter = entry;
+    return entry;
+}
+
+char *
+hiterkey(register HENT *entry)
+{
+    return entry->hent_key;
+}
+
+STR *
+hiterval(register HENT *entry)
+{
+    return entry->hent_val;
 }

@@ -1,14 +1,24 @@
-#	$OpenBSD: Makefile,v 1.14 2015/10/26 21:57:42 naddy Exp $
+#	$OpenBSD: Makefile,v 1.5 1998/03/06 05:40:01 millert Exp $
 #
 # C Shell with process control; VM/UNIX VAX Makefile
 # Bill Joy UC Berkeley; Jim Kulp IIASA, Austria
+#
+# To profile, put -DPROF in DEFS and -pg in CFLAGS, and recompile.
 
 PROG=	csh
-CFLAGS+=-I${.CURDIR} -I.
+DFLAGS=-DBUILTIN -DFILEC -DNLS -DSHORT_STRINGS
+#CFLAGS+=-g
+#CFLAGS+=-Wall -ansi -pedantic
+CFLAGS+=-I${.CURDIR} -I. ${DFLAGS}
 SRCS=	alloc.c char.c const.c csh.c dir.c dol.c error.c exec.c exp.c file.c \
-	func.c glob.c hist.c init.c lex.c misc.c parse.c proc.c \
+	func.c glob.c hist.c init.c lex.c misc.c parse.c printf.c proc.c \
 	sem.c set.c str.c time.c
+#.PATH:	${.CURDIR}/../../usr.bin/printf
 
+MLINKS=	csh.1 limit.1 csh.1 alias.1 csh.1 bg.1 csh.1 dirs.1 csh.1 fg.1 \
+	csh.1 foreach.1 csh.1 history.1 csh.1 jobs.1 csh.1 popd.1 \
+	csh.1 pushd.1 csh.1 rehash.1 csh.1 repeat.1 csh.1 suspend.1 \
+	csh.1 stop.1 csh.1 source.1 csh.1 unlimit.1
 CLEANFILES+=error.h const.h
 
 const.h: error.h
@@ -29,5 +39,9 @@ const.h: const.c
 	    sort >> $@
 
 .depend alloc.o: const.h error.h 
+
+.if make(install)
+SUBDIR+= USD.doc
+.endif
 
 .include <bsd.prog.mk>

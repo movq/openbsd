@@ -1,4 +1,4 @@
-/*	$OpenBSD: swap.c,v 1.27 2015/08/20 22:32:42 deraadt Exp $	*/
+/*	$OpenBSD: swap.c,v 1.11 1999/05/22 21:41:58 weingart Exp $	*/
 /*	$NetBSD: swap.c,v 1.9 1998/12/26 07:05:08 marc Exp $	*/
 
 /*-
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,8 +35,17 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/signal.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)swap.c	8.3 (Berkeley) 4/29/95";
+#endif
+static char rcsid[] = "$OpenBSD: swap.c,v 1.11 1999/05/22 21:41:58 weingart Exp $";
+#endif /* not lint */
+
+
+#include <sys/cdefs.h>
+#include <sys/param.h>
+#include <sys/buf.h>
 #include <sys/conf.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -45,178 +58,125 @@
 #include <unistd.h>
 
 #include "systat.h"
+#include "extern.h"
 
+void showspace __P((char *header, int hlen, long blocksize));
 
 static	long blocksize;
 static	int hlen, nswap, rnswap;
+static	int first = 1;
 static	struct swapent *swap_devices;
 
-void print_sw(void);
-int read_sw(void);
-int select_sw(void);
-static void showswap(int i);
-static void showtotal(void);
-
-
-field_def fields_sw[] = {
-	{"DISK", 6, 16, 1, FLD_ALIGN_LEFT, -1, 0, 0, 0},
-	{"BLOCKS", 5, 10, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"USED", 5, 10, 1, FLD_ALIGN_RIGHT, -1, 0, 0, 0},
-	{"", 40, 80, 1, FLD_ALIGN_BAR, -1, 0, 0, 100},
-};
-
-#define FLD_SW_NAME	FIELD_ADDR(fields_sw,0)
-#define FLD_SW_BLOCKS	FIELD_ADDR(fields_sw,1)
-#define FLD_SW_USED	FIELD_ADDR(fields_sw,2)
-#define FLD_SW_BAR	FIELD_ADDR(fields_sw,3)
-
-/* Define views */
-field_def *view_sw_0[] = {
-	FLD_SW_NAME, FLD_SW_BLOCKS, FLD_SW_USED, FLD_SW_BAR, NULL
-};
-
-
-/* Define view managers */
-struct view_manager swap_mgr = {
-	"Swap", select_sw, read_sw, NULL, print_header,
-	print_sw, keyboard_callback, NULL, NULL
-};
-
-field_view views_sw[] = {
-	{view_sw_0, "swap", '6', &swap_mgr},
-	{NULL, NULL, 0, NULL}
-};
-
-
-int
-select_sw(void)
+WINDOW *
+openswap()
 {
-	if (swap_devices == NULL || nswap == 0)
-		num_disp = 1;
-	else
-		num_disp = nswap;
-	if (nswap > 1)
-		num_disp++;
-	return (0);
+	return (subwin(stdscr, LINES-5-1, 0, 5, 0));
 }
 
-int
-read_sw(void)
+void
+closeswap(w)
+	WINDOW *w;
 {
-	num_disp = 1;
+	if (w == NULL)
+		return;
+	wclear(w);
+	wrefresh(w);
+	delwin(w);
+}
 
+/* do nothing */
+int
+initswap()
+{
+	return (1);
+}
+
+void
+fetchswap()
+{
+	int	update_label = 0;
+
+	first = 0;
 	nswap = swapctl(SWAP_NSWAP, 0, 0);
-
 	if (nswap < 0)
 		error("error: %s", strerror(errno));
 	if (nswap == 0)
-		return 0;
+		return;
+	update_label = (nswap != rnswap);
 
 	if (swap_devices)
 		(void)free(swap_devices);
-
-	swap_devices = calloc(nswap, sizeof(*swap_devices));
+	swap_devices = (struct swapent *)malloc(nswap * sizeof(*swap_devices));
 	if (swap_devices == NULL)
-		return 0;
+		/* XXX */ ;	/* XXX systat doesn't do errors! */
 
 	rnswap = swapctl(SWAP_STATS, (void *)swap_devices, nswap);
-	if (rnswap < 0 || nswap != rnswap)
-		return 0;
-
-	num_disp = nswap;
-	if (nswap > 1)
-		num_disp++;
-
-	return 0;
+	if (nswap < 0)
+		/* XXX */ ;	/* XXX systat doesn't do errors! */
+	if (nswap != rnswap)
+		/* XXX */ ;	/* XXX systat doesn't do errors! */
+	if (update_label)
+		labelswap();
 }
-
 
 void
-print_sw(void)
+labelswap()
 {
-	int n, count = 0;
+	char	*header;
+	int	row;
 
-	if (swap_devices == NULL || nswap == 0) {
-		print_fld_str(FLD_SW_BAR, "No swap devices");
+	row = 0;
+	wmove(wnd, row, 0);
+	wclrtobot(wnd);
+	if (first)
+		fetchswap();
+	if (nswap == 0) {
+		mvwprintw(wnd, row++, 0, "No swap");
 		return;
 	}
-
-
-	for (n = dispstart; n < num_disp; n++) {
-		if (n >= nswap)
-			showtotal();
-		else
-			showswap(n);
-		count++;
-		if (maxprint > 0 && count >= maxprint)
-			break;
-	}
-
+	header = getbsize(&hlen, &blocksize);
+	mvwprintw(wnd, row++, 0, "%-5s%*s%9s  %55s",
+	    "Disk", hlen, header, "Used",
+	    "/0%  /10% /20% /30% /40% /50% /60% /70% /80% /90% /100%");
 }
 
-int
-initswap(void)
-{
-	field_view *v;
-
-	char *bs = getbsize(&hlen, &blocksize);
-
-	FLD_SW_BLOCKS->title = strdup(bs);
-
-	for (v = views_sw; v->name != NULL; v++)
-		add_view(v);
-
-	return(1);
-}
-
-
-static void
-showswap(int i)
-{
-	int d, used, xsize;
+void
+showswap() {
+	int	col, div, i, j, avail, used, xsize, free;
 	struct	swapent *sep;
 	char	*p;
 
-	d = blocksize / 512;
-
-	sep = &swap_devices[i];
-
-	p = strrchr(sep->se_path, '/');
-	p = p ? p+1 : sep->se_path;
-
-	print_fld_str(FLD_SW_NAME, p);
-	
-	xsize = sep->se_nblks;
-	used = sep->se_inuse;
-
-	print_fld_uint(FLD_SW_BLOCKS, xsize / d);
-	print_fld_uint(FLD_SW_USED, used / d);
-	print_fld_bar(FLD_SW_BAR, 100 * used / xsize);
-
-	end_line();
-}
-
-static void
-showtotal(void)
-{
-	struct	swapent *sep;
-	int	d, i, avail, used, xsize, mfree;
-
-	d = blocksize / 512;
-	mfree = avail = 0;
-
+	div = blocksize / 512;
+	free = avail = 0;
 	for (sep = swap_devices, i = 0; i < nswap; i++, sep++) {
+		if (sep == NULL)
+			continue;
+
+		p = strrchr(sep->se_path, '/');
+		p = p ? p+1 : sep->se_path;
+
+		mvwprintw(wnd, i + 1, 0, "%-5s", p);
+
+		col = 5;
+		mvwprintw(wnd, i + 1, col, "%*d", hlen, sep->se_nblks / div);
+
+		col += hlen;
 		xsize = sep->se_nblks;
 		used = sep->se_inuse;
 		avail += xsize;
-		mfree += xsize - used;
+		free += xsize - used;
+		mvwprintw(wnd, i + 1, col, "%9d  ", used / div);
+		for (j = (100 * used / xsize + 1) / 2; j > 0; j--)
+			waddch(wnd, 'X');
+		wclrtoeol(wnd);
 	}
-	used = avail - mfree;
-
-	print_fld_str(FLD_SW_NAME, "Total");
-	print_fld_uint(FLD_SW_BLOCKS, avail / d);
-	print_fld_uint(FLD_SW_USED, used / d);
-	print_fld_bar(FLD_SW_BAR, 100 * used / avail);
-
-	end_line();
+	/* do total if necessary */
+	if (nswap > 1) {
+		used = avail - free;
+		mvwprintw(wnd, i + 1, 0, "%-5s%*d%9d  ",
+		    "Total", hlen, avail / div, used / div);
+		for (j = (100 * used / avail + 1) / 2; j > 0; j--)
+			waddch(wnd, 'X');
+		wclrtoeol(wnd);
+	}
 }

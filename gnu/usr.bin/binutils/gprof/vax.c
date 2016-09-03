@@ -1,86 +1,40 @@
 /*
- * Copyright (c) 1983, 1993, 2001
- *      The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1983 Regents of the University of California.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that: (1) source distributions retain this entire copyright
+ * notice and comment, and (2) distributions including binaries display
+ * the following acknowledgement:  ``This product includes software
+ * developed by the University of California, Berkeley and its contributors''
+ * in the documentation or other materials provided with the distribution
+ * and in all advertising materials mentioning features or use of this
+ * software. Neither the name of the University nor the names of its
+ * contributors may be used to endorse or promote products derived
+ * from this software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 #include "gprof.h"
-#include "search_list.h"
-#include "source.h"
-#include "symtab.h"
 #include "cg_arcs.h"
-#include "corefile.h"
+#include "core.h"
 #include "hist.h"
-
-    /*
-     *        opcode of the `calls' instruction
-     */
-#define	CALLS	0xfb
-
-    /*
-     *        register for pc relative addressing
-     */
-#define	PC	0xf
-
-enum opermodes
-  {
-    literal, indexed, reg, regdef, autodec, autoinc, autoincdef,
-    bytedisp, bytedispdef, worddisp, worddispdef, longdisp, longdispdef,
-    immediate, absolute, byterel, bytereldef, wordrel, wordreldef,
-    longrel, longreldef
-  };
-typedef enum opermodes operandenum;
-
-#if 0
-/* Here to document only.  We can't use this when cross compiling as
-   the bitfield layout might not be the same as native.  */
-struct modebyte
-  {
-    unsigned int regfield:4;
-    unsigned int modefield:4;
-  };
-#endif
+#include "symtab.h"
 
 /*
  * A symbol to be the child of indirect calls:
  */
-static Sym indirectchild;
+Sym indirectchild;
 
-static operandenum vax_operandmode PARAMS ((unsigned char *));
-static char *vax_operandname PARAMS ((operandenum));
-static long vax_operandlength PARAMS ((unsigned char *));
-static bfd_signed_vma vax_offset PARAMS ((unsigned char *));
-void vax_find_call PARAMS ((Sym *, bfd_vma, bfd_vma));
 
 static operandenum
-vax_operandmode (modep)
-     unsigned char *modep;
+operandmode (modep)
+     struct modebyte *modep;
 {
-  int usesreg = *modep & 0xf;
+  long usesreg = modep->regfield;
 
-  switch ((*modep >> 4) & 0xf)
+  switch (modep->modefield)
     {
     case 0:
     case 1:
@@ -113,11 +67,10 @@ vax_operandmode (modep)
       return usesreg != PC ? longdispdef : longreldef;
     }
   /* NOTREACHED */
-  abort ();
 }
 
 static char *
-vax_operandname (mode)
+operandname (mode)
      operandenum mode;
 {
 
@@ -167,15 +120,14 @@ vax_operandname (mode)
       return "long relative deferred";
     }
   /* NOTREACHED */
-  abort ();
 }
 
 static long
-vax_operandlength (modep)
-     unsigned char *modep;
+operandlength (modep)
+     struct modebyte *modep;
 {
 
-  switch (vax_operandmode (modep))
+  switch (operandmode (modep))
     {
     case literal:
     case reg:
@@ -202,36 +154,41 @@ vax_operandlength (modep)
     case longreldef:
       return 5;
     case indexed:
-      return 1 + vax_operandlength (modep + 1);
+      return 1 + operandlength ((struct modebyte *) ((char *) modep) + 1);
     }
   /* NOTREACHED */
-  abort ();
 }
 
-static bfd_signed_vma
-vax_offset (modep)
-     unsigned char *modep;
+static bfd_vma
+reladdr (modep)
+     struct modebyte *modep;
 {
-  operandenum mode = vax_operandmode (modep);
+  operandenum mode = operandmode (modep);
+  char *cp;
+  short *sp;
+  long *lp;
 
-  ++modep;				/* skip over the mode */
+  cp = (char *) modep;
+  ++cp;				/* skip over the mode */
   switch (mode)
     {
     default:
       fprintf (stderr, "[reladdr] not relative address\n");
-      return 0;
+      return (bfd_vma) modep;
     case byterel:
-      return 1 + bfd_get_signed_8 (core_bfd, modep);
+      return (bfd_vma) (cp + sizeof *cp + *cp);
     case wordrel:
-      return 2 + bfd_get_signed_16 (core_bfd, modep);
+      sp = (short *) cp;
+      return (bfd_vma) (cp + sizeof *sp + *sp);
     case longrel:
-      return 4 + bfd_get_signed_32 (core_bfd, modep);
+      lp = (long *) cp;
+      return (bfd_vma) (cp + sizeof *lp + *lp);
     }
 }
 
 
 void
-vax_find_call (parent, p_lowpc, p_highpc)
+find_call (parent, p_lowpc, p_highpc)
      Sym *parent;
      bfd_vma p_lowpc;
      bfd_vma p_highpc;
@@ -241,8 +198,8 @@ vax_find_call (parent, p_lowpc, p_highpc)
   Sym *child;
   operandenum mode;
   operandenum firstmode;
-  bfd_vma pc, destpc;
-  static bfd_boolean inited = FALSE;
+  bfd_vma destpc;
+  static bool inited = FALSE;
 
   if (!inited)
     {
@@ -265,22 +222,22 @@ vax_find_call (parent, p_lowpc, p_highpc)
       p_highpc = s_highpc;
     }
   DBG (CALLDEBUG, printf ("[findcall] %s: 0x%lx to 0x%lx\n",
-			  parent->name, (unsigned long) p_lowpc,
-			  (unsigned long) p_highpc));
-  for (pc = p_lowpc; pc < p_highpc; pc += length)
+			  parent->name, p_lowpc, p_highpc));
+  for (instructp = (unsigned char *) core_text_space + p_lowpc;
+       instructp < (unsigned char *) core_text_space + p_highpc;
+       instructp += length)
     {
       length = 1;
-      instructp = ((unsigned char *) core_text_space
-		   + pc - core_text_sect->vma);
-      if ((*instructp & 0xff) == CALLS)
+      if (*instructp == CALLS)
 	{
 	  /*
 	   *    maybe a calls, better check it out.
 	   *      skip the count of the number of arguments.
 	   */
 	  DBG (CALLDEBUG,
-	       printf ("[findcall]\t0x%lx:calls", (unsigned long) pc));
-	  firstmode = vax_operandmode (instructp + length);
+	       printf ("[findcall]\t0x%x:calls",
+		       instructp - (unsigned char *) core_text_space));
+	  firstmode = operandmode ((struct modebyte *) (instructp + length));
 	  switch (firstmode)
 	    {
 	    case literal:
@@ -289,11 +246,11 @@ vax_find_call (parent, p_lowpc, p_highpc)
 	    default:
 	      goto botched;
 	    }
-	  length += vax_operandlength (instructp + length);
-	  mode = vax_operandmode (instructp + length);
+	  length += operandlength ((struct modebyte *) (instructp + length));
+	  mode = operandmode ((struct modebyte *) (instructp + length));
 	  DBG (CALLDEBUG,
-	       printf ("\tfirst operand is %s", vax_operandname (firstmode));
-	       printf ("\tsecond operand is %s\n", vax_operandname (mode)));
+	       printf ("\tfirst operand is %s", operandname (firstmode));
+	       printf ("\tsecond operand is %s\n", operandname (mode)));
 	  switch (mode)
 	    {
 	    case regdef:
@@ -311,35 +268,36 @@ vax_find_call (parent, p_lowpc, p_highpc)
 	       *      [are there others that we miss?,
 	       *       e.g. arrays of pointers to functions???]
 	       */
-	      arc_add (parent, &indirectchild, (unsigned long) 0);
-	      length += vax_operandlength (instructp + length);
+	      arc_add (parent, &indirectchild, (long) 0);
+	      length += operandlength (
+				  (struct modebyte *) (instructp + length));
 	      continue;
 	    case byterel:
 	    case wordrel:
 	    case longrel:
 	      /*
 	       *    regular pc relative addressing
-	       *      check that this is the address of
+	       *      check that this is the address of 
 	       *      a function.
 	       */
-	      destpc = pc + vax_offset (instructp + length);
+	      destpc = reladdr ((struct modebyte *) (instructp + length))
+		- (bfd_vma) core_text_space;
 	      if (destpc >= s_lowpc && destpc <= s_highpc)
 		{
 		  child = sym_lookup (&symtab, destpc);
 		  DBG (CALLDEBUG,
-		       printf ("[findcall]\tdestpc 0x%lx",
-			       (unsigned long) destpc);
+		       printf ("[findcall]\tdestpc 0x%lx", destpc);
 		       printf (" child->name %s", child->name);
-		       printf (" child->addr 0x%lx\n",
-			       (unsigned long) child->addr);
+		       printf (" child->addr 0x%lx\n", child->addr);
 		    );
 		  if (child->addr == destpc)
 		    {
 		      /*
 		       *    a hit
 		       */
-		      arc_add (parent, child, (unsigned long) 0);
-		      length += vax_operandlength (instructp + length);
+		      arc_add (parent, child, (long) 0);
+		      length += operandlength ((struct modebyte *)
+					       (instructp + length));
 		      continue;
 		    }
 		  goto botched;

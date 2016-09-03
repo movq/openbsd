@@ -1,4 +1,4 @@
-/*	$OpenBSD: save.c,v 1.14 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: save.c,v 1.5 1999/07/31 21:57:41 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,8 +33,14 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <limits.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)save.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: save.c,v 1.5 1999/07/31 21:57:41 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <errno.h>
 #include "back.h"
 
@@ -46,68 +56,70 @@ static const char rec[] = "\" to recover your game.\n\n";
 static const char cantrec[] = "Can't recover file:  ";
 
 void
-save(int n)
+save(n)
+	int     n;
 {
 	int     fdesc;
 	char   *fs;
-	char    fname[PATH_MAX];
-	int     r, c, i;
+	char    fname[50];
 
 	if (n) {
-		move(20, 0);
-		clrtobot();
-		addstr(confirm);
+		if (tflag) {
+			curmove(20, 0);
+			clend();
+		} else
+			writec('\n');
+		writel(confirm);
 		if (!yorn(0))
 			return;
 	}
 	cflag = 1;
 	for (;;) {
-		addstr(prompt);
+		writel(prompt);
 		fs = fname;
-		while ((i = readc()) != '\n') {
-			if (i == KEY_BACKSPACE || i == 0177) {
+		while ((*fs = readc()) != '\n') {
+			if (*fs == old.c_cc[VERASE]) {
 				if (fs > fname) {
 					fs--;
-					getyx(stdscr, r, c);
-					move(r, c - 1);
+					if (tflag)
+						curmove(curr, curc - 1);
+					else
+						writec(*fs);
 				} else
-					beep();
+					writec('\007');
 				continue;
 			}
-			if (fs - fname < sizeof(fname) - 1) {
-				if (isascii(i)) {
-					*fs = i;
-					addch(*fs++);
-				} else
-					beep();
-			} else
-				beep();
+			writec(*fs++);
 		}
 		*fs = '\0';
 		if ((fdesc = open(fname, O_RDWR)) == -1 && errno == ENOENT) {
-			if ((fdesc = open(fname,
-					  O_CREAT | O_TRUNC | O_WRONLY,
-					  0600)) != -1)
+			if ((fdesc = creat(fname, 0600)) != -1)
 				break;
 		}
 		if (fdesc != -1) {
-			move(18, 0);
-			clrtobot();
-			printw("%s%s%s", exist1, fname, exist2);
+			if (tflag) {
+				curmove(18, 0);
+				clend();
+			} else
+				writec('\n');
+			writel(exist1);
+			writel(fname);
+			writel(exist2);
 			cflag = 0;
 			close(fdesc);
 			if (yorn(0)) {
 				unlink(fname);
-				fdesc = open(fname,
-					     O_CREAT | O_TRUNC | O_WRONLY,
-					     0600);
+				fdesc = creat(fname, 0600);
 				break;
 			} else {
 				cflag = 1;
 				continue;
 			}
 		}
-		printw("%s%s.\n", cantuse, fname);
+		writel(cantuse);
+		writel(fname);
+		writel(".\n");
+		close(fdesc);
 		cflag = 1;
 	}
 	write(fdesc, board, sizeof(board));
@@ -115,7 +127,6 @@ save(int n)
 	write(fdesc, in, sizeof(in));
 	write(fdesc, dice, sizeof(dice));
 	write(fdesc, &cturn, sizeof(cturn));
-	write(fdesc, &dflag, sizeof(dflag));
 	write(fdesc, &dlast, sizeof(dlast));
 	write(fdesc, &pnum, sizeof(pnum));
 	write(fdesc, &rscore, sizeof(rscore));
@@ -123,14 +134,21 @@ save(int n)
 	write(fdesc, &gvalue, sizeof(gvalue));
 	write(fdesc, &raflag, sizeof(raflag));
 	close(fdesc);
-	move(18, 0);
-	printw("%s%s%s%s%s", saved, fname, type, fname, rec);
-	clrtobot();
+	if (tflag)
+		curmove(18, 0);
+	writel(saved);
+	writel(fname);
+	writel(type);
+	writel(fname);
+	writel(rec);
+	if (tflag)
+		clend();
 	getout(0);
 }
 
 void
-recover(const char *s)
+recover(s)
+	const char   *s;
 {
 	int     fdesc;
 
@@ -141,7 +159,6 @@ recover(const char *s)
 	read(fdesc, in, sizeof(in));
 	read(fdesc, dice, sizeof(dice));
 	read(fdesc, &cturn, sizeof(cturn));
-	read(fdesc, &dflag, sizeof(dflag));
 	read(fdesc, &dlast, sizeof(dlast));
 	read(fdesc, &pnum, sizeof(pnum));
 	read(fdesc, &rscore, sizeof(rscore));
@@ -153,13 +170,15 @@ recover(const char *s)
 }
 
 void
-norec(const char *s)
+norec(s)
+	const char   *s;
 {
 	const char   *c;
 
-	addstr(cantrec);
+	tflag = 0;
+	writel(cantrec);
 	c = s;
 	while (*c != '\0')
-		addch(*c++);
+		writec(*c++);
 	getout(0);
 }

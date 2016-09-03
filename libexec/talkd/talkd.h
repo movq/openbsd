@@ -1,4 +1,4 @@
-/*	$OpenBSD: talkd.h,v 1.8 2003/06/02 19:38:24 millert Exp $	*/
+/*	$OpenBSD: talkd.h,v 1.3 1998/08/18 03:42:11 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,22 +38,22 @@ extern int	debug;
 extern char	hostname[];
 
 /* table.c */
-void	init_table(void);
-CTL_MSG *find_request(CTL_MSG *);
-CTL_MSG *find_match(CTL_MSG *);
-void	insert_table(CTL_MSG *, CTL_RESPONSE *);
-int	new_id(void);
-int	delete_invite(int);
+void	init_table __P((void));
+CTL_MSG *find_request __P((CTL_MSG *));
+CTL_MSG *find_match __P((CTL_MSG *));
+void	insert_table __P((CTL_MSG *, CTL_RESPONSE *));
+int	new_id __P((void));
+int	delete_invite __P((int));
 
 /* process.c */
-void	process_request( CTL_MSG *, CTL_RESPONSE *);
-void	do_announce(CTL_MSG *, CTL_RESPONSE *);
-int	find_user(char *name, char *tty, size_t ttyl);
+void	process_request __P(( register CTL_MSG *, register CTL_RESPONSE *));
+void	do_announce __P((register CTL_MSG *, CTL_RESPONSE *));
+int	find_user __P((char *name, char *tty));
 
 /* announce.c */
-int	announce(CTL_MSG *,char *);
+int	announce __P((CTL_MSG *,char *));
 
 /* print.c */
-void	print_request(char *,CTL_MSG *);
-void	print_response(char *,CTL_RESPONSE *);
+void	print_request __P((char *,register CTL_MSG *));
+void	print_response __P((char *,register CTL_RESPONSE *));
 

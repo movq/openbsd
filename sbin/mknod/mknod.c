@@ -1,226 +1,202 @@
-/*	$OpenBSD: mknod.c,v 1.29 2016/03/07 19:16:06 tb Exp $	*/
+/*	$OpenBSD: mknod.c,v 1.6 1999/04/18 19:40:41 millert Exp $	*/
 /*	$NetBSD: mknod.c,v 1.8 1995/08/11 00:08:18 jtc Exp $	*/
 
 /*
- * Copyright (c) 1997-2016 Theo de Raadt <deraadt@openbsd.org>,
- *	Marc Espie <espie@openbsd.org>,	Todd Miller <millert@openbsd.org>,
- *	Martin Natano <natano@openbsd.org>
+ * Copyright (c) 1989, 1990, 1993
+ *	The Regents of the University of California.  All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * This code is derived from software contributed to Berkeley by
+ * Kevin Fall.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)mknod.c	8.1 (Berkeley) 6/5/93";
+#else
+static char rcsid[] = "$OpenBSD: mknod.c,v 1.6 1999/04/18 19:40:41 millert Exp $";
+#endif
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/stat.h>
-
-#include <err.h>
-#include <errno.h>
-#include <limits.h>
-#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <locale.h>
+#include <err.h>
 
 extern char *__progname;
 
-struct node {
-	const char *name;
-	mode_t mode;
-	dev_t dev;
-	char mflag;
-};
-
-static int domakenodes(struct node *, int);
-static dev_t compute_device(int, char **);
-__dead static void usage(int);
+int domknod __P((int, char **, mode_t));
+int domkfifo __P((int, char **, mode_t));
+void usage __P((int));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	struct node *node;
-	int ismkfifo;
-	int n = 0;
-	int mode = DEFFILEMODE;
-	int mflag = 0;
-	void *set;
-	int ch;
+	int ch, ismkfifo = 0;
+	void *set = NULL;
+	mode_t mode;
 
-	setlocale(LC_ALL, "");
+	setlocale (LC_ALL, "");
 
-	if (pledge("stdio dpath", NULL) == -1)
-		err(1, "pledge");
+	if (strcmp(__progname, "mkfifo") == 0)
+		ismkfifo = 1;
 
-	node = reallocarray(NULL, sizeof(struct node), argc);
-	if (!node)
-		err(1, NULL);
-
-	ismkfifo = strcmp(__progname, "mkfifo") == 0;
-
-	/* we parse all arguments upfront */
-	while (argc > 1) {
-		while ((ch = getopt(argc, argv, "m:")) != -1) {
-			switch (ch) {
-			case 'm':
-				if (!(set = setmode(optarg)))
-					errx(1, "invalid file mode '%s'",
-					    optarg);
-				/*
-				 * In symbolic mode strings, the + and -
-				 * operators are interpreted relative to
-				 * an assumed initial mode of a=rw.
-				 */
-				mode = getmode(set, DEFFILEMODE);
-				if ((mode & ACCESSPERMS) != mode)
-					errx(1, "forbidden mode: %o", mode);
-				mflag = 1;
-				free(set);
-				break;
-			default:
-				usage(ismkfifo);
+	while ((ch = getopt(argc, argv, "m:")) != -1)
+		switch(ch) {
+		case 'm':
+			if (!(set = setmode(optarg))) {
+				errx(1, "invalid file mode.");
+				/* NOTREACHED */
 			}
-		}
-		argc -= optind;
-		argv += optind;
 
-		if (ismkfifo) {
-			while (*argv) {
-				node[n].mode = mode | S_IFIFO;
-				node[n].mflag = mflag;
-				node[n].name = *argv;
-				node[n].dev = 0;
-				n++;
-				argv++;
-			}
-			/* XXX no multiple getopt */
+			/*
+			 * In symbolic mode strings, the + and - operators are
+			 * interpreted relative to an assumed initial mode of
+			 * a=rw.
+			 */
+			mode = getmode (set, 0666);
+			free(set);
 			break;
-		} else {
-			if (argc < 2)
-				usage(ismkfifo);
-			node[n].mode = mode;
-			node[n].mflag = mflag;
-			node[n].name = argv[0];
-			if (strlen(argv[1]) != 1)
-				errx(1, "invalid device type '%s'", argv[1]);
-
-			/* XXX computation offset by one for next getopt */
-			switch(argv[1][0]) {
-			case 'p':
-				node[n].mode |= S_IFIFO;
-				node[n].dev = 0;
-				argv++;
-				argc--;
-				break;
-			case 'b':
-				node[n].mode |= S_IFBLK;
-				goto common;
-			case 'c':
-				node[n].mode |= S_IFCHR;
-common:
-				node[n].dev = compute_device(argc, argv);
-				argv+=3;
-				argc-=3;
-				break;
-			default:
-				errx(1, "invalid device type '%s'", argv[1]);
-			}
-			n++;
+		case '?':
+		default:
+			usage(ismkfifo);
 		}
-		optind = 1;
-		optreset = 1;
+	argc -= optind;
+	argv += optind;
+
+	if (argv[0] == NULL)
+		usage(ismkfifo);
+	if (!ismkfifo) {
+		if (argc == 2 && argv[1][0] == 'p') {
+			ismkfifo = 2;
+			argc--;
+			argv[1] = NULL;
+		} else if (argc != 4) {
+			usage(ismkfifo);
+			/* NOTREACHED */
+		}
 	}
 
-	if (n == 0)
-		usage(ismkfifo);
+	/* The default mode is the value of the bitwise inclusive or of
+	   S_IRUSR, S_IWUSR, S_IRGRP, S_IWGRP, S_IROTH, and S_IWOTH */
+	if (!set)
+		mode = 0666;
 
-	return (domakenodes(node, n));
+	if (ismkfifo)
+		exit(domkfifo(argc, argv, mode));
+	else
+		exit(domknod(argc, argv, mode));
 }
 
-static dev_t
-compute_device(int argc, char **argv)
+int
+domknod(argc, argv, mode)
+	int argc;
+	char **argv;
+	mode_t mode;
 {
 	dev_t dev;
 	char *endp;
-	unsigned long major, minor;
+	u_int major, minor;
 
-	if (argc < 4)
-		usage(0);
+	if (argv[1][0] == 'c')
+		mode |= S_IFCHR;
+	else if (argv[1][0] == 'b')
+		mode |= S_IFBLK;
+	else {
+		errx(1, "node must be type 'b' or 'c'.");
+		/* NOTREACHED */
+	}
 
-	errno = 0;
-	major = strtoul(argv[2], &endp, 0);
-	if (endp == argv[2] || *endp != '\0')
-		errx(1, "invalid major number '%s'", argv[2]);
-	if (errno == ERANGE && major == ULONG_MAX)
-		errx(1, "major number too large: '%s'", argv[2]);
-
-	errno = 0;
-	minor = strtoul(argv[3], &endp, 0);
-	if (endp == argv[3] || *endp != '\0')
-		errx(1, "invalid minor number '%s'", argv[3]);
-	if (errno == ERANGE && minor == ULONG_MAX)
-		errx(1, "minor number too large: '%s'", argv[3]);
-
+	major = (long)strtoul(argv[2], &endp, 10);
+	if (endp == argv[2] || *endp != '\0') {
+		errx(1, "non-numeric major number.");
+		/* NOTREACHED */
+	}
+	minor = (long)strtoul(argv[3], &endp, 10);
+	if (endp == argv[3] || *endp != '\0') {
+		errx(1, "non-numeric minor number.");
+		/* NOTREACHED */
+	}
 	dev = makedev(major, minor);
-	if (major(dev) != major || minor(dev) != minor)
-		errx(1, "major or minor number too large (%lu %lu)", major,
-		    minor);
-
-	return dev;
+	if (major(dev) != major || minor(dev) != minor) {
+		errx(1, "major or minor number too large");
+		/* NOTREACHED */
+	}
+	if (mknod(argv[0], mode, dev) < 0) {
+		err(1, "%s", argv[0]);
+		/* NOTREACHED */
+	}
+	return(0);
 }
 
-static int
-domakenodes(struct node *node, int n)
+int
+domkfifo(argc, argv, mode)
+	int argc;
+	char **argv;
+	mode_t mode;
 {
-	int done_umask = 0;
-	int rv = 0;
-	int i;
+	int rv;
 
-	for (i = 0; i != n; i++) {
-		int r;
-		/*
-		 * If the user specified a mode via `-m', don't allow the umask
-		 * to modify it.  If no `-m' flag was specified, the default
-		 * mode is the value of the bitwise inclusive or of S_IRUSR,
-		 * S_IWUSR, S_IRGRP, S_IWGRP, S_IROTH, and S_IWOTH as
-		 * modified by the umask.
-		 */
-		if (node[i].mflag && !done_umask) {
-			(void)umask(0);
-			done_umask = 1;
-		}
-
-		r = mknod(node[i].name, node[i].mode, node[i].dev);
-		if (r < 0) {
-			warn("%s", node[i].name);
+	for (rv = 0; *argv; ++argv) {
+		if (mkfifo(*argv, mode) < 0) {  
+			warn("%s", *argv);
 			rv = 1;
 		}
 	}
-
-	free(node);
-	return rv;
+	return(rv);
 }
 
-__dead static void
-usage(int ismkfifo)
+void
+usage(ismkfifo)
+	int ismkfifo;
 {
 
 	if (ismkfifo == 1)
-		(void)fprintf(stderr, "usage: %s [-m mode] fifo_name ...\n",
+		(void)fprintf(stderr, "usage: %s [-m mode] fifoname ...\n",
 		    __progname);
 	else {
-		(void)fprintf(stderr,
-		    "usage: %s [-m mode] name b|c major minor\n",
+		(void)fprintf(stderr, "usage: %s [-m mode] name [b | c] major minor\n",
 		    __progname);
-		(void)fprintf(stderr, "       %s [-m mode] name p\n",
+		(void)fprintf(stderr, "usage: %s [-m mode] name p\n",
 		    __progname);
 	}
 	exit(1);

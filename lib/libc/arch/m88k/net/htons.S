@@ -1,5 +1,3 @@
-/*	$OpenBSD: htons.S,v 1.7 2013/01/11 21:23:24 miod Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,11 +35,16 @@
  * SUCH DAMAGE.
  */
 
-#include "DEFS.h"
+#if defined(LIBC_SCCS) && !defined(lint)
+	.text
+	/*.asciz "from: @(#)htons.s	5.1 (Berkeley) 5/12/90"*/
+	.asciz "$Id: htons.S,v 1.1 1998/12/15 07:10:32 smurph Exp $"
+#endif /* LIBC_SCCS and not lint */
 
 /* hostorder = htons(netorder) */
 
+#include "DEFS.h"
+
 ENTRY(htons)
-	jmp.n	%r1
-	 clr	%r2,%r2,16<16> /* clear the top 16 bits */
-END(htons)
+	jmp.n	r1
+	clr	r2,r2,16<16> /* clear the top 16 bits */

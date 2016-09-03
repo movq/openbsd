@@ -96,17 +96,17 @@ void wrap_setup()
         wrap_setup_already_done = 1;
 
 #ifdef CLIENT_SUPPORT
-    if (!current_parsed_root->isremote)
+    if (!client_active)
 #endif
     {
 	char *file;
 
-	file = xmalloc (strlen (current_parsed_root->directory)
+	file = xmalloc (strlen (CVSroot_directory)
 			+ sizeof (CVSROOTADM)
 			+ sizeof (CVSROOTADM_WRAPPER)
-			+ 3);
+			+ 10);
 	/* Then add entries found in repository, if it exists.  */
-	(void) sprintf (file, "%s/%s/%s", current_parsed_root->directory, CVSROOTADM,
+	(void) sprintf (file, "%s/%s/%s", CVSroot_directory, CVSROOTADM,
 			CVSROOTADM_WRAPPER);
 	if (isfile (file))
 	{
@@ -246,30 +246,6 @@ wrap_unparse_rcs_options (line, first_call_p)
 #endif /* SERVER_SUPPORT || CLIENT_SUPPORT */
 
 /*
- * Remove fmt str specifier other than %% or %s. And allow
- * only max_s %s specifiers
- */
-void
-wrap_clean_fmt_str(char *fmt, int max_s)
-{
-    while (*fmt) {
-	if (fmt[0] == '%' && fmt[1])
-	{
-	    if (fmt[1] == '%') 
-		fmt++;
-	    else
-		if (fmt[1] == 's' && max_s > 0)
-		{
-		    max_s--;
-		    fmt++;
-		} else 
-		    *fmt = ' ';
-	}
-	fmt++;
-    }
-}
-
-/*
  * Open a file and read lines, feeding each line to a line parser. Arrange
  * for keeping a temporary list of wrappers at the end, if the "temp"
  * argument is set.
@@ -294,7 +270,7 @@ wrap_add_file (file, temp)
 	    error (0, errno, "cannot open %s", file);
 	return;
     }
-    while (get_line (&line, &line_allocated, fp) >= 0)
+    while (getline (&line, &line_allocated, fp) >= 0)
 	wrap_add (line, temp);
     if (line)
         free (line);
@@ -593,8 +569,9 @@ wrap_tocvs_process_file(fileName)
     args = xmalloc (strlen (e->tocvsFilter)
 		    + strlen (fileName)
 		    + strlen (buf));
-
-    wrap_clean_fmt_str(e->tocvsFilter, 2);
+    /* FIXME: sprintf will blow up if the format string contains items other
+       than %s, or contains too many %s's.  We should instead be parsing
+       e->tocvsFilter ourselves and giving a real error.  */
     sprintf (args, e->tocvsFilter, fileName, buf);
     run_setup (args);
     run_exec(RUN_TTY, RUN_TTY, RUN_TTY, RUN_NORMAL|RUN_REALLY );
@@ -626,8 +603,9 @@ wrap_fromcvs_process_file(fileName)
 
     args = xmalloc (strlen (e->fromcvsFilter)
 		    + strlen (fileName));
-
-    wrap_clean_fmt_str(e->fromcvsFilter, 1);
+    /* FIXME: sprintf will blow up if the format string contains items other
+       than %s, or contains too many %s's.  We should instead be parsing
+       e->fromcvsFilter ourselves and giving a real error.  */
     sprintf (args, e->fromcvsFilter, fileName);
     run_setup (args);
     run_exec(RUN_TTY, RUN_TTY, RUN_TTY, RUN_NORMAL );

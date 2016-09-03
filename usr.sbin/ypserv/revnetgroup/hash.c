@@ -1,4 +1,4 @@
-/* $OpenBSD: hash.c,v 1.7 2009/10/27 23:59:58 deraadt Exp $ */
+/* $OpenBSD: hash.c,v 1.1 1997/04/15 22:06:11 maja Exp $ */
 /*
  * Copyright (c) 1995
  *	Bill Paul <wpaul@ctr.columbia.edu>.  All rights reserved.
@@ -39,6 +39,10 @@
 #include <sys/types.h>
 #include "hash.h"
 
+#ifndef lint
+static const char rcsid[] = "$OpenBSD: hash.c,v 1.1 1997/04/15 22:06:11 maja Exp $";
+#endif
+
 /*
  * This hash function is stolen directly from the
  * Berkeley DB package. It already exists inside libc, but
@@ -48,12 +52,14 @@
 /*
  * OZ's original sdbm hash
  */
-static u_int32_t
-hash(const void *keyarg, size_t len)
+u_int32_t
+hash(keyarg, len)
+	const void *keyarg;
+	register size_t len;
 {
-	const u_char *key;
-	size_t loop;
-	u_int32_t h;
+	register const u_char *key;
+	register size_t loop;
+	register u_int32_t h;
 
 #define HASHC   h = *key++ + 65599 * h
 
@@ -98,18 +104,19 @@ hash(const void *keyarg, size_t len)
  * We mask off all but the lower 8 bits since our table array
  * can only hold 256 elements.
  */
-static u_int32_t
-hashkey(char *key)
+u_int32_t hashkey(key)
+	char *key;
 {
 
 	if (key == NULL)
 		return (-1);
-	return(hash(key, strlen(key)) & HASH_MASK);
+	return(hash((void *)key, strlen(key)) & HASH_MASK);
 }
 
 /* Find an entry in the hash table (may be hanging off a linked list). */
-char *
-lookup(struct group_entry *table[], char *key)
+char *lookup(table, key)
+	struct group_entry *table[];
+	char *key;
 {
 	struct group_entry *cur;
 
@@ -141,19 +148,22 @@ lookup(struct group_entry *table[], char *key)
  *
  * That's a lot of comment for such a small piece of code, isn't it.
  */
-void
-ngstore(struct group_entry *table[], char *key, char *data)
+void store (table, key, data)
+	struct group_entry *table[];
+	char *key, *data;
 {
 	struct group_entry *new;
 	u_int32_t i;
 
 	i = hashkey(key);
 
-	new = malloc(sizeof(struct group_entry));
+	new = (struct group_entry *)malloc(sizeof(struct group_entry));
 	new->key = strdup(key);
 	new->data = strdup(data);
 	new->next = table[i];
 	table[i] = new;
+
+	return;
 }
 
 /*
@@ -168,8 +178,9 @@ ngstore(struct group_entry *table[], char *key, char *data)
  * an entry in the table, then we just have to do one thing, which is
  * to update its grouplist.
  */
-void
-mstore(struct member_entry *table[], char *key, char *data, char *domain)
+void mstore (table, key, data, domain)
+	struct member_entry *table[];
+	char *key, *data, *domain;
 {
 	struct member_entry *cur, *new;
 	struct grouplist *tmp,*p;
@@ -178,20 +189,17 @@ mstore(struct member_entry *table[], char *key, char *data, char *domain)
 	i = hashkey(key);
 	cur = table[i];
 
-	tmp = malloc(sizeof(struct grouplist));
+	tmp = (struct grouplist *)malloc(sizeof(struct grouplist));
 	tmp->groupname = strdup(data);
 	tmp->next = NULL;
 
 	/* Check if all we have to do is insert a new groupname. */
 	while (cur) {
-		if (!strcmp(cur->key, key) && !strcmp(cur->domain, domain)) {
-			p = cur->groups;
-			while (p) {
-				if (!strcmp(p->groupname, data)) {
-					free(tmp->groupname);
-					free(tmp);
+		if (!strcmp(cur->key, key) && !strcmp(cur->domain,domain)) {
+		  	p = cur->groups;
+			while(p) {
+				if (!strcmp(p->groupname,data))
 					return;
-				}
 				p = p->next;
 			}
 			tmp->next = cur->groups;
@@ -202,10 +210,12 @@ mstore(struct member_entry *table[], char *key, char *data, char *domain)
 	}
 
 	/* Didn't find a match -- add the whole mess to the table. */
-	new = malloc(sizeof(struct member_entry));
+	new = (struct member_entry *)malloc(sizeof(struct member_entry));
 	new->key = strdup(key);
 	new->domain = strdup(domain);
 	new->groups = tmp;
 	new->next = table[i];
 	table[i] = new;
+
+	return;
 }

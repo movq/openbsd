@@ -1,36 +1,12 @@
-/*	$OpenBSD: lex.c,v 1.69 2016/04/27 12:46:23 naddy Exp $	*/
+/*	$OpenBSD: lex.c,v 1.14 1999/06/15 01:18:34 millert Exp $	*/
 
 /*
  * lexical analysis and source input
  */
 
-#include <ctype.h>
-#include <errno.h>
-#include <libgen.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-
 #include "sh.h"
+#include <ctype.h>
 
-/*
- * states while lexing word
- */
-#define	SINVALID	-1	/* invalid state */
-#define	SBASE	0		/* outside any lexical constructs */
-#define	SWORD	1		/* implicit quoting for substitute() */
-#define	SLETPAREN 2		/* inside (( )), implicit quoting */
-#define	SSQUOTE	3		/* inside '' */
-#define	SDQUOTE	4		/* inside "" */
-#define	SBRACE	5		/* inside ${} */
-#define	SCSPAREN 6		/* inside $() */
-#define	SBQUOTE	7		/* inside `` */
-#define	SASPAREN 8		/* inside $(( )) */
-#define SHEREDELIM 9		/* parsing <<,<<- delimiter */
-#define SHEREDQUOTE 10		/* parsing " in <<,<<- delimiter */
-#define SPATTERN 11		/* parsing *(...|...) pattern (*+?@!) */
-#define STBRACE 12		/* parsing ${..[#%]..} */
-#define	SBRACEQ	13		/* inside "${}" */
 
 /* Structure to keep track of the lexing state and the various pieces of info
  * needed for each particular state.
@@ -39,33 +15,33 @@ typedef struct lex_state Lex_state;
 struct lex_state {
 	int ls_state;
 	union {
-		/* $(...) */
-		struct scsparen_info {
-			int nparen;	/* count open parenthesis */
-			int csstate;	/* XXX remove */
+	    /* $(...) */
+	    struct scsparen_info {
+		    int nparen;		/* count open parenthesis */
+		    int csstate; /* XXX remove */
 #define ls_scsparen ls_info.u_scsparen
-		} u_scsparen;
+	    } u_scsparen;
 
-		/* $((...)) */
-		struct sasparen_info {
-			int nparen;	/* count open parenthesis */
-			int start;	/* marks start of $(( in output str */
+	    /* $((...)) */
+	    struct sasparen_info {
+		    int nparen;		/* count open parenthesis */
+		    int start;		/* marks start of $(( in output str */
 #define ls_sasparen ls_info.u_sasparen
-		} u_sasparen;
+	    } u_sasparen;
 
-		/* ((...)) */
-		struct sletparen_info {
-			int nparen;	/* count open parenthesis */
+	    /* ((...)) */
+	    struct sletparen_info {
+		    int nparen;		/* count open parenthesis */
 #define ls_sletparen ls_info.u_sletparen
-		} u_sletparen;
+	    } u_sletparen;
 
-		/* `...` */
-		struct sbquote_info {
-			int indquotes;	/* true if in double quotes: "`...`" */
+	    /* `...` */
+	    struct sbquote_info {
+		    int indquotes;	/* true if in double quotes: "`...`" */
 #define ls_sbquote ls_info.u_sbquote
-		} u_sbquote;
+	    } u_sbquote;
 
-		Lex_state *base;	/* used to point to next state block */
+	    Lex_state *base;		/* used to point to next state block */
 	} ls_info;
 };
 
@@ -76,31 +52,19 @@ struct State_info {
 };
 
 
-static void	readhere(struct ioword *);
-static int	getsc__(void);
-static void	getsc_line(Source *);
-static int	getsc_bn(void);
-static char	*get_brace_var(XString *, char *);
-static int	arraysub(char **);
-static const char *ungetsc(int);
-static void	gethere(void);
-static Lex_state *push_state_(State_info *, Lex_state *);
-static Lex_state *pop_state_(State_info *, Lex_state *);
-static char	*special_prompt_expand(char *);
-static int	dopprompt(const char *, int, const char **, int);
-int		promptlen(const char *cp, const char **spp);
+static void	readhere ARGS((struct ioword *iop));
+static int	getsc__ ARGS((void));
+static void	getsc_line ARGS((Source *s));
+static int	getsc_bn ARGS((void));
+static char	*get_brace_var ARGS((XString *wsp, char *wp));
+static int	arraysub ARGS((char **strp));
+static const char *ungetsc ARGS((int c));
+static void	gethere ARGS((void));
+static Lex_state *push_state_ ARGS((State_info *si, Lex_state *old_end));
+static Lex_state *pop_state_ ARGS((State_info *si, Lex_state *old_end));
 
 static int backslash_skip;
 static int ignore_backslash_newline;
-
-Source *source;		/* yyparse/yylex source */
-YYSTYPE	yylval;		/* result from yylex */
-struct ioword *heres[HERES], **herep;
-char	ident[IDENT+1];
-
-char  **history;	/* saved commands */
-char  **histptr;	/* last history item */
-int	histsize;	/* history size */
 
 /* optimized getsc_bn() */
 #define getsc()		(*source->str != '\0' && *source->str != '\\' \
@@ -133,20 +97,21 @@ int	histsize;	/* history size */
  */
 
 int
-yylex(int cf)
+yylex(cf)
+	int cf;
 {
 	Lex_state states[STATE_BSIZE], *statep;
 	State_info state_info;
-	int c, state;
+	register int c, state;
 	XString ws;		/* expandable output word */
-	char *wp;		/* output word pointer */
+	register char *wp;	/* output word pointer */
 	char *sp, *dp;
 	int c2;
 
 
   Again:
-	states[0].ls_state = SINVALID;
-	states[0].ls_info.base = NULL;
+	states[0].ls_state = -1;
+	states[0].ls_info.base = (Lex_state *) 0;
 	statep = &states[1];
 	state_info.base = states;
 	state_info.end = &states[STATE_BSIZE];
@@ -158,11 +123,14 @@ yylex(int cf)
 
 	if (cf&ONEWORD)
 		state = SWORD;
+#ifdef KSH
 	else if (cf&LETEXPR) {
 		*wp++ = OQUOTE;	 /* enclose arguments in (double) quotes */
-		state = SLETPAREN;
+		state = SLETPAREN;	
 		statep->ls_sletparen.nparen = 0;
-	} else {		/* normal lexing */
+	}
+#endif /* KSH */
+	else {		/* normal lexing */
 		state = (cf & HEREDELIM) ? SHEREDELIM : SBASE;
 		while ((c = getsc()) == ' ' || c == '\t')
 			;
@@ -187,80 +155,17 @@ yylex(int cf)
 	statep->ls_state = state;
 
 	/* collect non-special or quoted characters to form word */
-	while (!((c = getsc()) == 0 ||
-	    ((state == SBASE || state == SHEREDELIM) && ctype(c, C_LEX1)))) {
+	while (!((c = getsc()) == 0
+		 || ((state == SBASE || state == SHEREDELIM)
+		     && ctype(c, C_LEX1))))
+	{
 		Xcheck(ws, wp);
 		switch (state) {
-		case SBASE:
-			if (Flag(FCSHHISTORY) && (source->flags & SF_TTY) &&
-			    c == '!') {
-				char **replace = NULL;
-				int get, i;
-				char match[200] = { 0 }, *str = match;
-				size_t mlen;
-
-				c2 = getsc();
-				if (c2 == '\0' || c2 == ' ' || c2 == '\t')
-					;
-				else if (c2 == '!')
-					replace = hist_get_newest(0);
-				else if (isdigit(c2) || c2 == '-' ||
-				    isalpha(c2)) {
-					get = !isalpha(c2);
-
-					*str++ = c2;
-					do {
-						if ((c2 = getsc()) == '\0')
-							break;
-						if (c2 == '\t' || c2 == ' ' ||
-						    c2 == '\n') {
-							ungetsc(c2);
-							break;
-						}
-						*str++ = c2;
-					} while (str < &match[sizeof(match)-1]);
-					*str = '\0';
-
-					if (get) {
-						int h = findhistrel(match);
-						if (h >= 0)
-							replace = &history[h];
-					} else {
-						int h = findhist(-1, 0, match, true);
-						if (h >= 0)
-							replace = &history[h];
-					}
-				}
-
-				/*
-				 * XXX ksh history buffer saves un-expanded
-				 * commands. Until the history buffer code is
-				 * changed to contain expanded commands, we
-				 * ignore the bad commands (spinning sucks)
-				 */
-				if (replace && **replace == '!')
-					ungetsc(c2);
-				else if (replace) {
-					Source *s;
-
-					/* do not strdup replacement via alloc */
-					s = pushs(SREREAD, source->areap);
-					s->start = s->str = *replace;
-					s->next = source;
-					s->u.freeme = NULL;
-					source = s;
-					continue;
-				} else if (*match != '\0') {
-					/* restore what followed the '!' */
-					mlen = strlen(match);
-					for (i = mlen-1; i >= 0; i--)
-						ungetsc(match[i]);
-				} else
-					ungetsc(c2);
-			}
+		  case SBASE:
 			if (c == '[' && (cf & (VARASN|ARRAYVAR))) {
 				*wp = EOS; /* temporary */
-				if (is_wdvarname(Xstring(ws, wp), false)) {
+				if (is_wdvarname(Xstring(ws, wp), FALSE))
+				{
 					char *p, *tmp;
 
 					if (arraysub(&tmp)) {
@@ -288,10 +193,12 @@ yylex(int cf)
 				*wp++ = c;
 				break;
 			}
-			/* FALLTHROUGH */
+			/* fall through.. */
 		  Sbase1:	/* includes *(...|...) pattern (*+?@!) */
-			if (c == '*' || c == '@' || c == '+' || c == '?' ||
-			    c == '!') {
+#ifdef KSH
+			if (c == '*' || c == '@' || c == '+' || c == '?'
+			    || c == '!')
+			{
 				c2 = getsc();
 				if (c2 == '(' /*)*/ ) {
 					*wp++ = OPAT;
@@ -301,52 +208,45 @@ yylex(int cf)
 				}
 				ungetsc(c2);
 			}
-			/* FALLTHROUGH */
+#endif /* KSH */
+			/* fall through.. */
 		  Sbase2:	/* doesn't include *(...|...) pattern (*+?@!) */
 			switch (c) {
-			case '\\':
+			  case '\\':
 				c = getsc();
+#ifdef OS2
+				if (isalnum(c)) {
+					*wp++ = CHAR, *wp++ = '\\';
+					*wp++ = CHAR, *wp++ = c;
+				} else 
+#endif
 				if (c) /* trailing \ is lost */
 					*wp++ = QCHAR, *wp++ = c;
 				break;
-			case '\'':
-				if ((cf & HEREDOC) || state == SBRACEQ) {
-					*wp++ = CHAR, *wp++ = c;
-					break;
-				}
+			  case '\'':
 				*wp++ = OQUOTE;
 				ignore_backslash_newline++;
 				PUSH_STATE(SSQUOTE);
 				break;
-			case '"':
+			  case '"':
 				*wp++ = OQUOTE;
 				PUSH_STATE(SDQUOTE);
 				break;
-			default:
+			  default:
 				goto Subst;
 			}
 			break;
 
 		  Subst:
 			switch (c) {
-			case '\\':
+			  case '\\':
 				c = getsc();
 				switch (c) {
-				case '\\':
-				case '$': case '`':
+				  case '"': case '\\':
+				  case '$': case '`':
 					*wp++ = QCHAR, *wp++ = c;
 					break;
-				case '"':
-					if ((cf & HEREDOC) == 0) {
-						*wp++ = QCHAR, *wp++ = c;
-						break;
-					}
-					/* FALLTHROUGH */
-				default:
-					if (cf & UNESCAPE) {
-						*wp++ = QCHAR, *wp++ = c;
-						break;
-					}
+				  default:
 					Xcheck(ws, wp);
 					if (c) { /* trailing \ is lost */
 						*wp++ = CHAR, *wp++ = '\\';
@@ -355,7 +255,7 @@ yylex(int cf)
 					break;
 				}
 				break;
-			case '$':
+			  case '$':
 				c = getsc();
 				if (c == '(') /*)*/ {
 					c = getsc();
@@ -363,7 +263,7 @@ yylex(int cf)
 						PUSH_STATE(SASPAREN);
 						statep->ls_sasparen.nparen = 2;
 						statep->ls_sasparen.start =
-						    Xsavepos(ws, wp);
+							Xsavepos(ws, wp);
 						*wp++ = EXPRSUB;
 					} else {
 						ungetsc(c);
@@ -390,11 +290,7 @@ yylex(int cf)
 						PUSH_STATE(STBRACE);
 					} else {
 						ungetsc(c);
-						if (state == SDQUOTE ||
-						    state == SBRACEQ)
-							PUSH_STATE(SBRACEQ);
-						else
-							PUSH_STATE(SBRACE);
+						PUSH_STATE(SBRACE);
 					}
 				} else if (ctype(c, C_ALPHA)) {
 					*wp++ = OSUBST;
@@ -403,12 +299,12 @@ yylex(int cf)
 						Xcheck(ws, wp);
 						*wp++ = c;
 						c = getsc();
-					} while (ctype(c, C_ALPHA) || digit(c));
+					} while (ctype(c, C_ALPHA|C_DIGIT));
 					*wp++ = '\0';
 					*wp++ = CSUBST;
 					*wp++ = 'X';
 					ungetsc(c);
-				} else if (ctype(c, C_VAR1) || digit(c)) {
+				} else if (ctype(c, C_DIGIT|C_VAR1)) {
 					Xcheck(ws, wp);
 					*wp++ = OSUBST;
 					*wp++ = 'X';
@@ -421,49 +317,63 @@ yylex(int cf)
 					ungetsc(c);
 				}
 				break;
-			case '`':
+			  case '`':
 				PUSH_STATE(SBQUOTE);
 				*wp++ = COMSUB;
 				/* Need to know if we are inside double quotes
 				 * since sh/at&t-ksh translate the \" to " in
 				 * "`..\"..`".
+				 * This is not done in posix mode (section
+				 * 3.2.3, Double Quotes: "The backquote shall
+				 * retain its special meaning introducing the
+				 * other form of command substitution (see
+				 * 3.6.3). The portion of the quoted string
+				 * from the initial backquote and the
+				 * characters up to the next backquote that
+				 * is not preceded by a backslash (having
+				 * escape characters removed) defines that
+				 * command whose output replaces `...` when
+				 * the word is expanded."
+				 * Section 3.6.3, Command Substitution:
+				 * "Within the backquoted style of command
+				 * substitution, backslash shall retain its
+				 * literal meaning, except when followed by
+				 * $ ` \.").
 				 */
 				statep->ls_sbquote.indquotes = 0;
-				Lex_state *s = statep;
-				Lex_state *base = state_info.base;
-				while (1) {
-					for (; s != base; s--) {
-						if (s->ls_state == SDQUOTE) {
-							statep->ls_sbquote.indquotes = 1;
-							break;
+				if (!Flag(FPOSIX)) {
+					Lex_state *s = statep;
+					Lex_state *base = state_info.base;
+					while (1) {
+						for (; s != base; s--) {
+							if (s->ls_state == SDQUOTE) {
+								statep->ls_sbquote.indquotes = 1;
+								break;
+							}
 						}
+						if (s != base)
+							break;
+						if (!(s = s->ls_info.base))
+							break;
+						base = s-- - STATE_BSIZE;
 					}
-					if (s != base)
-						break;
-					if (!(s = s->ls_info.base))
-						break;
-					base = s-- - STATE_BSIZE;
 				}
 				break;
-			default:
+			  default:
 				*wp++ = CHAR, *wp++ = c;
 			}
 			break;
 
-		case SSQUOTE:
+		  case SSQUOTE:
 			if (c == '\'') {
 				POP_STATE();
-				if (state == SBRACEQ) {
-					*wp++ = CHAR, *wp++ = c;
-					break;
-				}
 				*wp++ = CQUOTE;
 				ignore_backslash_newline--;
 			} else
 				*wp++ = QCHAR, *wp++ = c;
 			break;
 
-		case SDQUOTE:
+		  case SDQUOTE:
 			if (c == '"') {
 				POP_STATE();
 				*wp++ = CQUOTE;
@@ -471,47 +381,47 @@ yylex(int cf)
 				goto Subst;
 			break;
 
-		case SCSPAREN: /* $( .. ) */
+		  case SCSPAREN: /* $( .. ) */
 			/* todo: deal with $(...) quoting properly
 			 * kludge to partly fake quoting inside $(..): doesn't
 			 * really work because nested $(..) or ${..} inside
 			 * double quotes aren't dealt with.
 			 */
 			switch (statep->ls_scsparen.csstate) {
-			case 0: /* normal */
+			  case 0: /* normal */
 				switch (c) {
-				case '(':
+				  case '(':
 					statep->ls_scsparen.nparen++;
 					break;
-				case ')':
+				  case ')':
 					statep->ls_scsparen.nparen--;
 					break;
-				case '\\':
+				  case '\\':
 					statep->ls_scsparen.csstate = 1;
 					break;
-				case '"':
+				  case '"':
 					statep->ls_scsparen.csstate = 2;
 					break;
-				case '\'':
+				  case '\'':
 					statep->ls_scsparen.csstate = 4;
 					ignore_backslash_newline++;
 					break;
 				}
 				break;
 
-			case 1: /* backslash in normal mode */
-			case 3: /* backslash in double quotes */
+			  case 1: /* backslash in normal mode */
+			  case 3: /* backslash in double quotes */
 				--statep->ls_scsparen.csstate;
 				break;
 
-			case 2: /* double quotes */
+			  case 2: /* double quotes */
 				if (c == '"')
 					statep->ls_scsparen.csstate = 0;
 				else if (c == '\\')
 					statep->ls_scsparen.csstate = 3;
 				break;
 
-			case 4: /* single quotes */
+			  case 4: /* single quotes */
 				if (c == '\'') {
 					statep->ls_scsparen.csstate = 0;
 					ignore_backslash_newline--;
@@ -525,10 +435,10 @@ yylex(int cf)
 				*wp++ = c;
 			break;
 
-		case SASPAREN: /* $(( .. )) */
+		  case SASPAREN: /* $(( .. )) */
 			/* todo: deal with $((...); (...)) properly */
 			/* XXX should nest using existing state machine
-			 * (embed "..", $(...), etc.) */
+			 *     (embed "..", $(...), etc.) */
 			if (c == '(')
 				statep->ls_sasparen.nparen++;
 			else if (c == ')') {
@@ -548,32 +458,23 @@ yylex(int cf)
 						 * parsing a $(..) expression
 						 */
 						s = Xrestpos(ws, wp,
-						    statep->ls_sasparen.start);
+						     statep->ls_sasparen.start);
 						memmove(s + 1, s, wp - s);
 						*s++ = COMSUB;
 						*s = '('; /*)*/
 						wp++;
 						statep->ls_scsparen.nparen = 1;
 						statep->ls_scsparen.csstate = 0;
-						state = statep->ls_state =
-						    SCSPAREN;
+						state = statep->ls_state
+							= SCSPAREN;
+						
 					}
 				}
 			}
 			*wp++ = c;
 			break;
 
-		case SBRACEQ:
-			/*{*/
-			if (c == '}') {
-				POP_STATE();
-				*wp++ = CSUBST;
-				*wp++ = /*{*/ '}';
-			} else
-				goto Sbase2;
-			break;
-
-		case SBRACE:
+		  case SBRACE:
 			/*{*/
 			if (c == '}') {
 				POP_STATE();
@@ -583,7 +484,7 @@ yylex(int cf)
 				goto Sbase1;
 			break;
 
-		case STBRACE:
+		  case STBRACE:
 			/* Same as SBRACE, except (,|,) treated specially */
 			/*{*/
 			if (c == '}') {
@@ -600,23 +501,23 @@ yylex(int cf)
 				goto Sbase1;
 			break;
 
-		case SBQUOTE:
+		  case SBQUOTE:
 			if (c == '`') {
 				*wp++ = 0;
 				POP_STATE();
 			} else if (c == '\\') {
 				switch (c = getsc()) {
-				case '\\':
-				case '$': case '`':
+				  case '\\':
+				  case '$': case '`':
 					*wp++ = c;
 					break;
-				case '"':
+				  case '"':
 					if (statep->ls_sbquote.indquotes) {
 						*wp++ = c;
 						break;
 					}
-					/* FALLTHROUGH */
-				default:
+					/* fall through.. */
+				  default:
 					if (c) { /* trailing \ is lost */
 						*wp++ = '\\';
 						*wp++ = c;
@@ -627,10 +528,11 @@ yylex(int cf)
 				*wp++ = c;
 			break;
 
-		case SWORD:	/* ONEWORD */
+		  case SWORD:	/* ONEWORD */
 			goto Subst;
 
-		case SLETPAREN:	/* LETEXPR: (( ... )) */
+#ifdef KSH
+		  case SLETPAREN:	/* LETEXPR: (( ... )) */
 			/*(*/
 			if (c == ')') {
 				if (statep->ls_sletparen.nparen > 0)
@@ -649,8 +551,9 @@ yylex(int cf)
 				 */
 				++statep->ls_sletparen.nparen;
 			goto Sbase2;
+#endif /* KSH */
 
-		case SHEREDELIM:	/* <<,<<- delimiter */
+		  case SHEREDELIM:	/* <<,<<- delimiter */
 			/* XXX chuck this state (and the next) - use
 			 * the existing states ($ and \`..` should be
 			 * stripped of their specialness after the
@@ -678,17 +581,17 @@ yylex(int cf)
 			}
 			break;
 
-		case SHEREDQUOTE:	/* " in <<,<<- delimiter */
+		  case SHEREDQUOTE:	/* " in <<,<<- delimiter */
 			if (c == '"') {
 				*wp++ = CQUOTE;
 				state = statep->ls_state = SHEREDELIM;
 			} else {
 				if (c == '\\') {
 					switch (c = getsc()) {
-					case '\\': case '"':
-					case '$': case '`':
+					  case '\\': case '"':
+					  case '$': case '`':
 						break;
-					default:
+					  default:
 						if (c) { /* trailing \ lost */
 							*wp++ = CHAR;
 							*wp++ = '\\';
@@ -701,7 +604,7 @@ yylex(int cf)
 			}
 			break;
 
-		case SPATTERN:	/* in *(...|...) pattern (*+?@!) */
+		  case SPATTERN:	/* in *(...|...) pattern (*+?@!) */
 			if ( /*(*/ c == ')') {
 				*wp++ = CPAT;
 				POP_STATE();
@@ -727,10 +630,12 @@ Done:
 		state = SBASE;
 
 	dp = Xstring(ws, wp);
-	if ((c == '<' || c == '>') && state == SBASE &&
-	    ((c2 = Xlength(ws, wp)) == 0 ||
-	    (c2 == 2 && dp[0] == CHAR && digit(dp[1])))) {
-		struct ioword *iop = alloc(sizeof(*iop), ATEMP);
+	if ((c == '<' || c == '>') && state == SBASE
+	    && ((c2 = Xlength(ws, wp)) == 0
+	        || (c2 == 2 && dp[0] == CHAR && digit(dp[1]))))
+	{
+		struct ioword *iop =
+				(struct ioword *) alloc(sizeof(*iop), ATEMP);
 
 		if (c2 == 2)
 			iop->unit = dp[1] - '0';
@@ -741,7 +646,7 @@ Done:
 		/* <<, >>, <> are ok, >< is not */
 		if (c == c2 || (c == '<' && c2 == '>')) {
 			iop->flag = c == c2 ?
-			    (c == '>' ? IOCAT : IOHERE) : IORDWR;
+				  (c == '>' ? IOCAT : IOHERE) : IORDWR;
 			if (iop->flag == IOHERE) {
 				if ((c2 = getsc()) == '-')
 					iop->flag |= IOSKIP;
@@ -758,9 +663,9 @@ Done:
 				ungetsc(c2);
 		}
 
-		iop->name = NULL;
-		iop->delim = NULL;
-		iop->heredoc = NULL;
+		iop->name = (char *) 0;
+		iop->delim = (char *) 0;
+		iop->heredoc = (char *) 0;
 		Xfree(ws, wp);	/* free word */
 		yylval.iop = iop;
 		return REDIR;
@@ -770,30 +675,33 @@ Done:
 		Xfree(ws, wp);	/* free word */
 		/* no word, process LEX1 character */
 		switch (c) {
-		default:
+		  default:
 			return c;
 
-		case '|':
-		case '&':
-		case ';':
+		  case '|':
+		  case '&':
+		  case ';':
 			if ((c2 = getsc()) == c)
 				c = (c == ';') ? BREAK :
 				    (c == '|') ? LOGOR :
 				    (c == '&') ? LOGAND :
 				    YYERRCODE;
+#ifdef KSH
 			else if (c == '|' && c2 == '&')
 				c = COPROC;
+#endif /* KSH */
 			else
 				ungetsc(c2);
 			return c;
 
-		case '\n':
+		  case '\n':
 			gethere();
 			if (cf & CONTIN)
 				goto Again;
 			return c;
 
-		case '(':  /*)*/
+		  case '(':  /*)*/
+#ifdef KSH
 			if (!Flag(FSH)) {
 				if ((c2 = getsc()) == '(') /*)*/
 					/* XXX need to handle ((...); (...)) */
@@ -801,23 +709,28 @@ Done:
 				else
 					ungetsc(c2);
 			}
+#endif /* KSH */
 			return c;
 		  /*(*/
-		case ')':
+		  case ')':
 			return c;
 		}
 	}
 
 	*wp++ = EOS;		/* terminate word */
 	yylval.cp = Xclose(ws, wp);
-	if (state == SWORD || state == SLETPAREN)	/* ONEWORD? */
+	if (state == SWORD
+#ifdef KSH
+		|| state == SLETPAREN
+#endif /* KSH */
+		)	/* ONEWORD? */
 		return LWORD;
 	ungetsc(c);		/* unget terminator */
 
 	/* copy word to unprefixed string ident */
 	for (sp = yylval.cp, dp = ident; dp < ident+IDENT && (c = *sp++) == CHAR; )
 		*dp++ = *sp++;
-	/* Make sure the ident array stays '\0' padded */
+	/* Make sure the ident array stays '\0' paded */
 	memset(dp, 0, (ident+IDENT) - dp + 1);
 	if (c != EOS)
 		*ident = '\0';	/* word is not unquoted */
@@ -827,14 +740,16 @@ Done:
 		int h = hash(ident);
 
 		/* { */
-		if ((cf & KEYWORD) && (p = ktsearch(&keywords, ident, h)) &&
-		    (!(cf & ESACONLY) || p->val.i == ESAC || p->val.i == '}')) {
+		if ((cf & KEYWORD) && (p = tsearch(&keywords, ident, h))
+		    && (!(cf & ESACONLY) || p->val.i == ESAC || p->val.i == '}'))
+		{
 			afree(yylval.cp, ATEMP);
 			return p->val.i;
 		}
-		if ((cf & ALIAS) && (p = ktsearch(&aliases, ident, h)) &&
-		    (p->flag & ISSET)) {
-			Source *s;
+		if ((cf & ALIAS) && (p = tsearch(&aliases, ident, h))
+		    && (p->flag & ISSET))
+		{
+			register Source *s;
 
 			for (s = source; s->type == SALIAS; s = s->next)
 				if (s->u.tblp == p)
@@ -854,9 +769,9 @@ Done:
 }
 
 static void
-gethere(void)
+gethere()
 {
-	struct ioword **p;
+	register struct ioword **p;
 
 	for (p = heres; p < herep; p++)
 		readhere(*p);
@@ -868,9 +783,10 @@ gethere(void)
  */
 
 static void
-readhere(struct ioword *iop)
+readhere(iop)
+	struct ioword *iop;
 {
-	int c;
+	register int c;
 	char *volatile eof;
 	char *eofp;
 	int skiptabs;
@@ -926,7 +842,13 @@ readhere(struct ioword *iop)
 }
 
 void
+#ifdef HAVE_PROTOTYPES
 yyerror(const char *fmt, ...)
+#else
+yyerror(fmt, va_alist)
+	const char *fmt;
+	va_dcl
+#endif
 {
 	va_list va;
 
@@ -935,11 +857,11 @@ yyerror(const char *fmt, ...)
 		source = source->next;
 	source->str = null;	/* zap pending input */
 
-	error_prefix(true);
-	va_start(va, fmt);
+	error_prefix(TRUE);
+	SH_VA_START(va, fmt);
 	shf_vfprintf(shl_out, fmt, va);
 	va_end(va);
-	errorf(NULL);
+	errorf(null);
 }
 
 /*
@@ -947,16 +869,17 @@ yyerror(const char *fmt, ...)
  */
 
 Source *
-pushs(int type, Area *areap)
+pushs(type, areap)
+	int type;
+	Area *areap;
 {
-	Source *s;
+	register Source *s;
 
-	s = alloc(sizeof(Source), areap);
+	s = (Source *) alloc(sizeof(Source), areap);
 	s->type = type;
 	s->str = null;
 	s->start = NULL;
 	s->line = 0;
-	s->cmd_offset = 0;
 	s->errline = 0;
 	s->file = NULL;
 	s->flags = 0;
@@ -971,52 +894,53 @@ pushs(int type, Area *areap)
 }
 
 static int
-getsc__(void)
+getsc__()
 {
-	Source *s = source;
-	int c;
+	register Source *s = source;
+	register int c;
 
 	while ((c = *s->str++) == 0) {
 		s->str = NULL;		/* return 0 for EOF by default */
 		switch (s->type) {
-		case SEOF:
+		  case SEOF:
 			s->str = null;
 			return 0;
 
-		case SSTDIN:
-		case SFILE:
+		  case SSTDIN:
+		  case SFILE:
 			getsc_line(s);
 			break;
 
-		case SWSTR:
+		  case SWSTR:
 			break;
 
-		case SSTRING:
+		  case SSTRING:
 			break;
 
-		case SWORDS:
+		  case SWORDS:
 			s->start = s->str = *s->u.strv++;
 			s->type = SWORDSEP;
 			break;
 
-		case SWORDSEP:
+		  case SWORDSEP:
 			if (*s->u.strv == NULL) {
-				s->start = s->str = "\n";
+				s->start = s->str = newline;
 				s->type = SEOF;
 			} else {
-				s->start = s->str = " ";
+				s->start = s->str = space;
 				s->type = SWORDS;
 			}
 			break;
 
-		case SALIAS:
+		  case SALIAS:
 			if (s->flags & SF_ALIASEND) {
 				/* pass on an unused SF_ALIAS flag */
 				source = s->next;
 				source->flags |= s->flags & SF_ALIAS;
 				s = source;
-			} else if (*s->u.tblp->val.s &&
-			    isspace((unsigned char)strchr(s->u.tblp->val.s, 0)[-1])) {
+			} else if (*s->u.tblp->val.s
+				 && isspace(strchr(s->u.tblp->val.s, 0)[-1]))
+			{
 				source = s = s->next;	/* pop source stack */
 				/* Note that this alias ended with a space,
 				 * enabling alias expansion on the following
@@ -1051,7 +975,7 @@ getsc__(void)
 			}
 			continue;
 
-		case SREREAD:
+		  case SREREAD:
 			if (s->start != s->ugbuf) /* yuck */
 				afree(s->u.freeme, ATEMP);
 			source = s = s->next;
@@ -1071,7 +995,8 @@ getsc__(void)
 }
 
 static void
-getsc_line(Source *s)
+getsc_line(s)
+	Source *s;
 {
 	char *xp = Xstring(s->xs, xp);
 	int interactive = Flag(FTALKING) && s->type == SSTDIN;
@@ -1082,19 +1007,22 @@ getsc_line(Source *s)
 	*xp = '\0';
 	s->start = s->str = xp;
 
+#ifdef KSH
 	if (have_tty && ksh_tmout) {
 		ksh_tmout_state = TMOUT_READING;
 		alarm(ksh_tmout);
 	}
+#endif /* KSH */
 #ifdef EDIT
 	if (have_tty && (0
 # ifdef VI
-	    || Flag(FVI)
+			 || Flag(FVI)
 # endif /* VI */
 # ifdef EMACS
-	    || Flag(FEMACS) || Flag(FGMACS)
+			 || Flag(FEMACS) || Flag(FGMACS)
 # endif /* EMACS */
-	    )) {
+		))
+	{
 		int nread;
 
 		nread = x_read(xp, LINE);
@@ -1114,8 +1042,9 @@ getsc_line(Source *s)
 		while (1) {
 			char *p = shf_getse(xp, Xnleft(s->xs, xp), s->u.shf);
 
-			if (!p && shf_error(s->u.shf) &&
-			    s->u.shf->errno_ == EINTR) {
+			if (!p && shf_error(s->u.shf)
+			    && shf_errno(s->u.shf) == EINTR)
+			{
 				shf_clearerr(s->u.shf);
 				if (trap)
 					runtraps(0);
@@ -1141,10 +1070,13 @@ getsc_line(Source *s)
 	 * trap may have been executed.
 	 */
 	source = s;
-	if (have_tty && ksh_tmout) {
+#ifdef KSH
+	if (have_tty && ksh_tmout)
+	{
 		ksh_tmout_state = TMOUT_EXECUTING;
 		alarm(0);
 	}
+#endif /* KSH */
 	s->start = s->str = Xstring(s->xs, xp);
 	strip_nuls(Xstring(s->xs, xp), Xlength(s->xs, xp));
 	/* Note: if input is all nulls, this is not eof */
@@ -1159,296 +1091,102 @@ getsc_line(Source *s)
 			while (*p && ctype(*p, C_IFS) && ctype(*p, C_IFSWS))
 				p++;
 		if (*p) {
-			s->line++;
-			histsave(s->line, s->str, 1);
+# ifdef EASY_HISTORY
+			if (cur_prompt == PS2)
+				histappend(Xstring(s->xs, xp), 1);
+			else
+# endif /* EASY_HISTORY */
+			{
+				s->line++;
+				histsave(s->line, s->str, 1);
+			}
 		}
 #endif /* HISTORY */
 	}
 	if (interactive)
-		set_prompt(PS2, NULL);
-}
-
-static char *
-special_prompt_expand(char *str)
-{
-	char *p = str;
-
-	while ((p = strstr(p, "\\$")) != NULL) {
-		*(p+1) = 'p';
-	}
-	return str;
+		set_prompt(PS2, (Source *) 0);
 }
 
 void
-set_prompt(int to, Source *s)
+set_prompt(to, s)
+	int to;
+	Source *s;
 {
-	char *ps1;
-	Area *saved_atemp;
-
 	cur_prompt = to;
 
 	switch (to) {
 	case PS1: /* command */
-		ps1 = str_save(str_val(global("PS1")), ATEMP);
-		saved_atemp = ATEMP;	/* ps1 is freed by substitute() */
-		newenv(E_ERRH);
-		if (sigsetjmp(genv->jbuf, 0)) {
-			prompt = safe_prompt;
-			/* Don't print an error - assume it has already
-			 * been printed.  Reason is we may have forked
-			 * to run a command and the child may be
-			 * unwinding its stack through this code as it
-			 * exits.
-			 */
-		} else {
-			/* expand \$ before other substitutions are done */
-			char *tmp = special_prompt_expand(ps1);
-			prompt = str_save(substitute(tmp, 0), saved_atemp);
+#ifdef KSH
+		/* Substitute ! and !! here, before substitutions are done
+		 * so ! in expanded variables are not expanded.
+		 * NOTE: this is not what at&t ksh does (it does it after
+		 * substitutions, POSIX doesn't say which is to be done.
+		 */
+		{
+			struct shf *shf;
+			char *ps1;
+			Area *saved_atemp;
+#ifdef __GNUC__
+			(void)&ps1;
+#endif
+			ps1 = str_val(global("PS1"));
+			shf = shf_sopen((char *) 0, strlen(ps1) * 2,
+				SHF_WR | SHF_DYNAMIC, (struct shf *) 0);
+			while (*ps1) {
+				if (*ps1 != '!' || *++ps1 == '!')
+					shf_putchar(*ps1++, shf);
+				else
+					shf_fprintf(shf, "%d",
+						s ? s->line + 1 : 0);
+			}
+			ps1 = shf_sclose(shf);
+			saved_atemp = ATEMP;
+			newenv(E_ERRH);
+			if (ksh_sigsetjmp(e->jbuf, 0)) {
+				prompt = safe_prompt;
+				/* Don't print an error - assume it has already
+				 * been printed.  Reason is we may have forked
+				 * to run a command and the child may be
+				 * unwinding its stack through this code as it
+				 * exits.
+				 */
+			} else
+				prompt = str_save(substitute(ps1, 0),
+						 saved_atemp);
+			quitenv();
 		}
-		quitenv(NULL);
+#else /* KSH */
+		prompt = str_val(global("PS1"));
+#endif /* KSH */
 		break;
+
 	case PS2: /* command continuation */
 		prompt = str_val(global("PS2"));
 		break;
 	}
 }
 
-static int
-dopprompt(const char *sp, int ntruncate, const char **spp, int doprint)
+/* See also related routine, promptlen() in edit.c */
+void
+pprompt(cp, ntruncate)
+	const char *cp;
+	int ntruncate;
 {
-	char strbuf[1024], tmpbuf[1024], *p, *str, nbuf[32], delimiter = '\0';
-	int len, c, n, totlen = 0, indelimit = 0, counting = 1, delimitthis;
-	const char *cp = sp;
-	struct tm *tm;
-	time_t t;
-
-	if (*cp && cp[1] == '\r') {
-		delimiter = *cp;
-		cp += 2;
-	}
+#if 0
+	char nbuf[32];
+	int c;
 
 	while (*cp != 0) {
-		delimitthis = 0;
-		if (indelimit && *cp != delimiter)
-			;
-		else if (*cp == '\n' || *cp == '\r') {
-			totlen = 0;
-			sp = cp + 1;
-		} else if (*cp == '\t') {
-			if (counting)
-				totlen = (totlen | 7) + 1;
-		} else if (*cp == delimiter) {
-			indelimit = !indelimit;
-			delimitthis = 1;
-		}
-
-		if (*cp == '\\') {
-			cp++;
-			if (!*cp)
-				break;
-			if (Flag(FSH))
-				snprintf(strbuf, sizeof strbuf, "\\%c", *cp);
-			else switch (*cp) {
-			case 'a':	/* '\' 'a' bell */
-				strbuf[0] = '\007';
-				strbuf[1] = '\0';
-				break;
-			case 'd':	/* '\' 'd' Dow Mon DD */
-				time(&t);
-				tm = localtime(&t);
-				strftime(strbuf, sizeof strbuf, "%a %b %d", tm);
-				break;
-			case 'D': /* '\' 'D' '{' strftime format '}' */
-				p = strchr(cp + 2, '}');
-				if (cp[1] != '{' || p == NULL) {
-					snprintf(strbuf, sizeof strbuf,
-					    "\\%c", *cp);
-					break;
-				}
-				strlcpy(tmpbuf, cp + 2, sizeof tmpbuf);
-				p = strchr(tmpbuf, '}');
-				if (p)
-					*p = '\0';
-				time(&t);
-				tm = localtime(&t);
-				strftime(strbuf, sizeof strbuf, tmpbuf, tm);
-				cp = strchr(cp + 2, '}');
-				break;
-			case 'e':	/* '\' 'e' escape */
-				strbuf[0] = '\033';
-				strbuf[1] = '\0';
-				break;
-			case 'h':	/* '\' 'h' shortened hostname */
-				gethostname(strbuf, sizeof strbuf);
-				p = strchr(strbuf, '.');
-				if (p)
-					*p = '\0';
-				break;
-			case 'H':	/* '\' 'H' full hostname */
-				gethostname(strbuf, sizeof strbuf);
-				break;
-			case 'j':	/* '\' 'j' number of jobs */
-				snprintf(strbuf, sizeof strbuf, "%d",
-				    j_njobs());
-				break;
-			case 'l':	/* '\' 'l' basename of tty */
-				p = ttyname(0);
-				if (p)
-					p = basename(p);
-				if (p)
-					strlcpy(strbuf, p, sizeof strbuf);
-				break;
-			case 'n':	/* '\' 'n' newline */
-				strbuf[0] = '\n';
-				strbuf[1] = '\0';
-				totlen = 0;	/* reset for prompt re-print */
-				sp = cp + 1;
-				break;
-			case 'p':	/* '\' '$' $ or # */
-				strbuf[0] = ksheuid ? '$' : '#';
-				strbuf[1] = '\0';
-				break;
-			case 'r':	/* '\' 'r' return */
-				strbuf[0] = '\r';
-				strbuf[1] = '\0';
-				totlen = 0;	/* reset for prompt re-print */
-				sp = cp + 1;
-				break;
-			case 's':	/* '\' 's' basename $0 */
-				strlcpy(strbuf, kshname, sizeof strbuf);
-				break;
-			case 't':	/* '\' 't' 24 hour HH:MM:SS */
-				time(&t);
-				tm = localtime(&t);
-				strftime(strbuf, sizeof strbuf, "%T", tm);
-				break;
-			case 'T':	/* '\' 'T' 12 hour HH:MM:SS */
-				time(&t);
-				tm = localtime(&t);
-				strftime(strbuf, sizeof strbuf, "%l:%M:%S", tm);
-				break;
-			case '@':	/* '\' '@' 12 hour am/pm format */
-				time(&t);
-				tm = localtime(&t);
-				strftime(strbuf, sizeof strbuf, "%r", tm);
-				break;
-			case 'A':	/* '\' 'A' 24 hour HH:MM */
-				time(&t);
-				tm = localtime(&t);
-				strftime(strbuf, sizeof strbuf, "%R", tm);
-				break;
-			case 'u':	/* '\' 'u' username */
-				strlcpy(strbuf, username, sizeof strbuf);
-				break;
-			case 'v':	/* '\' 'v' version (short) */
-				p = strchr(ksh_version, ' ');
-				if (p)
-					p = strchr(p + 1, ' ');
-				if (p) {
-					p++;
-					strlcpy(strbuf, p, sizeof strbuf);
-					p = strchr(strbuf, ' ');
-					if (p)
-						*p = '\0';
-				}
-				break;
-			case 'V':	/* '\' 'V' version (long) */
-				strlcpy(strbuf, ksh_version, sizeof strbuf);
-				break;
-			case 'w':	/* '\' 'w' cwd */
-				p = str_val(global("PWD"));
-				n = strlen(str_val(global("HOME")));
-				if (strcmp(p, "/") == 0) {
-					strlcpy(strbuf, p, sizeof strbuf);
-				} else if (strcmp(p, str_val(global("HOME"))) == 0) {
-					strbuf[0] = '~';
-					strbuf[1] = '\0';
-				} else if (strncmp(p, str_val(global("HOME")), n)
-				    == 0 && p[n] == '/') {
-					snprintf(strbuf, sizeof strbuf, "~/%s",
-					    str_val(global("PWD")) + n + 1);
-				} else
-					strlcpy(strbuf, p, sizeof strbuf);
-				break;
-			case 'W':	/* '\' 'W' basename(cwd) */
-				p = str_val(global("PWD"));
-				if (strcmp(p, str_val(global("HOME"))) == 0) {
-					strbuf[0] = '~';
-					strbuf[1] = '\0';
-				} else
-					strlcpy(strbuf, basename(p), sizeof strbuf);
-				break;
-			case '!':	/* '\' '!' history line number */
-				snprintf(strbuf, sizeof strbuf, "%d",
-				    source->line + 1);
-				break;
-			case '#':	/* '\' '#' command line number */
-				snprintf(strbuf, sizeof strbuf, "%d",
-				    source->line - source->cmd_offset + 1);
-				break;
-			case '0':	/* '\' '#' '#' ' #' octal numeric handling */
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-				if ((cp[1] > '7' || cp[1] < '0') ||
-				    (cp[2] > '7' || cp[2] < '0')) {
-					snprintf(strbuf, sizeof strbuf,
-					    "\\%c", *cp);
-					break;
-				}
-				n = (cp[0] - '0') * 8 * 8 + (cp[1] - '0') * 8 +
-				    (cp[2] - '0');
-				snprintf(strbuf, sizeof strbuf, "%c", n);
-				cp += 2;
-				break;
-			case '\\':	/* '\' '\' */
-				strbuf[0] = '\\';
-				strbuf[1] = '\0';
-				break;
-			case '[': /* '\' '[' .... stop counting */
-				strbuf[0] = '\0';
-				counting = 0;
-				break;
-			case ']': /* '\' ']' restart counting */
-				strbuf[0] = '\0';
-				counting = 1;
-				break;
-
-			default:
-				snprintf(strbuf, sizeof strbuf, "\\%c", *cp);
-				break;
-			}
-			cp++;
-
-			str = strbuf;
-			len = strlen(str);
-			if (ntruncate) {
-				if (ntruncate >= len) {
-					ntruncate -= len;
-					continue;
-				}
-				str += ntruncate;
-				len -= ntruncate;
-				ntruncate = 0;
-			}
-			if (doprint)
-				shf_write(str, len, shl_out);
-			if (counting && !indelimit && !delimitthis)
-				totlen += len;
-			continue;
-		} else if (*cp != '!')
+		if (*cp != '!')
 			c = *cp++;
 		else if (*++cp == '!')
 			c = *cp++;
 		else {
+			int len;
 			char *p;
 
 			shf_snprintf(p = nbuf, sizeof(nbuf), "%d",
-			    source->line + 1);
+				source->line + 1);
 			len = strlen(nbuf);
 			if (ntruncate) {
 				if (ntruncate >= len) {
@@ -1459,44 +1197,26 @@ dopprompt(const char *sp, int ntruncate, const char **spp, int doprint)
 				len -= ntruncate;
 				ntruncate = 0;
 			}
-			if (doprint)
-				shf_write(p, len, shl_out);
-			if (counting && !indelimit && !delimitthis)
-				totlen += len;
+			shf_write(p, len, shl_out);
 			continue;
 		}
-		if (counting && ntruncate)
+		if (ntruncate)
 			--ntruncate;
-		else if (doprint) {
+		else
 			shf_putc(c, shl_out);
-		}
-		if (counting && !indelimit && !delimitthis)
-			totlen++;
 	}
-	if (doprint)
-		shf_flush(shl_out);
-	if (spp)
-		*spp = sp;
-	return (totlen);
-}
-
-void
-pprompt(const char *cp, int ntruncate)
-{
-	dopprompt(cp, ntruncate, NULL, 1);
-}
-
-int
-promptlen(const char *cp, const char **spp)
-{
-	return dopprompt(cp, 0, spp, 0);
+#endif /* 0 */
+	shf_puts(cp + ntruncate, shl_out);
+	shf_flush(shl_out);
 }
 
 /* Read the variable part of a ${...} expression (ie, up to but not including
  * the :[-+?=#%] or close-brace.
  */
 static char *
-get_brace_var(XString *wsp, char *wp)
+get_brace_var(wsp, wp)
+	XString *wsp;
+	char *wp;
 {
 	enum parse_state {
 			   PS_INITIAL, PS_SAW_HASH, PS_IDENT,
@@ -1510,13 +1230,13 @@ get_brace_var(XString *wsp, char *wp)
 		c = getsc();
 		/* State machine to figure out where the variable part ends. */
 		switch (state) {
-		case PS_INITIAL:
+		  case PS_INITIAL:
 			if (c == '#') {
 				state = PS_SAW_HASH;
 				break;
 			}
-			/* FALLTHROUGH */
-		case PS_SAW_HASH:
+			/* fall through.. */
+		  case PS_SAW_HASH:
 			if (letter(c))
 				state = PS_IDENT;
 			else if (digit(c))
@@ -1526,7 +1246,7 @@ get_brace_var(XString *wsp, char *wp)
 			else
 				state = PS_END;
 			break;
-		case PS_IDENT:
+		  case PS_IDENT:
 			if (!letnum(c)) {
 				state = PS_END;
 				if (c == '[') {
@@ -1544,14 +1264,14 @@ get_brace_var(XString *wsp, char *wp)
 				}
 			}
 			break;
-		case PS_NUMBER:
+		  case PS_NUMBER:
 			if (!digit(c))
 				state = PS_END;
 			break;
-		case PS_VAR1:
+		  case PS_VAR1:
 			state = PS_END;
 			break;
-		case PS_END: /* keep gcc happy */
+		  case PS_END: /* keep gcc happy */
 			break;
 		}
 		if (state == PS_END) {
@@ -1571,12 +1291,13 @@ get_brace_var(XString *wsp, char *wp)
  * (Returned string double null terminated)
  */
 static int
-arraysub(char **strp)
+arraysub(strp)
+	char **strp;
 {
 	XString ws;
 	char	*wp;
 	char	c;
-	int	depth = 1;	/* we are just past the initial [ */
+	int 	depth = 1;	/* we are just past the initial [ */
 
 	Xinit(ws, wp, 32, ATEMP);
 
@@ -1598,7 +1319,8 @@ arraysub(char **strp)
 
 /* Unget a char: handles case when we are already at the start of the buffer */
 static const char *
-ungetsc(int c)
+ungetsc(c)
+	int c;
 {
 	if (backslash_skip)
 		backslash_skip--;
@@ -1622,7 +1344,7 @@ ungetsc(int c)
 
 /* Called to get a char that isn't a \newline sequence. */
 static int
-getsc_bn(void)
+getsc_bn ARGS((void))
 {
 	int c, c2;
 
@@ -1650,10 +1372,11 @@ getsc_bn(void)
 }
 
 static Lex_state *
-push_state_(State_info *si, Lex_state *old_end)
+push_state_(si, old_end)
+	State_info *si;
+	Lex_state *old_end;
 {
-	Lex_state *new = areallocarray(NULL, STATE_BSIZE,
-	    sizeof(Lex_state), ATEMP);
+	Lex_state	*new = alloc(sizeof(Lex_state) * STATE_BSIZE, ATEMP);
 
 	new[0].ls_info.base = old_end;
 	si->base = &new[0];
@@ -1662,7 +1385,9 @@ push_state_(State_info *si, Lex_state *old_end)
 }
 
 static Lex_state *
-pop_state_(State_info *si, Lex_state *old_end)
+pop_state_(si, old_end)
+	State_info *si;
+	Lex_state *old_end;
 {
 	Lex_state *old_base = si->base;
 
@@ -1671,5 +1396,5 @@ pop_state_(State_info *si, Lex_state *old_end)
 
 	afree(old_base, ATEMP);
 
-	return si->base + STATE_BSIZE - 1;
+	return si->base + STATE_BSIZE - 1;;
 }

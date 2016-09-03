@@ -1,4 +1,4 @@
-/*	$OpenBSD: rdistd.c,v 1.10 2015/02/08 23:40:34 deraadt Exp $	*/
+/*	$OpenBSD: rdistd.c,v 1.4 1998/06/26 21:20:51 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,22 +33,31 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: rdistd.c,v 6.22 1995/12/11 23:37:35 mcooper Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: rdistd.c,v 1.4 1998/06/26 21:20:51 millert Exp $";
+#endif
 
-#include "server.h"
+static char sccsid[] = "@(#)rdistd.c";
 
-int main(int, char **, char **);
-static void usage(void);
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+
+#include "defs.h"
 
 /*
  * Print usage message
  */
-static void
-usage(void)
+static void usage()
 {
-	fprintf(stderr, "usage: %s [-DV] -S\n", progname);
+	fprintf(stderr, "usage: %s -S [ -DV ]\n", progname);
 	exit(1);
 }
 
@@ -54,13 +67,13 @@ char	localmsglist[] = "syslog=ferror";
  * The Beginning
  */
 int
-main(int argc, char **argv, char **envp)
+main(argc, argv, envp)
+	int argc;
+	char **argv;
+	char **envp;
 {
-	extern char *__progname;
 	char *cp;
 	int c;
-
-	progname = __progname;
 
 	if (init(argc, argv, envp) < 0)
 		exit(1);
@@ -68,7 +81,7 @@ main(int argc, char **argv, char **envp)
 	while ((c = getopt(argc, argv, "SDV")) != -1)
 		switch (c) {
 		case 'S':
-			isserver = 1;
+			isserver++;
 			break;
 
 		case 'D':
@@ -95,7 +108,7 @@ main(int argc, char **argv, char **envp)
 	rem_w = fileno(stdout);
 
 	/* Set logging */
-	if ((cp = msgparseopts(localmsglist, TRUE)) != NULL)
+	if ((cp = msgparseopts(localmsglist, TRUE)))
 		fatalerr("Bad message logging option (%s): %s", 
 			 localmsglist, cp);
 

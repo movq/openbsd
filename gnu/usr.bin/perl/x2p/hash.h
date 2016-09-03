@@ -1,16 +1,17 @@
-/*    hash.h
+/* $RCSfile: hash.h,v $$Revision: 4.1 $$Date: 92/08/07 18:29:21 $
  *
- *    Copyright (C) 1991, 1992, 1993, 1994, 1995, 1999, 2000, 2005
- *    by Larry Wall and others
+ *    Copyright (c) 1991-1997, Larry Wall
  *
  *    You may distribute under the terms of either the GNU General Public
  *    License or the Artistic License, as specified in the README file.
+ *
+ * $Log:	hash.h,v $
  */
 
 #define FILLPCT 60		/* don't make greater than 99 */
 
 #ifdef DOINIT
-EXTERN_C char const coeff[] = {
+char coeff[] = {
 		61,59,53,47,43,41,37,31,29,23,17,13,11,7,3,1,
 		61,59,53,47,43,41,37,31,29,23,17,13,11,7,3,1,
 		61,59,53,47,43,41,37,31,29,23,17,13,11,7,3,1,
@@ -20,7 +21,7 @@ EXTERN_C char const coeff[] = {
 		61,59,53,47,43,41,37,31,29,23,17,13,11,7,3,1,
 		61,59,53,47,43,41,37,31,29,23,17,13,11,7,3,1};
 #else
-EXTERN_C const char coeff[];
+extern char coeff[];
 #endif
 
 typedef struct hentry HENT;
@@ -40,8 +41,12 @@ struct htbl {
     HENT	*tbl_eiter;	/* current entry of iterator */
 };
 
-STR * hfetch ( HASH *tb, char *key );
-int hiterinit ( HASH *tb );
-HASH * hnew ( void );
-void hsplit ( HASH *tb );
-bool hstore ( HASH *tb, char *key, STR *val );
+bool hdelete _((HASH *tb, char *key));
+STR * hfetch _(( HASH *tb, char *key ));
+int hiterinit _(( HASH *tb ));
+char * hiterkey _(( HENT *entry ));
+HENT * hiternext _(( HASH *tb ));
+STR * hiterval _(( HENT *entry ));
+HASH * hnew _(( void ));
+void hsplit _(( HASH *tb ));
+bool hstore _(( HASH *tb, char *key, STR *val ));

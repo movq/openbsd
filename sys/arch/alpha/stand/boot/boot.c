@@ -1,4 +1,4 @@
-/*	$OpenBSD: boot.c,v 1.23 2014/02/19 22:02:14 miod Exp $	*/
+/*	$OpenBSD: boot.c,v 1.11 1998/03/05 23:08:17 deraadt Exp $	*/
 /*	$NetBSD: boot.c,v 1.10 1997/01/18 01:58:33 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -37,125 +41,77 @@
 
 #include <lib/libkern/libkern.h>
 #include <lib/libsa/stand.h>
-#include <lib/libsa/loadfile.h>
 
 #include <sys/param.h>
 #include <sys/exec.h>
-#include <sys/stat.h>
-#define _KERNEL
-#include <sys/fcntl.h>
-#undef _KERNEL
+#include <sys/exec_ecoff.h>
 
 #include <machine/rpb.h>
 #include <machine/prom.h>
-#include <machine/autoconf.h>
+
+#define _KERNEL
+#include "include/pte.h"
+
+int loadfile __P((char *, u_int64_t *));
 
 char boot_file[128];
 char boot_flags[128];
 
-extern char bootprog_name[];
+extern char bootprog_name[], bootprog_rev[], bootprog_date[], bootprog_maker[];
 
-struct bootinfo_v1 bootinfo_v1;
-
-paddr_t ptbr_save;
+vm_offset_t ffp_save, ptbr_save, esym;
 
 int debug;
 
-char   rnddata[BOOTRANDOM_MAX];
-
-void
-loadrandom(char *name, char *buf, size_t buflen)
-{
-	struct stat sb;
-	int fd, i;
-
-	fd = open(name, O_RDONLY);
-	if (fd == -1) {
-		if (errno != EPERM)
-			printf("cannot open %s: %s\n", name, strerror(errno));
-		return;
-	}
-	if (fstat(fd, &sb) == -1 || sb.st_uid != 0 || !S_ISREG(sb.st_mode) ||
-	    (sb.st_mode & (S_IWOTH|S_IROTH)))
-		goto fail;
-	(void) read(fd, buf, buflen);
-fail:
-	close(fd);
-}
+char *kernelnames[] = {
+	"bsd",
+	"bsd.bak",
+	"bsd.old",
+	"obsd",
+	NULL
+};
 
 int
 main()
 {
 	char *name, **namep;
 	u_int64_t entry;
-	int rc;
-	u_long marks[MARK_MAX];
-#ifdef DEBUG
-	struct rpb *r;
-	struct mddt *mddtp;
-	struct mddt_cluster *memc;
-	int i;
-#endif
+	int win;
 
 	/* Init prom callback vector. */
 	init_prom_calls();
 
 	/* print a banner */
-	printf("%s\n", bootprog_name);
+	printf("\n");
+	printf("%s, Revision %s\n", bootprog_name, bootprog_rev);
+	printf("(%s, %s)\n", bootprog_maker, bootprog_date);
+	printf("\n");
 
 	/* switch to OSF pal code. */
 	OSFpal();
 
-#ifdef DEBUG
-	r = (struct rpb *)HWRPB_ADDR;
-	mddtp = (struct mddt *)(HWRPB_ADDR + r->rpb_memdat_off);
-	printf("%d memory clusters\n", mddtp->mddt_cluster_cnt);
-	for (i = 0; i < mddtp->mddt_cluster_cnt; i++) {
-		memc = &mddtp->mddt_clusters[i];
-		printf("%d: (%d) %lx-%lx\n", i, memc->mddt_usage,
-		    memc->mddt_pfn << PAGE_SHIFT,
-		    (memc->mddt_pfn + memc->mddt_pg_cnt) << PAGE_SHIFT);
-	}
-#endif
-
-	loadrandom(BOOTRANDOM, rnddata, sizeof(rnddata));
+	printf("\n");
 
 	prom_getenv(PROM_E_BOOTED_FILE, boot_file, sizeof(boot_file));
 	prom_getenv(PROM_E_BOOTED_OSFLAGS, boot_flags, sizeof(boot_flags));
 
-	if (boot_file[0] != '\0') {
-		(void)printf("Boot file: %s %s\n", boot_file, boot_flags);
-		name = boot_file;
-	} else
-		name = "bsd";
+	if (boot_file[0] != 0)
+		(void)printf("Boot file: %s\n", boot_file);
+	(void)printf("Boot flags: %s\n", boot_flags);
 
-	(void)printf("Loading %s...\n", name);
-	marks[MARK_START] = 0;
-	rc = loadfile(name, marks, LOAD_KERNEL | COUNT_KERNEL);
-	(void)printf("\n");
-	if (rc != 0)
-		goto fail;
+	if (boot_file[0] != '\0')
+		win = (loadfile(name = boot_file, &entry) == 0);
+	else
+		for (namep = kernelnames, win = 0; *namep != NULL && !win;
+		    namep++)
+			win = (loadfile(name = *namep, &entry) == 0);
 
-	/*
-	 * Fill in the bootinfo for the kernel.
-	 */
-	bzero(&bootinfo_v1, sizeof(bootinfo_v1));
-	bootinfo_v1.ssym = marks[MARK_SYM];
-	bootinfo_v1.esym = marks[MARK_END];
-	bcopy(name, bootinfo_v1.booted_kernel,
-	    sizeof(bootinfo_v1.booted_kernel));
-	bcopy(boot_flags, bootinfo_v1.boot_flags,
-	    sizeof(bootinfo_v1.boot_flags));
-	bootinfo_v1.hwrpb = (void *)HWRPB_ADDR;
-	bootinfo_v1.hwrpbsize = ((struct rpb *)HWRPB_ADDR)->rpb_size;
-	bootinfo_v1.cngetc = NULL;
-	bootinfo_v1.cnputc = NULL;
-	bootinfo_v1.cnpollc = NULL;
+	printf("\n");
+	if (win) {
+		(void)printf("Entering %s at 0x%lx...\n", name, entry);
+		(*(void (*)())entry)(ffp_save, ptbr_save, esym);
+	}
 
-	entry = marks[MARK_START];
-	(*(void (*)(u_int64_t, u_int64_t, u_int64_t, void *, u_int64_t,
-	    u_int64_t))entry)(0, ptbr_save, BOOTINFO_MAGIC, &bootinfo_v1, 1, 0);
-
-fail:
+	(void)printf("Boot failed!  Halting...\n");
 	halt();
 }

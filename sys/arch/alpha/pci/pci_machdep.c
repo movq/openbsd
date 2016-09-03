@@ -1,4 +1,4 @@
-/*	$OpenBSD: pci_machdep.c,v 1.20 2015/07/26 05:09:44 miod Exp $	*/
+/*	$OpenBSD: pci_machdep.c,v 1.9 1997/11/06 12:27:03 niklas Exp $	*/
 /*	$NetBSD: pci_machdep.c,v 1.7 1996/11/19 04:57:32 cgd Exp $	*/
 
 /*
@@ -36,30 +36,24 @@
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/systm.h>
-#include <sys/proc.h>
-#include <sys/sysctl.h>
 #include <sys/errno.h>
 #include <sys/device.h>
-#include <uvm/uvm_extern.h>
-#include <machine/cpu.h>
+#include <vm/vm.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
-#include <dev/pci/ppbreg.h>
 
-#include "vga.h"
+#include "vga_pci.h"
 #if NVGA_PCI
 #include <dev/pci/vga_pcivar.h>
 #endif
 
 #include "tga.h"
 #if NTGA
-#include <dev/pci/tgavar.h>
+#include <alpha/pci/tgavar.h>
 #endif
-
-struct alpha_pci_chipset *alpha_pci_chipset;
 
 void
 pci_display_console(iot, memt, pc, bus, device, function)
@@ -73,8 +67,8 @@ pci_display_console(iot, memt, pc, bus, device, function)
 #if NVGA_PCI || NTGA
 	int nmatch;
 #endif
-	int (*fn)(bus_space_tag_t, bus_space_tag_t, pci_chipset_tag_t,
-	    int, int, int);
+	void (*fn) __P((bus_space_tag_t, bus_space_tag_t, pci_chipset_tag_t,
+	    int, int, int));
 
 	tag = pci_make_tag(pc, bus, device, function);
 	id = pci_conf_read(pc, tag, PCI_ID_REG);
@@ -87,17 +81,17 @@ pci_display_console(iot, memt, pc, bus, device, function)
 	fn = NULL;
 
 #if NVGA_PCI
-	nmatch = DEVICE_IS_VGA_PCI(class);
+	nmatch = DEVICE_IS_VGA_PCI(class, id);
 	if (nmatch > match) {
 		match = nmatch;
-		fn = vga_pci_cnattach;
+		fn = vga_pci_console;
 	}
 #endif
 #if NTGA
 	nmatch = DEVICE_IS_TGA(class, id);
 	if (nmatch > match) {
 		match = nmatch;
-		fn = tga_cnattach;
+		fn = tga_console;
 	}
 #endif
 
@@ -106,50 +100,4 @@ pci_display_console(iot, memt, pc, bus, device, function)
 	else
 		panic("pci_display_console: unconfigured device at %d/%d/%d",
 		    bus, device, function);
-}
-
-int
-alpha_sysctl_chipset(int *name, u_int namelen, char *where, size_t *sizep)
-{
-	if (namelen != 1)
-		return (ENOTDIR);
-
-	if (alpha_pci_chipset == NULL)
-		return (EOPNOTSUPP);
-
-	switch (name[0]) {
-	case CPU_CHIPSET_TYPE:
-		return (sysctl_rdstring(where, sizep, NULL,
-		    alpha_pci_chipset->pc_name));
-	case CPU_CHIPSET_BWX:
-		return (sysctl_rdint(where, sizep, NULL,
-		    alpha_pci_chipset->pc_bwx));
-	case CPU_CHIPSET_MEM:
-		return (sysctl_rdquad(where, sizep, NULL,
-		    alpha_pci_chipset->pc_mem));
-	case CPU_CHIPSET_DENSE:
-		return (sysctl_rdquad(where, sizep, NULL,
-		    alpha_pci_chipset->pc_dense));
-	case CPU_CHIPSET_PORTS:
-		return (sysctl_rdquad(where, sizep, NULL,
-		    alpha_pci_chipset->pc_ports));
-	case CPU_CHIPSET_HAE_MASK:
-		return (sysctl_rdquad(where, sizep, NULL,
-		    alpha_pci_chipset->pc_hae_mask));
-	default:
-		return (EOPNOTSUPP);
-	}
-	/* NOTREACHED */
-}
-
-int
-pci_intr_map(struct pci_attach_args *pa, pci_intr_handle_t *ihp)
-{
-	if (pa->pa_intrpin == 0)	/* No IRQ used. */
-		return 1;
-
-	if (!(1 <= pa->pa_intrpin && pa->pa_intrpin <= 4))
-		return 1;
-
-	return (*(pa->pa_pc)->pc_intr_map)(pa, ihp);
 }

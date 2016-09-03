@@ -1,17 +1,16 @@
-/*	$OpenBSD: mail.c,v 1.22 2015/10/19 14:42:16 mmcc Exp $	*/
+/*	$OpenBSD: mail.c,v 1.9 1999/06/15 01:18:35 millert Exp $	*/
 
 /*
  * Mailbox checking code by Robert J. Gibson, adapted for PD ksh by
  * John R. MacMillan
  */
 
-#include <sys/stat.h>
-
-#include <string.h>
-#include <time.h>
-
 #include "config.h"
+
+#ifdef KSH
 #include "sh.h"
+#include "ksh_stat.h"
+#include "ksh_time.h"
 
 #define MBMESSAGE	"you have mail in $_"
 
@@ -33,19 +32,19 @@ static mbox_t	mbox;
 static time_t	mlastchkd;	/* when mail was last checked */
 static time_t	mailcheck_interval;
 
-static void	munset(mbox_t *); /* free mlist and mval */
-static mbox_t * mballoc(char *, char *); /* allocate a new mbox */
-static void	mprintit(mbox_t *);
+static void     munset      ARGS((mbox_t *mlist)); /* free mlist and mval */
+static mbox_t * mballoc     ARGS((char *p, char *m)); /* allocate a new mbox */
+static void     mprintit    ARGS((mbox_t *mbp));
 
 void
-mcheck(void)
+mcheck()
 {
-	mbox_t		*mbp;
+	register mbox_t	*mbp;
 	time_t		 now;
 	struct tbl	*vp;
 	struct stat	 stbuf;
 
-	now = time(NULL);
+	now = time((time_t *) 0);
 	if (mlastchkd == 0)
 		mlastchkd = now;
 	if (now - mlastchkd >= mailcheck_interval) {
@@ -59,11 +58,12 @@ mcheck(void)
 			mbp = NULL;
 
 		while (mbp) {
-			if (mbp->mb_path && stat(mbp->mb_path, &stbuf) == 0 &&
-			    S_ISREG(stbuf.st_mode)) {
-				if (stbuf.st_size &&
-				    mbp->mb_mtime != stbuf.st_mtime &&
-				    stbuf.st_atime <= stbuf.st_mtime)
+			if (mbp->mb_path && stat(mbp->mb_path, &stbuf) == 0
+			    && S_ISREG(stbuf.st_mode))
+			{
+				if (stbuf.st_size
+				    && mbp->mb_mtime != stbuf.st_mtime
+				    && stbuf.st_atime <= stbuf.st_mtime)
 					mprintit(mbp);
 				mbp->mb_mtime = stbuf.st_mtime;
 			} else {
@@ -81,18 +81,22 @@ mcheck(void)
 }
 
 void
-mcset(long int interval)
+mcset(interval)
+	long interval;
 {
 	mailcheck_interval = interval;
 }
 
 void
-mbset(char *p)
+mbset(p)
+	register char	*p;
 {
 	struct stat	stbuf;
 
-	afree(mbox.mb_msg, APERM);
-	afree(mbox.mb_path, APERM);
+	if (mbox.mb_msg)
+		afree((void *)mbox.mb_msg, APERM);
+	if (mbox.mb_path)
+		afree((void *)mbox.mb_path, APERM);
 	/* Save a copy to protect from export (which munges the string) */
 	mbox.mb_path = str_save(p, APERM);
 	mbox.mb_msg = NULL;
@@ -103,10 +107,11 @@ mbset(char *p)
 }
 
 void
-mpset(char *mptoparse)
+mpset(mptoparse)
+	register char	*mptoparse;
 {
-	mbox_t	*mbp;
-	char	*mpath, *mmsg, *mval;
+	register mbox_t	*mbp;
+	register char	*mpath, *mmsg, *mval;
 	char *p;
 
 	munset( mplist );
@@ -114,9 +119,8 @@ mpset(char *mptoparse)
 	mval = str_save(mptoparse, APERM);
 	while (mval) {
 		mpath = mval;
-		if ((mval = strchr(mval, ':')) != NULL) {
-			*mval = '\0';
-			mval++;
+		if ((mval = strchr(mval, PATHSEP)) != NULL) {
+			*mval = '\0', mval++;
 		}
 		/* POSIX/bourne-shell say file%message */
 		for (p = mpath; (mmsg = strchr(p, '%')); ) {
@@ -143,26 +147,29 @@ mpset(char *mptoparse)
 }
 
 static void
-munset(mbox_t *mlist)
+munset(mlist)
+register mbox_t	*mlist;
 {
-	mbox_t	*mbp;
+	register mbox_t	*mbp;
 
 	while (mlist != NULL) {
 		mbp = mlist;
 		mlist = mbp->mb_next;
 		if (!mlist)
-			afree(mbp->mb_path, APERM);
-		afree(mbp, APERM);
+			afree((void *)mbp->mb_path, APERM);
+		afree((void *)mbp, APERM);
 	}
 }
 
 static mbox_t *
-mballoc(char *p, char *m)
+mballoc(p, m)
+	char	*p;
+	char	*m;
 {
 	struct stat	stbuf;
-	mbox_t	*mbp;
+	register mbox_t	*mbp;
 
-	mbp = alloc(sizeof(mbox_t), APERM);
+	mbp = (mbox_t *)alloc(sizeof(mbox_t), APERM);
 	mbp->mb_next = NULL;
 	mbp->mb_path = p;
 	mbp->mb_msg = m;
@@ -174,7 +181,8 @@ mballoc(char *p, char *m)
 }
 
 static void
-mprintit(mbox_t *mbp)
+mprintit( mbp )
+mbox_t	*mbp;
 {
 	struct tbl	*vp;
 
@@ -188,9 +196,10 @@ mprintit(mbox_t *mbp)
 	if (!Flag(FSH))
 #endif
 		/* Ignore setstr errors here (arbitrary) */
-		setstr((vp = local("_", false)), mbp->mb_path, KSH_RETURN_ERROR);
+		setstr((vp = local("_", FALSE)), mbp->mb_path, KSH_RETURN_ERROR);
 
 	shellf("%s\n", substitute(mbp->mb_msg ? mbp->mb_msg : MBMESSAGE, 0));
 
 	unset(vp, 0);
 }
+#endif /* KSH */

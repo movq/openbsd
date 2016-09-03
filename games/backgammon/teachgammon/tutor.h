@@ -1,4 +1,4 @@
-/*	$OpenBSD: tutor.h,v 1.5 2003/06/03 03:01:38 millert Exp $	*/
+/*	$OpenBSD: tutor.h,v 1.3 1999/07/31 21:57:41 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -61,7 +65,7 @@ extern	const char	*const stragy[];
 extern	const struct situatn	test[];
 
 
-int	brdeq(const int *, const int *);
-void	clrest(void);
-void	leave(void);
-void	tutor(void);
+int	brdeq __P((const int *, const int *));
+void	clrest __P((void));
+void	leave __P((void));
+void	tutor __P((void));

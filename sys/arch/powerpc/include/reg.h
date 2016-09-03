@@ -1,4 +1,4 @@
-/*	$OpenBSD: reg.h,v 1.11 2014/09/08 01:47:06 guenther Exp $	*/
+/*	$OpenBSD: reg.h,v 1.2 1998/08/07 02:22:06 rahnds Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -38,11 +42,12 @@
 #define _POWERPC_REG_H_
 
 /*
- * Struct reg, used for ptrace and in signal contexts
+ * Struct reg, used for procfs and in signal contexts
  * Note that in signal contexts, it's represented as an array.
  * That array has to look exactly like 'struct reg' though.
  */
 
+/* this table is set up to match what gdb expects */
 struct reg {
 	u_int32_t gpr[32];
 	u_int64_t fpr[32];
@@ -54,23 +59,4 @@ struct reg {
 	u_int32_t xer;
 	u_int32_t mq;
 };
-
-struct fpreg {
-	u_int64_t fpr[32];
-	u_int32_t fpscr;
-};
-
-struct vreg {
-        u_int32_t vreg[32][4];
-	u_int64_t vscr;
-	u_int32_t vrsave;
-	u_int32_t pad;
-};
-
-#ifdef _KERNEL
-void save_vec(struct proc *);
-void enable_vec(struct proc *);
-extern struct proc *ppc_vecproc;
-extern struct pool ppc_vecpl;
-#endif /* _KERNEL */
 #endif /* !_POWERPC_REG_H_ */

@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_prom.c,v 1.7 2015/07/17 16:13:26 miod Exp $	*/
+/*	$OpenBSD: if_prom.c,v 1.3 1997/05/05 06:02:01 millert Exp $	*/
 /*	$NetBSD: if_prom.c,v 1.9 1997/04/06 08:41:26 cgd Exp $	*/
 
 /*
@@ -36,6 +36,7 @@
 #include <sys/types.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 
 #include <include/rpb.h>
 #include <include/prom.h>
@@ -46,12 +47,12 @@
 
 #include "stand/bbinfo.h"
 
-int	prom_match(struct netif *, void *);
-int	prom_probe(struct netif *, void *);
-void	prom_init(struct iodesc *, void *);
-int	prom_get(struct iodesc *, void *, size_t, time_t);
-int	prom_put(struct iodesc *, void *, size_t);
-void	prom_end(struct netif *);
+int prom_probe();
+int prom_match();
+void prom_init();
+int prom_get();
+int prom_put();
+void prom_end();
 
 extern struct netif_stats	prom_stats[];
 
@@ -60,7 +61,7 @@ struct netif_dif prom_ifs[] = {
 {	0,		1,		&prom_stats[0],	0,		},
 };
 
-struct netif_stats prom_stats[nitems(prom_ifs)];
+struct netif_stats prom_stats[NENTS(prom_ifs)];
 
 struct netbbinfo netbbinfo = {
 	0xfeedbabedeadbeef,			/* magic number */
@@ -81,27 +82,34 @@ struct netif_driver prom_netif_driver = {
 	prom_put,		/* netif_put */
 	prom_end,		/* netif_end */
 	prom_ifs,		/* netif_ifs */
-	nitems(prom_ifs)	/* netif_nifs */
+	NENTS(prom_ifs)		/* netif_nifs */
 };
 
 int netfd, broken_firmware;
 
 int
-prom_match(struct netif *nif, void *machdep_hint)
+prom_match(nif, machdep_hint)
+	struct netif *nif;
+	void *machdep_hint;
 {
 
 	return (1);
 }
 
 int
-prom_probe(struct netif *nif, void *machdep_hint)
+prom_probe(nif, machdep_hint)
+	struct netif *nif;
+	void *machdep_hint;
 {
 
 	return 0;
 }
 
 int
-prom_put(struct iodesc *desc, void *pkt, size_t len)
+prom_put(desc, pkt, len)
+	struct iodesc *desc;
+	void *pkt;
+	int len;
 {
 
 	prom_write(netfd, len, pkt, 0);
@@ -111,11 +119,15 @@ prom_put(struct iodesc *desc, void *pkt, size_t len)
 
 
 int
-prom_get(struct iodesc *desc, void *pkt, size_t len, time_t timeout)
+prom_get(desc, pkt, len, timeout)
+	struct iodesc *desc;
+	void *pkt;
+	int len;
+	time_t timeout;
 {
 	prom_return_t ret;
 	time_t t;
-	ssize_t cc;
+	int cc;
 	char hate[2000];
 
 	t = getsecs();
@@ -129,7 +141,7 @@ prom_get(struct iodesc *desc, void *pkt, size_t len, time_t timeout)
 			cc = ret.u.retval;
 	}
 	if (broken_firmware)
-		cc = lmin(cc, len);
+		cc = min(cc, len);
 	else
 		cc = len;
 	bcopy(hate, pkt, cc);
@@ -140,7 +152,9 @@ prom_get(struct iodesc *desc, void *pkt, size_t len, time_t timeout)
 extern char *strchr();
 
 void
-prom_init(struct iodesc *desc, void *machdep_hint)
+prom_init(desc, machdep_hint)
+	struct iodesc *desc;
+	void *machdep_hint;
 {
 	prom_return_t ret;
 	char devname[64];
@@ -230,14 +244,15 @@ reallypunt:
 	printf("\n");
 	printf("Boot device name was: \"%s\"\n", devname);
 	printf("\n");
-	printf("Your firmware may be too old to network-boot OpenBSD/alpha,\n");
+	printf("Your firmware may be too old to network-boot OpenBSD/Alpha,\n");
 	printf("or you might have to hard-code an ethernet address into\n");
 	printf("your network boot block with setnetbootinfo(8).\n");
 	halt();
 }
 
 void
-prom_end(struct netif *nif)
+prom_end(nif)
+	struct netif *nif;
 {
 
 	prom_close(netfd);

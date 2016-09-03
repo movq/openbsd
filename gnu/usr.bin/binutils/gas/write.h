@@ -1,6 +1,5 @@
 /* write.h
-   Copyright 1987, 1992, 1993, 1994, 1995, 1996, 1997, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 92, 93, 94, 95, 1996 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,12 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
-
-#ifndef __write_h__
-#define __write_h__
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef TC_I960
 #ifdef hpux
@@ -28,21 +23,15 @@
 #endif
 #endif /* TC_I960 */
 
-#ifndef BFD_ASSEMBLER
-
 #ifndef LOCAL_LABEL
 #define LOCAL_LABEL(name) (name [0] == 'L' )
-#endif
+#endif /* LOCAL_LABEL */
 
-#define S_LOCAL_NAME(s) (LOCAL_LABEL (S_GET_NAME (s)))
-
-#endif /* ! BFD_ASSEMBLER */
-
-/* This is the name of a fake symbol which will never appear in the
-   assembler output.  S_IS_LOCAL detects it because of the \001.  */
 #ifndef FAKE_LABEL_NAME
 #define FAKE_LABEL_NAME "L0\001"
 #endif
+
+#define S_LOCAL_NAME(s) (LOCAL_LABEL(S_GET_NAME(s)))
 
 #include "bit_fix.h"
 
@@ -55,7 +44,7 @@ struct fix
   /* These small fields are grouped together for compactness of
      this structure, and efficiency of access on some architectures.  */
 
-  /* pc-relative offset adjust (only used by m68k) */
+  /* pc-relative offset adjust */
   char fx_pcrel_adjust;
 
   /* How many bytes are involved? */
@@ -89,26 +78,25 @@ struct fix
      @@ Can this be determined from BFD?  */
   unsigned fx_no_overflow : 1;
 
-  /* The value is signed when checking for overflow.  */
-  unsigned fx_signed : 1;
-
   /* Which frag does this fix apply to?  */
   fragS *fx_frag;
 
   /* Where is the first byte to fix up?  */
   long fx_where;
 
-  /* NULL or Symbol whose value we add in.  */
+  /* NULL or Symbol whose value we add in. */
   symbolS *fx_addsy;
 
-  /* NULL or Symbol whose value we subtract.  */
+  /* NULL or Symbol whose value we subtract. */
   symbolS *fx_subsy;
 
-  /* Absolute number we add in.  */
-  valueT fx_offset;
+#if defined(TE_NetBSD) || defined (TE_OpenBSD)
+  /* NULL or __GLOBAL_OFFSET_TABLE_ . */
+  symbolS *fx_gotsy;
+#endif
 
-  /* The value of dot when the fixup expression was parsed.  */
-  addressT fx_dot_value;
+  /* Absolute number we add in. */
+  valueT fx_offset;
 
   /* Next fixS in linked list, or NULL.  */
   struct fix *fx_next;
@@ -144,15 +132,6 @@ struct fix
   char *fx_file;
   unsigned fx_line;
 
-#ifdef USING_CGEN
-  struct {
-    /* CGEN_INSN entry for this instruction.  */
-    const struct cgen_insn *insn;
-    /* Target specific data, usually reloc number.  */
-    int opinfo;
-  } fx_cgen;
-#endif
-
 #ifdef TC_FIX_TYPE
   /* Location where a backend can attach additional data
      needed to perform fixups.  */
@@ -162,56 +141,50 @@ struct fix
 
 typedef struct fix fixS;
 
-extern int finalize_syms;
-extern symbolS *abs_section_sym;
-extern addressT dot_value;
-
 #ifndef BFD_ASSEMBLER
 extern char *next_object_file_charP;
 
 #ifndef MANY_SEGMENTS
-COMMON fixS *text_fix_root, *text_fix_tail;	/* Chains fixSs.  */
-COMMON fixS *data_fix_root, *data_fix_tail;	/* Chains fixSs.  */
-COMMON fixS *bss_fix_root, *bss_fix_tail;	/* Chains fixSs.  */
-extern struct frag *text_last_frag;		/* Last frag in segment.  */
-extern struct frag *data_last_frag;		/* Last frag in segment.  */
+COMMON fixS *text_fix_root, *text_fix_tail;	/* Chains fixSs. */
+COMMON fixS *data_fix_root, *data_fix_tail;	/* Chains fixSs. */
+COMMON fixS *bss_fix_root, *bss_fix_tail;	/* Chains fixSs. */
+extern struct frag *text_last_frag;		/* Last frag in segment. */
+extern struct frag *data_last_frag;		/* Last frag in segment. */
 #endif
-COMMON fixS **seg_fix_rootP, **seg_fix_tailP;	/* -> one of above.  */
+COMMON fixS **seg_fix_rootP, **seg_fix_tailP;	/* -> one of above. */
 #endif
 
 extern long string_byte_count;
 extern int section_alignment[];
 
 extern bit_fixS *bit_fix_new
-  (int size, int offset, long base_type, long base_adj, long min,
-   long max, long add);
-extern void append (char **charPP, char *fromP, unsigned long length);
-extern void record_alignment (segT seg, int align);
-extern int get_recorded_alignment (segT seg);
-extern void subsegs_finish (void);
-extern void write_object_file (void);
-extern long relax_frag (segT, fragS *, long);
-extern int relax_segment (struct frag * seg_frag_root, segT seg_type);
+  PARAMS ((int size, int offset, long base_type, long base_adj, long min,
+	   long max, long add));
+extern void append PARAMS ((char **charPP, char *fromP, unsigned long length));
+extern void record_alignment PARAMS ((segT seg, int align));
+extern void write_object_file PARAMS ((void));
+extern void relax_segment
+  PARAMS ((struct frag * seg_frag_root, segT seg_type));
 
-extern void number_to_chars_littleendian (char *, valueT, int);
-extern void number_to_chars_bigendian (char *, valueT, int);
+extern void number_to_chars_littleendian PARAMS ((char *, valueT, int));
+extern void number_to_chars_bigendian    PARAMS ((char *, valueT, int));
 
 #ifdef BFD_ASSEMBLER
 extern fixS *fix_new
-  (fragS * frag, int where, int size, symbolS * add_symbol,
-   offsetT offset, int pcrel, bfd_reloc_code_real_type r_type);
+  PARAMS ((fragS * frag, int where, int size, symbolS * add_symbol,
+	   offsetT offset, int pcrel, bfd_reloc_code_real_type r_type));
 extern fixS *fix_new_exp
-  (fragS * frag, int where, int size, expressionS *exp, int pcrel,
-   bfd_reloc_code_real_type r_type);
+  PARAMS ((fragS * frag, int where, int size, expressionS *exp, int pcrel,
+	   bfd_reloc_code_real_type r_type));
 #else
 extern fixS *fix_new
-  (fragS * frag, int where, int size, symbolS * add_symbol,
-   offsetT offset, int pcrel, int r_type);
+  PARAMS ((fragS * frag, int where, int size, symbolS * add_symbol,
+	   offsetT offset, int pcrel, int r_type));
 extern fixS *fix_new_exp
-  (fragS * frag, int where, int size, expressionS *exp, int pcrel,
-   int r_type);
+  PARAMS ((fragS * frag, int where, int size, expressionS *exp, int pcrel,
+	   int r_type));
 #endif
 
-extern void write_print_statistics (FILE *);
+extern void write_print_statistics PARAMS ((FILE *));
 
-#endif /* __write_h__ */
+/* end of write.h */

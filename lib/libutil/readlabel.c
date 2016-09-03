@@ -1,4 +1,4 @@
-/*	$OpenBSD: readlabel.c,v 1.14 2016/08/30 14:44:45 guenther Exp $	*/
+/*	$OpenBSD: readlabel.c,v 1.4 1997/11/18 19:57:29 millert Exp $	*/
 
 /*
  * Copyright (c) 1996, Jason Downs.  All rights reserved.
@@ -26,119 +26,100 @@
  */
 
 #include <sys/types.h>
-#include <sys/disk.h>
-#include <sys/dkio.h>
-#define DKTYPENAMES
-#include <sys/disklabel.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <err.h>
 #include <errno.h>
-#include <limits.h>
 #include <fcntl.h>
 #include <paths.h>
 #include <string.h>
 #include <unistd.h>
-
-#include "util.h"
+#include <util.h>
+#include <sys/dkio.h>
+#define DKTYPENAMES
+#include <sys/disklabel.h>
+#include <sys/ioctl.h>
+#include <sys/param.h>
+#include <sys/stat.h>
 
 /*
  * Try to get a disklabel for the specified device, and return mount_xxx
  * style filesystem type name for the specified partition.
  */
-char *
-readlabelfs(char *device, int verbose)
+
+char *readlabelfs(device, verbose)
+	char *device;
+	int verbose;
 {
-	char rpath[PATH_MAX];
-	struct dk_diskmap dm;
-	struct disklabel dk;
+	char rpath[MAXPATHLEN];
 	char part, *type;
 	struct stat sbuf;
-	int fd = -1;
-
-	/* Perform disk mapping if device is given as a DUID. */
-	if (isduid(device, 0)) {
-		if ((fd = open("/dev/diskmap", O_RDONLY|O_CLOEXEC)) != -1) {
-			bzero(&dm, sizeof(struct dk_diskmap));
-			strlcpy(rpath, device, sizeof(rpath));
-			part = rpath[strlen(rpath) - 1];
-			dm.device = rpath;
-			dm.fd = fd;
-			dm.flags = DM_OPENPART;
-			if (ioctl(fd, DIOCMAP, &dm) == -1)
-				close(fd);
-			else
-				goto disklabel;
-		}
-	}
+	struct disklabel dk;
+	int fd;
 
 	/* Assuming device is of the form /dev/??p, build a raw partition. */
 	if (stat(device, &sbuf) < 0) {
 		if (verbose)
 			warn("%s", device);
-		return (NULL);
+		return(NULL);
 	}
-	switch (sbuf.st_mode & S_IFMT) {
+	switch(sbuf.st_mode & S_IFMT) {
 	case S_IFCHR:
 		/* Ok... already a raw device.  Hmm. */
-		strlcpy(rpath, device, sizeof(rpath));
+		strncpy(rpath, device, sizeof(rpath));
+		rpath[sizeof(rpath) - 1] = '\0';
 
 		/* Change partition name. */
 		part = rpath[strlen(rpath) - 1];
 		rpath[strlen(rpath) - 1] = 'a' + getrawpartition();
 		break;
 	case S_IFBLK:
-		if (strlen(device) > sizeof(_PATH_DEV) - 1) {
+		if (strlen(device) > strlen(_PATH_DEV)) {
 			snprintf(rpath, sizeof(rpath), "%sr%s", _PATH_DEV,
-			    &device[sizeof(_PATH_DEV) - 1]);
+			    &device[strlen(_PATH_DEV)]);
+
 			/* Change partition name. */
 			part = rpath[strlen(rpath) - 1];
 			rpath[strlen(rpath) - 1] = 'a' + getrawpartition();
 			break;
 		}
-		/* FALLTHROUGH */
 	default:
 		if (verbose)
 			warnx("%s: not a device node", device);
-		return (NULL);
+		return(NULL);
 	}
 
 	/* If rpath doesn't exist, change that partition back. */
-	fd = open(rpath, O_RDONLY|O_CLOEXEC);
+	fd = open(rpath, O_RDONLY);
 	if (fd < 0) {
 		if (errno == ENOENT) {
 			rpath[strlen(rpath) - 1] = part;
 
-			fd = open(rpath, O_RDONLY|O_CLOEXEC);
+			fd = open(rpath, O_RDONLY);
 			if (fd < 0) {
 				if (verbose)
 					warn("%s", rpath);
-				return (NULL);
+				return(NULL);
 			}
 		} else {
-			if (verbose)
-				warn("%s", rpath);
-			return (NULL);
+				if (verbose)
+					warn("%s", rpath);
+				return(NULL);
 		}
 	}
-
-disklabel:
-
 	if (ioctl(fd, DIOCGDINFO, &dk) < 0) {
 		if (verbose)
 			warn("%s: couldn't read disklabel", rpath);
 		close(fd);
-		return (NULL);
+		return(NULL);
 	}
 	close(fd);
 
-	if (dk.d_partitions[part - 'a'].p_fstype >= FSMAXTYPES) {
+	if (dk.d_partitions[part - 'a'].p_fstype > FSMAXTYPES) {
 		if (verbose)
 			warnx("%s: bad filesystem type in label", rpath);
-		return (NULL);
+		return(NULL);
 	}
 
 	type = fstypesnames[dk.d_partitions[part - 'a'].p_fstype];
-	return ((type[0] == '\0') ? NULL : type);
+	return((type[0] == '\0') ? NULL : type);
 }

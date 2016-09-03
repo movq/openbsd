@@ -1,8 +1,8 @@
-#	$OpenBSD: Makefile,v 1.10 2012/08/02 13:38:39 okan Exp $
+#	$OpenBSD: Makefile,v 1.5 1997/04/27 20:56:14 millert Exp $
 
 
-RPCSRCS=	bootparam_prot.x klm_prot.x mount.x nfs_prot.x \
-		nlm_prot.x rex.x rnusers.x rusers.x rquota.x rstat.x rwall.x \
+RPCSRCS=	bootparam_prot.x klm_prot.x mount.x nfs_prot.x\
+		nlm_prot.x rex.x rnusers.x rusers.x rquota.x rstat.x rwall.x\
 		sm_inter.x spray.x yp.x yppasswd.x
 SRCS=		${RPCSRCS:R:S/$/.c/g}
 HDRS=           ${RPCSRCS:R:S/$/.h/g}
@@ -10,6 +10,7 @@ CLEANFILES+=	${SRCS} ${HDRS}
 
 LIB=		rpcsvc
 NOMAN=
+NOPIC=
 
 all:		${HDRS}
 beforedepend:	${HDRS}
@@ -18,14 +19,14 @@ includes:	${HDRS}
 	${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m 755 \
 		${DESTDIR}/usr/include/rpcsvc
 	@echo installing rpc .h and .x files
-	@(cd ${.CURDIR}; for i in $(RPCSRCS); do \
-	    cmp -s $(.CURDIR)/$$i ${DESTDIR}/usr/include/rpcsvc/$$i || \
+	@for i in $(HDRS); do \
+	    cmp -s $$i ${DESTDIR}/usr/include/rpcsvc/$$i || \
 		{ j="${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 $$i \
 		${DESTDIR}/usr/include/rpcsvc"; \
 		echo $$j; $$j; } \
-	done)
-	@sleep 1; for i in $(HDRS); do \
-	    cmp -s $$i ${DESTDIR}/usr/include/rpcsvc/$$i || \
+	done
+	@cd ${.CURDIR}; for i in $(RPCSRCS); do \
+	    cmp -s $(.CURDIR)/$$i ${DESTDIR}/usr/include/rpcsvc/$$i || \
 		{ j="${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 $$i \
 		${DESTDIR}/usr/include/rpcsvc"; \
 		echo $$j; $$j; } \
@@ -36,7 +37,7 @@ includes:	${HDRS}
 .SUFFIXES: .x .c .h
 
 .x.c:
-	rpcgen -C -c ${.IMPSRC} -o ${.TARGET}
+	rpcgen -c ${.IMPSRC} -o ${.TARGET}
 
 .x.h:
-	rpcgen -C -h ${.IMPSRC} -o ${.TARGET}
+	rpcgen -h ${.IMPSRC} -o ${.TARGET}

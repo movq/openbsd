@@ -1,7 +1,7 @@
-/*	$OpenBSD: c_test.h,v 1.4 2004/12/20 11:34:26 otto Exp $	*/
+/*	$OpenBSD: c_test.h,v 1.1.1.1 1996/08/14 06:19:10 downsj Exp $	*/
 
 /* Various types of operations.  Keeping things grouped nicely
- * (unary,binary) makes switch() statements more efficient.
+ * (unary,binary) makes switch() statements more efficeint.
  */
 enum Test_op {
 	TO_NONOP = 0,	/* non-operator */
@@ -42,12 +42,14 @@ struct test_env {
 		XPtrV	*av;		/* used by dbtestp_* */
 	} pos;
 	char **wp_end;			/* used by ptest_* */
-	int	(*isa)(Test_env *, Test_meta);
-	const char *(*getopnd) (Test_env *, Test_op, int);
-	int	(*eval)(Test_env *, Test_op, const char *, const char *, int);
-	void	(*error)(Test_env *, int, const char *);
+	int	(*isa) ARGS((Test_env *te, Test_meta meta));
+	const char *(*getopnd) ARGS((Test_env *te, Test_op op, int do_eval));
+	int	(*eval) ARGS((Test_env *te, Test_op op, const char *opnd1,
+				 const char *opnd2, int do_eval));
+	void	(*error) ARGS((Test_env *te, int offset, const char *msg));
 };
 
-Test_op	test_isop(Test_env *, Test_meta, const char *);
-int     test_eval(Test_env *, Test_op, const char *, const char *, int);
-int	test_parse(Test_env *);
+Test_op	test_isop ARGS((Test_env *te, Test_meta meta, const char *s));
+int     test_eval ARGS((Test_env *te, Test_op op, const char *opnd1,
+			const char *opnd2, int do_eval));
+int	test_parse ARGS((Test_env *te));

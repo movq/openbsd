@@ -1,4 +1,4 @@
-/*	$OpenBSD: globals.c,v 1.7 2009/10/27 23:59:27 deraadt Exp $	*/
+/*	$OpenBSD: globals.c,v 1.4 1999/01/18 06:20:52 pjanzen Exp $	*/
 /*	$NetBSD: globals.c,v 1.4 1995/04/22 10:36:57 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +33,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)globals.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: globals.c,v 1.4 1999/01/18 06:20:52 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
@@ -535,24 +547,3 @@ const char loadname[] = { '-', 'G', 'C', 'R', 'D', 'E' };
 
 const char dr[] = { 0, 1, 1, 0, -1, -1, -1, 0, 1 };
 const char dc[] = { 0, 0, -1, -1, -1, 0, 1, 1, 1 };
-
-int mode;
-jmp_buf restart;
-
-char debug;				/* -D */
-char randomize;				/* -x, give first available ship */
-char longfmt;				/* -l, print score in long format */
-char nobells;				/* -b, don't ring bell before Signal */
-
-gid_t gid, egid;
-
-struct scenario *cc;		/* the current scenario */
-struct ship *ls;		/* &cc->ship[cc->vessels] */
-
-int winddir;
-int windspeed;
-int turn;
-int game;
-int alive;
-int people;
-char hasdriver;

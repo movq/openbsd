@@ -157,10 +157,10 @@ start_recursion (fileproc, filesdoneproc, direntproc, dirleaveproc, callerdat,
 #ifdef CLIENT_SUPPORT
 	if (!just_subdirs
 	    && CVSroot_cmdline == NULL
-	    && current_parsed_root->isremote)
+	    && client_active)
 	{
 	    char *root = Name_Root (NULL, update_dir);
-	    if (root && strcmp (root, current_parsed_root->original) != 0)
+	    if (root && strcmp (root, current_root) != 0)
 		/* We're skipping this directory because it is for
 		   a different root.  Therefore, we just want to
 		   do the subdirectories only.  Processing files would
@@ -173,7 +173,6 @@ start_recursion (fileproc, filesdoneproc, direntproc, dirleaveproc, callerdat,
 		   seems to be handled somewhere (else) but why should
 		   it be a separate case?  Needs investigation...  */
 		just_subdirs = 1;
-	    free (root);
 	}
 #endif
 
@@ -204,7 +203,7 @@ start_recursion (fileproc, filesdoneproc, direntproc, dirleaveproc, callerdat,
 		       program_name);
 	    }
 #ifdef CLIENT_SUPPORT
-	    else if (current_parsed_root->isremote && server_started)
+	    else if (client_active && server_started)
 	    {
 		/* In the the case "cvs update foo bar baz", a call to
 		   send_file_names in update.c will have sent the
@@ -290,7 +289,7 @@ start_recursion (fileproc, filesdoneproc, direntproc, dirleaveproc, callerdat,
 	    {
 		if ((which & W_LOCAL) && isdir (CVSADM)
 #ifdef CLIENT_SUPPORT
-		    && !current_parsed_root->isremote
+		    && !client_active
 #endif
 		    )
 		{
@@ -363,8 +362,8 @@ start_recursion (fileproc, filesdoneproc, direntproc, dirleaveproc, callerdat,
 	/* FIXME (njc): in the multiroot case, we don't want to send
 	   argument commands for those top-level directories which do
 	   not contain any subdirectories which have files checked out
-	   from current_parsed_root->original.  If we do, and two repositories
-	   have a module with the same name, nasty things could happen.
+	   from current_root.  If we do, and two repositories have a
+	   module with the same name, nasty things could happen.
 
 	   This is hard.  Perhaps we should send the Argument commands
 	   later in this procedure, after we've had a chance to notice
@@ -440,7 +439,7 @@ start_recursion (fileproc, filesdoneproc, direntproc, dirleaveproc, callerdat,
 	   "Directory xxx" command, which forces the server to descend
 	   and serve the files there.  client.c (send_file_names) has
 	   also been modified to send only those arguments which are
-	   appropriate to current_parsed_root->original.
+	   appropriate to current_root.
 
 	*/
 		
@@ -591,7 +590,7 @@ do_recursion (frame)
 		/* Add it to our list. */
 
 		Node *n = getnode ();
-		n->type = NT_UNKNOWN;
+		n->type = UNKNOWN;
 		n->key = xstrdup (this_root);
 
 		if (addnode (root_directories, n))
@@ -599,9 +598,8 @@ do_recursion (frame)
 	
 	    }
 	
-	    process_this_directory =
-		    (strcmp (current_parsed_root->original, this_root) == 0);
-
+	    process_this_directory = (strcmp (current_root, this_root) == 0);
+	
 	    free (this_root);
 	}
     }
@@ -711,7 +709,7 @@ do_recursion (frame)
 	   place (server_notify).  For local, we can't do them here--we don't
 	   have writelocks in place, and there is no way to get writelocks
 	   here.  */
-	if (current_parsed_root->isremote)
+	if (client_active)
 	    notify_check (repository, update_dir);
 #endif /* CLIENT_SUPPORT */
 
@@ -1017,7 +1015,7 @@ but CVS uses %s for its own purposes; skipping %s directory",
 		/* Add it to our list. */
 
 		Node *n = getnode ();
-		n->type = NT_UNKNOWN;
+		n->type = UNKNOWN;
 		n->key = xstrdup (this_root);
 
 		if (addnode (root_directories, n))
@@ -1025,8 +1023,7 @@ but CVS uses %s for its own purposes; skipping %s directory",
 
 	    }
 
-	    process_this_directory = (strcmp (current_parsed_root->original, this_root) == 0);
-
+	    process_this_directory = (strcmp (current_root, this_root) == 0);
 	    free (this_root);
 	}
     }
@@ -1135,7 +1132,6 @@ addfile (listp, dir, file)
     char *file;
 {
     Node *n;
-    List *fl;
 
     /* add this dir. */
     addlist (listp, dir);
@@ -1148,9 +1144,7 @@ addfile (listp, dir, file)
     }
 
     n->type = DIRS;
-    fl = (List *) n->data;
-    addlist (&fl, file);
-    n->data = (char *) fl;
+    addlist ((List **) &n->data, file);
     return;
 }
 
@@ -1210,7 +1204,6 @@ unroll_files_proc (p, closure)
     }
 
     dirlist = save_dirlist;
-    if (filelist)
-	dellist (&filelist);
+    filelist = NULL;
     return(err);
 }

@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_sentence.c,v 1.7 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_sentence.c	10.7 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -47,10 +49,12 @@
  * v_sentencef -- [count])
  *	Move forward count sentences.
  *
- * PUBLIC: int v_sentencef(SCR *, VICMD *);
+ * PUBLIC: int v_sentencef __P((SCR *, VICMD *));
  */
 int
-v_sentencef(SCR *sp, VICMD *vp)
+v_sentencef(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	enum { BLANK, NONE, PERIOD } state;
 	VCS cs;
@@ -70,7 +74,7 @@ v_sentencef(SCR *sp, VICMD *vp)
 	 * This may not handle "  .  " correctly, but it's real unclear
 	 * what correctly means in that case.
 	 */
-	if (cs.cs_flags == CS_EMP || (cs.cs_flags == 0 && isblank(cs.cs_ch))) {
+	if (cs.cs_flags == CS_EMP || cs.cs_flags == 0 && isblank(cs.cs_ch)) {
 		if (cs_fblank(sp, &cs))
 			return (1);
 		if (--cnt == 0) {
@@ -186,10 +190,12 @@ okret:	vp->m_stop.lno = cs.cs_lno;
  * v_sentenceb -- [count](
  *	Move backward count sentences.
  *
- * PUBLIC: int v_sentenceb(SCR *, VICMD *);
+ * PUBLIC: int v_sentenceb __P((SCR *, VICMD *));
  */
 int
-v_sentenceb(SCR *sp, VICMD *vp)
+v_sentenceb(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	VCS cs;
 	recno_t slno;
@@ -338,7 +344,7 @@ okret:	vp->m_stop.lno = cs.cs_lno;
 	 * All commands move to the end of the range.  Adjust the start of
 	 * the range for motion commands.
 	 */
-	if (ISMOTION(vp)) {
+	if (ISMOTION(vp))
 		if (vp->m_start.cno == 0 &&
 		    (cs.cs_flags != 0 || vp->m_stop.cno == 0)) {
 			if (db_get(sp,
@@ -348,7 +354,6 @@ okret:	vp->m_stop.lno = cs.cs_lno;
 			F_SET(vp, VM_LMODE);
 		} else
 			--vp->m_start.cno;
-	}
 	vp->m_final = vp->m_stop;
 	return (0);
 }

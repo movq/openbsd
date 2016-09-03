@@ -1,4 +1,4 @@
-/*	$OpenBSD: fastfind.c,v 1.13 2015/10/23 07:57:03 tedu Exp $	*/
+/*	$OpenBSD: fastfind.c,v 1.5 1998/07/24 20:50:24 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1995 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,22 +36,22 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: fastfind.c,v 1.13 2015/10/23 07:57:03 tedu Exp $
+ * $Id: fastfind.c,v 1.5 1998/07/24 20:50:24 deraadt Exp $
  */
 
 #ifndef _LOCATE_STATISTIC_
 #define _LOCATE_STATISTIC_
 
-void
+void 
 statistic (fp, path_fcodes)
 	FILE *fp;               /* open database */
 	char *path_fcodes;  	/* for error message */
 {
-	int lines, chars, size, big, zwerg;
-	u_char *p, *s;
-	int c;
+	register int lines, chars, size, big, zwerg;
+	register u_char *p, *s;
+	register int c;
 	int count, umlaut;
-	u_char bigram1[NBG], bigram2[NBG], path[PATH_MAX];
+	u_char bigram1[NBG], bigram2[NBG], path[MAXPATHLEN];
 
 	for (c = 0, p = bigram1, s = bigram2; c < NBG; c++) {
 		p[c] = check_bigram_char(getc(fp));
@@ -64,8 +68,7 @@ statistic (fp, path_fcodes)
 			zwerg++;
 		} else
 			count += c - OFFSET;
-
-		sane_count(count);
+		
 		for (p = path + count; (c = getc(fp)) > SWITCH; size++)
 			if (c < PARITY) {
 				if (c == UMLAUT) {
@@ -87,10 +90,10 @@ statistic (fp, path_fcodes)
 
 	(void)printf("\nDatabase: %s\n", path_fcodes);
 	(void)printf("Compression: Front: %2.2f%%, ",
-	    (float)(100 * (size + big - (2 * NBG))) / chars);
+		     (float)(100 * (size + big - (2 * NBG))) / chars);
 	(void)printf("Bigram: %2.2f%%, ", (float)(100 * (size - big)) / size);
-	(void)printf("Total: %2.2f%%\n",
-	    (float)(100 * (size - (2 * NBG))) / chars);
+	(void)printf("Total: %2.2f%%\n", 
+		     (float)(100 * (size - (2 * NBG))) / chars);
 	(void)printf("Filenames: %d, ", lines);
 	(void)printf("Characters: %d, ", chars);
 	(void)printf("Database size: %d\n", size);
@@ -103,6 +106,7 @@ statistic (fp, path_fcodes)
 
 
 void
+#ifdef FF_MMAP
 
 
 #ifdef FF_ICASE
@@ -117,13 +121,29 @@ fastfind_mmap
 	char *database; 	/* for error message */
 
 
+#else /* MMAP */
+
+
+#ifdef FF_ICASE
+fastfind_icase
+#else
+fastfind
+#endif /* FF_ICASE */
+
+(fp, pathpart, database)
+	FILE *fp;               /* open database */
+	char *pathpart;		/* search string */
+	char *database;		/* for error message */
+
+
+#endif /* MMAP */
 
 {
-	u_char *p, *s, *patend, *q, *foundchar;
-	int c, cc;
+	register u_char *p, *s, *patend, *q, *foundchar;
+	register int c, cc;
 	int count, found, globflag;
 	u_char *cutoff;
-	u_char bigram1[NBG], bigram2[NBG], path[PATH_MAX];
+	u_char bigram1[NBG], bigram2[NBG], path[MAXPATHLEN];
 
 #ifdef FF_ICASE
 	/* use a lookup table for case insensitive search */
@@ -133,15 +153,22 @@ fastfind_mmap
 #endif /* FF_ICASE*/
 
 	/* init bigram table */
+#ifdef FF_MMAP
 	if (len < (2*NBG)) {
 		(void)fprintf(stderr, "database too small: %s\n", database);
 		exit(1);
 	}
-
+	
 	for (c = 0, p = bigram1, s = bigram2; c < NBG; c++, len-= 2) {
 		p[c] = check_bigram_char(*paddr++);
 		s[c] = check_bigram_char(*paddr++);
 	}
+#else
+	for (c = 0, p = bigram1, s = bigram2; c < NBG; c++) {
+		p[c] = check_bigram_char(getc(fp));
+		s[c] = check_bigram_char(getc(fp));
+	}
+#endif /* FF_MMAP */
 
 	/* find optimal (last) char for searching */
 	for (p = pathpart; *p != '\0'; p++)
@@ -168,25 +195,37 @@ fastfind_mmap
 	found = count = 0;
 	foundchar = 0;
 
+#ifdef FF_MMAP
 	c = (u_char)*paddr++; len--;
 	for (; len > 0; ) {
+#else
+	c = getc(fp);
+	for (; c != EOF; ) {
+#endif /* FF_MMAP */
 
 		/* go forward or backward */
 		if (c == SWITCH) { /* big step, an integer */
+#ifdef FF_MMAP
 			count += getwm(paddr) - OFFSET;
 			len -= INTSIZE; paddr += INTSIZE;
+#else
+			count +=  getwf(fp) - OFFSET;
+#endif /* FF_MMAP */
 		} else {	   /* slow step, =< 14 chars */
 			count += c - OFFSET;
 		}
 
-		sane_count(count);
 		/* overlay old path */
 		p = path + count;
 		foundchar = p - 1;
 
 		for (;;) {
-			c = (u_char)*paddr++;
-			len--;
+#ifdef FF_MMAP
+			c = (u_char)*paddr++; 
+		        len--;
+#else
+			c = getc(fp);
+#endif /* FF_MMAP */
 			/*
 			 * == UMLAUT: 8 bit char followed
 			 * <= SWITCH: offset
@@ -198,9 +237,13 @@ fastfind_mmap
 			if (c < PARITY) {
 				if (c <= UMLAUT) {
 					if (c == UMLAUT) {
+#ifdef FF_MMAP
 						c = (u_char)*paddr++;
 						len--;
-
+#else
+						c = getc(fp);
+#endif /* FF_MMAP */
+						
 					} else
 						break; /* SWITCH */
 				}
@@ -211,7 +254,8 @@ fastfind_mmap
 #endif /* FF_ICASE */
 					foundchar = p;
 				*p++ = c;
-			} else {
+			}
+			else {		
 				/* bigrams are parity-marked */
 				TO7BIT(c);
 
@@ -229,15 +273,15 @@ fastfind_mmap
 				*p++ = bigram2[c];
 			}
 		}
-
-		if (found) {			/* previous line matched */
+		
+		if (found) {                     /* previous line matched */
 			cutoff = path;
 			*p-- = '\0';
 			foundchar = p;
 		} else if (foundchar >= path + count) { /* a char matched */
 			*p-- = '\0';
 			cutoff = path + count;
-		} else				/* nothing to do */
+		} else                           /* nothing to do */
 			continue;
 
 		found = 0;
@@ -248,7 +292,7 @@ fastfind_mmap
 #endif /* FF_ICASE */
 			    ) {	/* fast first char check */
 				for (p = patend - 1, q = s - 1; *p != '\0';
-				    p--, q--)
+				     p--, q--)
 					if (*q != *p
 #ifdef FF_ICASE
 					    && TOLOWER(*q) != *p
@@ -256,22 +300,8 @@ fastfind_mmap
 					    )
 						break;
 				if (*p == '\0') {   /* fast match success */
-					char	*shortpath;
-
 					found = 1;
-					shortpath = path;
-					if (f_basename)
-						shortpath = basename(path);
-
-					if ((!f_basename && (!globflag ||
-#ifdef FF_ICASE
-					    !fnmatch(pathpart, shortpath,
-						FNM_CASEFOLD)))
-#else
-					    !fnmatch(pathpart, shortpath, 0)))
-#endif /* FF_ICASE */
-					    || (strstr(shortpath, pathpart) !=
-					    NULL)) {
+					if (!globflag || !fnmatch(pathpart, path, 0)) {
 						if (f_silent)
 							counter++;
 						else if (f_limit) {

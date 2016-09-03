@@ -1,12 +1,14 @@
-#	$OpenBSD: Makefile,v 1.19 2014/07/12 03:32:00 guenther Exp $
+#	$OpenBSD: Makefile,v 1.10 1997/09/21 11:50:32 deraadt Exp $
 
 
 PROG=	rdist
-CFLAGS+=-I. -I${.CURDIR}
+CFLAGS+=-I. -DOS_H=\"os-openbsd.h\"
 SRCS=	gram.y child.c client.c common.c distopt.c docmd.c expand.c \
-	isexec.c lookup.c message.c rdist.c
+	isexec.c lookup.c message.c rdist.c signal.c
 CLEANFILES+=gram.c y.tab.h
-WARNINGS=yes
+
+LDADD=	-lcompat
+DPADD=	${LIBCOMPAT}
 
 .include <bsd.prog.mk>
 

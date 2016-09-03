@@ -1,4 +1,4 @@
-/*	$OpenBSD: bt_put.c,v 1.13 2005/08/05 13:02:59 espie Exp $	*/
+/*	$OpenBSD: bt_put.c,v 1.6 1999/02/15 05:11:23 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,14 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)bt_put.c   8.8 (Berkeley) 7/26/94";
+#else
+static char rcsid[] = "$OpenBSD: bt_put.c,v 1.6 1999/02/15 05:11:23 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 
 #include <errno.h>
@@ -42,7 +54,7 @@
 #include <db.h>
 #include "btree.h"
 
-static EPG *bt_fast(BTREE *, const DBT *, const DBT *, int *);
+static EPG *bt_fast __P((BTREE *, const DBT *, const DBT *, int *));
 
 /*
  * __BT_PUT -- Add a btree item to the tree.
@@ -58,15 +70,19 @@ static EPG *bt_fast(BTREE *, const DBT *, const DBT *, int *);
  *	tree and R_NOOVERWRITE specified.
  */
 int
-__bt_put(const DB *dbp, DBT *key, const DBT *data, u_int flags)
+__bt_put(dbp, key, data, flags)
+	const DB *dbp;
+	DBT *key;
+	const DBT *data;
+	u_int flags;
 {
 	BTREE *t;
 	DBT tkey, tdata;
 	EPG *e;
 	PAGE *h;
-	indx_t idx, nxtindex;
+	indx_t index, nxtindex;
 	pgno_t pg;
-	u_int32_t nbytes, size32;
+	u_int32_t nbytes;
 	int dflags, exact, status;
 	char *dest, db[NOVFLSIZE], kb[NOVFLSIZE];
 
@@ -119,9 +135,8 @@ storekey:		if (__ovfl_put(t, key, &pg) == RET_ERROR)
 			tkey.data = kb;
 			tkey.size = NOVFLSIZE;
 			memmove(kb, &pg, sizeof(pgno_t));
-			size32 = key->size;
 			memmove(kb + sizeof(pgno_t),
-			    &size32, sizeof(u_int32_t));
+			    &key->size, sizeof(u_int32_t));
 			dflags |= P_BIGKEY;
 			key = &tkey;
 		}
@@ -131,9 +146,8 @@ storekey:		if (__ovfl_put(t, key, &pg) == RET_ERROR)
 			tdata.data = db;
 			tdata.size = NOVFLSIZE;
 			memmove(db, &pg, sizeof(pgno_t));
-			size32 = data->size;
 			memmove(db + sizeof(pgno_t),
-			    &size32, sizeof(u_int32_t));
+			    &data->size, sizeof(u_int32_t));
 			dflags |= P_BIGDATA;
 			data = &tdata;
 		}
@@ -145,7 +159,7 @@ storekey:		if (__ovfl_put(t, key, &pg) == RET_ERROR)
 	if (flags == R_CURSOR) {
 		if ((h = mpool_get(t->bt_mp, t->bt_cursor.pg.pgno, 0)) == NULL)
 			return (RET_ERROR);
-		idx = t->bt_cursor.pg.index;
+		index = t->bt_cursor.pg.index;
 		goto delete;
 	}
 
@@ -157,7 +171,7 @@ storekey:		if (__ovfl_put(t, key, &pg) == RET_ERROR)
 		if ((e = __bt_search(t, key, &exact)) == NULL)
 			return (RET_ERROR);
 	h = e->page;
-	idx = e->index;
+	index = e->index;
 
 	/*
 	 * Add the key/data pair to the tree.  If an identical key is already
@@ -179,7 +193,7 @@ storekey:		if (__ovfl_put(t, key, &pg) == RET_ERROR)
 		 * Note, the delete may empty the page, so we need to put a
 		 * new entry into the page immediately.
 		 */
-delete:		if (__bt_dleaf(t, key, h, idx) == RET_ERROR) {
+delete:		if (__bt_dleaf(t, key, h, index) == RET_ERROR) {
 			mpool_put(t->bt_mp, h, 0);
 			return (RET_ERROR);
 		}
@@ -195,35 +209,35 @@ delete:		if (__bt_dleaf(t, key, h, idx) == RET_ERROR) {
 	nbytes = NBLEAFDBT(key->size, data->size);
 	if (h->upper - h->lower < nbytes + sizeof(indx_t)) {
 		if ((status = __bt_split(t, h, key,
-		    data, dflags, nbytes, idx)) != RET_SUCCESS)
+		    data, dflags, nbytes, index)) != RET_SUCCESS)
 			return (status);
 		goto success;
 	}
 
-	if (idx < (nxtindex = NEXTINDEX(h)))
-		memmove(h->linp + idx + 1, h->linp + idx,
-		    (nxtindex - idx) * sizeof(indx_t));
+	if (index < (nxtindex = NEXTINDEX(h)))
+		memmove(h->linp + index + 1, h->linp + index,
+		    (nxtindex - index) * sizeof(indx_t));
 	h->lower += sizeof(indx_t);
 
-	h->linp[idx] = h->upper -= nbytes;
+	h->linp[index] = h->upper -= nbytes;
 	dest = (char *)h + h->upper;
 	WR_BLEAF(dest, key, data, dflags);
 
 	/* If the cursor is on this page, adjust it as necessary. */
 	if (F_ISSET(&t->bt_cursor, CURS_INIT) &&
 	    !F_ISSET(&t->bt_cursor, CURS_ACQUIRE) &&
-	    t->bt_cursor.pg.pgno == h->pgno && t->bt_cursor.pg.index >= idx)
+	    t->bt_cursor.pg.pgno == h->pgno && t->bt_cursor.pg.index >= index)
 		++t->bt_cursor.pg.index;
 
 	if (t->bt_order == NOT) {
 		if (h->nextpg == P_INVALID) {
-			if (idx == NEXTINDEX(h) - 1) {
+			if (index == NEXTINDEX(h) - 1) {
 				t->bt_order = FORWARD;
-				t->bt_last.index = idx;
+				t->bt_last.index = index;
 				t->bt_last.pgno = h->pgno;
 			}
 		} else if (h->prevpg == P_INVALID) {
-			if (idx == 0) {
+			if (index == 0) {
 				t->bt_order = BACK;
 				t->bt_last.index = 0;
 				t->bt_last.pgno = h->pgno;
@@ -256,7 +270,10 @@ u_long bt_cache_hit, bt_cache_miss;
  * 	EPG for new record or NULL if not found.
  */
 static EPG *
-bt_fast(BTREE *t, const DBT *key, const DBT *data, int *exactp)
+bt_fast(t, key, data, exactp)
+	BTREE *t;
+	const DBT *key, *data;
+	int *exactp;
 {
 	PAGE *h;
 	u_int32_t nbytes;

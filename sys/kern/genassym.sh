@@ -1,5 +1,5 @@
-#	$OpenBSD: genassym.sh,v 1.12 2014/07/05 07:18:33 jsg Exp $
-#	$NetBSD: genassym.sh,v 1.9 1998/04/25 19:48:27 matthias Exp $
+#	$OpenBSD: genassym.sh,v 1.3 1997/07/25 05:39:16 mickey Exp $
+#	$NetBSD: genassym.sh,v 1.7 1997/06/25 03:09:06 thorpej Exp $
 
 #
 # Copyright (c) 1997 Matthias Pfaller.
@@ -13,6 +13,11 @@
 # 2. Redistributions in binary form must reproduce the above copyright
 #    notice, this list of conditions and the following disclaimer in the
 #    documentation and/or other materials provided with the distribution.
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by Matthias Pfaller.
+# 4. The name of the author may not be used to endorse or promote products
+#    derived from this software without specific prior written permission
 #
 # THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
 # IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -31,39 +36,24 @@
 
 awk=${AWK:-awk}
 
-if [ "x$1" = "x-c" ] ; then
+if [ $1 = '-c' ] ; then
 	shift
 	ccode=1
 else
 	ccode=0
 fi
 
-TMPC=`mktemp /tmp/genassym_c.XXXXXXXXXX` || exit 1
-TMP=`mktemp /tmp/genassym.XXXXXXXXXX` || {
-	rm -f ${TMPC}
-	exit 1
-}
-trap "rm -f $TMPC $TMP" 0 1 2 3 15
+trap "rm -f /tmp/$$.c /tmp/genassym.$$" 0 1 2 3 15
 
 $awk '
 BEGIN {
 	printf("#ifndef _KERNEL\n#define _KERNEL\n#endif\n");
 	printf("#define	offsetof(type, member) ((size_t)(&((type *)0)->member))\n");
 	defining = 0;
-	type = "long";
-	asmtype = "n";
-	asmprint = "";
 }
 
 $0 ~ /^[ \t]*#.*/ || $0 ~ /^[ \t]*$/ {
 	# Just ignore comments and empty lines
-	next;
-}
-
-$0 ~ /^config[ \t]/ {
-	type = $2;
-	asmtype = $3;
-	asmprint = $4;
 	next;
 }
 
@@ -72,10 +62,7 @@ $0 ~ /^config[ \t]/ {
 		defining = 0;
 		printf("}\n");
 	}
-	if (includes[$2] == 0) {
-		printf("#%s\n", $0);
-		includes[$2] = 1;
-	}
+	printf("#%s\n", $0);
 	next;
 }
 
@@ -89,37 +76,14 @@ $0 ~ /^endif/ {
 	next;
 }
 
-/^union[ \t]/ {
-	structname = $2;
-	prefixname = toupper($3);
-	structtype = "union"
-	if (union[structname] == 1)
-		next;
-	else {
-		union[structname] = 1;
-		$0 = "define " toupper(structname) "_SIZEOF sizeof(union " structname ")";
-	}
-	# fall through
-}
-
 /^struct[ \t]/ {
 	structname = $2;
-	prefixname = toupper($3);
-	structtype = "struct"
-	if (struct[structname] == 1)
-		next;
-	else {
-		struct[structname] = 1;
-		$0 = "define " toupper(structname) "_SIZEOF sizeof(struct " structname ")";
-	}
+	$0 = "define " structname "_SIZEOF sizeof(struct " structname ")";
 	# fall through
 }
 
 /^member[ \t]/ {
-	if (NF > 2)
-		$0 = "define " prefixname toupper($2) " offsetof(" structtype " " structname ", " $3 ")";
-	else
-		$0 = "define " prefixname toupper($2) " offsetof(" structtype " " structname ", " $2 ")";
+	$0 = "define " $2 " offsetof(struct " structname ", " $2 ")";
 	# fall through
 }
 
@@ -140,9 +104,9 @@ $0 ~ /^endif/ {
 	value = $0
 	gsub("^define[ \t]+[A-Za-z_][A-Za-z_0-9]*[ \t]+", "", value)
 	if (ccode)
-		printf("printf(\"#define " $2 " %%ld\\n\", (%s)" value ");\n", type);
+		printf("printf(\"#define " $2 " %%ld\\n\", (long)" value ");\n");
 	else
-		printf("__asm(\"XYZZY %s %%%s0\" : : \"%s\" (%s));\n", $2, asmprint, asmtype, value);
+		printf("__asm(\"XYZZY %s %%0\" : : \"n\" (%s));\n", $2, value);
 	next;
 }
 
@@ -169,13 +133,13 @@ END {
 		printf("return(0); }\n");
 	}
 }
-' ccode=$ccode > $TMPC || exit 1
+' ccode=$ccode > /tmp/$$.c || exit 1
 
 if [ $ccode = 1 ] ; then
-	"$@" -x c $TMPC -o $TMP && $TMP
+	"$@" /tmp/$$.c -o /tmp/genassym.$$ && /tmp/genassym.$$
 else
 	# Kill all of the "#" and "$" modifiers; locore.s already
 	# prepends the correct "constant" modifier.
-	"$@" -x c -S ${TMPC} -o ${TMP} || exit 1
-	sed -e 's/#//g' -e 's/\$//g' ${TMP} | sed -n 's/.*XYZZY/#define/gp'
+	"$@" -S /tmp/$$.c -o -| sed -e 's/#//g' -e 's/\$//g' | \
+	    sed -n 's/.*XYZZY/#define/gp'
 fi

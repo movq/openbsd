@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)nfs_subr.c	8.1 (Berkeley) 6/6/93
- *	$Id: nfs_subr.c,v 1.9 2015/01/22 03:43:58 guenther Exp $
+ *	$Id: nfs_subr.c,v 1.1.1.1 1995/10/18 08:47:11 deraadt Exp $
  */
 
 #include "am.h"
@@ -49,8 +53,11 @@ NFS_ERROR_MAPPING
 #define nfs_error(e) ((nfsstat)(e))
 #endif /* NFS_ERROR_MAPPING */
 
-static char *
-do_readlink(am_node *mp, int *error_return, struct attrstat **attrpp)
+static char *do_readlink P((am_node *mp, int *error_return, struct attrstat **attrpp));
+static char *do_readlink(mp, error_return, attrpp)
+am_node *mp;
+int *error_return;
+struct attrstat **attrpp;
 {
 	char *ln;
 
@@ -78,17 +85,23 @@ do_readlink(am_node *mp, int *error_return, struct attrstat **attrpp)
 	return ln;
 }
 
-void *
-nfsproc_null_2_svc(void *argp, struct svc_req *rqstp)
+/*ARGSUSED*/
+voidp 
+nfsproc_null_2(argp, rqstp)
+voidp argp;
+struct svc_req *rqstp;
 {
 	static char res;
 
-	return &res;
+	return (voidp) &res;
 }
 
 
+/*ARGSUSED*/
 struct attrstat *
-nfsproc_getattr_2_svc(struct nfs_fh *argp, struct svc_req *rqstp)
+nfsproc_getattr_2(argp, rqstp)
+struct nfs_fh *argp;
+struct svc_req *rqstp;
 {
 	static struct attrstat res;
 	am_node *mp;
@@ -101,13 +114,16 @@ nfsproc_getattr_2_svc(struct nfs_fh *argp, struct svc_req *rqstp)
 
 	mp = fh_to_mp2(argp, &retry);
 	if (mp == 0) {
+#ifdef PRECISE_SYMLINKS
 getattr_retry:
+#endif /* PRECISE_SYMLINKS */
 
 		if (retry < 0)
 			return 0;
 		res.status = nfs_error(retry);
 	} else {
 		struct attrstat *attrp = &mp->am_attr;
+#ifdef PRECISE_SYMLINKS
 		if (mp->am_fattr.type == NFLNK) {
 			/*
 			 * Make sure we can read the link,
@@ -117,6 +133,7 @@ getattr_retry:
 			if (ln == 0)
 				goto getattr_retry;
 		}
+#endif /* PRECISE_SYMLINKS */
 #ifdef DEBUG
 		Debug(D_TRACE)
 			plog(XLOG_DEBUG, "\tstat(%s), size = %d", mp->am_path, attrp->attrstat_u.attributes.size);
@@ -129,8 +146,11 @@ getattr_retry:
 }
 
 
+/*ARGSUSED*/
 struct attrstat *
-nfsproc_setattr_2_svc(struct sattrargs *argp, struct svc_req *rqstp)
+nfsproc_setattr_2(argp, rqstp)
+struct sattrargs *argp;
+struct svc_req *rqstp;
 {
 	static struct attrstat res;
 
@@ -143,17 +163,23 @@ nfsproc_setattr_2_svc(struct sattrargs *argp, struct svc_req *rqstp)
 }
 
 
-void *
-nfsproc_root_2_svc(void *argp, struct svc_req *rqstp)
+/*ARGSUSED*/
+voidp 
+nfsproc_root_2(argp, rqstp)
+voidp argp;
+struct svc_req *rqstp;
 {
 	static char res;
 
-	return &res;
+	return (voidp)&res;
 }
 
 
+/*ARGSUSED*/
 struct diropres *
-nfsproc_lookup_2_svc(struct diropargs *argp, struct svc_req *rqstp)
+nfsproc_lookup_2(argp, rqstp)
+struct diropargs *argp;
+struct svc_req *rqstp;
 {
 	static struct diropres res;
 	am_node *mp;
@@ -199,8 +225,11 @@ nfsproc_lookup_2_svc(struct diropargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 struct readlinkres *
-nfsproc_readlink_2_svc(struct nfs_fh *argp, struct svc_req *rqstp)
+nfsproc_readlink_2(argp, rqstp)
+struct nfs_fh *argp;
+struct svc_req *rqstp;
 {
 	static struct readlinkres res;
 	am_node *mp;
@@ -235,12 +264,15 @@ readlink_retry:
 }
 
 
+/*ARGSUSED*/
 struct readres *
-nfsproc_read_2_svc(struct readargs *argp, struct svc_req *rqstp)
+nfsproc_read_2(argp, rqstp)
+struct readargs *argp;
+struct svc_req *rqstp;
 {
 	static struct readres res;
 
-	bzero(&res, sizeof(res));
+	bzero((char *)&res, sizeof(res));
 
 	res.status = nfs_error(EACCES);
 
@@ -248,17 +280,23 @@ nfsproc_read_2_svc(struct readargs *argp, struct svc_req *rqstp)
 }
 
 
-void *
-nfsproc_writecache_2_svc(void *argp, struct svc_req *rqstp)
+/*ARGSUSED*/
+voidp 
+nfsproc_writecache_2(argp, rqstp)
+voidp argp;
+struct svc_req *rqstp;
 {
 	static char res;
 
-	return &res;
+	return (voidp) &res;
 }
 
 
+/*ARGSUSED*/
 struct attrstat *
-nfsproc_write_2_svc(writeargs *argp, struct svc_req *rqstp)
+nfsproc_write_2(argp, rqstp)
+writeargs *argp;
+struct svc_req *rqstp;
 {
 	static struct attrstat res;
 
@@ -271,8 +309,11 @@ nfsproc_write_2_svc(writeargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 struct diropres *
-nfsproc_create_2_svc(createargs *argp, struct svc_req *rqstp)
+nfsproc_create_2(argp, rqstp)
+createargs *argp;
+struct svc_req *rqstp;
 {
 	static struct diropres res;
 
@@ -285,15 +326,17 @@ nfsproc_create_2_svc(createargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 static nfsstat *
-unlink_or_rmdir(struct diropargs *argp, struct svc_req *rqstp,
-    int unlinkp)
+unlink_or_rmdir(argp, rqstp, unlinkp)
+struct diropargs *argp;
+struct svc_req *rqstp;
+int unlinkp;
 {
 	static nfsstat res;
 	int retry;
 	/*mntfs *mf;*/
 	am_node *mp = fh_to_mp3(&argp->dir, &retry, VLOOK_DELETE);
-
 	if (mp == 0) {
 		if (retry < 0)
 			return 0;
@@ -332,14 +375,20 @@ out:
 }
 
 
+/*ARGSUSED*/
 nfsstat *
-nfsproc_remove_2_svc(struct diropargs *argp, struct svc_req *rqstp)
+nfsproc_remove_2(argp, rqstp)
+struct diropargs *argp;
+struct svc_req *rqstp;
 {
 	return unlink_or_rmdir(argp, rqstp, TRUE);
 }
 
+/*ARGSUSED*/
 nfsstat *
-nfsproc_rename_2_svc(renameargs *argp, struct svc_req *rqstp)
+nfsproc_rename_2(argp, rqstp)
+renameargs *argp;
+struct svc_req *rqstp;
 {
 	static nfsstat res;
 	if (!fh_to_mp(&argp->from.dir) || !fh_to_mp(&argp->to.dir))
@@ -359,8 +408,11 @@ nfsproc_rename_2_svc(renameargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 nfsstat *
-nfsproc_link_2_svc(linkargs *argp, struct svc_req *rqstp)
+nfsproc_link_2(argp, rqstp)
+linkargs *argp;
+struct svc_req *rqstp;
 {
 	static nfsstat res;
 	if (!fh_to_mp(&argp->from) || !fh_to_mp(&argp->to.dir))
@@ -372,8 +424,11 @@ nfsproc_link_2_svc(linkargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 nfsstat *
-nfsproc_symlink_2_svc(symlinkargs *argp, struct svc_req *rqstp)
+nfsproc_symlink_2(argp, rqstp)
+symlinkargs *argp;
+struct svc_req *rqstp;
 {
 	static nfsstat res;
 	if (!fh_to_mp(&argp->from.dir))
@@ -385,8 +440,11 @@ nfsproc_symlink_2_svc(symlinkargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 struct diropres *
-nfsproc_mkdir_2_svc(createargs *argp, struct svc_req *rqstp)
+nfsproc_mkdir_2(argp, rqstp)
+createargs *argp;
+struct svc_req *rqstp;
 {
 	static struct diropres res;
 	if (!fh_to_mp(&argp->where.dir))
@@ -398,15 +456,21 @@ nfsproc_mkdir_2_svc(createargs *argp, struct svc_req *rqstp)
 }
 
 
+/*ARGSUSED*/
 nfsstat *
-nfsproc_rmdir_2_svc(struct diropargs *argp, struct svc_req *rqstp)
+nfsproc_rmdir_2(argp, rqstp)
+struct diropargs *argp;
+struct svc_req *rqstp;
 {
 	return unlink_or_rmdir(argp, rqstp, FALSE);
 }
 
 
+/*ARGSUSED*/
 struct readdirres *
-nfsproc_readdir_2_svc(readdirargs *argp, struct svc_req *rqstp)
+nfsproc_readdir_2(argp, rqstp)
+readdirargs *argp;
+struct svc_req *rqstp;
 {
 	static readdirres res;
 	static entry e_res[MAX_READDIR_ENTRIES];
@@ -436,8 +500,11 @@ nfsproc_readdir_2_svc(readdirargs *argp, struct svc_req *rqstp)
 	return &res;
 }
 
+/*ARGSUSED*/
 struct statfsres *
-nfsproc_statfs_2_svc(struct nfs_fh *argp, struct svc_req *rqstp)
+nfsproc_statfs_2(argp, rqstp)
+struct nfs_fh *argp;
+struct svc_req *rqstp;
 {
 	static statfsres res;
 	am_node *mp;
@@ -467,7 +534,11 @@ nfsproc_statfs_2_svc(struct nfs_fh *argp, struct svc_req *rqstp)
 
 		fp->tsize = 1024;
 		fp->bsize = 4096;
+#ifdef HAS_EMPTY_AUTOMOUNTS
 		fp->blocks = 0;
+#else
+		fp->blocks = 1;
+#endif
 		fp->bfree = 0;
 		fp->bavail = 0;
 

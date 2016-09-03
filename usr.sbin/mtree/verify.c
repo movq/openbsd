@@ -1,4 +1,4 @@
-/*	$OpenBSD: verify.c,v 1.21 2016/08/16 16:41:46 krw Exp $	*/
+/*	$OpenBSD: verify.c,v 1.6 1998/08/20 20:11:42 marc Exp $	*/
 /*	$NetBSD: verify.c,v 1.10 1995/03/07 21:26:28 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)verify.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: verify.c,v 1.6 1998/08/20 20:11:42 marc Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fts.h>
@@ -37,44 +50,43 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
-#include <limits.h>
 #include "mtree.h"
 #include "extern.h"
 
-extern u_int32_t crc_total;
+extern int32_t crc_total;
 extern int ftsoptions;
 extern int dflag, eflag, qflag, rflag, sflag, uflag;
-extern char fullpath[PATH_MAX];
+extern char fullpath[MAXPATHLEN];
 
 static NODE *root;
-static char path[PATH_MAX];
+static char path[MAXPATHLEN];
 
-static void	miss(NODE *, char *, size_t);
-static int	vwalk(void);
+static void	miss __P((NODE *, char *));
+static int	vwalk __P((void));
 
 int
-verify(void)
+verify()
 {
 	int rval;
 
 	root = spec();
 	rval = vwalk();
-	miss(root, path, sizeof(path));
+	miss(root, path);
 	return (rval);
 }
 
 static int
-vwalk(void)
+vwalk()
 {
-	FTS *t;
-	FTSENT *p;
-	NODE *ep, *level;
+	register FTS *t;
+	register FTSENT *p;
+	register NODE *ep, *level;
 	int specdepth, rval;
 	char *argv[2];
 
 	argv[0] = ".";
 	argv[1] = NULL;
-	if ((t = fts_open(argv, ftsoptions, dsort)) == NULL)
+	if ((t = fts_open(argv, ftsoptions, NULL)) == NULL)
 		error("fts_open: %s", strerror(errno));
 	level = root;
 	specdepth = rval = 0;
@@ -85,7 +97,7 @@ vwalk(void)
 		case FTS_DP:
 			if (specdepth > p->fts_level) {
 				for (level = level->parent; level->prev;
-				      level = level->prev);
+				      level = level->prev);  
 				--specdepth;
 			}
 			continue;
@@ -107,8 +119,7 @@ vwalk(void)
 			    !fnmatch(ep->name, p->fts_name, FNM_PATHNAME)) ||
 			    !strcmp(ep->name, p->fts_name)) {
 				ep->flags |= F_VISIT;
-				if ((ep->flags & F_NOCHANGE) == 0 &&
-				    compare(ep->name, ep, p))
+				if (compare(ep->name, ep, p))
 					rval = MISMATCHEXIT;
 				if (ep->flags & F_IGN)
 					(void)fts_set(t, p, FTS_SKIP);
@@ -130,11 +141,9 @@ extra:
 				    ? rmdir : unlink)(p->fts_accpath)) {
 					(void)printf(", not removed: %s",
 					    strerror(errno));
-					rval = ERROREXIT;
 				} else
 					(void)printf(", removed");
-			} else
-				rval = MISMATCHEXIT;
+			}
 			(void)putchar('\n');
 		}
 		(void)fts_set(t, p, FTS_SKIP);
@@ -147,17 +156,19 @@ extra:
 }
 
 static void
-miss(NODE *p, char *tail, size_t len)
+miss(p, tail)
+	register NODE *p;
+	register char *tail;
 {
-	int create;
-	char *tp;
+	register int create;
+	register char *tp;
 
 	for (; p; p = p->next) {
 		if ((p->flags & F_OPT) && !(p->flags & F_VISIT))
 			continue;
 		if (p->type != F_DIR && (dflag || p->flags & F_VISIT))
 			continue;
-		(void)strlcpy(tail, p->name, len);
+		(void)strcpy(tail, p->name);
 		if (!(p->flags & F_VISIT)) {
 			/* Don't print missing message if file exists as a
 			   symbolic link and the -q flag is set. */
@@ -174,7 +185,7 @@ miss(NODE *p, char *tail, size_t len)
 		}
 
 		create = 0;
-		if (!(p->flags & F_VISIT) && uflag) {
+		if (!(p->flags & F_VISIT) && uflag)
 			if (!(p->flags & (F_UID | F_UNAME)))
 			    (void)printf(" (not created: user not specified)");
 			else if (!(p->flags & (F_GID | F_GNAME)))
@@ -188,14 +199,13 @@ miss(NODE *p, char *tail, size_t len)
 				create = 1;
 				(void)printf(" (created)");
 			}
-		}
 
 		if (!(p->flags & F_VISIT))
 			(void)putchar('\n');
 
 		for (tp = tail; *tp; ++tp);
 		*tp = '/';
-		miss(p->child, tp + 1, len - (tp + 1 - tail));
+		miss(p->child, tp + 1);
 		*tp = '\0';
 
 		if (!create)

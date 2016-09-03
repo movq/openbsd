@@ -1,5 +1,3 @@
-/*	$OpenBSD: setsignal.h,v 1.4 2015/10/14 04:55:17 guenther Exp $	*/
-
 /*
  * Copyright (c) 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -20,10 +18,10 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
- * @(#) $Id: setsignal.h,v 1.4 2015/10/14 04:55:17 guenther Exp $ (LBL)
+ * @(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/setsignal.h,v 1.1 1999/07/28 20:41:36 jakob Exp $ (LBL)
  */
 #ifndef setsignal_h
 #define setsignal_h
 
-void	setsignal(int, void (*)(int));
+RETSIGTYPE (*setsignal(int, RETSIGTYPE (*)(int)))(int);
 #endif

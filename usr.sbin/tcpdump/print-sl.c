@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-sl.c,v 1.19 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1989, 1990, 1991, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,20 +19,34 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-sl.c,v 1.8 1999/09/16 20:58:47 brad Exp $ (LBL)";
+#endif
+
 #ifdef HAVE_NET_SLIP_H
+#include <sys/param.h>
 #include <sys/time.h>
+#include <sys/timeb.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/mbuf.h>
 #include <sys/socket.h>
 
+#ifdef __STDC__
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#include <netinet/ip_var.h>
 #include <netinet/udp.h>
+#include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
 #include <net/slcompress.h>
 #include <net/slip.h>
@@ -42,8 +54,8 @@ struct rtentry;
 #include <ctype.h>
 #include <netdb.h>
 #include <pcap.h>
+#include <signal.h>
 #include <stdio.h>
-#include <limits.h>
 
 #include "interface.h"
 #include "addrtoname.h"
@@ -68,13 +80,13 @@ static void compressed_sl_print(const u_char *, const struct ip *, u_int, int);
 void
 sl_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 {
-	u_int caplen = h->caplen;
-	u_int length = h->len;
-	const struct ip *ip;
+	register u_int caplen = h->caplen;
+	register u_int length = h->len;
+	register const struct ip *ip;
 
 	ts_print(&h->ts);
 
-	if (caplen < SLIP_HDRLEN || length < SLIP_HDRLEN) {
+	if (caplen < SLIP_HDRLEN) {
 		printf("[|slip]");
 		goto out;
 	}
@@ -93,18 +105,7 @@ sl_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 	if (eflag)
 		sliplink_print(p, ip, length);
 
-	switch (ip->ip_v) {
-	case 4:
-		ip_print((u_char *)ip, length);
-		break;
-#ifdef INET6
-	case 6:
-		ip6_print((u_char *)ip, length);
-		break;
-#endif
-	default:
-		printf ("ip v%d", ip->ip_v);
-	}
+	ip_print((u_char *)ip, length);
 
 	if (xflag)
 		default_print((u_char *)ip, caplen - SLIP_HDRLEN);
@@ -116,9 +117,9 @@ sl_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 void
 sl_bsdos_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 {
-	u_int caplen = h->caplen;
-	u_int length = h->len;
-	const struct ip *ip;
+	register u_int caplen = h->caplen;
+	register u_int length = h->len;
+	register const struct ip *ip;
 
 	ts_print(&h->ts);
 
@@ -152,7 +153,8 @@ sl_bsdos_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 }
 
 static void
-sliplink_print(const u_char *p, const struct ip *ip, u_int length)
+sliplink_print(register const u_char *p, register const struct ip *ip,
+	       register u_int length)
 {
 	int dir;
 	u_int hlen;
@@ -163,7 +165,7 @@ sliplink_print(const u_char *p, const struct ip *ip, u_int length)
 
 	if (nflag) {
 		/* XXX just dump the header */
-		int i;
+		register int i;
 
 		for (i = SLX_CHDR; i < SLX_CHDR + CHDR_LEN - 1; ++i)
 			printf("%02x.", p[i]);
@@ -200,9 +202,9 @@ sliplink_print(const u_char *p, const struct ip *ip, u_int length)
 }
 
 static const u_char *
-print_sl_change(const char *str, const u_char *cp)
+print_sl_change(const char *str, register const u_char *cp)
 {
-	u_int i;
+	register u_int i;
 
 	if ((i = *cp++) == 0) {
 		i = EXTRACT_16BITS(cp);
@@ -213,9 +215,9 @@ print_sl_change(const char *str, const u_char *cp)
 }
 
 static const u_char *
-print_sl_winchange(const u_char *cp)
+print_sl_winchange(register const u_char *cp)
 {
-	short i;
+	register short i;
 
 	if ((i = *cp++) == 0) {
 		i = EXTRACT_16BITS(cp);
@@ -232,8 +234,8 @@ static void
 compressed_sl_print(const u_char *chdr, const struct ip *ip,
 		    u_int length, int dir)
 {
-	const u_char *cp = chdr;
-	u_int flags, hlen;
+	register const u_char *cp = chdr;
+	register u_int flags, hlen;
 
 	flags = *cp++;
 	if (flags & NEW_C) {
@@ -276,7 +278,7 @@ compressed_sl_print(const u_char *chdr, const struct ip *ip,
 	hlen = ip->ip_hl;
 	hlen += ((struct tcphdr *)&((int32_t *)ip)[hlen])->th_off;
 	lastlen[dir][lastconn] = length - (hlen << 2);
-	printf(" %d (%d)", lastlen[dir][lastconn], (int)(cp - chdr));
+	printf(" %d (%d)", lastlen[dir][lastconn], cp - chdr);
 }
 #else
 #include <sys/types.h>

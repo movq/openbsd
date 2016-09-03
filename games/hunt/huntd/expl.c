@@ -1,47 +1,20 @@
-/*	$OpenBSD: expl.c,v 1.14 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: expl.c,v 1.5 1999/08/30 23:30:08 d Exp $	*/
 /*	$NetBSD: expl.c,v 1.2 1997/10/10 16:33:18 lukem Exp $	*/
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/select.h>
 #include <stdlib.h>
 #include <syslog.h>
 #include <string.h>
-
-#include "conf.h"
 #include "hunt.h"
 #include "server.h"
+#include "conf.h"
 
-static	void	remove_wall(int, int);
-static	void	init_removed(void);
+static	void	remove_wall __P((int, int));
+static	void	init_removed __P((void));
 
 
 /*
@@ -49,7 +22,9 @@ static	void	init_removed(void);
  *	Show the explosions as they currently are
  */
 void
-showexpl(int y, int x, char type)
+showexpl(y, x, type)
+	int	y, x;
+	char	type;
 {
 	PLAYER	*pp;
 	EXPL	*ep;
@@ -58,9 +33,9 @@ showexpl(int y, int x, char type)
 		return;
 	if (x < 0 || x >= WIDTH)
 		return;
-	ep = malloc(sizeof (EXPL));
+	ep = (EXPL *) malloc(sizeof (EXPL));	/* NOSTRICT */
 	if (ep == NULL) {
-		logit(LOG_ERR, "malloc");
+		log(LOG_ERR, "malloc");
 		return;
 	}
 	ep->e_y = y;
@@ -105,7 +80,7 @@ showexpl(int y, int x, char type)
  *	top
  */
 void
-rollexpl(void)
+rollexpl()
 {
 	EXPL	*ep;
 	PLAYER	*pp;
@@ -138,7 +113,7 @@ rollexpl(void)
 }
 
 int
-can_rollexpl(void)
+can_rollexpl()
 {
 	int i;
 
@@ -152,11 +127,11 @@ static	REGEN	*removed = NULL;
 static	REGEN	*rem_index = NULL;
 
 static void
-init_removed(void)
+init_removed()
 {
-	rem_index = removed = calloc(conf_maxremove, sizeof(REGEN));
+	rem_index = removed = malloc(conf_maxremove * sizeof(REGEN));
 	if (rem_index == NULL) {
-		logit(LOG_ERR, "malloc");
+		log(LOG_ERR, "malloc");
 		cleanup(1);
 	}
 }
@@ -167,7 +142,8 @@ init_removed(void)
  *		 the location currently pointed at.
  */
 static void
-remove_wall(int y, int x)
+remove_wall(y, x)
+	int	y, x;
 {
 	REGEN	*r;
 	PLAYER	*pp;
@@ -240,7 +216,7 @@ found:
  *	Clear out the walls array
  */
 void
-clearwalls(void)
+clearwalls()
 {
 	REGEN	*rp;
 

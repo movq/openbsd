@@ -1,8 +1,7 @@
 /* ldctor.c -- constructor support routines
-   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
-   2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1991, 92, 93, 94, 1995 Free Software Foundation, Inc.
    By Steve Chamberlain <sac@cygnus.com>
-
+   
 This file is part of GLD, the Gnu Linker.
 
 GLD is free software; you can redistribute it and/or modify
@@ -16,31 +15,24 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with GLD; see the file COPYING.  If not, write to the Free
-Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-02111-1307, USA.  */
+along with GLD; see the file COPYING.  If not, write to
+the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "bfd.h"
 #include "sysdep.h"
 #include "bfdlink.h"
-#include "safe-ctype.h"
 
 #include "ld.h"
 #include "ldexp.h"
 #include "ldlang.h"
 #include "ldmisc.h"
-#include <ldgram.h>
+#include "ldgram.h"
 #include "ldmain.h"
 #include "ldctor.h"
 
 /* The list of statements needed to handle constructors.  These are
    invoked by the command CONSTRUCTORS in the linker script.  */
 lang_statement_list_type constructor_list;
-
-/* Whether the constructors should be sorted.  Note that this is
-   global for the entire link; we assume that there is only a single
-   CONSTRUCTORS command in the linker script.  */
-bfd_boolean constructors_sorted;
 
 /* The sets we have seen.  */
 struct set_info *sets;
@@ -53,23 +45,24 @@ struct set_info *sets;
    function will construct the sets.  */
 
 void
-ldctor_add_set_entry (struct bfd_link_hash_entry *h,
-		      bfd_reloc_code_real_type reloc,
-		      const char *name,
-		      asection *section,
-		      bfd_vma value)
+ldctor_add_set_entry (h, reloc, name, section, value)
+     struct bfd_link_hash_entry *h;
+     bfd_reloc_code_real_type reloc;
+     const char *name;
+     asection *section;
+     bfd_vma value;
 {
   struct set_info *p;
   struct set_element *e;
   struct set_element **epp;
 
-  for (p = sets; p != NULL; p = p->next)
+  for (p = sets; p != (struct set_info *) NULL; p = p->next)
     if (p->h == h)
       break;
 
-  if (p == NULL)
+  if (p == (struct set_info *) NULL)
     {
-      p = xmalloc (sizeof (struct set_info));
+      p = (struct set_info *) xmalloc (sizeof (struct set_info));
       p->next = sets;
       sets = p;
       p->h = h;
@@ -81,8 +74,7 @@ ldctor_add_set_entry (struct bfd_link_hash_entry *h,
     {
       if (p->reloc != reloc)
 	{
-	  einfo (_("%P%X: Different relocs used in set %s\n"),
-		 h->root.string);
+	  einfo ("%P%X: Different relocs used in set %s\n", h->root.string);
 	  return;
 	}
 
@@ -99,13 +91,13 @@ ldctor_add_set_entry (struct bfd_link_hash_entry *h,
 	  && strcmp (bfd_get_target (section->owner),
 		     bfd_get_target (p->elements->section->owner)) != 0)
 	{
-	  einfo (_("%P%X: Different object file formats composing set %s\n"),
+	  einfo ("%P%X: Different object file formats composing set %s\n",
 		 h->root.string);
 	  return;
 	}
     }
 
-  e = xmalloc (sizeof (struct set_element));
+  e = (struct set_element *) xmalloc (sizeof (struct set_element));
   e->next = NULL;
   e->name = name;
   e->section = section;
@@ -118,143 +110,36 @@ ldctor_add_set_entry (struct bfd_link_hash_entry *h,
   ++p->count;
 }
 
-/* Get the priority of a g++ global constructor or destructor from the
-   symbol name.  */
-
-static int
-ctor_prio (const char *name)
-{
-  /* The name will look something like _GLOBAL_$I$65535$test02__Fv.
-     There might be extra leading underscores, and the $ characters
-     might be something else.  The I might be a D.  */
-
-  while (*name == '_')
-    ++name;
-
-  if (strncmp (name, "GLOBAL_", sizeof "GLOBAL_" - 1) != 0)
-    return -1;
-
-  name += sizeof "GLOBAL_" - 1;
-
-  if (name[0] != name[2])
-    return -1;
-  if (name[1] != 'I' && name[1] != 'D')
-    return -1;
-  if (! ISDIGIT (name[3]))
-    return -1;
-
-  return atoi (name + 3);
-}
-
-/* This function is used to sort constructor elements by priority.  It
-   is called via qsort.  */
-
-static int
-ctor_cmp (const void *p1, const void *p2)
-{
-  const struct set_element * const *pe1 = p1;
-  const struct set_element * const *pe2 = p2;
-  const char *n1;
-  const char *n2;
-  int prio1;
-  int prio2;
-
-  n1 = (*pe1)->name;
-  if (n1 == NULL)
-    n1 = "";
-  n2 = (*pe2)->name;
-  if (n2 == NULL)
-    n2 = "";
-
-  /* We need to sort in reverse order by priority.  When two
-     constructors have the same priority, we should maintain their
-     current relative position.  */
-
-  prio1 = ctor_prio (n1);
-  prio2 = ctor_prio (n2);
-
-  /* We sort in reverse order because that is what g++ expects.  */
-  if (prio1 < prio2)
-    return 1;
-  else if (prio1 > prio2)
-    return -1;
-
-  /* Force a stable sort.  */
-
-  if (pe1 < pe2)
-    return -1;
-  else if (pe1 > pe2)
-    return 1;
-  else
-    return 0;
-}
-
 /* This function is called after the first phase of the link and
    before the second phase.  At this point all set information has
    been gathered.  We now put the statements to build the sets
    themselves into constructor_list.  */
 
 void
-ldctor_build_sets (void)
+ldctor_build_sets ()
 {
-  static bfd_boolean called;
+  static boolean called;
   lang_statement_list_type *old;
-  bfd_boolean header_printed;
+  boolean header_printed;
   struct set_info *p;
 
   /* The emulation code may call us directly, but we only want to do
      this once.  */
   if (called)
     return;
-  called = TRUE;
-
-  if (constructors_sorted)
-    {
-      for (p = sets; p != NULL; p = p->next)
-	{
-	  int c, i;
-	  struct set_element *e;
-	  struct set_element **array;
-
-	  if (p->elements == NULL)
-	    continue;
-
-	  c = 0;
-	  for (e = p->elements; e != NULL; e = e->next)
-	    ++c;
-
-	  array = xmalloc (c * sizeof *array);
-
-	  i = 0;
-	  for (e = p->elements; e != NULL; e = e->next)
-	    {
-	      array[i] = e;
-	      ++i;
-	    }
-
-	  qsort (array, c, sizeof *array, ctor_cmp);
-
-	  e = array[0];
-	  p->elements = e;
-	  for (i = 0; i < c - 1; i++)
-	    array[i]->next = array[i + 1];
-	  array[i]->next = NULL;
-
-	  free (array);
-	}
-    }
+  called = true;
 
   old = stat_ptr;
   stat_ptr = &constructor_list;
 
   lang_list_init (stat_ptr);
 
-  header_printed = FALSE;
-  for (p = sets; p != NULL; p = p->next)
+  header_printed = false;
+  for (p = sets; p != (struct set_info *) NULL; p = p->next)
     {
       struct set_element *e;
       reloc_howto_type *howto;
-      int reloc_size, size;
+      int size;
 
       /* If the symbol is defined, we may have been invoked from
 	 collect, and the sets may already have been built, so we do
@@ -271,28 +156,27 @@ ldctor_build_sets (void)
 	     .long elementN
 	     .long 0
 	 except that we use the right size instead of .long.  When
-	 generating relocatable output, we generate relocs instead of
+	 generating relocateable output, we generate relocs instead of
 	 addresses.  */
       howto = bfd_reloc_type_lookup (output_bfd, p->reloc);
-      if (howto == NULL)
+      if (howto == (reloc_howto_type *) NULL)
 	{
-	  if (link_info.relocatable)
+	  if (link_info.shared || link_info.relocateable)
 	    {
-	      einfo (_("%P%X: %s does not support reloc %s for set %s\n"),
+	      einfo ("%P%X: %s does not support reloc %s for set %s\n",
 		     bfd_get_target (output_bfd),
 		     bfd_get_reloc_code_name (p->reloc),
 		     p->h->root.string);
 	      continue;
 	    }
 
-	  /* If this is not a relocatable link, all we need is the
+	  /* If this is not a relocateable link, all we need is the
 	     size, which we can get from the input BFD.  */
-	  if (p->elements->section->owner != NULL)
-	    howto = bfd_reloc_type_lookup (p->elements->section->owner,
-					   p->reloc);
+	  howto = bfd_reloc_type_lookup (p->elements->section->owner,
+					 p->reloc);
 	  if (howto == NULL)
 	    {
-	      einfo (_("%P%X: %s does not support reloc %s for set %s\n"),
+	      einfo ("%P%X: %s does not support reloc %s for set %s\n",
 		     bfd_get_target (p->elements->section->owner),
 		     bfd_get_reloc_code_name (p->reloc),
 		     p->h->root.string);
@@ -300,33 +184,24 @@ ldctor_build_sets (void)
 	    }
 	}
 
-      reloc_size = bfd_get_reloc_size (howto);
-      switch (reloc_size)
+      switch (bfd_get_reloc_size (howto))
 	{
 	case 1: size = BYTE; break;
 	case 2: size = SHORT; break;
 	case 4: size = LONG; break;
-	case 8:
-	  if (howto->complain_on_overflow == complain_overflow_signed)
-	    size = SQUAD;
-	  else
-	    size = QUAD;
-	  break;
+	case 8: size = QUAD; break;
 	default:
-	  einfo (_("%P%X: Unsupported size %d for set %s\n"),
+	  einfo ("%P%X: Unsupported size %d for set %s\n",
 		 bfd_get_reloc_size (howto), p->h->root.string);
 	  size = LONG;
 	  break;
 	}
 
-      lang_add_assignment (exp_assop ('=', ".",
-				      exp_unop (ALIGN_K,
-						exp_intop (reloc_size))));
       lang_add_assignment (exp_assop ('=', p->h->root.string,
 				      exp_nameop (NAME, ".")));
-      lang_add_data (size, exp_intop (p->count));
+      lang_add_data (size, exp_intop ((bfd_vma) p->count));
 
-      for (e = p->elements; e != NULL; e = e->next)
+      for (e = p->elements; e != (struct set_element *) NULL; e = e->next)
 	{
 	  if (config.map_file != NULL)
 	    {
@@ -334,8 +209,8 @@ ldctor_build_sets (void)
 
 	      if (! header_printed)
 		{
-		  minfo (_("\nSet                 Symbol\n\n"));
-		  header_printed = TRUE;
+		  minfo ("\nSet                 Symbol\n\n");
+		  header_printed = true;
 		}
 
 	      minfo ("%s", p->h->root.string);
@@ -358,11 +233,7 @@ ldctor_build_sets (void)
 		minfo ("%G\n", e->section->owner, e->section, e->value);
 	    }
 
-	  /* Need SEC_KEEP for --gc-sections.  */
-	  if (! bfd_is_abs_section (e->section))
-	    e->section->flags |= SEC_KEEP;
-
-	  if (link_info.relocatable)
+	  if (link_info.shared || link_info.relocateable)
 	    lang_add_reloc (p->reloc, howto, e->section, e->name,
 			    exp_intop (e->value));
 	  else

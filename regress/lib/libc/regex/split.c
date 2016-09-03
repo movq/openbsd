@@ -1,17 +1,18 @@
-/*	$OpenBSD: split.c,v 1.5 2007/09/09 23:25:12 chl Exp $	*/
 /*	$NetBSD: split.c,v 1.2 1995/04/20 22:39:57 cgd Exp $	*/
 
 #include <stdio.h>
 #include <string.h>
-
-int split(char *string, char *fields[], int nfields, char *sep);
 
 /*
  - split - divide a string into fields, like awk split()
  = int split(char *string, char *fields[], int nfields, char *sep);
  */
 int				/* number of fields, including overflow */
-split(char *string, char *fields[], int nfields, char *sep)
+split(string, fields, nfields, sep)
+char *string;
+char *fields[];			/* list is not NULL-terminated */
+int nfields;			/* number of entries available in fields[] */
+char *sep;			/* "" white, "c" single char, "ab" [ab]+ */
 {
 	register char *p = string;
 	register char c;			/* latest character */
@@ -160,18 +161,18 @@ char *argv[];
 
 	if (argc > 4)
 		for (n = atoi(argv[3]); n > 0; n--) {
-			(void) strlcpy(buf, argv[1], sizeof buf);
+			(void) strcpy(buf, argv[1]);
 		}
 	else if (argc > 3)
 		for (n = atoi(argv[3]); n > 0; n--) {
-			(void) strlcpy(buf, argv[1], sizeof buf);
+			(void) strcpy(buf, argv[1]);
 			(void) split(buf, fields, MNF, argv[2]);
 		}
 	else if (argc > 2)
 		dosplit(argv[1], argv[2]);
 	else if (argc > 1)
 		while (fgets(buf, sizeof(buf), stdin) != NULL) {
-			buf[strcspn(buf, "\n")] = '\0';	/* stomp newline */
+			buf[strlen(buf)-1] = '\0';	/* stomp newline */
 			dosplit(buf, argv[1]);
 		}
 	else
@@ -286,7 +287,7 @@ regress()
 	register char *f;
 
 	for (n = 0; tests[n].str != NULL; n++) {
-		(void) strlcpy(buf, tests[n].str, sizeof buf);
+		(void) strcpy(buf, tests[n].str);
 		fields[RNF] = NULL;
 		nf = split(buf, fields, RNF, tests[n].seps);
 		printit = 0;

@@ -1,5 +1,5 @@
 /*
- * $OpenBSD: readlink.c,v 1.27 2015/10/09 01:37:08 deraadt Exp $
+ * $OpenBSD: readlink.c,v 1.18 1998/08/24 14:45:33 kstailey Exp $
  *
  * Copyright (c) 1997
  *	Kenneth Stailey (hereinafter referred to as the author)
@@ -27,25 +27,21 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <errno.h>
 #include <limits.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-static void	usage(void);
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	char buf[PATH_MAX];
 	int n, ch, nflag = 0, fflag = 0;
 	extern int optind;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	while ((ch = getopt(argc, argv, "fn")) != -1)
 		switch (ch) {
@@ -56,26 +52,29 @@ main(int argc, char *argv[])
 			nflag = 1;
 			break;
 		default:
-			usage();
+			(void)fprintf(stderr,
+			    "usage: readlink [-n] [-f] symlink\n");
+			exit(1);
 		}
 	argc -= optind;
 	argv += optind;
 
-	if (argc != 1)
-		usage();
+	if (argc != 1) {
+		fprintf(stderr, "usage: readlink [-n] [-f] symlink\n");
+		exit(1);
+	}
 
 	n = strlen(argv[0]);
 	if (n > PATH_MAX - 1) {
 		fprintf(stderr,
-		    "readlink: filename longer than PATH_MAX-1 (%d)\n",
-		    PATH_MAX - 1);
+			"readlink: filename longer than PATH_MAX-1 (%d)\n",
+			PATH_MAX - 1);
 		exit(1);
 	}
 
-	if (fflag) {
-		if (realpath(argv[0], buf) == NULL)
-			err(1, "%s", argv[0]);
-	} else {
+	if (fflag)
+		realpath(argv[0], buf);
+	else {
 		if ((n = readlink(argv[0], buf, sizeof buf-1)) < 0)
 			exit(1);
 		buf[n] = '\0';
@@ -85,11 +84,4 @@ main(int argc, char *argv[])
 	if (!nflag)
 		putchar('\n');
 	exit(0);
-}
-
-static void
-usage(void)
-{
-	(void)fprintf(stderr, "usage: readlink [-fn] file\n");
-	exit(1);
 }

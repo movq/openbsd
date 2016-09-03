@@ -1,11 +1,9 @@
-/*	$OpenBSD: map.c,v 1.4 2016/01/06 09:29:34 tb Exp $	*/
 /*	$NetBSD: map.c,v 1.2 1995/03/24 03:58:58 cgd Exp $	*/
 
 #define	minusminus	plusplus
 #define	minusplus	plusminus
 
-int
-main(int argc, char *argv[])
+main()
 {
     /* Set up */
 
@@ -126,12 +124,12 @@ main(int argc, char *argv[])
 
     move(-1380, 1180);
     closepl();
-    return 0;
+    exit(0);
 }
 
-/* draw strings in plus plus quadrant */
-void
-plusplus(char *s, int x, int y)
+plusplus(s, x, y)	/* draw strings in plus plus quadrant */
+char	*s;
+int	x, y;
 {
 char	s1[2];
 
@@ -146,9 +144,9 @@ char	s1[2];
 	}
 }
 
-/* draw strings in plus minus quadrant */
-void
-plusminus(char *s, int x, int y)
+plusminus(s, x, y)	/* draw strings in plus minus quadrant */
+char	*s;
+int	x, y;
 {
 char	s1[2];
 

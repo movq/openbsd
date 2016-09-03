@@ -1,4 +1,3 @@
-/*	$OpenBSD: siginterrupt.c,v 1.8 2015/10/23 04:39:24 guenther Exp $ */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: siginterrupt.c,v 1.3 1996/08/19 08:26:03 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <signal.h>
 
 /*
@@ -35,12 +42,14 @@
  * after an instance of the indicated signal.
  */
 int
-siginterrupt(int sig, int flag)
+siginterrupt(sig, flag)
+	int sig, flag;
 {
+	extern sigset_t __sigintr;
 	struct sigaction sa;
 	int ret;
 
-	if ((ret = WRAP(sigaction)(sig, NULL, &sa)) < 0)
+	if ((ret = sigaction(sig, (struct sigaction *)0, &sa)) < 0)
 		return (ret);
 	if (flag) {
 		sigaddset(&__sigintr, sig);
@@ -49,5 +58,5 @@ siginterrupt(int sig, int flag)
 		sigdelset(&__sigintr, sig);
 		sa.sa_flags |= SA_RESTART;
 	}
-	return (sigaction(sig, &sa, NULL));
+	return (sigaction(sig, &sa, (struct sigaction *)0));
 }

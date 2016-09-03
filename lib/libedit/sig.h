@@ -1,5 +1,5 @@
-/*	$OpenBSD: sig.h,v 1.8 2016/03/20 22:57:59 schwarze Exp $	*/
-/*	$NetBSD: sig.h,v 1.10 2016/02/16 15:53:48 christos Exp $	*/
+/*	$OpenBSD: sig.h,v 1.3 1997/03/14 05:13:03 millert Exp $	*/
+/*	$NetBSD: sig.h,v 1.2 1997/01/11 06:48:11 lukem Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,33 +43,31 @@
  * el.sig.h: Signal handling functions
  */
 #ifndef _h_el_sig
-#define	_h_el_sig
+#define _h_el_sig
 
 #include <signal.h>
+
+#include "histedit.h"
 
 /*
  * Define here all the signals we are going to handle
  * The _DO macro is used to iterate in the source code
  */
-#define	ALLSIGS		\
-	_DO(SIGINT)	\
-	_DO(SIGTSTP)	\
-	_DO(SIGQUIT)	\
-	_DO(SIGHUP)	\
-	_DO(SIGTERM)	\
-	_DO(SIGCONT)	\
-	_DO(SIGWINCH)
-#define ALLSIGSNO	7
+#define ALLSIGS 	\
+    _DO(SIGINT)		\
+    _DO(SIGTSTP)	\
+    _DO(SIGSTOP)	\
+    _DO(SIGQUIT)	\
+    _DO(SIGHUP)		\
+    _DO(SIGTERM)	\
+    _DO(SIGCONT)	\
+    _DO(SIGWINCH)
 
-typedef struct {
-	struct sigaction sig_action[ALLSIGSNO];
-	sigset_t sig_set;
-	volatile sig_atomic_t sig_no;
-} *el_signal_t;
+typedef sig_t *el_signal_t;
 
-protected void	sig_end(EditLine*);
-protected int	sig_init(EditLine*);
-protected void	sig_set(EditLine*);
-protected void	sig_clr(EditLine*);
+protected void	sig_end		__P((EditLine*));
+protected int	sig_init	__P((EditLine*));
+protected void	sig_set		__P((EditLine*));
+protected void	sig_clr		__P((EditLine*));
 
 #endif /* _h_el_sig */

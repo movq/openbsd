@@ -1,4 +1,3 @@
-/*	$OpenBSD: usrdb.c,v 1.10 2016/08/14 22:29:01 krw Exp $	*/
 /*
  * Copyright (c) 1994 Christopher G. Demetriou
  * All rights reserved.
@@ -29,23 +28,25 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$Id: usrdb.c,v 1.2 1999/08/06 20:41:08 deraadt Exp $";
+#endif
+
 #include <sys/types.h>
 #include <sys/acct.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <pwd.h>
-#include <stdio.h>
 #include <string.h>
 #include "extern.h"
 #include "pathnames.h"
 
-static int uid_compare(const DBT *, const DBT *);
+static int uid_compare __P((const DBT *, const DBT *));
 
 static DB	*usracct_db;
 
 int
-usracct_init(void)
+usracct_init()
 {
 	DB *saved_usracct_db;
 	BTREEINFO bti;
@@ -84,7 +85,7 @@ usracct_init(void)
 				warn("initializing user accounting stats");
 				error = -1;
 				break;
-			}
+			} 
 
 			serr = DB_SEQ(saved_usracct_db, &key, &data, R_NEXT);
 			if (serr < 0) {
@@ -108,14 +109,15 @@ out:
 }
 
 void
-usracct_destroy(void)
+usracct_destroy()
 {
 	if (DB_CLOSE(usracct_db) < 0)
 		warn("destroying user accounting stats");
 }
 
 int
-usracct_add(const struct cmdinfo *ci)
+usracct_add(ci)
+	const struct cmdinfo *ci;
 {
 	DBT key, data;
 	struct userinfo newui;
@@ -150,7 +152,7 @@ usracct_add(const struct cmdinfo *ci)
 	newui.ui_mem += ci->ci_mem;
 	newui.ui_io += ci->ci_io;
 
-	data.data = &newui;
+	data.data = &newui; 
 	data.size = sizeof(newui);
 	rv = DB_PUT(usracct_db, &key, &data, 0);
 	if (rv < 0) {
@@ -165,11 +167,12 @@ usracct_add(const struct cmdinfo *ci)
 }
 
 int
-usracct_update(void)
+usracct_update()
 {
 	DB *saved_usracct_db;
 	DBT key, data;
 	BTREEINFO bti;
+	uid_t uid;
 	int error, serr, nerr;
 
 	memset(&bti, 0, sizeof(bti));
@@ -209,6 +212,7 @@ usracct_update(void)
 		warn("syncing process accounting summary");
 		error = -1;
 	}
+out:
 	if (DB_CLOSE(saved_usracct_db) < 0) {
 		warn("closing process accounting summary");
 		error = -1;
@@ -217,7 +221,7 @@ usracct_update(void)
 }
 
 void
-usracct_print(void)
+usracct_print()
 {
 	DBT key, data;
 	struct userinfo uistore, *ui = &uistore;
@@ -231,7 +235,7 @@ usracct_print(void)
 	while (rv == 0) {
 		memcpy(ui, data.data, sizeof(struct userinfo));
 
-		printf("%-8s %9llu ",
+		printf("%-8s %9qu ",
 		    user_from_uid(ui->ui_uid, 0), ui->ui_calls);
 
 		t = (double) (ui->ui_utime + ui->ui_stime) /
@@ -239,19 +243,19 @@ usracct_print(void)
 		if (t < 0.0001)		/* kill divide by zero */
 			t = 0.0001;
 
-		printf("%12.2f%s ", t / 60.0, "cpu");
+		printf("%12.2lf%s ", t / 60.0, "cpu");
 
 		/* ui->ui_calls is always != 0 */
 		if (dflag)
-			printf("%12llu%s", ui->ui_io / ui->ui_calls, "avio");
+			printf("%12qu%s", ui->ui_io / ui->ui_calls, "avio");
 		else
-			printf("%12llu%s", ui->ui_io, "tio");
+			printf("%12qu%s", ui->ui_io, "tio");
 
 		/* t is always >= 0.0001; see above */
 		if (kflag)
 			printf("%12.0f%s", ui->ui_mem / t, "k");
 		else
-			printf("%12llu%s", ui->ui_mem, "k*sec");
+			printf("%12qu%s", ui->ui_mem, "k*sec");
 
 		printf("\n");
 
@@ -262,13 +266,14 @@ usracct_print(void)
 }
 
 static int
-uid_compare(const DBT *k1, const DBT *k2)
+uid_compare(k1, k2)
+	const DBT *k1, *k2;
 {
-	uid_t d1, d2;
+	u_long d1, d2;
 
 	memcpy(&d1, k1->data, sizeof(d1));
 	memcpy(&d2, k2->data, sizeof(d2));
-
+	
 	if (d1 < d2)
 		return -1;
 	else if (d1 == d2)

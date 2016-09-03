@@ -1,7 +1,7 @@
-/*	$OpenBSD: ukc.h,v 1.13 2015/09/21 14:45:14 guenther Exp $ */
+/*	$OpenBSD: ukc.h,v 1.1 1999/10/04 20:00:52 deraadt Exp $ */
 
 /*
- * Copyright (c) 1999-2001 Mats O Jansson.  All rights reserved.
+ * Copyright (c) 1999 Mats O Jansson.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -11,6 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -41,14 +46,7 @@
 #define I_UEXTRALOC	11
 #define	I_HISTLEN	12
 #define	CA_HISTORY	13
-#define TZ_TZ		14
-#define P_PDEVNAMES	15
-#define I_PDEVSIZE	16
-#define S_PDEVINIT	17
-#define I_NMBCLUSTERS	18
-#define I_BUFCACHEPCT	19
-#define I_NKMEMPG	20
-#define NLENTRIES	21
+#define NLENTRIES	14
 
 #ifdef UKC_MAIN
 struct nlist nl[] = {
@@ -66,14 +64,6 @@ struct nlist nl[] = {
 	{ "_uextraloc" },
 	{ "_userconf_histlen" },
 	{ "_userconf_history" },
-	{ "_tz" },
-	{ "_pdevnames" },
-	{ "_pdevnames_size" },
-	{ "_pdevinit" },
-	{ "_nmbclust" },
-	{ "_bufcachepercent" },
-	{ "_nkmempages" },
-	{ NULL },
 };
 struct nlist knl[] = {
 	{ "_locnames" },
@@ -90,59 +80,51 @@ struct nlist knl[] = {
 	{ "_uextraloc" },
 	{ "_userconf_histlen" },
 	{ "_userconf_history" },
-	{ "_tz" },
-	{ "_pdevnames" },
-	{ "_pdevnames_size" },
-	{ "_pdevinit" },
-	{ "_nmbclust" },
-	{ "_bufcachepercent" },
-	{ "_nkmempages" },
-	{ NULL },
 };
 int	maxdev = 0;
 int	totdev = 0;
-int	maxpseudo = 0;
 int	maxlocnames = 0;
 int	base = 16;
 int	cnt = -1;
 int	lines = 18;
 int	oldkernel = 0;
-int	nopdev = 0;
 #else
 extern struct nlist nl[];
 extern int maxdev;
 extern int totdev;
-extern int maxpseudo;
 extern int maxlocnames;
 extern int base;
 extern int cnt;
 extern int lines;
 extern int oldkernel;
-extern int nopdev;
 #endif
 
-struct cfdata   *get_cfdata(int);
-short	        *get_locnamp(int);
+struct cfdata *get_cfdata __P((int));
+short	      *get_locnamp __P((int));
+caddr_t	      *get_locnames __P((int));
+int	      *get_extraloc __P((int));
 
-int	more(void);
-void	pdev(short);
-int	number(const char *, int *);
-int	device(char *, int *, short *, short *);
-int	attr(char *, int *);
-void	modify(char *, int *);
-void	change(int);
-void	disable(int);
-void	enable(int);
-void	show(void);
-void	common_attr_val(short, int *, char);
-void	show_attr(char *);
-void	common_dev(char *, int, short, short, char);
-void	common_attr(char *, int, char);
-void	add_read(char *, char, char *, int, int *);
-void	add(char *, int, short, short);
+int	more __P(());
+void	pnum __P((int));
+void	pdevnam __P((short));
+void	pdev __P((short));
+int	number __P((char *, int *));
+int	device __P((char *, int *, short *, short *));
+int	attr __P((char *, int *));
+void	modify __P((char *, int *));
+void	change __P((int));
+void	disable __P((int));
+void	enable __P((int));
+void	show __P((void));
+void	common_attr_val __P((short, int *, char));
+void	show_attr __P((char *));
+void	common_dev __P((char *, int, short, short, char));
+void	common_attr __P((char *, int, char));
+void	add_read __P((char *, char, char *, int, int *));
+void	add __P((char *, int, short, short));
 
-int	config(void);
-void	process_history(int, char *);
+int	config __P(());
+void	process_history __P((int, char *));
 
 #define UC_CHANGE 'c'
 #define UC_DISABLE 'd'
@@ -150,6 +132,5 @@ void	process_history(int, char *);
 #define UC_FIND 'f'
 #define UC_SHOW 's'
 
-#endif /* _UTIL_H */
-
+#endif _UTIL_H
 

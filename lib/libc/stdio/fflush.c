@@ -1,4 +1,3 @@
-/*	$OpenBSD: fflush.c,v 1.9 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,34 +34,35 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fflush.c,v 1.2 1996/08/19 08:32:26 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <errno.h>
 #include <stdio.h>
 #include "local.h"
 
 /* Flush a single file, or (if fp is NULL) all files.  */
 int
-fflush(FILE *fp)
+fflush(fp)
+	register FILE *fp;
 {
-	int	r;
 
 	if (fp == NULL)
-		return (_fwalk(__sflush_locked));
-	FLOCKFILE(fp);
+		return (_fwalk(__sflush));
 	if ((fp->_flags & (__SWR | __SRW)) == 0) {
 		errno = EBADF;
-		r = EOF;
-	} else
-		r = __sflush(fp);
-	FUNLOCKFILE(fp);
-	return (r);
+		return (EOF);
+	}
+	return (__sflush(fp));
 }
-DEF_STRONG(fflush);
 
 int
-__sflush(FILE *fp)
+__sflush(fp)
+	register FILE *fp;
 {
-	unsigned char *p;
-	int n, t;
+	register unsigned char *p;
+	register int n, t;
 
 	t = fp->_flags;
 	if ((t & __SWR) == 0)
@@ -84,15 +88,4 @@ __sflush(FILE *fp)
 		}
 	}
 	return (0);
-}
-
-int
-__sflush_locked(FILE *fp)
-{
-	int	r;
-
-	FLOCKFILE(fp);
-	r = __sflush(fp);
-	FUNLOCKFILE(fp);
-	return (r);
 }

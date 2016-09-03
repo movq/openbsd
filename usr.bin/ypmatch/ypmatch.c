@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypmatch.c,v 1.16 2015/02/08 23:40:35 deraadt Exp $ */
+/*	$OpenBSD: ypmatch.c,v 1.6 1997/07/21 19:21:17 deraadt Exp $ */
 /*	$NetBSD: ypmatch.c,v 1.8 1996/05/07 01:24:52 jtc Exp $	*/
 
 /*
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote
+ *    products derived from this software without specific prior written
+ *    permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -27,10 +33,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: ypmatch.c,v 1.6 1997/07/21 19:21:17 deraadt Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -39,8 +49,6 @@
 #include <rpc/xdr.h>
 #include <rpcsvc/yp_prot.h>
 #include <rpcsvc/ypclnt.h>
-
-void	usage(void);
 
 struct ypalias {
 	char *alias, *name;
@@ -56,33 +64,35 @@ struct ypalias {
 };
 
 void
-usage(void)
+usage()
 {
-	fprintf(stderr,
-	    "usage: ypmatch [-kt] [-d domain] key ... mapname\n"
-	    "       ypmatch -x\n");
-	fprintf(stderr,
-	    "where\n"
-	    "\tmapname may be either a mapname or a nickname for a map.\n"
-	    "\t-k prints keys as well as values.\n"
-	    "\t-t inhibits map nickname translation.\n"
-	    "\t-x dumps the map nickname translation table.\n");
+	fprintf(stderr, "Usage:\n");
+	fprintf(stderr, "\typmatch [-d domain] [-t] [-k] key [key ...] mname\n");
+	fprintf(stderr, "\typmatch -x\n");
+	fprintf(stderr, "where\n");
+	fprintf(stderr, "\tmname may be either a mapname or a nickname for a map\n");
+	fprintf(stderr, "\t-t inhibits map nickname translation\n");
+	fprintf(stderr, "\t-k prints keys as well as values.\n");
+	fprintf(stderr, "\t-x dumps the map nickname translation table.\n");
 	exit(1);
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+char **argv;
 {
-	char *domainname, *inkey, *inmap, *outbuf;
+	char *domainname;
+	char *inkey, *inmap, *outbuf;
 	extern char *optarg;
 	extern int optind;
-	int outbuflen, key, notrans, rval;
+	int outbuflen, key, notrans;
 	int c, r, i;
+	int rval;
 
 	domainname = NULL;
 	notrans = key = 0;
-	while ((c=getopt(argc, argv, "xd:kt")) != -1)
-		switch (c) {
+	while( (c=getopt(argc, argv, "xd:kt")) != -1)
+		switch(c) {
 		case 'x':
 			for(i=0; i<sizeof ypaliases/sizeof ypaliases[0]; i++)
 				printf("Use \"%s\" for \"%s\"\n",
@@ -93,16 +103,16 @@ main(int argc, char *argv[])
 			domainname = optarg;
 			break;
 		case 't':
-			notrans = 1;
+			notrans++;
 			break;
 		case 'k':
-			key = 1;
+			key++;
 			break;
 		default:
 			usage();
 		}
 
-	if ((argc-optind) < 2 )
+	if( (argc-optind) < 2 )
 		usage();
 
 	if (!domainname) {
@@ -112,7 +122,7 @@ main(int argc, char *argv[])
 	inmap = argv[argc-1];
 	if (!notrans) {
 		for(i=0; i<sizeof ypaliases/sizeof ypaliases[0]; i++)
-			if (strcmp(inmap, ypaliases[i].alias) == 0)
+			if( strcmp(inmap, ypaliases[i].alias) == 0)
 				inmap = ypaliases[i].name;
 	}
 
@@ -122,9 +132,9 @@ main(int argc, char *argv[])
 
 		r = yp_match(domainname, inmap, inkey,
 			strlen(inkey), &outbuf, &outbuflen);
-		switch (r) {
+		switch(r) {
 		case 0:
-			if (key)
+			if(key)
 				printf("%s: ", inkey);
 			printf("%*.*s\n", outbuflen, outbuflen, outbuf);
 			break;
@@ -133,7 +143,7 @@ main(int argc, char *argv[])
 			exit(1);
 		default:
 			fprintf(stderr, "Can't match key %s in map %s. Reason: %s\n",
-			    inkey, inmap, yperr_string(r));
+				inkey, inmap, yperr_string(r));
 			rval = 1;
 			break;
 		}

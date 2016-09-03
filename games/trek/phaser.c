@@ -1,4 +1,4 @@
-/*	$OpenBSD: phaser.c,v 1.10 2016/01/07 14:37:51 mestre Exp $	*/
+/*	$OpenBSD: phaser.c,v 1.4 1999/07/31 18:48:59 pjanzen Exp $	*/
 /*	$NetBSD: phaser.c,v 1.4 1995/04/24 12:26:02 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,11 +34,18 @@
  * SUCH DAMAGE.
  */
 
-#include <math.h>
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)phaser.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: phaser.c,v 1.4 1999/07/31 18:48:59 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "getpar.h"
+#include <stdio.h>
+#include <math.h>
 #include "trek.h"
+#include "getpar.h"
 
 /* factors for phaser hits; see description below */
 
@@ -83,19 +94,21 @@ struct banks
 
 
 void
-phaser(int v)
+phaser(v)
+	int v;
 {
-	int		i, j;
-	struct kling	*k;
-	double		dx, dy;
-	double		anglefactor, distfactor;
-	struct banks	*b;
-	int		manual, flag, extra;
-	int		hit;
-	double		tot;
-	int		n;
-	int		hitreqd[NBANKS];
-	struct banks	bank[NBANKS];
+	register int		i;
+	int			j;
+	register struct kling	*k;
+	double			dx, dy;
+	double			anglefactor, distfactor;
+	register struct banks	*b;
+	int			manual, flag, extra;
+	int			hit;
+	double			tot;
+	int			n;
+	int			hitreqd[NBANKS];
+	struct banks		bank[NBANKS];
 	const struct cvntab	*ptr;
 
 	if (Ship.cond == DOCKED)
@@ -126,13 +139,13 @@ phaser(int v)
 	{
 		if (damaged(COMPUTER))
 		{
-			printf("%s", Device[COMPUTER].name);
+			printf(Device[COMPUTER].name);
 			manual++;
 		}
 		else
 			if (damaged(SRSCAN))
 			{
-				printf("%s", Device[SRSCAN].name);
+				printf(Device[SRSCAN].name);
 				manual++;
 			}
 		if (manual)

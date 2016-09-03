@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.11 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: main.c,v 1.3 1999/01/18 06:20:53 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.3 1995/04/22 10:37:01 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +34,33 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.3 1999/01/18 06:20:53 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <err.h>
 
+/*ARGSUSED*/
 int
-main(int argc, char **argv)
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	extern char *__progname;
 	char *p;
 	int i;
 	int fd;
@@ -52,10 +71,14 @@ main(int argc, char **argv)
 
 	fd = open("/dev/null", O_RDONLY);
 	if (fd < 3)
-		return 1;
+		exit(1);
 	close(fd);
 
-	p = __progname;
+	srandom(getpid());
+	if ((p = strrchr(*argv, '/')))
+		p++;
+	else
+		p = *argv;
 	if (strcmp(p, "driver") == 0 || strcmp(p, "saildriver") == 0)
 		mode = MODE_DRIVER;
 	else if (strcmp(p, "sail.log") == 0)
@@ -93,7 +116,7 @@ main(int argc, char **argv)
 		mode = i;
 	switch (mode) {
 	case MODE_PLAYER:
-		pl_main();
+		return pl_main();
 	case MODE_DRIVER:
 		return dr_main();
 	case MODE_LOGGER:
@@ -102,4 +125,5 @@ main(int argc, char **argv)
 		warnx("Unknown mode %d", mode);
 		abort();
 	}
+	/*NOTREACHED*/
 }

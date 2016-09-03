@@ -37,14 +37,15 @@
 #include "cvs.h"
 
 static char *findslash PROTO((char *start, char *p));
-static int checkout_proc PROTO((int argc, char **argv, char *where,
+static int checkout_proc PROTO((int *pargc, char **argv, char *where,
 		          char *mwhere, char *mfile, int shorten,
 		          int local_specified, char *omodule,
 		          char *msg));
+static int safe_location PROTO((void));
 
 static const char *const checkout_usage[] =
 {
-    "Usage:\n  %s %s [-ANPRcflnps] [-t id] [-r rev] [-D date] [-d dir]\n",
+    "Usage:\n  %s %s [-ANPRcflnps] [-r rev | -D date] [-d dir]\n",
     "    [-j rev1] [-j rev2] [-k kopt] modules...\n",
     "\t-A\tReset any sticky tags/date/kopts.\n",
     "\t-N\tDon't shorten module paths if -d specified.\n",
@@ -59,16 +60,15 @@ static const char *const checkout_usage[] =
     "\t-r rev\tCheck out revision or tag. (implies -P) (is sticky)\n",
     "\t-D date\tCheck out revisions as of date. (implies -P) (is sticky)\n",
     "\t-d dir\tCheck out into dir instead of module name.\n",
-    "\t-k kopt\tUse RCS kopt -k option on checkout. (is sticky)\n",
+    "\t-k kopt\tUse RCS kopt -k option on checkout.\n",
     "\t-j rev\tMerge in changes made between current revision and rev.\n",
-    "\t-t id\tRCS identifier to expand on checkout.\n",
     "(Specify the --help global option for a list of other help options)\n",
     NULL
 };
 
 static const char *const export_usage[] =
 {
-    "Usage: %s %s [-NRfln] [-r rev] [-t id] [-D date] [-d dir] [-k kopt] module...\n",
+    "Usage: %s %s [-NRfln] [-r rev | -D date] [-d dir] [-k kopt] module...\n",
     "\t-N\tDon't shorten module paths if -d specified.\n",
     "\t-f\tForce a head revision match if tag/date not found.\n",
     "\t-l\tLocal directory only, not recursive\n",
@@ -78,7 +78,6 @@ static const char *const export_usage[] =
     "\t-D date\tExport revisions as of date.\n",
     "\t-d dir\tExport into dir instead of module name.\n",
     "\t-k kopt\tUse RCS kopt -k option on checkout.\n",
-    "\t-t id\tRCS identifier to expand on export.\n",
     "(Specify the --help global option for a list of other help options)\n",
     NULL
 };
@@ -96,7 +95,6 @@ static char *join_rev2 = NULL;
 static int join_tags_validated = 0;
 static char *preload_update_dir = NULL;
 static char *history_name = NULL;
-static enum mtype m_type;
 
 int
 checkout (argc, argv)
@@ -113,6 +111,7 @@ checkout (argc, argv)
     char *where = NULL;
     char *valid_options;
     const char *const *valid_usage;
+    enum mtype m_type;
 
     /*
      * A smaller subset of options are allowed for the export command, which
@@ -123,13 +122,13 @@ checkout (argc, argv)
     if (strcmp (command_name, "export") == 0)
     {
         m_type = EXPORT;
-	valid_options = "+Nnk:d:flRQqr:t:D:";
+	valid_options = "+Nnk:d:flRQqr:D:";
 	valid_usage = export_usage;
     }
     else
     {
         m_type = CHECKOUT;
-	valid_options = "+ANnk:d:flRpQqcsr:t:D:j:P";
+	valid_options = "+ANnk:d:flRpQqcsr:D:j:P";
 	valid_usage = checkout_usage;
     }
 
@@ -192,7 +191,7 @@ checkout (argc, argv)
 		    shorten = 1;
 		break;
 	    case 's':
-		cat = status = 1;
+		status = 1;
 		break;
 	    case 'f':
 		force_tag_match = 0;
@@ -200,11 +199,6 @@ checkout (argc, argv)
 	    case 'r':
 		tag = optarg;
 		checkout_prune_dirs = 1;
-		break;
-	    case 't':
-		if (RCS_citag)
-		    free(RCS_citag);
-		RCS_citag = strdup(optarg);
 		break;
 	    case 'D':
 		date = Make_Date (optarg);
@@ -230,16 +224,16 @@ checkout (argc, argv)
     if (shorten == -1)
 	shorten = 0;
 
-    if (cat && argc != 0)
+    if ((cat || status) && argc != 0)
 	error (1, 0, "-c and -s must not get any arguments");
 
-    if (!cat && argc == 0)
+    if (!(cat || status) && argc == 0)
 	error (1, 0, "must specify at least one module or directory");
 
     if (where && pipeout)
 	error (1, 0, "-d and -p are mutually exclusive");
 
-    if (m_type == EXPORT)
+    if (strcmp (command_name, "export") == 0)
     {
 	if (!tag && !date)
 	    error (1, 0, "must specify a tag or date");
@@ -255,12 +249,12 @@ checkout (argc, argv)
     }
 #endif
 
-    if (!cat && !safe_location()) {
+    if (!safe_location()) {
         error(1, 0, "Cannot check out files into the repository itself");
     }
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	int expand_modules;
 
@@ -276,7 +270,7 @@ checkout (argc, argv)
            below in !expand_modules), those files (CVS/Checkin.prog
            or CVS/Update.prog) don't get created.  Grrr.  */
 	
-	expand_modules = (!cat && !pipeout
+	expand_modules = (!cat && !status && !pipeout
 			  && supported_request ("expand-modules"));
 	
 	if (expand_modules)
@@ -300,10 +294,10 @@ checkout (argc, argv)
 	    send_arg("-A");
 	if (!shorten)
 	    send_arg("-N");
-	if (checkout_prune_dirs && m_type == CHECKOUT)
+	if (checkout_prune_dirs && strcmp (command_name, "export") != 0)
 	    send_arg("-P");
 	client_prune_dirs = checkout_prune_dirs;
-	if (cat && !status)
+	if (cat)
 	    send_arg("-c");
 	if (where != NULL)
 	    option_with_arg ("-d", where);
@@ -331,12 +325,15 @@ checkout (argc, argv)
 	    client_nonexpanded_setup ();
 	}
 
-	send_to_server (m_type == EXPORT ? "export\012" : "co\012", 0);
+	send_to_server (strcmp (command_name, "export") == 0 ?
+                        "export\012" : "co\012",
+                        0);
+
 	return get_responses_and_close ();
     }
 #endif /* CLIENT_SUPPORT */
 
-    if (cat)
+    if (cat || status)
     {
 	cat_module (status);
 	if (options)
@@ -358,7 +355,7 @@ checkout (argc, argv)
 
     /* If we will be calling history_write, work out the name to pass
        it.  */
-    if (m_type == CHECKOUT && !pipeout)
+    if (strcmp (command_name, "export") != 0 && !pipeout)
     {
 	if (tag && date)
 	{
@@ -374,7 +371,7 @@ checkout (argc, argv)
 
     for (i = 0; i < argc; i++)
 	err += do_module (db, argv[i], m_type, "Updating", checkout_proc,
-			  where, shorten, local, run_module_prog, !pipeout,
+			  where, shorten, local, run_module_prog,
 			  (char *) NULL);
     close_module (db);
     if (options)
@@ -382,10 +379,7 @@ checkout (argc, argv)
     return (err);
 }
 
-/* FIXME: This is and emptydir_name are in checkout.c for historical
-   reasons, probably want to move them.  */
-
-int
+static int
 safe_location ()
 {
     char *current;
@@ -398,13 +392,13 @@ safe_location ()
     /* FIXME-arbitrary limit: should be retrying this like xgetwd.
        But how does readlink let us know that the buffer was too small?
        (by returning sizeof hardpath - 1?).  */
-    x = readlink(current_parsed_root->directory, hardpath, sizeof hardpath - 1);
+    x = readlink(CVSroot_directory, hardpath, sizeof hardpath - 1);
 #else
     x = -1;
 #endif
     if (x == -1)
     {
-        strcpy(hardpath, current_parsed_root->directory);
+        strcpy(hardpath, CVSroot_directory);
     }
     else
     {
@@ -461,20 +455,15 @@ build_one_dir (repository, dirpath, sticky)
 {
     FILE *fp;
 
-    if (isfile (CVSADM))
-    {
-	if (m_type == EXPORT)
-	    error (1, 0, "cannot export into a working directory");
-    }
-    else if (m_type == CHECKOUT)
+    if (!isfile (CVSADM) && strcmp (command_name, "export") != 0)
     {
 	/* I suspect that this check could be omitted.  */
 	if (!isdir (repository))
 	    error (1, 0, "there is no repository %s", repository);
 
 	if (Create_Admin (".", dirpath, repository,
-			  sticky ? tag : (char *) NULL,
-			  sticky ? date : (char *) NULL,
+			  sticky ? (char *) NULL : tag,
+			  sticky ? (char *) NULL : date,
 
 			  /* FIXME?  This is a guess.  If it is important
 			     for nonbranch to be set correctly here I
@@ -482,7 +471,7 @@ build_one_dir (repository, dirpath, sticky)
 			     then rewrite it later via WriteTag, once
 			     we've had a chance to call RCS_nodeisbranch
 			     on each file.  */
-			  0, 1, 1))
+			  0, 1))
 	    return;
 
 	if (!noexec)
@@ -503,9 +492,9 @@ build_one_dir (repository, dirpath, sticky)
  */
 /* ARGSUSED */
 static int
-checkout_proc (argc, argv, where_orig, mwhere, mfile, shorten,
+checkout_proc (pargc, argv, where_orig, mwhere, mfile, shorten,
 	       local_specified, omodule, msg)
-    int argc;
+    int *pargc;
     char **argv;
     char *where_orig;
     char *mwhere;
@@ -515,7 +504,6 @@ checkout_proc (argc, argv, where_orig, mwhere, mfile, shorten,
     char *omodule;
     char *msg;
 {
-    char *myargv[2];
     int err = 0;
     int which;
     char *cp;
@@ -536,11 +524,11 @@ checkout_proc (argc, argv, where_orig, mwhere, mfile, shorten,
     /* Set up the repository (maybe) for the bottom directory.
        Allocate more space than we need so we don't need to keep
        reallocating this string. */
-    repository = xmalloc (strlen (current_parsed_root->directory)
+    repository = xmalloc (strlen (CVSroot_directory)
 			  + strlen (argv[0])
 			  + (mfile == NULL ? 0 : strlen (mfile))
 			  + 10);
-    (void) sprintf (repository, "%s/%s", current_parsed_root->directory, argv[0]);
+    (void) sprintf (repository, "%s/%s", CVSroot_directory, argv[0]);
     Sanitize_Repository_Name (repository);
 
 
@@ -677,10 +665,26 @@ checkout_proc (argc, argv, where_orig, mwhere, mfile, shorten,
 	{
 	    /* It's a file, which means we have to screw around with
                argv. */
-	    myargv[0] = argv[0];
-	    myargv[1] = mfile;
-	    argc = 2;
-	    argv = myargv;
+
+	    int i;
+
+
+	    /* Paranoia check. */
+	    
+	    if (*pargc > 1)
+	    {
+		error (0, 0, "checkout_proc: trashing argv elements!");
+		for (i = 1; i < *pargc; i++)
+		{
+		    error (0, 0, "checkout_proc: argv[%d] `%s'",
+			   i, argv[i]);
+		}
+	    }
+
+	    for (i = 1; i < *pargc; i++)
+		free (argv[i]);
+	    argv[1] = xstrdup (mfile);
+	    (*pargc) = 2;
 	}
 	free (path);
     }
@@ -716,11 +720,11 @@ checkout_proc (argc, argv, where_orig, mwhere, mfile, shorten,
 	struct dir_to_build *head;
 	char *reposcopy;
 
-	if (strncmp (repository, current_parsed_root->directory,
-		     strlen (current_parsed_root->directory)) != 0)
+	if (strncmp (repository, CVSroot_directory,
+		     strlen (CVSroot_directory)) != 0)
 	    error (1, 0, "\
 internal error: %s doesn't start with %s in checkout_proc",
-		   repository, current_parsed_root->directory);
+		   repository, CVSroot_directory);
 
 	/* We always create at least one directory, which corresponds to
 	   the entire strings for WHERE and REPOSITORY.  */
@@ -741,7 +745,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	   NT, &c, if the user specifies '\'.  Likewise for the call
 	   to findslash.  */
 	cp = where + strlen (where);
-	while (cp > where)
+	while (1)
 	{
 	    struct dir_to_build *new;
 
@@ -757,7 +761,7 @@ internal error: %s doesn't start with %s in checkout_proc",
                last path element we create should be the top-level
                directory. */
 
-	    if (cp > where)
+	    if (cp - where)
 	    {
 		strncpy (new->dirpath, where, cp - where);
 		new->dirpath[cp - where] = '\0';
@@ -765,7 +769,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	    else
 	    {
 		/* where should always be at least one character long. */
-		assert (where[0] != '\0');
+		assert (strlen (where));
 		strcpy (new->dirpath, "/");
 	    }
 	    new->next = head;
@@ -805,7 +809,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 		 bar   -> Emptydir   (generated dir -- not in repos)
 		 baz   -> quux       (finally!) */
 
-	    if (strcmp (reposcopy, current_parsed_root->directory) == 0)
+	    if (strcmp (reposcopy, CVSroot_directory) == 0)
 	    {
 		/* We can't walk up past CVSROOT.  Instead, the
                    repository should be Emptydir. */
@@ -813,30 +817,54 @@ internal error: %s doesn't start with %s in checkout_proc",
 	    }
 	    else
 	    {
-		/* It's a directory in the repository! */
-		    
-		char *rp;
-		    
-		/* We'll always be below CVSROOT, but check for
-		   paranoia's sake. */
-		rp = strrchr (reposcopy, '/');
-		if (rp == NULL)
-		    error (1, 0,
-			   "internal error: %s doesn't contain a slash",
-			   reposcopy);
-			   
-		*rp = '\0';
-		new->repository = xmalloc (strlen (reposcopy) + 5);
-		(void) strcpy (new->repository, reposcopy);
-		    
-		if (strcmp (reposcopy, current_parsed_root->directory) == 0)
+		if ((where_orig != NULL)
+		    && (strcmp (new->dirpath, where_orig) == 0))
 		{
-		    /* Special case -- the repository name needs
-		       to be "/path/to/repos/." (the trailing dot
-		       is important).  We might be able to get rid
-		       of this after the we check out the other
-		       code that handles repository names. */
-		    (void) strcat (new->repository, "/.");
+		    /* It's the case that the user specified a
+		     * destination directory with the "-d" flag.  The
+		     * repository in this directory should be "."
+		     * since the user's command is equivalent to:
+		     *
+		     *   cd <dir>; cvs co blah   */
+
+		    strcpy (reposcopy, CVSroot_directory);
+		    goto allocate_repos;
+		}
+		else if (mwhere != NULL)
+		{
+		    /* This is a generated directory, so point to
+                       CVSNULLREPOS. */
+
+		    new->repository = emptydir_name ();
+		}
+		else
+		{
+		    /* It's a directory in the repository! */
+		    
+		    char *rp = strrchr (reposcopy, '/');
+		    
+		    /* We'll always be below CVSROOT, but check for
+		       paranoia's sake. */
+		    if (rp == NULL)
+			error (1, 0,
+			       "internal error: %s doesn't contain a slash",
+			       reposcopy);
+			   
+		    *rp = '\0';
+		
+		allocate_repos:
+		    new->repository = xmalloc (strlen (reposcopy) + 5);
+		    (void) strcpy (new->repository, reposcopy);
+		    
+		    if (strcmp (reposcopy, CVSroot_directory) == 0)
+		    {
+			/* Special case -- the repository name needs
+			   to be "/path/to/repos/." (the trailing dot
+			   is important).  We might be able to get rid
+			   of this after the we check out the other
+			   code that handles repository names. */
+			(void) strcat (new->repository, "/.");
+		    }
 		}
 	    }
 	}
@@ -848,7 +876,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	    int where_is_absolute = isabsolute (where);
 	    
 	    /* The top-level CVSADM directory should always be
-	       current_parsed_root->directory.  Create it, but only if WHERE is
+	       CVSroot_directory.  Create it, but only if WHERE is
 	       relative.  If WHERE is absolute, our current directory
 	       may not have a thing to do with where the sources are
 	       being checked out.  If it does, build_dirs_and_chdir
@@ -862,7 +890,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	    {
 		/* It may be argued that we shouldn't set any sticky
 		   bits for the top-level repository.  FIXME?  */
-		build_one_dir (current_parsed_root->directory, ".", argc <= 1);
+		build_one_dir (CVSroot_directory, ".", *pargc <= 1);
 
 #ifdef SERVER_SUPPORT
 		/* We _always_ want to have a top-level admin
@@ -874,7 +902,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 		   will be ignored on the client side.  */
 
 		if (server_active)
-		    server_clear_entstat (".", current_parsed_root->directory);
+		    server_clear_entstat (".", CVSroot_directory);
 #endif
 	    }
 
@@ -884,7 +912,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	       contain a CVS subdir yet, but all the others contain
 	       CVS and Entries.Static files */
 
-	    if (build_dirs_and_chdir (head, argc <= 1) != 0)
+	    if (build_dirs_and_chdir (head, *pargc <= 1) != 0)
 	    {
 		error (0, 0, "ignoring module %s", omodule);
 		err = 1;
@@ -897,15 +925,14 @@ internal error: %s doesn't start with %s in checkout_proc",
 	{
 	    FILE *fp;
 
-	    if (!noexec && argc > 1)
+	    if (!noexec && *pargc > 1)
 	    {
 		/* I'm not sure whether this check is redundant.  */
 		if (!isdir (repository))
 		    error (1, 0, "there is no repository %s", repository);
 
 		Create_Admin (".", preload_update_dir, repository,
-			      (char *) NULL, (char *) NULL, 0, 0,
-			      m_type == CHECKOUT);
+			      (char *) NULL, (char *) NULL, 0, 0);
 		fp = open_file (CVSADM_ENTSTAT, "w+");
 		if (fclose(fp) == EOF)
 		    error(1, errno, "cannot close %s", CVSADM_ENTSTAT);
@@ -928,15 +955,12 @@ internal error: %s doesn't start with %s in checkout_proc",
 				 then rewrite it later via WriteTag, once
 				 we've had a chance to call RCS_nodeisbranch
 				 on each file.  */
-			      0, 0, m_type == CHECKOUT);
+			      0, 0);
 	    }
 	}
 	else
 	{
 	    char *repos;
-
-	    if (m_type == EXPORT)
-		error (1, 0, "cannot export into working directory");
 
 	    /* get the contents of the previously existing repository */
 	    repos = Name_Repository ((char *) NULL, preload_update_dir);
@@ -969,7 +993,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	which = W_REPOS;
 	if (tag != NULL && !tag_validated)
 	{
-	    tag_check_valid (tag, argc - 1, argv + 1, 0, aflag, NULL);
+	    tag_check_valid (tag, *pargc - 1, argv + 1, 0, aflag, NULL);
 	    tag_validated = 1;
 	}
     }
@@ -978,7 +1002,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 	which = W_LOCAL | W_REPOS;
 	if (tag != NULL && !tag_validated)
 	{
-	    tag_check_valid (tag, argc - 1, argv + 1, 0, aflag,
+	    tag_check_valid (tag, *pargc - 1, argv + 1, 0, aflag,
 			     repository);
 	    tag_validated = 1;
 	}
@@ -990,10 +1014,10 @@ internal error: %s doesn't start with %s in checkout_proc",
     if (! join_tags_validated)
     {
         if (join_rev1 != NULL)
-	    tag_check_valid_join (join_rev1, argc - 1, argv + 1, 0, aflag,
+	    tag_check_valid_join (join_rev1, *pargc - 1, argv + 1, 0, aflag,
 				  repository);
 	if (join_rev2 != NULL)
-	    tag_check_valid_join (join_rev2, argc - 1, argv + 1, 0, aflag,
+	    tag_check_valid_join (join_rev2, *pargc - 1, argv + 1, 0, aflag,
 				  repository);
 	join_tags_validated = 1;
     }
@@ -1003,19 +1027,19 @@ internal error: %s doesn't start with %s in checkout_proc",
      * update recursion processor.  We will be recursive unless either local
      * only was specified, or we were passed arguments
      */
-    if (!(local_specified || argc > 1))
+    if (!(local_specified || *pargc > 1))
     {
-	if (m_type == CHECKOUT && !pipeout)
+	if (strcmp (command_name, "export") != 0 && !pipeout)
 	    history_write ('O', preload_update_dir, history_name, where,
 			   repository);
-	else if (m_type == EXPORT && !pipeout)
+	else if (strcmp (command_name, "export") == 0 && !pipeout)
 	    history_write ('E', preload_update_dir, tag ? tag : date, where,
 			   repository);
 	err += do_update (0, (char **) NULL, options, tag, date,
 			  force_tag_match, 0 /* !local */ ,
 			  1 /* update -d */ , aflag, checkout_prune_dirs,
 			  pipeout, which, join_rev1, join_rev2,
-			  preload_update_dir, m_type == CHECKOUT);
+			  preload_update_dir);
 	goto out;
     }
 
@@ -1026,7 +1050,7 @@ internal error: %s doesn't start with %s in checkout_proc",
 
 	/* we are only doing files, so register them */
 	entries = Entries_Open (0, NULL);
-	for (i = 1; i < argc; i++)
+	for (i = 1; i < *pargc; i++)
 	{
 	    char *line;
 	    Vers_TS *vers;
@@ -1063,15 +1087,15 @@ internal error: %s doesn't start with %s in checkout_proc",
     }
 
     /* Don't log "export", just regular "checkouts" */
-    if (m_type == CHECKOUT && !pipeout)
+    if (strcmp (command_name, "export") != 0 && !pipeout)
 	history_write ('O', preload_update_dir, history_name, where,
 		       repository);
 
     /* go ahead and call update now that everything is set */
-    err += do_update (argc - 1, argv + 1, options, tag, date,
+    err += do_update (*pargc - 1, argv + 1, options, tag, date,
 		      force_tag_match, local_specified, 1 /* update -d */,
 		      aflag, checkout_prune_dirs, pipeout, which, join_rev1,
-		      join_rev2, preload_update_dir, m_type == CHECKOUT);
+		      join_rev2, preload_update_dir);
 out:
     free (preload_update_dir);
     preload_update_dir = oldupdate;
@@ -1085,13 +1109,15 @@ findslash (start, p)
     char *start;
     char *p;
 {
-    for (;;)
-    {
-	if (*p == '/') return p;
-	if (p == start) break;
-	--p;
-    }
-    return NULL;
+    while (p >= start && *p != '/')
+	p--;
+    /* FIXME: indexing off the start of the array like this is *NOT*
+       OK according to ANSI, and will break some of the time on certain
+       segmented architectures.  */
+    if (p < start)
+	return (NULL);
+    else
+	return (p);
 }
 
 /* Return a newly malloc'd string containing a pathname for CVSNULLREPOS,
@@ -1103,11 +1129,11 @@ emptydir_name ()
 {
     char *repository;
 
-    repository = xmalloc (strlen (current_parsed_root->directory) 
+    repository = xmalloc (strlen (CVSroot_directory) 
 			  + sizeof (CVSROOTADM)
 			  + sizeof (CVSNULLREPOS)
-			  + 3);
-    (void) sprintf (repository, "%s/%s/%s", current_parsed_root->directory,
+			  + 10);
+    (void) sprintf (repository, "%s/%s/%s", CVSroot_directory,
 		    CVSROOTADM, CVSNULLREPOS);
     if (!isfile (repository))
     {
@@ -1159,14 +1185,5 @@ build_dirs_and_chdir (dirs, sticky)
     }
 
  out:
-    while (dirs != NULL)
-    {
-	if (dirs->repository != NULL)
-	    free (dirs->repository);
-	nextdir = dirs->next;
-	free (dirs->dirpath);
-	free (dirs);
-	dirs = nextdir;
-    }
     return retval;
 }

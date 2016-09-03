@@ -1,105 +1,79 @@
 .\"/* Copyright 1988,1990,1993 by Paul Vixie
 .\" * All rights reserved
+.\" *
+.\" * Distribute freely, except: don't remove my name from the source or
+.\" * documentation (don't take credit for my work), mark your changes (don't
+.\" * get me blamed for your possible bugs), don't alter or remove this
+.\" * notice.  May be sold if buildable source is provided to buyer.  No
+.\" * warrantee of any kind, express or implied, is included with this
+.\" * software; use at your own risk, responsibility for damages (if any) to
+.\" * anyone resulting from the use of this software rests entirely with the
+.\" * user.
+.\" *
+.\" * Send bug reports, bug fixes, enhancements, requests, flames, etc., and
+.\" * I'll try to keep a version up to date.  I can be reached as follows:
+.\" * Paul Vixie          <paul@vix.com>          uunet!decwrl!vixie!paul
 .\" */
 .\"
-.\" Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
-.\" Copyright (c) 1997,2000 by Internet Software Consortium, Inc.
+.\" $Id: crontab.1,v 1.5 1999/07/09 13:35:53 aaron Exp $
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
-.\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
-.\" OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-.\"
-.\" $OpenBSD: crontab.1,v 1.33 2015/10/26 15:50:06 millert Exp $
-.\"
-.Dd $Mdocdate: October 26 2015 $
+.Dd June 8, 1999
 .Dt CRONTAB 1
 .Os
 .Sh NAME
 .Nm crontab
-.Nd maintain crontab files for individual users
+.Nd maintain crontab files for individual users (V3)
 .Sh SYNOPSIS
-.Nm
+.Nm crontab
 .Op Fl u Ar user
 .Ar file
-.Nm
-.Oo
-.Fl e | l | r
-.Oc
+.br
+.Nm crontab
 .Op Fl u Ar user
+.Oo
+.Fl l No \&|
+.Fl r No \&|
+.Fl e
+.Oc
 .Sh DESCRIPTION
 .Nm
 is the program used to install, deinstall, or list the tables
 used to drive the
 .Xr cron 8
-daemon.
-Each user can have their own
+daemon in Vixie Cron. Each user can have their own
 .Xr crontab 5 ,
 and though these are files in
 .Pa /var/cron/tabs ,
 they are not intended to be edited directly.
 .Pp
-The first form of this command is used to install a new crontab from some
-named file, or standard input if the pseudo-filename
-.Sq -
-is given.
-.Pp
 If the
-.Pa /var/cron/cron.allow
+.Pa /var/cron/allow
 file exists, then you must be listed therein in order to use
-.Nm .
+.Nm crontab .
 If the
-.Pa /var/cron/cron.allow
+.Pa /var/cron/allow
 file does not exist but the
-.Pa /var/cron/cron.deny
+.Pa /var/cron/deny
 file does exist, then you must
 .Em not
 be listed in the
-.Pa /var/cron/cron.deny
+.Pa /var/cron/deny
 file in order to use
-.Nm .
-If neither of these files exists then only the super user
+.Nm crontab .
+If neither of these files exists, then
+depending on site-dependent configuration parameters, only the super user
 will be allowed to use
-.Nm .
-.Em NOTE :
-if they exist,
-.Pa /var/cron/cron.allow
-and
-.Pa /var/cron/cron.deny
-must be readable by group crontab.
-If
-.Nm
-is unable to read the files, users will not be allowed to use
-.Nm .
+.Nm crontab ,
+or all users will be able to use it.
 .Pp
-The options are as follows:
-.Bl -tag -width "-u userX"
-.It Fl e
-Edit the current crontab using the editor specified by
-the
-.Ev VISUAL
-or
-.Ev EDITOR
-environment variables.
-After you exit from the editor, the modified
+If the
+.Fl u
+option is given,
+.Ar user
+specifies the name of the user whose
 .Xr crontab 5
-will be installed automatically.
-.It Fl l
-Causes the current crontab to be displayed on standard output.
-.It Fl r
-Causes the current crontab to be removed.
-.It Fl u Ar user
-Specifies the name of the user whose
-.Xr crontab 5
-is to be edited.
-If this option is not given,
+is to be
+tweaked. If this option is not given,
 .Nm
 examines
 .Dq your
@@ -107,70 +81,62 @@ examines
 i.e., the
 crontab of the person executing the command.
 Note that
-.Xr su 1
+.Xr su 8
 can confuse
 .Nm
 and that if you are running inside of
-.Xr su 1
+.Xr su 8
 you should always use the
 .Fl u
 option for safety's sake.
-.El
-.Sh ENVIRONMENT
-.Bl -tag -width "EDITOR"
-.It Ev EDITOR , VISUAL
-Specifies an editor to use.
-If both
+.Pp
+The first form of this command is used to install a new crontab from some
+named file, or standard input if the pseudo-filename
+.Sq Fl
+is given.
+.Pp
+The
+.Fl l
+option causes the current crontab to be displayed on standard output.
+.Pp
+The
+.Fl r
+option causes the current crontab to be removed.
+.Pp
+The
+.Fl e
+option is used to edit the current crontab using the editor specified by
+the
+.Ev VISUAL
+or
 .Ev EDITOR
-and
-.Ev VISUAL
-are set,
-.Ev VISUAL
-takes precedence.
-If neither
-.Ev EDITOR
-nor
-.Ev VISUAL
-are set, the default is
-.Xr vi 1 .
-.El
+environment variables. After you exit
+from the editor, the modified
+.Xr crontab 5
+will be installed automatically.
 .Sh FILES
-.Bl -tag -width "/var/cron/cron.allow" -compact
-.It Pa /var/cron/cron.allow
+.Bl -tag -width "/var/cron/allow" -compact
+.It Pa /var/cron/allow
 list of users allowed to use crontab
-.It Pa /var/cron/cron.deny
+.It Pa /var/cron/deny
 list of users prohibited from using crontab
 .It Pa /var/cron/tabs
 directory of individual crontabs
 .El
-.Sh DIAGNOSTICS
-A fairly informative usage message appears if you run it with a bad command
-line.
 .Sh SEE ALSO
-.Xr at 1 ,
 .Xr crontab 5 ,
 .Xr cron 8
 .Sh STANDARDS
 The
 .Nm
 utility is compliant with the
-.St -p1003.1-2008
+.St -p1003.2-92
 specification.
-.Pp
-The flag
-.Op Fl u
-is an extension to that specification.
-.Pp
-The flag
-.Op Fl e
-is marked by
-.St -p1003.1-2008
-as being optional.
-.Pp
-The cron.allow/deny mechanism is marked by
-.St -p1003.1-2008
-as being an
-X/Open System Interfaces
-option.
-.Sh AUTHORS
-.An Paul Vixie Aq Mt vixie@isc.org
+This new command syntax
+differs from previous versions of Vixie Cron, as well as from the classic
+SVR3 syntax.
+.Sh DIAGNOSTICS
+A fairly informative usage message appears if you run it with a bad command
+line.
+.Sh AUTHOR
+Paul Vixie <paul@vix.com>

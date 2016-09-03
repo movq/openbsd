@@ -1,43 +1,53 @@
-/*	$OpenBSD: misc.h,v 1.33 2015/11/21 16:45:41 krw Exp $	*/
+/*	$OpenBSD: misc.h,v 1.3 1997/10/16 01:47:11 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *    This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef _MISC_H
 #define _MISC_H
 
-struct unit_type {
-	char	*abbr;
-	int64_t	 conversion;
-	char	*lname;
-};
-extern struct unit_type unit_types[];
-#define SECTORS	1	/* units are bytes/sectors/kbytes/mbytes/gbytes */
+#include <sys/types.h>
+#include "cmd.h"
+
+/* Constants */
+#define ASK_HEX 0x01
+#define ASK_DEC 0x02
 
 /* Prototypes */
-int unit_lookup(char *);
-int string_from_line(char *, size_t);
-void ask_cmd(char **, char **);
-int ask_num(const char *, int, int, int);
-int ask_pid(int, struct uuid *);
-char *ask_string(const char *, const char *);
-int ask_yn(const char *);
-u_int64_t getuint64(char *, u_int64_t, u_int64_t, u_int64_t);
-u_int32_t crc32(const u_char *, const u_int32_t);
-char *utf16le_to_string(u_int16_t *);
-u_int16_t *string_to_utf16le(char *);
+int ask_cmd __P((cmd_t *));
+int ask_num __P((const char *, int, int, int, int, void (*help) __P((void))));
+int ask_yn __P((const char *));
+u_int16_t getshort __P((void *));
+u_int32_t getlong __P((void *));
+void putshort __P((void *, u_int16_t));
+void putlong __P((void *, u_int32_t));
 
-#endif /* _MISC_H */
+#endif _MISC_H
+

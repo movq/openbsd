@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.8 2015/10/26 10:34:18 tedu Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:44:10 deraadt Exp $
 
 PROG=	rarpd
 SRCS=	rarpd.c arptab.c

@@ -1,5 +1,3 @@
-/*	$OpenBSD: options_f.c,v 1.11 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)options_f.c	10.25 (Berkeley) 7/12/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,14 @@
 #include "common.h"
 
 /*
- * PUBLIC: int f_altwerase(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_altwerase __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_altwerase(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_altwerase(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	if (!*valp)
 		O_CLR(sp, O_TTYWERASE);
@@ -38,14 +44,18 @@ f_altwerase(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_columns(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_columns __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_columns(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_columns(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	/* Validate the number. */
 	if (*valp < MINIMUM_SCREEN_COLS) {
-		msgq(sp, M_ERR, "Screen columns too small, less than %d",
+		msgq(sp, M_ERR, "040|Screen columns too small, less than %d",
 		    MINIMUM_SCREEN_COLS);
 		return (1);
 	}
@@ -58,9 +68,9 @@ f_columns(SCR *sp, OPTION *op, char *str, u_long *valp)
 	 * number of lines/columns for the screen, but at least we don't drop
 	 * core.
 	 */
-#define	MAXIMUM_SCREEN_COLS	768
+#define	MAXIMUM_SCREEN_COLS	500
 	if (*valp > MAXIMUM_SCREEN_COLS) {
-		msgq(sp, M_ERR, "Screen columns too large, greater than %d",
+		msgq(sp, M_ERR, "041|Screen columns too large, greater than %d",
 		    MAXIMUM_SCREEN_COLS);
 		return (1);
 	}
@@ -68,14 +78,18 @@ f_columns(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_lines(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_lines __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_lines(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_lines(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	/* Validate the number. */
 	if (*valp < MINIMUM_SCREEN_ROWS) {
-		msgq(sp, M_ERR, "Screen lines too small, less than %d",
+		msgq(sp, M_ERR, "042|Screen lines too small, less than %d",
 		    MINIMUM_SCREEN_ROWS);
 		return (1);
 	}
@@ -90,7 +104,7 @@ f_lines(SCR *sp, OPTION *op, char *str, u_long *valp)
 	 */
 #define	MAXIMUM_SCREEN_ROWS	500
 	if (*valp > MAXIMUM_SCREEN_ROWS) {
-		msgq(sp, M_ERR, "Screen lines too large, greater than %d",
+		msgq(sp, M_ERR, "043|Screen lines too large, greater than %d",
 		    MAXIMUM_SCREEN_ROWS);
 		return (1);
 	}
@@ -121,34 +135,60 @@ f_lines(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_lisp(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_lisp __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_lisp(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_lisp(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
-	msgq(sp, M_ERR, "The lisp option is not implemented");
+	msgq(sp, M_ERR, "044|The lisp option is not implemented");
 	return (0);
 }
 
 /*
- * PUBLIC: int f_paragraph(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_msgcat __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_paragraph(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_msgcat(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
+{
+	(void)msg_open(sp, str);
+	return (0);
+}
+
+/*
+ * PUBLIC: int f_paragraph __P((SCR *, OPTION *, char *, u_long *));
+ */
+int
+f_paragraph(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	if (strlen(str) & 1) {
 		msgq(sp, M_ERR,
-		    "The paragraph option must be in two character groups");
+		    "048|The paragraph option must be in two character groups");
 		return (1);
 	}
 	return (0);
 }
 
 /*
- * PUBLIC: int f_print(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_print __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_print(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_print(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	/* Reinitialize the key fast lookup table. */
 	v_key_ilookup(sp);
@@ -159,10 +199,14 @@ f_print(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_readonly(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_readonly __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_readonly(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_readonly(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	/*
 	 * !!!
@@ -176,10 +220,14 @@ f_readonly(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_recompile(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_recompile __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_recompile(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_recompile(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	if (F_ISSET(sp, SC_RE_SEARCH)) {
 		regfree(&sp->re_c);
@@ -193,34 +241,46 @@ f_recompile(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_reformat(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_reformat __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_reformat(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_reformat(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	F_SET(sp, SC_SCR_REFORMAT);
 	return (0);
 }
 
 /*
- * PUBLIC: int f_section(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_section __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_section(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_section(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	if (strlen(str) & 1) {
 		msgq(sp, M_ERR,
-		    "The section option must be in two character groups");
+		    "049|The section option must be in two character groups");
 		return (1);
 	}
 	return (0);
 }
 
 /*
- * PUBLIC: int f_ttywerase(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_ttywerase __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_ttywerase(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_ttywerase(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	if (!*valp)
 		O_CLR(sp, O_ALTWERASE);
@@ -228,10 +288,14 @@ f_ttywerase(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_w300(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_w300 __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_w300(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_w300(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	u_long v;
 
@@ -245,10 +309,14 @@ f_w300(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_w1200(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_w1200 __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_w1200(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_w1200(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	u_long v;
 
@@ -262,10 +330,14 @@ f_w1200(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_w9600(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_w9600 __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_w9600(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_w9600(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	u_long v;
 
@@ -279,10 +351,14 @@ f_w9600(SCR *sp, OPTION *op, char *str, u_long *valp)
 }
 
 /*
- * PUBLIC: int f_window(SCR *, OPTION *, char *, u_long *);
+ * PUBLIC: int f_window __P((SCR *, OPTION *, char *, u_long *));
  */
 int
-f_window(SCR *sp, OPTION *op, char *str, u_long *valp)
+f_window(sp, op, str, valp)
+	SCR *sp;
+	OPTION *op;
+	char *str;
+	u_long *valp;
 {
 	if (*valp >= O_VAL(sp, O_LINES) - 1 &&
 	    (*valp = O_VAL(sp, O_LINES) - 1) == 0)

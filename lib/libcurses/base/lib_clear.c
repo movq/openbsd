@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_clear.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_clear.c,v 1.1 1999/01/18 19:09:38 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -42,17 +42,16 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_clear.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_clear.c,v 1.5 1998/02/11 12:13:53 tom Exp $")
 
-NCURSES_EXPORT(int)
-wclear(WINDOW *win)
+int wclear(WINDOW *win)
 {
-    int code = ERR;
+int code = ERR;
 
-    T((T_CALLED("wclear(%p)"), win));
+	T((T_CALLED("wclear(%p)"), win));
 
-    if ((code = werase(win)) != ERR)
-	win->_clear = TRUE;
-
-    returnCode(code);
+	if ((code = werase(win))!=ERR)
+	  win->_clear = TRUE;
+	
+	returnCode(code);
 }

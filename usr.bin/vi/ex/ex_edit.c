@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_edit.c,v 1.6 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_edit.c	10.10 (Berkeley) 4/27/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,7 +27,7 @@
 #include "../common/common.h"
 #include "../vi/vi.h"
 
-static int ex_N_edit(SCR *, EXCMD *, FREF *, int);
+static int ex_N_edit __P((SCR *, EXCMD *, FREF *, int));
 
 /*
  * ex_edit --	:e[dit][!] [+cmd] [file]
@@ -41,10 +43,12 @@ static int ex_N_edit(SCR *, EXCMD *, FREF *, int);
  * a file name as well.  This seems unreasonable, so we support it
  * regardless.
  *
- * PUBLIC: int ex_edit(SCR *, EXCMD *);
+ * PUBLIC: int ex_edit __P((SCR *, EXCMD *));
  */
 int
-ex_edit(SCR *sp, EXCMD *cmdp)
+ex_edit(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	FREF *frp;
 	int attach, setalt;
@@ -104,7 +108,11 @@ ex_edit(SCR *sp, EXCMD *cmdp)
  *	New screen version of ex_edit.
  */
 static int
-ex_N_edit(SCR *sp, EXCMD *cmdp, FREF *frp, int attach)
+ex_N_edit(sp, cmdp, frp, attach)
+	SCR *sp;
+	EXCMD *cmdp;
+	FREF *frp;
+	int attach;
 {
 	SCR *new;
 

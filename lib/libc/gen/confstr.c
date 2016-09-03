@@ -1,4 +1,3 @@
-/*	$OpenBSD: confstr.c,v 1.10 2013/03/07 06:00:18 guenther Exp $ */
 /*-
  * Copyright (c) 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,97 +31,53 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: confstr.c,v 1.3 1996/09/15 09:30:55 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
+#include <sys/sysctl.h>
+
 #include <errno.h>
 #include <paths.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-
-static const char v6_width_restricted_envs[] = {
-#ifdef __LP64__
-	"POSIX_V6_LP64_OFF64\n"
-	"POSIX_V6_LPBIG_OFFBIG"
-#else
-	"POSIX_V6_ILP32_OFFBIG"
-#endif
-};
-
-static const char v7_width_restricted_envs[] = {
-#ifdef __LP64__
-	"POSIX_V7_LP64_OFF64\n"
-	"POSIX_V7_LPBIG_OFFBIG"
-#else
-	"POSIX_V7_ILP32_OFFBIG"
-#endif
-};
-
 size_t
-confstr(int name, char *buf, size_t len)
+confstr(name, buf, len)
+	int name;
+	char *buf;
+	size_t len;
 {
+	size_t tlen;
+	int mib[2], sverrno;
+	char *p;
+
 	switch (name) {
 	case _CS_PATH:
-		return (strlcpy(buf, _PATH_STDPATH, len) + 1);
-
-	/* no configuration-defined value */
-	case _CS_POSIX_V6_ILP32_OFF32_CFLAGS:
-	case _CS_POSIX_V6_ILP32_OFF32_LDFLAGS:
-	case _CS_POSIX_V6_ILP32_OFF32_LIBS:
-	case _CS_POSIX_V7_ILP32_OFF32_CFLAGS:
-	case _CS_POSIX_V7_ILP32_OFF32_LDFLAGS:
-	case _CS_POSIX_V7_ILP32_OFF32_LIBS:
-		return (0);
-
-	/* these are either NULL or empty, depending on the platform */
-	case _CS_POSIX_V6_ILP32_OFFBIG_CFLAGS:
-	case _CS_POSIX_V6_ILP32_OFFBIG_LDFLAGS:
-	case _CS_POSIX_V6_ILP32_OFFBIG_LIBS:
-	case _CS_POSIX_V7_ILP32_OFFBIG_CFLAGS:
-	case _CS_POSIX_V7_ILP32_OFFBIG_LDFLAGS:
-	case _CS_POSIX_V7_ILP32_OFFBIG_LIBS:
-#ifdef __LP64__
-		return (0);
-#else
-		if (len > 0)
-			buf[0] = '\0';
-		return (1);
-#endif
-	case _CS_POSIX_V6_LP64_OFF64_CFLAGS:
-	case _CS_POSIX_V6_LP64_OFF64_LDFLAGS:
-	case _CS_POSIX_V6_LP64_OFF64_LIBS:
-	case _CS_POSIX_V6_LPBIG_OFFBIG_CFLAGS:
-	case _CS_POSIX_V6_LPBIG_OFFBIG_LDFLAGS:
-	case _CS_POSIX_V6_LPBIG_OFFBIG_LIBS:
-	case _CS_POSIX_V7_LP64_OFF64_CFLAGS:
-	case _CS_POSIX_V7_LP64_OFF64_LDFLAGS:
-	case _CS_POSIX_V7_LP64_OFF64_LIBS:
-	case _CS_POSIX_V7_LPBIG_OFFBIG_CFLAGS:
-	case _CS_POSIX_V7_LPBIG_OFFBIG_LDFLAGS:
-	case _CS_POSIX_V7_LPBIG_OFFBIG_LIBS:
-#ifdef __LP64__
-		if (len > 0)
-			buf[0] = '\0';
-		return (1);
-#else
-		return (0);
-#endif
-
-	/* zero length strings */
-	case _CS_POSIX_V7_THREADS_CFLAGS:
-	case _CS_V6_ENV:
-	case _CS_V7_ENV:
-		if (len > 0)
-			buf[0] = '\0';
-		return (1);
-
-	case _CS_POSIX_V7_THREADS_LDFLAGS:
-		return (strlcpy(buf, "-lpthread", len) + 1);
-
-	case _CS_POSIX_V6_WIDTH_RESTRICTED_ENVS:
-		return (strlcpy(buf, v6_width_restricted_envs, len) + 1);
-	
-	case _CS_POSIX_V7_WIDTH_RESTRICTED_ENVS:
-		return (strlcpy(buf, v7_width_restricted_envs, len) + 1);
-
+		mib[0] = CTL_USER;
+		mib[1] = USER_CS_PATH;
+		if (sysctl(mib, 2, NULL, &tlen, NULL, 0) == -1)
+			return ((size_t) -1);
+		if (len != 0 && buf != NULL) {
+			if ((p = malloc(tlen)) == NULL)
+				return ((size_t) -1);
+			if (sysctl(mib, 2, p, &tlen, NULL, 0) == -1) {
+				sverrno = errno;
+				free(p);
+				errno = sverrno;
+				return ((size_t) -1);
+			}
+			/*
+			 * POSIX 1003.2 requires partial return of
+			 * the string -- that should be *real* useful.
+			 */
+			(void)strncpy(buf, p, len - 1);
+			buf[len - 1] = '\0';
+			free(p);
+		}
+		return (tlen + 1);
 	default:
 		errno = EINVAL;
 		return (0);

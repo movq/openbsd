@@ -13,10 +13,18 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_acosf.c,v 1.5 1995/05/12 04:57:16 jtc Exp $";
+#endif
+
 #include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const float 
+#else
+static float 
+#endif
 one =  1.0000000000e+00, /* 0x3F800000 */
 pi =  3.1415925026e+00, /* 0x40490fda */
 pio2_hi =  1.5707962513e+00, /* 0x3fc90fda */
@@ -32,8 +40,12 @@ qS2 =  2.0209457874e+00, /* 0x4001572d */
 qS3 = -6.8828397989e-01, /* 0xbf303361 */
 qS4 =  7.7038154006e-02; /* 0x3d9dc62e */
 
-float
-acosf(float x)
+#ifdef __STDC__
+	float __ieee754_acosf(float x)
+#else
+	float __ieee754_acosf(x)
+	float x;
+#endif
 {
 	float z,p,q,r,w,s,c,df;
 	int32_t hx,ix;
@@ -56,14 +68,14 @@ acosf(float x)
 	    z = (one+x)*(float)0.5;
 	    p = z*(pS0+z*(pS1+z*(pS2+z*(pS3+z*(pS4+z*pS5)))));
 	    q = one+z*(qS1+z*(qS2+z*(qS3+z*qS4)));
-	    s = sqrtf(z);
+	    s = __ieee754_sqrtf(z);
 	    r = p/q;
 	    w = r*s-pio2_lo;
 	    return pi - (float)2.0*(s+w);
 	} else {			/* x > 0.5 */
 	    int32_t idf;
 	    z = (one-x)*(float)0.5;
-	    s = sqrtf(z);
+	    s = __ieee754_sqrtf(z);
 	    df = s;
 	    GET_FLOAT_WORD(idf,df);
 	    SET_FLOAT_WORD(df,idf&0xfffff000);

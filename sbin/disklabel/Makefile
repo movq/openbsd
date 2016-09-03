@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.63 2016/09/01 09:46:42 tedu Exp $
+#	$OpenBSD: Makefile,v 1.21 1999/07/14 23:16:26 deraadt Exp $
 
 PROG=	disklabel
 SRCS=	disklabel.c dkcksum.c editor.c manual.c
@@ -6,55 +6,41 @@ DPADD=	${LIBUTIL}
 LDADD=	-lutil
 MAN=	disklabel.8 disklabel.5
 
-CLEANFILES += disklabel.cat8 manual.c
+CLEANFILES+=manual.c
+manual.c:	disklabel.8
+	(echo 'char manpage[] = "\\'; \
+	nroff -mandoc ${.CURDIR}/disklabel.8 | sed -e 's/$$/\\n\\/' ; \
+	echo '";' ) > manual.c
 
-.include <bsd.own.mk>
-
-.ifdef NOMAN
-manual.c:
-	(echo 'const unsigned char manpage[] = {'; \
-	echo 'no manual' | gzip -9c | hexdump -ve '"0x" 1/1 "%02x,"'; \
-	echo '};'; echo 'const int manpage_sz = sizeof(manpage);') > manual.c
-.else
-disklabel.cat8:	disklabel.8
-	mandoc -Tascii ${.ALLSRC} > ${.TARGET}
-
-manual.c:	disklabel.cat8
-	(echo 'const unsigned char manpage[] = {'; \
-	cat disklabel.cat8 | gzip -9c | hexdump -ve '"0x" 1/1 "%02x,"'; \
-	echo '};'; echo 'const int manpage_sz = sizeof(manpage);') > manual.c
+.if (${MACHINE} == "amiga")
+CFLAGS+= -D${MACHINE}
 .endif
 
-.if (${MACHINE} == "alpha")
+.if (${MACHINE} == "i386")
+CFLAGS+= -DNUMBOOT=2 -DDOSLABEL
 CFLAGS+= -DSEEALSO="\"fdisk(8), installboot(8)\""
 .endif
 
-.if (${MACHINE} == "amd64") || (${MACHINE} == "i386")
-CFLAGS+= -DSEEALSO="\"fdisk(8), installboot(8)\""
-.endif
-
-.if (${MACHINE} == "armv7") || (${MACHINE} == "loongson")
+.if (${MACHINE} == "arc")
+CFLAGS+= -DDOSLABEL -DNUMBOOT=1
 CFLAGS+= -DSEEALSO="\"fdisk(8)\""
 .endif
 
-.if (${MACHINE} == "landisk")
-CFLAGS+= -DSEEALSO="\"fdisk(8), installboot(8)\""
+.if (${MACHINE} == "hp300") || (${MACHINE} == "vax")
+CFLAGS+= -DNUMBOOT=1
 .endif
 
-.if (${MACHINE} == "macppc" || ${MACHINE} == "socppc")
-CFLAGS+= -DSEEALSO="\"fdisk(8), pdisk(8)\""
+.if (${MACHINE} == "sun3") || (${MACHINE} == "sparc")
+CFLAGS+= -DSEEALSO="\"installboot(8)\"" -DCYLCHECK -DAAT0
 .endif
 
-.if (${MACHINE} == "sparc64")
-CFLAGS+= -DSEEALSO="\"installboot(8)\"" -DSUN_CYLCHECK -DSUN_AAT0
+.if (${MACHINE} == "mvme68k") || (${MACHINE} == "mvme68k")
+CFLAGS+= -DSEEALSO="\"installboot(8)\""
 .endif
 
-.if (${MACHINE} == "zaurus")
+.if (${MACHINE} == "powerpc")
+CFLAGS+= -DDOSLABEL
 CFLAGS+= -DSEEALSO="\"fdisk(8)\""
-.endif
-
-.ifdef NOPIC
-CFLAGS+= -DSTATICLINKING
 .endif
 
 .include <bsd.prog.mk>

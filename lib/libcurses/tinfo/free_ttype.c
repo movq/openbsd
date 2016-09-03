@@ -1,7 +1,7 @@
-/* $OpenBSD: free_ttype.c,v 1.7 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: free_ttype.c,v 1.2 1999/05/08 20:29:01 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1999-2005,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1999 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,8 +29,9 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey                    1999-on                     *
+ *  Author: Thomas E. Dickey <dickey@clark.net> 1999                        *
  ****************************************************************************/
+
 
 /*
  * free_ttype.c -- allocation functions for TERMTYPE
@@ -45,35 +46,29 @@
 #include <tic.h>
 #include <term_entry.h>
 
-MODULE_ID("$Id: free_ttype.c,v 1.7 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: free_ttype.c,v 1.2 1999/03/01 00:30:35 tom Exp $")
 
-NCURSES_EXPORT(void)
-_nc_free_termtype(TERMTYPE *ptr)
+void _nc_free_termtype(TERMTYPE *ptr)
 {
-    T(("_nc_free_termtype(%s)", ptr->term_names));
-
-    FreeIfNeeded(ptr->str_table);
-    FreeIfNeeded(ptr->Booleans);
-    FreeIfNeeded(ptr->Numbers);
-    FreeIfNeeded(ptr->Strings);
+	FreeIfNeeded(ptr->str_table);
+	FreeIfNeeded(ptr->term_names);
 #if NCURSES_XNAMES
-    FreeIfNeeded(ptr->ext_str_table);
-    FreeIfNeeded(ptr->ext_Names);
+	FreeIfNeeded(ptr->ext_str_table);
+	FreeIfNeeded(ptr->Booleans);
+	FreeIfNeeded(ptr->Numbers);
+	FreeIfNeeded(ptr->Strings);
+	FreeIfNeeded(ptr->ext_Names);
 #endif
-    memset(ptr, 0, sizeof(TERMTYPE));
-    _nc_free_entry(_nc_head, ptr);
+	memset(ptr, 0, sizeof(TERMTYPE));
 }
 
 #if NCURSES_XNAMES
-NCURSES_EXPORT_VAR(bool) _nc_user_definable = TRUE;
+bool _nc_user_definable = TRUE;
 
-NCURSES_EXPORT(int)
-use_extended_names(bool flag)
+int use_extended_names(bool flag)
 {
-    int oldflag = _nc_user_definable;
-
-    T((T_CALLED("use_extended_names(%d)"), flag));
-    _nc_user_definable = flag;
-    returnBool(oldflag);
+	int oldflag = _nc_user_definable;
+	_nc_user_definable = flag;
+	return oldflag;
 }
 #endif

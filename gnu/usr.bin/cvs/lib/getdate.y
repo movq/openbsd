@@ -39,11 +39,46 @@
    Include <sys/time.h> if that will be used.  */
 
 #if	defined(vms)
-# include <types.h>
-#else /* defined(vms) */
-# include <sys/types.h>
-# include "xtime.h"
-#endif	/* !defined(vms) */
+
+#include <types.h>
+#include <time.h>
+
+#else
+
+#include <sys/types.h>
+
+#ifdef TIME_WITH_SYS_TIME
+#include <sys/time.h>
+#include <time.h>
+#else
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>
+#else
+#include <time.h>
+#endif
+#endif
+
+#ifdef timezone
+#undef timezone /* needed for sgi */
+#endif
+
+#if defined(HAVE_SYS_TIMEB_H)
+#include <sys/timeb.h>
+#else
+/*
+** We use the obsolete `struct timeb' as part of our interface!
+** Since the system doesn't have it, we define it here;
+** our callers must do likewise.
+*/
+struct timeb {
+    time_t		time;		/* Seconds since the epoch	*/
+    unsigned short	millitm;	/* Field not used		*/
+    short		timezone;	/* Minutes west of GMT		*/
+    short		dstflag;	/* Field not used		*/
+};
+#endif /* defined(HAVE_SYS_TIMEB_H) */
+
+#endif	/* defined(vms) */
 
 #if defined (STDC_HEADERS) || defined (USG)
 #include <string.h>
@@ -80,7 +115,6 @@ extern struct tm	*localtime();
 #define yylex getdate_yylex
 #define yyerror getdate_yyerror
 
-static int yyparse ();
 static int yylex ();
 static int yyerror ();
 
@@ -247,15 +281,9 @@ date	: tUNUMBER '/' tUNUMBER {
 	    yyDay = $3;
 	}
 	| tUNUMBER '/' tUNUMBER '/' tUNUMBER {
-	    if ($1 >= 100) {
-		yyYear = $1;
-		yyMonth = $3;
-		yyDay = $5;
-	    } else {
-		yyMonth = $1;
-		yyDay = $3;
-		yyYear = $5;
-	    }
+	    yyMonth = $1;
+	    yyDay = $3;
+	    yyYear = $5;
 	}
 	| tUNUMBER tSNUMBER tSNUMBER {
 	    /* ISO 8601 format.  yyyy-mm-dd.  */
@@ -615,18 +643,13 @@ Convert(Month, Day, Year, Hours, Minutes, Seconds, Meridian, DSTmode)
 
     if (Year < 0)
 	Year = -Year;
-    if (Year < 69)
-	Year += 2000;
-    else if (Year < 100) {
+    if (Year < 100)
 	Year += 1900;
-	if (Year < EPOCH)
-		Year += 100;
-    }
     DaysInMonth[1] = Year % 4 == 0 && (Year % 100 != 0 || Year % 400 == 0)
 		    ? 29 : 28;
-    /* XXX Sloppily check for 2038 if time_t is 32 bits */
-    if (Year < EPOCH
-     || (sizeof(time_t) == sizeof(int) && Year > 2038)
+    /* Checking for 2038 bogusly assumes that time_t is 32 bits.  But
+       I'm too lazy to try to check for time_t overflow in another way.  */
+    if (Year < EPOCH || Year > 2038
      || Month < 1 || Month > 12
      /* Lint fluff:  "conversion from long may lose accuracy" */
      || Day < 1 || Day > DaysInMonth[(int)--Month])
@@ -885,50 +908,59 @@ difftm (a, b)
 }
 
 time_t
-get_date(p)
-     char *p;
+get_date(p, now)
+    char		*p;
+    struct timeb	*now;
 {
-    struct tm		*tm, *gmt, gmtbuf;
+    struct tm		*tm, gmt;
+    struct timeb	ftz;
     time_t		Start;
     time_t		tod;
-    time_t		now;
-    time_t		timezone;
+    time_t nowtime;
 
     yyInput = p;
-    (void)time (&now);
+    if (now == NULL) {
+	struct tm *gmt_ptr;
 
-    gmt = gmtime (&now);
-    if (gmt != NULL)
+        now = &ftz;
+	(void)time (&nowtime);
+
+	gmt_ptr = gmtime (&nowtime);
+	if (gmt_ptr != NULL)
+	{
+	    /* Make a copy, in case localtime modifies *tm (I think
+	       that comment now applies to *gmt_ptr, but I am too
+	       lazy to dig into how gmtime and locatime allocate the
+	       structures they return pointers to).  */
+	    gmt = *gmt_ptr;
+	}
+
+	if (! (tm = localtime (&nowtime)))
+	    return -1;
+
+	if (gmt_ptr != NULL)
+	    ftz.timezone = difftm (&gmt, tm) / 60;
+	else
+	    /* We are on a system like VMS, where the system clock is
+	       in local time and the system has no concept of timezones.
+	       Hopefully we can fake this out (for the case in which the
+	       user specifies no timezone) by just saying the timezone
+	       is zero.  */
+	    ftz.timezone = 0;
+
+	if(tm->tm_isdst)
+	    ftz.timezone += 60;
+    }
+    else
     {
-	/* Make a copy, in case localtime modifies *tm (I think
-	   that comment now applies to *gmt, but I am too
-	   lazy to dig into how gmtime and locatime allocate the
-	   structures they return pointers to).  */
-	gmtbuf = *gmt;
-	gmt = &gmtbuf;
+	nowtime = now->time;
     }
 
-    if (! (tm = localtime (&now)))
-	return -1;
-
-    if (gmt != NULL)
-	timezone = difftm (gmt, tm) / 60;
-    else
-	/* We are on a system like VMS, where the system clock is
-	   in local time and the system has no concept of timezones.
-	   Hopefully we can fake this out (for the case in which the
-	   user specifies no timezone) by just saying the timezone
-	   is zero.  */
-	timezone = 0;
-
-    if(tm->tm_isdst)
-	timezone += 60;
-
-    tm = localtime(&now);
-    yyYear = tm->tm_year + 1900;
+    tm = localtime(&nowtime);
+    yyYear = tm->tm_year;
     yyMonth = tm->tm_mon + 1;
     yyDay = tm->tm_mday;
-    yyTimezone = timezone;
+    yyTimezone = now->timezone;
     yyDSTmode = DSTmaybe;
     yyHour = 0;
     yyMinutes = 0;
@@ -953,7 +985,7 @@ get_date(p)
 	    return -1;
     }
     else {
-	Start = now;
+	Start = nowtime;
 	if (!yyHaveRel)
 	    Start -= ((tm->tm_hour * 60L + tm->tm_min) * 60L) + tm->tm_sec;
     }
@@ -986,7 +1018,7 @@ main(ac, av)
     (void)printf("Enter date, or blank line to exit.\n\t> ");
     (void)fflush(stdout);
     while (gets(buff) && buff[0]) {
-	d = get_date(buff);
+	d = get_date(buff, (struct timeb *)NULL);
 	if (d == -1)
 	    (void)printf("Bad format - couldn't convert.\n");
 	else

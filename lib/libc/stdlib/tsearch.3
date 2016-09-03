@@ -1,38 +1,46 @@
-.\" $OpenBSD: tsearch.3,v 1.20 2016/03/12 21:31:22 mmcc Exp $
-.\"
 .\" Copyright (c) 1997 Todd C. Miller <Todd.Miller@courtesan.com>
+.\" All rights reserved.
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\" THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+.\" INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+.\" AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+.\" THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+.\" EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+.\" PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+.\" OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+.\" WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+.\" OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+.\" ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: March 12 2016 $
+.\"	$OpenBSD: tsearch.3,v 1.6 1999/07/04 18:59:43 aaron Exp $
+.\"
+.Dd June 15, 1997
 .Dt TSEARCH 3
 .Os
 .Sh NAME
-.Nm tsearch ,
-.Nm tfind ,
-.Nm tdelete ,
-.Nm twalk
+.Nm tsearch, tfind, tdelete, twalk
 .Nd manipulate binary search trees
 .Sh SYNOPSIS
-.In search.h
+.Fd #include <search.h>
 .Ft void *
-.Fn tdelete "const void *key" "void **rootp" "int (*compar)(const void *, const void *)"
+.Fn tdelete "const void *key" "void **rootp", "int (*compar) (const void *, const void *)"
 .Ft void *
-.Fn tfind "const void *key" "void * const *rootp" "int (*compar)(const void *, const void *)"
+.Fn tfind "const void *key" "void * const *rootp", "int (*compar) (const void *, const void *)"
 .Ft void *
-.Fn tsearch "const void *key" "void **rootp" "int (*compar)(const void *, const void *)"
+.Fn tsearch "const void *key" "void **rootp", "int (*compar) (const void *, const void *)"
 .Ft void
-.Fn twalk "const void *root" "void (*action)(const void *, VISIT, int)"
+.Fn twalk "const void *root" "void (*compar) (const void *, VISIT, int)"
 .Sh DESCRIPTION
 The
 .Fn tdelete ,
@@ -41,8 +49,7 @@ The
 and
 .Fn twalk
 functions manage binary search trees based on algorithms T and D
-from Knuth (6.2.2).
-The comparison function passed in by
+from Knuth (6.2.2).  The comparison function passed in by
 the user has the same style of return values as
 .Xr strcmp 3 .
 .Pp
@@ -60,21 +67,20 @@ is identical to
 .Fn tfind
 except that if no match is found,
 .Fa key
-is inserted into the tree and a pointer to it is returned.
-If
+is inserted into the tree and a pointer to it is returned.  If
 .Fa rootp
 points to a null value a new binary search tree is created.
 .Pp
 .Fn tdelete
 deletes a node from the specified binary search tree and returns
 a pointer to the parent of the node to be deleted.
-If the node to be deleted is the root of the binary search tree,
-.Fa rootp
-will be adjusted and an unspecified non-null pointer will be returned.
 It takes the same arguments as
 .Fn tfind
 and
 .Fn tsearch .
+If the node to be deleted is the root of the binary search tree,
+.Fa rootp
+will be adjusted.
 .Pp
 .Fn twalk
 walks the binary search tree rooted in
@@ -88,6 +94,9 @@ a value from the enum
 .Sy "typedef enum { preorder, postorder, endorder, leaf } VISIT;"
 specifying the traversal type, and a node level (where level
 zero is the root of the tree).
+.Sh SEE ALSO
+.Xr bsearch 3 ,
+.Xr lsearch 3
 .Sh RETURN VALUES
 The
 .Fn tsearch
@@ -95,10 +104,6 @@ function returns
 .Dv NULL
 if allocation of a new node fails (usually
 due to a lack of free memory).
-.Pp
-.Fn tdelete
-returns a pointer to the parent of the deleted node or an unspecified
-non-null pointer if the root node is deleted.
 .Pp
 .Fn tfind ,
 .Fn tsearch ,
@@ -111,16 +116,7 @@ if
 is
 .Dv NULL
 or the datum cannot be found.
-.Sh SEE ALSO
-.Xr bsearch 3 ,
-.Xr lsearch 3
-.Sh STANDARDS
-These functions conform to
-.St -p1003.1-2008 .
-.Sh CAVEATS
-The value returned when deleting the root node was unspecified before
-the
-.St -p1003.1-2008
-standard, so users of the
-.Fn tdelete
-function should be wary of relying on a specific behaviour.
+.Pp
+The
+.Fn twalk
+function returns no value.

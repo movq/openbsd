@@ -211,8 +211,7 @@ mydbm_load_file (fp, list)
     value = xmalloc (value_allocated);
 
     cont = 0;
-    while ((line_length = 
-            getstr (&line, &line_size, fp, '\012', 0, GETLINE_NO_LIMIT)) >= 0)
+    while ((line_length = getstr (&line, &line_size, fp, '\012', 0)) >= 0)
     {
 	if (line_length > 0 && line[line_length - 1] == '\012')
 	{

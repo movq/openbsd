@@ -1,4 +1,4 @@
-/*	$OpenBSD: dump.h,v 1.24 2015/05/23 05:17:20 guenther Exp $	*/
+/*	$OpenBSD: dump.h,v 1.8 1998/11/24 01:25:46 deraadt Exp $	*/
 /*	$NetBSD: dump.h,v 1.11 1997/06/05 11:13:20 lukem Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +35,9 @@
  *
  *	@(#)dump.h	8.1 (Berkeley) 6/5/93
  */
+
+#define MAXINOPB	(MAXBSIZE / sizeof(struct dinode))
+#define MAXNINDIR	(MAXBSIZE / sizeof(daddr_t))
 
 /*
  * Dump maps used to describe what is to be dumped.
@@ -56,7 +63,6 @@ char	*disk;		/* name of the disk file */
 char	*tape;		/* name of the tape file */
 char	*dumpdates;	/* name of the file containing dump date information*/
 char	*temp;		/* name of the file for doing rewrite of dumpdates */
-char	*duid;		/* duid of the disk being dumped */
 char	lastlevel;	/* dump level of previous dump */
 char	level;		/* dump level of this dump */
 int	uflag;		/* update flag */
@@ -66,77 +72,78 @@ int	pipeout;	/* true => output to standard output */
 ino_t	curino;		/* current inumber; used globally */
 int	newtape;	/* new tape flag */
 int	density;	/* density in 0.1" units */
-int64_t	tapesize;	/* estimated tape size, blocks */
-int64_t	tsize;		/* tape size in 0.1" units */
+u_int64_t tapesize;	/* estimated tape size, blocks */
+long	tsize;		/* tape size in 0.1" units */
 int	unlimited;	/* if set, write to end of medium */
-int64_t	asize;		/* number of 0.1" units written on current tape */
+long	asize;		/* number of 0.1" units written on current tape */
 int	etapes;		/* estimated number of tapes */
 int	nonodump;	/* if set, do not honor UF_NODUMP user flags */
 
 int	notify;		/* notify operator flag */
-int64_t	blockswritten;	/* number of blocks written on current tape */
+int	blockswritten;	/* number of blocks written on current tape */
 int	tapeno;		/* current tape number */
 time_t	tstart_writing;	/* when started writing the first tape block */
 long	xferrate;	/* averaged transfer rate of all volumes */
 struct	fs *sblock;	/* the file system super block */
 char	sblock_buf[MAXBSIZE];
+long	dev_bsize;	/* block size of underlying disk device */
+int	dev_bshift;	/* log2(dev_bsize) */
 int	tp_bshift;	/* log2(TP_BSIZE) */
 
+#ifndef __P
+#include <sys/cdefs.h>
+#endif
+
 /* operator interface functions */
-void	broadcast(char *message);
-time_t	do_stats(void);
-void	lastdump(int arg);	/* int should be char */
-void	msg(const char *fmt, ...)
-	    __attribute__((__format__ (printf, 1, 2)));
-void	msgtail(const char *fmt, ...)
-	    __attribute__((__format__ (printf, 1, 2)));
-int	query(char *question);
-__dead void quit(const char *fmt, ...)
-	    __attribute__((__format__ (printf, 1, 2)));
-void	statussig(int);
-void	timeest(void);
+void	broadcast __P((char *message));
+time_t	do_stats __P((void));
+void	lastdump __P((int arg));	/* int should be char */
+void	msg __P((const char *fmt, ...));
+void	msgtail __P((const char *fmt, ...));
+int	query __P((char *question));
+void	quit __P((const char *fmt, ...));
+void	statussig __P((int));
+void	timeest __P((void));
 
 /* mapping routines */
-union	dinode;
-int64_t	blockest(union dinode *dp);
-void	mapfileino(ino_t, int64_t *, int *);
-int	mapfiles(ino_t maxino, int64_t *tapesize, char *disk,
-	    char * const *dirv);
-int	mapdirs(ino_t maxino, int64_t *tapesize);
+struct	dinode;
+long	blockest __P((struct dinode *dp));
+void	mapfileino __P((ino_t, u_int64_t *, int *));
+int	mapfiles __P((ino_t maxino, u_int64_t *tapesize, char *disk,
+		    char * const *dirv));
+int	mapdirs __P((ino_t maxino, u_int64_t *tapesize));
 
 /* file dumping routines */
-void	ufs1_blksout(int32_t *blkp, int frags, ino_t ino);
-void	ufs2_blksout(daddr_t *blkp, int frags, ino_t ino);
-void	bread(daddr_t blkno, char *buf, int size);
-void	dumpino(union dinode *dp, ino_t ino);
-void	dumpmap(char *map, int type, ino_t ino);
-void	writeheader(ino_t ino);
+void	blksout __P((daddr_t *blkp, int frags, ino_t ino));
+void	bread __P((daddr_t blkno, char *buf, int size));	
+void	dumpino __P((struct dinode *dp, ino_t ino));
+void	dumpmap __P((char *map, int type, ino_t ino));
+void	writeheader __P((ino_t ino));
 
 /* tape writing routines */
-int	alloctape(void);
-void	close_rewind(void);
-void	dumpblock(daddr_t blkno, int size);
-void	startnewtape(int top);
-void	trewind(void);
-void	writerec(char *dp, int isspcl);
+int	alloctape __P((void));
+void	close_rewind __P((void));
+void	dumpblock __P((daddr_t blkno, int size));
+void	startnewtape __P((int top));
+void	trewind __P((void));
+void	writerec __P((char *dp, int isspcl));
 
-__dead void Exit(int status);
-__dead void dumpabort(int signo);
-void	getfstab(void);
+__dead void Exit __P((int status));
+void	dumpabort __P((int signo));
+void	getfstab __P((void));
 
-char	*rawname(char *cp);
-char	*getduid(char *path);
-union	dinode *getino(ino_t inum, int *mode);
+char	*rawname __P((char *cp));
+struct	dinode *getino __P((ino_t inum));
 
 /* rdump routines */
 #ifdef RDUMP
-void	rmtclose(void);
-int	rmthost(char *host);
-int	rmtopen(char *tape, int mode);
-int	rmtwrite(char *buf, int count);
+void	rmtclose __P((void));
+int	rmthost __P((char *host));
+int	rmtopen __P((char *tape, int mode));
+int	rmtwrite __P((char *buf, int count));
 #endif /* RDUMP */
 
-void	interrupt(int signo);	/* in case operator bangs on console */
+void	interrupt __P((int signo));	/* in case operator bangs on console */
 
 /*
  *	Exit status codes
@@ -148,7 +155,11 @@ void	interrupt(int signo);	/* in case operator bangs on console */
 
 #define	OPGRENT	"operator"		/* group entry to notify */
 
-struct	fstab *fstabsearch(char *key);	/* search fs_file and fs_spec */
+struct	fstab *fstabsearch __P((char *key));	/* search fs_file and fs_spec */
+
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif
 
 /*
  *	The contents of the file _PATH_DUMPDATES is maintained both on
@@ -167,11 +178,43 @@ struct	dumptime *dthead;	/* head of the list version */
 int	nddates;		/* number of records (might be zero) */
 int	ddates_in;		/* we have read the increment file */
 struct	dumpdates **ddatev;	/* the arrayfied version */
-void	initdumptimes(void);
-void	getdumptime(void);
-void	putdumptime(void);
+void	initdumptimes __P((void));
+void	getdumptime __P((void));
+void	putdumptime __P((void));
 #define	ITITERATE(i, ddp) \
-	for (i = 0; i < nddates && (ddp = ddatev[i]); i++)
+	for (ddp = ddatev[i = 0]; i < nddates; ddp = ddatev[++i])
 
-void	sig(int signo);
+void	sig __P((int signo));
 
+/*
+ * Compatibility with old systems.
+ */
+#ifdef COMPAT
+#include <sys/file.h>
+#define	strchr(a,b)	index(a,b)
+#define	strrchr(a,b)	rindex(a,b)
+extern char *strdup(), *ctime();
+extern int read(), write();
+extern int errno;
+#endif
+
+#ifndef	_PATH_UTMP
+#define	_PATH_UTMP	"/etc/utmp"
+#endif
+#ifndef	_PATH_FSTAB
+#define	_PATH_FSTAB	"/etc/fstab"
+#endif
+
+#ifdef sunos
+extern char *calloc();
+extern char *malloc();
+extern long atol();
+extern char *strcpy();
+extern char *strncpy();
+extern char *strcat();
+extern time_t time();
+extern void endgrent();
+extern __dead void exit();
+extern off_t lseek();
+extern const char *strerror();
+#endif

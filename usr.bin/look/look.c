@@ -1,4 +1,4 @@
-/*	$OpenBSD: look.c,v 1.18 2015/10/09 01:37:08 deraadt Exp $	*/
+/*	$OpenBSD: look.c,v 1.3 1997/01/15 23:42:48 millert Exp $	*/
 /*	$NetBSD: look.c,v 1.7 1995/08/31 22:41:02 jtc Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)look.c	8.2 (Berkeley) 5/4/95";
+#endif
+static char rcsid[] = "$OpenBSD: look.c,v 1.3 1997/01/15 23:42:48 millert Exp $";
+#endif /* not lint */
+
 /*
  * look -- find lines in a sorted list.
  * 
@@ -48,7 +65,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdint.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,22 +91,21 @@
 
 int dflag, fflag;
 
-char	*binary_search(char *, char *, char *);
-int	 compare(char *, char *, char *);
-char	*linear_search(char *, char *, char *);
-int	 look(char *, char *, char *);
-void	 print_from(char *, char *, char *);
-void	 usage(void);
+char	*binary_search __P((char *, char *, char *));
+int	 compare __P((char *, char *, char *));
+char	*linear_search __P((char *, char *, char *));
+int	 look __P((char *, char *, char *));
+void	 print_from __P((char *, char *, char *));
+void	 usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct stat sb;
 	int ch, fd, termchar;
 	char *back, *file, *front, *string, *p;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	file = _PATH_WORDS;
 	termchar = '\0';
@@ -129,27 +145,28 @@ main(int argc, char *argv[])
 
 	if ((fd = open(file, O_RDONLY, 0)) < 0 || fstat(fd, &sb))
 		err(2, "%s", file);
-	if (sb.st_size > SIZE_MAX)
-		errc(2, EFBIG, "%s", file);
+	if (sb.st_size > SIZE_T_MAX)
+		err(2, "%s: %s", file, strerror(EFBIG));
 	if ((front = mmap(NULL,
-	    (size_t)sb.st_size, PROT_READ, MAP_PRIVATE, fd, (off_t)0)) == MAP_FAILED)
+	    (size_t)sb.st_size, PROT_READ, 0, fd, (off_t)0)) == NULL)
 		err(2, "%s", file);
 	back = front + sb.st_size;
 	exit(look(string, front, back));
 }
 
 int
-look(char *string, char *front, char *back)
+look(string, front, back)
+	char *string, *front, *back;
 {
-	int ch;
-	char *readp, *writep;
+	register int ch;
+	register char *readp, *writep;
 
-	/* Reformat string to avoid doing it multiple times later. */
+	/* Reformat string string to avoid doing it multiple times later. */
 	for (readp = writep = string; ch = *readp++;) {
 		if (fflag)
-			ch = FOLD((unsigned char)ch);
+			ch = FOLD(ch);
 		if (dflag)
-			ch = DICT((unsigned char)ch);
+			ch = DICT(ch);
 		if (ch != NO_COMPARE)
 			*(writep++) = ch;
 	}
@@ -206,9 +223,10 @@ look(char *string, char *front, char *back)
 	while (p < back && *p++ != '\n');
 
 char *
-binary_search(char *string, char *front, char *back)
+binary_search(string, front, back)
+	register char *string, *front, *back;
 {
-	char *p;
+	register char *p;
 
 	p = front + (back - front) / 2;
 	SKIP_PAST_NEWLINE(p, back);
@@ -240,7 +258,8 @@ binary_search(char *string, char *front, char *back)
  *	o front is before or at the first line to be printed.
  */
 char *
-linear_search(char *string, char *front, char *back)
+linear_search(string, front, back)
+	char *string, *front, *back;
 {
 	while (front < back) {
 		switch (compare(string, front, back)) {
@@ -262,7 +281,8 @@ linear_search(char *string, char *front, char *back)
  * Print as many lines as match string, starting at front.
  */
 void 
-print_from(char *string, char *front, char *back)
+print_from(string, front, back)
+	register char *string, *front, *back;
 {
 	for (; front < back && compare(string, front, back) == EQUAL; ++front) {
 		for (; front < back && *front != '\n'; ++front)
@@ -287,16 +307,17 @@ print_from(char *string, char *front, char *back)
  * "back" terminated).
  */
 int
-compare(char *s1, char *s2, char *back)
+compare(s1, s2, back)
+	register char *s1, *s2, *back;
 {
-	int ch;
+	register int ch;
 
 	for (; *s1 && s2 < back && *s2 != '\n'; ++s1, ++s2) {
 		ch = *s2;
 		if (fflag)
-			ch = FOLD((unsigned char)ch);
+			ch = FOLD(ch);
 		if (dflag)
-			ch = DICT((unsigned char)ch);
+			ch = DICT(ch);
 
 		if (ch == NO_COMPARE) {
 			++s2;		/* Ignore character in comparison. */
@@ -309,9 +330,8 @@ compare(char *s1, char *s2, char *back)
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr,
-	    "usage: look [-df] [-t termchar] string [file]\n");
+	(void)fprintf(stderr, "usage: look [-df] [-t char] string [file]\n");
 	exit(2);
 }

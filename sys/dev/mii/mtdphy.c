@@ -1,4 +1,4 @@
-/*	$OpenBSD: mtdphy.c,v 1.15 2015/03/14 03:38:48 jsg Exp $	*/
+/*	$OpenBSD: mtdphy.c,v 1.3 1999/07/23 12:39:11 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1998, 1999 Jason L. Wright (jason@thought.net)
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Jason L. Wright
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -34,86 +39,86 @@
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/malloc.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/if_media.h>
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #include <dev/mii/miidevs.h>
+#include <dev/mii/mtdphyreg.h>
 
-int	mtdphymatch(struct device *, void *, void *);
-void	mtdphyattach(struct device *, struct device *, void *);
+int	mtdphymatch __P((struct device *, void *, void *));
+void	mtdphyattach __P((struct device *, struct device *, void *));
 
 struct cfattach mtdphy_ca = {
-	sizeof(struct mii_softc), mtdphymatch, mtdphyattach, mii_phy_detach
+	sizeof(struct mii_softc), mtdphymatch, mtdphyattach
 };
 
 struct cfdriver mtdphy_cd = {
 	NULL, "mtdphy", DV_DULL
 };
 
-int	mtdphy_service(struct mii_softc *, struct mii_data *, int);
-
-const struct mii_phy_funcs mtdphy_funcs = {
-	mtdphy_service, ukphy_status, mii_phy_reset,
-};
-
-static const struct mii_phydesc mtdphys[] = {
-	{ MII_OUI_MYSON,		MII_MODEL_MYSON_MTD972,
-	  MII_STR_MYSON_MTD972 },
-
-	{ 0,			0,
-	  NULL },
-};
+int	mtdphy_service __P((struct mii_softc *, struct mii_data *, int));
 
 int
-mtdphymatch(struct device *parent, void *match, void *aux)
+mtdphymatch(parent, match, aux)
+	struct device *parent;
+	void *match;
+	void *aux;
 {
 	struct mii_attach_args *ma = aux;
 
-	if (mii_phy_match(ma, mtdphys) != NULL)
+	if (MII_OUI(ma->mii_id1, ma->mii_id2) == MII_OUI_MYSON &&
+	    MII_MODEL(ma->mii_id2) == MII_MODEL_MYSON_MTD972)
 		return (10);
 
 	return (0);
 }
 
 void
-mtdphyattach(struct device *parent, struct device *self, void *aux)
+mtdphyattach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct mii_softc *sc = (struct mii_softc *)self;
 	struct mii_attach_args *ma = aux;
 	struct mii_data *mii = ma->mii_data;
-	const struct mii_phydesc *mpd;
 
-	mpd = mii_phy_match(ma, mtdphys);
-	printf(": %s, rev. %d\n", mpd->mpd_name, MII_REV(ma->mii_id2));
+	printf(": %s, rev. %d\n", MII_STR_MYSON_MTD972, MII_REV(ma->mii_id2));
 
 	sc->mii_inst = mii->mii_instance;
 	sc->mii_phy = ma->mii_phyno;
-	sc->mii_funcs = &mtdphy_funcs;
+	sc->mii_service = mtdphy_service;
 	sc->mii_pdata = mii;
-	sc->mii_flags = ma->mii_flags;
 
-	PHY_RESET(sc);
+	ifmedia_add(&mii->mii_media,
+	    IFM_MAKEWORD(IFM_ETHER, IFM_NONE, 0, sc->mii_inst),
+	    BMCR_ISO, NULL);
+	ifmedia_add(&mii->mii_media,
+	    IFM_MAKEWORD(IFM_ETHER, IFM_100_TX, IFM_LOOP, sc->mii_inst),
+	    BMCR_LOOP | BMCR_S100, NULL);
+
+	mii_phy_reset(sc);
 
 	sc->mii_capabilities =
 	    PHY_READ(sc, MII_BMSR) & ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_MEDIAMASK)
-		mii_phy_add_media(sc);
+		mii_add_media(mii, sc->mii_capabilities,
+		    sc->mii_inst);
 }
 
 int
-mtdphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
+mtdphy_service(sc, mii, cmd)
+	struct mii_softc *sc;
+	struct mii_data *mii;
+	int cmd;
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	int reg;
-
-	if ((sc->mii_dev.dv_flags & DVF_ACTIVE) == 0)
-		return (ENXIO);
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -137,7 +142,43 @@ mtdphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
-		mii_phy_setmedia(sc);
+		switch (IFM_SUBTYPE(ife->ifm_media)) {
+		case IFM_AUTO:
+			/*
+			 * If we're already in auto mode, just return.
+			 */
+			if (PHY_READ(sc, MII_BMCR) & BMCR_AUTOEN)
+				return (0);
+			(void) mii_phy_auto(sc, 1);
+			break;
+
+		case IFM_100_TX:
+			PHY_WRITE(sc, MII_ANAR,
+			    mii_anar(ife->ifm_media));
+
+			reg = BMCR_ISO | BMCR_S100;
+			if ((ife->ifm_media & IFM_GMASK) == IFM_FDX)
+				reg |= BMCR_FDX;
+			PHY_WRITE(sc, MII_BMCR, reg);
+			delay(75000);
+
+			reg &= ~BMCR_ISO;
+			PHY_WRITE(sc, MII_BMCR, reg);
+			break;
+
+		case IFM_100_T4:
+			/*
+			 * Not supported by MTD972.
+			 */
+			return (EINVAL);
+		default:
+			/*
+			 * BMCR data is stored in the ifmedia entry.
+			 */
+			PHY_WRITE(sc, MII_ANAR,
+			    mii_anar(ife->ifm_media));
+			PHY_WRITE(sc, MII_BMCR, ife->ifm_data);
+		}
 		break;
 
 	case MII_TICK:
@@ -147,19 +188,32 @@ mtdphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return (0);
 
-		if (mii_phy_tick(sc) == EJUSTRETURN)
+		/*
+		 * Only used for autonegotiation.
+		 */
+		if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO)
 			return (0);
-		break;
 
-	case MII_DOWN:
-		mii_phy_down(sc);
-		return (0);
+		/*
+		 * Is the interface even up?
+		 */
+		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
+			return (0);
+
+		/*
+		 * The MTD972 autonegotiation doesn't need to be
+		 * kicked; it continues in the background.
+		 */
+		break;
 	}
 
 	/* Update the media status. */
-	mii_phy_status(sc);
+	ukphy_status(sc);
 
 	/* Callback if something changed. */
-	mii_phy_update(sc, cmd);
+	if (sc->mii_active != mii->mii_media_active || cmd == MII_MEDIACHG) {
+		(*mii->mii_statchg)(sc->mii_dev.dv_parent);
+		sc->mii_active = mii->mii_media_active;
+	}
 	return (0);
 }

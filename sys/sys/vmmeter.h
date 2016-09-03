@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmmeter.h,v 1.15 2016/07/27 14:44:59 tedu Exp $	*/
+/*	$OpenBSD: vmmeter.h,v 1.6 1999/02/26 02:47:02 art Exp $	*/
 /*	$NetBSD: vmmeter.h,v 1.9 1995/03/26 20:25:04 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,9 +43,61 @@
  * System wide statistics counters.  Look in <uvm/uvm_extern.h> for the
  * UVM equivalent.
  */
+#if !defined(UVM)
+struct vmmeter {
+	/*
+	 * General system activity.
+	 */
+	u_int v_swtch;		/* context switches */
+	u_int v_trap;		/* calls to trap */
+	u_int v_syscall;	/* calls to syscall() */
+	u_int v_intr;		/* device interrupts */
+	u_int v_soft;		/* software interrupts */
+	u_int v_faults;		/* total faults taken */
+	/*
+	 * Virtual memory activity.
+	 */
+	u_int v_lookups;	/* object cache lookups */
+	u_int v_hits;		/* object cache hits */
+	u_int v_vm_faults;	/* number of address memory faults */
+	u_int v_cow_faults;	/* number of copy-on-writes */
+	u_int v_swpin;		/* swapins */
+	u_int v_swpout;		/* swapouts */
+	u_int v_pswpin;		/* pages swapped in */
+	u_int v_pswpout;	/* pages swapped out */
+	u_int v_pageins;	/* number of pageins */
+	u_int v_pageouts;	/* number of pageouts */
+	u_int v_pgpgin;		/* pages paged in */
+	u_int v_pgpgout;	/* pages paged out */
+	u_int v_intrans;	/* intransit blocking page faults */
+	u_int v_reactivated;	/* number of pages reactivated from free list */
+	u_int v_rev;		/* revolutions of the hand */
+	u_int v_scan;		/* scans in page out daemon */
+	u_int v_dfree;		/* pages freed by daemon */
+	u_int v_pfree;		/* pages freed by exiting processes */
+	u_int v_zfod;		/* pages zero filled on demand */
+	u_int v_nzfod;		/* number of zfod's created */
+	/*
+	 * Distribution of page usages.
+	 */
+	u_int v_page_size;	/* page size in bytes */
+	u_int v_kernel_pages;	/* number of pages in use by kernel */
+	u_int v_free_target;	/* number of pages desired free */
+	u_int v_free_min;	/* minimum number of pages desired free */
+	u_int v_free_count;	/* number of pages free */
+	u_int v_wire_count;	/* number of pages wired down */
+	u_int v_active_count;	/* number of pages active */
+	u_int v_inactive_target; /* number of pages desired inactive */
+	u_int v_inactive_count;  /* number of pages inactive */
+};
+#ifdef _KERNEL
+struct	vmmeter cnt;
+#endif
+#endif
 
 /* systemwide totals computed every five seconds */
-struct vmtotal {
+struct vmtotal
+{
 	u_int16_t t_rq;		/* length of the run queue */
 	u_int16_t t_dw;		/* jobs in ``disk wait'' (neg priority) */
 	u_int16_t t_pw;		/* jobs in page wait */
@@ -57,41 +113,63 @@ struct vmtotal {
 	u_int32_t t_armshr;	/* active shared real memory */
 	u_int32_t t_free;	/* free memory pages */
 };
+#ifdef _KERNEL
+struct	vmtotal total;
+#endif
 
 /*
- * Fork/vfork/__tfork accounting.
+ * Fork/vfork/rfork accounting.
  */
-struct  forkstat {
-	uint32_t	cntfork;	/* number of fork() calls */
-	uint32_t	cntvfork;	/* number of vfork() calls */
-	uint32_t	cnttfork;	/* number of __tfork() calls */
-	uint32_t	cntkthread;	/* number of kernel threads created */
-	uint64_t	sizfork;	/* VM pages affected by fork() */
-	uint64_t	sizvfork;	/* VM pages affected by vfork() */
-	uint64_t	siztfork;	/* VM pages affected by __tfork() */
-	uint64_t	sizkthread;	/* VM pages affected by kernel threads */
+struct  forkstat
+{
+	int	cntfork;	/* number of fork() calls */
+	int	cntvfork;	/* number of vfork() calls */
+	int	cntrfork;	/* number of rfork() calls */
+	int	sizfork;	/* VM pages affected by fork() */
+	int	sizvfork;	/* VM pages affected by vfork() */
+	int	sizrfork;	/* VM pages affected by rfork() */
 };
 
-/* These sysctl names are only really used by sysctl(8) */
-#define KERN_FORKSTAT_FORK		1
-#define KERN_FORKSTAT_VFORK		2
-#define KERN_FORKSTAT_TFORK		3
-#define KERN_FORKSTAT_KTHREAD		4
-#define KERN_FORKSTAT_SIZFORK		5
-#define KERN_FORKSTAT_SIZVFORK		6
-#define KERN_FORKSTAT_SIZTFORK		7
-#define KERN_FORKSTAT_SIZKTHREAD	8
-#define KERN_FORKSTAT_MAXID		9
+#ifdef _KERNEL
+struct forkstat forkstat;
+#endif
 
-#define CTL_KERN_FORKSTAT_NAMES { \
-	{ 0, 0 }, \
-	{ "forks", CTLTYPE_INT }, \
-	{ "vforks", CTLTYPE_INT }, \
-	{ "tforks", CTLTYPE_INT }, \
-	{ "kthreads", CTLTYPE_INT }, \
-	{ "fork_pages", CTLTYPE_INT }, \
-	{ "vfork_pages", CTLTYPE_INT }, \
-	{ "tfork_pages", CTLTYPE_INT }, \
-	{ "kthread_pages", CTLTYPE_INT }, \
-}
+/*
+ * Optional instrumentation.
+ */
+#ifdef PGINPROF
+
+#define	NDMON	128
+#define	NSMON	128
+
+#define	DRES	20
+#define	SRES	5
+
+#define	PMONMIN	20
+#define	PRES	50
+#define	NPMON	64
+
+#define	RMONMIN	130
+#define	RRES	5
+#define	NRMON	64
+
+/* data and stack size distribution counters */
+u_int	dmon[NDMON+1];
+u_int	smon[NSMON+1];
+
+/* page in time distribution counters */
+u_int	pmon[NPMON+2];
+
+/* reclaim time distribution counters */
+u_int	rmon[NRMON+2];
+
+int	pmonmin;
+int	pres;
+int	rmonmin;
+int	rres;
+
+u_int rectime;		/* accumulator for reclaim times */
+u_int pgintime;		/* accumulator for page in times */
+#endif
+
 #endif /* __VMMETER_H__ */

@@ -1,240 +1,103 @@
-/* Native-dependent code for OpenBSD/powerpc.
+/* Functions specific to running gdb native on a Powerpc System.
+   Copyright (C) 1993, Free Software Foundation, Inc.
 
-   Copyright (C) 2004, 2005, 2006 Free Software Foundation, Inc.
+This file is part of GDB.
 
-   This file is part of GDB.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor,
-   Boston, MA 02110-1301, USA.  */
-
-#include "defs.h"
-#include "gdbcore.h"
-#include "inferior.h"
-#include "regcache.h"
-
-#include "gdb_assert.h"
-#include <stddef.h>
 #include <sys/types.h>
 #include <sys/ptrace.h>
-#include <sys/signal.h>
-#include <machine/frame.h>
-#include <machine/pcb.h>
+#include <sys/param.h>
+#include <sys/signal.h>	/* for MAXSIG in sys/user.h */
+#include <sys/types.h>	/* for ushort in sys/dir.h */
+#include <sys/dir.h>	/* for struct direct in sys/user.h */
+#include <sys/user.h>
 #include <machine/reg.h>
+#include "defs.h"
+#include "inferior.h"
+#include "target.h"
+#include "gdbcore.h"
 
-#include "obsd-nat.h"
-#include "ppc-tdep.h"
-#include "ppcobsd-tdep.h"
-#include "inf-ptrace.h"
-#include "bsd-kvm.h"
+#include <nlist.h>
 
-/* OpenBSD/powerpc didn't have PT_GETFPREGS/PT_SETFPREGS until release
-   4.0.  On older releases the floating-point registers are handled by
-   PT_GETREGS/PT_SETREGS, but fpscr wasn't available..  */
-
-#ifdef PT_GETFPREGS
-
-/* Returns true if PT_GETFPREGS fetches this register.  */
-
-static int
-getfpregs_supplies (int regnum)
-{
-  struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
-
-  /* FIXME: jimb/2004-05-05: Some PPC variants don't have floating
-     point registers.  Traditionally, GDB's register set has still
-     listed the floating point registers for such machines, so this
-     code is harmless.  However, the new E500 port actually omits the
-     floating point registers entirely from the register set --- they
-     don't even have register numbers assigned to them.
-
-     It's not clear to me how best to update this code, so this assert
-     will alert the first person to encounter the NetBSD/E500
-     combination to the problem.  */
-  gdb_assert (ppc_floating_point_unit_p (current_gdbarch));
-
-  return ((regnum >= tdep->ppc_fp0_regnum
-           && regnum < tdep->ppc_fp0_regnum + ppc_num_fprs)
-	  || regnum == tdep->ppc_fpscr_regnum);
-}
-
-#endif /* PT_GETFPREGS */
-
-/* Fetch register REGNUM from the inferior.  If REGNUM is -1, do this
-   for all registers.  */
-
-static void
-ppcobsd_fetch_registers (int regnum)
-{
-  struct reg regs;
-  int pid;
-
-  /* Cater for systems like OpenBSD, that implement threads as
-     separate processes.  */
-  pid = ptid_get_lwp (inferior_ptid);
-  if (pid == 0)
-    pid = ptid_get_pid (inferior_ptid);
-
-  if (ptrace (PT_GETREGS, pid, (PTRACE_TYPE_ARG3) &regs, 0) == -1)
-    perror_with_name (_("Couldn't get registers"));
-
-  ppc_supply_gregset (&ppcobsd_gregset, current_regcache, -1,
-		      &regs, sizeof regs);
-#ifndef PT_GETFPREGS
-  ppc_supply_fpregset (&ppcobsd_gregset, current_regcache, -1,
-		       &regs, sizeof regs);
+#if !defined (offsetof)
+#define offsetof(TYPE, MEMBER) ((unsigned long) &((TYPE *)0)->MEMBER)
 #endif
-
-#ifdef PT_GETFPREGS
-  if (regnum == -1 || getfpregs_supplies (regnum))
-    {
-      struct fpreg fpregs;
-
-      if (ptrace (PT_GETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
-	perror_with_name (_("Couldn't get floating point status"));
-
-      ppc_supply_fpregset (&ppcobsd_fpregset, current_regcache, -1,
-			   &fpregs, sizeof fpregs);
-    }
-#endif
-}
-
-/* Store register REGNUM back into the inferior.  If REGNUM is -1, do
-   this for all registers.  */
-
-static void
-ppcobsd_store_registers (int regnum)
-{
-  struct reg regs;
-  int pid;
-
-  /* Cater for systems like OpenBSD, that implement threads as
-     separate processes.  */
-  pid = ptid_get_lwp (inferior_ptid);
-  if (pid == 0)
-    pid = ptid_get_pid (inferior_ptid);
-
-  if (ptrace (PT_GETREGS, pid, (PTRACE_TYPE_ARG3) &regs, 0) == -1)
-    perror_with_name (_("Couldn't get registers"));
-
-  ppc_collect_gregset (&ppcobsd_gregset, current_regcache,
-		       regnum, &regs, sizeof regs);
-#ifndef PT_GETFPREGS
-  ppc_collect_fpregset (&ppcobsd_gregset, current_regcache,
-			regnum, &regs, sizeof regs);
-#endif
-
-  if (ptrace (PT_SETREGS, pid, (PTRACE_TYPE_ARG3) &regs, 0) == -1)
-    perror_with_name (_("Couldn't write registers"));
-
-#ifdef PT_GETFPREGS
-  if (regnum == -1 || getfpregs_supplies (regnum))
-    {
-      struct fpreg fpregs;
-
-      if (ptrace (PT_GETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
-	perror_with_name (_("Couldn't get floating point status"));
-
-      ppc_collect_fpregset (&ppcobsd_fpregset, current_regcache,
-			    regnum, &fpregs, sizeof fpregs);
-
-      if (ptrace (PT_SETFPREGS, pid, (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
-	perror_with_name (_("Couldn't write floating point status"));
-    }
-#endif
-}
-
-
-static int
-ppcobsd_supply_pcb (struct regcache *regcache, struct pcb *pcb)
-{
-  struct gdbarch_tdep *tdep = gdbarch_tdep (get_regcache_arch (regcache));
-  struct switchframe sf;
-  struct callframe cf;
-  int i, regnum;
-
-  /* The following is true for OpenBSD 3.7:
-
-     The pcb contains %r1 (the stack pointer) at the point of the
-     context switch in cpu_switch().  At that point we have a stack
-     frame as described by `struct switchframe', and below that a call
-     frame as described by `struct callframe'.  From this information
-     we reconstruct the register state as it would look when we are in
-     cpu_switch().  */
-
-  /* The stack pointer shouldn't be zero.  */
-  if (pcb->pcb_sp == 0)
-    return 0;
-
-  read_memory (pcb->pcb_sp, (char *)&sf, sizeof sf);
-  regcache_raw_supply (regcache, tdep->ppc_cr_regnum, &sf.cr);
-  regcache_raw_supply (regcache, tdep->ppc_gp0_regnum + 2, &sf.fixreg2);
-  for (i = 0, regnum = tdep->ppc_gp0_regnum + 13; i < 19; i++, regnum++)
-    regcache_raw_supply (regcache, regnum, &sf.fixreg[i]);
-
-  read_memory (sf.sp, (char *)&cf, sizeof cf);
-  regcache_raw_supply (regcache, SP_REGNUM, &cf.sp);
-  regcache_raw_supply (regcache, tdep->ppc_gp0_regnum + 30, &cf.r30);
-  regcache_raw_supply (regcache, tdep->ppc_gp0_regnum + 31, &cf.r31);
-
-  read_memory (cf.sp, (char *)&cf, sizeof cf);
-  regcache_raw_supply (regcache, PC_REGNUM, &cf.lr);
-
-  return 1;
-}
-
-
-/* Provide a prototype to silence -Wmissing-prototypes.  */
-void _initialize_ppcobsd_nat (void);
 
 void
-_initialize_ppcobsd_nat (void)
+fetch_inferior_registers (regno)
+     int regno;
 {
-  struct target_ops *t;
+  struct reg inferior_registers;
 
-  /* Add in local overrides.  */
-  t = inf_ptrace_target ();
-  t->to_fetch_registers = ppcobsd_fetch_registers;
-  t->to_store_registers = ppcobsd_store_registers;
-  t->to_pid_to_str = obsd_pid_to_str;
-  t->to_find_new_threads = obsd_find_new_threads;
-  t->to_wait = obsd_wait;
-  add_target (t);
+/* 
+ * this gets fp and gpr?
+ */
 
-  /* General-purpose registers.  */
-  ppcobsd_reg_offsets.r0_offset = offsetof (struct reg, gpr);
-  ppcobsd_reg_offsets.pc_offset = offsetof (struct reg, pc);
-  ppcobsd_reg_offsets.ps_offset = offsetof (struct reg, ps);
-  ppcobsd_reg_offsets.cr_offset = offsetof (struct reg, cnd);
-  ppcobsd_reg_offsets.lr_offset = offsetof (struct reg, lr);
-  ppcobsd_reg_offsets.ctr_offset = offsetof (struct reg, cnt);
-  ppcobsd_reg_offsets.xer_offset = offsetof (struct reg, xer);
-  ppcobsd_reg_offsets.mq_offset = offsetof (struct reg, mq);
+  ptrace (PT_GETREGS, inferior_pid,
+	  (PTRACE_ARG3_TYPE) &inferior_registers, 0);
+  memcpy (&registers, &inferior_registers,
+	  sizeof(inferior_registers));
 
-  /* Floating-point registers.  */
-  ppcobsd_reg_offsets.f0_offset = offsetof (struct reg, fpr);
-  ppcobsd_reg_offsets.fpscr_offset = -1;
-#ifdef PT_GETFPREGS
-  ppcobsd_fpreg_offsets.f0_offset = offsetof (struct fpreg, fpr);
-  ppcobsd_fpreg_offsets.fpscr_offset = offsetof (struct fpreg, fpscr);
-#endif
 
-  /* AltiVec registers.  */
-  ppcobsd_reg_offsets.vr0_offset = offsetof (struct vreg, vreg);
-  ppcobsd_reg_offsets.vscr_offset = offsetof (struct vreg, vscr);
-  ppcobsd_reg_offsets.vrsave_offset = offsetof (struct vreg, vrsave);
+  registers_fetched ();
+}
 
-  /* Support debugging kernel virtual memory images.  */
-  bsd_kvm_add_target (ppcobsd_supply_pcb);
+void
+store_inferior_registers (regno)
+     int regno;
+{
+  struct reg inferior_registers;
+
+
+  memcpy (&inferior_registers, &registers,
+	  sizeof(inferior_registers));
+  ptrace (PT_SETREGS, inferior_pid,
+	  (PTRACE_ARG3_TYPE) &inferior_registers, 0);
+
+}
+/* Return the address in the core dump or inferior of register REGNO.
+   BLOCKEND is the address of the end of the user structure.  */
+
+CORE_ADDR
+register_addr (regno, blockend)
+     int	regno;
+     CORE_ADDR	blockend;
+{
+	int ppcreg[] = 
+	{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* fp 0-15 */
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* fp 16-31 */
+	   36,    37,   33,    32,    35,    34 ,   0 };
+	/* "pc", "ps", "cnd", "lr", "cnt", "xer", "mq" */
+	/*
+	32 lr
+	33 cr
+	34 xer
+	35 ctr
+	36 srr0
+	37 srr1
+	*/
+  if (regno < NUM_REGS) {
+    return (blockend + REGISTER_BYTE(regno));
+  } else
+    {
+      fprintf_unfiltered (gdb_stderr, "\
+Internal error: invalid register number %d in REGISTER_U_ADDR\n",
+	       regno);
+      return blockend;
+    }
 }

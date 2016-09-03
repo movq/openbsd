@@ -1,4 +1,4 @@
-/*	$OpenBSD: com1.c,v 1.15 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: com1.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: com1.c,v 1.3 1995/03/21 15:06:51 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,14 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)com1.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: com1.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
 int
-moveplayer(int thataway, int token)
+move(thataway, token)
+	int     thataway, token;
 {
 	wordnumber++;
 	if ((!notes[CANTMOVE] && !notes[LAUNCHED]) ||
@@ -61,14 +70,10 @@ moveplayer(int thataway, int token)
 	return (1);
 }
 
-/*
- * Converts day to night and vice versa.
- * Day objects are permanent.  Night objects
- * are added at dusk, and subtracted at dawn.
- */
 void
-convert(int tothis)			
-{				
+convert(tothis)			/* Converts day to night and vice versa.     */
+	int     tothis;		/* Day objects are permanent.  Night objects */
+{				/* are added at dusk, and subtracted at dawn.*/
 	const struct objs *p;
 	unsigned int i, j;
 
@@ -90,7 +95,7 @@ convert(int tothis)
 }
 
 void
-news(void)
+news()
 {
 	int     n;
 	int     hurt;
@@ -121,10 +126,10 @@ news(void)
 			convert(TONIGHT);
 			ClearBit(location[POOLS].objects, BATHGOD);
 			if (OUTSIDE && ourtime - rythmn - CYCLE < 10) {
-				puts("The dying sun sinks into the ocean, leaving a blood-stained sunset.");
+				puts("The dying sun sinks into the ocean, leaving a blood stained sunset.");
 				puts("The sky slowly fades from orange to violet to black.  A few stars");
 				puts("flicker on, and it is night.");
-				puts("The world seems completely different at night.");
+				puts("The world seems completly different at night.");
 			}
 		}
 		rythmn = ourtime - ourtime % CYCLE;
@@ -207,17 +212,11 @@ news(void)
 				WEIGHT = 0;
 		}
 	if (injuries[ARM] == 2) {
-		if (CUMBER > 5)
-			CUMBER -= 5;
-		else
-			CUMBER = 0;
+		CUMBER -= 5;
 		injuries[ARM]++;
 	}
 	if (injuries[RIBS] == 2) {
-		if (CUMBER > 2)
-			CUMBER -= 2;
-		else
-			CUMBER = 0;
+		CUMBER -= 2;
 		injuries[RIBS]++;
 	}
 	if (injuries[SPINE] == 2) {
@@ -231,7 +230,7 @@ news(void)
 }
 
 void
-crash(void)
+crash()
 {
 	int     hurt1, hurt2;
 
@@ -263,25 +262,4 @@ crash(void)
 		printf("I'm afraid you have suffered %s and %s.\n",
 		    ouch[hurt1], ouch[hurt2]);
 	}
-}
-
-void
-newlocation(void)
-{
-	news();
-	if (beenthere[position] <= ROOMDESC)
-	     beenthere[position]++;
-	if (notes[LAUNCHED])
-		crash();	/* decrements fuel & crash */
-	if (matchlight) {
-		puts("Your match splutters out.");
-		matchlight = 0;
-	}
-	if (!notes[CANTSEE] || TestBit(inven, LAMPON) ||
-	    TestBit(location[position].objects, LAMPON)) {
-		writedes();
-		printobjs();
-	} else
-		puts("It's too dark to see anything in here!");
-	whichway(location[position]);
 }

@@ -1,6 +1,5 @@
 /* sysdep.h -- handle host dependencies for the BFD library
-   Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+   Copyright 1995, 1996 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -35,7 +34,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include <sys/stat.h>
 
 #include <errno.h>
-#if !(defined(errno) || defined(_MSC_VER) && defined(_INC_ERRNO))
+#ifndef errno
 extern int errno;
 #endif
 
@@ -103,8 +102,6 @@ extern char *strrchr ();
 #define SEEK_CUR 1
 #endif
 
-#include "filenames.h"
-
 #ifdef NEED_DECLARATION_STRSTR
 extern char *strstr ();
 #endif
@@ -123,42 +120,6 @@ extern void free ();
 
 #ifdef NEED_DECLARATION_GETENV
 extern char *getenv ();
-#endif
-
-/* Define offsetof for those systems which lack it */
-
-#ifndef offsetof
-#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
-#endif
-
-#ifdef ENABLE_NLS
-#include <libintl.h>
-/* Note the use of dgetext() and PACKAGE here, rather than gettext().
-
-   This is because the code in this directory is used to build a library which
-   will be linked with code in other directories to form programs.  We want to
-   maintain a seperate translation file for this directory however, rather
-   than being forced to merge it with that of any program linked to libbfd.
-   This is a library, so it cannot depend on the catalog currently loaded.
-
-   In order to do this, we have to make sure that when we extract messages we
-   use the OPCODES domain rather than the domain of the program that included
-   the bfd library, (eg OBJDUMP).  Hence we use dgettext (PACKAGE, String)
-   and define PACKAGE to be 'bfd'.  (See the code in configure).  */
-#define _(String) dgettext (PACKAGE, String)
-#ifdef gettext_noop
-#define N_(String) gettext_noop (String)
-#else
-#define N_(String) (String)
-#endif
-#else
-# define gettext(Msgid) (Msgid)
-# define dgettext(Domainname, Msgid) (Msgid)
-# define dcgettext(Domainname, Msgid, Category) (Msgid)
-# define textdomain(Domainname) while (0) /* nothing */
-# define bindtextdomain(Domainname, Dirname) while (0) /* nothing */
-# define _(String) (String)
-# define N_(String) (String)
 #endif
 
 #endif /* ! defined (BFD_SYSDEP_H) */

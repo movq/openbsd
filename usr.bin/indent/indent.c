@@ -1,10 +1,9 @@
-/*	$OpenBSD: indent.c,v 1.30 2015/11/11 01:12:09 deraadt Exp $	*/
+/*	$OpenBSD: indent.c,v 1.6 1999/05/19 03:17:16 alex Exp $	*/
 
 /*
- * Copyright (c) 1980, 1993
- *	The Regents of the University of California.
- * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * Copyright (c) 1985 Sun Microsystems, Inc.
+ * Copyright (c) 1980 The Regents of the University of California.
+ * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,9 +35,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+char copyright[] =
+"@(#) Copyright (c) 1985 Sun Microsystems, Inc.\n\
+ @(#) Copyright (c) 1980 The Regents of the University of California.\n\
+ @(#) Copyright (c) 1976 Board of Trustees of the University of Illinois.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)indent.c	5.16 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$OpenBSD: indent.c,v 1.6 1999/05/19 03:17:16 alex Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,12 +64,14 @@ char       *in_name = "Standard Input";	/* will always point to name of input
 					 * file */
 char       *out_name = "Standard Output";	/* will always point to name
 						 * of output file */
-char        bakfile[PATH_MAX] = "";
+char        bakfile[MAXPATHLEN] = "";
 
-void bakcopy(void);
+void bakcopy();
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+    int         argc;
+    char      **argv;
 {
 
     extern int  found_err;	/* flag set in diag() on error */
@@ -64,7 +82,7 @@ main(int argc, char **argv)
     int         force_nl;	/* when true, code must be broken */
     int         hd_type;	/* used to store type of stmt for if (...),
 				 * for (...), etc */
-    int 	i;		/* local loop counter */
+    register int i;		/* local loop counter */
     int         scase;		/* set to true when we see a case, so we will
 				 * know what to do with the following colon */
     int         sp_sw;		/* when true, we are in the expressin of
@@ -72,32 +90,25 @@ main(int argc, char **argv)
     int         squest;		/* when this is positive, we have seen a ?
 				 * without the matching : in a <c>?<s>:<s>
 				 * construct */
-    char 	*t_ptr;		/* used for copying tokens */
-    int         tabs_to_var;	/* true if using tabs to indent to var name */
+    register char *t_ptr;	/* used for copying tokens */
     int         type_code;	/* the type of token, returned by lexi */
 
     int         last_else = 0;	/* true iff last keyword was an else */
 
-    if (pledge("stdio rpath wpath cpath", NULL) == -1)
-	err(1, "pledge");
 
     /*-----------------------------------------------*\
     |		      INITIALIZATION		      |
     \*-----------------------------------------------*/
 
 
-    hd_type = 0;
     ps.p_stack[0] = stmt;	/* this is the parser's stack */
     ps.last_nl = true;		/* this is true if the last thing scanned was
 				 * a newline */
     ps.last_token = semicolon;
-    combuf = malloc(bufsize);
-    labbuf = malloc(bufsize);
-    codebuf = malloc(bufsize);
-    tokenbuf = malloc(bufsize);
-    if (combuf == NULL || labbuf == NULL || codebuf == NULL ||
-        tokenbuf == NULL)
-	    err(1, NULL);
+    combuf = (char *) malloc(bufsize);
+    labbuf = (char *) malloc(bufsize);
+    codebuf = (char *) malloc(bufsize);
+    tokenbuf = (char *) malloc(bufsize);
     l_com = combuf + bufsize - 5;
     l_lab = labbuf + bufsize - 5;
     l_code = codebuf + bufsize - 5;
@@ -111,9 +122,7 @@ main(int argc, char **argv)
     s_com = e_com = combuf + 1;
     s_token = e_token = tokenbuf + 1;
 
-    in_buffer = malloc(10);
-    if (in_buffer == NULL)
-	    err(1, NULL);
+    in_buffer = (char *) malloc(10);
     in_buffer_limit = in_buffer + 8;
     buf_ptr = buf_end = in_buffer;
     line_no = 1;
@@ -181,7 +190,7 @@ main(int argc, char **argv)
 		in_name = argv[i];	/* remember name of input file */
 		input = fopen(in_name, "r");
 		if (input == NULL)		/* check for open error */
-			err(1, "%s", in_name);
+			err(1, in_name);
 		continue;
 	    }
 	    else if (output == 0) {	/* we have the output file */
@@ -191,7 +200,7 @@ main(int argc, char **argv)
 			errx(1, "input and output files must be different");
 		output = fopen(out_name, "w");
 		if (output == NULL)	/* check for create error */
-			err(1, "%s", out_name);
+			err(1, out_name);
 		continue;
 	    }
 	    errx(1, "unknown parameter: %s", argv[i]);
@@ -200,16 +209,16 @@ main(int argc, char **argv)
 	    set_option(argv[i]);
     }				/* end of for */
     if (input == NULL) {
-	input = stdin;
+	fprintf(stderr, "usage: indent file [ outfile ] [ options ]\n");
+	exit(1);
     }
-    if (output == NULL) {
-	if (troff || input == stdin)
+    if (output == NULL)
+	if (troff)
 	    output = stdout;
 	else {
 	    out_name = in_name;
 	    bakcopy();
 	}
-    }
     if (ps.com_ind <= 1)
 	ps.com_ind = 2;		/* dont put normal comments before column 2 */
     if (troff) {
@@ -242,8 +251,8 @@ main(int argc, char **argv)
 
     parse(semicolon);
     {
-	char *p = buf_ptr;
-	int   col = 1;
+	register char *p = buf_ptr;
+	register    col = 1;
 
 	while (1) {
 	    if (*p == ' ')
@@ -258,7 +267,7 @@ main(int argc, char **argv)
 	    ps.ind_level = ps.i_l_follow = col / ps.ind_size;
     }
     if (troff) {
-	char *p = in_name,
+	register char *p = in_name,
 	           *beg = in_name;
 
 	while (*p)
@@ -410,7 +419,7 @@ check_type:
 		    || s_com != e_com)	/* must dump end of line */
 		dump_line();
 	    if (ps.tos > 1)	/* check for balanced braces */
-		diag(1, "Missing braces at end of file.");
+		diag(1, "Stuff missing from end of file.");
 
 	    if (verbose) {
 		printf("There were %d output lines and %d comments\n",
@@ -489,10 +498,8 @@ check_type:
 	    if (ps.in_decl && !ps.block_init)
 		if (troff && !ps.dumped_decl_indent && !is_procname && ps.last_token == decl) {
 		    ps.dumped_decl_indent = 1;
-		    snprintf(e_code, (l_code - e_code) + 5, 
-			"\n.Du %dp+\200p \"%s\"\n", dec_ind * 7, token);
+		    sprintf(e_code, "\n.Du %dp+\200p \"%s\"\n", dec_ind * 7, token);
 		    e_code += strlen(e_code);
-		    CHECK_SIZE_CODE;
 		}
 		else {
 		    while ((e_code - s_code) < dec_ind) {
@@ -561,11 +568,9 @@ check_type:
 		*e_code++ = ' ';
 
 	    if (troff && !ps.dumped_decl_indent && ps.in_decl && !is_procname) {
-		snprintf(e_code, (l_code - e_code) + 5,
-		    "\n.Du %dp+\200p \"%s\"\n", dec_ind * 7, token);
+		sprintf(e_code, "\n.Du %dp+\200p \"%s\"\n", dec_ind * 7, token);
 		ps.dumped_decl_indent = 1;
 		e_code += strlen(e_code);
-		CHECK_SIZE_CODE;
 	    }
 	    else {
 		char       *res = token;
@@ -750,7 +755,7 @@ check_type:
 	    if (ps.in_parameter_declaration)
 		prefix_blankline_requested = 0;
 
-	    if (ps.p_l_follow > 0) {	/* check for preceding unbalanced
+	    if (ps.p_l_follow > 0) {	/* check for preceeding unbalanced
 					 * parens */
 		diag(1, "Unbalanced parens");
 		ps.p_l_follow = 0;
@@ -769,9 +774,10 @@ check_type:
 		/* ?		dec_ind = 0; */
 	    }
 	    else {
-		ps.decl_on_line = false;
-		/* we can't be in the middle of a declaration, so don't do
-		 * special indentation of comments */
+		ps.decl_on_line = false;	/* we cant be in the middle of
+						 * a declaration, so dont do
+						 * special indentation of
+						 * comments */
 		if (blanklines_after_declarations_at_proctop
 			&& ps.in_parameter_declaration)
 		    postfix_blankline_requested = 1;
@@ -893,7 +899,6 @@ check_type:
 	     * : i);
 	     */
 	    dec_ind = ps.decl_indent > 0 ? ps.decl_indent : i;
-	    tabs_to_var = (use_tabs ? ps.decl_indent > 0 : 0);
 	    goto copy_id;
 
 	case ident:		/* got an identifier or constant */
@@ -903,51 +908,17 @@ check_type:
 		    *e_code++ = ' ';
 		ps.want_blank = false;
 		if (is_procname == 0 || !procnames_start_line) {
-		    if (!ps.block_init) {
+		    if (!ps.block_init)
 			if (troff && !ps.dumped_decl_indent) {
-			    snprintf(e_code, (l_code - e_code) + 5,
-				"\n.De %dp+\200p\n", dec_ind * 7);
+			    sprintf(e_code, "\n.De %dp+\200p\n", dec_ind * 7);
 			    ps.dumped_decl_indent = 1;
 			    e_code += strlen(e_code);
-			    CHECK_SIZE_CODE;
-			} else {
-			    int cur_dec_ind;
-			    int pos, startpos;
-
-			    /*
-			     * in order to get the tab math right for
-			     * indentations that are not multiples of 8 we
-			     * need to modify both startpos and dec_ind
-			     * (cur_dec_ind) here by eight minus the
-			     * remainder of the current starting column
-			     * divided by eight. This seems to be a
-			     * properly working fix
-			     */
-			    startpos = e_code - s_code;
-			    cur_dec_ind = dec_ind;
-			    pos = startpos;
-			    if ((ps.ind_level * ps.ind_size) % 8 != 0) {
-				pos += (ps.ind_level * ps.ind_size) % 8;
-				cur_dec_ind += (ps.ind_level * ps.ind_size) % 8;
-			    }
-
-			    if (tabs_to_var) {
-				while ((pos & ~7) + 8 <= cur_dec_ind) {
-				    CHECK_SIZE_CODE;
-				    *e_code++ = '\t';
-				    pos = (pos & ~7) + 8;
-				}
-			    }
-			    while (pos < cur_dec_ind) {
+			}
+			else
+			    while ((e_code - s_code) < dec_ind) {
 				CHECK_SIZE_CODE;
 				*e_code++ = ' ';
-				pos++;
 			    }
-			    if (ps.want_blank && e_code - s_code == startpos)
-				*e_code++ = ' ';
-			    ps.want_blank = false;
-			}
-		    }
 		}
 		else {
 		    if (dec_ind && s_code != e_code)
@@ -970,9 +941,8 @@ check_type:
 		e_code = chfont(&bodyf, &keywordf, e_code);
 		for (t_ptr = token; *t_ptr; ++t_ptr) {
 		    CHECK_SIZE_CODE;
-		    *e_code++ = keywordf.allcaps &&
-		      islower((unsigned char)*t_ptr) ?
-		      toupper((unsigned char)*t_ptr) : *t_ptr;
+		    *e_code++ = keywordf.allcaps && islower(*t_ptr)
+			? toupper(*t_ptr) : *t_ptr;
 		}
 		e_code = chfont(&keywordf, &bodyf, e_code);
 	    }
@@ -1026,7 +996,7 @@ check_type:
 		    if (buf_ptr >= buf_end)
 			fill_buffer();
 		}
-		while (*buf_ptr != '\n' || (in_comment && !had_eof)) {
+		while (*buf_ptr != '\n' || in_comment) {
 		    CHECK_SIZE_LAB;
 		    *e_lab = *buf_ptr++;
 		    if (buf_ptr >= buf_end)
@@ -1101,7 +1071,7 @@ check_type:
 
 	    if (strncmp(s_lab, "#if", 3) == 0) {
 		if (blanklines_around_conditional_compilation) {
-		    int    c;
+		    register    c;
 		    prefix_blankline_requested++;
 		    while ((c = getc(input)) == '\n');
 		    ungetc(c, input);
@@ -1133,7 +1103,7 @@ check_type:
 		     */
 		    if (match_state[ifdef_level].tos >= 0
 			  && bcmp(&ps, &match_state[ifdef_level], sizeof ps))
-			diag(0, "Syntactically inconsistent #ifdef alternatives.");
+			diag(0, "Syntactically inconsistant #ifdef alternatives.");
 #endif
 		}
 		if (blanklines_around_conditional_compilation) {
@@ -1167,12 +1137,12 @@ check_type:
  * original input file the output
  */
 void
-bakcopy(void)
+bakcopy()
 {
     int         n,
                 bakchn;
     char        buff[8 * 1024];
-    char       *p;
+    register char *p;
 
     /* construct file name .Bfile */
     for (p = in_name; *p; p++);	/* skip to end of string */
@@ -1180,30 +1150,28 @@ bakcopy(void)
 	p--;
     if (*p == '/')
 	p++;
-    if (snprintf(bakfile, PATH_MAX, "%s.BAK", p) >= PATH_MAX)
-	    errc(1, ENAMETOOLONG, "%s.BAK", p);
+    sprintf(bakfile, "%s.BAK", p);
 
     /* copy in_name to backup file */
-    bakchn = open(bakfile, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    bakchn = creat(bakfile, 0600);
     if (bakchn < 0)
-	err(1, "%s", bakfile);
+	err(1, bakfile);
     while ((n = read(fileno(input), buff, sizeof buff)) > 0)
 	if (write(bakchn, buff, n) != n)
-	    err(1, "%s", bakfile);
+	    err(1, bakfile);
     if (n < 0)
-	err(1, "%s", in_name);
+	err(1, in_name);
     close(bakchn);
     fclose(input);
 
     /* re-open backup file as the input file */
     input = fopen(bakfile, "r");
     if (input == NULL)
-	err(1, "%s", bakfile);
+	err(1, bakfile);
     /* now the original input file will be the output */
     output = fopen(in_name, "w");
     if (output == NULL) {
-	int saved_errno = errno;
 	unlink(bakfile);
-	errc(1, saved_errno, "%s", in_name);
+	err(1, in_name);
     }
 }

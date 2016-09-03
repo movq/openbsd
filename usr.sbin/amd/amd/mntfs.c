@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +35,12 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)mntfs.c	8.1 (Berkeley) 6/6/93";*/
+static char *rcsid = "$Id: mntfs.c,v 1.2 1997/06/24 07:48:40 deraadt Exp $";
+#endif /* not lint */
+
 
 #include "am.h"
 
@@ -65,8 +75,8 @@ static struct fattr gen_fattr = {
 };
 #endif /* notdef */
 
-mntfs *
-dup_mntfs(mntfs *mf)
+mntfs *dup_mntfs(mf)
+mntfs *mf;
 {
 	if (mf->mf_refc == 0) {
 		if (mf->mf_cid)
@@ -81,9 +91,16 @@ dup_mntfs(mntfs *mf)
 	return mf;
 }
 
-static void
-init_mntfs(mntfs *mf, am_ops *ops, am_opts *mo, char *mp, char *info,
-    char *auto_opts, char *mopts, char *remopts)
+static void init_mntfs P((mntfs *mf, am_ops *ops, am_opts *mo, char *mp, char *info, char *auto_opts, char *mopts, char *remopts));
+static void init_mntfs(mf, ops, mo, mp, info, auto_opts, mopts, remopts)
+mntfs *mf;
+am_ops *ops;
+am_opts *mo;
+char *mp;
+char *info;
+char *auto_opts;
+char *mopts;
+char *remopts;
 {
 	mf->mf_ops = ops;
 	mf->mf_fo = mo;
@@ -114,9 +131,15 @@ init_mntfs(mntfs *mf, am_ops *ops, am_opts *mo, char *mp, char *info,
 		mf->mf_server = 0;
 }
 
-static mntfs *
-alloc_mntfs(am_ops *ops, am_opts *mo, char *mp, char *info,
-    char *auto_opts, char *mopts, char *remopts)
+static mntfs *alloc_mntfs P((am_ops *ops, am_opts *mo, char *mp, char *info, char *auto_opts, char *mopts, char *remopts));
+static mntfs *alloc_mntfs(ops, mo, mp, info, auto_opts, mopts, remopts)
+am_ops *ops;
+am_opts *mo;
+char *mp;
+char *info;
+char *auto_opts;
+char *mopts;
+char *remopts;
 {
 	mntfs *mf = ALLOC(mntfs);
 	init_mntfs(mf, ops, mo, mp, info, auto_opts, mopts, remopts);
@@ -126,9 +149,15 @@ alloc_mntfs(am_ops *ops, am_opts *mo, char *mp, char *info,
 	return mf;
 }
 
-mntfs *
-find_mntfs(am_ops *ops, am_opts *mo, char *mp, char *info,
-    char *auto_opts, char *mopts, char *remopts)
+mntfs *find_mntfs P((am_ops *ops, am_opts *mo, char *mp, char *info, char *auto_opts, char *mopts, char *remopts));
+mntfs *find_mntfs(ops, mo, mp, info, auto_opts, mopts, remopts)
+am_ops *ops;
+am_opts *mo;
+char *mp;
+char *info;
+char *auto_opts;
+char *mopts;
+char *remopts;
 {
 	mntfs *mf;
 
@@ -167,7 +196,7 @@ find_mntfs(am_ops *ops, am_opts *mo, char *mp, char *info,
 				/*
 				 * Remember who we are restarting
 				 */
-				mf2->mf_private = dup_mntfs(mf);
+				mf2->mf_private = (voidp) dup_mntfs(mf);
 				mf2->mf_prfree = free_mntfs;
 				return mf2;
 			}
@@ -196,19 +225,19 @@ find_mntfs(am_ops *ops, am_opts *mo, char *mp, char *info,
 	return alloc_mntfs(ops, mo, mp, info, auto_opts, mopts, remopts);
 }
 
-mntfs *
-new_mntfs()
+mntfs *new_mntfs()
 {
 	return alloc_mntfs(&efs_ops, (am_opts *) 0, "//nil//", ".", "", "", "");
 }
 
-static void
-uninit_mntfs(mntfs *mf, int rmd)
+static void uninit_mntfs(mf, rmd)
+mntfs *mf;
+int rmd;
 {
-	free(mf->mf_auto);
-	free(mf->mf_mopts);
-	free(mf->mf_remopts);
-	free(mf->mf_info);
+	if (mf->mf_auto) free((voidp) mf->mf_auto);
+	if (mf->mf_mopts) free((voidp) mf->mf_mopts);
+	if (mf->mf_remopts) free((voidp) mf->mf_remopts);
+	if (mf->mf_info) free((voidp) mf->mf_info);
 	if (mf->mf_private && mf->mf_prfree)
 		(*mf->mf_prfree)(mf->mf_private);
 	/*
@@ -216,7 +245,7 @@ uninit_mntfs(mntfs *mf, int rmd)
 	 */
 	if (rmd && (mf->mf_flags & MFF_MKMNT))
 		rmdirs(mf->mf_mount);
-	free(mf->mf_mount);
+	if (mf->mf_mount) free((voidp) mf->mf_mount);
 
 	/*
 	 * Clean up the file server
@@ -233,23 +262,20 @@ uninit_mntfs(mntfs *mf, int rmd)
 	}
 }
 
-static void
-discard_mntfs(void *arg)
+static void discard_mntfs(mf)
+mntfs *mf;
 {
-	mntfs *mf = arg;
-
 	rem_que(&mf->mf_q);
 	/*
 	 * Free memory
 	 */
 	uninit_mntfs(mf, TRUE);
-	free(mf);
+	free((voidp) mf);
 
 	--mntfs_allocated;
 }
 
-void
-flush_mntfs(void)
+void flush_mntfs()
 {
 	mntfs *mf;
 
@@ -262,11 +288,9 @@ flush_mntfs(void)
 	}
 }
 
-void
-free_mntfs(void *arg)
+void free_mntfs(mf)
+mntfs *mf;
 {
-	mntfs *mf = arg;
-
 	if (--mf->mf_refc == 0) {
 		if (mf->mf_flags & MFF_MOUNTED) {
 			int quoted;
@@ -300,18 +324,23 @@ free_mntfs(void *arg)
 			if (mf->mf_flags & (MFF_MOUNTED|MFF_MOUNTING|MFF_UNMOUNTING))
 				dlog("mntfs reference for %s still active", mf->mf_mount);
 #endif /* DEBUG */
-			mf->mf_cid = timeout(ALLOWED_MOUNT_TIME,
-			    discard_mntfs, mf);
+			mf->mf_cid = timeout(ALLOWED_MOUNT_TIME, discard_mntfs, (voidp) mf);
 		}
 	}
 }
 
-mntfs *
-realloc_mntfs(mntfs *mf, am_ops *ops, am_opts *mo, char *mp,
-    char *info, char *auto_opts, char *mopts, char *remopts)
+mntfs *realloc_mntfs P((mntfs *mf, am_ops *ops, am_opts *mo, char *mp, char *info, char *auto_opts, char *mopts, char *remopts));
+mntfs *realloc_mntfs(mf, ops, mo, mp, info, auto_opts, mopts, remopts)
+mntfs *mf;
+am_ops *ops;
+am_opts *mo;
+char *mp;
+char *info;
+char *auto_opts;
+char *mopts;
+char *remopts;
 {
 	mntfs *mf2;
-
 	if (mf->mf_refc == 1 && mf->mf_ops == &ifs_ops && STREQ(mf->mf_mount, mp)) {
 		/*
 		 * If we are inheriting then just return

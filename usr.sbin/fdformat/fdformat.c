@@ -1,4 +1,4 @@
-/*	$OpenBSD: fdformat.c,v 1.22 2016/03/16 15:41:11 krw Exp $	*/
+/*	$OpenBSD: fdformat.c,v 1.8 1998/08/13 05:36:56 deraadt Exp $	*/
 
 /*
  * Copyright (C) 1992-1994 by Joerg Wunsch, Dresden
@@ -45,7 +45,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
-#include <limits.h>
 #include <ctype.h>
 #include <err.h>
 #include <util.h>
@@ -58,11 +57,12 @@
 extern const char *__progname;
 
 static void
-format_track(int fd, int cyl, int secs, int head, int rate, int gaplen,
-    int secsize, int fill, int interleave)
+format_track(fd, cyl, secs, head, rate, gaplen, secsize, fill, interleave)
+	int fd, cyl, secs, head, rate, gaplen, secsize;
+	int fill, interleave;
 {
 	struct fd_formb f;
-	int i,j;
+	register int i,j;
 	int il[FD_MAX_NSEC + 1];
 
 	memset(il,0,sizeof il);
@@ -93,7 +93,8 @@ format_track(int fd, int cyl, int secs, int head, int rate, int gaplen,
 }
 
 static int
-verify_track(int fd, int track, int tracksize)
+verify_track(fd, track, tracksize)
+	int fd, track, tracksize;
 {
 	static char *buf = 0;
 	static int bufsz = 0;
@@ -108,17 +109,18 @@ verify_track(int fd, int track, int tracksize)
 	}
 	
 	if (bufsz < tracksize) {
-		free(buf);
+		if (buf)
+			free (buf);
 		bufsz = tracksize;
 		buf = 0;
 	}
 	if (! buf)
-		buf = malloc(bufsz);
+		buf = malloc (bufsz);
 	if (! buf) {
 		fprintf (stderr, "\nfdformat: out of memory\n");
 		exit (2);
 	}
-	if (lseek (fd, (off_t) track*tracksize, SEEK_SET) < 0)
+	if (lseek (fd, (off_t) track*tracksize, 0) < 0)
 		rv = -1;
 	/* try twice reading it, without using the normal retrier */
 	else if (read (fd, buf, tracksize) != tracksize
@@ -130,39 +132,39 @@ verify_track(int fd, int track, int tracksize)
 }
 
 static void
-usage(void)
+usage ()
 {
-	printf("usage: %s [-nqv] [-c cyls] [-F fillbyte] [-g gap3len] ",
+	printf("Usage:\n\t%s [-q] [-n | -v] [-c #] [-s #] [-h #]\n",
 		__progname);
-	printf("[-h heads]\n");
-	printf("\t[-i intleave] [-r rate] [-S secshft] [-s secs]\n");
-	printf("\t[-t steps_per_track] device_name\n");
+	printf("\t\t [-r #] [-g #] [-i #] [-S #] [-F #] [-t #] devname\n");
 	printf("Options:\n");
+	printf("\t-q\tsupress any normal output, don't ask for confirmation\n");
 	printf("\t-n\tdon't verify floppy after formatting\n");
-	printf("\t-q\tsuppress any normal output, don't ask for confirmation\n");
 	printf("\t-v\tdon't format, verify only\n");
+	printf("\t\tvalid choices are 360, 720, 800, 820, 1200, 1440, 1480, 1720\n");
 	printf("\tdevname\tthe full name of floppy device or in short form fd0, fd1\n");
 	printf("Obscure options:\n");
 	printf("\t-c #\tspecify number of cylinders, 40 or 80\n");
-	printf("\t-F #\tspecify fill byte\n");
-	printf("\t-g #\tspecify gap length\n");
-	printf("\t-h #\tspecify number of floppy heads, 1 or 2\n");
-	printf("\t-i #\tspecify interleave factor\n");
-	printf("\t-r #\tspecify data rate, 250, 300 or 500 kbps\n");
-	printf("\t-S #\tspecify sector size, 0=128, 1=256, 2=512 bytes\n");
 	printf("\t-s #\tspecify number of sectors per track, 9, 10, 15 or 18\n");
+	printf("\t-h #\tspecify number of floppy heads, 1 or 2\n");
+	printf("\t-r #\tspecify data rate, 250, 300 or 500 kbps\n");
+	printf("\t-g #\tspecify gap length\n");
+	printf("\t-i #\tspecify interleave factor\n");
+	printf("\t-S #\tspecify sector size, 0=128, 1=256, 2=512 bytes\n");
+	printf("\t-F #\tspecify fill byte\n");
 	printf("\t-t #\tnumber of steps per track\n");
 	exit(2);
 }
 
 static int
-yes(void)
+yes ()
 {
-	char reply[256], *p;
+	char reply [256], *p;
 
+	reply[sizeof(reply)-1] = 0;
 	for (;;) {
 		fflush(stdout);
-		if (!fgets(reply, sizeof(reply), stdin))
+		if (! fgets (reply, sizeof(reply)-1, stdin))
 			return (0);
 		for (p=reply; *p==' ' || *p=='\t'; ++p)
 			continue;
@@ -175,68 +177,53 @@ yes(void)
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int cyls = -1, secs = -1, heads = -1, intleave = -1;
 	int rate = -1, gaplen = -1, secsize = -1, steps = -1;
 	int fill = 0xf6, quiet = 0, verify = 1, verify_only = 0;
 	int fd, c, track, error, tracks_per_dot, bytes_per_track, errs;
-	const char *errstr;
 	char *devname;
 	struct fd_type fdt;
 
 	while((c = getopt(argc, argv, "c:s:h:r:g:S:F:t:i:qvn")) != -1)
 		switch (c) {
 		case 'c':       /* # of cyls */
-			cyls = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-c %s: %s", optarg, errstr);
+			cyls = atoi(optarg);
 			break;
 
 		case 's':       /* # of secs per track */
-			secs = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-s %s: %s", optarg, errstr);
+			secs = atoi(optarg);
 			break;
 
 		case 'h':       /* # of heads */
-			heads = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-h %s: %s", optarg, errstr);
+			heads = atoi(optarg);
 			break;
 
 		case 'r':       /* transfer rate, kilobyte/sec */
-			rate = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-r %s: %s", optarg, errstr);
+			rate = atoi(optarg);
 			break;
 
 		case 'g':       /* length of GAP3 to format with */
-			gaplen = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-g %s: %s", optarg, errstr);
+			gaplen = atoi(optarg);
 			break;
 
 		case 'S':       /* sector size shift factor (1 << S)*128 */
-			secsize = strtonum(optarg, 0, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-S %s: %s", optarg, errstr);
+			secsize = atoi(optarg);
 			break;
 
 		case 'F':       /* fill byte, C-like notation allowed */
-			fill = (int)strtol(optarg, NULL, 0);
+			fill = (int)strtol(optarg, (char **)0, 0);
 			break;
 
 		case 't':       /* steps per track */
-			steps = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-t %s: %s", optarg, errstr);
+			steps = atoi(optarg);
 			break;
 
 		case 'i':       /* interleave factor */
-			intleave = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "-i %s: %s", optarg, errstr);
+			intleave = atoi(optarg);
 			break;
 
 		case 'q':
@@ -260,7 +247,7 @@ main(int argc, char *argv[])
 		usage();
 
 	if ((fd = opendev(argv[optind], O_RDWR, OPENDEV_PART, &devname)) < 0)
-		err(1, "%s", devname);
+		err(1, devname);
 
 	if (ioctl(fd, FD_GTYPE, &fdt) < 0)
 		errx(1, "not a floppy disk: %s", devname);
@@ -299,8 +286,6 @@ main(int argc, char *argv[])
 
 	bytes_per_track = fdt.sectrac * (1<<fdt.secsize) * 128;
 	tracks_per_dot = fdt.tracks * fdt.heads / 40;
-	if (tracks_per_dot == 0)
-		tracks_per_dot++;
 
 	if (verify_only) {
 		if (!quiet)
@@ -361,7 +346,6 @@ main(int argc, char *argv[])
 			}
 		}
 	}
-	close(fd);
 	if (!quiet)
 		printf(" done.\n");
 

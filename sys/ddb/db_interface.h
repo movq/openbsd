@@ -1,4 +1,4 @@
-/*	$OpenBSD: db_interface.h,v 1.17 2016/01/15 11:21:58 dlg Exp $	*/
+/*	$OpenBSD: db_interface.h,v 1.3 1996/04/21 22:19:02 deraadt Exp $	*/
 /*	$NetBSD: db_interface.h,v 1.1 1996/02/05 01:57:03 christos Exp $	*/
 
 /*
@@ -33,46 +33,18 @@
 #define _DDB_DB_INTERFACE_H_
 
 /* arch/<arch>/<arch>/db_trace.c */
-void db_stack_trace_print(db_expr_t, int, db_expr_t, char *,
-    int (*)(const char *, ...));
+void db_stack_trace_cmd __P((db_expr_t, int, db_expr_t, char *));
 
 /* arch/<arch>/<arch>/db_disasm.c */
-db_addr_t db_disasm(db_addr_t, boolean_t);
+db_addr_t db_disasm __P((db_addr_t, boolean_t));
 
-/* kern/kern_proc.c */
-void db_show_all_procs(db_expr_t, int, db_expr_t, char *);
+/* kern/kern_synch.c */
+void db_show_all_procs __P((db_expr_t, int, db_expr_t, char *));
 
-/* kern/kern_timeout.c */
-void db_show_callout(db_expr_t, int, db_expr_t, char *);
-
-struct mount;
-
-/* kern/vfs_subr.c */
-void vfs_buf_print(void *, int, int (*)(const char *, ...));
-void vfs_vnode_print(void *, int, int (*)(const char *, ...));
-void vfs_mount_print(struct mount *, int, int (*)(const char *, ...));
-
-/* kern/subr_pool.c */
-void db_show_all_pools(db_expr_t, int, db_expr_t, char *);
-
-/* kern/uipc_mbuf.c */
-void m_print(void *, int (*)(const char *, ...));
-
-/* kern/uipc_socket.c */
-void so_print(void *, int (*)(const char *, ...));
-
-/* nfs/nfs_debug.c */
-void db_show_all_nfsreqs(db_expr_t, int, db_expr_t, char *);
-void nfs_request_print(void *, int, int (*)(const char *, ...));
-void db_show_all_nfsnodes(db_expr_t, int, db_expr_t, char *);
-void nfs_node_print(void *, int, int (*)(const char *, ...));
-
-/* ufs/ffs/ffs_softdep.c */
-struct worklist;
-void worklist_print(struct worklist *, int, int (*)(const char *, ...));
-void softdep_print(struct buf *, int, int (*)(const char *, ...));
+/* kern/kern_clock.c */
+void db_show_callout __P((db_expr_t, int, db_expr_t, char *));
 
 /* arch/<arch>/<arch>/db_interface.c */
-void db_machine_init(void);
+void db_machine_init __P((void));
 
 #endif /* _DDB_DB_INTERFACE_H_ */

@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-netbios.c,v 1.10 2015/01/16 06:40:21 deraadt Exp $	*/
-
 /*
  * Copyright (c) 1994, 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -24,17 +22,27 @@
  * Contributed by Brad Parker (brad@fcr.com).
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-netbios.c,v 1.2 1996/12/12 16:22:32 bitblt Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
-#include <stdio.h>
+#ifdef __STDC__
 #include <stdlib.h>
+#endif
+#include <stdio.h>
 #include <string.h>
 
 #include "interface.h"
@@ -49,21 +57,43 @@ void
 netbios_print(struct p8022Hdr *nb, u_int length)
 {
 	if (length < p8022Size) {
-		printf(" truncated-netbios %d", length);
+		(void)printf(" truncated-netbios %d", length);
 		return;
 	}
 
-	TCHECK(*nb);
+	if (nb->flags == UI) {
+	    (void)printf("802.1 UI ");
+	} else {
+	    (void)printf("802.1 CONN ");
+	}
 
-	if (nb->flags == UI)
-		printf("802.1 UI ");
-	else
-		printf("802.1 CONN ");
+	if ((u_char *)(nb + 1) > snapend) {
+		printf(" [|netbios]");
+		return;
+	}
 
-#if 0
+/*
 	netbios_decode(nb, (u_char *)nb + p8022Size, length - p8022Size);
+*/
+}
+
+#ifdef never
+	(void)printf("%s.%d > ",
+		     ipxaddr_string(EXTRACT_32BITS(ipx->srcNet), ipx->srcNode),
+		     EXTRACT_16BITS(ipx->srcSkt));
+
+	(void)printf("%s.%d:",
+		     ipxaddr_string(EXTRACT_32BITS(ipx->dstNet), ipx->dstNode),
+		     EXTRACT_16BITS(ipx->dstSkt));
+
+	if ((u_char *)(ipx + 1) > snapend) {
+		printf(" [|ipx]");
+		return;
+	}
+
+	/* take length from ipx header */
+	length = EXTRACT_16BITS(&ipx->length);
+
+	ipx_decode(ipx, (u_char *)ipx + ipxSize, length - ipxSize);
 #endif
 
-trunc:
-	printf("[|netbios]");
-}

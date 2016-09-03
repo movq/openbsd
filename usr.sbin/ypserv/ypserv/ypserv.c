@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypserv.c,v 1.44 2015/11/17 18:21:48 tedu Exp $ */
+/*	$OpenBSD: ypserv.c,v 1.12 1997/11/04 07:40:52 deraadt Exp $ */
 
 /*
  * Copyright (c) 1994 Mats O Jansson <moj@stacken.kth.se>
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Mats O Jansson
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,31 +31,40 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <netinet/in.h>
-#include <rpcsvc/yp.h>
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: ypserv.c,v 1.12 1997/11/04 07:40:52 deraadt Exp $";
+#endif
+
+#include "yp.h"
 #include "ypv1.h"
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stdlib.h>/* getenv, exit */
+#include <rpc/pmap_clnt.h> /* for pmap_unset */
+#include <string.h> /* strcmp */ 
 #include <netdb.h>
 #include <signal.h>
 #include <errno.h>
-#include <util.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <rpc/pmap_clnt.h>
-#include <ndbm.h>
+#include <sys/ttycom.h>/* TIOCNOTTY */
+#ifdef __cplusplus
+#include <sysent.h> /* getdtablesize, open */
+#endif /* __cplusplus */
+#include <memory.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#ifdef SYSLOG
 #include <syslog.h>
+#else
+#define LOG_ERR 1
+#define openlog(a, b, c)
+#endif
 #include "acl.h"
 #include "yplog.h"
 #include "ypdef.h"
-#include "ypserv.h"
 #include <sys/wait.h>
 
-void ypdb_init(void);
+#ifdef __STDC__
+#define SIG_PF void(*)(int)
+#endif
 
 #ifdef DEBUG
 #define RPC_SVC_FG
@@ -62,59 +76,60 @@ static int _rpcfdtype;		/* Whether Stream or Datagram ? */
 static int _rpcsvcdirty;	/* Still serving ? */
 
 int	usedns = FALSE;
+char   *progname = "ypserv";
 char   *aclfile = NULL;
 
-void	sig_child(int);
-void	sig_hup(int);
-volatile sig_atomic_t wantsighup;
+void sig_child();
+void sig_hup();
 
-static void
-_msgout(char *msg)
+static
+void _msgout(char* msg)
 {
 #ifdef RPC_SVC_FG
 	if (_rpcpmstart)
-		syslog(LOG_ERR, "%s", msg);
+		syslog(LOG_ERR, msg);
 	else
 		(void) fprintf(stderr, "%s\n", msg);
 #else
-	syslog(LOG_ERR, "%s", msg);
+	syslog(LOG_ERR, msg);
 #endif
 }
 
-/* ARGSUSED */
 static void
-closedown(int sig)
+closedown()
 {
-	int save_errno = errno;
-
 	if (_rpcsvcdirty == 0) {
+		extern fd_set svc_fdset;
+		static int size;
 		int i, openfd;
 
 		if (_rpcfdtype == SOCK_DGRAM)
 			exit(0);
-		for (i = 0, openfd = 0; i < svc_max_pollfd && openfd < 2; i++)
-			if (svc_pollfd[i].fd != -1)
+		if (size == 0) {
+			size = getdtablesize();
+		}
+		for (i = 0, openfd = 0; i < size && openfd < 2; i++)
+			if (FD_ISSET(i, &svc_fdset))
 				openfd++;
-		if (openfd <= (_rpcpmstart ? 0 : 1))
-			_exit(0);
+		if (openfd <= (_rpcpmstart?0:1))
+			exit(0);
 	}
 	(void) alarm(_RPCSVC_CLOSEDOWN);
-	errno = save_errno;
 }
 
 static void
-ypprog_1(struct svc_req *rqstp, SVCXPRT *transp)
+ypprog_1(struct svc_req *rqstp, register SVCXPRT *transp)
 {
 	union {
-		domainname ypoldproc_domain_1_arg;
-		domainname ypoldproc_domain_nonack_1_arg;
-		yprequest ypoldproc_match_1_arg;
-		yprequest ypoldproc_first_1_arg;
-		yprequest ypoldproc_next_1_arg;
-		yprequest ypoldproc_poll_1_arg;
-		yprequest ypoldproc_push_1_arg;
-		yprequest ypoldproc_pull_1_arg;
-		yprequest ypoldproc_get_1_arg;
+		domainname ypproc_domain_1_arg;
+		domainname ypproc_domain_nonack_1_arg;
+		yprequest ypproc_match_1_arg;
+		yprequest ypproc_first_1_arg;
+		yprequest ypproc_next_1_arg;
+		yprequest ypproc_poll_1_arg;
+		yprequest ypproc_push_1_arg;
+		yprequest ypproc_pull_1_arg;
+		yprequest ypproc_get_1_arg;
 	} argument;
 	char *result;
 	xdrproc_t xdr_argument, xdr_result;
@@ -125,61 +140,61 @@ ypprog_1(struct svc_req *rqstp, SVCXPRT *transp)
 	case YPOLDPROC_NULL:
 		xdr_argument = (xdrproc_t) xdr_void;
 		xdr_result = (xdrproc_t) xdr_void;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_null_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_null_1_svc;
 		break;
 
 	case YPOLDPROC_DOMAIN:
 		xdr_argument = (xdrproc_t) xdr_domainname;
 		xdr_result = (xdrproc_t) xdr_bool;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_domain_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_domain_1_svc;
 		break;
 
 	case YPOLDPROC_DOMAIN_NONACK:
 		xdr_argument = (xdrproc_t) xdr_domainname;
 		xdr_result = (xdrproc_t) xdr_bool;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_domain_nonack_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_domain_nonack_1_svc;
 		break;
 
 	case YPOLDPROC_MATCH:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_ypresponse;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_match_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_match_1_svc;
 		break;
 
 	case YPOLDPROC_FIRST:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_ypresponse;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_first_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_first_1_svc;
 		break;
 
 	case YPOLDPROC_NEXT:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_ypresponse;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_next_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_next_1_svc;
 		break;
 
 	case YPOLDPROC_POLL:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_ypresponse;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_poll_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_poll_1_svc;
 		break;
 
 	case YPOLDPROC_PUSH:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_void;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_push_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_push_1_svc;
 		break;
 
 	case YPOLDPROC_PULL:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_void;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_pull_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_pull_1_svc;
 		break;
 
 	case YPOLDPROC_GET:
 		xdr_argument = (xdrproc_t) xdr_yprequest;
 		xdr_result = (xdrproc_t) xdr_void;
-		local = (char *(*)(char *, struct svc_req *)) ypoldproc_get_1_svc;
+		local = (char *(*)(char *, struct svc_req *)) ypproc_get_1_svc;
 		break;
 
 	default:
@@ -187,8 +202,8 @@ ypprog_1(struct svc_req *rqstp, SVCXPRT *transp)
 		_rpcsvcdirty = 0;
 		return;
 	}
-	(void) memset(&argument, 0, sizeof(argument));
-	if (!svc_getargs(transp, xdr_argument, (caddr_t)&argument)) {
+	(void) memset((char *)&argument, 0, sizeof (argument));
+	if (!svc_getargs(transp, xdr_argument, (caddr_t) &argument)) {
 		svcerr_decode(transp);
 		_rpcsvcdirty = 0;
 		return;
@@ -197,15 +212,16 @@ ypprog_1(struct svc_req *rqstp, SVCXPRT *transp)
 	if (result != NULL && !svc_sendreply(transp, xdr_result, result)) {
 		svcerr_systemerr(transp);
 	}
-	if (!svc_freeargs(transp, xdr_argument, (caddr_t)&argument)) {
+	if (!svc_freeargs(transp, xdr_argument, (caddr_t) &argument)) {
 		_msgout("unable to free arguments");
 		exit(1);
 	}
 	_rpcsvcdirty = 0;
+	return;
 }
 
 static void
-ypprog_2(struct svc_req *rqstp, SVCXPRT *transp)
+ypprog_2(struct svc_req *rqstp, register SVCXPRT *transp)
 {
 	union {
 		domainname ypproc_domain_2_arg;
@@ -302,8 +318,8 @@ ypprog_2(struct svc_req *rqstp, SVCXPRT *transp)
 		_rpcsvcdirty = 0;
 		return;
 	}
-	(void) memset(&argument, 0, sizeof(argument));
-	if (!svc_getargs(transp, xdr_argument, (caddr_t)&argument)) {
+	(void) memset((char *)&argument, 0, sizeof (argument));
+	if (!svc_getargs(transp, xdr_argument, (caddr_t) &argument)) {
 		svcerr_decode(transp);
 		_rpcsvcdirty = 0;
 		return;
@@ -312,87 +328,30 @@ ypprog_2(struct svc_req *rqstp, SVCXPRT *transp)
 	if (result != NULL && !svc_sendreply(transp, xdr_result, result)) {
 		svcerr_systemerr(transp);
 	}
-	if (!svc_freeargs(transp, xdr_argument, (caddr_t)&argument)) {
+	if (!svc_freeargs(transp, xdr_argument, (caddr_t) &argument)) {
 		_msgout("unable to free arguments");
 		exit(1);
 	}
 	_rpcsvcdirty = 0;
-}
-
-static void
-hup(void)
-{
-	/* Handle the log. */
-	ypcloselog();
-	ypopenlog();
-
-	acl_reset();
-	if (aclfile != NULL) {
-		yplog("sig_hup: reread %s", aclfile);
-		(void)acl_init(aclfile);
-	} else {
-		yplog("sig_hup: reread %s", YP_SECURENET_FILE);
-		(void)acl_securenet(YP_SECURENET_FILE);
-	}
-
-	ypdb_close_all();
-}
-
-static void
-my_svc_run(void)
-{
-	struct pollfd *pfd = NULL, *newp;
-	int nready, saved_max_pollfd = 0;
-
-	for (;;) {
-		if (wantsighup) {
-			wantsighup = 0;
-			hup();
-		}
-		if (svc_max_pollfd > saved_max_pollfd) {
-			newp = reallocarray(pfd, svc_max_pollfd, sizeof(*pfd));
-			if (newp == NULL) {
-				free(pfd);
-				perror("svc_run: - realloc failed");
-				return;
-			}
-			pfd = newp;
-			saved_max_pollfd = svc_max_pollfd;
-		}
-		memcpy(pfd, svc_pollfd, sizeof(*pfd) * svc_max_pollfd);
-
-		nready = poll(pfd, svc_max_pollfd, INFTIM);
-		switch (nready) {
-		case -1:
-			if (errno == EINTR)
-				continue;
-			perror("svc_run: - poll failed");
-			free(pfd);
-			return;
-		case 0:
-			continue;
-		default:
-			svc_getreq_poll(pfd, nready);
-		}
-	}
-}
-
-static void
-usage(void)
-{
-	(void)fprintf(stderr, "usage: ypserv [-1dx] [-a aclfile]\n");
-	exit(1);
+	return;
 }
 
 int
-main(int argc, char *argv[])
+main (argc,argv)
+int argc;
+char *argv[];
 {
-	int xflag = 0, allowv1 = 0, ch, sock, proto;
+	register SVCXPRT *transp;
+	int sock;
+	int proto;
 	struct sockaddr_in saddr;
-	socklen_t asize = sizeof(saddr);
-	extern char *optarg;
-	SVCXPRT *transp = NULL;
-
+	int asize = sizeof (saddr);
+	int	 usage = 0;
+	int	 xflag = 0;
+	int	 allowv1 = 0;
+	int	 ch;
+	extern	 char *optarg;
+	
 	while ((ch = getopt(argc, argv, "1a:dx")) != -1)
 		switch (ch) {
 		case '1':
@@ -408,30 +367,36 @@ main(int argc, char *argv[])
 			xflag = TRUE;
 			break;
 		default:
-			usage();
+			usage++;
 			break;
 		}
-
-	if (geteuid() != 0) {
-		(void)fprintf(stderr, "ypserv: must be root to run.\n");
+	
+	if (usage) {
+		(void)fprintf(stderr,"usage: %s [-a aclfile] [-d] [-x]\n",progname);
 		exit(1);
 	}
 
-	if (aclfile != NULL)
-		(void)acl_init(aclfile);
-	else
-		(void)acl_securenet(YP_SECURENET_FILE);
-
-	if (xflag)
+	if (geteuid() != 0) {
+		(void)fprintf(stderr,"%s: must be root to run.\n",progname);
 		exit(1);
+	}
+
+	if (aclfile != NULL) {
+		(void)acl_init(aclfile);
+	} else {
+		(void)acl_securenet(YP_SECURENET_FILE);
+	}
+	if (xflag) {
+		exit(1);
+	};
 
 	if (getsockname(0, (struct sockaddr *)&saddr, &asize) == 0) {
-		socklen_t ssize = sizeof(int);
+		int ssize = sizeof (int);
 
 		if (saddr.sin_family != AF_INET)
 			exit(1);
 		if (getsockopt(0, SOL_SOCKET, SO_TYPE,
-		    &_rpcfdtype, &ssize) == -1)
+				(char *)&_rpcfdtype, &ssize) == -1)
 			exit(1);
 		sock = 0;
 		_rpcpmstart = 1;
@@ -439,8 +404,8 @@ main(int argc, char *argv[])
 		openlog("ypserv", LOG_PID, LOG_DAEMON);
 	} else {
 #ifndef RPC_SVC_FG
-		int i;
-		pid_t pid;
+		int size;
+		int pid, i;
 
 		pid = fork();
 		if (pid < 0) {
@@ -449,13 +414,15 @@ main(int argc, char *argv[])
 		}
 		if (pid)
 			exit(0);
-		closefrom(0);
-		i = open("/dev/console", O_RDWR);
+		size = getdtablesize();
+		for (i = 0; i < size; i++)
+			(void) close(i);
+		i = open("/dev/console", 2);
 		(void) dup2(i, 1);
 		(void) dup2(i, 2);
-		i = open("/dev/tty", O_RDWR);
+		i = open("/dev/tty", 2);
 		if (i >= 0) {
-			(void) ioctl(i, TIOCNOTTY, NULL);
+			(void) ioctl(i, TIOCNOTTY, (char *)NULL);
 			(void) close(i);
 		}
 		openlog("ypserv", LOG_PID, LOG_DAEMON);
@@ -469,11 +436,17 @@ main(int argc, char *argv[])
 	ypdb_init();	/* init db stuff */
 
 	chdir("/");
-
+	
 	(void)signal(SIGCHLD, sig_child);
 	(void)signal(SIGHUP, sig_hup);
+	{ FILE *pidfile = fopen(YPSERV_PID_PATH, "w");
+	  if (pidfile != NULL) {
+		fprintf(pidfile, "%d\n", getpid());
+		fclose(pidfile);
+	  }
+	}
 
-	if (_rpcfdtype == 0 || _rpcfdtype == SOCK_DGRAM) {
+	if ((_rpcfdtype == 0) || (_rpcfdtype == SOCK_DGRAM)) {
 		transp = svcudp_create(sock);
 		if (transp == NULL) {
 			_msgout("cannot create udp service.");
@@ -497,7 +470,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (_rpcfdtype == 0 || _rpcfdtype == SOCK_STREAM) {
+	if ((_rpcfdtype == 0) || (_rpcfdtype == SOCK_STREAM)) {
 		if (_rpcpmstart)
 			transp = svcfd_create(sock, 0, 0);
 		else
@@ -524,34 +497,39 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (transp == NULL) {
+	if (transp == (SVCXPRT *)NULL) {
 		_msgout("could not create a handle");
 		exit(1);
 	}
 	if (_rpcpmstart) {
-		(void) signal(SIGALRM, closedown);
+		(void) signal(SIGALRM, (SIG_PF) closedown);
 		(void) alarm(_RPCSVC_CLOSEDOWN);
 	}
-	my_svc_run();
+	svc_run();
 	_msgout("svc_run returned");
 	exit(1);
 	/* NOTREACHED */
 }
 
-/* ARGSUSED */
 void
-sig_child(int signo)
+sig_child()
 {
 	int save_errno = errno;
 
-	while (wait3(NULL, WNOHANG, NULL) > 0)
+	while (wait3((int *)NULL, WNOHANG, (struct rusage *)NULL) > 0)
 		;
 	errno = save_errno;
 }
 
-/* ARGSUSED */
 void
-sig_hup(int signo)
+sig_hup()
 {
-	wantsighup = 1;
+	acl_reset();
+	if (aclfile != NULL) {
+		yplog("sig_hup: reread %s",aclfile);
+		(void)acl_init(aclfile);
+	} else {
+		yplog("sig_hup: reread %s",YP_SECURENET_FILE);
+		(void)acl_securenet(YP_SECURENET_FILE);
+	}
 }

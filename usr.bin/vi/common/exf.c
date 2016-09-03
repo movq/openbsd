@@ -1,5 +1,3 @@
-/*	$OpenBSD: exf.c,v 1.44 2016/08/01 18:27:35 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,9 +9,14 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)exf.c		10.49 (Berkeley) 10/10/96";
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/types.h>		/* XXX: param.h may not have included types.h */
 #include <sys/queue.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 
 /*
  * We include <sys/file.h>, because the flock(2) and open(2) #defines
@@ -31,15 +34,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "common.h"
 
-static int	file_backup(SCR *, char *, char *);
-static void	file_cinit(SCR *);
-static void	file_comment(SCR *);
-static int	file_spath(SCR *, FREF *, struct stat *, int *);
+static int	file_backup __P((SCR *, char *, char *));
+static void	file_cinit __P((SCR *));
+static void	file_comment __P((SCR *));
+static int	file_spath __P((SCR *, FREF *, struct stat *, int *));
 
 /*
  * file_add --
@@ -54,10 +56,12 @@ static int	file_spath(SCR *, FREF *, struct stat *, int *);
  * vi now remembers the last location in any file that it has ever edited,
  * not just the previously edited file.
  *
- * PUBLIC: FREF *file_add(SCR *, CHAR_T *);
+ * PUBLIC: FREF *file_add __P((SCR *, CHAR_T *));
  */
 FREF *
-file_add(SCR *sp, CHAR_T *name)
+file_add(sp, name)
+	SCR *sp;
+	CHAR_T *name;
 {
 	GS *gp;
 	FREF *frp, *tfrp;
@@ -73,12 +77,15 @@ file_add(SCR *sp, CHAR_T *name)
 	 */
 	gp = sp->gp;
 	if (name != NULL)
-		TAILQ_FOREACH_SAFE(frp, &gp->frefq, q, tfrp) {
+		for (frp = gp->frefq.cqh_first;
+		    frp != (FREF *)&gp->frefq; frp = frp->q.cqe_next) {
 			if (frp->name == NULL) {
-				TAILQ_REMOVE(&gp->frefq, frp, q);
+				tfrp = frp->q.cqe_next;
+				CIRCLEQ_REMOVE(&gp->frefq, frp, q);
 				if (frp->name != NULL)
 					free(frp->name);
 				free(frp);
+				frp = tfrp;
 				continue;
 			}
 			if (!strcmp(frp->name, name))
@@ -86,7 +93,7 @@ file_add(SCR *sp, CHAR_T *name)
 		}
 
 	/* Allocate and initialize the FREF structure. */
-	CALLOC(sp, frp, 1, sizeof(FREF));
+	CALLOC(sp, frp, FREF *, 1, sizeof(FREF));
 	if (frp == NULL)
 		return (NULL);
 
@@ -103,7 +110,7 @@ file_add(SCR *sp, CHAR_T *name)
 	}
 
 	/* Append into the chain of file names. */
-	TAILQ_INSERT_TAIL(&gp->frefq, frp, q);
+	CIRCLEQ_INSERT_TAIL(&gp->frefq, frp, q);
 
 	return (frp);
 }
@@ -114,17 +121,21 @@ file_add(SCR *sp, CHAR_T *name)
  *	let go of any previous file.  Don't release the previous file until
  *	absolutely sure we have the new one.
  *
- * PUBLIC: int file_init(SCR *, FREF *, char *, int);
+ * PUBLIC: int file_init __P((SCR *, FREF *, char *, int));
  */
 int
-file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
+file_init(sp, frp, rcv_name, flags)
+	SCR *sp;
+	FREF *frp;
+	char *rcv_name;
+	int flags;
 {
 	EXF *ep;
 	RECNOINFO oinfo;
 	struct stat sb;
 	size_t psize;
 	int fd, exists, open_err, readonly;
-	char *oname, tname[] = "/tmp/vi.XXXXXXXXXX";
+	char *oname, tname[MAXPATHLEN];
 
 	open_err = readonly = 0;
 
@@ -137,8 +148,7 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 	 */
 	if (F_ISSET(frp, FR_RECOVER)) {
 		F_CLR(frp, FR_RECOVER);
-		if (rcv_read(sp, frp) == 0)
-			return (0);		/* successful recovery */
+		return (rcv_read(sp, frp));
 	}
 
 	/*
@@ -153,7 +163,7 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 	 *	Default recover mail file fd to -1.
 	 *	Set initial EXF flag bits.
 	 */
-	CALLOC_RET(sp, ep, 1, sizeof(EXF));
+	CALLOC_RET(sp, ep, EXF *, 1, sizeof(EXF));
 	ep->c_lno = ep->c_nlines = OOBLNO;
 	ep->rcv_fd = ep->fcntl_fd = -1;
 	F_SET(ep, F_FIRSTMODIFY);
@@ -162,10 +172,8 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 	 * Scan the user's path to find the file that we're going to
 	 * try and open.
 	 */
-	if (file_spath(sp, frp, &sb, &exists)) {
-		free(ep);
+	if (file_spath(sp, frp, &sb, &exists))
 		return (1);
-	}
 
 	/*
 	 * If no name or backing file, for whatever reason, create a backing
@@ -175,20 +183,13 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 	 */
 	oname = frp->name;
 	if (LF_ISSET(FS_OPENERR) || oname == NULL || !exists) {
-		/*
-		 * Don't try to create a temporary support file twice.
-		 */
-		if (frp->tname != NULL)
+		if (opts_empty(sp, O_DIRECTORY, 0))
 			goto err;
-		fd = mkstemp(tname);
-		if (fd == -1 || fstat(fd, &sb) == -1 ||
-		    fchmod(fd, S_IRUSR | S_IWUSR) == -1) {
+		(void)snprintf(tname, sizeof(tname),
+		    "%s/vi.XXXXXX", O_STR(sp, O_DIRECTORY));
+		if ((fd = mkstemp(tname)) == -1) {
 			msgq(sp, M_SYSERR,
-			    "Unable to create temporary file");
-			if (fd != -1) {
-				close(fd);
-				(void)unlink(tname);
-			}
+			    "237|Unable to create temporary file");
 			goto err;
 		}
 		(void)close(fd);
@@ -196,7 +197,7 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 		if (frp->name == NULL)
 			F_SET(frp, FR_TMPFILE);
 		if ((frp->tname = strdup(tname)) == NULL ||
-		    (frp->name == NULL && (frp->name = strdup(tname)) == NULL)) {
+		    frp->name == NULL && (frp->name = strdup(tname)) == NULL) {
 			if (frp->tname != NULL)
 				free(frp->tname);
 			msgq(sp, M_SYSERR, NULL);
@@ -207,6 +208,8 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 		psize = 1024;
 		if (!LF_ISSET(FS_OPENERR))
 			F_SET(frp, FR_NEWFILE);
+
+		time(&ep->mtime);
 	} else {
 		/*
 		 * XXX
@@ -221,17 +224,16 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 			psize = 1;
 		psize *= 1024;
 
+		F_SET(ep, F_DEVSET);
+		ep->mdev = sb.st_dev;
+		ep->minode = sb.st_ino;
+
+		ep->mtime = sb.st_mtime;
+
 		if (!S_ISREG(sb.st_mode))
 			msgq_str(sp, M_ERR, oname,
-			    "Warning: %s is not a regular file");
+			    "238|Warning: %s is not a regular file");
 	}
-
-	/* Save device, inode and modification time. */
-	F_SET(ep, F_DEVSET);
-	ep->mdev = sb.st_dev;
-	ep->minode = sb.st_ino;
-
-	ep->mtim = sb.st_mtim;
 
 	/* Set up recovery. */
 	memset(&oinfo, 0, sizeof(RECNOINFO));
@@ -331,7 +333,7 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 	 * when locking is a little more reliable, this should change to be
 	 * an error.
 	 */
-	if (rcv_name == NULL && !O_ISSET(sp, O_READONLY))
+	if (rcv_name == NULL)
 		switch (file_lock(sp, oname,
 		    &ep->fcntl_fd, ep->db->fd(ep->db), 0)) {
 		case LOCK_FAILED:
@@ -340,7 +342,7 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 		case LOCK_UNAVAIL:
 			readonly = 1;
 			msgq_str(sp, M_INFO, oname,
-			    "%s already locked, session is read-only");
+			    "239|%s already locked, session is read-only");
 			break;
 		case LOCK_SUCCESS:
 			break;
@@ -351,9 +353,9 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
          * vi, unless the -R command-line option was specified or the program
          * was executed as "view".  (Well, to be truthful, if the letter 'w'
          * occurred anywhere in the program name, but let's not get into that.)
-	 * So, the persistent readonly state has to be stored in the screen
+	 * So, the persistant readonly state has to be stored in the screen
 	 * structure, and the edit option value toggles with the contents of
-	 * the edit buffer.  If the persistent readonly flag is set, set the
+	 * the edit buffer.  If the persistant readonly flag is set, set the
 	 * readonly edit option.
 	 *
 	 * Otherwise, try and figure out if a file is readonly.  This is a
@@ -390,9 +392,9 @@ file_init(SCR *sp, FREF *frp, char *rcv_name, int flags)
 	 * probably isn't a problem for vi when it's running standalone.
 	 */
 	if (readonly || F_ISSET(sp, SC_READONLY) ||
-	    (!F_ISSET(frp, FR_NEWFILE) &&
+	    !F_ISSET(frp, FR_NEWFILE) &&
 	    (!(sb.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) ||
-	    access(frp->name, W_OK))))
+	    access(frp->name, W_OK)))
 		O_SET(sp, O_READONLY);
 	else
 		O_CLR(sp, O_READONLY);
@@ -440,12 +442,16 @@ oerr:	if (F_ISSET(ep, F_RCV_ON))
  *	try and open.
  */
 static int
-file_spath(SCR *sp, FREF *frp, struct stat *sbp, int *existsp)
+file_spath(sp, frp, sbp, existsp)
+	SCR *sp;
+	FREF *frp;
+	struct stat *sbp;
+	int *existsp;
 {
 	CHAR_T savech;
 	size_t len;
 	int found;
-	char *name, *p, *t, path[PATH_MAX];
+	char *name, *p, *t, path[MAXPATHLEN];
 
 	/*
 	 * If the name is NULL or an explicit reference (i.e., the first
@@ -456,8 +462,8 @@ file_spath(SCR *sp, FREF *frp, struct stat *sbp, int *existsp)
 		*existsp = 0;
 		return (0);
 	}
-	if (name[0] == '/' || (name[0] == '.' &&
-	    (name[1] == '/' || (name[1] == '.' && name[2] == '/')))) {
+	if (name[0] == '/' || name[0] == '.' &&
+	    (name[1] == '/' || name[1] == '.' && name[2] == '/')) {
 		*existsp = !stat(name, sbp);
 		return (0);
 	}
@@ -491,7 +497,7 @@ file_spath(SCR *sp, FREF *frp, struct stat *sbp, int *existsp)
 
 	/* If we found it, build a new pathname and discard the old one. */
 	if (found) {
-		MALLOC_RET(sp, p, len + 1);
+		MALLOC_RET(sp, p, char *, len + 1);
 		memcpy(p, path, len + 1);
 		free(frp->name);
 		frp->name = p;
@@ -505,7 +511,8 @@ file_spath(SCR *sp, FREF *frp, struct stat *sbp, int *existsp)
  *	Set up the initial cursor position.
  */
 static void
-file_cinit(SCR *sp)
+file_cinit(sp)
+	SCR *sp;
 {
 	GS *gp;
 	MARK m;
@@ -610,10 +617,13 @@ file_cinit(SCR *sp)
  * file_end --
  *	Stop editing a file.
  *
- * PUBLIC: int file_end(SCR *, EXF *, int);
+ * PUBLIC: int file_end __P((SCR *, EXF *, int));
  */
 int
-file_end(SCR *sp, EXF *ep, int force)
+file_end(sp, ep, force)
+	SCR *sp;
+	EXF *ep;
+	int force;
 {
 	FREF *frp;
 
@@ -654,11 +664,11 @@ file_end(SCR *sp, EXF *ep, int force)
 	 */
 	if (!F_ISSET(frp, FR_DONTDELETE) && frp->tname != NULL) {
 		if (unlink(frp->tname))
-			msgq_str(sp, M_SYSERR, frp->tname, "%s: remove");
+			msgq_str(sp, M_SYSERR, frp->tname, "240|%s: remove");
 		free(frp->tname);
 		frp->tname = NULL;
 		if (F_ISSET(frp, FR_TMPFILE)) {
-			TAILQ_REMOVE(&sp->gp->frefq, frp, q);
+			CIRCLEQ_REMOVE(&sp->gp->frefq, frp, q);
 			if (frp->name != NULL)
 				free(frp->name);
 			free(frp);
@@ -672,7 +682,7 @@ file_end(SCR *sp, EXF *ep, int force)
 	 * Close the db structure.
 	 */
 	if (ep->db->close != NULL && ep->db->close(ep->db) && !force) {
-		msgq_str(sp, M_SYSERR, frp->name, "%s: close");
+		msgq_str(sp, M_SYSERR, frp->name, "241|%s: close");
 		++ep->refcnt;
 		return (1);
 	}
@@ -696,9 +706,9 @@ file_end(SCR *sp, EXF *ep, int force)
 	 */
 	if (!F_ISSET(ep, F_RCV_NORM)) {
 		if (ep->rcv_path != NULL && unlink(ep->rcv_path))
-			msgq_str(sp, M_SYSERR, ep->rcv_path, "%s: remove");
+			msgq_str(sp, M_SYSERR, ep->rcv_path, "242|%s: remove");
 		if (ep->rcv_mpath != NULL && unlink(ep->rcv_mpath))
-			msgq_str(sp, M_SYSERR, ep->rcv_mpath, "%s: remove");
+			msgq_str(sp, M_SYSERR, ep->rcv_mpath, "243|%s: remove");
 	}
 	if (ep->fcntl_fd != -1)
 		(void)close(ep->fcntl_fd);
@@ -719,10 +729,14 @@ file_end(SCR *sp, EXF *ep, int force)
  *	semantics for whether or not writes would happen.  That's
  *	why all the flags.
  *
- * PUBLIC: int file_write(SCR *, MARK *, MARK *, char *, int);
+ * PUBLIC: int file_write __P((SCR *, MARK *, MARK *, char *, int));
  */
 int
-file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
+file_write(sp, fm, tm, name, flags)
+	SCR *sp;
+	MARK *fm, *tm;
+	char *name;
+	int flags;
 {
 	enum { NEWFILE, OLDFILE } mtype;
 	struct stat sb;
@@ -733,7 +747,7 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 	size_t len;
 	u_long nlno, nch;
 	int fd, nf, noname, oflags, rval;
-	char *p, *s, *t, buf[PATH_MAX + 64];
+	char *p, *s, *t, buf[MAXPATHLEN + 64];
 	const char *msgstr;
 
 	ep = sp->ep;
@@ -752,8 +766,8 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 	/* Can't write files marked read-only, unless forced. */
 	if (!LF_ISSET(FS_FORCE) && noname && O_ISSET(sp, O_READONLY)) {
 		msgq(sp, M_ERR, LF_ISSET(FS_POSSIBLE) ?
-		    "Read-only file, not written; use ! to override" :
-		    "Read-only file, not written");
+		    "244|Read-only file, not written; use ! to override" :
+		    "245|Read-only file, not written");
 		return (1);
 	}
 
@@ -764,8 +778,8 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 		    !stat(name, &sb)) {
 			msgq_str(sp, M_ERR, name,
 			    LF_ISSET(FS_POSSIBLE) ?
-			    "%s exists, not written; use ! to override" :
-			    "%s exists, not written");
+			    "246|%s exists, not written; use ! to override" :
+			    "247|%s exists, not written");
 			return (1);
 		}
 
@@ -775,8 +789,8 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 		 */
 		if (!LF_ISSET(FS_ALL) && noname && !stat(name, &sb)) {
 			msgq(sp, M_ERR, LF_ISSET(FS_POSSIBLE) ?
-			    "Partial file, not written; use ! to override" :
-			    "Partial file, not written");
+			    "248|Partial file, not written; use ! to override" :
+			    "249|Partial file, not written");
 			return (1);
 		}
 	}
@@ -796,12 +810,12 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 		mtype = NEWFILE;
 	else {
 		if (noname && !LF_ISSET(FS_FORCE | FS_APPEND) &&
-		    ((F_ISSET(ep, F_DEVSET) &&
-		    (sb.st_dev != ep->mdev || sb.st_ino != ep->minode)) ||
-		    timespeccmp(&sb.st_mtim, &ep->mtim, !=))) {
+		    (F_ISSET(ep, F_DEVSET) &&
+		    (sb.st_dev != ep->mdev || sb.st_ino != ep->minode) ||
+		    sb.st_mtime != ep->mtime)) {
 			msgq_str(sp, M_ERR, name, LF_ISSET(FS_POSSIBLE) ?
-"%s: file modified more recently than this copy; use ! to override" :
-"%s: file modified more recently than this copy");
+"250|%s: file modified more recently than this copy; use ! to override" :
+"251|%s: file modified more recently than this copy");
 			return (1);
 		}
 
@@ -818,16 +832,34 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 		return (1);
 
 	/* Open the file. */
+	SIGBLOCK;
 	if ((fd = open(name, oflags,
 	    S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0) {
 		msgq_str(sp, M_SYSERR, name, "%s");
+		SIGUNBLOCK;
 		return (1);
 	}
+	SIGUNBLOCK;
 
 	/* Try and get a lock. */
 	if (!noname && file_lock(sp, NULL, NULL, fd, 0) == LOCK_UNAVAIL)
 		msgq_str(sp, M_ERR, name,
-		    "%s: write lock was unavailable");
+		    "252|%s: write lock was unavailable");
+
+#if __linux__
+	/*
+	 * XXX
+	 * In libc 4.5.x, fdopen(fd, "w") clears the O_APPEND flag (if set).
+	 * This bug is fixed in libc 4.6.x.
+	 *
+	 * This code works around this problem for libc 4.5.x users.
+	 * Note that this code is harmless if you're using libc 4.6.x.
+	 */
+	if (LF_ISSET(FS_APPEND) && lseek(fd, (off_t)0, SEEK_END) < 0) {
+		msgq(sp, M_SYSERR, name);
+		return (1);
+	}
+#endif
 
 	/*
 	 * Use stdio for buffering.
@@ -860,17 +892,16 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 	 * we re-init the time.  That way the user can clean up the disk
 	 * and rewrite without having to force it.
 	 */
-	if (noname) {
+	if (noname)
 		if (stat(name, &sb))
-			(void)clock_gettime(CLOCK_REALTIME, &ep->mtim);
+			time(&ep->mtime);
 		else {
 			F_SET(ep, F_DEVSET);
 			ep->mdev = sb.st_dev;
 			ep->minode = sb.st_ino;
 
-			ep->mtim = sb.st_mtim;
+			ep->mtime = sb.st_mtime;
 		}
-	}
 
 	/*
 	 * If the write failed, complain loudly.  ex_writefp() has already
@@ -879,7 +910,7 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 	if (rval) {
 		if (!LF_ISSET(FS_APPEND))
 			msgq_str(sp, M_ERR, name,
-			    "%s: WARNING: FILE TRUNCATED");
+			    "254|%s: WARNING: FILE TRUNCATED");
 		return (1);
 	}
 
@@ -899,26 +930,26 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 	 */
 	if (LF_ISSET(FS_ALL) && !LF_ISSET(FS_APPEND)) {
 		F_CLR(ep, F_MODIFIED);
-		if (F_ISSET(frp, FR_TMPFILE)) {
+		if (F_ISSET(frp, FR_TMPFILE))
 			if (noname)
 				F_SET(frp, FR_TMPEXIT);
 			else
 				F_CLR(frp, FR_TMPEXIT);
-		}
 	}
 
 	p = msg_print(sp, name, &nf);
 	switch (mtype) {
 	case NEWFILE:
-		len = snprintf(buf, sizeof(buf),
-		    "%s: new file: %lu lines, %lu characters", p, nlno, nch);
+		msgstr = msg_cat(sp,
+		    "256|%s: new file: %lu lines, %lu characters", NULL);
+		len = snprintf(buf, sizeof(buf), msgstr, p, nlno, nch);
 		if (len >= sizeof(buf))
 			len = sizeof(buf) - 1;
 		break;
 	case OLDFILE:
-		msgstr = LF_ISSET(FS_APPEND) ?
-		    "%s: appended: %lu lines, %lu characters" :
-		    "%s: %lu lines, %lu characters", NULL;
+		msgstr = msg_cat(sp, LF_ISSET(FS_APPEND) ?
+		    "315|%s: appended: %lu lines, %lu characters" :
+		    "257|%s: %lu lines, %lu characters", NULL);
 		len = snprintf(buf, sizeof(buf), msgstr, p, nlno, nch);
 		if (len >= sizeof(buf))
 			len = sizeof(buf) - 1;
@@ -928,7 +959,7 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 	}
 
 	/*
-	 * There's a nasty problem with long path names.  Tags files
+	 * There's a nasty problem with long path names.  Cscope and tags files
 	 * can result in long paths and vi will request a continuation key from
 	 * the user.  Unfortunately, the user has typed ahead, and chaos will
 	 * result.  If we assume that the characters in the filenames only take
@@ -946,7 +977,7 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
 			*--s = '.';
 		}
 	}
-	msgq(sp, M_INFO, "%s", s);
+	msgq(sp, M_INFO, s);
 	if (nf)
 		FREE_SPACE(sp, p, 0);
 	return (0);
@@ -965,7 +996,9 @@ file_write(SCR *sp, MARK *fm, MARK *tm, char *name, int flags)
  * recreate the file.  So, let's not risk it.
  */
 static int
-file_backup(SCR *sp, char *name, char *bname)
+file_backup(sp, name, bname)
+	SCR *sp;
+	char *name, *bname;
 {
 	struct dirent *dp;
 	struct stat sb;
@@ -1021,7 +1054,7 @@ file_backup(SCR *sp, char *name, char *bname)
 	 */
 	if (cmd.argc != 1) {
 		msgq_str(sp, M_ERR, bname,
-		    "%s expanded into too many file names");
+		    "258|%s expanded into too many file names");
 		(void)close(rfd);
 		return (1);
 	}
@@ -1079,27 +1112,22 @@ file_backup(SCR *sp, char *name, char *bname)
 	if (stat(wfname, &sb) == 0) {
 		if (!S_ISREG(sb.st_mode)) {
 			msgq_str(sp, M_ERR, bname,
-			    "%s: not a regular file");
+			    "259|%s: not a regular file");
 			goto err;
 		}
 		if (sb.st_uid != getuid()) {
-			msgq_str(sp, M_ERR, bname, "%s: not owned by you");
+			msgq_str(sp, M_ERR, bname, "260|%s: not owned by you");
 			goto err;
 		}
 		if (sb.st_mode & (S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) {
 			msgq_str(sp, M_ERR, bname,
-			   "%s: accessible by a user other than the owner");
+			   "261|%s: accessible by a user other than the owner");
 			goto err;
 		}
 		flags = O_TRUNC;
 	} else
 		flags = O_CREAT | O_EXCL;
-	if ((wfd = open(wfname, flags | O_WRONLY, S_IRUSR | S_IWUSR)) < 0 ||
-	    fchmod(wfd, S_IRUSR | S_IWUSR) < 0) {
-		if (wfd != -1) {
-			close(wfd);
-			(void)unlink(wfname);
-		}
+	if ((wfd = open(wfname, flags | O_WRONLY, S_IRUSR | S_IWUSR)) < 0) {
 		estr = bname;
 		goto err;
 	}
@@ -1147,7 +1175,8 @@ err:	if (rfd != -1)
  *	Skip the first comment.
  */
 static void
-file_comment(SCR *sp)
+file_comment(sp)
+	SCR *sp;
 {
 	recno_t lno;
 	size_t len;
@@ -1191,10 +1220,12 @@ file_comment(SCR *sp)
  * 	First modification check routine.  The :next, :prev, :rewind, :tag,
  *	:tagpush, :tagpop, ^^ modifications check.
  *
- * PUBLIC: int file_m1(SCR *, int, int);
+ * PUBLIC: int file_m1 __P((SCR *, int, int));
  */
 int
-file_m1(SCR *sp, int force, int flags)
+file_m1(sp, force, flags)
+	SCR *sp;
+	int force, flags;
 {
 	EXF *ep;
 
@@ -1210,17 +1241,16 @@ file_m1(SCR *sp, int force, int flags)
 	 * unless force is also set.  Otherwise, we fail unless forced or
 	 * there's another open screen on this file.
 	 */
-	if (F_ISSET(ep, F_MODIFIED)) {
+	if (F_ISSET(ep, F_MODIFIED))
 		if (O_ISSET(sp, O_AUTOWRITE)) {
 			if (!force && file_aw(sp, flags))
 				return (1);
 		} else if (ep->refcnt <= 1 && !force) {
 			msgq(sp, M_ERR, LF_ISSET(FS_POSSIBLE) ?
-"File modified since last complete write; write or use ! to override" :
-"File modified since last complete write; write or use :edit! to override");
+"262|File modified since last complete write; write or use ! to override" :
+"263|File modified since last complete write; write or use :edit! to override");
 			return (1);
 		}
-	}
 
 	return (file_m3(sp, force));
 }
@@ -1230,10 +1260,12 @@ file_m1(SCR *sp, int force, int flags)
  * 	Second modification check routine.  The :edit, :quit, :recover
  *	modifications check.
  *
- * PUBLIC: int file_m2(SCR *, int);
+ * PUBLIC: int file_m2 __P((SCR *, int));
  */
 int
-file_m2(SCR *sp, int force)
+file_m2(sp, force)
+	SCR *sp;
+	int force;
 {
 	EXF *ep;
 
@@ -1249,7 +1281,7 @@ file_m2(SCR *sp, int force)
 	 */
 	if (F_ISSET(ep, F_MODIFIED) && ep->refcnt <= 1 && !force) {
 		msgq(sp, M_ERR,
-"File modified since last complete write; write or use ! to override");
+"264|File modified since last complete write; write or use ! to override");
 		return (1);
 	}
 
@@ -1260,10 +1292,12 @@ file_m2(SCR *sp, int force)
  * file_m3 --
  * 	Third modification check routine.
  *
- * PUBLIC: int file_m3(SCR *, int);
+ * PUBLIC: int file_m3 __P((SCR *, int));
  */
 int
-file_m3(SCR *sp, int force)
+file_m3(sp, force)
+	SCR *sp;
+	int force;
 {
 	EXF *ep;
 
@@ -1282,7 +1316,7 @@ file_m3(SCR *sp, int force)
 	 */
 	if (F_ISSET(sp->frp, FR_TMPEXIT) && ep->refcnt <= 1 && !force) {
 		msgq(sp, M_ERR,
-		    "File is a temporary; exit will discard modifications");
+		    "265|File is a temporary; exit will discard modifications");
 		return (1);
 	}
 	return (0);
@@ -1294,10 +1328,12 @@ file_m3(SCR *sp, int force)
  *	is not set, write the file.  A routine so there's a place to put the
  *	comment.
  *
- * PUBLIC: int file_aw(SCR *, int);
+ * PUBLIC: int file_aw __P((SCR *, int));
  */
 int
-file_aw(SCR *sp, int flags)
+file_aw(sp, flags)
+	SCR *sp;
+	int flags;
 {
 	if (!F_ISSET(sp->ep, F_MODIFIED))
 		return (0);
@@ -1315,7 +1351,7 @@ file_aw(SCR *sp, int flags)
 	 */
 	if (O_ISSET(sp, O_READONLY)) {
 		msgq(sp, M_INFO,
-		    "File readonly, modifications not auto-written");
+		    "266|File readonly, modifications not auto-written");
 		return (1);
 	}
 	return (file_write(sp, NULL, NULL, NULL, flags));
@@ -1353,10 +1389,12 @@ file_aw(SCR *sp, int flags)
  * If the user edits a temporary file, there may be times when there is no
  * alternative file name.  A name argument of NULL turns it off.
  *
- * PUBLIC: void set_alt_name(SCR *, char *);
+ * PUBLIC: void set_alt_name __P((SCR *, char *));
  */
 void
-set_alt_name(SCR *sp, char *name)
+set_alt_name(sp, name)
+	SCR *sp;
+	char *name;
 {
 	if (sp->alt_name != NULL)
 		free(sp->alt_name);
@@ -1370,18 +1408,39 @@ set_alt_name(SCR *sp, char *name)
  * file_lock --
  *	Get an exclusive lock on a file.
  *
- * PUBLIC: lockr_t file_lock(SCR *, char *, int *, int, int);
+ * XXX
+ * The default locking is flock(2) style, not fcntl(2).  The latter is
+ * known to fail badly on some systems, and its only advantage is that
+ * it occasionally works over NFS.
+ *
+ * Furthermore, the semantics of fcntl(2) are wrong.  The problems are
+ * two-fold: you can't close any file descriptor associated with the file
+ * without losing all of the locks, and you can't get an exclusive lock
+ * unless you have the file open for writing.  Someone ought to be shot,
+ * but it's probably too late, they may already have reproduced.  To get
+ * around these problems, nvi opens the files for writing when it can and
+ * acquires a second file descriptor when it can't.  The recovery files
+ * are examples of the former, they're always opened for writing.  The DB
+ * files can't be opened for writing because the semantics of DB are that
+ * files opened for writing are flushed back to disk when the DB session
+ * is ended. So, in that case we have to acquire an extra file descriptor.
+ *
+ * PUBLIC: lockr_t file_lock __P((SCR *, char *, int *, int, int));
  */
 lockr_t
-file_lock(SCR *sp, char *name, int *fdp, int fd, int iswrite)
+file_lock(sp, name, fdp, fd, iswrite)
+	SCR *sp;
+	char *name;
+	int *fdp, fd, iswrite;
 {
 	if (!O_ISSET(sp, O_LOCKFILES))
 		return (LOCK_SUCCESS);
 	
 	/* Set close-on-exec flag so locks are not inherited by shell cmd. */
-	if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+	if (fcntl(fd, F_SETFD, 1) == -1)
 		msgq_str(sp, M_SYSERR, name, "%s");
 
+#ifdef HAVE_LOCK_FLOCK			/* Hurrah!  We've got flock(2). */
 	/*
 	 * !!!
 	 * We need to distinguish a lock not being available for the file
@@ -1390,7 +1449,61 @@ file_lock(SCR *sp, char *name, int *fdp, int fd, int iswrite)
 	 * they are the former.  There's no portable way to do this.
 	 */
 	errno = 0;
-	return (flock(fd, LOCK_EX | LOCK_NB) ?
-	    errno == EAGAIN || errno == EWOULDBLOCK ? LOCK_UNAVAIL : LOCK_FAILED :
-	    LOCK_SUCCESS);
+	return (flock(fd, LOCK_EX | LOCK_NB) ? errno == EAGAIN
+#ifdef EWOULDBLOCK
+	    || errno == EWOULDBLOCK
+#endif
+	    ? LOCK_UNAVAIL : LOCK_FAILED : LOCK_SUCCESS);
+#endif
+#ifdef HAVE_LOCK_FCNTL			/* Gag me.  We've got fcntl(2). */
+{
+	struct flock arg;
+	int didopen, sverrno;
+
+	arg.l_type = F_WRLCK;
+	arg.l_whence = 0;		/* SEEK_SET */
+	arg.l_start = arg.l_len = 0;
+	arg.l_pid = 0;
+
+	/*
+	 * If the file descriptor isn't opened for writing, it must fail.
+	 * If we fail because we can't get a read/write file descriptor,
+	 * we return LOCK_SUCCESS, believing that the file is readonly
+	 * and that will be sufficient to warn the user.
+	 */
+	if (!iswrite) {
+		if (name == NULL || fdp == NULL)
+			return (LOCK_FAILED);
+		if ((fd = open(name, O_RDWR, 0)) == -1)
+			return (LOCK_SUCCESS);
+		*fdp = fd;
+		didopen = 1;
+	}
+
+	errno = 0;
+	if (!fcntl(fd, F_SETLK, &arg))
+		return (LOCK_SUCCESS);
+	if (didopen) {
+		sverrno = errno;
+		(void)close(fd);
+		errno = sverrno;
+	}
+
+	/*
+	 * !!!
+	 * We need to distinguish a lock not being available for the file
+	 * from the file system not supporting locking.  Fcntl is documented
+	 * as returning EACCESS and EAGAIN; add EWOULDBLOCK for good measure,
+	 * and assume they are the former.  There's no portable way to do this.
+	 */
+	return (errno == EACCES || errno == EAGAIN
+#ifdef EWOULDBLOCK
+	|| errno == EWOULDBLOCK
+#endif
+	?  LOCK_UNAVAIL : LOCK_FAILED);
+}
+#endif
+#if !defined(HAVE_LOCK_FLOCK) && !defined(HAVE_LOCK_FCNTL)
+	return (LOCK_SUCCESS);
+#endif
 }

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: uk.4,v 1.18 2014/01/21 03:15:46 schwarze Exp $
+.\"	$OpenBSD: uk.4,v 1.6 1999/07/09 13:35:48 aaron Exp $
 .\"	$NetBSD: uk.4,v 1.3 1996/10/20 23:15:26 explorer Exp $
 .\"
 .\" Copyright (c) 1996
@@ -26,36 +26,39 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: January 21 2014 $
+.Dd October 11, 1993
 .Dt UK 4
 .Os
 .Sh NAME
 .Nm uk
-.Nd SCSI user-level driver
+.Nd scsi user-level driver
 .Sh SYNOPSIS
-.Cd "uk* at scsibus?"
+.Nm uk* at scsibus? target ? lun ?
 .Sh DESCRIPTION
 The
-.Nm
+.Nm uk
 driver provides support for a
-process to address devices on the SCSI bus for which there is no configured
+process to address devices on the scsi bus for which there is no configured
 driver.
 .Pp
-A SCSI adapter must also be separately configured into the system
+A scsi adapter must also be separately configured into the system
 before this driver makes sense.
+.Sh KERNEL CONFIGURATION
+If a count is given that number of
+.Nm
+devices will be configured into the kernel.
 .Sh IOCTLS
 The
 .Nm
 driver has no ioctls of its own but rather acts as a medium for the
 generic
 .Xr scsi 4
-ioctls.
-These are described in
-.In sys/scsiio.h .
+ioctls. These are described in
+.Em sys/scsiio.h.
 .Sh FILES
 .Bl -tag -width /dev/uk[0-255] -compact
 .It Pa /dev/uk[0-255]
-uk{x} is the 'xth' unknown device found.
+uk{x} is the  'xth'unknown device found.
 .El
 .Sh DIAGNOSTICS
 All
@@ -68,7 +71,8 @@ devices.
 .Xr ch 4 ,
 .Xr scsi 4 ,
 .Xr sd 4 ,
-.Xr st 4
+.Xr st 4 ,
+.Xr su 4
 .Sh HISTORY
 The
 .Nm

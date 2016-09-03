@@ -1,4 +1,4 @@
-/*	$OpenBSD: mpuvar.h,v 1.6 2008/06/26 05:42:15 ray Exp $	*/
+/*	$OpenBSD: mpuvar.h,v 1.1 1999/08/05 05:32:40 deraadt Exp $	*/
 /*	$NetBSD: mpu401var.h,v 1.3 1998/11/25 22:17:06 augustss Exp $	*/
 
 /*
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -35,29 +42,18 @@ struct mpu_softc {
 	bus_space_handle_t ioh;		/* handle */
 	int	iobase;
 	int	open;
-	void	(*intr)(void *, int);	/* midi input intr handler */
+	void	(*intr)__P((void*, int)); /* midi input intr handler */
 	void	*arg;			/* arg for intr() */
 };
 
-extern struct midi_hw_if mpu_midi_hw_if;
+struct midi_hw_if mpu_midi_hw_if;
 
-int	mpu_intr(void *);
-int	mpu_find(void *);
-int	mpu_open(void *, int,
-		 void (*iintr)(void *, int),
-		 void (*ointr)(void *), void *arg);
-void	mpu_close(void *);
-int	mpu_output(void *, int);
-void	mpu_getinfo(void *addr, struct midi_info *mi);
+int	mpu_intr __P((void *));
+int	mpu_find __P((void *));
+int	mpu_open __P((void *, int, 
+			 void (*iintr)__P((void *, int)),
+			 void (*ointr)__P((void *)), void *arg));
+void	mpu_close __P((void *));
+int	mpu_output __P((void *, int));
+void	mpu_getinfo __P((void *addr, struct midi_info *mi));
 
-#define MPU401_NPORT		2
-#define MPU_DATA		0
-#define MPU_COMMAND		1
-#define  MPU_RESET		0xff
-#define  MPU_UART_MODE		0x3f
-#define  MPU_ACK		0xfe
-#define MPU_STATUS		1
-#define  MPU_OUTPUT_BUSY	0x40
-#define  MPU_INPUT_EMPTY	0x80
-
-#define MPU_MAXWAIT	10000	/* usec/10 to wait */

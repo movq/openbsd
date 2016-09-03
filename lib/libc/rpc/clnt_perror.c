@@ -1,36 +1,42 @@
-/*	$OpenBSD: clnt_perror.c,v 1.24 2015/09/13 15:36:56 guenther Exp $ */
-
 /*
- * Copyright (c) 2010, Oracle America, Inc.
+ * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
+ * unrestricted use provided that this legend is included on all tape
+ * media and as a part of the software program in whole or part.  Users
+ * may copy or modify Sun RPC without charge, but are not authorized
+ * to license or distribute it to anyone else except as part of a product or
+ * program developed by the user.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
+ * SUN RPC IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING THE
+ * WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
  *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the "Oracle America, Inc." nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
+ * Sun RPC is provided with no support and without any obligation on the
+ * part of Sun Microsystems, Inc. to assist in its use, correction,
+ * modification or enhancement.
  *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *   COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- *   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- *   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+ * INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY SUN RPC
+ * OR ANY PART THEREOF.
+ *
+ * In no event will Sun Microsystems, Inc. be liable for any lost revenue
+ * or profits or other special, indirect and consequential damages, even if
+ * Sun has been advised of the possibility of such damages.
+ *
+ * Sun Microsystems, Inc.
+ * 2550 Garcia Avenue
+ * Mountain View, California  94043
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: clnt_perror.c,v 1.10 1998/12/30 22:26:18 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+/*
+ * clnt_perror.c
+ *
+ * Copyright (C) 1984, Sun Microsystems, Inc.
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,30 +45,43 @@
 #include <rpc/auth.h>
 #include <rpc/clnt.h>
 
-static char *auth_errmsg(enum auth_stat stat);
+static char *auth_errmsg();
 #define CLNT_PERROR_BUFLEN 256
 
-static char buf[CLNT_PERROR_BUFLEN];
+static char *buf;
+
+static char *
+_buf()
+{
+
+	if (buf == 0)
+		buf = (char *)malloc(CLNT_PERROR_BUFLEN);
+	return (buf);
+}
 
 /*
  * Print reply error info
  */
 char *
-clnt_sperror(CLIENT *rpch, char *s)
+clnt_sperror(rpch, s)
+	CLIENT *rpch;
+	char *s;
 {
-	char *err, *str = buf;
 	struct rpc_err e;
-	int ret, len = CLNT_PERROR_BUFLEN;
+	char *err;
+	char *str = _buf();
+	char *strstart = str;
+	int ret;
 
+	if (str == 0)
+		return (0);
 	CLNT_GETERR(rpch, &e);
 
-	ret = snprintf(str, len, "%s: %s", s, clnt_sperrno(e.re_status));
-	if (ret == -1)
-		ret = 0;
-	else if (ret >= len)
-		goto truncated;
+	ret = snprintf(str, CLNT_PERROR_BUFLEN, "%s: %s", s,
+	    clnt_sperrno(e.re_status));
 	str += ret;
-	len -= ret;
+	if (str > strstart + CLNT_PERROR_BUFLEN)
+		goto truncated;
 
 	switch (e.re_status) {
 	case RPC_SUCCESS:
@@ -82,72 +101,61 @@ clnt_sperror(CLIENT *rpch, char *s)
 
 	case RPC_CANTSEND:
 	case RPC_CANTRECV:
-		ret = snprintf(str, len, "; errno = %s", strerror(e.re_errno));
-		if (ret == -1 || ret >= len)
-			goto truncated;
+		ret = snprintf(str, CLNT_PERROR_BUFLEN - (str - strstart),
+		    "; errno = %s\n", strerror(e.re_errno));
 		break;
 
 	case RPC_VERSMISMATCH:
-		ret = snprintf(str, len,
-		    "; low version = %u, high version = %u",
+		ret = snprintf(str, CLNT_PERROR_BUFLEN - (str - strstart),
+		    "; low version = %u, high version = %u\n",
 		    e.re_vers.low, e.re_vers.high);
-		if (ret == -1 || ret >= len)
-			goto truncated;
 		break;
 
 	case RPC_AUTHERROR:
-		ret = snprintf(str, len, "; why = ");
-		if (ret == -1)
-			ret = 0;
-		else if (ret >= len)
-			goto truncated;
-		str += ret;
-		len -= ret;
 		err = auth_errmsg(e.re_why);
+		ret = snprintf(str, CLNT_PERROR_BUFLEN - (str - strstart),
+		    "; why = ");
+		str += ret;
+		if (str > strstart + CLNT_PERROR_BUFLEN)
+			goto truncated;
 		if (err != NULL) {
-			ret = snprintf(str, len, "%s", err);
-			if (ret == -1 || ret >= len)
-				goto truncated;
+			ret = snprintf(str, CLNT_PERROR_BUFLEN -
+			    (str - strstart), "%s\n", err);
 		} else {
-			ret = snprintf(str, len,
-			    "(unknown authentication error - %d)",
+			ret = snprintf(str, CLNT_PERROR_BUFLEN -
+			    (str - strstart),
+			    "(unknown authentication error - %d)\n",
 			    (int) e.re_why);
-			if (ret == -1 || ret >= len)
-				goto truncated;
 		}
 		break;
 
 	case RPC_PROGVERSMISMATCH:
-		ret = snprintf(str, len,
-		    "; low version = %u, high version = %u",
+		ret = snprintf(str, CLNT_PERROR_BUFLEN - (str - strstart),
+		    "; low version = %u, high version = %u\n",
 		    e.re_vers.low, e.re_vers.high);
-		if (ret == -1 || ret >= len)
-			goto truncated;
 		break;
 
 	default:	/* unknown */
-		ret = snprintf(str, len, "; s1 = %u, s2 = %u",
-		    e.re_lb.s1, e.re_lb.s2);
-		if (ret == -1 || ret >= len)
-			goto truncated;
+		ret = snprintf(str, CLNT_PERROR_BUFLEN - (str - strstart),
+		    "; s1 = %u, s2 = %u\n", e.re_lb.s1, e.re_lb.s2);
 		break;
 	}
-	if (strlcat(buf, "\n", CLNT_PERROR_BUFLEN) >= CLNT_PERROR_BUFLEN)
-		goto truncated;
-	return (buf);
+	strstart[CLNT_PERROR_BUFLEN-2] = '\0';
+	strcat(strstart, "\n");
+	return (strstart);
 
 truncated:
-	snprintf(buf + CLNT_PERROR_BUFLEN - 5, 5, "...\n");
-	return (buf);
+	snprintf(strstart + CLNT_PERROR_BUFLEN - 5, 5, "...\n");
+	return (strstart);
 }
-DEF_WEAK(clnt_sperror);
 
 void
-clnt_perror(CLIENT *rpch, char *s)
+clnt_perror(rpch, s)
+	CLIENT *rpch;
+	char *s;
 {
-	(void) fprintf(stderr, "%s", clnt_sperror(rpch, s));
+	(void) fprintf(stderr, "%s\n", clnt_sperror(rpch, s));
 }
-DEF_WEAK(clnt_perror);
 
 static const char *const rpc_errlist[] = {
 	"RPC: Success",				/*  0 - RPC_SUCCESS */
@@ -175,7 +183,8 @@ static const char *const rpc_errlist[] = {
  * This interface for use by clntrpc
  */
 char *
-clnt_sperrno(enum clnt_stat stat)
+clnt_sperrno(stat)
+	enum clnt_stat stat;
 {
 	unsigned int errnum = stat;
 
@@ -184,48 +193,53 @@ clnt_sperrno(enum clnt_stat stat)
 
 	return ("RPC: (unknown error code)");
 }
-DEF_WEAK(clnt_sperrno);
 
 void
-clnt_perrno(enum clnt_stat num)
+clnt_perrno(num)
+	enum clnt_stat num;
 {
 	(void) fprintf(stderr, "%s\n", clnt_sperrno(num));
 }
 
 
 char *
-clnt_spcreateerror(char *s)
+clnt_spcreateerror(s)
+	char *s;
 {
+	char *str = _buf();
+
+	if (str == 0)
+		return (0);
+
 	switch (rpc_createerr.cf_stat) {
 	case RPC_PMAPFAILURE:
-		(void) snprintf(buf, CLNT_PERROR_BUFLEN, "%s: %s - %s\n", s,
+		(void) snprintf(str, CLNT_PERROR_BUFLEN, "%s: %s - %s\n", s,
 		    clnt_sperrno(rpc_createerr.cf_stat),
 		    clnt_sperrno(rpc_createerr.cf_error.re_status));
 		break;
 
 	case RPC_SYSTEMERROR:
-		(void) snprintf(buf, CLNT_PERROR_BUFLEN, "%s: %s - %s\n", s,
+		(void) snprintf(str, CLNT_PERROR_BUFLEN, "%s: %s - %s\n", s,
 		    clnt_sperrno(rpc_createerr.cf_stat),
 		    strerror(rpc_createerr.cf_error.re_errno));
 		break;
 
 	default:
-		(void) snprintf(buf, CLNT_PERROR_BUFLEN, "%s: %s\n", s,
+		(void) snprintf(str, CLNT_PERROR_BUFLEN, "%s: %s\n", s,
 		    clnt_sperrno(rpc_createerr.cf_stat));
 		break;
 	}
-	buf[CLNT_PERROR_BUFLEN-2] = '\n';
-	buf[CLNT_PERROR_BUFLEN-1] = '\0';
-	return (buf);
+	str[CLNT_PERROR_BUFLEN-2] = '\n';
+	str[CLNT_PERROR_BUFLEN-1] = '\0';
+	return (str);
 }
-DEF_WEAK(clnt_spcreateerror);
 
 void
-clnt_pcreateerror(char *s)
+clnt_pcreateerror(s)
+	char *s;
 {
-	fprintf(stderr, "%s", clnt_spcreateerror(s));
+	(void) fprintf(stderr, "%s", clnt_spcreateerror(s));
 }
-DEF_WEAK(clnt_pcreateerror);
 
 static const char *const auth_errlist[] = {
 	"Authentication OK",			/* 0 - AUTH_OK */
@@ -239,7 +253,8 @@ static const char *const auth_errlist[] = {
 };
 
 static char *
-auth_errmsg(enum auth_stat stat)
+auth_errmsg(stat)
+	enum auth_stat stat;
 {
 	unsigned int errnum = stat;
 

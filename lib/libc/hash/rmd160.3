@@ -1,72 +1,76 @@
-.\"	$OpenBSD: rmd160.3,v 1.37 2016/07/28 03:52:41 tedu Exp $
+.\"	$OpenBSD: rmd160.3,v 1.11 1999/08/11 03:06:06 deraadt Exp $
 .\"
-.\" Copyright (c) 1997, 2004 Todd C. Miller <Todd.Miller@courtesan.com>
+.\" Copyright (c) 1997 Todd C. Miller <Todd.Miller@courtesan.com>
+.\" All rights reserved.
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\" THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+.\" INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+.\" AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+.\" THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+.\" EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+.\" PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+.\" OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+.\" WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+.\" OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+.\" ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
 .\" See http://www.esat.kuleuven.ac.be/~bosselae/ripemd160.html
 .\"	for detailed information about RIPEMD-160.
 .\"
-.Dd $Mdocdate: July 28 2016 $
-.Dt RMD160INIT 3
+.Dd July 16, 1997
+.Dt RMD160 3
 .Os
 .Sh NAME
 .Nm RMD160Init ,
 .Nm RMD160Update ,
-.Nm RMD160Pad ,
 .Nm RMD160Final ,
 .Nm RMD160Transform ,
 .Nm RMD160End ,
 .Nm RMD160File ,
-.Nm RMD160FileChunk ,
 .Nm RMD160Data
-.Nd calculate the RIPEMD-160 message digest
+.Nd calculate the ``RIPEMD-160'' message digest
 .Sh SYNOPSIS
-.In sys/types.h
-.In rmd160.h
+.Fd #include <sys/types.h>
+.Fd #include <rmd160.h>
 .Ft void
 .Fn RMD160Init "RMD160_CTX *context"
 .Ft void
-.Fn RMD160Update "RMD160_CTX *context" "const u_int8_t *data" "size_t nbytes"
+.Fn RMD160Update "RMD160_CTX *context" "const u_char *data" "u_int nbytes"
 .Ft void
-.Fn RMD160Pad "RMD160_CTX *context"
+.Fn RMD160Final "u_char digest[20]" "RMD160_CTX *context"
 .Ft void
-.Fn RMD160Final "u_int8_t digest[RMD160_DIGEST_LENGTH]" "RMD160_CTX *context"
-.Ft void
-.Fn RMD160Transform "u_int32_t state[5]" "const u_int8_t block[RMD160_BLOCK_LENGTH]"
+.Fn RMD160Transform "u_int32_t state[5]" "const u_int32_t block[16]"
 .Ft "char *"
 .Fn RMD160End "RMD160_CTX *context" "char *buf"
 .Ft "char *"
-.Fn RMD160File "const char *filename" "char *buf"
+.Fn RMD160File "char *filename" "char *buf"
 .Ft "char *"
-.Fn RMD160FileChunk "const char *filename" "char *buf" "off_t offset" "off_t length"
-.Ft "char *"
-.Fn RMD160Data "const u_int8_t *data" "size_t len" "char *buf"
+.Fn RMD160Data "u_char *data" "u_int len" "char *buf"
 .Sh DESCRIPTION
 The RMD160 functions implement the 160-bit RIPE message digest hash algorithm
-(RMD-160).
-RMD-160 is used to generate a condensed representation
-of a message called a message digest.
-The algorithm takes a
+(RMD-160).  RMD-160 is used to generate a condensed representation
+of a message called a message digest.  The algorithm takes a
 message less than 2^64 bits as input and produces a 160-bit digest
 suitable for use as a digital signature.
 .Pp
 The RMD160 functions are considered to be more secure than the
+.Xr md4 3
+and
 .Xr md5 3
 functions and at least as secure as the
 .Xr sha1 3
-function.
-All share a similar interface.
+function.  All share a similar interface.
 .Pp
 The
 .Fn RMD160Init
@@ -90,12 +94,10 @@ is called when all data has been added via
 and stores a message digest in the
 .Ar digest
 parameter.
-.Pp
-The
-.Fn RMD160Pad
-function can be used to apply padding to the message digest as in
-.Fn RMD160Final ,
-but the current context can still be used with
+When a null pointer is passed to
+.Fn RMD160Final
+as first argument only the final padding will be applied and the
+current context can still be used with
 .Fn RMD160Update .
 .Pp
 The
@@ -116,7 +118,8 @@ The
 .Fn RMD160End
 function is a front end for
 .Fn RMD160Final
-which converts the digest into an ASCII
+which converts the digest into an
+.Tn ASCII
 representation of the 160 bit digest in hexadecimal.
 .Pp
 The
@@ -126,23 +129,6 @@ function calculates the digest for a file and returns the result via
 If
 .Fn RMD160File
 is unable to open the file a NULL pointer is returned.
-.Pp
-.Fn RMD160FileChunk
-behaves like
-.Fn RMD160File
-but calculates the digest only for that portion of the file starting at
-.Fa offset
-and continuing for
-.Fa length
-bytes or until end of file is reached, whichever comes first.
-A zero
-.Fa length
-can be specified to read until end of file.
-A negative
-.Fa length
-or
-.Fa offset
-will be ignored.
 .Pp
 The
 .Fn RMD160Data
@@ -158,50 +144,62 @@ and
 functions the
 .Ar buf
 parameter should either be a string of at least 41 characters in
-size or a NULL pointer.
-In the latter case, space will be dynamically allocated via
+size or a NULL pointer.  In the latter case, space will be dynamically
+allocated via
 .Xr malloc 3
 and should be freed using
 .Xr free 3
 when it is no longer needed.
 .Sh EXAMPLES
 The follow code fragment will calculate the digest for
-the string
-.Dq abc
-which is
-.Dq 0x8eb208f7e05d987a9b044a8e98c6b087f15a0bfc .
+the string "abc" which is ``0x8eb208f7e05d987a9b044a8e98c6b087f15a0bfc''.
 .Bd -literal -offset indent
 RMD160_CTX rmd;
-u_int8_t results[RMD160_DIGEST_LENGTH];
+u_char results[20];
 char *buf;
 int n;
 
 buf = "abc";
 n = strlen(buf);
 RMD160Init(&rmd);
-RMD160Update(&rmd, (u_int8_t *)buf, n);
+RMD160Update(&rmd, (u_char *)buf, n);
 RMD160Final(results, &rmd);
 
 /* Print the digest as one long hex value */
 printf("0x");
-for (n = 0; n < RMD160_DIGEST_LENGTH; n++)
+for (n = 0; n < 20; n++)
 	printf("%02x", results[n]);
-putchar('\en');
+putchar('\\n');
 .Ed
 .Pp
 Alternately, the helper functions could be used in the following way:
 .Bd -literal -offset indent
 RMD160_CTX rmd;
-u_int8_t output[RMD160_DIGEST_STRING_LENGTH];
+u_char output[41];
 char *buf = "abc";
 
 printf("0x%s\en", RMD160Data(buf, strlen(buf), output));
 .Ed
+.Sh CAVEATS
+If a message digest is to be copied to a multi-byte type (ie:
+an array of five 32-bit integers) it will be necessary to
+perform byte swapping on little endian machines such as the i386, alpha,
+and vax.
+.Sh AUTHOR
+This implementation of RMD-160 was written by Antoon Bosselaers.
+.Pp
+The
+.Fn RMD160End ,
+.Fn RMD160File ,
+and
+.Fn RMD160Data
+helper functions are derived from code written by Poul-Henning Kamp.
 .Sh SEE ALSO
-.Xr cksum 1 ,
+.Xr rmd160 1 ,
+.Xr md4 3 ,
 .Xr md5 3 ,
-.Xr sha1 3 ,
-.Xr sha2 3
+.Xr sha1 3
+.Pp
 .Rs
 .%A H. Dobbertin, A. Bosselaers, B. Preneel
 .%T RIPEMD-160, a strengthened version of RIPEMD
@@ -221,20 +219,3 @@ printf("0x%s\en", RMD160Data(buf, strlen(buf), output));
 .Sh HISTORY
 The RMD-160 functions appeared in
 .Ox 2.1 .
-.Sh AUTHORS
-.An -nosplit
-This implementation of RMD-160 was written by
-.An Markus Friedl .
-.Pp
-The
-.Fn RMD160End ,
-.Fn RMD160File ,
-.Fn RMD160FileChunk ,
-and
-.Fn RMD160Data
-helper functions are derived from code written by
-.An Poul-Henning Kamp .
-.Sh CAVEATS
-If a message digest is to be copied to a multi-byte type (ie:
-an array of five 32-bit integers) it will be necessary to
-perform byte swapping on little endian machines such as the i386 and alpha.

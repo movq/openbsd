@@ -1,4 +1,4 @@
-/*	$OpenBSD: time.c,v 1.19 2014/09/23 17:59:25 brad Exp $	*/
+/*	$OpenBSD: time.c,v 1.12 1998/05/30 01:53:44 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997 Michael Shalayeff
@@ -13,6 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
@@ -40,8 +45,10 @@
  * Convert from bcd (packed) to int
  */
 static __inline u_int8_t
-bcdtoint(u_int8_t c)
+bcdtoint(c)
+	register u_int8_t c;
 {
+
 	return ((c & 0xf0) / 8) * 5 + (c & 0x0f);
 }
 
@@ -49,22 +56,23 @@ bcdtoint(u_int8_t c)
  * Quick compute of time in seconds since the Epoch
  */
 const u_short monthcount[] = {
-	0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365
+	0, 0, 31, 59, 90, 120, 151, 181,
+	212, 243, 273, 304, 334, 365
 };
-
 static __inline time_t
-compute(int year, u_int8_t month, u_int8_t day, u_int8_t hour,
-    u_int8_t min, u_int8_t sec)
+compute(year, month, day, hour, min, sec)
+	int year;
+	u_int8_t month, day, hour, min, sec;
 {
 	/* Number of days per month */
 	register time_t tt;
 
 	/* Compute days */
-	tt = (year - 1970) * 365 + monthcount[month] + day - 1;
+	tt = (year - 1970) * 365 + monthcount[month] + day;
 
 	/* Compute for leap year */
-	for (month <= 2 ? year-- : 0; year >= 1970; year--)
-		if (isleap(year))
+	for(month <= 2? year--:0;year >= 1970;year--)
+		if(isleap(year))
 			tt++;
 
 	/* Plus the time */
@@ -74,17 +82,18 @@ compute(int year, u_int8_t month, u_int8_t day, u_int8_t hour,
 }
 
 static int
-bios_time_date(int f, u_int8_t *b)
+bios_time_date(f, b)
+	int f;
+	register u_int8_t *b;
 {
-	__asm volatile(DOINT(0x1a) "\n\t"
-	    "setc %b0\n\t"
-	    "movb %%ch, 0(%2)\n\t"
-	    "movb %%cl, 1(%2)\n\t"
-	    "movb %%dh, 2(%2)\n\t"
-	    "movb %%dl, 3(%2)\n\t"
-	    : "=a" (f)
-	    : "0" (f), "r" (b) : "%ecx", "%edx", "cc");
-
+	__asm __volatile(DOINT(0x1a) "\n\t"
+		       "setc %b0\n\t"
+		       "movb %%ch, 0(%2)\n\t"
+		       "movb %%cl, 1(%2)\n\t"
+		       "movb %%dh, 2(%2)\n\t"
+		       "movb %%dl, 3(%2)\n\t"
+		       : "=a" (f)
+		       : "0" (f), "p" (b) : "%ecx", "%edx", "cc");
 	if (f & 0xff)
 		return -1;
 	else {
@@ -97,13 +106,15 @@ bios_time_date(int f, u_int8_t *b)
 }
 
 static __inline int
-biosdate(u_int8_t *b)
+biosdate(b)
+	register u_int8_t *b;
 {
 	return bios_time_date(4 << 8, b);
 }
 
 static __inline int
-biostime(u_int8_t *b)
+biostime(b)
+	register u_int8_t *b;
 {
 	return bios_time_date(2 << 8, b);
 }
@@ -117,32 +128,31 @@ getsecs(void)
 	u_int8_t timebuf[4], datebuf[4];
 
 	/* Query BIOS for time & date */
-	if (!biostime(timebuf) && !biosdate(datebuf)) {
+	if(!biostime(timebuf) && !biosdate(datebuf)) {
 #ifdef notdef
 		int dst;
 
 		dst = timebuf[3];
 #endif
 		/* Convert to seconds since Epoch */
-		return compute(datebuf[0] * 100 + datebuf[1], datebuf[2],
-		    datebuf[3], timebuf[0], timebuf[1], timebuf[2]);
+		return compute(datebuf[0] * 100 + datebuf[1],
+			       datebuf[2], datebuf[3],
+			       timebuf[0], timebuf[1], timebuf[2]);
 	} else
 		errno = EIO;
 
-	return 1;
+	return(1);
 }
 
 u_int
-sleep(u_int i)
+sleep(i)
+	u_int i;
 {
 	register time_t t;
 
-	/*
-	 * Loop for the requested number of seconds, polling BIOS,
-	 * so that it may handle interrupts.
-	 */
-	for (t = getsecs() + i; getsecs() < t; cnischar())
-		;
+	/* loop for that number of seconds, polling BIOS,
+	   so that it may handle interrupts */
+	for (t = getsecs() + i; getsecs() < t; cnischar());
 
 	return 0;
 }

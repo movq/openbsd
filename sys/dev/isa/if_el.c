@@ -1,4 +1,4 @@
-/*    $OpenBSD: if_el.c,v 1.33 2016/04/13 10:49:26 mpi Exp $       */
+/*    $OpenBSD: if_el.c,v 1.12 1999/02/28 03:23:37 jason Exp $       */
 /*	$NetBSD: if_el.c,v 1.39 1996/05/12 23:52:32 mycroft Exp $	*/
 
 /*
@@ -31,12 +31,20 @@
 #include <sys/device.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
@@ -45,6 +53,10 @@
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/if_elreg.h>
+
+#define ETHER_MIN_LEN	64
+#define ETHER_MAX_LEN	1518
+#define	ETHER_ADDR_LEN	6
 
 /* for debugging convenience */
 #ifdef EL_DEBUG
@@ -67,20 +79,20 @@ struct el_softc {
 /*
  * prototypes
  */
-int elintr(void *);
-void elinit(struct el_softc *);
-int elioctl(struct ifnet *, u_long, caddr_t);
-void elstart(struct ifnet *);
-void elwatchdog(struct ifnet *);
-void elreset(struct el_softc *);
-void elstop(struct el_softc *);
-static int el_xmit(struct el_softc *);
-void elread(struct el_softc *, int);
-struct mbuf *elget(struct el_softc *sc, int);
-static inline void el_hardreset(struct el_softc *);
+int elintr __P((void *));
+void elinit __P((struct el_softc *));
+int elioctl __P((struct ifnet *, u_long, caddr_t));
+void elstart __P((struct ifnet *));
+void elwatchdog __P((struct ifnet *));
+void elreset __P((struct el_softc *));
+void elstop __P((struct el_softc *));
+static int el_xmit __P((struct el_softc *));
+void elread __P((struct el_softc *, int));
+struct mbuf *elget __P((struct el_softc *sc, int));
+static inline void el_hardreset __P((struct el_softc *));
 
-int elprobe(struct device *, void *, void *);
-void elattach(struct device *, struct device *, void *);
+int elprobe __P((struct device *, void *, void *));
+void elattach __P((struct device *, struct device *, void *));
 
 struct cfattach el_ca = {
 	sizeof(struct el_softc), elprobe, elattach
@@ -178,7 +190,7 @@ elattach(parent, self, aux)
 	ifp->if_start = elstart;
 	ifp->if_ioctl = elioctl;
 	ifp->if_watchdog = elwatchdog;
-	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS;
 
 	/* Now we can attach the interface. */
 	dprintf(("Attaching interface...\n"));
@@ -187,6 +199,12 @@ elattach(parent, self, aux)
 
 	/* Print out some information for the user. */
 	printf(": address %s\n", ether_sprintf(sc->sc_arpcom.ac_enaddr));
+
+	/* Finally, attach to bpf filter if it is present. */
+#if NBPFILTER > 0
+	dprintf(("Attaching to BPF...\n"));
+	bpfattach(&ifp->if_bpf, ifp, DLT_EN10MB, sizeof(struct ether_header));
+#endif
 
 	sc->sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,
 	    IPL_NET, elintr, sc, sc->sc_dev.dv_xname);
@@ -271,7 +289,7 @@ elinit(sc)
 
 	/* Set flags appropriately. */
 	ifp->if_flags |= IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
+	ifp->if_flags &= ~IFF_OACTIVE;
 
 	/* And start output. */
 	elstart(ifp);
@@ -295,12 +313,12 @@ elstart(ifp)
 	s = splnet();
 
 	/* Don't do anything if output is active. */
-	if (ifq_is_oactive(&ifp->if_snd) != 0) {
+	if ((ifp->if_flags & IFF_OACTIVE) != 0) {
 		splx(s);
 		return;
 	}
 
-	ifq_set_oactive(&ifp->if_snd);
+	ifp->if_flags |= IFF_OACTIVE;
 
 	/*
 	 * The main loop.  They warned me against endless loops, but would I
@@ -308,16 +326,16 @@ elstart(ifp)
 	 */
 	for (;;) {
 		/* Dequeue the next datagram. */
-		IFQ_DEQUEUE(&ifp->if_snd, m0);
+		IF_DEQUEUE(&ifp->if_snd, m0);
 
 		/* If there's nothing to send, return. */
-		if (m0 == NULL)
+		if (m0 == 0)
 			break;
 
 #if NBPFILTER > 0
 		/* Give the packet to the bpf, if any. */
 		if (ifp->if_bpf)
-			bpf_mtap(ifp->if_bpf, m0, BPF_DIRECTION_OUT);
+			bpf_mtap(ifp->if_bpf, m0);
 #endif
 
 		/* Disable the receiver. */
@@ -333,10 +351,7 @@ elstart(ifp)
 		/* Copy the datagram to the buffer. */
 		for (m = m0; m != 0; m = m->m_next)
 			outsb(iobase+EL_BUF, mtod(m, caddr_t), m->m_len);
-		for (i = 0;
-		    i < ETHER_MIN_LEN - ETHER_CRC_LEN - m0->m_pkthdr.len; i++)
-			outb(iobase+EL_BUF, 0);
-			
+
 		m_freem(m0);
 
 		/* Now transmit the datagram. */
@@ -383,7 +398,7 @@ elstart(ifp)
 
 	(void)inb(iobase+EL_AS);
 	outb(iobase+EL_AC, EL_AC_IRQE | EL_AC_RX);
-	ifq_clr_oactive(&ifp->if_snd);
+	ifp->if_flags &= ~IFF_OACTIVE;
 	splx(s);
 }
 
@@ -487,8 +502,8 @@ elread(sc, len)
 	int len;
 {
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
-	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 	struct mbuf *m;
+	struct ether_header *eh;
 
 	if (len <= sizeof(struct ether_header) ||
 	    len > ETHER_MAX_LEN) {
@@ -500,13 +515,28 @@ elread(sc, len)
 
 	/* Pull packet off interface. */
 	m = elget(sc, len);
-	if (m == NULL) {
+	if (m == 0) {
 		ifp->if_ierrors++;
 		return;
 	}
 
-	ml_enqueue(&ml, m);
-	if_input(ifp, &ml);
+	ifp->if_ipackets++;
+
+	/* We assume that the header fit entirely in one mbuf. */
+	eh = mtod(m, struct ether_header *);
+
+#if NBPFILTER > 0
+	/*
+	 * Check if there's a BPF listener on this interface.
+	 * If so, hand off the raw packet to BPF.
+	 */
+	if (ifp->if_bpf)
+		bpf_mtap(ifp->if_bpf, m);
+#endif
+
+	/* We assume that the header fit entirely in one mbuf. */
+	m_adj(m, sizeof(struct ether_header));
+	ether_input(ifp, eh, m);
 }
 
 /*
@@ -519,13 +549,15 @@ elget(sc, totlen)
 	struct el_softc *sc;
 	int totlen;
 {
+	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	int iobase = sc->sc_iobase;
 	struct mbuf *top, **mp, *m;
 	int len;
 
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
-	if (m == NULL)
+	if (m == 0)
 		return 0;
+	m->m_pkthdr.rcvif = ifp;
 	m->m_pkthdr.len = totlen;
 	len = MHLEN;
 	top = 0;
@@ -537,7 +569,7 @@ elget(sc, totlen)
 	while (totlen > 0) {
 		if (top) {
 			MGET(m, M_DONTWAIT, MT_DATA);
-			if (m == NULL) {
+			if (m == 0) {
 				m_freem(top);
 				return 0;
 			}
@@ -571,14 +603,32 @@ elioctl(ifp, cmd, data)
 	caddr_t data;
 {
 	struct el_softc *sc = ifp->if_softc;
+	struct ifaddr *ifa = (struct ifaddr *)data;
 	int s, error = 0;
 
 	s = splnet();
 
+	if ((error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data)) > 0) {
+		splx(s);
+		return error;
+	}
+
 	switch (cmd) {
+
 	case SIOCSIFADDR:
 		ifp->if_flags |= IFF_UP;
-		elinit(sc);
+
+		switch (ifa->ifa_addr->sa_family) {
+#ifdef INET
+		case AF_INET:
+			elinit(sc);
+			arp_ifinit(&sc->sc_arpcom, ifa);
+			break;
+#endif
+		default:
+			elinit(sc);
+			break;
+		}
 		break;
 
 	case SIOCSIFFLAGS:
@@ -607,7 +657,8 @@ elioctl(ifp, cmd, data)
 		break;
 
 	default:
-		error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data);
+		error = EINVAL;
+		break;
 	}
 
 	splx(s);

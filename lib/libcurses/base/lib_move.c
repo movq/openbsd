@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_move.c,v 1.4 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_move.c,v 1.1 1999/01/18 19:09:52 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,8 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
 
 /*
 **	lib_move.c
@@ -43,20 +43,23 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_move.c,v 1.4 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_move.c,v 1.8 1998/02/11 12:13:53 tom Exp $")
 
-NCURSES_EXPORT(int)
+int
 wmove(WINDOW *win, int y, int x)
 {
-    T((T_CALLED("wmove(%p,%d,%d)"), win, y, x));
+	T((T_CALLED("wmove(%p,%d,%d)"), win, y, x));
 
-    if (LEGALYX(win, y, x)) {
-	win->_curx = (NCURSES_SIZE_T) x;
-	win->_cury = (NCURSES_SIZE_T) y;
+	if (win && 
+	    x >= 0  &&  x <= win->_maxx  &&
+	    y >= 0  &&  y <= win->_maxy)
+	{
+		win->_curx = (short)x;
+		win->_cury = (short)y;
 
-	win->_flags &= ~_WRAPPED;
-	win->_flags |= _HASMOVED;
-	returnCode(OK);
-    } else
-	returnCode(ERR);
+		win->_flags &= ~_WRAPPED;
+		win->_flags |= _HASMOVED;
+		returnCode(OK);
+	} else
+		returnCode(ERR);
 }

@@ -1,4 +1,4 @@
-/* $OpenBSD: pciide_machdep.c,v 1.5 2012/12/05 23:20:10 deraadt Exp $ */
+/* $OpenBSD: pciide_machdep.c,v 1.1 1998/07/01 02:42:40 angelos Exp $ */
 /* $NetBSD: pciide_machdep.c,v 1.2 1998/04/18 01:09:20 thorpej Exp $ */
 
 /*
@@ -41,6 +41,8 @@
  * PCI SIG.
  */
 
+#include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
@@ -58,19 +60,11 @@ pciide_machdep_compat_intr_establish(dev, pa, chan, func, arg)
 	struct device *dev;
 	struct pci_attach_args *pa;
 	int chan;
-	int (*func)(void *);
+	int (*func) __P((void *));
 	void *arg;
 {
 	pci_chipset_tag_t pc = pa->pa_pc;
 
 	return (alpha_pciide_compat_intr_establish(pc, dev, pa, chan,
 	    func, arg));
-}
-
-void
-pciide_machdep_compat_intr_disestablish(pc, cookie)
-	pci_chipset_tag_t pc;
-	void *cookie;
-{
-	alpha_pciide_compat_intr_disestablish(pc, cookie);
 }

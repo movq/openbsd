@@ -1,9 +1,10 @@
-/*	$OpenBSD: infinity.c,v 1.6 2006/03/31 04:28:37 drahn Exp $	*/
+#ifndef lint
+static char rcsid[] = "$Id: infinity.c,v 1.1.1.1 1996/12/21 20:42:22 rahnds Exp $";
+#endif /* not lint */
 
 /* infinity.c */
 
 #include <math.h>
 
-/* bytes for +Infinity on a PowerPC */
-char __infinity[] __attribute__((__aligned__(sizeof(double)))) =
-    { 0x7f, (char)0xf0, 0, 0, 0, 0, 0, 0 };
+/* bytes for +Infinity on a 387 */
+char __infinity[] = { 0, 0, 0, 0, 0, 0, 0xf0, 0x7f };

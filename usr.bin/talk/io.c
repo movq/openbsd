@@ -1,4 +1,4 @@
-/*	$OpenBSD: io.c,v 1.20 2016/02/18 21:51:20 espie Exp $	*/
+/*	$OpenBSD: io.c,v 1.9 1999/03/03 20:43:30 millert Exp $	*/
 /*	$NetBSD: io.c,v 1.4 1994/12/09 02:14:20 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,33 +34,38 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)io.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: io.c,v 1.9 1999/03/03 20:43:30 millert Exp $";
+#endif /* not lint */
+
 /*
  * This file contains the I/O handling and the exchange of
  * edit characters. This connection itself is established in
  * ctl.c
  */
 
+#include "talk.h"
 #include <sys/ioctl.h>
-
+#include <sys/time.h>
+#include <stdio.h>
 #include <errno.h>
-#include <poll.h>
 #include <unistd.h>
 
-#include "talk.h"
-
-#define A_LONG_TIME 1000000
-
-volatile sig_atomic_t gotwinch;
+#define A_LONG_TIME 10000000
 
 /*
  * The routine to do the actual talking
  */
 void
-talk(void)
+talk()
 {
-	struct pollfd fds[2];
-	char buf[BUFSIZ];
+	fd_set read_template, read_set;
 	int nb;
+	char buf[BUFSIZ];
+	struct timeval wait;
 
 #if defined(NCURSES_VERSION) || defined(beep)
 	message("Connection established");
@@ -72,37 +81,36 @@ talk(void)
 	 * Wait on both the other process (sockt_mask) and
 	 * standard input ( STDIN_MASK )
 	 */
-	fds[0].fd = fileno(stdin);
-	fds[0].events = POLLIN;
-	fds[1].fd = sockt;
-	fds[1].events = POLLIN;
-	
+	FD_ZERO(&read_template);
+	FD_SET(sockt, &read_template);
+	FD_SET(fileno(stdin), &read_template);
 	for (;;) {
-		nb = poll(fds, 2, A_LONG_TIME * 1000);
-		if (gotwinch) {
-			resize_display();
-			gotwinch = 0;
-		}
+		read_set = read_template;
+		wait.tv_sec = A_LONG_TIME;
+		wait.tv_usec = 0;
+		nb = select(32, &read_set, 0, 0, &wait);
 		if (nb <= 0) {
-			if (errno == EINTR)
+			if (errno == EINTR) {
+				read_set = read_template;
 				continue;
+			}
 			/* panic, we don't know what happened */
-			quit("Unexpected error from poll", 1);
+			quit("Unexpected error from select", 1);
 		}
-		if (fds[1].revents & POLLIN) {
+		if (FD_ISSET(sockt, &read_set)) {
 			/* There is data on sockt */
 			nb = read(sockt, buf, sizeof buf);
 			if (nb <= 0)
 				quit("Connection closed.  Exiting", 0);
 			display(&his_win, buf, nb);
 		}
-		if (fds[0].revents & POLLIN) {
+		if (FD_ISSET(fileno(stdin), &read_set)) {
 			/*
 			 * We can't make the tty non_blocking, because
 			 * curses's output routines would screw up
 			 */
 			ioctl(0, FIONREAD, &nb);
-			nb = read(STDIN_FILENO, buf, nb);
+			nb = read(0, buf, nb);
 			display(&my_win, buf, nb);
 			/* might lose data here because sockt is non-blocking */
 			write(sockt, buf, nb);
@@ -114,7 +122,8 @@ talk(void)
  * Display string in the standard location
  */
 void
-message(char *string)
+message(string)
+	char *string;
 {
 	wmove(my_win.x_win, current_line % my_win.x_nlines, 0);
 	wprintw(my_win.x_win, "[%s]", string);

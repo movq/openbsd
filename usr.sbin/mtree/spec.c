@@ -1,5 +1,5 @@
 /*	$NetBSD: spec.c,v 1.6 1995/03/07 21:12:12 cgd Exp $	*/
-/*	$OpenBSD: spec.c,v 1.28 2016/08/16 16:41:46 krw Exp $	*/
+/*	$OpenBSD: spec.c,v 1.10 1998/09/24 02:42:38 millert Exp $	*/
 
 /*-
  * Copyright (c) 1989, 1993
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,65 +34,68 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)spec.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: spec.c,v 1.10 1998/09/24 02:42:38 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fts.h>
 #include <pwd.h>
 #include <grp.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <ctype.h>
-#include <vis.h>
 #include "mtree.h"
 #include "extern.h"
 
 int lineno;				/* Current spec line number. */
 
-static void	 set(char *, NODE *);
-static void	 unset(char *, NODE *);
+static void	 set __P((char *, NODE *));
+static void	 unset __P((char *, NODE *));
 
 NODE *
-spec(void)
+spec()
 {
-	NODE *centry, *last;
-	char *p;
+	register NODE *centry, *last;
+	register char *p;
 	NODE ginfo, *root;
 	int c_cur, c_next;
-	char *buf, *tbuf = NULL;
-	size_t len;
+	char buf[2048];
 
-	last = root = NULL;
+	centry = last = root = NULL;
 	bzero(&ginfo, sizeof(ginfo));
-	centry = &ginfo;
 	c_cur = c_next = 0;
-	for (lineno = 1; (buf = fgetln(stdin, &len));
+	for (lineno = 1; fgets(buf, sizeof(buf), stdin);
 	    ++lineno, c_cur = c_next, c_next = 0) {
-		/* Null-terminate the line. */
-		if (buf[len - 1] == '\n') {
-			buf[--len] = '\0';
-		} else {
-			/* EOF with no newline. */
-			tbuf = malloc(len + 1);
-			memcpy(tbuf, buf, len);
-			tbuf[len] = '\0';
-			buf = tbuf;
-		}
-
-		/* Skip leading whitespace. */
-		for (p = buf; isspace((unsigned char)*p); p++)
-			;
-
-		/* If nothing but whitespace or comment char, continue. */
-		if (*p == '\0' || *p == '#')
+		/* Skip empty lines. */
+		if (buf[0] == '\n')
 			continue;
 
+		/* Find end of line. */
+		if ((p = strchr(buf, '\n')) == NULL)
+			error("line %d too long", lineno);
+
 		/* See if next line is continuation line. */
-		if (buf[len - 1] == '\\') {
+		if (p[-1] == '\\') {
+			--p;
 			c_next = 1;
-			if (--len == 0)
-				continue;
-			buf[len] = '\0';
 		}
+
+		/* Null-terminate the line. */
+		*p = '\0';
+
+		/* Skip leading whitespace. */
+		for (p = buf; *p && isspace(*p); ++p);
+
+		/* If nothing but whitespace or comment char, continue. */
+		if (!*p || *p == '#')
+			continue;
 
 #ifdef DEBUG
 		(void)fprintf(stderr, "line %d: {%s}\n", lineno, p);
@@ -97,7 +104,7 @@ spec(void)
 			set(p, centry);
 			continue;
 		}
-
+			
 		/* Grab file name, "$", "set", or "unset". */
 		if ((p = strtok(p, "\n\t ")) == NULL)
 			error("missing field");
@@ -134,18 +141,13 @@ spec(void)
 noparent:		error("no parent node");
 		}
 
-		len = strlen(p) + 1;	/* NUL in struct _node */
-		if ((centry = calloc(1, sizeof(NODE) + len - 1)) == NULL)
+		if ((centry = calloc(1, sizeof(NODE) + strlen(p))) == NULL)
 			error("%s", strerror(errno));
 		*centry = ginfo;
+		(void)strcpy(centry->name, p);
 #define	MAGIC	"?*["
 		if (strpbrk(p, MAGIC))
 			centry->flags |= F_MAGIC;
-		if (strunvis(centry->name, p) == -1) {
-			fprintf(stderr,
-			    "mtree: filename (%s) encoded incorrectly\n", p);
-			strlcpy(centry->name, p, len);
-		}
 		set(NULL, centry);
 
 		if (!root) {
@@ -160,22 +162,21 @@ noparent:		error("no parent node");
 			last = last->next = centry;
 		}
 	}
-	free(tbuf);
 	return (root);
 }
 
 static void
-set(char *t, NODE *ip)
+set(t, ip)
+	char *t;
+	register NODE *ip;
 {
-	int type;
-	char *kw, *val = NULL;
+	register int type;
+	register char *kw, *val = NULL;
 	struct group *gr;
 	struct passwd *pw;
-	void *m;
+	mode_t *m;
 	int value;
-	u_int32_t fset, fclr;
 	char *ep;
-	size_t len;
 
 	for (; (kw = strtok(t, "= \t\n")); t = NULL) {
 		ip->flags |= type = parsekey(kw, &value);
@@ -191,15 +192,6 @@ set(char *t, NODE *ip)
 			ip->md5digest = strdup(val);
 			if (!ip->md5digest)
 				error("%s", strerror(errno));
-			break;
-		case F_FLAGS:
-			if (!strcmp(val, "none")) {
-				ip->file_flags = 0;
-				break;
-			}
-			if (strtofflags(&val, &fset, &fclr))
-				error("%s", strerror(errno));
-			ip->file_flags = fset;
 			break;
 		case F_GID:
 			ip->st_gid = strtoul(val, &ep, 10);
@@ -235,25 +227,14 @@ set(char *t, NODE *ip)
 			if (!ip->sha1digest)
 				error("%s", strerror(errno));
 			break;
-		case F_SHA256:
-			ip->sha256digest = strdup(val);
-			if (!ip->sha256digest)
-				error("%s", strerror(errno));
-			break;
 		case F_SIZE:
-			ip->st_size = strtoll(val, &ep, 10);
+			ip->st_size = strtouq(val, &ep, 10);
 			if (*ep)
 				error("invalid size %s", val);
 			break;
 		case F_SLINK:
-			len = strlen(val) + 1;
-			if ((ip->slink = malloc(len)) == NULL)
+			if ((ip->slink = strdup(val)) == NULL)
 				error("%s", strerror(errno));
-			if (strunvis(ip->slink, val) == -1) {
-				fprintf(stderr,
-				    "mtree: filename (%s) encoded incorrectly\n", val);
-				strlcpy(ip->slink, val, len);
-			}
 			break;
 		case F_TIME:
 			ip->st_mtimespec.tv_sec = strtoul(val, &ep, 10);
@@ -311,9 +292,11 @@ set(char *t, NODE *ip)
 }
 
 static void
-unset(char *t, NODE *ip)
+unset(t, ip)
+	char *t;
+	register NODE *ip;
 {
-	char *p;
+	register char *p;
 
 	while ((p = strtok(t, "\n\t ")))
 		ip->flags &= ~parsekey(p, NULL);

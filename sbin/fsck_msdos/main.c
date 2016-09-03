@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.23 2016/05/28 18:00:42 tb Exp $	*/
+/*	$OpenBSD: main.c,v 1.8 1997/07/25 19:13:15 mickey Exp $	*/
 /*	$NetBSD: main.c,v 1.8 1996/10/17 20:29:53 cgd Exp $	*/
 
 /*
@@ -13,6 +13,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Martin Husemann
+ *	and Wolfgang Solfrank.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -27,14 +34,21 @@
  */
 
 
+#ifndef lint
+static char rcsid[] = "$OpenBSD: main.c,v 1.8 1997/07/25 19:13:15 mickey Exp $";
+#endif /* not lint */
+
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#ifdef __STDC__
 #include <stdarg.h>
-#include <err.h>
+#else
+#include <varargs.h>
+#endif
 
 #include "ext.h"
 
@@ -43,18 +57,22 @@ int alwaysyes;		/* assume "yes" for all questions */
 int preen;		/* set when preening */
 int rdonly;		/* device is opened read only (supersedes above) */
 
-static void usage(void);
-int main(int, char **);
+static void usage __P((void));
+int main __P((int, char **));
 
 static void
-usage(void)
+usage()
 {
-	errexit("usage: fsck_msdos [-fnpy] filesystem\n");
+	errexit("Usage: fsck_msdos [-fnpy] filesystem ... \n");
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
+	extern int optind;
+	int ret = 0, erg;
 	int ch;
 
 	while ((ch = getopt(argc, argv, "pynf")) != -1) {
@@ -86,15 +104,28 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc != 1)
+	if (!argc)
 		usage();
 
-	setcdevname(*argv, NULL, preen);
-	exit (checkfilesys(blockcheck(*argv)));
+	while (argc-- > 0) {
+		setcdevname(*argv, preen);
+		erg = checkfilesys(*argv++);
+		if (erg > ret)
+			ret = erg;
+	}
+	exit(ret);
 }
 
+/*VARARGS*/
 int
+#ifdef __STDC__
 ask(int def, const char *fmt, ...)
+#else
+ask(def, fmt, va_alist)
+	int def;
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
 
@@ -109,21 +140,20 @@ ask(int def, const char *fmt, ...)
 		return (def);
 	}
 
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	vsnprintf(prompt, sizeof(prompt), fmt, ap);
-	va_end(ap);
 	if (alwaysyes || rdonly) {
 		printf("%s? %s\n", prompt, rdonly ? "no" : "yes");
 		return (!rdonly);
 	}
 	do {
-		printf("%s? [Fyn] ", prompt);
+		printf("%s? [yn] ", prompt);
 		fflush(stdout);
 		c = getchar();
-		if (c == 'F') {
-			alwaysyes = 1;
-			return (1);
-		}
 		while (c != '\n' && getchar() != '\n')
 			if (feof(stdin))
 				return (0);

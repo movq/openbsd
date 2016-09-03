@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_stop.c,v 1.6 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_stop.c	10.10 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -28,10 +30,12 @@
  *	      :suspend[!]
  *	Suspend execution.
  *
- * PUBLIC: int ex_stop(SCR *, EXCMD *);
+ * PUBLIC: int ex_stop __P((SCR *, EXCMD *));
  */
 int
-ex_stop(SCR *sp, EXCMD *cmdp)
+ex_stop(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	int allowed;
 

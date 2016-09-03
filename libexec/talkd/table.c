@@ -1,4 +1,4 @@
-/*	$OpenBSD: table.c,v 1.19 2016/08/26 08:44:04 guenther Exp $	*/
+/*	$OpenBSD: table.c,v 1.4 1998/07/10 08:06:19 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,24 +33,29 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)table.c	5.7 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$Id: table.c,v 1.4 1998/07/10 08:06:19 deraadt Exp $";
+#endif /* not lint */
+
 /*
  * Routines to handle insertion, deletion, etc on the table
  * of requests kept by the daemon. Nothing fancy here, linear
- * search on a double-linked list. A time is kept with each
+ * search on a double-linked list. A time is kept with each 
  * entry so that overly old invitations can be eliminated.
  *
  * Consider this a mis-guided attempt at modularity
  */
-#include <sys/queue.h>
-#include <sys/socket.h>
+#include <sys/param.h>
 #include <sys/time.h>
+#include <sys/socket.h>
+#include <sys/queue.h>
 #include <protocols/talkd.h>
-
-#include <stdlib.h>
-#include <string.h>
 #include <syslog.h>
 #include <unistd.h>
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "talkd.h"
 
 #define MAX_ID 16000	/* << 2^15 so I don't have sign troubles */
@@ -63,13 +72,13 @@ struct table_entry {
 };
 TAILQ_HEAD(, table_entry)	table;
 
-static void	delete(TABLE_ENTRY *);
+static void	delete __P((register TABLE_ENTRY *));
 
 /*
  * Init the table
  */
 void
-init_table(void)
+init_table()
 {
 	TAILQ_INIT(&table);
 }
@@ -79,17 +88,17 @@ init_table(void)
  * request looking for an invitation
  */
 CTL_MSG *
-find_match(CTL_MSG *request)
+find_match(request)
+	register CTL_MSG *request;
 {
-	TABLE_ENTRY *ptr, *next;
+	register TABLE_ENTRY *ptr;
 	time_t current_time;
 
 	gettimeofday(&tp, &txp);
 	current_time = tp.tv_sec;
 	if (debug)
 		print_request("find_match", request);
-	for (ptr = TAILQ_FIRST(&table); ptr != NULL; ptr = next) {
-		next = TAILQ_NEXT(ptr, list);
+	for (ptr = table.tqh_first; ptr != NULL; ptr = ptr->list.tqe_next) {
 		if ((current_time - ptr->time) > MAX_LIFE) {
 			/* the entry is too old */
 			if (debug)
@@ -100,25 +109,26 @@ find_match(CTL_MSG *request)
 		}
 		if (debug)
 			print_request("", &ptr->request);
-		if (ptr->request.type == LEAVE_INVITE &&
-		    strcmp(request->l_name, ptr->request.r_name) == 0 &&
-		    strcmp(request->r_name, ptr->request.l_name) == 0)
+		if (strcmp(request->l_name, ptr->request.r_name) == 0 &&
+		    strcmp(request->r_name, ptr->request.l_name) == 0 &&
+		     ptr->request.type == LEAVE_INVITE)
 			return (&ptr->request);
 	}
 	if (debug)
 		syslog(LOG_DEBUG, "find_match: not found");
 
-	return (NULL);
+	return ((CTL_MSG *)0);
 }
 
 /*
  * Look for an identical request, as opposed to a complimentary
- * one as find_match does
+ * one as find_match does 
  */
 CTL_MSG *
-find_request(CTL_MSG *request)
+find_request(request)
+	register CTL_MSG *request;
 {
-	TABLE_ENTRY *ptr, *next;
+	register TABLE_ENTRY *ptr;
 	time_t current_time;
 
 	gettimeofday(&tp, &txp);
@@ -129,8 +139,7 @@ find_request(CTL_MSG *request)
 	 */
 	if (debug)
 		print_request("find_request", request);
-	for (ptr = TAILQ_FIRST(&table); ptr != NULL; ptr = next) {
-		next = TAILQ_NEXT(ptr, list);
+	for (ptr = table.tqh_first; ptr != NULL; ptr = ptr->list.tqe_next) {
 		if ((current_time - ptr->time) > MAX_LIFE) {
 			/* the entry is too old */
 			if (debug)
@@ -141,22 +150,24 @@ find_request(CTL_MSG *request)
 		}
 		if (debug)
 			print_request("", &ptr->request);
-		if (request->pid == ptr->request.pid &&
+		if (strcmp(request->r_name, ptr->request.r_name) == 0 &&
+		    strcmp(request->l_name, ptr->request.l_name) == 0 &&
 		    request->type == ptr->request.type &&
-		    strcmp(request->r_name, ptr->request.r_name) == 0 &&
-		    strcmp(request->l_name, ptr->request.l_name) == 0) {
+		    request->pid == ptr->request.pid) {
 			/* update the time if we 'touch' it */
 			ptr->time = current_time;
 			return (&ptr->request);
 		}
 	}
-	return (NULL);
+	return ((CTL_MSG *)0);
 }
 
 void
-insert_table(CTL_MSG *request, CTL_RESPONSE *response)
+insert_table(request, response)
+	CTL_MSG *request;
+	CTL_RESPONSE *response;
 {
-	TABLE_ENTRY *ptr;
+	register TABLE_ENTRY *ptr;
 	time_t current_time;
 
 	if (debug)
@@ -166,7 +177,7 @@ insert_table(CTL_MSG *request, CTL_RESPONSE *response)
 	request->id_num = new_id();
 	response->id_num = htonl(request->id_num);
 	/* insert a new entry into the top of the list */
-	ptr = malloc(sizeof(TABLE_ENTRY));
+	ptr = (TABLE_ENTRY *)malloc(sizeof(TABLE_ENTRY));
 	if (ptr == NULL) {
 		syslog(LOG_ERR, "insert_table: Out of memory");
 		_exit(1);
@@ -195,13 +206,14 @@ new_id(void)
  * Delete the invitation with id 'id_num'
  */
 int
-delete_invite(int id_num)
+delete_invite(id_num)
+	int id_num;
 {
-	TABLE_ENTRY *ptr;
+	register TABLE_ENTRY *ptr;
 
 	if (debug)
 		syslog(LOG_DEBUG, "delete_invite(%d)", id_num);
-	TAILQ_FOREACH(ptr, &table, list) {
+	for (ptr = table.tqh_first; ptr != NULL; ptr = ptr->list.tqe_next) {
 		if (ptr->request.id_num == id_num)
 			break;
 		if (debug)
@@ -218,7 +230,8 @@ delete_invite(int id_num)
  * Classic delete from a double-linked list
  */
 static void
-delete(TABLE_ENTRY *ptr)
+delete(ptr)
+	register TABLE_ENTRY *ptr;
 {
 
 	if (debug)

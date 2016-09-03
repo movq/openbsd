@@ -1,7 +1,7 @@
-/* $OpenBSD: nc_panel.c,v 1.3 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: nc_panel.c,v 1.1 1999/01/18 19:10:06 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -34,10 +34,10 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: nc_panel.c,v 1.3 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: nc_panel.c,v 1.2 1998/02/11 12:13:56 tom Exp $")
 
-NCURSES_EXPORT(struct panelhook *)
+struct panelhook*
 _nc_panelhook(void)
 {
-    return (SP ? &(SP->_panelHook) : NULL);
+  return (SP ? &(SP->_panelHook) : NULL);
 }

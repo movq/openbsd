@@ -1,5 +1,4 @@
-/*	$OpenBSD: strtol.c,v 1.11 2015/09/13 08:31:48 guenther Exp $ */
-/*
+/*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,10 +31,15 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: strtol.c,v 1.4 1996/08/19 08:33:51 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
+
 
 /*
  * Convert a string to a long integer.
@@ -40,23 +48,15 @@
  * alphabets and digits are each contiguous.
  */
 long
-strtol(const char *nptr, char **endptr, int base)
+strtol(nptr, endptr, base)
+	const char *nptr;
+	char **endptr;
+	register int base;
 {
-	const char *s;
-	long acc, cutoff;
-	int c;
-	int neg, any, cutlim;
-
-	/*
-	 * Ensure that base is between 2 and 36 inclusive, or the special
-	 * value of 0.
-	 */
-	if (base < 0 || base == 1 || base > 36) {
-		if (endptr != 0)
-			*endptr = (char *)nptr;
-		errno = EINVAL;
-		return 0;
-	}
+	register const char *s;
+	register long acc, cutoff;
+	register int c;
+	register int neg, any, cutlim;
 
 	/*
 	 * Skip white space and pick up leading +/- sign if any.
@@ -123,7 +123,7 @@ strtol(const char *nptr, char **endptr, int base)
 		if (any < 0)
 			continue;
 		if (neg) {
-			if (acc < cutoff || (acc == cutoff && c > cutlim)) {
+			if (acc < cutoff || acc == cutoff && c > cutlim) {
 				any = -1;
 				acc = LONG_MIN;
 				errno = ERANGE;
@@ -133,7 +133,7 @@ strtol(const char *nptr, char **endptr, int base)
 				acc -= c;
 			}
 		} else {
-			if (acc > cutoff || (acc == cutoff && c > cutlim)) {
+			if (acc > cutoff || acc == cutoff && c > cutlim) {
 				any = -1;
 				acc = LONG_MAX;
 				errno = ERANGE;
@@ -148,4 +148,3 @@ strtol(const char *nptr, char **endptr, int base)
 		*endptr = (char *) (any ? s - 1 : nptr);
 	return (acc);
 }
-DEF_STRONG(strtol);

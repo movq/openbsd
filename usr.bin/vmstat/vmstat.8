@@ -1,4 +1,4 @@
-.\"	$OpenBSD: vmstat.8,v 1.37 2016/03/30 06:58:06 jmc Exp $
+.\"	$OpenBSD: vmstat.8,v 1.14 1999/07/03 02:11:09 aaron Exp $
 .\"	$NetBSD: vmstat.8,v 1.12 1996/05/10 23:19:30 thorpej Exp $
 .\"
 .\" Copyright (c) 1986, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,34 +34,28 @@
 .\"
 .\"	@(#)vmstat.8	8.1 (Berkeley) 6/6/93
 .\"
-.Dd $Mdocdate: March 30 2016 $
+.Dd June 6, 1993
 .Dt VMSTAT 8
 .Os
 .Sh NAME
 .Nm vmstat
-.Nd report statistics about kernel activities
+.Nd report virtual memory statistics
 .Sh SYNOPSIS
 .Nm vmstat
-.Op Fl fimstvz
+.Op Fl fimst
 .Nm vmstat
 .Op Fl c Ar count
 .Op Fl M Ar core
 .Op Fl N Ar system
 .Op Fl w Ar wait
-.Op Ar disk ...
+.Op disks
 .Sh DESCRIPTION
-.Nm
+.Nm vmstat
 reports certain kernel statistics kept about process, virtual memory,
-disk, trap, and CPU activity.
-The default behavior is to print a one-line summary of these statistics.
-The
-.Fl c
-and
-.Fl w
-flags may be used to continually report summaries.
+disk, trap and cpu activity.
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width "blah"
 .It Fl c Ar count
 Repeat the display
 .Ar count
@@ -68,36 +66,34 @@ If no
 .Ar wait
 interval is specified, the default is 1 second.
 .It Fl f
-Report on the number of
+Report on the number
 .Xr fork 2 ,
-.Xr __tfork 3 ,
+.Xr vfork 2 ,
 and
-.Xr vfork 2
-system calls as well as kernel thread creations since system startup,
-and the number of pages of virtual memory involved in each.
+.Xr rfork 2
+system calls since system startup, and the number of pages of virtual memory
+involved in each.
 .It Fl i
 Report on the number of interrupts taken by each device since system
 startup.
 .It Fl M Ar core
 Extract values associated with the name list from the specified core
-instead of the running kernel.
+instead of the default
+.Pa /dev/mem .
+.It Fl N Ar system
+Extract the name list from the specified system instead of the default
+.Pa /bsd .
 .It Fl m
 Report on the usage of kernel dynamic memory listed first by size of
 allocation and then by type of usage.
-.It Fl N Ar system
-Extract the name list from the specified system instead of the running kernel.
 .It Fl s
 Display the contents of the
-.Va uvmexp
-structure (see
-.Xr uvm 9 ) ,
-giving the total number of several kinds of paging related
+.Ar sum
+structure, giving the total number of several kinds of paging related
 events which have occurred since system startup.
 .It Fl t
 Report on the number of page in and page reclaims since system startup,
 and the amount of time required by each.
-.It Fl v
-Print more verbose information.
 .It Fl w Ar wait
 Pause
 .Ar wait
@@ -105,119 +101,117 @@ seconds between each display.
 If no repeat
 .Ar count
 is specified, the default is infinity.
-.It Fl z
-When used with
-.Fl i ,
-also list devices which have not yet generated an interrupt.
 .El
 .Pp
 By default,
-.Nm
+.Nm vmstat
 displays the following information just once:
-.Bl -tag -width Ds
-.It Li procs
+.Bl -tag -width "whatever"
+.It procs
 Information about the numbers of processes in various states.
 .Pp
-.Bl -tag -width 4n -compact
-.It Li r
+.Bl -inset -width xxxxxx -compact
+.It Ar r
 in run queue
-.It Li b
-blocked for resources (I/O, paging, etc.)
-.It Li w
+.It Ar b
+blocked for resources (i/o, paging, etc.)
+.It Ar w
 runnable or short sleeper (< 20 secs) but swapped
 .El
-.It Li memory
-Information about the usage of virtual and real memory.
-Virtual pages
+.Pp
+.It Ar memory
+Information about the usage of virtual and real memory.  Virtual pages
 (reported in units of 1024 bytes) are considered active if they belong
 to processes which are running or have run in the last 20 seconds.
 .Pp
-.Bl -tag -width 4n -compact
-.It Li avm
+.Bl -inset -width xxxxxx -compact
+.It Ar avm
 active virtual pages
-.It Li fre
+.It Ar fre
 size of the free list
 .El
-.It Li page
+.Pp
+.It Ar page
 Information about page faults and paging activity.
 These are averaged each five seconds, and given in units per second.
 .Pp
-.Bl -tag -width 4n -compact
-.It Li flt
-page faults
-.It Li re
+.Bl -inset -width xxxxxx -compact
+.It Ar re
 page reclaims (simulating reference bits)
-.It Li at
+.It Ar at
 pages attached (found in free list)
-.It Li pi
+.It Ar pi
 pages paged in
-.It Li po
+.It Ar po
 pages paged out
-.It Li fr
-pages freed
-.It Li sr
-pages scanned by clock algorithm
+.It Ar fr
+pages freed per second
+.It Ar de
+anticipated short term memory shortfall
+.It Ar sr
+pages scanned by clock algorithm, per-second
 .El
-.It Li disks
+.Pp
+.It Ar disks
 Disk transfers per second.
 Typically paging will be split across the available drives.
 The header of the field is the first character of the disk name and
 the unit number.
-If more than two disk drives are configured in the system,
-.Nm
-displays only the first two drives.
+If more than four disk drives are configured in the system,
+.Nm vmstat
+displays only the first four drives.
 To force
-.Nm
+.Nm vmstat
 to display specific drives, their names may be supplied on the command line.
-.It Li traps
+.Pp
+.It Ar faults
 Trap/interrupt rate averages per second over last 5 seconds.
 .Pp
-.Bl -tag -width 4n -compact
-.It Li int
+.Bl -inset -width xxxxxx -compact
+.It Ar in
 device interrupts per interval (including clock interrupts)
-.It Li sys
+.It Ar sy
 system calls per interval
-.It Li cs
-CPU context switch rate (switches/interval)
+.It Ar cs
+cpu context switch rate (switches/interval)
 .El
-.It Li cpu
+.Pp
+.It Ar cpu
 Breakdown of percentage usage of CPU time.
 .Pp
-.Bl -tag -width 4n -compact
-.It Li us
+.Bl -inset -width xxxxxx -compact
+.It Ar us
 user time for normal and low priority processes
-.It Li sy
+.It Ar sy
 system time
-.It Li id
-CPU idle
+.It Ar id
+cpu idle
 .El
-.El
-.Sh FILES
-.Bl -tag -width Pa -compact
-.It Pa /bsd
-default kernel image
-.It Pa /dev/kmem
-default memory file
 .El
 .Sh EXAMPLES
-The command
-.Ic vmstat -w 5
-will print what the system is doing every five
+The command ``vmstat -w 5'' will print what the system is doing every five
 seconds; this is a good choice of printing interval since this is how often
 some of the statistics are sampled in the system.
 Others vary every second and running the output for a while will make it
 apparent which are recomputed every second.
+.Sh FILES
+.Bl -tag -width /etc/networks -compact
+.It Pa /bsd
+default kernel namelist
+.It Pa /dev/mem
+default memory file
+.El
 .Sh SEE ALSO
 .Xr fstat 1 ,
 .Xr netstat 1 ,
 .Xr nfsstat 1 ,
-.Xr procmap 1 ,
 .Xr ps 1 ,
 .Xr systat 1 ,
-.Xr top 1 ,
 .Xr iostat 8 ,
-.Xr pstat 8 ,
-.Xr uvm 9
+.Xr pstat 8
+.Pp
+The sections starting with ``Interpreting system activity'' in
+.%T "Installing and Operating 4.3BSD" .
 .Sh BUGS
 The
 .Fl c

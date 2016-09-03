@@ -1,4 +1,4 @@
-/*	$OpenBSD: instr.c,v 1.14 2016/01/10 13:35:09 mestre Exp $	*/
+/*	$OpenBSD: instr.c,v 1.7 1999/06/10 22:58:19 pjanzen Exp $	*/
 /*	$NetBSD: instr.c,v 1.5 1997/07/10 06:47:30 mikel Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,19 +34,34 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/wait.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)instr.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: instr.c,v 1.7 1999/06/10 22:58:19 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+
+#include <curses.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <paths.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
+#include "deck.h"
+#include "cribbage.h"
 #include "pathnames.h"
 
 void
-instructions(void)
+instructions()
 {
 	int pstat;
 	int fd;
@@ -55,7 +74,9 @@ instructions(void)
 	switch (pid = vfork()) {
 	case -1:
 		err(1, "vfork");
+		/* NOTREACHED */
 	case 0:
+		setgid(getgid());
 		if (!isatty(1))
 			pager = "/bin/cat";
 		else {
@@ -64,8 +85,9 @@ instructions(void)
 		}
 		if (dup2(fd, 0) == -1)
 			err(1, "dup2");
-		execl(_PATH_BSHELL, "sh", "-c", pager, (char *)NULL);
+		execl(_PATH_BSHELL, "sh", "-c", pager, NULL);
 		err(1, "exec sh -c %s", pager);
+		/* NOTREACHED */
 	default:
 		do {
 			pid = waitpid(pid, &pstat, 0);

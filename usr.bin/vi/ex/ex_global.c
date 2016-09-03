@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_global.c,v 1.17 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_global.c	10.22 (Berkeley) 10/10/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,16 +29,18 @@
 
 enum which {GLOBAL, V};
 
-static int ex_g_setup(SCR *, EXCMD *, enum which);
+static int ex_g_setup __P((SCR *, EXCMD *, enum which));
 
 /*
  * ex_global -- [line [,line]] g[lobal][!] /pattern/ [commands]
  *	Exec on lines matching a pattern.
  *
- * PUBLIC: int ex_global(SCR *, EXCMD *);
+ * PUBLIC: int ex_global __P((SCR *, EXCMD *));
  */
 int
-ex_global(SCR *sp, EXCMD *cmdp)
+ex_global(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (ex_g_setup(sp,
 	    cmdp, FL_ISSET(cmdp->iflags, E_C_FORCE) ? V : GLOBAL));
@@ -46,10 +50,12 @@ ex_global(SCR *sp, EXCMD *cmdp)
  * ex_v -- [line [,line]] v /pattern/ [commands]
  *	Exec on lines not matching a pattern.
  *
- * PUBLIC: int ex_v(SCR *, EXCMD *);
+ * PUBLIC: int ex_v __P((SCR *, EXCMD *));
  */
 int
-ex_v(SCR *sp, EXCMD *cmdp)
+ex_v(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (ex_g_setup(sp, cmdp, V));
 }
@@ -59,11 +65,14 @@ ex_v(SCR *sp, EXCMD *cmdp)
  *	Ex global and v commands.
  */
 static int
-ex_g_setup(SCR *sp, EXCMD *cmdp, enum which cmd)
+ex_g_setup(sp, cmdp, cmd)
+	SCR *sp;
+	EXCMD *cmdp;
+	enum which cmd;
 {
 	CHAR_T *ptrn, *p, *t;
 	EXCMD *ecp;
-	MARK abs_mark;
+	MARK abs;
 	RANGE *rp;
 	busy_t btype;
 	recno_t start, end;
@@ -77,7 +86,7 @@ ex_g_setup(SCR *sp, EXCMD *cmdp, enum which cmd)
 
 	if (F_ISSET(sp, SC_EX_GLOBAL)) {
 		msgq(sp, M_ERR,
-	"The %s command can't be used as part of a global or v command",
+	"124|The %s command can't be used as part of a global or v command",
 		    cmdp->cmd->name);
 		return (1);
 	}
@@ -114,12 +123,11 @@ usage:		ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
 			*t = '\0';
 			break;
 		}
-		if (p[0] == '\\') {
+		if (p[0] == '\\')
 			if (p[1] == delim)
 				++p;
 			else if (p[1] == '\\')
 				*t++ = *p++;
-		}
 		*t++ = *p++;
 	}
 
@@ -149,14 +157,14 @@ usage:		ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
 	re = &sp->re_c;
 
 	/* The global commands always set the previous context mark. */
-	abs_mark.lno = sp->lno;
-	abs_mark.cno = sp->cno;
-	if (mark_set(sp, ABSMARK1, &abs_mark, 1))
+	abs.lno = sp->lno;
+	abs.cno = sp->cno;
+	if (mark_set(sp, ABSMARK1, &abs, 1))
 		return (1);
 
 	/* Get an EXCMD structure. */
-	CALLOC_RET(sp, ecp, 1, sizeof(EXCMD));
-	TAILQ_INIT(&ecp->rq);
+	CALLOC_RET(sp, ecp, EXCMD *, 1, sizeof(EXCMD));
+	CIRCLEQ_INIT(&ecp->rq);
 
 	/*
 	 * Get a copy of the command string; the default command is print.
@@ -170,7 +178,7 @@ usage:		ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
 		len = 1;
 	}
 
-	MALLOC_RET(sp, ecp->cp, len * 2);
+	MALLOC_RET(sp, ecp->cp, char *, len * 2);
 	ecp->o_cp = ecp->cp;
 	ecp->o_clen = len;
 	memcpy(ecp->cp + len, p, len);
@@ -225,17 +233,18 @@ usage:		ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
 		}
 
 		/* If follows the last entry, extend the last entry's range. */
-		if ((rp = TAILQ_LAST(&ecp->rq, _rh)) && rp->stop == start - 1) {
+		if ((rp = ecp->rq.cqh_last) != (void *)&ecp->rq &&
+		    rp->stop == start - 1) {
 			++rp->stop;
 			continue;
 		}
 
 		/* Allocate a new range, and append it to the list. */
-		CALLOC(sp, rp, 1, sizeof(RANGE));
+		CALLOC(sp, rp, RANGE *, 1, sizeof(RANGE));
 		if (rp == NULL)
 			return (1);
 		rp->start = rp->stop = start;
-		TAILQ_INSERT_TAIL(&ecp->rq, rp, q);
+		CIRCLEQ_INSERT_TAIL(&ecp->rq, rp, q);
 	}
 	search_busy(sp, BUSY_OFF);
 	return (0);
@@ -245,10 +254,13 @@ usage:		ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
  * ex_g_insdel --
  *	Update the ranges based on an insertion or deletion.
  *
- * PUBLIC: int ex_g_insdel(SCR *, lnop_t, recno_t);
+ * PUBLIC: int ex_g_insdel __P((SCR *, lnop_t, recno_t));
  */
 int
-ex_g_insdel(SCR *sp, lnop_t op, recno_t lno)
+ex_g_insdel(sp, op, lno)
+	SCR *sp;
+	lnop_t op;
+	recno_t lno;
 {
 	EXCMD *ecp;
 	RANGE *nrp, *rp;
@@ -260,11 +272,11 @@ ex_g_insdel(SCR *sp, lnop_t op, recno_t lno)
 	if (op == LINE_RESET)
 		return (0);
 
-	LIST_FOREACH(ecp, &sp->gp->ecq, q) {
+	for (ecp = sp->gp->ecq.lh_first; ecp != NULL; ecp = ecp->q.le_next) {
 		if (!FL_ISSET(ecp->agv_flags, AGV_AT | AGV_GLOBAL | AGV_V))
 			continue;
-		for (rp = TAILQ_FIRST(&ecp->rq); rp != NULL; rp = nrp) {
-			nrp = TAILQ_NEXT(rp, q);
+		for (rp = ecp->rq.cqh_first; rp != (void *)&ecp->rq; rp = nrp) {
+			nrp = rp->q.cqe_next;
 
 			/* If range less than the line, ignore it. */
 			if (rp->stop < lno)
@@ -293,15 +305,15 @@ ex_g_insdel(SCR *sp, lnop_t op, recno_t lno)
 			 */
 			if (op == LINE_DELETE) {
 				if (rp->start > --rp->stop) {
-					TAILQ_REMOVE(&ecp->rq, rp, q);
+					CIRCLEQ_REMOVE(&ecp->rq, rp, q);
 					free(rp);
 				}
 			} else {
-				CALLOC_RET(sp, nrp, 1, sizeof(RANGE));
+				CALLOC_RET(sp, nrp, RANGE *, 1, sizeof(RANGE));
 				nrp->start = lno + 1;
 				nrp->stop = rp->stop + 1;
 				rp->stop = lno - 1;
-				TAILQ_INSERT_AFTER(&ecp->rq, rp, nrp, q);
+				CIRCLEQ_INSERT_AFTER(&ecp->rq, rp, nrp, q);
 				rp = nrp;
 			}
 		}

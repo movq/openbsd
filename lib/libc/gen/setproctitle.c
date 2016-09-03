@@ -1,4 +1,3 @@
-/*	$OpenBSD: setproctitle.c,v 1.15 2016/03/13 18:34:20 guenther Exp $ */
 /*
  * Copyright (c) 1994, 1995 Christopher G. Demetriou
  * All rights reserved.
@@ -30,33 +29,54 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: setproctitle.c,v 1.7 1999/02/25 22:10:12 art Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/exec.h>
 #include <sys/sysctl.h>
+#include <vm/vm.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 
 #define	MAX_PROCTITLE	2048
 
+extern char *__progname;		/* Program name, from crt0. */
+
 void
+#ifdef __STDC__
 setproctitle(const char *fmt, ...)
+#else
+setproctitle(fmt, va_alist)
+	const char *fmt;
+	va_dcl
+#endif
 {
 	static struct ps_strings *ps;
 	va_list ap;
 	
 	static char buf[MAX_PROCTITLE], *bufp = buf;
-	int used;
+	size_t used;
 
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	if (fmt != NULL) {
 		used = snprintf(buf, MAX_PROCTITLE, "%s: ", __progname);
 		if (used >= MAX_PROCTITLE)
 			used = MAX_PROCTITLE - 1;
-		else if (used < 0)
-			used = 0;
 		(void)vsnprintf(buf + used, MAX_PROCTITLE - used, fmt, ap);
 	} else
 		(void)snprintf(buf, MAX_PROCTITLE, "%s", __progname);

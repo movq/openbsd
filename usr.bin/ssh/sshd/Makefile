@@ -1,45 +1,50 @@
-#	$OpenBSD: Makefile,v 1.89 2016/08/13 17:47:41 markus Exp $
-
 .PATH:		${.CURDIR}/..
-.include "${.CURDIR}/../Makefile.inc"
 
 PROG=	sshd
 BINOWN=	root
 BINMODE=555
 BINDIR=	/usr/sbin
-MAN=	sshd.8 sshd_config.5
+MAN=	sshd.8
 
-SRCS=	sshd.c auth-rhosts.c auth-passwd.c \
-	sshpty.c sshlogin.c servconf.c serverloop.c \
-	auth.c auth2.c auth-options.c session.c \
-	auth2-chall.c groupaccess.c \
-	auth-bsdauth.c auth2-hostbased.c auth2-kbdint.c \
-	auth2-none.c auth2-passwd.c auth2-pubkey.c \
-	monitor_mm.c monitor.c monitor_wrap.c \
-	sftp-server.c sftp-common.c \
-	sandbox-pledge.c
+SRCS=	sshd.c auth-rhosts.c auth-passwd.c auth-rsa.c auth-rh-rsa.c \
+	pty.c log-server.c login.c hostfile.c canohost.c servconf.c \
+	tildexpand.c uidswap.c serverloop.c rsa.c buffer.c packet.c \
+	xmalloc.c ttymodes.c channels.c bufaux.c authfd.c authfile.c \
+	crc32.c match.c mpaux.c cipher.c compress.c deattack.c \
+	nchan.c compat.c
 
 .include <bsd.own.mk> # for KERBEROS and AFS
 
-KERBEROS5=no
+.if (${KERBEROS} == "yes")
+CFLAGS+= -DKRB4 -I/usr/include/kerberosIV
+SRCS+=	auth-krb4.c
+LDADD+=	 -lkrb
+DPADD+=	 ${LIBKRB}
+.if (${AFS} == "yes")
+SRCS+=	radix.c
+CFLAGS+= -DAFS
+LDADD+=  -lkafs
+DPADD+=  ${LIBKRBAFS}
+.endif # AFS
+.endif # KERBEROS
 
-.if (${KERBEROS5:L} == "yes")
-CFLAGS+=-DKRB5 -I${DESTDIR}/usr/include/kerberosV -DGSSAPI
-SRCS+=  auth-krb5.c auth2-gss.c gss-serv.c gss-serv-krb5.c
+.if (${SKEY} == "yes")
+SRCS+=	auth-skey.c
 .endif
 
 .include <bsd.prog.mk>
 
-.if (${KERBEROS5:L} == "yes")
-LDADD+= -lgssapi -lkrb5 -lasn1
-LDADD+= -lwind -lroken -lcom_err -lpthread -lheimbase -lkafs
-DPADD+= ${LIBGSSAPI} ${LIBKRB5}
+LDADD+=	-lcrypto -lutil -lz
+DPADD+=	${LIBCRYPTO} ${LIBUTIL} ${LIBZ}
+
+.if (${TCP_WRAPPERS} == "yes")
+CFLAGS+= -DLIBWRAP
+LDADD+= -lwrap
+DPADD+= ${LIBWRAP}
 .endif
 
-.if (${OPENSSL:L} == "yes")
-LDADD+=	-lcrypto -lutil
-DPADD+=	${LIBCRYPTO} ${LIBUTIL}
+.if (${SKEY} == "yes")
+CFLAGS+= -DSKEY
+LDADD+= -lskey
+DPADD+= ${SKEY}
 .endif
-
-LDADD+=	-lz
-DPADD+=	${LIBZ}

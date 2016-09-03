@@ -1,17 +1,18 @@
-#	$OpenBSD: Makefile,v 1.14 2014/11/01 20:56:29 deraadt Exp $
-
 .include <bsd.own.mk>
 
-.PATH:	${.CURDIR}/../../../sbin/dhclient
+.PATH:	${.CURDIR}/../../../usr.sbin/dhcp/dhclient
+.PATH:  ${.CURDIR}/../../../usr.sbin/dhcp/common
 
-CLIENT_PATH='"PATH=/usr/bin:/usr/sbin:/bin:/sbin"'
-CPPFLAGS+= -I${.CURDIR}/../../../sbin/dhclient
-SRCS=	dhclient.c clparse.c dispatch.c bpf.c options.c \
-	conflex.c errwarn.c kroute.c packet.c \
-	tables.c parse.c privsep.c
+COPTS+=-Os
+CPPFLAGS+= -I${.CURDIR}/../../../usr.sbin/dhcp -I${.CURDIR}/../../../usr.sbin/dhcp/includes
+SRCS=	dhclient.c clparse.c \
+        raw.c parse.c nit.c icmp.c dispatch.c conflex.c upf.c bpf.c socket.c \
+        packet.c memory.c print.c options.c inet.c convert.c sysconf.c \
+        tree.c tables.c hash.c alloc.c errwarn.c inet_addr.c dns.c resolv.c
 PROG=	dhclient
-LDADD+=	-lutil
-DPADD+= ${LIBUTIL}
+MAN=
+
+LDSTATIC?=      -static
 
 .include <bsd.prog.mk>
 .include <bsd.subdir.mk>

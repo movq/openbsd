@@ -1,15 +1,8 @@
-[Note: This file has not been updated for OpenSSH versions after
-OpenSSH-1.2 and should be considered OBSOLETE.  It has been left in
-the distribution because some of its information may still be useful
-to developers.]
-
-This document is intended for those who wish to read the ssh source
+This document is inteded for those who wish to read the ssh source
 code.  This tries to give an overview of the structure of the code.
-
+      
 Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>
 Updated 17 Nov 1995.
-Updated 19 Oct 1999 for OpenSSH-1.2
-Updated 20 May 2001 note obsolete for > OpenSSH-1.2
 
 The software consists of ssh (client), sshd (server), scp, sdist, and
 the auxiliary programs ssh-keygen, ssh-agent, ssh-add, and
@@ -20,7 +13,7 @@ There are some subsystems/abstractions that are used by a number of
 these programs.
 
   Buffer manipulation routines
-
+      
     - These provide an arbitrary size buffer, where data can be appended.
       Data can be consumed from either end.  The code is used heavily
       throughout ssh.  The basic buffer manipulation functions are in
@@ -28,18 +21,20 @@ these programs.
       data types is in bufaux.c.
 
   Compression Library
-
-    - Ssh uses the GNU GZIP compression library (ZLIB).
+  
+    - Ssh uses the GNU GZIP compression library (ZLIB).  It resides in
+      the zlib095 subdirectory.
 
   Encryption/Decryption
 
     - Ssh contains several encryption algorithms.  These are all
       accessed through the cipher.h interface.  The interface code is
-      in cipher.c, and the implementations are in libc.
+      in cipher.c, and the implementations in des.c, ssh_md5.c, rc4.c.
 
   Multiple Precision Integer Library
 
     - Uses the SSLeay BIGNUM sublibrary.
+    - Some auxiliary functions for mp-int manipulation are in mpaux.c.
 
   Random Numbers
 
@@ -65,8 +60,8 @@ these programs.
       packets.  CRC code comes from crc32.c.
 
     - The code in packet.c calls the buffer manipulation routines
-      (buffer.c, bufaux.c), compression routines (zlib), and the
-      encryption routines.
+      (buffer.c, bufaux.c), compression routines (compress.c, zlib),
+      and the encryption routines.
 
   X11, TCP/IP, and Agent forwarding
 
@@ -75,11 +70,11 @@ these programs.
       channels inside the secure channel, and uses this framework to
       implement X11 forwarding, TCP/IP forwarding, and authentication
       agent forwarding.
-      The new, Protocol 1.5, channel close implementation is in nchan.c
 
   Authentication agent
 
-    - Code to communicate with the authentication agent is in authfd.c.
+    - Code to communicate with the authentication agent is in
+      authfd.c.  The files gen-minfd.c, minfd.h, minfd.c
 
   Authentication methods
 
@@ -88,7 +83,8 @@ these programs.
       code is linked into the server.  The routines also manipulate
       known hosts files using code in hostfile.c.  Code in canohost.c
       is used to retrieve the canonical host name of the remote host.
-      Code in match.c is used to match host names.
+      Code in match.c is used to match host names.  Code for osf C2
+      extended security is in osfc2.c.
 
     - In the client end, authentication code is in sshconnect.c.  It
       reads Passwords/passphrases using code in readpass.c.  It reads
@@ -146,10 +142,10 @@ these programs.
       operations, and finally the server enters the normal session
       mode by calling server_loop in serverloop.c.  This does the real
       work, calling functions in other modules.
-
+      
     - The code for the server is in sshd.c.  It contains a lot of
       stuff, including:
-	- server main program
+        - server main program
 	- waiting for connections
 	- processing new connection
 	- authentication
@@ -161,8 +157,9 @@ these programs.
 
     - There are several other files in the distribution that contain
       various auxiliary routines:
-	ssh.h	     the main header file for ssh (various definitions)
+        ssh.h	     the main header file for ssh (various definitions)
+        getput.h     byte-order independent storage of integers
+        includes.h   includes most system headers.  Lots of #ifdefs.
+	tildexpand.c expand tilde in file names
 	uidswap.c    uid-swapping
 	xmalloc.c    "safe" malloc routines
-
-$OpenBSD: OVERVIEW,v 1.12 2015/07/08 19:01:15 markus Exp $

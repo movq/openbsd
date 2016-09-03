@@ -1,4 +1,4 @@
-/*	$OpenBSD: csh.h,v 1.28 2015/12/26 13:48:38 mestre Exp $	*/
+/*	$OpenBSD: csh.h,v 1.5 1999/08/06 20:41:04 deraadt Exp $	*/
 /*	$NetBSD: csh.h,v 1.9 1995/03/21 09:02:40 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -38,6 +42,9 @@
  *	BUFSIZ		The i/o buffering size; also limits word size
  *	MAILINTVL	How often to mailcheck; more often is more expensive
  */
+#ifndef BUFSIZ
+#define	BUFSIZ	1024		/* default buffer size */
+#endif				/* BUFSIZ */
 
 #define FORKSLEEP	10	/* delay loop on non-interactive fork failure */
 #define	MAILINTVL	600	/* 10 minutes */
@@ -53,25 +60,38 @@
 #define	FSHERR	18		/* ... shell diagnostics */
 #define	FOLDSTD	19		/* ... old std input */
 
+#ifdef PROF
+#define	xexit(n)	done(n)
+#endif
+
+#ifdef SHORT_STRINGS
 typedef short Char;
 
 #define SAVE(a) (Strsave(str2short(a)))
+#else
+typedef char Char;
+
+#define SAVE(a) (strsave(a))
+#endif
 
 /*
- * Make sure a variable is not stored in register a by taking its address
+ * Make sure a variable is not stored in a register by taking its address
  * This is used where variables might be clobbered by longjmp.
  */
 #define UNREGISTER(a)	(void) &a
 
 typedef void *ioctl_t;		/* Third arg of ioctl */
 
+typedef void *ptr_t;
+
 #include "const.h"
 #include "char.h"
 #include "error.h"
 
 #define xmalloc(i)	Malloc(i)
-#define xreallocarray(p, i, j)	Reallocarray(p, i, j)
+#define xrealloc(p, i)	Realloc(p, i)
 #define xcalloc(n, s)	Calloc(n, s)
+#define xfree(p)	Free(p)
 
 #include <stdio.h>
 FILE *cshin, *cshout, *csherr;
@@ -107,7 +127,9 @@ bool    setintr;		/* Set interrupts on/off -> Wait intr... */
 bool    timflg;			/* Time the next waited for command */
 bool    havhash;		/* path hashing is available */
 
+#ifdef FILEC
 bool    filec;			/* doing filename expansion */
+#endif
 
 /*
  * Global i/o info
@@ -117,6 +139,7 @@ int     onelflg;		/* 2 -> need line for -t, 1 -> exit on read */
 Char   *ffile;			/* Name of shell file for $0 */
 
 char   *seterr;			/* Error message from scanner/parser */
+Char   *shtemp;			/* Temp name for << shell files in /tmp */
 
 #include <sys/types.h>
 #include <sys/time.h>
@@ -133,11 +156,11 @@ int	backpid;		/* Pid of the last background process */
 uid_t	uid, euid;		/* Invokers uid */
 gid_t	gid, egid;		/* Invokers gid */
 time_t  chktim;			/* Time mail last checked */
-pid_t	shpgrp;			/* Pgrp of shell */
-pid_t	tpgrp;			/* Terminal process group */
+int     shpgrp;			/* Pgrp of shell */
+int     tpgrp;			/* Terminal process group */
 
 /* If tpgrp is -1, leave tty alone! */
-pid_t	opgrp;			/* Initial pgrp and tty pgrp */
+int     opgrp;			/* Initial pgrp and tty pgrp */
 
 
 /*
@@ -162,7 +185,6 @@ int   OLDSTD;			/* Old standard input (def for cmds) */
 
 #include <setjmp.h>
 jmp_buf reslab;
-int exitset;
 
 #define	setexit()	(setjmp(reslab))
 #define	reset()		longjmp(reslab, 1)
@@ -185,8 +207,17 @@ sig_t parterm;			/* Parents terminate catch */
  */
 #define	META		0200
 #define	ASCII		0177
-#define	QUOTE 		0100000U /* 16nth char bit used for 'ing */
+#ifdef SHORT_STRINGS
+#define	CHAR		0377
+#define	QUOTE 		0100000	/* 16nth char bit used for 'ing */
 #define	TRIM		0077777	/* Mask to strip quote bit */
+#else
+#define	CHAR		0177
+#define	QUOTE 		0200	/* Eighth char bit used for 'ing */
+#define	TRIM		0177	/* Mask to strip quote bit */
+#endif
+
+int     AsciiOnly;		/* If set only 7 bits is expected in characters */
 
 /*
  * Each level of input has a buffered input structure.
@@ -329,7 +360,7 @@ struct command {
 
 extern struct biltins {
     char   *bname;
-    void    (*bfunct)(Char **, struct command *);
+    void    (*bfunct) __P((Char **, struct command *));
     short   minargs, maxargs;
 }       bfunc[];
 extern int nbfunc;
@@ -392,7 +423,7 @@ struct varent {
 #define v_right		v_link[1]
 #define v_parent	v_link[2]
 
-struct varent *adrof1(Char *, struct varent *);
+struct varent *adrof1();
 
 #define adrof(v)	adrof1(v, &shvhed)
 #define value(v)	value1(v, &shvhed)
@@ -453,6 +484,46 @@ Char    HIST;			/* history invocation character */
 Char    HISTSUB;		/* auto-substitute character */
 
 /*
+ * strings.h:
+ */
+#ifndef SHORT_STRINGS
+#define Strchr(a, b)		strchr(a, b)
+#define Strrchr(a, b)		strrchr(a, b)
+#define Strcat(a, b)		strcat(a, b)
+#define Strncat(a, b, c) 	strncat(a, b, c)
+#define Strcpy(a, b)		strcpy(a, b)
+#define Strncpy(a, b, c) 	strncpy(a, b, c)
+#define Strlen(a)		strlen(a)
+#define Strcmp(a, b)		strcmp(a, b)
+#define Strncmp(a, b, c)	strncmp(a, b, c)
+
+#define Strspl(a, b)		strspl(a, b)
+#define Strsave(a)		strsave(a)
+#define Strend(a)		strend(a)
+#define Strstr(a, b)		strstr(a, b)
+
+#define str2short(a) 		(a)
+#define blk2short(a) 		saveblk(a)
+#define short2blk(a) 		saveblk(a)
+#define short2str(a) 		strip(a)
+#else
+#define Strchr(a, b)		s_strchr(a, b)
+#define Strrchr(a, b) 		s_strrchr(a, b)
+#define Strcat(a, b)		s_strcat(a, b)
+#define Strncat(a, b, c) 	s_strncat(a, b, c)
+#define Strcpy(a, b)		s_strcpy(a, b)
+#define Strncpy(a, b, c)	s_strncpy(a, b, c)
+#define Strlen(a)		s_strlen(a)
+#define Strcmp(a, b)		s_strcmp(a, b)
+#define Strncmp(a, b, c)	s_strncmp(a, b, c)
+
+#define Strspl(a, b)		s_strspl(a, b)
+#define Strsave(a)		s_strsave(a)
+#define Strend(a)		s_strend(a)
+#define Strstr(a, b)		s_strstr(a, b)
+#endif
+
+/*
  * setname is a macro to save space (see sh.err.c)
  */
 char   *bname;
@@ -477,6 +548,8 @@ Char   *word_chars;
 Char   *STR_SHELLPATH;
 
 #include <paths.h>
+#ifdef _PATH_BSHELL
 Char   *STR_BSHELL;
+#endif
 Char   *STR_WORD_CHARS;
 Char  **STR_environ;

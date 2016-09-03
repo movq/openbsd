@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.h,v 1.20 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: extern.h,v 1.5 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: extern.h,v 1.5 1995/04/24 12:22:18 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,25 +36,29 @@
  *	@(#)extern.h	8.1 (Berkeley) 5/31/93
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/time.h>
+
+#include <ctype.h>
+#include <err.h>
+#include <errno.h>
+#include <limits.h>
+#include <pwd.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #define BITS (8 * sizeof (int))
 
 #define OUTSIDE		(position > 68 && position < 246 && position != 218)
-#define rnd(x)		arc4random_uniform(x)
+#define rnd(x)		(random() % (x))
 #define max(a,b)	((a) < (b) ? (b) : (a))
+ /* avoid name collision with sys/param.h */
 #define TestBit(array, index)	(array[index/BITS] & (1 << (index % BITS)))
 #define SetBit(array, index)	(array[index/BITS] |= (1 << (index % BITS)))
 #define ClearBit(array, index)	(array[index/BITS] &= ~(1 << (index % BITS)))
-/*
- * These macros yield words to use with objects (followed but not preceded
- * by spaces, or with no spaces if the expansion is the empty string).
- */
-#define A_OR_AN(n)		(objflags[(n)] & OBJ_AN ? "an " : "a ")
-#define IS_PLURAL(n)	(objflags[(n)] & OBJ_PLURAL)
-#define A_OR_AN_OR_THE(n)	(IS_PLURAL((n)) ? "the " : A_OR_AN((n)))
-#define A_OR_AN_OR_BLANK(n)	(IS_PLURAL((n)) ? "" : A_OR_AN((n)))
-#define IS_OR_ARE(n)		(IS_PLURAL((n)) ? "are " : "is ")
 
  /* well known rooms */
 #define FINAL	275
@@ -100,8 +108,8 @@
 #define MACE		29
 #define SHOVEL		30
 #define HALBERD		31
-#define COMPASS		32
-#define CRASH		33
+#define	COMPASS		32
+#define	CRASH		33
 #define ELF		34
 #define FOOT		35
 #define COINS		36
@@ -129,7 +137,7 @@
 #define CAR		60
 #define POT		61
 #define BAR		62
-#define BLOCK		63
+#define	BLOCK		63
 #define NUMOFOBJECTS	64
  /* non-objects below */
 #define UP	1000
@@ -146,7 +154,7 @@
 #define SOUTH	1011
 #define EAST	1012
 #define WEST	1013
-#define SU	1014
+#define SU      1014
 #define DROP	1015
 #define TAKEOFF	1016
 #define DRAW	1017
@@ -170,7 +178,7 @@
 #define SMITE	1035
 #define SHOOT	1036
 #define ON	1037
-#define OFF	1038
+#define	OFF	1038
 #define TIME	1039
 #define SLEEP	1040
 #define DIG	1041
@@ -185,10 +193,6 @@
 #define BURY	1050
 #define JUMP	1051
 #define KICK	1052
-#define OPEN	1053
-#define VERBOSE	1054
-#define BRIEF	1055
-#define AUXVERB 1056
 
  /* injuries */
 #define ARM	6		/* broken arm */
@@ -200,16 +204,13 @@
 #define NUMOFINJURIES 13
 
  /* notes */
-#define CANTLAUNCH	0
+#define	CANTLAUNCH	0
 #define LAUNCHED	1
 #define CANTSEE		2
 #define CANTMOVE	3
 #define JINXED		4
 #define DUG		5
 #define NUMOFNOTES	6
-
- /* number of times room description shown */
-#define ROOMDESC	3
 
  /* fundamental constants */
 #define NUMOFROOMS	275
@@ -225,12 +226,6 @@
 #define TORPEDOES	10
 #define MAXWEIGHT	60
 #define MAXCUMBER	10
-
-/* Flags for objects */
-#define OBJ_PLURAL	1
-#define OBJ_AN		2
-#define OBJ_PERSON	4
-#define OBJ_NONOBJ	8	/* footsteps, asteroids, etc. */
 
 struct room {
 	const char   *name;
@@ -256,26 +251,23 @@ extern const char   *const objsht[NUMOFOBJECTS];
 extern const char   *const ouch[NUMOFINJURIES];
 extern const int     objwt[NUMOFOBJECTS];
 extern const int     objcumber[NUMOFOBJECTS];
-extern const int     objflags[NUMOFOBJECTS];
 
  /* current input line */
-#define WORDLEN 15
 #define NWORD	20		/* words per line */
-extern char    words[NWORD][WORDLEN];
+extern char    words[NWORD][15];
 extern int     wordvalue[NWORD];
 extern int     wordtype[NWORD];
 extern int     wordcount, wordnumber;
-extern int     stop_cypher;	/* continue parsing the current line? */
 
  /* state of the game */
-extern int     ourtime;
+extern time_t  ourtime;
 extern int     position;
 extern int     direction;
 extern int     left, right, ahead, back;
 extern int     ourclock, fuel, torps;
 extern int     carrying, encumber;
 extern int     rythmn;
-extern int     followfight;
+extern int followfight;
 extern int     ate;
 extern int     snooze;
 extern int     meetgirl;
@@ -296,15 +288,18 @@ extern unsigned int inven[NUMOFWORDS];
 extern unsigned int wear[NUMOFWORDS];
 extern char    beenthere[NUMOFROOMS+1];
 extern char    injuries[NUMOFINJURIES];
-extern int     verbose;
 
-extern const char *username;
+extern char    username[LOGIN_NAME_MAX + 1];
 
 struct wlist {
 	const char   *string;
 	int     value, article;
 	struct wlist *next;
 };
+#define HASHSIZE	256
+#define HASHMUL		81
+#define HASHMASK	(HASHSIZE - 1)
+extern struct wlist *hashtab[HASHSIZE];
 extern struct wlist wlist[];
 
 struct objs {
@@ -314,62 +309,71 @@ struct objs {
 extern const struct objs dayobjs[];
 extern const struct objs nightobjs[];
 
-void bury(void);
-int card(const char *, int);
-void chime(void);
-void convert(int);
-void crash(void);
-int cypher(void);
-__dead void die(int);
-void dig(void);
-void dooropen(void);
-int draw(void);
-void drink(void);
-int drive(void);
-int drop(const char *);
-int eat(void);
-int fight(int, int);
-int follow(void);
-char *getcom(char *, int, const char *, const char *);
-char *getword(char *, char *, int);
-int give(void);
-int inc_wordnumber(const char *, const char *);
-void initialize(const char *);
-int jump(void);
-void kiss(void);
-int land(void);
-int launch(void);
-void light(void);
-__dead void live(void);
-void love(void);
-int moveplayer(int, int);
-void murder(void);
-void newlocation(void);
-void news(void);
-void newway(int);
-void open_score_file(void);
-void parse(void);
-void post(char);
-void printobjs(void);
-int put(void);
-int puton(void);
-const char *rate(void);
-void ravage(void);
-void restore(const char *);
-int ride(void);
-void save(const char *);
-char *save_file_name(const char *, size_t);
-int shoot(void);
-int take(unsigned int[]);
-int takeoff(void);
-int throw(const char *);
-const char *truedirec(int, char);
-int ucard(const unsigned int *);
-void undress(void);
-int use(void);
-int visual(void);
-int wearit(void);
-void whichway(struct room);
-void wordinit(void);
-void writedes(void);
-int zzz(void);
+void blast __P((void));
+void bury __P((void));
+int card __P((const char *, int));
+int checkout __P((const char *));
+void chime __P((void));
+void convert __P((int));
+void crash __P((void));
+int cypher __P((void));
+void die __P((int));
+void dig __P((void));
+int draw __P((void));
+void drink __P((void));
+int drive __P((void));
+int drop __P((const char *));
+int eat __P((void));
+void endfly __P((void));
+int fight __P((int, int));
+int follow __P((void));
+char *getcom __P((char *, int, const char *, const char *));
+char *getword __P((char *, char *, int));
+void getutmp __P((char *));
+int give __P((void));
+int hash __P((const char *));
+void initialize __P((const char *));
+void install __P((struct wlist *));
+int jump __P((void));
+void kiss __P((void));
+int land __P((void));
+int launch __P((void));
+void light __P((void));
+void live __P((void));
+struct wlist *lookup __P((const char *));
+void love __P((void));
+int move __P((int, int));
+void moveenemy __P((int));
+void murder __P((void));
+void news __P((void));
+void newway __P((int));
+void notarget __P((void));
+void open_score_file __P((void));
+void parse __P((void));
+void post __P((char));
+void printobjs __P((void));
+int put __P((void));
+int puton __P((void));
+const char *rate __P((void));
+void ravage __P((void));
+void restore __P((const char *));
+int ride __P((void));
+void save __P((const char *));
+char *save_file_name __P((const char *, size_t));
+void screen __P((void));
+int shoot __P((void));
+void succumb __P((int));
+int take __P((unsigned int[]));
+int takeoff __P((void));
+void target __P((void));
+int throw __P((const char *));
+const char *truedirec __P((int, char));
+int ucard __P((const unsigned int *));
+int use __P((void));
+int visual __P((void));
+int wearit __P((void));
+void whichway __P((struct room));
+int wizard __P((const char *));
+void wordinit __P((void));
+void writedes __P((void));
+int zzz __P((void));

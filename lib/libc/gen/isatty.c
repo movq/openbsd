@@ -1,4 +1,3 @@
-/*	$OpenBSD: isatty.c,v 1.11 2015/09/12 14:56:50 guenther Exp $ */
 /*
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,12 +31,26 @@
  * SUCH DAMAGE.
  */
 
-#include <fcntl.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: isatty.c,v 1.3 1998/11/20 11:18:39 d Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <termios.h>
 #include <unistd.h>
+#include "thread_private.h"
 
 int
-isatty(int fd)
+isatty(fd)
+	int fd;
 {
-	return fcntl(fd, F_ISATTY) != -1;
+	int retval;
+	struct termios t;
+
+	if (_FD_LOCK(fd, FD_READ, NULL) == 0) {
+		retval = (tcgetattr(fd, &t) != -1);
+		_FD_UNLOCK(fd, FD_READ);
+	} else {
+		retval = 0;
+	}
+	return(retval);
 }
-DEF_WEAK(isatty);

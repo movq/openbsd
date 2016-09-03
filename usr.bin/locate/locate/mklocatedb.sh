@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-#	$OpenBSD: mklocatedb.sh,v 1.13 2007/03/18 20:13:49 otto Exp $
+#	$OpenBSD: mklocatedb.sh,v 1.6 1997/12/13 20:06:13 deraadt Exp $
 #
 # Copyright (c) September 1995 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
 # All rights reserved.
@@ -30,7 +30,7 @@
 # 
 # usage: mklocatedb [-presort] < filelist > database
 #
-# $Id: mklocatedb.sh,v 1.13 2007/03/18 20:13:49 otto Exp $
+# $Id: mklocatedb.sh,v 1.6 1997/12/13 20:06:13 deraadt Exp $
 
 
 # The directory containing locate subprograms
@@ -48,10 +48,10 @@ fi
 # utilities to built locate database
 : ${bigram=locate.bigram}
 : ${code=locate.code}
-: ${sort=sort -H}
+: ${sort=sort}
 
 sortopt="-u -T $TMPDIR"
-sortcmd="$sort"
+sortcmd=$sort
 
 # Input already sorted
 case X"$1" in 
@@ -60,15 +60,12 @@ esac
 
 bigrams=`mktemp ${TMPDIR=/tmp}/_bigrams.XXXXXXXXXX` || exit 1
 trap 'rm -f $bigrams' 0 1 2 3 5 10 15
-filelist=`mktemp ${TMPDIR=/tmp}/_filelist.XXXXXXXXXX` || {
-	rm -f ${bigrams}
-	exit 1
-}
+filelist=`mktemp ${TMPDIR=/tmp}/_filelist.XXXXXXXXXX` || exit 1
 trap 'rm -f $bigrams $filelist' 0 1 2 3 5 10 15
 
 if $sortcmd $sortopt > $filelist; then
         $bigram < $filelist | $sort -nr | 
-                awk -Ft 'BEGIN { ORS = "" } NR <= 128 { print $2 }' > $bigrams &&
+                awk 'NR <= 128 { printf $2 }' > $bigrams &&
         $code $bigrams < $filelist 
 else
         echo "`basename $0`: cannot build locate database" >&2

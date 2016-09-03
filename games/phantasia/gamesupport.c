@@ -1,18 +1,11 @@
-/*	$OpenBSD: gamesupport.c,v 1.10 2016/08/27 02:00:10 guenther Exp $	*/
+/*	$OpenBSD: gamesupport.c,v 1.3 1998/11/29 19:56:56 pjanzen Exp $	*/
 /*	$NetBSD: gamesupport.c,v 1.3 1995/04/24 12:24:28 cgd Exp $	*/
 
 /*
  * gamesupport.c - auxiliary routines for support of Phantasia
  */
 
-#include <curses.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
-
-#include "pathnames.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
+#include "include.h"
 
 /************************************************************************
 /
@@ -28,7 +21,7 @@
 / RETURN VALUE: none
 /
 / MODULES CALLED: freerecord(), writerecord(), descrstatus(), truncstring(), 
-/	time(), more(), wmove(), wclear(), strcmp(), printw(), strlcpy(), 
+/	time(), more(), wmove(), wclear(), strcmp(), printw(), strcpy(), 
 /	infloat(), waddstr(), cleanup(), findname(), userlist(), mvprintw(), 
 /	localtime(), getanswer(), descrtype(), getstring()
 /
@@ -61,7 +54,8 @@
 *************************************************************************/
 
 void
-changestats(bool ingameflag)
+changestats(ingameflag)
+	bool    ingameflag;
 {
 	static char flag[2] =	/* for printing values of bools */
 	{'F', 'T'};
@@ -204,6 +198,7 @@ changestats(bool ingameflag)
 				return;
 			} else
 				cleanup(TRUE);
+			/* NOTREACHED */
 		}
 		mvaddstr(20, 0, "!:Quit       ?:Delete");
 		mvaddstr(21, 0, "What would you like to change ? ");
@@ -236,8 +231,7 @@ changestats(bool ingameflag)
 				truncstring(Databuf);
 				if (Databuf[0] != '\0')
 					if (Wizard || findname(Databuf, &Other) < 0L)
-						strlcpy(playerp->p_name, Databuf,
-						    sizeof playerp->p_name);
+						strcpy(playerp->p_name, Databuf);
 			} else
 				/* get new password */
 			{
@@ -514,13 +508,13 @@ BALTER:
 *************************************************************************/
 
 void
-monstlist(void)
+monstlist()
 {
 	int     count = 0;	/* count in file */
 
 	puts(" #)  Name                 Str  Brain  Quick  Energy  Exper  Treas  Type  Flock%\n");
-	fseek(Monstfp, 0L, SEEK_SET);
-	while (fread(&Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp) == 1)
+	fseek(Monstfp, 0L, 0);
+	while (fread((char *) &Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp) == 1)
 		printf("%2d)  %-20.20s%4.0f   %4.0f     %2.0f   %5.0f  %5.0f     %2d    %2d     %3.0f\n", count++,
 		    Curmonster.m_name, Curmonster.m_strength, Curmonster.m_brains,
 		    Curmonster.m_speed, Curmonster.m_energy, Curmonster.m_experience,
@@ -551,13 +545,13 @@ monstlist(void)
 *************************************************************************/
 
 void
-scorelist(void)
+scorelist()
 {
 	struct scoreboard sbuf;	/* for reading entries */
 	FILE   *fp;		/* to open the file */
 
 	if ((fp = fopen(_PATH_SCORE, "r")) != NULL) {
-		while (fread(&sbuf, SZ_SCORESTRUCT, 1, fp) == 1)
+		while (fread((char *) &sbuf, SZ_SCORESTRUCT, 1, fp) == 1)
 			printf("%-20s   (%-9s)  Level: %6.0f  Type: %s\n",
 			    sbuf.sb_name, sbuf.sb_login, sbuf.sb_level, sbuf.sb_type);
 		fclose(fp);
@@ -588,12 +582,12 @@ scorelist(void)
 *************************************************************************/
 
 void
-activelist(void)
+activelist()
 {
-	fseek(Playersfp, 0L, SEEK_SET);
+	fseek(Playersfp, 0L, 0);
 	printf("Current characters on file are:\n\n");
 
-	while (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
+	while (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) == 1)
 		if (Other.p_status != S_NOTUSED)
 			printf("%-20s   (%-9s)  Level: %6.0f  %s  (%s)\n",
 			    Other.p_name, Other.p_login, Other.p_level,
@@ -626,7 +620,7 @@ activelist(void)
 *************************************************************************/
 
 void
-purgeoldplayers(void)
+purgeoldplayers()
 {
 	int     today;		/* day of year for today */
 	int     daysold;	/* how many days since the character has been
@@ -638,8 +632,8 @@ purgeoldplayers(void)
 	today = localtime(&ltime)->tm_yday;
 
 	for (;;) {
-		fseek(Playersfp, loc, SEEK_SET);
-		if (fread(&Other, SZ_PLAYERSTRUCT, 1, Playersfp) != 1)
+		fseek(Playersfp, loc, 0);
+		if (fread((char *) &Other, SZ_PLAYERSTRUCT, 1, Playersfp) != 1)
 			break;
 
 		daysold = today - Other.p_lastused;
@@ -667,7 +661,7 @@ purgeoldplayers(void)
 / RETURN VALUE: none
 /
 / MODULES CALLED: fread(), fseek(), fopen(), error(), strcmp(), fclose(), 
-/	strlcpy(), fwrite(), descrtype()
+/	strcpy(), fwrite(), descrtype()
 /
 / GLOBAL INPUTS: Player
 /
@@ -683,7 +677,7 @@ purgeoldplayers(void)
 *************************************************************************/
 
 void
-enterscore(void)
+enterscore()
 {
 	struct scoreboard sbuf;	/* buffer to read in scoreboard entries */
 	FILE   *fp;		/* to open scoreboard file */
@@ -691,7 +685,7 @@ enterscore(void)
 	bool    found = FALSE;	/* set if we found an entry for this login */
 
 	if ((fp = fopen(_PATH_SCORE, "r+")) != NULL) {
-		while (fread(&sbuf, SZ_SCORESTRUCT, 1, fp) == 1)
+		while (fread((char *) &sbuf, SZ_SCORESTRUCT, 1, fp) == 1)
 			if (strcmp(Player.p_login, sbuf.sb_login) == 0) {
 				found = TRUE;
 				break;
@@ -699,6 +693,7 @@ enterscore(void)
 				loc += SZ_SCORESTRUCT;
 	} else {
 		error(_PATH_SCORE);
+		/* NOTREACHED */
 	}
 
 	/*
@@ -710,16 +705,13 @@ enterscore(void)
 	if ((!found) || Player.p_level > sbuf.sb_level)
 		/* put new entry in for this login */
 	{
-		strlcpy(sbuf.sb_login, Player.p_login,
-		    sizeof sbuf.sb_login);
-		strlcpy(sbuf.sb_name, Player.p_name,
-		    sizeof sbuf.sb_name);
+		strcpy(sbuf.sb_login, Player.p_login);
+		strcpy(sbuf.sb_name, Player.p_name);
 		sbuf.sb_level = Player.p_level;
-		strlcpy(sbuf.sb_type, descrtype(&Player, TRUE),
-		    sizeof sbuf.sb_type);
+		strcpy(sbuf.sb_type, descrtype(&Player, TRUE));
 	}
 	/* update entry */
-	fseek(fp, loc, SEEK_SET);
-	fwrite(&sbuf, SZ_SCORESTRUCT, 1, fp);
+	fseek(fp, loc, 0);
+	fwrite((char *) &sbuf, SZ_SCORESTRUCT, 1, fp);
 	fclose(fp);
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mkindex.c,v 1.9 2016/01/07 16:00:31 tb Exp $	*/
+/*	$OpenBSD: mkindex.c,v 1.2 1998/09/24 06:45:07 pjanzen Exp $	*/
 /*	$NetBSD: mkindex.c,v 1.2 1995/03/21 12:14:52 cgd Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,24 +37,34 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)mkindex.c	8.1 (Berkeley) 6/11/93";
+#else
+static char rcsid[] = "$OpenBSD: mkindex.c,v 1.2 1998/09/24 06:45:07 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 
 #include "bog.h"
 
-char *nextword(FILE *, char *, int *, int *);
+char *nextword __P((FILE *, char *, int *, int *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int clen, rlen, prev;
 	long off, start;
 	char buf[MAXWORDLEN + 1];
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
 
 	prev = '\0';
 	off = start = 0L;
@@ -64,7 +78,7 @@ main(int argc, char *argv[])
 		off += clen + 1;
 	}
 	printf("%c %6ld %6ld\n", prev, start, off - 1);
-	return 0;
+	exit(0);
 }
 
 /*
@@ -74,10 +88,13 @@ main(int argc, char *argv[])
  * rlen to the strlen() of the real word
  */
 char *
-nextword(FILE *fp, char *buffer, int *clen, int *rlen)
+nextword(fp, buffer, clen, rlen)
+	FILE *fp;
+	char *buffer;
+	int *clen, *rlen;
 {
-	int ch, pcount;
-	char *p, *q;
+	register int ch, pcount;
+	register char *p, *q;
 	static char buf[MAXWORDLEN + 1];
 	static int first = 1;
 	static int lastch = 0;

@@ -1,5 +1,3 @@
-/*	$OpenBSD: delete.c,v 1.11 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,12 +9,16 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)delete.c	10.12 (Berkeley) 10/23/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
 #include <errno.h>
-#include <stdint.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,10 +29,13 @@
  * del --
  *	Delete a range of text.
  *
- * PUBLIC: int del(SCR *, MARK *, MARK *, int);
+ * PUBLIC: int del __P((SCR *, MARK *, MARK *, int));
  */
 int
-del(SCR *sp, MARK *fm, MARK *tm, int lmode)
+del(sp, fm, tm, lmode)
+	SCR *sp;
+	MARK *fm, *tm;
+	int lmode;
 {
 	recno_t lno;
 	size_t blen, len, nlen, tlen;
@@ -61,7 +66,7 @@ del(SCR *sp, MARK *fm, MARK *tm, int lmode)
 		if (tm->lno == lno) {
 			if (db_get(sp, lno, DBG_FATAL, &p, &len))
 				return (1);
-			eof = tm->cno != -1 && tm->cno >= len ? 1 : 0;
+			eof = tm->cno >= len ? 1 : 0;
 		} else
 			eof = 1;
 		if (eof) {
@@ -113,11 +118,17 @@ del(SCR *sp, MARK *fm, MARK *tm, int lmode)
 	if (db_get(sp, tm->lno, DBG_FATAL, &p, &len))
 		goto err;
 	if (len != 0 && tm->cno != len - 1) {
-		if (len < tm->cno + 1 || len - (tm->cno + 1) > SIZE_MAX - tlen) {
-			msgq(sp, M_ERR, "Line length overflow");
+		/*
+		 * XXX
+		 * We can overflow memory here, if the total length is greater
+		 * than SIZE_T_MAX.  The only portable way I've found to test
+		 * is depending on the overflow being less than the value.
+		 */
+		nlen = (len - (tm->cno + 1)) + tlen;
+		if (tlen > nlen) {
+			msgq(sp, M_ERR, "002|Line length overflow");
 			goto err;
 		}
-		nlen = (len - (tm->cno + 1)) + tlen;
 		if (tlen == 0) {
 			GET_SPACE_RET(sp, bp, blen, nlen);
 		} else

@@ -1,4 +1,3 @@
-/*	$OpenBSD: catgets.c,v 1.9 2015/09/05 11:25:30 guenther Exp $ */
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -14,6 +13,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -28,6 +34,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: catgets.c,v 1.5 1996/09/15 09:31:22 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #define _NLS_PRIVATE
 
 #include <errno.h>
@@ -36,7 +46,11 @@
 #include <nl_types.h>
 
 char *
-catgets(nl_catd catd, int set_id, int msg_id, const char *s)
+_catgets(catd, set_id, msg_id, s)
+	nl_catd catd;
+	int set_id;
+	int msg_id;
+	const char *s;
 {
 	struct _nls_cat_hdr *cat_hdr;
 	struct _nls_set_hdr *set_hdr;
@@ -94,4 +108,3 @@ catgets(nl_catd catd, int set_id, int msg_id, const char *s)
 	/* not found */
 	return (char *) s;
 }
-DEF_WEAK(catgets);

@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_vline.c,v 1.4 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_vline.c,v 1.1 1999/01/18 19:10:05 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2001,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,6 +33,8 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
+
 /*
 **	lib_vline.c
 **
@@ -42,40 +44,36 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_vline.c,v 1.4 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_vline.c,v 1.4 1998/06/28 00:10:12 tom Exp $")
 
-NCURSES_EXPORT(int)
-wvline(WINDOW *win, chtype ch, int n)
+int wvline(WINDOW *win, chtype ch, int n)
 {
-    int code = ERR;
-    NCURSES_SIZE_T row, col;
-    NCURSES_SIZE_T end;
+int   code = ERR;
+short row, col;
+short end;
 
-    T((T_CALLED("wvline(%p,%s,%d)"), win, _tracechtype(ch), n));
+	T((T_CALLED("wvline(%p,%s,%d)"), win, _tracechtype(ch), n));
 
-    if (win) {
-	NCURSES_CH_T wch;
-	row = win->_cury;
-	col = win->_curx;
-	end = row + n - 1;
-	if (end > win->_maxy)
-	    end = win->_maxy;
+	if (win) {
+		row = win->_cury;
+		col = win->_curx;
+		end = row + n - 1;
+		if (end > win->_maxy)
+			end = win->_maxy;
 
-	if (ch == 0)
-	    SetChar2(wch, ACS_VLINE);
-	else
-	    SetChar2(wch, ch);
-	wch = _nc_render(win, wch);
+		if (ch == 0)
+			ch = ACS_VLINE;
+		ch = _nc_render(win, ch);
 
-	while (end >= row) {
-	    struct ldat *line = &(win->_line[end]);
-	    line->text[col] = wch;
-	    CHANGED_CELL(line, col);
-	    end--;
+		while(end >= row) {
+			struct ldat *line = &(win->_line[end]);
+			line->text[col] = ch;
+			CHANGED_CELL(line, col);
+			end--;
+		}
+
+		_nc_synchook(win);
+		code = OK;
 	}
-
-	_nc_synchook(win);
-	code = OK;
-    }
-    returnCode(code);
+	returnCode(code);
 }

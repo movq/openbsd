@@ -1,5 +1,3 @@
-/*	$OpenBSD: common.h,v 1.9 2016/08/27 04:07:42 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +9,17 @@
  *	@(#)common.h	10.13 (Berkeley) 9/25/96
  */
 
-#include <sys/time.h>
+/*
+ * Porting information built at configuration time.  Included before
+ * any of nvi's include files.
+ */
+#include "port.h"
+
+/*
+ * Pseudo-local includes.  These are files that are unlikely to exist
+ * on most machines to which we're porting vi, and we want to include
+ * them in a very specific order, regardless.
+ */
 #include <db.h>
 #include <regex.h>
 
@@ -20,6 +28,7 @@
  * are far too interrelated for a clean solution.
  */
 typedef struct _cb		CB;
+typedef struct _csc		CSC;
 typedef struct _event		EVENT;
 typedef struct _excmd		EXCMD;
 typedef struct _exf		EXF;
@@ -64,9 +73,6 @@ typedef enum { LOCK_FAILED, LOCK_SUCCESS, LOCK_UNAVAIL } lockr_t;
 
 /* Sequence types. */
 typedef enum { SEQ_ABBREV, SEQ_COMMAND, SEQ_INPUT } seq_t;
-
-/* Program modes. */
-enum { MODE_EX, MODE_VI, MODE_VIEW } pmode;
 
 /*
  * Local includes.

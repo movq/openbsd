@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-domain.c,v 1.23 2016/03/07 19:33:26 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,18 +19,30 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-domain.c,v 1.8 1999/09/16 20:58:46 brad Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
+#ifdef __STDC__
+struct mbuf;
+struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
 #ifdef NOERROR
 #undef NOERROR					/* Solaris sucks */
@@ -40,55 +50,95 @@
 #ifdef NOERROR
 #undef T_UNSPEC					/* SINIX does too */
 #endif
-#include "nameser.h"
+#include <arpa/nameser.h>
 
 #include <stdio.h>
-#include <string.h>
 
 #include "interface.h"
 #include "addrtoname.h"
 #include "extract.h"                    /* must come after interface.h */
 
-static const char *ns_ops[] = {
-	"", " inv_q", " stat", " op3", " notify", " update", " op6", " op7",
+/* Compatibility */
+#ifndef T_TXT
+#define T_TXT		16		/* text strings */
+#endif
+#ifndef T_RP
+#define T_RP		17		/* responsible person */
+#endif
+#ifndef T_AFSDB
+#define T_AFSDB		18		/* AFS cell database */
+#endif
+#ifndef T_X25
+#define T_X25		19		/* X_25 calling address */
+#endif
+#ifndef T_ISDN
+#define T_ISDN		20		/* ISDN calling address */
+#endif
+#ifndef T_RT
+#define T_RT		21		/* router */
+#endif
+#ifndef T_NSAP
+#define T_NSAP		22		/* NSAP address */
+#endif
+#ifndef T_NSAP_PTR
+#define T_NSAP_PTR	23		/* reverse NSAP lookup (deprecated) */
+#endif
+#ifndef T_SIG
+#define T_SIG		24		/* security signature */
+#endif
+#ifndef T_KEY
+#define T_KEY		25		/* security key */
+#endif
+#ifndef T_PX
+#define T_PX		26		/* X.400 mail mapping */
+#endif
+#ifndef T_GPOS
+#define T_GPOS		27		/* geographical position (withdrawn) */
+#endif
+#ifndef T_AAAA
+#define T_AAAA		28		/* IP6 Address */
+#endif
+#ifndef T_LOC
+#define T_LOC		29		/* Location Information */
+#endif
+
+#ifndef T_UNSPEC
+#define T_UNSPEC	103		/* Unspecified format (binary data) */
+#endif
+#ifndef T_UNSPECA
+#define T_UNSPECA	104		/* "unspecified ascii". Ugly MIT hack */
+#endif
+
+#ifndef C_CHAOS
+#define C_CHAOS		3		/* for chaos net (MIT) */
+#endif
+#ifndef C_HS
+#define C_HS		4		/* for Hesiod name server (MIT) (XXX) */
+#endif
+
+static char *ns_ops[] = {
+	"", " inv_q", " stat", " op3", " notify", " op5", " op6", " op7",
 	" op8", " updataA", " updateD", " updateDA",
 	" updateM", " updateMA", " zoneInit", " zoneRef",
 };
 
-static const char *ns_resp[] = {
+static char *ns_resp[] = {
 	"", " FormErr", " ServFail", " NXDomain",
-	" NotImp", " Refused", " YXDomain", " YXRRSet",
-	" NXRRSet", " NotAuth", " NotZone", " Resp11",
+	" NotImp", " Refused", " Resp6", " Resp7",
+	" Resp8", " Resp9", " Resp10", " Resp11",
 	" Resp12", " Resp13", " Resp14", " NoChange",
 };
 
 /* skip over a domain name */
 static const u_char *
-ns_nskip(const u_char *cp)
+ns_nskip(register const u_char *cp, register const u_char *bp)
 {
-	u_char i;
+	register u_char i;
 
-	if (!TTEST2(*cp, 1))
-		return (NULL);
-	i = *cp++;
-	while (i) {
-		if ((i & INDIR_MASK) == INDIR_MASK)
-			return (cp + 1);
-		if ((i & INDIR_MASK) == EDNS0_MASK) {
-			int bitlen, bytelen;
-
-			if ((i & ~INDIR_MASK) != EDNS0_ELT_BITLABEL)
-				return(NULL); /* unknown ELT */
-			if (!TTEST2(*cp, 1))
-				return (NULL);
-			if ((bitlen = *cp++) == 0)
-				bitlen = 256;
-			bytelen = (bitlen + 7) / 8;
-			cp += bytelen;
-		} else
-			cp += i;
-		if (!TTEST2(*cp, 1))
-			return (NULL);
+	if (((i = *cp++) & INDIR_MASK) == INDIR_MASK)
+		return (cp + 1);
+	while (i && cp < snapend) {
+		cp += i;
 		i = *cp++;
 	}
 	return (cp);
@@ -96,141 +146,33 @@ ns_nskip(const u_char *cp)
 
 /* print a <domain-name> */
 static const u_char *
-blabel_print(const u_char *cp)
+ns_nprint(register const u_char *cp, register const u_char *bp)
 {
-	int bitlen, slen, b;
-	const u_char *bitp, *lim;
-	char tc;
+	register u_int i;
+	register const u_char *rp;
+	register int compress;
 
-	if (!TTEST2(*cp, 1))
-		return(NULL);
-	if ((bitlen = *cp) == 0)
-		bitlen = 256;
-	slen = (bitlen + 3) / 4;
-	lim = cp + 1 + slen;
-
-	/* print the bit string as a hex string */
-	printf("\\[x");
-	for (bitp = cp + 1, b = bitlen; bitp < lim && b > 7; b -= 8, bitp++) {
-		TCHECK(*bitp);
-		printf("%02x", *bitp);
-	}
-	if (b > 4) {
-		TCHECK(*bitp);
-		tc = *bitp++;
-		printf("%02x", tc & (0xff << (8 - b)));
-	} else if (b > 0) {
-		TCHECK(*bitp);
-		tc = *bitp++;
-		printf("%1x", ((tc >> 4) & 0x0f) & (0x0f << (4 - b)));
-	}
-	printf("/%d]", bitlen);
-	return lim;
-trunc:
-	printf(".../%d]", bitlen);
-	return NULL;
-}
-
-static int
-labellen(const u_char *cp)
-{
-	u_int i;
-
-	if (!TTEST2(*cp, 1))
-		return(-1);
-	i = *cp;
-	if ((i & INDIR_MASK) == EDNS0_MASK) {
-		int bitlen, elt;
-		if ((elt = (i & ~INDIR_MASK)) != EDNS0_ELT_BITLABEL) {
-			printf("<ELT %d>", elt);
-			return(-1);
-		}
-		if (!TTEST2(*(cp + 1), 1))
-			return(-1);
-		if ((bitlen = *(cp + 1)) == 0)
-			bitlen = 256;
-		return(((bitlen + 7) / 8) + 1);
+	i = *cp++;
+	rp = cp + i;
+	if ((i & INDIR_MASK) == INDIR_MASK) {
+		rp = cp + 1;
+		compress = 1;
 	} else
-		return(i);
-}
-
-static const u_char *
-ns_nprint(const u_char *cp, const u_char *bp)
-{
-	u_int i, l;
-	const u_char *rp = NULL;
-	int compress = 0;
-	int chars_processed;
-	int elt;
-	int data_size = snapend - bp;
-
-	if ((l = labellen(cp)) == (u_int)-1)
-		return(NULL);
-	if (!TTEST2(*cp, 1))
-		return(NULL);
-	chars_processed = 1;
-	if (((i = *cp++) & INDIR_MASK) != INDIR_MASK) {
 		compress = 0;
-		rp = cp + l;
-	}
-
 	if (i != 0)
 		while (i && cp < snapend) {
 			if ((i & INDIR_MASK) == INDIR_MASK) {
-				if (!compress) {
-					rp = cp + 1;
-					compress = 1;
-				}
-				if (!TTEST2(*cp, 1))
-					return(NULL);
 				cp = bp + (((i << 8) | *cp) & 0x3fff);
-				if ((l = labellen(cp)) == (u_int)-1)
-					return(NULL);
-				if (!TTEST2(*cp, 1))
-					return(NULL);
 				i = *cp++;
-				chars_processed++;
-
-				/*
-				 * If we've looked at every character in
-				 * the message, this pointer will make
-				 * us look at some character again,
-				 * which means we're looping.
-				 */
-				if (chars_processed >= data_size) {
-					printf("<LOOP>");
-					return (NULL);
-				}
 				continue;
 			}
-			if ((i & INDIR_MASK) == EDNS0_MASK) {
-				elt = (i & ~INDIR_MASK);
-				switch(elt) {
-				case EDNS0_ELT_BITLABEL:
-					if (blabel_print(cp) == NULL)
-						return (NULL);
-					break;
-				default:
-					/* unknown ELT */
-					printf("<ELT %d>", elt);
-					return(NULL);
-				}
-			} else {
-				if (fn_printn(cp, l, snapend))
-					return(NULL);
-			}
-
-			cp += l;
-			chars_processed += l;
+			if (fn_printn(cp, i, snapend))
+				break;
+			cp += i;
 			putchar('.');
-			if ((l = labellen(cp)) == (u_int)-1)
-				return(NULL);
-			if (!TTEST2(*cp, 1))
-				return(NULL);
 			i = *cp++;
-			chars_processed++;
 			if (!compress)
-				rp += l + 1;
+				rp += i + 1;
 		}
 	else
 		putchar('.');
@@ -239,435 +181,216 @@ ns_nprint(const u_char *cp, const u_char *bp)
 
 /* print a <character-string> */
 static const u_char *
-ns_cprint(const u_char *cp)
+ns_cprint(register const u_char *cp, register const u_char *bp)
 {
-	u_int i;
+	register u_int i;
 
-	if (!TTEST2(*cp, 1))
-		return (NULL);
 	i = *cp++;
-	if (fn_printn(cp, i, snapend))
-		return (NULL);
+	(void)fn_printn(cp, i, snapend);
 	return (cp + i);
 }
 
-/* https://www.iana.org/assignments/dns-parameters */
-struct tok ns_type2str[] = {
-	{ T_A,		"A" },			/* RFC 1035 */
-	{ T_NS,		"NS" },			/* RFC 1035 */
-	{ T_MD,		"MD" },			/* RFC 1035 */
-	{ T_MF,		"MF" },			/* RFC 1035 */
-	{ T_CNAME,	"CNAME" },		/* RFC 1035 */
-	{ T_SOA,	"SOA" },		/* RFC 1035 */
-	{ T_MB,		"MB" },			/* RFC 1035 */
-	{ T_MG,		"MG" },			/* RFC 1035 */
-	{ T_MR,		"MR" },			/* RFC 1035 */
-	{ T_NULL,	"NULL" },		/* RFC 1035 */
-	{ T_WKS,	"WKS" },		/* RFC 1035 */
-	{ T_PTR,	"PTR" },		/* RFC 1035 */
-	{ T_HINFO,	"HINFO" },		/* RFC 1035 */
-	{ T_MINFO,	"MINFO" },		/* RFC 1035 */
-	{ T_MX,		"MX" },			/* RFC 1035 */
-	{ T_TXT,	"TXT" },		/* RFC 1035 */
-	{ T_RP,		"RP" },			/* RFC 1183 */
-	{ T_AFSDB,	"AFSDB" },		/* RFC 1183 */
-	{ T_X25,	"X25" },		/* RFC 1183 */
-	{ T_ISDN,	"ISDN" },		/* RFC 1183 */
-	{ T_RT,		"RT" },			/* RFC 1183 */
-	{ T_NSAP,	"NSAP" },		/* RFC 1706 */
+static struct tok type2str[] = {
+	{ T_A,		"A" },
+	{ T_NS,		"NS" },
+	{ T_MD,		"MD" },
+	{ T_MF,		"MF" },
+	{ T_CNAME,	"CNAME" },
+	{ T_SOA,	"SOA" },
+	{ T_MB,		"MB" },
+	{ T_MG,		"MG" },
+	{ T_MR,		"MR" },
+	{ T_NULL,	"NULL" },
+	{ T_WKS,	"WKS" },
+	{ T_PTR,	"PTR" },
+	{ T_HINFO,	"HINFO" },
+	{ T_MINFO,	"MINFO" },
+	{ T_MX,		"MX" },
+	{ T_TXT,	"TXT" },
+	{ T_RP,		"RP" },
+	{ T_AFSDB,	"AFSDB" },
+	{ T_X25,	"X25" },
+	{ T_ISDN,	"ISDN" },
+	{ T_RT,		"RT" },
+	{ T_NSAP,	"NSAP" },
 	{ T_NSAP_PTR,	"NSAP_PTR" },
-	{ T_SIG,	"SIG" },		/* RFC 2535 */
-	{ T_KEY,	"KEY" },		/* RFC 2535 */
-	{ T_PX,		"PX" },			/* RFC 2163 */
-	{ T_GPOS,	"GPOS" },		/* RFC 1712 */
-	{ T_AAAA,	"AAAA" },		/* RFC 1886 */
-	{ T_LOC,	"LOC" },		/* RFC 1876 */
-	{ T_NXT,	"NXT" },		/* RFC 2535 */
-	{ T_EID,	"EID" },		/* Nimrod */
-	{ T_NIMLOC,	"NIMLOC" },		/* Nimrod */
-	{ T_SRV,	"SRV" },		/* RFC 2782 */
-	{ T_ATMA,	"ATMA" },		/* ATM Forum */
-	{ T_NAPTR,	"NAPTR" },		/* RFC 2168, RFC 2915 */
-	{ T_KX,		"KX" },			/* RFC 2230 */
-	{ T_CERT,	"CERT" },		/* RFC 2538 */
-	{ T_A6,		"A6" },			/* RFC 2874 */
-	{ T_DNAME,	"DNAME" },		/* RFC 2672 */
-	{ T_SINK, 	"SINK" },
-	{ T_OPT,	"OPT" },		/* RFC 2671 */
-	{ T_APL, 	"APL" },		/* RFC 3123 */
-	{ T_DS,		"DS" },			/* RFC 4034 */
-	{ T_SSHFP,	"SSHFP" },		/* RFC 4255 */
-	{ T_IPSECKEY,	"IPSECKEY" },		/* RFC 4025 */
-	{ T_RRSIG, 	"RRSIG" },		/* RFC 4034 */
-	{ T_NSEC,	"NSEC" },		/* RFC 4034 */
-	{ T_DNSKEY,	"DNSKEY" },		/* RFC 4034 */
-	{ T_SPF,	"SPF" },		/* RFC-schlitt-spf-classic-02.txt */
+	{ T_SIG,	"SIG" },
+	{ T_KEY,	"KEY" },
+	{ T_PX,		"PX" },
+	{ T_GPOS,	"GPOS" },
+	{ T_AAAA,	"AAAA" },
+	{ T_LOC ,	"LOC " },
+#ifndef T_UINFO
+#define T_UINFO 100
+#endif
 	{ T_UINFO,	"UINFO" },
+#ifndef T_UID
+#define T_UID 101
+#endif
 	{ T_UID,	"UID" },
+#ifndef T_GID
+#define T_GID 102
+#endif
 	{ T_GID,	"GID" },
 	{ T_UNSPEC,	"UNSPEC" },
 	{ T_UNSPECA,	"UNSPECA" },
-	{ T_TKEY,	"TKEY" },		/* RFC 2930 */
-	{ T_TSIG,	"TSIG" },		/* RFC 2845 */
-	{ T_IXFR,	"IXFR" },		/* RFC 1995 */
-	{ T_AXFR,	"AXFR" },		/* RFC 1035 */
-	{ T_MAILB,	"MAILB" },		/* RFC 1035 */
-	{ T_MAILA,	"MAILA" },		/* RFC 1035 */
+	{ T_AXFR,	"AXFR" },
+	{ T_MAILB,	"MAILB" },
+	{ T_MAILA,	"MAILA" },
 	{ T_ANY,	"ANY" },
 	{ 0,		NULL }
 };
 
-struct tok ns_class2str[] = {
+static struct tok class2str[] = {
 	{ C_IN,		"IN" },		/* Not used */
-	{ C_CHAOS,	"CHAOS" },
+	{ C_CHAOS,	"CHAOS)" },
 	{ C_HS,		"HS" },
 	{ C_ANY,	"ANY" },
 	{ 0,		NULL }
 };
 
 /* print a query */
-static const u_char *
-ns_qprint(const u_char *cp, const u_char *bp, int is_mdns)
+static void
+ns_qprint(register const u_char *cp, register const u_char *bp)
 {
-	const u_char *np = cp;
-	u_int i, class;
+	register const u_char *np = cp;
+	register u_int i;
 
-	cp = ns_nskip(cp);
+	cp = ns_nskip(cp, bp);
 
-	if (cp == NULL || !TTEST2(*cp, 4))
-		return(NULL);
+	if (cp + 4 > snapend)
+		return;
 
-	/* print the qtype */
-	i = EXTRACT_16BITS(cp);
-	cp += 2;
-	printf(" %s", tok2str(ns_type2str, "Type%d", i));
-	/* print the qclass (if it's not IN) */
-	i = EXTRACT_16BITS(cp);
-	cp += 2;
-	if (is_mdns)
-		class = (i & ~C_QU);
-	else
-		class = i;
-	if (class != C_IN)
-		printf(" %s", tok2str(ns_class2str, "(Class %d)", class));
-	if (is_mdns && (i & C_QU))
-		printf(" (QU)");
+	/* print the qtype and qclass (if it's not IN) */
+	i = *cp++ << 8;
+	i |= *cp++;
+	printf(" %s", tok2str(type2str, "Type%d", i));
+	i = *cp++ << 8;
+	i |= *cp++;
+	if (i != C_IN)
+		printf(" %s", tok2str(class2str, "(Class %d)", i));
 
 	fputs("? ", stdout);
-	cp = ns_nprint(np, bp);
-	return(cp ? cp + 4 : NULL);
+	ns_nprint(np, bp);
 }
 
 /* print a reply */
 static const u_char *
-ns_rprint(const u_char *cp, const u_char *bp, int is_mdns)
+ns_rprint(register const u_char *cp, register const u_char *bp)
 {
-	u_int i, class, opt_flags = 0;
-	u_short typ, len;
-	const u_char *rp;
+	register u_int i;
+	register u_short typ, len;
+	register const u_char *rp;
 
 	if (vflag) {
 		putchar(' ');
-		if ((cp = ns_nprint(cp, bp)) == NULL)
-			return NULL;
+		cp = ns_nprint(cp, bp);
 	} else
-		cp = ns_nskip(cp);
+		cp = ns_nskip(cp, bp);
 
-	if (cp == NULL || !TTEST2(*cp, 10))
+	if (cp + 10 > snapend)
 		return (snapend);
 
-	/* print the type/qtype */
-	typ = EXTRACT_16BITS(cp);
-	cp += 2;
-	/* print the class (if it's not IN and the type isn't OPT) */
-	i = EXTRACT_16BITS(cp);
-	cp += 2;
-	if (is_mdns)
-		class = (i & ~C_CACHE_FLUSH);
-	else
-		class = i;
-	if (class != C_IN && typ != T_OPT)
-		printf(" %s", tok2str(ns_class2str, "(Class %d)", class));
-	if (is_mdns) {
-		if (i & C_CACHE_FLUSH)
-			printf(" (Cache flush)");
-	}
+	/* print the type/qtype and class (if it's not IN) */
+	typ = *cp++ << 8;
+	typ |= *cp++;
+	i = *cp++ << 8;
+	i |= *cp++;
+	if (i != C_IN)
+		printf(" %s", tok2str(class2str, "(Class %d)", i));
 
-	if (typ == T_OPT) {
-		/* get opt flags */
-		cp += 2;
-		opt_flags = EXTRACT_16BITS(cp);
-		/* ignore rest of ttl field */
-		cp += 2;
-	} else if (vflag > 2) {
-		/* print ttl */
-		printf(" [");
-		relts_print(EXTRACT_32BITS(cp));
-		printf("]");
-		cp += 4;
-	} else {
-		/* ignore ttl */
-		cp += 4;
-	}
+	/* ignore ttl */
+	cp += 4;
 
-	len = EXTRACT_16BITS(cp);
-	cp += 2;
+	len = *cp++ << 8;
+	len |= *cp++;
 
 	rp = cp + len;
 
-	printf(" %s", tok2str(ns_type2str, "Type%d", typ));
-	if (rp > snapend)
-		return(NULL);
-
+	printf(" %s", tok2str(type2str, "Type%d", typ));
 	switch (typ) {
+
 	case T_A:
-		if (!TTEST2(*cp, sizeof(struct in_addr)))
-			return(NULL);
 		printf(" %s", ipaddr_string(cp));
 		break;
 
 	case T_NS:
 	case T_CNAME:
 	case T_PTR:
-#ifdef T_DNAME
-	case T_DNAME:
-#endif
 		putchar(' ');
-		if (ns_nprint(cp, bp) == NULL)
-			return(NULL);
+		(void)ns_nprint(cp, bp);
 		break;
 
-	case T_SOA:
-		if (!vflag)
-			break;
-		putchar(' ');
-		if ((cp = ns_nprint(cp, bp)) == NULL)
-			return(NULL);
-		putchar(' ');
-		if ((cp = ns_nprint(cp, bp)) == NULL)
-			return(NULL);
-		if (!TTEST2(*cp, 5 * 4))
-			return(NULL);
-		printf(" %u", EXTRACT_32BITS(cp));
-		cp += 4;
-		printf(" %u", EXTRACT_32BITS(cp));
-		cp += 4;
-		printf(" %u", EXTRACT_32BITS(cp));
-		cp += 4;
-		printf(" %u", EXTRACT_32BITS(cp));
-		cp += 4;
-		printf(" %u", EXTRACT_32BITS(cp));
-		cp += 4;
-		break;
 	case T_MX:
 		putchar(' ');
-		if (!TTEST2(*cp, 2))
-			return(NULL);
-		if (ns_nprint(cp + 2, bp) == NULL)
-			return(NULL);
+		(void)ns_nprint(cp + 2, bp);
 		printf(" %d", EXTRACT_16BITS(cp));
 		break;
 
 	case T_TXT:
-		while (cp < rp) {
-			printf(" \"");
-			cp = ns_cprint(cp);
-			if (cp == NULL)
-				return(NULL);
-			putchar('"');
-		}
-		break;
-
-	case T_SRV:
 		putchar(' ');
-		if (!TTEST2(*cp, 6))
-			return(NULL);
-		if (ns_nprint(cp + 6, bp) == NULL)
-			return(NULL);
-		printf(":%d %d %d", EXTRACT_16BITS(cp + 4),
-			EXTRACT_16BITS(cp), EXTRACT_16BITS(cp + 2));
-		break;
-
-#ifdef INET6
-	case T_AAAA:
-		if (!TTEST2(*cp, sizeof(struct in6_addr)))
-			return(NULL);
-		printf(" %s", ip6addr_string(cp));
-		break;
-
-	case T_A6:
-	    {
-		struct in6_addr a;
-		int pbit, pbyte;
-
-		if (!TTEST2(*cp, 1))
-			return(NULL);
-		pbit = *cp;
-		pbyte = (pbit & ~7) / 8;
-		if (pbit > 128) {
-			printf(" %u(bad plen)", pbit);
-			break;
-		} else if (pbit < 128) {
-			if (!TTEST2(*(cp + 1), sizeof(a) - pbyte))
-				return(NULL);
-			memset(&a, 0, sizeof(a));
-			memcpy(&a.s6_addr[pbyte], cp + 1, sizeof(a) - pbyte);
-			printf(" %u %s", pbit, ip6addr_string(&a));
-		}
-		if (pbit > 0) {
-			putchar(' ');
-			if (ns_nprint(cp + 1 + sizeof(a) - pbyte, bp) == NULL)
-				return(NULL);
-		}
-		break;
-	    }
-#endif /*INET6*/
-
-	case T_OPT:
-		printf(" UDPsize=%u", class);
-		if (opt_flags & 0x8000)
-			printf(" OK");
+		(void)ns_cprint(cp, bp);
 		break;
 
 	case T_UNSPECA:		/* One long string */
-		if (!TTEST2(*cp, len))
-			return(NULL);
-		if (fn_printn(cp, len, snapend))
-			return(NULL);
+	        printf(" %.*s", len, cp);
 		break;
-
-	case T_TSIG:
-	    {
-		if (cp + len > snapend)
-			return(NULL);
-		if (!vflag)
-			break;
-		putchar(' ');
-		if ((cp = ns_nprint(cp, bp)) == NULL)
-			return(NULL);
-		cp += 6;
-		if (!TTEST2(*cp, 2))
-			return(NULL);
-		printf(" fudge=%u", EXTRACT_16BITS(cp));
-		cp += 2;
-		if (!TTEST2(*cp, 2))
-			return(NULL);
-		printf(" maclen=%u", EXTRACT_16BITS(cp));
-		cp += 2 + EXTRACT_16BITS(cp);
-		if (!TTEST2(*cp, 2))
-			return(NULL);
-		printf(" origid=%u", EXTRACT_16BITS(cp));
-		cp += 2;
-		if (!TTEST2(*cp, 2))
-			return(NULL);
-		printf(" error=%u", EXTRACT_16BITS(cp));
-		cp += 2;
-		if (!TTEST2(*cp, 2))
-			return(NULL);
-		printf(" otherlen=%u", EXTRACT_16BITS(cp));
-		cp += 2;
-	    }
 	}
 	return (rp);		/* XXX This isn't always right */
 }
 
 void
-ns_print(const u_char *bp, u_int length, int is_mdns)
+ns_print(register const u_char *bp, u_int length)
 {
-	const HEADER *np;
-	int qdcount, ancount, nscount, arcount;
-	const u_char *cp;
-	u_int16_t b2;
+	register const HEADER *np;
+	register int qdcount, ancount, nscount, arcount;
+	register const u_char *cp;
 
 	np = (const HEADER *)bp;
-	TCHECK(*np);
 	/* get the byte-order right */
-	qdcount = EXTRACT_16BITS(&np->qdcount);
-	ancount = EXTRACT_16BITS(&np->ancount);
-	nscount = EXTRACT_16BITS(&np->nscount);
-	arcount = EXTRACT_16BITS(&np->arcount);
+	qdcount = ntohs(np->qdcount);
+	ancount = ntohs(np->ancount);
+	nscount = ntohs(np->nscount);
+	arcount = ntohs(np->arcount);
 
-	if (DNS_QR(np)) {
+	if (np->qr) {
 		/* this is a response */
-		printf(" %d%s%s%s%s%s%s",
-			EXTRACT_16BITS(&np->id),
-			ns_ops[DNS_OPCODE(np)],
-			ns_resp[DNS_RCODE(np)],
-			DNS_AA(np)? "*" : "",
-			DNS_RA(np)? "" : "-",
-			DNS_TC(np)? "|" : "",
-			DNS_AD(np)? "$" : "");
-
+		printf(" %d%s%s%s%s%s",
+			ntohs(np->id),
+			ns_ops[np->opcode],
+			ns_resp[np->rcode],
+			np->aa? "*" : "",
+			np->ra? "" : "-",
+			np->tc? "|" : "");
 		if (qdcount != 1)
 			printf(" [%dq]", qdcount);
 		/* Print QUESTION section on -vv */
-		cp = (const u_char *)(np + 1);
-		while (qdcount--) {
-			if (qdcount < EXTRACT_16BITS(&np->qdcount) - 1)
-				putchar(',');
-			if (vflag > 1) {
-				fputs(" q:", stdout);
-				if ((cp = ns_qprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
-			} else {
-				if ((cp = ns_nskip(cp)) == NULL)
-					goto trunc;
-				cp += 4;	/* skip QTYPE and QCLASS */
-			}
-		}
+		if (vflag > 1) {
+		            fputs(" q: ", stdout);
+			    cp = ns_nprint((const u_char *)(np + 1), bp);
+		} else
+			    cp = ns_nskip((const u_char *)(np + 1), bp);
 		printf(" %d/%d/%d", ancount, nscount, arcount);
 		if (ancount--) {
-			if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-				goto trunc;
-			while (cp < snapend && ancount--) {
+			cp = ns_rprint(cp + 4, bp);
+			while (ancount-- && cp < snapend) {
 				putchar(',');
-				if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
+				cp = ns_rprint(cp, bp);
 			}
-		}
-		if (ancount > 0)
-			goto trunc;
-		/* Print NS and AR sections on -vv */
-		if (vflag > 1) {
-			if (cp < snapend && nscount--) {
-				fputs(" ns:", stdout);
-				if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
-				while (cp < snapend && nscount--) {
-					putchar(',');
-					if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-						goto trunc;
-				}
-			}
-			if (nscount > 0)
-				goto trunc;
-			if (cp < snapend && arcount--) {
-				fputs(" ar:", stdout);
-				if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
-				while (cp < snapend && arcount--) {
-					putchar(',');
-					if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-						goto trunc;
-				}
-			}
-			if (arcount > 0)
-				goto trunc;
 		}
 	}
 	else {
 		/* this is a request */
-		printf(" %d%s%s%s", EXTRACT_16BITS(&np->id), ns_ops[DNS_OPCODE(np)],
-		    DNS_RD(np) ? "+" : "",
-		    DNS_CD(np) ? "%" : "");
+		printf(" %d%s%s",
+		        ntohs(np->id),
+			ns_ops[np->opcode],
+			np->rd? "+" : "");
 
-		/* any weirdness? AA is expected in NOTIFY. */
-		b2 = EXTRACT_16BITS(((u_short *)np)+1);
-		if ((b2 & 0x6cf) !=
-		    (DNS_OPCODE(np) == NS_NOTIFY_OP ? htons(0x400) : 0))
-			printf(" [b2&3=0x%x]", b2);
+		/* any weirdness? */
+		if (*(((u_short *)np)+1) & htons(0x6ff))
+			printf(" [b2&3=0x%x]", ntohs(*(((u_short *)np)+1)));
 
-		if (DNS_OPCODE(np) == IQUERY) {
+		if (np->opcode == IQUERY) {
 			if (qdcount)
 				printf(" [%dq]", qdcount);
 			if (ancount != 1)
@@ -684,65 +407,7 @@ ns_print(const u_char *bp, u_int length, int is_mdns)
 		if (arcount)
 			printf(" [%dau]", arcount);
 
-		cp = (const u_char *)(np + 1);
-		if (qdcount--) {
-			cp = ns_qprint(cp, (const u_char *)np, is_mdns);
-			if (!cp)
-				goto trunc;
-			while (cp < snapend && qdcount--) {
-				cp = ns_qprint((const u_char *)cp,
-					       (const u_char *)np,
-					       is_mdns);
-				if (!cp)
-					goto trunc;
-			}
-		}
-		if (qdcount > 0)
-			goto trunc;
-
-		/* Print remaining sections on -vv */
-		if (vflag > 1) {
-			if (ancount--) {
-				if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
-				while (cp < snapend && ancount--) {
-					putchar(',');
-					if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-						goto trunc;
-				}
-			}
-			if (ancount > 0)
-				goto trunc;
-			if (cp < snapend && nscount--) {
-				fputs(" ns:", stdout);
-				if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
-				while (nscount-- && cp < snapend) {
-					putchar(',');
-					if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-						goto trunc;
-				}
-			}
-			if (nscount > 0)
-				goto trunc;
-			if (cp < snapend && arcount--) {
-				fputs(" ar:", stdout);
-				if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-					goto trunc;
-				while (cp < snapend && arcount--) {
-					putchar(',');
-					if ((cp = ns_rprint(cp, bp, is_mdns)) == NULL)
-						goto trunc;
-				}
-			}
-			if (arcount > 0)
-				goto trunc;
-		}
+		ns_qprint((const u_char *)(np + 1), (const u_char *)np);
 	}
 	printf(" (%d)", length);
-	return;
-
-  trunc:
-	printf("[|domain]");
-	return;
 }

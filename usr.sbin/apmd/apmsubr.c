@@ -1,5 +1,3 @@
-/*	$OpenBSD: apmsubr.c,v 1.8 2006/03/15 20:30:28 sturm Exp $	*/
-
 /*
  *  Copyright (c) 1995,1996 John T. Kohl
  *  All rights reserved.
@@ -29,59 +27,53 @@
  * 
  */
 
+#include <stdio.h>
+#include <errno.h>
+#include <syslog.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
 #include <machine/apmvar.h>
+#include <err.h>
 #include "apm-proto.h"
 
 const char *
 battstate(int state)
 {
-	switch (state) {
-	case APM_BATT_HIGH:
-		return "high";
-	case APM_BATT_LOW:
-		return "low";
-	case APM_BATT_CRITICAL:
-		return "CRITICAL";
-	case APM_BATT_CHARGING:
-		return "charging";
-	case APM_BATTERY_ABSENT:
-		return "absent";
-	case APM_BATT_UNKNOWN:
-		return "unknown";
-	default:
-		return "invalid battery state";
-	}
+    switch (state) {
+    case APM_BATT_HIGH:
+	return "high";
+    case APM_BATT_LOW:
+	return "low";
+    case APM_BATT_CRITICAL:
+	return "CRITICAL";
+    case APM_BATT_CHARGING:
+	return "charging";
+    case APM_BATTERY_ABSENT:
+	return "absent";
+    case APM_BATT_UNKNOWN:
+	return "unknown (absent?)";
+    default:
+	return "invalid battery state";
+    }
 }
 
 const char *
 ac_state(int state)
 {
-	switch (state) {
-	case APM_AC_OFF:
-		return "not connected";
-	case APM_AC_ON:
-		return "connected";
-	case APM_AC_BACKUP:
-		return "backup power source";
-	case APM_AC_UNKNOWN:
-		return "not known";
-	default:
-		return "invalid AC status";
-	}
-}
-
-const char *
-perf_mode(int mode)
-{
-	switch (mode) {
-	case PERF_MANUAL:
-		return "manual";
-	case PERF_AUTO:
-		return "auto";
-	case PERF_COOL:
-		return "cool running";
-	default:
-		return "invalid";
-	}
+    switch (state) {
+    case APM_AC_OFF:
+	return "not connected";
+    case APM_AC_ON:
+	return "connected";
+    case APM_AC_BACKUP:
+	return "backup power source";
+    case APM_AC_UNKNOWN:
+	return "not known";
+    default:
+	return "invalid AC status";
+    }
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec_script.h,v 1.5 2008/09/19 05:41:29 djm Exp $	*/
+/*	$OpenBSD: exec_script.h,v 1.3 1996/03/03 12:11:43 niklas Exp $	*/
 /*	$NetBSD: exec_script.h,v 1.6 1995/03/26 20:24:11 jtc Exp $	*/
 
 /*
@@ -33,13 +33,12 @@
 
 #define	EXEC_SCRIPT_MAGIC	"#!"
 #define	EXEC_SCRIPT_MAGICLEN	2
-#define EXEC_SCRIPT_HDRSZ	(EXEC_SCRIPT_MAGICLEN + 1 + MAXINTERP + 1)
 
 #define	SETUIDSCRIPTS		/* they are secure, so enable them */
 
 #ifdef _KERNEL
 
 /* the shell script handler's entry in the exec switch */
-int	exec_script_makecmds(struct proc *, struct exec_package *);
+int	exec_script_makecmds __P((struct proc *, struct exec_package *));
 
 #endif /* _KERNEL */

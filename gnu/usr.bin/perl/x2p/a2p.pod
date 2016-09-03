@@ -4,7 +4,7 @@ a2p - Awk to Perl translator
 
 =head1 SYNOPSIS
 
-B<a2p> [I<options>] [I<filename>]
+B<a2p [options] filename>
 
 =head1 DESCRIPTION
 
@@ -12,7 +12,7 @@ I<A2p> takes an awk script specified on the command line (or from
 standard input) and produces a comparable I<perl> script on the
 standard output.
 
-=head2 OPTIONS
+=head2 Options
 
 Options include:
 
@@ -43,26 +43,9 @@ causes a2p to assume that input will always have that many fields.
 
 =item B<-o>
 
-tells a2p to use old awk behavior.  The only current differences are:
-
-=over 5
-
-=item *
-
-Old awk always has a line loop, even if there are no line
+tells a2p to use old awk behavior.  For now, the only difference is
+that old awk always has a line loop, even if there are no line
 actions, whereas new awk does not.
-
-=item *
-
-In old awk, sprintf is extremely greedy about its arguments.
-For example, given the statement
-
-	print sprintf(some_args), extra_args;
-
-old awk considers I<extra_args> to be arguments to C<sprintf>; new awk
-considers them arguments to C<print>.
-
-=back
 
 =back
 
@@ -122,9 +105,9 @@ implicit in the awk script.  There are times when you can move this
 down past some conditionals that test the entire record so that the
 split is not done as often.
 
-For aesthetic reasons you may wish to change index variables from being
-1-based (awk style) to 0-based (Perl style).  Be sure to change all
-operations the variable is involved in to match.
+For aesthetic reasons you may wish to change the array base $[ from 1
+back to perl's default of 0, but remember to change all array
+subscripts AND all substr() and index() operations to match.
 
 Cute comments that say "# Here is a workaround because awk is dumb"
 are passed through unmodified.
@@ -148,7 +131,7 @@ statement that is the last statement executed in a subroutine.  A2p
 catches the most common case, but doesn't analyze embedded blocks for
 subtler cases.
 
-ARGV[0] translates to $ARGV0, but ARGV[n] translates to $ARGV[$n-1].  A
+ARGV[0] translates to $ARGV0, but ARGV[n] translates to $ARGV[$n].  A
 loop that tries to iterate over ARGV[0] won't find it.
 
 =head1 ENVIRONMENT
@@ -159,11 +142,15 @@ A2p uses no environment variables.
 
 Larry Wall E<lt>F<larry@wall.org>E<gt>
 
+=head1 FILES
+
 =head1 SEE ALSO
 
  perl	The perl compiler/interpreter
-
+ 
  s2p	sed to perl translator
+
+=head1 DIAGNOSTICS
 
 =head1 BUGS
 

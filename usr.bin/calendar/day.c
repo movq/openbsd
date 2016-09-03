@@ -1,4 +1,4 @@
-/*	$OpenBSD: day.c,v 1.33 2016/07/13 21:32:01 millert Exp $	*/
+/*	$OpenBSD: day.c,v 1.9 1999/04/25 01:16:04 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +33,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static const char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static const char sccsid[] = "@(#)calendar.c  8.3 (Berkeley) 3/25/94";
+#else
+static char rcsid[] = "$OpenBSD: day.c,v 1.9 1999/04/25 01:16:04 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/uio.h>
 
@@ -39,11 +57,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <tzfile.h>
 
 #include "pathnames.h"
 #include "calendar.h"
-
-extern struct iovec header[];
 
 #define WEEKLY 1
 #define MONTHLY 2
@@ -52,8 +69,6 @@ extern struct iovec header[];
 struct tm *tp;
 int *cumdays, offset;
 char dayname[10];
-enum calendars calendar;
-u_long julian;
 
 
 /* 1-based month, 0-based days, cumulative */
@@ -77,16 +92,8 @@ static struct fixs ndays[8];          /* short national days names */
 static struct fixs fnmonths[13];      /* full national months names */
 static struct fixs nmonths[13];       /* short national month names */
 
-void
-fill_print_date(struct match *m, struct tm *tm)
-{
-	if (strftime(m->print_date, sizeof(m->print_date),
-	    daynames ? "%a %b %d" : "%b %d", tm) == 0)
-		m->print_date[sizeof(m->print_date) - 1] = '\0';
-}
 
-void
-setnnames(void)
+void setnnames(void)
 {
 	char buf[80];
 	int i, l;
@@ -95,63 +102,65 @@ setnnames(void)
 	for (i = 0; i < 7; i++) {
 		tm.tm_wday = i;
 		l = strftime(buf, sizeof(buf), "%a", &tm);
-		for (; l > 0 && isspace((unsigned char)buf[l - 1]); l--)
+		for (; l > 0 && isspace((int)buf[l - 1]); l--)
 			;
 		buf[l] = '\0';
-		free(ndays[i].name);
+		if (ndays[i].name != NULL)
+			free(ndays[i].name);
 		if ((ndays[i].name = strdup(buf)) == NULL)
-			err(1, NULL);
+			errx(1, "cannot allocate memory");
 		ndays[i].len = strlen(buf);
 
 		l = strftime(buf, sizeof(buf), "%A", &tm);
-		for (; l > 0 && isspace((unsigned char)buf[l - 1]); l--)
+		for (; l > 0 && isspace((int)buf[l - 1]); l--)
 			;
 		buf[l] = '\0';
-		free(fndays[i].name);
+		if (fndays[i].name != NULL)
+			free(fndays[i].name);
 		if ((fndays[i].name = strdup(buf)) == NULL)
-			err(1, NULL);
+			errx(1, "cannot allocate memory");
 		fndays[i].len = strlen(buf);
 	}
 
 	for (i = 0; i < 12; i++) {
 		tm.tm_mon = i;
 		l = strftime(buf, sizeof(buf), "%b", &tm);
-		for (; l > 0 && isspace((unsigned char)buf[l - 1]); l--)
+		for (; l > 0 && isspace((int)buf[l - 1]); l--)
 			;
 		buf[l] = '\0';
-		free(nmonths[i].name);
+		if (nmonths[i].name != NULL)
+			free(nmonths[i].name);
 		if ((nmonths[i].name = strdup(buf)) == NULL)
-			err(1, NULL);
+			errx(1, "cannot allocate memory");
 		nmonths[i].len = strlen(buf);
 
 		l = strftime(buf, sizeof(buf), "%B", &tm);
-		for (; l > 0 && isspace((unsigned char)buf[l - 1]); l--)
+		for (; l > 0 && isspace((int)buf[l - 1]); l--)
 			;
 		buf[l] = '\0';
-		free(fnmonths[i].name);
+		if (fnmonths[i].name != NULL)
+			free(fnmonths[i].name);
 		if ((fnmonths[i].name = strdup(buf)) == NULL)
-			err(1, NULL);
+			errx(1, "cannot allocate memory");
 		fnmonths[i].len = strlen(buf);
 	}
 	/* Hardwired special events */
-	spev[0].name = strdup(PESACH);
-	spev[0].nlen = PESACHLEN;
-	spev[0].getev = pesach;
-	spev[1].name = strdup(EASTER);
-	spev[1].nlen = EASTERNAMELEN;
-	spev[1].getev = easter;
-	spev[2].name = strdup(PASKHA);
-	spev[2].nlen = PASKHALEN;
-	spev[2].getev = paskha;
+	spev[0].name = strdup(EASTER);
+	spev[0].nlen = EASTERNAMELEN;
+	spev[0].getev = easter;
+	spev[1].name = strdup(PASKHA);
+	spev[1].nlen = PASKHALEN;
+	spev[1].getev = paskha;
 	for (i = 0; i < NUMEV; i++) {
 		if (spev[i].name == NULL)
-			err(1, NULL);
+			errx(1, "cannot allocate memory");
 		spev[i].uname = NULL;
 	}
 }
 
 void
-settime(time_t *now)
+settime(now)
+	time_t *now;
 {
 	tp = localtime(now);
 	tp->tm_sec = 0;
@@ -160,13 +169,13 @@ settime(time_t *now)
 	tp->tm_isdst = 0;
 	tp->tm_hour = 12;
 	*now = mktime(tp);
-	if (isleap(tp->tm_year + 1900))
+	if (isleap(tp->tm_year + TM_YEAR_BASE))
 		cumdays = daytab[1];
 	else
 		cumdays = daytab[0];
 	/* Friday displays Monday's events */
 	offset = tp->tm_wday == 5 ? 3 : 1;
-	if (f_SetdayAfter)
+	if (f_dayAfter)
 		offset = 0;	/* Except not when range is set explicitly */
 	header[5].iov_base = dayname;
 
@@ -180,75 +189,57 @@ settime(time_t *now)
 /* convert [Year][Month]Day into unix time (since 1970)
  * Year: two or four digits, Month: two digits, Day: two digits
  */
-time_t
-Mktime(char *date)
+time_t Mktime (date)
+    char *date;
 {
-	time_t t;
-	int len;
-	struct tm tm;
+    time_t t;
+    int len;
+    struct tm tm;
 
-	(void)time(&t);
-	tp = localtime(&t);
+    (void)time(&t);
+    tp = localtime(&t);
 
-	len = strlen(date);
-	if (len < 2)
-		return((time_t)-1);
-	bzero(&tm, sizeof tm);
-	tm.tm_sec = 0;
-	tm.tm_min = 0;
-	/* Avoid getting caught by a timezone shift; set time to noon */
-	tm.tm_isdst = 0;
-	tm.tm_hour = 12;
-	tm.tm_wday = 0;
-	tm.tm_mday = tp->tm_mday;
-	tm.tm_mon = tp->tm_mon;
-	tm.tm_year = tp->tm_year;
+    len = strlen(date);
+    if (len < 2)
+	return((time_t)-1);
+    tm.tm_sec = 0;
+    tm.tm_min = 0;
+    /* Avoid getting caught by a timezone shift; set time to noon */
+    tm.tm_isdst = 0;
+    tm.tm_hour = 12;
+    tm.tm_wday = 0;
+    tm.tm_mday = tp->tm_mday;
+    tm.tm_mon = tp->tm_mon;
+    tm.tm_year = tp->tm_year;
 
-	/* Day */
-	tm.tm_mday = atoi(date + len - 2);
+    /* Day */
+    tm.tm_mday = atoi(date + len - 2);
 
-	/* Month */
-	if (len >= 4) {
-		*(date + len - 2) = '\0';
-		tm.tm_mon = atoi(date + len - 4) - 1;
-	}
+    /* Month */
+    if (len >= 4) {
+	*(date + len - 2) = '\0';
+	tm.tm_mon = atoi(date + len - 4) - 1;
+    }
 
-	/* Year */
-	if (len >= 6) {
+    /* Year */
+    if (len >= 6) {
 		*(date + len - 4) = '\0';
 		tm.tm_year = atoi(date);
 
-		if (tm.tm_year < 69)		/* Y2K */
-			tm.tm_year += 100;
-		else if (tm.tm_year > 1900)
-			tm.tm_year -= 1900;
-	}
+	/* tm_year up TM_YEAR_BASE ... */
+	if (tm.tm_year < 69)		/* Y2K */
+		tm.tm_year += 2000 - TM_YEAR_BASE;
+	else if (tm.tm_year < 100)
+		tm.tm_year += 1900 - TM_YEAR_BASE;
+	else if (tm.tm_year > TM_YEAR_BASE)
+		tm.tm_year -= TM_YEAR_BASE;
+    }
 
 #if DEBUG
-	printf("Mktime: %d %lld %d %s\n", (int)mktime(&tm), (long long)t, len,
-	    asctime(&tm));
+    printf("Mktime: %d %d %d %s\n", (int)mktime(&tm), (int)t, len,
+	   asctime(&tm));
 #endif
-	return(mktime(&tm));
-}
-
-static void
-adjust_calendar(int *day, int *month)
-{
-	switch (calendar) {
-	case GREGORIAN:
-		break;
-
-	case JULIAN:
-		*day += julian;
-		if (*day > (cumdays[*month + 1] - cumdays[*month])) {
-			*day -= (cumdays[*month + 1] - cumdays[*month]);
-			if (++*month > 12)
-				*month = 1;
-		}
-		break;
-	case LUNAR:
-		break;
-	}
+    return(mktime(&tm));
 }
 
 /*
@@ -257,12 +248,13 @@ adjust_calendar(int *day, int *month)
  *	3-charweekday			(Friday, Monday, mon.)
  *	numeric month or day		(1, 2, 04)
  *
- * Any character except \t or '*' may separate them, or they may not be
- * separated.  Any line following a line that is matched, that starts
- * with \t, is shown along with the matched line.
+ * Any character may separate them, or they may not be separated.  Any line,
+ * following a line that is matched, that starts with "whitespace", is shown
+ * along with the matched line.
  */
 struct match *
-isnow(char *endp, int bodun)
+isnow(endp)
+	char	*endp;
 {
 	int day = 0, flags = 0, month = 0, v1, v2, i;
 	int monthp, dayp, varp = 0;
@@ -286,10 +278,6 @@ isnow(char *endp, int bodun)
 	/* didn't recognize anything, skip it */
 	if (!(v1 = getfield(endp, &endp, &flags)))
 		return (NULL);
-
-	/* adjust bodun rate */
-	if (bodun && !bodun_always)
-		bodun = !arc4random_uniform(3);
 
 	/* Easter or Easter depending days */
 	if (flags & F_SPECIAL)
@@ -323,8 +311,7 @@ isnow(char *endp, int bodun)
 		if (month == -1) {
 			month = tp->tm_mon + 1;
 			interval = MONTHLY;
-		} else if (calendar)
-			adjust_calendar(&day, &month);
+		}
 		if ((month > 12) || (month < 1))
 			return (NULL);
 	}
@@ -342,11 +329,8 @@ isnow(char *endp, int bodun)
 			day = 1;
 		/* If a weekday was spelled out without an ordering,
 		 * assume the first of that day in the month */
-		if ((flags & F_ISDAY)) {
-			if ((day >= 1) && (day <=7))
-				day += 10;
-		} else if (calendar)
-			adjust_calendar(&day, &month);
+		if ((flags & F_ISDAY) && (day >= 1) && (day <=7))
+			day += 10;
 	}
 
 	/* Hm ... */
@@ -363,8 +347,7 @@ isnow(char *endp, int bodun)
 			if (month == -1) {
 				month = tp->tm_mon + 1;
 				interval = MONTHLY;
-			} else if (calendar)
-				adjust_calendar(&day, &month);
+			}
 		}
 
 		/* {Month} {Weekday,Day} ...  */
@@ -373,11 +356,8 @@ isnow(char *endp, int bodun)
 			month = v1;
 			/* if no recognizable day, assume the first */
 			day = v2 ? v2 : 1;
-			if ((flags & F_ISDAY)) {
-				if ((day >= 1) && (day <= 7))
-					day += 10;
-			} else
-				adjust_calendar(&day, &month);
+			if ((flags & F_ISDAY) && (day >= 1) && (day <= 7))
+				day += 10;
 		}
 	}
 
@@ -431,40 +411,36 @@ isnow(char *endp, int bodun)
 			 */
 				if (tp->tm_yday > 300 && tmtmp.tm_mon <= 1)
 					variable_weekday(&vwd, tmtmp.tm_mon + 1,
-					    tmtmp.tm_year + 1900 + 1);
+					    tmtmp.tm_year + TM_YEAR_BASE + 1);
 				else
 					variable_weekday(&vwd, tmtmp.tm_mon + 1,
-					    tmtmp.tm_year + 1900);
+					    tmtmp.tm_year + TM_YEAR_BASE);
 				day = cumdays[tmtmp.tm_mon + 1] + vwd;
 				tmtmp.tm_mday = vwd;
 			}
 			v2 = day - tp->tm_yday;
 			if ((v2 > v1) || (v2 < 0)) {
-				if ((v2 += isleap(tp->tm_year + 1900) ? 366 : 365)
+				if ((v2 += isleap(tp->tm_year + TM_YEAR_BASE) ? 366 : 365)
 				    <= v1)
 					tmtmp.tm_year++;
-				else if(!bodun || (day - tp->tm_yday) != -1)
+				else
 					return(NULL);
 			}
 			if ((tmp = malloc(sizeof(struct match))) == NULL)
-				err(1, NULL);
-
-			if (bodun && (day - tp->tm_yday) == -1) {
-				tmp->when = f_time - 1 * SECSPERDAY;
-				tmtmp.tm_mday++;
-				tmp->bodun = 1;
-			} else {
-				tmp->when = f_time + v2 * SECSPERDAY;
-				tmp->bodun = 0;
-			}
-
+				errx(1, "cannot allocate memory");
+			tmp->when = f_time + v2 * SECSPERDAY;
 			(void)mktime(&tmtmp);
-			fill_print_date(tmp, &tmtmp);
+			if (strftime(tmp->print_date,
+			    sizeof(tmp->print_date),
+			/*    "%a %b %d", &tm);  Skip weekdays */
+			    "%b %d", &tmtmp) == 0)
+				tmp->print_date[sizeof(tmp->print_date) - 1] = '\0';
 			tmp->var   = varp;
 			tmp->next  = NULL;
 			return(tmp);
 		}
-	} else {
+	}
+	else {
 		varp = 1;
 		/* Set up v1 to the event number and ... */
 		v1 = vwd % (NUMEV + 1) - 1;
@@ -511,7 +487,7 @@ isnow(char *endp, int bodun)
 				if (vwd) {
 					v1 = vwd;
 					variable_weekday(&v1, tmtmp.tm_mon + 1,
-					    tmtmp.tm_year + 1900);
+					    tmtmp.tm_year + TM_YEAR_BASE);
 					tmtmp.tm_mday = v1;
 				} else
 					tmtmp.tm_mday = dayp;
@@ -522,11 +498,11 @@ isnow(char *endp, int bodun)
 				if (flags & F_SPECIAL) {
 					tmtmp.tm_mon = 0;	/* Gee, mktime() is nice */
 					tmtmp.tm_mday = spev[v1].getev(tmtmp.tm_year +
-					    1900) + vwd;
+					    TM_YEAR_BASE) + vwd;
 				} else if (vwd) {
 					v1 = vwd;
 					variable_weekday(&v1, tmtmp.tm_mon + 1,
-					    tmtmp.tm_year + 1900);
+					    tmtmp.tm_year + TM_YEAR_BASE);
 					tmtmp.tm_mday = v1;
 				} else {
 				/* Need the following to keep Feb 29 from
@@ -541,16 +517,16 @@ isnow(char *endp, int bodun)
 				warnx("time out of range: %s", endp);
 			else {
 				tdiff = difftime(ttmp, f_time)/ SECSPERDAY;
-				if (tdiff <= offset + f_dayAfter ||
-				    (bodun && tdiff == -1)) {
-					if ((tmtmp.tm_mon == month) &&
-					    (tdiff >=  0 ||
-					    (bodun && tdiff == -1))) {
+				if (tdiff <= offset + f_dayAfter) {
+					if (tdiff >=  0) {
 					if ((tmp = malloc(sizeof(struct match))) == NULL)
-						err(1, NULL);
+						errx(1, "cannot allocate memory");
 					tmp->when = ttmp;
-					fill_print_date(tmp, &tmtmp);
-					tmp->bodun = bodun && tdiff == -1;
+					if (strftime(tmp->print_date,
+					    sizeof(tmp->print_date),
+					/*    "%a %b %d", &tm);  Skip weekdays */
+					    "%b %d", &tmtmp) == 0)
+						tmp->print_date[sizeof(tmp->print_date) - 1] = '\0';
 					tmp->var   = varp;
 					tmp->next  = NULL;
 					if (tmp2)
@@ -570,9 +546,10 @@ isnow(char *endp, int bodun)
 
 
 int
-getmonth(char *s)
+getmonth(s)
+	register char *s;
 {
-	char **p;
+	register char **p;
 	struct fixs *n;
 
 	for (n = fnmonths; n->name; ++n)
@@ -589,9 +566,10 @@ getmonth(char *s)
 
 
 int
-getday(char *s)
+getday(s)
+	register char *s;
 {
-	char **p;
+	register char **p;
 	struct fixs *n;
 
 	for (n = fndays; n->name; ++n)
@@ -612,9 +590,10 @@ getday(char *s)
  * ... etc ...
  */
 int
-getdayvar(char *s)
+getdayvar(s)
+	register char *s;
 {
-	int offset;
+	register int offset;
 
 
 	offset = strlen(s);
@@ -652,7 +631,8 @@ getdayvar(char *s)
 
 
 int
-foy(int year)
+foy(year)
+	int year;
 {
 	/* 0-6; what weekday Jan 1 is */
 	year--;
@@ -662,7 +642,8 @@ foy(int year)
 
 
 void
-variable_weekday(int *day, int month, int year)
+variable_weekday(day, month, year)
+	int *day, month, year;
 {
 	int v1, v2;
 	int *cumdays;

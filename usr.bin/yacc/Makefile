@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.5 2010/10/17 22:54:37 schwarze Exp $
+#	$OpenBSD: Makefile,v 1.3 1999/04/18 20:41:45 millert Exp $
 
 PROG=	yacc
 SRCS=	closure.c error.c lalr.c lr0.c main.c mkpar.c output.c reader.c \

@@ -1,4 +1,4 @@
-/*	$OpenBSD: aic_pcmcia.c,v 1.17 2015/03/14 03:38:49 jsg Exp $	*/
+/*	$OpenBSD: aic_pcmcia.c,v 1.8 1999/09/13 13:07:00 deraadt Exp $	*/
 /*	$NetBSD: aic_pcmcia.c,v 1.6 1998/07/19 17:28:15 christos Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/selinfo.h>
+#include <sys/select.h>
 #include <sys/device.h>
 
 #include <machine/cpu.h>
@@ -42,14 +42,16 @@
 #include <scsi/scsi_all.h>
 #include <scsi/scsiconf.h>
 
+#include <dev/isa/isavar.h>
+
 #include <dev/ic/aic6360var.h>
 
+#include <dev/pcmcia/pcmciareg.h>
 #include <dev/pcmcia/pcmciavar.h>
 #include <dev/pcmcia/pcmciadevs.h>
 
-int	aic_pcmcia_match(struct device *, void *, void *);
-void	aic_pcmcia_attach(struct device *, struct device *, void *);
-int	aic_pcmcia_detach(struct device *, int);
+int	aic_pcmcia_match __P((struct device *, void *, void *));
+void	aic_pcmcia_attach __P((struct device *, struct device *, void *));
 
 struct aic_pcmcia_softc {
 	struct aic_softc sc_aic;		/* real "aic" softc */
@@ -62,8 +64,7 @@ struct aic_pcmcia_softc {
 };
 
 struct cfattach aic_pcmcia_ca = {
-	sizeof(struct aic_pcmcia_softc), aic_pcmcia_match, aic_pcmcia_attach,
-	aic_pcmcia_detach
+	sizeof(struct aic_pcmcia_softc), aic_pcmcia_match, aic_pcmcia_attach
 };
 
 struct aic_pcmcia_product {
@@ -89,7 +90,7 @@ aic_pcmcia_match(parent, match, aux)
 	struct pcmcia_attach_args *pa = aux;
 	int i;
 
-	for (i = 0; i < nitems(aic_pcmcia_prod); i++)
+	for (i = 0; i < sizeof(aic_pcmcia_prod)/sizeof(aic_pcmcia_prod[0]); i++)
 		if (pa->manufacturer == aic_pcmcia_prod[i].app_vendor &&
 		    pa->product == aic_pcmcia_prod[i].app_product &&
 		    pa->pf->number == aic_pcmcia_prod[i].app_expfunc)
@@ -107,7 +108,6 @@ aic_pcmcia_attach(parent, self, aux)
 	struct pcmcia_attach_args *pa = aux;
 	struct pcmcia_config_entry *cfe;
 	struct pcmcia_function *pf = pa->pf;
-	const char *intrstr;
 
 	psc->sc_pf = pf;
 
@@ -152,8 +152,7 @@ aic_pcmcia_attach(parent, self, aux)
 		return;
 	}
 
-	printf(" port 0x%lx/%lu", psc->sc_pcioh.addr,
-	    (u_long)psc->sc_pcioh.size);
+	printf(" port 0x%lx/%d", psc->sc_pcioh.addr, psc->sc_pcioh.size);
 
 	if (!aic_find(sc->sc_iot, sc->sc_ioh)) {
 		printf(": unable to detect chip!\n");
@@ -161,32 +160,14 @@ aic_pcmcia_attach(parent, self, aux)
 	}
 
 	/* Establish the interrupt handler. */
-	psc->sc_ih = pcmcia_intr_establish(pa->pf, IPL_BIO,
-	    aicintr, sc, sc->sc_dev.dv_xname);
-	intrstr = pcmcia_intr_string(psc->sc_pf, psc->sc_ih);
-	printf("%s%s\n", *intrstr ? ", " : "", intrstr);
-	if (psc->sc_ih == NULL)
+	psc->sc_ih = pcmcia_intr_establish(pa->pf, IPL_BIO, aicintr, sc);
+	if (psc->sc_ih == NULL) {
+		printf(": couldn't establish interrupt\n");
 		return;
+	}
+
+	printf("\n");
 
 	aicattach(sc);
 
-}
-
-int
-aic_pcmcia_detach(self, flags)
-	struct device *self;
-	int flags;
-{
-	struct aic_pcmcia_softc *sc= (void *)self;
-	int error;
-
-	error = aic_detach(self, flags);
-	if (error)
-		return (error);
-
-	/* Unmap our i/o window and i/o space. */
-	pcmcia_io_unmap(sc->sc_pf, sc->sc_io_window);
-	pcmcia_io_free(sc->sc_pf, &sc->sc_pcioh);
-
-	return (0);
 }

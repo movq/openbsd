@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_join.c,v 1.8 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_join.c	10.10 (Berkeley) 9/15/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,12 @@
  * ex_join -- :[line [,line]] j[oin][!] [count] [flags]
  *	Join lines.
  *
- * PUBLIC: int ex_join(SCR *, EXCMD *);
+ * PUBLIC: int ex_join __P((SCR *, EXCMD *));
  */
 int
-ex_join(SCR *sp, EXCMD *cmdp)
+ex_join(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	recno_t from, to;
 	size_t blen, clen, len, tlen;
@@ -44,7 +48,7 @@ ex_join(SCR *sp, EXCMD *cmdp)
 
 	/* Check for no lines to join. */
 	if (!db_exist(sp, from + 1)) {
-		msgq(sp, M_ERR, "No following lines to join");
+		msgq(sp, M_ERR, "131|No following lines to join");
 		return (1);
 	}
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: random.c,v 1.9 2014/01/19 12:45:36 deraadt Exp $	*/
+/*	$OpenBSD: random.c,v 1.5 1997/11/07 15:56:49 niklas Exp $	*/
 /*	$NetBSD: random.c,v 1.2 1994/10/26 06:42:42 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,21 +36,21 @@
  *	@(#)random.c	8.1 (Berkeley) 6/10/93
  */
 
-#include <sys/param.h>
 #include <sys/types.h>
 
 #include <lib/libkern/libkern.h>
 
 /*
- * Pseudo-random number generator for randomizing the profiling clock.
- * The result is uniform on [0, 2^31 - 1].
+ * Pseudo-random number generator for randomizing the profiling clock,
+ * and whatever else we might use it for.  The result is uniform on
+ * [0, 2^31 - 1].
  */
+u_long _randseed = 1;
 
-u_int32_t
-random(void)
+u_long
+random()
 {
-	struct cpu_info *ci = curcpu();
-	int32_t x, hi, lo, t;
+	register long x, hi, lo, t;
 
 	/*
 	 * Compute x[n + 1] = (7^5 * x[n]) mod (2^31 - 1).
@@ -54,12 +58,12 @@ random(void)
 	 * Park and Miller, Communications of the ACM, vol. 31, no. 10,
 	 * October 1988, p. 1195.
 	 */
-	x = ci->ci_randseed;
+	x = _randseed;
 	hi = x / 127773;
 	lo = x % 127773;
 	t = 16807 * lo - 2836 * hi;
 	if (t <= 0)
 		t += 0x7fffffff;
-	ci->ci_randseed = t;
+	_randseed = t;
 	return (t);
 }

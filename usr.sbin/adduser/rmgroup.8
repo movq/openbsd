@@ -1,4 +1,4 @@
-.\"	$OpenBSD: rmgroup.8,v 1.13 2009/10/22 12:35:53 sobrado Exp $
+.\"	$OpenBSD: rmgroup.8,v 1.6 1999/07/09 13:35:53 aaron Exp $
 .\"
 .\" Copyright (c) 1996 Wolfram Schneider <wosch@FreeBSD.org>. Berlin.
 .\" All rights reserved.
@@ -25,31 +25,25 @@
 .\" SUCH DAMAGE.
 .\"
 .\" $From: rmgroup.8,v 1.1 1996/11/04 17:21:11 wosch Exp $
-.Dd $Mdocdate: October 22 2009 $
+
+.Dd October 30, 1996
 .Dt RMGROUP 8
 .Os
 .Sh NAME
 .Nm rmgroup
-.Nd delete a UNIX group
+.Nd delete a Unix group
 .Sh SYNOPSIS
 .Nm rmgroup
 .Ar group
 .Sh DESCRIPTION
 .Nm
-deletes the specified
-.Ux
+deletes the specified Unix
 .Ar group
 from group database.
 .Nm
 will not delete the system groups wheel, daemon, kmem, sys, tty,
 operator, bin, nogroup, nobody,
-or groups with gid 0.
-Do not delete these groups.
-.Sh FILES
-.Bl -tag -width /etc/groupX -compact
-.It Pa /etc/group
-group database
-.El
+or groups with gid 0. Do not delete these groups.
 .Sh SEE ALSO
 .Xr group 5 ,
 .Xr adduser 8 ,
@@ -57,5 +51,4 @@ group database
 .Sh HISTORY
 The
 .Nm
-command appeared in
-.Fx 2.2 .
+command appeared in FreeBSD 2.2.

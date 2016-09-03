@@ -1,4 +1,4 @@
-/*	$OpenBSD: bcd.c,v 1.25 2016/03/07 12:07:55 mestre Exp $	*/
+/*	$OpenBSD: bcd.c,v 1.6 1999/09/25 15:52:09 pjanzen Exp $	*/
 /*	$NetBSD: bcd.c,v 1.6 1995/04/24 12:22:23 cgd Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,20 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)bcd.c	8.2 (Berkeley) 3/20/94";
+#else
+static char rcsid[] = "$OpenBSD: bcd.c,v 1.6 1999/09/25 15:52:09 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 /*
  * bcd --
@@ -63,10 +81,10 @@
  * Nov 5, 1993
  */
 
-#include <err.h>
-#include <ctype.h>
+#include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 
 u_short holes[256] = {
@@ -109,94 +127,58 @@ u_short holes[256] = {
  */
 #define	bit(w,i)	((w)&(1<<(i)))
 
-void	printonecard(char *, size_t);
-void	printcard(char *);
-int	decode(char *buf);
-
-int	columns	= 48;
+void	printcard __P((char *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	char cardline[1024];
-	extern char *__progname;
-	int dflag = 0;
-	int ch;
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
-	while ((ch = getopt(argc, argv, "dl")) != -1) {
-		switch (ch) {
-		case 'd':
-			dflag = 1;
-			break;
-		case 'l':
-			columns = 80;
-			break;
-		default:
-			fprintf(stderr, "usage: %s [-l] [string ...]\n",
-			    __progname);
-			fprintf(stderr, "usage: %s -d [-l]\n", __progname);
-			return 1;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (dflag) {
-		while (decode(cardline) == 0) {
-			printf("%s\n", cardline);
-		}
-		return 0;
-	}
-
+	char cardline[80];
 
 	/*
 	 * The original bcd prompts with a "%" when reading from stdin,
 	 * but this seems kind of silly.  So this one doesn't.
 	 */
-	if (argc > 0) {
-		while (argc--) {
-			printcard(*argv);
-			argv++;
-		}
-	} else {
+
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
+
+	if (argc > 1) {
+		while (--argc)
+			printcard(*++argv);
+	} else
 		while (fgets(cardline, sizeof(cardline), stdin))
 			printcard(cardline);
-	}
-	return 0;
+	exit(0);
 }
 
-void
-printcard(char *str)
-{
-	size_t len = strlen(str);
-
-	while (len > 0) {
-		size_t amt = len > columns ? columns : len;
-		printonecard(str, amt);
-		str += amt;
-		len -= amt;
-	}
-}
+#define	COLUMNS	48
 
 void
-printonecard(char *str, size_t len)
+printcard(str)
+	char *str;
 {
 	static const char rowchars[] = "   123456789";
 	int	i, row;
-	char	*p, *end;
+	char	*p;
 
-	end = str + len;
+	/* ruthlessly remove newlines and truncate at 48 characters. */
+	if ((p = strchr(str, '\n')))
+		*p = '\0';
+
+	if (strlen(str) > COLUMNS)
+		str[COLUMNS] = '\0';
 
 	/* make string upper case. */
-	for (p = str; p < end; ++p)
-		*p = toupper((unsigned char)*p);
+	for (p = str; *p; ++p)
+		if (isascii(*p) && islower(*p))
+			*p = toupper(*p);
 
-	/* top of card */
+	 /* top of card */
 	putchar(' ');
-	for (i = 1; i <= columns; ++i)
+	for (i = 1; i <= COLUMNS; ++i)
 		putchar('_');
 	putchar('\n');
 
@@ -206,12 +188,12 @@ printonecard(char *str, size_t len)
 	 */
 	p = str;
 	putchar('/');
-	for (i = 1; p < end; i++, p++)
-		if (holes[(unsigned char)*p])
+	for (i = 1; *p; i++, p++)
+		if (holes[(int)*p])
 			putchar(*p);
 		else
 			putchar(' ');
-	while (i++ <= columns)
+	while (i++ <= COLUMNS)
 		putchar(' ');
 	putchar('|');
 	putchar('\n');
@@ -224,13 +206,13 @@ printonecard(char *str, size_t len)
 	 */
 	for (row = 0; row <= 11; ++row) {
 		putchar('|');
-		for (i = 0, p = str; p < end; i++, p++) {
-			if (bit(holes[(unsigned char)*p], 11 - row))
+		for (i = 0, p = str; *p; i++, p++) {
+			if (bit(holes[(int)*p], 11 - row))
 				putchar(']');
 			else
 				putchar(rowchars[row]);
 		}
-		while (i++ < columns)
+		while (i++ < COLUMNS)
 			putchar(rowchars[row]);
 		putchar('|');
 		putchar('\n');
@@ -238,61 +220,8 @@ printonecard(char *str, size_t len)
 
 	/* bottom of card */
 	putchar('|');
-	for (i = 1; i <= columns; i++)
+	for (i = 1; i <= COLUMNS; i++)
 		putchar('_');
 	putchar('|');
 	putchar('\n');
-}
-
-#define LINES 12
-
-int
-decode(char *buf)
-{
-	int col, i;
-	char lines[LINES][1024];
-	char tmp[1024];
-
-	/* top of card; if missing signal no more input */
-	if (fgets(tmp, sizeof(tmp), stdin) == NULL)
-		return 1;
-	/* text line, ignored */
-	if (fgets(tmp, sizeof(tmp), stdin) == NULL)
-		return -1;
-	/* twelve lines of data */
-	for (i = 0; i < LINES; i++)
-		if (fgets(lines[i], sizeof(lines[i]), stdin) == NULL)
-			return -1;
-	/* bottom of card */
-	if (fgets(tmp, sizeof(tmp), stdin) == NULL)
-		return -1;
-
-	for (i = 0; i < LINES; i++) {
-		if (strlen(lines[i]) < columns + 2)
-			return -1;
-		if (lines[i][0] != '|' || lines[i][columns + 1] != '|')
-			return -1;
-		memmove(&lines[i][0], &lines[i][1], columns);
-		lines[i][columns] = 0;
-	}
-	for (col = 0; col < columns; col++) {
-		unsigned int val = 0;
-		for (i = 0; i < LINES; i++)
-			if (lines[i][col] == ']')
-				val |= 1 << (11 - i);
-		buf[col] = ' ';
-		for (i = 0; i < 256; i++)
-			if (holes[i] == val && holes[i]) {
-				buf[col] = i;
-				break;
-			}
-	}
-	buf[col] = 0;
-	for (col = columns - 1; col >= 0; col--) {
-		if (buf[col] == ' ')
-			buf[col] = '\0';
-		else
-			break;
-	}
-	return 0;
 }

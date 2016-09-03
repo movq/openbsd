@@ -1,7 +1,5 @@
-/* $OpenBSD: lib_tracechr.c,v 1.5 2010/01/12 23:22:07 nicm Exp $ */
-
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,57 +29,41 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
+
 
 /*
  *	lib_tracechr.c - Tracing/Debugging routines
  */
+
+#ifndef TRACE
+#define TRACE			/* turn on internal defs for this module */
+#endif
+
 #include <curses.priv.h>
 
 #include <ctype.h>
 
-MODULE_ID("$Id: lib_tracechr.c,v 1.5 2010/01/12 23:22:07 nicm Exp $")
-
 #ifdef TRACE
-
-NCURSES_EXPORT(char *)
-_nc_tracechar(SCREEN *sp, int ch)
+char *_tracechar(const unsigned char ch)
 {
-    NCURSES_CONST char *name;
-    char *MyBuffer = ((sp != 0)
-		      ? sp->tracechr_buf
-		      : _nc_globals.tracechr_buf);
-    size_t len = ((sp != 0)
-		  ? _nc_screen_tracechr_buf_size
-		  : _nc_globals_traceatr_color_buf_size);
-
-    if (ch > KEY_MIN || ch < 0) {
-	name = _nc_keyname(sp, ch);
-	if (name == 0 || *name == '\0')
-	    name = "NULL";
-	(void) snprintf(MyBuffer, len, "'%.30s' = %#03o", name, ch);
-    } else if (!is8bits(ch) || !isprint(UChar(ch))) {
-	/*
-	 * workaround for glibc bug:
-	 * sprintf changes the result from unctrl() to an empty string if it
-	 * does not correspond to a valid multibyte sequence.
-	 */
-	(void) snprintf(MyBuffer, len, "%#03o", ch);
-    } else {
-	name = _nc_unctrl(sp, (chtype) ch);
-	if (name == 0 || *name == 0)
-	    name = "null";	/* shouldn't happen */
-	(void) snprintf(MyBuffer, len, "'%.30s' = %#03o", name, ch);
+    static char crep[20];
+    /* 
+     * We can show the actual character if it's either an ordinary printable
+     * or one of the high-half characters.
+     */
+    if (isprint(ch) || (ch & 0x80))
+    {
+	crep[0] = '\'';
+	crep[1] = ch;	/* necessary; printf tries too hard on metachars */
+	(void) sprintf(crep + 2, "' = 0x%02x", (unsigned)ch);
     }
-    return (MyBuffer);
-}
-
-NCURSES_EXPORT(char *)
-_tracechar(int ch)
-{
-    return _nc_tracechar(SP, ch);
+    else
+	(void) sprintf(crep, "0x%02x", (unsigned)ch);
+    return(crep);
 }
 #else
-EMPTY_MODULE(_nc_lib_tracechr)
+extern	void _nc_lib_tracechr(void);
+	void _nc_lib_tracechr(void) { }
 #endif

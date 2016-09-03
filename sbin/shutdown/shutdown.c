@@ -1,4 +1,4 @@
-/*	$OpenBSD: shutdown.c,v 1.45 2016/09/01 09:50:38 deraadt Exp $	*/
+/*	$OpenBSD: shutdown.c,v 1.17 1999/09/03 18:11:51 deraadt Exp $	*/
 /*	$NetBSD: shutdown.c,v 1.9 1995/03/18 15:01:09 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,11 +34,24 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1988, 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)shutdown.c	8.2 (Berkeley) 2/16/94";
+#else
+static char rcsid[] = "$OpenBSD: shutdown.c,v 1.17 1999/09/03 18:11:51 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/syslog.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 
 #include <ctype.h>
 #include <fcntl.h>
@@ -45,9 +62,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <tzfile.h>
 #include <unistd.h>
-#include <limits.h>
 #include <errno.h>
 #include <err.h>
 
@@ -85,37 +101,38 @@ struct interval {
 #undef S
 
 static time_t offset, shuttime;
-static int dofast, dohalt, doreboot, dopower, dodump, mbuflen, nosync;
-static sig_atomic_t killflg;
+static int dofast, dohalt, doreboot, dopower, dodump, killflg, mbuflen, nosync;
 static char *whom, mbuf[BUFSIZ];
 
-void badtime(void);
-void __dead die_you_gravy_sucking_pig_dog(void);
-void doitfast(void);
-void __dead finish(int);
-void getoffset(char *);
-void __dead loop(void);
-void nolog(void);
-void timeout(int);
-void timewarn(int);
-void usage(void);
+void badtime __P((void));
+void __attribute ((noreturn)) die_you_gravy_sucking_pig_dog __P((void));
+void doitfast __P((void));
+void __attribute ((noreturn)) finish __P((int));
+void getoffset __P((char *));
+void __attribute ((noreturn)) loop __P((void));
+void nolog __P((void));
+void timeout __P((int));
+void timewarn __P((int));
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int arglen, ch, len, readstdin = 0;
+	extern int optind;
+	register char *p, *endp;
 	struct passwd *pw;
-	char *p, *endp;
-	pid_t forkpid;
-
-	if (pledge("stdio rpath wpath cpath getpw tty id proc exec", NULL) == -1)
-		err(1, "pledge");
+	int arglen, ch, len, readstdin;
 
 #ifndef DEBUG
-	if (geteuid())
-		errx(1, "NOT super-user");
+	if (geteuid()) {
+		(void)fprintf(stderr, "shutdown: NOT super-user\n");
+		exit(1);
+	}
 #endif
-	while ((ch = getopt(argc, argv, "dfhknpr-")) != -1)
+	readstdin = 0;
+	while ((ch = getopt(argc, argv, "-dfhknpr")) != -1)
 		switch (ch) {
 		case '-':
 			readstdin = 1;
@@ -141,6 +158,7 @@ main(int argc, char *argv[])
 		case 'r':
 			doreboot = 1;
 			break;
+		case '?':
 		default:
 			usage();
 		}
@@ -160,9 +178,9 @@ main(int argc, char *argv[])
 		    "shutdown: incompatible switches -h and -r.\n");
 		usage();
 	}
-	if (doreboot && dopower) {
+	if (dopower && !dohalt) {
 		(void)fprintf(stderr,
-		    "shutdown: incompatible switches -p and -r.\n");
+		    "shutdown: switch -p must be used with -h.\n");
 		usage();
 	}
 	getoffset(*argv++);
@@ -187,8 +205,7 @@ main(int argc, char *argv[])
 		for (;;) {
 			if (!fgets(p, endp - p + 1, stdin))
 				break;
-			for (; *p &&  p < endp; ++p)
-				;
+			for (; *p &&  p < endp; ++p);
 			if (p == endp) {
 				*p = '\n';
 				*++p = '\0';
@@ -198,14 +215,9 @@ main(int argc, char *argv[])
 	}
 	mbuflen = strlen(mbuf);
 
-	if (offset) {
-		char *ct = ctime(&shuttime);
-
-		if (ct)
-			printf("Shutdown at %.24s.\n", ct);
-		else
-			printf("Shutdown soon.\n");
-	} else
+	if (offset)
+		(void)printf("Shutdown at %.24s.\n", ctime(&shuttime));
+	else
 		(void)printf("Shutdown NOW!\n");
 
 	if (!(whom = getlogin()))
@@ -215,13 +227,16 @@ main(int argc, char *argv[])
 	(void)putc('\n', stdout);
 #else
 	(void)setpriority(PRIO_PROCESS, 0, PRIO_MIN);
+	{
+		int forkpid;
 
-	forkpid = fork();
-	if (forkpid == -1)
-		err(1, "fork");
-	if (forkpid) {
-		(void)printf("shutdown: [pid %ld]\n", (long)forkpid);
-		exit(0);
+		forkpid = fork();
+		if (forkpid == -1)
+			err(1, "fork");
+		if (forkpid) {
+			(void)printf("shutdown: [pid %d]\n", forkpid);
+			exit(0);
+		}
 	}
 	setsid();
 #endif
@@ -231,7 +246,7 @@ main(int argc, char *argv[])
 }
 
 void
-loop(void)
+loop()
 {
 	struct interval *tp;
 	u_int sltime;
@@ -240,7 +255,8 @@ loop(void)
 	if (offset <= NOLOG_TIME) {
 		logged = 1;
 		nolog();
-	} else
+	}
+	else
 		logged = 0;
 	tp = tlist;
 	if (tp->timeleft < offset)
@@ -279,13 +295,14 @@ static char *restricted_environ[] = {
 };
 
 void
-timewarn(int timeleft)
+timewarn(timeleft)
+	int timeleft;
 {
-	static char hostname[HOST_NAME_MAX+1];
-	char wcmd[PATH_MAX + 4];
-	extern char **environ;
 	static int first;
+	static char hostname[MAXHOSTNAMELEN];
 	FILE *pf;
+	char wcmd[MAXPATHLEN + 4];
+	extern char **environ;
 
 	if (!first++)
 		(void)gethostname(hostname, sizeof(hostname));
@@ -302,12 +319,10 @@ timewarn(int timeleft)
 	    "\007*** %sSystem shutdown message from %s@%s ***\007\n",
 	    timeleft ? "": "FINAL ", whom, hostname);
 
-	if (timeleft > 10*60) {
-		struct tm *tm = localtime(&shuttime);
-
-		fprintf(pf, "System going down at %d:%02d\n\n",
-		    tm->tm_hour, tm->tm_min);
-	} else if (timeleft > 59)
+	if (timeleft > 10*60)
+		(void)fprintf(pf, "System going down at %5.5s\n\n",
+		    ctime(&shuttime) + 11);
+	else if (timeleft > 59)
 		(void)fprintf(pf, "System going down in %d minute%s\n\n",
 		    timeleft / 60, (timeleft > 60) ? "s" : "");
 	else if (timeleft)
@@ -320,7 +335,7 @@ timewarn(int timeleft)
 
 	/*
 	 * play some games, just in case wall doesn't come back
-	 * probably unnecessary, given that wall is careful.
+	 * probably unecessary, given that wall is careful.
 	 */
 	if (!setjmp(alarmbuf)) {
 		(void)signal(SIGALRM, timeout);
@@ -332,18 +347,18 @@ timewarn(int timeleft)
 }
 
 void
-timeout(int signo)
+timeout(signo)
+	int signo;
 {
-	longjmp(alarmbuf, 1);		/* XXX signal/longjmp resource leaks */
+	longjmp(alarmbuf, 1);
 }
 
 void
-die_you_gravy_sucking_pig_dog(void)
+die_you_gravy_sucking_pig_dog()
 {
 
 	syslog(LOG_NOTICE, "%s by %s: %s",
-	    doreboot ? "reboot" : dopower ? "power-down" : dohalt ? "halt" :
-	    "shutdown", whom, mbuf);
+	    doreboot ? "reboot" : dohalt ? "halt" : "shutdown", whom, mbuf);
 	(void)sleep(2);
 
 	(void)printf("\r\nSystem shutdown time has arrived\007\007\r\n");
@@ -353,15 +368,9 @@ die_you_gravy_sucking_pig_dog(void)
 	}
 	if (dofast)
 		doitfast();
-
-	if (pledge("stdio rpath wpath cpath tty id proc exec", NULL) == -1)
-		err(1, "pledge");
-
 #ifdef DEBUG
 	if (doreboot)
 		(void)printf("reboot");
-	else if (dopower)
-		(void)printf("power-down");
 	else if (dohalt)
 		(void)printf("halt");
 	if (nosync)
@@ -372,32 +381,20 @@ die_you_gravy_sucking_pig_dog(void)
 		(void)printf(" with dump");
 	(void)printf("\nkill -HUP 1\n");
 #else
-	if (dohalt || dopower || doreboot) {
-		char *args[10];
-		char **arg, *path;
-
-		if (pledge("stdio exec", NULL) == -1)
-			err(1, "pledge");
-
-		arg = &args[0];
-		if (doreboot) {
-			path = _PATH_REBOOT;
-			*arg++ = "reboot";
-		} else {
-			path = _PATH_HALT;
-			*arg++ = "halt";
-		}
-		*arg++ = "-l";
-		if (dopower)
-			*arg++ = "-p";
-		if (nosync)
-			*arg++ = "-n";
-		if (dodump)
-			*arg++ = "-d";
-		*arg++ = NULL;
-		execve(path, args, NULL);
-		syslog(LOG_ERR, "shutdown: can't exec %s: %m.", path);
-		warn(path);
+	if (doreboot) {
+		execle(_PATH_REBOOT, "reboot", "-l",
+		    (nosync ? "-n" : (dodump ? "-d" : NULL)),
+		    (dodump ? "-d" : NULL), NULL, NULL);
+		syslog(LOG_ERR, "shutdown: can't exec %s: %m.", _PATH_REBOOT);
+		warn(_PATH_REBOOT);
+	}
+	else if (dohalt) {
+		execle(_PATH_HALT, "halt", "-l",
+		    (dopower ? "-p" : (nosync ? "-n" : (dodump ? "-d" : NULL))),
+		    (nosync ? "-n" : (dodump ? "-d" : NULL)),
+		    (dodump ? "-d" : NULL), NULL, NULL);
+		syslog(LOG_ERR, "shutdown: can't exec %s: %m.", _PATH_HALT);
+		warn(_PATH_HALT);
 	}
 	if (access(_PATH_RC, R_OK) != -1) {
 		pid_t pid;
@@ -426,7 +423,7 @@ die_you_gravy_sucking_pig_dog(void)
 			t.c_oflag |= (ONLCR | OPOST);
 			tcsetattr(0, TCSANOW, &t);
 
-			execl(_PATH_BSHELL, "sh", _PATH_RC, "shutdown", (char *)NULL);
+			execl(_PATH_BSHELL, "sh", _PATH_RC, "shutdown", NULL);
 			_exit(1);
 		default:
 			waitpid(pid, NULL, 0);
@@ -440,12 +437,13 @@ die_you_gravy_sucking_pig_dog(void)
 #define	ATOI2(p)	(p[0] - '0') * 10 + (p[1] - '0'); p += 2;
 
 void
-getoffset(char *timearg)
+getoffset(timearg)
+	register char *timearg;
 {
-	struct tm *lt;
-	int this_year;
+	register struct tm *lt;
+	register char *p;
 	time_t now;
-	char *p;
+	int this_year;
 
 	if (!strcasecmp(timearg, "now")) {		/* now */
 		offset = 0;
@@ -454,32 +452,28 @@ getoffset(char *timearg)
 
 	(void)time(&now);
 	if (*timearg == '+') {				/* +minutes */
-		const char *errstr;
-
-		offset = strtonum(++timearg, 0, INT_MAX, &errstr);
-		if (errstr)
+		if (!isdigit(*++timearg))
 			badtime();
-		offset *= 60;
+		offset = atoi(timearg) * 60;
 		shuttime = now + offset;
 		return;
 	}
 
 	/* handle hh:mm by getting rid of the colon */
-	for (p = timearg; *p; ++p) {
-		if (!isascii((unsigned char)*p) || !isdigit((unsigned char)*p)) {
+	for (p = timearg; *p; ++p)
+		if (!isascii(*p) || !isdigit(*p))
 			if (*p == ':' && strlen(p) == 3) {
 				p[0] = p[1];
 				p[1] = p[2];
 				p[2] = '\0';
-			} else
+			}
+			else
 				badtime();
-		}
-	}
 
 	unsetenv("TZ");					/* OUR timezone */
 	lt = localtime(&now);				/* current time val */
 
-	switch (strlen(timearg)) {
+	switch(strlen(timearg)) {
 	case 10:
 		this_year = lt->tm_year;
 		lt->tm_year = ATOI2(timearg);
@@ -513,68 +507,71 @@ getoffset(char *timearg)
 		lt->tm_sec = 0;
 		if ((shuttime = mktime(lt)) == -1)
 			badtime();
-		if ((offset = shuttime - now) < 0)
-			errx(1, "that time is already past.");
+		if ((offset = shuttime - now) < 0) {
+			(void)fprintf(stderr,
+			    "shutdown: that time is already past.\n");
+			exit(1);
+		}
 		break;
 	default:
 		badtime();
 	}
 }
 
+#define	FSMSG	"fastboot file for fsck\n"
 void
-doitfast(void)
+doitfast()
 {
 	int fastfd;
 
 	if ((fastfd = open(_PATH_FASTBOOT, O_WRONLY|O_CREAT|O_TRUNC,
 	    0664)) >= 0) {
-		dprintf(fastfd, "fastboot file for fsck\n");
-		close(fastfd);
+		(void)write(fastfd, FSMSG, sizeof(FSMSG) - 1);
+		(void)close(fastfd);
 	}
 }
 
+#define	NOMSG	"\n\nNO LOGINS: System going down at "
 void
-nolog(void)
+nolog()
 {
 	int logfd;
-	struct tm *tm;
+	char *ct;
 
 	(void)unlink(_PATH_NOLOGIN);	/* in case linked to another file */
 	(void)signal(SIGINT, finish);
 	(void)signal(SIGHUP, finish);
 	(void)signal(SIGQUIT, finish);
 	(void)signal(SIGTERM, finish);
-	tm = localtime(&shuttime);
-	if (tm && (logfd = open(_PATH_NOLOGIN, O_WRONLY|O_CREAT|O_TRUNC,
+	if ((logfd = open(_PATH_NOLOGIN, O_WRONLY|O_CREAT|O_TRUNC,
 	    0664)) >= 0) {
-		dprintf(logfd,
-		    "\n\nNO LOGINS: System going down at %d:%02d\n\n",
-		    tm->tm_hour, tm->tm_min);
-		close(logfd);
+		(void)write(logfd, NOMSG, sizeof(NOMSG) - 1);
+		ct = ctime(&shuttime);
+		(void)write(logfd, ct + 11, 5);
+		(void)write(logfd, "\n\n", 2);
+		(void)write(logfd, mbuf, strlen(mbuf));
+		(void)close(logfd);
 	}
 }
 
 void
-finish(int signo)
+finish(signo)
+	int signo;
 {
 	if (!killflg)
 		(void)unlink(_PATH_NOLOGIN);
-	if (signo == 0)
-		exit(0);
-	else
-		_exit(0);
+	exit(0);
 }
 
 void
-badtime(void)
+badtime()
 {
 	errx(1, "bad time format.");
 }
 
 void
-usage(void)
+usage()
 {
-	fprintf(stderr,
-	    "usage: shutdown [-] [-dfhknpr] time [warning-message ...]\n");
+	fprintf(stderr, "usage: shutdown [-fhknpr] shutdowntime [ message ]\n");
 	exit(1);
 }

@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_mkexrc.c,v 1.7 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_mkexrc.c	10.11 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -32,10 +34,12 @@
  *
  * Create (or overwrite) a .exrc file with the current info.
  *
- * PUBLIC: int ex_mkexrc(SCR *, EXCMD *);
+ * PUBLIC: int ex_mkexrc __P((SCR *, EXCMD *));
  */
 int
-ex_mkexrc(SCR *sp, EXCMD *cmdp)
+ex_mkexrc(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	struct stat sb;
 	FILE *fp;
@@ -56,7 +60,7 @@ ex_mkexrc(SCR *sp, EXCMD *cmdp)
 
 	if (!FL_ISSET(cmdp->iflags, E_C_FORCE) && !stat(fname, &sb)) {
 		msgq_str(sp, M_ERR, fname,
-		    "%s exists, not written; use ! to override");
+		    "137|%s exists, not written; use ! to override");
 		return (1);
 	}
 
@@ -86,7 +90,7 @@ ex_mkexrc(SCR *sp, EXCMD *cmdp)
 		goto e2;
 	}
 
-	msgq_str(sp, M_INFO, fname, "New exrc file: %s");
+	msgq_str(sp, M_INFO, fname, "138|New exrc file: %s");
 	return (0);
 
 e1:	sverrno = errno;

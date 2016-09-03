@@ -1,4 +1,4 @@
-/*	$OpenBSD: top.local.h,v 1.4 2008/04/02 16:41:24 deraadt Exp $	*/
+/*	$OpenBSD: top.local.h,v 1.2 1997/08/14 15:05:04 downsj Exp $	*/
 
 /*
  *  Top - a top users display for Berkeley Unix
@@ -50,4 +50,21 @@
 
 #ifndef Default_DELAY
 #define Default_DELAY	5
+#endif
+
+/*
+ *  If the local system's getpwnam interface uses random access to retrieve
+ *  a record (i.e.: 4.3 systems, Sun "yellow pages"), then defining
+ *  RANDOM_PW will take advantage of that fact.  If RANDOM_PW is defined,
+ *  then getpwnam is used and the result is cached.  If not, then getpwent
+ *  is used to read and cache the password entries sequentially until the
+ *  desired one is found.
+ *
+ *  We initially set RANDOM_PW to something which is controllable by the
+ *  Configure script.  Then if its value is 0, we undef it.
+ */
+
+#define RANDOM_PW	1
+#if RANDOM_PW == 0
+#undef RANDOM_PW
 #endif

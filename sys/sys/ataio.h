@@ -1,4 +1,4 @@
-/*	$OpenBSD: ataio.h,v 1.5 2003/09/26 21:43:32 miod Exp $	*/
+/*	$OpenBSD: ataio.h,v 1.1 1999/07/18 21:25:20 csapuntz Exp $	*/
 /*	$NetBSD: ataio.h,v 1.2 1998/11/23 22:58:23 kenh Exp $	*/
 
 #ifndef _SYS_ATAIO_H_
@@ -16,14 +16,14 @@ typedef struct	atareq {
 	u_char	head;		/* head number */
 	u_short	cylinder;	/* cylinder/lba address */
 
-	caddr_t	databuf;	/* pointer to I/O data buffer */
+	caddr_t	databuf;	/* Pointer to I/O data buffer */
 	u_long	datalen;	/* length of data buffer */
-	int	timeout;	/* command timeout */
-	u_char	retsts;		/* return status for the command */
+	int	timeout;	/* Command timeout */
+	u_char	retsts;		/* the return status for the command */
 	u_char	error;		/* error bits */
 } atareq_t;
 
-/* bit definitions for flags */
+/* bit defintions for flags */
 #define ATACMD_READ		0x00000001
 #define ATACMD_WRITE		0x00000002
 #define ATACMD_READREG		0x00000004
@@ -35,14 +35,5 @@ typedef struct	atareq {
 #define ATACMD_DF	0x03
 
 #define ATAIOCCOMMAND	_IOWR('Q', 8, atareq_t)
-
-typedef struct atagettrace {
-	unsigned int	buf_size;	/* length of data buffer */
-	void		*buf;		/* pointer to data buffer */
-	unsigned int	bytes_copied;	/* number of bytes copied to buffer */
-	unsigned int	bytes_left;	/* number of bytes left */
-} atagettrace_t;
-
-#define ATAIOGETTRACE	_IOWR('Q', 27, struct atagettrace)
 
 #endif /* _SYS_ATAIO_H_ */

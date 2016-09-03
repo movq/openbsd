@@ -1,4 +1,4 @@
-/*	$OpenBSD: n_log.c,v 1.8 2009/10/27 23:59:29 deraadt Exp $	*/
+/*      $NetBSD: n_log.c,v 1.1 1995/10/10 23:36:57 ragge Exp $ */
 /*
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -27,6 +31,10 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+static char sccsid[] = "@(#)log.c	8.2 (Berkeley) 11/30/93";
+#endif /* not lint */
 
 #include <math.h>
 #include <errno.h>
@@ -68,7 +76,7 @@
  *	+Inf	return +Inf
 */
 
-#if defined(__vax__)
+#if defined(vax) || defined(tahoe)
 #define _IEEE		0
 #define TRUNC(x)	x = (double) (float) (x)
 #else
@@ -89,12 +97,12 @@
  * Values for log(F) were generated using error < 10^-57 absolute
  * with the bc -l package.
 */
-static const double	A1 = 	  .08333333333333178827;
-static const double	A2 = 	  .01250000000377174923;
-static const double	A3 =	 .002232139987919447809;
-static const double	A4 =	.0004348877777076145742;
+static double	A1 = 	  .08333333333333178827;
+static double	A2 = 	  .01250000000377174923;
+static double	A3 =	 .002232139987919447809;
+static double	A4 =	.0004348877777076145742;
 
-static const double logF_head[N+1] = {
+static double logF_head[N+1] = {
 	0.,
 	.007782140442060381246,
 	.015504186535963526694,
@@ -226,7 +234,7 @@ static const double logF_head[N+1] = {
 	.693147180560117703862
 };
 
-static const double logF_tail[N+1] = {
+static double logF_tail[N+1] = {
 	0.,
 	-.00000000000000543229938420049,
 	 .00000000000000172745674997061,
@@ -359,7 +367,11 @@ static const double logF_tail[N+1] = {
 };
 
 double
+#ifdef _ANSI_SOURCE
 log(double x)
+#else
+log(x) double x;
+#endif
 {
 	int m, j;
 	double F, f, g, q, u, u2, v, zero = 0.0, one = 1.0;
@@ -380,15 +392,14 @@ log(double x)
 			return (x+x);
 		else
 			return (infnan(ERANGE));
-
+	
 	/* Argument reduction: 1 <= g < 2; x/2^m = g;	*/
 	/* y = F*(1 + f/F) for |f| <= 2^-8		*/
 
 	m = logb(x);
 	g = ldexp(x, -m);
 	if (_IEEE && m == -1022) {
-		j = logb(g);
-		m += j;
+		j = logb(g), m += j;
 		g = ldexp(g, -j);
 	}
 	j = N*(g-1) + .5;
@@ -405,18 +416,14 @@ log(double x)
      * 	       u1 has at most 35 bits, and F*u1 is exact, as F has < 8 bits.
      *         It also adds exactly to |m*log2_hi + log_F_head[j] | < 750
     */
-	if (m | j) {
-		u1 = u + 513;
-		u1 -= 513;
-	}
+	if (m | j)
+		u1 = u + 513, u1 -= 513;
 
     /* case 2:	|1-x| < 1/256. The m- and j- dependent terms are zero;
      * 		u1 = u to 24 bits.
     */
-	else {
-		u1 = u;
-		TRUNC(u1);
-	}
+	else
+		u1 = u, TRUNC(u1);
 	u2 = (2.0*(f - F*u1) - u1*f) * g;
 			/* u1 + u2 = 2f/(2F+f) to extra precision.	*/
 
@@ -432,10 +439,14 @@ log(double x)
 
 /*
  * Extra precision variant, returning struct {double a, b;};
- * log(x) = a+b to 63 bits, with a rounded to 26 bits.
+ * log(x) = a+b to 63 bits, with a is rounded to 26 bits.
  */
 struct Double
+#ifdef _ANSI_SOURCE
 __log__D(double x)
+#else
+__log__D(x) double x;
+#endif
 {
 	int m, j;
 	double F, f, g, q, u, v, u2, one = 1.0;
@@ -448,8 +459,7 @@ __log__D(double x)
 	m = logb(x);
 	g = ldexp(x, -m);
 	if (_IEEE && m == -1022) {
-		j = logb(g);
-		m += j;
+		j = logb(g), m += j;
 		g = ldexp(g, -j);
 	}
 	j = N*(g-1) + .5;
@@ -460,14 +470,10 @@ __log__D(double x)
 	u = 2*f*g;
 	v = u*u;
 	q = u*v*(A1 + v*(A2 + v*(A3 + v*A4)));
-	if (m | j) {
-		u1 = u + 513;
-		u1 -= 513;
-	}
-	else {
-		u1 = u;
-		TRUNC(u1);
-	}
+	if (m | j)
+		u1 = u + 513, u1 -= 513;
+	else
+		u1 = u, TRUNC(u1);
 	u2 = (2.0*(f - F*u1) - u1*f) * g;
 
 	u1 += m*logF_head[N] + logF_head[j];

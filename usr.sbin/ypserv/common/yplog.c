@@ -1,4 +1,4 @@
-/*	$OpenBSD: yplog.c,v 1.8 2002/07/19 02:38:40 deraadt Exp $ */
+/*	$OpenBSD: yplog.c,v 1.5 1997/08/09 22:44:04 maja Exp $ */
 
 /*
  * Copyright (c) 1996 Charles D. Cranor
@@ -31,7 +31,7 @@
  */
 
 /*
- * yplog.c: replacement yplog routines for
+ * yplog.c: replacement yplog routines for 
  * Mats O Jansson's ypserv program, as added by
  * Chuck Cranor.
  */
@@ -40,7 +40,11 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 #include "yplog.h"
 
 static FILE	*logfp = NULL;		/* the log file */
@@ -49,12 +53,23 @@ static FILE	*logfp = NULL;		/* the log file */
  * yplog(): like a printf, but to the log file.   does the flush
  * and data for you.
  */
+
 void
+#ifdef __STDC__
 yplog(const char *fmt, ...)
+#else
+yplog(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
 
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	vyplog(fmt, ap);
 	va_end(ap);
 }
@@ -62,10 +77,13 @@ yplog(const char *fmt, ...)
 /*
  * vyplog() support routine for yplog()
  */
+
 void
-vyplog(const char *fmt, va_list ap)
+vyplog(fmt, ap)
+	register const char *fmt;
+	va_list ap;
 {
-	time_t t;
+        time_t t;
 
 	if (logfp == NULL)
 		return;
@@ -79,8 +97,9 @@ vyplog(const char *fmt, va_list ap)
 /*
  * open log
  */
+
 void
-ypopenlog(void)
+ypopenlog()
 {
 	static char logfn[] = "/var/yp/ypserv.log";
 
@@ -95,8 +114,9 @@ ypopenlog(void)
 /*
  * close log
  */
+
 void
-ypcloselog(void)
+ypcloselog()
 {
 	if (logfp) {
 		yplog("yplog closed");

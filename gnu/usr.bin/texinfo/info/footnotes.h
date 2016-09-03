@@ -1,7 +1,10 @@
 /* footnotes.h -- Some functions for manipulating footnotes.
-   $Id: footnotes.h,v 1.4 2006/07/17 16:12:36 espie Exp $
+   $Id: footnotes.h,v 1.2 1999/01/11 16:38:08 espie Exp $
 
-   Copyright (C) 1993, 1997, 1998, 2002, 2004 Free Software Foundation, Inc.
+   This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993, 97 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +26,7 @@
 #define INFO_FOOTNOTES_H
 
 /* Magic string which indicates following text is footnotes. */
-#define FOOTNOTE_LABEL N_("---------- Footnotes ----------")
+#define FOOTNOTE_LABEL _("---------- Footnotes ----------")
 
 #define FN_FOUND   0
 #define FN_UNFOUND 1
@@ -35,7 +38,7 @@
    and displayed.  Returns FN_UNFOUND if there were no footnotes found
    in WINDOW's node.  Returns FN_UNABLE if there were footnotes, but the
    window to show them couldn't be made. */
-extern int info_get_or_remove_footnotes (WINDOW *window);
+extern int info_get_or_remove_footnotes ();
 
 /* Non-zero means attempt to show footnotes when displaying a new window. */
 extern int auto_footnotes_p;

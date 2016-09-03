@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)info_passwd.c	8.1 (Berkeley) 6/6/93
- *	$Id: info_passwd.c,v 1.10 2015/12/05 21:15:01 mmcc Exp $
+ *	$Id: info_passwd.c,v 1.1.1.1 1995/10/18 08:47:10 deraadt Exp $
  */
 
 /*
@@ -44,6 +48,7 @@
 
 #include "am.h"
 
+#ifdef HAS_PASSWD_MAPS
 #include <pwd.h>
 
 #define	PASSWD_MAP	"/etc/passwd"
@@ -51,8 +56,10 @@
 /*
  * Nothing to probe - check the map name is PASSWD_MAP.
  */
-int
-passwd_init(char *map, time_t *tp)
+int passwd_init P((char *map, time_t *tp));
+int passwd_init(map, tp)
+char *map;
+time_t *tp;
 {
 	*tp = 0;
 	return strcmp(map, PASSWD_MAP) == 0 ? 0 : ENOENT;
@@ -63,12 +70,16 @@ passwd_init(char *map, time_t *tp)
  * Grab the entry via the getpwname routine
  * Modify time is ignored by passwd - XXX
  */
-int
-passwd_search(mnt_map *m, char *map, char *key, char **pval, time_t *tp)
+int passwd_search P((mnt_map *m, char *map, char *key, char **pval, time_t *tp));
+int passwd_search(m, map, key, pval, tp)
+mnt_map *m;
+char *map;
+char *key;
+char **pval;
+time_t *tp;
 {
-	struct passwd *pw;
 	char *dir = 0;
-
+	struct passwd *pw;
 	if (strcmp(key, "/defaults") == 0) {
 		*pval = strdup("type:=nfs");
 		return 0;
@@ -86,9 +97,10 @@ passwd_search(mnt_map *m, char *map, char *key, char **pval, time_t *tp)
 		 * This allows cross-domain entries in your passwd file.
 		 * ... but forget about security!
 		 */
-		char val[MAXPATHLEN], rhost[MAXHOSTNAMELEN];
-		char *user, *p, *q;
-
+		char *user;
+		char *p, *q;
+		char val[MAXPATHLEN];
+		char rhost[MAXHOSTNAMELEN];
 		dir = strdup(pw->pw_dir);
 		/*
 		 * Find user name.  If no / then Invalid...
@@ -99,7 +111,7 @@ passwd_search(mnt_map *m, char *map, char *key, char **pval, time_t *tp)
 		*user++ = '\0';
 		/*
 		 * Find start of host "path".  If no / then Invalid...
-		 */
+		 */ 
 		p = strchr(dir+1, '/');
 		if (!p)
 			goto enoent;
@@ -113,14 +125,13 @@ passwd_search(mnt_map *m, char *map, char *key, char **pval, time_t *tp)
 		do {
 			q = strrchr(p, '/');
 			if (q) {
-				strlcat(rhost, q + 1, sizeof(rhost));
-				strlcat(rhost, ".", sizeof(rhost));
+				strcat(rhost, q + 1);
+				strcat(rhost, ".");
 				*q = '\0';
 			} else {
-				strlcat(rhost, p, sizeof(rhost));
+				strcat(rhost, p);
 			}
 		} while (q);
-
 		/*
 		 * Sanity check
 		 */
@@ -132,10 +143,8 @@ passwd_search(mnt_map *m, char *map, char *key, char **pval, time_t *tp)
 		q = strchr(rhost, '.');
 		if (q)
 			*q = '\0';
-		snprintf(val, sizeof(val),
-		    "rfs:=%s/%s;rhost:=%s;sublink:=%s;fs:=${autodir}%s",
-		    dir, rhost, rhost, user, pw->pw_dir);
-		free(dir);
+		sprintf(val, "rfs:=%s/%s;rhost:=%s;sublink:=%s;fs:=${autodir}%s",
+			dir, rhost, rhost, user, pw->pw_dir);
 		if (q)
 			*q = '.';
 		*pval = strdup(val);
@@ -143,7 +152,9 @@ passwd_search(mnt_map *m, char *map, char *key, char **pval, time_t *tp)
 	}
 
 enoent:
-	free(dir);
+	if (dir)
+		free(dir);
 
 	return ENOENT;
 }
+#endif /* HAS_PASSWD_MAPS */

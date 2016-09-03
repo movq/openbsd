@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-atm.c,v 1.12 2015/01/16 06:40:21 deraadt Exp $	*/
-
 /*
  * Copyright (c) 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -20,21 +18,30 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-atm.c,v 1.4 1999/09/16 20:58:45 brad Exp $ (LBL)";
+#endif
 
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
+#ifdef __STDC__
 struct mbuf;
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
 #include <stdio.h>
 #include <pcap.h>
@@ -64,11 +71,6 @@ atm_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 	}
 	if (p[0] != 0xaa || p[1] != 0xaa || p[2] != 0x03) {
 		/*XXX assume 802.6 MAC header from fore driver */
-#define MIN_ATM_8026_HDRLEN (20 + 8)
-		if (caplen < MIN_ATM_8026_HDRLEN) {
-			printf("[|atm]");
-			goto out;
-		}
 		if (eflag)
 			printf("%04x%04x %04x%04x ",
 			       p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3],
@@ -103,12 +105,6 @@ atm_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 	case ETHERTYPE_IP:
 		ip_print(p, length);
 		break;
-
-#ifdef INET6
-	case ETHERTYPE_IPV6:
-		ip6_print(p, length);
-		break;
-#endif /*INET6*/
 
 		/*XXX this probably isn't right */
 	case ETHERTYPE_ARP:

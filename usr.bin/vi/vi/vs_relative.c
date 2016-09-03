@@ -1,5 +1,3 @@
-/*	$OpenBSD: vs_relative.c,v 1.9 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)vs_relative.c	10.11 (Berkeley) 5/13/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,10 +29,12 @@
  * vs_column --
  *	Return the logical column of the cursor in the line.
  *
- * PUBLIC: int vs_column(SCR *, size_t *);
+ * PUBLIC: int vs_column __P((SCR *, size_t *));
  */
 int
-vs_column(SCR *sp, size_t *colp)
+vs_column(sp, colp)
+	SCR *sp;
+	size_t *colp;
 {
 	VI_PRIVATE *vip;
 
@@ -48,10 +52,13 @@ vs_column(SCR *sp, size_t *colp)
  *	the physical character column within the line, including space
  *	required for the O_NUMBER and O_LIST options.
  *
- * PUBLIC: size_t vs_screens(SCR *, recno_t, size_t *);
+ * PUBLIC: size_t vs_screens __P((SCR *, recno_t, size_t *));
  */
 size_t
-vs_screens(SCR *sp, recno_t lno, size_t *cnop)
+vs_screens(sp, lno, cnop)
+	SCR *sp;
+	recno_t lno;
+	size_t *cnop;
 {
 	size_t cols, screens;
 
@@ -91,26 +98,18 @@ vs_screens(SCR *sp, recno_t lno, size_t *cnop)
  *	Return the screen columns necessary to display the line, or,
  *	if specified, the physical character column within the line.
  *
- * PUBLIC: size_t vs_columns(SCR *, char *, recno_t, size_t *, size_t *);
+ * PUBLIC: size_t vs_columns __P((SCR *, char *, recno_t, size_t *, size_t *));
  */
 size_t
-vs_columns(SCR *sp, char *lp, recno_t lno, size_t *cnop, size_t *diffp)
+vs_columns(sp, lp, lno, cnop, diffp)
+	SCR *sp;
+	char *lp;
+	recno_t lno;
+	size_t *cnop, *diffp;
 {
 	size_t chlen, cno, curoff, last, len, scno;
 	int ch, leftright, listset;
 	char *p;
-
-	/*
-	 * Initialize the screen offset.
-	 */
-	scno = 0;
-	curoff = 0;
-
-	/* Leading number if O_NUMBER option set. */
-	if (O_ISSET(sp, O_NUMBER)) {
-		scno += O_NUMBER_LENGTH;
-		curoff += O_NUMBER_LENGTH;
-	}
 
 	/* Need the line to go any further. */
 	if (lp == NULL) {
@@ -123,7 +122,7 @@ vs_columns(SCR *sp, char *lp, recno_t lno, size_t *cnop, size_t *diffp)
 	if (lp == NULL) {
 done:		if (diffp != NULL)		/* XXX */
 			*diffp = 0;
-		return (scno);
+		return (0);
 	}
 
 	/* Store away the values of the list and leftright edit options. */
@@ -131,9 +130,15 @@ done:		if (diffp != NULL)		/* XXX */
 	leftright = O_ISSET(sp, O_LEFTRIGHT);
 
 	/*
-	 * Initialize the pointer into the buffer.
+	 * Initialize the pointer into the buffer and screen and current
+	 * offsets.
 	 */
 	p = lp;
+	curoff = scno = 0;
+
+	/* Leading number if O_NUMBER option set. */
+	if (O_ISSET(sp, O_NUMBER))
+		scno += O_NUMBER_LENGTH;
 
 	/* Macro to return the display length of any signal character. */
 #define	CHLEN(val) (ch = *(u_char *)p++) == '\t' &&			\
@@ -148,13 +153,12 @@ done:		if (diffp != NULL)		/* XXX */
 	 */
 #define	TAB_RESET {							\
 	curoff += chlen;						\
-	if (!leftright && curoff >= sp->cols) {				\
+	if (!leftright && curoff >= sp->cols)				\
 		if (ch == '\t') {					\
 			curoff = 0;					\
 			scno -= scno % sp->cols;			\
 		} else							\
 			curoff -= sp->cols;				\
-	}								\
 }
 	if (cnop == NULL)
 		while (len--) {
@@ -193,10 +197,13 @@ done:		if (diffp != NULL)		/* XXX */
  *	character closest to the currently most attractive character
  *	position (which is stored as a screen column).
  *
- * PUBLIC: size_t vs_rcm(SCR *, recno_t, int);
+ * PUBLIC: size_t vs_rcm __P((SCR *, recno_t, int));
  */
 size_t
-vs_rcm(SCR *sp, recno_t lno, int islast)
+vs_rcm(sp, lno, islast)
+	SCR *sp;
+	recno_t lno;
+	int islast;
 {
 	size_t len;
 
@@ -219,10 +226,13 @@ vs_rcm(SCR *sp, recno_t lno, int islast)
  *	Return the physical column from the line that will display a
  *	character closest to the specified screen column.
  *
- * PUBLIC: size_t vs_colpos(SCR *, recno_t, size_t);
+ * PUBLIC: size_t vs_colpos __P((SCR *, recno_t, size_t));
  */
 size_t
-vs_colpos(SCR *sp, recno_t lno, size_t cno)
+vs_colpos(sp, lno, cno)
+	SCR *sp;
+	recno_t lno;
+	size_t cno;
 {
 	size_t chlen, curoff, len, llen, off, scno;
 	int ch, leftright, listset;

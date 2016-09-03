@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_chgat.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_chgat.c,v 1.1 1999/01/18 19:09:37 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,6 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Sven Verdoolaege                        2001                    *
- *     and: Thomas E. Dickey                        2005                    *
  ****************************************************************************/
 
 /*
@@ -44,27 +42,23 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_chgat.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_chgat.c,v 1.2 1998/02/11 12:14:00 tom Exp $")
 
-NCURSES_EXPORT(int)
-wchgat(WINDOW *win, int n, attr_t attr, short color, const void *opts GCC_UNUSED)
+int wchgat(WINDOW *win, int n, attr_t attr, short color, const void *opts GCC_UNUSED)
 {
-    int i;
+    int	i;
 
     T((T_CALLED("wchgat(%p,%d,%s,%d)"), win, n, _traceattr(attr), color));
 
     if (win) {
-	struct ldat *line = &(win->_line[win->_cury]);
+      toggle_attr_on(attr,COLOR_PAIR(color));
 
-	toggle_attr_on(attr, COLOR_PAIR(color));
+      for (i = win->_curx; i <= win->_maxx && (n == -1 || (n-- > 0)); i++)
+	win->_line[win->_cury].text[i]
+	  = TextOf(win->_line[win->_cury].text[i]) | attr;
 
-	for (i = win->_curx; i <= win->_maxx && (n == -1 || (n-- > 0)); i++) {
-	    SetAttr(line->text[i], attr);
-	    SetPair(line->text[i], color);
-	    CHANGED_CELL(line, i);
-	}
-
-	returnCode(OK);
-    } else
-	returnCode(ERR);
+      returnCode(OK);
+    }
+    else
+      returnCode(ERR);
 }

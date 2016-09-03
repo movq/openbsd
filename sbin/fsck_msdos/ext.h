@@ -1,4 +1,4 @@
-/*	$OpenBSD: ext.h,v 1.13 2015/09/27 16:56:06 guenther Exp $	*/
+/*	$OpenBSD: ext.h,v 1.5 1998/01/11 20:40:33 provos Exp $	*/
 /*	$NetBSD: ext.h,v 1.5 1997/10/17 11:19:48 ws Exp $	*/
 
 /*
@@ -13,6 +13,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Martin Husemann
+ *	and Wolfgang Solfrank.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -44,17 +51,19 @@ extern int alwaysyes;	/* assume "yes" for all questions */
 extern int preen;	/* we are preening */
 extern int rdonly;	/* device is opened read only (supersedes above) */
 
-extern struct disklabel lab;
+extern char *fname;	/* filesystem currently checked */
+
+extern struct dosDirEntry *rootDir;
 
 /*
  * function declarations
  */
-int ask(int, const char *, ...) __attribute__((__format__ (printf, 2, 3)));
+int ask __P((int, const char *, ...));
 
 /*
  * Check filesystem given as arg
  */
-int checkfilesys(const char *);
+int checkfilesys __P((const char *));
 
 /*
  * Return values of various functions
@@ -64,47 +73,47 @@ int checkfilesys(const char *);
 #define	FSDIRMOD	2		/* Some directory was modified */
 #define	FSFATMOD	4		/* The FAT was modified */
 #define	FSERROR		8		/* Some unrecovered error remains */
-#define	FSFATAL		16		/* Some unrecoverable error occurred */
+#define	FSFATAL		16		/* Some unrecoverable error occured */
 
 /*
- * read a boot block in a machine independent fashion and translate
+ * read a boot block in a machine independend fashion and translate
  * it into our struct bootblock.
  */
-int readboot(int, struct bootblock *);
+int readboot __P((int, struct bootblock *));
 
 /*
  * Correct the FSInfo block.
  */
-int writefsinfo(int, struct bootblock *);
+int writefsinfo __P((int, struct bootblock *));
 
 /*
  * Read one of the FAT copies and return a pointer to the new
  * allocated array holding our description of it.
  */
-int readfat(int, struct bootblock *, int, struct fatEntry **);
+int readfat __P((int, struct bootblock *, int, struct fatEntry **));
 
 /*
  * Check two FAT copies for consistency and merge changes into the
- * first if necessary.
+ * first if neccessary.
  */
-int comparefat(struct bootblock *, struct fatEntry *, struct fatEntry *, int);
+int comparefat __P((struct bootblock *, struct fatEntry *, struct fatEntry *, int));
 
 /*
  * Check a FAT
  */
-int checkfat(struct bootblock *, struct fatEntry *);
+int checkfat __P((struct bootblock *, struct fatEntry *));
 
 /*
  * Write back FAT entries
  */
-int writefat(int, struct bootblock *, struct fatEntry *);
+int writefat __P((int, struct bootblock *, struct fatEntry *));
 
 /*
  * Read a directory
  */
-int resetDosDirSection(struct bootblock *, struct fatEntry *);
-void finishDosDirSection(void);
-int handleDirTree(int, struct bootblock *, struct fatEntry *);
+int resetDosDirSection __P((struct bootblock *, struct fatEntry *));
+void finishDosDirSection __P((void));
+int handleDirTree __P((int, struct bootblock *, struct fatEntry *));
 
 /*
  * Cross-check routines run after everything is completely in memory
@@ -112,12 +121,12 @@ int handleDirTree(int, struct bootblock *, struct fatEntry *);
 /*
  * Check for lost cluster chains
  */
-int checklost(int, struct bootblock *, struct fatEntry *);
+int checklost __P((int, struct bootblock *, struct fatEntry *));
 /*
  * Try to reconnect a lost cluster chain
  */
-int reconnect(int, struct bootblock *, struct fatEntry *, cl_t);
-void finishlf(void);
+int reconnect __P((int, struct bootblock *, struct fatEntry *, cl_t));
+void finishlf __P((void));
 
 /*
  * Small helper functions
@@ -125,11 +134,11 @@ void finishlf(void);
 /*
  * Return the type of a reserved cluster as text
  */
-char *rsrvdcltype(cl_t);
+char *rsrvdcltype __P((cl_t));
 
 /*
  * Clear a cluster chain in a FAT
  */
-void clearchain(struct bootblock *, struct fatEntry *, cl_t);
+void clearchain __P((struct bootblock *, struct fatEntry *, cl_t));
 
 #endif

@@ -1,5 +1,5 @@
-/*	$OpenBSD: clri.c,v 1.19 2016/03/07 21:47:04 natano Exp $	*/
-/*	$NetBSD: clri.c,v 1.19 2005/01/20 15:50:47 xtraeme Exp $	*/
+/*	$OpenBSD: clri.c,v 1.4 1997/10/12 20:07:46 deraadt Exp $	*/
+/*	$NetBSD: clri.c,v 1.9 1995/03/18 14:54:33 cgd Exp $	*/
 
 /*
  * Copyright (c) 1990, 1993
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,94 +37,76 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MAXBSIZE DEV_BSIZE */
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)clri.c	8.2 (Berkeley) 9/23/93";
+#else
+static char rcsid[] = "$OpenBSD: clri.c,v 1.4 1997/10/12 20:07:46 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
+#include <sys/time.h>
 
 #include <ufs/ufs/dinode.h>
 #include <ufs/ffs/fs.h>
 
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <util.h>
-
-/*
- * Possible superblock locations ordered from most to least likely.
- */
-static int sblock_try[] = SBLOCKSEARCH;
-
-static void
-usage(void)
-{
-	(void)fprintf(stderr, "usage: clri special_device inode_number ...\n");
-	exit(1);
-}
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	struct ufs1_dinode *dp1;
-	struct ufs2_dinode *dp2;
-	struct fs *sbp;
-	char *ibuf[MAXBSIZE];
-	char *fs, sblock[SBLOCKSIZE];
-	size_t bsize;
+	register struct fs *sbp;
+	register struct dinode *ip;
+	register int fd;
+	struct dinode ibuf[MAXBSIZE / sizeof (struct dinode)];
+	int32_t generation;
 	off_t offset;
-	int i, fd, imax, inonum;
+	size_t bsize;
+	int inonum;
+	char *fs, sblock[SBSIZE];
 
-	if (argc < 3)
-		usage();
+	if (argc < 3) {
+		(void)fprintf(stderr, "usage: clri filesystem inode ...\n");
+		exit(1);
+	}
 
 	fs = *++argv;
-	sbp = NULL;
 
 	/* get the superblock. */
-	if ((fd = opendev(fs, O_RDWR, 0, NULL)) < 0)
+	if ((fd = open(fs, O_RDWR, 0)) < 0)
 		err(1, "%s", fs);
+	if (lseek(fd, (off_t)(SBLOCK * DEV_BSIZE), SEEK_SET) < 0)
+		err(1, "%s", fs);
+	if (read(fd, sblock, sizeof(sblock)) != sizeof(sblock))
+		errx(1, "%s: can't read superblock", fs);
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
-
-	for (i = 0; sblock_try[i] != -1; i++) {
-		offset = (off_t)(sblock_try[i]);
-		if (pread(fd, sblock, sizeof(sblock), offset) != sizeof(sblock))
-			err(1, "%s: can't read superblock", fs);
-		sbp = (struct fs *)sblock;
-		if ((sbp->fs_magic == FS_UFS1_MAGIC ||
-		     (sbp->fs_magic == FS_UFS2_MAGIC &&
-		      sbp->fs_sblockloc == sblock_try[i])) &&
-		    sbp->fs_bsize <= MAXBSIZE &&
-		    sbp->fs_bsize >= (int)sizeof(struct fs))
-			break;
-	}
-	if (sblock_try[i] == -1)
-		errx(2, "cannot find file system superblock");
+	sbp = (struct fs *)sblock;
+	if (sbp->fs_magic != FS_MAGIC)
+		errx(1, "%s: superblock magic number 0x%x, not 0x%x",
+		    fs, sbp->fs_magic, FS_MAGIC);
 	bsize = sbp->fs_bsize;
-
-	/* check that inode numbers are valid */
-	imax = sbp->fs_ncg * sbp->fs_ipg;
-	for (i = 1; i < (argc - 1); i++) {
-		const char *errstr;
-		strtonum(argv[i], 1, imax, &errstr);
-		if (errstr)
-			errx(1, "%s is not a valid inode number: %s", argv[i], errstr);
-	}
-
-	/* clear the clean flag in the superblock */
-	if (sbp->fs_inodefmt >= FS_44INODEFMT) {
-		sbp->fs_clean = 0;
-		if (pwrite(fd, sblock, sizeof(sblock), offset) != sizeof(sblock))
-			err(1, "%s: can't update superblock", fs);
-		(void)fsync(fd);
-	}
 
 	/* remaining arguments are inode numbers. */
 	while (*++argv) {
 		/* get the inode number. */
-		inonum = strtonum(*argv, 1, imax, NULL);
-		(void)printf("clearing %u\n", inonum);
+		if ((inonum = atoi(*argv)) <= 0)
+			errx(1, "%s is not a valid inode number", *argv);
+		(void)printf("clearing %d\n", inonum);
 
 		/* read in the appropriate block. */
 		offset = ino_to_fsba(sbp, inonum);	/* inode to fs blk */
@@ -128,31 +114,34 @@ main(int argc, char *argv[])
 		offset *= DEV_BSIZE;			/* disk blk to bytes */
 
 		/* seek and read the block */
-		if (pread(fd, ibuf, bsize, offset) != bsize)
+		if (lseek(fd, offset, SEEK_SET) < 0)
+			err(1, "%s", fs);
+		if (read(fd, ibuf, bsize) != bsize)
 			err(1, "%s", fs);
 
-		if (sbp->fs_magic == FS_UFS2_MAGIC) {
-			/* get the inode within the block. */
-			dp2 = &(((struct ufs2_dinode *)ibuf)
-			    [ino_to_fsbo(sbp, inonum)]);
+		/* get the inode within the block. */
+		ip = &ibuf[ino_to_fsbo(sbp, inonum)];
 
-			/* clear the inode, and bump the generation count. */
-			memset(dp2, 0, sizeof(*dp2));
-			dp2->di_gen = arc4random();
-		} else {
-			/* get the inode within the block. */
-			dp1 = &(((struct ufs1_dinode *)ibuf)
-			    [ino_to_fsbo(sbp, inonum)]);
-
-			/* clear the inode, and bump the generation count. */
-			memset(dp1, 0, sizeof(*dp1));
-			dp1->di_gen = arc4random();
-		}
+		/* clear the inode, and bump the generation count. */
+		generation = ip->di_gen + 1;
+		memset(ip, 0, sizeof(*ip));
+		ip->di_gen = generation;
 
 		/* backup and write the block */
-		if (pwrite(fd, ibuf, bsize, offset) != bsize)
+		if (lseek(fd, offset, SEEK_SET) < 0)
+			err(1, "%s", fs);
+		if (write(fd, ibuf, bsize) != bsize)
 			err(1, "%s", fs);
 		(void)fsync(fd);
+
+		if (sbp->fs_inodefmt >= FS_44INODEFMT) {
+			/* update after each inode cleared */
+			sbp->fs_clean = 0;
+			if (lseek(fd, (off_t)(SBLOCK * DEV_BSIZE), SEEK_SET) < 0)
+				err(1, "%s", fs);
+			if (write(fd, sblock, sizeof(sblock)) != sizeof(sblock))
+				errx(1, "%s: can't update superblock", fs);
+		}
 	}
 	(void)close(fd);
 	exit(0);

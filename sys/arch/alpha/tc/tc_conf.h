@@ -1,5 +1,5 @@
-/* $OpenBSD: tc_conf.h,v 1.11 2010/09/22 12:36:32 miod Exp $ */
-/* $NetBSD: tc_conf.h,v 1.10 2000/06/04 19:14:29 cgd Exp $ */
+/*	$OpenBSD: tc_conf.h,v 1.4 1997/01/24 19:58:20 niklas Exp $	*/
+/*	$NetBSD: tc_conf.h,v 1.3 1996/11/15 23:59:01 cgd Exp $	*/
 
 /*
  * Copyright (c) 1995 Carnegie-Mellon University.
@@ -33,15 +33,12 @@
  */
 
 #ifdef DEC_3000_500
-#include <alpha/tc/tc_dma_3000_500.h>
+extern void	tc_3000_500_intr_setup __P((void));
+extern void	tc_3000_500_iointr __P((void *, unsigned long));
 
-extern void	tc_3000_500_intr_setup(void);
-extern void	tc_3000_500_iointr(void *, unsigned long);
-
-extern void	tc_3000_500_intr_establish(struct device *, void *,
-		    int, int (*)(void *), void *, const char *);
-extern void	tc_3000_500_intr_disestablish(struct device *, void *,
-		    const char *);
+extern void	tc_3000_500_intr_establish __P((struct device *, void *,
+		    tc_intrlevel_t, int (*)(void *), void *));
+extern void	tc_3000_500_intr_disestablish __P((struct device *, void *));
 
 extern int	tc_3000_500_nslots;
 extern struct tc_slotdesc tc_3000_500_slots[];
@@ -52,21 +49,15 @@ extern struct tc_builtin tc_3000_500_nographics_builtins[];
 #endif /* DEC_3000_500 */
 
 #ifdef DEC_3000_300
-#include <alpha/tc/tc_dma_3000_300.h>
+extern void	tc_3000_300_intr_setup __P((void));
+extern void	tc_3000_300_iointr __P((void *, unsigned long));
 
-extern void	tc_3000_300_intr_setup(void);
-extern void	tc_3000_300_iointr(void *, unsigned long);
-
-extern void	tc_3000_300_intr_establish(struct device *, void *,
-		    int, int (*)(void *), void *, const char *);
-extern void	tc_3000_300_intr_disestablish(struct device *, void *,
-		    const char *);
+extern void	tc_3000_300_intr_establish __P((struct device *, void *,
+		    tc_intrlevel_t, int (*)(void *), void *));
+extern void	tc_3000_300_intr_disestablish __P((struct device *, void *));
 
 extern int	tc_3000_300_nslots;
 extern struct tc_slotdesc tc_3000_300_slots[];
 extern int	tc_3000_300_nbuiltins;
 extern struct tc_builtin tc_3000_300_builtins[];
 #endif /* DEC_3000_300 */
-
-extern int	tc_fb_cnattach(tc_addr_t);
-

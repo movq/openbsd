@@ -39,7 +39,7 @@
 
 @setfilename cvs.info
 @include CVSvn.texi
-@settitle CVS---Concurrent Versions System v@value{CVSVN}
+@settitle CVS---Concurrent Versions System
 @setchapternewpage odd
 
 @c -- TODO list:
@@ -252,7 +252,7 @@ free download from the internet.  For more information
 on downloading @sc{cvs} and other @sc{cvs} topics, see:
 
 @example
-http://www.cvshome.org/
+http://www.cyclic.com/
 http://www.loria.fr/~molli/cvs-index.html
 @end example
 
@@ -728,7 +728,7 @@ they should be in separate locations.
 @c as it is; need a little reorganization...
 
 @cindex :local:, setting up
-@sc{cvs} can access a repository by a variety of
+@sc{Cvs} can access a repository by a variety of
 means.  It might be on the local computer, or it might
 be on a computer across the room or across the world.
 To distinguish various ways to access a repository, the
@@ -859,8 +859,8 @@ the file permissions appropriate for the repository.
 @node Repository files
 @subsection Where files are stored within the repository
 
-@c @cindex Filenames, legal
-@c @cindex Legal filenames
+@c @cindex filenames, legal
+@c @cindex legal filenames
 @c Somewhere we need to say something about legitimate
 @c characters in filenames in working directory and
 @c repository.  Not "/" (not even on non-unix).  And
@@ -989,12 +989,12 @@ rules see @ref{Tags}.
 @c -- Move this to @node Creating a repository or similar
 @cindex Security, file permissions in repository
 @cindex File permissions, general
-@cindex Permissions, general
+@cindex permissions, general
 @c FIXME: we need to somehow reflect "permissions in
 @c repository" versus "permissions in working
 @c directory" in the index entries.
 @cindex Group
-@cindex Read-only files, in repository
+@cindex read-only files, in repository
 All @samp{,v} files are created read-only, and you
 should not change the permission of those files.  The
 directories inside the repository should be writable by
@@ -1019,7 +1019,7 @@ out files, because @sc{cvs} needs to create lock files
 @c Like val-tags gets created by someone who doesn't
 @c have CVSUMASK set right?
 Also note that users must have write access to the
-@file{CVSROOT/val-tags} file.  @sc{cvs} uses it to keep
+@file{CVSROOT/val-tags} file.  @sc{Cvs} uses it to keep
 track of what tags are valid tag names (it is sometimes
 updated when tags are used, as well as when they are
 created).
@@ -1029,7 +1029,7 @@ checked it in.  This has little significance; what
 really matters is who owns the directories.
 
 @cindex CVSUMASK, environment variable
-@cindex Umask, for repository files
+@cindex umask, for repository files
 @sc{cvs} tries to set up reasonable file permissions
 for new directories that are added inside the tree, but
 you must fix the permissions manually when a new
@@ -1043,7 +1043,7 @@ directory; such files have the permissions which are
 typical for newly created files, except that sometimes
 @sc{cvs} creates them read-only (see the sections on
 watches, @ref{Setting a watch}; -r, @ref{Global
-options}; or @code{CVSREAD}, @ref{Environment variables}).
+options}; or CVSREAD, @ref{Environment variables}).
 @c FIXME: Need more discussion of which
 @c group should own the file in the repository.
 @c Include a somewhat detailed example of the usual
@@ -1091,22 +1091,22 @@ permissions on the @sc{cvsroot} directory and
 directories above it in the tree; see @ref{Password
 authentication security}.
 
-@cindex Setuid
-@cindex Setgid
-@cindex Security, setuid
-@cindex Installed images (VMS)
+@cindex setuid
+@cindex setgid
+@cindex security, setuid
+@cindex installed images (VMS)
 Some operating systems have features which allow a
 particular program to run with the ability to perform
 operations which the caller of the program could not.
 For example, the set user ID (setuid) or set group ID
 (setgid) features of unix or the installed image
-feature of VMS.  @sc{cvs} was not written to use such
-features and therefore attempting to install @sc{cvs} in
+feature of VMS.  CVS was not written to use such
+features and therefore attempting to install CVS in
 this fashion will provide protection against only
 accidental lapses; anyone who is trying to circumvent
 the measure will be able to do so, and depending on how
 you have set it up may gain access to more than just
-@sc{cvs}.  You may wish to instead consider pserver.  It
+CVS.  You may wish to instead consider pserver.  It
 shares some of the same attributes, in terms of
 possibly providing a false sense of security or opening
 security holes wider than the ones you are trying to
@@ -1118,7 +1118,7 @@ carefully if you are considering this option
 @subsection File Permission issues specific to Windows
 @cindex Windows, and permissions
 @cindex File permissions, Windows-specific
-@cindex Permissions, Windows-specific
+@cindex permissions, Windows-specific
 
 Some file permission issues are specific to Windows
 operating systems (Windows 95, Windows NT, and
@@ -1126,21 +1126,21 @@ presumably future operating systems in this family.
 Some of the following might apply to OS/2 but I'm not
 sure).
 
-If you are using local @sc{cvs} and the repository is on a
+If you are using local CVS and the repository is on a
 networked file system which is served by the Samba SMB
 server, some people have reported problems with
 permissions.  Enabling WRITE=YES in the samba
 configuration is said to fix/workaround it.
 Disclaimer: I haven't investigated enough to know the
 implications of enabling that option, nor do I know
-whether there is something which @sc{cvs} could be doing
+whether there is something which CVS could be doing
 differently in order to avoid the problem.  If you find
 something out, please let us know as described in
 @ref{BUGS}.
 
 @node Attic
 @subsection The attic
-@cindex Attic
+@cindex attic
 
 You will notice that sometimes @sc{cvs} stores an
 @sc{rcs} file in the @code{Attic}.  For example, if the
@@ -1159,7 +1159,7 @@ but if it goes in the attic, it would be in
 /usr/local/cvsroot/yoyodyne/tc/Attic/backend.c,v
 @end example
 
-@cindex Dead state
+@cindex dead state
 instead.  It should not matter from a user point of
 view whether a file is in the attic; @sc{cvs} keeps
 track of this and looks in the attic when it needs to.
@@ -1205,9 +1205,9 @@ attributes for that file.
 and @var{filename} empty, to specify default attributes
 to be used for newly added files.
 
-Other @var{ent-type} are reserved for future expansion.  @sc{cvs} 1.9 and older
+Other @var{ent-type} are reserved for future expansion.  CVS 1.9 and older
 will delete them any time it writes file attributes.
-@sc{cvs} 1.10 and later will preserve them.
+CVS 1.10 and later will preserve them.
 
 Note that the order of the lines is not significant;
 a program writing the fileattr file may
@@ -1220,7 +1220,7 @@ don't handle a NUL character in any of the fields, but
 implementations are encouraged to allow it.
 
 By convention, @var{attrname} starting with @samp{_} is for an attribute given
-special meaning by @sc{cvs}; other @var{attrname}s are for user-defined attributes
+special meaning by CVS; other @var{attrname}s are for user-defined attributes
 (or will be, once implementations start supporting user-defined attributes).
 
 Builtin attributes:
@@ -1276,11 +1276,11 @@ there must be a single tab character there and no spaces.
 @cindex #cvs.rfl, technical details
 @cindex #cvs.wfl, technical details
 @cindex #cvs.lock, technical details
-@cindex Locks, cvs, technical details
-For an introduction to @sc{cvs} locks focusing on
+@cindex locks, cvs, technical details
+For an introduction to CVS locks focusing on
 user-visible behavior, see @ref{Concurrency}.  The
 following section is aimed at people who are writing
-tools which want to access a @sc{cvs} repository without
+tools which want to access a CVS repository without
 interfering with other tools acessing the same
 repository.  If you find yourself confused by concepts
 described here, like @dfn{read lock}, @dfn{write lock},
@@ -1291,8 +1291,8 @@ operating systems or databases.
 Any file in the repository with a name starting
 with @file{#cvs.rfl.} is a read lock.  Any file in
 the repository with a name starting with
-@file{#cvs.wfl} is a write lock.  Old versions of @sc{cvs}
-(before @sc{cvs} 1.5) also created files with names starting
+@file{#cvs.wfl} is a write lock.  Old versions of CVS
+(before CVS 1.5) also created files with names starting
 with @file{#cvs.tfl}, but they are not discussed here.
 The directory @file{#cvs.lock} serves as a master
 lock.  That is, one must obtain this lock first before
@@ -1436,7 +1436,7 @@ convention for the system in question.  This means that
 working directories are not portable between systems
 with differing conventions for storing text files.
 This is intentional, on the theory that the files being
-managed by @sc{cvs} probably will not be portable between
+managed by CVS probably will not be portable between
 such systems either.
 
 @table @file
@@ -1861,7 +1861,7 @@ another system, the size of those files is the
 approximate initial size of your repository, or if you
 are starting without any version history, a rule of
 thumb is to allow for the server approximately three
-times the size of the code to be under @sc{cvs} for the
+times the size of the code to be under CVS for the
 repository (you will eventually outgrow this, but not
 for a while).  On the machines on which the developers
 will be working, you'll want disk space for
@@ -1907,7 +1907,7 @@ in the repository; for the most part it is possible to
 back them up just like any other files.  However, there
 are a few issues to consider.
 
-@cindex Locks, cvs, and backups
+@cindex locks, cvs, and backups
 @cindex #cvs.rfl, and backups
 The first is that to be paranoid, one should either not
 use @sc{cvs} during the backup, or have the backup
@@ -1953,9 +1953,9 @@ the changes into the repository.
 
 @node Moving a repository
 @section Moving a repository
-@cindex Repository, moving
-@cindex Moving a repository
-@cindex Copying a repository
+@cindex repository, moving
+@cindex moving a repository
+@cindex copying a repository
 
 Just as backing up the files in the repository is
 pretty much like backing up any other files, if you
@@ -1990,14 +1990,7 @@ isn't worth it.
 @cindex Repositories, remote
 @cindex Remote repositories
 @cindex Client/Server Operation
-@cindex Server, CVS
-@cindex Remote repositories, port specification
-@cindex Repositories, remote, port specification
-@cindex Client/Server Operation, port specification
-@cindex pserver (client/server connection method), port specification
-@cindex kserver (client/server connection method), port specification
-@cindex gserver (client/server connection method), port specification
-@cindex port, specifying for remote repositories
+@cindex server, CVS
 
         Your working copy of the sources can be on a
 different machine than the repository.  Using @sc{cvs}
@@ -2011,13 +2004,8 @@ repository is just like using a local one, except that
 the format of the repository name is:
 
 @example
-:@var{method}:[[@var{user}][:@var{password}]@@]@var{hostname}[:[@var{port}]]/path/to/repository
+:@var{method}:@var{user}@@@var{hostname}:/path/to/repository
 @end example
-
-Specifying a password in the repository name is not recommended during
-checkout, since this will cause @sc{cvs} to store a cleartext copy of the
-password in each created directory.  @code{cvs login} first instead
-(@pxref{Password authentication client}).
 
 The details of exactly what needs to be set up depend
 on how you are connecting to the server.
@@ -2146,7 +2134,7 @@ For information on disk space requirements, see
 @subsection Connecting with rsh
 
 @cindex rsh
-@sc{cvs} uses the @file{rsh} protocol to perform these
+CVS uses the @file{rsh} protocol to perform these
 operations, so the remote user host needs to have a
 @file{.rhosts} file which grants access to the local
 user.
@@ -2183,7 +2171,7 @@ for example @file{/usr/local/bin/cvs-1.6}.
 @c different ones for different roots.  e.g. ":server;cvs=cvs-1.6:"
 @c instead of ":server:".
 
-There is no need to edit @file{inetd.conf} or start a
+There is no need to edit @code{inetd.conf} or start a
 @sc{cvs} server daemon.
 
 @cindex :server:, setting up
@@ -2191,9 +2179,9 @@ There is no need to edit @file{inetd.conf} or start a
 @cindex Kerberos, using kerberized rsh
 @cindex SSH (rsh replacement)
 @cindex rsh replacements (Kerberized, SSH, &c)
-There are two access methods that you use in @code{CVSROOT}
+There are two access methods that you use in CVSROOT
 for rsh.  @code{:server:} specifies an internal rsh
-client, which is supported only by some @sc{cvs} ports.
+client, which is supported only by some CVS ports.
 @code{:ext:} specifies an external rsh program.  By
 default this is @code{rsh} but you may set the
 @code{CVS_RSH} environment variable to invoke another
@@ -2203,7 +2191,7 @@ something different).  It must be a program which can
 transmit data to and from the server without modifying
 it; for example the Windows NT @code{rsh} is not
 suitable since it by default translates between CRLF
-and LF.  The OS/2 @sc{cvs} port has a hack to pass @samp{-b}
+and LF.  The OS/2 CVS port has a hack to pass @samp{-b}
 to @code{rsh} to get around this, but since this could
 potentially cause problems for programs other than the
 standard @code{rsh}, it may change in the future.  If
@@ -2226,7 +2214,7 @@ the module @file{foo} in the repository
 @file{faun.example.org}, you are ready to go:
 
 @example
-cvs -d :ext:bach@@faun.example.org/usr/local/cvsroot checkout foo
+cvs -d :ext:bach@@faun.example.org:/usr/local/cvsroot checkout foo
 @end example
 
 (The @file{bach@@} can be omitted if the username is
@@ -2264,16 +2252,9 @@ permissions on the @file{$CVSROOT} and
 @file{$CVSROOT/CVSROOT} directories.  See @ref{Password
 authentication security}, for more details.
 
-@cindex pserver (subcommand)
-@cindex Remote repositories, port specification
-@cindex Repositories, remote, port specification
-@cindex Client/Server Operation, port specification
-@cindex pserver (client/server connection method), port specification
-@cindex kserver (client/server connection method), port specification
-@cindex gserver (client/server connection method), port specification
-@cindex port, specifying for remote repositories
-@cindex Password server, setting up
-@cindex Authenticating server, setting up
+@cindex Pserver (subcommand)
+@cindex password server, setting up
+@cindex authenticating server, setting up
 @c FIXME: this isn't quite right regarding port
 @c numbers; CVS looks up "cvspserver" in
 @c /etc/services (on unix, but what about non-unix?).
@@ -2283,9 +2264,7 @@ command @code{cvs pserver} when it receives a
 connection on the right port.  By default, the port
 number is 2401; it would be different if your client
 were compiled with @code{CVS_AUTH_PORT} defined to
-something else, though.  This can also be sepcified in the CVSROOT variable
-(@pxref{Remote repositories}) or overridden with the CVS_CLIENT_PORT
-environment variable (@pxref{Environment variables}).
+something else, though.
 
         If your @code{inetd} allows raw port numbers in
 @file{/etc/inetd.conf}, then the following (all on a
@@ -2293,7 +2272,7 @@ single line in @file{inetd.conf}) should be sufficient:
 
 @example
 2401  stream  tcp  nowait  root  /usr/local/bin/cvs
-cvs -f --allow-root=/usr/cvsroot pserver
+cvs --allow-root=/usr/cvsroot pserver
 @end example
 
 You could also use the
@@ -2333,126 +2312,86 @@ If you are having trouble setting this up, see
 Because the client stores and transmits passwords in
 cleartext (almost---see @ref{Password authentication
 security}, for details), a separate @sc{cvs} password
-file is generally used, so people don't compromise
-their regular passwords when they access the
-repository.  This file is
-@file{$CVSROOT/CVSROOT/passwd} (@pxref{Intro
-administrative files}).  It uses a colon-separated
-format, similar to @file{/etc/passwd} on Unix systems,
-except that it has fewer fields: @sc{cvs} username,
-optional password, and an optional system username for
-@sc{cvs} to run as if authentication succeeds.  Here is
-an example @file{passwd} file with five entries:
+file may be used, so people don't compromise their
+regular passwords when they access the repository.
+This file is @file{$CVSROOT/CVSROOT/passwd}
+(@pxref{Intro administrative files}).  Its format is
+similar to @file{/etc/passwd}, except that it only has
+two or three fields, username, password, and optional
+username for the server to use.  For example:
 
 @example
-anonymous:
 bach:ULtgRLXo7NRxs
-spwang:1sOp854gDF3DY
-melissa:tGX1fS8sun6rY:pubcvs
-qproj:XR4EZcEs0szik:pubcvs
+cwang:1sOp854gDF3DY
 @end example
 
-(The passwords are encrypted according to the standard
+The password is encrypted according to the standard
 Unix @code{crypt()} function, so it is possible to
 paste in passwords directly from regular Unix
-@file{/etc/passwd} files.)
+@file{passwd} files.
 
-The first line in the example will grant access to any
-@sc{cvs} client attempting to authenticate as user
-@code{anonymous}, no matter what password they use,
-including an empty password.  (This is typical for
-sites granting anonymous read-only access; for
-information on how to do the "read-only" part, see
-@ref{Read-only access}.)
+When authenticating a password, the server first checks
+for the user in the @sc{cvs} @file{passwd} file.  If it
+finds the user, it compares against that password.  If
+it does not find the user, or if the @sc{cvs}
+@file{passwd} file does not exist, then the server
+tries to match the password using the system's
+user-lookup routine (using the system's user-lookup
+routine can be disabled by setting @code{SystemAuth=no}
+in the config file, @pxref{config}).  When using the @sc{cvs}
+@file{passwd} file, the server runs as the
+username specified in the third argument in the
+entry, or as the first argument if there is no third
+argument (in this way @sc{cvs} allows imaginary
+usernames provided the @sc{cvs} @file{passwd} file
+indicates corresponding valid system usernames).  In
+any case, @sc{cvs} will have no privileges which the
+(valid) user would not have.
 
-The second and third lines will grant access to
-@code{bach} and @code{spwang} if they supply their
-respective plaintext passwords.
-
-@cindex User aliases
-The fourth line will grant access to @code{melissa}, if
-she supplies the correct password, but her @sc{cvs}
-operations will actually run on the server side under
-the system user @code{pubcvs}.  Thus, there need not be
-any system user named @code{melissa}, but there
-@emph{must} be one named @code{pubcvs}.
-
-The fifth line shows that system user identities can be
-shared: any client who successfully authenticates as
-@code{qproj} will actually run as @code{pubcvs}, just
-as @code{melissa} does.  That way you could create a
-single, shared system user for each project in your
-repository, and give each developer their own line in
-the @file{$CVSROOT/CVSROOT/passwd} file.  The @sc{cvs}
-username on each line would be different, but the
-system username would be the same.  The reason to have
-different @sc{cvs} usernames is that @sc{cvs} will log their
-actions under those names: when @code{melissa} commits
-a change to a project, the checkin is recorded in the
-project's history under the name @code{melissa}, not
-@code{pubcvs}.  And the reason to have them share a
-system username is so that you can arrange permissions
-in the relevant area of the repository such that only
-that account has write-permission there.
-
-If the system-user field is present, all
-password-authenticated @sc{cvs} commands run as that
-user; if no system user is specified, @sc{cvs} simply
-takes the @sc{cvs} username as the system username and
-runs commands as that user.  In either case, if there
-is no such user on the system, then the @sc{cvs}
-operation will fail (regardless of whether the client
-supplied a valid password).
-
-The password and system-user fields can both be omitted
-(and if the system-user field is omitted, then also
-omit the colon that would have separated it from the
-encrypted password).  For example, this would be a
-valid @file{$CVSROOT/CVSROOT/passwd} file:
+@cindex user aliases
+        It is possible to ``map'' cvs-specific
+usernames onto system usernames (i.e., onto system
+login names) in the @file{$CVSROOT/CVSROOT/passwd} file
+by appending a colon and the system username after the
+password.  For example:
 
 @example
-anonymous::pubcvs
-fish:rKa5jzULzmhOo:kfogel
-sussman:1sOp854gDF3DY
+cvs:ULtgRLXo7NRxs:kfogel
+generic:1sOp854gDF3DY:spwang
+anyone:1sOp854gDF3DY:spwang
 @end example
 
-When the password field is omitted or empty, then the
-client's authentication attempt will succeed with any
-password, including the empty string.  However, the
-colon after the @sc{cvs} username is always necessary,
-even if the password is empty.
+        Thus, someone remotely accessing the repository
+on @file{faun.example.org} with the following
+command:
 
-@sc{cvs} can also fall back to use system authentication.
-When authenticating a password, the server first checks
-for the user in the @file{$CVSROOT/CVSROOT/passwd}
-file.  If it finds the user, it will use that entry for
-authentication as described above.  But if it does not
-find the user, or if the @sc{cvs} @file{passwd} file
-does not exist, then the server can try to authenticate
-the username and password using the operating system's
-user-lookup routines (this "fallback" behavior can be
-disabled by setting @code{SystemAuth=no} in the
-@sc{cvs} @file{config} file, @pxref{config}).  Be
-aware, however, that falling back to system
-authentication might be a security risk: @sc{cvs}
-operations would then be authenticated with that user's
-regular login password, and the password flies across
-the network in plaintext.  See @ref{Password
-authentication security} for more on this.
+@example
+cvs -d :pserver:cvs@@faun.example.org:/usr/local/cvsroot checkout foo
+@end example
+
+        would end up running the server under the
+system identity kfogel, assuming successful
+authentication.  However, the remote user would not
+necessarily need to know kfogel's system password, as
+the @file{$CVSROOT/CVSROOT/passwd} file might contain a
+different password, used only for @sc{cvs}.  And as the
+example above indicates, it is permissible to map
+multiple cvs usernames onto a single system username.
+
+        This feature is designed to allow people
+repository access without full system access (in
+particular, see @ref{Read-only access}); however, also
+see @ref{Password authentication security}.  Any sort of
+repository access very likely implies a degree of
+general system access as well.
 
 Right now, the only way to put a password in the
 @sc{cvs} @file{passwd} file is to paste it there from
 somewhere else.  Someday, there may be a @code{cvs
 passwd} command.
-
-Unlike many of the files in @file{$CVSROOT/CVSROOT}, it
-is normal to edit the @file{passwd} file in-place,
-rather than via @sc{cvs}.  This is because of the
-possible security risks of having the @file{passwd}
-file checked out to people's working copies.  If you do
-want to include the @file{passwd} file in checkouts of
-@file{$CVSROOT/CVSROOT}, see @ref{checkoutlist}.
-
+Unlike many of the files in @file{$CVSROOT/CVSROOT},
+you edit the @file{passwd} file directly, rather than
+via @sc{cvs}.
 @c We might also suggest using the @code{htpasswd} command
 @c from freely available web servers as well, but that
 @c would open up a can of worms in that the users next
@@ -2464,105 +2403,74 @@ want to include the @file{passwd} file in checkouts of
 @node Password authentication client
 @subsubsection Using the client with password authentication
 @cindex Login (subcommand)
-@cindex Password client, using
-@cindex Authenticated client, using
+@cindex password client, using
+@cindex authenticated client, using
 @cindex :pserver:, setting up
-To run a @sc{cvs} command on a remote repository via
-the password-authenticating server, one specifies the
-@code{pserver} protocol, optional username, repository host, an
-optional port number, and path to the repository.  For example:
+Before connecting to the server, the client must @dfn{log
+in} with the command @code{cvs login}.  Logging in
+verifies a password with the server, and also records
+the password for later transactions with the server.
+The @code{cvs login} command needs to know the
+username, server hostname, and full repository path,
+and it gets this information from the repository
+argument or the @code{CVSROOT} environment variable.
 
-@example
-cvs -d :pserver:faun.example.org:/usr/local/cvsroot checkout someproj
-@end example
-
-or
-
-@example
-CVSROOT=:pserver:bach@@faun.example.org:2401/usr/local/cvsroot
-cvs checkout someproj
-@end example
-
-However, unless you're connecting to a public-access
-repository (i.e., one where that username doesn't
-require a password), you'll need to supply a password or @dfn{log in} first.
-Logging in verifies your password with the repository and stores it in a file.
-It's done with the @code{login} command, which will
-prompt you interactively for the password if you didn't supply one as part of
-@var{$CVSROOT}:
+@code{cvs login} is interactive --- it prompts for a
+password:
 
 @example
 cvs -d :pserver:bach@@faun.example.org:/usr/local/cvsroot login
 CVS password:
 @end example
 
-or
+The password is checked with the server; if it is
+correct, the @code{login} succeeds, else it fails,
+complaining that the password was incorrect.
 
-@example
-cvs -d :pserver:bach:p4ss30rd@@faun.example.org:/usr/local/cvsroot login
-@end example
+Once you have logged in, you can force @sc{cvs} to
+connect directly to the server and authenticate with
+the stored password:
 
-After you enter the password, @sc{cvs} verifies it with
-the server.  If the verification succeeds, then that
-combination of username, host, repository, and password
-is permanently recorded, so future transactions with
-that repository won't require you to run @code{cvs
-login}.  (If verification fails, @sc{cvs} will exit
-complaining that the password was incorrect, and
-nothing will be recorded.)
-
-The records are stored, by default, in the file
-@file{$HOME/.cvspass}.  That file's format is
-human-readable, and to a degree human-editable, but
-note that the passwords are not stored in
-cleartext---they are trivially encoded to protect them
-from "innocent" compromise (i.e., inadvertent viewing
-by a system administrator or other non-malicious
-person).
-
-@cindex CVS_PASSFILE, environment variable
-You can change the default location of this file by
-setting the @code{CVS_PASSFILE} environment variable.
-If you use this variable, make sure you set it
-@emph{before} @code{cvs login} is run.  If you were to
-set it after running @code{cvs login}, then later
-@sc{cvs} commands would be unable to look up the
-password for transmission to the server.
-  
-Once you have logged in, all @sc{cvs} commands using
-that remote repository and username will authenticate
-with the stored password.  So, for example
-  
 @example
 cvs -d :pserver:bach@@faun.example.org:/usr/local/cvsroot checkout foo
 @end example
 
-should just work (unless the password changes on the
-server side, in which case you'll have to re-run
-@code{cvs login}).
+The @samp{:pserver:} is necessary because without it,
+@sc{cvs} will assume it should use @code{rsh} to
+connect with the server (@pxref{Connecting via rsh}).
+(Once you have a working copy checked out and are
+running @sc{cvs} commands from within it, there is no
+longer any need to specify the repository explicitly,
+because @sc{cvs} records it in the working copy's
+@file{CVS} subdirectory.)
 
-Note that if the @samp{:pserver:} were not present in
-the repository specification, @sc{cvs} would assume it
-should use @code{rsh} to connect with the server
-instead (@pxref{Connecting via rsh}).
-
-Of course, once you have a working copy checked out and
-are running @sc{cvs} commands from within it, there is
-no longer any need to specify the repository
-explicitly, because @sc{cvs} can deduce the repository
-from the working copy's @file{CVS} subdirectory.
+@cindex CVS_PASSFILE, environment variable
+Passwords are stored by default in the file
+@file{$HOME/.cvspass}.  Its format is human-readable,
+but don't edit it unless you know what you are doing.
+The passwords are not stored in cleartext, but are
+trivially encoded to protect them from "innocent"
+compromise (i.e., inadvertently being seen by a system
+administrator who happens to look at that file).
 
 @c FIXME: seems to me this needs somewhat more
 @c explanation.
 @cindex Logout (subcommand)
-The password for a given remote repository can be
-removed from the @code{CVS_PASSFILE} by using the
+The password for the currently chosen remote repository
+can be removed from the CVS_PASSFILE by using the
 @code{cvs logout} command.
+
+The @code{CVS_PASSFILE} environment variable overrides
+this default.  If you use this variable, make sure you
+set it @emph{before} @code{cvs login} is run.  If you
+were to set it after running @code{cvs login}, then
+later @sc{cvs} commands would be unable to look up the
+password for transmission to the server.
 
 @node Password authentication security
 @subsubsection Security considerations with password authentication
 
-@cindex Security, of pserver
+@cindex security, of pserver
 The passwords are stored on the client side in a
 trivial encoding of the cleartext, and transmitted in
 the same encoding.  The encoding is done only to
@@ -2626,7 +2534,7 @@ security, get Kerberos.
 @subsection Direct connection with GSSAPI
 
 @cindex GSSAPI
-@cindex Security, GSSAPI
+@cindex security, GSSAPI
 @cindex :gserver:, setting up
 @cindex Kerberos, using :gserver:
 GSSAPI is a generic interface to network security
@@ -2680,7 +2588,7 @@ cvs -d :gserver:faun.example.org:/usr/local/cvsroot checkout foo
 @subsection Direct connection with kerberos
 
 @cindex Kerberos, using :kserver:
-@cindex Security, kerberos
+@cindex security, kerberos
 @cindex :kserver:, setting up
 The easiest way to use kerberos is to use the kerberos
 @code{rsh}, as described in @ref{Connecting via rsh}.
@@ -2708,11 +2616,11 @@ on.  You must then use the @code{-x} global option to
 request encryption.
 
 @cindex CVS_CLIENT_PORT
-You need to edit @file{inetd.conf} on the server
+You need to edit @code{inetd.conf} on the server
 machine to run @code{cvs kserver}.  The client uses
 port 1999 by default; if you want to use another port
-specify it in the @code{CVSROOT} (@pxref{Remote repositories})
-or the @code{CVS_CLIENT_PORT} environment variable on the client.
+specify it in the @code{CVS_CLIENT_PORT} environment
+variable on the client.
 
 @cindex kinit
 When you want to use @sc{cvs}, get a ticket in the
@@ -2765,7 +2673,7 @@ environment variable.
 @c ---------------------------------------------------------------------
 @node Read-only access
 @section Read-only repository access
-@cindex Read-only repository access
+@cindex read-only repository access
 @cindex readers (admin file)
 @cindex writers (admin file)
 
@@ -2854,8 +2762,8 @@ read-only access.
 
 @node Server temporary directory
 @section Temporary directories for the server
-@cindex Temporary directories, and server
-@cindex Server, temporary directories
+@cindex temporary directories, and server
+@cindex server, temporary directories
 
 While running, the @sc{cvs} server creates temporary
 directories.  They are named
@@ -2867,7 +2775,7 @@ cvs-serv@var{pid}
 @noindent
 where @var{pid} is the process identification number of
 the server.  They are located in the directory
-specified by the @code{TMPDIR} environment variable
+specified by the @samp{TMPDIR} environment variable
 (@pxref{Environment variables}), the @samp{-T} global
 option (@pxref{Global options}), or failing that
 @file{/tmp}.
@@ -2971,14 +2879,15 @@ original source directory.
 
 @example
 $ cd ..
-$ cvs checkout yoyodyne/@var{rdir}       # @r{Explanation below}
-$ diff -r @var{wdir} yoyodyne/@var{rdir}
-$ rm -r @var{wdir}
+$ mv @var{dir} @var{dir}.orig
+$ cvs checkout yoyodyne/@var{dir}       # @r{Explanation below}
+$ diff -r @var{dir}.orig yoyodyne/@var{dir}
+$ rm -r @var{dir}.orig
 @end example
 
 @noindent
 Erasing the original sources is a good idea, to make sure that you do
-not accidentally edit them in @var{wdir}, bypassing @sc{cvs}.
+not accidentally edit them in @var{dir}, bypassing @sc{cvs}.
 Of course, it would be wise to make sure that you have
 a backup of the sources before you remove them.
 
@@ -2988,7 +2897,7 @@ examples) or a path name relative to @code{$CVSROOT},
 as it did in the example above.
 
 It is a good idea to check that the permissions
-@sc{cvs} sets on the directories inside @code{$CVSROOT}
+@sc{cvs} sets on the directories inside @samp{$CVSROOT}
 are reasonable, and that they belong to the proper
 groups.  @xref{File permissions}.
 
@@ -3124,7 +3033,7 @@ Then, use @code{add} to add files (and new directories)
 as they appear.
 
 Check that the permissions @sc{cvs} sets on the
-directories inside @code{$CVSROOT} are reasonable.
+directories inside @samp{$CVSROOT} are reasonable.
 
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node Defining the module
@@ -3376,7 +3285,7 @@ based on information such as the name of the program
 and the version number of the release.  For example,
 one might take the name of the program, immediately
 followed by the version number with @samp{.} changed to
-@samp{-}, so that @sc{cvs} 1.9 would be tagged with the name
+@samp{-}, so that CVS 1.9 would be tagged with the name
 @code{cvs1-9}.  If you choose a consistent convention,
 then you won't constantly be guessing whether a tag is
 @code{cvs-1-9} or @code{cvs1_9} or what.  You might
@@ -3387,7 +3296,7 @@ taginfo file (@pxref{user-defined logging}).
 @c issues which arise.
 
 @cindex Adding a tag
-@cindex Tag, example
+@cindex tag, example
 The following example shows how you can add a tag to a
 file.  The commands must be issued inside your working
 directory.  That is, you should issue the
@@ -3498,7 +3407,7 @@ like this:
 @node Tagging the working directory
 @section Specifying what to tag from the working directory
 
-@cindex tag (subcommand)
+@cindex Tag (subcommand)
 The example in the previous section demonstrates one of
 the most common ways to choose which revisions to tag.
 Namely, running the @code{cvs tag} command without
@@ -3530,7 +3439,7 @@ cvs [tag aborted]: correct the above errors first!
 
 @node Tagging by date/tag
 @section Specifying what to tag by date or revision
-@cindex rtag (subcommand)
+@cindex Rtag (subcommand)
 
 The @code{cvs rtag} command tags the repository as of a
 certain date or time (or can be used to tag the latest
@@ -3592,9 +3501,9 @@ recover from errors.  If you are a @sc{cvs}
 administrator, you may consider restricting these
 commands with taginfo (@pxref{user-defined logging}).
 
-@cindex Deleting tags
-@cindex Removing tags
-@cindex Tags, deleting
+@cindex deleting tags
+@cindex removing tags
+@cindex tags, deleting
 To delete a tag, specify the @samp{-d} option to either
 @code{cvs tag} or @code{cvs rtag}.  For example:
 
@@ -3604,8 +3513,8 @@ cvs rtag -d rel-0-4 tc
 
 deletes the tag @code{rel-0-4} from the module @code{tc}.
 
-@cindex Moving tags
-@cindex Tags, moving
+@cindex moving tags
+@cindex tags, moving
 When we say @dfn{move} a tag, we mean to make the same
 name point to different revisions.  For example, the
 @code{stable} tag may currently point to revision 1.4
@@ -3619,8 +3528,8 @@ accomplished as:
 cvs tag -r 1.6 -F stable backend.c
 @end example
 
-@cindex Renaming tags
-@cindex Tags, renaming
+@cindex renaming tags
+@cindex tags, renaming
 When we say @dfn{rename} a tag, we mean to make a
 different name point to the same revisions as the old
 tag.  For example, one may have misspelled the tag name
@@ -3722,7 +3631,7 @@ you delete them with @samp{cvs update -A}.  The
 the head of the trunk, and forgets any sticky tags,
 dates, or options.
 
-@cindex Sticky date
+@cindex sticky date
 The most common use of sticky tags is to identify which
 branch one is working on, as described in
 @ref{Accessing branches}.  However, non-branch
@@ -3776,7 +3685,7 @@ discussion see @ref{Merging two revisions}.
 @cindex Changes, copying between branches
 @cindex Modifications, copying between branches
 
-@sc{cvs} allows you to isolate changes onto a separate
+CVS allows you to isolate changes onto a separate
 line of development, known as a @dfn{branch}.  When you
 change files on a branch, those changes do not appear
 on the main trunk or other branches.
@@ -4152,8 +4061,8 @@ no way to see how the tag was assigned yesterday).
 @cindex -j (merging branches)
 
 You can merge changes made on a branch into your working copy by giving
-the @samp{-j @var{branchname}} flag to the @code{update} subcommand.  With one
-@samp{-j @var{branchname}} option it merges the changes made between the
+the @samp{-j @var{branch}} flag to the @code{update} command.  With one
+@samp{-j @var{branch}} option it merges the changes made between the
 point where the branch forked and newest revision on that branch (into
 your working copy).
 
@@ -4200,16 +4109,13 @@ If your source files contain keywords (@pxref{Keyword substitution}),
 you might be getting more conflicts than strictly necessary.  See
 @ref{Merging and keywords}, for information on how to avoid this.
 
-The @code{checkout} command also supports the @samp{-j @var{branchname}} flag.  The
+The @code{checkout} command also supports the @samp{-j @var{branch}} flag.  The
 same effect as above could be achieved with this:
 
 @example
 $ cvs checkout -j R1fix mod
 $ cvs commit -m "Included R1fix"
 @end example
-
-It should be noted that @code{update -j @var{tagname}} will also work but may
-not produce the desired result.  @xref{Merging adds and removals}, for more.
 
 @node Merging more than once
 @section Merging from a branch several times
@@ -4356,15 +4262,6 @@ cvs update -jbranchtag
 After these commands are executed and a @samp{cvs commit} is done,
 file @file{a} will be removed and file @file{d} added in the main branch.
 @c (which was determined by trying it)
-
-Note that using a single static tag (@samp{-j @var{tagname}})
-rather than a dynamic tag (@samp{-j @var{branchname}}) to merge
-changes from a branch will usually not remove files which were removed on the
-branch since @sc{cvs} does not automatically add static tags to dead revisions.
-The exception to this rule occurs when
-a static tag has been attached to a dead revision manually.  Use the branch tag
-to merge all changes from the branch or use two static tags as merge endpoints
-to be sure that all intended changes are propogated in the merge.
 
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node Merging and keywords
@@ -4766,7 +4663,7 @@ When you commit the removal of the file, @sc{cvs}
 records the fact that the file no longer exists.  It is
 possible for a file to exist on only some branches and
 not on others, or to re-add another file with the same
-name later.  @sc{cvs} will correctly create or not create
+name later.  CVS will correctly create or not create
 the file, based on the @samp{-r} and @samp{-D} options
 specified to @code{checkout} or @code{update}.
 
@@ -4863,8 +4760,8 @@ later merge the removals to another branch if you want
 
 @node Removing directories
 @section Removing directories
-@cindex Removing directories
-@cindex Directories, removing
+@cindex removing directories
+@cindex directories, removing
 
 In concept removing directories is somewhat similar to
 removing files---you want the directory to not exist in
@@ -4876,11 +4773,9 @@ The way that you remove a directory is to remove all
 the files in it.  You don't remove the directory
 itself; there is no way to do that.
 Instead you specify the @samp{-P} option to
-@code{cvs update} or @code{cvs checkout},
-which will cause @sc{cvs} to remove empty
-directories from working directories.
-(Note that @code{cvs export} always removes empty directories.)
-Probably the
+@code{cvs update}, @code{cvs checkout}, or @code{cvs
+export}, which will cause @sc{cvs} to remove empty
+directories from working directories.  Probably the
 best way to do this is to always specify @samp{-P}; if
 you want an empty directory then put a dummy file (for
 example @file{.keepme}) in it to prevent @samp{-P} from
@@ -4893,7 +4788,7 @@ removing it.
 @c need for -P and so that a file can be a directory in
 @c one revision and a regular file in another.
 Note that @samp{-P} is implied by the @samp{-r} or @samp{-D}
-options of @code{checkout}.  This way
+options of @code{checkout} and @code{export}.  This way
 @sc{cvs} will be able to correctly create the directory
 or not depending on whether the particular version you
 are checking out contains any files in that directory.
@@ -5225,11 +5120,6 @@ You can use the history file (@pxref{history file}) to
 log various @sc{cvs} actions.  To retrieve the
 information from the history file, use the @code{cvs
 history} command (@pxref{history}).
-
-Note: you can control what is logged to this file by using the
-@samp{LogHistory} keyword in the @file{CVSROOT/config} file
-(@pxref{config}).
-
 @c
 @c The history database has many problems:
 @c * It is very unclear what field means what.  This
@@ -5323,7 +5213,7 @@ Notified}); this command is useful even if you are not
 using @code{cvs watch on}.
 
 @cindex taginfo
-@cindex Exit status, of taginfo
+@cindex exit status, of taginfo
 The @file{taginfo} file defines programs to execute
 when someone executes a @code{tag} or @code{rtag}
 command.  The @file{taginfo} file has the standard form
@@ -5591,8 +5481,8 @@ considerably with the operating system.
 @cindex File locking
 @cindex Locking files
 @cindex Working copy
-@cindex Reserved checkouts
-@cindex Unreserved checkouts
+@cindex reserved checkouts
+@cindex unreserved checkouts
 @cindex RCS-style locking
 
 When more than one person works on a software project
@@ -5635,7 +5525,7 @@ is almost automatic.
 
 @c FIXME? should probably use the word "watch" here, to
 @c tie this into the text below and above.
-@sc{cvs} also supports mechanisms which facilitate
+@sc{Cvs} also supports mechanisms which facilitate
 various kinds of communication, without actually
 enforcing rules like reserved checkouts do.
 
@@ -5688,7 +5578,7 @@ details, assuming "cvs watch lock" and
 
 CVS/Watched file?  Or try to fit this into CVS/Entries somehow?
 Cases: (1) file is checked out (unreserved or with watch on) by old
-version of @sc{cvs}, now we do something with new one, (2) file is checked
+version of CVS, now we do something with new one, (2) file is checked
 out by new version, now we do something with old one.
 
 Remote protocol would have a "Watched" analogous to "Mode".  Of course
@@ -5813,7 +5703,7 @@ resolve the conflict as described in @ref{Conflicts example}.
 
 @item Unknown
 @cindex Unknown
-@sc{cvs} doesn't know anything about this file.  For
+@sc{Cvs} doesn't know anything about this file.  For
 example, you have created a new file and have not run
 @code{add}.
 @c
@@ -5892,7 +5782,7 @@ these options, see @ref{Invoking CVS}.
 @cindex Bringing a file up to date
 @cindex Updating a file
 @cindex Merging a file
-@cindex Update, introduction
+@cindex update, introduction
 
 When you want to update or merge a file, use the @code{update}
 command.  For files that are not up to date this is roughly equivalent
@@ -6136,7 +6026,7 @@ newsgroup.
 @node Concurrency
 @section Several developers simultaneously attempting to run CVS
 
-@cindex Locks, cvs, introduction
+@cindex locks, cvs, introduction
 @c For a discussion of *why* CVS creates locks, see
 @c the comment at the start of src/lock.c
 If several developers try to run @sc{cvs} at the same
@@ -6273,14 +6163,14 @@ certain files are to be watched.
 @cindex watch on (subcommand)
 @deffn Command {cvs watch on} [@code{-lR}] files @dots{}
 
-@cindex Read-only files, and watches
+@cindex read-only files, and watches
 Specify that developers should run @code{cvs edit}
-before editing @var{files}.  @sc{cvs} will create working
+before editing @var{files}.  CVS will create working
 copies of @var{files} read-only, to remind developers
 to run the @code{cvs edit} command before working on
 them.
 
-If @var{files} includes the name of a directory, @sc{cvs}
+If @var{files} includes the name of a directory, CVS
 arranges to watch all files added to the corresponding
 repository directory, and sets a default for files
 added in the future; this allows the user to set
@@ -6297,16 +6187,8 @@ If @var{files} is omitted, it defaults to the current directory.
 
 @deffn Command {cvs watch off} [@code{-lR}] files @dots{}
 
-Do not create @var{files} read-only on checkout; thus,
-developers will not be reminded to use @code{cvs edit}
-and @code{cvs unedit}.
-@ignore
-@sc{cvs} will check out @var{files}
-read-write as usual, unless other permissions override
-due to the @code{PreservePermissions} option being
-enabled in the @file{config} administrative file
-(@pxref{Special Files}, @pxref{config})
-@end ignore
+Do not provide notification about work on @var{files}.  CVS will create
+working copies of @var{files} read-write.
 
 The @var{files} and options are processed as for @code{cvs
 watch on}.
@@ -6329,7 +6211,7 @@ command.
 Add the current user to the list of people to receive notification of
 work done on @var{files}.
 
-The @code{-a} option specifies what kinds of events @sc{cvs} should notify
+The @code{-a} option specifies what kinds of events CVS should notify
 the user about.  @var{action} is one of the following:
 
 @table @code
@@ -6389,7 +6271,7 @@ standard thing to put in the @code{notify} file is the
 single line:
 
 @example
-ALL mail %s -s "CVS notification"
+ALL mail %s -s \"CVS notification\"
 @end example
 
 This causes users to be notified by electronic mail.
@@ -6413,7 +6295,7 @@ instead of passing the name of the user to be notified
 to @file{notify}, @sc{cvs} will pass the @var{value}
 (normally an email address on some other machine).
 
-@sc{cvs} does not notify you for your own changes.
+@sc{Cvs} does not notify you for your own changes.
 Currently this check is done based on whether the user
 name of the person taking the action which triggers
 notification matches the user name of the person
@@ -6435,7 +6317,7 @@ changing.
 @node Editing files
 @subsection How to edit a file which is being watched
 
-@cindex Checkout, as term for getting ready to edit
+@cindex checkout, as term for getting ready to edit
 Since a file which is being watched is checked out
 read-only, you cannot simply edit it.  To make it
 read-write, and inform others that you are planning to
@@ -6460,28 +6342,26 @@ source}), an operation which those systems call a
 @cindex edit (subcommand)
 @deffn Command {cvs edit} [options] files @dots{}
 
-Prepare to edit the working files @var{files}.  @sc{cvs} makes the
+Prepare to edit the working files @var{files}.  CVS makes the
 @var{files} read-write, and notifies users who have requested
 @code{edit} notification for any of @var{files}.
 
 The @code{cvs edit} command accepts the same @var{options} as the
 @code{cvs watch add} command, and establishes a temporary watch for the
-user on @var{files}; @sc{cvs} will remove the watch when @var{files} are
+user on @var{files}; CVS will remove the watch when @var{files} are
 @code{unedit}ed or @code{commit}ted.  If the user does not wish to
 receive notifications, she should specify @code{-a none}.
 
 The @var{files} and options are processed as for the @code{cvs
 watch} commands.
 
-@ignore
 @strong{Caution:} If the @code{PreservePermissions}
 option is enabled in the repository (@pxref{config}),
-@sc{cvs} will not change the permissions on any of the
+CVS will not change the permissions on any of the
 @var{files}.  The reason for this change is to ensure
 that using @samp{cvs edit} does not interfere with the
-ability to store file permissions in the @sc{cvs}
+ability to store file permissions in the CVS
 repository.
-@end ignore
 
 @end deffn
 
@@ -6493,14 +6373,14 @@ your changes, or not to make any changes, you can use
 the @code{cvs unedit} command.
 
 @cindex unedit (subcommand)
-@cindex Abandoning work
-@cindex Reverting to repository version
+@cindex abandoning work
+@cindex reverting to repository version
 @deffn Command {cvs unedit} [@code{-lR}] files @dots{}
 
 Abandon work on the working files @var{files}, and revert them to the
-repository versions on which they are based.  @sc{cvs} makes those
+repository versions on which they are based.  CVS makes those
 @var{files} read-only for which users have requested notification using
-@code{cvs watch on}.  @sc{cvs} notifies users who have requested @code{unedit}
+@code{cvs watch on}.  CVS notifies users who have requested @code{unedit}
 notification for any of @var{files}.
 
 The @var{files} and options are processed as for the
@@ -6577,7 +6457,7 @@ that will restore the repository to a state which
 
 @node Choosing a model
 @section Choosing between reserved or unreserved checkouts
-@cindex Choosing, reserved or unreserved checkouts
+@cindex choosing, reserved or unreserved checkouts
 
 Reserved and unreserved checkouts each have pros and
 cons.  Let it be said that a lot of this is a matter of
@@ -6706,7 +6586,7 @@ But as soon as you export the files from your
 development environment it becomes harder to identify
 which revisions they are.
 
-@sc{cvs} can use a mechanism known as @dfn{keyword
+CVS can use a mechanism known as @dfn{keyword
 substitution} (or @dfn{keyword expansion}) to help
 identifying the files.  Embedded strings of the form
 @code{$@var{keyword}$} and
@@ -7086,7 +6966,7 @@ command to track third-party sources, the @dfn{vendor
 tag} and @dfn{release tags} are useful.  The
 @dfn{vendor tag} is a symbolic name for the branch
 (which is always 1.1.1, unless you use the @samp{-b
-@var{branch}} flag---see @ref{Multiple vendor branches}.).  The
+@var{branch}} flag---@xref{Multiple vendor branches}.).  The
 @dfn{release tags} are symbolic names for a particular
 release, such as @samp{FSF_0_04}.
 
@@ -7100,7 +6980,7 @@ directory; if you want to work with the sources import
 them first and then check them out into a different
 directory (@pxref{Getting the source}).
 
-@cindex wdiff (import example)
+@cindex Wdiff (import example)
 Suppose you have the sources to a program called
 @code{wdiff} in a directory @file{wdiff-0.04},
 and are going to make private modifications that you
@@ -7229,7 +7109,7 @@ a project where many different people and teams are
 modifying the software.  There are a variety of ways to
 handle this, but in some cases you have a bunch of
 source trees lying around and what you want to do more
-than anything else is just to all put them in @sc{cvs} so
+than anything else is just to all put them in CVS so
 that you at least have them in one place.
 
 For handling situations in which there may be more than
@@ -7250,7 +7130,7 @@ $ cvs import -b 1.1.3 dir BLUE BLUE_1-5
 @end example
 
 Note that if your vendor tag does not match your
-@samp{-b} option, @sc{cvs} will not detect this case!  For
+@samp{-b} option, CVS will not detect this case!  For
 example,
 
 @example
@@ -7261,7 +7141,7 @@ $ cvs import -b 1.1.3 dir RED RED_1-0
 Be careful; this kind of mismatch is sure to sow
 confusion or worse.  I can't think of a useful purpose
 for the ability to specify a mismatch here, but if you
-discover such a use, don't.  @sc{cvs} is likely to make this
+discover such a use, don't.  CVS is likely to make this
 an error in some future release.
 
 @c Probably should say more about the semantics of
@@ -7278,7 +7158,7 @@ an error in some future release.
 @c "Revision management" section.
 @node Builds
 @chapter How your build system interacts with CVS
-@cindex Builds
+@cindex builds
 @cindex make
 
 As mentioned in the introduction, @sc{cvs} does not
@@ -7311,7 +7191,7 @@ periodically (in between changes, using the approach
 just described) updating your entire tree, you ensure
 that your sources are sufficiently up to date.
 
-@cindex Bill of materials
+@cindex bill of materials
 One common need is to record which versions of which
 source files went into a particular build.  This kind
 of functionality is sometimes called @dfn{bill of
@@ -7371,27 +7251,26 @@ is Odin (see
 @node Special Files
 @chapter Special Files
 
-@cindex Special files
-@cindex Device nodes
-@cindex Ownership, saving in CVS
-@cindex Permissions, saving in CVS
-@cindex Hard links
-@cindex Symbolic links
+@cindex special files
+@cindex device nodes
+@cindex ownership, saving in CVS
+@cindex permissions, saving in CVS
+@cindex hard links
+@cindex symbolic links
 
-In normal circumstances, @sc{cvs} works only with regular
+In normal circumstances, CVS works only with regular
 files.  Every file in a project is assumed to be
 persistent; it must be possible to open, read and close
-them; and so on.  @sc{cvs} also ignores file permissions and
+them; and so on.  CVS also ignores file permissions and
 ownerships, leaving such issues to be resolved by the
 developer at installation time.  In other words, it is
 not possible to "check in" a device into a repository;
-if the device file cannot be opened, @sc{cvs} will refuse to
+if the device file cannot be opened, CVS will refuse to
 handle it.  Files also lose their ownerships and
 permissions during repository transactions.
 
-@ignore
 If the configuration variable @code{PreservePermissions}
-(@pxref{config}) is set in the repository, @sc{cvs} will
+(@pxref{config}) is set in the repository, CVS will
 save the following file characteristics in the
 repository:
 
@@ -7404,30 +7283,30 @@ repository:
 @end itemize
 
 Using the @code{PreservePermissions} option affects the
-behavior of @sc{cvs} in several ways.  First, some of the
-new operations supported by @sc{cvs} are not accessible to
+behavior of CVS in several ways.  First, some of the
+new operations supported by CVS are not accessible to
 all users.  In particular, file ownership and special
 file characteristics may only be changed by the
 superuser.  When the @code{PreservePermissions}
 configuration variable is set, therefore, users will
-have to be `root' in order to perform @sc{cvs} operations.
+have to be `root' in order to perform CVS operations.
 
-When @code{PreservePermissions} is in use, some @sc{cvs}
+When @code{PreservePermissions} is in use, some CVS
 operations (such as @samp{cvs status}) will not
 recognize a file's hard link structure, and so will
 emit spurious warnings about mismatching hard links.
-The reason is that @sc{cvs}'s internal structure does not
+The reason is that CVS's internal structure does not
 make it easy for these operations to collect all the
 necessary data about hard links, so they check for file
 conflicts with inaccurate data.
 
-A more subtle difference is that @sc{cvs} considers a file
+A more subtle difference is that CVS considers a file
 to have changed only if its contents have changed
 (specifically, if the modification time of the working
 file does not match that of the repository's file).
 Therefore, if only the permissions, ownership or hard
 linkage have changed, or if a device's major or minor
-numbers have changed, @sc{cvs} will not notice.  In order to
+numbers have changed, CVS will not notice.  In order to
 commit such a change to the repository, you must force
 the commit with @samp{cvs commit -f}.  This also means
 that if a file's permissions have changed and the
@@ -7435,7 +7314,7 @@ repository file is newer than the working copy,
 performing @samp{cvs update} will silently change the
 permissions on the working copy.
 
-Changing hard links in a @sc{cvs} repository is particularly
+Changing hard links in a CVS repository is particularly
 delicate.  Suppose that file @file{foo} is linked to
 file @file{old}, but is later relinked to file
 @file{new}.  You can wind up in the unusual situation
@@ -7456,7 +7335,7 @@ It is worth noting that only regular files may
 be merged, for reasons that hopefully are obvious.  If
 @samp{cvs update} or @samp{cvs checkout -j} attempts to
 merge a symbolic link with a regular file, or two
-device files for different kinds of devices, @sc{cvs} will
+device files for different kinds of devices, CVS will
 report a conflict and refuse to perform the merge.  At
 the same time, @samp{cvs diff} will not report any
 differences between these files, since no meaningful
@@ -7468,7 +7347,6 @@ with client/server @sc{cvs}.  Another limitation is
 that hard links must be to other files within the same
 directory; hard links across directories are not
 supported.
-@end ignore
 
 @c ---------------------------------------------------------------------
 @node CVS commands
@@ -7560,9 +7438,9 @@ the documentation instead.
 
 @node Exit status
 @appendixsec CVS's exit status
-@cindex Exit status, of CVS
+@cindex exit status, of CVS
 
-@sc{cvs} can indicate to the calling environment whether it
+CVS can indicate to the calling environment whether it
 succeeded or failed by setting its @dfn{exit status}.
 The exact way of testing the exit status will vary from
 one operating system to another.  For example in a unix
@@ -7570,7 +7448,7 @@ shell script the @samp{$?} variable will be 0 if the
 last command returned a successful exit status, or
 greater than 0 if the exit status indicated failure.
 
-If @sc{cvs} is successful, it returns a successful status;
+If CVS is successful, it returns a successful status;
 if there is an error, it prints an error message and
 returns a failure status.  The one exception to this is
 the @code{cvs diff} command.  It will return a
@@ -7596,7 +7474,7 @@ other @sc{cvs} commands.
 @node ~/.cvsrc
 @appendixsec Default options and the ~/.cvsrc file
 @cindex .cvsrc file
-@cindex Option defaults
+@cindex option defaults
 
 There are some @code{command_options} that are used so
 often that you might have set up an alias or some other
@@ -7670,8 +7548,8 @@ left of @samp{cvs_command}) are:
 Specify legal @sc{cvsroot} directory.  See
 @ref{Password authentication server}.
 
-@cindex Authentication, stream
-@cindex Stream authentication
+@cindex authentication, stream
+@cindex stream authentication
 @item -a
 Authenticate all communication between the client and
 the server.  Only has an effect on the @sc{cvs} client.
@@ -7759,7 +7637,7 @@ Cause the command to be somewhat quiet; informational messages,
 such as reports of recursion through subdirectories, are
 suppressed.
 
-@cindex Read-only files, and -r
+@cindex read-only files, and -r
 @item -r
 Make new working files read-only.  Same effect
 as if the @code{$CVSREAD} environment variable is set
@@ -7794,8 +7672,8 @@ set or @samp{-r} is given.
 @c be the same as a get and a cvs edit?), but I'm not
 @c completely sure whether to document it this way.
 
+@cindex encryption
 @item -x
-@cindex Encryption
 Encrypt all communication between the client and the
 server.  Only has an effect on the @sc{cvs} client.  As
 of this writing, this is only implemented when using a
@@ -7808,13 +7686,8 @@ special configure option, @file{--enable-encryption},
 when you build @sc{cvs}.
 
 @item -z @var{gzip-level}
-@cindex Compression
-@cindex Gzip
-Set the compression level.
-Valid levels are 1 (high speed, low compression) to
-9 (low speed, high compression), or 0 to disable
-compression (the default).
-Only has an effect on the @sc{cvs} client.
+Set the compression level.  Only has an effect on the
+@sc{cvs} client.
 
 @end table
 
@@ -7923,8 +7796,8 @@ slightly different way; @pxref{history options}).
 @c Headers Issue 4, Version 2 (September 1994), in the
 @c entry for getdate() on page 231
 
-@cindex Timezone, in input
-@cindex Zone, time, in input
+@cindex timezone, in input
+@cindex zone, time, in input
 A wide variety of date formats are supported by
 @sc{cvs}.  The most standard ones are ISO8601 (from the
 International Standards Organization) and the Internet
@@ -7957,7 +7830,7 @@ are:
 @c bizarre and it has lots of gratuitous multiple ways
 @c to specify the same thing.
 
-There are a lot more ISO8601 date formats, and @sc{cvs}
+There are a lot more ISO8601 date formats, and CVS
 accepts many of them, but you probably don't want to
 hear the @emph{whole} long story :-).
 
@@ -8251,7 +8124,7 @@ There can be no space between @samp{-b} and its argument.
 @c work, as of 17 Sep 1997, but probably will once "cvs
 @c admin" is internal to CVS.
 
-@cindex Comment leader
+@cindex comment leader
 @item -c@var{string}
 Sets the comment leader to @var{string}.  The comment
 leader is not used by current versions of @sc{cvs} or
@@ -8360,7 +8233,7 @@ If you are short on disc this option might help you.
 But think twice before using it---there is no way short
 of restoring the latest backup to undo this command!
 If you delete different revisions than you planned,
-either due to carelessness or (heaven forbid) a @sc{cvs}
+either due to carelessness or (heaven forbid) a CVS
 bug, there is no opportunity to correct the error
 before the revisions are deleted.  It probably would be
 a good idea to experiment on a copy of the repository
@@ -8371,7 +8244,7 @@ Specify @var{range} in one of the following ways:
 @table @code
 @item @var{rev1}::@var{rev2}
 Collapse all revisions between rev1 and rev2, so that
-@sc{cvs} only stores the differences associated with going
+CVS only stores the differences associated with going
 from rev1 to rev2, not intermediate steps.  For
 example, after @samp{-o 1.3::1.5} one can retrieve
 revision 1.3, revision 1.5, or the differences to get
@@ -8487,7 +8360,13 @@ If @var{file} is omitted,
 obtain the text from standard input, terminated by
 end-of-file or by a line containing @samp{.} by itself.
 Prompt for the text if interaction is possible; see
-@samp{-I}.
+@samp{-I}.  Reading from standard input does not work
+for client/server @sc{cvs} and may change in a future
+release of @sc{cvs}.
+@c Changing it to doeditor() is the most obvious thing
+@c (but with a different syntax, as we would like to
+@c phase out optional arguments).  I don't know.  I'm
+@c tempted to say the whole concept is unnecessary.
 
 @item -t-@var{string}
 Similar to @samp{-t@var{file}}. Write descriptive text
@@ -8512,11 +8391,16 @@ using this option with @sc{cvs}.  Unlock the revision
 with number @var{rev}.  If a branch is given, unlock
 the latest revision on that branch.  If @var{rev} is
 omitted, remove the latest lock held by the caller.
-Normally, only the locker of a revision may unlock it;
-somebody else unlocking a revision breaks the lock.
-This causes the original locker to be sent a @code{commit}
-notification (@pxref{Getting Notified}).
+Normally, only the locker of a revision may unlock it.
+Somebody else unlocking a revision breaks the lock.
+This causes a mail message to be sent to the original
+locker.  The message contains a commentary solicited
+from the breaker.  The commentary is terminated by
+end-of-file or by a line containing @code{.} by itself.
 There can be no space between @samp{-u} and its argument.
+@c In the future "send mail" probably will go via the
+@c CVSROOT/notify mechanism.  But for now it means
+@c whatever it means to "rcs".
 
 @item -V@var{n}
 In previous versions of @sc{cvs}, this option meant to
@@ -8541,8 +8425,8 @@ this option has never done anything useful.
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node checkout
 @appendixsec checkout---Check out sources for editing
-@cindex checkout (subcommand)
-@cindex co (subcommand)
+@cindex Checkout (subcommand)
+@cindex Co (subcommand)
 
 @itemize @bullet
 @item
@@ -8699,7 +8583,7 @@ There is an important exception, however.  It is very
 convenient when checking out a single item to have the
 output appear in a directory that doesn't contain empty
 intermediate directories.  In this case @emph{only},
-@sc{cvs} tries to ``shorten'' pathnames to avoid those empty
+CVS tries to ``shorten'' pathnames to avoid those empty
 directories.
 
 For example, given a module @samp{foo} that contains
@@ -8774,7 +8658,7 @@ $ cvs checkout -D yesterday tc
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node commit
 @appendixsec commit---Check files into the repository
-@cindex commit (subcommand)
+@cindex Commit (subcommand)
 
 @itemize @bullet
 @item
@@ -8974,7 +8858,7 @@ $ cvs checkout -r EXPR1 whatever_module
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node diff
 @appendixsec diff---Show differences between revisions
-@cindex diff (subcommand)
+@cindex Diff (subcommand)
 
 @itemize @bullet
 @item
@@ -9154,7 +9038,7 @@ $ cvs diff -u | less
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node export
 @appendixsec export---Export sources from CVS, similar to checkout
-@cindex export (subcommand)
+@cindex Export (subcommand)
 
 @itemize @bullet
 @item
@@ -9171,8 +9055,7 @@ the @sc{cvs} administrative directories.  For example, you
 might use @code{export} to prepare source for shipment
 off-site.  This command requires that you specify a
 date or tag (with @samp{-D} or @samp{-r}), so that you
-can count on reproducing the source you ship to others
-(and thus it always prunes empty directories).
+can count on reproducing the source you ship to others.
 
 One often would like to use @samp{-kv} with @code{cvs
 export}.  This causes any keywords to be
@@ -9250,7 +9133,7 @@ Contributed examples are gratefully accepted.
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node history
 @appendixsec history---Show status of files and users
-@cindex history (subcommand)
+@cindex History (subcommand)
 
 @itemize @bullet
 @item
@@ -9303,7 +9186,7 @@ Report on a particular module.  (You can meaningfully
 use @samp{-m} more than once on the command line.)
 
 @item -o
-Report on checked-out modules.  This is the default report type.
+Report on checked-out modules.
 
 @item -T
 Report on all tags.
@@ -9386,15 +9269,6 @@ Show data since @var{date}.  This is slightly different
 from the normal use of @samp{-D @var{date}}, which
 selects the newest revision older than @var{date}.
 
-@item -f @var{file}
-Show data for a particular file
-(you can specify several @samp{-f} options on the same command line).
-This is equivalent to specifying the file on the command line.
-
-@item -n @var{module}
-Show data for a particular module
-(you can specify several @samp{-n} options on the same command line).
-
 @item -p @var{repository}
 Show data for a particular source repository  (you
 can specify several @samp{-p} options on the same command
@@ -9414,10 +9288,6 @@ above in that it reads only the history file, not the
 
 @item -u @var{name}
 Show records for user @var{name}.
-
-@item -z @var{timezone}
-Show times in the selected records using the specified
-time zone instead of UTC.
 @end table
 
 @ignore
@@ -9432,7 +9302,7 @@ Contributed examples will gratefully be accepted.
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node import
 @appendixsec import---Import sources into CVS, using vendor branches
-@cindex import (subcommand)
+@cindex Import (subcommand)
 
 @c FIXME: This node is way too long for one which has subnodes.
 
@@ -9574,8 +9444,8 @@ you will have to merge the changes.
 @item I @var{file}
 The file is being ignored (@pxref{cvsignore}).
 
-@cindex Symbolic link, importing
-@cindex Link, symbolic, importing
+@cindex symbolic link, importing
+@cindex link, symbolic, importing
 @c FIXME: also (somewhere else) probably
 @c should be documenting what happens if you "cvs add"
 @c a symbolic link.  Also maybe what happens if
@@ -9601,7 +9471,7 @@ See @ref{Tracking sources}, and @ref{From files}.
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node log
 @appendixsec log---Print out log information for files
-@cindex log (subcommand)
+@cindex Log (subcommand)
 
 @itemize @bullet
 @item
@@ -9619,8 +9489,8 @@ determines the format of the output and the options,
 which are not quite in the style of the other @sc{cvs}
 commands.
 
-@cindex Timezone, in output
-@cindex Zone, time, in output
+@cindex timezone, in output
+@cindex zone, time, in output
 @c Kind of a funny place to document the timezone used
 @c in output from commands other than @code{log}.
 @c There is also more we need to say about this,
@@ -9747,23 +9617,12 @@ range formats:
 Revisions @var{rev1} to @var{rev2} (which must be on
 the same branch).
 
-@item @var{rev1}::@var{rev2}
-Revisions between, but not including, @var{rev1} and @var{rev2}.
-
 @item :@var{rev}
 Revisions from the beginning of the branch up to
 and including @var{rev}.
 
-@item ::@var{rev}
-Revisions from the beginning of the branch up to,
-but not including, @var{rev}.
-
 @item @var{rev}:
 Revisions starting with @var{rev} to the end of the
-branch containing @var{rev}.
-
-@item @var{rev}:
-Revisions starting just after @var{rev} to the end of the
 branch containing @var{rev}.
 
 @item @var{branch}
@@ -9771,7 +9630,6 @@ An argument that is a branch means all revisions on
 that branch.
 
 @item @var{branch1}:@var{branch2}
-@itemx @var{branch1}::@var{branch2}
 A range of branches means all revisions
 on the branches in that range.
 
@@ -9814,7 +9672,7 @@ Contributed examples are gratefully accepted.
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node rdiff
 @appendixsec rdiff---'patch' format diffs between releases
-@cindex rdiff (subcommand)
+@cindex Rdiff (subcommand)
 
 @itemize @bullet
 @item
@@ -9909,7 +9767,7 @@ you should probably not use @samp{-u}.
 Expand keywords according to the rules current in
 @sc{rcs} version @var{vn} (the expansion format changed with
 @sc{rcs} version 5).  Note that this option is no
-longer accepted.  @sc{cvs} will always expand keywords the
+longer accepted.  CVS will always expand keywords the
 way that @sc{rcs} version 5 does.
 @end table
 
@@ -9944,7 +9802,7 @@ File bar.h,v changed from revision 1.29.2.1 to 1.2
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node release
 @appendixsec release---Indicate that a Module is no longer in use
-@cindex release (subcommand)
+@cindex Release (subcommand)
 
 @itemize @bullet
 @item
@@ -10070,7 +9928,7 @@ $
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node update
 @appendixsec update---Bring work tree in sync with repository
-@cindex update (subcommand)
+@cindex Update (subcommand)
 
 @itemize @bullet
 @item
@@ -10152,11 +10010,6 @@ These special options are also available with
 Reset any sticky tags, dates, or @samp{-k} options.
 See @ref{Sticky tags}, for more information on sticky tags/dates.
 
-@item -C
-Overwrite locally modified files with clean copies from
-the repository (the modified file is saved in
-@file{.#@var{file}.@var{revision}}, however).
-
 @item -d
 Create any directories that exist in the repository if
 they're missing from the working directory.  Normally,
@@ -10201,11 +10054,6 @@ ancestor revision to the revision specified with the
 ancestor revision is the common ancestor of the
 revision which the working directory is based on, and
 the revision specified in the @samp{-j} option.
-
-Note that using a single @samp{-j @var{tagname}} option rather than
-@samp{-j @var{branchname}} to merge changes from a branch will
-often not remove files which were removed on the branch.
-@xref{Merging adds and removals}, for more.
 
 In addition, each @samp{-j} option can contain an optional
 date specification which, when used with branches, can
@@ -10351,7 +10199,7 @@ options}.
 Print a help message.  See @ref{Global options}.
 
 @item -l
-Do not log in @file{$CVSROOT/CVSROOT/history} file.  See @ref{Global
+Do not log in CVSROOT/history file.  See @ref{Global
 options}.
 
 @item -n
@@ -10385,14 +10233,15 @@ Make new working files read-write.  See @ref{Global
 options}.
 
 @item -x
-Encrypt all communication (client only).
-See @ref{Global options}.
+Encrypt all communication (client only).  See
+@ref{Global options}.
 
 @item -z @var{gzip-level}
-@cindex Compression
-@cindex Gzip
 Set the compression level (client only).
-See @ref{Global options}.
+@c FIXME: what are the valid values for gzip-level.
+@c And shouldn't this be documented in at least a
+@c little bit of detail somewhere?
+
 @end table
 
 Keyword expansion modes (@pxref{Substitution modes}):
@@ -10676,7 +10525,7 @@ behavior}.
 @end table
 
 @item export [@var{options}] @var{modules}@dots{}
-Export files from @sc{cvs}.  See @ref{export}.
+Export files from CVS.  See @ref{export}.
 
 @table @code
 @item -D @var{date}
@@ -10777,7 +10626,7 @@ options}.
 @end table
 
 @item import [@var{options}] @var{repository} @var{vendor-tag} @var{release-tags}@dots{}
-Import files into @sc{cvs}, using vendor branches.  See
+Import files into CVS, using vendor branches.  See
 @ref{import}.
 
 @table @code
@@ -10806,7 +10655,7 @@ More wrappers.  See @ref{import options}.
 @end table
 
 @item init
-Create a @sc{cvs} repository if it doesn't exist.  See
+Create a CVS repository if it doesn't exist.  See
 @ref{Creating a repository}.
 
 @item log [@var{options}] [@var{files}@dots{}]
@@ -11035,11 +10884,6 @@ Bring work tree in sync with repository.  See
 Reset any sticky tags/date/options.  See @ref{Sticky
 tags} and @ref{Keyword substitution}.
 
-@item -C
-Overwrite locally modified files with clean copies from
-the repository (the modified file is saved in
-@file{.#@var{file}.@var{revision}}, however).
-
 @item -D @var{date}
 Check out revisions as of @var{date} (is sticky).  See
 @ref{Common options}.
@@ -11084,12 +10928,6 @@ Checkout revision @var{tag} (is sticky).  See @ref{Common options}.
 @item -W @var{spec}
 More wrappers.  See @ref{import options}.
 @end table
-
-@item version
-@cindex version (subcommand)
-
-Display the version of @sc{cvs} being used.  If the repository
-is remote, display both the client and server versions.
 
 @item watch [on|off|add|remove] [@var{options}] [@var{files}@dots{}]
 
@@ -11207,8 +11045,6 @@ a file @file{sfile}.
 * Ampersand modules::
 * Excluding directories::     Excluding directories from a module
 * Module options::            Regular and ampersand modules can take options
-* Module program options::    How the modules ``program options'' programs
-                              are run. 
 @end menu
 
 @node Alias modules
@@ -11382,7 +11218,7 @@ a future release of @sc{cvs}.
 
 @node Excluding directories
 @appendixsubsec Excluding directories
-@cindex Excluding directories, in modules file
+@cindex excluding directories, in modules file
 @cindex !, in modules file
 
 An alias module may exclude particular directories from
@@ -11405,7 +11241,7 @@ the subdirectory @samp{first-dir/sdir}.
 
 @node Module options
 @appendixsubsec Module options
-@cindex Options, in modules file
+@cindex options, in modules file
 
 Either regular modules or ampersand modules can contain
 options, which supply additional information concerning
@@ -11491,49 +11327,6 @@ this module.
 @c they are no good for security-type stuff.
 @end table
 
-You should also see @pxref{Module program options} about how the
-``program options'' programs are run.
-
-@c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-@node Module program options
-@appendixsubsec How the modules file ``program options'' programs are run
-@cindex Modules file program options
-@cindex -u, in modules file
-@cindex -t, in modules file
-@cindex -o, in modules file
-@cindex -i, in modules file
-@cindex -e, in modules file
-
-@noindent
-For checkout, rtag, and export, the program is server-based, and as such the
-following applies:-
-
-If using remote access methods (pserver, ext, etc.),
-@sc{cvs} will execute this program on the server from a temporary
-directory. The path is searched for this program.
-
-If using ``local access'' (on a local or remote NFS filesystem, i.e.
-repository set just to a path),
-the program will be executed from the newly checked-out tree, if
-found there, or alternatively searched for in the path if not.
-
-@noindent
-The commit and update programs are locally-based, and are run as
-follows:-
-
-The program is always run locally. One must
-re-checkout the tree one is using if these options are updated in the
-modules administrative file. The file CVS/Checkin.prog contains the
-value of the option `-i' set in the modules file, and similarly for
-the file CVS/Update.prog and `-u'. The program is always executed from
-the top level of the checked-out copy on the client. Again, the program
-is first searched for in the checked-out copy and then using the path.
-
-The programs are all run after the operation has effectively
-completed.
-
-
 @c - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 @node Wrappers
 @appendixsec The cvswrappers file
@@ -11580,7 +11373,7 @@ means that @code{cvs update} will refuse to merge
 files, as it also does for files specified as binary
 with @samp{-kb} (but if the file is specified as
 binary, there is no need to specify @samp{-m 'COPY'}).
-@sc{cvs} will provide the user with the
+CVS will provide the user with the
 two versions of the files, and require the user using
 mechanisms outside @sc{cvs}, to insert any necessary
 changes.  @strong{WARNING}: do not use @code{COPY} with
@@ -11661,11 +11454,11 @@ result of this filter will be a file in the users directory
 that they can work on as they normally would.
 
 Note that the @samp{-t}/@samp{-f} features do not
-conveniently handle one portion of @sc{cvs}'s operation:
-determining when files are modified.  @sc{cvs} will still
+conveniently handle one portion of CVS's operation:
+determining when files are modified.  CVS will still
 want a file (or directory) to exist, and it will use
 its modification time to determine whether a file is
-modified.  If @sc{cvs} erroneously thinks a file is
+modified.  If CVS erroneously thinks a file is
 unmodified (for example, a directory is unchanged but
 one of the files within it is changed), you can force
 it to check in the file anyway by specifying the
@@ -11780,7 +11573,7 @@ all have a common format.  The purpose of the files are
 described later on.  The common syntax is described
 here.
 
-@cindex Regular expression syntax
+@cindex regular expression syntax
 Each line contains the following:
 @itemize @bullet
 @item
@@ -11850,7 +11643,7 @@ repository is appended to the template, followed by the
 file names of any files involved in the commit (added,
 removed, and modified files).
 
-@cindex Exit status, of commitinfo
+@cindex exit status, of commitinfo
 The first line with a regular expression matching the
 directory within the repository will be used.  If the
 command returns a non-zero exit status the commit will
@@ -11868,7 +11661,7 @@ All occurrences of the name @samp{ALL} appearing as a
 regular expression are used in addition to the first
 matching regular expression or the name @samp{DEFAULT}.
 
-Note: when @sc{cvs} is accessing a remote repository,
+Note: when @sc{CVS} is accessing a remote repository,
 @file{commitinfo} will be run on the @emph{remote}
 (i.e., server) side, not the client side (@pxref{Remote
 repositories}).
@@ -11893,7 +11686,7 @@ repositories}).
 @node verifymsg
 @appendixsec Verifying log messages
 @cindex verifymsg (admin file)
-@cindex Log message, verifying
+@cindex log message, verifying
 
 Once you have entered a log message, you can evaluate
 that message to check for specific content, such as
@@ -11923,7 +11716,7 @@ If the repository name does not match any of the
 regular expressions in this file, the @samp{DEFAULT}
 line is used, if it is specified.
 
-@cindex Exit status, of verifymsg
+@cindex exit status, of verifymsg
 If the verification script exits with a non-zero exit status,
 the commit is aborted.
 
@@ -12036,7 +11829,7 @@ line is used, if it is specified.
 If the edit script exits with a non-zero exit status,
 the commit is aborted.
 
-Note: when @sc{cvs} is accessing a remote repository,
+Note: when @sc{CVS} is accessing a remote repository,
 or when the @samp{-m} or @samp{-F} options to @code{cvs
 commit} are used, @file{editinfo} will not be consulted.
 There is no good workaround for this; use
@@ -12157,22 +11950,22 @@ For example, some valid format strings are @samp{%},
 
 The output will be a string of tokens separated by
 spaces.  For backwards compatibility, the first
-token will be the repository subdirectory.  The rest of the
+token will be the repository name.  The rest of the
 tokens will be comma-delimited lists of the information
 requested in the format string.  For example, if
-@samp{/u/src/master/yoyodyne/tc} is the repository, @samp{%@{sVv@}}
+@samp{/u/src/master} is the repository, @samp{%@{sVv@}}
 is the format string, and three files (@t{ChangeLog},
 @t{Makefile}, @t{foo.c}) were modified, the output
 might be:
 
 @example
-yoyodyne/tc ChangeLog,1.1,1.2 Makefile,1.3,1.4 foo.c,1.12,1.13
+/u/src/master ChangeLog,1.1,1.2 Makefile,1.3,1.4 foo.c,1.12,1.13
 @end example
 
 As another example, @samp{%@{@}} means that only the
 name of the repository will be generated.
 
-Note: when @sc{cvs} is accessing a remote repository,
+Note: when @sc{CVS} is accessing a remote repository,
 @file{loginfo} will be run on the @emph{remote}
 (i.e., server) side, not the client side (@pxref{Remote
 repositories}).
@@ -12224,9 +12017,9 @@ like this:
 @c What other index entries?  It seems like
 @c people might want to use a lot of different
 @c words for this functionality.
-@cindex Keeping a checked out copy
-@cindex Checked out copy, keeping
-@cindex Web pages, maintaining with CVS
+@cindex keeping a checked out copy
+@cindex checked out copy, keeping
+@cindex web pages, maintaining with CVS
 
 It is often useful to maintain a directory tree which
 contains files which correspond to the latest version
@@ -12314,7 +12107,7 @@ template.
 @xref{verifymsg}, for an example @file{rcsinfo}
 file.
 
-When @sc{cvs} is accessing a remote repository,
+When @sc{CVS} is accessing a remote repository,
 the contents of @file{rcsinfo} at the time a directory
 is first checked out will specify a template which does
 not then change.  If you edit @file{rcsinfo} or its
@@ -12363,14 +12156,14 @@ patterns is:
 @cindex Automatically ignored files
 @example
     RCS     SCCS    CVS     CVS.adm
-    RCSLOG  cvslog.*        .git
+    RCSLOG  cvslog.*
     tags    TAGS
-    .make.state     .nse_depinfo   .*.swp
+    .make.state     .nse_depinfo
     *~      #*      .#*     ,*      _$*     *$
     *.old   *.bak   *.BAK   *.orig  *.rej   .del-*
     *.a     *.olb   *.o     *.obj   *.so    *.exe
-    *.Z     *.elc   *.ln    *.depend
-    *.core
+    *.Z     *.elc   *.ln
+    core
 @end example
 
 @item
@@ -12497,8 +12290,6 @@ format changes with future releases of @sc{cvs}.
 
 @node Variables
 @appendixsec Expansions in administrative files
-@cindex Internal variables
-@cindex Variables
 
 Sometimes in writing an administrative file, you might
 want the file to be able to know various things based
@@ -12530,13 +12321,11 @@ internal variables are:
 
 @table @code
 @item CVSROOT
-@cindex CVSROOT, internal variable
 This is the value of the @sc{cvs} root in use.
 @xref{Repository}, for a description of the various
 ways to specify this.
 
 @item RCSBIN
-@cindex RCSBIN, internal variable
 In @sc{cvs} 1.9.18 and older, this specified the
 directory where @sc{cvs} was looking for @sc{rcs}
 programs.  Because @sc{cvs} no longer runs @sc{rcs}
@@ -12544,29 +12333,20 @@ programs, specifying this internal variable is now an
 error.
 
 @item CVSEDITOR
-@cindex CVSEDITOR, internal variable
 @itemx VISUAL
-@cindex VISUAL, internal variable
 @itemx EDITOR
-@cindex EDITOR, internal variable
 These all expand to the same value, which is the editor
 that @sc{cvs} is using.  @xref{Global options}, for how
 to specify this.
 
 @item USER
-@cindex USER, internal variable
 Username of the user running @sc{cvs} (on the @sc{cvs}
 server machine).
-When using pserver, this is the user specified in the repository
-specification which need not be the same as the username the
-server is running as (@pxref{Password authentication server}).
 @end table
 
 If you want to pass a value to the administrative files
 which the user who is running @sc{cvs} can specify,
-use a user variable.
-@cindex User variables
-To expand a user variable, the
+use a user variable.  To expand a user variable, the
 administrative file contains
 @code{$@{=@var{variable}@}}.  To set a user variable,
 specify the global option @samp{-s} to @sc{cvs}, with
@@ -12592,21 +12372,6 @@ to @code{sh /work/local/tests/runtests}.
 All other strings containing @samp{$} are reserved;
 there is no way to quote a @samp{$} character so that
 @samp{$} represents itself.
-
-Environment variables passed to administrative files are:
-
-@table @code
-@cindex environment variables, passed to administrative files
-@c FIXME: should document USER, LOGNAME, and whatever else is
-@c available both in internal variables and environment variables.
-
-@item CVS_USER
-The @sc{cvs}-specific username provided by the user, if it
-can be provided (currently just for the pserver access
-method), and to the empty string otherwise.  (CVS_USER
-and USER may differ when @file{$CVSROOT/CVSROOT/passwd}
-is used to map cvs usernames to system usernames.)
-@end table
 
 @node config
 @appendixsec The CVSROOT/config configuration file
@@ -12648,7 +12413,6 @@ pserver users must exist in @file{CVSROOT/passwd}.
 The default is @samp{yes}.  For more on pserver, see
 @ref{Password authenticated}.
 
-@ignore
 @cindex PreservePermissions, in CVSROOT/config
 @item PreservePermissions=@var{value}
 Enable support for saving special device files,
@@ -12656,7 +12420,6 @@ symbolic links, file permissions and ownerships in the
 repository.  The default value is @samp{no}.
 @xref{Special Files}, for the full implications of using
 this keyword.
-@end ignore
 
 @cindex TopLevelAdmin, in CVSROOT/config
 @item TopLevelAdmin=@var{value}
@@ -12669,42 +12432,34 @@ The default value is @samp{no}.
 This option is useful if you find yourself performing
 many commands at the top level of your working
 directory, rather than in one of the checked out
-subdirectories.  The @file{CVS} directory created there
-will mean you don't have to specify @code{CVSROOT} for
+subdirectories.  The @samp{CVS} directory created there
+will mean you don't have to specify @samp{CVSROOT} for
 each command.  It also provides a place for the
-@file{CVS/Template} file (@pxref{Working directory
+@samp{CVS/Template} file (@pxref{Working directory
 storage}).
 
 @cindex LockDir, in CVSROOT/config
 @item LockDir=@var{directory}
-Put @sc{cvs} lock files in @var{directory} rather than
+Put CVS lock files in @var{directory} rather than
 directly in the repository.  This is useful if you want
 to let users read from the repository while giving them
 write access only to @var{directory}, not to the
 repository.  You need to create @var{directory}, but
-@sc{cvs} will create subdirectories of @var{directory} as it
-needs them.  For information on @sc{cvs} locks, see
+CVS will create subdirectories of @var{directory} as it
+needs them.  For information on CVS locks, see
 @ref{Concurrency}.
 
 @c Mention this in Compatibility section?
 Before enabling the LockDir option, make sure that you
-have tracked down and removed any copies of @sc{cvs} 1.9 or
+have tracked down and removed any copies of CVS 1.9 or
 older.  Such versions neither support LockDir, nor will
 give an error indicating that they don't support it.
 The result, if this is allowed to happen, is that some
-@sc{cvs} users will put the locks one place, and others will
+CVS users will put the locks one place, and others will
 put them another place, and therefore the repository
-could become corrupted.  @sc{cvs} 1.10 does not support
+could become corrupted.  CVS 1.10 does not support
 LockDir but it will print a warning if run on a
 repository with LockDir enabled.
-
-@cindex LogHistory, in CVSROOT/config
-@item LogHistory=@var{value}
-Control what is logged to the @file{CVSROOT/history} file.
-Default of @samp{TOFEWGCMAR} (or simply @samp{all}) will log
-all transactions.  Any subset of the default is
-legal.  (For example, to only log transactions that modify the
-@file{*,v} files, use @samp{LogHistory=TMAR}.)
 @end table
 
 @c ---------------------------------------------------------------------
@@ -12728,7 +12483,7 @@ A whitespace-separated list of file name patterns that
 @sc{cvs} should treat as wrappers. @xref{Wrappers}.
 
 @cindex CVSREAD, environment variable
-@cindex Read-only files, and CVSREAD
+@cindex read-only files, and CVSREAD
 @item $CVSREAD
 If this is set, @code{checkout} and @code{update} will
 try hard to make the files in your working directory
@@ -12772,17 +12527,17 @@ programs it uses.
 @cindex HOMEDRIVE, environment variable
 @item $HOMEDRIVE
 Used to locate the directory where the @file{.cvsrc}
-file, and other such files, are searched.  On Unix, @sc{cvs}
-just checks for @code{HOME}.  On Windows NT, the system will
-set @code{HOMEDRIVE}, for example to @samp{d:} and @code{HOMEPATH},
+file, and other such files, are searched.  On Unix, CVS
+just checks for HOME.  On Windows NT, the system will
+set HOMEDRIVE, for example to @samp{d:} and HOMEPATH,
 for example to @file{\joe}.  On Windows 95, you'll
-probably need to set @code{HOMEDRIVE} and @code{HOMEPATH} yourself.
+probably need to set HOMEDRIVE and HOMEPATH yourself.
 @c We are being vague about whether HOME works on
 @c Windows; see long comment in windows-NT/filesubr.c.
 
 @cindex CVS_RSH, environment variable
 @item $CVS_RSH
-Specifies the external program which @sc{cvs} connects with,
+Specifies the external program which CVS connects with,
 when @code{:ext:} access method is specified.
 @pxref{Connecting via rsh}.
 
@@ -12800,9 +12555,8 @@ login server}.  Default value is @file{$HOME/.cvspass}.
 
 @item $CVS_CLIENT_PORT
 Used in client-server mode when accessing the server
-via Kerberos, GSSAPI, or @sc{cvs}'s password authentication if the port is not
-specified in $CVSROOT.
-@pxref{Remote repositories}
+via Kerberos.
+@pxref{Kerberos authenticated}
 
 @cindex CVS_RCMD_PORT, environment variable
 @item $CVS_RCMD_PORT
@@ -12813,9 +12567,9 @@ the server side. (Currently not used for Unix clients).
 @cindex CVS_CLIENT_LOG, environment variable
 @item $CVS_CLIENT_LOG
 Used for debugging only in client-server
-mode.  If set, everything sent to the server is logged
+mode.  If set, everything send to the server is logged
 into @file{@code{$CVS_CLIENT_LOG}.in} and everything
-sent from the server is logged into
+send from the server is logged into
 @file{@code{$CVS_CLIENT_LOG}.out}.
 
 @cindex CVS_SERVER_SLEEP, environment variable
@@ -12831,7 +12585,7 @@ For @sc{cvs} 1.10 and older, setting this variable
 prevents @sc{cvs} from overwriting the @file{CVS/Root}
 file when the @samp{-d} global option is specified.
 Later versions of @sc{cvs} do not rewrite
-@file{CVS/Root}, so @code{CVS_IGNORE_REMOTE_ROOT} has no
+@file{CVS/Root}, so CVS_IGNORE_REMOTE_ROOT has no
 effect.
 
 @cindex COMSPEC, environment variable
@@ -12845,7 +12599,7 @@ command interpreter and defaults to @sc{cmd.exe}.
 @itemx $TMP
 @cindex TEMP, environment variable
 @itemx $TEMP
-@cindex Temporary files, location of
+@cindex temporary files, location of
 @c This is quite nuts.  We don't talk about tempnam
 @c or mkstemp which we sometimes use.  The discussion
 @c of "Global options" is semi-incoherent.
@@ -12874,8 +12628,8 @@ if your server and client are both running @sc{cvs}
 @appendix Compatibility between CVS Versions
 
 @cindex CVS, versions of
-@cindex Versions, of CVS
-@cindex Compatibility, between CVS versions
+@cindex versions, of CVS
+@cindex compatibility, between CVS versions
 @c We don't mention versions older than CVS 1.3
 @c on the theory that it would clutter it up for the vast
 @c majority of people, who don't have anything that old.
@@ -13006,8 +12760,8 @@ This is a generic response when trying to connect to a
 pserver server which chooses not to provide a
 specific reason for denying authorization.  Check that
 the username and password specified are correct and
-that the @code{CVSROOT} specified is allowed by @samp{--allow-root}
-in @file{inetd.conf}.  See @ref{Password authenticated}.
+that the CVSROOT specified is allowed by --allow-root
+in inetd.conf.  See @ref{Password authenticated}.
 
 @item @var{file}:@var{line}: Assertion '@var{text}' failed
 The exact format of this message may vary depending on
@@ -13084,7 +12838,7 @@ here for the benefit of @sc{cvs} 1.9 and older.
 
 @item cvs [checkout aborted]: cannot rename file @var{file} to CVS/,,@var{file}: Invalid argument
 This message has been reported as intermittently
-happening with @sc{cvs} 1.9 on Solaris 2.5.  The cause is
+happening with CVS 1.9 on Solaris 2.5.  The cause is
 unknown; if you know more about what causes it, let us
 know as described in @ref{BUGS}.
 
@@ -13099,7 +12853,7 @@ client at all, you probably forgot to specify
 @code{:local:}, as described in @ref{Repository}.
 
 @item ci: @var{file},v: bad diff output line: Binary files - and /tmp/T2a22651 differ
-@sc{cvs} 1.9 and older will print this message
+CVS 1.9 and older will print this message
 when trying to check in a binary file if
 @sc{rcs} is not correctly installed.  Re-read the
 instructions that came with your @sc{rcs} distribution
@@ -13109,13 +12863,13 @@ version of @sc{cvs}, which checks in files itself
 rather than via @sc{rcs}.
 
 @item cvs checkout: could not check out @var{file}
-With @sc{cvs} 1.9, this can mean that the @code{co} program
+With CVS 1.9, this can mean that the @code{co} program
 (part of @sc{rcs}) returned a failure.  It should be
 preceded by another error message, however it has been
 observed without another error message and the cause is
-not well-understood.  With the current version of @sc{cvs},
+not well-understood.  With the current version of CVS,
 which does not run @code{co}, if this message occurs
-without another error message, it is definitely a @sc{cvs}
+without another error message, it is definitely a CVS
 bug (@pxref{BUGS}).
 @c My current suspicion is that the RCS in the rcs (not
 @c cvs/winnt/rcs57nt.zip) directory on the _Practical_
@@ -13125,15 +12879,15 @@ bug (@pxref{BUGS}).
 
 @item cvs [login aborted]: could not find out home directory
 This means that you need to set the environment
-variables that @sc{cvs} uses to locate your home directory.
-See the discussion of @code{HOME}, @code{HOMEDRIVE}, and @code{HOMEPATH} in
+variables that CVS uses to locate your home directory.
+See the discussion of HOME, HOMEDRIVE, and HOMEPATH in
 @ref{Environment variables}.
 
 @item cvs update: could not merge revision @var{rev} of @var{file}: No such file or directory
-@sc{cvs} 1.9 and older will print this message if there was
+CVS 1.9 and older will print this message if there was
 a problem finding the @code{rcsmerge} program.  Make
 sure that it is in your @code{PATH}, or upgrade to a
-current version of @sc{cvs}, which does not require
+current version of CVS, which does not require
 an external @code{rcsmerge} program.
 
 @item cvs [update aborted]: could not patch @var{file}: No such file or directory
@@ -13219,7 +12973,7 @@ see @ref{modules}.
 @c for this message.
 @item missing author
 Typically this can happen if you created an RCS file
-with your username set to empty.  @sc{cvs} will, bogusly,
+with your username set to empty.  CVS will, bogusly,
 create an illegal RCS file with no value for the author
 field.  The solution is to make sure your username is
 set to a non-empty value and re-create the RCS file.
@@ -13246,20 +13000,19 @@ this check; see @ref{Common options}.
 
 @item *PANIC* administration files missing
 This typically means that there is a directory named
-@sc{cvs} but it does not contain the administrative files
-which @sc{cvs} puts in a CVS directory.  If the problem is
+CVS but it does not contain the administrative files
+which CVS puts in a CVS directory.  If the problem is
 that you created a CVS directory via some mechanism
-other than @sc{cvs}, then the answer is simple, use a name
-other than @sc{cvs}.  If not, it indicates a @sc{cvs} bug
+other than CVS, then the answer is simple, use a name
+other than CVS.  If not, it indicates a CVS bug
 (@pxref{BUGS}).
 
 @item rcs error: Unknown option: -x,v/
 This message will be followed by a usage message for
 @sc{rcs}.  It means that you have an old version of
 @sc{rcs} (probably supplied with your operating
-system), as well as an old version of @sc{cvs}.
-@sc{cvs} 1.9.18 and earlier only work with @sc{rcs} version 5 and
-later; current versions of @sc{cvs} do not run @sc{rcs} programs.
+system).  CVS only works with @sc{rcs} version 5 and
+later.
 @c For more information on installing @sc{cvs}, see
 @c (FIXME: where?  it depends on whether you are
 @c getting binaries or sources or what).
@@ -13303,20 +13056,16 @@ find the log file which inetd writes
 your system).  For details, see @ref{Connection}, and
 @ref{Password authentication server}.
 
-@item cvs server: cannot open /root/.cvsignore: Permission denied
-@itemx cvs [server aborted]: can't chdir(/root): Permission denied
-See @ref{Connection}.
-
 @item cvs commit: Up-to-date check failed for `@var{file}'
 This means that someone else has committed a change to
 that file since the last time that you did a @code{cvs
 update}.  So before proceeding with your @code{cvs
-commit} you need to @code{cvs update}.  @sc{cvs} will merge
+commit} you need to @code{cvs update}.  CVS will merge
 the changes that you made and the changes that the
 other person made.  If it does not detect any conflicts
-it will report @samp{M @var{file}} and you are ready
+it will report @samp{M cacErrCodes.h} and you are ready
 to @code{cvs commit}.  If it detects conflicts it will
-print a message saying so, will report @samp{C @var{file}},
+print a message saying so, will report @samp{C cacErrCodes.h},
 and you need to manually resolve the
 conflict.  For more details on this process see
 @ref{Conflicts example}.
@@ -13345,9 +13094,9 @@ non-unix rsh versions, which does not by default
 provide a transparent data stream.  In such cases you
 probably want to try @samp{:server:} instead of
 @samp{:ext:}.  If @var{text} is something else, this
-may signify a problem with your @sc{cvs} server.
+may signify a problem with your CVS server.
 Double-check your installation against the instructions
-for setting up the @sc{cvs} server.
+for setting up the CVS server.
 @c FIXCVS: should be printing CR as \r or \015 or some
 @c such, probably.
 
@@ -13356,11 +13105,11 @@ This is a normal message, not an error.  See
 @ref{Concurrency}, for more details.
 
 @item cvs commit: warning: editor session failed
-@cindex Exit status, of editor
+@cindex exit status, of editor
 This means that the editor which @sc{cvs} is using exits with a nonzero
 exit status.  Some versions of vi will do this even when there was not
 a problem editing the file.  If so, point the
-@code{CVSEDITOR} environment variable to a small script
+@sc{CVSEDITOR} environment variable to a small script
 such as:
 
 @example
@@ -13407,18 +13156,6 @@ directions given for :ext:.
 
 @cindex :pserver:, troubleshooting
 @item :pserver:
-Errors along the lines of "connection refused" typically indicate
-that inetd isn't even listening for connections on port 2401
-whereas errors like "connection reset by peer" or "recv() from
-server: EOF" typically indicate that inetd is listening for
-connections but is unable to start @sc{cvs} (this is frequently
-caused by having an incorrect path in @file{inetd.conf}).
-"unrecognized auth response" errors are caused by a bad command
-line in @file{inetd.conf}, typically an invalid option or forgetting
-to put the @samp{pserver} command at the end of the line.
-Another less common problem is invisible control characters that
-your editor "helpfully" added without you noticing.
-
 One good debugging tool is to "telnet servername
 2401".  After connecting, send any text (for example
 "foo" followed by return).  If @sc{cvs} is working
@@ -13428,33 +13165,8 @@ correctly, it will respond with
 cvs [pserver aborted]: bad auth protocol start: foo
 @end example
 
-If instead you get:
-
-@example
-Usage: cvs [cvs-options] command [command-options-and-arguments]
-...
-@end example
-
-then you're missing the @samp{pserver} command at the end of the
-line in @file{inetd.conf}; check to make sure that the entire command
-is on one line and that it's complete.
-
-Likewise, if you get something like:
-
-@example
-Unknown command: `pserved'
-
-CVS commands are:
-        add          Add a new file/directory to the repository
-...
-@end example
-
-then you've misspelled @samp{pserver} in some way.  If it isn't
-obvious, check for invisible control characters (particularly
-carriage returns) in @file{inetd.conf}.
-
-If it fails to work at all, then make sure inetd is working
-right.  Change the invocation in @file{inetd.conf} to run the
+If this fails to work, then make sure inetd is working
+right.  Change the invocation in inetd.conf to run the
 echo program instead of cvs.  For example:
 
 @example
@@ -13477,24 +13189,6 @@ to address this problem.
 Another good debugging tool is the @samp{-d}
 (debugging) option to inetd.  Consult your system
 documentation for more information.
-
-If you seem to be connecting but get errors like:
-
-@example
-cvs server: cannot open /root/.cvsignore: Permission denied
-cvs [server aborted]: can't chdir(/root): Permission denied
-@end example
-
-then you probably haven't specified @samp{-f} in @file{inetd.conf}.
-
-If you can connect successfully for a while but then can't,
-you've probably hit inetd's rate limit.
-(If inetd receives too many requests for the same service
-in a short period of time, it assumes that something is wrong
-and temporarily disables the service.)
-Check your inetd documentation to find out how to adjust the
-rate limit (some versions of inetd have a single rate limit,
-others allow you to set the limit for each service separately.)
 @end table
 
 @node Other problems
@@ -13509,7 +13203,7 @@ On Windows, if there is a 30 second or so delay when
 you run a @sc{cvs} command, it may mean that you have
 your home directory set to @file{C:/}, for example (see
 @code{HOMEDRIVE} and @code{HOMEPATH} in
-@ref{Environment variables}).  @sc{cvs} expects the home
+@ref{Environment variables}).  CVS expects the home
 directory to not end in a slash, for example @file{C:}
 or @file{C:\cvs}.
 @c FIXCVS: CVS should at least detect this and print an
@@ -13591,9 +13285,10 @@ something about as well as problems with @sc{cvs} itself.
 @item
 If you want someone to help you and fix bugs that you
 report, there are companies which will do that for a
-fee.  One such company is:
+fee.  Two such companies are:
 
 @cindex Signum Support
+@cindex Cyclic Software
 @cindex Support, getting CVS support
 @example
 Signum Support AB
@@ -13605,6 +13300,10 @@ Phone: +46 (0)13 - 21 46 00
 Fax:   +46 (0)13 - 21 47 00
 http://www.signum.se/
 
+Cyclic Software
+United States of America
+http://www.cyclic.com/
+info@@cyclic.com
 @end example
 
 @item
@@ -13628,7 +13327,7 @@ There may be resources on the net which can help.  Two
 good places to start are:
 
 @example
-http://www.cvshome.org
+http://www.cyclic.com
 http://www.loria.fr/~molli/cvs-index.html
 @end example
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: extern.h,v 1.6 2003/06/02 23:32:09 millert Exp $	*/
+/*	$OpenBSD: extern.h,v 1.3 1996/06/23 14:21:50 deraadt Exp $	*/
 /*	$NetBSD: extern.h,v 1.8 1996/05/07 18:20:06 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,18 +36,16 @@
  *	@(#)extern.h	8.1 (Berkeley) 5/31/93
  */
 
-extern char *__progname;
-
-int	c_cchars(const void *, const void *);
-int	c_modes(const void *, const void *);
-int	csearch(char ***, struct info *);
-void	checkredirect(void);
-void	gprint(struct termios *, struct winsize *, int);
-void	gread(struct termios *, char *);
-int	ksearch(char ***, struct info *);
-int	msearch(char ***, struct info *);
-void	optlist(void);
-void	print(struct termios *, struct winsize *, int, enum FMT);
-void	usage(void);
+int	c_cchars __P((const void *, const void *));
+int	c_modes __P((const void *, const void *));
+int	csearch __P((char ***, struct info *));
+void	checkredirect __P((void));
+void	gprint __P((struct termios *, struct winsize *, int));
+void	gread __P((struct termios *, char *));
+int	ksearch __P((char ***, struct info *));
+int	msearch __P((char ***, struct info *));
+void	optlist __P((void));
+void	print __P((struct termios *, struct winsize *, int, enum FMT));
+void	usage __P((void));
 
 extern const struct cchar cchars1[], cchars2[];

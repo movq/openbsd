@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.19 2016/08/14 19:45:24 guenther Exp $	*/
+/*	$OpenBSD: misc.c,v 1.5 1997/07/25 18:58:13 mickey Exp $	*/
 /*	$NetBSD: misc.c,v 1.6 1995/03/21 09:03:09 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +34,32 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)misc.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: misc.c,v 1.5 1997/07/25 18:58:13 mickey Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdarg.h>
+#ifdef __STDC__
+# include <stdarg.h>
+#else
+# include <varargs.h>
+#endif
 
 #include "csh.h"
 #include "extern.h"
 
-static int	renum(int, int);
+static int	renum __P((int, int));
 
 int
-any(char *s, int c)
+any(s, c)
+    register char *s;
+    register int c;
 {
     if (!s)
 	return (0);		/* Check for nil pointer */
@@ -51,24 +69,37 @@ any(char *s, int c)
     return (0);
 }
 
+void
+setzero(cp, i)
+    char   *cp;
+    int     i;
+{
+    if (i != 0)
+	do
+	    *cp++ = 0;
+	while (--i);
+}
+
 char   *
-strsave(char *s)
+strsave(s)
+    register char *s;
 {
     char   *n;
-    char *p;
+    register char *p;
 
     if (s == NULL)
 	s = "";
     for (p = s; *p++;)
 	continue;
-    n = p = xreallocarray(NULL, (p - s), sizeof(char));
+    n = p = (char *) xmalloc((size_t) ((p - s) * sizeof(char)));
     while ((*p++ = *s++) != '\0')
 	continue;
     return (n);
 }
 
 Char  **
-blkend(Char **up)
+blkend(up)
+    register Char **up;
 {
 
     while (*up)
@@ -78,7 +109,9 @@ blkend(Char **up)
 
 
 void
-blkpr(FILE *fp, Char **av)
+blkpr(fp, av)
+    FILE *fp;
+    register Char **av;
 {
 
     for (; *av; av++) {
@@ -89,9 +122,10 @@ blkpr(FILE *fp, Char **av)
 }
 
 int
-blklen(Char **av)
+blklen(av)
+    register Char **av;
 {
-    int i = 0;
+    register int i = 0;
 
     while (*av++)
 	i++;
@@ -99,9 +133,11 @@ blklen(Char **av)
 }
 
 Char  **
-blkcpy(Char **oav, Char **bv)
+blkcpy(oav, bv)
+    Char  **oav;
+    register Char **bv;
 {
-    Char **av = oav;
+    register Char **av = oav;
 
     while ((*av++ = *bv++) != NULL)
 	continue;
@@ -109,7 +145,8 @@ blkcpy(Char **oav, Char **bv)
 }
 
 Char  **
-blkcat(Char **up, Char **vp)
+blkcat(up, vp)
+    Char  **up, **vp;
 {
 
     (void) blkcpy(blkend(up), vp);
@@ -117,21 +154,24 @@ blkcat(Char **up, Char **vp)
 }
 
 void
-blkfree(Char **av0)
+blkfree(av0)
+    Char  **av0;
 {
-    Char **av = av0;
+    register Char **av = av0;
 
     if (!av0)
 	return;
     for (; *av; av++)
-	free(* av);
-    free(av0);
+	xfree((ptr_t) * av);
+    xfree((ptr_t) av0);
 }
 
 Char  **
-saveblk(Char **v)
+saveblk(v)
+    register Char **v;
 {
-    Char **newv = xcalloc((size_t) (blklen(v) + 1), sizeof(Char **));
+    register Char **newv =
+    (Char **) xcalloc((size_t) (blklen(v) + 1), sizeof(Char **));
     Char  **onewv = newv;
 
     while (*v)
@@ -139,10 +179,57 @@ saveblk(Char **v)
     return (onewv);
 }
 
-Char  **
-blkspl(Char **up, Char **vp)
+#ifdef NOTUSED
+char   *
+strstr(s, t)
+    register char *s, *t;
 {
-    Char **wp = xcalloc((size_t) (blklen(up) + blklen(vp) + 1),
+    do {
+	register char *ss = s;
+	register char *tt = t;
+
+	do
+	    if (*tt == '\0')
+		return (s);
+	while (*ss++ == *tt++);
+    } while (*s++ != '\0');
+    return (NULL);
+}
+
+#endif /* NOTUSED */
+
+#ifndef SHORT_STRINGS
+char   *
+strspl(cp, dp)
+    char   *cp, *dp;
+{
+    char   *ep;
+    register char *p, *q;
+
+    if (!cp)
+	cp = "";
+    if (!dp)
+	dp = "";
+    for (p = cp; *p++;)
+	continue;
+    for (q = dp; *q++;)
+	continue;
+    ep = (char *) xmalloc((size_t) (((p - cp) + (q - dp) - 1) * sizeof(char)));
+    for (p = ep, q = cp; *p++ = *q++;)
+	continue;
+    for (p--, q = dp; *p++ = *q++;)
+	continue;
+    return (ep);
+}
+
+#endif
+
+Char  **
+blkspl(up, vp)
+    register Char **up, **vp;
+{
+    register Char **wp =
+    (Char **) xcalloc((size_t) (blklen(up) + blklen(vp) + 1),
 		      sizeof(Char **));
 
     (void) blkcpy(wp, up);
@@ -150,7 +237,8 @@ blkspl(Char **up, Char **vp)
 }
 
 Char
-lastchr(Char *cp)
+lastchr(cp)
+    register Char *cp;
 {
 
     if (!cp)
@@ -167,19 +255,18 @@ lastchr(Char *cp)
  * any units which may have been left open accidentally.
  */
 void
-closem(void)
+closem()
 {
-    int f;
-    int max = sysconf(_SC_OPEN_MAX);
+    register int f;
 
-    for (f = 0; f < max; f++)
+    for (f = 0; f < sysconf(_SC_OPEN_MAX); f++)
 	if (f != SHIN && f != SHOUT && f != SHERR && f != OLDSTD &&
 	    f != FSHTTY)
 	    (void) close(f);
 }
 
 void
-donefds(void)
+donefds()
 {
     (void) close(0);
     (void) close(1);
@@ -194,7 +281,8 @@ donefds(void)
  * i.e. to a unit > 2.  This also happens in dcopy.
  */
 int
-dmove(int i, int j)
+dmove(i, j)
+    register int i, j;
 {
 
     if (i == j || i < 0)
@@ -212,7 +300,8 @@ dmove(int i, int j)
 }
 
 int
-dcopy(int i, int j)
+dcopy(i, j)
+    register int i, j;
 {
 
     if (i == j || i < 0 || (j < 0 && i > 2))
@@ -226,9 +315,10 @@ dcopy(int i, int j)
 }
 
 static int
-renum(int i, int j)
+renum(i, j)
+    register int i, j;
 {
-    int k = dup(i);
+    register int k = dup(i);
 
     if (k < 0)
 	return (-1);
@@ -248,17 +338,20 @@ renum(int i, int j)
  * as well as by commands like "repeat".
  */
 void
-lshift(Char **v, int c)
+lshift(v, c)
+    register Char **v;
+    register int c;
 {
-    Char **u;
+    register Char **u;
 
     for (u = v; *u && --c >= 0; u++)
-	free(*u);
+	xfree((ptr_t) *u);
     (void) blkcpy(v, u);
 }
 
 int
-number(Char *cp)
+number(cp)
+    Char   *cp;
 {
     if (!cp)
 	return(0);
@@ -274,17 +367,33 @@ number(Char *cp)
 }
 
 Char  **
-copyblk(Char **v)
+copyblk(v)
+    register Char **v;
 {
-    Char  **nv = xcalloc((size_t) (blklen(v) + 1), sizeof(Char **));
+    Char  **nv = (Char **) xcalloc((size_t) (blklen(v) + 1), sizeof(Char **));
 
     return (blkcpy(nv, v));
 }
 
-Char   *
-strip(Char *cp)
+#ifndef SHORT_STRINGS
+char   *
+strend(cp)
+    register char *cp;
 {
-    Char *dp = cp;
+    if (!cp)
+	return (cp);
+    while (*cp)
+	cp++;
+    return (cp);
+}
+
+#endif /* SHORT_STRINGS */
+
+Char   *
+strip(cp)
+    Char   *cp;
+{
+    register Char *dp = cp;
 
     if (!cp)
 	return (cp);
@@ -294,9 +403,10 @@ strip(Char *cp)
 }
 
 Char   *
-quote(Char *cp)
+quote(cp)
+    Char   *cp;
 {
-    Char *dp = cp;
+    register Char *dp = cp;
 
     if (!cp)
 	return (cp);
@@ -306,7 +416,8 @@ quote(Char *cp)
 }
 
 void
-udvar(Char *name)
+udvar(name)
+    Char   *name;
 {
 
     setname(vis_str(name));
@@ -314,7 +425,8 @@ udvar(Char *name)
 }
 
 int
-prefix(Char *sub, Char *str)
+prefix(sub, str)
+    register Char *sub, *str;
 {
 
     for (;;) {

@@ -1,4 +1,3 @@
-/*	$OpenBSD: bcopy.c,v 1.7 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: bcopy.c,v 1.2 1996/08/19 08:33:58 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <string.h>
 
 /*
@@ -44,13 +51,28 @@ typedef	long word;		/* "word" used for optimal copy speed */
 
 /*
  * Copy a block of memory, handling overlap.
+ * This is the routine that actually implements
+ * (the portable versions of) bcopy, memcpy, and memmove.
  */
+#ifdef MEMCOPY
+void *
+memcpy(dst0, src0, length)
+#else
+#ifdef MEMMOVE
+void *
+memmove(dst0, src0, length)
+#else
 void
-bcopy(const void *src0, void *dst0, size_t length)
+bcopy(src0, dst0, length)
+#endif
+#endif
+	void *dst0;
+	const void *src0;
+	register size_t length;
 {
-	char *dst = dst0;
-	const char *src = src0;
-	size_t t;
+	register char *dst = dst0;
+	register const char *src = src0;
+	register size_t t;
 
 	if (length == 0 || dst == src)		/* nothing to do */
 		goto done;
@@ -108,6 +130,9 @@ bcopy(const void *src0, void *dst0, size_t length)
 		TLOOP(*--dst = *--src);
 	}
 done:
+#if defined(MEMCOPY) || defined(MEMMOVE)
+	return (dst0);
+#else
 	return;
+#endif
 }
-DEF_WEAK(bcopy);

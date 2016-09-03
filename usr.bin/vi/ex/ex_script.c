@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_script.c,v 1.26 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -14,10 +12,20 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)ex_script.c	10.30 (Berkeley) 9/24/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/queue.h>
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
 #include <sys/stat.h>
+#ifdef HAVE_SYS5_PTY
+#include <sys/stropts.h>
+#endif
 #include <sys/time.h>
 #include <sys/wait.h>
 
@@ -27,38 +35,39 @@
 #include <stdio.h>		/* XXX: OSF/1 bug: include before <grp.h> */
 #include <grp.h>
 #include <limits.h>
-#include <poll.h>
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
-#include <util.h>
 
 #include "../common/common.h"
 #include "../vi/vi.h"
 #include "script.h"
 #include "pathnames.h"
 
-static void	sscr_check(SCR *);
-static int	sscr_getprompt(SCR *);
-static int	sscr_init(SCR *);
-static int	sscr_insert(SCR *);
-static int	sscr_matchprompt(SCR *, char *, size_t, size_t *);
-static int	sscr_setprompt(SCR *, char *, size_t);
+static void	sscr_check __P((SCR *));
+static int	sscr_getprompt __P((SCR *));
+static int	sscr_init __P((SCR *));
+static int	sscr_insert __P((SCR *));
+static int	sscr_matchprompt __P((SCR *, char *, size_t, size_t *));
+static int	sscr_pty __P((int *, int *, char *, struct termios *, void *));
+static int	sscr_setprompt __P((SCR *, char *, size_t));
 
 /*
  * ex_script -- : sc[ript][!] [file]
  *	Switch to script mode.
  *
- * PUBLIC: int ex_script(SCR *, EXCMD *);
+ * PUBLIC: int ex_script __P((SCR *, EXCMD *));
  */
 int
-ex_script(SCR *sp, EXCMD *cmdp)
+ex_script(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	/* Vi only command. */
 	if (!F_ISSET(sp, SC_VI)) {
 		msgq(sp, M_ERR,
-		    "The script command is only available in vi mode");
+		    "150|The script command is only available in vi mode");
 		return (1);
 	}
 
@@ -78,7 +87,8 @@ ex_script(SCR *sp, EXCMD *cmdp)
  *	Create a pty setup for a shell.
  */
 static int
-sscr_init(SCR *sp)
+sscr_init(sp)
+	SCR *sp;
 {
 	SCRIPT *sc;
 	char *sh, *sh_path;
@@ -87,7 +97,7 @@ sscr_init(SCR *sp)
 	if (opts_empty(sp, O_SHELL, 0))
 		return (1);
 
-	MALLOC_RET(sp, sc, sizeof(SCRIPT));
+	MALLOC_RET(sp, sc, SCRIPT *, sizeof(SCRIPT));
 	sp->script = sc;
 	sc->sh_prompt = NULL;
 	sc->sh_prompt_len = 0;
@@ -109,16 +119,24 @@ sscr_init(SCR *sp)
 	sc->sh_term.c_oflag &= ~OPOST;
 	sc->sh_term.c_cflag &= ~(ECHO|ECHOE|ECHONL|ECHOK);
 
+#ifdef TIOCGWINSZ
 	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &sc->sh_win) == -1) {
 		msgq(sp, M_SYSERR, "tcgetattr");
 		goto err;
 	}
 
-	if (openpty(&sc->sh_master,
+	if (sscr_pty(&sc->sh_master,
 	    &sc->sh_slave, sc->sh_name, &sc->sh_term, &sc->sh_win) == -1) {
 		msgq(sp, M_SYSERR, "pty");
 		goto err;
 	}
+#else
+	if (sscr_pty(&sc->sh_master,
+	    &sc->sh_slave, sc->sh_name, &sc->sh_term, NULL) == -1) {
+		msgq(sp, M_SYSERR, "pty");
+		goto err;
+	}
+#endif
 
 	/*
 	 * __TK__ huh?
@@ -138,18 +156,20 @@ err:		if (sc->sh_master != -1)
 		 * XXX
 		 * So that shells that do command line editing turn it off.
 		 */
-		if (setenv("TERM", "emacs", 1) == -1 ||
-		    setenv("TERMCAP", "emacs:", 1) == -1 ||
-		    setenv("EMACS", "t", 1) == -1)
-			_exit(126);
+		(void)setenv("TERM", "emacs", 1);
+		(void)setenv("TERMCAP", "emacs:", 1);
+		(void)setenv("EMACS", "t", 1);
 
 		(void)setsid();
+#ifdef TIOCSCTTY
 		/*
 		 * 4.4BSD allocates a controlling terminal using the TIOCSCTTY
 		 * ioctl, not by opening a terminal device file.  POSIX 1003.1
-		 * doesn't define a portable way to do this.
+		 * doesn't define a portable way to do this.  If TIOCSCTTY is
+		 * not available, hope that the open does it.
 		 */
 		(void)ioctl(sc->sh_slave, TIOCSCTTY, 0);
+#endif
 		(void)close(sc->sh_master);
 		(void)dup2(sc->sh_slave, STDIN_FILENO);
 		(void)dup2(sc->sh_slave, STDOUT_FILENO);
@@ -162,7 +182,7 @@ err:		if (sc->sh_master != -1)
 			sh = sh_path;
 		else
 			++sh;
-		execl(sh_path, sh, "-i", (char *)NULL);
+		execl(sh_path, sh, "-i", NULL);
 		msgq_str(sp, M_SYSERR, sh_path, "execl: %s");
 		_exit(127);
 	default:			/* Parent. */
@@ -183,31 +203,35 @@ err:		if (sc->sh_master != -1)
  *	carriage return comes; set the prompt from that line.
  */
 static int
-sscr_getprompt(SCR *sp)
+sscr_getprompt(sp)
+	SCR *sp;
 {
+	struct timeval tv;
 	CHAR_T *endp, *p, *t, buf[1024];
 	SCRIPT *sc;
-	struct pollfd pfd[1];
+	fd_set fdset;
 	recno_t lline;
 	size_t llen, len;
 	u_int value;
 	int nr;
 
+	FD_ZERO(&fdset);
 	endp = buf;
 	len = sizeof(buf);
 
 	/* Wait up to a second for characters to read. */
+	tv.tv_sec = 5;
+	tv.tv_usec = 0;
 	sc = sp->script;
-	pfd[0].fd = sc->sh_master;
-	pfd[0].events = POLLIN;
-	switch (poll(pfd, 1, 5 * 1000)) {
+	FD_SET(sc->sh_master, &fdset);
+	switch (select(sc->sh_master + 1, &fdset, NULL, NULL, &tv)) {
 	case -1:		/* Error or interrupt. */
-		msgq(sp, M_SYSERR, "poll");
+		msgq(sp, M_SYSERR, "select");
 		goto prompterr;
 	case  0:		/* Timeout */
 		msgq(sp, M_ERR, "Error: timed out");
 		goto prompterr;
-	default:		/* Characters to read. */
+	case  1:		/* Characters to read. */
 		break;
 	}
 
@@ -243,13 +267,15 @@ more:	len = sizeof(buf) - (endp - buf);
 		goto more;
 
 	/* Wait up 1/10 of a second to make sure that we got it all. */
-	switch (poll(pfd, 1, 100)) {
+	tv.tv_sec = 0;
+	tv.tv_usec = 100000;
+	switch (select(sc->sh_master + 1, &fdset, NULL, NULL, &tv)) {
 	case -1:		/* Error or interrupt. */
-		msgq(sp, M_SYSERR, "poll");
+		msgq(sp, M_SYSERR, "select");
 		goto prompterr;
 	case  0:		/* Timeout */
 		break;
-	default:		/* Characters to read. */
+	case  1:		/* Characters to read. */
 		goto more;
 	}
 
@@ -270,10 +296,12 @@ prompterr:	sscr_end(sp);
  * sscr_exec --
  *	Take a line and hand it off to the shell.
  *
- * PUBLIC: int sscr_exec(SCR *, recno_t);
+ * PUBLIC: int sscr_exec __P((SCR *, recno_t));
  */
 int
-sscr_exec(SCR *sp, recno_t lno)
+sscr_exec(sp, lno)
+	SCR *sp;
+	recno_t lno;
 {
 	SCRIPT *sc;
 	recno_t last_lno;
@@ -307,7 +335,7 @@ sscr_exec(SCR *sp, recno_t lno)
 	/* Delete any prompt. */
 	if (sscr_matchprompt(sp, p, len, &tlen)) {
 		if (tlen == len) {
-empty:			msgq(sp, M_BERR, "No command to execute");
+empty:			msgq(sp, M_BERR, "151|No command to execute");
 			goto err1;
 		}
 		p += (len - tlen);
@@ -338,140 +366,52 @@ err1:			rval = 1;
 }
 
 /*
- * sscr_check_input -
- *	Check for input from command input or scripting windows.
- *
- * PUBLIC: int sscr_check_input(SCR *sp);
- */
-int
-sscr_check_input(SCR *sp)
-{
-	GS *gp;
-	SCR *tsp;
-	struct pollfd *pfd;
-	int nfds, rval;
-
-	gp = sp->gp;
-	rval = 0;
-
-	/* Allocate space for pfd. */   
-	nfds = 1;
-	TAILQ_FOREACH(tsp, &gp->dq, q)
-		if (F_ISSET(sp, SC_SCRIPT))
-			nfds++;
-	pfd = calloc(nfds, sizeof(struct pollfd));
-	if (pfd == NULL) {
-		msgq(sp, M_SYSERR, "malloc");
-		return (1);
-	}
-
-	/* Setup events bitmasks. */
-	pfd[0].fd = STDIN_FILENO;
-	pfd[0].events = POLLIN;
-	nfds = 1;
-	TAILQ_FOREACH(tsp, &gp->dq, q)
-		if (F_ISSET(sp, SC_SCRIPT)) {
-			pfd[nfds].fd = sp->script->sh_master;
-			pfd[nfds].events = POLLIN;
-			nfds++;
-		}
-
-loop:
-	/* Check for input. */
-	switch (poll(pfd, nfds, INFTIM)) {
-	case -1:
-		msgq(sp, M_SYSERR, "poll");
-		rval = 1;
-		/* FALLTHROUGH */
-	case 0:
-		goto done;
-	default:
-		break;
-	}
-
-	/* Only insert from the scripting windows if no command input */
-	if (!(pfd[0].revents & POLLIN)) {
-		nfds = 1;
-		TAILQ_FOREACH(tsp, &gp->dq, q)
-			if (F_ISSET(sp, SC_SCRIPT)) {
-				if ((pfd[nfds].revents & POLLHUP) && sscr_end(sp))
-					goto done;
-				if ((pfd[nfds].revents & POLLIN) && sscr_insert(sp))
-					goto done;
-				nfds++;
-			}
-		goto loop;
-	}
-done:
-	free(pfd);
-	return (rval);
-}
-
-/*
  * sscr_input --
  *	Read any waiting shell input.
  *
- * PUBLIC: int sscr_input(SCR *);
+ * PUBLIC: int sscr_input __P((SCR *));
  */
 int
-sscr_input(SCR *sp)
+sscr_input(sp)
+	SCR *sp;
 {
 	GS *gp;
-	struct pollfd *pfd;
-	int nfds, rval;
+	struct timeval poll;
+	fd_set rdfd;
+	int maxfd;
 
 	gp = sp->gp;
-	rval = 0;
 
-	/* Allocate space for pfd. */
-	nfds = 0;
-	TAILQ_FOREACH(sp, &gp->dq, q)
-		if (F_ISSET(sp, SC_SCRIPT))
-			nfds++;
-	if (nfds == 0)
-		return (0);
-	pfd = calloc(nfds, sizeof(struct pollfd));
-	if (pfd == NULL) {
-		msgq(sp, M_SYSERR, "malloc");
-		return (1);
-	}
+loop:	maxfd = 0;
+	FD_ZERO(&rdfd);
+	poll.tv_sec = 0;
+	poll.tv_usec = 0;
 
-	/* Setup events bitmasks. */
-	nfds = 0;
-	TAILQ_FOREACH(sp, &gp->dq, q)
+	/* Set up the input mask. */
+	for (sp = gp->dq.cqh_first; sp != (void *)&gp->dq; sp = sp->q.cqe_next)
 		if (F_ISSET(sp, SC_SCRIPT)) {
-			pfd[nfds].fd = sp->script->sh_master;
-			pfd[nfds].events = POLLIN;
-			nfds++;
+			FD_SET(sp->script->sh_master, &rdfd);
+			if (sp->script->sh_master > maxfd)
+				maxfd = sp->script->sh_master;
 		}
 
-loop:
 	/* Check for input. */
-	switch (poll(pfd, nfds, 0)) {
+	switch (select(maxfd + 1, &rdfd, NULL, NULL, &poll)) {
 	case -1:
-		msgq(sp, M_SYSERR, "poll");
-		rval = 1;
-		/* FALLTHROUGH */
+		msgq(sp, M_SYSERR, "select");
+		return (1);
 	case 0:
-		goto done;
+		return (0);
 	default:
 		break;
 	}
 
 	/* Read the input. */
-	nfds = 0;
-	TAILQ_FOREACH(sp, &gp->dq, q)
-		if (F_ISSET(sp, SC_SCRIPT)) {
-			if ((pfd[nfds].revents & POLLHUP) && sscr_end(sp))
-				goto done;
-			if ((pfd[nfds].revents & POLLIN) && sscr_insert(sp))
-				goto done;
-			nfds++;
-		}
+	for (sp = gp->dq.cqh_first; sp != (void *)&gp->dq; sp = sp->q.cqe_next)
+		if (F_ISSET(sp, SC_SCRIPT) &&
+		    FD_ISSET(sp->script->sh_master, &rdfd) && sscr_insert(sp))
+			return (1);
 	goto loop;
-done:
-	free(pfd);
-	return (rval);
 }
 
 /*
@@ -479,11 +419,13 @@ done:
  *	Take a line from the shell and insert it into the file.
  */
 static int
-sscr_insert(SCR *sp)
+sscr_insert(sp)
+	SCR *sp;
 {
+	struct timeval tv;
 	CHAR_T *endp, *p, *t;
 	SCRIPT *sc;
-	struct pollfd pfd[1];
+	fd_set rdfd;
 	recno_t lno;
 	size_t blen, len, tlen;
 	u_int value;
@@ -534,9 +476,12 @@ more:	switch (nr = read(sc->sh_master, endp, MINREAD)) {
 		 * confused the shell, or whatever.
 		 */
 		if (!sscr_matchprompt(sp, t, len, &tlen) || tlen != 0) {
-			pfd[0].fd = sc->sh_master;
-			pfd[0].events = POLLIN;
-			if (poll(pfd, 1, 100) > 0) {
+			tv.tv_sec = 0;
+			tv.tv_usec = 100000;
+			FD_ZERO(&rdfd);
+			FD_SET(sc->sh_master, &rdfd);
+			if (select(sc->sh_master + 1,
+			    &rdfd, NULL, NULL, &tv) == 1) {
 				memmove(bp, t, len);
 				endp = bp + len;
 				goto more;
@@ -564,14 +509,17 @@ ret:	FREE_SPACE(sp, bp, blen);
  *
  */
 static int
-sscr_setprompt(SCR *sp, char *buf, size_t len)
+sscr_setprompt(sp, buf, len)
+	SCR *sp;
+	char *buf;
+	size_t len;
 {
 	SCRIPT *sc;
 
 	sc = sp->script;
 	if (sc->sh_prompt)
 		free(sc->sh_prompt);
-	MALLOC(sp, sc->sh_prompt, len + 1);
+	MALLOC(sp, sc->sh_prompt, char *, len + 1);
 	if (sc->sh_prompt == NULL) {
 		sscr_end(sp);
 		return (1);
@@ -588,7 +536,10 @@ sscr_setprompt(SCR *sp, char *buf, size_t len)
  *	parts that can change, in both content and size.
  */
 static int
-sscr_matchprompt(SCR *sp, char *lp, size_t line_len, size_t *lenp)
+sscr_matchprompt(sp, lp, line_len, lenp)
+	SCR *sp;
+	char *lp;
+	size_t line_len, *lenp;
 {
 	SCRIPT *sc;
 	size_t prompt_len;
@@ -623,10 +574,11 @@ sscr_matchprompt(SCR *sp, char *lp, size_t line_len, size_t *lenp)
  * sscr_end --
  *	End the pipe to a shell.
  *
- * PUBLIC: int sscr_end(SCR *);
+ * PUBLIC: int sscr_end __P((SCR *));
  */
 int
-sscr_end(SCR *sp)
+sscr_end(sp)
+	SCR *sp;
 {
 	SCRIPT *sc;
 
@@ -644,7 +596,7 @@ sscr_end(SCR *sp)
 	    (void)close(sc->sh_slave);
 
 	/* This should have killed the child. */
-	(void)proc_wait(sp, sc->sh_pid, "script-shell", 0, 0);
+	(void)proc_wait(sp, (long)sc->sh_pid, "script-shell", 0, 0);
 
 	/* Free memory. */
 	free(sc->sh_prompt);
@@ -659,15 +611,188 @@ sscr_end(SCR *sp)
  *	Set/clear the global scripting bit.
  */
 static void
-sscr_check(SCR *sp)
+sscr_check(sp)
+	SCR *sp;
 {
 	GS *gp;
 
 	gp = sp->gp;
-	TAILQ_FOREACH(sp, &gp->dq, q)
+	for (sp = gp->dq.cqh_first; sp != (void *)&gp->dq; sp = sp->q.cqe_next)
 		if (F_ISSET(sp, SC_SCRIPT)) {
 			F_SET(gp, G_SCRWIN);
 			return;
 		}
 	F_CLR(gp, G_SCRWIN);
 }
+
+#ifdef HAVE_SYS5_PTY
+static int ptys_open __P((int, char *));
+static int ptym_open __P((char *));
+
+static int
+sscr_pty(amaster, aslave, name, termp, winp)
+	int *amaster, *aslave;
+	char *name;
+	struct termios *termp;
+	void *winp;
+{
+	int master, slave, ttygid;
+
+	/* open master terminal */
+	if ((master = ptym_open(name)) < 0)  {
+		errno = ENOENT;	/* out of ptys */
+		return (-1);
+	}
+
+	/* open slave terminal */
+	if ((slave = ptys_open(master, name)) >= 0) {
+		*amaster = master;
+		*aslave = slave;
+	} else {
+		errno = ENOENT;	/* out of ptys */
+		return (-1);
+	}
+
+	if (termp)
+		(void) tcsetattr(slave, TCSAFLUSH, termp);
+#ifdef TIOCSWINSZ
+	if (winp != NULL)
+		(void) ioctl(slave, TIOCSWINSZ, (struct winsize *)winp);
+#endif
+	return (0);
+}
+
+/*
+ * ptym_open --
+ *	This function opens a master pty and returns the file descriptor
+ *	to it.  pts_name is also returned which is the name of the slave.
+ */
+static int
+ptym_open(pts_name)
+	char *pts_name;
+{
+	int fdm;
+	char *ptr, *ptsname();
+
+	strcpy(pts_name, _PATH_SYSV_PTY);
+	if ((fdm = open(pts_name, O_RDWR)) < 0 )
+		return (-1);
+
+	if (grantpt(fdm) < 0) {
+		close(fdm);
+		return (-2);
+	}
+
+	if (unlockpt(fdm) < 0) {
+		close(fdm);
+		return (-3);
+	}
+
+	if (unlockpt(fdm) < 0) {
+		close(fdm);
+		return (-3);
+	}
+
+	/* get slave's name */
+	if ((ptr = ptsname(fdm)) == NULL) {
+		close(fdm);
+		return (-3);
+	}
+	strcpy(pts_name, ptr);
+	return (fdm);
+}
+
+/*
+ * ptys_open --
+ *	This function opens the slave pty.
+ */
+static int
+ptys_open(fdm, pts_name)
+	int fdm;
+	char *pts_name;
+{
+	int fds;
+
+	if ((fds = open(pts_name, O_RDWR)) < 0) {
+		close(fdm);
+		return (-5);
+	}
+
+	if (ioctl(fds, I_PUSH, "ptem") < 0) {
+		close(fds);
+		close(fdm);
+		return (-6);
+	}
+
+	if (ioctl(fds, I_PUSH, "ldterm") < 0) {
+		close(fds);
+		close(fdm);
+		return (-7);
+	}
+
+	if (ioctl(fds, I_PUSH, "ttcompat") < 0) {
+		close(fds);
+		close(fdm);
+		return (-8);
+	}
+
+	return (fds);
+}
+
+#else /* !HAVE_SYS5_PTY */
+
+static int
+sscr_pty(amaster, aslave, name, termp, winp)
+	int *amaster, *aslave;
+	char *name;
+	struct termios *termp;
+	void *winp;
+{
+	static char line[] = "/dev/ptyXX";
+	register char *cp1, *cp2;
+	register int master, slave, ttygid;
+	struct group *gr;
+
+	if ((gr = getgrnam("tty")) != NULL)
+		ttygid = gr->gr_gid;
+	else
+		ttygid = -1;
+
+	for (cp1 = "pqrs"; *cp1; cp1++) {
+		line[8] = *cp1;
+		for (cp2 = "0123456789abcdef"; *cp2; cp2++) {
+			line[5] = 'p';
+			line[9] = *cp2;
+			if ((master = open(line, O_RDWR, 0)) == -1) {
+				if (errno == ENOENT)
+					return (-1);	/* out of ptys */
+			} else {
+				line[5] = 't';
+				(void) chown(line, getuid(), ttygid);
+				(void) chmod(line, S_IRUSR|S_IWUSR|S_IWGRP);
+#ifdef HAVE_REVOKE
+				(void) revoke(line);
+#endif
+				if ((slave = open(line, O_RDWR, 0)) != -1) {
+					*amaster = master;
+					*aslave = slave;
+					if (name)
+						strcpy(name, line);
+					if (termp)
+						(void) tcsetattr(slave, 
+							TCSAFLUSH, termp);
+#ifdef TIOCSWINSZ
+					if (winp)
+						(void) ioctl(slave, TIOCSWINSZ, 
+							(char *)winp);
+#endif
+					return (0);
+				}
+				(void) close(master);
+			}
+		}
+	}
+	errno = ENOENT;	/* out of ptys */
+	return (-1);
+}
+#endif /* HAVE_SYS5_PTY */

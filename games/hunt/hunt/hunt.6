@@ -1,37 +1,15 @@
 .\"	$NetBSD: hunt.6,v 1.3 1997/10/10 16:32:30 lukem Exp $
-.\"	$OpenBSD: hunt.6,v 1.22 2014/09/28 07:53:02 schwarze Exp $
+.\"	$OpenBSD: hunt.6,v 1.9 1999/08/30 23:33:50 d Exp $
 .\"
-.\" Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
-.\" San Francisco, California
+.\"  hunt
+.\"  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+.\"  San Francisco, California
 .\"
-.\" Copyright (c) 1985 Regents of the University of California.
-.\" All rights reserved.
+.\"  Copyright (c) 1985 Regents of the University of California.
+.\"  All rights reserved.  The Berkeley software License Agreement
+.\"  specifies the terms and conditions for redistribution.
 .\"
-.\" Redistribution and use in source and binary forms, with or without
-.\" modification, are permitted provided that the following conditions
-.\" are met:
-.\" 1. Redistributions of source code must retain the above copyright
-.\"    notice, this list of conditions and the following disclaimer.
-.\" 2. Redistributions in binary form must reproduce the above copyright
-.\"    notice, this list of conditions and the following disclaimer in the
-.\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
-.\"    may be used to endorse or promote products derived from this software
-.\"    without specific prior written permission.
-.\"
-.\" THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
-.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
-.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
-.\" SUCH DAMAGE.
-.\"
-.Dd $Mdocdate: September 28 2014 $
+.Dd August 21, 1986
 .Dt HUNT 6
 .Os
 .Sh NAME
@@ -39,10 +17,10 @@
 .Nd a multi-player multi-terminal game
 .Sh SYNOPSIS
 .Nm hunt
-.Op Fl bcfmqSs
+.Op Fl qmcsfbS
 .Op Fl n Ar name
-.Op Fl p Ar port
 .Op Fl t Ar team
+.Op Fl p Ar port
 .Op Fl w Ar message
 .Oo
 .Op Fl h
@@ -60,9 +38,7 @@ If the
 .Fl m
 flag is given,
 you enter the game as a monitor
-.Po
-you can see the action but you cannot play
-.Pc .
+(you can see the action but you cannot play).
 .Pp
 .Nm
 looks for an active game on the local network.
@@ -81,8 +57,7 @@ If the
 .Fl q
 flag is given,
 .Nm
-queries the local network
-.Pq or specific host
+queries the local network (or specific host)
 and reports on all active games found.
 This is useful for shell startup scripts, e.g., csh's
 .Pa .login .
@@ -131,8 +106,7 @@ You can also reply with a
 .Ic w
 to write a message before continuing or
 .Ic o
-to change how you enter the game
-.Pq cloaked, scanning, or flying .
+to change how you enter the game (cloaked, scanning, or flying).
 .Sh "PLAYING HINTS"
 .Nm
 only works on terminals with at least 24 lines, 80 columns, and
@@ -142,18 +116,12 @@ On the right hand side is the status area.
 It shows damage sustained,
 charges remaining,
 who's in the game,
-who's scanning
-.Po
-the
+who's scanning (the
 .Ql \&*
-in front of the name
-.Pc ,
-who's cloaked
-.Po
-the
+in front of the name),
+who's cloaked (the
 .Ql \&+
-in front of the name
-.Pc ,
+in front of the name),
 and other players' scores.
 The rest of the screen is taken up by your map of the maze.
 The 24th line
@@ -170,68 +138,47 @@ and
 .Ic l
 for left, down, up, right, respectively.
 To change which direction you're facing in the maze,
-use the upper case version of the movement key
-.Po
-i.e.,
-.Ic HJKL
-.Pc .
+use the upper case version of the movement key (i.e.,
+.Ic HJKL ) .
 You can only fire or throw things in the direction you're facing.
 .Pp
 Other commands are:
 .Bl -tag -width Ic -compact
 .It Ic f No or Ic 1
-Fire a bullet
-.Pq Takes 1 charge
+Fire a bullet (Takes 1 charge)
 .It Ic g No or Ic 2
-Throw grenade
-.Pq Takes 9 charges
+Throw grenade (Takes 9 charges)
 .It Ic F No or Ic 3
-Throw satchel charge
-.Pq Takes 25 charges
+Throw satchel charge (Takes 25 charges)
 .It Ic G No or Ic 4
-Throw bomb
-.Pq Takes 49 charges
+Throw bomb (Takes 49 charges)
 .It Ic 5
-Throw big bomb
-.Pq Takes 81 charges
+Throw big bomb (Takes 81 charges)
 .It Ic 6
-Throw even bigger bomb
-.Pq Takes 121 charges
+Throw even bigger bomb (Takes 121 charges)
 .It Ic 7
-Throw even more big bomb
-.Pq Takes 169 charges
+Throw even more big bomb (Takes 169 charges)
 .It Ic 8
-Throw even more bigger bomb
-.Pq Takes 225 charges
+Throw even more bigger bomb (Takes 225 charges)
 .It Ic 9
-Throw very big bomb
-.Pq Takes 289 charges
+Throw very big bomb (Takes 289 charges)
 .It Ic 0
-Throw very, very big bomb
-.Pq Takes 361 charges
+Throw very, very big bomb (Takes 361 charges)
 .It Ic @
-Throw biggest bomb
-.Pq Takes 441 charges
+Throw biggest bomb (Takes 441 charges)
 .It Ic o
-Throw small slime
-.Pq Takes 5 charges
+Throw small slime (Takes 5 charges)
 .It Ic O
-Throw big slime
-.Pq Takes 10 charges
+Throw big slime (Takes 10 charges)
 .It Ic p
-Throw bigger slime
-.Pq Takes 15 charges
+Throw bigger slime (Takes 15 charges)
 .It Ic P
-Throw biggest slime
-.Pq Takes 20 charges
+Throw biggest slime (Takes 20 charges)
 .It Ic s
-Scan
-.Pq show where other players are
-.Pq Takes 1 charge
+Scan (show where other players are) (Takes 1 charge)
 .It Ic c
-Cloak
-.Pq hide from scanners
-.Pq Takes 1 charge
+Cloak (hide from scanners) (Takes 1 charge)
+.br
 .It Ic ^L
 Redraw screen
 .It Ic q
@@ -243,17 +190,14 @@ The symbols on the screen are:
 .It Li \&- \&| \&+
 walls
 .It Li \&/ \e
-diagonal
-.Pq deflecting
-walls
+diagonal (deflecting) walls
 .It Li #
-doors
-.Pq dispersion walls
-.It Li \&;
+doors (dispersion walls)
+.It Li ;
 small mine
 .It Li g
 large mine
-.It Li \&:
+.It Li :
 bullet
 .It Li o
 grenade
@@ -265,9 +209,10 @@ bomb
 small slime
 .It Li $
 big slime
+.br
 .It Li > < ^ v
 you, facing right, left, up, or down
-.It Li } { i \&!
+.It Li } { i !
 other players facing right, left, up, or down
 .It \&*
 explosion
@@ -297,20 +242,17 @@ You start with 15 charges and get 5 more every time a player enters
 or re-enters.
 .It
 Grenade explosions cover a 3 by 3 area, each larger bomb cover a
-correspondingly larger area
-.Po
-ranging from 5 by 5 to 21 by 21
-.Pc .
+correspondingly larger area (ranging from 5 by 5 to 21 by 21).
 All explosions are centered around the square the shot hits and
 do the most damage in the center.
 .It
 Slime affects all squares it oozes over.
 The number of squares is equal to the number of charges used,
 multiplied by
-.Va slimefactor
+.Ft conf_slimefactor
 as set by
 .Xr huntd 6
-.Pq default 3 .
+(default 3).
 .It
 One small mine and one large mine are placed in the maze for every new player.
 A mine has a 2% probability of tripping when you walk forward on to it;
@@ -334,14 +276,12 @@ you get 2 more damage capacity points and 2 damage points get taken away.
 .It
 Maximum typeahead is 5 characters.
 .It
-A shot destroys normal
-.Pq i.e., non-diagonal, non-door
-walls.
+A shot destroys normal (i.e.,
+non-diagonal, non-door) walls.
 .It
 Diagonal walls deflect shots and change orientation.
 .It
-Doors disperse shots in random directions
-.Pq up, down, left, right .
+Doors disperse shots in random directions (up, down, left, right).
 .It
 Diagonal walls and doors cannot be destroyed by direct shots but may
 be destroyed by an adjacent grenade explosion.
@@ -351,12 +291,9 @@ Slime goes around walls, not through them.
 Walls regenerate, reappearing in the order they were destroyed.
 One percent of the regenerated walls will be diagonal walls or doors.
 When a wall is generated directly beneath a player, he is thrown in
-a random direction for a random period of time.
-When he lands, he
-sustains damage
-.Po
-up to 20 percent of the amount of damage already sustained
-.Pc ;
+a random direction for a random period of time.  When he lands, he
+sustains damage (up to 20 percent of the amount of damage already
+sustained);
 i.e.,
 the less damage he had, the more nimble he is and
 therefore less likely to hurt himself on landing.
@@ -365,16 +302,12 @@ therefore less likely to hurt himself on landing.
 .\"close to every 30 deaths.
 .It
 Every 30 deaths or so, a
-.Ql \&?
+.Ql ?
 will appear.
 It is a wandering bomb which will explode when it hits someone, or
 when it is slimed.
 .It
 If no one moves, everything stands still.
-But see the
-.Va simstep
-configuration variable in
-.Xr huntd 6
 .It
 The environment variable
 .Ev HUNT
@@ -429,16 +362,13 @@ The
 option fetches the current game statistics.
 .Pp
 Two groups of statistics are presented: the first group of statistics is
-that of the clients currently connected to the game, and is reset each
-time the client rejoins, while the second group of statistics is on all
-players
-.Pq dead or alive
-by name, and collected over the lifetime of the
+that of the clients currently connected to the game, and is reset each 
+time the client rejoins, while the second group of statistics is on all 
+players (dead or alive) by name, and collected over the lifetime of the 
 game daemon.
 .Pp
 The meaning of the column headings are as follows:
-.Pp
-.Bl -tag -width No -compact -offset indent
+.Bl -tag -width No -compact -offset
 .It Score
 the player's last score
 .It Ducked
@@ -458,8 +388,7 @@ how many slime kills player had
 .It Enemy
 how many enemies were killed
 .It Friend
-how many friends were killed
-.Pq self and same team
+how many friends were killed (self and same team)
 .It Deaths
 how many times player died
 .It Still
@@ -479,16 +408,19 @@ for monitoring
 .It Pa /usr/games/huntd
 game coordinator
 .El
-.Sh SEE ALSO
+.Sh "SEE ALSO"
 .Xr huntd 6
 .Sh AUTHORS
-.An -nosplit
-.An Conrad Huang ,
-.An Ken Arnold ,
-and
-.An Greg Couch ;
+Conrad Huang, Ken Arnold, and Greg Couch;
 .br
 University of California, San Francisco, Computer Graphics Lab
+.Sh ACKNOWLEDGEMENTS
+We thank Don Kneller,
+John Thomason, Eric Pettersen, Mark Day,
+and Scott Weiner for providing
+endless hours of play-testing to improve the character of the game.
+We hope their significant others will forgive them;
+we certainly don't.
 .Sh BUGS
 To keep up the pace, not everything is as realistic as possible.
 .Pp
@@ -497,10 +429,3 @@ The historic behaviour of
 automatically starting
 .Xr huntd 6
 is no longer supported.
-.Sh ACKNOWLEDGEMENTS
-We thank Don Kneller,
-John Thomason, Eric Pettersen, Mark Day,
-and Scott Weiner for providing
-endless hours of play-testing to improve the character of the game.
-We hope their significant others will forgive them;
-we certainly don't.

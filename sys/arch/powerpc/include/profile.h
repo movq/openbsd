@@ -1,8 +1,7 @@
-/*	$OpenBSD: profile.h,v 1.7 2013/08/19 08:39:30 mpi Exp $ */
+/*	$OpenBSD: profile.h,v 1.2 1998/07/04 23:56:14 rahnds Exp $ */
 
 /*
- * Copyright (c) 1998 Dale Rahn.
- * All rights reserved.
+ * Copyright (c) 1998 Dale Rahn. All rights reserved.
  *
  *   
  * Redistribution and use in source and binary forms, with or without
@@ -13,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Dale Rahn.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -66,13 +70,4 @@
 	.Lfe2: \n\
 		.size _mcount, .Lfe2-_mcount \n\
 	");
-#define _MCOUNT_DECL static void __mcount
-#ifdef _KERNEL
-#define MCOUNT_ENTER						\
-	__asm volatile("mfmsr %0" : "=r"(s));			\
-	s &= ~PSL_POW;						\
-	__asm volatile("mtmsr %0" :: "r"(s & ~PSL_EE))
-
-#define	MCOUNT_EXIT						\
-	__asm volatile("mtmsr %0" :: "r"(s))
-#endif /* _KERNEL */
+#define _MCOUNT_DECL static __mcount

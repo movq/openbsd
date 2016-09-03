@@ -1,5 +1,5 @@
-/*	$OpenBSD: pass4.c,v 1.10 2015/01/16 06:39:57 deraadt Exp $	*/
-/*	$NetBSD: pass4.c,v 1.2 1997/09/14 14:27:29 lukem Exp $	*/
+/*	$OpenBSD: pass4.c,v 1.3 1997/06/14 04:16:57 downsj Exp $	*/
+/*	$NetBSD: pass4.c,v 1.1 1997/06/11 11:21:56 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1997 Manuel Bouyer.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,7 +35,19 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* isset clrbit */
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pass4.c	8.1 (Berkeley) 6/5/93";
+#else
+#if 0
+static char rcsid[] = "$NetBSD: pass4.c,v 1.1 1997/06/11 11:21:56 bouyer Exp $";
+#else
+static char rcsid[] = "$OpenBSD: pass4.c,v 1.3 1997/06/14 04:16:57 downsj Exp $";
+#endif
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
 #include <ufs/ext2fs/ext2fs.h>
@@ -43,10 +59,10 @@
 #include "extern.h"
 
 void
-pass4(void)
+pass4()
 {
-	ino_t inumber;
-	struct zlncnt *zlnp;
+	register ino_t inumber;
+	register struct zlncnt *zlnp;
 	struct ext2fs_dinode *dp;
 	struct inodesc idesc;
 	int n;
@@ -84,7 +100,7 @@ pass4(void)
 
 		case DCLEAR:
 			dp = ginode(inumber);
-			if (inosize(dp) == 0) {
+			if (dp->e2di_size == 0) {
 				clri(&idesc, "ZERO LENGTH", 1);
 				break;
 			}
@@ -97,18 +113,19 @@ pass4(void)
 			break;
 
 		default:
-			errexit("BAD STATE %d FOR INODE I=%llu\n",
-			    statemap[inumber], (unsigned long long)inumber);
+			errexit("BAD STATE %d FOR INODE I=%d\n",
+			    statemap[inumber], inumber);
 		}
 	}
 }
 
 int
-pass4check(struct inodesc *idesc)
+pass4check(idesc)
+	register struct inodesc *idesc;
 {
-	struct dups *dlp;
+	register struct dups *dlp;
 	int nfrags, res = KEEPON;
-	daddr32_t blkno = idesc->id_blkno;
+	daddr_t blkno = idesc->id_blkno;
 
 	for (nfrags = idesc->id_numfrags; nfrags > 0; blkno++, nfrags--) {
 		if (chkrange(blkno, 1)) {

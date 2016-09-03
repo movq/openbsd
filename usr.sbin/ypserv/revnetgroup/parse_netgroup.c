@@ -1,4 +1,4 @@
-/* $OpenBSD: parse_netgroup.c,v 1.13 2015/12/08 07:16:33 mmcc Exp $ */
+/* $OpenBSD: parse_netgroup.c,v 1.2 1997/08/18 03:11:35 millert Exp $ */
 /*
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -46,6 +50,10 @@
 #include <unistd.h>
 #include "hash.h"
 
+#ifndef lint
+static const char rcsid[] = "$OpenBSD: parse_netgroup.c,v 1.2 1997/08/18 03:11:35 millert Exp $";
+#endif
+
 /*
  * Static Variables and functions used by setnetgrent(), getnetgrent() and
  * __endnetgrent().
@@ -69,20 +77,19 @@ struct netgrp {
 #define NG_USER		1	/* User name */
 #define NG_DOM		2	/* and Domain name */
 
-static struct linelist	*linehead = NULL;
-static struct netgrp	*nextgrp = NULL;
+static struct linelist	*linehead = (struct linelist *)0;
+static struct netgrp	*nextgrp = (struct netgrp *)0;
 static struct {
 	struct netgrp	*gr;
 	char		*grname;
 } grouphead = {
-	NULL,
-	NULL,
+	(struct netgrp *)0,
+	(char *)0,
 };
-
-static int parse_netgrp(char *);
-static struct linelist *read_for_group(char *);
-void __setnetgrent(char *), __endnetgrent(void);
-int __getnetgrent(char **, char **, char **);
+static int parse_netgrp();
+static struct linelist *read_for_group();
+void __setnetgrent(), __endnetgrent();
+int __getnetgrent();
 extern struct group_entry *gtable[];
 
 /*
@@ -92,19 +99,24 @@ extern struct group_entry *gtable[];
  * most of the work.
  */
 void
-__setnetgrent(char *group)
+__setnetgrent(group)
+	char *group;
 {
 	/* Sanity check */
 
 	if (group == NULL || !strlen(group))
 		return;
 
-	if (grouphead.gr == NULL || strcmp(group, grouphead.grname)) {
+	if (grouphead.gr == (struct netgrp *)0 ||
+		strcmp(group, grouphead.grname)) {
 		__endnetgrent();
 		if (parse_netgrp(group))
 			__endnetgrent();
-		else
-			grouphead.grname = strdup(group);
+		else {
+			grouphead.grname = (char *)
+				malloc(strlen(group) + 1);
+			strcpy(grouphead.grname, group);
+		}
 	}
 	nextgrp = grouphead.gr;
 }
@@ -113,7 +125,8 @@ __setnetgrent(char *group)
  * Get the next netgroup off the list.
  */
 int
-__getnetgrent(char **hostp, char **userp, char **domp)
+__getnetgrent(hostp, userp, domp)
+	char **hostp, **userp, **domp;
 {
 	if (nextgrp) {
 		*hostp = nextgrp->ng_str[NG_HOST];
@@ -129,10 +142,10 @@ __getnetgrent(char **hostp, char **userp, char **domp)
  * __endnetgrent() - cleanup
  */
 void
-__endnetgrent(void)
+__endnetgrent()
 {
-	struct linelist *lp, *olp;
-	struct netgrp *gp, *ogp;
+	register struct linelist *lp, *olp;
+	register struct netgrp *gp, *ogp;
 
 	lp = linehead;
 	while (lp) {
@@ -140,33 +153,39 @@ __endnetgrent(void)
 		lp = lp->l_next;
 		free(olp->l_groupname);
 		free(olp->l_line);
-		free(olp);
+		free((char *)olp);
 	}
-	linehead = NULL;
-	free(grouphead.grname);
-	grouphead.grname = NULL;
+	linehead = (struct linelist *)0;
+	if (grouphead.grname) {
+		free(grouphead.grname);
+		grouphead.grname = (char *)0;
+	}
 	gp = grouphead.gr;
 	while (gp) {
 		ogp = gp;
 		gp = gp->ng_next;
-		free(ogp->ng_str[NG_HOST]);
-		free(ogp->ng_str[NG_USER]);
-		free(ogp->ng_str[NG_DOM]);
-		free(ogp);
+		if (ogp->ng_str[NG_HOST])
+			free(ogp->ng_str[NG_HOST]);
+		if (ogp->ng_str[NG_USER])
+			free(ogp->ng_str[NG_USER]);
+		if (ogp->ng_str[NG_DOM])
+			free(ogp->ng_str[NG_DOM]);
+		free((char *)ogp);
 	}
-	grouphead.gr = NULL;
+	grouphead.gr = (struct netgrp *)0;
 }
 
 /*
  * Parse the netgroup file setting up the linked lists.
  */
 static int
-parse_netgrp(char *group)
+parse_netgrp(group)
+	char *group;
 {
-	char *spos, *epos;
-	int len, strpos;
+	register char *spos, *epos;
+	register int len, strpos;
 #ifdef DEBUG
-	int fields;
+	register int fields;
 #endif
 	char *pos, *gpos;
 	struct netgrp *grp;
@@ -180,13 +199,14 @@ parse_netgrp(char *group)
 			break;
 		lp = lp->l_next;
 	}
-	if (lp == NULL && (lp = read_for_group(group)) == NULL)
+	if (lp == (struct linelist *)0 &&
+	    (lp = read_for_group(group)) == (struct linelist *)0)
 		return (1);
 	if (lp->l_parsed) {
 #ifdef DEBUG
 		/*
 		 * This error message is largely superflous since the
-		 * code handles the error condition successfully, and
+		 * code handles the error condition sucessfully, and
 		 * spewing it out from inside libc can actually hose
 		 * certain programs.
 		 */
@@ -199,8 +219,8 @@ parse_netgrp(char *group)
 	/* Watch for null pointer dereferences, dammit! */
 	while (pos != NULL && *pos != '\0') {
 		if (*pos == '(') {
-			grp = malloc(sizeof(struct netgrp));
-			bzero(grp, sizeof(struct netgrp));
+			grp = (struct netgrp *)malloc(sizeof (struct netgrp));
+			bzero((char *)grp, sizeof (struct netgrp));
 			grp->ng_next = grouphead.gr;
 			grouphead.gr = grp;
 			pos++;
@@ -221,9 +241,10 @@ parse_netgrp(char *group)
 					} else
 						len = strlen(spos);
 					if (len > 0) {
-						grp->ng_str[strpos] = malloc(len + 1);
+						grp->ng_str[strpos] =  (char *)
+							malloc(len + 1);
 						bcopy(spos, grp->ng_str[strpos],
-						    len + 1);
+							len + 1);
 					}
 				} else {
 					/*
@@ -269,17 +290,18 @@ parse_netgrp(char *group)
  * is found. Return 1 if eof is encountered.
  */
 static struct linelist *
-read_for_group(char *group)
+read_for_group(group)
+	char *group;
 {
-	char *pos, *spos, *linep = NULL, *olinep = NULL;
-	int len, olen;
+	register char *pos, *spos, *linep = NULL, *olinep = NULL;
+	register int len, olen;
 	int cont;
 	struct linelist *lp;
 	char line[LINSIZ + 1];
 	char *data = NULL;
 
 	data = lookup (gtable, group);
-	snprintf(line, sizeof line, "%s %s", group, data);
+	sprintf(line, "%s %s", group, data);
 	pos = (char *)&line;
 #ifdef CANT_HAPPEN
 	if (*pos == '#')
@@ -295,9 +317,9 @@ read_for_group(char *group)
 	while (*pos == ' ' || *pos == '\t')
 		pos++;
 	if (*pos != '\n' && *pos != '\0') {
-		lp = malloc(sizeof(*lp));
+		lp = (struct linelist *)malloc(sizeof (*lp));
 		lp->l_parsed = 0;
-		lp->l_groupname = malloc(len + 1);
+		lp->l_groupname = (char *)malloc(len + 1);
 		bcopy(spos, lp->l_groupname, len);
 		*(lp->l_groupname + len) = '\0';
 		len = strlen(pos);
@@ -314,7 +336,7 @@ read_for_group(char *group)
 				} else
 					cont = 0;
 				if (len > 0) {
-					linep = malloc(olen + len + 1);
+					linep = (char *)malloc(olen + len + 1);
 					if (olen > 0) {
 						bcopy(olinep, linep, olen);
 						free(olinep);
@@ -326,7 +348,7 @@ read_for_group(char *group)
 				}
 #ifdef CANT_HAPPEN
 				if (cont) {
-					if (fgets(line, sizeof(line), netf)) {
+					if (fgets(line, LINSIZ, netf)) {
 						pos = line;
 						len = strlen(pos);
 					} else
@@ -345,5 +367,5 @@ read_for_group(char *group)
 #endif
 			return (lp);
 	}
-	return (NULL);
+	return ((struct linelist *)0);
 }

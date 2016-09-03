@@ -1,52 +1,10 @@
 #!./perl
 
-print "1..6\n";
-my $test = 0;
+# $RCSfile: multiline.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:20 $
 
-sub failed {
-    my ($got, $expected, $name) = @_;
+print "1..5\n";
 
-    print "not ok $test - $name\n";
-    my @caller = caller(1);
-    print "# Failed test at $caller[1] line $caller[2]\n";
-    if (defined $got) {
-	print "# Got '$got'\n";
-    } else {
-	print "# Got undef\n";
-    }
-    print "# Expected $expected\n";
-    return;
-}
-
-sub like {
-    my ($got, $pattern, $name) = @_;
-    $test = $test + 1;
-    if (defined $got && $got =~ $pattern) {
-	print "ok $test - $name\n";
-	# Principle of least surprise - maintain the expected interface, even
-	# though we aren't using it here (yet).
-	return 1;
-    }
-    failed($got, $pattern, $name);
-}
-
-sub is {
-    my ($got, $expect, $name) = @_;
-    $test = $test + 1;
-    if (defined $got && $got eq $expect) {
-	print "ok $test - $name\n";
-	return 1;
-    }
-    failed($got, "'$expect'", $name);
-}
-
-my $filename = "multiline$$";
-
-END {
-    1 while unlink $filename;
-}
-
-open(TRY,'>',$filename) || (die "Can't open $filename: $!");
+open(try,'>Comp.try') || (die "Can't open temp file.");
 
 $x = 'now is the time
 for all good men
@@ -61,30 +19,28 @@ $y = 'now is the time' . "\n" .
 'for all good men' . "\n" .
 'to come to.' . "\n\n\n!\n\n";
 
-is($x, $y,  'test data is sane');
+if ($x eq $y) {print "ok 1\n";} else {print "not ok 1\n";}
 
-print TRY $x;
-close TRY or die "Could not close: $!";
+print try $x;
+close try;
 
-open(TRY,$filename) || (die "Can't reopen $filename: $!");
+open(try,'Comp.try') || (die "Can't reopen temp file.");
 $count = 0;
 $z = '';
-while (<TRY>) {
+while (<try>) {
     $z .= $_;
     $count = $count + 1;
 }
 
-is($z, $y,  'basic multiline reading');
+if ($z eq $y) {print "ok 2\n";} else {print "not ok 2\n";}
 
-is($count, 7,   '    line count');
-is($., 7,       '    $.' );
+if ($count == 7) {print "ok 3\n";} else {print "not ok 3\n";}
 
-$out = (($^O eq 'MSWin32') || $^O eq 'NetWare') ? `type $filename`
-    : ($^O eq 'VMS') ? `type $filename.;0`   # otherwise .LIS is assumed
-    : `cat $filename`;
+$_ = ($^O eq 'MSWin32') ? `type Comp.try` : `cat Comp.try`;
 
-like($out, qr/.*\n.*\n.*\n$/);
+if (/.*\n.*\n.*\n$/) {print "ok 4\n";} else {print "not ok 4\n";}
 
-close(TRY) || (die "Can't close $filename: $!");
+close(try) || (die "Can't close temp file.");
+unlink 'Comp.try' || `/bin/rm -f Comp.try`;
 
-is($out, $y);
+if ($_ eq $y) {print "ok 5\n";} else {print "not ok 5\n";}

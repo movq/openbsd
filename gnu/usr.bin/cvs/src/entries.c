@@ -302,7 +302,7 @@ fgetentent(fpin, cmd, sawdir)
     line_chars_allocated = 0;
 
     ent = NULL;
-    while ((line_length = get_line (&line, &line_chars_allocated, fpin)) > 0)
+    while ((line_length = getline (&line, &line_chars_allocated, fpin)) > 0)
     {
 	l = line;
 
@@ -381,9 +381,7 @@ fgetentent(fpin, cmd, sawdir)
 	    if (strlen (ts) > 30 && CVS_STAT (user, &sb) == 0)
 	    {
 		char *c = ctime (&sb.st_mtime);
-		/* Fix non-standard format.  */
-		if (c[8] == '0') c[8] = ' ';
-
+		
 		if (!strncmp (ts + 25, c, 24))
 		    ts = time_stamp (user);
 		else
@@ -737,7 +735,7 @@ ParseTag (tagp, datep, nonbranchp)
 	line = NULL;
 	line_chars_allocated = 0;
 
-	if ((line_length = get_line (&line, &line_chars_allocated, fp)) > 0)
+	if ((line_length = getline (&line, &line_chars_allocated, fp)) > 0)
 	{
 	    /* Remove any trailing newline.  */
 	    if (line[line_length - 1] == '\n')
@@ -809,8 +807,7 @@ Subdirs_Known (entries)
 	if (!noexec)
 	{
 	    /* Create Entries.Log so that Entries_Close will do something.  */
-	    entfilename = CVSADM_ENTLOG;
-	    fp = CVS_FOPEN (entfilename, "a");
+	    fp = CVS_FOPEN (CVSADM_ENTLOG, "a");
 	    if (fp == NULL)
 	    {
 		int save_errno = errno;
@@ -824,7 +821,7 @@ Subdirs_Known (entries)
 	    else
 	    {
 		if (fclose (fp) == EOF)
-		    error (1, errno, "cannot close %s", entfilename);
+		    error (1, errno, "cannot close %s", CVSADM_ENTLOG);
 	    }
 	}
     }
@@ -1070,7 +1067,7 @@ base_walk (code, finfo, rev)
 
     if (fp != NULL)
     {
-	while (get_line (&line, &line_allocated, fp) >= 0)
+	while (getline (&line, &line_allocated, fp) >= 0)
 	{
 	    char *linefile;
 	    char *p;

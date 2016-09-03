@@ -1,4 +1,4 @@
-/*	$OpenBSD: pig.c,v 1.17 2016/03/07 12:07:56 mestre Exp $	*/
+/*	$OpenBSD: pig.c,v 1.6 1998/08/19 07:40:49 pjanzen Exp $	*/
 /*	$NetBSD: pig.c,v 1.2 1995/03/23 08:41:40 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,22 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1992, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pig.c	8.2 (Berkeley) 5/4/95";
+#else
+static char rcsid[] = "$OpenBSD: pig.c,v 1.6 1998/08/19 07:40:49 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/types.h>
+
 #include <ctype.h>
 #include <err.h>
 #include <stdio.h>
@@ -37,22 +57,25 @@
 #include <string.h>
 #include <unistd.h>
 
-void pigout(char *, int);
-__dead void usage(void);
+void pigout __P((char *, int));
+void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	int len;
 	int ch;
 	char buf[1024];
 
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
-	while ((ch = getopt(argc, argv, "h")) != -1)
+	while ((ch = getopt(argc, argv, "")) != -1)
 		switch(ch) {
-		case 'h':
+		case '?':
 		default:
 			usage();
 		}
@@ -72,19 +95,21 @@ main(int argc, char *argv[])
 		}
 		(void)putchar(ch);
 	}
-	return 0;
+	exit(0);
 }
 
 void
-pigout(char *buf, int len)
+pigout(buf, len)
+	char *buf;
+	int len;
 {
 	int ch, start, i;
 	int olen, allupper, firstupper;
 
 	/* See if the word is all upper case */
-	allupper = firstupper = isupper((unsigned char)buf[0]);
+	allupper = firstupper = isupper(buf[0]);
 	for (i = 1; i < len && allupper; i++)
-		allupper = allupper && isupper((unsigned char)buf[i]);
+		allupper = allupper && isupper(buf[i]);
 
 	/*
 	 * If the word starts with a vowel, append "way".  Don't treat 'y'
@@ -101,7 +126,7 @@ pigout(char *buf, int len)
 	 * isn't treated as a vowel.
 	 */
 	if (!allupper)
-		buf[0] = tolower((unsigned char)buf[0]);
+		buf[0] = tolower(buf[0]);
 	for (start = 0, olen = len;
 	    !strchr("aeiouyAEIOUY", buf[start]) && start < olen;) {
 		ch = buf[len++] = buf[start++];
@@ -110,13 +135,13 @@ pigout(char *buf, int len)
 			buf[len++] = buf[start++];
 	}
 	if (firstupper)
-		buf[start] = toupper((unsigned char)buf[start]);
+		buf[start] = toupper(buf[start]);
 	(void)printf("%.*s%s", olen, buf + start, allupper ? "AY" : "ay");
 }
 
 void
-usage(void)
+usage()
 {
-	(void)fprintf(stderr, "usage: %s\n", getprogname());
+	(void)fprintf(stderr, "usage: pig\n");
 	exit(1);
 }

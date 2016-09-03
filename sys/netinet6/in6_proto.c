@@ -1,66 +1,14 @@
-/*	$OpenBSD: in6_proto.c,v 1.86 2016/06/01 11:11:44 jca Exp $	*/
-/*	$KAME: in6_proto.c,v 1.66 2000/10/10 15:35:47 itojun Exp $	*/
-
 /*
- * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the project nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- */
+%%% copyright-nrl-95
+This software is Copyright 1995-1998 by Randall Atkinson, Ronald Lee,
+Daniel McDonald, Bao Phan, and Chris Winters. All Rights Reserved. All
+rights under this copyright have been assigned to the US Naval Research
+Laboratory (NRL). The NRL Copyright Notice and License Agreement Version
+1.1 (January 17, 1995) applies to this software.
+You should have received a copy of the license with this software. If you
+didn't get a copy, you may request one from <license@ipv6.nrl.navy.mil>.
 
-/*
- * Copyright (c) 1982, 1986, 1993
- *	The Regents of the University of California.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- *
- *	@(#)in_proto.c	8.1 (Berkeley) 6/10/93
- */
-
+*/
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/protosw.h>
@@ -69,234 +17,379 @@
 #include <sys/mbuf.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/route.h>
-#include <net/rtable.h>
+#include <net/radix.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/in_pcb.h>
-#include <netinet/ip6.h>
-#include <netinet6/ip6_var.h>
-#include <netinet/icmp6.h>
-
-#include <netinet/tcp.h>
-#include <netinet/tcp_timer.h>
-#include <netinet/tcp_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
-#include <netinet/ip_ipsp.h>
-#include <netinet/ip_ah.h>
-#include <netinet/ip_esp.h>
-#include <netinet/ip_ipip.h>
 
-#ifdef PIM
-#include <netinet6/pim6_var.h>
-#endif
+#include <netinet/tcp.h>
+#include <netinet/tcp_fsm.h>
+#include <netinet/tcp_seq.h>
+#include <netinet/tcp_timer.h>
+/* #include <netinet/tcpip.h> */
+#if __FreeBSD__ && defined(_NETINET_IN_PCB_H_)
+#undef _NETINET_IN_PCB_H_
+#include <netinet/tcp_var.h>
+#define _NETINET_IN_PCB_H_
+#else /* __FreeBSD__ */
+#include <netinet/tcp_var.h>
+#endif /* __FreeBSD__ */
+#include <netinet/tcpip.h>
+#include <netinet/tcp_debug.h>
 
+#include <netinet6/in6.h>
 #include <netinet6/in6_var.h>
-#include <netinet6/nd6.h>
-#include <netinet6/ip6protosw.h>
+#include <netinet6/ipv6.h>
+#include <netinet6/ipv6_var.h>
+#include <netinet6/ipv6_icmp.h>
 
-#include "gif.h"
-#if NGIF > 0
-#include <netinet/ip_ether.h>
-#include <net/if_gif.h>
-#endif
+#if __OpenBSD__
+#undef IPSEC
+#ifdef NRL_IPSEC
+#define IPSEC 1
+#endif /* NRL_IPSEC */
+#endif /* __OpenBSD__ */
 
-#include "carp.h"
-#if NCARP > 0
-#include <netinet/ip_carp.h>
-#endif
-
-#include "pf.h"
-#if NPF > 0
-#include <netinet6/ip6_divert.h>
-#endif
-
-#include "etherip.h"
-#if NETHERIP > 0
-#include <net/if_etherip.h>
-#endif
-
-/*
- * TCP/IP protocol family: IP6, ICMP6, UDP, TCP.
- */
-u_char ip6_protox[IPPROTO_MAX];
-
-struct ip6protosw inet6sw[] = {
-{ 0,		&inet6domain,	IPPROTO_IPV6,	0,
-  0,		0,		0,		0,
-  0,
-  ip6_init,	0,		frag6_slowtimo,	frag6_drain,
-  ip6_sysctl,
-},
-{ SOCK_DGRAM,	&inet6domain,	IPPROTO_UDP,	PR_ATOMIC|PR_ADDR|PR_SPLICE,
-  udp6_input,	0,		udp6_ctlinput,	ip6_ctloutput,
-  udp_usrreq,	0,
-  0,		0,		0,
-  udp_sysctl,
-},
-{ SOCK_STREAM,	&inet6domain,	IPPROTO_TCP,	PR_CONNREQUIRED|PR_WANTRCVD|PR_ABRTACPTDIS|PR_SPLICE,
-  tcp6_input,	0,		tcp6_ctlinput,	tcp_ctloutput,
-  tcp_usrreq,
-  0,		0,		0,		0,
-  tcp_sysctl,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_RAW,	PR_ATOMIC|PR_ADDR,
-  rip6_input,	rip6_output,	rip6_ctlinput,	rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,		rip6_sysctl
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_ICMPV6,	PR_ATOMIC|PR_ADDR,
-  icmp6_input,	rip6_output,	rip6_ctlinput,	rip6_ctloutput,
-  rip6_usrreq,
-  icmp6_init,	icmp6_fasttimo,	0,		0,
-  icmp6_sysctl,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_DSTOPTS,PR_ATOMIC|PR_ADDR,
-  dest6_input,	0,	 	0,		0,
-  0,
-  0,		0,		0,		0,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_ROUTING,PR_ATOMIC|PR_ADDR,
-  route6_input,	0,	 	0,		0,
-  0,
-  0,		0,		0,		0,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_FRAGMENT,PR_ATOMIC|PR_ADDR,
-  frag6_input,	0,	 	0,		0,
-  0,
-  0,		0,		0,		0,
-},
 #ifdef IPSEC
-{ SOCK_RAW,	&inet6domain,	IPPROTO_AH,	PR_ATOMIC|PR_ADDR,
-  ah6_input,	rip6_output, 	0,		rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,
-  ah_sysctl,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_ESP,	PR_ATOMIC|PR_ADDR,
-  esp6_input,	rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,
-  esp_sysctl,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_IPCOMP,	PR_ATOMIC|PR_ADDR,
-  ipcomp6_input, rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,
-  ipcomp_sysctl,
-},
+#include <sys/osdep.h>
+#include <netsec/ipsec.h>
 #endif /* IPSEC */
-#if NGIF > 0
-{ SOCK_RAW,	&inet6domain,	IPPROTO_ETHERIP,PR_ATOMIC|PR_ADDR,
-  etherip_input6, rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,		etherip_sysctl
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_IPV6,	PR_ATOMIC|PR_ADDR,
-  in6_gif_input, rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,	/* XXX */
-  0,		0,		0,		0,
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_IPV4,	PR_ATOMIC|PR_ADDR,
-  in6_gif_input, rip6_output, 	0,		rip6_ctloutput,
-  rip6_usrreq,	/* XXX */
-  0,		0,		0,		0,
-},
-#else /* NGIF */
-{ SOCK_RAW,	&inet6domain,	IPPROTO_IPV6,	PR_ATOMIC|PR_ADDR,
-  ip4_input6,	rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,	/* XXX */
-  0,		0,		0,		0,		ipip_sysctl
-},
-{ SOCK_RAW,	&inet6domain,	IPPROTO_IPV4,	PR_ATOMIC|PR_ADDR,
-  ip4_input6,	rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,	/* XXX */
-  0,		0,		0,		0,
-},
-#endif /* GIF */
-#ifdef PIM
-{ SOCK_RAW,	&inet6domain,	IPPROTO_PIM,	PR_ATOMIC|PR_ADDR,
-  pim6_input,	rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,		pim6_sysctl
-},
-#endif /* PIM */
-#if NCARP > 0
-{ SOCK_RAW,	&inet6domain,	IPPROTO_CARP,	PR_ATOMIC|PR_ADDR,
-  carp6_proto_input,	rip6_output,	0,	rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,		carp_sysctl
-},
-#endif /* NCARP */
-#if NPF > 0
-{ SOCK_RAW,	&inet6domain,	IPPROTO_DIVERT,	PR_ATOMIC|PR_ADDR,
-  divert6_input,	0,		0,	rip6_ctloutput,
-  divert6_usrreq,
-  divert6_init,	0,		0,		0,		divert6_sysctl
-},
-#endif /* NPF > 0 */
-#if NETHERIP > 0
-{ SOCK_RAW,	&inet6domain,	IPPROTO_ETHERIP,PR_ATOMIC|PR_ADDR,
-  ip6_etherip_input, rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,
-  0,		0,		0,		0,		ip_etherip_sysctl
-},
-#endif /* NETHERIP */
-/* raw wildcard */
-{ SOCK_RAW,	&inet6domain,	0,		PR_ATOMIC|PR_ADDR,
-  rip6_input,	rip6_output,	0,		rip6_ctloutput,
-  rip6_usrreq,	rip6_init,
-  0,		0,		0,
-},
+
+#if __FreeBSD__
+#include <sys/sysctl.h>
+#endif /* __FreeBSD__ */
+
+extern struct domain inet6domain;
+
+#define CAST (void *)
+
+#if !__FreeBSD__
+struct protosw inet6sw[] = {
+/* normal protocol switch */
+  {
+    0, &inet6domain, 0, 0,    /* NOTE:  This 0 is the same as IPPROTO_HOPOPTS,
+				 but we specially demux IPPROTO_HOPOPTS
+				 in ipv6_input(). */
+    CAST ipv6_hop, CAST ipv6_output, 0, 0, /* Watch for hop-by-hop input! */
+    0,
+    ipv6_init, 0, ipv6_slowtimo, ipv6_drain, ipv6_sysctl
+  },
+
+  /* ICMPv6 entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_ICMPV6, PR_ATOMIC|PR_ADDR,
+    CAST ipv6_icmp_input, CAST ipv6_icmp_output, 0, ripv6_ctloutput,
+    ipv6_icmp_usrreq,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, ipv6_icmp_sysctl
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+
+  /* IPv6-in-IPv6 tunnel entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_IPV6, PR_ATOMIC|PR_ADDR,
+    CAST ipv6_input, CAST ripv6_output, 0, ripv6_ctloutput,
+    ripv6_usrreq,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, ipv6_sysctl
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+
+  /* IPv4-in-IPv6 tunnel entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_IPV4, PR_ATOMIC|PR_ADDR,
+    CAST ipv4_input, 0, 0, 0,
+    0,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, ip_sysctl
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+
+  /* Fragment entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_FRAGMENT, PR_ATOMIC|PR_ADDR,
+    CAST ipv6_reasm, 0, 0, 0,
+    0,
+    0, 0, 0, 0, 0
+  },
+
+
+  /* UDP entry */
+
+  /*
+   * Eventually, that ipv6_ctloutput() will have to be replaced with a
+   * udp_ctloutput(), which knows whether or not to redirect things down to
+   * IP or IPv6 appropriately.
+   */
+
+  {
+    SOCK_DGRAM, &inet6domain, IPPROTO_UDP, PR_ATOMIC|PR_ADDR,
+    CAST udp_input, 0, CAST udp_ctlinput, ipv6_ctloutput,
+    udp_usrreq,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, udp_sysctl
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+
+  /* TCP entry */
+
+  {
+    SOCK_STREAM, &inet6domain, IPPROTO_TCP, PR_CONNREQUIRED|PR_WANTRCVD,
+    CAST tcp_input, 0, CAST tcp_ctlinput, tcp_ctloutput,
+    tcp_usrreq,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, tcp_sysctl /* init, fasttimo, etc. in v4 protosw already! */
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0  /* init, fasttimo, etc. in v4 protosw already! */
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+
+#ifdef IPSEC
+  /* IPv6 & IPv4 Authentication Header */
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_AH, PR_ATOMIC|PR_ADDR,
+    CAST ipsec_ah_input, 0, 0, 0,
+    0,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, ipsec_ah_sysctl
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+
+#ifdef IPSEC_ESP
+  /* IPv6 & IPv4 Encapsulating Security Payload Header */
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_ESP, PR_ATOMIC|PR_ADDR,
+    CAST ipsec_esp_input, 0, 0, 0,
+    0,
+#if defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802
+    0, 0, 0, 0, ipsec_esp_sysctl
+#else /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+    0, 0, 0, 0, 0
+#endif /* defined(_BSDI_VERSION) && _BSDI_VERSION >= 199802 */
+  },
+#endif /* IPSEC_ESP */
+#endif /* IPSEC */
+
+  /* Unknown header. */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_RAW, PR_ATOMIC|PR_ADDR,
+    CAST ripv6_input, CAST ripv6_output, 0, ripv6_ctloutput,
+    ripv6_usrreq,
+    0,0,0,0,0
+  },
+
+  /* Raw wildcard */
+  {
+    SOCK_RAW, &inet6domain, 0, PR_ATOMIC|PR_ADDR,
+    CAST ripv6_input, CAST ripv6_output, 0, ripv6_ctloutput,
+    ripv6_usrreq,
+    ripv6_init,0,0,0,0
+  },
+};
+#else /* !__FreeBSD__ */
+extern struct pr_usrreqs nousrreqs;
+struct protosw inet6sw[] = {
+  {
+    0, &inet6domain, 0, 0,    /* NOTE:  This 0 is the same as IPPROTO_HOPOPTS,
+				 but we specially demux IPPROTO_HOPOPTS
+				 in ipv6_input(). */
+    CAST ipv6_hop, CAST ipv6_output, 0, 0, /* Watch for hop-by-hop input! */
+    0,
+    ipv6_init, 0, ipv6_slowtimo, ipv6_drain, 
+    &nousrreqs
+  },
+
+  /* ICMPv6 entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_ICMPV6, PR_ATOMIC|PR_ADDR,
+    CAST ipv6_icmp_input, CAST ipv6_icmp_output, 0, CAST ripv6_ctloutput,
+    0,
+    0, 0, 0, 0,
+    &ipv6_icmp_usrreqs,
+  },
+
+  /* IPv6-in-IPv6 tunnel entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_IPV6, PR_ATOMIC|PR_ADDR,
+    CAST ipv6_input, CAST ripv6_output, 0, ripv6_ctloutput,
+    0,
+    0, 0, 0, 0,
+    &ripv6_usrreqs
+  },
+
+  /* IPv4-in-IPv6 tunnel entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_IPV4, PR_ATOMIC|PR_ADDR,
+    CAST ipv4_input, 0, 0, 0,
+    0,
+    0, 0, 0, 0,
+    &nousrreqs
+  },
+
+  /* Fragment entry */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_FRAGMENT, PR_ATOMIC|PR_ADDR,
+    CAST ipv6_reasm, 0, 0, 0,
+    0,
+    0, 0, 0, 0,
+    &nousrreqs
+  },
+
+
+  /* UDP entry */
+
+  /*
+   * Eventually, that ipv6_ctloutput() will have to be replaced with a
+   * udp_ctloutput(), which knows whether or not to redirect things down to
+   * IP or IPv6 appropriately.
+   */
+
+  {
+    SOCK_DGRAM, &inet6domain, IPPROTO_UDP, PR_ATOMIC|PR_ADDR,
+    CAST udp_input, 0, CAST udp_ctlinput, ipv6_ctloutput,
+    0,
+    udp_init, 0, 0, 0,
+    &udp_usrreqs
+  },
+
+  /* TCP entry */
+
+  {
+    SOCK_STREAM, &inet6domain, IPPROTO_TCP, PR_CONNREQUIRED|PR_WANTRCVD,
+    CAST tcp_input, 0, CAST tcp_ctlinput, tcp_ctloutput,
+    0,
+    tcp_init,	tcp_fasttimo,	tcp_slowtimo,	tcp_drain, 
+    &tcp_usrreqs,
+  },
+
+#ifdef IPSEC
+  /* IPv6 & IPv4 Authentication Header */
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_AH, PR_ATOMIC|PR_ADDR,
+    CAST ipsec_ah_input, 0, 0, 0,
+    0,
+    0, 0, 0, 0,
+    &nousrreqs
+  },
+
+#ifdef IPSEC_ESP
+  /* IPv6 & IPv4 Encapsulating Security Payload Header */
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_ESP, PR_ATOMIC|PR_ADDR,
+    CAST ipsec_esp_input, 0, 0, 0,
+    0,
+    0, 0, 0, 0,
+    &nousrreqs
+  },
+#endif /* IPSEC_ESP */
+#endif /* IPSEC */
+
+  /* Unknown header. */
+
+  {
+    SOCK_RAW, &inet6domain, IPPROTO_RAW, PR_ATOMIC|PR_ADDR,
+    CAST ripv6_input, CAST ripv6_output, 0, ripv6_ctloutput,
+    0,
+    0,0,0,0,
+    &ripv6_usrreqs
+  },
+
+  /* Raw wildcard */
+  {
+    SOCK_RAW, &inet6domain, 0, PR_ATOMIC|PR_ADDR,
+    CAST ripv6_input, CAST ripv6_output, 0, ripv6_ctloutput,
+    0,
+    ripv6_init,0,0,0,
+    &ripv6_usrreqs,
+  },
 };
 
+#endif /* !__FreeBSD__ */
+
+#if !__FreeBSD__
 struct domain inet6domain =
-    { AF_INET6, "internet6", 0, 0, 0,
-      (struct protosw *)inet6sw,
-      (struct protosw *)&inet6sw[nitems(inet6sw)],
-      sizeof(struct sockaddr_in6),
-      offsetof(struct sockaddr_in6, sin6_addr), 128,
-      in6_domifattach, in6_domifdetach, };
+{
+  PF_INET6, "IPv6", 0, 0, 0,
+  inet6sw, &inet6sw[sizeof(inet6sw)/sizeof(inet6sw[0])], 0,
+  /*
+   * FreeBSD's IPv4 replaces rn_inithead() with an IPv4-specific function.
+   * Our IPv6 uses the ifa->ifa_rtrequest() function pointer to intercept
+   * rtrequest()s.  The consequence of this is that we use the generic
+   * rn_inithead().
+   */
+  rn_inithead, 64, sizeof(struct sockaddr_in6)
+};
+#else /* !__FreeBSD__ */
+struct domain inet6domain =
+{
+  PF_INET6, "IPv6", 0, 0, 0,
+  inet6sw, &inet6sw[sizeof(inet6sw)/sizeof(inet6sw[0])], 0,
+  /*
+   * FreeBSD's IPv4 replaces rn_inithead() with an IPv4-specific function.
+   * Our IPv6 uses the ifa->ifa_rtrequest() function pointer to intercept
+   * rtrequest()s.  The consequence of this is that we use the generic
+   * rn_inithead().
+   */
+  rn_inithead, 64, sizeof(struct sockaddr_in6)
+};
 
-/*
- * Internet configuration info
- */
-int	ip6_forwarding = 0;	/* no forwarding unless sysctl'd to enable */
-int	ip6_mforwarding = 0;	/* no multicast forwarding unless ... */
-int	ip6_multipath = 0;	/* no using multipath routes unless ... */
-int	ip6_sendredirects = 1;
-int	ip6_defhlim = IPV6_DEFHLIM;
-int	ip6_defmcasthlim = IPV6_DEFAULT_MULTICAST_HOPS;
-int	ip6_maxfragpackets = 200;
-int	ip6_maxfrags = 200;
-int	ip6_log_interval = 5;
-int	ip6_hdrnestlimit = 10;	/* appropriate? */
-int	ip6_dad_count = 1;	/* DupAddrDetectionTransmits */
-int	ip6_dad_pending;	/* number of currently running DADs */
-int	ip6_auto_flowlabel = 1;
-int	ip6_use_deprecated = 1;	/* allow deprecated addr (RFC2462 5.5.4) */
-int	ip6_mcast_pmtu = 0;	/* enable pMTU discovery for multicast? */
-int	ip6_neighborgcthresh = 2048; /* Threshold # of NDP entries for GC */
-int	ip6_maxifprefixes = 16; /* Max acceptable prefixes via RA per IF */
-int	ip6_maxifdefrouters = 16; /* Max acceptable def routers via RA */
-int	ip6_maxdynroutes = 4096; /* Max # of routes created via redirect */
-time_t	ip6_log_time = (time_t)0L;
+DOMAIN_SET(inet6);
+#endif /* !__FreeBSD__ */
 
-/* raw IP6 parameters */
-/*
- * Nominal space allocated to a raw ip socket.
- */
-#define	RIPV6SNDQ	8192
-#define	RIPV6RCVQ	8192
+/* Eventually, make these go away -- if you want to be a router, twiddle the
+   sysctls before bringing up your interfaces */
 
-u_long	rip6_sendspace = RIPV6SNDQ;
-u_long	rip6_recvspace = RIPV6RCVQ;
+#ifndef IPV6FORWARDING
+#ifdef IPV6GATEWAY
+#define IPV6FORWARDING 1
+#else
+#define IPV6FORWARDING 0
+#endif /* IPV6GATEWAY */
+#endif /* IPV6FORWARDING */
 
-/* ICMPV6 parameters */
-int	icmp6_redirtimeout = 10 * 60;	/* 10 minutes */
-int	icmp6errppslim = 100;		/* 100pps */
-int	ip6_mtudisc_timeout = IPMTUDISCTIMEOUT;
+#ifndef IPV6RSOLICIT
+#if IPV6FORWARDING
+#define IPV6RSOLICIT 0
+#else /* IPV6FORWARDING */
+#define IPV6RSOLICIT 1
+#endif /* IPV6FORWARDING */
+#endif /* IPV6RSOLICIT */
+
+#ifndef	IFQMAXLEN
+#define	IFQMAXLEN	IFQ_MAXLEN
+#endif
+
+int ipv6forwarding = IPV6FORWARDING;
+int ipv6rsolicit = IPV6RSOLICIT;
+int ipv6_defhoplmt = MAXHOPLIMIT;
+int ipv6qmaxlen = IFQMAXLEN;
+
+#if __FreeBSD__
+SYSCTL_NODE(_net_inet, IPPROTO_IPV6,      ipv6,     CTLFLAG_RW, 0,  "IPV6");
+SYSCTL_NODE(_net_inet, IPPROTO_ICMPV6,    icmpv6,   CTLFLAG_RW, 0,  "ICMPV6");
+#endif /* __FreeBSD__ */

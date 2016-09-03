@@ -1,22 +1,21 @@
 /* bucomm.h -- binutils common include file.
-   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1992, 93, 94, 95, 1996 Free Software Foundation, Inc.
 
-   This file is part of GNU Binutils.
+This file is part of GNU Binutils.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef _BUCOMM_H
 #define _BUCOMM_H
@@ -26,13 +25,6 @@
 #include <sys/types.h>
 
 #include "config.h"
-#include "bin-bugs.h"
-
-#ifdef ANSI_PROTOTYPES
-#include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 
 #ifdef USE_BINARY_FOPEN
 #include "fopen-bin.h"
@@ -82,14 +74,6 @@ extern char *sbrk ();
 #endif
 #endif
 
-#ifdef NEED_DECLARATION_GETENV
-extern char *getenv ();
-#endif
-
-#ifdef NEED_DECLARATION_ENVIRON
-extern char **environ;
-#endif
-
 #ifndef O_RDONLY
 #define O_RDONLY 0
 #endif
@@ -108,90 +92,35 @@ extern char **environ;
 #define SEEK_END 2
 #endif
 
-#if defined(__GNUC__) && !defined(C_ALLOCA)
-# undef alloca
-# define alloca __builtin_alloca
-#else
-# if defined(HAVE_ALLOCA_H) && !defined(C_ALLOCA)
-#  include <alloca.h>
-# else
-#  ifndef alloca /* predefined by HP cc +Olibcalls */
-#   if !defined (__STDC__) && !defined (__hpux)
-char *alloca ();
-#   else
-void *alloca ();
-#   endif /* __STDC__, __hpux */
-#  endif /* alloca */
-# endif /* HAVE_ALLOCA_H */
-#endif
-
-#ifdef HAVE_LOCALE_H
-# include <locale.h>
-#endif
-
-#ifdef ENABLE_NLS
-# include <libintl.h>
-# define _(String) gettext (String)
-# ifdef gettext_noop
-#  define N_(String) gettext_noop (String)
-# else
-#  define N_(String) (String)
-# endif
-#else
-# define gettext(Msgid) (Msgid)
-# define dgettext(Domainname, Msgid) (Msgid)
-# define dcgettext(Domainname, Msgid, Category) (Msgid)
-# define textdomain(Domainname) while (0) /* nothing */
-# define bindtextdomain(Domainname, Dirname) while (0) /* nothing */
-# define _(String) (String)
-# define N_(String) (String)
-#endif
-
 /* bucomm.c */
-void bfd_nonfatal (const char *);
+void bfd_nonfatal PARAMS ((CONST char *));
 
-void bfd_fatal (const char *) ATTRIBUTE_NORETURN;
+void bfd_fatal PARAMS ((CONST char *));
 
-void report (const char *, va_list);
+void fatal PARAMS ((CONST char *, ...));
 
-void fatal (const char *, ...) ATTRIBUTE_PRINTF_1 ATTRIBUTE_NORETURN;
+void list_matching_formats PARAMS ((char **p));
 
-void non_fatal (const char *, ...) ATTRIBUTE_PRINTF_1;
+void list_supported_targets PARAMS ((const char *, FILE *));
 
-void set_default_bfd_target (void);
+void print_arelt_descr PARAMS ((FILE *file, bfd *abfd, boolean verbose));
 
-void list_matching_formats (char **);
+char *make_tempname PARAMS ((char *));
+char *make_tempdir PARAMS ((char *));
 
-void list_supported_targets (const char *, FILE *);
-
-void list_supported_architectures (const char *, FILE *);
-
-int display_info (void);
-
-void print_arelt_descr (FILE *, bfd *, bfd_boolean);
-
-char *make_tempname (char *, int);
-
-bfd_vma parse_vma (const char *, const char *);
-
-off_t get_file_size (const char *);
+bfd_vma parse_vma PARAMS ((const char *, const char *));
 
 extern char *program_name;
 
 /* filemode.c */
-void mode_string (unsigned long, char *);
+void mode_string PARAMS ((unsigned long mode, char *buf));
 
 /* version.c */
-extern void print_version (const char *);
+extern void print_version PARAMS ((const char *));
 
-/* rename.c */
-extern void set_times (const char *, const struct stat *);
+/* libiberty */
+PTR xmalloc PARAMS ((size_t));
 
-extern int smart_rename (const char *, const char *, int);
-
-/* libiberty.  */
-void *xmalloc (size_t);
-
-void *xrealloc (void *, size_t);
+PTR xrealloc PARAMS ((PTR, size_t));
 
 #endif /* _BUCOMM_H */

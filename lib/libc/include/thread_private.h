@@ -1,235 +1,179 @@
-/* $OpenBSD: thread_private.h,v 1.28 2016/09/01 10:41:02 otto Exp $ */
-
-/* PUBLIC DOMAIN: No Rights Reserved. Marco S Hyman <marc@snafu.org> */
+/*
+ *
+ * Support for thread-safety in libc and libc_r common code using macros 
+ * to declare thread-safe data structures.
+ *
+ * $OpenBSD: thread_private.h,v 1.2 1999/01/06 05:19:32 d Exp $
+ */
 
 #ifndef _THREAD_PRIVATE_H_
 #define _THREAD_PRIVATE_H_
 
-#include <stdio.h>		/* for FILE and __isthreaded */
-
-#define _MALLOC_MUTEXES 4
-void _malloc_init(int);
-
 /*
- * The callbacks needed by libc to handle the threaded case.
- * NOTE: Bump the version when you change the struct contents!
+ * Parts of this file are
+ * Copyright (c) 1998 John Birrell <jb@cimlogic.com.au>.
+ * All rights reserved.
  *
- * tc_canceled:
- *	If not NULL, what to do when canceled (otherwise _exit(0))
- *
- * tc_flockfile, tc_ftrylockfile, and tc_funlockfile:
- *	If not NULL, these implement the flockfile() family.
- *	XXX In theory, you should be able to lock a FILE before
- *	XXX loading libpthread and have that be a real lock on it,
- *	XXX but that doesn't work without the libc base version
- *	XXX tracking the recursion count.
- *
- * tc_malloc_lock and tc_malloc_unlock:
- * tc_atexit_lock and tc_atexit_unlock:
- * tc_atfork_lock and tc_atfork_unlock:
- * tc_arc4_lock and tc_arc4_unlock:
- *	The locks used by the malloc, atexit, atfork, and arc4 subsystems.
- *	These have to be ordered specially in the fork/vfork wrappers
- *	and may be implemented differently than the general mutexes
- *	in the callbacks below.
- *
- * tc_mutex_lock and tc_mutex_unlock:
- *	Lock and unlock the given mutex. If the given mutex is NULL
- *	a mutex is allocated and initialized automatically.
- *
- * tc_mutex_destroy:
- *	Destroy/deallocate the given mutex.
- *
- * tc_tag_lock and tc_tag_unlock:
- *	Lock and unlock the mutex associated with the given tag.
- *	If the given tag is NULL a tag is allocated and initialized
- *	automatically.
- *
- * tc_tag_storage:
- *	Returns a pointer to per-thread instance of data associated
- *	with the given tag.  If the given tag is NULL a tag is
- *	allocated and initialized automatically.
- *
- * tc_fork, tc_vfork:
- *	If not NULL, they are called instead of the syscall stub, so that
- *	the thread library can do necessary locking and reinitialization.
- *
- *
- * If <machine/tcb.h> doesn't define TCB_GET(), then locating the TCB in a
- * threaded process requires a syscall (__get_tcb(2)) which is too much
- * overhead for single-threaded processes.  For those archs, there are two
- * additional callbacks, though they are placed first in the struct for
- * convenience in ASM:
- *
- * tc_errnoptr:
- *	Returns the address of the thread's errno.
- *
- * tc_tcb:
- *	Returns the address of the thread's TCB.
+ * $Id: thread_private.h,v 1.2 1999/01/06 05:19:32 d Exp $
+ * $OpenBSD: thread_private.h,v 1.2 1999/01/06 05:19:32 d Exp $
  */
 
-struct thread_callbacks {
-	int	*(*tc_errnoptr)(void);		/* MUST BE FIRST */
-	void	*(*tc_tcb)(void);
-	__dead void	(*tc_canceled)(void);
-	void	(*tc_flockfile)(FILE *);
-	int	(*tc_ftrylockfile)(FILE *);
-	void	(*tc_funlockfile)(FILE *);
-	void	(*tc_malloc_lock)(int);
-	void	(*tc_malloc_unlock)(int);
-	void	(*tc_atexit_lock)(void);
-	void	(*tc_atexit_unlock)(void);
-	void	(*tc_atfork_lock)(void);
-	void	(*tc_atfork_unlock)(void);
-	void	(*tc_arc4_lock)(void);
-	void	(*tc_arc4_unlock)(void);
-	void	(*tc_mutex_lock)(void **);
-	void	(*tc_mutex_unlock)(void **);
-	void	(*tc_mutex_destroy)(void **);
-	void	(*tc_tag_lock)(void **);
-	void	(*tc_tag_unlock)(void **);
-	void	*(*tc_tag_storage)(void **, void *, size_t, void *);
-	__pid_t	(*tc_fork)(void);
-	__pid_t	(*tc_vfork)(void);
+/*
+ * This global flag is non-zero when a process has created one
+ * or more threads. It is used to avoid calling locking functions
+ * when they are not required. In libc, this is always assumed
+ * to be zero.
+ */
+
+extern volatile int	__isthreaded;
+
+#ifdef _THREAD_SAFE
+
+#include <pthread.h>
+#include "pthread_private.h"
+
+/*
+ * File lock contention is difficult to diagnose without knowing
+ * where locks were set. Allow a debug library to be built which
+ * records the source file and line number of each lock call.
+ */
+#ifdef	_FLOCK_DEBUG
+#define _FLOCKFILE(x)	_flockfile_debug(x, __FILE__, __LINE__)
+#else
+#define _FLOCKFILE(x)	flockfile(x)
+#endif
+
+/*
+ * These macros help in making persistent storage thread-specific.
+ * Libc makes extensive use of private static data structures
+ * that hold state across function invocation, and these macros
+ * are no-ops when _THREAD_SAFE is not defined. 
+ * In a thread-safe library, the static variables are used only for
+ * initialising the per-thread instances of the state variables.
+ */
+
+/*
+ * Give names to the private variables used to hold per-thread
+ * data structures.
+ */
+#ifdef __STDC__
+#define __THREAD_MUTEXP_NAME(name)	_thread_mutexp_inst__ ## name
+#define __THREAD_MUTEX_NAME(name)	_thread_mutex_inst__ ## name
+#define __THREAD_KEY_NAME(name)		_thread_key_inst__ ## name
+#else
+#define __THREAD_MUTEXP_NAME(name)	_thread_mutexp_inst__/**/name
+#define __THREAD_MUTEX_NAME(name)	_thread_mutex_inst__/**/name
+#define __THREAD_KEY_NAME(name)		_thread_key_inst__/**/name
+#endif
+
+/*
+ * Mutex declare, lock and unlock macros.
+ */
+#define _THREAD_PRIVATE_MUTEX(name)					\
+	static struct pthread_mutex __THREAD_MUTEXP_NAME(name) =	\
+		PTHREAD_MUTEX_STATIC_INITIALIZER;			\
+	static pthread_mutex_t __THREAD_MUTEX_NAME(name) = 		\
+		&__THREAD_MUTEXP_NAME(name);
+		
+#define _THREAD_PRIVATE_MUTEX_LOCK(name) 				\
+	pthread_mutex_lock(&__THREAD_MUTEX_NAME(name))
+		
+#define _THREAD_PRIVATE_MUTEX_UNLOCK(name) 				\
+	pthread_mutex_unlock(&__THREAD_MUTEX_NAME(name))
+
+/*
+ * A mutexed data structure used to hold the persistent state's key.
+ */
+struct _thread_private_key_struct {
+	struct pthread_mutex	lockd;
+	pthread_mutex_t		lock;
+	int			init;
+	pthread_key_t		key;
 };
 
-__BEGIN_PUBLIC_DECLS
 /*
- *  Set the callbacks used by libc
- */
-void	_thread_set_callbacks(const struct thread_callbacks *_cb, size_t _len);
-__END_PUBLIC_DECLS
-
-#ifdef __LIBC__
-__BEGIN_HIDDEN_DECLS
-/* the current set */
-extern struct thread_callbacks _thread_cb;
-__END_HIDDEN_DECLS
-#endif /* __LIBC__ */
-
-/*
- * helper macro to make unique names in the thread namespace
- */
-#define __THREAD_NAME(name)	__CONCAT(_thread_tagname_,name)
-
-/*
- * Resolver code is special cased in that it uses global keys.
- */
-extern void *__THREAD_NAME(_res);
-extern void *__THREAD_NAME(_res_ext);
-extern void *__THREAD_NAME(serv_mutex);
-
-/*
- * Macros used in libc to access thread mutex, keys, and per thread storage.
- * _THREAD_PRIVATE_KEY and _THREAD_PRIVATE_MUTEX are different macros for
- * historical reasons.   They do the same thing, define a static variable
- * keyed by 'name' that identifies a mutex and a key to identify per thread
- * data.
+ * Declaration of a per-thread state key.
  */
 #define _THREAD_PRIVATE_KEY(name)					\
-	static void *__THREAD_NAME(name)
-#define _THREAD_PRIVATE_MUTEX(name)					\
-	static void *__THREAD_NAME(name)
-
-
-#ifndef __LIBC__	/* building some sort of reach around */
-
-#define _THREAD_PRIVATE_MUTEX_LOCK(name)		do {} while (0)
-#define _THREAD_PRIVATE_MUTEX_UNLOCK(name)		do {} while (0)
-#define _THREAD_PRIVATE(keyname, storage, error)	&(storage)
-#define _MUTEX_LOCK(mutex)				do {} while (0)
-#define _MUTEX_UNLOCK(mutex)				do {} while (0)
-#define _MUTEX_DESTROY(mutex)				do {} while (0)
-#define _MALLOC_LOCK(n)					do {} while (0)
-#define _MALLOC_UNLOCK(n)				do {} while (0)
-#define _ATEXIT_LOCK()					do {} while (0)
-#define _ATEXIT_UNLOCK()				do {} while (0)
-#define _ATFORK_LOCK()					do {} while (0)
-#define _ATFORK_UNLOCK()				do {} while (0)
-#define _ARC4_LOCK()					do {} while (0)
-#define _ARC4_UNLOCK()					do {} while (0)
-
-#else		/* building libc */
-#define _THREAD_PRIVATE_MUTEX_LOCK(name)				\
-	do {								\
-		if (_thread_cb.tc_tag_lock != NULL)			\
-			_thread_cb.tc_tag_lock(&(__THREAD_NAME(name)));	\
-	} while (0)
-#define _THREAD_PRIVATE_MUTEX_UNLOCK(name)				\
-	do {								\
-		if (_thread_cb.tc_tag_unlock != NULL)			\
-			_thread_cb.tc_tag_unlock(&(__THREAD_NAME(name))); \
-	} while (0)
-#define _THREAD_PRIVATE(keyname, storage, error)			\
-	(_thread_cb.tc_tag_storage == NULL ? &(storage) :		\
-	    _thread_cb.tc_tag_storage(&(__THREAD_NAME(keyname)),	\
-		&(storage), sizeof(storage), error))
+	static volatile struct _thread_private_key_struct		\
+	__THREAD_KEY_NAME(name) = {					\
+		PTHREAD_MUTEX_STATIC_INITIALIZER, 			\
+		&__THREAD_KEY_NAME(name).lockd,				\
+		0							\
+	};
 
 /*
- * Macros used in libc to access mutexes.
+ * Initialisation of storage space for a per-thread state variable.
+ * A pointer to a per-thread *copy* of the _initv parameter is returned.
+ * It calls malloc the first time and the space is automatically free'd
+ * when the thread dies. If you need something a bit more complicated
+ * than free() you will need to roll-your-own.
  */
-#define _MUTEX_LOCK(mutex)						\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_mutex_lock(mutex);		\
-	} while (0)
-#define _MUTEX_UNLOCK(mutex)						\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_mutex_unlock(mutex);		\
-	} while (0)
-#define _MUTEX_DESTROY(mutex)						\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_mutex_destroy(mutex);		\
-	} while (0)
+#define _THREAD_PRIVATE(keyname, _initv, _errv) 			\
+	({								\
+		struct _thread_private_key_struct * __k = 		\
+			&__THREAD_KEY_NAME(keyname);			\
+		void* __p;						\
+		extern void free __P((void*));				\
+		extern void* malloc __P((size_t));			\
+									\
+		if (!__isthreaded) {					\
+			/* non-threaded behaviour */			\
+			__p = &(_initv);				\
+			goto _ok;					\
+		}							\
+									\
+		/* create key for first thread */			\
+		pthread_mutex_lock(&__k->lock);				\
+		if (__k->init == 0) {					\
+			if (pthread_key_create(&__k->key, free)) {	\
+				pthread_mutex_unlock(&__k->lock);	\
+				goto _err;				\
+			}						\
+			__k->init = 1;					\
+		}							\
+		pthread_mutex_unlock(&__k->lock);			\
+									\
+		if ((__p = pthread_getspecific(__k->key)) == NULL) {	\
+			/* alloc space on 1st call in this thread */	\
+			if ((__p = malloc(sizeof(_initv))) == NULL) 	\
+				goto _err;				\
+				if (pthread_setspecific(__k->key, __p) != 0) { \
+					free(__p);			\
+					goto _err;			\
+				}					\
+			/* initialise with _initv */			\
+		memcpy(__p, &_initv, sizeof(_initv));			\
+		}							\
+		goto _ok;						\
+	_err:								\
+		__p = (_errv);						\
+	_ok:								\
+		__p;							\
+	})
 
 /*
- * malloc lock/unlock prototypes and definitions
+ * Macros for locking and unlocking FILEs. These test if the
+ * process is threaded to avoid locking when not required.
  */
-#define _MALLOC_LOCK(n)							\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_malloc_lock(n);			\
-	} while (0)
-#define _MALLOC_UNLOCK(n)						\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_malloc_unlock(n);			\
-	} while (0)
+#define	FLOCKFILE(fp)		if (__isthreaded) _FLOCKFILE(fp)
+#define	FUNLOCKFILE(fp)		if (__isthreaded) funlockfile(fp)
 
-#define _ATEXIT_LOCK()							\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_atexit_lock();			\
-	} while (0)
-#define _ATEXIT_UNLOCK()						\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_atexit_unlock();			\
-	} while (0)
+#else /* !_THREAD_SAFE */
 
-#define _ATFORK_LOCK()							\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_atfork_lock();			\
-	} while (0)
-#define _ATFORK_UNLOCK()						\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_atfork_unlock();			\
-	} while (0)
+/*
+ * Do-nothing macros for single-threaded case.
+ */
+#define _FD_LOCK(f,o,p)				(0)
+#define _FD_UNLOCK(f,o)				/* nothing */
+#define _THREAD_PRIVATE_KEY(_key)		/* nothing */
+#define _THREAD_PRIVATE(keyname, _initv, _errv)	(&(_initv))
+#define _THREAD_PRIVATE_MUTEX(_name)		/* nothing */
+#define _THREAD_PRIVATE_MUTEX_LOCK(_name)	/* nothing */
+#define _THREAD_PRIVATE_MUTEX_UNLOCK(_name)	/* nothing */
+#define	FLOCKFILE(fp)				/* nothing */
+#define	FUNLOCKFILE(fp)				/* nothing */
 
-#define _ARC4_LOCK()							\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_arc4_lock();			\
-	} while (0)
-#define _ARC4_UNLOCK()							\
-	do {								\
-		if (__isthreaded)					\
-			_thread_cb.tc_arc4_unlock();			\
-	} while (0)
-#endif /* __LIBC__ */
+#endif /* !_THREAD_SAFE */
 
-#endif /* _THREAD_PRIVATE_H_ */
+#endif _THREAD_PRIVATE_H_

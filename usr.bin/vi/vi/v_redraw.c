@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_redraw.c,v 1.6 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_redraw.c	10.6 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,10 +28,12 @@
  * v_redraw -- ^L, ^R
  *	Redraw the screen.
  *
- * PUBLIC: int v_redraw(SCR *, VICMD *);
+ * PUBLIC: int v_redraw __P((SCR *, VICMD *));
  */
 int
-v_redraw(SCR *sp, VICMD *vp)
+v_redraw(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (sp->gp->scr_refresh(sp, 1));
 }

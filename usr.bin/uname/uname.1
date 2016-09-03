@@ -1,5 +1,4 @@
-.\"	$OpenBSD: uname.1,v 1.17 2011/10/21 14:48:02 ajacoutot Exp $
-.\"
+.\"	$OpenBSD: uname.1,v 1.5 1999/06/05 01:21:45 aaron Exp $
 .\" Copyright (c) 1990 The Regents of the University of California.
 .\" All rights reserved.
 .\"
@@ -11,7 +10,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,7 +32,7 @@
 .\"
 .\"     from: @(#)du.1	6.13 (Berkeley) 6/20/91
 .\"
-.Dd $Mdocdate: October 21 2011 $
+.Dd January 26, 1994
 .Dt UNAME 1
 .Os
 .Sh NAME
@@ -37,15 +40,15 @@
 .Nd print operating system name
 .Sh SYNOPSIS
 .Nm uname
-.Op Fl amnprsv
+.Op Fl amnpsrv
 .Sh DESCRIPTION
 The
 .Nm uname
 utility writes symbols representing one or more system characteristics
 to the standard output.
 .Pp
-The options are as follows:
-.Bl -tag -width Ds
+The following options are available:
+.Bl -tag -width indent
 .It Fl a
 Behave as though all of the options
 .Fl mnrsv
@@ -57,11 +60,11 @@ Print the nodename (the nodename may be a name
 that the system is known by to a communications
 network).
 .It Fl p
-Print the machine processor architecture name.
-.It Fl r
-Print the operating system release.
+Print the processor type in more detail.
 .It Fl s
 Print the operating system name.
+.It Fl r
+Print the operating system release.
 .It Fl v
 Print the operating system version.
 .El
@@ -71,24 +74,13 @@ If no options are specified,
 prints the operating system name as if the
 .Fl s
 option had been specified.
-.Sh EXIT STATUS
-.Ex -std uname
 .Sh SEE ALSO
 .Xr hostname 1 ,
 .Xr machine 1 ,
 .Xr uname 3
 .Sh STANDARDS
 The
-.Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification.
-.Pp
-The flag
-.Op Fl p
-is an extension to that specification.
-.Sh HISTORY
-The
-.Nm
-command appeared in
-.Bx 4.4 .
+.Nm uname
+utility conforms to
+.St -p1003.2-92 .
+

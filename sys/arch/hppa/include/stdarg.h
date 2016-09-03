@@ -1,4 +1,4 @@
-/*	$OpenBSD: stdarg.h,v 1.11 2014/03/11 19:45:27 guenther Exp $	*/
+/*	$OpenBSD: stdarg.h,v 1.2 1998/11/23 03:28:23 mickey Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,12 +38,13 @@
 #ifndef _MACHINE_STDARG_H_
 #define	_MACHINE_STDARG_H_
 
-#include <sys/cdefs.h>
-#include <machine/_types.h>
+typedef double *va_list;
 
-typedef __va_list va_list;
-
+#ifdef __GNUC__
 #define	va_start(ap,lastarg)	((ap) = (va_list)__builtin_saveregs())
+#else
+#define	va_start(ap,lastarg)	__builtin_va_start(ap, &lastarg)
+#endif
 
 #define va_arg(ap,type)							\
 	(sizeof(type) > 8 ?						\
@@ -49,6 +54,6 @@ typedef __va_list va_list;
 	                             (sizeof(type) > 4 ? ~0x7 : ~0x3))),\
 	     (*((type *) (void *) ((char *)ap + ((8 - sizeof(type)) % 4))))))
 
-#define	va_end(ap)	
+#define	va_end(ap)
 
 #endif /* !_MACHINE_STDARG_H */

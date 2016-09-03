@@ -1,28 +1,28 @@
-/*	$OpenBSD: db_lex.c,v 1.14 2016/04/19 12:23:25 mpi Exp $	*/
+/*	$OpenBSD: db_lex.c,v 1.6 1997/07/19 22:31:18 niklas Exp $	*/
 /*	$NetBSD: db_lex.c,v 1.8 1996/02/05 01:57:05 christos Exp $	*/
 
-/*
+/* 
  * Mach Operating System
  * Copyright (c) 1993,1992,1991,1990 Carnegie Mellon University
  * All Rights Reserved.
- *
+ * 
  * Permission to use, copy, modify and distribute this software and its
  * documentation is hereby granted, provided that both the copyright
  * notice and this permission notice appear in all copies of the
  * software, derivative works or modified versions, and any portions
  * thereof, and that both notices appear in supporting documentation.
- *
+ * 
  * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
  * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND FOR
  * ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
- *
+ * 
  * Carnegie Mellon requests users of this software to return to
- *
+ * 
  *  Software Distribution Coordinator  or  Software.Distribution@CS.CMU.EDU
  *  School of Computer Science
  *  Carnegie Mellon University
  *  Pittsburgh PA 15213-3890
- *
+ * 
  * any improvements or extensions that they make and grant Carnegie Mellon
  * the rights to redistribute these changes.
  *
@@ -34,28 +34,23 @@
  * Lexical analyzer.
  */
 #include <sys/param.h>
-#include <sys/systm.h>
+#include <sys/proc.h>
+
+#include <vm/vm.h>
 
 #include <machine/db_machdep.h>
 
 #include <ddb/db_lex.h>
 #include <ddb/db_output.h>
 #include <ddb/db_command.h>
+#include <ddb/db_sym.h>
 #include <ddb/db_extern.h>
-#include <ddb/db_var.h>
 
 char	db_line[120];
 char *	db_lp, *db_endlp;
 
-db_expr_t db_tok_number;
-char	db_tok_string[TOK_STRING_SIZE];
-
-void db_flush_line(void);
-int db_read_char(void);
-void db_unread_char(int);
-
 int
-db_read_line(void)
+db_read_line()
 {
 	int	i;
 
@@ -68,7 +63,7 @@ db_read_line(void)
 }
 
 void
-db_flush_line(void)
+db_flush_line()
 {
 	db_lp = db_line;
 	db_endlp = db_line;
@@ -77,7 +72,7 @@ db_flush_line(void)
 int	db_look_char = 0;
 
 int
-db_read_char(void)
+db_read_char()
 {
 	int	c;
 
@@ -87,13 +82,14 @@ db_read_char(void)
 	}
 	else if (db_lp >= db_endlp)
 	    c = -1;
-	else
+	else 
 	    c = *db_lp++;
 	return (c);
 }
 
 void
-db_unread_char(int c)
+db_unread_char(c)
+	int c;
 {
 	db_look_char = c;
 }
@@ -101,13 +97,14 @@ db_unread_char(int c)
 int	db_look_token = 0;
 
 void
-db_unread_token(int t)
+db_unread_token(t)
+	int	t;
 {
 	db_look_token = t;
 }
 
 int
-db_read_token(void)
+db_read_token()
 {
 	int	t;
 
@@ -121,7 +118,7 @@ db_read_token(void)
 }
 
 void
-db_flush_lex(void)
+db_flush_lex()
 {
 	db_flush_line();
 	db_look_char = 0;
@@ -129,7 +126,7 @@ db_flush_lex(void)
 }
 
 int
-db_lex(void)
+db_lex()
 {
 	int	c;
 

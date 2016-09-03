@@ -1,4 +1,4 @@
-/*	$OpenBSD: bt_conv.c,v 1.10 2015/01/16 16:48:51 deraadt Exp $	*/
+/*	$OpenBSD: bt_conv.c,v 1.4 1999/02/15 05:11:22 millert Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993, 1994
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,12 +36,22 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char sccsid[] = "@(#)bt_conv.c	8.5 (Berkeley) 8/17/94";
+#else
+static char rcsid[] = "$OpenBSD: bt_conv.c,v 1.4 1999/02/15 05:11:22 millert Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
+
 #include <stdio.h>
 
 #include <db.h>
 #include "btree.h"
 
-static void mswap(PAGE *);
+static void mswap __P((PAGE *));
 
 /*
  * __BT_BPGIN, __BT_BPGOUT --
@@ -50,7 +64,10 @@ static void mswap(PAGE *);
  *	h:	page to convert
  */
 void
-__bt_pgin(void *t, pgno_t pg, void *pp)
+__bt_pgin(t, pg, pp)
+	void *t;
+	pgno_t pg;
+	void *pp;
 {
 	PAGE *h;
 	indx_t i, top;
@@ -115,7 +132,10 @@ __bt_pgin(void *t, pgno_t pg, void *pp)
 }
 
 void
-__bt_pgout(void *t, pgno_t pg, void *pp)
+__bt_pgout(t, pg, pp)
+	void *t;
+	pgno_t pg;
+	void *pp;
 {
 	PAGE *h;
 	indx_t i, top;
@@ -186,7 +206,8 @@ __bt_pgout(void *t, pgno_t pg, void *pp)
  *	p:	page to convert
  */
 static void
-mswap(PAGE *pg)
+mswap(pg)
+	PAGE *pg;
 {
 	char *p;
 

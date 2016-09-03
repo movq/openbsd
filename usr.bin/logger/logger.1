@@ -1,4 +1,4 @@
-.\"	$OpenBSD: logger.1,v 1.21 2013/06/05 17:35:12 tedu Exp $
+.\"	$OpenBSD: logger.1,v 1.6 1999/10/17 20:24:34 aaron Exp $
 .\"	$NetBSD: logger.1,v 1.4 1994/12/22 06:26:59 jtc Exp $
 .\"
 .\" Copyright (c) 1983, 1990, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\"
 .\"	@(#)logger.1	8.1 (Berkeley) 6/6/93
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd June 6, 1993
 .Dt LOGGER 1
 .Os
 .Sh NAME
@@ -44,27 +48,27 @@
 .Op Fl t Ar tag
 .Op Ar message ...
 .Sh DESCRIPTION
-The
 .Nm logger
-utility provides a shell command interface to the
-.Xr syslog 3
+provides a shell command interface to the
+.Xr syslog  3
 system log module.
 .Pp
 The options are as follows:
-.Bl -tag -width "-f file"
-.It Fl f Ar file
-Read from the specified
-.Ar file .
+.Bl -tag -width "message"
 .It Fl i
 Log the process ID of the logger process
 with each line.
+.It Fl s
+Log the message to standard error, as well as the system log.
+.It Fl f Ar file
+Log the specified file.
 .It Fl p Ar pri
 Enter the message with the specified priority.
 The priority may be specified numerically or as a
 .Dq facility.level
 pair.
 For example,
-.Dq -p local3.info
+.Dq \-p local3.info
 logs the message(s) as
 .Ar info Ns rmational
 level in the
@@ -72,8 +76,6 @@ level in the
 facility.
 The default is
 .Dq user.notice .
-.It Fl s
-Log the message to standard error, as well as the system log.
 .It Fl t Ar tag
 Mark every line in the log with the specified
 .Ar tag .
@@ -83,24 +85,21 @@ Write the message to log; if not specified, and the
 flag is not
 provided, standard input is logged.
 .El
-.Sh EXIT STATUS
-.Ex -std logger
+.Pp
+The
+.Nm logger
+utility exits 0 on success or >0 if an error occurred.
 .Sh EXAMPLES
-.Bd -literal -offset indent
-$ logger System rebooted
+.Bd -literal -offset indent -compact
+logger System rebooted
 
-$ logger -p local0.notice -t HOSTIDM -f /dev/idmc
+logger \-p local0.notice \-t HOSTIDM \-f /dev/idmc
 .Ed
 .Sh SEE ALSO
 .Xr syslog 3 ,
 .Xr syslogd 8
 .Sh STANDARDS
 The
-.Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification.
-.Pp
-The flags
-.Op Fl ifpst
-are extensions to that specification.
+.Nm logger
+utility conforms to
+.St -p1003.2-92 .

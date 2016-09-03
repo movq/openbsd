@@ -1,4 +1,4 @@
-/*	$OpenBSD: isapnp.c,v 1.41 2014/07/12 18:48:18 tedu Exp $	*/
+/*	$OpenBSD: isapnp.c,v 1.28 1999/08/22 06:13:10 deraadt Exp $	*/
 /*	$NetBSD: isapnp.c,v 1.9.4.3 1997/10/29 00:40:43 thorpej Exp $	*/
 
 /*
@@ -48,30 +48,28 @@
 
 #include <dev/isa/pnpdevs.h>
 
-#include "isadma.h"
-
-void isapnp_init(struct isapnp_softc *);
-static __inline u_char isapnp_shift_bit(struct isapnp_softc *);
-int isapnp_findcard(struct isapnp_softc *);
-void isapnp_free_region(bus_space_tag_t, struct isapnp_region *);
-int isapnp_alloc_region(bus_space_tag_t, struct isapnp_region *);
-int isapnp_alloc_irq(isa_chipset_tag_t, struct isapnp_pin *);
-int isapnp_alloc_drq(struct device *, struct isapnp_pin *);
-int isapnp_testconfig(bus_space_tag_t, bus_space_tag_t,
-    struct isa_attach_args *, int);
-struct isa_attach_args *isapnp_bestconfig(struct device *,
-    struct isapnp_softc *, struct isa_attach_args **);
-void isapnp_print_region(const char *, struct isapnp_region *,
-    size_t);
-void isapnp_configure(struct isapnp_softc *,
-    const struct isa_attach_args *);
-void isapnp_print_pin(const char *, struct isapnp_pin *, size_t);
-int isapnp_print(void *, const char *);
-int isapnp_submatch(struct device *, void *, void *);
-int isapnp_com_submatch(struct device *, void *, void *);
-int isapnp_find(struct isapnp_softc *, int);
-int isapnp_match(struct device *, void *, void *);
-void isapnp_attach(struct device *, struct device *, void *);
+void isapnp_init __P((struct isapnp_softc *));
+static __inline u_char isapnp_shift_bit __P((struct isapnp_softc *));
+int isapnp_findcard __P((struct isapnp_softc *));
+void isapnp_free_region __P((bus_space_tag_t, struct isapnp_region *));
+int isapnp_alloc_region __P((bus_space_tag_t, struct isapnp_region *));
+int isapnp_alloc_irq __P((isa_chipset_tag_t, struct isapnp_pin *));
+int isapnp_alloc_drq __P((struct device *, struct isapnp_pin *));
+int isapnp_testconfig __P((bus_space_tag_t, bus_space_tag_t,
+    struct isa_attach_args *, int));
+struct isa_attach_args *isapnp_bestconfig __P((struct device *, 
+    struct isapnp_softc *, struct isa_attach_args **));
+void isapnp_print_region __P((const char *, struct isapnp_region *,
+    size_t));
+void isapnp_configure __P((struct isapnp_softc *,
+    const struct isa_attach_args *));
+void isapnp_print_pin __P((const char *, struct isapnp_pin *, size_t));
+int isapnp_print __P((void *, const char *));
+int isapnp_submatch __P((struct device *, void *, void *));
+int isapnp_com_submatch __P((struct device *, void *, void *));
+int isapnp_find __P((struct isapnp_softc *, int));
+int isapnp_match __P((struct device *, void *, void *));
+void isapnp_attach __P((struct device *, struct device *, void *));
 
 #ifdef DEBUG_ISAPNP
 # define DPRINTF(a) printf a
@@ -200,7 +198,7 @@ isapnp_free_region(t, r)
 		return;
 
 	bus_space_unmap(t, r->h, r->length);
-	r->h = 0;
+	r->h = NULL;
 }
 
 
@@ -217,7 +215,7 @@ isapnp_alloc_region(t, r)
 	if (r->length == 0)
 		return 0;
 
-	r->h = 0;
+	r->h = NULL;
 	for (r->base = r->minbase; r->base <= r->maxbase;
 	     r->base += r->align) {
 		error = bus_space_map(t, r->base, r->length, 0, &r->h);
@@ -261,7 +259,6 @@ isapnp_alloc_drq(isa, i)
 	struct device *isa;
 	struct isapnp_pin *i;
 {
-#if NISADMA > 0
 	int b;
 
 	if (i->bits == 0) {
@@ -274,7 +271,6 @@ isapnp_alloc_drq(isa, i)
 			i->num = b;
 			return 0;
 		}
-#endif
 
 	return EINVAL;
 }
@@ -329,6 +325,14 @@ isapnp_testconfig(iot, memt, ipa, alloc)
 		return error;
 
 bad:
+#ifdef notyet
+	for (ndrq--; ndrq >= 0; ndrq--)
+		isapnp_free_pin(&ipa->ipa_drq[ndrq]);
+
+	for (nirq--; nirq >= 0; nirq--)
+		isapnp_free_pin(&ipa->ipa_irq[nirq]);
+#endif
+
 	for (nmem32--; nmem32 >= 0; nmem32--)
 		isapnp_free_region(memt, &ipa->ipa_mem32[nmem32]);
 
@@ -363,6 +367,14 @@ isapnp_unconfig(iot, memt, ipa)
 	struct isa_attach_args *ipa;
 {
 	int i;
+
+#ifdef notyet
+	for (i = 0; i < ipa->ipa_ndrq; i++)
+		isapnp_free_pin(&ipa->ipa_drq[i]);
+
+	for (i = 0; i < ipa->ipa_nirq; i++)
+		isapnp_free_pin(&ipa->ipa_irq[i]);
+#endif
 
 	for (i = 0; i < ipa->ipa_nmem32; i++)
 		isapnp_free_region(memt, &ipa->ipa_mem32[i]);
@@ -427,7 +439,7 @@ isapnp_bestconfig(isa, sc, ipa)
 				return best;
 			}
 
-			free(best, M_DEVBUF, 0);
+			ISAPNP_FREE(best);
 			continue;
 		}
 		else {
@@ -439,11 +451,11 @@ isapnp_bestconfig(isa, sc, ipa)
 					continue;
 				d = c->ipa_sibling;
 				if (SAMEDEV(c, best))
-					free(c, M_DEVBUF, 0);
+					ISAPNP_FREE(c);
 				else {
 					if (n)
 						n->ipa_sibling = c;
-
+				
 					else
 						l = c;
 					n = c;
@@ -469,7 +481,7 @@ isapnp_id_to_vendor(v, id)
 {
 	static const char hex[] = "0123456789ABCDEF";
 	char *p = v;
-
+	
 	*p++ = 'A' + (id[0] >> 2) - 1;
 	*p++ = 'A' + ((id[0] & 3) << 3) + (id[1] >> 5) - 1;
 	*p++ = 'A' + (id[1] & 0x1f) - 1;
@@ -559,7 +571,7 @@ isapnp_print(aux, str)
 
 /* isapnp_submatch():
  * Special case.
- * A lot of com devices do not have the PNPxxx identifiers
+ * A lot of com/pccom devices do not have the PNPxxx identifiers
  * they should have.  If it looks like a modem..... let's try it.
  */
 int
@@ -570,7 +582,8 @@ isapnp_com_submatch(parent, match, aux)
 	struct cfdata *cf = match;
 	struct isa_attach_args *ipa = aux;
 
-	if (strcmp("com", cf->cf_driver->cd_name) == 0 &&
+	if ((strcmp("com", cf->cf_driver->cd_name) == 0 ||
+	    strcmp("pccom", cf->cf_driver->cd_name) == 0) &&
 	    ipa->ipa_nio == 1 && ipa->ipa_nirq == 1 &&
 	    ipa->ipa_ndrq == 0 && ipa->ipa_nmem == 0 &&
 	    ipa->ipa_io[0].length == 8) {
@@ -597,7 +610,7 @@ isapnp_submatch(parent, match, aux)
 	const char *dname;
 	int i;
 
-	for (i = 0; i < nitems(isapnp_knowndevs); i++) {
+	for (i = 0; isapnp_knowndevs[i].pnpid; i++) {
 		dname = NULL;
 
 		if (strcmp(isapnp_knowndevs[i].pnpid, ipa->ipa_devlogic) == 0)
@@ -708,7 +721,7 @@ isapnp_configure(sc, ipa)
 	for (i = 0; i < sizeof(isapnp_mem_range); i++) {
 		if (i < ipa->ipa_nmem)
 			r = &ipa->ipa_mem[i];
-		else
+		else 
 			r = &rz;
 
 		isapnp_write_reg(sc,
@@ -771,7 +784,7 @@ isapnp_configure(sc, ipa)
 	for (i = 0; i < sizeof(isapnp_mem32_range); i++) {
 		if (i < ipa->ipa_nmem32)
 			r = &ipa->ipa_mem32[i];
-		else
+		else 
 			r = &rz;
 
 		isapnp_write_reg(sc,
@@ -814,7 +827,7 @@ isapnp_isa_attach_hook(isa_sc)
 
 {
 	struct isapnp_softc sc;
-
+	
 	bzero(&sc, sizeof sc);
 	sc.sc_iot = isa_sc->sc_iot;
 	sc.sc_ncards = 0;
@@ -845,8 +858,7 @@ isapnp_match(parent, match, aux)
 
 	sc.sc_iot = ia->ia_iot;
 	sc.sc_ncards = 0;
-	(void) strlcpy(sc.sc_dev.dv_xname, "(isapnp probe)",
-	     sizeof sc.sc_dev.dv_xname);
+	(void) strcpy(sc.sc_dev.dv_xname, "(isapnp probe)");
 
 	if (isapnp_map(&sc))
 		return 0;
@@ -878,16 +890,14 @@ isapnp_attach(parent, self, aux)
 
 	sc->sc_iot = ia->ia_iot;
 	sc->sc_memt = ia->ia_memt;
-#if NISADMA > 0
 	sc->sc_dmat = ia->ia_dmat;
-#endif
 	sc->sc_ncards = 0;
 
 	if (isapnp_map(sc))
 		panic("%s: bus map failed", sc->sc_dev.dv_xname);
 
 	if (!isapnp_find(sc, 1)) {
-		printf(": no cards found\n");
+		printf(": no cards found\n", sc->sc_dev.dv_xname);
 		return;
 	}
 
@@ -899,7 +909,7 @@ isapnp_attach(parent, self, aux)
 		/* Good morning card c */
 		isapnp_write_reg(sc, ISAPNP_WAKE, c + 1);
 
-		if ((ipa = isapnp_get_resource(sc, c, ia)) == NULL)
+		if ((ipa = isapnp_get_resource(sc, c)) == NULL)
 			continue;
 
 		DPRINTF(("Selecting attachments\n"));
@@ -923,16 +933,14 @@ isapnp_attach(parent, self, aux)
 			if (lpa->ipa_pref == ISAPNP_DEP_CONFLICTING) {
 				isapnp_print(lpa, self->dv_xname);
 				printf(" resource conflict\n");
-				free(lpa, M_DEVBUF, 0);
+				ISAPNP_FREE(lpa);
 				continue;
 			}
 
 			lpa->ia_ic = ia->ia_ic;
 			lpa->ia_iot = ia->ia_iot;
 			lpa->ia_memt = ia->ia_memt;
-#if NISADMA > 0
 			lpa->ia_dmat = ia->ia_dmat;
-#endif
 			lpa->ia_delaybah = ia->ia_delaybah;
 
 			isapnp_write_reg(sc, ISAPNP_ACTIVATE, 1);
@@ -948,7 +956,7 @@ isapnp_attach(parent, self, aux)
 				printf(" not configured\n");
 				isapnp_write_reg(sc, ISAPNP_ACTIVATE, 0);
 			}
-			free(lpa, M_DEVBUF, 0);
+			ISAPNP_FREE(lpa);
 		}
 		isapnp_write_reg(sc, ISAPNP_WAKE, 0);    /* Good night cards */
 	}

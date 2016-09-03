@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_wereg.h,v 1.3 2006/03/04 19:33:21 miod Exp $	*/
+/*	$OpenBSD: if_wereg.h,v 1.1 1998/09/22 06:33:19 fgsch Exp $	*/
 /*	$NetBSD: if_wereg.h,v 1.1 1997/11/03 21:22:50 thorpej Exp $	*/
 
 /*
@@ -15,9 +15,9 @@
  * Compile-time config flags
  */
 /*
- * This sets the default for enabling/disablng the transceiver.
+ * This sets the default for enabling/disablng the tranceiver.
  */
-#define WE_FLAGS_DISABLE_TRANSCEIVER	0x0001
+#define WE_FLAGS_DISABLE_TRANCEIVER	0x0001
 
 /*
  * This forces the board to be used in 8/16-bit mode even if it autoconfigs
@@ -163,7 +163,7 @@
 
 /*
  * General Control Register (GCR)
- * Enabled with SWH bit == 1 in HWR register
+ * Eanbled with SWH bit == 1 in HWR register
  */
 #define	WE790_GCR	0x0d
 

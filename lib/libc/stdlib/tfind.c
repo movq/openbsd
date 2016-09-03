@@ -1,15 +1,14 @@
-/*	$OpenBSD: tfind.c,v 1.7 2015/09/26 16:03:48 guenther Exp $	*/
-
 /*
  * Tree search generalized from Knuth (6.2.2) Algorithm T just like
  * the AT&T man page says.
  *
- * The node_t structure is for internal use only
+ * The node_t structure is for internal use only, lint doesn't grok it.
  *
  * Written by reading the System V Interface Definition, not the code.
  *
  * Totally public domain.
  */
+/*LINTLIBRARY*/
 #include <search.h>
 
 typedef struct node_t
@@ -20,8 +19,10 @@ typedef struct node_t
 
 /* find a node, or return 0 */
 void *
-tfind(const void *vkey, void * const *vrootp,
-    int (*compar)(const void *, const void *))
+tfind(vkey, vrootp, compar)
+	const void	*vkey;		/* key to be found */
+	void		*const *vrootp;	/* address of the tree root */
+	int		(*compar) __P((const void *, const void *));
 {
     char *key = (char *)vkey;
     node **rootp = (node **)vrootp;

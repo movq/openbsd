@@ -1,4 +1,4 @@
-/*      $OpenBSD: wdc_isa.c,v 1.15 2011/06/20 01:09:25 matthew Exp $     */
+/*      $OpenBSD: wdc_isa.c,v 1.4 1999/10/09 03:42:04 csapuntz Exp $     */
 /*	$NetBSD: wdc_isa.c,v 1.15 1999/05/19 14:41:25 bouyer Exp $ */
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -45,7 +52,11 @@
 #include <dev/ata/atavar.h>
 #include <dev/ic/wdcvar.h>
 
+#ifdef __OpenBSD__
 #include "isadma.h"
+#else
+#define NISADMA 1
+#endif
 
 #define	WDC_ISA_REG_NPORTS	8
 #define	WDC_ISA_AUXREG_OFFSET	0x206
@@ -58,32 +69,44 @@ struct wdc_isa_softc {
 	struct	wdc_softc sc_wdcdev;
 	struct	channel_softc *wdc_chanptr;
 	struct	channel_softc wdc_channel;
+#ifdef __OpenBSD__
 	struct  device *sc_isa;
+#endif
 	isa_chipset_tag_t sc_ic;
 	void	*sc_ih;
 	int	sc_drq;
 };
 
-int	wdc_isa_probe(struct device *, void *, void *);
-void	wdc_isa_attach(struct device *, struct device *, void *);
+#ifndef __OpenBSD__
+int	wdc_isa_probe	__P((struct device *, struct cfdata *, void *));
+#else
+int	wdc_isa_probe	__P((struct device *, void *, void *));
+#endif
+void	wdc_isa_attach	__P((struct device *, struct device *, void *));
 
 struct cfattach wdc_isa_ca = {
 	sizeof(struct wdc_isa_softc), wdc_isa_probe, wdc_isa_attach
 };
 
 #if NISADMA > 0
-static void	wdc_isa_dma_setup(struct wdc_isa_softc *);
-static int	wdc_isa_dma_init(void *, int, int, void *, size_t, int);
-static void 	wdc_isa_dma_start(void *, int, int);
-static int	wdc_isa_dma_finish(void *, int, int, int);
+static void	wdc_isa_dma_setup __P((struct wdc_isa_softc *));
+static int	wdc_isa_dma_init __P((void*, int, int, void *, size_t, int));
+static void 	wdc_isa_dma_start __P((void*, int, int, int));
+static int	wdc_isa_dma_finish __P((void*, int, int, int));
 #endif	/* NISADMA > 0 */
 
 int
-wdc_isa_probe(struct device *parent, void *match, void *aux)
+wdc_isa_probe(parent, match, aux)
+	struct device *parent;
+#ifndef __OpenBSD__
+	struct cfdata *match;
+#else
+	void *match;
+#endif
+	void *aux;
 {
 	struct channel_softc ch;
 	struct isa_attach_args *ia = aux;
-	struct cfdata *cf = ((struct device *)match)->dv_cfdata;
 	int result = 0;
 
 	bzero(&ch, sizeof ch);
@@ -96,9 +119,6 @@ wdc_isa_probe(struct device *parent, void *match, void *aux)
 	if (bus_space_map(ch.ctl_iot, ia->ia_iobase + WDC_ISA_AUXREG_OFFSET,
 	    WDC_ISA_AUXREG_NPORTS, 0, &ch.ctl_ioh))
 		goto outunmap;
-
-	if (cf->cf_flags & WDC_OPTION_PROBE_VERBOSE)
-		ch.ch_flags |= WDCF_VERBOSE_PROBE;
 
 	result = wdcprobe(&ch);
 	if (result) {
@@ -114,7 +134,9 @@ out:
 }
 
 void
-wdc_isa_attach(struct device *parent, struct device *self, void *aux)
+wdc_isa_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct wdc_isa_softc *sc = (void *)self;
 	struct isa_attach_args *ia = aux;
@@ -125,7 +147,6 @@ wdc_isa_attach(struct device *parent, struct device *self, void *aux)
 	sc->wdc_channel.ctl_iot = ia->ia_iot;
 	sc->sc_ic = ia->ia_ic;
 	sc->sc_isa = parent;
-
 	if (bus_space_map(sc->wdc_channel.cmd_iot, ia->ia_iobase,
 	    WDC_ISA_REG_NPORTS, 0, &sc->wdc_channel.cmd_ioh) ||
 	    bus_space_map(sc->wdc_channel.ctl_iot,
@@ -137,9 +158,13 @@ wdc_isa_attach(struct device *parent, struct device *self, void *aux)
 	sc->wdc_channel.data32iot = sc->wdc_channel.cmd_iot;
 	sc->wdc_channel.data32ioh = sc->wdc_channel.cmd_ioh;
 
+#ifdef __OpenBSD__
 	sc->sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,
 	    IPL_BIO, wdcintr, &sc->wdc_channel, sc->sc_wdcdev.sc_dev.dv_xname);
-
+#else
+	sc->sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,
+	    IPL_BIO, wdcintr, &sc->wdc_channel);
+#endif
 	if (ia->ia_drq != DRQUNK) {
 #if NISADMA > 0
 		sc->sc_drq = ia->ia_drq;
@@ -164,22 +189,28 @@ wdc_isa_attach(struct device *parent, struct device *self, void *aux)
 	sc->sc_wdcdev.nchannels = 1;
 	sc->wdc_channel.channel = 0;
 	sc->wdc_channel.wdc = &sc->sc_wdcdev;
-	sc->wdc_channel.ch_queue = wdc_alloc_queue();
+	sc->wdc_channel.ch_queue = malloc(sizeof(struct channel_queue),
+	    M_DEVBUF, M_NOWAIT);
 	if (sc->wdc_channel.ch_queue == NULL) {
-		printf("%s: cannot allocate channel queue",
+		printf("%s: can't allocate memory for command queue",
 		    sc->sc_wdcdev.sc_dev.dv_xname);
 		return;
 	}
 	wdcattach(&sc->wdc_channel);
-	wdc_print_current_modes(&sc->wdc_channel);
 }
 
 #if NISADMA > 0
 static void
-wdc_isa_dma_setup(struct wdc_isa_softc *sc)
+wdc_isa_dma_setup(sc)
+	struct wdc_isa_softc *sc;
 {
+#ifndef __OpenBSD__
+	if (isa_dmamap_create(sc->sc_ic, sc->sc_drq,
+	    MAXPHYS, BUS_DMA_NOWAIT|BUS_DMA_ALLOCNOW)) {
+#else
 	if (isa_dmamap_create(sc->sc_isa, sc->sc_drq,
 	    MAXPHYS, BUS_DMA_NOWAIT|BUS_DMA_ALLOCNOW)) {			      
+#endif
 		printf("%s: can't create map for drq %d\n",
 		    sc->sc_wdcdev.sc_dev.dv_xname, sc->sc_drq);
 		sc->sc_wdcdev.cap &= ~WDC_CAPABILITY_DMA;
@@ -187,31 +218,47 @@ wdc_isa_dma_setup(struct wdc_isa_softc *sc)
 }
 
 static int
-wdc_isa_dma_init(void *v, int channel, int drive, void *databuf, size_t datalen,
-    int read)
+wdc_isa_dma_init(v, channel, drive, databuf, datalen, read)
+	void *v;
+	void *databuf;
+	size_t datalen;
+	int read;
 {
 	struct wdc_isa_softc *sc = v;
 
+#ifndef __OpenBSD__
+	isa_dmastart(sc->sc_ic, sc->sc_drq, databuf, datalen, NULL,
+	    (read ? DMAMODE_READ : DMAMODE_WRITE) | DMAMODE_DEMAND,
+	    BUS_DMA_NOWAIT);
+#else
 	isa_dmastart(sc->sc_isa, sc->sc_drq, databuf, datalen, NULL,
 	    (read ? DMAMODE_READ : DMAMODE_WRITE),
 	    BUS_DMA_NOWAIT);
-
+#endif
 	return 0;
 }
 
 static void
-wdc_isa_dma_start(void *v, int channel, int drive)
+wdc_isa_dma_start(v, channel, drive, read)
+	void *v;
+	int channel, drive;
 {
 	/* nothing to do */
 }
 
 static int
-wdc_isa_dma_finish(void *v, int channel, int drive, int force)
+wdc_isa_dma_finish(v, channel, drive, read)
+	void *v;
+	int channel, drive;
+	int read;
 {
 	struct wdc_isa_softc *sc = v;
 
+#ifndef __OpenBSD__
+	isa_dmadone(sc->sc_ic, sc->sc_drq);
+#else
 	isa_dmadone(sc->sc_isa, sc->sc_drq);
-
+#endif
 	return 0;
 }
 #endif	/* NISADMA > 0 */

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: cap_mkdb.1,v 1.20 2015/12/04 19:15:54 jmc Exp $
+.\"	$OpenBSD: cap_mkdb.1,v 1.10 1999/07/03 02:11:08 aaron Exp $
 .\"	$NetBSD: cap_mkdb.1,v 1.4 1995/03/26 03:59:36 glass Exp $
 .\"
 .\" Copyright (c) 1992, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\"
 .\"	@(#)cap_mkdb.1	8.1 (Berkeley) 6/6/93
 .\"
-.Dd $Mdocdate: December 4 2015 $
+.Dd June 6, 1993
 .Dt CAP_MKDB 1
 .Os
 .Sh NAME
@@ -38,6 +42,7 @@
 .Nd create capability database
 .Sh SYNOPSIS
 .Nm cap_mkdb
+.Op Fl i
 .Op Fl v
 .Op Fl f Ar outfile
 .Ar file1
@@ -46,6 +51,8 @@
 .Nm
 builds a hashed database out of the
 .Xr getcap 3
+or
+.Xr terminfo 5
 logical database constructed by the concatenation of the specified
 files.
 .Pp
@@ -63,13 +70,17 @@ capabilities of the records are expanded before the
 record is stored into the database.
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width XXXXXX -indent
 .It Fl f Ar outfile
 Specify a different database basename.
+.It Fl i
+Expect the capability records to be parsed to be in
+.Xr terminfo 5
+format.
 .It Fl v
 Print out the number of capability records in the database.
 .El
-.Pp
+.Sh FORMAT
 Each record is stored in the database using two different types of keys.
 .Pp
 The first type is a key which consists of the first capability of
@@ -93,9 +104,12 @@ in a key/data pair of the second type.
 The data field of this key/data pair is used to look up a key/data
 pair of the first type which has the real data associated with the
 name.
-.Sh EXIT STATUS
-.Ex -std cap_mkdb
+.Sh RETURN VALUE
+The
+.Nm
+utility exits 0 on success or >0 if an error occurred.
 .Sh SEE ALSO
 .Xr dbopen 3 ,
 .Xr getcap 3 ,
-.Xr termcap 5
+.Xr termcap 5 ,
+.Xr terminfo 5

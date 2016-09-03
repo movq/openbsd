@@ -1,4 +1,4 @@
-/*	$OpenBSD: sb.c,v 1.27 2014/09/14 14:17:25 jsg Exp $	*/
+/*	$OpenBSD: sb.c,v 1.20 1999/07/20 16:36:05 deraadt Exp $	*/
 /*	$NetBSD: sb.c,v 1.57 1998/01/12 09:43:46 thorpej Exp $	*/
 
 /*
@@ -43,6 +43,7 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -64,17 +65,17 @@ struct cfdriver sb_cd = {
 };
 
 #if NMIDI > 0
-int	sb_mpu401_open(void *, int, void (*iintr)(void *, int),
-		       void (*ointr)(void *), void *arg);
-void	sb_mpu401_close(void *);
-int	sb_mpu401_output(void *, int);
-void	sb_mpu401_getinfo(void *, struct midi_info *);
+int	sb_mpu401_open __P((void *, int, 
+			     void (*iintr)__P((void *, int)),
+			     void (*ointr)__P((void *)), void *arg));
+void	sb_mpu401_close __P((void *));
+int	sb_mpu401_output __P((void *, int));
+void	sb_mpu401_getinfo __P((void *, struct midi_info *));
 
 struct midi_hw_if sb_midi_hw_if = {
 	sbdsp_midi_open,
 	sbdsp_midi_close,
 	sbdsp_midi_output,
-	0,			/* flush */
 	sbdsp_midi_getinfo,
 	0,			/* ioctl */
 };
@@ -83,7 +84,6 @@ struct midi_hw_if sb_mpu401_hw_if = {
 	sb_mpu401_open,
 	sb_mpu401_close,
 	sb_mpu401_output,
-	0,			/* flush */
 	sb_mpu401_getinfo,
 	0,			/* ioctl */
 };
@@ -95,7 +95,7 @@ struct audio_device sb_device = {
 	"sb"
 };
 
-int	sb_getdev(void *, struct audio_device *);
+int	sb_getdev __P((void *, struct audio_device *));
 
 /*
  * Define our interface to the higher level audio driver.
@@ -127,8 +127,7 @@ struct audio_hw_if sb_hw_if = {
         sb_mappage,
 	sbdsp_get_props,
 	sbdsp_trigger_output,
-	sbdsp_trigger_input,
-	NULL
+	sbdsp_trigger_input
 };
 
 #ifdef AUDIO_DEBUG
@@ -261,9 +260,8 @@ sbattach(sc)
 	struct midi_hw_if *mhw = &sb_midi_hw_if;
 #endif
 
-	sc->sc_ih = isa_intr_establish(sc->sc_ic, sc->sc_irq,
-	    IST_EDGE, IPL_AUDIO | IPL_MPSAFE,
-	    sbdsp_intr, sc, sc->sc_dev.dv_xname);
+	sc->sc_ih = isa_intr_establish(sc->sc_ic, sc->sc_irq, IST_EDGE,
+	    IPL_AUDIO, sbdsp_intr, sc, sc->sc_dev.dv_xname);
 
 	sbdsp_attach(sc);
 
@@ -301,17 +299,17 @@ sb_getdev(addr, retp)
 	char *config;
 
 	if (sc->sc_model == SB_JAZZ)
-		strlcpy(retp->name, "MV Jazz16", sizeof retp->name);
+		strncpy(retp->name, "MV Jazz16", sizeof(retp->name));
 	else
-		strlcpy(retp->name, "SoundBlaster", sizeof retp->name);
-	snprintf(retp->version, sizeof retp->version, "%d.%02d", 
-		 SBVER_MAJOR(sc->sc_version),
-		 SBVER_MINOR(sc->sc_version));
+		strncpy(retp->name, "SoundBlaster", sizeof(retp->name));
+	sprintf(retp->version, "%d.%02d", 
+		SBVER_MAJOR(sc->sc_version),
+		SBVER_MINOR(sc->sc_version));
 	if (0 <= sc->sc_model && sc->sc_model < sizeof names / sizeof names[0])
 		config = names[sc->sc_model];
 	else
 		config = "??";
-	strlcpy(retp->config, config, sizeof retp->config);
+	strncpy(retp->config, config, sizeof(retp->config));
 		
 	return 0;
 }
@@ -324,8 +322,8 @@ int
 sb_mpu401_open(addr, flags, iintr, ointr, arg)
 	void *addr;
 	int flags;
-	void (*iintr)(void *, int);
-	void (*ointr)(void *);
+	void (*iintr)__P((void *, int));
+	void (*ointr)__P((void *));
 	void *arg;
 {
 	return mpu_open(SBMPU(addr), flags, iintr, ointr, arg);

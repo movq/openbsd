@@ -1,6 +1,12 @@
-#	$OpenBSD: ftpusers,v 1.50 2014/03/17 21:01:02 sthen Exp $
+#	$OpenBSD: ftpusers,v 1.6 1998/08/12 13:25:25 kstailey Exp $
 #
 # list of users disallowed any ftp access.
 # read by ftpd(8).
-# by default, uids below 1000 are not permitted; see ftpd's -m option.
+root
+bin
+daemon
 nobody
+operator
+uucp
+www
+named

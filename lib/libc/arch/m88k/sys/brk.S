@@ -1,5 +1,3 @@
-/*	$OpenBSD: brk.S,v 1.14 2015/09/10 13:29:09 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,61 +35,37 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)brk.s	5.1 (Berkeley) 5/12/90"*/
+	.asciz "$Id: brk.S,v 1.2 1999/02/09 05:23:37 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
+
 #include "SYS.h"
 
 	.globl	_end
-	.globl	__curbrk
+	.globl	minbrk
+	.globl	curbrk
 
 	.data
 	.align 8
-__minbrk:
-	.long	_end
-	END(__minbrk)
-	.type	__minbrk,@object
-
-	.weak	brk
+minbrk:	.long	_end
+	.text
 
 ENTRY(brk)
-#ifdef __PIC__
-	PIC_SAVE(%r9)
-	PIC_SETUP
-#endif
-
-#ifdef __PIC__
-	PIC_LOAD(%r5,__minbrk)
-#else
-	or.u	%r5,%r0,%hi16(__minbrk)
-	ld	%r5,%r5,%lo16(__minbrk)
-#endif
-	cmp	%r3,%r5,%r2
-	bb1	ls,%r3,1f	/* r2 should be > minbrk; can't go below end */
-	or	%r2,%r5,0	/* otherwise, set r2 to minbrk */
+	or.u	r5,r0,hi16(minbrk)
+	ld	r5,r5,lo16(minbrk)
+	cmp	r3,r5,r2
+	bb1	le,r3,1f	/* r2 should be > minbrk; can't go below end */
+	or	r2,r5,0		/* otherwise, set r2 to minbrk */ 
 1:
-	or	%r4,%r2,0
-	or	%r13,%r0,__SYSCALLNAME(SYS_,break)
-	tb0	0,%r0,450
-#ifdef __PIC__
-	br	9f
-#else
-	br	CERROR
-#endif
-
-#ifdef __PIC__
-	PIC_STORE(%r4,__curbrk)
-#else
-	or.u	%r5,%r0,%hi16(__curbrk)
-	st	%r4,%r5,%lo16(__curbrk)
-#endif
-	or	%r2,%r0,0	/* clear r2/r3 to indicate success */
-#ifdef __PIC__
-	PIC_RESTORE(%r9)
-#endif
-	jmp.n	%r1
-	 or	%r3,%r0,0
-
-#ifdef __PIC__
-9:
-	br.n	CERROR
-	 PIC_RESTORE(%r9)
-#endif
-END(brk)
+	or	r4,r2,0
+	or	r13,r0,SYS_break
+	tb0	0,r0,128
+	br	cerror
+	or.u	r5,r0,hi16(curbrk)
+	st	r4,r5,lo16(curbrk)
+	or	r2,r0,0		/* clear r2/r3 to indicate success */
+	jmp.n	r1
+	or	r3,r0,0

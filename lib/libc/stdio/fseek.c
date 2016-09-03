@@ -1,4 +1,3 @@
-/*	$OpenBSD: fseek.c,v 1.12 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fseek.c,v 1.2 1996/08/19 08:32:46 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -46,9 +53,12 @@
  * `Whence' must be one of the three SEEK_* macros.
  */
 int
-fseeko(FILE *fp, off_t offset, int whence)
+fseek(fp, offset, whence)
+	register FILE *fp;
+	long offset;
+	int whence;
 {
-	fpos_t (*seekfn)(void *, fpos_t, int);
+	register fpos_t (*seekfn) __P((void *, fpos_t, int));
 	fpos_t target, curoff;
 	size_t n;
 	struct stat st;
@@ -70,7 +80,6 @@ fseeko(FILE *fp, off_t offset, int whence)
 	 * Change any SEEK_CUR to SEEK_SET, and check `whence' argument.
 	 * After this, whence is either SEEK_SET or SEEK_END.
 	 */
-	FLOCKFILE(fp);
 	switch (whence) {
 
 	case SEEK_CUR:
@@ -84,10 +93,8 @@ fseeko(FILE *fp, off_t offset, int whence)
 			curoff = fp->_offset;
 		else {
 			curoff = (*seekfn)(fp->_cookie, (fpos_t)0, SEEK_CUR);
-			if (curoff == (fpos_t)-1) {
-				FUNLOCKFILE(fp);
+			if (curoff == -1L)
 				return (EOF);
-			}
 		}
 		if (fp->_flags & __SRD) {
 			curoff -= fp->_r;
@@ -108,7 +115,6 @@ fseeko(FILE *fp, off_t offset, int whence)
 		break;
 
 	default:
-		FUNLOCKFILE(fp);
 		errno = EINVAL;
 		return (EOF);
 	}
@@ -186,14 +192,13 @@ fseeko(FILE *fp, off_t offset, int whence)
 	 */
 	if ((fp->_flags & __SMOD) == 0 &&
 	    target >= curoff && target < curoff + n) {
-		int o = target - curoff;
+		register int o = target - curoff;
 
 		fp->_p = fp->_bf._base + o;
 		fp->_r = n - o;
 		if (HASUB(fp))
 			FREEUB(fp);
 		fp->_flags &= ~__SEOF;
-		FUNLOCKFILE(fp);
 		return (0);
 	}
 
@@ -220,7 +225,6 @@ fseeko(FILE *fp, off_t offset, int whence)
 		fp->_p += n;
 		fp->_r -= n;
 	}
-	FUNLOCKFILE(fp);
 	return (0);
 
 	/*
@@ -230,7 +234,6 @@ fseeko(FILE *fp, off_t offset, int whence)
 dumb:
 	if (__sflush(fp) ||
 	    (*seekfn)(fp->_cookie, (fpos_t)offset, whence) == POS_ERR) {
-		FUNLOCKFILE(fp);
 		return (EOF);
 	}
 	/* success: clear EOF indicator and discard ungetc() data */
@@ -240,14 +243,5 @@ dumb:
 	fp->_r = 0;
 	/* fp->_w = 0; */	/* unnecessary (I think...) */
 	fp->_flags &= ~__SEOF;
-	FUNLOCKFILE(fp);
 	return (0);
 }
-DEF_WEAK(fseeko);
-
-int
-fseek(FILE *fp, long offset, int whence)
-{
-	return (fseeko(fp, offset, whence));
-}
-DEF_STRONG(fseek);

@@ -1,4 +1,4 @@
-/*	$OpenBSD: inet.h,v 1.19 2015/09/14 08:24:37 guenther Exp $	*/
+/*	$OpenBSD: inet.h,v 1.4 1997/04/05 20:58:30 millert Exp $	*/
 
 /*
  * ++Copyright++ 1983, 1993
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ * 	This product includes software developed by the University of
+ * 	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  * 
@@ -61,62 +65,29 @@
 
 /* External definitions for functions in inet(3) */
 
-#include <sys/types.h>
-
-/* <sys/_endian.h> is pulled in by <sys/types.h> */
-#ifndef htons
-#define htons(x)	__htobe16(x)
-#define htonl(x)	__htobe32(x)
-#define ntohs(x)	__htobe16(x)
-#define ntohl(x)	__htobe32(x)
+#include <sys/param.h>
+#if (!defined(BSD)) || (BSD < 199306)
+# include <sys/bitypes.h>
+#else
+# include <sys/types.h>
 #endif
-
-#ifndef	_SOCKLEN_T_DEFINED_
-#define	_SOCKLEN_T_DEFINED_
-typedef	__socklen_t	socklen_t;	/* length type for network syscalls */
-#endif
-
-/*
- * Buffer lengths for strings containing printable IP addresses
- */
-#ifndef INET_ADDRSTRLEN
-#define INET_ADDRSTRLEN		16
-#endif
-#ifndef INET6_ADDRSTRLEN
-#define INET6_ADDRSTRLEN	46
-#endif
-
-#ifndef _IN_ADDR_DECLARED
-#define _IN_ADDR_DECLARED
-/*
- * IP Version 4 Internet address (a structure for historical reasons)
- */
-struct in_addr {
-	in_addr_t s_addr;
-};
-#endif
-
+#include <sys/cdefs.h>
 
 __BEGIN_DECLS
-in_addr_t	 inet_addr(const char *);
-char		*inet_ntoa(struct in_addr);
-const char	*inet_ntop(int, const void *__restrict, char *__restrict,
-		    socklen_t) __attribute__ ((__bounded__(__string__,3,4)));
-int		 inet_pton(int, const char *__restrict, void *__restrict);
-
-#if __BSD_VISIBLE
-int		 inet_aton(const char *, struct in_addr *);
-in_addr_t	 inet_lnaof(struct in_addr);
-struct in_addr	 inet_makeaddr(in_addr_t , in_addr_t);
-char *		 inet_neta(in_addr_t, char *, size_t)
-			__attribute__((__bounded__(__string__,2,3)));
-in_addr_t	 inet_netof(struct in_addr);
-in_addr_t	 inet_network(const char *);
-char		*inet_net_ntop(int, const void *, int, char *, size_t)
-			__attribute__((__bounded__(__string__,4,5)));
-int		 inet_net_pton(int, const char *, void *, size_t)
-			__attribute__((__bounded__(__string__,3,4)));
-#endif /* __BSD_VISIBLE */
+in_addr_t	 inet_addr __P((const char *));
+int		 inet_aton __P((const char *, struct in_addr *));
+in_addr_t	 inet_lnaof __P((struct in_addr));
+struct in_addr	 inet_makeaddr __P((in_addr_t , in_addr_t));
+char *		 inet_neta __P((in_addr_t, char *, size_t));
+in_addr_t	 inet_netof __P((struct in_addr));
+in_addr_t	 inet_network __P((const char *));
+char		*inet_net_ntop __P((int, const void *, int, char *, size_t));
+int		 inet_net_pton __P((int, const char *, void *, size_t));
+char		*inet_ntoa __P((struct in_addr));
+int		 inet_pton __P((int, const char *, void *));
+const char	*inet_ntop __P((int, const void *, char *, size_t));
+u_int		 inet_nsap_addr __P((const char *, u_char *, int));
+char		*inet_nsap_ntoa __P((int, const u_char *, char *));
 __END_DECLS
 
 #endif /* !_INET_H_ */

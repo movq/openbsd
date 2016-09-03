@@ -1,5 +1,3 @@
-/*	$OpenBSD: cerror.S,v 1.13 2016/05/07 19:05:21 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,40 +35,20 @@
  * SUCH DAMAGE.
  */
 
-#include "DEFS.h"
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)cerror.s	5.1 (Berkeley) 5/12/90"*/
+	.asciz "$Id: cerror.S,v 1.1 1998/12/15 07:10:32 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
 
-	.globl	_C_LABEL(__errno)
+#include "SYS.h"
 
-/*
- * long long __cerror(register_t errcode)
- * stores `errcode' into the current thread's errno variable, and returns
- * -1LL.
- */
-
-ASENTRY(__cerror)
-	/* if %r26 has been initialized, don't bother setting up a frame */
-	bcnd	ne0, %r26, has_r26
-
-	subu	%r31,%r31,16
-	st	%r25,%r0,%r31
-	st	%r1,%r31,4
-
-#ifdef __PIC__
-	bsr.n	_C_LABEL(__errno)#plt
-#else
-	bsr.n	_C_LABEL(__errno)
-#endif
-	 or	%r25,%r0,%r2
-	or	%r26,%r0,%r2	/* save errno ptr */
-	or	%r2,%r0,%r25	/* and restore errno value */
-
-	ld	%r1,%r31,4
-	ld	%r25,%r0,%r31
-	addu	%r31,%r31,16
-
-has_r26:
-	st	%r2,%r0,%r26
-	subu	%r2,%r0,1
-	jmp.n	%r1
-	 or	%r3, %r0, %r2
-END(__cerror)
+	.align 8
+	.globl	_errno
+cerror:
+	or.u	r4,r0,hi16(_errno)
+	st	r2,r4,lo16(_errno)
+	sub	r2,r0,0x1
+	jmp.n	r1
+	sub	r3,r0,0x1

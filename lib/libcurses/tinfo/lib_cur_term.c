@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_cur_term.c,v 1.6 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_cur_term.c,v 1.3 1999/08/15 11:40:55 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -39,69 +39,34 @@
  */
 
 #include <curses.priv.h>
-#include <term_entry.h>		/* TTY, cur_term */
-#include <termcap.h>		/* ospeed */
+#include <term_entry.h>	/* TTY, cur_term */
+#include <termcap.h>	/* ospeed */
 
-MODULE_ID("$Id: lib_cur_term.c,v 1.6 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_cur_term.c,v 1.8 1999/07/24 20:08:19 tom Exp $")
 
-#undef CUR
-#define CUR termp->type.
+TERMINAL *cur_term;
 
-#if BROKEN_LINKER || USE_REENTRANT
-NCURSES_EXPORT(TERMINAL *)
-NCURSES_PUBLIC_VAR(cur_term) (void)
+TERMINAL *set_curterm(TERMINAL *termp)
 {
-    return (SP != 0 && SP->_term != 0) ? SP->_term : _nc_prescreen._cur_term;
-}
-#else
-NCURSES_EXPORT_VAR(TERMINAL *) cur_term = 0;
-#endif
+	TERMINAL *oldterm = cur_term;
 
-NCURSES_EXPORT(TERMINAL *)
-set_curterm(TERMINAL * termp)
-{
-    TERMINAL *oldterm;
-
-    T((T_CALLED("set_curterm(%p)"), termp));
-
-    _nc_lock_global(curses);
-    oldterm = cur_term;
-    if (SP)
-	SP->_term = termp;
-#if BROKEN_LINKER || USE_REENTRANT
-    _nc_prescreen._cur_term = termp;
-#else
-    cur_term = termp;
-#endif
-    if (termp != 0) {
-	ospeed = _nc_ospeed(termp->_baudrate);
-	if (termp->type.Strings) {
-		PC = (char) ((pad_char != NULL) ? pad_char[0] : 0);
+	if ((cur_term = termp) != 0) {
+		ospeed = _nc_ospeed(cur_term->_baudrate);
+		PC = (pad_char != NULL) ? pad_char[0] : 0; 
 	}
-    }
-    _nc_unlock_global(curses);
-
-    T((T_RETURN("%p"), oldterm));
-    return (oldterm);
+	return oldterm;
 }
 
-NCURSES_EXPORT(int)
-del_curterm(TERMINAL * termp)
+int del_curterm(TERMINAL *termp)
 {
-    int rc = ERR;
+	T((T_CALLED("del_curterm(%p)"), termp));
 
-    T((T_CALLED("del_curterm(%p)"), termp));
-
-    _nc_lock_global(curses);
-    if (termp != 0) {
-	_nc_free_termtype(&(termp->type));
-	FreeIfNeeded(termp->_termname);
-	free(termp);
-	if (termp == cur_term)
-	    set_curterm(0);
-	rc = OK;
-    }
-    _nc_unlock_global(curses);
-
-    returnCode(rc);
+	if (termp != 0) {
+		_nc_free_termtype(&(termp->type));
+		free(termp);
+		if (termp == cur_term)
+			cur_term = 0;
+		returnCode(OK);
+	}
+	returnCode(ERR);
 }

@@ -1,5 +1,3 @@
-/*	$OpenBSD: mpu_isapnp.c,v 1.8 2014/09/14 14:17:25 jsg Exp $	*/
-
 #include "midi.h"
 
 #include <sys/param.h>
@@ -8,6 +6,7 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 
 #include <machine/bus.h>
 
@@ -21,14 +20,18 @@
 
 #include <dev/ic/mpuvar.h>
 
-int	mpu_isapnp_match(struct device *, void *, void *);
-void	mpu_isapnp_attach(struct device *, struct device *, void *);
+int	mpu_isapnp_match __P((struct device *, void *, void *));
+void	mpu_isapnp_attach __P((struct device *, struct device *, void *));
 
 struct mpu_isapnp_softc {
 	struct device sc_dev;
 	void *sc_ih;
 
 	struct mpu_softc sc_mpu;
+};
+
+struct cfdriver mpu_cd = {
+	NULL, "mpu", DV_DULL
 };
 
 struct cfattach mpu_isapnp_ca = {
@@ -61,8 +64,8 @@ mpu_isapnp_attach(parent, self, aux)
 	sc->sc_mpu.ioh = ipa->ipa_io[0].h;
 
 	sc->sc_ih = isa_intr_establish(ipa->ia_ic, ipa->ipa_irq[0].num,
-	    ipa->ipa_irq[0].type, IPL_AUDIO | IPL_MPSAFE,
-	    mpu_intr, &sc->sc_mpu, sc->sc_dev.dv_xname);
+	    ipa->ipa_irq[0].type, IPL_AUDIO, mpu_intr, &sc->sc_mpu,
+	    sc->sc_dev.dv_xname);
 
 	if (!mpu_find(&sc->sc_mpu)) {
 		printf("%s: find failed\n", sc->sc_dev.dv_xname);

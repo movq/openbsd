@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-raw.c,v 1.8 2015/01/16 06:40:21 deraadt Exp $	*/
-
 /*
  * Copyright (c) 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -21,22 +19,32 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-raw.c,v 1.1 1999/09/16 17:27:59 brad Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
 
+#ifdef __STDC__
 struct mbuf;
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
 #include <pcap.h>
 #include <stdio.h>

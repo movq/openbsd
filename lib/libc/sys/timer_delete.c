@@ -1,13 +1,15 @@
-/*	$OpenBSD: timer_delete.c,v 1.6 2015/09/12 13:13:34 guenther Exp $ */
+#if defined(SYSLIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: timer_delete.c,v 1.3 1997/04/30 05:49:29 tholo Exp $";
+#endif /* SYSLIBC_SCCS and not lint */
 
+#include <signal.h>
 #include <time.h>
 #include <errno.h>
 
-int	timer_delete(timer_t);
-PROTO_DEPRECATED(timer_delete);
-
+/* ARGSUSED */
 int
-timer_delete(timer_t timerid)
+timer_delete(timerid)
+	timer_t timerid;
 {
 	errno = ENOSYS;
 	return -1;

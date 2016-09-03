@@ -1,5 +1,3 @@
-/*	$OpenBSD: screen.c,v 1.13 2015/12/07 20:39:19 mmcc Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)screen.c	10.15 (Berkeley) 9/15/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -30,16 +32,18 @@
  * screen_init --
  *	Do the default initialization of an SCR structure.
  *
- * PUBLIC: int screen_init(GS *, SCR *, SCR **);
+ * PUBLIC: int screen_init __P((GS *, SCR *, SCR **));
  */
 int
-screen_init(GS *gp, SCR *orig, SCR **spp)
+screen_init(gp, orig, spp)
+	GS *gp;
+	SCR *orig, **spp;
 {
 	SCR *sp;
 	size_t len;
 
 	*spp = NULL;
-	CALLOC_RET(orig, sp, 1, sizeof(SCR));
+	CALLOC_RET(orig, sp, SCR *, 1, sizeof(SCR));
 	*spp = sp;
 
 /* INITIALIZED AT SCREEN CREATE. */
@@ -56,7 +60,7 @@ screen_init(GS *gp, SCR *orig, SCR **spp)
 	 * we don't have the option information yet.
 	 */
 
-	TAILQ_INIT(&sp->tiq);
+	CIRCLEQ_INIT(&sp->tiq);
 
 /* PARTIALLY OR COMPLETELY COPIED FROM PREVIOUS SCREEN. */
 	if (orig == NULL) {
@@ -89,7 +93,7 @@ screen_init(GS *gp, SCR *orig, SCR **spp)
 		sp->repl_len = orig->repl_len;
 		if (orig->newl_len) {
 			len = orig->newl_len * sizeof(size_t);
-			MALLOC(sp, sp->newl, len);
+			MALLOC(sp, sp->newl, size_t *, len);
 			if (sp->newl == NULL) {
 mem:				msgq(orig, M_SYSERR, NULL);
 				goto err;
@@ -122,41 +126,35 @@ err:	screen_end(sp);
  *	Release a screen, no matter what had (and had not) been
  *	initialized.
  *
- * PUBLIC: int screen_end(SCR *);
+ * PUBLIC: int screen_end __P((SCR *));
  */
 int
-screen_end(SCR *sp)
+screen_end(sp)
+	SCR *sp;
 {
 	int rval;
-	SCR *tsp;
 
 	/* If multiply referenced, just decrement the count and return. */
 	 if (--sp->refcnt != 0)
 		 return (0);
 
 	/*
-	 * Remove the screen from the displayed and hidden queues.
+	 * Remove the screen from the displayed queue.
 	 *
 	 * If a created screen failed during initialization, it may not
-	 * be linked into a queue.
+	 * be linked into the chain.
 	 */
-	TAILQ_FOREACH(tsp, &sp->gp->dq, q) {
-		if (tsp == sp) {
-			TAILQ_REMOVE(&sp->gp->dq, sp, q);
-			break;
-		}
-	}
-	TAILQ_FOREACH(tsp, &sp->gp->hq, q) {
-		if (tsp == sp) {
-			TAILQ_REMOVE(&sp->gp->hq, sp, q);
-			break;
-		}
-	}
+	if (sp->q.cqe_next != NULL)
+		CIRCLEQ_REMOVE(&sp->gp->dq, sp, q);
 
 	/* The screen is no longer real. */
 	F_CLR(sp, SC_SCR_EX | SC_SCR_VI);
 
 	rval = 0;
+#ifdef HAVE_PERL_INTERP
+	if (perl_screen_end(sp))		/* End perl. */
+		rval = 1;
+#endif
 	if (v_screen_end(sp))			/* End vi. */
 		rval = 1;
 	if (ex_screen_end(sp))			/* End ex. */
@@ -172,7 +170,7 @@ screen_end(SCR *sp)
 	}
 
 	/* Free any text input. */
-	if (TAILQ_FIRST(&sp->tiq) != NULL)
+	if (sp->tiq.cqh_first != NULL)
 		text_lfree(&sp->tiq);
 
 	/* Free alternate file name. */
@@ -206,25 +204,29 @@ screen_end(SCR *sp)
  * screen_next --
  *	Return the next screen in the queue.
  *
- * PUBLIC: SCR *screen_next(SCR *);
+ * PUBLIC: SCR *screen_next __P((SCR *));
  */
 SCR *
-screen_next(SCR *sp)
+screen_next(sp)
+	SCR *sp;
 {
 	GS *gp;
 	SCR *next;
 
 	/* Try the display queue, without returning the current screen. */
 	gp = sp->gp;
-	TAILQ_FOREACH(next, &gp->dq, q)
+	for (next = gp->dq.cqh_first;
+	    next != (void *)&gp->dq; next = next->q.cqe_next)
 		if (next != sp)
-			return (next);
+			break;
+	if (next != (void *)&gp->dq)
+		return (next);
 
 	/* Try the hidden queue; if found, move screen to the display queue. */
-	if (!TAILQ_EMPTY(&gp->hq)) {
-		next = TAILQ_FIRST(&gp->hq);
-		TAILQ_REMOVE(&gp->hq, next, q);
-		TAILQ_INSERT_HEAD(&gp->dq, next, q);
+	if (gp->hq.cqh_first != (void *)&gp->hq) {
+		next = gp->hq.cqh_first;
+		CIRCLEQ_REMOVE(&gp->hq, next, q);
+		CIRCLEQ_INSERT_HEAD(&gp->dq, next, q);
 		return (next);
 	}
 	return (NULL);

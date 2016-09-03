@@ -1,6 +1,5 @@
 /* Generic support for 64-bit ELF
-   Copyright 1993, 1995, 1998, 1999, 2001, 2002, 2004
-   Free Software Foundation, Inc.
+   Copyright 1993 Free Software Foundation, Inc.
 
 This file is part of BFD, the Binary File Descriptor library.
 
@@ -23,73 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "libbfd.h"
 #include "elf-bfd.h"
 
-/* This does not include any relocation information, but should be
-   good enough for GDB or objdump to read the file.  */
-
-static reloc_howto_type dummy =
-  HOWTO (0,			/* type */
-	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
-	 0,			/* bitsize */
-	 FALSE,			/* pc_relative */
-	 0,			/* bitpos */
-	 complain_overflow_dont, /* complain_on_overflow */
-	 NULL,			/* special_function */
-	 "UNKNOWN",		/* name */
-	 FALSE,			/* partial_inplace */
-	 0,			/* src_mask */
-	 0,			/* dst_mask */
-	 FALSE);		/* pcrel_offset */
-
-static void elf_generic_info_to_howto
-  PARAMS ((bfd *, arelent *, Elf_Internal_Rela *));
-static void elf_generic_info_to_howto_rel
-  PARAMS ((bfd *, arelent *, Elf_Internal_Rela *));
-static bfd_boolean elf64_generic_link_add_symbols
-  PARAMS ((bfd *, struct bfd_link_info *));
-
-static void
-elf_generic_info_to_howto (abfd, bfd_reloc, elf_reloc)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *bfd_reloc;
-     Elf_Internal_Rela *elf_reloc ATTRIBUTE_UNUSED;
-{
-  bfd_reloc->howto = &dummy;
-}
-
-static void
-elf_generic_info_to_howto_rel (abfd, bfd_reloc, elf_reloc)
-     bfd *abfd ATTRIBUTE_UNUSED;
-     arelent *bfd_reloc;
-     Elf_Internal_Rela *elf_reloc ATTRIBUTE_UNUSED;
-{
-  bfd_reloc->howto = &dummy;
-}
-
-static bfd_boolean
-elf64_generic_link_add_symbols (abfd, info)
-     bfd *abfd;
-     struct bfd_link_info *info;
-{
-  asection *o;
-
-  /* Check if there are any relocations.  */
-  for (o = abfd->sections; o != NULL; o = o->next)
-    if ((o->flags & SEC_RELOC) != 0)
-      {
-	Elf_Internal_Ehdr *ehdrp;
-
-	ehdrp = elf_elfheader (abfd);
-	(*_bfd_error_handler) (_("%s: Relocations in generic ELF (EM: %d)"),
-			       bfd_archive_filename (abfd),
-			       ehdrp->e_machine);
-
-	bfd_set_error (bfd_error_wrong_format);
-	return FALSE;
-      }
-
-  return bfd_elf_link_add_symbols (abfd, info);
-}
+/* This does not include any relocations, but should be good enough
+   for GDB to read the file.  */
 
 #define TARGET_LITTLE_SYM		bfd_elf64_little_generic_vec
 #define TARGET_LITTLE_NAME		"elf64-little"
@@ -97,10 +31,7 @@ elf64_generic_link_add_symbols (abfd, info)
 #define TARGET_BIG_NAME			"elf64-big"
 #define ELF_ARCH			bfd_arch_unknown
 #define ELF_MACHINE_CODE		EM_NONE
-#define ELF_MAXPAGESIZE			0x1
 #define bfd_elf64_bfd_reloc_type_lookup bfd_default_reloc_type_lookup
-#define bfd_elf64_bfd_link_add_symbols	elf64_generic_link_add_symbols
-#define elf_info_to_howto		elf_generic_info_to_howto
-#define elf_info_to_howto_rel		elf_generic_info_to_howto_rel
+#define elf_info_to_howto		_bfd_elf_no_info_to_howto
 
 #include "elf64-target.h"

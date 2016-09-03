@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_write.c,v 1.13 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_write.c	10.30 (Berkeley) 7/12/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -28,16 +30,18 @@
 #include "../common/common.h"
 
 enum which {WN, WQ, WRITE, XIT};
-static int exwr(SCR *, EXCMD *, enum which);
+static int exwr __P((SCR *, EXCMD *, enum which));
 
 /*
  * ex_wn --	:wn[!] [>>] [file]
  *	Write to a file and switch to the next one.
  *
- * PUBLIC: int ex_wn(SCR *, EXCMD *);
+ * PUBLIC: int ex_wn __P((SCR *, EXCMD *));
  */
 int
-ex_wn(SCR *sp, EXCMD *cmdp)
+ex_wn(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	if (exwr(sp, cmdp, WN))
 		return (1);
@@ -54,10 +58,12 @@ ex_wn(SCR *sp, EXCMD *cmdp)
  * ex_wq --	:wq[!] [>>] [file]
  *	Write to a file and quit.
  *
- * PUBLIC: int ex_wq(SCR *, EXCMD *);
+ * PUBLIC: int ex_wq __P((SCR *, EXCMD *));
  */
 int
-ex_wq(SCR *sp, EXCMD *cmdp)
+ex_wq(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	int force;
 
@@ -80,10 +86,12 @@ ex_wq(SCR *sp, EXCMD *cmdp)
  *		:write [!] [cmd]
  *	Write to a file.
  *
- * PUBLIC: int ex_write(SCR *, EXCMD *);
+ * PUBLIC: int ex_write __P((SCR *, EXCMD *));
  */
 int
-ex_write(SCR *sp, EXCMD *cmdp)
+ex_write(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (exwr(sp, cmdp, WRITE));
 }
@@ -93,10 +101,12 @@ ex_write(SCR *sp, EXCMD *cmdp)
  * ex_xit -- :x[it]! [file]
  *	Write out any modifications and quit.
  *
- * PUBLIC: int ex_xit(SCR *, EXCMD *);
+ * PUBLIC: int ex_xit __P((SCR *, EXCMD *));
  */
 int
-ex_xit(SCR *sp, EXCMD *cmdp)
+ex_xit(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	int force;
 
@@ -121,11 +131,14 @@ ex_xit(SCR *sp, EXCMD *cmdp)
  *	The guts of the ex write commands.
  */
 static int
-exwr(SCR *sp, EXCMD *cmdp, enum which cmd)
+exwr(sp, cmdp, cmd)
+	SCR *sp;
+	EXCMD *cmdp;
+	enum which cmd;
 {
 	MARK rm;
 	int flags;
-	char *name, *p = NULL;
+	char *name, *p;
 
 	NEEDFILE(sp, cmdp);
 
@@ -136,8 +149,7 @@ exwr(SCR *sp, EXCMD *cmdp, enum which cmd)
 
 	/* Skip any leading whitespace. */
 	if (cmdp->argc != 0)
-		for (p = cmdp->argv[0]->bp; isblank(*p); ++p)
-			;
+		for (p = cmdp->argv[0]->bp; *p != '\0' && isblank(*p); ++p);
 
 	/* If "write !" it's a pipe to a utility. */
 	if (cmdp->argc != 0 && cmd == WRITE && *p == '!') {
@@ -148,7 +160,7 @@ exwr(SCR *sp, EXCMD *cmdp, enum which cmd)
 		}
 
 		/* Expand the argument. */
-		for (++p; isblank(*p); ++p);
+		for (++p; *p && isblank(*p); ++p);
 		if (*p == '\0') {
 			ex_emsg(sp, cmdp->cmd->usage, EXM_USAGE);
 			return (1);
@@ -189,7 +201,7 @@ exwr(SCR *sp, EXCMD *cmdp, enum which cmd)
 		LF_SET(FS_APPEND);
 
 		/* Skip ">>" and whitespace. */
-		for (p += 2; isblank(*p); ++p);
+		for (p += 2; *p && isblank(*p); ++p);
 	}
 
 	/* If no other arguments, just write the file back. */
@@ -260,12 +272,17 @@ exwr(SCR *sp, EXCMD *cmdp, enum which cmd)
  * ex_writefp --
  *	Write a range of lines to a FILE *.
  *
- * PUBLIC: int ex_writefp(SCR *,
- * PUBLIC:    char *, FILE *, MARK *, MARK *, u_long *, u_long *, int);
+ * PUBLIC: int ex_writefp __P((SCR *,
+ * PUBLIC:    char *, FILE *, MARK *, MARK *, u_long *, u_long *, int));
  */
 int
-ex_writefp(SCR *sp, char *name, FILE *fp, MARK *fm, MARK *tm, u_long *nlno,
-    u_long *nch, int silent)
+ex_writefp(sp, name, fp, fm, tm, nlno, nch, silent)
+	SCR *sp;
+	char *name;
+	FILE *fp;
+	MARK *fm, *tm;
+	u_long *nlno, *nch;
+	int silent;
 {
 	struct stat sb;
 	GS *gp;
@@ -301,7 +318,7 @@ ex_writefp(SCR *sp, char *name, FILE *fp, MARK *fm, MARK *tm, u_long *nlno,
 	 */
 	ccnt = 0;
 	lcnt = 0;
-	msg = "Writing...";
+	msg = "253|Writing...";
 	if (tline != 0)
 		for (; fline <= tline; ++fline, ++lcnt) {
 			/* Caller has to provide any interrupt message. */
@@ -335,17 +352,14 @@ ex_writefp(SCR *sp, char *name, FILE *fp, MARK *fm, MARK *tm, u_long *nlno,
 	    S_ISREG(sb.st_mode) && fsync(fileno(fp)))
 		goto err;
 
-	if (fclose(fp)) {
-		fp = NULL;
+	if (fclose(fp))
 		goto err;
-	}
 
 	rval = 0;
 	if (0) {
 err:		if (!F_ISSET(sp->ep, F_MULTILOCK))
 			msgq_str(sp, M_SYSERR, name, "%s");
-		if (fp != NULL)
-			(void)fclose(fp);
+		(void)fclose(fp);
 		rval = 1;
 	}
 

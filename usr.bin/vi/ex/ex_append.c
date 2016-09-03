@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_append.c,v 1.14 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_append.c	10.30 (Berkeley) 10/23/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -24,17 +26,19 @@
 
 enum which {APPEND, CHANGE, INSERT};
 
-static int ex_aci(SCR *, EXCMD *, enum which);
+static int ex_aci __P((SCR *, EXCMD *, enum which));
 
 /*
  * ex_append -- :[line] a[ppend][!]
  *	Append one or more lines of new text after the specified line,
  *	or the current line if no address is specified.
  *
- * PUBLIC: int ex_append(SCR *, EXCMD *);
+ * PUBLIC: int ex_append __P((SCR *, EXCMD *));
  */
 int
-ex_append(SCR *sp, EXCMD *cmdp)
+ex_append(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (ex_aci(sp, cmdp, APPEND));
 }
@@ -43,10 +47,12 @@ ex_append(SCR *sp, EXCMD *cmdp)
  * ex_change -- :[line[,line]] c[hange][!] [count]
  *	Change one or more lines to the input text.
  *
- * PUBLIC: int ex_change(SCR *, EXCMD *);
+ * PUBLIC: int ex_change __P((SCR *, EXCMD *));
  */
 int
-ex_change(SCR *sp, EXCMD *cmdp)
+ex_change(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (ex_aci(sp, cmdp, CHANGE));
 }
@@ -56,10 +62,12 @@ ex_change(SCR *sp, EXCMD *cmdp)
  *	Insert one or more lines of new text before the specified line,
  *	or the current line if no address is specified.
  *
- * PUBLIC: int ex_insert(SCR *, EXCMD *);
+ * PUBLIC: int ex_insert __P((SCR *, EXCMD *));
  */
 int
-ex_insert(SCR *sp, EXCMD *cmdp)
+ex_insert(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (ex_aci(sp, cmdp, INSERT));
 }
@@ -69,7 +77,10 @@ ex_insert(SCR *sp, EXCMD *cmdp)
  *	Append, change, insert in ex.
  */
 static int
-ex_aci(SCR *sp, EXCMD *cmdp, enum which cmd)
+ex_aci(sp, cmdp, cmd)
+	SCR *sp;
+	EXCMD *cmdp;
+	enum which cmd;
 {
 	CHAR_T *p, *t;
 	GS *gp;
@@ -218,7 +229,9 @@ ex_aci(SCR *sp, EXCMD *cmdp, enum which cmd)
 		 * when they enter append mode, and can't seem to get out of
 		 * it.  Give them an informational message.
 		 */
-		(void)ex_puts(sp, "Entering ex input mode.\n");
+		(void)ex_puts(sp,
+		    msg_cat(sp, "273|Entering ex input mode.", NULL));
+		(void)ex_puts(sp, "\n");
 		(void)ex_fflush(sp);
 	}
 
@@ -242,17 +255,15 @@ ex_aci(SCR *sp, EXCMD *cmdp, enum which cmd)
 	 * into the file, above.)
 	 */
 	memset(&tiq, 0, sizeof(TEXTH));
-	TAILQ_INIT(&tiq);
+	CIRCLEQ_INIT(&tiq);
 
 	if (ex_txt(sp, &tiq, 0, flags))
 		return (1);
 
-	cnt = 0;
-	TAILQ_FOREACH(tp, &tiq, q) {
+	for (cnt = 0, tp = tiq.cqh_first;
+	    tp != (TEXT *)&tiq; ++cnt, tp = tp->q.cqe_next)
 		if (db_append(sp, 1, lno++, tp->lb, tp->len))
 			return (1);
-		cnt++;
-	}
 
 	/*
 	 * Set sp->lno to the final line number value (correcting for a

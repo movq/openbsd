@@ -1,8 +1,8 @@
-/*	$OpenBSD: gdt.h,v 1.13 2016/03/03 12:41:30 naddy Exp $	*/
-/*	$NetBSD: gdt.h,v 1.7.10.6 2002/08/19 01:22:36 sommerfeld Exp $	*/
+/*	$OpenBSD: gdt.h,v 1.5 1997/11/11 22:53:40 deraadt Exp $	*/
+/*	$NetBSD: gdt.h,v 1.3 1996/02/27 22:32:11 jtc Exp $	*/
 
 /*-
- * Copyright (c) 1996, 1997 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -30,26 +37,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _LOCORE
-
-struct cpu_info;
-struct pcb;
-struct pmap;
-union descriptor;
-
-void gdt_alloc_cpu(struct cpu_info *);
-int gdt_get_slot(void);
-void gdt_init(void);
-void gdt_init_cpu(struct cpu_info *);
-void gdt_reload_cpu(/* XXX struct cpu_info * */ void);
-int tss_alloc(struct pcb *);
-void tss_free(int);
-void setgdt(int, void *, size_t, int, int, int, int);
+#ifdef _KERNEL
+void tss_alloc __P((struct pcb *));
+void tss_free __P((struct pcb *));
+void ldt_alloc __P((struct pcb *, union descriptor *, size_t));
+void ldt_free __P((struct pcb *));
 #endif
-
-/*
- * Maximum GDT size.  It cannot exceed 65536 since the selector field of
- * a descriptor is just 16 bits, and used as free list link.
- */
-
-#define MAXGDTSIZ 65536

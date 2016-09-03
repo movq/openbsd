@@ -1,4 +1,4 @@
-/*	$OpenBSD: preen.c,v 1.20 2015/01/16 06:39:57 deraadt Exp $	*/
+/*	$OpenBSD: preen.c,v 1.5 1999/01/11 20:59:29 niklas Exp $	*/
 /*	$NetBSD: preen.c,v 1.15 1996/09/28 19:21:42 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)preen.c	8.3 (Berkeley) 12/6/94";
+#else
+static char rcsid[] = "$NetBSD: preen.c,v 1.15 1996/09/28 19:21:42 christos Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/queue.h>
@@ -65,33 +78,34 @@ TAILQ_HEAD(disk, diskentry) diskh;
 
 static int nrun = 0, ndisks = 0;
 
-static struct diskentry *finddisk(const char *);
-static void addpart(const char *, const char *, const char *, void *);
-static int startdisk(struct diskentry *,
-    int (*)(const char *, const char *, const char *, void *, pid_t *));
-static void printpart(void);
+static struct diskentry *finddisk __P((const char *));
+static void addpart __P((const char *, const char *, const char *, void *));
+static int startdisk __P((struct diskentry *, 
+    int (*)(const char *, const char *, const char *, void *, pid_t *)));
+static void printpart __P((void));
 
 int
-checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
-    int (*checkit)(const char *, const char *, const char *, void *, pid_t *))
+checkfstab(flags, maxrun, docheck, checkit)
+	int flags, maxrun;
+	void *(*docheck) __P((struct fstab *));
+	int (*checkit) __P((const char *, const char *, const char *, void *,
+	    pid_t *));
 {
 	struct fstab *fs;
 	struct diskentry *d, *nextdisk;
 	struct partentry *p;
-	int ret, retcode, passno, sumstatus, status, maxp;
+	int ret, pid, retcode, passno, sumstatus, status;
 	void *auxarg;
 	char *name;
-	pid_t pid;
 
 	TAILQ_INIT(&badh);
 	TAILQ_INIT(&diskh);
 
 	sumstatus = 0;
-	maxp = 2;
 
-	for (passno = 1; passno <= maxp; passno++) {
+	for (passno = 1; passno <= 2; passno++) {
 		if (setfsent() == 0) {
-			warnx("Can't open checklist file: %s", _PATH_FSTAB);
+			warnx("Can't open checklist file: %s\n", _PATH_FSTAB);
 			return (8);
 		}
 		while ((fs = getfsent()) != 0) {
@@ -101,7 +115,6 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 			name = blockcheck(fs->fs_spec);
 			if (flags & CHECK_DEBUG)
 				printf("pass %d, name %s\n", passno, name);
-			maxp = (fs->fs_passno > maxp) ? fs->fs_passno : maxp;
 
 			if ((flags & CHECK_PREEN) == 0 ||
 			    (passno == 1 && fs->fs_passno == 1)) {
@@ -116,16 +129,15 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 
 				if (sumstatus)
 					return (sumstatus);
-			} else  {
+			} else if (passno == 2 && fs->fs_passno > 1) {
 				if (name == NULL) {
 					(void) fprintf(stderr,
 					    "BAD DISK NAME %s\n", fs->fs_spec);
 					sumstatus |= 8;
 					continue;
 				}
-				if (passno == fs->fs_passno)
-					addpart(fs->fs_vfstype, name,
-					    fs->fs_file, auxarg);
+				addpart(fs->fs_vfstype, name, fs->fs_file,
+				    auxarg);
 			}
 		}
 		if ((flags & CHECK_PREEN) == 0)
@@ -140,20 +152,20 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 			maxrun = ndisks;
 		if (maxrun > ndisks)
 			maxrun = ndisks;
-		nextdisk = TAILQ_FIRST(&diskh);
+		nextdisk = diskh.tqh_first;
 		for (passno = 0; passno < maxrun; ++passno) {
 			if ((ret = startdisk(nextdisk, checkit)) != 0)
 				return ret;
-			nextdisk = TAILQ_NEXT(nextdisk, d_entries);
+			nextdisk = nextdisk->d_entries.tqe_next;
 		}
 
 		while ((pid = wait(&status)) != -1) {
-			TAILQ_FOREACH(d, &diskh, d_entries)
+			for (d = diskh.tqh_first; d; d = d->d_entries.tqe_next)
 				if (d->d_pid == pid)
 					break;
 
 			if (d == NULL) {
-				warnx("Unknown pid %ld", (long)pid);
+				warnx("Unknown pid %d\n", pid);
 				continue;
 			}
 
@@ -163,7 +175,7 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 			else
 				retcode = 0;
 
-			p = TAILQ_FIRST(&d->d_part);
+			p = d->d_part.tqh_first;
 
 			if (flags & (CHECK_DEBUG|CHECK_VERBOSE))
 				(void) printf("done %s: %s (%s) = %x\n",
@@ -191,22 +203,21 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 			d->d_pid = 0;
 			nrun--;
 
-			if (TAILQ_EMPTY(&d->d_part))
+			if (d->d_part.tqh_first == NULL)
 				ndisks--;
 
 			if (nextdisk == NULL) {
-				if (!TAILQ_EMPTY(&d->d_part)) {
+				if (d->d_part.tqh_first) {
 					if ((ret = startdisk(d, checkit)) != 0)
 						return ret;
 				}
 			} else if (nrun < maxrun && nrun < ndisks) {
 				for ( ;; ) {
-					nextdisk = TAILQ_NEXT(nextdisk,
-					    d_entries);
+					nextdisk = nextdisk->d_entries.tqe_next;
 					if (nextdisk == NULL)
-						nextdisk = TAILQ_FIRST(&diskh);
-					if (!TAILQ_EMPTY(&nextdisk->d_part) &&
-					    nextdisk->d_pid == 0)
+						nextdisk = diskh.tqh_first;
+					if (nextdisk->d_part.tqh_first != NULL
+					    && nextdisk->d_pid == 0)
 						break;
 				}
 				if ((ret = startdisk(nextdisk, checkit)) != 0)
@@ -215,19 +226,19 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 		}
 	}
 	if (sumstatus) {
-		p = TAILQ_FIRST(&badh);
+		p = badh.tqh_first;
 		if (p == NULL)
 			return (sumstatus);
 
 		(void) fprintf(stderr,
 			"THE FOLLOWING FILE SYSTEM%s HAD AN %s\n\t",
-			TAILQ_NEXT(p, p_entries) ? "S" : "",
+			p->p_entries.tqe_next ? "S" : "",
 			"UNEXPECTED INCONSISTENCY:");
 
-		for (; p; p = TAILQ_NEXT(p, p_entries))
+		for (; p; p = p->p_entries.tqe_next)
 			(void) fprintf(stderr,
 			    "%s: %s (%s)%s", p->p_type, p->p_devname,
-			    p->p_mntpt, TAILQ_NEXT(p, p_entries) ? ", " : "\n");
+			    p->p_mntpt, p->p_entries.tqe_next ? ", " : "\n");
 
 		return sumstatus;
 	}
@@ -237,14 +248,15 @@ checkfstab(int flags, int maxrun, void *(*docheck)(struct fstab *),
 
 
 static struct diskentry *
-finddisk(const char *name)
+finddisk(name)
+	const char *name;
 {
 	const char *p;
 	size_t len = 0;
 	struct diskentry *d;
 
 	for (p = name + strlen(name) - 1; p >= name; --p)
-		if (isdigit((unsigned char)*p)) {
+		if (isdigit(*p)) {
 			len = p - name + 1;
 			break;
 		}
@@ -252,7 +264,7 @@ finddisk(const char *name)
 	if (p < name)
 		len = strlen(name);
 
-	TAILQ_FOREACH(d, &diskh, d_entries)
+	for (d = diskh.tqh_first; d != NULL; d = d->d_entries.tqe_next)
 		if (strncmp(d->d_name, name, len) == 0 && d->d_name[len] == 0)
 			return d;
 
@@ -270,14 +282,15 @@ finddisk(const char *name)
 
 
 static void
-printpart(void)
+printpart()
 {
 	struct diskentry *d;
 	struct partentry *p;
 
-	TAILQ_FOREACH(d, &diskh, d_entries) {
+	for (d = diskh.tqh_first; d != NULL; d = d->d_entries.tqe_next) {
 		(void) printf("disk %s: ", d->d_name);
-		TAILQ_FOREACH(p, &d->d_part, p_entries)
+		for (p = d->d_part.tqh_first; p != NULL;
+		    p = p->p_entries.tqe_next)
 			(void) printf("%s ", p->p_devname);
 		(void) printf("\n");
 	}
@@ -285,14 +298,16 @@ printpart(void)
 
 
 static void
-addpart(const char *type, const char *devname, const char *mntpt, void *auxarg)
+addpart(type, devname, mntpt, auxarg)
+	const char *type, *devname, *mntpt;
+	void *auxarg;
 {
 	struct diskentry *d = finddisk(devname);
 	struct partentry *p;
 
-	TAILQ_FOREACH(p, &d->d_part, p_entries)
+	for (p = d->d_part.tqh_first; p != NULL; p = p->p_entries.tqe_next)
 		if (strcmp(p->p_devname, devname) == 0) {
-			warnx("%s in fstab more than once!", devname);
+			warnx("%s in fstab more than once!\n", devname);
 			return;
 		}
 
@@ -307,10 +322,12 @@ addpart(const char *type, const char *devname, const char *mntpt, void *auxarg)
 
 
 static int
-startdisk(struct diskentry *d,
-    int (*checkit)(const char *, const char *, const char *, void *, pid_t *))
+startdisk(d, checkit)
+	register struct diskentry *d;
+	int (*checkit) __P((const char *, const char *, const char *, void *,
+	    pid_t *));
 {
-	struct partentry *p = TAILQ_FIRST(&d->d_part);
+	register struct partentry *p = d->d_part.tqh_first;
 	int rv;
 
 	while ((rv = (*checkit)(p->p_type, p->p_devname, p->p_mntpt,

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ttext1.c,v 1.6 2009/10/27 23:59:23 deraadt Exp $	*/
+/*	$OpenBSD: ttext1.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +32,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)ttext1.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: ttext1.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "back.h"
 #include "tutor.h"
@@ -83,7 +95,7 @@ const char   *const intro2[] = {
 	"\n   Although they are not shown on the board, the players' homes are",
 	"located just to the right of the board.  A player's men are placed",
 	"there when they are removed from the board.  The board you just",
-	"saw was in its initial position:  all games start with the board",
+	"saw was in it's initial position:  all games start with the board",
 	"looking like this.  Notice that red's pieces are represented by",
 	"the letter `r' and white's pieces are represented by the letter",
 	"`w'.  A position may have zero or more pieces on it:  for example,",

@@ -1,5 +1,5 @@
-/*	$OpenBSD: pass5.c,v 1.18 2015/01/16 06:39:57 deraadt Exp $	*/
-/*	$NetBSD: pass5.c,v 1.7 2000/01/28 16:01:46 bouyer Exp $ */
+/*	$OpenBSD: pass5.c,v 1.4 1997/06/14 05:04:12 downsj Exp $	*/
+/*	$NetBSD: pass5.c,v 1.1 1997/06/11 11:21:58 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1997 Manuel Bouyer.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,11 +35,23 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* setbit isset */
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pass5.c	8.6 (Berkeley) 11/30/94";
+#else
+#if 0
+static char rcsid[] = "$NetBSD: pass5.c,v 1.1 1997/06/11 11:21:58 bouyer Exp $";
+#else
+static char rcsid[] = "$OpenBSD: pass5.c,v 1.4 1997/06/14 05:04:12 downsj Exp $";
+#endif
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/time.h>
-#include <ufs/ufs/dinode.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
 #include <ufs/ext2fs/ext2fs.h>
+#include <ufs/ext2fs/ext2fs_extern.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,16 +61,16 @@
 #include "extern.h"
 
 
-void print_bmap(u_char *,u_int32_t);
+void print_bmap __P((u_char *,u_int32_t));
 
 void
-pass5(void)
+pass5()
 {
-	int c;
-	struct m_ext2fs *fs = &sblock;
-	daddr32_t dbase, dmax;
-	daddr32_t d;
-	long i, j;
+	int c, blk, frags, basesize, sumsize, mapsize, savednrpos;
+	register struct m_ext2fs *fs = &sblock;
+	daddr_t dbase, dmax;
+	register daddr_t d;
+	register long i, j;
 	struct inodesc idesc[3];
 	struct bufarea *ino_bitmap = NULL, *blk_bitmap = NULL;
 	char *ibmap, *bbmap;
@@ -81,17 +97,17 @@ pass5(void)
 		ndirs = 0;
 
 		if (blk_bitmap == NULL) {
-			blk_bitmap = getdatablk(letoh32(fs->e2fs_gd[c].ext2bgd_b_bitmap),
+			blk_bitmap = getdatablk(fs->e2fs_gd[c].ext2bgd_b_bitmap,
 				fs->e2fs_bsize);
 		} else {
-			getblk(blk_bitmap, letoh32(fs->e2fs_gd[c].ext2bgd_b_bitmap),
+			getblk(blk_bitmap, fs->e2fs_gd[c].ext2bgd_b_bitmap,
 				fs->e2fs_bsize);
 		}
 		if (ino_bitmap == NULL) {
-			ino_bitmap = getdatablk(letoh32(fs->e2fs_gd[c].ext2bgd_i_bitmap),
+			ino_bitmap = getdatablk(fs->e2fs_gd[c].ext2bgd_i_bitmap,
 				fs->e2fs_bsize);
 		} else {
-			getblk(ino_bitmap, letoh32(fs->e2fs_gd[c].ext2bgd_i_bitmap),
+			getblk(ino_bitmap, fs->e2fs_gd[c].ext2bgd_i_bitmap,
 				fs->e2fs_bsize);
 		}
 		memset(bbmap, 0, fs->e2fs_bsize);
@@ -99,7 +115,7 @@ pass5(void)
 		memset(&idesc[0], 0, sizeof idesc);
 		for (i = 0; i < 3; i++) {
 			idesc[i].id_type = ADDR;
-		}
+		}       
 
 		j = fs->e2fs.e2fs_ipg * c + 1;
 
@@ -131,21 +147,22 @@ pass5(void)
 				break;
 
 			default:
-				errexit("BAD STATE %d FOR INODE I=%llu\n",
-				    statemap[j], (unsigned long long)j);
+				errexit("BAD STATE %d FOR INODE I=%d\n",
+				    statemap[j], j);
 			}
 		}
 
 		/* fill in unused par of the inode map */
 		for (i = fs->e2fs.e2fs_ipg / NBBY; i < fs->e2fs_bsize; i++)
-			ibmap[i] = 0xff;
+			ibmap[i] = 0xff; 
 
-		dbase = c * sblock.e2fs.e2fs_bpg +
-		    sblock.e2fs.e2fs_first_dblock;
-		dmax = (c+1) * sblock.e2fs.e2fs_bpg +
-		    sblock.e2fs.e2fs_first_dblock;
+		dbase = c * sblock.e2fs.e2fs_bpg + sblock.e2fs.e2fs_first_dblock +
+				cgoverhead;
+		dmax = (c+1) * sblock.e2fs.e2fs_bpg + sblock.e2fs.e2fs_first_dblock;
 
-		for (i = 0, d = dbase;
+		for (i = 0; i < cgoverhead; i++)
+			setbit(bbmap, i); /* blks allocated to fs metadata */
+		for (i = cgoverhead, d = dbase;
 		     d < dmax;
 		     d ++, i ++) {
 			if (testbmap(d) || d >= sblock.e2fs.e2fs_bcount) {
@@ -160,27 +177,26 @@ pass5(void)
 		cs_nifree += nifree;
 		cs_ndir += ndirs;
 
-		if (debug && (letoh16(fs->e2fs_gd[c].ext2bgd_nbfree) != nbfree ||
-		    letoh16(fs->e2fs_gd[c].ext2bgd_nifree) != nifree ||
-		    letoh16(fs->e2fs_gd[c].ext2bgd_ndirs) != ndirs)) {
+		if (debug && (fs->e2fs_gd[c].ext2bgd_nbfree != nbfree ||
+					  fs->e2fs_gd[c].ext2bgd_nifree != nifree ||
+					  fs->e2fs_gd[c].ext2bgd_ndirs != ndirs)) {
 			printf("summary info for cg %d is %d, %d, %d,"
 					"should be %d, %d, %d\n", c,
-					letoh16(fs->e2fs_gd[c].ext2bgd_nbfree),
-					letoh16(fs->e2fs_gd[c].ext2bgd_nifree),
-					letoh16(fs->e2fs_gd[c].ext2bgd_ndirs),
+					fs->e2fs_gd[c].ext2bgd_nbfree,
+					fs->e2fs_gd[c].ext2bgd_nifree,
+					fs->e2fs_gd[c].ext2bgd_ndirs,
 					nbfree,
 					nifree,
 					ndirs);
 		}
-		(void)snprintf(msg, sizeof(msg),
-		    "SUMMARY INFORMATIONS WRONG FOR CG #%d", c);
-		if ((letoh16(fs->e2fs_gd[c].ext2bgd_nbfree) != nbfree ||
-			letoh16(fs->e2fs_gd[c].ext2bgd_nifree) != nifree ||
-			letoh16(fs->e2fs_gd[c].ext2bgd_ndirs) != ndirs) &&
+		snprintf(msg, 255, "SUMMARY INFORMATIONS WRONG FOR CG #%d", c);
+		if ((fs->e2fs_gd[c].ext2bgd_nbfree != nbfree ||
+			fs->e2fs_gd[c].ext2bgd_nifree != nifree ||
+			fs->e2fs_gd[c].ext2bgd_ndirs != ndirs) &&
 			dofix(&idesc[0], msg)) {
-			fs->e2fs_gd[c].ext2bgd_nbfree = htole16(nbfree);
-			fs->e2fs_gd[c].ext2bgd_nifree = htole16(nifree);
-			fs->e2fs_gd[c].ext2bgd_ndirs = htole16(ndirs);
+			fs->e2fs_gd[c].ext2bgd_nbfree = nbfree;
+			fs->e2fs_gd[c].ext2bgd_nifree = nifree;
+			fs->e2fs_gd[c].ext2bgd_ndirs = ndirs;
 			sbdirty();
 		}
 
@@ -191,8 +207,7 @@ pass5(void)
 			print_bmap(bbmap, fs->e2fs_bsize);
 		}
 
-		(void)snprintf(msg, sizeof(msg),
-		    "BLK(S) MISSING IN BIT MAPS #%d", c);
+		snprintf(msg, 255, "BLK(S) MISSING IN BIT MAPS #%d", c);
 		if (memcmp(blk_bitmap->b_un.b_buf, bbmap, fs->e2fs_bsize) &&
 			dofix(&idesc[1], msg)) {
 			memcpy(blk_bitmap->b_un.b_buf, bbmap, fs->e2fs_bsize);
@@ -204,8 +219,7 @@ pass5(void)
 			printf("ibmap:\n");
 			print_bmap(ibmap, fs->e2fs_bsize);
 		}
-		(void)snprintf(msg, sizeof(msg),
-		    "INODE(S) MISSING IN BIT MAPS #%d", c);
+		snprintf(msg, 255, "INODE(S) MISSING IN BIT MAPS #%d", c);
 		if (memcmp(ino_bitmap->b_un.b_buf, ibmap, fs->e2fs_bsize) &&
 			dofix(&idesc[1], msg)) {
 			memcpy(ino_bitmap->b_un.b_buf, ibmap, fs->e2fs_bsize);
@@ -226,12 +240,12 @@ pass5(void)
 		fs->e2fs.e2fs_ficount = cs_nifree;
 		sbdirty();
 	}
-	free(ibmap);
-	free(bbmap);
 }
 
-void
-print_bmap(u_char *map, u_int32_t size)
+void 
+print_bmap(map, size)
+	u_char *map;
+	u_int32_t size;
 {
 	int i, j;
 
@@ -239,7 +253,7 @@ print_bmap(u_char *map, u_int32_t size)
 	while (i < size) {
 		printf("%u: ",i);
 		for (j = 0; j < 16; j++, i++)
-			printf("%2x ", (u_int)map[i] & 0xff);
+			printf("%2x ", (u_int)map[i]) & 0xff;
 		printf("\n");
 	}
 }

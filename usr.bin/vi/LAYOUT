@@ -1,9 +1,4 @@
-#	$OpenBSD: LAYOUT,v 1.7 2016/01/06 22:34:45 millert Exp $
-
 #	@(#)LAYOUT	8.12 (Berkeley) 10/10/96
-
-FAQ
-	Frequently asked questions.
 
 LAYOUT
 	This file: the layout of the nvi sources.
@@ -18,14 +13,33 @@ build/
 	The build/configuration directory for nvi.  See build/README for
 	more information.
 
+catalog/
+	Support for message catalogs for nvi.  See catalog/README for more
+	information.
+
 cl/
 	Source files for nvi's curses screen support.
+
+clib/
+	Replacement source files for C library functions.
 
 common/
 	Source files for pieces of code that are shared by ex and vi,
 	e.g., searching and logging code or code translating line numbers
 	into requests to the dbopen(3) database code.  It also has the
 	interface code for modifying "records" in the underlying database.
+
+curses/
+	A stripped-down replacement curses library.  Do not try and use
+	this library outside of nvi, many standard curses functions have
+	been removed because nvi doesn't use them.  See build/README for
+	more information.
+
+db/
+	A stripped-down replacement DB library.  Do not try and use this
+	library outside of nvi, many standard DB functions have been
+	removed because nvi doesn't use them.  See db/README for more
+	information.
 
 docs/
 	Ex/vi documentation, both current and historic.
@@ -85,7 +99,30 @@ ex/
 	version.h	-- Version information.
 
 include/
-	Replacement include files.
+	Replacement include files:
+
+	bitstring.h	-- The 4.4BSD bitstring operations.
+	sys/queue.h	-- The 4.4BSD queue operations.
+
+perl_api/
+	Source code supporting the Perl scripting language for nvi.
+
+perl_scripts/
+	Scripts for Perl included with nvi.
+
+regex/
+	Henry Spencer's POSIX 1003.2 regular expression (RE) library.
+
+tcl_api/
+	Source code supporting the Tcl scripting language for nvi.
+
+tcl_scripts/
+	Scripts for Tcl included with nvi.
+
+tk/
+	Source files for nvi's Tk screen support.
+
+	init.tcl	-- Vi startup tcl script.
 
 vi/
 	The vi source code.

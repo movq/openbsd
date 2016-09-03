@@ -1,5 +1,4 @@
-.\"	$OpenBSD: printenv.1,v 1.8 2012/01/15 20:06:40 schwarze Exp $
-.\"
+.\"	$OpenBSD: printenv.1,v 1.3 1998/09/27 16:57:50 aaron Exp $
 .\" Copyright (c) 1980, 1990 The Regents of the University of California.
 .\" All rights reserved.
 .\"
@@ -13,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -31,7 +34,7 @@
 .\"
 .\"	from: @(#)printenv.1	6.7 (Berkeley) 7/28/91
 .\"
-.Dd $Mdocdate: January 15 2012 $
+.Dd July 28, 1991
 .Dt PRINTENV 1
 .Os
 .Sh NAME
@@ -43,12 +46,11 @@
 .Sh DESCRIPTION
 .Nm printenv
 prints out the names and values of the variables in the environment,
-with one name/value pair per line.
-If
+with one name/value pair per line.  If
 .Ar name
 is specified, only
 its value is printed.
-.Sh EXIT STATUS
+.Pp
 If a
 .Ar name
 is specified and it is not defined in the environment,
@@ -61,8 +63,5 @@ returns exit status 1, else it returns status 0.
 .Sh HISTORY
 The
 .Nm printenv
-command first appeared in
-.Bx 2 .
-.Sh AUTHORS
-.An Bill Joy ,
-February 1979.
+command appeared in
+.Bx 3.0 .

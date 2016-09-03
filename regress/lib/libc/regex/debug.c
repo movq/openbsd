@@ -1,4 +1,3 @@
-/*	$OpenBSD: debug.c,v 1.4 2003/07/31 21:48:03 deraadt Exp $	*/
 /*	$NetBSD: debug.c,v 1.2 1995/04/20 22:39:42 cgd Exp $	*/
 
 #include <stdio.h>
@@ -238,8 +237,8 @@ int ch;
 	static char buf[10];
 
 	if (isprint(ch) || ch == ' ')
-		snprintf(buf, sizeof buf, "%c", ch);
+		sprintf(buf, "%c", ch);
 	else
-		snprintf(buf, sizeof buf, "\\%o", ch);
+		sprintf(buf, "\\%o", ch);
 	return(buf);
 }

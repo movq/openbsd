@@ -1,8 +1,10 @@
 /* info.h -- Header file which includes all of the other headers.
-   $Id: info.h,v 1.5 2006/07/17 16:12:36 espie Exp $
+   $Id: info.h,v 1.2 1999/01/11 16:38:08 espie Exp $
 
-   Copyright (C) 1993, 1997, 1998, 1999, 2001, 2002, 2003, 2004 Free Software
-   Foundation, Inc.
+   This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993, 97, 98 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,13 +22,12 @@
 
    Written by Brian Fox (bfox@ai.mit.edu). */
 
-#ifndef INFO_H
+#if !defined (INFO_H)
 #define INFO_H
 
 /* We always want these, so why clutter up the compile command?  */
 #define HANDLE_MAN_PAGES
 #define NAMED_FUNCTIONS
-#define INFOKEY
 
 /* System dependencies.  */
 #include "system.h"
@@ -36,11 +37,12 @@ typedef int Function ();
 typedef void VFunction ();
 typedef char *CFunction ();
 
+
 #include "filesys.h"
-#include "doc.h"
 #include "display.h"
 #include "session.h"
 #include "echo-area.h"
+#include "doc.h"
 #include "footnotes.h"
 #include "gc.h"
 
@@ -117,44 +119,47 @@ extern int info_error_was_printed;
 /* Non-zero means ring terminal bell on errors. */
 extern int info_error_rings_bell_p;
 
-/* Non-zero means default keybindings are loosely modeled on vi(1).  */
-extern int vi_keys_p;
-
-/* Non-zero means don't remove ANSI escape sequences from man pages.  */
-extern int raw_escapes_p;
-
 /* Print FORMAT with ARG1 and ARG2.  If the window system was initialized,
    then the message is printed in the echo area.  Otherwise, a message is
    output to stderr. */
-extern void info_error (char *format, void *arg1, void *arg2);
+extern void info_error ();
 
-extern void add_file_directory_to_path (char *filename);
+/* The version numbers of Info. */
+extern int info_major_version, info_minor_version;
+
+/* How to get the version string for this version of Info.  Returns
+   something similar to "2.11". */
+extern char *version_string ();
 
 /* Error message defines. */
-extern const char *msg_cant_find_node;
-extern const char *msg_cant_file_node;
-extern const char *msg_cant_find_window;
-extern const char *msg_cant_find_point;
-extern const char *msg_cant_kill_last;
-extern const char *msg_no_menu_node;
-extern const char *msg_no_foot_node;
-extern const char *msg_no_xref_node;
-extern const char *msg_no_pointer;
-extern const char *msg_unknown_command;
-extern const char *msg_term_too_dumb;
-extern const char *msg_at_node_bottom;
-extern const char *msg_at_node_top;
-extern const char *msg_one_window;
-extern const char *msg_win_too_small;
-extern const char *msg_cant_make_help;
+#define CANT_FIND_NODE  _("Cannot find the node \"%s\".")
+#define CANT_FILE_NODE  _("Cannot find the node \"(%s)%s\".")
+#define CANT_FIND_WIND  _("Cannot find a window!")
+#define CANT_FIND_POINT _("Point doesn't appear within this window's node!")
+#define CANT_KILL_LAST  _("Cannot delete the last window.")
+#define NO_MENU_NODE    _("No menu in this node.")
+#define NO_FOOT_NODE    _("No footnotes in this node.")
+#define NO_XREF_NODE    _("No cross references in this node.")
+#define NO_POINTER      _("No \"%s\" pointer for this node.")
+#define UNKNOWN_COMMAND _("Unknown Info command `%c'.  `?' for help.")
+#define TERM_TOO_DUMB   _("Terminal type \"%s\" is not smart enough to run Info.")
+#define AT_NODE_BOTTOM  _("You are already at the last page of this node.")
+#define AT_NODE_TOP     _("You are already at the first page of this node.")
+#define ONE_WINDOW      _("Only one window.")
+#define WIN_TOO_SMALL   _("Resulting window would be too small.")
+#define CANT_MAKE_HELP  \
+_("There isn't enough room to make a help window.  Please delete a window.")
 
 
-#if defined(INFOKEY)
-/* Found in variables.c. */
-extern void set_variable_to_value (char *name, char *value);
-#endif /* INFOKEY */
+/* Found in info-utils.c. */
+extern char *filename_non_directory ();
 
-/* Found in m-x.c.  */
-extern char *read_function_name (char *prompt, WINDOW *window);
+#if !defined (BUILDING_LIBRARY)
+/* Found in session.c */
+extern int info_windows_initialized_p;
+
+/* Found in window.c. */
+extern void message_in_echo_area (), unmessage_in_echo_area ();
+#endif /* !BUILDING_LIBRARY */
 
 #endif /* !INFO_H */

@@ -1,12 +1,12 @@
-/*	$OpenBSD: uhci_pci.c,v 1.33 2014/05/16 18:17:03 mpi Exp $	*/
-/*	$NetBSD: uhci_pci.c,v 1.24 2002/10/02 16:51:58 thorpej Exp $	*/
+/*	$OpenBSD: uhci_pci.c,v 1.4 1999/09/27 18:07:59 fgsch Exp $	*/
+/*	$NetBSD: uhci_pci.c,v 1.7 1999/05/20 09:52:35 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -35,7 +42,7 @@
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/timeout.h>
+#include <sys/proc.h>
 #include <sys/queue.h>
 
 #include <machine/bus.h>
@@ -50,194 +57,100 @@
 #include <dev/usb/uhcireg.h>
 #include <dev/usb/uhcivar.h>
 
-int	uhci_pci_match(struct device *, void *, void *);
-void	uhci_pci_attach(struct device *, struct device *, void *);
-void	uhci_pci_attach_deferred(struct device *);
-int	uhci_pci_detach(struct device *, int);
-int	uhci_pci_activate(struct device *, int);
-
-struct uhci_pci_softc {
-	struct uhci_softc	sc;
-	pci_chipset_tag_t	sc_pc;
-	pcitag_t		sc_tag;
-	void 			*sc_ih;		/* interrupt vectoring */
-};
+int	uhci_pci_match __P((struct device *, void *, void *));
+void	uhci_pci_attach __P((struct device *, struct device *, void *));
 
 struct cfattach uhci_pci_ca = {
-	sizeof(struct uhci_pci_softc), uhci_pci_match, uhci_pci_attach,
-	uhci_pci_detach, uhci_pci_activate
+	sizeof(uhci_softc_t), uhci_pci_match, uhci_pci_attach,
+	uhci_detach, uhci_activate
 };
 
 int
-uhci_pci_match(struct device *parent, void *match, void *aux)
+uhci_pci_match(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct pci_attach_args *pa = (struct pci_attach_args *) aux;
 
 	if (PCI_CLASS(pa->pa_class) == PCI_CLASS_SERIALBUS &&
 	    PCI_SUBCLASS(pa->pa_class) == PCI_SUBCLASS_SERIALBUS_USB &&
 	    PCI_INTERFACE(pa->pa_class) == PCI_INTERFACE_UHCI)
-		return (1);
+		return 1;
  
-	return (0);
-}
-
-int
-uhci_pci_activate(struct device *self, int act)
-{
-	struct uhci_pci_softc *sc = (struct uhci_pci_softc *)self;
-
-	/* On resume, set legacy support attribute and enable intrs */
-	switch (act) {
-	case DVACT_RESUME:
-		pci_conf_write(sc->sc_pc, sc->sc_tag,
-		    PCI_LEGSUP, PCI_LEGSUP_USBPIRQDEN);
-		bus_space_barrier(sc->sc.iot, sc->sc.ioh, 0, sc->sc.sc_size,
-		    BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE);
-		bus_space_write_2(sc->sc.iot, sc->sc.ioh, UHCI_INTR, 0);
-		break;
-	}
-
-	return uhci_activate(self, act);
+	return 0;
 }
 
 void
-uhci_pci_attach(struct device *parent, struct device *self, void *aux)
+uhci_pci_attach(parent, self, aux)
+	struct device *parent;
+	struct device *self;
+	void *aux;
 {
-	struct uhci_pci_softc *sc = (struct uhci_pci_softc *)self;
+	uhci_softc_t *sc = (uhci_softc_t *)self;
 	struct pci_attach_args *pa = (struct pci_attach_args *)aux;
 	pci_chipset_tag_t pc = pa->pa_pc;
-	pcitag_t tag = pa->pa_tag;
 	char const *intrstr;
 	pci_intr_handle_t ih;
-	const char *vendor;
-	char *devname = sc->sc.sc_bus.bdev.dv_xname;
-	int s;
+	pcireg_t csr;
+	char *typestr;
+	usbd_status r;
+
 
 	/* Map I/O registers */
 	if (pci_mapreg_map(pa, PCI_CBIO, PCI_MAPREG_TYPE_IO, 0,
-		    &sc->sc.iot, &sc->sc.ioh, NULL, &sc->sc.sc_size, 0)) {
+			   &sc->iot, &sc->ioh, NULL, NULL)) {
 		printf(": can't map i/o space\n");
 		return;
 	}
 
+	/* Disable interrupts, so we don't can any spurious ones. */
+	bus_space_write_2(sc->iot, sc->ioh, UHCI_INTR, 0);
 
-	/* Disable interrupts, so we don't get any spurious ones. */
-	s = splhardusb();
-	bus_space_write_2(sc->sc.iot, sc->sc.ioh, UHCI_INTR, 0);
+	sc->sc_bus.dmatag = pa->pa_dmat;
 
-	sc->sc_pc = pc;
-	sc->sc_tag = tag;
-	sc->sc.sc_bus.dmatag = pa->pa_dmat;
+	/* Enable the device. */
+	csr = pci_conf_read(pa->pa_pc, pa->pa_tag, PCI_COMMAND_STATUS_REG);
+	pci_conf_write(pa->pa_pc, pa->pa_tag, PCI_COMMAND_STATUS_REG,
+		       csr | PCI_COMMAND_MASTER_ENABLE);
 
 	/* Map and establish the interrupt. */
-	if (pci_intr_map(pa, &ih)) {
+	if (pci_intr_map(pc, pa->pa_intrtag, pa->pa_intrpin,
+	    pa->pa_intrline, &ih)) {
 		printf(": couldn't map interrupt\n");
-		goto unmap_ret;
+		return;
 	}
 	intrstr = pci_intr_string(pc, ih);
 	sc->sc_ih = pci_intr_establish(pc, ih, IPL_USB, uhci_intr, sc,
-				       devname);
+	    sc->sc_bus.bdev.dv_xname);
 	if (sc->sc_ih == NULL) {
 		printf(": couldn't establish interrupt");
 		if (intrstr != NULL)
 			printf(" at %s", intrstr);
 		printf("\n");
-		goto unmap_ret;
+		return;
 	}
-	printf(": %s\n", intrstr);
+	printf(": %s", intrstr);
 
-	/* Set LEGSUP register to its default value. */
-	pci_conf_write(pc, tag, PCI_LEGSUP, PCI_LEGSUP_USBPIRQDEN);
-
-	switch(pci_conf_read(pc, tag, PCI_USBREV) & PCI_USBREV_MASK) {
+	switch(pci_conf_read(pc, pa->pa_tag, PCI_USBREV) & PCI_USBREV_MASK) {
 	case PCI_USBREV_PRE_1_0:
-		sc->sc.sc_bus.usbrev = USBREV_PRE_1_0;
+		typestr = "pre 1.0";
 		break;
 	case PCI_USBREV_1_0:
-		sc->sc.sc_bus.usbrev = USBREV_1_0;
-		break;
-	case PCI_USBREV_1_1:
-		sc->sc.sc_bus.usbrev = USBREV_1_1;
+		typestr = "1.0";
 		break;
 	default:
-		sc->sc.sc_bus.usbrev = USBREV_UNKNOWN;
+		typestr = "unknown";
 		break;
 	}
+	printf(" version %s\n", typestr);
 
-	uhci_run(&sc->sc, 0);			/* stop the controller */
-						/* disable interrupts */
-	bus_space_barrier(sc->sc.iot, sc->sc.ioh, 0, sc->sc.sc_size,
-	    BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE);
-	bus_space_write_2(sc->sc.iot, sc->sc.ioh, UHCI_INTR, 0);
-
-	/* Figure out vendor for root hub descriptor. */
-	vendor = pci_findvendor(pa->pa_id);
-	sc->sc.sc_id_vendor = PCI_VENDOR(pa->pa_id);
-	if (vendor)
-		strlcpy(sc->sc.sc_vendor, vendor, sizeof (sc->sc.sc_vendor));
-	else
-		snprintf(sc->sc.sc_vendor, sizeof (sc->sc.sc_vendor),
-			"vendor 0x%04x", PCI_VENDOR(pa->pa_id));
-
-	config_defer(self, uhci_pci_attach_deferred);
-	
-	/* Ignore interrupts for now */
-	sc->sc.sc_bus.dying = 1;
-
-	splx(s);
-
-	return;
-
-unmap_ret:
-	bus_space_unmap(sc->sc.iot, sc->sc.ioh, sc->sc.sc_size);
-	splx(s);
-}
-
-void
-uhci_pci_attach_deferred(struct device *self)
-{
-	struct uhci_pci_softc *sc = (struct uhci_pci_softc *)self;
-	char *devname = sc->sc.sc_bus.bdev.dv_xname;
-	usbd_status r;
-	int s;
-
-	s = splhardusb();
-	
-	sc->sc.sc_bus.dying = 0;
-	r = uhci_init(&sc->sc);
+	r = uhci_init(sc);
 	if (r != USBD_NORMAL_COMPLETION) {
-		printf("%s: init failed, error=%d\n", devname, r);
-		goto unmap_ret;
+		printf("%s: init failed, error=%d\n", 
+		       sc->sc_bus.bdev.dv_xname, r);
+		return;
 	}
-	splx(s);
 
 	/* Attach usb device. */
-	config_found(self, &sc->sc.sc_bus, usbctlprint);
-	return;
-
-unmap_ret:
-	bus_space_unmap(sc->sc.iot, sc->sc.ioh, sc->sc.sc_size);
-	pci_intr_disestablish(sc->sc_pc, sc->sc_ih);
-	splx(s);
-}
-
-int
-uhci_pci_detach(struct device *self, int flags)
-{
-	struct uhci_pci_softc *sc = (struct uhci_pci_softc *)self;
-	int rv;
-
-	rv = uhci_detach(self, flags);
-	if (rv)
-		return (rv);
-	if (sc->sc_ih != NULL) {
-		pci_intr_disestablish(sc->sc_pc, sc->sc_ih);
-		sc->sc_ih = NULL;
-	}
-	if (sc->sc.sc_size) {
-		bus_space_unmap(sc->sc.iot, sc->sc.ioh, sc->sc.sc_size);
-		sc->sc.sc_size = 0;
-	}
-
-	return (0);
+	sc->sc_child = config_found((void *)sc, &sc->sc_bus, usbctlprint);
 }

@@ -1,10 +1,9 @@
-/*	$OpenBSD: parse.c,v 1.9 2009/10/27 23:59:39 deraadt Exp $	*/
+/*	$OpenBSD: parse.c,v 1.3 1997/07/25 22:00:47 mickey Exp $	*/
 
 /*
- * Copyright (c) 1980, 1993
- *	The Regents of the University of California.
- * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * Copyright (c) 1985 Sun Microsystems, Inc.
+ * Copyright (c) 1980 The Regents of the University of California.
+ * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,14 +35,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)parse.c	5.12 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$OpenBSD: parse.c,v 1.3 1997/07/25 22:00:47 mickey Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include "indent_globs.h"
 #include "indent_codes.h"
 
-void reduce(void);
+void reduce();
 
 void
-parse(int tk)			/* the code for the construct scanned */
+parse(tk)
+    int         tk;		/* the code for the construct scanned */
 {
     int         i;
 
@@ -202,12 +211,12 @@ parse(int tk)			/* the code for the construct scanned */
 
 /*
  * NAME: reduce
- *
+ * 
  * FUNCTION: Implements the reduce part of the parsing algorithm
- *
+ * 
  * ALGORITHM: The following reductions are done.  Reductions are repeated
  *	until no more are possible.
- *
+ * 
  * Old TOS		New TOS
  * <stmt> <stmt>	<stmtl>
  * <stmtl> <stmt>	<stmtl>
@@ -219,31 +228,31 @@ parse(int tk)			/* the code for the construct scanned */
  * for <stmt>		<stmt>
  * while <stmt>		<stmt>
  * "dostmt" while	<stmt>
- *
+ * 
  * On each reduction, ps.i_l_follow (the indentation for the following line)
  * is set to the indentation level associated with the old TOS.
- *
+ * 
  * PARAMETERS: None
- *
+ * 
  * RETURNS: Nothing
- *
+ * 
  * GLOBALS: ps.cstk ps.i_l_follow = ps.il ps.p_stack = ps.tos =
- *
+ * 
  * CALLS: None
- *
+ * 
  * CALLED BY: parse
- *
+ * 
  * HISTORY: initial coding 	November 1976	D A Willcox of CAC
- *
+ * 
  */
 /*----------------------------------------------*\
 |   REDUCTION PHASE				    |
 \*----------------------------------------------*/
 void
-reduce(void)
+reduce()
 {
 
-    int i;
+    register int i;
 
     for (;;) {			/* keep looping until there is nothing left to
 				 * reduce */

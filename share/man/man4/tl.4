@@ -1,5 +1,4 @@
-.\"	$OpenBSD: tl.4,v 1.22 2013/07/16 16:05:49 schwarze Exp $
-.\"
+.\"	$OpenBSD: tl.4,v 1.5 1999/09/23 04:12:05 alex Exp $
 .\" Copyright (c) 1997, 1998
 .\"	Bill Paul <wpaul@ctr.columbia.edu>. All rights reserved.
 .\"
@@ -30,66 +29,64 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 .\" THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.\"	$Id: tl.4,v 1.22 2013/07/16 16:05:49 schwarze Exp $
+.\"	$Id: tl.4,v 1.5 1999/09/23 04:12:05 alex Exp $
 .\"
-.Dd $Mdocdate: July 16 2013 $
+.Dd May 1, 1998
 .Dt TL 4
 .Os
 .Sh NAME
 .Nm tl
-.Nd Texas Instruments ThunderLAN 10/100 Ethernet device
+.Nd
+Texas Instruments ThunderLAN ethernet device driver
 .Sh SYNOPSIS
-.Cd "tl* at pci?"
-.Cd "lxtphy* at mii?"
-.Cd "mlphy* at mii?"
-.Cd "nsphy* at mii?"
-.Cd "tlphy* at mii?"
+.Cd "tl* at pci? dev ? function ?"
 .Sh DESCRIPTION
 The
 .Nm
-driver provides support for PCI Ethernet adapters based on the Texas
-Instruments ThunderLAN Ethernet controller chip.
-This includes a large number of Compaq PCI-bus Ethernet adapters as well as
-the integrated Ethernet controllers built in to several models
-of Compaq Prosignia servers and Compaq Deskpro desktop machines.
-This driver also supports the Olicom OC-2135/2138, OC-2325 and OC-2326
-10/100 TX UTP adapters and the Racore 8165 10/100baseTX and 8148
-10baseT/100baseTX/100baseFX multi-personality cards.
+driver provides support for PCI ethernet adapters based on the Texas
+Instruments ThunderLAN ethernet controller chip. This includes a large
+number of Compaq PCI-bus ethernet adapters as well as the integrated
+ethernet controllers built in to several models of Compaq Prosignia
+servers and Compaq Deskpro desktop machines. This driver also supports
+the Olicom OC-2135/2138, OC-2325 and OC-2326 10/100 TX UTP adapters
+and the Racore 8165 10/100baseTX and 8148 10baseT/100baseTX/100baseFX
+multi-personality cards.
 .Pp
 The ThunderLAN controller has a standard MII interface that supports
-up to 32 physical interface devices (PHYs).
-It also has a built-in 10baseT PHY hardwired at MII address 31, which may be
-used in some 10Mbps-only hardware configurations.
-In 100Mbps configurations, a National Semiconductor DP83840A or other
-MII-compliant PHY may be attached to the ThunderLAN's MII bus.
-If a DP83840A or equivalent is available, the ThunderLAN chip can operate
-at either 100Mbps or 10Mbps in either half-duplex or full-duplex modes.
-The ThunderLAN's built-in PHY and the DP83840A also support autonegotiation.
+up to 32 physical interface devices (PHYs). It also has a built-in
+10baseT PHY hardwired at MII address 31, which may be used in some
+10Mbps-only hardware configurations. In 100Mbps configurations, a
+National Semiconductor DP83840A or other MII-compliant PHY may be
+attached to the ThunderLAN's MII bus. If a DP83840A or equivalent
+is available, the ThunderLAN chip can operate at either 100Mbps or
+10Mbps in either half-duplex or full-duplex modes. The ThunderLAN's
+built-in PHY and the DP83840A also support autonegotiation.
 .Pp
 The
 .Nm
 driver supports the following media types:
-.Bl -tag -width full-duplex
+.Pp
+.Bl -tag -width xxxxxxxxxxxxxxxxxxxx
 .It autoselect
-Enable autoselection of the media type and options.
-Note that this option is only available on those PHYs that support
-autonegotiation.
+Enable autoselection of the media type and options. Note that this
+option is only available on those PHYs that support autonegotiation.
 Also, the PHY will not advertise those modes that have been explicitly
 disabled using the following media options.
-.It 10baseT
-Set 10Mbps operation.
+.It 10baseT/UTP
+Set 10Mbps operation
 .It 100baseTX
-Set 100Mbps (Fast Ethernet) operation.
-.It 10base5
+Set 100Mbps (fast ethernet) operation
+.It 10base5/AUI
 Enable AUI/BNC interface (useful only with the built-in PHY).
 .El
 .Pp
 The
 .Nm
 driver supports the following media options:
-.Bl -tag -width full-duplex
+.Pp
+.Bl -tag -width xxxxxxxxxxxxxxxxxxxx
 .It full-duplex
-Force full duplex operation.
+Force full duplex operation
 .It half-duplex
 Force half duplex operation.
 .It hw-loopback
@@ -102,30 +99,22 @@ For more information on configuring this device, see
 .Xr ifconfig 8 .
 .Sh DIAGNOSTICS
 .Bl -diag
-.It "tl0: couldn't map memory"
+.It "tl%d: couldn't map memory"
 A fatal initialization error has occurred.
-.It "tl0: couldn't map interrupt"
+.It "tl%d: couldn't map interrupt"
 A fatal initialization error has occurred.
-.It "tl0: device timeout"
+.It "tl%d: device timeout"
 The device has stopped responding to the network, or there is a problem with
 the network connection (cable).
-.It "tl0: no memory for rx list"
+.It "tl%d: no memory for rx list"
 The driver failed to allocate an mbuf for the receiver ring.
-.It "tl0: no memory for tx list"
+.It "tl%d: no memory for tx list"
 The driver failed to allocate an mbuf for the transmitter ring when
 allocating a pad buffer or collapsing an mbuf chain into a cluster.
 .El
 .Sh SEE ALSO
 .Xr arp 4 ,
-.Xr ifmedia 4 ,
-.Xr intro 4 ,
-.Xr lxtphy 4 ,
-.Xr mlphy 4 ,
 .Xr netintro 4 ,
-.Xr nsphy 4 ,
-.Xr pci 4 ,
-.Xr tlphy 4 ,
-.Xr hostname.if 5 ,
 .Xr ifconfig 8
 .Sh HISTORY
 The
@@ -135,8 +124,8 @@ device driver first appeared in
 .Ox
 support first appeared in
 .Ox 2.4 .
-.Sh AUTHORS
+.Sh AUTHOR
 The
 .Nm
 driver was written by
-.An Bill Paul Aq Mt wpaul@ctr.columbia.edu .
+.An Bill Paul Aq wpaul@ctr.columbia.edu .

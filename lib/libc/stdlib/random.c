@@ -1,4 +1,3 @@
-/*	$OpenBSD: random.c,v 1.30 2016/04/05 04:29:21 guenther Exp $ */
 /*
  * Copyright (c) 1983 Regents of the University of California.
  * All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,12 +31,12 @@
  * SUCH DAMAGE.
  */
 
-#include <fcntl.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: random.c,v 1.6 1998/02/07 02:16:25 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-
-#include "thread_private.h"
 
 /*
  * random.c:
@@ -51,10 +54,10 @@
  * congruential generator.  If the amount of state information is less than
  * 32 bytes, a simple linear congruential R.N.G. is used.
  *
- * Internally, the state information is treated as an array of int32_t; the
+ * Internally, the state information is treated as an array of longs; the
  * zeroeth element of the array is the type of R.N.G. being used (small
  * integer); the remainder of the array is the state information for the
- * R.N.G.  Thus, 32 bytes of state information will give 7 int32_ts worth of
+ * R.N.G.  Thus, 32 bytes of state information will give 7 longs worth of
  * state information, which will allow a degree seven polynomial.  (Note:
  * the zeroeth word of state information also has some other information
  * stored in it -- see setstate() for details).
@@ -130,7 +133,7 @@ static int seps [MAX_TYPES] =	{ SEP_0, SEP_1, SEP_2, SEP_3, SEP_4 };
  *	MAX_TYPES * (rptr - state) + TYPE_3 == TYPE_3.
  */
 
-static int32_t randtbl[DEG_3 + 1] = {
+static long randtbl[DEG_3 + 1] = {
 	TYPE_3,
 	0x991539b1, 0x16a5bce3, 0x6774a4cd, 0x3e01511e, 0x4e508aaa, 0x61048c05, 
 	0xf5500617, 0x846b7115, 0x6a19892c, 0x896a97af, 0xdb48f936, 0x14898454, 
@@ -154,8 +157,8 @@ static int32_t randtbl[DEG_3 + 1] = {
  * in the initialization of randtbl) because the state table pointer is set
  * to point to randtbl[1] (as explained below).
  */
-static int32_t *fptr = &randtbl[SEP_3 + 1];
-static int32_t *rptr = &randtbl[1];
+static long *fptr = &randtbl[SEP_3 + 1];
+static long *rptr = &randtbl[1];
 
 /*
  * The following things are the pointer to the state information table, the
@@ -167,19 +170,11 @@ static int32_t *rptr = &randtbl[1];
  * this is more efficient than indexing every time to find the address of
  * the last element to see if the front and rear pointers have wrapped.
  */
-static int32_t *state = &randtbl[1];
-static int32_t *end_ptr = &randtbl[DEG_3 + 1];
+static long *state = &randtbl[1];
 static int rand_type = TYPE_3;
 static int rand_deg = DEG_3;
 static int rand_sep = SEP_3;
-
-static int random_deterministic;
-
-static void *random_mutex;
-static long random_l(void);
-
-#define LOCK()		_MUTEX_LOCK(&random_mutex)
-#define UNLOCK()	_MUTEX_UNLOCK(&random_mutex)
+static long *end_ptr = &randtbl[DEG_3 + 1];
 
 /*
  * srandom:
@@ -193,19 +188,18 @@ static long random_l(void);
  * introduced by the L.C.R.N.G.  Note that the initialization of randtbl[]
  * for default usage relies on values produced by this routine.
  */
-static void
-srandom_l(unsigned int x)
+void
+srandom(x)
+	u_int x;
 {
-	int i;
-	int32_t test;
-	div_t val;
+	register long int test;
+	register int i;
+	ldiv_t val;
 
-	random_deterministic = 1;
 	if (rand_type == TYPE_0)
 		state[0] = x;
 	else {
-		/* A seed of 0 would result in state[] always being zero. */
-		state[0] = x ? x : 1;
+		state[0] = x;
 		for (i = 1; i < rand_deg; i++) {
 			/*
 			 * Implement the following, without overflowing 31 bits:
@@ -214,35 +208,15 @@ srandom_l(unsigned int x)
 			 *
 			 *	2^31-1 (prime) = 2147483647 = 127773*16807+2836
 			 */
-			val = div(state[i-1], 127773);
+			val = ldiv(state[i-1], 127773);
 			test = 16807 * val.rem - 2836 * val.quot;
 			state[i] = test + (test < 0 ? 2147483647 : 0);
 		}
 		fptr = &state[rand_sep];
 		rptr = &state[0];
 		for (i = 0; i < 10 * rand_deg; i++)
-			(void)random_l();
+			(void)random();
 	}
-}
-
-void
-srandom(unsigned int x)
-{
-	random_deterministic = 0;
-}
-
-void
-srandomdev(void)
-{
-	random_deterministic = 0;	/* back to the default */
-}
-
-void
-srandom_deterministic(unsigned int x)
-{
-	LOCK();
-	srandom_l(x);
-	UNLOCK();
 }
 
 /*
@@ -265,20 +239,19 @@ srandom_deterministic(unsigned int x)
  * Returns a pointer to the old state.
  */
 char *
-initstate(u_int seed, char *arg_state, size_t n)
+initstate(seed, arg_state, n)
+	u_int seed;			/* seed for R.N.G. */
+	char *arg_state;		/* pointer to state array */
+	size_t n;			/* # bytes of state info */
 {
-	char *ostate = (char *)(&state[-1]);
+	register char *ostate = (char *)(&state[-1]);
 
-	LOCK();
-	random_deterministic = 1;
 	if (rand_type == TYPE_0)
 		state[-1] = rand_type;
 	else
 		state[-1] = MAX_TYPES * (rptr - state) + rand_type;
-	if (n < BREAK_0) {
-		UNLOCK();
+	if (n < BREAK_0)
 		return(NULL);
-	}
 	if (n < BREAK_1) {
 		rand_type = TYPE_0;
 		rand_deg = DEG_0;
@@ -300,14 +273,13 @@ initstate(u_int seed, char *arg_state, size_t n)
 		rand_deg = DEG_4;
 		rand_sep = SEP_4;
 	}
-	state = &(((int32_t *)arg_state)[1]);	/* first location */
+	state = &(((long *)arg_state)[1]);	/* first location */
 	end_ptr = &state[rand_deg];	/* must set end_ptr before srandom */
-	srandom_l(seed);
+	srandom(seed);
 	if (rand_type == TYPE_0)
 		state[-1] = rand_type;
 	else
 		state[-1] = MAX_TYPES*(rptr - state) + rand_type;
-	UNLOCK();
 	return(ostate);
 }
 
@@ -327,15 +299,14 @@ initstate(u_int seed, char *arg_state, size_t n)
  * Returns a pointer to the old state information.
  */
 char *
-setstate(char *arg_state)
+setstate(arg_state)
+	const char *arg_state;
 {
-	int32_t *new_state = (int32_t *)arg_state;
-	int32_t type = new_state[0] % MAX_TYPES;
-	int32_t rear = new_state[0] / MAX_TYPES;
+	register long *new_state = (long *)arg_state;
+	register int type = new_state[0] % MAX_TYPES;
+	register int rear = new_state[0] / MAX_TYPES;
 	char *ostate = (char *)(&state[-1]);
 
-	LOCK();
-	random_deterministic = 1;
 	if (rand_type == TYPE_0)
 		state[-1] = rand_type;
 	else
@@ -351,7 +322,6 @@ setstate(char *arg_state)
 		rand_sep = seps[type];
 		break;
 	default:
-		UNLOCK();
 		return(NULL);
 	}
 	state = &new_state[1];
@@ -360,7 +330,6 @@ setstate(char *arg_state)
 		fptr = &state[(rear + rand_sep) % rand_deg];
 	}
 	end_ptr = &state[rand_deg];		/* set end_ptr too */
-	UNLOCK();
 	return(ostate);
 }
 
@@ -381,13 +350,10 @@ setstate(char *arg_state)
  *
  * Returns a 31-bit random number.
  */
-static long
-random_l(void)
+long
+random()
 {
-	int32_t i;
-
-	if (random_deterministic == 0)
-		return arc4random() & 0x7fffffff;
+	long i;
 
 	if (rand_type == TYPE_0)
 		i = state[0] = (state[0] * 1103515245 + 12345) & 0x7fffffff;
@@ -400,20 +366,5 @@ random_l(void)
 		} else if (++rptr >= end_ptr)
 			rptr = state;
 	}
-	return((long)i);
+	return(i);
 }
-
-long
-random(void)
-{
-	long r;
-	LOCK();
-	r = random_l();
-	UNLOCK();
-	return r;
-}
-
-#if defined(APIWARN)
-__warn_references(random,
-    "warning: random() may return deterministic values, is that what you want?");
-#endif

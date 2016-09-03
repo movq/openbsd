@@ -1,5 +1,5 @@
 /* ARM opcode list.
-   Copyright 1989, 1991 Free Software Foundation, Inc.
+   Copyright (C) 1989, Free Software Foundation, Inc.
 
 This file is part of GDB and GAS.
 

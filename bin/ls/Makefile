@@ -1,8 +1,6 @@
-#	$OpenBSD: Makefile,v 1.8 2015/12/01 18:36:13 schwarze Exp $
+#	$OpenBSD: Makefile,v 1.5 1999/02/23 23:54:16 art Exp $
 
 PROG=	ls
-SRCS=	cmp.c ls.c main.c print.c util.c utf8.c
-DPADD= ${LIBUTIL}
-LDADD= -lutil
+SRCS=	cmp.c stat_flags.c ls.c main.c print.c util.c
 
 .include <bsd.prog.mk>

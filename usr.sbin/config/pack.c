@@ -1,4 +1,4 @@
-/*	$OpenBSD: pack.c,v 1.18 2015/01/16 06:40:16 deraadt Exp $	*/
+/*	$OpenBSD: pack.c,v 1.9 1999/01/19 01:11:25 niklas Exp $	*/
 /*	$NetBSD: pack.c,v 1.5 1996/08/31 21:15:11 mycroft Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,9 +45,9 @@
  *	from: @(#)pack.c	8.1 (Berkeley) 6/6/93
  */
 
+#include <sys/param.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "config.h"
 
 /*
@@ -84,7 +88,7 @@
  * (So it goes.)
  */
 
-typedef int (*vec_cmp_func)(const void *, int, int);
+typedef int (*vec_cmp_func) __P((const void *, int, int));
 
 #define	TAILHSIZE	128
 #define	PVHASH(i)	((i) & (TAILHSIZE - 1))
@@ -99,27 +103,27 @@ static int locspace;
 static int pvecspace;
 static int longest_pvec;
 
-static void packdevi(void);
-static void packlocs(void);
-static void packpvec(void);
+static void packdevi __P((void));
+static void packlocs __P((void));
+static void packpvec __P((void));
 
-static void addparents(struct devi *src, struct devi *dst);
-static int nparents(struct devi **, struct devbase *, int);
-static int sameas(struct devi *, struct devi *);
-static int findvec(const void *, int, int, vec_cmp_func, int);
-static int samelocs(const void *, int, int);
-static int addlocs(const char **, int);
-static int loclencmp(const void *, const void *);
-static int samepv(const void *, int, int);
-static int addpv(short *, int);
-static int pvlencmp(const void *, const void *);
-static void resettails(void);
+static void addparents __P((struct devi *src, struct devi *dst));
+static int nparents __P((struct devi **, struct devbase *, int));
+static int sameas __P((struct devi *, struct devi *));
+static int findvec __P((const void *, int, int, vec_cmp_func, int));
+static int samelocs __P((const void *, int, int));
+static int addlocs __P((const char **, int));
+static int loclencmp __P((const void *, const void *));
+static int samepv __P((const void *, int, int));
+static int addpv __P((short *, int));
+static int pvlencmp __P((const void *, const void *));
+static void resettails __P((void));
 
 void
-pack(void)
+pack()
 {
-	struct devi *i;
-	int n;
+	register struct devi *i;
+	register int n;
 
 	/* Pack instances and make parent vectors. */
 	packdevi();
@@ -142,12 +146,12 @@ pack(void)
 	}
 
 	/* Allocate and pack loc[]. */
-	locators.vec = ereallocarray(NULL, locspace, sizeof(*locators.vec));
+	locators.vec = emalloc(locspace * sizeof(*locators.vec));
 	locators.used = 0;
 	packlocs();
 
 	/* Allocate and pack pv[]. */
-	parents.vec = ereallocarray(NULL, pvecspace, sizeof(*parents.vec));
+	parents.vec = emalloc(pvecspace * sizeof(*parents.vec));
 	parents.used = 0;
 	packpvec();
 }
@@ -159,13 +163,13 @@ pack(void)
  * if any, of the parents will collapse during packing.
  */
 void
-packdevi(void)
+packdevi()
 {
-	struct devi *i, *l, *p;
-	struct deva *d;
-	int j, m, n;
+	register struct devi *i, *l, *p;
+	register struct deva *d;
+	register int j, m, n;
 
-	packed = ereallocarray(NULL, ndevi + 1, sizeof *packed);
+	packed = emalloc((ndevi + 1) * sizeof *packed);
 	n = 0;
 	for (d = alldevas; d != NULL; d = d->d_next) {
 		/*
@@ -212,9 +216,10 @@ packdevi(void)
  * have the same locators.
  */
 static int
-sameas(struct devi *i1, struct devi *i2)
+sameas(i1, i2)
+	register struct devi *i1, *i2;
 {
-	const char **p1, **p2;
+	register const char **p1, **p2;
 
 	if (i1->i_atattr != i2->i_atattr)
 		return (0);
@@ -231,21 +236,22 @@ sameas(struct devi *i1, struct devi *i2)
  * instance "dst".
  */
 static void
-addparents(struct devi *src, struct devi *dst)
+addparents(src, dst)
+	register struct devi *src, *dst;
 {
-	struct nvlist *nv;
-	struct devi *i, **p, **q;
-	int j, n, old, new, ndup;
+	register struct nvlist *nv;
+	register struct devi *i, **p, **q;
+	register int j, n, old, new, ndup;
 
 	if (dst->i_collapsed)
 		panic("addparents() i_collapsed");
 
 	/* Collect up list of parents to add. */
-	if (src->i_at == NULL)	/* none, because we are "at root" */
+	if (src->i_at == NULL)	/* none, 'cuz "at root" */
 		return;
 	if (src->i_atdev != NULL) {
 		n = nparents(NULL, src->i_atdev, src->i_atunit);
-		p = ereallocarray(NULL, n, sizeof *p);
+		p = emalloc(n * sizeof *p);
 		if (n == 0)
 			return;
 		(void)nparents(p, src->i_atdev, src->i_atunit);
@@ -255,7 +261,7 @@ addparents(struct devi *src, struct devi *dst)
 			n += nparents(NULL, nv->nv_ptr, src->i_atunit);
 		if (n == 0)
 			return;
-		p = ereallocarray(NULL, n, sizeof *p);
+		p = emalloc(n * sizeof *p);
 		n = 0;
 		for (nv = src->i_atattr->a_refs; nv != NULL; nv = nv->nv_next)
 			n += nparents(p + n, nv->nv_ptr, src->i_atunit);
@@ -281,7 +287,7 @@ addparents(struct devi *src, struct devi *dst)
 		free(p);
 		return;
 	}
-	dst->i_parents = q = ereallocarray(dst->i_parents, new + 1, sizeof(*q));
+	dst->i_parents = q = erealloc(dst->i_parents, (new + 1) * sizeof(*q));
 	dst->i_pvlen = new;
 	q[new] = NULL;
 	q += old;
@@ -295,10 +301,13 @@ addparents(struct devi *src, struct devi *dst)
  * Count up parents, and optionally store pointers to each.
  */
 static int
-nparents(struct devi **p, struct devbase *dev, int unit)
+nparents(p, dev, unit)
+	register struct devi **p;
+	register struct devbase *dev;
+	register int unit;
 {
-	struct devi *i, *l;
-	int n;
+	register struct devi *i, *l;
+	register int n;
 
 	n = 0;
 	/* for each instance ... */
@@ -317,10 +326,10 @@ nparents(struct devi **p, struct devbase *dev, int unit)
 }
 
 static void
-packlocs(void)
+packlocs()
 {
-	struct devi **p, *i;
-	int l, o;
+	register struct devi **p, *i;
+	register int l, o;
 
 	qsort(packed, npacked, sizeof *packed, loclencmp);
 	for (p = packed; (i = *p) != NULL; p++) {
@@ -335,24 +344,24 @@ packlocs(void)
 }
 
 static void
-packpvec(void)
+packpvec()
 {
-	struct devi **p, *i, **par;
-	int l, v, o;
-	short *vec;
+	register struct devi **p, *i, **par;
+	register int l, v, o;
+	register short *vec;
 
-	vec = ereallocarray(NULL, longest_pvec, sizeof(*vec));
+	vec = emalloc(longest_pvec * sizeof(*vec));
 	qsort(packed, npacked, sizeof *packed, pvlencmp);
 	for (p = packed; (i = *p) != NULL; p++) {
 		l = i->i_pvlen;
-		if (l > longest_pvec)
-			panic("packpvec");
+if (l > longest_pvec) panic("packpvec");
 		par = i->i_parents;
 		for (v = 0; v < l; v++)
 			vec[v] = par[v]->i_cfindex;
-		if (l == 0 || (o = findvec(vec, PVHASH(vec[l - 1]), l,
-		    samepv, parents.used)) < 0)
-			o = addpv(vec, l);
+		if (l == 0 ||
+		    (o = findvec(vec, PVHASH(vec[l - 1]), l,
+			    samepv, parents.used)) < 0)
+		    	o = addpv(vec, l);
 		i->i_pvoff = o;
 	}
 	free(vec);
@@ -366,10 +375,14 @@ packpvec(void)
  * sure that next time, we will find it there.
  */
 static int
-findvec(const void *ptr, int hash, int len, vec_cmp_func cmp, int nextplace)
+findvec(ptr, hash, len, cmp, nextplace)
+	const void *ptr;
+	int hash, len;
+	vec_cmp_func cmp;
+	int nextplace;
 {
-	struct tails *t, **hp;
-	int off;
+	register struct tails *t, **hp;
+	register int off;
 
 	hp = &tails[hash];
 	for (t = *hp; t != NULL; t = t->t_next) {
@@ -388,9 +401,12 @@ findvec(const void *ptr, int hash, int len, vec_cmp_func cmp, int nextplace)
  * Comparison function for locators.
  */
 static int
-samelocs(const void *ptr, int off, int len)
+samelocs(ptr, off, len)
+	const void *ptr;
+	int off;
+	register int len;
 {
-	const char **p, **q;
+	register const char **p, **q;
 
 	for (p = &locators.vec[off], q = (const char **)ptr; --len >= 0;)
 		if (*p++ != *q++)
@@ -402,10 +418,12 @@ samelocs(const void *ptr, int off, int len)
  * Add the given locators at the end of the global loc[] table.
  */
 static int
-addlocs(const char **locs, int len)
+addlocs(locs, len)
+	register const char **locs;
+	register int len;
 {
-	const char **p;
-	int ret;
+	register const char **p;
+	register int ret;
 
 	ret = locators.used;
 	if ((locators.used = ret + len) > locspace)
@@ -420,9 +438,10 @@ addlocs(const char **locs, int len)
  * We rashly assume that subtraction of these lengths does not overflow.
  */
 static int
-loclencmp(const void *a, const void *b)
+loclencmp(a, b)
+	const void *a, *b;
 {
-	int l1, l2;
+	register int l1, l2;
 
 	l1 = (*(struct devi **)a)->i_atattr->a_loclen;
 	l2 = (*(struct devi **)b)->i_atattr->a_loclen;
@@ -433,9 +452,12 @@ loclencmp(const void *a, const void *b)
  * Comparison function for parent vectors.
  */
 static int
-samepv(const void *ptr, int off, int len)
+samepv(ptr, off, len)
+	const void *ptr;
+	int off;
+	register int len;
 {
-	short *p, *q;
+	register short *p, *q;
 
 	for (p = &parents.vec[off], q = (short *)ptr; --len >= 0;)
 		if (*p++ != *q++)
@@ -447,10 +469,12 @@ samepv(const void *ptr, int off, int len)
  * Add the given parent vectors at the end of the global pv[] table.
  */
 static int
-addpv(short *pv, int len)
+addpv(pv, len)
+	register short *pv;
+	register int len;
 {
-	short *p;
-	int ret;
+	register short *p;
+	register int ret;
 	static int firstend = -1;
 
 	/*
@@ -478,9 +502,10 @@ addpv(short *pv, int len)
  * We rashly assume that subtraction of these lengths does not overflow.
  */
 static int
-pvlencmp(const void *a, const void *b)
+pvlencmp(a, b)
+	const void *a, *b;
 {
-	int l1, l2;
+	register int l1, l2;
 
 	l1 = (*(struct devi **)a)->i_pvlen;
 	l2 = (*(struct devi **)b)->i_pvlen;
@@ -488,10 +513,10 @@ pvlencmp(const void *a, const void *b)
 }
 
 static void
-resettails(void)
+resettails()
 {
-	struct tails **p, *t, *next;
-	int i;
+	register struct tails **p, *t, *next;
+	register int i;
 
 	for (p = tails, i = TAILHSIZE; --i >= 0; p++) {
 		for (t = *p; t != NULL; t = next) {

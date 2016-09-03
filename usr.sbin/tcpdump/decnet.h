@@ -1,5 +1,3 @@
-/*	$OpenBSD: decnet.h,v 1.7 2007/10/07 16:41:05 deraadt Exp $	*/
-
 /*
  * Copyright (c) 1992, 1994, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -20,7 +18,7 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
- * @(#) $Id: decnet.h,v 1.7 2007/10/07 16:41:05 deraadt Exp $ (LBL)
+ * @(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/decnet.h,v 1.5 1996/12/12 16:22:57 bitblt Exp $ (LBL)
  */
 
 typedef unsigned char byte[1];		/* single byte field */

@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.9 2011/10/02 22:20:49 edd Exp $	*/
+/*	$OpenBSD: misc.c,v 1.1 1999/10/04 20:00:51 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *    This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -25,44 +30,45 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: misc.c,v 1.1 1999/10/04 20:00:51 deraadt Exp $";
+#endif
 
-#include <ctype.h>
+#include <sys/types.h>
 #include <err.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "misc.h"
 
-extern int verbose;
-
 int
-ask_cmd(cmd_t *cmd)
+ask_cmd(cmd)
+	cmd_t *cmd;
 {
 	char lbuf[100], *cp, *buf;
 
 	/* Get input */
 	if (fgets(lbuf, sizeof lbuf, stdin) == NULL)
 		errx(1, "eof");
-	lbuf[strcspn(lbuf, "\n")] = '\0';
-	if (verbose)
-		printf("%s\n", lbuf);
+	lbuf[strlen(lbuf)-1] = '\0';
 
 	/* Parse input */
 	buf = lbuf;
 	buf = &buf[strspn(buf, " \t")];
 	cp = &buf[strcspn(buf, " \t")];
 	*cp++ = '\0';
-	strlcpy(cmd->cmd, buf, sizeof cmd->cmd);
+	strncpy(cmd->cmd, buf, 10);
 	buf = &cp[strspn(cp, " \t")];
-	strlcpy(cmd->args, buf, sizeof cmd->args);
+	strncpy(cmd->args, buf, 100);
 
 	return (0);
 }
 
 int
-ask_yn(const char *str)
+ask_yn(str)
+	const char *str;
 {
 	int ch, first;
 
@@ -70,17 +76,9 @@ ask_yn(const char *str)
 	fflush(stdout);
 
 	first = ch = getchar();
-	if (verbose) {
-		printf("%c", ch);
-		fflush(stdout);
-	}
-	while (ch != '\n' && ch != EOF) {
+	while (ch != '\n' && ch != EOF)
 		ch = getchar();
-		if (verbose) {
-			printf("%c\n", ch);
-			fflush(stdout);
-		}
-	}
+
 	if (ch == EOF || first == EOF)
 		errx(1, "eof");
 

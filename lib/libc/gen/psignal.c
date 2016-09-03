@@ -1,4 +1,3 @@
-/*	$OpenBSD: psignal.c,v 1.10 2015/08/31 02:53:57 guenther Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: psignal.c,v 1.3 1999/09/16 19:06:00 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 /*
  * Print the name of the signal indicated
  * along with the supplied message.
@@ -39,18 +46,25 @@
 #include <unistd.h>
 #include <limits.h>
 
+extern char *__strsignal __P((int , char *));
+
 void
-psignal(unsigned int sig, const char *s)
+psignal(sig, s)
+	unsigned int sig;
+	const char *s;
 {
 	static char buf[NL_TEXTMAX];
-	const char *c;
+	register const char *c;
+	register int n;
 	struct iovec iov[4];
 	int niov = 0;
 
 	c = __strsignal(sig, buf);
 	if (s && *s) {
+
+		n = strlen(s);
 		iov[0].iov_base = (void *)s;
-		iov[0].iov_len = strlen(s);
+		iov[0].iov_len = n;
 		iov[1].iov_base = ": ";
 		iov[1].iov_len = 2;
 		niov = 2;

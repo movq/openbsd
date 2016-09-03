@@ -1,9 +1,8 @@
-/* $OpenBSD: ike_aggressive.c,v 1.11 2010/06/29 19:50:16 reyk Exp $	 */
-/* $EOM: ike_aggressive.c,v 1.4 2000/01/31 22:33:45 niklas Exp $	 */
+/*	$OpenBSD: ike_aggressive.c,v 1.3 1999/08/26 22:28:54 niklas Exp $	*/
+/*	$EOM: ike_aggressive.c,v 1.3 1999/08/19 01:14:04 angelos Exp $	*/
 
 /*
  * Copyright (c) 1999 Niklas Hallqvist.  All rights reserved.
- * Copyright (c) 1999 Angelos D. Keromytis.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -13,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -35,6 +39,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sysdep.h"
+
 #include "attribute.h"
 #include "conf.h"
 #include "constants.h"
@@ -50,77 +56,76 @@
 #include "ipsec_doi.h"
 #include "isakmp.h"
 #include "log.h"
+#include "math_group.h"
 #include "message.h"
-#include "nat_traversal.h"
 #include "prf.h"
 #include "sa.h"
 #include "transport.h"
 #include "util.h"
 
-static int	initiator_recv_SA_KE_NONCE_ID_AUTH(struct message *);
-static int	initiator_send_SA_KE_NONCE_ID(struct message *);
-static int	initiator_send_AUTH(struct message *);
-static int	responder_recv_SA_KE_NONCE_ID(struct message *);
-static int	responder_send_SA_KE_NONCE_ID_AUTH(struct message *);
-static int	responder_recv_AUTH(struct message *);
+static int initiator_recv_SA_KE_NONCE_ID_AUTH (struct message *);
+static int initiator_send_SA_KE_NONCE_ID (struct message *);
+static int initiator_send_AUTH (struct message *);
+static int responder_recv_SA_KE_NONCE_ID (struct message *);
+static int responder_send_SA_KE_NONCE_ID_AUTH (struct message *);
 
-int (*ike_aggressive_initiator[])(struct message *) = {
-	initiator_send_SA_KE_NONCE_ID,
-	initiator_recv_SA_KE_NONCE_ID_AUTH,
-	initiator_send_AUTH
+int (*ike_aggressive_initiator[]) (struct message *) = {
+  initiator_send_SA_KE_NONCE_ID,
+  initiator_recv_SA_KE_NONCE_ID_AUTH,
+  initiator_send_AUTH
 };
 
-int (*ike_aggressive_responder[])(struct message *) = {
-	responder_recv_SA_KE_NONCE_ID,
-	responder_send_SA_KE_NONCE_ID_AUTH,
-	responder_recv_AUTH
+int (*ike_aggressive_responder[]) (struct message *) = {
+  responder_recv_SA_KE_NONCE_ID,
+  responder_send_SA_KE_NONCE_ID_AUTH,
+  ike_phase_1_recv_AUTH
 };
 
 /* Offer a set of transforms to the responder in the MSG message.  */
 static int
-initiator_send_SA_KE_NONCE_ID(struct message *msg)
+initiator_send_SA_KE_NONCE_ID (struct message *msg)
 {
-	if (ike_phase_1_initiator_send_SA(msg))
-		return -1;
+  if (ike_phase_1_initiator_send_SA (msg))
+    return -1;
 
-	if (ike_phase_1_initiator_send_KE_NONCE(msg))
-		return -1;
+  if (ike_phase_1_initiator_send_KE_NONCE (msg))
+    return -1;
 
-	return ike_phase_1_send_ID(msg);
+  return ike_phase_1_send_ID (msg);
 }
 
 /* Figure out what transform the responder chose.  */
 static int
-initiator_recv_SA_KE_NONCE_ID_AUTH(struct message *msg)
+initiator_recv_SA_KE_NONCE_ID_AUTH (struct message *msg)
 {
-	if (ike_phase_1_initiator_recv_SA(msg))
-		return -1;
+  if (ike_phase_1_initiator_recv_SA (msg))
+    return -1;
 
-	if (ike_phase_1_initiator_recv_KE_NONCE(msg))
-		return -1;
+  if (ike_phase_1_initiator_recv_KE_NONCE (msg))
+    return -1;
 
-	return ike_phase_1_recv_ID_AUTH(msg);
+  return ike_phase_1_recv_ID_AUTH (msg);
 }
 
 static int
-initiator_send_AUTH(struct message *msg)
+initiator_send_AUTH (struct message *msg)
 {
-	msg->exchange->flags |= EXCHANGE_FLAG_ENCRYPT;
+  msg->exchange->flags |= EXCHANGE_FLAG_ENCRYPT;
 
-	if (ike_phase_1_send_AUTH(msg))
-		return -1;
+  if (ike_phase_1_send_AUTH (msg))
+    return -1;
 
-	/*
-	 * RFC 2407 4.6.3 says that, among others, INITIAL-CONTACT MUST NOT
-	 * be sent in Aggressive Mode.  This leaves us with the choice of
-	 * doing it in an informational exchange of its own with no delivery
-	 * guarantee or in the first Quick Mode, or not at all.
-	 * draft-jenkins-ipsec-rekeying-01.txt has some text that requires
-	 * INITIAL-CONTACT in phase 1, thus contradicting what we learned
-	 * above.  I will bring this up in the IPsec list.  For now we don't
-	 * do INITIAL-CONTACT at all when using aggressive mode.
-         */
-	return 0;
+  /*
+   * RFC 2407 4.6.3 says that, among others, INITIAL-CONTACT MUST NOT
+   * be sent in Aggressive Mode.  This leaves us with the choice of
+   * doing it in an informational exchange of its own with no delivery
+   * guarantee or in the first Quick Mode, or not at all.
+   * draft-jenkins-ipsec-rekeying-01.txt has some text that requires
+   * INITIAL-CONTACT in phase 1, thus contradicting what we learned
+   * above.  I will bring this up in the IPsec list.  For now we don't
+   * do INITIAL-CONTACT at all when using aggressive mode.
+   */
+  return 0;
 }
 
 /*
@@ -128,15 +133,15 @@ initiator_send_AUTH(struct message *msg)
  * handle.  Also accept initiator's public DH value, nonce and ID.
  */
 static int
-responder_recv_SA_KE_NONCE_ID(struct message *msg)
+responder_recv_SA_KE_NONCE_ID (struct message *msg)
 {
-	if (ike_phase_1_responder_recv_SA(msg))
-		return -1;
+  if (ike_phase_1_responder_recv_SA (msg))
+    return -1;
 
-	if (ike_phase_1_recv_ID(msg))
-		return -1;
+  if (ike_phase_1_recv_ID (msg))
+    return -1;
 
-	return ike_phase_1_recv_KE_NONCE(msg);
+  return ike_phase_1_recv_KE_NONCE (msg);
 }
 
 /*
@@ -144,34 +149,19 @@ responder_recv_SA_KE_NONCE_ID(struct message *msg)
  * to the initiator.
  */
 static int
-responder_send_SA_KE_NONCE_ID_AUTH(struct message *msg)
+responder_send_SA_KE_NONCE_ID_AUTH (struct message *msg)
 {
-	/* Add the SA payload with the transform that was chosen.  */
-	if (ike_phase_1_responder_send_SA(msg))
-		return -1;
+  /* Add the SA payload with the transform that was chosen.  */
+  if (ike_phase_1_responder_send_SA (msg))
+   return -1;
 
-	/* XXX Should we really just use the initiator's nonce size?  */
-	if (ike_phase_1_send_KE_NONCE(msg, msg->exchange->nonce_i_len))
-		return -1;
+  /* XXX Should we really just use the initiator's nonce size?  */
+  if (ike_phase_1_send_KE_NONCE (msg, msg->exchange->nonce_i_len))
+    return -1;
 
-	if (ike_phase_1_post_exchange_KE_NONCE(msg))
-		return -1;
+  if (ike_phase_1_post_exchange_KE_NONCE (msg))
+    return -1;
 
-	return ike_phase_1_responder_send_ID_AUTH(msg);
-}
-
-/*
- * Reply with the transform we chose.  Send our public DH value and a nonce
- * to the initiator.
- */
-static int
-responder_recv_AUTH(struct message *msg)
-{
-	if (ike_phase_1_recv_AUTH(msg))
-		return -1;
-
-	/* Aggressive: Check for NAT-D payloads and contents.  */
-	if (msg->exchange->flags & EXCHANGE_FLAG_NAT_T_CAP_PEER)
-		(void)nat_t_exchange_check_nat_d(msg);
-	return 0;
+  return ike_phase_1_responder_send_ID_AUTH (msg);
+    return -1;
 }

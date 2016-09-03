@@ -1,4 +1,4 @@
-/*	$OpenBSD: yplog.h,v 1.6 2006/01/06 18:53:06 millert Exp $ */
+/*	$OpenBSD: yplog.h,v 1.3 1996/05/30 09:53:04 deraadt Exp $ */
 
 /*
  * Copyright (c) 1994 Mats O Jansson <moj@stacken.kth.se>
@@ -12,6 +12,9 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote
+ *    products derived from this software without specific prior written
+ *    permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -30,10 +33,10 @@
 #define _YPLOG_H_
 
 __BEGIN_DECLS
-void    yplog(const char *, ...);
-void    vyplog(const char *, __va_list);
-void	ypopenlog(void);
-void	ypcloselog(void);
+void    yplog __P((const char *, ...));
+void    vyplog __P((const char *, _BSD_VA_LIST_));
+void	ypopenlog __P((void));
+void	ypcloselog __P((void));
 __END_DECLS
 
 #endif /* !_YPLOG_H_ */

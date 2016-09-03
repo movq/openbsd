@@ -1,719 +1,565 @@
-/* $OpenBSD: authfd.c,v 1.100 2015/12/04 16:41:28 markus Exp $ */
 /*
- * Author: Tatu Ylonen <ylo@cs.hut.fi>
- * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
- *                    All rights reserved
- * Functions for connecting the local authentication agent.
- *
- * As far as I am concerned, the code I have written for this software
- * can be used freely for any purpose.  Any derived versions of this
- * software must be clearly marked as such, and if the derived work is
- * incompatible with the protocol description in the RFC file, it must be
- * called by a name other than "ssh" or "Secure Shell".
- *
- * SSH2 implementation,
- * Copyright (c) 2000 Markus Friedl.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 
+authfd.c
 
-#include <sys/types.h>
-#include <sys/un.h>
-#include <sys/socket.h>
+Author: Tatu Ylonen <ylo@cs.hut.fi>
 
-#include <fcntl.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
+Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
+                   All rights reserved
 
-#include "xmalloc.h"
+Created: Wed Mar 29 01:30:28 1995 ylo
+
+Functions for connecting the local authentication agent.
+
+*/
+
+#include "includes.h"
+RCSID("$Id: authfd.c,v 1.8 1999/10/14 18:17:41 markus Exp $");
+
 #include "ssh.h"
 #include "rsa.h"
-#include "sshbuf.h"
-#include "sshkey.h"
 #include "authfd.h"
-#include "cipher.h"
-#include "compat.h"
-#include "log.h"
-#include "atomicio.h"
-#include "misc.h"
-#include "ssherr.h"
+#include "buffer.h"
+#include "bufaux.h"
+#include "xmalloc.h"
+#include "getput.h"
 
-#define MAX_AGENT_IDENTITIES	2048		/* Max keys in agent reply */
-#define MAX_AGENT_REPLY_LEN	(256 * 1024) 	/* Max bytes in agent reply */
-
-/* macro to check for "agent failure" message */
-#define agent_failed(x) \
-    ((x == SSH_AGENT_FAILURE) || \
-    (x == SSH_COM_AGENT2_FAILURE) || \
-    (x == SSH2_AGENT_FAILURE))
-
-/* Convert success/failure response from agent to a err.h status */
-static int
-decode_reply(u_char type)
-{
-	if (agent_failed(type))
-		return SSH_ERR_AGENT_FAILURE;
-	else if (type == SSH_AGENT_SUCCESS)
-		return 0;
-	else
-		return SSH_ERR_INVALID_FORMAT;
-}
+#include <ssl/rsa.h>
 
 /* Returns the number of the authentication fd, or -1 if there is none. */
+
 int
-ssh_get_authentication_socket(int *fdp)
+ssh_get_authentication_socket()
 {
-	const char *authsocket;
-	int sock, oerrno;
-	struct sockaddr_un sunaddr;
+  const char *authsocket;
+  int sock;
+  struct sockaddr_un sunaddr;
 
-	if (fdp != NULL)
-		*fdp = -1;
+  authsocket = getenv(SSH_AUTHSOCKET_ENV_NAME);
+  if (!authsocket)
+    return -1;
 
-	authsocket = getenv(SSH_AUTHSOCKET_ENV_NAME);
-	if (!authsocket)
-		return SSH_ERR_AGENT_NOT_PRESENT;
+  sunaddr.sun_family = AF_UNIX;
+  strlcpy(sunaddr.sun_path, authsocket, sizeof(sunaddr.sun_path));
+  
+  sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0)
+    return -1;
+  
+  if (connect(sock, (struct sockaddr *)&sunaddr, sizeof(sunaddr)) < 0)
+    {
+      close(sock);
+      return -1;
+    }
 
-	memset(&sunaddr, 0, sizeof(sunaddr));
-	sunaddr.sun_family = AF_UNIX;
-	strlcpy(sunaddr.sun_path, authsocket, sizeof(sunaddr.sun_path));
-
-	if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
-		return SSH_ERR_SYSTEM_ERROR;
-
-	/* close on exec */
-	if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1 ||
-	    connect(sock, (struct sockaddr *)&sunaddr, sizeof(sunaddr)) < 0) {
-		oerrno = errno;
-		close(sock);
-		errno = oerrno;
-		return SSH_ERR_SYSTEM_ERROR;
-	}
-	if (fdp != NULL)
-		*fdp = sock;
-	else
-		close(sock);
-	return 0;
+  return sock;
 }
 
-/* Communicate with agent: send request and read reply */
-static int
-ssh_request_reply(int sock, struct sshbuf *request, struct sshbuf *reply)
+/* Closes the agent socket if it should be closed (depends on how it was
+   obtained).  The argument must have been returned by 
+   ssh_get_authentication_socket(). */
+
+void ssh_close_authentication_socket(int sock)
 {
-	int r;
-	size_t l, len;
-	char buf[1024];
-
-	/* Get the length of the message, and format it in the buffer. */
-	len = sshbuf_len(request);
-	put_u32(buf, len);
-
-	/* Send the length and then the packet to the agent. */
-	if (atomicio(vwrite, sock, buf, 4) != 4 ||
-	    atomicio(vwrite, sock, (u_char *)sshbuf_ptr(request),
-	    sshbuf_len(request)) != sshbuf_len(request))
-		return SSH_ERR_AGENT_COMMUNICATION;
-	/*
-	 * Wait for response from the agent.  First read the length of the
-	 * response packet.
-	 */
-	if (atomicio(read, sock, buf, 4) != 4)
-	    return SSH_ERR_AGENT_COMMUNICATION;
-
-	/* Extract the length, and check it for sanity. */
-	len = get_u32(buf);
-	if (len > MAX_AGENT_REPLY_LEN)
-		return SSH_ERR_INVALID_FORMAT;
-
-	/* Read the rest of the response in to the buffer. */
-	sshbuf_reset(reply);
-	while (len > 0) {
-		l = len;
-		if (l > sizeof(buf))
-			l = sizeof(buf);
-		if (atomicio(read, sock, buf, l) != l)
-			return SSH_ERR_AGENT_COMMUNICATION;
-		if ((r = sshbuf_put(reply, buf, l)) != 0)
-			return r;
-		len -= l;
-	}
-	return 0;
+  if (getenv(SSH_AUTHSOCKET_ENV_NAME))
+    close(sock);
 }
 
-/*
- * Closes the agent socket if it should be closed (depends on how it was
- * obtained).  The argument must have been returned by
- * ssh_get_authentication_socket().
- */
-void
-ssh_close_authentication_socket(int sock)
+/* Opens and connects a private socket for communication with the
+   authentication agent.  Returns the file descriptor (which must be
+   shut down and closed by the caller when no longer needed).
+   Returns NULL if an error occurred and the connection could not be
+   opened. */
+
+AuthenticationConnection *ssh_get_authentication_connection()
 {
-	if (getenv(SSH_AUTHSOCKET_ENV_NAME))
-		close(sock);
+  AuthenticationConnection *auth;
+  int sock;
+  
+  sock = ssh_get_authentication_socket();
+
+  /* Fail if we couldn't obtain a connection.  This happens if we exited
+     due to a timeout. */
+  if (sock < 0)
+    return NULL;
+
+  /* Applocate the connection structure and initialize it. */
+  auth = xmalloc(sizeof(*auth));
+  auth->fd = sock;
+  buffer_init(&auth->packet);
+  buffer_init(&auth->identities);
+  auth->howmany = 0;
+
+  return auth;
 }
 
-/* Lock/unlock agent */
+/* Closes the connection to the authentication agent and frees any associated
+   memory. */
+
+void ssh_close_authentication_connection(AuthenticationConnection *ac)
+{
+  buffer_free(&ac->packet);
+  buffer_free(&ac->identities);
+  close(ac->fd);
+  /* Free the connection data structure. */
+  xfree(ac);
+}
+
+/* Returns the first authentication identity held by the agent.
+   Returns true if an identity is available, 0 otherwise.
+   The caller must initialize the integers before the call, and free the
+   comment after a successful call (before calling ssh_get_next_identity). */
+
 int
-ssh_lock_agent(int sock, int lock, const char *password)
+ssh_get_first_identity(AuthenticationConnection *auth,
+		       int *bitsp, BIGNUM *e, BIGNUM *n, char **comment)
 {
-	int r;
-	u_char type = lock ? SSH_AGENTC_LOCK : SSH_AGENTC_UNLOCK;
-	struct sshbuf *msg;
+  unsigned char msg[8192];
+  int len, l;
 
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_put_u8(msg, type)) != 0 ||
-	    (r = sshbuf_put_cstring(msg, password)) != 0)
-		goto out;
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	r = decode_reply(type);
- out:
-	sshbuf_free(msg);
-	return r;
+  /* Send a message to the agent requesting for a list of the identities
+     it can represent. */
+  msg[0] = 0;
+  msg[1] = 0;
+  msg[2] = 0;
+  msg[3] = 1;
+  msg[4] = SSH_AGENTC_REQUEST_RSA_IDENTITIES;
+  if (write(auth->fd, msg, 5) != 5)
+    {
+      error("write auth->fd: %.100s", strerror(errno));
+      return 0;
+    }
+
+  /* Read the length of the response.  XXX implement timeouts here. */
+  len = 4;
+  while (len > 0)
+    {
+      l = read(auth->fd, msg + 4 - len, len);
+      if (l <= 0)
+	{
+	  error("read auth->fd: %.100s", strerror(errno));
+	  return 0;
+	}
+      len -= l;
+    }
+
+  /* Extract the length, and check it for sanity.  (We cannot trust
+     authentication agents). */
+  len = GET_32BIT(msg);
+  if (len < 1 || len > 256*1024)
+    fatal("Authentication reply message too long: %d\n", len);
+
+  /* Read the packet itself. */
+  buffer_clear(&auth->identities);
+  while (len > 0)
+    {
+      l = len;
+      if (l > sizeof(msg))
+	l = sizeof(msg);
+      l = read(auth->fd, msg, l);
+      if (l <= 0)
+	fatal("Incomplete authentication reply.");
+      buffer_append(&auth->identities, (char *)msg, l);
+      len -= l;
+    }
+  
+  /* Get message type, and verify that we got a proper answer. */
+  buffer_get(&auth->identities, (char *)msg, 1);
+  if (msg[0] != SSH_AGENT_RSA_IDENTITIES_ANSWER)
+    fatal("Bad authentication reply message type: %d", msg[0]);
+  
+  /* Get the number of entries in the response and check it for sanity. */
+  auth->howmany = buffer_get_int(&auth->identities);
+  if (auth->howmany > 1024)
+    fatal("Too many identities in authentication reply: %d\n", auth->howmany);
+
+  /* Return the first entry (if any). */
+  return ssh_get_next_identity(auth, bitsp, e, n, comment);
 }
 
-#ifdef WITH_SSH1
-static int
-deserialise_identity1(struct sshbuf *ids, struct sshkey **keyp, char **commentp)
-{
-	struct sshkey *key;
-	int r, keybits;
-	u_int32_t bits;
-	char *comment = NULL;
+/* Returns the next authentication identity for the agent.  Other functions
+   can be called between this and ssh_get_first_identity or two calls of this
+   function.  This returns 0 if there are no more identities.  The caller
+   must free comment after a successful return. */
 
-	if ((key = sshkey_new(KEY_RSA1)) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_get_u32(ids, &bits)) != 0 ||
-	    (r = sshbuf_get_bignum1(ids, key->rsa->e)) != 0 ||
-	    (r = sshbuf_get_bignum1(ids, key->rsa->n)) != 0 ||
-	    (r = sshbuf_get_cstring(ids, &comment, NULL)) != 0)
-		goto out;
-	keybits = BN_num_bits(key->rsa->n);
-	/* XXX previously we just warned here. I think we should be strict */
-	if (keybits < 0 || bits != (u_int)keybits) {
-		r = SSH_ERR_KEY_BITS_MISMATCH;
-		goto out;
-	}
-	if (keyp != NULL) {
-		*keyp = key;
-		key = NULL;
-	}
-	if (commentp != NULL) {
-		*commentp = comment;
-		comment = NULL;
-	}
-	r = 0;
- out:
-	sshkey_free(key);
-	free(comment);
-	return r;
-}
-#endif
-
-static int
-deserialise_identity2(struct sshbuf *ids, struct sshkey **keyp, char **commentp)
-{
-	int r;
-	char *comment = NULL;
-	const u_char *blob;
-	size_t blen;
-
-	if ((r = sshbuf_get_string_direct(ids, &blob, &blen)) != 0 ||
-	    (r = sshbuf_get_cstring(ids, &comment, NULL)) != 0)
-		goto out;
-	if ((r = sshkey_from_blob(blob, blen, keyp)) != 0)
-		goto out;
-	if (commentp != NULL) {
-		*commentp = comment;
-		comment = NULL;
-	}
-	r = 0;
- out:
-	free(comment);
-	return r;
-}
-
-/*
- * Fetch list of identities held by the agent.
- */
 int
-ssh_fetch_identitylist(int sock, int version, struct ssh_identitylist **idlp)
+ssh_get_next_identity(AuthenticationConnection *auth,
+		      int *bitsp, BIGNUM *e, BIGNUM *n, char **comment)
 {
-	u_char type, code1 = 0, code2 = 0;
-	u_int32_t num, i;
-	struct sshbuf *msg;
-	struct ssh_identitylist *idl = NULL;
-	int r;
+  /* Return failure if no more entries. */
+  if (auth->howmany <= 0)
+    return 0;
 
-	/* Determine request and expected response types */
-	switch (version) {
-	case 1:
-		code1 = SSH_AGENTC_REQUEST_RSA_IDENTITIES;
-		code2 = SSH_AGENT_RSA_IDENTITIES_ANSWER;
-		break;
-	case 2:
-		code1 = SSH2_AGENTC_REQUEST_IDENTITIES;
-		code2 = SSH2_AGENT_IDENTITIES_ANSWER;
-		break;
-	default:
-		return SSH_ERR_INVALID_ARGUMENT;
-	}
+  /* Get the next entry from the packet.  These will abort with a fatal
+     error if the packet is too short or contains corrupt data. */
+  *bitsp = buffer_get_int(&auth->identities);
+  buffer_get_bignum(&auth->identities, e);
+  buffer_get_bignum(&auth->identities, n);
+  *comment = buffer_get_string(&auth->identities, NULL);
 
-	/*
-	 * Send a message to the agent requesting for a list of the
-	 * identities it can represent.
-	 */
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_put_u8(msg, code1)) != 0)
-		goto out;
+  /* Decrement the number of remaining entries. */
+  auth->howmany--;
 
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-
-	/* Get message type, and verify that we got a proper answer. */
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	if (agent_failed(type)) {
-		r = SSH_ERR_AGENT_FAILURE;
-		goto out;
-	} else if (type != code2) {
-		r = SSH_ERR_INVALID_FORMAT;
-		goto out;
-	}
-
-	/* Get the number of entries in the response and check it for sanity. */
-	if ((r = sshbuf_get_u32(msg, &num)) != 0)
-		goto out;
-	if (num > MAX_AGENT_IDENTITIES) {
-		r = SSH_ERR_INVALID_FORMAT;
-		goto out;
-	}
-	if (num == 0) {
-		r = SSH_ERR_AGENT_NO_IDENTITIES;
-		goto out;
-	}
-
-	/* Deserialise the response into a list of keys/comments */
-	if ((idl = calloc(1, sizeof(*idl))) == NULL ||
-	    (idl->keys = calloc(num, sizeof(*idl->keys))) == NULL ||
-	    (idl->comments = calloc(num, sizeof(*idl->comments))) == NULL) {
-		r = SSH_ERR_ALLOC_FAIL;
-		goto out;
-	}
-	for (i = 0; i < num;) {
-		switch (version) {
-		case 1:
-#ifdef WITH_SSH1
-			if ((r = deserialise_identity1(msg,
-			    &(idl->keys[i]), &(idl->comments[i]))) != 0)
-				goto out;
-#endif
-			break;
-		case 2:
-			if ((r = deserialise_identity2(msg,
-			    &(idl->keys[i]), &(idl->comments[i]))) != 0) {
-				if (r == SSH_ERR_KEY_TYPE_UNKNOWN) {
-					/* Gracefully skip unknown key types */
-					num--;
-					continue;
-				} else
-					goto out;
-			}
-			break;
-		}
-		i++;
-	}
-	idl->nkeys = num;
-	*idlp = idl;
-	idl = NULL;
-	r = 0;
- out:
-	sshbuf_free(msg);
-	if (idl != NULL)
-		ssh_free_identitylist(idl);
-	return r;
+  return 1;
 }
 
-void
-ssh_free_identitylist(struct ssh_identitylist *idl)
-{
-	size_t i;
+/* Generates a random challenge, sends it to the agent, and waits for response
+   from the agent.  Returns true (non-zero) if the agent gave the correct
+   answer, zero otherwise.  Response type selects the style of response
+   desired, with 0 corresponding to protocol version 1.0 (no longer supported)
+   and 1 corresponding to protocol version 1.1. */
 
-	if (idl == NULL)
-		return;
-	for (i = 0; i < idl->nkeys; i++) {
-		if (idl->keys != NULL)
-			sshkey_free(idl->keys[i]);
-		if (idl->comments != NULL)
-			free(idl->comments[i]);
-	}
-	free(idl);
-}
-
-/*
- * Sends a challenge (typically from a server via ssh(1)) to the agent,
- * and waits for a response from the agent.
- * Returns true (non-zero) if the agent gave the correct answer, zero
- * otherwise.
- */
-
-#ifdef WITH_SSH1
 int
-ssh_decrypt_challenge(int sock, struct sshkey* key, BIGNUM *challenge,
-    u_char session_id[16], u_char response[16])
+ssh_decrypt_challenge(AuthenticationConnection *auth,
+		      int bits, BIGNUM *e, BIGNUM *n, BIGNUM *challenge,
+		      unsigned char session_id[16],
+		      unsigned int response_type,
+		      unsigned char response[16])
 {
-	struct sshbuf *msg;
-	int r;
-	u_char type;
+  Buffer buffer;
+  unsigned char buf[8192];
+  int len, l, i;
 
-	if (key->type != KEY_RSA1)
-		return SSH_ERR_INVALID_ARGUMENT;
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_put_u8(msg, SSH_AGENTC_RSA_CHALLENGE)) != 0 ||
-	    (r = sshbuf_put_u32(msg, BN_num_bits(key->rsa->n))) != 0 ||
-	    (r = sshbuf_put_bignum1(msg, key->rsa->e)) != 0 ||
-	    (r = sshbuf_put_bignum1(msg, key->rsa->n)) != 0 ||
-	    (r = sshbuf_put_bignum1(msg, challenge)) != 0 ||
-	    (r = sshbuf_put(msg, session_id, 16)) != 0 ||
-	    (r = sshbuf_put_u32(msg, 1)) != 0) /* Response type for proto 1.1 */
-		goto out;
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	if (agent_failed(type)) {
-		r = SSH_ERR_AGENT_FAILURE;
-		goto out;
-	} else if (type != SSH_AGENT_RSA_RESPONSE) {
-		r = SSH_ERR_INVALID_FORMAT;
-		goto out;
+  /* Response type 0 is no longer supported. */
+  if (response_type == 0)
+    fatal("Compatibility with ssh protocol version 1.0 no longer supported.");
+
+  /* Format a message to the agent. */
+  buf[0] = SSH_AGENTC_RSA_CHALLENGE;
+  buffer_init(&buffer);
+  buffer_append(&buffer, (char *)buf, 1);
+  buffer_put_int(&buffer, bits);
+  buffer_put_bignum(&buffer, e);
+  buffer_put_bignum(&buffer, n);
+  buffer_put_bignum(&buffer, challenge);
+  buffer_append(&buffer, (char *)session_id, 16);
+  buffer_put_int(&buffer, response_type);
+
+  /* Get the length of the message, and format it in the buffer. */
+  len = buffer_len(&buffer);
+  PUT_32BIT(buf, len);
+
+  /* Send the length and then the packet to the agent. */
+  if (write(auth->fd, buf, 4) != 4 ||
+      write(auth->fd, buffer_ptr(&buffer), buffer_len(&buffer)) !=
+        buffer_len(&buffer))
+    {
+      error("Error writing to authentication socket.");
+    error_cleanup:
+      buffer_free(&buffer);
+      return 0;
+    }
+
+  /* Wait for response from the agent.  First read the length of the
+     response packet. */
+  len = 4;
+  while (len > 0)
+    {
+      l = read(auth->fd, buf + 4 - len, len);
+      if (l <= 0)
+	{
+	  error("Error reading response length from authentication socket.");
+	  goto error_cleanup;
 	}
-	if ((r = sshbuf_get(msg, response, 16)) != 0)
-		goto out;
-	r = 0;
- out:
-	sshbuf_free(msg);
-	return r;
-}
-#endif
+      len -= l;
+    }
 
-/* encode signature algoritm in flag bits, so we can keep the msg format */
-static u_int
-agent_encode_alg(struct sshkey *key, const char *alg)
-{
-	if (alg != NULL && key->type == KEY_RSA) {
-		if (strcmp(alg, "rsa-sha2-256") == 0)
-			return SSH_AGENT_RSA_SHA2_256;
-		else if (strcmp(alg, "rsa-sha2-512") == 0)
-			return SSH_AGENT_RSA_SHA2_512;
+  /* Extract the length, and check it for sanity. */
+  len = GET_32BIT(buf);
+  if (len > 256*1024)
+    fatal("Authentication response too long: %d", len);
+
+  /* Read the rest of the response in tothe buffer. */
+  buffer_clear(&buffer);
+  while (len > 0)
+    {
+      l = len;
+      if (l > sizeof(buf))
+	l = sizeof(buf);
+      l = read(auth->fd, buf, l);
+      if (l <= 0)
+	{
+	  error("Error reading response from authentication socket.");
+	  goto error_cleanup;
 	}
-	return 0;
-}
+      buffer_append(&buffer, (char *)buf, l);
+      len -= l;
+    }
 
-/* ask agent to sign data, returns err.h code on error, 0 on success */
-int
-ssh_agent_sign(int sock, struct sshkey *key,
-    u_char **sigp, size_t *lenp,
-    const u_char *data, size_t datalen, const char *alg, u_int compat)
+  /* Get the type of the packet. */
+  buffer_get(&buffer, (char *)buf, 1);
+
+  /* Check for agent failure message. */
+  if (buf[0] == SSH_AGENT_FAILURE)
+    {
+      log("Agent admitted failure to authenticate using the key.");
+      goto error_cleanup;
+    }
+      
+  /* Now it must be an authentication response packet. */
+  if (buf[0] != SSH_AGENT_RSA_RESPONSE)
+    fatal("Bad authentication response: %d", buf[0]);
+
+  /* Get the response from the packet.  This will abort with a fatal error
+     if the packet is corrupt. */
+  for (i = 0; i < 16; i++)
+    response[i] = buffer_get_char(&buffer);
+
+  /* The buffer containing the packet is no longer needed. */
+  buffer_free(&buffer);
+
+  /* Correct answer. */
+  return 1;
+}  
+
+/* Adds an identity to the authentication server.  This call is not meant to
+   be used by normal applications. */
+
+int ssh_add_identity(AuthenticationConnection *auth,
+		     RSA *key, const char *comment)
 {
-	struct sshbuf *msg;
-	u_char *blob = NULL, type;
-	size_t blen = 0, len = 0;
-	u_int flags = 0;
-	int r = SSH_ERR_INTERNAL_ERROR;
+  Buffer buffer;
+  unsigned char buf[8192];
+  int len, l, type;
 
-	*sigp = NULL;
-	*lenp = 0;
+  /* Format a message to the agent. */
+  buffer_init(&buffer);
+  buffer_put_char(&buffer, SSH_AGENTC_ADD_RSA_IDENTITY);
+  buffer_put_int(&buffer, BN_num_bits(key->n));
+  buffer_put_bignum(&buffer, key->n);
+  buffer_put_bignum(&buffer, key->e);
+  buffer_put_bignum(&buffer, key->d);
+  /* To keep within the protocol: p < q for ssh. in SSL p > q */
+  buffer_put_bignum(&buffer, key->iqmp); /* ssh key->u */
+  buffer_put_bignum(&buffer, key->q); /* ssh key->p, SSL key->q */
+  buffer_put_bignum(&buffer, key->p); /* ssh key->q, SSL key->p */
+  buffer_put_string(&buffer, comment, strlen(comment));
 
-	if (datalen > SSH_KEY_MAX_SIGN_DATA_SIZE)
-		return SSH_ERR_INVALID_ARGUMENT;
-	if (compat & SSH_BUG_SIGBLOB)
-		flags |= SSH_AGENT_OLD_SIGNATURE;
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshkey_to_blob(key, &blob, &blen)) != 0)
-		goto out;
-	flags |= agent_encode_alg(key, alg);
-	if ((r = sshbuf_put_u8(msg, SSH2_AGENTC_SIGN_REQUEST)) != 0 ||
-	    (r = sshbuf_put_string(msg, blob, blen)) != 0 ||
-	    (r = sshbuf_put_string(msg, data, datalen)) != 0 ||
-	    (r = sshbuf_put_u32(msg, flags)) != 0)
-		goto out;
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	if (agent_failed(type)) {
-		r = SSH_ERR_AGENT_FAILURE;
-		goto out;
-	} else if (type != SSH2_AGENT_SIGN_RESPONSE) {
-		r = SSH_ERR_INVALID_FORMAT;
-		goto out;
+  /* Get the length of the message, and format it in the buffer. */
+  len = buffer_len(&buffer);
+  PUT_32BIT(buf, len);
+
+  /* Send the length and then the packet to the agent. */
+  if (write(auth->fd, buf, 4) != 4 ||
+      write(auth->fd, buffer_ptr(&buffer), buffer_len(&buffer)) !=
+        buffer_len(&buffer))
+    {
+      error("Error writing to authentication socket.");
+    error_cleanup:
+      buffer_free(&buffer);
+      return 0;
+    }
+
+  /* Wait for response from the agent.  First read the length of the
+     response packet. */
+  len = 4;
+  while (len > 0)
+    {
+      l = read(auth->fd, buf + 4 - len, len);
+      if (l <= 0)
+	{
+	  error("Error reading response length from authentication socket.");
+	  goto error_cleanup;
 	}
-	if ((r = sshbuf_get_string(msg, sigp, &len)) != 0)
-		goto out;
-	*lenp = len;
-	r = 0;
- out:
-	if (blob != NULL) {
-		explicit_bzero(blob, blen);
-		free(blob);
+      len -= l;
+    }
+
+  /* Extract the length, and check it for sanity. */
+  len = GET_32BIT(buf);
+  if (len > 256*1024)
+    fatal("Add identity response too long: %d", len);
+
+  /* Read the rest of the response in tothe buffer. */
+  buffer_clear(&buffer);
+  while (len > 0)
+    {
+      l = len;
+      if (l > sizeof(buf))
+	l = sizeof(buf);
+      l = read(auth->fd, buf, l);
+      if (l <= 0)
+	{
+	  error("Error reading response from authentication socket.");
+	  goto error_cleanup;
 	}
-	sshbuf_free(msg);
-	return r;
-}
+      buffer_append(&buffer, (char *)buf, l);
+      len -= l;
+    }
 
-/* Encode key for a message to the agent. */
+  /* Get the type of the packet. */
+  type = buffer_get_char(&buffer);
+  switch (type)
+    {
+    case SSH_AGENT_FAILURE:
+      buffer_free(&buffer);
+      return 0;
+    case SSH_AGENT_SUCCESS:
+      buffer_free(&buffer);
+      return 1;
+    default:
+      fatal("Bad response to add identity from authentication agent: %d", 
+	    type);
+    }
+  /*NOTREACHED*/
+  return 0;
+}  
 
-#ifdef WITH_SSH1
-static int
-ssh_encode_identity_rsa1(struct sshbuf *b, RSA *key, const char *comment)
+/* Removes an identity from the authentication server.  This call is not meant 
+   to be used by normal applications. */
+
+int ssh_remove_identity(AuthenticationConnection *auth, RSA *key)
 {
-	int r;
+  Buffer buffer;
+  unsigned char buf[8192];
+  int len, l, type;
 
-	/* To keep within the protocol: p < q for ssh. in SSL p > q */
-	if ((r = sshbuf_put_u32(b, BN_num_bits(key->n))) != 0 ||
-	    (r = sshbuf_put_bignum1(b, key->n)) != 0 ||
-	    (r = sshbuf_put_bignum1(b, key->e)) != 0 ||
-	    (r = sshbuf_put_bignum1(b, key->d)) != 0 ||
-	    (r = sshbuf_put_bignum1(b, key->iqmp)) != 0 ||
-	    (r = sshbuf_put_bignum1(b, key->q)) != 0 ||
-	    (r = sshbuf_put_bignum1(b, key->p)) != 0 ||
-	    (r = sshbuf_put_cstring(b, comment)) != 0)
-		return r;
-	return 0;
-}
-#endif
+  /* Format a message to the agent. */
+  buffer_init(&buffer);
+  buffer_put_char(&buffer, SSH_AGENTC_REMOVE_RSA_IDENTITY);
+  buffer_put_int(&buffer, BN_num_bits(key->n));
+  buffer_put_bignum(&buffer, key->e);
+  buffer_put_bignum(&buffer, key->n);
 
-static int
-ssh_encode_identity_ssh2(struct sshbuf *b, struct sshkey *key,
-    const char *comment)
-{
-	int r;
+  /* Get the length of the message, and format it in the buffer. */
+  len = buffer_len(&buffer);
+  PUT_32BIT(buf, len);
 
-	if ((r = sshkey_private_serialize(key, b)) != 0 ||
-	    (r = sshbuf_put_cstring(b, comment)) != 0)
-		return r;
-	return 0;
-}
+  /* Send the length and then the packet to the agent. */
+  if (write(auth->fd, buf, 4) != 4 ||
+      write(auth->fd, buffer_ptr(&buffer), buffer_len(&buffer)) !=
+        buffer_len(&buffer))
+    {
+      error("Error writing to authentication socket.");
+    error_cleanup:
+      buffer_free(&buffer);
+      return 0;
+    }
 
-static int
-encode_constraints(struct sshbuf *m, u_int life, u_int confirm)
-{
-	int r;
-
-	if (life != 0) {
-		if ((r = sshbuf_put_u8(m, SSH_AGENT_CONSTRAIN_LIFETIME)) != 0 ||
-		    (r = sshbuf_put_u32(m, life)) != 0)
-			goto out;
+  /* Wait for response from the agent.  First read the length of the
+     response packet. */
+  len = 4;
+  while (len > 0)
+    {
+      l = read(auth->fd, buf + 4 - len, len);
+      if (l <= 0)
+	{
+	  error("Error reading response length from authentication socket.");
+	  goto error_cleanup;
 	}
-	if (confirm != 0) {
-		if ((r = sshbuf_put_u8(m, SSH_AGENT_CONSTRAIN_CONFIRM)) != 0)
-			goto out;
+      len -= l;
+    }
+
+  /* Extract the length, and check it for sanity. */
+  len = GET_32BIT(buf);
+  if (len > 256*1024)
+    fatal("Remove identity response too long: %d", len);
+
+  /* Read the rest of the response in tothe buffer. */
+  buffer_clear(&buffer);
+  while (len > 0)
+    {
+      l = len;
+      if (l > sizeof(buf))
+	l = sizeof(buf);
+      l = read(auth->fd, buf, l);
+      if (l <= 0)
+	{
+	  error("Error reading response from authentication socket.");
+	  goto error_cleanup;
 	}
-	r = 0;
- out:
-	return r;
-}
+      buffer_append(&buffer, (char *)buf, l);
+      len -= l;
+    }
 
-/*
- * Adds an identity to the authentication server.
- * This call is intended only for use by ssh-add(1) and like applications.
- */
-int
-ssh_add_identity_constrained(int sock, struct sshkey *key, const char *comment,
-    u_int life, u_int confirm)
+  /* Get the type of the packet. */
+  type = buffer_get_char(&buffer);
+  switch (type)
+    {
+    case SSH_AGENT_FAILURE:
+      buffer_free(&buffer);
+      return 0;
+    case SSH_AGENT_SUCCESS:
+      buffer_free(&buffer);
+      return 1;
+    default:
+      fatal("Bad response to remove identity from authentication agent: %d", 
+	    type);
+    }
+  /*NOTREACHED*/
+  return 0;
+}  
+
+/* Removes all identities from the agent.  This call is not meant 
+   to be used by normal applications. */
+
+int ssh_remove_all_identities(AuthenticationConnection *auth)
 {
-	struct sshbuf *msg;
-	int r, constrained = (life || confirm);
-	u_char type;
+  Buffer buffer;
+  unsigned char buf[8192];
+  int len, l, type;
 
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
+  /* Get the length of the message, and format it in the buffer. */
+  PUT_32BIT(buf, 1);
+  buf[4] = SSH_AGENTC_REMOVE_ALL_RSA_IDENTITIES;
 
-	switch (key->type) {
-#ifdef WITH_SSH1
-	case KEY_RSA1:
-		type = constrained ?
-		    SSH_AGENTC_ADD_RSA_ID_CONSTRAINED :
-		    SSH_AGENTC_ADD_RSA_IDENTITY;
-		if ((r = sshbuf_put_u8(msg, type)) != 0 ||
-		    (r = ssh_encode_identity_rsa1(msg, key->rsa, comment)) != 0)
-			goto out;
-		break;
-#endif
-#ifdef WITH_OPENSSL
-	case KEY_RSA:
-	case KEY_RSA_CERT:
-	case KEY_DSA:
-	case KEY_DSA_CERT:
-	case KEY_ECDSA:
-	case KEY_ECDSA_CERT:
-#endif
-	case KEY_ED25519:
-	case KEY_ED25519_CERT:
-		type = constrained ?
-		    SSH2_AGENTC_ADD_ID_CONSTRAINED :
-		    SSH2_AGENTC_ADD_IDENTITY;
-		if ((r = sshbuf_put_u8(msg, type)) != 0 ||
-		    (r = ssh_encode_identity_ssh2(msg, key, comment)) != 0)
-			goto out;
-		break;
-	default:
-		r = SSH_ERR_INVALID_ARGUMENT;
-		goto out;
+  /* Send the length and then the packet to the agent. */
+  if (write(auth->fd, buf, 5) != 5)
+    {
+      error("Error writing to authentication socket.");
+      return 0;
+    }
+
+  /* Wait for response from the agent.  First read the length of the
+     response packet. */
+  len = 4;
+  while (len > 0)
+    {
+      l = read(auth->fd, buf + 4 - len, len);
+      if (l <= 0)
+	{
+	  error("Error reading response length from authentication socket.");
+	  return 0;
 	}
-	if (constrained &&
-	    (r = encode_constraints(msg, life, confirm)) != 0)
-		goto out;
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	r = decode_reply(type);
- out:
-	sshbuf_free(msg);
-	return r;
-}
+      len -= l;
+    }
 
-/*
- * Removes an identity from the authentication server.
- * This call is intended only for use by ssh-add(1) and like applications.
- */
-int
-ssh_remove_identity(int sock, struct sshkey *key)
-{
-	struct sshbuf *msg;
-	int r;
-	u_char type, *blob = NULL;
-	size_t blen;
+  /* Extract the length, and check it for sanity. */
+  len = GET_32BIT(buf);
+  if (len > 256*1024)
+    fatal("Remove identity response too long: %d", len);
 
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-
-#ifdef WITH_SSH1
-	if (key->type == KEY_RSA1) {
-		if ((r = sshbuf_put_u8(msg,
-		    SSH_AGENTC_REMOVE_RSA_IDENTITY)) != 0 ||
-		    (r = sshbuf_put_u32(msg, BN_num_bits(key->rsa->n))) != 0 ||
-		    (r = sshbuf_put_bignum1(msg, key->rsa->e)) != 0 ||
-		    (r = sshbuf_put_bignum1(msg, key->rsa->n)) != 0)
-			goto out;
-	} else
-#endif
-	if (key->type != KEY_UNSPEC) {
-		if ((r = sshkey_to_blob(key, &blob, &blen)) != 0)
-			goto out;
-		if ((r = sshbuf_put_u8(msg,
-		    SSH2_AGENTC_REMOVE_IDENTITY)) != 0 ||
-		    (r = sshbuf_put_string(msg, blob, blen)) != 0)
-			goto out;
-	} else {
-		r = SSH_ERR_INVALID_ARGUMENT;
-		goto out;
+  /* Read the rest of the response into the buffer. */
+  buffer_init(&buffer);
+  while (len > 0)
+    {
+      l = len;
+      if (l > sizeof(buf))
+	l = sizeof(buf);
+      l = read(auth->fd, buf, l);
+      if (l <= 0)
+	{
+	  error("Error reading response from authentication socket.");
+	  buffer_free(&buffer);
+	  return 0;
 	}
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	r = decode_reply(type);
- out:
-	if (blob != NULL) {
-		explicit_bzero(blob, blen);
-		free(blob);
-	}
-	sshbuf_free(msg);
-	return r;
-}
+      buffer_append(&buffer, (char *)buf, l);
+      len -= l;
+    }
 
-/*
- * Add/remove an token-based identity from the authentication server.
- * This call is intended only for use by ssh-add(1) and like applications.
- */
-int
-ssh_update_card(int sock, int add, const char *reader_id, const char *pin,
-    u_int life, u_int confirm)
-{
-	struct sshbuf *msg;
-	int r, constrained = (life || confirm);
-	u_char type;
-
-	if (add) {
-		type = constrained ?
-		    SSH_AGENTC_ADD_SMARTCARD_KEY_CONSTRAINED :
-		    SSH_AGENTC_ADD_SMARTCARD_KEY;
-	} else
-		type = SSH_AGENTC_REMOVE_SMARTCARD_KEY;
-
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_put_u8(msg, type)) != 0 ||
-	    (r = sshbuf_put_cstring(msg, reader_id)) != 0 ||
-	    (r = sshbuf_put_cstring(msg, pin)) != 0)
-		goto out;
-	if (constrained &&
-	    (r = encode_constraints(msg, life, confirm)) != 0)
-		goto out;
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	r = decode_reply(type);
- out:
-	sshbuf_free(msg);
-	return r;
-}
-
-/*
- * Removes all identities from the agent.
- * This call is intended only for use by ssh-add(1) and like applications.
- */
-int
-ssh_remove_all_identities(int sock, int version)
-{
-	struct sshbuf *msg;
-	u_char type = (version == 1) ?
-	    SSH_AGENTC_REMOVE_ALL_RSA_IDENTITIES :
-	    SSH2_AGENTC_REMOVE_ALL_IDENTITIES;
-	int r;
-
-	if ((msg = sshbuf_new()) == NULL)
-		return SSH_ERR_ALLOC_FAIL;
-	if ((r = sshbuf_put_u8(msg, type)) != 0)
-		goto out;
-	if ((r = ssh_request_reply(sock, msg, msg)) != 0)
-		goto out;
-	if ((r = sshbuf_get_u8(msg, &type)) != 0)
-		goto out;
-	r = decode_reply(type);
- out:
-	sshbuf_free(msg);
-	return r;
-}
+  /* Get the type of the packet. */
+  type = buffer_get_char(&buffer);
+  switch (type)
+    {
+    case SSH_AGENT_FAILURE:
+      buffer_free(&buffer);
+      return 0;
+    case SSH_AGENT_SUCCESS:
+      buffer_free(&buffer);
+      return 1;
+    default:
+      fatal("Bad response to remove identity from authentication agent: %d", 
+	    type);
+    }
+  /*NOTREACHED*/
+  return 0;
+}  

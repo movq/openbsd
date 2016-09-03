@@ -1,6 +1,8 @@
+
+
 /* coffgrok.c
-   Copyright 1994, 1995, 1997, 1998, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+
+   Copyright (C) 1994 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -26,8 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 */
 
-#include "bfd.h"
-#include "libiberty.h"
+#include <bfd.h>
 #include "bucomm.h"
 
 #include "coff/internal.h"
@@ -55,31 +56,18 @@ static long symcount;
 static struct coff_ptr_struct *rawsyms;
 static int rawcount;
 static bfd *abfd;
-
-#define PTR_SIZE	4
-#define SHORT_SIZE	2
-#define INT_SIZE	4
-#define LONG_SIZE	4
-#define FLOAT_SIZE	4
-#define DOUBLE_SIZE	8
+extern char *xcalloc ();
+#define PTR_SIZE 	4
+#define SHORT_SIZE 	2
+#define INT_SIZE 	4
+#define LONG_SIZE 	4
+#define FLOAT_SIZE 	4
+#define DOUBLE_SIZE 	8
 
 #define INDEXOF(p)  ((struct coff_ptr_struct *)(p)-(rawsyms))
 
-static struct coff_scope *empty_scope (void);
-static struct coff_symbol *empty_symbol (void);
-static void push_scope (int);
-static void pop_scope (void);
-static void do_sections_p1 (struct coff_ofile *);
-static void do_sections_p2 (struct coff_ofile *);
-static struct coff_where *do_where (int);
-static struct coff_line *do_lines (int, char *);
-static struct coff_type *do_type (int);
-static struct coff_visible *do_visible (int);
-static int do_define (int, struct coff_scope *);
-static struct coff_ofile *doit (void);
-
 static struct coff_scope *
-empty_scope (void)
+empty_scope ()
 {
   struct coff_scope *l;
   l = (struct coff_scope *) (xcalloc (sizeof (struct coff_scope), 1));
@@ -87,14 +75,15 @@ empty_scope (void)
 }
 
 static struct coff_symbol *
-empty_symbol (void)
+empty_symbol ()
 {
   return (struct coff_symbol *) (xcalloc (sizeof (struct coff_symbol), 1));
 }
 
 /*int l;*/
 static void
-push_scope (int link)
+push_scope (link)
+     int link;
 {
   struct coff_scope *n = empty_scope ();
   if (link)
@@ -118,13 +107,14 @@ push_scope (int link)
 }
 
 static void
-pop_scope (void)
+pop_scope ()
 {
   top_scope = top_scope->parent;
 }
 
 static void
-do_sections_p1 (struct coff_ofile *head)
+do_sections_p1 (head)
+     struct coff_ofile *head;
 {
   asection *section;
   int idx;
@@ -144,7 +134,7 @@ do_sections_p1 (struct coff_ofile *head)
       if (relsize < 0)
 	bfd_fatal (bfd_get_filename (abfd));
       if (relsize == 0)
-	continue;
+        continue;
       relpp = (arelent **) xmalloc (relsize);
       relcount = bfd_canonicalize_reloc (abfd, section, relpp, syms);
       if (relcount < 0)
@@ -155,7 +145,7 @@ do_sections_p1 (struct coff_ofile *head)
       head->sections[i].data = section->flags & SEC_DATA;
       if (strcmp (section->name, ".bss") == 0)
 	head->sections[i].data = 1;
-      head->sections[i].address = section->lma;
+      head->sections[i].address = section->vma;
       head->sections[i].size = section->_raw_size;
       head->sections[i].number = idx;
       head->sections[i].nrelocs = section->reloc_count;
@@ -173,13 +163,13 @@ do_sections_p1 (struct coff_ofile *head)
 }
 
 static void
-do_sections_p2 (struct coff_ofile *head)
+do_sections_p2 (head)
+     struct coff_ofile *head;
 {
   asection *section;
   for (section = abfd->sections; section; section = section->next)
     {
-      unsigned int j;
-
+      int j;
       for (j = 0; j < section->reloc_count; j++)
 	{
 	  int idx;
@@ -195,11 +185,12 @@ do_sections_p2 (struct coff_ofile *head)
 }
 
 static struct coff_where *
-do_where (int i)
+do_where (i)
+     int i;
 {
   struct internal_syment *sym = &rawsyms[i].u.syment;
-  struct coff_where *where =
-    (struct coff_where *) (xmalloc (sizeof (struct coff_where)));
+  struct coff_where *where
+  = (struct coff_where *) (malloc (sizeof (struct coff_where)));
   where->offset = sym->n_value;
 
   if (sym->n_scnum == -1)
@@ -254,12 +245,13 @@ do_where (int i)
 
 static
 struct coff_line *
-do_lines (int i, char *name ATTRIBUTE_UNUSED)
+do_lines (i, name)
+     int i;
+     char *name;
 {
   struct coff_line *res = (struct coff_line *) xcalloc (sizeof (struct coff_line), 1);
   asection *s;
-  unsigned int l;
-
+  int l;
   /* Find out if this function has any line numbers in the table */
   for (s = abfd->sections; s; s = s->next)
     {
@@ -272,7 +264,7 @@ do_lines (int i, char *name ATTRIBUTE_UNUSED)
 		  /* These lines are for this function - so count them and stick them on */
 		  int c = 0;
 		  /* Find the linenumber of the top of the function, since coff linenumbers
-		     are relative to the start of the function.  */
+		     are relative to the start of the function. */
 		  int start_line = rawsyms[i + 3].u.auxent.x_sym.x_misc.x_lnsz.x_lnno;
 
 		  l++;
@@ -301,12 +293,12 @@ do_lines (int i, char *name ATTRIBUTE_UNUSED)
 
 static
 struct coff_type *
-do_type (int i)
+do_type (i)
+     int i;
 {
   struct internal_syment *sym = &rawsyms[i].u.syment;
   union internal_auxent *aux = &rawsyms[i + 1].u.auxent;
-  struct coff_type *res =
-    (struct coff_type *) xmalloc (sizeof (struct coff_type));
+  struct coff_type *res = (struct coff_type *) malloc (sizeof (struct coff_type));
   int type = sym->n_type;
   int which_dt = 0;
   int dimind = 0;
@@ -370,7 +362,7 @@ do_type (int i)
 	{
 	  if (aux->x_sym.x_tagndx.p)
 	    {
-	      /* Referring to a struct defined elsewhere */
+	      /* Refering to a struct defined elsewhere */
 	      res->type = coff_structref_type;
 	      res->u.astructref.ref = tindex[INDEXOF (aux->x_sym.x_tagndx.p)];
 	      res->size = res->u.astructref.ref ?
@@ -389,7 +381,7 @@ do_type (int i)
 	}
       else
 	{
-	  /* No auxents - it's anonymous */
+	  /* No auxents - it's anonynmous */
 	  res->type = coff_structref_type;
 	  res->u.astructref.ref = 0;
 	  res->size = 0;
@@ -398,7 +390,7 @@ do_type (int i)
     case T_ENUM:
       if (aux->x_sym.x_tagndx.p)
 	{
-	  /* Referring to a enum defined elsewhere */
+	  /* Refering to a enum defined elsewhere */
 	  res->type = coff_enumref_type;
 	  res->u.aenumref.ref = tindex[INDEXOF (aux->x_sym.x_tagndx.p)];
 	  res->size = res->u.aenumref.ref->type->size;
@@ -425,7 +417,7 @@ do_type (int i)
 	case DT_ARY:
 	  {
 	    struct coff_type *ptr = ((struct coff_type *)
-				     xmalloc (sizeof (struct coff_type)));
+				     malloc (sizeof (struct coff_type)));
 	    int els = (dimind < DIMNUM
 		       ? aux->x_sym.x_fcnary.x_ary.x_dimen[dimind]
 		       : 0);
@@ -439,8 +431,7 @@ do_type (int i)
 	  }
 	case DT_PTR:
 	  {
-	    struct coff_type *ptr =
-	      (struct coff_type *) xmalloc (sizeof (struct coff_type));
+	    struct coff_type *ptr = (struct coff_type *) malloc (sizeof (struct coff_type));
 	    ptr->size = PTR_SIZE;
 	    ptr->type = coff_pointer_type;
 	    ptr->u.pointer.points_to = res;
@@ -449,8 +440,7 @@ do_type (int i)
 	  }
 	case DT_FCN:
 	  {
-	    struct coff_type *ptr
-	      = (struct coff_type *) xmalloc (sizeof (struct coff_type));
+	    struct coff_type *ptr = (struct coff_type *) malloc (sizeof (struct coff_type));
 	    ptr->size = 0;
 	    ptr->type = coff_function_type;
 	    ptr->u.function.function_returns = res;
@@ -467,11 +457,11 @@ do_type (int i)
 }
 
 static struct coff_visible *
-do_visible (int i)
+do_visible (i)
+     int i;
 {
   struct internal_syment *sym = &rawsyms[i].u.syment;
-  struct coff_visible *visible =
-    (struct coff_visible *) (xmalloc (sizeof (struct coff_visible)));
+  struct coff_visible *visible = (struct coff_visible *) (malloc (sizeof (struct coff_visible)));
   enum coff_vis_type t;
   switch (sym->n_sclass)
     {
@@ -531,7 +521,9 @@ do_visible (int i)
 }
 
 static int
-do_define (int i, struct coff_scope *b)
+do_define (i, b)
+     int i;
+     struct coff_scope *b;
 {
   static int symbol_index;
   struct internal_syment *sym = &rawsyms[i].u.syment;
@@ -591,12 +583,12 @@ do_define (int i, struct coff_scope *b)
 
 static
 struct coff_ofile *
-doit (void)
+doit ()
 {
   int i;
   int infile = 0;
   struct coff_ofile *head =
-    (struct coff_ofile *) xmalloc (sizeof (struct coff_ofile));
+  (struct coff_ofile *) xmalloc (sizeof (struct coff_ofile));
   ofile = head;
   head->source_head = 0;
   head->source_tail = 0;
@@ -614,8 +606,7 @@ doit (void)
 	case C_FILE:
 	  {
 	    /* new source file announced */
-	    struct coff_sfile *n =
-	      (struct coff_sfile *) xmalloc (sizeof (struct coff_sfile));
+	    struct coff_sfile *n = (struct coff_sfile *) malloc (sizeof (struct coff_sfile));
 	    n->section = (struct coff_isection *) xcalloc (sizeof (struct coff_isection), abfd->section_count + 1);
 	    cur_sfile = n;
 	    n->name = sym->_n._n_nptr[1];
@@ -718,7 +709,8 @@ doit (void)
 }
 
 struct coff_ofile *
-coff_grok (bfd *inabfd)
+coff_grok (inabfd)
+     bfd *inabfd;
 {
   long storage;
   struct coff_ofile *p;

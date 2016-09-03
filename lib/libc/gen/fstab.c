@@ -1,4 +1,3 @@
-/*	$OpenBSD: fstab.c,v 1.22 2016/03/17 23:48:42 mmcc Exp $ */
 /*
  * Copyright (c) 1980, 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fstab.c,v 1.8 1999/09/03 16:23:18 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/stat.h>
@@ -43,29 +50,30 @@
 static FILE *_fs_fp;
 static struct fstab _fs_fstab;
 
-static int fstabscan(void);
+static void error __P((int));
+static int fstabscan __P((void));
 
 static int
-fstabscan(void)
+fstabscan()
 {
-	char *cp;
+	register char *cp;
 #define	MAXLINELENGTH	1024
 	static char line[MAXLINELENGTH];
 	char subline[MAXLINELENGTH];
-	const char *errstr;
-	char *last;
+	char *endp;
 	int typexx;
+	long l;
 
 	for (;;) {
 		if (!(cp = fgets(line, sizeof(line), _fs_fp)))
 			return(0);
 /* OLD_STYLE_FSTAB */
 		if (!strpbrk(cp, " \t")) {
-			_fs_fstab.fs_spec = strtok_r(cp, ":\n", &last);
+			_fs_fstab.fs_spec = strtok(cp, ":\n");
 			if (!_fs_fstab.fs_spec || *_fs_fstab.fs_spec == '#')
 				continue;
-			_fs_fstab.fs_file = strtok_r(NULL, ":\n", &last);
-			_fs_fstab.fs_type = strtok_r(NULL, ":\n", &last);
+			_fs_fstab.fs_file = strtok((char *)NULL, ":\n");
+			_fs_fstab.fs_type = strtok((char *)NULL, ":\n");
 			if (_fs_fstab.fs_type) {
 				if (!strcmp(_fs_fstab.fs_type, FSTAB_XX))
 					continue;
@@ -73,18 +81,18 @@ fstabscan(void)
 				_fs_fstab.fs_vfstype =
 				    strcmp(_fs_fstab.fs_type, FSTAB_SW) ?
 				    "ufs" : "swap";
-				if ((cp = strtok_r(NULL, ":\n", &last))) {
-					_fs_fstab.fs_freq = strtonum(cp, 0,
-					    INT_MAX, &errstr);
-					if (errstr)
+				if ((cp = strtok((char *)NULL, ":\n"))) {
+					l = strtol(cp, &endp, 10);
+					if (endp == cp || *endp != '\0' ||
+					    l < 0 || l >= INT_MAX)
 						goto bad;
-					if ((cp = strtok_r(NULL,
-					    ":\n", &last))) {
-						_fs_fstab.fs_passno =
-						    strtonum(cp, 0, INT_MAX,
-						    &errstr);
-						if (errstr)
+					_fs_fstab.fs_freq = l;
+					if ((cp = strtok((char *)NULL, ":\n"))) {
+						l = strtol(cp, &endp, 10);
+						if (endp == cp || *endp != '\0'
+						    || l < 0 || l >= INT_MAX)
 							goto bad;
+						_fs_fstab.fs_passno = l;
 						return(1);
 					}
 				}
@@ -92,30 +100,34 @@ fstabscan(void)
 			goto bad;
 		}
 /* OLD_STYLE_FSTAB */
-		_fs_fstab.fs_spec = strtok_r(cp, " \t\n", &last);
+		_fs_fstab.fs_spec = strtok(cp, " \t\n");
 		if (!_fs_fstab.fs_spec || *_fs_fstab.fs_spec == '#')
 			continue;
-		_fs_fstab.fs_file = strtok_r(NULL, " \t\n", &last);
-		_fs_fstab.fs_vfstype = strtok_r(NULL, " \t\n", &last);
-		_fs_fstab.fs_mntops = strtok_r(NULL, " \t\n", &last);
+		_fs_fstab.fs_file = strtok((char *)NULL, " \t\n");
+		_fs_fstab.fs_vfstype = strtok((char *)NULL, " \t\n");
+		_fs_fstab.fs_mntops = strtok((char *)NULL, " \t\n");
 		if (_fs_fstab.fs_mntops == NULL)
 			goto bad;
 		_fs_fstab.fs_freq = 0;
 		_fs_fstab.fs_passno = 0;
-		if ((cp = strtok_r(NULL, " \t\n", &last)) != NULL) {
-			_fs_fstab.fs_freq = strtonum(cp, 0, INT_MAX, &errstr);
-			if (errstr)
+		if ((cp = strtok((char *)NULL, " \t\n")) != NULL) {
+			l = strtol(cp, &endp, 10);
+			if (endp == cp || *endp != '\0' || l < 0 ||
+			    l >= INT_MAX)
 				goto bad;
-			if ((cp = strtok_r(NULL, " \t\n", &last)) != NULL) {
-				_fs_fstab.fs_passno = strtonum(cp, 0, INT_MAX,
-				    &errstr);
-				if (errstr)
+			_fs_fstab.fs_freq = l;
+			if ((cp = strtok((char *)NULL, " \t\n")) != NULL) {
+				l = strtol(cp, &endp, 10);
+				if (endp == cp || *endp != '\0' || l < 0 ||
+				    l >= INT_MAX)
 					goto bad;
+				_fs_fstab.fs_passno = l;
 			}
 		}
-		strlcpy(subline, _fs_fstab.fs_mntops, sizeof subline);
-		for (typexx = 0, cp = strtok_r(subline, ",", &last); cp;
-		     cp = strtok_r(NULL, ",", &last)) {
+		strncpy(subline, _fs_fstab.fs_mntops, sizeof subline-1);
+		subline[sizeof subline-1] = '\0';
+		for (typexx = 0, cp = strtok(subline, ","); cp;
+		     cp = strtok((char *)NULL, ",")) {
 			if (strlen(cp) != 2)
 				continue;
 			if (!strcmp(cp, FSTAB_RW)) {
@@ -145,13 +157,14 @@ fstabscan(void)
 		if (cp != NULL)
 			return(1);
 
-bad:		/* We silently ignore all bogus lines */
-		;
+bad:		/* no way to distinguish between EOF and syntax error */
+		error(EFTYPE);
 	}
+	/* NOTREACHED */
 }
 
 struct fstab *
-getfsent(void)
+getfsent()
 {
 	if ((!_fs_fp && !setfsent()) || !fstabscan())
 		return(NULL);
@@ -159,27 +172,29 @@ getfsent(void)
 }
 
 struct fstab *
-getfsspec(const char *name)
+getfsspec(name)
+	register const char *name;
 {
 	if (setfsent())
 		while (fstabscan())
 			if (!strcmp(_fs_fstab.fs_spec, name))
 				return(&_fs_fstab);
-	return(NULL);
+	return((struct fstab *)NULL);
 }
 
 struct fstab *
-getfsfile(const char *name)
+getfsfile(name)
+	register const char *name;
 {
 	if (setfsent())
 		while (fstabscan())
 			if (!strcmp(_fs_fstab.fs_file, name))
 				return(&_fs_fstab);
-	return(NULL);
+	return((struct fstab *)NULL);
 }
 
 int
-setfsent(void)
+setfsent()
 {
 	struct stat sbuf;
 
@@ -195,19 +210,38 @@ setfsent(void)
 		goto fail;
 	}
 
-	if ((_fs_fp = fopen(_PATH_FSTAB, "re")))
+	if ((_fs_fp = fopen(_PATH_FSTAB, "r")))
 		return(1);
 
 fail:
+	error(errno);
 	return(0);
 }
-DEF_WEAK(setfsent);
 
 void
-endfsent(void)
+endfsent()
 {
 	if (_fs_fp) {
 		(void)fclose(_fs_fp);
 		_fs_fp = NULL;
 	}
+}
+
+static void
+error(err)
+	int err;
+{
+	struct iovec iov[5];
+
+	iov[0].iov_base = "fstab: ";
+	iov[0].iov_len = 7;
+	iov[1].iov_base = _PATH_FSTAB;
+	iov[1].iov_len = sizeof(_PATH_FSTAB) - 1;
+	iov[2].iov_base =  ": ";
+	iov[2].iov_len = 2;
+	iov[3].iov_base = strerror(err);
+	iov[3].iov_len = strlen(iov[3].iov_base);
+	iov[4].iov_base = "\n";
+	iov[4].iov_len = 1;
+	(void)writev(STDERR_FILENO, iov, 5);
 }

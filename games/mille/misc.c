@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.13 2016/01/08 18:09:59 mestre Exp $	*/
+/*	$OpenBSD: misc.c,v 1.5 1999/09/30 03:24:32 pjanzen Exp $	*/
 /*	$NetBSD: misc.c,v 1.4 1995/03/24 05:01:54 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,10 +34,24 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)misc.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: misc.c,v 1.5 1999/09/30 03:24:32 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "mille.h"
+#include <sys/file.h>
+#include <termios.h>
+
+#if __STDC__
+#include	<stdarg.h>
+#else
+#include	<varargs.h>
+#endif
+
+#include	"mille.h"
 
 /*
  * @(#)misc.c	1.2 (Berkeley) 3/28/83
@@ -42,11 +60,21 @@
 #define	NUMSAFE	4
 
 bool
+#if __STDC__
 error(char *str, ...)
+#else
+error(str, arg)
+	char	*str;
+	va_dcl
+#endif
 {
 	va_list ap;
 
+#if __STDC__
 	va_start(ap, str);
+#else
+	va_start(ap);
+#endif
 	wmove(Score, ERR_Y, ERR_X);
 	vwprintw(Score, str, ap);
 	wclrtoeol(Score);
@@ -57,7 +85,7 @@ error(char *str, ...)
 }
 
 CARD
-getcard(void)
+getcard()
 {
 	int	c, c1;
 
@@ -79,7 +107,7 @@ getcard(void)
 			c = 0;
 			break;
 		  default:
-			beep();
+			putchar('\07');
 			addch('\b');
 			if (!isprint(c))
 				addch('\b');
@@ -98,7 +126,7 @@ getcard(void)
 					goto cont;
 				}
 				else
-					beep();
+					write(0, "\07", 1);
 			return c;
 		}
 cont:		;
@@ -106,7 +134,8 @@ cont:		;
 }
 
 int
-check_ext(bool forcomp)
+check_ext(forcomp)
+	bool	forcomp;
 {
 	if (End == 700) {
 		if (Play == PLAYER) {
@@ -143,7 +172,7 @@ done:
 				goto extend;
 			for (miles = 0, i = 0; i < HAND_SZ; i++)
 				if ((safe = pp->hand[i]) <= C_200)
-					miles += Value[safe];
+					miles += Value[safe]; 
 			if (miles + (Topcard - Deck) * 3 > 1000)
 				goto extend;
 			goto done;
@@ -157,7 +186,8 @@ done:
  * also allowed.  Return TRUE if the answer was yes, FALSE if no.
  */
 int
-getyn(int promptno)
+getyn(promptno)
+	int	promptno;
 {
 	char	c;
 
@@ -189,7 +219,7 @@ getyn(int promptno)
 		  default:
 			addstr(unctrl(c));
 			refresh();
-			beep();
+			putchar('\07');
 			break;
 		}
 	}
@@ -201,7 +231,7 @@ getyn(int promptno)
  * it.  Exit appropriately.
  */
 void
-check_more(void)
+check_more()
 {
 	On_exit = TRUE;
 	if (Player[PLAYER].total >= 5000 || Player[COMP].total >= 5000) {
@@ -228,13 +258,13 @@ check_more(void)
 }
 
 int
-readch(void)
+readch()
 {
 	int	cnt;
 	static char	c;
 
 	for (cnt = 0; read(STDIN_FILENO, &c, 1) <= 0; cnt++)
 		if (cnt > 100)
-			die(1);
+			exit(1);
 	return c;
 }

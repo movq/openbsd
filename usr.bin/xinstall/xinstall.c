@@ -1,4 +1,4 @@
-/*	$OpenBSD: xinstall.c,v 1.65 2016/05/13 17:51:15 jmc Exp $	*/
+/*	$OpenBSD: xinstall.c,v 1.22 1999/08/04 18:24:09 mickey Exp $	*/
 /*	$NetBSD: xinstall.c,v 1.9 1995/12/20 10:25:17 jonathan Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,20 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MAXBSIZE */
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1987, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)xinstall.c	8.1 (Berkeley) 7/21/93";
+#endif
+static char rcsid[] = "$OpenBSD: xinstall.c,v 1.22 1999/08/04 18:24:09 mickey Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -46,53 +63,51 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
+#include <sysexits.h>
 #include <utime.h>
-#include <libgen.h>
 
 #include "pathnames.h"
 
-#define MINIMUM(a, b)	(((a) < (b)) ? (a) : (b))
-
 #define	DIRECTORY	0x01		/* Tell install it's a directory. */
 #define	SETFLAGS	0x02		/* Tell install to set flags. */
-#define	USEFSYNC	0x04		/* Tell install to use fsync(2). */
 #define NOCHANGEBITS	(UF_IMMUTABLE | UF_APPEND | SF_IMMUTABLE | SF_APPEND)
 #define BACKUP_SUFFIX	".old"
 
 struct passwd *pp;
 struct group *gp;
-int dobackup, docompare, dodest, dodir, dopreserve, dostrip, safecopy;
+int dobackup, docompare, dodir, dopreserve, dostrip, safecopy;
 int mode = S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH;
-char pathbuf[PATH_MAX], tempfile[PATH_MAX];
+char pathbuf[MAXPATHLEN], tempfile[MAXPATHLEN];
 char *suffix = BACKUP_SUFFIX;
 uid_t uid;
 gid_t gid;
 
-void	copy(int, char *, int, char *, off_t, int);
-int	compare(int, const char *, off_t, int, const char *, off_t);
-void	install(char *, char *, u_long, u_int);
-void	install_dir(char *, int);
-void	strip(char *);
-void	usage(void);
-int	create_newfile(char *, struct stat *);
-int	create_tempfile(char *, char *, size_t);
-int	file_write(int, char *, size_t, int *, int *, int);
-void	file_flush(int, int);
+void	copy __P((int, char *, int, char *, off_t, int));
+int	compare __P((int, const char *, size_t, int, const char *, size_t));
+void	install __P((char *, char *, u_long, u_int));
+void	install_dir __P((char *));
+u_long	string_to_flags __P((char **, u_long *, u_long *));
+void	strip __P((char *));
+void	usage __P((void));
+int	create_newfile __P((char *, struct stat *));
+int	create_tempfile __P((char *, char *, size_t));
+int	file_write __P((int, char *, register size_t, int *, int *, int));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct stat from_sb, to_sb;
-	void *set;
-	u_int32_t fset;
+	mode_t *set;
+	u_long fset;
 	u_int iflags;
 	int ch, no_target;
 	char *flags, *to_name, *group = NULL, *owner = NULL;
 
 	iflags = 0;
-	while ((ch = getopt(argc, argv, "B:bCcDdFf:g:m:o:pSs")) != -1)
-		switch(ch) {
+	while ((ch = getopt(argc, argv, "BbCcdf:g:m:o:pSs")) != -1)
+		switch((char)ch) {
 		case 'C':
 			docompare = 1;
 			break;
@@ -105,13 +120,10 @@ main(int argc, char *argv[])
 		case 'c':
 			/* For backwards compatibility. */
 			break;
-		case 'F':
-			iflags |= USEFSYNC;
-			break;
 		case 'f':
 			flags = optarg;
-			if (strtofflags(&flags, &fset, NULL))
-				errx(1, "%s: invalid flag", flags);
+			if (string_to_flags(&flags, &fset, NULL))
+				errx(EX_USAGE, "%s: invalid flag", flags);
 			iflags |= SETFLAGS;
 			break;
 		case 'g':
@@ -119,7 +131,7 @@ main(int argc, char *argv[])
 			break;
 		case 'm':
 			if (!(set = setmode(optarg)))
-				errx(1, "%s: invalid file mode", optarg);
+				errx(EX_USAGE, "%s: invalid file mode", optarg);
 			mode = getmode(set, 0);
 			free(set);
 			break;
@@ -134,9 +146,6 @@ main(int argc, char *argv[])
 			break;
 		case 's':
 			dostrip = 1;
-			break;
-		case 'D':
-			dodest = 1;
 			break;
 		case 'd':
 			dodir = 1;
@@ -161,55 +170,43 @@ main(int argc, char *argv[])
 		safecopy = 1;
 
 	/* get group and owner id's */
-	if (group && !(gp = getgrnam(group)) && !isdigit((unsigned char)*group))
-		errx(1, "unknown group %s", group);
+	if (group && !(gp = getgrnam(group)) && !isdigit(*group))
+		errx(EX_NOUSER, "unknown group %s", group);
 	gid = (group) ? ((gp) ? gp->gr_gid : (gid_t)strtoul(group, NULL, 10)) : (gid_t)-1;
-	if (owner && !(pp = getpwnam(owner)) && !isdigit((unsigned char)*owner))
-		errx(1, "unknown user %s", owner);
+	if (owner && !(pp = getpwnam(owner)) && !isdigit(*owner))
+		errx(EX_NOUSER, "unknown user %s", owner);
 	uid = (owner) ? ((pp) ? pp->pw_uid : (uid_t)strtoul(owner, NULL, 10)) : (uid_t)-1;
 
 	if (dodir) {
 		for (; *argv != NULL; ++argv)
-			install_dir(*argv, mode);
-		exit(0);
+			install_dir(*argv);
+		exit(EX_OK);
 		/* NOTREACHED */
-	}
-
-	if (dodest) {
-		char *dest = dirname(argv[argc - 1]);
-		if (dest == NULL)
-			errx(1, "cannot determine dirname");
-		/*
-		 * When -D is passed, do not chmod the directory with the mode set for
-		 * the target file. If more restrictive permissions are required then
-		 * '-d -m' ought to be used instead.
-		 */
-		install_dir(dest, 0755);
 	}
 
 	no_target = stat(to_name = argv[argc - 1], &to_sb);
 	if (!no_target && S_ISDIR(to_sb.st_mode)) {
 		for (; *argv != to_name; ++argv)
 			install(*argv, to_name, fset, iflags | DIRECTORY);
-		exit(0);
+		exit(EX_OK);
 		/* NOTREACHED */
 	}
 
 	/* can't do file1 file2 directory/file */
 	if (argc != 2)
-		errx(1, "Target: %s", argv[argc-1]);
+		usage();
 
 	if (!no_target) {
 		if (stat(*argv, &from_sb))
-			err(1, "%s", *argv);
+			err(EX_OSERR, "%s", *argv);
 		if (!S_ISREG(to_sb.st_mode))
-			errc(1, EFTYPE, "%s", to_name);
+			errx(EX_OSERR, "%s: %s", to_name, strerror(EFTYPE));
 		if (to_sb.st_dev == from_sb.st_dev &&
 		    to_sb.st_ino == from_sb.st_ino)
-			errx(1, "%s and %s are the same file", *argv, to_name);
+			errx(EX_USAGE, "%s and %s are the same file", *argv, to_name);
 	}
 	install(*argv, to_name, fset, iflags);
-	exit(0);
+	exit(EX_OK);
 	/* NOTREACHED */
 }
 
@@ -218,10 +215,13 @@ main(int argc, char *argv[])
  *	build a path name and install the file
  */
 void
-install(char *from_name, char *to_name, u_long fset, u_int flags)
+install(from_name, to_name, fset, flags)
+	char *from_name, *to_name;
+	u_long fset;
+	u_int flags;
 {
 	struct stat from_sb, to_sb;
-	struct timespec ts[2];
+	struct utimbuf utb;
 	int devnull, from_fd, to_fd, serrno, files_match = 0;
 	char *p;
 
@@ -231,9 +231,9 @@ install(char *from_name, char *to_name, u_long fset, u_int flags)
 	/* If try to install NULL file to a directory, fails. */
 	if (flags & DIRECTORY || strcmp(from_name, _PATH_DEVNULL)) {
 		if (stat(from_name, &from_sb))
-			err(1, "%s", from_name);
+			err(EX_OSERR, "%s", from_name);
 		if (!S_ISREG(from_sb.st_mode))
-			errc(1, EFTYPE, "%s", from_name);
+			errx(EX_OSERR, "%s: %s", from_name, strerror(EFTYPE));
 		/* Build the target path. */
 		if (flags & DIRECTORY) {
 			(void)snprintf(pathbuf, sizeof(pathbuf), "%s/%s",
@@ -250,41 +250,42 @@ install(char *from_name, char *to_name, u_long fset, u_int flags)
 		/* Only compare against regular files. */
 		if (docompare && !S_ISREG(to_sb.st_mode)) {
 			docompare = 0;
-			warnc(EFTYPE, "%s", to_name);
+			warnx("%s: %s", to_name, strerror(EFTYPE));
 		}
 	} else if (docompare) {
 		/* File does not exist so silently ignore compare flag. */
 		docompare = 0;
 	}
 
-	if (!devnull) {
-		if ((from_fd = open(from_name, O_RDONLY, 0)) < 0)
-			err(1, "%s", from_name);
-	}
-
 	if (safecopy) {
 		to_fd = create_tempfile(to_name, tempfile, sizeof(tempfile));
 		if (to_fd < 0)
-			err(1, "%s", tempfile);
+			err(EX_OSERR, "%s", tempfile);
 	} else if (docompare && !dostrip) {
 		if ((to_fd = open(to_name, O_RDONLY, 0)) < 0)
-			err(1, "%s", to_name);
+			err(EX_OSERR, "%s", to_name);
 	} else {
 		if ((to_fd = create_newfile(to_name, &to_sb)) < 0)
-			err(1, "%s", to_name);
+			err(EX_OSERR, "%s", to_name);
 	}
 
 	if (!devnull) {
+		if ((from_fd = open(from_name, O_RDONLY, 0)) < 0) {
+			serrno = errno;
+			(void)unlink(safecopy ? tempfile : to_name);
+			errx(EX_OSERR, "%s: %s", from_name, strerror(serrno));
+		}
+
 		if (docompare && !safecopy) {
 			files_match = !(compare(from_fd, from_name,
-					from_sb.st_size, to_fd,
-					to_name, to_sb.st_size));
+					(size_t)from_sb.st_size, to_fd,
+					to_name, (size_t)to_sb.st_size));
 
 			/* Truncate "to" file for copy unless we match */
 			if (!files_match) {
 				(void)close(to_fd);
 				if ((to_fd = create_newfile(to_name, &to_sb)) < 0)
-					err(1, "%s", to_name);
+					err(EX_OSERR, "%s", to_name);
 			}
 		}
 		if (!files_match)
@@ -303,7 +304,7 @@ install(char *from_name, char *to_name, u_long fset, u_int flags)
 		close(to_fd);
 		if ((to_fd = open(safecopy ? tempfile : to_name, O_RDONLY,
 		     0)) < 0)
-			err(1, "stripping %s", to_name);
+			err(EX_OSERR, "stripping %s", to_name);
 	}
 
 	/*
@@ -315,77 +316,32 @@ install(char *from_name, char *to_name, u_long fset, u_int flags)
 
 		/* Re-open to_fd using the real target name. */
 		if ((to_fd = open(to_name, O_RDONLY, 0)) < 0)
-			err(1, "%s", to_name);
+			err(EX_OSERR, "%s", to_name);
 
 		if (fstat(temp_fd, &temp_sb)) {
 			serrno = errno;
 			(void)unlink(tempfile);
-			errc(1, serrno, "%s", tempfile);
+			errx(EX_OSERR, "%s: %s", tempfile, strerror(serrno));
 		}
 
-		if (compare(temp_fd, tempfile, temp_sb.st_size, to_fd,
-			    to_name, to_sb.st_size) == 0) {
+		if (compare(temp_fd, tempfile, (size_t)temp_sb.st_size, to_fd,
+			    to_name, (size_t)to_sb.st_size) == 0) {
 			/*
 			 * If target has more than one link we need to
 			 * replace it in order to snap the extra links.
 			 * Need to preserve target file times, though.
 			 */
 			if (to_sb.st_nlink != 1) {
-				ts[0] = to_sb.st_atim;
-				ts[1] = to_sb.st_mtim;
-				futimens(temp_fd, ts);
+				utb.actime = to_sb.st_atime;
+				utb.modtime = to_sb.st_mtime;
+				(void)utime(tempfile, &utb);
 			} else {
 				files_match = 1;
 				(void)unlink(tempfile);
 			}
+			(void) close(temp_fd);
 		}
-		(void)close(to_fd);
-		to_fd = temp_fd;
 	}
-
-	/*
-	 * Preserve the timestamp of the source file if necessary.
-	 */
-	if (dopreserve && !files_match) {
-		ts[0] = from_sb.st_atim;
-		ts[1] = from_sb.st_mtim;
-		futimens(to_fd, ts);
-	}
-
-	/*
-	 * Set owner, group, mode for target; do the chown first,
-	 * chown may lose the setuid bits.
-	 */
-	if ((gid != (gid_t)-1 || uid != (uid_t)-1) &&
-	    fchown(to_fd, uid, gid)) {
-		serrno = errno;
-		(void)unlink(safecopy ? tempfile : to_name);
-		errx(1, "%s: chown/chgrp: %s",
-		    safecopy ? tempfile : to_name, strerror(serrno));
-	}
-	if (fchmod(to_fd, mode)) {
-		serrno = errno;
-		(void)unlink(safecopy ? tempfile : to_name);
-		errx(1, "%s: chmod: %s", safecopy ? tempfile : to_name,
-		    strerror(serrno));
-	}
-
-	/*
-	 * If provided a set of flags, set them, otherwise, preserve the
-	 * flags, except for the dump flag.
-	 */
-	if (fchflags(to_fd,
-	    flags & SETFLAGS ? fset : from_sb.st_flags & ~UF_NODUMP)) {
-		if (errno != EOPNOTSUPP || (from_sb.st_flags & ~UF_NODUMP) != 0)
-			warnx("%s: chflags: %s",
-			    safecopy ? tempfile :to_name, strerror(errno));
-	}
-
-	if (flags & USEFSYNC)
-		fsync(to_fd);
-	(void)close(to_fd);
-	if (!devnull)
-		(void)close(from_fd);
 
 	/*
 	 * Move the new file into place if doing a safe copy
@@ -396,24 +352,66 @@ install(char *from_name, char *to_name, u_long fset, u_int flags)
 		if (to_sb.st_flags & (NOCHANGEBITS))
 			(void)chflags(to_name, to_sb.st_flags & ~(NOCHANGEBITS));
 		if (dobackup) {
-			char backup[PATH_MAX];
-			(void)snprintf(backup, PATH_MAX, "%s%s", to_name,
+			char backup[MAXPATHLEN];
+			(void)snprintf(backup, MAXPATHLEN, "%s%s", to_name,
 			    suffix);
-			/* It is ok for the target file not to exist. */
-			if (rename(to_name, backup) < 0 && errno != ENOENT) {
+			if (rename(to_name, backup) < 0) {
 				serrno = errno;
 				unlink(tempfile);
-				errx(1, "rename: %s to %s: %s", to_name,
+				errx(EX_OSERR, "rename: %s to %s: %s", to_name,
 				     backup, strerror(serrno));
 			}
 		}
 		if (rename(tempfile, to_name) < 0 ) {
 			serrno = errno;
 			unlink(tempfile);
-			errx(1, "rename: %s to %s: %s", tempfile,
+			errx(EX_OSERR, "rename: %s to %s: %s", tempfile,
 			     to_name, strerror(serrno));
 		}
+
+		/* Re-open to_fd so we aren't hosed by the rename(2). */
+		(void) close(to_fd);
+		if ((to_fd = open(to_name, O_RDONLY, 0)) < 0)
+			err(EX_OSERR, "%s", to_name);
 	}
+
+	/*
+	 * Preserve the timestamp of the source file if necesary.
+	 */
+	if (dopreserve && !files_match) {
+		utb.actime = from_sb.st_atime;
+		utb.modtime = from_sb.st_mtime;
+		(void)utime(to_name, &utb);
+	}
+
+	/*
+	 * Set owner, group, mode for target; do the chown first,
+	 * chown may lose the setuid bits.
+	 */
+	if ((gid != (gid_t)-1 || uid != (uid_t)-1) && fchown(to_fd, uid, gid)) {
+		serrno = errno;
+		(void)unlink(to_name);
+		errx(EX_OSERR, "%s: chown/chgrp: %s", to_name, strerror(serrno));
+	}
+	if (fchmod(to_fd, mode)) {
+		serrno = errno;
+		(void)unlink(to_name);
+		errx(EX_OSERR, "%s: chmod: %s", to_name, strerror(serrno));
+	}
+
+	/*
+	 * If provided a set of flags, set them, otherwise, preserve the
+	 * flags, except for the dump flag.
+	 */
+	if (fchflags(to_fd,
+	    flags & SETFLAGS ? fset : from_sb.st_flags & ~UF_NODUMP)) {
+		if (errno != EOPNOTSUPP || (from_sb.st_flags & ~UF_NODUMP) != 0)
+			warnx("%s: chflags: %s", to_name, strerror(errno));
+	}
+
+	(void)close(to_fd);
+	if (!devnull)
+		(void)close(from_fd);
 }
 
 /*
@@ -421,21 +419,21 @@ install(char *from_name, char *to_name, u_long fset, u_int flags)
  *	copy from one file to another
  */
 void
-copy(int from_fd, char *from_name, int to_fd, char *to_name, off_t size,
-    int sparse)
+copy(from_fd, from_name, to_fd, to_name, size, sparse)
+	register int from_fd, to_fd;
+	char *from_name, *to_name;
+	off_t size;
+	int sparse;
 {
-	ssize_t nr, nw;
+	register ssize_t nr, nw;
 	int serrno;
 	char *p, buf[MAXBSIZE];
 
-	if (size == 0)
-		return;
-
 	/* Rewind file descriptors. */
 	if (lseek(from_fd, (off_t)0, SEEK_SET) == (off_t)-1)
-		err(1, "lseek: %s", from_name);
+		err(EX_OSERR, "lseek: %s", from_name);
 	if (lseek(to_fd, (off_t)0, SEEK_SET) == (off_t)-1)
-		err(1, "lseek: %s", to_name);
+		err(EX_OSERR, "lseek: %s", to_name);
 
 	/*
 	 * Mmap and write if less than 8M (the limit is so we don't totally
@@ -443,20 +441,19 @@ copy(int from_fd, char *from_name, int to_fd, char *to_name, off_t size,
 	 * wins some CPU back.  Sparse files need special treatment.
 	 */
 	if (!sparse && size <= 8 * 1048576) {
-		size_t siz;
+		volatile size_t siz;
 
 		if ((p = mmap(NULL, (size_t)size, PROT_READ, MAP_PRIVATE,
-		    from_fd, (off_t)0)) == MAP_FAILED) {
+		    from_fd, (off_t)0)) == (char *)-1) {
 			serrno = errno;
 			(void)unlink(to_name);
-			errc(1, serrno, "%s", from_name);
+			errx(EX_OSERR, "%s: %s", from_name, strerror(serrno));
 		}
-		madvise(p, size, MADV_SEQUENTIAL);
 		siz = (size_t)size;
 		if ((nw = write(to_fd, p, siz)) != siz) {
 			serrno = errno;
 			(void)unlink(to_name);
-			errx(1, "%s: %s",
+			errx(EX_OSERR, "%s: %s",
 			    to_name, strerror(nw > 0 ? EIO : serrno));
 		}
 		(void) munmap(p, (size_t)size);
@@ -482,16 +479,14 @@ copy(int from_fd, char *from_name, int to_fd, char *to_name, off_t size,
 			if (nw != nr) {
 				serrno = errno;
 				(void)unlink(to_name);
-				errx(1, "%s: %s",
+				errx(EX_OSERR, "%s: %s",
 				    to_name, strerror(nw > 0 ? EIO : serrno));
 			}
 		}
-		if (sparse)
-			file_flush(to_fd, isem);
 		if (nr != 0) {
 			serrno = errno;
 			(void)unlink(to_name);
-			errc(1, serrno, "%s", from_name);
+			errx(EX_OSERR, "%s: %s", from_name, strerror(serrno));
 		}
 	}
 }
@@ -501,19 +496,21 @@ copy(int from_fd, char *from_name, int to_fd, char *to_name, off_t size,
  *	compare two files; non-zero means files differ
  */
 int
-compare(int from_fd, const char *from_name, off_t from_len, int to_fd,
-    const char *to_name, off_t to_len)
+compare(from_fd, from_name, from_len, to_fd, to_name, to_len)
+	int from_fd;
+	const char *from_name;
+	size_t from_len;
+	int to_fd;
+	const char *to_name;
+	size_t to_len;
 {
 	caddr_t p1, p2;
-	size_t length;
-	off_t from_off, to_off, remainder;
+	size_t length, remainder;
+	off_t from_off, to_off;
 	int dfound;
 
-	if (from_len == 0 && from_len == to_len)
-		return (0);
-
 	if (from_len != to_len)
-		return (1);
+		return(1);
 
 	/*
 	 * Compare the two files being careful not to mmap
@@ -522,19 +519,15 @@ compare(int from_fd, const char *from_name, off_t from_len, int to_fd,
 	from_off = to_off = (off_t)0;
 	remainder = from_len;
 	do {
-		length = MINIMUM(remainder, 8 * 1048576);
+		length = MIN(remainder, 8 * 1048576);
 		remainder -= length;
 
 		if ((p1 = mmap(NULL, length, PROT_READ, MAP_PRIVATE,
 		    from_fd, from_off)) == MAP_FAILED)
-			err(1, "%s", from_name);
+			err(EX_OSERR, "%s", from_name);
 		if ((p2 = mmap(NULL, length, PROT_READ, MAP_PRIVATE,
 		    to_fd, to_off)) == MAP_FAILED)
-			err(1, "%s", to_name);
-		if (length) {
-			madvise(p1, length, MADV_SEQUENTIAL);
-			madvise(p2, length, MADV_SEQUENTIAL);
-		}
+			err(EX_OSERR, "%s", to_name);
 
 		dfound = memcmp(p1, p2, length);
 
@@ -554,10 +547,15 @@ compare(int from_fd, const char *from_name, off_t from_len, int to_fd,
  *	use strip(1) to strip the target file
  */
 void
-strip(char *to_name)
+strip(to_name)
+	char *to_name;
 {
 	int serrno, status;
-	char * volatile path_strip;
+	char *path_strip;
+
+#ifdef __GNUC__				/* XXX: to shut up gcc warnings */
+        (void)&path_strip;
+#endif
 
 	if (issetugid() || (path_strip = getenv("STRIP")) == NULL)
 		path_strip = _PATH_STRIP;
@@ -566,11 +564,11 @@ strip(char *to_name)
 	case -1:
 		serrno = errno;
 		(void)unlink(to_name);
-		errc(1, serrno, "forks");
+		errx(EX_TEMPFAIL, "forks: %s", strerror(serrno));
 	case 0:
-		execl(path_strip, "strip", "--", to_name, (char *)NULL);
+		execl(path_strip, "strip", to_name, NULL);
 		warn("%s", path_strip);
-		_exit(1);
+		_exit(EX_OSERR);
 	default:
 		if (wait(&status) == -1 || !WIFEXITED(status))
 			(void)unlink(to_name);
@@ -579,12 +577,13 @@ strip(char *to_name)
 
 /*
  * install_dir --
- *	build directory hierarchy
+ *	build directory heirarchy
  */
 void
-install_dir(char *path, int mode)
+install_dir(path)
+        char *path;
 {
-	char *p;
+	register char *p;
 	struct stat sb;
 	int ch;
 
@@ -592,17 +591,9 @@ install_dir(char *path, int mode)
 		if (!*p || (p != path && *p  == '/')) {
 			ch = *p;
 			*p = '\0';
-			if (mkdir(path, 0777)) {
-				int mkdir_errno = errno;
-				if (stat(path, &sb)) {
-					/* Not there; use mkdir()s errno */
-					errc(1, mkdir_errno, "%s",
-					    path);
-					/* NOTREACHED */
-				}
-				if (!S_ISDIR(sb.st_mode)) {
-					/* Is there, but isn't a directory */
-					errc(1, ENOTDIR, "%s", path);
+			if (stat(path, &sb)) {
+				if (errno != ENOENT || mkdir(path, 0777) < 0) {
+					err(EX_OSERR, "%s", path);
 					/* NOTREACHED */
 				}
 			}
@@ -621,11 +612,13 @@ install_dir(char *path, int mode)
  *	print a usage message and die
  */
 void
-usage(void)
+usage()
 {
 	(void)fprintf(stderr, "\
-usage: install [-bCcDdFpSs] [-B suffix] [-f flags] [-g group] [-m mode] [-o owner]\n	       source ... target ...\n");
-	exit(1);
+usage: install [-bCcpSs] [-B suffix] [-f flags] [-g group] [-m mode] [-o owner] file1 file2\n\
+       install [-bCcpSs] [-B suffix] [-f flags] [-g group] [-m mode] [-o owner] file1 ... fileN directory\n\
+       install  -d   [-g group] [-m mode] [-o owner] directory ...\n");
+	exit(EX_USAGE);
 	/* NOTREACHED */
 }
 
@@ -634,29 +627,35 @@ usage: install [-bCcDdFpSs] [-B suffix] [-f flags] [-g group] [-m mode] [-o owne
  *	create a temporary file based on path and open it
  */
 int
-create_tempfile(char *path, char *temp, size_t tsize)
+create_tempfile(path, temp, tsize)
+        char *path;
+        char *temp;
+	size_t tsize;
 {
 	char *p;
 
-	strlcpy(temp, path, tsize);
-	if ((p = strrchr(temp, '/')) != NULL)
+	(void)strncpy(temp, path, tsize);
+	temp[tsize - 1] = '\0';
+	if ((p = strrchr(temp, '/')))
 		p++;
 	else
 		p = temp;
-	*p = '\0';
-	strlcat(p, "INS@XXXXXXXXXX", tsize);
+	(void)strncpy(p, "INS@XXXXXX", &temp[tsize - 1] - p);
+	temp[tsize - 1] = '\0';
 
 	return(mkstemp(temp));
 }
 
 /*
  * create_newfile --
- *	create a new file, overwriting an existing one if necessary
+ *	create a new file, overwriting an existing one if necesary
  */
 int
-create_newfile(char *path, struct stat *sbp)
+create_newfile(path, sbp)
+        char *path;
+	struct stat *sbp;
 {
-	char backup[PATH_MAX];
+	char backup[MAXPATHLEN];
 
 	/*
 	 * Unlink now... avoid ETXTBSY errors later.  Try and turn
@@ -667,16 +666,13 @@ create_newfile(char *path, struct stat *sbp)
 		(void)chflags(path, sbp->st_flags & ~(NOCHANGEBITS));
 
 	if (dobackup) {
-		(void)snprintf(backup, PATH_MAX, "%s%s", path, suffix);
-		/* It is ok for the target file not to exist. */
-		if (rename(path, backup) < 0 && errno != ENOENT)
-			err(1, "rename: %s to %s (errno %d)", path, backup, errno);
-	} else {
-		if (unlink(path) < 0 && errno != ENOENT)
-			err(1, "%s", path);
-	}
+		(void)snprintf(backup, MAXPATHLEN, "%s%s", path, suffix);
+		if (rename(path, backup) < 0)
+			err(EX_OSERR, "rename: %s to %s", path, backup);
+	} else
+		(void)unlink(path);
 
-	return(open(path, O_CREAT | O_RDWR | O_EXCL, S_IRUSR | S_IWUSR));
+	return(open(path, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR));
 }
 
 /*
@@ -698,11 +694,11 @@ create_newfile(char *path, struct stat *sbp)
  *	uses lseek whenever it detects the input data is all 0 within that
  *	file block. In more detail, the strategy is as follows:
  *	While the input is all zero keep doing an lseek. Keep track of when we
- *	pass over file block boundaries. Only write when we hit a non zero
+ *	pass over file block boundries. Only write when we hit a non zero
  *	input. once we have written a file block, we continue to write it to
  *	the end (we stop looking at the input). When we reach the start of the
  *	next file block, start checking for zero blocks again. Working on file
- *	block boundaries significantly reduces the overhead when copying files
+ *	block boundries significantly reduces the overhead when copying files
  *	that are NOT very sparse. This overhead (when compared to a write) is
  *	almost below the measurement resolution on many systems. Without it,
  *	files with holes cannot be safely copied. It does has a side effect as
@@ -728,12 +724,18 @@ create_newfile(char *path, struct stat *sbp)
  */
 
 int
-file_write(int fd, char *str, size_t cnt, int *rem, int *isempt, int sz)
+file_write(fd, str, cnt, rem, isempt, sz)
+	int fd;
+	char *str;
+	register size_t cnt;
+	int *rem;
+	int *isempt;
+	int sz;
 {
-	char *pt;
-	char *end;
-	size_t wcnt;
-	char *st = str;
+	register char *pt;
+	register char *end;
+	register size_t wcnt;
+	register char *st = str;
 
 	/*
 	 * while we have data to process
@@ -753,7 +755,7 @@ file_write(int fd, char *str, size_t cnt, int *rem, int *isempt, int sz)
 		 * only examine up to the end of the current file block or
 		 * remaining characters to write, whatever is smaller
 		 */
-		wcnt = MINIMUM(cnt, *rem);
+		wcnt = MIN(cnt, *rem);
 		cnt -= wcnt;
 		*rem -= wcnt;
 		if (*isempt) {
@@ -797,35 +799,4 @@ file_write(int fd, char *str, size_t cnt, int *rem, int *isempt, int sz)
 		st += wcnt;
 	}
 	return(st - str);
-}
-
-/*
- * file_flush()
- *	when the last file block in a file is zero, many file systems will not
- *	let us create a hole at the end. To get the last block with zeros, we
- *	write the last BYTE with a zero (back up one byte and write a zero).
- */
-void
-file_flush(int fd, int isempt)
-{
-	static char blnk[] = "\0";
-
-	/*
-	 * silly test, but make sure we are only called when the last block is
-	 * filled with all zeros.
-	 */
-	if (!isempt)
-		return;
-
-	/*
-	 * move back one byte and write a zero
-	 */
-	if (lseek(fd, (off_t)-1, SEEK_CUR) < 0) {
-		warn("Failed seek on file");
-		return;
-	}
-
-	if (write(fd, blnk, 1) < 0)
-		warn("Failed write to file");
-	return;
 }

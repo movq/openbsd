@@ -1,7 +1,7 @@
-/* $OpenBSD: m_cursor.c,v 1.8 2010/01/12 23:22:07 nicm Exp $ */
+/*	$OpenBSD: m_cursor.c,v 1.6 1999/05/17 03:04:19 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2004,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,17 +29,17 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
 * Module m_cursor                                                          *
-* Correctly position a menu's cursor                                       *
+* Correctly position a menus cursor                                        *
 ***************************************************************************/
 
 #include "menu.priv.h"
 
-MODULE_ID("$Id: m_cursor.c,v 1.8 2010/01/12 23:22:07 nicm Exp $")
+MODULE_ID("$From: m_cursor.c,v 1.13 1999/05/16 17:24:43 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu
@@ -51,24 +51,25 @@ MODULE_ID("$Id: m_cursor.c,v 1.8 2010/01/12 23:22:07 nicm Exp $")
 |                    E_BAD_ARGUMENT  - invalid menu
 |                    E_NOT_POSTED    - Menu is not posted
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-_nc_menu_cursor_pos(const MENU * menu, const ITEM * item, int *pY, int *pX)
+int _nc_menu_cursor_pos(const MENU* menu,
+			const ITEM* item,
+			int* pY, int* pX)
 {
   if (!menu || !pX || !pY)
-    return (E_BAD_ARGUMENT);
+    return(E_BAD_ARGUMENT);
   else
     {
-      if ((ITEM *) 0 == item)
+      if ((ITEM*)0 == item)
 	item = menu->curitem;
-      assert(item != (ITEM *) 0);
+      assert(item!=(ITEM*)0);
 
-      if (!(menu->status & _POSTED))
-	return (E_NOT_POSTED);
+      if ( !( menu->status & _POSTED ) )
+	return(E_NOT_POSTED);
 
       *pX = item->x * (menu->spc_cols + menu->itemlen);
       *pY = (item->y - menu->toprow) * menu->spc_rows;
     }
-  return (E_OK);
+  return(E_OK);
 }
 
 /*---------------------------------------------------------------------------
@@ -81,27 +82,24 @@ _nc_menu_cursor_pos(const MENU * menu, const ITEM * item, int *pY, int *pX)
 |                    E_BAD_ARGUMENT  - invalid menu
 |                    E_NOT_POSTED    - Menu is not posted
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-pos_menu_cursor(const MENU * menu)
+int pos_menu_cursor(const MENU * menu)
 {
   WINDOW *win, *sub;
-  int x = 0, y = 0;
-  int err = _nc_menu_cursor_pos(menu, (ITEM *) 0, &y, &x);
+  int x, y;
+  int err = _nc_menu_cursor_pos(menu,(ITEM*)0,&y,&x);
 
-  T((T_CALLED("pos_menu_cursor(%p)"), menu));
-
-  if (E_OK == err)
+  if (E_OK==err)
     {
       win = menu->userwin ? menu->userwin : stdscr;
       sub = menu->usersub ? menu->usersub : win;
       assert(win && sub);
 
       if ((menu->opt & O_SHOWMATCH) && (menu->pindex > 0))
-	x += (menu->pindex + menu->marklen - 1);
+	x += ( menu->pindex + menu->marklen - 1);
 
-      wmove(sub, y, x);
+      wmove(sub,y,x);
 
-      if (win != sub)
+      if ( win != sub )
 	{
 	  wcursyncup(sub);
 	  wsyncup(sub);

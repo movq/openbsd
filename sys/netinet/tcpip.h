@@ -1,4 +1,4 @@
-/*	$OpenBSD: tcpip.h,v 1.6 2003/06/02 23:28:15 millert Exp $	*/
+/*	$OpenBSD: tcpip.h,v 1.4 1997/08/26 20:02:35 deraadt Exp $	*/
 /*	$NetBSD: tcpip.h,v 1.6 1995/11/21 01:07:44 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,9 +35,6 @@
  *
  *	@(#)tcpip.h	8.1 (Berkeley) 6/10/93
  */
-
-#ifndef _NETINET_TCPIP_H_
-#define _NETINET_TCPIP_H_
 
 /*
  * Tcp+ip header, after ip options removed.
@@ -57,5 +58,3 @@ struct tcpiphdr {
 #define	ti_win		ti_t.th_win
 #define	ti_sum		ti_t.th_sum
 #define	ti_urp		ti_t.th_urp
-
-#endif /* _NETINET_TCPIP_H_ */

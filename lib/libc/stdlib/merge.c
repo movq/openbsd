@@ -1,4 +1,3 @@
-/*	$OpenBSD: merge.c,v 1.10 2015/06/21 03:20:56 millert Exp $ */
 /*-
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +33,10 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: merge.c,v 1.3 1996/09/15 09:31:50 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * Hybrid exponential search/linear search merge sort with hybrid
@@ -51,8 +58,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void setup(u_char *, u_char *, size_t, size_t, int (*)());
-static void insertionsort(u_char *, size_t, size_t, int (*)());
+static void setup __P((u_char *, u_char *, size_t, size_t, int (*)()));
+static void insertionsort __P((u_char *, size_t, size_t, int (*)()));
 
 #define ISIZE sizeof(int)
 #define PSIZE sizeof(u_char *)
@@ -88,21 +95,21 @@ static void insertionsort(u_char *, size_t, size_t, int (*)());
  * Arguments are as for qsort.
  */
 int
-mergesort(void *base, size_t nmemb, size_t size,
-    int (*cmp)(const void *, const void *))
+mergesort(base, nmemb, size, cmp)
+	void *base;
+	size_t nmemb;
+	register size_t size;
+	int (*cmp) __P((const void *, const void *));
 {
-	int i, sense;
+	register int i, sense;
 	int big, iflag;
-	u_char *f1, *f2, *t, *b, *tp2, *q, *l1, *l2;
+	register u_char *f1, *f2, *t, *b, *tp2, *q, *l1, *l2;
 	u_char *list2, *list1, *p2, *p, *last, **p1;
 
 	if (size < PSIZE / 2) {		/* Pointers must fit into 2 * size. */
 		errno = EINVAL;
 		return (-1);
 	}
-
-	if (nmemb == 0)
-		return (0);
 
 	/*
 	 * XXX
@@ -248,11 +255,13 @@ COPY:	    			b = t;
  * is defined.  Otherwise simple pairwise merging is used.)
  */
 void
-setup(u_char *list1, u_char *list2, size_t n, size_t size,
-    int (*cmp)(const void *, const void *))
+setup(list1, list2, n, size, cmp)
+	size_t n, size;
+	int (*cmp) __P((const void *, const void *));
+	u_char *list1, *list2;
 {
-	int i, length, size2, sense;
-	u_char tmp, *f1, *f2, *s, *l2, *last, *p2;
+	int i, length, size2, tmp, sense;
+	u_char *f1, *f2, *s, *l2, *last, *p2;
 
 	size2 = size*2;
 	if (n <= 5) {
@@ -320,8 +329,10 @@ setup(u_char *list1, u_char *list2, size_t n, size_t size,
  * last 4 elements.
  */
 static void
-insertionsort(u_char *a, size_t n, size_t size,
-    int (*cmp)(const void *, const void *))
+insertionsort(a, n, size, cmp)
+	u_char *a;
+	size_t n, size;
+	int (*cmp) __P((const void *, const void *));
 {
 	u_char *ai, *s, *t, *u, tmp;
 	int i;

@@ -1,4 +1,4 @@
-/*	$OpenBSD: tcp_usrreq.c,v 1.134 2016/07/20 19:57:53 bluhm Exp $	*/
+/*	$OpenBSD: tcp_usrreq.c,v 1.36 1999/09/01 21:38:21 provos Exp $	*/
 /*	$NetBSD: tcp_usrreq.c,v 1.20 1996/02/13 23:44:16 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,62 +33,41 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)COPYRIGHT	1.1 (NRL) 17 January 1995
- *
- * NRL grants permission for redistribution and use in source and binary
- * forms, with or without modification, of the software and documentation
- * created at NRL provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgements:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- *	This product includes software developed at the Information
- *	Technology Division, US Naval Research Laboratory.
- * 4. Neither the name of the NRL nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THE SOFTWARE PROVIDED BY NRL IS PROVIDED BY NRL AND CONTRIBUTORS ``AS
- * IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL NRL OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * The views and conclusions contained in the software and documentation
- * are those of the authors and should not be interpreted as representing
- * official policies, either expressed or implied, of the US Naval
- * Research Laboratory (NRL).
+ *	@(#)tcp_usrreq.c	8.2 (Berkeley) 1/3/94
  */
+
+/*
+%%% portions-copyright-nrl-95
+Portions of this software are Copyright 1995-1998 by Randall Atkinson,
+Ronald Lee, Daniel McDonald, Bao Phan, and Chris Winters. All Rights
+Reserved. All rights under this copyright have been assigned to the US
+Naval Research Laboratory (NRL). The NRL Copyright Notice and License
+Agreement Version 1.1 (January 17, 1995) applies to these portions of the
+software.
+You should have received a copy of the license with this software. If you
+didn't get a copy, you may request one from <license@ipv6.nrl.navy.mil>.
+*/
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/protosw.h>
+#include <sys/errno.h>
 #include <sys/stat.h>
+#include <sys/proc.h>
+#include <sys/ucred.h>
+#include <vm/vm.h>
 #include <sys/sysctl.h>
-#include <sys/domain.h>
-#include <sys/kernel.h>
-#include <sys/pool.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/route.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
 #include <netinet/in_pcb.h>
@@ -96,26 +79,26 @@
 #include <netinet/tcp_var.h>
 #include <netinet/tcpip.h>
 #include <netinet/tcp_debug.h>
+#include <dev/rndvar.h>
+
+#ifdef IPSEC
+extern int	check_ipsec_policy __P((struct inpcb *, u_int32_t));
+#endif
 
 #ifdef INET6
-#include <netinet6/in6_var.h>
-#endif
+#include <sys/domain.h>
+#endif /* INET6 */
 
-#ifndef TCP_SENDSPACE
-#define	TCP_SENDSPACE	1024*16
-#endif
-u_int	tcp_sendspace = TCP_SENDSPACE;
-#ifndef TCP_RECVSPACE
-#define	TCP_RECVSPACE	1024*16
-#endif
-u_int	tcp_recvspace = TCP_RECVSPACE;
-u_int	tcp_autorcvbuf_inc = 16 * 1024;
+/*
+ * TCP protocol interface to socket abstraction.
+ */
+extern	char *tcpstates[];
+extern	int tcptv_keep_init;
 
-int *tcpctl_vars[TCPCTL_MAXID] = TCPCTL_VARS;
+/* from in_pcb.c */
+extern	struct baddynamicports baddynamicports;
 
-struct	inpcbtable tcbtable;
-
-int tcp_ident(void *, size_t *, void *, size_t, int);
+int tcp_ident __P((void *, size_t *, void *, size_t));
 
 /*
  * Process a TCP user request for TCP tb.  If this is a send request
@@ -124,24 +107,23 @@ int tcp_ident(void *, size_t *, void *, size_t, int);
  */
 /*ARGSUSED*/
 int
-tcp_usrreq(so, req, m, nam, control, p)
+tcp_usrreq(so, req, m, nam, control)
 	struct socket *so;
 	int req;
 	struct mbuf *m, *nam, *control;
-	struct proc *p;
 {
 	struct sockaddr_in *sin;
-	struct inpcb *inp;
-	struct tcpcb *tp = NULL;
+	register struct inpcb *inp;
+	register struct tcpcb *tp = NULL;
 	int s;
 	int error = 0;
-	short ostate;
+	int ostate;
 
 	if (req == PRU_CONTROL) {
 #ifdef INET6
 		if (sotopf(so) == PF_INET6)
 			return in6_control(so, (u_long)m, (caddr_t)nam,
-			    (struct ifnet *)control);
+			    (struct ifnet *)control, 0);
 		else
 #endif /* INET6 */
 			return (in_control(so, (u_long)m, (caddr_t)nam,
@@ -149,7 +131,8 @@ tcp_usrreq(so, req, m, nam, control, p)
 	}
 	if (control && control->m_len) {
 		m_freem(control);
-		m_freem(m);
+		if (m)
+			m_freem(m);
 		return (EINVAL);
 	}
 
@@ -158,28 +141,21 @@ tcp_usrreq(so, req, m, nam, control, p)
 	/*
 	 * When a TCP is attached to a socket, then there will be
 	 * a (struct inpcb) pointed at by the socket, and this
-	 * structure will point at a subsidiary (struct tcpcb).
+	 * structure will point at a subsidary (struct tcpcb).
 	 */
-	if (inp == NULL && req != PRU_ATTACH) {
-		error = so->so_error;
-		if (error == 0)
-			error = EINVAL;
+	if (inp == 0 && req != PRU_ATTACH) {
 		splx(s);
 		/*
 		 * The following corrects an mbuf leak under rare
 		 * circumstances
 		 */
-		if (req == PRU_SEND || req == PRU_SENDOOB)
+		if (m && (req == PRU_SEND || req == PRU_SENDOOB))
 			m_freem(m);
-		return (error);
+		return (EINVAL);		/* XXX */
 	}
 	if (inp) {
 		tp = intotcpcb(inp);
-		/* tp might get 0 when using socket splicing */
-		if (tp == NULL) {
-			splx(s);
-			return (0);
-		}
+		/* WHAT IF TP IS 0? */
 #ifdef KPROF
 		tcp_acounts[tp->t_state][req]++;
 #endif
@@ -220,7 +196,23 @@ tcp_usrreq(so, req, m, nam, control, p)
 	 * Give the socket an address.
 	 */
 	case PRU_BIND:
-		error = in_pcbbind(inp, nam, p);
+		error = in_pcbbind(inp, nam);
+		if (error)
+			break;
+#ifdef INET6
+		/*
+		 * If we bind to an address, set up the tp->pf accordingly!
+		 */
+		if (inp->inp_flags & INP_IPV6) {
+			/* If a PF_INET6 socket... */
+			if (inp->inp_flags & INP_IPV6_MAPPED)
+				tp->pf = AF_INET;
+			else if ((inp->inp_flags & INP_IPV6_UNDEC) == 0)
+				tp->pf = AF_INET6;
+			/* else tp->pf is still 0. */
+		}
+		/* else socket is PF_INET, and tp->pf is PF_INET. */
+#endif /* INET6 */
 		break;
 
 	/*
@@ -228,7 +220,7 @@ tcp_usrreq(so, req, m, nam, control, p)
 	 */
 	case PRU_LISTEN:
 		if (inp->inp_lport == 0)
-			error = in_pcbbind(inp, NULL, p);
+			error = in_pcbbind(inp, NULL);
 		/* If the in_pcbbind() above is called, the tp->pf
 		   should still be whatever it was before. */
 		if (error == 0)
@@ -252,28 +244,50 @@ tcp_usrreq(so, req, m, nam, control, p)
 
 			if (IN6_IS_ADDR_UNSPECIFIED(in6_addr) ||
 			    IN6_IS_ADDR_MULTICAST(in6_addr) ||
-			    IN6_IS_ADDR_V4MAPPED(in6_addr)) {
+			    (IN6_IS_ADDR_V4MAPPED(in6_addr) &&
+			    ((in6_addr->s6_addr32[3] == INADDR_ANY) ||
+			    IN_MULTICAST(in6_addr->s6_addr32[3]) ||
+			    in_broadcast(sin->sin_addr, NULL)))) {
 				error = EINVAL;
 				break;
 			}
-
-			error = in6_pcbconnect(inp, nam);
 		} else if (sin->sin_family == AF_INET)
 #endif /* INET6 */
-		{
 			if ((sin->sin_addr.s_addr == INADDR_ANY) ||
-			    (sin->sin_addr.s_addr == INADDR_BROADCAST) ||
 			    IN_MULTICAST(sin->sin_addr.s_addr) ||
-			    in_broadcast(sin->sin_addr, inp->inp_rtableid)) {
+			    in_broadcast(sin->sin_addr, NULL)) {
 				error = EINVAL;
 				break;
 			}
 
-			error = in_pcbconnect(inp, nam);
+		/* Trying to connect to some broadcast address */
+		if (in_broadcast(sin->sin_addr, NULL)) {
+			error = EINVAL;
+			break;
 		}
 
+		if (inp->inp_lport == 0) {
+			error = in_pcbbind(inp, NULL);
+			if (error)
+				break;
+		}
+		error = in_pcbconnect(inp, nam);
 		if (error)
 			break;
+
+#ifdef INET6
+		/*
+		 * With a connection, I now know the version of IP
+		 * is in use and hence can set tp->pf with authority. 
+		 */
+		if (inp->inp_flags & INP_IPV6) {
+			if (inp->inp_flags & INP_IPV6_MAPPED)
+				tp->pf = PF_INET;
+			else
+				tp->pf = PF_INET6;
+		}
+		/* else I'm a PF_INET socket, and hence tp->pf is PF_INET. */
+#endif /* INET6 */
 
 		tp->t_template = tcp_template(tp);
 		if (tp->t_template == 0) {
@@ -282,18 +296,30 @@ tcp_usrreq(so, req, m, nam, control, p)
 			break;
 		}
 
+#ifdef INET6
+		if ((inp->inp_flags & INP_IPV6) && (tp->pf == PF_INET)) {
+			inp->inp_ip.ip_ttl = ip_defttl;
+			inp->inp_ip.ip_tos = 0;
+		}
+#endif /* INET6 */
+
 		so->so_state |= SS_CONNECTOUT;
-
 		/* Compute window scaling to request.  */
-		tcp_rscale(tp, sb_max);
-
+		while (tp->request_r_scale < TCP_MAX_WINSHIFT &&
+		    (TCP_MAXWIN << tp->request_r_scale) < so->so_rcv.sb_hiwat)
+			tp->request_r_scale++;
 		soisconnecting(so);
 		tcpstat.tcps_connattempt++;
 		tp->t_state = TCPS_SYN_SENT;
-		TCP_TIMER_ARM(tp, TCPT_KEEP, tcptv_keep_init);
-		tcp_set_iss_tsm(tp);
+		tp->t_timer[TCPT_KEEP] = tcptv_keep_init;
+		tp->iss = tcp_iss;
+#ifdef TCP_COMPAT_42
+		tcp_iss += TCP_ISSINCR/2;
+#else /* TCP_COMPAT_42 */
+		tcp_iss += arc4random() % TCP_ISSINCR + 1;
+#endif /* !TCP_COMPAT_42 */
 		tcp_sendseqinit(tp);
-#if defined(TCP_SACK)
+#if defined(TCP_SACK) || defined(TCP_NEWRENO)
 		tp->snd_last = tp->snd_una;
 #endif
 #if defined(TCP_SACK) && defined(TCP_FACK)
@@ -332,12 +358,7 @@ tcp_usrreq(so, req, m, nam, control, p)
 	 * of the peer, storing through addr.
 	 */
 	case PRU_ACCEPT:
-#ifdef INET6
-		if (inp->inp_flags & INP_IPV6)
-			in6_setpeeraddr(inp, nam);
-		else
-#endif
-			in_setpeeraddr(inp, nam);
+		in_setpeeraddr(inp, nam);
 		break;
 
 	/*
@@ -356,15 +377,7 @@ tcp_usrreq(so, req, m, nam, control, p)
 	 * After a receive, possibly send window update to peer.
 	 */
 	case PRU_RCVD:
-		/*
-		 * soreceive() calls this function when a user receives
-		 * ancillary data on a listening socket. We don't call
-		 * tcp_output in such a case, since there is no header
-		 * template for a listening socket and hence the kernel
-		 * will panic.
-		 */
-		if ((so->so_state & (SS_ISCONNECTED|SS_ISCONNECTING)) != 0)
-			(void) tcp_output(tp);
+		(void) tcp_output(tp);
 		break;
 
 	/*
@@ -372,7 +385,12 @@ tcp_usrreq(so, req, m, nam, control, p)
 	 * marker if URG set.  Possibly send more data.
 	 */
 	case PRU_SEND:
-		sbappendstream(&so->so_snd, m);
+#ifdef IPSEC
+		error = check_ipsec_policy(inp, 0);
+		if (error)
+			break;
+#endif
+		sbappend(&so->so_snd, m);
 		error = tcp_output(tp);
 		break;
 
@@ -385,7 +403,7 @@ tcp_usrreq(so, req, m, nam, control, p)
 
 	case PRU_SENSE:
 		((struct stat *) m)->st_blksize = so->so_snd.sb_hiwat;
-		splx(s);
+		(void) splx(s);
 		return (0);
 
 	case PRU_RCVOOB:
@@ -420,7 +438,7 @@ tcp_usrreq(so, req, m, nam, control, p)
 		 * of data past the urgent section.
 		 * Otherwise, snd_up should be one lower.
 		 */
-		sbappendstream(&so->so_snd, m);
+		sbappend(&so->so_snd, m);
 		tp->snd_up = tp->snd_una + so->so_snd.sb_cc;
 		tp->t_force = 1;
 		error = tcp_output(tp);
@@ -428,21 +446,20 @@ tcp_usrreq(so, req, m, nam, control, p)
 		break;
 
 	case PRU_SOCKADDR:
-#ifdef INET6
-		if (inp->inp_flags & INP_IPV6)
-			in6_setsockaddr(inp, nam);
-		else
-#endif
-			in_setsockaddr(inp, nam);
+		in_setsockaddr(inp, nam);
 		break;
 
 	case PRU_PEERADDR:
-#ifdef INET6
-		if (inp->inp_flags & INP_IPV6)
-			in6_setpeeraddr(inp, nam);
-		else
-#endif
-			in_setpeeraddr(inp, nam);
+		in_setpeeraddr(inp, nam);
+		break;
+
+	/*
+	 * TCP slow timer went off; going through this
+	 * routine for tracing's sake.
+	 */
+	case PRU_SLOWTIMO:
+		tp = tcp_timers(tp, (long)nam);
+		req |= (long)nam << 8;		/* for debug's sake */
 		break;
 
 	default:
@@ -463,36 +480,40 @@ tcp_ctloutput(op, so, level, optname, mp)
 {
 	int error = 0, s;
 	struct inpcb *inp;
-	struct tcpcb *tp;
-	struct mbuf *m;
-	int i;
+	register struct tcpcb *tp;
+	register struct mbuf *m;
+	register int i;
 
 	s = splsoftnet();
 	inp = sotoinpcb(so);
 	if (inp == NULL) {
 		splx(s);
-		if (op == PRCO_SETOPT)
+		if (op == PRCO_SETOPT && *mp)
 			(void) m_free(*mp);
 		return (ECONNRESET);
 	}
-	if (level != IPPROTO_TCP) {
-		switch (so->so_proto->pr_domain->dom_family) {
 #ifdef INET6
-		case PF_INET6:
-			error = ip6_ctloutput(op, so, level, optname, mp);
-			break;
+	tp = intotcpcb(inp);
 #endif /* INET6 */
-		case PF_INET:
+	if (level != IPPROTO_TCP) {
+#ifdef INET6
+		/*
+		 * Not sure if this is the best approach.
+		 * It seems to be, but we don't set tp->pf until the connection
+		 * is established, which may lead to confusion in the case of
+		 * AF_INET6 sockets which get SET/GET options for IPv4.
+		 */
+		if (tp->pf == PF_INET6)
+			error = ipv6_ctloutput(op, so, level, optname, mp);
+		else
+#endif /* INET6 */
 			error = ip_ctloutput(op, so, level, optname, mp);
-			break;
-		default:
-			error = EAFNOSUPPORT;	/*?*/
-			break;
-		}
 		splx(s);
 		return (error);
 	}
+#ifndef INET6
 	tp = intotcpcb(inp);
+#endif /* !INET6 */
 
 	switch (op) {
 
@@ -509,18 +530,6 @@ tcp_ctloutput(op, so, level, optname, mp)
 				tp->t_flags &= ~TF_NODELAY;
 			break;
 
-		case TCP_NOPUSH:
-			if (m == NULL || m->m_len < sizeof (int))
-				error = EINVAL;
-			else if (*mtod(m, int *))
-				tp->t_flags |= TF_NOPUSH;
-			else if (tp->t_flags & TF_NOPUSH) {
-				tp->t_flags &= ~TF_NOPUSH;
-				if (TCPS_HAVEESTABLISHED(tp->t_state))
-					error = tcp_output(tp);
-			}
-			break;
-
 		case TCP_MAXSEG:
 			if (m == NULL || m->m_len < sizeof (int)) {
 				error = EINVAL;
@@ -535,7 +544,7 @@ tcp_ctloutput(op, so, level, optname, mp)
 			break;
 
 #ifdef TCP_SACK
-		case TCP_SACK_ENABLE:
+		case TCP_SACK_DISABLE:
 			if (m == NULL || m->m_len < sizeof (int)) {
 				error = EINVAL;
 				break;
@@ -552,13 +561,13 @@ tcp_ctloutput(op, so, level, optname, mp)
 			}
 
 			if (*mtod(m, int *))
-				tp->sack_enable = 1;
+				tp->sack_disable = 1;
 			else
-				tp->sack_enable = 0;
+				tp->sack_disable = 0;
 			break;
 #endif
 #ifdef TCP_SIGNATURE
-		case TCP_MD5SIG:
+		case TCP_SIGNATURE_ENABLE:
 			if (m == NULL || m->m_len < sizeof (int)) {
 				error = EINVAL;
 				break;
@@ -572,13 +581,13 @@ tcp_ctloutput(op, so, level, optname, mp)
 			if (*mtod(m, int *)) {
 				tp->t_flags |= TF_SIGNATURE;
 #ifdef TCP_SACK
-				tp->sack_enable = 0;
+				tp->sack_disable = 1;
 #endif /* TCP_SACK */
 			} else
 				tp->t_flags &= ~TF_SIGNATURE;
 			break;
 #endif /* TCP_SIGNATURE */
-		default:
+ 		default:
 			error = ENOPROTOOPT;
 			break;
 		}
@@ -594,20 +603,12 @@ tcp_ctloutput(op, so, level, optname, mp)
 		case TCP_NODELAY:
 			*mtod(m, int *) = tp->t_flags & TF_NODELAY;
 			break;
-		case TCP_NOPUSH:
-			*mtod(m, int *) = tp->t_flags & TF_NOPUSH;
-			break;
 		case TCP_MAXSEG:
 			*mtod(m, int *) = tp->t_maxseg;
 			break;
 #ifdef TCP_SACK
-		case TCP_SACK_ENABLE:
-			*mtod(m, int *) = tp->sack_enable;
-			break;
-#endif
-#ifdef TCP_SIGNATURE
-		case TCP_MD5SIG:
-			*mtod(m, int *) = tp->t_flags & TF_SIGNATURE;
+		case TCP_SACK_DISABLE:
+			*mtod(m, int *) = tp->sack_disable;
 			break;
 #endif
 		default:
@@ -620,6 +621,15 @@ tcp_ctloutput(op, so, level, optname, mp)
 	return (error);
 }
 
+#ifndef TCP_SENDSPACE
+#define	TCP_SENDSPACE	1024*16;
+#endif
+u_int	tcp_sendspace = TCP_SENDSPACE;
+#ifndef TCP_RECVSPACE
+#define	TCP_RECVSPACE	1024*16;
+#endif
+u_int	tcp_recvspace = TCP_RECVSPACE;
+
 /*
  * Attach TCP protocol to socket, allocating
  * internet protocol control block, tcp control block,
@@ -629,18 +639,15 @@ int
 tcp_attach(so)
 	struct socket *so;
 {
-	struct tcpcb *tp;
+	register struct tcpcb *tp;
 	struct inpcb *inp;
 	int error;
 
-	if (so->so_snd.sb_hiwat == 0 || so->so_rcv.sb_hiwat == 0 ||
-	    sbcheckreserve(so->so_snd.sb_wat, tcp_sendspace) ||
-	    sbcheckreserve(so->so_rcv.sb_wat, tcp_recvspace)) {
+	if (so->so_snd.sb_hiwat == 0 || so->so_rcv.sb_hiwat == 0) {
 		error = soreserve(so, tcp_sendspace, tcp_recvspace);
 		if (error)
 			return (error);
 	}
-
 	error = in_pcballoc(so, &tcbtable);
 	if (error)
 		return (error);
@@ -655,15 +662,6 @@ tcp_attach(so)
 		return (ENOBUFS);
 	}
 	tp->t_state = TCPS_CLOSED;
-#ifdef INET6
-	/* we disallow IPv4 mapped address completely. */
-	if (inp->inp_flags & INP_IPV6)
-		tp->pf = PF_INET6;
-	else
-		tp->pf = PF_INET;
-#else
-	tp->pf = PF_INET;
-#endif
 	return (0);
 }
 
@@ -677,7 +675,7 @@ tcp_attach(so)
  */
 struct tcpcb *
 tcp_disconnect(tp)
-	struct tcpcb *tp;
+	register struct tcpcb *tp;
 {
 	struct socket *so = tp->t_inpcb->inp_socket;
 
@@ -707,7 +705,7 @@ tcp_disconnect(tp)
  */
 struct tcpcb *
 tcp_usrclosed(tp)
-	struct tcpcb *tp;
+	register struct tcpcb *tp;
 {
 
 	switch (tp->t_state) {
@@ -738,108 +736,46 @@ tcp_usrclosed(tp)
 		 * not left in FIN_WAIT_2 forever.
 		 */
 		if (tp->t_state == TCPS_FIN_WAIT_2)
-			TCP_TIMER_ARM(tp, TCPT_2MSL, tcp_maxidle);
+			tp->t_timer[TCPT_2MSL] = tcp_maxidle;
 	}
 	return (tp);
 }
 
 /*
- * Look up a socket for ident or tcpdrop, ...
+ * Look up a socket for ident..
  */
 int
-tcp_ident(void *oldp, size_t *oldlenp, void *newp, size_t newlen, int dodrop)
+tcp_ident(oldp, oldlenp, newp, newlen)
+	void *oldp;
+	size_t *oldlenp;
+	void *newp;
+	size_t newlen;
 {
 	int error = 0, s;
 	struct tcp_ident_mapping tir;
 	struct inpcb *inp;
-	struct tcpcb *tp = NULL;
 	struct sockaddr_in *fin, *lin;
-#ifdef INET6
-	struct sockaddr_in6 *fin6, *lin6;
-	struct in6_addr f6, l6;
-#endif
-	if (dodrop) {
-		if (oldp != NULL || *oldlenp != 0)
-			return (EINVAL);
-		if (newp == NULL)
-			return (EPERM);
-		if (newlen < sizeof(tir))
-			return (ENOMEM);
-		if ((error = copyin(newp, &tir, sizeof (tir))) != 0 )
-			return (error);
-	} else {
-		if (oldp == NULL)
-			return (EINVAL);
-		if (*oldlenp < sizeof(tir))
-			return (ENOMEM);
-		if (newp != NULL || newlen != 0)
-			return (EINVAL);
-		if ((error = copyin(oldp, &tir, sizeof (tir))) != 0 )
-			return (error);
-	}
-	switch (tir.faddr.ss_family) {
-#ifdef INET6
-	case AF_INET6:
-		fin6 = (struct sockaddr_in6 *)&tir.faddr;
-		error = in6_embedscope(&f6, fin6, NULL);
-		if (error)
-			return EINVAL;	/*?*/
-		lin6 = (struct sockaddr_in6 *)&tir.laddr;
-		error = in6_embedscope(&l6, lin6, NULL);
-		if (error)
-			return EINVAL;	/*?*/
-		break;
-#endif
-	case AF_INET:
-		fin = (struct sockaddr_in *)&tir.faddr;
-		lin = (struct sockaddr_in *)&tir.laddr;
-		break;
-	default:
+
+	if (oldp == NULL || newp != NULL || newlen != 0)
 		return (EINVAL);
-	}
+	if  (*oldlenp < sizeof(tir))
+		return (ENOMEM);
+	if ((error = copyin(oldp, &tir, sizeof (tir))) != 0 )
+		return (error);
+	if (tir.faddr.sa_len != sizeof (struct sockaddr) ||
+	    tir.faddr.sa_family != AF_INET)
+		return (EINVAL);
+	fin = (struct sockaddr_in *)&tir.faddr;
+	lin = (struct sockaddr_in *)&tir.laddr;
 
 	s = splsoftnet();
-	switch (tir.faddr.ss_family) {
-#ifdef INET6
-	case AF_INET6:
-		inp = in6_pcbhashlookup(&tcbtable, &f6,
-		    fin6->sin6_port, &l6, lin6->sin6_port, tir.rdomain);
-		break;
-#endif
-	case AF_INET:
-		inp = in_pcbhashlookup(&tcbtable, fin->sin_addr,
-		    fin->sin_port, lin->sin_addr, lin->sin_port, tir.rdomain);
-		break;
-	default:
-		unhandled_af(tir.faddr.ss_family);
-	}
-
-	if (dodrop) {
-		if (inp && (tp = intotcpcb(inp)) &&
-		    ((inp->inp_socket->so_options & SO_ACCEPTCONN) == 0))
-			tp = tcp_drop(tp, ECONNABORTED);
-		else
-			error = ESRCH;
-		splx(s);
-		return (error);
-	}
-
+	inp = in_pcbhashlookup(&tcbtable,  fin->sin_addr, fin->sin_port,
+	    lin->sin_addr, lin->sin_port);
 	if (inp == NULL) {
 		++tcpstat.tcps_pcbhashmiss;
-		switch (tir.faddr.ss_family) {
-#ifdef INET6
-		case AF_INET6:
-			inp = in6_pcblookup_listen(&tcbtable,
-			    &l6, lin6->sin6_port, 0, NULL, tir.rdomain);
-			break;
-#endif
-		case AF_INET:
-			inp = in_pcblookup_listen(&tcbtable,
-			    lin->sin_addr, lin->sin_port, 0, NULL, tir.rdomain);
-			break;
-		}
+		inp = in_pcblookup(&tcbtable, &fin->sin_addr, fin->sin_port,
+		    &lin->sin_addr, lin->sin_port, 0);
 	}
-
 	if (inp != NULL && (inp->inp_socket->so_state & SS_CONNECTOUT)) {
 		tir.ruid = inp->inp_socket->so_ruid;
 		tir.euid = inp->inp_socket->so_euid;
@@ -866,18 +802,35 @@ tcp_sysctl(name, namelen, oldp, oldlenp, newp, newlen)
 	void *newp;
 	size_t newlen;
 {
-	int error, nval;
 
 	/* All sysctl names at this level are terminal. */
 	if (namelen != 1)
 		return (ENOTDIR);
 
 	switch (name[0]) {
+	case TCPCTL_RFC1323:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,
+		    &tcp_do_rfc1323));
 #ifdef TCP_SACK
 	case TCPCTL_SACK:
 		return (sysctl_int(oldp, oldlenp, newp, newlen,
 		    &tcp_do_sack));
 #endif
+	case TCPCTL_MSSDFLT:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,
+		    &tcp_mssdflt));
+	case TCPCTL_KEEPINITTIME:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,
+		    &tcptv_keep_init));
+
+	case TCPCTL_KEEPIDLE:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,
+		    &tcp_keepidle));
+
+	case TCPCTL_KEEPINTVL:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,
+		    &tcp_keepintvl));
+
 	case TCPCTL_SLOWHZ:
 		return (sysctl_rdint(oldp, oldlenp, newp, PR_SLOWHZ));
 
@@ -885,201 +838,15 @@ tcp_sysctl(name, namelen, oldp, oldlenp, newp, newlen)
 		return (sysctl_struct(oldp, oldlenp, newp, newlen,
 		    baddynamicports.tcp, sizeof(baddynamicports.tcp)));
 
-	case TCPCTL_ROOTONLY:
-		if (newp && securelevel > 0)
-			return (EPERM);
-		return (sysctl_struct(oldp, oldlenp, newp, newlen,
-		    rootonlyports.tcp, sizeof(rootonlyports.tcp)));
+	case TCPCTL_RECVSPACE:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,&tcp_recvspace));
 
+	case TCPCTL_SENDSPACE:
+		return (sysctl_int(oldp, oldlenp, newp, newlen,&tcp_sendspace));
 	case TCPCTL_IDENT:
-		return (tcp_ident(oldp, oldlenp, newp, newlen, 0));
-
-	case TCPCTL_DROP:
-		return (tcp_ident(oldp, oldlenp, newp, newlen, 1));
-
-	case TCPCTL_ALWAYS_KEEPALIVE:
-		return (sysctl_int(oldp, oldlenp, newp, newlen,
-		    &tcp_always_keepalive));
-
-#ifdef TCP_ECN
-	case TCPCTL_ECN:
-		return (sysctl_int(oldp, oldlenp, newp, newlen,
-		   &tcp_do_ecn));
-#endif
-	case TCPCTL_REASS_LIMIT:
-		nval = tcp_reass_limit;
-		error = sysctl_int(oldp, oldlenp, newp, newlen, &nval);
-		if (error)
-			return (error);
-		if (nval != tcp_reass_limit) {
-			error = pool_sethardlimit(&tcpqe_pool, nval, NULL, 0);
-			if (error)
-				return (error);
-			tcp_reass_limit = nval;
-		}
-		return (0);
-#ifdef TCP_SACK
-	case TCPCTL_SACKHOLE_LIMIT:
-		nval = tcp_sackhole_limit;
-		error = sysctl_int(oldp, oldlenp, newp, newlen, &nval);
-		if (error)
-			return (error);
-		if (nval != tcp_sackhole_limit) {
-			error = pool_sethardlimit(&sackhl_pool, nval, NULL, 0);
-			if (error)
-				return (error);
-			tcp_sackhole_limit = nval;
-		}
-		return (0);
-#endif
-
-	case TCPCTL_STATS:
-		if (newp != NULL)
-			return (EPERM);
-		{
-			struct syn_cache_set *set;
-			int i;
-
-			set = &tcp_syn_cache[tcp_syn_cache_active];
-			tcpstat.tcps_sc_hash_size = set->scs_size;
-			tcpstat.tcps_sc_entry_count = set->scs_count;
-			tcpstat.tcps_sc_entry_limit = tcp_syn_cache_limit;
-			tcpstat.tcps_sc_bucket_maxlen = 0;
-			for (i = 0; i < set->scs_size; i++) {
-				if (tcpstat.tcps_sc_bucket_maxlen <
-				    set->scs_buckethead[i].sch_length)
-					tcpstat.tcps_sc_bucket_maxlen =
-					    set->scs_buckethead[i].sch_length;
-			}
-			tcpstat.tcps_sc_bucket_limit = tcp_syn_bucket_limit;
-			tcpstat.tcps_sc_uses_left = set->scs_use;
-		}
-		return (sysctl_struct(oldp, oldlenp, newp, newlen,
-		    &tcpstat, sizeof(tcpstat)));
-
-	case TCPCTL_SYN_USE_LIMIT:
-		error = sysctl_int(oldp, oldlenp, newp, newlen,
-		    &tcp_syn_use_limit);
-		if (error)
-			return (error);
-		if (newp != NULL) {
-			/*
-			 * Global tcp_syn_use_limit is used when reseeding a
-			 * new cache.  Also update the value in active cache.
-			 */
-			if (tcp_syn_cache[0].scs_use > tcp_syn_use_limit)
-				tcp_syn_cache[0].scs_use = tcp_syn_use_limit;
-			if (tcp_syn_cache[1].scs_use > tcp_syn_use_limit)
-				tcp_syn_cache[1].scs_use = tcp_syn_use_limit;
-		}
-		return (0);
-
-	case TCPCTL_SYN_HASH_SIZE:
-		nval = tcp_syn_hash_size;
-		error = sysctl_int(oldp, oldlenp, newp, newlen, &nval);
-		if (error)
-			return (error);
-		if (nval != tcp_syn_hash_size) {
-			if (nval < 1 || nval > 100000)
-				return (EINVAL);
-			/*
-			 * If global hash size has been changed, switch sets as
-			 * soon as possible.  Then the actual hash array will
-			 * be reallocated.
-			 */
-			if (tcp_syn_cache[0].scs_size != nval)
-				tcp_syn_cache[0].scs_use = 0;
-			if (tcp_syn_cache[1].scs_size != nval)
-				tcp_syn_cache[1].scs_use = 0;
-			tcp_syn_hash_size = nval;
-		}
-		return (0);
-
+		return (tcp_ident(oldp, oldlenp, newp, newlen));
 	default:
-		if (name[0] < TCPCTL_MAXID)
-			return (sysctl_int_arr(tcpctl_vars, name, namelen,
-			    oldp, oldlenp, newp, newlen));
 		return (ENOPROTOOPT);
 	}
 	/* NOTREACHED */
-}
-
-/*
- * Scale the send buffer so that inflight data is not accounted against
- * the limit. The buffer will scale with the congestion window, if the
- * the receiver stops acking data the window will shrink and therefor
- * the buffer size will shrink as well.
- * In low memory situation try to shrink the buffer to the initial size
- * disabling the send buffer scaling as long as the situation persists.
- */
-void
-tcp_update_sndspace(struct tcpcb *tp)
-{
-	struct socket *so = tp->t_inpcb->inp_socket;
-	u_long nmax = so->so_snd.sb_hiwat;
-
-	if (sbchecklowmem()) {
-		/* low on memory try to get rid of some */
-		if (tcp_sendspace < nmax)
-			nmax = tcp_sendspace;
-	} else if (so->so_snd.sb_wat != tcp_sendspace)
-		/* user requested buffer size, auto-scaling disabled */
-		nmax = so->so_snd.sb_wat;
-	else
-		/* automatic buffer scaling */
-		nmax = MIN(sb_max, so->so_snd.sb_wat + tp->snd_max -
-		    tp->snd_una);
-
-	/* a writable socket must be preserved because of poll(2) semantics */
-	if (sbspace(&so->so_snd) >= so->so_snd.sb_lowat) {
-		if (nmax < so->so_snd.sb_cc + so->so_snd.sb_lowat)
-			nmax = so->so_snd.sb_cc + so->so_snd.sb_lowat;
-		if (nmax * 2 < so->so_snd.sb_mbcnt + so->so_snd.sb_lowat)
-			nmax = (so->so_snd.sb_mbcnt+so->so_snd.sb_lowat+1) / 2;
-	}
-
-	/* round to MSS boundary */
-	nmax = roundup(nmax, tp->t_maxseg);
-
-	if (nmax != so->so_snd.sb_hiwat)
-		sbreserve(&so->so_snd, nmax);
-}
-
-/*
- * Scale the recv buffer by looking at how much data was transferred in
- * on approximated RTT. If more then a big part of the recv buffer was
- * transferred during that time we increase the buffer by a constant.
- * In low memory situation try to shrink the buffer to the initial size.
- */
-void
-tcp_update_rcvspace(struct tcpcb *tp)
-{
-	struct socket *so = tp->t_inpcb->inp_socket;
-	u_long nmax = so->so_rcv.sb_hiwat;
-
-	if (sbchecklowmem()) {
-		/* low on memory try to get rid of some */
-		if (tcp_recvspace < nmax)
-			nmax = tcp_recvspace;
-	} else if (so->so_rcv.sb_wat != tcp_recvspace)
-		/* user requested buffer size, auto-scaling disabled */
-		nmax = so->so_rcv.sb_wat;
-	else {
-		/* automatic buffer scaling */
-		if (tp->rfbuf_cnt > so->so_rcv.sb_hiwat / 8 * 7)
-			nmax = MIN(sb_max, so->so_rcv.sb_hiwat +
-			    tcp_autorcvbuf_inc);
-	}
-
-	/* a readable socket must be preserved because of poll(2) semantics */
-	if (so->so_rcv.sb_cc >= so->so_rcv.sb_lowat &&
-	    nmax < so->so_snd.sb_lowat)
-		nmax = so->so_snd.sb_lowat;
-
-	if (nmax == so->so_rcv.sb_hiwat)
-		return;
-
-	/* round to MSS boundary */
-	nmax = roundup(nmax, tp->t_maxseg);
-	sbreserve(&so->so_rcv, nmax);
 }

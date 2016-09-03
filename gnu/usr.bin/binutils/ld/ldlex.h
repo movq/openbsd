@@ -1,6 +1,5 @@
 /* ldlex.h -
-   Copyright 1991, 1992, 1993, 1994, 1995, 1997, 2000, 2003
-   Free Software Foundation, Inc.
+   Copyright 1991, 1992 Free Software Foundation, Inc.
 
    This file is part of GLD, the Gnu Linker.
 
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GLD; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GLD; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef LDLEX_H
 #define LDLEX_H
@@ -29,35 +27,33 @@ typedef enum input_enum {
   input_selected,		/* We've set the initial state.  */
   input_script,
   input_mri_script,
-  input_version_script,
   input_defsym
 } input_type;
 
 extern input_type parser_input;
 
+extern int hex_mode;
 extern unsigned int lineno;
 extern const char *lex_string;
 
 /* In ldlex.l.  */
-extern int yylex (void);
-extern void lex_push_file (FILE *, const char *);
-extern void lex_redirect (const char *);
-extern void ldlex_script (void);
-extern void ldlex_mri_script (void);
-extern void ldlex_version_script (void);
-extern void ldlex_version_file (void);
-extern void ldlex_defsym (void);
-extern void ldlex_expression (void);
-extern void ldlex_both (void);
-extern void ldlex_command (void);
-extern void ldlex_popstate (void);
+extern int yylex PARAMS ((void));
+extern void lex_push_file PARAMS ((FILE *, const char *));
+extern void lex_redirect PARAMS ((const char *));
+extern void ldlex_script PARAMS ((void));
+extern void ldlex_mri_script PARAMS ((void));
+extern void ldlex_defsym PARAMS ((void));
+extern void ldlex_expression PARAMS ((void));
+extern void ldlex_both PARAMS ((void));
+extern void ldlex_command PARAMS ((void));
+extern void ldlex_popstate PARAMS ((void));
 
 /* In lexsup.c.  */
-extern int lex_input (void);
-extern void lex_unput (int);
+extern int lex_input PARAMS ((void));
+extern void lex_unput PARAMS ((int));
 #ifndef yywrap
-extern int yywrap (void);
+extern int yywrap PARAMS ((void));
 #endif
-extern void parse_args (unsigned, char **);
+extern void parse_args PARAMS ((int, char **));
 
 #endif

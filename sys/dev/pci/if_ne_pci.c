@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ne_pci.c,v 1.20 2014/12/22 02:28:52 tedu Exp $	*/
+/*	$OpenBSD: if_ne_pci.c,v 1.6 1999/09/01 21:43:38 deraadt Exp $	*/
 /*	$NetBSD: if_ne_pci.c,v 1.8 1998/07/05 00:51:24 jonathan Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -41,10 +48,19 @@
 #include <sys/device.h>
 
 #include <net/if.h>
+#ifdef __NetBSD__
+#include <net/if_ether.h>
+#endif
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#ifdef __NetBSD__
+#include <netinet/if_inarp.h>
+#else
 #include <netinet/if_ether.h>
+#endif
+#endif
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -52,8 +68,6 @@
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
-
-#include <dev/mii/miivar.h>
 
 #include <dev/ic/dp8390reg.h>
 #include <dev/ic/dp8390var.h>
@@ -71,8 +85,8 @@ struct ne_pci_softc {
 	void *sc_ih;				/* interrupt handle */
 };
 
-int ne_pci_match(struct device *, void *, void *);
-void ne_pci_attach(struct device *, struct device *, void *);
+int ne_pci_match __P((struct device *, void *, void *));
+void ne_pci_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ne_pci_ca = {
 	sizeof(struct ne_pci_softc), ne_pci_match, ne_pci_attach
@@ -81,16 +95,17 @@ struct cfattach ne_pci_ca = {
 const struct ne_pci_product {
 	pci_vendor_id_t npp_vendor;
 	pci_product_id_t npp_product;
-	int (*npp_mediachange)(struct dp8390_softc *);
-	void (*npp_mediastatus)(struct dp8390_softc *,
-	    struct ifmediareq *);
-	void (*npp_init_card)(struct dp8390_softc *);
-	void (*npp_media_init)(struct dp8390_softc *);
+	int (*npp_mediachange) __P((struct dp8390_softc *));
+	void (*npp_mediastatus) __P((struct dp8390_softc *,
+	    struct ifmediareq *));
+	void (*npp_init_card) __P((struct dp8390_softc *));
+	void (*npp_init_media) __P((struct dp8390_softc *, int **,
+	    int *, int *));
 } ne_pci_prod[] = {
 	{ PCI_VENDOR_REALTEK,		PCI_PRODUCT_REALTEK_RT8029,
 	  rtl80x9_mediachange,		rtl80x9_mediastatus,
-	  rtl80x9_init_card,		rtl80x9_media_init,
-	  /* Realtek 8029 */ },
+	  rtl80x9_init_card,		rtl80x9_init_media,
+	  /* RealTek 8029 */ },
 
 	{ PCI_VENDOR_WINBOND,		PCI_PRODUCT_WINBOND_W89C940F,
 	  NULL,				NULL,
@@ -129,15 +144,16 @@ const struct ne_pci_product {
 	  /* KTI */ },
 };
 
-const struct ne_pci_product *ne_pci_lookup(struct pci_attach_args *);
+const struct ne_pci_product *ne_pci_lookup __P((struct pci_attach_args *));
 
 const struct ne_pci_product *
-ne_pci_lookup(struct pci_attach_args *pa)
+ne_pci_lookup(pa)
+	struct pci_attach_args *pa;
 {
 	const struct ne_pci_product *npp;
 
 	for (npp = ne_pci_prod;
-	    npp < &ne_pci_prod[nitems(ne_pci_prod)];
+	    npp < &ne_pci_prod[sizeof(ne_pci_prod)/sizeof(ne_pci_prod[0])];
 	    npp++) {
 		if (PCI_VENDOR(pa->pa_id) == npp->npp_vendor &&
 		    PCI_PRODUCT(pa->pa_id) == npp->npp_product)
@@ -153,7 +169,9 @@ ne_pci_lookup(struct pci_attach_args *pa)
 #define PCI_CBIO	0x10		/* Configuration Base IO Address */
 
 int
-ne_pci_match(struct device *parent, void *match, void *aux)
+ne_pci_match(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct pci_attach_args *pa = aux;
 
@@ -164,14 +182,19 @@ ne_pci_match(struct device *parent, void *match, void *aux)
 }
 
 void
-ne_pci_attach(struct device *parent, struct device *self, void *aux)
+ne_pci_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct ne_pci_softc *psc = (struct ne_pci_softc *)self;
 	struct ne2000_softc *nsc = &psc->sc_ne2000;
 	struct dp8390_softc *dsc = &nsc->sc_dp8390;
 	struct pci_attach_args *pa = aux;
 	pci_chipset_tag_t pc = pa->pa_pc;
+#ifndef __NetBSD__
+	bus_addr_t iobase;
 	bus_size_t iosize;
+#endif
 	bus_space_tag_t nict;
 	bus_space_handle_t nich;
 	bus_space_tag_t asict;
@@ -179,6 +202,8 @@ ne_pci_attach(struct device *parent, struct device *self, void *aux)
 	const char *intrstr;
 	const struct ne_pci_product *npp;
 	pci_intr_handle_t ih;
+	pcireg_t csr;
+	int *media, nmedia, defmedia;
 
 	npp = ne_pci_lookup(pa);
 	if (npp == NULL) {
@@ -186,17 +211,30 @@ ne_pci_attach(struct device *parent, struct device *self, void *aux)
 		panic("ne_pci_attach: impossible");
 	}
 
+#ifdef __NetBSD__
 	if (pci_mapreg_map(pa, PCI_CBIO, PCI_MAPREG_TYPE_IO, 0,
-	    &nict, &nich, NULL, &iosize, 0)) {
+	    &nict, &nich, NULL, NULL)) {
 		printf(": can't map i/o space\n");
 		return;
 	}
+#else
+	if (pci_io_find(pc, pa->pa_tag, PCI_CBIO, &iobase, &iosize)) {
+		printf(": can't find I/O base\n");
+		return;
+	}
+
+	nict = pa->pa_iot;
+
+	if (bus_space_map(nict, iobase, iosize, 0, &nich)) {
+		printf(": can't map I/O space\n");
+		return;
+	}
+#endif
 
 	asict = nict;
 	if (bus_space_subregion(nict, nich, NE2000_ASIC_OFFSET,
 	    NE2000_ASIC_NPORTS, &asich)) {
 		printf(": can't subregion i/o space\n");
-		bus_space_unmap(nict, nich, iosize);
 		return;
 	}
 
@@ -206,18 +244,32 @@ ne_pci_attach(struct device *parent, struct device *self, void *aux)
 	nsc->sc_asict = asict;
 	nsc->sc_asich = asich;
 
+	/* Enable the card. */
+	csr = pci_conf_read(pc, pa->pa_tag,
+	    PCI_COMMAND_STATUS_REG);
+	pci_conf_write(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG,
+	    csr | PCI_COMMAND_MASTER_ENABLE);
+
 	/* This interface is always enabled. */
 	dsc->sc_enabled = 1;
 
-	dsc->sc_mediachange = npp->npp_mediachange;
-	dsc->sc_mediastatus = npp->npp_mediastatus;
-	dsc->sc_media_init = npp->npp_media_init;
+	if (npp->npp_init_media != NULL) {
+		(*npp->npp_init_media)(dsc, &media, &nmedia, &defmedia);
+		dsc->sc_mediachange = npp->npp_mediachange;
+		dsc->sc_mediastatus = npp->npp_mediastatus;
+	} else {
+		media = NULL;
+		nmedia = 0;
+		defmedia = 0;
+	}
+
+	/* Always fill in init_card; it might be used for non-media stuff. */
 	dsc->init_card = npp->npp_init_card;
 
 	/* Map and establish the interrupt. */
-	if (pci_intr_map(pa, &ih)) {
+	if (pci_intr_map(pc, pa->pa_intrtag, pa->pa_intrpin,
+	    pa->pa_intrline, &ih)) {
 		printf(": couldn't map interrupt\n");
-		bus_space_unmap(nict, nich, iosize);
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih);
@@ -228,14 +280,13 @@ ne_pci_attach(struct device *parent, struct device *self, void *aux)
 		if (intrstr != NULL)
 			printf(" at %s", intrstr);
 		printf("\n");
-		bus_space_unmap(nict, nich, iosize);
 		return;
 	}
-	printf(": %s", intrstr);
+	printf(" %s\n", intrstr);
 
 	/*
 	 * Do generic NE2000 attach.  This will read the station address
 	 * from the EEPROM.
 	 */
-	ne2000_attach(nsc, NULL);
+	ne2000_attach(nsc, NULL, media, nmedia, defmedia);
 }

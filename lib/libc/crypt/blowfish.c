@@ -1,4 +1,4 @@
-/* $OpenBSD: blowfish.c,v 1.19 2015/09/11 09:18:27 guenther Exp $ */
+/* $OpenBSD: blowfish.c,v 1.13 1999/05/14 16:08:58 niklas Exp $ */
 /*
  * Blowfish block cipher for OpenBSD
  * Copyright 1997 Niels Provos <provos@physnet.uni-hamburg.de>
@@ -56,71 +56,74 @@
 
 /* Function for Feistel Networks */
 
-#define F(s, x) ((((s)[        (((x)>>24)&0xFF)]  \
-		 + (s)[0x100 + (((x)>>16)&0xFF)]) \
-		 ^ (s)[0x200 + (((x)>> 8)&0xFF)]) \
-		 + (s)[0x300 + ( (x)     &0xFF)])
+#define F(bc, x) ((((bc)->S[0][((x) & 0xFF000000) >> 24] \
+		    + (bc)->S[1][((x) &0xFF0000 ) >> 16]) \
+		   ^ (bc)->S[2][((x) & 0xFF00) >> 8]) \
+		  + (bc)->S[3][(x) & 0x00FF])
 
-#define BLFRND(s,p,i,j,n) (i ^= F(s,j) ^ (p)[n])
+#define BLFRND(bc,i,j,n) (i ^= F(bc,j) ^ (bc)->P[n])
 
 void
-Blowfish_encipher(blf_ctx *c, u_int32_t *xl, u_int32_t *xr)
+Blowfish_encipher(c, xl, xr)
+	blf_ctx *c;
+	u_int32_t *xl;
+	u_int32_t *xr;
 {
 	u_int32_t Xl;
 	u_int32_t Xr;
-	u_int32_t *s = c->S[0];
-	u_int32_t *p = c->P;
 
 	Xl = *xl;
 	Xr = *xr;
 
-	Xl ^= p[0];
-	BLFRND(s, p, Xr, Xl, 1); BLFRND(s, p, Xl, Xr, 2);
-	BLFRND(s, p, Xr, Xl, 3); BLFRND(s, p, Xl, Xr, 4);
-	BLFRND(s, p, Xr, Xl, 5); BLFRND(s, p, Xl, Xr, 6);
-	BLFRND(s, p, Xr, Xl, 7); BLFRND(s, p, Xl, Xr, 8);
-	BLFRND(s, p, Xr, Xl, 9); BLFRND(s, p, Xl, Xr, 10);
-	BLFRND(s, p, Xr, Xl, 11); BLFRND(s, p, Xl, Xr, 12);
-	BLFRND(s, p, Xr, Xl, 13); BLFRND(s, p, Xl, Xr, 14);
-	BLFRND(s, p, Xr, Xl, 15); BLFRND(s, p, Xl, Xr, 16);
+	Xl ^= c->P[0];
+	BLFRND(c, Xr, Xl, 1); BLFRND(c, Xl, Xr, 2);
+	BLFRND(c, Xr, Xl, 3); BLFRND(c, Xl, Xr, 4);
+	BLFRND(c, Xr, Xl, 5); BLFRND(c, Xl, Xr, 6);
+	BLFRND(c, Xr, Xl, 7); BLFRND(c, Xl, Xr, 8);
+	BLFRND(c, Xr, Xl, 9); BLFRND(c, Xl, Xr, 10);
+	BLFRND(c, Xr, Xl, 11); BLFRND(c, Xl, Xr, 12);
+	BLFRND(c, Xr, Xl, 13); BLFRND(c, Xl, Xr, 14);
+	BLFRND(c, Xr, Xl, 15); BLFRND(c, Xl, Xr, 16);
 
-	*xl = Xr ^ p[17];
+	*xl = Xr ^ c->P[17];
 	*xr = Xl;
 }
-DEF_WEAK(Blowfish_encipher);
 
 void
-Blowfish_decipher(blf_ctx *c, u_int32_t *xl, u_int32_t *xr)
+Blowfish_decipher(c, xl, xr)
+	blf_ctx *c;
+	u_int32_t *xl;
+	u_int32_t *xr;
 {
 	u_int32_t Xl;
 	u_int32_t Xr;
-	u_int32_t *s = c->S[0];
-	u_int32_t *p = c->P;
 
 	Xl = *xl;
 	Xr = *xr;
 
-	Xl ^= p[17];
-	BLFRND(s, p, Xr, Xl, 16); BLFRND(s, p, Xl, Xr, 15);
-	BLFRND(s, p, Xr, Xl, 14); BLFRND(s, p, Xl, Xr, 13);
-	BLFRND(s, p, Xr, Xl, 12); BLFRND(s, p, Xl, Xr, 11);
-	BLFRND(s, p, Xr, Xl, 10); BLFRND(s, p, Xl, Xr, 9);
-	BLFRND(s, p, Xr, Xl, 8); BLFRND(s, p, Xl, Xr, 7);
-	BLFRND(s, p, Xr, Xl, 6); BLFRND(s, p, Xl, Xr, 5);
-	BLFRND(s, p, Xr, Xl, 4); BLFRND(s, p, Xl, Xr, 3);
-	BLFRND(s, p, Xr, Xl, 2); BLFRND(s, p, Xl, Xr, 1);
+	Xl ^= c->P[17];
+	BLFRND(c, Xr, Xl, 16); BLFRND(c, Xl, Xr, 15);
+	BLFRND(c, Xr, Xl, 14); BLFRND(c, Xl, Xr, 13);
+	BLFRND(c, Xr, Xl, 12); BLFRND(c, Xl, Xr, 11);
+	BLFRND(c, Xr, Xl, 10); BLFRND(c, Xl, Xr, 9);
+	BLFRND(c, Xr, Xl, 8); BLFRND(c, Xl, Xr, 7);
+	BLFRND(c, Xr, Xl, 6); BLFRND(c, Xl, Xr, 5);
+	BLFRND(c, Xr, Xl, 4); BLFRND(c, Xl, Xr, 3);
+	BLFRND(c, Xr, Xl, 2); BLFRND(c, Xl, Xr, 1);
 
-	*xl = Xr ^ p[0];
+	*xl = Xr ^ c->P[0];
 	*xr = Xl;
 }
-DEF_WEAK(Blowfish_decipher);
 
 void
-Blowfish_initstate(blf_ctx *c)
+Blowfish_initstate(c)
+	blf_ctx *c;
 {
-	/* P-box and S-box tables initialized with digits of Pi */
 
-	static const blf_ctx initstate =
+/* P-box and S-box tables initialized with digits of Pi */
+
+	const blf_ctx initstate =
+
 	{ {
 		{
 			0xd1310ba6, 0x98dfb5ac, 0x2ffd72db, 0xd01adfb7,
@@ -392,12 +395,19 @@ Blowfish_initstate(blf_ctx *c)
 	} };
 
 	*c = initstate;
-}
-DEF_WEAK(Blowfish_initstate);
 
+}
+
+#ifdef __STDC__
 u_int32_t
-Blowfish_stream2word(const u_int8_t *data, u_int16_t databytes,
-    u_int16_t *current)
+Blowfish_stream2word(const u_int8_t *data, u_int16_t databytes, u_int16_t *current)
+#else
+u_int32_t
+Blowfish_stream2word(data, databytes, current)
+	const u_int8_t *data;
+	u_int16_t databytes;
+	u_int16_t *current;
+#endif
 {
 	u_int8_t i;
 	u_int16_t j;
@@ -415,10 +425,17 @@ Blowfish_stream2word(const u_int8_t *data, u_int16_t databytes,
 	*current = j;
 	return temp;
 }
-DEF_WEAK(Blowfish_stream2word);
 
+#if __STDC__
 void
 Blowfish_expand0state(blf_ctx *c, const u_int8_t *key, u_int16_t keybytes)
+#else
+void
+Blowfish_expand0state(c, key, keybytes)
+	blf_ctx *c;
+	const u_int8_t *key;
+	u_int16_t keybytes;
+#endif
 {
 	u_int16_t i;
 	u_int16_t j;
@@ -453,12 +470,21 @@ Blowfish_expand0state(blf_ctx *c, const u_int8_t *key, u_int16_t keybytes)
 		}
 	}
 }
-DEF_WEAK(Blowfish_expand0state);
 
 
+#if __STDC__
 void
 Blowfish_expandstate(blf_ctx *c, const u_int8_t *data, u_int16_t databytes,
-    const u_int8_t *key, u_int16_t keybytes)
+		     const u_int8_t *key, u_int16_t keybytes)
+#else
+void
+Blowfish_expandstate(c, data, databytes, key, keybytes)
+	blf_ctx *c;
+	const u_int8_t *data;
+	u_int16_t databytes;
+	const u_int8_t *key;
+	u_int16_t keybytes;
+#endif
 {
 	u_int16_t i;
 	u_int16_t j;
@@ -498,21 +524,35 @@ Blowfish_expandstate(blf_ctx *c, const u_int8_t *data, u_int16_t databytes,
 	}
 
 }
-DEF_WEAK(Blowfish_expandstate);
 
+#if __STDC__
 void
 blf_key(blf_ctx *c, const u_int8_t *k, u_int16_t len)
+#else
+void
+blf_key(c, k, len)
+	blf_ctx *c;
+	const u_int8_t *k;
+	u_int16_t len;
+#endif
 {
-	/* Initialize S-boxes and subkeys with Pi */
+	/* Initalize S-boxes and subkeys with Pi */
 	Blowfish_initstate(c);
 
 	/* Transform S-boxes and subkeys with key */
 	Blowfish_expand0state(c, k, len);
 }
-DEF_WEAK(blf_key);
 
+#if __STDC__
 void
 blf_enc(blf_ctx *c, u_int32_t *data, u_int16_t blocks)
+#else
+void
+blf_enc(c, data, blocks)
+	blf_ctx *c;
+	u_int32_t *data;
+	u_int16_t blocks;
+#endif
 {
 	u_int32_t *d;
 	u_int16_t i;
@@ -523,10 +563,17 @@ blf_enc(blf_ctx *c, u_int32_t *data, u_int16_t blocks)
 		d += 2;
 	}
 }
-DEF_WEAK(blf_enc);
 
+#if __STDC__
 void
 blf_dec(blf_ctx *c, u_int32_t *data, u_int16_t blocks)
+#else
+void
+blf_dec(c, data, blocks)
+	blf_ctx *c;
+	u_int32_t *data;
+	u_int16_t blocks;
+#endif
 {
 	u_int32_t *d;
 	u_int16_t i;
@@ -537,10 +584,17 @@ blf_dec(blf_ctx *c, u_int32_t *data, u_int16_t blocks)
 		d += 2;
 	}
 }
-DEF_WEAK(blf_dec);
 
+#if __STDC__
 void
 blf_ecb_encrypt(blf_ctx *c, u_int8_t *data, u_int32_t len)
+#else
+void
+blf_ecb_encrypt(c, data, len)
+     blf_ctx *c;
+     u_int8_t *data;
+     u_int32_t len;
+#endif
 {
 	u_int32_t l, r;
 	u_int32_t i;
@@ -560,10 +614,17 @@ blf_ecb_encrypt(blf_ctx *c, u_int8_t *data, u_int32_t len)
 		data += 8;
 	}
 }
-DEF_WEAK(blf_ecb_encrypt);
 
+#if __STDC__
 void
 blf_ecb_decrypt(blf_ctx *c, u_int8_t *data, u_int32_t len)
+#else
+void
+blf_ecb_decrypt(c, data, len)
+     blf_ctx *c;
+     u_int8_t *data;
+     u_int32_t len;
+#endif
 {
 	u_int32_t l, r;
 	u_int32_t i;
@@ -583,10 +644,18 @@ blf_ecb_decrypt(blf_ctx *c, u_int8_t *data, u_int32_t len)
 		data += 8;
 	}
 }
-DEF_WEAK(blf_ecb_decrypt);
 
+#if __STDC__
 void
 blf_cbc_encrypt(blf_ctx *c, u_int8_t *iv, u_int8_t *data, u_int32_t len)
+#else
+void
+blf_cbc_encrypt(c, iv, data, len)
+     blf_ctx *c;
+     u_int8_t *iv;
+     u_int8_t *data;
+     u_int32_t len;
+#endif
 {
 	u_int32_t l, r;
 	u_int32_t i, j;
@@ -609,10 +678,18 @@ blf_cbc_encrypt(blf_ctx *c, u_int8_t *iv, u_int8_t *data, u_int32_t len)
 		data += 8;
 	}
 }
-DEF_WEAK(blf_cbc_encrypt);
 
+#if __STDC__
 void
 blf_cbc_decrypt(blf_ctx *c, u_int8_t *iva, u_int8_t *data, u_int32_t len)
+#else
+void
+blf_cbc_decrypt(c, iva, data, len)
+     blf_ctx *c;
+     u_int8_t *iva;
+     u_int8_t *data;
+     u_int32_t len;
+#endif
 {
 	u_int32_t l, r;
 	u_int8_t *iv;
@@ -651,7 +728,6 @@ blf_cbc_decrypt(blf_ctx *c, u_int8_t *iva, u_int8_t *data, u_int32_t len)
 	for (j = 0; j < 8; j++)
 		data[j] ^= iva[j];
 }
-DEF_WEAK(blf_cbc_decrypt);
 
 #if 0
 void

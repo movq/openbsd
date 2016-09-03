@@ -1,64 +1,39 @@
-/*	$OpenBSD: shots.c,v 1.13 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: shots.c,v 1.4 1999/02/01 06:53:56 d Exp $	*/
 /*	$NetBSD: shots.c,v 1.3 1997/10/11 08:13:50 lukem Exp $	*/
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/select.h>
+#include <err.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <syslog.h>
-
-#include "conf.h"
 #include "hunt.h"
+#include "conf.h"
 #include "server.h"
 
 #define	PLUS_DELTA(x, max)	if (x < max) x++; else x--
 #define	MINUS_DELTA(x, min)	if (x > min) x--; else x++
 
-static	void	chkshot(BULLET *, BULLET *);
-static	void	chkslime(BULLET *, BULLET *);
-static	void	explshot(BULLET *, int, int);
-static	void	find_under(BULLET *, BULLET *);
-static	int	iswall(int, int);
-static	void	mark_boot(BULLET *);
-static	void	mark_player(BULLET *);
-static	int	move_drone(BULLET *);
-static	void	move_flyer(PLAYER *);
-static	int	move_normal_shot(BULLET *);
-static	void	move_slime(BULLET *, int, BULLET *);
-static	void	save_bullet(BULLET *);
-static	void	zapshot(BULLET *, BULLET *);
+static	void	chkshot __P((BULLET *, BULLET *));
+static	void	chkslime __P((BULLET *, BULLET *));
+static	void	explshot __P((BULLET *, int, int));
+static	void	find_under __P((BULLET *, BULLET *));
+static	int	iswall __P((int, int));
+static	void	mark_boot __P((BULLET *));
+static	void	mark_player __P((BULLET *));
+static	int	move_drone __P((BULLET *));
+static	void	move_flyer __P((PLAYER *));
+static	int	move_normal_shot __P((BULLET *));
+static	void	move_slime __P((BULLET *, int, BULLET *));
+static	void	save_bullet __P((BULLET *));
+static	void	zapshot __P((BULLET *, BULLET *));
 
 /* Return true if there is pending activity */
 int
-can_moveshots(void)
+can_moveshots()
 {
 	PLAYER *pp;
 
@@ -87,7 +62,7 @@ can_moveshots(void)
  *	Move the shots already in the air, taking explosions into account
  */
 void
-moveshots(void)
+moveshots()
 {
 	BULLET	*bp, *next;
 	PLAYER	*pp;
@@ -222,7 +197,8 @@ no_bullets:
  *	Returns false if the bullet no longer needs tracking.
  */
 static int
-move_normal_shot(BULLET  *bp)
+move_normal_shot(bp)
+	BULLET	*bp;
 {
 	int	i, x, y;
 	PLAYER	*pp;
@@ -377,7 +353,7 @@ move_normal_shot(BULLET  *bp)
 				pp->p_ident->i_absorbed += bp->b_charge;
 
 				/* Deallocate storage: */
-				free(bp);
+				free((char *) bp);
 
 				/* Update ammo display: */
 				ammo_update(pp);
@@ -449,26 +425,27 @@ move_normal_shot(BULLET  *bp)
  *	Returns FALSE if the drone need no longer be tracked.
  */
 static int
-move_drone(BULLET *bp)
+move_drone(bp)
+	BULLET	*bp;
 {
 	int	mask, count;
 	int	n, dir = -1;
 	PLAYER	*pp;
 
 	/* See if we can give someone a blast: */
-	if (is_player(Maze[bp->b_y][bp->b_x - 1])) {
+	if (isplayer(Maze[bp->b_y][bp->b_x - 1])) {
 		dir = WEST;
 		goto drone_move;
 	}
-	if (is_player(Maze[bp->b_y - 1][bp->b_x])) {
+	if (isplayer(Maze[bp->b_y - 1][bp->b_x])) {
 		dir = NORTH;
 		goto drone_move;
 	}
-	if (is_player(Maze[bp->b_y + 1][bp->b_x])) {
+	if (isplayer(Maze[bp->b_y + 1][bp->b_x])) {
 		dir = SOUTH;
 		goto drone_move;
 	}
-	if (is_player(Maze[bp->b_y][bp->b_x + 1])) {
+	if (isplayer(Maze[bp->b_y][bp->b_x + 1])) {
 		dir = EAST;
 		goto drone_move;
 	}
@@ -567,7 +544,7 @@ drone_move:
 			message(pp, "**** Absorbed drone ****");
 
 			/* Release drone storage: */
-			free(bp);
+			free((char *) bp);
 
 			/* Update ammo: */
 			ammo_update(pp);
@@ -589,7 +566,8 @@ drone_move:
  *	Put a bullet back onto the bullet list
  */
 static void
-save_bullet(BULLET *bp)
+save_bullet(bp)
+	BULLET	*bp;
 {
 
 	/* Save what the bullet will be flying over: */
@@ -640,7 +618,8 @@ save_bullet(BULLET *bp)
  *	Update the position of a player in flight
  */
 static void
-move_flyer(PLAYER *pp)
+move_flyer(pp)
+	PLAYER	*pp;
 {
 	int	x, y;
 
@@ -746,7 +725,9 @@ again:
  *	Handle explosions
  */
 static void
-chkshot(BULLET *bp, BULLET *next)
+chkshot(bp, next)
+	BULLET	*bp;
+	BULLET	*next;
 {
 	int	y, x;
 	int	dy, dx, absdy;
@@ -837,7 +818,9 @@ chkshot(BULLET *bp, BULLET *next)
  *	handle slime shot exploding
  */
 static void
-chkslime(BULLET *bp, BULLET *next)
+chkslime(bp, next)
+	BULLET	*bp;
+	BULLET	*next;
 {
 	BULLET	*nbp;
 
@@ -867,9 +850,9 @@ chkslime(BULLET *bp, BULLET *next)
 	}
 
 	/* Duplicate the unit of slime: */
-	nbp = malloc(sizeof (BULLET));
+	nbp = (BULLET *) malloc(sizeof (BULLET));
 	if (nbp == NULL) {
-		logit(LOG_ERR, "malloc");
+		log(LOG_ERR, "malloc");
 		return;
 	}
 	*nbp = *bp;
@@ -885,7 +868,10 @@ chkslime(BULLET *bp, BULLET *next)
  *	it hasn't fizzled yet
  */
 static void
-move_slime(BULLET *bp, int speed, BULLET *next)
+move_slime(bp, speed, next)
+	BULLET	*bp;
+	int	speed;
+	BULLET	*next;
 {
 	int	i, j, dirmask, count;
 	PLAYER	*pp;
@@ -893,7 +879,7 @@ move_slime(BULLET *bp, int speed, BULLET *next)
 
 	if (speed == 0) {
 		if (bp->b_charge <= 0)
-			free(bp);
+			free((char *) bp);
 		else
 			save_bullet(bp);
 		return;
@@ -1035,7 +1021,7 @@ move_slime(BULLET *bp, int speed, BULLET *next)
 		move_slime(nbp, speed - 1, next);
 	}
 
-	free(bp);
+	free((char *) bp);
 }
 
 /*
@@ -1043,7 +1029,8 @@ move_slime(BULLET *bp, int speed, BULLET *next)
  *	returns whether the given location is a wall
  */
 static int
-iswall(int y, int x)
+iswall(y, x)
+	int	y, x;
 {
 	if (y < 0 || x < 0 || y >= HEIGHT || x >= WIDTH)
 		return TRUE;
@@ -1066,7 +1053,8 @@ iswall(int y, int x)
  *	Take a shot out of the air.
  */
 static void
-zapshot(BULLET *blist, BULLET *obp)
+zapshot(blist, obp)
+	BULLET	*blist, *obp;
 {
 	BULLET	*bp;
 
@@ -1087,7 +1075,9 @@ zapshot(BULLET *blist, BULLET *obp)
  *	Make all shots at this location blow up
  */
 static void
-explshot(BULLET *blist, int y, int x)
+explshot(blist, y, x)
+	BULLET	*blist;
+	int	y, x;
 {
 	BULLET	*bp;
 
@@ -1104,7 +1094,8 @@ explshot(BULLET *blist, int y, int x)
  *	Return a pointer to the player at the given location
  */
 PLAYER *
-play_at(int y, int x)
+play_at(y, x)
+	int	y, x;
 {
 	PLAYER	*pp;
 
@@ -1123,7 +1114,9 @@ play_at(int y, int x)
  *	of the player in the maze
  */
 int
-opposite(int face, char dir)
+opposite(face, dir)
+	int	face;
+	char	dir;
 {
 	switch (face) {
 	  case LEFTS:
@@ -1145,7 +1138,8 @@ opposite(int face, char dir)
  *	a pointer to the bullet, otherwise return NULL
  */
 BULLET *
-is_bullet(int y, int x)
+is_bullet(y, x)
+	int	y, x;
 {
 	BULLET	*bp;
 
@@ -1161,7 +1155,9 @@ is_bullet(int y, int x)
  *	to the given character.
  */
 void
-fixshots(int y, int x, char over)
+fixshots(y, x, over)
+	int	y, x;
+	char	over;
 {
 	BULLET	*bp;
 
@@ -1176,7 +1172,8 @@ fixshots(int y, int x, char over)
  *	on another bullet.
  */
 static void
-find_under(BULLET *blist, BULLET *bp)
+find_under(blist, bp)
+	BULLET	*blist, *bp;
 {
 	BULLET	*nbp;
 
@@ -1192,7 +1189,8 @@ find_under(BULLET *blist, BULLET *bp)
  *	mark a player as under a shot
  */
 static void
-mark_player(BULLET *bp)
+mark_player(bp)
+	BULLET	*bp;
 {
 	PLAYER	*pp;
 
@@ -1208,7 +1206,8 @@ mark_player(BULLET *bp)
  *	mark a boot as under a shot
  */
 static void
-mark_boot(BULLET *bp)
+mark_boot(bp)
+	BULLET	*bp;
 {
 	PLAYER	*pp;
 

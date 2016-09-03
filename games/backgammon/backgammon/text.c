@@ -1,4 +1,4 @@
-/*	$OpenBSD: text.c,v 1.9 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: text.c,v 1.3 1999/07/31 21:57:35 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgment:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,9 +33,17 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)text.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: text.c,v 1.3 1999/07/31 21:57:35 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 
-const char *const instruct[] = {
+const char *const instr[] = {
 	"    This program reacts to keystrokes immediately, without waiting",
 	"for a newline.  Consequently, special characters such as RUBOUT",
 	"and ESC will not perform their special functions during most of",
@@ -93,23 +105,29 @@ const char *const instruct[] = {
 	0};
 
 int
-text(const char *const *t)
+text(t)
+	const char *const *t;
 {
 	int     i;
 	const char   *s, *a;
 
+	fixtty(&noech);
 	while (*t != 0) {
 		s = a = *t;
 		for (i = 0; *a != '\0'; i--)
 			a++;
-		if (i)
-			printw("%s\n", s);
-		else {
-			addstr("-->");
+		if (i) {
+			writel(s);
+			writec('\n');
+		} else {
+			writel("-->");
+			fixtty(&raw);
 			while ((i = readc()) != ' ' && i != '\n');
+			fixtty(&noech);
 			clear();
 		}
 		t++;
 	}
+	fixtty(&raw);
 	return(0);
 }

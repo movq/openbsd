@@ -1,4 +1,4 @@
-/*	$OpenBSD: locate.h,v 1.10 2003/09/29 16:03:16 deraadt Exp $	*/
+/*	$OpenBSD: locate.h,v 1.8 1997/01/21 21:22:56 rahnds Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -46,7 +50,7 @@
 #undef CHAR_MAX
 #define CHAR_MAX 127
 /*	128-255 bigram codes (128 most common, as determined by 'updatedb') */
-#define BIGRAM_MIN    (UCHAR_MAX - CHAR_MAX)
+#define BIGRAM_MIN    (UCHAR_MAX - CHAR_MAX) 
 #define BIGRAM_MAX    UCHAR_MAX
 
 /*	32-127  single character (printable) ascii residue (ie, literal) */

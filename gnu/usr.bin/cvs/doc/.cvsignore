@@ -1,6 +1,6 @@
 *.dvi
 Makefile
-cvs-paper.pdf
+CVSvn.texi
 cvs-paper.ps
 cvs.aux
 cvs.cp
@@ -12,7 +12,6 @@ cvs.info
 cvs.info-*
 cvs.ky
 cvs.log
-cvs.pdf
 cvs.pg
 cvs.ps
 cvs.toc
@@ -28,7 +27,6 @@ cvsclient.info
 cvsclient.info-*
 cvsclient.ky
 cvsclient.log
-cvsclient.pdf
 cvsclient.pg
 cvsclient.ps
 cvsclient.toc

@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_le_isa.c,v 1.22 2014/12/22 02:28:51 tedu Exp $	*/
+/*	$OpenBSD: if_le_isa.c,v 1.14 1998/09/16 22:41:21 jason Exp $	*/
 /*	$NetBSD: if_le_isa.c,v 1.2 1996/05/12 23:52:56 mycroft Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -49,8 +53,12 @@
 #include <net/if.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#endif
+
+#include <vm/vm.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -59,8 +67,6 @@
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
 
-#include <dev/ic/lancereg.h>
-#include <dev/ic/lancevar.h>
 #include <dev/ic/am7990reg.h>
 #include <dev/ic/am7990var.h>
 
@@ -69,20 +75,22 @@
 static char *card_type[] =
     { "unknown", "BICC Isolan", "NE2100", "DEPCA", "PCnet-ISA" };
 
-int	le_isa_probe(struct device *, void *, void *);
-void	le_isa_attach(struct device *, struct device *, void *);
+int le_isa_probe __P((struct device *, void *, void *));
+void le_isa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach le_isa_ca = {
 	sizeof(struct le_softc), le_isa_probe, le_isa_attach
 };
 
-int	depca_isa_probe(struct le_softc *, struct isa_attach_args *);
-int	ne2100_isa_probe(struct le_softc *, struct isa_attach_args *);
-int	bicc_isa_probe(struct le_softc *, struct isa_attach_args *);
-int	lance_isa_probe(struct lance_softc *);
+int depca_isa_probe __P((struct le_softc *, struct isa_attach_args *));
+int ne2100_isa_probe __P((struct le_softc *, struct isa_attach_args *));
+int bicc_isa_probe __P((struct le_softc *, struct isa_attach_args *));
+int lance_isa_probe __P((struct am7990_softc *));
 
 int
-le_isa_probe(struct device *parent, void *match, void *aux)
+le_isa_probe(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct le_softc *lesc = match;
 	struct isa_attach_args *ia = aux;
@@ -99,7 +107,7 @@ le_isa_probe(struct device *parent, void *match, void *aux)
 	    depca_isa_probe(lesc, ia) == 0)
 		return (0);
 
-	if (bcmp(lesc->sc_am7990.lsc.sc_arpcom.ac_enaddr, bogusether,
+	if (bcmp(lesc->sc_am7990.sc_arpcom.ac_enaddr, bogusether,
 	    sizeof(bogusether)) == 0)
 		return (0);
 
@@ -107,9 +115,11 @@ le_isa_probe(struct device *parent, void *match, void *aux)
 }
 
 int
-depca_isa_probe(struct le_softc *lesc, struct isa_attach_args *ia)
+depca_isa_probe(lesc, ia)
+	struct le_softc *lesc;
+	struct isa_attach_args *ia;
 {
-	struct lance_softc *sc = &lesc->sc_am7990.lsc;
+	struct am7990_softc *sc = &lesc->sc_am7990;
 	bus_space_tag_t iot = lesc->sc_iot;
 	bus_space_handle_t ioh = lesc->sc_ioh;
 	int iosize = 16;
@@ -209,9 +219,11 @@ found:
 }
 
 int
-ne2100_isa_probe(struct le_softc *lesc, struct isa_attach_args *ia)
+ne2100_isa_probe(lesc, ia)
+	struct le_softc *lesc;
+	struct isa_attach_args *ia;
 {
-	struct lance_softc *sc = &lesc->sc_am7990.lsc;
+	struct am7990_softc *sc = &lesc->sc_am7990;
 	bus_space_tag_t iot = lesc->sc_iot;
 	bus_space_handle_t ioh = lesc->sc_ioh;
 	int iosize = 24;
@@ -242,9 +254,11 @@ ne2100_isa_probe(struct le_softc *lesc, struct isa_attach_args *ia)
 }
 
 int
-bicc_isa_probe(struct le_softc *lesc, struct isa_attach_args *ia)
+bicc_isa_probe(lesc, ia)
+	struct le_softc *lesc;
+	struct isa_attach_args *ia;
 {
-	struct lance_softc *sc = &lesc->sc_am7990.lsc;
+	struct am7990_softc *sc = &lesc->sc_am7990;
 	bus_space_handle_t ioh;
 	bus_space_tag_t iot = ia->ia_iot;
 	int iosize = 16;
@@ -278,7 +292,8 @@ bicc_isa_probe(struct le_softc *lesc, struct isa_attach_args *ia)
  * Determine which chip is present on the card.
  */
 int
-lance_isa_probe(struct lance_softc *sc)
+lance_isa_probe(sc)
+	struct am7990_softc *sc;
 {
 
 	/* Stop the LANCE chip and put it in a known state. */
@@ -293,17 +308,18 @@ lance_isa_probe(struct lance_softc *sc)
 }
 
 void
-le_isa_attach(struct device *parent, struct device *self,
-    void *aux)
+le_isa_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct le_softc *lesc = (void *)self;
-	struct lance_softc *sc = &lesc->sc_am7990.lsc;
+	struct am7990_softc *sc = &lesc->sc_am7990;
 	struct isa_attach_args *ia = aux;
 	bus_space_tag_t iot = ia->ia_iot;
 	bus_space_handle_t ioh;
 
 	if (bus_space_map(iot, ia->ia_iobase, ia->ia_iosize, 0, &ioh))
-		panic("%s: can't map I/O-ports", sc->sc_dev.dv_xname);
+		panic("%s: could not map I/O-ports", sc->sc_dev.dv_xname);
 	lesc->sc_iot = iot;
 	lesc->sc_ioh = ioh;
 
@@ -346,11 +362,11 @@ le_isa_attach(struct device *parent, struct device *self,
 		sc->sc_memsize = 16384;
 	}
 
-	sc->sc_copytodesc = lance_copytobuf_contig;
-	sc->sc_copyfromdesc = lance_copyfrombuf_contig;
-	sc->sc_copytobuf = lance_copytobuf_contig;
-	sc->sc_copyfrombuf = lance_copyfrombuf_contig;
-	sc->sc_zerobuf = lance_zerobuf_contig;
+	sc->sc_copytodesc = am7990_copytobuf_contig;
+	sc->sc_copyfromdesc = am7990_copyfrombuf_contig;
+	sc->sc_copytobuf = am7990_copytobuf_contig;
+	sc->sc_copyfrombuf = am7990_copyfrombuf_contig;
+	sc->sc_zerobuf = am7990_zerobuf_contig;
 
 	sc->sc_rdcsr = le_isa_rdcsr;
 	sc->sc_wrcsr = le_isa_wrcsr;
@@ -358,7 +374,7 @@ le_isa_attach(struct device *parent, struct device *self,
 	sc->sc_hwinit = NULL;
 
 	printf("%s", sc->sc_dev.dv_xname);
-	am7990_config(&lesc->sc_am7990);
+	am7990_config(sc);
 
 #if NISADMA > 0
 	if (ia->ia_drq != DRQUNK)

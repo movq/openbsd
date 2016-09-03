@@ -1,9 +1,5 @@
-#	$OpenBSD: Makefile,v 1.22 2015/01/21 08:43:55 ratchov Exp $
+#	$OpenBSD: Makefile,v 1.1 1997/01/02 22:12:26 kstailey Exp $
 
 PROG=	aucat
-SRCS=	abuf.c afile.c aucat.c dsp.c utils.c
-MAN=	aucat.1
-CFLAGS+=-DDEBUG -I${.CURDIR}/../../lib/libsndio
-COPTS+=	-Wall -Wstrict-prototypes -Wmissing-prototypes -Wpointer-arith -Wundef
-LDADD+=	-lsndio
+
 .include <bsd.prog.mk>

@@ -1,161 +1,138 @@
 /*
- * Copyright (C) 1984-2012  Mark Nudelman
- * Modified for use with illumos by Garrett D'Amore.
- * Copyright 2014 Garrett D'Amore <garrett@damore.org>
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 
 /*
  * Entry point, initialization, miscellaneous routines.
  */
 
-#include <sys/types.h>
-
-#include <libgen.h>
-#include <stdarg.h>
-
 #include "less.h"
+#include "position.h"
 
-char	*every_first_cmd = NULL;
-int	new_file;
-int	is_tty;
-IFILE	curr_ifile = NULL;
-IFILE	old_ifile = NULL;
-struct scrpos initial_scrpos;
-int	any_display = FALSE;
-off_t	start_attnpos = -1;
-off_t	end_attnpos = -1;
-int	wscroll;
+public char *	every_first_cmd = NULL;
+public int	new_file;
+public int	is_tty;
+public IFILE	curr_ifile = NULL_IFILE;
+public IFILE	old_ifile = NULL_IFILE;
+public struct scrpos initial_scrpos;
+public int	any_display = FALSE;
+public int	wscroll;
+public char *	progname;
+public int	quitting;
+public int	more_mode = 0;
 
-static char	*progname;
-
-int	quitting;
-int	secure;
-int	dohelp;
-
-int logfile = -1;
-int force_logfile = FALSE;
-char *namelogfile = NULL;
-char *editor;
-char *editproto;
-
-extern char	*tags;
-extern char	*tagoption;
-extern int	jump_sline;
-extern int	less_is_more;
-extern int	missing_cap;
-extern int	know_dumb;
-extern int	quit_if_one_screen;
 extern int	quit_at_eof;
-extern int	pr_type;
-extern int	hilite_search;
-extern int	use_lessopen;
-extern int	no_init;
-extern int	top_scroll;
+extern int	cbufs;
 extern int	errmsgs;
+extern int	screen_trashed;
+extern int	force_open;
+
+#if LOGFILE
+public int	logfile = -1;
+public int	force_logfile = FALSE;
+public char *	namelogfile = NULL;
+#endif
+
+#if EDITOR
+public char *	editor;
+public char *	editproto;
+#endif
+
+#if TAGS
+extern char *	tagfile;
+extern char *	tagoption;
+extern int	jump_sline;
+#endif
+
 
 
 /*
  * Entry point.
  */
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	IFILE ifile;
-	char *s;
+	extern char *__progname;
 
-	progname = basename(argv[0]);
-	argv++;
-	argc--;
+#ifdef __EMX__
+	_response(&argc, &argv);
+	_wildcard(&argc, &argv);
+#endif
 
-	/*
-	 * If the name of the executable program is "more",
-	 * act like LESS_IS_MORE is set.  We have to set this as early
-	 * as possible for POSIX.
-	 */
-	if (strcmp(progname, "more") == 0)
-		less_is_more = 1;
-	else {
-		s = lgetenv("LESS_IS_MORE");
-		if (s != NULL && *s != '\0')
-			less_is_more = 1;
-	}
-
-	secure = 0;
-	s = lgetenv("LESSSECURE");
-	if (s != NULL && *s != '\0')
-		secure = 1;
-
-	if (secure) {
-		if (pledge("stdio rpath wpath tty", NULL) == -1) {
-			perror("pledge");
-			exit(1);
-		}
-	} else {
-		if (pledge("stdio rpath wpath cpath fattr proc exec tty", NULL) == -1) {
-			perror("pledge");
-			exit(1);
-		}
-	}
+	progname = *argv++;
 
 	/*
 	 * Process command line arguments and LESS environment arguments.
 	 * Command line arguments override environment arguments.
 	 */
-	is_tty = isatty(1);
+	if (strcmp(__progname, "more") == 0)
+		more_mode = 1;
+
 	get_term();
 	init_cmds();
-	init_charset();
-	init_line();
-	init_cmdhist();
-	init_option();
-	init_search();
-
-
 	init_prompt();
+	init_charset();
+	init_option();
 
-	if (less_is_more) {
-		/* this is specified by XPG */
-		quit_at_eof = OPT_ON;
+	if (more_mode) {
+		scan_option("-E");
+		scan_option("-m");
+		scan_option("-G");
+		scan_option(getenv("MORE"));
+	} else
+		scan_option(getenv("LESS"));
 
-		/* more users don't like the warning */
-		know_dumb = OPT_ON;
-
-		/* default prompt is medium */
-		pr_type = OPT_ON;
-
-		/* do not hilight search terms */
-		hilite_search = OPT_OFF;
-
-		/* do not use LESSOPEN */
-		use_lessopen = OPT_OFF;
-
-		/* do not set init strings to terminal */
-		no_init = OPT_ON;
-
-		/* repaint from top of screen */
-		top_scroll = OPT_OFF;
+#if GNU_OPTIONS
+	/*
+	 * Special case for "less --help" and "less --version".
+	 */
+	if (argc == 2)
+	{
+		if (strcmp(argv[0], "--help") == 0)
+			scan_option("-?");
+		if (strcmp(argv[0], "--version") == 0)
+			scan_option("-V");
 	}
-
-	s = lgetenv(less_is_more ? "MORE" : "LESS");
-	if (s != NULL)
-		scan_option(estrdup(s));
-
+#endif
 #define	isoptstring(s)	(((s)[0] == '-' || (s)[0] == '+') && (s)[1] != '\0')
-	while (argc > 0 && (isoptstring(*argv) || isoptpending())) {
-		s = *argv++;
-		argc--;
-		if (strcmp(s, "--") == 0)
+	while (--argc > 0 && (isoptstring(argv[0]) || isoptpending())) {
+		if (strcmp(argv[0], "--") == 0) {
+			argv++;
+			argc--;
 			break;
-		scan_option(s);
+		}
+		scan_option(*argv++);
 	}
 #undef isoptstring
 
-	if (isoptpending()) {
+	if (isoptpending())
+	{
 		/*
 		 * Last command line option was a flag requiring a
 		 * following string, but there was no following string.
@@ -164,57 +141,63 @@ main(int argc, char *argv[])
 		quit(QUIT_OK);
 	}
 
-	if (errmsgs) {
-		quit(QUIT_ERROR);
-	}
-	if (less_is_more && quit_at_eof == OPT_ONPLUS) {
-		extern int no_init;
-		no_init = OPT_ON;
-	}
-	if (less_is_more && pr_type == OPT_ONPLUS) {
-		extern int quiet;
-		quiet = VERY_QUIET;
-	}
-
-	editor = lgetenv("VISUAL");
-	if (editor == NULL || *editor == '\0') {
-		editor = lgetenv("EDITOR");
+#if EDITOR
+	editor = getenv("VISUAL");
+	if (editor == NULL || *editor == '\0')
+	{
+		editor = getenv("EDITOR");
 		if (editor == NULL || *editor == '\0')
 			editor = EDIT_PGM;
 	}
-	editproto = lgetenv("LESSEDIT");
+	editproto = getenv("LESSEDIT");
 	if (editproto == NULL || *editproto == '\0')
 		editproto = "%E ?lm+%lm. %f";
+#endif
 
 	/*
 	 * Call get_ifile with all the command line filenames
 	 * to "register" them with the ifile system.
 	 */
-	ifile = NULL;
-	if (dohelp)
-		ifile = get_ifile(helpfile(), ifile);
-	while (argc-- > 0) {
+	ifile = NULL_IFILE;
+	while (--argc >= 0)
+	{
+#if MSOFTC || OS2
+		/*
+		 * Because the "shell" doesn't expand filename patterns,
+		 * treat each argument as a filename pattern rather than
+		 * a single filename.  
+		 * Expand the pattern and iterate over the expanded list.
+		 */
+		struct textlist tlist;
+		char *gfilename;
 		char *filename;
-		filename = shell_quote(*argv);
-		if (filename == NULL)
-			filename = *argv;
-		argv++;
-		(void) get_ifile(filename, ifile);
-		ifile = prev_ifile(NULL);
-		free(filename);
+		
+		gfilename = glob(*argv++);
+		init_textlist(&tlist, gfilename);
+		filename = NULL;
+		while ((filename = forw_textlist(&tlist, filename)) != NULL)
+			ifile = get_ifile(filename, ifile);
+		free(gfilename);
+#else
+		ifile = get_ifile(*argv++, ifile);
+#endif
 	}
 	/*
 	 * Set up terminal, etc.
 	 */
-	if (!is_tty) {
+	is_tty = isatty(1);
+	if (!is_tty)
+	{
 		/*
 		 * Output is not a tty.
 		 * Just copy the input file(s) to output.
 		 */
-		if (nifile() == 0) {
+		if (nifile() == 0)
+		{
 			if (edit_stdin() == 0)
 				cat_file();
-		} else if (edit_first() == 0) {
+		} else if (edit_first() == 0)
+		{
 			do {
 				cat_file();
 			} while (edit_next(1) == 0);
@@ -222,49 +205,49 @@ main(int argc, char *argv[])
 		quit(QUIT_OK);
 	}
 
-	if (missing_cap && !know_dumb)
-		error("WARNING: terminal is not fully functional", NULL);
 	init_mark();
-	open_getchr();
-
-	if (secure)
-		if (pledge("stdio rpath tty", NULL) == -1) {
-			perror("pledge");
-			exit(1);
-		}
-
 	raw_mode(1);
+	open_getchr();
 	init_signals(1);
 
 	/*
 	 * Select the first file to examine.
 	 */
-	if (tagoption != NULL || strcmp(tags, "-") == 0) {
+#if TAGS
+	if (tagoption != NULL)
+	{
 		/*
 		 * A -t option was given.
 		 * Verify that no filenames were also given.
 		 * Edit the file selected by the "tags" search,
 		 * and search for the proper line in the file.
 		 */
-		if (nifile() > 0) {
-			error("No filenames allowed with -t option", NULL);
+		if (nifile() > 0)
+		{
+			error("No filenames allowed with -t option", NULL_PARG);
 			quit(QUIT_ERROR);
 		}
 		findtag(tagoption);
-		if (edit_tagfile())  /* Edit file which contains the tag */
+		if (tagfile == NULL)
+			quit(QUIT_ERROR);
+		if (edit(tagfile))  /* Edit file which contains the tag */
 			quit(QUIT_ERROR);
 		/*
 		 * Search for the line which contains the tag.
 		 * Set up initial_scrpos so we display that line.
 		 */
 		initial_scrpos.pos = tagsearch();
-		if (initial_scrpos.pos == -1)
+		if (initial_scrpos.pos == NULL_POSITION)
 			quit(QUIT_ERROR);
 		initial_scrpos.ln = jump_sline;
-	} else if (nifile() == 0) {
+	} else
+#endif
+	if (nifile() == 0)
+	{
 		if (edit_stdin())  /* Edit standard input */
 			quit(QUIT_ERROR);
-	} else {
+	} else 
+	{
 		if (edit_first())  /* Edit first valid file in cmd line */
 			quit(QUIT_ERROR);
 	}
@@ -272,102 +255,75 @@ main(int argc, char *argv[])
 	init();
 	commands();
 	quit(QUIT_OK);
-	return (0);
+	/*NOTREACHED*/
+}
+
+/*
+ * Copy a string, truncating to the specified length if necessary.
+ * Unlike strncpy(), the resulting string is guaranteed to be null-terminated.
+ */
+	public void
+strtcpy(to, from, len)
+	char *to;
+	char *from;
+	unsigned int len;
+{
+	strncpy(to, from, len);
+	to[len-1] = '\0';
+}
+
+/*
+ * Copy a string to a "safe" place
+ * (that is, to a buffer allocated by calloc).
+ */
+	public char *
+save(s)
+	char *s;
+{
+	register char *p;
+
+	p = (char *) ecalloc(strlen(s)+1, sizeof(char));
+	strcpy(p, s);
+	return (p);
 }
 
 /*
  * Allocate memory.
  * Like calloc(), but never returns an error (NULL).
  */
-void *
-ecalloc(int count, unsigned int size)
+	public VOID_POINTER
+ecalloc(count, size)
+	int count;
+	unsigned int size;
 {
-	void *p;
+	register VOID_POINTER p;
 
-	p = calloc(count, size);
+	p = (VOID_POINTER) calloc(count, size);
 	if (p != NULL)
 		return (p);
-	error("Cannot allocate memory", NULL);
+	error("Cannot allocate memory", NULL_PARG);
 	quit(QUIT_ERROR);
-	return (NULL);
-}
-
-char *
-easprintf(const char *fmt, ...)
-{
-	char *p = NULL;
-	int rv;
-	va_list ap;
-
-	va_start(ap, fmt);
-	rv = vasprintf(&p, fmt, ap);
-	va_end(ap);
-
-	if (p == NULL || rv < 0) {
-		error("Cannot allocate memory", NULL);
-		quit(QUIT_ERROR);
-	}
-	return (p);
-}
-
-char *
-estrdup(const char *str)
-{
-	char *n;
-
-	n = strdup(str);
-	if (n == NULL) {
-		error("Cannot allocate memory", NULL);
-		quit(QUIT_ERROR);
-	}
-	return (n);
+	/*NOTREACHED*/
 }
 
 /*
  * Skip leading spaces in a string.
  */
-char *
-skipsp(char *s)
+	public char *
+skipsp(s)
+	register char *s;
 {
-	while (*s == ' ' || *s == '\t')
+	while (*s == ' ' || *s == '\t')	
 		s++;
 	return (s);
 }
 
 /*
- * See how many characters of two strings are identical.
- * If uppercase is true, the first string must begin with an uppercase
- * character; the remainder of the first string may be either case.
- */
-int
-sprefix(char *ps, char *s, int uppercase)
-{
-	int c;
-	int sc;
-	int len = 0;
-
-	for (; *s != '\0';  s++, ps++) {
-		c = *ps;
-		if (uppercase) {
-			if (len == 0 && islower(c))
-				return (-1);
-			c = tolower(c);
-		}
-		sc = *s;
-		if (len > 0)
-			sc = tolower(sc);
-		if (c != sc)
-			break;
-		len++;
-	}
-	return (len);
-}
-
-/*
  * Exit the program.
  */
-void
-quit(int status)
+	public void
+quit(status)
+	int status;
 {
 	static int save_status;
 
@@ -380,19 +336,20 @@ quit(int status)
 	else
 		save_status = status;
 	quitting = 1;
-	edit(NULL);
-	if (!secure)
-		save_cmdhist();
-	if (any_display && is_tty)
+	edit((char*)NULL);
+	if (is_tty && any_display)
 		clear_bot();
 	deinit();
-	flush(1);
+	flush();
 	raw_mode(0);
+#if MSOFTC
+	/* 
+	 * If we don't close 2, we get some garbage from
+	 * 2's buffer when it flushes automatically.
+	 * I cannot track this one down  RB
+	 * The same bug shows up if we use ^C^C to abort.
+	 */
+	close(2);
+#endif
 	exit(status);
-}
-
-char *
-helpfile(void)
-{
-	return (less_is_more ? HELPDIR "/more.help" : HELPDIR "/less.help");
 }

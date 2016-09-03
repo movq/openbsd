@@ -1,15 +1,12 @@
-#	$OpenBSD: Makefile,v 1.47 2016/09/01 09:32:49 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.4 1998/05/18 14:28:15 mickey Exp $
 #	$NetBSD: Makefile,v 1.5 1995/09/15 21:05:21 pk Exp $
 
-SUBDIR=	dev/microcode \
-	arch/alpha arch/amd64 arch/armv7 \
-	arch/hppa arch/i386 \
-	arch/landisk arch/loongson arch/luna88k \
-	arch/macppc arch/octeon \
-	arch/sgi arch/socppc arch/sparc64 \
-	arch/zaurus
-
-tags:
-	cd ${.CURDIR}/kern; make tags
+.if make(obj)
+SUBDIR=  arch/alpha arch/amiga arch/arc arch/hp300 arch/i386 \
+	arch/m68k arch/mac68k arch/mvme68k arch/pmax arch/powerpc \
+	arch/sparc arch/wgrisc arch/vax
+.else
+SUBDIR+= arch/${MACHINE}
+.endif
 
 .include <bsd.subdir.mk>

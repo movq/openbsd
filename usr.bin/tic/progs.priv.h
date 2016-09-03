@@ -1,7 +1,7 @@
-/* $OpenBSD: progs.priv.h,v 1.10 2015/01/16 06:40:13 deraadt Exp $ */
+/*	$OpenBSD: progs.priv.h,v 1.3 1999/03/02 06:23:55 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,10 +29,10 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey                    1997-on                     *
+ *  Author: Thomas E. Dickey <dickey@clark.net> 1997,1998                   *
  ****************************************************************************/
 /*
- * $Id: progs.priv.h,v 1.10 2015/01/16 06:40:13 deraadt Exp $
+ * $From: progs.priv.h,v 1.19 1999/02/23 11:10:32 tom Exp $
  *
  *	progs.priv.h
  *
@@ -41,7 +41,7 @@
 
 #include <ncurses_cfg.h>
 
-#if USE_RCS_IDS
+#ifdef USE_RCS_IDS
 #define MODULE_ID(id) static const char Ident[] = id;
 #else
 #define MODULE_ID(id) /*nothing*/
@@ -54,6 +54,10 @@
 
 #if HAVE_UNISTD_H
 #include <unistd.h>
+#else
+# if HAVE_LIBC_H
+# include <libc.h>
+# endif
 #endif
 
 #if HAVE_SYS_BSDTYPES_H
@@ -63,23 +67,14 @@
 #if HAVE_LIMITS_H
 # include <limits.h>
 #elif HAVE_SYS_PARAM_H
-# include <sys/param.h>		/* only if no limits.h */
+# include <sys/param.h>
 #endif
 
 #if HAVE_DIRENT_H
 # include <dirent.h>
 # define NAMLEN(dirent) strlen((dirent)->d_name)
-# if defined(_FILE_OFFSET_BITS) && defined(HAVE_STRUCT_DIRENT64)
-#  if !defined(_LP64) && (_FILE_OFFSET_BITS == 64)
-#   define	DIRENT	struct dirent64
-#  else
-#   define	DIRENT	struct dirent
-#  endif
-# else
-#  define	DIRENT	struct dirent
-# endif
 #else
-# define DIRENT struct direct
+# define dirent direct
 # define NAMLEN(dirent) (dirent)->d_namlen
 # if HAVE_SYS_NDIR_H
 #  include <sys/ndir.h>
@@ -92,7 +87,6 @@
 # endif
 #endif
 
-#include <assert.h>
 #include <errno.h>
 
 #if DECL_ERRNO
@@ -112,17 +106,7 @@ extern int optind;
 #include <curses.h>
 #include <term_entry.h>
 #include <tic.h>
-#include <nc_tparm.h>
-
 #include <nc_alloc.h>
-#if HAVE_NC_FREEALL
-#undef ExitProgram
-#ifdef USE_LIBTINFO
-#define ExitProgram(code) _nc_free_tinfo(code)
-#else
-#define ExitProgram(code) _nc_free_tic(code)
-#endif
-#endif
 
 /* usually in <unistd.h> */
 #ifndef STDOUT_FILENO
@@ -139,18 +123,6 @@ extern int optind;
 
 #ifndef EXIT_FAILURE
 #define EXIT_FAILURE 1
-#endif
-
-#ifndef R_OK
-#define	R_OK	4		/* Test for readable.  */
-#endif
-
-#ifndef W_OK
-#define	W_OK	2		/* Test for writable.  */
-#endif
-
-#ifndef X_OK
-#define	X_OK	1		/* Test for executable.  */
 #endif
 
 #ifndef F_OK
@@ -180,15 +152,11 @@ extern int optind;
 /* We use isascii only to guard against use of 7-bit ctype tables in the
  * isprint test in infocmp.
  */
-#if !HAVE_ISASCII
+#ifndef HAVE_ISASCII
 # undef isascii
 # if ('z'-'a' == 25) && ('z' < 127) && ('Z'-'A' == 25) && ('Z' < 127) && ('9' < 127)
-#  define isascii(c) (UChar(c) <= 127)
+#  define isascii(c) (((c) & 0xff) <= 127)
 # else
 #  define isascii(c) 1	/* not really ascii anyway */
 # endif
 #endif
-
-#define UChar(c)    ((unsigned char)(c))
-
-#define SIZEOF(v) (sizeof(v)/sizeof(v[0]))

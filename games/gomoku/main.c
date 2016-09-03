@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.32 2016/01/08 21:38:33 mestre Exp $	*/
+/*	$OpenBSD: main.c,v 1.8 1998/03/26 21:16:49 pjanzen Exp $	*/
 /*
  * Copyright (c) 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,25 +35,36 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.4 (Berkeley) 5/4/95";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.8 1998/03/26 21:16:49 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include "gomoku.h"
 #include <curses.h>
 #include <err.h>
-#include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "gomoku.h"
-
 #define USER	0		/* get input from standard input */
 #define PROGRAM	1		/* get input from program */
 #define INPUTF	2		/* get input from a file */
 
-extern char *__progname;	/* name of program */
-
 int	interactive = 1;	/* true if interactive */
 int	debug;			/* true if debugging */
 int	test;			/* both moves come from 1: input, 2: computer */
+char	*prog;			/* name of program */
 FILE	*debugfp;		/* file for debug output */
 FILE	*inputfp;		/* file for debug input */
 
@@ -65,13 +80,14 @@ int	movelog[BSZ * BSZ];		/* log of all the moves */
 int	movenum;			/* current move number */
 char	*plyr[2];			/* who's who */
 
-static char you[LOGIN_NAME_MAX];	/* username */
+static char you[9] = "you\0\0\0\0\0\0";	/* username */
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	char buf[128];
-	char fname[PATH_MAX];
 	int color = BLACK, curmove = 0, i, ch;
 	int input[2];
 	static char *fmt[2] = {
@@ -80,13 +96,18 @@ main(int argc, char **argv)
 	};
 	char *tmpname;
 
-	if (pledge("stdio rpath wpath cpath tty", NULL) == -1)
-		err(1, "pledge");
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
-	if ((tmpname = getlogin()) != NULL)
-		strlcpy(you, tmpname, sizeof(you));
+	prog = strrchr(argv[0], '/');
+	if (prog)
+		prog++;
 	else
-		strlcpy(you, "you", sizeof(you));
+		prog = argv[0];
+
+	if ((tmpname = getlogin()) != 0)
+		strncpy(you,tmpname,8);
 
 	while ((ch = getopt(argc, argv, "bcdD:hu")) != -1) {
 		switch (ch) {
@@ -100,18 +121,25 @@ main(int argc, char **argv)
 			if ((debugfp = fopen(optarg, "w")) == NULL)
 				err(1, "%s", optarg);
 			break;
-		case 'u':	/* testing: user versus user */
+		case 'u':	/* testing: user verses user */
 			test = 1;
 			break;
-		case 'c':	/* testing: computer versus computer */
+		case 'c':	/* testing: computer verses computer */
 			test = 2;
 			break;
 		case 'h':
 		default:
+			fprintf(stderr,"usage:  %s [-bcdu] [-D debugfile] [inputfile]\n",
+					prog);
+			fprintf(stderr,"\tWhere the options are:\n\t-b : background\n");
+			fprintf(stderr,"\t-c : computer vs itself\n");
+			fprintf(stderr,"\t-d : print debugging information\n");
+			fprintf(stderr,"\t-u : user vs user\n");
 			fprintf(stderr,
-			    "usage: %s [-bcdu] [-D debugfile] [inputfile]\n",
-			    __progname);
-			return 1;
+	"\t-D : print debugging information to debugfile\n");
+			fprintf(stderr,
+	"\t  The game will be restored from inputfile if one is specified.\n");
+			exit(1);
 		}
 	}
 	argc -= optind;
@@ -121,6 +149,12 @@ main(int argc, char **argv)
 			err(1, "%s", *argv);
 	}
 
+	if (!debug)
+#ifdef SVR4
+		srand(time(0));
+#else
+		srandom(time(0));
+#endif
 	if (interactive)
 		cursinit();		/* initialize curses */
 again:
@@ -151,14 +185,14 @@ again:
 			clrtoeol();
 		}
 	} else {
-		setvbuf(stdout, NULL, _IONBF, 0);
-		get_line(buf, sizeof(buf));
+		setbuf(stdout, 0);
+		getline(buf, sizeof(buf));
 		if (strcmp(buf, "black") == 0)
 			color = BLACK;
 		else if (strcmp(buf, "white") == 0)
 			color = WHITE;
 		else {
-			snprintf(fmtbuf, sizeof fmtbuf,
+			sprintf(fmtbuf,
 			    "Huh?  Expected `black' or `white', got `%s'\n",
 			    buf);
 			panic(fmtbuf);
@@ -170,25 +204,25 @@ again:
 		input[WHITE] = INPUTF;
 	} else {
 		switch (test) {
-		case 0: /* user versus program */
+		case 0: /* user verses program */
 			input[color] = USER;
 			input[!color] = PROGRAM;
 			break;
 
-		case 1: /* user versus user */
+		case 1: /* user verses user */
 			input[BLACK] = USER;
 			input[WHITE] = USER;
 			break;
 
-		case 2: /* program versus program */
+		case 2: /* program verses program */
 			input[BLACK] = PROGRAM;
 			input[WHITE] = PROGRAM;
 			break;
 		}
 	}
 	if (interactive) {
-		plyr[BLACK] = input[BLACK] == USER ? you : __progname;
-		plyr[WHITE] = input[WHITE] == USER ? you : __progname;
+		plyr[BLACK] = input[BLACK] == USER ? you : prog;
+		plyr[WHITE] = input[WHITE] == USER ? you : prog;
 		bdwho(1);
 	}
 
@@ -215,8 +249,8 @@ again:
 				input[WHITE] = PROGRAM;
 				break;
 			}
-			plyr[BLACK] = input[BLACK] == USER ? you : __progname;
-			plyr[WHITE] = input[WHITE] == USER ? you : __progname;
+			plyr[BLACK] = input[BLACK] == USER ? "you" : prog;
+			plyr[WHITE] = input[WHITE] == USER ? "you" : prog;
 			bdwho(1);
 			goto top;
 
@@ -229,9 +263,9 @@ again:
 					FILE *fp;
 
 					ask("save file name? ");
-					(void)get_line(fname, sizeof(fname));
-					if ((fp = fopen(fname, "w")) == NULL) {
-						logit("cannot create save file");
+					(void)getline(buf, sizeof(buf));
+					if ((fp = fopen(buf, "w")) == NULL) {
+						log("cannot create save file");
 						goto getinput;
 					}
 					for (i = 0; i < movenum - 1; i++)
@@ -242,12 +276,12 @@ again:
 				}
 				if (curmove != RESIGN &&
 				    board[curmove].s_occ != EMPTY) {
-				/*	logit("Illegal move"); */
+				/*	log("Illegal move"); */
 					beep();
 					goto getinput;
 				}
 			} else {
-				if (!get_line(buf, sizeof(buf))) {
+				if (!getline(buf, sizeof(buf))) {
 					curmove = RESIGN;
 					break;
 				}
@@ -264,9 +298,8 @@ again:
 			break;
 		}
 		if (interactive) {
-			snprintf(fmtbuf, sizeof fmtbuf,
-				fmt[color], movenum, stoc(curmove));
-			logit(fmtbuf);
+			sprintf(fmtbuf, fmt[color], movenum, stoc(curmove));
+			log(fmtbuf);
 		}
 		if ((i = makemove(color, curmove)) != MOVEOK)
 			break;
@@ -297,16 +330,16 @@ again:
 		if (i != RESIGN) {
 		replay:
 			ask("replay? ");
-			if (get_line(buf, sizeof(buf)) &&
+			if (getline(buf, sizeof(buf)) &&
 			    (buf[0] == 'y' || buf[0] == 'Y'))
 				goto again;
 			if (strcmp(buf, "save") == 0) {
 				FILE *fp;
 
 				ask("save file name? ");
-				(void)get_line(buf, sizeof(buf));
+				(void)getline(buf, sizeof(buf));
 				if ((fp = fopen(buf, "w")) == NULL) {
-					logit("cannot create save file");
+					log("cannot create save file");
 					goto replay;
 				}
 				for (i = 0; i < movenum - 1; i++)
@@ -318,10 +351,12 @@ again:
 		}
 	}
 	quit(0);
+	/* NOTREACHED */
 }
 
 int
-readinput(FILE *fp)
+readinput(fp)
+	FILE *fp;
 {
 	char *cp;
 	int c;
@@ -338,7 +373,8 @@ readinput(FILE *fp)
  * Handle strange situations.
  */
 void
-whatsup(int signum)
+whatsup(signum)
+	int signum;
 {
 	int i, pnum, n, s1, s2, d1, d2;
 	struct spotstr *sp;
@@ -351,7 +387,7 @@ whatsup(int signum)
 		quit(0);
 top:
 	ask("cmd? ");
-	if (!get_line(fmtbuf, sizeof(fmtbuf)))
+	if (!getline(fmtbuf, sizeof(fmtbuf)))
 		quit(0);
 	switch (*fmtbuf) {
 	case '\0':
@@ -360,8 +396,7 @@ top:
 		quit(0);
 	case 'd':		/* set debug level */
 		debug = fmtbuf[1] - '0';
-		snprintf(fmtbuf, sizeof fmtbuf,
-			"Debug set to %d", debug);
+		sprintf(fmtbuf, "Debug set to %d", debug);
 		dlog(fmtbuf);
 		sleep(1);
 	case 'c':
@@ -375,8 +410,7 @@ top:
 		goto top;
 	case 's':		/* suggest a move */
 		i = fmtbuf[1] == 'b' ? BLACK : WHITE;
-		snprintf(fmtbuf, sizeof fmtbuf,
-			"suggest %c %s", i == BLACK ? 'B' : 'W',
+		sprintf(fmtbuf, "suggest %c %s", i == BLACK ? 'B' : 'W',
 			stoc(pickmove(i)));
 		dlog(fmtbuf);
 		goto top;
@@ -424,29 +458,24 @@ top:
 				break;
 		n += sp->s_frame[d2] - frames;
 		str = fmtbuf;
-		snprintf(str, fmtbuf + sizeof fmtbuf - str,
-		    "overlap %s%c,", stoc(s1), pdir[d1]);
+		sprintf(str, "overlap %s%c,", stoc(s1), pdir[d1]);
 		str += strlen(str);
-		snprintf(str, fmtbuf + sizeof fmtbuf - str,
-		    "%s%c = %x", stoc(s2), pdir[d2], overlap[n]);
+		sprintf(str, "%s%c = %x", stoc(s2), pdir[d2], overlap[n]);
 		dlog(fmtbuf);
 		goto top;
 	case 'p':
 		sp = &board[i = ctos(fmtbuf + 1)];
-		snprintf(fmtbuf, sizeof fmtbuf,
-			"V %s %x/%d %d %x/%d %d %d %x", stoc(i),
+		sprintf(fmtbuf, "V %s %x/%d %d %x/%d %d %d %x", stoc(i),
 			sp->s_combo[BLACK].s, sp->s_level[BLACK],
 			sp->s_nforce[BLACK],
 			sp->s_combo[WHITE].s, sp->s_level[WHITE],
 			sp->s_nforce[WHITE], sp->s_wval, sp->s_flg);
 		dlog(fmtbuf);
-		snprintf(fmtbuf, sizeof fmtbuf,
-			"FB %s %x %x %x %x", stoc(i),
+		sprintf(fmtbuf, "FB %s %x %x %x %x", stoc(i),
 			sp->s_fval[BLACK][0].s, sp->s_fval[BLACK][1].s,
 			sp->s_fval[BLACK][2].s, sp->s_fval[BLACK][3].s);
 		dlog(fmtbuf);
-		snprintf(fmtbuf, sizeof fmtbuf,
-			"FW %s %x %x %x %x", stoc(i),
+		sprintf(fmtbuf, "FW %s %x %x %x %x", stoc(i),
 			sp->s_fval[WHITE][0].s, sp->s_fval[WHITE][1].s,
 			sp->s_fval[WHITE][2].s, sp->s_fval[WHITE][3].s);
 		dlog(fmtbuf);
@@ -466,7 +495,7 @@ top:
 				if (cbp->c_nframes != n)
 					break;
 			}
-			printcombo(cbp, fmtbuf, sizeof fmtbuf);
+			printcombo(cbp, fmtbuf);
 			dlog(fmtbuf);
 		}
 		goto top;
@@ -486,7 +515,8 @@ syntax:
  * Display debug info.
  */
 void
-dlog(char *str)
+dlog(str)
+	char *str;
 {
 
 	if (debugfp)
@@ -498,7 +528,8 @@ dlog(char *str)
 }
 
 void
-logit(char *str)
+log(str)
+	char *str;
 {
 
 	if (debugfp)
@@ -513,7 +544,8 @@ logit(char *str)
  * Deal with a fatal error.
  */
 void
-qlog(char *str)
+qlog(str)
+	char *str;
 {
 	dlog(str);
 	if (interactive)
@@ -522,8 +554,10 @@ qlog(char *str)
 	quit(0);
 }
 
+/* ARGSUSED */
 void
-quit(int sig)
+quit(sig)
+	int sig;
 {
 	if (interactive) {
 		bdisp();		/* show final board */
@@ -536,9 +570,10 @@ quit(int sig)
  * Die gracefully.
  */
 void
-panic(char *str)
+panic(str)
+	char *str;
 {
-	fprintf(stderr, "%s: %s\n", __progname, str);
+	fprintf(stderr, "%s: %s\n", prog, str);
 	fputs("resign\n", stdout);
 	quit(0);
 }

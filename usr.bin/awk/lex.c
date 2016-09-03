@@ -1,4 +1,4 @@
-/*	$OpenBSD: lex.c,v 1.12 2011/09/28 19:27:18 millert Exp $	*/
+/*	$OpenBSD: lex.c,v 1.3 1999/04/20 17:31:29 millert Exp $	*/
 /****************************************************************
 Copyright (C) Lucent Technologies 1997
 All Rights Reserved
@@ -39,7 +39,7 @@ int	brackcnt  = 0;
 int	parencnt = 0;
 
 typedef struct Keyword {
-	const char *word;
+	char	*word;
 	int	sub;
 	int	type;
 } Keyword;
@@ -48,11 +48,9 @@ Keyword keywords[] ={	/* keep sorted: binary searched */
 	{ "BEGIN",	XBEGIN,		XBEGIN },
 	{ "END",	XEND,		XEND },
 	{ "NF",		VARNF,		VARNF },
-	{ "and",	FAND,		BLTIN },
 	{ "atan2",	FATAN,		BLTIN },
 	{ "break",	BREAK,		BREAK },
 	{ "close",	CLOSE,		CLOSE },
-	{ "compl",	FCOMPL,		BLTIN },
 	{ "continue",	CONTINUE,	CONTINUE },
 	{ "cos",	FCOS,		BLTIN },
 	{ "delete",	DELETE,		DELETE },
@@ -72,16 +70,13 @@ Keyword keywords[] ={	/* keep sorted: binary searched */
 	{ "int",	FINT,		BLTIN },
 	{ "length",	FLENGTH,	BLTIN },
 	{ "log",	FLOG,		BLTIN },
-	{ "lshift",	FLSHIFT,	BLTIN },
 	{ "match",	MATCHFCN,	MATCHFCN },
 	{ "next",	NEXT,		NEXT },
 	{ "nextfile",	NEXTFILE,	NEXTFILE },
-	{ "or",		FFOR,		BLTIN },
 	{ "print",	PRINT,		PRINT },
 	{ "printf",	PRINTF,		PRINTF },
 	{ "rand",	FRAND,		BLTIN },
 	{ "return",	RETURN,		RETURN },
-	{ "rshift",	FRSHIFT,	BLTIN },
 	{ "sin",	FSIN,		BLTIN },
 	{ "split",	SPLIT,		SPLIT },
 	{ "sprintf",	SPRINTF,	SPRINTF },
@@ -93,14 +88,14 @@ Keyword keywords[] ={	/* keep sorted: binary searched */
 	{ "tolower",	FTOLOWER,	BLTIN },
 	{ "toupper",	FTOUPPER,	BLTIN },
 	{ "while",	WHILE,		WHILE },
-	{ "xor",	FXOR,		BLTIN },
 };
 
+#define DEBUG
+#ifdef	DEBUG
 #define	RET(x)	{ if(dbg)printf("lex %s\n", tokname(x)); return(x); }
-
-int peek(void);
-int gettok(char **, int *);
-int binsearch(char *, Keyword *, int);
+#else
+#define	RET(x)	return(x)
+#endif
 
 int peek(void)
 {
@@ -111,7 +106,7 @@ int peek(void)
 
 int gettok(char **pbuf, int *psz)	/* get next input token */
 {
-	int c, retc;
+	int c;
 	char *buf = *pbuf;
 	int sz = *psz;
 	char *bp = buf;
@@ -128,8 +123,8 @@ int gettok(char **pbuf, int *psz)	/* get next input token */
 	if (isalpha(c) || c == '_') {	/* it's a varname */
 		for ( ; (c = input()) != 0; ) {
 			if (bp-buf >= sz)
-				if (!adjbuf(&buf, &sz, bp-buf+2, 100, &bp, "gettok"))
-					FATAL( "out of space for name %.10s...", buf );
+				if (!adjbuf(&buf, &sz, bp-buf+2, 100, &bp, 0))
+					ERROR "out of space for name %.10s...", buf FATAL;
 			if (isalnum(c) || c == '_')
 				*bp++ = c;
 			else {
@@ -138,15 +133,13 @@ int gettok(char **pbuf, int *psz)	/* get next input token */
 				break;
 			}
 		}
-		*bp = 0;
-		retc = 'a';	/* alphanumeric */
-	} else {	/* maybe it's a number, but could be . */
+	} else {	/* it's a number */
 		char *rem;
 		/* read input until can't be a number */
 		for ( ; (c = input()) != 0; ) {
 			if (bp-buf >= sz)
-				if (!adjbuf(&buf, &sz, bp-buf+2, 100, &bp, "gettok"))
-					FATAL( "out of space for number %.10s...", buf );
+				if (!adjbuf(&buf, &sz, bp-buf+2, 100, &bp, 0))
+					ERROR "out of space for number %.10s...", buf FATAL;
 			if (isdigit(c) || c == 'e' || c == 'E' 
 			  || c == '.' || c == '+' || c == '-')
 				*bp++ = c;
@@ -157,19 +150,12 @@ int gettok(char **pbuf, int *psz)	/* get next input token */
 		}
 		*bp = 0;
 		strtod(buf, &rem);	/* parse the number */
-		if (rem == buf) {	/* it wasn't a valid number at all */
-			buf[1] = 0;	/* return one character as token */
-			retc = buf[0];	/* character is its own type */
-			unputstr(rem+1); /* put rest back for later */
-		} else {	/* some prefix was a number */
-			unputstr(rem);	/* put rest back for later */
-			rem[0] = 0;	/* truncate buf after number part */
-			retc = '0';	/* type is number */
-		}
+		unputstr(rem);		/* put rest back for later */
+		rem[0] = 0;
 	}
 	*pbuf = buf;
 	*psz = sz;
-	return retc;
+	return buf[0];
 }
 
 int	word(char *);
@@ -182,10 +168,10 @@ int yylex(void)
 {
 	int c;
 	static char *buf = 0;
-	static int bufsize = 5; /* BUG: setting this small causes core dump! */
+	static int bufsize = 500;
 
 	if (buf == 0 && (buf = (char *) malloc(bufsize)) == NULL)
-		FATAL( "out of space in yylex" );
+		ERROR "out of space in yylex" FATAL;
 	if (sc) {
 		sc = 0;
 		RET('}');
@@ -200,7 +186,7 @@ int yylex(void)
 			return 0;
 		if (isalpha(c) || c == '_')
 			return word(buf);
-		if (isdigit(c)) {
+		if (isdigit(c) || c == '.') {
 			yylval.cp = setsymtab(buf, tostring(buf), atof(buf), CON|NUM, symtab);
 			/* should this also have STR set? */
 			RET(NUMBER);
@@ -309,25 +295,20 @@ int yylex(void)
 				input(); yylval.i = POWEQ; RET(ASGNOP);
 			} else
 				RET(POWER);
-
+	
 		case '$':
 			/* BUG: awkward, if not wrong */
 			c = gettok(&buf, &bufsize);
-			if (isalpha(c)) {
+			if (c == '(' || c == '[' || (infunc && isarg(buf) >= 0)) {
+				unputstr(buf);
+				RET(INDIRECT);
+			} else if (isalpha(c)) {
 				if (strcmp(buf, "NF") == 0) {	/* very special */
 					unputstr("(NF)");
 					RET(INDIRECT);
 				}
-				c = peek();
-				if (c == '(' || c == '[' || (infunc && isarg(buf) >= 0)) {
-					unputstr(buf);
-					RET(INDIRECT);
-				}
 				yylval.cp = setsymtab(buf, "", 0.0, STR|NUM, symtab);
 				RET(IVAR);
-			} else if (c == 0) {	/*  */
-				SYNTAX( "unexpected end of input after $" );
-				RET(';');
 			} else {
 				unputstr(buf);
 				RET(INDIRECT);
@@ -335,16 +316,16 @@ int yylex(void)
 	
 		case '}':
 			if (--bracecnt < 0)
-				SYNTAX( "extra }" );
+				ERROR "extra }" SYNTAX;
 			sc = 1;
 			RET(';');
 		case ']':
 			if (--brackcnt < 0)
-				SYNTAX( "extra ]" );
+				ERROR "extra ]" SYNTAX;
 			RET(']');
 		case ')':
 			if (--parencnt < 0)
-				SYNTAX( "extra )" );
+				ERROR "extra )" SYNTAX;
 			RET(')');
 		case '{':
 			bracecnt++;
@@ -373,18 +354,16 @@ int string(void)
 	static int bufsz = 500;
 
 	if (buf == 0 && (buf = (char *) malloc(bufsz)) == NULL)
-		FATAL("out of space for strings");
+		ERROR "out of space for strings" FATAL;
 	for (bp = buf; (c = input()) != '"'; ) {
-		if (!adjbuf(&buf, &bufsz, bp-buf+2, 500, &bp, "string"))
-			FATAL("out of space for string %.10s...", buf);
+		if (!adjbuf(&buf, &bufsz, bp-buf+2, 500, &bp, 0))
+			ERROR "out of space for string %.10s...", buf FATAL;
 		switch (c) {
 		case '\n':
 		case '\r':
 		case 0:
-			SYNTAX( "non-terminated string %.10s...", buf );
+			ERROR "non-terminated string %.10s...", buf SYNTAX;
 			lineno++;
-			if (c == 0)	/* hopeless */
-				FATAL( "giving up" );
 			break;
 		case '\\':
 			c = input();
@@ -422,7 +401,7 @@ int string(void)
 				}
 				*px = 0;
 				unput(c);
-	  			sscanf(xbuf, "%x", (unsigned int *) &n);
+	  			sscanf(xbuf, "%x", &n);
 				*bp++ = n;
 				break;
 			    }
@@ -469,22 +448,21 @@ int word(char *w)
 	int c, n;
 
 	n = binsearch(w, keywords, sizeof(keywords)/sizeof(keywords[0]));
-/* BUG: this ought to be inside the if; in theory could fault (daniel barrett) */
 	kp = keywords + n;
 	if (n != -1) {	/* found in table */
 		yylval.i = kp->sub;
 		switch (kp->type) {	/* special handling */
-		case BLTIN:
-			if (kp->sub == FSYSTEM && safe)
-				SYNTAX( "system is unsafe" );
+		case FSYSTEM:
+			if (safe)
+				ERROR "system is unsafe" SYNTAX;
 			RET(kp->type);
 		case FUNC:
 			if (infunc)
-				SYNTAX( "illegal nested function" );
+				ERROR "illegal nested function" SYNTAX;
 			RET(kp->type);
 		case RETURN:
 			if (!infunc)
-				SYNTAX( "return not in function" );
+				ERROR "return not in function" SYNTAX;
 			RET(kp->type);
 		case VARNF:
 			yylval.cp = setsymtab("NF", "", 0.0, NUM, symtab);
@@ -507,42 +485,36 @@ int word(char *w)
 	}
 }
 
-void startreg(void)	/* next call to yylex will return a regular expression */
+void startreg(void)	/* next call to yyles will return a regular expression */
 {
 	reg = 1;
 }
 
 int regexpr(void)
 {
-	int c, openclass = 0;
+	int c;
 	static char *buf = 0;
 	static int bufsz = 500;
 	char *bp;
 
 	if (buf == 0 && (buf = (char *) malloc(bufsz)) == NULL)
-		FATAL("out of space for rex expr");
+		ERROR "out of space for rex expr" FATAL;
 	bp = buf;
-	for ( ; ((c = input()) != '/' || openclass == 1) && c != 0; ) {
-		if (!adjbuf(&buf, &bufsz, bp-buf+3, 500, &bp, "regexpr"))
-			FATAL("out of space for reg expr %.10s...", buf);
+	for ( ; (c = input()) != '/' && c != 0; ) {
+		if (!adjbuf(&buf, &bufsz, bp-buf+3, 500, &bp, 0))
+			ERROR "out of space for reg expr %.10s...", buf FATAL;
 		if (c == '\n') {
-			SYNTAX( "newline in regular expression %.10s...", buf ); 
+			ERROR "newline in regular expression %.10s...", buf SYNTAX; 
 			unput('\n');
 			break;
 		} else if (c == '\\') {
 			*bp++ = '\\'; 
 			*bp++ = input();
 		} else {
-			if (c == '[')
-				openclass = 1;
-			else if (c == ']')
-				openclass = 0;
 			*bp++ = c;
 		}
 	}
 	*bp = 0;
-	if (c == 0)
-		SYNTAX("non-terminated regular expression %.10s...", buf);
 	yylval.s = tostring(buf);
 	unput('/');
 	RET(REGEXPR);
@@ -562,9 +534,9 @@ int input(void)	/* get next lexical input character */
 	extern char *lexprog;
 
 	if (yysptr > yysbuf)
-		c = (uschar)*--yysptr;
+		c = *--yysptr;
 	else if (lexprog != NULL) {	/* awk '...' */
-		if ((c = (uschar)*lexprog) != 0)
+		if ((c = *lexprog) != 0)
 			lexprog++;
 	} else				/* awk -f ... */
 		c = pgetc();
@@ -582,13 +554,13 @@ void unput(int c)	/* put lexical character back on input */
 	if (c == '\n')
 		lineno--;
 	if (yysptr >= yysbuf + sizeof(yysbuf))
-		FATAL("pushed back too much: %.20s...", yysbuf);
+		ERROR "pushed back too much: %.20s...", yysbuf FATAL;
 	*yysptr++ = c;
 	if (--ep < ebuf)
 		ep = ebuf + sizeof(ebuf) - 1;
 }
 
-void unputstr(const char *s)	/* put a string back on input */
+void unputstr(char *s)	/* put a string back on input */
 {
 	int i;
 

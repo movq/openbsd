@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_traceatr.c,v 1.6 2010/01/12 23:22:07 nicm Exp $ */
+/*	$OpenBSD: lib_traceatr.c,v 1.1 1999/01/18 19:10:23 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2007,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,60 +29,31 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas Dickey                           1996-on                 *
- *     and: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
+ *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
+
+
 
 /*
  *	lib_traceatr.c - Tracing/Debugging routines (attributes)
  */
 
 #include <curses.priv.h>
-#include <term.h>		/* acs_chars */
+#include <term.h>	/* acs_chars */
 
-MODULE_ID("$Id: lib_traceatr.c,v 1.6 2010/01/12 23:22:07 nicm Exp $")
+MODULE_ID("$From: lib_traceatr.c,v 1.28 1998/03/21 18:39:36 tom Exp $")
 
-#define COLOR_OF(c) ((c < 0) ? "default" : (c > 7 ? color_of(c) : colors[c].name))
+#define COLOR_OF(c) (c < 0 || c > 7 ? "default" : colors[c].name)
 
 #ifdef TRACE
-
-static const char l_brace[] = StringOf(L_BRACE);
-static const char r_brace[] = StringOf(R_BRACE);
-
-#ifndef USE_TERMLIB
-
-#define my_buffer _nc_globals.traceatr_color_buf
-#define my_select _nc_globals.traceatr_color_sel
-#define my_cached _nc_globals.traceatr_color_last
-
-static char *
-color_of(int c)
+char *_traceattr2(int bufnum, attr_t newmode)
 {
-    if (c != my_cached) {
-	my_cached = c;
-	my_select = !my_select;
-	if (c == COLOR_DEFAULT)
-	    strlcpy(my_buffer[my_select], "default", _nc_globals_traceatr_color_buf_size);
-	else
-	    snprintf(my_buffer[my_select], _nc_globals_traceatr_color_buf_size, "color%d", c);
-    }
-    return my_buffer[my_select];
-}
-
-#undef my_buffer
-#undef my_select
-#endif /* !USE_TERMLIB */
-
-NCURSES_EXPORT(char *)
-_traceattr2(int bufnum, chtype newmode)
-{
-    static const struct {
-	unsigned int val;
-	const char *name;
-    } names[] =
+char	*buf = _nc_trace_buf(bufnum, BUFSIZ);
+char	*tmp = buf;
+static const	struct {unsigned int val; const char *name;}
+names[] =
     {
-	/* *INDENT-OFF* */
 	{ A_STANDOUT,		"A_STANDOUT" },
 	{ A_UNDERLINE,		"A_UNDERLINE" },
 	{ A_REVERSE,		"A_REVERSE" },
@@ -95,14 +66,9 @@ _traceattr2(int bufnum, chtype newmode)
 	{ A_CHARTEXT,		"A_CHARTEXT" },
 	{ A_NORMAL,		"A_NORMAL" },
 	{ A_COLOR,		"A_COLOR" },
-	/* *INDENT-ON* */
-
-    }
-#ifndef USE_TERMLIB
-    ,
-	colors[] =
+    },
+colors[] =
     {
-	/* *INDENT-OFF* */
 	{ COLOR_BLACK,		"COLOR_BLACK" },
 	{ COLOR_RED,		"COLOR_RED" },
 	{ COLOR_GREEN,		"COLOR_GREEN" },
@@ -111,250 +77,144 @@ _traceattr2(int bufnum, chtype newmode)
 	{ COLOR_MAGENTA,	"COLOR_MAGENTA" },
 	{ COLOR_CYAN,		"COLOR_CYAN" },
 	{ COLOR_WHITE,		"COLOR_WHITE" },
-	/* *INDENT-ON* */
-
-    }
-#endif /* !USE_TERMLIB */
-    ;
-    size_t n;
-    char temp[80];
-    char *result = _nc_trace_buf(bufnum, BUFSIZ);
-
-    if (result != 0) {
-	unsigned save_nc_tracing = _nc_tracing;
-
+    };
+size_t n;
+unsigned save_nc_tracing = _nc_tracing;
 	_nc_tracing = 0;
 
-	strlcpy(result, l_brace, BUFSIZ);
+	strcpy(tmp++, "{");
 
 	for (n = 0; n < SIZEOF(names); n++) {
-	    if ((newmode & names[n].val) != 0) {
-		if (result[1] != '\0')
-		    result = _nc_trace_bufcat(bufnum, "|");
-		result = _nc_trace_bufcat(bufnum, names[n].name);
+		if ((newmode & names[n].val) != 0) {
+			if (buf[1] != '\0')
+				strcat(tmp, "|");
+			strcat(tmp, names[n].name);
+			tmp += strlen(tmp);
 
-		if (names[n].val == A_COLOR) {
-		    short pairnum = PAIR_NUMBER(newmode);
-#ifdef USE_TERMLIB
-		    /* pair_content lives in libncurses */
-		    (void) snprintf(temp, sizeof(temp), "{%d}", pairnum);
-#else
-		    short fg, bg;
-
-		    if (pair_content(pairnum, &fg, &bg) == OK) {
-			(void) snprintf(temp, sizeof(temp),
-				       "{%d = {%s, %s}}",
-				       pairnum,
-				       COLOR_OF(fg),
-				       COLOR_OF(bg));
-		    } else {
-			(void) snprintf(temp, sizeof(temp), "{%d}", pairnum);
-		    }
-#endif
-		    result = _nc_trace_bufcat(bufnum, temp);
+			if (names[n].val == A_COLOR)
+			{
+				short pairnum = PAIR_NUMBER(newmode);
+				short fg, bg;
+	
+				if (pair_content(pairnum, &fg, &bg) == OK)
+					(void) sprintf(tmp,
+						"{%d = {%s, %s}}",
+						pairnum,
+						COLOR_OF(fg),
+						COLOR_OF(bg)
+						);
+				else
+					(void) sprintf(tmp, "{%d}", pairnum);
+			}
 		}
-	    }
 	}
-	if (ChAttrOf(newmode) == A_NORMAL) {
-	    if (result != 0 && result[1] != '\0')
-		(void) _nc_trace_bufcat(bufnum, "|");
-	    (void) _nc_trace_bufcat(bufnum, "A_NORMAL");
+	if (AttrOf(newmode) == A_NORMAL) {
+		if (buf[1] != '\0')
+			strcat(tmp, "|");
+		strcat(tmp, "A_NORMAL");
 	}
 
 	_nc_tracing = save_nc_tracing;
-	result = _nc_trace_bufcat(bufnum, r_brace);
-    }
-    return result;
+	return (strcat(buf,"}"));
 }
 
-NCURSES_EXPORT(char *)
-_traceattr(attr_t newmode)
+char *_traceattr(attr_t newmode)
 {
-    return _traceattr2(0, newmode);
+	return _traceattr2(0, newmode);
 }
 
 /* Trace 'int' return-values */
-NCURSES_EXPORT(attr_t)
-_nc_retrace_attr_t(attr_t code)
+attr_t _nc_retrace_attr_t(attr_t code)
 {
-    T((T_RETURN("%s"), _traceattr(code)));
-    return code;
+	T((T_RETURN("%s"), _traceattr(code)));
+	return code;
 }
 
-const char *
-_nc_altcharset_name(attr_t attr, chtype ch)
+char *_tracechtype2(int bufnum, chtype ch)
 {
-    typedef struct {
-	unsigned int val;
-	const char *name;
-    } ALT_NAMES;
-    static const ALT_NAMES names[] =
+char	*buf = _nc_trace_buf(bufnum, BUFSIZ);
+char	*found = 0;
+
+    strcpy(buf, "{");
+    if (ch & A_ALTCHARSET)
     {
-	{'l', "ACS_ULCORNER"},	/* upper left corner */
-	{'m', "ACS_LLCORNER"},	/* lower left corner */
-	{'k', "ACS_URCORNER"},	/* upper right corner */
-	{'j', "ACS_LRCORNER"},	/* lower right corner */
-	{'t', "ACS_LTEE"},	/* tee pointing right */
-	{'u', "ACS_RTEE"},	/* tee pointing left */
-	{'v', "ACS_BTEE"},	/* tee pointing up */
-	{'w', "ACS_TTEE"},	/* tee pointing down */
-	{'q', "ACS_HLINE"},	/* horizontal line */
-	{'x', "ACS_VLINE"},	/* vertical line */
-	{'n', "ACS_PLUS"},	/* large plus or crossover */
-	{'o', "ACS_S1"},	/* scan line 1 */
-	{'s', "ACS_S9"},	/* scan line 9 */
-	{'`', "ACS_DIAMOND"},	/* diamond */
-	{'a', "ACS_CKBOARD"},	/* checker board (stipple) */
-	{'f', "ACS_DEGREE"},	/* degree symbol */
-	{'g', "ACS_PLMINUS"},	/* plus/minus */
-	{'~', "ACS_BULLET"},	/* bullet */
-	{',', "ACS_LARROW"},	/* arrow pointing left */
-	{'+', "ACS_RARROW"},	/* arrow pointing right */
-	{'.', "ACS_DARROW"},	/* arrow pointing down */
-	{'-', "ACS_UARROW"},	/* arrow pointing up */
-	{'h', "ACS_BOARD"},	/* board of squares */
-	{'i', "ACS_LANTERN"},	/* lantern symbol */
-	{'0', "ACS_BLOCK"},	/* solid square block */
-	{'p', "ACS_S3"},	/* scan line 3 */
-	{'r', "ACS_S7"},	/* scan line 7 */
-	{'y', "ACS_LEQUAL"},	/* less/equal */
-	{'z', "ACS_GEQUAL"},	/* greater/equal */
-	{'{', "ACS_PI"},	/* Pi */
-	{'|', "ACS_NEQUAL"},	/* not equal */
-	{'}', "ACS_STERLING"},	/* UK pound sign */
-	{'\0', (char *) 0}
-    };
+	char	*cp;
+	static const	struct {unsigned int val; const char *name;}
+	names[] =
+	{
+	    {'l', "ACS_ULCORNER"},	/* upper left corner */
+	    {'m', "ACS_LLCORNER"},	/* lower left corner */
+	    {'k', "ACS_URCORNER"},	/* upper right corner */
+	    {'j', "ACS_LRCORNER"},	/* lower right corner */
+	    {'t', "ACS_LTEE"},		/* tee pointing right */
+	    {'u', "ACS_RTEE"},		/* tee pointing left */
+	    {'v', "ACS_BTEE"},		/* tee pointing up */
+	    {'w', "ACS_TTEE"},		/* tee pointing down */
+	    {'q', "ACS_HLINE"},		/* horizontal line */
+	    {'x', "ACS_VLINE"},		/* vertical line */
+	    {'n', "ACS_PLUS"},		/* large plus or crossover */
+	    {'o', "ACS_S1"},		/* scan line 1 */
+	    {'s', "ACS_S9"},		/* scan line 9 */
+	    {'`', "ACS_DIAMOND"},	/* diamond */
+	    {'a', "ACS_CKBOARD"},	/* checker board (stipple) */
+	    {'f', "ACS_DEGREE"},	/* degree symbol */
+	    {'g', "ACS_PLMINUS"},	/* plus/minus */
+	    {'~', "ACS_BULLET"},	/* bullet */
+	    {',', "ACS_LARROW"},	/* arrow pointing left */
+	    {'+', "ACS_RARROW"},	/* arrow pointing right */
+	    {'.', "ACS_DARROW"},	/* arrow pointing down */
+	    {'-', "ACS_UARROW"},	/* arrow pointing up */
+	    {'h', "ACS_BOARD"},		/* board of squares */
+	    {'i', "ACS_LANTERN"},	/* lantern symbol */
+	    {'0', "ACS_BLOCK"},		/* solid square block */
+	    {'p', "ACS_S3"},		/* scan line 3 */
+	    {'r', "ACS_S7"},		/* scan line 7 */
+	    {'y', "ACS_LEQUAL"},	/* less/equal */
+	    {'z', "ACS_GEQUAL"},	/* greater/equal */
+	    {'{', "ACS_PI"},		/* Pi */
+	    {'|', "ACS_NEQUAL"},	/* not equal */
+	    {'}', "ACS_STERLING"},	/* UK pound sign */
+	    {'\0',(char *)0}
+	},
+	*sp;
 
-    const char *result = 0;
-
-    if ((attr & A_ALTCHARSET) && (acs_chars != 0)) {
-	char *cp;
-	char *found = 0;
-	const ALT_NAMES *sp;
-
-	for (cp = acs_chars; cp[0] && cp[1]; cp += 2) {
-	    if (ChCharOf(cp[1]) == ChCharOf(ch)) {
+	for (cp = acs_chars; cp[0] && cp[1]; cp += 2)
+	{
+	    if (TextOf(cp[1]) == TextOf(ch))
+	    {
 		found = cp;
 		/* don't exit from loop - there may be redefinitions */
 	    }
 	}
 
-	if (found != 0) {
-	    ch = ChCharOf(*found);
+	if (found != 0)
+	{
+	    ch = TextOf(*found);
 	    for (sp = names; sp->val; sp++)
-		if (sp->val == ch) {
-		    result = sp->name;
+		if (sp->val == ch)
+		{
+		    (void) strcat(buf, sp->name);
+		    ch &= ~A_ALTCHARSET;
 		    break;
 		}
 	}
     }
-    return result;
+
+    if (found == 0)
+	(void) strcat(buf, _tracechar(TextOf(ch)));
+
+    if (AttrOf(ch) != A_NORMAL)
+	(void) sprintf(buf + strlen(buf), " | %s", _traceattr2(bufnum+20,AttrOf(ch)));
+
+    strcat(buf, "}");
+    return(buf);
 }
 
-NCURSES_EXPORT(char *)
-_tracechtype2(int bufnum, chtype ch)
+char *_tracechtype(chtype ch)
 {
-    const char *found;
-    char *result = _nc_trace_buf(bufnum, BUFSIZ);
-
-    if (result != 0) {
-	strlcpy(result, l_brace, BUFSIZ);
-	if ((found = _nc_altcharset_name(ChAttrOf(ch), ch)) != 0) {
-	    (void) _nc_trace_bufcat(bufnum, found);
-	} else
-	    (void) _nc_trace_bufcat(bufnum, _nc_tracechar(SP, (int) ChCharOf(ch)));
-
-	if (ChAttrOf(ch) != A_NORMAL) {
-	    (void) _nc_trace_bufcat(bufnum, " | ");
-	    (void) _nc_trace_bufcat(bufnum,
-				    _traceattr2(bufnum + 20, ChAttrOf(ch)));
-	}
-
-	result = _nc_trace_bufcat(bufnum, r_brace);
-    }
-    return result;
+	return _tracechtype2(0, ch);
 }
-
-NCURSES_EXPORT(char *)
-_tracechtype(chtype ch)
-{
-    return _tracechtype2(0, ch);
-}
-
-/* Trace 'chtype' return-values */
-NCURSES_EXPORT(chtype)
-_nc_retrace_chtype(chtype code)
-{
-    T((T_RETURN("%s"), _tracechtype(code)));
-    return code;
-}
-
-#if USE_WIDEC_SUPPORT
-NCURSES_EXPORT(char *)
-_tracecchar_t2(int bufnum, const cchar_t *ch)
-{
-    char *result = _nc_trace_buf(bufnum, BUFSIZ);
-    attr_t attr;
-    const char *found;
-
-    if (result != 0) {
-	    strlcpy(result, l_brace, BUFSIZ);
-	if (ch != 0) {
-	    attr = AttrOfD(ch);
-	    if ((found = _nc_altcharset_name(attr, (chtype) CharOfD(ch))) != 0) {
-		(void) _nc_trace_bufcat(bufnum, found);
-		attr &= ~A_ALTCHARSET;
-	    } else if (isWidecExt(CHDEREF(ch))) {
-		(void) _nc_trace_bufcat(bufnum, "{NAC}");
-		attr &= ~A_CHARTEXT;
-	    } else {
-		PUTC_DATA;
-		int n;
-
-		PUTC_INIT;
-		(void) _nc_trace_bufcat(bufnum, "{ ");
-		for (PUTC_i = 0; PUTC_i < CCHARW_MAX; ++PUTC_i) {
-		    PUTC_ch = ch->chars[PUTC_i];
-		    if (PUTC_ch == L'\0')
-			break;
-		    PUTC_n = wcrtomb(PUTC_buf, ch->chars[PUTC_i], &PUT_st);
-		    if (PUTC_n <= 0) {
-			if (PUTC_ch != L'\0') {
-			    /* it could not be a multibyte sequence */
-			    (void) _nc_trace_bufcat(bufnum,
-						    _nc_tracechar(SP,
-								  UChar(ch->chars[PUTC_i])));
-			}
-			break;
-		    }
-		    for (n = 0; n < PUTC_n; n++) {
-			if (n)
-			    (void) _nc_trace_bufcat(bufnum, ", ");
-			(void) _nc_trace_bufcat(bufnum,
-						_nc_tracechar(SP,
-							      UChar(PUTC_buf[n])));
-		    }
-		}
-		(void) _nc_trace_bufcat(bufnum, " }");
-	    }
-	    if (attr != A_NORMAL) {
-		(void) _nc_trace_bufcat(bufnum, " | ");
-		(void) _nc_trace_bufcat(bufnum, _traceattr2(bufnum + 20, attr));
-	    }
-	}
-
-	result = _nc_trace_bufcat(bufnum, r_brace);
-    }
-    return result;
-}
-
-NCURSES_EXPORT(char *)
-_tracecchar_t(const cchar_t *ch)
-{
-    return _tracecchar_t2(0, ch);
-}
-#endif
-
 #else
-EMPTY_MODULE(_nc_lib_traceatr)
+extern	void _nc_lib_traceatr(void);
+	void _nc_lib_traceatr(void) { }
 #endif /* TRACE */

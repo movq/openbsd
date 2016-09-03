@@ -1,4 +1,4 @@
-/*	$OpenBSD: common.c,v 1.37 2015/12/22 08:48:39 mmcc Exp $	*/
+/*	$OpenBSD: common.c,v 1.9 1999/05/14 20:19:11 aaron Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,33 +33,39 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/wait.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: common.c,v 6.82 1998/03/23 23:27:33 michaelc Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: common.c,v 1.9 1999/05/14 20:19:11 aaron Exp $";
+#endif
 
-#include <errno.h>
-#include <fcntl.h>
-#include <grp.h>
-#include <limits.h>
-#include <paths.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+static char sccsid[] = "@(#)common.c";
 
-#include "defs.h"
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* !lint */
 
 /*
  * Things common to both the client and server.
  */
 
+#include "defs.h"
+#if	defined(NEED_UTIME_H)
+#include <utime.h>
+#endif	/* defined(NEED_UTIME_H) */
+#include <sys/socket.h>
+#include <sys/wait.h>
+
 /*
  * Variables common to both client and server
  */
-char			host[HOST_NAME_MAX+1];	/* Name of this host */
-uid_t			userid = (uid_t)-1;	/* User's UID */
-gid_t			groupid = (gid_t)-1;	/* User's GID */
+char			host[MAXHOSTNAMELEN];	/* Name of this host */
+UID_T			userid = (UID_T)-1;	/* User's UID */
+GID_T			groupid = (GID_T)-1;	/* User's GID */
 char		       *homedir = NULL;		/* User's $HOME */
 char		       *locuser = NULL;		/* Local User's name */
 int			isserver = FALSE;	/* We're the server */
@@ -66,29 +76,26 @@ char		       *progname = NULL;	/* Name of this program */
 int			rem_r = -1;		/* Client file descriptor */
 int			rem_w = -1;		/* Client file descriptor */
 struct passwd	       *pw = NULL;		/* Local user's pwd entry */
-volatile sig_atomic_t 	contimedout = FALSE;	/* Connection timed out */
+int 			contimedout = FALSE;	/* Connection timed out */
+int			proto_version = -1;	/* Protocol version */
 int			rtimeout = RTIMEOUT;	/* Response time out */
 jmp_buf			finish_jmpbuf;		/* Finish() jmp buffer */
 int			setjmp_ok = FALSE;	/* setjmp()/longjmp() status */
 char		      **realargv;		/* Real main() argv */
 int			realargc;		/* Real main() argc */
 opt_t			options = 0;		/* Global install options */
-char			defowner[64] = "bin";	/* Default owner */
-char			defgroup[64] = "bin";	/* Default group */
-
-static int sendcmdmsg(int, char *, size_t);
-static ssize_t remread(int, u_char *, size_t);
-static int remmore(void);
 
 /* 
  * Front end to write() that handles partial write() requests.
  */
-ssize_t
-xwrite(int fd, void *buf, size_t len)
+extern WRITE_RETURN_T xwrite(fd, buf, len)
+	int fd;
+	void *buf;
+	WRITE_AMT_T len;
 {
-    	size_t nleft = len;
-	ssize_t nwritten;
-	char *ptr = buf;
+    	WRITE_AMT_T nleft = len;
+	WRITE_RETURN_T nwritten;
+	register char *ptr = buf;
          
 	while (nleft > 0) {
 	    	if ((nwritten = write(fd, ptr, nleft)) <= 0) {
@@ -102,38 +109,64 @@ xwrite(int fd, void *buf, size_t len)
 }
 
 /*
+ * Set program name
+ */
+extern void setprogname(argv)
+	char **argv;
+{
+	register char *cp;
+
+	if (!progname) {
+		progname = xstrdup(argv[0]);
+		if ((cp = strrchr(progname, '/')))
+			progname = cp + 1;
+	}
+}
+
+/*
  * Do run-time initialization
  */
-int
-init(int argc, char **argv, char **envp)
+extern int init(argc, argv, envp)
+	/*ARGSUSED*/
+	int argc;
+	char **argv;
+	char **envp;
 {
-	int i;
+	register int i;
+	register char *cp;
+
+	if (!isserver)
+		(void) signal(SIGSEGV, sighandler);
+
+	setprogname(argv);
 
 	/*
 	 * Save a copy of our argc and argv before setargs() overwrites them
 	 */
 	realargc = argc;
-	realargv = xmalloc(sizeof(char *) * (argc+1));
+	realargv = (char **) xmalloc(sizeof(char *) * (argc+1));
 	for (i = 0; i < argc; i++)
 		realargv[i] = xstrdup(argv[i]);
 
+#if	defined(SETARGS)
+	setargs_settup(argc, argv, envp);
+#endif	/* SETARGS */
+
 	pw = getpwuid(userid = getuid());
 	if (pw == NULL) {
-		error("Your user id (%u) is not known to this system.",
+		error("Your user id (%d) is not known to this system.",
 		      getuid());
 		return(-1);
 	}
 
-	debugmsg(DM_MISC, "UserID = %u pwname = '%s' home = '%s'\n",
+	debugmsg(DM_MISC, "UserID = %d pwname = '%s' home = '%s'\n",
 		 userid, pw->pw_name, pw->pw_dir);
 	homedir = xstrdup(pw->pw_dir);
 	locuser = xstrdup(pw->pw_name);
 	groupid = pw->pw_gid;
 	gethostname(host, sizeof(host));
-#if 0
 	if ((cp = strchr(host, '.')) != NULL)
 	    	*cp = CNULL;
-#endif
 
 	/*
 	 * If we're not root, disable paranoid ownership checks
@@ -150,13 +183,14 @@ init(int argc, char **argv, char **envp)
 /*
  * Finish things up before ending.
  */
-void
-finish(void)
+extern void finish()
 {
+	extern jmp_buf finish_jmpbuf;
+
 	debugmsg(DM_CALL, 
 		 "finish() called: do_fork = %d amchild = %d isserver = %d",
 		 do_fork, amchild, isserver);
-	cleanup(0);
+	cleanup();
 
 	/*
 	 * There's no valid finish_jmpbuf for the rdist master parent.
@@ -183,8 +217,7 @@ finish(void)
 /*
  * Handle lost connections
  */
-void
-lostconn(void)
+extern void lostconn()
 {
 	/* Prevent looping */
 	(void) signal(SIGPIPE, SIG_IGN);
@@ -198,27 +231,37 @@ lostconn(void)
 }
 
 /*
+ * Do a core dump
+ */
+extern void coredump()
+{
+	error("Segmentation violation - dumping core [PID = %d, %s]",
+	      getpid(), 
+	      (isserver) ? "isserver" : ((amchild) ? "amchild" : "parent"));
+	abort();
+	/*NOTREACHED*/
+	fatalerr("Abort failed - no core dump.  Exiting...");
+}
+
+/*
  * General signal handler
  */
-void
-sighandler(int sig)
+extern void sighandler(sig)
+	int sig;
 {
 	int save_errno = errno;
 
-	/* XXX signal race */
 	debugmsg(DM_CALL, "sighandler() received signal %d\n", sig);
 
 	switch (sig) {
 	case SIGALRM:
 		contimedout = TRUE;
-		/* XXX signal race */
 		checkhostname();
 		error("Response time out");
 		finish();
 		break;
 
 	case SIGPIPE:
-		/* XXX signal race */
 		lostconn();
 		break;
 
@@ -226,16 +269,18 @@ sighandler(int sig)
 		debug = !debug;
 		break;
 
+	case SIGSEGV:
+		coredump();
+		break;
+
 	case SIGHUP:
 	case SIGINT:
 	case SIGQUIT:
 	case SIGTERM:
-		/* XXX signal race */
 		finish();
 		break;
 
 	default:
-		/* XXX signal race */
 		fatalerr("No signal handler defined for signal %d.", sig);
 	}
 	errno = save_errno;
@@ -245,8 +290,9 @@ sighandler(int sig)
  * Function to actually send the command char and message to the
  * remote host.
  */
-static int
-sendcmdmsg(int cmd, char *msg, size_t msgsize)
+static int sendcmdmsg(cmd, msg)
+	char cmd;
+	char *msg;
 {
 	int len;
 
@@ -257,7 +303,7 @@ sendcmdmsg(int cmd, char *msg, size_t msgsize)
 	 * All commands except C_NONE should have a newline
 	 */
 	if (cmd != C_NONE && !strchr(msg + 1, '\n'))
-		(void) strlcat(msg + 1, "\n", msgsize - 1);
+		(void) strcat(msg + 1, "\n");
 
 	if (cmd == C_NONE)
 		len = strlen(msg);
@@ -277,45 +323,96 @@ sendcmdmsg(int cmd, char *msg, size_t msgsize)
 /*
  * Send a command message to the remote host.
  * Called as sendcmd(char cmdchar, char *fmt, arg1, arg2, ...)
- * The fmt may be NULL, in which case there are no args.
+ * The fmt and arg? arguments are optional.
  */
-int
-sendcmd(char cmd, const char *fmt, ...)
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_STDARG
+/*
+ * Stdarg frontend to sendcmdmsg()
+ */
+extern int sendcmd(char cmd, char *fmt, ...)
 {
 	static char buf[BUFSIZ];
 	va_list args;
 
 	va_start(args, fmt);
 	if (fmt)
-		(void) vsnprintf(buf + (cmd != C_NONE),
-				 sizeof(buf) - (cmd != C_NONE), fmt, args);
+		(void) vsprintf((cmd == C_NONE) ? buf : buf + 1, fmt, args);
 	else
 		buf[1] = CNULL;
 	va_end(args);
 
-	return(sendcmdmsg(cmd, buf, sizeof(buf)));
+	return(sendcmdmsg(cmd, buf));
 }
+#endif	/* ARG_TYPE == ARG_STDARG */
+
+#if	defined(ARG_TYPE) && ARG_TYPE == ARG_VARARGS
+/*
+ * Varargs frontend to sendcmdmsg()
+ */
+extern int sendcmd(va_alist)
+	va_dcl
+{
+	static char buf[BUFSIZ];
+	va_list args;
+	char cmd;
+	char *fmt;
+
+	va_start(args);
+	/* XXX The "int" is necessary as a workaround for broken varargs */
+	cmd = (char) va_arg(args, int);
+	fmt = va_arg(args, char *);
+	if (fmt)
+		(void) vsprintf((cmd == C_NONE) ? buf : buf + 1, fmt, args);
+	else
+		buf[1] = CNULL;
+	va_end(args);
+
+	return(sendcmdmsg(cmd, buf));
+}
+#endif	/* ARG_TYPE == ARG_VARARGS */
+
+#if	!defined(ARG_TYPE)
+/*
+ * Stupid frontend to sendcmdmsg()
+ */
+/*VARARGS2*/
+extern int sendcmd(cmd, fmt, a1, a2, a3, a4, a5, a6, a7, a8)
+	char cmd;
+	char *fmt;
+{
+	static char buf[BUFSIZ];
+
+	if (fmt)
+		(void) sprintf((cmd == C_NONE) ? buf : buf + 1, 
+			       fmt, a1, a2, a3, a4, a5, a6, a7, a8);
+	else
+		buf[1] = CNULL;
+
+	return(sendcmdmsg(cmd, buf));
+}
+#endif	/* !ARG_TYPE */
 
 /*
  * Internal variables and routines for reading lines from the remote.
  */
 static u_char rembuf[BUFSIZ];
 static u_char *remptr;
-static ssize_t remleft;
+static int remleft;
 
 #define remc() (--remleft < 0 ? remmore() : *remptr++)
 
 /*
  * Back end to remote read()
  */
-static ssize_t 
-remread(int fd, u_char *buf, size_t bufsiz)
+static int remread(fd, buf, bufsiz)
+	int fd;
+	u_char *buf;
+	int bufsiz;
 {
 	return(read(fd, (char *)buf, bufsiz));
 }
 
-static int
-remmore(void)
+static int remmore()
 {
 	(void) signal(SIGALRM, sighandler);
 	(void) alarm(rtimeout);
@@ -340,11 +437,13 @@ remmore(void)
  * errors, call cleanup() or lostconn().  In other words, unless
  * the third argument is nonzero, this routine never returns failure.
  */
-int
-remline(u_char *buffer, int space, int doclean)
+extern int remline(buffer, space, doclean)
+	register u_char *buffer;
+	int space;
+	int doclean;
 {
-	int c, left = space;
-	u_char *p = buffer;
+	register int c, left = space;
+	register u_char *p = buffer;
 
 	if (rem_r < 0) {
 		error("Cannot read remote input: Remote descriptor not open.");
@@ -376,7 +475,7 @@ remline(u_char *buffer, int space, int doclean)
 			if (debug) {
 				static char mbuf[BUFSIZ];
 
-				(void) snprintf(mbuf, sizeof(mbuf),
+				(void) sprintf(mbuf, 
 					"<<< Cmd = %c (\\%3.3o) Msg = \"%s\"", 
 					       buffer[0], buffer[0], 
 					       buffer + 1);
@@ -399,8 +498,10 @@ remline(u_char *buffer, int space, int doclean)
 /*
  * Non-line-oriented remote read.
  */
-ssize_t
-readrem(char *p, ssize_t space)
+int
+readrem(p, space)
+	char *p;
+	register int space;
 {
 	if (remleft <= 0) {
 		/*
@@ -420,7 +521,7 @@ readrem(char *p, ssize_t space)
 	if (remleft < space)
 		space = remleft;
 
-	memcpy(p, remptr, space);
+	bcopy((char *) remptr, p, space);
 
 	remptr += space;
 	remleft -= space;
@@ -431,11 +532,13 @@ readrem(char *p, ssize_t space)
 /*
  * Get the user name for the uid.
  */
-char *
-getusername(uid_t uid, char *file, opt_t opts)
+extern char *getusername(uid, file, opts)
+	UID_T uid;
+	char *file;
+	opt_t opts;
 {
 	static char buf[100];
-	static uid_t lastuid = (uid_t)-1;
+	static UID_T lastuid = (UID_T)-1;
 	struct passwd *pwd = NULL;
 
 	/*
@@ -443,7 +546,7 @@ getusername(uid_t uid, char *file, opt_t opts)
 	 * do the opts check.
 	 */
   	if (IS_ON(opts, DO_NUMCHKOWNER)) { 
-		(void) snprintf(buf, sizeof(buf), ":%u", uid);
+		(void) sprintf(buf, ":%d", uid);
 		return(buf);
   	}
 
@@ -456,16 +559,11 @@ getusername(uid_t uid, char *file, opt_t opts)
 	lastuid = uid;
 
 	if ((pwd = getpwuid(uid)) == NULL) {
-		if (IS_ON(opts, DO_DEFOWNER) && !isserver) 
-			(void) strlcpy(buf, defowner, sizeof(buf));
-		else {
-			message(MT_WARNING,
-				"%s: No password entry for uid %u", file, uid);
-			(void) snprintf(buf, sizeof(buf), ":%u", uid);
-		}
-	} else {
-		(void) strlcpy(buf, pwd->pw_name, sizeof(buf));
-	}
+		message(MT_WARNING,
+			"%s: No password entry for uid %d", file, uid);
+		(void) sprintf(buf, ":%d", uid);
+	} else
+		(void) strcpy(buf, pwd->pw_name);
 
 	return(buf);
 }
@@ -473,11 +571,13 @@ getusername(uid_t uid, char *file, opt_t opts)
 /*
  * Get the group name for the gid.
  */
-char *
-getgroupname(gid_t gid, char *file, opt_t opts)
+extern char *getgroupname(gid, file, opts)
+	GID_T gid;
+	char *file;
+	opt_t opts;
 {
 	static char buf[100];
-	static gid_t lastgid = (gid_t)-1;
+	static GID_T lastgid = (GID_T)-1;
 	struct group *grp = NULL;
 
 	/*
@@ -485,7 +585,7 @@ getgroupname(gid_t gid, char *file, opt_t opts)
 	 * do the opts check.
 	 */
   	if (IS_ON(opts, DO_NUMCHKGROUP)) { 
-		(void) snprintf(buf, sizeof(buf), ":%u", gid);
+		(void) sprintf(buf, ":%d", gid);
 		return(buf);
   	}
 
@@ -498,15 +598,10 @@ getgroupname(gid_t gid, char *file, opt_t opts)
 	lastgid = gid;
 
 	if ((grp = (struct group *)getgrgid(gid)) == NULL) {
-		if (IS_ON(opts, DO_DEFGROUP) && !isserver) 
-			(void) strlcpy(buf, defgroup, sizeof(buf));
-		else {
-			message(MT_WARNING, "%s: No name for group %u",
-				file, gid);
-			(void) snprintf(buf, sizeof(buf), ":%u", gid);
-		}
+		message(MT_WARNING, "%s: No name for group %d", file, gid);
+		(void) sprintf(buf, ":%d", gid);
 	} else
-		(void) strlcpy(buf, grp->gr_name, sizeof(buf));
+		(void) strcpy(buf, grp->gr_name);
 
 	return(buf);
 }
@@ -514,8 +609,7 @@ getgroupname(gid_t gid, char *file, opt_t opts)
 /*
  * Read a response from the remote host.
  */
-int
-response(void)
+extern int response()
 {
 	static u_char resp[BUFSIZ];
 	u_char *s;
@@ -556,7 +650,6 @@ response(void)
 		if (s)
 			message(MT_FERROR, "%s", s);
 		finish();
-		return(-1);
 	}
 	/*NOTREACHED*/
 }
@@ -569,82 +662,144 @@ response(void)
  * user's home directory path name. Return a pointer in buf to the
  * part corresponding to `file'.
  */
-char *
-exptilde(char *ebuf, char *file, size_t ebufsize)
+extern char *exptilde(ebuf, file)
+	char *ebuf;
+	register char *file;
 {
-	char *pw_dir, *rest;
-	size_t len;
+	register char *s1, *s2, *s3;
+	extern char *homedir;
 
 	if (*file != '~') {
-notilde:
-		(void) strlcpy(ebuf, file, ebufsize);
+		(void) strcpy(ebuf, file);
 		return(ebuf);
 	}
 	if (*++file == CNULL) {
-		pw_dir = homedir;
-		rest = NULL;
+		s2 = homedir;
+		s3 = NULL;
 	} else if (*file == '/') {
-		pw_dir = homedir;
-		rest = file;
+		s2 = homedir;
+		s3 = file;
 	} else {
-		rest = file;
-		while (*rest && *rest != '/')
-			rest++;
-		if (*rest == '/')
-			*rest = CNULL;
+		s3 = file;
+		while (*s3 && *s3 != '/')
+			s3++;
+		if (*s3 == '/')
+			*s3 = CNULL;
 		else
-			rest = NULL;
+			s3 = NULL;
 		if (pw == NULL || strcmp(pw->pw_name, file) != 0) {
 			if ((pw = getpwnam(file)) == NULL) {
 				error("%s: unknown user name", file);
-				if (rest != NULL)
-					*rest = '/';
+				if (s3 != NULL)
+					*s3 = '/';
 				return(NULL);
 			}
 		}
-		if (rest != NULL)
-			*rest = '/';
-		pw_dir = pw->pw_dir;
+		if (s3 != NULL)
+			*s3 = '/';
+		s2 = pw->pw_dir;
 	}
-	if ((len = strlcpy(ebuf, pw_dir, ebufsize)) >= ebufsize)
-		goto notilde;
-	pw_dir = ebuf + len;
-	if (rest != NULL) {
-		pw_dir++;
-		if ((len = strlcat(ebuf, rest, ebufsize)) >= ebufsize)
-			goto notilde;
+	for (s1 = ebuf; (*s1++ = *s2++); )
+		;
+	s2 = --s1;
+	if (s3 != NULL) {
+		s2++;
+		while ((*s1++ = *s3++))
+			;
 	}
-	return(pw_dir);
+	return(s2);
 }
 
+#if	defined(DIRECT_RCMD)
+/*
+ * Set our effective user id to the user running us.
+ * This should be the uid we do most of our work as.
+ */
+extern int becomeuser()
+{
+	int r = 0;
 
+#if	defined(HAVE_SAVED_IDS)
+	r = seteuid(userid);
+#else
+	r = setreuid(0, userid);
+#endif	/* HAVE_SAVED_IDS */
+
+	if (r < 0)
+		error("becomeuser %d failed: %s (ruid = %d euid = %d)",
+		      userid, SYSERR, getuid(), geteuid());
+
+	return(r);
+}
+#endif	/* DIRECT_RCMD */
+
+#if	defined(DIRECT_RCMD)
+/*
+ * Set our effective user id to "root" (uid = 0)
+ */
+extern int becomeroot()
+{
+	int r = 0;
+
+#if	defined(HAVE_SAVED_IDS)
+	r = seteuid(0);
+#else
+	r = setreuid(userid, 0);
+#endif	/* HAVE_SAVED_IDS */
+
+	if (r < 0)
+		error("becomeroot failed: %s (ruid = %d euid = %d)",
+		      SYSERR, getuid(), geteuid());
+
+	return(r);
+}
+#endif	/* DIRECT_RCMD */
 
 /*
  * Set access and modify times of a given file
  */
-int
-setfiletime(char *file, time_t atime, time_t mtime)
+extern int setfiletime(file, atime, mtime)
+	char *file;
+	time_t atime;
+	time_t mtime;
 {
+#if	SETFTIME_TYPE == SETFTIME_UTIMES
 	struct timeval tv[2];
 
 	if (atime != 0 && mtime != 0) {
 		tv[0].tv_sec = atime;
 		tv[1].tv_sec = mtime;
-		tv[0].tv_usec = tv[1].tv_usec = 0;
-		return (utimes(file, tv));
+		tv[0].tv_usec = tv[1].tv_usec = (time_t) 0;
+		return(utimes(file, tv));
 	} else	/* Set to current time */
-		return (utimes(file, NULL));
+		return(utimes(file, NULL));
+
+#endif	/* SETFTIME_UTIMES */
+
+#if	SETFTIME_TYPE == SETFTIME_UTIME
+	struct utimbuf utbuf;
+
+	if (atime != 0 && mtime != 0) {
+		utbuf.actime = atime;
+		utbuf.modtime = mtime;
+		return(utime(file, &utbuf));
+	} else	/* Set to current time */
+		return(utime(file, NULL));
+#endif	/* SETFTIME_UTIME */
+
+#if	!defined(SETFTIME_TYPE)
+	There is no "SETFTIME_TYPE" defined!
+#endif	/* SETFTIME_TYPE */
 }
 
 /*
  * Get version info
  */
-char *
-getversion(void)
+extern char *getversion()
 {
 	static char buff[BUFSIZ];
 
-	(void) snprintf(buff, sizeof(buff), 
+	(void) sprintf(buff,
 	"Version %s.%d (%s) - Protocol Version %d, Release %s, Patch level %d",
 		       DISTVERSION, PATCHLEVEL, DISTSTATUS,
 		       VERSION, DISTVERSION, PATCHLEVEL);
@@ -656,14 +811,13 @@ getversion(void)
  * Execute a shell command to handle special cases.
  * This is now common to both server and client
  */
-void
-runcommand(char *cmd)
+void runcommand(cmd)
+	char *cmd;
 {
-	ssize_t nread;
-	pid_t pid, wpid;
-	char *cp, *s;
+	int fd[2], pid, i;
+	int status;
+	register char *cp, *s;
 	char sbuf[BUFSIZ], buf[BUFSIZ];
-	int fd[2], status;
 
 	if (pipe(fd) < 0) {
 		error("pipe of %s failed: %s", cmd, SYSERR);
@@ -682,13 +836,13 @@ runcommand(char *cmd)
 		(void) dup(fd[PIPE_WRITE]);
 		(void) close(fd[PIPE_READ]);
 		(void) close(fd[PIPE_WRITE]);
-		(void) execl(_PATH_BSHELL, "sh", "-c", cmd, (char *)NULL);
+		(void) execl(_PATH_BSHELL, "sh", "-c", cmd, 0);
 		_exit(127);
 	}
 	(void) close(fd[PIPE_WRITE]);
 	s = sbuf;
 	*s++ = C_LOGMSG;
-	while ((nread = read(fd[PIPE_READ], buf, sizeof(buf))) > 0) {
+	while ((i = read(fd[PIPE_READ], buf, sizeof(buf))) > 0) {
 		cp = buf;
 		do {
 			*s++ = *cp++;
@@ -711,7 +865,7 @@ runcommand(char *cmd)
 				message(MT_INFO, "%s", sbuf+1);
 			}
 			s = &sbuf[1];
-		} while (--nread);
+		} while (--i);
 	}
 	if (s > (char *) &sbuf[1]) {
 		*s++ = '\n';
@@ -722,9 +876,9 @@ runcommand(char *cmd)
 			message(MT_INFO, "%s", sbuf+1);
 		}
 	}
-	while ((wpid = wait(&status)) != pid && wpid != -1)
+	while ((i = wait(&status)) != pid && i != -1)
 		;
-	if (wpid == -1)
+	if (i == -1)
 		status = -1;
 	(void) close(fd[PIPE_READ]);
 	if (status)
@@ -736,91 +890,144 @@ runcommand(char *cmd)
 /*
  * Malloc with error checking
  */
-void *
-xmalloc(size_t amt)
+char *xmalloc(amt)
+	int amt;
 {
-	void *ptr;
+	char *ptr;
+	extern POINTER *malloc();
 
-	if ((ptr = malloc(amt)) == NULL)
-		fatalerr("Cannot malloc %zu bytes of memory.", amt);
+	if ((ptr = (char *)malloc(amt)) == NULL)
+		fatalerr("Cannot malloc %d bytes of memory.", amt);
 
-	return (ptr);
+	return(ptr);
 }
 
 /*
  * realloc with error checking
  */
-void *
-xrealloc(void *baseptr, size_t amt)
+char *xrealloc(baseptr, amt)
+	char *baseptr;
+	unsigned int amt;
 {
-	void *new;
+	char *new;
+	extern POINTER *realloc();
 
-	if ((new = realloc(baseptr, amt)) == NULL)
-		fatalerr("Cannot realloc %zu bytes of memory.", amt);
+	if ((new = (char *)realloc(baseptr, amt)) == NULL)
+		fatalerr("Cannot realloc %d bytes of memory.", amt);
 
-	return (new);
+	return(new);
 }
 
 /*
  * calloc with error checking
  */
-void *
-xcalloc(size_t num, size_t esize)
+char *xcalloc(num, esize)
+	unsigned num;
+	unsigned esize;
 {
-	void *ptr;
+	char *ptr;
+	extern POINTER *calloc();
 
-	if ((ptr = calloc(num, esize)) == NULL)
-		fatalerr("Cannot calloc %zu * %zu = %zu bytes of memory.",
+	if ((ptr = (char *)calloc(num, esize)) == NULL)
+		fatalerr("Cannot calloc %d * %d = %d bytes of memory.",
 		      num, esize, num * esize);
 
-	return (ptr);
+	return(ptr);
 }
 
 /*
  * Strdup with error checking
  */
-char *
-xstrdup(const char *str)
+char *xstrdup(str)
+	char *str;
 {
-	size_t len = strlen(str) + 1;
-	char *nstr = xmalloc(len);
+	char *nstr;
 
-	return (memcpy(nstr, str, len));
+	if ((nstr = strdup(str)) == NULL)
+		fatalerr("Cannot malloc %d bytes of memory.", strlen(str) + 1);
+
+	return(nstr);
 }
 
 /*
  * Private version of basename()
  */
-char *
-xbasename(char *path)
+extern char *xbasename(path)
+	char *path;
 {
-	char *cp;
+	register char *cp;
  
-	if ((cp = strrchr(path, '/')) != NULL)
+	if ((cp = strrchr(path, '/')))
 		return(cp+1);
 	else
 		return(path);
 }
 
 /*
- * Take a colon (':') separated path to a file and
+ * Take a colon (':') seperated path to a file and
  * search until a component of that path is found and
  * return the found file name.
  */
-char *
-searchpath(char *path)
+extern char *searchpath(path)
+	char *path;
 {
-	char *file;
-	char *space;
-	int found;
+	register char *cp;
+	register char *file;
 	struct stat statbuf;
 
-	for (found = 0; !found && (file = strsep(&path, ":")) != NULL; ) {
-		if ((space = strchr(file, ' ')) != NULL)
-			*space = CNULL;
-		found = stat(file, &statbuf) == 0;
-		if (space)
-			*space = ' ';		/* Put back what we zapped */
+	for (; ;) {
+		if (!path)
+			return(NULL);
+		file = path;
+		cp = strchr(path, ':');
+		if (cp) {
+			path = cp + 1;
+			*cp = CNULL;
+		} else
+			path = NULL;
+		if (stat(file, &statbuf) == 0)
+			return(file);
+		/* Put back what we zapped */
+		if (path)
+			*cp = ':';
 	}
-	return (file);
+}
+
+/*
+ * Set line buffering.
+ */
+extern void
+mysetlinebuf(fp)
+	FILE *fp;
+{
+#if	SETBUF_TYPE == SETBUF_SETLINEBUF
+	setlinebuf(fp);
+#endif	/* SETBUF_SETLINEBUF */
+#if	SETBUF_TYPE == SETBUF_SETVBUF
+	setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+#endif	/* SETBUF_SETVBUF */
+#if	!defined(SETBUF_TYPE)
+	No SETBUF_TYPE is defined!
+#endif	/* SETBUF_TYPE */
+}
+
+/*
+ * Our interface to system call to get a socket pair.
+ */
+int
+getsocketpair(domain, type, protocol, sv)
+	int domain;
+	int type;
+	int protocol;
+	int sv[];
+{
+#if	SOCKPAIR_TYPE == SOCKPAIR_SOCKETPAIR
+	return(socketpair(domain, type, protocol, sv));
+#endif	/* SOCKPAIR_SOCKETPAIR */
+#if	SOCKPAIR_TYPE == SOCKPAIR_SPIPE
+	return(spipe(sv));
+#endif	/* SOCKPAIR_SPIPE */
+#if	!defined(SOCKPAIR_TYPE)
+	No SOCKPAIR_TYPE is defined!
+#endif	/* SOCKPAIR_TYPE */
 }

@@ -4,12 +4,11 @@
    non-unix systems.
 
    usage:
-   munchconfig config.sh config_h.sh [-f file] [foo=bar [baz=xyzzy [...]]] >config.h
+   munchconfig config.sh config_h.sh [foo=bar [baz=xyzzy [...]]] >config.h
 
-   which is to say, it takes as its first parameter a config.sh (or
-   equivalent), as its second a config_h.sh (or equivalent), an optional file
-   containing tag=value pairs (one on each line), and an optional list of
-   tag=value pairs on the command line.
+   which is to say, it takes as its firt parameter a config.sh (or
+   equivalent), as its second a config_h.sh (or equvalent), and a list of
+   optional tag=value pairs.
 
    It spits the processed config.h out to STDOUT.
 
@@ -20,7 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <unistd.h>
 
 /* The failure code to exit with */
 #ifndef EXIT_FAILURE
@@ -32,7 +30,7 @@
 #endif
 
 /* The biggest line we can read in from a file */
-#define LINEBUFFERSIZE 1024
+#define LINEBUFFERSIZE 400
 #define NUMTILDESUBS 30
 #define NUMCONFIGSUBS 1000
 #define TOKENBUFFERSIZE 80
@@ -47,15 +45,12 @@ void tilde_sub(char [], Translate [], int);
 int
 main(int argc, char *argv[])
 {
-  int c, i;
-  char *ifile = NULL;
-  char WorkString[LINEBUFFERSIZE]; 
-  FILE *ConfigSH, *Config_H, *Extra_Subs;
+  FILE *ConfigSH, *Config_H;
   char LineBuffer[LINEBUFFERSIZE], *TempValue, *StartTilde, *EndTilde;
-  char SecondaryLineBuffer[LINEBUFFERSIZE], OutBuf[LINEBUFFERSIZE];
+  char SecondaryLineBuffer[LINEBUFFERSIZE];
   char TokenBuffer[TOKENBUFFERSIZE];
   int LineBufferLength, TempLength, DummyVariable, LineBufferLoop;
-  int TokenBufferLoop, ConfigSubLoop, GotIt, OutBufPos;
+  int TokenBufferLoop, ConfigSubLoop, GotIt;
   Translate TildeSub[NUMTILDESUBS];    /* Holds the tilde (~FOO~) */
                                        /* substitutions */
   Translate ConfigSub[NUMCONFIGSUBS];  /* Holds the substitutions from */
@@ -64,24 +59,11 @@ main(int argc, char *argv[])
                                              /* and config substitutions, */
                                              /* respectively */
   if (argc < 3) {
-    printf("Usage: munchconfig config.sh config_h.sh [-f file] [foo=bar [baz=xyzzy [...]]]\n");
+    printf("Usage: munchconfig config.sh config_h.sh [foo=bar [baz=xyzzy [...]]]\n");
     exit(EXIT_FAILURE);
   }
 
-  optind = 3;    /* skip config.sh and config_h.sh */
-  while ((c = getopt(argc, argv, "f:")) != -1) {
-      switch (c) {
-        case 'f':
-            ifile = optarg;
-            break;
-        case ':':
-            fprintf(stderr, "Option -%c requires an operand\n", optopt);
-            break;
-        case '?':
-            fprintf(stderr,"Unrecognised option: -%c\n", optopt);
-      }
-  }
-
+  
   /* First, open the input files */
   if (NULL == (ConfigSH = fopen(argv[1], "r"))) {
     printf("Error %i trying to open config.sh file %s\n", errno, argv[1]);
@@ -93,14 +75,12 @@ main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }
 
-  if (ifile != NULL && NULL == (Extra_Subs = fopen(ifile, "r"))) {
-    printf("Error %i trying to open extra substitutions file %s\n", errno, ifile);
-    exit(EXIT_FAILURE);
-  }
-
   /* Any tag/value pairs on the command line? */
-  if (argc > optind) {
-    for (i=optind; i < argc && argv[i]; i++) {
+  if (argc > 3) {
+    int i;
+    char WorkString[80]; 
+    for (i=3; i < argc && argv[i]; i++) {
+      
       /* Local copy */
       strcpy(WorkString, argv[i]);
       /* Stick a NULL over the = */
@@ -113,35 +93,6 @@ main(int argc, char *argv[])
       TildeSubCount++;
     }
   }
-
-  /* Now read in the tag/value pairs from the extra substitutions file, if any */
-  while(ifile && fgets(LineBuffer, LINEBUFFERSIZE - 1, Extra_Subs)) {
-    /* Force a trailing null, just in case */
-    LineBuffer[LINEBUFFERSIZE - 1] = '\0';
-    LineBufferLength = strlen(LineBuffer);
-
-    /* Chop trailing control characters */
-    while((LineBufferLength > 0) && (LineBuffer[LineBufferLength-1] < ' ')) {
-      LineBuffer[LineBufferLength - 1] = '\0';
-      LineBufferLength--;
-    }
-
-    /* If it's empty, then try again */
-    if (!*LineBuffer)
-      continue;
-
-    /* Local copy */
-    strcpy(WorkString, LineBuffer);
-    /* Stick a NULL over the = */
-    TempValue = strchr(WorkString, '=');
-    *TempValue++ = '\0';
-
-    /* Copy the tag and value into the holding array */
-    strcpy(TildeSub[TildeSubCount].Tag, WorkString);
-    strcpy(TildeSub[TildeSubCount].Value, TempValue);
-    TildeSubCount++;
-  }
-
 
   /* Now read in the config.sh file. */
   while(fgets(LineBuffer, LINEBUFFERSIZE - 1, ConfigSH)) {
@@ -215,7 +166,7 @@ main(int argc, char *argv[])
     }
   }
 
-  /* Okay, we've read in all the substitutions from our config.sh */
+  /* Okay, we've read in all the substititions from our config.sh */
   /* equivalent. Read in the config_h.sh equiv and start the substitution */
   
   /* First, eat all the lines until we get to one with !GROK!THIS! in it */
@@ -246,20 +197,19 @@ main(int argc, char *argv[])
       LineBufferLength--;
     }
 
-    OutBufPos = 0;
     /* Right. Go looking for $s. */
     for(LineBufferLoop = 0; LineBufferLoop < LineBufferLength;
         LineBufferLoop++) {
       /* Did we find one? */
       if ('$' != LineBuffer[LineBufferLoop]) {
         /* Nope, spit out the value */
-	OutBuf[OutBufPos++] = LineBuffer[LineBufferLoop];
+        putchar(LineBuffer[LineBufferLoop]);
       } else {
         /* Yes, we did. Is it escaped? */
         if ((LineBufferLoop > 0) && ('\\' == LineBuffer[LineBufferLoop -
                                                        1])) {
           /* Yup. Spit it out */
-          OutBuf[OutBufPos++] = LineBuffer[LineBufferLoop];
+          putchar(LineBuffer[LineBufferLoop]);
         } else {
          /* Nope. Go grab us a token */
           TokenBufferLoop = 0;
@@ -288,9 +238,8 @@ main(int argc, char *argv[])
             for(ConfigSubLoop = 0; ConfigSubLoop < ConfigSubCount;
                 ConfigSubLoop++) {
               if (!strcmp(TokenBuffer, ConfigSub[ConfigSubLoop].Tag)) {
-                char *cp = ConfigSub[ConfigSubLoop].Value;
-		GotIt = 1;
-		while (*cp) OutBuf[OutBufPos++] = *(cp++);
+                GotIt = 1;
+                printf("%s", ConfigSub[ConfigSubLoop].Value);
                 break;
               }
             }
@@ -298,55 +247,26 @@ main(int argc, char *argv[])
             /* Did we find something? If not, spit out what was in our */
             /* buffer */
             if (!GotIt) {
-	      char *cp = TokenBuffer;
-	      OutBuf[OutBufPos++] = '$';
-	      while (*cp) OutBuf[OutBufPos++] = *(cp++);
+              printf("$%s", TokenBuffer);
             }
             
           } else {
             /* Just a bare $. Spit it out */
-            OutBuf[OutBufPos++] = '$';
+            putchar('$');
           }       
         }
       }
     }
     
-    /* If we've created an #undef line, make sure we don't output anything
-     * after the "#undef FOO" besides comments.  We could do this as we
-     * go by recognizing the #undef as it goes by, and thus avoid another
-     * use of a fixed-length buffer, but this is simpler.
-     */
-    if (!strncmp(OutBuf,"#undef",6)) {
-      char *cp = OutBuf;
-      int i, incomment = 0;
-      LineBufferLoop = 0;
-      OutBuf[OutBufPos] = '\0';
-      for (i = 0; i <= 1; i++) {
-	while (!isspace(*cp)) LineBuffer[LineBufferLoop++] = *(cp++);
-	while ( isspace(*cp)) LineBuffer[LineBufferLoop++] = *(cp++);
-      }
-      while (*cp) {
-	while (isspace(*cp)) LineBuffer[LineBufferLoop++] = *(cp++);
-	if (!incomment && *cp == '/' && *(cp+1) == '*') incomment = 1;
-	while (*cp && !isspace(*cp)) {
-	  if (incomment) LineBuffer[LineBufferLoop++] = *cp;
-	  cp++;
-	}
-	if (incomment && *cp == '*' && *(cp+1) == '/') incomment = 0;
-      }
-      LineBuffer[LineBufferLoop] = '\0';
-      puts(LineBuffer);
-    }	
-    else {
-      OutBuf[OutBufPos] = '\0';
-      puts(OutBuf);
-    }
+    /* We're all done. Spit out an EOL */
+    printf("\n");
+    
+    
   }
   
   /* Close the files */
   fclose(ConfigSH);
   fclose(Config_H);
-  if (ifile) fclose(Extra_Subs);
 }
 
 void
@@ -395,7 +315,8 @@ tilde_sub(char LineBuffer[], Translate TildeSub[], int TildeSubCount)
         
       } else {
         /* 'Kay, not a tilde. Is it a word character? */
-        if (isalnum(LineBuffer[TildeLoop]) ||
+        if (isalnum(LineBuffer[TildeLoop]) || (LineBuffer[TildeLoop] =
+                                              '-') ||
             (LineBuffer[TildeLoop] == '-')) {
           TempTilde[TildeBufferLength++] = LineBuffer[TildeLoop];
         } else {

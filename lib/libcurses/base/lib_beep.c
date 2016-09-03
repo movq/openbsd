@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_beep.c,v 1.4 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_beep.c,v 1.1 1999/01/18 19:09:35 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,8 +31,8 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
+
 
 /*
  *	beep.c
@@ -42,9 +42,9 @@
  */
 
 #include <curses.priv.h>
-#include <term.h>		/* beep, flash */
+#include <term.h>	/* beep, flash */
 
-MODULE_ID("$Id: lib_beep.c,v 1.4 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_beep.c,v 1.6 1998/06/29 19:34:16 Alexander.V.Lukyanov Exp $")
 
 /*
  *	beep()
@@ -54,25 +54,22 @@ MODULE_ID("$Id: lib_beep.c,v 1.4 2010/01/12 23:22:05 nicm Exp $")
  *
  */
 
-NCURSES_EXPORT(int)
-beep(void)
+int beep(void)
 {
-    int res = ERR;
+	int res = ERR;
 
-    T((T_CALLED("beep()")));
+	T((T_CALLED("beep()")));
 
-    /* FIXME: should make sure that we are not in altchar mode */
-    if (cur_term == 0) {
-	res = ERR;
-    } else if (bell) {
-	TPUTS_TRACE("bell");
-	res = putp(bell);
-	_nc_flush();
-    } else if (flash_screen) {
-	TPUTS_TRACE("flash_screen");
-	res = putp(flash_screen);
-	_nc_flush();
-    }
+	/* FIXME: should make sure that we are not in altchar mode */
+	if (bell) {
+		TPUTS_TRACE("bell");
+		res = putp(bell);
+		fflush(SP->_ofp);
+	} else if (flash_screen) {
+		TPUTS_TRACE("flash_screen");
+		res = putp(flash_screen);
+		fflush(SP->_ofp);
+	}
 
-    returnCode(res);
+	returnCode(res);
 }

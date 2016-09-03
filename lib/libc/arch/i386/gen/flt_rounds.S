@@ -1,10 +1,14 @@
-/* $OpenBSD: flt_rounds.S,v 1.5 2015/10/27 05:54:49 guenther Exp $ */
 /*
  * Written by J.T. Conklin, Apr 4, 1995
  * Public domain.
  */
 
-#include "SYS.h"
+#include <machine/asm.h>
+
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: flt_rounds.S,v 1.2 1996/08/19 08:12:20 tholo Exp $"
+#endif
 
 	.text
 	.align 2
@@ -20,7 +24,7 @@ ENTRY(__flt_rounds)
 	movl (%esp),%eax
 	shrl $10,%eax
 	andl $3,%eax
-#ifdef __PIC__
+#ifdef PIC
 	PIC_PROLOGUE
 	leal PIC_GOTOFF(_map),%ecx
 	PIC_EPILOGUE
@@ -30,4 +34,3 @@ ENTRY(__flt_rounds)
 #endif
 	addl $4,%esp
 	ret
-END_STRONG(__flt_rounds);

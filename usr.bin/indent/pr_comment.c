@@ -1,10 +1,9 @@
-/*	$OpenBSD: pr_comment.c,v 1.7 2009/10/27 23:59:39 deraadt Exp $	*/
+/*	$OpenBSD: pr_comment.c,v 1.3 1997/07/25 22:00:47 mickey Exp $	*/
 
 /*
- * Copyright (c) 1980, 1993
- *	The Regents of the University of California.
- * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * Copyright (c) 1985 Sun Microsystems, Inc.
+ * Copyright (c) 1980 The Regents of the University of California.
+ * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,7 +35,11 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
+#ifndef lint
+/*static char sccsid[] = "from: @(#)pr_comment.c	5.12 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$OpenBSD: pr_comment.c,v 1.3 1997/07/25 22:00:47 mickey Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "indent_globs.h"
@@ -59,7 +66,7 @@
  *	12/6/76		D A Willcox of CAC	Modification to handle
  *						UNIX-style comments
  *
- */
+ */
 
 /*
  * this routine processes comments.  It makes an attempt to keep comments from
@@ -69,7 +76,7 @@
  */
 
 void
-pr_comment(void)
+pr_comment()
 {
     int         now_col;	/* column we are in now */
     int         adj_max_col;	/* Adjusted max_col for when we decide to
@@ -85,15 +92,15 @@ pr_comment(void)
     int         l_just_saw_decl = ps.just_saw_decl;
     /*
      * int         ps.last_nl = 0;	 true iff the last significant thing
-     * we've seen is a newline
+     * weve seen is a newline
      */
     int         one_liner = 1;	/* true iff this comment is a one-liner */
     adj_max_col = max_col;
     ps.just_saw_decl = 0;
     last_bl = 0;		/* no blanks found so far */
     ps.box_com = false;		/* at first, assume that we are not in
-				 * a boxed comment or some other
-				 * comment that should not be touched */
+					 * a boxed comment or some other
+					 * comment that should not be touched */
     ++ps.out_coms;		/* keep track of number of comments */
     unix_comment = 1;		/* set flag to let us figure out if there is a
 				 * unix-style comment ** DISABLED: use 0 to
@@ -116,7 +123,7 @@ pr_comment(void)
 	if ( /* ps.bl_line && */ (s_lab == e_lab) && (s_code == e_code)) {
 	    /* klg: check only if this line is blank */
 	    /*
-	     * If this (*and previous lines are*) blank, don't put comment way
+	     * If this (*and previous lines are*) blank, dont put comment way
 	     * out at left
 	     */
 	    ps.com_col = (ps.ind_level - ps.unindent_displace) * ps.ind_size + 1;
@@ -125,7 +132,7 @@ pr_comment(void)
 		ps.com_col = 1 + !format_col1_comments;
 	}
 	else {
-	    int    target_col;
+	    register    target_col;
 	    break_delim = 0;
 	    if (s_code != e_code)
 		target_col = count_spaces(compute_code_target(), s_code);
@@ -203,8 +210,7 @@ pr_comment(void)
 	    }
 	    one_liner = 0;
 	    if (ps.box_com || ps.last_nl) {	/* if this is a boxed comment,
-						 * we don't ignore the newline
-						 */
+						 * we dont ignore the newline */
 		if (s_com == e_com) {
 		    *e_com++ = ' ';
 		    *e_com++ = ' ';

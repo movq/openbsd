@@ -1,7 +1,7 @@
-/* $OpenBSD: m_scale.c,v 1.5 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: m_scale.c,v 1.3 1999/05/17 03:04:25 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2004 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,7 +29,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 /***************************************************************************
@@ -39,7 +39,7 @@
 
 #include "menu.priv.h"
 
-MODULE_ID("$Id: m_scale.c,v 1.5 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: m_scale.c,v 1.4 1999/05/16 17:28:00 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnmenu  
@@ -52,14 +52,11 @@ MODULE_ID("$Id: m_scale.c,v 1.5 2010/01/12 23:22:08 nicm Exp $")
 |                    E_BAD_ARGUMENT        - invalid menu pointer
 |                    E_NOT_CONNECTED       - no items are connected to menu
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(int)
-scale_menu(const MENU * menu, int *rows, int *cols)
+int scale_menu(const MENU *menu, int *rows, int *cols)
 {
-  T((T_CALLED("scale_menu(%p,%p,%p)"), menu, rows, cols));
-
-  if (!menu)
-    RETURN(E_BAD_ARGUMENT);
-
+  if (!menu) 
+    RETURN( E_BAD_ARGUMENT );
+  
   if (menu->items && *(menu->items))
     {
       if (rows)
@@ -69,7 +66,8 @@ scale_menu(const MENU * menu, int *rows, int *cols)
       RETURN(E_OK);
     }
   else
-    RETURN(E_NOT_CONNECTED);
+    RETURN( E_NOT_CONNECTED );
 }
 
 /* m_scale.c ends here */
+

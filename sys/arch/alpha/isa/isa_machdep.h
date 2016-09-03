@@ -1,4 +1,4 @@
-/*	$OpenBSD: isa_machdep.h,v 1.15 2015/08/15 19:15:18 miod Exp $	*/
+/*	$OpenBSD: isa_machdep.h,v 1.5 1998/06/29 05:32:53 downsj Exp $	*/
 /*	$NetBSD: isa_machdep.h,v 1.3 1996/11/19 04:53:07 cgd Exp $	*/
 
 /*
@@ -36,13 +36,12 @@ typedef struct alpha_isa_chipset *isa_chipset_tag_t;
 struct alpha_isa_chipset {
 	void	*ic_v;
 
-	void	(*ic_attach_hook)(struct device *, struct device *,
-		    struct isabus_attach_args *);
-	void	*(*ic_intr_establish)(void *, int, int, int,
-		    int (*)(void *), void *, const char *);
-	void	(*ic_intr_disestablish)(void *, void *);
-	int	(*ic_intr_alloc)(isa_chipset_tag_t, int, int, int *);
-	int	(*ic_intr_check)(isa_chipset_tag_t, int, int);
+	void	(*ic_attach_hook) __P((struct device *, struct device *,
+		    struct isabus_attach_args *));
+	void	*(*ic_intr_establish) __P((void *, int, int, int,
+		    int (*)(void *), void *, char *));
+	void	(*ic_intr_disestablish) __P((void *, void *));
+	int	(*ic_intr_check) __P((void *, int, int));
 };
 
 /*
@@ -54,8 +53,6 @@ struct alpha_isa_chipset {
     (*(c)->ic_intr_establish)((c)->ic_v, (i), (t), (l), (f), (a), (nm))
 #define	isa_intr_disestablish(c, h)					\
     (*(c)->ic_intr_disestablish)((c)->ic_v, (h))
-#define isa_intr_alloc(c, m, t, i)					\
-    (*(c)->ic_intr_alloc)((c)->ic_v, (m), (t), (i))
 #define isa_intr_check(c, i, t)						\
     (*(c)->ic_intr_check)((c)->ic_v, (i), (t))
 
@@ -63,23 +60,4 @@ struct alpha_isa_chipset {
  * alpha-specific ISA functions.
  * NOT TO BE USED DIRECTLY BY MACHINE INDEPENDENT CODE.
  */ 
-int	isa_display_console(bus_space_tag_t, bus_space_tag_t);
-
-#ifdef _ALPHA_BUS_DMA_PRIVATE
-int	isadma_bounce_dmamap_create(bus_dma_tag_t, bus_size_t, int,
-	    bus_size_t, bus_size_t, int, bus_dmamap_t *);
-void	isadma_bounce_dmamap_destroy(bus_dma_tag_t, bus_dmamap_t);
-int	isadma_bounce_dmamap_load(bus_dma_tag_t, bus_dmamap_t, void *,
-	    bus_size_t, struct proc *, int);
-int	isadma_bounce_dmamap_load_mbuf(bus_dma_tag_t, bus_dmamap_t,
-	    struct mbuf *, int);
-int	isadma_bounce_dmamap_load_uio(bus_dma_tag_t, bus_dmamap_t,
-	    struct uio *, int);
-int	isadma_bounce_dmamap_load_raw(bus_dma_tag_t, bus_dmamap_t,
-	    bus_dma_segment_t *, int, bus_size_t, int);
-void	isadma_bounce_dmamap_unload(bus_dma_tag_t, bus_dmamap_t);
-void	isadma_bounce_dmamap_sync(bus_dma_tag_t, bus_dmamap_t, bus_addr_t,
-	    bus_size_t, int);
-int	isadma_bounce_dmamem_alloc(bus_dma_tag_t, bus_size_t, bus_size_t,
-	    bus_size_t, bus_dma_segment_t *, int, int *, int);
-#endif /* _ALPHA_BUS_DMA_PRIVATE */
+void    isa_display_console __P((bus_space_tag_t, bus_space_tag_t));

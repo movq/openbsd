@@ -1,4 +1,4 @@
-/*	$OpenBSD: rdist.c,v 1.30 2015/02/08 23:40:34 deraadt Exp $	*/
+/*	$OpenBSD: rdist.c,v 1.7 1999/02/04 23:18:57 millert Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,51 +33,68 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
-#include <paths.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: rdist.c,v 6.65 1995/12/12 00:20:39 mcooper Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: rdist.c,v 1.7 1999/02/04 23:18:57 millert Exp $";
+#endif
 
-#include "client.h"
+static char sccsid[] = "@(#)main.c	5.1 (Berkeley) 6/6/85";
+
+static char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+
+#include "defs.h"
 #include "y.tab.h"
-
+#include <netdb.h>
+#include <sys/ioctl.h>
 
 /*
  * Remote distribution program.
  */
 
+#ifdef __STDC__
+void		docmdargs(int, char **);
+void		usage(void);
+#else
+void		docmdargs();
+void		usage();
+#endif
+
+char   	       *distfile = NULL;		/* Name of distfile to use */
 int     	maxchildren = MAXCHILDREN;	/* Max no of concurrent PIDs */
 int		nflag = 0;			/* Say without doing */
-int64_t		min_freespace = 0;		/* Min filesys free space */
-int64_t		min_freefiles = 0;		/* Min filesys free # files */
+long		min_freespace = 0;		/* Min filesys free space */
+long		min_freefiles = 0;		/* Min filesys free # files */
 FILE   	       *fin = NULL;			/* Input file pointer */
+struct group   *gr = NULL;			/* Static area for getgrent */
 char		localmsglist[] = "stdout=all:notify=all:syslog=nerror,ferror";
 char   	       *remotemsglist = NULL;
 char		optchars[] = "A:a:bcd:DFf:hil:L:M:m:NnOo:p:P:qRrst:Vvwxy";
+FILE   	       *opendist();
 char	       *path_rdistd = _PATH_RDISTD;
 char	       *path_remsh = NULL;
-
-static void addhostlist(char *, struct namelist **);
-static void usage(void);
-int main(int, char **, char **);
 
 /*
  * Add a hostname to the host list
  */
-static void
-addhostlist(char *name, struct namelist **hostlist)
+static void addhostlist(name, hostlist)
+	char *name;
+	struct namelist **hostlist;
 {
-	struct namelist *ptr, *new;
+	register struct namelist *ptr, *new;
 
 	if (!name || !hostlist)
 		return;
 
-	new = xmalloc(sizeof *new);
+	new = (struct namelist *) xmalloc(sizeof(struct namelist));
 	new->n_name = xstrdup(name);
-	new->n_regex = NULL;
 	new->n_next = NULL;
 
 	if (*hostlist) {
@@ -85,45 +106,68 @@ addhostlist(char *name, struct namelist **hostlist)
 }
 
 int
-main(int argc, char **argv, char **envp)
+main(argc, argv, envp)
+	int argc;
+	char *argv[];
+	char **envp;
 {
-	extern char *__progname;
 	struct namelist *hostlist = NULL;
-	char *distfile = NULL;
-	char *cp;
+	register int x;
+	register char *cp;
 	int cmdargs = 0;
 	int c;
-	const char *errstr;
 
-	progname = __progname;
+	/*
+	 * We initialize progname here instead of init() because
+	 * things in msgparseopts() need progname set.
+	 */
+	setprogname(argv);
 
-	if ((cp = msgparseopts(localmsglist, TRUE)) != NULL) {
+	if ((cp = msgparseopts(localmsglist, TRUE))) {
 		error("Bad builtin log option (%s): %s.", 
 		      localmsglist, cp);
 		usage();
 	}
 
-	if ((cp = getenv("RDIST_OPTIONS")) != NULL)
-		if (parsedistopts(cp, &options, TRUE)) {
-			error("Bad dist option environment string \"%s\".", 
-			      cp);
-			exit(1);
-		}
-
 	if (init(argc, argv, envp) < 0)
 		exit(1);
 
+	/*
+	 * Be backwards compatible.
+	 */
+	for (x = 1; x <= argc && argv[x]; x++) {
+		if (strcmp(argv[x], "-Server") != 0)
+			continue;
+#if	defined(_PATH_OLDRDIST)
+		message(MT_SYSLOG, 
+			"Old rdist (-Server) requested; running %s", 
+			_PATH_OLDRDIST);
+		(void) execl(_PATH_OLDRDIST, xbasename(_PATH_OLDRDIST), 
+			     "-Server", NULL);
+		fatalerr("Exec old rdist failed: %s: %s.", 
+			 _PATH_OLDRDIST, SYSERR);
+#else	/* !_PATH_OLDRDIST */
+		fatalerr("Old rdist not available.");
+#endif	/* _PATH_OLDRDIST */
+		exit(1);
+	}
+
+#if	defined(DIRECT_RCMD)
+	if (becomeuser() != 0)
+		exit(1);
+#else	/* !DIRECT_RCMD */
 	/*
 	 * Perform check to make sure we are not incorrectly installed
 	 * setuid to root or anybody else.
 	 */
 	if (getuid() != geteuid())
 		fatalerr("This version of rdist should not be installed setuid.");
+#endif	/* DIRECT_RCMD */
 
 	while ((c = getopt(argc, argv, optchars)) != -1)
 		switch (c) {
 		case 'l':
-			if ((cp = msgparseopts(optarg, TRUE)) != NULL) {
+			if ((cp = msgparseopts(optarg, TRUE))) {
 				error("Bad log option \"%s\": %s.", optarg,cp);
 				usage();
 			}
@@ -137,24 +181,14 @@ main(int argc, char **argv, char **envp)
 		case 'a':
 		case 'M':
 		case 't':
-			if (!isdigit((unsigned char)*optarg)) {
+			if (!isdigit(*optarg)) {
 				error("\"%s\" is not a number.", optarg);
 				usage();
 			}
-			if (c == 'a') {
-				min_freespace = (int64_t)strtonum(optarg,
-					0, LLONG_MAX, &errstr);
-				if (errstr)
-					fatalerr("Minimum free space is %s: "
-						 "'%s'", errstr, optarg);
-			}
-			else if (c == 'A') {
-				min_freefiles = (int64_t)strtonum(optarg,
-					0, LLONG_MAX, &errstr);
-				if (errstr)
-					fatalerr("Minimum free files is %s: "
-						 "'%s'", errstr, optarg);
-			}
+			if (c == 'a')
+				min_freespace = atoi(optarg);
+			else if (c == 'A')
+				min_freefiles = atoi(optarg);
 			else if (c == 'M')
 				maxchildren = atoi(optarg);
 			else if (c == 't')
@@ -181,19 +215,18 @@ main(int argc, char **argv, char **envp)
 
 		case 'D':
 			debug = DM_ALL;
-			if ((cp = msgparseopts("stdout=all,debug",
-			    TRUE)) != NULL) {
+			if ((cp = msgparseopts("stdout=all,debug", TRUE))) {
 				error("Enable debug messages failed: %s.", cp);
 				usage();
 			}
 			break;
 
 		case 'c':
-			cmdargs = 1;
+			cmdargs++;
 			break;
 
 		case 'n':
-			nflag = 1;
+			nflag++;
 			break;
 
 		case 'V':
@@ -221,7 +254,7 @@ main(int argc, char **argv, char **envp)
 				error("No path specified to \"-P\".");
 				usage();
 			}
-			if ((cp = searchpath(optarg)) != NULL)
+			if ((cp = searchpath(optarg)))
 				path_remsh = xstrdup(cp);
 			else {
 				error("No component of path \"%s\" exists.",
@@ -262,12 +295,8 @@ main(int argc, char **argv, char **envp)
 		fatalerr(
 		 "The -n flag and \"verify\" mode may not both be used.");
 
-	if (path_remsh == NULL) {
-		if ((cp = getenv("RSH")) != NULL && *cp != '\0')
-			path_remsh = cp;
-		else
-			path_remsh = _PATH_RSH;
-	}
+	if (path_remsh == NULL)
+		path_remsh = getenv("RSH");
 
 	/*
 	 * Don't fork children for nflag
@@ -296,8 +325,8 @@ main(int argc, char **argv, char **envp)
 /*
  * Open a distfile
  */
-FILE *
-opendist(char *distfile)
+FILE *opendist(distfile)
+	char *distfile;
 {
 	char *file = NULL;
 	FILE *fp;
@@ -331,20 +360,26 @@ opendist(char *distfile)
 /*
  * Print usage message and exit.
  */
-static void
-usage(void)
+void
+usage()
 {
-	extern char *__progname;
+	char *sopts = "cDFnv";
 
 	(void) fprintf(stderr,
-		"usage: %s [-DFnV] [-A num] [-a num] "
-		"[-c mini_distfile]\n"
-		"\t[-d var=value] [-f distfile] [-L remote_logopts] "
-		"[-l local_logopts]\n"
-		"\t[-M maxproc] [-m host] [-o distopts] [-P rsh-path] "
-		"[-p rdistd-path]\n"
-		"\t[-t timeout] [name ...]\n", __progname);
+		      "Usage: %s [-%s] [-A <num>] [-a <num>] [-d var=value]\n",
+		       progname, sopts);
+	(void) fprintf(stderr, 
+       "\t[-f distfile] [-l <msgopt>] [-L <msgopt>] [-M <maxproc>]\n");
+	(void) fprintf(stderr, 
+       "\t[-m host] [-o <distopts>] [-p <rdistd-cmd>] [-P <rsh-path>]\n");
+	(void) fprintf(stderr, 
+       "\t[-t <timeout>] [target ...]\n");
 
+	(void) fprintf(stderr,
+		      "OR:    %s [-%s] -c source [...] machine[:dest]\n", 
+		       progname, sopts);
+
+	(void) fprintf(stderr, "OR:    %s -V\n", progname);
 
 	(void) fprintf(stderr, "\nThe values for <distopts> are:\n\t%s\n",
 		       getdistoptlist());
@@ -358,14 +393,16 @@ usage(void)
  * rcp like interface for distributing files.
  */
 void
-docmdargs(int nargs, char **args)
+docmdargs(nargs, args)
+	int nargs;
+	char *args[];
 {
-	struct namelist *nl, *prev;
-	char *cp;
+	register struct namelist *nl, *prev;
+	register char *cp;
 	struct namelist *files, *hosts;
-	struct subcmd *scmds;
+	struct subcmd *cmds;
 	char *dest;
-	static struct namelist tnl;
+	static struct namelist tnl = { NULL, NULL };
 	int i;
 
 	if (nargs < 2)
@@ -387,54 +424,52 @@ docmdargs(int nargs, char **args)
 	if ((dest = strchr(cp, ':')) != NULL)
 		*dest++ = '\0';
 	tnl.n_name = cp;
-	tnl.n_regex = NULL;
-	tnl.n_next = NULL;
 	hosts = expand(&tnl, E_ALL);
 	if (nerrs)
 		exit(1);
 
 	if (dest == NULL || *dest == '\0')
-		scmds = NULL;
+		cmds = NULL;
 	else {
-		scmds = makesubcmd(INSTALL);
-		scmds->sc_options = options;
-		scmds->sc_name = dest;
+		cmds = makesubcmd(INSTALL);
+		cmds->sc_options = options;
+		cmds->sc_name = dest;
 	}
 
 	debugmsg(DM_MISC, "docmdargs()\nfiles = %s", getnlstr(files));
 	debugmsg(DM_MISC, "host = %s", getnlstr(hosts));
 
-	insert(NULL, files, hosts, scmds);
-	docmds(NULL, 0, NULL);
+	insert(NULL, files, hosts, cmds);
+	docmds(0, NULL, 0, (char **)NULL);
 }
 
 /*
  * Get a list of NAME blocks (mostly for debugging).
  */
-char *
-getnlstr(struct namelist *nl)
+extern char *getnlstr(nl)
+	register struct namelist *nl;
 {
 	static char buf[16384];
-	size_t len = 0;
+	register int count = 0, len = 0;
 
-	(void) snprintf(buf, sizeof(buf), "(");
+	(void) sprintf(buf, "(");
 
 	while (nl != NULL) {
 		if (nl->n_name == NULL)
 			continue;
 		len += strlen(nl->n_name) + 2;
 		if (len >= sizeof(buf)) {
-			(void) strlcpy(buf,
-				       "getnlstr() Buffer not large enough",
-				       sizeof(buf));
+			(void) strcpy(buf,
+				      "getnlstr() Buffer not large enough");
 			return(buf);
 		}
-		(void) strlcat(buf, " ", sizeof(buf));
-		(void) strlcat(buf, nl->n_name, sizeof(buf));
+		++count;
+		(void) strcat(buf, " ");
+		(void) strcat(buf, nl->n_name);
 		nl = nl->n_next;
 	}
 
-	(void) strlcat(buf, " )", sizeof(buf));
+	(void) strcat(buf, " )");
 
 	return(buf);
 }

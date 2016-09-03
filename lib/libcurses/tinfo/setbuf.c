@@ -1,7 +1,7 @@
-/* $OpenBSD: setbuf.c,v 1.5 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: setbuf.c,v 1.3 1999/03/02 06:23:29 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2003,2007 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,6 +33,8 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
+
 /*
 **	setbuf.c
 **
@@ -42,7 +44,7 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: setbuf.c,v 1.5 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: setbuf.c,v 1.5 1999/02/27 20:00:15 tom Exp $")
 
 /*
  * If the output file descriptor is connected to a tty (the typical case) it
@@ -99,54 +101,46 @@ MODULE_ID("$Id: setbuf.c,v 1.5 2010/01/12 23:22:06 nicm Exp $")
  * do indeed get confused by changing setbuf on/off, and will overrun the
  * buffer.  So we disable this by default (there may yet be a workaround).
  */
-NCURSES_EXPORT(void)
-_nc_set_buffer(FILE *ofp, bool buffered)
+void _nc_set_buffer(FILE *ofp, bool buffered)
 {
-    /* optional optimization hack -- do before any output to ofp */
+	/* optional optimization hack -- do before any output to ofp */
 #if HAVE_SETVBUF || HAVE_SETBUFFER
-    if (SP->_buffered != buffered) {
 	unsigned buf_len;
 	char *buf_ptr;
 
 	if (getenv("NCURSES_NO_SETBUF") != 0)
-	    return;
+		return;
 
 	fflush(ofp);
-#ifdef __DJGPP__
-	setmode(ofp, O_BINARY);
-#endif
-	if (buffered != 0) {
-	    buf_len = min(LINES * (COLS + 6), 2800);
-	    if ((buf_ptr = SP->_setbuf) == 0) {
-		if ((buf_ptr = typeMalloc(char, buf_len)) == NULL)
-		      return;
-		SP->_setbuf = buf_ptr;
-		/* Don't try to free this! */
-	    }
+	if ((SP->_buffered = buffered) != 0) {
+		buf_len = min(LINES * (COLS + 6), 2800);
+	 	if ((buf_ptr = SP->_setbuf) == 0) {
+			if ((buf_ptr = typeMalloc(char, buf_len)) == NULL)
+				return;
+			SP->_setbuf = buf_ptr;
+			/* Don't try to free this! */
+		}
 #if !USE_SETBUF_0
-	    else
-		return;
+		else return;
 #endif
 	} else {
 #if !USE_SETBUF_0
-	    return;
+		return;
 #else
-	    buf_len = 0;
-	    buf_ptr = 0;
+		buf_len = 0;
+		buf_ptr = 0;
 #endif
 	}
 
 #if HAVE_SETVBUF
-#ifdef SETVBUF_REVERSED		/* pre-svr3? */
+#ifdef SETVBUF_REVERSED	/* pre-svr3? */
 	(void) setvbuf(ofp, buf_ptr, buf_len, buf_len ? _IOFBF : _IOLBF);
 #else
 	(void) setvbuf(ofp, buf_ptr, buf_len ? _IOFBF : _IOLBF, buf_len);
 #endif
 #elif HAVE_SETBUFFER
-	(void) setbuffer(ofp, buf_ptr, (int) buf_len);
+	(void) setbuffer(ofp, buf_ptr, (int)buf_len);
 #endif
 
-	SP->_buffered = buffered;
-    }
 #endif /* HAVE_SETVBUF || HAVE_SETBUFFER */
 }

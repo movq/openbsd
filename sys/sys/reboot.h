@@ -1,4 +1,4 @@
-/*	$OpenBSD: reboot.h,v 1.17 2014/07/11 14:36:44 uebayasi Exp $	*/
+/*	$OpenBSD: reboot.h,v 1.9 1998/03/18 12:10:14 pefo Exp $	*/
 /*	$NetBSD: reboot.h,v 1.9 1996/04/22 01:23:25 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,9 +35,6 @@
  *
  *	@(#)reboot.h	8.2 (Berkeley) 7/10/94
  */
-
-#ifndef _SYS_REBOOT_H_
-#define	_SYS_REBOOT_H_
 
 /*
  * Arguments to reboot system call.  These are passed to the boot program,
@@ -55,7 +56,6 @@
 #define	RB_TIMEBAD	0x0800	/* don't call resettodr() in boot() */
 #define	RB_POWERDOWN	0x1000	/* attempt to power down machine */
 #define	RB_SERCONS	0x2000	/* use serial console if available */
-#define	RB_USERREQ	0x4000	/* boot() called at user request (e.g. ddb) */
 
 /*
  * Constants for converting boot-style device number to type,
@@ -93,13 +93,14 @@
 	((controller) << B_CONTROLLERSHIFT) | ((unit) << B_UNITSHIFT) | \
 	((partition) << B_PARTITIONSHIFT) | B_DEVMAGIC)
 
-#if	defined(_KERNEL) && !defined(_STANDALONE) && !defined(_LOCORE)
+#if	defined(_KERNEL) && !defined(_STANDALONE)
 
 __BEGIN_DECLS
-__dead void	reboot(int);
-__dead void	boot(int);
+
+void	boot __P((int))
+    __attribute__((__noreturn__));
+
 __END_DECLS
 
 #endif /* _KERNEL */
 
-#endif /* !_SYS_REBOOT_H_ */

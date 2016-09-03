@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.50 2015/10/16 13:37:44 millert Exp $	*/
+/*	$OpenBSD: main.c,v 1.18 1999/10/04 20:00:51 deraadt Exp $	*/
 /*	$NetBSD: main.c,v 1.22 1997/02/02 21:12:33 thorpej Exp $	*/
 
 /*
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -41,22 +45,25 @@
  *	from: @(#)main.c	8.1 (Berkeley) 6/6/93
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1992, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include <sys/param.h>
 #include <ctype.h>
-#include <err.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
-
 #include "config.h"
 
-int	firstfile(const char *);
-int	yyparse(void);
+int	firstfile __P((const char *));
+int	yyparse __P((void));
 
 extern char *optarg;
 extern int optind;
@@ -66,49 +73,38 @@ static struct nvlist **nextopt;
 static struct nvlist **nextdefopt;
 static struct nvlist **nextmkopt;
 
-static __dead void stop(void);
-static int do_option(struct hashtab *, struct nvlist ***,
-    const char *, const char *, const char *);
-static int crosscheck(void);
-static int badstar(void);
-static int mksymlinks(void);
-static int hasparent(struct devi *);
-static int cfcrosscheck(struct config *, const char *, struct nvlist *);
-static void optiondelta(void);
+static __dead void stop __P((void));
+static int do_option __P((struct hashtab *, struct nvlist ***,
+			const char *, const char *, const char *));
+static int crosscheck __P((void));
+static int badstar __P((void));
+static int mksymlinks __P((void));
+static int hasparent __P((struct devi *));
+static int cfcrosscheck __P((struct config *, const char *, struct nvlist *));
+static void optiondelta __P((void));
 
 int	madedir = 0;
 
-int	verbose;
-
 void
-usage(void)
+usage()
 {
 	extern char *__progname;
 
-	fprintf(stderr,
-		"usage: %s [-p] [-b builddir] [-s srcdir] [config-file]\n"
-		"       %s [-u] [-f | -o outfile] -e infile\n",
-		__progname, __progname);
-
+	fprintf(stderr, "usage: %s [-p] [-s srcdir] [-b builddir] sysname\n",
+	    __progname);
+	fprintf(stderr, "       %s -e [-u] [-o newkernel] kernel\n", __progname);
 	exit(1);
 }
 
-int pflag = 0;
-char *sflag = NULL;
-char *bflag = NULL;
-char *startdir;
-
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	char *p;
+	register char *p;
 	const char *last_component;
 	char *outfile = NULL;
-	int ch, eflag, uflag, fflag;
-	char dirbuffer[PATH_MAX];
-
-	if (pledge("stdio rpath wpath cpath flock", NULL) == -1)
-		err(1, "pledge");
+	int pflag, ch, eflag, uflag, fflag;
 
 	pflag = eflag = uflag = fflag = 0;
 	while ((ch = getopt(argc, argv, "egpfb:s:o:u")) != -1) {
@@ -126,8 +122,6 @@ main(int argc, char *argv[])
 
 		case 'e':
 			eflag = 1;
-			if (!isatty(STDIN_FILENO))
-				verbose = 1;
 			break;
 
 		case 'g':
@@ -157,15 +151,14 @@ main(int argc, char *argv[])
 			break;
 
 		case 'b':
-			bflag = optarg;
 			builddir = optarg;
 			break;
 
 		case 's':
-			sflag = optarg;
 			srcdir = optarg;
 			break;
 
+		case '?':
 		default:
 			usage();
 		}
@@ -173,25 +166,11 @@ main(int argc, char *argv[])
 
 	argc -= optind;
 	argv += optind;
-	if (argc > 1 || (eflag && argv[0] == NULL))
-
+	if (argc > 1 || !argv[0])
 		usage();
-	if (bflag) {
-		startdir = getcwd(dirbuffer, sizeof dirbuffer);
-		if (startdir == NULL)
-			warn("Use of -b and can't getcwd, no make config");
-	} else {
-		startdir = "../../conf";
-	}
 
-	if (eflag) {
-#ifdef MAKE_BOOTSTRAP
-		fprintf(stderr, "config: UKC not available in this binary\n");
-		exit(1);
-#else
+	if (eflag)
 		return (ukc(argv[0], outfile, uflag, fflag));
-#endif
-	}
 
 	conffile = (argc == 1) ? argv[0] : "CONFIG";
 	if (firstfile(conffile)) {
@@ -226,15 +205,13 @@ main(int argc, char *argv[])
 	last_component = strrchr(conffile, '/');
 	last_component = (last_component) ? last_component + 1 : conffile;
 	if (pflag) {
-		int len = strlen(last_component) + 17;
-		p = emalloc(len);
-		(void)snprintf(p, len, "../compile/%s.PROF", last_component);
+		p  = emalloc(strlen(last_component) + 17);
+		(void)sprintf(p, "../compile/%s.PROF", last_component);
 		(void)addmkoption(intern("PROF"), "-pg");
 		(void)addoption(intern("GPROF"), NULL);
 	} else {
-		int len = strlen(last_component) + 12;
-		p = emalloc(len);
-		(void)snprintf(p, len, "../compile/%s", last_component);
+		p = emalloc(strlen(last_component) + 13);
+		(void)sprintf(p, "../compile/%s", last_component);
 	}
 	defbuilddir = (argc == 0) ? "." : p;
 
@@ -287,59 +264,50 @@ main(int argc, char *argv[])
 	if (mksymlinks() || mkmakefile() || mkheaders() || mkswap() ||
 	    mkioconf())
 		stop();
+	(void)printf("Don't forget to run \"make depend\"\n");
 	optiondelta();
 	exit(0);
 }
-
-static int
-mksymlink(const char *value, const char *path)
-{
-	int ret = 0;
-
-	if (remove(path) && errno != ENOENT) {
-		warn("config: remove(%s)", path);
-		ret = 1;
-	}
-	if (symlink(value, path)) {
-		warn("config: symlink(%s -> %s)", path, value);
-		ret = 1;
-	}
-	return (ret);
-}
-
 
 /*
  * Make a symlink for "machine" so that "#include <machine/foo.h>" works,
  * and for the machine's CPU architecture, so that works as well.
  */
 static int
-mksymlinks(void)
+mksymlinks()
 {
 	int ret;
-	char *p, buf[PATH_MAX];
+	char *p, buf[MAXPATHLEN];
 	const char *q;
 
-	snprintf(buf, sizeof buf, "arch/%s/include", machine);
+	sprintf(buf, "arch/%s/include", machine);
 	p = sourcepath(buf);
-	ret = mksymlink(p, "machine");
+	(void)unlink("machine");
+	ret = symlink(p, "machine");
+	if (ret)
+		(void)fprintf(stderr, "config: symlink(machine -> %s): %s\n",
+		    p, strerror(errno));
+
 	if (machinearch != NULL) {
-		snprintf(buf, sizeof buf, "arch/%s/include", machinearch);
+		sprintf(buf, "arch/%s/include", machinearch);
 		p = sourcepath(buf);
 		q = machinearch;
 	} else {
 		p = strdup("machine");
-		if (!p)
-			errx(1, "out of memory");
 		q = machine;
 	}
-	ret |= mksymlink(p, q);
+	(void)unlink(q);
+	ret = symlink(p, q);
+	if (ret)
+		(void)fprintf(stderr, "config: symlink(%s -> %s): %s\n",
+		    q, p, strerror(errno));
 	free(p);
 
 	return (ret);
 }
 
 static __dead void
-stop(void)
+stop()
 {
 	(void)fprintf(stderr, "*** Stop.\n");
 	exit(1);
@@ -349,10 +317,12 @@ stop(void)
  * Define a standard option, for which a header file will be generated.
  */
 void
-defoption(const char *name)
+defoption(name)
+	const char *name;
 {
-	char *p, *low, c;
-	const char *n;
+	register const char *n;
+	register char *p, c;
+	char low[500];
 
 	/*
 	 * Convert to lower case.  The header file name will be
@@ -361,61 +331,18 @@ defoption(const char *name)
 	 * original string will be stored in the nvlist for use
 	 * in the header file.
 	 */
-	low = emalloc(strlen(name) + 1);
 	for (n = name, p = low; (c = *n) != '\0'; n++)
-		*p++ = isupper((unsigned char)c) ?
-		    tolower((unsigned char)c) : c;
+		*p++ = isupper(c) ? tolower(c) : c;
 	*p = 0;
 
 	n = intern(low);
-	free(low);
 	(void)do_option(defopttab, &nextdefopt, n, name, "defopt");
 
 	/*
-	 * Insert a verbatim copy of the option name, as well,
+	 * Insert a verbatum copy of the option name, as well,
 	 * to speed lookups when creating the Makefile.
 	 */
 	(void)ht_insert(defopttab, name, (void *)name);
-}
-
-/*
- * Remove an option.
- */
-void
-removeoption(const char *name)
-{
-	struct nvlist *nv, *nvt;
-	char *p, *low, c;
-	const char *n;
-
-	if ((nv = ht_lookup(opttab, name)) != NULL) {
-		if (options == nv) {
-			options = nv->nv_next;
-			nvfree(nv);
-		} else {
-			nvt = options;
-			while (nvt->nv_next != NULL) {
-				if (nvt->nv_next == nv) {
-					nvt->nv_next = nvt->nv_next->nv_next;
-					nvfree(nv);
-					break;
-				} else
-					nvt = nvt->nv_next;
-			}
-		}
-	}
-
-	(void)ht_remove(opttab, name);
-
-	low = emalloc(strlen(name) + 1);
-	/* make lowercase, then remove from select table */
-	for (n = name, p = low; (c = *n) != '\0'; n++)
-		*p++ = isupper((unsigned char)c) ?
-		    tolower((unsigned char)c) : c;
-	*p = 0;
-	n = intern(low);
-	free(low);
-	(void)ht_remove(selecttab, n);
 }
 
 /*
@@ -423,22 +350,21 @@ removeoption(const char *name)
  * are "optional foo".
  */
 void
-addoption(const char *name, const char *value)
+addoption(name, value)
+	const char *name, *value;
 {
-	char *p, *low, c;
-	const char *n;
+	register const char *n;
+	register char *p, c;
+	char low[500];
 
 	if (do_option(opttab, &nextopt, name, value, "options"))
 		return;
 
-	low = emalloc(strlen(name) + 1);
 	/* make lowercase, then add to select table */
 	for (n = name, p = low; (c = *n) != '\0'; n++)
-		*p++ = isupper((unsigned char)c) ?
-		    tolower((unsigned char)c) : c;
+		*p++ = isupper(c) ? tolower(c) : c;
 	*p = 0;
 	n = intern(low);
-	free(low);
 	(void)ht_insert(selecttab, n, (void *)n);
 }
 
@@ -446,7 +372,8 @@ addoption(const char *name, const char *value)
  * Add a "make" option.
  */
 void
-addmkoption(const char *name, const char *value)
+addmkoption(name, value)
+	const char *name, *value;
 {
 
 	(void)do_option(mkopttab, &nextmkopt, name, value, "mkoptions");
@@ -456,10 +383,12 @@ addmkoption(const char *name, const char *value)
  * Add a name=value pair to an option list.  The value may be NULL.
  */
 static int
-do_option(struct hashtab *ht, struct nvlist ***nppp, const char *name,
-    const char *value, const char *type)
+do_option(ht, nppp, name, value, type)
+	struct hashtab *ht;
+	struct nvlist ***nppp;
+	const char *name, *value, *type;
 {
-	struct nvlist *nv;
+	register struct nvlist *nv;
 
 	/* assume it will work */
 	nv = newnv(name, value, NULL, 0, NULL);
@@ -485,9 +414,11 @@ do_option(struct hashtab *ht, struct nvlist ***nppp, const char *name,
  * on the given device attachment (or any units, if unit == WILD).
  */
 int
-deva_has_instances(struct deva *deva, int unit)
+deva_has_instances(deva, unit)
+	register struct deva *deva;
+	int unit;
 {
-	struct devi *i;
+	register struct devi *i;
 
 	if (unit == WILD)
 		return (deva->d_ihead != NULL);
@@ -502,9 +433,11 @@ deva_has_instances(struct deva *deva, int unit)
  * on the given base (or any units, if unit == WILD).
  */
 int
-devbase_has_instances(struct devbase *dev, int unit)
+devbase_has_instances(dev, unit)
+	register struct devbase *dev;
+	int unit;
 {
-	struct deva *da;
+	register struct deva *da;
 
 	for (da = dev->d_ahead; da != NULL; da = da->d_bsame)
 		if (deva_has_instances(da, unit))
@@ -513,9 +446,10 @@ devbase_has_instances(struct devbase *dev, int unit)
 }
 
 static int
-hasparent(struct devi *i)
+hasparent(i)
+	register struct devi *i;
 {
-	struct nvlist *nv;
+	register struct nvlist *nv;
 	int atunit = i->i_atunit;
 
 	/*
@@ -526,7 +460,7 @@ hasparent(struct devi *i)
 	 *	    we search its devbase for a matching unit number.
 	 *	(2) If the device was attach to an attribute, then we
 	 *	    search all attributes the device can be attached to
-	 *	    for parents (with appropriate unit numbers) that
+	 *	    for parents (with appropriate unit numebrs) that
 	 *	    may be able to attach the device.
 	 */
 
@@ -547,10 +481,13 @@ hasparent(struct devi *i)
 }
 
 static int
-cfcrosscheck(struct config *cf, const char *what, struct nvlist *nv)
+cfcrosscheck(cf, what, nv)
+	register struct config *cf;
+	const char *what;
+	register struct nvlist *nv;
 {
-	struct devbase *dev;
-	struct devi *pd;
+	register struct devbase *dev;
+	register struct devi *pd;
 	int errs, devminor;
 
 	if (maxpartitions <= 0)
@@ -578,7 +515,6 @@ cfcrosscheck(struct config *cf, const char *what, struct nvlist *nv)
 		    cf->cf_name, what, nv->nv_str, nv->nv_str);
 		errs++;
 loop:
-		;
 	}
 	return (errs);
 }
@@ -590,10 +526,10 @@ loop:
  * are there.
  */
 int
-crosscheck(void)
+crosscheck()
 {
-	struct devi *i;
-	struct config *cf;
+	register struct devi *i;
+	register struct config *cf;
 	int errs;
 
 	errs = 0;
@@ -626,12 +562,12 @@ crosscheck(void)
  * Check to see if there is a *'d unit with a needs-count file.
  */
 int
-badstar(void)
+badstar()
 {
-	struct devbase *d;
-	struct deva *da;
-	struct devi *i;
-	int errs, n;
+	register struct devbase *d;
+	register struct deva *da;
+	register struct devi *i;
+	register int errs, n;
 
 	errs = 0;
 	for (d = allbases; d != NULL; d = d->d_next) {
@@ -663,7 +599,7 @@ badstar(void)
  * This will be called when we see the first include.
  */
 void
-setupdirs(void)
+setupdirs()
 {
 	struct stat st;
 
@@ -688,17 +624,17 @@ setupdirs(void)
 		madedir = 1;
 	} else if (!S_ISDIR(st.st_mode)) {
 		(void)fprintf(stderr, "config: %s is not a directory\n",
-		    builddir);
+			      builddir);
 		exit(2);
 	}
 	if (chdir(builddir) != 0) {
 		(void)fprintf(stderr, "config: cannot change to %s\n",
-		    builddir);
+			      builddir);
 		exit(2);
 	}
 	if (stat(srcdir, &st) != 0 || !S_ISDIR(st.st_mode)) {
 		(void)fprintf(stderr, "config: %s is not a directory\n",
-		    srcdir);
+			      srcdir);
 		exit(2);
 	}
 }
@@ -709,15 +645,15 @@ struct opt {
 };
 
 int
-optcmp(const void *v1, const void *v2)
+optcmp(sp1, sp2)
+	struct opt *sp1, *sp2;
 {
-	const struct opt *sp1 = v1, *sp2 = v2;
 	int r;
 
 	r = strcmp(sp1->name, sp2->name);
 	if (r == 0) {
 		if (!sp1->val && !sp2->val)
-			r = 0;
+			r = 0;	
 		else if (sp1->val && !sp2->val)
 			r = -1;
 		else if (sp2->val && !sp1->val)
@@ -728,9 +664,9 @@ optcmp(const void *v1, const void *v2)
 }
 
 void
-optiondelta(void)
+optiondelta()
 {
-	struct nvlist *nv;
+	register struct nvlist *nv;
 	char nbuf[BUFSIZ], obuf[BUFSIZ];	/* XXX size */
 	int nnewopts, ret = 0, i;
 	struct opt *newopts;
@@ -738,7 +674,7 @@ optiondelta(void)
 
 	for (nnewopts = 0, nv = options; nv != NULL; nv = nv->nv_next)
 		nnewopts++;
-	newopts = ereallocarray(NULL, nnewopts, sizeof(struct opt));
+	newopts = (struct opt *)malloc(nnewopts * sizeof(struct opt));
 	if (newopts == NULL)
 		ret = 0;
 	for (i = 0, nv = options; nv != NULL; nv = nv->nv_next, i++) {

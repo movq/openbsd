@@ -1,4 +1,4 @@
-/*	$OpenBSD: signal.h,v 1.10 2016/05/10 18:39:42 deraadt Exp $	*/
+/*	$OpenBSD: signal.h,v 1.3 1996/10/30 22:39:29 niklas Exp $	*/
 /*	$NetBSD: signal.h,v 1.2 1995/02/16 03:08:08 cgd Exp $	*/
 
 /*
@@ -28,14 +28,12 @@
  * rights to redistribute these changes.
  */
 
-#ifndef _MACHINE_SIGNAL_H_
-#define	_MACHINE_SIGNAL_H_
+#ifndef _ALPHA_SIGNAL_H_
+#define	_ALPHA_SIGNAL_H_
 
-#include <sys/cdefs.h>
+typedef long	sig_atomic_t;
 
-typedef int	sig_atomic_t;
-
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 420
+#ifndef _ANSI_SOURCE
 /*
  * Information pushed on stack when a signal is delivered.
  * This is used by the kernel to restore state following
@@ -47,8 +45,8 @@ typedef int	sig_atomic_t;
  * representations of 'struct reg' and 'struct fpreg', respectively.
  */
 struct  sigcontext {
-	long	sc_cookie;
-	long	sc_mask;                /* signal mask to restore XXX should be int */
+	long	sc_onstack;             /* sigstack state to restore */
+	long	sc_mask;                /* signal mask to restore */
 	long	sc_pc;                  /* pc to restore */
 	long	sc_ps;			/* ps to restore */
 	unsigned long sc_regs[32];	/* integer register set (see above) */
@@ -60,5 +58,6 @@ struct  sigcontext {
 	long	sc_reserved[2];		/* XXX */
 	long	sc_xxx[8];		/* XXX */
 };
-#endif /* __BSD_VISIBLE || __XPG_VISIBLE >= 420 */
-#endif /* !_MACHINE_SIGNAL_H_*/
+
+#endif /* !_ANSI_SOURCE */
+#endif /* !_ALPHA_SIGNAL_H_*/

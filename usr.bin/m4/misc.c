@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.46 2015/12/07 14:12:46 espie Exp $	*/
+/*	$OpenBSD: misc.c,v 1.12 1999/09/14 08:35:17 espie Exp $	*/
 /*	$NetBSD: misc.c,v 1.6 1995/09/28 05:37:41 tls Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,12 +37,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)misc.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: misc.c,v 1.12 1999/09/14 08:35:17 espie Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <errno.h>
 #include <unistd.h>
-#include <stdarg.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
@@ -51,22 +61,27 @@
 
 char *ep;		/* first free char in strspace */
 static char *strspace;	/* string space for evaluation */
-char *endest;		/* end of string space	       */
+static char *endest;	/* end of string space	       */
 static size_t strsize = STRSPMAX;
 static size_t bufsize = BUFSIZE;
+static int low_sp = 0;
 
-unsigned char *buf;			/* push-back buffer	       */
-unsigned char *bufbase;			/* the base for current ilevel */
-unsigned char *bbase[MAXINP];		/* the base for each ilevel    */
-unsigned char *bp;			/* first available character   */
-unsigned char *endpbb;			/* end of push-back buffer     */
+pbent *buf;			/* push-back buffer	       */
+pbent *bufbase;			/* the base for current ilevel */
+pbent *bbase[MAXINP];		/* the base for each ilevel    */
+pbent *bp; 			/* first available character   */
+static pbent *endpbb;			/* end of push-back buffer     */
 
 
+static void enlarge_bufspace();
+static void enlarge_strspace();
 /*
  * find the index of second str in the first str.
  */
 ptrdiff_t
-indx(const char *s1, const char *s2)
+indx(s1, s2)
+	const char *s1;
+	const char *s2;
 {
 	char *t;
 
@@ -77,13 +92,12 @@ indx(const char *s1, const char *s2)
 		return (t - s1);
 }
 /*
- *  pushback - push character back onto input
+ *  putback - push character back onto input
  */
 void
-pushback(int c)
+putback(c)
+	pbent c;
 {
-	if (c == EOF)
-		return;
 	if (bp >= endpbb)
 		enlarge_bufspace();
 	*bp++ = c;
@@ -91,11 +105,12 @@ pushback(int c)
 
 /*
  *  pbstr - push string back onto input
- *          pushback is replicated to improve
+ *          putback is replicated to improve
  *          performance.
  */
 void
-pbstr(const char *s)
+pbstr(s)
+	char *s;
 {
 	size_t n;
 
@@ -110,61 +125,31 @@ pbstr(const char *s)
  *  pbnum - convert number to string, push back on input.
  */
 void
-pbnum(int n)
+pbnum(n)
+	int n;
 {
-	pbnumbase(n, 10, 0);
-}
-
-void
-pbnumbase(int n, int base, int d)
-{
-	static char digits[36] = "0123456789abcdefghijklmnopqrstuvwxyz";
 	int num;
-	int printed = 0;
-
-	if (base > 36)
-		m4errx(1, "base %d > 36: not supported.", base);
-
-	if (base < 2)
-		m4errx(1, "bad base %d for conversion.", base);
 
 	num = (n < 0) ? -n : n;
 	do {
-		pushback(digits[num % base]);
-		printed++;
+		putback(num % 10 + '0');
 	}
-	while ((num /= base) > 0);
+	while ((num /= 10) > 0);
 
 	if (n < 0)
-		printed++;
-	while (printed++ < d)
-		pushback('0');
-
-	if (n < 0)
-		pushback('-');
+		putback('-');
 }
 
-/*
- *  pbunsigned - convert unsigned long to string, push back on input.
- */
-void
-pbunsigned(unsigned long n)
-{
-	do {
-		pushback(n % 10 + '0');
-	}
-	while ((n /= 10) > 0);
-}
 
-void
+void 
 initspaces()
 {
 	int i;
 
-	strspace = xalloc(strsize+1, NULL);
+	strspace = xalloc(strsize+1);
 	ep = strspace;
 	endest = strspace+strsize;
-	buf = xalloc(bufsize, NULL);
+	buf = (pbent *)xalloc(bufsize * sizeof(pbent));
 	bufbase = buf;
 	bp = buf;
 	endpbb = buf + bufsize;
@@ -172,35 +157,41 @@ initspaces()
 		bbase[i] = buf;
 }
 
-void
-enlarge_strspace()
+/* XXX when chrsave is called, the current argument is
+ * always topmost on the stack.  We make use of this to
+ * duplicate it transparently, and to reclaim the correct
+ * space when the stack is unwound.
+ */
+static
+void enlarge_strspace()
 {
 	char *newstrspace;
-	int i;
 
+	low_sp = sp;
 	strsize *= 2;
 	newstrspace = malloc(strsize + 1);
 	if (!newstrspace)
 		errx(1, "string space overflow");
 	memcpy(newstrspace, strspace, strsize/2);
-	for (i = 0; i <= sp; i++)
-		if (sstack[i] == STORAGE_STRSPACE)
-			mstack[i].sstr = (mstack[i].sstr - strspace)
-			    + newstrspace;
+		/* reclaim memory in the easy, common case. */
+	if (ep == strspace)
+		free(strspace);
+	mstack[sp].sstr = (mstack[sp].sstr-strspace) + newstrspace;
 	ep = (ep-strspace) + newstrspace;
-	free(strspace);
 	strspace = newstrspace;
 	endest = strspace + strsize;
 }
 
-void
-enlarge_bufspace()
+static
+void enlarge_bufspace()
 {
-	unsigned char *newbuf;
+	pbent *newbuf;
 	int i;
 
-	bufsize += bufsize/2;
-	newbuf = xrealloc(buf, bufsize, "too many characters pushed back");
+	bufsize *= 2;
+	newbuf = realloc(buf, bufsize*sizeof(pbent));
+	if (!newbuf)
+		errx(1, "too many characters pushed back");
 	for (i = 0; i < MAXINP; i++)
 		bbase[i] = (bbase[i]-buf)+newbuf;
 	bp = (bp-buf)+newbuf;
@@ -213,36 +204,52 @@ enlarge_bufspace()
  *  chrsave - put single char on string space
  */
 void
-chrsave(int c)
+chrsave(c)
+	char c;
 {
-	if (ep >= endest)
+	if (ep >= endest) 
 		enlarge_strspace();
 	*ep++ = c;
+}
+
+/* 
+ * so we reclaim what string space we can
+ */
+char * 
+compute_prevep()
+{
+	if (fp+3 <= low_sp)
+		{
+		return strspace;
+		}
+	else
+		{
+		return mstack[fp+3].sstr;
+		}
 }
 
 /*
  * read in a diversion file, and dispose it.
  */
 void
-getdiv(int n)
+getdiv(n)
+	int n;
 {
 	int c;
 
 	if (active == outfile[n])
-		m4errx(1, "undivert: diversion still active.");
+		errx(1, "undivert: diversion still active");
 	rewind(outfile[n]);
 	while ((c = getc(outfile[n])) != EOF)
 		putc(c, active);
 	(void) fclose(outfile[n]);
-	outfile[n] = NULL;
 }
 
 void
-onintr(int signo)
+onintr(signo)
+	int signo;
 {
-#define intrmessage	"m4: interrupted.\n"
-	write(STDERR_FILENO, intrmessage, sizeof(intrmessage)-1);
-	_exit(1);
+	errx(1, "interrupted.");
 }
 
 /*
@@ -253,124 +260,26 @@ killdiv()
 {
 	int n;
 
-	for (n = 0; n < maxout; n++)
+	for (n = 0; n < MAXOUT; n++)
 		if (outfile[n] != NULL) {
 			(void) fclose(outfile[n]);
 		}
 }
 
-extern char *__progname;
-
-void
-m4errx(int eval, const char *fmt, ...)
+char *
+xalloc(n)
+	unsigned long n;
 {
-	fprintf(stderr, "%s: ", __progname);
-	fprintf(stderr, "%s at line %lu: ", CURRENT_NAME, CURRENT_LINE);
-	if (fmt != NULL) {
-		va_list ap;
+	char *p = malloc(n);
 
-		va_start(ap, fmt);
-		vfprintf(stderr, fmt, ap);
-		va_end(ap);
-	}
-	fprintf(stderr, "\n");
-	exit(eval);
-}
-
-/*
- * resizedivs: allocate more diversion files */
-void
-resizedivs(int n)
-{
-	int i;
-
-	outfile = xreallocarray(outfile, n, sizeof(FILE *),
-	    "too many diverts %d", n);
-	for (i = maxout; i < n; i++)
-		outfile[i] = NULL;
-	maxout = n;
-}
-
-void *
-xalloc(size_t n, const char *fmt, ...)
-{
-	void *p = malloc(n);
-
-	if (p == NULL) {
-		if (fmt == NULL)
-			err(1, "malloc");
-		else {
-			va_list va;
-
-			va_start(va, fmt);
-			verr(1, fmt, va);
-			va_end(va);
-		}
-	}
-	return p;
-}
-
-void *
-xcalloc(size_t n, size_t s, const char *fmt, ...)
-{
-	void *p = calloc(n, s);
-
-	if (p == NULL) {
-		if (fmt == NULL)
-			err(1, "calloc");
-		else {
-			va_list va;
-
-			va_start(va, fmt);
-			verr(1, fmt, va);
-			va_end(va);
-		}
-	}
-	return p;
-}
-
-void *
-xrealloc(void *old, size_t n, const char *fmt, ...)
-{
-	char *p = realloc(old, n);
-
-	if (p == NULL) {
-		free(old);
-		if (fmt == NULL)
-			err(1, "realloc");
-		else {
-			va_list va;
-
-			va_start(va, fmt);
-			verr(1, fmt, va);
-			va_end(va);
-		}
-	}
-	return p;
-}
-
-void *
-xreallocarray(void *old, size_t s1, size_t s2, const char *fmt, ...)
-{
-	void *p = reallocarray(old, s1, s2);
-
-	if (p == NULL) {
-		free(old);
-		if (fmt == NULL)
-			err(1, "reallocarray");
-		else {
-			va_list va;
-
-			va_start(va, fmt);
-			verr(1, fmt, va);
-			va_end(va);
-		}
-	}
+	if (p == NULL)
+		err(1, "malloc");
 	return p;
 }
 
 char *
-xstrdup(const char *s)
+xstrdup(s)
+	const char *s;
 {
 	char *p = strdup(s);
 	if (p == NULL)
@@ -381,87 +290,7 @@ xstrdup(const char *s)
 void
 usage()
 {
-	fprintf(stderr, "usage: m4 [-gPs] [-Dname[=value]] [-d flags] "
-			"[-I dirname] [-o filename]\n"
-			"\t[-t macro] [-Uname] [file ...]\n");
+	fprintf(stderr, "usage: m4 [-Dname[=val]] [-Uname] [-I dirname...]\n");
 	exit(1);
 }
 
-int
-obtain_char(struct input_file *f)
-{
-	if (f->c == EOF)
-		return EOF;
-
-	f->c = fgetc(f->file);
-	if (f->c == '\n')
-		f->lineno++;
-
-	return f->c;
-}
-
-void
-set_input(struct input_file *f, FILE *real, const char *name)
-{
-	f->file = real;
-	f->lineno = 1;
-	f->c = 0;
-	f->name = xstrdup(name);
-	emit_synchline();
-}
-
-void
-do_emit_synchline()
-{
-	fprintf(active, "#line %lu \"%s\"\n",
-	    infile[ilevel].lineno, infile[ilevel].name);
-	infile[ilevel].synch_lineno = infile[ilevel].lineno;
-}
-
-void
-release_input(struct input_file *f)
-{
-	if (ferror(f->file))
-		errx(1, "Fatal error reading from %s\n", f->name);
-	if (f->file != stdin)
-	    fclose(f->file);
-	f->c = EOF;
-	/*
-	 * XXX can't free filename, as there might still be
-	 * error information pointing to it.
-	 */
-}
-
-void
-doprintlineno(struct input_file *f)
-{
-	pbunsigned(f->lineno);
-}
-
-void
-doprintfilename(struct input_file *f)
-{
-	pbstr(rquote);
-	pbstr(f->name);
-	pbstr(lquote);
-}
-
-/*
- * buffer_mark/dump_buffer: allows one to save a mark in a buffer,
- * and later dump everything that was added since then to a file.
- */
-size_t
-buffer_mark()
-{
-	return bp - buf;
-}
-
-
-void
-dump_buffer(FILE *f, size_t m)
-{
-	unsigned char *s;
-
-	for (s = bp; s-buf > m;)
-		fputc(*--s, f);
-}

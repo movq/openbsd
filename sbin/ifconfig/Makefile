@@ -1,10 +1,6 @@
-#	$OpenBSD: Makefile,v 1.14 2016/05/03 17:52:33 jca Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:36:46 deraadt Exp $
 
 PROG=	ifconfig
-SRCS=	ifconfig.c brconfig.c
 MAN=	ifconfig.8
-
-LDADD=	-lutil
-DPADD=	${LIBUTIL}
 
 .include <bsd.prog.mk>

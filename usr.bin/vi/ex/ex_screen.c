@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_screen.c,v 1.10 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_screen.c	10.11 (Berkeley) 6/29/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -28,10 +30,12 @@
  * ex_bg --	:bg
  *	Hide the screen.
  *
- * PUBLIC: int ex_bg(SCR *, EXCMD *);
+ * PUBLIC: int ex_bg __P((SCR *, EXCMD *));
  */
 int
-ex_bg(SCR *sp, EXCMD *cmdp)
+ex_bg(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	return (vs_bg(sp));
 }
@@ -40,10 +44,12 @@ ex_bg(SCR *sp, EXCMD *cmdp)
  * ex_fg --	:fg [file]
  *	Show the screen.
  *
- * PUBLIC: int ex_fg(SCR *, EXCMD *);
+ * PUBLIC: int ex_fg __P((SCR *, EXCMD *));
  */
 int
-ex_fg(SCR *sp, EXCMD *cmdp)
+ex_fg(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	SCR *nsp;
 	int newscreen;
@@ -64,10 +70,12 @@ ex_fg(SCR *sp, EXCMD *cmdp)
  * ex_resize --	:resize [+-]rows
  *	Change the screen size.
  *
- * PUBLIC: int ex_resize(SCR *, EXCMD *);
+ * PUBLIC: int ex_resize __P((SCR *, EXCMD *));
  */
 int
-ex_resize(SCR *sp, EXCMD *cmdp)
+ex_resize(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	adj_t adj;
 
@@ -93,26 +101,25 @@ ex_resize(SCR *sp, EXCMD *cmdp)
  * ex_sdisplay --
  *	Display the list of screens.
  *
- * PUBLIC: int ex_sdisplay(SCR *);
+ * PUBLIC: int ex_sdisplay __P((SCR *));
  */
 int
-ex_sdisplay(SCR *sp)
+ex_sdisplay(sp)
+	SCR *sp;
 {
 	GS *gp;
 	SCR *tsp;
 	int cnt, col, len, sep;
 
 	gp = sp->gp;
-	if (TAILQ_EMPTY(&gp->hq)) {
-		msgq(sp, M_INFO, "No background screens to display");
+	if ((tsp = gp->hq.cqh_first) == (void *)&gp->hq) {
+		msgq(sp, M_INFO, "149|No background screens to display");
 		return (0);
 	}
 
 	col = len = sep = 0;
-	cnt = 1;
-	TAILQ_FOREACH(tsp, &gp->hq, q) {
-		if (INTERRUPTED(sp))
-			break;
+	for (cnt = 1; tsp != (void *)&gp->hq && !INTERRUPTED(sp);
+	    tsp = tsp->q.cqe_next) {
 		col += len = strlen(tsp->frp->name) + sep;
 		if (col >= sp->cols - 1) {
 			col = len;

@@ -1,41 +1,53 @@
-.\" $OpenBSD: dirname.3,v 1.20 2013/09/30 12:02:32 millert Exp $
 .\"
 .\" Copyright (c) 1997 Todd C. Miller <Todd.Miller@courtesan.com>
+.\" All rights reserved.
 .\"
-.\" Permission to use, copy, modify, and distribute this software for any
-.\" purpose with or without fee is hereby granted, provided that the above
-.\" copyright notice and this permission notice appear in all copies.
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission.
 .\"
-.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\" THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+.\" INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+.\" AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+.\" THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+.\" EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+.\" PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+.\" OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+.\" WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+.\" OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+.\" ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: September 30 2013 $
+.\" $OpenBSD: dirname.3,v 1.8 1999/07/17 09:32:30 downsj Exp $
+.\"
+.Dd August 17, 1997
 .Dt DIRNAME 3
 .Os
 .Sh NAME
 .Nm dirname
-.Nd extract the directory portion of a pathname
+.Nd extract the directory portition of a pathname
 .Sh SYNOPSIS
-.In libgen.h
+.Fd #include <libgen.h>
 .Ft char *
 .Fn dirname "const char *path"
 .Sh DESCRIPTION
 The
 .Fn dirname
-function is the converse of
+function
+is the converse of
 .Xr basename 3 ;
 it returns a pointer to the parent directory of the pathname pointed to by
 .Ar path .
 Any trailing
 .Sq \&/
 characters are not counted as part of the directory
-name.
-If
+name.  If
 .Ar path
 is a null pointer, the empty string, or contains no
 .Sq \&/
@@ -61,8 +73,19 @@ The following error codes may be set in
 .Bl -tag -width Er
 .It Bq Er ENAMETOOLONG
 The path component to be returned was larger than
-.Dv PATH_MAX .
+.Dv MAXPATHLEN .
 .El
+.Sh WARNINGS
+.Fn dirname
+returns a pointer to internal static storage space that will be overwritten
+by subsequent calls (each function has its own separate storage).
+.Pp
+Other vendor implementations of
+.Fn dirname
+may modify the contents of the string passed to
+.Fn dirname ;
+this should be taken into account when writing code which calls this function
+if portability is desired.
 .Sh SEE ALSO
 .Xr basename 1 ,
 .Xr dirname 1 ,
@@ -77,16 +100,5 @@ The
 .Fn dirname
 function first appeared in
 .Ox 2.2 .
-.Sh AUTHORS
-.An Todd C. Miller
-.Sh CAVEATS
-.Fn dirname
-returns a pointer to internal static storage space that will be overwritten
-by subsequent calls (each function has its own separate storage).
-.Pp
-Other vendor implementations of
-.Fn dirname
-may modify the contents of the string passed to
-.Fn dirname ;
-this should be taken into account when writing code which calls this function
-if portability is desired.
+.Sh AUTHOR
+Todd C. Miller <Todd.Miller@courtesan.com>

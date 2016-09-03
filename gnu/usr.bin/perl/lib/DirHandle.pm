@@ -1,7 +1,5 @@
 package DirHandle;
 
-our $VERSION = '1.04';
-
 =head1 NAME 
 
 DirHandle - supply object methods for directory handles
@@ -9,7 +7,7 @@ DirHandle - supply object methods for directory handles
 =head1 SYNOPSIS
 
     use DirHandle;
-    $d = DirHandle->new(".");
+    $d = new DirHandle ".";
     if (defined $d) {
         while (defined($_ = $d->read)) { something($_); }
         $d->rewind;
@@ -32,7 +30,7 @@ use Carp;
 use Symbol;
 
 sub new {
-    @_ >= 1 && @_ <= 2 or croak 'usage: DirHandle->new( [DIRNAME] )';
+    @_ >= 1 && @_ <= 2 or croak 'usage: new DirHandle [DIRNAME]';
     my $class = shift;
     my $dh = gensym;
     if (@_) {
@@ -44,10 +42,6 @@ sub new {
 
 sub DESTROY {
     my ($dh) = @_;
-    # Don't warn about already being closed as it may have been closed 
-    # correctly, or maybe never opened at all.
-    local($., $@, $!, $^E, $?);
-    no warnings 'io';
     closedir($dh);
 }
 

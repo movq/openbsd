@@ -1,4 +1,4 @@
-/*	$OpenBSD: cia_bus_mem.c,v 1.8 2001/11/06 19:53:13 miod Exp $	*/
+/*	$OpenBSD: cia_bus_mem.c,v 1.6 1997/01/24 19:57:38 niklas Exp $	*/
 /*	$NetBSD: cia_bus_mem.c,v 1.7 1996/11/25 03:46:09 cgd Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #include <sys/malloc.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
 #include <machine/bus.h>
 
@@ -82,4 +82,4 @@
 #define	CHIP_S_MEM_W3_SYS_END(v)					\
 	    (CIA_PCI_SMEM3 + ((HAE_MEM_REG3_MASK + 1) << 5) - 1)
 
-#include "pci_swiz_bus_mem_chipdep.c"
+#include "pcs_bus_mem_common.c"

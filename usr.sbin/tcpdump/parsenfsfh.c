@@ -1,38 +1,3 @@
-/*	$OpenBSD: parsenfsfh.c,v 1.14 2016/01/15 18:02:18 mmcc Exp $	*/
-
-/*
- * Copyright (c) 1993, 1994 Jeffrey C. Mogul, Digital Equipment Corporation,
- * Western Research Laboratory. All rights reserved.
- * Copyright (c) 2001 Compaq Computer Corporation. All rights reserved.
- *
- *  Permission to use, copy, and modify this software and its
- *  documentation is hereby granted only under the following terms and
- *  conditions.  Both the above copyright notice and this permission
- *  notice must appear in all copies of the software, derivative works
- *  or modified versions, and any portions thereof, and both notices
- *  must appear in supporting documentation.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *    1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *    2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS" AND COMPAQ COMPUTER CORPORATION
- *  DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
- *  ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.   IN NO
- *  EVENT SHALL COMPAQ COMPUTER CORPORATION BE LIABLE FOR ANY
- *  SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- *  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- *  AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- *  OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
- *  SOFTWARE.
- */
-
 /*
  * parsenfsfh.c - portable parser for NFS file handles
  *			uses all sorts of heuristics
@@ -42,10 +7,16 @@
  * Western Research Laboratory
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/parsenfsfh.c,v 1.6 1999/07/28 20:41:36 jakob Exp $ (LBL)";
+#endif
+
 #include <sys/types.h>
 #include <sys/time.h>
 
 #include <ctype.h>
+#include <memory.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -75,14 +46,21 @@
 #define	FHT_AIX32	10
 #define	FHT_HPUX9	11
 
+#ifdef	ultrix
+/* Nasty hack to keep the Ultrix C compiler from emitting bogus warnings */
+#define	XFF(x)	((u_int32_t)(x))
+#else
+#define	XFF(x)	(x)
+#endif
+
 #define	make_uint32(msb,b,c,lsb)\
-	((lsb) + ((c)<<8) + ((b)<<16) + ((msb)<<24))
+	(XFF(lsb) + (XFF(c)<<8) + (XFF(b)<<16) + (XFF(msb)<<24))
 
 #define	make_uint24(msb,b, lsb)\
-	((lsb) + ((b)<<8) + ((msb)<<16))
+	(XFF(lsb) + (XFF(b)<<8) + (XFF(msb)<<16))
 
 #define	make_uint16(msb,lsb)\
-	((lsb) + ((msb)<<8))
+	(XFF(lsb) + (XFF(msb)<<8))
 
 #ifdef	__alpha
 	/* or other 64-bit systems */
@@ -97,21 +75,46 @@
 static int is_UCX(unsigned char *);
 
 void
-Parse_fh(fh, fsidp, inop, osnamep, fsnamep)
-caddr_t *fh;
+Parse_fh(fh, fsidp, inop, osnamep, fsnamep, ourself)
+register caddr_t *fh;
 my_fsid *fsidp;
 ino_t *inop;
 char **osnamep;		/* if non-NULL, return OS name here */
 char **fsnamep;		/* if non-NULL, return server fs name here (for VMS) */
+int ourself;		/* true if file handle was generated on this host */
 {
-	unsigned char *fhp = (unsigned char *)fh;
+	register unsigned char *fhp = (unsigned char *)fh;
 	u_int32_t temp;
 	int fhtype = FHT_UNKNOWN;
 
+	if (ourself) {
+	    /* File handle generated on this host, no need for guessing */
+#if	defined(IRIX40)
+	    fhtype = FHT_IRIX4;
+#endif
+#if	defined(IRIX50)
+	    fhtype = FHT_IRIX5;
+#endif
+#if	defined(IRIX51)
+	    fhtype = FHT_IRIX5;
+#endif
+#if	defined(SUNOS4)
+	    fhtype = FHT_SUNOS4;
+#endif
+#if	defined(SUNOS5)
+	    fhtype = FHT_SUNOS5;
+#endif
+#if	defined(ultrix)
+	    fhtype = FHT_ULTRIX;
+#endif
+#if	defined(__osf__)
+	    fhtype = FHT_DECOSF;
+#endif
+	}
 	/*
 	 * This is basically a big decision tree
 	 */
-	if ((fhp[0] == 0) && (fhp[1] == 0)) {
+	else if ((fhp[0] == 0) && (fhp[1] == 0)) {
 	    /* bytes[0,1] == (0,0); rules out Ultrix, IRIX5, SUNOS5 */
 	    /* probably rules out HP-UX, AIX unless they allow major=0 */
 	    if ((fhp[2] == 0) && (fhp[3] == 0)) {
@@ -361,6 +364,7 @@ char **fsnamep;		/* if non-NULL, return server fs name here (for VMS) */
 	case FHT_UNKNOWN:
 #ifdef DEBUG
 	    {
+		/* XXX debugging */
 		int i;
 		for (i = 0; i < 32; i++)
 			(void)fprintf(stderr, "%x.", fhp[i]);
@@ -395,7 +399,7 @@ static int
 is_UCX(fhp)
 unsigned char *fhp;
 {
-	int i;
+	register int i;
 	int seen_null = 0;
 
 	for (i = 1; i < 14; i++) {

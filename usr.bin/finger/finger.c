@@ -1,4 +1,4 @@
-/*	$OpenBSD: finger.c,v 1.26 2015/11/03 05:13:35 mmcc Exp $	*/
+/*	$OpenBSD: finger.c,v 1.8 1998/07/10 15:45:15 mickey Exp $	*/
 
 /*
  * Copyright (c) 1989 The Regents of the University of California.
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,6 +46,17 @@
  *	login time is < 6 days.
  */
 
+#ifndef lint
+char copyright[] =
+"@(#) Copyright (c) 1989 The Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)finger.c	5.22 (Berkeley) 6/29/90";*/
+static char rcsid[] = "$OpenBSD: finger.c,v 1.8 1998/07/10 15:45:15 mickey Exp $";
+#endif /* not lint */
+
 /*
  * Finger prints out information about users.  It is not portable since
  * certain fields (e.g. the full user name, office, and phone numbers) are
@@ -56,14 +71,12 @@
  * well as home directory, shell, mail info, and .plan/.project files.
  */
 
+#include <sys/param.h>
 #include <sys/file.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
-#include <limits.h>
 #include <err.h>
 #include "finger.h"
 #include "extern.h"
@@ -71,17 +84,16 @@
 time_t now;
 int entries, lflag, sflag, mflag, oflag, pplan, Mflag;
 char tbuf[1024];
-PERSON *htab[HSIZE];
-PERSON *phead, *ptail;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	extern int optind;
 	extern char *__progname;
 	int ch;
-	char domain[HOST_NAME_MAX+1];
-	struct stat sb;
+	char domain[256];
 
 	oflag = 1;		/* default to old "office" behavior */
 
@@ -111,34 +123,24 @@ main(int argc, char *argv[])
 		case '?':
 		default:
 			(void)fprintf(stderr,
-			    "usage: %s [-hlMmops] [login ...]\n", __progname);
+			    "usage: %s [-lmMpsho] [login ...]\n", __progname);
 			exit(1);
 		}
 	argc -= optind;
 	argv += optind;
 
-	/* If a domainname is set, increment mflag. */
-	if ((getdomainname(domain, sizeof(domain)) == 0) && domain[0])
+	/* if a domainname is set, increment mflag. */
+	if ((getdomainname(&domain, sizeof(domain)) == 0) && domain[0])
 		mflag++;
-	/* If _PATH_MP_DB is larger than 1MB, increment mflag. */
-	if (stat(_PATH_MP_DB, &sb) == 0) {
-		if (sb.st_size > 1048576)
-			mflag++;
-	}
-
-	if (pledge("stdio rpath getpw dns inet", NULL) == -1)
-		err(1, "pledge");
 
 	(void)time(&now);
+	setpassent(1);
 	if (!*argv) {
 		/*
 		 * Assign explicit "small" format if no names given and -l
 		 * not selected.  Force the -s BEFORE we get names so proper
 		 * screening will be done.
 		 */
-		if (pledge("stdio rpath getpw", NULL) == -1)
-			err(1, "pledge");
-
 		if (!lflag)
 			sflag = 1;	/* if -l not explicit, force -s */
 		loginlist();
@@ -164,7 +166,7 @@ main(int argc, char *argv[])
 }
 
 void
-loginlist(void)
+loginlist()
 {
 	PERSON *pn;
 	struct passwd *pw;
@@ -174,7 +176,6 @@ loginlist(void)
 	if (!freopen(_PATH_UTMP, "r", stdin))
 		err(2, _PATH_UTMP);
 	name[UT_NAMESIZE] = '\0';
-	setpassent(1);
 	while (fread((char *)&user, sizeof(user), 1, stdin) == 1) {
 		if (!user.ut_name[0])
 			continue;
@@ -186,22 +187,23 @@ loginlist(void)
 		}
 		enter_where(&user, pn);
 	}
-	endpwent();
 	for (pn = phead; lflag && pn != NULL; pn = pn->next)
 		enter_lastlog(pn);
 }
 
 void
-userlist(int argc, char **argv)
+userlist(argc, argv)
+	int argc;
+	char **argv;
 {
-	int i;
-	PERSON *pn;
+	register int i;
+	register PERSON *pn;
 	PERSON *nethead, **nettail;
 	struct utmp user;
 	struct passwd *pw;
 	int dolocal, *used;
 
-	if (!(used = calloc((u_int)argc, (u_int)sizeof(int))))
+	if (!(used = (int *)calloc((u_int)argc, (u_int)sizeof(int))))
 		err(2, "malloc");
 
 	/* pull out all network requests */
@@ -221,15 +223,10 @@ userlist(int argc, char **argv)
 	if (!dolocal)
 		goto net;
 
-	if (nettail == &nethead)
-		if (pledge("stdio rpath getpw", NULL) == -1)
-			err(1, "pledge");
-
 	/*
 	 * traverse the list of possible login names and check the login name
 	 * and real name against the name specified by the user.
 	 */
-	setpassent(1);
 	if ((mflag - Mflag) > 0) {
 		for (i = 0; i < argc; i++)
 			if (used[i] >= 0 && (pw = getpwnam(argv[i]))) {
@@ -244,7 +241,6 @@ userlist(int argc, char **argv)
 				enter_person(pw);
 				used[i] = 1;
 			}
-	endpwent();
 
 	/* list errors */
 	for (i = 0; i < argc; i++)
@@ -258,7 +254,6 @@ net:	for (pn = nethead; pn; pn = pn->next) {
 			putchar('\n');
 	}
 
-	free(used);
 	if (entries == 0)
 		return;
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: ethertype.h,v 1.8 2014/04/11 04:08:58 lteo Exp $	*/
+/*	$OpenBSD: ethertype.h,v 1.5 1999/07/20 04:49:54 deraadt Exp $	*/
 /*	$NetBSD: ethertype.h,v 1.2 1995/03/06 11:38:17 mycroft Exp $	*/
 
 /*
@@ -20,6 +20,8 @@
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * @(#) $Header: /home/mike/src/cvs/openbsd/src/lib/libpcap/ethertype.h,v 1.5 1999/07/20 04:49:54 deraadt Exp $ (LBL)
  */
 
 /* Types missing from some systems */
@@ -71,12 +73,6 @@
 #endif
 #ifndef	ETHERTYPE_AARP
 #define	ETHERTYPE_AARP		0x80f3
-#endif
-#ifndef ETHERTYPE_8021Q
-#define ETHERTYPE_8021Q		0x8100
-#endif
-#ifndef ETHERTYPE_IPV6
-#define ETHERTYPE_IPV6		0x80f3
 #endif
 #ifndef	ETHERTYPE_LOOPBACK
 #define	ETHERTYPE_LOOPBACK	0x9000

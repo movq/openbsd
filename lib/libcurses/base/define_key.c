@@ -1,7 +1,7 @@
-/* $OpenBSD: define_key.c,v 1.5 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: define_key.c,v 1.3 1999/03/02 06:23:27 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2005,2006 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,44 +29,33 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author: Thomas E. Dickey                    1997-on                     *
+ *  Author: Thomas E. Dickey <dickey@clark.net> 1997                        *
  ****************************************************************************/
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: define_key.c,v 1.5 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: define_key.c,v 1.4 1999/02/21 13:03:55 tom Exp $")
 
-NCURSES_EXPORT(int)
-define_key(const char *str, int keycode)
+int
+define_key(char *str, int keycode)
 {
-    int code = ERR;
+	int code = ERR;
 
-    T((T_CALLED("define_key(%s,%d)"), _nc_visbuf(str), keycode));
-    if (SP == 0) {
-	code = ERR;
-    } else if (keycode > 0) {
-	unsigned ukey = (unsigned) keycode;
-
-	if (str != 0) {
-	    define_key(str, 0);
-	} else if (has_key(keycode)) {
-	    while (_nc_remove_key(&(SP->_keytry), ukey))
-		code = OK;
-	}
-	if (str != 0) {
-	    if (key_defined(str) == 0) {
-		if (_nc_add_to_try(&(SP->_keytry), str, ukey) == OK) {
-		    code = OK;
-		} else {
-		    code = ERR;
+	T((T_CALLED("define_key(%s,%d)"), _nc_visbuf(str), keycode));
+	if (keycode > 0) {
+		if (str != 0) {
+			define_key(str, 0);
+		} else if (has_key(keycode)) {
+			while (_nc_remove_key(&(SP->_keytry), keycode))
+				code = OK;
 		}
-	    } else {
-		code = ERR;
-	    }
+		if (str != 0) {
+			(void) _nc_add_to_try(&(SP->_keytry), str, keycode);
+			code = OK;
+		}
+	} else {
+		while (_nc_remove_string(&(SP->_keytry), str))
+			code = OK;
 	}
-    } else {
-	while (_nc_remove_string(&(SP->_keytry), str))
-	    code = OK;
-    }
-    returnCode(code);
+	returnCode(code);
 }

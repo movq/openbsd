@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_mark.c,v 1.10 2015/03/29 01:04:23 bcallah Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_mark.c	10.8 (Berkeley) 9/20/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -27,16 +29,18 @@
  * v_mark -- m[a-z]
  *	Set a mark.
  *
- * PUBLIC: int v_mark(SCR *, VICMD *);
+ * PUBLIC: int v_mark __P((SCR *, VICMD *));
  */
 int
-v_mark(SCR *sp, VICMD *vp)
+v_mark(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (mark_set(sp, vp->character, &vp->m_start, 1));
 }
 
 enum which {BQMARK, FQMARK};
-static int mark(SCR *, VICMD *, enum which);
+static int mark __P((SCR *, VICMD *, enum which));
 
 
 /*
@@ -52,10 +56,12 @@ static int mark(SCR *, VICMD *, enum which);
  * people don't know it and will be delighted that you are able to tell
  * them.
  *
- * PUBLIC: int v_bmark(SCR *, VICMD *);
+ * PUBLIC: int v_bmark __P((SCR *, VICMD *));
  */
 int
-v_bmark(SCR *sp, VICMD *vp)
+v_bmark(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (mark(sp, vp, BQMARK));
 }
@@ -66,10 +72,12 @@ v_bmark(SCR *sp, VICMD *vp)
  *
  * Move to the first nonblank character of the line containing the mark.
  *
- * PUBLIC: int v_fmark(SCR *, VICMD *);
+ * PUBLIC: int v_fmark __P((SCR *, VICMD *));
  */
 int
-v_fmark(SCR *sp, VICMD *vp)
+v_fmark(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (mark(sp, vp, FQMARK));
 }
@@ -79,8 +87,12 @@ v_fmark(SCR *sp, VICMD *vp)
  *	Mark commands.
  */
 static int
-mark(SCR *sp, VICMD *vp, enum which cmd)
+mark(sp, vp, cmd)
+	SCR *sp;
+	VICMD *vp;
+	enum which cmd;
 {
+	dir_t dir;
 	MARK m;
 	size_t len;
 
@@ -99,7 +111,7 @@ mark(SCR *sp, VICMD *vp, enum which cmd)
 		if (db_get(sp, vp->m_stop.lno, DBG_FATAL, NULL, &len))
 			return (1);
 		if (vp->m_stop.cno < len ||
-		    (vp->m_stop.cno == len && len == 0))
+		    vp->m_stop.cno == len && len == 0)
 			break;
 
 		if (ISMOTION(vp))
@@ -140,12 +152,14 @@ mark(SCR *sp, VICMD *vp, enum which cmd)
 	 * and backward motions can happen for any kind of search command.
 	 */
 	if (vp->m_start.lno > vp->m_stop.lno ||
-	    (vp->m_start.lno == vp->m_stop.lno &&
-	    vp->m_start.cno > vp->m_stop.cno)) {
+	    vp->m_start.lno == vp->m_stop.lno &&
+	    vp->m_start.cno > vp->m_stop.cno) {
 		m = vp->m_start;
 		vp->m_start = vp->m_stop;
 		vp->m_stop = m;
-	}
+		dir = BACKWARD;
+	} else
+		dir = FORWARD;
 
 	/*
 	 * Yank cursor motion, when associated with marks as motion commands,
@@ -170,7 +184,22 @@ mark(SCR *sp, VICMD *vp, enum which cmd)
 	 * Delete cursor motion was always to the start of the text region,
 	 * regardless.  Ignore other motion commands.
 	 */
+#ifdef HISTORICAL_PRACTICE
+	if (ISCMD(vp->rkp, 'y')) {
+		if ((cmd == BQMARK ||
+		    cmd == FQMARK && vp->m_start.lno != vp->m_stop.lno) &&
+		    (vp->m_start.lno > vp->m_stop.lno ||
+		    vp->m_start.lno == vp->m_stop.lno &&
+		    vp->m_start.cno > vp->m_stop.cno))
+			vp->m_final = vp->m_stop;
+	} else if (ISCMD(vp->rkp, 'd'))
+		if (vp->m_start.lno > vp->m_stop.lno ||
+		    vp->m_start.lno == vp->m_stop.lno &&
+		    vp->m_start.cno > vp->m_stop.cno)
+			vp->m_final = vp->m_stop;
+#else
 	vp->m_final = vp->m_start;
+#endif
 
 	/*
 	 * Forward marks are always line oriented, and it's set in the

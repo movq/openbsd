@@ -1,4 +1,3 @@
-/*	$OpenBSD: vm86.c,v 1.22 2014/03/29 18:09:29 guenther Exp $	*/
 /*	$NetBSD: vm86.c,v 1.15 1996/05/03 19:42:33 christos Exp $	*/
 
 /*-
@@ -16,6 +15,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -34,6 +40,7 @@
 #include <sys/systm.h>
 #include <sys/signalvar.h>
 #include <sys/kernel.h>
+#include <sys/map.h>
 #include <sys/proc.h>
 #include <sys/user.h>
 #include <sys/exec.h>
@@ -41,6 +48,7 @@
 #include <sys/reboot.h>
 #include <sys/conf.h>
 #include <sys/file.h>
+#include <sys/callout.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/msgbuf.h>
@@ -63,8 +71,8 @@
 #include <machine/sysarch.h>
 #include <machine/vm86.h>
 
-static void fast_intxx(struct proc *, int);
-static __inline int is_bitset(int, caddr_t);
+static void fast_intxx __P((struct proc *, int));
+static __inline int is_bitset __P((int, caddr_t));
 
 #define	CS(tf)		(*(u_short *)&tf->tf_cs)
 #define	IP(tf)		(*(u_short *)&tf->tf_eip)
@@ -73,7 +81,7 @@ static __inline int is_bitset(int, caddr_t);
 
 
 #define putword(base, ptr, val) \
-__asm__ volatile( \
+__asm__ __volatile__( \
 	"decw %w0\n\t" \
 	"movb %h2,0(%1,%0)\n\t" \
 	"decw %w0\n\t" \
@@ -82,7 +90,7 @@ __asm__ volatile( \
 	: "r" (base), "q" (val), "0" (ptr))
 
 #define putdword(base, ptr, val) \
-__asm__ volatile( \
+__asm__ __volatile__( \
 	"rorl $16,%2\n\t" \
 	"decw %w0\n\t" \
 	"movb %h2,0(%1,%0)\n\t" \
@@ -98,7 +106,7 @@ __asm__ volatile( \
 
 #define getbyte(base, ptr) \
 ({ unsigned long __res; \
-__asm__ volatile( \
+__asm__ __volatile__( \
 	"movb 0(%1,%0),%b2\n\t" \
 	"incw %w0" \
 	: "=r" (ptr), "=r" (base), "=q" (__res) \
@@ -107,7 +115,7 @@ __res; })
 
 #define getword(base, ptr) \
 ({ unsigned long __res; \
-__asm__ volatile( \
+__asm__ __volatile__( \
 	"movb 0(%1,%0),%b2\n\t" \
 	"incw %w0\n\t" \
 	"movb 0(%1,%0),%h2\n\t" \
@@ -118,7 +126,7 @@ __res; })
 
 #define getdword(base, ptr) \
 ({ unsigned long __res; \
-__asm__ volatile( \
+__asm__ __volatile__( \
 	"movb 0(%1,%0),%b2\n\t" \
 	"incw %w0\n\t" \
 	"movb 0(%1,%0),%h2\n\t" \
@@ -135,15 +143,17 @@ __res; })
 
 
 static __inline int
-is_bitset(int nr, caddr_t bitmap)
+is_bitset(nr, bitmap)
+	int nr;
+	caddr_t bitmap;
 {
 	u_int byte;		/* bt instruction doesn't do
 					   bytes--it examines ints! */
 	bitmap += nr / NBBY;
 	nr = nr % NBBY;
-	copyin(bitmap, &byte, sizeof(u_char));
+	byte = fubyte(bitmap);
 
-	__asm__ volatile("btl %2,%1\n\tsbbl %0,%0"
+	__asm__ __volatile__("btl %2,%1\n\tsbbl %0,%0"
 			     :"=r" (nr)
 			     :"r" (byte),"r" (nr));
 	return (nr);
@@ -154,7 +164,9 @@ is_bitset(int nr, caddr_t bitmap)
 #define V86_AL(regs)	(((u_char *)&((regs)->tf_eax))[0])
 
 static void
-fast_intxx(struct proc *p, int intrno)
+fast_intxx(p, intrno)
+	struct proc *p;
+	int intrno;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	/*
@@ -167,14 +179,14 @@ fast_intxx(struct proc *p, int intrno)
 
 	u_long ss, sp;
 
-	/*
+	/* 
 	 * Note: u_vm86p points to user-space, we only compute offsets
-	 * and don't deref it. is_revectored() above does copyin() to
+	 * and don't deref it. is_revectored() above does fubyte() to
 	 * get stuff from it
 	 */
 	u_vm86p = (struct vm86_struct *)p->p_addr->u_pcb.vm86_userp;
 
-	/*
+	/* 
 	 * If user requested special handling, return to user space with
 	 * indication of which INT was requested.
 	 */
@@ -223,7 +235,9 @@ bad:
 }
 
 void
-vm86_return(struct proc *p, int retval)
+vm86_return(p, retval)
+	struct proc *p;
+	int retval;
 {
 	union sigval sv;
 
@@ -261,7 +275,9 @@ vm86_return(struct proc *p, int retval)
  * handler code and then having it restart VM86 mode).
  */
 void
-vm86_gpfault(struct proc *p, int type)
+vm86_gpfault(p, type)
+	struct proc *p;
+	int type;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	union sigval sv;
@@ -368,7 +384,10 @@ bad:
 }
 
 int
-i386_vm86(struct proc *p, char *args, register_t *retval)
+i386_vm86(p, args, retval)
+	struct proc *p;
+	char *args;
+	register_t *retval;
 {
 	struct trapframe *tf = p->p_md.md_regs;
 	struct pcb *pcb = &p->p_addr->u_pcb;
@@ -427,7 +446,7 @@ i386_vm86(struct proc *p, char *args, register_t *retval)
 #undef	DOREG
 
 	/* Going into vm86 mode jumps off the signal stack. */
-	p->p_sigstk.ss_flags &= ~SS_ONSTACK;
+	p->p_sigacts->ps_sigstk.ss_flags &= ~SS_ONSTACK;
 
 	set_vflags(p, vm86s.regs.vmsc.sc_eflags | PSL_VM);
 

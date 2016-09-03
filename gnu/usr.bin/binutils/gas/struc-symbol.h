@@ -1,6 +1,5 @@
 /* struct_symbol.h - Internal symbol structure
-   Copyright 1987, 1992, 1993, 1994, 1995, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+   Copyright (C) 1987, 1992, 1993, 1994 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,9 +14,8 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef __struc_symbol_h__
 #define __struc_symbol_h__
@@ -28,27 +26,24 @@
 #define SYMBOLS_NEED_BACKPOINTERS
 #endif
 
-/* The information we keep for a symbol.  Note that the symbol table
-   holds pointers both to this and to local_symbol structures.  See
-   below.  */
-
+/* our version of an nlist node */
 struct symbol
 {
-#ifdef BFD_ASSEMBLER
-  /* BFD symbol */
-  asymbol *bsym;
-#else
+#ifndef BFD_ASSEMBLER
   /* The (4-origin) position of sy_name in the symbol table of the object
      file.  This will be 0 for (nameless) .stabd symbols.
 
-     Not used until write_object_file() time.  */
+     Not used until write_object_file() time. */
   unsigned long sy_name_offset;
 
   /* What we write in .o file (if permitted).  */
   obj_symbol_type sy_symbol;
 
-  /* The 24 bit symbol number.  Symbol numbers start at 0 and are unsigned.  */
+  /* The 24 bit symbol number.  Symbol numbers start at 0 and are unsigned. */
   long sy_number;
+#else
+  /* BFD symbol */
+  asymbol *bsym;
 #endif
 
   /* The value of the symbol.  */
@@ -76,7 +71,7 @@ struct symbol
      are local and would otherwise not be.  */
   unsigned int sy_used_in_reloc : 1;
 
-  /* Whether the symbol is used as an operand or in an expression.
+  /* Whether the symbol is used as an operand or in an expression.  
      NOTE:  Not all the backends keep this information accurate;
      backends which use this bit are responsible for setting it when
      a symbol is used in backend routines.  */
@@ -101,59 +96,72 @@ struct symbol
 #endif
 };
 
-#ifdef BFD_ASSEMBLER
+typedef struct symbol symbolS;
 
-/* A pointer in the symbol may point to either a complete symbol
-   (struct symbol above) or to a local symbol (struct local_symbol
-   defined here).  The symbol code can detect the case by examining
-   the first field.  It is always NULL for a local symbol.
-
-   We do this because we ordinarily only need a small amount of
-   information for a local symbol.  The symbol table takes up a lot of
-   space, and storing less information for a local symbol can make a
-   big difference in assembler memory usage when assembling a large
-   file.  */
-
-struct local_symbol
-{
-  /* This pointer is always NULL to indicate that this is a local
-     symbol.  */
-  asymbol *lsy_marker;
-
-  /* The symbol section.  This also serves as a flag.  If this is
-     reg_section, then this symbol has been converted into a regular
-     symbol, and lsy_sym points to it.  */
-  segT lsy_section;
-
-  /* The symbol name.  */
-  const char *lsy_name;
-
-  /* The symbol frag or the real symbol, depending upon the value in
-     lsy_section.  If the symbol has been fully resolved, lsy_frag is
-     set to NULL.  */
-  union
-  {
-    fragS *lsy_frag;
-    symbolS *lsy_sym;
-  } u;
-
-  /* The value of the symbol.  */
-  valueT lsy_value;
-
-#ifdef TC_LOCAL_SYMFIELD_TYPE
-  TC_LOCAL_SYMFIELD_TYPE lsy_tc;
+#if defined(TE_NetBSD) || defined(TE_OpenBSD)
+symbolS *GOT_symbol;		/* Pre-defined "__GLOBAL_OFFSET_TABLE" */
+int	got_referenced;
 #endif
-};
 
-#define local_symbol_converted_p(l) ((l)->lsy_section == reg_section)
-#define local_symbol_mark_converted(l) ((l)->lsy_section = reg_section)
-#define local_symbol_resolved_p(l) ((l)->u.lsy_frag == NULL)
-#define local_symbol_mark_resolved(l) ((l)->u.lsy_frag = NULL)
-#define local_symbol_get_frag(l) ((l)->u.lsy_frag)
-#define local_symbol_set_frag(l, f) ((l)->u.lsy_frag = (f))
-#define local_symbol_get_real_symbol(l) ((l)->u.lsy_sym)
-#define local_symbol_set_real_symbol(l, s) ((l)->u.lsy_sym = (s))
+#ifndef WORKING_DOT_WORD
+struct broken_word
+  {
+    /* Linked list -- one of these structures per ".word x-y+C"
+       expression.  */
+    struct broken_word *next_broken_word;
+    /* Which frag is this broken word in?  */
+    fragS *frag;
+    /* Where in the frag is it?  */
+    char *word_goes_here;
+    /* Where to add the break.  */
+    fragS *dispfrag;		/* where to add the break */
+    /* Operands of expression.  */
+    symbolS *add;
+    symbolS *sub;
+    offsetT addnum;
 
-#endif /* BFD_ASSEMBLER */
+    int added;			/* nasty thing happend yet? */
+    /* 1: added and has a long-jump */
+    /* 2: added but uses someone elses long-jump */
+
+    /* Pointer to broken_word with a similar long-jump.  */
+    struct broken_word *use_jump;
+  };
+extern struct broken_word *broken_words;
+#endif /* ndef WORKING_DOT_WORD */
+
+/*
+ * Current means for getting from symbols to segments and vice verse.
+ * This will change for infinite-segments support (e.g. COFF).
+ */
+extern const segT N_TYPE_seg[];	/* subseg.c */
+
+#define	SEGMENT_TO_SYMBOL_TYPE(seg)  ( seg_N_TYPE [(int) (seg)] )
+extern const short seg_N_TYPE[];/* subseg.c */
+
+#define	N_REGISTER	30	/* Fake N_TYPE value for SEG_REGISTER */
+
+void symbol_clear_list_pointers PARAMS ((symbolS * symbolP));
+
+#ifdef SYMBOLS_NEED_BACKPOINTERS
+
+void symbol_insert PARAMS ((symbolS * addme, symbolS * target,
+			    symbolS ** rootP, symbolS ** lastP));
+void symbol_remove PARAMS ((symbolS * symbolP, symbolS ** rootP,
+			    symbolS ** lastP));
+
+#define symbol_previous(s) ((s)->sy_previous)
+
+#endif /* SYMBOLS_NEED_BACKPOINTERS */
+
+void verify_symbol_chain PARAMS ((symbolS * rootP, symbolS * lastP));
+void verify_symbol_chain_2 PARAMS ((symbolS * symP));
+
+void symbol_append PARAMS ((symbolS * addme, symbolS * target,
+			    symbolS ** rootP, symbolS ** lastP));
+
+#define symbol_next(s)	((s)->sy_next)
 
 #endif /* __struc_symbol_h__ */
+
+/* end of struc-symbol.h */

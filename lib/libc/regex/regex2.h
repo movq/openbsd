@@ -1,4 +1,4 @@
-/*	$OpenBSD: regex2.h,v 1.8 2013/04/17 17:39:29 tedu Exp $	*/
+/*	$OpenBSD: regex2.h,v 1.5 1997/04/30 05:53:51 tholo Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993, 1994 Henry Spencer.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -35,6 +39,20 @@
  *	@(#)regex2.h	8.4 (Berkeley) 3/20/94
  */
 
+/*
+ * First, the stuff that ends up in the outside-world include file
+ = typedef off_t regoff_t;
+ = typedef struct {
+ = 	int re_magic;
+ = 	size_t re_nsub;		// number of parenthesized subexpressions
+ = 	const char *re_endp;	// end pointer for REG_PEND
+ = 	struct re_guts *re_g;	// none of your business :-)
+ = } regex_t;
+ = typedef struct {
+ = 	regoff_t rm_so;		// start of match
+ = 	regoff_t rm_eo;		// end of match
+ = } regmatch_t;
+ */
 /*
  * internals of regex_t
  */
@@ -149,7 +167,7 @@ struct re_guts {
 	int backrefs;		/* does it use back references? */
 	sopno nplus;		/* how deep does it nest +s? */
 	/* catspace must be last */
-	cat_t catspace[NC];	/* actually [NC] */
+	cat_t catspace[1];	/* actually [NC] */
 };
 
 /* misc utilities */

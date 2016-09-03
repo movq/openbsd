@@ -1,7 +1,7 @@
-/* $OpenBSD: SigAction.h,v 1.4 2010/01/12 23:21:58 nicm Exp $ */
+/*	$OpenBSD: SigAction.h,v 1.2 1999/06/27 08:15:19 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -34,7 +34,7 @@
  ****************************************************************************/
 
 /*
- * $Id: SigAction.h,v 1.4 2010/01/12 23:21:58 nicm Exp $
+ * $From: SigAction.h,v 1.5 1999/06/19 23:00:54 tom Exp $
  *
  * This file exists to handle non-POSIX systems which don't have <unistd.h>,
  * and usually no sigaction() nor <termios.h>
@@ -60,6 +60,10 @@ typedef struct sigaction sigaction_t;
 #else	/* !HAVE_SIGACTION */
 
 #if HAVE_SIGVEC
+
+#if HAVE_LIBC_H
+#include <libc.h>
+#endif
 
 #undef  SIG_BLOCK
 #define SIG_BLOCK       00
@@ -103,8 +107,12 @@ typedef unsigned long sigset_t;
 #undef  sigaddset
 #define sigaddset   _nc_sigaddset
 
-/* tty/lib_tstp.c is the only user */
-#include <base/sigaction.c>
+extern int sigaction (int sig, sigaction_t * sigact, sigaction_t *  osigact);
+extern int sigprocmask (int how, sigset_t *mask, sigset_t *omask);
+extern int sigemptyset (sigset_t *mask);
+extern int sigsuspend (sigset_t *mask);
+extern int sigdelset (sigset_t *mask, int sig);
+extern int sigaddset (sigset_t *mask, int sig);
 
 #endif /* HAVE_SIGVEC */
 #endif /* HAVE_SIGACTION */

@@ -3,7 +3,7 @@
 
    Written by Ron Guilmette (rfg@ncd.com)
 
-Copyright 1992, 1993, 1995, 1999 Free Software Foundation, Inc.
+Copyright (C) 1992 Free Software Foundation, Inc.
 
 This file is part of GNU CC.
 
@@ -301,8 +301,7 @@ enum dwarf_source_language {
 
     /* GNU extensions */
 
-    LANG_CHILL		= 0x00009af3,	/* random value for GNU Chill */
-    LANG_JAVA		= 0x00009af4    /* random value + 1 for GNU Java */
+    LANG_CHILL		= 0x00009af3	/* random value for GNU Chill */
 };
 
 #define LANG_lo_user	0x00008000  /* implementation-defined range start */

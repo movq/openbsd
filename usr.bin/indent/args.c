@@ -1,10 +1,9 @@
-/*	$OpenBSD: args.c,v 1.18 2014/05/20 01:25:23 guenther Exp $	*/
+/*	$OpenBSD: args.c,v 1.4 1997/07/25 22:00:44 mickey Exp $	*/
 
 /*
- * Copyright (c) 1980, 1993
- *	The Regents of the University of California.
- * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * Copyright (c) 1985 Sun Microsystems, Inc.
+ * Copyright (c) 1980 The Regents of the University of California.
+ * Copyright (c) 1976 Board of Trustees of the University of Illinois.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -15,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,11 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#ifndef lint
+/*static char sccsid[] = "from: @(#)args.c	5.10 (Berkeley) 2/26/91";*/
+static char rcsid[] = "$OpenBSD: args.c,v 1.4 1997/07/25 22:00:44 mickey Exp $";
+#endif /* not lint */
 
 /*
  * Argument scanning and profile reading code.  Default parameters are set
@@ -49,7 +57,7 @@
 #define	PRO_SPECIAL	1	/* special case */
 #define	PRO_BOOL	2	/* boolean */
 #define	PRO_INT		3	/* integer */
-#define	PRO_FONT	4	/* troff font */
+#define PRO_FONT	4	/* troff font */
 
 /* profile specials for booleans */
 #define	ON		1	/* turn it on */
@@ -135,7 +143,6 @@ struct pro {
 	{"nps", PRO_BOOL, false, OFF, &pointer_as_binop },
 	{"nsc", PRO_BOOL, true, OFF, &star_comment_cont },
 	{"nsob", PRO_BOOL, false, OFF, &swallow_optional_blanklines },
-	{"nut", PRO_BOOL, true, OFF, &use_tabs},
 	{"nv", PRO_BOOL, false, OFF, &verbose },
 	{"pcs", PRO_BOOL, false, ON, &proc_calls_space },
 	{"psl", PRO_BOOL, true, ON, &procnames_start_line },
@@ -144,37 +151,33 @@ struct pro {
 	{"sob", PRO_BOOL, false, ON, &swallow_optional_blanklines },
 	{"st", PRO_SPECIAL, 0, STDIN, 0 },
 	{"troff", PRO_BOOL, false, ON, &troff },
-	{"ut", PRO_BOOL, true, ON, &use_tabs},
 	{"v", PRO_BOOL, false, ON, &verbose },
 	/* whew! */
 	{ 0, 0, 0, 0, 0 }
 };
 
-void scan_profile(FILE *);
-void set_option(char *);
+void scan_profile();
+void set_option();
 
 /*
  * set_profile reads $HOME/.indent.pro and ./.indent.pro and handles arguments
  * given in these files.
  */
 void
-set_profile(void)
+set_profile()
 {
-    FILE *f;
+    register FILE *f;
     char        fname[BUFSIZ];
-    char	*home;
     static char prof[] = ".indent.pro";
 
-    home = getenv("HOME");
-    if (home != NULL && *home != '\0') {
-	if (snprintf(fname, sizeof fname, "%s/%s", home, prof) >= sizeof fname) {
-	    warnc(ENAMETOOLONG, "%s/%s", home, prof);
-	    return;
-	}
-	if ((f = fopen(option_source = fname, "r")) != NULL) {
-	    scan_profile(f);
-	    (void) fclose(f);
-	}
+    if (strlen(getenv("HOME")) + sizeof(prof) > sizeof(fname)) {
+	warnx("%s/%s: %s", getenv("HOME"), prof, strerror(ENAMETOOLONG));
+	return;
+    }
+    sprintf(fname, "%s/%s", getenv("HOME"), prof);
+    if ((f = fopen(option_source = fname, "r")) != NULL) {
+	scan_profile(f);
+	(void) fclose(f);
     }
     if ((f = fopen(option_source = prof, "r")) != NULL) {
 	scan_profile(f);
@@ -184,19 +187,17 @@ set_profile(void)
 }
 
 void
-scan_profile(FILE *f)
+scan_profile(f)
+    register FILE *f;
 {
-    int i;
-    char *p;
+    register int i;
+    register char *p;
     char        buf[BUFSIZ];
 
     while (1) {
-	for (p = buf;
-	    (i = getc(f)) != EOF && (*p = i) > ' ' && p + 1 - buf < BUFSIZ;
-	    ++p)
-		;
+	for (p = buf; (i = getc(f)) != EOF && (*p = i) > ' '; ++p);
 	if (p != buf) {
-	    *p = 0;
+	    *p++ = 0;
 	    if (verbose)
 		printf("profile: %s\n", buf);
 	    set_option(buf);
@@ -209,7 +210,9 @@ scan_profile(FILE *f)
 char       *param_start;
 
 int
-eqin(char *s1, char *s2)
+eqin(s1, s2)
+    register char *s1;
+    register char *s2;
 {
     while (*s1) {
 	if (*s1++ != *s2++)
@@ -223,9 +226,9 @@ eqin(char *s1, char *s2)
  * Set the defaults.
  */
 void
-set_defaults(void)
+set_defaults()
 {
-    struct pro *p;
+    register struct pro *p;
 
     /*
      * Because ps.case_indent is a float, we can't initialize it from the
@@ -238,15 +241,18 @@ set_defaults(void)
 }
 
 void
-set_option(char *arg)
+set_option(arg)
+    register char *arg;
 {
-    struct pro *p;
+    register struct pro *p;
+    extern double atof();
 
     arg++;			/* ignore leading "-" */
     for (p = pro; p->p_name; p++)
 	if (*p->p_name == *arg && eqin(p->p_name, arg))
 	    goto found;
-    errx(1, "%s: unknown parameter \"%s\"", option_source, arg - 1);
+    fprintf(stderr, "indent: %s: unknown parameter \"%s\"\n", option_source, arg - 1);
+    exit(1);
 found:
     switch (p->p_type) {
 
@@ -273,15 +279,16 @@ found:
 	    if (*param_start == 0)
 		goto need_param;
 	    {
-		char *str;
-		if ((str = strdup(param_start)) == NULL)
-			err(1, NULL);
+		register char *str = (char *) malloc(strlen(param_start) + 1);
+		strcpy(str, param_start);
 		addkey(str, 4);
 	    }
 	    break;
 
 	default:
-	    errx(1, "set_option: internal error: p_special %d", p->p_special);
+	    fprintf(stderr, "\
+indent: set_option: internal error: p_special %d\n", p->p_special);
+	    exit(1);
 	}
 	break;
 
@@ -293,14 +300,13 @@ found:
 	break;
 
     case PRO_INT:
-	if (!isdigit((unsigned char)*param_start)) {
+	if (!isdigit(*param_start)) {
     need_param:
-	    errx(1, "%s: ``%s'' requires a parameter", option_source, arg - 1);
+	    fprintf(stderr, "indent: %s: ``%s'' requires a parameter\n",
+		    option_source, arg - 1);
+	    exit(1);
 	}
 	*p->p_obj = atoi(param_start);
-	if (*p->p_name == 'i' && *p->p_obj <= 0)
-		errx(1, "%s: ``%s must be greater of zero''",
-		    option_source, arg - 1);
 	break;
 
     case PRO_FONT:
@@ -308,6 +314,8 @@ found:
 	break;
 
     default:
-	errx(1, "set_option: internal error: p_type %d", p->p_type);
+	fprintf(stderr, "indent: set_option: internal error: p_type %d\n",
+		p->p_type);
+	exit(1);
     }
 }

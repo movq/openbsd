@@ -1,4 +1,4 @@
-.\"	$OpenBSD: send.2,v 1.31 2014/09/09 06:32:37 guenther Exp $
+.\"	$OpenBSD: send.2,v 1.17 1999/08/15 13:14:12 deraadt Exp $
 .\"	$NetBSD: send.2,v 1.6 1996/01/15 01:17:18 thorpej Exp $
 .\"
 .\" Copyright (c) 1983, 1991, 1993
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,7 +34,7 @@
 .\"
 .\"     @(#)send.2	8.2 (Berkeley) 2/21/94
 .\"
-.Dd $Mdocdate: September 9 2014 $
+.Dd July 28, 1998
 .Dt SEND 2
 .Os
 .Sh NAME
@@ -39,7 +43,8 @@
 .Nm sendmsg
 .Nd send a message from a socket
 .Sh SYNOPSIS
-.In sys/socket.h
+.Fd #include <sys/types.h>
+.Fd #include <sys/socket.h>
 .Ft ssize_t
 .Fn send "int s" "const void *msg" "size_t len" "int flags"
 .Ft ssize_t
@@ -93,35 +98,22 @@ send more data.
 The
 .Fa flags
 parameter may include one or more of the following:
-.Pp
-.Bl -tag -width "MSG_DONTROUTEXX" -offset indent -compact
-.It Dv MSG_DONTROUTE
-bypass routing tables, silently ignored
-.It Dv MSG_DONTWAIT
-don't block
-.It Dv MSG_EOR
-terminate the record (SOCK_SEQPACKET only)
-.It Dv MSG_NOSIGNAL
-don't send
-.Dv SIGPIPE
-.It Dv MSG_OOB
-process out-of-band data
-.El
+.Bd -literal
+#define	MSG_OOB        0x1  /* process out-of-band data */
+#define	MSG_DONTROUTE  0x4  /* bypass routing, use direct interface */
+.Ed
 .Pp
 The flag
 .Dv MSG_OOB
 is used to send
 .Dq out-of-band
-data on sockets that support this notion (e.g.,
+data on sockets that support this notion (e.g.
 .Dv SOCK_STREAM ) ;
 the underlying protocol must also support
 .Dq out-of-band
 data.
-.Dv MSG_NOSIGNAL
-is used to request not to send the
-.Dv SIGPIPE
-signal if an attempt to send is made on a socket that is shut down for
-writing or no longer connected.
+.Dv MSG_DONTROUTE
+is usually used only by diagnostic or routing programs.
 .Pp
 See
 .Xr recv 2
@@ -150,9 +142,7 @@ An invalid user space address was specified for a parameter.
 The socket requires that message be sent atomically,
 and the size of the message to be sent made this impossible.
 .It Bq Er EAGAIN
-The socket is marked non-blocking or the
-.Dv MSG_DONTWAIT
-flag is set and the requested operation
+The socket is marked non-blocking and the requested operation
 would block.
 .It Bq Er ENOBUFS
 The system was unable to allocate an internal buffer.
@@ -177,17 +167,15 @@ The destination address specified a host that is down.
 .It Bq Er ENETDOWN
 The destination address specified a network that is down.
 .It Bq Er ECONNREFUSED
-The destination host rejected the message (or a previous one).
-This error can only be returned by connected sockets.
+The destination host rejected the message (or a previous one). This error
+can only be returned by connected sockets.
 .It Bq Er ENOPROTOOPT
-There was a problem sending the message.
-This error can only be returned by connected sockets.
+There was a problem sending the message. This error can only be returned by
+connected sockets.
 .It Bq Er EDESTADDRREQ
 The socket is not connected, and no destination address was specified.
-.It Bq Er EPIPE
-The socket is shut down for writing or not longer connected and the
-.Dv MSG_NOSIGNAL
-flag is set.
+.It Bq Er EISCONN
+The socket is already connected, and a destination address was specified.
 .El
 .Pp
 In addition,
@@ -202,17 +190,7 @@ was larger than
 .Dv SSIZE_MAX .
 .El
 .Pp
-.Fn sendto
-and
-.Fn sendmsg
-may return the following errors:
-.Bl -tag -width Er
-.It Bq Er EAFNOSUPPORT
-Addresses in the specified address family cannot be used with this socket.
-.It Bq Er EISCONN
-The socket is already connected, and a destination address was specified.
-.El
-.Pp
+Also,
 .Fn sendmsg
 may return the following errors:
 .Bl -tag -width Er
@@ -230,11 +208,8 @@ member of
 .Fa msg
 was less than 0 or larger than
 .Dv IOV_MAX .
-.It Bq Er EMFILE
-The message contains control information utilizing
-.Xr CMSG_DATA 3
-to pass file descriptors, but too many file descriptors
-are already in-flight.
+.It Bq Er EAFNOSUPPORT
+Addresses in the specified address family cannot be used with this socket.
 .El
 .Sh SEE ALSO
 .Xr fcntl 2 ,
@@ -242,22 +217,9 @@ are already in-flight.
 .Xr poll 2 ,
 .Xr recv 2 ,
 .Xr select 2 ,
+.Xr poll 2 ,
 .Xr socket 2 ,
-.Xr write 2 ,
-.Xr CMSG_DATA 3
-.Sh STANDARDS
-The
-.Fn send ,
-.Fn sendto ,
-and
-.Fn sendmsg
-functions conform to
-.St -p1003.1-2008 .
-The
-.Dv MSG_DONTWAIT
-and
-.Dv MSG_NOSIGNAL
-flags are extensions to that specification.
+.Xr write 2
 .Sh HISTORY
 The
 .Fn send

@@ -1,4 +1,4 @@
-/*	$OpenBSD: rarp.c,v 1.11 2014/07/13 15:31:20 mpi Exp $	*/
+/*	$OpenBSD: rarp.c,v 1.6 1998/02/23 20:32:28 niklas Exp $	*/
 /*	$NetBSD: rarp.c,v 1.13 1996/10/13 02:29:05 christos Exp $	*/
 
 /*
@@ -45,39 +45,41 @@
 #include <netinet/in.h>
 
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 
 #include "stand.h"
 #include "net.h"
 #include "netif.h"
 
-static ssize_t rarpsend(struct iodesc *, void *, size_t);
-static ssize_t rarprecv(struct iodesc *, void *, size_t, time_t);
+static ssize_t rarpsend __P((struct iodesc *, void *, size_t));
+static ssize_t rarprecv __P((struct iodesc *, void *, size_t, time_t));
 
 /*
  * Ethernet (Reverse) Address Resolution Protocol (see RFC 903, and 826).
  */
 int
-rarp_getipaddress(int sock)
+rarp_getipaddress(sock)
+	int sock;
 {
 	struct iodesc *d;
-	struct ether_arp *ap;
+	register struct ether_arp *ap;
 	struct {
 		u_char header[ETHER_SIZE];
 		struct {
 			struct ether_arp arp;
-			u_char pad[18];		/* 60 - sizeof(arp) */
+			u_char pad[18]; 	/* 60 - sizeof(arp) */
 		} data;
 	} wbuf;
 	struct {
 		u_char header[ETHER_SIZE];
 		struct {
 			struct ether_arp arp;
-			u_char pad[24];		/* extra space */
+			u_char pad[24]; 	/* extra space */
 		} data;
 	} rbuf;
 
 #ifdef RARP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("rarp: socket=%d\n", sock);
 #endif
 	if (!(d = socktodesc(sock))) {
@@ -85,11 +87,11 @@ rarp_getipaddress(int sock)
 		return (-1);
 	}
 #ifdef RARP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("rarp: d=%x\n", (u_int)d);
 #endif
 
-	bzero((char *)&wbuf.data, sizeof(wbuf.data));
+	bzero((char*)&wbuf.data, sizeof(wbuf.data));
 	ap = &wbuf.data.arp;
 	ap->arp_hrd = htons(ARPHRD_ETHER);
 	ap->arp_pro = htons(ETHERTYPE_IP);
@@ -130,11 +132,14 @@ rarp_getipaddress(int sock)
  * Broadcast a RARP request (i.e. who knows who I am)
  */
 static ssize_t
-rarpsend(struct iodesc *d, void *pkt, size_t len)
+rarpsend(d, pkt, len)
+	register struct iodesc *d;
+	register void *pkt;
+	register size_t len;
 {
 
 #ifdef RARP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("rarpsend: called\n");
 #endif
 
@@ -146,14 +151,18 @@ rarpsend(struct iodesc *d, void *pkt, size_t len)
  * else -1 (and errno == 0)
  */
 static ssize_t
-rarprecv(struct iodesc *d, void *pkt, size_t len, time_t tleft)
+rarprecv(d, pkt, len, tleft)
+	register struct iodesc *d;
+	register void *pkt;
+	register size_t len;
+	time_t tleft;
 {
-	ssize_t n;
-	struct ether_arp *ap;
+	register ssize_t n;
+	register struct ether_arp *ap;
 	u_int16_t etype;	/* host order */
 
 #ifdef RARP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("rarprecv: ");
 #endif
 
@@ -207,7 +216,7 @@ rarprecv(struct iodesc *d, void *pkt, size_t len, time_t tleft)
 
 	/* We have our answer. */
 #ifdef RARP_DEBUG
-	if (debug)
+ 	if (debug)
 		printf("got it\n");
 #endif
 	return (n);

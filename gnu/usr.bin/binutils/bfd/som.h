@@ -1,6 +1,5 @@
 /* HP PA-RISC SOM object file format:  definitions internal to BFD.
-   Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1998, 2000, 2001,
-   2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1990, 91, 92, 93, 94 Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
    University of Utah (pa-gdb-bugs@cs.utah.edu).
@@ -19,16 +18,13 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #ifndef _SOM_H
 #define _SOM_H
 
+#include "../bfd/sysdep.h"
 #include "libhppa.h"
-
-/* Enable PA2.0 if available */
-#define PA_2_0
 
 #include <a.out.h>
 #include <lst.h>
@@ -49,8 +45,8 @@
 #define _PA_RISC_ID(__m_num) 1
 #endif /* HOST_HPPABSD */
 
-#define FILE_HDR_SIZE sizeof (struct header)
-#define AUX_HDR_SIZE sizeof (struct som_exec_auxhdr)
+#define FILE_HDR_SIZE sizeof(struct header)
+#define AUX_HDR_SIZE sizeof(struct som_exec_auxhdr)
 
 typedef struct som_symbol
   {
@@ -61,11 +57,7 @@ typedef struct som_symbol
        in GAS this way.  */
     union
       {
-	struct
-	{
-	  unsigned int hppa_arg_reloc;
-	  unsigned int hppa_priv_level;
-	} ap;
+	unsigned int hppa_arg_reloc;
 	PTR any;
       }
     tc_data;
@@ -80,7 +72,7 @@ typedef struct som_symbol
     int reloc_count;
 
     /* During object file writing, the offset of the name of this symbol
-       in the SOM string table.  */
+       in the SOM string table. */
     int stringtab_offset;
   }
 som_symbol_type;
@@ -97,10 +89,6 @@ struct som_exec_data
        null pointer dereferencing is allowed and the like.  */
     long exec_flags;
 
-    /* We must preserve the version identifier too.  Some versions
-       of the HP linker do not grok NEW_VERSION_ID for reasons unknown.  */
-    unsigned int version_id;
-
     /* Add more stuff here as needed.  Good examples of information
        we might want to pass would be presumed_dp, entry_* and maybe
        others from the file header.  */
@@ -110,7 +98,7 @@ struct somdata
   {
     /* All the magic information about an executable which lives
        in the private BFD structure and needs to be copied from
-       the input bfd to the output bfd during an objcopy/strip.  */
+       the input bfd to the output bfd during a objcopy/strip.  */
     struct som_exec_data *exec_data;
 
     /* These three fields are only used when writing files and are
@@ -120,7 +108,6 @@ struct somdata
     struct copyright_aux_hdr *copyright_aux_hdr;
     struct user_string_aux_hdr *version_aux_hdr;
     struct som_exec_auxhdr *exec_hdr;
-    COMPUNIT *comp_unit;
 
     /* Pointers to a saved copy of the symbol and string tables.  These
        need not be copied for objcopy or strip to work.  */
@@ -166,7 +153,7 @@ struct som_copyable_section_data_struct
     int space_number;
 
     /* Add more stuff here as needed.  Good examples of information
-       we might want to pass would be initialization pointers,
+       we might want to pass would be initialization pointers, 
        and the many subspace flags we do not represent yet.  */
   };
 
@@ -174,7 +161,7 @@ struct som_copyable_section_data_struct
 
    reloc_size holds the size of the relocation stream, note this
    is very different from the number of relocations as SOM relocations
-   are variable length.
+   are variable length. 
 
    reloc_stream is the actual stream of relocation entries.  */
 
@@ -193,7 +180,6 @@ struct som_section_data_struct
 #define obj_som_exec_hdr(bfd)		(somdata(bfd).exec_hdr)
 #define obj_som_copyright_hdr(bfd)	(somdata(bfd).copyright_aux_hdr)
 #define obj_som_version_hdr(bfd)	(somdata(bfd).version_aux_hdr)
-#define obj_som_compilation_unit(bfd)	(somdata(bfd).comp_unit)
 #define obj_som_symtab(bfd)		(somdata(bfd).symtab)
 #define obj_som_stringtab(bfd)		(somdata(bfd).stringtab)
 #define obj_som_sym_filepos(bfd)	(somdata(bfd).sym_filepos)
@@ -205,13 +191,14 @@ struct som_section_data_struct
   ((struct som_section_data_struct *)sec->used_by_bfd)
 #define som_symbol_data(symbol)		((som_symbol_type *) symbol)
 
+
 /* Defines groups of basic relocations.  FIXME:  These should
    be the only basic relocations created by GAS.  The rest
    should be internal to the BFD backend.
 
    The idea is both SOM and ELF define these basic relocation
-   types so they map into a SOM or ELF specific relocation as
-   appropriate.  This allows GAS to share much more code
+   types so they map into a SOM or ELF specific reloation as
+   appropriate.  This allows GAS to share much more code 
    between the two object formats.  */
 
 #define R_HPPA_NONE			R_NO_RELOCATION
@@ -228,16 +215,13 @@ struct som_section_data_struct
 #define R_HPPA_END_TRY			R_END_TRY
 
 /* Exported functions, mostly for use by GAS.  */
-bfd_boolean bfd_som_set_section_attributes
-  PARAMS ((asection *, int, int, unsigned int, int));
-bfd_boolean bfd_som_set_subsection_attributes
-  PARAMS ((asection *, asection *, int, unsigned int, int));
+boolean bfd_som_set_section_attributes PARAMS ((asection *, int, int,
+						unsigned int, int));
+boolean bfd_som_set_subsection_attributes PARAMS ((asection *, asection *,
+						   int, unsigned int, int));
 void bfd_som_set_symbol_type PARAMS ((asymbol *, unsigned int));
-bfd_boolean bfd_som_attach_aux_hdr PARAMS ((bfd *, int, char *));
+boolean bfd_som_attach_aux_hdr PARAMS ((bfd *, int, char *));
 int ** hppa_som_gen_reloc_type
   PARAMS ((bfd *, int, int, enum hppa_reloc_field_selector_type_alt,
 	   int, asymbol *));
-bfd_boolean bfd_som_attach_compilation_unit
-  PARAMS ((bfd *, const char *, const char *, const char *, const char *));
-
 #endif /* _SOM_H */

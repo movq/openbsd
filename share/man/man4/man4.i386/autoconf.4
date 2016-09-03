@@ -1,4 +1,4 @@
-.\"	$OpenBSD: autoconf.4,v 1.7 2007/05/31 19:19:54 jmc Exp $
+.\"	$OpenBSD: autoconf.4,v 1.4 1999/07/02 20:11:51 aaron Exp $
 .\"
 .\" Copyright (c) 1994 Christopher G. Demetriou
 .\" All rights reserved.
@@ -28,7 +28,7 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: May 31 2007 $
+.Dd July 12, 1998
 .Dt AUTOCONF 4 i386
 .Os
 .Sh NAME
@@ -36,17 +36,29 @@
 .Nd diagnostics from the autoconfiguration code
 .Sh DESCRIPTION
 When
-.Ox
+.Tn OpenBSD
 bootstraps it probes the innards of the machine
 on which it is running
 and locates controllers, drives, and other devices, printing out
-what it finds on the console.
-This procedure is driven by a system configuration table which is processed by
+what it finds on the console.  This procedure is driven by a system
+configuration table which is processed by
 .Xr config 8
 and compiled into each kernel.
 Devices which exist in the machine but are not configured into the
-kernel are usually not detected.
+kernel are not detected.
+.Sh DIAGNOSTICS
+.Bl -diag
+.It CPU class not configured.
+You tried to boot
+.Tn OpenBSD
+on a class of
+.Tn CPU
+type which it doesn't
+(or at least this compiled version of
+.Tn OpenBSD
+doesn't) understand.
+.El
 .Sh SEE ALSO
 .Xr intro 4 ,
-.Xr boot_i386 8 ,
+.Xr boot 8 ,
 .Xr config 8

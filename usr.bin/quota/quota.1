@@ -1,5 +1,4 @@
-.\"	$OpenBSD: quota.1,v 1.16 2011/01/20 13:58:16 jmc Exp $
-.\"
+.\"	$OpenBSD: quota.1,v 1.8 1999/10/17 20:24:35 aaron Exp $
 .\" Copyright (c) 1983, 1990, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -14,7 +13,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -32,7 +35,7 @@
 .\"
 .\"	from: @(#)quota.1	8.1 (Berkeley) 6/6/93
 .\"
-.Dd $Mdocdate: January 20 2011 $
+.Dd June 6, 1993
 .Dt QUOTA 1
 .Os
 .Sh NAME
@@ -40,16 +43,17 @@
 .Nd display disk usage and limits
 .Sh SYNOPSIS
 .Nm quota
-.Op Fl q | v
-.Op Fl gu
+.Op Fl g
+.Op Fl u
+.Op Fl v | Fl q
 .Nm quota
-.Op Fl q | v
-.Fl g
-.Ar group ...
+.Op Fl u
+.Op Fl v | Fl q
+.Ar user
 .Nm quota
-.Op Fl q | v
-.Fl u
-.Ar user ...
+.Op Fl g
+.Op Fl v | Fl q
+.Ar group
 .Sh DESCRIPTION
 .Nm quota
 displays users' disk usage and limits.
@@ -60,17 +64,17 @@ The options are as follows:
 .It Fl g
 Print group quotas for the group
 of which the user is a member.
-.It Fl q
-Print a more terse message,
-containing only information
-on filesystems where usage is over quota.
-.It Fl u
-Print user quotas for the user.
-This flag is equivalent to the default.
+The optional
+.Fl u
+flag is equivalent to the default.
 .It Fl v
 .Nm quota
 will display quotas on filesystems
 where no storage is allocated.
+.It Fl q
+Print a more terse message,
+containing only information
+on filesystems where usage is over quota.
 .El
 .Pp
 Specifying both
@@ -80,12 +84,12 @@ and
 displays both the user quotas and the group quotas (for
 the user).
 .Pp
-Only the superuser may use the
+Only the super-user may use the
 .Fl u
 flag and the optional
 .Ar user
 argument to view the limits of other users.
-Non-superusers can use the
+Non-super-users can use the
 .Fl g
 flag and optional
 .Ar group
@@ -107,6 +111,10 @@ NFS server.
 For FFS
 filesystems, quotas must be turned on in
 .Pa /etc/fstab .
+If
+.Nm quota
+exits with a non-zero status, one or more filesystems
+are over quota.
 .Sh FILES
 .Bl -tag -width quota.group -compact
 .It Pa quota.user
@@ -116,12 +124,11 @@ located at the filesystem root with group quotas
 .It Pa /etc/fstab
 to find filesystem names and locations
 .El
-.Sh EXIT STATUS
+.Sh HISTORY
 The
 .Nm quota
-utility exits 0 on success,
-and with a non-zero value if one or more
-filesystems are over quota.
+command appeared in
+.Bx 4.2 .
 .Sh SEE ALSO
 .Xr quotactl 2 ,
 .Xr fstab 5 ,
@@ -130,8 +137,3 @@ filesystems are over quota.
 .Xr quotaon 8 ,
 .Xr repquota 8 ,
 .Xr rpc.rquotad 8
-.Sh HISTORY
-The
-.Nm quota
-command appeared in
-.Bx 4.2 .

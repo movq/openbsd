@@ -1,28 +1,50 @@
-#	$OpenBSD: Makefile,v 1.24 2015/12/03 11:30:46 nicm Exp $
+#	$OpenBSD: Makefile,v 1.10 1999/03/22 18:53:11 millert Exp $
+#
+# Take termcap/terminfo master file and generate termcap/terminfo .db files
+# master: http://www.tuxedo.org/~esr/terminfo/termtypes.master.gz
 
 MAN=	termcap.5
-TIC=	/usr/bin/tic
+CLEANFILES+= terminfo.src termcap.src terminfo.db termcap.db
 
-all: terminfo termcap
+all: terminfo.db termcap.db
 
-terminfo: termtypes.master
-	${TIC} -x -o ${.TARGET} ${.ALLSRC}
-	@[ -d ${.TARGET} ] || exit 1
+terminfo.src: termtypes.master
+	tic -I ${.ALLSRC} | sed \
+	    -e 's,/usr/share/lib/tabset,/usr/share/tabset,g' \
+	    -e 's,/usr/lib/tabset,/usr/share/tabset,g' \
+	    > ${.TARGET}
+	@if [ ! -s ${.TARGET} ]; then \
+	    echo ${.TARGET} is zero length!  You need to update /usr/bin/tic ;\
+	    exit 1 ;\
+	fi
 
-termcap: termtypes.master
-	${TIC} -C -x ${.ALLSRC} > ${.TARGET}
-	@[ -s ${.TARGET} ] || exit 1
+terminfo.db: terminfo.src
+	cap_mkdb -i -f terminfo terminfo.src
+
+# Note the disgusting ed hack to remove three lines from xterm
+termcap.src: termtypes.master
+	tic -C ${.ALLSRC} | sed \
+	    -e 's,/usr/share/lib/tabset,/usr/share/tabset,g' \
+	    -e 's,/usr/lib/tabset,/usr/share/tabset,g' \
+	    > ${.TARGET}
+	echo "1\n/^xterm|\n\nd\nd\nd\n.\nw\nq\n" | ed - ${.OBJDIR}/termcap.src >/dev/null 2>&1
+	@if [ ! -s ${.TARGET} ]; then \
+	    echo ${.TARGET} is zero length!  You need to update /usr/bin/tic ;\
+	    exit 1 ;\
+	fi
+
+termcap.db: termcap.src
+	cap_mkdb -f termcap termcap.src
 
 realinstall:
-	find terminfo -type f -exec \
-	     ${INSTALL} -D ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 \
-	     {} ${DESTDIR}${BINDIR}/{} \;
-	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 termcap \
+	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 terminfo.db \
+	     ${DESTDIR}${BINDIR}/misc/terminfo.db
+	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 termcap.db \
+	     ${DESTDIR}${BINDIR}/misc/termcap.db
+	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 termcap.src \
 	     ${DESTDIR}${BINDIR}/misc/termcap
+	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 ${.CURDIR}/map3270 \
+	     ${DESTDIR}${BINDIR}/misc/map3270
 	ln -fs ${BINDIR}/misc/termcap ${DESTDIR}/etc/termcap
-
-clean:
-	rm -f termcap
-	rm -rf terminfo
 
 .include <bsd.prog.mk>

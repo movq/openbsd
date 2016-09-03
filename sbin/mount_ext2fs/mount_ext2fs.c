@@ -1,4 +1,4 @@
-/*	$OpenBSD: mount_ext2fs.c,v 1.18 2015/12/08 15:56:42 tedu Exp $	*/
+/*	$OpenBSD: mount_ext2fs.c,v 1.6 1997/08/20 05:10:19 millert Exp $	*/
 /*	$NetBSD: mount_ffs.c,v 1.3 1996/04/13 01:31:19 jtc Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,7 +34,21 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)mount_ufs.c	8.2 (Berkeley) 3/27/94";
+#else
+static char rcsid[] = "$OpenBSD: mount_ext2fs.c,v 1.6 1997/08/20 05:10:19 millert Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/mount.h>
 
 #include <err.h>
@@ -39,11 +57,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 
 #include "mntopts.h"
 
-void	ext2fs_usage(void);
+void	ext2fs_usage __P((void));
 
 static const struct mntopt mopts[] = {
 	MOPT_STDOPTS,
@@ -52,11 +69,14 @@ static const struct mntopt mopts[] = {
 };
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char * const argv[];
 {
+	extern int optreset;
 	struct ufs_args args;		/* XXX ffs_args */
 	int ch, mntflags;
-	char fs_name[PATH_MAX], *errcause;
+	char *fs_name, *errcause;
 
 	mntflags = 0;
 	optind = optreset = 1;		/* Reset for parse of new argv. */
@@ -75,16 +95,15 @@ main(int argc, char *argv[])
 	if (argc != 2)
 		ext2fs_usage();
 
-	args.fspec = argv[0];		/* The name of the device file. */
-	if (realpath(argv[1], fs_name) == NULL)	/* The mount point. */
-		err(1, "realpath %s", argv[1]);
+        args.fspec = argv[0];		/* The name of the device file. */
+	fs_name = argv[1];		/* The mount point. */
 
 #define DEFAULT_ROOTUID	-2
-	args.export_info.ex_root = DEFAULT_ROOTUID;
+	args.export.ex_root = DEFAULT_ROOTUID;
 	if (mntflags & MNT_RDONLY)
-		args.export_info.ex_flags = MNT_EXRDONLY;
+		args.export.ex_flags = MNT_EXRDONLY;
 	else
-		args.export_info.ex_flags = 0;
+		args.export.ex_flags = 0;
 
 	if (mount(MOUNT_EXT2FS, fs_name, mntflags, &args) < 0) {
 		switch (errno) {
@@ -108,7 +127,7 @@ main(int argc, char *argv[])
 }
 
 void
-ext2fs_usage(void)
+ext2fs_usage()
 {
 	(void)fprintf(stderr,
 		"usage: mount_ext2fs [-o options] special node\n");

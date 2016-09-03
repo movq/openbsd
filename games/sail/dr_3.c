@@ -1,4 +1,4 @@
-/*	$OpenBSD: dr_3.c,v 1.7 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: dr_3.c,v 1.2 1999/01/18 06:20:52 pjanzen Exp $	*/
 /*	$NetBSD: dr_3.c,v 1.3 1995/04/22 10:36:49 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,16 +34,19 @@
  * SUCH DAMAGE.
  */
 
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dr_3.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: dr_3.c,v 1.2 1999/01/18 06:20:52 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "driver.h"
-#include "extern.h"
-#include "player.h"
+#include <stdlib.h>
 
-/* move all comp ships */
 void
-moveall(void)
+moveall()		/* move all comp ships */
 {
 	struct ship *sp, *sq;		/* r11, r10 */
 	int n;				/* r9 */
@@ -66,7 +73,6 @@ moveall(void)
 				*sp->file->movebuf = '\0';
 			else
 				closeon(sp, closest, sp->file->movebuf,
-					sizeof sp->file->movebuf,
 					ta, ma, af);
 		} else
 			*sp->file->movebuf = '\0';
@@ -80,12 +86,10 @@ moveall(void)
 	n = 0;
 	foreachship(sp) {
 		if (snagged(sp))
-			(void) strlcpy(sp->file->movebuf, "d",
-			    sizeof sp->file->movebuf);
+			(void) strcpy(sp->file->movebuf, "d");
 		else
 			if (*sp->file->movebuf != 'd')
-				(void) strlcat(sp->file->movebuf, "d",
-					sizeof sp->file->movebuf);
+				(void) strcat(sp->file->movebuf, "d");
 		row[n] = sp->file->row;
 		col[n] = sp->file->col;
 		dir[n] = sp->file->dir;
@@ -179,7 +183,8 @@ moveall(void)
 }
 
 int
-stillmoving(int k)
+stillmoving(k)
+	int k;
 {
 	struct ship *sp;
 
@@ -190,7 +195,8 @@ stillmoving(int k)
 }
 
 int
-is_isolated(struct ship *ship)
+is_isolated(ship)
+	struct ship *ship;
 {
 	struct ship *sp;
 
@@ -202,7 +208,8 @@ is_isolated(struct ship *ship)
 }
 
 int
-push(struct ship *from, struct ship *to)
+push(from, to)
+	struct ship *from, *to;
 {
 	int bs, sb;
 
@@ -216,7 +223,10 @@ push(struct ship *from, struct ship *to)
 }
 
 void
-step(int com, struct ship *sp, char *moved)
+step(com, sp, moved)
+	char com;
+	struct ship *sp;
+	char *moved;
 {
 	int dist;
 
@@ -256,7 +266,10 @@ step(int com, struct ship *sp, char *moved)
 }
 
 void
-sendbp(struct ship *from, struct ship *to, int sections, int isdefense)
+sendbp(from, to, sections, isdefense)
+	struct ship *from, *to;
+	int sections;
+	char isdefense;
 {
 	int n;
 	struct BP *bp;
@@ -275,7 +288,9 @@ sendbp(struct ship *from, struct ship *to, int sections, int isdefense)
 }
 
 int
-is_toughmelee(struct ship *ship, struct ship *to, int isdefense, int count)
+is_toughmelee(ship, to, isdefense, count)
+	struct ship *ship, *to;
+	int isdefense, count;
 {
 	struct BP *bp;
 	int obp = 0;
@@ -306,7 +321,7 @@ is_toughmelee(struct ship *ship, struct ship *to, int isdefense, int count)
 }
 
 void
-reload(void)
+reload()
 {
 	struct ship *sp;
 
@@ -316,7 +331,7 @@ reload(void)
 }
 
 void
-checksails(void)
+checksails()
 {
 	struct ship *sp;
 	int rig, full; 

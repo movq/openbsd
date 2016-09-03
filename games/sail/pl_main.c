@@ -1,4 +1,4 @@
-/*	$OpenBSD: pl_main.c,v 1.16 2016/01/08 20:26:33 mestre Exp $	*/
+/*	$OpenBSD: pl_main.c,v 1.6 1999/06/13 16:43:12 pjanzen Exp $	*/
 /*	$NetBSD: pl_main.c,v 1.5 1995/04/24 12:25:25 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,26 +34,33 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pl_main.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: pl_main.c,v 1.6 1999/06/13 16:43:12 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
-#include "extern.h"
 #include "player.h"
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <err.h>
 
-void
-pl_main(void)
+/*ARGSUSED*/
+int
+pl_main()
 {
 	initialize();
 	Msg("Aye aye, Sir");
 	play();
+	return 0;			/* for lint,  play() never returns */
 }
 
 void
-initialize(void)
+initialize()
 {
 	struct File *fp;
 	struct ship *sp;
@@ -85,8 +96,8 @@ reprint:
 		nat[n] = 0;
 	foreachship(sp) {
 		if (sp->file == NULL &&
-		    (sp->file = calloc(1, sizeof (struct File))) == NULL)
-			err(1, NULL);
+		    (sp->file = (struct File *)calloc(1, sizeof (struct File))) == NULL)
+			errx(1, "out of memory");
 		sp->file->index = sp - SHIP(0);
 		sp->file->stern = nat[sp->nationality]++;
 		sp->file->dir = sp->shipdir;
@@ -173,6 +184,7 @@ reprint:
 		switch (fork()) {
 		case 0:
 			longjmp(restart, MODE_DRIVER);
+			/*NOTREACHED*/
 		case -1:
 			perror("fork");
 			leave(LEAVE_FORK);
@@ -185,13 +197,13 @@ reprint:
 		ms->shipname, mc->guns, classname[mc->class],
 		qualname[mc->qual]);
 	if ((nameptr = (char *) getenv("SAILNAME")) && *nameptr)
-		(void) strlcpy(captain, nameptr, sizeof captain);
+		(void) strncpy(captain, nameptr, sizeof captain);
 	else {
 		(void) printf("Your name, Captain? ");
 		(void) fflush(stdout);
-		if (fgets(captain, sizeof captain, stdin) == NULL ||
-		    captain[0] == '\0' || captain[0] == '\n')
-			(void) strlcpy(captain, "no name", sizeof captain);
+		(void) fgets(captain, sizeof captain, stdin);
+		if (!*captain || *captain == '\n')
+			(void) strcpy(captain, "no name");
 		else if (captain[strlen(captain) - 1] == '\n')
 		    captain[strlen(captain) - 1] = '\0';
 	}

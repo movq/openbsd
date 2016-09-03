@@ -1,7 +1,7 @@
-/*	$OpenBSD: lasi.c,v 1.22 2004/09/15 20:11:28 mickey Exp $	*/
+/*	$OpenBSD: lasi.c,v 1.3 1999/04/20 20:28:32 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2003 Michael Shalayeff
+ * Copyright (c) 1998,1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,21 +12,25 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#undef LASIDEBUG
+#define LASIDEBUG 9
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -35,19 +39,14 @@
 
 #include <machine/bus.h>
 #include <machine/iomod.h>
-#include <machine/reg.h>
 #include <machine/autoconf.h>
 
 #include <hppa/dev/cpudevs.h>
 
 #include <hppa/gsc/gscbusvar.h>
 
-#define	LASI_IOMASK	0xfff00000
-
 struct lasi_hwr {
 	u_int32_t lasi_power;
-#define	LASI_BLINK	0x01
-#define	LASI_OFF	0x02
 	u_int32_t lasi_error;
 	u_int32_t lasi_version;
 	u_int32_t lasi_reset;
@@ -68,11 +67,10 @@ struct lasi_softc {
 
 	struct lasi_hwr volatile *sc_hw;
 	struct lasi_trs volatile *sc_trs;
-	struct gsc_attach_args ga;	/* for deferred attach */
 };
 
-int	lasimatch(struct device *, void *, void *);
-void	lasiattach(struct device *, struct device *, void *);
+int	lasimatch __P((struct device *, void *, void *));
+void	lasiattach __P((struct device *, struct device *, void *));
 
 struct cfattach lasi_ca = {
 	sizeof(struct lasi_softc), lasimatch, lasiattach
@@ -82,8 +80,11 @@ struct cfdriver lasi_cd = {
 	NULL, "lasi", DV_DULL
 };
 
-void lasi_cold_hook(int on);
-void lasi_gsc_attach(struct device *self);
+void lasi_intr_establish __P((void *v, u_int32_t mask));
+void lasi_intr_disestablish __P((void *v, u_int32_t mask));
+u_int32_t lasi_intr_check __P((void *v));
+void lasi_intr_ack __P((void *v, u_int32_t mask));
+
 
 int
 lasimatch(parent, cfdata, aux)   
@@ -107,21 +108,17 @@ lasiattach(parent, self, aux)
 	struct device *self;
 	void *aux;
 {
-	struct lasi_softc *sc = (struct lasi_softc *)self;
-	struct confargs *ca = aux;
-	bus_space_handle_t ioh, ioh2;
+	register struct confargs *ca = aux;
+	register struct lasi_softc *sc = (struct lasi_softc *)self;
+	struct gsc_attach_args ga;
+	bus_space_handle_t ioh;
 	int s, in;
 
-	if (bus_space_map(ca->ca_iot, ca->ca_hpa,
-	    IOMOD_HPASIZE, 0, &ioh)) {
-		printf(": can't map TRS space\n");
-		return;
-	}
-
 	if (bus_space_map(ca->ca_iot, ca->ca_hpa + 0xc000,
-	    IOMOD_HPASIZE, 0, &ioh2)) {
-		bus_space_unmap(ca->ca_iot, ioh, IOMOD_HPASIZE);
-		printf(": can't map IO space\n");
+			  IOMOD_HPASIZE, 0, &ioh)) {
+#ifdef DEBUG
+		printf("lasiattach: can't map IO space\n");
+#endif
 		return;
 	}
 
@@ -130,8 +127,8 @@ lasiattach(parent, self, aux)
 
 	/* XXX should we reset the chip here? */
 
-	printf(": rev %d.%d\n", (sc->sc_hw->lasi_version & 0xf0) >> 4,
-	    sc->sc_hw->lasi_version & 0xf);
+	printf (": rev %d.%d\n", (sc->sc_hw->lasi_version & 0xf0) >> 4,
+		sc->sc_hw->lasi_version & 0xf);
 
 	/* interrupts guts */
 	s = splhigh();
@@ -144,107 +141,65 @@ lasiattach(parent, self, aux)
 
 	sc->sc_ic.gsc_type = gsc_lasi;
 	sc->sc_ic.gsc_dv = sc;
-	sc->sc_ic.gsc_base = sc->sc_trs;
+	sc->sc_ic.gsc_intr_establish = lasi_intr_establish;
+	sc->sc_ic.gsc_intr_disestablish = lasi_intr_disestablish;
+	sc->sc_ic.gsc_intr_check = lasi_intr_check;
+	sc->sc_ic.gsc_intr_ack = lasi_intr_ack;
 
-#ifdef USELEDS
-	/* figure out the leds address */
-	switch (cpu_hvers) {
-	case HPPA_BOARD_HP712_60:
-	case HPPA_BOARD_HP712_80:
-	case HPPA_BOARD_HP712_100:
-	case HPPA_BOARD_HP743I_64:
-	case HPPA_BOARD_HP743I_100:
-	case HPPA_BOARD_HP712_120:
-		break;	/* only has one led. works different */
+	ga.ga_ca = *ca;	/* clone from us */
+	ga.ga_name = "gsc";
+	ga.ga_ic = &sc->sc_ic;
+	config_found(self, &ga, gscprint);
+}
 
-	case HPPA_BOARD_HP715_64:
-	case HPPA_BOARD_HP715_80:
-	case HPPA_BOARD_HP715_100:
-	case HPPA_BOARD_HP715_100XC:
-	case HPPA_BOARD_HP725_100:
-	case HPPA_BOARD_HP725_120:
-		if (bus_space_map(ca->ca_iot, ca->ca_hpa - 0x20000,
-		    4, 0, (bus_space_handle_t *)&machine_ledaddr))
-			machine_ledaddr = NULL;
-		machine_ledword = 1;
-		break;
+void
+lasi_intr_establish(v, mask)
+	void *v;
+	u_int32_t mask;
+{
+	register struct lasi_softc *sc = v;
 
-	case HPPA_BOARD_HP800_A180C:
-	case HPPA_BOARD_HP778_B132L:
-	case HPPA_BOARD_HP778_B132LP:
-	case HPPA_BOARD_HP778_B160L:
-	case HPPA_BOARD_HP778_B180L:
-	case HPPA_BOARD_HP780_C100:
-	case HPPA_BOARD_HP780_C110:
-	case HPPA_BOARD_HP779_C132L:
-	case HPPA_BOARD_HP779_C160L:
-	case HPPA_BOARD_HP779_C180L:
-	case HPPA_BOARD_HP779_C160L1:
-		if (bus_space_map(ca->ca_iot, 0xf0190000,
-		    4, 0, (bus_space_handle_t *)&machine_ledaddr))
-			machine_ledaddr = NULL;
-		machine_ledword = 1;
-		break;
+	sc->sc_trs->lasi_imr |= mask;
+}
 
-	default:
-		machine_ledaddr = (u_int8_t *)sc->sc_hw;
-		machine_ledword = 1;
-		break;
-	}
+void
+lasi_intr_disestablish(v, mask)
+	void *v;
+	u_int32_t mask;
+{
+	register struct lasi_softc *sc = v;
+
+	sc->sc_trs->lasi_imr &= ~mask;
+}
+
+u_int32_t
+lasi_intr_check(v)
+	void *v;
+{
+	register struct lasi_softc *sc = v;
+	register u_int32_t irr, imr, ipr;
+
+	imr = sc->sc_trs->lasi_imr;
+	ipr = sc->sc_trs->lasi_ipr;
+	irr = sc->sc_trs->lasi_irr;
+	sc->sc_trs->lasi_imr = 0;
+	sc->sc_trs->lasi_imr = imr &= ~irr;
+
+#ifdef LASIDEBUG
+	printf ("%s: imr=0x%x, irr=0x%x, ipr=0x%x, iar=0x%x, icr=0x%x\n",
+		sc->sc_dev.dv_xname, imr, irr, ipr,
+		sc->sc_trs->lasi_iar, sc->sc_trs->lasi_icr);
 #endif
 
-	sc->ga.ga_ca = *ca;	/* clone from us */
-	if (!strcmp(parent->dv_xname, "mainbus0")) {
-		sc->ga.ga_dp.dp_bc[0] = sc->ga.ga_dp.dp_bc[1];
-		sc->ga.ga_dp.dp_bc[1] = sc->ga.ga_dp.dp_bc[2];
-		sc->ga.ga_dp.dp_bc[2] = sc->ga.ga_dp.dp_bc[3];
-		sc->ga.ga_dp.dp_bc[3] = sc->ga.ga_dp.dp_bc[4];
-		sc->ga.ga_dp.dp_bc[4] = sc->ga.ga_dp.dp_bc[5];
-		sc->ga.ga_dp.dp_bc[5] = sc->ga.ga_dp.dp_mod;
-		sc->ga.ga_dp.dp_mod = 0;
-	}
-	if (sc->sc_dev.dv_unit)
-		config_defer(self, lasi_gsc_attach);
-	else {
-		extern void (*cold_hook)(int);
-
-		lasi_gsc_attach(self);
-		/* could be already set by power(4) */
-		if (!cold_hook)
-			cold_hook = lasi_cold_hook;
-	}
+	return irr;
 }
 
 void
-lasi_gsc_attach(self)
-	struct device *self;
+lasi_intr_ack(v, mask)
+	void *v;
+	u_int32_t mask;
 {
-	struct lasi_softc *sc = (struct lasi_softc *)self;
+	register struct lasi_softc *sc = v;
 
-	sc->ga.ga_name = "gsc";
-	sc->ga.ga_hpamask = LASI_IOMASK;
-	sc->ga.ga_ic = &sc->sc_ic;
-	config_found(self, &sc->ga, gscprint);
-}
-
-void
-lasi_cold_hook(on)
-	int on;
-{
-	register struct lasi_softc *sc = lasi_cd.cd_devs[0];
-
-	if (!sc)
-		return;
-
-	switch (on) {
-	case HPPA_COLD_COLD:
-		sc->sc_hw->lasi_power = LASI_BLINK;
-		break;
-	case HPPA_COLD_HOT:
-		sc->sc_hw->lasi_power = 0;
-		break;
-	case HPPA_COLD_OFF:
-		sc->sc_hw->lasi_power = LASI_OFF;
-		break;
-	}
+	sc->sc_trs->lasi_imr |= mask;
 }

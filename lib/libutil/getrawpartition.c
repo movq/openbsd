@@ -1,4 +1,4 @@
-/*	$OpenBSD: getrawpartition.c,v 1.9 2016/08/27 03:54:20 guenther Exp $	*/
+/*	$OpenBSD: getrawpartition.c,v 1.2 1996/06/17 07:46:02 downsj Exp $	*/
 /*	$NetBSD: getrawpartition.c,v 1.1 1996/05/16 07:03:33 thorpej Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -30,22 +37,25 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: getrawpartition.c,v 1.1 1996/05/16 07:03:33 thorpej Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/sysctl.h>
-#include <stdio.h>		/* for NULL */
 
 #include "util.h"
 
 int
-getrawpartition(void)
+getrawpartition()
 {
 	int rawpart, mib[2];
-	size_t varlen;
+	size_t varlen; 
 
 	mib[0] = CTL_KERN;
 	mib[1] = KERN_RAWPARTITION;
 	varlen = sizeof(rawpart);
-	if (sysctl(mib, 2, &rawpart, &varlen, NULL, (size_t)0) < 0)
+	if (sysctl(mib, 2, &rawpart, &varlen, NULL, 0) < 0)
 		return (-1);
 
 	return (rawpart);

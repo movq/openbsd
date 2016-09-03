@@ -1,4 +1,4 @@
-/*	$OpenBSD: cypher.c,v 1.19 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: cypher.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: cypher.c,v 1.3 1995/03/21 15:07:15 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,135 +34,92 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <err.h>
-#include <limits.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cypher.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: cypher.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 #include "pathnames.h"
 
-static void verb_with_all(unsigned int *, int, int (*)(void), const char *);
-
-/*
- * Prompt user to input an integer, which is stored in *value.
- * On failure prints a warning, leaves *value untouched, and returns -1.
- */
 int
-getnum(int *value, const char *fmt, ...)
-{
-	char buffer[BUFSIZ];
-	va_list ap;
-	const char *errstr;
-	int n;
-
-	va_start(ap, fmt);
-	vprintf(fmt, ap);
-	fflush(stdout);
-	va_end(ap);
-
-	if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
-		warnx("error reading input");
-		return (-1);
-	}
-	buffer[strcspn(buffer, "\n")] = '\0';
-
-	n = strtonum(buffer, INT_MIN, INT_MAX, &errstr);
-	if (errstr) {
-		warnx("number %s: %s", errstr, buffer);
-		return (-1);
-	}
-	*value = n;
-	return (0);
-}
-
-/* returns 0 if error or no more commands to do,
- *         1 if there are more commands remaining on the current input line
- */
-int
-cypher(void)
+cypher()
 {
 	int     n;
 	int     junk;
 	int     lflag = -1;
+	char    buffer[10];
 	char   *filename, *rfilename;
 	size_t  filename_len;
 
+	while (wordtype[wordnumber] == ADJS)
+		wordnumber++;
 	while (wordnumber <= wordcount) {
-		if (wordtype[wordnumber] != VERB &&
-		    !(wordtype[wordnumber] == OBJECT &&
-		    wordvalue[wordnumber] == KNIFE)) {
-			printf("%s: How's that?\n",
-			    (wordnumber == wordcount) ? words[wordnumber - 1] : words[wordnumber]);
-			return (0);
-		}
-
 		switch (wordvalue[wordnumber]) {
-
-		case AUXVERB:
-			/* Take the following word as the verb */
-			wordnumber++;
-			return(cypher());
-			break;
 
 		case UP:
 			if (location[position].access || wiz || tempwiz) {
 				if (!location[position].access)
 					puts("Zap!  A gust of wind lifts you up.");
-				if (!moveplayer(location[position].up, AHEAD))
-					return (0);
+				if (!move(location[position].up, AHEAD))
+					return (-1);
 			} else {
-				puts("There is no way up.");
-				return (0);
+				puts("There is no way up");
+				return (-1);
 			}
 			lflag = 0;
 			break;
 
 		case DOWN:
-			if (!moveplayer(location[position].down, AHEAD))
-				return (0);
+			if (!move(location[position].down, AHEAD))
+				return (-1);
 			lflag = 0;
 			break;
 
 		case LEFT:
-			if (!moveplayer(left, LEFT))
-				return (0);
+			if (!move(left, LEFT))
+				return (-1);
 			lflag = 0;
 			break;
 
 		case RIGHT:
-			if (!moveplayer(right, RIGHT))
-				return (0);
+			if (!move(right, RIGHT))
+				return (-1);
 			lflag = 0;
 			break;
 
 		case AHEAD:
-			if (!moveplayer(ahead, AHEAD))
-				return (0);
+			if (!move(ahead, AHEAD))
+				return (-1);
 			lflag = 0;
 			break;
 
 		case BACK:
-			if (!moveplayer(back, BACK))
-				return (0);
+			if (!move(back, BACK))
+				return (-1);
 			lflag = 0;
 			break;
 
 		case SHOOT:
-			verb_with_all(location[position].objects, OBJ_PERSON,
-			    shoot, "shoot at");
+			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
+				for (n = 0; n < NUMOFOBJECTS; n++)
+					if (TestBit(location[position].objects, n) && objsht[n]) {
+						wordvalue[wordnumber + 1] = n;
+						wordnumber = shoot();
+					}
+				wordnumber++;
+				wordnumber++;
+			} else
+				shoot();
 			break;
 
 		case TAKE:
 			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
-				int things;
-				things = 0;
 				for (n = 0; n < NUMOFOBJECTS; n++)
 					if (TestBit(location[position].objects, n) && objsht[n]) {
-						things++;
 						wordvalue[wordnumber + 1] = n;
 /* Some objects (type NOUNS) have special treatment in take().  For these
  * we must set the type to NOUNS.  However for SWORD and BODY all it does
@@ -184,28 +145,22 @@ cypher(void)
 							wordtype[wordnumber + 1] = OBJECT;
 						}
 						wordnumber = take(location[position].objects);
-						wordnumber += 2;
 					}
-				if (!things)
-					puts("Nothing to take!");
+				wordnumber++;
+				wordnumber++;
 			} else
 				take(location[position].objects);
 			break;
 
 		case DROP:
 			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
-				int things;
-				things = 0;
 				for (n = 0; n < NUMOFOBJECTS; n++)
 					if (TestBit(inven, n)) {
-						things++;
 						wordvalue[wordnumber + 1] = n;
 						wordnumber = drop("Dropped");
 					}
 				wordnumber++;
 				wordnumber++;
-				if (!things)
-					puts("Nothing to drop!");
 			} else
 				drop("Dropped");
 			break;
@@ -214,41 +169,75 @@ cypher(void)
 		case KICK:
 		case THROW:
 			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
-				int things, wv;
-				things = 0;
-				wv = wordvalue[wordnumber];
 				for (n = 0; n < NUMOFOBJECTS; n++)
 					if (TestBit(inven, n) ||
 					  (TestBit(location[position].objects, n) && objsht[n])) {
-						things++;
 						wordvalue[wordnumber + 1] = n;
 						wordnumber = throw(wordvalue[wordnumber] == KICK ? "Kicked" : "Thrown");
 					}
 				wordnumber += 2;
-				if (!things)
-					printf("Nothing to %s!\n", wv == KICK ? "kick" : "throw");
 			} else
 				throw(wordvalue[wordnumber] == KICK ? "Kicked" : "Thrown");
 			break;
 
 		case TAKEOFF:
-			verb_with_all(wear, 0, takeoff, "take off");
+			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
+				for (n = 0; n < NUMOFOBJECTS; n++)
+					if (TestBit(wear, n)) {
+						wordvalue[wordnumber + 1] = n;
+						wordnumber = takeoff();
+					}
+				wordnumber += 2;
+			} else
+				takeoff();
 			break;
 
 		case DRAW:
-			verb_with_all(wear, 0, draw, "draw");
+			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
+				for (n = 0; n < NUMOFOBJECTS; n++)
+					if (TestBit(wear, n)) {
+						wordvalue[wordnumber + 1] = n;
+						wordnumber = draw();
+					}
+				wordnumber += 2;
+			} else
+				draw();
 			break;
 
 		case PUTON:
-			verb_with_all(location[position].objects, 0, puton, "put on");
+			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
+				for (n = 0; n < NUMOFOBJECTS; n++)
+					if (TestBit(location[position].objects, n) && objsht[n]) {
+						wordvalue[wordnumber + 1] = n;
+						wordnumber = puton();
+					}
+				wordnumber += 2;
+			} else
+				puton();
 			break;
 
 		case WEARIT:
-			verb_with_all(inven, 0, wearit, "wear");
+			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
+				for (n = 0; n < NUMOFOBJECTS; n++)
+					if (TestBit(inven, n)) {
+						wordvalue[wordnumber + 1] = n;
+						wordnumber = wearit();
+					}
+				wordnumber += 2;
+			} else
+				wearit();
 			break;
 
 		case EAT:
-			verb_with_all(inven, 0, eat, "eat");
+			if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
+				for (n = 0; n < NUMOFOBJECTS; n++)
+					if (TestBit(inven, n)) {
+						wordvalue[wordnumber + 1] = n;
+						wordnumber = eat();
+					}
+				wordnumber += 2;
+			} else
+				eat();
 			break;
 
 		case PUT:
@@ -261,18 +250,8 @@ cypher(void)
 				for (n = 0; n < NUMOFOBJECTS; n++)
 					if (TestBit(inven, n))
 						printf("\t%s\n", objsht[n]);
-				printf("\n= %d kilogram%s ", carrying,
-				    (carrying == 1 ?  "." : "s."));
-				if (WEIGHT)
-					printf("(%d%%)\n", carrying * 100 / WEIGHT);
-				else
-					printf("(can't lift any weight%s)\n",
-					    (carrying ? " or move with what you have" : ""));
-				if (CUMBER)
-					printf("Your arms are %d%% full.\n",
-					    encumber * 100 / CUMBER);
-				else
-					printf("You can't pick anything up.\n");
+				printf("\n= %d kilogram%s (%d%%)\n", carrying, (carrying == 1 ? "." : "s."), (WEIGHT ? carrying * 100 / WEIGHT : -1));
+				printf("Your arms are %d%% full.\n", encumber * 100 / CUMBER);
 			} else
 				puts("You aren't carrying anything.");
 
@@ -297,10 +276,6 @@ cypher(void)
 			lflag = use();
 			break;
 
-		case OPEN:
-			dooropen();
-			break;
-
 		case LOOK:
 			if (!notes[CANTSEE] || TestBit(inven, LAMPON) ||
 			    TestBit(location[position].objects, LAMPON)
@@ -314,22 +289,48 @@ cypher(void)
 				}
 			} else
 				puts("I can't see anything.");
-			return (0);	/* No commands after a look */
+			return (-1);
 			break;
 
 		case SU:
 			if (wiz || tempwiz) {
-				getnum(&position, "\nRoom (was %d) = ", position);
-				getnum(&ourtime, "Time (was %d) = ", ourtime);
-				getnum(&fuel, "Fuel (was %d) = ", fuel);
-				getnum(&torps, "Torps (was %d) = ", torps);
-				getnum(&CUMBER, "CUMBER (was %d) = ", CUMBER);
-				getnum(&WEIGHT, "WEIGHT (was %d) = ", WEIGHT);
-				getnum(&ourclock, "Clock (was %d) = ", ourclock);
-				if (getnum(&junk, "Wizard (was %d, %d) = ", wiz, tempwiz) != -1 && !junk)
-					tempwiz = wiz = 0;
+				printf("\nRoom (was %d) = ", position);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &position);
+				printf("Time (was %d) = ", ourtime);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &ourtime);
+				printf("Fuel (was %d) = ", fuel);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &fuel);
+				printf("Torps (was %d) = ", torps);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &torps);
+				printf("CUMBER (was %d) = ", CUMBER);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &CUMBER);
+				printf("WEIGHT (was %d) = ", WEIGHT);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &WEIGHT);
+				printf("Clock (was %d) = ", ourclock);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n')
+					sscanf(buffer, "%d", &ourclock);
+				printf("Wizard (was %d, %d) = ", wiz, tempwiz);
+				fgets(buffer, 10, stdin);
+				if (*buffer != '\n') {
+					sscanf(buffer, "%d", &junk);
+					if (!junk)
+						tempwiz = wiz = 0;
+				}
 				printf("\nDONE.\n");
-				return (0);	/* No commands after a SU */
+				return (0);
 			} else
 				puts("You aren't a wizard.");
 			break;
@@ -341,15 +342,12 @@ cypher(void)
 			printf("You have visited %d out of %d rooms this run (%d%%).\n", card(beenthere, NUMOFROOMS), NUMOFROOMS, card(beenthere, NUMOFROOMS) * 100 / NUMOFROOMS);
 			break;
 
-		/* case KNIFE: */
+		case KNIFE:
 		case KILL:
 			murder();
 			break;
 
 		case UNDRESS:
-			undress();
-			break;
-
 		case RAVAGE:
 			ravage();
 			break;
@@ -370,16 +368,6 @@ cypher(void)
 			}
 			save(rfilename);
 			free(rfilename);
-			break;
-
-		case VERBOSE:
-			verbose = 1;
-			printf("[Maximum verbosity]\n");
-			break;
-
-		case BRIEF:
-			verbose = 0;
-			printf("[Standard verbosity]\n");
 			break;
 
 		case FOLLOW:
@@ -412,14 +400,14 @@ cypher(void)
 
 		case LAUNCH:
 			if (!launch())
-				return (0);
+				return (-1);
 			else
 				lflag = 0;
 			break;
 
 		case LANDIT:
 			if (!land())
-				return (0);
+				return (-1);
 			else
 				lflag = 0;
 			break;
@@ -457,57 +445,14 @@ cypher(void)
 
 		default:
 			puts("How's that?");
-			return (0);
+			return (-1);
 			break;
 
 		}
-		if (!lflag)
-			newlocation();
-		if (wordnumber < wordcount && !stop_cypher &&
-		    (*words[wordnumber] == ',' || *words[wordnumber] == '.')) {
-			wordnumber++;
-			return (1);
-		} else
-			return (0);
+		if (wordnumber < wordcount && *words[wordnumber++] == ',')
+			continue;
+		else
+			return (lflag);
 	}
-	return (0);
-}
-
-int
-inc_wordnumber(const char *v, const char *adv)
-{
-	wordnumber++;
-	if (wordnumber >= wordcount) {
-		printf("%c%s %s?\n",
-		    toupper((unsigned char)v[0]), v + 1, adv);
-		return(-1);
-	}
-	return(0);
-}
-
-static void
-verb_with_all(unsigned int *testarray, int objflg, int (*verbfunc)(void),
-              const char *verbname)
-{
-	int things, n;
-
-	things = 0;
-	if (wordnumber < wordcount && wordvalue[wordnumber + 1] == EVERYTHING) {
-		for (n = 0; n < NUMOFOBJECTS; n++)
-			if (TestBit(testarray, n) &&
-			    (objsht[n] || (objflg & objflags[n]))) {
-				things++;
-				wordvalue[wordnumber + 1] = n;
-				/* Assume it's a NOUN if no short description */
-				if (objsht[n])
-					wordtype[wordnumber + 1] = OBJECT;
-				else
-					wordtype[wordnumber + 1] = NOUNS;
-				wordnumber = verbfunc();
-			}
-		wordnumber += 2;
-		if (!things)
-			printf("Nothing to %s!\n", verbname);
-	} else
-		verbfunc();
+	return (lflag);
 }

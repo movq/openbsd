@@ -1,4 +1,4 @@
-/* $OpenBSD: revnetgroup.c,v 1.11 2013/12/05 14:20:53 jca Exp $ */
+/* $OpenBSD: revnetgroup.c,v 1.1 1997/04/15 22:06:15 maja Exp $ */
 /*
  * Copyright (c) 1995
  *	Bill Paul <wpaul@ctr.columbia.edu>.  All rights reserved.
@@ -42,11 +42,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <util.h>
 #include <errno.h>
 #include <err.h>
 #include "hash.h"
+
+#ifndef lint
+static const char rcsid[] = "$OpenBSD: revnetgroup.c,v 1.1 1997/04/15 22:06:15 maja Exp $";
+#endif
 
 /* Default location of netgroup file. */
 char *netgroup = "/etc/netgroup";
@@ -60,42 +62,45 @@ struct group_entry *gtable[TABLESIZE];
  */
 struct member_entry *mtable[TABLESIZE];
 
-static void
-usage(void)
+void usage(prog)
+char *prog;
 {
-	fprintf (stderr,"usage: revnetgroup -h | -u [-f netgroup_file]\n");
+	fprintf (stderr,"usage: %s -u|-h [-f netgroup file]\n",prog);
 	exit(1);
 }
 
+extern char *optarg;
+
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	FILE *fp;
-	char *readbuf;
+	char readbuf[LINSIZ];
 	struct group_entry *gcur;
 	struct member_entry *mcur;
 	char *host, *user, *domain;
-	extern char *optarg;
 	int ch;
 	char *key = NULL, *data = NULL;
 	int hosts = -1, i;
 
 	if (argc < 2)
-		usage();
+		usage(argv[0]);
 
 	while ((ch = getopt(argc, argv, "uhf:")) != -1) {
-		switch (ch) {
+		switch(ch) {
 		case 'u':
 			if (hosts != -1) {
-				warnx("please use only one of -h or -u");
-				usage();
+				warnx("please use only one of -u or -h");
+				usage(argv[0]);
 			}
 			hosts = 0;
 			break;
 		case 'h':
 			if (hosts != -1) {
 				warnx("please use only one of -u or -h");
-				usage();
+				usage(argv[0]);
 			}
 			hosts = 1;
 			break;
@@ -103,34 +108,37 @@ main(int argc, char *argv[])
 			netgroup = optarg;
 			break;
 		default:
-			usage();
+			usage(argv[0]);
 			break;
 		}
 	}
 
 	if (hosts == -1)
-		usage();
+		usage(argv[0]);
 
 	if (strcmp(netgroup, "-")) {
 		if ((fp = fopen(netgroup, "r")) == NULL) {
-			err(1, "%s", netgroup);
+			err(1,netgroup);
 		}
 	} else {
 		fp = stdin;
 	}
 
 	/* Stuff all the netgroup names and members into a hash table. */
-	while ((readbuf = fparseln(fp, NULL, NULL, NULL, 0)) != NULL) {
-		data = strpbrk(readbuf, " \t");
-		if (data == NULL) {
-			free(readbuf);
+	while (fgets(readbuf, LINSIZ, fp)) {
+		if (readbuf[0] == '#')
 			continue;
+		/* handle backslash line continuations */
+		while(readbuf[strlen(readbuf) - 2] == '\\') {
+			fgets((char *)&readbuf[strlen(readbuf) - 2],
+					sizeof(readbuf) - strlen(readbuf), fp);
 		}
-		*data = '\0';
-		++data;
-		key = readbuf;
-		ngstore(gtable, key, data);
-		free(readbuf);
+		data = NULL;
+		if ((data = (char *)(strpbrk(readbuf, " \t") + 1)) < (char *)2)
+			continue;
+		key = (char *)&readbuf;
+		*(data - 1) = '\0';
+		store(gtable, key, data);
 	}
 
 	fclose(fp);
@@ -141,22 +149,22 @@ main(int argc, char *argv[])
 	 */
 	for (i = 0; i < TABLESIZE; i++) {
 		gcur = gtable[i];
-		while (gcur) {
+		while(gcur) {
 			__setnetgrent(gcur->key);
-			while (__getnetgrent(&host, &user, &domain) != 0) {
+			while(__getnetgrent(&host, &user, &domain) != NULL) {
 				if (hosts) {
 					if (!(host && !strcmp(host,"-"))) {
 						mstore(mtable,
-						    host ? host : "*",
-						    gcur->key,
-						    domain ? domain : "*");
+						       host ? host : "*",
+						       gcur->key,
+						       domain ? domain : "*");
 					}
 				} else {
 					if (!(user && !strcmp(user,"-"))) {
 						mstore(mtable,
-						    user ? user : "*",
-						    gcur->key,
-						    domain ? domain : "*");
+						       user ? user : "*",
+						       gcur->key,
+						       domain ? domain : "*");
 					}
 				}
 			}
@@ -170,11 +178,11 @@ main(int argc, char *argv[])
 	/* Spew out the results. */
 	for (i = 0; i < TABLESIZE; i++) {
 		mcur = mtable[i];
-		while (mcur) {
+		while(mcur) {
 			struct grouplist *tmp;
 			printf ("%s.%s\t", mcur->key, mcur->domain);
 			tmp = mcur->groups;
-			while (tmp) {
+			while(tmp) {
 				printf ("%s", tmp->groupname);
 				tmp = tmp->next;
 				if (tmp)

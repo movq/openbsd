@@ -1,4 +1,4 @@
-/*	$OpenBSD: time.c,v 1.14 2013/08/22 04:43:40 guenther Exp $	*/
+/*	$OpenBSD: time.c,v 1.5 1997/11/15 21:51:31 todd Exp $	*/
 /*	$NetBSD: time.c,v 1.7 1995/03/21 13:55:25 mycroft Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)time.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: time.c,v 1.5 1997/11/15 21:51:31 todd Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
-#include <stdarg.h>
+#ifdef __STDC__
+# include <stdarg.h>
+#else
+# include <varargs.h>
+#endif
 
 #include "csh.h"
 #include "extern.h"
@@ -39,10 +55,10 @@
 /*
  * C Shell - routines handling process timing and niceing
  */
-static void	pdeltat(struct timeval *, struct timeval *);
+static void	pdeltat __P((struct timeval *, struct timeval *));
 
 void
-settimes(void)
+settimes()
 {
     struct rusage ruch;
 
@@ -58,7 +74,9 @@ settimes(void)
  */
 void
 /*ARGSUSED*/
-dotime(Char **v, struct command *t)
+dotime(v, t)
+    Char **v;
+    struct command *t;
 {
     struct timeval timedol;
     struct rusage ru1, ruch;
@@ -75,9 +93,11 @@ dotime(Char **v, struct command *t)
  */
 void
 /*ARGSUSED*/
-donice(Char **v, struct command *t)
+donice(v, t)
+    Char **v;
+    struct command *t;
 {
-    Char *cp;
+    register Char *cp;
     int     nval = 0;
 
     v++, cp = *v++;
@@ -89,7 +109,8 @@ donice(Char **v, struct command *t)
 }
 
 void
-ruadd(struct rusage *ru, struct rusage *ru2)
+ruadd(ru, ru2)
+    register struct rusage *ru, *ru2;
 {
     timeradd(&ru->ru_utime, &ru2->ru_utime, &ru->ru_utime);
     timeradd(&ru->ru_stime, &ru2->ru_stime, &ru->ru_stime);
@@ -112,17 +133,18 @@ ruadd(struct rusage *ru, struct rusage *ru2)
 }
 
 void
-prusage(struct rusage *r0, struct rusage *r1, struct timeval *e,
-    struct timeval *b)
+prusage(r0, r1, e, b)
+    register struct rusage *r0, *r1;
+    struct timeval *e, *b;
 {
-    time_t t =
+    register time_t t =
     (r1->ru_utime.tv_sec - r0->ru_utime.tv_sec) * 100 +
     (r1->ru_utime.tv_usec - r0->ru_utime.tv_usec) / 10000 +
     (r1->ru_stime.tv_sec - r0->ru_stime.tv_sec) * 100 +
     (r1->ru_stime.tv_usec - r0->ru_stime.tv_usec) / 10000;
-    char *cp;
-    long i;
-    struct varent *vp = adrof(STRtime);
+    register char *cp;
+    register long i;
+    register struct varent *vp = adrof(STRtime);
 
     int     ms =
     (e->tv_sec - b->tv_sec) * 100 + (e->tv_usec - b->tv_usec) / 10000;
@@ -152,7 +174,7 @@ prusage(struct rusage *r0, struct rusage *r1, struct timeval *e,
 
 	    case 'P':		/* percent time spent running */
 		/* check if it did not run at all */
-		i = (ms == 0) ? 0 : ((long long)t * 1000 / ms);
+		i = (ms == 0) ? 0 : (t * 1000 / ms);
 		/* nn.n% */
 		(void) fprintf(cshout, "%ld.%01ld%%", i / 10, i % 10);
 		break;
@@ -163,21 +185,20 @@ prusage(struct rusage *r0, struct rusage *r1, struct timeval *e,
 		break;
 
 	    case 'X':		/* (average) shared text size */
-		(void) fprintf(cshout, "%ld", t == 0 ? 0L :
-			       (long)((r1->ru_ixrss - r0->ru_ixrss) / t));
+		(void) fprintf(cshout, "%ld", t == 0 ? 0L : 
+			       (r1->ru_ixrss - r0->ru_ixrss) / t);
 		break;
 
 	    case 'D':		/* (average) unshared data size */
 		(void) fprintf(cshout, "%ld", t == 0 ? 0L :
-			(long)((r1->ru_idrss + r1->ru_isrss -
-			       (r0->ru_idrss + r0->ru_isrss)) / t));
+			(r1->ru_idrss + r1->ru_isrss -
+			 (r0->ru_idrss + r0->ru_isrss)) / t);
 		break;
 
 	    case 'K':		/* (average) total data memory used  */
 		(void) fprintf(cshout, "%ld", t == 0 ? 0L :
-			(long)(((r1->ru_ixrss + r1->ru_isrss + r1->ru_idrss)
-			      - (r0->ru_ixrss + r0->ru_idrss + r0->ru_isrss))
-			      / t));
+			((r1->ru_ixrss + r1->ru_isrss + r1->ru_idrss) -
+			 (r0->ru_ixrss + r0->ru_idrss + r0->ru_isrss)) / t);
 		break;
 
 	    case 'M':		/* max. Resident Set Size */
@@ -224,21 +245,22 @@ prusage(struct rusage *r0, struct rusage *r1, struct timeval *e,
 }
 
 static void
-pdeltat(struct timeval *t1, struct timeval *t0)
+pdeltat(t1, t0)
+    struct timeval *t1, *t0;
 {
     struct timeval td;
 
     timersub(t1, t0, &td);
-    (void) fprintf(cshout, "%lld.%01ld", (long long)td.tv_sec,
-	td.tv_usec / 100000);
+    (void) fprintf(cshout, "%ld.%01ld", td.tv_sec, td.tv_usec / 100000);
 }
 
 #define  P2DIG(i) (void) fprintf(cshout, "%d%d", (i) / 10, (i) % 10)
 
 void
-psecs(long l)
+psecs(l)
+    long    l;
 {
-    int i;
+    register int i;
 
     i = l / 3600;
     if (i) {
@@ -256,9 +278,10 @@ minsec:
 }
 
 void
-pcsecs(long l)			/* PWP: print mm:ss.dd, l is in sec*100 */
+pcsecs(l)			/* PWP: print mm:ss.dd, l is in sec*100 */
+    long    l;
 {
-    int i;
+    register int i;
 
     i = l / 360000;
     if (i) {

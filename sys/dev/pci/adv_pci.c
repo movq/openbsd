@@ -1,4 +1,4 @@
-/*	$OpenBSD: adv_pci.c,v 1.11 2011/04/03 15:36:02 jasper Exp $	*/
+/*	$OpenBSD: adv_pci.c,v 1.4 1998/11/17 07:55:46 downsj Exp $	*/
 /*	$NetBSD: adv_pci.c,v 1.5 1998/09/26 15:52:55 dante Exp $	*/
 
 /*
@@ -14,6 +14,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -82,24 +89,18 @@
 
 /******************************************************************************/
 
-int	adv_pci_match(struct device *, void *, void *);
-void	adv_pci_attach(struct device *, struct device *, void *);
+int	adv_pci_match __P((struct device *, void *, void *));
+void	adv_pci_attach __P((struct device *, struct device *, void *));
 
 struct cfattach adv_pci_ca =
 {
 	sizeof(ASC_SOFTC), adv_pci_match, adv_pci_attach
 };
 
-const struct pci_matchid adv_pci_devices[] = {
-	{ PCI_VENDOR_ADVSYS, PCI_PRODUCT_ADVSYS_1200A },
-	{ PCI_VENDOR_ADVSYS, PCI_PRODUCT_ADVSYS_1200B },
-	{ PCI_VENDOR_ADVSYS, PCI_PRODUCT_ADVSYS_ULTRA },
-};
-
 /******************************************************************************/
 /*
  * Check the slots looking for a board we recognise
- * If we find one, note its address (slot) and call
+ * If we find one, note it's address (slot) and call
  * the actual probe routine to check it out.
  */
 int 
@@ -107,8 +108,17 @@ adv_pci_match(parent, match, aux)
 	struct device *parent;
 	void *match, *aux;
 {
-	return (pci_matchbyid((struct pci_attach_args *)aux, adv_pci_devices,
-	    nitems(adv_pci_devices)));
+	struct pci_attach_args *pa = aux;
+
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_ADVSYS)
+		switch (PCI_PRODUCT(pa->pa_id)) {
+		case PCI_PRODUCT_ADVSYS_1200A:
+		case PCI_PRODUCT_ADVSYS_1200B:
+		case PCI_PRODUCT_ADVSYS_ULTRA:
+			return (1);
+		}
+
+	return 0;
 }
 
 
@@ -120,6 +130,7 @@ adv_pci_attach(parent, self, aux)
 	struct pci_attach_args *pa = aux;
 	ASC_SOFTC      *sc = (void *) self;
 	bus_space_handle_t ioh;
+	bus_addr_t advbase;
 	bus_size_t advsize;
 	pci_intr_handle_t ih;
 	pci_chipset_tag_t pc = pa->pa_pc;
@@ -154,12 +165,15 @@ adv_pci_attach(parent, self, aux)
 	/*
 	 * Map Device Registers for I/O
 	 */
-	retval = pci_mapreg_map(pa, PCI_CBIO, PCI_MAPREG_TYPE_IO, 0,
-	    &sc->sc_iot, &ioh, NULL, &advsize, 0);
+	retval = pci_io_find(pc, pa->pa_tag, PCI_CBIO, &advbase, &advsize);
+	if (retval == 0)
+		retval = bus_space_map(pa->pa_iot, advbase, advsize, 0, &ioh);
 	if (retval) {
-		printf(": unable to map device registers\n");
+		printf("\n%s: unable to map device registers\n",
+		       sc->sc_dev.dv_xname);
 		return;
 	}
+	sc->sc_iot = pa->pa_iot;
 	sc->sc_ioh = ioh;
 	sc->sc_dmat = pa->pa_dmat;
 	sc->pci_device_id = pa->pa_id;
@@ -168,18 +182,15 @@ adv_pci_attach(parent, self, aux)
 	/*
 	 * Initialize the board
 	 */
-	if (adv_init(sc)) {
-		printf(": adv_init failed\n");
-		bus_space_unmap(sc->sc_iot, ioh, advsize);
-		return;
-	}
+	if (adv_init(sc))
+		panic("adv_pci_attach: adv_init failed");
 
 	/*
 	 * Map Interrupt line
 	 */
-	if (pci_intr_map(pa, &ih)) {
-		printf(": couldn't map interrupt\n");
-		bus_space_unmap(sc->sc_iot, ioh, advsize);
+	if (pci_intr_map(pc, pa->pa_intrtag, pa->pa_intrpin,
+			 pa->pa_intrline, &ih)) {
+		printf("\n%s: couldn't map interrupt\n", sc->sc_dev.dv_xname);
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih);
@@ -190,11 +201,11 @@ adv_pci_attach(parent, self, aux)
 	sc->sc_ih = pci_intr_establish(pc, ih, IPL_BIO, adv_intr, sc,
 				       sc->sc_dev.dv_xname);
 	if (sc->sc_ih == NULL) {
-		printf(": couldn't establish interrupt");
+		printf("\n%s: couldn't establish interrupt",
+		       sc->sc_dev.dv_xname);
 		if (intrstr != NULL)
 			printf(" at %s", intrstr);
 		printf("\n");
-		bus_space_unmap(sc->sc_iot, ioh, advsize);
 		return;
 	}
 	printf(": %s\n", intrstr);

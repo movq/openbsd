@@ -7,11 +7,13 @@ archname='m68k-amigaos'
 cc='gcc'
 firstmakefile='GNUmakefile'
 usenm='true'
-d_fork='undef' # available but ENOSYS
 
 usemymalloc='n'
+usevfork='true'
 useperlio='true'
 d_eofnblk='define'
+d_fork='undef'
+d_vfork='define'
 groupstype='int'
 
 # libs
@@ -20,21 +22,15 @@ libpth="$prefix/lib /local/lib"
 glibpth="$libpth"
 xlibpth="$libpth"
 
-# This should remove unwanted libraries instead of limiting the set
-# to just these few.  E.g. what about Berkeley DB?
-libswanted='gdbm m'
+libswanted='gdbm m dld'
 so=' '
-libs='-lm'
 
 # compiler & linker flags
-# Respect command-line values.
 
-ccflags="$ccflags -DAMIGAOS"
-case "$optimize" in
-'') optimize='-O2 -fomit-frame-pointer';;
-esac
+ccflags='-DAMIGAOS -mstackextend'
+ldflags=''
+optimize='-O2 -fomit-frame-pointer'
 dlext='o'
-# Are these two different from the defaults?
 cccdlflags='none'
 ccdlflags='none'
 lddlflags='-oformat a.out-amiga -r'

@@ -1,4 +1,3 @@
-/*	$OpenBSD: ualarm.c,v 1.7 2005/08/08 08:05:34 espie Exp $ */
 /*
  * Copyright (c) 1985, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: ualarm.c,v 1.4 1997/11/06 01:25:48 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <sys/types.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -40,7 +47,9 @@
  * every ``reload'' microseconds after the first signal.
  */
 useconds_t
-ualarm(useconds_t usecs, useconds_t reload)
+ualarm(usecs, reload)
+	register useconds_t usecs;
+	register useconds_t reload;
 {
 	struct itimerval new, old;
 

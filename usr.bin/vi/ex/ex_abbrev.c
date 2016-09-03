@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_abbrev.c,v 1.9 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_abbrev.c	10.7 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -29,10 +31,12 @@
  * ex_abbr -- :abbreviate [key replacement]
  *	Create an abbreviation or display abbreviations.
  *
- * PUBLIC: int ex_abbr(SCR *, EXCMD *);
+ * PUBLIC: int ex_abbr __P((SCR *, EXCMD *));
  */
 int
-ex_abbr(SCR *sp, EXCMD *cmdp)
+ex_abbr(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	CHAR_T *p;
 	size_t len;
@@ -40,7 +44,7 @@ ex_abbr(SCR *sp, EXCMD *cmdp)
 	switch (cmdp->argc) {
 	case 0:
 		if (seq_dump(sp, SEQ_ABBREV, 0) == 0)
-			msgq(sp, M_INFO, "No abbreviations to display");
+			msgq(sp, M_INFO, "105|No abbreviations to display");
 		return (0);
 	case 2:
 		break;
@@ -63,13 +67,13 @@ ex_abbr(SCR *sp, EXCMD *cmdp)
 	 */
 	if (!inword(cmdp->argv[0]->bp[cmdp->argv[0]->len - 1])) {
 		msgq(sp, M_ERR,
-		    "Abbreviations must end with a \"word\" character");
+		    "106|Abbreviations must end with a \"word\" character");
 			return (1);
 	}
 	for (p = cmdp->argv[0]->bp; *p != '\0'; ++p)
 		if (isblank(p[0])) {
 			msgq(sp, M_ERR,
-			    "Abbreviations may not contain tabs or spaces");
+			    "107|Abbreviations may not contain tabs or spaces");
 			return (1);
 		}
 	if (cmdp->argv[0]->len > 2)
@@ -77,7 +81,7 @@ ex_abbr(SCR *sp, EXCMD *cmdp)
 		    len = cmdp->argv[0]->len - 2; len; --len, ++p)
 			if (inword(p[0]) != inword(p[1])) {
 				msgq(sp, M_ERR,
-"Abbreviations may not mix word/non-word characters, except at the end");
+"108|Abbreviations may not mix word/non-word characters, except at the end");
 				return (1);
 			}
 
@@ -93,10 +97,12 @@ ex_abbr(SCR *sp, EXCMD *cmdp)
  * ex_unabbr -- :unabbreviate key
  *      Delete an abbreviation.
  *
- * PUBLIC: int ex_unabbr(SCR *, EXCMD *);
+ * PUBLIC: int ex_unabbr __P((SCR *, EXCMD *));
  */
 int
-ex_unabbr(SCR *sp, EXCMD *cmdp)
+ex_unabbr(sp, cmdp)
+	SCR *sp;
+        EXCMD *cmdp;
 {
 	ARGS *ap;
 
@@ -104,7 +110,7 @@ ex_unabbr(SCR *sp, EXCMD *cmdp)
 	if (!F_ISSET(sp->gp, G_ABBREV) ||
 	    seq_delete(sp, ap->bp, ap->len, SEQ_ABBREV)) {
 		msgq_str(sp, M_ERR, ap->bp,
-		    "\"%s\" is not an abbreviation");
+		    "109|\"%s\" is not an abbreviation");
 		return (1);
 	}
 	return (0);

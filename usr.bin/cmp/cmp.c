@@ -1,4 +1,4 @@
-/*      $OpenBSD: cmp.c,v 1.15 2016/08/14 18:34:48 guenther Exp $      */
+/*      $OpenBSD: cmp.c,v 1.8 1999/08/03 16:02:44 mickey Exp $      */
 /*      $NetBSD: cmp.c,v 1.7 1995/09/08 03:22:56 tls Exp $      */
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1987, 1990, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cmp.c	8.3 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: cmp.c,v 1.8 1999/08/03 16:02:44 mickey Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -45,10 +63,12 @@
 
 int	lflag, sflag;
 
-static void usage(void);
+static void usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct stat sb1, sb2;
 	off_t skip1, skip2;
@@ -56,9 +76,6 @@ main(int argc, char *argv[])
 	char *file1, *file2;
 
 	setlocale(LC_ALL, "");
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(ERR_EXIT, "pledge");
 
 	while ((ch = getopt(argc, argv, "ls")) != -1)
 		switch (ch) {
@@ -88,7 +105,8 @@ main(int argc, char *argv[])
 		special = 1;
 		fd1 = 0;
 		file1 = "stdin";
-	} else if ((fd1 = open(file1, O_RDONLY, 0)) < 0) {
+	}
+	else if ((fd1 = open(file1, O_RDONLY, 0)) < 0) {
 		if (sflag)
 			exit(ERR_EXIT);
 		else
@@ -105,18 +123,16 @@ main(int argc, char *argv[])
 		special = 1;
 		fd2 = 0;
 		file2 = "stdin";
-	} else if ((fd2 = open(file2, O_RDONLY, 0)) < 0) {
+	}
+	else if ((fd2 = open(file2, O_RDONLY, 0)) < 0) {
 		if (sflag)
 			exit(ERR_EXIT);
 		else
 			err(ERR_EXIT, "%s", file2);
 	}
 
-	if (pledge("stdio", NULL) == -1)
-		err(ERR_EXIT, "pledge");
-
-	skip1 = argc > 2 ? strtoll(argv[2], NULL, 0) : 0;
-	skip2 = argc == 4 ? strtoll(argv[3], NULL, 0) : 0;
+	skip1 = argc > 2 ? strtoq(argv[2], NULL, 0) : 0;
+	skip2 = argc == 4 ? strtoq(argv[3], NULL, 0) : 0;
 
 	if (!special) {
 		if (fstat(fd1, &sb1)) {
@@ -148,7 +164,7 @@ main(int argc, char *argv[])
 }
 
 static void
-usage(void)
+usage()
 {
 
 	(void)fprintf(stderr,

@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-krb.c,v 1.11 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -23,10 +21,17 @@
  * Initial contribution from John Hawkinson (jhawk@mit.edu).
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-krb.c,v 1.4 1999/09/16 18:03:14 brad Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
@@ -39,7 +44,7 @@
 #include "interface.h"
 #include "addrtoname.h"
 
-const u_char *c_print(const u_char *, const u_char *);
+const u_char *c_print(register const u_char *, register const u_char *);
 const u_char *krb4_print_hdr(const u_char *);
 void krb4_print(const u_char *);
 void krb_print(const u_char *, u_int);
@@ -122,10 +127,10 @@ static struct tok kerr2str[] = {
 
 
 const u_char *
-c_print(const u_char *s, const u_char *ep)
+c_print(register const u_char *s, register const u_char *ep)
 {
-	u_char c;
-	int flag;
+	register u_char c;
+	register int flag;
 
 	flag = 1;
 	while (ep == NULL || s < ep) {
@@ -175,7 +180,7 @@ trunc:
 void
 krb4_print(const u_char *cp)
 {
-	const struct krb *kp;
+	register const struct krb *kp;
 	u_char type;
 	u_short len;
 
@@ -201,14 +206,14 @@ krb4_print(const u_char *cp)
 	case AUTH_MSG_KDC_REQUEST:
 		if ((cp = krb4_print_hdr(cp)) == NULL)
 			return;
-		cp += 4; 	  /* ctime */
-		TCHECK2(cp, 0);
-		printf(" %dmin ", *cp++ * 5);
-		TCHECK2(cp, 0);
-		PRINT;
-		TCHECK2(cp, 0);
-		putchar('.');  PRINT;
-		break;
+		 cp += 4; 	  /* ctime */
+		 TCHECK2(cp, 0);
+		 printf(" %dmin ", *cp++ * 5);
+		 TCHECK2(cp, 0);
+		 PRINT;
+		 TCHECK2(cp, 0);
+		 putchar('.');  PRINT;
+		 break;
 
 	case AUTH_MSG_APPL_REQUEST:
 		cp += 2;
@@ -257,7 +262,7 @@ trunc:
 void
 krb_print(const u_char *dat, u_int length)
 {
-	const struct krb *kp;
+	register const struct krb *kp;
 
 	kp = (struct krb *)dat;
 

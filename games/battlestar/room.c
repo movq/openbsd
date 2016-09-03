@@ -1,4 +1,4 @@
-/*	$OpenBSD: room.c,v 1.11 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: room.c,v 1.5 1999/09/25 20:30:46 pjanzen Exp $	*/
 /*	$NetBSD: room.c,v 1.3 1995/03/21 15:07:54 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,36 +34,39 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)room.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: room.c,v 1.5 1999/09/25 20:30:46 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
 void
-writedes(void)
+writedes()
 {
 	int     compass;
 	const char   *p;
 	int     c;
 
 	printf("\n\t%s\n", location[position].name);
-	if (beenthere[position] < ROOMDESC || verbose) {
+	if (beenthere[position] < 3) {
 		compass = NORTH;
 		for (p = location[position].desc; (c = *p++) != 0;)
-			if (c != '-' && c != '*' && c != '+') {
-				if (c == '=')
-					putchar('-');
-				else
-					putchar(c);
-			} else {
+			if (c != '-' && c != '*' && c != '+')
+				putchar(c);
+			else {
 				if (c != '*')
-					printf("%s", truedirec(compass, c));
+					printf(truedirec(compass, c));
 				compass++;
 			}
 	}
 }
 
 void
-printobjs(void)
+printobjs()
 {
 	unsigned int *p = location[position].objects;
 	int     n;
@@ -71,7 +78,8 @@ printobjs(void)
 }
 
 void
-whichway(struct room here)
+whichway(here)
+	struct room here;
 {
 	switch (direction) {
 
@@ -107,7 +115,9 @@ whichway(struct room here)
 }
 
 const char   *
-truedirec(int way, char option)
+truedirec(way, option)
+	int     way;
+	char    option;
 {
 	switch (way) {
 
@@ -166,7 +176,8 @@ truedirec(int way, char option)
 }
 
 void
-newway(int thisway)
+newway(thisway)
+	int     thisway;
 {
 	switch (direction) {
 

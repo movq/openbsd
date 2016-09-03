@@ -1,146 +1,129 @@
-/*	$OpenBSD: cron.c,v 1.74 2016/01/11 14:23:50 millert Exp $	*/
-
 /* Copyright 1988,1990,1993,1994 by Paul Vixie
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
- * Copyright (c) 1997,2000 by Internet Software Consortium, Inc.
+ * All rights reserved
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Distribute freely, except: don't remove my name from the source or
+ * documentation (don't take credit for my work), mark your changes (don't
+ * get me blamed for your possible bugs), don't alter or remove this
+ * notice.  May be sold if buildable source is provided to buyer.  No
+ * warrantee of any kind, express or implied, is included with this
+ * software; use at your own risk, responsibility for damages (if any) to
+ * anyone resulting from the use of this software rests entirely with the
+ * user.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Send bug reports, bug fixes, enhancements, requests, flames, etc., and
+ * I'll try to keep a version up to date.  I can be reached as follows:
+ * Paul Vixie          <paul@vix.com>          uunet!decwrl!vixie!paul
  */
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/un.h>
-#include <sys/wait.h>
+#if !defined(lint) && !defined(LINT)
+static char rcsid[] = "$Id: cron.c,v 1.6 1999/05/23 17:19:23 aaron Exp $";
+#endif
 
-#include <bitstring.h>
-#include <err.h>
-#include <errno.h>
-#include <grp.h>
-#include <locale.h>
-#include <poll.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <syslog.h>
-#include <time.h>
-#include <unistd.h>
 
-#include "config.h"
-#include "pathnames.h"
-#include "macros.h"
-#include "structs.h"
-#include "funcs.h"
-#include "globals.h"
+#define	MAIN_PROGRAM
 
-enum timejump { negative, small, medium, large };
 
-static	void	usage(void),
-		run_reboot_jobs(cron_db *),
-		find_jobs(time_t, cron_db *, int, int),
-		set_time(int),
-		cron_sleep(time_t, sigset_t *),
-		sigchld_handler(int),
-		sigchld_reaper(void),
-		parse_args(int c, char *v[]);
+#include "cron.h"
+#include <sys/signal.h>
+#if SYS_TIME_H
+# include <sys/time.h>
+#else
+# include <time.h>
+#endif
 
-static	int	open_socket(void);
 
-static	volatile sig_atomic_t	got_sigchld;
-static	time_t			timeRunning, virtualTime, clockTime;
-static	int			cronSock;
-static	long			GMToff;
-static	cron_db			*database;
-static	at_db			*at_database;
-static	double			batch_maxload = BATCH_MAXLOAD;
-static	int			NoFork;
-static	time_t			StartTime;
+static	void	usage __P((void)),
+		run_reboot_jobs __P((cron_db *)),
+		find_jobs __P((time_min, cron_db *, int, int)),
+		set_time __P((void)),
+		cron_sleep __P((time_min)),
+#ifdef USE_SIGCHLD
+		sigchld_handler __P((int)),
+#endif
+		sighup_handler __P((int)),
+		parse_args __P((int c, char *v[]));
+
 
 static void
-usage(void)
-{
+usage() {
+	char **dflags;
 
-	fprintf(stderr, "usage: %s [-n] [-l load_avg]\n", __progname);
-	exit(EXIT_FAILURE);
+	fprintf(stderr, "usage:  %s [-x [", ProgramName);
+	for(dflags = DebugFlagNames; *dflags; dflags++)
+		fprintf(stderr, "%s%s", *dflags, dflags[1] ? "," : "]");
+	fprintf(stderr, "]\n");
+	exit(ERROR_EXIT);
 }
 
+
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int	argc;
+	char	*argv[];
 {
-	struct sigaction sact;
-	sigset_t blocked, omask;
+	cron_db	database;
 
-	setlocale(LC_ALL, "");
+	ProgramName = argv[0];
 
-	setvbuf(stdout, NULL, _IOLBF, 0);
-	setvbuf(stderr, NULL, _IOLBF, 0);
+#if defined(BSD)
+	setlinebuf(stdout);
+	setlinebuf(stderr);
+#endif
 
 	parse_args(argc, argv);
 
-	bzero((char *)&sact, sizeof sact);
-	sigemptyset(&sact.sa_mask);
-	sact.sa_flags = SA_RESTART;
-	sact.sa_handler = sigchld_handler;
-	(void) sigaction(SIGCHLD, &sact, NULL);
-	sact.sa_handler = SIG_IGN;
-	(void) sigaction(SIGHUP, &sact, NULL);
-	(void) sigaction(SIGPIPE, &sact, NULL);
+#ifdef USE_SIGCHLD
+	(void) signal(SIGCHLD, sigchld_handler);
+#else
+	(void) signal(SIGCLD, SIG_IGN);
+#endif
+	(void) signal(SIGHUP, sighup_handler);
 
-	openlog(__progname, LOG_PID, LOG_CRON);
+	acquire_daemonlock(0);
+	set_cron_uid();
+	set_cron_cwd();
 
-	if (pledge("stdio rpath wpath cpath fattr getpw unix id dns proc exec",
-	    NULL) == -1) {
-		warn("pledge");
-		syslog(LOG_ERR, "(CRON) PLEDGE (%m)");
-		exit(EXIT_FAILURE);
-	}
+#if defined(POSIX)
+	setenv("PATH", _PATH_DEFPATH, 1);
+#endif
 
-	cronSock = open_socket();
+	/* if there are no debug flags turned on, fork as a daemon should.
+	 */
 
-	if (putenv("PATH="_PATH_DEFPATH) < 0) {
-		warn("putenv");
-		syslog(LOG_ERR, "(CRON) DEATH (%m)");
-		exit(EXIT_FAILURE);
-	}
-
-	if (NoFork == 0) {
-		if (daemon(0, 0) == -1) {
-			syslog(LOG_ERR, "(CRON) DEATH (%m)");
-			exit(EXIT_FAILURE);
+	if (DebugFlags) {
+#if DEBUGGING
+		(void) fprintf(stderr, "[%d] cron started\n", getpid());
+#endif
+	} else {
+		switch (fork()) {
+		case -1:
+			log_it("CRON",getpid(),"DEATH","can't fork");
+			exit(0);
+			break;
+		case 0:
+			/* child process */
+			log_it("CRON",getpid(),"STARTUP","fork ok");
+			(void) setsid();
+			break;
+		default:
+			/* parent process should just die */
+			_exit(0);
 		}
-		syslog(LOG_INFO, "(CRON) STARTUP (%s)", CRON_VERSION);
 	}
 
+	acquire_daemonlock(0);
+	database.head = NULL;
+	database.tail = NULL;
+	database.mtime = (time_t) 0;
 	load_database(&database);
-	scan_atjobs(&at_database, NULL);
-	set_time(TRUE);
-	run_reboot_jobs(database);
+
+	set_time();
+	run_reboot_jobs(&database);
 	timeRunning = virtualTime = clockTime;
 
 	/*
-	 * We block SIGHUP and SIGCHLD while running jobs and receive them
-	 * only while sleeping in ppoll().  This ensures no signal is lost.
-	 */
-	sigemptyset(&blocked);
-	sigaddset(&blocked, SIGCHLD);
-	sigaddset(&blocked, SIGHUP);
-	sigprocmask(SIG_BLOCK, &blocked, &omask);
-
-	/*
-	 * Too many clocks, not enough time (Al. Einstein)
-	 * These clocks are in minutes since the epoch, adjusted for timezone.
+	 * too many clocks, not enough time (Al. Einstein)
+	 * These clocks are in minutes since the epoch (time()/60).
 	 * virtualTime: is the time it *would* be if we woke up
 	 * promptly and nobody ever changed the clock. It is
 	 * monotonically increasing... unless a timejump happens.
@@ -149,139 +132,143 @@ main(int argc, char *argv[])
 	 * clockTime: is the time when set_time was last called.
 	 */
 	while (TRUE) {
-		int timeDiff;
-		enum timejump wakeupKind;
+		time_min timeDiff;
+		int wakeupKind;
+
+		load_database(&database);
 
 		/* ... wait for the time (in minutes) to change ... */
 		do {
-			cron_sleep(timeRunning + 1, &omask);
-			set_time(FALSE);
+			cron_sleep(timeRunning + 1);
+			set_time();
 		} while (clockTime == timeRunning);
 		timeRunning = clockTime;
 
 		/*
-		 * Calculate how the current time differs from our virtual
-		 * clock.  Classify the change into one of 4 cases.
+		 * ... calculate how the current time differs from
+		 * our virtual clock. Classify the change into one
+		 * of 4 cases
 		 */
 		timeDiff = timeRunning - virtualTime;
 
 		/* shortcut for the most common case */
 		if (timeDiff == 1) {
 			virtualTime = timeRunning;
-			find_jobs(virtualTime, database, TRUE, TRUE);
+			find_jobs(virtualTime, &database, TRUE, TRUE);
 		} else {
-			if (timeDiff > (3*MINUTE_COUNT) ||
-			    timeDiff < -(3*MINUTE_COUNT))
-				wakeupKind = large;
-			else if (timeDiff > 5)
-				wakeupKind = medium;
-			else if (timeDiff > 0)
-				wakeupKind = small;
-			else
-				wakeupKind = negative;
+			wakeupKind = -1;
+			if (timeDiff > -(3*MINUTE_COUNT))
+				wakeupKind = 0;
+			if (timeDiff > 0)
+				wakeupKind = 1;
+			if (timeDiff > 5)
+				wakeupKind = 2;
+			if (timeDiff > (3*MINUTE_COUNT))
+				wakeupKind = 3;
 
 			switch (wakeupKind) {
-			case small:
+			case 1:
 				/*
 				 * case 1: timeDiff is a small positive number
-				 * (wokeup late) run jobs for each virtual
-				 * minute until caught up.
+				 * (wokeup late) run jobs for each virtual minute
+				 * until caught up.
 				 */
+				Debug(DSCH, ("[%d], normal case %d minutes to go\n",
+				    getpid(), timeRunning - virtualTime))
 				do {
 					if (job_runqueue())
 						sleep(10);
 					virtualTime++;
-					find_jobs(virtualTime, database,
-					    TRUE, TRUE);
-				} while (virtualTime < timeRunning);
+					find_jobs(virtualTime, &database, TRUE, TRUE);
+				} while (virtualTime< timeRunning);
 				break;
 
-			case medium:
+			case 2:
 				/*
-				 * case 2: timeDiff is a medium-sized positive
-				 * number, for example because we went to DST
-				 * run wildcard jobs once, then run any
-				 * fixed-time jobs that would otherwise be
-				 * skipped if we use up our minute (possible,
-				 * if there are a lot of jobs to run) go
-				 * around the loop again so that wildcard jobs
-				 * have a chance to run, and we do our
-				 * housekeeping.
+				 * case 2: timeDiff is a medium-sized positive number,
+				 * for example because we went to DST run wildcard
+				 * jobs once, then run any fixed-time jobs that would
+				 * otherwise be skipped if we use up our minute
+				 * (possible, if there are a lot of jobs to run) go
+				 * around the loop again so that wildcard jobs have
+				 * a chance to run, and we do our housekeeping
 				 */
+				Debug(DSCH, ("[%d], DST begins %d minutes to go\n",
+				    getpid(), timeRunning - virtualTime))
 				/* run wildcard jobs for current minute */
-				find_jobs(timeRunning, database, TRUE, FALSE);
-
-				/* run fixed-time jobs for each minute missed */
+				find_jobs(timeRunning, &database, TRUE, FALSE);
+	
+				/* run fixed-time jobs for each minute missed */ 
 				do {
 					if (job_runqueue())
 						sleep(10);
 					virtualTime++;
-					find_jobs(virtualTime, database,
-					    FALSE, TRUE);
-					set_time(FALSE);
+					find_jobs(virtualTime, &database, FALSE, TRUE);
+					set_time();
 				} while (virtualTime< timeRunning &&
 				    clockTime == timeRunning);
 				break;
-
-			case negative:
+	
+			case 0:
 				/*
 				 * case 3: timeDiff is a small or medium-sized
-				 * negative num, eg. because of DST ending.
-				 * Just run the wildcard jobs. The fixed-time
-				 * jobs probably have already run, and should
-				 * not be repeated.  Virtual time does not
-				 * change until we are caught up.
+				 * negative num, eg. because of DST ending just run
+				 * the wildcard jobs. The fixed-time jobs probably
+				 * have already run, and should not be repeated
+				 * virtual time does not change until we are caught up
 				 */
-				find_jobs(timeRunning, database, TRUE, FALSE);
+				Debug(DSCH, ("[%d], DST ends %d minutes to go\n",
+				    getpid(), virtualTime - timeRunning))
+				find_jobs(timeRunning, &database, TRUE, FALSE);
 				break;
 			default:
 				/*
 				 * other: time has changed a *lot*,
 				 * jump virtual time, and run everything
 				 */
+				Debug(DSCH, ("[%d], clock jumped\n", getpid()))
 				virtualTime = timeRunning;
-				find_jobs(timeRunning, database, TRUE, TRUE);
+				find_jobs(timeRunning, &database, TRUE, TRUE);
 			}
 		}
-
-		/* Jobs to be run (if any) are loaded; clear the queue. */
+		/* jobs to be run (if any) are loaded. clear the queue */
 		job_runqueue();
-
-		/* Run any jobs in the at queue. */
-		atrun(at_database, batch_maxload,
-		    timeRunning * SECONDS_PER_MINUTE - GMToff);
-
-		/* Reload jobs as needed. */
-		load_database(&database);
-		scan_atjobs(&at_database, NULL);
 	}
 }
 
-static void
-run_reboot_jobs(cron_db *db)
-{
-	user *u;
-	entry *e;
 
-	TAILQ_FOREACH(u, &db->users, entries) {
-		SLIST_FOREACH(e, &u->crontab, entries) {
-			if (e->flags & WHEN_REBOOT)
+static void
+run_reboot_jobs(db)
+	cron_db *db;
+{
+	register user		*u;
+	register entry		*e;
+
+	for (u = db->head;  u != NULL;  u = u->next) {
+		for (e = u->crontab;  e != NULL;  e = e->next) {
+			if (e->flags & WHEN_REBOOT) {
 				job_add(e, u);
+			}
 		}
 	}
 	(void) job_runqueue();
 }
 
-static void
-find_jobs(time_t vtime, cron_db *db, int doWild, int doNonWild)
-{
-	time_t virtualSecond  = vtime * SECONDS_PER_MINUTE;
-	struct tm *tm = gmtime(&virtualSecond);
-	int minute, hour, dom, month, dow;
-	user *u;
-	entry *e;
 
-	/* make 0-based values out of these so we can use them as indices
+static void
+find_jobs(vtime, db, doWild, doNonWild)
+	time_min vtime;
+	cron_db	*db;
+	int doWild;
+	int doNonWild;
+{
+	time_t   virtualSecond  = vtime * SECONDS_PER_MINUTE;
+	register struct tm	*tm = localtime(&virtualSecond);
+	register int		minute, hour, dom, month, dow;
+	register user		*u;
+	register entry		*e;
+
+	/* make 0-based values out of these so we can use them as indicies
 	 */
 	minute = tm->tm_min -FIRST_MINUTE;
 	hour = tm->tm_hour -FIRST_HOUR;
@@ -289,240 +276,122 @@ find_jobs(time_t vtime, cron_db *db, int doWild, int doNonWild)
 	month = tm->tm_mon +1 /* 0..11 -> 1..12 */ -FIRST_MONTH;
 	dow = tm->tm_wday -FIRST_DOW;
 
+	Debug(DSCH, ("[%d] tick(%d,%d,%d,%d,%d) %s %s\n",
+		getpid(), minute, hour, dom, month, dow,
+		doWild?" ":"No wildcard",doNonWild?" ":"Wildcard only"))
+
 	/* the dom/dow situation is odd.  '* * 1,15 * Sun' will run on the
 	 * first and fifteenth AND every Sunday;  '* * * * Sun' will run *only*
 	 * on Sundays;  '* * 1,15 * *' will run *only* the 1st and 15th.  this
 	 * is why we keep 'e->dow_star' and 'e->dom_star'.  yes, it's bizarre.
 	 * like many bizarre things, it's the standard.
 	 */
-	TAILQ_FOREACH(u, &db->users, entries) {
-		SLIST_FOREACH(e, &u->crontab, entries) {
+	for (u = db->head;  u != NULL;  u = u->next) {
+		for (e = u->crontab;  e != NULL;  e = e->next) {
+			Debug(DSCH|DEXT, ("user [%s:%d:%d:...] cmd=\"%s\"\n",
+			    env_get("LOGNAME", e->envp),
+			    e->uid, e->gid, e->cmd))
 			if (bit_test(e->minute, minute) &&
 			    bit_test(e->hour, hour) &&
 			    bit_test(e->month, month) &&
 			    ( ((e->flags & DOM_STAR) || (e->flags & DOW_STAR))
 			      ? (bit_test(e->dow,dow) && bit_test(e->dom,dom))
-			      : (bit_test(e->dow,dow) || bit_test(e->dom,dom))
-			    )
-			   ) {
-				if ((doNonWild &&
-				    !(e->flags & (MIN_STAR|HR_STAR))) ||
-				    (doWild && (e->flags & (MIN_STAR|HR_STAR))))
+			      : (bit_test(e->dow,dow) || bit_test(e->dom,dom)))) {
+				if ((doNonWild && !(e->flags & (MIN_STAR|HR_STAR)))
+				    || (doWild && (e->flags & (MIN_STAR|HR_STAR))))
 					job_add(e, u);
 			}
 		}
 	}
 }
 
+
 /*
- * Set StartTime and clockTime to the current time.
- * These are used for computing what time it really is right now.
- * Note that clockTime is a unix wallclock time converted to minutes.
+ * set StartTime and clockTime to the current time.
+ * these are used for computing what time it really is right now.
+ * note that clockTime is a unix wallclock time converted to minutes
  */
 static void
-set_time(int initialize)
+set_time()
 {
-	struct tm tm;
-	static int isdst;
-
-	StartTime = time(NULL);
-
-	/* We adjust the time to GMT so we can catch DST changes. */
-	tm = *localtime(&StartTime);
-	if (initialize || tm.tm_isdst != isdst) {
-		isdst = tm.tm_isdst;
-		GMToff = get_gmtoff(&StartTime, &tm);
-	}
-	clockTime = (StartTime + GMToff) / (time_t)SECONDS_PER_MINUTE;
+	StartTime = time((time_t *)0);
+	clockTime = StartTime / (unsigned long)SECONDS_PER_MINUTE;
 }
 
 /*
- * Try to just hit the next minute.
+ * try to just hit the next minute
  */
 static void
-cron_sleep(time_t target, sigset_t *mask)
+cron_sleep(target)
+	time_min target;
 {
-	int fd, nfds;
-	unsigned char poke;
-	struct timespec t1, t2, timeout;
-	struct sockaddr_un s_un;
-	socklen_t sunlen;
-	static struct pollfd pfd[1];
+	register int	seconds_to_wait;
 
-	clock_gettime(CLOCK_REALTIME, &t1);
-	t1.tv_sec += GMToff;
-	timeout.tv_sec = (target * SECONDS_PER_MINUTE - t1.tv_sec) + 1;
-	timeout.tv_nsec = 0;
+	seconds_to_wait = (int)(target*SECONDS_PER_MINUTE - time((time_t*)0)) + 1;
+	Debug(DSCH, ("[%d] TargetTime=%ld, sec-to-wait=%d\n",
+	    getpid(), (long)target*SECONDS_PER_MINUTE, seconds_to_wait))
 
-	pfd[0].fd = cronSock;
-	pfd[0].events = POLLIN;
-
-	while (timespecisset(&timeout) && timeout.tv_sec < 65) {
-		poke = RELOAD_CRON | RELOAD_AT;
-
-		/* Sleep until we time out, get a poke, or get a signal. */
-		nfds = ppoll(pfd, 1, &timeout, mask);
-		if (nfds == 0)
-			break;		/* timer expired */
-		if (nfds == -1 && errno != EINTR)
-			break;		/* an error occurred */
-		if (nfds > 0) {
-			sunlen = sizeof(s_un);
-			fd = accept4(cronSock, (struct sockaddr *)&s_un,
-			    &sunlen, SOCK_NONBLOCK);
-			if (fd >= 0) {
-				(void) read(fd, &poke, 1);
-				close(fd);
-				if (poke & RELOAD_CRON) {
-					timespecclear(&database->mtime);
-					load_database(&database);
-				}
-				if (poke & RELOAD_AT) {
-					/*
-					 * We run any pending at jobs right
-					 * away so that "at now" really runs
-					 * jobs immediately.
-					 */
-					clock_gettime(CLOCK_REALTIME, &t2);
-					timespecclear(&at_database->mtime);
-					if (scan_atjobs(&at_database, &t2))
-						atrun(at_database,
-						    batch_maxload, t2.tv_sec);
-				}
-			}
-		} else {
-			/* Interrupted by a signal. */
-			if (got_sigchld) {
-				got_sigchld = 0;
-				sigchld_reaper();
-			}
-		}
-
-		/* Adjust tv and continue where we left off.  */
-		clock_gettime(CLOCK_REALTIME, &t2);
-		t2.tv_sec += GMToff;
-		timespecsub(&t2, &t1, &t1);
-		timespecsub(&timeout, &t1, &timeout);
-		memcpy(&t1, &t2, sizeof(t1));
-		if (timeout.tv_sec < 0)
-			timeout.tv_sec = 0;
-		if (timeout.tv_nsec < 0)
-			timeout.tv_nsec = 0;
-	}
+	if (seconds_to_wait > 0 && seconds_to_wait< 65)
+		sleep((unsigned int) seconds_to_wait);
 }
 
-/* int open_socket(void)
- *	opens a UNIX domain socket that crontab uses to poke cron.
- *	If the socket is already in use, return an error.
- */
-static int
-open_socket(void)
-{
-	int		   sock, rc;
-	mode_t		   omask;
-	struct group *grp;
-	struct sockaddr_un s_un;
 
-	if ((grp = getgrnam(CRON_GROUP)) == NULL)
-		syslog(LOG_WARNING, "(CRON) STARTUP (can't find cron group)");
-
-	sock = socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
-	if (sock == -1) {
-		warn("socket");
-		syslog(LOG_ERR, "(CRON) DEATH (can't create socket)");
-		exit(EXIT_FAILURE);
-	}
-	bzero(&s_un, sizeof(s_un));
-	if (strlcpy(s_un.sun_path, _PATH_CRON_SOCK, sizeof(s_un.sun_path))
-	    >= sizeof(s_un.sun_path)) {
-		warnc(ENAMETOOLONG, _PATH_CRON_SOCK);
-		syslog(LOG_ERR, "(CRON) DEATH (socket path too long)");
-		exit(EXIT_FAILURE);
-	}
-	s_un.sun_family = AF_UNIX;
-
-	if (connect(sock, (struct sockaddr *)&s_un, sizeof(s_un)) == 0) {
-		warnx("already running");
-		syslog(LOG_ERR, "(CRON) DEATH (already running)");
-		exit(EXIT_FAILURE);
-	}
-	if (errno != ENOENT)
-		unlink(s_un.sun_path);
-
-	omask = umask(007);
-	rc = bind(sock, (struct sockaddr *)&s_un, sizeof(s_un));
-	umask(omask);
-	if (rc != 0) {
-		warn("bind");
-		syslog(LOG_ERR, "(CRON) DEATH (can't bind socket)");
-		exit(EXIT_FAILURE);
-	}
-	if (listen(sock, SOMAXCONN)) {
-		warn("listen");
-		syslog(LOG_ERR, "(CRON) DEATH (can't listen on socket)");
-		exit(EXIT_FAILURE);
-	}
-	chmod(s_un.sun_path, 0660);
-	if (grp != NULL) {
-		/* pledge won't let us change files to a foreign group. */
-		if (setegid(grp->gr_gid) == 0) {
-			chown(s_un.sun_path, -1, grp->gr_gid);
-			(void)setegid(getgid());
-		}
-	}
-
-	return(sock);
-}
-
+#ifdef USE_SIGCHLD
 static void
-sigchld_handler(int x)
-{
-	got_sigchld = 1;
-}
+sigchld_handler(x) {
+	int save_errno = errno;
+	WAIT_T		waiter;
+	PID_T		pid;
 
-static void
-sigchld_reaper(void)
-{
-	int waiter;
-	pid_t pid;
-
-	do {
+	for (;;) {
+#ifdef POSIX
 		pid = waitpid(-1, &waiter, WNOHANG);
+#else
+		pid = wait3(&waiter, WNOHANG, (struct rusage *)0);
+#endif
 		switch (pid) {
 		case -1:
-			if (errno == EINTR)
-				continue;
-			break;
+			Debug(DPROC,
+				("[%d] sigchld...no children\n", getpid()))
+			errno = save_errno;
+			return;
 		case 0:
-			break;
+			Debug(DPROC,
+				("[%d] sigchld...no dead kids\n", getpid()))
+			errno = save_errno;
+			return;
 		default:
-			break;
+			Debug(DPROC,
+				("[%d] sigchld...pid #%d died, stat=%d\n",
+				getpid(), pid, WEXITSTATUS(waiter)))
 		}
-	} while (pid > 0);
+	}
+	errno = save_errno;
 }
+#endif /*USE_SIGCHLD*/
+
 
 static void
-parse_args(int argc, char *argv[])
-{
-	int argch;
-	char *ep;
+sighup_handler(x) {
+	log_close();
+}
 
-	while (-1 != (argch = getopt(argc, argv, "l:n"))) {
+
+static void
+parse_args(argc, argv)
+	int	argc;
+	char	*argv[];
+{
+	int	argch;
+
+	while (-1 != (argch = getopt(argc, argv, "x:"))) {
 		switch (argch) {
-		case 'l':
-			errno = 0;
-			batch_maxload = strtod(optarg, &ep);
-			if (*ep != '\0' || ep == optarg || errno == ERANGE ||
-			    batch_maxload < 0) {
-				warnx("illegal load average: %s", optarg);
-				usage();
-			}
-			break;
-		case 'n':
-			NoFork = 1;
-			break;
 		default:
 			usage();
+		case 'x':
+			if (!set_debug_flags(optarg))
+				usage();
+			break;
 		}
 	}
 }

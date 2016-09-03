@@ -1,4 +1,4 @@
-/*	$OpenBSD: glbl.c,v 1.18 2016/03/22 17:58:28 mmcc Exp $	*/
+/*	$OpenBSD: glbl.c,v 1.7 1998/04/30 05:55:05 deraadt Exp $	*/
 /*	$NetBSD: glbl.c,v 1.2 1995/03/21 09:04:41 cgd Exp $	*/
 
 /* glob.c: This file contains the global command routines for the ed line
@@ -29,32 +29,33 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char *rcsid = "@(#)glob.c,v 1.1 1994/02/01 00:34:40 alm Exp";
+#else
+static char rcsid[] = "$OpenBSD: glbl.c,v 1.7 1998/04/30 05:55:05 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 
-#include <regex.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "ed.h"
 
-static int set_active_node(line_t *);
-static line_t *next_active_node(void);
 
 /* build_active_list:  add line matching a pattern to the global-active list */
 int
-build_active_list(int isgcmd)
+build_active_list(isgcmd)
+	int isgcmd;
 {
-	regex_t *pat;
+	pattern_t *pat;
 	line_t *lp;
-	int n;
+	long n;
 	char *s;
 	char delimiter;
 
 	if ((delimiter = *ibufp) == ' ' || delimiter == '\n') {
-		seterrmsg("invalid pattern delimiter");
+		strcpy(errmsg, "invalid pattern delimiter");
 		return ERR;
 	} else if ((pat = get_compiled_pattern()) == NULL)
 		return ERR;
@@ -77,8 +78,10 @@ build_active_list(int isgcmd)
 
 /* exec_global: apply command list in the command buffer to the active
    lines in a range; return command status */
-int
-exec_global(int interact, int gflag)
+long
+exec_global(interact, gflag)
+	int interact;
+	int gflag;
 {
 	static char *ocmd = NULL;
 	static int ocmdsz = 0;
@@ -113,13 +116,13 @@ exec_global(int interact, int gflag)
 			if (n < 0)
 				return ERR;
 			else if (n == 0) {
-				seterrmsg("unexpected end-of-file");
+				strcpy(errmsg, "unexpected end-of-file");
 				return ERR;
 			} else if (n == 1 && !strcmp(ibuf, "\n"))
 				continue;
 			else if (n == 2 && !strcmp(ibuf, "&\n")) {
 				if (cmd == NULL) {
-					seterrmsg("no previous command");
+					strcpy(errmsg, "no previous command");
 					return ERR;
 				} else cmd = ocmd;
 			} else if ((cmd = get_extended_line(&n, 0)) == NULL)
@@ -143,27 +146,42 @@ exec_global(int interact, int gflag)
 }
 
 
-static line_t **active_list;	/* list of lines active in a global command */
-static int active_last;		/* index of last active line in active_list */
-static int active_size;		/* size of active_list */
-static int active_ptr;		/* active_list index (non-decreasing) */
-static int active_ndx;		/* active_list index (modulo active_last) */
+line_t **active_list;		/* list of lines active in a global command */
+long active_last;		/* index of last active line in active_list */
+long active_size;		/* size of active_list */
+long active_ptr;		/* active_list index (non-decreasing) */
+long active_ndx;		/* active_list index (modulo active_last) */
 
 /* set_active_node: add a line node to the global-active list */
-static int
-set_active_node(line_t *lp)
+int
+set_active_node(lp)
+	line_t *lp;
 {
 	if (active_last + 1 > active_size) {
 		int ti = active_size;
 		line_t **ts;
 		SPL1();
-		if ((ts = reallocarray(active_list,
-		    (ti += MINBUFSZ), sizeof(line_t **))) == NULL) {
-			perror(NULL);
-			seterrmsg("out of memory");
-			SPL0();
-			return ERR;
+#if defined(sun) || defined(NO_REALLOC_NULL)
+		if (active_list != NULL) {
+#endif
+			if ((ts = (line_t **) realloc(active_list,
+			    (ti += MINBUFSZ) * sizeof(line_t **))) == NULL) {
+				perror(NULL);
+				strcpy(errmsg, "out of memory");
+				SPL0();
+				return ERR;
+			}
+#if defined(sun) || defined(NO_REALLOC_NULL)
+		} else {
+			if ((ts = (line_t **) malloc((ti += MINBUFSZ) *
+			    sizeof(line_t **))) == NULL) {
+				perror(NULL);
+				strcpy(errmsg, "out of memory");
+				SPL0();
+				return ERR;
+			}
 		}
+#endif
 		active_size = ti;
 		active_list = ts;
 		SPL0();
@@ -175,10 +193,11 @@ set_active_node(line_t *lp)
 
 /* unset_active_nodes: remove a range of lines from the global-active list */
 void
-unset_active_nodes(line_t *np, line_t *mp)
+unset_active_nodes(np, mp)
+	line_t *np, *mp;
 {
 	line_t *lp;
-	int i;
+	long i;
 
 	for (lp = np; lp != mp; lp = lp->q_forw)
 		for (i = 0; i < active_last; i++)
@@ -191,8 +210,8 @@ unset_active_nodes(line_t *np, line_t *mp)
 
 
 /* next_active_node: return the next global-active line node */
-static line_t *
-next_active_node(void)
+line_t *
+next_active_node()
 {
 	while (active_ptr < active_last && active_list[active_ptr] == NULL)
 		active_ptr++;
@@ -202,7 +221,7 @@ next_active_node(void)
 
 /* clear_active_list: clear the global-active list */
 void
-clear_active_list(void)
+clear_active_list()
 {
 	SPL1();
 	active_size = active_last = active_ptr = active_ndx = 0;

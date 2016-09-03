@@ -1,4 +1,4 @@
-/*	$OpenBSD: com2.c,v 1.18 2015/12/31 17:51:19 mestre Exp $	*/
+/*	$OpenBSD: com2.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $	*/
 /*	$NetBSD: com2.c,v 1.3 1995/03/21 15:06:55 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,23 +34,27 @@
  * SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)com2.c	8.2 (Berkeley) 4/28/95";
+#else
+static char rcsid[] = "$OpenBSD: com2.c,v 1.7 1999/09/25 20:30:45 pjanzen Exp $";
+#endif
+#endif /* not lint */
 
 #include "extern.h"
 
 int
-wearit(void)
+wearit()
 {				/* synonyms = {sheathe, sheath} */
+	int     n;
 	int     firstnumber, value;
 
 	firstnumber = wordnumber;
-	wordnumber++;
-	while (wordnumber <= wordcount && (wordtype[wordnumber] == OBJECT ||
-	    (wordtype[wordnumber] == NOUNS && wordvalue[wordnumber] != DOOR))) {
+	while (wordtype[++wordnumber] == ADJS);
+	while (wordnumber <= wordcount) {
 		value = wordvalue[wordnumber];
-		if (value >= 0 && objsht[value] == NULL)
-			break;
+		for (n = 0; objsht[value][n]; n++);
 		switch (value) {
 
 		case -1:
@@ -54,8 +62,7 @@ wearit(void)
 			return (firstnumber);
 
 		default:
-			printf("You can't wear %s%s!\n",
-			    A_OR_AN_OR_BLANK(value), objsht[value]);
+			printf("You can't wear%s%s!\n", (objsht[value][n - 1] == 's' ? " " : " a "), objsht[value]);
 			return (firstnumber);
 
 		case KNIFE:
@@ -83,8 +90,9 @@ wearit(void)
 				carrying -= objwt[value];
 				encumber -= objcumber[value];
 				ourtime++;
-				printf("You are now wearing %s%s.\n",
-				    A_OR_AN_OR_THE(value), objsht[value]);
+				printf("You are now wearing %s %s.\n",
+				    (objsht[value][n - 1] == 's' ? "the" : "a"),
+				    objsht[value]);
 			} else
 				if (TestBit(wear, value))
 					printf("You are already wearing the %s.\n",
@@ -104,35 +112,31 @@ wearit(void)
 }
 
 int
-put(void)
+put()
 {				/* synonyms = {buckle, strap, tie} */
-	if (inc_wordnumber(words[wordnumber], "what"))
-		return(-1);
-	if (wordvalue[wordnumber] == ON) {
-		wordvalue[wordnumber] = PUTON;
-		wordtype[wordnumber] = VERB;
-		return (cypher() - 1);
+	if (wordvalue[wordnumber + 1] == ON) {
+		wordvalue[++wordnumber] = PUTON;
+		return (cypher());
 	}
-	if (wordvalue[wordnumber] == DOWN) {
-		wordvalue[wordnumber] = DROP;
-		wordtype[wordnumber] = VERB;
-		return (cypher() - 1);
+	if (wordvalue[wordnumber + 1] == DOWN) {
+		wordvalue[++wordnumber] = DROP;
+		return (cypher());
 	}
 	puts("I don't understand what you want to put.");
 	return (-1);
+
 }
 
 int
-draw(void)
+draw()
 {				/* synonyms = {pull, carry} */
 	return (take(wear));
 }
 
 int
-use(void)
+use()
 {
-	if (inc_wordnumber(words[wordnumber], "what"))
-		return(-1);
+	while (wordtype[++wordnumber] == ADJS && wordnumber < wordcount);
 	if (wordvalue[wordnumber] == AMULET && TestBit(inven, AMULET) &&
 	    position != FINAL) {
 		puts("The amulet begins to glow.");
@@ -143,7 +147,6 @@ use(void)
 				whichway(location[position]);
 				puts("The waves subside and it is possible to descend to the sea cave now.");
 				ourtime++;
-				wordnumber++;
 				return (-1);
 			}
 		}
@@ -155,7 +158,6 @@ use(void)
 			position = 229;
 		ourtime++;
 		notes[CANTSEE] = 0;
-		wordnumber++;
 		return (0);
 	}
 	else if (position == FINAL)
@@ -168,47 +170,20 @@ use(void)
 		puts("You aren't holding the amulet.");
 	else
 		puts("There is no apparent use.");
-	wordnumber++;
 	return (-1);
 }
 
 void
-murder(void)
+murder()
 {
 	int     n;
 
-	if (inc_wordnumber(words[wordnumber], "whom"))
-		return;
-	for (n = 0; n < NUMOFOBJECTS && !((n == SWORD || n == KNIFE || n == TWO_HANDED || n == MACE || n == CLEAVER || n == BROAD || n == CHAIN || n == SHOVEL || n == HALBERD) && TestBit(inven, n)); n++)
-		;
-	if (n == NUMOFOBJECTS) {
-		if (TestBit(inven, LASER)) {
-			printf("Your laser should do the trick.\n");
-			switch(wordvalue[wordnumber]) {
-			case NORMGOD:
-			case TIMER:
-			case NATIVE:
-			case MAN:
-				wordvalue[--wordnumber] = SHOOT;
-				cypher();
-				break;
-			case -1:
-				puts("Kill what?");
-				break;
-			default:
-				if (wordtype[wordnumber] != OBJECT ||
-				    wordvalue[wordnumber] == EVERYTHING)
-					puts("You can't kill that!");
-				else
-					printf("You can't kill %s%s!\n",
-					    A_OR_AN_OR_BLANK(wordvalue[wordnumber]),
-					    objsht[wordvalue[wordnumber]]);
-				break;
-			}
-		} else
-			puts("You don't have suitable weapons to kill.");
-	} else {
+	for (n = 0; !((n == SWORD || n == KNIFE || n == TWO_HANDED || n == MACE || n == CLEAVER || n == BROAD || n == CHAIN || n == SHOVEL || n == HALBERD) && TestBit(inven, n)) && n < NUMOFOBJECTS; n++);
+	if (n == NUMOFOBJECTS)
+		puts("You don't have suitable weapons to kill.");
+	else {
 		printf("Your %s should do the trick.\n", objsht[n]);
+		while (wordtype[++wordnumber] == ADJS);
 		switch (wordvalue[wordnumber]) {
 
 		case NORMGOD:
@@ -228,7 +203,7 @@ murder(void)
 					if (wintime)
 						live();
 				} else
-					puts("I don't see her anywhere.");
+					puts("I dont see her anywhere.");
 			break;
 		case TIMER:
 			if (TestBit(location[position].objects, TIMER)) {
@@ -261,32 +236,25 @@ murder(void)
 			break;
 
 		default:
-			if (wordtype[wordnumber] != OBJECT ||
-			    wordvalue[wordnumber] == EVERYTHING)
-				puts("You can't kill that!");
+			if (wordtype[wordnumber] != NOUNS)
+				puts("Kill what?");
 			else
 				printf("You can't kill the %s!\n",
 				    objsht[wordvalue[wordnumber]]);
 		}
 	}
-	wordnumber++;
 }
 
 void
-ravage(void)
+ravage()
 {
-	if (inc_wordnumber(words[wordnumber], "whom"))
-		return;
-	if (wordtype[wordnumber] == NOUNS && (TestBit(location[position].objects, wordvalue[wordnumber])
-	    || (wordvalue[wordnumber] == NORMGOD && TestBit(location[position].objects, BATHGOD)))) {
+	while (wordtype[++wordnumber] != NOUNS && wordnumber <= wordcount);
+	if (wordtype[wordnumber] == NOUNS && TestBit(location[position].objects, wordvalue[wordnumber])) {
 		ourtime++;
 		switch (wordvalue[wordnumber]) {
 		case NORMGOD:
 			puts("You attack the goddess, and she screams as you beat her.  She falls down");
-			if (TestBit(location[position].objects, BATHGOD))
-				puts("crying and tries to cover her nakedness.");
-			else
-				puts("crying and tries to hold her torn and bloodied dress around her.");
+			puts("crying and tries to hold her torn and bloodied dress around her.");
 			power += 5;
 			pleasure += 8;
 			ego -= 10;
@@ -321,16 +289,13 @@ ravage(void)
 			break;
 		default:
 			puts("You are perverted.");
-			wordnumber++;
 		}
-	} else {
-		printf("%s:  Who?\n", words[wordnumber]);
-		wordnumber++;
-	}
+	} else
+		puts("Who?");
 }
 
 int
-follow(void)
+follow()
 {
 	if (followfight == ourtime) {
 		puts("The Dark Lord leaps away and runs down secret tunnels and corridors.");
@@ -353,18 +318,3 @@ follow(void)
 			puts("There is no one to follow.");
 	return (-1);
 }
-
-void
-undress(void)
-{
-	if (inc_wordnumber(words[wordnumber], "whom"))
-		return;
-	if (wordvalue[wordnumber] == NORMGOD &&
-	    (TestBit(location[position].objects, NORMGOD)) && godready >= 2) {
-		wordnumber--;
-		love();
-	} else {
-		wordnumber--;
-		ravage();
-	}
-}	

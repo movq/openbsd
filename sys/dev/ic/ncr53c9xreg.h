@@ -1,4 +1,4 @@
-/*	$OpenBSD: ncr53c9xreg.h,v 1.9 2003/10/21 18:58:49 jmc Exp $	*/
+/*	$OpenBSD: ncr53c9xreg.h,v 1.2 1997/08/08 08:13:06 downsj Exp $	*/
 /*	$NetBSD: ncr53c9xreg.h,v 1.4 1997/05/17 20:56:55 pk Exp $	*/
 
 /*
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Peter Galbavy.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -78,8 +83,6 @@
 #define  NCRSTAT_PHASE	0x07		/*	Phase bits		*/
 
 #define	NCR_SELID	0x04		/* WO - Select/Reselect Bus ID	*/
-#define  NCR_BUSID_HME	0x10		/*	XXX HME reselect ID 	*/
-#define  NCR_BUSID_HME32 0x40		/*	XXX HME to select more than 16 */
 
 #define	NCR_INTR	0x05		/* RO - Interrupt		*/
 #define  NCRINTR_SBR	0x80		/*	SCSI Bus Reset		*/
@@ -117,14 +120,14 @@
 #define  NCRCFG1_BUSID	0x07		/*	Bus ID			*/
 
 #define	NCR_CCF		0x09		/* WO -	Clock Conversion Factor	*/
-					/*	0 = 35.01 - 40MHz	*/
+					/*	0 = 35.01 - 40Mhz	*/
 					/*	NEVER SET TO 1		*/
-					/*	2 = 10MHz		*/
-					/*	3 = 10.01 - 15MHz	*/
-					/*	4 = 15.01 - 20MHz	*/
-					/*	5 = 20.01 - 25MHz	*/
-					/*	6 = 25.01 - 30MHz	*/
-					/*	7 = 30.01 - 35MHz	*/
+					/*	2 = 10Mhz		*/
+					/*	3 = 10.01 - 15Mhz	*/
+					/*	4 = 15.01 - 20Mhz	*/
+					/*	5 = 20.01 - 25Mhz	*/
+					/*	6 = 25.01 - 30Mhz	*/
+					/*	7 = 30.01 - 35Mhz	*/
 
 #define	NCR_TEST	0x0a		/* WO - Test (Chip Test Only)	*/
 
@@ -136,8 +139,6 @@
 #define  NCRCFG2_BPA	0x04		/* 	Target Bad Parity Abort	*/
 #define  NCRCFG2_RPE	0x02		/* 	Register Parity Error	*/
 #define  NCRCFG2_DPE	0x01		/* 	DMA Parity Error	*/
-#define  NCRCFG2_HMEFE	0x10		/*	HME feature enable	*/
-#define  NCRCFG2_HME32	0x80		/*	HME 32 extended		*/
 
 /* Config #3 only on 53C9X */
 #define	NCR_CFG3	0x0c		/* RW - Configuration #3	*/
@@ -146,7 +147,7 @@
 #define  NCRCFG3_QTE	0x08		/*	Queue Tag Enable	*/
 #define  NCRCFG3_CDB	0x04		/*	CDB 10-bytes OK		*/
 #define  NCRCFG3_FSCSI	0x02		/*	Fast SCSI		*/
-#define  NCRCFG3_FCLK	0x01		/*	Fast Clock (>25MHz)	*/
+#define  NCRCFG3_FCLK	0x01		/*	Fast Clock (>25Mhz)	*/
 
 /*
  * For some unknown reason, the ESP406/FAS408 looks like every
@@ -162,36 +163,20 @@
 #define  NCRESPCFG3_CDB		0x20	/*	CDB 10-bytes OK		*/
 #define  NCRESPCFG3_FSCSI	0x10	/*	Fast SCSI		*/
 #define	 NCRESPCFG3_SRESB	0x08	/*	Save Residual Byte	*/
-#define  NCRESPCFG3_FCLK	0x04	/*	Fast Clock (>25MHz)	*/
+#define  NCRESPCFG3_FCLK	0x04	/*	Fast Clock (>25Mhz)	*/
 #define	 NCRESPCFG3_ADMA	0x02	/*	Alternate DMA Mode	*/
 #define	 NCRESPCFG3_T8M		0x01	/*	Threshold 8 Mode	*/
-
-/* Config #3 also different on NCR53CF9x/FAS216 */
-#define	NCR_F9XCFG3		0x0c	/* RW - Configuration #3	*/
-#define  NCRF9XCFG3_IDM		0x80	/*	ID Message Res Check	*/
-#define  NCRF9XCFG3_QTE		0x40	/*	Queue Tag Enable	*/
-#define  NCRF9XCFG3_CDB		0x20	/*	CDB 10-bytes OK		*/
-#define  NCRF9XCFG3_FSCSI	0x10	/*	Fast SCSI		*/
-#define  NCRF9XCFG3_FCLK	0x08	/*	Fast Clock (>25MHz)	*/
-#define  NCRF9XCFG3_SRESB	0x04	/*	Save Residual Byte	*/
-#define  NCRF9XCFG3_ADMA	0x02	/*	Alternate DMA Mode	*/
-#define  NCRF9XCFG3_T8M		0x01	/*	Threshold 8 Mode	*/
-
-/* Config #3 on FAS366 */
-#define  NCRFASCFG3_OBAUTO	0x80	/*	auto push odd-byte to dma */
-#define  NCRFASCFG3_EWIDE	0x40	/*	Enable Wide-SCSI	*/
-#define  NCRFASCFG3_IDBIT3	0x20	/*	Bit 3 of HME SCSI-ID	*/
-#define  NCRFASCFG3_IDRESCHK	0x10	/*	ID message checking	*/
-#define  NCRFASCFG3_QUENB	0x08	/*	3-byte msg support	*/
-#define  NCRFASCFG3_CDB10	0x04	/*	group 2 scsi-2 support	*/
-#define  NCRFASCFG3_FASTSCSI	0x02	/*	10 MB/S fast scsi mode	*/
-#define  NCRFASCFG3_FASTCLK	0x01	/*	fast clock mode		*/
 
 /* Config #4 only on ESP406/FAS408 */
 #define	NCR_CFG4	0x0d		/* RW - Configuration #4	*/
 #define	 NCRCFG4_CRS1	0x80		/*	Select register set #1	*/
 #define	 NCRCFG4_RSVD	0x7b		/*	reserved		*/
 #define	 NCRCFG4_ACTNEG	0x04		/*	Active negation		*/
+
+#define	NCR_SCSIREGS(sc) do { NCR_WRITE_REG(sc, NCR_CFG4, \
+	~NCRCFG4_CRS1 & NCR_READ_REG(sc, NCR_CFG4)); } while(0)
+#define	NCR_PIOREGS(sc) do { NCR_WRITE_REG(sc, NCR_CFG4, \
+	NCRCFG4_CRS1 | NCR_READ_REG(sc, NCR_CFG4)); } while(0)
 
 /*
    The following registers are only on the ESP406/FAS408.  The
@@ -235,47 +220,8 @@
 #define  NCRCFG5_AADDR	0x20		/*	Auto Address		*/
 #define  NCRCFG5_PTRINC	0x10		/*	Pointer Increment	*/
 #define  NCRCFG5_LOWPWR	0x08		/*	Low Power Mode		*/
-#define  NCRCFG5_SINT	0x04		/*	SCSI Interrupt Enable	*/
+#define  NCRCFG5_SINT	0x04		/*	SCSI Interupt Enable	*/
 #define  NCRCFG5_INTP	0x02		/*	INT Polarity		*/
-#define  NCRCFG5_AINT	0x01		/*	ATA Interrupt Enable	*/
+#define  NCRCFG5_AINT	0x01		/*	ATA Interupt Enable	*/
 
 #define	NCR_SIGNTR	0x0e		/* RO - Signature		*/
-
-/* Am53c974 Config #3 */
-#define	NCR_AMDCFG3		0x0c	/* RW - Configuration #3	*/
-#define	 NCRAMDCFG3_IDM		0x80	/*	ID Message Res Check	*/
-#define	 NCRAMDCFG3_QTE		0x40	/*	Queue Tag Enable	*/
-#define	 NCRAMDCFG3_CDB		0x20	/*	CDB 10-bytes OK		*/
-#define	 NCRAMDCFG3_FSCSI	0x10	/*	Fast SCSI		*/
-#define	 NCRAMDCFG3_FCLK	0x08	/*	Fast Clock (40MHz)	*/
-#define	 NCRAMDCFG3_RSVD	0x07	/*	Reserved		*/
-
-/* Am53c974 Config #4 */
-#define	NCR_AMDCFG4		0x0d	/* RW - Configuration #4	*/
-#define	 NCRAMDCFG4_GE		0xc0	/*	Glitch Eater		*/
-#define	 NCRAMDCFG4_GE12NS	0x00	/*	Signal window 12ns	*/
-#define	 NCRAMDCFG4_GE25NS	0x80	/*	Signal window 25ns	*/
-#define	 NCRAMDCFG4_GE35NS	0x40	/*	Signal window 35ns	*/
-#define	 NCRAMDCFG4_GE0NS	0xc0	/*	Signal window 0ns	*/
-#define	 NCRAMDCFG4_PWD		0x20	/*	Reduced power feature	*/
-#define	 NCRAMDCFG4_RSVD	0x13	/*	Reserved		*/
-#define	 NCRAMDCFG4_RAE		0x08	/*	Active neg. REQ/ACK	*/
-#define	 NCRAMDCFG4_RADE	0x04	/*	Active neg. REQ/ACK/DAT	*/
-
-/*
- * FAS366
- */
-#define	NCR_RCL		NCR_TCH	/* Recommand counter low */
-#define	NCR_RCH		0xf	/* Recommand counter high */
-#define	NCR_UID		NCR_RCL	/* fas366 part-uniq id */
-
-/* status register #2 definitions (read only) */
-#define NCR_STAT2	NCR_CCF
-#define  FAS_STAT2_SEQCNT	0x01	/* Sequence counter bit 7-3 enabled */
-#define  FAS_STAT2_FLATCHED	0x02	/* FIFO flags register latched */
-#define  FAS_STAT2_CLATCHED	0x04	/* Xfer cntr & recommand ctr latched */
-#define  FAS_STAT2_CACTIVE	0x08	/* Command register is active */
-#define  FAS_STAT2_SCSI16	0x10	/* SCSI interface is wide */
-#define  FAS_STAT2_ISHUTTLE	0x20	/* FIFO Top register contains 1 byte */
-#define  FAS_STAT2_OSHUTTLE	0x40	/* next byte from FIFO is MSB */
-#define  FAS_STAT2_EMPTY	0x80	/* FIFO is empty */

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: kvm_read.3,v 1.9 2013/06/05 03:40:26 tedu Exp $
+.\"	$OpenBSD: kvm_read.3,v 1.4 1999/07/09 13:35:26 aaron Exp $
 .\"	$NetBSD: kvm_read.3,v 1.2 1996/03/18 22:34:01 thorpej Exp $
 .\"
 .\" Copyright (c) 1992, 1993
@@ -16,7 +16,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -34,7 +38,7 @@
 .\"
 .\"     @(#)kvm_read.3	8.1 (Berkeley) 6/4/93
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd June 4, 1993
 .Dt KVM_READ 3
 .Os
 .Sh NAME
@@ -42,7 +46,7 @@
 .Nm kvm_write
 .Nd read or write kernel virtual memory
 .Sh SYNOPSIS
-.In kvm.h
+.Fd #include <kvm.h>
 .Ft ssize_t
 .Fn kvm_read "kvm_t *kd" "u_long addr" "void *buf" "size_t nbytes"
 .Ft ssize_t
@@ -53,9 +57,10 @@ The
 and
 .Fn kvm_write
 functions are used to read and write kernel virtual memory (or a crash
-dump file).
-See
-.Xr kvm_open 3
+dump file). See
+.Fn kvm_open 3
+or
+.Fn kvm_openfiles 3
 for information regarding opening kernel virtual memory and crash dumps.
 .Pp
 The
@@ -76,12 +81,15 @@ to
 Unlike their SunOS counterparts, these functions cannot be used to
 read or write process address spaces.
 .Sh RETURN VALUES
-Upon successful completion, the number of bytes actually transferred is
-returned.
+Upon success, the number of bytes actually transferred is returned.
 Otherwise, \-1 is returned.
 .Sh SEE ALSO
 .Xr kvm 3 ,
+.Xr kvm_close 3 ,
+.Xr kvm_getargv 3 ,
+.Xr kvm_getenvv 3 ,
 .Xr kvm_geterr 3 ,
 .Xr kvm_getprocs 3 ,
 .Xr kvm_nlist 3 ,
-.Xr kvm_open 3
+.Xr kvm_open 3 ,
+.Xr kvm_openfiles 3

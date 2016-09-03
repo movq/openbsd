@@ -1,7 +1,6 @@
-/*	$OpenBSD: opendev.c,v 1.15 2011/06/30 15:04:58 jsing Exp $	*/
+/*	$OpenBSD: opendev.c,v 1.5 1996/09/16 02:40:51 tholo Exp $ */
 
 /*
- * Copyright (c) 2000, Todd C. Miller.  All rights reserved.
  * Copyright (c) 1996, Jason Downs.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,18 +25,11 @@
  * SUCH DAMAGE.
  */
 
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <paths.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
-
-#include <sys/ioctl.h>
-#include <sys/limits.h>
-#include <sys/disk.h>
-#include <sys/dkio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <paths.h>
 
 #include "util.h"
 
@@ -45,66 +37,53 @@
  * This routine is a generic rewrite of the original code found in
  * disklabel(8).
  */
+
 int
-opendev(const char *path, int oflags, int dflags, char **realpath)
+opendev(path, oflags, dflags, realpath)
+	char *path;
+	int oflags;
+	int dflags;
+	char **realpath;
 {
-	static char namebuf[PATH_MAX];
-	struct dk_diskmap dm;
-	char *slash, *prefix;
 	int fd;
+	static char namebuf[256];
 
-	/* Initial state */
-	fd = -1;
-	errno = ENOENT;
-
-	if (dflags & OPENDEV_BLCK)
-		prefix = "";			/* block device */
-	else
-		prefix = "r";			/* character device */
-
-	if ((slash = strchr(path, '/'))) {
-		strlcpy(namebuf, path, sizeof(namebuf));
-		fd = open(namebuf, oflags);
-	} else if (isduid(path, dflags)) {
-		strlcpy(namebuf, path, sizeof(namebuf));
-		if ((fd = open("/dev/diskmap", oflags)) != -1) {
-			bzero(&dm, sizeof(struct dk_diskmap));
-			dm.device = namebuf;
-			dm.fd = fd;
-			if (dflags & OPENDEV_PART)
-				dm.flags |= DM_OPENPART;
-			if (dflags & OPENDEV_BLCK)
-				dm.flags |= DM_OPENBLCK;
-
-			if (ioctl(fd, DIOCMAP, &dm) == -1) {
-				close(fd);
-				fd = -1;
-				errno = ENOENT;
-			}
-		}
-	}
-	if (!slash && fd == -1 && errno == ENOENT) {
-		if (dflags & OPENDEV_PART) {
-			/*
-			 * First try raw partition (for removable drives)
-			 */
-			if (snprintf(namebuf, sizeof(namebuf), "%s%s%s%c",
-			    _PATH_DEV, prefix, path, 'a' + getrawpartition())
-			    < sizeof(namebuf)) {
-				fd = open(namebuf, oflags);
-			} else
-				errno = ENAMETOOLONG;
-		}
-		if (fd == -1 && errno == ENOENT) {
-			if (snprintf(namebuf, sizeof(namebuf), "%s%s%s",
-			    _PATH_DEV, prefix, path) < sizeof(namebuf)) {
-				fd = open(namebuf, oflags);
-			} else
-				errno = ENAMETOOLONG;
-		}
-	}
 	if (realpath)
-		*realpath = namebuf;
+		*realpath = path;
+
+	fd = open(path, oflags);
+	if ((fd < 0) && (errno == ENOENT)) {
+		if (path[0] != '/') {
+			if (dflags & OPENDEV_PART) {
+				/*
+				 * First try raw partition (for removable
+				 * drives)
+				 */
+				(void)snprintf(namebuf, sizeof(namebuf),
+				    "%sr%s%c", _PATH_DEV, path,
+				    'a' + getrawpartition());
+				fd = open(namebuf, oflags);
+			}
+
+			if ((dflags & OPENDEV_DRCT) && (fd < 0) &&
+			    (errno == ENOENT)) {
+				/* ..and now no partition (for tapes) */
+				namebuf[strlen(namebuf) - 1] = '\0';
+				fd = open(namebuf, oflags);
+			}
+
+			if (realpath)
+				*realpath = namebuf;
+		}
+	}
+	if ((fd < 0) && (errno == ENOENT) && (path[0] != '/')) {
+		(void)snprintf(namebuf, sizeof(namebuf), "%sr%s",
+		    _PATH_DEV, path);
+		fd = open(namebuf, oflags);
+
+		if (realpath)
+			*realpath = namebuf;
+	}
 
 	return (fd);
 }

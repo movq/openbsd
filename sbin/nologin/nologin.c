@@ -1,4 +1,4 @@
-/*	$OpenBSD: nologin.c,v 1.6 2015/10/13 07:10:38 doug Exp $	*/
+/*	$OpenBSD: nologin.c,v 1.2 1997/04/04 16:51:37 millert Exp $	*/
 
 /*
  * Copyright (c) 1997, Jason Downs.  All rights reserved.
@@ -26,10 +26,7 @@
  */
 
 #include <sys/types.h>
-#include <err.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -39,15 +36,12 @@
 #define DEFAULT_MESG	"This account is currently not available.\n"
 
 /*ARGSUSED*/
-int
-main(int argc, char *argv[])
+int main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	int nfd;
-	ssize_t nrd;
-	char nbuf[BUFSIZ];
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
+	int nfd, nrd;
+	char nbuf[128];
 
 	nfd = open(_PATH_NOLOGIN_TXT, O_RDONLY);
 	if (nfd < 0) {
@@ -55,7 +49,7 @@ main(int argc, char *argv[])
 		exit (1);
 	}
 
-	while ((nrd = read(nfd, nbuf, sizeof(nbuf))) != -1 && nrd != 0)
+	while ((nrd = read(nfd, nbuf, sizeof(nbuf))) > 0)
 		write(STDOUT_FILENO, nbuf, nrd);
 	close (nfd);
 

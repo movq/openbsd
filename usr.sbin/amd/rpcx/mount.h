@@ -1,4 +1,4 @@
-/*	$OpenBSD: mount.h,v 1.8 2014/10/26 03:03:34 guenther Exp $	*/
+/*	$OpenBSD: mount.h,v 1.2 1996/03/25 15:54:56 niklas Exp $	*/
 
 /*
  * Copyright (c) 1990 Jan-Simon Pendry
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -39,32 +43,41 @@
 #define MNTPATHLEN 1024
 #define MNTNAMLEN 255
 
+#if NFS_PROTOCOL_VERSION < 3
+#define FHSIZE 32
+typedef char fhandle[FHSIZE];
+typedef struct fhstatus {
+	u_int fhs_stat;
+	fhandle fhs_fhandle;
+} fhstatus;
+#else
 #define FHSIZE NFSX_V3FHMAX
 typedef char fhandle[NFSX_V3FHMAX];
 typedef struct fhstatus {
 	u_long		fhs_stat;
-	long		fhs_vers;
+ 	long		fhs_vers;
 	long		fhs_auth;
 	long		fhs_size;
 	fhandle		fhs_fhandle;
 } fhstatus;
+#endif
 
-bool_t xdr_fhandle(XDR *, fhandle *);
+bool_t xdr_fhandle();
 
 
-bool_t xdr_fhstatus(XDR *, fhstatus *);
+bool_t xdr_fhstatus();
 
 
 typedef char *dirpath;
-bool_t xdr_dirpath(XDR *, dirpath *);
+bool_t xdr_dirpath();
 
 
 typedef char *name;
-bool_t xdr_name(XDR *, name *);
+bool_t xdr_name();
 
 
 typedef struct mountbody *mountlist;
-bool_t xdr_mountlist(XDR *, mountlist *);
+bool_t xdr_mountlist();
 
 
 struct mountbody {
@@ -73,11 +86,11 @@ struct mountbody {
 	mountlist ml_next;
 };
 typedef struct mountbody mountbody;
-bool_t xdr_mountbody(XDR *, mountbody *);
+bool_t xdr_mountbody();
 
 
 typedef struct groupnode *groups;
-bool_t xdr_groups(XDR *, groups *);
+bool_t xdr_groups();
 
 
 struct groupnode {
@@ -85,11 +98,11 @@ struct groupnode {
 	groups gr_next;
 };
 typedef struct groupnode groupnode;
-bool_t xdr_groupnode(XDR *, groupnode *);
+bool_t xdr_groupnode();
 
 
 typedef struct exportnode *exports;
-bool_t xdr_exports(XDR *, exports *);
+bool_t xdr_exports();
 
 
 struct exportnode {
@@ -98,22 +111,23 @@ struct exportnode {
 	exports ex_next;
 };
 typedef struct exportnode exportnode;
-bool_t xdr_exportnode(XDR *, exportnode *);
+bool_t xdr_exportnode();
 
 
 #define MOUNTPROG ((u_long)100005)
 #define MOUNTVERS ((u_long)1)
 #define MOUNTPROC_NULL ((u_long)0)
-extern void *mountproc_null_1(void *, CLIENT *);
+extern voidp mountproc_null_1();
 #define MOUNTPROC_MNT ((u_long)1)
-extern fhstatus *mountproc_mnt_1(void *, CLIENT *);
+extern fhstatus *mountproc_mnt_1();
 #define MOUNTPROC_DUMP ((u_long)2)
-extern mountlist *mountproc_dump_1(void *, CLIENT *);
+extern mountlist *mountproc_dump_1();
 #define MOUNTPROC_UMNT ((u_long)3)
-extern void *mountproc_umnt_1(void *, CLIENT *);
+extern voidp mountproc_umnt_1();
 #define MOUNTPROC_UMNTALL ((u_long)4)
-extern void *mountproc_umntall_1(void *, CLIENT *);
+extern voidp mountproc_umntall_1();
 #define MOUNTPROC_EXPORT ((u_long)5)
-extern exports *mountproc_export_1(void *, CLIENT *);
+extern exports *mountproc_export_1();
 #define MOUNTPROC_EXPORTALL ((u_long)6)
-extern exports *mountproc_exportall_1(void *, CLIENT *);
+extern exports *mountproc_exportall_1();
+

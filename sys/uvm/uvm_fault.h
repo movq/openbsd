@@ -1,7 +1,7 @@
-/*	$OpenBSD: uvm_fault.h,v 1.15 2014/07/11 16:35:40 jsg Exp $	*/
-/*	$NetBSD: uvm_fault.h,v 1.14 2000/06/26 14:21:17 mrg Exp $	*/
+/*	$NetBSD: uvm_fault.h,v 1.7 1998/10/11 23:07:42 chuck Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -59,25 +65,20 @@ struct uvm_faultinfo {
 	vsize_t size;			/* size of interest */
 };
 
-#ifdef _KERNEL
-
 /*
  * fault prototypes
  */
 
-void		uvmfault_init(void);
 
-boolean_t	uvmfault_lookup(struct uvm_faultinfo *, boolean_t);
-boolean_t	uvmfault_relock(struct uvm_faultinfo *);
-void		uvmfault_unlockall(struct uvm_faultinfo *, struct vm_amap *,
-		    struct uvm_object *, struct vm_anon *);
-int		uvmfault_anonget(struct uvm_faultinfo *, struct vm_amap *,
-		    struct vm_anon *);
+int uvmfault_anonget __P((struct uvm_faultinfo *, struct vm_amap *,
+													struct vm_anon *));
+static boolean_t uvmfault_lookup __P((struct uvm_faultinfo *, boolean_t));
+static boolean_t uvmfault_relock __P((struct uvm_faultinfo *));
+static void uvmfault_unlockall __P((struct uvm_faultinfo *, struct vm_amap *,
+			            struct uvm_object *, struct vm_anon *));
+static void uvmfault_unlockmaps __P((struct uvm_faultinfo *, boolean_t));
 
-int		uvm_fault_wire(vm_map_t, vaddr_t, vaddr_t, vm_prot_t);
-void		uvm_fault_unwire(vm_map_t, vaddr_t, vaddr_t);
-void		uvm_fault_unwire_locked(vm_map_t, vaddr_t, vaddr_t);
-
-#endif /* _KERNEL */
+int uvm_fault_wire __P((vm_map_t, vaddr_t, vaddr_t));
+void uvm_fault_unwire __P((struct pmap *, vaddr_t, vaddr_t));
 
 #endif /* _UVM_UVM_FAULT_H_ */

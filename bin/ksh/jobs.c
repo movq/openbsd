@@ -1,4 +1,4 @@
-/*	$OpenBSD: jobs.c,v 1.55 2016/03/17 23:33:23 mmcc Exp $	*/
+/*	$OpenBSD: jobs.c,v 1.16 1999/08/04 16:56:42 millert Exp $	*/
 
 /*
  * Process and job control
@@ -13,23 +13,79 @@
  * to allow use of vfork() when available but that would be way too much
  * work :)
  *
+ * Notes regarding the copious ifdefs:
+ *	- JOB_SIGS is independent of JOBS - it is defined if there are modern
+ *	  signal and wait routines available.  This is prefered, even when
+ *	  JOBS is not defined, since the shell will not otherwise notice when
+ *	  background jobs die until the shell waits for a foreground process
+ *	  to die.
+ *	- TTY_PGRP defined iff JOBS is defined - defined if there are tty
+ *	  process groups
+ *	- NEED_PGRP_SYNC defined iff JOBS is defined - see comment below
  */
 
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-
-#include <ctype.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
 #include "sh.h"
+#include "ksh_stat.h"
+#include "ksh_wait.h"
+#include "ksh_times.h"
 #include "tty.h"
+
+/* Start of system configuration stuff */
+
+/* We keep CHILD_MAX zombie processes around (exact value isn't critical) */
+#ifndef CHILD_MAX
+# if defined(HAVE_SYSCONF) && defined(_SC_CHILD_MAX)
+#  define CHILD_MAX sysconf(_SC_CHILD_MAX)
+# else /* _SC_CHILD_MAX */
+#  ifdef _POSIX_CHILD_MAX
+#   define CHILD_MAX	((_POSIX_CHILD_MAX) * 2)
+#  else /* _POSIX_CHILD_MAX */
+#   define CHILD_MAX	20
+#  endif /* _POSIX_CHILD_MAX */
+# endif /* _SC_CHILD_MAX */
+#endif /* !CHILD_MAX */
+
+#ifdef JOBS
+# if defined(HAVE_TCSETPGRP) || defined(TIOCSPGRP)
+#  define TTY_PGRP
+# endif
+# ifdef BSD_PGRP
+#  define setpgid	setpgrp
+#  define getpgID()	getpgrp(0)
+# else
+#  define getpgID()	getpgrp()
+# endif
+# if defined(TTY_PGRP) && !defined(HAVE_TCSETPGRP)
+int tcsetpgrp ARGS((int fd, pid_t grp));
+int tcgetpgrp ARGS((int fd));
+
+int
+tcsetpgrp(fd, grp)
+	int fd;
+	pid_t grp;
+{
+	return ioctl(fd, TIOCSPGRP, &grp);
+}
+
+int
+tcgetpgrp(fd)
+	int	fd;
+{
+	int r, grp;
+
+	if ((r = ioctl(fd, TIOCGPGRP, &grp)) < 0)
+		return r;
+	return grp;
+}
+# endif /* !HAVE_TCSETPGRP && TIOCSPGRP */
+#else /* JOBS */
+/* These so we can use ifdef xxx instead of if defined(JOBS) && defined(xxx) */
+# undef TTY_PGRP
+# undef NEED_PGRP_SYNC
+#endif /* JOBS */
+
+/* End of system configuration stuff */
+
 
 /* Order important! */
 #define PRUNNING	0
@@ -41,7 +97,7 @@ typedef struct proc	Proc;
 struct proc {
 	Proc	*next;		/* next process in pipeline (if any) */
 	int	state;
-	int	status;		/* wait status */
+	WAIT_T	status;		/* wait status */
 	pid_t	pid;		/* process id */
 	char	command[48];	/* process command string */
 };
@@ -67,7 +123,7 @@ struct proc {
 #define JF_CHANGED	0x040	/* process has changed state */
 #define JF_KNOWN	0x080	/* $! referenced */
 #define JF_ZOMBIE	0x100	/* known, unwaited process */
-#define JF_REMOVE	0x200	/* flagged for removal (j_jobs()/j_noityf()) */
+#define JF_REMOVE	0x200	/* flaged for removal (j_jobs()/j_noityf()) */
 #define JF_USETTYMODE	0x400	/* tty mode saved if process exits normally */
 #define JF_SAVEDTTYPGRP	0x800	/* j->saved_ttypgrp is valid */
 
@@ -80,16 +136,18 @@ struct job {
 	int	status;		/* exit status of last process */
 	pid_t	pgrp;		/* process group of job */
 	pid_t	ppid;		/* pid of process that forked job */
-	int	age;		/* number of jobs started */
-	struct timeval systime;	/* system time used by job */
-	struct timeval usrtime;	/* user time used by job */
+	INT32	age;		/* number of jobs started */
+	clock_t	systime;	/* system time used by job */
+	clock_t	usrtime;	/* user time used by job */
 	Proc	*proc_list;	/* process list */
 	Proc	*last_proc;	/* last process in list */
+#ifdef KSH
 	Coproc_id coproc_id;	/* 0 or id of coprocess output pipe */
-#ifdef JOBS
-	struct termios ttystate;/* saved tty state for stopped jobs */
+#endif /* KSH */
+#ifdef TTY_PGRP
+	TTY_state ttystate;	/* saved tty state for stopped jobs */
 	pid_t	saved_ttypgrp;	/* saved tty process group for stopped jobs */
-#endif /* JOBS */
+#endif /* TTY_PGRP */
 };
 
 /* Flags for j_waitj() */
@@ -105,14 +163,13 @@ struct job {
 #define JL_INVALID	3	/* non-pid, non-% job id */
 
 static const char	*const lookup_msgs[] = {
-	null,
-	"no such job",
-	"ambiguous",
-	"argument must be %job or process id",
-	NULL
-};
-
-struct timeval	j_systime, j_usrtime;	/* user and system time of last j_waitjed job */
+				null,
+				"no such job",
+				"ambiguous",
+				"argument must be %job or process id",
+				(char *) 0
+			    };
+clock_t	j_systime, j_usrtime;	/* user and system time of last j_waitjed job */
 
 static Job		*job_list;	/* job list */
 static Job		*last_job;
@@ -120,48 +177,72 @@ static Job		*async_job;
 static pid_t		async_pid;
 
 static int		nzombie;	/* # of zombies owned by this process */
-int			njobs;		/* # of jobs started */
+static INT32		njobs;		/* # of jobs started */
 static int		child_max;	/* CHILD_MAX */
 
 
+#ifdef JOB_SIGS
 /* held_sigchld is set if sigchld occurs before a job is completely started */
-static volatile sig_atomic_t held_sigchld;
+static int		held_sigchld;
+#endif /* JOB_SIGS */
 
 #ifdef JOBS
 static struct shf	*shl_j;
+#endif /* JOBS */
+
+#ifdef NEED_PGRP_SYNC
+/* On some systems, the kernel doesn't count zombie processes when checking
+ * if a process group is valid, which can cause problems in creating the
+ * pipeline "cmd1 | cmd2": if cmd1 can die (and go into the zombie state)
+ * before cmd2 is started, the kernel doesn't allow the setpgid() for cmd2
+ * to succeed.  Solution is to create a pipe between the parent and the first
+ * process; the first process doesn't do anything until the pipe is closed
+ * and the parent doesn't close the pipe until all the processes are started.
+ */
+static int		j_sync_pipe[2];
+static int		j_sync_open;
+#endif /* NEED_PGRP_SYNC */
+
+#ifdef TTY_PGRP
 static int		ttypgrp_ok;	/* set if can use tty pgrps */
 static pid_t		restore_ttypgrp = -1;
 static pid_t		our_pgrp;
 static int const	tt_sigs[] = { SIGTSTP, SIGTTIN, SIGTTOU };
-#endif /* JOBS */
+#endif /* TTY_PGRP */
 
-static void		j_set_async(Job *);
-static void		j_startjob(Job *);
-static int		j_waitj(Job *, int, const char *);
-static void		j_sigchld(int);
-static void		j_print(Job *, int, struct shf *);
-static Job		*j_lookup(const char *, int *);
-static Job		*new_job(void);
-static Proc		*new_proc(void);
-static void		check_job(Job *);
-static void		put_job(Job *, int);
-static void		remove_job(Job *, const char *);
-static int		kill_job(Job *, int);
+static void		j_set_async ARGS((Job *j));
+static void		j_startjob ARGS((Job *j));
+static int		j_waitj ARGS((Job *j, int flags, const char *where));
+static RETSIGTYPE	j_sigchld ARGS((int sig));
+static void		j_print ARGS((Job *j, int how, struct shf *shf));
+static Job		*j_lookup ARGS((const char *cp, int *ecodep));
+static Job		*new_job ARGS((void));
+static Proc		*new_proc ARGS((void));
+static void		check_job ARGS((Job *j));
+static void		put_job ARGS((Job *j, int where));
+static void		remove_job ARGS((Job *j, const char *where));
+static int		kill_job ARGS((Job *j, int sig));
 
 /* initialize job control */
 void
-j_init(int mflagset)
+j_init(mflagset)
+	int mflagset;
 {
 	child_max = CHILD_MAX; /* so syscon() isn't always being called */
 
+#ifdef JOB_SIGS
 	sigemptyset(&sm_default);
-	sigprocmask(SIG_SETMASK, &sm_default, NULL);
+	sigprocmask(SIG_SETMASK, &sm_default, (sigset_t *) 0);
 
 	sigemptyset(&sm_sigchld);
 	sigaddset(&sm_sigchld, SIGCHLD);
 
 	setsig(&sigtraps[SIGCHLD], j_sigchld,
-	    SS_RESTORE_ORIG|SS_FORCE|SS_SHTRAP);
+		SS_RESTORE_ORIG|SS_FORCE|SS_SHTRAP);
+#else /* JOB_SIGS */
+	/* Make sure SIGCHLD isn't ignored - can do odd things under SYSV */
+	setsig(&sigtraps[SIGCHLD], SIG_DFL, SS_RESTORE_ORIG|SS_FORCE);
+#endif /* JOB_SIGS */
 
 #ifdef JOBS
 	if (!mflagset && Flag(FTALKING))
@@ -170,8 +251,9 @@ j_init(int mflagset)
 	/* shl_j is used to do asynchronous notification (used in
 	 * an interrupt handler, so need a distinct shf)
 	 */
-	shl_j = shf_fdopen(2, SHF_WR, NULL);
+	shl_j = shf_fdopen(2, SHF_WR, (struct shf *) 0);
 
+# ifdef TTY_PGRP
 	if (Flag(FMONITOR) || Flag(FTALKING)) {
 		int i;
 
@@ -182,86 +264,36 @@ j_init(int mflagset)
 			sigtraps[tt_sigs[i]].flags |= TF_SHELL_USES;
 			/* j_change() sets this to SS_RESTORE_DFL if FMONITOR */
 			setsig(&sigtraps[tt_sigs[i]], SIG_IGN,
-			    SS_RESTORE_IGN|SS_FORCE);
+				SS_RESTORE_IGN|SS_FORCE);
 		}
 	}
+# endif /* TTY_PGRP */
 
 	/* j_change() calls tty_init() */
 	if (Flag(FMONITOR))
 		j_change();
 	else
 #endif /* JOBS */
-		if (Flag(FTALKING))
-			tty_init(true);
-}
-
-/* suspend the shell */
-void
-j_suspend(void)
-{
-	struct sigaction sa, osa;
-
-	/* Restore tty and pgrp. */
-	if (ttypgrp_ok) {
-		tcsetattr(tty_fd, TCSADRAIN, &tty_state);
-		if (restore_ttypgrp >= 0) {
-			if (tcsetpgrp(tty_fd, restore_ttypgrp) < 0) {
-				warningf(false,
-				    "j_suspend: tcsetpgrp() failed: %s",
-				    strerror(errno));
-			} else {
-				if (setpgid(0, restore_ttypgrp) < 0) {
-					warningf(false,
-					    "j_suspend: setpgid() failed: %s",
-					    strerror(errno));
-				}
-			}
-		}
-	}
-
-	/* Suspend the shell. */
-	memset(&sa, 0, sizeof(sa));
-	sigemptyset(&sa.sa_mask);
-	sa.sa_handler = SIG_DFL;
-	sigaction(SIGTSTP, &sa, &osa);
-	kill(0, SIGTSTP);
-
-	/* Back from suspend, reset signals, pgrp and tty. */
-	sigaction(SIGTSTP, &osa, NULL);
-	if (ttypgrp_ok) {
-		if (restore_ttypgrp >= 0) {
-			if (setpgid(0, kshpid) < 0) {
-				warningf(false,
-				    "j_suspend: setpgid() failed: %s",
-				    strerror(errno));
-				ttypgrp_ok = 0;
-			} else {
-				if (tcsetpgrp(tty_fd, kshpid) < 0) {
-					warningf(false,
-					    "j_suspend: tcsetpgrp() failed: %s",
-					    strerror(errno));
-					ttypgrp_ok = 0;
-				}
-			}
-		}
-		tty_init(true);
-	}
+	  if (Flag(FTALKING))
+		tty_init(TRUE);
 }
 
 /* job cleanup before shell exit */
 void
-j_exit(void)
+j_exit()
 {
 	/* kill stopped, and possibly running, jobs */
 	Job	*j;
 	int	killed = 0;
 
-	for (j = job_list; j != NULL; j = j->next) {
-		if (j->ppid == procpid &&
-		    (j->state == PSTOPPED ||
-		    (j->state == PRUNNING &&
-		    ((j->flags & JF_FG) ||
-		    (Flag(FLOGIN) && !Flag(FNOHUP) && procpid == kshpid))))) {
+	for (j = job_list; j != (Job *) 0; j = j->next) {
+		if (j->ppid == procpid
+		    && (j->state == PSTOPPED
+			|| (j->state == PRUNNING
+			    && ((j->flags & JF_FG)
+				|| (Flag(FLOGIN) && !Flag(FNOHUP)
+				    && procpid == kshpid)))))
+		{
 			killed = 1;
 			if (j->pgrp == 0)
 				kill_job(j, SIGHUP);
@@ -282,6 +314,7 @@ j_exit(void)
 	j_notify();
 
 #ifdef JOBS
+# ifdef TTY_PGRP
 	if (kshpid == procpid && restore_ttypgrp >= 0) {
 		/* Need to restore the tty pgrp to what it was when the
 		 * shell started up, so that the process that started us
@@ -293,6 +326,7 @@ j_exit(void)
 		tcsetpgrp(tty_fd, restore_ttypgrp);
 		setpgid(0, restore_ttypgrp);
 	}
+# endif /* TTY_PGRP */
 	if (Flag(FMONITOR)) {
 		Flag(FMONITOR) = 0;
 		j_change();
@@ -303,39 +337,34 @@ j_exit(void)
 #ifdef JOBS
 /* turn job control on or off according to Flag(FMONITOR) */
 void
-j_change(void)
+j_change()
 {
 	int i;
 
 	if (Flag(FMONITOR)) {
-		int use_tty;
+		/* Don't call get_tty() 'til we own the tty process group */
+		tty_init(FALSE);
 
-		if (Flag(FTALKING)) {
-			/* Don't call tcgetattr() 'til we own the tty process group */
-			use_tty = 1;
-			tty_init(false);
-		} else
-			use_tty = 0;
-
+# ifdef TTY_PGRP
 		/* no controlling tty, no SIGT* */
-		ttypgrp_ok = use_tty && tty_fd >= 0 && tty_devtty;
+		ttypgrp_ok = tty_fd >= 0 && tty_devtty;
 
-		if (ttypgrp_ok && (our_pgrp = getpgrp()) < 0) {
-			warningf(false, "j_init: getpgrp() failed: %s",
-			    strerror(errno));
+		if (ttypgrp_ok && (our_pgrp = getpgID()) < 0) {
+			warningf(FALSE, "j_init: getpgrp() failed: %s",
+				strerror(errno));
 			ttypgrp_ok = 0;
 		}
 		if (ttypgrp_ok) {
 			setsig(&sigtraps[SIGTTIN], SIG_DFL,
-			    SS_RESTORE_ORIG|SS_FORCE);
+				SS_RESTORE_ORIG|SS_FORCE);
 			/* wait to be given tty (POSIX.1, B.2, job control) */
 			while (1) {
 				pid_t ttypgrp;
 
 				if ((ttypgrp = tcgetpgrp(tty_fd)) < 0) {
-					warningf(false,
-					    "j_init: tcgetpgrp() failed: %s",
-					    strerror(errno));
+					warningf(FALSE,
+					"j_init: tcgetpgrp() failed: %s",
+						strerror(errno));
 					ttypgrp_ok = 0;
 					break;
 				}
@@ -346,45 +375,55 @@ j_change(void)
 		}
 		for (i = NELEM(tt_sigs); --i >= 0; )
 			setsig(&sigtraps[tt_sigs[i]], SIG_IGN,
-			    SS_RESTORE_DFL|SS_FORCE);
+				SS_RESTORE_DFL|SS_FORCE);
 		if (ttypgrp_ok && our_pgrp != kshpid) {
 			if (setpgid(0, kshpid) < 0) {
-				warningf(false,
-				    "j_init: setpgid() failed: %s",
-				    strerror(errno));
+				warningf(FALSE,
+					"j_init: setpgid() failed: %s",
+					strerror(errno));
 				ttypgrp_ok = 0;
 			} else {
 				if (tcsetpgrp(tty_fd, kshpid) < 0) {
-					warningf(false,
-					    "j_init: tcsetpgrp() failed: %s",
-					    strerror(errno));
+					warningf(FALSE,
+					"j_init: tcsetpgrp() failed: %s",
+						strerror(errno));
 					ttypgrp_ok = 0;
 				} else
 					restore_ttypgrp = our_pgrp;
 				our_pgrp = kshpid;
 			}
 		}
-		if (use_tty) {
-			if (!ttypgrp_ok)
-				warningf(false, "warning: won't have full job control");
+#  if defined(NTTYDISC) && defined(TIOCSETD) && !defined(HAVE_TERMIOS_H) && !defined(HAVE_TERMIO_H)
+		if (ttypgrp_ok) {
+			int ldisc = NTTYDISC;
+
+			if (ioctl(tty_fd, TIOCSETD, &ldisc) < 0)
+				warningf(FALSE,
+				"j_init: can't set new line discipline: %s",
+					strerror(errno));
 		}
+#  endif /* NTTYDISC && TIOCSETD */
+		if (!ttypgrp_ok)
+			warningf(FALSE, "warning: won't have full job control");
+# endif /* TTY_PGRP */
 		if (tty_fd >= 0)
-			tcgetattr(tty_fd, &tty_state);
+			get_tty(tty_fd, &tty_state);
 	} else {
+# ifdef TTY_PGRP
 		ttypgrp_ok = 0;
 		if (Flag(FTALKING))
 			for (i = NELEM(tt_sigs); --i >= 0; )
 				setsig(&sigtraps[tt_sigs[i]], SIG_IGN,
-				    SS_RESTORE_IGN|SS_FORCE);
+					SS_RESTORE_IGN|SS_FORCE);
 		else
 			for (i = NELEM(tt_sigs); --i >= 0; ) {
-				if (sigtraps[tt_sigs[i]].flags &
-				    (TF_ORIG_IGN | TF_ORIG_DFL))
+				if (sigtraps[tt_sigs[i]].flags & (TF_ORIG_IGN
+							          |TF_ORIG_DFL))
 					setsig(&sigtraps[tt_sigs[i]],
-					    (sigtraps[tt_sigs[i]].flags & TF_ORIG_IGN) ?
-					    SIG_IGN : SIG_DFL,
-					    SS_RESTORE_ORIG|SS_FORCE);
+						(sigtraps[tt_sigs[i]].flags & TF_ORIG_IGN) ? SIG_IGN : SIG_DFL,
+						SS_RESTORE_ORIG|SS_FORCE);
 			}
+# endif /* TTY_PGRP */
 		if (!Flag(FTALKING))
 			tty_close();
 	}
@@ -393,13 +432,17 @@ j_change(void)
 
 /* execute tree in child subprocess */
 int
-exchild(struct op *t, int flags, volatile int *xerrok,
-    int close_fd)	/* used if XPCLOSE or XCCLOSE */
+exchild(t, flags, close_fd)
+	struct op	*t;
+	int		flags;
+	int		close_fd;	/* used if XPCLOSE or XCCLOSE */
 {
 	static Proc	*last_proc;	/* for pipelines */
 
 	int		i;
+#ifdef JOB_SIGS
 	sigset_t	omask;
+#endif /* JOB_SIGS */
 	Proc		*p;
 	Job		*j;
 	int		rv = 0;
@@ -410,41 +453,53 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 		/* Clear XFORK|XPCLOSE|XCCLOSE|XCOPROC|XPIPEO|XPIPEI|XXCOM|XBGND
 		 * (also done in another execute() below)
 		 */
-		return execute(t, flags & (XEXEC | XERROK), xerrok);
+		return execute(t, flags & (XEXEC | XERROK));
 
+#ifdef JOB_SIGS
 	/* no SIGCHLD's while messing with job and process lists */
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
 	p = new_proc();
-	p->next = NULL;
+	p->next = (Proc *) 0;
 	p->state = PRUNNING;
-	p->status = 0;
+	WSTATUS(p->status) = 0;
 	p->pid = 0;
 
 	/* link process into jobs list */
 	if (flags&XPIPEI) {	/* continuing with a pipe */
 		if (!last_job)
-			internal_errorf(1,
-			    "exchild: XPIPEI and no last_job - pid %d",
-			    (int) procpid);
+			internal_errorf(1, "exchild: XPIPEI and no last_job - pid %d", (int) procpid);
 		j = last_job;
 		last_proc->next = p;
 		last_proc = p;
 	} else {
+#ifdef NEED_PGRP_SYNC
+		if (j_sync_open) {	/* should never happen */
+			j_sync_open = 0;
+			closepipe(j_sync_pipe);
+		}
+		/* don't do the sync pipe business if there is no pipeline */
+		if (flags & XPIPEO) {
+			openpipe(j_sync_pipe);
+			j_sync_open = 1;
+		}
+#endif /* NEED_PGRP_SYNC */
 		j = new_job(); /* fills in j->job */
 		/* we don't consider XXCOM's foreground since they don't get
 		 * tty process group and we don't save or restore tty modes.
 		 */
-		j->flags = (flags & XXCOM) ? JF_XXCOM :
-		    ((flags & XBGND) ? 0 : (JF_FG|JF_USETTYMODE));
-		timerclear(&j->usrtime);
-		timerclear(&j->systime);
+		j->flags = (flags & XXCOM) ? JF_XXCOM
+			: ((flags & XBGND) ? 0 : (JF_FG|JF_USETTYMODE));
+		j->usrtime = j->systime = 0;
 		j->state = PRUNNING;
 		j->pgrp = 0;
 		j->ppid = procpid;
 		j->age = ++njobs;
 		j->proc_list = p;
+#ifdef KSH
 		j->coproc_id = 0;
+#endif /* KSH */
 		last_job = j;
 		last_proc = p;
 		put_job(j, PJ_PAST_STOPPED);
@@ -463,7 +518,15 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 	if (i < 0) {
 		kill_job(j, SIGKILL);
 		remove_job(j, "fork failed");
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef NEED_PGRP_SYNC
+		if (j_sync_open) {
+			closepipe(j_sync_pipe);
+			j_sync_open = 0;
+		}
+#endif /* NEED_PGRP_SYNC */
+#ifdef JOB_SIGS
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 		errorf("cannot fork - try again");
 	}
 	ischild = i == 0;
@@ -476,6 +539,29 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 	/* job control set up */
 	if (Flag(FMONITOR) && !(flags&XXCOM)) {
 		int	dotty = 0;
+# ifdef NEED_PGRP_SYNC
+		int	first_child_sync = 0;
+# endif /* NEED_PGRP_SYNC */
+
+# ifdef NEED_PGRP_SYNC
+		if (j_sync_open) {
+			/*
+			 * The Parent closes 0, keeps 1 open 'til the whole
+			 * pipeline is started.  The First child closes 1,
+			 * keeps 0 open (reads from it).  The remaining
+			 * children just have to close 1 (parent has already
+			 * closeed 0).
+			 */
+			if (j->pgrp == 0) { /* First process */
+				close(j_sync_pipe[ischild]);
+				j_sync_pipe[ischild] = -1;
+				first_child_sync = ischild;
+			} else if (ischild) {
+				j_sync_open = 0;
+				closepipe(j_sync_pipe);
+			}
+		}
+# endif /* NEED_PGRP_SYNC */
 		if (j->pgrp == 0) {	/* First process */
 			j->pgrp = p->pid;
 			dotty = 1;
@@ -485,6 +571,7 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 		 * condition
 		 */
 		setpgid(p->pid, j->pgrp);
+# ifdef TTY_PGRP
 		/* YYY: should this be
 		   if (ttypgrp_ok && ischild && !(flags&XBGND))
 			tcsetpgrp(tty_fd, j->pgrp);
@@ -492,20 +579,35 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 		 */
 		if (ttypgrp_ok && dotty && !(flags & XBGND))
 			tcsetpgrp(tty_fd, j->pgrp);
+# endif /* TTY_PGRP */
+# ifdef NEED_PGRP_SYNC
+		if (first_child_sync) {
+			char c;
+			while (read(j_sync_pipe[0], &c, 1) == -1
+			       && errno == EINTR)
+				;
+			close(j_sync_pipe[0]);
+			j_sync_open = 0;
+		}
+# endif /* NEED_PGRP_SYNC */
 	}
 #endif /* JOBS */
 
 	/* used to close pipe input fd */
-	if (close_fd >= 0 && (((flags & XPCLOSE) && !ischild) ||
-	    ((flags & XCCLOSE) && ischild)))
+	if (close_fd >= 0 && (((flags & XPCLOSE) && !ischild)
+			      || ((flags & XCCLOSE) && ischild)))
 		close(close_fd);
 	if (ischild) {		/* child */
+#ifdef KSH
 		/* Do this before restoring signal */
 		if (flags & XCOPROC)
-			coproc_cleanup(false);
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+			coproc_cleanup(FALSE);
+#endif /* KSH */
+#ifdef JOB_SIGS
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 		cleanup_parents_env();
-#ifdef JOBS
+#ifdef TTY_PGRP
 		/* If FMONITOR or FTALKING is set, these signals are ignored,
 		 * if neither FMONITOR nor FTALKING are set, the signals have
 		 * their inherited values.
@@ -513,22 +615,22 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 		if (Flag(FMONITOR) && !(flags & XXCOM)) {
 			for (i = NELEM(tt_sigs); --i >= 0; )
 				setsig(&sigtraps[tt_sigs[i]], SIG_DFL,
-				    SS_RESTORE_DFL|SS_FORCE);
+					SS_RESTORE_DFL|SS_FORCE);
 		}
-#endif /* JOBS */
+#endif /* TTY_PGRP */
+#ifdef HAVE_NICE
 		if (Flag(FBGNICE) && (flags & XBGND))
 			nice(4);
+#endif /* HAVE_NICE */
 		if ((flags & XBGND) && !Flag(FMONITOR)) {
 			setsig(&sigtraps[SIGINT], SIG_IGN,
-			    SS_RESTORE_IGN|SS_FORCE);
+				SS_RESTORE_IGN|SS_FORCE);
 			setsig(&sigtraps[SIGQUIT], SIG_IGN,
-			    SS_RESTORE_IGN|SS_FORCE);
+				SS_RESTORE_IGN|SS_FORCE);
 			if (!(flags & (XPIPEI | XCOPROC))) {
-				int fd = open("/dev/null", O_RDONLY);
-				if (fd != 0) {
-					(void) ksh_dup2(fd, 0, true);
-					close(fd);
-				}
+				int fd = open("/dev/null", 0);
+				(void) ksh_dup2(fd, 0, TRUE);
+				close(fd);
 			}
 		}
 		remove_job(j, "child");	/* in case of `jobs` command */
@@ -538,9 +640,13 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 		Flag(FMONITOR) = 0;
 #endif /* JOBS */
 		Flag(FTALKING) = 0;
+#ifdef OS2
+		if (tty_fd >= 0)
+			flags |= XINTACT;
+#endif /* OS2 */
 		tty_close();
 		cleartraps();
-		execute(t, (flags & XERROK) | XEXEC, NULL); /* no return */
+		execute(t, (flags & XERROK) | XEXEC); /* no return */
 		internal_errorf(0, "exchild: execute() returned");
 		unwind(LLEAVE);
 		/* NOTREACHED */
@@ -550,18 +656,20 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 	/* Ensure next child gets a (slightly) different $RANDOM sequence */
 	change_random();
 	if (!(flags & XPIPEO)) {	/* last process in a job */
-#ifdef JOBS
+#ifdef TTY_PGRP
 		/* YYY: Is this needed? (see also YYY above)
 		   if (Flag(FMONITOR) && !(flags&(XXCOM|XBGND)))
 			tcsetpgrp(tty_fd, j->pgrp);
 		*/
-#endif /* JOBS */
+#endif /* TTY_PGRP */
 		j_startjob(j);
+#ifdef KSH
 		if (flags & XCOPROC) {
 			j->coproc_id = coproc.id;
 			coproc.njobs++; /* n jobs using co-process output */
 			coproc.job = (void *) j; /* j using co-process input */
 		}
+#endif /* KSH */
 		if (flags & XBGND) {
 			j_set_async(j);
 			if (Flag(FTALKING)) {
@@ -575,69 +683,85 @@ exchild(struct op *t, int flags, volatile int *xerrok,
 			rv = j_waitj(j, JW_NONE, "jw:last proc");
 	}
 
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 
 	return rv;
 }
 
 /* start the last job: only used for `command` jobs */
 void
-startlast(void)
+startlast()
 {
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
 	if (last_job) { /* no need to report error - waitlast() will do it */
 		/* ensure it isn't removed by check_job() */
 		last_job->flags |= JF_WAITING;
 		j_startjob(last_job);
 	}
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 }
 
 /* wait for last job: only used for `command` jobs */
 int
-waitlast(void)
+waitlast()
 {
 	int	rv;
 	Job	*j;
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
 	j = last_job;
 	if (!j || !(j->flags & JF_STARTED)) {
 		if (!j)
-			warningf(true, "waitlast: no last job");
+			warningf(TRUE, "waitlast: no last job");
 		else
 			internal_errorf(0, "waitlast: not started");
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 		return 125; /* not so arbitrary, non-zero value */
 	}
 
 	rv = j_waitj(j, JW_NONE, "jw:waitlast");
 
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 
 	return rv;
 }
 
 /* wait for child, interruptable. */
 int
-waitfor(const char *cp, int *sigp)
+waitfor(cp, sigp)
+	const char *cp;
+	int	*sigp;
 {
 	int	rv;
 	Job	*j;
 	int	ecode;
 	int	flags = JW_INTERRUPT|JW_ASYNCNOTIFY;
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
 	*sigp = 0;
 
-	if (cp == NULL) {
+	if (cp == (char *) 0) {
 		/* wait for an unspecified job - always returns 0, so
 		 * don't have to worry about exited/signaled jobs
 		 */
@@ -646,18 +770,24 @@ waitfor(const char *cp, int *sigp)
 			if (j->ppid == procpid && j->state == PRUNNING)
 				break;
 		if (!j) {
-			sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+			sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 			return -1;
 		}
 	} else if ((j = j_lookup(cp, &ecode))) {
 		/* don't report normal job completion */
 		flags &= ~JW_ASYNCNOTIFY;
 		if (j->ppid != procpid) {
-			sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+			sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 			return -1;
 		}
 	} else {
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 		if (ecode != JL_NOSUCH)
 			bi_errorf("%s: %s", cp, lookup_msgs[ecode]);
 		return -1;
@@ -666,7 +796,9 @@ waitfor(const char *cp, int *sigp)
 	/* at&t ksh will wait for stopped jobs - we don't */
 	rv = j_waitj(j, flags, "jw:waitfor");
 
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 
 	if (rv < 0) /* we were interrupted */
 		*sigp = 128 + -rv;
@@ -676,17 +808,24 @@ waitfor(const char *cp, int *sigp)
 
 /* kill (built-in) a job */
 int
-j_kill(const char *cp, int sig)
+j_kill(cp, sig)
+	const char *cp;
+	int	sig;
 {
 	Job	*j;
+	Proc	*p;
 	int	rv = 0;
 	int	ecode;
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
-	if ((j = j_lookup(cp, &ecode)) == NULL) {
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+	if ((j = j_lookup(cp, &ecode)) == (Job *) 0) {
+#ifdef JOB_SIGS
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 		bi_errorf("%s: %s", cp, lookup_msgs[ecode]);
 		return 1;
 	}
@@ -707,7 +846,9 @@ j_kill(const char *cp, int sig)
 		}
 	}
 
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 
 	return rv;
 }
@@ -715,7 +856,9 @@ j_kill(const char *cp, int sig)
 #ifdef JOBS
 /* fg and bg built-ins: called only if Flag(FMONITOR) set */
 int
-j_resume(const char *cp, int bg)
+j_resume(cp, bg)
+	const char *cp;
+	int	bg;
 {
 	Job	*j;
 	Proc	*p;
@@ -726,14 +869,14 @@ j_resume(const char *cp, int bg)
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
 
-	if ((j = j_lookup(cp, &ecode)) == NULL) {
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+	if ((j = j_lookup(cp, &ecode)) == (Job *) 0) {
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
 		bi_errorf("%s: %s", cp, lookup_msgs[ecode]);
 		return 1;
 	}
 
 	if (j->pgrp == 0) {
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
 		bi_errorf("job not job-controlled");
 		return 1;
 	}
@@ -742,15 +885,15 @@ j_resume(const char *cp, int bg)
 		shprintf("[%d] ", j->job);
 
 	running = 0;
-	for (p = j->proc_list; p != NULL; p = p->next) {
+	for (p = j->proc_list; p != (Proc *) 0; p = p->next) {
 		if (p->state == PSTOPPED) {
 			p->state = PRUNNING;
-			p->status = 0;
+			WSTATUS(p->status) = 0;
 			running = 1;
 		}
-		shprintf("%s%s", p->command, p->next ? "| " : "");
+		shprintf("%s%s", p->command, p->next ? "| " : null);
 	}
-	shprintf("\n");
+	shprintf(newline);
 	shf_flush(shl_stdout);
 	if (running)
 		j->state = PRUNNING;
@@ -759,31 +902,29 @@ j_resume(const char *cp, int bg)
 	if (bg)
 		j_set_async(j);
 	else {
-# ifdef JOBS
+# ifdef TTY_PGRP
 		/* attach tty to job */
 		if (j->state == PRUNNING) {
-			if (ttypgrp_ok && (j->flags & JF_SAVEDTTY))
-				tcsetattr(tty_fd, TCSADRAIN, &j->ttystate);
+			if (ttypgrp_ok && (j->flags & JF_SAVEDTTY)) {
+				set_tty(tty_fd, &j->ttystate, TF_NONE);
+			}
 			/* See comment in j_waitj regarding saved_ttypgrp. */
-			if (ttypgrp_ok &&
-			    tcsetpgrp(tty_fd, (j->flags & JF_SAVEDTTYPGRP) ?
-			    j->saved_ttypgrp : j->pgrp) < 0) {
-				if (j->flags & JF_SAVEDTTY)
-					tcsetattr(tty_fd, TCSADRAIN, &tty_state);
-				sigprocmask(SIG_SETMASK, &omask, NULL);
+			if (ttypgrp_ok && tcsetpgrp(tty_fd, (j->flags & JF_SAVEDTTYPGRP) ? j->saved_ttypgrp : j->pgrp) < 0) {
+				if (j->flags & JF_SAVEDTTY) {
+					set_tty(tty_fd, &tty_state, TF_NONE);
+				}
+				sigprocmask(SIG_SETMASK, &omask,
+					(sigset_t *) 0);
 				bi_errorf("1st tcsetpgrp(%d, %d) failed: %s",
-				    tty_fd,
-				    (int) ((j->flags & JF_SAVEDTTYPGRP) ?
-				    j->saved_ttypgrp : j->pgrp),
-				    strerror(errno));
+					tty_fd, (int) ((j->flags & JF_SAVEDTTYPGRP) ? j->saved_ttypgrp : j->pgrp), strerror(errno));
 				return 1;
 			}
 		}
-# endif /* JOBS */
+# endif /* TTY_PGRP */
 		j->flags |= JF_FG;
 		j->flags &= ~JF_KNOWN;
 		if (j == async_job)
-			async_job = NULL;
+			async_job = (Job *) 0;
 	}
 
 	if (j->state == PRUNNING && killpg(j->pgrp, SIGCONT) < 0) {
@@ -791,89 +932,78 @@ j_resume(const char *cp, int bg)
 
 		if (!bg) {
 			j->flags &= ~JF_FG;
-# ifdef JOBS
-			if (ttypgrp_ok && (j->flags & JF_SAVEDTTY))
-				tcsetattr(tty_fd, TCSADRAIN, &tty_state);
-			if (ttypgrp_ok && tcsetpgrp(tty_fd, our_pgrp) < 0) {
-				warningf(true,
-				    "fg: 2nd tcsetpgrp(%d, %d) failed: %s",
-				    tty_fd, (int) our_pgrp,
-				    strerror(errno));
+# ifdef TTY_PGRP
+			if (ttypgrp_ok && (j->flags & JF_SAVEDTTY)) {
+				set_tty(tty_fd, &tty_state, TF_NONE);
 			}
-# endif /* JOBS */
+			if (ttypgrp_ok && tcsetpgrp(tty_fd, our_pgrp) < 0) {
+				warningf(TRUE,
+				"fg: 2nd tcsetpgrp(%d, %d) failed: %s",
+					tty_fd, (int) our_pgrp,
+					strerror(errno));
+			}
+# endif /* TTY_PGRP */
 		}
-		sigprocmask(SIG_SETMASK, &omask, NULL);
+		sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
 		bi_errorf("cannot continue job %s: %s",
-		    cp, strerror(err));
+			cp, strerror(err));
 		return 1;
 	}
 	if (!bg) {
-# ifdef JOBS
+# ifdef TTY_PGRP
 		if (ttypgrp_ok) {
 			j->flags &= ~(JF_SAVEDTTY | JF_SAVEDTTYPGRP);
 		}
-# endif /* JOBS */
+# endif /* TTY_PGRP */
 		rv = j_waitj(j, JW_NONE, "jw:resume");
 	}
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
 	return rv;
 }
 #endif /* JOBS */
 
 /* are there any running or stopped jobs ? */
 int
-j_stopped_running(void)
+j_stopped_running()
 {
 	Job	*j;
 	int	which = 0;
 
-	for (j = job_list; j != NULL; j = j->next) {
+	for (j = job_list; j != (Job *) 0; j = j->next) {
 #ifdef JOBS
 		if (j->ppid == procpid && j->state == PSTOPPED)
 			which |= 1;
 #endif /* JOBS */
-		if (Flag(FLOGIN) && !Flag(FNOHUP) && procpid == kshpid &&
-		    j->ppid == procpid && j->state == PRUNNING)
+		if (Flag(FLOGIN) && !Flag(FNOHUP) && procpid == kshpid
+		    && j->ppid == procpid && j->state == PRUNNING)
 			which |= 2;
 	}
 	if (which) {
 		shellf("You have %s%s%s jobs\n",
-		    which & 1 ? "stopped" : "",
-		    which == 3 ? " and " : "",
-		    which & 2 ? "running" : "");
+			which & 1 ? "stopped" : "",
+			which == 3 ? " and " : "",
+			which & 2 ? "running" : "");
 		return 1;
 	}
 
 	return 0;
 }
 
-int
-j_njobs(void)
-{
-	Job *j;
-	int nj = 0;
-	sigset_t omask;
-
-	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
-	for (j = job_list; j; j = j->next)
-		nj++;
-
-	sigprocmask(SIG_SETMASK, &omask, NULL);
-	return nj;
-}
-
-
 /* list jobs for jobs built-in */
 int
-j_jobs(const char *cp, int slp,
-    int nflag)		/* 0: short, 1: long, 2: pgrp */
+j_jobs(cp, slp, nflag)
+	const char *cp;
+	int	slp;		/* 0: short, 1: long, 2: pgrp */
+	int	nflag;
 {
 	Job	*j, *tmp;
 	int	how;
 	int	zflag = 0;
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
 	if (nflag < 0) { /* kludge: print zombies */
 		nflag = 0;
@@ -882,8 +1012,10 @@ j_jobs(const char *cp, int slp,
 	if (cp) {
 		int	ecode;
 
-		if ((j = j_lookup(cp, &ecode)) == NULL) {
-			sigprocmask(SIG_SETMASK, &omask, NULL);
+		if ((j = j_lookup(cp, &ecode)) == (Job *) 0) {
+#ifdef JOB_SIGS
+			sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 			bi_errorf("%s: %s", cp, lookup_msgs[ecode]);
 			return 1;
 		}
@@ -891,8 +1023,9 @@ j_jobs(const char *cp, int slp,
 		j = job_list;
 	how = slp == 0 ? JP_MEDIUM : (slp == 1 ? JP_LONG : JP_PGRP);
 	for (; j; j = j->next) {
-		if ((!(j->flags & JF_ZOMBIE) || zflag) &&
-		    (!nflag || (j->flags & JF_CHANGED))) {
+		if ((!(j->flags & JF_ZOMBIE) || zflag)
+		    && (!nflag || (j->flags & JF_CHANGED)))
+		{
 			j_print(j, how, shl_stdout);
 			if (j->state == PEXITED || j->state == PSIGNALLED)
 				j->flags |= JF_REMOVE;
@@ -906,18 +1039,22 @@ j_jobs(const char *cp, int slp,
 		if (j->flags & JF_REMOVE)
 			remove_job(j, "jobs");
 	}
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 	return 0;
 }
 
 /* list jobs for top-level notification */
 void
-j_notify(void)
+j_notify()
 {
 	Job	*j, *tmp;
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 	for (j = job_list; j; j = j->next) {
 #ifdef JOBS
 		if (Flag(FMONITOR) && (j->flags & JF_CHANGED))
@@ -935,21 +1072,27 @@ j_notify(void)
 			remove_job(j, "notify");
 	}
 	shf_flush(shl_out);
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 }
 
-/* Return pid of last process in last asynchronous job */
+/* Return pid of last process in last asynchornous job */
 pid_t
-j_async(void)
+j_async()
 {
+#ifdef JOB_SIGS
 	sigset_t omask;
 
 	sigprocmask(SIG_BLOCK, &sm_sigchld, &omask);
+#endif /* JOB_SIGS */
 
 	if (async_job)
 		async_job->flags |= JF_KNOWN;
 
-	sigprocmask(SIG_SETMASK, &omask, NULL);
+#ifdef JOB_SIGS
+	sigprocmask(SIG_SETMASK, &omask, (sigset_t *) 0);
+#endif /* JOB_SIGS */
 
 	return async_pid;
 }
@@ -959,7 +1102,8 @@ j_async(void)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static void
-j_set_async(Job *j)
+j_set_async(j)
+	Job *j;
 {
 	Job	*jl, *oldest;
 
@@ -972,16 +1116,15 @@ j_set_async(Job *j)
 	async_job = j;
 	async_pid = j->last_proc->pid;
 	while (nzombie > child_max) {
-		oldest = NULL;
+		oldest = (Job *) 0;
 		for (jl = job_list; jl; jl = jl->next)
-			if (jl != async_job && (jl->flags & JF_ZOMBIE) &&
-			    (!oldest || jl->age < oldest->age))
+			if (jl != async_job && (jl->flags & JF_ZOMBIE)
+			    && (!oldest || jl->age < oldest->age))
 				oldest = jl;
 		if (!oldest) {
 			/* XXX debugging */
 			if (!(async_job->flags & JF_ZOMBIE) || nzombie != 1) {
-				internal_errorf(0,
-				    "j_async: bad nzombie (%d)", nzombie);
+				internal_errorf(0, "j_async: bad nzombie (%d)", nzombie);
 				nzombie = 0;
 			}
 			break;
@@ -995,7 +1138,8 @@ j_set_async(Job *j)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static void
-j_startjob(Job *j)
+j_startjob(j)
+	Job *j;
 {
 	Proc	*p;
 
@@ -1004,11 +1148,19 @@ j_startjob(Job *j)
 		;
 	j->last_proc = p;
 
+#ifdef NEED_PGRP_SYNC
+	if (j_sync_open) {
+		j_sync_open = 0;
+		closepipe(j_sync_pipe);
+	}
+#endif /* NEED_PGRP_SYNC */
+#ifdef JOB_SIGS
 	if (held_sigchld) {
 		held_sigchld = 0;
 		/* Don't call j_sigchld() as it may remove job... */
 		kill(procpid, SIGCHLD);
 	}
+#endif /* JOB_SIGS */
 }
 
 /*
@@ -1017,9 +1169,10 @@ j_startjob(Job *j)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static int
-j_waitj(Job *j,
-    int flags,			/* see JW_* */
-    const char *where)
+j_waitj(j, flags, where)
+	Job	*j;
+	int	flags;		/* see JW_* */
+	const char *where;
 {
 	int	rv;
 
@@ -1033,9 +1186,15 @@ j_waitj(Job *j,
 	if (!Flag(FMONITOR))
 		flags |= JW_STOPPEDWAIT;
 
-	while ((volatile int) j->state == PRUNNING ||
-	    ((flags & JW_STOPPEDWAIT) && (volatile int) j->state == PSTOPPED)) {
+	while ((volatile int) j->state == PRUNNING
+		|| ((flags & JW_STOPPEDWAIT)
+		    && (volatile int) j->state == PSTOPPED))
+	{
+#ifdef JOB_SIGS
 		sigsuspend(&sm_default);
+#else /* JOB_SIGS */
+		j_sigchld(SIGCHLD);
+#endif /* JOB_SIGS */
 		if (fatal_trap) {
 			int oldf = j->flags & (JF_WAITING|JF_W_ASYNCNOTIFY);
 			j->flags &= ~(JF_WAITING|JF_W_ASYNCNOTIFY);
@@ -1050,10 +1209,10 @@ j_waitj(Job *j,
 	j->flags &= ~(JF_WAITING|JF_W_ASYNCNOTIFY);
 
 	if (j->flags & JF_FG) {
-		int	status;
+		WAIT_T	status;
 
 		j->flags &= ~JF_FG;
-#ifdef JOBS
+#ifdef TTY_PGRP
 		if (Flag(FMONITOR) && ttypgrp_ok && j->pgrp) {
 			/*
 			 * Save the tty's current pgrp so it can be restored
@@ -1062,25 +1221,25 @@ j_waitj(Job *j,
 			 * a fork/exec instead of an exec (the fork means
 			 * the execed shell gets a different pid from its
 			 * pgrp, so naturally it sets its pgrp and gets hosed
-			 * when it gets foregrounded by the parent shell, which
+			 * when it gets forgrounded by the parent shell, which
 			 * has restored the tty's pgrp to that of the su
 			 * process).
 			 */
-			if (j->state == PSTOPPED &&
-			    (j->saved_ttypgrp = tcgetpgrp(tty_fd)) >= 0)
+			if (j->state == PSTOPPED
+			    && (j->saved_ttypgrp = tcgetpgrp(tty_fd)) >= 0)
 				j->flags |= JF_SAVEDTTYPGRP;
 			if (tcsetpgrp(tty_fd, our_pgrp) < 0) {
-				warningf(true,
-				    "j_waitj: tcsetpgrp(%d, %d) failed: %s",
-				    tty_fd, (int) our_pgrp,
+				warningf(TRUE,
+				"j_waitj: tcsetpgrp(%d, %d) failed: %s",
+					tty_fd, (int) our_pgrp,
 					strerror(errno));
 			}
 			if (j->state == PSTOPPED) {
 				j->flags |= JF_SAVEDTTY;
-				tcgetattr(tty_fd, &j->ttystate);
+				get_tty(tty_fd, &j->ttystate);
 			}
 		}
-#endif /* JOBS */
+#endif /* TTY_PGRP */
 		if (tty_fd >= 0) {
 			/* Only restore tty settings if job was originally
 			 * started in the foreground.  Problems can be
@@ -1090,11 +1249,13 @@ j_waitj(Job *j,
 			 * when more exits, it restores the `original'
 			 * settings, and things go down hill from there...
 			 */
-			if (j->state == PEXITED && j->status == 0 &&
-			    (j->flags & JF_USETTYMODE)) {
-				tcgetattr(tty_fd, &tty_state);
+			if (j->state == PEXITED && j->status == 0
+			    && (j->flags & JF_USETTYMODE))
+			{
+				get_tty(tty_fd, &tty_state);
 			} else {
-				tcsetattr(tty_fd, TCSADRAIN, &tty_state);
+				set_tty(tty_fd, &tty_state,
+				    (j->state == PEXITED) ? 0 : TF_MIPSKLUDGE);
 				/* Don't use tty mode if job is stopped and
 				 * later restarted and exits.  Consider
 				 * the sequence:
@@ -1117,9 +1278,9 @@ j_waitj(Job *j,
 		 * a tty generated ^C goes to the whole process group)
 		 */
 		status = j->last_proc->status;
-		if (Flag(FMONITOR) && j->state == PSIGNALLED &&
-		    WIFSIGNALED(status) &&
-		    (sigtraps[WTERMSIG(status)].flags & TF_TTY_INTR))
+		if (Flag(FMONITOR) && j->state == PSIGNALLED
+		    && WIFSIGNALED(status)
+		    && (sigtraps[WTERMSIG(status)].flags & TF_TTY_INTR))
 			trapsig(WTERMSIG(status));
 #endif /* JOBS */
 	}
@@ -1128,13 +1289,14 @@ j_waitj(Job *j,
 	j_systime = j->systime;
 	rv = j->status;
 
-	if (!(flags & JW_ASYNCNOTIFY) &&
-	    (!Flag(FMONITOR) || j->state != PSTOPPED)) {
+	if (!(flags & JW_ASYNCNOTIFY) 
+	    && (!Flag(FMONITOR) || j->state != PSTOPPED))
+	{
 		j_print(j, JP_SHORT, shl_out);
 		shf_flush(shl_out);
 	}
-	if (j->state != PSTOPPED &&
-	    (!Flag(FMONITOR) || !(flags & JW_ASYNCNOTIFY)))
+	if (j->state != PSTOPPED
+	    && (!Flag(FMONITOR) || !(flags & JW_ASYNCNOTIFY)))
 		remove_job(j, where);
 
 	return rv;
@@ -1144,16 +1306,18 @@ j_waitj(Job *j,
  *
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
-static void
-j_sigchld(int sig)
+static RETSIGTYPE
+j_sigchld(sig)
+	int	sig;
 {
 	int		errno_ = errno;
 	Job		*j;
-	Proc		*p = NULL;
+	Proc		UNINITIALIZED(*p);
 	int		pid;
-	int		status;
-	struct rusage	ru0, ru1;
+	WAIT_T		status;
+	struct tms	t0, t1;
 
+#ifdef JOB_SIGS
 	/* Don't wait for any processes if a job is partially started.
 	 * This is so we don't do away with the process group leader
 	 * before all the processes in a pipe line are started (so the
@@ -1162,38 +1326,41 @@ j_sigchld(int sig)
 	for (j = job_list; j; j = j->next)
 		if (j->ppid == procpid && !(j->flags & JF_STARTED)) {
 			held_sigchld = 1;
-			goto finished;
+			return RETSIGVAL;
 		}
+#endif /* JOB_SIGS */
 
-	getrusage(RUSAGE_CHILDREN, &ru0);
+	ksh_times(&t0);
 	do {
-		pid = waitpid(-1, &status, (WNOHANG|WUNTRACED));
+#ifdef JOB_SIGS
+		pid = ksh_waitpid(-1, &status, (WNOHANG|WUNTRACED));
+#else /* JOB_SIGS */
+		pid = wait(&status);
+#endif /* JOB_SIGS */
 
 		if (pid <= 0)	/* return if would block (0) ... */
 			break;	/* ... or no children or interrupted (-1) */
 
-		getrusage(RUSAGE_CHILDREN, &ru1);
+		ksh_times(&t1);
 
 		/* find job and process structures for this pid */
-		for (j = job_list; j != NULL; j = j->next)
-			for (p = j->proc_list; p != NULL; p = p->next)
+		for (j = job_list; j != (Job *) 0; j = j->next)
+			for (p = j->proc_list; p != (Proc *) 0; p = p->next)
 				if (p->pid == pid)
 					goto found;
 found:
-		if (j == NULL) {
+		if (j == (Job *) 0) {
 			/* Can occur if process has kids, then execs shell
-			warningf(true, "bad process waited for (pid = %d)",
+			warningf(TRUE, "bad process waited for (pid = %d)",
 				pid);
 			 */
-			ru0 = ru1;
+			t0 = t1;
 			continue;
 		}
 
-		timeradd(&j->usrtime, &ru1.ru_utime, &j->usrtime);
-		timersub(&j->usrtime, &ru0.ru_utime, &j->usrtime);
-		timeradd(&j->systime, &ru1.ru_stime, &j->systime);
-		timersub(&j->systime, &ru0.ru_stime, &j->systime);
-		ru0 = ru1;
+		j->usrtime += t1.tms_cutime - t0.tms_cutime;
+		j->systime += t1.tms_cstime - t0.tms_cstime;
+		t0 = t1;
 		p->status = status;
 #ifdef JOBS
 		if (WIFSTOPPED(status))
@@ -1206,10 +1373,16 @@ found:
 			p->state = PEXITED;
 
 		check_job(j);	/* check to see if entire job is done */
-	} while (1);
+	}
+#ifdef JOB_SIGS
+	while (1);
+#else /* JOB_SIGS */
+	while (0);
+#endif /* JOB_SIGS */
 
-finished:
 	errno = errno_;
+
+	return RETSIGVAL;
 }
 
 /*
@@ -1221,7 +1394,8 @@ finished:
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static void
-check_job(Job *j)
+check_job(j)
+	Job	*j;
 {
 	int	jstate;
 	Proc	*p;
@@ -1229,12 +1403,12 @@ check_job(Job *j)
 	/* XXX debugging (nasty - interrupt routine using shl_out) */
 	if (!(j->flags & JF_STARTED)) {
 		internal_errorf(0, "check_job: job started (flags 0x%x)",
-		    j->flags);
+			j->flags);
 		return;
 	}
 
 	jstate = PRUNNING;
-	for (p=j->proc_list; p != NULL; p = p->next) {
+	for (p=j->proc_list; p != (Proc *) 0; p = p->next) {
 		if (p->state == PRUNNING)
 			return;	/* some processes still running */
 		if (p->state > jstate)
@@ -1254,16 +1428,17 @@ check_job(Job *j)
 		break;
 	}
 
+#ifdef KSH
 	/* Note when co-process dies: can't be done in j_wait() nor
-	 * remove_job() since neither may be called for non-interactive
+	 * remove_job() since neither may be called for non-interactive 
 	 * shells.
 	 */
 	if (j->state == PEXITED || j->state == PSIGNALLED) {
 		/* No need to keep co-process input any more
-		 * (at least, this is what ksh93d thinks)
+		 * (at leasst, this is what ksh93d thinks)
 		 */
 		if (coproc.job == j) {
-			coproc.job = NULL;
+			coproc.job = (void *) 0;
 			/* XXX would be nice to get the closes out of here
 			 * so they aren't done in the signal handler.
 			 * Would mean a check in coproc_getfd() to
@@ -1272,10 +1447,11 @@ check_job(Job *j)
 			coproc_write_close(coproc.write);
 		}
 		/* Do we need to keep the output? */
-		if (j->coproc_id && j->coproc_id == coproc.id &&
-		    --coproc.njobs == 0)
+		if (j->coproc_id && j->coproc_id == coproc.id
+		    && --coproc.njobs == 0)
 			coproc_readw_close(coproc.read);
 	}
+#endif /* KSH */
 
 	j->flags |= JF_CHANGED;
 #ifdef JOBS
@@ -1285,14 +1461,15 @@ check_job(Job *j)
 		 */
 		if (j->state == PSTOPPED)
 			put_job(j, PJ_ON_FRONT);
-		if (Flag(FNOTIFY) &&
-		    (j->flags & (JF_WAITING|JF_W_ASYNCNOTIFY)) != JF_WAITING) {
+		if (Flag(FNOTIFY)
+		    && (j->flags & (JF_WAITING|JF_W_ASYNCNOTIFY)) != JF_WAITING)
+		{
 			/* Look for the real file descriptor 2 */
 			{
 				struct env *ep;
 				int fd = 2;
 
-				for (ep = genv; ep; ep = ep->oenv)
+				for (ep = e; ep; ep = ep->oenv)
 					if (ep->savefd && ep->savefd[2])
 						fd = ep->savefd[2];
 				shf_reopen(fd, SHF_WR, shl_j);
@@ -1308,8 +1485,9 @@ check_job(Job *j)
 		}
 	}
 #endif /* JOBS */
-	if (!Flag(FMONITOR) && !(j->flags & (JF_WAITING|JF_FG)) &&
-	    j->state != PSTOPPED) {
+	if (!Flag(FMONITOR) && !(j->flags & (JF_WAITING|JF_FG))
+	    && j->state != PSTOPPED)
+	{
 		if (j == async_job || (j->flags & JF_KNOWN)) {
 			j->flags |= JF_ZOMBIE;
 			j->job = -1;
@@ -1325,11 +1503,14 @@ check_job(Job *j)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static void
-j_print(Job *j, int how, struct shf *shf)
+j_print(j, how, shf)
+	Job		*j;
+	int		how;
+	struct shf	*shf;
 {
 	Proc	*p;
 	int	state;
-	int	status;
+	WAIT_T	status;
 	int	coredumped;
 	char	jobchar = ' ';
 	char	buf[64];
@@ -1341,8 +1522,8 @@ j_print(Job *j, int how, struct shf *shf)
 		 * group leader (ie, !FMONITOR).  We arbitrarily return
 		 * last pid (which is what $! returns).
 		 */
-		shf_fprintf(shf, "%d\n", j->pgrp ? j->pgrp :
-		    (j->last_proc ? j->last_proc->pid : 0));
+		shf_fprintf(shf, "%d\n", j->pgrp ? j->pgrp
+				: (j->last_proc ? j->last_proc->pid : 0));
 		return;
 	}
 	j->flags &= ~JF_CHANGED;
@@ -1352,38 +1533,36 @@ j_print(Job *j, int how, struct shf *shf)
 	else if (j == job_list->next)
 		jobchar = '-';
 
-	for (p = j->proc_list; p != NULL;) {
+	for (p = j->proc_list; p != (Proc *) 0;) {
 		coredumped = 0;
 		switch (p->state) {
 		case PRUNNING:
-			strlcpy(buf, "Running", sizeof buf);
+			strcpy(buf, "Running");
 			break;
 		case PSTOPPED:
-			strlcpy(buf, sigtraps[WSTOPSIG(p->status)].mess,
-			    sizeof buf);
+			strcpy(buf, sigtraps[WSTOPSIG(p->status)].mess);
 			break;
 		case PEXITED:
 			if (how == JP_SHORT)
 				buf[0] = '\0';
 			else if (WEXITSTATUS(p->status) == 0)
-				strlcpy(buf, "Done", sizeof buf);
+				strcpy(buf, "Done");
 			else
 				shf_snprintf(buf, sizeof(buf), "Done (%d)",
-				    WEXITSTATUS(p->status));
+					WEXITSTATUS(p->status));
 			break;
 		case PSIGNALLED:
-			if (WCOREDUMP(p->status))
+			if (WIFCORED(p->status))
 				coredumped = 1;
 			/* kludge for not reporting `normal termination signals'
 			 * (ie, SIGINT, SIGPIPE)
 			 */
-			if (how == JP_SHORT && !coredumped &&
-			    (WTERMSIG(p->status) == SIGINT ||
-			    WTERMSIG(p->status) == SIGPIPE)) {
+			if (how == JP_SHORT && !coredumped
+			    && (WTERMSIG(p->status) == SIGINT
+				|| WTERMSIG(p->status) == SIGPIPE)) {
 				buf[0] = '\0';
 			} else
-				strlcpy(buf, sigtraps[WTERMSIG(p->status)].mess,
-				    sizeof buf);
+				strcpy(buf, sigtraps[WTERMSIG(p->status)].mess);
 			break;
 		}
 
@@ -1401,30 +1580,32 @@ j_print(Job *j, int how, struct shf *shf)
 			if (buf[0]) {
 				output = 1;
 				shf_fprintf(shf, "%s%s ",
-				    buf, coredumped ? " (core dumped)" : "");
+					buf, coredumped ? " (core dumped)" : null);
 			}
 		} else {
 			output = 1;
 			shf_fprintf(shf, "%-20s %s%s%s", buf, p->command,
-			    p->next ? "|" : "",
-			    coredumped ? " (core dumped)" : "");
+				p->next ? "|" : null,
+				coredumped ? " (core dumped)" : null);
 		}
 
 		state = p->state;
 		status = p->status;
 		p = p->next;
-		while (p && p->state == state && p->status == status) {
+		while (p && p->state == state
+		       && WSTATUS(p->status) == WSTATUS(status))
+		{
 			if (how == JP_LONG)
 				shf_fprintf(shf, "%s%5d %-20s %s%s", filler, p->pid,
-				    " ", p->command, p->next ? "|" : "");
+					space, p->command, p->next ? "|" : null);
 			else if (how == JP_MEDIUM)
 				shf_fprintf(shf, " %s%s", p->command,
-				    p->next ? "|" : "");
+					p->next ? "|" : null);
 			p = p->next;
 		}
 	}
 	if (output)
-		shf_fprintf(shf, "\n");
+		shf_fprintf(shf, newline);
 }
 
 /* Convert % sequence to job
@@ -1432,71 +1613,65 @@ j_print(Job *j, int how, struct shf *shf)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static Job *
-j_lookup(const char *cp, int *ecodep)
+j_lookup(cp, ecodep)
+	const char *cp;
+	int	*ecodep;
 {
 	Job		*j, *last_match;
-	const char	*errstr;
 	Proc		*p;
 	int		len, job = 0;
 
 	if (digit(*cp)) {
-		job = strtonum(cp, 1, INT_MAX, &errstr);
-		if (errstr) {
-			if (ecodep)
-				*ecodep = JL_NOSUCH;
-			return NULL;
-		}
+		job = atoi(cp);
 		/* Look for last_proc->pid (what $! returns) first... */
-		for (j = job_list; j != NULL; j = j->next)
+		for (j = job_list; j != (Job *) 0; j = j->next)
 			if (j->last_proc && j->last_proc->pid == job)
 				return j;
 		/* ...then look for process group (this is non-POSIX),
 		 * but should not break anything (so FPOSIX isn't used).
 		 */
-		for (j = job_list; j != NULL; j = j->next)
+		for (j = job_list; j != (Job *) 0; j = j->next)
 			if (j->pgrp && j->pgrp == job)
 				return j;
 		if (ecodep)
 			*ecodep = JL_NOSUCH;
-		return NULL;
+		return (Job *) 0;
 	}
 	if (*cp != '%') {
 		if (ecodep)
 			*ecodep = JL_INVALID;
-		return NULL;
+		return (Job *) 0;
 	}
 	switch (*++cp) {
-	case '\0': /* non-standard */
-	case '+':
-	case '%':
-		if (job_list != NULL)
+	  case '\0': /* non-standard */
+	  case '+':
+	  case '%':
+		if (job_list != (Job *) 0)
 			return job_list;
 		break;
 
-	case '-':
-		if (job_list != NULL && job_list->next)
+	  case '-':
+		if (job_list != (Job *) 0 && job_list->next)
 			return job_list->next;
 		break;
 
-	case '0': case '1': case '2': case '3': case '4':
-	case '5': case '6': case '7': case '8': case '9':
-		job = strtonum(cp, 1, INT_MAX, &errstr);
-		if (errstr)
-			break;
-		for (j = job_list; j != NULL; j = j->next)
+	  case '0': case '1': case '2': case '3': case '4':
+	  case '5': case '6': case '7': case '8': case '9':
+		job = atoi(cp);
+		for (j = job_list; j != (Job *) 0; j = j->next)
 			if (j->job == job)
 				return j;
 		break;
 
-	case '?':		/* %?string */
-		last_match = NULL;
-		for (j = job_list; j != NULL; j = j->next)
-			for (p = j->proc_list; p != NULL; p = p->next)
-				if (strstr(p->command, cp+1) != NULL) {
+	  case '?':		/* %?string */
+		last_match = (Job *) 0;
+		for (j = job_list; j != (Job *) 0; j = j->next)
+			for (p = j->proc_list; p != (Proc *) 0; p = p->next)
+				if (strstr(p->command, cp+1) != (char *) 0) {
 					if (last_match) {
 						if (ecodep)
 							*ecodep = JL_AMBIG;
-						return NULL;
+						return (Job *) 0;
 					}
 					last_match = j;
 				}
@@ -1504,15 +1679,15 @@ j_lookup(const char *cp, int *ecodep)
 			return last_match;
 		break;
 
-	default:		/* %string */
+	  default:		/* %string */
 		len = strlen(cp);
-		last_match = NULL;
-		for (j = job_list; j != NULL; j = j->next)
+		last_match = (Job *) 0;
+		for (j = job_list; j != (Job *) 0; j = j->next)
 			if (strncmp(cp, j->proc_list->command, len) == 0) {
 				if (last_match) {
 					if (ecodep)
 						*ecodep = JL_AMBIG;
-					return NULL;
+					return (Job *) 0;
 				}
 				last_match = j;
 			}
@@ -1522,7 +1697,7 @@ j_lookup(const char *cp, int *ecodep)
 	}
 	if (ecodep)
 		*ecodep = JL_NOSUCH;
-	return NULL;
+	return (Job *) 0;
 }
 
 static Job	*free_jobs;
@@ -1533,22 +1708,22 @@ static Proc	*free_procs;
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static Job *
-new_job(void)
+new_job()
 {
 	int	i;
 	Job	*newj, *j;
 
-	if (free_jobs != NULL) {
+	if (free_jobs != (Job *) 0) {
 		newj = free_jobs;
 		free_jobs = free_jobs->next;
 	} else
-		newj = alloc(sizeof(Job), APERM);
+		newj = (Job *) alloc(sizeof(Job), APERM);
 
 	/* brute force method */
 	for (i = 1; ; i++) {
 		for (j = job_list; j && j->job != i; j = j->next)
 			;
-		if (j == NULL)
+		if (j == (Job *) 0)
 			break;
 	}
 	newj->job = i;
@@ -1556,20 +1731,20 @@ new_job(void)
 	return newj;
 }
 
-/* Allocate new process struct
+/* Allocate new process strut
  *
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static Proc *
-new_proc(void)
+new_proc()
 {
 	Proc	*p;
 
-	if (free_procs != NULL) {
+	if (free_procs != (Proc *) 0) {
 		p = free_procs;
 		free_procs = free_procs->next;
 	} else
-		p = alloc(sizeof(Proc), APERM);
+		p = (Proc *) alloc(sizeof(Proc), APERM);
 
 	return p;
 }
@@ -1580,14 +1755,16 @@ new_proc(void)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static void
-remove_job(Job *j, const char *where)
+remove_job(j, where)
+	Job	*j;
+	const char *where;
 {
 	Proc	*p, *tmp;
 	Job	**prev, *curr;
 
 	prev = &job_list;
 	curr = *prev;
-	for (; curr != NULL && curr != j; prev = &curr->next, curr = *prev)
+	for (; curr != (Job *) 0 && curr != j; prev = &curr->next, curr = *prev)
 		;
 	if (curr != j) {
 		internal_errorf(0, "remove_job: job not found (%s)", where);
@@ -1596,7 +1773,7 @@ remove_job(Job *j, const char *where)
 	*prev = curr->next;
 
 	/* free up proc structures */
-	for (p = j->proc_list; p != NULL; ) {
+	for (p = j->proc_list; p != (Proc *) 0; ) {
 		tmp = p;
 		p = p->next;
 		tmp->next = free_procs;
@@ -1609,9 +1786,9 @@ remove_job(Job *j, const char *where)
 	free_jobs = j;
 
 	if (j == last_job)
-		last_job = NULL;
+		last_job = (Job *) 0;
 	if (j == async_job)
-		async_job = NULL;
+		async_job = (Job *) 0;
 }
 
 /* put j in a particular location (taking it out job_list if it is there
@@ -1620,7 +1797,9 @@ remove_job(Job *j, const char *where)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static void
-put_job(Job *j, int where)
+put_job(j, where)
+	Job	*j;
+	int	where;
 {
 	Job	**prev, *curr;
 
@@ -1642,7 +1821,7 @@ put_job(Job *j, int where)
 		prev = &job_list;
 		curr = job_list;
 		for (; curr && curr->state == PSTOPPED; prev = &curr->next,
-		    curr = *prev)
+							curr = *prev)
 			;
 		j->next = curr;
 		*prev = j;
@@ -1655,12 +1834,14 @@ put_job(Job *j, int where)
  * If jobs are compiled in then this routine expects sigchld to be blocked.
  */
 static int
-kill_job(Job *j, int sig)
+kill_job(j, sig)
+	Job	*j;
+	int	sig;
 {
 	Proc	*p;
 	int	rval = 0;
 
-	for (p = j->proc_list; p != NULL; p = p->next)
+	for (p = j->proc_list; p != (Proc *) 0; p = p->next)
 		if (p->pid != 0)
 			if (kill(p->pid, sig) < 0)
 				rval = -1;

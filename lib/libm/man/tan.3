@@ -1,4 +1,3 @@
-.\"	$OpenBSD: tan.3,v 1.12 2013/06/05 03:40:26 tedu Exp $
 .\" Copyright (c) 1991 The Regents of the University of California.
 .\" All rights reserved.
 .\"
@@ -10,7 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,46 +30,37 @@
 .\" SUCH DAMAGE.
 .\"
 .\"     from: @(#)tan.3	5.1 (Berkeley) 5/2/91
+.\"	$Id: tan.3,v 1.5 1999/07/09 13:35:27 aaron Exp $
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd May 2, 1991
 .Dt TAN 3
 .Os
 .Sh NAME
 .Nm tan ,
-.Nm tanf ,
-.Nm tanl
+.Nm tanf
 .Nd tangent functions
 .Sh SYNOPSIS
-.In math.h
+.Fd #include <math.h>
 .Ft double
 .Fn tan "double x"
 .Ft float
 .Fn tanf "float x"
-.Ft long double
-.Fn tanl "long double x"
 .Sh DESCRIPTION
 The
 .Fn tan
-function computes the tangent of
+and
+.Fn tanf
+functions compute the tangent of
 .Fa x
 (measured in radians).
-The
-.Fn tanf
-function is a single precision version of
-.Fn tan .
-The
-.Fn tanl
-function is an extended precision version of
-.Fn tan .
 A large magnitude argument may yield a result
 with little or no significance.
+For a discussion of error due to roundoff, see
+.Xr math 3 .
 .Sh RETURN VALUES
 The
-.Fn tan ,
-.Fn tanf
-and
-.Fn tanl
-functions return the tangent value.
+.Fn tan
+function returns the tangent value.
 .Sh SEE ALSO
 .Xr acos 3 ,
 .Xr asin 3 ,
@@ -74,6 +68,7 @@ functions return the tangent value.
 .Xr atan2 3 ,
 .Xr cos 3 ,
 .Xr cosh 3 ,
+.Xr math 3 ,
 .Xr sin 3 ,
 .Xr sinh 3 ,
 .Xr tanh 3

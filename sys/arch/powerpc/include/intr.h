@@ -1,8 +1,8 @@
-/*	$OpenBSD: intr.h,v 1.52 2015/09/13 14:06:40 kettenis Exp $ */
+/*	$OpenBSD: intr.h,v 1.3 1998/10/09 02:06:40 rahnds Exp $ */
 
 /*
  * Copyright (c) 1997 Per Fogelstrom, Opsycon AB and RTMX Inc, USA.
- *
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -32,168 +32,118 @@
  *
  */
 
-#ifndef _POWERPC_INTR_H_
-#define _POWERPC_INTR_H_
+#ifndef _MACHINE_INTR_H_
+#define _MACHINE_INTR_H_
 
-#define	IPL_NONE	0
-#define	IPL_SOFT	1
-#define	IPL_SOFTCLOCK	2
-#define	IPL_SOFTNET	3
-#define	IPL_SOFTTTY	4
-#define	IPL_BIO		5
-#define	IPL_NET		6
-#define	IPL_TTY		7
-#define	IPL_VM		8
-#define	IPL_AUDIO	9
-#define	IPL_CLOCK	10
-#define	IPL_SCHED	11
-#define	IPL_HIGH	12
-#define	IPL_NUM		13
-
-#define	IPL_MPSAFE	0x100
+#define	IPL_BIO		0
+#define	IPL_NET		1
+#define	IPL_TTY		2
+#define	IPL_IMP		3
+#define	IPL_CLOCK	4
+#define	IPL_NONE	5
+#define	IPL_HIGH	6
 
 #define	IST_NONE	0
 #define	IST_PULSE	1
 #define	IST_EDGE	2
 #define	IST_LEVEL	3
 
-#if defined(_KERNEL) && !defined(_LOCORE)
+#ifndef _LOCORE
 
-#include <sys/evcount.h>
-#include <machine/atomic.h>
+void setsoftclock __P((void));
+void clearsoftclock __P((void));
+int  splsoftclock __P((void));
+void setsoftnet   __P((void));
+void clearsoftnet __P((void));
+int  splsoftnet   __P((void));
 
-#define	PPC_NIRQ	66
-#define	PPC_CLK_IRQ	64
-#define	PPC_STAT_IRQ	65
+void do_pending_int __P((void));
 
-int	splraise(int);
-int	spllower(int);
-void	splx(int);
 
-typedef int (ppc_splraise_t) (int);
-typedef int (ppc_spllower_t) (int);
-typedef void (ppc_splx_t) (int);
-
-extern struct ppc_intr_func {
-	ppc_splraise_t *raise;
-	ppc_spllower_t *lower;
-	ppc_splx_t *x;
-}ppc_intr_func;
-
-extern int ppc_smask[IPL_NUM];
-
-void ppc_smask_init(void);
-char *ppc_intr_typename(int type);
-
-void do_pending_int(void);
-
-/* SPL asserts */
-#ifdef DIAGNOSTIC
-/*
- * Although this function is implemented in MI code, it must be in this MD
- * header because we don't want this header to include MI includes.
- */
-void splassert_fail(int, int, const char *);
-extern int splassert_ctl;
-void splassert_check(int, const char *);
-#define splassert(__wantipl) do {			\
-	if (splassert_ctl > 0) {			\
-		splassert_check(__wantipl, __func__);	\
-	}						\
-} while (0)
-#define splsoftassert(wantipl) splassert(wantipl)
-#else
-#define splassert(wantipl)	do { /* nada */ } while (0)
-#define splsoftassert(wantipl)	do { /* nada */ } while (0)
-#endif
-
-#define	set_sint(p)	atomic_setbits_int(&curcpu()->ci_ipending, p)
-
-#define	splbio()	splraise(IPL_BIO)
-#define	splnet()	splraise(IPL_NET)
-#define	spltty()	splraise(IPL_TTY)
-#define	splaudio()	splraise(IPL_AUDIO)
-#define	splclock()	splraise(IPL_CLOCK)
-#define	splvm()		splraise(IPL_VM)
-#define	splsched()	splhigh()
-#define	spllock()	splhigh()
-#define	splstatclock()	splhigh()
-#define	splsoftclock()	splraise(IPL_SOFTCLOCK)
-#define	splsoftnet()	splraise(IPL_SOFTNET)
-#define	splsofttty()	splraise(IPL_SOFTTTY)
-
-#define	SI_TO_IRQBIT(x) (1 << (x))
-
-#define	SI_SOFTCLOCK		0	/* for IPL_SOFTCLOCK */
-#define	SI_SOFTNET		1	/* for IPL_SOFTNET */
-#define	SI_SOFTTTY		2	/* for IPL_SOFTSERIAL */
-
-#define	SI_NQUEUES		3
-
-#include <machine/mutex.h>
-#include <sys/queue.h>
-
-struct soft_intrhand {
-	TAILQ_ENTRY(soft_intrhand) sih_list;
-	void	(*sih_func)(void *);
-	void	*sih_arg;
-	struct soft_intrq *sih_siq;
-	int	sih_pending;
-};
-
-struct soft_intrq {
-	TAILQ_HEAD(, soft_intrhand) siq_list;
-	int siq_si;
-	struct mutex siq_mtx;
-};
-
-void	softintr_disestablish(void *);
-void	softintr_dispatch(int);
-void	*softintr_establish(int, void (*)(void *), void *);
-void	softintr_init(void);
-
-void	softintr_schedule(void *);
-void	dosoftint(int);
-
-#define	setsoftclock()	set_sint(SI_TO_IRQBIT(SI_SOFTCLOCK))
-#define	setsoftnet()	set_sint(SI_TO_IRQBIT(SI_SOFTNET))
-#define	setsofttty()	set_sint(SI_TO_IRQBIT(SI_SOFTTTY))
- 
-#define	splhigh()	splraise(IPL_HIGH)
-#define	spl0()		spllower(IPL_NONE)
+volatile int cpl, ipending, astpending, tickspending;
+int imask[7];
 
 /*
- *	Interrupt control struct used to control the ICU setup.
+ *  Reorder protection in the following inline functions is
+ * achived with the "eieio" instruction which the assembler
+ * seems to detect and then doen't move instructions past....
  */
+static __inline int
+splraise(newcpl)
+	int newcpl;
+{
+	int oldcpl;
 
-struct intrhand {
-	TAILQ_ENTRY(intrhand) ih_list;
-	int		(*ih_fun)(void *);
-	void		*ih_arg;
-	struct evcount	ih_count;
-	int		ih_type;
-	int		ih_level;
-	int		ih_flags;
-	int		ih_irq;
-	const char	*ih_what;
-};
+	__asm__ volatile("sync; eieio\n");	/* don't reorder.... */
+	oldcpl = cpl;
+	cpl = oldcpl | newcpl;
+	__asm__ volatile("sync; eieio\n");	/* reorder protect */
+	return(oldcpl);
+}
 
-struct intrq {
-	TAILQ_HEAD(, intrhand) iq_list; /* handler list */
-	int iq_ipl;			/* IPL_ to mask while handling */
-	int iq_ist;			/* share type */
-};
+static __inline void
+splx(newcpl)
+	int newcpl;
+{
+	__asm__ volatile("sync; eieio\n");	/* reorder protect */
+	cpl = newcpl;
+	if(ipending & ~newcpl)
+		do_pending_int();
+	__asm__ volatile("sync; eieio\n");	/* reorder protect */
+}
 
-extern int ppc_configed_intr_cnt;
-#define	MAX_PRECONF_INTR 16
-extern struct intrhand ppc_configed_intr[MAX_PRECONF_INTR];
+static __inline int
+spllower(newcpl)
+	int newcpl;
+{
+	int oldcpl;
 
-void intr_barrier(void *);
+	__asm__ volatile("sync; eieio\n");	/* reorder protect */
+	oldcpl = cpl;
+	cpl = newcpl;
+	if(ipending & ~newcpl)
+		do_pending_int();
+	__asm__ volatile("sync; eieio\n");	/* reorder protect */
+	return(oldcpl);
+}
 
-#define PPC_IPI_NOP		0
-#define PPC_IPI_DDB		1
+/* Following code should be implemented with lwarx/stwcx to avoid
+ * the disable/enable. i need to read the manual once more.... */
+static __inline void
+set_sint(pending)
+	int	pending;
+{
+	int	msrsave;
 
-void ppc_send_ipi(struct cpu_info *, int);
+	__asm__ ("mfmsr %0" : "=r"(msrsave));
+	__asm__ volatile ("mtmsr %0" :: "r"(msrsave & ~PSL_EE));
+	ipending |= pending;
+	__asm__ volatile ("mtmsr %0" :: "r"(msrsave));
+}
+
+#define	SINT_CLOCK	0x10000000
+#define	SINT_NET	0x20000000
+#define	SINT_TTY	0x40000000
+#define	SPL_CLOCK	0x80000000
+#define	SINT_MASK	(SINT_CLOCK|SINT_NET|SINT_TTY)
+
+#define splbio()	splraise(imask[IPL_BIO])
+#define splnet()	splraise(imask[IPL_NET])
+#define spltty()	splraise(imask[IPL_TTY])
+#define splclock()	splraise(SPL_CLOCK|SINT_MASK)
+#define splimp()	splraise(imask[IPL_IMP])
+#define splstatclock()	splhigh()
+#define	splsoftclock()	spllower(SINT_CLOCK)
+#define	splsoftnet()	splraise(SINT_NET)
+#define	splsofttty()	splraise(SINT_TTY)
+
+#define	setsoftclock()	set_sint(SINT_CLOCK);
+#define	setsoftnet()	set_sint(SINT_NET);
+#define	setsofttty()	set_sint(SINT_TTY);
+
+#define	splhigh()	splraise(0xffffffff)
+#define	spl0()		spllower(0)
 
 #endif /* _LOCORE */
-#endif /* _POWERPC_INTR_H_ */
+
+#endif /* _MACHINE_INTR_H_ */

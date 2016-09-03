@@ -1,4 +1,4 @@
-/*	$OpenBSD: check.c,v 1.18 2015/10/14 16:58:55 deraadt Exp $	*/
+/*	$OpenBSD: check.c,v 1.7 1999/03/25 01:45:01 aaron Exp $	*/
 /*	$NetBSD: check.c,v 1.8 1997/10/17 11:19:29 ws Exp $	*/
 
 /*
@@ -13,6 +13,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Martin Husemann
+ *	and Wolfgang Solfrank.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -26,72 +33,60 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/ioctl.h>
-#include <sys/dkio.h>
-#include <sys/disklabel.h>
+
+#ifndef lint
+static char rcsid[] = "$OpenBSD: check.c,v 1.7 1999/03/25 01:45:01 aaron Exp $";
+#endif /* not lint */
+
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <limits.h>
 #include <fcntl.h>
-#include <util.h>
-#include <err.h>
 
 #include "ext.h"
 
-struct disklabel lab;
-
 int
-checkfilesys(const char *fname)
+checkfilesys(fname)
+	const char *fname;
 {
 	int dosfs;
 	struct bootblock boot;
 	struct fatEntry *fat = NULL;
-	char *realdev;
 	int i;
 	int mod = 0;
 
 	rdonly = alwaysno;
+	if (!preen)
+		printf("** %s", fname);
 
-	dosfs = opendev(fname, rdonly ? O_RDONLY : O_RDWR, 0, &realdev);
+	dosfs = open(fname, rdonly ? O_RDONLY : O_RDWR, 0);
 	if (dosfs < 0 && !rdonly) {
-		dosfs = opendev(fname, O_RDONLY, 0, &realdev);
+		dosfs = open(fname, O_RDONLY, 0);
+		if (dosfs >= 0)
+			pwarn(" (NO WRITE)\n");
+		else if (!preen)
+			printf("\n");
 		rdonly = 1;
-	}
+	} else if (!preen)
+		printf("\n");
+
 	if (dosfs < 0) {
-		xperror("Can't open");
+		perror("Can't open");
 		return (8);
 	}
-
-	if (!preen) {
-		printf("** %s", realdev);
-		if (strncmp(fname, realdev, PATH_MAX) != 0)
-			printf(" (%s)", fname);
-		if (rdonly)
-			printf(" (NO WRITE)");
-		printf("\n");
-	}
-
-	if (ioctl(dosfs, DIOCGDINFO, (char *)&lab) < 0)
-		pfatal("can't read disk label for %s\n", fname);
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
 
 	if (readboot(dosfs, &boot) != FSOK) {
 		(void)close(dosfs);
 		return (8);
 	}
 
-	if (!preen) {
+	if (!preen)
 		if (boot.ValidFat < 0)
 			printf("** Phase 1 - Read and Compare FATs\n");
 		else
 			printf("** Phase 1 - Read FAT\n");
-	}
 
 	mod |= readfat(dosfs, &boot, boot.ValidFat >= 0 ? boot.ValidFat : 0, &fat);
 	if (mod & FSFATAL) {
@@ -163,7 +158,7 @@ checkfilesys(const char *fname)
 		(void)close(dosfs);
 		return (8);
 	}
-
+	
 	if (!preen)
 		printf("** Phase 4 - Check for Lost Files\n");
 

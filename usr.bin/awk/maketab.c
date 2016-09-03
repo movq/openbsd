@@ -1,4 +1,4 @@
-/*	$OpenBSD: maketab.c,v 1.11 2010/06/13 17:58:19 millert Exp $	*/
+/*	$OpenBSD: maketab.c,v 1.3 1999/04/18 17:06:30 millert Exp $	*/
 /****************************************************************
 Copyright (C) Lucent Technologies 1997
 All Rights Reserved
@@ -37,8 +37,8 @@ THIS SOFTWARE.
 
 struct xx
 {	int token;
-	const char *name;
-	const char *pname;
+	char *name;
+	char *pname;
 } proc[] = {
 	{ PROGRAM, "program", NULL },
 	{ BOR, "boolop", " || " },
@@ -103,17 +103,17 @@ struct xx
 	{ CALL, "call", "call" },
 	{ ARG, "arg", "arg" },
 	{ VARNF, "getnf", "NF" },
-	{ GETLINE, "awkgetline", "getline" },
+	{ GETLINE, "getline", "getline" },
 	{ 0, "", "" },
 };
 
 #define SIZE	(LASTTOKEN - FIRSTTOKEN + 1)
-const char *table[SIZE];
+char *table[SIZE];
 char *names[SIZE];
 
 int main(int argc, char *argv[])
 {
-	const struct xx *p;
+	struct xx *p;
 	int i, n, tok;
 	char c;
 	FILE *fp;
@@ -126,24 +126,21 @@ int main(int argc, char *argv[])
 		names[i] = "";
 
 	if ((fp = fopen("ytab.h", "r")) == NULL) {
-		fprintf(stderr, "maketab: can't open ytab.h!\n");
+		fprintf(stderr, "maketab can't open ytab.h!\n");
 		exit(1);
 	}
 	printf("static char *printname[%d] = {\n", SIZE);
 	i = 0;
 	while (fgets(buf, sizeof buf, fp) != NULL) {
 		n = sscanf(buf, "%1c %s %s %d", &c, def, name, &tok);
-		if (n != 4 || c != '#' || strcmp(def, "define") != 0)
-			continue;	/* not a valid #define */
-		if (tok < FIRSTTOKEN || tok > LASTTOKEN) {
-			/* fprintf(stderr, "maketab: funny token %d %s ignored\n", tok, buf); */
+		if (c != '#' || (n != 4 && strcmp(def,"define") != 0))	/* not a valid #define */
 			continue;
-		}
-		names[tok-FIRSTTOKEN] = (char *) strdup(name);
-		if (names[tok-FIRSTTOKEN] == NULL) {
-			fprintf(stderr, "maketab: out of memory\n");
+		if (tok < FIRSTTOKEN || tok > LASTTOKEN) {
+			fprintf(stderr, "maketab funny token %d %s\n", tok, buf);
 			exit(1);
 		}
+		names[tok-FIRSTTOKEN] = (char *) malloc(strlen(name)+1);
+		strcpy(names[tok-FIRSTTOKEN], name);
 		printf("\t(char *) \"%s\",\t/* %d */\n", name, tok);
 		i++;
 	}
@@ -163,7 +160,7 @@ int main(int argc, char *argv[])
 	printf("{\n");
 	printf("	static char buf[100];\n\n");
 	printf("	if (n < FIRSTTOKEN || n > LASTTOKEN) {\n");
-	printf("		snprintf(buf, sizeof buf, \"token %%d\", n);\n");
+	printf("		sprintf(buf, \"token %%d\", n);\n");
 	printf("		return buf;\n");
 	printf("	}\n");
 	printf("	return printname[n-FIRSTTOKEN];\n");

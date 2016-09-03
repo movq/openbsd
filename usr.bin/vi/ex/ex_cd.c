@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_cd.c,v 1.15 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,6 +9,11 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)ex_cd.c	10.10 (Berkeley) 8/12/96";
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/queue.h>
 
 #include <bitstring.h>
@@ -28,16 +31,18 @@
  * ex_cd -- :cd[!] [directory]
  *	Change directories.
  *
- * PUBLIC: int ex_cd(SCR *, EXCMD *);
+ * PUBLIC: int ex_cd __P((SCR *, EXCMD *));
  */
 int
-ex_cd(SCR *sp, EXCMD *cmdp)
+ex_cd(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	struct passwd *pw;
 	ARGS *ap;
 	CHAR_T savech;
-	char *dir, *p, *t;
-	char buf[PATH_MAX * 2];
+	char *dir, *p, *t;	/* XXX: END OF THE STACK, DON'T TRUST GETCWD. */
+	char buf[MAXPATHLEN * 2];
 
 	/*
 	 * !!!
@@ -48,18 +53,18 @@ ex_cd(SCR *sp, EXCMD *cmdp)
 	if (F_ISSET(sp->ep, F_MODIFIED) &&
 	    !FL_ISSET(cmdp->iflags, E_C_FORCE) && sp->frp->name[0] != '/') {
 		msgq(sp, M_ERR,
-    "File modified since last complete write; write or use ! to override");
+    "120|File modified since last complete write; write or use ! to override");
 		return (1);
 	}
 
 	switch (cmdp->argc) {
 	case 0:
 		/* If no argument, change to the user's home directory. */
-		if ((dir = getenv("HOME")) == NULL || *dir == '\0') {
+		if ((dir = getenv("HOME")) == NULL) {
 			if ((pw = getpwuid(getuid())) == NULL ||
 			    pw->pw_dir == NULL || pw->pw_dir[0] == '\0') {
 				msgq(sp, M_ERR,
-			   "Unable to find home directory location");
+			   "121|Unable to find home directory location");
 				return (1);
 			}
 			dir = pw->pw_dir;
@@ -86,9 +91,9 @@ ex_cd(SCR *sp, EXCMD *cmdp)
 	 */
 	if (cmdp->argc == 0 ||
 	    (ap = cmdp->argv[0])->bp[0] == '/' ||
-	    (ap->len == 1 && ap->bp[0] == '.') ||
-	    (ap->len >= 2 && ap->bp[0] == '.' && ap->bp[1] == '.' &&
-	    (ap->bp[2] == '/' || ap->bp[2] == '\0')))
+	    ap->len == 1 && ap->bp[0] == '.' ||
+	    ap->len >= 2 && ap->bp[0] == '.' && ap->bp[1] == '.' &&
+	    (ap->bp[2] == '/' || ap->bp[2] == '\0'))
 		goto err;
 
 	/* Try the O_CDPATH option values. */
@@ -100,7 +105,7 @@ ex_cd(SCR *sp, EXCMD *cmdp)
 			 * or a trailing colon.  Or, to put it the other way,
 			 * if the length is 1 or less, then we're dealing with
 			 * ":XXX", "XXX::XXXX" , "XXX:", or "".  Since we've
-			 * already tried dot, we ignore them all.
+			 * already tried dot, we ignore tham all.
 			 */
 			if (t < p - 1) {
 				savech = *p;
@@ -110,7 +115,7 @@ ex_cd(SCR *sp, EXCMD *cmdp)
 				*p = savech;
 				if (!chdir(buf)) {
 					if (getcwd(buf, sizeof(buf)) != NULL)
-		msgq_str(sp, M_INFO, buf, "New current directory: %s");
+		msgq_str(sp, M_INFO, buf, "122|New current directory: %s");
 					return (0);
 				}
 			}

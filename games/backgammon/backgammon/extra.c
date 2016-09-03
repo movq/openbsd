@@ -1,4 +1,4 @@
-/*	$OpenBSD: extra.c,v 1.8 2015/11/30 08:19:25 tb Exp $	*/
+/*	$OpenBSD: extra.c,v 1.2 1998/03/19 11:13:06 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,6 +33,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)extra.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: extra.c,v 1.2 1998/03/19 11:13:06 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
 #include "back.h"
 #include "backlocal.h"
 
@@ -38,36 +50,39 @@
  */
 
 void
-dble(void)
+dble()
 {
 	int     resp;		/* response to y/n */
 
 	for (;;) {
-		addstr(" doubles.");	/* indicate double */
+		writel(" doubles.");	/* indicate double */
 
 		if (cturn == -pnum) {	/* see if computer accepts */
 			if (dblgood()) {	/* guess not */
-				addstr("  Declined.\n");
+				writel("  Declined.\n");
 				nexturn();
 				cturn *= -2;	/* indicate loss */
 				return;
 			} else {/* computer accepts */
-				addstr("  Accepted.\n");
+				writel("  Accepted.\n");
 				gvalue *= 2;	/* double game value */
 				dlast = cturn;
-				gwrite();
+				if (tflag)
+					gwrite();
 				return;
 			}
 		}
 		/* ask if player accepts */
-		printw("  Does %s accept?", cturn == 1 ? color[2] : color[3]);
+		writel("  Does ");
+		writel(cturn == 1 ? color[2] : color[3]);
+		writel(" accept?");
 
 		/* get response from yorn; a "2" means he said "p" to print board. */
 		if ((resp = yorn ('r')) == 2) {
-			addstr("  Reprint.\n");
-			moveplayers();
+			writel("  Reprint.\n");
+			buflush();
 			wrboard();
-			addstr(*Colorptr);
+			writel(*Colorptr);
 			continue;
 		}
 		/* check response */
@@ -75,7 +90,8 @@ dble(void)
 			/* accepted */
 			gvalue *= 2;
 			dlast = cturn;
-			gwrite();
+			if (tflag)
+				gwrite();
 			return;
 		}
 		nexturn();	/* declined */
@@ -96,7 +112,7 @@ dble(void)
  */
 
 int
-dblgood(void)
+dblgood()
 {
 	int     n;		/* accumulated judgment */
 	int     OFFC = *offptr;	/* no. of computer's men off */
@@ -104,18 +120,17 @@ dblgood(void)
 
 #ifdef DEBUG
 	int     i;
-	if (ftrace == NULL)
-		ftrace = fopen("bgtrace", "w");
-		printf ("fopen\n");
+	if (trace == NULL)
+		trace = fopen("bgtrace", "w");
 #endif
 
 	/* get real pip value */
 	n = eval() * cturn;
 #ifdef DEBUG
-	fputs("\nDoubles:\nBoard: ", ftrace);
+	fputs("\nDoubles:\nBoard: ", trace);
 	for (i = 0; i < 26; i++)
-		fprintf(ftrace, " %d", board[i]);
-	fprintf(ftrace, "\n\tpip = %d, ", n);
+		fprintf(trace, " %d", board[i]);
+	fprintf(trace, "\n\tpip = %d, ", n);
 #endif
 
 	/* below adjusts pip value according to position judgments */
@@ -149,7 +164,7 @@ dblgood(void)
 	}
 
 #ifdef DEBUG
-	fprintf(ftrace, "off = %d, ", n);
+	fprintf(trace, "off = %d, ", n);
 #endif
 
 	/* see if men are trapped */
@@ -159,19 +174,20 @@ dblgood(void)
 	n -= trapped(bar, cturn);
 
 #ifdef DEBUG
-	fprintf(ftrace, "free = %d\n", n);
-	fprintf(ftrace, "\tOFFC = %d, OFFO = %d\n", OFFC, OFFO);
-	fflush(ftrace);
+	fprintf(trace, "free = %d\n", n);
+	fprintf(trace, "\tOFFC = %d, OFFO = %d\n", OFFC, OFFO);
+	fflush(trace);
 #endif
 
 	/* double if 2-3 moves ahead */
-	if (n > (int)(10 + rnum(7)))
+	if (n > 10 + rnum(7))
 		return(1);
 	return(0);
 }
 
 int
-freemen(int b)
+freemen(b)
+	int     b;
 {
 	int     i, inc, lim;
 
@@ -189,7 +205,8 @@ freemen(int b)
 }
 
 int
-trapped(int n, int inc)
+trapped(n, inc)
+	int     n, inc;
 {
 	int     i, j, k;
 	int     c, l, ct;
@@ -215,7 +232,7 @@ trapped(int n, int inc)
 }
 
 int
-eval(void)
+eval()
 {
 	int     i, j;
 

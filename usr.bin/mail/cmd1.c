@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmd1.c,v 1.29 2011/04/06 11:36:26 miod Exp $	*/
+/*	$OpenBSD: cmd1.c,v 1.13 1998/05/11 04:15:24 millert Exp $	*/
 /*	$NetBSD: cmd1.c,v 1.9 1997/07/09 05:29:48 mikel Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cmd1.c	8.2 (Berkeley) 4/20/95";
+#else
+static char rcsid[] = "$OpenBSD: cmd1.c,v 1.13 1998/05/11 04:15:24 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include "extern.h"
 
@@ -45,20 +57,18 @@
  */
 
 static int screen;
-static volatile sig_atomic_t gothdrint;
 
 int
-headers(void *v)
+headers(v)
+	void *v;
 {
 	int *msgvec = v;
 	int n, mesg, flag, size;
 	struct message *mp;
-	struct sigaction act, oact;
-	sigset_t oset;
 
 	size = screensize();
 	n = msgvec[0];
-	if (n != 0 && size > 0)
+	if (n != 0)
 		screen = (n-1)/size;
 	if (screen < 0)
 		screen = 0;
@@ -71,29 +81,13 @@ headers(void *v)
 	mesg = mp - &message[0];
 	if (dot != &message[n-1])
 		dot = mp;
-	sigemptyset(&act.sa_mask);
-	act.sa_flags = SA_RESTART;
-	act.sa_handler = hdrint;
-	if (sigaction(SIGINT, NULL, &oact) == 0 &&
-	    oact.sa_handler != SIG_IGN) {
-		(void)sigaction(SIGINT, &act, &oact);
-		(void)sigprocmask(SIG_UNBLOCK, &intset, &oset);
-	}
-	for (gothdrint = 0; !gothdrint && mp < &message[msgCount]; mp++) {
+	for (; mp < &message[msgCount]; mp++) {
 		mesg++;
 		if (mp->m_flag & MDELETED)
 			continue;
 		if (flag++ >= size)
 			break;
 		printhead(mesg);
-	}
-	if (gothdrint) {
-		fflush(stdout);
-		fputs("\nInterrupt\n", stderr);
-	}
-	if (oact.sa_handler != SIG_IGN) {
-		(void)sigprocmask(SIG_SETMASK, &oset, NULL);
-		(void)sigaction(SIGINT, &oact, NULL);
 	}
 	if (flag == 0) {
 		puts("No more mail.");
@@ -106,7 +100,8 @@ headers(void *v)
  * Scroll to the next/previous screen
  */
 int
-scroll(void *v)
+scroll(v)
+	void *v;
 {
 	char *arg = v;
 	int size, maxscreen;
@@ -114,9 +109,7 @@ scroll(void *v)
 
 	cur[0] = 0;
 	size = screensize();
-	maxscreen = 0;
-	if (size > 0)
-		maxscreen = (msgCount - 1) / size;
+	maxscreen = (msgCount - 1) / size;
 	switch (*arg) {
 	case 0:
 	case '+':
@@ -146,7 +139,7 @@ scroll(void *v)
  * Compute screen size.
  */
 int
-screensize(void)
+screensize()
 {
 	int s;
 	char *cp;
@@ -161,12 +154,13 @@ screensize(void)
  * in the passed message list.
  */
 int
-from(void *v)
+from(v)
+	void *v;
 {
 	int *msgvec = v;
 	int *ip;
 
-	for (ip = msgvec; *ip != 0; ip++)
+	for (ip = msgvec; *ip != NULL; ip++)
 		printhead(*ip);
 	if (--ip >= msgvec)
 		dot = &message[*ip - 1];
@@ -178,25 +172,20 @@ from(void *v)
  * This is a slight improvement to the standard one.
  */
 void
-printhead(int mesg)
+printhead(mesg)
+	int mesg;
 {
 	struct message *mp;
-	char headline[LINESIZE], *subjline, dispc, curind;
-	char visname[LINESIZE], vissub[LINESIZE];
-	char pbuf[LINESIZE];
-	char fmtline[LINESIZE];
-	const char *fmt;
+	char headline[LINESIZE], wcount[LINESIZE], *subjline, dispc, curind;
+	char pbuf[BUFSIZ];
 	struct headline hl;
+	int subjlen;
 	char *name;
-	char *to, *from;
-	struct name *np;
-	char **ap;
 
 	mp = &message[mesg-1];
-	(void)readline(setinput(mp), headline, LINESIZE, NULL);
-	if ((subjline = hfield("subject", mp)) == NULL &&
-	    (subjline = hfield("subj", mp)) == NULL)
-		subjline = "";
+	(void)readline(setinput(mp), headline, LINESIZE);
+	if ((subjline = hfield("subject", mp)) == NULL)
+		subjline = hfield("subj", mp);
 	/*
 	 * Bletch!
 	 */
@@ -213,36 +202,26 @@ printhead(int mesg)
 	if (mp->m_flag & MBOX)
 		dispc = 'M';
 	parse(headline, &hl, pbuf);
-	from = nameof(mp, 0);
-	to = skin(hfield("to", mp));
-	np = extract(from, GTO);
-	np = delname(np, myname);
-	if (altnames)
-		for (ap = altnames; *ap; ap++)
-			np = delname(np, *ap);
-	if (np)
-		/* not from me */
-		name = value("show-rcpt") != NULL && to ? to : from;
+	(void)snprintf(wcount, sizeof(wcount), "%3d/%-5d", mp->m_lines,
+	    mp->m_size);
+	subjlen = screenwidth - 50 - strlen(wcount);
+	name = value("show-rcpt") != NULL ?
+		skin(hfield("to", mp)) : nameof(mp, 0);
+	if (subjline == NULL || subjlen < 0)		/* pretty pathetic */
+		printf("%c%c%3d %-20.20s  %16.16s %s\n",
+			curind, dispc, mesg, name, hl.l_date, wcount);
 	else
-		/* from me - show TO */
-		name = value("showto") != NULL && to ? to : from;
-	strnvis(visname, name, sizeof(visname), VIS_SAFE|VIS_NOSLASH);
-	if (name == to)
-		fmt = "%c%c%3d TO %-14.14s  %16.16s %4d/%-5d %s";
-	else
-		fmt = "%c%c%3d %-17.17s  %16.16s %4d/%-5d %s";
-	strnvis(vissub, subjline, sizeof(vissub), VIS_SAFE|VIS_NOSLASH);
-	/* hl.l_date was sanity-checked when read in.  */
-	snprintf(fmtline, sizeof(fmtline), fmt, curind, dispc, mesg, visname,
-	    hl.l_date, mp->m_lines, mp->m_size, vissub);
-	printf("%.*s\n", screenwidth, fmtline);
+		printf("%c%c%3d %-20.20s  %16.16s %s \"%.*s\"\n",
+			curind, dispc, mesg, name, hl.l_date, wcount,
+			subjlen, subjline);
 }
 
 /*
  * Print out the value of dot.
  */
 int
-pdot(void *v)
+pdot(v)
+	void *v;
 {
 	printf("%d\n", (int)(dot - &message[0] + 1));
 	return(0);
@@ -252,7 +231,8 @@ pdot(void *v)
  * Print out all the possible commands.
  */
 int
-pcmdlist(void *v)
+pcmdlist(v)
+	void *v;
 {
 	extern const struct cmd cmdtab[];
 	const struct cmd *cp;
@@ -274,122 +254,122 @@ pcmdlist(void *v)
 }
 
 /*
- * Pipe message to command
- */
-int
-pipeit(void *ml, void *sl)
-{
-	int  *msgvec = ml;
-	char *cmd    = sl;
-
-	return(type1(msgvec, cmd, 0, 0));
-}
-
-/*
  * Paginate messages, honor ignored fields.
  */
 int
-more(void *v)
+more(v)
+	void *v;
 {
 	int *msgvec = v;
-	return(type1(msgvec, NULL, 1, 1));
+	return(type1(msgvec, 1, 1));
 }
 
 /*
  * Paginate messages, even printing ignored fields.
  */
 int
-More(void *v)
+More(v)
+	void *v;
 {
 	int *msgvec = v;
 
-	return(type1(msgvec, NULL, 0, 1));
+	return(type1(msgvec, 0, 1));
 }
 
 /*
  * Type out messages, honor ignored fields.
  */
 int
-type(void *v)
+type(v)
+	void *v;
 {
 	int *msgvec = v;
 
-	return(type1(msgvec, NULL, 1, 0));
+	return(type1(msgvec, 1, 0));
 }
 
 /*
  * Type out messages, even printing ignored fields.
  */
 int
-Type(void *v)
+Type(v)
+	void *v;
 {
 	int *msgvec = v;
 
-	return(type1(msgvec, NULL, 0, 0));
+	return(type1(msgvec, 0, 0));
 }
 
 /*
  * Type out the messages requested.
  */
+sigjmp_buf	pipestop;
 int
-type1(int *msgvec, char *cmd, int doign, int page)
+type1(msgvec, doign, page)
+	int *msgvec;
+	int doign, page;
 {
-	int nlines, *ip, restoreterm;
+	int nlines, *ip;
 	struct message *mp;
-	struct termios tbuf;
 	char *cp;
 	FILE *obuf;
+#if __GNUC__
+	/* Avoid siglongjmp clobbering */
+	(void)&cp;
+	(void)&obuf;
+#endif
 
 	obuf = stdout;
-	restoreterm = 0;
-
-	/*
-	 * start a pipe if needed.
-	 */
-	if (cmd) {
-		restoreterm = (tcgetattr(fileno(stdin), &tbuf) == 0);
-		obuf = Popen(cmd, "w");
-		if (obuf == NULL) {
-			warn("%s", cmd);
-			obuf = stdout;
-		}
-	} else if (value("interactive") != NULL &&
-	         (page || (cp = value("crt")) != NULL)) {
+	if (sigsetjmp(pipestop, 1))
+		goto close_pipe;
+	if (value("interactive") != NULL &&
+	    (page || (cp = value("crt")) != NULL)) {
 		nlines = 0;
 		if (!page) {
 			for (ip = msgvec; *ip && ip-msgvec < msgCount; ip++)
 				nlines += message[*ip - 1].m_lines;
 		}
 		if (page || nlines > (*cp ? atoi(cp) : realscreenheight)) {
-			restoreterm = (tcgetattr(fileno(stdin), &tbuf) == 0);
 			cp = value("PAGER");
+			if (cp == NULL || *cp == '\0')
+				cp = _PATH_MORE;
 			obuf = Popen(cp, "w");
 			if (obuf == NULL) {
-				warn("%s", cp);
+				warn(cp);
 				obuf = stdout;
-			}
+			} else
+				(void)signal(SIGPIPE, brokpipe);
 		}
 	}
-
-	/*
-	 * Send messages to the output.
-	 */
 	for (ip = msgvec; *ip && ip - msgvec < msgCount; ip++) {
 		mp = &message[*ip - 1];
 		touch(mp);
 		dot = mp;
-		if (cmd == NULL && value("quiet") == NULL)
+		if (value("quiet") == NULL)
 			fprintf(obuf, "Message %d:\n", *ip);
-		if (sendmessage(mp, obuf, doign ? ignore : 0, NULL) == -1)
-			break;
+		(void)send(mp, obuf, doign ? ignore : 0, NULL);
 	}
-
+close_pipe:
 	if (obuf != stdout) {
+		/*
+		 * Ignore SIGPIPE so it can't cause a duplicate close.
+		 */
+		(void)signal(SIGPIPE, SIG_IGN);
 		(void)Pclose(obuf);
-		if (restoreterm)
-			(void)tcsetattr(fileno(stdin), TCSADRAIN, &tbuf);
+		(void)signal(SIGPIPE, SIG_DFL);
 	}
 	return(0);
+}
+
+/*
+ * Respond to a broken pipe signal --
+ * probably caused by quitting more.
+ */
+void
+brokpipe(signo)
+	int signo;
+{
+	siglongjmp(pipestop, 1);
 }
 
 /*
@@ -398,7 +378,8 @@ type1(int *msgvec, char *cmd, int doign, int page)
  * and defaults to 5.
  */
 int
-top(void * v)
+top(v)
+	void *v;
 {
 	int *msgvec = v;
 	int *ip;
@@ -426,7 +407,7 @@ top(void * v)
 		if (!lineb)
 			putchar('\n');
 		for (lines = 0; lines < c && lines <= topl; lines++) {
-			if (readline(ibuf, linebuf, sizeof(linebuf), NULL) < 0)
+			if (readline(ibuf, linebuf, sizeof(linebuf)) < 0)
 				break;
 			puts(linebuf);
 			lineb = blankline(linebuf);
@@ -440,7 +421,8 @@ top(void * v)
  * get mboxed.
  */
 int
-stouch(void *v)
+stouch(v)
+	void *v;
 {
 	int *msgvec = v;
 	int *ip;
@@ -457,7 +439,8 @@ stouch(void *v)
  * Make sure all passed messages get mboxed.
  */
 int
-mboxit(void *v)
+mboxit(v)
+	void *v;
 {
 	int *msgvec = v;
 	int *ip;
@@ -474,19 +457,19 @@ mboxit(void *v)
  * List the folders the user currently has.
  */
 int
-folders(void *v)
+folders(v)
+	void *v;
 {
-	char *files = (char *)v;
 	char dirname[PATHSIZE];
-	char cmd[BUFSIZ];
+	char *cmd;
 
-	if (getfold(dirname, sizeof(dirname)) < 0)
-		strlcpy(dirname, "$HOME", sizeof(dirname));
-
-	snprintf(cmd, sizeof(cmd), "cd %s; %s %s", dirname, value("LISTER"),
-		files && *files ? files : "");
-
-	(void)run_command(value("SHELL"), 0, -1, -1, "-c", cmd, NULL);
+	if (getfold(dirname, sizeof(dirname)) < 0) {
+		puts("No value set for \"folder\"");
+		return(1);
+	}
+	if ((cmd = value("LISTER")) == NULL)
+		cmd = "ls";
+	(void)run_command(cmd, 0, -1, -1, dirname, NULL, NULL);
 	return(0);
 }
 
@@ -495,7 +478,8 @@ folders(void *v)
  * come in since we started reading mail.
  */
 int
-inc(void *v)
+inc(v)
+	void *v;
 {
 	int nmsg, mdot;
 
@@ -511,14 +495,4 @@ inc(void *v)
 	}
 
 	return(0);
-}
-
-/*
- * User hit ^C while printing the headers.
- */
-void
-hdrint(int s)
-{
-
-	gothdrint = 1;
 }

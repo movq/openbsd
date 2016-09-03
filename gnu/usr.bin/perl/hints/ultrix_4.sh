@@ -1,5 +1,5 @@
 # hints/ultrix_4.sh
-# Last updated by Andy Dougherty  <doughera@lafayette.edu>
+# Last updated by Andy Dougherty  <doughera@lafcol.lafayette.edu>
 # Fri Feb 10 10:04:51 EST 1995
 #
 # Use   Configure -Dcc=gcc   to use gcc.
@@ -16,7 +16,7 @@ case "$optimize" in
 esac
 
 # Some users have reported Configure runs *much* faster if you 
-# replace all occurrences of /bin/sh by /bin/sh5
+# replace all occurences of /bin/sh by /bin/sh5
 # Something like:
 #   sed 's!/bin/sh!/bin/sh5!g' Configure > Configure.sh5
 # Then run "sh5 Configure.sh5 [your options]"
@@ -34,16 +34,16 @@ case "$cc" in
 *gcc*) ;;
 *)
     case "$osvers" in
-    *4.1*)	ccflags="$ccflags -DLANGUAGE_C -Olimit 3800" ;;
-    *4.2*)	ccflags="$ccflags -DLANGUAGE_C -Olimit 3800"
+    *4.1*)	ccflags="$ccflags -DLANGUAGE_C -Olimit 3400" ;;
+    *4.2*)	ccflags="$ccflags -DLANGUAGE_C -Olimit 3400"
 		# Prototypes sometimes cause compilation errors in 4.2.
 		prototype=undef   
 		case "$myuname" in
 		*risc*)  d_volatile=undef ;;
 		esac
 		;;
-    *4.3*)	ccflags="$ccflags -std1 -DLANGUAGE_C -Olimit 3800" ;;
-    *)	ccflags="$ccflags -std -Olimit 3800" ;;
+    *4.3*)	ccflags="$ccflags -std1 -DLANGUAGE_C -Olimit 3400" ;;
+    *)	ccflags="$ccflags -std -Olimit 3400" ;;
     esac
     ;;
 esac
@@ -60,14 +60,7 @@ esac
 
 util_cflags='ccflags="$ccflags -DLOCALE_ENVIRON_REQUIRED"'
 groupstype='int'
-# The configure test should be beefed up to try using the field when
+# This will cause a WHOA THERE warning, but it's accurate.  The
+# configure test should be beefed up to try using the field when
 # it can't find any of the standardly-named fields.
 d_dirnamlen='define'
-
-# Ultrix can mmap only character devices, not regular files,
-# which is rather useless state of things for Perl.
-d_mmap='undef'
-
-# There simply isn't dynaloading in Ultrix.
-usedl='undef'
-

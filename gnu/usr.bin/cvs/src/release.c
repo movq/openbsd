@@ -118,14 +118,14 @@ release (argc, argv)
      */
     /* Construct the update command. */
     update_cmd = xmalloc (strlen (program_path)
-			  + strlen (current_parsed_root->original)
+			  + strlen (CVSroot_original)
 			  + 20);
     sprintf (update_cmd, "%s -n -q -d %s update",
-             program_path, current_parsed_root->original);
+             program_path, CVSroot_original);
 
 #ifdef CLIENT_SUPPORT
     /* Start the server; we'll close it after looping. */
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	start_server ();
 	ign_setup ();
@@ -186,11 +186,11 @@ release (argc, argv)
 
 	    c = 0;
 
-	    while ((line_length = get_line (&line, &line_allocated, fp)) >= 0)
+	    while ((line_length = getline (&line, &line_allocated, fp)) >= 0)
 	    {
 		if (strchr ("MARCZ", *line))
 		    c++;
-		(void) fputs (line, stdout);
+		(void) printf (line);
 	    }
 	    if (line_length < 0 && !feof (fp))
 		error (0, errno, "cannot read from subprocess");
@@ -226,7 +226,7 @@ release (argc, argv)
 
 	if (1
 #ifdef CLIENT_SUPPORT
-	    && !(current_parsed_root->isremote
+	    && !(client_active
 		 && (!supported_request ("noop")
 		     || !supported_request ("Notify")))
 #endif
@@ -242,7 +242,7 @@ release (argc, argv)
 	}
 
 #ifdef CLIENT_SUPPORT
-        if (current_parsed_root->isremote)
+        if (client_active)
         {
 	    send_to_server ("Argument ", 0);
 	    send_to_server (thisarg, 0);
@@ -271,7 +271,7 @@ release (argc, argv)
 	}
 
 #ifdef CLIENT_SUPPORT
-        if (current_parsed_root->isremote)
+        if (client_active)
 	    err += get_server_responses ();
 #endif /* CLIENT_SUPPORT */
     }
@@ -281,7 +281,7 @@ release (argc, argv)
     free_cwd (&cwd);
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	/* Unfortunately, client.c doesn't offer a way to close
 	   the connection without waiting for responses.  The extra

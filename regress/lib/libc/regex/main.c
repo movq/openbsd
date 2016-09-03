@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.10 2016/07/13 06:17:11 guenther Exp $	*/
+/*	$OpenBSD: main.c,v 1.3 1997/01/15 23:41:07 millert Exp $	*/
 /*	$NetBSD: main.c,v 1.2 1995/04/20 22:39:51 cgd Exp $	*/
 
 #include <stdio.h>
@@ -22,15 +22,16 @@ regoff_t startoff = 0;
 regoff_t endoff = 0;
 
 
-extern int split(char *, char *[], int, char *);
-extern void regprint(regex_t *, FILE *);
+extern int split();
+extern void regprint();
 
 /*
  - main - do the simple case, hand off to regress() for regression
  */
 int
-main(int argc, char *argv[])
-
+main(argc, argv)
+int argc;
+char *argv[];
 {
 	regex_t re;
 #	define	NS	10
@@ -46,19 +47,19 @@ main(int argc, char *argv[])
 
 	progname = argv[0];
 
-	while ((c = getopt(argc, argv, "c:E:e:S:x")) != -1)
+	while ((c = getopt(argc, argv, "c:e:S:E:x")) != -1)
 		switch (c) {
 		case 'c':	/* compile options */
 			copts = options('c', optarg);
-			break;
-		case 'E':	/* end offset */
-			endoff = (regoff_t)atoi(optarg);
 			break;
 		case 'e':	/* execute options */
 			eopts = options('e', optarg);
 			break;
 		case 'S':	/* start offset */
 			startoff = (regoff_t)atoi(optarg);
+			break;
+		case 'E':	/* end offset */
+			endoff = (regoff_t)atoi(optarg);
 			break;
 		case 'x':	/* Debugging. */
 			debug++;
@@ -70,7 +71,7 @@ main(int argc, char *argv[])
 		}
 	if (errflg) {
 		fprintf(stderr, "usage: %s ", progname);
-		fprintf(stderr, "[-x] [-c copt] [-E endoff] [-e eopt] [-S startoff] [re]\n");
+		fprintf(stderr, "[-c copt][-C][-d] [re]\n");
 		exit(2);
 	}
 
@@ -82,7 +83,7 @@ main(int argc, char *argv[])
 	err = regcomp(&re, argv[optind++], copts);
 	if (err) {
 		len = regerror(err, &re, erbuf, sizeof(erbuf));
-		fprintf(stderr, "error %s, %zu/%zu `%s'\n",
+		fprintf(stderr, "error %s, %d/%d `%s'\n",
 			eprint(err), len, sizeof(erbuf), erbuf);
 		exit(status);
 	}
@@ -100,7 +101,7 @@ main(int argc, char *argv[])
 	err = regexec(&re, argv[optind], (size_t)NS, subs, eopts);
 	if (err) {
 		len = regerror(err, &re, erbuf, sizeof(erbuf));
-		fprintf(stderr, "error %s, %zu/%zu `%s'\n",
+		fprintf(stderr, "error %s, %d/%d `%s'\n",
 			eprint(err), len, sizeof(erbuf), erbuf);
 		exit(status);
 	}
@@ -147,7 +148,7 @@ FILE *in;
 		line++;
 		if (inbuf[0] == '#' || inbuf[0] == '\n')
 			continue;			/* NOTE CONTINUE */
-		inbuf[strcspn(inbuf, "\n")] = '\0';	/* get rid of stupid \n */
+		inbuf[strlen(inbuf)-1] = '\0';	/* get rid of stupid \n */
 		if (debug)
 			fprintf(stdout, "%d:\n", line);
 		nf = split(inbuf, f, MAXF, "\t\t");
@@ -228,14 +229,14 @@ int opts;			/* may not match f1 */
 	char f0copy[1000];
 	char f2copy[1000];
 
-	strlcpy(f0copy, f0, sizeof f0copy);
+	strcpy(f0copy, f0);
 	re.re_endp = (opts&REG_PEND) ? f0copy + strlen(f0copy) : NULL;
 	fixstr(f0copy);
 	err = regcomp(&re, f0copy, opts);
 	if (err != 0 && (!opt('C', f1) || err != efind(f2))) {
 		/* unexpected error or wrong error */
 		len = regerror(err, &re, erbuf, sizeof(erbuf));
-		fprintf(stderr, "%d: %s error %s, %d/%zu `%s'\n",
+		fprintf(stderr, "%d: %s error %s, %d/%d `%s'\n",
 					line, type, eprint(err), len,
 					sizeof(erbuf), erbuf);
 		status = 1;
@@ -252,7 +253,7 @@ int opts;			/* may not match f1 */
 		return;
 	}
 
-	strlcpy(f2copy, f2, sizeof f2copy);
+	strcpy(f2copy, f2);
 	fixstr(f2copy);
 
 	if (options('e', f1)&REG_STARTEND) {
@@ -260,16 +261,13 @@ int opts;			/* may not match f1 */
 			fprintf(stderr, "%d: bad STARTEND syntax\n", line);
 		subs[0].rm_so = strchr(f2, '(') - f2 + 1;
 		subs[0].rm_eo = strchr(f2, ')') - f2;
-		/* the preceding character is relevant with REG_NOTBOL */
-		f2copy[subs[0].rm_so - 1] = subs[0].rm_so > 1 ?
-		    f2copy[subs[0].rm_so - 2] : 'X';
 	}
 	err = regexec(&re, f2copy, NSUBS, subs, options('e', f1));
 
 	if (err != 0 && (f3 != NULL || err != REG_NOMATCH)) {
 		/* unexpected error or wrong error */
 		len = regerror(err, &re, erbuf, sizeof(erbuf));
-		fprintf(stderr, "%d: %s exec error %s, %d/%zu `%s'\n",
+		fprintf(stderr, "%d: %s exec error %s, %d/%d `%s'\n",
 					line, type, eprint(err), len,
 					sizeof(erbuf), erbuf);
 		status = 1;
@@ -433,9 +431,8 @@ char *should;
 				(sub.rm_so != -1 && sub.rm_eo == -1) ||
 				(sub.rm_so != -1 && sub.rm_so < 0) ||
 				(sub.rm_eo != -1 && sub.rm_eo < 0) ) {
-		snprintf(grump, sizeof grump,
-		    "start %ld end %ld", (long)sub.rm_so,
-		    (long)sub.rm_eo);
+		sprintf(grump, "start %ld end %ld", (long)sub.rm_so,
+							(long)sub.rm_eo);
 		return(grump);
 	}
 
@@ -447,25 +444,24 @@ char *should;
 
 	/* check for in range */
 	if (sub.rm_eo > strlen(str)) {
-		snprintf(grump, sizeof grump,
-			"start %ld end %ld, past end of string",
-			(long)sub.rm_so, (long)sub.rm_eo);
+		sprintf(grump, "start %ld end %ld, past end of string",
+					(long)sub.rm_so, (long)sub.rm_eo);
 		return(grump);
 	}
 
 	len = (int)(sub.rm_eo - sub.rm_so);
+	shlen = (int)strlen(should);
 	p = str + sub.rm_so;
 
 	/* check for not supposed to match */
 	if (should == NULL) {
-		snprintf(grump, sizeof grump, "matched `%.*s'", len, p);
+		sprintf(grump, "matched `%.*s'", len, p);
 		return(grump);
 	}
 
 	/* check for wrong match */
-	shlen = (int)strlen(should);
 	if (len != shlen || strncmp(p, should, (size_t)shlen) != 0) {
-		snprintf(grump, sizeof grump, "matched `%.*s' instead", len, p);
+		sprintf(grump, "matched `%.*s' instead", len, p);
 		return(grump);
 	}
 	if (shlen > 0)
@@ -478,7 +474,7 @@ char *should;
 	if (shlen == 0)
 		shlen = 1;	/* force check for end-of-string */
 	if (strncmp(p, at, shlen) != 0) {
-		snprintf(grump, sizeof grump, "matched null at `%.20s'", p);
+		sprintf(grump, "matched null at `%.20s'", p);
 		return(grump);
 	}
 	return(NULL);
@@ -511,7 +507,7 @@ char *name;
 	static char efbuf[100];
 	regex_t re;
 
-	snprintf(efbuf, sizeof efbuf, "REG_%s", name);
+	sprintf(efbuf, "REG_%s", name);
 	assert(strlen(efbuf) < sizeof(efbuf));
 	re.re_endp = efbuf;
 	(void) regerror(REG_ATOI, &re, efbuf, sizeof(efbuf));

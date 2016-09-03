@@ -1,4 +1,4 @@
-/*	$OpenBSD: kthread.h,v 1.6 2013/11/18 20:21:51 deraadt Exp $	*/
+/*	$OpenBSD: kthread.h,v 1.1 1999/01/11 01:37:13 niklas Exp $	*/
 /*	$NetBSD: kthread.h,v 1.2 1998/11/14 00:08:49 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -41,11 +48,12 @@
 #ifdef _KERNEL
 #include <sys/proc.h>	/* struct proc, tsleep(), wakeup() */
 
-int	kthread_create(void (*)(void *), void *, struct proc **,
-	    const char *);
-void	kthread_create_deferred(void (*)(void *), void *);
-void	kthread_run_deferred_queue(void);
-void	kthread_exit(int) __attribute__((__noreturn__));
+int	kthread_create __P((void (*)(void *), void *, struct proc **,
+	    const char *, ...))
+	    __attribute__((__format__(__printf__,4,5)));
+void	kthread_create_deferred __P((void (*)(void *), void *));
+void	kthread_run_deferred_queue __P((void));
+void	kthread_exit __P((int)) __attribute__((__noreturn__));
 #endif /* _KERNEL */
 
 #endif /* _SYS_KTHREAD_H_ */

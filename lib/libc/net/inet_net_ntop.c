@@ -1,7 +1,6 @@
-/*	$OpenBSD: inet_net_ntop.c,v 1.8 2015/05/14 11:52:43 jsg Exp $	*/
+/*	$OpenBSD: inet_net_ntop.c,v 1.1 1997/03/13 19:07:30 downsj Exp $	*/
 
 /*
- * Copyright (c) 2012 by Gilles Chehade <gilles@openbsd.org>
  * Copyright (c) 1996 by Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -18,6 +17,14 @@
  * SOFTWARE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static const char rcsid[] = "$From: inet_net_ntop.c,v 8.2 1996/08/08 06:54:44 vixie Exp $";
+#else
+static const char rcsid[] = "$OpenBSD: inet_net_ntop.c,v 1.1 1997/03/13 19:07:30 downsj Exp $";
+#endif
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -28,8 +35,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-static char *inet_net_ntop_ipv4(const u_char *, int, char *, size_t);
-static char *inet_net_ntop_ipv6(const u_char *, int, char *, size_t);
+static char *	inet_net_ntop_ipv4 __P((const u_char *src, int bits,
+					char *dst, size_t size));
 
 /*
  * char *
@@ -42,13 +49,16 @@ static char *inet_net_ntop_ipv6(const u_char *, int, char *, size_t);
  *	Paul Vixie (ISC), July 1996
  */
 char *
-inet_net_ntop(int af, const void *src, int bits, char *dst, size_t size)
+inet_net_ntop(af, src, bits, dst, size)
+	int af;
+	const void *src;
+	int bits;
+	char *dst;
+	size_t size;
 {
 	switch (af) {
 	case AF_INET:
 		return (inet_net_ntop_ipv4(src, bits, dst, size));
-	case AF_INET6:
-		return (inet_net_ntop_ipv6(src, bits, dst, size));
 	default:
 		errno = EAFNOSUPPORT;
 		return (NULL);
@@ -69,24 +79,23 @@ inet_net_ntop(int af, const void *src, int bits, char *dst, size_t size)
  *	Paul Vixie (ISC), July 1996
  */
 static char *
-inet_net_ntop_ipv4(const u_char *src, int bits, char *dst, size_t size)
+inet_net_ntop_ipv4(src, bits, dst, size)
+	const u_char *src;
+	int bits;
+	char *dst;
+	size_t size;
 {
 	char *odst = dst;
+	char *t;
 	u_int m;
 	int b;
-	char *ep;
-	int advance;
-
-	ep = dst + size;
-	if (ep <= dst)
-		goto emsgsize;
 
 	if (bits < 0 || bits > 32) {
 		errno = EINVAL;
 		return (NULL);
 	}
 	if (bits == 0) {
-		if (ep - dst < sizeof "0")
+		if (size < sizeof "0")
 			goto emsgsize;
 		*dst++ = '0';
 		*dst = '\0';
@@ -94,67 +103,37 @@ inet_net_ntop_ipv4(const u_char *src, int bits, char *dst, size_t size)
 
 	/* Format whole octets. */
 	for (b = bits / 8; b > 0; b--) {
-		if (ep - dst < sizeof "255.")
+		if (size < sizeof "255.")
 			goto emsgsize;
-		advance = snprintf(dst, ep - dst, "%u", *src++);
-		if (advance <= 0 || advance >= ep - dst)
-			goto emsgsize;
-		dst += advance;
+		t = dst;
+		dst += sprintf(dst, "%u", *src++);
 		if (b > 1) {
-			if (dst + 1 >= ep)
-				goto emsgsize;
 			*dst++ = '.';
 			*dst = '\0';
 		}
+		size -= (size_t)(dst - t);
 	}
 
 	/* Format partial octet. */
 	b = bits % 8;
 	if (b > 0) {
-		if (ep - dst < sizeof ".255")
+		if (size < sizeof ".255")
 			goto emsgsize;
+		t = dst;
 		if (dst != odst)
 			*dst++ = '.';
 		m = ((1 << b) - 1) << (8 - b);
-		advance = snprintf(dst, ep - dst, "%u", *src & m);
-		if (advance <= 0 || advance >= ep - dst)
-			goto emsgsize;
-		dst += advance;
+		dst += sprintf(dst, "%u", *src & m);
+		size -= (size_t)(dst - t);
 	}
 
 	/* Format CIDR /width. */
-	if (ep - dst < sizeof "/32")
+	if (size < sizeof "/32")
 		goto emsgsize;
-	advance = snprintf(dst, ep - dst, "/%u", bits);
-	if (advance <= 0 || advance >= ep - dst)
-		goto emsgsize;
-	dst += advance;
+	dst += sprintf(dst, "/%u", bits);
 	return (odst);
 
  emsgsize:
 	errno = EMSGSIZE;
 	return (NULL);
-}
-
-static char *
-inet_net_ntop_ipv6(const u_char *src, int bits, char *dst, size_t size)
-{
-	int	ret;
-	char	buf[sizeof("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:255:255:255:255/128")];
-
-	if (bits < 0 || bits > 128) {
-		errno = EINVAL;
-		return (NULL);
-	}
-
-	if (inet_ntop(AF_INET6, src, buf, size) == NULL)
-		return (NULL);
-
-	ret = snprintf(dst, size, "%s/%d", buf, bits);
-	if (ret == -1 || ret >= size) {
-		errno = EMSGSIZE;
-		return (NULL); 
-	}
-
-	return (dst);
 }

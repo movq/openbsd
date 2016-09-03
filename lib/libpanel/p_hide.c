@@ -1,7 +1,7 @@
-/* $OpenBSD: p_hide.c,v 1.6 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_hide.c,v 1.2 1998/07/24 17:08:11 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -38,23 +38,64 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_hide.c,v 1.6 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_hide.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-hide_panel(register PANEL * pan)
+/*+-------------------------------------------------------------------------
+	__panel_unlink(pan) - unlink panel from stack
+--------------------------------------------------------------------------*/
+static void
+__panel_unlink(PANEL *pan)
 {
-  int err = OK;
+  PANEL *prev;
+  PANEL *next;
 
-  T((T_CALLED("hide_panel(%p)"), pan));
-  if (!pan)
-    returnCode(ERR);
+#ifdef TRACE
+  dStack("<u%d>",1,pan);
+  if(!_nc_panel_is_linked(pan))
+    return;
+#endif
+
+  _nc_override(pan,P_TOUCH);
+  _nc_free_obscure(pan);
+
+  prev = pan->below;
+  next = pan->above;
+
+  if(prev)
+    { /* if non-zero, we will not update the list head */
+      prev->above = next;
+      if(next)
+	next->below = prev;
+    }
+  else if(next)
+    next->below = prev;
+  if(pan == _nc_bottom_panel)
+    _nc_bottom_panel = next;
+  if(pan == _nc_top_panel)
+    _nc_top_panel = prev;
+
+  _nc_calculate_obscure();
+
+  pan->above = (PANEL *)0;
+  pan->below = (PANEL *)0;
+  dStack("<u%d>",9,pan);
+}
+
+int
+hide_panel(register PANEL *pan)
+{
+  if(!pan)
+    return(ERR);
 
   dBug(("--> hide_panel %s", USER_PTR(pan->user)));
-  dStack("<u%d>", 1, pan);
 
-  HIDE_PANEL(pan, err, ERR);
+  if(!_nc_panel_is_linked(pan))
+    {
+      pan->above = (PANEL *)0;
+      pan->below = (PANEL *)0;
+      return(ERR);
+    }
 
-  dStack("<u%d>", 9, pan);
-
-  returnCode(err);
+  __panel_unlink(pan);
+  return(OK);
 }

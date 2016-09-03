@@ -87,17 +87,22 @@ Version_TS (finfo, options, tag, date, force_tag_match, set_time)
 	    vers_ts->vn_user = xstrdup (entdata->version);
 	    vers_ts->ts_rcs = xstrdup (entdata->timestamp);
 	    vers_ts->ts_conflict = xstrdup (entdata->conflict);
-	    if (!(tag || date) && !(sdtp && sdtp->aflag))
+	    if (!tag)
 	    {
-		vers_ts->tag = xstrdup (entdata->tag);
-		vers_ts->date = xstrdup (entdata->date);
+		if (!(sdtp && sdtp->aflag))
+		    vers_ts->tag = xstrdup (entdata->tag);
+	    }
+	    if (!date)
+	    {
+		if (!(sdtp && sdtp->aflag))
+		    vers_ts->date = xstrdup (entdata->date);
 	    }
 	    vers_ts->entdata = entdata;
 	}
 	/* Even if we don't have an "entries line" as such
 	   (vers_ts->entdata), we want to pick up options which could
 	   have been from a Kopt protocol request.  */
-	if (!options || *options == '\0')
+	if (!options || (options && *options == '\0'))
 	{
 	    if (!(sdtp && sdtp->aflag))
 		vers_ts->options = xstrdup (entdata->options);
@@ -121,8 +126,6 @@ Version_TS (finfo, options, tag, date, force_tag_match, set_time)
 	    char *rcsexpand = RCS_getexpand (finfo->rcs);
 	    if (rcsexpand != NULL)
 	    {
-		if (vers_ts->options != NULL)
-		    free (vers_ts->options);
 		vers_ts->options = xmalloc (strlen (rcsexpand) + 3);
 		strcpy (vers_ts->options, "-k");
 		strcat (vers_ts->options, rcsexpand);
@@ -322,8 +325,6 @@ time_stamp_server (file, vers_ts, entdata)
 	    cp = ctime (&sb.st_mtime);
 
 	cp[24] = 0;
-	/* Fix non-standard format.  */
-	if (cp[8] == '0') cp[8] = ' ';
 	(void) strcpy (vers_ts->ts_user, cp);
     }
 }
@@ -367,8 +368,6 @@ time_stamp (file)
 	    cp = ctime(&sb.st_mtime);
 
 	cp[24] = 0;
-	/* Fix non-standard format.  */
-	if (cp[8] == '0') cp[8] = ' ';
 	(void) strcpy (ts, cp);
     }
 

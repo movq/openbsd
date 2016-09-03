@@ -1,4 +1,4 @@
-/*	$OpenBSD: strerror.c,v 1.10 2014/11/19 20:28:56 miod Exp $	*/
+/*	$OpenBSD: strerror.c,v 1.5 1997/06/10 16:39:16 millert Exp $	*/
 /*	$NetBSD: strerror.c,v 1.11 1996/10/13 02:29:08 christos Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,10 +38,11 @@
 #include "saerrno.h"
 #include "stand.h"
 
-const char *
-strerror(int err)
+char *
+strerror(err)
+	int err;
 {
-	static	char ebuf[64];
+static	char ebuf[64];
 
 	switch (err) {
 	case EADAPT:
@@ -50,6 +55,8 @@ strerror(int err)
 		return "bad partition";
 	case ERDLAB:
 		return "can't read disk label";
+	case EUNLAB:
+		return "unlabeled";
 	case ENXIO:
 		return "Device not configured";
 	case EPERM:
@@ -66,8 +73,9 @@ strerror(int err)
 		return "Input/output error";
 	case EINVAL:
 		return "Invalid argument";
+
 	default:
-		snprintf(ebuf, sizeof ebuf, "Unknown error: code %d", err);
+		sprintf(ebuf, "Unknown error: code %d", err);
 		return ebuf;
 	}
 }

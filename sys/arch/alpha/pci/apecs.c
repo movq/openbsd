@@ -1,34 +1,5 @@
-/*	$OpenBSD: apecs.c,v 1.22 2009/03/30 21:43:13 kettenis Exp $	*/
+/*	$OpenBSD: apecs.c,v 1.8 1997/01/24 19:57:32 niklas Exp $	*/
 /*	$NetBSD: apecs.c,v 1.16 1996/12/05 01:39:34 cgd Exp $	*/
-
-/*-
- * Copyright (c) 2000 The NetBSD Foundation, Inc.
- * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Jason R. Thorpe.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- */
 
 /*
  * Copyright (c) 1995, 1996 Carnegie-Mellon University.
@@ -62,7 +33,7 @@
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/device.h>
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
 #include <machine/autoconf.h>
 #include <machine/rpb.h>
@@ -74,31 +45,26 @@
 #include <dev/pci/pcivar.h>
 #include <alpha/pci/apecsreg.h>
 #include <alpha/pci/apecsvar.h>
-#ifdef DEC_2100_A50
+#if defined(DEC_2100_A50)
 #include <alpha/pci/pci_2100_a50.h>
 #endif
-#ifdef DEC_EB64PLUS
-#include <alpha/pci/pci_eb64plus.h>
-#endif
-#ifdef DEC_1000A
-#include <alpha/pci/pci_1000a.h>
-#endif
-#ifdef DEC_1000
-#include <alpha/pci/pci_1000.h>
-#endif
 
-int	apecsmatch(struct device *, void *, void *);
-void	apecsattach(struct device *, struct device *, void *);
+#ifdef __BROKEN_INDIRECT_CONFIG
+int	apecsmatch __P((struct device *, void *, void *));
+#else
+int	apecsmatch __P((struct device *, struct cfdata *, void *));
+#endif
+void	apecsattach __P((struct device *, struct device *, void *));
 
 struct cfattach apecs_ca = {
-	sizeof(struct device), apecsmatch, apecsattach,
+	sizeof(struct apecs_softc), apecsmatch, apecsattach,
 };
 
 struct cfdriver apecs_cd = {
 	NULL, "apecs", DV_DULL,
 };
 
-int	apecsprint(void *, const char *pnp);
+int	apecsprint __P((void *, const char *pnp));
 
 /* There can be only one. */
 int apecsfound;
@@ -107,13 +73,17 @@ struct apecs_config apecs_configuration;
 int
 apecsmatch(parent, match, aux)
 	struct device *parent;
+#ifdef __BROKEN_INDIRECT_CONFIG
 	void *match;
+#else
+	struct cfdata *match;
+#endif
 	void *aux;
 {
-	struct mainbus_attach_args *ma = aux;
+	struct confargs *ca = aux;
 
 	/* Make sure that we're looking for an APECS. */
-	if (strcmp(ma->ma_name, apecs_cd.cd_name) != 0)
+	if (strcmp(ca->ca_name, apecs_cd.cd_name) != 0)
 		return (0);
 
 	if (apecsfound)
@@ -140,30 +110,32 @@ apecs_init(acp, mallocsafe)
 	acp->ac_haxr1 = REGVAL(EPIC_HAXR1);
 	acp->ac_haxr2 = REGVAL(EPIC_HAXR2);
 
+	/*
+	 * Can't set up SGMAP data here; can be called before malloc().
+	 * XXX THIS COMMENT NO LONGER MAKES SENSE.
+	 */
+
 	if (!acp->ac_initted) {
 		/* don't do these twice since they set up extents */
-		apecs_bus_io_init(&acp->ac_iot, acp);
-		apecs_bus_mem_init(&acp->ac_memt, acp);
-
-#if 0
-		/*
-		 * We have two I/O windows and 3 MEM windows.
-		 */
-		alpha_bus_window_count[ALPHA_BUS_TYPE_PCI_IO] = 2;
-		alpha_bus_window_count[ALPHA_BUS_TYPE_PCI_MEM] = 3;
-		alpha_bus_get_window = apecs_bus_get_window;
-#endif
+		acp->ac_iot = apecs_bus_io_init(acp);
+		acp->ac_memt = apecs_bus_mem_init(acp);
 	}
 	acp->ac_mallocsafe = mallocsafe;
 
 	apecs_pci_init(&acp->ac_pc, acp);
-	alpha_pci_chipset = &acp->ac_pc;
-	alpha_pci_chipset->pc_name = "apecs";
-	alpha_pci_chipset->pc_mem = APECS_PCI_SPARSE;
-	alpha_pci_chipset->pc_dense = APECS_PCI_DENSE;
-	alpha_pci_chipset->pc_ports = APECS_PCI_SIO;
-	alpha_pci_chipset->pc_bwx = 0;
-	alpha_pci_chipset->pc_hae_mask = EPIC_HAXR1_EADDR;
+
+	/* Turn off DMA window enables in PCI Base Reg 1. */
+	REGVAL(EPIC_PCI_BASE_1) = 0;
+	alpha_mb();
+
+	/* XXX SGMAP? */
+
+	/* XXX XXX BEGIN XXX XXX */
+	{							/* XXX */
+		extern vm_offset_t alpha_XXX_dmamap_or;		/* XXX */
+		alpha_XXX_dmamap_or = 0x40000000;		/* XXX */
+	}							/* XXX */
+	/* XXX XXX END XXX XXX */
 
 	acp->ac_initted = 1;
 }
@@ -173,6 +145,7 @@ apecsattach(parent, self, aux)
 	struct device *parent, *self;
 	void *aux;
 {
+	struct apecs_softc *sc = (struct apecs_softc *)self;
 	struct apecs_config *acp;
 	struct pcibus_attach_args pba;
 
@@ -183,10 +156,10 @@ apecsattach(parent, self, aux)
 	 * set up the chipset's info; done once at console init time
 	 * (maybe), but doesn't hurt to do twice.
 	 */
-	acp = &apecs_configuration;
+	acp = sc->sc_acp = &apecs_configuration;
 	apecs_init(acp, 1);
 
-	apecs_dma_init(acp);
+	/* XXX SGMAP FOO */
 
 	printf(": DECchip %s Core Logic chipset\n",
 	    acp->ac_memwidth == 128 ? "21072" : "21071");
@@ -199,30 +172,10 @@ apecsattach(parent, self, aux)
 	if (!acp->ac_epic_pass2)
 		printf("WARNING: 21071-DA NOT PASS2... NO BETS...\n");
 
-	switch (cputype) {
-#ifdef DEC_2100_A50
+	switch (hwrpb->rpb_type) {
+#if defined(DEC_2100_A50)
 	case ST_DEC_2100_A50:
 		pci_2100_a50_pickintr(acp);
-		break;
-#endif
-
-#ifdef DEC_EB64PLUS
-	case ST_EB64P:
-		pci_eb64plus_pickintr(acp);
-		break;
-#endif
-
-#ifdef DEC_1000A
-	case ST_DEC_1000A:
-		pci_1000a_pickintr(acp, &acp->ac_iot, &acp->ac_memt,
-			&acp->ac_pc);
-		break;
-#endif
-
-#ifdef DEC_1000
-	case ST_DEC_1000:
-		pci_1000_pickintr(acp, &acp->ac_iot, &acp->ac_memt,
-			&acp->ac_pc);
 		break;
 #endif
 
@@ -230,19 +183,11 @@ apecsattach(parent, self, aux)
 		panic("apecsattach: shouldn't be here, really...");
 	}
 
-	bzero(&pba, sizeof(pba));
 	pba.pba_busname = "pci";
-	pba.pba_iot = &acp->ac_iot;
-	pba.pba_memt = &acp->ac_memt;
-	pba.pba_dmat =
-	    alphabus_dma_get_tag(&acp->ac_dmat_direct, ALPHA_BUS_PCI);
+	pba.pba_iot = acp->ac_iot;
+	pba.pba_memt = acp->ac_memt;
 	pba.pba_pc = &acp->ac_pc;
-	pba.pba_domain = pci_ndomains++;
 	pba.pba_bus = 0;
-#ifdef notyet
-	pba.pba_flags = PCI_FLAGS_IO_ENABLED | PCI_FLAGS_MEM_ENABLED |
-	    PCI_FLAGS_MRL_OKAY | PCI_FLAGS_MRM_OKAY | PCI_FLAGS_MWI_OKAY;
-#endif
 	config_found(self, &pba, apecsprint);
 }
 
@@ -259,29 +204,3 @@ apecsprint(aux, pnp)
 	printf(" bus %d", pba->pba_bus);
 	return (UNCONF);
 }
-
-#if 0
-int
-apecs_bus_get_window(type, window, abst)
-	int type, window;
-	struct alpha_bus_space_translation *abst;
-{
-	struct apecs_config *acp = &apecs_configuration;
-	bus_space_tag_t st;
-
-	switch (type) {
-	case ALPHA_BUS_TYPE_PCI_IO:
-		st = &acp->ac_iot;
-		break;
-
-	case ALPHA_BUS_TYPE_PCI_MEM:
-		st = &acp->ac_memt;
-		break;
-
-	default:
-		panic("apecs_bus_get_window");
-	}
-
-	return (alpha_bus_space_get_window(st, window, abst));
-}
-#endif

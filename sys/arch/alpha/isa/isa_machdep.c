@@ -1,5 +1,5 @@
-/* $OpenBSD: isa_machdep.c,v 1.13 2006/02/12 21:09:08 miod Exp $ */
-/* $NetBSD: isa_machdep.c,v 1.12 1998/08/07 10:26:39 drochner Exp $ */
+/*	$OpenBSD: isa_machdep.c,v 1.6 1997/11/10 15:53:10 niklas Exp $	*/
+/*	$NetBSD: isa_machdep.c,v 1.5 1996/11/23 06:38:49 cgd Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996 Carnegie-Mellon University.
@@ -38,27 +38,34 @@
 #include <sys/systm.h>
 #include <sys/errno.h>
 #include <sys/device.h>
-
-#include <uvm/uvm_extern.h>
+#include <vm/vm.h>
 
 #include <dev/isa/isavar.h>
 
-#include "vga.h"
+#include "vga_isa.h"
 #if NVGA_ISA
-#include <dev/ic/mc6845reg.h>
-#include <dev/ic/pcdisplayvar.h>
 #include <dev/isa/vga_isavar.h>
 #endif
 
-int
+struct {
+	int	(*probe) __P((bus_space_tag_t, bus_space_tag_t));
+	void	(*console) __P((bus_space_tag_t, bus_space_tag_t));
+} isa_display_console_devices[] = {
+#if NVGA_ISA
+	{ vga_isa_console_match, vga_isa_console_attach },
+#endif
+	{ },
+};
+
+void
 isa_display_console(iot, memt)
 	bus_space_tag_t iot, memt;
 {
-	int res = ENXIO;
-#if NVGA_ISA
-	res = vga_isa_cnattach(iot, memt);
-	if (!res)
-		return(0);
-#endif
-	return(res);
+	int i = 0;
+
+	while (isa_display_console_devices[i].probe != NULL)
+		if ((*isa_display_console_devices[i].probe)(iot, memt)) {
+			(*isa_display_console_devices[i].console)(iot, memt);
+			break;
+		}
 }

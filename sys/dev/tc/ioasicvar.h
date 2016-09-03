@@ -1,5 +1,5 @@
-/*	$OpenBSD: ioasicvar.h,v 1.10 2009/11/07 23:01:38 miod Exp $	*/
-/*	$NetBSD: ioasicvar.h,v 1.14 2000/10/17 09:45:49 nisimura Exp $	*/
+/*	$OpenBSD: ioasicvar.h,v 1.3 1997/11/07 08:07:51 niklas Exp $	*/
+/*	$NetBSD: ioasicvar.h,v 1.2 1996/03/17 21:37:45 jonathan Exp $	*/
 
 /*
  * Copyright (c) 1995 Carnegie-Mellon University.
@@ -28,18 +28,13 @@
  * rights to redistribute these changes.
  */
 
-#ifndef _DEV_TC_IOASICVAR_H_
-#define _DEV_TC_IOASICVAR_H_
+/*
+ * IOASIC subdevice attachment information.
+ */
 
-struct ioasic_dev {
-	char		*iad_modname;
-	tc_offset_t	iad_offset;
-	void		*iad_cookie;
-	u_int32_t	iad_intrbits;
-};
-
+/* Attachment arguments. */
 struct ioasicdev_attach_args {
-	char	iada_modname[TC_ROM_LLEN + 1];
+	char	iada_modname[TC_ROM_LLEN];
 	tc_offset_t iada_offset;
 	tc_addr_t iada_addr;
 	void	*iada_cookie;
@@ -50,28 +45,30 @@ struct ioasicdev_attach_args {
 
 #define	IOASIC_OFFSET_UNKNOWN	-1
 
-struct ioasic_softc {
-	struct	device sc_dv;
-	bus_space_tag_t sc_bst;
-	bus_space_handle_t sc_bsh;
-	bus_dma_tag_t sc_dmat;
-
-	tc_addr_t sc_base;		/* XXX offset XXX */
-};
-
+/*
+ * The IOASIC (bus) cfdriver, so that subdevices can more
+ * easily tell what bus they're on.
+ */
 extern struct cfdriver ioasic_cd;
+
 
 /*
  * XXX Some drivers need direct access to IOASIC registers.
  */
 extern tc_addr_t ioasic_base;
 
-void    ioasic_intr_establish(struct device *, void *,
-	    int, int (*)(void *), void *, const char *);
-void    ioasic_intr_disestablish(struct device *, void *);
-int	ioasic_submatch(void *, struct ioasicdev_attach_args *);
-void	ioasic_attach_devs(struct ioasic_softc *,
-	    struct ioasic_dev *, int);
-void	ioasic_led_blink(void *);
 
-#endif /* _DEV_TC_IOASICVAR_ */
+/*
+ * Interrupt establishment/disestablishment functions
+ */
+void    ioasic_intr_establish __P((struct device *, void *, tc_intrlevel_t,
+	    int (*)(void *), void *));
+void    ioasic_intr_disestablish __P((struct device *, void *));
+
+
+/*
+ * Miscellaneous helper functions.
+ */
+int	ioasic_submatch __P((struct cfdata *, struct ioasicdev_attach_args *));
+char	*ioasic_lance_ether_address __P((void));
+void	ioasic_lance_dma_setup __P((void *));

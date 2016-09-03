@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-ospf.c,v 1.20 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -23,10 +21,17 @@
  * OSPF support contributed by Jeffrey Honig (jch@mitchell.cit.cornell.edu)
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-ospf.c,v 1.6 1999/07/28 20:41:36 jakob Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 
@@ -80,11 +85,11 @@ static int ospf_print_lsa(const struct lsa *);
 static int ospf_decode_v2(const struct ospfhdr *, const u_char *);
 
 static inline void
-ospf_print_seqage(u_int32_t seq, time_t us)
+ospf_print_seqage(register u_int32_t seq, register time_t us)
 {
-	time_t sec = us % 60;
-	time_t mins = (us / 60) % 60;
-	time_t hour = us / 3600;
+	register time_t sec = us % 60;
+	register time_t mins = (us / 60) % 60;
+	register time_t hour = us / 3600;
 
 	printf(" S %X age ", seq);
 	if (hour)
@@ -98,9 +103,9 @@ ospf_print_seqage(u_int32_t seq, time_t us)
 
 
 static inline void
-ospf_print_bits(const struct bits *bp, u_char options)
+ospf_print_bits(register const struct bits *bp, register u_char options)
 {
-	char sep = ' ';
+	register char sep = ' ';
 
 	do {
 		if (options & bp->bit) {
@@ -111,14 +116,15 @@ ospf_print_bits(const struct bits *bp, u_char options)
 }
 
 static void
-ospf_print_ls_type(u_int ls_type, const struct in_addr *ls_stateid,
-    const struct in_addr *ls_router, const char *fmt)
+ospf_print_ls_type(register u_int ls_type,
+    register const struct in_addr *ls_stateid,
+    register const struct in_addr *ls_router, register const char *fmt)
 {
 
 	switch (ls_type) {
 
 	case LS_TYPE_ROUTER:
-		printf(" rtr %s", ipaddr_string(ls_router));
+		printf(" rtr %s ", ipaddr_string(ls_router));
 		break;
 
 	case LS_TYPE_NETWORK:
@@ -159,7 +165,7 @@ ospf_print_ls_type(u_int ls_type, const struct in_addr *ls_stateid,
 }
 
 static int
-ospf_print_lshdr(const struct lsa_hdr *lshp)
+ospf_print_lshdr(register const struct lsa_hdr *lshp)
 {
 
 	TCHECK(lshp->ls_type);
@@ -182,16 +188,16 @@ trunc:
  * Print a single link state advertisement.  If truncated return 1, else 0.
  */
 static int
-ospf_print_lsa(const struct lsa *lsap)
+ospf_print_lsa(register const struct lsa *lsap)
 {
-	const u_char *ls_end;
-	const struct rlalink *rlp;
-	const struct tos_metric *tosp;
-	const struct in_addr *ap;
-	const struct aslametric *almp;
-	const struct mcla *mcp;
-	const u_int32_t *lp;
-	int j, k;
+	register const u_char *ls_end;
+	register const struct rlalink *rlp;
+	register const struct tos_metric *tosp;
+	register const struct in_addr *ap;
+	register const struct aslametric *almp;
+	register const struct mcla *mcp;
+	register const u_int32_t *lp;
+	register int j, k;
 
 	if (ospf_print_lshdr(&lsap->ls_hdr))
 		return (1);
@@ -215,7 +221,7 @@ ospf_print_lsa(const struct lsa *lsap)
 
 			case RLA_TYPE_VIRTUAL:
 				printf(" virt");
-				/* FALLTHROUGH */
+				/* Fall through */
 
 			case RLA_TYPE_ROUTER:
 				printf(" nbrid %s if %s",
@@ -273,13 +279,13 @@ ospf_print_lsa(const struct lsa *lsap)
 		TCHECK(lsap->lsa_un.un_nla.nla_mask);
 		printf(" mask %s",
 		    ipaddr_string(&lsap->lsa_un.un_sla.sla_mask));
-		/* FALLTHROUGH */
+		/* Fall through */
 
 	case LS_TYPE_SUM_ABR:
 		TCHECK(lsap->lsa_un.un_sla.sla_tosmetric);
 		lp = lsap->lsa_un.un_sla.sla_tosmetric;
 		while ((u_char *)lp < ls_end) {
-			u_int32_t ul;
+			register u_int32_t ul;
 
 			TCHECK(*lp);
 			ul = ntohl(*lp);
@@ -298,7 +304,7 @@ ospf_print_lsa(const struct lsa *lsap)
 		TCHECK(lsap->lsa_un.un_sla.sla_tosmetric);
 		almp = lsap->lsa_un.un_asla.asla_metric;
 		while ((u_char *)almp < ls_end) {
-			u_int32_t ul;
+			register u_int32_t ul;
 
 			TCHECK(almp->asla_tosmetric);
 			ul = ntohl(almp->asla_tosmetric);
@@ -312,9 +318,9 @@ ospf_print_lsa(const struct lsa *lsap)
 				    ipaddr_string(&almp->asla_forward));
 			}
 			TCHECK(almp->asla_tag);
-			if (almp->asla_tag) {
-				printf(" tag %u",
-				    ntohl(almp->asla_tag));
+			if (almp->asla_tag.s_addr) {
+				printf(" tag %s",
+				    ipaddr_string(&almp->asla_tag));
 			}
 			++almp;
 		}
@@ -355,14 +361,15 @@ trunc:
 }
 
 static int
-ospf_decode_v2(const struct ospfhdr *op, const u_char *dataend)
+ospf_decode_v2(register const struct ospfhdr *op,
+    register const u_char *dataend)
 {
-	const struct in_addr *ap;
-	const struct lsr *lsrp;
-	const struct lsa_hdr *lshp;
-	const struct lsa *lsap;
-	char sep;
-	int i;
+	register const struct in_addr *ap;
+	register const struct lsr *lsrp;
+	register const struct lsa_hdr *lshp;
+	register const struct lsa *lsap;
+	register char sep;
+	register int i;
 
 	switch (op->ospf_type) {
 
@@ -421,8 +428,7 @@ ospf_decode_v2(const struct ospfhdr *op, const u_char *dataend)
 			sep = '/';
 		}
 		TCHECK(op->ospf_db.db_seq);
-		printf(" mtu %u S %X", ntohs(op->ospf_db.db_mtu),
-		    (u_int32_t)ntohl(op->ospf_db.db_seq));
+		printf(" S %X", (u_int32_t)ntohl(op->ospf_db.db_seq));
 
 		if (vflag) {
 			/* Print all the LS adv's */
@@ -490,12 +496,13 @@ trunc:
 }
 
 void
-ospf_print(const u_char *bp, u_int length, const u_char *bp2)
+ospf_print(register const u_char *bp, register u_int length,
+    register const u_char *bp2)
 {
-	const struct ospfhdr *op;
-	const struct ip *ip;
-	const u_char *dataend;
-	const char *cp;
+	register const struct ospfhdr *op;
+	register const struct ip *ip;
+	register const u_char *dataend;
+	register const char *cp;
 
 	op = (struct ospfhdr *)bp;
 	ip = (struct ip *)bp2;
@@ -515,23 +522,21 @@ ospf_print(const u_char *bp, u_int length, const u_char *bp2)
 	/* value.  If it's not valid, say so and return */
 	TCHECK(op->ospf_type);
 	cp = tok2str(type2str, "type%d", op->ospf_type);
-	printf(" OSPFv%d-%s ", op->ospf_version, cp);
+	printf(" OSPFv%d-%s %d:", op->ospf_version, cp, length);
 	if (*cp == 't')
 		return;
 
 	TCHECK(op->ospf_len);
-	if (length < ntohs(op->ospf_len)) {
+	if (length != ntohs(op->ospf_len)) {
 		printf(" [len %d]", ntohs(op->ospf_len));
 		return;
-	} else if (length > ntohs(op->ospf_len)) {
-		printf(" %d[%d]:", ntohs(op->ospf_len), length);
-		length = ntohs(op->ospf_len);
-	} else
-		printf(" %d:", length);
+	}
 	dataend = bp + length;
 
+	/* Print the routerid if it is not the same as the source */
 	TCHECK(op->ospf_routerid);
-	printf(" rtrid %s", ipaddr_string(&op->ospf_routerid));
+	if (ip->ip_src.s_addr != op->ospf_routerid.s_addr)
+		printf(" rtrid %s", ipaddr_string(&op->ospf_routerid));
 
 	TCHECK(op->ospf_areaid);
 	if (op->ospf_areaid.s_addr != 0)

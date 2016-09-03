@@ -15,11 +15,8 @@ Symbol - manipulate Perl symbols and their names
 
     ungensym $sym;      # no effect
 
-    # replace *FOO{IO} handle but not $FOO, %FOO, etc.
-    *FOO = geniosym;
-
-    print qualify("x"), "\n";              # "main::x"
-    print qualify("x", "FOO"), "\n";       # "FOO::x"
+    print qualify("x"), "\n";              # "Test::x"
+    print qualify("x", "FOO"), "\n"        # "FOO::x"
     print qualify("BAR::x"), "\n";         # "BAR::x"
     print qualify("BAR::x", "FOO"), "\n";  # "BAR::x"
     print qualify("STDOUT", "FOO"), "\n";  # "main::STDOUT" (global)
@@ -34,6 +31,7 @@ Symbol - manipulate Perl symbols and their names
     delete_package('Foo::Bar');
     print "deleted\n" unless exists $Foo::{'Bar::'};
 
+
 =head1 DESCRIPTION
 
 C<Symbol::gensym> creates an anonymous glob and returns a reference
@@ -43,10 +41,6 @@ handle.
 For backward compatibility with older implementations that didn't
 support anonymous globs, C<Symbol::ungensym> is also provided.
 But it doesn't do anything.
-
-C<Symbol::geniosym> creates an anonymous IO handle.  This can be
-assigned into an existing glob without affecting the non-IO portions
-of the glob.
 
 C<Symbol::qualify> turns unqualified symbol names into qualified
 variable names (e.g. "myvar" -E<gt> "MyPackage::myvar").  If it is given a
@@ -67,25 +61,16 @@ C<Symbol::delete_package> wipes out a whole package namespace.  Note
 this routine is not exported by default--you may want to import it
 explicitly.
 
-=head1 BUGS
-
-C<Symbol::delete_package> is a bit too powerful. It undefines every symbol that
-lives in the specified package. Since perl, for performance reasons, does not
-perform a symbol table lookup each time a function is called or a global
-variable is accessed, some code that has already been loaded and that makes use
-of symbols in package C<Foo> may stop working after you delete C<Foo>, even if
-you reload the C<Foo> module afterwards.
-
 =cut
 
-BEGIN { require 5.005; }
+BEGIN { require 5.002; }
 
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(gensym ungensym qualify qualify_to_ref);
-@EXPORT_OK = qw(delete_package geniosym);
+@EXPORT_OK = qw(delete_package);
 
-$VERSION = '1.07';
+$VERSION = 1.02;
 
 my $genpkg = "Symbol::";
 my $genseq = 0;
@@ -104,23 +89,14 @@ sub gensym () {
     $ref;
 }
 
-sub geniosym () {
-    my $sym = gensym();
-    # force the IO slot to be filled
-    select(select $sym);
-    *$sym{IO};
-}
-
 sub ungensym ($) {}
 
 sub qualify ($;$) {
     my ($name) = @_;
     if (!ref($name) && index($name, '::') == -1 && index($name, "'") == -1) {
 	my $pkg;
-	# Global names: special character, "^xyz", or other. 
-	if ($name =~ /^(([^a-z])|(\^[a-z_]+))\z/i || $global{$name}) {
-	    # RGS 2001-11-05 : translate leading ^X to control-char
-	    $name =~ s/^\^([a-z_])/'qq(\c'.$1.')'/eei;
+	# Global names: special character, "^x", or other. 
+	if ($name =~ /^([^a-z])|(\^[a-z])$/i || $global{$name}) {
 	    $pkg = "main";
 	}
 	else {
@@ -153,15 +129,8 @@ sub delete_package ($) {
     my $stem_symtab = *{$stem}{HASH};
     return unless defined $stem_symtab and exists $stem_symtab->{$leaf};
 
-
-    # free all the symbols in the package
-
-    my $leaf_symtab = *{$stem_symtab->{$leaf}}{HASH};
-    foreach my $name (keys %$leaf_symtab) {
-        undef *{$pkg . $name};
-    }
-
-    # delete the symbol table
+    my $leaf_glob   = $stem_symtab->{$leaf};
+    my $leaf_symtab = *{$leaf_glob}{HASH};
 
     %$leaf_symtab = ();
     delete $stem_symtab->{$leaf};

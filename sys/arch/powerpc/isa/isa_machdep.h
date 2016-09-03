@@ -1,4 +1,4 @@
-/*	$OpenBSD: isa_machdep.h,v 1.8 2003/10/31 03:55:06 drahn Exp $ */
+/*	$OpenBSD: isa_machdep.h,v 1.5 1998/09/20 22:11:47 rahnds Exp $ */
 
 /*
  * Copyright (c) 1997 Per Fogelstrom
@@ -34,7 +34,7 @@
 #ifndef _ISA_MACHDEP_H_
 #define _ISA_MACHDEP_H_
 
-typedef struct ppc_isa_bus *isa_chipset_tag_t;
+typedef struct p4e_isa_bus *isa_chipset_tag_t;
 
 /*
  *      I/O macros to access isa bus ports/memory.
@@ -42,18 +42,17 @@ typedef struct ppc_isa_bus *isa_chipset_tag_t;
  *      However, the cpu executes an instruction every <10 ns
  *      so the bus is much slower so it doesn't matter, really.
  */
-extern bus_space_handle_t ppc_isa_io_vaddr;
-#define isa_outb(x,y)   outb(ppc_isa_io_vaddr + (x), (y))
-#define isa_inb(x)   inb(ppc_isa_io_vaddr + (x))
+#define isa_outb(x,y)   outb(p4e_isa_io.bus_base + (x), y)
+#define isa_inb(x)      inb(p4e_isa_io.bus_base + (x))
  
-struct ppc_isa_bus {
+struct p4e_isa_bus {
         void    *ic_data;
 
-        void    (*ic_attach_hook) (struct device *, struct device *,
-                    struct isabus_attach_args *);
-        void    *(*ic_intr_establish) (void *, int, int, int,
-                    int (*)(void *), void *, char *);
-        void    (*ic_intr_disestablish) (void *, void *);
+        void    (*ic_attach_hook) __P((struct device *, struct device *,
+                    struct isabus_attach_args *));
+        void    *(*ic_intr_establish) __P((isa_chipset_tag_t, int, int, int,
+                    int (*)(void *), void *, char *));
+        void    (*ic_intr_disestablish) __P((isa_chipset_tag_t, void *));
 };
 
 
@@ -69,7 +68,29 @@ struct ppc_isa_bus {
 
 #define __NO_ISA_INTR_CHECK	/* FIXME */
 
+/*
+ *	Interrupt control struct used to control the ICU setup.
+ */
+
+struct intrhand {
+	struct	intrhand *ih_next;
+	int	(*ih_fun) __P((void *));
+	void    *ih_arg;
+	u_long  ih_count;
+	int     ih_level;
+	int     ih_irq;
+	char    *ih_what;
+};
+
 #define ICU_LEN	16		/* Number of possible interrupt sources */
 
-extern void * isabr_intr_establish(void *, int, int, int,                             int (*ih_fun) (void *), void *, char *);                              
+/*
+ * Let com.c know where our console is!
+ */
+extern u_int32_t ppc_console_addr;
+extern u_int32_t ppc_console_serfreq;
+#define	CONADDR		(ppc_console_addr)
+#define	COM_FREQ	(ppc_console_serfreq)
+
+extern void * isabr_intr_establish(isa_chipset_tag_t, int, int, int,                             int (*ih_fun) __P((void *)), void *, char *);                              
 #endif /* _ISA_MACHDEP_H_ */

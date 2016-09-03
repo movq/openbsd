@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ef_isapnp.c,v 1.38 2016/04/13 10:49:26 mpi Exp $	*/
+/*	$OpenBSD: if_ef_isapnp.c,v 1.4 1999/08/08 19:16:08 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1999 Jason L. Wright (jason@thought.net)
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Jason L. Wright
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -35,28 +40,33 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
+#include <sys/select.h>
 #include <sys/device.h>
 #include <sys/queue.h>
-#include <sys/kernel.h>
-#include <sys/timeout.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/netisr.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
 #include <machine/intr.h>
 
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
 #include <dev/ic/elink3reg.h>
@@ -68,13 +78,15 @@ struct ef_softc {
 	bus_space_tag_t		sc_iot;
 	bus_space_handle_t	sc_ioh;
 	struct arpcom		sc_arpcom;
-	struct mii_data		sc_mii;
-	struct timeout		sc_tick_tmo;
 	void *			sc_ih;
 	int			sc_tx_start_thresh;
 	int			sc_tx_succ_ok;
 	int			sc_busmaster;
 };
+
+#define	ETHER_MIN_LEN		64
+#define	ETHER_MAX_LEN		1518
+#define	ETHER_ADDR_LEN		6
 
 #define	EF_W0_EEPROM_COMMAND	0x200a
 #define    EF_EEPROM_BUSY	(1 << 9)
@@ -99,31 +111,31 @@ struct ef_softc {
 #define	EF_MII_DATA		0x02		/* data bit */
 #define	EF_MII_DIR		0x04		/* direction */
 
-int ef_isapnp_match(struct device *, void *, void *);
-void ef_isapnp_attach(struct device *, struct device *, void *);
+int ef_isapnp_match __P((struct device *, void *, void *));
+void ef_isapnp_attach __P((struct device *, struct device *, void *));
 
-void efstart(struct ifnet *);
-int efioctl(struct ifnet *, u_long, caddr_t);
-void efwatchdog(struct ifnet *);
-void efreset(struct ef_softc *);
-void efstop(struct ef_softc *);
-void efsetmulti(struct ef_softc *);
-int efbusyeeprom(struct ef_softc *);
-int efintr(void *);
-void efinit(struct ef_softc *);
-void efcompletecmd(struct ef_softc *, u_int, u_int);
-void eftxstat(struct ef_softc *);
-void efread(struct ef_softc *);
-struct mbuf *efget(struct ef_softc *, int totlen);
+void efstart __P((struct ifnet *));
+int efioctl __P((struct ifnet *, u_long, caddr_t));
+void efwatchdog __P((struct ifnet *));
+void efreset __P((struct ef_softc *));
+void efstop __P((struct ef_softc *));
+void efsetmulti __P((struct ef_softc *));
+int efbusyeeprom __P((struct ef_softc *));
+int efintr __P((void *));
+void efinit __P((struct ef_softc *));
+void efcompletecmd __P((struct ef_softc *, u_int, u_int));
+void eftxstat __P((struct ef_softc *));
+void efread __P((struct ef_softc *));
+struct mbuf *efget __P((struct ef_softc *, int totlen));
 
-void ef_miibus_writereg(struct device *, int, int, int);
-void ef_miibus_statchg(struct device *);
-int ef_miibus_readreg(struct device *, int, int);
-void ef_mii_writeb(struct ef_softc *, int);
-void ef_mii_sync(struct ef_softc *);
-int ef_ifmedia_upd(struct ifnet *);
-void ef_ifmedia_sts(struct ifnet *, struct ifmediareq *);
-void ef_tick(void *);
+#if 0
+/*
+ * XXX not used (yet)
+ */
+int ef_mii_write __P((struct ef_softc *, int, int, int));
+int ef_mii_read __P((struct ef_softc *, int, int));
+void ef_mii_writeb __P((struct ef_softc *, int));
+#endif
 
 struct cfdriver ef_cd = {
 	NULL, "ef", DV_IFNET
@@ -179,6 +191,9 @@ ef_isapnp_attach(parent, self, aux)
 
 	printf(": address %s\n", ether_sprintf(sc->sc_arpcom.ac_enaddr));
 
+	/*
+	 * XXX this assumes there is an MII transceiver
+	 */
 	GO_WINDOW(3);
 	cfg = bus_space_read_4(iot, ioh, EP_W3_INTERNAL_CONFIG);
 	cfg &= ~(0x00f00000);
@@ -191,31 +206,21 @@ ef_isapnp_attach(parent, self, aux)
 	if (ia->ia_drq != DRQUNK)
 		isadma_cascade(ia->ia_drq);
 
-	timeout_set(&sc->sc_tick_tmo, ef_tick, sc);
-
 	bcopy(sc->sc_dv.dv_xname, ifp->if_xname, IFNAMSIZ);
 	ifp->if_softc = sc;
 	ifp->if_start = efstart;
 	ifp->if_ioctl = efioctl;
 	ifp->if_watchdog = efwatchdog;
 	ifp->if_flags =
-	    IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = ef_miibus_readreg;
-	sc->sc_mii.mii_writereg = ef_miibus_writereg;
-	sc->sc_mii.mii_statchg = ef_miibus_statchg;
-	ifmedia_init(&sc->sc_mii.mii_media, 0, ef_ifmedia_upd, ef_ifmedia_sts);
-	mii_attach(self, &sc->sc_mii, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY,
-	    0);
-	if (LIST_FIRST(&sc->sc_mii.mii_phys) == NULL) {
-		ifmedia_add(&sc->sc_mii.mii_media, IFM_ETHER|IFM_NONE, 0, NULL);
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_NONE);
-	} else
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_AUTO);
+	    IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS | IFF_MULTICAST;
 
 	if_attach(ifp);
 	ether_ifattach(ifp);
+
+#if NBPFILTER > 0
+	bpfattach(&sc->sc_arpcom.ac_if.if_bpf, ifp, DLT_EN10MB,
+	   sizeof(struct ether_header));
+#endif
 
 	sc->sc_tx_start_thresh = 20;
 
@@ -235,11 +240,11 @@ efstart(ifp)
 	int fillcnt = 0;
 	u_int32_t filler = 0;
 
-	if (!(ifp->if_flags & IFF_RUNNING) || ifq_is_oactive(&ifp->if_snd))
+	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 
 startagain:
-	m0 = ifq_deq_begin(&ifp->if_snd);
+	m0 = ifp->if_snd.ifq_head;
 	if (m0 == NULL)
 		return;
 
@@ -250,7 +255,7 @@ startagain:
 
 	if (len + pad > ETHER_MAX_LEN) {
 		ifp->if_oerrors++;
-		ifq_deq_commit(&ifp->if_snd, m0);
+		IF_DEQUEUE(&ifp->if_snd, m0);
 		m_freem(m0);
 		goto startagain;
 	}
@@ -258,8 +263,7 @@ startagain:
 	if (bus_space_read_2(iot, ioh, EF_W1_FREE_TX) < len + pad + 4) {
 		bus_space_write_2(iot, ioh, EP_COMMAND,
 		    SET_TX_AVAIL_THRESH | ((len + pad) >> 2));
-		ifq_deq_rollback(&ifp->if_snd, m0);
-		ifq_set_oactive(&ifp->if_snd);
+		ifp->if_flags |= IFF_OACTIVE;
 		return;
 	} else {
 		bus_space_write_2(iot, ioh, EP_COMMAND,
@@ -271,10 +275,10 @@ startagain:
 
 #if NBPFILTER
 	if (ifp->if_bpf)
-		bpf_mtap(ifp->if_bpf, m0, BPF_DIRECTION_OUT);
+		bpf_mtap(ifp->if_bpf, m0);
 #endif
 
-	ifq_deq_commit(&ifp->if_snd, m0);
+	IF_DEQUEUE(&ifp->if_snd, m0);
 	if (m0 == NULL) /* XXX not needed */
 		return;
 
@@ -307,7 +311,7 @@ startagain:
 			filler >>= 8;
 			filler |= m->m_data[(m->m_len & ~3) + i] << 24;
 		}
-		m0 = m_free(m);
+		MFREE(m, m0);
 		m = m0;
 	}
 
@@ -332,20 +336,37 @@ efioctl(ifp, cmd, data)
 	caddr_t data;
 {
 	struct ef_softc *sc = ifp->if_softc;
+	struct ifaddr *ifa = (struct ifaddr *)data;
 	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
 	s = splnet();
 
+	if ((error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data)) > 0) {
+		splx(s);
+		return (error);
+	}
+
 	switch (cmd) {
 	case SIOCSIFADDR:
 		ifp->if_flags |= IFF_UP;
-		efinit(sc);
-		break;
+		switch (ifa->ifa_addr->sa_family) {
+#ifdef INET
+		case AF_INET:
+			efinit(sc);
+			arp_ifinit(&sc->sc_arpcom, ifa);
+			break;
+#endif
+		default:
+			efinit(sc);
+			break;
+		}
+#if 0
 	case SIOCSIFMEDIA:
 	case SIOCGIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_mii.mii_media, cmd);
+		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
 		break;
+#endif
 	case SIOCSIFFLAGS:
 		if ((ifp->if_flags & IFF_UP) == 0 &&
 		    (ifp->if_flags & IFF_RUNNING) != 0) {
@@ -358,16 +379,20 @@ efioctl(ifp, cmd, data)
 		efsetmulti(sc);
 		break;
 
-	default:
-		error = ether_ioctl(ifp, &sc->sc_arpcom, cmd, data);
-	}
-
-	if (error == ENETRESET) {
-		if (ifp->if_flags & IFF_RUNNING) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		error = (cmd == SIOCADDMULTI) ?
+		    ether_addmulti(ifr, &sc->sc_arpcom) :
+		    ether_delmulti(ifr, &sc->sc_arpcom);
+		if (error == ENETRESET) {
 			efreset(sc);
-			efsetmulti(sc);
+			error = 0;
 		}
-		error = 0;
+		efsetmulti(sc);
+		break;
+	default:
+		error = EINVAL;
+		break;
 	}
 
 	splx(s);
@@ -381,9 +406,7 @@ efinit(sc)
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
-	int i, s;
-
-	s = splnet();
+	int i;
 
 	efstop(sc);
 
@@ -401,7 +424,7 @@ efinit(sc)
 	efcompletecmd(sc, EP_COMMAND, TX_RESET);
 
 	bus_space_write_2(iot, ioh, EP_COMMAND,
-	    SET_TX_AVAIL_THRESH | (ETHER_MAX_DIX_LEN >> 2));
+	    SET_TX_AVAIL_THRESH | (1536 >> 2));
 
 	efsetmulti(sc);
 
@@ -434,14 +457,8 @@ efinit(sc)
 	    (sc->sc_busmaster ? S_DMA_DONE : 0) | S_UP_COMPLETE |
 	    S_DOWN_COMPLETE | S_CARD_FAILURE | S_TX_COMPLETE);
 
-	mii_mediachg(&sc->sc_mii);
-
 	ifp->if_flags |= IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
-
-	splx(s);
-
-	timeout_add_sec(&sc->sc_tick_tmo, 1);
+	ifp->if_flags &= ~IFF_OACTIVE;
 
 	efstart(ifp);
 }
@@ -462,15 +479,8 @@ void
 efstop(sc)
 	struct ef_softc *sc;
 {
-	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
-
-	ifp->if_timer = 0;
-	ifp->if_flags &= ~IFF_RUNNING;
-	ifq_clr_oactive(&ifp->if_snd);
-
-	timeout_del(&sc->sc_tick_tmo);
 
 	bus_space_write_2(iot, ioh, EP_COMMAND, RX_DISABLE);
 	efcompletecmd(sc, EP_COMMAND, RX_DISCARD_TOP_PACK);
@@ -522,7 +532,7 @@ efintr(vsc)
 		if (status & S_TX_AVAIL) {
 			bus_space_write_2(iot, ioh, EP_STATUS, C_TX_AVAIL);
 			r = 1;
-			ifq_clr_oactive(&sc->sc_arpcom.ac_if.if_snd);
+			sc->sc_arpcom.ac_if.if_flags &= ~IFF_OACTIVE;
 			efstart(&sc->sc_arpcom.ac_if);
 		}
 		if (status & S_CARD_FAILURE) {
@@ -585,7 +595,7 @@ eftxstat(sc)
 		else if (i & TXS_MAX_COLLISION) {
 			sc->sc_arpcom.ac_if.if_collisions++;
 			bus_space_write_2(iot, ioh, EP_COMMAND, TX_ENABLE);
-			ifq_clr_oactive(&sc->sc_arpcom.ac_if.if_snd);
+			sc->sc_arpcom.ac_if.if_flags &= ~IFF_OACTIVE;
 		}
 		else
 			sc->sc_tx_succ_ok = (sc->sc_tx_succ_ok + 1) & 127;
@@ -660,8 +670,8 @@ efread(sc)
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
 	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
-	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 	struct mbuf *m;
+	struct ether_header *eh;
 	int len;
 
 	len = bus_space_read_2(iot, ioh, EF_W1_RX_STATUS);
@@ -708,8 +718,17 @@ efread(sc)
 		return;
 	}
 
-	ml_enqueue(&ml, m);
-	if_input(ifp, &ml);
+	ifp->if_ipackets++;
+
+	eh = mtod(m, struct ether_header *);
+
+#if NBPFILTER > 0
+	if (ifp->if_bpf)
+		bpf_mtap(ifp->if_bpf, m);
+#endif
+
+	m_adj(m, sizeof(struct ether_header));
+	ether_input(ifp, eh, m);
 }
 
 struct mbuf *
@@ -719,12 +738,14 @@ efget(sc, totlen)
 {
 	bus_space_tag_t iot = sc->sc_iot;
 	bus_space_handle_t ioh = sc->sc_ioh;
+	struct ifnet *ifp = &sc->sc_arpcom.ac_if;
 	struct mbuf *top, **mp, *m;
 	int len, pad, s;
 
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
 	if (m == NULL)
 		return (NULL);
+	m->m_pkthdr.rcvif = ifp;
 	m->m_pkthdr.len = totlen;
 	pad = ALIGN(sizeof(struct ether_header)) - sizeof(struct ether_header);
 	m->m_data += pad;
@@ -772,6 +793,10 @@ efget(sc, totlen)
 	return (top);
 }
 
+#if 0
+/*
+ * XXX not used (yet)
+ */
 #define MII_SET(sc, x) \
 	bus_space_write_2((sc)->sc_iot, (sc)->sc_ioh, EP_W4_CTRLR_STATUS, \
 	    bus_space_read_2((sc)->sc_iot, (sc)->sc_ioh, EP_W4_CTRLR_STATUS) \
@@ -800,25 +825,14 @@ ef_mii_writeb(sc, b)
 	DELAY(1);
 }
 
-void
-ef_mii_sync(sc)
-	struct ef_softc *sc;
-{
-	int i;
-
-	for (i = 0; i < 32; i++)
-		ef_mii_writeb(sc, 1);
-}
-
 int
-ef_miibus_readreg(dev, phy, reg)
-	struct device *dev;
+ef_mii_read(sc, phy, reg)
+	struct ef_softc *sc;
 	int phy, reg;
 {
-	struct ef_softc *sc = (struct ef_softc *)dev;
 	int i, ack, s, val = 0;
 
-	s = splnet();
+	s = splimp();
 
 	GO_WINDOW(4);
 	bus_space_write_2(sc->sc_iot, sc->sc_ioh, EP_W4_CTRLR_STATUS, 0);
@@ -827,7 +841,9 @@ ef_miibus_readreg(dev, phy, reg)
 	MII_SET(sc, EF_MII_DIR);
 	MII_CLR(sc, EF_MII_CLK);
 
-	ef_mii_sync(sc);
+	/* Transmit idle sequence */
+	for (i = 0; i < 32; i++)
+		ef_mii_writeb(sc, 1);
 
 	/* Transmit start sequence */
 	ef_mii_writeb(sc, 0);
@@ -883,15 +899,14 @@ ef_miibus_readreg(dev, phy, reg)
 	return (val);
 }
 
-void
-ef_miibus_writereg(dev, phy, reg, val)
-	struct device *dev;
+int
+ef_mii_write(sc, phy, reg, val)
+	struct ef_softc *sc;
 	int phy, reg, val;
 {
-	struct ef_softc *sc = (struct ef_softc *)dev;
 	int s, i;
 
-	s = splnet();
+	s = splimp();
 
 	GO_WINDOW(4);
 	bus_space_write_2(sc->sc_iot, sc->sc_ioh, EP_W4_CTRLR_STATUS, 0);
@@ -899,7 +914,8 @@ ef_miibus_writereg(dev, phy, reg, val)
 	/* Turn on xmit */
 	MII_SET(sc, EF_MII_DIR);
 
-	ef_mii_sync(sc);
+	for (i = 0; i < 32; i++)
+		ef_mii_writeb(sc, 1);
 
 	ef_mii_writeb(sc, 0);
 	ef_mii_writeb(sc, 1);
@@ -919,59 +935,7 @@ ef_miibus_writereg(dev, phy, reg, val)
 		ef_mii_writeb(sc, (val & i) ? 1 : 0);
 
 	splx(s);
-}
 
-int
-ef_ifmedia_upd(ifp)
-	struct ifnet *ifp;
-{
-	struct ef_softc *sc = ifp->if_softc;
-
-	mii_mediachg(&sc->sc_mii);
 	return (0);
 }
-
-void
-ef_ifmedia_sts(ifp, ifmr)
-	struct ifnet *ifp;
-	struct ifmediareq *ifmr;
-{
-	struct ef_softc *sc = ifp->if_softc;
-
-	mii_pollstat(&sc->sc_mii);
-	ifmr->ifm_status = sc->sc_mii.mii_media_status;
-	ifmr->ifm_active = sc->sc_mii.mii_media_active;
-}
-
-void
-ef_miibus_statchg(self)
-	struct device *self;
-{
-	struct ef_softc *sc = (struct ef_softc *)self;
-	int s;
-
-	s = splnet();
-	GO_WINDOW(3);
-	/* Set duplex bit appropriately */
-	if ((sc->sc_mii.mii_media_active & IFM_GMASK) == IFM_FDX)
-		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-		    EP_W3_MAC_CONTROL, 0x20);
-	else
-		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-		    EP_W3_MAC_CONTROL, 0x00);
-	GO_WINDOW(7);
-	splx(s);
-}
-
-void
-ef_tick(v)
-	void *v;
-{
-	struct ef_softc *sc = v;
-	int s;
-
-	s = splnet();
-	mii_tick(&sc->sc_mii);
-	splx(s);
-	timeout_add_sec(&sc->sc_tick_tmo, 1);
-}
+#endif

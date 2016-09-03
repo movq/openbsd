@@ -1,4 +1,4 @@
-/*	$OpenBSD: aux.c,v 1.29 2015/10/16 17:56:07 mmcc Exp $	*/
+/*	$OpenBSD: aux.c,v 1.13 1997/11/14 00:23:41 millert Exp $	*/
 /*	$NetBSD: aux.c,v 1.5 1997/05/13 06:15:52 mikel Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,8 +34,15 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)aux.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: aux.c,v 1.13 1997/11/14 00:23:41 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
-#include <fcntl.h>
 #include "extern.h"
 
 /*
@@ -39,13 +50,14 @@
  *
  * Auxiliary functions.
  */
-static char *save2str(char *, char *);
+static char *save2str __P((char *, char *));
 
 /*
  * Return a pointer to a dynamic copy of the argument.
  */
 char *
-savestr(char *str)
+savestr(str)
+	char *str;
 {
 	char *new;
 	int size = strlen(str) + 1;
@@ -59,7 +71,8 @@ savestr(char *str)
  * Make a copy of new argument incorporating old one.
  */
 static char *
-save2str(char *str, char *old)
+save2str(str, old)
+	char *str, *old;
 {
 	char *new;
 	int newsize = strlen(str) + 1;
@@ -81,7 +94,8 @@ save2str(char *str, char *old)
  * back to the system mailbox on exit.
  */
 void
-touch(struct message *mp)
+touch(mp)
+	struct message *mp;
 {
 
 	mp->m_flag |= MTOUCH;
@@ -94,20 +108,22 @@ touch(struct message *mp)
  * Return true if it is.
  */
 int
-isdir(char *name)
+isdir(name)
+	char name[];
 {
 	struct stat sbuf;
 
 	if (stat(name, &sbuf) < 0)
 		return(0);
-	return(S_ISDIR(sbuf.st_mode));
+	return (S_ISDIR(sbuf.st_mode));
 }
 
 /*
  * Count the number of arguments in the given string raw list.
  */
 int
-argcount(char **argv)
+argcount(argv)
+	char **argv;
 {
 	char **ap;
 
@@ -121,7 +137,9 @@ argcount(char **argv)
  * pointer (or NULL if the desired header field is not available).
  */
 char *
-hfield(char *field, struct message *mp)
+hfield(field, mp)
+	char field[];
+	struct message *mp;
 {
 	FILE *ibuf;
 	char linebuf[LINESIZE];
@@ -132,7 +150,7 @@ hfield(char *field, struct message *mp)
 	ibuf = setinput(mp);
 	if ((lc = mp->m_lines - 1) < 0)
 		return(NULL);
-	if (readline(ibuf, linebuf, LINESIZE, NULL) < 0)
+	if (readline(ibuf, linebuf, LINESIZE) < 0)
 		return(NULL);
 	while (lc > 0) {
 		if ((lc = gethfield(ibuf, linebuf, lc, &colon)) < 0)
@@ -150,7 +168,11 @@ hfield(char *field, struct message *mp)
  * Must deal with \ continuations & other such fraud.
  */
 int
-gethfield(FILE *f, char *linebuf, int rem, char **colon)
+gethfield(f, linebuf, rem, colon)
+	FILE *f;
+	char linebuf[];
+	int rem;
+	char **colon;
 {
 	char line2[LINESIZE];
 	char *cp, *cp2;
@@ -159,11 +181,10 @@ gethfield(FILE *f, char *linebuf, int rem, char **colon)
 	for (;;) {
 		if (--rem < 0)
 			return(-1);
-		if ((c = readline(f, linebuf, LINESIZE, NULL)) <= 0)
+		if ((c = readline(f, linebuf, LINESIZE)) <= 0)
 			return(-1);
-		for (cp = linebuf;
-		    isprint((unsigned char)*cp) && *cp != ' ' && *cp != ':';
-		    cp++)
+		for (cp = linebuf; isprint(*cp) && *cp != ' ' && *cp != ':';
+		     cp++)
 			;
 		if (*cp != ':' || cp == linebuf)
 			continue;
@@ -182,7 +203,7 @@ gethfield(FILE *f, char *linebuf, int rem, char **colon)
 			ungetc(c = getc(f), f);
 			if (c != ' ' && c != '\t')
 				break;
-			if ((c = readline(f, line2, LINESIZE, NULL)) < 0)
+			if ((c = readline(f, line2, LINESIZE)) < 0)
 				break;
 			rem--;
 			for (cp2 = line2; *cp2 == ' ' || *cp2 == '\t'; cp2++)
@@ -206,7 +227,9 @@ gethfield(FILE *f, char *linebuf, int rem, char **colon)
  */
 
 char*
-ishfield(char *linebuf, char *colon, char *field)
+ishfield(linebuf, colon, field)
+	char linebuf[], field[];
+	char *colon;
 {
 	char *cp = colon;
 
@@ -223,32 +246,23 @@ ishfield(char *linebuf, char *colon, char *field)
 
 /*
  * Copy a string, lowercasing it as we go.  ``dsize'' should be
- * the real size (not len) of the dest string (guarantee NUL term).
+ * the real size (not len) of the dest string (guarantee NULL term).
  */
-size_t
-istrlcpy(char *dst, const char *src, size_t dsize)
+void
+istrncpy(dest, src, dsize)
+	char *dest, *src;
+	size_t dsize;
 {
-	char *d = dst;
-	const char *s = src;
-	size_t n = dsize;
 
-	/* Copy as many bytes as will fit */
-	if (n != 0 && --n != 0) {
-		do {
-			if ((*d++ = tolower((unsigned char)*s++)) == 0)
-				break;
-		} while (--n != 0);
+	if (dsize != 0) {
+		while (--dsize != 0 && *src != '\0') {
+			if (isupper(*src))
+				*dest++ = tolower(*src++);
+			else
+				*dest++ = *src++;
+		}
+		*dest = '\0';
 	}
-
-	/* Not enough room in dst, add NUL and traverse rest of src */
-	if (n == 0) {
-		if (dsize != 0)
-			*d = '\0';		/* NUL-terminate dst */
-		while (*s++)
-			;
-	}
-
-	return(s - src - 1);	/* count does not include NUL */
 }
 
 /*
@@ -256,12 +270,13 @@ istrlcpy(char *dst, const char *src, size_t dsize)
  * commands.  All but the current file pointer are saved on
  * the stack.
  */
+
 static	int	ssp;			/* Top of file stack */
 struct sstack {
 	FILE	*s_file;		/* File we were in. */
 	int	s_cond;			/* Saved state of conditionals */
 	int	s_loading;		/* Loading .mailrc, etc. */
-} sstack[OPEN_MAX];
+} sstack[NOFILE];
 
 /*
  * Pushdown current input file and switch to a new one.
@@ -269,7 +284,8 @@ struct sstack {
  * that they are no longer reading from a tty (in all probability).
  */
 int
-source(void *v)
+source(v)
+	void *v;
 {
 	char **arglist = v;
 	FILE *fi;
@@ -278,10 +294,10 @@ source(void *v)
 	if ((cp = expand(*arglist)) == NULL)
 		return(1);
 	if ((fi = Fopen(cp, "r")) == NULL) {
-		warn("%s", cp);
+		warn(cp);
 		return(1);
 	}
-	if (ssp >= OPEN_MAX - 1) {
+	if (ssp >= NOFILE - 1) {
 		puts("Too much \"sourcing\" going on.");
 		(void)Fclose(fi);
 		return(1);
@@ -302,9 +318,8 @@ source(void *v)
  * Update the "sourcing" flag as appropriate.
  */
 int
-unstack(void)
+unstack()
 {
-
 	if (ssp <= 0) {
 		puts("\"Source\" stack over-pop.");
 		sourcing = 0;
@@ -327,14 +342,18 @@ unstack(void)
  * This is nifty for the shell.
  */
 void
-alter(char *name)
+alter(name)
+	char *name;
 {
-	struct timespec ts[2];
+	struct stat sb;
+	struct timeval tv[2];
 
-	clock_gettime(CLOCK_REALTIME, &ts[0]);
-	ts[0].tv_sec++;
-	ts[1].tv_nsec = UTIME_OMIT;
-	(void)utimensat(AT_FDCWD, name, ts, 0);
+	if (stat(name, &sb))
+		return;
+	(void) gettimeofday(&tv[0], (struct timezone *)0);
+	tv[0].tv_sec++;
+	TIMESPEC_TO_TIMEVAL(&tv[1], &sb.st_mtimespec);
+	(void)utimes(name, tv);
 }
 
 /*
@@ -342,7 +361,8 @@ alter(char *name)
  * return true if it is all blanks and tabs.
  */
 int
-blankline(char *linebuf)
+blankline(linebuf)
+	char linebuf[];
 {
 	char *cp;
 
@@ -358,7 +378,9 @@ blankline(char *linebuf)
  * before returning it.
  */
 char *
-nameof(struct message *mp, int reptype)
+nameof(mp, reptype)
+	struct message *mp;
+	int reptype;
 {
 	char *cp, *cp2;
 
@@ -379,7 +401,8 @@ nameof(struct message *mp, int reptype)
  * Ignore it.
  */
 char *
-skip_comment(char *cp)
+skip_comment(cp)
+	char *cp;
 {
 	int nesting = 1;
 
@@ -405,7 +428,8 @@ skip_comment(char *cp)
  * of "host-phrase."
  */
 char *
-skin(char *name)
+skin(name)
+	char *name;
 {
 	char *nbuf, *bufend, *cp, *cp2;
 	int c, gotlt, lastsp;
@@ -417,12 +441,12 @@ skin(char *name)
 		return(name);
 
 	/* We assume that length(input) <= length(output) */
-	if ((nbuf = malloc(strlen(name) + 1)) == NULL)
-		err(1, "malloc");
+	if ((nbuf = (char *)malloc(strlen(name) + 1)) == NULL)
+		errx(1, "Out of memory");
 	gotlt = 0;
 	lastsp = 0;
 	bufend = nbuf;
-	for (cp = name, cp2 = bufend; (c = (unsigned char)*cp++) != '\0'; ) {
+	for (cp = name, cp2 = bufend; (c = *cp++) != '\0'; ) {
 		switch (c) {
 		case '(':
 			cp = skip_comment(cp);
@@ -434,13 +458,13 @@ skin(char *name)
 			 * Start of a "quoted-string".
 			 * Copy it in its entirety.
 			 */
-			while ((c = (unsigned char)*cp) != '\0') {
+			while ((c = *cp) != '\0') {
 				cp++;
 				if (c == '"')
 					break;
 				if (c != '\\')
 					*cp2++ = c;
-				else if ((c = (unsigned char)*cp) != '\0') {
+				else if ((c = *cp) != '\0') {
 					*cp2++ = c;
 					cp++;
 				}
@@ -449,10 +473,10 @@ skin(char *name)
 			break;
 
 		case ' ':
-			if (strncmp(cp, "at ", 3) == 0)
+			if (cp[0] == 'a' && cp[1] == 't' && cp[2] == ' ')
 				cp += 3, *cp2++ = '@';
 			else
-			if (strncmp(cp, "@ ", 2) == 0)
+			if (cp[0] == '@' && cp[1] == ' ')
 				cp += 2, *cp2++ = '@';
 			else
 				lastsp = 1;
@@ -467,12 +491,12 @@ skin(char *name)
 		case '>':
 			if (gotlt) {
 				gotlt = 0;
-				while ((c = (unsigned char)*cp) && c != ',') {
+				while ((c = *cp) && c != ',') {
 					cp++;
 					if (c == '(')
 						cp = skip_comment(cp);
 					else if (c == '"')
-						while ((c = (unsigned char)*cp) != '\0') {
+						while ((c = *cp) != '\0') {
 							cp++;
 							if (c == '"')
 								break;
@@ -491,9 +515,9 @@ skin(char *name)
 				*cp2++ = ' ';
 			}
 			*cp2++ = c;
-			if (c == ',' && *cp == ' ' && !gotlt) {
+			if (c == ',' && !gotlt) {
 				*cp2++ = ' ';
-				while (*++cp == ' ')
+				for (; *cp == ' '; cp++)
 					;
 				lastsp = 0;
 				bufend = cp2;
@@ -502,8 +526,8 @@ skin(char *name)
 	}
 	*cp2 = 0;
 
-	if ((cp = realloc(nbuf, strlen(nbuf) + 1)) != NULL)
-		nbuf = cp;
+	if ((nbuf = (char *)realloc(nbuf, strlen(nbuf) + 1)) == NULL)
+		errx(1, "Out of memory");
 	return(nbuf);
 }
 
@@ -515,7 +539,9 @@ skin(char *name)
  *	2 -- get sender's name for Reply
  */
 char *
-name1(struct message *mp, int reptype)
+name1(mp, reptype)
+	struct message *mp;
+	int reptype;
 {
 	char namebuf[LINESIZE];
 	char linebuf[LINESIZE];
@@ -529,7 +555,7 @@ name1(struct message *mp, int reptype)
 		return(cp);
 	ibuf = setinput(mp);
 	namebuf[0] = '\0';
-	if (readline(ibuf, linebuf, LINESIZE, NULL) < 0)
+	if (readline(ibuf, linebuf, LINESIZE) < 0)
 		return(savestr(namebuf));
 newname:
 	for (cp = linebuf; *cp && *cp != ' '; cp++)
@@ -540,7 +566,7 @@ newname:
 	     *cp && *cp != ' ' && *cp != '\t' && cp2 < namebuf + LINESIZE - 1;)
 		*cp2++ = *cp++;
 	*cp2 = '\0';
-	if (readline(ibuf, linebuf, LINESIZE, NULL) < 0)
+	if (readline(ibuf, linebuf, LINESIZE) < 0)
 		return(savestr(namebuf));
 	if ((cp = strchr(linebuf, 'F')) == NULL)
 		return(savestr(namebuf));
@@ -560,8 +586,9 @@ newname:
 				first = 0;
 			} else
 				cp2 = strrchr(namebuf, '!') + 1;
-			strlcpy(cp2, cp, sizeof(namebuf) - (cp2 - namebuf) - 1);
-			strlcat(namebuf, "!", sizeof(namebuf));
+			strncpy(cp2, cp, sizeof(namebuf) - (cp2 - namebuf) - 2);
+			namebuf[sizeof(namebuf) - 2] = '\0';
+			strcat(namebuf, "!");
 			goto newname;
 		}
 		cp++;
@@ -573,7 +600,9 @@ newname:
  * Count the occurances of c in str
  */
 int
-charcount(char *str, int c)
+charcount(str, c)
+	char *str;
+	int c;
 {
 	char *cp;
 	int i;
@@ -585,10 +614,38 @@ charcount(char *str, int c)
 }
 
 /*
+ * Are any of the characters in the two strings the same?
+ */
+int
+anyof(s1, s2)
+	char *s1, *s2;
+{
+
+	while (*s1)
+		if (strchr(s2, *s1++))
+			return(1);
+	return(0);
+}
+
+/*
+ * Convert c to upper case
+ */
+int
+raise(c)
+	int c;
+{
+
+	if (islower(c))
+		return(toupper(c));
+	return(c);
+}
+
+/*
  * Copy s1 to s2, return pointer to null in s2.
  */
 char *
-copy(char *s1, char *s2)
+copy(s1, s2)
+	char *s1, *s2;
 {
 
 	while ((*s2++ = *s1++) != '\0')
@@ -600,7 +657,9 @@ copy(char *s1, char *s2)
  * See if the given header field is supposed to be ignored.
  */
 int
-isign(char *field, struct ignoretab ignore[2])
+isign(field, ignore)
+	char *field;
+	struct ignoretab ignore[2];
 {
 	char realfld[LINESIZE];
 
@@ -610,7 +669,7 @@ isign(char *field, struct ignoretab ignore[2])
 	 * Lower-case the string, so that "Status" and "status"
 	 * will hash to the same place.
 	 */
-	istrlcpy(realfld, field, sizeof(realfld));
+	istrncpy(realfld, field, sizeof(realfld));
 	if (ignore[1].i_count > 0)
 		return(!member(realfld, ignore + 1));
 	else
@@ -618,7 +677,9 @@ isign(char *field, struct ignoretab ignore[2])
 }
 
 int
-member(char *realfield, struct ignoretab *table)
+member(realfield, table)
+	char *realfield;
+	struct ignoretab *table;
 {
 	struct ignore *igp;
 
@@ -627,17 +688,4 @@ member(char *realfield, struct ignoretab *table)
 		    equal(igp->i_field, realfield))
 			return(1);
 	return(0);
-}
-
-void
-clearnew(void)
-{
-	struct message *mp;
-
-	for (mp = &message[0]; mp < &message[msgCount]; mp++) {
-		if (mp->m_flag & MNEW) {
-			mp->m_flag &= ~MNEW;
-			mp->m_flag |= MSTATUS;
-		}
-	}
 }

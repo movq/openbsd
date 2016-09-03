@@ -1,4 +1,4 @@
-/*	$OpenBSD: du.c,v 1.32 2016/08/24 03:13:45 guenther Exp $	*/
+/*	$OpenBSD: du.c,v 1.5 1998/02/16 09:23:06 deraadt Exp $	*/
 /*	$NetBSD: du.c,v 1.11 1996/10/18 07:20:35 thorpej Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,20 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)du.c	8.5 (Berkeley) 5/4/95";
+#else
+static char rcsid[] = "$OpenBSD: du.c,v 1.5 1998/02/16 09:23:06 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -40,76 +58,56 @@
 #include <err.h>
 #include <errno.h>
 #include <fts.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/tree.h>
 #include <unistd.h>
-#include <util.h>
 
-
-int	 linkchk(FTSENT *);
-void	 prtout(int64_t, char *, int);
-void	 usage(void);
+int	 linkchk __P((FTSENT *));
+void	 usage __P((void));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	FTS *fts;
 	FTSENT *p;
-	long blocksize;
-	int64_t totalblocks;
-	int ftsoptions, listfiles, maxdepth;
-	int Hflag, Lflag, cflag, hflag, kflag;
-	int ch, notused, rval;
+	long blocksize, totalblocks;
+	int ftsoptions, listdirs, listfiles;
+	int Hflag, Lflag, Pflag, aflag, ch, cflag, kflag, notused, rval, sflag;
 	char **save;
-	const char *errstr;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	save = argv;
-	Hflag = Lflag = cflag = hflag = kflag = listfiles = 0;
+	Hflag = Lflag = Pflag = aflag = cflag = kflag = sflag = 0;
 	totalblocks = 0;
 	ftsoptions = FTS_PHYSICAL;
-	maxdepth = -1;
-	while ((ch = getopt(argc, argv, "HLPacd:hkrsx")) != -1)
+	while ((ch = getopt(argc, argv, "HLPacksxr")) != -1)
 		switch (ch) {
 		case 'H':
 			Hflag = 1;
-			Lflag = 0;
+			Lflag = Pflag = 0;
 			break;
 		case 'L':
 			Lflag = 1;
-			Hflag = 0;
+			Hflag = Pflag = 0;
 			break;
 		case 'P':
+			Pflag = 1;
 			Hflag = Lflag = 0;
 			break;
 		case 'a':
-			listfiles = 1;
+			aflag = 1;
 			break;
 		case 'c':
 			cflag = 1;
 			break;
-		case 'd':
-			maxdepth = strtonum(optarg, 0, INT_MAX, &errstr);
-			if (errstr) {
-				warnx("max depth %s: %s", optarg, errstr);
-				usage();
-			}
-			break;
-		case 'h':
-			hflag = 1;
-			kflag = 0;
-			break;
 		case 'k':
+			blocksize = 1024;
 			kflag = 1;
-			hflag = 0;
 			break;
 		case 's':
-			maxdepth = 0;
+			sflag = 1;
 			break;
 		case 'r':
 			break;
@@ -142,8 +140,16 @@ main(int argc, char *argv[])
 		ftsoptions |= FTS_LOGICAL;
 	}
 
-	if (maxdepth == -1)
-		maxdepth = INT_MAX;
+	if (aflag) {
+		if (sflag)
+			usage();
+		listdirs = listfiles = 1;
+	} else if (sflag)
+		listdirs = listfiles = 0;
+	else {
+		listfiles = 0;
+		listdirs = 1;
+	}
 
 	if (!*argv) {
 		argv = save;
@@ -151,11 +157,7 @@ main(int argc, char *argv[])
 		argv[1] = NULL;
 	}
 
-	if (hflag)
-		blocksize = 512;
-	else if (kflag)
-		blocksize = 1024;
-	else
+	if (!kflag)
 		(void)getbsize(&notused, &blocksize);
 	blocksize /= 512;
 
@@ -176,17 +178,17 @@ main(int argc, char *argv[])
 			 * or directories and this is post-order of the
 			 * root of a traversal, display the total.
 			 */
-			if (p->fts_level <= maxdepth)
-				prtout(howmany(p->fts_number,
-				    (unsigned long)blocksize), p->fts_path,
-				    hflag);
+			if (listdirs || (!listfiles && !p->fts_level))
+				(void)printf("%ld\t%s\n",
+				    howmany(p->fts_number, blocksize),
+				    p->fts_path);
 			break;
 		case FTS_DC:			/* Ignore. */
 			break;
 		case FTS_DNR:			/* Warn, continue. */
 		case FTS_ERR:
 		case FTS_NS:
-			warnc(p->fts_errno, "%s", p->fts_path);
+			warnx("%s: %s", p->fts_path, strerror(p->fts_errno));
 			rval = 1;
 			break;
 		default:
@@ -196,130 +198,58 @@ main(int argc, char *argv[])
 			 * If listing each file, or a non-directory file was
 			 * the root of a traversal, display the total.
 			 */
-			if ((listfiles && p->fts_level <= maxdepth) ||
-			    p->fts_level == FTS_ROOTLEVEL)
-				prtout(howmany(p->fts_statp->st_blocks,
-				    blocksize), p->fts_path, hflag);
+			if (listfiles || !p->fts_level)
+				(void)printf("%qd\t%s\n",
+				    howmany(p->fts_statp->st_blocks, blocksize),
+				    p->fts_path);
 			p->fts_parent->fts_number += p->fts_statp->st_blocks;
 			if (cflag)
 				totalblocks += p->fts_statp->st_blocks;
 		}
 	if (errno)
 		err(1, "fts_read");
-	if (cflag) {
-		prtout(howmany(totalblocks, blocksize), "total", hflag);
-	}
-	fts_close(fts);
-	exit(rval);
+	if (cflag)
+		(void)printf("%ld\ttotal\n",
+		    howmany(totalblocks, blocksize));
+	exit(0);
 }
 
-
-struct links_entry {
-	RB_ENTRY(links_entry) entry;
-	struct links_entry *fnext;
-	int	 links;
-	dev_t	 dev;
-	ino_t	 ino;
-};
-
-static int
-links_cmp(struct links_entry *e1, struct links_entry *e2)
-{
-	if (e1->dev == e2->dev) {
-		if (e1->ino == e2->ino)
-			return (0);
-		else
-			return (e1->ino < e2->ino ? -1 : 1);
-	}
-	else
-		return (e1->dev < e2->dev ? -1 : 1);
-}
-
-RB_HEAD(ltree, links_entry) links = RB_INITIALIZER(&links);
-
-RB_GENERATE_STATIC(ltree, links_entry, entry, links_cmp);
-
+typedef struct _ID {
+	dev_t	dev;
+	ino_t	inode;
+} ID;
 
 int
-linkchk(FTSENT *p)
+linkchk(p)
+	FTSENT *p;
 {
-	static struct links_entry *free_list = NULL;
-	static int stop_allocating = 0;
-	struct links_entry ltmp, *le;
-	struct stat *st;
+	static ID *files;
+	static int maxfiles, nfiles;
+	ID *fp, *start;
+	ino_t ino;
+	dev_t dev;
 
-	st = p->fts_statp;
+	ino = p->fts_statp->st_ino;
+	dev = p->fts_statp->st_dev;
+	if ((start = files) != NULL)
+		for (fp = start + nfiles - 1; fp >= start; --fp)
+			if (ino == fp->inode && dev == fp->dev)
+				return (1);
 
-	ltmp.ino = st->st_ino;
-	ltmp.dev = st->st_dev;
-
-	le = RB_FIND(ltree, &links, &ltmp);
-	if (le != NULL) {
-		/*
-		 * Save memory by releasing an entry when we've seen
-		 * all of it's links.
-		 */
-		if (--le->links <= 0) {
-			RB_REMOVE(ltree, &links, le);
-			/* Recycle this node through the free list */
-			if (stop_allocating) {
-				free(le);
-			} else {
-				le->fnext = free_list;
-				free_list = le;
-			}
-		}
-		return (1);
-	}
-
-	if (stop_allocating)
-		return (0);
-
-	/* Add this entry to the links cache. */
-	if (free_list != NULL) {
-		/* Pull a node from the free list if we can. */
-		le = free_list;
-		free_list = le->fnext;
-	} else
-		/* Malloc one if we have to. */
-		le = malloc(sizeof(struct links_entry));
-
-	if (le == NULL) {
-		stop_allocating = 1;
-		warnx("No more memory for tracking hard links");
-		return (0);
-	}
-
-	le->dev = st->st_dev;
-	le->ino = st->st_ino;
-	le->links = st->st_nlink - 1;
-	le->fnext = NULL;
-
-	RB_INSERT(ltree, &links, le);
-
+	if (nfiles == maxfiles && (files = realloc((char *)files,
+	    (u_int)(sizeof(ID) * (maxfiles += 128)))) == NULL)
+		err(1, "can't allocate memory");
+	files[nfiles].inode = ino;
+	files[nfiles].dev = dev;
+	++nfiles;
 	return (0);
 }
 
 void
-prtout(int64_t size, char *path, int hflag)
-{
-	if (!hflag)
-		(void)printf("%lld\t%s\n", size, path);
-	else {
-		char buf[FMT_SCALED_STRSIZE];
-
-		if (fmt_scaled(size * 512, buf) == 0)
-			(void)printf("%s\t%s\n", buf, path);
-		else
-			(void)printf("%lld\t%s\n", size, path);
-	}
-}
-
-void
-usage(void)
+usage()
 {
 
 	(void)fprintf(stderr,
-	    "usage: du [-achkrsx] [-H | -L | -P] [-d depth] [file ...]\n");
+		"usage: du [-H | -L | -P] [-a | -s] [-ckrx] [file ...]\n");
 	exit(1);
 }

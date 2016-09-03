@@ -1,4 +1,4 @@
-/*	$OpenBSD: limits.h,v 1.18 2015/04/30 13:42:08 millert Exp $	*/
+/*	$OpenBSD: limits.h,v 1.6 1998/08/06 15:03:55 pefo Exp $	*/
 /*	$NetBSD: limits.h,v 1.1 1996/09/30 16:34:28 ws Exp $	*/
 
 /*-
@@ -32,21 +32,54 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _POWERPC_LIMITS_H_
-#define _POWERPC_LIMITS_H_
+#ifndef _MACHINE_LIMITS_H_
+#define _MACHINE_LIMITS_H_
 
-#include <sys/cdefs.h>
+#define	CHAR_BIT	8		/* bits per char		*/
+#define	MB_LEN_MAX	1		/* no multibyte characters	*/
+#define	CHAR_MIN	0		/* min value in char		*/
+#define	CHAR_MAX	0xff		/* max value in char		*/
+#define	UCHAR_MAX	0xff		/* max value in unsigned char	*/
+#define	SCHAR_MIN	(-0x7f-1)	/* min value for a signed char	*/
+#define	SCHAR_MAX	0x7f		/* max value for a signed char	*/
 
-#if __POSIX_VISIBLE || __XPG_VISIBLE
-#define	SSIZE_MAX	LONG_MAX	/* max value for a ssize_t */
-#endif
+#define	SHRT_MIN	(-0x7fff-1)	/* min value in short		*/
+#define	SHRT_MAX	0x7fff		/* max value in short		*/
+#define	USHRT_MAX	0xffff		/* max value in unsigned short	*/
 
-#if __BSD_VISIBLE
-#define	SIZE_T_MAX	ULONG_MAX	/* max value for a size_t (historic) */
+#define	INT_MIN		(-0x7fffffff-1)	/* min value in int		*/
+#define	INT_MAX		0x7fffffff	/* max value in int		*/
+#define	UINT_MAX	0xffffffff	/* max value in unsigned int	*/
+
+#define	LONG_MIN	(-0x7fffffff-1)	/* min value in long		*/
+#define	LONG_MAX	0x7fffffff	/* max value in long		*/
+#define	ULONG_MAX	0xffffffff	/* max value in unsigned long	*/
+
+#if !defined(_ANSI_SOURCE)
+#define SSIZE_MAX	INT_MAX		/* max value for a ssize_t */  
+
+#if !defined(_POSIX_SOURCE) && !defined(_XOPEN_SOURCE)
+#define	SIZE_T_MAX	UINT_MAX	/* max value for a size_t */
+
+#define	UID_MAX		UINT_MAX	/* max value for a uid_t */
+#define	GID_MAX		UINT_MAX	/* max value for a gid_t */
 
 #define	UQUAD_MAX	0xffffffffffffffffULL		/* max unsigned quad */
 #define	QUAD_MAX	0x7fffffffffffffffLL		/* max signed quad */
 #define	QUAD_MIN	(-0x7fffffffffffffffLL-1)	/* min signed quad */
-#endif	/* __BSD_VISIBLE */
+#endif	/* !_POSIX_SOURCE && !_XOPEN_SOURCE */
+#endif	/* !_ANSI_SOURCE */
 
-#endif /* _POWERPC_LIMITS_H_ */
+#if (!defined(_ANSI_SOURCE)&&!defined(_POSIX_SOURCE)) || defined(_XOPEN_SOURCE)
+#define LONG_BIT	32
+#define WORD_BIT	32
+
+#define DBL_DIG		15
+#define DBL_MAX		1.797693134862316E+308
+#define DBL_MIN		2.225073858507201E-308
+
+#define FLT_DIG		6
+#define FLT_MAX		3.40282347E+38F
+#define FLT_MIN		1.17549435E-38F
+#endif
+#endif /* _MACHINE_LIMITS_H_ */

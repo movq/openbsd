@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfs.h,v 1.52 2014/03/24 00:19:48 guenther Exp $	*/
+/*	$OpenBSD: nfs.h,v 1.7 1998/05/25 09:12:26 deraadt Exp $	*/
 /*	$NetBSD: nfs.h,v 1.10.4.1 1996/05/27 11:23:56 fvdl Exp $	*/
 
 /*
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -38,25 +42,38 @@
 #ifndef _NFS_NFS_H_
 #define _NFS_NFS_H_
 
+/*
+ * Tunable constants for nfs
+ */
+
+#define	NFS_MAXIOVEC	34
 #define NFS_TICKINTVL	5		/* Desired time for a tick (msec) */
 #define NFS_HZ		(hz / nfs_ticks) /* Ticks/sec */
 #define	NFS_TIMEO	(1 * NFS_HZ)	/* Default timeout = 1 second */
 #define	NFS_MINTIMEO	(1 * NFS_HZ)	/* Min timeout to use */
 #define	NFS_MAXTIMEO	(60 * NFS_HZ)	/* Max timeout to backoff to */
 #define	NFS_MINIDEMTIMEO (5 * NFS_HZ)	/* Min timeout for non-idempotent ops*/
-#define	NFS_TIMEOUTMUL	2		/* Timeout/Delay multiplier */
 #define	NFS_MAXREXMIT	100		/* Stop counting after this many */
+#define	NFS_MAXWINDOW	1024		/* Max number of outstanding requests */
 #define	NFS_RETRANS	10		/* Num of retrans for soft mounts */
 #define	NFS_MAXGRPS	16		/* Max. size of groups list */
+#ifndef NFS_MINATTRTIMO
 #define	NFS_MINATTRTIMO 5		/* Attribute cache timeout in sec */
+#endif
+#ifndef NFS_MAXATTRTIMO
 #define	NFS_MAXATTRTIMO 60
+#endif
 #define	NFS_WSIZE	8192		/* Def. write data size <= 8192 */
 #define	NFS_RSIZE	8192		/* Def. read data size <= 8192 */
 #define NFS_READDIRSIZE	8192		/* Def. readdir size */
 #define	NFS_DEFRAHEAD	1		/* Def. read ahead # blocks */
 #define	NFS_MAXRAHEAD	4		/* Max. read ahead # blocks */
+#define	NFS_MAXUIDHASH	64		/* Max. # of hashed uid entries/mp */
 #define	NFS_MAXASYNCDAEMON 	20	/* Max. number async_daemons runable */
-
+#define NFS_MAXGATHERDELAY	100	/* Max. write gather delay (msec) */
+#ifndef NFS_GATHERDELAY
+#define NFS_GATHERDELAY		10	/* Default write gather delay (msec) */
+#endif
 /*
  * Ideally, NFS_DIRBLKSIZ should be bigger, but I've seen servers with
  * broken NFS/ethernet drivers that won't work with anything bigger (Linux..)
@@ -67,6 +84,7 @@
 /*
  * Oddballs
  */
+#define	NMOD(a)		((a) % nfs_asyncdaemons)
 #define NFS_CMPFH(n, f, s) \
 	((n)->n_fhsize == (s) && !bcmp((caddr_t)(n)->n_fhp, (caddr_t)(f), (s)))
 #define NFS_ISV3(v)	(VFSTONFS((v)->v_mount)->nm_flag & NFSMNT_NFSV3)
@@ -76,6 +94,8 @@
 
 /*
  * sys/malloc.h needs M_NFSDIROFF, M_NFSRVDESC and M_NFSBIGFH added.
+ * The VA_EXCLUSIVE flag should be added for va_vaflags and set for an
+ * exclusive create.
  */
 #ifndef M_NFSRVDESC
 #define M_NFSRVDESC	M_TEMP
@@ -86,6 +106,9 @@
 #ifndef M_NFSBIGFH
 #define M_NFSBIGFH	M_TEMP
 #endif
+#ifndef VA_EXCLUSIVE
+#define VA_EXCLUSIVE	0
+#endif
 
 /*
  * The B_INVAFTERWRITE flag should be set to whatever is required by the
@@ -94,8 +117,41 @@
 #define	B_INVAFTERWRITE	B_INVAL
 
 /*
- * Structures for the nfssvc(2) syscall.
- * Not that anyone besides nfsd(8) should ever use it.
+ * The IO_METASYNC flag should be implemented for local file systems.
+ * (Until then, it is nothin at all.)
+ */
+#ifndef IO_METASYNC
+#define IO_METASYNC	0
+#endif
+
+/*
+ * Set the attribute timeout based on how recently the file has been modified.
+ */
+#if 0 /* replaced by nfs_attrtimeo() in nfs_subs.c */
+#define	NFS_ATTRTIMEO(np) \
+	((((np)->n_flag & NMODIFIED) || \
+	 (time.tv_sec - (np)->n_mtime) / 10 < NFS_MINATTRTIMO) ? NFS_MINATTRTIMO : \
+	 ((time.tv_sec - (np)->n_mtime) / 10 > NFS_MAXATTRTIMO ? NFS_MAXATTRTIMO : \
+	  (time.tv_sec - (np)->n_mtime) / 10))
+#endif
+
+/*
+ * Expected allocation sizes for major data structures. If the actual size
+ * of the structure exceeds these sizes, then malloc() will be allocating
+ * almost twice the memory required. This is used in nfs_init() to warn
+ * the sysadmin that the size of a structure should be reduced.
+ * (These sizes are always a power of 2. If the kernel malloc() changes
+ *  to one that does not allocate space in powers of 2 size, then this all
+ *  becomes bunk!)
+ */
+#define NFS_NODEALLOC	256
+#define NFS_MNTALLOC	512
+#define NFS_SVCALLOC	256
+#define NFS_UIDALLOC	128
+
+/*
+ * Structures for the nfssvc(2) syscall. Not that anyone but nfsd and mount_nfs
+ * should ever try and use it.
  */
 struct nfsd_args {
 	int	sock;		/* Socket to serve */
@@ -106,54 +162,65 @@ struct nfsd_args {
 struct nfsd_srvargs {
 	struct nfsd	*nsd_nfsd;	/* Pointer to in kernel nfsd struct */
 	uid_t		nsd_uid;	/* Effective uid mapped to cred */
-	u_int32_t	nsd_haddr;	/* IP address of client */
-	struct xucred	nsd_cr;		/* Cred. uid maps to */
+	u_int32_t	nsd_haddr;	/* Ip address of client */
+	struct ucred	nsd_cr;		/* Cred. uid maps to */
 	int		nsd_authlen;	/* Length of auth string (ret) */
 	u_char		*nsd_authstr;	/* Auth string (ret) */
-	int		nsd_verflen;	/* and the verifier */
+	int		nsd_verflen;	/* and the verfier */
 	u_char		*nsd_verfstr;
 	struct timeval	nsd_timestamp;	/* timestamp from verifier */
 	u_int32_t	nsd_ttl;	/* credential ttl (sec) */
+	NFSKERBKEY_T	nsd_key;	/* Session key */
+};
+
+struct nfsd_cargs {
+	char		*ncd_dirp;	/* Mount dir path */
+	uid_t		ncd_authuid;	/* Effective uid */
+	int		ncd_authtype;	/* Type of authenticator */
+	int		ncd_authlen;	/* Length of authenticator string */
+	u_char		*ncd_authstr;	/* Authenticator string */
+	int		ncd_verflen;	/* and the verifier */
+	u_char		*ncd_verfstr;
+	NFSKERBKEY_T	ncd_key;	/* Session key */
 };
 
 /*
  * Stats structure
  */
 struct nfsstats {
-	uint64_t	attrcache_hits;
-	uint64_t	attrcache_misses;
-	uint64_t	lookupcache_hits;
-	uint64_t	lookupcache_misses;
-	uint64_t	direofcache_hits;
-	uint64_t	direofcache_misses;
-	uint64_t	biocache_reads;
-	uint64_t	read_bios;
-	uint64_t	read_physios;
-	uint64_t	biocache_writes;
-	uint64_t	write_bios;
-	uint64_t	write_physios;
-	uint64_t	biocache_readlinks;
-	uint64_t	readlink_bios;
-	uint64_t	biocache_readdirs;
-	uint64_t	readdir_bios;
-	uint64_t	rpccnt[NFS_NPROCS];
-	uint64_t	rpcretries;
-	uint64_t	srvrpccnt[NFS_NPROCS];
-	uint64_t	srvrpc_errs;
-	uint64_t	srv_errs;
-	uint64_t	rpcrequests;
-	uint64_t	rpctimeouts;
-	uint64_t	rpcunexpected;
-	uint64_t	rpcinvalid;
-	uint64_t	srvcache_inproghits;
-	uint64_t	srvcache_idemdonehits;
-	uint64_t	srvcache_nonidemdonehits;
-	uint64_t	srvcache_misses;
-	uint64_t	forcedsync;
-	uint64_t	srvnqnfs_leases;
-	uint64_t	srvnqnfs_maxleases;
-	uint64_t	srvnqnfs_getleases;
-	uint64_t	srvvop_writes;
+	int	attrcache_hits;
+	int	attrcache_misses;
+	int	lookupcache_hits;
+	int	lookupcache_misses;
+	int	direofcache_hits;
+	int	direofcache_misses;
+	int	biocache_reads;
+	int	read_bios;
+	int	read_physios;
+	int	biocache_writes;
+	int	write_bios;
+	int	write_physios;
+	int	biocache_readlinks;
+	int	readlink_bios;
+	int	biocache_readdirs;
+	int	readdir_bios;
+	int	rpccnt[NFS_NPROCS];
+	int	rpcretries;
+	int	srvrpccnt[NFS_NPROCS];
+	int	srvrpc_errs;
+	int	srv_errs;
+	int	rpcrequests;
+	int	rpctimeouts;
+	int	rpcunexpected;
+	int	rpcinvalid;
+	int	srvcache_inproghits;
+	int	srvcache_idemdonehits;
+	int	srvcache_nonidemdonehits;
+	int	srvcache_misses;
+	int	srvnqnfs_leases;
+	int	srvnqnfs_maxleases;
+	int	srvnqnfs_getleases;
+	int	srvvop_writes;
 };
 
 /*
@@ -170,14 +237,11 @@ struct nfsstats {
 /*
  * fs.nfs sysctl(3) identifiers
  */
-#define	NFS_NFSSTATS	1	/* struct: struct nfsstats */
-#define	NFS_NIOTHREADS	2	/* number of i/o threads */
-#define	NFS_MAXID	3
+#define NFS_NFSSTATS	1		/* struct: struct nfsstats */
 
 #define FS_NFS_NAMES { \
-			{ 0, 0 }, \
-			{ "nfsstats", CTLTYPE_STRUCT }, \
-			{ "iothreads", CTLTYPE_INT } \
+		       { 0, 0 }, \
+		       { "nfsstats", CTLTYPE_STRUCT }, \
 }
 
 /*
@@ -189,7 +253,6 @@ struct nfsstats {
  * by them and break.
  */
 #ifdef _KERNEL
-extern int nfs_niothreads;
 
 struct uio; struct buf; struct vattr; struct nameidata;	/* XXX */
 
@@ -217,12 +280,18 @@ struct nfsreq {
 	struct vnode	*r_vp;
 	u_int32_t	r_xid;
 	int		r_flags;	/* flags on request, see below */
+	int		r_retry;	/* max retransmission count */
 	int		r_rexmit;	/* current retrans count */
 	int		r_timer;	/* tick counter on reply */
 	int		r_procnum;	/* NFS procedure number */
 	int		r_rtt;		/* RTT for rpc */
 	struct proc	*r_procp;	/* Proc that did I/O system call */
 };
+
+/*
+ * Queue head for nfsreq's
+ */
+TAILQ_HEAD(, nfsreq) nfs_reqq;
 
 /* Flag values for r_flags */
 #define R_TIMING	0x01		/* timing request (in mntp) */
@@ -232,31 +301,31 @@ struct nfsreq {
 #define	R_SOCKERR	0x10		/* Fatal error on socket */
 #define	R_TPRINTFMSG	0x20		/* Did a tprintf msg. */
 #define	R_MUSTRESEND	0x40		/* Must resend request */
+#define	R_GETONEREP	0x80		/* Probe for one reply only */
 
 /*
- * On fast networks, the estimator will try to reduce the
- * timeout lower than the latency of the server's disks,
- * which results in too many timeouts, so cap the lower
- * bound.
+ * A list of nfssvc_sock structures is maintained with all the sockets
+ * that require service by the nfsd.
+ * The nfsuid structs hang off of the nfssvc_sock structs in both lru
+ * and uid hash lists.
  */
-#define NFS_MINRTO	(NFS_HZ >> 2)
-
-/*
- * Keep the RTO from increasing to unreasonably large values
- * when a server is not responding.
- */
-#define NFS_MAXRTO	(20 * NFS_HZ)
-
-enum nfs_rto_timers {
-	NFS_DEFAULT_TIMER,
-	NFS_GETATTR_TIMER,
-	NFS_LOOKUP_TIMER,
-	NFS_READ_TIMER,
-	NFS_WRITE_TIMER,
-};
-#define NFS_MAX_TIMER	(NFS_WRITE_TIMER)
-
-#define NFS_INITRTT	(NFS_HZ << 3)
+#ifndef NFS_UIDHASHSIZ
+#define	NFS_UIDHASHSIZ	29	/* Tune the size of nfssvc_sock with this */
+#endif
+#define	NUIDHASH(sock, uid) \
+	(&(sock)->ns_uidhashtbl[(uid) % NFS_UIDHASHSIZ])
+#ifndef NFS_WDELAYHASHSIZ
+#define	NFS_WDELAYHASHSIZ 16	/* and with this */
+#endif
+#define	NWDELAYHASH(sock, f) \
+	(&(sock)->ns_wdelayhashtbl[(*((u_int32_t *)(f))) % NFS_WDELAYHASHSIZ])
+#ifndef NFS_MUIDHASHSIZ
+#define NFS_MUIDHASHSIZ	67	/* Tune the size of nfsmount with this */
+#endif
+#define	NMUIDHASH(nmp, uid) \
+	(&(nmp)->nm_uidhashtbl[(uid) % NFS_MUIDHASHSIZ])
+#define	NFSNOHASH(fhsum) \
+	(&nfsnodehashtbl[(fhsum) & nfsnodehash])
 
 /*
  * Network address hash list element
@@ -266,36 +335,60 @@ union nethostaddr {
 	struct mbuf *had_nam;
 };
 
+struct nfsuid {
+	TAILQ_ENTRY(nfsuid) nu_lru;	/* LRU chain */
+	LIST_ENTRY(nfsuid) nu_hash;	/* Hash list */
+	int		nu_flag;	/* Flags */
+	union nethostaddr nu_haddr;	/* Host addr. for dgram sockets */
+	struct ucred	nu_cr;		/* Cred uid mapped to */
+	int		nu_expire;	/* Expiry time (sec) */
+	struct timeval	nu_timestamp;	/* Kerb. timestamp */
+	u_int32_t	nu_nickname;	/* Nickname on server */
+	NFSKERBKEY_T	nu_key;		/* and session key */
+};
+
+#define	nu_inetaddr	nu_haddr.had_inetaddr
+#define	nu_nam		nu_haddr.had_nam
+/* Bits for nu_flag */
+#define	NU_INETADDR	0x1
+#define NU_NAM		0x2
+#define NU_NETFAM(u)	(((u)->nu_flag & NU_INETADDR) ? AF_INET : AF_ISO)
+
 struct nfssvc_sock {
-	TAILQ_ENTRY(nfssvc_sock) ns_chain; /* List of all nfssvc_sock's */
-	struct file	*ns_fp;		/* fp from the... */
-	struct socket	*ns_so;		/* ...socket this struct wraps */
-	struct mbuf	*ns_nam;	/* MT_SONAME of client */
-	struct mbuf	*ns_raw;	/* head of unpeeked mbufs */
-	struct mbuf	*ns_rawend;	/* tail of unpeeked mbufs */
-	struct mbuf	*ns_rec;	/* queued RPC records */
-	struct mbuf	*ns_recend;	/* last queued RPC record */
-	struct mbuf	*ns_frag;	/* end of record fragment */
-	int		ns_flag;	/* socket status flags */
-	int		ns_solock;	/* lock for connected socket */
-	int		ns_cc;		/* actual chars queued */
-	int		ns_reclen;	/* length of first queued record */
-	u_int32_t	ns_sref;	/* # of refs to this struct */
+	TAILQ_ENTRY(nfssvc_sock) ns_chain;	/* List of all nfssvc_sock's */
+	TAILQ_HEAD(, nfsuid) ns_uidlruhead;
+	struct file	*ns_fp;
+	struct socket	*ns_so;
+	struct mbuf	*ns_nam;
+	struct mbuf	*ns_raw;
+	struct mbuf	*ns_rawend;
+	struct mbuf	*ns_rec;
+	struct mbuf	*ns_recend;
+	struct mbuf	*ns_frag;
+	int		ns_flag;
+	int		ns_solock;
+	int		ns_cc;
+	int		ns_reclen;
+	int		ns_numuids;
+	u_int32_t	ns_sref;
+	LIST_HEAD(, nfsrv_descript) ns_tq;	/* Write gather lists */
+	LIST_HEAD(, nfsuid) ns_uidhashtbl[NFS_UIDHASHSIZ];
+	LIST_HEAD(nfsrvw_delayhash, nfsrv_descript) ns_wdelayhashtbl[NFS_WDELAYHASHSIZ];
 };
 
 /* Bits for "ns_flag" */
-#define	SLP_VALID	0x01	/* connection is usable */
-#define	SLP_DOREC	0x02	/* receive operation required */
-#define	SLP_NEEDQ	0x04	/* connection has data to queue from socket */
-#define	SLP_DISCONN	0x08	/* connection is closed */
-#define	SLP_GETSTREAM	0x10	/* extracting RPC from TCP connection */
-#define	SLP_LASTFRAG	0x20	/* last fragment received on TCP connection */
-#define	SLP_ALLFLAGS	0xff	/* convenience */
+#define	SLP_VALID	0x01
+#define	SLP_DOREC	0x02
+#define	SLP_NEEDQ	0x04
+#define	SLP_DISCONN	0x08
+#define	SLP_GETSTREAM	0x10
+#define	SLP_LASTFRAG	0x20
+#define SLP_ALLFLAGS	0xff
 
-extern TAILQ_HEAD(nfssvc_sockhead, nfssvc_sock) nfssvc_sockhead;
-extern int nfssvc_sockhead_flag;
-#define	SLP_INIT	0x01	/* NFS data undergoing initialization */
-#define	SLP_WANTINIT	0x02	/* thread waiting on NFS initialization */
+TAILQ_HEAD(, nfssvc_sock) nfssvc_sockhead;
+int nfssvc_sockhead_flag;
+#define	SLP_INIT	0x01
+#define	SLP_WANTINIT	0x02
 
 /*
  * One of these structures is allocated for each nfsd.
@@ -304,6 +397,10 @@ struct nfsd {
 	TAILQ_ENTRY(nfsd) nfsd_chain;	/* List of all nfsd's */
 	int		nfsd_flag;	/* NFSD_ flags */
 	struct nfssvc_sock *nfsd_slp;	/* Current socket */
+	int		nfsd_authlen;	/* Authenticator len */
+	u_char		nfsd_authstr[RPCAUTH_MAXSIZ]; /* Authenticator data */
+	int		nfsd_verflen;	/* and the Verifier */
+	u_char		nfsd_verfstr[RPCVERF_MAXSIZ];
 	struct proc	*nfsd_procp;	/* Proc ptr */
 	struct nfsrv_descript *nfsd_nd;	/* Associated nfsrv_descript */
 };
@@ -316,28 +413,60 @@ struct nfsd {
 
 /*
  * This structure is used by the server for describing each request.
+ * Some fields are used only when write request gathering is performed.
  */
 struct nfsrv_descript {
+	u_quad_t		nd_time;	/* Write deadline (usec) */
+	off_t			nd_off;		/* Start byte offset */
+	off_t			nd_eoff;	/* and end byte offset */
+	LIST_ENTRY(nfsrv_descript) nd_hash;	/* Hash list */
+	LIST_ENTRY(nfsrv_descript) nd_tq;		/* and timer list */
+	LIST_HEAD(,nfsrv_descript) nd_coalesce;	/* coalesced writes */
 	struct mbuf		*nd_mrep;	/* Request mbuf list */
 	struct mbuf		*nd_md;		/* Current dissect mbuf */
+	struct mbuf		*nd_mreq;	/* Reply mbuf list */
 	struct mbuf		*nd_nam;	/* and socket addr */
 	struct mbuf		*nd_nam2;	/* return socket addr */
 	caddr_t			nd_dpos;	/* Current dissect pos */
 	unsigned int		nd_procnum;	/* RPC # */
+	int			nd_stable;	/* storage type */
 	int			nd_flag;	/* nd_flag */
+	int			nd_len;		/* Length of this write */
 	int			nd_repstat;	/* Reply status */
 	u_int32_t		nd_retxid;	/* Reply xid */
+	u_int32_t		nd_duration;	/* Lease duration */
+	struct timeval		nd_starttime;	/* Time RPC initiated */
+	fhandle_t		nd_fh;		/* File handle */
 	struct ucred		nd_cr;		/* Credentials */
 };
 
 /* Bits for "nd_flag" */
+#define	ND_READ		LEASE_READ
+#define ND_WRITE	LEASE_WRITE
+#define ND_CHECK	0x04
+#define ND_LEASE	(ND_READ | ND_WRITE | ND_CHECK)
 #define ND_NFSV3	0x08
+#define ND_NQNFS	0x10
+#define ND_KERBNICK	0x20
+#define ND_KERBFULL	0x40
+#define ND_KERBAUTH	(ND_KERBNICK | ND_KERBFULL)
 
-extern struct pool nfsreqpl;
-extern struct pool nfs_node_pool;
-extern TAILQ_HEAD(nfsdhead, nfsd) nfsd_head;
-extern int nfsd_head_flag;
+TAILQ_HEAD(, nfsd) nfsd_head;
+int nfsd_head_flag;
 #define	NFSD_CHECKSLP	0x01
 
+/*
+ * These macros compare nfsrv_descript structures.
+ */
+#define NFSW_CONTIG(o, n) \
+		((o)->nd_eoff >= (n)->nd_off && \
+		 !bcmp((caddr_t)&(o)->nd_fh, (caddr_t)&(n)->nd_fh, NFSX_V3FH))
+
+#define NFSW_SAMECRED(o, n) \
+	(((o)->nd_flag & ND_KERBAUTH) == ((n)->nd_flag & ND_KERBAUTH) && \
+ 	 !bcmp((caddr_t)&(o)->nd_cr, (caddr_t)&(n)->nd_cr, \
+		sizeof (struct ucred)))
+
 #endif	/* _KERNEL */
+
 #endif /* _NFS_NFS_H */

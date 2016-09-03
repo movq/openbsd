@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-ntp.c,v 1.17 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -25,11 +23,19 @@
  *	loosely based on print-bootp.c
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-ntp.c,v 1.8 1999/09/16 20:58:47 brad Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
+#ifdef __STDC__
 struct mbuf;
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
@@ -54,10 +60,11 @@ static void p_ntp_delta(const struct l_fixedpt *, const struct l_fixedpt *);
  * Print ntp requests
  */
 void
-ntp_print(const u_char *cp, u_int length)
+ntp_print(register const u_char *cp, u_int length)
 {
-	const struct ntpdata *bp;
+	register const struct ntpdata *bp;
 	int mode, version, leapind;
+	static char rclock[5];
 
 	bp = (struct ntpdata *)cp;
 	/* Note funny sized packets */
@@ -73,10 +80,6 @@ ntp_print(const u_char *cp, u_int length)
 	switch (leapind) {
 
 	case NO_WARNING:
-		break;
-
-	case ALARM:
-		fputs(" alarm", stdout);
 		break;
 
 	case PLUS_SEC:
@@ -156,7 +159,9 @@ ntp_print(const u_char *cp, u_int length)
 		break;
 
 	case PRIM_REF:
-		fn_printn((u_char *)&bp->refid, sizeof(bp->refid), NULL);
+		strncpy(rclock, (char *)&(bp->refid), 4);
+		rclock[4] = '\0';
+		fputs(rclock, stdout);
 		break;
 
 	case INFO_QUERY:
@@ -197,11 +202,11 @@ trunc:
 }
 
 static void
-p_sfix(const struct s_fixedpt *sfp)
+p_sfix(register const struct s_fixedpt *sfp)
 {
-	int i;
-	int f;
-	float ff;
+	register int i;
+	register int f;
+	register float ff;
 
 	i = ntohs(sfp->int_part);
 	f = ntohs(sfp->fraction);
@@ -213,12 +218,12 @@ p_sfix(const struct s_fixedpt *sfp)
 #define	FMAXINT	(4294967296.0)	/* floating point rep. of MAXINT */
 
 static void
-p_ntp_time(const struct l_fixedpt *lfp)
+p_ntp_time(register const struct l_fixedpt *lfp)
 {
-	int32_t i;
-	u_int32_t uf;
-	u_int32_t f;
-	float ff;
+	register int32_t i;
+	register u_int32_t uf;
+	register u_int32_t f;
+	register float ff;
 
 	i = ntohl(lfp->int_part);
 	uf = ntohl(lfp->fraction);
@@ -232,13 +237,14 @@ p_ntp_time(const struct l_fixedpt *lfp)
 
 /* Prints time difference between *lfp and *olfp */
 static void
-p_ntp_delta(const struct l_fixedpt *olfp, const struct l_fixedpt *lfp)
+p_ntp_delta(register const struct l_fixedpt *olfp,
+	    register const struct l_fixedpt *lfp)
 {
-	int32_t i;
-	u_int32_t uf;
-	u_int32_t ouf;
-	u_int32_t f;
-	float ff;
+	register int32_t i;
+	register u_int32_t uf;
+	register u_int32_t ouf;
+	register u_int32_t f;
+	register float ff;
 	int signbit;
 
 	i = ntohl(lfp->int_part) - ntohl(olfp->int_part);

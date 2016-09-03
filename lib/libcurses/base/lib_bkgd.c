@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_bkgd.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_bkgd.c,v 1.1 1999/01/18 19:09:36 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2006,2008 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -31,128 +31,58 @@
 /****************************************************************************
  *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
- *     and: Juergen Pfeifer                         1997                    *
- *     and: Sven Verdoolaege                        2000                    *
- *     and: Thomas E. Dickey                        1996-on                 *
  ****************************************************************************/
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_bkgd.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_bkgd.c,v 1.12 1998/02/11 12:13:54 tom Exp $")
 
-/*
- * Set the window's background information.
- */
-#if USE_WIDEC_SUPPORT
-NCURSES_EXPORT(void)
-#else
-static NCURSES_INLINE void
-#endif
-wbkgrndset(WINDOW *win, const ARG_CH_T ch)
+void wbkgdset(WINDOW *win, chtype ch)
 {
-    T((T_CALLED("wbkgdset(%p,%s)"), win, _tracech_t(ch)));
+  T((T_CALLED("wbkgdset(%p,%s)"), win, _tracechtype(ch)));
+    
+  if (win) {
+    chtype off = AttrOf(win->_bkgd);
+    chtype on  = AttrOf(ch);
+    
+    toggle_attr_off(win->_attrs,off);
+    toggle_attr_on (win->_attrs,on);
+    
+    if (TextOf(ch)==0)
+      ch |= BLANK;
+    win->_bkgd = ch;
+  }
+  returnVoid;
+}
 
-    if (win) {
-	attr_t off = AttrOf(win->_nc_bkgd);
-	attr_t on = AttrOf(CHDEREF(ch));
+int wbkgd(WINDOW *win, const chtype ch)
+{
+  int code = ERR;
+  int x, y;
+  chtype new_bkgd = ch;
 
-	toggle_attr_off(WINDOW_ATTRS(win), off);
-	toggle_attr_on(WINDOW_ATTRS(win), on);
+  T((T_CALLED("wbkgd(%p,%s)"), win, _tracechtype(new_bkgd)));
 
-#if NCURSES_EXT_COLORS
-	{
-	    int pair;
+  if (win) {
+    chtype old_bkgd = getbkgd(win);
 
-	    if ((pair = GetPair(win->_nc_bkgd)) != 0)
-		SET_WINDOW_PAIR(win, 0);
-	    if ((pair = GetPair(CHDEREF(ch))) != 0)
-		SET_WINDOW_PAIR(win, pair);
-	}
-#endif
-
-	if (CharOf(CHDEREF(ch)) == L('\0')) {
-	    SetChar(win->_nc_bkgd, BLANK_TEXT, AttrOf(CHDEREF(ch)));
-	    if_EXT_COLORS(SetPair(win->_nc_bkgd, GetPair(CHDEREF(ch))));
-	} else {
-	    win->_nc_bkgd = CHDEREF(ch);
-	}
-#if USE_WIDEC_SUPPORT
-	/*
-	 * If we're compiled for wide-character support, _bkgrnd is the
-	 * preferred location for the background information since it stores
-	 * more than _bkgd.  Update _bkgd each time we modify _bkgrnd, so the
-	 * macro getbkgd() will work.
-	 */
-	{
-	    cchar_t wch;
-	    int tmp;
-
-	    wgetbkgrnd(win, &wch);
-	    tmp = _nc_to_char((wint_t) CharOf(wch));
-
-	    win->_bkgd = (((tmp == EOF) ? ' ' : (chtype) tmp)
-			  | (AttrOf(wch) & ALL_BUT_COLOR)
-			  | COLOR_PAIR(GET_WINDOW_PAIR(win)));
-	}
-#endif
+    wbkgdset(win, new_bkgd);
+    wattrset(win, AttrOf(win->_bkgd));
+    
+    for (y = 0; y <= win->_maxy; y++) {
+      for (x = 0; x <= win->_maxx; x++) {
+	if (win->_line[y].text[x] == old_bkgd)
+	  win->_line[y].text[x] = win->_bkgd;
+	else 
+	  win->_line[y].text[x] =
+	    _nc_render(win,(A_ALTCHARSET & 
+			    AttrOf(win->_line[y].text[x])) 
+		       | TextOf(win->_line[y].text[x]));
+      }
     }
-    returnVoid;
-}
-
-NCURSES_EXPORT(void)
-wbkgdset(WINDOW *win, chtype ch)
-{
-    NCURSES_CH_T wch;
-    SetChar2(wch, ch);
-    wbkgrndset(win, CHREF(wch));
-}
-
-/*
- * Set the window's background information and apply it to each cell.
- */
-#if USE_WIDEC_SUPPORT
-NCURSES_EXPORT(int)
-#else
-static NCURSES_INLINE int
-#undef wbkgrnd
-#endif
-wbkgrnd(WINDOW *win, const ARG_CH_T ch)
-{
-    int code = ERR;
-    int x, y;
-    NCURSES_CH_T new_bkgd = CHDEREF(ch);
-
-    T((T_CALLED("wbkgd(%p,%s)"), win, _tracech_t(ch)));
-
-    if (win) {
-	NCURSES_CH_T old_bkgrnd;
-	wgetbkgrnd(win, &old_bkgrnd);
-
-	wbkgrndset(win, CHREF(new_bkgd));
-	wattrset(win, AttrOf(win->_nc_bkgd));
-
-	for (y = 0; y <= win->_maxy; y++) {
-	    for (x = 0; x <= win->_maxx; x++) {
-		if (CharEq(win->_line[y].text[x], old_bkgrnd)) {
-		    win->_line[y].text[x] = win->_nc_bkgd;
-		} else {
-		    NCURSES_CH_T wch = win->_line[y].text[x];
-		    RemAttr(wch, (~(A_ALTCHARSET | A_CHARTEXT)));
-		    win->_line[y].text[x] = _nc_render(win, wch);
-		}
-	    }
-	}
-	touchwin(win);
-	_nc_synchook(win);
-	code = OK;
-    }
-    returnCode(code);
-}
-
-NCURSES_EXPORT(int)
-wbkgd(WINDOW *win, chtype ch)
-{
-    NCURSES_CH_T wch;
-    SetChar2(wch, ch);
-    return wbkgrnd(win, CHREF(wch));
+    touchwin(win);
+    _nc_synchook(win);
+    code = OK;
+  }
+  returnCode(code);
 }

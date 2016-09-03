@@ -8,11 +8,7 @@
    the group part of the UIC), so we are better off with higher-level
    hooks like get_homedir and SYSTEM_GETCALLER.  */
 
-#if !defined(__VMS_VER)
 #define pid_t int
-#elif __VMS_VER < 70000000
-#define pid_t int
-#endif
 
 struct passwd {
    char  *pw_name;

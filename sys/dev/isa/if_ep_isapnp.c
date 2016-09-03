@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ep_isapnp.c,v 1.16 2015/11/24 17:11:39 mpi Exp $	*/
+/*	$OpenBSD: if_ep_isapnp.c,v 1.5 1998/09/19 10:08:05 maja Exp $	*/
 /*	$NetBSD: if_ep_isapnp.c,v 1.5 1996/05/12 23:52:36 mycroft Exp $	*/
 
 /*
@@ -45,27 +45,32 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
+#include <sys/select.h>
 #include <sys/device.h>
-#include <sys/timeout.h>
 #include <sys/queue.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/netisr.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
 #include <machine/intr.h>
-
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 
 #include <dev/ic/elink3var.h>
 #include <dev/ic/elink3reg.h>
@@ -73,8 +78,8 @@
 #include <dev/isa/isavar.h>
 #include <dev/isa/elink.h>
 
-int ep_isapnp_match(struct device *, void *, void *);
-void ep_isapnp_attach(struct device *, struct device *, void *);
+int ep_isapnp_match __P((struct device *, void *, void *));
+void ep_isapnp_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ep_isapnp_ca = {
 	sizeof(struct ep_softc), ep_isapnp_match, ep_isapnp_attach
@@ -83,19 +88,23 @@ struct cfattach ep_isapnp_ca = {
 /*
  * 3c509 cards on the ISA bus are probed in ethernet address order.
  * The probe sequence requires careful orchestration, and we'd like
- * to allow the irq and base address to be wildcarded. So, we
+ * like to allow the irq and base address to be wildcarded. So, we
  * probe all the cards the first time epprobe() is called. On subsequent
  * calls we look for matching cards.
  */
 int
-ep_isapnp_match(struct device *parent, void *match, void *aux)
+ep_isapnp_match(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	/* XXX This should be more intelligent */
 	return 1;
 }
 
 void
-ep_isapnp_attach(struct device *parent, struct device *self, void *aux)
+ep_isapnp_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct ep_softc *sc = (void *)self;
 	struct isa_attach_args *ia = aux;

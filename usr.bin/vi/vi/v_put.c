@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_put.c,v 1.8 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_put.c	10.5 (Berkeley) 3/6/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -22,16 +24,18 @@
 #include "../common/common.h"
 #include "vi.h"
 
-static void	inc_buf(SCR *, VICMD *);
+static void	inc_buf __P((SCR *, VICMD *));
 
 /*
  * v_Put -- [buffer]P
  *	Insert the contents of the buffer before the cursor.
  *
- * PUBLIC: int v_Put(SCR *, VICMD *);
+ * PUBLIC: int v_Put __P((SCR *, VICMD *));
  */
 int
-v_Put(SCR *sp, VICMD *vp)
+v_Put(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	u_long cnt;
 
@@ -59,10 +63,12 @@ v_Put(SCR *sp, VICMD *vp)
  * v_put -- [buffer]p
  *	Insert the contents of the buffer after the cursor.
  *
- * PUBLIC: int v_put(SCR *, VICMD *);
+ * PUBLIC: int v_put __P((SCR *, VICMD *));
  */
 int
-v_put(SCR *sp, VICMD *vp)
+v_put(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	u_long cnt;
 
@@ -102,7 +108,9 @@ v_put(SCR *sp, VICMD *vp)
  * the buffer increment gets done regardless of the success of the put.
  */
 static void
-inc_buf(SCR *sp, VICMD *vp)
+inc_buf(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	CHAR_T v;
 

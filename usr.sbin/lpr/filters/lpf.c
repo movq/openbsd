@@ -1,5 +1,4 @@
-/*	$OpenBSD: lpf.c,v 1.13 2015/02/09 23:00:14 deraadt Exp $	*/
-/*	$NetBSD: lpf.c,v 1.8 2000/04/29 00:12:32 abs Exp $	*/
+/*	$OpenBSD: lpf.c,v 1.4 1997/07/19 07:11:42 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1983, 1993
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +33,33 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1983, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)lpf.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: lpf.c,v 1.4 1997/07/19 07:11:42 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 /*
  * 	filter which reads the output of nroff and converts lines
  *	with ^H's to overwritten lines.  Thus this works like 'ul'
  *	but is much better: it can handle more than 2 overwrites
  *	and it is written with some style.
+ *	modified by kls to use register references instead of arrays
+ *	to try to gain a little speed.
  */
 
 #include <signal.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 
 #define MAXWIDTH  132
 #define MAXREP    10
@@ -59,53 +77,56 @@ char	*name;		/* user's login name */
 char	*host;		/* user's machine name */
 char	*acctfile;	/* accounting information file */
 
-__dead void usage(void);
-
 int
-main(int argc, char **argv) 
+main(argc, argv) 
+	int argc;
+	char *argv[];
 {
-	FILE *p = stdin, *o = stdout;
-	int i, col;
-	char *cp;
-	int done, linedone, maxrep, ch;
-	char *limit;
+	register FILE *p = stdin, *o = stdout;
+	register int i, col;
+	register char *cp;
+	int done, linedone, maxrep;
+	char ch, *limit;
 
-	while ((ch = getopt(argc, argv, "crh:i:j:l:n:w:")) != -1) {
-		switch (ch) {
-		case 'n':
-			name = optarg;
-			break;
-		case 'h':
-			host = optarg;
-			break;
-		case 'w':
-			if ((i = atoi(optarg)) > 0 && i <= MAXWIDTH)
-				width = i;
-			break;
-		case 'l':
-			length = atoi(optarg);
-			break;
-		case 'i':
-			indent = atoi(optarg);
-			break;
-		case 'r':	/* map nl->cr-nl */
-			onlcr = 1;
-			break;
-		case 'c':	/* Print control chars */
-			literal++;
-			break;
-		case 'j':	/* ignore job name */
-			break;
-		default:
-			usage();
-		}
+	while (--argc) {
+		if (*(cp = *++argv) == '-') {
+			switch (cp[1]) {
+			case 'n':
+				argc--;
+				name = *++argv;
+				break;
+
+			case 'h':
+				argc--;
+				host = *++argv;
+				break;
+
+			case 'w':
+				if ((i = atoi(&cp[2])) > 0 && i <= MAXWIDTH)
+					width = i;
+				break;
+
+			case 'l':
+				length = atoi(&cp[2]);
+				break;
+
+			case 'i':
+				indent = atoi(&cp[2]);
+				break;
+
+			case 'r':	/* map nl->cr-nl */
+				onlcr++;
+				break;
+
+			case 'c':	/* Print control chars */
+				literal++;
+				break;
+			}
+		} else
+			acctfile = cp;
 	}
-	argc -= optind;
-	argv += optind;
-	if (argc)
-		acctfile = *argv;
 
-	memset(buf, ' ',  sizeof(buf));
+	for (cp = buf[0], limit = buf[MAXREP]; cp < limit; *cp++ = ' ');
 	done = 0;
 	
 	while (!done) {
@@ -156,7 +177,7 @@ main(int argc, char **argv)
 				}
 
 			default:
-				if (col >= width || (!literal && ch < ' ')) {
+				if ((col >= width) || (!literal && ch < ' ')) {
 					col++;
 					break;
 				}
@@ -207,14 +228,4 @@ main(int argc, char **argv)
 		printf("%7.2f\t%s:%s\n", (float)npages, host, name);
 	}
 	exit(0);
-}
-
-__dead void
-usage(void)
-{
-	extern char *__progname;
-
-	fprintf(stderr, "usage: %s [-c] [-r] [-h host] [-i indent] [-l length]"
-	    " [-n name] [-w width] [acctfile]\n", __progname);
-	exit(1);
 }

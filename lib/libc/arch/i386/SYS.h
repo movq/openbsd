@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,119 +33,70 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	$OpenBSD: SYS.h,v 1.25 2016/05/07 19:05:21 guenther Exp $
+ *	$OpenBSD: SYS.h,v 1.5 1999/01/06 05:36:17 d Exp $
  */
 
 #include <machine/asm.h>
 #include <sys/syscall.h>
 
-#define TCB_OFFSET_ERRNO	16
+#ifdef __STDC__
+# define    __ENTRY(p,x)	ENTRY(p##x)
+# define    __DO_SYSCALL(x)				\
+				movl $(SYS_##x),%eax;	\
+				int $0x80
+# define    __LABEL2(p,x)	_C_LABEL(p##x)
+#else
+# define    __ENTRY(p,x)	ENTRY(p/**/x)
+# define    __DO_SYSCALL(x)				\
+				movl $(SYS_/**/x),%eax;	\
+				int $0x80
+# define    __LABEL2(p,x)	_C_LABEL(p/**/x)
+#endif
 
-/*
- * We define a hidden alias with the prefix "_libc_" for each global symbol
- * that may be used internally.  By referencing _libc_x instead of x, other
- * parts of libc prevent overriding by the application and avoid unnecessary
- * relocations.
- */
-#define _HIDDEN(x)		_libc_##x
-#define _HIDDEN_ALIAS(x,y)			\
-	STRONG_ALIAS(_HIDDEN(x),y);		\
-	.hidden _HIDDEN(x)
-#define _HIDDEN_FALIAS(x,y)			\
-	_HIDDEN_ALIAS(x,y);			\
-	.type _HIDDEN(x),@function
+/* perform a syscall, set errno */
+#define	    __SYSCALL(p,x)				\
+			.text;				\
+			.align 2;			\
+		2:					\
+			jmp PIC_PLT(cerror);		\
+		__ENTRY(p,x);				\
+			__DO_SYSCALL(x);		\
+			jc 2b
 
-/*
- * For functions implemented in ASM that aren't syscalls.
- *   END_STRONG(x)	Like DEF_STRONG() in C; for standard/reserved C names
- *   END_WEAK(x)	Like DEF_WEAK() in C; for non-ISO C names
- */
-#define	END_STRONG(x)	END(x); _HIDDEN_FALIAS(x,x); END(_HIDDEN(x))
-#define	END_WEAK(x)	END_STRONG(x); .weak x
+/* perform a syscall, set errno, return */
+# define    __RSYSCALL(p,x)	__SYSCALL(p,x); ret
 
+/* perform a syscall, return */
+# define    __PSEUDO(p,x,y)				\
+		__ENTRY(p,x);				\
+			__DO_SYSCALL(y);		\
+			ret
 
 /*
  * Design note:
  *
- * System calls entry points are really named _thread_sys_{syscall},
- * and weakly aliased to the name {syscall}. This allows the thread
- * library to replace system calls at link time.
+ * When the syscalls need to be renamed so they can be handled
+ * specially by the threaded library, these macros insert `_thread_sys_'
+ * in front of their name. This avoids the need to #ifdef _THREAD_SAFE 
+ * everywhere that the renamed function needs to be called.
  */
-
-/* Use both _thread_sys_{syscall} and [weak] {syscall}. */
-
-#define	SYSENTRY(x)					\
-			ENTRY(_thread_sys_##x);		\
-			WEAK_ALIAS(x, _thread_sys_##x)
-#define	SYSENTRY_HIDDEN(x)				\
-			ENTRY(_thread_sys_ ## x)
-#define	__END_HIDDEN(x)	END(_thread_sys_ ## x);			\
-			_HIDDEN_FALIAS(x,_thread_sys_ ## x);	\
-			END(_HIDDEN(x))
-#define	__END(x)	__END_HIDDEN(x); END(x)
-
-#define	__DO_SYSCALL(x)					\
-			movl $(SYS_ ## x),%eax;		\
-			int $0x80
-
-#define SET_ERRNO()					\
-	movl	%eax,%gs:(TCB_OFFSET_ERRNO);		\
-	movl	$-1, %eax;				\
-	movl	$-1, %edx	/* for lseek */
-#define HANDLE_ERRNO()					\
-	jnc,pt	99f;					\
-	SET_ERRNO();					\
-	99:
-
-/* perform a syscall */
-#define	_SYSCALL_NOERROR(x,y)				\
-		SYSENTRY(x);				\
-			__DO_SYSCALL(y);
-#define	_SYSCALL_HIDDEN_NOERROR(x,y)			\
-		SYSENTRY_HIDDEN(x);			\
-			__DO_SYSCALL(y);
-
-#define	SYSCALL_NOERROR(x)				\
-		_SYSCALL_NOERROR(x,x)
-
-/* perform a syscall, set errno */
-#define	_SYSCALL(x,y)					\
-			.text;				\
-			.align 2;			\
-		_SYSCALL_NOERROR(x,y)			\
-			HANDLE_ERRNO()
-#define	_SYSCALL_HIDDEN(x,y)				\
-			.text;				\
-			.align 2;			\
-		_SYSCALL_HIDDEN_NOERROR(x,y)		\
-			HANDLE_ERRNO()
-
-#define	SYSCALL(x)					\
-		_SYSCALL(x,x)
-#define	SYSCALL_HIDDEN(x)				\
-		_SYSCALL_HIDDEN(x,y)
-
-/* perform a syscall, return */
-#define	PSEUDO_NOERROR(x,y)				\
-		_SYSCALL_NOERROR(x,y);			\
-			ret;				\
-		__END(x)
-
-/* perform a syscall, set errno, return */
-#define	PSEUDO(x,y)					\
-		_SYSCALL(x,y);				\
-			ret;				\
-		__END(x)
-#define	PSEUDO_HIDDEN(x,y)				\
-		_SYSCALL_HIDDEN(x,y);			\
-			ret;				\
-		__END_HIDDEN(x)
-
-/* perform a syscall with the same name, set errno, return */
-#define	RSYSCALL(x)					\
-			PSEUDO(x,x);
-#define	RSYSCALL_HIDDEN(x)				\
-			PSEUDO_HIDDEN(x,x)
-#define	SYSCALL_END(x)	__END(x)
-#define	SYSCALL_END_HIDDEN(x)				\
-			__END_HIDDEN(x)
+#ifdef _THREAD_SAFE
+/*
+ * For the thread_safe versions, we prepend _thread_sys_ to the function
+ * name so that the 'C' wrapper can go around the real name.
+ */
+# define SYSCALL(x)	__SYSCALL(_thread_sys_,x)
+# define RSYSCALL(x)	__RSYSCALL(_thread_sys_,x)
+# define PSEUDO(x,y)	__PSEUDO(_thread_sys_,x,y)
+# define SYSENTRY(x)	__ENTRY(_thread_sys_,x)
+#else _THREAD_SAFE
+/*
+ * The non-threaded library defaults to traditional syscalls where
+ * the function name matches the syscall name.
+ */
+# define SYSCALL(x)	__SYSCALL(,x)
+# define RSYSCALL(x)	__RSYSCALL(,x)
+# define PSEUDO(x,y)	__PSEUDO(,x,y)
+# define SYSENTRY(x)	__ENTRY(,x)
+#endif _THREAD_SAFE
+	.globl	cerror

@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile.inc,v 1.3 2014/07/16 20:08:25 okan Exp $
+#	$OpenBSD: Makefile.inc,v 1.1 1997/05/05 06:01:57 millert Exp $
 #	$NetBSD: Makefile.inc,v 1.5 1996/09/30 16:01:18 ws Exp $
 #
 #	NOTE: $S must correspond to the top of the 'sys' tree
@@ -13,6 +13,7 @@ SAMAKE= \
 	  CC="${CC}" XCFLAGS="${CFLAGS}" \
 	  AS='${AS}' XAFLAGS='${AFLAGS}' \
 	  LD='${LD}' \
+	  XCPPFLAGS="${CPPFLAGS}" \
 	  SAREL="${SAREL}" \
 	  SADIR="${SADIR}" \
 	  EXTRACFLAGS="${EXTRACFLAGS}"
@@ -37,3 +38,4 @@ depend:			.NOTMAIN __always_make_salib
 
 __always_make_salib:	.NOTMAIN
 	@([ -d ${SADST} ] || mkdir -p ${SADST})
+

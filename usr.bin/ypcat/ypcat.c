@@ -1,4 +1,4 @@
-/*	$OpenBSD: ypcat.c,v 1.20 2015/11/11 02:52:46 deraadt Exp $ */
+/*	$OpenBSD: ypcat.c,v 1.6 1997/07/21 19:21:14 deraadt Exp $ */
 
 /*
  * Copyright (c) 1992, 1993, 1996 Theo de Raadt <deraadt@theos.com>
@@ -12,6 +12,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote
+ *    products derived from this software without specific prior written
+ *    permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
  * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -26,12 +32,16 @@
  * SUCH DAMAGE.
  */
 
+#ifndef LINT
+static char rcsid[] = "$OpenBSD: ypcat.c,v 1.6 1997/07/21 19:21:14 deraadt Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <ctype.h>
 
 #include <rpc/rpc.h>
@@ -39,14 +49,10 @@
 #include <rpcsvc/yp.h>
 #include <rpcsvc/ypclnt.h>
 
-void	usage(void);
-int	printit(u_long, char *, int, char *, int, void *);
-
 struct ypalias {
 	char *alias, *name;
 } ypaliases[] = {
 	{ "passwd", "passwd.byname" },
-	{ "master.passwd", "master.passwd.byname" },
 	{ "group", "group.byname" },
 	{ "networks", "networks.byaddr" },
 	{ "hosts", "hosts.byaddr" },
@@ -59,17 +65,22 @@ struct ypalias {
 int key;
 
 void
-usage(void)
+usage()
 {
-	fprintf(stderr,
-	    "usage: ypcat [-kt] [-d domainname] mapname\n"
-	    "       ypcat -x\n");
+	fprintf(stderr, "Usage:\n");
+	fprintf(stderr, "\typcat [-k] [-d domainname] [-t] mapname\n");
+	fprintf(stderr, "\typcat -x\n");
 	exit(1);
 }
 
 int
-printit(u_long instatus, char *inkey, int inkeylen, char *inval, int invallen,
-    void *indata)
+printit(instatus, inkey, inkeylen, inval, invallen, indata)
+int instatus;
+char *inkey;
+int inkeylen;
+char *inval;
+int invallen;
+char *indata;
 {
 	if (instatus != YP_TRUE)
 		return instatus;
@@ -80,18 +91,16 @@ printit(u_long instatus, char *inkey, int inkeylen, char *inval, int invallen,
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+char **argv;
 {
-	char *domain = NULL, *inmap;
+	char *domain = NULL;
 	struct ypall_callback ypcb;
+	char *inmap;
 	extern char *optarg;
 	extern int optind;
-	int notrans, c, r, i;
-
-	if (pledge("stdio rpath inet getpw", NULL) == -1) {
-		perror("pledge");
-		exit(1);
-	}
+	int notrans;
+	int c, r, i;
 
 	notrans = key = 0;
 	while ((c=getopt(argc, argv, "xd:kt")) != -1)
@@ -105,10 +114,10 @@ main(int argc, char *argv[])
 			domain = optarg;
 			break;
 		case 't':
-			notrans = 1;
+			notrans++;
 			break;
 		case 'k':
-			key = 1;
+			key++;
 			break;
 		default:
 			usage();

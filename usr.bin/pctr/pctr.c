@@ -1,20 +1,4 @@
-/*	$OpenBSD: pctr.c,v 1.22 2015/02/08 23:40:34 deraadt Exp $	*/
-
-/*
- * Copyright (c) 2007 Mike Belopuhov, Aleksey Lomovtsev
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
+/*	$OpenBSD: pctr.c,v 1.4 1998/08/30 22:35:37 downsj Exp $	*/
 
 /*
  * Pentium performance counter control program for OpenBSD.
@@ -22,510 +6,595 @@
  *
  * Modification and redistribution in source and binary forms is
  * permitted provided that due credit is given to the author and the
- * OpenBSD project by leaving this copyright notice intact.
+ * OpenBSD project (for instance by leaving this copyright notice
+ * intact).
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/ioctl.h>
-
+#include <err.h>
+#include <fcntl.h>
 #include <machine/cpu.h>
 #include <machine/pctr.h>
 #include <machine/specialreg.h>
 
-#include <errno.h>
-#include <err.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#define CFL_MESI 0x1   /* Unit mask accepts MESI encoding */
+#define CFL_SA   0x2   /* Unit mask accepts Self/Any bit */
+#define CFL_C0   0x4   /* Counter 0 only */
+#define CFL_C1   0x8   /* Counter 1 only */
 
-#include "pctrvar.h"
+/* Kernel cpuid values. */
+int cpu_id, cpu_feature;
+char cpu_vendor[16];
 
-static int	 cpu_type;
-static int	 tsc_avail;
+int pctr_isintel;
 
-static int	 ctr, func, masku, thold;
-static int	 cflag, eflag, iflag, kflag, uflag;
-static int	 Mflag, Eflag, Sflag, Iflag, Aflag;
+#define usetsc		(cpu_feature & CPUID_TSC)
+#define usep5ctr	(pctr_isintel && (((cpu_id >> 8) & 15) == 5) && \
+				(((cpu_id >> 4) & 15) > 0))
+#define usep6ctr	(pctr_isintel && ((cpu_id >> 8) & 15) == 6)
+#define cpufamily	((cpu_id >> 8) & 15)
 
-static void	 pctr_cpu_creds(void);
-static char	*pctr_fn2str(u_int32_t);
-static void	 pctr_printvals(struct pctrst *);
-static int	 pctr_read(struct pctrst *);
-static int	 pctr_write(int, u_int32_t);
-static void	 pctr_list_fnct(void);
-static int	 pctr_set_cntr(void);
-static void	 usage(void);
+extern char *__progname;
 
-int
-main(int argc, char **argv)
-{
-	const char *errstr;
-	struct pctrst st;
-	int ch = -1;
-	int list_mode = 0, set_mode = 0;
+struct ctrfn {
+  u_int fn;
+  int flags;
+  char *name;
+  char *desc;
+};
 
-	pctr_cpu_creds();
+struct ctrfn p5fn[] = {
+  {0x00, 0, "Data read", NULL},
+  {0x01, 0, "Data write", NULL},
+  {0x02, 0, "Data TLB miss", NULL},
+  {0x03, 0, "Data read miss", NULL},
+  {0x04, 0, "Data write miss", NULL},
+  {0x05, 0, "Write (hit) to M or E state lines", NULL},
+  {0x06, 0, "Data cache lines written back", NULL},
+  {0x07, 0, "Data cache snoops", NULL},
+  {0x08, 0, "Data cache snoop hits", NULL},
+  {0x09, 0, "Memory accesses in both pipes", NULL},
+  {0x0a, 0, "Bank conflicts", NULL},
+  {0x0b, 0, "Misaligned data memory references", NULL},
+  {0x0c, 0, "Code read", NULL},
+  {0x0d, 0, "Code TLB miss", NULL},
+  {0x0e, 0, "Code cache miss", NULL},
+  {0x0f, 0, "Any segment register load", NULL},
+  {0x12, 0, "Branches", NULL},
+  {0x13, 0, "BTB hits", NULL},
+  {0x14, 0, "Taken branch or BTB hit", NULL},
+  {0x15, 0, "Pipeline flushes", NULL},
+  {0x16, 0, "Instructions executed", NULL},
+  {0x17, 0, "Instructions executed in the V-pipe", NULL},
+  {0x18, 0, "Bus utilization (clocks)", NULL},
+  {0x19, 0, "Pipeline stalled by write backup", NULL},
+  {0x1a, 0, "Pipeline stalled by data memory read", NULL},
+  {0x1b, 0, "Pipeline stalled by write to E or M line", NULL},
+  {0x1c, 0, "Locked bus cycle", NULL},
+  {0x1d, 0, "I/O read or write cycle", NULL},
+  {0x1e, 0, "Noncacheable memory references", NULL},
+  {0x1f, 0, "AGI (Address Generation Interlock)", NULL},
+  {0x22, 0, "Floating-point operations", NULL},
+  {0x23, 0, "Breakpoint 0 match", NULL},
+  {0x24, 0, "Breakpoint 1 match", NULL},
+  {0x25, 0, "Breakpoint 2 match", NULL},
+  {0x26, 0, "Breakpoint 3 match", NULL},
+  {0x27, 0, "Hardware interupts", NULL},
+  {0x28, 0, "Data read or data write", NULL},
+  {0x29, 0, "Data read miss or data write miss", NULL},
+  {0x0, 0, NULL, NULL},
+};
 
-	while ((ch = getopt(argc, argv, "AcEef:IiklMm:Ss:t:u")) != -1)
-		switch (ch) {
-		case 'A':
-			Aflag = 1;
-			break;
-		case 'c':
-			cflag = 1;
-			break;
-		case 'E':
-			Eflag = 1;
-			break;
-		case 'e':
-			eflag = 1;
-			break;
-		case 'f':
-			if (sscanf(optarg, "%x", &func) <= 0 || func < 0 ||
-			    func > PCTR_MAX_FUNCT)
-				errx(1, "invalid function number");
-			break;
-		case 'I':
-			Iflag = 1;
-			break;
-		case 'i':
-			iflag = 1;
-			break;
-		case 'k':
-			kflag = 1;
-			break;
-		case 'l':
-			list_mode = 1;
-			break;
-		case 'M':
-			Mflag = 1;
-			break;
-		case 'm':
-			if (sscanf(optarg, "%x", &masku) <= 0 || masku < 0 ||
-			    masku > PCTR_MAX_UMASK)
-				errx(1, "invalid unit mask number");
-			break;
-		case 'S':
-			Sflag = 1;
-			break;
-		case 's':
-			set_mode = 1;
-			ctr = strtonum(optarg, 0, PCTR_NUM-1, &errstr);
-			if (errstr)
-				errx(1, "counter number is %s: %s", errstr,
-				    optarg);
-			break;
-		case 't':
-			thold = strtonum(optarg, 0, 0xff, &errstr);
-			if (errstr)
-				errx(1, "threshold is %s: %s", errstr, optarg);
-			break;
-		case 'u':
-			uflag = 1;
-			break;
-		default:
-			usage();
-			/* NOTREACHED */
-		}
-	argc -= optind;
-	argv += optind;
-
-	if (argc)
-		usage();
-
-	if (Aflag && (Mflag || Eflag || Sflag || Iflag))
-		usage();
-
-	if (list_mode)
-		pctr_list_fnct();
-	else if (set_mode) {
-		if (pctr_set_cntr() < 0)
-			err(1, "pctr_set_cntr");
-	} else {
-		bzero(&st, sizeof(st));
-		if (pctr_read(&st) < 0)
-			err(1, "pctr_read");
-		pctr_printvals(&st);
-	}
-	return (0);
-}
+struct ctrfn p6fn[] = {
+  {0x03, 0, "LD_BLOCKS",
+   "Number of store buffer blocks."},
+  {0x04, 0, "SB_DRAINS",
+   "Number of store buffer drain cycles."},
+  {0x05, 0, "MISALIGN_MEM_REF",
+   "Number of misaligned data memory references."},
+  {0x06, 0, "SEGMENT_REG_LOADS",
+   "Number of segment register loads."},
+  {0x10, CFL_C0, "FP_COMP_OPS_EXE",
+   "Number of computational floating-point operations executed."},
+  {0x11, CFL_C1, "FP_ASSIST",
+   "Number of floating-point exception cases handled by microcode."},
+  {0x12, CFL_C1, "MUL",
+   "Number of multiplies."},
+  {0x13, CFL_C1, "DIV",
+   "Number of divides."},
+  {0x14, CFL_C0, "CYCLES_DIV_BUSY",
+   "Number of cycles during which the divider is busy."},
+  {0x21, 0, "L2_ADS",
+   "Number of L2 address strobes."},
+  {0x22, 0, "L2_DBUS_BUSY",
+   "Number of cycles durring which the data bus was busy."},
+  {0x23, 0, "L2_DBUS_BUSY_RD",
+   "Number of cycles during which the data bus was busy transferring "
+   "data from L2 to the processor."},
+  {0x24, 0, "L2_LINES_IN",
+   "Number of lines allocated in the L2."},
+  {0x25, 0, "L2_M_LINES_INM",
+   "Number of modified lines allocated in the L2."},
+  {0x26, 0, "L2_LINES_OUT",
+   "Number of lines removed from the L2 for any reason."},
+  {0x27, 0, "L2_M_LINES_OUTM",
+   "Number of modified lines removed from the L2 for any reason."},
+  {0x28, CFL_MESI, "L2_IFETCH",
+   "Number of L2 instruction fetches."},
+  {0x29, CFL_MESI, "L2_LD", 
+   "Number of L2 data loads."},
+  {0x2a, CFL_MESI, "L2_ST",
+   "Number of L2 data stores."},
+  {0x2e, CFL_MESI, "L2_RQSTS",
+   "Number of L2 requests."},
+  {0x43, 0, "DATA_MEM_REFS",
+   "All memory references, both cacheable and non-cacheable."},
+  {0x45, 0, "DCU_LINES_IN",
+   "Total lines allocated in the DCU."},
+  {0x46, 0, "DCU_M_LINES_IN",
+   "Number of M state lines allocated in the DCU."},
+  {0x47, 0, "DCU_M_LINES_OUT",
+   "Number of M state lines evicted from the DCU.  "
+   "This includes evictions via snoop HITM, intervention or replacement"},
+  {0x48, 0, "DCU_MISS_OUTSTANDING",
+   "Weighted number of cycles while a DCU miss is outstanding."},
+  {0x60, 0, "BUS_REQ_OUTSTANDING",
+   "Number of bus requests outstanding."},
+  {0x61, 0, "BUS_BNR_DRV",
+   "Number of bus clock cycles during which the processor is "
+   "driving the BNR pin."},
+  {0x62, CFL_SA, "BUS_DRDY_CLOCKS",
+   "Number of clocks during which DRDY is asserted."},
+  {0x63, CFL_SA, "BUS_LOCK_CLOCKS",
+   "Number of clocks during which LOCK is asserted."},
+  {0x64, 0, "BUS_DATA_RCV",
+   "Number of bus clock cycles during which the processor is "
+   "receiving data."},
+  {0x65, CFL_SA, "BUS_TRAN_BRD",
+   "Number of burst read transactions."},
+  {0x66, CFL_SA, "BUS_TRAN_RFO",
+   "Number of read for ownership transactions."},
+  {0x67, CFL_SA, "BUS_TRANS_WB", 
+   "Number of write back transactions."},
+  {0x68, CFL_SA, "BUS_TRAN_IFETCH",
+   "Number of instruction fetch transactions."},
+  {0x69, CFL_SA, "BUS_TRAN_INVAL",
+   "Number of invalidate transactions."},
+  {0x6a, CFL_SA, "BUS_TRAN_PWR",
+   "Number of partial write transactions."},
+  {0x6b, CFL_SA, "BUS_TRANS_P",
+   "Number of partial transactions."},
+  {0x6c, CFL_SA, "BUS_TRANS_IO",
+   "Number of I/O transactions."},
+  {0x6d, CFL_SA, "BUS_TRAN_DEF",
+   "Number of deferred transactions."},
+  {0x6e, CFL_SA, "BUS_TRAN_BURST",
+   "Number of burst transactions."},
+  {0x6f, CFL_SA, "BUS_TRAN_MEM",
+   "Number of memory transactions."},
+  {0x70, CFL_SA, "BUS_TRAN_ANY",
+   "Number of all transactions."},
+  {0x79, 0, "CPU_CLK_UNHALTED",
+   "Number of cycles during which the processor is not halted."},
+  {0x7a, 0, "BUS_HIT_DRV",
+   "Number of bus clock cycles during which the processor is "
+   "driving the HIT pin."},
+  {0x7b, 0, "BUS_HITM_DRV",
+   "Number of bus clock cycles during which the processor is "
+   "driving the HITM pin."},
+  {0x7e, 0, "BUS_SNOOP_STALL",
+   "Number of clock cycles during which the bus is snoop stalled."},
+  {0x80, 0, "IFU_IFETCH",
+   "Number of instruction fetches, both cacheable and non-cacheable."},
+  {0x81, 0, "IFU_IFETCH_MISS",
+   "Number of instruction fetch misses."},
+  {0x85, 0, "ITLB_MISS",
+   "Number of ITLB misses."},
+  {0x86, 0, "IFU_MEM_STALL",
+   "Number of cycles that the instruction fetch pipe stage is stalled, "
+   "including cache mises, ITLB misses, ITLB faults, "
+   "and victim cache evictions"},
+  {0x87, 0, "ILD_STALL",
+   "Number of cycles that the instruction length decoder is stalled"},
+  {0xa2, 0, "RESOURCE_STALLS",
+   "Number of cycles during which there are resource-related stalls."},
+  {0xc0, 0, "INST_RETIRED",
+   "Number of instructions retired."},
+  {0xc1, CFL_C0, "FLOPS",
+   "Number of computational floating-point operations retired."},
+  {0xc2, 0, "UOPS_RETIRED",
+   "Number of UOPs retired."},
+  {0xc4, 0, "BR_INST_RETIRED",
+   "Number of branch instructions retired."},
+  {0xc5, 0, "BR_MISS_PRED_RETIRED",
+   "Number of mispredicted branches retired."},
+  {0xc6, 0, "CYCLES_INT_MASKED",
+   "Number of processor cycles for which interrupts are disabled."},
+  {0xc7, 0, "CYCLES_INT_PENDING_AND_MASKED",
+   "Number of processor cycles for which interrupts are disabled "
+   "and interrupts are pending."},
+  {0xc8, 0, "HW_INT_RX",
+   "Number of hardware interrupts received."},
+  {0xc9, 0, "BR_TAKEN_RETIRED",
+   "Number of taken branches retired."},
+  {0xca, 0, "BR_MISS_PRED_TAKEN_RET",
+   "Number of taken mispredictioned branches retired."},
+  {0xd0, 0, "INST_DECODER",
+   "Number of instructions decoded."},
+  {0xd2, 0, "PARTIAL_RAT_STALLS",
+   "Number of cycles or events for partial stalls."},
+  {0xe0, 0, "BR_INST_DECODED",
+   "Number of branch instructions decoded."},
+  {0xe2, 0, "BTB_MISSES",
+   "Number of branches that miss the BTB."},
+  {0xe4, 0, "BR_BOGUS",
+   "Number of bogus branches."},
+  {0xe6, 0, "BACLEARS",
+   "Number of times BACLEAR is asserted."},
+  {0x0, 0, NULL, NULL},
+};
 
 static void
-pctr_cpu_creds(void)
+printdesc (char *desc)
 {
-	int atype;
-	char arch[16], vendor[64];
-	int mib[2], cpu_id, cpu_feature;
-	size_t len;
+  char *p;
 
-	/* Get the architecture */
-	mib[0] = CTL_HW;
-	mib[1] = HW_MACHINE;
-	len = sizeof(arch) - 1;
-	bzero(arch, sizeof(arch));
-	if (sysctl(mib, 2, arch, &len, NULL, 0) == -1)
-		err(1, "HW_MACHINE");
-	arch[len] = '\0';
+  for (;;) {
+    while (*desc == ' ')
+      desc++;
+    if (strlen (desc) < 70) {
+      if (*desc)
+	printf ("      %s\n", desc);
+      return;
+    }
+    p = desc + 72;
+    while (*--p != ' ')
+      ;
+    while (*--p == ' ')
+      ;
+    p++;
+    printf ("      %.*s\n", p - desc, desc);
+    desc = p;
+  }
 
-	if (strcmp(arch, "i386") == 0)
-		atype = ARCH_I386;
-	else if (strcmp(arch, "amd64") == 0)
-		atype = ARCH_AMD64;
-	else
-		errx(1, "architecture %s is not supported", arch);
-
-	/* Get the CPU id */
-	mib[0] = CTL_MACHDEP;
-	mib[1] = CPU_CPUID;
-	len = sizeof(cpu_id);
-	if (sysctl(mib, 2, &cpu_id, &len, NULL, 0) == -1)
-		err(1, "CPU_CPUID");
-
-	/* Get the CPU features */
-	mib[1] = CPU_CPUFEATURE;
-	len = sizeof(cpu_feature);
-	if (sysctl(mib, 2, &cpu_feature, &len, NULL, 0) == -1)
-		err(1, "CPU_CPUFEATURE");
-
-	/* Get the processor vendor */
-	mib[0] = CTL_MACHDEP;
-	mib[1] = CPU_CPUVENDOR;
-	len = sizeof(vendor) - 1;
-	bzero(vendor, sizeof(vendor));
-	if (sysctl(mib, 2, vendor, &len, NULL, 0) == -1)
-		err(1, "CPU_CPUVENDOR");
-	vendor[len] = '\0';
-
-	switch (atype) {
-	case ARCH_I386:
-		if (strcmp(vendor, "AuthenticAMD") == 0) {
-			if (((cpu_id >> 8) & 15) >= 6)
-				cpu_type = CPU_AMD;
-			else
-				cpu_type = CPU_UNDEF;	/* old AMD cpu */
-
-		} else if (strcmp(vendor, "GenuineIntel") == 0) {
-			if (((cpu_id >> 8) & 15) == 6 &&
-			    ((cpu_id >> 4) & 15) > 14)
-				cpu_type = CPU_CORE;
-			else if (((cpu_id >> 8) & 15) >= 6)
-				cpu_type = CPU_P6;
-			else if (((cpu_id >> 4) & 15) > 0)
-				cpu_type = CPU_P5;
-			else
-				cpu_type = CPU_UNDEF;	/* old Intel cpu */
-		}
-		if (cpu_feature & CPUID_TSC)
-			tsc_avail = 1;
-		break;
-	case ARCH_AMD64:
-		if (strcmp(vendor, "AuthenticAMD") == 0)
-			cpu_type = CPU_AMD;
-		else if (strcmp(vendor, "GenuineIntel") == 0)
-			cpu_type = CPU_CORE;
-		if (cpu_feature & CPUID_TSC)
-			tsc_avail = 1;
-		break;
-	}
 }
 
-static __inline int
-pctr_ctrfn_index(struct ctrfn *cfnp, u_int32_t func)
+/* Print all possible counter functions */
+static void
+list (int fam)
 {
-	int i;
+  struct ctrfn *cfnp;
 
-	for (i = 0; cfnp[i].name != NULL; i++)
-		if (cfnp[i].fn == func)
-			return (i);
-	return (-1);
+  if (fam == 5)
+    cfnp = p5fn;
+  else if (fam == 6)
+    cfnp = p6fn;
+  else {
+    fprintf (stderr, "Unknown CPU family %d\n", fam);
+    exit (1);
+  }
+  printf ("Hardware counter functions for the %s:\n\n",
+	  fam == 5 ? "Pentium" : "Pentium Pro");
+  for (; cfnp->name; cfnp++) {
+    printf ("%02x  %s", cfnp->fn, cfnp->name);
+    if (cfnp->flags & CFL_MESI)
+      printf ("/mesi");
+    else if (cfnp->flags & CFL_SA)
+      printf ("/a");
+    if (cfnp->flags & CFL_C0)
+      printf ("  (ctr0 only)");
+    if (cfnp->flags & CFL_C1)
+      printf ("  (ctr1 only)");
+    printf ("\n");
+    if (cfnp->desc)
+      printdesc (cfnp->desc);
+  }
+}
+
+struct ctrfn *
+fn2cfnp (u_int family, u_int sel)
+{
+  struct ctrfn *cfnp;
+
+  if (family == 6) {
+    cfnp = p6fn;
+    sel &= 0xff;
+  }
+  else {
+    cfnp = p5fn;
+    sel &= 0x3f;
+  }
+  for (; cfnp->name; cfnp++)
+    if (cfnp->fn == sel)
+      return (cfnp);
+  return (NULL);
 }
 
 static char *
-pctr_fn2str(u_int32_t sel)
+fn2str (int family, u_int sel)
 {
-	static char buf[128];
-	struct ctrfn *cfnp = NULL;
-	char th[6], um[5], *msg;
-	u_int32_t fn;
-	int ind;
+  static char buf[128];
+  char um[9] = "";
+  char cm[6] = "";
+  struct ctrfn *cfnp;
+  u_int fn;
 
-	bzero(buf, sizeof(buf));
-	bzero(th, sizeof(th));
-	bzero(um, sizeof(um));
-	switch (cpu_type) {
-	case CPU_P5:
-		fn = sel & 0x3f;
-		if ((ind = pctr_ctrfn_index(p5fn, fn)) < 0)
-			msg = "unknown function";
-		else
-			msg = p5fn[ind].name;
-		snprintf(buf, sizeof(buf), "%c%c%c %02x %s",
-		    sel & P5CTR_C ? 'c' : '-',
-		    sel & P5CTR_U ? 'u' : '-',
-		    sel & P5CTR_K ? 'k' : '-',
-		    fn, msg);
-		break;
-	case CPU_P6:
-		cfnp = p6fn;
-	case CPU_CORE:
-		if (cpu_type == CPU_CORE)
-			cfnp = corefn;
-		fn = sel & 0xff;
-		if ((ind = pctr_ctrfn_index(cfnp, fn)) < 0)
-			msg = "unknown function";
-		else
-			msg = cfnp[ind].name;
-		if (cfnp[ind].name && cfnp[ind].flags & CFL_MESI)
-			snprintf(um, sizeof (um), "%c%c%c%c",
-			    sel & PCTR_UM_M ? 'M' : '-',
-			    sel & PCTR_UM_E ? 'E' : '-',
-			    sel & PCTR_UM_S ? 'S' : '-',
-			    sel & PCTR_UM_I ? 'I' : '-');
-		else if (cfnp[ind].name && cfnp[ind].flags & CFL_SA)
-			snprintf(um, sizeof(um), "%c",
-			    sel & PCTR_UM_A ? 'A' : '-');
-		if (sel >> PCTR_CM_SHIFT)
-			snprintf(th, sizeof(th), "+%d",
-			    sel >> PCTR_CM_SHIFT);
-		snprintf(buf, sizeof(buf), "%c%c%c%c %02x %02x %s %s %s",
-		    sel & PCTR_I ? 'i' : '-',
-		    sel & PCTR_E ? 'e' : '-',
-		    sel & PCTR_K ? 'k' : '-',
-		    sel & PCTR_U ? 'u' : '-',
-		    fn, (sel >> PCTR_UM_SHIFT) & 0xff, th, um, msg);
-		break;
-	case CPU_AMD:
-		fn = sel & 0xff;
-		if (sel >> PCTR_CM_SHIFT)
-			snprintf(th, sizeof(th), "+%d",
-			    sel >> PCTR_CM_SHIFT);
-		snprintf(buf, sizeof(buf), "%c%c%c%c %02x %02x %s",
-		    sel & PCTR_I ? 'i' : '-',
-		    sel & PCTR_E ? 'e' : '-',
-		    sel & PCTR_K ? 'k' : '-',
-		    sel & PCTR_U ? 'u' : '-',
-		    fn, (sel >> PCTR_UM_SHIFT) & 0xff, th);
-		break;
-	}
-	return (buf);
+  if (family == 5) {
+    fn = sel & 0x3f;
+    cfnp = fn2cfnp (family, fn);
+    sprintf (buf, "%c%c%c %02x %s",
+	     sel & P5CTR_C ? 'c' : '-',
+	     sel & P5CTR_U ? 'u' : '-',
+	     sel & P5CTR_K ? 'k' : '-',
+	     fn, cfnp ? cfnp->name : "unknown function");
+  }
+  else if (family == 6) {
+    fn = sel & 0xff;
+    cfnp = fn2cfnp (family, fn);
+    if (cfnp && cfnp->flags & CFL_MESI)
+      sprintf (um, "/%c%c%c%c",
+	       sel & P6CTR_UM_M ? 'm' : '-',
+	       sel & P6CTR_UM_E ? 'e' : '-',
+	       sel & P6CTR_UM_S ? 's' : '-',
+	       sel & P6CTR_UM_I ? 'i' : '-');
+    else if (cfnp && cfnp->flags & CFL_SA)
+      sprintf (um, "/%c", sel & P6CTR_UM_A ? 'a' : '-');
+    if (sel >> 24)
+      sprintf (cm, "+%d", sel >> 24);
+    sprintf (buf, "%c%c%c%c %02x%s%s%*s %s",
+	     sel & P6CTR_I ? 'i' : '-',
+	     sel & P6CTR_E ? 'e' : '-',
+	     sel & P6CTR_K ? 'k' : '-',
+	     sel & P6CTR_U ? 'u' : '-',
+	     fn, cm, um, 7 - (strlen (cm) + strlen (um)), "",
+	     cfnp ? cfnp->name : "unknown function");
+  }
+  else
+    return (NULL);
+  return (buf);
+}
+
+/* Print status of counters */
+static void
+readst (void)
+{
+  int fd, i;
+  struct pctrst st;
+
+  fd = open (_PATH_PCTR, O_RDONLY);
+  if (fd < 0) {
+    perror (_PATH_PCTR);
+    exit (1);
+  }
+  if (ioctl (fd, PCIOCRD, &st) < 0) {
+    perror ("PCIOCRD");
+    exit (1);
+  }
+  close (fd);
+
+  if (usep5ctr || usep6ctr) {
+    for (i = 0; i < PCTR_NUM; i++)
+      printf (" ctr%d = %16qd  [%s]\n", i, st.pctr_hwc[i],
+	      fn2str (cpufamily, st.pctr_fn[i]));
+  }
+  printf ("  tsc = %16qd\n  idl = %16qd\n", st.pctr_tsc, st.pctr_idl);
 }
 
 static void
-pctr_printvals(struct pctrst *st)
+setctr (int ctr, u_int val)
 {
-	int i, n;
+  int fd;
 
-	switch (cpu_type) {
-	case CPU_P5:
-	case CPU_P6:
-	case CPU_CORE:
-		n = PCTR_INTEL_NUM;
-	case CPU_AMD:
-		if (cpu_type == CPU_AMD)
-			n = PCTR_AMD_NUM;
-		for (i = 0; i < n; i++)
-			printf(" ctr%d = %16llu  [%s]\n", i, st->pctr_hwc[i],
-			    pctr_fn2str(st->pctr_fn[i]));
-		if (tsc_avail)
-			printf("  tsc = %16llu\n", st->pctr_tsc);
-		break;
-	}
-}
-
-static int
-pctr_read(struct pctrst *st)
-{
-	int fd, se;
-
-	fd = open(_PATH_PCTR, O_RDONLY);
-	if (fd < 0)
-		return (-1);
-	if (ioctl(fd, PCIOCRD, st) < 0) {
-		se = errno;
-		close(fd);
-		errno = se;
-		return (-1);
-	}
-	return (close(fd));
-}
-
-static int
-pctr_write(int ctr, u_int32_t val)
-{
-	int fd, se;
-
-	fd = open(_PATH_PCTR, O_WRONLY);
-	if (fd < 0)
-		return (-1);
-	if (ioctl(fd, PCIOCS0 + ctr, &val) < 0) {
-		se = errno;
-		close(fd);
-		errno = se;
-		return (-1);
-	}
-	return (close(fd));
-}
-
-static __inline void
-pctr_printdesc(char *desc)
-{
-	char *p;
-
-	for (;;) {
-		while (*desc == ' ')
-			desc++;
-		if (strlen(desc) < 70) {
-			if (*desc)
-				printf("      %s\n", desc);
-			return;
-		}
-		p = desc + 72;
-		while (*--p != ' ')
-			;
-		while (*--p == ' ')
-			;
-		p++;
-		printf("      %.*s\n", (int)(p-desc), desc);
-		desc = p;
-	}
+  fd = open (_PATH_PCTR, O_WRONLY);
+  if (fd < 0) {
+    perror (_PATH_PCTR);
+    exit (1);
+  }
+  if (ioctl (fd, PCIOCS0 + ctr, &val) < 0) {
+    perror ("PCIOCSn");
+    exit (1);
+  }
+  close (fd);
 }
 
 static void
-pctr_list_fnct(void)
+usage (void)
 {
-	struct ctrfn *cfnp = NULL;
-
-	if (cpu_type == CPU_P5)
-		cfnp = p5fn;
-	else if (cpu_type == CPU_P6)
-		cfnp = p6fn;
-	else if (cpu_type == CPU_CORE)
-		cfnp = corefn;
-	else if (cpu_type == CPU_AMD)
-		cfnp = amdfn;
-	else
-		return;
-
-	for (; cfnp->name; cfnp++) {
-		printf("%02x  %s", cfnp->fn, cfnp->name);
-		if (cfnp->flags & CFL_MESI)
-			printf("  (MESI)");
-		else if (cfnp->flags & CFL_SA)
-			printf("  (A)");
-		if (cfnp->flags & CFL_C0)
-			printf("  (ctr0 only)");
-		else if (cfnp->flags & CFL_C1)
-			printf("  (ctr1 only)");
-		if (cfnp->flags & CFL_UM)
-			printf("  (needs unit mask)");
-		printf("\n");
-		if (cfnp->desc)
-			pctr_printdesc(cfnp->desc);
-	}
+  fprintf (stderr,
+	   "usage:\n"
+	   "  %s\n"
+	   "    Read the counters.\n"
+	   "  %s -l [5|6]\n"
+	   "    List all possible counter functions for P5/P6.\n",
+	   __progname, __progname);
+  if (usep5ctr)
+    fprintf (stderr,
+	     "  %s -s {0|1} [-[c][u][k]] function\n"
+	     "    Configure counter.\n"
+	     "      0/1 - counter to configure\n"
+	     "        c - count cycles not events\n"
+	     "        u - count events in user mode (ring 3)\n"
+	     "        k - count events in kernel mode (rings 0-2)\n",
+	     __progname);
+  else if (usep6ctr)
+    fprintf (stderr,
+	     "  %s -s {0|1} [-[i][e][k][u]] "
+	     "function[+cm][/{[m][e][s][i]|[a]}]\n"
+	     "    Configure counter.\n"
+	     "       0/1 - counter number to configure\n"
+	     "         i - invert cm\n"
+	     "         e - edge detect\n"
+	     "         k - count events in kernel mode (rings 0-2)\n"
+	     "         u - count events in user mode (ring 3)\n"
+	     "        cm - # events/cycle required to bump ctr\n"
+	     "      mesi - Modified/Exclusive/Shared/Invalid in cache\n"
+	     "       s/a - self generated/all events\n", __progname);
+  exit (1);
 }
 
-static int
-pctr_set_cntr(void)
+
+int
+main (int argc, char **argv)
 {
-	struct ctrfn *cfnp = NULL;
-	u_int32_t val = func;
-	int ind = 0;
+  int fd;
+  u_int ctr;
+  char *cp;
+  u_int fn, fl = 0;
+  char **ap;
+  int ac;
+  struct ctrfn *cfnp;
+  int mib[2];
+  size_t len;
 
-	switch (cpu_type) {
-	case CPU_P5:
-		if (ctr >= PCTR_INTEL_NUM)
-			errx(1, "only %d counters are supported",
-			    PCTR_INTEL_NUM);
-		if (cflag)
-			val |= P5CTR_C;
-		if (kflag)
-			val |= P5CTR_K;
-		if (uflag)
-			val |= P5CTR_U;
-		if (func && (!kflag && !uflag))
-			val |= P5CTR_K | P5CTR_U;
-		break;
-	case CPU_P6:
-		cfnp = p6fn;
-	case CPU_CORE:
-		if (cpu_type == CPU_CORE)
-			cfnp = corefn;
-		if (ctr >= PCTR_INTEL_NUM)
-			errx(1, "only %d counters are supported",
-			    PCTR_INTEL_NUM);
-		if (func && (ind = pctr_ctrfn_index(cfnp, func)) < 0)
-			errx(1, "function %02x is not supported", func);
-		if (func && (cfnp[ind].flags & CFL_SA))
-			val |= PCTR_UM_A;
-		if (func && (cfnp[ind].flags & CFL_MESI)) {
-			if (Mflag)
-				val |= PCTR_UM_M;
-			if (Eflag)
-				val |= PCTR_UM_E;
-			if (Sflag)
-				val |= PCTR_UM_S;
-			if (Iflag)
-				val |= PCTR_UM_I;
-			if (!Mflag || !Eflag || !Sflag || !Iflag)
-				val |= PCTR_UM_MESI;
-		}
-		if (func && (cfnp[ind].flags & CFL_ED))
-			val |= PCTR_E;
-		if (func && (cfnp[ind].flags & CFL_UM) && !masku)
-			errx(1, "function %02x needs unit mask specification",
-			    func);
-	case CPU_AMD:
-		if (cpu_type == CPU_AMD && func &&
-		    ((ind = pctr_ctrfn_index(amdfn, func)) < 0))
-			errx(1, "function %02x is not supported", func);
-		if (ctr >= PCTR_AMD_NUM)
-			errx(1, "only %d counters are supported",
-			    PCTR_AMD_NUM);
-		if (eflag)
-			val |= PCTR_E;
-		if (iflag)
-			val |= PCTR_I;
-		if (kflag)
-			val |= PCTR_K;
-		if (uflag)
-			val |= PCTR_U;
-		if (func && (!kflag && !uflag))
-			val |= PCTR_K | PCTR_U;
-		val |= masku << PCTR_UM_SHIFT;
-		val |= thold << PCTR_CM_SHIFT;
-		if (func)
-			val |= PCTR_EN;
-		break;
-	}
+  /* Get the kernel cpuid return values. */
+  mib[0] = CTL_MACHDEP;
+  mib[1] = CPU_CPUVENDOR;
+  if (sysctl(mib, 2, NULL, &len, NULL, 0) == -1)
+    err(1, "sysctl CPU_CPUVENDOR");
+  if (len > sizeof(cpu_vendor))		/* Shouldn't ever happen. */
+    err(1, "sysctl CPU_CPUVENDOR too big");
+  if (sysctl(mib, 2, cpu_vendor, &len, NULL, 0) == -1)
+    err(1, "sysctl CPU_CPUVENDOR");
 
-	return (pctr_write(ctr, val));
-}
+  mib[1] = CPU_CPUID;
+  len = sizeof(cpu_id);
+  if (sysctl(mib, 2, &cpu_id, &len, NULL, 0) == -1)
+    err(1, "sysctl CPU_CPUID");
 
-static void
-usage(void)
-{
-	extern char *__progname;
-	char *usg = NULL;
+  mib[1] = CPU_CPUFEATURE;
+  len = sizeof(cpu_feature);
+  if (sysctl(mib, 2, &cpu_feature, &len, NULL, 0) == -1)
+    err(1, "sysctl CPU_CPUFEATURE");
 
-	switch (cpu_type) {
-	case CPU_P5:
-		usg = "[-cklu] [-f funct] [-s ctr]";
-		break;
-	case CPU_P6:
-	case CPU_CORE:
-		usg = "[-AEeIiklMSu] [-f funct] [-m umask] [-s ctr] "
-		    "[-t thold]";
-		break;
-	case CPU_AMD:
-		usg = "[-eilku] [-f funct] [-m umask] [-s ctr] "
-		    "[-t thold]";
-		break;
-	}
+  pctr_isintel = (strcmp(cpu_vendor, "GenuineIntel") == 0);
 
-	fprintf(stderr, "usage: %s %s\n", __progname, usg);
-	exit(1);
+  if (argc <= 1)
+    readst ();
+  else if (argc == 2 && !strcmp (argv[1], "-l"))
+    list (cpufamily);
+  else if (argc == 3 && !strcmp (argv[1], "-l"))
+    list (atoi (argv[2]));
+  else if (!strcmp (argv[1], "-s") && argc >= 4) {
+    ctr = atoi (argv[2]);
+    if (ctr >= PCTR_NUM)
+      usage ();
+    ap = &argv[3];
+    ac = argc - 3;
+
+    if (usep6ctr)
+      fl |= P6CTR_EN;
+    if (**ap == '-') {
+      cp = *ap;
+      if (usep6ctr)
+	while (*++cp)
+	  switch (*cp) {
+	  case 'i':
+	    fl |= P6CTR_I;
+	    break;
+	  case 'e':
+	    fl |= P6CTR_E;
+	    break;
+	  case 'k':
+	    fl |= P6CTR_K;
+	    break;
+	  case 'u':
+	    fl |= P6CTR_U;
+	    break;
+	  default:
+	    usage ();
+	  }
+      else if(usep5ctr)
+	while (*++cp)
+	  switch (*cp) {
+	  case 'c':
+	    fl |= P5CTR_C;
+	    break;
+	  case 'k':
+	    fl |= P5CTR_K;
+	    break;
+	  case 'u':
+	    fl |= P5CTR_U;
+	    break;
+	  default:
+	    usage ();
+	  }
+      ap++;
+      ac--;
+    }
+    else {
+      if (usep6ctr)
+	fl |= P6CTR_U|P6CTR_K;
+      else if (usep5ctr)
+	fl |= P5CTR_U|P5CTR_K;
+    }
+
+    if (!ac)
+      usage ();
+
+    fn = strtoul (*ap, NULL, 16);
+    if ((usep6ctr && (fn & ~0xff)) || (!usep6ctr && (fn & ~0x3f)))
+      usage ();
+    fl |= fn;
+    if (usep6ctr && (cp = strchr (*ap, '+'))) {
+      cp++;
+      fn = strtol (cp, NULL, 0);
+      if (fn & ~0xff)
+	usage ();
+      fl |= (fn << 24);
+    }
+    cfnp = fn2cfnp (6, fl);
+    if (usep6ctr && cfnp && (cp = strchr (*ap, '/'))) {
+      if (cfnp->flags & CFL_MESI)
+	while (*++cp)
+	  switch (*cp) {
+	  case 'm':
+	    fl |= P6CTR_UM_M;
+	    break;
+	  case 'e':
+	    fl |= P6CTR_UM_E;
+	    break;
+	  case 's':
+	    fl |= P6CTR_UM_S;
+	    break;
+	  case 'i':
+	    fl |= P6CTR_UM_I;
+	    break;
+	  default:
+	    usage ();
+	  }
+      else if (cfnp->flags & CFL_SA)
+	while (*++cp)
+	  switch (*cp) {
+	  case 'a':
+	    fl |= P6CTR_UM_A;
+	    break;
+	  default:
+	    usage ();
+	  }
+      else
+	usage ();
+    }
+    else if (cfnp && (cfnp->flags & CFL_MESI))
+      fl |= P6CTR_UM_MESI;
+    ap++;
+    ac--;
+
+    if (ac)
+      usage ();
+
+    if (usep6ctr && ! (fl & 0xff))
+      fl = 0;
+    setctr (ctr, fl);
+  }
+  else
+    usage ();
+
+  return 0;
 }

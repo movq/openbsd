@@ -1,4 +1,4 @@
-/*	$OpenBSD: dd.c,v 1.23 2015/10/09 01:37:06 deraadt Exp $	*/
+/*	$OpenBSD: dd.c,v 1.8 1998/04/30 05:55:02 deraadt Exp $	*/
 /*	$NetBSD: dd.c,v 1.6 1996/02/20 19:29:06 jtc Exp $	*/
 
 /*-
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,7 +38,21 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)dd.c	8.5 (Berkeley) 4/2/94";
+#else
+static char rcsid[] = "$OpenBSD: dd.c,v 1.8 1998/04/30 05:55:02 deraadt Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mtio.h>
@@ -52,16 +70,14 @@
 #include "dd.h"
 #include "extern.h"
 
-static void dd_close(void);
-static void dd_in(void);
-static void getfdtype(IO *);
-static void setup(void);
-
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
+static void dd_close __P((void));
+static void dd_in __P((void));
+static void getfdtype __P((IO *));
+static void setup __P((void));
 
 IO	in, out;		/* input/output state */
 STAT	st;			/* statistics */
-void	(*cfunc)(void);		/* conversion function */
+void	(*cfunc) __P((void));	/* conversion function */
 size_t	cpy_cnt;		/* # of blocks to copy */
 u_int	ddflags;		/* conversion options */
 size_t	cbsz;			/* conversion block size */
@@ -69,7 +85,9 @@ size_t	files_cnt = 1;		/* # of files to copy */
 const	u_char	*ctab;		/* conversion table */
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	jcl(argv);
 	setup();
@@ -79,18 +97,18 @@ main(int argc, char *argv[])
 
 	atexit(summary);
 
-	if (cpy_cnt != (size_t)-1) {
-		while (files_cnt--)
-			dd_in();
-	}
+	while (files_cnt--)
+		dd_in();
 
 	dd_close();
 	exit(0);
 }
 
 static void
-setup(void)
+setup()
 {
+	u_int cnt;
+
 	if (in.name == NULL) {
 		in.name = "stdin";
 		in.fd = STDIN_FILENO;
@@ -137,7 +155,7 @@ setup(void)
 			err(1, "input buffer");
 		out.db = in.db;
 	} else if ((in.db =
-	    malloc((u_int)(MAXIMUM(in.dbsz, cbsz) + cbsz))) == NULL ||
+	    malloc((u_int)(MAX(in.dbsz, cbsz) + cbsz))) == NULL ||
 	    (out.db = malloc((u_int)(out.dbsz + cbsz))) == NULL)
 		err(1, "output buffer");
 	in.dbp = in.db;
@@ -148,9 +166,6 @@ setup(void)
 		pos_in();
 	if (out.offset)
 		pos_out();
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
 
 	/*
 	 * Truncate the output file; ignore errors because it fails on some
@@ -169,7 +184,6 @@ setup(void)
 		/* Should not get here, but just in case... */
 		errx(1, "case conv and -DNO_CONV");
 #else	/* NO_CONV */
-		u_int cnt;
 		if (ddflags & C_ASCII || ddflags & C_EBCDIC) {
 			if (ddflags & C_LCASE) {
 				for (cnt = 0; cnt < 0377; ++cnt)
@@ -192,12 +206,12 @@ setup(void)
 #endif	/* NO_CONV */
 	}
 
-	/* Statistics timestamp. */
-	(void)gettimeofday(&st.startv, (struct timezone *)NULL);
+	(void)time(&st.start);			/* Statistics timestamp. */
 }
 
 static void
-getfdtype(IO *io)
+getfdtype(io)
+	IO *io;
 {
 	struct mtget mt;
 	struct stat sb;
@@ -206,28 +220,12 @@ getfdtype(IO *io)
 		err(1, "%s", io->name);
 	if (S_ISCHR(sb.st_mode))
 		io->flags |= ioctl(io->fd, MTIOCGET, &mt) ? ISCHR : ISTAPE;
-	if (S_ISFIFO(sb.st_mode) || S_ISSOCK(sb.st_mode))
-		io->flags |= ISPIPE;
+	else if (lseek(io->fd, (off_t)0, SEEK_CUR) == -1 && errno == ESPIPE)
+		io->flags |= ISPIPE;		/* XXX fixed in 4.4BSD */
 }
 
 static void
-swapbytes(void *v, size_t len)
-{
-	unsigned char *p = v;
-	unsigned char t;
-
-	while (len > 1) {
-		t = p[0];
-		p[0] = p[1];
-		p[1] = t;
-		p += 2;
-		len -= 2;
-	}
-}
-
-
-static void
-dd_in(void)
+dd_in()
 {
 	ssize_t n;
 
@@ -309,11 +307,11 @@ dd_in(void)
 		}
 
 		if (ddflags & C_SWAB) {
-			if ((n = in.dbrcnt) & 1) {
+			if ((n = in.dbcnt) & 1) {
 				++st.swab;
 				--n;
 			}
-			swapbytes(in.dbp, n);
+			swab(in.dbp, in.dbp, n);
 		}
 
 		in.dbp += in.dbrcnt;
@@ -326,7 +324,7 @@ dd_in(void)
  * is truncated.
  */
 static void
-dd_close(void)
+dd_close()
 {
 	if (cfunc == def)
 		def_close();
@@ -346,7 +344,8 @@ dd_close(void)
 }
 
 void
-dd_out(int force)
+dd_out(force)
+	int force;
 {
 	static int warned;
 	size_t cnt, n;

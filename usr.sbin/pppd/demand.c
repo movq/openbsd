@@ -1,40 +1,40 @@
-/*	$OpenBSD: demand.c,v 1.11 2015/01/16 06:40:19 deraadt Exp $	*/
+/*	$OpenBSD: demand.c,v 1.6 1998/07/12 04:34:39 angelos Exp $	*/
 
 /*
  * demand.c - Support routines for demand-dialling.
  *
- * Copyright (c) 1989-2002 Paul Mackerras. All rights reserved.
+ * Copyright (c) 1993 The Australian National University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name(s) of the authors of this software must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission.
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Paul Mackerras
- *     <paulus@samba.org>".
- *
- * THE AUTHORS OF THIS SOFTWARE DISCLAIM ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
- * SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by the Australian National University.  The name of the University
+ * may not be used to endorse or promote products derived from this
+ * software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: demand.c,v 1.7 1997/11/27 06:08:26 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: demand.c,v 1.6 1998/07/12 04:34:39 angelos Exp $";
+#endif
+#endif
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <syslog.h>
+#include <netdb.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -46,12 +46,6 @@
 #include <net/bpf.h>
 #include <pcap.h>
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <syslog.h>
 
 #include "pppd.h"
 #include "fsm.h"
@@ -74,7 +68,7 @@ struct packet {
 struct packet *pend_q;
 struct packet *pend_qtail;
 
-static int active_packet(unsigned char *, int);
+static int active_packet __P((unsigned char *, int));
 
 /*
  * demand_conf - configure the interface for doing dial-on-demand.
@@ -112,6 +106,50 @@ demand_conf()
 	if (protp->enabled_flag && protp->demand_conf != NULL)
 	    if (!((*protp->demand_conf)(0)))
 		die(1);
+}
+
+
+/*
+ * demand_block - set each network protocol to block further packets.
+ */
+void
+demand_block()
+{
+    int i;
+    struct protent *protp;
+
+    for (i = 0; (protp = protocols[i]) != NULL; ++i)
+	if (protp->enabled_flag && protp->demand_conf != NULL)
+	    sifnpmode(0, protp->protocol & ~0x8000, NPMODE_QUEUE);
+    get_loop_output();
+}
+
+/*
+ * demand_discard - set each network protocol to discard packets
+ * with an error.
+ */
+void
+demand_discard()
+{
+    struct packet *pkt, *nextpkt;
+    int i;
+    struct protent *protp;
+
+    for (i = 0; (protp = protocols[i]) != NULL; ++i)
+	if (protp->enabled_flag && protp->demand_conf != NULL)
+	    sifnpmode(0, protp->protocol & ~0x8000, NPMODE_ERROR);
+    get_loop_output();
+
+    /* discard all saved packets */
+    for (pkt = pend_q; pkt != NULL; pkt = nextpkt) {
+	nextpkt = pkt->next;
+	free(pkt);
+    }
+    pend_q = NULL;
+    framelen = 0;
+    flush_flag = 0;
+    escape_flag = 0;
+    fcs = PPP_INITFCS;
 }
 
 /*

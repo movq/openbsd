@@ -1,4 +1,4 @@
-.\"	$OpenBSD: msgctl.2,v 1.17 2014/12/10 19:19:00 schwarze Exp $
+.\"	$OpenBSD: msgctl.2,v 1.9 1999/06/29 14:10:08 aaron Exp $
 .\"	$NetBSD: msgctl.2,v 1.2 1997/03/27 08:20:35 mikel Exp $
 .\"
 .\" Copyright (c) 1995 Frank van der Linden
@@ -30,14 +30,16 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"/
-.Dd $Mdocdate: December 10 2014 $
+.Dd August 17, 1995
 .Dt MSGCTL 2
 .Os
 .Sh NAME
 .Nm msgctl
 .Nd message control operations
 .Sh SYNOPSIS
-.In sys/msg.h
+.Fd #include <sys/types.h>
+.Fd #include <sys/ipc.h>
+.Fd #include <sys/msg.h>
 .Ft int
 .Fn msgctl "int msqid" "int cmd" "struct msqid_ds *buf"
 .Sh DESCRIPTION
@@ -53,7 +55,7 @@ may be altered by
 and parts of which determine the actions of
 .Fn msgctl .
 The data structure is defined in
-.In sys/msg.h
+.Aq Pa sys/msg.h
 and contains (amongst others) the following members:
 .Bd -literal
 struct msqid_ds {
@@ -70,11 +72,15 @@ struct msqid_ds {
 .Ed
 .Pp
 The
-.Fa ipc_perm
+.Bf -literal
+ipc_perm
+.Ef
 structure used inside the
-.Fa msqid_ds
+.Bf -literal
+shmid_ds
+.Ef
 structure is defined in
-.In sys/ipc.h
+.Aq Pa sys/ipc.h
 and looks like this:
 .Bd -literal
 struct ipc_perm {
@@ -110,7 +116,7 @@ fields in the structure associated with
 The values are taken from the corresponding fields in the structure
 pointed to by
 .Fa buf .
-This operation can only be executed by the superuser, or a process that
+This operation can only be executed by the super-user, or a process that
 has an effective user ID equal to either
 .Va msg_perm.cuid
 or
@@ -118,19 +124,19 @@ or
 in the data structure associated with the message queue.
 The value of
 .Va msg_qbytes
-can only be increased by the superuser.
-Values for
+can only be increased by the super-user. Values for
 .Va msg_qbytes
 that exceed the system limit
 .Pf ( Dv MSGMNB
 from
-.In sys/msg.h )
+.Aq Pa sys/msg.h )
 are silently truncated to that limit.
+.Pp
 .It Dv IPC_RMID
 Remove the message queue specified by
 .Fa msqid
-and destroy the data associated with it.
-Only the superuser or a process with an effective UID equal to the
+and destroy the data associated with it. Only the super-user or a process
+with an effective UID equal to the
 .Va msg_perm.cuid
 or
 .Va msg_perm.uid
@@ -156,7 +162,10 @@ effective GID can match either
 or
 .Va msg_perm.gid .
 .Sh RETURN VALUES
-.Rv -std
+Upon successful completion, a value of 0 is returned. Otherwise, \-1 is
+returned and the global variable
+.Va errno
+is set to indicate the error.
 .Sh ERRORS
 .Fn msgctl
 will fail if:
@@ -167,7 +176,7 @@ is equal to
 .Dv IPC_SET
 or
 .Dv IPC_RMID
-and the caller is not the superuser, nor does
+and the caller is not the super-user, nor does
 the effective UID match either the
 .Va msg_perm.uid
 or
@@ -178,7 +187,7 @@ An attempt is made to increase the value of
 .Va msg_qbytes
 through
 .Dv IPC_SET
-but the caller is not the superuser.
+but the caller is not the super-user.
 .It Bq Er EACCES
 The command is
 .Dv IPC_STAT
@@ -198,5 +207,4 @@ specifies an invalid address.
 .Xr msgrcv 2 ,
 .Xr msgsnd 2
 .Sh HISTORY
-Message queues appeared in
-.At V.1 .
+Message queues appeared in the first release of AT&T Unix System V.

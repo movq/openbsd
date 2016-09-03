@@ -1,4 +1,3 @@
-/*	$OpenBSD: getservbyport.c,v 1.8 2015/09/14 07:38:38 guenther Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,38 +31,30 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getservbyport.c,v 1.3 1997/07/09 01:08:35 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <netdb.h>
-#include <stdio.h>
 #include <string.h>
 
-int
-getservbyport_r(int port, const char *proto, struct servent *se,
-    struct servent_data *sd)
-{
-	int error;
-
-	setservent_r(sd->stayopen, sd);
-	while ((error = getservent_r(se, sd)) == 0) {
-		if (se->s_port != port)
-			continue;
-		if (proto == 0 || strcmp(se->s_proto, proto) == 0)
-			break;
-	}
-	if (!sd->stayopen && sd->fp != NULL) {
-		fclose(sd->fp);
-		sd->fp = NULL;
-	}
-	return (error);
-}
-DEF_WEAK(getservbyport_r);
+extern int _serv_stayopen;
 
 struct servent *
-getservbyport(int port, const char *proto)
+getservbyport(port, proto)
+	int port;
+	const char *proto;
 {
-	extern struct servent_data _servent_data;
-	static struct servent serv;
+	register struct servent *p;
 
-	if (getservbyport_r(port, proto, &serv, &_servent_data) != 0)
-		return (NULL);
-	return (&serv);
+	setservent(_serv_stayopen);
+	while ((p = getservent())) {
+		if (p->s_port != port)
+			continue;
+		if (proto == 0 || strcmp(p->s_proto, proto) == 0)
+			break;
+	}
+	if (!_serv_stayopen)
+		endservent();
+	return (p);
 }

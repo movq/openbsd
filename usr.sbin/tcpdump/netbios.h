@@ -1,9 +1,7 @@
-/*	$OpenBSD: netbios.h,v 1.4 2007/10/07 16:41:05 deraadt Exp $	*/
-
 /*
  * NETBIOS protocol formats
  *
- * @(#) $Id: netbios.h,v 1.4 2007/10/07 16:41:05 deraadt Exp $
+ * @(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/netbios.h,v 1.2 1996/12/12 16:22:49 bitblt Exp $
  */
 
 struct p8022Hdr {

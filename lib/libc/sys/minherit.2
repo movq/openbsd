@@ -1,4 +1,4 @@
-.\"	$OpenBSD: minherit.2,v 1.15 2014/07/02 22:22:35 matthew Exp $
+.\"	$OpenBSD: minherit.2,v 1.9 1999/06/29 14:50:29 aaron Exp $
 .\"
 .\" Copyright (c) 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,14 +33,16 @@
 .\"
 .\"	@(#)minherit.2	8.1 (Berkeley) 6/9/93
 .\"
-.Dd $Mdocdate: July 2 2014 $
+.Dd June 9, 1993
 .Dt MINHERIT 2
 .Os
 .Sh NAME
 .Nm minherit
 .Nd control the inheritance of pages
 .Sh SYNOPSIS
-.In sys/mman.h
+.Fd #include <sys/types.h>
+.Fd #include <sys/mman.h>
+.Fd #include <vm/vm_inherit.h>
 .Ft int
 .Fn minherit "void *addr" "size_t len" "int inherit"
 .Sh DESCRIPTION
@@ -44,46 +50,15 @@ The
 .Fn minherit
 system call
 changes the specified pages to have the inheritance characteristic
-.Fa inherit .
-A page's inheritance characteristic controls how it will be mapped
-in child processes as created by
-.Xr fork 2 .
-.Pp
-The possible inheritance characteristics are:
-.Pp
-.Bl -tag -width MAP_INHERIT_SHARE -offset indent -compact
-.It Dv MAP_INHERIT_NONE
-Pages are not mapped in the child process.
-.It Dv MAP_INHERIT_COPY
-Private copy of pages are mapped in the child process.
-.It Dv MAP_INHERIT_SHARE
-Mapped pages are shared between the parent and child processes.
-.It Dv MAP_INHERIT_ZERO
-New anonymous pages (initialized to all zero bytes)
-are mapped in the child process.
-.El
-.Pp
+.Fa inherit ,
+which can be set to
+.Dv VM_INHERIT_NONE ,
+.Dv VM_INHERIT_COPY ,
+or
+.Dv VM_INHERIT_SHARE .
 Not all implementations will guarantee that the inheritance characteristic
 can be set on a page basis;
 the granularity of changes may be as large as an entire region.
-.Sh RETURN VALUES
-.Rv -std
-.Sh ERRORS
-The
-.Fn minherit
-system call will fail if:
-.Bl -tag -width Er
-.It Bq Er EINVAL
-The virtual address range specified by the
-.Fa addr
-and
-.Fa len
-arguments is not valid.
-.It Bq Er EINVAL
-The
-.Fa inherit
-argument is invalid.
-.El
 .Sh SEE ALSO
 .Xr madvise 2 ,
 .Xr mincore 2 ,

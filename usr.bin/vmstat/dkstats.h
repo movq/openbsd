@@ -1,4 +1,4 @@
-/*	$OpenBSD: dkstats.h,v 1.10 2006/06/13 02:11:27 dlg Exp $	*/
+/*	$OpenBSD: dkstats.h,v 1.4 1997/06/23 22:11:06 millert Exp $	*/
 /*	$NetBSD: dkstats.h,v 1.1 1996/05/10 23:19:28 thorpej Exp $	*/
 
 /*
@@ -38,20 +38,17 @@
 
 /* poseur disk entry to hold the information we're interested in. */
 struct _disk {
-	int		  dk_ndrive;	/* # of drives. */
 	int		 *dk_select;	/* Display stats for selected disks. */
 	char		**dk_name;	/* Disk names (sd0, wd1, etc). */
-	u_int64_t	 *dk_rxfer;	/* # of read transfers. */
-	u_int64_t	 *dk_wxfer;	/* # of write transfers. */
+	u_int64_t	 *dk_xfer;	/* # of transfers. */
 	u_int64_t	 *dk_seek;	/* # of seeks (currently unused). */
-	u_int64_t	 *dk_rbytes;	/* # of bytes read. */
-	u_int64_t	 *dk_wbytes;	/* # of bytes written. */
+	u_int64_t	 *dk_bytes;	/* # of bytes transfered. */
 	struct timeval	 *dk_time;	/* Time spent in disk i/o. */
-	int64_t	tk_nin;			/* TTY Chars in. */
-	int64_t	tk_nout;		/* TTY Chars out. */
+	long	tk_nin;			/* TTY Chars in. */
+	long	tk_nout;		/* TTY Chars out. */
 	long	cp_time[CPUSTATES];	/* System timer ticks. */
 };
 
-void dkswap(void);
-void dkreadstats(void);
-int dkinit(int);
+void dkswap __P((void));
+void dkreadstats __P((void));
+int dkinit __P((int));

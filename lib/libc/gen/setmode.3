@@ -1,4 +1,4 @@
-.\"	$OpenBSD: setmode.3,v 1.14 2013/06/05 03:39:22 tedu Exp $
+.\"	$OpenBSD: setmode.3,v 1.6 1999/05/20 14:50:35 aaron Exp $
 .\"
 .\" Copyright (c) 1989, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,7 +31,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: June 5 2013 $
+.Dd June 9, 1993
 .Dt SETMODE 3
 .Os
 .Sh NAME
@@ -35,7 +39,7 @@
 .Nm setmode
 .Nd modify mode bits
 .Sh SYNOPSIS
-.In unistd.h
+.Fd #include <unistd.h>
 .Ft mode_t
 .Fn getmode "const void *set" "mode_t mode"
 .Ft void *
@@ -43,7 +47,8 @@
 .Sh DESCRIPTION
 The
 .Fn getmode
-function returns a copy of the file permission bits
+function
+returns a copy of the file permission bits
 .Fa mode
 as altered by the values pointed to by
 .Fa set .
@@ -52,7 +57,8 @@ may be examined.
 .Pp
 The
 .Fn setmode
-function takes an absolute (octal) or symbolic value, as described in
+function
+takes an absolute (octal) or symbolic value, as described in
 .Xr chmod 1 ,
 as an argument
 and returns a pointer to mode values to be supplied to
@@ -85,15 +91,10 @@ returns.
 .Sh ERRORS
 The
 .Fn setmode
-function may fail and set
-.Va errno
-for any of the errors specified for the library routine
-.Xr malloc 3
-or to
-.Er ERANGE
-if an invalid octal value was specified, or
-.Er EINVAL
-if an invalid symbolic value was specified.
+function
+may fail and set errno for any of the errors specified for the library
+routine
+.Xr malloc 3 .
 .Sh SEE ALSO
 .Xr chmod 1 ,
 .Xr stat 2 ,

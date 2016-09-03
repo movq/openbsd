@@ -1,5 +1,5 @@
-/*	$OpenBSD: pass1.c,v 1.16 2015/08/20 22:02:20 deraadt Exp $	*/
-/*	$NetBSD: pass1.c,v 1.9 2000/01/31 11:40:12 bouyer Exp $	*/
+/*	$OpenBSD: pass1.c,v 1.4 1998/11/11 08:10:36 deraadt Exp $	*/
+/*	$NetBSD: pass1.c,v 1.1 1997/06/11 11:21:51 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1997 Manuel Bouyer.
@@ -14,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,7 +35,19 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* setbit btodb isset */
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)pass1.c	8.1 (Berkeley) 6/5/93";
+#else
+#if 0
+static char rcsid[] = "$NetBSD: pass1.c,v 1.1 1997/06/11 11:21:51 bouyer Exp $";
+#else
+static char rcsid[] = "$OpenBSD: pass1.c,v 1.4 1998/11/11 08:10:36 deraadt Exp $";
+#endif
+#endif
+#endif /* not lint */
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
 #include <ufs/ext2fs/ext2fs_dir.h>
@@ -42,59 +58,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "fsck.h"
 #include "extern.h"
 #include "fsutil.h"
 
-static daddr32_t badblk;
-static daddr32_t dupblk;
-static void checkinode(ino_t, struct inodesc *);
+static daddr_t badblk;
+static daddr_t dupblk;
+static void checkinode __P((ino_t, struct inodesc *));
 
 void
-pass1(void)
+pass1()
 {
 	ino_t inumber;
-	int c, i;
-	daddr32_t dbase;
+	int c, i, cgd;
 	struct inodesc idesc;
 
 	/*
 	 * Set file system reserved blocks in used block map.
 	 */
 	for (c = 0; c < sblock.e2fs_ncg; c++) {
-		dbase = c * sblock.e2fs.e2fs_bpg +
-		    sblock.e2fs.e2fs_first_dblock;
-		/* Mark the blocks used for the inode table */
-		if (letoh32(sblock.e2fs_gd[c].ext2bgd_i_tables) >= dbase) {
-			for (i = 0; i < sblock.e2fs_itpg; i++)
-				setbmap(
-				    letoh32(sblock.e2fs_gd[c].ext2bgd_i_tables)
-				    + i);
-		}
-		/* Mark the blocks used for the block bitmap */
-		if (letoh32(sblock.e2fs_gd[c].ext2bgd_b_bitmap) >= dbase)
-			setbmap(letoh32(sblock.e2fs_gd[c].ext2bgd_b_bitmap));
-		/* Mark the blocks used for the inode bitmap */
-		if (letoh32(sblock.e2fs_gd[c].ext2bgd_i_bitmap) >= dbase)
-			setbmap(letoh32(sblock.e2fs_gd[c].ext2bgd_i_bitmap));
+		i = c * sblock.e2fs.e2fs_bpg + sblock.e2fs.e2fs_first_dblock;
+		cgd = i + cgoverhead;
 
-		if (sblock.e2fs.e2fs_rev == E2FS_REV0 ||
-		    (sblock.e2fs.e2fs_features_rocompat &
-			EXT2F_ROCOMPAT_SPARSESUPER) == 0 ||
-		    cg_has_sb(c)) {
-			/* Mark copuy of SB and descriptors */
-			setbmap(dbase);
-			for (i = 1; i <= sblock.e2fs_ngdb; i++)
-				setbmap(dbase+i);
-		}
-
-
-		if (c == 0) {
-			for(i = 0; i < dbase; i++)
-				setbmap(i);
-		}
+		if (c == 0)
+			i = 0;
+		for (; i < cgd; i++)
+			setbmap(i);
 	}
 
 	/*
@@ -118,26 +108,30 @@ pass1(void)
 	freeinodebuf();
 }
 
+#define MODE_USES_BLOCKS( mode ) (mode == IFREG || mode == IFDIR || mode == IFLNK)
+
 static void
-checkinode(ino_t inumber, struct inodesc *idesc)
+checkinode(inumber, idesc)
+	ino_t inumber;
+	register struct inodesc *idesc;
 {
-	struct ext2fs_dinode *dp;
+	register struct ext2fs_dinode *dp;
 	struct zlncnt *zlnp;
 	int ndb, j;
 	mode_t mode;
+	char *symbuf;
 
 	dp = getnextinode(inumber);
-	if (inumber < EXT2_FIRSTINO && inumber != EXT2_ROOTINO)
+	if (inumber < EXT2_FIRSTINO && inumber != EXT2_ROOTINO) 
 		return;
 
-	mode = letoh16(dp->e2di_mode) & IFMT;
+	mode = dp->e2di_mode & IFMT;
 	if (mode == 0 || (dp->e2di_dtime != 0 && dp->e2di_nlink == 0)) {
 		if (mode == 0 && (
 			memcmp(dp->e2di_blocks, zino.e2di_blocks,
 			(NDADDR + NIADDR) * sizeof(u_int32_t)) ||
-		    dp->e2di_mode || inosize(dp))) {
-			pfatal("PARTIALLY ALLOCATED INODE I=%llu",
-			    (unsigned long long)inumber);
+		    dp->e2di_mode || dp->e2di_size)) {
+			pfatal("PARTIALLY ALLOCATED INODE I=%u", inumber);
 			if (reply("CLEAR") == 1) {
 				dp = ginode(inumber);
 				clearinode(dp);
@@ -146,15 +140,14 @@ checkinode(ino_t inumber, struct inodesc *idesc)
 		}
 #ifdef notyet /* it seems that dtime == 0 is valid for a unallocated inode */
 		if (dp->e2di_dtime == 0) {
-			pwarn("DELETED INODE I=%llu HAS A NULL DTIME",
-			    (unsigned long long)inumber);
+			pwarn("DELETED INODE I=%u HAS A NULL DTIME", inumber);
 			if (preen) {
 				printf(" (CORRECTED)\n");
 			}
 			if (preen || reply("CORRECT")) {
 				time_t t;
 				time(&t);
-				dp->e2di_dtime = htole32(t);
+				dp->e2di_dtime = t;
 				dp = ginode(inumber);
 				inodirty();
 			}
@@ -165,10 +158,9 @@ checkinode(ino_t inumber, struct inodesc *idesc)
 	}
 	lastino = inumber;
 	if (dp->e2di_dtime != 0) {
-		time_t t = letoh32(dp->e2di_dtime);
+		time_t t = dp->e2di_dtime;
 		char *p = ctime(&t);
-		pwarn("INODE I=%llu HAS DTIME=%12.12s %4.4s",
-		    (unsigned long long)inumber, &p[4], &p[20]);
+		pwarn("INODE I=%u HAS DTIME=%12.12s %4.4s", inumber, &p[4], &p[20]);
 		if (preen) {
 			printf(" (CORRECTED)\n");
 		}
@@ -178,68 +170,66 @@ checkinode(ino_t inumber, struct inodesc *idesc)
 			inodirty();
 		}
 	}
-	if (inosize(dp) + sblock.e2fs_bsize - 1 < inosize(dp)) {
+	if (/* dp->di_size < 0 || */
+	    dp->e2di_size + sblock.e2fs_bsize - 1 < dp->e2di_size) {
 		if (debug)
-			printf("bad size %llu:", (unsigned long long)inosize(dp));
+			printf("bad size %qu:", dp->e2di_size);
 		goto unknown;
 	}
 	if (!preen && mode == IFMT && reply("HOLD BAD BLOCK") == 1) {
 		dp = ginode(inumber);
-		dp->e2di_mode = htole16(IFREG|0600);
-		inossize(dp, sblock.e2fs_bsize);
+		dp->e2di_size = sblock.e2fs_bsize;
+		dp->e2di_mode = IFREG|0600;
 		inodirty();
 	}
-	ndb = howmany(inosize(dp), sblock.e2fs_bsize);
-	if (ndb < 0) {
-		if (debug)
-			printf("bad size %llu ndb %d:",
-			    (unsigned long long)inosize(dp), ndb);
-		goto unknown;
-	}
-	if (mode == IFBLK || mode == IFCHR)
-		ndb++;
-	if (mode == IFLNK) {
-		/*
-		 * Fake ndb value so direct/indirect block checks below
-		 * will detect any garbage after symlink string.
-		 */
-		if (inosize(dp) < EXT2_MAXSYMLINKLEN ||
-		    (EXT2_MAXSYMLINKLEN == 0 && dp->e2di_blocks == 0)) {
-			ndb = howmany(inosize(dp), sizeof(u_int32_t));
-			if (ndb > NDADDR) {
-				j = ndb - NDADDR;
-				for (ndb = 1; j > 1; j--)
-					ndb *= NINDIR(&sblock);
-				ndb += NDADDR;
+	if (MODE_USES_BLOCKS( mode )) {
+		ndb = howmany(dp->e2di_size, sblock.e2fs_bsize);
+		if (ndb < 0) {
+			if (debug)
+				printf("bad size %qu ndb %d:",
+					dp->e2di_size, ndb);
+			goto unknown;
+		}
+		if (mode == IFBLK || mode == IFCHR)
+			ndb++;
+		if (mode == IFLNK) {
+			/*
+		 	 * Fake ndb value so direct/indirect block checks below
+		 	 * will detect any garbage after symlink string.
+		 	 */
+			if (dp->e2di_size < EXT2_MAXSYMLINKLEN ||
+		    	(EXT2_MAXSYMLINKLEN == 0 && dp->e2di_blocks == 0)) {
+				ndb = howmany(dp->e2di_size, sizeof(u_int32_t));
+				if (ndb > NDADDR) {
+					j = ndb - NDADDR;
+					for (ndb = 1; j > 1; j--)
+						ndb *= NINDIR(&sblock);
+					ndb += NDADDR;
+				}
 			}
 		}
-	}
-	/* Linux puts things in blocks for FIFO, so skip this check */
-	if (mode != IFIFO) {
 		for (j = ndb; j < NDADDR; j++)
 			if (dp->e2di_blocks[j] != 0) {
 				if (debug)
-					printf("bad direct addr: %d\n",
-					    letoh32(dp->e2di_blocks[j]));
+					printf("bad direct addr: %d\n", dp->e2di_blocks[j]);
 				goto unknown;
 			}
 		for (j = 0, ndb -= NDADDR; ndb > 0; j++)
 			ndb /= NINDIR(&sblock);
-		for (; j < NIADDR; j++) {
+		for (; j < NIADDR; j++)
 			if (dp->e2di_blocks[j+NDADDR] != 0) {
 				if (debug)
 					printf("bad indirect addr: %d\n",
-					    letoh32(dp->e2di_blocks[j+NDADDR]));
+						dp->e2di_blocks[j+NDADDR]);
 				goto unknown;
 			}
-		}
 	}
 	if (ftypeok(dp) == 0)
 		goto unknown;
 	n_files++;
-	lncntp[inumber] = letoh16(dp->e2di_nlink);
-	if (dp->e2di_nlink == 0) {
-		zlnp = malloc(sizeof *zlnp);
+	lncntp[inumber] = dp->e2di_nlink;
+	if (dp->e2di_nlink <= 0) {
+		zlnp = (struct zlncnt *)malloc(sizeof *zlnp);
 		if (zlnp == NULL) {
 			pfatal("LINK COUNT TABLE OVERFLOW");
 			if (reply("CONTINUE") == 0)
@@ -251,7 +241,7 @@ checkinode(ino_t inumber, struct inodesc *idesc)
 		}
 	}
 	if (mode == IFDIR) {
-		if (inosize(dp) == 0)
+		if (dp->e2di_size == 0)
 			statemap[inumber] = DCLEAR;
 		else
 			statemap[inumber] = DSTATE;
@@ -259,26 +249,26 @@ checkinode(ino_t inumber, struct inodesc *idesc)
 	} else {
 		statemap[inumber] = FSTATE;
 	}
-	typemap[inumber] = E2IFTODT(mode);
-	badblk = dupblk = 0;
-	idesc->id_number = inumber;
-	(void)ckinode(dp, idesc);
-	idesc->id_entryno *= btodb(sblock.e2fs_bsize);
-	if (letoh32(dp->e2di_nblock) != idesc->id_entryno) {
-		pwarn("INCORRECT BLOCK COUNT I=%llu (%d should be %d)",
-		    (unsigned long long)inumber,
-		    letoh32(dp->e2di_nblock), idesc->id_entryno);
-		if (preen)
-			printf(" (CORRECTED)\n");
-		else if (reply("CORRECT") == 0)
-			return;
-		dp = ginode(inumber);
-		dp->e2di_nblock = htole32(idesc->id_entryno);
-		inodirty();
+	if (MODE_USES_BLOCKS( mode )) {	
+		badblk = dupblk = 0;
+		idesc->id_number = inumber;
+		(void)ckinode(dp, idesc);
+		idesc->id_entryno *= btodb(sblock.e2fs_bsize);
+		if (dp->e2di_nblock != idesc->id_entryno) {
+			pwarn("INCORRECT BLOCK COUNT I=%u (%d should be %d)",
+		    	inumber, dp->e2di_nblock, idesc->id_entryno);
+			if (preen)
+				printf(" (CORRECTED)\n");
+			else if (reply("CORRECT") == 0)
+				return;
+			dp = ginode(inumber);
+			dp->e2di_nblock = idesc->id_entryno;
+			inodirty();
+		}
 	}
 	return;
 unknown:
-	pfatal("UNKNOWN FILE TYPE I=%llu", (unsigned long long)inumber);
+	pfatal("UNKNOWN FILE TYPE I=%u", inumber);
 	statemap[inumber] = FCLEAR;
 	if (reply("CLEAR") == 1) {
 		statemap[inumber] = USTATE;
@@ -289,19 +279,20 @@ unknown:
 }
 
 int
-pass1check(struct inodesc *idesc)
+pass1check(idesc)
+	register struct inodesc *idesc;
 {
 	int res = KEEPON;
 	int anyout, nfrags;
-	daddr32_t blkno = idesc->id_blkno;
-	struct dups *dlp;
+	daddr_t blkno = idesc->id_blkno;
+	register struct dups *dlp;
 	struct dups *new;
 
 	if ((anyout = chkrange(blkno, idesc->id_numfrags)) != 0) {
 		blkerror(idesc->id_number, "BAD", blkno);
 		if (badblk++ >= MAXBAD) {
-			pwarn("EXCESSIVE BAD BLKS I=%llu",
-			    (unsigned long long)idesc->id_number);
+			pwarn("EXCESSIVE BAD BLKS I=%u",
+				idesc->id_number);
 			if (preen)
 				printf(" (SKIPPING)\n");
 			else if (reply("CONTINUE") == 0)
@@ -318,15 +309,15 @@ pass1check(struct inodesc *idesc)
 		} else {
 			blkerror(idesc->id_number, "DUP", blkno);
 			if (dupblk++ >= MAXDUP) {
-				pwarn("EXCESSIVE DUP BLKS I=%lluu",
-				    (unsigned long long)idesc->id_number);
+				pwarn("EXCESSIVE DUP BLKS I=%u",
+					idesc->id_number);
 				if (preen)
 					printf(" (SKIPPING)\n");
 				else if (reply("CONTINUE") == 0)
 					errexit("%s\n", "");
 				return (STOP);
 			}
-			new = malloc(sizeof(struct dups));
+			new = (struct dups *)malloc(sizeof(struct dups));
 			if (new == NULL) {
 				pfatal("DUP TABLE OVERFLOW.");
 				if (reply("CONTINUE") == 0)

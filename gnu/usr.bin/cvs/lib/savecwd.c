@@ -13,7 +13,6 @@
 #endif
 
 #ifdef HAVE_FCNTL_H
-# include <sys/types.h>
 # include <fcntl.h>
 #else
 # include <sys/file.h>

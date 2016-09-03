@@ -1,4 +1,3 @@
-/*	$OpenBSD: mtrace.c,v 1.37 2016/08/03 23:37:25 krw Exp $	*/
 /*	$NetBSD: mtrace.c,v 1.5 1995/12/10 10:57:15 mycroft Exp $	*/
 
 /*
@@ -22,49 +21,56 @@
  * format the unicast traceroute program written by Van Jacobson (LBL)
  * for the parts where that makes sense.
  * 
- * Copyright (c) 1998-2001.
- * The University of Southern California/Information Sciences Institute.
+ * Copyright (c) 1995 by the University of Southern California
  * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the project nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation in source and binary forms for non-commercial purposes
+ * and without fee is hereby granted, provided that the above copyright
+ * notice appear in all copies and that both the copyright notice and
+ * this permission notice appear in supporting documentation, and that
+ * any documentation, advertising materials, and other materials related
+ * to such distribution and use acknowledge that the software was
+ * developed by the University of Southern California, Information
+ * Sciences Institute.  The name of the University may not be used to
+ * endorse or promote products derived from this software without
+ * specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ * THE UNIVERSITY OF SOUTHERN CALIFORNIA makes no representations about
+ * the suitability of this software for any purpose.  THIS SOFTWARE IS
+ * PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * Other copyrights might apply to parts of this software and are so
+ * noted when applicable.
+ *
+ * In particular, parts of the prototype version of this program may
+ * have been derived from mrouted programs sources covered by the
+ * license in the accompanying file named "LICENSE".
  */
+
+#ifndef lint
+static char rcsid[] =
+    "@(#) $Id: mtrace.c,v 1.3 1996/09/11 19:15:36 deraadt Exp $";
+#endif
 
 #include <netdb.h>
 #include <sys/time.h>
+#include <memory.h>
 #include <string.h>
-#include <poll.h>
 #include <ctype.h>
 #include <sys/ioctl.h>
 #include "defs.h"
 #include <arpa/inet.h>
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 #ifdef SUNOS5
 #include <sys/systeminfo.h>
 #endif
-#include <ifaddrs.h>
-#include <err.h>
 
 #define DEFAULT_TIMEOUT	3	/* How long to wait before retrying requests */
 #define DEFAULT_RETRIES 3	/* How many times to try */
@@ -128,39 +134,45 @@ u_int32_t tdst = 0;		/* Address where trace is sent (last-hop) */
 
 vifi_t  numvifs;		/* to keep loader happy */
 				/* (see kern.c) */
+#ifndef SYSV
+extern long random();
+#endif
+extern int errno;
 
-char *			inet_name(u_int32_t addr);
-u_int32_t			host_addr(char *name);
+char *			inet_name __P((u_int32_t addr));
+u_int32_t			host_addr __P((char *name));
 /* u_int is promoted u_char */
-char *			proto_type(u_int type);
-char *			flag_type(u_int type);
+char *			proto_type __P((u_int type));
+char *			flag_type __P((u_int type));
 
-u_int32_t			get_netmask(int s, u_int32_t dst);
-int			get_ttl(struct resp_buf *buf);
-int			t_diff(u_long a, u_long b);
-u_long			fixtime(u_long time);
-int			send_recv(u_int32_t dst, int type, int code,
-			    int tries, struct resp_buf *save);
-char *			print_host(u_int32_t addr);
-char *			print_host2(u_int32_t addr1, u_int32_t addr2);
-void			print_trace(int index, struct resp_buf *buf);
-int			what_kind(struct resp_buf *buf, char *why);
-char *			scale(int *hop);
-void			stat_line(struct tr_resp *r, struct tr_resp *s,
-			    int have_next, int *res);
-void			fixup_stats(struct resp_buf *base,
-			    struct resp_buf *prev, struct resp_buf *new);
-int			print_stats(struct resp_buf *base,
-			    struct resp_buf *prev, struct resp_buf *new);
-void			check_vif_state(void);
-u_long			byteswap(u_long v);
+u_int32_t			get_netmask __P((int s, u_int32_t dst));
+int			get_ttl __P((struct resp_buf *buf));
+int			t_diff __P((u_long a, u_long b));
+u_long			fixtime __P((u_long time));
+int			send_recv __P((u_int32_t dst, int type, int code,
+					int tries, struct resp_buf *save));
+char *			print_host __P((u_int32_t addr));
+char *			print_host2 __P((u_int32_t addr1, u_int32_t addr2));
+void			print_trace __P((int index, struct resp_buf *buf));
+int			what_kind __P((struct resp_buf *buf, char *why));
+char *			scale __P((int *hop));
+void			stat_line __P((struct tr_resp *r, struct tr_resp *s,
+					int have_next, int *res));
+void			fixup_stats __P((struct resp_buf *base,
+					struct resp_buf *prev,
+					struct resp_buf *new));
+int			print_stats __P((struct resp_buf *base,
+					struct resp_buf *prev,
+					struct resp_buf *new));
+void			check_vif_state __P((void));
 
-int			main(int argc, char *argv[]);
+int			main __P((int argc, char *argv[]));
 
 
 
 char   *
-inet_name(u_int32_t addr)
+inet_name(addr)
+    u_int32_t  addr;
 {
     struct hostent *e;
 
@@ -171,9 +183,10 @@ inet_name(u_int32_t addr)
 
 
 u_int32_t 
-host_addr(char *name)
+host_addr(name)
+    char   *name;
 {
-    struct hostent *e = NULL;
+    struct hostent *e = (struct hostent *)0;
     u_int32_t  addr;
     int	i, dots = 3;
     char	buf[40];
@@ -185,12 +198,9 @@ host_addr(char *name)
      * if the name is all numeric.
      */
     for (i = sizeof(buf) - 7; i > 0; --i) {
-	if (*ip == '.')
-		--dots;
-	else if (*ip == '\0')
-		break;
-	else if (!isdigit((unsigned char)*ip))
-		dots = 0;  /* Not numeric, don't add zeroes */
+	if (*ip == '.') --dots;
+	else if (*ip == '\0') break;
+	else if (!isdigit(*ip)) dots = 0;  /* Not numeric, don't add zeroes */
 	*op++ = *ip++;
     }
     for (i = 0; i < dots; ++i) {
@@ -213,7 +223,8 @@ host_addr(char *name)
 
 
 char *
-proto_type(u_int type)
+proto_type(type)
+    u_int type;
 {
     static char buf[80];
 
@@ -227,14 +238,15 @@ proto_type(u_int type)
       case PROTO_CBT:
 	return ("CBT");
       default:
-	(void) snprintf(buf, sizeof buf, "Unknown protocol code %d", type);
+	(void) sprintf(buf, "Unknown protocol code %d", type);
 	return (buf);
     }
 }
 
 
 char *
-flag_type(u_int type)
+flag_type(type)
+    u_int type;
 {
     static char buf[80];
 
@@ -258,7 +270,7 @@ flag_type(u_int type)
       case TR_NO_SPACE:
 	return ("No space in packet");
       default:
-	(void) snprintf(buf, sizeof buf, "Unknown error code %d", type);
+	(void) sprintf(buf, "Unknown error code %d", type);
 	return (buf);
     }
 }    
@@ -272,41 +284,48 @@ flag_type(u_int type)
  */
 
 u_int32_t
-get_netmask(int s, u_int32_t dst)
+get_netmask(s, dst)
+    int s;
+    u_int32_t dst;
 {
+    unsigned int i;
+    char ifbuf[5000];
+    struct ifconf ifc;
+    struct ifreq *ifr;
     u_int32_t if_addr, if_mask;
     u_int32_t retval = 0xFFFFFFFF;
     int found = FALSE;
-    struct ifaddrs *ifap, *ifa;
 
-    if (getifaddrs(&ifap) != 0) {
-	perror("getifaddrs");
+    ifc.ifc_buf = ifbuf;
+    ifc.ifc_len = sizeof(ifbuf);
+    if (ioctl(s, SIOCGIFCONF, (char *) &ifc) < 0) {
+	perror("ioctl (SIOCGIFCONF)");
 	return (retval);
     }
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-	if (ifa->ifa_addr->sa_family != AF_INET) 
-             continue;
-	if_addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
-	if_mask = ((struct sockaddr_in *)ifa->ifa_netmask)->sin_addr.s_addr;
-	if ((dst & if_mask) == (if_addr & if_mask)) {
-	    retval = if_mask;
-	    if (lcl_addr == 0)
-		lcl_addr = if_addr;
+    for (i = 0; i < ifc.ifc_len; ) {
+	ifr = (struct ifreq *)((char *)ifc.ifc_req + i);
+	i += sizeof(ifr->ifr_name) + ifr->ifr_addr.sa_len;
+	if_addr = ((struct sockaddr_in *)&(ifr->ifr_addr))->sin_addr.s_addr;
+	if (ioctl(s, SIOCGIFNETMASK, (char *)ifr) >= 0) {
+	    if_mask = ((struct sockaddr_in *)&(ifr->ifr_addr))->sin_addr.s_addr;
+	    if ((dst & if_mask) == (if_addr & if_mask)) {
+		retval = if_mask;
+		if (lcl_addr == 0) lcl_addr = if_addr;
+	    }
 	}
-	if (lcl_addr == if_addr)
-	    found = TRUE;
+	if (lcl_addr == if_addr) found = TRUE;
     }
     if (!found && lcl_addr != 0) {
 	printf("Interface address is not valid\n");
 	exit(1);
     }
-    freeifaddrs(ifap);
     return (retval);
 }
 
 
 int
-get_ttl(struct resp_buf *buf)
+get_ttl(buf)
+    struct resp_buf *buf;
 {
     int rno;
     struct tr_resp *b;
@@ -333,7 +352,8 @@ get_ttl(struct resp_buf *buf)
  * the result in milliseconds.
  */
 int
-t_diff(u_long a, u_long b)
+t_diff(a, b)
+    u_long a, b;
 {
     int d = a - b;
 
@@ -346,7 +366,8 @@ t_diff(u_long a, u_long b)
  * so correct and incorrect times will be far apart.
  */
 u_long
-fixtime(u_long time)
+fixtime(time)
+    u_long time;
 {
     if (abs((int)(time-base.qtime)) > 0x3FFFFFFF)
         time = ((time & 0xFFFF0000) + (JAN_1970 << 16)) +
@@ -358,15 +379,20 @@ fixtime(u_long time)
  * Swap bytes for poor little-endian machines that don't byte-swap
  */
 u_long
-byteswap(u_long v)
+byteswap(v)
+    u_long v;
 {
     return ((v << 24) | ((v & 0xff00) << 8) |
 	    ((v >> 8) & 0xff00) | (v >> 24));
 }
 
 int
-send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
+send_recv(dst, type, code, tries, save)
+    u_int32_t dst;
+    int type, code, tries;
+    struct resp_buf *save;
 {
+    fd_set  fds;
     struct timeval tq, tr, tv;
     struct ip *ip;
     struct igmp *igmp;
@@ -374,7 +400,6 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
     int ipdatalen, iphdrlen, igmpdatalen;
     u_int32_t local, group;
     int datalen;
-    struct pollfd pfd[1];
     int count, recvlen, dummy = 0;
     int len;
     int i;
@@ -390,7 +415,7 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
     else local = INADDR_ANY;
 
     /*
-     * If the reply address was not explicitly specified, start off
+     * If the reply address was not explictly specified, start off
      * with the unicast address of this host.  Then, if there is no
      * response after trying half the tries with unicast, switch to
      * the standard multicast reply address.  If the TTL was also not
@@ -421,7 +446,11 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
 	 * Change the qid for each request sent to avoid being confused
 	 * by duplicate responses
 	 */
-	query->tr_qid  = arc4random();
+#ifdef SYSV    
+	query->tr_qid  = ((u_int32_t)lrand48() >> 8);
+#else
+	query->tr_qid  = ((u_int32_t)random() >> 8);
+#endif
 
 	/*
 	 * Set timer to calculate delays, then send query
@@ -432,19 +461,20 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
 	/*
 	 * Wait for response, discarding false alarms
 	 */
-	pfd[0].fd = igmp_socket;
-	pfd[0].events = POLLIN;
 	while (TRUE) {
+	    FD_ZERO(&fds);
+	    FD_SET(igmp_socket, &fds);
 	    gettimeofday(&tv, 0);
 	    tv.tv_sec = tq.tv_sec + timeout - tv.tv_sec;
 	    tv.tv_usec = tq.tv_usec - tv.tv_usec;
 	    if (tv.tv_usec < 0) tv.tv_usec += 1000000L, --tv.tv_sec;
 	    if (tv.tv_sec < 0) tv.tv_sec = tv.tv_usec = 0;
 
-	    count = poll(pfd, 1, tv.tv_sec * 1000);
+	    count = select(igmp_socket + 1, &fds, (fd_set *)0, (fd_set *)0,
+			   &tv);
 
 	    if (count < 0) {
-		if (errno != EINTR) perror("poll");
+		if (errno != EINTR) perror("select");
 		continue;
 	    } else if (count == 0) {
 		printf("* ");
@@ -454,7 +484,7 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
 
 	    gettimeofday(&tr, 0);
 	    recvlen = recvfrom(igmp_socket, recv_buf, RECV_BUF_SIZE,
-			       0, NULL, &dummy);
+			       0, (struct sockaddr *)0, &dummy);
 
 	    if (recvlen <= 0) {
 		if (recvlen && errno != EINTR) perror("recvfrom");
@@ -471,7 +501,7 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
 		continue;
 
 	    iphdrlen = ip->ip_hl << 2;
-	    ipdatalen = ntohs(ip->ip_len) - iphdrlen;
+	    ipdatalen = ip->ip_len;
 	    if (iphdrlen + ipdatalen != recvlen) {
 		fprintf(stderr,
 			"packet shorter (%u bytes) than hdr+data len (%u+%u)\n",
@@ -591,7 +621,7 @@ send_recv(u_int32_t dst, int type, int code, int tries, struct resp_buf *save)
  * it just snoops on what traces it can.
  */
 void
-passive_mode(void)
+passive_mode()
 {
     struct timeval tr;
     struct ip *ip;
@@ -601,13 +631,15 @@ passive_mode(void)
     int len, recvlen, dummy = 0;
     u_int32_t smask;
 
+    init_igmp();
+
     if (raddr) {
 	if (IN_MULTICAST(ntohl(raddr))) k_join(raddr, INADDR_ANY);
     } else k_join(htonl(0xE0000120), INADDR_ANY);
 
     while (1) {
 	recvlen = recvfrom(igmp_socket, recv_buf, RECV_BUF_SIZE,
-			   0, NULL, &dummy);
+			   0, (struct sockaddr *)0, &dummy);
 	gettimeofday(&tr,0);
 
 	if (recvlen <= 0) {
@@ -625,7 +657,7 @@ passive_mode(void)
 	    continue;
 
 	iphdrlen = ip->ip_hl << 2;
-	ipdatalen = ntohs(ip->ip_len) - iphdrlen;
+	ipdatalen = ip->ip_len;
 	if (iphdrlen + ipdatalen != recvlen) {
 	    fprintf(stderr,
 		    "packet shorter (%u bytes) than hdr+data len (%u+%u)\n",
@@ -702,7 +734,8 @@ passive_mode(void)
 }
 
 char *
-print_host(u_int32_t addr)
+print_host(addr)
+    u_int32_t addr;
 {
     return print_host2(addr, 0);
 }
@@ -714,7 +747,8 @@ print_host(u_int32_t addr)
  * confusing but should be slightly more helpful than just a "?".
  */
 char *
-print_host2(u_int32_t addr1, u_int32_t addr2)
+print_host2(addr1, addr2)
+    u_int32_t addr1, addr2;
 {
     char *name;
 
@@ -733,7 +767,9 @@ print_host2(u_int32_t addr1, u_int32_t addr2)
  * Print responses as received (reverse path from dst to src)
  */
 void
-print_trace(int index, struct resp_buf *buf)
+print_trace(index, buf)
+    int index;
+    struct resp_buf *buf;
 {
     struct tr_resp *r;
     char *name;
@@ -763,7 +799,9 @@ print_trace(int index, struct resp_buf *buf)
  * See what kind of router is the next hop
  */
 int
-what_kind(struct resp_buf *buf, char *why)
+what_kind(buf, why)
+    struct resp_buf *buf;
+    char *why;
 {
     u_int32_t smask;
     int retval;
@@ -821,7 +859,8 @@ what_kind(struct resp_buf *buf, char *why)
 
 
 char *
-scale(int *hop)
+scale(hop)
+    int *hop;
 {
     if (*hop > -1000 && *hop < 10000) return (" ms");
     *hop /= 1000;
@@ -838,7 +877,10 @@ scale(int *hop)
 #define OUTS    2
 #define BOTH    3
 void
-stat_line(struct tr_resp *r, struct tr_resp *s, int have_next, int *rst)
+stat_line(r, s, have_next, rst)
+    struct tr_resp *r, *s;
+    int have_next;
+    int *rst;
 {
     int timediff = (fixtime(ntohl(s->tr_qarr)) -
 			 fixtime(ntohl(r->tr_qarr))) >> 16;
@@ -855,7 +897,7 @@ stat_line(struct tr_resp *r, struct tr_resp *s, int have_next, int *rst)
     v_pps = v_out / timediff;
     g_pps = g_out / timediff;
 
-    if ((v_out && (s->tr_vifout != 0xFFFFFFFF && s->tr_vifout != 0)) ||
+    if (v_out && (s->tr_vifout != 0xFFFFFFFF && s->tr_vifout != 0) ||
 		 (r->tr_vifout != 0xFFFFFFFF && r->tr_vifout != 0))
 	    have |= OUTS;
 
@@ -874,14 +916,14 @@ stat_line(struct tr_resp *r, struct tr_resp *s, int have_next, int *rst)
 	if (v_out) v_pct = (v_lost * 100 + (v_out >> 1)) / v_out;
 	else v_pct = 0;
 	if (-100 < v_pct && v_pct < 101 && v_out > 10)
-	  snprintf(v_str, sizeof v_str, "%3d", v_pct);
+	  sprintf(v_str, "%3d", v_pct);
 	else memcpy(v_str, " --", 4);
 
 	g_lost = g_out - (ntohl(s->tr_pktcnt) - ntohl(r->tr_pktcnt));
 	if (g_out) g_pct = (g_lost * 100 + (g_out >> 1))/ g_out;
 	else g_pct = 0;
 	if (-100 < g_pct && g_pct < 101 && g_out > 10)
-	  snprintf(g_str, sizeof g_str, "%3d", g_pct);
+	  sprintf(g_str, "%3d", g_pct);
 	else memcpy(g_str, " --", 4);
 
 	printf("%6d/%-5d=%s%%%4d pps",
@@ -914,15 +956,15 @@ stat_line(struct tr_resp *r, struct tr_resp *s, int have_next, int *rst)
     }
 
     if (debug > 2) {
-	printf("\t\t\t\tv_in: %u ", ntohl(s->tr_vifin));
-	printf("v_out: %u ", ntohl(s->tr_vifout));
-	printf("pkts: %u\n", ntohl(s->tr_pktcnt));
-	printf("\t\t\t\tv_in: %u ", ntohl(r->tr_vifin));
-	printf("v_out: %u ", ntohl(r->tr_vifout));
-	printf("pkts: %u\n", ntohl(r->tr_pktcnt));
-	printf("\t\t\t\tv_in: %u ", ntohl(s->tr_vifin)-ntohl(r->tr_vifin));
-	printf("v_out: %u ", ntohl(s->tr_vifout) - ntohl(r->tr_vifout));
-	printf("pkts: %u ", ntohl(s->tr_pktcnt) - ntohl(r->tr_pktcnt));
+	printf("\t\t\t\tv_in: %ld ", ntohl(s->tr_vifin));
+	printf("v_out: %ld ", ntohl(s->tr_vifout));
+	printf("pkts: %ld\n", ntohl(s->tr_pktcnt));
+	printf("\t\t\t\tv_in: %ld ", ntohl(r->tr_vifin));
+	printf("v_out: %ld ", ntohl(r->tr_vifout));
+	printf("pkts: %ld\n", ntohl(r->tr_pktcnt));
+	printf("\t\t\t\tv_in: %ld ",ntohl(s->tr_vifin)-ntohl(r->tr_vifin));
+	printf("v_out: %ld ", ntohl(s->tr_vifout) - ntohl(r->tr_vifout));
+	printf("pkts: %ld ", ntohl(s->tr_pktcnt) - ntohl(r->tr_pktcnt));
 	printf("time: %d\n", timediff);
 	printf("\t\t\t\tres: %d\n", res);
     }
@@ -933,7 +975,8 @@ stat_line(struct tr_resp *r, struct tr_resp *s, int have_next, int *rst)
  * byteorder bugs in mrouted 3.6 on little-endian machines.
  */
 void
-fixup_stats(struct resp_buf *base, struct resp_buf *prev, struct resp_buf *new)
+fixup_stats(base, prev, new)
+    struct resp_buf *base, *prev, *new;
 {
     int rno = base->len;
     struct tr_resp *b = base->resps + rno;
@@ -984,7 +1027,7 @@ fixup_stats(struct resp_buf *base, struct resp_buf *prev, struct resp_buf *new)
 		 * doubt from now on.
 		 */
 		p->tr_pktcnt = b->tr_pktcnt = n->tr_pktcnt;
-		r++;
+		*r++;
 	    } else {
 		/*
 		 * This is simply the situation that the original
@@ -1012,7 +1055,8 @@ fixup_stats(struct resp_buf *base, struct resp_buf *prev, struct resp_buf *new)
  * Print responses with statistics for forward path (from src to dst)
  */
 int
-print_stats(struct resp_buf *base, struct resp_buf *prev, struct resp_buf *new)
+print_stats(base, prev, new)
+    struct resp_buf *base, *prev, *new;
 {
     int rtt, hop;
     char *ms;
@@ -1044,20 +1088,20 @@ print_stats(struct resp_buf *base, struct resp_buf *prev, struct resp_buf *new)
 	printf("    ---------------------     --------------------\n");
     }
     if (debug > 2) {
-	printf("\t\t\t\tv_in: %u ", ntohl(n->tr_vifin));
-	printf("v_out: %u ", ntohl(n->tr_vifout));
-	printf("pkts: %u\n", ntohl(n->tr_pktcnt));
-	printf("\t\t\t\tv_in: %u ", ntohl(b->tr_vifin));
-	printf("v_out: %u ", ntohl(b->tr_vifout));
-	printf("pkts: %u\n", ntohl(b->tr_pktcnt));
-	printf("\t\t\t\tv_in: %u ", ntohl(n->tr_vifin) - ntohl(b->tr_vifin));
-	printf("v_out: %u ", ntohl(n->tr_vifout) - ntohl(b->tr_vifout));
-	printf("pkts: %u\n", ntohl(n->tr_pktcnt) - ntohl(b->tr_pktcnt));
+	printf("\t\t\t\tv_in: %ld ", ntohl(n->tr_vifin));
+	printf("v_out: %ld ", ntohl(n->tr_vifout));
+	printf("pkts: %ld\n", ntohl(n->tr_pktcnt));
+	printf("\t\t\t\tv_in: %ld ", ntohl(b->tr_vifin));
+	printf("v_out: %ld ", ntohl(b->tr_vifout));
+	printf("pkts: %ld\n", ntohl(b->tr_pktcnt));
+	printf("\t\t\t\tv_in: %ld ", ntohl(n->tr_vifin) - ntohl(b->tr_vifin));
+	printf("v_out: %ld ", ntohl(n->tr_vifout) - ntohl(b->tr_vifout));
+	printf("pkts: %ld\n", ntohl(n->tr_pktcnt) - ntohl(b->tr_pktcnt));
 	printf("\t\t\t\treset: %d\n", *r);
     }
 
     while (TRUE) {
-	if ((n->tr_inaddr != b->tr_inaddr) || (p->tr_inaddr != b->tr_inaddr))
+	if ((n->tr_inaddr != b->tr_inaddr) || (n->tr_inaddr != b->tr_inaddr))
 	  return 1;		/* Route changed */
 
 	if ((n->tr_inaddr != n->tr_outaddr))
@@ -1102,7 +1146,9 @@ print_stats(struct resp_buf *base, struct resp_buf *prev, struct resp_buf *new)
  ***************************************************************************/
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+int argc;
+char *argv[];
 {
     int udp;
     struct sockaddr_in addr;
@@ -1117,13 +1163,10 @@ main(int argc, char *argv[])
     u_int32_t lastout = 0;
     int numstats = 1;
     int waittime;
-    uid_t uid;
+    int seed;
 
     init_igmp();
-
-    uid = getuid();
-    if (setresuid(uid, uid, uid) == -1)
-	err(1, "setresuid");
+    setuid(getuid());
 
     argv++, argc--;
     if (argc == 0) goto usage;
@@ -1133,14 +1176,14 @@ main(int argc, char *argv[])
 	p++;
 	do {
 	    char c = *p++;
-	    char *arg = NULL;
-	    if (isdigit((unsigned char)*p)) {
+	    char *arg = (char *) 0;
+	    if (isdigit(*p)) {
 		arg = p;
 		p = "";
 	    } else if (argc > 0) arg = argv[0];
 	    switch (c) {
 	      case 'd':			/* Unlisted debug print option */
-		if (arg && isdigit((unsigned char)*arg)) {
+		if (arg && isdigit(*arg)) {
 		    debug = atoi(arg);
 		    if (debug < 0) debug = 0;
 		    if (debug > 3) debug = 3;
@@ -1148,7 +1191,7 @@ main(int argc, char *argv[])
 		    break;
 		} else
 		    goto usage;
-	      case 'M':			/* Use multicast for response */
+	      case 'M':			/* Use multicast for reponse */
 		multicast = TRUE;
 		break;
 	      case 'l':			/* Loop updating stats indefinitely */
@@ -1167,7 +1210,7 @@ main(int argc, char *argv[])
 		numstats = 0;
 		break;
 	      case 'w':			/* Time to wait for packet arrival */
-		if (arg && isdigit((unsigned char)*arg)) {
+		if (arg && isdigit(*arg)) {
 		    timeout = atoi(arg);
 		    if (timeout < 1) timeout = 1;
 		    if (arg == argv[0]) argv++, argc--;
@@ -1175,7 +1218,7 @@ main(int argc, char *argv[])
 		} else
 		    goto usage;
 	      case 'm':			/* Max number of hops to trace */
-		if (arg && isdigit((unsigned char)*arg)) {
+		if (arg && isdigit(*arg)) {
 		    qno = atoi(arg);
 		    if (qno > MAXHOPS) qno = MAXHOPS;
 		    else if (qno < 1) qno = 0;
@@ -1184,7 +1227,7 @@ main(int argc, char *argv[])
 		} else
 		    goto usage;
 	      case 'q':			/* Number of query retries */
-		if (arg && isdigit((unsigned char)*arg)) {
+		if (arg && isdigit(*arg)) {
 		    nqueries = atoi(arg);
 		    if (nqueries < 1) nqueries = 1;
 		    if (arg == argv[0]) argv++, argc--;
@@ -1198,7 +1241,7 @@ main(int argc, char *argv[])
 		} else
 		    goto usage;
 	      case 't':			/* TTL for query packet */
-		if (arg && isdigit((unsigned char)*arg)) {
+		if (arg && isdigit(*arg)) {
 		    qttl = atoi(arg);
 		    if (qttl < 1) qttl = 1;
 		    rttl = qttl;
@@ -1219,7 +1262,7 @@ main(int argc, char *argv[])
 		} else
 		    goto usage;
 	      case 'S':			/* Stat accumulation interval */
-		if (arg && isdigit((unsigned char)*arg)) {
+		if (arg && isdigit(*arg)) {
 		    statint = atoi(arg);
 		    if (statint < 1) statint = 1;
 		    if (arg == argv[0]) argv++, argc--;
@@ -1256,9 +1299,8 @@ main(int argc, char *argv[])
 
     if (argc > 0 || qsrc == 0) {
 usage:	printf("\
-usage: mtrace [-lMnpsv] [-g gateway] [-i if_addr] [-m max_hops] [-q nqueries]\n\
-              [-r host] [-S stat_int] [-t ttl] [-w waittime] source [receiver]\n\
-	      [group]\n");
+Usage: mtrace [-Mlnps] [-w wait] [-m max_hops] [-q nqueries] [-g gateway]\n\
+              [-S statint] [-t ttl] [-r resp_dest] [-i if_addr] source [receiver] [group]\n");
 	exit(1);
     }
 
@@ -1274,9 +1316,10 @@ usage: mtrace [-lMnpsv] [-g gateway] [-i if_addr] [-m max_hops] [-q nqueries]\n\
     /*
      * Get default local address for multicasts to use in setting defaults.
      */
-    memset(&addr, 0, sizeof addr);
     addr.sin_family = AF_INET;
+#if (defined(BSD) && (BSD >= 199103))
     addr.sin_len = sizeof(addr);
+#endif
     addr.sin_addr.s_addr = qgrp;
     addr.sin_port = htons(2000);	/* Any port above 1024 will do */
 
@@ -1284,33 +1327,33 @@ usage: mtrace [-lMnpsv] [-g gateway] [-i if_addr] [-m max_hops] [-q nqueries]\n\
 	(connect(udp, (struct sockaddr *) &addr, sizeof(addr)) < 0) ||
 	getsockname(udp, (struct sockaddr *) &addr, &addrlen) < 0) {
 	perror("Determining local address");
-	exit(1);
+	exit(-1);
     }
 
 #ifdef SUNOS5
     /*
      * SunOS 5.X prior to SunOS 2.6, getsockname returns 0 for udp socket.
      * This call to sysinfo will return the hostname.
-     * If the default multicast interface (set with the route
+     * If the default multicast interfface (set with the route
      * for 224.0.0.0) is not the same as the hostname,
      * mtrace -i [if_addr] will have to be used.
      */
     if (addr.sin_addr.s_addr == 0) {
-	char myhostname[HOST_NAME_MAX+1];
+	char myhostname[MAXHOSTNAMELEN];
 	struct hostent *hp;
 	int error;
     
 	error = sysinfo(SI_HOSTNAME, myhostname, sizeof(myhostname));
 	if (error == -1) {
 	    perror("Getting my hostname");
-	    exit(1);
+	    exit(-1);
 	}
 
 	hp = gethostbyname(myhostname);
 	if (hp == NULL || hp->h_addrtype != AF_INET ||
 	    hp->h_length != sizeof(addr.sin_addr)) {
 	    perror("Finding IP address for my hostname");
-	    exit(1);
+	    exit(-1);
 	}
 
 	memcpy((char *)&addr.sin_addr.s_addr, hp->h_addr, hp->h_length);
@@ -1324,6 +1367,17 @@ usage: mtrace [-lMnpsv] [-g gateway] [-i if_addr] [-m max_hops] [-q nqueries]\n\
     dst_netmask = get_netmask(udp, qdst);
     close(udp);
     if (lcl_addr == 0) lcl_addr = addr.sin_addr.s_addr;
+
+    /*
+     * Initialize the seed for random query identifiers.
+     */
+    gettimeofday(&tv, 0);
+    seed = tv.tv_usec ^ lcl_addr;
+#ifdef SYSV    
+    srand48(seed);
+#else
+    srandom(seed);
+#endif
 
     /*
      * Protect against unicast queries to mrouted versions that might crash.
@@ -1530,7 +1584,7 @@ usage: mtrace [-lMnpsv] [-g gateway] [-i if_addr] [-m max_hops] [-q nqueries]\n\
 
     if (base.rtime == 0) {
 	printf("Timed out receiving responses\n");
-	if (IN_MULTICAST(ntohl(tdst))) {
+	if (IN_MULTICAST(ntohl(tdst)))
 	  if (tdst == query_cast)
 	    printf("Perhaps no local router has a route for source %s\n",
 		   inet_fmt(qsrc, s1));
@@ -1540,7 +1594,6 @@ or no router local to it has a route for source %s,\n\
 or multicast at ttl %d doesn't reach its last-hop router for that source\n",
 		   inet_fmt(qdst, s2), inet_fmt(qgrp, s3), inet_fmt(qsrc, s1),
 		   qttl ? qttl : MULTICAST_TTL1);
-	}
 	exit(1);
     }
 
@@ -1558,12 +1611,11 @@ or multicast at ttl %d doesn't reach its last-hop router for that source\n",
     new = &incr[numstats&1];
 
     while (numstats--) {
-	if (waittime < 1)
-		printf("\n");
+	if (waittime < 1) printf("\n");
 	else {
-		printf("Waiting to accumulate statistics... ");
-		fflush(stdout);
-		sleep((unsigned int)waittime);
+	    printf("Waiting to accumulate statistics... ");
+	    fflush(stdout);
+	    sleep((unsigned)waittime);
 	}
 	rno = base.len;
 	recvlen = send_recv(tdst, IGMP_MTRACE_QUERY, rno, nqueries, new);
@@ -1614,9 +1666,9 @@ or multicast at ttl %d doesn't reach its last-hop router for that source\n",
 }
 
 void
-check_vif_state(void)
+check_vif_state()
 {
-    logit(LOG_WARNING, errno, "sendto");
+    log(LOG_WARNING, errno, "sendto");
 }
 
 /*
@@ -1624,21 +1676,37 @@ check_vif_state(void)
  * of the message and the current debug level.  For errors of severity
  * LOG_ERR or worse, terminate the program.
  */
+#ifdef __STDC__
 void
-logit(int severity, int syserr, char *format, ...)
+log(int severity, int syserr, char *format, ...)
 {
-    va_list ap;
+	va_list ap;
+	char    fmt[100];
+
+	va_start(ap, format);
+#else
+/*VARARGS3*/
+void 
+log(severity, syserr, format, va_alist)
+	int     severity, syserr;
+	char   *format;
+	va_dcl
+{
+	va_list ap;
+	char    fmt[100];
+
+	va_start(ap);
+#endif
 
     switch (debug) {
 	case 0: if (severity > LOG_WARNING) return;
 	case 1: if (severity > LOG_NOTICE) return;
 	case 2: if (severity > LOG_INFO  ) return;
 	default:
-	    if (severity == LOG_WARNING)
-		fprintf(stderr, "warning - ");
-	    va_start(ap, format);
-	    vfprintf(stderr, format, ap);
-	    va_end(ap);
+	    fmt[0] = '\0';
+	    if (severity == LOG_WARNING) strcat(fmt, "warning - ");
+	    strncat(fmt, format, 80);
+	    vfprintf(stderr, fmt, ap);
 	    if (syserr == 0)
 		fprintf(stderr, "\n");
 	    else if(syserr < sys_nerr)
@@ -1646,77 +1714,94 @@ logit(int severity, int syserr, char *format, ...)
 	    else
 		fprintf(stderr, ": errno %d\n", syserr);
     }
-    if (severity <= LOG_ERR) exit(1);
+    if (severity <= LOG_ERR) exit(-1);
 }
 
 /* dummies */
-void accept_probe(u_int32_t src, u_int32_t dst, char *p, int datalen,
-    u_int32_t level)
+void accept_probe(src, dst, p, datalen, level)
+	u_int32_t src, dst, level;
+	char *p;
+	int datalen;
 {
 }
-
-void accept_group_report(u_int32_t src, u_int32_t dst, u_int32_t group,
-    int r_type)
+void accept_group_report(src, dst, group, r_type)
+	u_int32_t src, dst, group;
+	int r_type;
 {
 }
-
-void accept_neighbor_request2(u_int32_t src, u_int32_t dst)
+void accept_neighbor_request2(src, dst)
+	u_int32_t src, dst;
 {
 }
-
-void accept_report(u_int32_t src, u_int32_t dst, char *p, int datalen,
-    u_int32_t level)
+void accept_report(src, dst, p, datalen, level)
+	u_int32_t src, dst, level;
+	char *p;
+	int datalen;
 {
 }
-
-void accept_neighbor_request(u_int32_t src, u_int32_t dst)
+void accept_neighbor_request(src, dst)
+	u_int32_t src, dst;
 {
 }
-
-void accept_prune(u_int32_t src, u_int32_t dst, char *p, int datalen)
+void accept_prune(src, dst, p, datalen)
+	u_int32_t src, dst;
+	char *p;
+	int datalen;
 {
 }
-
-void accept_graft(u_int32_t src, u_int32_t dst, char *p, int datalen)
+void accept_graft(src, dst, p, datalen)
+	u_int32_t src, dst;
+	char *p;
+	int datalen;
 {
 }
-
-void accept_g_ack(u_int32_t src, u_int32_t dst, char *p, int datalen)
+void accept_g_ack(src, dst, p, datalen)
+	u_int32_t src, dst;
+	char *p;
+	int datalen;
 {
 }
-
-void add_table_entry(u_int32_t origin, u_int32_t mcastgrp)
+void add_table_entry(origin, mcastgrp)
+	u_int32_t origin, mcastgrp;
 {
 }
-
-void accept_leave_message(u_int32_t src, u_int32_t dst, u_int32_t group)
+void accept_leave_message(src, dst, group)
+	u_int32_t src, dst, group;
 {
 }
-
-void accept_mtrace(u_int32_t src, u_int32_t dst, u_int32_t group, char *data,
-    u_int no, int datalen)
+void accept_mtrace(src, dst, group, data, no, datalen)
+	u_int32_t src, dst, group;
+	char *data;
+	u_int no;
+	int datalen;
 {
 }
-
-void accept_membership_query(u_int32_t src, u_int32_t dst, u_int32_t group,
-    int tmo)
+void accept_membership_query(src, dst, group, tmo)
+	u_int32_t src, dst, group;
+	int tmo;
 {
 }
-
-void accept_neighbors(u_int32_t src, u_int32_t dst, u_char *p, int datalen,
-    u_int32_t level)
+void accept_neighbors(src, dst, p, datalen, level)
+	u_int32_t src, dst, level;
+	u_char *p;
+	int datalen;
 {
 }
-
-void accept_neighbors2(u_int32_t src, u_int32_t dst, u_char *p, int datalen,
-    u_int32_t level)
+void accept_neighbors2(src, dst, p, datalen, level)
+	u_int32_t src, dst, level;
+	u_char *p;
+	int datalen;
 {
 }
-
-void accept_info_request(u_int32_t src, u_int32_t dst, u_char *p, int datalen)
+void accept_info_request(src, dst, p, datalen)
+	u_int32_t src, dst;
+	u_char *p;
+	int datalen;
 {
 }
-
-void accept_info_reply(u_int32_t src, u_int32_t dst, u_char *p, int datalen)
+void accept_info_reply(src, dst, p, datalen)
+	u_int32_t src, dst;
+	u_char *p;
+	int datalen;
 {
 }

@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,51 +36,43 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)amd.c	8.1 (Berkeley) 6/6/93
- *	$Id: amd.c,v 1.22 2015/09/11 19:03:30 millert Exp $
+ *	$Id: amd.c,v 1.1.1.1 1995/10/18 08:47:10 deraadt Exp $
  */
+
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
 /*
  * Automounter
  */
 
 #include "am.h"
-#include <signal.h>
+#include <sys/signal.h>
 #include <sys/ioctl.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <setjmp.h>
-#include <endian.h>
-
-#include <rpc/rpc.h>
-#include <rpcsvc/ypclnt.h>
-#include <rpcsvc/yp_prot.h>
-
-#if BYTE_ORDER == LITTLE_ENDIAN
-#define ARCH_ENDIAN "little"
-#elif BYTE_ORDER == BIG_ENDIAN
-#define ARCH_ENDIAN "big"
-#else
-#error "unknown endian"
-#endif
 
 char pid_fsname[16 + MAXHOSTNAMELEN];	/* "kiska.southseas.nz:(pid%d)" */
+char *progname;				/* "amd" */
 #ifdef HAS_HOST
 #ifdef HOST_EXEC
 char *host_helper;
 #endif /* HOST_EXEC */
 #endif /* HAS_HOST */
-char *auto_dir = "/tmp_mnt";
+char *auto_dir = "/a";
 char *hostdomain = "unknown.domain";
 char hostname[MAXHOSTNAMELEN] = "localhost"; /* Hostname */
 char hostd[2*MAXHOSTNAMELEN];		/* Host+domain */
-char *op_sys = "bsd44";			/* Name of current op_sys */
+char *op_sys = OS_REP;			/* Name of current op_sys */
 char *arch = ARCH_REP;			/* Name of current architecture */
 char *endian = ARCH_ENDIAN;		/* Big or Little endian */
 char *wire;
 int foreground = 1;			/* This is the top-level server */
-pid_t mypid;				/* Current process id */
-volatile sig_atomic_t immediate_abort;	/* Should close-down unmounts be retried */
+int mypid;				/* Current process id */
+int immediate_abort;			/* Should close-down unmounts be retried */
 struct in_addr myipaddr;		/* (An) IP address of this host */
 serv_state amd_state;
 struct amd_stats amd_stats;		/* Server statistics */
@@ -90,9 +86,12 @@ int orig_umask;
  * SIGINT - tells amd to do a full shutdown, including unmounting all filesystem.
  * SIGTERM - tells amd to shutdown now.  Just unmounts the automount nodes.
  */
-static void
-sigterm(int sig)
+static void sigterm(sig)
+int sig;
 {
+#ifdef SYS5_SIGNALS
+	signal(sig, sigterm);
+#endif /* SYS5_SIGNALS */
 
 	switch (sig) {
 	case SIGINT:
@@ -115,9 +114,13 @@ sigterm(int sig)
  * Hook for cache reload.
  * When a SIGHUP arrives it schedules a call to mapc_reload
  */
-static void
-sighup(int sig)
+/*ARGSUSED*/
+static void sighup(sig)
+int sig;
 {
+#ifdef SYS5_SIGNALS
+	signal(sig, sighup);
+#endif /* SYS5_SIGNALS */
 
 #ifdef DEBUG
 	if (sig != SIGHUP)
@@ -130,23 +133,23 @@ sighup(int sig)
 		do_mapc_reload = 0;
 }
 
-static void
-parent_exit(int sig)
+/*ARGSUSED*/
+static void parent_exit(sig)
+int sig;
 {
-	_exit(0);
+	exit(0);
 }
 
-static pid_t
-daemon_mode(void)
+static int daemon_mode(P_void)
 {
-	pid_t bgpid;
+	int bgpid;
 
 	signal(SIGQUIT, parent_exit);
 	bgpid = background();
 
 	if (bgpid != 0) {
 		if (print_pid) {
-			printf("%ld\n", (long)bgpid);
+			printf("%d\n", bgpid);
 			fflush(stdout);
 		}
 		/*
@@ -183,11 +186,12 @@ daemon_mode(void)
 	return getppid();
 }
 
-int
-main(int argc, char *argv[])
+main(argc, argv)
+int argc;
+char *argv[];
 {
 	char *domdot;
-	pid_t ppid = 0;
+	int ppid = 0;
 	int error;
 
 	/*
@@ -200,6 +204,20 @@ main(int argc, char *argv[])
 	 * Set processing status.
 	 */
 	amd_state = Start;
+
+	/*
+	 * Determine program name
+	 */
+	if (argv[0]) {
+		progname = strrchr(argv[0], '/');
+		if (progname && progname[1])
+			progname++;
+		else
+			progname = argv[0];
+	}
+
+	if (!progname)
+		progname = "amd";
 
 	/*
 	 * Initialise process id.  This is kept
@@ -226,7 +244,7 @@ main(int argc, char *argv[])
 	 * Partially initialise hostd[].  This
 	 * is completed in get_args().
 	 */
-	if ((domdot = strchr(hostname, '.'))) {
+	if (domdot = strchr(hostname, '.')) {
 		/*
 		 * Hostname already contains domainname.
 		 * Split out hostname and domainname
@@ -235,7 +253,7 @@ main(int argc, char *argv[])
 		*domdot++ = '\0';
 		hostdomain = domdot;
 	}
-	strlcpy(hostd, hostname, sizeof hostd);
+	strcpy(hostd, hostname);
 
 	/*
 	 * Trap interrupts for shutdowns.
@@ -274,11 +292,6 @@ main(int argc, char *argv[])
 	 */
 	get_args(argc, argv);
 
-	if (mkdir(auto_dir, 0755) == -1) {
-		if (errno != EEXIST)
-			plog(XLOG_FATAL, "mkdir(autodir = %s: %m", auto_dir);
-	}
-
 	/*
 	 * Get our own IP address so that we
 	 * can mount the automounter.
@@ -292,10 +305,11 @@ main(int argc, char *argv[])
 	 * Now check we are root.
 	 */
 	if (geteuid() != 0) {
-		plog(XLOG_FATAL, "Must be root to mount filesystems (euid = %u)", geteuid());
+		plog(XLOG_FATAL, "Must be root to mount filesystems (euid = %d)", geteuid());
 		going_down(1);
 	}
 
+#ifdef HAS_NIS_MAPS
 	/*
 	 * If the domain was specified then bind it here
 	 * to circumvent any default bindings that may
@@ -305,13 +319,14 @@ main(int argc, char *argv[])
 		plog(XLOG_FATAL, "Can't bind to domain \"%s\"", domain);
 		going_down(1);
 	}
+#endif /* HAS_NIS_MAPS */
 
 #ifdef DEBUG
 	Debug(D_DAEMON)
 #endif /* DEBUG */
 	ppid = daemon_mode();
 
-	snprintf(pid_fsname, sizeof(pid_fsname), "%s:(pid%ld)", hostname, (long)mypid);
+	sprintf(pid_fsname, "%s:(pid%d)", hostname, mypid);
 
 	do_mapc_reload = clocktime() + ONE_HOUR;
 
@@ -320,7 +335,7 @@ main(int argc, char *argv[])
 	 */
 	error = mount_automounter(ppid);
 	if (error && ppid)
-		kill(ppid, SIGALRM);
+		kill(SIGALRM, ppid);
 	going_down(error);
 
 	abort();

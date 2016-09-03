@@ -1,5 +1,3 @@
-/*	$OpenBSD: gmt2local.c,v 1.7 2015/11/15 20:35:36 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,6 +19,11 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/gmt2local.c,v 1.1 1999/07/28 20:41:35 jakob Exp $ (LBL)";
+#endif
+
 #include <sys/types.h>
 #include <sys/time.h>
 
@@ -29,12 +32,12 @@
 #include <time.h>
 #endif
 
+#include "gnuc.h"
 #ifdef HAVE_OS_PROTO_H
 #include "os-proto.h"
 #endif
 
 #include "gmt2local.h"
-#include "privsep.h"
 
 /*
  * Returns the difference between gmt and local time in seconds.
@@ -43,15 +46,15 @@
 int32_t
 gmt2local(time_t t)
 {
-	int dt, dir;
-	struct tm *gmt, *loc;
+	register int dt, dir;
+	register struct tm *gmt, *loc;
 	struct tm sgmt;
 
 	if (t == 0)
 		t = time(NULL);
 	gmt = &sgmt;
 	*gmt = *gmtime(&t);
-	loc = priv_localtime(&t);
+	loc = localtime(&t);
 	dt = (loc->tm_hour - gmt->tm_hour) * 60 * 60 +
 	    (loc->tm_min - gmt->tm_min) * 60;
 

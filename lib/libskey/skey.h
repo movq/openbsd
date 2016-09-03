@@ -1,57 +1,64 @@
 /*
- * OpenBSD S/Key (skey.h)
+ * S/KEY v1.1b (skey.h)
  *
  * Authors:
  *          Neil M. Haller <nmh@thumper.bellcore.com>
  *          Philip R. Karn <karn@chicago.qualcomm.com>
  *          John S. Walden <jsw@thumper.bellcore.com>
+ *
+ * Modifications:
  *          Scott Chasin <chasin@crimelab.com>
  *          Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Main client header
  *
- * $OpenBSD: skey.h,v 1.20 2014/03/20 20:39:13 naddy Exp $
+ * $OpenBSD: skey.h,v 1.13 1999/07/15 14:33:48 provos Exp $
  */
-
-#ifndef _SKEY_H_
-#define _SKEY_H_ 1
-
-#include <dirent.h>
 
 /* Server-side data structure for reading keys file during login */
 struct skey {
 	FILE *keyfile;
-	DIR  *keydir;
+	char buf[256];
 	char *logname;
+	int n;
 	char *seed;
 	char *val;
-	unsigned int n;
-	char buf[256];
+	long recstart;		/* needed so reread of buffer is efficient */
 };
 
 /* Client-side structure for scanning data stream for challenge */
 struct mc {
+	char buf[256];
 	int skip;
 	int cnt;
-	char buf[256];
 };
 
 /* Maximum sequence number we allow */
+#ifndef SKEY_MAX_SEQ
 #define SKEY_MAX_SEQ		10000
+#endif
 
-/* Minimum secret password length (rfc2289) */
+/* Minimum secret password length (rfc1938) */
+#ifndef SKEY_MIN_PW_LEN
 #define SKEY_MIN_PW_LEN		10
+#endif
 
-/* Max secret password length (rfc2289 says 63 but allows more) */
+/* Max secret password length (rfc1938 says 63 but allows more) */
+#ifndef SKEY_MAX_PW_LEN
 #define SKEY_MAX_PW_LEN		255
+#endif
 
-/* Max length of an S/Key seed (rfc2289) */
+/* Max length of an S/Key seed (rfc1938) */
+#ifndef SKEY_MAX_SEED_LEN
 #define SKEY_MAX_SEED_LEN	16
+#endif
 
 /* Max length of S/Key challenge (otp-???? 9999 seed) */
+#ifndef SKEY_MAX_CHALLENGE
 #define SKEY_MAX_CHALLENGE	(11 + SKEY_MAX_HASHNAME_LEN + SKEY_MAX_SEED_LEN)
+#endif
 
-/* Max length of hash algorithm name (md5/sha1/rmd160) */
+/* Max length of hash algorithm name (md4/md5/sha1/rmd160) */
 #define SKEY_MAX_HASHNAME_LEN	6
 
 /* Size of a binary key (not NULL-terminated) */
@@ -60,37 +67,30 @@ struct mc {
 /* Location of random file for bogus challenges */
 #define _SKEY_RAND_FILE_PATH_	"/var/db/host.random"
 
-/* Directory for S/Key per-user files */
-#define _PATH_SKEYDIR		"/etc/skey"
-
-__BEGIN_DECLS
-void f(char *);
-int keycrunch(char *, char *, char *);
-char *btoe(char *, char *);
-char *put8(char *, char *);
-int etob(char *, char *);
-void rip(char *);
-int skeychallenge(struct skey *, char *, char *);
-int skeychallenge2(int, struct skey *, char *, char *);
-int skeylookup(struct skey *, char *);
-int skeyverify(struct skey *, char *);
-int skeyzero(struct skey *);
-void sevenbit(char *);
-void backspace(char *);
-char *skipspace(char *);
-char *readpass(char *, int);
-char *readskey(char *, int);
-int skey_authenticate(char *);
-int skey_passcheck(char *, char *);
-char *skey_keyinfo(char *);
-int skey_haskey(char *);
-int atob8(char *, char *);
-int btoa8(char *, char *);
-int htoi(int);
-const char *skey_get_algorithm(void);
-char *skey_set_algorithm(char *);
-int skeygetnext(struct skey *);
-int skey_unlock(struct skey *);
-__END_DECLS
-
-#endif /* _SKEY_H_ */
+/* Prototypes */
+void f __P((char *x));
+int keycrunch __P((char *result, char *seed, char *passwd));
+char *btoe __P((char *engout, char *c));
+char *put8 __P((char *out, char *s));
+int etob __P((char *out, char *e));
+void rip __P((char *buf));
+int skeychallenge __P((struct skey * mp, char *name, char *ss));
+int skeylookup __P((struct skey * mp, char *name));
+int skeyverify __P((struct skey * mp, char *response));
+int skeyzero __P((struct skey * mp, char *response));
+void sevenbit __P((char *s));
+void backspace __P((char *s));
+char *skipspace __P((char *s));
+char *readpass __P((char *buf, int n));
+char *readskey __P((char *buf, int n));
+int skey_authenticate __P((char *username));
+int skey_passcheck __P((char *username, char *passwd));
+char *skey_keyinfo __P((char *username));
+int skey_haskey __P((char *username));
+int getskeyprompt __P((struct skey *mp, char *name, char *prompt));
+int atob8 __P((char *out, char *in));
+int btoa8 __P((char *out, char *in));
+int htoi __P((int c));
+const char *skey_get_algorithm __P((void));
+char *skey_set_algorithm __P((char *new));
+int skeygetnext __P((struct skey *mp));

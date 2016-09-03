@@ -1,6 +1,5 @@
 /* ECOFF object file format header file.
-   Copyright 1993, 1994, 1995, 1996, 1997, 1999, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1993, 94, 95, 1996 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
    Written by Ian Lance Taylor <ian@cygnus.com>.
 
@@ -37,21 +36,13 @@
    symbols is undefined (this last is needed to distinguish a .extern
    symbols from a .comm symbol).  */
 
-struct ecoff_sy_obj
-{
-  struct efdr *ecoff_file;
-  struct localsym *ecoff_symbol;
+#define TARGET_SYMBOL_FIELDS \
+  struct efdr *ecoff_file; \
+  struct localsym *ecoff_symbol; \
   valueT ecoff_extern_size;
-};
-
-#define OBJ_SYMFIELD_TYPE struct ecoff_sy_obj
 
 /* Modify the ECOFF symbol.  */
 #define obj_frob_symbol(symp, punt) ecoff_frob_symbol (symp)
-
-/* Set section VMAs and GP.  */
-extern void ecoff_frob_file_before_fix PARAMS ((void));
-#define obj_frob_file_before_fix() ecoff_frob_file_before_fix ()
 
 /* This is used to write the symbolic data in the format that BFD
    expects it.  */
@@ -69,8 +60,10 @@ extern void ecoff_frob_file PARAMS ((void));
 #define OBJ_PROCESS_STAB(seg, what, string, type, other, desc) \
   ecoff_stab ((seg), (what), (string), (type), (other), (desc))
 
+#define OBJ_GENERATE_ASM_LINENO(filename, lineno) \
+  ecoff_generate_asm_lineno ((filename), (lineno))
+
 #define EMIT_SECTION_SYMBOLS		0
 #define obj_sec_sym_ok_for_reloc(SEC)	1
 
 #define obj_ecoff_set_ext ecoff_set_ext
-extern void obj_ecoff_set_ext PARAMS ((symbolS *, EXTR *));

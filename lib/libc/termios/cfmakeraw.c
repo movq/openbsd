@@ -1,4 +1,3 @@
-/*	$OpenBSD: cfmakeraw.c,v 1.7 2008/02/25 06:20:57 deraadt Exp $ */
 /*-
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: cfmakeraw.c,v 1.3 1998/08/20 19:45:57 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <termios.h>
 
 /*
@@ -35,13 +42,13 @@
  * mode with no characters interpreted, 8-bit data path.
  */
 void
-cfmakeraw(struct termios *t)
+cfmakeraw(t)
+	struct termios *t;
 {
 	t->c_iflag &= ~(IMAXBEL|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
 	t->c_oflag &= ~OPOST;
 	t->c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
 	t->c_cflag &= ~(CSIZE|PARENB);
 	t->c_cflag |= CS8;
-	t->c_cc[VMIN] = 1;
-	t->c_cc[VTIME] = 0;
+	/* XXX set MIN/TIME */
 }

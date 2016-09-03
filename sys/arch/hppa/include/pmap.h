@@ -1,7 +1,7 @@
-/*	$OpenBSD: pmap.h,v 1.51 2015/07/27 03:36:38 guenther Exp $	*/
+/*	$OpenBSD: pmap.h,v 1.9 1999/07/21 05:38:03 mickey Exp $	*/
 
 /*
- * Copyright (c) 2002-2004 Michael Shalayeff
+ * Copyright (c) 1998,1999 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,165 +12,187 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+/*
+ * Copyright 1996 1995 by Open Software Foundation, Inc.   
+ *              All Rights Reserved 
+ *  
+ * Permission to use, copy, modify, and distribute this software and 
+ * its documentation for any purpose and without fee is hereby granted, 
+ * provided that the above copyright notice appears in all copies and 
+ * that both the copyright notice and this permission notice appear in 
+ * supporting documentation. 
+ *  
+ * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+ */
+/* 
+ * Copyright (c) 1990,1993,1994 The University of Utah and
+ * the Computer Systems Laboratory at the University of Utah (CSL).
+ * All rights reserved.
+ *
+ * Permission to use, copy, modify and distribute this software is hereby
+ * granted provided that (1) source code retains these copyright, permission,
+ * and disclaimer notices, and (2) redistributions including binaries
+ * reproduce the notices in supporting documentation, and (3) all advertising
+ * materials mentioning features or use of this software display the following
+ * acknowledgement: ``This product includes software developed by the
+ * Computer Systems Laboratory at the University of Utah.''
+ *
+ * THE UNIVERSITY OF UTAH AND CSL ALLOW FREE USE OF THIS SOFTWARE IN ITS "AS
+ * IS" CONDITION.  THE UNIVERSITY OF UTAH AND CSL DISCLAIM ANY LIABILITY OF
+ * ANY KIND FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
+ *
+ * CSL requests users of this software to return to csl-dist@cs.utah.edu any
+ * improvements that they make and grant CSL redistribution rights.
+ *
+ * 	Utah $Hdr: pmap.h 1.24 94/12/14$
+ *	Author: Mike Hibler, Bob Wheeler, University of Utah CSL, 9/90
  */
 
-#ifndef _MACHINE_PMAP_H_
-#define _MACHINE_PMAP_H_
+/*
+ *	Pmap header for hppa.
+ */
 
-#include <uvm/uvm_object.h>
-#include <sys/mutex.h>
+#ifndef	_MACHINE_PMAP_H_
+#define	_MACHINE_PMAP_H_
 
-#ifdef	_KERNEL
 #include <machine/pte.h>
 
+typedef
 struct pmap {
-	struct mutex pm_mtx;
-	struct uvm_object pm_obj;
-	struct vm_page	*pm_ptphint;
-	struct vm_page	*pm_pdir_pg;	/* vm_page for pdir */
-	volatile u_int32_t *pm_pdir;	/* page dir (read-only after create) */
-	pa_space_t	pm_space;	/* space id (read-only after create) */
-	u_int		pm_pid;		/* prot id (read-only after create) */
+	TAILQ_ENTRY(pmap)	pmap_list;	/* pmap free list */
+	struct simplelock	pmap_lock;	/* lock on map */
+	int			pmap_refcnt;	/* reference count */
+	pa_space_t		pmap_space;	/* space for this pmap */
+	u_int			pmap_pid;	/* protection id for pmap */
+	struct pmap_statistics	pmap_stats;	/* statistics */
+} *pmap_t;
+extern pmap_t	kernel_pmap;			/* The kernel's map */
 
-	struct pmap_statistics	pm_stats;
+/*
+ * If HPT is defined, we cache the last miss for each bucket using a
+ * structure defined for the 7100 hardware TLB walker. On non-7100s, this
+ * acts as a software cache that cuts down on the number of times we have
+ * to search the hash chain. (thereby reducing the number of instructions
+ * and cache misses incurred during the TLB miss).
+ *
+ * The pv_entry pointer is the address of the associated hash bucket
+ * list for fast tlbmiss search.
+ */
+struct hpt_entry {
+	u_int	hpt_valid:1,	/* Valid bit */
+		hpt_vpn:15,	/* Virtual Page Number */
+		hpt_space:16;	/* Space ID */
+	u_int	hpt_tlbprot;	/* prot/access rights (for TLB load) */
+	u_int	hpt_tlbpage;	/* physical page (<<5 for TLB load) */
+	void	*hpt_entry;	/* Pointer to associated hash list */
 };
-typedef struct pmap *pmap_t;
+#ifdef _KERNEL
+extern struct hpt_entry *hpt_table;
+extern u_int hpt_hashsize;
+#endif /* _KERNEL */
 
-#define HPPA_MAX_PID    0xfffa
-#define	HPPA_SID_MAX	0x7ffd
-#define HPPA_SID_KERNEL 0
-#define HPPA_PID_KERNEL 2
+/*
+ * keep it at 32 bytes for the cache overall satisfaction
+ * also, align commonly used pairs on double-word boundary
+ */
+struct pv_entry {
+	struct pv_entry	*pv_next;	/* list of mappings of a given PA */
+	pmap_t		pv_pmap;	/* back link to pmap */
+	u_int		pv_va;		/* virtual page number */
+	u_int		pv_space;	/* copy of space id from pmap */
+	u_int		pv_tlbpage;	/* physical page (for TLB load) */
+	u_int		pv_tlbprot;	/* TLB format protection */
+	struct pv_entry *pv_hash;	/* VTOP hash bucket list */
+	u_int		pv_pad;		/* pad to 32 bytes */
+};
+
+#define NPVPPG (NBPG/32-1)
+struct pv_page {
+	TAILQ_ENTRY(pv_page) pvp_list;	/* Chain of pages */
+	u_int		pvp_nfree;
+	struct pv_entry *pvp_freelist;
+	u_int		pvp_flag;	/* is it direct mapped (unused) */ 
+	u_int		pvp_pad[3];	/* align to 32 */
+	struct pv_entry pvp_pv[NPVPPG];
+};
+
+struct pmap_physseg {
+	struct pv_entry *pvent;
+};
+
+#define HPPA_MAX_PID	0xfffa
+#define	HPPA_SID_KERNEL	0
+#define	HPPA_PID_KERNEL	2
 
 #define KERNEL_ACCESS_ID 1
+
 #define KERNEL_TEXT_PROT (TLB_AR_KRX | (KERNEL_ACCESS_ID << 1))
 #define KERNEL_DATA_PROT (TLB_AR_KRW | (KERNEL_ACCESS_ID << 1))
 
-struct pv_entry {			/* locked by its list's pvh_lock */
-	struct pv_entry	*pv_next;
-	struct pmap	*pv_pmap;	/* the pmap */
-	vaddr_t		pv_va;		/* the virtual address */
-	struct vm_page	*pv_ptp;	/* the vm_page of the PTP */
-};
+#ifdef _KERNEL
+#define cache_align(x)	(((x) + dcache_line_mask) & ~(dcache_line_mask))
+extern int dcache_line_mask;
 
-/* also match the hardware tlb walker definition */
-struct vp_entry {
-	u_int	vp_tag;
-	u_int	vp_tlbprot;
-	u_int	vp_tlbpage;
-	u_int	vp_ptr;
-};
+extern void gateway_page __P((void));
 
-extern void gateway_page(void);
-extern struct pmap kernel_pmap_store;
+#define	PMAP_STEAL_MEMORY	/* we have some memory to steal */
 
-#if defined(HP7100LC_CPU) || defined(HP7300LC_CPU)
-extern int pmap_hptsize;
-extern struct pdc_hwtlb pdc_hwtlb;
-#endif
+#define pmap_kernel_va(VA)	\
+	(((VA) >= VM_MIN_KERNEL_ADDRESS) && ((VA) <= VM_MAX_KERNEL_ADDRESS))
 
-/*
- * pool quickmaps
- */
-#define	pmap_map_direct(pg)	((vaddr_t)VM_PAGE_TO_PHYS(pg))
-struct vm_page *pmap_unmap_direct(vaddr_t);
-#define	__HAVE_PMAP_DIRECT
-
-/*
- * according to the parisc manual aliased va's should be
- * different by high 12 bits only.
- */
-#define	PMAP_PREFER(o,h)	pmap_prefer(o, h)
-static __inline__ vaddr_t
-pmap_prefer(vaddr_t offs, vaddr_t hint)
-{
-	vaddr_t pmap_prefer_hint = (hint & HPPA_PGAMASK) | (offs & HPPA_PGAOFF);
-	if (pmap_prefer_hint < hint)
-		pmap_prefer_hint += HPPA_PGALIAS;
-	return pmap_prefer_hint;
-}
-
-/* pmap prefer alignment */
-#define PMAP_PREFER_ALIGN()	(HPPA_PGALIAS)
-/* pmap prefer offset within alignment */
-#define PMAP_PREFER_OFFSET(of)	((of) & HPPA_PGAOFF)
-
-#define	pmap_sid2pid(s)			(((s) + 1) << 1)
-#define pmap_kernel()			(&kernel_pmap_store)
-#define	pmap_resident_count(pmap)	((pmap)->pm_stats.resident_count)
-#define	pmap_update(pm)			(void)(pm)
+#define pmap_kernel()			(kernel_pmap)
+#define	pmap_resident_count(pmap)	((pmap)->pmap_stats.resident_count)
+#define pmap_reference(pmap) \
+do { if (pmap) { \
+	simple_lock(&pmap->pmap_lock); \
+	pmap->pmap_refcnt++; \
+	simple_unlock(&pmap->pmap_lock); \
+} } while (0)
+#define pmap_collect(pmap)
+#define pmap_release(pmap)
+#define pmap_pageable(pmap, start, end, pageable)
 #define pmap_copy(dpmap,spmap,da,len,sa)
+#define	pmap_update()
+#define	pmap_activate(p)
+#define	pmap_deactivate(p)
 
-#define pmap_clear_modify(pg)	pmap_changebit(pg, 0, PTE_PROT(TLB_DIRTY))
-#define pmap_clear_reference(pg) pmap_changebit(pg, PTE_PROT(TLB_REFTRAP), 0)
-#define pmap_is_modified(pg)	pmap_testbit(pg, PTE_PROT(TLB_DIRTY))
-#define pmap_is_referenced(pg)	pmap_testbit(pg, PTE_PROT(TLB_REFTRAP))
-
-#define pmap_unuse_final(p)		/* nothing */
-#define	pmap_remove_holes(vm)		do { /* nothing */ } while (0)
-
-void pmap_bootstrap(vaddr_t);
-boolean_t pmap_changebit(struct vm_page *, pt_entry_t, pt_entry_t);
-boolean_t pmap_testbit(struct vm_page *, pt_entry_t);
-void pmap_write_protect(struct pmap *, vaddr_t, vaddr_t, vm_prot_t);
-void pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva);
-void pmap_page_remove(struct vm_page *pg);
+#define pmap_phys_address(x)	((x) << PGSHIFT)
+#define pmap_phys_to_frame(x)	((x) >> PGSHIFT)
 
 static __inline int
 pmap_prot(struct pmap *pmap, int prot)
 {
-	extern u_int hppa_prot[];
-	return (hppa_prot[prot] | (pmap == pmap_kernel()? 0 : TLB_USER));
+	extern u_int kern_prot[], user_prot[];
+	return (pmap == kernel_pmap? kern_prot: user_prot)[prot];
 }
 
-static __inline void
-pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
-{
-	if ((prot & PROT_WRITE) == 0) {
-		if (prot & (PROT_READ | PROT_EXEC))
-			pmap_changebit(pg, 0, PTE_PROT(TLB_WRITE));
-		else
-			pmap_page_remove(pg);
-	}
-}
-
-static __inline void
-pmap_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
-{
-	if ((prot & PROT_WRITE) == 0) {
-		if (prot & (PROT_READ | PROT_EXEC))
-			pmap_write_protect(pmap, sva, eva, prot);
-		else
-			pmap_remove(pmap, sva, eva);
-	}
-}
-
+void pmap_bootstrap __P((vaddr_t *, vaddr_t *));
+void pmap_changebit __P((vaddr_t, u_int, u_int));
 #endif /* _KERNEL */
-
-#if !defined(_LOCORE)
-struct pv_entry;
-struct vm_page_md {
-	struct mutex pvh_mtx;
-	struct pv_entry	*pvh_list;	/* head of list (locked by pvh_mtx) */
-	u_int		pvh_attrs;	/* to preserve ref/mod */
-};
-
-#define	VM_MDPAGE_INIT(pg) do {				\
-	mtx_init(&(pg)->mdpage.pvh_mtx, IPL_VM);	\
-	(pg)->mdpage.pvh_list = NULL;			\
-	(pg)->mdpage.pvh_attrs = 0;			\
-} while (0)
-#endif
 
 #endif /* _MACHINE_PMAP_H_ */

@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex_move.c,v 1.11 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex_move.c	10.10 (Berkeley) 9/15/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -26,10 +28,12 @@
  * ex_copy -- :[line [,line]] co[py] line [flags]
  *	Copy selected lines.
  *
- * PUBLIC: int ex_copy(SCR *, EXCMD *);
+ * PUBLIC: int ex_copy __P((SCR *, EXCMD *));
  */
 int
-ex_copy(SCR *sp, EXCMD *cmdp)
+ex_copy(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	CB cb;
 	MARK fm1, fm2, m, tm;
@@ -48,9 +52,9 @@ ex_copy(SCR *sp, EXCMD *cmdp)
 	fm1 = cmdp->addr1;
 	fm2 = cmdp->addr2;
 	memset(&cb, 0, sizeof(cb));
-	TAILQ_INIT(&cb.textq);
+	CIRCLEQ_INIT(&cb.textq);
 	for (cnt = fm1.lno; cnt <= fm2.lno; ++cnt)
-		if (cut_line(sp, cnt, 0, CUT_LINE_TO_EOL, &cb)) {
+		if (cut_line(sp, cnt, 0, 0, &cb)) {
 			rval = 1;
 			goto err;
 		}
@@ -79,10 +83,12 @@ err:	text_lfree(&cb.textq);
  * ex_move -- :[line [,line]] mo[ve] line
  *	Move selected lines.
  *
- * PUBLIC: int ex_move(SCR *, EXCMD *);
+ * PUBLIC: int ex_move __P((SCR *, EXCMD *));
  */
 int
-ex_move(SCR *sp, EXCMD *cmdp)
+ex_move(sp, cmdp)
+	SCR *sp;
+	EXCMD *cmdp;
 {
 	LMARK *lmp;
 	MARK fm1, fm2;
@@ -100,7 +106,7 @@ ex_move(SCR *sp, EXCMD *cmdp)
 	fm1 = cmdp->addr1;
 	fm2 = cmdp->addr2;
 	if (cmdp->lineno >= fm1.lno && cmdp->lineno <= fm2.lno) {
-		msgq(sp, M_ERR, "Destination line is inside move range");
+		msgq(sp, M_ERR, "139|Destination line is inside move range");
 		return (1);
 	}
 
@@ -120,7 +126,7 @@ ex_move(SCR *sp, EXCMD *cmdp)
 
 	/* Log the old positions of the marks. */
 	mark_reset = 0;
-	LIST_FOREACH(lmp, &sp->ep->marks, q)
+	for (lmp = sp->ep->marks.lh_first; lmp != NULL; lmp = lmp->q.le_next)
 		if (lmp->name != ABSMARK1 &&
 		    lmp->lno >= fl && lmp->lno <= tl) {
 			mark_reset = 1;
@@ -144,7 +150,8 @@ ex_move(SCR *sp, EXCMD *cmdp)
 			if (db_append(sp, 1, tl, bp, len))
 				return (1);
 			if (mark_reset)
-				LIST_FOREACH(lmp, &sp->ep->marks, q)
+				for (lmp = sp->ep->marks.lh_first;
+				    lmp != NULL; lmp = lmp->q.le_next)
 					if (lmp->name != ABSMARK1 &&
 					    lmp->lno == fl)
 						lmp->lno = tl + 1;
@@ -162,7 +169,8 @@ ex_move(SCR *sp, EXCMD *cmdp)
 			if (db_append(sp, 1, tl++, bp, len))
 				return (1);
 			if (mark_reset)
-				LIST_FOREACH(lmp, &sp->ep->marks, q)
+				for (lmp = sp->ep->marks.lh_first;
+				    lmp != NULL; lmp = lmp->q.le_next)
 					if (lmp->name != ABSMARK1 &&
 					    lmp->lno == fl)
 						lmp->lno = tl;
@@ -178,7 +186,8 @@ ex_move(SCR *sp, EXCMD *cmdp)
 
 	/* Log the new positions of the marks. */
 	if (mark_reset)
-		LIST_FOREACH(lmp, &sp->ep->marks, q)
+		for (lmp = sp->ep->marks.lh_first;
+		    lmp != NULL; lmp = lmp->q.le_next)
 			if (lmp->name != ABSMARK1 &&
 			    lmp->lno >= mfl && lmp->lno <= mtl)
 				(void)log_mark(sp, lmp);

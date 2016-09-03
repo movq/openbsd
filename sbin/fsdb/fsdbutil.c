@@ -1,4 +1,4 @@
-/*	$OpenBSD: fsdbutil.c,v 1.17 2015/01/20 18:22:21 deraadt Exp $	*/
+/*	$OpenBSD: fsdbutil.c,v 1.5 1997/01/16 04:04:21 millert Exp $	*/
 /*	$NetBSD: fsdbutil.c,v 1.5 1996/09/28 19:30:37 christos Exp $	*/
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -30,7 +37,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef lint
+static char rcsid[] = "$OpenBSD: fsdbutil.c,v 1.5 1997/01/16 04:04:21 millert Exp $";
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/mount.h>
 #include <ctype.h>
@@ -50,157 +63,156 @@
 #include "fsck.h"
 
 char **
-crack(char *line, int *argc)
+crack(line, argc)
+	char *line;
+	int *argc;
 {
-	static char *argv[8];
-	int i;
-	char *p, *val;
-
-	for (p = line, i = 0; p != NULL && i < 8; i++) {
-		while ((val = strsep(&p, " \t\n")) != NULL && *val == '\0')
-			/**/;
-		if (val)
-			argv[i] = val;
-		else
-			break;
-	}
-	*argc = i;
-	return argv;
+    static char *argv[8];
+    int i;
+    char *p, *val;
+    for (p = line, i = 0; p != NULL && i < 8; i++) {
+	while ((val = strsep(&p, " \t\n")) != NULL && *val == '\0')
+	    /**/;
+	if (val)
+	    argv[i] = val;
+	else
+	    break;
+    }
+    *argc = i;
+    return argv;
 }
 
 int
-argcount(struct cmdtable *cmdp, int argc, char *argv[])
+argcount(cmdp, argc, argv)
+	struct cmdtable *cmdp;
+	int argc;
+	char *argv[];
 {
-	if (cmdp->minargc == cmdp->maxargc)
-		warnx("command `%s' takes %u arguments", cmdp->cmd, cmdp->minargc-1);
-	else
-		warnx("command `%s' takes from %u to %u arguments",
-		    cmdp->cmd, cmdp->minargc-1, cmdp->maxargc-1);
-	warnx("usage: %s: %s", cmdp->cmd, cmdp->helptxt);
-	return 1;
+    if (cmdp->minargc == cmdp->maxargc)
+	warnx("command `%s' takes %u arguments", cmdp->cmd, cmdp->minargc-1);
+    else
+	warnx("command `%s' takes from %u to %u arguments",
+	      cmdp->cmd, cmdp->minargc-1, cmdp->maxargc-1);
+	    
+    warnx("usage: %s: %s", cmdp->cmd, cmdp->helptxt);
+    return 1;
 }
 
 void
-printstat(const char *cp, ino_t inum, union dinode *dp)
+printstat(cp, inum, dp)
+	const char *cp;
+	ino_t inum;
+	struct dinode *dp;
 {
-	struct group *grp;
-	struct passwd *pw;
-	time_t t;
-	char *p;
+    struct group *grp;
+    struct passwd *pw;
+    time_t t;
+    char *p;
 
-	printf("%s: ", cp);
-	switch (DIP(dp, di_mode) & IFMT) {
-	case IFDIR:
-		puts("directory");
-		break;
-	case IFREG:
-		puts("regular file");
-		break;
-	case IFBLK:
-		printf("block special (%d,%d)",
-		    (int)major(DIP(dp, di_rdev)), (int)minor(DIP(dp, di_rdev)));
-		break;
-	case IFCHR:
-		printf("character special (%d,%d)",
-		    (int)major(DIP(dp, di_rdev)), (int)minor(DIP(dp, di_rdev)));
-		break;
-	case IFLNK:
-		fputs("symlink",stdout);
-		if (DIP(dp, di_size) > 0 &&
-		    DIP(dp, di_size) < sblock.fs_maxsymlinklen &&
-		    DIP(dp, di_blocks) == 0) {
-			char *p = sblock.fs_magic == FS_UFS1_MAGIC ?
-			    (char *)dp->dp1.di_shortlink :
-			    (char *)dp->dp2.di_shortlink;
-			printf(" to `%.*s'\n", (int)DIP(dp, di_size), p);
-		} else
-			putchar('\n');
-		break;
-	case IFSOCK:
-		puts("socket");
-		break;
-	case IFIFO:
-		puts("fifo");
-		break;
-	}
-
-	printf("I=%llu MODE=%o SIZE=%llu", (unsigned long long)inum,
-	    DIP(dp, di_mode), DIP(dp, di_size));
-	t = DIP(dp, di_mtime);
-	p = ctime(&t);
-	printf("\n\tMTIME=%15.15s %4.4s [%d nsec]", &p[4], &p[20],
-	    DIP(dp, di_mtimensec));
-	t = DIP(dp, di_ctime);
-	p = ctime(&t);
-	printf("\n\tCTIME=%15.15s %4.4s [%d nsec]", &p[4], &p[20],
-	    DIP(dp, di_ctimensec));
-	t = DIP(dp, di_atime);
-	p = ctime(&t);
-	printf("\n\tATIME=%15.15s %4.4s [%d nsec]\n", &p[4], &p[20],
-	    DIP(dp, di_atimensec));
-
-	if ((pw = getpwuid(DIP(dp, di_uid))))
-		printf("OWNER=%s ", pw->pw_name);
+    printf("%s: ", cp);
+    switch (dp->di_mode & IFMT) {
+    case IFDIR:
+	puts("directory");
+	break;
+    case IFREG:
+	puts("regular file");
+	break;
+    case IFBLK:
+	printf("block special (%d,%d)",
+	       major(dp->di_rdev), minor(dp->di_rdev));
+	break;
+    case IFCHR:
+	printf("character special (%d,%d)",
+	       major(dp->di_rdev), minor(dp->di_rdev));
+	break;
+    case IFLNK:
+	fputs("symlink",stdout);
+	if (dp->di_size > 0 && dp->di_size < MAXSYMLINKLEN &&
+	    dp->di_blocks == 0)
+	    printf(" to `%.*s'\n", (int) dp->di_size, (char *)dp->di_shortlink);
 	else
-		printf("OWNUID=%u ", DIP(dp, di_uid));
-	if ((grp = getgrgid(DIP(dp, di_gid))))
-		printf("GRP=%s ", grp->gr_name);
-	else
-		printf("GID=%u ", DIP(dp, di_gid));
+		putchar('\n');
+	break;
+    case IFSOCK:
+	puts("socket");
+	break;
+    case IFIFO:
+	puts("fifo");
+	break;
+    }
+    printf("I=%u MODE=%o SIZE=%qu", inum, dp->di_mode, dp->di_size);
+    t = dp->di_mtime;
+    p = ctime(&t);
+    printf("\n\tMTIME=%15.15s %4.4s [%d nsec]", &p[4], &p[20],
+	   dp->di_mtimensec);
+    t = dp->di_ctime;
+    p = ctime(&t);
+    printf("\n\tCTIME=%15.15s %4.4s [%d nsec]", &p[4], &p[20],
+	   dp->di_ctimensec);
+    t = dp->di_atime;
+    p = ctime(&t);
+    printf("\n\tATIME=%15.15s %4.4s [%d nsec]\n", &p[4], &p[20],
+	   dp->di_atimensec);
 
-	printf("LINKCNT=%hd FLAGS=%#x BLKCNT=%x GEN=%x\n", DIP(dp, di_nlink),
-	    DIP(dp, di_flags), (unsigned)DIP(dp, di_blocks), DIP(dp, di_gen));
+    if ((pw = getpwuid(dp->di_uid)))
+	printf("OWNER=%s ", pw->pw_name);
+    else
+	printf("OWNUID=%u ", dp->di_uid);
+    if ((grp = getgrgid(dp->di_gid)))
+	printf("GRP=%s ", grp->gr_name);
+    else
+	printf("GID=%u ", dp->di_gid);
+
+    printf("LINKCNT=%hd FLAGS=%#x BLKCNT=%x GEN=%x\n", dp->di_nlink, dp->di_flags,
+	   dp->di_blocks, dp->di_gen);
 }
 
 int
-checkactive(void)
+checkactive()
 {
-	if (!curinode) {
-		warnx("no current inode");
-		return 0;
-	}
-	return 1;
-}
-
-int
-checkactivedir(void)
-{
-	if (!curinode) {
-		warnx("no current inode");
-		return 0;
-	}
-	if ((DIP(curinode, di_mode) & IFMT) != IFDIR) {
-		warnx("inode %llu not a directory",
-		    (unsigned long long)curinum);
-		return 0;
-	}
-	return 1;
-}
-
-int
-printactive(void)
-{
-	if (!checkactive())
-		return 1;
-	switch (DIP(curinode, di_mode) & IFMT) {
-	case IFDIR:
-	case IFREG:
-	case IFBLK:
-	case IFCHR:
-	case IFLNK:
-	case IFSOCK:
-	case IFIFO:
-		printstat("current inode", curinum, curinode);
-		break;
-	case 0:
-		printf("current inode %llu: unallocated inode\n",
-		    (unsigned long long)curinum);
-		break;
-	default:
-		printf("current inode %llu: screwy itype 0%o (mode 0%o)?\n",
-		    (unsigned long long)curinum, DIP(curinode, di_mode) & IFMT,
-		    DIP(curinode, di_mode));
-		break;
-	}
+    if (!curinode) {
+	warnx("no current inode\n");
 	return 0;
+    }
+    return 1;
+}
+
+int
+checkactivedir()
+{
+    if (!curinode) {
+	warnx("no current inode\n");
+	return 0;
+    }
+    if ((curinode->di_mode & IFMT) != IFDIR) {
+	warnx("inode %d not a directory", curinum);
+	return 0;
+    }
+    return 1;
+}
+
+int
+printactive()
+{
+    if (!checkactive())
+	return 1;
+    switch (curinode->di_mode & IFMT) {
+    case IFDIR:
+    case IFREG:
+    case IFBLK:
+    case IFCHR:
+    case IFLNK:
+    case IFSOCK:
+    case IFIFO:
+	printstat("current inode", curinum, curinode);
+	break;
+    case 0:
+	printf("current inode %d: unallocated inode\n", curinum);
+	break;
+    default:
+	printf("current inode %d: screwy itype 0%o (mode 0%o)?\n",
+	       curinum, curinode->di_mode & IFMT, curinode->di_mode);
+	break;
+    }
+    return 0;
 }

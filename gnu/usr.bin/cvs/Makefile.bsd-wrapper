@@ -1,21 +1,23 @@
-#	$OpenBSD: Makefile.bsd-wrapper,v 1.52 2014/10/21 00:12:46 daniel Exp $
+#	$OpenBSD: Makefile.bsd-wrapper,v 1.32 1999/09/10 06:19:48 tholo Exp $
 
 .include <bsd.own.mk>
 
-MAN=	man/cvs.1 man/cvs.5 man/cvsbug.8 man/rcs2log.1
-GNUCFLAGS=	CC="${CC}" CFLAGS="${CFLAGS} ${COPTS}" CPP="${CPP}"
-CLEANFILES=	src/version.c lib/getdate.c lib/getdate.h macintosh/Makefile \
-		os2/Makefile zlib/Makefile \
-		windows-NT/SCC/Makefile emx/Makefile doc/CVSvn.texi \
+MAN=	man/cvs.1 man/cvs.5 man/cvsbug.8
+GNUCFLAGS=	CC="${CC}" CFLAGS="${CFLAGS} ${COPTS}"
+CLEANFILES=	lib/getdate.c macintosh/Makefile os2/Makefile doc/CVSvn.texi \
                 doc/cvs.info doc/cvs.info-1 doc/cvs.info-2 doc/cvs.info-3 \
                 doc/cvs.info-4 doc/cvs.info-5 doc/cvs.info-6 doc/cvs.info-7 \
-		doc/cvs.info-8 doc/cvs.info-9 doc/cvsclient.info \
-		doc/cvsclient.info-1 doc/cvsclient.info-2 doc/cvsclient.info-3
+		doc/cvs.info-8 doc/cvs.info-9 doc/cvsclient.info doc/cvsclient.info-1 \
+		doc/cvsclient.info-2 doc/cvsclient.info-3
 
-LDFLAGS=${LDSTATIC}
+.if (${KERBEROS} == "yes")
+KRB=--with-krb4=/usr
+.else
+KRB=--without-krb4
+.endif
 
 all:	config.status
-	${MAKE} ${GNUCFLAGS} LDFLAGS="${LDFLAGS}" all info
+	${MAKE} ${GNUCFLAGS} LDFLAGS=${LDSTATIC} all info
 
 .FORCE:	.IGNORE
 
@@ -29,32 +31,22 @@ config: .FORCE
 	-rm -f config.cache
 	PATH="/bin:/usr/bin:/sbin:/usr/sbin" \
 	INSTALL_PROGRAM="${INSTALL} ${INSTALL_COPY} ${INSTALL_STRIP}" \
-		INSTALL_SCRIPT="${INSTALL} ${INSTALL_COPY}" \
-		ACLOCAL=true AUTOCONF=true AUTOMAKE=true AUTOHEADER=true \
-		MAKEINFO='makeinfo --no-split' \
-		sh ${.CURDIR}/configure --prefix=/usr --mandir=/usr/share/man \
-			--datadir=/usr/libdata ${CF}
+		sh ${.CURDIR}/configure --prefix=/usr --mandir=/usr/share/man --datadir=/usr/libdata ${KRB} ${CF}
 
 config.status:
 	PATH="/bin:/usr/bin:/sbin:/usr/sbin" \
 	INSTALL_PROGRAM="${INSTALL} ${INSTALL_COPY} ${INSTALL_STRIP}" \
-		INSTALL_SCRIPT="${INSTALL} ${INSTALL_COPY}" \
-		ACLOCAL=true AUTOCONF=true AUTOMAKE=true AUTOHEADER=true \
-		MAKEINFO='makeinfo --no-split' \
-		sh ${.CURDIR}/configure --prefix=/usr --mandir=/usr/share/man \
-			--datadir=/usr/libdata ${CF}
+		sh ${.CURDIR}/configure --prefix=/usr --mandir=/usr/share/man --datadir=/usr/libdata ${KRB} ${CF}
 
 .ifdef NOMAN
 maninstall:
 	@echo NOMAN is set
 .endif
 
-BEFOREMAN=config.status
 install: maninstall
 	${MAKE} ${GNUCFLAGS} prefix=${DESTDIR}/usr \
-		infodir=/usr/share/info \
-		libexecdir=/usr/libexec \
-		bindir=/usr/bin INSTALL_MAN= install
+		infodir=${DESTDIR}/usr/share/info \
+		bindir=${DESTDIR}/usr/bin INSTALL_MAN= install
 
 clean cleandir:
 	-@if [ -e Makefile ]; then ${MAKE} distclean; fi

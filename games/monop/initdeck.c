@@ -1,4 +1,4 @@
-/*	$OpenBSD: initdeck.c,v 1.17 2016/01/08 18:20:33 mestre Exp $	*/
+/*	$OpenBSD: initdeck.c,v 1.6 1998/09/20 23:36:51 pjanzen Exp $	*/
 /*	$NetBSD: initdeck.c,v 1.3 1995/03/23 08:34:43 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +34,31 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
 
-#include "deck.h"
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)initdeck.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: initdeck.c,v 1.6 1998/09/20 23:36:51 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include	<err.h>
+#include	<stdio.h>
+#include	<stdlib.h>
+#include	<unistd.h>
+#include	"deck.h"
 
 /*
  *	This program initializes the card files for monopoly.
  * It reads in a data file with Com. Chest cards, followed by
- * the Chance card.  The two are separated by a line of "%-".
- * All other cards are separated by lines of "%%".  In the front
+ * the Chance card.  The two are seperated by a line of "%-".
+ * All other cards are seperated by lines of "%%".  In the front
  * of the file is the data for the decks in the same order.
  * This includes the seek pointer for the start of each card.
  * All cards start with their execution code, followed by the
@@ -60,43 +77,43 @@ DECK	deck[2];
 
 FILE	*inf, *outf;
 
-static void	getargs(int, char *[]);
-static void	count(void);
-static void	putem(void);
+static void	getargs __P((int, char *[]));
+static void	count __P((void));
+static void	putem __P((void));
 
 int
-main(int ac, char *av[])
+main(ac, av)
+	int	ac;
+	char	*av[];
 {
 	int n;
 
-	if (pledge("stdio rpath wpath cpath", NULL) == -1)
-		err(1, "pledge");
+	/* revoke */
+	setegid(getgid());
+	setgid(getgid());
 
 	getargs(ac, av);
 	if ((inf = fopen(infile, "r")) == NULL)
-		err(1, "%s", infile);
+		err(1, infile);
 	count();
 	/*
 	 * allocate space for pointers.
 	 */
-	if ((CC_D.offsets = calloc(CC_D.num_cards + 1,
+	if ((CC_D.offsets = (int32_t *)calloc(CC_D.num_cards + 1,
 			sizeof (int32_t))) == NULL ||
-	    (CH_D.offsets = calloc(CH_D.num_cards + 1,
+	    (CH_D.offsets = (int32_t *)calloc(CH_D.num_cards + 1,
 			sizeof (int32_t))) == NULL)
-		err(1, NULL);
-	fseek(inf, 0L, SEEK_SET);
+		errx(1, "malloc");
+	fseek(inf, 0L, 0);
 	if ((outf = fopen(outfile, "w")) == NULL)
-		err(1, "%s", outfile);
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
+		err(1, outfile);
 
 	fwrite(&deck[0].num_cards, sizeof(deck[0].num_cards), 1, outf);
-	fwrite(&deck[0].top_card, sizeof(deck[0].top_card), 1, outf);
+	fwrite(&deck[0].last_card, sizeof(deck[0].last_card), 1, outf);
 	fwrite(&deck[0].gojf_used, sizeof(deck[0].gojf_used), 1, outf);
 
 	fwrite(&deck[0].num_cards, sizeof(deck[0].num_cards), 1, outf);
-	fwrite(&deck[0].top_card, sizeof(deck[0].top_card), 1, outf);
+	fwrite(&deck[0].last_card, sizeof(deck[0].last_card), 1, outf);
 	fwrite(&deck[0].gojf_used, sizeof(deck[0].gojf_used), 1, outf);
 
 	fwrite(CC_D.offsets, sizeof(CC_D.offsets[0]), CC_D.num_cards, outf);
@@ -104,19 +121,19 @@ main(int ac, char *av[])
 	putem();
 
 	fclose(inf);
-	fseek(outf, 0L, SEEK_SET);
+	fseek(outf, 0, 0L);
 
 	deck[0].num_cards = htons(deck[0].num_cards);
 	fwrite(&deck[0].num_cards, sizeof(deck[0].num_cards), 1, outf);
-	deck[0].top_card = htons(deck[0].top_card);
-	fwrite(&deck[0].top_card, sizeof(deck[0].top_card), 1, outf);
+	deck[0].last_card = htons(deck[0].last_card);
+	fwrite(&deck[0].last_card, sizeof(deck[0].last_card), 1, outf);
 	fwrite(&deck[0].gojf_used, sizeof(deck[0].gojf_used), 1, outf);
 	deck[0].num_cards = ntohs(deck[0].num_cards);
 
 	deck[1].num_cards = htons(deck[1].num_cards);
 	fwrite(&deck[1].num_cards, sizeof(deck[1].num_cards), 1, outf);
-	deck[1].top_card = htons(deck[1].top_card);
-	fwrite(&deck[1].top_card, sizeof(deck[1].top_card), 1, outf);
+	deck[1].last_card = htons(deck[1].last_card);
+	fwrite(&deck[1].last_card, sizeof(deck[1].last_card), 1, outf);
 	fwrite(&deck[1].gojf_used, sizeof(deck[1].gojf_used), 1, outf);
 	deck[1].num_cards = ntohs(deck[1].num_cards);
 
@@ -130,13 +147,14 @@ main(int ac, char *av[])
 	}
 
 	fclose(outf);
-	printf("There were %d com. chest and %d chance cards\n", CC_D.num_cards,
-	    CH_D.num_cards);
-	return 0;
+	printf("There were %d com. chest and %d chance cards\n", CC_D.num_cards, CH_D.num_cards);
+	exit(0);
 }
 
 static void
-getargs(int ac, char *av[])
+getargs(ac, av)
+	int	ac;
+	char	*av[];
 {
 	if (ac > 1)
 		infile = av[1];
@@ -148,7 +166,7 @@ getargs(int ac, char *av[])
  * count the cards
  */
 static void
-count(void)
+count()
 {
 	bool	newline;
 	DECK	*in_deck;
@@ -171,7 +189,7 @@ count(void)
  *	put strings in the file
  */
 static void
-putem(void)
+putem()
 {
 	bool	newline;
 	DECK	*in_deck;

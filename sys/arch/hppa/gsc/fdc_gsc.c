@@ -1,4 +1,4 @@
-/*	$OpenBSD: fdc_gsc.c,v 1.5 2004/04/07 18:24:19 mickey Exp $	*/
+/*	$OpenBSD: fdc_gsc.c,v 1.1 1998/09/30 04:45:46 mickey Exp $	*/
 
 /*
  * Copyright (c) 1998 Michael Shalayeff
@@ -12,18 +12,22 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 
@@ -42,8 +46,8 @@
 #include <hppa/dev/cpudevs.h>
 
 /* controller driver configuration */
-int fdc_gsc_probe(struct device *, void *, void *);
-void fdc_gsc_attach(struct device *, struct device *, void *);
+int fdc_gsc_probe __P((struct device *, void *, void *));
+void fdc_gsc_attach __P((struct device *, struct device *, void *));
 
 struct cfattach fdc_gsc_ca = {
 	sizeof(struct fdc_softc), fdc_gsc_probe, fdc_gsc_attach
@@ -54,7 +58,7 @@ fdc_gsc_probe(parent, match, aux)
 	struct device *parent;
 	void *match, *aux;
 {
-	struct confargs *ca = aux;
+	register struct confargs *ca = aux;
 	bus_space_handle_t ioh;
 	int rv;
 
@@ -62,7 +66,7 @@ fdc_gsc_probe(parent, match, aux)
 	    ca->ca_type.iodc_sv_model != HPPA_FIO_GPCFD)
 		return 0;
 
-	/* Map the I/O space. */
+	/* Map the i/o space. */
 	if (bus_space_map(ca->ca_iot, ca->ca_hpa, IOMOD_HPASIZE, 0, &ioh))
 		return 0;
 
@@ -78,7 +82,7 @@ fdc_gsc_attach(parent, self, aux)
 {
 	struct fdc_softc *sc = (void *)self;
 	bus_space_handle_t ioh;
-	struct confargs *ca = aux;
+	register struct confargs *ca = aux;
 
 	/* Re-map the I/O space. */
 	if (bus_space_map(ca->ca_iot, ca->ca_hpa, IOMOD_HPASIZE, 0, &ioh))

@@ -1,4 +1,4 @@
-/* $OpenBSD: ics2101.c,v 1.9 2014/09/14 14:17:25 jsg Exp $ */
+/* $OpenBSD: ics2101.c,v 1.4 1998/04/26 21:02:44 provos Exp $ */
 /* $NetBSD: ics2101.c,v 1.6 1997/10/09 07:57:23 jtc Exp $ */
 
 /*-
@@ -16,6 +16,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD 
+ *	  Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its 
+ *    contributors may be used to endorse or promote products derived 
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -36,9 +43,11 @@
 #include <sys/ioctl.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
+#include <sys/proc.h>
 #include <sys/buf.h>
 
 #include <machine/cpu.h>
+#include <machine/pio.h>
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
@@ -59,8 +68,8 @@
 
 #define cvt_value(val) ((val) >> 1)
 
-static void ics2101_mix_doit(struct ics2101_softc *, u_int, u_int, u_int,
-    u_int);
+static void ics2101_mix_doit __P((struct ics2101_softc *, u_int, u_int, u_int,
+    u_int));
 /*
  * Program one channel of the ICS mixer
  */
@@ -77,6 +86,7 @@ ics2101_mix_doit(sc, chan, side, value, flags)
 	register unsigned char ctrl_addr;
 	register unsigned char attn_addr;
 	register unsigned char normal;
+	int s;
 
 	if (chan < ICSMIX_CHAN_0 || chan > ICSMIX_CHAN_5)
 		return;
@@ -117,7 +127,7 @@ ics2101_mix_doit(sc, chan, side, value, flags)
 			normal = 0x02;
 	}
 
-	mtx_enter(&audio_lock);
+	s = splaudio();
 
 	bus_space_write_1(iot, sc->sc_selio_ioh, sc->sc_selio, ctrl_addr);
 	bus_space_write_1(iot, sc->sc_dataio_ioh, sc->sc_dataio, normal);
@@ -125,7 +135,7 @@ ics2101_mix_doit(sc, chan, side, value, flags)
 	bus_space_write_1(iot, sc->sc_selio_ioh, sc->sc_selio, attn_addr);
 	bus_space_write_1(iot, sc->sc_dataio_ioh, sc->sc_dataio, (unsigned char) value);
 
-	mtx_leave(&audio_lock);
+	splx(s);
 }
 
 void

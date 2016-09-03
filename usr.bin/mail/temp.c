@@ -1,4 +1,4 @@
-/*	$OpenBSD: temp.c,v 1.17 2016/07/28 21:37:45 tedu Exp $	*/
+/*	$OpenBSD: temp.c,v 1.10 1997/11/14 00:23:59 millert Exp $	*/
 /*	$NetBSD: temp.c,v 1.5 1996/06/08 19:48:42 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)temp.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: temp.c,v 1.10 1997/11/14 00:23:59 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include "extern.h"
 
@@ -39,18 +51,19 @@
  * Give names to all the temporary files that we will need.
  */
 
-char *tmpdir;
+char	*tmpdir;
 
 void
-tinit(void)
+tinit()
 {
 	char *cp;
 
-	tmpdir = _PATH_TMP;
+	if ((tmpdir = getenv("TMPDIR")) == NULL || *tmpdir == '\0')
+		tmpdir = _PATH_TMP;
 	if ((tmpdir = strdup(tmpdir)) == NULL)
-		err(1, "strdup");
+		errx(1, "Out of memory");
 
-	/* Strip trailing '/' if necessary */
+	/* Strip trailing '/' if necesary */
 	cp = tmpdir + strlen(tmpdir) - 1;
 	while (cp > tmpdir && *cp == '/') {
 		*cp = '\0';
@@ -62,7 +75,7 @@ tinit(void)
 	 * do a spreserve() after us.
 	 */
 	if (myname != NULL) {
-		if (getuserid(myname) == UID_MAX)
+		if (getuserid(myname) < 0)
 			errx(1, "\"%s\" is not a user of this system", myname);
 	} else {
 		if ((cp = username()) == NULL) {
@@ -72,12 +85,9 @@ tinit(void)
 		} else
 			myname = savestr(cp);
 	}
-	if ((cp = getenv("HOME")) == NULL || *cp == '\0' ||
-	    strlen(cp) >= PATHSIZE)
-		homedir = NULL;
-	else
-		homedir = savestr(cp);
+	if ((cp = getenv("HOME")) == NULL || strlen(getenv("HOME")) >= PATHSIZE)
+		cp = ".";
+	homedir = savestr(cp);
 	if (debug)
-		printf("user = %s, homedir = %s\n", myname,
-		    homedir ? homedir : "NONE");
+		printf("user = %s, homedir = %s\n", myname, homedir);
 }

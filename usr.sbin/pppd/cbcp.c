@@ -1,34 +1,32 @@
-/*	$OpenBSD: cbcp.c,v 1.8 2010/05/01 08:14:26 mk Exp $	*/
+/*	$OpenBSD: cbcp.c,v 1.2 1997/09/05 04:32:33 millert Exp $	*/
 
 /*
  * cbcp - Call Back Configuration Protocol.
  *
- * Copyright (c) 1995 Pedro Roque Marques.  All rights reserved.
+ * Copyright (c) 1995 Pedro Roque Marques
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Pedro Roque Marques.  The name of the author may not be used to
+ * endorse or promote products derived from this software without
+ * specific prior written permission.
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name(s) of the authors of this software must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission.
- *
- * THE AUTHORS OF THIS SOFTWARE DISCLAIM ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
- * SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: cbcp.c,v 1.2 1997/04/30 05:50:26 paulus Exp";
+#else
+static char rcsid[] = "$OpenBSD: cbcp.c,v 1.2 1997/09/05 04:32:33 millert Exp $";
+#endif
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -45,13 +43,14 @@
 /*
  * Protocol entry points.
  */
-static void cbcp_init(int unit);
-static void cbcp_open(int unit);
-static void cbcp_lowerup(int unit);
-static void cbcp_input(int unit, u_char *pkt, int len);
-static void cbcp_protrej(int unit);
-static int  cbcp_printpkt(u_char *pkt, int len,
-    void (*printer)(void *, char *, ...), void *arg);
+static void cbcp_init      __P((int unit));
+static void cbcp_open      __P((int unit));
+static void cbcp_lowerup   __P((int unit));
+static void cbcp_input     __P((int unit, u_char *pkt, int len));
+static void cbcp_protrej   __P((int unit));
+static int  cbcp_printpkt  __P((u_char *pkt, int len,
+				void (*printer) __P((void *, char *, ...)),
+				void *arg));
 
 struct protent cbcp_protent = {
     PPP_CBCP,
@@ -75,11 +74,11 @@ cbcp_state cbcp[NUM_PPP];
 
 /* internal prototypes */
 
-static void cbcp_recvreq(cbcp_state *us, char *pckt, int len);
-static void cbcp_resp(cbcp_state *us);
-static void cbcp_up(cbcp_state *us);
-static void cbcp_recvack(cbcp_state *us, char *pckt, int len);
-static void cbcp_send(cbcp_state *us, u_char code, u_char *buf, int len);
+static void cbcp_recvreq __P((cbcp_state *us, char *pckt, int len));
+static void cbcp_resp __P((cbcp_state *us));
+static void cbcp_up __P((cbcp_state *us));
+static void cbcp_recvack __P((cbcp_state *us, char *pckt, int len));
+static void cbcp_send __P((cbcp_state *us, u_char code, u_char *buf, int len));
 
 /* init state */
 static void
@@ -115,7 +114,7 @@ cbcp_open(unit)
     syslog(LOG_DEBUG, "cbcp_open");
 }
 
-/* process an incoming packet */
+/* process an incomming packet */
 static void
 cbcp_input(unit, inpacket, pktlen)
     int unit;
@@ -139,10 +138,13 @@ cbcp_input(unit, inpacket, pktlen)
     GETCHAR(id, inp);
     GETSHORT(len, inp);
 
-    if (len < CBCP_MINLEN || len > pktlen) {
+#if 0
+    if (len > pktlen) {
         syslog(LOG_ERR, "CBCP packet: invalid length");
         return;
     }
+#endif
+
     len -= CBCP_MINLEN;
  
     switch(code) {
@@ -189,7 +191,7 @@ static int
 cbcp_printpkt(p, plen, printer, arg)
     u_char *p;
     int plen;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     int code, opt, id, len, olen, delay;
@@ -275,15 +277,11 @@ cbcp_recvreq(us, pckt, pcktlen)
 
     address[0] = 0;
 
-    while (len > 1) {
+    while (len) {
         syslog(LOG_DEBUG, "length: %d", len);
 
 	GETCHAR(type, pckt);
 	GETCHAR(opt_len, pckt);
-
-	if (len < opt_len)
-	    break;
-	len -= opt_len;
 
 	if (opt_len > 2)
 	    GETCHAR(delay, pckt);
@@ -313,6 +311,7 @@ cbcp_recvreq(us, pckt, pcktlen)
 	case CB_CONF_LIST:
 	    break;
 	}
+	len -= opt_len;
     }
 
     cbcp_resp(us);
@@ -406,13 +405,10 @@ cbcp_recvack(us, pckt, len)
     int opt_len;
     char address[256];
 
-    if (len > 1) {
+    if (len) {
         GETCHAR(type, pckt);
 	GETCHAR(opt_len, pckt);
-
-	if (opt_len > len)
-	    return;
-
+     
 	if (opt_len > 2)
 	    GETCHAR(delay, pckt);
 

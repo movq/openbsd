@@ -1,4 +1,4 @@
-/*	$OpenBSD: inet_neta.c,v 1.7 2005/08/06 20:30:03 espie Exp $	*/
+/*	$OpenBSD: inet_neta.c,v 1.2 1997/04/05 21:13:12 millert Exp $	*/
 
 /*
  * Copyright (c) 1996 by Internet Software Consortium.
@@ -16,6 +16,14 @@
  * ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
  * SOFTWARE.
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static const char rcsid[] = "$Id: inet_neta.c,v 1.2 1997/04/05 21:13:12 millert Exp $";
+#else
+static const char rcsid[] = "$OpenBSD: inet_neta.c,v 1.2 1997/04/05 21:13:12 millert Exp $";
+#endif
+#endif
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -38,39 +46,34 @@
  *	Paul Vixie (ISC), July 1996
  */
 char *
-inet_neta(in_addr_t src, char *dst, size_t size)
+inet_neta(src, dst, size)
+	in_addr_t src;
+	char *dst;
+	size_t size;
 {
 	char *odst = dst;
-	char *ep;
-	int advance;
+	char *tp;
 
-	if (src == 0x00000000) {
-		if (size < sizeof "0.0.0.0")
-			goto emsgsize;
-		strlcpy(dst, "0.0.0.0", size);
-		return dst;
-	}
-	ep = dst + size;
-	if (ep <= dst)
-		goto emsgsize;
 	while (src & 0xffffffff) {
 		u_char b = (src & 0xff000000) >> 24;
 
 		src <<= 8;
-		if (b || src) {
-			if (ep - dst < sizeof "255.")
+		if (b) {
+			if (size < sizeof "255.")
 				goto emsgsize;
-			advance = snprintf(dst, ep - dst, "%u", b);
-			if (advance <= 0 || advance >= ep - dst)
-				goto emsgsize;
-			dst += advance;
+			tp = dst;
+			dst += sprintf(dst, "%u", b);
 			if (src != 0L) {
-				if (dst + 1 >= ep)
-					goto emsgsize;
 				*dst++ = '.';
 				*dst = '\0';
 			}
+			size -= (size_t)(dst - tp);
 		}
+	}
+	if (dst == odst) {
+		if (size < sizeof "0.0.0.0")
+			goto emsgsize;
+		strcpy(dst, "0.0.0.0");
 	}
 	return (odst);
 

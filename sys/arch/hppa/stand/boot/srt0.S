@@ -1,7 +1,7 @@
-/*	$OpenBSD: srt0.S,v 1.11 2011/04/17 09:49:48 kettenis Exp $	*/
+/*	$OpenBSD: srt0.S,v 1.6 1999/05/06 02:29:56 mickey Exp $	*/
 
 /*
- * Copyright (c) 1998-2004 Michael Shalayeff
+ * Copyright (c) 1998 Michael Shalayeff
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,18 +12,22 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR OR HIS RELATIVES BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF MIND, USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 /*
  * Copyright 1996 1995 by Open Software Foundation, Inc.   
@@ -60,14 +64,13 @@
 ;
 
 #define	_LOCORE
-#include <machine/asm.h>
-#include <machine/cpu.h>
 #include <machine/iomod.h>
+#include <machine/asm.h>
 
 /*
  * This is the ending of the begin
  */
-ENTRY(begin,0)
+ENTRY(begin)
 
 	blr	%r0,%r5			; Get address of 'boff' into 'r5',
 	ldo	begin-boff(%r5),%r5	;   and subtract to get 'begin'.
@@ -135,13 +138,6 @@ start
 	ldil	L%HEAP_LIMIT, %sp
 	ldo	R%HEAP_LIMIT(%sp), %sp
 
-	comb,=	%r0, %r26, call_boot
-	nop
-	.import	boottimeout, data
-	ldil	L%boottimeout, %r22
-	stw	%r0, R%boottimeout(%r22)
-
-call_boot
 	b	boot			; Call boot(),
 	copy	%r0, arg0		; use default boot device
 	nop
@@ -149,8 +145,8 @@ call_boot
 /*
  * rtt - restart the box
  */
-LEAF_ENTRY(_rtt)
-	ldil    L%HPPA_LBCAST, %r25
+ENTRY(_rtt)
+	ldil    L%LBCAST_ADDR, %r25
 	ldi     CMD_RESET, %r26
 	stw     %r26,R%iomod_command(%r25)
 forever                                 ; Loop until bus reset takes effect.

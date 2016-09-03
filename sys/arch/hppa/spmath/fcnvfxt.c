@@ -1,23 +1,48 @@
-/*	$OpenBSD: fcnvfxt.c,v 1.8 2010/07/30 18:05:23 kettenis Exp $	*/
-/*
-  (c) Copyright 1986 HEWLETT-PACKARD COMPANY
-  To anyone who acknowledges that this file is provided "AS IS"
-  without any express or implied warranty:
-      permission to use, copy, modify, and distribute this file
-  for any purpose is hereby granted without fee, provided that
-  the above copyright notice and this notice appears in all
-  copies, and that the name of Hewlett-Packard Company not be
-  used in advertising or publicity pertaining to distribution
-  of the software without specific, written prior permission.
-  Hewlett-Packard Company makes no representations about the
-  suitability of this software for any purpose.
-*/
-/* @(#)fcnvfxt.c: Revision: 2.8.88.2 Date: 93/12/08 13:27:34 */
+/*	$OpenBSD: fcnvfxt.c,v 1.3 1998/07/02 19:05:21 mickey Exp $	*/
 
-#include "float.h"
-#include "sgl_float.h"
-#include "dbl_float.h"
-#include "cnv_float.h"
+/*
+ * Copyright 1996 1995 by Open Software Foundation, Inc.   
+ *              All Rights Reserved 
+ *  
+ * Permission to use, copy, modify, and distribute this software and 
+ * its documentation for any purpose and without fee is hereby granted, 
+ * provided that the above copyright notice appears in all copies and 
+ * that both the copyright notice and this permission notice appear in 
+ * supporting documentation. 
+ *  
+ * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+ * 
+ */
+/*
+ * pmk1.1
+ */
+/*
+ * (c) Copyright 1986 HEWLETT-PACKARD COMPANY
+ *
+ * To anyone who acknowledges that this file is provided "AS IS" 
+ * without any express or implied warranty:
+ *     permission to use, copy, modify, and distribute this file 
+ * for any purpose is hereby granted without fee, provided that 
+ * the above copyright notice and this notice appears in all 
+ * copies, and that the name of Hewlett-Packard Company not be 
+ * used in advertising or publicity pertaining to distribution 
+ * of the software without specific, written prior permission.  
+ * Hewlett-Packard Company makes no representations about the 
+ * suitability of this software for any purpose.
+ */
+
+#include "../spmath/float.h"
+#include "../spmath/sgl_float.h"
+#include "../spmath/dbl_float.h"
+#include "../spmath/cnv_float.h"
 
 /*
  *  Convert single floating-point to single fixed-point format
@@ -25,10 +50,12 @@
  */
 /*ARGSUSED*/
 int
-sgl_to_sgl_fcnvfxt(srcptr, null, dstptr, status)
-	sgl_floating_point *srcptr, *null;
-	int *dstptr;
-	unsigned int *status;
+sgl_to_sgl_fcnvfxt(srcptr,nullptr,dstptr,status)
+
+sgl_floating_point *srcptr;
+int *dstptr;
+void *nullptr;
+unsigned int *status;
 {
 	register unsigned int src, temp;
 	register int src_exponent, result;
@@ -36,22 +63,19 @@ sgl_to_sgl_fcnvfxt(srcptr, null, dstptr, status)
 	src = *srcptr;
 	src_exponent = Sgl_exponent(src) - SGL_BIAS;
 
-	/*
+	/* 
 	 * Test for overflow
 	 */
 	if (src_exponent > SGL_FX_MAX_EXP) {
 		/* check for MININT */
-		if ((src_exponent > SGL_FX_MAX_EXP + 1) ||
+		if ((src_exponent > SGL_FX_MAX_EXP + 1) || 
 		Sgl_isnotzero_mantissa(src) || Sgl_iszero_sign(src)) {
-			if (Sgl_iszero_sign(src)) result = 0x7fffffff;
-			else result = 0x80000000;
-
-			if (Is_invalidtrap_enabled()) {
-				return(INVALIDEXCEPTION);
-			}
-			Set_invalidflag();
-			*dstptr = result;
-			return(NOEXCEPTION);
+			/* 
+		 	 * Since source is a number which cannot be 
+			 * represented in fixed-point format, return
+			 * largest (or smallest) fixed-point number.
+		 	 */
+			Sgl_return_overflow(src,dstptr);
 		}
 	}
 	/*
@@ -84,14 +108,16 @@ sgl_to_sgl_fcnvfxt(srcptr, null, dstptr, status)
 }
 
 /*
- *  Single Floating-point to Double Fixed-point
+ *  Single Floating-point to Double Fixed-point 
  */
 /*ARGSUSED*/
 int
-sgl_to_dbl_fcnvfxt(srcptr, null, dstptr, status)
-	sgl_floating_point *srcptr, *null;
-	dbl_integer *dstptr;
-	unsigned int *status;
+sgl_to_dbl_fcnvfxt(srcptr,nullptr,dstptr,status)
+
+sgl_floating_point *srcptr;
+dbl_integer *dstptr;
+void *nullptr;
+unsigned int *status;
 {
 	register int src_exponent, resultp1;
 	register unsigned int src, temp, resultp2;
@@ -99,28 +125,19 @@ sgl_to_dbl_fcnvfxt(srcptr, null, dstptr, status)
 	src = *srcptr;
 	src_exponent = Sgl_exponent(src) - SGL_BIAS;
 
-	/*
+	/* 
 	 * Test for overflow
 	 */
 	if (src_exponent > DBL_FX_MAX_EXP) {
 		/* check for MININT */
-		if ((src_exponent > DBL_FX_MAX_EXP + 1) ||
+		if ((src_exponent > DBL_FX_MAX_EXP + 1) || 
 		Sgl_isnotzero_mantissa(src) || Sgl_iszero_sign(src)) {
-			if (Sgl_iszero_sign(src)) {
-				resultp1 = 0x7fffffff;
-				resultp2 = 0xffffffff;
-			}
-			else {
-				resultp1 = 0x80000000;
-				resultp2 = 0;
-			}
-
-			if (Is_invalidtrap_enabled()) {
-				return(INVALIDEXCEPTION);
-			}
-			Set_invalidflag();
-			Dint_copytoptr(resultp1,resultp2,dstptr);
-			return(NOEXCEPTION);
+			/* 
+		 	 * Since source is a number which cannot be 
+			 * represented in fixed-point format, return
+			 * largest (or smallest) fixed-point number.
+		 	 */
+			Sgl_return_overflow_dbl(src,dstptr);
 		}
 		Dint_set_minint(resultp1,resultp2);
 		Dint_copytoptr(resultp1,resultp2,dstptr);
@@ -158,14 +175,16 @@ sgl_to_dbl_fcnvfxt(srcptr, null, dstptr, status)
 }
 
 /*
- *  Double Floating-point to Single Fixed-point
+ *  Double Floating-point to Single Fixed-point 
  */
 /*ARGSUSED*/
 int
-dbl_to_sgl_fcnvfxt(srcptr, null, dstptr, status)
-	dbl_floating_point *srcptr, *null;
-	int *dstptr;
-	unsigned int *status;
+dbl_to_sgl_fcnvfxt(srcptr,nullptr,dstptr,status)
+
+dbl_floating_point *srcptr;
+int *dstptr;
+void  *nullptr;
+unsigned int *status;
 {
 	register unsigned int srcp1, srcp2, tempp1, tempp2;
 	register int src_exponent, result;
@@ -173,21 +192,13 @@ dbl_to_sgl_fcnvfxt(srcptr, null, dstptr, status)
 	Dbl_copyfromptr(srcptr,srcp1,srcp2);
 	src_exponent = Dbl_exponent(srcp1) - DBL_BIAS;
 
-	/*
+	/* 
 	 * Test for overflow
 	 */
 	if (src_exponent > SGL_FX_MAX_EXP) {
 		/* check for MININT */
 		if (Dbl_isoverflow_to_int(src_exponent,srcp1,srcp2)) {
-			if (Dbl_iszero_sign(srcp1)) result = 0x7fffffff;
-			else result = 0x80000000;
-
-			if (Is_invalidtrap_enabled()) {
-				return(INVALIDEXCEPTION);
-			}
-			Set_invalidflag();
-			*dstptr = result;
-			return(NOEXCEPTION);
+			Dbl_return_overflow(srcp1,srcp2,dstptr);
 		}
 	}
 	/*
@@ -222,14 +233,16 @@ dbl_to_sgl_fcnvfxt(srcptr, null, dstptr, status)
 }
 
 /*
- *  Double Floating-point to Double Fixed-point
+ *  Double Floating-point to Double Fixed-point 
  */
 /*ARGSUSED*/
 int
-dbl_to_dbl_fcnvfxt(srcptr, null, dstptr, status)
-	dbl_floating_point *srcptr, *null;
-	dbl_integer *dstptr;
-	unsigned int *status;
+dbl_to_dbl_fcnvfxt(srcptr,nullptr,dstptr,status)
+
+dbl_floating_point *srcptr;
+dbl_integer *dstptr;
+void *nullptr;
+unsigned int *status;
 {
 	register int src_exponent, resultp1;
 	register unsigned int srcp1, srcp2, tempp1, tempp2, resultp2;
@@ -237,28 +250,19 @@ dbl_to_dbl_fcnvfxt(srcptr, null, dstptr, status)
 	Dbl_copyfromptr(srcptr,srcp1,srcp2);
 	src_exponent = Dbl_exponent(srcp1) - DBL_BIAS;
 
-	/*
+	/* 
 	 * Test for overflow
 	 */
 	if (src_exponent > DBL_FX_MAX_EXP) {
 		/* check for MININT */
-		if ((src_exponent > DBL_FX_MAX_EXP + 1) ||
+		if ((src_exponent > DBL_FX_MAX_EXP + 1) || 
 		Dbl_isnotzero_mantissa(srcp1,srcp2) || Dbl_iszero_sign(srcp1)) {
-			if (Dbl_iszero_sign(srcp1)) {
-				resultp1 = 0x7fffffff;
-				resultp2 = 0xffffffff;
-			}
-			else {
-				resultp1 = 0x80000000;
-				resultp2 = 0;
-			}
-
-			if (Is_invalidtrap_enabled()) {
-				return(INVALIDEXCEPTION);
-			}
-			Set_invalidflag();
-			Dint_copytoptr(resultp1,resultp2,dstptr);
-			return(NOEXCEPTION);
+			/* 
+		 	 * Since source is a number which cannot be 
+			 * represented in fixed-point format, return
+			 * largest (or smallest) fixed-point number.
+		 	 */
+			Dbl_return_overflow_dbl(srcp1,srcp2,dstptr);
 		}
 	}
 	/*

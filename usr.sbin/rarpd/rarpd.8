@@ -1,6 +1,4 @@
-.\"	$OpenBSD: rarpd.8,v 1.21 2015/10/28 10:02:59 jmc Exp $
 .\"	$NetBSD: rarpd.8,v 1.7 1998/04/15 15:06:06 mrg Exp $
-.\"
 .\" Copyright (c) 1988-1990 The Regents of the University of California.
 .\" All rights reserved.
 .\"
@@ -19,9 +17,9 @@
 .\" THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR IMPLIED
 .\" WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 .\" MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-.\" @(#) $Id: rarpd.8,v 1.21 2015/10/28 10:02:59 jmc Exp $
+.\" @(#) $Id: rarpd.8,v 1.7 1999/07/07 10:50:14 aaron Exp $
 .\"
-.Dd $Mdocdate: October 28 2015 $
+.Dd October 26, 1990
 .Dt RARPD 8
 .Os
 .Sh NAME
@@ -29,12 +27,12 @@
 .Nd reverse ARP daemon
 .Sh SYNOPSIS
 .Nm rarpd
-.Op Fl adflt
-.Ar if0 Op Ar ... ifN
+.Op Fl adfl
+.Op Ar interface
 .Sh DESCRIPTION
 .Nm
 services Reverse ARP requests on the Ethernet connected to
-the specified interfaces.
+.Ar interface .
 Upon receiving a request,
 .Nm
 maps the target hardware address to an IP address via its name, which
@@ -45,20 +43,30 @@ and
 databases.
 If a host does not exist in both databases, the translation cannot
 proceed and a reply will not be sent.
+.\" .Pp
+.\" Additionally, a request is honored only if the server
+.\" (i.e., the host that rarpd is running on)
+.\" can "boot" the target; that is, if the directory
+.\" .Pa /tftpboot/ Ns Em ipaddr
+.\" exists, where
+.\" .Rm ipaddr
+.\" is the target IP address.
 .Pp
 In normal operation,
 .Nm
-forks a copy of itself and runs in the background.
-Anomalies and errors are reported via
+forks a copy of itself and runs in
+the background.  Anomalies and errors are reported via
 .Xr syslog 3 .
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width indent
 .It Fl a
 Listen on all the Ethernets attached to the system.
 If
 .Fl a
-is omitted, a list of interfaces must be specified.
+is omitted, an
+.Ar interface
+must be specified.
 .It Fl d
 Run in debug mode, with all the output to stderr.
 This option implies the
@@ -69,42 +77,26 @@ Run in the foreground.
 .It Fl l
 Log all requests to
 .Xr syslog 3 .
-.It Fl t
-Only honour a request if the server
-(the host that
-.Nm
-is running on)
-can "boot" the target; that is, if a file or directory called
-.Pa /tftpboot/ipaddr
-exists, where
-.Pa ipaddr
-is the target IP address expressed in uppercase hexadecimal
-(only the first 8 characters of filenames are checked).
 .El
 .Sh FILES
 .Bl -tag -width /etc/ethers -compact
 .It Pa /etc/ethers
-Ethernet host name database.
+Ethernet host name data base
 .It Pa /etc/hosts
-Host name database.
+host name data base
 .\" .It Pa /tftpboot
 .El
 .Sh SEE ALSO
 .Xr bpf 4 ,
 .Xr diskless 8
-.Sh STANDARDS
 .Rs
-.%A R. Finlayson
-.%A T. Mann
-.%A J. Mogul
-.%A M. Theimer
-.%D June 1984
-.%R RFC 903
-.%T A Reverse Address Resolution Protocol
+.%R A Reverse Address  Resolution Protocol
+.%N RFC 903
+.%A Finlayson, R.
+.%A Mann, T.
+.%A Mogul, J.C.
+.%A Theimer, M.
 .Re
 .Sh AUTHORS
-.An -nosplit
-.An Craig Leres Aq Mt leres@ee.lbl.gov
-and
-.An Steven McCanne Aq Mt mccanne@ee.lbl.gov ,
+Craig Leres (leres@ee.lbl.gov) and Steven McCanne (mccanne@ee.lbl.gov).
 Lawrence Berkeley Laboratory, University of California, Berkeley, CA.

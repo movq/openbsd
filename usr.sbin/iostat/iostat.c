@@ -1,4 +1,4 @@
-/*	$OpenBSD: iostat.c,v 1.39 2015/10/23 08:21:27 tedu Exp $	*/
+/*	$OpenBSD: iostat.c,v 1.8 1998/07/08 22:13:27 deraadt Exp $	*/
 /*	$NetBSD: iostat.c,v 1.10 1996/10/25 18:21:58 scottr Exp $	*/
 
 /*
@@ -45,7 +45,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by the University of
+ *      California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -62,9 +66,23 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/limits.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1986, 1991, 1993\n\
+        The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)iostat.c    8.2 (Berkeley) 1/26/94";
+#else
+static char *rcsid = "$NetBSD: iostat.c,v 1.10 1996/10/25 18:21:58 scottr Exp $"
+;
+#endif
+#endif /* not lint */
+
+#include <sys/dkstat.h>
 #include <sys/time.h>
-#include <sys/sched.h>
 
 #include <err.h>
 #include <ctype.h>
@@ -73,22 +91,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <kvm.h>
 
 #include "dkstats.h"
 
 /* Defined in dkstats.c */
-extern struct _disk cur, last;
-extern int	dk_ndrive;
+extern struct _disk cur;
+extern int  	dk_ndrive;
 
 /* Namelist and memory files. */
-kvm_t *kd;
 char	*nlistf, *memf;
 
 int		hz, reps, interval;
 static int	todo = 0;
-
-volatile sig_atomic_t wantheader;
 
 #define ISSET(x, a)	((x) & (a))
 #define SHOW_CPU	0x0001
@@ -97,32 +111,31 @@ volatile sig_atomic_t wantheader;
 #define SHOW_STATS_2	0x0008
 #define SHOW_TOTALS	0x0080
 
-static void cpustats(void);
-static void disk_stats(double);
-static void disk_stats2(double);
-static void sigheader(int);
-static void header(void);
-static void usage(void);
-static void display(void);
-static void selectdrives(char **);
+static void cpustats __P((void));
+static void disk_stats __P((double));
+static void disk_stats2 __P((double));
+static void header __P((int));
+static void usage __P((void));
+static void display __P((void));
+static void selectdrives __P((int, char **));
 
-void dkswap(void);
-void dkreadstats(void);
-int dkinit(int);
+void dkswap __P((void));
+void dkreadstats __P((void));
+int dkinit __P((int));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	const char *errstr;
 	int ch, hdrcnt;
-	struct timespec	ts;
+	struct timeval	tv;
 
 	while ((ch = getopt(argc, argv, "Cc:dDIM:N:Tw:")) != -1)
 		switch(ch) {
 		case 'c':
-			reps = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "repetition count is %s", errstr);
+			if ((reps = atoi(optarg)) <= 0)
+				errx(1, "repetition count <= 0.");
 			break;
 		case 'C':
 			todo |= SHOW_CPU;
@@ -146,9 +159,8 @@ main(int argc, char *argv[])
 			todo |= SHOW_TTY;
 			break;
 		case 'w':
-			interval = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "interval is %s", errstr);
+			if ((interval = atoi(optarg)) <= 0)
+				errx(1, "interval <= 0.");
 			break;
 		case '?':
 		default:
@@ -160,21 +172,33 @@ main(int argc, char *argv[])
 	if (!ISSET(todo, SHOW_CPU | SHOW_TTY | SHOW_STATS_1 | SHOW_STATS_2))
 		todo |= SHOW_CPU | SHOW_TTY | SHOW_STATS_1;
 
-	dkinit(0);
-	dkreadstats();
-	selectdrives(argv);
+	/*
+	 * Discard setgid privileges if not the running kernel so that bad
+	 * guys can't print interesting stuff from kernel memory.
+	 */
+	if (nlistf != NULL || memf != NULL) {
+		setegid(getgid());
+		setgid(getgid());
+	}
 
-	ts.tv_sec = interval;
-	ts.tv_nsec = 0;
+	dkinit(0);
+
+	setegid(getgid());
+	setgid(getgid());
+
+	dkreadstats();
+	selectdrives(argc, argv);
+
+	tv.tv_sec = interval;
+	tv.tv_usec = 0;
 
 	/* print a new header on sigcont */
-	signal(SIGCONT, sigheader);
+	(void)signal(SIGCONT, header);
 
 	for (hdrcnt = 1;;) {
-		if (!--hdrcnt || wantheader) {
-			header();
+		if (!--hdrcnt) {
+			header(0);
 			hdrcnt = 20;
-			wantheader = 0;
 		}
 
 		if (!ISSET(todo, SHOW_TOTALS))
@@ -183,85 +207,63 @@ main(int argc, char *argv[])
 
 		if (reps >= 0 && --reps <= 0)
 			break;
-		nanosleep(&ts, NULL);
+		select(0, NULL, NULL, NULL, &tv);
 		dkreadstats();
-		if (last.dk_ndrive != cur.dk_ndrive)
-			wantheader = 1;
 	}
 	exit(0);
 }
 
-/*ARGSUSED*/
 static void
-sigheader(int signo)
+header(signo)
+	int signo;
 {
-	wantheader = 1;
-}
-
-static void
-header(void)
-{
-	int i;
-	static int printedheader = 0;
-
-	if (printedheader && !isatty(STDOUT_FILENO))
-		return;
+	register int i;
 
 	/* Main Headers. */
-	if (ISSET(todo, SHOW_TTY)) {
-		if (ISSET(todo, SHOW_TOTALS))
-			printf("            tty");
-		else
-			printf("      tty");
-	}
+	if (ISSET(todo, SHOW_TTY))
+		(void)printf("      tty");
 
 	if (ISSET(todo, SHOW_STATS_1))
-		for (i = 0; i < dk_ndrive; i++)
-			if (cur.dk_select[i]) {
-				if (ISSET(todo, SHOW_TOTALS))
-					printf(" %18.18s ", cur.dk_name[i]);
-				else
-					printf(" %16.16s ", cur.dk_name[i]);
-			}
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i])
+			(void)printf(" %14.14s ", cur.dk_name[i]);
+
 	if (ISSET(todo, SHOW_STATS_2))
-		for (i = 0; i < dk_ndrive; i++)
-			if (cur.dk_select[i])
-				printf(" %16.16s ", cur.dk_name[i]);
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i])
+			(void)printf(" %13.13s ", cur.dk_name[i]);
 
 	if (ISSET(todo, SHOW_CPU))
-		printf("            cpu");
+		(void)printf("            cpu");
 	printf("\n");
 
 	/* Sub-Headers. */
-	if (ISSET(todo, SHOW_TTY)) {
-		if (ISSET(todo, SHOW_TOTALS))
-			printf("   tin     tout");
-		else
-			printf(" tin tout");
-	}
+	if (ISSET(todo, SHOW_TTY))
+		printf(" tin tout");
 
 	if (ISSET(todo, SHOW_STATS_1))
-		for (i = 0; i < dk_ndrive; i++)
-			if (cur.dk_select[i]) {
-				if (ISSET(todo, SHOW_TOTALS))
-					printf("  KB/t   xfr     MB ");
-				else
-					printf("  KB/t  t/s  MB/s ");
-			}
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i])
+			if (ISSET(todo, SHOW_TOTALS))
+				(void)printf("  KB/t xfr MB   ");
+			else
+				(void)printf("  KB/t t/s MB/s ");
+
 	if (ISSET(todo, SHOW_STATS_2))
-		for (i = 0; i < dk_ndrive; i++)
-			if (cur.dk_select[i])
-				printf("     KB  xfr time ");
+	for (i = 0; i < dk_ndrive; i++)
+		if (cur.dk_select[i])
+			(void)printf("   KB xfr time ");
 
 	if (ISSET(todo, SHOW_CPU))
-		printf(" us ni sy in id");
+		(void)printf(" us ni sy in id");
 	printf("\n");
 }
 
 static void
-disk_stats(double etime)
+disk_stats(etime)
+double etime;
 {
-	int dn;
+	register int dn;
 	double atime, mbps;
 
 	for (dn = 0; dn < dk_ndrive; ++dn) {
@@ -269,19 +271,14 @@ disk_stats(double etime)
 			continue;
 
 		/* average Kbytes per transfer. */
-		if (cur.dk_rxfer[dn] + cur.dk_wxfer[dn])
-			mbps = ((cur.dk_rbytes[dn] + cur.dk_wbytes[dn]) /
-			    (1024.0)) / (cur.dk_rxfer[dn] + cur.dk_wxfer[dn]);
+		if (cur.dk_xfer[dn])
+			mbps = (cur.dk_bytes[dn] / (1024.0)) / cur.dk_xfer[dn];
 		else
 			mbps = 0.0;
-
-		printf(" %5.2f", mbps);
+		(void)printf(" %5.2f", mbps); 
 
 		/* average transfers per second. */
-		if (ISSET(todo, SHOW_TOTALS))
-			printf(" %5.0f", (cur.dk_rxfer[dn] + cur.dk_wxfer[dn]) / etime);
-		else
-			printf(" %4.0f", (cur.dk_rxfer[dn] + cur.dk_wxfer[dn]) / etime);
+		(void)printf(" %3.0f", cur.dk_xfer[dn] / etime);
 
 		/* time busy in disk activity */
 		atime = (double)cur.dk_time[dn].tv_sec +
@@ -289,21 +286,18 @@ disk_stats(double etime)
 
 		/* Megabytes per second. */
 		if (atime != 0.0)
-			mbps = (cur.dk_rbytes[dn] + cur.dk_wbytes[dn]) /
-			    (double)(1024 * 1024);
-		else
+			mbps = cur.dk_bytes[dn] / (double)(1024 * 1024);
+		else 
 			mbps = 0;
-		if (ISSET(todo, SHOW_TOTALS))
-			printf(" %6.2f ", mbps / etime);
-		else
-			printf(" %5.2f ", mbps / etime);
+		(void)printf(" %4.2f ", mbps / etime);
 	}
 }
 
 static void
-disk_stats2(double etime)
+disk_stats2(etime)
+double etime;
 {
-	int dn;
+	register int dn;
 	double atime;
 
 	for (dn = 0; dn < dk_ndrive; ++dn) {
@@ -311,52 +305,53 @@ disk_stats2(double etime)
 			continue;
 
 		/* average kbytes per second. */
-		printf(" %6.0f",
-		    (cur.dk_rbytes[dn] + cur.dk_wbytes[dn]) / (1024.0) / etime);
+		(void)printf(" %4.0f", cur.dk_bytes[dn] / (1024.0) / etime);
 
 		/* average transfers per second. */
-		printf(" %4.0f", (cur.dk_rxfer[dn] + cur.dk_wxfer[dn]) / etime);
+		(void)printf(" %3.0f", cur.dk_xfer[dn] / etime);
 
 		/* average time busy in disk activity. */
 		atime = (double)cur.dk_time[dn].tv_sec +
-		    ((double)cur.dk_time[dn].tv_usec / (double)1000000);
-		printf(" %4.2f ", atime / etime);
+			((double)cur.dk_time[dn].tv_usec / (double)1000000);
+		(void)printf(" %4.2f ", atime / etime);
 	}
 }
 
 static void
-cpustats(void)
+cpustats()
 {
-	int state;
-	double t = 0;
+	register int state;
+	double time;
 
+	time = 0;
 	for (state = 0; state < CPUSTATES; ++state)
-		t += cur.cp_time[state];
-	if (!t)
-		t = 1.0;
+		time += cur.cp_time[state];
+	if (!time)
+		time = 1.0;
 	/* States are generally never 100% and can use %3.0f. */
 	for (state = 0; state < CPUSTATES; ++state)
-		printf("%3.0f", 100. * cur.cp_time[state] / t);
+		printf("%3.0f", 100. * cur.cp_time[state] / time);
 }
 
 static void
-usage(void)
+usage()
 {
-	fprintf(stderr,
-"usage: iostat [-CDdIT] [-c count] [-M core] [-N system] [-w wait] [drives]\n");
+	(void)fprintf(stderr,
+"usage: iostat [-CdDIT] [-c count] [-M core] [-N system] [-w wait] [drives]\n");
 	exit(1);
 }
 
 static void
-display(void)
+display()
 {
 	int	i;
 	double	etime;
 
 	/* Sum up the elapsed ticks. */
 	etime = 0.0;
-	for (i = 0; i < CPUSTATES; i++)
+	for (i = 0; i < CPUSTATES; i++) {
 		etime += cur.cp_time[i];
+	}
 	if (etime == 0.0)
 		etime = 1.0;
 	/* Convert to seconds. */
@@ -368,15 +363,9 @@ display(void)
 	if (ISSET(todo, SHOW_TOTALS))
 		etime = 1.0;
 
-	if (ISSET(todo, SHOW_TTY)) {
-		if (ISSET(todo, SHOW_TOTALS))
-			printf("%6.0f %8.0f", cur.tk_nin / etime,
-			    cur.tk_nout / etime);
-		else
-			printf("%4.0f %4.0f", cur.tk_nin / etime,
-			    cur.tk_nout / etime);
-	}
-
+	if (ISSET(todo, SHOW_TTY))
+		printf("%4.0f %4.0f", cur.tk_nin / etime, cur.tk_nout / etime);
+	
 	if (ISSET(todo, SHOW_STATS_1))
 		disk_stats(etime);
 
@@ -386,14 +375,15 @@ display(void)
 	if (ISSET(todo, SHOW_CPU))
 		cpustats();
 
-	printf("\n");
-	fflush(stdout);
+	(void)printf("\n");
+	(void)fflush(stdout);
 }
 
 static void
-selectdrives(char *argv[])
+selectdrives(argc, argv)
+int	argc;
+char	*argv[];
 {
-	const char *errstr;
 	int	i, ndrives;
 
 	/*
@@ -402,35 +392,29 @@ selectdrives(char *argv[])
 	 * filled in and there are drives not taken care of, display the first
 	 * few that fit.
 	 *
-	 * The backward compatibility syntax is:
+	 * The backward compatibility #ifdefs permit the syntax:
 	 *	iostat [ drives ] [ interval [ count ] ]
 	 */
+#define	BACKWARD_COMPATIBILITY
 	for (ndrives = 0; *argv; ++argv) {
-		if (isdigit((unsigned char)**argv))
+#ifdef	BACKWARD_COMPATIBILITY
+		if (isdigit(**argv))
 			break;
+#endif
 		for (i = 0; i < dk_ndrive; i++) {
 			if (strcmp(cur.dk_name[i], *argv))
 				continue;
 			cur.dk_select[i] = 1;
 			++ndrives;
-			break;
 		}
-		if (i == dk_ndrive)
-			errx(1, "invalid interval or drive name: %s", *argv);
 	}
+#ifdef	BACKWARD_COMPATIBILITY
 	if (*argv) {
-		interval = strtonum(*argv, 1, INT_MAX, &errstr);
-		if (errstr)
-			errx(1, "interval is %s", errstr);
-		if (*++argv) {
-			reps = strtonum(*argv, 1, INT_MAX, &errstr);
-			if (errstr)
-				errx(1, "repetition count is %s", errstr);
-			++argv;
-		}
+		interval = atoi(*argv);
+		if (*++argv)
+			reps = atoi(*argv);
 	}
-	if (*argv)
-		errx(1, "too many arguments");
+#endif
 
 	if (interval) {
 		if (!reps)

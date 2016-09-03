@@ -1,4 +1,4 @@
-.\"	$OpenBSD: sa.8,v 1.19 2013/07/16 11:13:34 schwarze Exp $
+.\"	$OpenBSD: sa.8,v 1.7 1999/10/07 22:13:34 aaron Exp $
 .\"
 .\" Copyright (c) 1994 Christopher G. Demetriou
 .\" All rights reserved.
@@ -28,7 +28,9 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: July 16 2013 $
+.\"	$Id: sa.8,v 1.7 1999/10/07 22:13:34 aaron Exp $
+.\"
+.Dd February 25, 1994
 .Dt SA 8
 .Os
 .Sh NAME
@@ -36,7 +38,7 @@
 .Nd print system accounting statistics
 .Sh SYNOPSIS
 .Nm sa
-.Op Fl abcDdfijKklmnqrstu
+.Op Fl abcdDfijkKlmnqrstu
 .Op Fl v Ar cutoff
 .Op Ar
 .Sh DESCRIPTION
@@ -45,9 +47,6 @@ The
 utility reports on, cleans up,
 and generally maintains system
 accounting files.
-See
-.Xr accton 8
-for details on enabling system accounting.
 .Pp
 .Nm
 is able to condense the information in
@@ -70,13 +69,13 @@ If file names are supplied, they are read instead of
 .Pa /var/account/acct .
 After each file is read, if the summary
 files are being updated, an updated summary will
-be saved to disk.
-Only one report is printed, after the last file is processed.
+be saved to disk.  Only one report is printed,
+after the last file is processed.
 .Pp
 The labels used in the output indicate the following, except
 where otherwise specified by individual options:
 .Pp
-.Bl -tag -width k*sec -compact -offset indent
+.Bl -tag -width k*sec -compact
 .It Dv avio
 Average number of I/O operations per execution.
 .It Dv cp
@@ -98,12 +97,13 @@ Total number of I/O operations.
 User time, in minutes.
 .El
 .Pp
-The options are as follows:
+The options to
+.Nm
+are as follows:
 .Bl -tag -width Ds
 .It Fl a
 List all command names, including those containing unprintable
-characters and those used only once.
-By default,
+characters and those used only once.  By default,
 .Nm
 places all names containing unprintable characters and
 those used only once under the name
@@ -114,14 +114,13 @@ time divided by number of calls.
 .It Fl c
 In addition to the number of calls and the user, system and real times
 for each command, print their percentage of the total over all commands.
+.It Fl d
+If printing command statistics, sort by the average number of disk
+I/O operations.  If printing user statistics, print the average number of
+disk I/O operations per user.
 .It Fl D
 If printing command statistics, sort and print by the total number
 of disk I/O operations.
-.It Fl d
-If printing command statistics, sort by the average number of disk
-I/O operations.
-If printing user statistics, print the average number of
-disk I/O operations per user.
 .It Fl f
 Force no interactive threshold comparison with the
 .Fl v
@@ -130,12 +129,12 @@ option.
 Do not read in the summary files.
 .It Fl j
 Instead of the total minutes per category, give seconds per call.
-.It Fl K
-If printing command statistics, print and sort by the CPU-storage integral.
 .It Fl k
 If printing command statistics, sort by the CPU time average memory
-usage.
-If printing user statistics, print the CPU time average memory usage.
+usage.  If printing user statistics, print the CPU time average
+memory usage.
+.It Fl K
+If printing command statistics, print and sort by the CPU-storage integral.
 .It Fl l
 Separate system and user time; normally they are combined.
 .It Fl m
@@ -164,28 +163,24 @@ command name.
 For each command used
 .Ar cutoff
 times or fewer, print the command name and await a reply
-from the terminal.
-If the reply begins with
+from the terminal.  If the reply begins with
 .Dq y ,
 add the command to the category
 .Dq **junk** .
 This flag is used to strip garbage from the report.
 .El
 .Pp
-By default, per-command statistics will be printed.
-The number of
+By default, per-command statistics will be printed.  The number of
 calls, the total elapsed time in minutes, total CPU and user time
 in minutes, average number of I/O operations, and CPU time
-averaged core usage will be printed.
-If the
+averaged core usage will be printed.  If the
 .Fl m
 option is specified, per-user statistics will be printed, including
 the user name, the number of commands invoked, total CPU time used
 (in minutes), total number of I/O operations, and CPU storage integral
-for each user.
-If the
+for each user.  If the
 .Fl u
-option is specified, the UID, user and system time (in seconds),
+option is specified, the uid, user and system time (in seconds),
 CPU storage integral, I/O usage, and command name will be printed
 for each entry in the accounting data file.
 .Pp
@@ -193,8 +188,7 @@ If the
 .Fl u
 flag is specified, all flags other than
 .Fl q
-are ignored.
-If the
+are ignored.  If the
 .Fl m
 flag is specified, only the
 .Fl b ,
@@ -205,6 +199,10 @@ flag is specified, only the
 and
 .Fl s
 flags are honored.
+.Pp
+The
+.Nm
+utility exits 0 on success or >0 if an error occurred.
 .Sh FILES
 .Bl -tag -width /var/account/usracct -compact
 .It Pa /var/account/acct
@@ -214,37 +212,11 @@ per-command accounting summary database
 .It Pa /var/account/usracct
 per-user accounting summary database
 .El
-.Sh EXIT STATUS
-.Ex -std sa
 .Sh SEE ALSO
 .Xr lastcomm 1 ,
 .Xr acct 5 ,
 .Xr ac 8 ,
 .Xr accton 8
-.Sh HISTORY
-.Nm
-was written for
-.Nx 0.9a
-from the specification provided by various systems' manual pages.
-Its date of origin is unknown to the author.
-.Sh AUTHORS
-.An Chris G. Demetriou Aq Mt cgd@postgres.berkeley.edu
-.Sh CAVEATS
-While the behavior of the options in this version of
-.Nm
-was modeled after the original version, there are some intentional
-differences and undoubtedly some unintentional ones as well.
-In particular, the
-.Fl q
-option has been added, and the
-.Fl m
-option now understands more options than it used to.
-.Pp
-The formats of the summary files created by this version of
-.Nm
-are very different than those used by the original version.
-This is not considered a problem, however, because the accounting record
-format has changed as well (since user IDs are now 32 bits).
 .Sh BUGS
 The number of options to this program is absurd, especially considering
 that there's not much logic behind their lettering.
@@ -252,3 +224,29 @@ that there's not much logic behind their lettering.
 The field labels should be more consistent.
 .Pp
 OpenBSD's VM system does not record the CPU storage integral.
+.Sh CAVEATS
+While the behavior of the options in this version of
+.Nm
+was modeled after the original version, there are some intentional
+differences and undoubtedly some unintentional ones as well.  In
+particular, the
+.Fl q
+option has been added, and the
+.Fl m
+option now understands more options than it used to.
+.Pp
+The formats of the summary files created by this version of
+.Nm
+are very different than the those used by the original version.
+This is not considered a problem, however, because the accounting record
+format has changed as well (since user ids are now 32 bits).
+.Sh HISTORY
+.Nm
+was written for
+.Nx 0.9a
+from the specification provided by various systems' manual pages.
+Its date of origin is unknown to the author.
+.Sh AUTHOR
+.Bl -tag
+Chris G. Demetriou, cgd@postgres.berkeley.edu
+.El

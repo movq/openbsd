@@ -1,4 +1,3 @@
-.\"	$OpenBSD: printf.9,v 1.24 2015/11/07 03:48:25 mmcc Exp $
 .\"     $NetBSD: kprintf.9,v 1.6 1999/03/16 00:40:47 garbled Exp $
 .\"
 .\" Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -15,11 +14,18 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"        This product includes software developed by the NetBSD
+.\"        Foundation, Inc. and its contributors.
+.\" 4. Neither the name of The NetBSD Foundation nor the names of its
+.\"    contributors may be used to endorse or promote products derived
+.\"    from this software without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
 .\" ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
 .\" TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-.\" PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+.\" PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS 
 .\" BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
 .\" CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
 .\" SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
@@ -28,73 +34,58 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 7 2015 $
+.Dd Sep 1, 1998
 .Dt PRINTF 9
 .Os
 .Sh NAME
-.Nm printf ,
-.Nm snprintf ,
-.Nm vprintf ,
-.Nm vsnprintf ,
-.Nm uprintf ,
-.Nm ttyprintf ,
-.Nm db_printf ,
-.Nm db_vprintf
+.Nm printf , 
+.Nm sprintf , 
+.Nm vprintf, 
+.Nm uprintf, 
+.Nm ttyprintf, 
+.Nm db_printf
 .Nd kernel formatted output conversion
 .Sh SYNOPSIS
-.In sys/types.h
-.In sys/systm.h
-.Ft int
-.Fo printf
-.Fa "const char *format"
-.Fa "..."
-.Fc
-.Ft int
-.Fo snprintf
-.Fa "char *buf"
-.Fa "size_t size"
-.Fa "const char *format"
-.Fa "..."
-.Fc
-.Ft int
-.Fo vprintf
-.Fa "const char *format"
-.Fa "va_list ap"
-.Fc
-.Ft int
-.Fo vsnprintf
-.Fa "char *buf"
-.Fa "size_t size"
-.Fa "const char *fmt"
-.Fa "va_list ap"
-.Fc
+.Fd #include <sys/types.h>
+.Fd #include <sys/systm.h>
 .Ft void
-.Fo uprintf
+.Fo "printf"
+.Fa "const char *format"
+.Fa "..."
+.Fc
+.Ft int
+.Fo "sprintf"
+.Fa "char *buf"
 .Fa "const char *format"
 .Fa "..."
 .Fc
 .Ft void
-.Fo ttyprintf
+.Fo "vprintf"
+.Fa "const char *format"
+.Fa "va_list ap"
+.Fc
+.Ft void
+.Fo "uprintf"
+.Fa "const char *format"
+.Fa "..."
+.Fc
+.Ft void
+.Fo "ttyprintf"
 .Fa "struct tty *tty"
 .Fa "const char *format"
 .Fa "..."
 .Fc
-.In ddb/db_output.h
 .Ft void
 .Fn db_printf "const char *format" ...
-.Ft void
-.Fn db_vprintf "const char *format" "va_list ap"
 .Sh DESCRIPTION
 The
 .Fn printf ,
-.Fn snprintf ,
+.Fn sprintf ,
 .Fn vprintf ,
-.Fn vsnprintf ,
 .Fn uprintf ,
 .Fn ttyprintf ,
-.Fn db_printf ,
-and
-.Fn db_vprintf
+and 
+.Fn db_printf
 functions allow the kernel to send formatted messages to various output
 devices.
 The functions
@@ -109,45 +100,25 @@ and
 send formatted strings to the current process's controlling tty and a specific
 tty,
 respectively.
-The functions
+The function
 .Fn db_printf
-and
-.Fn db_vprintf
-send formatted strings to the ddb console, and are only used to implement
+sends formatted strings to the ddb console, and is only used to implement
 .Xr ddb 4 .
 .Pp
 Since each of these kernel functions is a variant of its user space
-counterpart, this page describes only the differences between the user
-space and kernel versions.
-Refer to
+counterpart,
+this page describes only the differences between the user space and kernel
+versions. Refer to
 .Xr printf 3
 for functional details.
 .Ss FORMAT OPTIONS
-The kernel functions don't support as many formatting specifiers as their
-user space counterparts.
-In addition to the floating point formatting specifiers,
-the following integer type specifiers are not supported:
-.Bl -tag -width 5n
-.It Li %hh
-Argument of
-.Li char
-type.
-This format specifier is accepted by the kernel but will be handled as
-.Li %h .
-.It Li %j
-Argument of
-.Li intmax_t
-or
-.Li uintmax_t
-type.
-.It Li %t
-Argument of
-.Li ptrdiff_t
-type.
-.El
+The kernel functions don't support any floating point formatting
+specifiers.  In addition to other formatting specifiers common with the user 
+space functions, the kernel functions accept the following format specifiers
+in the format string
+.Fa format :
 .Pp
-The kernel functions support some additional formatting specifiers:
-.Bl -tag -width 5n
+.Bl -tag -width "\e177"
 .It Li %b
 Bit field expansion.
 This format specifier is useful for decoding bit fields in device registers.
@@ -155,11 +126,9 @@ It displays an integer using a specified radix
 .Pq base
 and an interpretation of
 the bits within that integer as though they were flags.
-It requires two arguments from the argument vector, the first argument being
+It requires two arguments from the argument vector, the first argument being 
 the bit field to be decoded
-(of type
-.Li int ,
-unless a width modifier has been specified)
+.Pq "as an integer"
 and the second being a decoding directive string.
 .Pp
 The decoding directive string describes how the bitfield is to be interpreted
@@ -186,40 +155,37 @@ Whereas a position value of 32
 .Pq "octal 40, hexadecimal 20, the ASCII space character"
 describes the most significant bit.
 .Pp
-To deal with more than 32 bits, the characters 128
-.Pq "octal 200, hexadecimal 80"
-through 255
-.Pq "octal 377, hexadecimal FF"
-are used.
-The value 127 is subtracted from the character to determine the
-bit position (1 is least significant, and 128 is most significant).
-.Pp
 The remaining characters in a bit-position\(endescription pair are the
 characters to print should the bit being described be set.
 Description strings are delimited by the next bit position value character
 encountered
-.Po
-distinguishable by its value being \*(Le 32 or \*(Ge 128
-.Pc ,
+.Pq "distinguishable by its value being \(<= 32" ,
 or the end of the decoding directive string itself.
+.It Li %:
+Inline format continuation.
+This format specifier allows for recursive formatted output.
+Its argument is the new formatting string to obey and the argument which
+follows it is a
+.Va va_list
+argument vector from which to obtain the data to be formatted.
+.It Li %r
+Displays an integer using the current
+.Tn DDB
+radix.
+This non-standard interpretation of 
+.Li %r
+is only available to
+.Fn db_printf .
+.It Li %z
+Displays a signed integer using the C-style hexadecimal constant format.
+This format specifier is only available to
+.Fn db_printf .
 .El
 .Sh RETURN VALUES
 The
-.Fn printf
-and
-.Fn vprintf
-functions return the number of characters printed.
-.Pp
-The
-.Fn snprintf
-and
-.Fn vsnprintf
-functions return the number of characters that would have been put into
-the buffer
-.Fa buf
-if the
-.Fa size
-were unlimited.
+.Fn sprintf
+function returns the number of characters it placed in the buffer
+.Fa buf .
 .Sh EXAMPLES
 Use of the
 .Li %b
@@ -234,10 +200,35 @@ printf("enablereg=%b\en", 0xe860,
        "\ex06IOCACHE\ex05LOOPBACK\ex04DBGCACHE")
 \(rA "enablereg=e860<NOTBOOT,FPP,SDVMA,VIDEO,CACHE,IOCACHE>"
 .Ed
-.Sh CODE REFERENCES
-.Pa sys/kern/subr_prf.c
+.Pp
+Use of the
+.Li %:
+format specifier for recursive formatting.
+.Bd -literal -offset indent
+void
+bail(char *fmt, ...)
+{
+        va_list ap;
+        va_start (ap, fmt);
+        printf("bailing out: %:\en", fmt, ap);
+        va_end(ap);
+}
+
+bail("descriptor %d is invalid.", 5)
+\(rA "bailing out: descriptor 5 is invalid"
+.Ed
 .Sh SEE ALSO
+.\" The following page has not been written, but I am including a cross-
+.\" reference to it in the hopes that it will inspire someone to write it.
 .Xr revoke 2 ,
 .Xr printf 3 ,
 .Xr ddb 4 ,
-.Xr log 9
+.Xr log 9 ,
+.Xr tprintf 9
+.Sh CODE REFERENCES
+.Pa sys/kern/subr_prf.c
+.Sh LIMITATIONS
+The
+.Li %b
+format specifier cannot be used to decode integers greater than 32 bits in
+size.

@@ -1,4 +1,4 @@
-/*	$OpenBSD: dev_i386.c,v 1.41 2015/09/18 13:30:56 miod Exp $	*/
+/*	$OpenBSD: dev_i386.c,v 1.22 1999/08/25 00:54:19 mickey Exp $	*/
 
 /*
  * Copyright (c) 1996-1999 Michael Shalayeff
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -26,35 +31,25 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/param.h>
-#include <sys/queue.h>
-#include <sys/disklabel.h>
-#include <dev/cons.h>
-
 #include "libsa.h"
 #include "biosdev.h"
-#include "disk.h"
-
-#ifdef SOFTRAID
-#include <dev/biovar.h>
-#include <dev/softraidvar.h>
-#include "softraid.h"
-#endif
+#include <sys/param.h>
+#include <dev/cons.h>
 
 extern int debug;
 
 /* XXX use slot for 'rd' for 'hd' pseudo-device */
 const char bdevs[][4] = {
-	"wd", "", "fd", "", "sd", "st", "cd", "",
-	"", "", "", "", "", "", "", "", "", "hd", ""
+	"wd", "", "fd", "wt", "sd", "st", "cd", "mcd",
+	"", "", "", "", "", "", "", "scd", "", "hd", "acd"
 };
-const int nbdevs = nitems(bdevs);
+const int nbdevs = NENTS(bdevs);
 
 const char cdevs[][4] = {
 	"cn", "", "", "", "", "", "", "",
 	"com", "", "", "", "pc"
 };
-const int ncdevs = nitems(cdevs);
+const int ncdevs = NENTS(cdevs);
 
 /* pass dev_t to the open routines */
 int
@@ -83,7 +78,7 @@ devopen(struct open_file *f, const char *fname, char **file)
 		else if (debug)
 			printf("%d", rc);
 #endif
-
+			
 	}
 #ifdef DEBUG
 	if (debug)
@@ -97,73 +92,89 @@ devopen(struct open_file *f, const char *fname, char **file)
 }
 
 void
-devboot(dev_t bootdev, char *p)
+devboot(bootdev, p)
+	dev_t bootdev;
+	char *p;
 {
-#ifdef SOFTRAID
-	struct sr_boot_volume *bv;
-	struct sr_boot_chunk *bc;
-	struct diskinfo *dip = NULL;
+#ifdef _TEST
+	*p++ = '/';
+	*p++ = 'd';
+	*p++ = 'e';
+	*p++ = 'v';
+	*p++ = '/';
+	*p++ = 'r';
 #endif
-	int sr_boot_vol = -1;
-	int part_type = FS_UNUSED;
-
-#ifdef SOFTRAID
-	/*
-	 * Determine the partition type for the 'a' partition of the
-	 * boot device.
-	 */
-	TAILQ_FOREACH(dip, &disklist, list)
-		if (dip->bios_info.bios_number == bootdev &&
-		    (dip->bios_info.flags & BDI_BADLABEL) == 0)
-			part_type = dip->disklabel.d_partitions[0].p_fstype;
-
-	/*
-	 * See if we booted from a disk that is a member of a bootable
-	 * softraid volume.
-	 */
-	SLIST_FOREACH(bv, &sr_volumes, sbv_link) {
-		if (bv->sbv_flags & BIOC_SCBOOTABLE)
-			SLIST_FOREACH(bc, &bv->sbv_chunks, sbc_link)
-				if (bc->sbc_disk == bootdev)
-					sr_boot_vol = bv->sbv_unit;
-		if (sr_boot_vol != -1)
-			break;
-	}
-#endif
-
-	if (sr_boot_vol != -1 && part_type != FS_BSDFFS) {
-		*p++ = 's';
-		*p++ = 'r';
-		*p++ = '0' + sr_boot_vol;
-	} else if (bootdev & 0x100) {
-		*p++ = 'c';
-		*p++ = 'd';
-		*p++ = '0';
-	} else {
-		if (bootdev & 0x80)
-			*p++ = 'h';
-		else
-			*p++ = 'f';
-		*p++ = 'd';
-		*p++ = '0' + (bootdev & 0x7f);
-	}
+	if (bootdev & 0x80)
+		*p++ = 'h';
+	else
+		*p++ = 'f';
+	*p++ = 'd';
+	*p++ = '0' + (bootdev & 0x7f);
 	*p++ = 'a';
 	*p = '\0';
 }
 
-char ttyname_buf[8];
+int pch_pos = 0;
 
-char *
-ttyname(int fd)
+void
+putchar(c)
+	int c;
 {
-	snprintf(ttyname_buf, sizeof ttyname_buf, "%s%d",
-	    cdevs[major(cn_tab->cn_dev)], minor(cn_tab->cn_dev));
+	switch(c) {
+	case '\177':	/* DEL erases */
+		cnputc('\b');
+		cnputc(' ');
+	case '\b':
+		cnputc('\b');
+		if (pch_pos)
+			pch_pos--;
+		break;
+	case '\t':
+		do
+			cnputc(' ');
+		while(++pch_pos % 8);
+		break;
+	case '\n':
+	case '\r':
+		cnputc(c);
+		pch_pos=0;
+		break;
+	default:
+		cnputc(c);
+		pch_pos++;
+		break;
+	}
+}
 
-	return ttyname_buf;
+int
+getchar()
+{
+	register int c = cngetc();
+
+	if (c == '\r')
+		c = '\n';
+
+	if ((c < ' ' && c != '\n') || c == '\177')
+		return(c);
+
+	putchar(c);
+
+	return(c);
+}
+
+char ttyname_buf[8];
+char *
+ttyname(fd)
+	int fd;
+{
+	sprintf(ttyname_buf, "%s%d", cdevs[major(cn_tab->cn_dev)],
+	    minor(cn_tab->cn_dev));
+	return (ttyname_buf);
 }
 
 dev_t
-ttydev(char *name)
+ttydev(name)
+	char *name;
 {
 	int i, unit = -1;
 	char *no = name + strlen(name) - 1;
@@ -171,19 +182,9 @@ ttydev(char *name)
 	while (no >= name && *no >= '0' && *no <= '9')
 		unit = (unit < 0 ? 0 : (unit * 10)) + *no-- - '0';
 	if (no < name || unit < 0)
-		return NODEV;
+		return (NODEV);
 	for (i = 0; i < ncdevs; i++)
 		if (strncmp(name, cdevs[i], no - name + 1) == 0)
-			return makedev(i, unit);
-	return NODEV;
-}
-
-int
-cnspeed(dev_t dev, int sp)
-{
-	if (major(dev) == 8)	/* comN */
-		return comspeed(dev, sp);
-
-	/* pc0 and anything else */
-	return 9600;
+			return (makedev(i, unit));
+	return (NODEV);
 }

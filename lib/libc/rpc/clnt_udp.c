@@ -1,47 +1,49 @@
-/*	$OpenBSD: clnt_udp.c,v 1.32 2015/11/01 03:45:29 guenther Exp $ */
-
 /*
- * Copyright (c) 2010, Oracle America, Inc.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the "Oracle America, Inc." nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- *   COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- *   GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- *   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
+ * unrestricted use provided that this legend is included on all tape
+ * media and as a part of the software program in whole or part.  Users
+ * may copy or modify Sun RPC without charge, but are not authorized
+ * to license or distribute it to anyone else except as part of a product or
+ * program developed by the user.
+ * 
+ * SUN RPC IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING THE
+ * WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
+ * 
+ * Sun RPC is provided with no support and without any obligation on the
+ * part of Sun Microsystems, Inc. to assist in its use, correction,
+ * modification or enhancement.
+ * 
+ * SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+ * INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY SUN RPC
+ * OR ANY PART THEREOF.
+ * 
+ * In no event will Sun Microsystems, Inc. be liable for any lost revenue
+ * or profits or other special, indirect and consequential damages, even if
+ * Sun has been advised of the possibility of such damages.
+ * 
+ * Sun Microsystems, Inc.
+ * 2550 Garcia Avenue
+ * Mountain View, California  94043
  */
+
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: clnt_udp.c,v 1.15 1998/03/01 10:05:33 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
 
 /*
  * clnt_udp.c, Implements a UDP/IP based, client side RPC.
+ *
+ * Copyright (C) 1984, Sun Microsystems, Inc.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <rpc/rpc.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <netdb.h>
 #include <errno.h>
 #include <rpc/pmap_clnt.h>
@@ -49,13 +51,12 @@
 /*
  * UDP bases client side rpc operations
  */
-static enum clnt_stat	clntudp_call(CLIENT *, u_long, xdrproc_t, caddr_t,
-			    xdrproc_t, caddr_t, struct timeval);
-static void		clntudp_abort(CLIENT *);
-static void		clntudp_geterr(CLIENT *, struct rpc_err *);
-static bool_t		clntudp_freeres(CLIENT *, xdrproc_t, caddr_t);
-static bool_t           clntudp_control(CLIENT *, u_int, void *);
-static void		clntudp_destroy(CLIENT *);
+static enum clnt_stat	clntudp_call();
+static void		clntudp_abort();
+static void		clntudp_geterr();
+static bool_t		clntudp_freeres();
+static bool_t           clntudp_control();
+static void		clntudp_destroy();
 
 static struct clnt_ops udp_ops = {
 	clntudp_call,
@@ -90,30 +91,35 @@ struct cu_data {
  * If *sockp<0, *sockp is set to a newly created UPD socket.
  * If raddr->sin_port is 0 a binder on the remote machine
  * is consulted for the correct port number.
- * NB: It is the client's responsibility to close *sockp, unless
- *	clntudp_bufcreate() was called with *sockp = -1 (so it created
- *	the socket), and CLNT_DESTROY() is used.
+ * NB: It is the clients responsibility to close *sockp.
  * NB: The rpch->cl_auth is initialized to null authentication.
  *     Caller may wish to set this something more useful.
  *
  * wait is the amount of time used between retransmitting a call if
- * no response has been heard;  retransmission occurs until the actual
+ * no response has been heard;  retransmition occurs until the actual
  * rpc call times out.
  *
  * sendsz and recvsz are the maximum allowable packet sizes that can be
  * sent and received.
  */
 CLIENT *
-clntudp_bufcreate(struct sockaddr_in *raddr, u_long program, u_long version,
-    struct timeval wait, int *sockp, u_int sendsz, u_int recvsz)
+clntudp_bufcreate(raddr, program, version, wait, sockp, sendsz, recvsz)
+	struct sockaddr_in *raddr;
+	u_long program;
+	u_long version;
+	struct timeval wait;
+	register int *sockp;
+	u_int sendsz;
+	u_int recvsz;
 {
 	CLIENT *cl;
-	struct cu_data *cu = NULL;
+	register struct cu_data *cu;
 	struct timeval now;
 	struct rpc_msg call_msg;
 
 	cl = (CLIENT *)mem_alloc(sizeof(CLIENT));
 	if (cl == NULL) {
+		(void) fprintf(stderr, "clntudp_create: out of memory\n");
 		rpc_createerr.cf_stat = RPC_SYSTEMERROR;
 		rpc_createerr.cf_error.re_errno = errno;
 		goto fooy;
@@ -122,13 +128,14 @@ clntudp_bufcreate(struct sockaddr_in *raddr, u_long program, u_long version,
 	recvsz = ((recvsz + 3) / 4) * 4;
 	cu = (struct cu_data *)mem_alloc(sizeof(*cu) + sendsz + recvsz);
 	if (cu == NULL) {
+		(void) fprintf(stderr, "clntudp_create: out of memory\n");
 		rpc_createerr.cf_stat = RPC_SYSTEMERROR;
 		rpc_createerr.cf_error.re_errno = errno;
 		goto fooy;
 	}
 	cu->cu_outbuf = &cu->cu_inbuf[recvsz];
 
-	(void)gettimeofday(&now, NULL);
+	(void)gettimeofday(&now, (struct timezone *)0);
 	if (raddr->sin_port == 0) {
 		u_short port;
 		if ((port =
@@ -158,61 +165,62 @@ clntudp_bufcreate(struct sockaddr_in *raddr, u_long program, u_long version,
 	}
 	cu->cu_xdrpos = XDR_GETPOS(&(cu->cu_outxdrs));
 	if (*sockp < 0) {
-		*sockp = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK,
-		    IPPROTO_UDP);
+		int dontblock = 1;
+
+		*sockp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		if (*sockp < 0) {
 			rpc_createerr.cf_stat = RPC_SYSTEMERROR;
 			rpc_createerr.cf_error.re_errno = errno;
 			goto fooy;
 		}
 		/* attempt to bind to priv port */
-		(void)bindresvport(*sockp, NULL);
+		(void)bindresvport(*sockp, (struct sockaddr_in *)0);
+		/* the sockets rpc controls are non-blocking */
+		(void)ioctl(*sockp, FIONBIO, (char *) &dontblock);
 		cu->cu_closeit = TRUE;
 	} else {
 		cu->cu_closeit = FALSE;
 	}
 	cu->cu_sock = *sockp;
 	cl->cl_auth = authnone_create();
-	if (cl->cl_auth == NULL) {
-		rpc_createerr.cf_stat = RPC_SYSTEMERROR;
-		rpc_createerr.cf_error.re_errno = errno;
-		goto fooy;
-	}
 	return (cl);
 fooy:
 	if (cu)
 		mem_free((caddr_t)cu, sizeof(*cu) + sendsz + recvsz);
 	if (cl)
 		mem_free((caddr_t)cl, sizeof(CLIENT));
-	return (NULL);
+	return ((CLIENT *)NULL);
 }
-DEF_WEAK(clntudp_bufcreate);
 
 CLIENT *
-clntudp_create(struct sockaddr_in *raddr, u_long program, u_long version,
-    struct timeval wait, int *sockp)
+clntudp_create(raddr, program, version, wait, sockp)
+	struct sockaddr_in *raddr;
+	u_long program;
+	u_long version;
+	struct timeval wait;
+	register int *sockp;
 {
 
 	return(clntudp_bufcreate(raddr, program, version, wait, sockp,
 	    UDPMSGSIZE, UDPMSGSIZE));
 }
-DEF_WEAK(clntudp_create);
 
 static enum clnt_stat 
-clntudp_call(CLIENT *cl,	/* client handle */
-    u_long proc,		/* procedure number */
-    xdrproc_t xargs,		/* xdr routine for args */
-    caddr_t argsp,		/* pointer to args */
-    xdrproc_t xresults,		/* xdr routine for results */
-    caddr_t resultsp,		/* pointer to results */
-    struct timeval utimeout)	/* seconds to wait before giving up */
+clntudp_call(cl, proc, xargs, argsp, xresults, resultsp, utimeout)
+	register CLIENT	*cl;		/* client handle */
+	u_long		proc;		/* procedure number */
+	xdrproc_t	xargs;		/* xdr routine for args */
+	caddr_t		argsp;		/* pointer to args */
+	xdrproc_t	xresults;	/* xdr routine for results */
+	caddr_t		resultsp;	/* pointer to results */
+	struct timeval	utimeout;	/* seconds to wait before giving up */
 {
-	struct cu_data *cu = (struct cu_data *)cl->cl_private;
-	XDR *xdrs;
-	int outlen;
-	int inlen;
-	socklen_t fromlen;
-	struct pollfd pfd[1];
+	register struct cu_data *cu = (struct cu_data *)cl->cl_private;
+	register XDR *xdrs;
+	register int outlen;
+	register int inlen;
+	int fromlen;
+	fd_set *fds, readfds;
 	struct sockaddr_in from;
 	struct rpc_msg reply_msg;
 	XDR reply_xdrs;
@@ -226,8 +234,17 @@ clntudp_call(CLIENT *cl,	/* client handle */
 	else
 		timeout = cu->cu_total; /* use default timeout */
 
-	pfd[0].fd = cu->cu_sock;
-	pfd[0].events = POLLIN;
+	if (cu->cu_sock+1 > FD_SETSIZE) {
+		int bytes = howmany(cu->cu_sock+1, NFDBITS) * sizeof(fd_mask);
+		fds = (fd_set *)malloc(bytes);
+		if (fds == NULL)
+			return (cu->cu_error.re_status = RPC_CANTSEND);
+		memset(fds, 0, bytes);
+	} else {
+		fds = &readfds;
+		FD_ZERO(fds);
+	}
+
 	timerclear(&time_waited);
 call_again:
 	xdrs = &(cu->cu_outxdrs);
@@ -240,6 +257,8 @@ call_again:
 	if (!XDR_PUTLONG(xdrs, (long *)&proc) ||
 	    !AUTH_MARSHALL(cl->cl_auth, xdrs) ||
 	    !(*xargs)(xdrs, argsp)) {
+		if (fds != &readfds)
+			free(fds);
 		return (cu->cu_error.re_status = RPC_CANTENCODEARGS);
 	}
 	outlen = (int)XDR_GETPOS(xdrs);
@@ -248,14 +267,19 @@ send_again:
 	if (sendto(cu->cu_sock, cu->cu_outbuf, outlen, 0,
 	    (struct sockaddr *)&(cu->cu_raddr), cu->cu_rlen) != outlen) {
 		cu->cu_error.re_errno = errno;
+		if (fds != &readfds)
+			free(fds);
 		return (cu->cu_error.re_status = RPC_CANTSEND);
 	}
 
 	/*
 	 * Hack to provide rpc-based message passing
 	 */
-	if (!timerisset(&timeout))
+	if (!timerisset(&timeout)) {
+		if (fds != &readfds)
+			free(fds);
 		return (cu->cu_error.re_status = RPC_TIMEDOUT);
+	}
 
 	/*
 	 * sub-optimal code appears here because we have
@@ -268,22 +292,17 @@ send_again:
 
 	gettimeofday(&start, NULL);
 	for (;;) {
-		switch (poll(pfd, 1,
-		    cu->cu_wait.tv_sec * 1000 + cu->cu_wait.tv_usec / 1000)) {
+		/* XXX we know the other bits are still clear */
+		FD_SET(cu->cu_sock, fds);
+		switch (select(cu->cu_sock+1, fds, NULL, NULL, &cu->cu_wait)) {
 		case 0:
 			timeradd(&time_waited, &cu->cu_wait, &tmp1);
 			time_waited = tmp1;
 			if (timercmp(&time_waited, &timeout, <))
 				goto send_again;
+			if (fds != &readfds)
+				free(fds);
 			return (cu->cu_error.re_status = RPC_TIMEDOUT);
-		case 1:
-			if (pfd[0].revents & POLLNVAL)
-				errno = EBADF;
-			else if (pfd[0].revents & POLLERR)
-				errno = EIO;
-			else
-				break;
-			/* FALLTHROUGH */
 		case -1:
 			if (errno == EINTR) {
 				gettimeofday(&after, NULL);
@@ -292,9 +311,13 @@ send_again:
 				time_waited = tmp2;
 				if (timercmp(&time_waited, &timeout, <))
 					continue;
+				if (fds != &readfds)
+					free(fds);
 				return (cu->cu_error.re_status = RPC_TIMEDOUT);
 			}
 			cu->cu_error.re_errno = errno;
+			if (fds != &readfds)
+				free(fds);
 			return (cu->cu_error.re_status = RPC_CANTRECV);
 		}
 
@@ -308,6 +331,8 @@ send_again:
 			if (errno == EWOULDBLOCK)
 				continue;
 			cu->cu_error.re_errno = errno;
+			if (fds != &readfds)
+				free(fds);
 			return (cu->cu_error.re_status = RPC_CANTRECV);
 		}
 		if (inlen < sizeof(u_int32_t))
@@ -367,37 +392,48 @@ send_again:
 		cu->cu_error.re_status = RPC_CANTDECODERES;
 	}
 
+	if (fds != &readfds)
+		free(fds);
 	return (cu->cu_error.re_status);
 }
 
 static void
-clntudp_geterr(CLIENT *cl, struct rpc_err *errp)
+clntudp_geterr(cl, errp)
+	CLIENT *cl;
+	struct rpc_err *errp;
 {
-	struct cu_data *cu = (struct cu_data *)cl->cl_private;
+	register struct cu_data *cu = (struct cu_data *)cl->cl_private;
 
 	*errp = cu->cu_error;
 }
 
 
 static bool_t
-clntudp_freeres(CLIENT *cl, xdrproc_t xdr_res, caddr_t res_ptr)
+clntudp_freeres(cl, xdr_res, res_ptr)
+	CLIENT *cl;
+	xdrproc_t xdr_res;
+	caddr_t res_ptr;
 {
-	struct cu_data *cu = (struct cu_data *)cl->cl_private;
-	XDR *xdrs = &(cu->cu_outxdrs);
+	register struct cu_data *cu = (struct cu_data *)cl->cl_private;
+	register XDR *xdrs = &(cu->cu_outxdrs);
 
 	xdrs->x_op = XDR_FREE;
 	return ((*xdr_res)(xdrs, res_ptr));
 }
 
 static void 
-clntudp_abort(CLIENT *clnt)
+clntudp_abort(/*h*/)
+	/*CLIENT *h;*/
 {
 }
 
 static bool_t
-clntudp_control(CLIENT *cl, u_int request, void *info)
+clntudp_control(cl, request, info)
+	CLIENT *cl;
+	int request;
+	char *info;
 {
-	struct cu_data *cu = (struct cu_data *)cl->cl_private;
+	register struct cu_data *cu = (struct cu_data *)cl->cl_private;
 
 	switch (request) {
 	case CLSET_TIMEOUT:
@@ -422,11 +458,12 @@ clntudp_control(CLIENT *cl, u_int request, void *info)
 }
 	
 static void
-clntudp_destroy(CLIENT *cl)
+clntudp_destroy(cl)
+	CLIENT *cl;
 {
-	struct cu_data *cu = (struct cu_data *)cl->cl_private;
+	register struct cu_data *cu = (struct cu_data *)cl->cl_private;
 
-	if (cu->cu_closeit && cu->cu_sock != -1) {
+	if (cu->cu_closeit) {
 		(void)close(cu->cu_sock);
 	}
 	XDR_DESTROY(&(cu->cu_outxdrs));

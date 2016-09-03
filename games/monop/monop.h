@@ -1,4 +1,4 @@
-/*	$OpenBSD: monop.h,v 1.8 2016/01/08 18:19:47 mestre Exp $	*/
+/*	$OpenBSD: monop.h,v 1.4 1998/09/20 23:36:54 pjanzen Exp $	*/
 /*	$NetBSD: monop.h,v 1.4 1995/04/24 12:24:23 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,6 +36,10 @@
  *	@(#)monop.h	8.1 (Berkeley) 5/31/93
  */
 
+#include	<stdio.h>
+#include	<stdlib.h>
+#include	<string.h>
+
 #ifdef __CHAR_UNSIGNED__
 #define	shrt	short
 #else
@@ -49,8 +57,6 @@
 #define	N_SQRS	40	/* number of squares on board		*/
 #define	MAX_PL	9	/* maximum number of players		*/
 #define	MAX_PRP	(N_PROP+N_RR+N_UTIL) /* max # ownable property	*/
-#define	N_HOUSE	32	/* total number of houses available	*/
-#define	N_HOTEL	12	/* total number of hotels available	*/
 
 			/* square type numbers			*/
 #define	PRPTY	0	/* normal property			*/
@@ -131,75 +137,74 @@ typedef struct prp_st	RR_S;
 typedef struct prp_st	UTIL_S;
 
 /* cards.c */
-void	init_decks(void);
-void	get_card(DECK *);
-void	ret_card(PLAY *);
+void	init_decks __P((void));
+void	get_card __P((DECK *));
 
 /* execute.c */
-void	execute(int);
-void	do_move(void);
-void	move(int);
-void	save(void);
-void	restore(void);
-void	game_restore(void);
-int	rest_f(char *);
+void	execute __P((int));
+void	do_move __P((void));
+void	move __P((int));
+void	save __P((void));
+void	restore __P((void));
+int	rest_f __P((char *));
 
 /* getinp.c */
-int	getinp(char *, char *[]);
+int	getinp __P((char *, char *[]));
 
 /* houses.c */
-void	buy_houses(void);
-void	sell_houses(void);
+void	buy_houses __P((void));
+void	sell_houses __P((void));
 
 /* jail.c */
-void	card(void);
-void	pay(void);
-int	move_jail(int, int );
-void	printturn(void);
+void	card __P((void));
+void	ret_card __P((PLAY *));
+void	pay __P((void));
+int	move_jail __P((int, int ));
+void	printturn __P((void));
 
 /* misc.c */
-int	getyn(char *);
-void	notify(void);
-void	next_play(void);
-int	get_int(char *);
-void	set_ownlist(int);
-void	is_monop(MON *, int);
-void	isnot_monop(MON *);
-void	list(void);
-void	list_all(void);
-void	quit(void);
+int	getyn __P((char *));
+void	notify __P((void));
+void	next_play __P((void));
+int	get_int __P((char *));
+void	set_ownlist __P((int));
+void	is_monop __P((MON *, int));
+void	isnot_monop __P((MON *));
+void	list __P((void));
+void	list_all __P((void));
+void	quit __P((void));
 
 /* morg.c */
-void	mortgage(void);
-void	unmortgage(void);
-void	force_morg(void);
+void	mortgage __P((void));
+void	unmortgage __P((void));
+void	force_morg __P((void));
 
 /* print.c */
-void	printboard(void);
-void	where(void);
-void	printsq(int, bool);
-void	printhold(int);
+void	printboard __P((void));
+void	where __P((void));
+void	printsq __P((int, bool));
+void	printhold __P((int));
 
 /* prop.c */
-void	buy(int, SQUARE *);
-void	add_list(int, OWN **, int);
-void	del_list(int, OWN **, shrt);
-void	bid(void);
-int	prop_worth(PLAY *);
+void	buy __P((int, SQUARE *));
+void	add_list __P((int, OWN **, int));
+void	del_list __P((int, OWN **, shrt));
+void	bid __P((void));
+int	prop_worth __P((PLAY *));
 
 /* rent.c */
-void	rent(SQUARE *);
+void	rent __P((SQUARE *));
 
 /* roll.c */
-int	roll(int, int);
+int	roll __P((int, int));
 
 /* spec.c */
-void	inc_tax(void);
-void	goto_jail(void);
-void	lux_tax(void);
-void	cc(void);
-void	chance(void);
+void	inc_tax __P((void));
+void	goto_jail __P((void));
+void	lux_tax __P((void));
+void	cc __P((void));
+void	chance __P((void));
 
 /* trade.c */
-void	trade(void);
-void	resign(void);
+void	trade __P((void));
+void	resign __P((void));

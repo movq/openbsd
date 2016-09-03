@@ -1,158 +1,110 @@
-/*	$OpenBSD: mktemp.c,v 1.22 2015/10/09 01:37:08 deraadt Exp $	*/
+/*	$OpenBSD: mktemp.c,v 1.5 1998/06/21 22:14:00 millert Exp $	*/
 
 /*
- * Copyright (c) 1996, 1997, 2001-2003, 2013
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1996 Todd C. Miller <Todd.Miller@courtesan.com>
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+ * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <paths.h>
-#include <stdarg.h>
+#ifndef lint                                                              
+static char rcsid[] = "$OpenBSD: mktemp.c,v 1.5 1998/06/21 22:14:00 millert Exp $";
+#endif /* not lint */                                                        
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <err.h>
 
-__dead void usage(void);
-__dead void fatal(const char *, ...) __attribute__((__format__(printf, 1, 2)));
-__dead void fatalx(const char *, ...) __attribute__((__format__(printf, 1, 2)));
+extern char *__progname;
 
-static int quiet;
+void
+usage()
+{
+	(void) fprintf(stderr, "Usage: %s [-d] [-q] [-u] template\n",
+	    __progname);
+	exit(1);
+}
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, fd, uflag = 0, tflag = 0, makedir = 0;
-	char *cp, *template, *tempfile, *prefix = _PATH_TMP;
-	size_t len;
+	char *template;
+	int c, uflag = 0, qflag = 0, makedir = 0;
 
-	if (pledge("stdio rpath wpath cpath", NULL) == -1)
-		err(1, "pledge");
-
-	while ((ch = getopt(argc, argv, "dp:qtu")) != -1)
-		switch(ch) {
+	while ((c = getopt(argc, argv, "dqu")) != -1)
+		switch(c) {
 		case 'd':
 			makedir = 1;
 			break;
-		case 'p':
-			prefix = optarg;
-			tflag = 1;
-			break;
 		case 'q':
-			quiet = 1;
-			break;
-		case 't':
-			tflag = 1;
+			qflag = 1;
 			break;
 		case 'u':
 			uflag = 1;
 			break;
+		case '?':
 		default:
 			usage();
 	}
 
-	/* If no template specified use a default one (implies -t mode) */
-	switch (argc - optind) {
-	case 1:
-		template = argv[optind];
-		break;
-	case 0:
-		template = "tmp.XXXXXXXXXX";
-		tflag = 1;
-		break;
-	default:
+	if (argc - optind != 1)
 		usage();
+
+	if ((template = strdup(argv[optind])) == NULL) {
+		if (qflag)
+			exit(1);
+		else
+			errx(1, "Cannot allocate memory");
 	}
-
-	len = strlen(template);
-	if (len < 6 || strcmp(&template[len - 6], "XXXXXX")) {
-		fatalx("insufficient number of Xs in template `%s'",
-		    template);
-	}
-	if (tflag) {
-		if (strchr(template, '/')) {
-			fatalx("template must not contain directory "
-			    "separators in -t mode");
-		}
-
-		cp = getenv("TMPDIR");
-		if (cp != NULL && *cp != '\0')
-			prefix = cp;
-		len = strlen(prefix);
-		while (len != 0 && prefix[len - 1] == '/')
-			len--;
-
-		if (asprintf(&tempfile, "%.*s/%s", (int)len, prefix, template) < 0)
-			tempfile = NULL;
-	} else
-		tempfile = strdup(template);
-
-	if (tempfile == NULL)
-		fatalx("cannot allocate memory");
 
 	if (makedir) {
-		if (mkdtemp(tempfile) == NULL)
-			fatal("cannot make temp dir %s", tempfile);
+		if (mkdtemp(template) == NULL) {
+			if (qflag)
+				exit(1);
+			else
+				err(1, "Cannot make temp dir %s", template);
+		}
+
 		if (uflag)
-			(void)rmdir(tempfile);
+			(void) rmdir(template);
 	} else {
-		if ((fd = mkstemp(tempfile)) < 0)
-			fatal("cannot make temp file %s", tempfile);
-		(void)close(fd);
+		if (mkstemp(template) < 0) {
+			if (qflag)
+				exit(1);
+			else
+				err(1, "Cannot create temp file %s", template);
+		}
+
 		if (uflag)
-			(void)unlink(tempfile);
+			(void) unlink(template);
 	}
 
-	(void)puts(tempfile);
-	free(tempfile);
+	(void) puts(template);
+	free(template);
 
-	exit(EXIT_SUCCESS);
-}
-
-__dead void
-fatal(const char *fmt, ...)
-{
-	if (!quiet) {
-		va_list ap;
-
-		va_start(ap, fmt);
-		vwarn(fmt, ap);
-		va_end(ap);
-	}
-	exit(EXIT_FAILURE);
-}
-
-__dead void
-fatalx(const char *fmt, ...)
-{
-	if (!quiet) {
-		va_list ap;
-
-		va_start(ap, fmt);
-		vwarnx(fmt, ap);
-		va_end(ap);
-	}
-	exit(EXIT_FAILURE);
-}
-
-__dead void
-usage(void)
-{
-	extern char *__progname;
-
-	(void)fprintf(stderr,
-	    "usage: %s [-dqtu] [-p directory] [template]\n", __progname);
-	exit(EXIT_FAILURE);
+	exit(0);
 }

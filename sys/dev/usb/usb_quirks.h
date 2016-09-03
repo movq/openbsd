@@ -1,13 +1,12 @@
-/*	$OpenBSD: usb_quirks.h,v 1.16 2010/07/19 05:08:37 jakemsr Exp $ */
-/*	$NetBSD: usb_quirks.h,v 1.20 2001/04/15 09:38:01 augustss Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/usb_quirks.h,v 1.9 1999/11/12 23:31:03 n_hibma Exp $	*/
+/*	$OpenBSD: usb_quirks.h,v 1.1 1999/08/13 05:28:04 fgsch Exp $	*/
+/*	$NetBSD: usb_quirks.h,v 1.7 1999/06/26 00:09:15 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -18,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -34,23 +40,13 @@
 
 struct usbd_quirks {
 	u_int32_t uq_flags;	/* Device problems: */
-#define UQ_NO_SET_PROTO		0x00000001 /* cannot handle SET PROTOCOL */
-#define UQ_SWAP_UNICODE		0x00000002 /* some Unicode strings swapped */
-#define UQ_MS_REVZ		0x00000004 /* mouse has Z-axis reversed */
-#define UQ_NO_STRINGS		0x00000008 /* string descriptors are broken */
-#define UQ_BUS_POWERED		0x00000020 /* is bus-powered, despite claim */
-#define UQ_SPUR_BUT_UP		0x00000080 /* spurious mouse button up events */
-#define UQ_POWER_CLAIM		0x00000200 /* hub lies about power status */
-#define UQ_ASSUME_CM_OVER_DATA	0x00001000 /* modem device breaks on cm
-						over data */
-#define UQ_BROKEN_BIDIR		0x00002000 /* printer has broken bidir mode */
-#define UQ_BAD_HID		0x00004000 /* device claims uhid, but isn't */
-#define UQ_MS_BAD_CLASS		0x00008000 /* mouse doesn't identify properly */
-#define UQ_MS_LEADING_BYTE	0x00010000 /* mouse sends unknown leading byte */
-#define UQ_EHCI_NEEDTO_DISOWN	0x00020000 /* must hand device over to USB 1.1
-						if attached to EHCI */
+#define UQ_NO_SET_PROTO	0x01	/* cannot handle SET PROTOCOL. */
+#define UQ_SWAP_UNICODE	0x02	/* has some Unicode strings swapped. */
+#define UQ_MS_REVZ	0x04	/* mouse has Z-axis reversed */
+#define UQ_NO_STRINGS	0x08	/* string descriptors are broken. */
+#define UQ_BAD_ADC	0x10	/* bad audio spec version number. */
 };
 
-extern const struct usbd_quirks usbd_no_quirk;
+extern struct usbd_quirks usbd_no_quirk;
 
-const struct usbd_quirks *usbd_find_quirk(usb_device_descriptor_t *);
+struct usbd_quirks *usbd_find_quirk __P((usb_device_descriptor_t *));

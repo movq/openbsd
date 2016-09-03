@@ -1,4 +1,4 @@
-.\"	$OpenBSD: fparseln.3,v 1.10 2015/09/14 15:14:55 schwarze Exp $
+.\"	$OpenBSD: fparseln.3,v 1.3 1999/07/21 12:17:31 aaron Exp $
 .\"	$NetBSD: fparseln.3,v 1.7 1999/07/02 15:49:12 simonb Exp $
 .\"
 .\" Copyright (c) 1997 Christos Zoulas.  All rights reserved.
@@ -28,17 +28,16 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: September 14 2015 $
+.Dd December 1, 1997
 .Dt FPARSELN 3
 .Os
 .Sh NAME
 .Nm fparseln
 .Nd return the next logical line from a stream
 .Sh SYNOPSIS
-.In stdio.h
-.In util.h
+.Fd #include <util.h>
 .Ft "char *"
-.Fo fparseln
+.Fo "fparseln"
 .Fa "FILE *stream" "size_t *len" "size_t *lineno"
 .Fa "const char delim[3]" "int flags"
 .Fc
@@ -48,9 +47,8 @@ The
 function
 returns a pointer to the next logical line from the stream referenced by
 .Fa stream .
-This string is null terminated, contains no trailing newline,
-and is dynamically allocated on each invocation.
-It is the responsibility of the caller to free the pointer.
+This string is null terminated and dynamically allocated on each
+invocation. It is the responsibility of the caller to free the pointer.
 .Pp
 By default, if a character is escaped, both it and the preceding escape
 character will be present in the returned string.
@@ -75,7 +73,9 @@ the value of the memory location to which
 references is incremented by the number of lines actually read from the file.
 .It Fa delim
 Contains the escape, continuation, and comment characters.
-If a character is NUL then processing for that character is disabled.
+If a character is
+.Tn NUL
+then processing for that character is disabled.
 If
 .Dv NULL ,
 all characters default to values specified below.
@@ -102,7 +102,9 @@ end of the current line.
 .It Fa flags
 If non-zero, alter the operation of
 .Fn fparseln .
-The various flags, which may be OR'ed together, are:
+The various flags, which may be
+.Tn OR Ns 'ed
+together, are:
 .Bl -tag -width "FPARSELN_UNESCCOMM"
 .It Dv FPARSELN_UNESCCOMM
 Remove escape preceding an escaped comment.

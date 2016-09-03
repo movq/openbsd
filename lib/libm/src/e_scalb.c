@@ -10,8 +10,12 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_scalb.c,v 1.6 1995/05/10 20:46:09 jtc Exp $";
+#endif
+
 /*
- * scalb(x, fn) is provide for
+ * __ieee754_scalb(x, fn) is provide for
  * passing various standard test suite. One 
  * should use scalbn() instead.
  */
@@ -20,17 +24,24 @@
 #include "math_private.h"
 
 #ifdef _SCALB_INT
-double
-scalb(double x, int fn)
-{
-	return scalbn(x, fn);
-}
-
+#ifdef __STDC__
+	double __ieee754_scalb(double x, int fn)
 #else
-
-double
-scalb(double x, double fn)
+	double __ieee754_scalb(x,fn)
+	double x; int fn;
+#endif
+#else
+#ifdef __STDC__
+	double __ieee754_scalb(double x, double fn)
+#else
+	double __ieee754_scalb(x,fn)
+	double x, fn;
+#endif
+#endif
 {
+#ifdef _SCALB_INT
+	return scalbn(x,fn);
+#else
 	if (isnan(x)||isnan(fn)) return x*fn;
 	if (!finite(fn)) {
 	    if(fn>0.0) return x*fn;
@@ -40,5 +51,5 @@ scalb(double x, double fn)
 	if ( fn > 65000.0) return scalbn(x, 65000);
 	if (-fn > 65000.0) return scalbn(x,-65000);
 	return scalbn(x,(int)fn);
-}
 #endif
+}

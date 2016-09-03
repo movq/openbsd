@@ -1,4 +1,4 @@
-/*	$OpenBSD: ufs_bmap.c,v 1.35 2015/03/14 03:38:53 jsg Exp $	*/
+/*	$OpenBSD: ufs_bmap.c,v 1.5 1999/04/25 00:36:47 millert Exp $	*/
 /*	$NetBSD: ufs_bmap.c,v 1.3 1996/02/09 22:36:00 christos Exp $	*/
 
 /*
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -43,7 +47,10 @@
 #include <sys/proc.h>
 #include <sys/vnode.h>
 #include <sys/mount.h>
-#include <sys/specdev.h>
+#include <sys/resourcevar.h>
+#include <sys/trace.h>
+
+#include <miscfs/specfs/specdev.h>
 
 #include <ufs/ufs/quota.h>
 #include <ufs/ufs/inode.h>
@@ -56,10 +63,16 @@
  * number to index into the array of block pointers described by the dinode.
  */
 int
-ufs_bmap(void *v)
+ufs_bmap(v)
+	void *v;
 {
-	struct vop_bmap_args *ap = v;
-
+	struct vop_bmap_args /* {
+		struct vnode *a_vp;
+		daddr_t  a_bn;
+		struct vnode **a_vpp;
+		daddr_t *a_bnp;
+		int *a_runp;
+	} */ *ap = v;
 	/*
 	 * Check for underlying vnode requests and ensure that logical
 	 * to physical mapping is requested.
@@ -86,17 +99,27 @@ ufs_bmap(void *v)
  * Each entry contains the offset into that block that gets you to the
  * next block and the disk address of the block (if it is assigned).
  */
+
 int
-ufs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp, struct indir *ap,
-    int *nump, int *runp)
+ufs_bmaparray(vp, bn, bnp, ap, nump, runp)
+	struct vnode *vp;
+	register daddr_t bn;
+	daddr_t *bnp;
+	struct indir *ap;
+	int *nump;
+	int *runp;
 {
-	struct inode *ip;
+	register struct inode *ip;
 	struct buf *bp;
 	struct ufsmount *ump;
 	struct mount *mp;
 	struct vnode *devvp;
 	struct indir a[NIADDR+1], *xap;
-	daddr_t daddr, metalbn;
+	daddr_t daddr;
+	long metalbn;
+#ifdef	TRACE
+	long size;
+#endif
 	int error, maxrun = 0, num;
 
 	ip = VTOI(vp);
@@ -126,20 +149,19 @@ ufs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp, struct indir *ap,
 
 	num = *nump;
 	if (num == 0) {
-		*bnp = blkptrtodb(ump, DIP(ip, db[bn]));
+		*bnp = blkptrtodb(ump, ip->i_ffs_db[bn]);
 		if (*bnp == 0)
 			*bnp = -1;
 		else if (runp)
 			for (++bn; bn < NDADDR && *runp < maxrun &&
-			    is_sequential(ump, DIP(ip, db[bn - 1]),
-			        DIP(ip, db[bn]));
+			    is_sequential(ump, ip->i_ffs_db[bn - 1], ip->i_ffs_db[bn]);
 			    ++bn, ++*runp);
 		return (0);
 	}
 
 
 	/* Get disk address out of indirect block array */
-	daddr = DIP(ip, ib[xap->in_off]);
+	daddr = ip->i_ffs_ib[xap->in_off];
 
 	devvp = VFSTOUFS(vp->v_mount)->um_devvp;
 	for (bp = NULL, ++xap; --num; ++xap) {
@@ -162,48 +184,30 @@ ufs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp, struct indir *ap,
 		xap->in_exists = 1;
 		bp = getblk(vp, metalbn, mp->mnt_stat.f_iosize, 0, 0);
 		if (bp->b_flags & (B_DONE | B_DELWRI)) {
-			;
+			trace(TR_BREADHIT, pack(vp, size), metalbn);
 		}
 #ifdef DIAGNOSTIC
 		else if (!daddr)
-			panic("ufs_bmaparray: indirect block not in cache");
+			panic("ufs_bmaparry: indirect block not in cache");
 #endif
 		else {
+			trace(TR_BREADMISS, pack(vp, size), metalbn);
 			bp->b_blkno = blkptrtodb(ump, daddr);
 			bp->b_flags |= B_READ;
-			bcstats.pendingreads++;
-			bcstats.numreads++;
 			VOP_STRATEGY(bp);
-			curproc->p_ru.ru_inblock++;		/* XXX */
+			curproc->p_stats->p_ru.ru_inblock++;	/* XXX */
 			if ((error = biowait(bp)) != 0) {
 				brelse(bp);
 				return (error);
 			}
 		}
 
-#ifdef FFS2
-		if (ip->i_ump->um_fstype == UM_UFS2) {
-			daddr = ((int64_t *)bp->b_data)[xap->in_off];
-			if (num == 1 && daddr && runp)
-				for (bn = xap->in_off + 1;
-				    bn < MNINDIR(ump) && *runp < maxrun &&
-				    is_sequential(ump,
-					((int64_t *)bp->b_data)[bn - 1],
-					((int64_t *)bp->b_data)[bn]);
-				    ++bn, ++*runp);
-
-                        continue;
-		}
-
-#endif /* FFS2 */
-
-		daddr = ((int32_t *)bp->b_data)[xap->in_off];
+		daddr = ((daddr_t *)bp->b_data)[xap->in_off];
 		if (num == 1 && daddr && runp)
 			for (bn = xap->in_off + 1;
 			    bn < MNINDIR(ump) && *runp < maxrun &&
-			    is_sequential(ump,
-				((int32_t *)bp->b_data)[bn - 1],
-				((int32_t *)bp->b_data)[bn]);
+			    is_sequential(ump, ((daddr_t *)bp->b_data)[bn - 1],
+			    ((daddr_t *)bp->b_data)[bn]);
 			    ++bn, ++*runp);
 	}
 	if (bp)
@@ -224,27 +228,23 @@ ufs_bmaparray(struct vnode *vp, daddr_t bn, daddr_t *bnp, struct indir *ap,
  * once with the offset into the page itself.
  */
 int
-ufs_getlbns(struct vnode *vp, daddr_t bn, struct indir *ap, int *nump)
+ufs_getlbns(vp, bn, ap, nump)
+	struct vnode *vp;
+	register daddr_t bn;
+	struct indir *ap;
+	int *nump;
 {
-	daddr_t metalbn, realbn;
+	long metalbn, realbn;
 	struct ufsmount *ump;
-	int64_t blockcnt;
-	int i, numlevels, off;
+	int blockcnt, i, numlevels, off;
 
 	ump = VFSTOUFS(vp->v_mount);
 	if (nump)
 		*nump = 0;
 	numlevels = 0;
 	realbn = bn;
-	if (bn < 0)
-		bn = -bn;
-
-#ifdef DIAGNOSTIC
-	if (realbn < 0 && realbn > -NDADDR) {
-		panic ("ufs_getlbns: Invalid indirect block %lld specified",
-		    (long long)realbn);
-	}
-#endif
+	if ((long)bn < 0)
+		bn = -(long)bn;
 
 	/* The first NDADDR blocks are direct blocks. */
 	if (bn < NDADDR)
@@ -296,12 +296,6 @@ ufs_getlbns(struct vnode *vp, daddr_t bn, struct indir *ap, int *nump)
 
 		metalbn -= -1 + off * blockcnt;
 	}
-#ifdef DIAGNOSTIC
-	if (realbn < 0 && metalbn != realbn) {
-		panic("ufs_getlbns: indirect block %lld not found",
-		    (long long)realbn);
-	}
-#endif
 	if (nump)
 		*nump = numlevels;
 	return (0);

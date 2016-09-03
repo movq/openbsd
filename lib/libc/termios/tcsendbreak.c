@@ -1,4 +1,3 @@
-/*	$OpenBSD: tcsendbreak.c,v 1.9 2015/11/01 03:45:29 guenther Exp $ */
 /*-
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,21 +31,33 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <time.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: tcsendbreak.c,v 1.3 1996/09/15 09:31:58 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
 
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/tty.h>
+#include <sys/time.h>
+#include <sys/fcntl.h>
+
+#include <errno.h>
+#include <stdio.h>
+#include <termios.h>
+#include <unistd.h>
+
+/* ARGSUSED */
 int
-tcsendbreak(int fd, int len)
+tcsendbreak(fd, len)
+	int fd, len;
 {
-	struct timespec sleepytime;
+	struct timeval sleepytime;
 
 	sleepytime.tv_sec = 0;
-	sleepytime.tv_nsec = 400000000;
-
+	sleepytime.tv_usec = 400000;
 	if (ioctl(fd, TIOCSBRK, 0) == -1)
 		return (-1);
-	(void)nanosleep(&sleepytime, NULL);
+	(void)select(0, 0, 0, 0, &sleepytime);
 	if (ioctl(fd, TIOCCBRK, 0) == -1)
 		return (-1);
 	return (0);

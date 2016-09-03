@@ -1,5 +1,3 @@
-/*	$OpenBSD: ex.c,v 1.21 2016/03/19 00:21:28 mestre Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)ex.c	10.57 (Berkeley) 10/10/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -30,24 +32,26 @@
 #include "../vi/vi.h"
 
 #if defined(DEBUG) && defined(COMLOG)
-static void	ex_comlog(SCR *, EXCMD *);
+static void	ex_comlog __P((SCR *, EXCMD *));
 #endif
 static EXCMDLIST const *
-		ex_comm_search(char *, size_t);
-static int	ex_discard(SCR *);
-static int	ex_line(SCR *, EXCMD *, MARK *, int *, int *);
-static int	ex_load(SCR *);
-static void	ex_unknown(SCR *, char *, size_t);
+		ex_comm_search __P((char *, size_t));
+static int	ex_discard __P((SCR *));
+static int	ex_line __P((SCR *, EXCMD *, MARK *, int *, int *));
+static int	ex_load __P((SCR *));
+static void	ex_unknown __P((SCR *, char *, size_t));
 
 /*
  * ex --
  *	Main ex loop.
  *
- * PUBLIC: int ex(SCR **);
+ * PUBLIC: int ex __P((SCR **));
  */
 int
-ex(SCR **spp)
+ex(spp)
+	SCR **spp;
 {
+	EX_PRIVATE *exp;
 	GS *gp;
 	MSGS *mp;
 	SCR *sp;
@@ -56,13 +60,14 @@ ex(SCR **spp)
 
 	sp = *spp;
 	gp = sp->gp;
+	exp = EXP(sp);
 
 	/* Start the ex screen. */
 	if (ex_init(sp))
 		return (1);
 
 	/* Flush any saved messages. */
-	while ((mp = LIST_FIRST(&gp->msgq)) != NULL) {
+	while ((mp = gp->msgq.lh_first) != NULL) {
 		gp->scr_msg(sp, mp->mtype, mp->buf, mp->len);
 		LIST_REMOVE(mp, q);
 		free(mp->buf);
@@ -115,7 +120,7 @@ ex(SCR **spp)
 		 * If the user entered a single carriage return, send
 		 * ex_cmd() a separator -- it discards single newlines.
 		 */
-		tp = TAILQ_FIRST(&sp->tiq);
+		tp = sp->tiq.cqh_first;
 		if (tp->len == 0) {
 			gp->excmd.cp = " ";	/* __TK__ why not |? */
 			gp->excmd.clen = 1;
@@ -130,7 +135,7 @@ ex(SCR **spp)
 
 		if (INTERRUPTED(sp)) {
 			CLR_INTERRUPT(sp);
-			msgq(sp, M_ERR, "Interrupted");
+			msgq(sp, M_ERR, "170|Interrupted");
 		}
 
 		/*
@@ -184,10 +189,11 @@ ex(SCR **spp)
  *
  * For extra credit, try them in a startup .exrc file.
  *
- * PUBLIC: int ex_cmd(SCR *);
+ * PUBLIC: int ex_cmd __P((SCR *));
  */
 int
-ex_cmd(SCR *sp)
+ex_cmd(sp)
+	SCR *sp;
 {
 	enum nresult nret;
 	EX_PRIVATE *exp;
@@ -211,7 +217,7 @@ ex_cmd(SCR *sp)
 	 * This means that *everything* must be resolved when we leave
 	 * this function for any reason.
 	 */
-loop:	ecp = LIST_FIRST(&gp->ecq);
+loop:	ecp = gp->ecq.lh_first;
 
 	/* If we're reading a command from a file, set up error information. */
 	if (ecp->if_name != NULL) {
@@ -315,7 +321,7 @@ loop:	ecp = LIST_FIRST(&gp->ecq);
 	    (!notempty || F_ISSET(sp, SC_VI) || F_ISSET(ecp, E_BLIGNORE))) {
 		if (ex_load(sp))
 			goto rfail;
-		ecp = LIST_FIRST(&gp->ecq);
+		ecp = gp->ecq.lh_first;
 		if (ecp->clen == 0)
 			goto rsuccess;
 		goto loop;
@@ -385,7 +391,7 @@ loop:	ecp = LIST_FIRST(&gp->ecq);
 				if (!isalpha(*ecp->cp))
 					break;
 			if ((namelen = ecp->cp - p) == 0) {
-				msgq(sp, M_ERR, "Unknown command name");
+				msgq(sp, M_ERR, "080|Unknown command name");
 				goto err;
 			}
 		}
@@ -569,7 +575,7 @@ skip_srch:	if (ecp->cmd == &cmds[C_VISUAL_EX] && F_ISSET(sp, SC_VI))
 	/* Check for ex mode legality. */
 	if (F_ISSET(sp, SC_EX) && (F_ISSET(ecp->cmd, E_VIONLY) || newscreen)) {
 		msgq(sp, M_ERR,
-		    "%s: command not available in ex mode", ecp->cmd->name);
+		    "082|%s: command not available in ex mode", ecp->cmd->name);
 		goto err;
 	}
 
@@ -1058,7 +1064,7 @@ end_case23:		break;
 				goto err;
 			}
 			if (ltmp == 0 && *p != '0') {
-				msgq(sp, M_ERR, "Count may not be zero");
+				msgq(sp, M_ERR, "083|Count may not be zero");
 				goto err;
 			}
 			ecp->clen -= (t - ecp->cp);
@@ -1101,7 +1107,7 @@ end_case23:		break;
 			/* Line specifications are always required. */
 			if (!isaddr) {
 				msgq_str(sp, M_ERR, ecp->cp,
-				     "%s: bad line specification");
+				     "084|%s: bad line specification");
 				goto err;
 			}
 			/*
@@ -1194,7 +1200,7 @@ arg_cnt_chk:		if (*++p != 'N') {		/* N */
 			goto addr_verify;
 		default:
 			msgq(sp, M_ERR,
-			    "Internal syntax table error (%s: %s)",
+			    "085|Internal syntax table error (%s: %s)",
 			    ecp->cmd->name, KEY_NAME(sp, *p));
 		}
 	}
@@ -1211,7 +1217,7 @@ arg_cnt_chk:		if (*++p != 'N') {		/* N */
 	 * i.e neither 'l' or 'r' in the syntax string.
 	 */
 	if (ecp->clen != 0 || strpbrk(p, "lr")) {
-usage:		msgq(sp, M_ERR, "Usage: %s", ecp->cmd->usage);
+usage:		msgq(sp, M_ERR, "086|Usage: %s", ecp->cmd->usage);
 		goto err;
 	}
 
@@ -1242,7 +1248,7 @@ addr_verify:
 				ex_badaddr(sp, ecp->cmd, A_ZERO, NUM_OK);
 				goto err;
 			}
-		} else if (!db_exist(sp, ecp->addr2.lno)) {
+		} else if (!db_exist(sp, ecp->addr2.lno))
 			if (FL_ISSET(ecp->iflags, E_C_COUNT)) {
 				if (db_last(sp, &lno))
 					goto err;
@@ -1251,7 +1257,6 @@ addr_verify:
 				ex_badaddr(sp, NULL, A_EOF, NUM_OK);
 				goto err;
 			}
-		}
 		/* FALLTHROUGH */
 	case 1:
 		if (ecp->addr1.lno == 0) {
@@ -1374,7 +1379,7 @@ addr_verify:
 	/* Make sure no function left global temporary space locked. */
 	if (F_ISSET(gp, G_TMP_INUSE)) {
 		F_CLR(gp, G_TMP_INUSE);
-		msgq(sp, M_ERR, "%s: temporary buffer not released",
+		msgq(sp, M_ERR, "087|%s: temporary buffer not released",
 		    ecp->cmd->name);
 	}
 #endif
@@ -1407,7 +1412,7 @@ addr_verify:
 		if (ecp->flagoff < 0) {
 			if (sp->lno <= -ecp->flagoff) {
 				msgq(sp, M_ERR,
-				    "Flag offset to before line 1");
+				    "088|Flag offset to before line 1");
 				goto err;
 			}
 		} else {
@@ -1417,7 +1422,7 @@ addr_verify:
 			}
 			if (!db_exist(sp, sp->lno + ecp->flagoff)) {
 				msgq(sp, M_ERR,
-				    "Flag offset past end-of-file");
+				    "089|Flag offset past end-of-file");
 				goto err;
 			}
 		}
@@ -1488,7 +1493,7 @@ addr_verify:
 
 		ecp->save_cmd -= arg1_len;
 		ecp->save_cmdlen += arg1_len;
-		memmove(ecp->save_cmd, arg1, arg1_len);
+		memcpy(ecp->save_cmd, arg1, arg1_len);
 
 		/*
 		 * Any commands executed from a +cmd are executed starting at
@@ -1522,7 +1527,8 @@ addr_verify:
 	 */
 	if (F_ISSET(sp, SC_EXIT | SC_EXIT_FORCE | SC_FSWITCH | SC_SSWITCH)) {
 		at_found = gv_found = 0;
-		LIST_FOREACH(ecp, &sp->gp->ecq, q)
+		for (ecp = sp->gp->ecq.lh_first;
+		    ecp != NULL; ecp = ecp->q.le_next)
 			switch (ecp->agv_flags) {
 			case 0:
 			case AGV_AT_NORANGE:
@@ -1531,7 +1537,7 @@ addr_verify:
 				if (!at_found) {
 					at_found = 1;
 					msgq(sp, M_ERR,
-		"@ with range running when the file/screen changed");
+		"090|@ with range running when the file/screen changed");
 				}
 				break;
 			case AGV_GLOBAL:
@@ -1539,7 +1545,7 @@ addr_verify:
 				if (!gv_found) {
 					gv_found = 1;
 					msgq(sp, M_ERR,
-		"Global/v command running when the file/screen changed");
+		"091|Global/v command running when the file/screen changed");
 				}
 				break;
 			default:
@@ -1574,14 +1580,14 @@ err:	/*
 				break;
 			}
 		}
-	if (ecp->save_cmdlen != 0 || LIST_FIRST(&gp->ecq) != &gp->excmd) {
+	if (ecp->save_cmdlen != 0 || gp->ecq.lh_first != &gp->excmd) {
 discard:	msgq(sp, M_BERR,
-		    "Ex command failed: pending commands discarded");
+		    "092|Ex command failed: pending commands discarded");
 		ex_discard(sp);
 	}
 	if (v_event_flush(sp, CH_MAPPED))
 		msgq(sp, M_BERR,
-		    "Ex command failed: mapped keys discarded");
+		    "093|Ex command failed: mapped keys discarded");
 
 rfail:	tmp = 1;
 	if (0)
@@ -1600,12 +1606,17 @@ rsuccess:	tmp = 0;
  * ex_range --
  *	Get a line range for ex commands, or perform a vi ex address search.
  *
- * PUBLIC: int ex_range(SCR *, EXCMD *, int *);
+ * PUBLIC: int ex_range __P((SCR *, EXCMD *, int *));
  */
 int
-ex_range(SCR *sp, EXCMD *ecp, int *errp)
+ex_range(sp, ecp, errp)
+	SCR *sp;
+	EXCMD *ecp;
+	int *errp;
 {
 	enum { ADDR_FOUND, ADDR_NEED, ADDR_NONE } addr;
+	GS *gp;
+	EX_PRIVATE *exp;
 	MARK m;
 	int isaddr;
 
@@ -1632,6 +1643,8 @@ ex_range(SCR *sp, EXCMD *ecp, int *errp)
 	 * addresses.  For consistency, we make it true for leading semicolon
 	 * addresses as well.
 	 */
+	gp = sp->gp;
+	exp = EXP(sp);
 	for (addr = ADDR_NONE, ecp->addrcnt = 0; ecp->clen > 0;)
 		switch (*ecp->cp) {
 		case '%':		/* Entire file. */
@@ -1775,7 +1788,7 @@ ret:	if (F_ISSET(ecp, E_VISEARCH))
 
 	if (ecp->addrcnt == 2 && ecp->addr2.lno < ecp->addr1.lno) {
 		msgq(sp, M_ERR,
-		    "The second address is smaller than the first");
+		    "094|The second address is smaller than the first");
 		*errp = 1;
 	}
 	return (0);
@@ -1798,13 +1811,22 @@ ret:	if (F_ISSET(ecp, E_VISEARCH))
  * it's fairly close.
  */
 static int
-ex_line(SCR *sp, EXCMD *ecp, MARK *mp, int *isaddrp, int *errp)
+ex_line(sp, ecp, mp, isaddrp, errp)
+	SCR *sp;
+	EXCMD *ecp;
+	MARK *mp;
+	int *isaddrp, *errp;
 {
 	enum nresult nret;
+	EX_PRIVATE *exp;
+	GS *gp;
 	long total, val;
 	int isneg;
-	int (*sf)(SCR *, MARK *, MARK *, char *, size_t, char **, u_int);
+	int (*sf) __P((SCR *, MARK *, MARK *, char *, size_t, char **, u_int));
 	char *endp;
+
+	gp = sp->gp;
+	exp = EXP(sp);
 
 	*isaddrp = *errp = 0;
 	F_CLR(ecp, E_DELTA);
@@ -1852,7 +1874,7 @@ ex_line(SCR *sp, EXCMD *ecp, MARK *mp, int *isaddrp, int *errp)
 		F_SET(ecp, E_ABSMARK);
 
 		if (ecp->clen == 1) {
-			msgq(sp, M_ERR, "No mark name supplied");
+			msgq(sp, M_ERR, "095|No mark name supplied");
 			*errp = 1;
 			return (0);
 		}
@@ -1871,8 +1893,8 @@ ex_line(SCR *sp, EXCMD *ecp, MARK *mp, int *isaddrp, int *errp)
 		 * difference.  C'est la vie.
 		 */
 		if (ecp->clen < 2 ||
-		    (ecp->cp[1] != '/' && ecp->cp[1] != '?')) {
-			msgq(sp, M_ERR, "\\ not followed by / or ?");
+		    ecp->cp[1] != '/' && ecp->cp[1] != '?') {
+			msgq(sp, M_ERR, "096|\\ not followed by / or ?");
 			*errp = 1;
 			return (0);
 		}
@@ -1977,9 +1999,9 @@ search:		mp->lno = sp->lno;
 		for (;;) {
 			for (; ecp->clen > 0 && isblank(ecp->cp[0]);
 			    ++ecp->cp, --ecp->clen);
-			if (ecp->clen == 0 || (!isdigit(ecp->cp[0]) &&
+			if (ecp->clen == 0 || !isdigit(ecp->cp[0]) &&
 			    ecp->cp[0] != '+' && ecp->cp[0] != '-' &&
-			    ecp->cp[0] != '^'))
+			    ecp->cp[0] != '^')
 				break;
 			if (!isdigit(ecp->cp[0]) &&
 			    !isdigit(ecp->cp[1])) {
@@ -1998,7 +2020,8 @@ search:		mp->lno = sp->lno;
 				/* Get a signed long, add it to the total. */
 				if ((nret = nget_slong(&val,
 				    ecp->cp, &endp, 10)) != NUM_OK ||
-				    (nret = NADD_SLONG(total, val)) != NUM_OK) {
+				    (nret = NADD_SLONG(sp,
+				    total, val)) != NUM_OK) {
 					ex_badaddr(sp, NULL, A_NOTSET, nret);
 					*errp = 1;
 					return (0);
@@ -2018,7 +2041,7 @@ search:		mp->lno = sp->lno;
 		if (total < 0) {
 			if (-total > mp->lno) {
 				msgq(sp, M_ERR,
-			    "Reference to a line number less than 0");
+			    "097|Reference to a line number less than 0");
 				*errp = 1;
 				return (0);
 			}
@@ -2039,7 +2062,8 @@ search:		mp->lno = sp->lno;
  *	Load up the next command, which may be an @ buffer or global command.
  */
 static int
-ex_load(SCR *sp)
+ex_load(sp)
+	SCR *sp;
 {
 	GS *gp;
 	EXCMD *ecp;
@@ -2057,7 +2081,7 @@ ex_load(SCR *sp)
 		 * but discard any allocated source name, we've returned to
 		 * the beginning of the command stack.
 		 */
-		if ((ecp = LIST_FIRST(&gp->ecq)) == &gp->excmd) {
+		if ((ecp = gp->ecq.lh_first) == &gp->excmd) {
 			if (F_ISSET(ecp, E_NAMEDISCARD)) {
 				free(ecp->if_name);
 				ecp->if_name = NULL;
@@ -2081,21 +2105,20 @@ ex_load(SCR *sp)
 		 */
 		if (FL_ISSET(ecp->agv_flags, AGV_ALL)) {
 			/* Discard any exhausted ranges. */
-			while ((rp = TAILQ_FIRST(&ecp->rq))) {
+			while ((rp = ecp->rq.cqh_first) != (void *)&ecp->rq)
 				if (rp->start > rp->stop) {
-					TAILQ_REMOVE(&ecp->rq, rp, q);
+					CIRCLEQ_REMOVE(&ecp->rq, rp, q);
 					free(rp);
 				} else
 					break;
-			}
 
 			/* If there's another range, continue with it. */
-			if (rp)
+			if (rp != (void *)&ecp->rq)
 				break;
 
 			/* If it's a global/v command, fix up the last line. */
 			if (FL_ISSET(ecp->agv_flags,
-			    AGV_GLOBAL | AGV_V) && ecp->range_lno != OOBLNO) {
+			    AGV_GLOBAL | AGV_V) && ecp->range_lno != OOBLNO)
 				if (db_exist(sp, ecp->range_lno))
 					sp->lno = ecp->range_lno;
 				else {
@@ -2104,7 +2127,6 @@ ex_load(SCR *sp)
 					if (sp->lno == 0)
 						sp->lno = 1;
 				}
-			}
 			free(ecp->o_cp);
 		}
 
@@ -2134,7 +2156,8 @@ ex_load(SCR *sp)
  *	Discard any pending ex commands.
  */
 static int
-ex_discard(SCR *sp)
+ex_discard(sp)
+	SCR *sp;
 {
 	GS *gp;
 	EXCMD *ecp;
@@ -2144,10 +2167,10 @@ ex_discard(SCR *sp)
 	 * We know the first command can't be an AGV command, so we don't
 	 * process it specially.  We do, however, nail the command itself.
 	 */
-	for (gp = sp->gp; (ecp = LIST_FIRST(&gp->ecq)) != &gp->excmd;) {
+	for (gp = sp->gp; (ecp = gp->ecq.lh_first) != &gp->excmd;) {
 		if (FL_ISSET(ecp->agv_flags, AGV_ALL)) {
-			while ((rp = TAILQ_FIRST(&ecp->rq))) {
-				TAILQ_REMOVE(&ecp->rq, rp, q);
+			while ((rp = ecp->rq.cqh_first) != (void *)&ecp->rq) {
+				CIRCLEQ_REMOVE(&ecp->rq, rp, q);
 				free(rp);
 			}
 			free(ecp->o_cp);
@@ -2155,7 +2178,7 @@ ex_discard(SCR *sp)
 		LIST_REMOVE(ecp, q);
 		free(ecp);
 	}
-	LIST_FIRST(&gp->ecq)->clen = 0;
+	gp->ecq.lh_first->clen = 0;
 	return (0);
 }
 
@@ -2164,7 +2187,10 @@ ex_discard(SCR *sp)
  *	Display an unknown command name.
  */
 static void
-ex_unknown(SCR *sp, char *cmd, size_t len)
+ex_unknown(sp, cmd, len)
+	SCR *sp;
+	char *cmd;
+	size_t len;
 {
 	size_t blen;
 	char *bp;
@@ -2172,7 +2198,7 @@ ex_unknown(SCR *sp, char *cmd, size_t len)
 	GET_SPACE_GOTO(sp, bp, blen, len + 1);
 	bp[len] = '\0';
 	memcpy(bp, cmd, len);
-	msgq_str(sp, M_ERR, bp, "The %s command is unknown");
+	msgq_str(sp, M_ERR, bp, "098|The %s command is unknown");
 	FREE_SPACE(sp, bp, blen);
 
 alloc_err:
@@ -2185,10 +2211,12 @@ alloc_err:
  *	[un]abbreviate command, so it can turn off abbreviations.  See
  *	the usual ranting in the vi/v_txt_ev.c:txt_abbrev() routine.
  *
- * PUBLIC: int ex_is_abbrev(char *, size_t);
+ * PUBLIC: int ex_is_abbrev __P((char *, size_t));
  */
 int
-ex_is_abbrev(char *name, size_t len)
+ex_is_abbrev(name, len)
+	char *name;
+	size_t len;
 {
 	EXCMDLIST const *cp;
 
@@ -2202,10 +2230,12 @@ ex_is_abbrev(char *name, size_t len)
  *	unmap command, so it can turn off input mapping.  See the usual
  *	ranting in the vi/v_txt_ev.c:txt_unmap() routine.
  *
- * PUBLIC: int ex_is_unmap(char *, size_t);
+ * PUBLIC: int ex_is_unmap __P((char *, size_t));
  */
 int
-ex_is_unmap(char *name, size_t len)
+ex_is_unmap(name, len)
+	char *name;
+	size_t len;
 {
 	EXCMDLIST const *cp;
 
@@ -2225,7 +2255,9 @@ ex_is_unmap(char *name, size_t len)
  *	Search for a command name.
  */
 static EXCMDLIST const *
-ex_comm_search(char *name, size_t len)
+ex_comm_search(name, len)
+	char *name;
+	size_t len;
 {
 	EXCMDLIST const *cp;
 
@@ -2245,10 +2277,14 @@ ex_comm_search(char *name, size_t len)
  *	Display a bad address message.
  *
  * PUBLIC: void ex_badaddr
- * PUBLIC:(SCR *, EXCMDLIST const *, enum badaddr, enum nresult);
+ * PUBLIC:    __P((SCR *, EXCMDLIST const *, enum badaddr, enum nresult));
  */
 void
-ex_badaddr(SCR *sp, EXCMDLIST const *cp, enum badaddr ba, enum nresult nret)
+ex_badaddr(sp, cp, ba, nret)
+	SCR *sp;
+	EXCMDLIST const *cp;
+	enum badaddr ba;
+	enum nresult nret;
 {
 	recno_t lno;
 
@@ -2259,10 +2295,10 @@ ex_badaddr(SCR *sp, EXCMDLIST const *cp, enum badaddr ba, enum nresult nret)
 		msgq(sp, M_SYSERR, NULL);
 		return;
 	case NUM_OVER:
-		msgq(sp, M_ERR, "Address value overflow");
+		msgq(sp, M_ERR, "099|Address value overflow");
 		return;
 	case NUM_UNDER:
-		msgq(sp, M_ERR, "Address value underflow");
+		msgq(sp, M_ERR, "100|Address value underflow");
 		return;
 	}
 
@@ -2271,33 +2307,33 @@ ex_badaddr(SCR *sp, EXCMDLIST const *cp, enum badaddr ba, enum nresult nret)
 	 * underlying file, that's the real problem.
 	 */
 	if (sp->ep == NULL) {
-		ex_emsg(sp, cp != NULL ? cp->name : NULL, EXM_NOFILEYET);
+		ex_emsg(sp, cp->name, EXM_NOFILEYET);
 		return;
 	}
 
 	switch (ba) {
 	case A_COMBO:
-		msgq(sp, M_ERR, "Illegal address combination");
+		msgq(sp, M_ERR, "101|Illegal address combination");
 		break;
 	case A_EOF:
 		if (db_last(sp, &lno))
 			return;
 		if (lno != 0) {
 			msgq(sp, M_ERR,
-			    "Illegal address: only %lu lines in the file",
+			    "102|Illegal address: only %lu lines in the file",
 			    lno);
 			break;
 		}
 		/* FALLTHROUGH */
 	case A_EMPTY:
-		msgq(sp, M_ERR, "Illegal address: the file is empty");
+		msgq(sp, M_ERR, "103|Illegal address: the file is empty");
 		break;
 	case A_NOTSET:
 		abort();
 		/* NOTREACHED */
 	case A_ZERO:
 		msgq(sp, M_ERR,
-		    "The %s command doesn't permit an address of 0",
+		    "104|The %s command doesn't permit an address of 0",
 		    cp->name);
 		break;
 	}
@@ -2310,7 +2346,9 @@ ex_badaddr(SCR *sp, EXCMDLIST const *cp, enum badaddr ba, enum nresult nret)
  *	Log ex commands.
  */
 static void
-ex_comlog(SCR *sp, EXCMD *ecp)
+ex_comlog(sp, ecp)
+	SCR *sp;
+	EXCMD *ecp;
 {
 	TRACE(sp, "ecmd: %s", ecp->cmd->name);
 	if (ecp->addrcnt > 0) {

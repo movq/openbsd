@@ -1,5 +1,5 @@
 /* arsup.h - archive support header file
-   Copyright 1992, 1993, 1994, 1996, 2003 Free Software Foundation, Inc.
+   Copyright 1992 Free Software Foundation, Inc.
 
 This file is part of GNU Binutils.
 
@@ -18,44 +18,58 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 struct list {
-	char *name;
+	char *name;	
 	struct list *next;
 };
 
-void maybequit (void);
+void
+maybequit PARAMS ((void));
 
-void prompt (void);
+void
+prompt PARAMS ((void));
 
-void ar_clear (void);
+void
+ar_clear PARAMS ((void));
 
-void ar_replace (struct list *);
+void
+ar_replace PARAMS ((struct list *));
 
-void ar_delete (struct list *);
+void
+ar_delete PARAMS ((struct list *));
 
-void ar_save (void);
+void
+ar_save PARAMS ((void));
 
-void ar_list (void);
+void
+ar_list PARAMS ((void));
 
-void ar_open (char *, int);
+void
+ar_open PARAMS ((char *, int));
 
-void ar_directory (char *, struct list *, char *);
+void
+ar_directory PARAMS ((char *, struct list *, char *));
 
-void ar_addmod (struct list *);
+void
+ar_addmod PARAMS ((struct list *));
 
-void ar_addlib (char *, struct list *);
+void
+ar_addlib PARAMS ((char *, struct list *));
 
-void ar_end (void);
+void 
+ar_end PARAMS ((void));
 
-void ar_extract (struct list *);
+void
+ar_extract PARAMS ((struct list *));
 
-bfd *open_inarch (const char *archive_filename, const char *);
+bfd *
+open_inarch PARAMS ((const char *archive_filename, const char *));
 
-extern int yylex (void);
-
-int yyparse (void);
+int
+yyparse PARAMS ((void));
 
 /* Functions from ar.c */
 
-void extract_file (bfd * abfd);
+void
+extract_file PARAMS ((bfd * abfd));
 
 extern int interactive;

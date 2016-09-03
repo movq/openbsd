@@ -1,4 +1,4 @@
-/*	$OpenBSD: cd9660_util.c,v 1.9 2015/03/14 03:38:50 jsg Exp $	*/
+/*	$OpenBSD: cd9660_util.c,v 1.5 1999/07/01 02:20:22 d Exp $	*/
 /*	$NetBSD: cd9660_util.c,v 1.12 1997/01/24 00:27:33 cgd Exp $	*/
 
 /*-
@@ -19,7 +19,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -46,6 +50,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/buf.h>
+#include <sys/proc.h>
 #include <sys/conf.h>
 #include <sys/mount.h>
 #include <sys/vnode.h>
@@ -53,14 +58,7 @@
 #include <sys/dirent.h>
 
 #include <isofs/cd9660/iso.h>
-
-/*
- * XXX: limited support for loading of Unicode
- * conversion routine as a kld at a run-time.
- * Should be removed when native Unicode kernel
- * interfaces have been introduced.
- */
-u_char (*cd9660_wchar2char)(u_int32_t wchar) = NULL;
+#include <isofs/cd9660/cd9660_extern.h>
 
 /*
  * Get one character out of an iso filename
@@ -88,11 +86,6 @@ isochar(isofn, isoend, joliet_level, c)
               *c = *isofn;
               break;
       }
-
-      /* XXX: if Unicode conversion routine is loaded then use it */
-      if (cd9660_wchar2char != NULL)
-	      *c = cd9660_wchar2char((*(isofn - 1) << 8) | *isofn);
-
       return 2;
 }
 

@@ -1,4 +1,4 @@
-/*	$OpenBSD: column.c,v 1.24 2016/08/31 20:43:57 martijn Exp $	*/
+/*	$OpenBSD: column.c,v 1.4 1997/06/30 11:46:21 deraadt Exp $	*/
 /*	$NetBSD: column.c,v 1.4 1995/09/02 05:53:03 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,19 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1989, 1993, 1994\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)column.c	8.4 (Berkeley) 5/4/95";
+#endif
+static char rcsid[] = "$OpenBSD: column.c,v 1.4 1997/06/30 11:46:21 deraadt Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/ioctl.h>
 
@@ -41,55 +58,43 @@
 #include <string.h>
 #include <unistd.h>
 
-void  c_columnate(void);
-void *ereallocarray(void *, size_t, size_t);
-void *ecalloc(size_t, size_t);
-void  input(FILE *);
-void  maketbl(void);
-void  print(void);
-void  r_columnate(void);
-__dead void usage(void);
+void  c_columnate __P((void));
+void *emalloc __P((int));
+void  input __P((FILE *));
+void  maketbl __P((void));
+void  print __P((void));
+void  r_columnate __P((void));
+void  usage __P((void));
 
-struct field {
-	char *content;
-	int width;
-};
+int termwidth = 80;		/* default terminal width */
 
-int termwidth;			/* default terminal width */
 int entries;			/* number of records */
 int eval;			/* exit value */
-int *maxwidths;			/* longest record per column */
-struct field **table;		/* one array of pointers per line */
+int maxlength;			/* longest record */
+char **list;			/* array of pointers to records */
 char *separator = "\t ";	/* field separator for table option */
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	struct winsize win;
 	FILE *fp;
 	int ch, tflag, xflag;
 	char *p;
-	const char *errstr;
 
-	termwidth = 0;
-	if ((p = getenv("COLUMNS")) != NULL)
-		termwidth = strtonum(p, 1, INT_MAX, NULL);
-	if (termwidth == 0 && ioctl(STDOUT_FILENO, TIOCGWINSZ, &win) == 0 &&
-	    win.ws_col > 0)
+	if (ioctl(1, TIOCGWINSZ, &win) == -1 || !win.ws_col) {
+		if (p = getenv("COLUMNS"))
+			termwidth = atoi(p);
+	} else
 		termwidth = win.ws_col;
-	if (termwidth == 0)
-		termwidth = 80;
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
 
 	tflag = xflag = 0;
-	while ((ch = getopt(argc, argv, "c:s:tx")) != -1) {
+	while ((ch = getopt(argc, argv, "c:s:tx")) != -1)
 		switch(ch) {
 		case 'c':
-			termwidth = strtonum(optarg, 1, INT_MAX, &errstr);
-			if (errstr != NULL)
-				errx(1, "%s: %s", errstr, optarg);
+			termwidth = atoi(optarg);
 			break;
 		case 's':
 			separator = optarg;
@@ -100,236 +105,206 @@ main(int argc, char *argv[])
 		case 'x':
 			xflag = 1;
 			break;
+		case '?':
 		default:
 			usage();
 		}
-	}
-
-	if (!tflag)
-		separator = "";
+	argc -= optind;
 	argv += optind;
 
-	if (*argv == NULL) {
+	if (!*argv)
 		input(stdin);
-	} else {
-		for (; *argv; ++argv) {
-			if ((fp = fopen(*argv, "r"))) {
-				input(fp);
-				(void)fclose(fp);
-			} else {
-				warn("%s", *argv);
-				eval = 1;
-			}
+	else for (; *argv; ++argv)
+		if (fp = fopen(*argv, "r")) {
+			input(fp);
+			(void)fclose(fp);
+		} else {
+			warn("%s", *argv);
+			eval = 1;
 		}
-	}
-
-	if (pledge("stdio", NULL) == -1)
-		err(1, "pledge");
 
 	if (!entries)
-		return eval;
+		exit(eval);
 
 	if (tflag)
 		maketbl();
-	else if (*maxwidths >= termwidth)
+	else if (maxlength >= termwidth)
 		print();
 	else if (xflag)
 		c_columnate();
 	else
 		r_columnate();
-	return eval;
+	exit(eval);
 }
 
-#define	INCR_NEXTTAB(x)	(x = (x + 8) & ~7)
+#define	TAB	8
 void
-c_columnate(void)
+c_columnate()
 {
-	int col, numcols;
-	struct field **row;
+	int chcnt, col, cnt, endcol, numcols;
+	char **lp;
 
-	INCR_NEXTTAB(*maxwidths);
-	if ((numcols = termwidth / *maxwidths) == 0)
-		numcols = 1;
-	for (col = 0, row = table;; ++row) {
-		fputs((*row)->content, stdout);
+	maxlength = (maxlength + TAB) & ~(TAB - 1);
+	numcols = termwidth / maxlength;
+	endcol = maxlength;
+	for (chcnt = col = 0, lp = list;; ++lp) {
+		chcnt += printf("%s", *lp);
 		if (!--entries)
 			break;
 		if (++col == numcols) {
-			col = 0;
+			chcnt = col = 0;
+			endcol = maxlength;
 			putchar('\n');
 		} else {
-			while (INCR_NEXTTAB((*row)->width) <= *maxwidths)
-				putchar('\t');
+			while ((cnt = (chcnt + TAB & ~(TAB - 1))) <= endcol) {
+				(void)putchar('\t');
+				chcnt = cnt;
+			}
+			endcol += maxlength;
 		}
 	}
-	putchar('\n');
+	if (chcnt)
+		putchar('\n');
 }
 
 void
-r_columnate(void)
+r_columnate()
 {
-	int base, col, numcols, numrows, row;
+	int base, chcnt, cnt, col, endcol, numcols, numrows, row;
 
-	INCR_NEXTTAB(*maxwidths);
-	if ((numcols = termwidth / *maxwidths) == 0)
-		numcols = 1;
+	maxlength = (maxlength + TAB) & ~(TAB - 1);
+	numcols = termwidth / maxlength;
 	numrows = entries / numcols;
 	if (entries % numcols)
 		++numrows;
 
-	for (base = row = 0; row < numrows; base = ++row) {
-		for (col = 0; col < numcols; ++col, base += numrows) {
-			fputs(table[base]->content, stdout);
-			if (base + numrows >= entries)
+	for (row = 0; row < numrows; ++row) {
+		endcol = maxlength;
+		for (base = row, chcnt = col = 0; col < numcols; ++col) {
+			chcnt += printf("%s", list[base]);
+			if ((base += numrows) >= entries)
 				break;
-			while (INCR_NEXTTAB(table[base]->width) <= *maxwidths)
-				putchar('\t');
+			while ((cnt = (chcnt + TAB & ~(TAB - 1))) <= endcol) {
+				(void)putchar('\t');
+				chcnt = cnt;
+			}
+			endcol += maxlength;
 		}
 		putchar('\n');
 	}
 }
 
 void
-print(void)
+print()
 {
-	int row;
+	int cnt;
+	char **lp;
 
-	for (row = 0; row < entries; row++)
-		puts(table[row]->content);
+	for (cnt = entries, lp = list; cnt--; ++lp)
+		(void)printf("%s\n", *lp);
 }
 
+typedef struct _tbl {
+	char **list;
+	int cols, *len;
+} TBL;
+#define	DEFCOLS	25
 
 void
-maketbl(void)
+maketbl()
 {
-	struct field **row;
-	int col;
+	TBL *t;
+	int coloff, cnt;
+	char *p, **lp;
+	int *lens, maxcols;
+	TBL *tbl;
+	char **cols;
 
-	for (row = table; entries--; ++row) {
-		for (col = 0; (*row)[col + 1].content != NULL; ++col)
-			printf("%s%*s  ", (*row)[col].content,
-			    maxwidths[col] - (*row)[col].width, "");
-		puts((*row)[col].content);
+	t = tbl = emalloc(entries * sizeof(TBL));
+	cols = emalloc((maxcols = DEFCOLS) * sizeof(char *));
+	lens = emalloc(maxcols * sizeof(int));
+	for (cnt = 0, lp = list; cnt < entries; ++cnt, ++lp, ++t) {
+		for (coloff = 0, p = *lp; cols[coloff] = strtok(p, separator);
+		    p = NULL)
+			if (++coloff == maxcols) {
+				if (!(cols = realloc(cols, (u_int)maxcols +
+				    DEFCOLS * sizeof(char *))) ||
+				    !(lens = realloc(lens,
+				    (u_int)maxcols + DEFCOLS * sizeof(int))))
+					err(1, NULL);
+				memset((char *)lens + maxcols * sizeof(int),
+				    0, DEFCOLS * sizeof(int));
+				maxcols += DEFCOLS;
+			}
+		t->list = emalloc(coloff * sizeof(char *));
+		t->len = emalloc(coloff * sizeof(int));
+		for (t->cols = coloff; --coloff >= 0;) {
+			t->list[coloff] = cols[coloff];
+			t->len[coloff] = strlen(cols[coloff]);
+			if (t->len[coloff] > lens[coloff])
+				lens[coloff] = t->len[coloff];
+		}
+	}
+	for (cnt = 0, t = tbl; cnt < entries; ++cnt, ++t) {
+		for (coloff = 0; coloff < t->cols  - 1; ++coloff)
+			(void)printf("%s%*s", t->list[coloff],
+			    lens[coloff] - t->len[coloff] + 2, " ");
+		(void)printf("%s\n", t->list[coloff]);
 	}
 }
 
 #define	DEFNUM		1000
-#define	DEFCOLS		25
+#define	MAXLINELEN	(LINE_MAX + 1)
 
 void
-input(FILE *fp)
+input(fp)
+	FILE *fp;
 {
-	static int maxentry = 0;
-	static int maxcols = 0;
-	static struct field *cols = NULL;
-	int col, width;
-	size_t blen;
-	ssize_t llen;
-	char *p, *s, *buf = NULL;
+	static int maxentry;
+	int len;
+	char *p, buf[MAXLINELEN];
 
-	while ((llen = getline(&buf, &blen, fp)) > -1) {
-		if (buf[llen - 1] == '\n')
-			buf[llen - 1] = '\0';
-
-		p = buf;
-		for (col = 0;; col++) {
-
-			/* Skip lines containing nothing but whitespace. */
-
-			for (s = p; s != '\0'; s++)
-				if (!isspace((unsigned char)*s))
-					break;
-			if (*s == '\0')
-				break;
-
-			/* Skip leading, multiple, and trailing separators. */
-
-			while (*p != '\0' && strchr(separator, *p) != NULL)
-				p++;
-			if (*p == '\0')
-				break;
-
-			/*
-			 * Found a non-empty field.
-			 * Remember the start and measure the width.
-			 */
-
-			s = p;
-			width = 0;
-			while (*p != '\0' && strchr(separator, *p) == NULL) {
-				if (*p++ == '\t')
-					INCR_NEXTTAB(width);
-				else
-					width++;
-			}
-
-			if (col + 1 >= maxcols) {
-				if (maxcols > INT_MAX - DEFCOLS)
-					err(1, "too many columns");
-				maxcols += DEFCOLS;
-				cols = ereallocarray(cols, maxcols,
-				    sizeof(*cols));
-				maxwidths = ereallocarray(maxwidths, maxcols,
-				    sizeof(*maxwidths));
-				memset(maxwidths + col, 0,
-				    DEFCOLS * sizeof(*maxwidths));
-			}
-
-			/*
-			 * Remember the width of the field,
-			 * NUL-terminate and remeber the content,
-			 * and advance beyond the separator, if any.
-			 */
-
-			cols[col].width = width;
-			if (maxwidths[col] < width)
-				maxwidths[col] = width;
-			if (*p != '\0')
-				*p++ = '\0';
-			if ((cols[col].content = strdup(s)) == NULL)
+	if (!list)
+		list = emalloc((maxentry = DEFNUM) * sizeof(char *));
+	while (fgets(buf, MAXLINELEN, fp)) {
+		for (p = buf; *p && isspace(*p); ++p);
+		if (!*p)
+			continue;
+		if (!(p = strchr(p, '\n'))) {
+			warnx("line too long");
+			eval = 1;
+			continue;
+		}
+		*p = '\0';
+		len = p - buf;
+		if (maxlength < len)
+			maxlength = len;
+		if (entries == maxentry) {
+			maxentry += DEFNUM;
+			if (!(list = realloc(list,
+			    (u_int)maxentry * sizeof(char *))))
 				err(1, NULL);
 		}
-		if (col == 0)
-			continue;
-
-		/* Found a non-empty line; remember it. */
-
-		if (entries == maxentry) {
-			if (maxentry > INT_MAX - DEFNUM)
-				errx(1, "too many input lines");
-			maxentry += DEFNUM;
-			table = ereallocarray(table, maxentry, sizeof(*table));
-		}
-		table[entries] = ereallocarray(NULL, col + 1,
-		    sizeof(*(table[entries])));
-		table[entries][col].content = NULL;
-		while (col--)
-			table[entries][col] = cols[col];
-		entries++;
+		list[entries++] = strdup(buf);
 	}
 }
 
 void *
-ereallocarray(void *ptr, size_t nmemb, size_t size)
+emalloc(size)
+	int size;
 {
-	if ((ptr = reallocarray(ptr, nmemb, size)) == NULL)
+	char *p;
+
+	if (!(p = malloc(size)))
 		err(1, NULL);
-	return ptr;
+	memset(p, 0, size);
+	return (p);
 }
 
-void *
-ecalloc(size_t nmemb, size_t size)
+void
+usage()
 {
-	void *ptr;
 
-	if ((ptr = calloc(nmemb, size)) == NULL)
-		err(1, NULL);
-	return ptr;
-}
-
-__dead void
-usage(void)
-{
 	(void)fprintf(stderr,
 	    "usage: column [-tx] [-c columns] [-s sep] [file ...]\n");
 	exit(1);

@@ -1,6 +1,7 @@
-/*	$OpenBSD: frm_data.c,v 1.8 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: frm_data.c,v 1.5 1999/05/17 03:04:16 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2004,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,29 +29,26 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: frm_data.c,v 1.8 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: frm_data.c,v 1.6 1999/05/16 17:20:29 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
 |   Function      :  bool data_behind(const FORM *form)
 |   
 |   Description   :  Check for off-screen data behind. This is nearly trivial
-|                    because the beginning of a field is fixed.
+|                    becose the begin of a field is fixed.
 |
 |   Return Values :  TRUE   - there are off-screen data behind
 |                    FALSE  - there are no off-screen data behind
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(bool)
-data_behind(const FORM *form)
+bool data_behind(const FORM *form)
 {
   bool result = FALSE;
-
-  T((T_CALLED("data_behind(%p)"), form));
 
   if (form && (form->status & _POSTED) && form->current)
     {
@@ -59,68 +57,41 @@ data_behind(const FORM *form)
       field = form->current;
       if (!Single_Line_Field(field))
 	{
-	  result = (form->toprow == 0) ? FALSE : TRUE;
+	  result = (form->toprow==0) ? FALSE : TRUE;
 	}
       else
 	{
-	  result = (form->begincol == 0) ? FALSE : TRUE;
+	  result = (form->begincol==0) ? FALSE : TRUE;
 	}
     }
-  returnBool(result);
+  return(result);
 }
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
-|   Function      :  static char * Only_Padding(
-|                                    WINDOW *w,
+|   Function      :  static char * After_Last_Non_Pad_Position(
+|                                    char *buffer,
 |                                    int len,
 |                                    int pad)
 |   
-|   Description   :  Test if 'length' cells starting at the current position
+|   Description   :  Find the last position in the buffer that doesn't
 |                    contain a padding character.
 |
-|   Return Values :  true if only padding cells are found
+|   Return Values :  The pointer to this position 
 +--------------------------------------------------------------------------*/
-NCURSES_INLINE static bool
-Only_Padding(WINDOW *w, int len, int pad)
+INLINE 
+static char * After_Last_Non_Pad_Position(char *buffer, int len, int pad)
 {
-  bool result = TRUE;
-  int y, x, j;
-  FIELD_CELL cell;
+  char *end = buffer + len;
 
-  getyx(w, y, x);
-  for (j = 0; j < len; ++j)
-    {
-      if (wmove(w, y, x + j) != ERR)
-	{
-#if USE_WIDEC_SUPPORT
-	  if (win_wch(w, &cell) != ERR)
-	    {
-	      if ((chtype)CharOf(cell) != ChCharOf(pad)
-		  || cell.chars[1] != 0)
-		{
-		  result = FALSE;
-		  break;
-		}
-	    }
-#else
-	  cell = winch(w);
-	  if (ChCharOf(cell) != ChCharOf(pad))
-	    {
-	      result = FALSE;
-	      break;
-	    }
-#endif
-	}
-      else
-	{
-	  /* if an error, return true: no non-padding text found */
-	  break;
-	}
-    }
-  /* no need to reset the cursor position; caller does this */
-  return result;
+  assert(buffer && len>=0);
+  while ( (buffer < end) && (*(end-1)==pad) )
+    end--;
+
+  return end;
 }
+
+#define SMALL_BUFFER_SIZE (80)
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -132,22 +103,31 @@ Only_Padding(WINDOW *w, int len, int pad)
 |   Return Values :  TRUE   - there are off-screen data ahead
 |                    FALSE  - there are no off-screen data ahead
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(bool)
-data_ahead(const FORM *form)
+bool data_ahead(const FORM *form)
 {
   bool result = FALSE;
 
-  T((T_CALLED("data_ahead(%p)"), form));
-
   if (form && (form->status & _POSTED) && form->current)
     {
+      static char buffer[SMALL_BUFFER_SIZE + 1];
       FIELD *field;
+      bool large_buffer;
       bool cursor_moved = FALSE;
+      char *bp;
+      char *found_content;
       int pos;
 
       field = form->current;
       assert(form->w);
 
+      large_buffer = (field->cols > SMALL_BUFFER_SIZE);
+      if (large_buffer)
+	bp = (char *)malloc((size_t)(field->cols) + 1);
+      else
+	bp = buffer;
+
+      assert(bp);
+      
       if (Single_Line_Field(field))
 	{
 	  int check_len;
@@ -156,12 +136,15 @@ data_ahead(const FORM *form)
 	  while (pos < field->dcols)
 	    {
 	      check_len = field->dcols - pos;
-	      if (check_len >= field->cols)
+	      if ( check_len >= field->cols )
 		check_len = field->cols;
 	      cursor_moved = TRUE;
-	      wmove(form->w, 0, pos);
-	      if (Only_Padding(form->w, check_len, field->pad))
-		pos += field->cols;
+	      wmove(form->w,0,pos);
+	      winnstr(form->w,bp,check_len);
+	      found_content = 
+		After_Last_Non_Pad_Position(bp,check_len,field->pad);
+	      if (found_content==bp)
+		  pos += field->cols;		  
 	      else
 		{
 		  result = TRUE;
@@ -175,9 +158,12 @@ data_ahead(const FORM *form)
 	  while (pos < field->drows)
 	    {
 	      cursor_moved = TRUE;
-	      wmove(form->w, pos, 0);
+	      wmove(form->w,pos,0);
 	      pos++;
-	      if (!Only_Padding(form->w, field->cols, field->pad))
+	      winnstr(form->w,bp,field->cols);
+	      found_content = 
+		After_Last_Non_Pad_Position(bp,field->cols,field->pad);
+	      if (found_content!=bp)
 		{
 		  result = TRUE;
 		  break;
@@ -185,10 +171,13 @@ data_ahead(const FORM *form)
 	    }
 	}
 
+      if (large_buffer)
+	free(bp);
+
       if (cursor_moved)
-	wmove(form->w, form->currow, form->curcol);
+	wmove(form->w,form->currow,form->curcol);
     }
-  returnBool(result);
+  return(result);
 }
 
 /* frm_data.c ends here */

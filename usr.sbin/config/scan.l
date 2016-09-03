@@ -1,5 +1,5 @@
 %{
-/*	$OpenBSD: scan.l,v 1.23 2015/11/19 19:48:27 tedu Exp $	*/
+/*	$OpenBSD: scan.l,v 1.12 1998/06/27 01:45:47 deraadt Exp $	*/
 /*	$NetBSD: scan.l,v 1.13 1997/02/02 21:12:37 thorpej Exp $	*/
 
 /*
@@ -23,7 +23,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,6 +46,7 @@
  *	from: @(#)scan.l	8.1 (Berkeley) 6/6/93
  */
 
+#include <sys/param.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,13 +70,13 @@ struct incl {
 	int	in_ateof;	/* token to insert at EOF */
 };
 static struct incl *incl;
-static int endinclude(void);
+static int endinclude __P((void));
+
+#define	yywrap() 1
 
 %}
 
-%option noyywrap
-
-PATH	[A-Za-z_0-9]*[./][-A-Za-z_0-9./\$\{\}]*
+PATH	[A-Za-z_0-9]*[./][-A-Za-z_0-9./]*
 WORD	[A-Za-z_][-A-Za-z_0-9]*
 
 %%
@@ -88,7 +93,6 @@ define		return DEFINE;
 defopt		return DEFOPT;
 device		return DEVICE;
 disable		return DISABLE;
-enable		return ENABLE;
 dumps		return DUMPS;
 file		return XFILE;
 flags		return FLAGS;
@@ -111,8 +115,6 @@ root		return ROOT;
 source		return SOURCE;
 swap		return SWAP;
 with		return WITH;
-rmoption	return RMOPTIONS;
-rmoptions	return RMOPTIONS;
 
 {PATH}		{
 		yylval.str = intern(yytext);
@@ -129,11 +131,11 @@ rmoptions	return RMOPTIONS;
 	}
 \"([^"\n]|\\\")+ {
 		tok = input();  /* eat closing quote */
-		yylval.str = intern(yytext + 1);
 		if (tok != '"') {
-			error("closing quote missing");
+			error("closing quote missing\n");
 			unput(tok);
 		}
+		yylval.str = intern(yytext + 1);
 		return WORD;
 	}
 0[0-7]*	{

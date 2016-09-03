@@ -10,6 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by SigmaSoft, Th.  Lockert.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
  * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -23,57 +28,73 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/param.h>	/* MACHINE MACHINE_ARCH */
+#ifndef lint
+static char rcsid[] = "$OpenBSD: arch.c,v 1.5 1999/08/21 18:02:29 espie Exp $";
+#endif /* not lint */
 
+#include <sys/param.h>
+
+#include <err.h>
+#include <locale.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
-static void __dead usage(void);
+static void usage __P((void));
 
 static int machine;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
+	char *arch;
+	char *opts;
+	int c;
+	int short_form = 0;
 	extern char *__progname;
-	int short_form = 0, c;
-	char *arch, *opts;
+
+	setlocale(LC_ALL, "");
 
 	machine = strcmp(__progname, "machine") == 0;
 	if (machine) {
 		arch = MACHINE;
 		opts = "a";
-		short_form = 1;
+		short_form++;
 	} else {
 		arch = MACHINE_ARCH;
 		opts = "ks";
 	}
-	while ((c = getopt(argc, argv, opts)) != -1) {
+	while ((c = getopt(argc, argv, opts)) != -1)
 		switch (c) {
-		case 'a':
-			arch = MACHINE_ARCH;
-			break;
-		case 'k':
-			arch = MACHINE;
-			break;
-		case 's':
-			short_form = 1;
-			break;
-		default:
-			usage();
+			case 'a':
+				arch = MACHINE_ARCH;
+				break;
+			case 'k':
+				arch = MACHINE;
+				break;
+			case 's':
+				short_form++;
+				break;
+			default:
+				usage();
+				/* NOTREACHED */
 		}
-	}
-	if (optind != argc)
+	if (optind != argc) {
 		usage();
-
-	printf("%s%s\n", short_form ? "" : "OpenBSD.", arch);
-	return (0);
+		/* NOTREACHED */
+	}
+	if (!short_form) {
+		fputs("OpenBSD", stdout);
+		fputc('.', stdout);
+	}
+	fputs(arch, stdout);
+	fputc('\n', stdout);
+	exit(0);
 }
 
-static void __dead
-usage(void)
+static void
+usage()
 {
 	if (machine)
 		fprintf(stderr, "usage: machine [-a]\n");

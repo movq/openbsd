@@ -1,5 +1,4 @@
-.\"	$OpenBSD: repquota.8,v 1.12 2016/03/17 18:50:48 mmcc Exp $
-.\"
+.\"	$OpenBSD: repquota.8,v 1.3 1999/05/23 14:11:37 aaron Exp $
 .\" Copyright (c) 1983, 1990, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -14,7 +13,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -31,21 +34,25 @@
 .\" SUCH DAMAGE.
 .\"
 .\"     from: @(#)repquota.8	8.1 (Berkeley) 6/6/93
-.\"	$Id: repquota.8,v 1.12 2016/03/17 18:50:48 mmcc Exp $
+.\"	$Id: repquota.8,v 1.3 1999/05/23 14:11:37 aaron Exp $
 .\"
-.Dd $Mdocdate: March 17 2016 $
+.Dd June 6, 1993
 .Dt REPQUOTA 8
 .Os
 .Sh NAME
 .Nm repquota
 .Nd summarize quotas for a file system
 .Sh SYNOPSIS
-.Nm
-.Op Fl guv
+.Nm repquota
+.Op Fl g
+.Op Fl u
+.Op Fl v
+.Ar filesystem Op Ar ...
+.Nm repquota
+.Op Fl g
+.Op Fl u
+.Op Fl v
 .Fl a
-.Nm
-.Op Fl guv
-.Ar filesystem ...
 .Sh DESCRIPTION
 .Nm
 prints a summary of the disk usage and quotas for the
@@ -67,11 +74,11 @@ Print a header line before printing each filesystem's quota.
 .El
 .Pp
 For each user or group, the current
-number of files and amount of space (in kilobytes) is
+number files and amount of space (in kilobytes) is
 printed, along with any quotas created with
 .Xr edquota 8 .
 .Pp
-Only members of the operator group or the superuser may
+Only members of the operator group or the super-user may
 use this command.
 .Sh FILES
 .Bl -tag -width quota.group -compact
@@ -89,6 +96,8 @@ for file system names and locations
 .Xr edquota 8 ,
 .Xr quotacheck 8 ,
 .Xr quotaon 8
+.Sh DIAGNOSTICS
+Various messages about inaccessible files; self-explanatory.
 .Sh HISTORY
 The
 .Nm

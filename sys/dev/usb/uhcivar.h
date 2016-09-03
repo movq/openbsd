@@ -1,13 +1,12 @@
-/*	$OpenBSD: uhcivar.h,v 1.33 2014/05/18 17:10:27 mpi Exp $ */
-/*	$NetBSD: uhcivar.h,v 1.36 2002/12/31 00:39:11 augustss Exp $	*/
-/*	$FreeBSD: src/sys/dev/usb/uhcivar.h,v 1.14 1999/11/17 22:33:42 n_hibma Exp $	*/
+/*	$OpenBSD: uhcivar.h,v 1.4 1999/09/27 18:03:55 fgsch Exp $	*/
+/*	$NetBSD: uhcivar.h,v 1.14 1999/09/15 10:25:31 augustss Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
+ * by Lennart Augustsson (augustss@carlstedt.se) at
  * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -18,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -35,21 +41,20 @@
 /*
  * To avoid having 1024 TDs for each isochronous transfer we introduce
  * a virtual frame list.  Every UHCI_VFRAMELIST_COUNT entries in the real
- * frame list points to a non-active TD.  These, in turn, form the
- * starts of the virtual frame list.  This also has the advantage that it
- * simplifies linking in/out of TDs/QHs in the schedule.
+ * frame list points to a non-active TD.  These, in turn, which form the 
+ * starts of the virtual frame list.  This also has the advantage that it 
+ * simplifies linking in/out TD/QH in the schedule.
  * Furthermore, initially each of the inactive TDs point to an inactive
  * QH that forms the start of the interrupt traffic for that slot.
  * Each of these QHs point to the same QH that is the start of control
- * traffic.  This QH points at another QH which is the start of the
- * bulk traffic.
+ * traffic.
  *
  * UHCI_VFRAMELIST_COUNT should be a power of 2 and <= UHCI_FRAMELIST_COUNT.
  */
 #define UHCI_VFRAMELIST_COUNT 128
 
-struct uhci_soft_qh;
-struct uhci_soft_td;
+typedef struct uhci_soft_qh uhci_soft_qh_t;
+typedef struct uhci_soft_td uhci_soft_td_t;
 
 typedef union {
 	struct uhci_soft_qh *sqh;
@@ -63,28 +68,31 @@ typedef union {
  * the interrupt all structs are linked together so they can be
  * searched at interrupt time.
  */
-struct uhci_xfer {
-	struct usbd_xfer xfer;
-	LIST_ENTRY(uhci_xfer) inext;
-	struct uhci_soft_td *stdstart;
-	struct uhci_soft_td *stdend;
-	int curframe;
+typedef struct uhci_intr_info {
+	struct uhci_softc *sc;
+	usbd_request_handle reqh;
+	uhci_soft_td_t *stdstart;
+	uhci_soft_td_t *stdend;
+	LIST_ENTRY(uhci_intr_info) list;
+#if defined(__FreeBSD__)
+	struct callout_handle timeout_handle;
+#endif /* defined(__FreeBSD__) */
 #ifdef DIAGNOSTIC
 	int isdone;
 #endif
-};
+} uhci_intr_info_t;
 
 /*
  * Extra information that we need for a TD.
  */
 struct uhci_soft_td {
-	struct uhci_td td;		/* The real TD, must be first */
+	uhci_td_t td;			/* The real TD, must be first */
 	uhci_soft_td_qh_t link; 	/* soft version of the td_link field */
 	uhci_physaddr_t physaddr;	/* TD's physical address. */
 };
-/*
+/* 
  * Make the size such that it is a multiple of UHCI_TD_ALIGN.  This way
- * we can pack a number of soft TD together and have the real TD well
+ * we can pack a number of soft TD together and have the real TS well
  * aligned.
  * NOTE: Minimum size is 32 bytes.
  */
@@ -95,71 +103,86 @@ struct uhci_soft_td {
  * Extra information that we need for a QH.
  */
 struct uhci_soft_qh {
-	struct uhci_qh qh;		/* The real QH, must be first */
-	struct uhci_soft_qh *hlink;	/* soft version of qh_hlink */
-	struct uhci_soft_td *elink;	/* soft version of qh_elink */
+	uhci_qh_t qh;			/* The real QH, must be first */
+	uhci_soft_qh_t *hlink;		/* soft version of qh_hlink */
+	uhci_soft_td_t *elink;		/* soft version of qh_elink */
 	uhci_physaddr_t physaddr;	/* QH's physical address. */
 	int pos;			/* Timeslot position */
+	uhci_intr_info_t *intr_info;	/* Who to call on completion. */
+/* XXX should try to shrink with 4 bytes to fit into 32 bytes */
 };
 /* See comment about UHCI_STD_SIZE. */
 #define UHCI_SQH_SIZE ((sizeof (struct uhci_soft_qh) + UHCI_QH_ALIGN - 1) / UHCI_QH_ALIGN * UHCI_QH_ALIGN)
 #define UHCI_SQH_CHUNK 128 /*(PAGE_SIZE / UHCI_QH_SIZE)*/
 
 /*
- * Information about an entry in the virtual frame list.
+ * Information about an entry in the virtial frame list.
  */
 struct uhci_vframe {
-	struct uhci_soft_td *htd;	/* pointer to dummy TD */
-	struct uhci_soft_td *etd;	/* pointer to last TD */
-	struct uhci_soft_qh *hqh;	/* pointer to dummy QH */
-	struct uhci_soft_qh *eqh;	/* pointer to last QH */
+	uhci_soft_td_t *htd;		/* pointer to dummy TD */
+	uhci_soft_td_t *etd;		/* pointer to last TD */
+	uhci_soft_qh_t *hqh;		/* pointer to dummy QH */
+	uhci_soft_qh_t *eqh;		/* pointer to last QH */
 	u_int bandwidth;		/* max bandwidth used by this frame */
 };
 
-struct uhci_softc {
+typedef struct uhci_softc {
 	struct usbd_bus sc_bus;		/* base device */
 	bus_space_tag_t iot;
 	bus_space_handle_t ioh;
-	bus_size_t sc_size;
+#if defined(__NetBSD__) || defined(__OpenBSD__)
+	void *sc_ih;			/* interrupt vectoring */
+
+	/* XXX should keep track of all DMA memory */
+#endif /* defined(__FreeBSD__) */
 
 	uhci_physaddr_t *sc_pframes;
-	struct usb_dma sc_dma;
+	usb_dma_t sc_dma;
 	struct uhci_vframe sc_vframes[UHCI_VFRAMELIST_COUNT];
 
-	struct uhci_soft_qh *sc_lctl_start; /* dummy QH for low speed control */
-	struct uhci_soft_qh *sc_lctl_end; /* last control QH */
-	struct uhci_soft_qh *sc_hctl_start;/* dummy QH for high speed control */
-	struct uhci_soft_qh *sc_hctl_end; /* last control QH */
-	struct uhci_soft_qh *sc_bulk_start; /* dummy QH for bulk */
-	struct uhci_soft_qh *sc_bulk_end; /* last bulk transfer */
-	struct uhci_soft_qh *sc_last_qh; /* dummy QH at the end */
-	u_int32_t sc_loops;		/* number of QHs that wants looping */
+	uhci_soft_qh_t *sc_ctl_start;	/* dummy QH for control */
+	uhci_soft_qh_t *sc_ctl_end;	/* last control QH */
+	uhci_soft_qh_t *sc_bulk_start;	/* dummy QH for bulk */
+	uhci_soft_qh_t *sc_bulk_end;	/* last bulk transfer */
 
-	struct uhci_soft_td *sc_freetds; /* TD free list */
-	struct uhci_soft_qh *sc_freeqhs; /* QH free list */
+	uhci_soft_td_t *sc_freetds;
+	uhci_soft_qh_t *sc_freeqhs;
 
+	u_int8_t sc_addr;		/* device address */
 	u_int8_t sc_conf;		/* device configuration */
 
-	u_int8_t sc_saved_sof;
-	u_int16_t sc_saved_frnum;
-
-	char sc_softwake;
-
 	char sc_isreset;
+
 	char sc_suspend;
+	usbd_request_handle sc_has_timo;
 
-	LIST_HEAD(, uhci_xfer) sc_intrhead;
+	LIST_HEAD(, uhci_intr_info) sc_intrhead;
 
-	/* Info for the root hub interrupt "pipe". */
-	struct usbd_xfer	*sc_intrxfer;
-	struct timeout		 sc_root_intr;
+	/* Info for the root hub interrupt channel. */
+	int sc_ival;
 
-	char sc_vendor[32];		/* vendor string for root hub */
-	int sc_id_vendor;		/* vendor ID for root hub */
-};
+	char sc_vflock;
+#define UHCI_HAS_LOCK 1
+#define UHCI_WANT_LOCK 2
 
-usbd_status	uhci_init(struct uhci_softc *);
-usbd_status	uhci_run(struct uhci_softc *, int run);
-int		uhci_intr(void *);
-int		uhci_detach(struct device *, int);
-int		uhci_activate(struct device *, int);
+	char sc_vendor[16];
+	int sc_id_vendor;
+
+	void *sc_powerhook;
+	device_ptr_t sc_child;
+} uhci_softc_t;
+
+usbd_status	uhci_init __P((uhci_softc_t *));
+int		uhci_intr __P((void *));
+int		uhci_detach __P((device_ptr_t, int));
+int		uhci_activate __P((device_ptr_t, enum devact));
+
+#ifdef USB_DEBUG
+#define DPRINTF(x)	if (uhcidebug) printf x
+#define DPRINTFN(n,x)	if (uhcidebug>(n)) printf x
+extern int uhcidebug;
+#else
+#define DPRINTF(x)
+#define DPRINTFN(n,x)
+#endif
+

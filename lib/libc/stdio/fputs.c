@@ -1,4 +1,3 @@
-/*	$OpenBSD: fputs.c,v 1.11 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,29 +34,28 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: fputs.c,v 1.3 1999/08/07 17:35:58 millert Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <stdio.h>
 #include <string.h>
-#include "local.h"
 #include "fvwrite.h"
 
 /*
  * Write the given string to the given file.
  */
 int
-fputs(const char *s, FILE *fp)
+fputs(s, fp)
+	const char *s;
+	FILE *fp;
 {
 	struct __suio uio;
 	struct __siov iov;
-	int ret;
 
 	iov.iov_base = (void *)s;
 	iov.iov_len = uio.uio_resid = strlen(s);
 	uio.uio_iov = &iov;
 	uio.uio_iovcnt = 1;
-	FLOCKFILE(fp);
-	_SET_ORIENTATION(fp, -1);
-	ret = __sfvwrite(fp, &uio);
-	FUNLOCKFILE(fp);
-	return (ret);
+	return (__sfvwrite(fp, &uio));
 }
-DEF_STRONG(fputs);

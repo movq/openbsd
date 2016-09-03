@@ -1,19 +1,19 @@
-/*	$OpenBSD: bootsect.h,v 1.6 2015/10/23 10:45:31 krw Exp $	*/
+/*	$OpenBSD: bootsect.h,v 1.3 1998/01/11 20:39:02 provos Exp $	*/
 /*	$NetBSD: bootsect.h,v 1.8 1997/10/17 11:23:29 ws Exp $	*/
 
 /*
  * Written by Paul Popelka (paulp@uts.amdahl.com)
- *
+ * 
  * You can do anything you want with this software, just don't say you wrote
  * it, and don't remove this notice.
- *
+ * 
  * This software is provided "as is".
- *
+ * 
  * The author supplies this software to be publicly redistributed on the
  * understanding that the author is not responsible for the correct
  * functioning of this software in any circumstances and is not liable for
  * any damages caused by this software.
- *
+ * 
  * October 1992
  */
 
@@ -71,6 +71,22 @@ struct bootsector710 {
 #define	BOOTSIG2	0
 #define	BOOTSIG3	0
 };
+#ifdef	atari
+/*
+ * The boot sector on a gemdos fs is a little bit different from the msdos fs
+ * format. Currently there is no need to declare a seperate structure, the
+ * bootsector33 struct will do.
+ */
+#if 0
+struct bootsec_atari {
+	u_int8_t	bsBranch[2];		/* branch inst if auto-boot	*/
+	int8_t		bsFiller[6];		/* anything or nothing		*/
+	int8_t		bsSerial[3];		/* serial no. for mediachange	*/
+	int8_t		bsBPB[19];		/* BIOS parameter block		*/
+	int8_t		bsBootCode[482];	/* pad so struct is 512b	*/
+};
+#endif
+#endif /* atari */
 
 union bootsector {
 	struct bootsector33 bs33;

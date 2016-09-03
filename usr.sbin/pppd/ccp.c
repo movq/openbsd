@@ -1,39 +1,39 @@
-/*	$OpenBSD: ccp.c,v 1.13 2009/10/27 23:59:53 deraadt Exp $	*/
+/*	$OpenBSD: ccp.c,v 1.8 1998/05/08 04:52:19 millert Exp $	*/
 
 /*
  * ccp.c - PPP Compression Control Protocol.
  *
- * Copyright (c) 1989-2002 Paul Mackerras. All rights reserved.
+ * Copyright (c) 1994 The Australian National University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation is hereby granted, provided that the above copyright
+ * notice appears in all copies.  This software is provided without any
+ * warranty, express or implied. The Australian National University
+ * makes no representations about the suitability of this software for
+ * any purpose.
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ * IN NO EVENT SHALL THE AUSTRALIAN NATIONAL UNIVERSITY BE LIABLE TO ANY
+ * PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES
+ * ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF
+ * THE AUSTRALIAN NATIONAL UNIVERSITY HAVE BEEN ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
  *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name(s) of the authors of this software must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission.
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Paul Mackerras
- *     <paulus@samba.org>".
- *
- * THE AUTHORS OF THIS SOFTWARE DISCLAIM ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
- * SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THE AUSTRALIAN NATIONAL UNIVERSITY SPECIFICALLY DISCLAIMS ANY WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
+ * ON AN "AS IS" BASIS, AND THE AUSTRALIAN NATIONAL UNIVERSITY HAS NO
+ * OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS,
+ * OR MODIFICATIONS.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: ccp.c,v 1.22 1998/03/25 01:25:02 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: ccp.c,v 1.8 1998/05/08 04:52:19 millert Exp $";
+#endif
+#endif
 
 #include <string.h>
 #include <syslog.h>
@@ -48,16 +48,17 @@
 /*
  * Protocol entry points from main code.
  */
-static void ccp_init(int unit);
-static void ccp_open(int unit);
-static void ccp_close(int unit, char *);
-static void ccp_lowerup(int unit);
-static void ccp_lowerdown(int);
-static void ccp_input(int unit, u_char *pkt, int len);
-static void ccp_protrej(int unit);
-static int  ccp_printpkt(u_char *pkt, int len,
-    void (*printer)(void *, char *, ...), void *arg);
-static void ccp_datainput(int unit, u_char *pkt, int len);
+static void ccp_init __P((int unit));
+static void ccp_open __P((int unit));
+static void ccp_close __P((int unit, char *));
+static void ccp_lowerup __P((int unit));
+static void ccp_lowerdown __P((int));
+static void ccp_input __P((int unit, u_char *pkt, int len));
+static void ccp_protrej __P((int unit));
+static int  ccp_printpkt __P((u_char *pkt, int len,
+			      void (*printer) __P((void *, char *, ...)),
+			      void *arg));
+static void ccp_datainput __P((int unit, u_char *pkt, int len));
 
 struct protent ccp_protent = {
     PPP_CCP,
@@ -86,18 +87,18 @@ ccp_options ccp_hisoptions[NUM_PPP];	/* what we agreed to do */
 /*
  * Callbacks for fsm code.
  */
-static void ccp_resetci(fsm *);
-static int  ccp_cilen(fsm *);
-static void ccp_addci(fsm *, u_char *, int *);
-static int  ccp_ackci(fsm *, u_char *, int);
-static int  ccp_nakci(fsm *, u_char *, int);
-static int  ccp_rejci(fsm *, u_char *, int);
-static int  ccp_reqci(fsm *, u_char *, int *, int);
-static void ccp_up(fsm *);
-static void ccp_down(fsm *);
-static int  ccp_extcode(fsm *, int, int, u_char *, int);
-static void ccp_rack_timeout(void *);
-static char *method_name(ccp_options *, ccp_options *);
+static void ccp_resetci __P((fsm *));
+static int  ccp_cilen __P((fsm *));
+static void ccp_addci __P((fsm *, u_char *, int *));
+static int  ccp_ackci __P((fsm *, u_char *, int));
+static int  ccp_nakci __P((fsm *, u_char *, int));
+static int  ccp_rejci __P((fsm *, u_char *, int));
+static int  ccp_reqci __P((fsm *, u_char *, int *, int));
+static void ccp_up __P((fsm *));
+static void ccp_down __P((fsm *));
+static int  ccp_extcode __P((fsm *, int, int, u_char *, int));
+static void ccp_rack_timeout __P((void *));
+static char *method_name __P((ccp_options *, ccp_options *));
 
 static fsm_callbacks ccp_callbacks = {
     ccp_resetci,
@@ -877,28 +878,27 @@ method_name(opt, opt2)
     case CI_DEFLATE:
     case CI_DEFLATE_DRAFT:
 	if (opt2 != NULL && opt2->deflate_size != opt->deflate_size)
-	    snprintf(result, sizeof result, "Deflate%s (%d/%d)",
+	    sprintf(result, "Deflate%s (%d/%d)",
 		    (opt->method == CI_DEFLATE_DRAFT? "(old#)": ""),
 		    opt->deflate_size, opt2->deflate_size);
 	else
-	    snprintf(result, sizeof result, "Deflate%s (%d)",
+	    sprintf(result, "Deflate%s (%d)",
 		    (opt->method == CI_DEFLATE_DRAFT? "(old#)": ""),
 		    opt->deflate_size);
 	break;
     case CI_BSD_COMPRESS:
 	if (opt2 != NULL && opt2->bsd_bits != opt->bsd_bits)
-	    snprintf(result, sizeof result,
-		    "BSD-Compress (%d/%d)", opt->bsd_bits,
+	    sprintf(result, "BSD-Compress (%d/%d)", opt->bsd_bits,
 		    opt2->bsd_bits);
 	else
-	    snprintf(result, sizeof result, "BSD-Compress (%d)", opt->bsd_bits);
+	    sprintf(result, "BSD-Compress (%d)", opt->bsd_bits);
 	break;
     case CI_PREDICTOR_1:
 	return "Predictor 1";
     case CI_PREDICTOR_2:
 	return "Predictor 2";
     default:
-	snprintf(result, sizeof result, "Method %d", opt->method);
+	sprintf(result, "Method %d", opt->method);
     }
     return result;
 }
@@ -921,7 +921,7 @@ ccp_up(f)
 		syslog(LOG_NOTICE, "%s compression enabled",
 		       method_name(go, ho));
 	    } else {
-		strncpy(method1, method_name(go, NULL), sizeof method1);
+		strcpy(method1, method_name(go, NULL));
 		syslog(LOG_NOTICE, "%s / %s compression enabled",
 		       method1, method_name(ho, NULL));
 	    }
@@ -960,7 +960,7 @@ static int
 ccp_printpkt(p, plen, printer, arg)
     u_char *p;
     int plen;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     u_char *p0, *optend;

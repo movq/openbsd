@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_ep_isa.c,v 1.31 2015/11/25 11:20:38 mpi Exp $	*/
+/*	$OpenBSD: if_ep_isa.c,v 1.18 1999/04/23 08:21:05 deraadt Exp $	*/
 /*	$NetBSD: if_ep_isa.c,v 1.5 1996/05/12 23:52:36 mycroft Exp $	*/
 
 /*
@@ -45,27 +45,32 @@
 #include <sys/ioctl.h>
 #include <sys/errno.h>
 #include <sys/syslog.h>
-#include <sys/selinfo.h>
-#include <sys/timeout.h>
+#include <sys/select.h>
 #include <sys/device.h>
 #include <sys/queue.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/netisr.h>
 #include <net/if_media.h>
 
+#ifdef INET
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
+#include <netinet/in_var.h>
+#include <netinet/ip.h>
 #include <netinet/if_ether.h>
+#endif
 
 #if NBPFILTER > 0
 #include <net/bpf.h>
+#include <net/bpfdesc.h>
 #endif
 
 #include <machine/cpu.h>
 #include <machine/bus.h>
 #include <machine/intr.h>
-
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 
 #include <dev/ic/elink3var.h>
 #include <dev/ic/elink3reg.h>
@@ -73,14 +78,14 @@
 #include <dev/isa/isavar.h>
 #include <dev/isa/elink.h>
 
-int ep_isa_probe(struct device *, void *, void *);
-void ep_isa_attach(struct device *, struct device *, void *);
+int ep_isa_probe __P((struct device *, void *, void *));
+void ep_isa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach ep_isa_ca = {
 	sizeof(struct ep_softc), ep_isa_probe, ep_isa_attach
 };
 
-static	void epaddcard(int, int, int, u_short);
+static	void epaddcard __P((int, int, int, u_short));
 
 /*
  * This keeps track of which ISAs have been through an ep probe sequence.
@@ -109,8 +114,11 @@ static struct epcard {
 static int nepcards;
 
 static void
-epaddcard(int bus, int iobase, int irq, u_short model)
+epaddcard(bus, iobase, irq, model)
+	int bus, iobase, irq;
+	u_short model;
 {
+
 	if (nepcards >= MAXEPCARDS)
 		return;
 	epcards[nepcards].bus = bus;
@@ -124,12 +132,14 @@ epaddcard(int bus, int iobase, int irq, u_short model)
 /*
  * 3c509 cards on the ISA bus are probed in ethernet address order.
  * The probe sequence requires careful orchestration, and we'd like
- * to allow the irq and base address to be wildcarded. So, we
+ * like to allow the irq and base address to be wildcarded. So, we
  * probe all the cards the first time epprobe() is called. On subsequent
  * calls we look for matching cards.
  */
 int
-ep_isa_probe(struct device *parent, void *match, void *aux)
+ep_isa_probe(parent, match, aux)
+	struct device *parent;
+	void *match, *aux;
 {
 	struct isa_attach_args *ia = aux;
 	bus_space_tag_t iot = ia->ia_iot;
@@ -147,7 +157,8 @@ ep_isa_probe(struct device *parent, void *match, void *aux)
 	/*
 	 * Probe this bus if we haven't done so already.
 	 */
-	LIST_FOREACH(er, &ep_isa_all_probes, er_link)
+	for (er = ep_isa_all_probes.lh_first; er != NULL;
+	    er = er->er_link.le_next)
 		if (er->er_bus == parent->dv_unit)
 			goto bus_probed;
 
@@ -246,7 +257,9 @@ good:
 }
 
 void
-ep_isa_attach(struct device *parent, struct device *self, void *aux)
+ep_isa_attach(parent, self, aux)
+	struct device *parent, *self;
+	void *aux;
 {
 	struct ep_softc *sc = (void *)self;
 	struct isa_attach_args *ia = aux;

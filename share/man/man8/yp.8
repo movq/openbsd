@@ -1,4 +1,4 @@
-.\"	$OpenBSD: yp.8,v 1.32 2015/11/26 20:00:40 jmc Exp $
+.\"	$OpenBSD: yp.8,v 1.11 1999/09/23 04:12:07 alex Exp $
 .\"	$NetBSD: yp.8,v 1.9 1995/08/11 01:16:52 thorpej Exp $
 .\"
 .\" Copyright (c) 1992, 1993, 1996 Theo de Raadt <deraadt@theos.com>
@@ -12,6 +12,9 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. The name of the author may not be used to endorse or promote
+.\"    products derived from this software without specific prior written
+.\"    permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
 .\" OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -25,7 +28,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 26 2015 $
+.Dd April 5, 1993
 .Dt YP 8
 .Os
 .Sh NAME
@@ -33,25 +36,26 @@
 .Nd description of the YP subsystem
 .Sh SYNOPSIS
 .Nm ypinit
-.Fl m Op Ar domainname
+.Op Fl m
+.Ar domain
 .Nm ypinit
-.Fl s Ar master_server Op Ar domainname
-.Nm ypinit
-.Fl u Op Ar domainname
+.Op Fl s
+.Ar server
+.Ar domain
 .Pp
 .Nm ypbind
-.Op Fl insecure
 .Op Fl ypset
+.Nm ypbind
 .Op Fl ypsetme
 .Pp
 .Nm ypset
-.Op Fl d Ar domain
 .Op Fl h Ar host
+.Op Fl d Ar domain
 .Ar server
 .Pp
 .Nm yppoll
-.Op Fl d Ar domain
 .Op Fl h Ar host
+.Op Fl d Ar domain
 .Ar mapname
 .Pp
 .Nm ypcat
@@ -69,38 +73,35 @@
 .Fl x
 .Pp
 .Nm ypwhich
-.Op Fl t
 .Op Fl d Ar domain
 .Oo
-.Op Fl h
+.Op Fl t
+.Fl m Op Ar mname
+|
 .Ar host
 .Oc
-.Nm ypwhich
-.Op Fl t
-.Op Fl d Ar domain
-.Op Fl h Ar host
-.Fl m Op Ar mname
 .Nm ypwhich
 .Fl x
 .Pp
 .Nm ypserv
-.Op Fl 1dx
 .Op Fl a Ar aclfile
+.Op Fl d
+.Op Fl x
 .Pp
 .Nm ypxfr
-.Op Fl cf
-.Op Fl C Ar tid prog ipadd port
+.Op Fl bcf
 .Op Fl d Ar domain
 .Op Fl h Ar host
 .Op Fl s Ar domain
+.Op Fl C Ar tid prog ipadd port
 .Ar mapname
 .Pp
 .Nm yppush
-.Op Fl v
 .Op Fl d Ar domainname
 .Op Fl h Ar hostname
 .\" .Op Fl p Ar paralleljobs
 .\" .Op Fl t Ar timeout
+.Op Fl v
 .Ar mapname
 .Sh DESCRIPTION
 The
@@ -122,31 +123,28 @@ and
 to access distributed and shareable versions
 of their maps through
 .Nm YP .
-The YP subsystem requires that
-.Xr portmap 8
-be running, since the entire subsystem uses the RPC subsystem.
 .Pp
 .Nm ypinit
 is used to initialize
 .Nm YP
-as a master or a slave.
-This creates various files in
+as a server or master.  This creates
+various files in
 .Pa /var/yp .
-After running
-.Nm ypinit Fl m ,
-optionally edit
-.Pa /var/yp/DOMAINNAME/Makefile
-to change settings, for example to switch from the default
-backwards compatible mode to secure mode.
-Finally, always run
-.Xr make 1
-in
-.Pa /var/yp .
-See
-.Xr Makefile.yp 8
-for details.
+By default the
+.Nm YP
+server will be setup in backwards compatible mode.  To enable
+.Dq secure
+mode, the file
+.Pa /var/yp/Makefile.yp
+must be edited.  This
+.Dq secure
+mode is compatible with
+.Ox
+and
+.Fx
+clients.
 .Pp
-If set up as a slave, the required databases are automatically copied
+If setup as a client, the required databases are automatically copied
 from the specified server.
 .Pp
 The
@@ -172,7 +170,7 @@ This directory is automatically created by
 .Xr ypinit 8
 (which initializes the machine as a
 .Nm YP
-server).
+server.)
 .Pp
 If
 .Nm ypbind
@@ -191,12 +189,9 @@ YP maps Makefile
 .Xr ypmatch 1 ,
 .Xr ypwhich 1 ,
 .Xr ypclnt 3 ,
-.Xr defaultdomain 5 ,
 .Xr group 5 ,
 .Xr passwd 5 ,
-.Xr resolv.conf 5 ,
-.Xr Makefile.yp 8 ,
-.Xr portmap 8 ,
+.Xr rpc.yppasswdd 8 ,
 .Xr ypbind 8 ,
 .Xr ypinit 8 ,
 .Xr yppoll 8 ,
@@ -207,8 +202,8 @@ YP maps Makefile
 .Sh HISTORY
 This free
 .Nm YP
-subsystem is thought to be compatible with Sun's implementation.
-It is, of course, not compatible with
+subsystem is thought to be compatible with Sun's implementation.  It is,
+of course, not compatible with
 .Nm NIS+
 or any other
 .Dq secure
@@ -220,11 +215,8 @@ The name
 stands for Yellow Pee.
 .Pp
 The ypbind, most library components, and userland programs were implemented
-by
-.An Theo de Raadt Aq Mt deraadt@theos.com .
+by Theo de Raadt <deraadt@theos.com>.
 The current
 .Xr getpwent 3
-implementation was done by
-.An Jason Downs Aq Mt downsj@downsj.com .
-The server component was implemented by
-.An Mats O Jansson Aq Mt moj@stacken.kth.se .
+implementation was done by Jason Downs <downsj@downsj.com>.
+The server component was implemented by Mats O Jansson <moj@stacken.kth.se>.

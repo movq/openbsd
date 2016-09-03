@@ -1,6 +1,5 @@
 Makefile
 example
 minigzip
-foo.gz
 Debug
 Release

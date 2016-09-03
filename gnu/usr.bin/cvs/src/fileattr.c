@@ -100,7 +100,7 @@ fileattr_read ()
     attrlist = getlist ();
     while (1) {
 	int nread;
-	nread = get_line (&line, &line_len, fp);
+	nread = getline (&line, &line_len, fp);
 	if (nread < 0)
 	    break;
 	/* Remove trailing newline.  */
@@ -126,7 +126,7 @@ fileattr_read ()
 		   any line other than the first for that filename.  This
 		   is the way that CVS has behaved since file attributes
 		   were first introduced.  */
-		freenode (newnode);
+		free (newnode);
 	}
 	else if (line[0] == 'D')
 	{
@@ -513,7 +513,6 @@ fileattr_write ()
     FILE *fp;
     char *fname;
     mode_t omask;
-    struct unrecog *p;
 
     if (!attrs_modified)
 	return;
@@ -617,10 +616,17 @@ fileattr_write ()
     }
 
     /* Then any other attributes.  */
-    for (p = unrecog_head; p != NULL; p = p->next)
+    while (unrecog_head != NULL)
     {
+	struct unrecog *p;
+
+	p = unrecog_head;
 	fputs (p->line, fp);
 	fputs ("\012", fp);
+
+	unrecog_head = p->next;
+	free (p->line);
+	free (p);
     }
 
     if (fclose (fp) < 0)
@@ -643,11 +649,4 @@ fileattr_free ()
     if (fileattr_default_attrs != NULL)
 	free (fileattr_default_attrs);
     fileattr_default_attrs = NULL;
-    while (unrecog_head)
-    {
-	struct unrecog *p = unrecog_head;
-	unrecog_head = p->next;
-	free (p->line);
-	free (p);
-    }
 }

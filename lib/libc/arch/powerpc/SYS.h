@@ -1,4 +1,3 @@
-/*	$OpenBSD: SYS.h,v 1.22 2016/05/15 00:15:10 guenther Exp $	*/
 /*-
  * Copyright (c) 1994
  *	Andrew Cagney.  All rights reserved.
@@ -35,6 +34,7 @@
  * SUCH DAMAGE.
  *
  *	from: @(#)SYS.h	8.1 (Berkeley) 6/4/93
+ *      $Id: SYS.h,v 1.6 1999/06/15 02:12:13 rahnds Exp $ 
  */
 
 #include <sys/syscall.h>
@@ -44,79 +44,46 @@
 
 #include "machine/asm.h"
 
-
-/* offsetof(struct tib, tib_errno) - offsetof(struct tib, __tib_tcb) */
-#define	TCB_OFFSET_ERRNO	(-8)
-/* from <powerpc/tcb.h>: TCB address == %r2 - TCB_OFFSET */
-#define	TCB_OFFSET		0x7000
-
-/* offset of errno from %r2 */
-#define	R2_OFFSET_ERRNO		(-TCB_OFFSET + TCB_OFFSET_ERRNO)
-
-/*
- * We define a hidden alias with the prefix "_libc_" for each global symbol
- * that may be used internally.  By referencing _libc_x instead of x, other
- * parts of libc prevent overriding by the application and avoid unnecessary
- * relocations.
- */
-#define _HIDDEN(x)		_libc_##x
-#define _HIDDEN_ALIAS(x,y)			\
-	STRONG_ALIAS(_HIDDEN(x),y);		\
-	.hidden _HIDDEN(x)
-#define _HIDDEN_FALIAS(x,y)			\
-	_HIDDEN_ALIAS(x,y);			\
-	.type _HIDDEN(x),@function
-
-/*
- * For functions implemented in ASM that aren't syscalls.
- *   END_STRONG(x)	Like DEF_STRONG() in C; for standard/reserved C names
- *   END_WEAK(x)	Like DEF_WEAK() in C; for non-ISO C names
- */
-#define	END_STRONG(x)	END(x); _HIDDEN_FALIAS(x,x); END(_HIDDEN(x))
-#define	END_WEAK(x)	END_STRONG(x); .weak x
-
-
+#ifdef __STDC__
 #define _CONCAT(x,y)	x##y
-#define PSEUDO_PREFIX(p,x,y)	\
+#define PSEUDO_PREFIX(p,x,y)	.extern cerror ; \
 			ENTRY(p##x) \
 				li 0, SYS_##y ; \
 				/* sc */
+#else /* !__STDC__ */
+#define _CONCAT(x,y)	x/**/y
+#define PSEUDO_PREFIX(p,x,y)	.extern cerror ; \
+			ENTRY(p/**/x) \
+				li 0, SYS_/**/y ; \
+				/* sc */
+#endif /* !__STDC__ */
 #define PSEUDO_SUFFIX		cmpwi 0, 0 ; \
 				beqlr+ ; \
-				stw	0, R2_OFFSET_ERRNO(2); \
-				li	3, -1; \
-				li	4, -1; /* for __syscall(lseek) */ \
-				blr
-
-#define PSEUDO_NOERROR_SUFFIX	blr
-
-#define __END_HIDDEN(p,x)	END(p##x);			\
-				_HIDDEN_FALIAS(x,p##x);		\
-				END(_HIDDEN(x))
-#define __END(p,x)		__END_HIDDEN(p,x); END(x)
+				b PIC_PLT(_ASM_LABEL(cerror))
 
 
-#define ALIAS(x,y)		WEAK_ALIAS(y,_CONCAT(x,y));
-		
-#define PREFIX_HIDDEN(x)	PSEUDO_PREFIX(_thread_sys_,x,x)
-#define PREFIX(x)		ALIAS(_thread_sys_,x) \
-				PREFIX_HIDDEN(x)
-#define	PSEUDO_NOERROR(x,y)	ALIAS(_thread_sys_,x) \
-				PSEUDO_PREFIX(_thread_sys_,x,y) ; \
+#define SUFFIX			PSEUDO_SUFFIX
+
+#ifndef _THREAD_SAFE
+#define PREFIX(x)		PSEUDO_PREFIX(,x,x)
+#define PREFIX2(x,y)		PSEUDO_PREFIX(,x,y)
+#define	PSEUDO(x,y)		PSEUDO_PREFIX(,x,y) ; \
 				sc ; \
-				PSEUDO_NOERROR_SUFFIX; \
-				__END(_thread_sys_,x)
-
-#define	PSEUDO_HIDDEN(x,y)	PSEUDO_PREFIX(_thread_sys_,x,y) ; \
-				sc ; \
-				PSEUDO_SUFFIX; \
-				__END_HIDDEN(_thread_sys_,x)
-#define	PSEUDO(x,y)		ALIAS(_thread_sys_,x) \
-				PSEUDO_HIDDEN(x,y); \
-				__END(_thread_sys_,x)
+				PSEUDO_SUFFIX
 
 #define RSYSCALL(x)		PSEUDO(x,x)
-#define RSYSCALL_HIDDEN(x)	PSEUDO_HIDDEN(x,x)
-#define SYSCALL_END_HIDDEN(x)	__END_HIDDEN(_thread_sys_,x)
-#define SYSCALL_END(x)		__END(_thread_sys_,x)
+#else /* _THREAD_SAFE */
+#define ALIAS(x,y)		.weak y; .set y,_CONCAT(x,y);
+		
+#define PREFIX(x)		ALIAS(_thread_sys_,x) \
+				PSEUDO_PREFIX(_thread_sys_,x,x)
+#define PREFIX2(x,y)		ALIAS(_thread_sys_,x) \
+				PSEUDO_PREFIX(_thread_sys_,x,y)
+#define	PSEUDO(x,y)		ALIAS(_thread_sys_,x) \
+				PSEUDO_PREFIX(_thread_sys_,x,y) ; \
+				sc ; \
+				PSEUDO_SUFFIX
 
+#define RSYSCALL(x)		PSEUDO(x,x)
+
+#endif /* _THREAD_SAFE */

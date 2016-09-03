@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmd.c,v 1.63 2014/07/20 19:33:54 tobias Exp $	*/
+/*	$OpenBSD: cmd.c,v 1.44 1999/04/20 02:20:12 mickey Exp $	*/
 
 /*
  * Copyright (c) 1997-1999 Michael Shalayeff
@@ -12,9 +12,14 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Michael Shalayeff.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR 
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -24,36 +29,30 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
  */
 
 #include <sys/param.h>
-#include <sys/reboot.h>
-
 #include <libsa.h>
-#include <lib/libkern/funcs.h>
-
+#include <sys/reboot.h>
 #include "cmd.h"
 
 #define CTRL(c)	((c)&0x1f)
 
-static int Xboot(void);
-static int Xecho(void);
-static int Xhelp(void);
-static int Xls(void);
-static int Xnop(void);
-static int Xreboot(void);
-static int Xstty(void);
-static int Xtime(void);
+static int Xboot __P((void));
+static int Xecho __P((void));
+static int Xhelp __P((void));
+static int Xls __P((void));
+static int Xnop __P((void));
+static int Xreboot __P((void));
+static int Xstty __P((void));
+static int Xtime __P((void));
 #ifdef MACHINE_CMD
-static int Xmachine(void);
+static int Xmachine __P((void));
 extern const struct cmd_table MACHINE_CMD[];
 #endif
-extern int Xset(void);
-extern int Xenv(void);
-
-#ifdef CHECK_SKIP_CONF
-extern int CHECK_SKIP_CONF(void);
-#endif
+extern int Xset __P((void));
+extern int Xenv __P((void));
 
 extern const struct cmd_table cmd_set[];
 const struct cmd_table cmd_table[] = {
@@ -73,40 +72,34 @@ const struct cmd_table cmd_table[] = {
 	{NULL, 0},
 };
 
-static void ls(char *, struct stat *);
-static int readline(char *, size_t, int);
-char *nextword(char *);
-static char *whatcmd(const struct cmd_table **ct, char *);
-static char *qualify(char *);
+static void ls __P((char *, register struct stat *));
+static int readline __P((register char *, int));
+char *nextword __P((register char *));
+static char *whatcmd
+	__P((register const struct cmd_table **ct, register char *));
+static int docmd __P((void));
+static char *qualify __P((char *));
 
-char cmd_buf[CMD_BUFF_SIZE];
+char cmd_buf[133];
 
 int
-getcmd(void)
+getcmd()
 {
 	cmd.cmd = NULL;
 
-	if (!readline(cmd_buf, sizeof(cmd_buf), cmd.timeout))
+	if (!readline(cmd_buf, cmd.timeout))
 		cmd.cmd = cmd_table;
 
 	return docmd();
 }
 
 int
-read_conf(void)
+read_conf()
 {
 #ifndef INSECURE
 	struct stat sb;
 #endif
-	int fd, rc = 0;
-
-#ifdef CHECK_SKIP_CONF
-	if (CHECK_SKIP_CONF()) {
-		printf("boot.conf processing skipped at operator request\n");
-		cmd.timeout = 0;
-		return -1;		/* Pretend file wasn't found */
-	}
-#endif
+	int fd, eof = 0;
 
 	if ((fd = open(qualify(cmd.conf), 0)) < 0) {
 		if (errno != ENOENT && errno != ENXIO) {
@@ -126,53 +119,36 @@ read_conf(void)
 #endif
 
 	do {
-		char *p = cmd_buf;
+		register char *p = cmd_buf;
 
 		cmd.cmd = NULL;
-		do {
-			rc = read(fd, p, 1);
-		} while (rc > 0 && *p++ != '\n' &&
-		    (p-cmd_buf) < sizeof(cmd_buf));
 
-		if (rc < 0) {			/* Error from read() */
+		do
+			eof = read(fd, p, 1);
+		while (eof > 0 && *p++ != '\n');
+
+		if (eof < 0)
 			printf("%s: %s\n", cmd.path, strerror(errno));
-			break;
-		}
+		else
+			*--p = '\0';
 
-		if (rc == 0) {			/* eof from read() */
-			if (p != cmd_buf) {	/* Line w/o trailing \n */
-				*p = '\0';
-				rc = docmd();
-				break;
-			}
-		} else {			/* rc > 0, read a char */
-			p--;			/* Get back to last character */
-
-			if (*p != '\n') {	/* Line was too long */
-				printf("%s: line too long\n", cmd.path);
-
-				/* Don't want to run the truncated command */
-				rc = -1;
-			}
-			*p = '\0';
-		}
-	} while (rc > 0 && !(rc = docmd()));
+	} while (eof > 0 && !(eof = docmd()));
 
 	close(fd);
-	return rc;
+	return eof;
 }
 
-int
-docmd(void)
+static int
+docmd()
 {
-	char *p = NULL;
+	register char *p = NULL;
 	const struct cmd_table *ct = cmd_table, *cs;
 
 	cmd.argc = 1;
 	if (cmd.cmd == NULL) {
 
 		/* command */
-		for (p = cmd_buf; *p == ' ' || *p == '\t'; p++)
+		for (p = cmd_buf; *p && (*p == ' ' || *p == '\t'); p++)
 			;
 		if (*p == '#' || *p == '\0') { /* comment or empty string */
 #ifdef DEBUG
@@ -217,10 +193,12 @@ docmd(void)
 }
 
 static char *
-whatcmd(const struct cmd_table **ct, char *p)
+whatcmd(ct, p)
+	register const struct cmd_table **ct;
+	register char *p;
 {
-	char *q;
-	int l;
+	register char *q;
+	register int l;
 
 	q = nextword(p);
 
@@ -237,12 +215,14 @@ whatcmd(const struct cmd_table **ct, char *p)
 }
 
 static int
-readline(char *buf, size_t n, int to)
+readline(buf, to)
+	register char *buf;
+	int	to;
 {
 #ifdef DEBUG
 	extern int debug;
 #endif
-	char *p = buf, ch;
+	register char *p = buf, *pe = buf, ch;
 
 	/* Only do timeout if greater than 0 */
 	if (to > 0) {
@@ -259,60 +239,51 @@ readline(char *buf, size_t n, int to)
 				break;
 
 		if (!cnischar()) {
-			strlcpy(buf, "boot", 5);
+			strncpy(buf, "boot", 5);
 			putchar('\n');
 			return strlen(buf);
 		}
 	} else
-		while (!cnischar())
-			;
-
-	/* User has typed something.  Turn off timeouts. */
-	cmd.timeout = 0;
+		while (!cnischar()) ;
 
 	while (1) {
 		switch ((ch = getchar())) {
 		case CTRL('u'):
-			while (p > buf) {
+			while (pe-- > buf)
 				putchar('\177');
-				p--;
-			}
+			p = pe = buf;
 			continue;
 		case '\n':
 		case '\r':
-			*p = '\0';
+			pe[1] = *pe = '\0';
 			break;
 		case '\b':
 		case '\177':
 			if (p > buf) {
 				putchar('\177');
 				p--;
+				pe--;
 			}
 			continue;
 		default:
-			if (ch >= ' ' && ch < '\177') {
-				if (p - buf < n-1)
-					*p++ = ch;
-				else {
-					putchar('\007');
-					putchar('\177');
-				}
-			}
+			pe++;
+			*p++ = ch;
 			continue;
 		}
 		break;
 	}
 
-	return p - buf;
+	return pe - buf;
 }
 
 /*
  * Search for spaces/tabs after the current word. If found, \0 the
  * first one.  Then pass a pointer to the first character of the
- * next word, or NULL if there is no next word.
+ * next word, or NULL if there is no next word. 
  */
 char *
-nextword(char *p)
+nextword(p)
+	register char *p;
 {
 	/* skip blanks */
 	while (*p && *p != '\t' && *p != ' ')
@@ -328,7 +299,8 @@ nextword(char *p)
 }
 
 static void
-print_help(const struct cmd_table *ct)
+print_help(ct)
+	register const struct cmd_table *ct;
 {
 	for (; ct->cmd_name != NULL; ct++)
 		printf(" %s", ct->cmd_name);
@@ -336,7 +308,7 @@ print_help(const struct cmd_table *ct)
 }
 
 static int
-Xhelp(void)
+Xhelp()
 {
 	printf("commands:");
 	print_help(cmd_table);
@@ -349,7 +321,7 @@ Xhelp(void)
 
 #ifdef MACHINE_CMD
 static int
-Xmachine(void)
+Xmachine()
 {
 	printf("machine:");
 	print_help(MACHINE_CMD);
@@ -358,61 +330,62 @@ Xmachine(void)
 #endif
 
 static int
-Xecho(void)
+Xecho()
 {
-	int i;
-
+	register int i;
 	for (i = 1; i < cmd.argc; i++)
-		printf("%s ", cmd.argv[i]);
+		printf(cmd.argv[i]), putchar(' ');
 	putchar('\n');
 	return 0;
 }
 
 static int
-Xstty(void)
+Xstty()
 {
-	int sp;
-	char *cp;
+	register int sp;
+	register char *cp;
 	dev_t dev;
 
-	if (cmd.argc == 1) {
+	if (cmd.argc == 1)
 		printf("%s speed is %d\n", ttyname(0), cnspeed(0, -1));
-		return 0;
-	}
-	dev = ttydev(cmd.argv[1]);
-	if (dev == NODEV) {
-		printf("%s not a console device\n", cmd.argv[1]);
-		return 0;
+	else {
+		dev = ttydev(cmd.argv[1]);
+		if (dev == NODEV)
+			printf("%s not a console device\n", cmd.argv[1]);
+		else {
+			if (cmd.argc == 2)
+				printf("%s speed is %d\n", cmd.argv[1],
+				       cnspeed(dev, -1));
+			else {
+				sp = 0;
+				for (cp = cmd.argv[2]; *cp && isdigit(*cp); cp++)
+					sp = sp * 10 + (*cp - '0');
+				cnspeed(dev, sp);
+			}
+		}
 	}
 
-	if (cmd.argc == 2)
-		printf("%s speed is %d\n", cmd.argv[1],
-		    cnspeed(dev, -1));
-	else {
-		sp = 0;
-		for (cp = cmd.argv[2]; isdigit(*cp); cp++)
-			sp = sp * 10 + (*cp - '0');
-		cnspeed(dev, sp);
-	}
 	return 0;
 }
 
 static int
-Xtime(void)
+Xtime()
 {
 	time_t tt = getsecs();
 
 	if (cmd.argc == 1)
 		printf(ctime(&tt));
+	else {
+	}
 
 	return 0;
 }
 
 static int
-Xls(void)
+Xls()
 {
 	struct stat sb;
-	char *p;
+	register char *p;
 	int fd;
 
 	if (stat(qualify((cmd.argv[1]? cmd.argv[1]: "/.")), &sb) < 0) {
@@ -424,21 +397,20 @@ Xls(void)
 		ls(cmd.path, &sb);
 	else {
 		if ((fd = opendir(cmd.path)) < 0) {
-			printf("opendir(%s): %s\n", cmd.path,
-			    strerror(errno));
+			printf ("opendir(%s): %s\n", cmd.path,
+				strerror(errno));
 			return 0;
 		}
 
 		/* no strlen in lib !!! */
-		for (p = cmd.path; *p; p++)
-			;
+		for (p = cmd.path; *p; p++);
 		*p++ = '/';
 		*p = '\0';
 
-		while (readdir(fd, p) >= 0) {
+		while(readdir(fd, p) >= 0) {
 			if (stat(cmd.path, &sb) < 0)
 				printf("stat(%s): %s\n", cmd.path,
-				    strerror(errno));
+				       strerror(errno));
 			else
 				ls(p, &sb);
 		}
@@ -453,7 +425,9 @@ Xls(void)
 	putchar ((mode) & S_IXOTH? *(s): (s)[1]);
 
 static void
-ls(char *name, struct stat *sb)
+ls(name, sb)
+	register char *name;
+	register struct stat *sb;
 {
 	putchar("-fc-d-b---l-s-w-"[(sb->st_mode & S_IFMT) >> 12]);
 	lsrwx(sb->st_mode >> 6, (sb->st_mode & S_ISUID? "sS" : "x-"));
@@ -461,14 +435,14 @@ ls(char *name, struct stat *sb)
 	lsrwx(sb->st_mode     , (sb->st_mode & S_ISTXT? "tT" : "x-"));
 
 	printf (" %u,%u\t%lu\t%s\n", sb->st_uid, sb->st_gid,
-	    (u_long)sb->st_size, name);
+		(u_long)sb->st_size, name);
 }
 #undef lsrwx
 
 int doboot = 1;
 
 static int
-Xnop(void)
+Xnop()
 {
 	if (doboot) {
 		doboot = 0;
@@ -479,7 +453,7 @@ Xnop(void)
 }
 
 static int
-Xboot(void)
+Xboot()
 {
 	if (cmd.argc > 1 && cmd.argv[1][0] != '-') {
 		qualify((cmd.argv[1]? cmd.argv[1]: cmd.image));
@@ -488,35 +462,34 @@ Xboot(void)
 	} else {
 		if (bootparse(1))
 			return 0;
-		snprintf(cmd.path, sizeof cmd.path, "%s:%s",
-		    cmd.bootdev, cmd.image);
+		sprintf(cmd.path, "%s:%s", cmd.bootdev, cmd.image);
 	}
 
 	return 1;
 }
 
 /*
- * Qualifies the path adding necessary dev
+ * Qualifies the path adding neccessary dev
  */
 
 static char *
-qualify(char *name)
+qualify(name)
+	char *name;
 {
-	char *p;
+	register char *p;
 
 	for (p = name; *p; p++)
 		if (*p == ':')
 			break;
 	if (*p == ':')
-		strlcpy(cmd.path, name, sizeof(cmd.path));
+		strncpy(cmd.path, name, sizeof(cmd.path));
 	else
-		snprintf(cmd.path, sizeof cmd.path, "%s:%s",
-		    cmd.bootdev, name);
+		sprintf(cmd.path, "%s:%s", cmd.bootdev, name);
 	return cmd.path;
 }
 
 static int
-Xreboot(void)
+Xreboot()
 {
 	printf("Rebooting...\n");
 	exit();

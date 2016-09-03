@@ -1,4 +1,4 @@
-/*	$OpenBSD: asm.h,v 1.18 2013/03/28 17:41:04 martynas Exp $	*/
+/*	$OpenBSD: asm.h,v 1.9 1999/09/18 20:41:16 mickey Exp $	*/
 
 /* 
  * Copyright (c) 1990,1991,1994 The University of Utah and
@@ -19,7 +19,7 @@
  * CSL requests users of this software to return to csl-dist@cs.utah.edu any
  * improvements that they make and grant CSL redistribution rights.
  *
- *	Utah $Hdr: asm.h 1.8 94/12/14$
+ * 	Utah $Hdr: asm.h 1.8 94/12/14$
  */
 
 #ifndef _MACHINE_ASM_H_
@@ -159,6 +159,7 @@ isr	.reg	%cr20
 ior	.reg	%cr21
 ipsw	.reg	%cr22
 eirr	.reg	%cr23
+hptmask	.reg	%cr24
 tr0	.reg	%cr24
 vtop	.reg	%cr25
 tr1	.reg	%cr25
@@ -168,6 +169,16 @@ tr4	.reg	%cr28
 tr5	.reg	%cr29
 tr6	.reg	%cr30
 tr7	.reg	%cr31
+
+/*
+ * CPU-secific additional control registers
+ */
+#define	dtlb_reg	8
+#define	dtlb_size_even	26
+#define	dtlb_size_odd	27
+#define	itlb_reg	9
+#define	itlb_size_even	24
+#define	itlb_size_odd	25
 
 /*
  * Calling Convention
@@ -225,47 +236,58 @@ tf4	.reg	%fr8
 #define	__CONCAT(a,b)	a/**/b
 #endif
 
+/*
+ * Standard space and subspace definitions.
+ */
+	.SPACE	$TEXT$,0
+/*	.subspa $FIRST$,	QUAD=0,ALIGN=8,ACCESS=0x2c,SORT=4 */
+	.subspa $MILLICODE$,	QUAD=0,ALIGN=8,ACCESS=0x2c,SORT=8
+	.subspa $LIT$,		QUAD=0,ALIGN=8,ACCESS=0x2c,SORT=16
+	.subspa $CODE$,		QUAD=0,ALIGN=8,ACCESS=0x2c,SORT=24,CODE_ONLY
+/*	.subspa	$UNWIND$MILLICODE$,QUAD=0,ALIGN=8,ACCESS=0x2c,SORT=64
+	.subspa	$UNWIND$,	QUAD=0,ALIGN=8,ACCESS=0x2c,SORT=72
+	.subspa	$RECOVER$,	QUAD=0,ALIGN=4,ACCESS=0x2c,SORT=80
+*/
+
+/*
+ * additional code subspaces should have ALIGN=8 for an interspace BV
+ */
+	.SPACE $PRIVATE$,1
+/*	.subspa $GLOBAL$,	QUAD=1,ALIGN=8,ACCESS=0x1f,SORT=8 */
+/*	.subspa $SHORTDATA$,	QUAD=1,ALIGN=8,ACCESS=0x1f,SORT=16 */
+	.subspa $DATA$,		QUAD=1,ALIGN=8,ACCESS=0x1f,SORT=24
+	.import $global$
+/*	.subspa	$PFA_COUNTER$,	QUAD=1,ALIGN=4,ACCESS=0x1f,SORT=72 */
+	.subspa $BSS$,		QUAD=1,ALIGN=8,ACCESS=0x1f,SORT=80,ZERO
+
+
 #ifdef PROF
 #define	_PROF_PROLOGUE !\
-1:						!\
-	stw	rp, HPPA_FRAME_CRP(sr0,sp)	!\
-	stw	arg0, HPPA_FRAME_ARG(0)(sr0,sp)	!\
-	stw	arg1, HPPA_FRAME_ARG(1)(sr0,sp)	!\
-	stw	arg2, HPPA_FRAME_ARG(2)(sr0,sp)	!\
-	stw	arg3, HPPA_FRAME_ARG(3)(sr0,sp)	!\
-	ldo	HPPA_FRAME_SIZE(sp), sp		!\
-	copy	rp, arg0			!\
-	bl	2f, arg1			!\
-	depi	0, 31, 2, arg1			!\
-2:						!\
-	bl	_mcount, rp			!\
-	 ldo	1b - 2b(arg1), arg1		!\
-	ldo	-HPPA_FRAME_SIZE(sp), sp	!\
-	ldw	HPPA_FRAME_ARG(3)(sr0,sp), arg3	!\
-	ldw	HPPA_FRAME_ARG(2)(sr0,sp), arg2	!\
-	ldw	HPPA_FRAME_ARG(1)(sr0,sp), arg1	!\
-	ldw	HPPA_FRAME_ARG(0)(sr0,sp), arg0	!\
-	ldw	HPPA_FRAME_CRP(sr0,sp) ,rp
+	stw rp, HPPA_FRAME_CRP(sr0,sp)	!\
+	ldil L%_mcount,r1		!\
+	ble R%_mcount(sr0,r1)		!\
+	ldo HPPA_FRAME_SIZE(sp),sp	!\
+	ldw HPPA_FRAME_CRP(sr0,sp),rp
 #else
 #define	_PROF_PROLOGUE
 #endif
 
-#define	LEAF_ENTRY(x) ! .text ! .align	4	!\
-	.export	x, entry ! .label x ! .proc	!\
-	.callinfo frame=0,no_calls,save_rp	!\
-	.entry ! _PROF_PROLOGUE
+#define	ENTRY(x)		!\
+	.space	.text		!\
+	.subspa	$code$		!\
+	.export	x,entry		!\
+	.label	x               !\
+	.proc			!\
+	.callinfo calls		!\
+	.entry			!\
+	_PROF_PROLOGUE
 
-#define	ENTRY(x,n) ! .text ! .align 4			!\
-	.export	x, entry ! .label x ! .proc		!\
-	.callinfo frame=n,calls, save_rp, save_sp	!\
-	.entry ! _PROF_PROLOGUE
+#define ALTENTRY(x)		!\
+	.export x,entry         !\
+	.label  x
 
-#define ALTENTRY(x) ! .export x, entry ! .label  x
-#define EXIT(x) ! .exit ! .procend ! .size   x, .-x
-
-#define	BSS(n,s)	! .data ! .label n ! .comm s
-
-#define STRONG_ALIAS(alias,sym) ! .global alias ! .set alias, sym
-#define WEAK_ALIAS(alias,sym) ! .weak alias ! .set alias, sym
+#define EXIT(x)			!\
+	.exit                   !\
+	.procend
 
 #endif /* _MACHINE_ASM_H_ */

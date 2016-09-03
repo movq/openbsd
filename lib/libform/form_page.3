@@ -1,8 +1,8 @@
 '\" t
-.\" $OpenBSD: form_page.3,v 1.9 2015/11/14 01:35:38 jmc Exp $
+.\" $OpenBSD: form_page.3,v 1.7 1999/01/22 03:30:54 millert Exp $
 .\"
 .\"***************************************************************************
-.\" Copyright (c) 1998,2006 Free Software Foundation, Inc.                   *
+.\" Copyright (c) 1998 Free Software Foundation, Inc.                        *
 .\"                                                                          *
 .\" Permission is hereby granted, free of charge, to any person obtaining a  *
 .\" copy of this software and associated documentation files (the            *
@@ -29,12 +29,10 @@
 .\" authorization.                                                           *
 .\"***************************************************************************
 .\"
-.\" $Id: form_page.3,v 1.9 2015/11/14 01:35:38 jmc Exp $
+.\" $From: form_page.3x,v 1.8 1998/11/29 01:08:02 Rick.Ohnemus Exp $
 .TH form_page 3 ""
 .SH NAME
-\fBset_current_field\fR, \fBcurrent_field\fR,
-\fBset_form_page\fR, \fBform_page\fR,
-\fBfield_index\fR - set and get form page number
+\fBform_page\fR - set and get form page number
 .SH SYNOPSIS
 \fB#include <form.h>\fR
 .br
@@ -63,24 +61,23 @@ the argument is the null pointer or the field is not connected.
 .SH RETURN VALUE
 Except for \fBform_page\fR, each routine returns one of the following:
 .TP 5
-.B E_OK
+\fBE_OK\fR
 The routine succeeded.
 .TP 5
-.B E_BAD_ARGUMENT
+\fBE_SYSTEM_ERROR\fR
+System error occurred (see \fBerrno\fR).
+.TP 5
+\fBE_BAD_ARGUMENT\fR
 Routine detected an incorrect or out-of-range argument.
 .TP 5
-.B E_BAD_STATE
+\fBE_BAD_STATE\fR
 Routine was called from an initialization or termination function.
 .TP 5
-.B E_INVALID_FIELD
+\fBE_INVALID_FIELD\fR
 Contents of a field are not valid.
 .TP 5
-.B E_REQUEST_DENIED
+\fBE_REQUEST_DENIED\fR
 The form driver could not process the request.
-.TP 5
-.B E_SYSTEM_ERROR
-System error occurred (see \fBerrno\fR).
-.
 .SH SEE ALSO
 \fBcurses\fR(3), \fBform\fR(3).
 .SH NOTES

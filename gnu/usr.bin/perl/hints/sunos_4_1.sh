@@ -1,6 +1,6 @@
 # hints/sunos_4_1.sh
 # Last modified:  Wed May 27 11:00:02 EDT 1998
-# Andy Dougherty  <doughera@lafayette.edu>
+# Andy Dougherty  <doughera@lafcol.lafayette.edu>
 
 case "$cc" in
 *gcc*)	usevfork=false 
@@ -9,12 +9,14 @@ case "$cc" in
 *)	usevfork=true ;;
 esac
 
+# Configure will issue a WHOA warning.  The problem is that
 # Configure finds getzname, not tzname.  If you're in the System V
 # environment, you can set d_tzname='define' since tzname[] is
 # available in the System V environment.
 d_tzname='undef'
 
-# unistd.h contains incorrect prototypes for some functions in the usual
+# Configure will issue a WHOA warning.  The problem is that unistd.h
+# contains incorrect prototypes for some functions in the usual
 # BSD-ish environment.  In particular, it has
 # extern int	getgroups(/* int gidsetsize, gid_t grouplist[] */);
 # but groupslist[] ought to be of type int, not gid_t.
@@ -23,20 +25,15 @@ d_tzname='undef'
 # The gcc fix-includes script exposes those incorrect prototypes.
 # There may be other examples as well.  Volunteers are welcome to
 # track them all down :-).  In the meantime, we'll just skip unistd.h
-# for SunOS in most of the code.   
-# However, see ext/POSIX/hints/sunos_4.pl for one exception.
+# for SunOS in most of the code.   (However, see ext/POSIX/hints/sunos_4.pl.)
 i_unistd='undef'
-# See util.c for another:  We need _SC_OPEN_MAX, which is in
-# <unistd.h>.
 
-# fflush(NULL) will core dump on SunOS 4.1.3.  In util.c we'll
-# try explicitly fflushing all open files.  Unfortunately,
-# on my SunOS 4.1.3 system, sysconf(_SC_OPEN_MAX) returns
-# 64, but only 32 of those file pointers can be accessed 
-# directly by _iob[i].  The remainder are off in dynamically
-# allocated memory somewhere and I don't know to automatically
-# fflush() them.  -- Andy Dougherty  Wed May 26 15:25:22 EDT 1999
-util_cflags='ccflags="$ccflags -DPERL_FFLUSH_ALL_FOPEN_MAX=32"'
+cat << 'EOM' >&4
+
+You will probably see  *** WHOA THERE!!! ***  messages from Configure for
+d_tzname and i_unistd.  Keep the recommended values.  See
+hints/sunos_4_1.sh for more information.
+EOM
 
 # The correct setting of groupstype depends on which version of the C
 # library is used.  If you are in the 'System V environment'
@@ -73,14 +70,3 @@ fi
 # library.
 # 
 # Thanks to William Setzer <William_Setzer@ncsu.edu> for this info.
-
-# Don't use the GNU ld, that doesn't work, you'll get a lot of
-# relocation truncated to fit: BASE13 ...
-# from many extensions, like B and Data::Dumper.
-ld=/usr/bin/ld
-
-# As of Perl 5.8.1 it seems that dynaloading is broken in SunOS 4.x, sniff.
-case "$usedl" in
-'') usedl=undef ;;
-esac
-

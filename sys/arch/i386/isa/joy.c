@@ -1,4 +1,4 @@
-/*	$OpenBSD: joy.c,v 1.15 2015/02/10 21:58:16 miod Exp $	*/
+/*	$OpenBSD: joy.c,v 1.8 1999/01/13 07:26:01 niklas Exp $	*/
 /*	$NetBSD: joy.c,v 1.3 1996/05/05 19:46:15 christos Exp $	*/
 
 /*-
@@ -17,7 +17,7 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission
+ *    derived from this software withough specific prior written permission
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -46,17 +46,20 @@
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isareg.h>
-#include <dev/ic/i8253reg.h>
+#include <i386/isa/timerreg.h>
 #include <i386/isa/joyreg.h>
 
-static int	joy_get_tick(void);
+static int	joy_get_tick __P((void));
 
 struct cfdriver joy_cd = {
 	NULL, "joy", DV_DULL
 };
 
 int
-joyopen(dev_t dev, int flag, int mode, struct proc *p)
+joyopen(dev, flag, mode, p)
+	dev_t dev;
+	int flag, mode;
+	struct proc *p;
 {
 	int unit = JOYUNIT(dev);
 	int i = JOYPART(dev);
@@ -66,8 +69,6 @@ joyopen(dev_t dev, int flag, int mode, struct proc *p)
 		return (ENXIO);
 
 	sc = joy_cd.cd_devs[unit];
-	if (sc == NULL)
-		return (ENXIO);
 
 	if (sc->timeout[i])
 		return EBUSY;
@@ -78,7 +79,10 @@ joyopen(dev_t dev, int flag, int mode, struct proc *p)
 }
 
 int
-joyclose(dev_t dev, int flag, int mode, struct proc *p)
+joyclose(dev, flag, mode, p)
+	dev_t dev;
+	int flag, mode;
+	struct proc *p;
 {
 	int unit = JOYUNIT(dev);
 	int i = JOYPART(dev);
@@ -89,7 +93,10 @@ joyclose(dev_t dev, int flag, int mode, struct proc *p)
 }
 
 int
-joyread(dev_t dev, struct uio *uio, int flag)
+joyread(dev, uio, flag)
+	dev_t dev;
+	struct uio *uio;
+	int flag;
 {
 	int unit = JOYUNIT(dev);
 	struct joy_softc *sc = joy_cd.cd_devs[unit];
@@ -127,7 +134,12 @@ joyread(dev_t dev, struct uio *uio, int flag)
 }
 
 int
-joyioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
+joyioctl(dev, cmd, data, flag, p)
+	dev_t dev;
+	u_long cmd;
+	caddr_t data;
+	int flag;
+	struct proc *p;
 {
 	int unit = JOYUNIT(dev);
 	struct joy_softc *sc = joy_cd.cd_devs[unit];
@@ -163,13 +175,13 @@ joyioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
 }
 
 static int
-joy_get_tick(void)
+joy_get_tick()
 {
 	int low, high;
 
-	outb(IO_TIMER1 + TIMER_MODE, TIMER_SEL0);
-	low = inb(IO_TIMER1 + TIMER_CNTR0);
-	high = inb(IO_TIMER1 + TIMER_CNTR0);
+	outb(TIMER_MODE, TIMER_SEL0);
+	low = inb(TIMER_CNTR0);
+	high = inb(TIMER_CNTR0);
 
 	return (high << 8) | low;
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: init.c,v 1.11 2015/12/02 20:05:01 tb Exp $	*/
+/*	$OpenBSD: init.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,15 +33,24 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)init.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: init.c,v 1.3 1999/07/31 21:57:41 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include <termios.h>
+
 /*
  * variable initialization.
  */
 
 #ifdef DEBUG
 #include <stdio.h>
-FILE	*ftrace;
+FILE	*trace;
 #endif
-#include <back.h>
 
 /* name of executable object programs */
 const char    EXEC[] = "/usr/games/backgammon";
@@ -48,14 +61,16 @@ int     pnum = 2;		/* color of player:
 						 1 = red
 						 0 = both
 						 2 = not yet init'ed */
+int     acnt = 0;		/* length of args */
 int     aflag = 1;		/* flag to ask for rules or instructions */
+int     bflag = 0;		/* flag for automatic board printing */
 int     cflag = 0;		/* case conversion flag */
 int     hflag = 1;		/* flag for cleaning screen */
 int     mflag = 0;		/* backgammon flag */
 int     raflag = 0;		/* 'roll again' flag for recovered game */
 int     rflag = 0;		/* recovered game flag */
+int     tflag = 0;		/* cursor addressing flag */
 int     iroll = 0;		/* special flag for inputting rolls */
-int	dflag = 1;		/* doubling enabled */
 int     rfl = 0;
 
 const char   *const color[] = {"White", "Red", "white", "red"};
@@ -67,12 +82,15 @@ int	*inopp;
 int	*inptr;
 int	*offopp;
 int	*offptr;
+char	args[100];
 int	bar;
 int	begscr;
 int	board[26];
-char	cin[CIN_SIZE];
+char	cin[100];
 int	colen;
 int	cturn;
+int	curc;
+int	curr;
 int	d0;
 int	dice[2];
 int	dlast;
@@ -89,3 +107,4 @@ int	p[5];
 int	rscore;
 int	table[6][6];
 int	wscore;
+struct termios	old, noech, raw;

@@ -1,18 +1,44 @@
-/*	$OpenBSD: dbl_float.h,v 1.12 2013/11/26 20:33:12 deraadt Exp $	*/
+/*	$OpenBSD: dbl_float.h,v 1.3 1998/07/02 19:04:56 mickey Exp $	*/
+
 /*
-  (c) Copyright 1986 HEWLETT-PACKARD COMPANY
-  To anyone who acknowledges that this file is provided "AS IS"
-  without any express or implied warranty:
-      permission to use, copy, modify, and distribute this file
-  for any purpose is hereby granted without fee, provided that
-  the above copyright notice and this notice appears in all
-  copies, and that the name of Hewlett-Packard Company not be
-  used in advertising or publicity pertaining to distribution
-  of the software without specific, written prior permission.
-  Hewlett-Packard Company makes no representations about the
-  suitability of this software for any purpose.
-*/
-/* @(#)dbl_float.h: Revision: 2.9.88.1 Date: 93/12/07 15:05:32 */
+ * Copyright 1996 1995 by Open Software Foundation, Inc.   
+ *              All Rights Reserved 
+ *  
+ * Permission to use, copy, modify, and distribute this software and 
+ * its documentation for any purpose and without fee is hereby granted, 
+ * provided that the above copyright notice appears in all copies and 
+ * that both the copyright notice and this permission notice appear in 
+ * supporting documentation. 
+ *  
+ * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+ */
+/*
+ * pmk1.1
+ */
+/*
+ * (c) Copyright 1986 HEWLETT-PACKARD COMPANY
+ *
+ * To anyone who acknowledges that this file is provided "AS IS" 
+ * without any express or implied warranty:
+ *     permission to use, copy, modify, and distribute this file 
+ * for any purpose is hereby granted without fee, provided that 
+ * the above copyright notice and this notice appears in all 
+ * copies, and that the name of Hewlett-Packard Company not be 
+ * used in advertising or publicity pertaining to distribution 
+ * of the software without specific, written prior permission.  
+ * Hewlett-Packard Company makes no representations about the 
+ * suitability of this software for any purpose.
+ */
+
+#include <sys/cdefs.h>
 
 /**************************************
  * Declare double precision functions *
@@ -53,24 +79,24 @@
  * variable shifts.  The insignificant bits can be ignored.
  *      MTSAR f(varamount)
  *      VSHD	srcdst.high,srcdst.low => srcdst.low
- *	VSHD	0,srcdst.high => srcdst.high
+ *	VSHD	0,srcdst.high => srcdst.high 
  * This is very difficult to model with C expressions since the shift amount
  * could exceed 32.  */
 /* varamount must be less than 64 */
 #define Dbl_rightshift(srcdstA, srcdstB, varamount)			\
     {if((varamount) >= 32) {						\
-	Dallp2(srcdstB) = Dallp1(srcdstA) >> (varamount-32);		\
-	Dallp1(srcdstA)=0;						\
+        Dallp2(srcdstB) = Dallp1(srcdstA) >> (varamount-32);		\
+        Dallp1(srcdstA)=0;						\
     }									\
     else if(varamount > 0) {						\
-	Variable_shift_double(Dallp1(srcdstA), Dallp2(srcdstB),		\
+	Variable_shift_double(Dallp1(srcdstA), Dallp2(srcdstB), 	\
 	  (varamount), Dallp2(srcdstB));				\
 	Dallp1(srcdstA) >>= varamount;					\
     } }
 /* varamount must be less than 64 */
 #define Dbl_rightshift_exponentmantissa(srcdstA, srcdstB, varamount)	\
     {if((varamount) >= 32) {						\
-	Dallp2(srcdstB) = Dexponentmantissap1(srcdstA) >> ((varamount)-32); \
+        Dallp2(srcdstB) = Dexponentmantissap1(srcdstA) >> ((varamount)-32); \
 	Dallp1(srcdstA) &= (1<<31);  /* clear exponentmantissa field */ \
     }									\
     else if(varamount > 0) {						\
@@ -94,8 +120,8 @@
     } }
 #define Dbl_leftshiftby1_withextent(lefta,leftb,right,resulta,resultb)	\
     Shiftdouble(Dallp1(lefta), Dallp2(leftb), 31, Dallp1(resulta));	\
-    Shiftdouble(Dallp2(leftb), Extall(right), 31, Dallp2(resultb))
-
+    Shiftdouble(Dallp2(leftb), Extall(right), 31, Dallp2(resultb)) 
+    
 #define Dbl_rightshiftby1_withextent(leftb,right,dst)		\
     Extall(dst) = (Dallp2(leftb) << 31) | ((unsigned)Extall(right) >> 1) | \
 		  Extlow(right)
@@ -103,7 +129,7 @@
 #define Dbl_arithrightshiftby1(srcdstA,srcdstB)			\
     Shiftdouble(Dallp1(srcdstA),Dallp2(srcdstB),1,Dallp2(srcdstB));\
     Dallp1(srcdstA) = (int)Dallp1(srcdstA) >> 1
-
+   
 /* Sign extend the sign bit with an integer destination */
 #define Dbl_signextendedsign(value)  Dsignedsign(value)
 
@@ -218,21 +244,21 @@
 #define Dbl_rightshiftby1(dbl_valueA,dbl_valueB) \
     Shiftdouble(Dallp1(dbl_valueA),Dallp2(dbl_valueB),1,Dallp2(dbl_valueB)); \
     Dallp1(dbl_valueA) >>= 1
-
+    
 /* This magnitude comparison uses the signless first words and
  * the regular part2 words.  The comparison is graphically:
  *
  *       1st greater?  -------------
- *				   |
+ *                                 |
  *       1st less?-----------------+---------
- *				   |	    |
- *       2nd greater or equal----->|	    |
- *				 False     True
+ *                                 |        |
+ *       2nd greater or equal----->|        |
+ *                               False     True
  */
 #define Dbl_ismagnitudeless(leftB,rightB,signlessleft,signlessright)	\
       ((signlessleft <= signlessright) &&				\
        ( (signlessleft < signlessright) || (Dallp2(leftB)<Dallp2(rightB)) ))
-
+    
 #define Dbl_copytoint_exponentmantissap1(src,dest) \
     dest = Dexponentmantissap1(src)
 
@@ -257,7 +283,7 @@
 
 #define Dbl_copyfromptr(src,desta,destb) \
     Dallp1(desta) = src->wd0;		\
-    Dallp2(destb) = src->wd1
+    Dallp2(destb) = src->wd1 
 #define Dbl_copytoptr(srca,srcb,dest)	\
     dest->wd0 = Dallp1(srca);		\
     dest->wd1 = Dallp2(srcb)
@@ -266,19 +292,19 @@
 #define Dbl_setinfinity_exponent(dbl_value) \
     Deposit_dexponent(dbl_value,DBL_INFINITY_EXPONENT)
 #define Dbl_setinfinity_exponentmantissa(dbl_valueA,dbl_valueB)	\
-    Deposit_dexponentmantissap1(dbl_valueA,			\
+    Deposit_dexponentmantissap1(dbl_valueA, 			\
     (DBL_INFINITY_EXPONENT << (32-(1+DBL_EXP_LENGTH))));	\
     Dmantissap2(dbl_valueB) = 0
 #define Dbl_setinfinitypositive(dbl_valueA,dbl_valueB)		\
-    Dallp1(dbl_valueA)						\
-	= (DBL_INFINITY_EXPONENT << (32-(1+DBL_EXP_LENGTH)));	\
+    Dallp1(dbl_valueA) 						\
+        = (DBL_INFINITY_EXPONENT << (32-(1+DBL_EXP_LENGTH)));	\
     Dmantissap2(dbl_valueB) = 0
 #define Dbl_setinfinitynegative(dbl_valueA,dbl_valueB)		\
     Dallp1(dbl_valueA) = (1<<31) |				\
-	(DBL_INFINITY_EXPONENT << (32-(1+DBL_EXP_LENGTH)));	\
+         (DBL_INFINITY_EXPONENT << (32-(1+DBL_EXP_LENGTH)));	\
     Dmantissap2(dbl_valueB) = 0
 #define Dbl_setinfinity(dbl_valueA,dbl_valueB,sign)		\
-    Dallp1(dbl_valueA) = (sign << 31) |				\
+    Dallp1(dbl_valueA) = (sign << 31) | 			\
 	(DBL_INFINITY_EXPONENT << (32-(1+DBL_EXP_LENGTH)));	\
     Dmantissap2(dbl_valueB) = 0
 
@@ -288,10 +314,10 @@
 #define Dbl_setone_sign(dbl_value) Deposit_dsign(dbl_value,1)
 #define Dbl_setone_lowmantissap2(dbl_value) Deposit_dlowp2(dbl_value,1)
 #define Dbl_setzero_sign(dbl_value) Dallp1(dbl_value) &= 0x7fffffff
-#define Dbl_setzero_exponent(dbl_value)			\
+#define Dbl_setzero_exponent(dbl_value) 		\
     Dallp1(dbl_value) &= 0x800fffff
 #define Dbl_setzero_mantissa(dbl_valueA,dbl_valueB)	\
-    Dallp1(dbl_valueA) &= 0xfff00000;			\
+    Dallp1(dbl_valueA) &= 0xfff00000; 			\
     Dallp2(dbl_valueB) = 0
 #define Dbl_setzero_mantissap1(dbl_value) Dallp1(dbl_value) &= 0xfff00000
 #define Dbl_setzero_mantissap2(dbl_value) Dallp2(dbl_value) = 0
@@ -305,8 +331,8 @@
 #define Dbl_setzerop1(dbl_value) Dallp1(dbl_value) = 0
 #define Dbl_setzerop2(dbl_value) Dallp2(dbl_value) = 0
 #define Dbl_setnegativezero(dbl_value) \
-    Dallp1(dbl_value) = 1U << 31; Dallp2(dbl_value) = 0
-#define Dbl_setnegativezerop1(dbl_value) Dallp1(dbl_value) = 1U << 31
+    Dallp1(dbl_value) = 1 << 31; Dallp2(dbl_value) = 0
+#define Dbl_setnegativezerop1(dbl_value) Dallp1(dbl_value) = 1 << 31
 
 /* Use the following macro for both overflow & underflow conditions */
 #define ovfl -
@@ -314,11 +340,11 @@
 #define Dbl_setwrapped_exponent(dbl_value,exponent,op) \
     Deposit_dexponent(dbl_value,(exponent op DBL_WRAP))
 
-#define Dbl_setlargestpositive(dbl_valueA,dbl_valueB)			\
+#define Dbl_setlargestpositive(dbl_valueA,dbl_valueB) 			\
     Dallp1(dbl_valueA) = ((DBL_EMAX+DBL_BIAS) << (32-(1+DBL_EXP_LENGTH))) \
 			| ((1<<(32-(1+DBL_EXP_LENGTH))) - 1 );		\
     Dallp2(dbl_valueB) = 0xFFFFFFFF
-#define Dbl_setlargestnegative(dbl_valueA,dbl_valueB)			\
+#define Dbl_setlargestnegative(dbl_valueA,dbl_valueB) 			\
     Dallp1(dbl_valueA) = ((DBL_EMAX+DBL_BIAS) << (32-(1+DBL_EXP_LENGTH))) \
 			| ((1<<(32-(1+DBL_EXP_LENGTH))) - 1 ) | (1<<31); \
     Dallp2(dbl_valueB) = 0xFFFFFFFF
@@ -328,31 +354,31 @@
 			| ((1<<(32-(1+DBL_EXP_LENGTH))) - 1 )));	\
     Dallp2(dbl_valueB) = 0xFFFFFFFF
 
-#define Dbl_setnegativeinfinity(dbl_valueA,dbl_valueB)			\
-    Dallp1(dbl_valueA) = ((1<<DBL_EXP_LENGTH) | DBL_INFINITY_EXPONENT)	\
-			 << (32-(1+DBL_EXP_LENGTH)) ;			\
+#define Dbl_setnegativeinfinity(dbl_valueA,dbl_valueB) 			\
+    Dallp1(dbl_valueA) = ((1<<DBL_EXP_LENGTH) | DBL_INFINITY_EXPONENT) 	\
+			 << (32-(1+DBL_EXP_LENGTH)) ; 			\
     Dallp2(dbl_valueB) = 0
 #define Dbl_setlargest(dbl_valueA,dbl_valueB,sign)			\
     Dallp1(dbl_valueA) = (sign << 31) |					\
-	((DBL_EMAX+DBL_BIAS) << (32-(1+DBL_EXP_LENGTH))) |		\
+         ((DBL_EMAX+DBL_BIAS) << (32-(1+DBL_EXP_LENGTH))) |	 	\
 	 ((1 << (32-(1+DBL_EXP_LENGTH))) - 1 );				\
     Dallp2(dbl_valueB) = 0xFFFFFFFF
-
+    
 
 /* The high bit is always zero so arithmetic or logical shifts will work. */
 #define Dbl_right_align(srcdstA,srcdstB,shift,extent)			\
-    if( shift >= 32 )							\
+    if( shift >= 32 ) 							\
 	{								\
-	/* Big shift requires examining the portion shift off		\
+	/* Big shift requires examining the portion shift off 		\
 	the end to properly set inexact.  */				\
 	if(shift < 64)							\
 	    {								\
 	    if(shift > 32)						\
 		{							\
-		Variable_shift_double(Dallp1(srcdstA),Dallp2(srcdstB),	\
+	        Variable_shift_double(Dallp1(srcdstA),Dallp2(srcdstB),	\
 		 shift-32, Extall(extent));				\
-		if(Dallp2(srcdstB) << (64 - (shift))) Ext_setone_low(extent); \
-		}							\
+	        if(Dallp2(srcdstB) << (64 - (shift))) Ext_setone_low(extent); \
+	        }							\
 	    else Extall(extent) = Dallp2(srcdstB);			\
 	    Dallp2(srcdstB) = Dallp1(srcdstA) >> (shift - 32);		\
 	    }								\
@@ -377,7 +403,7 @@
 	else Extall(extent) = 0;					\
 	}
 
-/*
+/* 
  * Here we need to shift the result right to correct for an overshift
  * (due to the exponent becoming negative) during normalization.
  */
@@ -402,9 +428,9 @@
 #define Dbl_subtract_withextension(lefta,leftb,righta,rightb,extent,resulta,resultb)	\
     Dbl_subtract(lefta,leftb,righta,rightb,resulta,resultb);		\
     if( (Extall(extent) = 0-Extall(extent)) )				\
-	{								\
-	if((Dallp2(resultb)--) == 0) Dallp1(resulta)--;			\
-	}
+        {								\
+        if((Dallp2(resultb)--) == 0) Dallp1(resulta)--;			\
+        }
 
 #define Dbl_addition(lefta,leftb,righta,rightb,resulta,resultb)		\
     /* If the sum of the low words is less than either source, then	\
@@ -427,11 +453,11 @@
 /* Need to Initialize */
 #define Dbl_makequietnan(desta,destb)					\
     Dallp1(desta) = ((DBL_EMAX+DBL_BIAS)+1)<< (32-(1+DBL_EXP_LENGTH))	\
-		| (1<<(32-(1+DBL_EXP_LENGTH+2)));			\
+                 | (1<<(32-(1+DBL_EXP_LENGTH+2)));			\
     Dallp2(destb) = 0
 #define Dbl_makesignalingnan(desta,destb)				\
     Dallp1(desta) = ((DBL_EMAX+DBL_BIAS)+1)<< (32-(1+DBL_EXP_LENGTH))	\
-		| (1<<(32-(1+DBL_EXP_LENGTH+1)));			\
+                 | (1<<(32-(1+DBL_EXP_LENGTH+1)));			\
     Dallp2(destb) = 0
 
 #define Dbl_normalize(dbl_opndA,dbl_opndB,exponent)			\
@@ -449,7 +475,7 @@
 	}
 
 #define Twoword_add(src1dstA,src1dstB,src2A,src2B)		\
-	/*							\
+	/* 							\
 	 * want this macro to generate:				\
 	 *	ADD	src1dstB,src2B,src1dstB;		\
 	 *	ADDC	src1dstA,src2A,src1dstA;		\
@@ -459,7 +485,7 @@
 	Dallp2(src1dstB) += (src2B)
 
 #define Twoword_subtract(src1dstA,src1dstB,src2A,src2B)		\
-	/*							\
+	/* 							\
 	 * want this macro to generate:				\
 	 *	SUB	src1dstB,src2B,src1dstB;		\
 	 *	SUBB	src1dstA,src2A,src1dstA;		\
@@ -526,15 +552,17 @@
     }
 
 
-int dbl_fadd(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
-int dbl_fcmp(dbl_floating_point *, dbl_floating_point *, unsigned int, unsigned int *);
-int dbl_fdiv(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
-int dbl_fmpy(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
-int dbl_frem(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
-int dbl_fsqrt(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
-int dbl_fsub(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
+int dbl_fadd __P((dbl_floating_point *, dbl_floating_point*, dbl_floating_point*, unsigned int *));
+int dbl_fcmp __P((dbl_floating_point *, dbl_floating_point*, unsigned int, unsigned int *));
+int dbl_fdiv __P((dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *));
+int dbl_fmpy __P((dbl_floating_point *, dbl_floating_point *, dbl_floating_point*, unsigned int *));
+int dbl_frem __P((dbl_floating_point *, dbl_floating_point *, dbl_floating_point*, unsigned int *));
+int dbl_fsqrt __P((dbl_floating_point *, void *, dbl_floating_point *, unsigned int *));
+int dbl_fsub __P((dbl_floating_point *, dbl_floating_point *, dbl_floating_point*, unsigned int *));
 
-int sgl_to_dbl_fcnvff(sgl_floating_point *, sgl_floating_point *, dbl_floating_point *, unsigned int *);
-int dbl_to_sgl_fcnvff(dbl_floating_point *, dbl_floating_point *, sgl_floating_point *, unsigned int *);
+dbl_floating_point dbl_setoverflow __P((unsigned int));
 
-int dbl_frnd(dbl_floating_point *, dbl_floating_point *, dbl_floating_point *, unsigned int *);
+int sgl_to_dbl_fcnvff __P((sgl_floating_point *, void *, dbl_floating_point *, unsigned int *));
+int dbl_to_sgl_fcnvff __P((dbl_floating_point *, void *, sgl_floating_point *, unsigned int *));
+
+int dbl_frnd __P((dbl_floating_point *, void *, dbl_floating_point *, unsigned int *));

@@ -10,7 +10,11 @@
  * ====================================================
  */
 
-/* acosh(x)
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_acosh.c,v 1.9 1995/05/12 04:57:18 jtc Exp $";
+#endif
+
+/* __ieee754_acosh(x)
  * Method :
  *	Based on 
  *		acosh(x) = log [ x + sqrt(x*x-1) ]
@@ -24,17 +28,23 @@
  *	acosh(NaN) is NaN without signal.
  */
 
-#include <float.h>
-#include <math.h>
-
+#include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const double 
+#else
+static double 
+#endif
 one	= 1.0,
 ln2	= 6.93147180559945286227e-01;  /* 0x3FE62E42, 0xFEFA39EF */
 
-double
-acosh(double x)
+#ifdef __STDC__
+	double __ieee754_acosh(double x)
+#else
+	double __ieee754_acosh(x)
+	double x;
+#endif
 {	
 	double t;
 	int32_t hx;
@@ -46,18 +56,14 @@ acosh(double x)
 	    if(hx >=0x7ff00000) {	/* x is inf of NaN */
 	        return x+x;
 	    } else 
-		return log(x)+ln2;	/* acosh(huge)=log(2x) */
+		return __ieee754_log(x)+ln2;	/* acosh(huge)=log(2x) */
 	} else if(((hx-0x3ff00000)|lx)==0) {
 	    return 0.0;			/* acosh(1) = 0 */
 	} else if (hx > 0x40000000) {	/* 2**28 > x > 2 */
 	    t=x*x;
-	    return log(2.0*x-one/(x+sqrt(t-one)));
+	    return __ieee754_log(2.0*x-one/(x+__ieee754_sqrt(t-one)));
 	} else {			/* 1<x<2 */
 	    t = x-one;
 	    return log1p(t+sqrt(2.0*t+t*t));
 	}
 }
-
-#if	LDBL_MANT_DIG == DBL_MANT_DIG
-__strong_alias(acoshl, acosh);
-#endif	/* LDBL_MANT_DIG == DBL_MANT_DIG */

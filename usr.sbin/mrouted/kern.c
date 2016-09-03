@@ -13,59 +13,66 @@
 #include "defs.h"
 
 
-void k_set_rcvbuf(int bufsize)
+void k_set_rcvbuf(bufsize)
+    int bufsize;
 {
     if (setsockopt(igmp_socket, SOL_SOCKET, SO_RCVBUF,
 		   (char *)&bufsize, sizeof(bufsize)) < 0)
-	logit(LOG_ERR, errno, "setsockopt SO_RCVBUF %u", bufsize);
+	log(LOG_ERR, errno, "setsockopt SO_RCVBUF %u", bufsize);
 }
 
 
-void k_hdr_include(int bool)
+void k_hdr_include(bool)
+    int bool;
 {
 #ifdef IP_HDRINCL
     if (setsockopt(igmp_socket, IPPROTO_IP, IP_HDRINCL,
 		   (char *)&bool, sizeof(bool)) < 0)
-	logit(LOG_ERR, errno, "setsockopt IP_HDRINCL %u", bool);
+	log(LOG_ERR, errno, "setsockopt IP_HDRINCL %u", bool);
 #endif
 }
 
 
-void k_set_ttl(int t)
+void k_set_ttl(t)
+    int t;
 {
     u_char ttl;
 
     ttl = t;
     if (setsockopt(igmp_socket, IPPROTO_IP, IP_MULTICAST_TTL,
 		   (char *)&ttl, sizeof(ttl)) < 0)
-	logit(LOG_ERR, errno, "setsockopt IP_MULTICAST_TTL %u", ttl);
+	log(LOG_ERR, errno, "setsockopt IP_MULTICAST_TTL %u", ttl);
 }
 
 
-void k_set_loop(int l)
+void k_set_loop(l)
+    int l;
 {
     u_char loop;
 
     loop = l;
     if (setsockopt(igmp_socket, IPPROTO_IP, IP_MULTICAST_LOOP,
 		   (char *)&loop, sizeof(loop)) < 0)
-	logit(LOG_ERR, errno, "setsockopt IP_MULTICAST_LOOP %u", loop);
+	log(LOG_ERR, errno, "setsockopt IP_MULTICAST_LOOP %u", loop);
 }
 
 
-void k_set_if(u_int32_t ifa)
+void k_set_if(ifa)
+    u_int32_t ifa;
 {
     struct in_addr adr;
 
     adr.s_addr = ifa;
     if (setsockopt(igmp_socket, IPPROTO_IP, IP_MULTICAST_IF,
 		   (char *)&adr, sizeof(adr)) < 0)
-	logit(LOG_ERR, errno, "setsockopt IP_MULTICAST_IF %s",
-			    inet_fmt(ifa, s1));
+	log(LOG_ERR, errno, "setsockopt IP_MULTICAST_IF %s",
+	    		    inet_fmt(ifa, s1));
 }
 
 
-void k_join(u_int32_t grp, u_int32_t ifa)
+void k_join(grp, ifa)
+    u_int32_t grp;
+    u_int32_t ifa;
 {
     struct ip_mreq mreq;
 
@@ -74,12 +81,14 @@ void k_join(u_int32_t grp, u_int32_t ifa)
 
     if (setsockopt(igmp_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
 		   (char *)&mreq, sizeof(mreq)) < 0)
-	logit(LOG_WARNING, errno, "can't join group %s on interface %s",
+	log(LOG_WARNING, errno, "can't join group %s on interface %s",
 				inet_fmt(grp, s1), inet_fmt(ifa, s2));
 }
 
 
-void k_leave(u_int32_t grp, u_int32_t ifa)
+void k_leave(grp, ifa)
+    u_int32_t grp;
+    u_int32_t ifa;
 {
     struct ip_mreq mreq;
 
@@ -88,12 +97,12 @@ void k_leave(u_int32_t grp, u_int32_t ifa)
 
     if (setsockopt(igmp_socket, IPPROTO_IP, IP_DROP_MEMBERSHIP,
 		   (char *)&mreq, sizeof(mreq)) < 0)
-	logit(LOG_WARNING, errno, "can't leave group %s on interface %s",
+	log(LOG_WARNING, errno, "can't leave group %s on interface %s",
 				inet_fmt(grp, s1), inet_fmt(ifa, s2));
 }
 
 
-void k_init_dvmrp(void)
+void k_init_dvmrp()
 {
 #ifdef OLD_KERNEL
     if (setsockopt(igmp_socket, IPPROTO_IP, MRT_INIT,
@@ -104,19 +113,21 @@ void k_init_dvmrp(void)
     if (setsockopt(igmp_socket, IPPROTO_IP, MRT_INIT,
 		   (char *)&v, sizeof(int)) < 0)
 #endif
-	logit(LOG_ERR, errno, "can't enable Multicast routing in kernel");
+	log(LOG_ERR, errno, "can't enable Multicast routing in kernel");
 }
 
 
-void k_stop_dvmrp(void)
+void k_stop_dvmrp()
 {
     if (setsockopt(igmp_socket, IPPROTO_IP, MRT_DONE,
 		   (char *)NULL, 0) < 0)
-	logit(LOG_WARNING, errno, "can't disable Multicast routing in kernel");
+	log(LOG_WARNING, errno, "can't disable Multicast routing in kernel");
 }
 
 
-void k_add_vif(vifi_t vifi, struct uvif *v)
+void k_add_vif(vifi, v)
+    vifi_t vifi;
+    struct uvif *v;
 {
     struct vifctl vc;
 
@@ -129,28 +140,31 @@ void k_add_vif(vifi_t vifi, struct uvif *v)
 
     if (setsockopt(igmp_socket, IPPROTO_IP, MRT_ADD_VIF,
 		   (char *)&vc, sizeof(vc)) < 0)
-	logit(LOG_ERR, errno, "setsockopt MRT_ADD_VIF");
+	log(LOG_ERR, errno, "setsockopt MRT_ADD_VIF");
 }
 
 
-void k_del_vif(vifi_t vifi)
+void k_del_vif(vifi)
+    vifi_t vifi;
 {
     if (setsockopt(igmp_socket, IPPROTO_IP, MRT_DEL_VIF,
 		   (char *)&vifi, sizeof(vifi)) < 0)
-	logit(LOG_ERR, errno, "setsockopt MRT_DEL_VIF");
+	log(LOG_ERR, errno, "setsockopt MRT_DEL_VIF");
 }
 
 
 /*
  * Adds a (source, mcastgrp) entry to the kernel
  */
-void k_add_rg(u_int32_t origin, struct gtable *g)
+void k_add_rg(origin, g)
+    u_int32_t origin;
+    struct gtable *g;
 {
     struct mfcctl mc;
     vifi_t i;
 
 #ifdef DEBUG_MFC
-    md_logit(MD_ADD, origin, g->gt_mcastgrp);
+    md_log(MD_ADD, origin, g->gt_mcastgrp);
 #endif
     /* copy table values so that setsockopt can process it */
     mc.mfcc_origin.s_addr = origin;
@@ -166,9 +180,9 @@ void k_add_rg(u_int32_t origin, struct gtable *g)
     if (setsockopt(igmp_socket, IPPROTO_IP, MRT_ADD_MFC,
 		   (char *)&mc, sizeof(mc)) < 0) {
 #ifdef DEBUG_MFC
-	md_logit(MD_ADD_FAIL, origin, g->gt_mcastgrp);
+	md_log(MD_ADD_FAIL, origin, g->gt_mcastgrp);
 #endif
-	logit(LOG_WARNING, errno, "setsockopt MRT_ADD_MFC");
+	log(LOG_WARNING, errno, "setsockopt MRT_ADD_MFC");
     }
 }
 
@@ -176,13 +190,15 @@ void k_add_rg(u_int32_t origin, struct gtable *g)
 /*
  * Deletes a (source, mcastgrp) entry from the kernel
  */
-int k_del_rg(u_int32_t origin, struct gtable *g)
+int k_del_rg(origin, g)
+    u_int32_t origin;
+    struct gtable *g;
 {
     struct mfcctl mc;
     int retval;
 
 #ifdef DEBUG_MFC
-    md_logit(MD_DEL, origin, g->gt_mcastgrp);
+    md_log(MD_DEL, origin, g->gt_mcastgrp);
 #endif
     /* copy table values so that setsockopt can process it */
     mc.mfcc_origin.s_addr = origin;
@@ -195,18 +211,18 @@ int k_del_rg(u_int32_t origin, struct gtable *g)
     if ((retval = setsockopt(igmp_socket, IPPROTO_IP, MRT_DEL_MFC,
 		   (char *)&mc, sizeof(mc))) < 0) {
 #ifdef DEBUG_MFC
-	md_logit(MD_DEL_FAIL, origin, g->gt_mcastgrp);
+	md_log(MD_DEL_FAIL, origin, g->gt_mcastgrp);
 #endif
-	logit(LOG_WARNING, errno, "setsockopt MRT_DEL_MFC");
+	log(LOG_WARNING, errno, "setsockopt MRT_DEL_MFC");
     }
 
     return retval;
-}
+}	
 
 /*
  * Get the kernel's idea of what version of mrouted needs to run with it.
  */
-int k_get_version(void)
+int k_get_version()
 {
 #ifdef OLD_KERNEL
     return -1;
@@ -216,7 +232,7 @@ int k_get_version(void)
 
     if (getsockopt(igmp_socket, IPPROTO_IP, MRT_VERSION,
 			(char *)&vers, &len) < 0)
-	logit(LOG_ERR, errno,
+	log(LOG_ERR, errno,
 		"getsockopt MRT_VERSION: perhaps your kernel is too old");
 
     return vers;

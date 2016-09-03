@@ -1,72 +1,21 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-}
+# $RCSfile: append.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:36 $
 
-##Literal test count since evals below can fail
-plan tests => 13;
+print "1..3\n";
 
 $a = 'ab' . 'c';	# compile time
 $b = 'def';
 
 $c = $a . $b;
-is( $c, 'abcdef', 'compile time concatenation' );
+print "#1\t:$c: eq :abcdef:\n";
+if ($c eq 'abcdef') {print "ok 1\n";} else {print "not ok 1\n";}
 
 $c .= 'xyz';
-is( $c, 'abcdefxyz', 'concat to self');
+print "#2\t:$c: eq :abcdefxyz:\n";
+if ($c eq 'abcdefxyz') {print "ok 2\n";} else {print "not ok 2\n";}
 
 $_ = $a;
 $_ .= $b;
-is( $_, 'abcdef', 'concat using $_');
-
-# test that when right argument of concat is UTF8, and is the same
-# variable as the target, and the left argument is not UTF8, it no
-# longer frees the wrong string.
-{
-    sub r2 {
-	my $string = '';
-	$string .= pack("U0a*", 'mnopqrstuvwx');
-	$string = "abcdefghijkl$string";
-    }
-
-    isnt(r2(), '', 'UTF8 concat does not free the wrong string');
-    isnt(r2(), '', 'second check');
-}
-
-# test that nul bytes get copied
-{
-    my ($a, $ab)   = ("a", "a\0b");
-    my ($ua, $uab) = map pack("U0a*", $_), $a, $ab;
-
-    my $ub = pack("U0a*", 'b');
-
-    #aa\0b
-    my $t1 = $a; $t1 .= $ab;
-    like( $t1, qr/b/, 'null bytes do not stop string copy, aa\0b');
-
-    #a\0a\0b
-    my $t2 = $a; $t2 .= $uab;
-    ok( eval '$t2 =~ /$ub/', '... a\0a\0b' );
-
-    #\0aa\0b
-    my $t3 = $ua; $t3 .= $ab;
-    ok( eval '$t3 =~ /$ub/', '... \0aa\0b' );
-
-    my $t4 = $ua; $t4 .= $uab;
-    ok( eval '$t4 =~ /$ub/', '... \0a\0a\0b' );
-
-    my $t5 = $a; $t5 = $ab . $t5;
-    like( $t5, qr/$ub/, '... a\0ba' );
-
-    my $t6 = $a; $t6 = $uab . $t6;
-    ok( eval '$t6 =~ /$ub/', '... \0a\0ba' );
-
-    my $t7 = $ua; $t7 = $ab . $t7;
-    like( $t7, qr/$ub/, '... a\0b\0a' );
-
-    my $t8 = $ua; $t8 = $uab . $t8;
-    ok( eval '$t8 =~ /$ub/', '... \0a\0b\0a' );
-}
+print "#3\t:$_: eq :abcdef:\n";
+if ($_ eq 'abcdef') {print "ok 3\n";} else {print "not ok 3\n";}

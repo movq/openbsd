@@ -1,23 +1,13 @@
-#	$OpenBSD: Makefile,v 1.16 2016/09/01 09:59:40 deraadt Exp $
-
-
-.if (${MACHINE} == "amd64") || (${MACHINE} == "i386") || \
-    (${MACHINE} == "loongson") || (${MACHINE} == "macppc") || \
-    (${MACHINE} == "sparc64") || (${MACHINE} == "zaurus")
+#	$OpenBSD: Makefile,v 1.4 1997/09/21 11:43:16 deraadt Exp $
 
 SRCS=	apm.c apmsubr.c
 
 .PATH:	${.CURDIR}/../apmd
 
-CFLAGS+=	-I${.CURDIR}/../apmd
+CFLAGS+=	-g  -O2 -Wmissing-prototypes -Wall -I${.CURDIR}/../apmd
 PROG=	apm
-LINKS=	${BINDIR}/apm ${BINDIR}/zzz
-LINKS+=	${BINDIR}/apm ${BINDIR}/ZZZ
-.else
-NOPROG=yes
-.endif
-
 MAN=	apm.8
-MANSUBDIR=amd64 i386 loongson macppc sparc64 zaurus
+MLINKS=	apm.8 zzz.8
+LINKS=	${BINDIR}/apm ${BINDIR}/zzz
 
 .include <bsd.prog.mk>

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: popen.3,v 1.20 2016/02/05 18:09:20 espie Exp $
+.\"	$OpenBSD: popen.3,v 1.8 1999/08/31 16:52:34 aaron Exp $
 .\"
 .\" Copyright (c) 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,15 +31,16 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: February 5 2016 $
+.Dd June 4, 1993
 .Dt POPEN 3
 .Os
 .Sh NAME
 .Nm popen ,
 .Nm pclose
-.Nd process I/O
+.Nd process
+.Tn I/O
 .Sh SYNOPSIS
-.In stdio.h
+.Fd #include <stdio.h>
 .Ft FILE *
 .Fn popen "const char *command" "const char *type"
 .Ft int
@@ -45,7 +50,9 @@ The
 .Fn popen
 function
 .Dq opens
-a process by creating a pipe, forking, and invoking the shell.
+a process by creating a pipe,
+forking,
+and invoking the shell.
 Since a pipe is by definition unidirectional, the
 .Fa type
 argument may specify only reading or writing, not both;
@@ -53,7 +60,7 @@ the resulting stream is correspondingly read-only or write-only.
 .Pp
 The
 .Fa command
-argument is a pointer to a NUL-terminated
+argument is a pointer to a null-terminated
 string containing a shell command line.
 This command is passed to
 .Pa /bin/sh
@@ -61,32 +68,24 @@ using the
 .Fl c
 flag; interpretation, if any, is performed by the shell.
 The
-.Fa type
-argument is a pointer to a NUL-terminated
+.Fa mode
+argument is a pointer to a null-terminated
 string which must be either
 .Qq r
-or
-.Qq re
 for reading
 or
 .Qq w
-or
-.Qq we
 for writing.
-If the letter
-.Qq e
-is present in the string then the close-on-exec flag shall be set on the
-file descriptor underlying the
-.Vt FILE
-that is returned.
 .Pp
 The return value from
 .Fn popen
-is a normal standard I/O stream in all respects
+is a normal standard
+.Tn I/O
+stream in all respects
 except that it must be closed with
 .Fn pclose
 rather than
-.Xr fclose 3 .
+.Fn fclose .
 Writing to such a stream
 writes to the standard input of the command;
 the command's standard output is the same as that of the process that called
@@ -98,18 +97,15 @@ stream reads the command's standard output, and
 the command's standard input is the same as that of the process that called
 .Fn popen .
 .Pp
-Note that
+Note that output
 .Fn popen
-output streams are fully buffered by default.
-In addition, fork handlers established using
-.Xr pthread_atfork 3
-are not called when a multithreaded program calls
-.Fn popen .
+streams are fully buffered by default.
 .Pp
 The
 .Fn pclose
-function waits for the associated process to terminate and returns the
-exit status of the command as returned by
+function waits for the associated process to terminate
+and returns the exit status of the command
+as returned by
 .Xr wait4 2 .
 .Sh RETURN VALUES
 The
@@ -125,7 +121,8 @@ or if it cannot allocate memory.
 .Pp
 The
 .Fn pclose
-function returns \-1 if
+function
+returns \-1 if
 .Fa stream
 is not associated with a
 .Dq popened
@@ -134,7 +131,7 @@ command, if
 already
 .Dq pclosed ,
 or if
-.Xr wait4 2
+.Xr wait4
 returns an error.
 .Sh ERRORS
 The
@@ -151,30 +148,6 @@ function does not reliably set
 .Xr fopen 3 ,
 .Xr stdio 3 ,
 .Xr system 3
-.Sh HISTORY
-A
-.Fn popen
-and a
-.Fn pclose
-function appeared in
-.At v7 .
-.Sh CAVEATS
-Never supply the
-.Fn popen
-function with a command containing any part of an unsanitized user-supplied
-string.
-Shell meta-characters present will be honored by the
-.Xr sh 1
-command interpreter.
-.Pp
-It is often simpler to bypass the shell entirely and use
-.Xr pipe 2 ,
-.Xr fork 2 ,
-.Xr dup2 2 ,
-.Xr execlp 3 ,
-and
-.Xr fdopen 3
-directly instead of having to sanitize a string for shell consumption.
 .Sh BUGS
 Since the standard input of a command opened for reading
 shares its seek offset with the process that called
@@ -188,8 +161,21 @@ The latter can be avoided by calling
 before
 .Fn popen .
 .Pp
-Failure to execute the shell is indistinguishable from the shell's
-failure to execute
-.Fa command ,
+Failure to execute the shell
+is indistinguishable from the shell's failure to execute command,
 or an immediate exit of the command.
 The only hint is an exit status of 127.
+.Pp
+The
+.Fn popen
+argument always calls
+.Xr sh ;
+it never calls
+.Xr csh .
+.Sh HISTORY
+A
+.Fn popen
+and a
+.Fn pclose
+function appeared in
+.At v7 .

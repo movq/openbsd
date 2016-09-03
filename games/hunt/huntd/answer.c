@@ -1,51 +1,27 @@
-/*	$OpenBSD: answer.c,v 1.21 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: answer.c,v 1.6 1999/03/22 00:29:15 pjanzen Exp $	*/
 /*	$NetBSD: answer.c,v 1.3 1997/10/10 16:32:50 lukem Exp $	*/
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/select.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <string.h>
-#include <syslog.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <tcpd.h>
+#include <syslog.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#include "conf.h"
 #include "hunt.h"
 #include "server.h"
+#include "conf.h"
 
 /* Exported symbols for hosts_access(): */
 int allow_severity	= LOG_INFO;
@@ -55,38 +31,45 @@ int deny_severity	= LOG_WARNING;
 /* List of spawning connections: */
 struct spawn		*Spawn = NULL;
 
-static void	stplayer(PLAYER *, int);
-static void	stmonitor(PLAYER *);
-static IDENT *	get_ident(struct sockaddr *, int, u_long, char *, char);
+static void	stplayer __P((PLAYER *, int));
+static void	stmonitor __P((PLAYER *));
+static IDENT *	get_ident __P((struct sockaddr *, int, u_long, char *, char));
 
 void
-answer_first(void)
+answer_first()
 {
 	struct sockaddr		sockstruct;
 	int			newsock;
-	socklen_t		socklen;
+	int			socklen;
+	int			flags;
+	struct request_info	ri;
 	struct spawn *sp;
 
-	/*
-	 * Answer the call to hunt, turning off blocking I/O, so a slow
-	 * or dead terminal won't stop the game.  All subsequent reads
-	 * check how many bytes they read.
-	 */
+	/* Answer the call to hunt: */
 	socklen = sizeof sockstruct;
-	newsock = accept4(Socket, (struct sockaddr *) &sockstruct, &socklen,
-	    SOCK_NONBLOCK);
+	newsock = accept(Socket, (struct sockaddr *) &sockstruct, &socklen);
 	if (newsock < 0) {
-		logit(LOG_ERR, "accept");
+		log(LOG_ERR, "accept");
+		return;
+	}
+
+	/* Check for access permissions: */
+	request_init(&ri, RQ_DAEMON, "huntd", RQ_FILE, newsock, 0);
+	fromhost(&ri);
+	if (hosts_access(&ri) == 0) {
+		logx(LOG_INFO, "rejected connection from %s", eval_client(&ri));
+		close(newsock);
 		return;
 	}
 
 	/* Remember this spawning connection: */
-	sp = calloc(1, sizeof *sp);
+	sp = (struct spawn *)malloc(sizeof *sp);
 	if (sp == NULL) {
-		logit(LOG_ERR, "calloc");
+		log(LOG_ERR, "malloc");
 		close(newsock);
 		return;
 	}
+	memset(sp, '\0', sizeof *sp);
 
 	/* Keep the calling machine's source addr for ident purposes: */
 	memcpy(&sp->source, &sockstruct, sizeof sp->source);
@@ -95,8 +78,16 @@ answer_first(void)
 	/* Warn if we lose connection info: */
 	if (socklen > sizeof Spawn->source) 
 		logx(LOG_WARNING, 
-		    "struct sockaddr is not big enough! (%d > %zu)",
+		    "struct sockaddr is not big enough! (%d > %d)",
 		    socklen, sizeof Spawn->source);
+
+	/*
+	 * Turn off blocking I/O, so a slow or dead terminal won't stop
+	 * the game.  All subsequent reads check how many bytes they read.
+	 */
+	flags = fcntl(newsock, F_GETFL, 0);
+	flags |= O_NDELAY;
+	(void) fcntl(newsock, F_SETFL, flags);
 
 	/* Start listening to the spawning connection */
 	sp->fd = newsock;
@@ -104,8 +95,8 @@ answer_first(void)
 	if (sp->fd >= Num_fds)
 		Num_fds = sp->fd + 1;
 
-	sp->reading_msg = 0;
-	sp->inlen = 0;
+	/* Initialise the spawn state */
+	sp->state = 0;
 
 	/* Add to the spawning list */
 	if ((sp->next = Spawn) != NULL)
@@ -115,24 +106,55 @@ answer_first(void)
 }
 
 int
-answer_next(struct spawn *sp)
+answer_next(sp)
+	struct spawn *sp;
 {
 	PLAYER			*pp;
 	char			*cp1, *cp2;
 	u_int32_t		version;
 	FILE			*conn;
 	int			len;
-	char 			teamstr[] = "[x]";
 
-	if (sp->reading_msg) {
-		/* Receive a message from a player */
-		len = read(sp->fd, sp->msg + sp->msglen, 
-		    sizeof sp->msg - sp->msglen);
-		if (len < 0)
-			goto error;
-		sp->msglen += len;
-		if (len && sp->msglen < sizeof sp->msg)
-			return FALSE;
+	switch (sp->state) {
+	case 0: 
+		len = read(sp->fd, &sp->uid, sizeof sp->uid);
+		break;
+	case 1:
+		len = read(sp->fd, sp->name, NAMELEN);
+		sp->name[NAMELEN] = '\0';
+		break;
+	case 2:
+		len = read(sp->fd, &sp->team, sizeof sp->team);
+		break;
+	case 3:
+		len = read(sp->fd, &sp->enter_status, sizeof sp->enter_status);
+		break;
+	case 4:	
+		len = read(sp->fd, sp->ttyname, NAMELEN);
+		break;
+	case 5:
+		len = read(sp->fd, &sp->mode, sizeof sp->mode);
+		break;
+ 	case 7:
+		len = sp->msglen = read(sp->fd, &sp->msg, sizeof sp->msg - 1);
+		break;
+	default:
+		log(LOG_ERR, "impossible state %d", sp->state);
+		goto close_it;
+	}
+
+	if (len < 0) {
+		log(LOG_WARNING, "read");
+		goto close_it;
+	}
+	if (len == 0) {
+		logx(LOG_WARNING, "lost connection to new client");
+		goto close_it;
+	}
+
+	if (sp->state == 7) {
+		/* Received message: */
+		char teamstr[] = "[?]";
 
 		teamstr[1] = sp->team;
 		outyx(ALL_PLAYERS, HEIGHT, 0, "%s%s: %.*s",
@@ -147,29 +169,11 @@ answer_next(struct spawn *sp)
 		goto close_it;
 	}
 
-	/* Fill the buffer */
-	len = read(sp->fd, sp->inbuf + sp->inlen, 
-	    sizeof sp->inbuf - sp->inlen);
-	if (len <= 0)
-		goto error;
-	sp->inlen += len;
-	if (sp->inlen < sizeof sp->inbuf)
+	sp->state++;
+	if (sp->state != 6) {
+		/* More to come: */
 		return FALSE;
-
-	/* Extract values from the buffer */
-	cp1 = sp->inbuf;
-	memcpy(&sp->uid, cp1, sizeof (u_int32_t));
-	cp1+= sizeof(u_int32_t);
-	memcpy(sp->name, cp1, NAMELEN);
-	cp1+= NAMELEN;
-	memcpy(&sp->team, cp1, sizeof (u_int8_t));
-	cp1+= sizeof(u_int8_t);
-	memcpy(&sp->enter_status, cp1, sizeof (u_int32_t));
-	cp1+= sizeof(u_int32_t);
-	memcpy(sp->ttyname, cp1, NAMELEN);
-	cp1+= NAMELEN;
-	memcpy(&sp->mode, cp1, sizeof (u_int32_t));
-	cp1+= sizeof(u_int32_t);
+	}
 
 	/* Convert data from network byte order: */
 	sp->uid = ntohl(sp->uid);
@@ -181,24 +185,18 @@ answer_next(struct spawn *sp)
 	 * since we use control characters for cursor control
 	 * between driver and player processes
 	 */
-	sp->name[NAMELEN] = '\0';
 	for (cp1 = cp2 = sp->name; *cp1 != '\0'; cp1++)
-		if (isprint((unsigned char)*cp1) || *cp1 == ' ')
+		if (isprint(*cp1) || *cp1 == ' ')
 			*cp2++ = *cp1;
 	*cp2 = '\0';
-
-	/* Make sure team name is valid */
-	if (sp->team < '1' || sp->team > '9')
-		sp->team = ' ';
 
 	/* Tell the other end this server's hunt driver version: */
 	version = htonl((u_int32_t) HUNT_VERSION);
 	(void) write(sp->fd, &version, sizeof version);
 
 	if (sp->mode == C_MESSAGE) {
-		/* The clients only wants to send a message: */
-		sp->msglen = 0;
-		sp->reading_msg = 1;
+		/* The connection is solely for a message: */
+		sp->state = 7;
 		return FALSE;
 	}
 
@@ -239,6 +237,10 @@ answer_next(struct spawn *sp)
 	pp->p_death[0] = '\0';
 	pp->p_fd = sp->fd;
 
+	/* Remove from the spawn list. (fd remains in read set) */
+	*sp->prevnext = sp->next;
+	if (sp->next) sp->next->prevnext = sp->prevnext;
+
 	/* No idea where the player starts: */
 	pp->p_y = 0;
 	pp->p_x = 0;
@@ -249,14 +251,8 @@ answer_next(struct spawn *sp)
 	else
 		stplayer(pp, sp->enter_status);
 
-	/* And, they're off! Caller should remove and free sp. */
+	/* And, they're off! */
 	return TRUE;
-
-error:
-	if (len < 0) 
-		logit(LOG_WARNING, "read");
-	else
-		logx(LOG_WARNING, "lost connection to new client");
 
 close_it:
 	/* Destroy the spawn */
@@ -270,7 +266,8 @@ close_it:
 
 /* Start a monitor: */
 static void
-stmonitor(PLAYER *pp)
+stmonitor(pp)
+	PLAYER	*pp;
 {
 
 	/* Monitors get to see the entire maze: */
@@ -291,7 +288,9 @@ stmonitor(PLAYER *pp)
 
 /* Start a player: */
 static void
-stplayer(PLAYER *newpp, int enter_status)
+stplayer(newpp, enter_status)
+	PLAYER	*newpp;
+	int	enter_status;
 {
 	int	x, y;
 	PLAYER	*pp;
@@ -415,7 +414,7 @@ stplayer(PLAYER *newpp, int enter_status)
  *	Return a random direction
  */
 int
-rand_dir(void)
+rand_dir()
 {
 	switch (rand_num(4)) {
 	  case 0:
@@ -427,6 +426,7 @@ rand_dir(void)
 	  case 3:
 		return ABOVE;
 	}
+	/* NOTREACHED */
 	return(-1);
 }
 
@@ -435,7 +435,12 @@ rand_dir(void)
  *	Get the score structure of a player
  */
 static IDENT *
-get_ident(struct sockaddr *sa, int salen, u_long uid, char *name, char team)
+get_ident(sa, salen, uid, name, team)
+	struct sockaddr *sa;
+	int	salen;
+	u_long	uid;
+	char	*name;
+	char	team;
 {
 	IDENT		*ip;
 	static IDENT	punt;
@@ -471,9 +476,9 @@ get_ident(struct sockaddr *sa, int salen, u_long uid, char *name, char team)
 	}
 	else {
 		/* Alloc new entry -- it is released in clear_scores() */
-		ip = malloc(sizeof (IDENT));
+		ip = (IDENT *) malloc(sizeof (IDENT));
 		if (ip == NULL) {
-			logit(LOG_ERR, "malloc");
+			log(LOG_ERR, "malloc");
 			/* Fourth down, time to punt */
 			ip = &punt;
 		}
@@ -507,7 +512,8 @@ get_ident(struct sockaddr *sa, int salen, u_long uid, char *name, char team)
 }
 
 void
-answer_info(FILE *fp)
+answer_info(fp)
+	FILE *fp;
 {
 	struct spawn *sp;
 	char buf[128];
@@ -521,11 +527,10 @@ answer_info(FILE *fp)
 		sa = (struct sockaddr_in *)&sp->source;
 		bf = inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof buf);
 		if (!bf)  {
-			logit(LOG_WARNING, "inet_ntop");
+			log(LOG_WARNING, "inet_ntop");
 			bf = "?";
 		}
 		fprintf(fp, "fd %d: state %d, from %s:%d\n",
-			sp->fd, sp->inlen + (sp->reading_msg ? sp->msglen : 0),
-			bf, sa->sin_port);
+			sp->fd, sp->state, bf, sa->sin_port);
 	}
 }

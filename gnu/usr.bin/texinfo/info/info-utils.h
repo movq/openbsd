@@ -1,8 +1,10 @@
-/* info-utils.h -- Exported functions and variables from info-utils.c.
-   $Id: info-utils.h,v 1.4 2006/07/17 16:12:36 espie Exp $   
+/* info-utils.h -- Exported functions and variables from info-util.c.
+   $Id: info-utils.h,v 1.2 1999/01/11 16:38:08 espie Exp $   
 
-   Copyright (C) 1993, 1996, 1998, 2002, 2003, 2004 Free Software
-   Foundation, Inc.
+   This file is part of GNU Info, a program for reading online documentation
+   stored in Info format.
+
+   Copyright (C) 1993, 96 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +25,13 @@
 #ifndef INFO_UTILS_H
 #define INFO_UTILS_H
 
+#if !defined (HAVE_STRCHR)
+#  undef strchr
+#  undef strrchr
+#  define strchr index
+#  define strrchr rindex
+#endif /* !HAVE_STRCHR */
+
 #include "nodes.h"
 #include "window.h"
 #include "search.h"
@@ -35,7 +44,6 @@ typedef struct {
   char *filename;       /* File where this node can be found. */
   char *nodename;       /* Name of the node. */
   int start, end;       /* Offsets within the containing node of LABEL. */
-  int line_number;      /* Specific line number a menu item points to.  */
 } REFERENCE;
 
 /* When non-zero, various display and input functions handle ISO Latin
@@ -55,73 +63,69 @@ extern char *info_parsed_nodename;
    INFO_PARSED_FILENAME to NULL.  If second argument NEWLINES_OKAY is
    non-zero, it says to allow the nodename specification to cross a
    newline boundary (i.e., only `,', `.', or `TAB' can end the spec). */
-void info_parse_node (char *string, int newlines_okay);
+void info_parse_node ();
 
 /* Return a NULL terminated array of REFERENCE * which represents the menu
    found in NODE.  If there is no menu in NODE, just return a NULL pointer. */
-extern REFERENCE **info_menu_of_node (NODE *node);
+extern REFERENCE **info_menu_of_node ();
 
 /* Return a NULL terminated array of REFERENCE * which represents the cross
    refrences found in NODE.  If there are no cross references in NODE, just
    return a NULL pointer. */
-extern REFERENCE **info_xrefs_of_node (NODE *node);
+extern REFERENCE **info_xrefs_of_node ();
 
 /* Glean cross references from BINDING->buffer + BINDING->start until
    BINDING->end.  Return an array of REFERENCE * that represents each
    cross reference in this range. */
-extern REFERENCE **info_xrefs (SEARCH_BINDING *binding);
+extern REFERENCE **info_xrefs ();
 
 /* Get the entry associated with LABEL in REFERENCES.  Return a pointer to
    the reference if found, or NULL. */
-extern REFERENCE *info_get_labeled_reference (char *label,
-    REFERENCE **references);
+extern REFERENCE *info_get_labeled_reference ();
 
 /* Glean menu entries from BINDING->buffer + BINDING->start until we
    have looked at the entire contents of BINDING.  Return an array
    of REFERENCE * that represents each menu item in this range. */
-extern REFERENCE **info_menu_items (SEARCH_BINDING *binding);
+extern REFERENCE **info_menu_items ();
 
 /* A utility function for concatenating REFERENCE **.  Returns a new
    REFERENCE ** which is the concatenation of REF1 and REF2.  The REF1
    and REF2 arrays are freed, but their contents are not. */
-REFERENCE **info_concatenate_references (REFERENCE **ref1, REFERENCE **ref2);
-
-/* Copy an existing reference into new memory.  */
-extern REFERENCE *info_copy_reference (REFERENCE *src);
+REFERENCE **info_concatenate_references ();
 
 /* Free the data associated with REFERENCES. */
-extern void info_free_references (REFERENCE **references);
+extern void info_free_references ();
 
 /* Search for sequences of whitespace or newlines in STRING, replacing
    all such sequences with just a single space.  Remove whitespace from
    start and end of string. */
-void canonicalize_whitespace (char *string);
+void canonicalize_whitespace ();
 
 /* Return a pointer to a string which is the printed representation
    of CHARACTER if it were printed at HPOS. */
-extern char *printed_representation (unsigned char character, int hpos);
+extern char *printed_representation ();
 
 /* Return a pointer to the part of PATHNAME that simply defines the file. */
-extern char *filename_non_directory (char *pathname);
+extern char *filename_non_directory ();
 
 /* Return non-zero if NODE is one especially created by Info. */
-extern int internal_info_node_p (NODE *node);
+extern int internal_info_node_p ();
 
 /* Make NODE appear to be one especially created by Info, and give it NAME. */
-extern void name_internal_node (NODE *node, char *name);
+extern void name_internal_node ();
 
 /* Return the window displaying NAME, the name of an internally created
    Info window. */
-extern WINDOW *get_internal_info_window (char *name);
-
-/* Return a window displaying the node NODE. */
-extern WINDOW *get_window_of_node (NODE *node);
+extern WINDOW *get_internal_info_window ();
 
 /* Return the node addressed by LABEL in NODE (usually one of "Prev:",
    "Next:", "Up:", "File:", or "Node:".  After a call to this function,
-   the globals `info_parsed_nodename' and `info_parsed_filename' contain
+   the global INFO_PARSED_NODENAME and INFO_PARSED_FILENAME contain
    the information. */
-extern void info_parse_label (char *label, NODE *node);
+extern void info_parse_label (/* label, node */);
+
+#define info_label_was_found \
+   (info_parsed_nodename != NULL || info_parsed_filename != NULL)
 
 #define info_file_label_of_node(n) info_parse_label (INFO_FILE_LABEL, n)
 #define info_next_label_of_node(n) info_parse_label (INFO_NEXT_LABEL, n)
@@ -129,7 +133,7 @@ extern void info_parse_label (char *label, NODE *node);
 #define info_prev_label_of_node(n) \
   do { \
     info_parse_label (INFO_PREV_LABEL, n); \
-    if (!info_parsed_nodename && !info_parsed_filename) \
+    if (!info_label_was_found) \
       info_parse_label (INFO_ALTPREV_LABEL, n); \
   } while (0)
 

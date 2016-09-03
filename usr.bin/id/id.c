@@ -1,4 +1,4 @@
-/*	$OpenBSD: id.c,v 1.26 2015/10/09 01:37:07 deraadt Exp $	*/
+/*	$OpenBSD: id.c,v 1.8 1999/08/18 12:23:01 aaron Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,7 +33,19 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1991, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+/*static char sccsid[] = "@(#)id.c	8.3 (Berkeley) 4/28/95";*/
+static char rcsid[] = "$OpenBSD: id.c,v 1.8 1999/08/18 12:23:01 aaron Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
+
 #include <errno.h>
 #include <grp.h>
 #include <pwd.h>
@@ -37,52 +53,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
-#include <login_cap.h>
+#include <err.h>
 
-void	current(void);
-void	pretty(struct passwd *);
-void	group(struct passwd *, int);
-void	usage(void);
-void	user(struct passwd *);
+void	current __P((void));
+void	pretty __P((struct passwd *));
+void	group __P((struct passwd *, int));
+void	usage __P((void));
+void	user __P((struct passwd *));
 struct passwd *
-	who(char *);
+	who __P((char *));
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct group *gr;
 	struct passwd *pw;
-	int ch, cflag, Gflag, gflag, nflag, pflag, rflag, uflag;
-	uid_t uid;
-	gid_t gid;
-	const char *opts;
+	int Gflag, ch, gflag, id, nflag, pflag, rflag, uflag;
 
-	if (pledge("stdio getpw", NULL) == -1)
-		err(1, "pledge");
-
-	cflag = Gflag = gflag = nflag = pflag = rflag = uflag = 0;
-
-	if (strcmp(getprogname(), "groups") == 0) {
-		Gflag = 1;
-		nflag = 1;
-		opts = "";
-		if (argc > 2)
-			usage();
-	} else if (strcmp(getprogname(), "whoami") == 0) {
-		uflag = 1;
-		nflag = 1;
-		opts = "";
-		if (argc > 1)
-			usage();
-	} else
-		opts = "cGgnpru";
-
-	while ((ch = getopt(argc, argv, opts)) != -1)
+	Gflag = gflag = nflag = pflag = rflag = uflag = 0;
+	while ((ch = getopt(argc, argv, "Ggnpru")) != -1)
 		switch(ch) {
-		case 'c':
-			cflag = 1;
-			break;
 		case 'G':
 			Gflag = 1;
 			break;
@@ -108,7 +100,7 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	switch (cflag + Gflag + gflag + pflag + uflag) {
+	switch(Gflag + gflag + pflag + uflag) {
 	case 1:
 		break;
 	case 0:
@@ -119,36 +111,23 @@ main(int argc, char *argv[])
 		usage();
 	}
 
-	if (strcmp(opts, "") != 0 && argc > 1)
-		usage();
-
 	pw = *argv ? who(*argv) : NULL;
 
-	if (cflag) {
-		if (pw == NULL)
-			pw = getpwuid(getuid());
-		if (pw != NULL && pw->pw_class != NULL && *pw->pw_class != '\0')
-			(void)printf("%s\n", pw->pw_class);
-		else
-			(void)printf("%s\n", LOGIN_DEFCLASS);
-		exit(0);
-	}
-
 	if (gflag) {
-		gid = pw ? pw->pw_gid : rflag ? getgid() : getegid();
-		if (nflag && (gr = getgrgid(gid)))
+		id = pw ? pw->pw_gid : rflag ? getgid() : getegid();
+		if (nflag && (gr = getgrgid(id)))
 			(void)printf("%s\n", gr->gr_name);
 		else
-			(void)printf("%u\n", gid);
+			(void)printf("%u\n", id);
 		exit(0);
 	}
 
 	if (uflag) {
-		uid = pw ? pw->pw_uid : rflag ? getuid() : geteuid();
-		if (nflag && (pw = getpwuid(uid)))
+		id = pw ? pw->pw_uid : rflag ? getuid() : geteuid();
+		if (nflag && (pw = getpwuid(id)))
 			(void)printf("%s\n", pw->pw_name);
 		else
-			(void)printf("%u\n", uid);
+			(void)printf("%u\n", id);
 		exit(0);
 	}
 
@@ -170,7 +149,8 @@ main(int argc, char *argv[])
 }
 
 void
-pretty(struct passwd *pw)
+pretty(pw)
+	struct passwd *pw;
 {
 	struct group *gr;
 	uid_t eid, rid;
@@ -191,61 +171,57 @@ pretty(struct passwd *pw)
 			(void)printf("uid\t%s\n", pw->pw_name);
 		else
 			(void)printf("uid\t%u\n", rid);
-
-		if ((eid = geteuid()) != rid) {
+		
+		if ((eid = geteuid()) != rid)
 			if ((pw = getpwuid(eid)))
 				(void)printf("euid\t%s\n", pw->pw_name);
 			else
 				(void)printf("euid\t%u\n", eid);
-		}
-		if ((rid = getgid()) != (eid = getegid())) {
+		if ((rid = getgid()) != (eid = getegid()))
 			if ((gr = getgrgid(rid)))
 				(void)printf("rgid\t%s\n", gr->gr_name);
 			else
 				(void)printf("rgid\t%u\n", rid);
-		}
 		(void)printf("groups\t");
 		group(NULL, 1);
 	}
-	if (pw != NULL && pw->pw_class != NULL && *pw->pw_class != '\0')
-		(void)printf("class\t%s\n", pw->pw_class);
 }
 
 void
-current(void)
+current()
 {
 	struct group *gr;
 	struct passwd *pw;
 	int cnt, ngroups;
-	uid_t uid, euid;
-	gid_t groups[NGROUPS_MAX], gid, egid, lastgid;
-	char *prefix;
+	uid_t id, eid;
+	gid_t groups[NGROUPS], gid, lastgid;
+	char *fmt;
 
-	uid = getuid();
-	(void)printf("uid=%u", uid);
-	if ((pw = getpwuid(uid)))
+	id = getuid();
+	(void)printf("uid=%u", id);
+	if ((pw = getpwuid(id)))
 		(void)printf("(%s)", pw->pw_name);
-	if ((euid = geteuid()) != uid) {
-		(void)printf(" euid=%u", euid);
-		if ((pw = getpwuid(euid)))
+	if ((eid = geteuid()) != id) {
+		(void)printf(" euid=%u", eid);
+		if ((pw = getpwuid(eid)))
 			(void)printf("(%s)", pw->pw_name);
 	}
-	gid = getgid();
-	(void)printf(" gid=%u", gid);
-	if ((gr = getgrgid(gid)))
+	id = getgid();
+	(void)printf(" gid=%u", id);
+	if ((gr = getgrgid(id)))
 		(void)printf("(%s)", gr->gr_name);
-	if ((egid = getegid()) != gid) {
-		(void)printf(" egid=%u", egid);
-		if ((gr = getgrgid(egid)))
+	if ((eid = getegid()) != id) {
+		(void)printf(" egid=%u", eid);
+		if ((gr = getgrgid(eid)))
 			(void)printf("(%s)", gr->gr_name);
 	}
-	if ((ngroups = getgroups(NGROUPS_MAX, groups))) {
-		for (prefix = " groups=", lastgid = (gid_t)-1, cnt = 0;
-		    cnt < ngroups; prefix = ", ", lastgid = gid) {
+	if ((ngroups = getgroups(NGROUPS, groups))) {
+		for (fmt = " groups=%u", lastgid = (gid_t)-1, cnt = 0; cnt < ngroups;
+		    fmt = ", %u", lastgid = gid) {
 			gid = groups[cnt++];
 			if (lastgid == gid)
 				continue;
-			(void)printf("%s%u", prefix, gid);
+			(void)printf(fmt, gid);
 			if ((gr = getgrgid(gid)))
 				(void)printf("(%s)", gr->gr_name);
 		}
@@ -254,75 +230,77 @@ current(void)
 }
 
 void
-user(struct passwd *pw)
+user(pw)
+	register struct passwd *pw;
 {
-	gid_t gid, groups[NGROUPS_MAX + 1];
-	int cnt, ngroups;
-	uid_t uid;
-	struct group *gr;
-	char *prefix;
+	register struct group *gr;
+	register char *fmt;
+	int cnt, id, lastid, ngroups, groups[NGROUPS + 1];
 
-	uid = pw->pw_uid;
-	(void)printf("uid=%u(%s)", uid, pw->pw_name);
+	id = pw->pw_uid;
+	(void)printf("uid=%u(%s)", id, pw->pw_name);
 	(void)printf(" gid=%u", pw->pw_gid);
 	if ((gr = getgrgid(pw->pw_gid)))
 		(void)printf("(%s)", gr->gr_name);
-	ngroups = NGROUPS_MAX + 1;
+	ngroups = NGROUPS + 1;
 	(void) getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups);
-	prefix = " groups=";
-	for (cnt = 0; cnt < ngroups;) {
-		gid = groups[cnt];
-		(void)printf("%s%u", prefix, gid);
-		prefix = ", ";
-		if ((gr = getgrgid(gid)))
+	fmt = " groups=%u";
+	for (lastid = -1, cnt = 0; cnt < ngroups; ++cnt) {
+		if (lastid == (id = groups[cnt]))
+			continue;
+		(void)printf(fmt, id);
+		fmt = ", %u";
+		if ((gr = getgrgid(id)))
 			(void)printf("(%s)", gr->gr_name);
-		/* Skip same gid entries. */
-		while (++cnt < ngroups && gid == groups[cnt])
-			;
+		lastid = id;
 	}
 	(void)printf("\n");
 }
 
 void
-group(struct passwd *pw, int nflag)
+group(pw, nflag)
+	struct passwd *pw;
+	int nflag;
 {
-	int cnt, ngroups;
-	gid_t gid, groups[NGROUPS_MAX + 1];
 	struct group *gr;
-	char *prefix;
+	int cnt, id, lastid, ngroups;
+	gid_t groups[NGROUPS + 1];
+	char *fmt;
 
 	if (pw) {
-		ngroups = NGROUPS_MAX + 1;
+		ngroups = NGROUPS + 1;
 		(void) getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups);
 	} else {
 		groups[0] = getgid();
-		ngroups = getgroups(NGROUPS_MAX, groups + 1) + 1;
+		ngroups = getgroups(NGROUPS, groups + 1) + 1;
 	}
-	prefix = "";
-	for (cnt = 0; cnt < ngroups;) {
-		gid = groups[cnt];
+	fmt = nflag ? "%s" : "%u";
+	for (lastid = -1, cnt = 0; cnt < ngroups; ++cnt) {
+		if (lastid == (id = groups[cnt]))
+			continue;
 		if (nflag) {
-			if ((gr = getgrgid(gid)))
-				(void)printf("%s%s", prefix, gr->gr_name);
+			if ((gr = getgrgid(id)))
+				(void)printf(fmt, gr->gr_name);
 			else
-				(void)printf("%s%u", prefix, gid);
+				(void)printf(*fmt == ' ' ? " %u" : "%u",
+				    id);
+			fmt = " %s";
 		} else {
-			(void)printf("%s%u", prefix, gid);
+			(void)printf(fmt, id);
+			fmt = " %u";
 		}
-		prefix = " ";
-		/* Skip same gid entries. */
-		while (++cnt < ngroups && gid == groups[cnt])
-			;
+		lastid = id;
 	}
 	(void)printf("\n");
 }
 
 struct passwd *
-who(char *u)
+who(u)
+	char *u;
 {
 	struct passwd *pw;
-	uid_t uid;
-	const char *errstr;
+	uid_t id;
+	char *ep;
 
 	/*
 	 * Translate user argument into a pw pointer.  First, try to
@@ -330,27 +308,20 @@ who(char *u)
 	 */
 	if ((pw = getpwnam(u)))
 		return(pw);
-	uid = strtonum(u, 0, UID_MAX, &errstr);
-	if (!errstr && (pw = getpwuid(uid)))
+	id = strtoul(u, &ep, 10);
+	if (*u && !*ep && (pw = getpwuid(id)))
 		return(pw);
 	errx(1, "%s: No such user", u);
 	/* NOTREACHED */
 }
 
 void
-usage(void)
+usage()
 {
-	if (strcmp(getprogname(), "groups") == 0) {
-		(void)fprintf(stderr, "usage: groups [user]\n");
-	} else if (strcmp(getprogname(), "whoami") == 0) {
-		(void)fprintf(stderr, "usage: whoami\n");
-	} else {
-		(void)fprintf(stderr, "usage: id [user]\n");
-		(void)fprintf(stderr, "       id -c [user]\n");
-		(void)fprintf(stderr, "       id -G [-n] [user]\n");
-		(void)fprintf(stderr, "       id -g [-nr] [user]\n");
-		(void)fprintf(stderr, "       id -p [user]\n");
-		(void)fprintf(stderr, "       id -u [-nr] [user]\n");
-	}
+	(void)fprintf(stderr, "usage: id [user]\n"
+			      "       id -G [-n] [user]\n"
+			      "       id -g [-nr] [user]\n"
+			      "       id -p\n"
+			      "       id -u [-nr] [user]\n");
 	exit(1);
 }

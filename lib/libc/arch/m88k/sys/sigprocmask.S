@@ -1,5 +1,3 @@
-/*	$OpenBSD: sigprocmask.S,v 1.12 2015/10/23 04:39:24 guenther Exp $	*/
-
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -16,7 +14,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,21 +35,27 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+	.data
+	/*.asciz "from: @(#)sigprocmask.s	5.2 (Berkeley) 6/6/90"*/
+	.asciz "$Id: sigprocmask.S,v 1.1 1998/12/15 07:10:34 smurph Exp $"
+	.text
+#endif /* LIBC_SCCS and not lint */
+
 #include "SYS.h"
 
-SYSENTRY_HIDDEN(sigprocmask)
-	bcnd	ne0,%r3,1f		/* if new sigset pointer is null */
-	or	%r2,%r0,1		/* how = SIG_BLOCK and do it */
-	br	2f
-1:
-	ld	%r3,%r3,0		/* else load set from *set and do it */
-2:
-	or	%r13,%r0,SYS_sigprocmask
-	tb0	0,%r0,450
-	br	CERROR
-	bcnd	eq0,%r4,3f		/* if old mask not requested, done */
-	st	%r2,%r4,0		/* otherwise, set it */
-3:
-	jmp.n	%r1
-	 or	%r2,%r0,0
-SYSCALL_END_HIDDEN(sigprocmask)
+ENTRY(sigprocmask)
+	bcnd	ne0,r3,L1		/* if new sigset pointer is null */
+	or	r2,r0,1			/* how = SIG_BLOCK and do it */
+	br	L2
+L1:
+	ld	r3,r3,0			/* else load set from *set and do it */
+L2:
+	or	r13,r0,SYS_sigprocmask
+	tb0	0,r0,128
+	br	cerror
+	bcnd	eq0,r4,out		/* if old mask not requested, done */
+	st	r2,r4,0			/* otherwise, set it */
+out:
+	jmp.n	r1
+	or	r2,r0,0

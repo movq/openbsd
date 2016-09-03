@@ -1,6 +1,7 @@
-/*	$OpenBSD: fld_ftlink.c,v 1.6 2015/01/23 22:48:51 krw Exp $	*/
+/*	$OpenBSD: fld_ftlink.c,v 1.3 1999/05/17 03:04:14 millert Exp $	*/
+
 /****************************************************************************
- * Copyright (c) 1998-2004,2007 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -28,12 +29,12 @@
  ****************************************************************************/
 
 /****************************************************************************
- *   Author:  Juergen Pfeifer, 1995,1997                                    *
+ *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
 
 #include "form.priv.h"
 
-MODULE_ID("$Id: fld_ftlink.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
+MODULE_ID("$From: fld_ftlink.c,v 1.4 1999/05/16 17:17:33 juergen Exp $")
 
 /*---------------------------------------------------------------------------
 |   Facility      :  libnform  
@@ -47,42 +48,38 @@ MODULE_ID("$Id: fld_ftlink.c,v 1.6 2015/01/23 22:48:51 krw Exp $")
 |                       E_BAD_ARGUMENT  - invalid arguments
 |                       E_SYSTEM_ERROR  - system error (no memory)
 |
-|   Return Values :  Fieldtype pointer or NULL if error occurred.
+|   Return Values :  Fieldtype pointer or NULL if error occured.
 +--------------------------------------------------------------------------*/
-NCURSES_EXPORT(FIELDTYPE *)
-link_fieldtype(FIELDTYPE *type1, FIELDTYPE *type2)
+FIELDTYPE *link_fieldtype(FIELDTYPE * type1, FIELDTYPE * type2)
 {
   FIELDTYPE *nftyp = (FIELDTYPE *)0;
 
-  T((T_CALLED("link_fieldtype(%p,%p)"), type1, type2));
-  if (type1 && type2)
+  if ( type1 && type2 )
     {
-      nftyp = typeMalloc(FIELDTYPE, 1);
-
+      nftyp = (FIELDTYPE *)malloc(sizeof(FIELDTYPE));
       if (nftyp)
 	{
-	  T((T_CREATE("fieldtype %p"), nftyp));
 	  *nftyp = *_nc_Default_FieldType;
 	  nftyp->status |= _LINKED_TYPE;
-	  if ((type1->status & _HAS_ARGS) || (type2->status & _HAS_ARGS))
+	  if ((type1->status & _HAS_ARGS) || (type2->status & _HAS_ARGS) )
 	    nftyp->status |= _HAS_ARGS;
-	  if ((type1->status & _HAS_CHOICE) || (type2->status & _HAS_CHOICE))
+	  if ((type1->status & _HAS_CHOICE) || (type2->status & _HAS_CHOICE) )
 	    nftyp->status |= _HAS_CHOICE;
-	  nftyp->left = type1;
-	  nftyp->right = type2;
+	  nftyp->left  = type1;
+	  nftyp->right = type2; 
 	  type1->ref++;
 	  type2->ref++;
 	}
       else
 	{
-	  SET_ERROR(E_SYSTEM_ERROR);
+	  SET_ERROR( E_SYSTEM_ERROR );
 	}
     }
   else
     {
-      SET_ERROR(E_BAD_ARGUMENT);
+      SET_ERROR( E_BAD_ARGUMENT );
     }
-  returnFieldType(nftyp);
+  return nftyp;
 }
 
 /* fld_ftlink.c ends here */

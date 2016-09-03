@@ -1,4 +1,4 @@
-/*	$OpenBSD: restore.h,v 1.8 2010/07/20 20:47:13 miod Exp $	*/
+/*	$OpenBSD: restore.h,v 1.3 1997/07/05 20:51:25 millert Exp $	*/
 /*	$NetBSD: restore.h,v 1.8 1997/07/01 05:37:54 lukem Exp $	*/
 
 /*
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -59,7 +63,7 @@ extern long	volno;		/* current volume being read */
 extern long	ntrec;		/* number of TP_BSIZE records per tape block */
 extern time_t	dumptime;	/* time that this dump begins */
 extern time_t	dumpdate;	/* time that this dump was made */
-extern char	command;	/* operation being performed */
+extern char	command;	/* opration being performed */
 extern FILE	*terminal;	/* file descriptor for the terminal input */
 extern char	*tmpdir;	/* where to store temporary files */
 extern int	oldinofmt;	/* reading tape with old format inodes */
@@ -75,7 +79,7 @@ struct entry {
 	char	e_type;			/* type of this entry, see below */
 	short	e_flags;		/* status flags, see below */
 	ino_t	e_ino;			/* inode number in previous file sys */
-	long	e_index;		/* unique index (for dumped table) */
+	long	e_index;		/* unique index (for dumpped table) */
 	struct	entry *e_parent;	/* pointer to parent directory (..) */
 	struct	entry *e_sibling;	/* next element in this directory (.) */
 	struct	entry *e_links;		/* hard links to this inode */
@@ -105,21 +109,10 @@ struct entry {
  * The entry describes the next file available on the tape
  */
 struct context {
-	short	action;		/* action being taken on this file */
-	mode_t	mode;		/* mode of file */
-	ino_t	ino;		/* inumber of file */
-	uid_t	uid;		/* file owner */
-	gid_t	gid;		/* file group */
-	int	file_flags;	/* status flags (chflags) */
-	int	rdev;		/* device number of file */
-	time_t	atime_sec;	/* access time seconds */
-	time_t	mtime_sec;	/* modified time seconds */
-	time_t	birthtime_sec;	/* creation time seconds */
-	int	atime_nsec;	/* access time nanoseconds */
-	int	mtime_nsec;	/* modified time nanoseconds */
-	int	birthtime_nsec;	/* creation time nanoseconds */
-	off_t	size;		/* size of file */
 	char	*name;		/* name of file */
+	ino_t	ino;		/* inumber of file */
+	struct	dinode *dip;	/* pointer to inode */
+	char	action;		/* action being taken on this file */
 } curfile;
 /* actions */
 #define	USING	1	/* extracting from the tape */

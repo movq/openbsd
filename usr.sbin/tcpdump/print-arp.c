@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-arp.c,v 1.15 2015/11/18 15:36:20 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -21,16 +19,25 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-arp.c,v 1.8 1999/09/16 20:58:45 brad Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
+#ifdef __STDC__
 struct mbuf;
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 
+#include <memory.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -50,11 +57,11 @@ struct rtentry;
 static u_char ezero[6];
 
 void
-arp_print(const u_char *bp, u_int length, u_int caplen)
+arp_print(register const u_char *bp, u_int length, u_int caplen)
 {
-	const struct ether_arp *ap;
-	const struct ether_header *eh;
-	u_short pro, hrd, op;
+	register const struct ether_arp *ap;
+	register const struct ether_header *eh;
+	register u_short pro, hrd, op;
 
 	ap = (struct ether_arp *)bp;
 	if ((u_char *)(ap + 1) > snapend) {

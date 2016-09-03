@@ -1,39 +1,14 @@
-/*	$OpenBSD: server.h,v 1.11 2016/01/07 21:29:31 mestre Exp $	*/
+/*	$OpenBSD: server.h,v 1.4 1999/08/30 23:38:11 d Exp $	*/
 /*	$NetBSD: hunt.h,v 1.5 1998/09/13 15:27:28 hubertf Exp $	*/
+
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/socket.h>
-
 #include <stdio.h>
+#include <sys/socket.h>
 
 #ifndef __GNUC__
 #define __attribute__(x)
@@ -190,7 +165,7 @@ struct regen_def {
 
 struct spawn {
 	int		fd;
-	int		reading_msg;
+	int		state;
 	struct sockaddr source;
 	socklen_t	sourcelen;
 	u_int32_t	uid;
@@ -203,10 +178,6 @@ struct spawn {
 	int		msglen;
 	struct spawn *	next;
 	struct spawn **	prevnext;
-	int		inlen;
-	char		inbuf[ sizeof (u_int32_t) + NAMELEN +
-			       sizeof (u_int8_t) + sizeof (u_int32_t) +
-			       NAMELEN + sizeof (u_int32_t) ];
 };
 
 extern struct spawn *	Spawn;
@@ -214,63 +185,63 @@ extern struct spawn *	Spawn;
 extern int	Socket;
 
 /* answer.c */
-void	answer_first(void);
-int	answer_next(struct spawn *);
-int	rand_dir(void);
-void	answer_info(FILE *);
+void	answer_first __P((void));
+int	answer_next __P((struct spawn *));
+int	rand_dir __P((void));
+void	answer_info __P((FILE *));
 
 /* draw.c */
-void	drawmaze(PLAYER *);
-void	look(PLAYER *);
-void	check(PLAYER *, int, int);
-void	showstat(PLAYER *);
-void	drawplayer(PLAYER *, FLAG);
-void	message(PLAYER *, char *);
+void	drawmaze __P((PLAYER *));
+void	look __P((PLAYER *));
+void	check __P((PLAYER *, int, int));
+void	showstat __P((PLAYER *));
+void	drawplayer __P((PLAYER *, FLAG));
+void	message __P((PLAYER *, char *));
 
 /* driver.c */
-int	rand_num(int);
-void	checkdam(PLAYER *, PLAYER *, IDENT *, int, char);
-__dead void	cleanup(int);
+int	rand_num __P((int));
+void	checkdam __P((PLAYER *, PLAYER *, IDENT *, int, char));
+void	cleanup __P((int));
 
 /* execute.c */
-void	mon_execute(PLAYER *);
-void	execute(PLAYER *);
-void	add_shot(int, int, int, char, int, PLAYER *, int, char);
-BULLET *create_shot(int, int, int, char, int, int, PLAYER *, IDENT *,
-	    int, char);
-void	ammo_update(PLAYER *);
+void	mon_execute __P((PLAYER *));
+void	execute __P((PLAYER *));
+void	add_shot __P((int, int, int, char, int, PLAYER *, int, char));
+BULLET *create_shot __P((int, int, int, char, int, int, PLAYER *, IDENT *,
+	int, char));
+void	ammo_update __P((PLAYER *));
 
 /* expl.c */
-void	showexpl(int, int, char);
-void	rollexpl(void);
-void	makemaze(void);
-void	clearwalls(void);
-int	can_rollexpl(void);
+void	showexpl __P((int, int, char));
+void	rollexpl __P((void));
+void	makemaze __P((void));
+void	clearwalls __P((void));
+int	can_rollexpl __P((void));
 
 /* makemaze.c */
-void	makemaze(void);
+void	makemaze __P((void));
 
 /* shots.c */
-int	can_moveshots(void);
-void	moveshots(void);
-PLAYER *play_at(int, int);
-int	opposite(int, char);
-BULLET *is_bullet(int, int);
-void	fixshots(int, int, char);
+int	can_moveshots __P((void));
+void	moveshots __P((void));
+PLAYER *play_at __P((int, int));
+int	opposite __P((int, char));
+BULLET *is_bullet __P((int, int));
+void	fixshots __P((int, int, char));
 
 /* terminal.c */
-void	cgoto(PLAYER *, int, int);
-void	outch(PLAYER *, char);
-void	outstr(PLAYER *, char *, int);
-void	outyx(PLAYER *, int, int, const char *, ...)
+void	cgoto __P((PLAYER *, int, int));
+void	outch __P((PLAYER *, char));
+void	outstr __P((PLAYER *, char *, int));
+void	outyx __P((PLAYER *, int, int, const char *, ...))
 			__attribute__((format (printf, 4, 5)));
-void	clrscr(PLAYER *);
-void	ce(PLAYER *);
-void	sendcom(PLAYER *, int, ...);
-void	flush(PLAYER *);
-void	logit(int, const char *, ...)
+void	clrscr __P((PLAYER *));
+void	ce __P((PLAYER *));
+void	sendcom __P((PLAYER *, int, ...));
+void	flush __P((PLAYER *));
+void	log __P((int, const char *, ...))
 			__attribute__((format (printf, 2, 3)));
-void	logx(int, const char *, ...)
+void	logx __P((int, const char *, ...))
 			__attribute__((format (printf, 2, 3)));
 
 /* extern.c */

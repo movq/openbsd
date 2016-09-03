@@ -22,55 +22,66 @@ interface.
 
 =head1 AVAILABILITY
 
-gdbm is available from any GNU archive.  The master site is
-C<ftp.gnu.org>, but you are strongly urged to use one of the many
-mirrors.  You can obtain a list of mirror sites from
-http://www.gnu.org/order/ftp.html.
+Gdbm is available from any GNU archive.  The master site is
+C<prep.ai.mit.edu>, but your are strongly urged to use one of the many
+mirrors.   You can obtain a list of mirror sites by issuing the
+command	C<finger fsf@prep.ai.mit.edu>.
 
 =head1 BUGS
 
 The available functions and the gdbm/perl interface need to be documented.
 
-The GDBM error number and error message interface needs to be added.
-
 =head1 SEE ALSO
 
-L<perl(1)>, L<DB_File(3)>, L<perldbmfilter>. 
+L<perl(1)>, L<DB_File(3)>. 
 
 =cut
 
 package GDBM_File;
 
 use strict;
-use warnings;
-our($VERSION, @ISA, @EXPORT);
+use vars qw($VERSION @ISA @EXPORT $AUTOLOAD);
 
 require Carp;
 require Tie::Hash;
 require Exporter;
-require XSLoader;
-@ISA = qw(Tie::Hash Exporter);
+use AutoLoader;
+require DynaLoader;
+@ISA = qw(Tie::Hash Exporter DynaLoader);
 @EXPORT = qw(
 	GDBM_CACHESIZE
-	GDBM_CENTFREE
-	GDBM_COALESCEBLKS
 	GDBM_FAST
-	GDBM_FASTMODE
 	GDBM_INSERT
 	GDBM_NEWDB
-	GDBM_NOLOCK
-	GDBM_OPENMASK
 	GDBM_READER
 	GDBM_REPLACE
-	GDBM_SYNC
-	GDBM_SYNCMODE
 	GDBM_WRCREAT
 	GDBM_WRITER
 );
 
-# This module isn't dual life, so no need for dev version numbers.
-$VERSION = '1.15';
+$VERSION = "1.00";
 
-XSLoader::load();
+sub AUTOLOAD {
+    my($constname);
+    ($constname = $AUTOLOAD) =~ s/.*:://;
+    my $val = constant($constname, @_ ? $_[0] : 0);
+    if ($! != 0) {
+	if ($! =~ /Invalid/) {
+	    $AutoLoader::AUTOLOAD = $AUTOLOAD;
+	    goto &AutoLoader::AUTOLOAD;
+	}
+	else {
+	    Carp::croak("Your vendor has not defined GDBM_File macro $constname, used");
+	}
+    }
+    eval "sub $AUTOLOAD { $val }";
+    goto &$AUTOLOAD;
+}
+
+bootstrap GDBM_File $VERSION;
+
+# Preloaded methods go here.  Autoload methods go after __END__, and are
+# processed by the autosplit program.
 
 1;
+__END__

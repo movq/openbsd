@@ -1,4 +1,4 @@
-/*	$OpenBSD: aic6360var.h,v 1.8 2011/04/06 18:14:35 miod Exp $	*/
+/*	$OpenBSD: aic6360var.h,v 1.1 1998/09/11 07:24:57 fgsch Exp $	*/
 /*	$NetBSD: aic6360.c,v 1.52 1996/12/10 21:27:51 thorpej Exp $	*/
 
 /*
@@ -56,14 +56,12 @@
 typedef u_long physaddr;
 typedef u_long physlen;
 
-#ifdef notyet
 struct aic_dma_seg {
 	physaddr seg_addr;
 	physlen seg_len;
 };
 
 #define AIC_NSEG	16
-#endif
 
 /*
  * ACB. Holds additional information for each SCSI command Comments: We
@@ -114,10 +112,11 @@ struct aic_tinfo {
 	u_char  period;		/* Period suggestion */
 	u_char  offset;		/* Offset suggestion */
 	u_char	width;		/* Width suggestion */
-};
+} tinfo_t;
 
 struct aic_softc {
 	struct device sc_dev;
+	struct isadev sc_id;
 	void *sc_ih;
 
 	bus_space_tag_t sc_iot;
@@ -130,9 +129,6 @@ struct aic_softc {
 	struct aic_acb *sc_nexus;	/* current command */
 	struct aic_acb sc_acb[8];
 	struct aic_tinfo sc_tinfo[8];
-
-	struct mutex		sc_acb_mtx;
-	struct scsi_iopool	sc_iopool;
 
 	/* Data about the current nexus (updated for every cmd switch) */
 	u_char	*sc_dp;		/* Current data pointer */
@@ -197,7 +193,7 @@ struct aic_softc {
 	do { if ((aic_debug & AIC_DOBREAK) != 0) Debugger(); } while (0)
 #define	AIC_ASSERT(x) \
 	do { \
-		if (!(x)) { \
+		if (!x) { \
 			printf("%s at line %d: assertion failed\n", \
 			    sc->sc_dev.dv_xname, __LINE__); \
 			Debugger(); \
@@ -216,7 +212,6 @@ struct aic_softc {
 #define AIC_TRACE(s)	AIC_PRINT(AIC_SHOWTRACE, s)
 #define AIC_START(s)	AIC_PRINT(AIC_SHOWSTART, s)
 
-void	aicattach(struct aic_softc *);
-int	aic_detach(struct device *, int);
-int	aicintr(void *);
-int 	aic_find(bus_space_tag_t, bus_space_handle_t);
+void	aicattach	__P((struct aic_softc *));
+int	aicintr		__P((void *));
+int 	aic_find	__P((bus_space_tag_t, bus_space_handle_t));

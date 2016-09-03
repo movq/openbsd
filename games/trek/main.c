@@ -1,4 +1,4 @@
-/*	$OpenBSD: main.c,v 1.17 2016/01/07 16:00:33 tb Exp $	*/
+/*	$OpenBSD: main.c,v 1.7 1999/03/12 03:02:42 pjanzen Exp $	*/
 /*	$NetBSD: main.c,v 1.4 1995/04/22 10:59:10 cgd Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,14 +34,29 @@
  * SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <setjmp.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)main.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: main.c,v 1.7 1999/03/12 03:02:42 pjanzen Exp $";
+#endif
+#endif /* not lint */
+
+#include <sys/types.h>
 #include <stdio.h>
+#include <setjmp.h>
+#include <termios.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#include "getpar.h"
+#include <err.h>
 #include "trek.h"
+#include "getpar.h"
 
 /*
 **	 ####  #####	#    ####	   #####  ####	 #####	#   #
@@ -116,17 +135,23 @@
 jmp_buf env;
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+	int	argc;
+	char	**argv;
 {
-	int		ac;
-	char		**av;
+	time_t			curtime;
+	register int		ac;
+	register char		**av;
 
-	if (pledge("stdio rpath wpath cpath", NULL) == -1)
-		err(1, "pledge");
+	/* revoke privs */
+	setegid(getgid());
+	setgid(getgid());
 
 	av = argv;
 	ac = argc;
 	av++;
+	time(&curtime);
+	srandom((long)curtime);
 
 #ifdef xTRACE
 	Trace = 0;
@@ -152,7 +177,7 @@ main(int argc, char **argv)
 	if (setjmp(env))
 	{
 		if ( !getynpar("Another game") )
-			return 0;
+			exit(0);
 	}
 	do
 	{

@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_match.c,v 1.9 2016/01/06 22:28:52 millert Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -11,12 +9,15 @@
 
 #include "config.h"
 
+#ifndef lint
+static const char sccsid[] = "@(#)v_match.c	10.8 (Berkeley) 3/6/96";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/time.h>
 
 #include <bitstring.h>
-#include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,15 +29,17 @@
  * v_match -- %
  *	Search to matching character.
  *
- * PUBLIC: int v_match(SCR *, VICMD *);
+ * PUBLIC: int v_match __P((SCR *, VICMD *));
  */
 int
-v_match(SCR *sp, VICMD *vp)
+v_match(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	VCS cs;
 	MARK *mp;
 	size_t cno, len, off;
-	int cnt, isempty, matchc, startc, (*gc)(SCR *, VCS *);
+	int cnt, isempty, matchc, startc, (*gc)__P((SCR *, VCS *));
 	char *p;
 
 	/*
@@ -54,7 +57,7 @@ v_match(SCR *sp, VICMD *vp)
 	}
 	for (off = vp->m_start.cno;; ++off) {
 		if (off >= len) {
-nomatch:		msgq(sp, M_BERR, "No match character on this line");
+nomatch:		msgq(sp, M_BERR, "184|No match character on this line");
 			return (1);
 		}
 		switch (startc = p[off]) {
@@ -114,7 +117,7 @@ nomatch:		msgq(sp, M_BERR, "No match character on this line");
 			break;
 	}
 	if (cnt) {
-		msgq(sp, M_BERR, "Matching character not found");
+		msgq(sp, M_BERR, "185|Matching character not found");
 		return (1);
 	}
 
@@ -132,8 +135,8 @@ nomatch:		msgq(sp, M_BERR, "No match character on this line");
 	 * starting cursor position when deleting to a match.
 	 */
 	if (vp->m_start.lno < vp->m_stop.lno ||
-	    (vp->m_start.lno == vp->m_stop.lno &&
-	    vp->m_start.cno < vp->m_stop.cno))
+	    vp->m_start.lno == vp->m_stop.lno &&
+	    vp->m_start.cno < vp->m_stop.cno)
 		vp->m_final = ISMOTION(vp) ? vp->m_start : vp->m_stop;
 	else
 		vp->m_final = vp->m_stop;

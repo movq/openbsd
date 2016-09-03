@@ -1,4 +1,3 @@
-/*	$OpenBSD: verr.c,v 1.11 2016/03/13 18:34:20 guenther Exp $ */
 /*-
  * Copyright (c) 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,15 +31,29 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: verr.c,v 1.2 1996/08/19 08:27:30 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <err.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
+
+extern char *__progname;		/* Program name, from crt0. */
 
 __dead void
-verr(int eval, const char *fmt, va_list ap)
+_verr(eval, fmt, ap)
+	int eval;
+	const char *fmt;
+	va_list ap;
 {
 	int sverrno;
 
@@ -49,4 +66,3 @@ verr(int eval, const char *fmt, va_list ap)
 	(void)fprintf(stderr, "%s\n", strerror(sverrno));
 	exit(eval);
 }
-DEF_WEAK(verr);

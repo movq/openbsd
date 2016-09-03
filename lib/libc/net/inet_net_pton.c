@@ -1,7 +1,6 @@
-/*	$OpenBSD: inet_net_pton.c,v 1.8 2013/11/25 18:23:51 deraadt Exp $	*/
+/*	$OpenBSD: inet_net_pton.c,v 1.1 1997/03/13 19:07:30 downsj Exp $	*/
 
 /*
- * Copyright (c) 2012 by Gilles Chehade <gilles@openbsd.org>
  * Copyright (c) 1996 by Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -18,6 +17,14 @@
  * SOFTWARE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static const char rcsid[] = "$From: inet_net_pton.c,v 8.3 1996/11/11 06:36:52 vixie Exp $";
+#else
+static const char rcsid[] = "$OpenBSD: inet_net_pton.c,v 1.1 1997/03/13 19:07:30 downsj Exp $";
+#endif
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -30,8 +37,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-static int	inet_net_pton_ipv4(const char *, u_char *, size_t);
-static int	inet_net_pton_ipv6(const char *, u_char *, size_t);
+static int	inet_net_pton_ipv4 __P((const char *src, u_char *dst,
+					size_t size));
 
 /*
  * static int
@@ -47,13 +54,15 @@ static int	inet_net_pton_ipv6(const char *, u_char *, size_t);
  *	Paul Vixie (ISC), June 1996
  */
 int
-inet_net_pton(int af, const char *src, void *dst, size_t size)
+inet_net_pton(af, src, dst, size)
+	int af;
+	const char *src;
+	void *dst;
+	size_t size;
 {
 	switch (af) {
 	case AF_INET:
 		return (inet_net_pton_ipv4(src, dst, size));
-	case AF_INET6:
-		return (inet_net_pton_ipv6(src, dst, size));
 	default:
 		errno = EAFNOSUPPORT;
 		return (-1);
@@ -77,7 +86,10 @@ inet_net_pton(int af, const char *src, void *dst, size_t size)
  *	Paul Vixie (ISC), June 1996
  */
 static int
-inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
+inet_net_pton_ipv4(src, dst, size)
+	const char *src;
+	u_char *dst;
+	size_t size;
 {
 	static const char
 		xdigits[] = "0123456789abcdef",
@@ -85,16 +97,16 @@ inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
 	int n, ch, tmp, dirty, bits;
 	const u_char *odst = dst;
 
-	ch = (unsigned char)*src++;
+	ch = *src++;
 	if (ch == '0' && (src[0] == 'x' || src[0] == 'X')
-	    && isascii((unsigned char)src[1]) && isxdigit((unsigned char)src[1])) {
+	    && isascii(src[1]) && isxdigit(src[1])) {
 		/* Hexadecimal: Eat nybble string. */
 		if (size <= 0)
 			goto emsgsize;
 		*dst = 0, dirty = 0;
 		src++;	/* skip x or X. */
-		while ((ch = (unsigned char)*src++) != '\0' &&
-		    isascii(ch) && isxdigit(ch)) {
+		while ((ch = *src++) != '\0' &&
+		       isascii(ch) && isxdigit(ch)) {
 			if (isupper(ch))
 				ch = tolower(ch);
 			n = strchr(xdigits, ch) - xdigits;
@@ -120,7 +132,7 @@ inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
 				tmp += n;
 				if (tmp > 255)
 					goto enoent;
-			} while ((ch = (unsigned char)*src++) != '\0' &&
+			} while ((ch = *src++) != '\0' &&
 				 isascii(ch) && isdigit(ch));
 			if (size-- <= 0)
 				goto emsgsize;
@@ -129,7 +141,7 @@ inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
 				break;
 			if (ch != '.')
 				goto enoent;
-			ch = (unsigned char)*src++;
+			ch = *src++;
 			if (!isascii(ch) || !isdigit(ch))
 				goto enoent;
 		}
@@ -137,22 +149,21 @@ inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
 		goto enoent;
 
 	bits = -1;
-	if (ch == '/' && isascii((unsigned char)src[0]) &&
-	    isdigit((unsigned char)src[0]) && dst > odst) {
+	if (ch == '/' && isascii(src[0]) && isdigit(src[0]) && dst > odst) {
 		/* CIDR width specifier.  Nothing can follow it. */
-		ch = (unsigned char)*src++;	/* Skip over the /. */
+		ch = *src++;	/* Skip over the /. */
 		bits = 0;
 		do {
 			n = strchr(digits, ch) - digits;
 			assert(n >= 0 && n <= 9);
 			bits *= 10;
 			bits += n;
-			if (bits > 32)
-				goto emsgsize;
-		} while ((ch = (unsigned char)*src++) != '\0' &&
+		} while ((ch = *src++) != '\0' &&
 			 isascii(ch) && isdigit(ch));
 		if (ch != '\0')
 			goto enoent;
+		if (bits > 32)
+			goto emsgsize;
 	}
 
 	/* Firey death and destruction unless we prefetched EOS. */
@@ -175,7 +186,7 @@ inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
 		else			/* Class A */
 			bits = 8;
 		/* If imputed mask is narrower than specified octets, widen. */
-		if (bits < ((dst - odst) * 8))
+		if (bits >= 8 && bits < ((dst - odst) * 8))
 			bits = (dst - odst) * 8;
 	}
 	/* Extend network to cover the actual mask. */
@@ -193,39 +204,4 @@ inet_net_pton_ipv4(const char *src, u_char *dst, size_t size)
  emsgsize:
 	errno = EMSGSIZE;
 	return (-1);
-}
-
-
-static int
-inet_net_pton_ipv6(const char *src, u_char *dst, size_t size)
-{
-	int	ret;
-	int	bits;
-	char	buf[sizeof("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:255:255:255:255/128")];
-	char		*sep;
-	const char	*errstr;
-
-	if (strlcpy(buf, src, sizeof buf) >= sizeof buf) {
-		errno = EMSGSIZE;
-		return (-1);
-	}
-
-	sep = strchr(buf, '/');
-	if (sep != NULL)
-		*sep++ = '\0';
-
-	ret = inet_pton(AF_INET6, buf, dst);
-	if (ret != 1)
-		return (-1);
-
-	if (sep == NULL)
-		return 128;
-
-	bits = strtonum(sep, 0, 128, &errstr);
-	if (errstr) {
-		errno = EINVAL;
-		return (-1);
-	}
-
-	return bits;
 }

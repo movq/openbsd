@@ -1,7 +1,7 @@
-/*	$OpenBSD: strptime.c,v 1.22 2016/05/23 00:05:15 guenther Exp $ */
 /*	$NetBSD: strptime.c,v 1.12 1998/01/20 21:39:40 mycroft Exp $	*/
+
 /*-
- * Copyright (c) 1997, 1998, 2005, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code was contributed to The NetBSD Foundation by Klaus Klein.
@@ -14,6 +14,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -28,16 +35,18 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: strptime.c,v 1.5 1998/04/25 08:08:25 deraadt Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/localedef.h>
 #include <ctype.h>
 #include <locale.h>
 #include <string.h>
 #include <time.h>
+#include <tzfile.h>
 
-#include "localedef.h"
-#include "private.h"
-#include "tzfile.h"
-
-#define	_ctloc(x)		(_CurrentTimeLocale->x)
+#define	_ctloc(x)		__CONCAT(_CurrentTimeLocale->,x)
 
 /*
  * We do not implement alternate representations. However, we always
@@ -47,61 +56,36 @@
 #define _ALT_O			0x02
 #define	_LEGAL_ALT(x)		{ if (alt_format & ~(x)) return (0); }
 
-/*
- * We keep track of some of the fields we set in order to compute missing ones.
- */
-#define FIELD_TM_MON	(1 << 0)
-#define FIELD_TM_MDAY	(1 << 1)
-#define FIELD_TM_WDAY	(1 << 2)
-#define FIELD_TM_YDAY	(1 << 3)
-#define FIELD_TM_YEAR	(1 << 4)
 
-static char gmt[] = { "GMT" };
-static char utc[] = { "UTC" };
-/* RFC-822/RFC-2822 */
-static const char * const nast[5] = {
-       "EST",    "CST",    "MST",    "PST",    "\0\0\0"
-};
-static const char * const nadt[5] = {
-       "EDT",    "CDT",    "MDT",    "PDT",    "\0\0\0"
-};
-
-static const int mon_lengths[2][MONSPERYEAR] = {
-        { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
-        { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
-};
-
-static	int _conv_num(const unsigned char **, int *, int, int);
-static	int leaps_thru_end_of(const int y);
-static	char *_strptime(const char *, const char *, struct tm *, int);
-static	const u_char *_find_string(const u_char *, int *, const char * const *,
-	    const char * const *, int);
+static	int _conv_num __P((const char **, int *, int, int));
+static	char *_strptime __P((const char *, const char *, struct tm *, int));
 
 
 char *
-strptime(const char *buf, const char *fmt, struct tm *tm)
+strptime(buf, fmt, tm)
+	const char *buf, *fmt;
+	struct tm *tm;
 {
 	return(_strptime(buf, fmt, tm, 1));
 }
-DEF_WEAK(strptime);
 
 static char *
-_strptime(const char *buf, const char *fmt, struct tm *tm, int initialize)
+_strptime(buf, fmt, tm, initialize)
+	const char *buf, *fmt;
+	struct tm *tm;
+	int initialize;
 {
-	unsigned char c;
-	const unsigned char *bp, *ep;
-	size_t len;
-	int alt_format, i, offs;
-	int neg = 0;
-	static int century, relyear, fields;
+	char c;
+	const char *bp;
+	int alt_format, i, len;
+	static int century, relyear;
 
 	if (initialize) {
 		century = TM_YEAR_BASE;
 		relyear = -1;
-		fields = 0;
 	}
 
-	bp = (const unsigned char *)buf;
+	bp = buf;
 	while ((c = *fmt) != '\0') {
 		/* Clear `alternate' modifier prior to new conversion. */
 		alt_format = 0;
@@ -155,13 +139,7 @@ literal:
 			if (!(bp = _strptime(bp, "%m/%d/%y", tm, 0)))
 				return (NULL);
 			break;
-
-		case 'F':	/* The date as "%Y-%m-%d". */
-			_LEGAL_ALT(0);
-			if (!(bp = _strptime(bp, "%Y-%m-%d", tm, 0)))
-				return (NULL);
-			continue;
-
+	
 		case 'R':	/* The time as "%H:%M". */
 			_LEGAL_ALT(0);
 			if (!(bp = _strptime(bp, "%H:%M", tm, 0)))
@@ -216,7 +194,6 @@ literal:
 
 			tm->tm_wday = i;
 			bp += len;
-			fields |= FIELD_TM_WDAY;
 			break;
 
 		case 'B':	/* The month, using the locale's form. */
@@ -241,7 +218,6 @@ literal:
 
 			tm->tm_mon = i;
 			bp += len;
-			fields |= FIELD_TM_MON;
 			break;
 
 		case 'C':	/* The century number. */
@@ -257,7 +233,6 @@ literal:
 			_LEGAL_ALT(_ALT_O);
 			if (!(_conv_num(&bp, &tm->tm_mday, 1, 31)))
 				return (NULL);
-			fields |= FIELD_TM_MDAY;
 			break;
 
 		case 'k':	/* The hour (24-hour clock representation). */
@@ -283,7 +258,6 @@ literal:
 			if (!(_conv_num(&bp, &tm->tm_yday, 1, 366)))
 				return (NULL);
 			tm->tm_yday--;
-			fields |= FIELD_TM_YDAY;
 			break;
 
 		case 'M':	/* The minute. */
@@ -297,31 +271,28 @@ literal:
 			if (!(_conv_num(&bp, &tm->tm_mon, 1, 12)))
 				return (NULL);
 			tm->tm_mon--;
-			fields |= FIELD_TM_MON;
 			break;
 
 		case 'p':	/* The locale's equivalent of AM/PM. */
 			_LEGAL_ALT(0);
 			/* AM? */
-			len = strlen(_ctloc(am_pm[0]));
-			if (strncasecmp(_ctloc(am_pm[0]), bp, len) == 0) {
+			if (strcmp(_ctloc(am_pm[0]), bp) == 0) {
 				if (tm->tm_hour > 12)	/* i.e., 13:00 AM ?! */
 					return (NULL);
 				else if (tm->tm_hour == 12)
 					tm->tm_hour = 0;
 
-				bp += len;
+				bp += strlen(_ctloc(am_pm[0]));
 				break;
 			}
 			/* PM? */
-			len = strlen(_ctloc(am_pm[1]));
-			if (strncasecmp(_ctloc(am_pm[1]), bp, len) == 0) {
+			else if (strcmp(_ctloc(am_pm[1]), bp) == 0) {
 				if (tm->tm_hour > 12)	/* i.e., 13:00 PM ?! */
 					return (NULL);
 				else if (tm->tm_hour < 12)
 					tm->tm_hour += 12;
 
-				bp += len;
+				bp += strlen(_ctloc(am_pm[1]));
 				break;
 			}
 
@@ -351,45 +322,15 @@ literal:
 			_LEGAL_ALT(_ALT_O);
 			if (!(_conv_num(&bp, &tm->tm_wday, 0, 6)))
 				return (NULL);
-			fields |= FIELD_TM_WDAY;
 			break;
-
-		case 'u':	/* The day of week, monday = 1. */
-			_LEGAL_ALT(_ALT_O);
-			if (!(_conv_num(&bp, &i, 1, 7)))
-				return (NULL);
-			tm->tm_wday = i % 7;
-			fields |= FIELD_TM_WDAY;
-			continue;
-
-		case 'g':	/* The year corresponding to the ISO week
-				 * number but without the century.
-				 */
-			if (!(_conv_num(&bp, &i, 0, 99)))
-				return (NULL);				
-			continue;
-
-		case 'G':	/* The year corresponding to the ISO week
-				 * number with century.
-				 */
-			do
-				bp++;
-			while (isdigit(*bp));
-			continue;
-
-		case 'V':	/* The ISO 8601:1988 week number as decimal */
-			if (!(_conv_num(&bp, &i, 0, 53)))
-				return (NULL);
-			continue;
 
 		case 'Y':	/* The year. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(_conv_num(&bp, &i, 0, 9999)))
+			if (!(_conv_num(&bp, &i, 0, INT_MAX)))
 				return (NULL);
 
 			relyear = -1;
 			tm->tm_year = i - TM_YEAR_BASE;
-			fields |= FIELD_TM_YEAR;
 			break;
 
 		case 'y':	/* The year within the century (2 digits). */
@@ -397,173 +338,6 @@ literal:
 			if (!(_conv_num(&bp, &relyear, 0, 99)))
 				return (NULL);
 			break;
-
-		case 'Z':
-			tzset();
-			if (strncmp((const char *)bp, gmt, 3) == 0) {
-				tm->tm_isdst = 0;
-#ifdef TM_GMTOFF
-				tm->TM_GMTOFF = 0;
-#endif
-#ifdef TM_ZONE
-				tm->TM_ZONE = gmt;
-#endif
-				bp += 3;
-			} else if (strncmp((const char *)bp, utc, 3) == 0) {
-				tm->tm_isdst = 0;
-#ifdef TM_GMTOFF
-				tm->TM_GMTOFF = 0;
-#endif
-#ifdef TM_ZONE
-				tm->TM_ZONE = utc;
-#endif
-				bp += 3;
-			} else {
-				ep = _find_string(bp, &i,
-					       	 (const char * const *)tzname,
-					       	  NULL, 2);
-				if (ep == NULL)
-					return (NULL);
-
-				tm->tm_isdst = i;
-#ifdef TM_GMTOFF
-				tm->TM_GMTOFF = -(timezone);
-#endif
-#ifdef TM_ZONE
-				tm->TM_ZONE = tzname[i];
-#endif
-				bp = ep;
-			}
-			continue;
-
-		case 'z':
-			/*
-			 * We recognize all ISO 8601 formats:
-			 * Z	= Zulu time/UTC
-			 * [+-]hhmm
-			 * [+-]hh:mm
-			 * [+-]hh
-			 * We recognize all RFC-822/RFC-2822 formats:
-			 * UT|GMT
-			 *          North American : UTC offsets
-			 * E[DS]T = Eastern : -4 | -5
-			 * C[DS]T = Central : -5 | -6
-			 * M[DS]T = Mountain: -6 | -7
-			 * P[DS]T = Pacific : -7 | -8
-			 *          Military
-			 * [A-IL-M] = -1 ... -9 (J not used)
-			 * [N-Y]  = +1 ... +12
-			 */
-			while (isspace(*bp))
-				bp++;
-
-			switch (*bp++) {
-			case 'G':
-				if (*bp++ != 'M')
-					return NULL;
-				/*FALLTHROUGH*/
-			case 'U':
-				if (*bp++ != 'T')
-					return NULL;
-				/*FALLTHROUGH*/
-			case 'Z':
-				tm->tm_isdst = 0;
-#ifdef TM_GMTOFF
-				tm->TM_GMTOFF = 0;
-#endif
-#ifdef TM_ZONE
-				tm->TM_ZONE = utc;
-#endif
-				continue;
-			case '+':
-				neg = 0;
-				break;
-			case '-':
-				neg = 1;
-				break;
-			default:
-				--bp;
-				ep = _find_string(bp, &i, nast, NULL, 4);
-				if (ep != NULL) {
-#ifdef TM_GMTOFF
-					tm->TM_GMTOFF = -5 - i;
-#endif
-#ifdef TM_ZONE
-					tm->TM_ZONE = (char *)nast[i];
-#endif
-					bp = ep;
-					continue;
-				}
-				ep = _find_string(bp, &i, nadt, NULL, 4);
-				if (ep != NULL) {
-					tm->tm_isdst = 1;
-#ifdef TM_GMTOFF
-					tm->TM_GMTOFF = -4 - i;
-#endif
-#ifdef TM_ZONE
-					tm->TM_ZONE = (char *)nadt[i];
-#endif
-					bp = ep;
-					continue;
-				}
-
-				if ((*bp >= 'A' && *bp <= 'I') ||
-				    (*bp >= 'L' && *bp <= 'Y')) {
-#ifdef TM_GMTOFF
-					/* Argh! No 'J'! */
-					if (*bp >= 'A' && *bp <= 'I')
-						tm->TM_GMTOFF =
-						    ('A' - 1) - (int)*bp;
-					else if (*bp >= 'L' && *bp <= 'M')
-						tm->TM_GMTOFF = 'A' - (int)*bp;
-					else if (*bp >= 'N' && *bp <= 'Y')
-						tm->TM_GMTOFF = (int)*bp - 'M';
-#endif
-#ifdef TM_ZONE
-					tm->TM_ZONE = NULL; /* XXX */
-#endif
-					bp++;
-					continue;
-				}
-				return NULL;
-			}
-			offs = 0;
-			for (i = 0; i < 4; ) {
-				if (isdigit(*bp)) {
-					offs = offs * 10 + (*bp++ - '0');
-					i++;
-					continue;
-				}
-				if (i == 2 && *bp == ':') {
-					bp++;
-					continue;
-				}
-				break;
-			}
-			switch (i) {
-			case 2:
-				offs *= 100;
-				break;
-			case 4:
-				i = offs % 100;
-				if (i >= 60)
-					return NULL;
-				/* Convert minutes into decimal */
-				offs = (offs / 100) * 100 + (i * 50) / 30;
-				break;
-			default:
-				return NULL;
-			}
-			if (neg)
-				offs = -offs;
-			tm->tm_isdst = 0;	/* XXX */
-#ifdef TM_GMTOFF
-			tm->TM_GMTOFF = offs;
-#endif
-#ifdef TM_ZONE
-			tm->TM_ZONE = NULL;	/* XXX */
-#endif
-			continue;
 
 		/*
 		 * Miscellaneous conversions.
@@ -596,41 +370,6 @@ literal:
 		} else {
 			tm->tm_year = relyear + century - TM_YEAR_BASE;
 		}
-		fields |= FIELD_TM_YEAR;
-	}
-
-	/* Compute some missing values when possible. */
-	if (fields & FIELD_TM_YEAR) {
-		const int year = tm->tm_year + TM_YEAR_BASE;
-		const int *mon_lens = mon_lengths[isleap(year)];
-		if (!(fields & FIELD_TM_YDAY) &&
-		    (fields & FIELD_TM_MON) && (fields & FIELD_TM_MDAY)) {
-			tm->tm_yday = tm->tm_mday - 1;
-			for (i = 0; i < tm->tm_mon; i++)
-				tm->tm_yday += mon_lens[i];
-			fields |= FIELD_TM_YDAY;
-		}
-		if (fields & FIELD_TM_YDAY) {
-			int days = tm->tm_yday;
-			if (!(fields & FIELD_TM_WDAY)) {
-				tm->tm_wday = EPOCH_WDAY +
-				    ((year - EPOCH_YEAR) % DAYSPERWEEK) *
-				    (DAYSPERNYEAR % DAYSPERWEEK) +
-				    leaps_thru_end_of(year - 1) -
-				    leaps_thru_end_of(EPOCH_YEAR - 1) +
-				    tm->tm_yday;
-				tm->tm_wday %= DAYSPERWEEK;
-				if (tm->tm_wday < 0)
-					tm->tm_wday += DAYSPERWEEK;
-			}
-			if (!(fields & FIELD_TM_MON)) {
-				tm->tm_mon = 0;
-				while (tm->tm_mon < MONSPERYEAR && days >= mon_lens[tm->tm_mon])
-					days -= mon_lens[tm->tm_mon++];
-			}
-			if (!(fields & FIELD_TM_MDAY))
-				tm->tm_mday = days + 1;
-		}
 	}
 
 	return ((char *)bp);
@@ -638,53 +377,23 @@ literal:
 
 
 static int
-_conv_num(const unsigned char **buf, int *dest, int llim, int ulim)
+_conv_num(buf, dest, llim, ulim)
+	const char **buf;
+	int *dest;
+	int llim, ulim;
 {
-	int result = 0;
-	int rulim = ulim;
+	*dest = 0;
 
 	if (**buf < '0' || **buf > '9')
 		return (0);
 
-	/* we use rulim to break out of the loop when we run out of digits */
 	do {
-		result *= 10;
-		result += *(*buf)++ - '0';
-		rulim /= 10;
-	} while ((result * 10 <= ulim) && rulim && **buf >= '0' && **buf <= '9');
+		*dest *= 10;
+		*dest += *(*buf)++ - '0';
+	} while ((*dest * 10 <= ulim) && **buf >= '0' && **buf <= '9');
 
-	if (result < llim || result > ulim)
+	if (*dest < llim || *dest > ulim || isdigit(**buf))
 		return (0);
 
-	*dest = result;
 	return (1);
-}
-
-static const u_char *
-_find_string(const u_char *bp, int *tgt, const char * const *n1,
-		const char * const *n2, int c)
-{
-	int i;
-	unsigned int len;
-
-	/* check full name - then abbreviated ones */
-	for (; n1 != NULL; n1 = n2, n2 = NULL) {
-		for (i = 0; i < c; i++, n1++) {
-			len = strlen(*n1);
-			if (strncasecmp(*n1, (const char *)bp, len) == 0) {
-				*tgt = i;
-				return bp + len;
-			}
-		}
-	}
-
-	/* Nothing matched */
-	return NULL;
-}
-
-static int              
-leaps_thru_end_of(const int y)
-{
-	return (y >= 0) ? (y / 4 - y / 100 + y / 400) :
-		-(leaps_thru_end_of(-(y + 1)) + 1);
 }

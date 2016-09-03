@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-sunrpc.c,v 1.20 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1992, 1993, 1994, 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -21,15 +19,24 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-sunrpc.c,v 1.8 1999/07/28 20:41:36 jakob Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
+#ifdef __STDC__
 struct mbuf;
 struct rtentry;
+#endif
 #include <net/if.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 
@@ -46,7 +53,6 @@ struct rtentry;
 
 #include "interface.h"
 #include "addrtoname.h"
-#include "privsep.h"
 
 static struct tok proc2str[] = {
 	{ PMAPPROC_NULL,	"null" },
@@ -62,16 +68,29 @@ static struct tok proc2str[] = {
 static char *progstr(u_int32_t);
 
 void
-sunrpcrequest_print(const u_char *bp, u_int length, const u_char *bp2)
+sunrpcrequest_print(register const u_char *bp, register u_int length,
+		    register const u_char *bp2)
 {
-	const struct rpc_msg *rp;
-	const struct ip *ip;
+	register const struct rpc_msg *rp;
+	register const struct ip *ip;
 	u_int32_t x;
 
 	rp = (struct rpc_msg *)bp;
 	ip = (struct ip *)bp2;
 
-	printf("xid 0x%x %d", (u_int32_t)ntohl(rp->rm_xid), length);
+	if (!nflag)
+		(void)printf("%s.%x > %s.sunrpc: %d",
+			     ipaddr_string(&ip->ip_src),
+			     (u_int32_t)ntohl(rp->rm_xid),
+			     ipaddr_string(&ip->ip_dst),
+			     length);
+	else
+		(void)printf("%s.%x > %s.%x: %d",
+			     ipaddr_string(&ip->ip_src),
+			     (u_int32_t)ntohl(rp->rm_xid),
+			     ipaddr_string(&ip->ip_dst),
+			     PMAPPORT,
+			     length);
 	printf(" %s", tok2str(proc2str, " proc #%u",
 	    (u_int32_t)ntohl(rp->rm_call.cb_proc)));
 	x = ntohl(rp->rm_call.cb_rpcvers);
@@ -98,16 +117,18 @@ static char *
 progstr(prog)
 	u_int32_t prog;
 {
-	char progname[32];
+	register struct rpcent *rp;
 	static char buf[32];
 	static int lastprog = 0;
 
 	if (lastprog != 0 && prog == lastprog)
 		return (buf);
-	lastprog = prog;
-        if (priv_getrpcbynumber(prog, progname, sizeof(progname)) == 0)
-		snprintf(buf, sizeof(buf), "#%u", prog);
-	else
-		strlcpy(buf, progname, sizeof(buf));
+	rp = getrpcbynumber(prog);
+	if (rp == NULL)
+		(void) sprintf(buf, "#%u", prog);
+	else {
+		strncpy(buf, rp->r_name, sizeof buf-1);
+		buf[sizeof buf-1] = '\0';
+	}
 	return (buf);
 }

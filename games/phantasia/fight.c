@@ -1,20 +1,11 @@
-/*	$OpenBSD: fight.c,v 1.14 2016/01/10 13:35:09 mestre Exp $	*/
+/*	$OpenBSD: fight.c,v 1.3 1998/11/29 19:56:55 pjanzen Exp $	*/
 /*	$NetBSD: fight.c,v 1.2 1995/03/24 03:58:39 cgd Exp $	*/
 
 /*
  * fight.c   Phantasia monster fighting routines
  */
 
-#include <curses.h>
-#include <math.h>
-#include <setjmp.h>
-#include <string.h>
-
-#include "macros.h"
-#include "phantdefs.h"
-#include "phantglobs.h"
-
-static jmp_buf Fightenv;	/* used to jump into fight routine */
+#include "include.h"
 
 /************************************************************************
 /
@@ -47,15 +38,24 @@ static jmp_buf Fightenv;	/* used to jump into fight routine */
 *************************************************************************/
 
 void
-encounter(int particular)
+encounter(particular)
+	int     particular;
 {
-	int flockcnt = 1;	/* how many time flocked */
-	volatile bool firsthit = Player.p_blessing;	/* set if player gets
-							 * the first hit */
+	bool    firsthit = Player.p_blessing;	/* set if player gets the
+						 * first hit */
+	int     flockcnt = 1;	/* how many time flocked */
 
 	/* let others know what we are doing */
 	Player.p_status = S_MONSTER;
 	writerecord(&Player, Fileloc);
+
+#if __GNUC__
+	(void)&firsthit;	/* XXX shut up gcc */
+#endif
+
+#ifdef SYS5
+	flushinp();
+#endif
 
 	Shield = 0.0;		/* no shield up yet */
 
@@ -163,7 +163,8 @@ encounter(int particular)
 	{
 		more(Lines);
 		++flockcnt;
-		longjmp(Fightenv, 1);
+		longjmp(Fightenv, 0);
+		/* NOTREACHED */
 	} else
 		if (Circle > 1.0
 		    && Curmonster.m_treasuretype > 0
@@ -214,7 +215,7 @@ encounter(int particular)
 *************************************************************************/
 
 int
-pickmonster(void)
+pickmonster()
 {
 	if (Player.p_specialtype == SC_VALAR)
 		/* even chance of any monster */
@@ -271,7 +272,7 @@ pickmonster(void)
 *************************************************************************/
 
 void
-playerhits(void)
+playerhits()
 {
 	double  inflict;	/* damage inflicted */
 	int     ch;		/* input */
@@ -442,7 +443,7 @@ playerhits(void)
 *************************************************************************/
 
 void
-monsthits(void)
+monsthits()
 {
 	double  inflict;	/* damage inflicted */
 	int     ch;		/* input */
@@ -461,7 +462,8 @@ monsthits(void)
 		    "Shrieeeek!!  You scared it, and it called one of its friends.");
 		more(Lines);
 		Whichmonster = (int) ROLL(70.0, 30.0);
-		longjmp(Fightenv, 1);
+		longjmp(Fightenv, 0);
+		/* NOTREACHED */
 
 	case SM_BALROG:
 		/* take experience away */
@@ -651,8 +653,9 @@ monsthits(void)
 			mvprintw(Lines++, 0,
 			    "%s flew away, and left you to contend with one of its friends.",
 			    Enemyname);
-			Whichmonster = 55 + ((drandom() > 0.5) ? 22 : 0);
-			longjmp(Fightenv, 1);
+			Whichmonster = 55 + (drandom() > 0.5) ? 22 : 0;
+			longjmp(Fightenv, 0);
+			/* NOTREACHED */
 
 		case SM_TROLL:
 			/* partially regenerate monster */
@@ -714,7 +717,7 @@ SPECIALHIT:
 *************************************************************************/
 
 void
-cancelmonster(void)
+cancelmonster()
 {
     Curmonster.m_energy = 0.0;
     Curmonster.m_experience = 0.0;
@@ -748,7 +751,8 @@ cancelmonster(void)
 *************************************************************************/
 
 void
-hitmonster(double inflict)
+hitmonster(inflict)
+	double  inflict;
 {
 	mvprintw(Lines++, 0, "You hit %s %.0f times!", Enemyname, inflict);
 	Curmonster.m_energy -= inflict;
@@ -801,7 +805,7 @@ hitmonster(double inflict)
 *************************************************************************/
 
 void
-throwspell(void)
+throwspell()
 {
 	double  inflict;	/* damage inflicted */
 	double  dtemp;		/* for dtemporary calculations */
@@ -913,7 +917,8 @@ throwspell(void)
 			else {
 				Player.p_mana -= MM_XFORM;
 				Whichmonster = (int) ROLL(0.0, 100.0);
-				longjmp(Fightenv, 1);
+				longjmp(Fightenv, 0);
+				/* NOTREACHED */
 				}
 			break;
 
@@ -995,7 +1000,8 @@ throwspell(void)
 				mvaddstr(5, 0, "Which monster do you want [0-99] ? ");
 				Whichmonster = (int) infloat();
 				Whichmonster = MAX(0, MIN(99, Whichmonster));
-				longjmp(Fightenv, 1);
+				longjmp(Fightenv, 0);
+				/* NOTREACHED */
 			}
 			break;
 		}
@@ -1015,7 +1021,7 @@ throwspell(void)
 / RETURN VALUE: none
 /
 / MODULES CALLED: truncstring(), fread(), fseek(), floor(), drandom(), 
-/	strlcpy()
+/	strcpy()
 /
 / GLOBAL INPUTS: Curmonster, Circle, Player, *Monstfp
 /
@@ -1030,15 +1036,16 @@ throwspell(void)
 *************************************************************************/
 
 void
-callmonster(int which)
+callmonster(which)
+	int     which;
 {
 	struct monster Othermonster;	/* to find a name for mimics */
 
 	which = MIN(which, 99);	/* make sure within range */
 
 	/* fill structure */
-	fseek(Monstfp, (long) which * (long) SZ_MONSTERSTRUCT, SEEK_SET);
-	fread(&Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
+	fseek(Monstfp, (long) which * (long) SZ_MONSTERSTRUCT, 0);
+	fread((char *) &Curmonster, SZ_MONSTERSTRUCT, 1, Monstfp);
 
 	/* handle some special monsters */
 	if (Curmonster.m_type == SM_MODNAR) {
@@ -1055,15 +1062,14 @@ callmonster(int which)
 		} else
 			/* make Modnar into Morgoth */
 		{
-			strlcpy(Curmonster.m_name, "Morgoth",
-			    sizeof Curmonster.m_name);
+			strcpy(Curmonster.m_name, "Morgoth");
 			Curmonster.m_strength = drandom() * (Player.p_maxenergy + Player.p_shield) / 1.4
 			    + drandom() * (Player.p_maxenergy + Player.p_shield) / 1.5;
 			Curmonster.m_brains = Player.p_brains;
 			Curmonster.m_energy = Player.p_might * 30.0;
 			Curmonster.m_type = SM_MORGOTH;
 			Curmonster.m_speed = Player.p_speed * 1.1
-			    + ((Player.p_specialtype == SC_EXVALAR) ? Player.p_speed : 0.0);
+			    + (Player.p_specialtype == SC_EXVALAR) ? Player.p_speed : 0.0;
 			Curmonster.m_flock = 0.0;
 			Curmonster.m_treasuretype = 0;
 			Curmonster.m_experience = 0.0;
@@ -1073,10 +1079,9 @@ callmonster(int which)
 			/* pick another name */
 		{
 			which = (int) ROLL(0.0, 100.0);
-			fseek(Monstfp, (long) which * (long) SZ_MONSTERSTRUCT, SEEK_SET);
+			fseek(Monstfp, (long) which * (long) SZ_MONSTERSTRUCT, 0);
 			fread(&Othermonster, SZ_MONSTERSTRUCT, 1, Monstfp);
-			strlcpy(Curmonster.m_name, Othermonster.m_name,
-			    sizeof Curmonster.m_name);
+			strcpy(Curmonster.m_name, Othermonster.m_name);
 		}
 	truncstring(Curmonster.m_name);
 
@@ -1137,7 +1142,7 @@ callmonster(int which)
 *************************************************************************/
 
 void
-awardtreasure(void)
+awardtreasure()
 {
 	int	whichtreasure;	/* calculated treasure to grant */
 	int	temp;		/* temporary */
@@ -1294,7 +1299,8 @@ awardtreasure(void)
 				    Shield =
 					(Player.p_maxenergy + Player.p_energy) * 5.5 + Circle * 50.0;
 				    Whichmonster = pickmonster();
-				    longjmp(Fightenv, 1);
+				    longjmp(Fightenv, 0);
+				    /* NOTREACHED */
 
 				case 2:
 				    addstr("It makes you invisible for you next monster.\n");
@@ -1302,7 +1308,8 @@ awardtreasure(void)
 				    more(whichtreasure);
 				    Player.p_speed = 1e6;
 				    Whichmonster = pickmonster();
-				    longjmp(Fightenv, 1);
+				    longjmp(Fightenv, 0);
+				    /* NOTREACHED */
 
 				case 3:
 				    addstr("It increases your strength ten fold to fight your next monster.\n");
@@ -1310,7 +1317,8 @@ awardtreasure(void)
 				    more(whichtreasure);
 				    Player.p_might *= 10.0;
 				    Whichmonster = pickmonster();
-				    longjmp(Fightenv, 1);
+				    longjmp(Fightenv, 0);
+				    /* NOTREACHED */
 
 				case 4:
 				    addstr("It is a general knowledge scroll.\n");
@@ -1323,7 +1331,7 @@ awardtreasure(void)
 				    addstr("Which monster do you want [0-99] ? ");
 				    Whichmonster = (int) infloat();
 				    Whichmonster = MIN(99, MAX(0, Whichmonster));
-				    longjmp(Fightenv, 1);
+				    longjmp(Fightenv, 0);
 
 				case 6:
 				    addstr("It was cursed!\n");
@@ -1571,7 +1579,7 @@ awardtreasure(void)
 *************************************************************************/
 
 void
-cursedtreasure(void)
+cursedtreasure()
 {
 	if (Player.p_charms > 0) {
 		addstr("But your charm saved you!\n");
@@ -1611,7 +1619,7 @@ cursedtreasure(void)
 *************************************************************************/
 
 void
-scramblestats(void)
+scramblestats()
 {
 	double  dbuf[6];	/* to put statistic in */
 	double  dtemp1, dtemp2;	/* for swapping values */

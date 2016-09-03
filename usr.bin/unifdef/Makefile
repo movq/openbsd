@@ -1,8 +1,5 @@
-#	$OpenBSD: Makefile,v 1.8 2015/10/05 06:54:59 deraadt Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/09/21 11:51:32 deraadt Exp $
 
 PROG=	unifdef
-COPTS+=	-Wall
-
-unifdef: unifdef.c version.h
 
 .include <bsd.prog.mk>

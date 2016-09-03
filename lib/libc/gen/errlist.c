@@ -1,4 +1,3 @@
-/*	$OpenBSD: errlist.c,v 1.18 2015/10/24 10:42:02 bluhm Exp $ */
 /*
  * Copyright (c) 1982, 1985, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,9 +31,16 @@
  * SUCH DAMAGE.
  */
 
-#include <errno.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: errlist.c,v 1.3 1996/09/15 09:30:59 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
 
-const char *const sys_errlist[] = {
+#ifdef lint
+char *
+#else
+const char *const
+#endif
+	_sys_errlist[] = {
 	"Undefined error: 0",			/*  0 - ENOERROR */
 	"Operation not permitted",		/*  1 - EPERM */
 	"No such file or directory",		/*  2 - ENOENT */
@@ -115,39 +125,19 @@ const char *const sys_errlist[] = {
 /* quotas & mush */
 	"Too many processes",			/* 67 - EPROCLIM */
 	"Too many users",			/* 68 - EUSERS */
-	"Disk quota exceeded",			/* 69 - EDQUOT */
+	"Disc quota exceeded",			/* 69 - EDQUOT */
 
 /* Network File System */
 	"Stale NFS file handle",		/* 70 - ESTALE */
 	"Too many levels of remote in path",	/* 71 - EREMOTE */
 	"RPC struct is bad",			/* 72 - EBADRPC */
 	"RPC version wrong",			/* 73 - ERPCMISMATCH */
-	"RPC program not available",		/* 74 - EPROGUNAVAIL */
+	"RPC prog. not avail",			/* 74 - EPROGUNAVAIL */
 	"Program version wrong",		/* 75 - EPROGMISMATCH */
 	"Bad procedure for program",		/* 76 - EPROCUNAVAIL */
 
 	"No locks available",			/* 77 - ENOLCK */
 	"Function not implemented",		/* 78 - ENOSYS */
 	"Inappropriate file type or format",	/* 79 - EFTYPE */
-	"Authentication error",			/* 80 - EAUTH */
-	"Need authenticator",			/* 81 - ENEEDAUTH */
-	"IPsec processing failure",		/* 82 - EIPSEC */
-	"Attribute not found",			/* 83 - ENOATTR */
-	"Illegal byte sequence",		/* 84 - EILSEQ */
-	"No medium found",			/* 85 - ENOMEDIUM */
-	"Wrong medium type",			/* 86 - EMEDIUMTYPE */
-						/* 87 - EOVERFLOW */
-	"Value too large to be stored in data type",
-	"Operation canceled",			/* 88 - ECANCELED */
-	"Identifier removed",			/* 89 - EIDRM */
-	"No message of desired type",		/* 90 - ENOMSG */
-	"Not supported",			/* 91 - ENOTSUP */
 };
-const int sys_nerr = { sizeof sys_errlist/sizeof sys_errlist[0] };
-#if 0
-DEF_WEAK(sys_errlist);
-DEF_WEAK(sys_nerr);
-#endif
-
-__strong_alias(_sys_errlist, sys_errlist);  
-__strong_alias(_sys_nerr, sys_nerr);  
+int _sys_nerr = { sizeof _sys_errlist/sizeof _sys_errlist[0] };

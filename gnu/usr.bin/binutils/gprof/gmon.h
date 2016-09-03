@@ -1,6 +1,6 @@
-/*
- * Copyright (c) 1983, 1991, 1993, 2001
- *      The Regents of the University of California.  All rights reserved.
+/*-
+ * Copyright (c) 1991 The Regents of the University of California.
+ * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -25,57 +29,32 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)gmon.h	5.2 (Berkeley) 5/6/91
  */
 #ifndef gmon_h
 #define gmon_h
 
-/* Size of the 4.4BSD gmon header */
-#define GMON_HDRSIZE_BSD44_32 (4 + 4 + 4 + 4 + 4 + (3 * 4))
-#define GMON_HDRSIZE_BSD44_64 (8 + 8 + 4 + 4 + 4 + (3 * 4))
+struct raw_phdr
+  {
+    char low_pc[sizeof (bfd_vma)];	/* base pc address of sample buffer */
+    char high_pc[sizeof (bfd_vma)];	/* max pc address of sampled buffer */
+    char ncnt[4];		/* size of sample buffer (plus this header) */
 
-#if 0 /* For documentation purposes only.  */
-  struct raw_phdr
-    {
-      char low_pc[sizeof(void *)]; /* base pc address of sample buffer */
-      char high_pc[sizeof(void *)];/* max pc address of sampled buffer */
-      char ncnt[4];		   /* size of sample buffer (plus this
-				      header) */
-
-      char version[4];		   /* version number */
-      char profrate[4];		   /* profiling clock rate */
-      char spare[3*4];		   /* reserved */
-    };
-#endif
-
-#define GMONVERSION     0x00051879
-
-/* Size of the old BSD gmon header */
-#define GMON_HDRSIZE_OLDBSD_32 (4 + 4 + 4) 
-
-/* FIXME: Checking host compiler defines here means that we can't
-   use a cross gprof alpha OSF.  */
-#if defined(__alpha__) && defined (__osf__) 
-#define GMON_HDRSIZE_OLDBSD_64 (8 + 8 + 4 + 4)
-#else
-#define GMON_HDRSIZE_OLDBSD_64 (8 + 8 + 4)
-#endif
-
-#if 0 /* For documentation purposes only.  */
-  struct old_raw_phdr
-    {
-      char low_pc[sizeof(void *)]; /* base pc address of sample buffer */
-      char high_pc[sizeof(void *)];/* max pc address of sampled buffer */
-      char ncnt[4];		   /* size of sample buffer (plus this
-				      header) */
 #if defined (__alpha__) && defined (__osf__)
-      /*
-       * DEC's OSF v3.0 uses 4 bytes of padding to bring the header to
-       * a size that is a multiple of 8.
-       */
-      char pad[4];
+    /*
+     * DEC's OSF v3.0 uses 4 bytes of padding to bring the header to
+     * a size that is a multiple of 8.
+     */
+    char pad[4];
+#else
+#ifdef BSD44_FORMAT
+    char version[4];			/* version number */
+    char profrate[4];			/* profiling clock rate */
+    char spare[3*4];			/* reserved */
 #endif
-    };
 #endif
+  };
 
 /*
  * Histogram counters are unsigned shorts:
@@ -101,7 +80,7 @@
  *      calls   $0,(r0)
  *      calls   $0,(r0)
  *
- * which is separated by only three bytes, thus HASHFRACTION is
+ * which is separated by only three bytes, thus HASHFRACTION is 
  * calculated as:
  *
  *      HASHFRACTION = 3 / (2 * 2 - 1) = 1
@@ -130,14 +109,12 @@ struct tostruct
  * as to get a packed representation (otherwise, different compilers
  * might introduce different padding):
  */
-#if 0 /* For documentation purposes only.  */
-  struct raw_arc
-    {
-      char from_pc[sizeof(void *)];
-      char self_pc[sizeof(void *)];
-      char count[sizeof(long)];
-    };
-#endif
+struct raw_arc
+  {
+    char from_pc[sizeof (bfd_vma)];
+    char self_pc[sizeof (bfd_vma)];
+    char count[sizeof (long)];
+  };
 
 /*
  * General rounding functions:

@@ -1,6 +1,5 @@
 /* BFD internal declarations for Oasys file format handling.
-   Copyright 1990, 1991, 1992, 1993, 1994, 1997, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1990, 91, 92, 93, 94 Free Software Foundation, Inc.
    Scrawled by Steve Chamberlain of Cygnus Support.
 
 This file is part of BFD, the Binary File Descriptor library.
@@ -39,14 +38,14 @@ typedef struct _oasys_per_section
   asection *section;
   bfd_byte *data;
   bfd_vma offset;
-  bfd_boolean had_vma;
+  boolean had_vma;
   oasys_reloc_type **reloc_tail_ptr;
   bfd_vma pc;
 
 
   file_ptr current_pos;
   unsigned int current_byte;
-  bfd_boolean initialized;
+  boolean initialized;
 } oasys_per_section_type;
 
 #define NSECTIONS 10
@@ -71,6 +70,7 @@ typedef struct _oasys_ar_data {
 } oasys_ar_data_type;
 
 typedef struct _oasys_data {
+  struct obstack oasys_obstack;
   char *strings;
   asymbol *symbols;
   unsigned int symbol_string_length;

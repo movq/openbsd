@@ -66,7 +66,6 @@ static const char *const loginfo_contents[] = {
     "# characters are:\n",
     "#\n",
     "#   s = file name\n",
-    "#   t = tag name\n",
     "#   V = old version number (pre-checkin)\n",
     "#   v = new version number (post-checkin)\n",
     "#\n",
@@ -281,15 +280,10 @@ static const char *const config_contents[] = {
     "# Set this to \"no\" if pserver shouldn't check system users/passwords\n",
     "#SystemAuth=no\n",
     "\n",
-    "# Put CVS lock files in this directory rather than directly in the repository.\n",
-    "#LockDir=/var/lock/cvs\n",
-    "\n",
-#ifdef PRESERVE_PERMISSIONS_SUPPORT
     "# Set `PreservePermissions' to `yes' to save file status information\n",
     "# in the repository.\n",
     "#PreservePermissions=no\n",
     "\n",
-#endif
     "# Set `TopLevelAdmin' to `yes' to create a CVS directory at the top\n",
     "# level of the new working directory when using the `cvs checkout'\n",
     "# command.\n",
@@ -303,13 +297,6 @@ static const char *const config_contents[] = {
     "\n",
     "# Set this to the default data resource limit to use\n",
     "#dlimit=65536\n",
-    "\n",
-    "# Set `LogHistory' to `all' or `TOFEWGCMAR' to log all transactions to the\n",
-    "# history file, or a subset as needed (ie `TMAR' logs all write operations)\n",
-    "#LogHistory=TOFEWGCMAR\n",
-    "\n",
-    "# Set DisableMdocdate=yes to turn off expansion of the Mdocdate keyword\n",
-    "#DisableMdocdate=no\n",
     NULL
 };
 
@@ -394,9 +381,6 @@ mkmodules (dir)
     size_t line_allocated = 0;
     const struct admin_file *fileptr;
 
-    if (noexec)
-	return 0;
-
     if (save_cwd (&cwd))
 	error_exit ();
 
@@ -467,7 +451,7 @@ mkmodules (dir)
 	 *
 	 * comment lines begin with '#'
 	 */
-	while (get_line (&line, &line_allocated, fp) >= 0)
+	while (getline (&line, &line_allocated, fp) >= 0)
 	{
 	    /* skip lines starting with # */
 	    if (line[0] == '#')
@@ -861,7 +845,7 @@ init (argc, argv)
 	usage (init_usage);
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	start_server ();
 
@@ -875,10 +859,12 @@ init (argc, argv)
        old cvsinit.sh script did.  Few utilities do that, and a
        non-existent parent directory is as likely to be a typo as something
        which needs to be created.  */
-    mkdir_if_needed (current_parsed_root->directory);
+    mkdir_if_needed (CVSroot_directory);
 
-    adm = xmalloc (strlen (current_parsed_root->directory) + sizeof (CVSROOTADM) + 2);
-    sprintf (adm, "%s/%s", current_parsed_root->directory, CVSROOTADM);
+    adm = xmalloc (strlen (CVSroot_directory) + sizeof (CVSROOTADM) + 10);
+    strcpy (adm, CVSroot_directory);
+    strcat (adm, "/");
+    strcat (adm, CVSROOTADM);
     mkdir_if_needed (adm);
 
     /* This is needed because we pass "fileptr->filename" not "info"
@@ -887,9 +873,6 @@ init (argc, argv)
        closely (e.g. see wrappers calls within add_rcs_file).  */
     if ( CVS_CHDIR (adm) < 0)
 	error (1, errno, "cannot change to directory %s", adm);
-
-    /* Make Emptydir so it's there if we need it */
-    mkdir_if_needed (CVSNULLREPOS);
 
     /* 80 is long enough for all the administrative file names, plus
        "/" and so on.  */
@@ -952,29 +935,6 @@ init (argc, argv)
 	fp = open_file (info, "w");
 	if (fclose (fp) < 0)
 	    error (1, errno, "cannot close %s", info);
- 
-        /* Make the new history file world-writeable, since every CVS
-           user will need to be able to write to it.  We use chmod()
-           because xchmod() is too shy. */
-        chmod (info, 0666);
-    }
-
-    /* Make an empty val-tags file to prevent problems creating it later.  */
-    strcpy (info, adm);
-    strcat (info, "/");
-    strcat (info, CVSROOTADM_VALTAGS);
-    if (!isfile (info))
-    {
-	FILE *fp;
-
-	fp = open_file (info, "w");
-	if (fclose (fp) < 0)
-	    error (1, errno, "cannot close %s", info);
- 
-        /* Make the new val-tags file world-writeable, since every CVS
-           user will need to be able to write to it.  We use chmod()
-           because xchmod() is too shy. */
-        chmod (info, 0666);
     }
 
     free (info);

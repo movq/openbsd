@@ -1,4 +1,4 @@
-/*	$OpenBSD: expand.c,v 1.15 2015/01/20 09:00:16 guenther Exp $	*/
+/*	$OpenBSD: expand.c,v 1.6 1998/08/13 03:29:09 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -12,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,14 +33,23 @@
  * SUCH DAMAGE.
  */
 
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#ifndef lint
+#if 0
+static char RCSid[] = 
+"$From: expand.c,v 6.18 1998/03/24 00:37:10 michaelc Exp $";
+#else
+static char RCSid[] = 
+"$OpenBSD: expand.c,v 1.6 1998/08/13 03:29:09 deraadt Exp $";
+#endif
 
-#include "client.h"
+static char sccsid[] = "@(#)expand.c	5.2 (Berkeley) 3/28/86";
+
+char copyright[] =
+"@(#) Copyright (c) 1983 Regents of the University of California.\n\
+ All rights reserved.\n";
+#endif /* not lint */
+
+#include "defs.h"
 
 #define	MAXEARGS	2048
 #define LC 		'{'
@@ -58,17 +71,18 @@ char	       *entp;
 char	      **sortbase;
 char 	       *argvbuf[MAXEARGS];
 
+static int	argcmp();
+void    	expstr();
+void    	expsh();
+void    	matchdir();
+
 #define sort()	qsort((char *)sortbase, &eargv[eargc] - sortbase, \
 		      sizeof(*sortbase), argcmp), sortbase = &eargv[eargc]
 
-static void Cat(u_char *, u_char *);
-static void addpath(int);
-static int argcmp(const void *, const void *);
-
-static void
-Cat(u_char *s1, u_char *s2)		/* quote in s1 and s2 */
+static void Cat(s1, s2)				/* quote in s1 and s2 */
+	register u_char *s1, *s2;
 {
-	char *cp;
+	register char *cp;
 	int len = strlen((char *)s1) + strlen((char *)s2) + 2;
 
 	if ((eargc + 1) >= MAXEARGS) {
@@ -82,16 +96,16 @@ Cat(u_char *s1, u_char *s2)		/* quote in s1 and s2 */
 	do { 
 		if (*s1 == QUOTECHAR) 
 			s1++; 
-	} while ((*cp++ = *s1++) != '\0');
+	} while ((*cp++ = *s1++));
 	cp--;
 	do { 
 		if (*s2 == QUOTECHAR) 
 			s2++; 
-	} while ((*cp++ = *s2++) != '\0');
+	} while ((*cp++ = *s2++));
 }
 
-static void
-addpath(int c)
+static void addpath(c)
+	char c;
 {
 	if (pathp >= lastpathp) {
 		yyerror("Pathname too long");
@@ -112,14 +126,16 @@ addpath(int c)
  * Major portions of this were snarfed from csh/sh.glob.c.
  */
 struct namelist *
-expand(struct namelist *list, int wh)		/* quote in list->n_name */
+expand(list, wh)				/* quote in list->n_name */
+	struct namelist *list;
+	int wh;
 {
-	struct namelist *nl, *prev;
-	int n;
+	register struct namelist *nl, *prev;
+	register int n;
 	char pathbuf[BUFSIZ];
 
 	if (debug)
-		debugmsg(DM_CALL, "expand(%p, %d) start, list = %s", 
+		debugmsg(DM_CALL, "expand(%x, %d) start, list = %s", 
 			 list, wh, getnlstr(list));
 
 	if (wh == 0)
@@ -128,7 +144,7 @@ expand(struct namelist *list, int wh)		/* quote in list->n_name */
 	which = wh;
 	path = tpathp = pathp = pathbuf;
 	*pathp = CNULL;
-	lastpathp = &pathbuf[sizeof pathbuf - 2];
+	lastpathp = &path[sizeof pathbuf - 2];
 	tilde = "";
 	eargc = 0;
 	eargv = sortbase = argvbuf;
@@ -161,10 +177,11 @@ expand(struct namelist *list, int wh)		/* quote in list->n_name */
  * xstrchr() is a version of strchr() that
  * handles u_char buffers.
  */
-u_char *
-xstrchr(u_char *str, int ch)
+u_char *xstrchr(str, ch)
+	u_char *str;
+	int ch;
 {
-	u_char *cp;
+	register u_char *cp;
 
 	for (cp = str; cp && *cp != CNULL; ++cp)
 		if (ch == *cp)
@@ -173,15 +190,16 @@ xstrchr(u_char *str, int ch)
 	return(NULL);
 }
 
-void
-expstr(u_char *s)
+void expstr(s)
+	u_char *s;
 {
-	u_char *cp, *cp1;
-	struct namelist *tp;
+	register u_char *cp, *cp1;
+	register struct namelist *tp;
 	u_char *tail;
 	u_char ebuf[BUFSIZ];
 	u_char varbuff[BUFSIZ];
 	int savec, oeargc;
+	extern char *homedir;
 
 	if (s == NULL || *s == CNULL)
 		return;
@@ -190,7 +208,7 @@ expstr(u_char *s)
 	 * Remove quoted characters
 	 */
 	if (IS_ON(which, E_VARS)) {
-		if (strlen((char *)s) > sizeof(varbuff)) {
+		if ((int)strlen((char *)s) > sizeof(varbuff)) {
 			yyerror("Variable is too large.");
 			return;
 		}
@@ -243,13 +261,13 @@ expstr(u_char *s)
 			*tail = savec;
 		if (tp != NULL) {
 			for (; tp != NULL; tp = tp->n_next) {
-				(void) snprintf((char *)ebuf, sizeof(ebuf),
-					        "%s%s%s", s, tp->n_name, tail);
+				(void) snprintf((char *)ebuf, sizeof ebuf,
+				    "%s%s%s", s, tp->n_name, tail);
 				expstr(ebuf);
 			}
 			return;
 		}
-		(void) snprintf((char *)ebuf, sizeof(ebuf), "%s%s", s, tail);
+		(void) snprintf((char *)ebuf, sizeof ebuf, "%s%s", s, tail);
 		expstr(ebuf);
 		return;
 	}
@@ -274,9 +292,8 @@ expstr(u_char *s)
 			if (pw == NULL || strcmp(pw->pw_name, 
 						 (char *)ebuf+1) != 0) {
 				if ((pw = getpwnam((char *)ebuf+1)) == NULL) {
-					strlcat((char *)ebuf, 
-					        ": unknown user name",
-					        sizeof(ebuf));
+					strcat((char *)ebuf, 
+					       ": unknown user name");
 					yyerror((char *)ebuf+1);
 					return;
 				}
@@ -284,8 +301,8 @@ expstr(u_char *s)
 			cp1 = (u_char *)pw->pw_dir;
 			s = cp;
 		}
-		for (cp = (u_char *)path; (*cp++ = *cp1++) != '\0'; )
-			continue;
+		for (cp = (u_char *)path; (*cp++ = *cp1++); )
+			;
 		tpathp = pathp = (char *)cp - 1;
 	} else {
 		tpathp = pathp = path;
@@ -309,9 +326,9 @@ expstr(u_char *s)
 }
 
 static int
-argcmp(const void *v1, const void *v2)
+argcmp(a1, a2)
+	char **a1, **a2;
 {
-	const char *const *a1 = v1, *const *a2 = v2;
 
 	return (strcmp(*a1, *a2));
 }
@@ -320,11 +337,11 @@ argcmp(const void *v1, const void *v2)
  * If there are any Shell meta characters in the name,
  * expand into a list, after searching directory
  */
-void
-expsh(u_char *s)			/* quote in s */
+void expsh(s)				/* quote in s */
+	u_char *s;
 {
-	u_char *cp, *oldcp;
-	char *spathp;
+	register u_char *cp, *oldcp;
+	register char *spathp;
 	struct stat stb;
 
 	spathp = pathp;
@@ -358,11 +375,11 @@ endit:
 	*pathp = CNULL;
 }
 
-void
-matchdir(char *pattern)			/* quote in pattern */
+void matchdir(pattern)				/* quote in pattern */
+	char *pattern;
 {
 	struct stat stb;
-	struct dirent *dp;
+	register DIRENTRY *dp;
 	DIR *dirp;
 
 	dirp = opendir(path);
@@ -371,7 +388,7 @@ matchdir(char *pattern)			/* quote in pattern */
 			return;
 		goto patherr2;
 	}
-	if (fstat(dirfd(dirp), &stb) < 0)
+	if (fstat(dirp->dd_fd, &stb) < 0)
 		goto patherr1;
 	if (!S_ISDIR(stb.st_mode)) {
 		errno = ENOTDIR;
@@ -382,8 +399,7 @@ matchdir(char *pattern)			/* quote in pattern */
 			if (which & E_TILDE)
 				Cat((u_char *)path, (u_char *)dp->d_name);
 			else {
-				(void) strlcpy(pathp, dp->d_name,
-				    lastpathp - pathp + 2);
+				(void) strcpy(pathp, dp->d_name);
 				Cat((u_char *)tilde, (u_char *)tpathp);
 				*pathp = CNULL;
 			}
@@ -394,16 +410,17 @@ matchdir(char *pattern)			/* quote in pattern */
 patherr1:
 	closedir(dirp);
 patherr2:
-	(void) strlcat(path, ": ", lastpathp - path + 2);
-	(void) strlcat(path, SYSERR, lastpathp - path + 2);
+	(void) strcat(path, ": ");
+	(void) strcat(path, SYSERR);
 	yyerror(path);
 }
 
 int
-execbrc(u_char *p, u_char *s)		/* quote in p */
+execbrc(p, s)				/* quote in p */
+	u_char *p, *s;
 {
 	u_char restbuf[BUFSIZ + 2];
-	u_char *pe, *pm, *pl;
+	register u_char *pe, *pm, *pl;
 	int brclev = 0;
 	u_char *lm, savec;
 	char *spathp;
@@ -461,11 +478,8 @@ pend:
 doit:
 			savec = *pm;
 			*pm = 0;
-			*lm = 0;
-			(void) strlcat((char *)restbuf, (char *)pl,
-			    sizeof(restbuf));
-			(void) strlcat((char *)restbuf, (char *)pe + 1,
-			    sizeof(restbuf));
+			(void) strcpy((char *)lm, (char *)pl);
+			(void) strcat((char *)restbuf, (char *)pe + 1);
 			*pm = savec;
 			if (s == 0) {
 				spathp = pathp;
@@ -493,10 +507,11 @@ doit:
 }
 
 int
-match(char *s, char *p)				/* quote in p */
+match(s, p)					/* quote in p */
+	char *s, *p;
 {
-	int c;
-	char *sentp;
+	register int c;
+	register char *sentp;
 	char sexpany = expany;
 
 	if (*s == '.' && *p != '.')
@@ -510,9 +525,11 @@ match(char *s, char *p)				/* quote in p */
 }
 
 int
-amatch(char *s, u_char *p)			/* quote in p */
+amatch(s, p)					/* quote in p */
+	register char *s;
+	register u_char *p;
 {
-	int scc;
+	register int scc;
 	int ok, lc;
 	char *spathp;
 	struct stat stb;
@@ -529,7 +546,7 @@ amatch(char *s, u_char *p)			/* quote in p */
 		case '[':
 			ok = 0;
 			lc = 077777;
-			while ((cc = *p++) != '\0') {
+			while ((cc = *p++)) {
 				if (cc == ']') {
 					if (ok)
 						break;
@@ -583,18 +600,17 @@ slash:
 			while (*s)
 				addpath(*s++);
 			addpath('/');
-			if (stat(path, &stb) == 0 && S_ISDIR(stb.st_mode)) {
+			if (stat(path, &stb) == 0 && S_ISDIR(stb.st_mode))
 				if (*p == CNULL) {
-					if (which & E_TILDE) {
+					if (which & E_TILDE)
 						Cat((u_char *)path, 
 						    (u_char *)"");
-					} else {
+					else
 						Cat((u_char *)tilde, 
 						    (u_char *)tpathp);
-					}
-				} else
+				} else {
 					expsh(p);
-			}
+				}
 			pathp = spathp;
 			*pathp = CNULL;
 			return (0);

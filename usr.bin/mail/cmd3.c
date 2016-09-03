@@ -1,4 +1,4 @@
-/*	$OpenBSD: cmd3.c,v 1.27 2015/10/16 17:56:07 mmcc Exp $	*/
+/*	$OpenBSD: cmd3.c,v 1.10 1997/11/14 00:23:44 millert Exp $	*/
 /*	$NetBSD: cmd3.c,v 1.8 1997/07/09 05:29:49 mikel Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,6 +34,14 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)cmd3.c	8.2 (Berkeley) 4/20/95";
+#else
+static char rcsid[] = "$OpenBSD: cmd3.c,v 1.10 1997/11/14 00:23:44 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include "extern.h"
 
@@ -38,29 +50,29 @@
  *
  * Still more user commands.
  */
-static int diction(const void *, const void *);
+static int diction __P((const void *, const void *));
 
 /*
  * Process a shell escape by saving signals, ignoring signals,
  * and forking a sh -c
  */
 int
-shell(void *v)
+shell(v)
+	void *v;
 {
 	char *str = v;
+	sig_t sigint = signal(SIGINT, SIG_IGN);
 	char *shell;
 	char cmd[BUFSIZ];
-	struct sigaction oact;
-	sigset_t oset;
 
-	(void)ignoresig(SIGINT, &oact, &oset);
-	(void)strlcpy(cmd, str, sizeof(cmd));
+	(void)strncpy(cmd, str, sizeof(cmd) - 1);
+	cmd[sizeof(cmd) - 1] = '\0';
 	if (bangexp(cmd, sizeof(cmd)) < 0)
 		return(1);
-	shell = value("SHELL");
-	(void)run_command(shell, 0, 0, -1, "-c", cmd, NULL);
-	(void)sigprocmask(SIG_SETMASK, &oset, NULL);
-	(void)sigaction(SIGINT, &oact, NULL);
+	if ((shell = value("SHELL")) == NULL)
+		shell = _PATH_CSHELL;
+	(void)run_command(shell, 0, -1, -1, "-c", cmd, NULL);
+	(void)signal(SIGINT, sigint);
 	puts("!");
 	return(0);
 }
@@ -70,17 +82,16 @@ shell(void *v)
  */
 /*ARGSUSED*/
 int
-dosh(void *v)
+dosh(v)
+	void *v;
 {
+	sig_t sigint = signal(SIGINT, SIG_IGN);
 	char *shell;
-	struct sigaction oact;
-	sigset_t oset;
 
-	shell = value("SHELL");
-	(void)ignoresig(SIGINT, &oact, &oset);
-	(void)run_command(shell, 0, 0, -1, NULL, NULL, NULL);
-	(void)sigprocmask(SIG_SETMASK, &oset, NULL);
-	(void)sigaction(SIGINT, &oact, NULL);
+	if ((shell = value("SHELL")) == NULL)
+		shell = _PATH_CSHELL;
+	(void)run_command(shell, 0, -1, -1, NULL, NULL, NULL);
+	(void)signal(SIGINT, sigint);
 	putchar('\n');
 	return(0);
 }
@@ -90,7 +101,9 @@ dosh(void *v)
  * last issued command where possible.
  */
 int
-bangexp(char *str, size_t strsize)
+bangexp(str, strsize)
+	char *str;
+	size_t strsize;
 {
 	char bangbuf[BUFSIZ];
 	static char lastbang[BUFSIZ];
@@ -108,7 +121,8 @@ overf:
 				return(-1);
 			}
 			changed++;
-			strlcpy(cp2, lastbang, sizeof(bangbuf) - (cp2 - bangbuf));
+			strncpy(cp2, lastbang, sizeof(bangbuf) - (cp2 - bangbuf) - 1);
+			bangbuf[sizeof(bangbuf) - 1] = '\0';
 			cp2 += strlen(lastbang);
 			n -= strlen(lastbang);
 			cp++;
@@ -130,19 +144,31 @@ overf:
 		(void)printf("!%s\n", bangbuf);
 		(void)fflush(stdout);
 	}
-	(void)strlcpy(str, bangbuf, strsize);
-	(void)strlcpy(lastbang, bangbuf, sizeof(lastbang));
+	(void)strncpy(str, bangbuf, strsize - 1);
+	str[strsize - 1]  = '\0';
+	(void)strncpy(lastbang, bangbuf, sizeof(lastbang) - 1);
+	lastbang[sizeof(lastbang) - 1] = '\0';
 	return(0);
 }
 
 /*
  * Print out a nice help message from some file or another.
  */
-int
-help(void *v)
-{
 
-	(void)run_command(value("PAGER"), 0, -1, -1, _PATH_HELP, NULL);
+int
+help(v)
+	void *v;
+{
+	int c;
+	FILE *f;
+
+	if ((f = Fopen(_PATH_HELP, "r")) == NULL) {
+		warn(_PATH_HELP);
+		return(1);
+	}
+	while ((c = getc(f)) != EOF)
+		putchar(c);
+	(void)Fclose(f);
 	return(0);
 }
 
@@ -150,31 +176,29 @@ help(void *v)
  * Change user's working directory.
  */
 int
-schdir(void *v)
+schdir(v)
+	void *v;
 {
 	char **arglist = v;
 	char *cp;
 
-	if (*arglist == NULL) {
-		if (homedir == NULL)
-			return(1);
+	if (*arglist == NULL)
 		cp = homedir;
-	} else {
+	else
 		if ((cp = expand(*arglist)) == NULL)
 			return(1);
-	}
 	if (chdir(cp) < 0) {
-		warn("%s", cp);
+		warn(cp);
 		return(1);
 	}
 	return(0);
 }
 
 int
-respond(void *v)
+respond(v)
+	void *v;
 {
 	int *msgvec = v;
-
 	if (value("Replyall") == NULL)
 		return(_respond(msgvec));
 	else
@@ -209,7 +233,8 @@ _respond(msgvec)
 	else if ((cp = skin(hfield("to", mp))) != NULL)
 		np = extract(cp, GTO);
 	else
-		np = NULL;
+		np = NIL;
+	np = elide(np);
 	/*
 	 * Delete my name from the reply list,
 	 * and with it, all my alternate names.
@@ -218,16 +243,14 @@ _respond(msgvec)
 	if (altnames)
 		for (ap = altnames; *ap; ap++)
 			np = delname(np, *ap);
-	if (np != NULL && replyto == NULL)
+	if (np != NIL && replyto == NULL)
 		np = cat(np, extract(rcv, GTO));
-	else if (np == NULL) {
+	else if (np == NIL) {
 		if (replyto != NULL)
 			puts("Empty reply-to field -- replying to author");
 		np = extract(rcv, GTO);
 	}
-	np = elide(np);
 	head.h_to = np;
-	head.h_from = NULL;
 	if ((head.h_subject = hfield("subject", mp)) == NULL)
 		head.h_subject = hfield("subj", mp);
 	head.h_subject = reedit(head.h_subject);
@@ -239,9 +262,9 @@ _respond(msgvec)
 				np = delname(np, *ap);
 		head.h_cc = np;
 	} else
-		head.h_cc = NULL;
-	head.h_bcc = NULL;
-	head.h_smopts = NULL;
+		head.h_cc = NIL;
+	head.h_bcc = NIL;
+	head.h_smopts = NIL;
 	mail1(&head, 1);
 	return(0);
 }
@@ -251,38 +274,21 @@ _respond(msgvec)
  * it does not already.
  */
 char *
-reedit(char *subj)
+reedit(subj)
+	char *subj;
 {
 	char *newsubj;
-	size_t len;
 
 	if (subj == NULL)
 		return(NULL);
-	if (strncasecmp(subj, "re:", 3) == 0)
+	if ((subj[0] == 'r' || subj[0] == 'R') &&
+	    (subj[1] == 'e' || subj[1] == 'E') &&
+	    subj[2] == ':')
 		return(subj);
-	len = strlen(subj) + 5;
-	newsubj = salloc(len);
-	strlcpy(newsubj, "Re: ", len);
-	strlcat(newsubj, subj, len);
+	newsubj = salloc(strlen(subj) + 5);
+	strcpy(newsubj, "Re: ");
+	strcpy(newsubj + 4, subj);
 	return(newsubj);
-}
-
-/*
- * Mark new the named messages, so that they will be left in the system
- * mailbox as unread.
- */
-int
-marknew(void *v)
-{
-	int *msgvec = v;
-	int *ip;
-
-	for (ip = msgvec; *ip != 0; ip++) {
-		dot = &message[*ip-1];
-		dot->m_flag &= ~(MBOX|MREAD|MTOUCH);
-		dot->m_flag |= MNEW|MSTATUS;
-	}
-	return(0);
 }
 
 /*
@@ -290,7 +296,8 @@ marknew(void *v)
  * back to the system mailbox.
  */
 int
-preserve(void *v)
+preserve(v)
+	void *v;
 {
 	int *msgvec = v;
 	int *ip, mesg;
@@ -300,7 +307,7 @@ preserve(void *v)
 		puts("Cannot \"preserve\" in edit mode");
 		return(1);
 	}
-	for (ip = msgvec; *ip != 0; ip++) {
+	for (ip = msgvec; *ip != NULL; ip++) {
 		mesg = *ip;
 		mp = &message[mesg-1];
 		mp->m_flag |= MPRESERVE;
@@ -314,12 +321,13 @@ preserve(void *v)
  * Mark all given messages as unread.
  */
 int
-unread(void *v)
+unread(v)
+	void *v;
 {
-	int *msgvec = v;
+	int	*msgvec = v;
 	int *ip;
 
-	for (ip = msgvec; *ip != 0; ip++) {
+	for (ip = msgvec; *ip != NULL; ip++) {
 		dot = &message[*ip-1];
 		dot->m_flag &= ~(MREAD|MTOUCH);
 		dot->m_flag |= MSTATUS;
@@ -331,13 +339,14 @@ unread(void *v)
  * Print the size of each message.
  */
 int
-messize(void *v)
+messize(v)
+	void *v;
 {
 	int *msgvec = v;
 	struct message *mp;
 	int *ip, mesg;
 
-	for (ip = msgvec; *ip != 0; ip++) {
+	for (ip = msgvec; *ip != NULL; ip++) {
 		mesg = *ip;
 		mp = &message[mesg-1];
 		printf("%d: %d/%d\n", mesg, mp->m_lines, mp->m_size);
@@ -350,9 +359,9 @@ messize(void *v)
  * by returning an error.
  */
 int
-rexit(void *v)
+rexit(v)
+	void *v;
 {
-
 	if (sourcing)
 		return(1);
 	exit(0);
@@ -364,7 +373,8 @@ rexit(void *v)
  * of csh.
  */
 int
-set(void *v)
+set(v)
+	void *v;
 {
 	char **arglist = v;
 	struct var *vp;
@@ -374,11 +384,11 @@ set(void *v)
 
 	if (*arglist == NULL) {
 		for (h = 0, s = 1; h < HSHSIZE; h++)
-			for (vp = variables[h]; vp != NULL; vp = vp->v_link)
+			for (vp = variables[h]; vp != NOVAR; vp = vp->v_link)
 				s++;
 		ap = (char **)salloc(s * sizeof(*ap));
 		for (h = 0, p = ap; h < HSHSIZE; h++)
-			for (vp = variables[h]; vp != NULL; vp = vp->v_link)
+			for (vp = variables[h]; vp != NOVAR; vp = vp->v_link)
 				*p++ = vp->v_name;
 		*p = NULL;
 		sort(ap);
@@ -411,7 +421,8 @@ set(void *v)
  * Unset a bunch of variable values.
  */
 int
-unset(void *v)
+unset(v)
+	void *v;
 {
 	char **arglist = v;
 	struct var *vp, *vp2;
@@ -420,7 +431,7 @@ unset(void *v)
 
 	errs = 0;
 	for (ap = arglist; *ap != NULL; ap++) {
-		if ((vp2 = lookup(*ap)) == NULL) {
+		if ((vp2 = lookup(*ap)) == NOVAR) {
 			if (!sourcing) {
 				printf("\"%s\": undefined variable\n", *ap);
 				errs++;
@@ -449,7 +460,8 @@ unset(void *v)
  * Put add users to a group.
  */
 int
-group(void *v)
+group(v)
+	void *v;
 {
 	char **argv = v;
 	struct grouphead *gh;
@@ -459,11 +471,11 @@ group(void *v)
 
 	if (*argv == NULL) {
 		for (h = 0, s = 1; h < HSHSIZE; h++)
-			for (gh = groups[h]; gh != NULL; gh = gh->g_link)
+			for (gh = groups[h]; gh != NOGRP; gh = gh->g_link)
 				s++;
 		ap = (char **)salloc(s * sizeof(*ap));
 		for (h = 0, p = ap; h < HSHSIZE; h++)
-			for (gh = groups[h]; gh != NULL; gh = gh->g_link)
+			for (gh = groups[h]; gh != NOGRP; gh = gh->g_link)
 				*p++ = gh->g_name;
 		*p = NULL;
 		sort(ap);
@@ -477,11 +489,10 @@ group(void *v)
 	}
 	gname = *argv;
 	h = hash(gname);
-	if ((gh = findgroup(gname)) == NULL) {
-		if ((gh = calloc(1, sizeof(*gh))) == NULL)
-			err(1, "calloc");
+	if ((gh = findgroup(gname)) == NOGRP) {
+		gh = (struct grouphead *)calloc(sizeof(*gh), 1);
 		gh->g_name = vcopy(gname);
-		gh->g_list = NULL;
+		gh->g_list = NOGE;
 		gh->g_link = groups[h];
 		groups[h] = gh;
 	}
@@ -493,8 +504,7 @@ group(void *v)
 	 */
 
 	for (ap = argv+1; *ap != NULL; ap++) {
-		if ((gp = calloc(1, sizeof(*gp))) == NULL)
-			err(1, "calloc");
+		gp = (struct group *)calloc(sizeof(*gp), 1);
 		gp->ge_name = vcopy(*ap);
 		gp->ge_link = gh->g_list;
 		gh->g_list = gp;
@@ -503,11 +513,12 @@ group(void *v)
 }
 
 /*
- * Sort the passed string vector into ascending dictionary
+ * Sort the passed string vecotor into ascending dictionary
  * order.
  */
 void
-sort(char **list)
+sort(list)
+	char **list;
 {
 	char **ap;
 
@@ -523,20 +534,21 @@ sort(char **list)
  * qsort.
  */
 static int
-diction(const void *a, const void *b)
+diction(a, b)
+	const void *a, *b;
 {
-
 	return(strcmp(*(char **)a, *(char **)b));
 }
 
 /*
  * The do nothing command for comments.
  */
+
 /*ARGSUSED*/
 int
-null(void *v)
+null(v)
+	void *v;
 {
-
 	return(0);
 }
 
@@ -545,13 +557,13 @@ null(void *v)
  * the current file.
  */
 int
-file(void *v)
+file(v)
+	void *v;
 {
 	char **argv = v;
 
 	if (argv[0] == NULL) {
 		newfileinfo(0);
-		clearnew();
 		return(0);
 	}
 	if (setfile(*argv) < 0)
@@ -564,7 +576,8 @@ file(void *v)
  * Expand file names like echo
  */
 int
-echo(void *v)
+echo(v)
+	void *v;
 {
 	char **argv = v;
 	char **ap, *cp;
@@ -582,10 +595,10 @@ echo(void *v)
 }
 
 int
-Respond(void *v)
+Respond(v)
+	void *v;
 {
 	int *msgvec = v;
-
 	if (value("Replyall") == NULL)
 		return(_Respond(msgvec));
 	else
@@ -598,14 +611,15 @@ Respond(void *v)
  * reply.
  */
 int
-_Respond(int *msgvec)
+_Respond(msgvec)
+	int msgvec[];
 {
 	struct header head;
 	struct message *mp;
 	int *ap;
 	char *cp;
 
-	head.h_to = NULL;
+	head.h_to = NIL;
 	for (ap = msgvec; *ap != 0; ap++) {
 		mp = &message[*ap - 1];
 		touch(mp);
@@ -614,16 +628,15 @@ _Respond(int *msgvec)
 			cp = skin(nameof(mp, 2));
 		head.h_to = cat(head.h_to, extract(cp, GTO));
 	}
-	if (head.h_to == NULL)
+	if (head.h_to == NIL)
 		return(0);
 	mp = &message[msgvec[0] - 1];
 	if ((head.h_subject = hfield("subject", mp)) == NULL)
 		head.h_subject = hfield("subj", mp);
 	head.h_subject = reedit(head.h_subject);
-	head.h_from = NULL;
-	head.h_cc = NULL;
-	head.h_bcc = NULL;
-	head.h_smopts = NULL;
+	head.h_cc = NIL;
+	head.h_bcc = NIL;
+	head.h_smopts = NIL;
 	mail1(&head, 1);
 	return(0);
 }
@@ -633,7 +646,8 @@ _Respond(int *msgvec)
  * .mailrc and do some things if sending, others if receiving.
  */
 int
-ifcmd(void *v)
+ifcmd(v)
+	void *v;
 {
 	char **argv = v;
 	char *cp;
@@ -665,7 +679,8 @@ ifcmd(void *v)
  * flip over the conditional flag.
  */
 int
-elsecmd(void *v)
+elsecmd(v)
+	void *v;
 {
 
 	switch (cond) {
@@ -693,7 +708,8 @@ elsecmd(void *v)
  * End of if statement.  Just set cond back to anything.
  */
 int
-endifcmd(void *v)
+endifcmd(v)
+	void *v;
 {
 
 	if (cond == CANY) {
@@ -708,10 +724,11 @@ endifcmd(void *v)
  * Set the list of alternate names.
  */
 int
-alternates(void *v)
+alternates(v)
+	void *v;
 {
 	char **namelist = v;
-	char **ap, **ap2;
+	char **ap, **ap2, *cp;
 	int c;
 
 	c = argcount(namelist) + 1;
@@ -725,11 +742,11 @@ alternates(void *v)
 	}
 	if (altnames != 0)
 		(void)free(altnames);
-	if ((altnames = calloc(c, sizeof(char *))) == NULL)
-		err(1, "calloc");
+	altnames = (char **)calloc(c, sizeof(char *));
 	for (ap = namelist, ap2 = altnames; *ap; ap++, ap2++) {
-		if ((*ap2 = strdup(*ap)) == NULL)
-			err(1, "strdup");
+		cp = (char *)calloc(strlen(*ap) + 1, sizeof(char));
+		strcpy(cp, *ap);
+		*ap2 = cp;
 	}
 	*ap2 = 0;
 	return(0);

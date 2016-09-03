@@ -1,16 +1,12 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-}
+# $RCSfile: cond.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:41 $
 
-is( 1 ? 1 : 0, 1, 'compile time, true' );
-is( 0 ? 0 : 1, 1, 'compile time, false' );
+print "1..4\n";
+
+print 1 ? "ok 1\n" : "not ok 1\n";	# compile time
+print 0 ? "not ok 2\n" : "ok 2\n";
 
 $x = 1;
-is(  $x ? 1 : 0, 1, 'run time, true');
-is( !$x ? 0 : 1, 1, 'run time, false');
-
-done_testing();
+print $x ? "ok 3\n" : "not ok 3\n";	# run time
+print !$x ? "not ok 4\n" : "ok 4\n";

@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.9 2015/11/19 17:50:04 tedu Exp $	*/
+/*	$OpenBSD: misc.c,v 1.4 1999/02/03 02:09:30 millert Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -15,7 +15,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,31 +36,35 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)misc.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: misc.c,v 1.4 1999/02/03 02:09:30 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/stat.h>
-
 #include <err.h>
+#include <errno.h>
+#include <unistd.h>
 #include <stdio.h>
-
+#include <stdlib.h>
+#include <string.h>
 #include "extern.h"
 
 void
-ierr(const char *fname)
+ierr()
 {
+
 	warn("%s", fname);
 	rval = 1;
 }
 
 void
-oerr(void)
+oerr()
 {
-	err(1, "stdout");
-}
 
-void printfname(const char *fname)
-{
-	static int first = 1;
-	(void)printf("%s==> %s <==\n", first ? "" : "\n", fname);
-	first = 0;
-	(void)fflush(stdout);
+	err(1, "stdout");
 }

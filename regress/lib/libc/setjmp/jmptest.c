@@ -1,4 +1,3 @@
-/*	$OpenBSD: jmptest.c,v 1.7 2003/09/02 23:52:16 david Exp $	*/
 /*	$NetBSD: jmptest.c,v 1.2 1995/01/01 20:55:35 jtc Exp $	*/
 
 /*
@@ -38,7 +37,6 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #if (TEST_SETJMP + TEST_U_SETJMP + TEST_SIGSETJMP) != 1
@@ -65,20 +63,21 @@
 
 int expectsignal;
 
-static void
-aborthandler(int signo)
+void
+aborthandler(signo)
+	int signo;
 {
 
 	if (expectsignal)
-		_exit(0);
-	else {
-		warnx("kill(SIGABRT) succeeded");
-		_exit(1);
-	}
+		exit(0);
+	else
+		errx(1, "kill(SIGABRT) succeeded");
 }
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
 	struct sigaction sa;
 	BUF jb;

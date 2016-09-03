@@ -1,7 +1,7 @@
 /* win32sck.c
  *
  * (c) 1995 Microsoft Corporation. All rights reserved. 
- * 		Developed by hip communications inc.
+ * 		Developed by hip communications inc., http://info.hip.com/info/
  * Portions (c) 1993 Intergraph Corporation. All rights reserved.
  *
  *    You may distribute under the terms of either the GNU General Public
@@ -11,15 +11,18 @@
 #define WIN32IO_IS_STDIO
 #define WIN32SCK_IS_STDSCK
 #define WIN32_LEAN_AND_MEAN
-#define PERLIO_NOT_STDIO 0
 #ifdef __GNUC__
 #define Win32_Winsock
 #endif
 #include <windows.h>
-#include <ws2spi.h>
-
 #include "EXTERN.h"
 #include "perl.h"
+
+#if defined(PERL_OBJECT)
+#define NO_XSLOCKS
+extern CPerlObj* pPerl;
+#include "XSUB.h"
+#endif
 
 #include "Win32iop.h"
 #include <sys/socket.h>
@@ -29,304 +32,63 @@
 #include <io.h>
 
 /* thanks to Beverly Brown	(beverly@datacube.com) */
-#define OPEN_SOCKET(x)	win32_open_osfhandle(x,O_RDWR|O_BINARY)
-#define TO_SOCKET(x)	_get_osfhandle(x)
+#ifdef USE_SOCKETS_AS_HANDLES
+#	define OPEN_SOCKET(x)	win32_open_osfhandle(x,O_RDWR|O_BINARY)
+#	define TO_SOCKET(x)	_get_osfhandle(x)
+#else
+#	define OPEN_SOCKET(x)	(x)
+#	define TO_SOCKET(x)	(x)
+#endif	/* USE_SOCKETS_AS_HANDLES */
 
+#ifdef USE_THREADS
 #define StartSockets() \
     STMT_START {					\
 	if (!wsock_started)				\
 	    start_sockets();				\
+       set_socktype();                         \
+    } STMT_END
+#else
+#define StartSockets() \
+    STMT_START {					\
+	if (!wsock_started) {				\
+	    start_sockets();				\
+	    set_socktype();				\
+	}						\
+    } STMT_END
+#endif
+
+#define EndSockets() \
+    STMT_START {					\
+	if (wsock_started)				\
+	    WSACleanup();				\
     } STMT_END
 
 #define SOCKET_TEST(x, y) \
     STMT_START {					\
 	StartSockets();					\
 	if((x) == (y))					\
-	    errno = get_last_socket_error();		\
+	    errno = WSAGetLastError();			\
     } STMT_END
 
 #define SOCKET_TEST_ERROR(x) SOCKET_TEST(x, SOCKET_ERROR)
 
-static int get_last_socket_error(void);
 static struct servent* win32_savecopyservent(struct servent*d,
                                              struct servent*s,
                                              const char *proto);
 
-static int wsock_started = 0;
-
-#ifdef WIN32_DYN_IOINFO_SIZE
-EXTERN_C Size_t w32_ioinfo_size;
-#endif
-
-EXTERN_C void
-EndSockets(void)
-{
-    if (wsock_started)
-	WSACleanup();
-}
-
-/* Translate WSAExxx values to corresponding Exxx values where possible. Not all
- * WSAExxx constants have corresponding Exxx constants in <errno.h> (even in
- * VC++ 2010 and above, which have expanded <errno.h> with more values), but
- * most missing constants are provided by win32/include/sys/errno2.h. The few
- * that are not are returned unchanged.
- *
- * The list of possible WSAExxx values used here comes from the MSDN page
- * titled "Windows Sockets Error Codes".
- *
- * (Note: Only the WSAExxx values are handled here; other WSAxxx values are
- * returned unchanged. The return value normally ends up in errno/$! and at
- * the Perl code level may be tested against the Exxx constants exported by
- * the Errno and POSIX modules, which have never handled the other WSAxxx
- * values themselves, apparently without any ill effect so far.)
- */
-int
-convert_wsa_error_to_errno(int wsaerr)
-{
-    switch (wsaerr) {
-    case WSAEINTR:
-	return EINTR;
-    case WSAEBADF:
-	return EBADF;
-    case WSAEACCES:
-	return EACCES;
-    case WSAEFAULT:
-	return EFAULT;
-    case WSAEINVAL:
-	return EINVAL;
-    case WSAEMFILE:
-	return EMFILE;
-    case WSAEWOULDBLOCK:
-	return EWOULDBLOCK;
-    case WSAEINPROGRESS:
-	return EINPROGRESS;
-    case WSAEALREADY:
-	return EALREADY;
-    case WSAENOTSOCK:
-	return ENOTSOCK;
-    case WSAEDESTADDRREQ:
-	return EDESTADDRREQ;
-    case WSAEMSGSIZE:
-	return EMSGSIZE;
-    case WSAEPROTOTYPE:
-	return EPROTOTYPE;
-    case WSAENOPROTOOPT:
-	return ENOPROTOOPT;
-    case WSAEPROTONOSUPPORT:
-	return EPROTONOSUPPORT;
-    case WSAESOCKTNOSUPPORT:
-	return ESOCKTNOSUPPORT;
-    case WSAEOPNOTSUPP:
-	return EOPNOTSUPP;
-    case WSAEPFNOSUPPORT:
-	return EPFNOSUPPORT;
-    case WSAEAFNOSUPPORT:
-	return EAFNOSUPPORT;
-    case WSAEADDRINUSE:
-	return EADDRINUSE;
-    case WSAEADDRNOTAVAIL:
-	return EADDRNOTAVAIL;
-    case WSAENETDOWN:
-	return ENETDOWN;
-    case WSAENETUNREACH:
-	return ENETUNREACH;
-    case WSAENETRESET:
-	return ENETRESET;
-    case WSAECONNABORTED:
-	return ECONNABORTED;
-    case WSAECONNRESET:
-	return ECONNRESET;
-    case WSAENOBUFS:
-	return ENOBUFS;
-    case WSAEISCONN:
-	return EISCONN;
-    case WSAENOTCONN:
-	return ENOTCONN;
-    case WSAESHUTDOWN:
-	return ESHUTDOWN;
-    case WSAETOOMANYREFS:
-	return ETOOMANYREFS;
-    case WSAETIMEDOUT:
-	return ETIMEDOUT;
-    case WSAECONNREFUSED:
-	return ECONNREFUSED;
-    case WSAELOOP:
-	return ELOOP;
-    case WSAENAMETOOLONG:
-	return ENAMETOOLONG;
-    case WSAEHOSTDOWN:
-	return WSAEHOSTDOWN;		/* EHOSTDOWN is not defined */
-    case WSAEHOSTUNREACH:
-	return EHOSTUNREACH;
-    case WSAENOTEMPTY:
-	return ENOTEMPTY;
-    case WSAEPROCLIM:
-	return EPROCLIM;
-    case WSAEUSERS:
-	return EUSERS;
-    case WSAEDQUOT:
-	return EDQUOT;
-    case WSAESTALE:
-	return ESTALE;
-    case WSAEREMOTE:
-	return EREMOTE;
-    case WSAEDISCON:
-	return WSAEDISCON;		/* EDISCON is not defined */
-    case WSAENOMORE:
-	return WSAENOMORE;		/* ENOMORE is not defined */
-#ifdef WSAECANCELLED
-    case WSAECANCELLED:			/* New in WinSock2 */
-	return ECANCELED;
-#endif
-    case WSAEINVALIDPROCTABLE:
-	return WSAEINVALIDPROCTABLE;	/* EINVALIDPROCTABLE is not defined */
-    case WSAEINVALIDPROVIDER:
-	return WSAEINVALIDPROVIDER;	/* EINVALIDPROVIDER is not defined */
-    case WSAEPROVIDERFAILEDINIT:
-	return WSAEPROVIDERFAILEDINIT;	/* EPROVIDERFAILEDINIT is not defined */
-    case WSAEREFUSED:
-	return WSAEREFUSED;		/* EREFUSED is not defined */
-    }
-
-    return wsaerr;
-}
-
-#ifdef ERRNO_HAS_POSIX_SUPPLEMENT
-/* Translate Exxx values in the POSIX supplement range defined in VC++ 2010 and
- * above (EADDRINUSE <= err <= EWOULDBLOCK) to corresponding WSAExxx values. Not
- * all such Exxx constants have corresponding WSAExxx constants in <winsock*.h>;
- * we just use ERROR_INVALID_FUNCTION for those that are missing but do not
- * really expect to encounter them anyway in the context in which this function
- * is called.
- * Some versions of MinGW/gcc-4.8 and above also define most, but not all, of
- * these extra Exxx values. The missing ones are all cases for which there is no
- * corresponding WSAExxx constant anyway, so we simply omit the cases for them
- * here.
- * Other Exxx values (err < sys_nerr) are returned unchanged.
- */
-int
-convert_errno_to_wsa_error(int err)
-{
-    switch (err) {
-    case EADDRINUSE:
-	return WSAEADDRINUSE;
-    case EADDRNOTAVAIL:
-	return WSAEADDRNOTAVAIL;
-    case EAFNOSUPPORT:
-	return WSAEAFNOSUPPORT;
-    case EALREADY:
-	return WSAEALREADY;
-#ifdef EBADMSG
-    case EBADMSG:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case ECANCELED:
-#ifdef WSAECANCELLED
-	return WSAECANCELLED;		/* New in WinSock2 */
+#ifdef USE_THREADS
+#ifdef USE_DECLSPEC_THREAD
+__declspec(thread) struct servent myservent;
+__declspec(thread) int init_socktype;
 #else
-	return ERROR_INVALID_FUNCTION;
+#define myservent (thr->i.Wservent)
+#define init_socktype (thr->i.Winit_socktype)
 #endif
-    case ECONNABORTED:
-	return WSAECONNABORTED;
-    case ECONNREFUSED:
-	return WSAECONNREFUSED;
-    case ECONNRESET:
-	return WSAECONNRESET;
-    case EDESTADDRREQ:
-	return WSAEDESTADDRREQ;
-    case EHOSTUNREACH:
-	return WSAEHOSTUNREACH;
-#ifdef EIDRM
-    case EIDRM:				/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
+#else
+static struct servent myservent;
 #endif
-    case EINPROGRESS:
-	return WSAEINPROGRESS;
-    case EISCONN:
-	return WSAEISCONN;
-    case ELOOP:
-	return WSAELOOP;
-    case EMSGSIZE:
-	return WSAEMSGSIZE;
-    case ENETDOWN:
-	return WSAENETDOWN;
-    case ENETRESET:
-	return WSAENETRESET;
-    case ENETUNREACH:
-	return WSAENETUNREACH;
-    case ENOBUFS:
-	return WSAENOBUFS;
-#ifdef ENODATA
-    case ENODATA:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-#ifdef ENOLINK
-    case ENOLINK:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-#ifdef ENOMSG
-    case ENOMSG:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case ENOPROTOOPT:
-	return WSAENOPROTOOPT;
-#ifdef ENOSR
-    case ENOSR:				/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-#ifdef ENOSTR
-    case ENOSTR:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case ENOTCONN:
-	return WSAENOTCONN;
-#ifdef ENOTRECOVERABLE
-    case ENOTRECOVERABLE:		/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case ENOTSOCK:
-	return WSAENOTSOCK;
-    case ENOTSUP:
-	return ERROR_INVALID_FUNCTION;
-    case EOPNOTSUPP:
-	return WSAEOPNOTSUPP;
-#ifdef EOTHER
-    case EOTHER:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case EOVERFLOW:
-	return ERROR_INVALID_FUNCTION;
-    case EOWNERDEAD:
-	return ERROR_INVALID_FUNCTION;
-    case EPROTO:
-	return ERROR_INVALID_FUNCTION;
-    case EPROTONOSUPPORT:
-	return WSAEPROTONOSUPPORT;
-    case EPROTOTYPE:
-	return WSAEPROTOTYPE;
-#ifdef ETIME
-    case ETIME:				/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case ETIMEDOUT:
-	return WSAETIMEDOUT;
-#ifdef ETXTBSY
-    case ETXTBSY:			/* Not defined in gcc-4.8.0 */
-	return ERROR_INVALID_FUNCTION;
-#endif
-    case EWOULDBLOCK:
-	return WSAEWOULDBLOCK;
-    }
 
-    return err;
-}
-#endif /* ERRNO_HAS_POSIX_SUPPLEMENT */
-
-static int
-get_last_socket_error(void)
-{
-    return convert_wsa_error_to_errno(WSAGetLastError());
-}
+static int wsock_started = 0;
 
 void
 start_sockets(void) 
@@ -339,52 +101,101 @@ start_sockets(void)
      * initalize the winsock interface and insure that it is
      * cleaned up at exit.
      */
-    version = 0x2;
+    version = 0x101;
     if(ret = WSAStartup(version, &retdata))
-	Perl_croak_nocontext("Unable to locate winsock library!\n");
+	croak("Unable to locate winsock library!\n");
     if(retdata.wVersion != version)
-	Perl_croak_nocontext("Could not find version 2.0 of winsock dll\n");
+	croak("Could not find version 1.1 of winsock dll\n");
 
     /* atexit((void (*)(void)) EndSockets); */
     wsock_started = 1;
 }
 
-/* in no sockets Win32 builds, these use the inline functions defined in
- * perl.h
- */
+void
+set_socktype(void)
+{
+#ifdef USE_SOCKETS_AS_HANDLES
+#ifdef USE_THREADS
+    dTHR;
+    if(!init_socktype) {
+#endif
+    int iSockOpt = SO_SYNCHRONOUS_NONALERT;
+    /*
+     * Enable the use of sockets as filehandles
+     */
+    setsockopt(INVALID_SOCKET, SOL_SOCKET, SO_OPENTYPE,
+		(char *)&iSockOpt, sizeof(iSockOpt));
+#ifdef USE_THREADS
+    init_socktype = 1;
+    }
+#endif
+#endif	/* USE_SOCKETS_AS_HANDLES */
+}
+
+
+#ifndef USE_SOCKETS_AS_HANDLES
+#undef fdopen
+FILE *
+my_fdopen(int fd, char *mode)
+{
+    FILE *fp;
+    char sockbuf[256];
+    int optlen = sizeof(sockbuf);
+    int retval;
+
+    if (!wsock_started)
+	return(fdopen(fd, mode));
+
+    retval = getsockopt((SOCKET)fd, SOL_SOCKET, SO_TYPE, sockbuf, &optlen);
+    if(retval == SOCKET_ERROR && WSAGetLastError() == WSAENOTSOCK) {
+	return(fdopen(fd, mode));
+    }
+
+    /*
+     * If we get here, then fd is actually a socket.
+     */
+    Newz(1310, fp, 1, FILE);
+    if(fp == NULL) {
+	errno = ENOMEM;
+	return NULL;
+    }
+
+    fp->_file = fd;
+    if(*mode == 'r')
+	fp->_flag = _IOREAD;
+    else
+	fp->_flag = _IOWRT;
+   
+    return fp;
+}
+#endif	/* USE_SOCKETS_AS_HANDLES */
+
+
 u_long
 win32_htonl(u_long hostlong)
 {
-#ifndef WIN32_NO_SOCKETS
     StartSockets();
-#endif
     return htonl(hostlong);
 }
 
 u_short
 win32_htons(u_short hostshort)
 {
-#ifndef WIN32_NO_SOCKETS
     StartSockets();
-#endif
     return htons(hostshort);
 }
 
 u_long
 win32_ntohl(u_long netlong)
 {
-#ifndef WIN32_NO_SOCKETS
     StartSockets();
-#endif
     return ntohl(netlong);
 }
 
 u_short
 win32_ntohs(u_short netshort)
 {
-#ifndef WIN32_NO_SOCKETS
     StartSockets();
-#endif
     return ntohs(netshort);
 }
 
@@ -493,37 +304,15 @@ int
 win32_select(int nfds, Perl_fd_set* rd, Perl_fd_set* wr, Perl_fd_set* ex, const struct timeval* timeout)
 {
     int r;
-    int i, fd, save_errno = errno;
-    FD_SET nrd, nwr, nex;
-    bool just_sleep = TRUE;
+#ifdef USE_SOCKETS_AS_HANDLES
+    Perl_fd_set dummy;
+    int i, fd, bit, offset;
+    FD_SET nrd, nwr, nex, *prd, *pwr, *pex;
 
-    StartSockets();
-
-    FD_ZERO(&nrd);
-    FD_ZERO(&nwr);
-    FD_ZERO(&nex);
-    for (i = 0; i < nfds; i++) {
-	if (rd && PERL_FD_ISSET(i,rd)) {
-	    fd = TO_SOCKET(i);
-	    FD_SET((unsigned)fd, &nrd);
-            just_sleep = FALSE;
-	}
-	if (wr && PERL_FD_ISSET(i,wr)) {
-	    fd = TO_SOCKET(i);
-	    FD_SET((unsigned)fd, &nwr);
-            just_sleep = FALSE;
-	}
-	if (ex && PERL_FD_ISSET(i,ex)) {
-	    fd = TO_SOCKET(i);
-	    FD_SET((unsigned)fd, &nex);
-            just_sleep = FALSE;
-	}
-    }
-
-    /* winsock seems incapable of dealing with all three fd_sets being empty,
+    /* winsock seems incapable of dealing with all three null fd_sets,
      * so do the (millisecond) sleep as a special case
      */
-    if (just_sleep) {
+    if (!(rd || wr || ex)) {
 	if (timeout)
 	    Sleep(timeout->tv_sec  * 1000 +
 		  timeout->tv_usec / 1000);	/* do the best we can */
@@ -531,29 +320,48 @@ win32_select(int nfds, Perl_fd_set* rd, Perl_fd_set* wr, Perl_fd_set* ex, const 
 	    Sleep(UINT_MAX);
 	return 0;
     }
+    StartSockets();
+    PERL_FD_ZERO(&dummy);
+    if (!rd)
+	rd = &dummy, prd = NULL;
+    else
+	prd = &nrd;
+    if (!wr)
+	wr = &dummy, pwr = NULL;
+    else
+	pwr = &nwr;
+    if (!ex)
+	ex = &dummy, pex = NULL;
+    else
+	pex = &nex;
 
-    errno = save_errno;
-    SOCKET_TEST_ERROR(r = select(nfds, &nrd, &nwr, &nex, timeout));
-    save_errno = errno;
+    FD_ZERO(&nrd);
+    FD_ZERO(&nwr);
+    FD_ZERO(&nex);
+    for (i = 0; i < nfds; i++) {
+	fd = TO_SOCKET(i);
+	if (PERL_FD_ISSET(i,rd))
+	    FD_SET(fd, &nrd);
+	if (PERL_FD_ISSET(i,wr))
+	    FD_SET(fd, &nwr);
+	if (PERL_FD_ISSET(i,ex))
+	    FD_SET(fd, &nex);
+    }
+
+    SOCKET_TEST_ERROR(r = select(nfds, prd, pwr, pex, timeout));
 
     for (i = 0; i < nfds; i++) {
-	if (rd && PERL_FD_ISSET(i,rd)) {
-	    fd = TO_SOCKET(i);
-	    if (!FD_ISSET(fd, &nrd))
-		PERL_FD_CLR(i,rd);
-	}
-	if (wr && PERL_FD_ISSET(i,wr)) {
-	    fd = TO_SOCKET(i);
-	    if (!FD_ISSET(fd, &nwr))
-		PERL_FD_CLR(i,wr);
-	}
-	if (ex && PERL_FD_ISSET(i,ex)) {
-	    fd = TO_SOCKET(i);
-	    if (!FD_ISSET(fd, &nex))
-		PERL_FD_CLR(i,ex);
-	}
+	fd = TO_SOCKET(i);
+	if (PERL_FD_ISSET(i,rd) && !FD_ISSET(fd, &nrd))
+	    PERL_FD_CLR(i,rd);
+	if (PERL_FD_ISSET(i,wr) && !FD_ISSET(fd, &nwr))
+	    PERL_FD_CLR(i,wr);
+	if (PERL_FD_ISSET(i,ex) && !FD_ISSET(fd, &nex))
+	    PERL_FD_CLR(i,ex);
     }
-    errno = save_errno;
+#else
+    SOCKET_TEST_ERROR(r = select(nfds, rd, wr, ex, timeout));
+#endif
     return r;
 }
 
@@ -603,141 +411,40 @@ win32_closesocket(SOCKET s)
     return r;
 }
 
-void
-convert_proto_info_w2a(WSAPROTOCOL_INFOW *in, WSAPROTOCOL_INFOA *out)
-{
-    Copy(in, out, 1, WSAPROTOCOL_INFOA);
-    wcstombs(out->szProtocol, in->szProtocol, sizeof(out->szProtocol));
-}
-
-SOCKET
-open_ifs_socket(int af, int type, int protocol)
-{
-    dTHX;
-    char *s;
-    unsigned long proto_buffers_len = 0;
-    int error_code;
-    SOCKET out = INVALID_SOCKET;
-
-    if ((s = PerlEnv_getenv("PERL_ALLOW_NON_IFS_LSP")) && atoi(s))
-        return WSASocket(af, type, protocol, NULL, 0, 0);
-
-    if (WSCEnumProtocols(NULL, NULL, &proto_buffers_len, &error_code) == SOCKET_ERROR
-        && error_code == WSAENOBUFS)
-    {
-	WSAPROTOCOL_INFOW *proto_buffers;
-        int protocols_available = 0;       
- 
-        Newx(proto_buffers, proto_buffers_len / sizeof(WSAPROTOCOL_INFOW),
-            WSAPROTOCOL_INFOW);
-
-        if ((protocols_available = WSCEnumProtocols(NULL, proto_buffers, 
-            &proto_buffers_len, &error_code)) != SOCKET_ERROR)
-        {
-            int i;
-            for (i = 0; i < protocols_available; i++)
-            {
-                WSAPROTOCOL_INFOA proto_info;
-
-                if ((af != AF_UNSPEC && af != proto_buffers[i].iAddressFamily)
-                    || (type != proto_buffers[i].iSocketType)
-                    || (protocol != 0 && proto_buffers[i].iProtocol != 0 &&
-                        protocol != proto_buffers[i].iProtocol))
-                    continue;
-
-                if ((proto_buffers[i].dwServiceFlags1 & XP1_IFS_HANDLES) == 0)
-                    continue;
-
-                convert_proto_info_w2a(&(proto_buffers[i]), &proto_info);
-
-                out = WSASocket(af, type, protocol, &proto_info, 0, 0);
-                break;
-            }
-        }
-
-        Safefree(proto_buffers);
-    }
-
-    return out;
-}
-
 SOCKET
 win32_socket(int af, int type, int protocol)
 {
     SOCKET s;
 
+#ifndef USE_SOCKETS_AS_HANDLES
+    SOCKET_TEST(s = socket(af, type, protocol), INVALID_SOCKET);
+#else
     StartSockets();
-
-    if((s = open_ifs_socket(af, type, protocol)) == INVALID_SOCKET)
-	errno = get_last_socket_error();
+    if((s = socket(af, type, protocol)) == INVALID_SOCKET)
+	errno = WSAGetLastError();
     else
 	s = OPEN_SOCKET(s);
+#endif	/* USE_SOCKETS_AS_HANDLES */
 
     return s;
-}
-
-/*
- * close RTL fd while respecting sockets
- * added as temporary measure until PerlIO has real
- * Win32 native layer
- *   -- BKS, 11-11-2000
-*/
-
-int my_close(int fd)
-{
-    int osf;
-    if (!wsock_started)		/* No WinSock? */
-	return(close(fd));	/* Then not a socket. */
-    osf = TO_SOCKET(fd);/* Get it now before it's gone! */
-    if (osf != -1) {
-	int err;
-	err = closesocket(osf);
-	if (err == 0) {
-	    assert(_osfhnd(fd) == osf); /* catch a bad ioinfo struct def */
-	    /* don't close freed handle */
-	    _set_osfhnd(fd, INVALID_HANDLE_VALUE);
-	    return close(fd);
-	}
-	else if (err == SOCKET_ERROR) {
-	    err = get_last_socket_error();
-	    if (err != ENOTSOCK) {
-		(void)close(fd);
-		errno = err;
-		return EOF;
-	    }
-	}
-    }
-    return close(fd);
 }
 
 #undef fclose
 int
 my_fclose (FILE *pf)
 {
-    int osf;
+    int osf, retval;
     if (!wsock_started)		/* No WinSock? */
 	return(fclose(pf));	/* Then not a socket. */
-    osf = TO_SOCKET(win32_fileno(pf));/* Get it now before it's gone! */
-    if (osf != -1) {
-	int err;
-	win32_fflush(pf);
-	err = closesocket(osf);
-	if (err == 0) {
-	    assert(_osfhnd(win32_fileno(pf)) == osf); /* catch a bad ioinfo struct def */
-	    /* don't close freed handle */
-	    _set_osfhnd(win32_fileno(pf), INVALID_HANDLE_VALUE);
-	    return fclose(pf);
-	}
-	else if (err == SOCKET_ERROR) {
-	    err = get_last_socket_error();
-	    if (err != ENOTSOCK) {
-		(void)fclose(pf);
-		errno = err;
-		return EOF;
-	    }
-	}
+    osf = TO_SOCKET(fileno(pf));/* Get it now before it's gone! */
+    retval = fclose(pf);	/* Must fclose() before closesocket() */
+    if (osf != -1
+	&& closesocket(osf) == SOCKET_ERROR
+	&& WSAGetLastError() != WSAENOTSOCK)
+    {
+	return EOF;
     }
-    return fclose(pf);
+    return retval;
 }
 
 struct hostent *
@@ -788,13 +495,12 @@ win32_getprotobynumber(int num)
 struct servent *
 win32_getservbyname(const char *name, const char *proto)
 {
-    dTHXa(NULL);    
     struct servent *r;
+    dTHR;    
 
     SOCKET_TEST(r = getservbyname(name, proto), NULL);
     if (r) {
-        aTHXa(PERL_GET_THX);
-	r = win32_savecopyservent(&w32_servent, r, proto);
+	r = win32_savecopyservent(&myservent, r, proto);
     }
     return r;
 }
@@ -802,13 +508,12 @@ win32_getservbyname(const char *name, const char *proto)
 struct servent *
 win32_getservbyport(int port, const char *proto)
 {
-    dTHXa(NULL); 
     struct servent *r;
+    dTHR; 
 
     SOCKET_TEST(r = getservbyport(port, proto), NULL);
     if (r) {
-        aTHXa(PERL_GET_THX);
-	r = win32_savecopyservent(&w32_servent, r, proto);
+	r = win32_savecopyservent(&myservent, r, proto);
     }
     return r;
 }
@@ -816,26 +521,21 @@ win32_getservbyport(int port, const char *proto)
 int
 win32_ioctl(int i, unsigned int u, char *data)
 {
-    u_long u_long_arg; 
+    u_long argp = (u_long)data;
     int retval;
-    
+
     if (!wsock_started) {
-	Perl_croak_nocontext("ioctl implemented only on sockets");
+	croak("ioctl implemented only on sockets");
 	/* NOTREACHED */
     }
 
-    /* mauke says using memcpy avoids alignment issues */
-    memcpy(&u_long_arg, data, sizeof u_long_arg); 
-    retval = ioctlsocket(TO_SOCKET(i), (long)u, &u_long_arg);
-    memcpy(data, &u_long_arg, sizeof u_long_arg);
-    
+    retval = ioctlsocket(TO_SOCKET(i), (long)u, &argp);
     if (retval == SOCKET_ERROR) {
-	int err = get_last_socket_error();
-	if (err == ENOTSOCK) {
-	    Perl_croak_nocontext("ioctl implemented only on sockets");
+	if (WSAGetLastError() == WSAENOTSOCK) {
+	    croak("ioctl implemented only on sockets");
 	    /* NOTREACHED */
 	}
-	errno = err;
+	errno = WSAGetLastError();
     }
     return retval;
 }
@@ -861,88 +561,88 @@ win32_inet_addr(const char FAR *cp)
 void
 win32_endhostent() 
 {
-    win32_croak_not_implemented("endhostent");
+    croak("endhostent not implemented!\n");
 }
 
 void
 win32_endnetent()
 {
-    win32_croak_not_implemented("endnetent");
+    croak("endnetent not implemented!\n");
 }
 
 void
 win32_endprotoent()
 {
-    win32_croak_not_implemented("endprotoent");
+    croak("endprotoent not implemented!\n");
 }
 
 void
 win32_endservent()
 {
-    win32_croak_not_implemented("endservent");
+    croak("endservent not implemented!\n");
 }
 
 
 struct netent *
 win32_getnetent(void) 
 {
-    win32_croak_not_implemented("getnetent");
+    croak("getnetent not implemented!\n");
     return (struct netent *) NULL;
 }
 
 struct netent *
 win32_getnetbyname(char *name) 
 {
-    win32_croak_not_implemented("getnetbyname");
+    croak("getnetbyname not implemented!\n");
     return (struct netent *)NULL;
 }
 
 struct netent *
 win32_getnetbyaddr(long net, int type) 
 {
-    win32_croak_not_implemented("getnetbyaddr");
+    croak("getnetbyaddr not implemented!\n");
     return (struct netent *)NULL;
 }
 
 struct protoent *
 win32_getprotoent(void) 
 {
-    win32_croak_not_implemented("getprotoent");
+    croak("getprotoent not implemented!\n");
     return (struct protoent *) NULL;
 }
 
 struct servent *
 win32_getservent(void) 
 {
-    win32_croak_not_implemented("getservent");
+    croak("getservent not implemented!\n");
     return (struct servent *) NULL;
 }
 
 void
 win32_sethostent(int stayopen)
 {
-    win32_croak_not_implemented("sethostent");
+    croak("sethostent not implemented!\n");
 }
 
 
 void
 win32_setnetent(int stayopen)
 {
-    win32_croak_not_implemented("setnetent");
+    croak("setnetent not implemented!\n");
 }
 
 
 void
 win32_setprotoent(int stayopen)
 {
-    win32_croak_not_implemented("setprotoent");
+    croak("setprotoent not implemented!\n");
 }
 
 
 void
 win32_setservent(int stayopen)
 {
-    win32_croak_not_implemented("setservent");
+    croak("setservent not implemented!\n");
 }
 
 static struct servent*
@@ -951,9 +651,11 @@ win32_savecopyservent(struct servent*d, struct servent*s, const char *proto)
     d->s_name = s->s_name;
     d->s_aliases = s->s_aliases;
     d->s_port = s->s_port;
-    if (s->s_proto && strlen(s->s_proto))
+#ifndef __BORLANDC__	/* Buggy on Win95 and WinNT-with-Borland-WSOCK */
+    if (!IsWin95() && s->s_proto && strlen(s->s_proto))
 	d->s_proto = s->s_proto;
     else
+#endif
     if (proto && strlen(proto))
 	d->s_proto = (char *)proto;
     else

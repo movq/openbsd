@@ -1,4 +1,4 @@
-/*	$OpenBSD: popen.c,v 1.38 2015/10/16 17:56:07 mmcc Exp $	*/
+/*	$OpenBSD: popen.c,v 1.23 1998/09/27 21:16:42 millert Exp $	*/
 /*	$NetBSD: popen.c,v 1.6 1997/05/13 06:48:42 mikel Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,11 +34,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)popen.c	8.1 (Berkeley) 6/6/93";
+#else
+static char rcsid[] = "$OpenBSD: popen.c,v 1.23 1998/09/27 21:16:42 millert Exp $";
+#endif
+#endif /* not lint */
+
 #include "rcv.h"
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <stdarg.h>
 #include "extern.h"
 
 #define READ 0
@@ -43,81 +54,85 @@
 struct fp {
 	FILE *fp;
 	int pipe;
-	pid_t pid;
+	int pid;
 	struct fp *link;
 };
 static struct fp *fp_head;
 
 struct child {
-	pid_t pid;
+	int pid;
 	char done;
 	char free;
 	int status;
 	struct child *link;
 };
 static struct child *child, *child_freelist = NULL;
-
-static struct child *findchild(pid_t, int);
-static void delchild(struct child *);
-static pid_t file_pid(FILE *);
-static int handle_spool_locks(int);
+static struct child *findchild __P((int, int));
+static void delchild __P((struct child *));
+static int file_pid __P((FILE *));
+static int handle_spool_locks __P((int));
 
 FILE *
-Fopen(char *file, char *mode)
+Fopen(file, mode)
+	char *file, *mode;
 {
 	FILE *fp;
 
 	if ((fp = fopen(file, mode)) != NULL) {
 		register_file(fp, 0, 0);
-		(void)fcntl(fileno(fp), F_SETFD, FD_CLOEXEC);
+		(void)fcntl(fileno(fp), F_SETFD, 1);
 	}
 	return(fp);
 }
 
 FILE *
-Fdopen(int fd, char *mode)
+Fdopen(fd, mode)
+	int fd;
+	char *mode;
 {
 	FILE *fp;
 
 	if ((fp = fdopen(fd, mode)) != NULL) {
 		register_file(fp, 0, 0);
-		(void)fcntl(fileno(fp), F_SETFD, FD_CLOEXEC);
+		(void)fcntl(fileno(fp), F_SETFD, 1);
 	}
 	return(fp);
 }
 
 int
-Fclose(FILE *fp)
+Fclose(fp)
+	FILE *fp;
 {
-
 	unregister_file(fp);
 	return(fclose(fp));
 }
 
 FILE *
-Popen(char *cmd, char *mode)
+Popen(cmd, mode)
+	char *cmd;
+	char *mode;
 {
 	int p[2];
 	int myside, hisside, fd0, fd1;
-	pid_t pid;
+	int pid;
 	sigset_t nset;
 	FILE *fp;
 
 	if (pipe(p) < 0)
 		return(NULL);
-	(void)fcntl(p[READ], F_SETFD, FD_CLOEXEC);
-	(void)fcntl(p[WRITE], F_SETFD, FD_CLOEXEC);
+	(void)fcntl(p[READ], F_SETFD, 1);
+	(void)fcntl(p[WRITE], F_SETFD, 1);
 	if (*mode == 'r') {
 		myside = p[READ];
-		hisside = fd0 = fd1 = p[WRITE];
+		fd0 = -1;
+		hisside = fd1 = p[WRITE];
 	} else {
 		myside = p[WRITE];
 		hisside = fd0 = p[READ];
 		fd1 = -1;
 	}
 	sigemptyset(&nset);
-	pid = start_command(value("SHELL"), &nset, fd0, fd1, "-c", cmd, NULL);
-	if (pid < 0) {
+	if ((pid = start_command(cmd, &nset, fd0, fd1, NULL, NULL, NULL)) < 0) {
 		(void)close(p[READ]);
 		(void)close(p[WRITE]);
 		return(NULL);
@@ -129,7 +144,8 @@ Popen(char *cmd, char *mode)
 }
 
 int
-Pclose(FILE *ptr)
+Pclose(ptr)
+	FILE *ptr;
 {
 	int i;
 	sigset_t nset, oset;
@@ -147,7 +163,7 @@ Pclose(FILE *ptr)
 }
 
 void
-close_all_files(void)
+close_all_files()
 {
 
 	while (fp_head)
@@ -158,12 +174,14 @@ close_all_files(void)
 }
 
 void
-register_file(FILE *fp, int pipe, pid_t pid)
+register_file(fp, pipe, pid)
+	FILE *fp;
+	int pipe, pid;
 {
 	struct fp *fpp;
 
-	if ((fpp = malloc(sizeof(*fpp))) == NULL)
-		err(1, "malloc");
+	if ((fpp = (struct fp *)malloc(sizeof(*fpp))) == NULL)
+		errx(1, "Out of memory");
 	fpp->fp = fp;
 	fpp->pipe = pipe;
 	fpp->pid = pid;
@@ -172,7 +190,8 @@ register_file(FILE *fp, int pipe, pid_t pid)
 }
 
 void
-unregister_file(FILE *fp)
+unregister_file(fp)
+	FILE *fp;
 {
 	struct fp **pp, *p;
 
@@ -185,8 +204,9 @@ unregister_file(FILE *fp)
 	errx(1, "Invalid file pointer");
 }
 
-static pid_t
-file_pid(FILE *fp)
+static int
+file_pid(fp)
+	FILE *fp;
 {
 	struct fp *p;
 
@@ -199,18 +219,37 @@ file_pid(FILE *fp)
 
 /*
  * Run a command without a shell, with optional arguments and splicing
- * of stdin (-1 means none) and stdout.  The command name can be a sequence
- * of words.
+ * of stdin and stdout.  The command name can be a sequence of words.
  * Signals must be handled by the caller.
  * "nset" contains the signals to ignore in the new process.
  * SIGINT is enabled unless it's in "nset".
  */
-pid_t
-start_commandv(char *cmd, sigset_t *nset, int infd, int outfd, va_list args)
+/*VARARGS4*/
+int
+run_command(cmd, nset, infd, outfd, a0, a1, a2)
+	char *cmd;
+	sigset_t *nset;
+	int infd, outfd;
+	char *a0, *a1, *a2;
 {
-	pid_t pid;
+	int pid;
 
-	if ((pid = fork()) < 0) {
+	if ((pid = start_command(cmd, nset, infd, outfd, a0, a1, a2)) < 0)
+		return(-1);
+	return(wait_command(pid));
+}
+
+/*VARARGS4*/
+int
+start_command(cmd, nset, infd, outfd, a0, a1, a2)
+	char *cmd;
+	sigset_t *nset;
+	int infd, outfd;
+	char *a0, *a1, *a2;
+{
+	int pid;
+
+	if ((pid = vfork()) < 0) {
 		warn("fork");
 		return(-1);
 	}
@@ -218,45 +257,22 @@ start_commandv(char *cmd, sigset_t *nset, int infd, int outfd, va_list args)
 		char *argv[100];
 		int i = getrawlist(cmd, argv, sizeof(argv)/ sizeof(*argv));
 
-		while ((argv[i++] = va_arg(args, char *)))
-			;
-		argv[i] = NULL;
+		if ((argv[i++] = a0) != NULL &&
+		    (argv[i++] = a1) != NULL &&
+		    (argv[i++] = a2) != NULL)
+			argv[i] = NULL;
 		prepare_child(nset, infd, outfd);
 		execvp(argv[0], argv);
-		warn("%s", argv[0]);
+		warn(argv[0]);
 		_exit(1);
 	}
 	return(pid);
 }
 
-int
-run_command(char *cmd, sigset_t *nset, int infd, int outfd, ...)
-{
-	pid_t pid;
-	va_list args;
-
-	va_start(args, outfd);
-	pid = start_commandv(cmd, nset, infd, outfd, args);
-	va_end(args);
-	if (pid < 0)
-		return(-1);
-	return(wait_command(pid));
-}
-
-int
-start_command(char *cmd, sigset_t *nset, int infd, int outfd, ...)
-{
-	va_list args;
-	int r;
-
-	va_start(args, outfd);
-	r = start_commandv(cmd, nset, infd, outfd, args);
-	va_end(args);
-	return(r);
-}
-
 void
-prepare_child(sigset_t *nset, int infd, int outfd)
+prepare_child(nset, infd, outfd)
+	sigset_t *nset;
+	int infd, outfd;
 {
 	int i;
 	sigset_t eset;
@@ -265,14 +281,9 @@ prepare_child(sigset_t *nset, int infd, int outfd)
 	 * All file descriptors other than 0, 1, and 2 are supposed to be
 	 * close-on-exec.
 	 */
-	if (infd > 0) {
+	if (infd >= 0)
 		dup2(infd, 0);
-	} else if (infd != 0) {
-		/* we don't want the child stealing my stdin input */
-		close(0);
-		open(_PATH_DEVNULL, O_RDONLY, 0);
-	}
-	if (outfd >= 0 && outfd != 1)
+	if (outfd >= 0)
 		dup2(outfd, 1);
 	if (nset == NULL)
 		return;
@@ -288,7 +299,8 @@ prepare_child(sigset_t *nset, int infd, int outfd)
 }
 
 int
-wait_command(pid_t pid)
+wait_command(pid)
+	int pid;
 {
 
 	if (wait_child(pid) < 0) {
@@ -299,7 +311,9 @@ wait_command(pid_t pid)
 }
 
 static struct child *
-findchild(pid_t pid, int dont_alloc)
+findchild(pid, dont_alloc)
+	int pid;
+	int dont_alloc;
 {
 	struct child **cpp;
 
@@ -312,11 +326,8 @@ findchild(pid_t pid, int dont_alloc)
 		if (child_freelist) {
 			*cpp = child_freelist;
 			child_freelist = (*cpp)->link;
-		} else {
-			*cpp = malloc(sizeof(struct child));
-			if (*cpp == NULL)
-				err(1, "malloc");
-		}
+		} else
+			*cpp = (struct child *)malloc(sizeof(struct child));
 		(*cpp)->pid = pid;
 		(*cpp)->done = (*cpp)->free = 0;
 		(*cpp)->link = NULL;
@@ -325,7 +336,8 @@ findchild(pid_t pid, int dont_alloc)
 }
 
 static void
-delchild(struct child *cp)
+delchild(cp)
+	struct child *cp;
 {
 	struct child **cpp;
 
@@ -336,16 +348,17 @@ delchild(struct child *cp)
 	child_freelist = cp;
 }
 
-/* ARGSUSED */
 void
-sigchild(int signo)
+sigchild(signo)
+	int signo;
 {
-	pid_t pid;
+	int pid;
 	int status;
 	struct child *cp;
 	int save_errno = errno;
 
-	while ((pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0) {
+	while ((pid =
+	    waitpid((pid_t)-1, &status, WNOHANG)) > 0) {
 		cp = findchild(pid, 1);
 		if (!cp)
 			continue;
@@ -365,11 +378,12 @@ int wait_status;
  * Wait for a specific child to die.
  */
 int
-wait_child(pid_t pid)
+wait_child(pid)
+	int pid;
 {
 	struct child *cp;
 	sigset_t nset, oset;
-	pid_t rv = 0;
+	int rv = 0;
 
 	sigemptyset(&nset);
 	sigaddset(&nset, SIGCHLD);
@@ -397,7 +411,8 @@ wait_child(pid_t pid)
  * Mark a child as don't care.
  */
 void
-free_child(pid_t pid)
+free_child(pid)
+	int pid;
 {
 	struct child *cp;
 	sigset_t nset, oset;
@@ -419,9 +434,11 @@ free_child(pid_t pid)
  * Returns 1 for success, 0 for failure, -1 for bad usage.
  */
 static int
-handle_spool_locks(int action)
+handle_spool_locks(action)
+	int action;
 {
 	static FILE *lockfp = NULL;
+	static int lock_pid;
 
 	if (action == 0) {
 		/* Clear the lock */
@@ -430,29 +447,26 @@ handle_spool_locks(int action)
 			    stderr);
 			return(-1);
 		}
+		(void)kill(lock_pid, SIGTERM);
 		(void)Pclose(lockfp);
 		lockfp = NULL;
 	} else if (action == 1) {
-		char *cmd;
-		char buf[sizeof(_PATH_LOCKSPOOL) + LOGIN_NAME_MAX + 1];
+		char *cmd = _PATH_LOCKSPOOL;
 
 		/* XXX - lockspool requires root for user arg, we do not */
-		if (uflag) {
-			snprintf(buf, sizeof(buf), "%s %s", _PATH_LOCKSPOOL,
-			    myname);
-			cmd = buf;
-		} else
-			cmd = _PATH_LOCKSPOOL;
+		if (uflag && asprintf(&cmd, "%s %s", _PATH_LOCKSPOOL,
+		    myname) == -1)
+			errx(1, "Out of memory");
 
 		/* Create the lock */
 		lockfp = Popen(cmd, "r");
-		if (lockfp == NULL)
-			return(0);
-		if (getc(lockfp) != '1') {
-			Pclose(lockfp);
+		if (uflag)
+			free(cmd);
+		if (lockfp == NULL || getc(lockfp) != '1') {
 			lockfp = NULL;
 			return(0);
 		}
+		lock_pid = fp_head->pid;	/* new entries added at head */
 	} else {
 		(void)fprintf(stderr, "handle_spool_locks: unknown action %d\n",
 		    action);
@@ -463,15 +477,13 @@ handle_spool_locks(int action)
 }
 
 int
-spool_lock(void)
+spool_lock()
 {
-
 	return(handle_spool_locks(1));
 }
 
 int
-spool_unlock(void)
+spool_unlock()
 {
-
 	return(handle_spool_locks(0));
 }

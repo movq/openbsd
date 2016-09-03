@@ -1,4 +1,4 @@
-/*	$OpenBSD: mt.h,v 1.3 2003/06/02 23:32:08 millert Exp $	*/
+/*	$OpenBSD: mt.h,v 1.1 1996/03/08 23:34:21 niklas Exp $	*/
 /*	$NetBSD: mt.h,v 1.1 1996/03/05 20:39:36 scottr Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,13 +35,13 @@
  */
 
 /* rmt routines */
-void	rmtclose(void);
-int	rmthost(char *host);
-int	rmtopen(char *tape, int mode);
-int	rmtioctl(int command, int count);
-struct mtget *rmtstatus(void);
+void	rmtclose __P((void));
+int	rmthost __P((char *host));
+int	rmtopen __P((char *tape, int mode));
+int	rmtioctl __P((int command, int count));
+struct mtget *rmtstatus __P((void));
 
-void	interrupt(int signo);	/* in case operator bangs on console */
+void	interrupt __P((int signo));	/* in case operator bangs on console */
 
 /*
  *	Exit status codes

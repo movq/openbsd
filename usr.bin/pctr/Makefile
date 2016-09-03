@@ -1,14 +1,5 @@
-#	$OpenBSD: Makefile,v 1.8 2012/09/12 09:19:54 haesbaert Exp $
+#	$OpenBSD: Makefile,v 1.3 1998/08/30 22:58:01 downsj Exp $
 
-MAN=pctr.1
-
-CFLAGS+=-W -Wall -Werror
-CDIAGFLAGS=
-
-.if ${MACHINE} == "amd64" || ${MACHINE} == "i386"
 PROG=	pctr
-.else
-NOPROG=
-.endif
 
 .include <bsd.prog.mk>

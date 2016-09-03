@@ -1,4 +1,4 @@
-/*	$OpenBSD: encrypt.c,v 1.44 2016/09/02 18:06:43 tedu Exp $	*/
+/*	$OpenBSD: encrypt.c,v 1.11 1999/09/03 18:13:37 deraadt Exp $	*/
 
 /*
  * Copyright (c) 1996, Jason Downs.  All rights reserved.
@@ -25,150 +25,203 @@
  * SUCH DAMAGE.
  */
 
+#include <stdio.h>
 #include <sys/types.h>
-#include <ctype.h>
 #include <err.h>
 #include <errno.h>
-#include <pwd.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <login_cap.h>
-#include <limits.h>
-#include <readpassphrase.h>
+#include <pwd.h>
+#include <ctype.h>
 
 /*
  * Very simple little program, for encrypting passwords from the command
  * line.  Useful for scripts and such.
  */
 
-extern char *__progname;
+#define DO_MAKEKEY 0
+#define DO_DES     1
+#define DO_MD5     2
+#define DO_BLF     3
 
-void	usage(void);
+extern char *optarg;
+extern int optind;
 
-#define DO_BLF		0
+char *progname;
+char buffer[_PASSWORD_LEN];
 
-void
-usage(void)
+void usage()
 {
-
-	(void)fprintf(stderr,
-	    "usage: %s [-b rounds] [-c class] [-p | string]\n",
-	    __progname);
-	exit(1);
+    fprintf(stderr, "usage: %s [-k] [-b rounds] [-m] [-s salt] [-p | string]\n",
+	progname);
+    exit(1);
 }
 
-static void
-print_passwd(char *string, int operation, char *extra)
+char *trim(line)
+    char *line;
 {
-	char buffer[_PASSWORD_LEN];
-	const char *pref;
-	char prefbuf[64];
+    char *ptr;
 
-	if (operation == DO_BLF) {
-		if (snprintf(prefbuf, sizeof(prefbuf), "blowfish,%s", extra) >=
-		    sizeof(prefbuf))
-			errx(1, "pref too long");
-		pref = prefbuf;
-	} else {
-		login_cap_t *lc;
+    for (ptr = &line[strlen(line)-1]; ptr > line; ptr--) {
+        if (!isspace(*ptr))
+	    break;
+    }
+    ptr[1] = '\0';
 
-		if ((lc = login_getclass(extra)) == NULL)
-			errx(1, "unable to get login class `%s'",
-			    extra ? (char *)extra : "default");
-		pref = login_getcapstr(lc, "localcipher", NULL, NULL);
-	}
-	if (crypt_newhash(string, pref, buffer, sizeof(buffer)) != 0)
-		err(1, "can't generate hash");
+    for (ptr = line; *ptr && isspace(*ptr); ptr++);
 
-	fputs(buffer, stdout);
+    return(ptr);
 }
 
-int
-main(int argc, char **argv)
+void print_passwd(char *string, int operation, void *extra)
 {
-	int opt;
-	int operation = -1;
-	int prompt = 0;
-	char *extra = NULL;	/* Store login class or number of rounds */
-	const char *errstr;
+     char msalt[3], *salt;
+     struct passwd pwd;
+     extern int pwd_gensalt __P((char *, int, struct passwd *, char));
+     extern void to64 __P((char *, int32_t, int n));
 
-	if (pledge("stdio rpath wpath tty", NULL) == -1)
-		err(1, "pledge");
+     switch(operation) {
+     case DO_MAKEKEY:
+	  /*
+	   * makekey mode: parse string into seperate DES key and salt.
+	   */
+	  if (strlen(string) != 10) {
+	       /* To be compatible... */
+	       fprintf (stderr, "%s: %s\n", progname, strerror(EFTYPE));
+	       exit (1);
+	  }
+	  strcpy(msalt, &string[8]);
+	  salt = msalt;
+	  break;
+     case DO_MD5:
+	  strcpy(buffer, "$1$");
+	  to64(&buffer[3], arc4random(), 4);
+	  to64(&buffer[7], arc4random(), 4);
+	  strcpy(buffer+11, "$");
+	  salt = buffer;
+	  break;
+     case DO_BLF:
+	  strncpy(buffer, bcrypt_gensalt(*(int *)extra), _PASSWORD_LEN - 1);
+	  buffer[_PASSWORD_LEN-1] = 0;
+	  salt = buffer;
+	  break;
+     case DO_DES:
+	  salt = extra;
+	  break;
+     default:
+	  pwd.pw_name = "default";
+	  if (!pwd_gensalt(buffer, _PASSWORD_LEN, &pwd, 'l')) {
+	       fprintf (stderr, "%s: Can't generate salt\n", progname);
+	       exit (1);
+	  }
+	  salt = buffer;
+	  break;
+     }
+     
+     fputs(crypt(string, salt), stdout);
+}
 
-	while ((opt = getopt(argc, argv, "pb:c:")) != -1) {
-		switch (opt) {
-		case 'p':
-			prompt = 1;
-			break;
-		case 'b':                       /* Blowfish password hash */
-			if (operation != -1)
-				usage();
-			operation = DO_BLF;
-			if (strcmp(optarg, "a") != 0) {
-				(void)strtonum(optarg, 4, 31, &errstr);
-				if (errstr != NULL)
-					errx(1, "rounds is %s: %s", errstr,
-					    optarg);
-			}
-			extra = optarg;
-			break;
-		case 'c':                       /* user login class */
-			extra = optarg;
-			operation = -1;
-			break;
-		default:
-			usage();
-		}
+int main(argc, argv)
+    int argc;
+    char *argv[];
+{
+    int opt;
+    int operation = -1;
+    int prompt = 0;
+    int rounds;
+    void *extra;                       /* Store salt or number of rounds */
+
+    if ((progname = strrchr(argv[0], '/')))
+	progname++;
+    else
+	progname = argv[0];
+
+    if (strcmp(progname, "makekey") == 0)
+	 operation = DO_MAKEKEY;
+
+    while ((opt = getopt(argc, argv, "kmps:b:")) != -1) {
+    	switch (opt) {
+	case 'k':                       /* Stdin/Stdout Unix crypt */
+	    if (operation != -1)
+		 usage();
+	    operation = DO_MAKEKEY;
+	    break;
+	case 'm':                       /* MD5 password hash */
+	    if (operation != -1 || prompt)
+		 usage();
+	    operation = DO_MD5;
+	    break;
+	case 'p':
+	    if (operation != -1)
+		 usage();
+	    prompt = 1;
+	    break;
+	case 's':                       /* Unix crypt (DES) */
+	    if (operation != -1)
+		 usage();
+	    operation = DO_DES;
+	    if (optarg[0] == '$')	/* -s is only for DES. */
+		usage();
+	    extra = optarg;
+	    break;
+	case 'b':                       /* Blowfish password hash */
+	    if (operation != -1)
+		 usage();
+	     operation = DO_BLF;
+	     rounds = atoi(optarg);
+	     extra = &rounds;
+	     break;
+	default:
+	    usage();
 	}
+    }
 
-	if (((argc - optind) < 1)) {
-		char line[BUFSIZ];
-		char string[1024];
+    if (((argc - optind) < 1) || operation == DO_MAKEKEY) {
+    	char line[BUFSIZ], *string;
 
-		if (prompt) {
-			if (readpassphrase("Enter string: ", string,
-			    sizeof(string), RPP_ECHO_OFF) == NULL)
-				err(1, "readpassphrase");
-			print_passwd(string, operation, extra);
-			(void)fputc('\n', stdout);
-		} else {
-			size_t len;
-			/* Encrypt stdin to stdout. */
-			while (!feof(stdin) &&
-			    (fgets(line, sizeof(line), stdin) != NULL)) {
-			    	len = strlen(line);
-				if (len == 0 || line[0] == '\n')
-					continue;
-				if (line[len - 1] == '\n')
-                     			line[len - 1] = '\0';
-
-				print_passwd(line, operation, extra);
-
-				(void)fputc('\n', stdout);
-			}
-		}
+	if (prompt) {
+	    string = getpass("Enter string: ");
+	    print_passwd(string, operation, extra);
+	    fputc('\n', stdout);
 	} else {
-		char *string;
-
-		/* can't combine -p with a supplied string */
-		if (prompt)
-			usage();
-
-		/* Perhaps it isn't worth worrying about, but... */
-		if ((string = strdup(argv[optind])) == NULL)
-			err(1, NULL);
-		/* Wipe the argument. */
-		explicit_bzero(argv[optind], strlen(argv[optind]));
-
+	    /* Encrypt stdin to stdout. */
+	    while (!feof(stdin) && (fgets(line, sizeof(line), stdin) != NULL)) {
+		/* Kill the whitesapce. */
+		string = trim(line);
+		if (*string == '\0')
+		    continue;
+		
 		print_passwd(string, operation, extra);
 
-		(void)fputc('\n', stdout);
-
-		/* Wipe our copy, before we free it. */
-		explicit_bzero(string, strlen(string));
-		free(string);
+		if (operation == DO_MAKEKEY) {
+		    fflush(stdout);
+		    break;
+		}
+		fputc('\n', stdout);
+	    }
 	}
-	exit(0);
+    } else {
+    	char *string;
+
+	/* can't combine -p with a supplied string */
+	if (prompt)
+	    usage();
+
+    	/* Perhaps it isn't worth worrying about, but... */
+    	string = strdup(argv[optind]);
+    	if (string == NULL)
+    	    err(1, NULL);
+    	/* Wipe the argument. */
+    	bzero(argv[optind], strlen(argv[optind]));
+
+	print_passwd(string, operation, extra);
+
+    	fputc('\n', stdout);
+
+    	/* Wipe our copy, before we free it. */
+    	bzero(string, strlen(string));
+    	free(string);
+    }
+    exit(0);
 }

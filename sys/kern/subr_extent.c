@@ -1,8 +1,8 @@
-/*	$OpenBSD: subr_extent.c,v 1.57 2015/08/28 00:03:53 deraadt Exp $	*/
+/*	$OpenBSD: subr_extent.c,v 1.7 1999/02/17 13:15:46 fgsch Exp $	*/
 /*	$NetBSD: subr_extent.c,v 1.7 1996/11/21 18:46:34 cgd Exp $	*/
 
 /*-
- * Copyright (c) 1996, 1998 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -16,12 +16,19 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *        This product includes software developed by the NetBSD
+ *        Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
@@ -38,9 +45,10 @@
 #include <sys/param.h>
 #include <sys/extent.h>
 #include <sys/malloc.h>
+#include <sys/time.h>
 #include <sys/systm.h>
+#include <sys/proc.h>
 #include <sys/queue.h>
-#include <sys/pool.h>
 #include <ddb/db_output.h>
 #else
 /*
@@ -50,98 +58,69 @@
 #include <sys/extent.h>
 #include <sys/queue.h>
 #include <errno.h>
-#include <err.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 
 #define	malloc(s, t, flags)		malloc(s)
-#define	free(p, t, s)			free(p)
-
+#define	free(p, t)			free(p)
 #define	tsleep(chan, pri, str, timo)	(EWOULDBLOCK)
 #define	wakeup(chan)			((void)0)
-
-struct pool {
-	size_t pr_size;
-};
-
-#define	pool_init(a, b, c, d, e, f, g)	do { (a)->pr_size = (b); } while (0)
-#define	pool_setipl(pp, ipl)		/* nothing */
-#define pool_get(pp, flags)		malloc((pp)->pr_size, 0, 0)
-#define	pool_put(pp, rp)		free((rp), 0, 0)
-
-#define	panic(...)		do { warnx(__VA_ARGS__); abort(); } while (0)
+#define db_printf printf
 #endif
 
-#if defined(DIAGNOSTIC) || defined(DDB)
-void	extent_print1(struct extent *, int (*)(const char *, ...)
-	    __attribute__((__format__(__kprintf__,1,2))));
-#endif
-
-static	void extent_insert_and_optimize(struct extent *, u_long, u_long,
-	    struct extent_region *, struct extent_region *);
-static	struct extent_region *extent_alloc_region_descriptor(struct extent *, int);
-static	void extent_free_region_descriptor(struct extent *,
-	    struct extent_region *);
-int	extent_do_alloc(struct extent *, u_long, u_long, u_long, u_long,
-	    u_long, u_long, int, struct extent_region *, u_long *);
+static	void extent_insert_and_optimize __P((struct extent *, u_long, u_long,
+	    int, struct extent_region *, struct extent_region *));
+static	struct extent_region *extent_alloc_region_descriptor
+	    __P((struct extent *, int));
+static	void extent_free_region_descriptor __P((struct extent *,
+	    struct extent_region *));
+static	void extent_register __P((struct extent *));
 
 /*
- * Shortcut to align to an arbitrary power-of-two boundary.
+ * Macro to align to an arbitrary power-of-two boundary.
  */
-static __inline__ u_long
-extent_align(u_long start, u_long align, u_long skew)
-{
-	return ((((start - skew) + (align - 1)) & (-align)) + skew);
-}
+#define EXTENT_ALIGN(_start, _align)			\
+	(((_start) + ((_align) - 1)) & (-(_align)))
 
-
-#if defined(DIAGNOSTIC) || defined(DDB)
 /*
  * Register the extent on a doubly linked list.
  * Should work, no?
  */
 static LIST_HEAD(listhead, extent) ext_list;
-static	void extent_register(struct extent *);
+static struct listhead *ext_listp;
 
 static void
-extent_register(struct extent *ex)
+extent_register(ex)
+	struct extent *ex;
 {
-#ifdef DIAGNOSTIC
-	struct extent *ep;
-#endif
-	static int initialized;
-
-	if (!initialized){
+	/* Is this redundant? */
+	if(ext_listp == NULL){
 		LIST_INIT(&ext_list);
-		initialized = 1;
+		ext_listp = &ext_list;
 	}
-
-#ifdef DIAGNOSTIC
-	LIST_FOREACH(ep, &ext_list, ex_link) {
-		if (ep == ex)
-			panic("%s: already registered", __func__);
-	}
-#endif
 
 	/* Insert into list */
-	LIST_INSERT_HEAD(&ext_list, ex, ex_link);
+	LIST_INSERT_HEAD(ext_listp, ex, ex_link);
 }
-#endif	/* DIAGNOSTIC || DDB */
 
-struct pool ex_region_pl;
-
-static void
-extent_pool_init(void)
+/*
+ * Find a given extent, and return a pointer to
+ * it so that other extent functions can be used
+ * on it.
+ *
+ * Returns NULL on failure.
+ */
+struct extent *
+extent_find(name)
+	char *name;
 {
-	static int inited;
+	struct extent *ep;
 
-	if (!inited) {
-		pool_init(&ex_region_pl, sizeof(struct extent_region), 0, 0, 0,
-		    "extentpl", NULL);
-		pool_setipl(&ex_region_pl, IPL_VM);
-		inited = 1;
+	for(ep = ext_listp->lh_first; ep != NULL; ep = ep->ex_link.le_next){
+		if(!strcmp(ep->ex_name, name)) return(ep);
 	}
+
+	return(NULL);
 }
 
 #ifdef DDB
@@ -154,8 +133,8 @@ extent_print_all(void)
 {
 	struct extent *ep;
 
-	LIST_FOREACH(ep, &ext_list, ex_link) {
-		extent_print1(ep, db_printf);
+	for(ep = ext_listp->lh_first; ep != NULL; ep = ep->ex_link.le_next){
+		extent_print(ep);
 	}
 }
 #endif
@@ -164,8 +143,13 @@ extent_print_all(void)
  * Allocate and initialize an extent map.
  */
 struct extent *
-extent_create(char *name, u_long start, u_long end, int mtype, caddr_t storage,
-    size_t storagesize, int flags)
+extent_create(name, start, end, mtype, storage, storagesize, flags)
+	char *name;
+	u_long start, end;
+	int mtype;
+	caddr_t storage;
+	size_t storagesize;
+	int flags;
 {
 	struct extent *ex;
 	caddr_t cp = storage;
@@ -176,26 +160,24 @@ extent_create(char *name, u_long start, u_long end, int mtype, caddr_t storage,
 #ifdef DIAGNOSTIC
 	/* Check arguments. */
 	if (name == NULL)
-		panic("%s: name == NULL", __func__);
+		panic("extent_create: name == NULL");
 	if (end < start) {
-		printf("%s: extent `%s', start 0x%lx, end 0x%lx\n",
-		    __func__, name, start, end);
-		panic("%s: end < start", __func__);
+		printf("extent_create: extent `%s', start 0x%lx, end 0x%lx\n",
+		    name, start, end);
+		panic("extent_create: end < start");
 	}
 	if (fixed_extent && (storagesize < sizeof(struct extent_fixed)))
-		panic("%s: fixed extent, bad storagesize 0x%lx",
-		    __func__, (u_long)storagesize);
+		panic("extent_create: fixed extent, bad storagesize 0x%x",
+		    storagesize);
 	if (fixed_extent == 0 && (storagesize != 0 || storage != NULL))
-		panic("%s: storage provided for non-fixed", __func__);
+		panic("extent_create: storage provided for non-fixed");
 #endif
-
-	extent_pool_init();
 
 	/* Allocate extent descriptor. */
 	if (fixed_extent) {
 		struct extent_fixed *fex;
 
-		memset(storage, 0, storagesize);
+		bzero(storage, storagesize);
 
 		/*
 		 * Align all descriptors on "long" boundaries.
@@ -237,21 +219,7 @@ extent_create(char *name, u_long start, u_long end, int mtype, caddr_t storage,
 	if (flags & EX_NOCOALESCE)
 		ex->ex_flags |= EXF_NOCOALESCE;
 
-	if (flags & EX_FILLED) {
-		rp = extent_alloc_region_descriptor(ex, flags);
-		if (rp == NULL) {
-			if (!fixed_extent)
-				free(ex, mtype, sizeof(struct extent));
-			return (NULL);
-		}
-		rp->er_start = start;
-		rp->er_end = end;
-		LIST_INSERT_HEAD(&ex->ex_regions, rp, er_link);
-	}
-
-#if defined(DIAGNOSTIC) || defined(DDB)
 	extent_register(ex);
-#endif
 	return (ex);
 }
 
@@ -259,32 +227,28 @@ extent_create(char *name, u_long start, u_long end, int mtype, caddr_t storage,
  * Destroy an extent map.
  */
 void
-extent_destroy(struct extent *ex)
+extent_destroy(ex)
+	struct extent *ex;
 {
 	struct extent_region *rp, *orp;
 
 #ifdef DIAGNOSTIC
 	/* Check arguments. */
 	if (ex == NULL)
-		panic("%s: NULL extent", __func__);
+		panic("extent_destroy: NULL extent");
 #endif
 
 	/* Free all region descriptors in extent. */
-	for (rp = LIST_FIRST(&ex->ex_regions); rp != NULL; ) {
+	for (rp = ex->ex_regions.lh_first; rp != NULL; ) {
 		orp = rp;
-		rp = LIST_NEXT(rp, er_link);
+		rp = rp->er_link.le_next;
 		LIST_REMOVE(orp, er_link);
 		extent_free_region_descriptor(ex, orp);
 	}
 
-#if defined(DIAGNOSTIC) || defined(DDB)
-	/* Remove from the list of all extents. */
-	LIST_REMOVE(ex, ex_link);
-#endif
-
 	/* If we're not a fixed extent, free the extent descriptor itself. */
 	if ((ex->ex_flags & EXF_FIXED) == 0)
-		free(ex, ex->ex_mtype, sizeof(*ex));
+		free(ex, ex->ex_mtype);
 }
 
 /*
@@ -295,8 +259,11 @@ extent_destroy(struct extent *ex)
  * If we don't need the region descriptor, it will be freed here.
  */
 static void
-extent_insert_and_optimize(struct extent *ex, u_long start, u_long size,
-    struct extent_region *after, struct extent_region *rp)
+extent_insert_and_optimize(ex, start, size, flags, after, rp)
+	struct extent *ex;
+	u_long start, size;
+	int flags;
+	struct extent_region *after, *rp;
 {
 	struct extent_region *nextr;
 	int appended = 0;
@@ -308,12 +275,12 @@ extent_insert_and_optimize(struct extent *ex, u_long start, u_long size,
 		 * descriptor overhead.
 		 */
 		if (((ex->ex_flags & EXF_NOCOALESCE) == 0) &&
-		    !LIST_EMPTY(&ex->ex_regions) &&
-		    ((start + size) == LIST_FIRST(&ex->ex_regions)->er_start)) {
+		    (ex->ex_regions.lh_first != NULL) &&
+		    ((start + size) == ex->ex_regions.lh_first->er_start)) {
 			/*
 			 * We can coalesce.  Prepend us to the first region.
 			 */
-			LIST_FIRST(&ex->ex_regions)->er_start = start;
+			ex->ex_regions.lh_first->er_start = start;
 			extent_free_region_descriptor(ex, rp);
 			return;
 		}
@@ -349,8 +316,8 @@ extent_insert_and_optimize(struct extent *ex, u_long start, u_long size,
 	/*
 	 * Attempt to coalesce with the region after us.
 	 */
-	if (LIST_NEXT(after, er_link) != NULL &&
-	    ((start + size) == LIST_NEXT(after, er_link)->er_start)) {
+	if ((after->er_link.le_next != NULL) &&
+	    ((start + size) == after->er_link.le_next->er_start)) {
 		/*
 		 * We can coalesce.  Note that if we appended ourselves
 		 * to the previous region, we exactly fit the gap, and
@@ -360,15 +327,15 @@ extent_insert_and_optimize(struct extent *ex, u_long start, u_long size,
 			/*
 			 * Yup, we can free it up.
 			 */
-			after->er_end = LIST_NEXT(after, er_link)->er_end;
-			nextr = LIST_NEXT(after, er_link);
+			after->er_end = after->er_link.le_next->er_end;
+			nextr = after->er_link.le_next;
 			LIST_REMOVE(nextr, er_link);
 			extent_free_region_descriptor(ex, nextr);
 		} else {
 			/*
 			 * Nope, just prepend us to the next region.
 			 */
-			LIST_NEXT(after, er_link)->er_start = start;
+			after->er_link.le_next->er_start = start;
 		}
 
 		extent_free_region_descriptor(ex, rp);
@@ -400,7 +367,10 @@ extent_insert_and_optimize(struct extent *ex, u_long start, u_long size,
  * Allocate a specific region in an extent map.
  */
 int
-extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
+extent_alloc_region(ex, start, size, flags)
+	struct extent *ex;
+	u_long start, size;
+	int flags;
 {
 	struct extent_region *rp, *last, *myrp;
 	u_long end = start + (size - 1);
@@ -409,20 +379,18 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
 #ifdef DIAGNOSTIC
 	/* Check arguments. */
 	if (ex == NULL)
-		panic("%s: NULL extent", __func__);
+		panic("extent_alloc_region: NULL extent");
 	if (size < 1) {
-		printf("%s: extent `%s', size 0x%lx\n",
-		    __func__, ex->ex_name, size);
-		panic("%s: bad size", __func__);
+		printf("extent_alloc_region: extent `%s', size 0x%lx\n",
+		    ex->ex_name, size);
+		panic("extent_alloc_region: bad size");
 	}
 	if (end < start) {
-		printf("%s: extent `%s', start 0x%lx, size 0x%lx\n",
-		    __func__, ex->ex_name, start, size);
-		panic("%s: overflow", __func__);
+		printf(
+		 "extent_alloc_region: extent `%s', start 0x%lx, size 0x%lx\n",
+		 ex->ex_name, start, size);
+		panic("extent_alloc_region: overflow");
 	}
-	if ((flags & EX_CONFLICTOK) && (flags & EX_WAITSPACE))
-		panic("%s: EX_CONFLICTOK and EX_WAITSPACE "
-		    "are mutually exclusive", __func__);
 #endif
 
 	/*
@@ -431,11 +399,11 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
 	 */
 	if ((start < ex->ex_start) || (end > ex->ex_end)) {
 #ifdef DIAGNOSTIC
-		printf("%s: extent `%s' (0x%lx - 0x%lx)\n",
-		    __func__, ex->ex_name, ex->ex_start, ex->ex_end);
-		printf("%s: start 0x%lx, end 0x%lx\n",
-		    __func__, start, end);
-		panic("%s: region lies outside extent", __func__);
+		printf("extent_alloc_region: extent `%s' (0x%lx - 0x%lx)\n",
+		    ex->ex_name, ex->ex_start, ex->ex_end);
+		printf("extent_alloc_region: start 0x%lx, end 0x%lx\n",
+		    start, end);
+		panic("extent_alloc_region: region lies outside extent");
 #else
 		return (EINVAL);
 #endif
@@ -449,7 +417,7 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
 	if (myrp == NULL) {
 #ifdef DIAGNOSTIC
 		printf(
-		    "%s: can't allocate region descriptor\n", __func__);
+		    "extent_alloc_region: can't allocate region descriptor\n");
 #endif
 		return (ENOMEM);
 	}
@@ -471,13 +439,14 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
 	 */
 	last = NULL;
 
-	LIST_FOREACH(rp, &ex->ex_regions, er_link) {
+	for (rp = ex->ex_regions.lh_first; rp != NULL;
+	    rp = rp->er_link.le_next) {
 		if (rp->er_start > end) {
 			/*
 			 * We lie before this region and don't
 			 * conflict.
 			 */
-			break;
+			 break;
 		}
 
 		/*
@@ -498,57 +467,6 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
 					return (error);
 				goto alloc_start;
 			}
-
-			/*
-			 * If we tolerate conflicts adjust things such
-			 * that all space in the requested region is
-			 * allocated.
-			 */
-			if (flags & EX_CONFLICTOK) {
-				/*
-				 * There are four possibilities:
-				 *
-				 * 1. The current region overlaps with
-				 *    the start of the requested region.
-				 *    Adjust the requested region to
-				 *    start at the end of the current
-				 *    region and try again.
-				 *
-				 * 2. The current region falls
-				 *    completely within the requested
-				 *    region.  Free the current region
-				 *    and try again.
-				 *
-				 * 3. The current region overlaps with
-				 *    the end of the requested region.
-				 *    Adjust the requested region to
-				 *    end at the start of the current
-				 *    region and try again.
-				 *
-				 * 4. The requested region falls
-				 *    completely within the current
-				 *    region.  We're done.
-				 */
-				if (rp->er_start <= start) {
-					if (rp->er_end < ex->ex_end) {
-						start = rp->er_end + 1;
-						size = end - start + 1;
-						goto alloc_start;
-					}
-				} else if (rp->er_end < end) {
-					LIST_REMOVE(rp, er_link);
-					extent_free_region_descriptor(ex, rp);
-					goto alloc_start;
-				} else if (rp->er_start < end) {
-					if (rp->er_start > ex->ex_start) {
-						end = rp->er_start - 1;
-						size = end - start + 1;
-						goto alloc_start;
-					}
-				}
-				return (0);
-			}
-
 			extent_free_region_descriptor(ex, myrp);
 			return (EAGAIN);
 		}
@@ -565,7 +483,7 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
 	 * to the region we fall after, or is NULL if we belong
 	 * at the beginning of the region list.  Insert ourselves.
 	 */
-	extent_insert_and_optimize(ex, start, size, last, myrp);
+	extent_insert_and_optimize(ex, start, size, flags, last, myrp);
 	return (0);
 }
 
@@ -586,44 +504,59 @@ extent_alloc_region(struct extent *ex, u_long start, u_long size, int flags)
  * a power of 2.
  */
 int
-extent_do_alloc(struct extent *ex, u_long substart, u_long subend,
-    u_long size, u_long alignment, u_long skew, u_long boundary, int flags,
-    struct extent_region *myrp, u_long *result)
+extent_alloc_subregion(ex, substart, subend, size, alignment, boundary,
+    flags, result)
+	struct extent *ex;
+	u_long substart, subend, size, alignment, boundary;
+	int flags;
+	u_long *result;
 {
-	struct extent_region *rp, *last, *bestlast;
-	u_long newstart, newend, exend, beststart, bestovh, ovh;
-	u_long dontcross;
+	struct extent_region *rp, *myrp, *last, *bestlast;
+	u_long newstart, newend, beststart, bestovh, ovh;
+	u_long dontcross, odontcross;
 	int error;
 
 #ifdef DIAGNOSTIC
 	/* Check arguments. */
 	if (ex == NULL)
-		panic("%s: NULL extent", __func__);
-	if (myrp == NULL)
-		panic("%s: NULL region descriptor", __func__);
+		panic("extent_alloc_subregion: NULL extent");
 	if (result == NULL)
-		panic("%s: NULL result pointer", __func__);
-	if ((substart < ex->ex_start) || (substart > ex->ex_end) ||
-	    (subend > ex->ex_end) || (subend < ex->ex_start)) {
-		printf("%s: extent `%s', ex_start 0x%lx, ex_end 0x%lx\n",
-		    __func__, ex->ex_name, ex->ex_start, ex->ex_end);
-		printf("%s: substart 0x%lx, subend 0x%lx\n",
-		    __func__, substart, subend);
-		panic("%s: bad subregion", __func__);
+		panic("extent_alloc_subregion: NULL result pointer");
+	if ((substart < ex->ex_start) || (substart >= ex->ex_end) ||
+	    (subend > ex->ex_end) || (subend <= ex->ex_start)) {
+  printf("extent_alloc_subregion: extent `%s', ex_start 0x%lx, ex_end 0x%lx\n",
+		    ex->ex_name, ex->ex_start, ex->ex_end);
+		printf("extent_alloc_subregion: substart 0x%lx, subend 0x%lx\n",
+		    substart, subend);
+		panic("extent_alloc_subregion: bad subregion");
 	}
-	if ((size < 1) || ((size - 1) > (subend - substart))) {
-		printf("%s: extent `%s', size 0x%lx\n",
-		    __func__, ex->ex_name, size);
-		panic("%s: bad size", __func__);
+	if ((size < 1) || (size > ((subend - substart) + 1))) {
+		printf("extent_alloc_subregion: extent `%s', size 0x%lx\n",
+		    ex->ex_name, size);
+		panic("extent_alloc_subregion: bad size");
 	}
 	if (alignment == 0)
-		panic("%s: bad alignment", __func__);
+		panic("extent_alloc_subregion: bad alignment");
 	if (boundary && (boundary < size)) {
-		printf("%s: extent `%s', size 0x%lx, boundary 0x%lx\n",
-		    __func__, ex->ex_name, size, boundary);
-		panic("%s: bad boundary", __func__);
+		printf(
+		    "extent_alloc_subregion: extent `%s', size 0x%lx,
+		    boundary 0x%lx\n", ex->ex_name, size, boundary);
+		panic("extent_alloc_subregion: bad boundary");
 	}
 #endif
+
+	/*
+	 * Allocate the region descriptor.  It will be freed later
+	 * if we can coalesce with another region.
+	 */
+	myrp = extent_alloc_region_descriptor(ex, flags);
+	if (myrp == NULL) {
+#ifdef DIAGNOSTIC
+		printf(
+		 "extent_alloc_subregion: can't allocate region descriptor\n");
+#endif
+		return (ENOMEM);
+	}
 
  alloc_start:
 	/*
@@ -631,9 +564,25 @@ extent_do_alloc(struct extent *ex, u_long substart, u_long subend,
 	 * that we don't have to traverse the list again when
 	 * we insert ourselves.  If "last" is NULL when we
 	 * finally insert ourselves, we go at the head of the
-	 * list.  See extent_insert_and_optimize() for details.
+	 * list.  See extent_insert_and_optimize() for deatails.
 	 */
 	last = NULL;
+
+	/*
+	 * Initialize the "don't cross" boundary, a.k.a a line
+	 * that a region should not cross.  If the boundary lies
+	 * before the region starts, we add the "boundary" argument
+	 * until we get a meaningful comparison.
+	 *
+	 * Start the boundary lines at 0 if the caller requests it.
+	 */
+	dontcross = 0;
+	if (boundary) {
+		dontcross =
+		    ((flags & EX_BOUNDZERO) ? 0 : ex->ex_start) + boundary;
+		while (dontcross < substart)
+			dontcross += boundary;
+	}
 
 	/*
 	 * Keep track of size and location of the smallest
@@ -651,58 +600,51 @@ extent_do_alloc(struct extent *ex, u_long substart, u_long subend,
 	bestlast = NULL;
 
 	/*
-	 * Keep track of end of free region.  This is either the end of extent
-	 * or the start of a region past the subend.
-	 */
-	exend = ex->ex_end;
-
-	/*
 	 * For N allocated regions, we must make (N + 1)
 	 * checks for unallocated space.  The first chunk we
 	 * check is the area from the beginning of the subregion
-	 * to the first allocated region after that point.
+	 * to the first allocated region.
 	 */
-	newstart = extent_align(substart, alignment, skew);
+	newstart = EXTENT_ALIGN(substart, alignment);
 	if (newstart < ex->ex_start) {
 #ifdef DIAGNOSTIC
-		printf("%s: extent `%s' (0x%lx - 0x%lx), alignment 0x%lx\n",
-		    __func__, ex->ex_name, ex->ex_start, ex->ex_end,
-		    alignment);
-		panic("%s: overflow after alignment", __func__);
+		printf(
+      "extent_alloc_subregion: extent `%s' (0x%lx - 0x%lx), alignment 0x%lx\n",
+		 ex->ex_name, ex->ex_start, ex->ex_end, alignment);
+		panic("extent_alloc_subregion: overflow after alignment");
 #else
 		extent_free_region_descriptor(ex, myrp);
 		return (EINVAL);
 #endif
 	}
 
-	/*
+	/* 
 	 * Find the first allocated region that begins on or after
 	 * the subregion start, advancing the "last" pointer along
 	 * the way.
 	 */
-	LIST_FOREACH(rp, &ex->ex_regions, er_link) {
+	for (rp = ex->ex_regions.lh_first; rp != NULL;
+	    rp = rp->er_link.le_next) {
 		if (rp->er_start >= newstart)
 			break;
 		last = rp;
 	}
 
 	/*
-	 * Relocate the start of our candidate region to the end of
-	 * the last allocated region (if there was one overlapping
-	 * our subrange).
+	 * If there are no allocated regions beyond where we want to be,
+	 * relocate the start of our candidate region to the end of
+	 * the last allocated region (if there was one).
 	 */
-	if (last != NULL && last->er_end >= newstart)
-		newstart = extent_align((last->er_end + 1), alignment, skew);
+	if (rp == NULL && last != NULL)
+		newstart = EXTENT_ALIGN((last->er_end + 1), alignment);
 
-	for (; rp != NULL; rp = LIST_NEXT(rp, er_link)) {
+	for (; rp != NULL; rp = rp->er_link.le_next) {
 		/*
-		 * If the region pasts the subend, bail out and see
-		 * if we fit against the subend.
+		 * Check from the current starting point to the
+		 * end of the subregion.
 		 */
-		if (rp->er_start > subend) {
-			exend = rp->er_start;
-			break;
-		}
+		if (LE_OV(newstart, size, subend) == 0)
+			goto fail;
 
 		/*
 		 * Check the chunk before "rp".  Note that our
@@ -718,44 +660,32 @@ extent_do_alloc(struct extent *ex, u_long substart, u_long subend,
 				newend = newstart + (size - 1);
 
 				/*
-				 * Calculate the next boundary after the start
-				 * of this region.
+				 * Adjust boundary for a meaningful
+				 * comparison.
 				 */
-				dontcross = extent_align(newstart+1, boundary, 
-				    (flags & EX_BOUNDZERO) ? 0 : ex->ex_start)
-				    - 1;
-
-#if 0
-				printf("newstart=%lx newend=%lx ex_start=%lx ex_end=%lx boundary=%lx dontcross=%lx\n",
-				    newstart, newend, ex->ex_start, ex->ex_end,
-				    boundary, dontcross);
-#endif
-
-				/* Check for overflow */
-				if (dontcross < ex->ex_start)
-					dontcross = ex->ex_end;
-				else if (newend > dontcross) {
-					/*
-					 * Candidate region crosses boundary.
-					 * Throw away the leading part and see
-					 * if we still fit.
-					 */
-					newstart = dontcross + 1;
-					newend = newstart + (size - 1);
+				while (dontcross <= newstart) {
+					odontcross = dontcross;
 					dontcross += boundary;
-					if (!LE_OV(newstart, size, rp->er_start))
-						goto skip;
+
+					/*
+					 * If we run past the end of
+					 * the extent or the boundary
+					 * overflows, then the request
+					 * can't fit.
+					 */
+					if ((dontcross > ex->ex_end) ||
+					    (dontcross < odontcross))
+						goto fail;
 				}
 
-				/*
-				 * If we run past the end of
-				 * the extent or the boundary
-				 * overflows, then the request
-				 * can't fit.
-				 */
-				if (newstart + size - 1 > ex->ex_end ||
-				    dontcross < newstart)
-					goto fail;
+				/* Do the boundary check. */
+				if (newend >= dontcross) {
+					/*
+					 * Candidate region crosses
+					 * boundary.  Try again.
+					 */
+					continue;
+				}
 			}
 
 			/*
@@ -779,11 +709,10 @@ extent_do_alloc(struct extent *ex, u_long substart, u_long subend,
 			}
 		}
 
-skip:
 		/*
 		 * Skip past the current region and check again.
 		 */
-		newstart = extent_align((rp->er_end + 1), alignment, skew);
+		newstart = EXTENT_ALIGN((rp->er_end + 1), alignment);
 		if (newstart < rp->er_end) {
 			/*
 			 * Overflow condition.  Don't error out, since
@@ -805,61 +734,12 @@ skip:
 	 */
 	if (LE_OV(newstart, (size - 1), subend)) {
 		/*
-		 * Do a boundary check, if necessary.  Note
-		 * that a region may *begin* on the boundary,
-		 * but it must end before the boundary.
-		 */
-		if (boundary) {
-			newend = newstart + (size - 1);
-
-			/*
-			 * Calculate the next boundary after the start
-			 * of this region.
-			 */
-			dontcross = extent_align(newstart+1, boundary, 
-			    (flags & EX_BOUNDZERO) ? 0 : ex->ex_start)
-			    - 1;
-
-#if 0
-			printf("newstart=%lx newend=%lx ex_start=%lx ex_end=%lx boundary=%lx dontcross=%lx\n",
-			    newstart, newend, ex->ex_start, ex->ex_end,
-			    boundary, dontcross);
-#endif
-
-			/* Check for overflow */
-			if (dontcross < ex->ex_start)
-				dontcross = ex->ex_end;
-			else if (newend > dontcross) {
-				/*
-				 * Candidate region crosses boundary.
-				 * Throw away the leading part and see
-				 * if we still fit.
-				 */
-				newstart = dontcross + 1;
-				newend = newstart + (size - 1);
-				dontcross += boundary;
-				if (!LE_OV(newstart, (size - 1), subend))
-					goto fail;
-			}
-
-			/*
-			 * If we run past the end of
-			 * the extent or the boundary
-			 * overflows, then the request
-			 * can't fit.
-			 */
-			if (newstart + size - 1 > ex->ex_end ||
-			    dontcross < newstart)
-				goto fail;
-		}
-
-		/*
 		 * We would fit into this space.  Calculate
 		 * the overhead (wasted space).  If we exactly
 		 * fit, or we're taking the first fit, insert
 		 * ourselves into the region list.
 		 */
-		ovh = exend - newstart - (size - 1);
+		ovh = ex->ex_end - newstart - (size - 1);
 		if ((flags & EX_FAST) || (ovh == 0))
 			goto found;
 
@@ -917,91 +797,39 @@ skip:
 	/*
 	 * Insert ourselves into the region list.
 	 */
-	extent_insert_and_optimize(ex, newstart, size, last, myrp);
+	extent_insert_and_optimize(ex, newstart, size, flags, last, myrp);
 	*result = newstart;
 	return (0);
 }
 
 int
-extent_alloc_subregion(struct extent *ex, u_long substart, u_long subend,
-    u_long size, u_long alignment, u_long skew, u_long boundary, int flags,
-    u_long *result)
+extent_free(ex, start, size, flags)
+	struct extent *ex;
+	u_long start, size;
+	int flags;
 {
 	struct extent_region *rp;
-
-	/*
-	 * Allocate the region descriptor.  It will be freed later
-	 * if we can coalesce with another region.
-	 */
-	rp = extent_alloc_region_descriptor(ex, flags);
-	if (rp == NULL) {
-#ifdef DIAGNOSTIC
-		printf("%s: can't allocate region descriptor\n", __func__);
-#endif
-		return (ENOMEM);
-	}
-
-	return extent_do_alloc(ex, substart, subend, size, alignment, skew,
-	    boundary, flags, rp, result);
-}
-
-int
-extent_alloc_subregion_with_descr(struct extent *ex, u_long substart,
-    u_long subend, u_long size, u_long alignment, u_long skew,
-    u_long boundary, int flags, struct extent_region *rp, u_long *result)
-{
-#ifdef DIAGNOSTIC
-	if ((ex->ex_flags & EXF_NOCOALESCE) == 0)
-		panic("%s: EX_NOCOALESCE not set", __func__);
-#endif
-
-	rp->er_flags = ER_DISCARD;
-	return extent_do_alloc(ex, substart, subend, size, alignment, skew,
-	    boundary, flags, rp, result);
-}
-
-int
-extent_free(struct extent *ex, u_long start, u_long size, int flags)
-{
-	struct extent_region *rp, *nrp = NULL;
 	u_long end = start + (size - 1);
-	int exflags;
 
 #ifdef DIAGNOSTIC
 	/* Check arguments. */
 	if (ex == NULL)
-		panic("%s: NULL extent", __func__);
-	if ((start < ex->ex_start) || (end > ex->ex_end)) {
+		panic("extent_free: NULL extent");
+	if ((start < ex->ex_start) || (start > ex->ex_end)) {
 		extent_print(ex);
-		printf("%s: extent `%s', start 0x%lx, size 0x%lx\n",
-		    __func__, ex->ex_name, start, size);
-		panic("%s: extent `%s', region not within extent",
-		    __func__, ex->ex_name);
+		printf("extent_free: extent `%s', start 0x%lx, size 0x%lx\n",
+		    ex->ex_name, start, size);
+		panic("extent_free: extent `%s', region not within extent",
+		    ex->ex_name);
 	}
 	/* Check for an overflow. */
 	if (end < start) {
 		extent_print(ex);
-		printf("%s: extent `%s', start 0x%lx, size 0x%lx\n",
-		    __func__, ex->ex_name, start, size);
-		panic("%s: overflow", __func__);
+		printf("extent_free: extent `%s', start 0x%lx, size 0x%lx\n",
+		    ex->ex_name, start, size);
+		panic("extent_free: overflow");
 	}
 #endif
-
-	/*
-	 * If we're allowing coalescing, we must allocate a region
-	 * descriptor now, since it might block.
-	 *
-	 * XXX Make a static, create-time flags word, so we don't
-	 * XXX have to lock to read it!
-	 */
-	exflags = ex->ex_flags;
-
-	if ((exflags & EXF_NOCOALESCE) == 0) {
-		/* Allocate a region descriptor. */
-		nrp = extent_alloc_region_descriptor(ex, flags);
-		if (nrp == NULL)
-			return (ENOMEM);
-	}
 
 	/*
 	 * Find region and deallocate.  Several possibilities:
@@ -1021,7 +849,8 @@ extent_free(struct extent *ex, u_long start, u_long size, int flags)
 	 * Cases 2, 3, and 4 require that the EXF_NOCOALESCE flag
 	 * is not set.
 	 */
-	LIST_FOREACH(rp, &ex->ex_regions, er_link) {
+	for (rp = ex->ex_regions.lh_first; rp != NULL;
+	    rp = rp->er_link.le_next) {
 		/*
 		 * Save ourselves some comparisons; does the current
 		 * region end before chunk to be freed begins?  If so,
@@ -1067,6 +896,13 @@ extent_free(struct extent *ex, u_long start, u_long size, int flags)
 
 		/* Case 4. */
 		if ((start > rp->er_start) && (end < rp->er_end)) {
+			struct extent_region *nrp;
+
+			/* Allocate a region descriptor. */
+			nrp = extent_alloc_region_descriptor(ex, flags);
+			if (nrp == NULL)
+				return (ENOMEM);
+
 			/* Fill in new descriptor. */
 			nrp->er_start = end + 1;
 			nrp->er_end = rp->er_end;
@@ -1074,25 +910,20 @@ extent_free(struct extent *ex, u_long start, u_long size, int flags)
 			/* Adjust current descriptor. */
 			rp->er_end = start - 1;
 
-			/* Insert new descriptor after current. */
+			/* Instert new descriptor after current. */
 			LIST_INSERT_AFTER(rp, nrp, er_link);
-
-			/* We used the new descriptor, so don't free it below */
-			nrp = NULL;
 			goto done;
 		}
 	}
 
+#ifdef DIAGNOSTIC
 	/* Region not found, or request otherwise invalid. */
-#if defined(DIAGNOSTIC) || defined(DDB)
 	extent_print(ex);
+	printf("extent_free: start 0x%lx, end 0x%lx\n", start, end);
+	panic("extent_free: region not found");
 #endif
-	printf("%s: start 0x%lx, end 0x%lx\n", __func__, start, end);
-	panic("%s: region not found", __func__);
 
  done:
-	if (nrp != NULL)
-		extent_free_region_descriptor(ex, nrp);
 	if (ex->ex_flags & EXF_WANTED) {
 		ex->ex_flags &= ~EXF_WANTED;
 		wakeup(ex);
@@ -1101,14 +932,16 @@ extent_free(struct extent *ex, u_long start, u_long size, int flags)
 }
 
 static struct extent_region *
-extent_alloc_region_descriptor(struct extent *ex, int flags)
+extent_alloc_region_descriptor(ex, flags)
+	struct extent *ex;
+	int flags;
 {
 	struct extent_region *rp;
 
 	if (ex->ex_flags & EXF_FIXED) {
 		struct extent_fixed *fex = (struct extent_fixed *)ex;
 
-		while (LIST_EMPTY(&fex->fex_freelist)) {
+		while (fex->fex_freelist.lh_first == NULL) {
 			if (flags & EX_MALLOCOK)
 				goto alloc;
 
@@ -1120,12 +953,12 @@ extent_alloc_region_descriptor(struct extent *ex, int flags)
 			    "extnt", 0))
 				return (NULL);
 		}
-		rp = LIST_FIRST(&fex->fex_freelist);
+		rp = fex->fex_freelist.lh_first;
 		LIST_REMOVE(rp, er_link);
 
 		/*
 		 * Don't muck with flags after pulling it off the
-		 * freelist; it may be a dynamically allocated
+		 * freelist; it may be a dynamiclly allocated
 		 * region pointer that was kindly given to us,
 		 * and we need to preserve that information.
 		 */
@@ -1134,8 +967,10 @@ extent_alloc_region_descriptor(struct extent *ex, int flags)
 	}
 
  alloc:
-	rp = pool_get(&ex_region_pl, (flags & EX_WAITOK) ? PR_WAITOK :
-	    PR_NOWAIT);
+	rp = (struct extent_region *)
+	    malloc(sizeof(struct extent_region), ex->ex_mtype,
+	    (flags & EX_WAITOK) ? M_WAITOK : M_NOWAIT);
+
 	if (rp != NULL)
 		rp->er_flags = ER_ALLOC;
 
@@ -1143,10 +978,10 @@ extent_alloc_region_descriptor(struct extent *ex, int flags)
 }
 
 static void
-extent_free_region_descriptor(struct extent *ex, struct extent_region *rp)
+extent_free_region_descriptor(ex, rp)
+	struct extent *ex;
+	struct extent_region *rp;
 {
-	if (rp->er_flags & ER_DISCARD)
-		return;
 
 	if (ex->ex_flags & EXF_FIXED) {
 		struct extent_fixed *fex = (struct extent_fixed *)ex;
@@ -1164,7 +999,7 @@ extent_free_region_descriptor(struct extent *ex, struct extent_region *rp)
 				    er_link);
 				goto wake_em_up;
 			} else {
-				pool_put(&ex_region_pl, rp);
+				free(rp, ex->ex_mtype);
 			}
 		} else {
 			/* Clear all flags. */
@@ -1183,36 +1018,28 @@ extent_free_region_descriptor(struct extent *ex, struct extent_region *rp)
 	/*
 	 * We know it's dynamically allocated if we get here.
 	 */
-	pool_put(&ex_region_pl, rp);
+	free(rp, ex->ex_mtype);
 }
 
+#ifndef DDB
+#define db_printf printf
+#endif
 
-#if defined(DIAGNOSTIC) || defined(DDB) || !defined(_KERNEL)
-
+#if defined(DIAGNOSTIC) || defined(DDB)
 void
-extent_print(struct extent *ex)
-{
-	extent_print1(ex, printf);
-}
-
-void
-extent_print1(struct extent *ex,
-    int (*pr)(const char *, ...) __attribute__((__format__(__kprintf__,1,2))))
+extent_print(ex)
+	struct extent *ex;
 {
 	struct extent_region *rp;
 
 	if (ex == NULL)
-		panic("%s: NULL extent", __func__);
+		panic("extent_print: NULL extent");
 
-#ifdef _KERNEL
-	(*pr)("extent `%s' (0x%lx - 0x%lx), flags=%b\n", ex->ex_name,
-	    ex->ex_start, ex->ex_end, ex->ex_flags, EXF_BITS);
-#else
-	(*pr)("extent `%s' (0x%lx - 0x%lx), flags = 0x%x\n", ex->ex_name,
+	db_printf("extent `%s' (0x%lx - 0x%lx), flags = 0x%x\n", ex->ex_name,
 	    ex->ex_start, ex->ex_end, ex->ex_flags);
-#endif
 
-	LIST_FOREACH(rp, &ex->ex_regions, er_link)
-		(*pr)("     0x%lx - 0x%lx\n", rp->er_start, rp->er_end);
+	for (rp = ex->ex_regions.lh_first; rp != NULL;
+	    rp = rp->er_link.le_next)
+		db_printf("     0x%lx - 0x%lx\n", rp->er_start, rp->er_end);
 }
 #endif

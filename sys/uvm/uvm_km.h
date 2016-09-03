@@ -1,7 +1,7 @@
-/*	$OpenBSD: uvm_km.h,v 1.14 2015/02/07 08:21:24 miod Exp $	*/
-/*	$NetBSD: uvm_km.h,v 1.9 1999/06/21 17:25:11 thorpej Exp $	*/
+/*	$NetBSD: uvm_km.h,v 1.6 1998/08/13 02:11:01 eeh Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -35,47 +41,11 @@
  * uvm_km.h
  */
 
-#ifdef _KERNEL
-
-#include <sys/mutex.h>
-
 /*
  * prototypes
  */
 
-void uvm_km_init(vaddr_t, vaddr_t, vaddr_t);
-void uvm_km_page_init(void);
-void uvm_km_pgremove(struct uvm_object *, vaddr_t, vaddr_t);
-void uvm_km_pgremove_intrsafe(vaddr_t, vaddr_t);
-
-#if !defined(__HAVE_PMAP_DIRECT)
-
-#define UVM_KM_PAGES_LOWAT_MAX	(2048)
-#define UVM_KM_PAGES_HIWAT_MAX	(4 * UVM_KM_PAGES_LOWAT_MAX)
-
-struct uvm_km_free_page {
-	struct uvm_km_free_page *next;
-};
-struct uvm_km_pages {
-	struct	mutex mtx;
-
-	/* Low and high water mark for addresses. */
-	int	lowat;
-	int	hiwat;
-
-	/* Kernel address pool. */
-	int	free;
-	vaddr_t	page[UVM_KM_PAGES_HIWAT_MAX];
-
-	struct uvm_km_free_page *freelist;
-	int freelistlen;
-
-	struct	proc *km_proc;
-};
-
-extern struct uvm_km_pages uvm_km_pages;
-#endif	/* _HAVE_PMAP_DIRECT */
-
-#endif /* _KERNEL */
+void uvm_km_init __P((vaddr_t, vaddr_t));
+void uvm_km_pgremove __P((struct uvm_object *, vaddr_t, vaddr_t));
 
 #endif /* _UVM_UVM_KM_H_ */

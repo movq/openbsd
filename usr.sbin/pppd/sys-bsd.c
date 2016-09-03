@@ -1,78 +1,34 @@
-/*	$OpenBSD: sys-bsd.c,v 1.27 2015/09/12 12:42:36 miod Exp $	*/
+/*	$OpenBSD: sys-bsd.c,v 1.14 1998/05/08 04:52:33 millert Exp $	*/
 
 /*
  * sys-bsd.c - System-dependent procedures for setting up
  * PPP interfaces on bsd-4.4-ish systems (including 386BSD, NetBSD, etc.)
  *
- * Copyright (c) 1984-2000 Carnegie Mellon University. All rights reserved.
+ * Copyright (c) 1989 Carnegie Mellon University.
+ * Copyright (c) 1995 The Australian National University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name "Carnegie Mellon University" must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission. For permission or any legal
- *    details, please contact
- *      Office of Technology Transfer
- *      Carnegie Mellon University
- *      5000 Forbes Avenue
- *      Pittsburgh, PA  15213-3890
- *      (412) 268-4387, fax: (412) 268-7395
- *      tech-transfer@andrew.cmu.edu
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Computing Services
- *     at Carnegie Mellon University (http://www.cmu.edu/computing/)."
- *
- * CARNEGIE MELLON UNIVERSITY DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY BE LIABLE
- * FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright (c) 1989-2002 Paul Mackerras. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name(s) of the authors of this software must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission.
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Paul Mackerras
- *     <paulus@samba.org>".
- *
- * THE AUTHORS OF THIS SOFTWARE DISCLAIM ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
- * SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by Carnegie Mellon University and The Australian National University.
+ * The names of the Universities may not be used to endorse or promote
+ * products derived from this software without specific prior written
+ * permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
+
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: sys-bsd.c,v 1.31 1998/04/02 12:04:19 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: sys-bsd.c,v 1.14 1998/05/08 04:52:33 millert Exp $";
+#endif
+#endif
 
 /*
  * TODO:
@@ -94,7 +50,6 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/stat.h>
-#include <ifaddrs.h>
 
 #ifdef PPP_FILTER
 #include <net/bpf.h>
@@ -123,6 +78,12 @@
 #include "fsm.h"
 #include "ipcp.h"
 
+#ifdef IPX_CHANGE
+#include <netipx/ipx.h>
+#include <netipx/ipx_if.h>
+#include "ipxcp.h"
+#endif
+
 #define ok_error(num) ((num)==EIO)
 
 static int initdisc = -1;	/* Initial TTY discipline for ppp_fd */
@@ -150,8 +111,8 @@ static u_int32_t default_route_gateway;	/* gateway addr for default route */
 static u_int32_t proxy_arp_addr;	/* remote addr for proxy arp */
 
 /* Prototypes for procedures local to this file. */
-static int dodefaultroute(u_int32_t, int);
-static int get_ether_addr(u_int32_t, struct sockaddr_dl *);
+static int dodefaultroute __P((u_int32_t, int));
+static int get_ether_addr __P((u_int32_t, struct sockaddr_dl *));
 
 
 /*
@@ -178,7 +139,8 @@ sys_cleanup()
     struct ifreq ifr;
 
     if (if_is_up) {
-	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
+	ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
 	if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) >= 0
 	    && ((ifr.ifr_flags & IFF_UP) != 0)) {
 	    ifr.ifr_flags &= ~IFF_UP;
@@ -228,13 +190,16 @@ ppp_available()
     if ((s = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	return 1;		/* can't tell */
 
-    strlcpy(ifr.ifr_name, "ppp0", sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, "ppp0", sizeof(ifr.ifr_name) - 1);
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
     ok = ioctl(s, SIOCGIFFLAGS, (caddr_t) &ifr) >= 0;
     close(s);
 
     no_ppp_msg = "\
-PPP device not available. Make sure the device is created with\n\
-ifconfig and that the kernel supports PPP. See ifconfig(8) and ppp(4).";
+This system lacks kernel support for PPP.  To include PPP support\n\
+in the kernel, please add a line\n\
+\tpseudo-device ppp 1\n\
+to your kernel config file and build a new kernel.\n";
     return ok;
 }
 
@@ -354,6 +319,103 @@ restore_loop()
     }
     ppp_fd = loop_slave;
 }
+
+#ifdef IPX_CHANGE
+/*
+ * sipxfaddr - Config the interface IPX networknumber
+ */
+int
+sipxfaddr(unit, network, node)
+	  int unit;
+	  u_int32_t network;
+	  u_char * node;
+{
+	int    skfd; 
+	int    result = 1;
+	struct ifreq         ifr;
+	struct sockaddr_ipx *sipx = (struct sockaddr_ipx *) &ifr.ifr_addr;
+
+	skfd = socket (AF_IPX, SOCK_DGRAM, 0);
+	if (skfd < 0) { 
+		if (!ok_error (errno))
+			syslog (LOG_DEBUG, "socket(AF_IPX): %m(%d)", errno);
+		result = 0;
+	} else {
+		bzero (&ifr, sizeof(ifr));
+		strncpy (ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+		ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
+
+		sipx->sipx_len     = sizeof(*sipx);
+		sipx->sipx_family  = AF_IPX;
+		sipx->sipx_type    = ETHERTYPE_II;
+		sipx->sipx_port    = 0;
+		sipx->sipx_network = htonl (network);
+		memcpy (sipx->sipx_node, node, IPX_HOSTADDRLEN);
+
+		/*
+		 *  Set the IPX device
+		 */
+		if (ioctl(skfd, SIOCSIFADDR, (caddr_t) &ifr) < 0) {
+			result = 0;
+			if (errno != EEXIST && !ok_error (errno)) {
+				syslog (LOG_DEBUG,
+					"ioctl(SIOCAIFADDR, CRTITF): %m(%d)",
+					errno);
+			} else {
+				syslog (LOG_WARNING,
+					"ioctl(SIOCAIFADDR, CRTITF): Address already exists");
+			}
+		}
+		close (skfd);
+	}
+
+	return result;
+}
+
+/*
+ * cipxfaddr - Clear the information for the IPX network. The IPX routes
+ *	       are removed and the device is no longer able to pass IPX
+ *	       frames.
+ */
+int
+cipxfaddr(unit)
+	int unit;
+{
+	int    skfd; 
+	int    result = 1;
+	struct ifreq         ifr;
+	struct sockaddr_ipx *sipx = (struct sockaddr_ipx *) &ifr.ifr_addr;
+
+	skfd = socket (AF_IPX, SOCK_DGRAM, 0);
+	if (skfd < 0) {
+		if (! ok_error (errno))
+			syslog (LOG_DEBUG, "socket(AF_IPX): %m(%d)", errno);
+		result = 0;
+	} else {
+		bzero (&ifr, sizeof(ifr));
+		strncpy (ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
+		ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
+
+		sipx->sipx_len     = sizeof(*sipx);
+		sipx->sipx_family  = AF_IPX;
+		sipx->sipx_type    = ETHERTYPE_II;
+
+		/*
+		 *  Set the IPX device
+		 */
+		if (ioctl(skfd, SIOCDIFADDR, (caddr_t) &ifr) < 0) {
+			if (!ok_error (errno))
+				syslog (LOG_INFO,
+					"ioctl(SIOCAIFADDR, IPX_DLTITF): %m(%d)",
+					errno);
+			result = 0;
+		}
+		close (skfd);
+	}
+
+	return result;
+}
+#endif
 
 /*
  * disestablish_ppp - Restore the serial port to normal operation.
@@ -734,7 +796,8 @@ ppp_send_config(unit, mtu, asyncmap, pcomp, accomp)
     u_int x;
     struct ifreq ifr;
 
-    strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
     ifr.ifr_mtu = mtu;
     if (ioctl(sockfd, SIOCSIFMTU, (caddr_t) &ifr) < 0) {
 	syslog(LOG_ERR, "ioctl(SIOCSIFMTU): %m");
@@ -934,7 +997,8 @@ sifup(u)
 {
     struct ifreq ifr;
 
-    strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
     if (ioctl(sockfd, SIOCGIFFLAGS, (caddr_t) &ifr) < 0) {
 	syslog(LOG_ERR, "ioctl (SIOCGIFFLAGS): %m");
 	return 0;
@@ -985,7 +1049,8 @@ sifdown(u)
     ioctl(ppp_fd, PPPIOCSNPMODE, (caddr_t) &npi);
     /* ignore errors, because ppp_fd might have been closed by now. */
 
-    strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
     if (ioctl(sockfd, SIOCGIFFLAGS, (caddr_t) &ifr) < 0) {
 	syslog(LOG_ERR, "ioctl (SIOCGIFFLAGS): %m");
 	rv = 0;
@@ -1019,9 +1084,9 @@ sifaddr(u, o, h, m)
 {
     struct ifaliasreq ifra;
     struct ifreq ifr;
-    char s1[64], s2[64];
 
-    strlcpy(ifra.ifra_name, ifname, sizeof(ifra.ifra_name));
+    strncpy(ifra.ifra_name, ifname, sizeof(ifra.ifra_name) - 1);
+    ifra.ifra_name[sizeof(ifra.ifra_name) - 1] = '\0';
     SET_SA_FAMILY(ifra.ifra_addr, AF_INET);
     ((struct sockaddr_in *) &ifra.ifra_addr)->sin_addr.s_addr = o;
     SET_SA_FAMILY(ifra.ifra_broadaddr, AF_INET);
@@ -1032,7 +1097,8 @@ sifaddr(u, o, h, m)
     } else
 	BZERO(&ifra.ifra_mask, sizeof(ifra.ifra_mask));
     BZERO(&ifr, sizeof(ifr));
-    strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+    strncpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name) - 1);
+    ifr.ifr_name[sizeof(ifr.ifr_name) - 1] = '\0';
     if (ioctl(sockfd, SIOCDIFADDR, (caddr_t) &ifr) < 0) {
 	if (errno != EADDRNOTAVAIL)
 	    syslog(LOG_WARNING, "Couldn't remove interface address: %m");
@@ -1042,11 +1108,9 @@ sifaddr(u, o, h, m)
 	    syslog(LOG_ERR, "Couldn't set interface address: %m");
 	    return 0;
 	}
-	strlcpy(s1, ip_ntoa(o), sizeof(s1));
-	strlcpy(s2, ip_ntoa(h), sizeof(s2));
 	syslog(LOG_WARNING,
-	       "Couldn't set interface address: "
-	       "Address %s or destination %s already exists", s1, s2);
+	       "Couldn't set interface address: Address %s already exists",
+	       ip_ntoa(o));
     }
     ifaddrs[0] = o;
     ifaddrs[1] = h;
@@ -1065,7 +1129,8 @@ cifaddr(u, o, h)
     struct ifaliasreq ifra;
 
     ifaddrs[0] = 0;
-    strlcpy(ifra.ifra_name, ifname, sizeof(ifra.ifra_name));
+    strncpy(ifra.ifra_name, ifname, sizeof(ifra.ifra_name) - 1);
+    ifra.ifra_name[sizeof(ifra.ifra_name) - 1] = '\0';
     SET_SA_FAMILY(ifra.ifra_addr, AF_INET);
     ((struct sockaddr_in *) &ifra.ifra_addr)->sin_addr.s_addr = o;
     SET_SA_FAMILY(ifra.ifra_broadaddr, AF_INET);
@@ -1320,12 +1385,17 @@ get_ether_addr(ipaddr, hwaddr)
     u_int32_t ipaddr;
     struct sockaddr_dl *hwaddr;
 {
+    struct ifreq *ifr, *ifend, *ifp;
     u_int32_t ina, mask;
     struct sockaddr_dl *dla;
-    struct ifaddrs *ifap, *ifa, *ifp;
+    struct ifreq ifreq;
+    struct ifconf ifc;
+    struct ifreq ifs[MAX_IFS];
 
-    if (getifaddrs(&ifap) != 0) {
-	syslog(LOG_ERR, "getifaddrs: %m");
+    ifc.ifc_len = sizeof(ifs);
+    ifc.ifc_req = ifs;
+    if (ioctl(sockfd, SIOCGIFCONF, &ifc) < 0) {
+	syslog(LOG_ERR, "ioctl(SIOCGIFCONF): %m");
 	return 0;
     }
 
@@ -1333,21 +1403,30 @@ get_ether_addr(ipaddr, hwaddr)
      * Scan through looking for an interface with an Internet
      * address on the same subnet as `ipaddr'.
      */
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-	if (ifa->ifa_addr->sa_family == AF_INET) {
-	    ina = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
+    ifend = (struct ifreq *) (ifc.ifc_buf + ifc.ifc_len);
+    for (ifr = ifc.ifc_req; ifr < ifend; ifr = (struct ifreq *)
+	 	((char *)&ifr->ifr_addr + ifr->ifr_addr.sa_len)) {
+	if (ifr->ifr_addr.sa_family == AF_INET) {
+	    ina = ((struct sockaddr_in *) &ifr->ifr_addr)->sin_addr.s_addr;
+	    strncpy(ifreq.ifr_name, ifr->ifr_name, sizeof(ifreq.ifr_name) - 1);
+	    ifreq.ifr_name[sizeof(ifreq.ifr_name) - 1] = '\0';
 	    /*
 	     * Check that the interface is up, and not point-to-point
 	     * or loopback.
 	     */
-	    if ((ifa->ifa_flags &
+	    if (ioctl(sockfd, SIOCGIFFLAGS, &ifreq) < 0)
+		continue;
+	    if ((ifreq.ifr_flags &
 		 (IFF_UP|IFF_BROADCAST|IFF_POINTOPOINT|IFF_LOOPBACK|IFF_NOARP))
 		 != (IFF_UP|IFF_BROADCAST))
 		continue;
 	    /*
 	     * Get its netmask and check that it's on the right subnet.
 	     */
-	    mask = ((struct sockaddr_in *)ifa->ifa_netmask)->sin_addr.s_addr;
+	    ifreq.ifr_addr = ifr->ifr_addr;
+	    if (ioctl(sockfd, SIOCGIFNETMASK, &ifreq) < 0)
+		continue;
+	    mask = ((struct sockaddr_in *) &ifreq.ifr_addr)->sin_addr.s_addr;
 	    if ((ipaddr & mask) != (ina & mask))
 		continue;
 
@@ -1355,30 +1434,28 @@ get_ether_addr(ipaddr, hwaddr)
 	}
     }
 
-    if (ifa == NULL) {
-	freeifaddrs(ifap);
+    if (ifr >= ifend)
 	return 0;
-    }
-    syslog(LOG_INFO, "found interface %s for proxy arp", ifa->ifa_name);
+    syslog(LOG_INFO, "found interface %s for proxy arp", ifr->ifr_name);
 
     /*
      * Now scan through again looking for a link-level address
      * for this interface.
      */
-    ifp = ifa;
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-	if (strcmp(ifp->ifa_name, ifa->ifa_name) == 0
-	    && ifa->ifa_addr->sa_family == AF_LINK) {
+    ifp = ifr;
+    for (ifr = ifc.ifc_req; ifr < ifend; ) {
+	if (strcmp(ifp->ifr_name, ifr->ifr_name) == 0
+	    && ifr->ifr_addr.sa_family == AF_LINK) {
 	    /*
 	     * Found the link-level address - copy it out
 	     */
-	    dla = (struct sockaddr_dl *)ifa->ifa_addr;
+	    dla = (struct sockaddr_dl *) &ifr->ifr_addr;
 	    BCOPY(dla, hwaddr, dla->sdl_len);
 	    return 1;
 	}
+	ifr = (struct ifreq *) ((char *)&ifr->ifr_addr + ifr->ifr_addr.sa_len);
     }
 
-    freeifaddrs(ifap);
     return 0;
 }
 
@@ -1395,7 +1472,9 @@ GetMask(addr)
     u_int32_t addr;
 {
     u_int32_t mask, nmask, ina;
-    struct ifaddrs *ifap, *ifa;
+    struct ifreq *ifr, *ifend, ifreq;
+    struct ifconf ifc;
+    struct ifreq ifs[MAX_IFS];
 
     addr = ntohl(addr);
     if (IN_CLASSA(addr))	/* determine network mask for address class */
@@ -1410,33 +1489,52 @@ GetMask(addr)
     /*
      * Scan through the system's network interfaces.
      */
-    if (getifaddrs(&ifap) != 0) {
-	syslog(LOG_WARNING, "getifaddrs: %m");
+    ifc.ifc_len = sizeof(ifs);
+    ifc.ifc_req = ifs;
+    if (ioctl(sockfd, SIOCGIFCONF, &ifc) < 0) {
+	syslog(LOG_WARNING, "ioctl(SIOCGIFCONF): %m");
 	return mask;
     }
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+    ifend = (struct ifreq *) (ifc.ifc_buf + ifc.ifc_len);
+    for (ifr = ifc.ifc_req; ifr < ifend; ifr = (struct ifreq *)
+	 	((char *)&ifr->ifr_addr + ifr->ifr_addr.sa_len)) {
 	/*
 	 * Check the interface's internet address.
 	 */
-	if (ifa->ifa_addr->sa_family != AF_INET)
+	if (ifr->ifr_addr.sa_family != AF_INET)
 	    continue;
-	ina = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
+	ina = ((struct sockaddr_in *) &ifr->ifr_addr)->sin_addr.s_addr;
 	if ((ntohl(ina) & nmask) != (addr & nmask))
 	    continue;
 	/*
 	 * Check that the interface is up, and not point-to-point or loopback.
 	 */
-	if ((ifa->ifa_flags & (IFF_UP|IFF_POINTOPOINT|IFF_LOOPBACK))
+	strncpy(ifreq.ifr_name, ifr->ifr_name, sizeof(ifreq.ifr_name) - 1);
+	ifreq.ifr_name[sizeof(ifreq.ifr_name) - 1] = '\0';
+	if (ioctl(sockfd, SIOCGIFFLAGS, &ifreq) < 0)
+	    continue;
+	if ((ifreq.ifr_flags & (IFF_UP|IFF_POINTOPOINT|IFF_LOOPBACK))
 	    != IFF_UP)
 	    continue;
 	/*
 	 * Get its netmask and OR it into our mask.
 	 */
-	mask |= ((struct sockaddr_in *)ifa->ifa_netmask)->sin_addr.s_addr;
+	ifreq.ifr_addr = ifr->ifr_addr;
+	if (ioctl(sockfd, SIOCGIFNETMASK, &ifreq) < 0)
+	    continue;
+	mask |= ((struct sockaddr_in *)&ifreq.ifr_addr)->sin_addr.s_addr;
     }
 
-    freeifaddrs(ifap);
     return mask;
+}
+
+/*
+ * Use the hostid as part of the random number seed.
+ */
+int
+get_host_seed()
+{
+    return gethostid();
 }
 
 /*
@@ -1449,14 +1547,15 @@ lock(dev)
     char *dev;
 {
     char hdb_lock_buffer[12];
-    int fd, n;
-    pid_t pid;
+    int fd, pid, n;
     char *p;
 
     if ((p = strrchr(dev, '/')) != NULL)
 	dev = p + 1;
-    if (asprintf(&lock_file, "%s%s", LOCK_PREFIX, dev) == -1)
+    lock_file = malloc(strlen(LOCK_PREFIX) + strlen(dev) + 1);
+    if (lock_file == NULL)
 	novm("lock file name");
+    strcat(strcpy(lock_file, LOCK_PREFIX), dev);
 
     while ((fd = open(lock_file, O_EXCL | O_CREAT | O_RDWR, 0644)) < 0) {
 	if (errno == EEXIST
@@ -1473,15 +1572,15 @@ lock(dev)
 		    /* pid no longer exists - remove the lock file */
 		    if (unlink(lock_file) == 0) {
 			close(fd);
-			syslog(LOG_NOTICE, "Removed stale lock on %s (pid %ld)",
-			       dev, (long)pid);
+			syslog(LOG_NOTICE, "Removed stale lock on %s (pid %d)",
+			       dev, pid);
 			continue;
 		    } else
 			syslog(LOG_WARNING, "Couldn't remove stale lock on %s",
 			       dev);
 		} else
-		    syslog(LOG_NOTICE, "Device %s is locked by pid %ld",
-			   dev, (long)pid);
+		    syslog(LOG_NOTICE, "Device %s is locked by pid %d",
+			   dev, pid);
 	    }
 	    close(fd);
 	} else
@@ -1491,7 +1590,7 @@ lock(dev)
 	return -1;
     }
 
-    snprintf(hdb_lock_buffer, sizeof hdb_lock_buffer, "%10ld\n", (long)getpid());
+    sprintf(hdb_lock_buffer, "%10d\n", getpid());
     write(fd, hdb_lock_buffer, 11);
 
     close(fd);

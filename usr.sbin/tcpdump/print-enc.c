@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-enc.c,v 1.15 2016/04/04 16:26:00 sthen Exp $	*/
-
 /*
  * Copyright (c) 1990, 1991, 1993, 1994, 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -21,20 +19,26 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-enc.c,v 1.1 1998/06/11 00:01:25 provos Exp $ (LBL)";
+#endif
+
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
-#include <sys/queue.h>
 #include <sys/mbuf.h>
 
+#ifdef __STDC__
 struct rtentry;
+#endif
 #include <net/if.h>
-#include <netinet/ip_ipsp.h>
 #include <net/if_enc.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 
 #include <ctype.h>
@@ -53,11 +57,14 @@ struct rtentry;
 	}
 
 void
-enc_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
+enc_if_print(u_char *user, const struct pcap_pkthdr *h,
+	     register const u_char *p)
 {
-	u_int length = h->len, caplen = h->caplen;
-	const struct enchdr *hdr;
+	register u_int length = h->len;
+	register u_int caplen = h->caplen;
 	int flags;
+	const struct ip *ip;
+	const struct enchdr *hdr;
 
 	ts_print(&h->ts);
 
@@ -73,33 +80,20 @@ enc_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 	 */
 	packetp = p;
 	snapend = p + caplen;
-
+	
 	hdr = (struct enchdr *)p;
+	printf("SPI 0x%08x (", ntohl(hdr->spi));
 	flags = hdr->flags;
-	if (flags == 0)
-		printf("(unprotected): ");
-	else
-		printf("(");
 	ENC_PRINT_TYPE(flags, M_AUTH, "authentic");
 	ENC_PRINT_TYPE(flags, M_CONF, "confidential");
-	/* ENC_PRINT_TYPE(flags, M_TUNNEL, "tunnel"); */
-	printf("SPI 0x%08x: ", ntohl(hdr->spi));
+	ENC_PRINT_TYPE(flags, M_TUNNEL, "tunnel");
 
 	length -= ENC_HDRLEN;
-	p += ENC_HDRLEN;
-
-	switch (hdr->af) {
-	case AF_INET:
-	default:
-		ip_print(p, length);
-		break;
-	case AF_INET6:
-		ip6_print(p, length);
-		break;
-	}
+	ip = (struct ip *)(p + ENC_HDRLEN);
+	ip_print((const u_char *)ip, length);
 
 	if (xflag)
-		default_print(p, caplen - ENC_HDRLEN);
+		default_print((const u_char *)ip, caplen - ENC_HDRLEN);
 out:
 	putchar('\n');
 }

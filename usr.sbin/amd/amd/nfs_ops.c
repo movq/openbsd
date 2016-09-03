@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfs_ops.c,v 1.26 2014/10/26 03:28:41 guenther Exp $	*/
+/*	$OpenBSD: nfs_ops.c,v 1.6 1997/01/31 14:42:00 graichen Exp $	*/
 
 /*-
  * Copyright (c) 1990 Jan-Simon Pendry
@@ -17,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -34,6 +38,11 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/*static char sccsid[] = "from: @(#)nfs_ops.c	8.1 (Berkeley) 6/6/93";*/
+static char *rcsid = "$OpenBSD: nfs_ops.c,v 1.6 1997/01/31 14:42:00 graichen Exp $";
+#endif /* not lint */
+
 #include "am.h"
 #include <sys/stat.h>
 
@@ -41,7 +50,12 @@
 
 #define NFS
 #define NFSCLIENT
-
+#ifdef NFS_3
+typedef nfs_fh fhandle_t;
+#endif /* NFS_3 */
+#ifdef NFS_HDR
+#include NFS_HDR
+#endif /* NFS_HDR */
 #include "mount.h"
 
 /*
@@ -79,7 +93,7 @@
 typedef struct fh_cache fh_cache;
 struct fh_cache {
 	qelem	fh_q;			/* List header */
-	void	*fh_wchan;		/* Wait channel */
+	voidp	fh_wchan;		/* Wait channel */
 	int	fh_error;		/* Valid data? */
 	int	fh_id;			/* Unique id */
 	int	fh_cid;			/* Callout id */
@@ -102,12 +116,14 @@ static int fh_id = 0;
 extern qelem fh_head;
 qelem fh_head = { &fh_head, &fh_head };
 
-static int call_mountd(fh_cache*, unsigned long, fwd_fun, void *);
+static int call_mountd P((fh_cache*, unsigned long, fwd_fun, voidp));
 
 AUTH *nfs_auth;
 
-static fh_cache *
-find_nfs_fhandle_cache(void *idv, int done)
+static fh_cache *find_nfs_fhandle_cache P((voidp idv, int done));
+static fh_cache *find_nfs_fhandle_cache(idv, done)
+voidp idv;
+int done;
 {
 	fh_cache *fp, *fp2 = 0;
 	/* XXX EVIL XXX */
@@ -139,15 +155,21 @@ find_nfs_fhandle_cache(void *idv, int done)
 /*
  * Called when a filehandle appears
  */
-static void
-got_nfs_fh(void *pkt, int len, struct sockaddr_in *sa,
-    struct sockaddr_in *ia, void *idv, int done)
+static void got_nfs_fh P((voidp pkt, int len, struct sockaddr_in *sa,
+				struct sockaddr_in *ia, voidp idv, int done));
+static void got_nfs_fh(pkt, len, sa, ia, idv, done)
+voidp pkt;
+int len;
+struct sockaddr_in *sa, *ia;
+voidp idv;
+int done;
 {
 	fh_cache *fp = find_nfs_fhandle_cache(idv, done);
 	if (fp) {
+#if NFS_PROTOCOL_VERSION >= 3
 		fp->fh_handle.fhs_vers = MOUNTVERS;
-		fp->fh_error = pickup_rpc_reply(pkt, len, &fp->fh_handle,
-		    xdr_fhstatus);
+#endif
+		fp->fh_error = pickup_rpc_reply(pkt, len, (voidp) &fp->fh_handle, xdr_fhstatus);
 		if (!fp->fh_error) {
 #ifdef DEBUG
 			dlog("got filehandle for %s:%s", fp->fh_fs->fs_host, fp->fh_path);
@@ -165,8 +187,9 @@ got_nfs_fh(void *pkt, int len, struct sockaddr_in *sa,
 	}
 }
 
-void
-flush_nfs_fhandle_cache(fserver *fs)
+void flush_nfs_fhandle_cache P((fserver *fs));
+void flush_nfs_fhandle_cache(fs)
+fserver *fs;
 {
 	fh_cache *fp;
 	ITER(fp, fh_cache, &fh_head) {
@@ -177,25 +200,28 @@ flush_nfs_fhandle_cache(fserver *fs)
 	}
 }
 
-static void
-discard_fh(void *arg)
+static void discard_fh P((fh_cache *fp));
+static void discard_fh(fp)
+fh_cache *fp;
 {
-	fh_cache *fp = arg;
-
 	rem_que(&fp->fh_q);
 #ifdef DEBUG
 	dlog("Discarding filehandle for %s:%s", fp->fh_fs->fs_host, fp->fh_path);
 #endif /* DEBUG */
 	free_srvr(fp->fh_fs);
-	free(fp->fh_path);
-	free(fp);
+	free((voidp) fp->fh_path);
+	free((voidp) fp);
 }
 
 /*
  * Determine the file handle for a node
  */
-static int
-prime_nfs_fhandle_cache(char *path, fserver *fs, fhstatus *fhbuf, void *wchan)
+static int prime_nfs_fhandle_cache P((char *path, fserver *fs, fhstatus *fhbuf, voidp wchan));
+static int prime_nfs_fhandle_cache(path, fs, fhbuf, wchan)
+char *path;
+fserver *fs;
+fhstatus *fhbuf;
+voidp wchan;
 {
 	fh_cache *fp, *fp_save = 0;
 	int error;
@@ -215,12 +241,11 @@ prime_nfs_fhandle_cache(char *path, fserver *fs, fhstatus *fhbuf, void *wchan)
 				error = fp->fh_error = unx_error(fp->fh_handle.fhs_stat);
 				if (error == 0) {
 					if (fhbuf)
-						bcopy(&fp->fh_handle, fhbuf,
+						bcopy((voidp) &fp->fh_handle, (voidp) fhbuf,
 							sizeof(fp->fh_handle));
 					if (fp->fh_cid)
 						untimeout(fp->fh_cid);
-					fp->fh_cid = timeout(FH_TTL,
-					    discard_fh, fp);
+					fp->fh_cid = timeout(FH_TTL, discard_fh, (voidp) fp);
 				} else if (error == EACCES) {
 					/*
 					 * Now decode the file handle return code.
@@ -279,14 +304,14 @@ prime_nfs_fhandle_cache(char *path, fserver *fs, fhstatus *fhbuf, void *wchan)
 		free(fp->fh_path);
 	} else {
 		fp = ALLOC(fh_cache);
-		bzero(fp, sizeof(*fp));
+		bzero((voidp) fp, sizeof(*fp));
 		ins_que(&fp->fh_q, &fh_head);
 	}
 	if (!reuse_id)
 		fp->fh_id = FHID_ALLOC();
 	fp->fh_wchan = wchan;
 	fp->fh_error = -1;
-	fp->fh_cid = timeout(FH_TTL, discard_fh, fp);
+	fp->fh_cid = timeout(FH_TTL, discard_fh, (voidp) fp);
 
 	/*
 	 * If the address has changed then don't try to re-use the
@@ -307,7 +332,7 @@ prime_nfs_fhandle_cache(char *path, fserver *fs, fhstatus *fhbuf, void *wchan)
 		 */
 		untimeout(fp->fh_cid);
 		fp->fh_cid = timeout(error < 0 ? 2 * ALLOWED_MOUNT_TIME : FH_TTL_ERROR,
-						discard_fh, fp);
+						discard_fh, (voidp) fp);
 		fp->fh_error = error;
 	} else {
 		error = fp->fh_error;
@@ -315,9 +340,9 @@ prime_nfs_fhandle_cache(char *path, fserver *fs, fhstatus *fhbuf, void *wchan)
 	return error;
 }
 
-int
-make_nfs_auth(void)
+int make_nfs_auth P((void))
 {
+#ifdef HAS_NFS_QUALIFIED_NAMES
 	/*
 	 * From: Chris Metcalf <metcalf@masala.lcs.mit.edu>
 	 * Use hostd, not just hostname.  Note that uids
@@ -326,13 +351,20 @@ make_nfs_auth(void)
 	 */
 	static int group_wheel = 0;
 	nfs_auth = authunix_create(hostd, 0, 0, 1, &group_wheel);
+#else
+	nfs_auth = authunix_create_default();
+#endif
 	if (!nfs_auth)
 		return ENOBUFS;
 	return 0;
 }
 
-static int
-call_mountd(fh_cache *fp, u_long proc, fwd_fun f, void *wchan)
+static int call_mountd P((fh_cache *fp, u_long proc, fwd_fun f, voidp wchan));
+static int call_mountd(fp, proc, f, wchan)
+fh_cache *fp;
+u_long proc;
+fwd_fun f;
+voidp wchan;
 {
 	struct rpc_msg mnt_msg;
 	int len;
@@ -355,16 +387,15 @@ call_mountd(fh_cache *fp, u_long proc, fwd_fun f, void *wchan)
 
 	rpc_msg_init(&mnt_msg, MOUNTPROG, MOUNTVERS, (unsigned long) 0);
 	len = make_rpc_packet(iobuf, sizeof(iobuf), proc,
-			&mnt_msg, &fp->fh_path, xdr_nfspath,  nfs_auth);
+			&mnt_msg, (voidp) &fp->fh_path, xdr_nfspath,  nfs_auth);
 
 	/*
-	 * XXX EVIL!  We cast fh_id to a pointer, then back to an int
+	 * XXX EVIL!  We case fh_id to a pointer, then back to an int
 	 * XXX later.
 	 */
 	if (len > 0) {
 		error = fwd_packet(MK_RPC_XID(RPC_XID_MOUNTD, fp->fh_id),
-			iobuf, len, &fp->fh_sin, &fp->fh_sin,
-			(void *)((long)fp->fh_id), f);
+			(voidp) iobuf, len, &fp->fh_sin, &fp->fh_sin, (voidp) ((long)fp->fh_id), f);
 	} else {
 		error = -len;
 	}
@@ -389,8 +420,8 @@ call_mountd(fh_cache *fp, u_long proc, fwd_fun f, void *wchan)
  * remote hostname.
  * Local filesystem defaults to remote and vice-versa.
  */
-static char *
-nfs_match(am_opts *fo)
+static char *nfs_match(fo)
+am_opts *fo;
 {
 	char *xmtab;
 	if (fo->opt_fs && !fo->opt_rfs)
@@ -406,9 +437,8 @@ nfs_match(am_opts *fo)
 	/*
 	 * Determine magic cookie to put in mtab
 	 */
-	xmtab = xmalloc(strlen(fo->opt_rhost) + strlen(fo->opt_rfs) + 2);
-	snprintf(xmtab, strlen(fo->opt_rhost) + strlen(fo->opt_rfs) + 2,
-		"%s:%s", fo->opt_rhost, fo->opt_rfs);
+	xmtab = (char *) xmalloc(strlen(fo->opt_rhost) + strlen(fo->opt_rfs) + 2);
+	sprintf(xmtab, "%s:%s", fo->opt_rhost, fo->opt_rfs);
 #ifdef DEBUG
 	dlog("NFS: mounting remote server \"%s\", remote fs \"%s\" on \"%s\"",
 		fo->opt_rhost, fo->opt_rfs, fo->opt_fs);
@@ -420,23 +450,22 @@ nfs_match(am_opts *fo)
 /*
  * Initialise am structure for nfs
  */
-static int
-nfs_init(mntfs *mf)
+static int nfs_init(mf)
+mntfs *mf;
 {
 	if (!mf->mf_private) {
 		int error;
 		fhstatus fhs;
-
+	
 		char *colon = strchr(mf->mf_info, ':');
 		if (colon == 0)
 			return ENOENT;
 
-		error = prime_nfs_fhandle_cache(colon+1, mf->mf_server,
-		    &fhs, mf);
+		error = prime_nfs_fhandle_cache(colon+1, mf->mf_server, &fhs, (voidp) mf);
 		if (!error) {
-			mf->mf_private = ALLOC(fhstatus);
-			mf->mf_prfree = free;
-			bcopy(&fhs, mf->mf_private, sizeof(fhs));
+			mf->mf_private = (voidp) ALLOC(fhstatus);
+			mf->mf_prfree = (void (*)()) free;
+			bcopy((voidp) &fhs, mf->mf_private, sizeof(fhs));
 		}
 		return error;
 	}
@@ -444,9 +473,13 @@ nfs_init(mntfs *mf)
 	return 0;
 }
 
-int
-mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
-    mntfs *mf)
+int mount_nfs_fh P((fhstatus *fhp, char *dir, char *fs_name, char *opts, mntfs *mf));
+int mount_nfs_fh(fhp, dir, fs_name, opts, mf)
+fhstatus *fhp;
+char *dir;
+char *fs_name;
+char *opts;
+mntfs *mf;
 {
 	struct nfs_args nfs_args;
 	struct mntent mnt;
@@ -462,16 +495,22 @@ mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
 	unsigned short port;
 #endif /* notdef */
 
-	const char *type = MOUNT_NFS;
+	MTYPE_TYPE type = MOUNT_TYPE_NFS;
 
-	bzero(&nfs_args, sizeof(nfs_args));	/* Paranoid */
+	bzero((voidp) &nfs_args, sizeof(nfs_args));	/* Paranoid */
 
 	/*
 	 * Extract host name to give to kernel
 	 */
 	if (!(colon = strchr(fs_name, ':')))
 		return ENOENT;
-	strlcpy(host, fs_name, sizeof(host));
+#ifndef NFS_ARGS_NEEDS_PATH
+	*colon = '\0';
+#endif
+	strncpy(host, fs_name, sizeof(host));
+#ifndef NFS_ARGS_NEEDS_PATH
+	*colon = ':';
+#endif /* NFS_ARGS_NEEDS_PATH */
 	/*path = colon + 1;*/
 
 	if (mf->mf_remopts && *mf->mf_remopts && !islocalnet(fs->fs_ip->sin_addr.s_addr))
@@ -479,11 +518,11 @@ mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
 	else
 		xopts = strdup(opts);
 
-	bzero(&nfs_args, sizeof(nfs_args));
+	bzero((voidp) &nfs_args, sizeof(nfs_args));
 
 	mnt.mnt_dir = dir;
 	mnt.mnt_fsname = fs_name;
-	mnt.mnt_type = "nfs";
+	mnt.mnt_type = MTAB_TYPE_NFS;
 	mnt.mnt_opts = xopts;
 	mnt.mnt_freq = 0;
 	mnt.mnt_passno = 0;
@@ -497,24 +536,31 @@ mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
 	/*
 	 * set mount args
 	 */
-	nfs_args.fh = (void *)fhp->fhs_fhandle;
+	NFS_FH_DREF(nfs_args.fh, (NFS_FH_TYPE) fhp->fhs_fhandle);
+
+#if NFS_PROTOCOL_VERSION >= 3
 	nfs_args.fhsize = fhp->fhs_size;
 	nfs_args.version = NFS_ARGSVERSION;
+#endif
+#ifdef ULTRIX_HACK
+	nfs_args.optstr = mnt.mnt_opts;
+#endif /* ULTRIX_HACK */
 
 	nfs_args.hostname = host;
+	nfs_args.flags |= NFSMNT_HOSTNAME;
 #ifdef HOSTNAMESZ
 	/*
 	 * Most kernels have a name length restriction.
 	 */
 	if (strlen(host) >= HOSTNAMESZ)
-		strlcpy(host + HOSTNAMESZ - 3, "..", sizeof host - HOSTNAMESZ + 3);
+		strcpy(host + HOSTNAMESZ - 3, "..");
 #endif /* HOSTNAMESZ */
 
-	if ((nfs_args.rsize = hasmntval(&mnt, "rsize")))
+	if (nfs_args.rsize = hasmntval(&mnt, "rsize"))
 		nfs_args.flags |= NFSMNT_RSIZE;
 
 #ifdef NFSMNT_READDIRSIZE
-	if ((nfs_args.readdirsize = hasmntval(&mnt, "readdirsize"))) {
+	if (nfs_args.readdirsize = hasmntval(&mnt, "readdirsize")) {
 		nfs_args.flags |= NFSMNT_READDIRSIZE;
 	} else if (nfs_args.rsize) {
 		nfs_args.readdirsize = nfs_args.rsize;
@@ -522,43 +568,38 @@ mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
 	}
 #endif
 
-	if ((nfs_args.wsize = hasmntval(&mnt, "wsize")))
+	if (nfs_args.wsize = hasmntval(&mnt, "wsize"))
 		nfs_args.flags |= NFSMNT_WSIZE;
 
-	if ((nfs_args.timeo = hasmntval(&mnt, "timeo")))
+	if (nfs_args.timeo = hasmntval(&mnt, "timeo"))
 		nfs_args.flags |= NFSMNT_TIMEO;
 
-	if ((nfs_args.retrans = hasmntval(&mnt, "retrans")))
+	if (nfs_args.retrans = hasmntval(&mnt, "retrans"))
 		nfs_args.flags |= NFSMNT_RETRANS;
 
 #ifdef NFSMNT_BIODS
-	if ((nfs_args.biods = hasmntval(&mnt, "biods")))
+	if (nfs_args.biods = hasmntval(&mnt, "biods"))
 		nfs_args.flags |= NFSMNT_BIODS;
 
 #endif /* NFSMNT_BIODS */
 
 #ifdef NFSMNT_MAXGRPS
-	if ((nfs_args.maxgrouplist = hasmntval(&mnt, "maxgroups")))
+	if (nfs_args.maxgrouplist = hasmntval(&mnt, "maxgroups"))
 		nfs_args.flags |= NFSMNT_MAXGRPS;
 #endif /* NFSMNT_MAXGRPS */
-
-#ifdef NFSMNT_READAHEAD
-	if ((nfs_args.readahead = hasmntval(&mnt, "readahead")))
-		nfs_args.flags |= NFSMNT_READAHEAD;
-#endif /* NFSMNT_READAHEAD */
 
 #ifdef notdef
 /*
  * This isn't supported by the ping algorithm yet.
  * In any case, it is all done in nfs_init().
  */
-	if ((port = hasmntval(&mnt, "port")))
+ 	if (port = hasmntval(&mnt, "port"))
 		sin.sin_port = htons(port);
 	else
 		sin.sin_port = htons(NFS_PORT);	/* XXX should use portmapper */
 #endif /* notdef */
 
-	if (hasmntopt(&mnt, "soft") != NULL)
+	if (hasmntopt(&mnt, MNTOPT_SOFT) != NULL)
 		nfs_args.flags |= NFSMNT_SOFT;
 
 #ifdef NFSMNT_SPONGY
@@ -571,30 +612,46 @@ mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
 	}
 #endif /* MNTOPT_SPONGY */
 
-	if (hasmntopt(&mnt, "intr") != NULL)
+#ifdef MNTOPT_INTR
+	if (hasmntopt(&mnt, MNTOPT_INTR) != NULL)
 		nfs_args.flags |= NFSMNT_INT;
+#endif /* MNTOPT_INTR */
 
 #ifdef MNTOPT_NODEVS
 	if (hasmntopt(&mnt, MNTOPT_NODEVS) != NULL)
 		nfs_args.flags |= NFSMNT_NODEVS;
 #endif /* MNTOPT_NODEVS */
 
+#ifdef MNTOPT_COMPRESS
+	if (hasmntopt(&mnt, MNTOPT_COMPRESS) != NULL)
+		nfs_args.flags |= NFSMNT_COMPRESS;
+#endif /* MNTOPT_COMPRESS */
 
-	if (hasmntopt(&mnt, "noconn") != NULL)
+#ifdef MNTOPT_NOCONN
+	if (hasmntopt(&mnt, MNTOPT_NOCONN) != NULL)
 		nfs_args.flags |= NFSMNT_NOCONN;
+#endif /* MNTOPT_NOCONN */
 
-	if (hasmntopt(&mnt, "resvport") != NULL)
+#ifdef MNTOPT_RESVPORT
+	if (hasmntopt(&mnt, MNTOPT_RESVPORT) != NULL)
 		nfs_args.flags |= NFSMNT_RESVPORT;
+#endif /* MNTOPT_RESVPORT */
+
+#ifdef MNTOPT_NQNFS
+	if (hasmntopt(&mnt, MNTOPT_NQNFS) != NULL)
+		nfs_args.flags |= NFSMNT_NQNFS;
+#ifdef NFSMNT_NQLOOKLEASE
+	if (hasmntopt(&mnt, "nolooklease") == NULL)
+		nfs_args.flags |= NFSMNT_NQLOOKLEASE;
+#endif /* NFSMNT_NQLOOKLEASE */
+#endif /* MNTOPT_NQNFS */
 
 #ifdef NFSMNT_PGTHRESH
-	if ((nfs_args.pg_thresh = hasmntval(&mnt, "pgthresh")))
+	if (nfs_args.pg_thresh = hasmntval(&mnt, "pgthresh"))
 		nfs_args.flags |= NFSMNT_PGTHRESH;
 #endif /* NFSMNT_PGTHRESH */
 
-	nfs_args.addr = (struct sockaddr *)fs->fs_ip;
-	nfs_args.addrlen = sizeof(*fs->fs_ip);
-	nfs_args.sotype = SOCK_DGRAM;
-	nfs_args.proto = 0;
+	NFS_SA_DREF(nfs_args, fs->fs_ip);
 
 	flags = compute_mount_flags(&mnt);
 
@@ -603,18 +660,39 @@ mount_nfs_fh(fhstatus *fhp, char *dir, char *fs_name, char *opts,
 		nfs_args.flags |= NFSMNT_NOCTO;
 #endif /* NFSMNT_NOCTO */
 
+#ifdef HAS_TCP_NFS
 	if (hasmntopt(&mnt, "tcp") != NULL)
 		nfs_args.sotype = SOCK_STREAM;
+#endif /* HAS_TCP_NFS */
 
 
+#ifdef ULTRIX_HACK
+	/*
+	 * Ultrix passes the flags argument as part of the
+	 * mount data structure, rather than using the
+	 * flags argument to the system call.  This is
+	 * confusing...
+	 */
+	if (!(nfs_args.flags & NFSMNT_PGTHRESH)) {
+		nfs_args.pg_thresh = 64; /* 64k - XXX */
+		nfs_args.flags |= NFSMNT_PGTHRESH;
+	}
+	nfs_args.gfs_flags = flags;
+	flags &= M_RDONLY;
+	if (flags & M_RDONLY)
+		nfs_args.flags |= NFSMNT_RONLY;
+#endif /* ULTRIX_HACK */
 
 	error = mount_fs(&mnt, flags, (caddr_t) &nfs_args, retry, type);
 	free(xopts);
 	return error;
 }
 
-static int
-mount_nfs(char *dir, char *fs_name, char *opts, mntfs *mf)
+static int mount_nfs(dir, fs_name, opts, mf)
+char *dir;
+char *fs_name;
+char *opts;
+mntfs *mf;
 {
 #ifdef notdef
 	int error;
@@ -627,7 +705,7 @@ mount_nfs(char *dir, char *fs_name, char *opts, mntfs *mf)
 #ifdef DEBUG
 	dlog("locating fhandle for %s", fs_name);
 #endif /* DEBUG */
-	error = prime_nfs_fhandle_cache(colon+1, mf->mf_server, &fhs, NULL);
+	error = prime_nfs_fhandle_cache(colon+1, mf->mf_server, &fhs, (voidp) 0);
 
 	if (error)
 		return error;
@@ -642,8 +720,8 @@ mount_nfs(char *dir, char *fs_name, char *opts, mntfs *mf)
 	return mount_nfs_fh((fhstatus *) mf->mf_private, dir, fs_name, opts, mf);
 }
 
-static int
-nfs_fmount(mntfs *mf)
+static int nfs_fmount(mf)
+mntfs *mf;
 {
 	int error;
 
@@ -658,15 +736,64 @@ nfs_fmount(mntfs *mf)
 	return error;
 }
 
-static int
-nfs_fumount(mntfs *mf)
+static int nfs_fumount(mf)
+mntfs *mf;
 {
-	return (umount_fs(mf->mf_mount));
+	int error = UMOUNT_FS(mf->mf_mount);
+	if (error)
+		return error;
+
+	return 0;
 }
 
-static void
-nfs_umounted(am_node *mp)
+static void nfs_umounted(mp)
+am_node *mp;
 {
+#ifdef INFORM_MOUNTD
+	/*
+	 * Don't bother to inform remote mountd
+	 * that we are finished.  Until a full
+	 * track of filehandles is maintained
+	 * the mountd unmount callback cannot
+	 * be done correctly anyway...
+	 */
+
+	mntfs *mf = mp->am_mnt;
+	fserver *fs;
+	char *colon, *path;
+
+	if (mf->mf_error || mf->mf_refc > 1)
+		return;
+
+	fs = mf->mf_server;
+
+	/*
+	 * Call the mount daemon on the server to
+	 * announce that we are not using the fs any more.
+	 *
+	 * This is *wrong*.  The mountd should be called
+	 * when the fhandle is flushed from the cache, and
+	 * a reference held to the cached entry while the
+	 * fs is mounted...
+	 */
+	colon = path = strchr(mf->mf_info, ':');
+	if (fs && colon) {
+		fh_cache f;
+#ifdef DEBUG
+		dlog("calling mountd for %s", mf->mf_info);
+#endif /* DEBUG */
+		*path++ = '\0';
+		f.fh_path = path;
+		f.fh_sin = *fs->fs_ip;
+		f.fh_sin.sin_port = (u_short) 0;
+		f.fh_fs = fs;
+		f.fh_id = 0;
+		f.fh_error = 0;
+		(void) prime_nfs_fhandle_cache(colon+1, mf->mf_server, (fhstatus *) 0, (voidp) mf);
+		(void) call_mountd(&f, MOUNTPROC_UMNT, (fwd_fun) 0, (voidp) 0);
+		*colon = ':';
+	}
+#endif /* INFORM_MOUNTD */
 
 #ifdef KICK_KERNEL
 	/* This should go into the mainline code, not in nfs_ops... */
@@ -679,7 +806,7 @@ nfs_umounted(am_node *mp)
 	if (mp->am_parent && mp->am_parent->am_path &&
 	    STREQ(mp->am_parent->am_mnt->mf_ops->fs_type, "direct")) {
 		struct stat stb;
-		pid_t pid;
+		int pid;
 		if ((pid = background()) == 0) {
 			if (lstat(mp->am_parent->am_path, &stb) < 0) {
 				plog(XLOG_ERROR, "lstat(%s) after unmount: %m", mp->am_parent->am_path);

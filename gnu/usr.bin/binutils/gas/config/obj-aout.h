@@ -1,6 +1,6 @@
 /* obj-aout.h, a.out object file format for gas, the assembler.
-   Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1998, 2000,
-   2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1989, 90, 91, 92, 93, 94, 95, 1996
+   Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -14,10 +14,9 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
    the GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   You should have received a copy of the GNU General Public
+   License along with GAS; see the file COPYING.  If not, write
+   to the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
 /* Tag to validate a.out object file format processing */
 #define OBJ_AOUT 1
@@ -33,7 +32,7 @@
 #else /* ! BFD_ASSEMBLER */
 
 #ifndef VMS
-#include "aout_gnu.h"		/* Needed to define struct nlist. Sigh.  */
+#include "aout_gnu.h"		/* Needed to define struct nlist. Sigh. */
 #else
 #include "a_out.h"
 #endif
@@ -51,12 +50,6 @@ extern const segT N_TYPE_seg[];
 
 #endif /* ! BFD_ASSEMBLER */
 
-extern const pseudo_typeS aout_pseudo_table[];
-
-#ifndef obj_pop_insert
-#define obj_pop_insert() pop_insert (aout_pseudo_table)
-#endif
-
 /* SYMBOL TABLE */
 /* Symbol table entry data type */
 
@@ -66,25 +59,19 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 #ifdef BFD_ASSEMBLER
 
-#define S_SET_OTHER(S,V) \
-  (aout_symbol (symbol_get_bfdsym (S))->other = (V))
-#define S_SET_TYPE(S,T) \
-  (aout_symbol (symbol_get_bfdsym (S))->type = (T))
-#define S_SET_DESC(S,D)	\
-  (aout_symbol (symbol_get_bfdsym (S))->desc = (D))
-#define S_GET_OTHER(S) \
-  (aout_symbol (symbol_get_bfdsym (S))->other)
-#define S_GET_TYPE(S) \
-  (aout_symbol (symbol_get_bfdsym (S))->type)
-#define S_GET_DESC(S) \
-  (aout_symbol (symbol_get_bfdsym (S))->desc)
+#define S_SET_OTHER(S,V)		(aout_symbol((S)->bsym)->other = (V))
+#define S_SET_TYPE(S,T)			(aout_symbol((S)->bsym)->type = (T))
+#define S_SET_DESC(S,D)			(aout_symbol((S)->bsym)->desc = (D))
+#define S_GET_OTHER(S)			(aout_symbol((S)->bsym)->other)
+#define S_GET_TYPE(S)			(aout_symbol((S)->bsym)->type)
+#define S_GET_DESC(S)			(aout_symbol((S)->bsym)->desc)
 
 asection *text_section, *data_section, *bss_section;
 
 #define obj_frob_symbol(S,PUNT)	obj_aout_frob_symbol (S, &PUNT)
-#define obj_frob_file_before_fix() obj_aout_frob_file_before_fix ()
-extern void obj_aout_frob_symbol PARAMS ((symbolS *, int *));
-extern void obj_aout_frob_file_before_fix PARAMS ((void));
+#define obj_frob_file()		obj_aout_frob_file ()
+extern void obj_aout_frob_symbol PARAMS ((struct symbol *, int *));
+extern void obj_aout_frob_file PARAMS ((void));
 
 #define obj_sec_sym_ok_for_reloc(SEC)	(1)
 
@@ -95,7 +82,7 @@ extern void obj_aout_frob_file_before_fix PARAMS ((void));
 
 /*
  *  Macros to extract information from a symbol table entry.
- *  This syntactic indirection allows independence regarding a.out or coff.
+ *  This syntaxic indirection allows independence regarding a.out or coff.
  *  The argument (s) of all these macros is a pointer to a symbol table entry.
  */
 
@@ -109,26 +96,17 @@ extern void obj_aout_frob_file_before_fix PARAMS ((void));
 #define S_IS_COMMON(s) \
   (S_GET_TYPE (s) == N_UNDF && S_GET_VALUE (s) != 0)
 
-/* Return true for symbols that should not be reduced to section
-   symbols or eliminated from expressions, because they may be
-   overridden by the linker.  */
-#define S_FORCE_RELOC(s, strict) \
-  (!SEG_NORMAL (S_GET_SEGMENT (s)))
-
 #define S_IS_REGISTER(s)	((s)->sy_symbol.n_type == N_REGISTER)
 
 /* True if a debug special symbol entry */
 #define S_IS_DEBUG(s)		((s)->sy_symbol.n_type & N_STAB)
 /* True if a symbol is local symbol name */
 #define S_IS_LOCAL(s) 					\
-  ((S_GET_NAME (s) 					\
-    && !S_IS_DEBUG (s) 					\
-    && (strchr (S_GET_NAME (s), '\001') != NULL		\
-        || strchr (S_GET_NAME (s), '\002') != NULL	\
-        || (S_LOCAL_NAME(s) && !flag_keep_locals)))	\
-   || (flag_strip_local_absolute			\
-       && ! S_IS_EXTERNAL(s)				\
-       && S_GET_SEGMENT (s) == absolute_section))
+  (S_GET_NAME (s) 					\
+   && !S_IS_DEBUG (s) 					\
+   && (strchr (S_GET_NAME (s), '\001') != NULL		\
+       || strchr (S_GET_NAME (s), '\002') != NULL	\
+       || (S_LOCAL_NAME(s) && !flag_keep_locals)))
 /* True if a symbol is not defined in this file */
 #define S_IS_EXTERN(s)		((s)->sy_symbol.n_type & N_EXT)
 /* True if the symbol has been generated because of a .stabd directive */
@@ -235,12 +213,12 @@ extern void obj_aout_frob_file_before_fix PARAMS ((void));
 typedef struct
   {
     struct exec header;		/* a.out header */
-    long string_table_size;	/* names + '\0' + sizeof (int) */
+    long string_table_size;	/* names + '\0' + sizeof(int) */
   }
 
 object_headers;
 
-/* line numbering stuff.  */
+/* line numbering stuff. */
 #define OBJ_EMIT_LINENO(a, b, c)	{;}
 
 struct fix;
@@ -248,9 +226,10 @@ void tc_aout_fix_to_chars PARAMS ((char *where, struct fix *fixP, relax_addressT
 
 #endif
 
-#define obj_read_begin_hook()	{;}
 #define obj_symbol_new_hook(s)	{;}
 
 #define EMIT_SECTION_SYMBOLS		0
 
 #define AOUT_STABS
+
+/* end of obj-aout.h */

@@ -1,30 +1,23 @@
 #!/usr/bin/perl
 
-BEGIN { push @INC, '../lib' } # If you haven't installed perl yet.
+use lib '../lib';  # If you haven't installed perl yet.
 use Pod::Functions;
 
 local $/ = '';
-
-$level = 0;
 
 $cur = '';
 while (<>) {
 
     next unless /^=(?!cut)/ .. /^=cut/;
 
-    ++$level if /^=over/;
-    --$level if /^=back/;
-
-    # Ignore items that are nested within other items, e.g. don't split on the
-    # items nested within the pack() and sprintf() items in perlfunc.pod.
-    if (/=item (\S+)/ and $level == 1) {
-	my $item = $1;
-	s/=item //; 
-	$next{$cur} = $item;
-	$cur = $item;
+    if (s/=item (\S+)/$1/) {
+	#$cur = "POSIX::" . $1;
+	$next{$cur} = $1;
+	$cur = $1;
 	$syn{$cur} .= $_;
 	next;
     } else { 
+	#s,L</,L<POSIX/,g;
 	s,L</,L<perlfunc/,g;
 	push @{$pod{$cur}}, $_ if $cur;
     }
@@ -48,15 +41,15 @@ for $f ( keys %syn ) {
     $body =~ s/^=back\s*//m if $has_back and !$has_over;
     open (POD, "> $name.pod") || die "can't open $name.pod: $!";
     print POD <<EOF;
-\=head1 NAME
+=head1 NAME
 
 $orig - $flavor
 
-\=head1 SYNOPSIS
+=head1 SYNOPSIS
 
 $syn{$orig}
 
-\=head1 DESCRIPTION
+=head1 DESCRIPTION
 
 $body
 

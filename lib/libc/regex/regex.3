@@ -1,4 +1,4 @@
-.\"	$OpenBSD: regex.3,v 1.27 2016/05/26 05:46:44 martijn Exp $
+.\"	$OpenBSD: regex.3,v 1.11 1999/07/09 13:35:22 aaron Exp $
 .\"
 .\" Copyright (c) 1997, Phillip F Knaack. All rights reserved.
 .\"
@@ -17,7 +17,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -35,35 +39,38 @@
 .\"
 .\"	@(#)regex.3	8.4 (Berkeley) 3/20/94
 .\"
-.Dd $Mdocdate: May 26 2016 $
-.Dt REGEXEC 3
+.Dd March 20, 1994
+.Dt REGEX 3
 .Os
 .Sh NAME
-.Nm regcomp ,
-.Nm regexec ,
-.Nm regerror ,
-.Nm regfree
-.Nd regular expression routines
+.Nm regcomp, regexec, regerror, regfree
+.Nd regular-expression library
 .Sh SYNOPSIS
-.In sys/types.h
-.In regex.h
-.Ft int
-.Fn regcomp "regex_t *preg" "const char *pattern" "int cflags"
-.Pp
-.Ft int
-.Fn regexec "const regex_t *preg" "const char *string" "size_t nmatch" \
-            "regmatch_t pmatch[]" "int eflags"
-.Pp
-.Ft size_t
-.Fn regerror "int errcode" "const regex_t *preg" "char *errbuf" \
-             "size_t errbuf_size"
-.Pp
-.Ft void
-.Fn regfree "regex_t *preg"
+.Fd #include <sys/types.h>
+.Fd #include <regex.h>
+.Fo "int regcomp"
+.Fa "regex_t *preg"
+.Fa "const char *pattern"
+.Fa "int cflags"
+.Fc
+.Fo "int regexec"
+.Fa "const regex_t *preg"
+.Fa "const char *string"
+.Fa "size_t nmatch"
+.Fa "regmatch_t pmatch[]"
+.Fa "int eflags"
+.Fc
+.Fo "size_t regerror"
+.Fa "int errcode"
+.Fa "const regex_t *preg"
+.Fa "char *errbuf"
+.Fa "size_t errbuf_size"
+.Fc
+.Fo "void regfree"
+.Fa "regex_t *preg"
+.Fc
 .Sh DESCRIPTION
-These routines implement
-.St -p1003.2
-regular expressions
+These routines implement POSIX 1003.2 regular expressions
 .Pq Dq REs ;
 see
 .Xr re_format 7 .
@@ -78,7 +85,7 @@ frees any dynamically allocated storage used by the internal form
 of an RE.
 .Pp
 The header
-.In regex.h
+.Aq Pa regex.h
 declares two structure types,
 .Li regex_t
 and
@@ -100,11 +107,10 @@ and places the results in the
 .Li regex_t
 structure pointed to by
 .Fa preg .
-The
 .Fa cflags
-argument is the bitwise
+is the bitwise
 .Tn OR
-of zero or more of the following values:
+of zero or more of the following flags:
 .Bl -tag -width XREG_EXTENDEDX
 .It Dv REG_EXTENDED
 Compile modern
@@ -123,8 +129,7 @@ Compile with recognition of all special characters turned off.
 All characters are thus considered ordinary,
 so the RE is a literal string.
 This is an extension,
-compatible with but not specified by
-.St -p1003.2 ,
+compatible with but not specified by POSIX 1003.2,
 and should be used with
 caution in software intended to be portable to other systems.
 .Dv REG_EXTENDED
@@ -170,8 +175,7 @@ member is of type
 This flag permits inclusion of NULs in the RE;
 they are considered ordinary characters.
 This is an extension,
-compatible with but not specified by
-.St -p1003.2 ,
+compatible with but not specified by POSIX 1003.2,
 and should be used with
 caution in software intended to be portable to other systems.
 .El
@@ -214,7 +218,7 @@ The compiled form is not altered during execution of
 so a single compiled RE can be used simultaneously by multiple threads.
 .Pp
 By default,
-the NUL-terminated string pointed to by
+the null-terminated string pointed to by
 .Fa string
 is considered to be the text of an entire line, minus any terminating
 newline.
@@ -222,19 +226,14 @@ The
 .Fa eflags
 argument is the bitwise
 .Tn OR
-of zero or more of the following values:
+of zero or more of the following flags:
 .Bl -tag -width XREG_STARTENDX
 .It Dv REG_NOTBOL
-The first character of the string is treated as the continuation
-of a line.
-This means that the anchors
-.Ql ^ ,
-.Ql [[:<:]] ,
-and
-.Ql \e<
-do not match before it; but see
-.Dv REG_STARTEND
-below.
+The first character of
+the string
+is not the beginning of a line, so the
+.Ql ^
+anchor should not match before it.
 This does not affect the behavior of newlines under
 .Dv REG_NEWLINE .
 .It Dv REG_NOTEOL
@@ -242,16 +241,15 @@ The NUL terminating
 the string
 does not end a line, so the
 .Ql $
-anchor does not match before it.
+anchor should not match before it.
 This does not affect the behavior of newlines under
 .Dv REG_NEWLINE .
 .It Dv REG_STARTEND
 The string is considered to start at
-.Fa string No +
-.Fa pmatch Ns [0]. Ns Fa rm_so
-and to end before the byte located at
-.Fa string No +
-.Fa pmatch Ns [0]. Ns Fa rm_eo ,
+\fIstring\fR\ + \fIpmatch\fR[0].\fIrm_so\fR
+and to have a terminating NUL located at
+\fIstring\fR\ + \fIpmatch\fR[0].\fIrm_eo\fR
+(there need not actually be a NUL at that location),
 regardless of the value of
 .Fa nmatch .
 See below for the definition of
@@ -259,41 +257,14 @@ See below for the definition of
 and
 .Fa nmatch .
 This is an extension,
-compatible with but not specified by
-.St -p1003.2 ,
+compatible with but not specified by POSIX 1003.2,
 and should be used with
 caution in software intended to be portable to other systems.
-.Pp
-Without
-.Dv REG_NOTBOL ,
-the position
-.Fa rm_so
-is considered the beginning of a line, such that
-.Ql ^
-matches before it, and the beginning of a word if there is a word
-character at this position, such that
-.Ql [[:<:]]
-and
-.Ql \e<
-match before it.
-.Pp
-With
-.Dv REG_NOTBOL ,
-the character at position
-.Fa rm_so
-is treated as the continuation of a line, and if
-.Fa rm_so
-is greater than 0, the preceding character is taken into consideration.
-If the preceding character is a newline and the regular expression was compiled
-with
-.Dv REG_NEWLINE ,
-.Ql ^
-matches before the string; if the preceding character is not a word character
-but the string starts with a word character,
-.Ql [[:<:]]
-and
-.Ql \e<
-match before the string.
+Note that a non-zero \fIrm_so\fR does not imply
+.Dv REG_NOTBOL ;
+.Dv REG_STARTEND
+affects only the location of the string,
+not how it is matched.
 .El
 .Pp
 See
@@ -337,7 +308,7 @@ both of type
 (a signed arithmetic type at least as large as an
 .Li off_t
 and a
-.Li ssize_t ) ,
+.Li ssize_t ),
 containing respectively the offset of the first character of a substring
 and the offset of the first character after the end of the substring.
 Offsets are measured from the beginning of the
@@ -426,13 +397,13 @@ and if the error code came from
 it should have been the result from the most recent
 .Fn regcomp
 using that
-.Li regex_t .
-.Pf ( Fn regerror
+.Li regex_t . (
+.Fn regerror
 may be able to supply a more detailed message using information
 from the
 .Li regex_t . )
 .Fn regerror
-places the NUL-terminated message into the buffer pointed to by
+places the null-terminated message into the buffer pointed to by
 .Fa errbuf ,
 limiting the length (including the NUL) to at most
 .Fa errbuf_size
@@ -482,8 +453,7 @@ and
 .Dv REG_ATOI
 are intended primarily as debugging facilities;
 they are extensions,
-compatible with but not specified by
-.St -p1003.2
+compatible with but not specified by POSIX 1003.2,
 and should be used with
 caution in software intended to be portable to other systems.
 Be warned also that they are considered experimental and changes are possible.
@@ -505,9 +475,7 @@ None of these functions references global variables except for tables
 of constants;
 all are safe for use from multiple threads if the arguments are safe.
 .Sh IMPLEMENTATION CHOICES
-There are a number of decisions that
-.St -p1003.2
-leaves up to the implementor,
+There are a number of decisions that 1003.2 leaves up to the implementor,
 either by explicitly saying
 .Dq undefined
 or by virtue of them being
@@ -528,9 +496,7 @@ for one short RE using them
 that will run almost any system out of memory.
 .Pp
 A backslashed character other than one specifically given a magic meaning
-by
-.St -p1003.2
-(such magic meanings occur only in obsolete REs)
+by 1003.2 (such magic meanings occur only in obsolete REs)
 is taken as an ordinary character.
 .Pp
 Any unmatched
@@ -580,6 +546,13 @@ and
 beginning and ending subexpressions in obsolete
 .Pq Dq basic
 REs are anchors, not ordinary characters.
+.Sh SEE ALSO
+.Xr grep 1 ,
+.Xr re_format 7
+.Pp
+POSIX 1003.2, sections 2.8 (Regular Expression Notation)
+and
+B.5 (C Binding for Regular Expression Matching).
 .Sh DIAGNOSTICS
 Non-zero error codes from
 .Fn regcomp
@@ -620,28 +593,11 @@ empty (sub)expression
 .Dq can't happen
 \(emyou found a bug
 .It Er REG_INVARG
-invalid argument, e.g., negative-length string
+invalid argument, e.g. negative-length string
 .El
-.Sh SEE ALSO
-.Xr grep 1 ,
-.Xr re_format 7
-.Pp
-.St -p1003.2 ,
-sections 2.8 (Regular Expression Notation)
-and
-B.5 (C Binding for Regular Expression Matching).
 .Sh HISTORY
-Predecessors to
-.Fn regcomp
-and
-.Fn regexec ,
-.Fn regcmp
-and
-.Fn regex ,
-first appeared in the Programmer's Workbench (PWB/UNIX).
-.Pp
-The present functions were originally written by Henry Spencer
-and altered for inclusion in the
+Originally written by Henry Spencer.
+Altered for inclusion in the
 .Bx 4.4
 distribution.
 .Sh BUGS
@@ -650,8 +606,7 @@ Please report problems.
 .Pp
 There is one known functionality bug.
 The implementation of internationalization is incomplete:
-the locale is always assumed to be the default one of
-.St -p1003.2 ,
+the locale is always assumed to be the default one of 1003.2,
 and only the collating elements etc. of that locale are available.
 .Pp
 The back-reference code is subtle and doubts linger about its correctness
@@ -686,9 +641,7 @@ certain kinds of internal overflow,
 produced only by truly enormous REs or by multiply nested bounded repetitions,
 are probably not handled well.
 .Pp
-Due to a mistake in
-.St -p1003.2 ,
-things like
+Due to a mistake in 1003.2, things like
 .Ql a)b
 are legal REs because
 .Ql \&)

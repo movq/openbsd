@@ -1,4 +1,3 @@
-# Target: OpenBSD/sparc
-TDEPFILES= sparc-tdep.o sparcnbsd-tdep.o sparcobsd-tdep.o nbsd-tdep.o \
-	obsd-tdep.o corelow.o solib.o solib-svr4.o
-DEPRECATED_TM_FILE= solib.h
+# Target: Sun 4 or Sparcstation, running OpenBSD
+TDEPFILES= sparc-tdep.o solib.o
+TM_FILE= tm-obsd.h

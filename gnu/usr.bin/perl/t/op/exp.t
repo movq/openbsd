@@ -1,59 +1,27 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-}
+# $RCSfile: exp.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:50 $
 
-plan tests => 16;
+print "1..6\n";
 
 # compile time evaluation
 
 $s = sqrt(2);
-is(substr($s,0,5), '1.414', 'compile time sqrt(2) == 1.414');
+if (substr($s,0,5) eq '1.414') {print "ok 1\n";} else {print "not ok 1\n";}
 
 $s = exp(1);
-is(substr($s,0,7), '2.71828', 'compile time exp(1) == e');
+if (substr($s,0,7) eq '2.71828') {print "ok 2\n";} else {print "not ok 2\n";}
 
-cmp_ok(exp(log(1)), '==', 1, 'compile time exp(log(1)) == 1');
+if (exp(log(1)) == 1) {print "ok 3\n";} else {print "not ok 3\n";}
 
 # run time evaluation
 
 $x1 = 1;
 $x2 = 2;
 $s = sqrt($x2);
-is(substr($s,0,5), '1.414', 'run time sqrt(2) == 1.414');
+if (substr($s,0,5) eq '1.414') {print "ok 4\n";} else {print "not ok 4\n";}
 
 $s = exp($x1);
-is(substr($s,0,7), '2.71828', 'run time exp(1) = e');
+if (substr($s,0,7) eq '2.71828') {print "ok 5\n";} else {print "not ok 5\n";}
 
-cmp_ok(exp(log($x1)), '==', 1, 'run time exp(log(1)) == 1');
-
-# tests for transcendental functions
-
-my $pi = 3.1415926535897931160;
-my $pi_2 = 1.5707963267948965580;
-
-sub round {
-   my $result = shift;
-   return sprintf("%.9f", $result);
-}
-
-# sin() tests
-cmp_ok(sin(0), '==', 0.0, 'sin(0) == 0');
-cmp_ok(round(sin($pi)), '==', 0.0, 'sin(pi) == 0');
-cmp_ok(round(sin(-1 * $pi)), '==', 0.0, 'sin(-pi) == 0');
-cmp_ok(round(sin($pi_2)), '==', 1.0, 'sin(pi/2) == 1');
-cmp_ok(round(sin(-1 * $pi_2)), '==', -1.0, 'sin(-pi/2) == -1');
-
-# cos() tests
-cmp_ok(cos(0), '==', 1.0, 'cos(0) == 1');
-cmp_ok(round(cos($pi)), '==', -1.0, 'cos(pi) == -1');
-cmp_ok(round(cos(-1 * $pi)), '==', -1.0, 'cos(-pi) == -1');
-cmp_ok(round(cos($pi_2)), '==', 0.0, 'cos(pi/2) == 0');
-cmp_ok(round(cos(-1 * $pi_2)), '==', 0.0, 'cos(-pi/2) == 0');
-
-# atan2() tests were removed due to differing results from calls to
-# atan2() on various OS's and architectures.  See perlport.pod for
-# more information.
+if (exp(log($x1)) == 1) {print "ok 6\n";} else {print "not ok 6\n";}

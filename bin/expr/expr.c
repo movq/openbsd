@@ -1,4 +1,4 @@
-/*	$OpenBSD: expr.c,v 1.25 2016/01/07 21:17:05 tedu Exp $	*/
+/*	$OpenBSD: expr.c,v 1.9 1997/11/13 07:57:17 deraadt Exp $	*/
 /*	$NetBSD: expr.c,v 1.3.6.1 1996/06/04 20:41:47 cgd Exp $	*/
 
 /*
@@ -7,32 +7,13 @@
  */
 
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 #include <locale.h>
 #include <ctype.h>
-#include <unistd.h>
 #include <regex.h>
 #include <err.h>
 
-struct val	*make_int(int64_t);
-struct val	*make_str(char *);
-void		 free_value(struct val *);
-int		 is_integer(struct val *, int64_t *);
-int		 to_integer(struct val *);
-void		 to_string(struct val *);
-int		 is_zero_or_null(struct val *);
-void		 nexttoken(int);
-__dead void	 error(void);
-struct val	*eval6(void);
-struct val	*eval5(void);
-struct val	*eval4(void);
-struct val	*eval3(void);
-struct val	*eval2(void);
-struct val	*eval1(void);
-struct val	*eval0(void);
 
 enum token {
 	OR, AND, EQ, LT, GT, ADD, SUB, MUL, DIV, MOD, MATCH, RP, LP,
@@ -47,7 +28,7 @@ struct val {
 
 	union {
 		char	       *s;
-		int64_t		i;
+		int		i;
 	} u;
 };
 
@@ -55,12 +36,14 @@ enum token	token;
 struct val     *tokval;
 char	      **av;
 
+
 struct val *
-make_int(int64_t i)
+make_int(i)
+	int		i;
 {
 	struct val     *vp;
 
-	vp = malloc(sizeof(*vp));
+	vp = (struct val *) malloc(sizeof(*vp));
 	if (vp == NULL) {
 		err(3, NULL);
 	}
@@ -71,11 +54,12 @@ make_int(int64_t i)
 
 
 struct val *
-make_str(char *s)
+make_str(s)
+	char	       *s;
 {
 	struct val     *vp;
 
-	vp = malloc(sizeof(*vp));
+	vp = (struct val *) malloc(sizeof(*vp));
 	if (vp == NULL || ((vp->u.s = strdup(s)) == NULL)) {
 		err(3, NULL);
 	}
@@ -85,7 +69,8 @@ make_str(char *s)
 
 
 void
-free_value(struct val *vp)
+free_value(vp)
+	struct val     *vp;
 {
 	if (vp->type == string)
 		free(vp->u.s);
@@ -95,11 +80,13 @@ free_value(struct val *vp)
 
 /* determine if vp is an integer; if so, return it's value in *r */
 int
-is_integer(struct val *vp, int64_t *r)
+is_integer(vp, r)
+	struct val     *vp;
+	int	       *r;
 {
 	char	       *s;
 	int		neg;
-	int64_t		i;
+	int		i;
 
 	if (vp->type == integer) {
 		*r = vp->u.i;
@@ -107,7 +94,7 @@ is_integer(struct val *vp, int64_t *r)
 	}
 
 	/*
-	 * POSIX.2 defines an "integer" as an optional unary minus
+	 * POSIX.2 defines an "integer" as an optional unary minus 
 	 * followed by digits.
 	 */
 	s = vp->u.s;
@@ -118,7 +105,7 @@ is_integer(struct val *vp, int64_t *r)
 		s++;
 
 	while (*s) {
-		if (!isdigit((unsigned char)*s))
+		if (!isdigit(*s))
 			return 0;
 
 		i *= 10;
@@ -137,9 +124,10 @@ is_integer(struct val *vp, int64_t *r)
 
 /* coerce to vp to an integer */
 int
-to_integer(struct val *vp)
+to_integer(vp)
+	struct val     *vp;
 {
-	int64_t		r;
+	int		r;
 
 	if (vp->type == integer)
 		return 1;
@@ -157,22 +145,26 @@ to_integer(struct val *vp)
 
 /* coerce to vp to an string */
 void
-to_string(struct val *vp)
+to_string(vp)
+	struct val     *vp;
 {
 	char	       *tmp;
 
 	if (vp->type == string)
 		return;
 
-	if (asprintf(&tmp, "%lld", vp->u.i) == -1)
+	tmp = malloc(25);
+	if (tmp == NULL) {
 		err(3, NULL);
-
+	}
+	snprintf(tmp, 25, "%d", vp->u.i);
 	vp->type = string;
 	vp->u.s = tmp;
 }
 
 int
-is_zero_or_null(struct val *vp)
+is_zero_or_null(vp)
+	struct val     *vp;
 {
 	if (vp->type == integer) {
 		return (vp->u.i == 0);
@@ -183,7 +175,8 @@ is_zero_or_null(struct val *vp)
 }
 
 void
-nexttoken(int pat)
+nexttoken(pat)
+	int pat;
 {
 	char	       *p;
 
@@ -223,15 +216,16 @@ nexttoken(int pat)
 }
 
 __dead void
-error(void)
+error()
 {
 	errx(2, "syntax error");
 	/* NOTREACHED */
 }
 
 struct val *
-eval6(void)
+eval6()
 {
+	struct val     *eval0 __P((void));
 	struct val     *v;
 
 	if (token == OPERAND) {
@@ -256,7 +250,7 @@ eval6(void)
 
 /* Parse and evaluate match (regex) expressions */
 struct val *
-eval5(void)
+eval5()
 {
 	regex_t		rp;
 	regmatch_t	rm[2];
@@ -280,7 +274,7 @@ eval5(void)
 			errx(2, "%s", errbuf);
 		}
 
-		/* compare string against pattern --  remember that patterns
+		/* compare string against pattern --  remember that patterns 
 		   are anchored to the beginning of the line */
 		if (regexec(&rp, l->u.s, 2, rm, 0) == 0 && rm[0].rm_so == 0) {
 			if (rm[1].rm_so >= 0) {
@@ -288,7 +282,7 @@ eval5(void)
 				v = make_str(l->u.s + rm[1].rm_so);
 
 			} else {
-				v = make_int(rm[0].rm_eo - rm[0].rm_so);
+				v = make_int((int)(rm[0].rm_eo - rm[0].rm_so));
 			}
 		} else {
 			if (rp.re_nsub == 0) {
@@ -311,7 +305,7 @@ eval5(void)
 
 /* Parse and evaluate multiplication and division expressions */
 struct val *
-eval4(void)
+eval4()
 {
 	struct val     *l, *r;
 	enum token	op;
@@ -332,13 +326,9 @@ eval4(void)
 				errx(2, "division by zero");
 			}
 			if (op == DIV) {
-				if (l->u.i != INT64_MIN || r->u.i != -1)
-					l->u.i /= r->u.i;
+				l->u.i /= r->u.i;
 			} else {
-				if (l->u.i != INT64_MIN || r->u.i != -1)
-					l->u.i %= r->u.i;
-				else
-					l->u.i = 0;
+				l->u.i %= r->u.i;
 			}
 		}
 
@@ -350,7 +340,7 @@ eval4(void)
 
 /* Parse and evaluate addition and subtraction expressions */
 struct val *
-eval3(void)
+eval3()
 {
 	struct val     *l, *r;
 	enum token	op;
@@ -378,11 +368,11 @@ eval3(void)
 
 /* Parse and evaluate comparison expressions */
 struct val *
-eval2(void)
+eval2()
 {
 	struct val     *l, *r;
 	enum token	op;
-	int64_t		v = 0, li, ri;
+	int		v = 0, li, ri;
 
 	l = eval3();
 	while ((op = token) == EQ || op == NE || op == LT || op == GT ||
@@ -451,7 +441,7 @@ eval2(void)
 
 /* Parse and evaluate & expressions */
 struct val *
-eval1(void)
+eval1()
 {
 	struct val     *l, *r;
 
@@ -474,7 +464,7 @@ eval1(void)
 
 /* Parse and evaluate | expressions */
 struct val *
-eval0(void)
+eval0()
 {
 	struct val     *l, *r;
 
@@ -496,18 +486,13 @@ eval0(void)
 
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int		argc;
+	char	      **argv;
 {
 	struct val     *vp;
 
 	(void) setlocale(LC_ALL, "");
-
-	if (pledge("stdio", NULL) == -1)
-		err(2, "pledge");
-
-	if (argc > 1 && !strcmp(argv[1], "--"))
-		argv++;
-
 	av = argv + 1;
 
 	nexttoken(0);
@@ -519,7 +504,7 @@ main(int argc, char *argv[])
 	}
 
 	if (vp->type == integer)
-		printf("%lld\n", vp->u.i);
+		printf("%d\n", vp->u.i);
 	else
 		printf("%s\n", vp->u.s);
 

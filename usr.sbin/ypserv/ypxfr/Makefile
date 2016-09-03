@@ -1,10 +1,11 @@
-#	$OpenBSD: Makefile,v 1.5 2016/03/30 06:38:47 jmc Exp $
+#	$OpenBSD: Makefile,v 1.3 1997/04/20 10:08:34 maja Exp $
 
 PROG=	ypxfr
-SRCS=	ypxfr.c ypdb.c yplog.c yplib_host.c
+SRCS=	ypxfr.c ypdb.c yplog.c yplib_host.c ypxfr_xdr.c
 MAN=	ypxfr.8
-LDADD=	-lrpcsvc
-DPADD=	${LIBRPCSVC}
+MLINKS= ypxfr.8 ypxfr_1perhour.8 \
+	ypxfr.8 ypxfr_2perday.8 \
+	ypxfr.8 ypxfr_1perday.8
 SCRIPTS= ypxfr_1perhour.sh ypxfr_2perday.sh ypxfr_1perday.sh
 
 .PATH:	${.CURDIR}/../common

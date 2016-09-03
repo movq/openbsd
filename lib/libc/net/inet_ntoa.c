@@ -1,4 +1,3 @@
-/*	$OpenBSD: inet_ntoa.c,v 1.6 2005/08/06 20:30:03 espie Exp $ */
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,6 +31,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: inet_ntoa.c,v 1.2 1996/08/19 08:29:16 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 /*
  * Convert network-format internet address
  * to base 256 d.d.d.d representation.
@@ -38,14 +45,15 @@
 #include <stdio.h>
 
 char *
-inet_ntoa(struct in_addr in)
+inet_ntoa(in)
+	struct in_addr in;
 {
 	static char b[18];
-	char *p;
+	register char *p;
 
 	p = (char *)&in;
 #define	UC(b)	(((int)b)&0xff)
 	(void)snprintf(b, sizeof(b),
-	    "%u.%u.%u.%u", UC(p[0]), UC(p[1]), UC(p[2]), UC(p[3]));
+	    "%d.%d.%d.%d", UC(p[0]), UC(p[1]), UC(p[2]), UC(p[3]));
 	return (b);
 }

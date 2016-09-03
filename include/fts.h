@@ -1,4 +1,4 @@
-/*	$OpenBSD: fts.h,v 1.14 2012/12/05 23:19:57 deraadt Exp $	*/
+/*	$OpenBSD: fts.h,v 1.5 1999/10/03 20:39:52 millert Exp $	*/
 /*	$NetBSD: fts.h,v 1.5 1994/12/28 01:41:50 mycroft Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,7 +46,7 @@ typedef struct {
 	dev_t fts_dev;			/* starting device # */
 	char *fts_path;			/* path for this descent */
 	int fts_rfd;			/* fd for root */
-	size_t fts_pathlen;		/* sizeof(path) */
+	int fts_pathlen;		/* sizeof(path) */
 	int fts_nitems;			/* elements in the sort array */
 	int (*fts_compar)();		/* compare function */
 
@@ -53,7 +57,9 @@ typedef struct {
 #define	FTS_PHYSICAL	0x0010		/* physical walk */
 #define	FTS_SEEDOT	0x0020		/* return dot and dot-dot */
 #define	FTS_XDEV	0x0040		/* don't cross devices */
-#define	FTS_OPTIONMASK	0x00ff		/* valid user option mask */
+#define	FTS_WHITEOUT	0x0080		/* return whiteout information */
+#define	FTS_CHDIRROOT	0x0100		/* chdir to root of tree not orig cwd */
+#define	FTS_OPTIONMASK	0x0fff		/* valid user option mask */
 
 #define	FTS_NAMEONLY	0x1000		/* (private) child names only */
 #define	FTS_STOP	0x2000		/* (private) unrecoverable error */
@@ -70,8 +76,8 @@ typedef struct _ftsent {
 	char *fts_path;			/* root path */
 	int fts_errno;			/* errno for this node */
 	int fts_symfd;			/* fd for symlink */
-	size_t fts_pathlen;		/* strlen(fts_path) */
-	size_t fts_namelen;		/* strlen(fts_name) */
+	u_short fts_pathlen;		/* strlen(fts_path) */
+	u_short fts_namelen;		/* strlen(fts_name) */
 
 	ino_t fts_ino;			/* inode */
 	dev_t fts_dev;			/* device */
@@ -79,8 +85,7 @@ typedef struct _ftsent {
 
 #define	FTS_ROOTPARENTLEVEL	-1
 #define	FTS_ROOTLEVEL		 0
-#define	FTS_MAXLEVEL		 0x7fffffff
-	int fts_level;		/* depth (-1 to N) */
+	short fts_level;		/* depth (-1 to N) */
 
 #define	FTS_D		 1		/* preorder directory */
 #define	FTS_DC		 2		/* directory that causes cycles */
@@ -95,31 +100,33 @@ typedef struct _ftsent {
 #define	FTS_NSOK	11		/* no stat(2) requested */
 #define	FTS_SL		12		/* symbolic link */
 #define	FTS_SLNONE	13		/* symbolic link without target */
-	unsigned short fts_info;	/* user flags for FTSENT structure */
+#define	FTS_W		14		/* whiteout object */
+	u_short fts_info;		/* user flags for FTSENT structure */
 
 #define	FTS_DONTCHDIR	 0x01		/* don't chdir .. to the parent */
 #define	FTS_SYMFOLLOW	 0x02		/* followed a symlink to get here */
-	unsigned short fts_flags;	/* private flags for FTSENT structure */
+#define	FTS_ISW		 0x04		/* this is a whiteout object */
+	u_short fts_flags;		/* private flags for FTSENT structure */
 
 #define	FTS_AGAIN	 1		/* read node again */
 #define	FTS_FOLLOW	 2		/* follow symbolic link */
 #define	FTS_NOINSTR	 3		/* no instructions */
 #define	FTS_SKIP	 4		/* discard node */
-	unsigned short fts_instr;	/* fts_set() instructions */
-
-	unsigned short fts_spare;	/* unused */
+	u_short fts_instr;		/* fts_set() instructions */
 
 	struct stat *fts_statp;		/* stat(2) information */
 	char fts_name[1];		/* file name */
 } FTSENT;
 
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-FTSENT	*fts_children(FTS *, int);
-int	 fts_close(FTS *);
-FTS	*fts_open(char * const *, int,
-	    int (*)(const FTSENT **, const FTSENT **));
-FTSENT	*fts_read(FTS *);
-int	 fts_set(FTS *, FTSENT *, int);
+FTSENT	*fts_children __P((FTS *, int));
+int	 fts_close __P((FTS *));
+FTS	*fts_open __P((char * const *, int,
+	    int (*)(const FTSENT **, const FTSENT **)));
+FTSENT	*fts_read __P((FTS *));
+int	 fts_set __P((FTS *, FTSENT *, int));
 __END_DECLS
 
 #endif /* !_FTS_H_ */

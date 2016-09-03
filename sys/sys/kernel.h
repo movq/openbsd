@@ -1,4 +1,4 @@
-/*	$OpenBSD: kernel.h,v 1.17 2015/07/20 23:47:20 uebayasi Exp $	*/
+/*	$OpenBSD: kernel.h,v 1.5 1996/08/11 20:39:07 niklas Exp $	*/
 /*	$NetBSD: kernel.h,v 1.11 1995/03/03 01:24:16 cgd Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -47,14 +51,16 @@ extern char domainname[MAXHOSTNAMELEN];
 extern int domainnamelen;
 
 /* 1.2 */
-extern struct timespec boottime;
+extern volatile struct timeval mono_time;
+extern struct timeval boottime;
+extern struct timeval runtime;
+extern volatile struct timeval time;
 extern struct timezone tz;			/* XXX */
 
 extern int tick;		/* usec per tick (1000000 / hz) */
 extern int tickfix;		/* periodic tick adj. tick not integral */
 extern int tickfixinterval;	/* interval at which to apply adjustment */
 extern int tickadj;		/* "standard" clock skew, us./tick */
-extern int ticks;		/* # of hardclock ticks */
 extern int hz;			/* system clock's frequency */
 extern int stathz;		/* statistics clock's frequency */
 extern int profhz;		/* profiling clock's frequency */
@@ -62,5 +68,4 @@ extern int lbolt;		/* once a second sleep address */
 extern int tickdelta;
 extern long timedelta;
 
-extern int64_t adjtimedelta;	/* unapplied time correction */
-extern struct bintime naptime;	/* time spent suspended */
+

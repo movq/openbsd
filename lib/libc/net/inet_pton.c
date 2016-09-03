@@ -1,4 +1,4 @@
-/*	$OpenBSD: inet_pton.c,v 1.10 2015/09/13 21:36:08 guenther Exp $	*/
+/*	$OpenBSD: inet_pton.c,v 1.2 1997/04/13 05:08:24 deraadt Exp $	*/
 
 /* Copyright (c) 1996 by Internet Software Consortium.
  *
@@ -16,6 +16,15 @@
  * SOFTWARE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+#if 0
+static char rcsid[] = "$From: inet_pton.c,v 8.7 1996/08/05 08:31:35 vixie Exp $";
+#else
+static char rcsid[] = "$OpenBSD: inet_pton.c,v 1.2 1997/04/13 05:08:24 deraadt Exp $";
+#endif
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -29,8 +38,8 @@
  * sizeof(int) < 4.  sizeof(int) > 4 is fine; all the world's not a VAX.
  */
 
-static int	inet_pton4(const char *src, u_char *dst);
-static int	inet_pton6(const char *src, u_char *dst);
+static int	inet_pton4 __P((const char *src, u_char *dst));
+static int	inet_pton6 __P((const char *src, u_char *dst));
 
 /* int
  * inet_pton(af, src, dst)
@@ -44,7 +53,10 @@ static int	inet_pton6(const char *src, u_char *dst);
  *	Paul Vixie, 1996.
  */
 int
-inet_pton(int af, const char *src, void *dst)
+inet_pton(af, src, dst)
+	int af;
+	const char *src;
+	void *dst;
 {
 	switch (af) {
 	case AF_INET:
@@ -57,7 +69,6 @@ inet_pton(int af, const char *src, void *dst)
 	}
 	/* NOTREACHED */
 }
-DEF_WEAK(inet_pton);
 
 /* int
  * inet_pton4(src, dst)
@@ -70,7 +81,9 @@ DEF_WEAK(inet_pton);
  *	Paul Vixie, 1996.
  */
 static int
-inet_pton4(const char *src, u_char *dst)
+inet_pton4(src, dst)
+	const char *src;
+	u_char *dst;
 {
 	static const char digits[] = "0123456789";
 	int saw_digit, octets, ch;
@@ -114,20 +127,23 @@ inet_pton4(const char *src, u_char *dst)
  * return:
  *	1 if `src' is a valid [RFC1884 2.2] address, else 0.
  * notice:
- *	does not touch `dst' unless it's returning 1.
+ *	(1) does not touch `dst' unless it's returning 1.
+ *	(2) :: in a full address is silently ignored.
  * credit:
  *	inspired by Mark Andrews.
  * author:
  *	Paul Vixie, 1996.
  */
 static int
-inet_pton6(const char *src, u_char *dst)
+inet_pton6(src, dst)
+	const char *src;
+	u_char *dst;
 {
 	static const char xdigits_l[] = "0123456789abcdef",
 			  xdigits_u[] = "0123456789ABCDEF";
 	u_char tmp[IN6ADDRSZ], *tp, *endp, *colonp;
 	const char *xdigits, *curtok;
-	int ch, saw_xdigit, count_xdigit;
+	int ch, saw_xdigit;
 	u_int val;
 
 	memset((tp = tmp), '\0', IN6ADDRSZ);
@@ -138,7 +154,7 @@ inet_pton6(const char *src, u_char *dst)
 		if (*++src != ':')
 			return (0);
 	curtok = src;
-	saw_xdigit = count_xdigit = 0;
+	saw_xdigit = 0;
 	val = 0;
 	while ((ch = *src++) != '\0') {
 		const char *pch;
@@ -146,14 +162,11 @@ inet_pton6(const char *src, u_char *dst)
 		if ((pch = strchr((xdigits = xdigits_l), ch)) == NULL)
 			pch = strchr((xdigits = xdigits_u), ch);
 		if (pch != NULL) {
-			if (count_xdigit >= 4)
-				return (0);
 			val <<= 4;
 			val |= (pch - xdigits);
 			if (val > 0xffff)
 				return (0);
 			saw_xdigit = 1;
-			count_xdigit++;
 			continue;
 		}
 		if (ch == ':') {
@@ -163,15 +176,12 @@ inet_pton6(const char *src, u_char *dst)
 					return (0);
 				colonp = tp;
 				continue;
-			} else if (*src == '\0') {
-				return (0);
 			}
 			if (tp + INT16SZ > endp)
 				return (0);
 			*tp++ = (u_char) (val >> 8) & 0xff;
 			*tp++ = (u_char) val & 0xff;
 			saw_xdigit = 0;
-			count_xdigit = 0;
 			val = 0;
 			continue;
 		}
@@ -179,7 +189,6 @@ inet_pton6(const char *src, u_char *dst)
 		    inet_pton4(curtok, tp) > 0) {
 			tp += INADDRSZ;
 			saw_xdigit = 0;
-			count_xdigit = 0;
 			break;	/* '\0' was seen by inet_pton4(). */
 		}
 		return (0);
@@ -198,8 +207,6 @@ inet_pton6(const char *src, u_char *dst)
 		const int n = tp - colonp;
 		int i;
 
-		if (tp == endp)
-			return (0);
 		for (i = 1; i <= n; i++) {
 			endp[- i] = colonp[n - i];
 			colonp[n - i] = 0;

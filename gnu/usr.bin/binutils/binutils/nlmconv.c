@@ -1,48 +1,46 @@
 /* nlmconv.c -- NLM conversion program
-   Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003
-   Free Software Foundation, Inc.
+   Copyright (C) 1993, 94, 95, 1996 Free Software Foundation, Inc.
 
-   This file is part of GNU Binutils.
+This file is part of GNU Binutils.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* Written by Ian Lance Taylor <ian@cygnus.com>.
 
    This program can be used to convert any appropriate object file
    into a NetWare Loadable Module (an NLM).  It will accept a linker
    specification file which is identical to that accepted by the
-   NetWare linker, NLMLINK.  */
-
-/* AIX requires this to be the first thing in the file.  */
-#ifndef __GNUC__
-# ifdef _AIX
- #pragma alloca
-#endif
-#endif
+   NetWare linker, NLMLINK, except that the INPUT command, normally
+   used to give a list of object files to link together, is not used.
+   This program will convert only a single object file.  */
 
 #include "bfd.h"
 #include "libiberty.h"
 #include "bucomm.h"
-#include "safe-ctype.h"
 
-#include "ansidecl.h"
+#include <ansidecl.h>
 #include <time.h>
+#include <ctype.h>
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <assert.h>
-#include "getopt.h"
+#include <getopt.h>
+
+#ifdef HAVE_VFORK_H
+#include <vfork.h>
+#endif
 
 /* Internal BFD NLM header.  */
 #include "libnlm.h"
@@ -56,10 +54,14 @@
 /* If strerror is just a macro, we want to use the one from libiberty
    since it will handle undefined values.  */
 #undef strerror
-extern char *strerror (int);
+extern char *strerror ();
 
 #ifndef localtime
 extern struct tm *localtime ();
+#endif
+
+#ifndef getenv
+extern char *getenv ();
 #endif
 
 #ifndef SEEK_SET
@@ -122,37 +124,47 @@ static struct option long_options[] =
 
 /* Local routines.  */
 
-int main (int, char **);
-
-static void show_usage (FILE *, int);
-static const char *select_output_format
-  (enum bfd_architecture, unsigned long, bfd_boolean);
-static void setup_sections (bfd *, asection *, void *);
-static void copy_sections (bfd *, asection *, void *);
-static void mangle_relocs
-  (bfd *, asection *, arelent ***, long *, char *, bfd_size_type);
-static void default_mangle_relocs
-  (bfd *, asection *, arelent ***, long *, char *, bfd_size_type);
-static char *link_inputs (struct string_list *, char *);
+static void show_help PARAMS ((void));
+static void show_usage PARAMS ((FILE *, int));
+static const char *select_output_format PARAMS ((enum bfd_architecture,
+						 unsigned long, boolean));
+static void setup_sections PARAMS ((bfd *, asection *, PTR));
+static void copy_sections PARAMS ((bfd *, asection *, PTR));
+static void mangle_relocs PARAMS ((bfd *, asection *, arelent ***,
+				   long *, char *,
+				   bfd_size_type));
+static void default_mangle_relocs PARAMS ((bfd *, asection *, arelent ***,
+					   long *, char *,
+					   bfd_size_type));
+static char *link_inputs PARAMS ((struct string_list *, char *));
+static int pexecute PARAMS ((char *, char *[]));
 
 #ifdef NLMCONV_I386
-static void i386_mangle_relocs (bfd *, asection *, arelent ***, long *, char *, bfd_size_type);
+static void i386_mangle_relocs PARAMS ((bfd *, asection *, arelent ***,
+					long *, char *,
+					bfd_size_type));
 #endif
 
 #ifdef NLMCONV_ALPHA
-static void alpha_mangle_relocs (bfd *, asection *, arelent ***, long *, char *, bfd_size_type);
+static void alpha_mangle_relocs PARAMS ((bfd *, asection *, arelent ***,
+					 long *, char *,
+					 bfd_size_type));
 #endif
 
 #ifdef NLMCONV_POWERPC
-static void powerpc_build_stubs (bfd *, bfd *, asymbol ***, long *);
-static void powerpc_resolve_stubs (bfd *, bfd *);
-static void powerpc_mangle_relocs (bfd *, asection *, arelent ***, long *, char *, bfd_size_type);
+static void powerpc_build_stubs PARAMS ((bfd *, bfd *, asymbol ***, long *));
+static void powerpc_resolve_stubs PARAMS ((bfd *, bfd *));
+static void powerpc_mangle_relocs PARAMS ((bfd *, asection *, arelent ***,
+					   long *, char *,
+					   bfd_size_type));
 #endif
 
 /* The main routine.  */
 
 int
-main (int argc, char **argv)
+main (argc, argv)
+     int argc;
+     char **argv;
 {
   int opt;
   char *input_file = NULL;
@@ -176,50 +188,25 @@ main (int argc, char **argv)
   asymbol *endsym;
   long i;
   char inlead, outlead;
-  bfd_boolean gotstart, gotexit, gotcheck;
+  boolean gotstart, gotexit, gotcheck;
   struct stat st;
-  FILE *custom_data = NULL;
-  FILE *help_data = NULL;
-  FILE *message_data = NULL;
-  FILE *rpc_data = NULL;
-  FILE *shared_data = NULL;
-  size_t custom_size = 0;
-  size_t help_size = 0;
-  size_t message_size = 0;
-  size_t module_size = 0;
-  size_t rpc_size = 0;
-  asection *custom_section = NULL;
-  asection *help_section = NULL;
-  asection *message_section = NULL;
-  asection *module_section = NULL;
-  asection *rpc_section = NULL;
-  asection *shared_section = NULL;
+  FILE *custom_data, *help_data, *message_data, *rpc_data, *shared_data;
+  size_t custom_size, help_size, message_size, module_size, rpc_size;
+  asection *custom_section, *help_section, *message_section, *module_section;
+  asection *rpc_section, *shared_section;
   bfd *sharedbfd;
-  size_t shared_offset = 0;
-  size_t shared_size = 0;
+  size_t shared_offset, shared_size;
   Nlm_Internal_Fixed_Header sharedhdr;
   int len;
   char *modname;
   char **matching;
 
-#if defined (HAVE_SETLOCALE) && defined (HAVE_LC_MESSAGES)
-  setlocale (LC_MESSAGES, "");
-#endif
-#if defined (HAVE_SETLOCALE)
-  setlocale (LC_CTYPE, "");
-#endif
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-
   program_name = argv[0];
   xmalloc_set_program_name (program_name);
 
-  expandargv (&argc, &argv);
-
   bfd_init ();
-  set_default_bfd_target ();
 
-  while ((opt = getopt_long (argc, argv, "dHhI:l:O:T:Vv", long_options,
+  while ((opt = getopt_long (argc, argv, "dhI:l:O:T:V", long_options,
 			     (int *) NULL))
 	 != EOF)
     {
@@ -228,10 +215,9 @@ main (int argc, char **argv)
 	case 'd':
 	  debug = 1;
 	  break;
-	case 'H':
 	case 'h':
-	  show_usage (stdout, 0);
-	  break;
+	  show_help ();
+	  /*NOTREACHED*/
 	case 'I':
 	  input_format = optarg;
 	  break;
@@ -244,15 +230,14 @@ main (int argc, char **argv)
 	case 'T':
 	  header_file = optarg;
 	  break;
-	case 'v':
 	case 'V':
 	  print_version ("nlmconv");
-	  break;
+	  /*NOTREACHED*/
 	case 0:
 	  break;
 	default:
 	  show_usage (stderr, 1);
-	  break;
+	  /*NOTREACHED*/
 	}
     }
 
@@ -270,36 +255,39 @@ main (int argc, char **argv)
 	    show_usage (stderr, 1);
 	  if (strcmp (input_file, output_file) == 0)
 	    {
-	      fatal (_("input and output files must be different"));
+	      fprintf (stderr,
+		       "%s: input and output files must be different\n",
+		       program_name);
+	      exit (1);
 	    }
 	}
     }
 
   /* Initialize the header information to default values.  */
   fixed_hdr = &fixed_hdr_struct;
-  memset ((void *) &fixed_hdr_struct, 0, sizeof fixed_hdr_struct);
+  memset ((PTR) &fixed_hdr_struct, 0, sizeof fixed_hdr_struct);
   var_hdr = &var_hdr_struct;
-  memset ((void *) &var_hdr_struct, 0, sizeof var_hdr_struct);
+  memset ((PTR) &var_hdr_struct, 0, sizeof var_hdr_struct);
   version_hdr = &version_hdr_struct;
-  memset ((void *) &version_hdr_struct, 0, sizeof version_hdr_struct);
+  memset ((PTR) &version_hdr_struct, 0, sizeof version_hdr_struct);
   copyright_hdr = &copyright_hdr_struct;
-  memset ((void *) &copyright_hdr_struct, 0, sizeof copyright_hdr_struct);
+  memset ((PTR) &copyright_hdr_struct, 0, sizeof copyright_hdr_struct);
   extended_hdr = &extended_hdr_struct;
-  memset ((void *) &extended_hdr_struct, 0, sizeof extended_hdr_struct);
+  memset ((PTR) &extended_hdr_struct, 0, sizeof extended_hdr_struct);
   check_procedure = NULL;
   custom_file = NULL;
-  debug_info = FALSE;
+  debug_info = false;
   exit_procedure = "_Stop";
   export_symbols = NULL;
   map_file = NULL;
-  full_map = FALSE;
+  full_map = false;
   help_file = NULL;
   import_symbols = NULL;
   message_file = NULL;
   modules = NULL;
   sharelib_file = NULL;
   start_procedure = "_Prelude";
-  verbose = FALSE;
+  verbose = false;
   rpc_file = NULL;
 
   parse_errors = 0;
@@ -317,7 +305,10 @@ main (int argc, char **argv)
     {
       if (input_file != NULL)
 	{
-	  fatal (_("input file named both on command line and with INPUT"));
+	  fprintf (stderr,
+		   "%s: input file named both on command line and with INPUT\n",
+		   program_name);
+	  exit (1);
 	}
       if (input_files->next == NULL)
 	input_file = input_files->string;
@@ -326,7 +317,7 @@ main (int argc, char **argv)
     }
   else if (input_file == NULL)
     {
-      non_fatal (_("no input file"));
+      fprintf (stderr, "%s: no input file\n", program_name);
       show_usage (stderr, 1);
     }
 
@@ -356,7 +347,8 @@ main (int argc, char **argv)
      Otherwise use the file named in the OUTPUT statement.  */
   if (output_file == NULL)
     {
-      non_fatal (_("no name for output file"));
+      fprintf (stderr, "%s: no name for output file\n",
+	       program_name);
       show_usage (stderr, 1);
     }
 
@@ -368,9 +360,10 @@ main (int argc, char **argv)
 
   assert (bfd_get_flavour (outbfd) == bfd_target_nlm_flavour);
 
-  /* XXX: Should we accept the unknown bfd format here ?  */
-  if (bfd_arch_get_compatible (inbfd, outbfd, TRUE) == NULL)
-    non_fatal (_("warning: input and output formats are not compatible"));
+  if (bfd_arch_get_compatible (inbfd, outbfd) == NULL)
+    fprintf (stderr,
+	     "%s: warning:input and output formats are not compatible\n",
+	     program_name);
 
   /* Move the values read from the command file into outbfd.  */
   *nlm_fixed_header (outbfd) = fixed_hdr_struct;
@@ -399,7 +392,7 @@ main (int argc, char **argv)
       if (bss_sec == NULL
 	  || ! bfd_set_section_flags (outbfd, bss_sec, SEC_ALLOC)
 	  || ! bfd_set_section_alignment (outbfd, bss_sec, 1))
-	bfd_fatal (_("make .bss section"));
+	bfd_fatal ("make .bss section");
     }
 
   /* We store the original section names in the .nlmsections section,
@@ -408,9 +401,9 @@ main (int argc, char **argv)
      the NLM header area.  */
   secsec = bfd_make_section (outbfd, ".nlmsections");
   if (secsec == NULL)
-    bfd_fatal (_("make .nlmsections section"));
+    bfd_fatal ("make .nlmsections section");
   if (! bfd_set_section_flags (outbfd, secsec, SEC_HAS_CONTENTS))
-    bfd_fatal (_("set .nlmsections flags"));
+    bfd_fatal ("set .nlmsections flags");
 
 #ifdef NLMCONV_POWERPC
   /* For PowerPC NetWare we need to build stubs for calls to undefined
@@ -423,7 +416,7 @@ main (int argc, char **argv)
 #endif
 
   /* Set up the sections.  */
-  bfd_map_over_sections (inbfd, setup_sections, (void *) outbfd);
+  bfd_map_over_sections (inbfd, setup_sections, (PTR) outbfd);
 
   text_sec = bfd_get_section_by_name (outbfd, NLM_CODE_NAME);
 
@@ -438,23 +431,23 @@ main (int argc, char **argv)
       add = ((vma + align - 1) &~ (align - 1)) - vma;
       vma += add;
       if (! bfd_set_section_vma (outbfd, bss_sec, vma))
-	bfd_fatal (_("set .bss vma"));
+	bfd_fatal ("set .bss vma");
       if (add != 0)
 	{
 	  bfd_size_type data_size;
 
 	  data_size = bfd_get_section_size_before_reloc (data_sec);
 	  if (! bfd_set_section_size (outbfd, data_sec, data_size + add))
-	    bfd_fatal (_("set .data size"));
+	    bfd_fatal ("set .data size");
 	}
     }
 
   /* Adjust symbol information.  */
   inlead = bfd_get_symbol_leading_char (inbfd);
   outlead = bfd_get_symbol_leading_char (outbfd);
-  gotstart = FALSE;
-  gotexit = FALSE;
-  gotcheck = FALSE;
+  gotstart = false;
+  gotexit = false;
+  gotcheck = false;
   newsymalloc = 10;
   newsyms = (asymbol **) xmalloc (newsymalloc * sizeof (asymbol *));
   newsymcount = 0;
@@ -552,7 +545,7 @@ main (int argc, char **argv)
 	      sym->section = got_sec->output_section;
 	    }
 #endif
-	}
+ 	}
 
       /* If this is a global symbol, check the export list.  */
       if ((sym->flags & (BSF_EXPORT | BSF_GLOBAL)) != 0)
@@ -580,7 +573,7 @@ main (int argc, char **argv)
 			{
 			  newsymalloc += 10;
 			  newsyms = ((asymbol **)
-				     xrealloc ((void *) newsyms,
+				     xrealloc ((PTR) newsyms,
 					       (newsymalloc
 						* sizeof (asymbol *))));
 			}
@@ -625,10 +618,11 @@ main (int argc, char **argv)
 		}
 	    }
 	  if (l == NULL)
-	    non_fatal (_("warning: symbol %s imported but not in import list"),
-		       bfd_asymbol_name (sym));
+	    fprintf (stderr,
+		     "%s: warning: symbol %s imported but not in import list\n",
+		     program_name, bfd_asymbol_name (sym));
 	}
-
+	
       /* See if it's one of the special named symbols.  */
       if ((sym->flags & BSF_DEBUGGING) == 0)
 	{
@@ -645,8 +639,8 @@ main (int argc, char **argv)
 		  && text_sec != (asection *) NULL)
 		val += bfd_section_size (outbfd, text_sec);
 	      if (! bfd_set_start_address (outbfd, val))
-		bfd_fatal (_("set start address"));
-	      gotstart = TRUE;
+		bfd_fatal ("set start address");
+	      gotstart = true;
 	    }
 	  if (strcmp (bfd_asymbol_name (sym), exit_procedure) == 0)
 	    {
@@ -655,7 +649,7 @@ main (int argc, char **argv)
 		  && text_sec != (asection *) NULL)
 		val += bfd_section_size (outbfd, text_sec);
 	      nlm_fixed_header (outbfd)->exitProcedureOffset = val;
-	      gotexit = TRUE;
+	      gotexit = true;
 	    }
 	  if (check_procedure != NULL
 	      && strcmp (bfd_asymbol_name (sym), check_procedure) == 0)
@@ -665,7 +659,7 @@ main (int argc, char **argv)
 		  && text_sec != (asection *) NULL)
 		val += bfd_section_size (outbfd, text_sec);
 	      nlm_fixed_header (outbfd)->checkUnloadProcedureOffset = val;
-	      gotcheck = TRUE;
+	      gotcheck = true;
 	    }
 	}
     }
@@ -692,13 +686,17 @@ main (int argc, char **argv)
     }
 
   bfd_set_symtab (outbfd, outsyms, symcount + newsymcount);
-
+    
   if (! gotstart)
-    non_fatal (_("warning: START procedure %s not defined"), start_procedure);
+    fprintf (stderr, "%s: warning: START procedure %s not defined\n",
+	     program_name, start_procedure);
   if (! gotexit)
-    non_fatal (_("warning: EXIT procedure %s not defined"), exit_procedure);
-  if (check_procedure != NULL && ! gotcheck)
-    non_fatal (_("warning: CHECK procedure %s not defined"), check_procedure);
+    fprintf (stderr, "%s: warning: EXIT procedure %s not defined\n",
+	     program_name, exit_procedure);
+  if (check_procedure != NULL
+      && ! gotcheck)
+    fprintf (stderr, "%s: warning: CHECK procedure %s not defined\n",
+	     program_name, check_procedure);
 
   /* Add additional sections required for the header information.  */
   if (custom_file != NULL)
@@ -719,7 +717,7 @@ main (int argc, char **argv)
 	      || ! bfd_set_section_size (outbfd, custom_section, custom_size)
 	      || ! bfd_set_section_flags (outbfd, custom_section,
 					  SEC_HAS_CONTENTS))
-	    bfd_fatal (_("custom section"));
+	    bfd_fatal ("custom section");
 	}
     }
   if (help_file != NULL)
@@ -740,7 +738,7 @@ main (int argc, char **argv)
 	      || ! bfd_set_section_size (outbfd, help_section, help_size)
 	      || ! bfd_set_section_flags (outbfd, help_section,
 					  SEC_HAS_CONTENTS))
-	    bfd_fatal (_("help section"));
+	    bfd_fatal ("help section");
 	  strncpy (nlm_extended_header (outbfd)->stamp, "MeSsAgEs", 8);
 	}
     }
@@ -762,7 +760,7 @@ main (int argc, char **argv)
 	      || ! bfd_set_section_size (outbfd, message_section, message_size)
 	      || ! bfd_set_section_flags (outbfd, message_section,
 					  SEC_HAS_CONTENTS))
-	    bfd_fatal (_("message section"));
+	    bfd_fatal ("message section");
 	  strncpy (nlm_extended_header (outbfd)->stamp, "MeSsAgEs", 8);
 	}
     }
@@ -778,7 +776,7 @@ main (int argc, char **argv)
 	  || ! bfd_set_section_size (outbfd, module_section, module_size)
 	  || ! bfd_set_section_flags (outbfd, module_section,
 				      SEC_HAS_CONTENTS))
-	bfd_fatal (_("module section"));
+	bfd_fatal ("module section");
     }
   if (rpc_file != NULL)
     {
@@ -798,7 +796,7 @@ main (int argc, char **argv)
 	      || ! bfd_set_section_size (outbfd, rpc_section, rpc_size)
 	      || ! bfd_set_section_flags (outbfd, rpc_section,
 					  SEC_HAS_CONTENTS))
-	    bfd_fatal (_("rpc section"));
+	    bfd_fatal ("rpc section");
 	  strncpy (nlm_extended_header (outbfd)->stamp, "MeSsAgEs", 8);
 	}
     }
@@ -834,19 +832,20 @@ main (int argc, char **argv)
 	      if (sharedhdr.uninitializedDataSize > 0)
 		{
 		  /* There is no place to record this information.  */
-		  non_fatal (_("%s: warning: shared libraries can not have uninitialized data"),
-			     sharelib_file);
+		  fprintf (stderr,
+			   "%s:%s: warning: shared libraries can not have uninitialized data\n",
+			   program_name, sharelib_file);
 		}
 	      shared_offset = st.st_size;
-	      if (shared_offset > (size_t) sharedhdr.codeImageOffset)
+	      if (shared_offset > sharedhdr.codeImageOffset)
 		shared_offset = sharedhdr.codeImageOffset;
-	      if (shared_offset > (size_t) sharedhdr.dataImageOffset)
+	      if (shared_offset > sharedhdr.dataImageOffset)
 		shared_offset = sharedhdr.dataImageOffset;
-	      if (shared_offset > (size_t) sharedhdr.relocationFixupOffset)
+	      if (shared_offset > sharedhdr.relocationFixupOffset)
 		shared_offset = sharedhdr.relocationFixupOffset;
-	      if (shared_offset > (size_t) sharedhdr.externalReferencesOffset)
+	      if (shared_offset > sharedhdr.externalReferencesOffset)
 		shared_offset = sharedhdr.externalReferencesOffset;
-	      if (shared_offset > (size_t) sharedhdr.publicsOffset)
+	      if (shared_offset > sharedhdr.publicsOffset)
 		shared_offset = sharedhdr.publicsOffset;
 	      shared_size = st.st_size - shared_offset;
 	      shared_section = bfd_make_section (outbfd, ".nlmshared");
@@ -855,7 +854,7 @@ main (int argc, char **argv)
 					     shared_size)
 		  || ! bfd_set_section_flags (outbfd, shared_section,
 					      SEC_HAS_CONTENTS))
-		bfd_fatal (_("shared section"));
+		bfd_fatal ("shared section");
 	      strncpy (nlm_extended_header (outbfd)->stamp, "MeSsAgEs", 8);
 	    }
 	}
@@ -863,7 +862,8 @@ main (int argc, char **argv)
 
   /* Check whether a version was given.  */
   if (strncmp (version_hdr->stamp, "VeRsIoN#", 8) != 0)
-    non_fatal (_("warning: No version number given"));
+    fprintf (stderr, "%s: warning: No version number given\n",
+	     program_name);
 
   /* At least for now, always create an extended header, because that
      is what NLMLINK does.  */
@@ -894,21 +894,22 @@ main (int argc, char **argv)
 #endif
 
   /* Copy over the sections.  */
-  bfd_map_over_sections (inbfd, copy_sections, (void *) outbfd);
+  bfd_map_over_sections (inbfd, copy_sections, (PTR) outbfd);
 
   /* Finish up the header information.  */
   if (custom_file != NULL)
     {
-      void *data;
+      PTR data;
 
       data = xmalloc (custom_size);
       if (fread (data, 1, custom_size, custom_data) != custom_size)
-	non_fatal (_("%s: read: %s"), custom_file, strerror (errno));
+	fprintf (stderr, "%s:%s: read: %s\n", program_name, custom_file,
+		 strerror (errno));
       else
 	{
 	  if (! bfd_set_section_contents (outbfd, custom_section, data,
 					  (file_ptr) 0, custom_size))
-	    bfd_fatal (_("custom section"));
+	    bfd_fatal ("custom section");
 	  nlm_fixed_header (outbfd)->customDataOffset =
 	    custom_section->filepos;
 	  nlm_fixed_header (outbfd)->customDataSize = custom_size;
@@ -925,19 +926,22 @@ main (int argc, char **argv)
       nlm_fixed_header (outbfd)->debugInfoOffset = (file_ptr) -1;
     }
   if (map_file != NULL)
-    non_fatal (_("warning: MAP and FULLMAP are not supported; try ld -M"));
+    fprintf (stderr,
+	     "%s: warning: MAP and FULLMAP are not supported; try ld -M\n",
+	     program_name);
   if (help_file != NULL)
     {
-      void *data;
+      PTR data;
 
       data = xmalloc (help_size);
       if (fread (data, 1, help_size, help_data) != help_size)
-	non_fatal (_("%s: read: %s"), help_file, strerror (errno));
+	fprintf (stderr, "%s:%s: read: %s\n", program_name, help_file,
+		 strerror (errno));
       else
 	{
 	  if (! bfd_set_section_contents (outbfd, help_section, data,
 					  (file_ptr) 0, help_size))
-	    bfd_fatal (_("help section"));
+	    bfd_fatal ("help section");
 	  nlm_extended_header (outbfd)->helpFileOffset =
 	    help_section->filepos;
 	  nlm_extended_header (outbfd)->helpFileLength = help_size;
@@ -946,16 +950,17 @@ main (int argc, char **argv)
     }
   if (message_file != NULL)
     {
-      void *data;
+      PTR data;
 
       data = xmalloc (message_size);
       if (fread (data, 1, message_size, message_data) != message_size)
-	non_fatal (_("%s: read: %s"), message_file, strerror (errno));
+	fprintf (stderr, "%s:%s: read: %s\n", program_name, message_file,
+		 strerror (errno));
       else
 	{
 	  if (! bfd_set_section_contents (outbfd, message_section, data,
 					  (file_ptr) 0, message_size))
-	    bfd_fatal (_("message section"));
+	    bfd_fatal ("message section");
 	  nlm_extended_header (outbfd)->messageFileOffset =
 	    message_section->filepos;
 	  nlm_extended_header (outbfd)->messageFileLength = message_size;
@@ -971,7 +976,7 @@ main (int argc, char **argv)
     }
   if (modules != NULL)
     {
-      void *data;
+      PTR data;
       unsigned char *set;
       struct string_list *l;
       bfd_size_type c;
@@ -988,23 +993,24 @@ main (int argc, char **argv)
 	}
       if (! bfd_set_section_contents (outbfd, module_section, data,
 				      (file_ptr) 0, module_size))
-	bfd_fatal (_("module section"));
+	bfd_fatal ("module section");
       nlm_fixed_header (outbfd)->moduleDependencyOffset =
 	module_section->filepos;
       nlm_fixed_header (outbfd)->numberOfModuleDependencies = c;
     }
   if (rpc_file != NULL)
     {
-      void *data;
+      PTR data;
 
       data = xmalloc (rpc_size);
       if (fread (data, 1, rpc_size, rpc_data) != rpc_size)
-	non_fatal (_("%s: read: %s"), rpc_file, strerror (errno));
+	fprintf (stderr, "%s:%s: read: %s\n", program_name, rpc_file,
+		 strerror (errno));
       else
 	{
 	  if (! bfd_set_section_contents (outbfd, rpc_section, data,
 					  (file_ptr) 0, rpc_size))
-	    bfd_fatal (_("rpc section"));
+	    bfd_fatal ("rpc section");
 	  nlm_extended_header (outbfd)->RPCDataOffset =
 	    rpc_section->filepos;
 	  nlm_extended_header (outbfd)->RPCDataLength = rpc_size;
@@ -1013,17 +1019,18 @@ main (int argc, char **argv)
     }
   if (sharelib_file != NULL)
     {
-      void *data;
+      PTR data;
 
       data = xmalloc (shared_size);
       if (fseek (shared_data, shared_offset, SEEK_SET) != 0
 	  || fread (data, 1, shared_size, shared_data) != shared_size)
-	non_fatal (_("%s: read: %s"), sharelib_file, strerror (errno));
+	fprintf (stderr, "%s:%s: read: %s\n", program_name, sharelib_file,
+		 strerror (errno));
       else
 	{
 	  if (! bfd_set_section_contents (outbfd, shared_section, data,
 					  (file_ptr) 0, shared_size))
-	    bfd_fatal (_("shared section"));
+	    bfd_fatal ("shared section");
 	}
       nlm_extended_header (outbfd)->sharedCodeOffset =
 	sharedhdr.codeImageOffset - shared_offset + shared_section->filepos;
@@ -1070,7 +1077,8 @@ main (int argc, char **argv)
   for (modname = nlm_fixed_header (outbfd)->moduleName;
        *modname != '\0';
        modname++)
-    *modname = TOUPPER (*modname);
+    if (islower (*modname))
+      *modname = toupper (*modname);
 
   strncpy (nlm_variable_header (outbfd)->oldThreadName, " LONG",
 	   NLM_OLD_THREAD_NAME_LENGTH);
@@ -1089,25 +1097,32 @@ main (int argc, char **argv)
   return 0;
 }
 
+/* Display a help message and exit.  */
+
+static void
+show_help ()
+{
+  printf ("%s: Convert an object file into a NetWare Loadable Module\n",
+	  program_name);
+  show_usage (stdout, 0);
+}
 
 /* Show a usage message and exit.  */
 
 static void
-show_usage (FILE *file, int status)
+show_usage (file, status)
+     FILE *file;
+     int status;
 {
-  fprintf (file, _("Usage: %s [option(s)] [in-file [out-file]]\n"), program_name);
-  fprintf (file, _(" Convert an object file into a NetWare Loadable Module\n"));
-  fprintf (file, _(" The options are:\n\
-  -I --input-target=<bfdname>   Set the input binary file format\n\
-  -O --output-target=<bfdname>  Set the output binary file format\n\
-  -T --header-file=<file>       Read <file> for NLM header information\n\
-  -l --linker=<linker>          Use <linker> for any linking\n\
-  -d --debug                    Display on stderr the linker command line\n\
-  -h --help                     Display this information\n\
-  -v --version                  Display the program's version\n\
-"));
+  fprintf (file, "\
+Usage: %s [-dhV] [-I bfdname] [-O bfdname] [-T header-file] [-l linker]\n\
+       [--input-target=bfdname] [--output-target=bfdname]\n\
+       [--header-file=file] [--linker=linker] [--debug]\n\
+       [--help] [--version]\n\
+       [in-file [out-file]]\n",
+	   program_name);
   if (status == 0)
-    fprintf (file, _("Report bugs to %s\n"), REPORT_BUGS_TO);
+    fprintf (file, "Report bugs to bug-gnu-utils@prep.ai.mit.edu\n");
   exit (status);
 }
 
@@ -1115,8 +1130,10 @@ show_usage (FILE *file, int status)
    and endianness.  This chooses the appropriate NLM target.  */
 
 static const char *
-select_output_format (enum bfd_architecture arch, unsigned long mach,
-		      bfd_boolean bigendian ATTRIBUTE_UNUSED)
+select_output_format (arch, mach, bigendian)
+     enum bfd_architecture arch;
+     unsigned long mach;
+     boolean bigendian;
 {
   switch (arch)
     {
@@ -1137,8 +1154,11 @@ select_output_format (enum bfd_architecture arch, unsigned long mach,
       return "nlm32-powerpc";
 #endif
     default:
-      fatal (_("support not compiled in for %s"),
-	     bfd_printable_arch_mach (arch, mach));
+      fprintf (stderr, "%s: support not compiled in for %s\n",
+	       program_name, bfd_printable_arch_mach (arch, mach));
+      exit (1);
+      /* Avoid warning.  */
+      return NULL;
     }
   /*NOTREACHED*/
 }
@@ -1148,7 +1168,10 @@ select_output_format (enum bfd_architecture arch, unsigned long mach,
    name, size, etc.  */
 
 static void
-setup_sections (bfd *inbfd ATTRIBUTE_UNUSED, asection *insec, void *data_ptr)
+setup_sections (inbfd, insec, data_ptr)
+     bfd *inbfd;
+     asection *insec;
+     PTR data_ptr;
 {
   bfd *outbfd = (bfd *) data_ptr;
   flagword f;
@@ -1174,7 +1197,7 @@ setup_sections (bfd *inbfd ATTRIBUTE_UNUSED, asection *insec, void *data_ptr)
     {
       outsec = bfd_make_section (outbfd, outname);
       if (outsec == NULL)
-	bfd_fatal (_("make section"));
+	bfd_fatal ("make section");
     }
 
   insec->output_section = outsec;
@@ -1188,17 +1211,17 @@ setup_sections (bfd *inbfd ATTRIBUTE_UNUSED, asection *insec, void *data_ptr)
 			      (bfd_section_size (outbfd, outsec)
 			       + bfd_section_size (inbfd, insec)
 			       + add)))
-    bfd_fatal (_("set section size"));
+    bfd_fatal ("set section size");
 
   if ((bfd_section_alignment (inbfd, insec)
        > bfd_section_alignment (outbfd, outsec))
       && ! bfd_set_section_alignment (outbfd, outsec,
 				      bfd_section_alignment (inbfd, insec)))
-    bfd_fatal (_("set section alignment"));
+    bfd_fatal ("set section alignment");
 
   if (! bfd_set_section_flags (outbfd, outsec,
 			       f | bfd_get_section_flags (outbfd, outsec)))
-    bfd_fatal (_("set section flags"));
+    bfd_fatal ("set section flags");
 
   bfd_set_reloc (outbfd, outsec, (arelent **) NULL, 0);
 
@@ -1209,20 +1232,23 @@ setup_sections (bfd *inbfd ATTRIBUTE_UNUSED, asection *insec, void *data_ptr)
   secsecsize = (secsecsize + 3) &~ 3;
   secsecsize += 8;
   if (! bfd_set_section_size (outbfd, secsec, secsecsize))
-    bfd_fatal (_("set .nlmsections size"));
+    bfd_fatal ("set .nlmsections size");
 }
 
 /* Copy the section contents.  */
 
 static void
-copy_sections (bfd *inbfd, asection *insec, void *data_ptr)
+copy_sections (inbfd, insec, data_ptr)
+     bfd *inbfd;
+     asection *insec;
+     PTR data_ptr;
 {
   static bfd_size_type secsecoff = 0;
   bfd *outbfd = (bfd *) data_ptr;
   const char *inname;
   asection *outsec;
   bfd_size_type size;
-  void *contents;
+  PTR contents;
   long reloc_size;
   bfd_byte buf[4];
   bfd_size_type add;
@@ -1236,7 +1262,7 @@ copy_sections (bfd *inbfd, asection *insec, void *data_ptr)
 
   /* FIXME: Why are these necessary?  */
   insec->_cooked_size = insec->_raw_size;
-  insec->reloc_done = TRUE;
+  insec->reloc_done = true;
 
   if ((bfd_get_section_flags (inbfd, insec) & SEC_HAS_CONTENTS) == 0)
     contents = NULL;
@@ -1292,9 +1318,9 @@ copy_sections (bfd *inbfd, asection *insec, void *data_ptr)
     }
 
   /* Add this section to .nlmsections.  */
-  if (! bfd_set_section_contents (outbfd, secsec, (void *) inname, secsecoff,
+  if (! bfd_set_section_contents (outbfd, secsec, (PTR) inname, secsecoff,
 				  strlen (inname) + 1))
-    bfd_fatal (_("set .nlmsection contents"));
+    bfd_fatal ("set .nlmsection contents");
   secsecoff += strlen (inname) + 1;
 
   add = ((secsecoff + 3) &~ 3) - secsecoff;
@@ -1302,7 +1328,7 @@ copy_sections (bfd *inbfd, asection *insec, void *data_ptr)
     {
       bfd_h_put_32 (outbfd, (bfd_vma) 0, buf);
       if (! bfd_set_section_contents (outbfd, secsec, buf, secsecoff, add))
-	bfd_fatal (_("set .nlmsection contents"));
+	bfd_fatal ("set .nlmsection contents");
       secsecoff += add;
     }
 
@@ -1311,12 +1337,12 @@ copy_sections (bfd *inbfd, asection *insec, void *data_ptr)
   else
     bfd_h_put_32 (outbfd, (bfd_vma) 0, buf);
   if (! bfd_set_section_contents (outbfd, secsec, buf, secsecoff, 4))
-    bfd_fatal (_("set .nlmsection contents"));
+    bfd_fatal ("set .nlmsection contents");
   secsecoff += 4;
 
   bfd_h_put_32 (outbfd, (bfd_vma) size, buf);
   if (! bfd_set_section_contents (outbfd, secsec, buf, secsecoff, 4))
-    bfd_fatal (_("set .nlmsection contents"));
+    bfd_fatal ("set .nlmsection contents");
   secsecoff += 4;
 }
 
@@ -1324,9 +1350,14 @@ copy_sections (bfd *inbfd, asection *insec, void *data_ptr)
    by the input formats.  */
 
 static void
-mangle_relocs (bfd *outbfd, asection *insec, arelent ***relocs_ptr,
-	       long *reloc_count_ptr, char *contents,
-	       bfd_size_type contents_size)
+mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
+	       contents_size)
+     bfd *outbfd;
+     asection *insec;
+     arelent ***relocs_ptr;
+     long *reloc_count_ptr;
+     char *contents;
+     bfd_size_type contents_size;
 {
   switch (bfd_get_arch (outbfd))
     {
@@ -1358,11 +1389,16 @@ mangle_relocs (bfd *outbfd, asection *insec, arelent ***relocs_ptr,
 /* By default all we need to do for relocs is change the address by
    the output_offset.  */
 
+/*ARGSUSED*/
 static void
-default_mangle_relocs (bfd *outbfd ATTRIBUTE_UNUSED, asection *insec,
-		       arelent ***relocs_ptr, long *reloc_count_ptr,
-		       char *contents ATTRIBUTE_UNUSED,
-		       bfd_size_type contents_size ATTRIBUTE_UNUSED)
+default_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
+		       contents_size)
+     bfd *outbfd;
+     asection *insec;
+     arelent ***relocs_ptr;
+     long *reloc_count_ptr;
+     char *contents;
+     bfd_size_type contents_size;
 {
   if (insec->output_offset != 0)
     {
@@ -1390,20 +1426,25 @@ static reloc_howto_type nlm_i386_pcrel_howto =
 	 0,			/* rightshift */
 	 2,			/* size (0 = byte, 1 = short, 2 = long) */
 	 32,			/* bitsize */
-	 TRUE,			/* pc_relative */
+	 true,			/* pc_relative */
 	 0,			/* bitpos */
 	 complain_overflow_signed, /* complain_on_overflow */
 	 0,			/* special_function */
 	 "DISP32",		/* name */
-	 TRUE,			/* partial_inplace */
+	 true,			/* partial_inplace */
 	 0xffffffff,		/* src_mask */
 	 0xffffffff,		/* dst_mask */
-	 TRUE);			/* pcrel_offset */
+	 true);			/* pcrel_offset */
 
 static void
-i386_mangle_relocs (bfd *outbfd, asection *insec, arelent ***relocs_ptr,
-		    long *reloc_count_ptr, char *contents,
-		    bfd_size_type contents_size)
+i386_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
+		    contents_size)
+     bfd *outbfd;
+     asection *insec;
+     arelent ***relocs_ptr;
+     long *reloc_count_ptr;
+     char *contents;
+     bfd_size_type contents_size;
 {
   long reloc_count, i;
   arelent **relocs;
@@ -1543,21 +1584,26 @@ static reloc_howto_type nlm32_alpha_nw_howto =
 	 0,			/* rightshift */
 	 0,			/* size (0 = byte, 1 = short, 2 = long) */
 	 0,			/* bitsize */
-	 FALSE,			/* pc_relative */
+	 false,			/* pc_relative */
 	 0,			/* bitpos */
 	 complain_overflow_dont, /* complain_on_overflow */
 	 0,			/* special_function */
 	 "NW_RELOC",		/* name */
-	 FALSE,			/* partial_inplace */
+	 false,			/* partial_inplace */
 	 0,			/* src_mask */
 	 0,			/* dst_mask */
-	 FALSE);		/* pcrel_offset */
+	 false);		/* pcrel_offset */
 
+/*ARGSUSED*/
 static void
-alpha_mangle_relocs (bfd *outbfd, asection *insec,
-		     register arelent ***relocs_ptr, long *reloc_count_ptr,
-		     char *contents ATTRIBUTE_UNUSED,
-		     bfd_size_type contents_size ATTRIBUTE_UNUSED)
+alpha_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
+		     contents_size)
+     bfd *outbfd;
+     asection *insec;
+     register arelent ***relocs_ptr;
+     long *reloc_count_ptr;
+     char *contents;
+     bfd_size_type contents_size;
 {
   long old_reloc_count;
   arelent **old_relocs;
@@ -1610,7 +1656,8 @@ alpha_mangle_relocs (bfd *outbfd, asection *insec,
   ++relocs;
   ++(*reloc_count_ptr);
 
-  memcpy (relocs, old_relocs, (size_t) old_reloc_count * sizeof (arelent *));
+  memcpy ((PTR) relocs, (PTR) old_relocs,
+	  (size_t) old_reloc_count * sizeof (arelent *));
   relocs[old_reloc_count] = (arelent *) NULL;
 
   free (old_relocs);
@@ -1619,7 +1666,7 @@ alpha_mangle_relocs (bfd *outbfd, asection *insec,
     {
       register bfd_size_type i;
 
-      for (i = 0; i < (bfd_size_type) old_reloc_count; i++, relocs++)
+      for (i = 0; i < old_reloc_count; i++, relocs++)
 	(*relocs)->address += insec->output_offset;
     }
 }
@@ -1686,8 +1733,11 @@ static bfd_size_type powerpc_initial_got_size;
    build a stub for each one.  */
 
 static void
-powerpc_build_stubs (bfd *inbfd, bfd *outbfd ATTRIBUTE_UNUSED,
-		     asymbol ***symbols_ptr, long *symcount_ptr)
+powerpc_build_stubs (inbfd, outbfd, symbols_ptr, symcount_ptr)
+     bfd *inbfd;
+     bfd *outbfd;
+     asymbol ***symbols_ptr;
+     long *symcount_ptr;
 {
   asection *stub_sec;
   asection *got_sec;
@@ -1769,7 +1819,7 @@ powerpc_build_stubs (bfd *inbfd, bfd *outbfd ATTRIBUTE_UNUSED,
 
       item->next = powerpc_stubs;
       powerpc_stubs = item;
-
+      
       ++stubcount;
     }
 
@@ -1795,7 +1845,7 @@ powerpc_build_stubs (bfd *inbfd, bfd *outbfd ATTRIBUTE_UNUSED,
 				     (got_base
 				      + (stubcount
 					 * POWERPC_STUB_TOC_ENTRY_SIZE))))
-	bfd_fatal (_("stub section sizes"));
+	bfd_fatal ("stub section sizes");
     }
 }
 
@@ -1803,7 +1853,9 @@ powerpc_build_stubs (bfd *inbfd, bfd *outbfd ATTRIBUTE_UNUSED,
    of the output section, and create new relocs in the TOC.  */
 
 static void
-powerpc_resolve_stubs (bfd *inbfd, bfd *outbfd)
+powerpc_resolve_stubs (inbfd, outbfd)
+     bfd *inbfd;
+     bfd *outbfd;
 {
   bfd_byte buf[POWERPC_STUB_SIZE];
   unsigned int i;
@@ -1842,7 +1894,7 @@ powerpc_resolve_stubs (bfd *inbfd, bfd *outbfd)
 				      buf,
 				      l->start->value,
 				      POWERPC_STUB_SIZE))
-	bfd_fatal (_("writing stub"));
+	bfd_fatal ("writing stub");
 
       /* Create a new reloc for the TOC entry.  */
       reloc = (arelent *) xmalloc (sizeof (arelent));
@@ -1850,7 +1902,7 @@ powerpc_resolve_stubs (bfd *inbfd, bfd *outbfd)
       reloc->address = l->toc_index + got_sec->output_offset;
       reloc->addend = 0;
       reloc->howto = bfd_reloc_type_lookup (inbfd, BFD_RELOC_32);
-
+				      
       *r++ = reloc;
     }
 
@@ -1863,11 +1915,16 @@ powerpc_resolve_stubs (bfd *inbfd, bfd *outbfd)
    r2, will be set to the correct TOC value, so there is no need for
    any further reloc.  */
 
+/*ARGSUSED*/
 static void
-powerpc_mangle_relocs (bfd *outbfd, asection *insec,
-		       register arelent ***relocs_ptr,
-		       long *reloc_count_ptr, char *contents,
-		       bfd_size_type contents_size ATTRIBUTE_UNUSED)
+powerpc_mangle_relocs (outbfd, insec, relocs_ptr, reloc_count_ptr, contents,
+		       contents_size)
+     bfd *outbfd;
+     asection *insec;
+     register arelent ***relocs_ptr;
+     long *reloc_count_ptr;
+     char *contents;
+     bfd_size_type contents_size;
 {
   reloc_howto_type *toc_howto;
   long reloc_count;
@@ -1927,8 +1984,8 @@ powerpc_mangle_relocs (bfd *outbfd, asection *insec,
 	     between two sections both of which were placed in the
 	     same output section.  This should not happen.  */
 	  if (bfd_get_section (sym) != insec->output_section)
-	    non_fatal (_("unresolved PC relative reloc against %s"),
-		       bfd_asymbol_name (sym));
+	    fprintf (stderr, "%s: unresolved PC relative reloc against %s\n",
+		     program_name, bfd_asymbol_name (sym));
 	  else
 	    {
 	      bfd_vma val;
@@ -1991,8 +2048,9 @@ powerpc_mangle_relocs (bfd *outbfd, asection *insec,
 			& rel->howto->dst_mask));
 	      if ((bfd_signed_vma) val < - 0x8000
 		  || (bfd_signed_vma) val >= 0x8000)
-		non_fatal (_("overflow when adjusting relocation against %s"),
-			   bfd_asymbol_name (sym));
+		fprintf (stderr,
+			 "%s: overflow when adjusting relocation against %s\n",
+			 program_name, bfd_asymbol_name (sym));
 	      bfd_put_16 (outbfd, val, (bfd_byte *) contents + rel->address);
 	      break;
 
@@ -2043,7 +2101,9 @@ powerpc_mangle_relocs (bfd *outbfd, asection *insec,
    file.  */
 
 static char *
-link_inputs (struct string_list *inputs, char *ld)
+link_inputs (inputs, ld)
+     struct string_list *inputs;
+     char *ld;
 {
   size_t c;
   struct string_list *q;
@@ -2051,8 +2111,6 @@ link_inputs (struct string_list *inputs, char *ld)
   size_t i;
   int pid;
   int status;
-  char *errfmt;
-  char *errarg;
 
   c = 0;
   for (q = inputs; q != NULL; q = q->next)
@@ -2084,7 +2142,7 @@ link_inputs (struct string_list *inputs, char *ld)
   if (ld == NULL)
     ld = (char *) LD_NAME;
 
-  unlink_on_exit = make_temp_file (".O");
+  unlink_on_exit = choose_temp_file (".O");
 
   argv[0] = ld;
   argv[1] = (char *) "-Ur";
@@ -2102,29 +2160,127 @@ link_inputs (struct string_list *inputs, char *ld)
       fprintf (stderr, "\n");
     }
 
-  pid = pexecute (ld, argv, program_name, (char *) NULL, &errfmt, &errarg,
-		  PEXECUTE_SEARCH | PEXECUTE_ONE);
-  if (pid == -1)
-    {
-      fprintf (stderr, _("%s: execution of %s failed: "), program_name, ld);
-      fprintf (stderr, errfmt, errarg);
-      unlink (unlink_on_exit);
-      exit (1);
-    }
+  pid = pexecute (ld, argv);
 
-  if (pwait (pid, &status, 0) < 0)
+  if (waitpid (pid, &status, 0) < 0)
     {
-      perror ("pwait");
+      perror ("waitpid");
       unlink (unlink_on_exit);
       exit (1);
     }
 
   if (status != 0)
     {
-      non_fatal (_("Execution of %s failed"), ld);
+      fprintf (stderr, "%s: Execution of %s failed\n", program_name, ld);
       unlink (unlink_on_exit);
       exit (1);
     }
 
   return unlink_on_exit;
 }
+
+/* Execute a job.  Stolen from gcc.c.  */
+
+#ifndef OS2
+#ifdef __MSDOS__
+
+static int
+pexecute (program, argv)
+     char *program;
+     char *argv[];
+{
+  char *scmd, *rf;
+  FILE *argfile;
+  int i;
+
+  scmd = (char *)malloc (strlen (program) + strlen (temp_filename) + 10);
+  rf = scmd + strlen(program) + 2 + el;
+  sprintf (scmd, "%s.exe @%s.gp", program, temp_filename);
+  argfile = fopen (rf, "w");
+  if (argfile == 0)
+    pfatal_with_name (rf);
+
+  for (i=1; argv[i]; i++)
+    {
+      char *cp;
+      for (cp = argv[i]; *cp; cp++)
+	{
+	  if (*cp == '"' || *cp == '\'' || *cp == '\\' || isspace (*cp))
+	    fputc ('\\', argfile);
+	  fputc (*cp, argfile);
+	}
+      fputc ('\n', argfile);
+    }
+  fclose (argfile);
+
+  i = system (scmd);
+
+  remove (rf);
+  
+  if (i == -1)
+    {
+      perror (program);
+      return MIN_FATAL_STATUS << 8;
+    }
+
+  return i << 8;
+}
+
+#else /* not __MSDOS__ */
+
+static int
+pexecute (program, argv)
+     char *program;
+     char *argv[];
+{
+  int pid;
+  int retries, sleep_interval;
+
+  /* Fork a subprocess; wait and retry if it fails.  */
+  sleep_interval = 1;
+  for (retries = 0; retries < 4; retries++)
+    {
+      pid = vfork ();
+      if (pid >= 0)
+	break;
+      sleep (sleep_interval);
+      sleep_interval *= 2;
+    }
+
+  switch (pid)
+    {
+    case -1:
+#ifdef vfork
+      perror ("fork");
+#else
+      perror ("vfork");
+#endif
+      exit (1);
+      /* NOTREACHED */
+      return 0;
+
+    case 0: /* child */
+      /* Exec the program.  */
+      execvp (program, argv);
+      perror (program);
+      exit (1);
+      /* NOTREACHED */
+      return 0;
+
+    default:
+      /* Return child's process number.  */
+      return pid;
+    }
+}
+
+#endif /* not __MSDOS__ */
+#else /* not OS2 */
+
+static int
+pexecute (program, argv)
+     char *program;
+     char *argv[];
+{
+  return spawnvp (1, program, argv);
+}
+#endif /* not OS2 */

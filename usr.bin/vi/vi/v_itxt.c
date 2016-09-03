@@ -1,5 +1,3 @@
-/*	$OpenBSD: v_itxt.c,v 1.8 2014/11/12 04:28:41 bentley Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)v_itxt.c	10.16 (Berkeley) 10/23/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -55,16 +57,18 @@
 		(void)log_cursor(sp);					\
 }
 
-static u_int32_t set_txt_std(SCR *, VICMD *, u_int32_t);
+static u_int32_t set_txt_std __P((SCR *, VICMD *, u_int32_t));
 
 /*
  * v_iA -- [count]A
  *	Append text to the end of the line.
  *
- * PUBLIC: int v_iA(SCR *, VICMD *);
+ * PUBLIC: int v_iA __P((SCR *, VICMD *));
  */
 int
-v_iA(SCR *sp, VICMD *vp)
+v_iA(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 
@@ -81,10 +85,12 @@ v_iA(SCR *sp, VICMD *vp)
  *	   [count]A
  *	Append text to the cursor position.
  *
- * PUBLIC: int v_ia(SCR *, VICMD *);
+ * PUBLIC: int v_ia __P((SCR *, VICMD *));
  */
 int
-v_ia(SCR *sp, VICMD *vp)
+v_ia(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 	u_int32_t flags;
@@ -118,10 +124,12 @@ v_ia(SCR *sp, VICMD *vp)
  * v_iI -- [count]I
  *	Insert text at the first nonblank.
  *
- * PUBLIC: int v_iI(SCR *, VICMD *);
+ * PUBLIC: int v_iI __P((SCR *, VICMD *));
  */
 int
-v_iI(SCR *sp, VICMD *vp)
+v_iI(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	sp->cno = 0;
 	if (nonblank(sp, vp->m_start.lno, &sp->cno))
@@ -137,10 +145,12 @@ v_iI(SCR *sp, VICMD *vp)
  *	   [count]I
  *	Insert text at the cursor position.
  *
- * PUBLIC: int v_ii(SCR *, VICMD *);
+ * PUBLIC: int v_ii __P((SCR *, VICMD *));
  */
 int
-v_ii(SCR *sp, VICMD *vp)
+v_ii(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 	u_int32_t flags;
@@ -164,16 +174,18 @@ v_ii(SCR *sp, VICMD *vp)
 }
 
 enum which { o_cmd, O_cmd };
-static int io(SCR *, VICMD *, enum which);
+static int io __P((SCR *, VICMD *, enum which));
 
 /*
  * v_iO -- [count]O
  *	Insert text above this line.
  *
- * PUBLIC: int v_iO(SCR *, VICMD *);
+ * PUBLIC: int v_iO __P((SCR *, VICMD *));
  */
 int
-v_iO(SCR *sp, VICMD *vp)
+v_iO(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (io(sp, vp, O_cmd));
 }
@@ -182,16 +194,21 @@ v_iO(SCR *sp, VICMD *vp)
  * v_io -- [count]o
  *	Insert text after this line.
  *
- * PUBLIC: int v_io(SCR *, VICMD *);
+ * PUBLIC: int v_io __P((SCR *, VICMD *));
  */
 int
-v_io(SCR *sp, VICMD *vp)
+v_io(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	return (io(sp, vp, o_cmd));
 }
 
 static int
-io(SCR *sp, VICMD *vp, enum which cmd)
+io(sp, vp, cmd)
+	SCR *sp;
+	VICMD *vp;
+	enum which cmd;
 {
 	recno_t ai_line, lno;
 	size_t len;
@@ -238,10 +255,12 @@ insert:		p = "";
  *	       [buffer][count]S
  *	Change command.
  *
- * PUBLIC: int v_change(SCR *, VICMD *);
+ * PUBLIC: int v_change __P((SCR *, VICMD *));
  */
 int
-v_change(SCR *sp, VICMD *vp)
+v_change(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t blen, len;
 	u_int32_t flags;
@@ -377,10 +396,12 @@ v_change(SCR *sp, VICMD *vp)
  * v_Replace -- [count]R
  *	Overwrite multiple characters.
  *
- * PUBLIC: int v_Replace(SCR *, VICMD *);
+ * PUBLIC: int v_Replace __P((SCR *, VICMD *));
  */
 int
-v_Replace(SCR *sp, VICMD *vp)
+v_Replace(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 	u_int32_t flags;
@@ -411,10 +432,12 @@ v_Replace(SCR *sp, VICMD *vp)
  * v_subst -- [buffer][count]s
  *	Substitute characters.
  *
- * PUBLIC: int v_subst(SCR *, VICMD *);
+ * PUBLIC: int v_subst __P((SCR *, VICMD *));
  */
 int
-v_subst(SCR *sp, VICMD *vp)
+v_subst(sp, vp)
+	SCR *sp;
+	VICMD *vp;
 {
 	size_t len;
 	u_int32_t flags;
@@ -454,7 +477,10 @@ v_subst(SCR *sp, VICMD *vp)
  *	Initialize text processing flags.
  */
 static u_int32_t
-set_txt_std(SCR *sp, VICMD *vp, u_int32_t flags)
+set_txt_std(sp, vp, flags)
+	SCR *sp;
+	VICMD *vp;
+	u_int32_t flags;
 {
 	LF_SET(TXT_CNTRLT |
 	    TXT_ESCAPE | TXT_MAPINPUT | TXT_RECORD | TXT_RESOLVE);

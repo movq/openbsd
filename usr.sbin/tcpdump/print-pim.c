@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-pim.c,v 1.8 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -21,15 +19,23 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-pim.c,v 1.2 1996/12/12 16:22:29 bitblt Exp $ (LBL)";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,10 +45,10 @@
 #include "addrtoname.h"
 
 void
-pim_print(const u_char *bp, u_int len)
+pim_print(register const u_char *bp, register u_int len)
 {
-    const u_char *ep;
-    u_char type;
+    register const u_char *ep;
+    register u_char type;
 
     ep = (const u_char *)snapend;
     if (bp >= ep)

@@ -1,5 +1,3 @@
-.\" $OpenBSD: arch.1,v 1.9 2007/05/31 19:20:07 jmc Exp $
-.\"
 .\" Copyright (c) 1994 SigmaSoft, Th. Lockert
 .\" All rights reserved.
 .\"
@@ -11,6 +9,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"      This product includes software developed by SigmaSoft, Th. Lockert.
+.\" 4. The name of the author may not be used to endorse or promote products
+.\"    derived from this software without specific prior written permission
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
 .\" IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -23,9 +26,9 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.\"	$OpenBSD: arch.1,v 1.9 2007/05/31 19:20:07 jmc Exp $
+.\"	$OpenBSD: arch.1,v 1.4 1999/08/19 22:17:38 niklas Exp $
 .\"
-.Dd $Mdocdate: May 31 2007 $
+.Dd June 22, 1996
 .Dt ARCH 1
 .Os
 .Sh NAME
@@ -39,40 +42,43 @@
 .Op Fl a
 .Sh DESCRIPTION
 The
-.Nm arch
+.Nm
 and
 .Nm machine
-commands display the machine's architecture in slightly different ways.
-.Nm arch
+command displays the machine's architecture in slightly different ways.
+.Nm
 by default displays the application architecture, defined by both the
 operating system and the instruction set architecture, while
 .Nm machine
 displays the kernel architecture (without the operating system part).
 Note that both commands output the target architecture as opposed to
 .Xr uname 1
-which describes the host.
-This is useful for dynamic discovery
+which describes the host.  This is useful for dynamic discovery
 of the target architecture in build or configuration scripts
 needing to work in cross-compilation environments.
 .Pp
-The options for
-.Nm arch
-are as follows:
+The following options are available to
+.Nm arch :
 .Bl -tag -width indent
 .It Fl k
 Display the kernel architecture instead of application
 architecture.
 .It Fl s
-Display the chosen architecture in a short form, i.e., without the
+Display the chosen architecture in a short form, i.e. without the
 operating system prefixed.
 .El
 .Pp
-The options for
+The
 .Nm machine
-are as follows:
+command accepts this option:
 .Bl -tag -width indent
 .It Fl a
 Display the application architecture instead of the kernel architecture.
 .El
 .Sh SEE ALSO
 .Xr uname 1
+.Sh HISTORY
+The
+.Nm
+command is
+.Ud .

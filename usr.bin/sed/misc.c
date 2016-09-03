@@ -1,4 +1,4 @@
-/*	$OpenBSD: misc.c,v 1.11 2015/10/26 14:08:47 mmcc Exp $	*/
+/*	$OpenBSD: misc.c,v 1.3 1997/07/25 21:05:41 mickey Exp $	*/
 
 /*-
  * Copyright (c) 1992 Diomidis Spinellis.
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,6 +37,11 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+/* from: static char sccsid[] = "@(#)misc.c	8.1 (Berkeley) 6/6/93"; */
+static char *rcsid = "$OpenBSD: misc.c,v 1.3 1997/07/25 21:05:41 mickey Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 
 #include <errno.h>
@@ -40,7 +49,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 
 #include "defs.h"
 #include "extern.h"
@@ -49,22 +57,13 @@
  * malloc with result test
  */
 void *
-xmalloc(size_t size)
+xmalloc(size)
+	u_int size;
 {
 	void *p;
 
 	if ((p = malloc(size)) == NULL)
-		error(FATAL, "%s", strerror(errno));
-	return (p);
-}
-
-void *
-xreallocarray(void *o, size_t nmemb, size_t size)
-{
-	void *p;
-
-	if ((p = reallocarray(o, nmemb, size)) == NULL)
-		error(FATAL, "%s", strerror(errno));
+		err(FATAL, "%s", strerror(errno));
 	return (p);
 }
 
@@ -72,11 +71,15 @@ xreallocarray(void *o, size_t nmemb, size_t size)
  * realloc with result test
  */
 void *
-xrealloc(void *p, size_t size)
+xrealloc(p, size)
+	void *p;
+	u_int size;
 {
+	if (p == NULL)			/* Compatibility hack. */
+		return (xmalloc(size));
 
 	if ((p = realloc(p, size)) == NULL)
-		error(FATAL, "%s", strerror(errno));
+		err(FATAL, "%s", strerror(errno));
 	return (p);
 }
 
@@ -86,27 +89,45 @@ xrealloc(void *p, size_t size)
  * the buffer).
  */
 char *
-strregerror(int errcode, regex_t *preg)
+strregerror(errcode, preg)
+	int errcode;
+	regex_t *preg;
 {
 	static char *oe;
 	size_t s;
 
-	free(oe);
+	if (oe != NULL)
+		free(oe);
 	s = regerror(errcode, preg, "", 0);
 	oe = xmalloc(s);
 	(void)regerror(errcode, preg, oe, s);
 	return (oe);
 }
 
+#ifdef __STDC__
+#include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 /*
  * Error reporting function
  */
 void
-error(int severity, const char *fmt, ...)
+#ifdef __STDC__
+err(int severity, const char *fmt, ...)
+#else
+err(severity, fmt, va_alist)
+	int severity;
+	char *fmt;
+        va_dcl
+#endif
 {
 	va_list ap;
-
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	(void)fprintf(stderr, "sed: ");
 	switch (severity) {
 	case WARNING:

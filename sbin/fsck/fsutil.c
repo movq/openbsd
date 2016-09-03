@@ -1,4 +1,4 @@
-/*	$OpenBSD: fsutil.c,v 1.22 2015/09/27 05:25:00 guenther Exp $	*/
+/*	$OpenBSD: fsutil.c,v 1.2 1997/07/25 19:13:18 mickey Exp $	*/
 /*	$NetBSD: fsutil.c,v 1.2 1996/10/03 20:06:31 christos Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,14 +33,20 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#ifndef lint
+static char rcsid[] = "$NetBSD: fsutil.c,v 1.2 1996/10/03 20:06:31 christos Exp $";
+#endif /* not lint */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#ifdef __STDC__
 #include <stdarg.h>
+#else
+#include <varargs.h>
+#endif
 #include <errno.h>
 #include <fstab.h>
-#include <limits.h>
 #include <err.h>
 
 #include <sys/types.h>
@@ -45,113 +55,156 @@
 #include "fsutil.h"
 
 static const char *dev = NULL;
-static const char *origdev = NULL;
 static int hot = 0;
 static int preen = 0;
 
 extern char *__progname;
 
-static void vmsg(int, const char *, va_list);
+static void vmsg __P((int, const char *, va_list));
 
 void
-setcdevname(const char *cd, const char *ocd, int pr)
+setcdevname(cd, pr)
+	const char *cd;
+	int pr;
 {
 	dev = cd;
-	origdev = ocd;
 	preen = pr;
 }
 
 const char *
-cdevname(void)
+cdevname()
 {
 	return dev;
 }
 
 int
-hotroot(void)
+hotroot()
 {
 	return hot;
 }
 
+/*VARARGS*/
 void
+#ifdef __STDC__
 errexit(const char *fmt, ...)
+#else
+errexit(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+	
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	(void) vfprintf(stderr, fmt, ap);
 	va_end(ap);
 	exit(8);
 }
 
 static void
-vmsg(int fatal, const char *fmt, va_list ap)
+vmsg(fatal, fmt, ap)
+	int fatal;
+	const char *fmt;
+	va_list ap;
 {
-	if (!fatal && preen) {
-		if (origdev)
-			printf("%s (%s): ", dev, origdev);
-		else
-			printf("%s: ", dev);
-	}
+	if (!fatal && preen)
+		(void) printf("%s: ", dev);
 
 	(void) vprintf(fmt, ap);
-	
+
+	if (fatal && preen)
+		(void) printf("\n");
+
 	if (fatal && preen) {
-		printf("\n");
-		if (origdev)
-			printf("%s (%s): ", dev, origdev);
-		else
-			printf("%s: ", dev);
-		printf("UNEXPECTED INCONSISTENCY; RUN %s MANUALLY.\n",
-		    __progname);
+		(void) printf(
+		    "%s: UNEXPECTED INCONSISTENCY; RUN %s MANUALLY.\n",
+		    dev, __progname);
 		exit(8);
 	}
 }
 
+/*VARARGS*/
 void
+#ifdef __STDC__
 pfatal(const char *fmt, ...)
+#else
+pfatal(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+	
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	vmsg(1, fmt, ap);
 	va_end(ap);
 }
 
+/*VARARGS*/
 void
+#ifdef __STDC__
 pwarn(const char *fmt, ...)
+#else
+pwarn(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+	
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	vmsg(0, fmt, ap);
 	va_end(ap);
 }
 
 void
-xperror(const char *s)
+perror(s)
+	const char *s;
 {
 	pfatal("%s (%s)", s, strerror(errno));
 }
 
 void
+#ifdef __STDC__
 panic(const char *fmt, ...)
+#else
+panic(fmt, va_alist)
+	char *fmt;
+	va_dcl
+#endif
 {
 	va_list ap;
-
+	
+#ifdef __STDC__
 	va_start(ap, fmt);
+#else
+	va_start(ap);
+#endif
 	vmsg(1, fmt, ap);
 	va_end(ap);
 	exit(8);
 }
 
 char *
-unrawname(char *name)
+unrawname(name)
+	char *name;
 {
 	char *dp;
 	struct stat stb;
 
-	if ((dp = strrchr(name, '/')) == NULL)
+	if ((dp = strrchr(name, '/')) == 0)
 		return (name);
 	if (stat(name, &stb) < 0)
 		return (name);
@@ -159,28 +212,30 @@ unrawname(char *name)
 		return (name);
 	if (dp[1] != 'r')
 		return (name);
-	(void)memmove(&dp[1], &dp[2], strlen(&dp[2]) + 1);
+	(void)strcpy(&dp[1], &dp[2]);
 	return (name);
 }
 
 char *
-rawname(char *name)
+rawname(name)
+	char *name;
 {
-	static char rawbuf[PATH_MAX];
+	static char rawbuf[32];
 	char *dp;
 
-	if ((dp = strrchr(name, '/')) == NULL)
+	if ((dp = strrchr(name, '/')) == 0)
 		return (0);
 	*dp = 0;
-	(void)strlcpy(rawbuf, name, sizeof rawbuf);
+	(void)strcpy(rawbuf, name);
 	*dp = '/';
-	(void)strlcat(rawbuf, "/r", sizeof rawbuf);
-	(void)strlcat(rawbuf, &dp[1], sizeof rawbuf);
+	(void)strcat(rawbuf, "/r");
+	(void)strcat(rawbuf, &dp[1]);
 	return (rawbuf);
 }
 
 char *
-blockcheck(char *origname)
+blockcheck(origname)
+	char *origname;
 {
 	struct stat stslash, stblock, stchar;
 	char *newname, *raw;
@@ -189,21 +244,23 @@ blockcheck(char *origname)
 
 	hot = 0;
 	if (stat("/", &stslash) < 0) {
-		xperror("/");
+		perror("/");
 		printf("Can't stat root\n");
 		return (origname);
 	}
 	newname = origname;
 retry:
-	if (stat(newname, &stblock) < 0)
+	if (stat(newname, &stblock) < 0) {
+		perror(newname);
+		printf("Can't stat %s\n", newname);
 		return (origname);
-
+	}
 	if (S_ISBLK(stblock.st_mode)) {
 		if (stslash.st_dev == stblock.st_rdev)
 			hot++;
 		raw = rawname(newname);
 		if (stat(raw, &stchar) < 0) {
-			xperror(raw);
+			perror(raw);
 			printf("Can't stat %s\n", raw);
 			return (origname);
 		}
@@ -231,13 +288,10 @@ retry:
 
 
 void *
-emalloc(size_t s)
+emalloc(s)
+	size_t s;
 {
-	void *p;
-
-	if (s == 0)
-		err(1, "malloc failed");
-	p = malloc(s);
+	void *p = malloc(s);
 	if (p == NULL)
 		err(1, "malloc failed");
 	return p;
@@ -245,25 +299,20 @@ emalloc(size_t s)
 
 
 void *
-ereallocarray(void *p, size_t n, size_t s)
+erealloc(p, s)
+	void *p;
+	size_t s;
 {
-	void *newp;
-
-	if (n == 0 || s == 0) {
-		free(p);
+	p = realloc(p, s);
+	if (p == NULL)
 		err(1, "realloc failed");
-	}
-	newp = reallocarray(p, n, s);
-	if (newp == NULL) {
-		free(p);
-		err(1, "realloc failed");
-	}
-	return newp;
+	return p;
 }
 
 
 char *
-estrdup(const char *s)
+estrdup(s)
+	const char *s;
 {
 	char *p = strdup(s);
 	if (p == NULL)

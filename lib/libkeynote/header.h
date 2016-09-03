@@ -1,4 +1,4 @@
-/* $OpenBSD: header.h,v 1.10 2004/06/29 11:35:56 msf Exp $ */
+/* $OpenBSD: header.h,v 1.4 1999/10/09 19:47:31 angelos Exp $ */
 /*
  * The author of this code is Angelos D. Keromytis (angelos@dsl.cis.upenn.edu)
  *
@@ -7,7 +7,7 @@
  *
  * Copyright (C) 1998, 1999 by Angelos D. Keromytis.
  *	
- * Permission to use, copy, and modify this software with or without fee
+ * Permission to use, copy, and modify this software without fee
  * is hereby granted, provided that this entire notice is included in
  * all copies of any software which is or includes a copy or
  * modification of this software. 
@@ -26,10 +26,11 @@
 extern void keynote_sign(int, char **), keynote_sigver(int, char **);
 extern void keynote_verify(int, char **), keynote_keygen(int, char **);
 extern void print_key(FILE *, char *, char *, int, int);
+extern void mystrncpy(char *, char *, int);
 extern void print_space(FILE *, int);
 extern int read_environment(char *);
 extern void parse_key(char *);
-extern int kvparse(void), kvlex(void);
+extern int kvparse(), kvlex();
 extern void kverror(char *);
 
 /* Variables */
@@ -37,7 +38,8 @@ int sessid;
 
 /* Defines */
 #define SEED_LEN        40
-#define DEFAULT_PUBLIC  0x10001
+#define RND_BYTES       1024
+#define DEFAULT_PUBLIC    0x10001
 
 #define KEY_PRINT_OFFSET      12
 #define KEY_PRINT_LENGTH      50

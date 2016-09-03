@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.212 2016/05/07 21:58:24 tedu Exp $
+#	$OpenBSD: Makefile,v 1.75 1999/10/05 22:29:36 beck Exp $
 #	$NetBSD: Makefile,v 1.59 1996/05/15 21:36:43 jtc Exp $
 
 #	@(#)Makefile	5.45.1.1 (Berkeley) 5/6/91
@@ -6,147 +6,156 @@
 # The ``rm -rf''s used below are safe because rm doesn't follow symbolic
 # links.
 
+# Missing: mp.h
 
-.include <bsd.own.mk>
+FILES=	a.out.h ar.h assert.h bitstring.h blf.h bm.h cast.h cpio.h ctype.h \
+	curses.h db.h dbm.h des.h dirent.h disktab.h elf_abi.h err.h fnmatch.h \
+	fstab.h fts.h glob.h grp.h ieeefp.h inttypes.h iso646.h kvm.h \
+	langinfo.h libgen.h limits.h locale.h malloc.h math.h md4.h md5.h \
+	memory.h mpool.h ndbm.h netdb.h netgroup.h nlist.h nl_types.h \
+	olf_abi.h paths.h poll.h pwd.h ranlib.h re_comp.h regex.h resolv.h \
+	rmd160.h search.h setjmp.h sgtty.h sha1.h skipjack.h signal.h stab.h \
+	stdbool.h stddef.h stdio.h stdlib.h string.h strings.h struct.h sysexits.h \
+	tar.h time.h ttyent.h tzfile.h unistd.h utime.h utmp.h vis.h
 
-FILES=	a.out.h ar.h asr.h assert.h bitstring.h blf.h bsd_auth.h \
-	complex.h cpio.h ctype.h curses.h db.h dirent.h disktab.h \
-	dlfcn.h elf_abi.h err.h errno.h fenv.h float.h fnmatch.h fstab.h fts.h \
-	ftw.h getopt.h glob.h grp.h icdb.h ieeefp.h ifaddrs.h inttypes.h \
-	iso646.h kvm.h langinfo.h libgen.h limits.h link.h link_elf.h \
-	locale.h login_cap.h math.h md5.h memory.h ndbm.h netdb.h netgroup.h \
-	nlist.h nl_types.h paths.h poll.h pwd.h ranlib.h readpassphrase.h \
-	regex.h resolv.h rmd160.h search.h setjmp.h sha1.h sha2.h signal.h \
-	siphash.h sndio.h spawn.h stdbool.h stddef.h stdio.h stdlib.h \
-	string.h strings.h struct.h sysexits.h tar.h tgmath.h tib.h time.h \
-	ttyent.h unistd.h utime.h utmp.h uuid.h vis.h wchar.h wctype.h
-
-MFILES=	frame.h
-LFILES=	endian.h fcntl.h syslog.h termios.h stdarg.h stdint.h varargs.h
-
-DIRS=	arpa protocols rpc rpcsvc
-LDIRS=	crypto ddb dev isofs miscfs msdosfs net netinet netinet6 \
-	netmpls net80211 nfs ntfs scsi sys ufs uvm
-
-# Places that need a prerequisite target met before includes
-PRDIRS=
-
-# Directories with an includes target
-RDIRS=	../lib/libcrypto ../lib/libcurses ../lib/libedit \
-	../lib/libevent ../lib/libexpat ../lib/libform \
-	../lib/libfuse ../lib/libkeynote ../lib/libmenu \
-	../lib/libossaudio ../lib/libpanel \
-	../lib/libpcap ../lib/libradius ../lib/librpcsvc ../lib/librthread \
-	../lib/libskey ../lib/libsqlite3 ../lib/libssl  ../lib/libtls \
-	../lib/libusbhid ../lib/libutil ../lib/libz \
-	../usr.bin/lex ../gnu/lib/libreadline \
-	../sys/arch/${MACHINE}
-
-.if ${COMPILER_VERSION:L} == "gcc3"
-RDIRS+= ../gnu/usr.bin/gcc ../gnu/lib/libobjc
-PRDIRS+= ../gnu/lib/libstdc++
-.else
-RDIRS+= ../gnu/usr.bin/cc/libobjc
-PRDIRS+= ../gnu/lib/libstdc++-v3
-RDIRS+= ../gnu/usr.bin/cc/include
+.if (${MACHINE_ARCH} != "alpha") && (${MACHINE_ARCH} != "mips") && \
+	(${MACHINE_ARCH} != "powerpc")
+FILES+=	dlfcn.h link.h
 .endif
 
-# prereq implies includes
-RDIRS += ${PRDIRS}
+MFILES=	float.h frame.h stdarg.h varargs.h
+LFILES=	errno.h fcntl.h syslog.h termios.h
+
+.if (${MACHINE_ARCH} == "mips")
+MFILES+= link.h dlfcn.h
+.endif
+
+DIRS=	arpa protocols rpc rpcsvc
+LDIRS=	dev net netinet netinet6 netccitt netiso netns netipx nfs sys ufs vm \
+	ddb scsi netatalk isofs xfs uvm miscfs
+
+# Directories with an includes target
+RDIRS=	../lib/libc_r ../lib/libcom_err ../lib/libcompat ../lib/libcurses \
+	../lib/libcurses++ ../lib/libform ../lib/libmenu ../lib/libocurses \
+	../lib/libossaudio ../lib/libpanel ../lib/librpcsvc ../lib/libskey \
+	../lib/libedit ../lib/libpcap ../lib/libutil ../lib/libwrap \
+	../lib/libz ../lib/libkeynote ../sys/arch/${MACHINE}
+
+# Places using Makefile that needs a prerequisite target met before includes
+PRDIRS=
+
+# Directories with an includes target that use Makefile.bsd-wrapper
+WDIRS=	../lib/libssl ../gnu/lib/libgmp ../usr.sbin/httpd
+WDIRS+= ../gnu/egcs/libio ../gnu/egcs/libstdc++ ../gnu/egcs/libf2c \
+	../gnu/egcs/libobjc ../gnu/egcs/gcc
+
+# Places using Makefile.bsd-wrapper that needs a prerequisite target met
+# before includes
+PWDIRS=	../lib/libssl ../usr.sbin/httpd
 
 NOOBJ=	noobj
 
 # Change SYS_INCLUDE in bsd.own.mk to "symlinks" if you don't want copies
+.include <bsd.own.mk>
 SYS_INCLUDE?=	copies
-
-RUN_MAKE = if test -f Makefile.bsd-wrapper; then ${MAKE} -f Makefile.bsd-wrapper $@; else ${MAKE} $@; fi
+.if (${KERBEROS} == "yes")
+RDIRS+=	../kerberosIV/include ../kerberosIV/kadm ../kerberosIV/krb
+PRDIRS+=../kerberosIV/kadm ../kerberosIV/krb
+.endif
 
 prereq:
-	@for i in ${PRDIRS}; do \
+	@-for i in ${PRDIRS}; do \
 		echo preparing in ${.CURDIR}/$$i; \
-		cd ${.CURDIR}/$$i && ${RUN_MAKE}; \
+		(cd ${.CURDIR}/$$i; ${MAKE} prereq) \
+	done
+	@-for i in ${PWDIRS}; do \
+		echo preparing in ${.CURDIR}/$$i; \
+		(cd ${.CURDIR}/$$i; ${MAKE} -f Makefile.bsd-wrapper prereq) \
 	done
 
 includes:
 	@echo installing ${FILES}
-	@for i in ${FILES}; do \
+	@-for i in ${FILES}; do \
 		cmp -s $$i ${DESTDIR}/usr/include/$$i || \
 		    ${INSTALL} ${INSTALL_COPY} -m 444 $$i ${DESTDIR}/usr/include/$$i; \
 	done
 	@echo installing ${DIRS}
-	@for i in ${DIRS}; do \
+	@-for i in ${DIRS}; do \
 		${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m 755 \
 			${DESTDIR}/usr/include/$$i; \
-		cd ${.CURDIR}/$$i && for j in *.[ih]; do \
+		(cd $$i; for j in *.[ih]; do \
 			cmp -s $$j ${DESTDIR}/usr/include/$$i/$$j || \
 			${INSTALL} ${INSTALL_COPY} -m 444 $$j ${DESTDIR}/usr/include/$$i/$$j; \
-		done; \
+		done); \
 	done
-	@ln -sfh openssl ${DESTDIR}/usr/include/ssl
+	@rm -f ${DESTDIR}/usr/include/openssl
+	@ln -sf ssl ${DESTDIR}/usr/include/openssl
 	@echo installing ${LFILES}
-	@for i in ${LFILES}; do \
-		rm -f ${DESTDIR}/usr/include/$$i && \
+	@-for i in ${LFILES}; do \
+		rm -f ${DESTDIR}/usr/include/$$i; \
 		ln -s sys/$$i ${DESTDIR}/usr/include/$$i; \
 	done
 	@echo installing ${MFILES}
-	@for i in ${MFILES}; do \
-		rm -f ${DESTDIR}/usr/include/$$i && \
+	@-for i in ${MFILES}; do \
+		rm -f ${DESTDIR}/usr/include/$$i; \
 		ln -s machine/$$i ${DESTDIR}/usr/include/$$i; \
 	done
 	chown -R ${BINOWN}:${BINGRP} ${DESTDIR}/usr/include
-	find ${DESTDIR}/usr/include -type f -print0 | \
-		xargs -0r chmod a=r
-	find ${DESTDIR}/usr/include -type d -print0 | \
-		xargs -0r chmod u=rwx,go=rx
-	@for i in ${RDIRS}; do \
+	find ${DESTDIR}/usr/include -type f | \
+		xargs chmod a=r
+	find ${DESTDIR}/usr/include -type d | \
+		xargs chmod u=rwx,go=rx
+	@-for i in ${RDIRS}; do \
 		echo installing in ${.CURDIR}/$$i; \
-		cd ${.CURDIR}/$$i && ${RUN_MAKE}; \
+		(cd ${.CURDIR}/$$i; ${MAKE} includes) \
+	done
+	@-for i in ${WDIRS}; do \
+		echo installing in ${.CURDIR}/$$i; \
+		(cd ${.CURDIR}/$$i; ${MAKE} -f Makefile.bsd-wrapper includes) \
 	done
 
 copies:
 	@echo copies: ${LDIRS}
-	@for i in ${LDIRS}; do \
-		rm -rf ${DESTDIR}/usr/include/$$i && \
+	@-for i in ${LDIRS}; do \
+		rm -rf ${DESTDIR}/usr/include/$$i; \
 		${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m 755 \
 			${DESTDIR}/usr/include/$$i ; \
 	done
 	cd ../sys; \
 	pax -rw -pa -L \
-	    `find ${LDIRS} -follow -type f -name '*.h' '!' \
-	    '(' -path 'dev/microcode/*' -or -path 'dev/pci/drm/*' ')' \
-	    -print` ${DESTDIR}/usr/include
-	cd ${DESTDIR}/usr/include && rm -rf ${MACHINE} ${MACHINE_CPU} machine
+	    `find ${LDIRS} -follow -type f -name '*.h' '!' -path \
+	    'netiso/xebec/*' -print` ${DESTDIR}/usr/include
+	cd ${DESTDIR}/usr/include && rm -rf ${MACHINE} ${MACHINE_ARCH} machine
 	${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m 755 \
 		${DESTDIR}/usr/include/${MACHINE}
 	pax -rw -pa -s "|\.\./sys/arch/${MACHINE}/include||" \
 	    ../sys/arch/${MACHINE}/include/*.h \
 	    ${DESTDIR}/usr/include/${MACHINE}
-	if test ${MACHINE} != ${MACHINE_CPU} -a \
-	    -d ../sys/arch/${MACHINE_CPU}/include; then \
+	if test ${MACHINE} != ${MACHINE_ARCH} -a \
+	    -d ../sys/arch/${MACHINE_ARCH}/include; then \
 		${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m 755 \
-	    	    ${DESTDIR}/usr/include/${MACHINE_CPU}; \
-		pax -rw -pa -s "|\.\./sys/arch/${MACHINE_CPU}/include||" \
-		    ../sys/arch/${MACHINE_CPU}/include/*.h \
-		    ${DESTDIR}/usr/include/${MACHINE_CPU}; \
+    	    	    ${DESTDIR}/usr/include/${MACHINE_ARCH}; \
+		pax -rw -pa -s "|\.\./sys/arch/${MACHINE_ARCH}/include||" \
+		    ../sys/arch/${MACHINE_ARCH}/include/*.h \
+		    ${DESTDIR}/usr/include/${MACHINE_ARCH}; \
 	fi
 	ln -sf ${MACHINE} ${DESTDIR}/usr/include/machine; \
 
 symlinks:
 	@echo symlinks: ${LDIRS}
 	@for i in ${LDIRS}; do \
-		rm -rf ${DESTDIR}/usr/include/$$i && \
+		rm -rf ${DESTDIR}/usr/include/$$i; \
 		ln -s /sys/$$i ${DESTDIR}/usr/include/$$i; \
 	done
-	cd ${DESTDIR}/usr/include && rm -rf ${MACHINE} ${MACHINE_CPU} machine
+	cd ${DESTDIR}/usr/include && rm -rf ${MACHINE} ${MACHINE_ARCH} machine
 	ln -s /sys/arch/${MACHINE}/include ${DESTDIR}/usr/include/${MACHINE}
-	if test ${MACHINE} != ${MACHINE_CPU} -a \
-	    -d ../sys/arch/${MACHINE_CPU}/include ; then \
-		ln -s /sys/arch/${MACHINE_CPU}/include \
-		    ${DESTDIR}/usr/include/${MACHINE_CPU} ; \
+	if test ${MACHINE} != ${MACHINE_ARCH} -a \
+	    -d ../sys/arch/${MACHINE_ARCH}/include ; then \
+		ln -s /sys/arch/${MACHINE_ARCH}/include \
+		    ${DESTDIR}/usr/include/${MACHINE_ARCH} ; \
 	fi
-	ln -sf ${MACHINE} ${DESTDIR}/usr/include/machine
+	ln -sf ${MACHINE} ${DESTDIR}/usr/include/machine ; \
 
 includes: ${SYS_INCLUDE}
 
-.PHONY: prereq includes copies symlink
 .include <bsd.prog.mk>

@@ -1,5 +1,3 @@
-/*	$OpenBSD: ext2fs_df.c,v 1.16 2016/03/01 17:57:49 mmcc Exp $	*/
-
 /*
  * This file is substantially derived from src/sys/ufs/ext2fs/ext2fs_vfsops.c:e2fs_statfs().
  * That file's copyright is applied here.
@@ -19,7 +17,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
  *      documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *      must display the following acknowledgement:
+ *      This product includes software developed by the University of
+ *      California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *      may be used to endorse or promote products derived from this software
  *      without specific prior written permission.
  *
@@ -38,25 +40,32 @@
  *	@(#)ffs_vfsops.c	8.14 (Berkeley) 11/28/94
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/mount.h>
 #include <ufs/ext2fs/ext2fs.h>
 #include <ufs/ext2fs/ext2fs_dinode.h>
+#include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <fstab.h>
 
-int		e2fs_df(int, char *, struct statfs *);
+int		e2fs_df __P((int, char *, struct statfs *));
 
-extern int	bread(int, off_t, void *, int);
-extern char	*getmntpt(char *);
+extern int	bread __P((int, off_t, void *, int));
+extern char	*getmntpt __P((char *));
 
-static union {
+union {
 	struct ext2fs ie_fs;
 	char dummy[SBSIZE];
 } sb;
 #define sblock sb.ie_fs
 
 int
-e2fs_df(int rfd, char *file, struct statfs *sfsp)
+e2fs_df(rfd, file, sfsp)
+	int rfd;
+	char *file;
+	struct statfs *sfsp;
 {
 	char *mntpt;
 	u_int32_t overhead, overhead_per_group;
@@ -66,16 +75,15 @@ e2fs_df(int rfd, char *file, struct statfs *sfsp)
 		return (-1);
 	}
 	if ((sblock.e2fs_magic != E2FS_MAGIC) ||
-	    (sblock.e2fs_rev != E2FS_REV0 && sblock.e2fs_rev != E2FS_REV1)) {
+			(sblock.e2fs_rev != E2FS_REV)) {
 		return (-1);
 	}
 	sfsp->f_flags = 0;	/* The fs is not mapped, so no flags */
 	sfsp->f_bsize = 1024 << sblock.e2fs_log_bsize;
 	sfsp->f_iosize = 1024 << sblock.e2fs_log_bsize;
 
-	if ((ipb = sfsp->f_bsize / sizeof(struct ext2fs_dinode)) == 0)
-		return (-1);
-	itpg = sblock.e2fs_ipg / ipb;
+	ipb = sfsp->f_bsize / sizeof(struct ext2fs_dinode);
+	itpg = sblock.e2fs_ipg/ipb;
 
 	ncg = howmany(sblock.e2fs_bcount - sblock.e2fs_first_dblock,
 		sblock.e2fs_bpg);
@@ -96,8 +104,9 @@ e2fs_df(int rfd, char *file, struct statfs *sfsp)
 	sfsp->f_fsid.val[1] = 0;
 	if ((mntpt = getmntpt(file)) == 0)
 		mntpt = "";
-	strlcpy(sfsp->f_mntonname, mntpt, sizeof(sfsp->f_mntonname));
-	strlcpy(sfsp->f_mntfromname, file, sizeof(sfsp->f_mntfromname));
-	strlcpy(sfsp->f_fstypename, MOUNT_EXT2FS, sizeof(sfsp->f_fstypename));
+	memmove(&sfsp->f_mntonname[0], mntpt, MNAMELEN);
+	memmove(&sfsp->f_mntfromname[0], file, MNAMELEN);
+	strncpy(sfsp->f_fstypename, MOUNT_EXT2FS, MFSNAMELEN-1);
+	sfsp->f_fstypename[MFSNAMELEN-1] = '\0';
 	return (0);
 }

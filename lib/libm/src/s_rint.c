@@ -10,6 +10,10 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: s_rint.c,v 1.8 1995/05/10 20:48:04 jtc Exp $";
+#endif
+
 /*
  * rint(x)
  * Return x rounded to integral value according to the prevailing
@@ -20,29 +24,34 @@
  *	Inexact flag raised if x not equal to rint(x).
  */
 
-#include <float.h>
-#include <math.h>
-
+#include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const double
+#else
+static double 
+#endif
 TWO52[2]={
   4.50359962737049600000e+15, /* 0x43300000, 0x00000000 */
  -4.50359962737049600000e+15, /* 0xC3300000, 0x00000000 */
 };
 
-double
-rint(double x)
+#ifdef __STDC__
+	double rint(double x)
+#else
+	double rint(x)
+	double x;
+#endif
 {
-	int32_t i0,jj0,sx;
+	int32_t i0,j0,sx;
 	u_int32_t i,i1;
-	double t;
-	volatile double w;	/* clip extra precision */
+	double w,t;
 	EXTRACT_WORDS(i0,i1,x);
 	sx = (i0>>31)&1;
-	jj0 = ((i0>>20)&0x7ff)-0x3ff;
-	if(jj0<20) {
-	    if(jj0<0) { 	
+	j0 = ((i0>>20)&0x7ff)-0x3ff;
+	if(j0<20) {
+	    if(j0<0) { 	
 		if(((i0&0x7fffffff)|i1)==0) return x;
 		i1 |= (i0&0x0fffff);
 		i0 &= 0xfffe0000;
@@ -54,28 +63,24 @@ rint(double x)
 		SET_HIGH_WORD(t,(i0&0x7fffffff)|(sx<<31));
 	        return t;
 	    } else {
-		i = (0x000fffff)>>jj0;
+		i = (0x000fffff)>>j0;
 		if(((i0&i)|i1)==0) return x; /* x is integral */
 		i>>=1;
 		if(((i0&i)|i1)!=0) {
-		    if(jj0==19) i1 = 0x40000000; else
-		    i0 = (i0&(~i))|((0x20000)>>jj0);
+		    if(j0==19) i1 = 0x40000000; else
+		    i0 = (i0&(~i))|((0x20000)>>j0);
 		}
 	    }
-	} else if (jj0>51) {
-	    if(jj0==0x400) return x+x;	/* inf or NaN */
+	} else if (j0>51) {
+	    if(j0==0x400) return x+x;	/* inf or NaN */
 	    else return x;		/* x is integral */
 	} else {
-	    i = ((u_int32_t)(0xffffffff))>>(jj0-20);
+	    i = ((u_int32_t)(0xffffffff))>>(j0-20);
 	    if((i1&i)==0) return x;	/* x is integral */
 	    i>>=1;
-	    if((i1&i)!=0) i1 = (i1&(~i))|((0x40000000)>>(jj0-20));
+	    if((i1&i)!=0) i1 = (i1&(~i))|((0x40000000)>>(j0-20));
 	}
 	INSERT_WORDS(x,i0,i1);
 	w = TWO52[sx]+x;
 	return w-TWO52[sx];
 }
-
-#if	LDBL_MANT_DIG == DBL_MANT_DIG
-__strong_alias(rintl, rint);
-#endif	/* LDBL_MANT_DIG == DBL_MANT_DIG */

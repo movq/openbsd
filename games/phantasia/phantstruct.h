@@ -1,12 +1,9 @@
-/*	$OpenBSD: phantstruct.h,v 1.5 2016/01/06 14:28:09 mestre Exp $	*/
+/*	$OpenBSD: phantstruct.h,v 1.2 1998/11/29 19:57:02 pjanzen Exp $	*/
 /*	$NetBSD: phantstruct.h,v 1.2 1995/03/24 04:00:11 cgd Exp $	*/
 
 /*
  * phantstruct.h - structure definitions for Phantasia
  */
-
-#include <limits.h>
-#include <stdbool.h>
 
 struct	player	    	/* player statistics */
     {
@@ -63,7 +60,7 @@ struct	player	    	/* player statistics */
 
     char	p_name[SZ_NAME];	/* name */
     char	p_password[SZ_PASSWORD];/* password */
-    char	p_login[LOGIN_NAME_MAX];/* login */
+    char	p_login[SZ_LOGIN];	/* login */
     };
 
 struct	monster	    	/* monster stats */
@@ -100,7 +97,7 @@ struct	scoreboard			/* scoreboard entry */
     double	sb_level;		/* level of player */
     char	sb_type[4];		/* character type of player */
     char	sb_name[SZ_NAME];	/* name of player */
-    char	sb_login[LOGIN_NAME_MAX];/* login of player */
+    char	sb_login[SZ_LOGIN];	/* login of player */
     };
 
 struct	charstats			/* character type statistics */

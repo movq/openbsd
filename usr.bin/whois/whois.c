@@ -1,4 +1,5 @@
-/*      $OpenBSD: whois.c,v 1.53 2015/12/09 19:29:49 mmcc Exp $   */
+/*	$OpenBSD: whois.c,v 1.6 1999/10/03 00:42:34 deraadt Exp $	*/
+/*	$NetBSD: whois.c,v 1.5 1994/11/14 05:13:25 jtc Exp $	*/
 
 /*
  * Copyright (c) 1980, 1993
@@ -12,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,324 +34,152 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)whois.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: whois.c,v 1.6 1999/10/03 00:42:34 deraadt Exp $";
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/socket.h>
-
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-
-#include <ctype.h>
-#include <err.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sysexits.h>
 #include <unistd.h>
+#include <err.h>
 
-#define	NICHOST		"whois.crsnic.net"
-#define	INICHOST	"whois.networksolutions.com"
-#define	CNICHOST	"whois.corenic.net"
-#define	DNICHOST	"whois.nic.mil"
-#define	GNICHOST	"whois.nic.gov"
+#define	NICHOST		"whois.internic.net"
+#define	DNICHOST	"nic.ddn.mil"
 #define	ANICHOST	"whois.arin.net"
 #define	RNICHOST	"whois.ripe.net"
 #define	PNICHOST	"whois.apnic.net"
-#define	RUNICHOST	"whois.ripn.net"
 #define	MNICHOST	"whois.ra.net"
-#define LNICHOST	"whois.lacnic.net"
-#define	AFNICHOST	"whois.afrinic.net"
-#define BNICHOST	"whois.registro.br"
-#define	PDBHOST		"whois.peeringdb.com"
-#define	IANAHOST	"whois.iana.org"
 #define	QNICHOST_TAIL	".whois-servers.net"
+#define	WHOIS_PORT	43
 
-#define	WHOIS_PORT	"whois"
-#define	WHOIS_SERVER_ID	"Whois Server:"
-
-#define WHOIS_RECURSE		0x01
-#define WHOIS_QUICK		0x02
-
-const char *port_whois = WHOIS_PORT;
-const char *ip_whois[] = { LNICHOST, RNICHOST, PNICHOST, BNICHOST,
-    AFNICHOST, NULL };
-
-__dead void usage(void);
-int whois(const char *, const char *, const char *, int);
-char *choose_server(const char *, const char *);
+static void usage();
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, flags, rval;
-	char *host, *name, *country;
+	extern char *optarg;
+	extern int optind;
+	register FILE *sfi, *sfo;
+	register int ch;
+	struct sockaddr_in sin;
+	struct hostent *hp;
+	struct servent *sp;
+	int s;
+	char *host;
+	char *qnichost;
+	int use_qnichost;
+	int i, j;
 
-	country = host = NULL;
-	flags = rval = 0;
-	while ((ch = getopt(argc, argv, "aAc:dgh:iIlmp:PqQrR")) != -1)
-		switch (ch) {
+	host = NICHOST;
+	use_qnichost = 0;
+	while ((ch = getopt(argc, argv, "adh:pmqr")) != -1)
+		switch((char)ch) {
 		case 'a':
 			host = ANICHOST;
-			break;
-		case 'A':
-			host = PNICHOST;
-			break;
-		case 'c':
-			country = optarg;
 			break;
 		case 'd':
 			host = DNICHOST;
 			break;
-		case 'g':
-			host = GNICHOST;
-			break;
 		case 'h':
 			host = optarg;
-			break;
-		case 'i':
-			host = INICHOST;
-			break;
-		case 'I':
-			host = IANAHOST;
-			break;
-		case 'l':
-			host = LNICHOST;
 			break;
 		case 'm':
 			host = MNICHOST;
 			break;
 		case 'p':
-			port_whois = optarg;
-			break;
-		case 'P':
-			host = PDBHOST;
+			host = PNICHOST;
 			break;
 		case 'q':
-			/* deprecated, now the default */
-			break;
-		case 'Q':
-			flags |= WHOIS_QUICK;
+			use_qnichost = 1;
 			break;
 		case 'r':
 			host = RNICHOST;
 			break;
-		case 'R':
-			host = RUNICHOST;
-			break;
+		case '?':
 		default:
 			usage();
 		}
 	argc -= optind;
 	argv += optind;
 
-	if (!argc || (country != NULL && host != NULL))
+	if (!argc)
 		usage();
 
-	if (pledge("stdio dns inet", NULL) == -1)
-		err(1, "pledge");
-
-	if (host == NULL && country == NULL && !(flags & WHOIS_QUICK))
-		flags |= WHOIS_RECURSE;
-	for (name = *argv; (name = *argv) != NULL; argv++)
-		rval += whois(name, host ? host : choose_server(name, country),
-		    port_whois, flags);
-	exit(rval);
-}
-
-int
-whois(const char *query, const char *server, const char *port, int flags)
-{
-	FILE *fp;
-	char *buf, *p, *nhost, *nbuf = NULL;
-	size_t len;
-	int i, s, error;
-	const char *reason = NULL, *fmt;
-	struct addrinfo hints, *res, *ai;
-
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_flags = 0;
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	error = getaddrinfo(server, port, &hints, &res);
-	if (error) {
-		if (error == EAI_SERVICE)
-			warnx("%s: bad port", port);
-		else
-			warnx("%s: %s", server, gai_strerror(error));
-		return (1);
-	}
-
-	for (s = -1, ai = res; ai != NULL; ai = ai->ai_next) {
-		s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-		if (s == -1) {
-			error = errno;
-			reason = "socket";
-			continue;
-		}
-		if (connect(s, ai->ai_addr, ai->ai_addrlen) == -1) {
-			error = errno;
-			reason = "connect";
-			close(s);
-			s = -1;
-			continue;
-		}
-		break;	/*okay*/
-	}
-	if (s == -1) {
-		if (reason) {
-			errno = error;
-			warn("%s: %s", server, reason);
-		} else
-			warn("unknown error in connection attempt");
-		freeaddrinfo(res);
-		return (1);
-	}
-
-	if (strcmp(server, "whois.denic.de") == 0 ||
-	    strcmp(server, "de" QNICHOST_TAIL) == 0)
-		fmt = "-T dn,ace -C ISO-8859-1 %s\r\n";
-	else if (strcmp(server, "whois.dk-hostmaster.dk") == 0 ||
-	    strcmp(server, "dk" QNICHOST_TAIL) == 0)
-		fmt = "--show-handles %s\r\n";
-	else
-		fmt = "%s\r\n";
-
-	fp = fdopen(s, "r+");
-	if (fp == NULL)
-		err(1, "fdopen");
-	fprintf(fp, fmt, query);
-	fflush(fp);
-	nhost = NULL;
-	while ((buf = fgetln(fp, &len)) != NULL) {
-		p = buf + len - 1;
-		if (isspace((unsigned char)*p)) {
-			do
-				*p = '\0';
-			while (p > buf && isspace((unsigned char)*--p));
-		} else {
-			if ((nbuf = malloc(len + 1)) == NULL)
-				err(1, "malloc");
-			memcpy(nbuf, buf, len);
-			nbuf[len] = '\0';
-			buf = nbuf;
-		}
-		puts(buf);
-
-		if (nhost != NULL || !(flags & WHOIS_RECURSE))
-			continue;
-
-		if ((p = strstr(buf, WHOIS_SERVER_ID))) {
-			p += sizeof(WHOIS_SERVER_ID) - 1;
-			while (isblank((unsigned char)*p))
-				p++;
-			if ((len = strcspn(p, " \t\n\r"))) {
-				if ((nhost = malloc(len + 1)) == NULL)
+	if (use_qnichost != 0) {
+		if (argc == 1) {
+			for (i = j = 0; (*argv)[i]; i++)
+				if ((*argv)[i] == '.') j = i;
+			if (j != 0) {
+				qnichost = (char *) calloc(i - j + 1 + \
+				    strlen(QNICHOST_TAIL), sizeof(char));
+				if (!qnichost)
 					err(1, "malloc");
-				memcpy(nhost, p, len);
-				nhost[len] = '\0';
-			}
-		} else if (strcmp(server, ANICHOST) == 0) {
-			for (p = buf; *p != '\0'; p++)
-				*p = tolower((unsigned char)*p);
-			for (i = 0; ip_whois[i] != NULL; i++) {
-				if (strstr(buf, ip_whois[i]) != NULL) {
-					nhost = strdup(ip_whois[i]);
-					if (nhost == NULL)
-						err(1, "strdup");
-					break;
-				}
+				strcpy(qnichost, *argv + j + 1);
+				strcat(qnichost, QNICHOST_TAIL);
+				host = qnichost;
 			}
 		}
 	}
-	fclose(fp);
-	free(nbuf);
 
-	if (nhost != NULL) {
-		error = whois(query, nhost, port, 0);
-		free(nhost);
-	}
-	freeaddrinfo(res);
-	return (error);
-}
+	s = socket(PF_INET, SOCK_STREAM, 0);
+	if (s < 0)
+		err(EX_OSERR, "socket");
 
-/*
- * If no country is specified determine the top level domain from the query.
- * If the TLD is a number, query ARIN, otherwise, use TLD.whois-server.net.
- * If the domain does not contain '.', check to see if it is an NSI handle
- * (starts with '!') or a CORE handle (COCO-[0-9]+ or COHO-[0-9]+) or an
- * ASN (starts with AS). Fall back to NICHOST for the non-handle case.
- */
-char *
-choose_server(const char *name, const char *country)
-{
-	static char *server;
-	const char *qhead;
-	char *nserver;
-	char *ep;
-	size_t len;
-	struct addrinfo hints, *res;
+	memset(&sin, 0, sizeof sin);
+	sin.sin_len = sizeof sin;
+	sin.sin_family = AF_INET;
 
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_flags = 0;
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-
-	if (country != NULL)
-		qhead = country;
-	else if ((qhead = strrchr(name, '.')) == NULL) {
-		if (*name == '!')
-			return (INICHOST);
-		else if ((strncasecmp(name, "COCO-", 5) == 0 ||
-		    strncasecmp(name, "COHO-", 5) == 0) &&
-		    strtol(name + 5, &ep, 10) > 0 && *ep == '\0')
-			return (CNICHOST);
-		else if ((strncasecmp(name, "AS", 2) == 0) &&
-		    strtol(name + 2, &ep, 10) > 0 && *ep == '\0')
-			return (MNICHOST);
-		else
-			return (NICHOST);
-	} else if (isdigit((unsigned char)*(++qhead)))
-		return (ANICHOST);
-	len = strlen(qhead) + sizeof(QNICHOST_TAIL);
-	if ((nserver = realloc(server, len)) == NULL)
-		err(1, "realloc");
-	server = nserver;
-
-	/*
-	 * Post-2003 ("new") gTLDs are all supposed to have "whois.nic.domain"
-	 * (per registry agreement), some older gTLDs also support this...
-	 */
-	snprintf(server, len, "whois.nic.%s", qhead);
-
-	/* most ccTLDs don't do this, but QNICHOST/whois-servers mostly works */
-	if ((strlen(qhead) == 2 ||
-	    /* and is required for most of the <=2003 TLDs/gTLDs */
-	    strcasecmp(qhead, "org") == 0 ||
-	    strcasecmp(qhead, "com") == 0 ||
-	    strcasecmp(qhead, "net") == 0 ||
-	    strcasecmp(qhead, "cat") == 0 ||
-	    strcasecmp(qhead, "pro") == 0 ||
-	    strcasecmp(qhead, "info") == 0 ||
-	    strcasecmp(qhead, "aero") == 0 ||
-	    strcasecmp(qhead, "jobs") == 0 ||
-	    strcasecmp(qhead, "mobi") == 0 ||
-	    strcasecmp(qhead, "museum") == 0 ||
-	     /* for others, if whois.nic.TLD doesn't exist, try whois-servers */
-	    getaddrinfo(server, NULL, &hints, &res) != 0)) {
-		strlcpy(server, qhead, len);
-		strlcat(server, QNICHOST_TAIL, len);
+	if (inet_aton(host, &sin.sin_addr) == 0) {
+		hp = gethostbyname2(host, AF_INET);
+		if (hp == NULL)
+			errx(EX_NOHOST, "%s: %s", host, hstrerror(h_errno));
+		host = hp->h_name;
+		sin.sin_addr = *(struct in_addr *)hp->h_addr_list[0];
 	}
 
-	return (server);
+	sp = getservbyname("whois", "tcp");
+	if (sp == NULL)
+		sin.sin_port = htons(WHOIS_PORT);
+	else
+		sin.sin_port = sp->s_port;
+
+	if (connect(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
+		err(EX_OSERR, "connect");
+
+	sfi = fdopen(s, "r");
+	sfo = fdopen(s, "w");
+	if (sfi == NULL || sfo == NULL)
+		err(EX_OSERR, "fdopen");
+	while (argc-- > 1)
+		(void)fprintf(sfo, "%s ", *argv++);
+	(void)fprintf(sfo, "%s\r\n", *argv);
+	(void)fflush(sfo);
+	while ((ch = getc(sfi)) != EOF)
+		putchar(ch);
+	exit(0);
 }
 
-__dead void
-usage(void)
+static void
+usage()
 {
-	extern char *__progname;
-
-	fprintf(stderr,
-	    "usage: %s [-AadgIilmPQRr] [-c country-code | -h host] "
-		"[-p port] name ...\n", __progname);
-	exit(1);
+	(void)fprintf(stderr, "usage: whois [-admpqr] [-h hostname] name ...\n");
+	exit(EX_USAGE);
 }

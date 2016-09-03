@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-llc.c,v 1.20 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1992, 1993, 1994, 1995, 1996, 1997
  *	The Regents of the University of California.  All rights reserved.
@@ -24,6 +22,12 @@
  *	with an awful lot of hacking by Jeffrey Mogul, DECWRL
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-llc.c,v 1.8 1999/09/16 20:58:47 brad Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 
 #include <netinet/in.h>
@@ -61,11 +65,8 @@ llc_print(const u_char *p, u_int length, u_int caplen,
 	  const u_char *esrc, const u_char *edst)
 {
 	struct llc llc;
-	u_short et;
-#if 0
-	u_short control;
-#endif
-	int ret;
+	register u_short et;
+	register int ret;
 
 	if (caplen < 3) {
 		(void)printf("[|llc]");
@@ -97,18 +98,6 @@ llc_print(const u_char *p, u_int length, u_int caplen,
 		    default_print((u_char *)p, caplen);
 		    return (0);
 		}
-
-		/* Cisco Discovery Protocol  - SNAP & ether type 0x2000 */
-		if (llc.ethertype[0] == 0x20 && llc.ethertype[1] == 0x00) {
-			cdp_print(p, length, caplen, esrc, edst);
-			return (1);
-		}
-		/* Shared Spanning Tree Protocol - SNAP & ether type 0x010b */
-		if (llc.ethertype[0] == 0x01 && llc.ethertype[1] == 0x0b) {
-			stp_print(p, length);
-			return (1);
-		}
-
 		if (vflag)
 			(void)printf("snap %s ", protoid_string(llc.llcpi));
 
@@ -139,49 +128,6 @@ llc_print(const u_char *p, u_int length, u_int caplen,
 		if (ret)
 			return (ret);
 	}
-
-	if (llc.ssap == LLCSAP_8021D && llc.dsap == LLCSAP_8021D) {
-		stp_print(p, length);
-		return (1);
-	}
-
-#if 0
-	if (llc.ssap == 0xf0 && llc.dsap == 0xf0) {
-		/*
-		 * we don't actually have a full netbeui parser yet, but the
-		 * smb parser can handle many smb-in-netbeui packets, which
-		 * is very useful, so we call that
-		 */
-
-		/*
-		 * Skip the DSAP and LSAP.
-		 */
-		p += 2;
-		length -= 2;
-		caplen -= 2;
-
-		/*
-		 * OK, what type of LLC frame is this?  The length
-		 * of the control field depends on that - S or I
-		 * frames have a two-byte control field, and U frames
-		 * have a one-byte control field.
-		 */
-		if ((llc.llcu & LLC_U_FMT) == LLC_U_FMT) {
-			control = llc.llcu;
-			p += 1;
-			length -= 1;
-			caplen -= 1;
-		} else {
-			control = llc.llcis;
-			p += 2;
-			length -= 2;
-			caplen -= 2;
-		}
-
-		netbeui_print(control, p, p + min(caplen, length));
-		return (1);
-	}
-#endif
 
 	if ((llc.ssap & ~LLC_GSAP) == llc.dsap) {
 		if (eflag)
@@ -234,23 +180,8 @@ llc_print(const u_char *p, u_int length, u_int caplen,
 			caplen -= 3;
 		    }
 		}
-
-#if 0
-		if (!strcmp(m,"ui") && f=='C') {
-			/*
-			 * we don't have a proper ipx decoder yet, but there
-			 * is a partial one in the smb code
-			 */
-			ipx_netbios_print(p,p+min(caplen,length));
-		}
-#endif
-
 	} else {
 		char f;
-		if (caplen < 4) {
-			default_print_unaligned(p, caplen);
-			return (0);
-		}
 		llc.llcis = ntohs(llc.llcis);
 		switch ((llc.ssap & LLC_GSAP) | (llc.llcu & LLC_U_POLL)) {
 		    case 0:			f = 'C'; break;
@@ -277,5 +208,8 @@ llc_print(const u_char *p, u_int length, u_int caplen,
 		caplen -= 4;
 	}
 	(void)printf(" len=%d", length);
+	if (caplen > 0) {
+		default_print_unaligned(p, caplen);
+	}
 	return(1);
 }

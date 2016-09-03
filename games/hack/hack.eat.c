@@ -1,75 +1,18 @@
-/*	$OpenBSD: hack.eat.c,v 1.11 2016/01/09 21:54:11 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.eat.c,v 1.3 1995/03/23 08:30:01 cgd Exp $";
+#endif /* not lint */
 
-#include <stdio.h>
-
-#include "hack.h"
-
+#include	"hack.h"
 char POISONOUS[] = "ADKSVabhks";
 extern char *nomovemsg;
-extern void (*afternmv)(void);
-extern int (*occupation)(void);
+extern int (*afternmv)();
+extern int (*occupation)();
 extern char *occtxt;
+extern struct obj *splitobj(), *addinv();
 
 /* hunger texts used on bottom line (each 8 chars long) */
 #define	SATIATED	0
@@ -90,17 +33,19 @@ char *hu_stat[] = {
 	"Starved "
 };
 
+init_uhunger(){
+	u.uhunger = 900;
+	u.uhs = NOT_HUNGRY;
+}
+
 #define	TTSZ	SIZE(tintxts)
-struct {
-	char *txt;
-	int nut;
-} tintxts[] = {
-	{ "It contains first quality peaches - what a surprise!",	40 },
-	{ "It contains salmon - not bad!",	60 },
-	{ "It contains apple juice - perhaps not what you hoped for.", 20 },
-	{ "It contains some nondescript substance, tasting awfully.", 500 },
-	{ "It contains rotten meat. You vomit.", -50 },
-	{ "It turns out to be empty.",	0 }
+struct { char *txt; int nut; } tintxts[] = {
+	"It contains first quality peaches - what a surprise!",	40,
+	"It contains salmon - not bad!",	60,
+	"It contains apple juice - perhaps not what you hoped for.", 20,
+	"It contains some nondescript substance, tasting awfully.", 500,
+	"It contains rotten meat. You vomit.", -50,
+	"It turns out to be empty.",	0
 };
 
 static struct {
@@ -108,20 +53,8 @@ static struct {
 	int usedtime, reqtime;
 } tin;
 
-static void newuhs(boolean);
-static int  eatcorpse(struct obj *);
-
-void
-init_uhunger(void)
-{
-	u.uhunger = 900;
-	u.uhs = NOT_HUNGRY;
-}
-
-int
-opentin(void)
-{
-	int r;
+opentin(){
+	register int r;
 
 	if(!carried(tin.tin))		/* perhaps it was stolen? */
 		return(0);		/* %% probably we should use tinoid */
@@ -136,7 +69,7 @@ opentin(void)
 	useup(tin.tin);
 	r = rn2(2*TTSZ);
 	if(r < TTSZ){
-	    pline("%s", tintxts[r].txt);
+	    pline(tintxts[r].txt);
 	    lesshungry(tintxts[r].nut);
 	    if(r == 1)	/* SALMON */ {
 		Glib = rnd(15);
@@ -153,19 +86,15 @@ opentin(void)
 	return(0);
 }
 
-void
-Meatdone(void)
-{
+Meatdone(){
 	u.usym = '@';
 	prme();
 }
 
-int
-doeat(void)
-{
-	struct obj *otmp;
-	struct objclass *ftmp;
-	int tmp;
+doeat(){
+	register struct obj *otmp;
+	register struct objclass *ftmp;
+	register tmp;
 
 	/* Is there some food (probably a heavy corpse) here on the ground? */
 	if(!Levitation)
@@ -207,14 +136,15 @@ gotit:
 				goto no_opener;
 			}
 			pline("Using your %s you try to open the tin.",
-				aobjnam(uwep, NULL));
+				aobjnam(uwep, (char *) 0));
 		} else {
 		no_opener:
 			pline("It is not so easy to open this tin.");
 			if(Glib) {
 				pline("The tin slips out of your hands.");
 				if(otmp->quan > 1) {
-					struct obj *obj;
+					register struct obj *obj;
+					extern struct obj *splitobj();
 
 					obj = splitobj(otmp, 1);
 					if(otmp == uwep) setuwep(obj);
@@ -300,7 +230,7 @@ gotit:
 				setsee();
 				pline("Your vision improves.");
 			} else
-#endif /* QUEST */
+#endif QUEST
 			if(otmp->otyp == FORTUNE_COOKIE) {
 			  if(Blind) {
 			    pline("This cookie has a scrap of paper inside!");
@@ -325,8 +255,7 @@ gotit:
 eatx:
 	if(multi<0 && !nomovemsg){
 		static char msgbuf[BUFSZ];
-		(void) snprintf(msgbuf, sizeof msgbuf,
-				"You finished eating the %s.",
+		(void) sprintf(msgbuf, "You finished eating the %s.",
 				ftmp->oc_name);
 		nomovemsg = msgbuf;
 	}
@@ -334,9 +263,8 @@ eatx:
 	return(1);
 }
 
-void
-gethungry(void)
-{
+/* called in hack.main.c */
+gethungry(){
 	--u.uhunger;
 	if(moves % 2) {
 		if(Regeneration) u.uhunger--;
@@ -353,32 +281,24 @@ gethungry(void)
 }
 
 /* called after vomiting and after performing feats of magic */
-void
-morehungry(int num)
-{
+morehungry(num) register num; {
 	u.uhunger -= num;
 	newuhs(TRUE);
 }
 
 /* called after eating something (and after drinking fruit juice) */
-void
-lesshungry(int num)
-{
+lesshungry(num) register num; {
 	u.uhunger += num;
 	newuhs(FALSE);
 }
 
-void
-unfaint(void)
-{
+unfaint(){
 	u.uhs = FAINTING;
 	flags.botl = 1;
 }
 
-static void
-newuhs(boolean incr)
-{
-	int newhs, h = u.uhunger;
+newuhs(incr) boolean incr; {
+	register int newhs, h = u.uhunger;
 
 	newhs = (h > 1000) ? SATIATED :
 		(h > 150) ? NOT_HUNGRY :
@@ -437,19 +357,16 @@ newuhs(boolean incr)
 #define	CORPSE_I_TO_C(otyp)	(char) ((otyp >= DEAD_ACID_BLOB)\
 		     ?  'a' + (otyp - DEAD_ACID_BLOB)\
 		     :	'@' + (otyp - DEAD_HUMAN))
-int
-poisonous(struct obj *otmp)
+poisonous(otmp)
+register struct obj *otmp;
 {
 	return(strchr(POISONOUS, CORPSE_I_TO_C(otmp->otyp)) != 0);
 }
 
 /* returns 1 if some text was printed */
-static int
-eatcorpse(struct obj *otmp)
-{
-	char let = CORPSE_I_TO_C(otmp->otyp);
-	int tp = 0;
-
+eatcorpse(otmp) register struct obj *otmp; {
+register char let = CORPSE_I_TO_C(otmp->otyp);
+register tp = 0;
 	if(let != 'a' && moves > otmp->age + 50 + rn2(100)) {
 		tp++;
 		pline("Ulch -- that meat was tainted!");
@@ -502,7 +419,7 @@ eatcorpse(struct obj *otmp)
 	case 'y':
 #ifdef QUEST
 		u.uhorizon++;
-#endif /* QUEST */
+#endif QUEST
 		/* fall into next case */
 	case 'B':
 		Confusion = 50;
@@ -525,6 +442,7 @@ eatcorpse(struct obj *otmp)
 		pline("You turn to stone.");
 		killer = "dead cockatrice";
 		done("died");
+		/* NOTREACHED */
 	case 'a':
 	  if(Stoned) {
 	      pline("What a pity - you just destroyed a future piece of art!");

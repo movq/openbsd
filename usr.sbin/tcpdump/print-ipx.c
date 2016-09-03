@@ -1,5 +1,3 @@
-/*	$OpenBSD: print-ipx.c,v 1.15 2015/11/16 00:16:39 mmcc Exp $	*/
-
 /*
  * Copyright (c) 1994, 1995, 1996
  *	The Regents of the University of California.  All rights reserved.
@@ -24,18 +22,28 @@
  * Contributed by Brad Parker (brad@fcr.com).
  */
 
+#ifndef lint
+static const char rcsid[] =
+    "@(#) $Header: /home/mike/src/cvs/openbsd/src/usr.sbin/tcpdump/print-ipx.c,v 1.5 1996/12/12 16:22:35 bitblt Exp $";
+#endif
+
+#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <netinet/tcp.h>
+#include <netinet/tcpip.h>
 
-#include <stdio.h>
+#ifdef __STDC__
 #include <stdlib.h>
+#endif
+#include <stdio.h>
 #include <string.h>
 
 #include "interface.h"
@@ -81,7 +89,7 @@ ipxaddr_string(u_int32_t net, const u_char *node)
 {
     static char line[256];
 
-    snprintf(line, sizeof(line), "%x.%02x:%02x:%02x:%02x:%02x:%02x",
+    sprintf(line, "%x.%02x:%02x:%02x:%02x:%02x:%02x",
 	    net, node[0], node[1], node[2], node[3], node[4], node[5]);
 
     return line;
@@ -90,7 +98,7 @@ ipxaddr_string(u_int32_t net, const u_char *node)
 void
 ipx_decode(const struct ipxHdr *ipx, const u_char *datap, u_int length)
 {
-    u_short dstSkt;
+    register u_short dstSkt;
 
     dstSkt = EXTRACT_16BITS(&ipx->dstSkt);
     switch (dstSkt) {
@@ -136,7 +144,7 @@ ipx_sap_print(const u_short *ipx, u_int length)
 	if (length > 0) {
 	    TCHECK(ipx[1]);
 	    (void)printf(" %x '", EXTRACT_16BITS(&ipx[0]));
-	    fn_print((u_char *)&ipx[1], min(snapend, (u_char *)&ipx[1] + 48));
+	    fn_print((u_char *)&ipx[1], (u_char *)&ipx[1] + 48);
 	    putchar('\'');
 	}
 	break;
@@ -151,7 +159,7 @@ ipx_sap_print(const u_short *ipx, u_int length)
 	for (i = 0; i < 8 && length > 0; i++) {
 	    TCHECK2(ipx[27], 1);
 	    (void)printf(" %x '", EXTRACT_16BITS(&ipx[0]));
-	    fn_print((u_char *)&ipx[1], min(snapend, (u_char *)&ipx[1] + 48));
+	    fn_print((u_char *)&ipx[1], (u_char *)&ipx[1] + 48);
 	    printf("' addr %s",
 		ipxaddr_string(EXTRACT_32BITS(&ipx[25]), (u_char *)&ipx[27]));
 	    ipx += 32;

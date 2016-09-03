@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_inchstr.c,v 1.3 2010/01/12 23:22:05 nicm Exp $ */
+/*	$OpenBSD: lib_inchstr.c,v 1.1 1999/01/18 19:09:48 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998,2000,2001 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -33,6 +33,7 @@
  *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
+
 /*
 **	lib_inchstr.c
 **
@@ -42,25 +43,22 @@
 
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_inchstr.c,v 1.3 2010/01/12 23:22:05 nicm Exp $")
+MODULE_ID("$From: lib_inchstr.c,v 1.7 1998/02/11 12:13:55 tom Exp $")
 
-NCURSES_EXPORT(int)
-winchnstr(WINDOW *win, chtype * str, int n)
+int winchnstr(WINDOW *win, chtype *str, int n)
 {
-    int i = 0;
+	int	i = 0;
 
-    T((T_CALLED("winchnstr(%p,%p,%d)"), win, str, n));
+	T((T_CALLED("winchnstr(%p,%p,%d)"), win, str, n));
 
-    if (!str)
-	returnCode(0);
+	if (!str)
+	  returnCode(0);
 
-    if (win) {
-	for (; (n < 0 || (i < n)) && (win->_curx + i <= win->_maxx); i++)
-	    str[i] =
-		CharOf(win->_line[win->_cury].text[win->_curx + i]) |
-		AttrOf(win->_line[win->_cury].text[win->_curx + i]);
-    }
-    str[i] = (chtype) 0;
+	if (win) {
+	  for (; (n < 0 || (i < n)) && (win->_curx + i <= win->_maxx); i++)
+	    str[i] = win->_line[win->_cury].text[win->_curx + i];
+	}
+	str[i] = (chtype)0;
 
-    returnCode(i);
+	returnCode(i);
 }

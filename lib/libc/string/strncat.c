@@ -1,4 +1,3 @@
-/*	$OpenBSD: strncat.c,v 1.6 2015/08/31 02:53:57 guenther Exp $ */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -14,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -31,6 +34,10 @@
  * SUCH DAMAGE.
  */
 
+#if defined(LIBC_SCCS) && !defined(lint)
+static char *rcsid = "$OpenBSD: strncat.c,v 1.2 1996/08/19 08:34:21 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
 #include <string.h>
 
 /*
@@ -38,11 +45,14 @@
  * are written at dst (at most n+1 bytes being appended).  Return dst.
  */
 char *
-strncat(char *dst, const char *src, size_t n)
+strncat(dst, src, n)
+	char *dst;
+	const char *src;
+	register size_t n;
 {
 	if (n != 0) {
-		char *d = dst;
-		const char *s = src;
+		register char *d = dst;
+		register const char *s = src;
 
 		while (*d != 0)
 			d++;
@@ -55,4 +65,3 @@ strncat(char *dst, const char *src, size_t n)
 	}
 	return (dst);
 }
-DEF_STRONG(strncat);

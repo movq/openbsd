@@ -74,7 +74,6 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 	}
 	else if (RCS_isdead (vers->srcfile, vers->vn_rcs))
 	{
-	    /* there is an RCS file, but it's dead */
 	    if (vers->ts_user == NULL)
 		ret = T_UPTODATE;
 	    else
@@ -84,17 +83,43 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 		ret = T_UNKNOWN;
 	    }
 	}
-	else if (!pipeout && vers->ts_user && No_Difference (finfo, vers))
-	{
-	    /* the files were different so it is a conflict */
-	    if (!really_quiet)
-		error (0, 0, "move away %s; it is in the way",
-		       finfo->fullname);
-	    ret = T_CONFLICT;
-	}
 	else
-	    /* no user file or no difference, just checkout */
-	    ret = T_CHECKOUT;
+	{
+	    /* there is an rcs file */
+
+	    if (vers->ts_user == NULL)
+	    {
+		/* There is no user file; needs checkout */
+		ret = T_CHECKOUT;
+	    }
+	    else
+	    {
+		if (pipeout)
+		{
+		    /*
+		     * The user file doesn't necessarily have anything
+		     * to do with this.
+		     */
+		    ret = T_CHECKOUT;
+		}
+		/*
+		 * There is a user file; print a warning and add it to the
+		 * conflict list, only if it is indeed different from what we
+		 * plan to extract
+		 */
+		else if (No_Difference (finfo, vers))
+		{
+		    /* the files were different so it is a conflict */
+		    if (!really_quiet)
+			error (0, 0, "move away %s; it is in the way",
+			       finfo->fullname);
+		    ret = T_CONFLICT;
+		}
+		else
+		    /* since there was no difference, still needs checkout */
+		    ret = T_CHECKOUT;
+	    }
+	}
     }
     else if (strcmp (vers->vn_user, "0") == 0)
     {
@@ -110,35 +135,44 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 		error (0, 0, "warning: new-born %s has disappeared", finfo->fullname);
 	    ret = T_REMOVE_ENTRY;
 	}
-	else if (vers->vn_rcs == NULL ||
-		 RCS_isdead (vers->srcfile, vers->vn_rcs))
-	    /* No RCS file or RCS file revision is dead  */
-	    ret = T_ADDED;
 	else
 	{
-	    if (vers->srcfile->flags & INATTIC
-		&& vers->srcfile->flags & VALID)
-	    {
-		/* This file has been added on some branch other than
-		   the one we are looking at.  In the branch we are
-		   looking at, the file was already valid.  */
-		if (!really_quiet)
-		    error (0, 0,
-			   "conflict: %s has been added, but already exists",
-			   finfo->fullname);
-	    }
+	    /* There is a user file */
+
+	    if (vers->vn_rcs == NULL)
+		/* There is no RCS file, added file */
+		ret = T_ADDED;
+	    else if (RCS_isdead (vers->srcfile, vers->vn_rcs))
+		/* we are resurrecting. */
+		ret = T_ADDED;
 	    else
 	    {
-		/*
-		 * There is an RCS file, so someone else must have checked
-		 * one in behind our back; conflict
-		 */
-		if (!really_quiet)
-		    error (0, 0,
-			   "conflict: %s created independently by second party",
-			   finfo->fullname);
+		if (vers->srcfile->flags & INATTIC
+		    && vers->srcfile->flags & VALID)
+		{
+		    /* This file has been added on some branch other than
+		       the one we are looking at.  In the branch we are
+		       looking at, the file was already valid.  */
+		    if (!really_quiet)
+			error (0, 0,
+			       "\
+conflict: %s has been added, but already exists",
+			       finfo->fullname);
+		}
+		else
+		{
+		    /*
+		     * There is an RCS file, so someone else must have checked
+		     * one in behind our back; conflict
+		     */
+		    if (!really_quiet)
+			error (0, 0,
+			       "\
+conflict: %s created independently by second party",
+			       finfo->fullname);
+		}
+		ret = T_CONFLICT;
 	    }
-	    ret = T_CONFLICT;
 	}
     }
     else if (vers->vn_user[0] == '-')
@@ -159,18 +193,14 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 		 */
 		ret = T_REMOVE_ENTRY;
 	    }
-	    else if (strcmp (vers->vn_rcs, vers->vn_user + 1) == 0)
+	    else if (vers->vn_rcs == NULL
+		     ? vers->vn_user[1] == '\0'
+		     : strcmp (vers->vn_rcs, vers->vn_user + 1) == 0)
 		/*
 		 * The RCS file is the same version as the user file was, and
 		 * that's OK; remove it
 		 */
 		ret = T_REMOVED;
-	    else if (pipeout)
-		/*
-		 * The RCS file doesn't match the user's file, but it doesn't
-		 * matter in this case
-		 */
-		ret = T_NEEDS_MERGE;
 	    else
 	    {
 
@@ -197,7 +227,7 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
     else
     {
 	/* A normal entry, TS_Rcs is valid */
-	if (vers->vn_rcs == NULL || RCS_isdead (vers->srcfile, vers->vn_rcs))
+	if (vers->vn_rcs == NULL)
 	{
 	    /* There is no RCS file */
 
@@ -221,23 +251,30 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 			   finfo->fullname);
 		ret = T_REMOVE_ENTRY;
 	    }
-	    else if (No_Difference (finfo, vers))
-	    {
-		/* they are different -> conflict */
-		if (!really_quiet)
-		    error (0, 0,
-	       "conflict: %s is modified but no longer in the repository",
-			   finfo->fullname);
-		ret = T_CONFLICT;
-	    }
 	    else
 	    {
-		/* they weren't really different */
-		if (!really_quiet)
-		    error (0, 0,
-			   "warning: %s is not (any longer) pertinent",
+		/*
+		 * The user file has been modified and since it is no longer
+		 * in the repository, a conflict is raised
+		 */
+		if (No_Difference (finfo, vers))
+		{
+		    /* they are different -> conflict */
+		    if (!really_quiet)
+			error (0, 0,
+	       "conflict: %s is modified but no longer in the repository",
 			   finfo->fullname);
-		ret = T_REMOVE_ENTRY;
+		    ret = T_CONFLICT;
+		}
+		else
+		{
+		    /* they weren't really different */
+		    if (!really_quiet)
+			error (0, 0,
+			       "warning: %s is not (any longer) pertinent",
+			       finfo->fullname);
+		    ret = T_REMOVE_ENTRY;
+		}
 	    }
 	}
 	else if (strcmp (vers->vn_rcs, vers->vn_user) == 0)
@@ -284,39 +321,50 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 		    ret = T_UPTODATE;
 		}
 	    }
-	    else if (No_Difference (finfo, vers))
-	    {
-
-		/*
-		 * they really are different; modified if we aren't
-		 * changing any sticky -k options, else needs merge
-		 */
-#ifdef XXX_FIXME_WHEN_RCSMERGE_IS_FIXED
-		if (strcmp (vers->entdata->options ?
-		       vers->entdata->options : "", vers->options) == 0)
-		    ret = T_MODIFIED;
-		else
-		    ret = T_NEEDS_MERGE;
-#else
-		ret = T_MODIFIED;
-		sticky_ck (finfo, aflag, vers);
-#endif
-	    }
-	    else if (strcmp (vers->entdata->options ?
-		       vers->entdata->options : "", vers->options) != 0)
-	    {
-		/* file has not changed; check out if -k changed */
-		ret = T_CHECKOUT;
-	    }
 	    else
 	    {
 
 		/*
-		 * else -> note that No_Difference will Register the
-		 * file already for us, using the new tag/date. This
-		 * is the desired behaviour
+		 * The user file appears to have been modified, but we call
+		 * No_Difference to verify that it really has been modified
 		 */
-		ret = T_UPTODATE;
+		if (No_Difference (finfo, vers))
+		{
+
+		    /*
+		     * they really are different; modified if we aren't
+		     * changing any sticky -k options, else needs merge
+		     */
+#ifdef XXX_FIXME_WHEN_RCSMERGE_IS_FIXED
+		    if (strcmp (vers->entdata->options ?
+			   vers->entdata->options : "", vers->options) == 0)
+			ret = T_MODIFIED;
+		    else
+			ret = T_NEEDS_MERGE;
+#else
+		    ret = T_MODIFIED;
+		    sticky_ck (finfo, aflag, vers);
+#endif
+		}
+		else
+		{
+		    /* file has not changed; check out if -k changed */
+		    if (strcmp (vers->entdata->options ?
+			   vers->entdata->options : "", vers->options) != 0)
+		    {
+			ret = T_CHECKOUT;
+		    }
+		    else
+		    {
+
+			/*
+			 * else -> note that No_Difference will Register the
+			 * file already for us, using the new tag/date. This
+			 * is the desired behaviour
+			 */
+			ret = T_UPTODATE;
+		    }
+		}
 	    }
 	}
 	else
@@ -340,6 +388,7 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 		/*
 		 * The user file is still unmodified, so just get it as well
 		 */
+#ifdef SERVER_SUPPORT
 		if (strcmp (vers->entdata->options ?
 			    vers->entdata->options : "", vers->options) != 0
 		    || (vers->srcfile != NULL
@@ -347,19 +396,31 @@ Classify_File (finfo, tag, date, options, force_tag_match, aflag, versp,
 		    ret = T_CHECKOUT;
 		else
 		    ret = T_PATCH;
-	    }
-	    else if (No_Difference (finfo, vers))
-		/* really modified, needs to merge */
-		ret = T_NEEDS_MERGE;
-	    else if ((strcmp (vers->entdata->options ?
-			      vers->entdata->options : "", vers->options)
-		      != 0)
-		     || (vers->srcfile != NULL
-		         && (vers->srcfile->flags & INATTIC) != 0))
-		/* not really modified, check it out */
+#else
 		ret = T_CHECKOUT;
+#endif
+	    }
 	    else
-		ret = T_PATCH;
+	    {
+		if (No_Difference (finfo, vers))
+		    /* really modified, needs to merge */
+		    ret = T_NEEDS_MERGE;
+#ifdef SERVER_SUPPORT
+	        else if ((strcmp (vers->entdata->options ?
+				  vers->entdata->options : "", vers->options)
+			  != 0)
+			 || (vers->srcfile != NULL
+			     && (vers->srcfile->flags & INATTIC) != 0))
+		    /* not really modified, check it out */
+		    ret = T_CHECKOUT;
+		else
+		    ret = T_PATCH;
+#else
+		else
+		    /* not really modified, check it out */
+		    ret = T_CHECKOUT;
+#endif
+	    }
 	}
     }
 

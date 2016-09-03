@@ -1,12 +1,10 @@
 package Net::protoent;
 use strict;
 
-use 5.006_001;
-our $VERSION = '1.00';
-our(@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
 BEGIN { 
     use Exporter   ();
-    @EXPORT      = qw(getprotobyname getprotobynumber getprotoent getproto);
+    use vars       qw(@EXPORT @EXPORT_OK %EXPORT_TAGS);
+    @EXPORT      = qw(getprotobyname getprotobynumber getprotoent);
     @EXPORT_OK   = qw( $p_name @p_aliases $p_proto );
     %EXPORT_TAGS = ( FIELDS => [ @EXPORT_OK, @EXPORT ] );
 }

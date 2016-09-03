@@ -1,38 +1,22 @@
-/*	$OpenBSD: chap.c,v 1.18 2015/01/15 23:19:48 tedu Exp $	*/
+/*	$OpenBSD: chap.c,v 1.7 1998/01/17 20:30:19 millert Exp $	*/
 
 /*
  * chap.c - Challenge Handshake Authentication Protocol.
  *
- * Copyright (c) 1989-2002 Paul Mackerras. All rights reserved.
+ * Copyright (c) 1993 The Australian National University.
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *
- * 3. The name(s) of the authors of this software must not be used to
- *    endorse or promote products derived from this software without
- *    prior written permission.
- *
- * 4. Redistributions of any form whatsoever must retain the following
- *    acknowledgment:
- *    "This product includes software developed by Paul Mackerras
- *     <paulus@samba.org>".
- *
- * THE AUTHORS OF THIS SOFTWARE DISCLAIM ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS, IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY
- * SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
- * AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Redistribution and use in source and binary forms are permitted
+ * provided that the above copyright notice and this paragraph are
+ * duplicated in all such forms and that any documentation,
+ * advertising materials, and other materials related to such
+ * distribution and use acknowledge that the software was developed
+ * by the Australian National University.  The name of the University
+ * may not be used to endorse or promote products derived from this
+ * software without specific prior written permission.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+ * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
  * Copyright (c) 1991 Gregory M. Christy.
  * All rights reserved.
@@ -51,12 +35,19 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#ifndef lint
+#if 0
+static char rcsid[] = "Id: chap.c,v 1.15 1997/11/27 06:07:48 paulus Exp $";
+#else
+static char rcsid[] = "$OpenBSD: chap.c,v 1.7 1998/01/17 20:30:19 millert Exp $";
+#endif
+#endif
+
 /*
  * TODO:
  */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -66,15 +57,20 @@
 #include "pppd.h"
 #include "chap.h"
 
+#ifdef CHAPMS
+#include "chap_ms.h"
+#endif
+
 /*
  * Protocol entry points.
  */
-static void ChapInit(int);
-static void ChapLowerUp(int);
-static void ChapLowerDown(int);
-static void ChapInput(int, u_char *, int);
-static void ChapProtocolReject(int);
-static int  ChapPrintPkt(u_char *, int, void (*)(void *, char *, ...), void *);
+static void ChapInit __P((int));
+static void ChapLowerUp __P((int));
+static void ChapLowerDown __P((int));
+static void ChapInput __P((int, u_char *, int));
+static void ChapProtocolReject __P((int));
+static int  ChapPrintPkt __P((u_char *, int,
+			      void (*) __P((void *, char *, ...)), void *));
 
 struct protent chap_protent = {
     PPP_CHAP,
@@ -96,17 +92,20 @@ struct protent chap_protent = {
 
 chap_state chap[NUM_PPP];		/* CHAP state; one for each unit */
 
-static void ChapChallengeTimeout(void *);
-static void ChapResponseTimeout(void *);
-static void ChapReceiveChallenge(chap_state *, u_char *, int, int);
-static void ChapRechallenge(void *);
-static void ChapReceiveResponse(chap_state *, u_char *, int, int);
-static void ChapReceiveSuccess(chap_state *, u_char *, int, int);
-static void ChapReceiveFailure(chap_state *, u_char *, int, int);
-static void ChapSendStatus(chap_state *, int);
-static void ChapSendChallenge(chap_state *);
-static void ChapSendResponse(chap_state *);
-static void ChapGenChallenge(chap_state *);
+static void ChapChallengeTimeout __P((void *));
+static void ChapResponseTimeout __P((void *));
+static void ChapReceiveChallenge __P((chap_state *, u_char *, int, int));
+static void ChapRechallenge __P((void *));
+static void ChapReceiveResponse __P((chap_state *, u_char *, int, int));
+static void ChapReceiveSuccess __P((chap_state *, u_char *, int, int));
+static void ChapReceiveFailure __P((chap_state *, u_char *, int, int));
+static void ChapSendStatus __P((chap_state *, int));
+static void ChapSendChallenge __P((chap_state *));
+static void ChapSendResponse __P((chap_state *));
+static void ChapGenChallenge __P((chap_state *));
+
+extern double drand48 __P((void));
+extern void srand48 __P((long));
 
 /*
  * ChapInit - Initialize a CHAP unit.
@@ -432,7 +431,8 @@ ChapReceiveChallenge(cstate, inp, id, len)
 
     /* Microsoft doesn't send their name back in the PPP packet */
     if (remote_name[0] != 0 && (explicit_remote || rhostname[0] == 0)) {
-	strlcpy(rhostname, remote_name, sizeof(rhostname));
+	strncpy(rhostname, remote_name, sizeof(rhostname) - 1);
+	rhostname[sizeof(rhostname) - 1] = 0;
 	CHAPDEBUG((LOG_INFO, "ChapReceiveChallenge: using '%s' as remote name",
 		  rhostname));
     }
@@ -464,6 +464,12 @@ ChapReceiveChallenge(cstate, inp, id, len)
 	BCOPY(hash, cstate->response, MD5_SIGNATURE_SIZE);
 	cstate->resp_length = MD5_SIGNATURE_SIZE;
 	break;
+
+#ifdef CHAPMS
+    case CHAP_MICROSOFT:
+	ChapMS(cstate, rchallenge, rchallenge_len, secret, secret_len);
+	break;
+#endif
 
     default:
 	CHAPDEBUG((LOG_INFO, "unknown digest type %d", cstate->resp_type));
@@ -718,9 +724,9 @@ ChapSendStatus(cstate, code)
     char msg[256];
 
     if (code == CHAP_SUCCESS)
-	snprintf(msg, sizeof msg, "Welcome to %s.", hostname);
+	sprintf(msg, "Welcome to %s.", hostname);
     else
-	snprintf(msg, sizeof msg, "I don't like you.  Go 'way.");
+	sprintf(msg, "I don't like you.  Go 'way.");
     msglen = strlen(msg);
 
     outlen = CHAP_HEADERLEN + msglen;
@@ -750,18 +756,21 @@ ChapGenChallenge(cstate)
     chap_state *cstate;
 {
     int chal_len;
+    u_char *ptr = cstate->challenge;
+    unsigned int i;
 
-    /* pick a random challenge length >= MIN_CHALLENGE_LENGTH and
-       <= MAX_CHALLENGE_LENGTH */
-    chal_len = MIN_CHALLENGE_LENGTH +
-	arc4random_uniform(MAX_CHALLENGE_LENGTH - MIN_CHALLENGE_LENGTH + 1);
-			    
+    /* pick a random challenge length between MIN_CHALLENGE_LENGTH and
+       MAX_CHALLENGE_LENGTH */
+    chal_len =  (unsigned) ((drand48() *
+			     (MAX_CHALLENGE_LENGTH - MIN_CHALLENGE_LENGTH)) +
+			    MIN_CHALLENGE_LENGTH);
     cstate->chal_len = chal_len;
     cstate->chal_id = ++cstate->id;
     cstate->chal_transmits = 0;
 
     /* generate a random string */
-    arc4random_buf(cstate->challenge, chal_len);
+    for (i = 0; i < chal_len; i++ )
+	*ptr++ = (char) (drand48() * 0xff);
 }
 
 /*
@@ -812,7 +821,7 @@ static int
 ChapPrintPkt(p, plen, printer, arg)
     u_char *p;
     int plen;
-    void (*printer)(void *, char *, ...);
+    void (*printer) __P((void *, char *, ...));
     void *arg;
 {
     int code, id, len;

@@ -1,4 +1,3 @@
-/*	$OpenBSD: rmp_var.h,v 1.5 2003/06/02 23:36:54 millert Exp $	*/
 /*	$NetBSD: rmp_var.h,v 1.7.2.1 1995/11/14 08:45:43 thorpej Exp $	*/
 
 /*
@@ -21,7 +20,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -126,7 +129,7 @@ typedef char	restofpkt;
  *	COPYWORD(w1,w2)	Copy u_word `w1' to `w2'.
  *	GETWORD(w,i)	Copy u_word `w' into int `i'.
  *	PUTWORD(i,w)	Copy int `i' into u_word `w'.
- *
+ * 
  * N.B. Endianness is handled by use of ntohl/htonl
  */
 #if defined(__vax__) || defined(__tahoe__) || defined(__m68k__)

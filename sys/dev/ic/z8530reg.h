@@ -1,5 +1,5 @@
-/*	$OpenBSD: z8530reg.h,v 1.7 2012/03/28 20:44:23 miod Exp $	*/
-/*	$NetBSD: z8530reg.h,v 1.12 2005/12/11 12:21:29 christos Exp $ */
+/*	$OpenBSD: z8530reg.h,v 1.4 1996/11/28 23:27:56 niklas Exp $ */
+/*	$NetBSD: z8530reg.h,v 1.7 1996/10/23 00:32:31 gwr Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -22,7 +22,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -162,8 +166,6 @@
 #define	ZSWR1_TIE		0x02	/* transmit interrupt enable */
 #define	ZSWR1_SIE		0x01	/* external/status interrupt enable */
 
-#define	ZSWR1_IMASK 	0x1F	/* mask of all itr. enable bits. */
-
 /* HSIS compat */
 #define	ZSWR1_REQ_ENABLE	(ZSWR1_REQ_WAIT | ZSWR1_REQ_TX)
 
@@ -186,7 +188,6 @@
 #define	ZSWR3_HUNT		0x10	/* enter hunt mode */
 #define	ZSWR3_RXCRC_ENABLE	0x08	/* enable recv crc calculation */
 #define	ZSWR3_ADDR_SEARCH_MODE	0x04	/* address search mode (SDLC only) */
-#define	ZSWR3_SDLC_SHORT_ADDR	0x02	/* short address mode (SDLC only) */
 #define	ZSWR3_SYNC_LOAD_INH	0x02	/* sync character load inhibit */
 #define	ZSWR3_RX_ENABLE		0x01	/* receiver enable */
 
@@ -330,7 +331,7 @@
  *	2 bps
  *
  * rounded down to an integer.  This can be computed entirely
- * in integer arithmetic as:
+ * in integer arithemtic as:
  *
  *	f + bps
  *	------- - 2

@@ -1,5 +1,5 @@
-/* $OpenBSD: udp.h,v 1.11 2005/02/25 14:14:31 hshoexer Exp $	 */
-/* $EOM: udp.h,v 1.4 1998/12/22 02:23:43 niklas Exp $	 */
+/*	$OpenBSD: udp.h,v 1.4 1998/12/22 02:25:15 niklas Exp $	*/
+/*	$EOM: udp.h,v 1.4 1998/12/22 02:23:43 niklas Exp $	*/
 
 /*
  * Copyright (c) 1998 Niklas Hallqvist.  All rights reserved.
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Ericsson Radio Systems.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -32,20 +37,10 @@
 #ifndef _UDP_H_
 #define _UDP_H_
 
-extern char    *udp_default_port;
-extern int      bind_family;
+extern in_port_t udp_default_port;
+extern in_port_t udp_bind_port;
 
-#define BIND_FAMILY_INET4	0x0001
-#define BIND_FAMILY_INET6	0x0002
+extern in_port_t udp_decode_port (char *);
+extern void udp_init (void);
 
-struct transport *udp_bind(const struct sockaddr *);
-void		  udp_init(void);
-
-struct udp_transport {
-	struct transport  transport;
-	struct sockaddr	 *src;
-	struct sockaddr	 *dst;
-	int		  s;
-};
-
-#endif				/* _UDP_H_ */
+#endif /* _UDP_H_ */

@@ -1,7 +1,7 @@
-/* $OpenBSD: p_replace.c,v 1.6 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_replace.c,v 1.2 1998/07/24 17:08:14 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -38,23 +38,17 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_replace.c,v 1.6 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_replace.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(int)
-replace_panel(PANEL * pan, WINDOW *win)
+int
+replace_panel(PANEL *pan, WINDOW *win)
 {
-  T((T_CALLED("replace_panel(%p,%p)"), pan, win));
-
-  if (!pan)
-    returnCode(ERR);
-
-  if (IS_LINKED(pan))
-    {
-      Touchpan(pan);
-      PANEL_UPDATE(pan, (PANEL *) 0);
-    }
-
+  if(!pan)
+    return(ERR);
+  if(_nc_panel_is_linked(pan))
+    _nc_override(pan,P_TOUCH);
   pan->win = win;
-
-  returnCode(OK);
+  if(_nc_panel_is_linked(pan))
+    _nc_calculate_obscure();
+  return(OK);
 }

@@ -1,6 +1,6 @@
 #!./perl
 
-print "1..15\n";
+print "1..10\n";
 
 for ($i = 0; $i <= 10; $i++) {
     $x[$i] = $i;
@@ -55,49 +55,3 @@ sub foo {
 print foo(1) == 1 ? "ok" : "not ok", " 8\n";
 print foo(2) == 2 ? "ok" : "not ok", " 9\n";
 print foo(5) == 5 ? "ok" : "not ok", " 10\n";
-
-sub bar {
-    return (1, 2, 4);
-}
-
-$a = 0;
-foreach $b (bar()) {
-    $a += $b;
-}
-print $a == 7 ? "ok" : "not ok", " 11\n";
-
-$loop_count = 0;
-for ("-3" .. "0") {
-    $loop_count++;
-}
-print $loop_count == 4 ? "ok" : "not ok", " 12\n";
-
-# modifying arrays in loops is a no-no
-@a = (3,4);
-eval { @a = () for (1,2,@a) };
-print $@ =~ /Use of freed value in iteration/ ? "ok" : "not ok", " 13\n";
-
-# [perl #30061] double destory when same iterator variable (eg $_) used in
-# DESTROY as used in for loop that triggered the destroy
-
-{
-
-    my $x = 0;
-    sub X::DESTROY {
-	my $o = shift;
-	$x++;
-	1 for (1);
-    }
-
-    my %h;
-    $h{foo} = bless [], 'X';
-    delete $h{foo} for $h{foo}, 1;
-    print $x == 1 ? "ok" : "not ok", " 14 - double destroy, x=$x\n";
-}
-
-# [perl #78194] foreach() aliasing op return values
-for ("${\''}") {
-    print "not " unless \$_ == \$_;
-    print 'ok 15 - [perl \#78194] \$_ == \$_ inside for("$x"){...}',
-          "\n";
-}

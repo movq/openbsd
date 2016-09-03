@@ -13,13 +13,25 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_sinhf.c,v 1.4 1995/05/10 20:46:15 jtc Exp $";
+#endif
+
 #include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const float one = 1.0, shuge = 1.0e37;
+#else
+static float one = 1.0, shuge = 1.0e37;
+#endif
 
-float
-sinhf(float x)
+#ifdef __STDC__
+	float __ieee754_sinhf(float x)
+#else
+	float __ieee754_sinhf(x)
+	float x;
+#endif
 {	
 	float t,w,h;
 	int32_t ix,jx;
@@ -42,11 +54,11 @@ sinhf(float x)
 	}
 
     /* |x| in [22, log(maxdouble)] return 0.5*exp(|x|) */
-	if (ix < 0x42b17180)  return h*expf(fabsf(x));
+	if (ix < 0x42b17180)  return h*__ieee754_expf(fabsf(x));
 
     /* |x| in [log(maxdouble), overflowthresold] */
 	if (ix<=0x42b2d4fc) {
-	    w = expf((float)0.5*fabsf(x));
+	    w = __ieee754_expf((float)0.5*fabsf(x));
 	    t = h*w;
 	    return t*w;
 	}

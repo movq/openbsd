@@ -1,7 +1,7 @@
-/*	$OpenBSD: uvm_ddb.h,v 1.14 2015/02/05 23:51:06 mpi Exp $	*/
-/*	$NetBSD: uvm_ddb.h,v 1.5 2000/11/25 06:27:59 chs Exp $	*/
+/*	$NetBSD: uvm_ddb.h,v 1.1 1998/07/04 22:18:53 jonathan Exp $	*/
 
 /*
+ *
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
  * All rights reserved.
  *
@@ -13,6 +13,12 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *      This product includes software developed by Charles D. Cranor and
+ *      Washington University.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -24,23 +30,23 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * from: Id: uvm_extern.h,v 1.1.2.21 1998/02/07 01:16:53 chs Exp
  */
 
 #ifndef _UVM_UVM_DDB_H_
 #define _UVM_UVM_DDB_H_
 
-#ifdef _KERNEL
+#if defined(DDB)
+void			uvm_map_print __P((vm_map_t, boolean_t));
+void			uvm_map_printit __P((vm_map_t, boolean_t,
+				int (*) __P((const char *, ...))));
 
-#ifdef DDB
-void	uvm_map_printit(vm_map_t, boolean_t,
-	    int (*)(const char *, ...));
-void	uvm_object_printit(struct uvm_object *, boolean_t,
-	    int (*)(const char *, ...));
-void	uvm_page_printit(struct vm_page *, boolean_t,
-	    int (*)(const char *, ...));
-void	uvmexp_print(int (*)(const char *, ...));
-#endif /* DDB */
-
-#endif /* _KERNEL */
-
-#endif /* _UVM_UVM_DDB_H_ */
+void			uvm_object_print __P((struct uvm_object *, boolean_t));
+void			uvm_object_printit __P((struct uvm_object *, boolean_t,
+				int (*) __P((const char *, ...))));
+void			uvm_page_print __P((struct vm_page *, boolean_t));
+void			uvm_page_printit __P((struct vm_page *, boolean_t,
+				int (*) __P((const char *, ...))));
+#endif
+#endif _UVM_UVM_DDB_H_

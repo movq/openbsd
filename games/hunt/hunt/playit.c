@@ -1,47 +1,21 @@
-/*	$OpenBSD: playit.c,v 1.13 2016/08/27 02:06:40 guenther Exp $	*/
+/*	$OpenBSD: playit.c,v 1.4 1999/02/01 06:53:55 d Exp $	*/
 /*	$NetBSD: playit.c,v 1.4 1997/10/20 00:37:15 lukem Exp $	*/
 /*
- * Copyright (c) 1983-2003, Regents of the University of California.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without 
- * modification, are permitted provided that the following conditions are 
- * met:
- * 
- * + Redistributions of source code must retain the above copyright 
- *   notice, this list of conditions and the following disclaimer.
- * + Redistributions in binary form must reproduce the above copyright 
- *   notice, this list of conditions and the following disclaimer in the 
- *   documentation and/or other materials provided with the distribution.
- * + Neither the name of the University of California, San Francisco nor 
- *   the names of its contributors may be used to endorse or promote 
- *   products derived from this software without specific prior written 
- *   permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS 
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED 
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY 
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Hunt
+ *  Copyright (c) 1985 Conrad C. Huang, Gregory S. Couch, Kenneth C.R.C. Arnold
+ *  San Francisco, California
  */
 
-#include <sys/select.h>
-#include <ctype.h>
+#include <sys/file.h>
 #include <err.h>
 #include <errno.h>
-#include <stdio.h>
-#include <string.h>
+#include <ctype.h>
 #include <termios.h>
+#include <signal.h>
 #include <unistd.h>
-
-#include "display.h"
+#include <stdio.h>
 #include "hunt.h"
+#include "display.h"
 #include "client.h"
 
 static int	nchar_send;
@@ -60,8 +34,8 @@ static unsigned char	ibuf[256], *iptr = ibuf;
 
 #define	GETCHR()	(--icnt < 0 ? getchr() : *iptr++)
 
-static	unsigned char	getchr(void);
-static	void		send_stuff(void);
+static	unsigned char	getchr __P((void));
+static	void		send_stuff __P((void));
 
 /*
  * playit:
@@ -69,7 +43,7 @@ static	void		send_stuff(void);
  *	the driver.
  */
 void
-playit(void)
+playit()
 {
 	int		ch;
 	int		y, x;
@@ -80,9 +54,11 @@ playit(void)
 
 	if (read(Socket, &version, sizeof version) != sizeof version) {
 		bad_con();
+		/* NOTREACHED */
 	}
 	if (ntohl(version) != HUNT_VERSION) {
 		bad_ver();
+		/* NOTREACHED */
 	}
 	errno = 0;
 	nchar_send = MAX_SEND;
@@ -151,8 +127,6 @@ playit(void)
 			ch = GETCHR();
 			/* FALLTHROUGH */
 		  default:
-			if (!isprint(ch))
-				ch = ' ';
 			display_put_ch(ch);
 			if (Otto_mode)
 				switch (ch) {
@@ -180,7 +154,7 @@ out:
  *	no characters in the input buffer.
  */
 static unsigned char
-getchr(void)
+getchr()
 {
 	fd_set	readfds, s_readfds;
 	int	nfds, s_nfds;
@@ -201,11 +175,12 @@ one_more_time:
 
 	if (FD_ISSET(STDIN_FILENO, &readfds))
 		send_stuff();
-	if (!FD_ISSET(Socket, &readfds))
+	if (! FD_ISSET(Socket, &readfds))
 		goto one_more_time;
 	icnt = read(Socket, ibuf, sizeof ibuf);
 	if (icnt <= 0) {
 		bad_con();
+		/* NOTREACHED */
 	}
 	iptr = ibuf;
 	icnt--;
@@ -217,7 +192,7 @@ one_more_time:
  *	Send standard input characters to the driver
  */
 static void
-send_stuff(void)
+send_stuff()
 {
 	int		count;
 	char		*sp, *nsp;
@@ -226,13 +201,11 @@ send_stuff(void)
 
 	/* Drain the user's keystrokes: */
 	count = read(STDIN_FILENO, Buf, sizeof Buf);
-	if (count < 0)
-		err(1, "read");
-	if (count == 0)
+	if (count <= 0)
 		return;
 
 	if (nchar_send <= 0 && !no_beep) {
-		display_beep();
+		(void) write(1, "\7", 1);	/* CTRL('G') */
 		return;
 	}
 
@@ -269,7 +242,8 @@ send_stuff(void)
  *	Handle the end of the game when the player dies
  */
 int
-quit(int old_status)
+quit(old_status)
+	int	old_status;
 {
 	int	explain, ch;
 
@@ -389,18 +363,21 @@ get_message:
  *	Send a message to the driver and return
  */
 void
-do_message(void)
+do_message()
 {
 	u_int32_t	version;
 
 	if (read(Socket, &version, sizeof version) != sizeof version) {
 		bad_con();
+		/* NOTREACHED */
 	}
 	if (ntohl(version) != HUNT_VERSION) {
 		bad_ver();
+		/* NOTREACHED */
 	}
 	if (write(Socket, Send_message, strlen(Send_message)) < 0) {
 		bad_con();
+		/* NOTREACHED */
 	}
 	(void) close(Socket);
 }

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: col.1,v 1.14 2015/09/14 20:06:58 schwarze Exp $
+.\"	$OpenBSD: col.1,v 1.4 1999/06/05 01:21:21 aaron Exp $
 .\"	$NetBSD: col.1,v 1.4 1995/03/26 05:25:52 glass Exp $
 .\"
 .\" Copyright (c) 1990, 1993
@@ -15,7 +15,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -33,77 +37,61 @@
 .\"
 .\"     @(#)col.1	8.1 (Berkeley) 6/29/93
 .\"
-.Dd $Mdocdate: September 14 2015 $
+.Dd June 29, 1993
 .Dt COL 1
 .Os
 .Sh NAME
 .Nm col
-.Nd filter reverse line feeds and backspaces from input
+.Nd filter reverse line feeds from input
 .Sh SYNOPSIS
 .Nm col
-.Op Fl bfhx
+.Op Fl bfx
 .Op Fl l Ar num
 .Sh DESCRIPTION
 .Nm
 filters out reverse (and half-reverse) line feeds so that the output is
 in the correct order with only forward and half-forward line
 feeds, and replaces whitespace characters with tabs where possible.
+This can be useful in processing the output of
+.Xr nroff 1
+and
+.Xr tbl  1 .
 .Pp
 .Nm
 reads from the standard input and writes to the standard output.
 .Pp
 The options are as follows:
-.Bl -tag -width Ds
+.Bl -tag -width "-l num"
 .It Fl b
 Do not output any backspaces, printing only the last character
 written to each column position.
-This can be useful in processing the output of
-.Xr mandoc 1 .
 .It Fl f
 Forward half-line feeds are permitted
-.Pf ( Dq fine
+.Pf ( Ns Dq fine
 mode).
 Normally characters printed on a half-line boundary are printed
 on the following line.
-.It Fl h
-Compress spaces into tabs.
-This is the default behavior.
+.It Fl x
+Output multiple spaces instead of tabs.
 .It Fl l Ar num
 Buffer at least
 .Ar num
 lines in memory.
 By default, 128 lines are buffered.
-.It Fl x
-Output multiple spaces instead of tabs.
 .El
 .Pp
-In the input stream,
+The control sequences for carriage motion that
 .Nm
-understands both the escape sequences of the form escape-digit
-mandated by
-.St -susv2
-and the traditional
-.Bx
-format escape-control-character.
-The control sequences for carriage motion and their ASCII values
-are as follows:
+understands and their decimal values are listed in the following
+table:
 .Pp
-.Bl -tag -width "escape-backspace" -compact
-.It escape\-bell
-Reverse line feed (27 then 7).
-.It escape\-digit\-7
-Reverse line feed (27 then 55).
-.It escape\-backspace
-Half reverse line feed (27 then 8).
-.It escape\-digit\-8
-Half reverse line feed (27 then 56).
-.It escape\-tab
-Half forward line feed (27 then 9).
-.It escape\-digit\-9
-Half forward line feed (27 then 57).
-In
-.Fl f
-mode, this sequence may also occur in the output stream.
+.Bl -tag -width "carriage return" -compact
+.It ESC\-7
+Reverse line feed (escape then 7).
+.It ESC\-8
+Half reverse line feed (escape then 8).
+.It ESC\-9
+Half forward line feed (escape then 9).
 .It backspace
 Moves back one column (8); ignored in the first column.
 .It carriage return
@@ -133,7 +121,9 @@ If the input attempts to back up to the last flushed line,
 .Nm
 will display a warning message.
 .Sh SEE ALSO
-.Xr expand 1
+.Xr expand 1 ,
+.Xr nroff 1 ,
+.Xr tbl 1
 .Sh HISTORY
 A
 .Nm

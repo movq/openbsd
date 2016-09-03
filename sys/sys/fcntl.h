@@ -1,4 +1,4 @@
-/*	$OpenBSD: fcntl.h,v 1.21 2015/05/17 01:22:01 deraadt Exp $	*/
+/*	$OpenBSD: fcntl.h,v 1.5 1998/01/09 16:33:47 csapuntz Exp $	*/
 /*	$NetBSD: fcntl.h,v 1.8 1995/03/26 20:24:12 jtc Exp $	*/
 
 /*-
@@ -18,7 +18,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -46,7 +50,6 @@
  * related kernel definitions.
  */
 
-#include <sys/cdefs.h>
 #ifndef _KERNEL
 #include <sys/types.h>
 #endif
@@ -72,40 +75,35 @@
  * FREAD and FWRITE are excluded from the #ifdef _KERNEL so that TIOCFLUSH,
  * which was documented to use FREAD/FWRITE, continues to work.
  */
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	FREAD		0x0001
 #define	FWRITE		0x0002
 #endif
 #define	O_NONBLOCK	0x0004		/* no delay */
 #define	O_APPEND	0x0008		/* set append mode */
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	O_SHLOCK	0x0010		/* open with shared file lock */
 #define	O_EXLOCK	0x0020		/* open with exclusive file lock */
 #define	O_ASYNC		0x0040		/* signal pgrp when data ready */
-#define	O_FSYNC		0x0080		/* backwards compatibility */
-#define	O_NOFOLLOW	0x0100		/* if path is a symlink, don't follow */
+#define	O_FSYNC		0x0080		/* synchronous writes */
 #endif
-#if __POSIX_VISIBLE >= 199309 || __XPG_VISIBLE >= 420
-#define	O_SYNC		0x0080		/* synchronous writes */
-#endif
-#define	O_CREAT		0x0200		/* create if nonexistent */
+#define	O_CREAT		0x0200		/* create if nonexistant */
 #define	O_TRUNC		0x0400		/* truncate to zero length */
 #define	O_EXCL		0x0800		/* error if already exists */
+#ifdef _KERNEL
+#define	FMARK		0x1000		/* mark during gc() */
+#define	FDEFER		0x2000		/* defer for next gc pass */
+#define	FHASLOCK	0x4000		/* descriptor holds advisory lock */
 
-/*
- * POSIX 1003.1 specifies a higher granularity for synchronous operations
- * than we support.  Since synchronicity is all or nothing in OpenBSD
- * we just define these to be the same as O_SYNC.
- */
-#define	O_DSYNC		O_SYNC		/* synchronous data writes */
-#define	O_RSYNC		O_SYNC		/* synchronous reads */
+/* Note: The below is not a flag that can be used in the struct file. 
+   It's an option that can be passed to vn_open to make sure it doesn't
+   follow a symlink on the last lookup */
+#define FNOSYMLINK     0x10000          /* Don't follow symlink for last
+					   component */
+#endif
 
 /* defined by POSIX 1003.1; BSD default, this bit is not required */
 #define	O_NOCTTY	0x8000		/* don't assign controlling terminal */
-
-/* defined by POSIX Issue 7 */
-#define	O_CLOEXEC	0x10000		/* atomically set FD_CLOEXEC */
-#define	O_DIRECTORY	0x20000		/* fail if not a directory */
 
 #ifdef _KERNEL
 /*
@@ -126,10 +124,10 @@
  * and by fcntl.  We retain the F* names for the kernel f_flags field
  * and for backward compatibility for fcntl.
  */
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 #define	FAPPEND		O_APPEND	/* kernel/compat */
 #define	FASYNC		O_ASYNC		/* kernel/compat */
-#define	FFSYNC		O_SYNC		/* kernel */
+#define	FFSYNC		O_FSYNC		/* kernel */
 #define	FNONBLOCK	O_NONBLOCK	/* kernel */
 #define	FNDELAY		O_NONBLOCK	/* compat */
 #define	O_NDELAY	O_NONBLOCK	/* compat */
@@ -145,19 +143,13 @@
 #define	F_SETFD		2		/* set file descriptor flags */
 #define	F_GETFL		3		/* get file status flags */
 #define	F_SETFL		4		/* set file status flags */
-#if __POSIX_VISIBLE >= 200112 || __XPG_VISIBLE >= 500
+#ifndef _POSIX_SOURCE
 #define	F_GETOWN	5		/* get SIGIO/SIGURG proc/pgrp */
 #define F_SETOWN	6		/* set SIGIO/SIGURG proc/pgrp */
 #endif
 #define	F_GETLK		7		/* get record locking information */
 #define	F_SETLK		8		/* set record locking information */
 #define	F_SETLKW	9		/* F_SETLK; wait if blocked */
-#if __POSIX_VISIBLE >= 200809
-#define	F_DUPFD_CLOEXEC	10		/* duplicate with FD_CLOEXEC set */
-#endif
-#if __BSD_VISIBLE
-#define F_ISATTY	11		/* used by isatty(3) */
-#endif
 
 /* file descriptor flags (F_GETFD, F_SETFD) */
 #define	FD_CLOEXEC	1		/* close-on-exec flag */
@@ -185,7 +177,7 @@ struct flock {
 };
 
 
-#if __BSD_VISIBLE
+#ifndef _POSIX_SOURCE
 /* lock operations for flock(2) */
 #define	LOCK_SH		0x01		/* shared file lock */
 #define	LOCK_EX		0x02		/* exclusive file lock */
@@ -193,26 +185,17 @@ struct flock {
 #define	LOCK_UN		0x08		/* unlock file */
 #endif
 
-#if __POSIX_VISIBLE >= 200809
-#define	AT_FDCWD	-100
-
-#define	AT_EACCESS		0x01
-#define	AT_SYMLINK_NOFOLLOW	0x02
-#define	AT_SYMLINK_FOLLOW	0x04
-#define	AT_REMOVEDIR		0x08
-#endif
 
 #ifndef _KERNEL
+#include <sys/cdefs.h>
+
 __BEGIN_DECLS
-int	open(const char *, int, ...);
-int	creat(const char *, mode_t);
-int	fcntl(int, int, ...);
-#if __BSD_VISIBLE
-int	flock(int, int);
-#endif
-#if __POSIX_VISIBLE >= 200809
-int	openat(int, const char *, int, ...);
-#endif
+int	open __P((const char *, int, ...));
+int	creat __P((const char *, mode_t));
+int	fcntl __P((int, int, ...));
+#ifndef _POSIX_SOURCE
+int	flock __P((int, int));
+#endif /* !_POSIX_SOURCE */
 __END_DECLS
 #endif
 

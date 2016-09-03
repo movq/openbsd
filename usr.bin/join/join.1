@@ -1,5 +1,3 @@
-.\"	$OpenBSD: join.1,v 1.23 2014/01/19 23:56:06 schwarze Exp $
-.\"
 .\" Copyright (c) 1990, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -14,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -32,7 +34,7 @@
 .\"
 .\"	@(#)join.1	8.3 (Berkeley) 4/28/95
 .\"
-.Dd $Mdocdate: January 19 2014 $
+.Dd April 28, 1995
 .Dt JOIN 1
 .Os
 .Sh NAME
@@ -40,14 +42,17 @@
 .Nd relational database operator
 .Sh SYNOPSIS
 .Nm join
-.Op Fl 1 Ar field
-.Op Fl 2 Ar field
 .Oo
 .Fl a Ar file_number | Fl v Ar file_number
 .Oc
 .Op Fl e Ar string
+.Op Fl j Ar file_number field
 .Op Fl o Ar list
+.Bk -words
+.Ek
 .Op Fl t Ar char
+.Op Fl \&1 Ar field
+.Op Fl \&2 Ar field
 .Ar file1
 .Ar file2
 .Sh DESCRIPTION
@@ -79,47 +84,17 @@ The default output field separator is a single space character.
 Many of the options use file and field numbers.
 Both file numbers and field numbers are 1 based, i.e., the first file on
 the command line is file number 1 and the first field is field number 1.
-.Pp
-When the default field delimiter characters are used, the files to be joined
-should be ordered in the collating sequence of
-.Xr sort 1 ,
-using the
-.Fl b
-option, on the fields on which they are to be joined, otherwise
-.Nm
-may not report all field matches.
-When the field delimiter characters are specified by the
-.Fl t
-option, the collating sequence should be the same as
-.Xr sort 1
-without the
-.Fl b
-option.
-.Pp
-If one of the arguments
-.Ar file1
-or
-.Ar file2
-is
-.Sq - ,
-the standard input is used.
-.Pp
-The options are as follows:
-.Bl -tag -width Ds
-.It Fl 1 Ar field
-Join on the
-.Ar field Ns 'th
-field of
-.Ar file1 .
-.It Fl 2 Ar field
-Join on the
-.Ar field Ns 'th
-field of
-.Ar file2 .
+The following options are available:
+.Bl -tag -width Fl
 .It Fl a Ar file_number
 In addition to the default output, produce a line for each unpairable
 line in file
 .Ar file_number .
+(The argument to
+.Fl a
+must not be preceded by a space; see the
+.Sx COMPATIBILITY
+section.)
 .It Fl e Ar string
 Replace empty output fields with
 .Ar string .
@@ -129,20 +104,16 @@ each line with matching join fields.
 Each element of
 .Ar list
 has the form
-.Dq file_number.field ,
+.Ql file_number.field ,
 where
 .Ar file_number
 is a file number and
 .Ar field
-is a field number,
-or the form
-.Dq 0
-(zero),
-representing the join field.
+is a field number.
 The elements of list must be either comma
 .Pq Ql \&,
 or whitespace separated.
-(The latter requires quoting to protect it from the shell, or a simpler
+(The latter requires quoting to protect it from the shell, or, a simpler
 approach is to use multiple
 .Fl o
 options.)
@@ -158,63 +129,71 @@ Do not display the default output, but display a line for each unpairable
 line in file
 .Ar file_number .
 The options
-.Fl v Cm 1
+.Fl v Ar 1
 and
-.Fl v Cm 2
+.Fl v Ar 2
 may be specified at the same time.
+.It Fl 1 Ar field
+Join on the
+.Ar field Ns 'th
+field of file 1.
+.It Fl 2 Ar field
+Join on the
+.Ar field Ns 'th
+field of file 2.
 .El
-.Sh EXIT STATUS
-.Ex -std join
-.Sh SEE ALSO
-.Xr awk 1 ,
-.Xr comm 1 ,
-.Xr lam 1 ,
-.Xr paste 1 ,
+.Pp
+When the default field delimiter characters are used, the files to be joined
+should be ordered in the collating sequence of
 .Xr sort 1 ,
-.Xr uniq 1
-.Sh STANDARDS
+using the
+.Fl b
+option, on the fields on which they are to be joined, otherwise
+.Nm
+may not report all field matches.
+When the field delimiter characters are specified by the
+.Fl t
+option, the collating sequence should be the same as
+.Xr sort
+without the
+.Fl b
+option.
+.Pp
+If one of the arguments
+.Ar file1
+or
+.Ar file2
+is
+.Ql \&- ,
+the standard input is used.
+.Pp
 The
 .Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification.
-.Pp
-In the absence of the
-.Fl o
-option,
-historical versions of
-.Nm
-wrote non-matching lines without reordering the fields.
-The current version writes the join field first, followed by the
-remaining fields.
-.Pp
-For compatibility with historical versions of
+utility exits 0 on success or >0 if an error occurred.
+.Sh COMPATIBILITY
+For compatibility with historic versions of
 .Nm join ,
 the following options are available:
 .Bl -tag -width Fl
 .It Fl a
 In addition to the default output, produce a line for each unpairable line
-in both
-.Ar file1
-and
-.Ar file2 .
-.It Fl j Ar field
-Join on the
-.Ar field Ns 'th
-field of both
-.Ar file1
-and
-.Ar file2 .
+in both file 1 and file 2.
+(To distinguish between this and
+.Fl a Ar file_number ,
+.Nm
+currently requires that the latter not include any white space.)
 .It Fl j1 Ar field
 Join on the
 .Ar field Ns 'th
-field of
-.Ar file1 .
+field of file 1.
 .It Fl j2 Ar field
 Join on the
 .Ar field Ns 'th
-field of
-.Ar file2 .
+field of file 2.
+.It Fl j Ar field
+Join on the
+.Ar field Ns 'th
+field of both file 1 and file 2.
 .It Fl o Ar list ...
 Historical implementations of
 .Nm
@@ -230,10 +209,17 @@ This has obvious difficulties in the presence of files named
 .Dq 1.2 .
 .El
 .Pp
-These options are available only so historical shell scripts don't require
+These options are available only so historic shell scripts don't require
 modification and should not be used.
-.Sh HISTORY
-A
+.Sh STANDARDS
+The
 .Nm
-utility appeared in
-.At v7 .
+command is expected to be
+.St -p1003.2
+compatible.
+.Sh SEE ALSO
+.Xr awk 1 ,
+.Xr comm 1 ,
+.Xr paste 1 ,
+.Xr sort 1 ,
+.Xr uniq 1

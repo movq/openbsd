@@ -1,19 +1,30 @@
-/*	$OpenBSD: tput.c,v 1.22 2015/11/16 03:03:28 deraadt Exp $	*/
+/*	$OpenBSD: tput.c,v 1.10 1999/09/12 10:29:01 millert Exp $	*/
 
 /*
  * Copyright (c) 1999 Todd C. Miller <Todd.Miller@courtesan.com>
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
+ * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 /*-
  * Copyright (c) 1980, 1988, 1993
@@ -27,7 +38,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -44,6 +59,21 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1988, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)tput.c	8.3 (Berkeley) 4/28/95";
+#endif
+static char rcsid[] = "$OpenBSD: tput.c,v 1.10 1999/09/12 10:29:01 millert Exp $";
+#endif /* not lint */
+
+#include <sys/param.h>
+
 #include <ctype.h>
 #include <err.h>
 #include <curses.h>
@@ -52,31 +82,27 @@
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
-#include <limits.h>
 #include <string.h>
-
-#define MAXIMUM(a, b)	(((a) > (b)) ? (a) : (b))
 
 #include <sys/wait.h>
 
-static void   init(void);
-static char **process(char *, char *, char **);
-static void   reset(void);
-static void   set_margins(void);
-static void   usage(void);
+static void   init __P((void));
+static char **process __P((char *, char *, char **));
+static void   reset __P((void));
+static void   set_margins __P((void));
+static void   usage __P((void));
 
 extern char  *__progname;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
 	int ch, exitval, n, Sflag;
 	size_t len;
 	char *p, *term, *str;
 	char **oargv;
-
-	if (pledge("stdio rpath wpath tty", NULL) == -1)
-		err(1, "pledge");
 
 	oargv = argv;
 	term = NULL;
@@ -126,15 +152,14 @@ main(int argc, char *argv[])
 			if (str[len-1] != '\n')
 				errx(1, "premature EOF");
 			str[len-1] = '\0';
+			/* grow av as needed */
+			if (argc + 1 >= n) {
+				n += 64;
+				av = (char **)realloc(av, sizeof(char *) * n);
+				if (av == NULL)
+					errx(1, "out of memory");
+			}
 			while ((p = strsep(&str, " \t")) != NULL) {
-				/* grow av as needed */
-				if (argc + 1 >= n) {
-					n += 64;
-					av = reallocarray(av, n,
-					    sizeof(char *));
-					if (av == NULL)
-						errx(1, "out of memory");
-				}
 				if (*p != '\0' &&
 				    (av[argc++] = strdup(p)) == NULL)
 					errx(1, "out of memory");
@@ -190,7 +215,8 @@ main(int argc, char *argv[])
 }
 
 static char **
-process(char *cap, char *str, char **argv)
+process(cap, str, argv)
+	char *cap, *str, **argv;
 {
 	char *cp, *s, *nargv[9];
 	int arg_need, popcount, i;
@@ -208,8 +234,7 @@ process(char *cap, char *str, char **argv)
 				break;
 			case 'p':
 				cp++;
-				if (isdigit((unsigned char)cp[1]) &&
-				    popcount < cp[1] - '0')
+				if (isdigit(cp[1]) && popcount < cp[1] - '0')
 					popcount = cp[1] - '0';
 				break;
 			case 'd':
@@ -233,7 +258,7 @@ process(char *cap, char *str, char **argv)
 			}
 		}
 	}
-	arg_need = MAXIMUM(arg_need, popcount);
+	arg_need = MAX(arg_need, popcount);
 	if (arg_need > 9)
 		errx(2, "too many arguments (%d) for capability `%s'",
 		    arg_need, cap);
@@ -246,8 +271,7 @@ process(char *cap, char *str, char **argv)
 			    arg_need, cap);
 
 		/* convert ascii representation of numbers to longs */
-		if (isdigit((unsigned char)argv[i][0])
-		    && (l = strtol(argv[i], &cp, 10)) >= 0
+		if (isdigit(argv[i][0]) && (l = strtol(argv[i], &cp, 10)) >= 0
 		    && l < LONG_MAX && *cp == '\0')
 			nargv[i] = (char *)l;
 		else
@@ -263,7 +287,7 @@ process(char *cap, char *str, char **argv)
 }
 
 static void
-init(void)
+init()
 {
 	FILE *ifile;
 	size_t len;
@@ -277,7 +301,7 @@ init(void)
 			break;
 		case 0:
 			/* child */
-			execl(init_prog, init_prog, (char *)NULL);
+			execl(init_prog, init_prog, NULL);
 			_exit(127);
 			break;
 		default:
@@ -319,7 +343,7 @@ init(void)
 }
 
 static void
-reset(void)
+reset()
 {
 	FILE *rfile;
 	size_t len;
@@ -345,7 +369,7 @@ reset(void)
 }
 
 static void
-set_margins(void)
+set_margins()
 {
 
 	/*
@@ -379,7 +403,7 @@ set_margins(void)
 }
 
 static void
-usage(void)
+usage()
 {
 
 	if (strcmp(__progname, "clear") == 0)

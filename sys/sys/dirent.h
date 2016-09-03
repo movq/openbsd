@@ -1,4 +1,4 @@
-/*	$OpenBSD: dirent.h,v 1.11 2013/12/13 18:09:27 zhuk Exp $	*/
+/*	$OpenBSD: dirent.h,v 1.4 1996/04/21 22:31:40 deraadt Exp $	*/
 /*	$NetBSD: dirent.h,v 1.12 1996/04/09 20:55:25 cgd Exp $	*/
 
 /*-
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,14 +36,9 @@
  *	@(#)dirent.h	8.3 (Berkeley) 8/10/94
  */
 
-#ifndef _SYS_DIRENT_H_
-#define _SYS_DIRENT_H_
-
-#include <sys/cdefs.h>
-
 /*
  * The dirent structure defines the format of directory entries returned by
- * the getdents(2) system call.
+ * the getdirentries(2) system call.
  *
  * A directory entry has a struct dirent at the front of it, containing its
  * inode number, the length of the entry, and the length of the name
@@ -49,21 +48,18 @@
  */
 
 struct dirent {
-	__ino_t    d_fileno;		/* file number of entry */
-	__off_t    d_off;		/* offset after this entry */
-	__uint16_t d_reclen;		/* length of this record */
-	__uint8_t  d_type; 		/* file type, see below */
-	__uint8_t  d_namlen;		/* length of string in d_name */
-	__uint8_t  __d_padding[4];	/* suppress padding after d_name */
-#if __BSD_VISIBLE
+	u_int32_t d_fileno;		/* file number of entry */
+	u_int16_t d_reclen;		/* length of this record */
+	u_int8_t  d_type; 		/* file type, see below */
+	u_int8_t  d_namlen;		/* length of string in d_name */
+#ifdef _POSIX_SOURCE
+	char	d_name[255 + 1];	/* name must be no longer than this */
+#else
 #define	MAXNAMLEN	255
 	char	d_name[MAXNAMLEN + 1];	/* name must be no longer than this */
-#else
-	char	d_name[255 + 1];	/* name must be no longer than this */
 #endif
 };
 
-#if __BSD_VISIBLE
 /*
  * File types
  */
@@ -75,6 +71,7 @@ struct dirent {
 #define	DT_REG		 8
 #define	DT_LNK		10
 #define	DT_SOCK		12
+#define	DT_WHT		14
 
 /*
  * Convert between stat structure types and directory types.
@@ -82,19 +79,14 @@ struct dirent {
 #define	IFTODT(mode)	(((mode) & 0170000) >> 12)
 #define	DTTOIF(dirtype)	((dirtype) << 12)
 
-#ifdef _KERNEL
+#if defined(_KERNEL)
 /*
- * The DIRENT_RECSIZE macro gives the minimum record length which will hold
- * a directory entry with a name of the given length, including the terminating
- * nul byte, rounded up to proper alignment.
- * The DIRENT_SIZE macro does the same when given a pointer to a struct dirent
+ * The DIRENT_SIZE macro gives the minimum record length which will hold
+ * the directory entry.  This requires the amount of space in struct dirent
+ * without the d_name field, plus enough space for the name with a terminating
+ * null byte (dp->d_namlen+1), rounded up to a 4 byte boundary.
  */
-#define DIRENT_RECSIZE(namelen) \
-    ((offsetof(struct dirent, d_name) + (namelen) + 1 + 7) &~ 7)
 #define	DIRENT_SIZE(dp) \
-    DIRENT_RECSIZE((dp)->d_namlen)
-#endif
+    ((sizeof (struct dirent) - (MAXNAMLEN+1)) + (((dp)->d_namlen+1 + 3) &~ 3))
 
-#endif /* __BSD_VISIBLE */
-
-#endif /* _SYS_DIRENT_H_ */
+#endif	/* !_KERNEL */

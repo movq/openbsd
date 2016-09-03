@@ -1,13 +1,29 @@
 /*
- * Copyright (C) 1984-2012  Mark Nudelman
- * Modified for use with illumos by Garrett D'Amore.
- * Copyright 2014 Garrett D'Amore <garrett@damore.org>
+ * Copyright (c) 1984,1985,1989,1994,1995  Mark Nudelman
+ * All rights reserved.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Less License, as specified in the README file.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice in the documentation and/or other materials provided with 
+ *    the distribution.
  *
- * For more information, see the README file.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR 
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE 
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN 
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 
 /*
  * Routines which jump to a new location in the file.
@@ -16,56 +32,45 @@
 #include "less.h"
 #include "position.h"
 
+extern int hit_eof;
 extern int jump_sline;
 extern int squished;
 extern int screen_trashed;
 extern int sc_width, sc_height;
-extern int show_attn;
-extern int top_scroll;
 
 /*
  * Jump to the end of the file.
  */
-void
-jump_forw(void)
+	public void
+jump_forw()
 {
-	off_t pos;
-	off_t end_pos;
+	POSITION pos;
 
-	if (ch_end_seek()) {
-		error("Cannot seek to end of file", NULL);
+	if (ch_end_seek())
+	{
+		error("Cannot seek to end of file", NULL_PARG);
 		return;
 	}
-	/*
-	 * Note; lastmark will be called later by jump_loc, but it fails
-	 * because the position table has been cleared by pos_clear below.
-	 * So call it here before calling pos_clear.
-	 */
-	lastmark();
 	/*
 	 * Position the last line in the file at the last screen line.
 	 * Go back one line from the end of the file
 	 * to get to the beginning of the last line.
 	 */
-	pos_clear();
-	end_pos = ch_tell();
-	pos = back_line(end_pos);
-	if (pos == -1) {
-		jump_loc(0, sc_height-1);
-	} else {
+	pos = back_line(ch_tell());
+	if (pos == NULL_POSITION)
+		jump_loc((POSITION)0, sc_height-1);
+	else
 		jump_loc(pos, sc_height-1);
-		if (position(sc_height-1) != end_pos)
-			repaint();
-	}
 }
 
 /*
  * Jump to line n in the file.
  */
-void
-jump_back(off_t linenum)
+	public void
+jump_back(n)
+	int n;
 {
-	off_t pos;
+	POSITION pos;
 	PARG parg;
 
 	/*
@@ -74,25 +79,26 @@ jump_back(off_t linenum)
 	 * If we can't seek, but we're trying to go to line number 1,
 	 * use ch_beg_seek() to get as close as we can.
 	 */
-	pos = find_pos(linenum);
-	if (pos != -1 && ch_seek(pos) == 0) {
-		if (show_attn)
-			set_attnpos(pos);
+	pos = find_pos(n);
+	if (pos != NULL_POSITION && ch_seek(pos) == 0)
+	{
 		jump_loc(pos, jump_sline);
-	} else if (linenum <= 1 && ch_beg_seek() == 0) {
+	} else if (n <= 1 && ch_beg_seek() == 0)
+	{
 		jump_loc(ch_tell(), jump_sline);
-		error("Cannot seek to beginning of file", NULL);
-	} else {
-		parg.p_linenum = linenum;
-		error("Cannot seek to line number %n", &parg);
+		error("Cannot seek to beginning of file", NULL_PARG);
+	} else
+	{
+		parg.p_int = n;
+		error("Cannot seek to line number %d", &parg);
 	}
 }
 
 /*
  * Repaint the screen.
  */
-void
-repaint(void)
+	public void
+repaint()
 {
 	struct scrpos scrpos;
 	/*
@@ -107,24 +113,30 @@ repaint(void)
 /*
  * Jump to a specified percentage into the file.
  */
-void
-jump_percent(int percent, long fraction)
+	public void
+jump_percent(percent)
+	int percent;
 {
-	off_t pos, len;
+	POSITION pos, len;
 
 	/*
 	 * Determine the position in the file
 	 * (the specified percentage of the file's length).
 	 */
-	if ((len = ch_length()) == -1) {
-		ierror("Determining length of file", NULL);
+	if ((len = ch_length()) == NULL_POSITION)
+	{
+		ierror("Determining length of file", NULL_PARG);
 		ch_end_seek();
 	}
-	if ((len = ch_length()) == -1) {
-		error("Don't know length of file", NULL);
+	if ((len = ch_length()) == NULL_POSITION)
+	{
+		error("Don't know length of file", NULL_PARG);
 		return;
 	}
-	pos = percent_pos(len, percent, fraction);
+	/*
+	 * {{ This calculation may overflow! }}
+	 */
+	pos = (percent * len) / 100;
 	if (pos >= len)
 		pos = len-1;
 
@@ -133,15 +145,18 @@ jump_percent(int percent, long fraction)
 
 /*
  * Jump to a specified position in the file.
- * Like jump_loc, but the position need not be
+ * Like jump_loc, but the position need not be 
  * the first character in a line.
  */
-void
-jump_line_loc(off_t pos, int sline)
+	public void
+jump_line_loc(pos, sline)
+	POSITION pos;
+	int sline;
 {
 	int c;
 
-	if (ch_seek(pos) == 0) {
+	if (ch_seek(pos) == 0)
+	{
 		/*
 		 * Back up to the beginning of the line.
 		 */
@@ -151,8 +166,6 @@ jump_line_loc(off_t pos, int sline)
 			(void) ch_forw_get();
 		pos = ch_tell();
 	}
-	if (show_attn)
-		set_attnpos(pos);
 	jump_loc(pos, sline);
 }
 
@@ -161,21 +174,24 @@ jump_line_loc(off_t pos, int sline)
  * The position must be the first character in a line.
  * Place the target line on a specified line on the screen.
  */
-void
-jump_loc(off_t pos, int sline)
+	public void
+jump_loc(pos, sline)
+	POSITION pos;
+	int sline;
 {
-	int nline;
-	off_t tpos;
-	off_t bpos;
+	register int nline;
+	POSITION tpos;
+	POSITION bpos;
 
 	/*
 	 * Normalize sline.
 	 */
 	sline = adjsline(sline);
 
-	if ((nline = onscreen(pos)) >= 0) {
+	if ((nline = onscreen(pos)) >= 0)
+	{
 		/*
-		 * The line is currently displayed.
+		 * The line is currently displayed.  
 		 * Just scroll there.
 		 */
 		nline -= sline;
@@ -183,8 +199,6 @@ jump_loc(off_t pos, int sline)
 			forw(nline, position(BOTTOM_PLUS_ONE), 1, 0, 0);
 		else
 			back(-nline, position(TOP), 1, 0);
-		if (show_attn)
-			repaint_hilite(1);
 		return;
 	}
 
@@ -192,38 +206,41 @@ jump_loc(off_t pos, int sline)
 	 * Line is not on screen.
 	 * Seek to the desired location.
 	 */
-	if (ch_seek(pos)) {
-		error("Cannot seek to that file position", NULL);
+	if (ch_seek(pos))
+	{
+		error("Cannot seek to that file position", NULL_PARG);
 		return;
 	}
 
 	/*
-	 * See if the desired line is before or after
+	 * See if the desired line is before or after 
 	 * the currently displayed screen.
 	 */
 	tpos = position(TOP);
 	bpos = position(BOTTOM_PLUS_ONE);
-	if (tpos == -1 || pos >= tpos) {
+	if (tpos == NULL_POSITION || pos >= tpos)
+	{
 		/*
 		 * The desired line is after the current screen.
 		 * Move back in the file far enough so that we can
-		 * call forw() and put the desired line at the
+		 * call forw() and put the desired line at the 
 		 * sline-th line on the screen.
 		 */
-		for (nline = 0;  nline < sline;  nline++) {
-			if (bpos != -1 && pos <= bpos) {
+		for (nline = 0;  nline < sline;  nline++)
+		{
+			if (bpos != NULL_POSITION && pos <= bpos)
+			{
 				/*
 				 * Surprise!  The desired line is
 				 * close enough to the current screen
 				 * that we can just scroll there after all.
 				 */
 				forw(sc_height-sline+nline-1, bpos, 1, 0, 0);
-				if (show_attn)
-					repaint_hilite(1);
 				return;
 			}
 			pos = back_line(pos);
-			if (pos == -1) {
+			if (pos == NULL_POSITION)
+			{
 				/*
 				 * Oops.  Ran into the beginning of the file.
 				 * Exit the loop here and rely on forw()
@@ -234,43 +251,43 @@ jump_loc(off_t pos, int sline)
 			}
 		}
 		lastmark();
+		hit_eof = 0;
 		squished = 0;
 		screen_trashed = 0;
 		forw(sc_height-1, pos, 1, 0, sline-nline);
-	} else {
+	} else
+	{
 		/*
 		 * The desired line is before the current screen.
 		 * Move forward in the file far enough so that we
-		 * can call back() and put the desired line at the
+		 * can call back() and put the desired line at the 
 		 * sline-th line on the screen.
 		 */
-		for (nline = sline;  nline < sc_height - 1;  nline++) {
+		for (nline = sline;  nline < sc_height - 1;  nline++)
+		{
 			pos = forw_line(pos);
-			if (pos == -1) {
+			if (pos == NULL_POSITION)
+			{
 				/*
 				 * Ran into end of file.
-				 * This shouldn't normally happen,
+				 * This shouldn't normally happen, 
 				 * but may if there is some kind of read error.
 				 */
 				break;
 			}
-			if (pos >= tpos) {
-				/*
+			if (pos >= tpos)
+			{
+				/* 
 				 * Surprise!  The desired line is
 				 * close enough to the current screen
 				 * that we can just scroll there after all.
 				 */
-				back(nline + 1, tpos, 1, 0);
-				if (show_attn)
-					repaint_hilite(1);
+				back(nline+1, tpos, 1, 0);
 				return;
 			}
 		}
 		lastmark();
-		if (!top_scroll)
-			do_clear();
-		else
-			home();
+		clear();
 		screen_trashed = 0;
 		add_back_pos(pos);
 		back(sc_height-1, pos, 1, 0);

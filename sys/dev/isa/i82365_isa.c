@@ -1,4 +1,4 @@
-/*	$OpenBSD: i82365_isa.c,v 1.22 2010/09/07 16:21:43 deraadt Exp $	*/
+/*	$OpenBSD: i82365_isa.c,v 1.9 1999/08/11 12:02:07 niklas Exp $	*/
 /*	$NetBSD: i82365_isa.c,v 1.11 1998/06/09 07:25:00 thorpej Exp $	*/
 
 /*
@@ -33,10 +33,11 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/extent.h>
 #include <sys/malloc.h>
+
+#include <vm/vm.h>
 
 #include <machine/bus.h>
 #include <machine/intr.h>
@@ -58,8 +59,12 @@
 #define	DPRINTF(arg)
 #endif
 
-int	pcic_isa_probe(struct device *, void *, void *);
-void	pcic_isa_attach(struct device *, struct device *, void *);
+int	pcic_isa_probe __P((struct device *, void *, void *));
+void	pcic_isa_attach __P((struct device *, struct device *, void *));
+
+void	*pcic_isa_chip_intr_establish __P((pcmcia_chipset_handle_t,
+	    struct pcmcia_function *, int, int (*) (void *), void *));
+void	pcic_isa_chip_intr_disestablish __P((pcmcia_chipset_handle_t, void *));
 
 struct cfattach pcic_isa_ca = {
 	sizeof(struct pcic_softc), pcic_isa_probe, pcic_isa_attach
@@ -78,7 +83,6 @@ static struct pcmcia_chip_functions pcic_isa_functions = {
 
 	pcic_isa_chip_intr_establish,
 	pcic_isa_chip_intr_disestablish,
-	pcic_isa_chip_intr_string,
 
 	pcic_chip_socket_enable,
 	pcic_chip_socket_disable,
@@ -90,9 +94,8 @@ pcic_isa_probe(parent, match, aux)
 	void *match, *aux;
 {
 	struct isa_attach_args *ia = aux;
-	bus_space_tag_t memt = ia->ia_memt, iot = ia->ia_iot;
+	bus_space_tag_t iot = ia->ia_iot;
 	bus_space_handle_t ioh, memh;
-	bus_size_t msize;
 	int val, found;
 
 	/* Disallow wildcarded i/o address. */
@@ -105,14 +108,8 @@ pcic_isa_probe(parent, match, aux)
 	if (ia->ia_msize == -1)
 		ia->ia_msize = PCIC_MEMSIZE;
 
-	msize = ia->ia_msize;
-	if (bus_space_map(memt, ia->ia_maddr, ia->ia_msize, 0, &memh)) {
-		if (ia->ia_msize > PCIC_MEMSIZE &&
-		    !bus_space_map(memt, ia->ia_maddr, PCIC_MEMSIZE, 0, &memh))
-			msize = PCIC_MEMSIZE;
-		else
-			return (0);
-	}
+	if (bus_space_map(ia->ia_memt, ia->ia_maddr, ia->ia_msize, 0, &memh))
+		return (0);
 	found = 0;
 
 	/*
@@ -141,12 +138,11 @@ pcic_isa_probe(parent, match, aux)
 		found++;
 
 	bus_space_unmap(iot, ioh, PCIC_IOSIZE);
-	bus_space_unmap(memt, memh, msize);
+	bus_space_unmap(ia->ia_memt, memh, ia->ia_msize);
 
 	if (!found)
 		return (0);
 	ia->ia_iosize = PCIC_IOSIZE;
-	ia->ia_msize = msize;
 	return (1);
 }
 
@@ -212,7 +208,7 @@ pcic_isa_attach(parent, self, aux)
 	sc->irq = irq;
 
 	if (irq) {
-		printf("%s: irq %d, ", sc->dev.dv_xname, irq);
+		printf("%s: irq %d\n", sc->dev.dv_xname, irq);
 
 		/* Set up the pcic to interrupt on card detect. */
 		for (i = 0; i < PCIC_NSLOTS; i++) {
@@ -224,12 +220,5 @@ pcic_isa_attach(parent, self, aux)
 			}
 		}
 	} else
-		printf("%s: no irq, ", sc->dev.dv_xname);
-
-	printf("polling enabled\n");
-	if (sc->poll_established == 0) {
-		timeout_set(&sc->poll_timeout, pcic_poll_intr, sc);
-		timeout_add_msec(&sc->poll_timeout, 500);
-		sc->poll_established = 1;
-	}
+		printf("%s: no irq\n", sc->dev.dv_xname);
 }

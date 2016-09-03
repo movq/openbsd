@@ -1,4 +1,4 @@
-/*	$OpenBSD: smc91cxxvar.h,v 1.8 2009/10/13 19:33:16 pirofti Exp $	*/
+/*	$OpenBSD: smc91cxxvar.h,v 1.2 1998/09/12 07:48:07 fgsch Exp $	*/
 /*	$NetBSD: smc91cxxvar.h,v 1.4 1997/10/15 05:56:13 explorer Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -31,39 +38,35 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if NRND > 0
+#include <sys/rnd.h>
+#endif
+
 struct smc91cxx_softc {
 	struct	device sc_dev;		/* generic device glue */
+#ifdef __NetBSD__
+	struct	ethercom sc_ethercom;	/* ethernet common glue */
+#endif
 	struct	arpcom sc_arpcom;	/* ethernet common glue */
-
-	struct mii_data sc_mii;		/* MII/media control */
-	struct timeout sc_mii_timeout;	/* MII callout handle */
 
 	bus_space_tag_t sc_bst;		/* bus space */
 	bus_space_handle_t sc_bsh;
 
-	/* Power management hooks and state. */
-	int	(*sc_enable)(struct smc91cxx_softc *);
-	void	(*sc_disable)(struct smc91cxx_softc *);
-	int	sc_enabled;
-	u_int32_t	sc_flags;	/* misc. flags*/
-#define SMC_FLAGS_ENABLED	0x0001
-#define SMC_FLAGS_ATTACHED	0x0002	/* attach was successful */
-#define SMC_FLAGS_HAS_MII	0x0004	/* Has MII (FEAST) */
-#define SMC_FLAGS_32BIT_READ	0x0008	/* reads are always 32-bits */
+	struct	ifmedia sc_media;	/* our media info */
 
-	u_int8_t	sc_chipid;
-	u_int8_t	sc_internal_phy;	/* 91C111 only */
+	/* Power management hooks and state. */
+	int	(*sc_enable) __P((struct smc91cxx_softc *));
+	void	(*sc_disable) __P((struct smc91cxx_softc *));
+	int	sc_enabled;
+
+#if NRND > 0
+	rndsource_element_t rnd_source;
+#endif
 };
 
 #define	SMC_SELECT_BANK(sc, x)						\
 	bus_space_write_2((sc)->sc_bst, (sc)->sc_bsh,			\
 	    BANK_SELECT_REG_W, (x))
 
-void	smc91cxx_attach(struct smc91cxx_softc *, u_int8_t *);
-int	smc91cxx_intr(void *);
-void	smc91cxx_init(struct smc91cxx_softc *);
-void	smc91cxx_stop(struct smc91cxx_softc *);
-int	smc91cxx_enable(struct smc91cxx_softc *);
-void	smc91cxx_disable(struct smc91cxx_softc *);
-int	smc91cxx_activate(struct device *, int);
-int	smc91cxx_detach(struct device *, int);
+void	smc91cxx_attach __P((struct smc91cxx_softc *, u_int8_t *));
+int	smc91cxx_intr __P((void *));

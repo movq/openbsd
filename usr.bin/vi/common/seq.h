@@ -1,5 +1,3 @@
-/*	$OpenBSD: seq.h,v 1.5 2016/05/27 09:18:11 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.

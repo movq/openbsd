@@ -11,15 +11,6 @@
 #include "cvs.h"
 #include "getline.h"
 
-#ifdef HAVE_NANOSLEEP
-# include "xtime.h"
-#else /* HAVE_NANOSLEEP */
-# if !defined HAVE_USLEEP && defined HAVE_SELECT
-    /* use select as a workaround */
-#   include "xselect.h"
-# endif /* !defined HAVE_USLEEP && defined HAVE_SELECT */
-#endif /* !HAVE_NANOSLEEP */
-
 extern char *getlogin ();
 
 /*
@@ -41,7 +32,7 @@ xmalloc (bytes)
     if (cp == NULL)
     {
 	char buf[80];
-	snprintf (buf, sizeof buf, "out of memory; can not allocate %lu bytes",
+	sprintf (buf, "out of memory; can not allocate %lu bytes",
 		 (unsigned long) bytes);
 	error (1, 0, buf);
     }
@@ -68,7 +59,7 @@ xrealloc (ptr, bytes)
     if (cp == NULL)
     {
 	char buf[80];
-	snprintf (buf, sizeof buf, "out of memory; can not reallocate %lu bytes",
+	sprintf (buf, "out of memory; can not reallocate %lu bytes",
 		 (unsigned long) bytes);
 	error (1, 0, buf);
     }
@@ -118,19 +109,6 @@ expand_string (strptr, n, newsize)
 	}
 	*strptr = xrealloc (*strptr, *n);
     }
-}
-
-/* *STR is a pointer to a malloc'd string.  *LENP is its allocated
-   length.  Add SRC to the end of it, reallocating if necessary.  */
-void
-allocate_and_strcat (str, lenp, src)
-    char **str;
-    size_t *lenp;
-    const char *src;
-{
-
-    expand_string (str, lenp, strlen (*str) + strlen (src) + 1);
-    strcat (*str, src);
 }
 
 /*
@@ -193,8 +171,7 @@ pathname_levels (path)
 	    if (-level > max_level)
 		max_level = -level;
 	}
-	else if (p[0] == '\0' || p[0] == '/' ||
-		 (p[0] == '.' && (p[1] == '\0' || p[1] == '/')))
+	else if (p[0] == '.' && (p[1] == '\0' || p[1] == '/'))
 	    ;
 	else
 	    ++level;
@@ -241,7 +218,9 @@ line2argv (pargc, argv, line, sepchars)
     int argv_allocated;
 
     /* Small for testing.  */
-    argv_allocated = 1;
+    /* argv_allocated must be at least 3 because at some places
+       (e.g. checkout_proc) cvs alters argv[2].  */
+    argv_allocated = 4;
     *argv = (char **) xmalloc (argv_allocated * sizeof (**argv));
 
     *pargc = 0;
@@ -369,7 +348,7 @@ getcaller ()
     {
 	char uidname[20];
 
-	(void) snprintf (uidname, sizeof uidname, "uid%lu", (unsigned long) uid);
+	(void) sprintf (uidname, "uid%lu", (unsigned long) uid);
 	cache = xstrdup (uidname);
 	return cache;
     }
@@ -382,8 +361,9 @@ getcaller ()
 #ifndef __GNUC__
 /* ARGSUSED */
 time_t
-get_date (date)
+get_date (date, now)
     char *date;
+    struct timeb *now;
 {
     time_t foo = 0;
 
@@ -604,11 +584,9 @@ file_has_markers (finfo)
     fp = CVS_FOPEN (finfo->file, "r");
     if (fp == NULL)
 	error (1, errno, "cannot open %s", finfo->fullname);
-    while (get_line (&line, &line_allocated, fp) > 0)
+    while (getline (&line, &line_allocated, fp) > 0)
     {
-	if (strncmp (line, RCS_MERGE_PAT_1, sizeof RCS_MERGE_PAT_1 - 1) == 0 ||
-	    strncmp (line, RCS_MERGE_PAT_2, sizeof RCS_MERGE_PAT_2 - 1) == 0 ||
-	    strncmp (line, RCS_MERGE_PAT_3, sizeof RCS_MERGE_PAT_3 - 1) == 0)
+	if (strncmp (line, RCS_MERGE_PAT, sizeof RCS_MERGE_PAT - 1) == 0)
 	{
 	    result = 1;
 	    goto out;
@@ -669,9 +647,9 @@ get_file (name, fullname, mode, buf, bufsize, len)
 	e = open_file (name, mode);
     }
 
-    if (*buf == NULL || *bufsize <= filesize)
+    if (*bufsize < filesize)
     {
-	*bufsize = filesize + 1;
+	*bufsize = filesize;
 	*buf = xrealloc (*buf, *bufsize);
     }
 
@@ -713,9 +691,12 @@ get_file (name, fullname, mode, buf, bufsize, len)
     *len = nread;
 
     /* Force *BUF to be large enough to hold a null terminator. */
-    if (nread == *bufsize)
-	expand_string (buf, bufsize, *bufsize + 1);
-    (*buf)[nread] = '\0';
+    if (*buf != NULL)
+    {
+	if (nread == *bufsize)
+	    expand_string (buf, bufsize, *bufsize + 1);
+	(*buf)[nread] = '\0';
+    }
 }
 
 
@@ -761,132 +742,5 @@ resolve_symlink (filename)
 	    free (*filename);
 	    *filename = fullnewname;
 	}
-    }
-}
-
-/*
- * Rename a file to an appropriate backup name based on BAKPREFIX.
- * If suffix non-null, then ".<suffix>" is appended to the new name.
- *
- * Returns the new name, which caller may free() if desired.
- */
-char *
-backup_file (filename, suffix)
-     const char *filename;
-     const char *suffix;
-{
-    char *backup_name;
-
-    if (suffix == NULL)
-    {
-        backup_name = xmalloc (sizeof (BAKPREFIX) + strlen (filename) + 1);
-        sprintf (backup_name, "%s%s", BAKPREFIX, filename);
-    }
-    else
-    {
-        backup_name = xmalloc (sizeof (BAKPREFIX)
-                               + strlen (filename)
-                               + strlen (suffix)
-                               + 2);  /* one for dot, one for trailing '\0' */
-        sprintf (backup_name, "%s%s.%s", BAKPREFIX, filename, suffix);
-    }
-
-    if (isfile (filename))
-        copy_file (filename, backup_name);
-
-    return backup_name;
-}
-
-/*
- * Copy a string into a buffer escaping any shell metacharacters.  The
- * buffer should be at least twice as long as the string.
- *
- * Returns a pointer to the terminating NUL byte in buffer.
- */
-
-char *
-shell_escape(buf, str)
-    char *buf;
-    const char *str;
-{
-    static const char meta[] = "$`\\\"";
-    const char *p;
-
-    for (;;)
-    {
-	p = strpbrk(str, meta);
-	if (!p) p = str + strlen(str);
-	if (p > str)
-	{
-	    memcpy(buf, str, p - str);
-	    buf += p - str;
-	}
-	if (!*p) break;
-	*buf++ = '\\';
-	*buf++ = *p++;
-	str = p;
-    }
-    *buf = '\0';
-    return buf;
-}
-
-/*
- * We can only travel forwards in time, not backwards.  :)
- */
-void
-sleep_past (desttime)
-    time_t desttime;
-{
-    time_t t;
-    long s;
-    long us;
-
-    while (time (&t) <= desttime)
-    {
-#ifdef HAVE_GETTIMEOFDAY
-	struct timeval tv;
-	gettimeofday (&tv, NULL);
-	if (tv.tv_sec > desttime)
-	    break;
-	s = desttime - tv.tv_sec;
-	if (tv.tv_usec > 0)
-	    us = 1000000 - tv.tv_usec;
-	else
-	{
-	    s++;
-	    us = 0;
-	}
-#else
-	/* default to 20 ms increments */
-	s = desttime - t;
-	us = 20000;
-#endif
-
-#if defined(HAVE_NANOSLEEP)
-	{
-	    struct timespec ts;
-	    ts.tv_sec = s;
-	    ts.tv_nsec = us * 1000;
-	    (void)nanosleep (&ts, NULL);
-	}
-#elif defined(HAVE_USLEEP)
-	if (s > 0)
-	    (void)sleep (s);
-	else
-	    (void)usleep (us);
-#elif defined(HAVE_SELECT)
-	{
-	    /* use select instead of sleep since it is a fairly portable way of
-	     * sleeping for ms.
-	     */
-	    struct timeval tv;
-	    tv.tv_sec = s;
-	    tv.tv_usec = us;
-	    (void)select (0, (fd_set *)NULL, (fd_set *)NULL, (fd_set *)NULL, &tv);
-	}
-#else
-	if (us > 0) s++;
-	(void)sleep(s);
-#endif
     }
 }

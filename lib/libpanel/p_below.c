@@ -1,7 +1,7 @@
-/* $OpenBSD: p_below.c,v 1.5 2010/01/12 23:22:08 nicm Exp $ */
+/*	$OpenBSD: p_below.c,v 1.2 1998/07/24 17:08:06 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -37,20 +37,19 @@
  */
 #include "panel.priv.h"
 
-MODULE_ID("$Id: p_below.c,v 1.5 2010/01/12 23:22:08 nicm Exp $")
+MODULE_ID("$From: p_below.c,v 1.2 1998/02/11 12:14:01 tom Exp $")
 
-NCURSES_EXPORT(PANEL *)
-panel_below(const PANEL * pan)
+PANEL*
+panel_below(const PANEL *pan)
 {
-  T((T_CALLED("panel_below(%p)"), pan));
-  if (!pan)
+  if(!pan)
     {
       /* if top and bottom are equal, we have no or only the pseudo panel */
-      returnPanel(EMPTY_STACK()? (PANEL *) 0 : _nc_top_panel);
+      return(_nc_top_panel==_nc_bottom_panel ? (PANEL*)0 : _nc_top_panel);
     }
   else
     {
       /* we must not return the pseudo panel */
-      returnPanel(Is_Pseudo(pan->below) ? (PANEL *) 0 : pan->below);
+      return(pan->below==_nc_bottom_panel ? (PANEL*) 0 : pan->below);
     }
 }

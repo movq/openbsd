@@ -1,4 +1,4 @@
-/*	$OpenBSD: lpt_isa.c,v 1.15 2015/03/14 03:38:47 jsg Exp $	*/
+/*	$OpenBSD: lpt_isa.c,v 1.10 1999/01/30 01:41:48 imp Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994 Charles Hannum.
@@ -58,17 +58,17 @@
 #include <sys/device.h>
 
 #include <machine/bus.h>
+#include <machine/intr.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/ic/lptreg.h>
 #include <dev/ic/lptvar.h>
 
-int	lpt_isa_probe(struct device *, void *, void *);
-void	lpt_isa_attach(struct device *, struct device *, void *);
+int	lpt_isa_probe __P((struct device *, void *, void *));
+void	lpt_isa_attach __P((struct device *, struct device *, void *));
 
 struct cfattach lpt_isa_ca = {
-	sizeof(struct lpt_softc), lpt_isa_probe, lpt_isa_attach, NULL,
-	lpt_activate
+	sizeof(struct lpt_softc), lpt_isa_probe, lpt_isa_attach
 };
 
 /*
@@ -79,7 +79,7 @@ struct cfattach lpt_isa_ca = {
  *
  *	2) You should be able to write to and read back the same value
  *	   to the control port lower 5 bits, the upper 3 bits are reserved
- *	   per the IBM PC technical reference manuals and different boards
+ *	   per the IBM PC technical reference manauls and different boards
  *	   do different things with them.  Do an alternating zeros, alternating
  *	   ones, walking zero, and walking one test to check for stuck bits.
  *
@@ -176,19 +176,24 @@ lpt_isa_attach(parent, self, aux)
 {
 	struct lpt_softc *sc = (void *)self;
 	struct isa_attach_args *ia = aux;
+	bus_space_tag_t iot;
+	bus_space_handle_t ioh;
 
-	sc->sc_state = 0;
-	sc->sc_iot = ia->ia_iot;
-	if (bus_space_map(sc->sc_iot, ia->ia_iobase, ia->ia_iosize, 0,
-	    &sc->sc_ioh))
-		panic("lpt_isa_attach: couldn't map I/O ports");
-
-	if (ia->ia_irq == IRQUNK) {
+	if (ia->ia_irq != IRQUNK)
+		printf("\n");
+	else {
 		sc->sc_flags |= LPT_POLLED;
-		printf(": polled");
+		printf(": polled\n");
 	}
 
-	lpt_attach_common(sc);
+	sc->sc_state = 0;
+
+	iot = sc->sc_iot = ia->ia_iot;
+	if (bus_space_map(iot, ia->ia_iobase, ia->ia_iosize, 0, &ioh))
+		panic("lpt_isa_attach: couldn't map I/O ports");
+	sc->sc_ioh = ioh;
+
+	bus_space_write_1(iot, ioh, lpt_control, LPC_NINIT);
 
 	if (ia->ia_irq != IRQUNK)
 		sc->sc_ih = isa_intr_establish(ia->ia_ic, ia->ia_irq, IST_EDGE,

@@ -1,17 +1,15 @@
-#	$OpenBSD: Makefile,v 1.27 2015/03/12 01:03:00 claudio Exp $
+#	$OpenBSD: Makefile,v 1.8 1998/07/24 00:10:58 millert Exp $
 
 PROG=	systat
 
 .PATH:	${.CURDIR}/../../usr.bin/vmstat
 
-CFLAGS+=-DNOKVM
-CPPFLAGS+=-I${.CURDIR}/../../usr.bin/vmstat
-CPPFLAGS+=-I${.CURDIR}/../../sbin/pfctl
-SRCS=	dkstats.c engine.c if.c inetname.c iostat.c main.c mbufs.c netstat.c \
-	nfs.c pigs.c sensors.c swap.c vmstat.c pftop.c cache.c pf.c \
-	pool.c malloc.c cpu.c
-
+CFLAGS+=-I${.CURDIR}/../../usr.bin/vmstat
+SRCS=	cmds.c cmdtab.c disks.c dkstats.c fetch.c iostat.c keyboard.c \
+	main.c mbufs.c netcmds.c netstat.c pigs.c swap.c vmstat.c
 DPADD=	${LIBCURSES} ${LIBM} ${LIBKVM}
 LDADD=	-lcurses -lm -lkvm
+BINGRP=	kmem
+BINMODE=2555
 
 .include <bsd.prog.mk>

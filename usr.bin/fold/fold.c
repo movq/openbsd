@@ -1,4 +1,4 @@
-/*	$OpenBSD: fold.c,v 1.18 2016/05/23 10:31:42 schwarze Exp $	*/
+/*	$OpenBSD: fold.c,v 1.3 1999/02/07 21:40:49 deraadt Exp $	*/
 /*	$NetBSD: fold.c,v 1.6 1995/09/01 01:42:44 jtc Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -33,42 +37,43 @@
  * SUCH DAMAGE.
  */
 
-#include <ctype.h>
-#include <err.h>
-#include <limits.h>
-#include <locale.h>
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1990, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)fold.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: fold.c,v 1.3 1999/02/07 21:40:49 deraadt Exp $";
+#endif /* not lint */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <wchar.h>
+#include <err.h>
 
 #define	DEFLINEWIDTH	80
 
-static void fold(unsigned int);
-static int isu8cont(unsigned char);
-static __dead void usage(void);
-
+static void fold ();
+static int new_column_position ();
 int count_bytes = 0;
 int split_words = 0;
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char **argv;
 {
-	int ch, lastch, newarg, prevoptind;
-	unsigned int width;
-	const char *errstr;
+	register int ch;
+	int width;
+	char *p;
 
-	setlocale(LC_CTYPE, "");
-
-	if (pledge("stdio rpath", NULL) == -1)
-		err(1, "pledge");
-
-	width = 0;
-	lastch = '\0';
-	prevoptind = 1;
-	newarg = 1;
-	while ((ch = getopt(argc, argv, "0123456789bsw:")) != -1) {
+	width = -1;
+	while ((ch = getopt(argc, argv, "0123456789bsw:")) != -1)
 		switch (ch) {
 		case 'b':
 			count_bytes = 1;
@@ -77,49 +82,42 @@ main(int argc, char *argv[])
 			split_words = 1;
 			break;
 		case 'w':
-			width = strtonum(optarg, 1, UINT_MAX, &errstr);
-			if (errstr != NULL)
-				errx(1, "illegal width value, %s: %s", errstr, 
-					optarg);
+			if ((width = atoi(optarg)) <= 0) {
+				(void)fprintf(stderr,
+				    "fold: illegal width value.\n");
+				exit(1);
+			}
 			break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
-			if (newarg)
-				width = 0;
-			else if (!isdigit(lastch))
-				usage();
-			if (width > UINT_MAX / 10 - 1)
-				errx(1, "illegal width value, too large");
-			width = (width * 10) + (ch - '0');
-			if (width < 1)
-				errx(1, "illegal width value, too small");
+			if (width == -1) {
+				p = argv[optind - 1];
+				if (p[0] == '-' && p[1] == ch && !p[2])
+					width = atoi(++p);
+				else
+					width = atoi(argv[optind] + 1);
+			}
 			break;
 		default:
-			usage();
+			(void)fprintf(stderr,
+			    "usage: fold [-bs] [-w width] [file ...]\n");
+			exit(1);
 		}
-		lastch = ch;
-		newarg = optind != prevoptind;
-		prevoptind = optind;
-	}
 	argv += optind;
 	argc -= optind;
 
-	if (width == 0)
+	if (width == -1)
 		width = DEFLINEWIDTH;
 
-	if (!*argv) {
-		if (pledge("stdio", NULL) == -1)
-			err(1, "pledge");
+	if (!*argv)
 		fold(width);
-	} else {
-		for (; *argv; ++argv) {
-			if (!freopen(*argv, "r", stdin))
-				err(1, "%s", *argv);
-			else
-				fold(width);
-		}
-	}
-	return 0;
+	else for (; *argv; ++argv)
+		if (!freopen(*argv, "r", stdin)) {
+			err (1, "%s", *argv);
+			/* NOTREACHED */
+		} else
+			fold(width);
+	exit(0);
 }
 
 /*
@@ -134,140 +132,96 @@ main(int argc, char *argv[])
  * returns embedded in the input stream.
  */
 static void
-fold(unsigned int max_width)
+fold(width)
+	register int width;
 {
-	static char	*buf = NULL;
-	static size_t	 bufsz = 2048;
-	char		*cp;	/* Current mb character. */
-	char		*np;	/* Next mb character. */
-	char		*sp;	/* To search for the last space. */
-	char		*nbuf;	/* For buffer reallocation. */
-	wchar_t		 wc;	/* Current wide character. */
-	int		 ch;	/* Last byte read. */
-	int		 len;	/* Bytes in the current mb character. */
-	unsigned int	 col;	/* Current display position. */
-	int		 width; /* Display width of wc. */
+	static char *buf = NULL;
+	static int   buf_max = 0;
+	register int ch, col;
+	register int indx;
 
-	if (buf == NULL && (buf = malloc(bufsz)) == NULL)
-		err(1, NULL);
-
-	np = cp = buf;
-	ch = 0;
-	col = 0;
-
-	while (ch != EOF) {  /* Loop on input characters. */
-		while ((ch = getchar()) != EOF) {  /* Loop on input bytes. */
-			if (np + 1 == buf + bufsz) {
-				nbuf = reallocarray(buf, 2, bufsz);
-				if (nbuf == NULL)
-					err(1, NULL);
-				bufsz *= 2;
-				cp = nbuf + (cp - buf);
-				np = nbuf + (np - buf);
-				buf = nbuf;
-			}
-			*np++ = ch;
-
-			/*
-			 * Read up to and including the first byte of
-			 * the next character, such that we are sure
-			 * to have a complete character in the buffer.
-			 * There is no need to read more than five bytes
-			 * ahead, since UTF-8 characters are four bytes
-			 * long at most.
-			 */
-
-			if (np - cp > 4 || (np - cp > 1 && !isu8cont(ch)))
-				break;
+	col = indx = 0;
+	while ((ch = getchar()) != EOF) {
+		if (ch == '\n') {
+			if (indx != 0)
+				fwrite (buf, 1, indx, stdout);
+			putchar('\n');
+			col = indx = 0;
+			continue;
 		}
 
-		while (cp < np) {  /* Loop on output characters. */
+		col = new_column_position (col, ch);
+		if (col > width) {
+			int i, last_space;
 
-			/* Handle end of line and backspace. */
+			if (split_words) {
+				for (i = 0, last_space = -1; i < indx; i++)
+					if(buf[i] == ' ') last_space = i;
+			}
 
-			if (*cp == '\n' || (*cp == '\r' && !count_bytes)) {
-				fwrite(buf, 1, ++cp - buf, stdout);
-				memmove(buf, cp, np - cp);
-				np = buf + (np - cp);
-				cp = buf;
+			if (split_words && last_space != -1) {
+				last_space++;
+
+				fwrite (buf, 1, last_space, stdout);
+				memmove (buf, buf+last_space, indx-last_space);
+
+				indx -= last_space;
 				col = 0;
-				continue;
-			}
-			if (*cp == '\b' && !count_bytes) {
-				if (col)
-					col--;
-				cp++;
-				continue;
-			}
-
-			/*
-			 * Measure display width.
-			 * Process the last byte only if
-			 * end of file was reached.
-			 */
-
-			if (np - cp > (ch != EOF)) {
-				len = 1;
-				width = 1;
-
-				if (*cp == '\t') {
-					if (count_bytes == 0)
-						width = 8 - (col & 7);
-				} else if ((len = mbtowc(&wc, cp,
-				    np - cp)) < 1)
-					len = 1;
-				else if (count_bytes)
-					width = len;
-				else if ((width = wcwidth(wc)) < 0)
-					width = 1;
-
-				col += width;
-				if (col <= max_width || cp == buf) {
-					cp += len;
-					continue;
+				for (i = 0; i < indx; i++) {
+					col = new_column_position (col, buf[i]);
 				}
+			} else {
+				fwrite (buf, 1, indx, stdout);
+				col = indx = 0;
 			}
+			putchar('\n');
 
-			/* Line break required. */
+			/* calculate the column position for the next line. */
+			col = new_column_position (col, ch);
+		}
 
-			if (col > max_width) {
-				if (split_words) {
-					for (sp = cp; sp > buf; sp--) {
-						if (sp[-1] == ' ') {
-							cp = sp;
-							break;
-						}
-					}
-				}
-				fwrite(buf, 1, cp - buf, stdout);
-				putchar('\n');
-				memmove(buf, cp, np - cp);
-				np = buf + (np - cp);
-				cp = buf;
-				col = 0;
-				continue;
+		if (indx + 1 > buf_max) {
+			/* Allocate buffer in LINE_MAX increments */
+			buf_max += 2048;
+			if((buf = realloc (buf, buf_max)) == NULL) {
+				err (1, NULL);
+				/* NOTREACHED */
 			}
+		}
+		buf[indx++] = ch;
+	}
 
-			/* Need more input. */
+	if (indx != 0)
+		fwrite (buf, 1, indx, stdout);
+}
 
+/*
+ * calculate the column position 
+ */
+static int
+new_column_position (col, ch)
+	int col;
+	int ch;
+{
+	if (!count_bytes) {
+		switch (ch) {
+		case '\b':
+			if (col > 0)
+				--col;
+			break;
+		case '\r':
+			col = 0;
+			break;
+		case '\t':
+			col = (col + 8) & ~7;
+			break;
+		default:
+			++col;
 			break;
 		}
+	} else {
+		++col;
 	}
-	fwrite(buf, 1, np - buf, stdout);
 
-	if (ferror(stdin))
-		err(1, NULL);
-}
-
-static int
-isu8cont(unsigned char c)
-{
-	return MB_CUR_MAX > 1 && (c & (0x80 | 0x40)) == 0x80;
-}
-
-static __dead void
-usage(void)
-{
-	(void)fprintf(stderr, "usage: fold [-bs] [-w width] [file ...]\n");
-	exit(1);
+	return col;
 }

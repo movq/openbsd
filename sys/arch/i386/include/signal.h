@@ -1,4 +1,3 @@
-/*	$OpenBSD: signal.h,v 1.11 2016/05/10 18:39:45 deraadt Exp $	*/
 /*	$NetBSD: signal.h,v 1.6 1996/01/08 13:51:43 mycroft Exp $	*/
 
 /*
@@ -13,7 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -32,18 +35,17 @@
  *	@(#)signal.h	7.16 (Berkeley) 3/17/91
  */
 
-#ifndef _MACHINE_SIGNAL_H_
-#define _MACHINE_SIGNAL_H_
-
-#include <sys/cdefs.h>
+#ifndef _I386_SIGNAL_H_
+#define _I386_SIGNAL_H_
 
 typedef int sig_atomic_t;
 
-#ifdef _KERNEL
+#ifndef _ANSI_SOURCE
+/*
+ * Get the "code" values
+ */
 #include <machine/trap.h>
-#endif
 
-#if __BSD_VISIBLE || __XPG_VISIBLE >= 420
 /*
  * Information pushed on stack when a signal is delivered.
  * This is used by the kernel to restore state following
@@ -70,13 +72,11 @@ struct	sigcontext {
 	int	sc_esp;
 	int	sc_ss;
 
-	long	sc_cookie;
+	int	sc_onstack;		/* sigstack state to restore */
 	int	sc_mask;		/* signal mask to restore */
 
 	int	sc_trapno;		/* XXX should be above */
 	int	sc_err;
-
-	union savefpu *sc_fpstate;
 };
 
 #define sc_sp sc_esp
@@ -84,5 +84,5 @@ struct	sigcontext {
 #define sc_pc sc_eip
 #define sc_ps sc_eflags
 
-#endif /* __BSD_VISIBLE || __XPG_VISIBLE >= 420 */
-#endif	/* !_MACHINE_SIGNAL_H_ */
+#endif	/* !_ANSI_SOURCE */
+#endif	/* !_I386_SIGNAL_H_ */

@@ -13,8 +13,12 @@
  * ====================================================
  */
 
+#if defined(LIBM_SCCS) && !defined(lint)
+static char rcsid[] = "$NetBSD: e_fmodf.c,v 1.4 1995/05/10 20:45:10 jtc Exp $";
+#endif
+
 /* 
- * fmodf(x,y)
+ * __ieee754_fmodf(x,y)
  * Return x mod y in exact arithmetic
  * Method: shift and subtract
  */
@@ -22,10 +26,18 @@
 #include "math.h"
 #include "math_private.h"
 
+#ifdef __STDC__
 static const float one = 1.0, Zero[] = {0.0, -0.0,};
+#else
+static float one = 1.0, Zero[] = {0.0, -0.0,};
+#endif
 
-float
-fmodf(float x, float y)
+#ifdef __STDC__
+	float __ieee754_fmodf(float x, float y)
+#else
+	float __ieee754_fmodf(x,y)
+	float x,y ;
+#endif
 {
 	int32_t n,hx,hy,hz,ix,iy,sx,i;
 

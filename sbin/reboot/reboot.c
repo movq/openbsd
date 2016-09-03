@@ -1,4 +1,4 @@
-/*	$OpenBSD: reboot.c,v 1.35 2016/08/27 01:56:07 guenther Exp $	*/
+/*	$OpenBSD: reboot.c,v 1.17 1999/09/03 18:11:50 deraadt Exp $	*/
 /*	$NetBSD: reboot.c,v 1.8 1995/10/05 05:36:22 mycroft Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,18 +34,28 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+static char copyright[] =
+"@(#) Copyright (c) 1980, 1986, 1993\n\
+	The Regents of the University of California.  All rights reserved.\n";
+#endif /* not lint */
+
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)reboot.c	8.1 (Berkeley) 6/5/93";
+#else
+static char rcsid[] = "$OpenBSD: reboot.c,v 1.17 1999/09/03 18:11:50 deraadt Exp $";
+#endif
+#endif /* not lint */
+
 #include <sys/types.h>
 #include <sys/reboot.h>
-#include <sys/sysctl.h>
-#include <sys/time.h>
+#include <sys/fcntl.h>
 #include <sys/wait.h>
-#include <machine/cpu.h>
 #include <signal.h>
 #include <pwd.h>
 #include <errno.h>
 #include <err.h>
-#include <fcntl.h>
-#include <termios.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -50,27 +64,25 @@
 #include <paths.h>
 #include <util.h>
 
-void	usage(void);
+void usage __P((void));
 extern char *__progname;
-
-int	dohalt;
 
 #define _PATH_RC	"/etc/rc"
 
 int
-main(int argc, char *argv[])
+main(argc, argv)
+	int argc;
+	char *argv[];
 {
-	unsigned int i;
+	register int i;
 	struct passwd *pw;
-	int ch, howto, lflag, nflag, pflag, qflag;
+	int ch, howto, dohalt, lflag, nflag, pflag, qflag, sverrno;
 	char *p, *user;
-	sigset_t mask;
 
 	p = __progname;
 
 	/* Nuke login shell */
-	if (*p == '-')
-		p++;
+	if(*p == '-') p++;
 
 	howto = dohalt = lflag = nflag = pflag = qflag = 0;
 	if (!strcmp(p, "halt")) {
@@ -79,11 +91,11 @@ main(int argc, char *argv[])
 	}
 
 	while ((ch = getopt(argc, argv, "dlnpq")) != -1)
-		switch (ch) {
+		switch(ch) {
 		case 'd':
 			howto |= RB_DUMP;
 			break;
-		case 'l':	/* Undocumented; used by shutdown. */
+		case 'l':		/* Undocumented; used by shutdown. */
 			lflag = 1;
 			break;
 		case 'n':
@@ -100,31 +112,15 @@ main(int argc, char *argv[])
 		case 'q':
 			qflag = 1;
 			break;
+		case '?':
 		default:
 			usage();
 		}
 	argc -= optind;
 	argv += optind;
 
-	if (argc)
-		usage();
-
 	if (geteuid())
 		errx(1, "%s", strerror(EPERM));
-
-#ifdef CPU_LIDSUSPEND
-	if (howto & RB_POWERDOWN) {
-		/* Disable suspending on laptop lid close */
-		int mib[2];
-		int lidsuspend = 0;
-
-		mib[0] = CTL_MACHDEP;
-		mib[1] = CPU_LIDSUSPEND;
-		if (sysctl(mib, 2, NULL, NULL, &lidsuspend,
-		    sizeof(lidsuspend)) == -1 && errno != EOPNOTSUPP)
-			warn("sysctl");
-	}
-#endif /* CPU_LIDSUSPEND */
 
 	if (qflag) {
 		reboot(howto);
@@ -175,19 +171,19 @@ main(int argc, char *argv[])
 	if (access(_PATH_RC, R_OK) != -1) {
 		pid_t pid;
 		struct termios t;
-		int fd, status;
+		int fd;
 
 		switch ((pid = fork())) {
 		case -1:
 			break;
 		case 0:
 			if (revoke(_PATH_CONSOLE) == -1)
-				warn("revoke");
+				perror("revoke");
 			if (setsid() == -1)
-				warn("setsid");
+				perror("setsid");
 			fd = open(_PATH_CONSOLE, O_RDWR);
 			if (fd == -1)
-				warn("open");
+				perror("open");
 			dup2(fd, 0);
 			dup2(fd, 1);
 			dup2(fd, 2);
@@ -199,22 +195,12 @@ main(int argc, char *argv[])
 			t.c_oflag |= (ONLCR | OPOST);
 			tcsetattr(0, TCSANOW, &t);
 
-			execl(_PATH_BSHELL, "sh", _PATH_RC, "shutdown", (char *)NULL);
+			execl(_PATH_BSHELL, "sh", _PATH_RC, "shutdown", NULL);
 			_exit(1);
 		default:
-			/* rc exits 2 if powerdown=YES in rc.shutdown */
-			waitpid(pid, &status, 0);
-			if (dohalt && WIFEXITED(status) && WEXITSTATUS(status) == 2)
-				howto |= RB_POWERDOWN;
+			waitpid(pid, NULL, 0);
 		}
 	}
-
-	/*
-	 * Point of no return, block all signals so we are sure to
-	 * reach the call to reboot(2) unmolested.
-	 */
-	sigfillset(&mask);
-	sigprocmask(SIG_BLOCK, &mask, NULL);
 
 	/* Send a SIGTERM first, a chance to save the buffers. */
 	if (kill(-1, SIGTERM) == -1) {
@@ -256,14 +242,14 @@ main(int argc, char *argv[])
 	/* FALLTHROUGH */
 
 restart:
+	sverrno = errno;
 	errx(1, kill(1, SIGHUP) == -1 ? "(can't restart init): " : "");
 	/* NOTREACHED */
 }
 
 void
-usage(void)
+usage()
 {
-	fprintf(stderr, "usage: %s [-dn%sq]\n", __progname,
-	    dohalt ? "p" : "");
+	(void)fprintf(stderr, "usage: %s [-dlnpq]\n", __progname);
 	exit(1);
 }

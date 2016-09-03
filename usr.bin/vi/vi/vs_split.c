@@ -1,5 +1,3 @@
-/*	$OpenBSD: vs_split.c,v 1.16 2016/05/27 09:18:12 martijn Exp $	*/
-
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -10,6 +8,10 @@
  */
 
 #include "config.h"
+
+#ifndef lint
+static const char sccsid[] = "@(#)vs_split.c	10.31 (Berkeley) 10/13/96";
+#endif /* not lint */
 
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -25,16 +27,18 @@
 #include "../common/common.h"
 #include "vi.h"
 
-static SCR *vs_getbg(SCR *, char *);
+static SCR *vs_getbg __P((SCR *, char *));
 
 /*
  * vs_split --
  *	Create a new screen.
  *
- * PUBLIC: int vs_split(SCR *, SCR *, int);
+ * PUBLIC: int vs_split __P((SCR *, SCR *, int));
  */
 int
-vs_split(SCR *sp, SCR *new, int ccl)
+vs_split(sp, new, ccl)
+	SCR *sp, *new;
+	int ccl;		/* Colon-command line split. */
 {
 	GS *gp;
 	SMAP *smp;
@@ -47,7 +51,7 @@ vs_split(SCR *sp, SCR *new, int ccl)
 	/* XXX: The IS_ONELINE fix will change this, too. */
 	if (sp->rows < 4) {
 		msgq(sp, M_ERR,
-		    "Screen must be larger than %d lines to split", 4 - 1);
+		    "222|Screen must be larger than %d lines to split", 4 - 1);
 		return (1);
 	}
 
@@ -59,7 +63,7 @@ vs_split(SCR *sp, SCR *new, int ccl)
 		half = 6;
 
 	/* Get a new screen map. */
-	CALLOC(sp, _HMAP(new), SIZE_HMAP(sp), sizeof(SMAP));
+	CALLOC(sp, _HMAP(new), SMAP *, SIZE_HMAP(sp), sizeof(SMAP));
 	if (_HMAP(new) == NULL)
 		return (1);
 	_HMAP(new)->lno = sp->lno;
@@ -93,7 +97,7 @@ vs_split(SCR *sp, SCR *new, int ccl)
 		sp->rows = half;		/* Old. */
 		sp->woff += new->rows;
 						/* Link in before old. */
-		TAILQ_INSERT_BEFORE(sp, new, q);
+		CIRCLEQ_INSERT_BEFORE(&gp->dq, sp, new, q);
 
 		/*
 		 * If the parent is the bottom half of the screen, shift
@@ -106,7 +110,7 @@ vs_split(SCR *sp, SCR *new, int ccl)
 		sp->rows -= half;		/* Old. */
 		new->woff = sp->woff + sp->rows;
 						/* Link in after old. */
-		TAILQ_INSERT_AFTER(&gp->dq, sp, new, q);
+		CIRCLEQ_INSERT_AFTER(&gp->dq, sp, new, q);
 	}
 
 	/* Adjust maximum text count. */
@@ -190,10 +194,11 @@ vs_split(SCR *sp, SCR *new, int ccl)
  *	Discard the screen, folding the real-estate into a related screen,
  *	if one exists, and return that screen.
  *
- * PUBLIC: int vs_discard(SCR *, SCR **);
+ * PUBLIC: int vs_discard __P((SCR *, SCR **));
  */
 int
-vs_discard(SCR *sp, SCR **spp)
+vs_discard(sp, spp)
+	SCR *sp, **spp;
 {
 	SCR *nsp;
 	dir_t dir;
@@ -216,19 +221,17 @@ vs_discard(SCR *sp, SCR **spp)
 	 * they're the closest to the current screen.  If that doesn't work,
 	 * there was no screen to join.
 	 */
-	if ((nsp = TAILQ_PREV(sp, _dqh, q))) {
+	if ((nsp = sp->q.cqe_prev) != (void *)&sp->gp->dq) {
 		nsp->rows += sp->rows;
 		sp = nsp;
 		dir = FORWARD;
-	} else if ((nsp = TAILQ_NEXT(sp, q))) {
+	} else if ((nsp = sp->q.cqe_next) != (void *)&sp->gp->dq) {
 		nsp->woff = sp->woff;
 		nsp->rows += sp->rows;
 		sp = nsp;
 		dir = BACKWARD;
-	} else {
+	} else
 		sp = NULL;
-		dir = 0;	/* unused */
-	}
 
 	if (spp != NULL)
 		*spp = sp;
@@ -278,10 +281,13 @@ vs_discard(SCR *sp, SCR **spp)
  * vs_fg --
  *	Background the current screen, and foreground a new one.
  *
- * PUBLIC: int vs_fg(SCR *, SCR **, CHAR_T *, int);
+ * PUBLIC: int vs_fg __P((SCR *, SCR **, CHAR_T *, int));
  */
 int
-vs_fg(SCR *sp, SCR **nspp, CHAR_T *name, int newscreen)
+vs_fg(sp, nspp, name, newscreen)
+	SCR *sp, **nspp;
+	CHAR_T *name;
+	int newscreen;
 {
 	GS *gp;
 	SCR *nsp;
@@ -299,24 +305,24 @@ vs_fg(SCR *sp, SCR **nspp, CHAR_T *name, int newscreen)
 	if ((*nspp = nsp) == NULL) {
 		msgq_str(sp, M_ERR, name,
 		    name == NULL ?
-		    "There are no background screens" :
-		    "There's no background screen editing a file named %s");
+		    "223|There are no background screens" :
+		    "224|There's no background screen editing a file named %s");
 		return (1);
 	}
 
 	if (newscreen) {
 		/* Remove the new screen from the background queue. */
-		TAILQ_REMOVE(&gp->hq, nsp, q);
+		CIRCLEQ_REMOVE(&gp->hq, nsp, q);
 
 		/* Split the screen; if we fail, hook the screen back in. */
 		if (vs_split(sp, nsp, 0)) {
-			TAILQ_INSERT_TAIL(&gp->hq, nsp, q);
+			CIRCLEQ_INSERT_TAIL(&gp->hq, nsp, q);
 			return (1);
 		}
 	} else {
 		/* Move the old screen to the background queue. */
-		TAILQ_REMOVE(&gp->dq, sp, q);
-		TAILQ_INSERT_TAIL(&gp->hq, sp, q);
+		CIRCLEQ_REMOVE(&gp->dq, sp, q);
+		CIRCLEQ_INSERT_TAIL(&gp->hq, sp, q);
 	}
 	return (0);
 }
@@ -325,10 +331,11 @@ vs_fg(SCR *sp, SCR **nspp, CHAR_T *name, int newscreen)
  * vs_bg --
  *	Background the screen, and switch to the next one.
  *
- * PUBLIC: int vs_bg(SCR *);
+ * PUBLIC: int vs_bg __P((SCR *));
  */
 int
-vs_bg(SCR *sp)
+vs_bg(sp)
+	SCR *sp;
 {
 	GS *gp;
 	SCR *nsp;
@@ -340,13 +347,13 @@ vs_bg(SCR *sp)
 		return (1);
 	if (nsp == NULL) {
 		msgq(sp, M_ERR,
-		    "You may not background your only displayed screen");
+		    "225|You may not background your only displayed screen");
 		return (1);
 	}
 
 	/* Move the old screen to the background queue. */
-	TAILQ_REMOVE(&gp->dq, sp, q);
-	TAILQ_INSERT_TAIL(&gp->hq, sp, q);
+	CIRCLEQ_REMOVE(&gp->dq, sp, q);
+	CIRCLEQ_INSERT_TAIL(&gp->hq, sp, q);
 
 	/* Toss the screen map. */
 	free(_HMAP(sp));
@@ -363,10 +370,12 @@ vs_bg(SCR *sp)
  * vs_swap --
  *	Swap the current screen with a backgrounded one.
  *
- * PUBLIC: int vs_swap(SCR *, SCR **, char *);
+ * PUBLIC: int vs_swap __P((SCR *, SCR **, char *));
  */
 int
-vs_swap(SCR *sp, SCR **nspp, char *name)
+vs_swap(sp, nspp, name)
+	SCR *sp, **nspp;
+	char *name;
 {
 	GS *gp;
 	SCR *nsp;
@@ -422,7 +431,7 @@ vs_swap(SCR *sp, SCR **nspp, char *name)
 	nsp->defscroll = nsp->t_maxrows / 2;
 
 	/* Allocate a new screen map. */
-	CALLOC_RET(nsp, _HMAP(nsp), SIZE_HMAP(nsp), sizeof(SMAP));
+	CALLOC_RET(nsp, _HMAP(nsp), SMAP *, SIZE_HMAP(nsp), sizeof(SMAP));
 	_TMAP(nsp) = _HMAP(nsp) + (nsp->t_rows - 1);
 
 	/* Fill the map. */
@@ -435,8 +444,8 @@ vs_swap(SCR *sp, SCR **nspp, char *name)
 	 * the exit will delete the old one, if we're foregrounding, the fg
 	 * code will move the old one to the background queue.
 	 */
-	TAILQ_REMOVE(&gp->hq, nsp, q);
-	TAILQ_INSERT_AFTER(&gp->dq, sp, nsp, q);
+	CIRCLEQ_REMOVE(&gp->hq, nsp, q);
+	CIRCLEQ_INSERT_AFTER(&gp->dq, sp, nsp, q);
 
 	/*
 	 * Don't change the screen's cursor information other than to
@@ -453,10 +462,13 @@ vs_swap(SCR *sp, SCR **nspp, char *name)
  * vs_resize --
  *	Change the absolute size of the current screen.
  *
- * PUBLIC: int vs_resize(SCR *, long, adj_t);
+ * PUBLIC: int vs_resize __P((SCR *, long, adj_t));
  */
 int
-vs_resize(SCR *sp, long count, adj_t adj)
+vs_resize(sp, count, adj)
+	SCR *sp;
+	long count;
+	adj_t adj;
 {
 	GS *gp;
 	SCR *g, *s;
@@ -489,15 +501,15 @@ vs_resize(SCR *sp, long count, adj_t adj)
 		s = sp;
 		if (s->t_maxrows < MINIMUM_SCREEN_ROWS + count)
 			goto toosmall;
-		if ((g = TAILQ_PREV(sp, _dqh, q)) == NULL) {
-			if ((g = TAILQ_NEXT(sp, q)) == NULL)
+		if ((g = sp->q.cqe_prev) == (void *)&gp->dq) {
+			if ((g = sp->q.cqe_next) == (void *)&gp->dq)
 				goto toobig;
 			g_off = -count;
 		} else
 			s_off = count;
 	} else {
 		g = sp;
-		if ((s = TAILQ_NEXT(sp, q)))
+		if ((s = sp->q.cqe_next) != (void *)&gp->dq)
 			if (s->t_maxrows < MINIMUM_SCREEN_ROWS + count)
 				s = NULL;
 			else
@@ -505,15 +517,15 @@ vs_resize(SCR *sp, long count, adj_t adj)
 		else
 			s = NULL;
 		if (s == NULL) {
-			if ((s = TAILQ_PREV(sp, _dqh, q)) == NULL) {
+			if ((s = sp->q.cqe_prev) == (void *)&gp->dq) {
 toobig:				msgq(sp, M_BERR, adj == A_DECREASE ?
-				    "The screen cannot shrink" :
-				    "The screen cannot grow");
+				    "227|The screen cannot shrink" :
+				    "228|The screen cannot grow");
 				return (1);
 			}
 			if (s->t_maxrows < MINIMUM_SCREEN_ROWS + count) {
 toosmall:			msgq(sp, M_BERR,
-				    "The screen can only shrink to %d rows",
+				    "226|The screen can only shrink to %d rows",
 				    MINIMUM_SCREEN_ROWS);
 				return (1);
 			}
@@ -554,7 +566,9 @@ toosmall:			msgq(sp, M_BERR,
  *	background screen.
  */
 static SCR *
-vs_getbg(SCR *sp, char *name)
+vs_getbg(sp, name)
+	SCR *sp;
+	char *name;
 {
 	GS *gp;
 	SCR *nsp;
@@ -563,24 +577,31 @@ vs_getbg(SCR *sp, char *name)
 	gp = sp->gp;
 
 	/* If name is NULL, return the first background screen on the list. */
-	if (name == NULL)
-		return (TAILQ_FIRST(&gp->hq));
-
-	/* Search for a full match. */
-	TAILQ_FOREACH(nsp, &gp->hq, q) {
-		if (!strcmp(nsp->frp->name, name))
-			return(nsp);
+	if (name == NULL) {
+		nsp = gp->hq.cqh_first;
+		return (nsp == (void *)&gp->hq ? NULL : nsp);
 	}
 
+	/* Search for a full match. */
+	for (nsp = gp->hq.cqh_first;
+	    nsp != (void *)&gp->hq; nsp = nsp->q.cqe_next)
+		if (!strcmp(nsp->frp->name, name))
+			break;
+	if (nsp != (void *)&gp->hq)
+		return (nsp);
+
 	/* Search for a last-component match. */
-	TAILQ_FOREACH(nsp, &gp->hq, q) {
+	for (nsp = gp->hq.cqh_first;
+	    nsp != (void *)&gp->hq; nsp = nsp->q.cqe_next) {
 		if ((p = strrchr(nsp->frp->name, '/')) == NULL)
 			p = nsp->frp->name;
 		else
 			++p;
 		if (!strcmp(p, name))
-			return(nsp);
+			break;
 	}
+	if (nsp != (void *)&gp->hq)
+		return (nsp);
 
 	return (NULL);
 }

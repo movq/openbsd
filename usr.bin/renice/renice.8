@@ -1,5 +1,4 @@
-.\"	$OpenBSD: renice.8,v 1.25 2015/05/15 19:34:31 jmc Exp $
-.\"
+.\"	$OpenBSD: renice.8,v 1.8 1999/06/05 01:21:38 aaron Exp $
 .\" Copyright (c) 1983, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
 .\"
@@ -11,7 +10,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -29,7 +32,7 @@
 .\"
 .\"     from: @(#)renice.8	8.1 (Berkeley) 6/9/93
 .\"
-.Dd $Mdocdate: May 15 2015 $
+.Dd June 9, 1993
 .Dt RENICE 8
 .Os
 .Sh NAME
@@ -37,108 +40,96 @@
 .Nd alter priority of running processes
 .Sh SYNOPSIS
 .Nm renice
-.Oo Fl n Oc Ar increment
-.Op Fl gpu
-.Ar id
+.Ar priority
+.Oo
+.Op Fl p
+.Ar pid ...
+.Oc
+.Oo
+.Op Fl g
+.Ar pgrp ...
+.Oc
+.Oo
+.Op Fl u
+.Ar user ...
+.Oc
 .Sh DESCRIPTION
 .Nm
-alters the scheduling priority of one or more running processes with ID
-.Ar id .
-Processes may be selected by
-process ID,
-process group ID,
-and
-user name or ID.
-If none of the
-.Fl gpu
-options are specified,
-the default is to select by process ID.
-Multiple processes can be specified in a space separated list.
+alters the
+scheduling
+.Ar priority
+(an integer) of one or more running processes.
+The following
+.Ar who
+parameters (pid, pgrp and user) are interpreted as process IDs, process group
+IDs, or user names.
+.Nm renice Ns ing
+a process group causes all processes in the process group
+to have their scheduling priority altered.
+.Nm renice Ns ing
+a user causes all processes owned by the user to have
+their scheduling priority altered.
+By default, the processes to be affected are specified by
+their process IDs.
 .Pp
-Users other than the superuser may only alter the priority of
+Options supported by
+.Nm renice :
+.Bl -tag -width Ds
+.It Fl g
+Force
+.Ar who
+parameters to be interpreted as process group IDs.
+.It Fl u
+Force the
+.Ar who
+parameters to be interpreted as user names.
+.It Fl p
+Resets the
+.Ar who
+interpretation to be (the default) process IDs.
+.El
+.Pp
+For example,
+.Bd -literal -offset
+renice +1 987 -u daemon root -p 32
+.Ed
+.Pp
+would change the priority of process IDs 987 and 32, and
+all processes owned by users daemon and root.
+.Pp
+Users other than the super-user may only alter the priority of
 processes they own,
-and can only monotonically increase their
-.Dq nice value
+and can only monotonically increase their ``nice value''
 within the range 0 to
 .Dv PRIO_MAX
-(20),
-which  prevents overriding administrative fiats.
-The superuser
+(20).
+(This prevents overriding administrative fiats.)
+The super-user
 may alter the priority of any process
 and set the priority to any value in the range
 .Dv PRIO_MIN
 (\-20)
 to
 .Dv PRIO_MAX .
-.Pp
 Useful priorities are:
 20 (the affected processes will run only when nothing else
 in the system wants to),
-0 (the
-.Dq base
-scheduling priority),
+0 (the ``base'' scheduling priority),
 anything negative (to make things go very fast).
-.Pp
-The options are as follows:
-.Bl -tag -width Ds
-.It Fl g
-Alter the scheduling priority of all processes in process group
-.Ar id .
-.It Fl n Ar increment
-A positive or negative decimal integer used to modify the
-scheduling priority.
-For compatibility with historic versions of this utility,
-if
-.Fl n
-is omitted and
-.Ar increment
-is the first argument to
-.Nm ,
-then
-.Ar increment
-is taken as an absolute priority rather than an increment.
-.It Fl p
-Alter the scheduling priority of process
-.Ar id .
-.It Fl u
-Alter the scheduling priority of all processes belonging to user
-.Ar id ,
-which may be a user name or ID.
-.El
 .Sh FILES
 .Bl -tag -width /etc/passwd -compact
 .It Pa /etc/passwd
-for mapping user names to user IDs
+to map user names to user IDs
 .El
-.Sh EXIT STATUS
-.Ex -std renice
-.Sh EXAMPLES
-The following example
-changes the priority of process IDs 987 and 32,
-and all processes owned by users daemon and root:
-.Bd -literal -offset indent
-# renice -n +1 987 -u daemon root -p 32
-.Ed
 .Sh SEE ALSO
 .Xr nice 1 ,
 .Xr getpriority 2 ,
 .Xr setpriority 2
-.Sh STANDARDS
-The
-.Nm
-utility is compliant with the
-.St -p1003.1-2008
-specification,
-except the way in which processes are specified differs.
-.Pp
-The historical behavior of passing
-.Ar increment
-as an absolute priority is supported for backwards compatibility.
+.Sh BUGS
+Non-super-users cannot increase scheduling priorities of their own processes,
+even if they were the ones that decreased the priorities in the first place.
 .Sh HISTORY
 The
 .Nm
 command appeared in
 .Bx 4.0 .
-.Sh BUGS
-Non-superusers cannot increase scheduling priorities of their own processes,
-even if they were the ones that decreased the priorities in the first place.

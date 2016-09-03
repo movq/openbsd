@@ -1,4 +1,4 @@
-/*	$OpenBSD: isavar.h,v 1.58 2014/03/18 22:36:37 miod Exp $	*/
+/*	$OpenBSD: isavar.h,v 1.39 1999/08/09 17:38:45 deraadt Exp $	*/
 /*	$NetBSD: isavar.h,v 1.26 1997/06/06 23:43:57 thorpej Exp $	*/
 
 /*-
@@ -17,6 +17,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -115,14 +122,29 @@
  */
 struct isabus_attach_args;
 
-#if defined(__alpha__)
+#if (__alpha__ + amiga + __i386__ + arc + __wgrisc__ + __powerpc__ + __hppa__ != 1)
+#error "COMPILING ISA FOR UNSUPPORTED MACHINE, OR MORE THAN ONE."
+#endif
+#ifdef __alpha__
 #include <alpha/isa/isa_machdep.h>
-#elif defined(__i386__)
+#endif
+#ifdef amiga
+#include <amiga/isa/isa_machdep.h>
+#endif
+#ifdef __i386__
 #include <i386/isa/isa_machdep.h>
-#elif defined(__powerpc__)
+#endif
+#ifdef arc
+#include <arc/isa/isa_machdep.h>
+#endif
+#ifdef __wgrisc__
+#include <wgrisc/isa/isa_machdep.h>
+#endif
+#ifdef __powerpc__
 #include <powerpc/isa/isa_machdep.h>
-#else
-#include <machine/isa_machdep.h>
+#endif
+#ifdef __hppa__
+#include <hppa/isa/isa_machdep.h>
 #endif
 
 #include "isapnp.h"
@@ -133,12 +155,14 @@ struct isabus_attach_args;
  */
 struct isapnp_softc;
 
-#if defined(__alpha__)
-#include <alpha/isa/isapnp_machdep.h>
-#elif defined(__i386__)
+#if (__i386__ != 1 && __alpha__ != 1)
+ERROR: COMPILING ISAPNP FOR UNSUPPORTED MACHINE, OR MORE THAN ONE.
+#endif
+#if __i386__
 #include <i386/isa/isapnp_machdep.h>
-#else
-#error COMPILING ISAPNP FOR UNSUPPORTED MACHINE.
+#endif
+#if __alpha__
+#include <alpha/isa/isapnp_machdep.h>
 #endif
 #endif	/* NISAPNP */
 
@@ -149,11 +173,8 @@ struct isapnp_softc;
 # define ISAPNP_READ_DATA(sc) \
     bus_space_read_1(sc->sc_iot, sc->sc_read_ioh, 0)
 
-# define ISAPNP_CLONE_SETUP(dest, src) \
-	do { \
-		bzero((dest), sizeof(*(dest))); \
-		(dest)->ia_ic = (src)->ia_ic; \
-	} while (0)
+# define ISAPNP_MALLOC(a) malloc(a, M_DEVBUF, M_WAITOK)
+# define ISAPNP_FREE(a) free(a, M_DEVBUF)
 
 #ifndef _DEV_ISA_ISAPNPREG_H_
 /*
@@ -213,8 +234,8 @@ struct isapnp_pin {
 };
 
 struct isapnp_knowndev {
-	const char pnpid[8];
-	const char driver[5];
+	const char *pnpid;
+	const char *driver;
 };
 
 /*
@@ -333,7 +354,7 @@ struct isa_softc {
 	 * DMA maps used for the 8 DMA channels.
 	 */
 	bus_dmamap_t	sc_dmamaps[8];
-	bus_size_t 	sc_dmalength[8];
+	vm_size_t	sc_dmalength[8];
 
 	int	sc_dmareads;		/* state for isa_dmadone() */
 	int	sc_dmafinished;		/* DMA completion state */
@@ -382,10 +403,10 @@ struct isa_softc {
  */
 
 /* ISA interrupt sharing types */
-char	*isa_intr_typename(int type);
+char	*isa_intr_typename __P((int type));
 
-void	isascan(struct device *parent, void *match);
-int	isaprint(void *, const char *);
+void	isascan __P((struct device *parent, void *match));
+int	isaprint __P((void *, const char *));
 
 /*
  * Some ISA devices (e.g. on a VLB) can perform 32-bit DMA.  This
@@ -396,42 +417,46 @@ int	isaprint(void *, const char *);
 /*
  * ISA PnP prototypes and support macros.
  */
-static __inline void isapnp_write_reg(struct isapnp_softc *, int, u_char);
-static __inline u_char isapnp_read_reg(struct isapnp_softc *, int);
+static __inline void isapnp_write_reg __P((struct isapnp_softc *, int, u_char));
+static __inline u_char isapnp_read_reg __P((struct isapnp_softc *, int));
 
 static __inline void
-isapnp_write_reg(struct isapnp_softc *sc, int r, u_char v)
+isapnp_write_reg(sc, r, v)
+	struct isapnp_softc *sc;
+	int r;
+	u_char v;
 {
 	ISAPNP_WRITE_ADDR(sc, r);
 	ISAPNP_WRITE_DATA(sc, v);
 }
 
 static __inline u_char
-isapnp_read_reg(struct isapnp_softc *sc, int r)
+isapnp_read_reg(sc, r)
+	struct isapnp_softc *sc;
 {
 	ISAPNP_WRITE_ADDR(sc, r);
 	return ISAPNP_READ_DATA(sc);
 }
 
 struct isa_attach_args *
-    isapnp_get_resource(struct isapnp_softc *, int, struct isa_attach_args *);
-char *isapnp_id_to_vendor(char *, const u_char *);
+    isapnp_get_resource __P((struct isapnp_softc *, int));
+char *isapnp_id_to_vendor __P((char *, const u_char *));
 
-int isapnp_config(bus_space_tag_t, bus_space_tag_t,
-    struct isa_attach_args *);
-void isapnp_unconfig(bus_space_tag_t, bus_space_tag_t,
-    struct isa_attach_args *);
+int isapnp_config __P((bus_space_tag_t, bus_space_tag_t,
+    struct isa_attach_args *));
+void isapnp_unconfig __P((bus_space_tag_t, bus_space_tag_t,
+    struct isa_attach_args *));
 
-void isapnp_isa_attach_hook(struct isa_softc *);
+void isapnp_isa_attach_hook __P((struct isa_softc *));
 #ifdef DEBUG_ISAPNP
-void isapnp_print_mem(const char *, const struct isapnp_region *);
-void isapnp_print_io(const char *, const struct isapnp_region *);
-void isapnp_print_irq(const char *, const struct isapnp_pin *);
-void isapnp_print_drq(const char *, const struct isapnp_pin *);
-void isapnp_print_dep_start(const char *, const u_char);
-void isapnp_print_attach(const struct isa_attach_args *);
-void isapnp_get_config(struct isapnp_softc *,
-	struct isa_attach_args *);
-void isapnp_print_config(const struct isa_attach_args *);
+void isapnp_print_mem __P((const char *, const struct isapnp_region *));
+void isapnp_print_io __P((const char *, const struct isapnp_region *));
+void isapnp_print_irq __P((const char *, const struct isapnp_pin *));
+void isapnp_print_drq __P((const char *, const struct isapnp_pin *));
+void isapnp_print_dep_start __P((const char *, const u_char));
+void isapnp_print_attach __P((const struct isa_attach_args *));
+void isapnp_get_config __P((struct isapnp_softc *,
+	struct isa_attach_args *));
+void isapnp_print_config __P((const struct isa_attach_args *));
 #endif	/* DEBUG_ISAPNP */
 #endif /* _DEV_ISA_ISAVAR_H_ */

@@ -1,4 +1,4 @@
-.\"	$OpenBSD: end.3,v 1.11 2007/05/31 19:19:48 jmc Exp $
+.\"	$OpenBSD: end.3,v 1.6 1999/07/09 13:35:37 aaron Exp $
 .\"	$NetBSD: end.3,v 1.5 1996/03/01 00:17:49 jtc Exp $
 .\"
 .\" Copyright (c) 1986
@@ -12,7 +12,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -30,26 +34,26 @@
 .\"
 .\"	@(#)end.3	6.4 (Berkeley) 1/24/94
 .\"
-.Dd $Mdocdate: May 31 2007 $
+.Dd January 24, 1994
 .Dt END 3
 .Os
 .Sh NAME
-.Nm end ,
-.Nm etext ,
-.Nm edata
+.Nm end , etext , edata
 .Nd end boundaries of image segments
 .Sh SYNOPSIS
 .Vt extern end;
 .Vt extern etext;
 .Vt extern edata;
 .Sh DESCRIPTION
-The addresses of the global symbols
-.Va etext ,
-.Va edata ,
+The global variables
+.Va end , etext
 and
-.Va end
-correspond to the next address following the end of the text segment,
-the end of the initialized data segment, and the end of the data segment
+.Va edata
+correspond to
+the next address following
+the end of the text segment,
+the end of initialized data segment and
+the end of the data segment
 .Pq Tn BSS .
 .Sh SEE ALSO
 .Xr brk 2 ,

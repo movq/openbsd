@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcivar.h,v 1.69 2013/08/08 17:54:11 kettenis Exp $	*/
+/*	$OpenBSD: pcivar.h,v 1.16 1999/07/18 03:20:18 csapuntz Exp $	*/
 /*	$NetBSD: pcivar.h,v 1.23 1997/06/06 23:48:05 thorpej Exp $	*/
 
 /*
@@ -42,9 +42,6 @@
  * provided by pci_machdep.h.
  */
 
-#include <sys/device.h>
-#include <sys/malloc.h>
-#include <sys/extent.h>
 #include <machine/bus.h>
 #include <dev/pci/pcireg.h>
 
@@ -52,31 +49,31 @@
  * Structures and definitions needed by the machine-dependent header.
  */
 typedef u_int32_t pcireg_t;		/* configuration space register XXX */
-
-/*
- * Power Management (PCI 2.2)
- */
-#define PCI_PWR_D0	0
-#define PCI_PWR_D1	1
-#define PCI_PWR_D2	2
-#define PCI_PWR_D3	3
-
-#ifdef _KERNEL
-
 struct pcibus_attach_args;
-struct pci_softc;
 
 /*
  * Machine-dependent definitions.
  */
-#if defined(__alpha__)
+#if (__alpha__ + __atari__ + __i386__ + __arc__ + __powerpc__ + __galileo__ != 1)
+ERROR: COMPILING FOR UNSUPPORTED MACHINE, OR MORE THAN ONE.
+#endif
+#if __alpha__
 #include <alpha/pci/pci_machdep.h>
-#elif defined(__i386__)
+#endif
+#if __atari__
+#include <atari/pci/pci_machdep.h>
+#endif
+#if __i386__
 #include <i386/pci/pci_machdep.h>
-#elif defined(__sgi__)
-#include <sgi/pci/pci_machdep.h>
-#else
-#include <machine/pci_machdep.h>
+#endif
+#if __arc__
+#include <arc/pci/pci_machdep.h>
+#endif
+#if __powerpc__
+#include <powerpc/pci/pci_machdep.h>
+#endif
+#if __galileo__
+#include <galileo/pci/pci_machdep.h>
 #endif
 
 /*
@@ -88,22 +85,8 @@ struct pcibus_attach_args {
 	bus_space_tag_t pba_memt;	/* pci mem space tag */
 	bus_dma_tag_t pba_dmat;		/* DMA tag */
 	pci_chipset_tag_t pba_pc;
-	int		pba_flags;	/* flags; see below */
 
-	struct extent	*pba_ioex;
-	struct extent	*pba_memex;
-	struct extent	*pba_pmemex;
-	struct extent	*pba_busex;
-
-	int		pba_domain;	/* PCI domain */
 	int		pba_bus;	/* PCI bus number */
-
-	/*
-	 * Pointer to the pcitag of our parent bridge.  If there is no
-	 * parent bridge, then we assume we are a root bus.
-	 */
-	pcitag_t	*pba_bridgetag;
-	pci_intr_handle_t *pba_bridgeih;
 
 	/*
 	 * Interrupt swizzling information.  These fields
@@ -123,20 +106,10 @@ struct pci_attach_args {
 	pci_chipset_tag_t pa_pc;
 	int		pa_flags;	/* flags; see below */
 
-	struct extent	*pa_ioex;
-	struct extent	*pa_memex;
-	struct extent	*pa_pmemex;
-	struct extent	*pa_busex;
-
-	u_int           pa_domain;
-	u_int           pa_bus;
 	u_int		pa_device;
 	u_int		pa_function;
 	pcitag_t	pa_tag;
 	pcireg_t	pa_id, pa_class;
-
-	pcitag_t	*pa_bridgetag;
-	pci_intr_handle_t *pa_bridgeih;
 
 	/*
 	 * Interrupt information.
@@ -150,7 +123,6 @@ struct pci_attach_args {
 	pcitag_t	pa_intrtag;	/* intr. appears to come from here */
 	pci_intr_pin_t	pa_intrpin;	/* intr. appears on this pin */
 	pci_intr_line_t	pa_intrline;	/* intr. routing information */
-	pci_intr_pin_t	pa_rawintrpin;	/* unswizzled pin */
 };
 
 /*
@@ -160,44 +132,6 @@ struct pci_attach_args {
  */
 #define	PCI_FLAGS_IO_ENABLED	0x01		/* I/O space is enabled */
 #define	PCI_FLAGS_MEM_ENABLED	0x02		/* memory space is enabled */
-#define	PCI_FLAGS_MRL_OKAY	0x04		/* Memory Read Line okay */
-#define	PCI_FLAGS_MRM_OKAY	0x08		/* Memory Read Multiple okay */
-#define	PCI_FLAGS_MWI_OKAY	0x10		/* Memory Write and Invalidate
-						   okay */
-#define	PCI_FLAGS_MSI_ENABLED	0x20		/* Message Signaled Interrupt
-						   enabled */
-
-/*
- *
- */
-struct pci_quirkdata {
-	pci_vendor_id_t		vendor;		/* Vendor ID */
-	pci_product_id_t	product;	/* Product ID */
-	int			quirks;		/* quirks; see below */
-};
-#define	PCI_QUIRK_MULTIFUNCTION		1
-#define	PCI_QUIRK_MONOFUNCTION		2
-
-struct pci_softc {
-	struct device sc_dev;
-	bus_space_tag_t sc_iot, sc_memt;
-	bus_dma_tag_t sc_dmat;
-	pci_chipset_tag_t sc_pc;
-	int sc_flags;
-	struct extent *sc_ioex;
-	struct extent *sc_memex;
-	struct extent *sc_pmemex;
-	struct extent *sc_busex;
-	LIST_HEAD(, pci_dev) sc_devs;
-	int sc_domain, sc_bus, sc_maxndevs;
-	pcitag_t *sc_bridgetag;
-	pci_intr_handle_t *sc_bridgeih;
-	u_int sc_intrswiz;
-	pcitag_t sc_intrtag;
-};
-
-extern int pci_ndomains;
-extern int pci_dopm;
 
 /*
  * Locators devices that attach to 'pcibus', as specified to config.
@@ -218,55 +152,29 @@ extern int pci_dopm;
  * Configuration space access and utility functions.  (Note that most,
  * e.g. make_tag, conf_read, conf_write are declared by pci_machdep.h.)
  */
-int	pci_mapreg_probe(pci_chipset_tag_t, pcitag_t, int, pcireg_t *);
-pcireg_t pci_mapreg_type(pci_chipset_tag_t, pcitag_t, int);
-int	pci_mapreg_info(pci_chipset_tag_t, pcitag_t, int, pcireg_t,
-	    bus_addr_t *, bus_size_t *, int *);
-int	pci_mapreg_map(struct pci_attach_args *, int, pcireg_t, int,
-	    bus_space_tag_t *, bus_space_handle_t *, bus_addr_t *,
-	    bus_size_t *, bus_size_t);
-
-
-int	pci_io_find(pci_chipset_tag_t, pcitag_t, int, bus_addr_t *,
-	    bus_size_t *);
-int	pci_mem_find(pci_chipset_tag_t, pcitag_t, int, bus_addr_t *,
-	    bus_size_t *, int *);
-
-int	pci_get_capability(pci_chipset_tag_t, pcitag_t, int,
-	    int *, pcireg_t *);
-int	pci_get_ht_capability(pci_chipset_tag_t, pcitag_t, int,
-	    int *, pcireg_t *);
-
-struct pci_matchid {
-	pci_vendor_id_t		pm_vid;
-	pci_product_id_t	pm_pid;
-};
-
-int pci_matchbyid(struct pci_attach_args *, const struct pci_matchid *, int);
-int pci_get_powerstate(pci_chipset_tag_t, pcitag_t);
-int pci_set_powerstate(pci_chipset_tag_t, pcitag_t, int);
-void pci_disable_legacy_vga(struct device *);
-
 /*
- * Vital Product Data (PCI 2.2)
+ * Configuration space access and utility functions.  (Note that most,
+ * e.g. make_tag, conf_read, conf_write are declared by pci_machdep.h.)
  */
-int pci_vpd_read(pci_chipset_tag_t, pcitag_t, int, int, pcireg_t *);
-int pci_vpd_write(pci_chipset_tag_t, pcitag_t, int, int, pcireg_t *);
+int	pci_mapreg_info __P((pci_chipset_tag_t, pcitag_t, int, pcireg_t,
+	    bus_addr_t *, bus_size_t *, int *));
+int	pci_mapreg_map __P((struct pci_attach_args *, int, pcireg_t, int,
+	    bus_space_tag_t *, bus_space_handle_t *, bus_addr_t *,
+	    bus_size_t *));
+
+
+int	pci_io_find __P((pci_chipset_tag_t, pcitag_t, int, bus_addr_t *,
+	    bus_size_t *));
+int	pci_mem_find __P((pci_chipset_tag_t, pcitag_t, int, bus_addr_t *,
+	    bus_size_t *, int *));
+
+int pci_get_capability __P((pci_chipset_tag_t, pcitag_t, int,
+			    int *, pcireg_t *));
 
 /*
  * Helper functions for autoconfiguration.
  */
-const char *pci_findvendor(pcireg_t);
-const char *pci_findproduct(pcireg_t);
-int	pci_find_device(struct pci_attach_args *pa,
-	    int (*match)(struct pci_attach_args *));
-int	pci_probe_device(struct pci_softc *, pcitag_t tag,
-	    int (*)(struct pci_attach_args *), struct pci_attach_args *);
-int	pci_detach_devices(struct pci_softc *, int);
-void	pci_devinfo(pcireg_t, pcireg_t, int, char *, size_t);
-const struct pci_quirkdata *
-	pci_lookup_quirkdata(pci_vendor_id_t, pci_product_id_t);
-void	pciagp_set_pchb(struct pci_attach_args *);
+void	pci_devinfo __P((pcireg_t, pcireg_t, int, char *));
+void	set_pci_isa_bridge_callback __P((void (*)(void *), void *));
 
-#endif /* _KERNEL */
 #endif /* _DEV_PCI_PCIVAR_H_ */

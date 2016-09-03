@@ -1,4 +1,3 @@
-/*	$OpenBSD: strcat.S,v 1.9 2015/08/31 02:53:56 guenther Exp $ */
 /*
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
@@ -6,11 +5,9 @@
 
 #include <machine/asm.h>
 
-#if defined(APIWARN)
-#APP
-	.section .gnu.warning.strcat
-	.ascii "warning: strcat() is almost always misused, please use strlcat()"
-#NO_APP
+#if defined(LIBC_SCCS)
+	.text
+	.asciz "$OpenBSD: strcat.S,v 1.2 1996/08/19 08:13:12 tholo Exp $"
 #endif
 
 /*
@@ -71,4 +68,3 @@ L1:	movb	(%edx),%al		/* unroll loop, but not too much */
 L2:	popl	%eax			/* pop destination address */
 	popl	%edi			/* restore edi */
 	ret
-END(strcat)

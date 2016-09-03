@@ -1,6 +1,5 @@
 /* tc-a29k.c -- Assemble for the AMD 29000.
-   Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1998, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1990, 1991, 1992, 1993 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -15,16 +14,15 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with GAS; see the file COPYING.  If not, write to the Free
-   Software Foundation, 59 Temple Place - Suite 330, Boston, MA
-   02111-1307, USA.  */
+   along with GAS; see the file COPYING.  If not, write to
+   the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /* John Gilmore has reorganized this module somewhat, to make it easier
    to convert it to new machines' assemblers as desired.  There was too
    much bloody rewriting required before.  There still probably is.  */
 
+#include <ctype.h>
 #include "as.h"
-#include "safe-ctype.h"
 
 #include "opcode/a29k.h"
 
@@ -61,9 +59,6 @@ static void machine_ip PARAMS ((char *str));
 static void s_data1 PARAMS ((void));
 static void s_use PARAMS ((int));
 #endif
-static void insert_sreg PARAMS ((char *, int));
-static void define_some_regs PARAMS ((void));
-static char *parse_operand PARAMS ((char *, expressionS *, int));
 
 const pseudo_typeS
 md_pseudo_table[] =
@@ -82,6 +77,8 @@ md_pseudo_table[] =
   {NULL, 0, 0},
 };
 
+int md_short_jump_size = 4;
+int md_long_jump_size = 4;
 #if defined(BFD_HEADERS)
 #ifdef RELSZ
 const int md_reloc_size = RELSZ;	/* Coff headers */
@@ -101,7 +98,7 @@ const char comment_chars[] = ";";
    .line and .file directives will appear in the pre-processed output */
 /* Note that input_file.c hand checks for '#' at the beginning of the
    first line of the input file.  This is because the compiler outputs
-   #NO_APP at the beginning of its output.  */
+   #NO_APP at the beginning of its output. */
 /* Also note that comments like this one will always work */
 const char line_comment_chars[] = "#";
 
@@ -151,7 +148,7 @@ s_use (ignore)
       return;
     }
   /* Literals can't go in the text segment because you can't read from
-     instruction memory on some 29k's.  So, into initialized data.  */
+     instruction memory on some 29k's.  So, into initialized data. */
   if (strncmp (input_line_pointer, ".lit", 4) == 0)
     {
       input_line_pointer += 4;
@@ -160,7 +157,7 @@ s_use (ignore)
       return;
     }
 
-  as_bad (_("Unknown segment type"));
+  as_bad ("Unknown segment type");
   demand_empty_rest_of_line ();
 }
 
@@ -191,7 +188,7 @@ insert_sreg (regname, regnum)
   symbol_table_insert (symbol_new (regname, SEG_REGISTER, (valueT) regnum,
 				   &zero_address_frag));
   for (i = 0; regname[i]; i++)
-    buf[i] = TOUPPER (regname[i]);
+    buf[i] = islower (regname[i]) ? toupper (regname[i]) : regname[i];
   buf[i] = '\0';
 
   symbol_table_insert (symbol_new (buf, SEG_REGISTER, (valueT) regnum,
@@ -201,7 +198,7 @@ insert_sreg (regname, regnum)
 /* Install symbol definitions for assorted special registers.
    See ASM29K Ref page 2-9.  */
 
-static void
+void
 define_some_regs ()
 {
 #define SREG	256
@@ -286,7 +283,7 @@ md_begin ()
 	}
 
       /* Hack to avoid multiple opcode entries.  We pre-locate all the
-	 variations (b/i field and P/A field) and handle them.  */
+	 variations (b/i field and P/A field) and handle them. */
 
       if (!strcmp (name, machine_opcodes[i + 1].name))
 	{
@@ -330,7 +327,7 @@ md_begin ()
     }
 
   if (lose)
-    as_fatal (_("Broken assembler.  No assembly attempted."));
+    as_fatal ("Broken assembler.  No assembly attempted.");
 
   define_some_regs ();
 }
@@ -363,7 +360,7 @@ md_assemble (str)
     }
 }
 
-static char *
+char *
 parse_operand (s, operandp, opt)
      char *s;
      expressionS *operandp;
@@ -375,7 +372,7 @@ parse_operand (s, operandp, opt)
   input_line_pointer = s;
   expression (operandp);
   if (operandp->X_op == O_absent && ! opt)
-    as_bad (_("missing operand"));
+    as_bad ("missing operand");
   new = input_line_pointer;
   input_line_pointer = save;
   return new;
@@ -400,9 +397,10 @@ machine_ip (str)
 
   /* Must handle `div0' opcode.  */
   s = str;
-  if (ISALPHA (*s))
-    for (; ISALNUM (*s); ++s)
-      *s = TOLOWER (*s);
+  if (isalpha (*s))
+    for (; isalnum (*s); ++s)
+      if (isupper (*s))
+	*s = tolower (*s);
 
   switch (*s)
     {
@@ -414,12 +412,12 @@ machine_ip (str)
       break;
 
     default:
-      as_bad (_("Unknown opcode: `%s'"), str);
+      as_bad ("Unknown opcode: `%s'", str);
       return;
     }
   if ((insn = (struct machine_opcode *) hash_find (op_hash, str)) == NULL)
     {
-      as_bad (_("Unknown opcode `%s'."), str);
+      as_bad ("Unknown opcode `%s'.", str);
       return;
     }
   argsStart = s;
@@ -429,7 +427,7 @@ machine_ip (str)
 
   /* Build the opcode, checking as we go to make sure that the
      operands match.
-
+   
      If an operand matches, we modify the_insn or opcode appropriately,
      and do a "continue".  If an operand fails to match, we "break".  */
 
@@ -447,11 +445,11 @@ machine_ip (str)
 	case '\0':		/* end of args */
 	  if (*s == '\0')
 	    {
-	      /* We are truly done.  */
+	      /* We are truly done. */
 	      the_insn.opcode = opcode;
 	      return;
 	    }
-	  as_bad (_("Too many operands: %s"), s);
+	  as_bad ("Too many operands: %s", s);
 	  break;
 
 	case ',':		/* Must match a comma */
@@ -473,7 +471,7 @@ machine_ip (str)
 		}
 	      else
 		{
-		  as_bad (_("Immediate value of %ld is too large"),
+		  as_bad ("Immediate value of %ld is too large",
 			  (long) operand->X_add_number);
 		  continue;
 		}
@@ -504,7 +502,7 @@ machine_ip (str)
 		}
 	      else
 		{
-		  as_bad (_("Immediate value of %ld is too large"),
+		  as_bad ("Immediate value of %ld is too large",
 			  (long) operand->X_add_number);
 		  continue;
 		}
@@ -543,7 +541,7 @@ machine_ip (str)
 	      opcode |= reg << 16;
 	      continue;
 	    }
-	  as_fatal (_("failed sanity check."));
+	  as_fatal ("failed sanity check.");
 	  break;
 
 	case 'x':		/* 16 bit constant, zero-extended */
@@ -671,6 +669,7 @@ machine_ip (str)
 	    }
 	  break;
 
+
 	case 'f':		/* FS bits of CONVERT */
 	  if (operand->X_op == O_constant &&
 	      operand->X_add_number < 4)
@@ -711,8 +710,8 @@ machine_ip (str)
    but I'm not sure.
 
    Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
+   of type type, and store the appropriate bytes in *litP.  The number
+   of LITTLENUMS emitted is stored in *sizeP .  An error message is
    returned, or NULL on OK.  */
 
 /* Equal to MAX_PRECISION in atof-ieee.c */
@@ -785,25 +784,27 @@ md_number_to_chars (buf, val, n)
 }
 
 void
-md_apply_fix3 (fixP, valP, seg)
+md_apply_fix (fixP, val)
      fixS *fixP;
-     valueT * valP;
-     segT seg ATTRIBUTE_UNUSED;
+     long val;
 {
-  long val = *valP;
   char *buf = fixP->fx_where + fixP->fx_frag->fr_literal;
 
-  fixP->fx_addnumber = val;	/* Remember value for emit_reloc.  */
+  fixP->fx_addnumber = val;	/* Remember value for emit_reloc */
+
 
   know (fixP->fx_size == 4);
   know (fixP->fx_r_type < NO_RELOC);
 
   /* This is a hack.  There should be a better way to handle this.  */
   if (fixP->fx_r_type == RELOC_WDISP30 && fixP->fx_addsy)
-    val += fixP->fx_where + fixP->fx_frag->fr_address;
+    {
+      val += fixP->fx_where + fixP->fx_frag->fr_address;
+    }
 
   switch (fixP->fx_r_type)
     {
+
     case RELOC_32:
       buf[0] = val >> 24;
       buf[1] = val >> 16;
@@ -816,7 +817,7 @@ md_apply_fix3 (fixP, valP, seg)
       break;
 
     case RELOC_WDISP30:
-      val = (val >> 2) + 1;
+      val = (val >>= 2) + 1;
       buf[0] |= (val >> 24) & 0x3f;
       buf[1] = (val >> 16);
       buf[2] = val >> 8;
@@ -840,7 +841,7 @@ md_apply_fix3 (fixP, valP, seg)
       break;
 
     case RELOC_WDISP22:
-      val = (val >> 2) + 1;
+      val = (val >>= 2) + 1;
       /* FALLTHROUGH */
     case RELOC_BASE22:
       buf[1] |= (val >> 16) & 0x3f;
@@ -865,13 +866,12 @@ md_apply_fix3 (fixP, valP, seg)
       else if (fixP->fx_pcrel)
 	{
 	  long v = val >> 17;
-
 	  if (v != 0 && v != -1)
 	    as_bad_where (fixP->fx_file, fixP->fx_line,
 			  "call/jmp target out of range");
 	}
       else
-	/* This case was supposed to be handled in machine_ip.  */
+	/* this case was supposed to be handled in machine_ip */
 	abort ();
       buf[1] = val >> 10;	/* Holds bits 0003FFFC of address */
       buf[3] = val >> 2;
@@ -889,12 +889,9 @@ md_apply_fix3 (fixP, valP, seg)
 
     case NO_RELOC:
     default:
-      as_bad (_("bad relocation type: 0x%02x"), fixP->fx_r_type);
+      as_bad ("bad relocation type: 0x%02x", fixP->fx_r_type);
       break;
     }
-
-  if (fixP->fx_addsy == NULL && fixP->fx_pcrel == 0)
-    fixP->fx_done = 1;
 }
 
 #ifdef OBJ_COFF
@@ -916,7 +913,7 @@ tc_coff_fix2rtype (fixP)
     case RELOC_JUMPTARG:
       return (R_IREL);
     default:
-      printf (_("need %o3\n"), fixP->fx_r_type);
+      printf ("need %o3\n", fixP->fx_r_type);
       abort ();
     }				/* switch on type */
 
@@ -927,21 +924,44 @@ tc_coff_fix2rtype (fixP)
 
 /* should never be called for 29k */
 void
-md_convert_frag (headers, seg, fragP)
-     object_headers *headers ATTRIBUTE_UNUSED;
-     segT seg ATTRIBUTE_UNUSED;
-     register fragS *fragP ATTRIBUTE_UNUSED;
+md_create_short_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr, to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
 {
-  as_fatal (_("a29k_convert_frag\n"));
+  as_fatal ("a29k_create_short_jmp\n");
+}
+
+/* should never be called for 29k */
+void
+md_convert_frag (headers, seg, fragP)
+     object_headers *headers;
+     segT seg;
+     register fragS *fragP;
+{
+  as_fatal ("a29k_convert_frag\n");
+}
+
+/* should never be called for 29k */
+void
+md_create_long_jump (ptr, from_addr, to_addr, frag, to_symbol)
+     char *ptr;
+     addressT from_addr;
+     addressT to_addr;
+     fragS *frag;
+     symbolS *to_symbol;
+{
+  as_fatal ("a29k_create_long_jump\n");
 }
 
 /* should never be called for a29k */
 int
 md_estimate_size_before_relax (fragP, segtype)
-     register fragS *fragP ATTRIBUTE_UNUSED;
-     segT segtype ATTRIBUTE_UNUSED;
+     register fragS *fragP;
+     segT segtype;
 {
-  as_fatal (_("a29k_estimate_size_before_relax\n"));
+  as_fatal ("a29k_estimate_size_before_relax\n");
   return 0;
 }
 
@@ -1007,7 +1027,7 @@ print_insn (insn)
    On sparc/29k: first 4 bytes are normal unsigned long address, next three
    bytes are index, most sig. byte first.  Byte 7 is broken up with
    bit 7 as external, bits 6 & 5 unused, and the lower
-   five bits as relocation type.  Next 4 bytes are long addend.  */
+   five bits as relocation type.  Next 4 bytes are long addend. */
 /* Thanx and a tip of the hat to Michael Bloom, mb@ttidca.tti.com */
 
 #ifdef OBJ_AOUT
@@ -1041,23 +1061,23 @@ tc_aout_fix_to_chars (where, fixP, segment_address_in_file)
 
 #endif /* OBJ_AOUT */
 
-const char *md_shortopts = "";
+CONST char *md_shortopts = "";
 struct option md_longopts[] = {
   {NULL, no_argument, NULL, 0}
 };
-size_t md_longopts_size = sizeof (md_longopts);
+size_t md_longopts_size = sizeof(md_longopts);
 
 int
 md_parse_option (c, arg)
-     int c ATTRIBUTE_UNUSED;
-     char *arg ATTRIBUTE_UNUSED;
+     int c;
+     char *arg;
 {
   return 0;
 }
 
 void
 md_show_usage (stream)
-     FILE *stream ATTRIBUTE_UNUSED;
+     FILE *stream;
 {
 }
 
@@ -1072,13 +1092,13 @@ a29k_unrecognized_line (c)
   char *s;
 
   if (c != '$'
-      || ! ISDIGIT (input_line_pointer[0]))
+      || ! isdigit ((unsigned char) input_line_pointer[0]))
     return 0;
 
   s = input_line_pointer;
 
   lab = 0;
-  while (ISDIGIT (*s))
+  while (isdigit ((unsigned char) *s))
     {
       lab = lab * 10 + *s - '0';
       ++s;
@@ -1092,7 +1112,7 @@ a29k_unrecognized_line (c)
 
   if (dollar_label_defined (lab))
     {
-      as_bad (_("label \"$%d\" redefined"), lab);
+      as_bad ("label \"$%d\" redefined", lab);
       return 0;
     }
 
@@ -1124,7 +1144,7 @@ md_undefined_symbol (name)
 	  long maxreg;
 
 	  /* Parse the number, make sure it has no extra zeroes or
-	     trailing chars.  */
+	     trailing chars. */
 	  regnum = atol (&name[2]);
 
 	  if (name[0] == 's' || name[0] == 'S')
@@ -1165,7 +1185,7 @@ md_operand (expressionP)
       (void) expression (expressionP);
       if (expressionP->X_op != O_constant
 	  || expressionP->X_add_number > 255)
-	as_bad (_("Invalid expression after %%%%\n"));
+	as_bad ("Invalid expression after %%%%\n");
       expressionP->X_op = O_register;
     }
   else if (input_line_pointer[0] == '&')
@@ -1176,12 +1196,12 @@ md_operand (expressionP)
       input_line_pointer++;	/* Skip & */
       (void) expression (expressionP);
       if (expressionP->X_op != O_register)
-	as_bad (_("Invalid register in & expression"));
+	as_bad ("Invalid register in & expression");
       else
 	expressionP->X_op = O_constant;
     }
   else if (input_line_pointer[0] == '$'
-	   && ISDIGIT (input_line_pointer[1]))
+	   && isdigit ((unsigned char) input_line_pointer[1]))
     {
       long lab;
       char *name;
@@ -1238,12 +1258,12 @@ md_operand (expressionP)
 	  type = 'x';
 	  fieldlimit = 4;
 	}
-      else
+      else 
 	{
 	  return;
 	}
 
-      if (ISDIGIT (*s))
+      if (isdigit (*s))
 	{
 	  fieldnum = *s - '0';
 	  ++s;
@@ -1269,7 +1289,7 @@ md_operand (expressionP)
       SKIP_WHITESPACE ();
 
       input_line_pointer = s;
-      expressionP->X_op = O_constant;
+      expressionP->X_op = O_constant; 
       expressionP->X_unsigned = 1;
       expressionP->X_add_number = ((floatbuf[fieldnum * 2]
 				    << LITTLENUM_NUMBER_OF_BITS)
@@ -1280,7 +1300,7 @@ md_operand (expressionP)
 /* Round up a section size to the appropriate boundary.  */
 valueT
 md_section_align (segment, size)
-     segT segment ATTRIBUTE_UNUSED;
+     segT segment;
      valueT size;
 {
   return size;			/* Byte alignment is fine */
@@ -1295,3 +1315,5 @@ md_pcrel_from (fixP)
 {
   return fixP->fx_where + fixP->fx_frag->fr_address;
 }
+
+/* end of tc-a29k.c */

@@ -1,4 +1,3 @@
-/*	$OpenBSD: getpagesize.c,v 1.9 2016/03/20 02:32:40 guenther Exp $ */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -11,7 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,23 +31,27 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/types.h>
+#if defined(LIBC_SCCS) && !defined(lint)
+static char rcsid[] = "$OpenBSD: getpagesize.c,v 1.2 1996/08/19 08:23:54 tholo Exp $";
+#endif /* LIBC_SCCS and not lint */
+
+#include <sys/param.h>
 #include <sys/sysctl.h>
-#include <unistd.h>
 
 int
-getpagesize(void)
+getpagesize()
 {
-	if (_pagesize == 0) {
+	static int pagsz;
+
+	if (pagsz == 0) {
 		int mib[2];
 		size_t size;
 
 		mib[0] = CTL_HW;
 		mib[1] = HW_PAGESIZE;
-		size = sizeof _pagesize;
-		if (sysctl(mib, 2, &_pagesize, &size, NULL, 0) == -1)
+		size = sizeof pagsz;
+		if (sysctl(mib, 2, &pagsz, &size, NULL, 0) == -1)
 			return (-1);
 	}
-	return (_pagesize);
+	return (pagsz);
 }
-DEF_WEAK(getpagesize);

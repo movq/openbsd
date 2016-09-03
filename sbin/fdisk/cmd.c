@@ -1,91 +1,89 @@
-/*	$OpenBSD: cmd.c,v 1.96 2016/08/02 16:00:10 jcs Exp $	*/
+/*	$OpenBSD: cmd.c,v 1.22 1999/08/21 22:49:25 niklas Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
+ * All rights reserved.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *    This product includes software developed by Tobias Weingartner.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/disklabel.h>
-
-#include <err.h>
-#include <signal.h>
-#include <stdint.h>
 #include <stdio.h>
+#include <ctype.h>
+#include <memory.h>
 #include <stdlib.h>
-#include <string.h>
-#include <uuid.h>
-
+#include <unistd.h>
+#include <signal.h>
+#include <sys/fcntl.h>
+#include <sys/disklabel.h>
 #include "disk.h"
 #include "misc.h"
-#include "part.h"
-#include "mbr.h"
-#include "gpt.h"
 #include "user.h"
+#include "part.h"
 #include "cmd.h"
-
-int reinited;
-
-/* Some helper functions for GPT handling. */
-int Xgedit(char *);
-int Xgsetpid(char *);
+#define MAX(a, b) ((a) >= (b) ? (a) : (b))
 
 int
-Xreinit(char *args, struct mbr *mbr)
+Xreinit(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
-	struct dos_mbr dos_mbr;
-	int dogpt;
+	char buf[DEV_BSIZE];
 
-	if (strncasecmp(args, "gpt", 3) == 0)
-		dogpt = 1;
-	else if (strncasecmp(args, "mbr", 3) == 0)
-		dogpt = 0;
-	else if (strlen(args) > 0) {
-		printf("Unrecognized modifier '%s'\n", args);
-		return (CMD_CONT);
-	} else if (MBR_protective_mbr(&initial_mbr) == 0)
-		dogpt = 1;
-	else
-		dogpt = 0;
+	/* Copy template MBR */
+	MBR_make(tt, buf);
+	MBR_parse(disk, buf, 0, 0, mbr);
 
-	MBR_make(&initial_mbr, &dos_mbr);
-	MBR_parse(&dos_mbr, mbr->offset, mbr->reloffset, mbr);
+	MBR_init(disk, mbr);
 
-	if (dogpt) {
-		MBR_init_GPT(mbr);
-		GPT_init();
-		GPT_print("s", 0);
-	} else {
-		MBR_init(mbr);
-		MBR_print(mbr, "s");
-	}
-	reinited = 1;
-
+	/* Tell em we did something */
+	printf("In memory copy is initialized to:\n");
+	printf("Offset: %d\t", offset);
+	MBR_print(mbr);
 	printf("Use 'write' to update disk.\n");
 
 	return (CMD_DIRTY);
 }
 
 int
-Xdisk(char *args, struct mbr *mbr)
+Xdisk(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
 	int maxcyl  = 1024;
 	int maxhead = 256;
-	int maxsec  = 63;
+	int maxsec  = 64;
 
 	/* Print out disk info */
-	DISK_printgeometry(args);
+	DISK_printmetrics(disk);
 
 #if defined (__powerpc__) || defined (__mips__)
 	maxcyl  = 9999999;
@@ -95,282 +93,125 @@ Xdisk(char *args, struct mbr *mbr)
 
 	/* Ask for new info */
 	if (ask_yn("Change disk geometry?")) {
-		disk.cylinders = ask_num("BIOS Cylinders",
-		    disk.cylinders, 1, maxcyl);
-		disk.heads = ask_num("BIOS Heads",
-		    disk.heads, 1, maxhead);
-		disk.sectors = ask_num("BIOS Sectors",
-		    disk.sectors, 1, maxsec);
+		disk->real->cylinders = ask_num("BIOS Cylinders", ASK_DEC,
+		    disk->real->cylinders, 1, maxcyl, NULL);
+		disk->real->heads = ask_num("BIOS Heads", ASK_DEC,
+		    disk->real->heads, 1, maxhead, NULL);
+		disk->real->sectors = ask_num("BIOS Sectors", ASK_DEC,
+		    disk->real->sectors, 1, maxsec, NULL);
 
-		disk.size = disk.cylinders * disk.heads * disk.sectors;
+		disk->real->size = disk->real->cylinders * disk->real->heads
+			* disk->real->sectors;
 	}
 
 	return (CMD_CONT);
 }
 
 int
-Xswap(char *args, struct mbr *mbr)
+Xedit(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
-	const char *errstr;
-	char *from, *to;
-	int pf, pt, maxpn;
-	struct prt pp;
-	struct gpt_partition gg;
+	int pn, num, ret;
+	prt_t *pp;
 
-	to = args;
-	from = strsep(&to, " \t");
+	ret = CMD_CONT;
 
-	if (to == NULL) {
-		printf("partition number is invalid:\n");
-		return (CMD_CONT);
+	if (!isdigit(cmd->args[0])) {
+		printf("Invalid argument: %s <partition number>\n", cmd->cmd);
+		return (ret);
+	}
+	pn = atoi(cmd->args);
+
+	if (pn < 0 || pn > 3) {
+		printf("Invalid partition number.\n");
+		return (ret);
 	}
 
-	if (letoh64(gh.gh_sig) == GPTSIGNATURE)
-		maxpn = NGPTPARTITIONS - 1;
-	else
-		maxpn = NDOSPART - 1;
-
-	pf = strtonum(from, 0, maxpn, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, from);
-		return (CMD_CONT);
-	}
-	pt = strtonum(to, 0, maxpn, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, to);
-		return (CMD_CONT);
-	}
-
-	if (pt == pf) {
-		printf("%d same partition as %d, doing nothing.\n", pt, pf);
-		return (CMD_CONT);
-	}
-
-	if (letoh64(gh.gh_sig) == GPTSIGNATURE) {
-		gg = gp[pt];
-		gp[pt] = gp[pf];
-		gp[pf] = gg;
-	} else {
-		pp = mbr->part[pt];
-		mbr->part[pt] = mbr->part[pf];
-		mbr->part[pf] = pp;
-	}
-
-	return (CMD_DIRTY);
-}
-
-int
-Xgedit(char *args)
-{
-	struct gpt_partition oldpart;
-	const char *errstr;
-	struct gpt_partition *gg;
-	char *name;
-	u_int16_t *utf;
-	u_int64_t bs, ns;
-	int i, pn;
-
-	pn = strtonum(args, 0, NGPTPARTITIONS - 1, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, args);
-		return (CMD_CONT);
-	}
-	gg = &gp[pn];
-	oldpart = *gg;
-
-	Xgsetpid(args);
-	if (uuid_is_nil(&gg->gp_type, NULL)) {
-		if (uuid_is_nil(&oldpart.gp_type, NULL) == 0) {
-			memset(gg, 0, sizeof(struct gpt_partition));
-			printf("Partition %d is disabled.\n", pn);
-		}
-		goto done;
-	}
-
-	bs = getuint64("Partition offset", letoh64(gg->gp_lba_start),
-	    letoh64(gh.gh_lba_start), letoh64(gh.gh_lba_end));
-	ns = getuint64("Partition size", letoh64(gg->gp_lba_end) - bs + 1,
-	    1, letoh64(gh.gh_lba_end) - bs + 1);
-
-	gg->gp_lba_start = htole64(bs);
-	gg->gp_lba_end = htole64(bs + ns - 1);
-
-	name = ask_string("Partition name", utf16le_to_string(gg->gp_name));
-	if (strlen(name) >= GPTPARTNAMESIZE) {
-		printf("partition name must be < %d characters\n",
-		    GPTPARTNAMESIZE);
-		goto done;
-	}
-	/*
-	 * N.B.: simple memcpy() could copy trash from static buf! This
-	 * would create false positives for the partition having changed.
-	 */
-	utf = string_to_utf16le(name);
-	for (i = 0; i < GPTPARTNAMESIZE; i++) {
-		gg->gp_name[i] = utf[i];
-		if (utf[i] == 0)
-			break;
-	}
-
-done:
-	if (memcmp(gg, &oldpart, sizeof(*gg)))
-		return (CMD_DIRTY);
-	else
-		return (CMD_CONT);
-}
-
-int
-Xedit(char *args, struct mbr *mbr)
-{
-	struct prt oldpart;
-	const char *errstr;
-	struct prt *pp;
-	int pn;
-
-	if (letoh64(gh.gh_sig) == GPTSIGNATURE)
-		return (Xgedit(args));
-
-	pn = strtonum(args, 0, 3, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, args);
-		return (CMD_CONT);
-	}
+	/* Print out current table entry */
 	pp = &mbr->part[pn];
-	oldpart = *pp;
+	PRT_print(0, NULL);
+	PRT_print(pn, pp);
 
-	Xsetpid(args, mbr);
+#define	EDIT(p, f, v, n, m, h)				\
+	if ((num = ask_num(p, f, v, n, m, h)) != v)	\
+		ret = CMD_DIRTY;			\
+	v = num;
+
+	/* Ask for partition type */
+	EDIT("Partition id ('0' to disable) ", ASK_HEX, pp->id, 0, 0xFF, PRT_printall);
+
+	/* Unused, so just zero out */
 	if (pp->id == DOSPTYP_UNUSED) {
-		if (oldpart.id != DOSPTYP_UNUSED) {
-			memset(pp, 0, sizeof(*pp));
-			printf("Partition %d is disabled.\n", pn);
-		}
-		goto done;
+		memset(pp, 0, sizeof(*pp));
+		printf("Partition %d is disabled.\n", pn);
+		return (ret);
 	}
 
+	/* Change table entry */
 	if (ask_yn("Do you wish to edit in CHS mode?")) {
-		pp->scyl = ask_num("BIOS Starting cylinder", pp->scyl,  0,
-		    disk.cylinders - 1);
-		pp->shead = ask_num("BIOS Starting head",    pp->shead, 0,
-		    disk.heads - 1);
-		pp->ssect = ask_num("BIOS Starting sector",  pp->ssect, 1,
-		    disk.sectors);
+		int maxcyl, maxhead, maxsect;
 
-		pp->ecyl = ask_num("BIOS Ending cylinder",   pp->ecyl,
-		    pp->scyl, disk.cylinders - 1);
-		pp->ehead = ask_num("BIOS Ending head",      pp->ehead,
-		    (pp->scyl == pp->ecyl) ? pp->shead : 0, disk.heads - 1);
-		pp->esect = ask_num("BIOS Ending sector",    pp->esect,
-		    (pp->scyl == pp->ecyl && pp->shead == pp->ehead) ? pp->ssect
-		    : 1, disk.sectors);
+		/* Shorter */
+		maxcyl = disk->real->cylinders - 1;
+		maxhead = disk->real->heads - 1;
+		maxsect = disk->real->sectors;
 
+		/* Get data */
+		EDIT("BIOS Starting cylinder", ASK_DEC, pp->scyl,  0, maxcyl, NULL);
+		EDIT("BIOS Starting head",     ASK_DEC, pp->shead, 0, maxhead, NULL);
+		EDIT("BIOS Starting sector",   ASK_DEC, pp->ssect, 1, maxsect, NULL);
+		EDIT("BIOS Ending cylinder",   ASK_DEC, pp->ecyl,  0, maxcyl, NULL);
+		EDIT("BIOS Ending head",       ASK_DEC, pp->ehead, 0, maxhead, NULL);
+		EDIT("BIOS Ending sector",     ASK_DEC, pp->esect, 1, maxsect, NULL);
 		/* Fix up off/size values */
-		PRT_fix_BN(pp, pn);
-		/* Fix up CHS values for LBA */
-		PRT_fix_CHS(pp);
+		PRT_fix_BN(disk, pp);
 	} else {
-		pp->bs = getuint64("Partition offset", pp->bs, 0, disk.size);
-		pp->ns = getuint64("Partition size",   pp->ns, 1,
-		    disk.size - pp->bs);
+		u_int m;
+
+		/* Get data */
+		EDIT("Partition offset", ASK_DEC, pp->bs, 0,
+		    disk->real->size, NULL);
+		m = MAX(pp->ns, disk->real->size - pp->bs);
+		if ( m > disk->real->size - pp->bs) {
+			/* dont have default value extend beyond end of disk */
+			m = disk->real->size - pp->bs;
+		}
+		EDIT("Partition size", ASK_DEC, pp->ns, 1,
+		    m, NULL);
 
 		/* Fix up CHS values */
-		PRT_fix_CHS(pp);
+		PRT_fix_CHS(disk, pp);
 	}
-
-done:
-	if (memcmp(pp, &oldpart, sizeof(*pp)))
-		return (CMD_DIRTY);
-	else
-		return (CMD_CONT);
+#undef EDIT
+	return (ret);
 }
 
 int
-Xgsetpid(char *args)
+Xselect(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
-	const char *errstr;
-	struct uuid guid;
-	struct gpt_partition *gg;
-	int pn, num, status;
-
-	pn = strtonum(args, 0, NGPTPARTITIONS - 1, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, args);
-		return (CMD_CONT);
-	}
-	gg = &gp[pn];
-
-	/* Print out current table entry */
-	GPT_print_parthdr(0);
-	GPT_print_part(pn, "s", 0);
-
-	/* Ask for partition type or GUID. */
-	uuid_dec_le(&gg->gp_type, &guid);
-	num = ask_pid(PRT_uuid_to_type(&guid), &guid);
-	if (num <= 0xff)
-		guid = *(PRT_type_to_uuid(num));
-	uuid_enc_le(&gg->gp_type, &guid);
-
-	if (uuid_is_nil(&gg->gp_guid, NULL)) {
-		uuid_create(&guid, &status);
-		if (status != uuid_s_ok) {
-			printf("could not create guid for partition\n");
-			return (CMD_CONT);
-		}
-		uuid_enc_le(&gg->gp_guid, &guid);
-	}
-
-	return (CMD_DIRTY);
-}
-
-int
-Xsetpid(char *args, struct mbr *mbr)
-{
-	const char *errstr;
-	int pn, num;
-	struct prt *pp;
-
-	if (letoh64(gh.gh_sig) == GPTSIGNATURE)
-		return (Xgsetpid(args));
-
-	pn = strtonum(args, 0, 3, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, args);
-		return (CMD_CONT);
-	}
-	pp = &mbr->part[pn];
-
-	/* Print out current table entry */
-	PRT_print(0, NULL, NULL);
-	PRT_print(pn, pp, NULL);
-
-	/* Ask for MBR partition type */
-	num = ask_pid(pp->id, NULL);
-	if (num == pp->id)
-		return (CMD_CONT);
-
-	pp->id = num;
-
-	return (CMD_DIRTY);
-}
-
-int
-Xselect(char *args, struct mbr *mbr)
-{
-	const char *errstr;
-	static off_t firstoff = 0;
-	off_t off;
+	static firstoff = 0;
+	int off;
 	int pn;
 
-	pn = strtonum(args, 0, 3, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s\n", errstr, args);
+	if (!isdigit(cmd->args[0])) {
+		printf("Invalid argument: %s <partition number>\n", cmd->cmd);
 		return (CMD_CONT);
 	}
 
+	pn = atoi(cmd->args);
 	off = mbr->part[pn].bs;
 
 	/* Sanity checks */
-	if ((mbr->part[pn].id != DOSPTYP_EXTEND) &&
-	    (mbr->part[pn].id != DOSPTYP_EXTENDL)) {
+	if (mbr->part[pn].id != DOSPTYP_EXTEND) {
 		printf("Partition %d is not an extended partition.\n", pn);
 		return (CMD_CONT);
 	}
@@ -383,200 +224,179 @@ Xselect(char *args, struct mbr *mbr)
 		return (CMD_CONT);
 	} else {
 		printf("Selected extended partition %d\n", pn);
-		printf("New MBR at offset %lld.\n", (long long)off);
+		printf("New MBR at offset %d.\n", off);
 	}
 
-	/* Recursion is beautiful! */
-	USER_edit(off, firstoff);
+	/* Recursion is beautifull! */
+	USER_modify(disk, tt, off, firstoff);
+	return (CMD_CONT);
+}
+
+int
+Xprint(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
+{
+
+	DISK_printmetrics(disk);
+	printf("Offset: %d\t", offset);
+	MBR_print(mbr);
 
 	return (CMD_CONT);
 }
 
 int
-Xprint(char *args, struct mbr *mbr)
+Xwrite(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
+	char mbr_buf[DEV_BSIZE];
+	int fd;
 
-	if (MBR_protective_mbr(mbr) == 0 && letoh64(gh.gh_sig) == GPTSIGNATURE)
-		GPT_print(args, 1);
-	else
-		MBR_print(mbr, args);
+	printf("Writing MBR at offset %d.\n", offset);
 
-	return (CMD_CONT);
-}
-
-int
-Xwrite(char *args, struct mbr *mbr)
-{
-	struct dos_mbr dos_mbr;
-	int i, n;
-
-	for (i = 0, n = 0; i < NDOSPART; i++)
-		if (mbr->part[i].id == 0xA6)
-			n++;
-	if (n >= 2) {
-		warnx("MBR contains more than one OpenBSD partition!");
-		if (!ask_yn("Write MBR anyway?"))
-			return (CMD_CONT);
-	}
-
-	MBR_make(mbr, &dos_mbr);
-
-	printf("Writing MBR at offset %lld.\n", (long long)mbr->offset);
-	if (MBR_write(mbr->offset, &dos_mbr) == -1) {
-		warn("error writing MBR");
-		return (CMD_CONT);
-	}
-
-	if (letoh64(gh.gh_sig) == GPTSIGNATURE) {
-		printf("Writing GPT.\n");
-		if (GPT_write() == -1) {
-			warn("error writing GPT");
-			return (CMD_CONT);
-		}
-	} else if (reinited) {
-		/* Make sure GPT doesn't get in the way. */
-		MBR_zapgpt(&dos_mbr, DL_GETDSIZE(&dl) - 1);
-	}
-
-	/* Refresh in memory copy to reflect what was just written. */
-	MBR_parse(&dos_mbr, mbr->offset, mbr->reloffset, mbr);
-
+	fd = DISK_open(disk->name, O_RDWR);
+	MBR_make(mbr, mbr_buf);
+	MBR_write(fd, offset, mbr_buf);
+	close(fd);
 	return (CMD_CLEAN);
 }
 
 int
-Xquit(char *args, struct mbr *mbr)
+Xquit(cmd, disk, r, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *r;
+	mbr_t *tt;
+	int offset;
 {
+
+	/* Nothing to do here */
 	return (CMD_SAVE);
 }
 
 int
-Xabort(char *args, struct mbr *mbr)
+Xabort(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
 	exit(0);
+
+	/* NOTREACHED */
+	return (CMD_CONT);
 }
 
+
 int
-Xexit(char *args, struct mbr *mbr)
+Xexit(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
+
+	/* Nothing to do here */
 	return (CMD_EXIT);
 }
 
 int
-Xhelp(char *args, struct mbr *mbr)
+Xhelp(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
-	char help[80];
-	char *mbrstr;
+	cmd_table_t *cmd_table = cmd->table;
 	int i;
 
-	for (i = 0; cmd_table[i].cmd != NULL; i++) {
-		strlcpy(help, cmd_table[i].help, sizeof(help));
-		if (letoh64(gh.gh_sig) == GPTSIGNATURE) {
-			if (cmd_table[i].gpt == 0)
-				continue;
-			mbrstr = strstr(help, "MBR");
-			if (mbrstr)
-				memcpy(mbrstr, "GPT", 3);
-		}
-		printf("\t%s\t\t%s\n", cmd_table[i].cmd, help);
-	}
-
+	/* Hmm, print out cmd_table here... */
+	for (i = 0; cmd_table[i].cmd != NULL; i++)
+		printf("\t%s\t\t%s\n", cmd_table[i].cmd, cmd_table[i].help);
 	return (CMD_CONT);
 }
 
 int
-Xupdate(char *args, struct mbr *mbr)
+Xupdate(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
+
 	/* Update code */
-	memcpy(mbr->code, initial_mbr.code, sizeof(mbr->code));
-	mbr->signature = DOSMBR_SIGNATURE;
+	memcpy(mbr->code, tt->code, MBR_CODE_SIZE);
 	printf("Machine code updated.\n");
 	return (CMD_DIRTY);
 }
 
 int
-Xflag(char *args, struct mbr *mbr)
+Xflag(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
-	const char *errstr;
-	int i, maxpn, pn = -1;
-	long long val = -1;
-	char *part, *flag;
+	int i, pn = -1;
 
-	flag = args;
-	part = strsep(&flag, " \t");
+	/* Parse partition table entry number */
+	if (!isdigit(cmd->args[0])) {
+		printf("Invalid argument: %s <partition number>\n", cmd->cmd);
+		return (CMD_CONT);
+	}
+	pn = atoi(cmd->args);
 
-	if (letoh64(gh.gh_sig) == GPTSIGNATURE)
-		maxpn = NGPTPARTITIONS - 1;
-	else
-		maxpn = NDOSPART - 1;
-
-	pn = strtonum(part, 0, maxpn, &errstr);
-	if (errstr) {
-		printf("partition number is %s: %s.\n", errstr, part);
+	if (pn < 0 || pn > 3) {
+		printf("Invalid partition number.\n");
 		return (CMD_CONT);
 	}
 
-	if (flag != NULL) {
-		/* Set flag to value provided. */
-		if (letoh64(gh.gh_sig) == GPTSIGNATURE)
-			val = strtonum(flag, 0, INT64_MAX, &errstr);
+	/* Set active flag */
+	for (i = 0; i < 4; i++) {
+		if (i == pn)
+			mbr->part[i].flag = DOSACTIVE;
 		else
-			val = strtonum(flag, 0, 0xff, &errstr);
-		if (errstr) {
-			printf("flag value is %s: %s.\n", errstr, flag);
-			return (CMD_CONT);
-		}
-		if (letoh64(gh.gh_sig) == GPTSIGNATURE)
-			gp[pn].gp_attrs = htole64(val);
-		else
-			mbr->part[pn].flag = val;
-		printf("Partition %d flag value set to 0x%llx.\n", pn, val);
-	} else {
-		/* Set active flag */
-		if (letoh64(gh.gh_sig) == GPTSIGNATURE) {
-			for (i = 0; i < NGPTPARTITIONS; i++) {
-				if (i == pn)
-					gp[i].gp_attrs = htole64(GPTDOSACTIVE);
-				else
-					gp[i].gp_attrs = htole64(0);
-			}
-		} else {
-			for (i = 0; i < NDOSPART; i++) {
-				if (i == pn)
-					mbr->part[i].flag = DOSACTIVE;
-				else
-					mbr->part[i].flag = 0x00;
-			}
-		}
-		printf("Partition %d marked active.\n", pn);
+			mbr->part[i].flag = 0x00;
 	}
 
+	printf("Partition %d marked active.\n", pn);
 	return (CMD_DIRTY);
 }
 
 int
-Xmanual(char *args, struct mbr *mbr)
+Xmanual(cmd, disk, mbr, tt, offset)
+	cmd_t *cmd;
+	disk_t *disk;
+	mbr_t *mbr;
+	mbr_t *tt;
+	int offset;
 {
 	char *pager = "/usr/bin/less";
 	char *p;
-	sig_t opipe;
-	extern const unsigned char manpage[];
-	extern const int manpage_sz;
+	sig_t opipe = signal(SIGPIPE, SIG_IGN);
+	extern char manpage[];
 	FILE *f;
 
-	opipe = signal(SIGPIPE, SIG_IGN);
 	if ((p = getenv("PAGER")) != NULL && (*p != '\0'))
 		pager = p;
-	if (asprintf(&p, "gunzip -qc|%s", pager) != -1) {
-		f = popen(p, "w");
-		if (f) {
-			fwrite(manpage, manpage_sz, 1, f);
-			pclose(f);
-		}
-		free(p);
+	f = popen(pager, "w");
+	if (f) {
+		(void) fwrite(manpage, strlen(manpage), 1, f);
+		pclose(f);
 	}
 
-	signal(SIGPIPE, opipe);
-
+	(void)signal(SIGPIPE, opipe);
 	return (CMD_CONT);
 }

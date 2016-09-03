@@ -1,4 +1,4 @@
-/*	$OpenBSD: msgs.c,v 1.11 2016/02/01 07:29:25 mestre Exp $	*/
+/*	$OpenBSD: msgs.c,v 1.4 1998/08/18 04:02:23 millert Exp $	*/
 /*	$NetBSD: msgs.c,v 1.3 1994/12/09 02:14:22 jtc Exp $	*/
 
 /*
@@ -13,7 +13,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -30,26 +34,37 @@
  * SUCH DAMAGE.
  */
 
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)msgs.c	8.1 (Berkeley) 6/6/93";
+#endif
+static char rcsid[] = "$OpenBSD: msgs.c,v 1.4 1998/08/18 04:02:23 millert Exp $";
+#endif /* not lint */
+
 /*
  * A package to display what is happening every MSG_INTERVAL seconds
  * if we are slow connecting.
  */
 
 #include "talk.h"
+#include <sys/time.h>
+#include <signal.h>
+#include <stdio.h>
 
 #define MSG_INTERVAL 4
 
 char	*current_state;
-int	current_line;
+int	current_line = 0;
 
 void
-disp_msg(int dummy)
+disp_msg(dummy)
+	int dummy;
 {
 	message(current_state);
 }
 
 void
-start_msgs(void)
+start_msgs()
 {
 	struct itimerval itimer;
 
@@ -57,16 +72,16 @@ start_msgs(void)
 	signal(SIGALRM, disp_msg);
 	itimer.it_value.tv_sec = itimer.it_interval.tv_sec = MSG_INTERVAL;
 	itimer.it_value.tv_usec = itimer.it_interval.tv_usec = 0;
-	setitimer(ITIMER_REAL, &itimer, NULL);
+	setitimer(ITIMER_REAL, &itimer, (struct itimerval *)0);
 }
 
 void
-end_msgs(void)
+end_msgs()
 {
 	struct itimerval itimer;
 
 	timerclear(&itimer.it_value);
 	timerclear(&itimer.it_interval);
-	setitimer(ITIMER_REAL, &itimer, NULL);
+	setitimer(ITIMER_REAL, &itimer, (struct itimerval *)0);
 	signal(SIGALRM, SIG_DFL);
 }

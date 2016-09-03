@@ -1,4 +1,4 @@
-/*	$OpenBSD: input.c,v 1.13 2015/12/31 16:50:29 mestre Exp $	*/
+/*	$OpenBSD: input.c,v 1.5 1998/09/21 07:36:06 pjanzen Exp $	*/
 /*	$NetBSD: input.c,v 1.4 1995/04/27 21:22:24 mycroft Exp $	*/
 
 /*-
@@ -16,7 +16,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,14 +46,16 @@
  * For more info on this and all of my stuff, mail edjames@berkeley.edu.
  */
 
-#include <ctype.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
-#include <termios.h>
+#ifndef lint
+#if 0
+static char sccsid[] = "@(#)input.c	8.1 (Berkeley) 5/31/93";
+#else
+static char rcsid[] = "$OpenBSD: input.c,v 1.5 1998/09/21 07:36:06 pjanzen Exp $";
+#endif
+#endif not lint
 
-#include "def.h"
-#include "extern.h"
+#include "include.h"
+#include "pathnames.h"
 
 #define MAXRULES	6
 #define MAXDEPTH	15
@@ -64,7 +70,7 @@ typedef struct {
 	int		token;
 	int		to_state;
 	const char	*str;
-	const char	*(*func)(char);
+	const char	*(*func) __P((char));
 } RULE;
 
 typedef struct {
@@ -171,7 +177,7 @@ int	tval;
 int	dest_type, dest_no, dir;
 
 int
-pop(void)
+pop()
 {
 	if (level == 0)
 		return (-1);
@@ -179,14 +185,14 @@ pop(void)
 
 	ioclrtoeol(T_POS);
 
-	strlcpy(T_STR, "", sizeof T_STR);
+	strcpy(T_STR, "");
 	T_RULE = -1;
 	T_CH = -1;
 	return (0);
 }
 
 void
-rezero(void)
+rezero()
 {
 	iomove(0);
 
@@ -195,15 +201,16 @@ rezero(void)
 	T_RULE = -1;
 	T_CH = -1;
 	T_POS = 0;
-	strlcpy(T_STR, "", sizeof T_STR);
+	strcpy(T_STR, "");
 }
 
 void
-push(int ruleno, int ch)
+push(ruleno, ch)
+	int ruleno, ch;
 {
 	int	newstate, newpos;
 
-	(void)snprintf(T_STR, sizeof T_STR, st[T_STATE].rule[ruleno].str, tval);
+	(void)sprintf(T_STR, st[T_STATE].rule[ruleno].str, tval);
 	T_RULE = ruleno;
 	T_CH = ch;
 	newstate = st[T_STATE].rule[ruleno].to_state;
@@ -217,14 +224,14 @@ push(int ruleno, int ch)
 	T_STATE = newstate;
 	T_POS = newpos;
 	T_RULE = -1;
-	strlcpy(T_STR, "", sizeof T_STR);
+	strcpy(T_STR, "");
 }
 
 int
-getcommand(void)
+getcommand()
 {
 	int	c, i, done;
-	const char	*s, *(*func)(char);
+	const char	*s, *(*func) __P((char));
 	PLANE	*pp;
 
 	rezero();
@@ -280,7 +287,7 @@ getcommand(void)
 }
 
 void
-noise(void)
+noise()
 {
 	if (makenoise)
 		putchar('\07');
@@ -288,7 +295,7 @@ noise(void)
 }
 
 int
-gettoken(void)
+gettoken()
 {
 	while ((tval = getAChar()) == REDRAWTOKEN)
 	{
@@ -304,7 +311,8 @@ gettoken(void)
 }
 
 const char	*
-setplane(char c)
+setplane(c)
+	char c;
 {
 	PLANE	*pp;
 
@@ -317,7 +325,8 @@ setplane(char c)
 }
 
 const char	*
-turn(char c)
+turn(c)
+	char c;
 {
 	if (p.altitude == 0)
 		return ("Planes at airports may not change direction");
@@ -325,7 +334,8 @@ turn(char c)
 }
 
 const char	*
-circle(char c)
+circle(c)
+	char c;
 {
 	if (p.altitude == 0)
 		return ("Planes cannot circle on the ground");
@@ -334,7 +344,8 @@ circle(char c)
 }
 
 const char	*
-left(char c)
+left(c)
+	char c;
 {
 	dir = D_LEFT;
 	p.new_dir = p.dir - 1;
@@ -344,7 +355,8 @@ left(char c)
 }
 
 const char	*
-right(char c)
+right(c)
+	char c;
 {
 	dir = D_RIGHT;
 	p.new_dir = p.dir + 1;
@@ -354,7 +366,8 @@ right(char c)
 }
 
 const char	*
-Left(char c)
+Left(c)
+	char c;
 {
 	p.new_dir = p.dir - 2;
 	if (p.new_dir < 0)
@@ -363,7 +376,8 @@ Left(char c)
 }
 
 const char	*
-Right(char c)
+Right(c)
+	char c;
 {
 	p.new_dir = p.dir + 2;
 	if (p.new_dir >= MAXDIR)
@@ -372,7 +386,8 @@ Right(char c)
 }
 
 const char	*
-delayb(char c)
+delayb(c)
+	char c;
 {
 	int	xdiff, ydiff;
 
@@ -421,83 +436,83 @@ delayb(char c)
 }
 
 const char	*
-beacon(char c)
+beacon(c)
+	char c;
 {
 	dest_type = T_BEACON;
 	return (NULL);
 }
 
 const char	*
-ex_it(char c)
+ex_it(c)
+	char c;
 {
 	dest_type = T_EXIT;
 	return (NULL);
 }
 
 const char	*
-airport(char c)
+airport(c)
+	char c;
 {
 	dest_type = T_AIRPORT;
 	return (NULL);
 }
 
 const char	*
-climb(char c)
+climb(c)
+	char c;
 {
 	dir = D_UP;
 	return (NULL);
 }
 
 const char	*
-descend(char c)
+descend(c)
+	char c;
 {
 	dir = D_DOWN;
 	return (NULL);
 }
 
 const char	*
-setalt(char c)
+setalt(c)
+	char c;
 {
 	if ((p.altitude == c - '0') && (p.new_altitude == p.altitude))
 		return ("Already at that altitude");
-	if (p.new_altitude == c - '0')
-		return ("Already going to that altitude");
 	p.new_altitude = c - '0';
 	return (NULL);
 }
 
 const char	*
-setrelalt(char c)
+setrelalt(c)
+	char c;
 {
-	int new_altitude;
-
 	if (c == 0)
 		return ("altitude not changed");
 
 	switch (dir) {
 	case D_UP:
-		new_altitude = p.altitude + c - '0';
+		p.new_altitude = p.altitude + c - '0';
 		break;
 	case D_DOWN:
-		new_altitude = p.altitude - (c - '0');
+		p.new_altitude = p.altitude - (c - '0');
 		break;
 	default:
 		return ("Unknown case in setrelalt!  Get help!");
 		break;
 	}
-	if (new_altitude < 0)
+	if (p.new_altitude < 0)
 		return ("Altitude would be too low");
-	else if (new_altitude > 9)
+	else if (p.new_altitude > 9)
 		return ("Altitude would be too high");
-	else if (new_altitude == p.new_altitude)
-		return ("Already going to that altitude");
-
-	p.new_altitude = new_altitude;
 	return (NULL);
 }
 
 const char	*
-benum(char c)
+benum(c)
+	char c;
 {
 	dest_no = c -= '0';
 
@@ -528,14 +543,16 @@ benum(char c)
 }
 
 const char	*
-to_dir(char c)
+to_dir(c)
+	char c;
 {
 	p.new_dir = dir_no(c);
 	return (NULL);
 }
 
 const char	*
-rel_dir(char c)
+rel_dir(c)
+	char c;
 {
 	int	angle;
 
@@ -559,7 +576,8 @@ rel_dir(char c)
 }
 
 const char	*
-mark(char c)
+mark(c)
+	char c;
 {
 	if (p.altitude == 0)
 		return ("Cannot mark planes on the ground");
@@ -570,7 +588,8 @@ mark(char c)
 }
 
 const char	*
-unmark(char c)
+unmark(c)
+	char c;
 {
 	if (p.altitude == 0)
 		return ("Cannot unmark planes on the ground");
@@ -581,7 +600,8 @@ unmark(char c)
 }
 
 const char	*
-ignore(char c)
+ignore(c)
+	char c;
 {
 	if (p.altitude == 0)
 		return ("Cannot ignore planes on the ground");
@@ -592,7 +612,8 @@ ignore(char c)
 }
 
 int
-dir_no(char ch)
+dir_no(ch)
+	char	ch;
 {
 	int	dir;
 

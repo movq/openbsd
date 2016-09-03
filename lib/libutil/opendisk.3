@@ -1,4 +1,4 @@
-.\"	$OpenBSD: opendisk.3,v 1.9 2015/09/10 15:16:43 schwarze Exp $
+.\"	$OpenBSD: opendisk.3,v 1.1 1999/09/21 04:52:45 csapuntz Exp $
 .\"	$NetBSD: opendisk.3,v 1.4 1999/07/02 15:49:12 simonb Exp $
 .\"
 .\" Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -15,6 +15,13 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"        This product includes software developed by the NetBSD
+.\"        Foundation, Inc. and its contributors.
+.\" 4. Neither the name of The NetBSD Foundation nor the names of its
+.\"    contributors may be used to endorse or promote products derived
+.\"    from this software without specific prior written permission.
 .\"
 .\" THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
 .\" ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -28,15 +35,18 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: September 10 2015 $
+.Dd September 22, 1997
 .Dt OPENDISK 3
 .Os
 .Sh NAME
 .Nm opendisk
-.Nd open a disk's raw partition
+.Nd open a disk's
+.Dq raw
+partition
+.Sh LIBRARY
+.Lb libutil
 .Sh SYNOPSIS
-.In sys/types.h
-.In util.h
+.Fd #include <util.h>
 .Ft int
 .Fo opendisk
 .Fa "const char *path"
@@ -75,9 +85,9 @@ attempts to open the following variations of
 .Fa path ,
 in order:
 .Bl -tag -width "/dev/rpathX"
-.It Fa path
+.It Pa path
 The pathname as given.
-.It Fa path Ns Em X
+.It Pa path Ns Em X
 .Fa path
 with a suffix of
 .Sq Em X ,
@@ -93,11 +103,11 @@ If
 .Fa iscooked
 is zero, then the following two variations are attempted:
 .Bl -tag -width "/dev/rpathX"
-.It Pa /dev/r Ns Fa path
+.It Pa /dev/rpath
 .Fa path
 with a prefix of
 .Dq Pa /dev/r .
-.It Pa /dev/r Ns Fa path Ns Em X
+.It Pa /dev/rpath Ns Em X
 .Fa path
 with a prefix of
 .Dq Pa /dev/r
@@ -110,11 +120,11 @@ Otherwise (i.e.,
 .Fa iscooked
 is non-zero), the following variations are attempted:
 .Bl -tag -width "/dev/rpathX"
-.It Pa /dev/ Ns Fa path
+.It Pa /dev/path
 .Fa path
 with a prefix of
 .Dq Pa /dev/ .
-.It Pa /dev/ Ns Fa path Ns Em X
+.It Pa /dev/path Ns Em X
 .Fa path
 with a prefix of
 .Dq Pa /dev/
@@ -139,6 +149,11 @@ was set in
 or
 .Xr getrawpartition 3
 didn't return a valid partition.
+.It Bq Er EFAULT
+.Fa buf
+was the
+.Dv NULL
+pointer.
 .El
 .Pp
 The

@@ -1,7 +1,7 @@
-/* $OpenBSD: lib_slkatrset.c,v 1.3 2010/01/12 23:22:06 nicm Exp $ */
+/*	$OpenBSD: lib_slkatrset.c,v 1.1 1999/01/18 19:10:01 millert Exp $	*/
 
 /****************************************************************************
- * Copyright (c) 1998-2000,2005 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998 Free Software Foundation, Inc.                        *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -29,8 +29,8 @@
  ****************************************************************************/
 
 /****************************************************************************
- *  Author:  Juergen Pfeifer, 1997                                          *
- *     and:  Thomas E. Dickey 2005                                          *
+ *  Author: Zeyd M. Ben-Halim <zmbenhal@netcom.com> 1992,1995               *
+ *     and: Eric S. Raymond <esr@snark.thyrsus.com>                         *
  ****************************************************************************/
 
 /*
@@ -40,16 +40,18 @@
  */
 #include <curses.priv.h>
 
-MODULE_ID("$Id: lib_slkatrset.c,v 1.3 2010/01/12 23:22:06 nicm Exp $")
+MODULE_ID("$From: lib_slkatrset.c,v 1.4 1998/03/11 19:26:01 juergen Exp $")
 
-NCURSES_EXPORT(int)
+int
 slk_attrset(const chtype attr)
 {
-    T((T_CALLED("slk_attrset(%s)"), _traceattr(attr)));
+  T((T_CALLED("slk_attrset(%s)"), _traceattr(attr)));
 
-    if (SP != 0 && SP->_slk != 0) {
-	SetAttr(SP->_slk->attr, attr);
-	returnCode(OK);
-    } else
-	returnCode(ERR);
+  if (SP!=0 && SP->_slk!=0)
+    {
+      SP->_slk->attr = attr;
+      returnCode(OK);
+    }
+  else
+    returnCode(ERR);
 }

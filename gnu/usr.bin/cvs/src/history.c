@@ -131,7 +131,7 @@
  *	-p repository	- Only records in which the "repository" string is a
  *			  prefix of the "repos" field are considered.
  *
- *	-n modulename	- Only records which contain "modulename" in the
+ *	-m modulename	- Only records which contain "modulename" in the
  *			  "module" field are considered.
  *
  *
@@ -191,12 +191,11 @@ static struct hrec
     char *end;		/* Ptr into repository to copy at end of workdir */
     char *mod;		/* The module within which the file is contained */
     time_t date;	/* Calculated from date stored in record */
-    long idx;		/* Index of record, for "stable" sort. */
+    int idx;		/* Index of record, for "stable" sort. */
 } *hrec_head;
-static long hrec_idx;
 
 
-static void fill_hrec PROTO((char *line, struct hrec * hr));
+static char *fill_hrec PROTO((char *line, struct hrec * hr));
 static int accept_hrec PROTO((struct hrec * hr, struct hrec * lr));
 static int select_hrec PROTO((struct hrec * hr));
 static int sort_order PROTO((const PTR l, const PTR r));
@@ -233,8 +232,6 @@ static short module_sort;
 static short tz_local;
 static time_t tz_seconds_east_of_GMT;
 static char *tz_name = "+0000";
-
-char *logHistory = ALL_REC_TYPES;
 
 /* -r, -t, or -b options, malloc'd.  These are "" if the option in
    question is not specified or is overridden by another option.  The
@@ -291,9 +288,9 @@ static const char *const history_usg[] =
     "        -o              Checked out modules\n",
     "        -m <module>     Look for specified module (repeatable)\n",
     "        -x [TOEFWUCGMAR] Extract by record type\n",
-    "        -e              Everything (same as -x, but all record types)\n",
     "   Flags:\n",
     "        -a              All users (Default is self)\n",
+    "        -e              Everything (same as -x, but all record types)\n",
     "        -l              Last modified (committed or modified report)\n",
     "        -w              Working directory must match\n",
     "   Options:\n",
@@ -414,11 +411,8 @@ history (argc, argv)
 		working = 1;
 		break;
 	    case 'X':			/* Undocumented debugging flag */
-#ifdef DEBUG
 		histfile = optarg;
-#endif
 		break;
-
 	    case 'D':			/* Since specified date */
 		if (*since_rev || *since_tag || *backto)
 		{
@@ -443,8 +437,8 @@ history (argc, argv)
 		save_file ("", optarg, (char *) NULL);
 		break;
 	    case 'm':			/* Full module report */
-		if (!module_report++) report_count++;
-		/* fall through */
+		report_count++;
+		module_report++;
 	    case 'n':			/* Look for specified module */
 		save_module (optarg);
 		break;
@@ -508,7 +502,7 @@ history (argc, argv)
 		    char *buf = xmalloc (sizeof (f) - 2 + strlen (optarg));
 		    time_t t;
 		    sprintf (buf, f, optarg);
-		    t = get_date (buf);
+		    t = get_date (buf, (struct timeb *) NULL);
 		    free (buf);
 		    if (t == (time_t) -1)
 			error (0, 0, "%s is not a known time zone", optarg);
@@ -529,20 +523,16 @@ history (argc, argv)
 		break;
 	}
     }
-    argc -= optind;
-    argv += optind;
-    for (i = 0; i < argc; i++)
-	save_file ("", argv[i], (char *) NULL);
-
+    c = optind;				/* Save the handled option count */
 
     /* ================ Now analyze the arguments a bit */
     if (!report_count)
 	v_checkout++;
     else if (report_count > 1)
-	error (1, 0, "Only one report type allowed from: \"-Tcomxe\".");
+	error (1, 0, "Only one report type allowed from: \"-Tcomx\".");
 
 #ifdef CLIENT_SUPPORT
-    if (current_parsed_root->isremote)
+    if (client_active)
     {
 	struct file_list_str *f1;
 	char **mod;
@@ -623,8 +613,7 @@ history (argc, argv)
 	 * If the user has not specified a date oriented flag ("Since"), sort
 	 * by Repository/file before date.  Default is "just" date.
 	 */
-	if (last_entry
-	    || (!since_date && !*since_rev && !*since_tag && !*backto))
+	if (!since_date && !*since_rev && !*since_tag && !*backto)
 	{
 	    repos_sort++;
 	    file_sort++;
@@ -653,8 +642,7 @@ history (argc, argv)
 	/* See comments in "modified" above */
 	if (!last_entry && user_list)
 	    user_sort++;
-	if (last_entry
-	    || (!since_date && !*since_rev && !*since_tag && !*backto))
+	if (!since_date && !*since_rev && !*since_tag && !*backto)
 	    file_sort++;
     }
 
@@ -669,22 +657,23 @@ history (argc, argv)
 	(void) strcat (rec_types, "T");
     }
 
+    argc -= c;
+    argv += c;
+    for (i = 0; i < argc; i++)
+	save_file ("", argv[i], (char *) NULL);
+
     if (histfile)
 	fname = xstrdup (histfile);
     else
     {
-	fname = xmalloc (strlen (current_parsed_root->directory) + sizeof (CVSROOTADM)
+	fname = xmalloc (strlen (CVSroot_directory) + sizeof (CVSROOTADM)
 			 + sizeof (CVSROOTADM_HISTORY) + 10);
-	(void) sprintf (fname, "%s/%s/%s", current_parsed_root->directory,
+	(void) sprintf (fname, "%s/%s/%s", CVSroot_directory,
 			CVSROOTADM, CVSROOTADM_HISTORY);
     }
 
     read_hrecs (fname);
-    if(hrec_count>0)
-    {
-	qsort ((PTR) hrec_head, hrec_count, 
-		sizeof (struct hrec), sort_order);
-    }
+    qsort ((PTR) hrec_head, hrec_count, sizeof (struct hrec), sort_order);
     report_hrecs ();
     free (fname);
     if (since_date != NULL)
@@ -717,11 +706,9 @@ history_write (type, update_dir, revs, name, repository)
 
     if (logoff)			/* History is turned off by cmd line switch */
 	return;
-    if ( strchr(logHistory, type) == NULL )	
-	return;
-    fname = xmalloc (strlen (current_parsed_root->directory) + sizeof (CVSROOTADM)
-		     + sizeof (CVSROOTADM_HISTORY) + 3);
-    (void) sprintf (fname, "%s/%s/%s", current_parsed_root->directory,
+    fname = xmalloc (strlen (CVSroot_directory) + sizeof (CVSROOTADM)
+		     + sizeof (CVSROOTADM_HISTORY) + 10);
+    (void) sprintf (fname, "%s/%s/%s", CVSroot_directory,
 		    CVSROOTADM, CVSROOTADM_HISTORY);
 
     /* turn off history logging if the history file does not exist */
@@ -738,14 +725,7 @@ history_write (type, update_dir, revs, name, repository)
 	goto out;
     fd = CVS_OPEN (fname, O_WRONLY | O_APPEND | O_CREAT | OPEN_BINARY, 0666);
     if (fd < 0)
-    {
-	if (! really_quiet)
-        {
-            error (0, errno, "warning: cannot write to history file %s",
-                   fname);
-        }
-        goto out;
-    }
+	error (1, errno, "cannot open history file: %s", fname);
 
     repos = Short_Repository (repository);
 
@@ -866,8 +846,8 @@ history_write (type, update_dir, revs, name, repository)
 	revs = "";
     line = xmalloc (strlen (username) + strlen (workdir) + strlen (repos)
 		    + strlen (revs) + strlen (name) + 100);
-    sprintf (line, "%c%08llx|%s|%s|%s|%s|%s\n",
-	     type, (long long) time ((time_t *) NULL),
+    sprintf (line, "%c%08lx|%s|%s|%s|%s|%s\n",
+	     type, (long) time ((time_t *) NULL),
 	     username, workdir, repos, revs, name);
 
     /* Lessen some race conditions on non-Posix-compliant hosts.  */
@@ -894,13 +874,9 @@ save_user (name)
 {
     if (user_count == user_max)
     {
-	user_max = xsum (user_max, USER_INCREMENT);
-	if (size_overflow_p (xtimes (user_max, sizeof (char *))))
-	{
-	    error (0, 0, "save_user: too many users");
-	    return;
-	}
-	user_list = xrealloc (user_list, xtimes (user_max, sizeof (char *)));
+	user_max += USER_INCREMENT;
+	user_list = (char **) xrealloc ((char *) user_list,
+					(int) user_max * sizeof (char *));
     }
     user_list[user_count++] = xstrdup (name);
 }
@@ -928,13 +904,9 @@ save_file (dir, name, module)
 
     if (file_count == file_max)
     {
-	file_max = xsum (file_max, FILE_INCREMENT);
-	if (size_overflow_p (xtimes (file_max, sizeof (*fl))))
-	{
-	    error (0, 0, "save_file: too many files");
-	    return;
-	}
-	file_list = xrealloc (file_list, xtimes (file_max, sizeof (*fl)));
+	file_max += FILE_INCREMENT;
+	file_list = (struct file_list_str *) xrealloc ((char *) file_list,
+						   file_max * sizeof (*fl));
     }
     fl = &file_list[file_count++];
     fl->l_file = cp = xmalloc (strlen (dir) + strlen (name) + 2);
@@ -973,13 +945,9 @@ save_module (module)
 {
     if (mod_count == mod_max)
     {
-	mod_max = xsum (mod_max, MODULE_INCREMENT);
-	if (size_overflow_p (xtimes (mod_max, sizeof (char *))))
-	{
-	    error (0, 0, "save_module: too many modules");
-	    return;
-	}
-	mod_list = xrealloc (mod_list, xtimes (mod_max, sizeof (char *)));
+	mod_max += MODULE_INCREMENT;
+	mod_list = (char **) xrealloc ((char *) mod_list,
+				       mod_max * sizeof (char *));
     }
     mod_list[mod_count++] = xstrdup (module);
 }
@@ -997,83 +965,74 @@ expand_modules ()
  *
  * Split it into 7 parts and drop the parts into a "struct hrec".
  * Return a pointer to the character following the newline.
- * 
  */
 
-#define NEXT_BAR(here) do { \
-	while (isspace(*line)) line++; \
-	hr->here = line; \
-	while ((c = *line++) && c != '|') ; \
-	if (!c) return; line[-1] = '\0'; \
-	} while (0)
+#define NEXT_BAR(here) do { while (isspace((unsigned char) *line)) line++; hr->here = line; while ((c = *line++) && c != '|') ; if (!c) return(rtn); *(line - 1) = '\0'; } while (0)
 
-static void
+static char *
 fill_hrec (line, hr)
     char *line;
     struct hrec *hr;
 {
-    char *cp;
+    char *cp, *rtn;
     int c;
+    int off;
+    static int idx = 0;
+    unsigned long date;
 
-    hr->type = hr->user = hr->dir = hr->repos = hr->rev = hr->file =
-	hr->end = hr->mod = NULL;
-    hr->date = -1;
-    hr->idx = ++hrec_idx;
-
+    memset ((char *) hr, 0, sizeof (*hr));
     while (isspace ((unsigned char) *line))
 	line++;
+    if (!(rtn = strchr (line, '\n')))
+	return ("");
+    *rtn++ = '\0';
 
     hr->type = line++;
-    hr->date = strtoul (line, &cp, 16);
-    if (cp == line || *cp != '|')
-	return;
-    line = cp + 1;
+    (void) sscanf (line, "%lx", &date);
+    hr->date = date;
+    while (*line && strchr ("0123456789abcdefABCDEF", *line))
+	line++;
+    if (*line == '\0')
+	return (rtn);
+
+    line++;
     NEXT_BAR (user);
     NEXT_BAR (dir);
     if ((cp = strrchr (hr->dir, '*')) != NULL)
     {
 	*cp++ = '\0';
-	hr->end = line + strtoul (cp, NULL, 16);
+	(void) sscanf (cp, "%x", &off);
+	hr->end = line + off;
     }
     else
 	hr->end = line - 1;		/* A handy pointer to '\0' */
     NEXT_BAR (repos);
     NEXT_BAR (rev);
+    hr->idx = idx++;
     if (strchr ("FOET", *(hr->type)))
 	hr->mod = line;
 
-    NEXT_BAR (file);
+    NEXT_BAR (file);	/* This returns ptr to next line or final '\0' */
+    return (rtn);	/* If it falls through, go on to next record */
 }
-
-
-#ifndef STAT_BLOCKSIZE
-#if HAVE_ST_BLKSIZE
-#define STAT_BLOCKSIZE(s) (s).st_blksize
-#else
-#define STAT_BLOCKSIZE(s) (4 * 1024)
-#endif
-#endif
-
 
 /* read_hrecs's job is to read the history file and fill in all the "hrec"
  * (history record) array elements with the ones we need to print.
  *
  * Logic:
- * - Read a block from the file. 
- * - Walk through the block parsing line into hr records. 
- * - if the hr isn't used, free its strings, if it is, bump the hrec counter
- * - at the end of a block, copy the end of the current block to the start 
- * of space for the next block, then read in the next block.  If we get less
- * than the whole block, we're done. 
+ * - Read the whole history file into a single buffer.
+ * - Walk through the buffer, parsing lines out of the buffer.
+ *   1. Split line into pointer and integer fields in the "next" hrec.
+ *   2. Apply tests to the hrec to see if it is wanted.
+ *   3. If it *is* wanted, bump the hrec pointer down by one.
  */
 static void
 read_hrecs (fname)
     char *fname;
 {
-    unsigned char *cpstart, *cpend, *cp, *nl;
-    char *hrline;
-    int i;
-    int fd;
+    char *cp, *cp2;
+    int i, fd;
+    struct hrec *hr;
     struct stat st_buf;
 
     if ((fd = CVS_OPEN (fname, O_RDONLY | OPEN_BINARY)) < 0)
@@ -1082,77 +1041,54 @@ read_hrecs (fname)
     if (fstat (fd, &st_buf) < 0)
 	error (1, errno, "can't stat history file");
 
-    if (!(st_buf.st_size))
+    /* Exactly enough space for lines data */
+    if (!(i = st_buf.st_size))
 	error (1, 0, "history file is empty");
+    cp = xmalloc (i + 2);
 
-    cpstart = xmalloc (2 * STAT_BLOCKSIZE(st_buf));
-    cpstart[0] = '\0';
-    cp = cpend = cpstart;
+    if (read (fd, cp, i) != i)
+	error (1, errno, "cannot read log file");
+    (void) close (fd);
+
+    if (*(cp + i - 1) != '\n')
+    {
+	*(cp + i) = '\n';		/* Make sure last line ends in '\n' */
+	i++;
+    }
+    *(cp + i) = '\0';
+    for (cp2 = cp; cp2 - cp < i; cp2++)
+    {
+	if (*cp2 != '\n' && !isprint ((unsigned char) *cp2))
+	    *cp2 = ' ';
+    }
 
     hrec_max = HREC_INCREMENT;
-    hrec_head = xmalloc (hrec_max * sizeof (struct hrec));
-    hrec_idx = 0;
+    hrec_head = (struct hrec *) xmalloc (hrec_max * sizeof (struct hrec));
 
-    for (;;)
+    while (*cp)
     {
-	for (nl = cp; nl < cpend && *nl != '\n'; nl++)
-	    if (!isprint(*nl)) *nl = ' ';
-
-	if (nl >= cpend)
-	{
-	    if (nl - cp >= STAT_BLOCKSIZE(st_buf))
-	    {
-		error(1, 0, "history line %ld too long (> %lu)", hrec_idx + 1,
-		      (unsigned long) STAT_BLOCKSIZE(st_buf));
-	    }
-	    if (nl > cp)
-		memmove (cpstart, cp, nl - cp);
-	    nl = cpstart + (nl - cp);
-	    cp = cpstart;
-	    i = read (fd, nl, STAT_BLOCKSIZE(st_buf));
-	    if (i > 0)
-	    {
-		cpend = nl + i;
-		*cpend = '\0';
-		continue;
-	    }
-	    if (i < 0)
-		error (1, errno, "error reading history file");
-	    if (nl == cp) break;
-	    error (0, 0, "warning: no newline at end of history file");
-	}
-	*nl = '\0';
-
 	if (hrec_count == hrec_max)
 	{
 	    struct hrec *old_head = hrec_head;
 
 	    hrec_max += HREC_INCREMENT;
-	    hrec_head = xrealloc ((char *) hrec_head,
-				  hrec_max * sizeof (struct hrec));
-	    if (last_since_tag)
-		last_since_tag = hrec_head + (last_since_tag - old_head);
-	    if (last_backto)
-		last_backto = hrec_head + (last_backto - old_head);
+	    hrec_head = (struct hrec *) xrealloc ((char *) hrec_head,
+					   hrec_max * sizeof (struct hrec));
+	    if (hrec_head != old_head)
+	    {
+		if (last_since_tag)
+		    last_since_tag = hrec_head + (last_since_tag - old_head);
+		if (last_backto)
+		    last_backto = hrec_head + (last_backto - old_head);
+	    }
 	}
 
-	/* fill_hrec dates from when history read the entire 
-	   history file in one chunk, and then records were pulled out
-	   by pointing to the various parts of this big chunk.  This is
-	   why there are ugly hacks here:  I don't want to completely
-	   re-write the whole history stuff right now.  */
+	hr = hrec_head + hrec_count;
+	cp = fill_hrec (cp, hr); /* cp == next line or '\0' at end of buffer */
 
-	hrline = xstrdup ((char *)cp);
-	fill_hrec (hrline, &hrec_head[hrec_count]);
-	if (select_hrec (&hrec_head[hrec_count]))
+	if (select_hrec (hr))
 	    hrec_count++;
-	else 
-	    free(hrline);
-
-	cp = nl + 1;
     }
-    free (cpstart);
-    close (fd);
 
     /* Special selection problem: If "since_tag" is set, we have saved every
      * record from the 1st occurrence of "since_tag", when we want to save
@@ -1209,14 +1145,6 @@ select_hrec (hr)
     struct file_list_str *fl;
     int count;
 
-    /* basic validity checking */
-    if (!hr->type || !hr->user || !hr->dir || !hr->repos || !hr->rev ||
-	!hr->file || !hr->end)
-    {
-	error (0, 0, "warning: history line %ld invalid", hr->idx);
-	return (0);
-    }
-
     /* "Since" checking:  The argument parser guarantees that only one of the
      *			  following four choices is set:
      *
@@ -1241,10 +1169,11 @@ select_hrec (hr)
     if (since_date)
     {
 	char *ourdate = date_from_time_t (hr->date);
-	count = RCS_datecmp (ourdate, since_date);
-	free (ourdate);
-	if (count < 0)
+
+	if (RCS_datecmp (ourdate, since_date) < 0)
 	    return (0);
+
+	free (ourdate);
     }
     else if (*since_rev)
     {
@@ -1497,9 +1426,9 @@ report_hrecs ()
 	else
 	    tm = localtime (&(lr->date));
 
-	(void) printf ("%c %04d-%02d-%02d %02d:%02d %s %-*s", ty,
-		  tm->tm_year+1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,
-		  tm->tm_min, tz_name, user_len, lr->user);
+	(void) printf ("%c %02d/%02d %02d:%02d %s %-*s", ty, tm->tm_mon + 1,
+		  tm->tm_mday, tm->tm_hour, tm->tm_min, tz_name,
+		  user_len, lr->user);
 
 	workdir = xmalloc (strlen (lr->dir) + strlen (lr->end) + 10);
 	(void) sprintf (workdir, "%s%s", lr->dir, lr->end);

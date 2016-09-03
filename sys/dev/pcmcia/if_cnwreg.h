@@ -1,5 +1,4 @@
-/*	$OpenBSD: if_cnwreg.h,v 1.3 2008/06/26 05:42:17 ray Exp $	*/
-
+/*	$OpenBSD: if_cnwreg.h,v 1.1 1999/08/13 20:34:17 fgsch Exp $	*/
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -15,6 +14,13 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the NetBSD
+ *	Foundation, Inc. and its contributors.
+ * 4. Neither the name of The NetBSD Foundation nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -65,8 +71,6 @@
 #define CNW_EREG_RSER		0x120
 #    define CNW_RSER_RXBIG		0x02
 #    define CNW_RSER_RXCRC		0x04
-#    define CNW_RSER_RXOVERRUN		0x08
-#    define CNW_RSER_RXOVERFLOW		0x10
 #    define CNW_RSER_RXERR		0x40
 #    define CNW_RSER_RXAVAIL		0x80
 #define CNW_EREG_RSERW		0x124
@@ -92,16 +96,6 @@
 #define CNW_EREG_NI		0x16e
 #define CNW_EREG_CRBP		0x17a
 #define CNW_EREG_EC		0x180
-#define CNW_EREG_STAT_RXERR	0x184
-#define CNW_EREG_STAT_FRAME	0x186
-#define CNW_EREG_STAT_IBEAT	0x188
-#define CNW_EREG_STAT_RXBUF	0x18e
-#define CNW_EREG_STAT_RXMULTI	0x190
-#define CNW_EREG_STAT_TXRETRY	0x192
-#define CNW_EREG_STAT_TXABORT	0x194
-#define CNW_EREG_STAT_OBEAT	0x198
-#define CNW_EREG_STAT_TXOK	0x19a
-#define CNW_EREG_STAT_TXSENT	0x19c
 
 /*
  * Commands used in the extended command buffer

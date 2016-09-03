@@ -1,4 +1,4 @@
-.\"	$OpenBSD: directory.3,v 1.24 2015/11/10 23:48:18 jmc Exp $
+.\"	$OpenBSD: directory.3,v 1.10 1999/07/09 13:35:16 aaron Exp $
 .\"
 .\" Copyright (c) 1983, 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -11,7 +11,11 @@
 .\" 2. Redistributions in binary form must reproduce the above copyright
 .\"    notice, this list of conditions and the following disclaimer in the
 .\"    documentation and/or other materials provided with the distribution.
-.\" 3. Neither the name of the University nor the names of its contributors
+.\" 3. All advertising materials mentioning features or use of this software
+.\"    must display the following acknowledgement:
+.\"	This product includes software developed by the University of
+.\"	California, Berkeley and its contributors.
+.\" 4. Neither the name of the University nor the names of its contributors
 .\"    may be used to endorse or promote products derived from this software
 .\"    without specific prior written permission.
 .\"
@@ -27,14 +31,12 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: November 10 2015 $
-.Dt OPENDIR 3
+.Dd June 4, 1993
+.Dt DIRECTORY 3
 .Os
 .Sh NAME
 .Nm opendir ,
-.Nm fdopendir ,
 .Nm readdir ,
-.Nm readdir_r ,
 .Nm telldir ,
 .Nm seekdir ,
 .Nm rewinddir ,
@@ -42,20 +44,16 @@
 .Nm dirfd
 .Nd directory operations
 .Sh SYNOPSIS
-.In sys/types.h
-.In dirent.h
+.Fd #include <sys/types.h>
+.Fd #include <dirent.h>
 .Ft DIR *
 .Fn opendir "const char *filename"
-.Ft DIR *
-.Fn fdopendir "int fd"
 .Ft struct dirent *
 .Fn readdir "DIR *dirp"
-.Ft int
-.Fn readdir_r "DIR *dirp" "struct dirent *entry" "struct dirent **result"
 .Ft long
 .Fn telldir "const DIR *dirp"
 .Ft void
-.Fn seekdir "DIR *dirp" "long loc"
+.Fn seekdir "DIR *dirp" "long  loc"
 .Ft void
 .Fn rewinddir "DIR *dirp"
 .Ft int
@@ -65,44 +63,25 @@
 .Sh DESCRIPTION
 The
 .Fn opendir
-function opens the directory named by
+function
+opens the directory named by
 .Fa filename ,
-associates a directory stream with it, and returns a pointer to be used
-to identify the directory stream in subsequent operations.
-On failure,
-.Dv NULL
-is returned and
-.Va errno
-is set to indicate the error.
-.Pp
-The
-.Fn fdopendir
-function is equivalent to
-.Fn opendir
-except that the directory is specified by file descriptor rather than by name.
-The file offset associated with the file descriptor at the time of the call
-determines which entries are returned.
-.Pp
-Upon successful return from
-.Fn fdopendir ,
-the file descriptor is under the control of the system,
-and if any attempt is made to close the file descriptor
-or to modify the state of the associated directory,
-other than by means of
-.Fn closedir ,
-.Fn readdir ,
-.Fn readdir_r ,
-or
-.Fn rewinddir ,
-the behavior is undefined.
-Upon calling
-.Fn closedir
-the file descriptor shall be closed.
+associates a directory stream
+with it
+and
+returns a pointer to be used to identify the
+directory stream
+in subsequent operations.  A null pointer is returned if
+.Fa filename
+cannot be accessed, or if
+.Xr malloc 3
+cannot allocate enough memory to hold the entire structure.
 .Pp
 The
 .Fn readdir
-function returns a pointer to the next directory entry in the named
-directory stream
+function
+returns a pointer to the next directory entry in the named directory
+stream
 .Fa dirp .
 It returns
 .Dv NULL
@@ -111,51 +90,23 @@ upon reaching the end of the directory or detecting an invalid
 operation.
 .Pp
 The
-.Fn readdir_r
-function (much like
-.Fn readdir )
-initializes the
-.Li dirent
-structure referenced by
-.Fa entry
-to represent the next directory entry in the named directory stream
-.Fa dirp ,
-and stores a pointer to this structure at the location referenced by
-.Fa result .
-The storage pointed to by
-.Fa entry
-must be large enough for a dirent with a
-.Fa d_name
-array member containing at least
-.Dv NAME_MAX
-plus one elements.
-On successful return, the pointer returned at
-.Fa "*result"
-will have the same value as the argument
-.Fa entry .
-Upon reaching the end of the directory stream, this pointer shall have the value
-.Dv NULL .
-.Pp
-The
 .Fn telldir
-function returns the current location associated with the named
+function
+returns the current location associated with the named
 directory stream
 .Fa dirp .
-On failure, \-1 is returned and
-.Va errno
-is set to indicate the error.
 .Pp
 The
 .Fn seekdir
-function sets the position of the next
+function
+sets the position of the next
 .Fn readdir
 operation on the named directory stream
 .Fa dirp .
 The new position reverts to the one associated with the
 directory stream when the
 .Fn telldir
-operation was performed.
-Values returned by
+operation was performed.  Values returned by
 .Fn telldir
 are good only for the lifetime of the
 .Dv DIR
@@ -165,26 +116,37 @@ from which they are derived.
 If the directory is closed and then reopened, the
 .Fn telldir
 value may be invalidated due to undetected directory compaction.
+It is safe to use a previous
+.Fn telldir
+value immediately after a call to
+.Fn opendir
+and before any calls to
+.Fn readdir .
 .Pp
 The
 .Fn rewinddir
-function resets the position of the named directory stream
+function
+resets the position of the named
+directory stream
 .Fa dirp
 to the beginning of the directory.
 .Pp
 The
 .Fn closedir
-function closes the named directory stream and frees the structure
-associated with the
+function
+closes the named directory stream
+and frees the structure associated with the
 .Fa dirp
-pointer, returning 0 on success.
+pointer,
+returning 0 on success.
 On failure, \-1 is returned and the global variable
 .Va errno
 is set to indicate the error.
 .Pp
 The
 .Fn dirfd
-function returns the integer file descriptor associated with the named
+function
+returns the integer file descriptor associated with the named
 directory stream
 .Fa dirp
 (see
@@ -198,93 +160,20 @@ len = strlen(name);
 dirp = opendir(".");
 if (dirp) {
 	while ((dp = readdir(dirp)) != NULL)
-		if (dp->d_namlen == len &&
-		    !strcmp(dp->d_name, name)) {
+		if (dp->d_namlen == len && !strcmp(dp->d_name, name)) {
 			(void)closedir(dirp);
-			return (FOUND);
+			return FOUND;
 		}
 	(void)closedir(dirp);
 }
-return (NOT_FOUND);
+return NOT_FOUND;
 .Ed
-.Sh ERRORS
-The
-.Fn opendir
-function will fail if:
-.Bl -tag -width Er
-.It Bq Er ENOTDIR
-The supplied
-.Fa filename
-is not a directory.
-.El
-.Pp
-The
-.Fn opendir
-function may also fail and set
-.Va errno
-for any of the errors specified for the routines
-.Xr fcntl 2 ,
-.Xr fstat 2 ,
-.Xr open 2 ,
-and
-.Xr malloc 3 .
-.Pp
-The
-.Fn fdopendir
-function will fail if:
-.Bl -tag -width Er
-.It Bq Er EBADF
-The
-.Fa fd
-argument is not a valid file descriptor open for reading.
-.It Bq Er ENOTDIR
-The descriptor
-.Fa fd
-is not associated with a directory.
-.El
-.Pp
-The
-.Fn readdir
-and
-.Fn readdir_r
-functions may also fail and set
-.Va errno
-for any of the errors specified for the routine
-.Xr getdents 2 .
-.Pp
-The
-.Fn telldir
-function may also fail and set
-.Va errno
-for any of the errors specified for the routine
-.Xr realloc 3 .
-.Pp
-The
-.Fn closedir
-function may also fail and set
-.Va errno
-for any of the errors specified for the routine
-.Xr close 2 .
 .Sh SEE ALSO
 .Xr close 2 ,
-.Xr getdents 2 ,
+.Xr getdirentries 2 ,
 .Xr lseek 2 ,
 .Xr open 2 ,
 .Xr dir 5
-.Sh STANDARDS
-The
-.Fn opendir ,
-.Fn fdopendir ,
-.Fn readdir ,
-.Fn readdir_r ,
-.Fn telldir ,
-.Fn seekdir ,
-.Fn rewinddir ,
-.Fn closedir ,
-and
-.Fn dirfd
-functions conform to
-.St -p1003.1-2008 .
 .Sh HISTORY
 The
 .Fn opendir ,
@@ -297,7 +186,3 @@ and
 .Fn dirfd
 functions appeared in
 .Bx 4.2 .
-The
-.Fn fdopendir
-function appeared in
-.Ox 5.0 .

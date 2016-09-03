@@ -1,4 +1,4 @@
-/*	$OpenBSD: getsn.c,v 1.6 2012/12/05 23:20:22 deraadt Exp $	*/
+/*	$OpenBSD: getsn.c,v 1.2 1996/08/23 19:22:43 niklas Exp $	*/
 
 /*
  * Copyright (c) 1996 Theo de Raadt
@@ -12,6 +12,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by Theo de Raadt.
+ * 4. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -25,17 +30,23 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
 #include <sys/types.h>
 #include <sys/systm.h>
 #include <dev/cons.h>
 
 int
-getsn(char *cp, int size)
+getsn(cp, size)
+	char *cp;
+	int size;
 {
-	int len = 0, c;
-	char *lp = cp;
+	register char *lp;
+	register int len;
+	register int c;
 
-	while (1) {
+	lp = cp;
+	len = 0;
+	for (;;) {
 		c = cngetc();
 		switch (c) {
 		case '\n':

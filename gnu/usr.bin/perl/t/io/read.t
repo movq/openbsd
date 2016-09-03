@@ -1,37 +1,26 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
-    eval 'use Errno';
-    die $@ if $@ and !is_miniperl();
-}
+# $RCSfile$
 
-use strict;
+print "1..1\n";
 
-plan tests => 2;
-
-my $tmpfile = tempfile();
-
-open(A,"+>$tmpfile");
+open(A,"+>a");
 print A "_";
 seek(A,0,0);
 
-my $b = "abcd"; 
+$b = "abcd"; 
 $b = "";
 
 read(A,$b,1,4);
 
 close(A);
 
-is($b,"\000\000\000\000_"); # otherwise probably "\000bcd_"
+unlink("a");
 
-SKIP: {
-    skip "no EBADF", 1 if (!exists &Errno::EBADF);
-
-    $! = 0;
-    no warnings 'unopened';
-    read(B,$b,1);
-    ok($! == &Errno::EBADF);
+if ($b eq "\000\000\000\000_") {
+	print "ok 1\n";
+} else { # Probably "\000bcd_"
+	print "not ok 1\n";
 }
+
+unlink 'a';

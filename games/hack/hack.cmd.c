@@ -1,151 +1,105 @@
-/*	$OpenBSD: hack.cmd.c,v 1.9 2016/01/09 18:33:15 mestre Exp $	*/
-
 /*
- * Copyright (c) 1985, Stichting Centrum voor Wiskunde en Informatica,
- * Amsterdam
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- * - Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * - Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * - Neither the name of the Stichting Centrum voor Wiskunde en
- * Informatica, nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior
- * written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
- * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
- * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Stichting Mathematisch Centrum, Amsterdam, 1985.
  */
 
-/*
- * Copyright (c) 1982 Jay Fenlason <hack@gnu.org>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
- * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
- * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+#ifndef lint
+static char rcsid[] = "$NetBSD: hack.cmd.c,v 1.3 1995/03/23 08:29:52 cgd Exp $";
+#endif /* not lint */
 
-#include <ctype.h>
+#include	"hack.h"
+#include	"def.func_tab.h"
 
-#include "def.func_tab.h"
-#include "hack.h"
+int doredraw(),doredotopl(),dodrop(),dodrink(),doread(),dosearch(),dopickup(),
+doversion(),doweararm(),dowearring(),doremarm(),doremring(),dopay(),doapply(),
+dosave(),dowield(),ddoinv(),dozap(),ddocall(),dowhatis(),doengrave(),dotele(),
+dohelp(),doeat(),doddrop(),do_mname(),doidtrap(),doprwep(),doprarm(),
+doprring(),doprgold(),dodiscovered(),dotypeinv(),dolook(),doset(),
+doup(), dodown(), done1(), donull(), dothrow(), doextcmd(), dodip(), dopray();
+#ifdef SHELL
+int dosh();
+#endif SHELL
+#ifdef SUSPEND
+int dosuspend();
+#endif SUSPEND
 
 struct func_tab cmdlist[]={
-	{ '\020', doredotopl },
-	{ '\022', doredraw },
-	{ '\024', dotele },
+	'\020', doredotopl,
+	'\022', doredraw,
+	'\024', dotele,
 #ifdef SUSPEND
-	{ '\032', dosuspend },
-#endif /* SUSPEND */
-	{ 'a', doapply },
+	'\032', dosuspend,
+#endif SUSPEND
+	'a', doapply,
 /*	'A' : UNUSED */
 /*	'b', 'B' : go sw */
-	{ 'c', ddocall },
-	{ 'C', do_mname },
-	{ 'd', dodrop },
-	{ 'D', doddrop },
-	{ 'e', doeat },
-	{ 'E', doengrave },
+	'c', ddocall,
+	'C', do_mname,
+	'd', dodrop,
+	'D', doddrop,
+	'e', doeat,
+	'E', doengrave,
 /*	'f', 'F' : multiple go (might become 'fight') */
 /*	'g', 'G' : UNUSED */
 /*	'h', 'H' : go west */
-	{ 'I', dotypeinv },		/* Robert Viduya */
-	{ 'i', ddoinv },
+	'I', dotypeinv,		/* Robert Viduya */
+	'i', ddoinv,
 /*	'j', 'J', 'k', 'K', 'l', 'L', 'm', 'M', 'n', 'N' : move commands */
 /*	'o', doopen,	*/
-	{ 'O', doset },
-	{ 'p', dopay },
-	{ 'P', dowearring },
-	{ 'q', dodrink },
-	{ 'Q', done2 },
-	{ 'r', doread },
-	{ 'R', doremring },
-	{ 's', dosearch },
-	{ 'S', dosave },
-	{ 't', dothrow },
-	{ 'T', doremarm },
+	'O', doset,
+	'p', dopay,
+	'P', dowearring,
+	'q', dodrink,
+	'Q', done1,
+	'r', doread,
+	'R', doremring,
+	's', dosearch,
+	'S', dosave,
+	't', dothrow,
+	'T', doremarm,
 /*	'u', 'U' : go ne */
-	{ 'v', doversion },
+	'v', doversion,
 /*	'V' : UNUSED */
-	{ 'w', dowield },
-	{ 'W', doweararm },
+	'w', dowield,
+	'W', doweararm,
 /*	'x', 'X' : UNUSED */
 /*	'y', 'Y' : go nw */
-	{ 'z', dozap },
+	'z', dozap,
 /*	'Z' : UNUSED */
-	{ '<', doup },
-	{ '>', dodown },
-	{ '/', dowhatis },
-	{ '?', dohelp },
+	'<', doup,
+	'>', dodown,
+	'/', dowhatis,
+	'?', dohelp,
 #ifdef SHELL
-	{ '!', dosh },
-#endif /* SHELL */
-	{ '.', donull },
-	{ ' ', donull },
-	{ ',', dopickup },
-	{ ':', dolook },
-	{ '^', doidtrap },
-	{ '\\', dodiscovered },		/* Robert Viduya */
-	{ WEAPON_SYM,  doprwep },
-	{ ARMOR_SYM,  doprarm },
-	{ RING_SYM,  doprring },
-	{ '$', doprgold },
-	{ '#', doextcmd },
-	{ '\0', NULL }
+	'!', dosh,
+#endif SHELL
+	'.', donull,
+	' ', donull,
+	',', dopickup,
+	':', dolook,
+	'^', doidtrap,
+	'\\', dodiscovered,		/* Robert Viduya */
+	 WEAPON_SYM,  doprwep,
+	 ARMOR_SYM,  doprarm,
+	 RING_SYM,  doprring,
+	'$', doprgold,
+	'#', doextcmd,
+	0,0,0
 };
 
 struct ext_func_tab extcmdlist[] = {
-	{ "dip", dodip },
-	{ "pray", dopray },
-	{ NULL, donull}
+	"dip", dodip,
+	"pray", dopray,
+	(char *) 0, donull
 };
 
-extern char quitchars[];
+extern char *parse(), lowc(), unctrl(), quitchars[];
 
-static char unctrl(char);
-
-void
-rhack(char *cmd)
+rhack(cmd)
+register char *cmd;
 {
-	struct func_tab *tlist = cmdlist;
+	register struct func_tab *tlist = cmdlist;
 	boolean firsttime = FALSE;
-	int res;
+	register res;
 
 	if(!cmd) {
 		firsttime = TRUE;
@@ -154,7 +108,7 @@ rhack(char *cmd)
 	}
 	if(!*cmd || (*cmd & 0377) == 0377 ||
 	   (flags.no_rest_on_space && *cmd == ' ')){
-		hackbell();
+		bell();
 		flags.move = 0;
 		return;		/* probably we just had an interrupt */
 	}
@@ -164,7 +118,7 @@ rhack(char *cmd)
 		domove();
 		return;
 	}
-	if(movecmd(tolower((unsigned char)*cmd))) {
+	if(movecmd(lowc(*cmd))) {
 		flags.run = 1;
 	rush:
 		if(firsttime){
@@ -178,7 +132,7 @@ rhack(char *cmd)
 			u.ux0 = u.ux + u.dx;
 			u.uy0 = u.uy + u.dy;
 		}
-#endif /* QUEST */
+#endif QUEST
 		domove();
 		return;
 	}
@@ -186,7 +140,7 @@ rhack(char *cmd)
 		flags.run = 2;
 		goto rush;
 	}
-	if(*cmd == 'F' && movecmd(tolower((unsigned char)cmd[1]))) {
+	if(*cmd == 'F' && movecmd(lowc(cmd[1]))) {
 		flags.run = 3;
 		goto rush;
 	}
@@ -195,7 +149,7 @@ rhack(char *cmd)
 		flags.nopick = 1;
 		goto walk;
 	}
-	if(*cmd == 'M' && movecmd(tolower((unsigned char)cmd[1]))) {
+	if(*cmd == 'M' && movecmd(lowc(cmd[1]))) {
 		flags.run = 1;
 		flags.nopick = 1;
 		goto rush;
@@ -207,7 +161,7 @@ rhack(char *cmd)
 		if(cmd[2] == '-') flags.run += 1;
 		goto rush;
 	}
-#endif /* QUEST */
+#endif QUEST
 	while(tlist->f_char) {
 		if(*cmd == tlist->f_char){
 			res = (*(tlist->f_funct))();
@@ -220,7 +174,7 @@ rhack(char *cmd)
 		tlist++;
 	}
 	{ char expcmd[10];
-	  char *cp = expcmd;
+	  register char *cp = expcmd;
 	  while(*cmd && cp-expcmd < sizeof(expcmd)-2) {
 		if(*cmd >= 040 && *cmd < 0177)
 			*cp++ = *cmd++;
@@ -235,11 +189,10 @@ rhack(char *cmd)
 	multi = flags.move = 0;
 }
 
-int
-doextcmd(void)	/* here after # - now read a full-word command */
+doextcmd()	/* here after # - now read a full-word command */
 {
 	char buf[BUFSZ];
-	struct ext_func_tab *efp = extcmdlist;
+	register struct ext_func_tab *efp = extcmdlist;
 
 	pline("# ");
 	getlin(buf);
@@ -255,8 +208,16 @@ doextcmd(void)	/* here after # - now read a full-word command */
 	return(0);
 }
 
-static char
-unctrl(char sym)
+char
+lowc(sym)
+char sym;
+{
+    return( (sym >= 'A' && sym <= 'Z') ? sym+'a'-'A' : sym );
+}
+
+char
+unctrl(sym)
+char sym;
 {
     return( (sym >= ('A' & 037) && sym <= ('Z' & 037)) ? sym + 0140 : sym );
 }
@@ -267,10 +228,10 @@ schar xdir[10] = { -1,-1, 0, 1, 1, 1, 0,-1, 0, 0 };
 schar ydir[10] = {  0,-1,-1,-1, 0, 1, 1, 1, 0, 0 };
 schar zdir[10] = {  0, 0, 0, 0, 0, 0, 0, 0, 1,-1 };
 
-int
-movecmd(char sym)	/* also sets u.dz, but returns false for <> */
+movecmd(sym)	/* also sets u.dz, but returns false for <> */
+char sym;
 {
-	char *dp;
+	register char *dp;
 
 	u.dz = 0;
 	if(!(dp = strchr(sdir, sym))) return(0);
@@ -280,8 +241,8 @@ movecmd(char sym)	/* also sets u.dz, but returns false for <> */
 	return(!u.dz);
 }
 
-int
-getdir(boolean s)
+getdir(s)
+boolean s;
 {
 	char dirsym;
 
@@ -297,27 +258,23 @@ getdir(boolean s)
 	return(1);
 }
 
-void
-confdir(void)
+confdir()
 {
-	int x = rn2(8);
+	register x = rn2(8);
 	u.dx = xdir[x];
 	u.dy = ydir[x];
 }
 
 #ifdef QUEST
-void
-finddir(void)
-{
-	int i, ui = u.di;
-
+finddir(){
+register int i, ui = u.di;
 	for(i = 0; i <= 8; i++){
 		if(flags.run & 1) ui++; else ui += 7;
 		ui %= 8;
 		if(i == 8){
 			pline("Not near a wall.");
 			flags.move = multi = 0;
-			return;
+			return(0);
 		}
 		if(!isroom(u.ux+xdir[ui], u.uy+ydir[ui]))
 			break;
@@ -328,7 +285,7 @@ finddir(void)
 		if(i == 8){
 			pline("Not near a room.");
 			flags.move = multi = 0;
-			return;
+			return(0);
 		}
 		if(isroom(u.ux+xdir[ui], u.uy+ydir[ui]))
 			break;
@@ -338,17 +295,13 @@ finddir(void)
 	u.dy = ydir[ui];
 }
 
-int
-isroom(int x, int y)
-{		/* what about POOL? */
+isroom(x,y)  register x,y; {		/* what about POOL? */
 	return(isok(x,y) && (levl[x][y].typ == ROOM ||
 				(levl[x][y].typ >= LDOOR && flags.run >= 6)));
 }
-#endif /* QUEST */
+#endif QUEST
 
-int
-isok(int x, int y)
-{
+isok(x,y) register x,y; {
 	/* x corresponds to curx, so x==1 is the first column. Ach. %% */
 	return(x >= 1 && x <= COLNO-1 && y >= 0 && y <= ROWNO-1);
 }
