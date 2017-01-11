@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2017/01/11 17:10:32 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2017/01/11 17:10:32 bluhm Exp $
 
 .PHONY: disk mount unconfig clean
 
