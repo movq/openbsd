@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2017/01/13 01:01:19 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2017/01/13 01:01:19 bluhm Exp $
 
 PROGS=		mmap-sysctl-copyin mmap-sysctl-copyout
 OBJS=		${PROGS:S/$/.o/}
