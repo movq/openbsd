@@ -9,6 +9,9 @@ from scapy.all import *
 e=Ether(src=LOCAL_MAC, dst=REMOTE_MAC)
 ip6=IPv6(src=FAKE_NET_ADDR6, dst=REMOTE_ADDR6)
 port=os.getpid() & 0xffff
+# inetd ignores packets from privileged port or nfs
+if port < 1024 or port == 2049:
+	port+=1024
 
 print "Send UDP packet with 1400 octets payload, receive echo."
 data=''.join(random.choice(string.ascii_uppercase + string.ascii_lowercase +
@@ -54,7 +57,7 @@ print "UDP echo has IPv6 and UDP header, so expected payload len is 1448"
 elen = echo.plen + len(IPv6())
 print "elen=%d" % elen
 if elen != 1448:
-	print "ERROR: UDP echo paylod len is %d, expected 1448." % elen
+	print "ERROR: UDP echo payload len is %d, expected 1448." % elen
 	exit(1)
 
 print "Fragments contain multiple of 8 octets, so expected len is 1296"
