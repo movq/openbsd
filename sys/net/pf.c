@@ -1,4 +1,4 @@
-/*	$OpenBSD: pf.c,v 1.1019 2017/03/17 17:19:16 mpi Exp $ */
+/*	$OpenBSD: pf.c,v 1.1019.4.1 2017/05/06 22:46:19 mikeb Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -1256,6 +1256,7 @@ pf_purge_expired_src_nodes(int waslocked)
 				    &tree_src_tracking, cur);
 				locked = 1;
 			}
+			pf_remove_src_node(cur);
 		}
 	}
 
