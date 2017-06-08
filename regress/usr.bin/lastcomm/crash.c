@@ -1,4 +1,4 @@
-/*	$OpenBSD: crash.c,v 1.1 2017/06/08 17:29:33 bluhm Exp $	*/
+/*	$OpenBSD: crash.c,v 1.1.1.1 2017/06/08 17:29:33 bluhm Exp $	*/
 
 #include <err.h>
 #include <stdlib.h>
