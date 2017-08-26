@@ -1,4 +1,4 @@
-/*	$OpenBSD: locore.s,v 1.172 2017/02/06 09:13:41 mpi Exp $	*/
+/*	$OpenBSD: locore.s,v 1.172.4.1 2017/08/26 00:14:20 bluhm Exp $	*/
 /*	$NetBSD: locore.s,v 1.145 1996/05/03 19:41:19 christos Exp $	*/
 
 /*-
@@ -115,6 +115,7 @@
  */
 #define	INTRENTRY \
 	cld			; \
+	SMAP_CLAC		; \
 	pushl	%eax		; \
 	pushl	%ecx		; \
 	pushl	%edx		; \
