@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2018/01/14 22:01:48 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2018/01/14 22:01:48 bluhm Exp $
 
 ED ?=		/bin/ed
 TESTDIR =	${.CURDIR}/../../../bin/ed/test
