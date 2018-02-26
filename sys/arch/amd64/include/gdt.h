@@ -1,4 +1,4 @@
-/*	$OpenBSD: gdt.h,v 1.5 2010/11/13 04:16:42 guenther Exp $	*/
+/*	$OpenBSD: gdt.h,v 1.5.28.1 2018/02/26 12:36:18 bluhm Exp $	*/
 /*	$NetBSD: gdt.h,v 1.1 2003/04/26 18:39:40 fvdl Exp $	*/
 
 /*-
@@ -31,4 +31,3 @@
  */
 
 void gdt_init_cpu(struct cpu_info *);
-void gdt_alloc_cpu(struct cpu_info *);
