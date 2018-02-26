@@ -1,4 +1,4 @@
-/*	$OpenBSD: pte.h,v 1.13 2015/11/09 00:49:33 mlarkin Exp $	*/
+/*	$OpenBSD: pte.h,v 1.13.8.1 2018/02/26 12:36:18 bluhm Exp $	*/
 /*	$NetBSD: pte.h,v 1.1 2003/04/26 18:39:47 fvdl Exp $	*/
 
 /*
@@ -158,6 +158,7 @@ typedef u_int64_t pt_entry_t;		/* PTE */
 
 #ifdef _KERNEL
 extern pt_entry_t pg_nx;	/* NX pte bit */
+extern pt_entry_t pg_g_kern;	/* PG_G if glbl mappings can be used in kern */
 #endif /* _KERNEL */
 
 #endif /* _MACHINE_PTE_H_ */
