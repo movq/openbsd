@@ -1,4 +1,4 @@
-/*	$OpenBSD: dup3.c,v 1.1 2018/04/10 23:00:53 bluhm Exp $	*/
+/*	$OpenBSD: dup3.c,v 1.1.1.1 2018/04/10 23:00:53 bluhm Exp $	*/
 /*
  * Copyright (c) 2018 Alexander Bluhm <bluhm@openbsd.org>
  *
