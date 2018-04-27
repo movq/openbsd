@@ -1,4 +1,4 @@
-/*	$OpenBSD: lpd.h,v 1.1 2018/04/27 16:14:37 eric Exp $	*/
+/*	$OpenBSD: lpd.h,v 1.1.1.1 2018/04/27 16:14:37 eric Exp $	*/
 
 /*
  * Copyright (c) 2017 Eric Faurot <eric@openbsd.org>

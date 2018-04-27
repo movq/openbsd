@@ -1,4 +1,4 @@
-/* $OpenBSD: lp_banner.c,v 1.1 2018/04/27 16:14:36 eric Exp $ */
+/* $OpenBSD: lp_banner.c,v 1.1.1.1 2018/04/27 16:14:36 eric Exp $ */
 
 /*
  * Adapted from the following files in src/usr.sbin/lpr/lpd:

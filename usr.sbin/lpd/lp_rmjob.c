@@ -1,4 +1,4 @@
-/*	$OpenBSD: lp_rmjob.c,v 1.1 2018/04/27 16:14:36 eric Exp $	*/
+/*	$OpenBSD: lp_rmjob.c,v 1.1.1.1 2018/04/27 16:14:36 eric Exp $	*/
 
 /*
  * Copyright (c) 2017 Eric Faurot <eric@openbsd.org>
