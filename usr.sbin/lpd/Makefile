@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2018/04/27 16:14:35 eric Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2018/04/27 16:14:35 eric Exp $
 
 PROG=		lpd
 

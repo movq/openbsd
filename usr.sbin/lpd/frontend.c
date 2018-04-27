@@ -1,4 +1,4 @@
-/*	$OpenBSD: frontend.c,v 1.1 2018/04/27 16:14:35 eric Exp $	*/
+/*	$OpenBSD: frontend.c,v 1.1.1.1 2018/04/27 16:14:35 eric Exp $	*/
 
 /*
  * Copyright (c) 2017 Eric Faurot <eric@openbsd.org>
