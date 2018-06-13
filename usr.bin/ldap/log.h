@@ -1,4 +1,4 @@
-/*	$OpenBSD: log.h,v 1.1 2018/06/13 15:45:58 reyk Exp $	*/
+/*	$OpenBSD: log.h,v 1.1.1.1 2018/06/13 15:45:58 reyk Exp $	*/
 
 /*
  * Copyright (c) 2010-2018 Reyk Floeter <reyk@openbsd.org>

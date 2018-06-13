@@ -1,4 +1,4 @@
-/*	$OpenBSD: ber.c,v 1.1 2018/06/13 15:45:57 reyk Exp $ */
+/*	$OpenBSD: ber.c,v 1.1.1.1 2018/06/13 15:45:57 reyk Exp $ */
 
 /*
  * Copyright (c) 2007 Reyk Floeter <reyk@vantronix.net>
