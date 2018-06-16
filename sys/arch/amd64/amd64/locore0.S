@@ -1,4 +1,4 @@
-/*	$OpenBSD: locore0.S,v 1.7 2018/02/21 19:24:15 guenther Exp $	*/
+/*	$OpenBSD: locore0.S,v 1.7.2.1 2018/06/16 20:37:22 guenther Exp $	*/
 /*	$NetBSD: locore.S,v 1.13 2004/03/25 18:33:17 drochner Exp $	*/
 
 /*
@@ -589,7 +589,7 @@ write_efer:
 	 * 4. Enable paging and the rest of it.
 	 */
 	movl	%cr0,%eax
-	orl	$(CR0_PE|CR0_PG|CR0_NE|CR0_TS|CR0_MP|CR0_WP),%eax
+	orl	$CR0_DEFAULT,%eax
 	movl	%eax,%cr0
 	jmp	compat
 compat:
