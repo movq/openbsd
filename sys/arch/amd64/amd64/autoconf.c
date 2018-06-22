@@ -1,4 +1,4 @@
-/*	$OpenBSD: autoconf.c,v 1.49 2017/06/20 21:05:46 deraadt Exp $	*/
+/*	$OpenBSD: autoconf.c,v 1.49.2.1 2018/06/22 13:05:33 bluhm Exp $	*/
 /*	$NetBSD: autoconf.c,v 1.1 2003/04/26 18:39:26 fvdl Exp $	*/
 
 /*-
@@ -137,10 +137,6 @@ cpu_configure(void)
 #endif
 
 	unmap_startup();
-
-#ifdef MULTIPROCESSOR
-	cpu_init_idle_pcbs();
-#endif
 
 	lcr8(0);
 	spl0();
