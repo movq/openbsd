@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2018/08/21 18:35:18 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2018/08/21 18:35:18 bluhm Exp $
 
 PROGS =		fenv fdump fdfl feget fxproc0
 SRCS_fenv =	fenv.S
