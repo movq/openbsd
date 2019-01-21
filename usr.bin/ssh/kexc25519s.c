@@ -1,4 +1,4 @@
-/* $OpenBSD: kexc25519s.c,v 1.15 2019/01/21 10:05:09 djm Exp $ */
+/* $OpenBSD: kexc25519s.c,v 1.16 2019/01/21 10:20:12 djm Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  * Copyright (c) 2010 Damien Miller.  All rights reserved.
@@ -102,10 +102,10 @@ input_kex_c25519_init(int type, u_int32_t seq, struct ssh *ssh)
 	    sshbuf_ptr(kex->peer), sshbuf_len(kex->peer),
 	    sshbuf_ptr(kex->my), sshbuf_len(kex->my),
 	    server_host_key_blob, sbloblen,
-	    client_pubkey,
-	    server_pubkey,
+	    client_pubkey, pklen,
+	    server_pubkey, sizeof(server_pubkey),
 	    sshbuf_ptr(shared_secret), sshbuf_len(shared_secret),
-	    hash, &hashlen)) < 0)
+	    hash, &hashlen)) != 0)
 		goto out;
 
 	/* sign H */

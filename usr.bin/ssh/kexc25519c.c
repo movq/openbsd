@@ -1,4 +1,4 @@
-/* $OpenBSD: kexc25519c.c,v 1.12 2019/01/21 10:07:22 djm Exp $ */
+/* $OpenBSD: kexc25519c.c,v 1.13 2019/01/21 10:20:12 djm Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  * Copyright (c) 2010 Damien Miller.  All rights reserved.
@@ -107,7 +107,7 @@ input_kex_c25519_reply(int type, u_int32_t seq, struct ssh *ssh)
 		goto out;
 	}
 	if ((r = kexc25519_shared_key(kex->c25519_client_key, server_pubkey,
-	    shared_secret)) < 0)
+	    shared_secret)) != 0)
 		goto out;
 
 	/* calc and verify H */
@@ -119,10 +119,10 @@ input_kex_c25519_reply(int type, u_int32_t seq, struct ssh *ssh)
 	    sshbuf_ptr(kex->my), sshbuf_len(kex->my),
 	    sshbuf_ptr(kex->peer), sshbuf_len(kex->peer),
 	    server_host_key_blob, sbloblen,
-	    kex->c25519_client_pubkey,
-	    server_pubkey,
+	    kex->c25519_client_pubkey, sizeof(kex->c25519_client_pubkey),
+	    server_pubkey, pklen,
 	    sshbuf_ptr(shared_secret), sshbuf_len(shared_secret),
-	    hash, &hashlen)) < 0)
+	    hash, &hashlen)) != 0)
 		goto out;
 
 	if ((r = sshkey_verify(server_host_key, signature, slen, hash, hashlen,
