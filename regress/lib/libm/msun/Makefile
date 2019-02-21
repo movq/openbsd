@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2019/02/21 16:14:03 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2019/02/21 16:14:03 bluhm Exp $
 
 TESTS =
 TESTS +=	conj_test
