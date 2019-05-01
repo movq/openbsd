@@ -1,4 +1,4 @@
-/*	$OpenBSD: resolve.h,v 1.90 2019/04/21 04:11:42 deraadt Exp $ */
+/*	$OpenBSD: resolve.h,v 1.88 2018/12/05 04:28:32 guenther Exp $ */
 
 /*
  * Copyright (c) 1998 Per Fogelstrom, Opsycon AB
@@ -46,13 +46,6 @@ struct load_list {
 	Elf_Addr	moff;
 	long		foff;
 };
-
-/* Alpha uses 8byte entries for DT_HASH */
-#ifdef __alpha__
-typedef uint64_t Elf_Hash_Word;
-#else
-typedef uint32_t Elf_Hash_Word;
-#endif
 
 /*
  *  Structure describing a loaded object.
@@ -144,17 +137,17 @@ struct elf_object {
 	union {
 		struct {
 			/* specific to ELF hash */
-			const Elf_Hash_Word	*buckets;
-			const Elf_Hash_Word	*chains;
+			const Elf_Word	*buckets;
+			const Elf_Word	*chains;
 		} u_elf;
 		struct {
 			/* specific to GNU hash */
-			const Elf_Word		*buckets;
-			const Elf_Word		*chains;
+			const Elf32_Word	*buckets;
+			const Elf32_Word	*chains;
 			const Elf_Addr		*bloom;
-			Elf_Word		mask_bm;
-			Elf_Word		shift2;
-			Elf_Word		symndx;
+			Elf32_Word		mask_bm;
+			Elf32_Word		shift2;
+			Elf32_Word		symndx;
 		} u_gnu;
 	} hash_u;
 #define buckets_elf	hash_u.u_elf.buckets

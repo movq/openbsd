@@ -1,4 +1,4 @@
-/* $OpenBSD: format.c,v 1.189 2019/04/25 18:18:55 nicm Exp $ */
+/* $OpenBSD: format.c,v 1.188 2019/03/29 09:33:24 nicm Exp $ */
 
 /*
  * Copyright (c) 2011 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -904,8 +904,9 @@ format_find(struct format_tree *ft, const char *key, int modifiers)
 	struct environ_entry	*envent;
 	static char		 s[64];
 	struct options_entry	*o;
+	const char		*found;
 	int			 idx;
-	char			*found, *saved;
+	char			*copy, *saved;
 
 	if (~modifiers & FORMAT_TIMESTRING) {
 		o = options_parse_get(global_options, key, &idx, 0);
@@ -932,11 +933,12 @@ format_find(struct format_tree *ft, const char *key, int modifiers)
 				return (NULL);
 			ctime_r(&fe->t, s);
 			s[strcspn(s, "\n")] = '\0';
-			found = xstrdup(s);
+			found = s;
 			goto found;
 		}
 		if (fe->t != 0) {
-			xasprintf(&found, "%lld", (long long)fe->t);
+			xsnprintf(s, sizeof s, "%lld", (long long)fe->t);
+			found = s;
 			goto found;
 		}
 		if (fe->value == NULL && fe->cb != NULL) {
@@ -944,7 +946,7 @@ format_find(struct format_tree *ft, const char *key, int modifiers)
 			if (fe->value == NULL)
 				fe->value = xstrdup("");
 		}
-		found = xstrdup(fe->value);
+		found = fe->value;
 		goto found;
 	}
 
@@ -955,7 +957,7 @@ format_find(struct format_tree *ft, const char *key, int modifiers)
 		if (envent == NULL)
 			envent = environ_find(global_environ, key);
 		if (envent != NULL) {
-			found = xstrdup(envent->value);
+			found = envent->value;
 			goto found;
 		}
 	}
@@ -965,22 +967,23 @@ format_find(struct format_tree *ft, const char *key, int modifiers)
 found:
 	if (found == NULL)
 		return (NULL);
+	copy = xstrdup(found);
 	if (modifiers & FORMAT_BASENAME) {
-		saved = found;
-		found = xstrdup(basename(saved));
+		saved = copy;
+		copy = xstrdup(basename(saved));
 		free(saved);
 	}
 	if (modifiers & FORMAT_DIRNAME) {
-		saved = found;
-		found = xstrdup(dirname(saved));
+		saved = copy;
+		copy = xstrdup(dirname(saved));
 		free(saved);
 	}
 	if (modifiers & FORMAT_QUOTE) {
-		saved = found;
-		found = xstrdup(format_quote(saved));
+		saved = copy;
+		copy = xstrdup(format_quote(saved));
 		free(saved);
 	}
-	return (found);
+	return (copy);
 }
 
 /* Skip until end. */

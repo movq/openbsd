@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_trunk.c,v 1.138 2019/04/23 10:53:45 dlg Exp $	*/
+/*	$OpenBSD: if_trunk.c,v 1.137 2018/08/12 23:50:31 ccardenas Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006, 2007 Reyk Floeter <reyk@openbsd.org>
@@ -194,7 +194,6 @@ trunk_clone_create(struct if_clone *ifc, int unit)
 	 * Attach as an ordinary ethernet device, children will be attached
 	 * as special device IFT_IEEE8023ADLAG.
 	 */
-	if_counters_alloc(ifp);
 	if_attach(ifp);
 	ether_ifattach(ifp);
 
@@ -1119,6 +1118,7 @@ trunk_input(struct ifnet *ifp, struct mbuf *m, void *cookie)
 	struct trunk_port *tp;
 	struct ifnet *trifp = NULL;
 	struct ether_header *eh;
+	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 
 	eh = mtod(m, struct ether_header *);
 	if (ETHER_IS_MULTICAST(eh->ether_dhost))
@@ -1162,7 +1162,8 @@ trunk_input(struct ifnet *ifp, struct mbuf *m, void *cookie)
 	}
 
 
-	if_vinput(trifp, m);
+	ml_enqueue(&ml, m);
+	if_input(trifp, &ml);
 	return (1);
 
  bad:

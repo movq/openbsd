@@ -1,4 +1,4 @@
-/* $OpenBSD: v3_alt.c,v 1.30 2019/04/22 17:10:01 tb Exp $ */
+/* $OpenBSD: v3_alt.c,v 1.28 2018/05/18 19:34:37 tb Exp $ */
 /* Written by Dr Stephen N Henson (steve@openssl.org) for the OpenSSL
  * project.
  */
@@ -127,83 +127,57 @@ STACK_OF(CONF_VALUE) *
 i2v_GENERAL_NAMES(X509V3_EXT_METHOD *method, GENERAL_NAMES *gens,
     STACK_OF(CONF_VALUE) *ret)
 {
-	STACK_OF(CONF_VALUE) *free_ret = NULL;
-	GENERAL_NAME *gen;
 	int i;
-
-	if (ret == NULL) {
-		if ((free_ret = ret = sk_CONF_VALUE_new_null()) == NULL)
-			return NULL;
-	}
+	GENERAL_NAME *gen;
 
 	for (i = 0; i < sk_GENERAL_NAME_num(gens); i++) {
-		if ((gen = sk_GENERAL_NAME_value(gens, i)) == NULL)
-			goto err;
-		if ((ret = i2v_GENERAL_NAME(method, gen, ret)) == NULL)
-			goto err;
+		gen = sk_GENERAL_NAME_value(gens, i);
+		ret = i2v_GENERAL_NAME(method, gen, ret);
 	}
-
+	if (!ret)
+		return sk_CONF_VALUE_new_null();
 	return ret;
-
- err:
-	sk_CONF_VALUE_pop_free(free_ret, X509V3_conf_free);
-
-	return NULL;
 }
 
 STACK_OF(CONF_VALUE) *
 i2v_GENERAL_NAME(X509V3_EXT_METHOD *method, GENERAL_NAME *gen,
     STACK_OF(CONF_VALUE) *ret)
 {
-	STACK_OF(CONF_VALUE) *free_ret = NULL;
 	unsigned char *p;
 	char oline[256], htmp[5];
 	int i;
 
-	if (ret == NULL) {
-		if ((free_ret = ret = sk_CONF_VALUE_new_null()) == NULL)
-			return NULL;
-	}
-
 	switch (gen->type) {
 	case GEN_OTHERNAME:
-		if (!X509V3_add_value("othername", "<unsupported>", &ret))
-			goto err;
+		X509V3_add_value("othername", "<unsupported>", &ret);
 		break;
 
 	case GEN_X400:
-		if (!X509V3_add_value("X400Name", "<unsupported>", &ret))
-			goto err;
+		X509V3_add_value("X400Name", "<unsupported>", &ret);
 		break;
 
 	case GEN_EDIPARTY:
-		if (!X509V3_add_value("EdiPartyName", "<unsupported>", &ret))
-			goto err;
+		X509V3_add_value("EdiPartyName", "<unsupported>", &ret);
 		break;
 
 	case GEN_EMAIL:
-		if (!X509V3_add_value_uchar("email", gen->d.ia5->data, &ret))
-			goto err;
+		X509V3_add_value_uchar("email", gen->d.ia5->data, &ret);
 		break;
 
 	case GEN_DNS:
-		if (!X509V3_add_value_uchar("DNS", gen->d.ia5->data, &ret))
-			goto err;
+		X509V3_add_value_uchar("DNS", gen->d.ia5->data, &ret);
 		break;
 
 	case GEN_URI:
-		if (!X509V3_add_value_uchar("URI", gen->d.ia5->data, &ret))
-			goto err;
+		X509V3_add_value_uchar("URI", gen->d.ia5->data, &ret);
 		break;
 
 	case GEN_DIRNAME:
-		if (X509_NAME_oneline(gen->d.dirn, oline, 256) == NULL)
-			goto err;
-		if (!X509V3_add_value("DirName", oline, &ret))
-			goto err;
+		X509_NAME_oneline(gen->d.dirn, oline, 256);
+		X509V3_add_value("DirName", oline, &ret);
 		break;
 
-	case GEN_IPADD: /* XXX */
+	case GEN_IPADD:
 		p = gen->d.ip->data;
 		if (gen->d.ip->length == 4)
 			(void) snprintf(oline, sizeof oline,
@@ -219,28 +193,18 @@ i2v_GENERAL_NAME(X509V3_EXT_METHOD *method, GENERAL_NAME *gen,
 					strlcat(oline, ":", sizeof(oline));
 			}
 		} else {
-			if (!X509V3_add_value("IP Address", "<invalid>", &ret))
-				goto err;
+			X509V3_add_value("IP Address", "<invalid>", &ret);
 			break;
 		}
-		if (!X509V3_add_value("IP Address", oline, &ret))
-			goto err;
+		X509V3_add_value("IP Address", oline, &ret);
 		break;
 
 	case GEN_RID:
-		if (!i2t_ASN1_OBJECT(oline, 256, gen->d.rid))
-			goto err;
-		if (!X509V3_add_value("Registered ID", oline, &ret))
-			goto err;
+		i2t_ASN1_OBJECT(oline, 256, gen->d.rid);
+		X509V3_add_value("Registered ID", oline, &ret);
 		break;
 	}
-
 	return ret;
-
- err:
-	sk_CONF_VALUE_pop_free(free_ret, X509V3_conf_free);
-
-	return NULL;
 }
 
 int

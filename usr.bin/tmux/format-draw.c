@@ -1,4 +1,4 @@
-/* $OpenBSD: format-draw.c,v 1.8 2019/04/24 20:27:52 nicm Exp $ */
+/* $OpenBSD: format-draw.c,v 1.7 2019/03/28 22:18:46 nicm Exp $ */
 
 /*
  * Copyright (c) 2019 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -837,8 +837,7 @@ format_trim_left(const char *expanded, u_int limit)
 				*out++ = *cp;
 			width++;
 			cp++;
-		} else
-			cp++;
+		}
 	}
 	*out = '\0';
 	return (copy);
@@ -884,8 +883,7 @@ format_trim_right(const char *expanded, u_int limit)
 				*out++ = *cp;
 			width++;
 			cp++;
-		} else
-			cp++;
+		}
 	}
 	*out = '\0';
 	return (copy);
