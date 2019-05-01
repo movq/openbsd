@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_vlan.c,v 1.186 2019/04/22 03:29:40 dlg Exp $	*/
+/*	$OpenBSD: if_vlan.c,v 1.183 2019/02/15 13:00:51 mpi Exp $	*/
 
 /*
  * Copyright 1998 Massachusetts Institute of Technology
@@ -174,7 +174,6 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 
 	refcnt_init(&ifv->ifv_refcnt);
 	ifv->ifv_prio = IF_HDRPRIO_PACKET;
-	ifv->ifv_rxprio = IF_HDRPRIO_OUTER;
 
 	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST;
 	ifp->if_xflags = IFXF_CLONED|IFXF_MPSAFE;
@@ -348,6 +347,7 @@ vlan_input(struct ifnet *ifp0, struct mbuf *m, void *cookie)
 	SRPL_HEAD(, ifvlan)		*tagh, *list;
 	struct srp_ref			 sr;
 	u_int				 tag;
+	struct mbuf_list		 ml = MBUF_LIST_INITIALIZER();
 	u_int16_t			 etype;
 
 	eh = mtod(m, struct ether_header *);
@@ -373,6 +373,11 @@ vlan_input(struct ifnet *ifp0, struct mbuf *m, void *cookie)
 
 	/* From now on ether_vtag is fine */
 	tag = EVL_VLANOFTAG(m->m_pkthdr.ether_vtag);
+	m->m_pkthdr.pf.prio = EVL_PRIOFTAG(m->m_pkthdr.ether_vtag);
+
+	/* IEEE 802.1p has prio 0 and 1 swapped */
+	if (m->m_pkthdr.pf.prio <= 1)
+		m->m_pkthdr.pf.prio = !m->m_pkthdr.pf.prio;
 
 	list = &tagh[TAG_HASH(tag)];
 	SRPL_FOREACH(ifv, &sr, list, ifv_list) {
@@ -403,21 +408,8 @@ vlan_input(struct ifnet *ifp0, struct mbuf *m, void *cookie)
 		m_adj(m, EVL_ENCAPLEN);
 	}
 
-	switch (ifv->ifv_rxprio) {
-	case IF_HDRPRIO_PACKET:
-		break;
-	case IF_HDRPRIO_OUTER:
-		m->m_pkthdr.pf.prio = EVL_PRIOFTAG(m->m_pkthdr.ether_vtag);
-		break;
-	default:
-		m->m_pkthdr.pf.prio = ifv->ifv_rxprio;
-		/* IEEE 802.1p has prio 0 and 1 swapped */
-		if (m->m_pkthdr.pf.prio <= 1)
-			m->m_pkthdr.pf.prio = !m->m_pkthdr.pf.prio;
-		break;
-	}
-
-	if_vinput(&ifv->ifv_if, m);
+	ml_enqueue(&ml, m);
+	if_input(&ifv->ifv_if, &ml);
 	SRPL_LEAVE(&sr);
 	return (1);
 
@@ -732,25 +724,18 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		break;
 
 	case SIOCSTXHPRIO:
-		error = if_txhprio_l2_check(ifr->ifr_hdrprio);
-		if (error != 0)
+		if (ifr->ifr_hdrprio == IF_HDRPRIO_PACKET)
+			;
+		else if (ifr->ifr_hdrprio > IF_HDRPRIO_MAX ||
+		    ifr->ifr_hdrprio < IF_HDRPRIO_MIN) {
+			error = EINVAL;
 			break;
+		}
 
 		ifv->ifv_prio = ifr->ifr_hdrprio;
 		break;
 	case SIOCGTXHPRIO:
 		ifr->ifr_hdrprio = ifv->ifv_prio;
-		break;
-
-	case SIOCSRXHPRIO:
-		error = if_rxhprio_l2_check(ifr->ifr_hdrprio);
-		if (error != 0)
-			break;
-
-		ifv->ifv_rxprio = ifr->ifr_hdrprio;
-		break;
-	case SIOCGRXHPRIO:
-		ifr->ifr_hdrprio = ifv->ifv_rxprio;
 		break;
 
 	default:

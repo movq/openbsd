@@ -1,4 +1,4 @@
-/* $OpenBSD: cmd.c,v 1.144 2019/04/25 19:36:59 nicm Exp $ */
+/* $OpenBSD: cmd.c,v 1.142 2019/03/18 11:58:40 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -321,11 +321,10 @@ cmd_try_alias(int *argc, char ***argv)
 {
 	struct options_entry		 *o;
 	struct options_array_item	 *a;
-	union options_value		 *ov;
 	int				  old_argc = *argc, new_argc, i;
 	char				**old_argv = *argv, **new_argv;
 	size_t				  wanted;
-	const char			 *cp = NULL;
+	const char			 *s, *cp = NULL;
 
 	o = options_get_only(global_options, "command-alias");
 	if (o == NULL)
@@ -334,12 +333,14 @@ cmd_try_alias(int *argc, char ***argv)
 
 	a = options_array_first(o);
 	while (a != NULL) {
-		ov = options_array_item_value(a);
-		cp = strchr(ov->string, '=');
-		if (cp != NULL &&
-		    (size_t)(cp - ov->string) == wanted &&
-		    strncmp(old_argv[0], ov->string, wanted) == 0)
-			break;
+		s = options_array_item_value(a);
+		if (s != NULL) {
+			cp = strchr(s, '=');
+			if (cp != NULL &&
+			    (size_t)(cp - s) == wanted &&
+			    strncmp(old_argv[0], s, wanted) == 0)
+				break;
+		}
 		a = options_array_next(a);
 	}
 	if (a == NULL)

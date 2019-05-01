@@ -1,4 +1,4 @@
-/*	$OpenBSD: ospfe.c,v 1.106 2019/04/23 06:18:02 remi Exp $ */
+/*	$OpenBSD: ospfe.c,v 1.103 2018/09/27 12:34:06 benno Exp $ */
 
 /*
  * Copyright (c) 2005 Claudio Jeker <claudio@openbsd.org>
@@ -900,8 +900,7 @@ orig_rtr_lsa(struct area *area)
 				if (ibuf_add(buf, &rtr_link, sizeof(rtr_link)))
 					fatalx("orig_rtr_lsa: ibuf_add failed");
 			}
-			if ((iface->flags & IFF_UP) &&
-			    LINK_STATE_IS_UP(iface->linkstate)) {
+			if (iface->state & IF_STA_POINTTOPOINT) {
 				log_debug("orig_rtr_lsa: stub net, "
 				    "interface %s", iface->name);
 				bzero(&rtr_link, sizeof(rtr_link));
@@ -909,16 +908,11 @@ orig_rtr_lsa(struct area *area)
 					rtr_link.id = nbr->addr.s_addr;
 					rtr_link.data = 0xffffffff;
 				} else {
-					rtr_link.id = iface->addr.s_addr &
-					              iface->mask.s_addr;
+					rtr_link.id = iface->addr.s_addr;
 					rtr_link.data = iface->mask.s_addr;
 				}
 				rtr_link.type = LINK_TYPE_STUB_NET;
-				if (iface->dependon[0] != '\0' &&
-				    iface->depend_ok == 0)
-					rtr_link.metric = MAX_METRIC;
-				else
-					rtr_link.metric = htons(iface->metric);
+				rtr_link.metric = htons(iface->metric);
 				num_links++;
 				if (ibuf_add(buf, &rtr_link, sizeof(rtr_link)))
 					fatalx("orig_rtr_lsa: ibuf_add failed");

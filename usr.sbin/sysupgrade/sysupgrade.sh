@@ -1,6 +1,6 @@
 #!/bin/ksh
 #
-# $OpenBSD: sysupgrade.sh,v 1.1 2019/04/25 20:22:52 florian Exp $
+# $OpenBSD: sysupgrade.sh,v 1.25 2019/09/28 17:30:07 ajacoutot Exp $
 #
 # Copyright (c) 1997-2015 Todd Miller, Theo de Raadt, Ken Westerback
 # Copyright (c) 2015 Robert Peichaer <rpe@openbsd.org>
@@ -22,6 +22,7 @@
 
 set -e
 umask 0022
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
 ARCH=$(uname -m)
 SETSDIR=/home/_sysupgrade
@@ -33,21 +34,28 @@ ug_err()
 
 usage()
 {
-	ug_err "usage: ${0##*/} [-c] [install URL]"
+	ug_err "usage: ${0##*/} [-fkn] [-r | -s] [installurl]"
 }
 
 unpriv()
 {
-	local _file=$2 _user=_syspatch
+	local _file _rc=0 _user=_syspatch
 
-	if [[ $1 == -f && -n ${_file} ]]; then
+	if [[ $1 == -f ]]; then
+		_file=$2
+		shift 2
+	fi
+ 	if [[ -n ${_file} ]]; then
 		>${_file}
 		chown "${_user}" "${_file}"
-		shift 2
 	fi
 	(($# >= 1))
 
-	eval su -s /bin/sh ${_user} -c "'$@'"
+	eval su -s /bin/sh ${_user} -c "'$@'" || _rc=$?
+
+	[[ -n ${_file} ]] && chown root "${_file}"
+
+	return ${_rc}
 }
 
 # Remove all occurrences of first argument from list formed by the remaining
@@ -62,14 +70,28 @@ rmel() {
 	echo -n "$_c"
 }
 
-CURRENT=false
+RELEASE=false
+SNAP=false
+FORCE=false
+KEEP=false
+REBOOT=true
 
-while getopts c arg; do
-        case ${arg} in
-        c)      CURRENT=true;;
-        *)      usage;;
-        esac
+while getopts fknrs arg; do
+	case ${arg} in
+	f)	FORCE=true;;
+	k)	KEEP=true;;
+	n)	REBOOT=false;;
+	r)	RELEASE=true;;
+	s)	SNAP=true;;
+	*)	usage;;
+	esac
 done
+
+(($(id -u) != 0)) && ug_err "${0##*/}: need root privileges"
+
+if $RELEASE && $SNAP; then
+	usage
+fi
 
 set -A _KERNV -- $(sysctl -n kern.version |
 	sed 's/^OpenBSD \([0-9]\)\.\([0-9]\)\([^ ]*\).*/\1.\2 \3/;q')
@@ -78,53 +100,75 @@ shift $(( OPTIND -1 ))
 
 case $# in
 0)	MIRROR=$(sed 's/#.*//;/^$/d' /etc/installurl) 2>/dev/null ||
-		installurl=https://cdn.openbsd.org/pub/OpenBSD
+		MIRROR=https://cdn.openbsd.org/pub/OpenBSD
 	;;
 1)	MIRROR=$1
 	;;
 *)	usage
 esac
 
-if [[ ${#_KERNV[*]} == 2 ]]; then
-	CURRENT=true
-else
-	NEXT_VERSION=$(echo ${_KERNV[0]} + 0.1 | bc -l)
+if ! $RELEASE && [[ ${#_KERNV[*]} == 2 ]]; then
+	SNAP=true
 fi
 
-if $CURRENT; then
+NEXT_VERSION=$(echo ${_KERNV[0]} + 0.1 | bc)
+
+if $SNAP; then
 	URL=${MIRROR}/snapshots/${ARCH}/
 else
 	URL=${MIRROR}/${NEXT_VERSION}/${ARCH}/
 fi
 
-# XXX be more paranoid who owns this directory
+if [[ -e ${SETSDIR} ]]; then
+	eval $(stat -s ${SETSDIR})
+	[[ $st_uid -eq 0 ]] ||
+		 ug_err "${SETSDIR} needs to be owned by root:wheel"
+	[[ $st_gid -eq 0 ]] ||
+		 ug_err "${SETSDIR} needs to be owned by root:wheel"
+	[[ $st_mode -eq 040755 ]] || 
+		ug_err "${SETSDIR} is not a directory with permissions 0755"
+else
+	mkdir -p ${SETSDIR}
+fi
 
-mkdir -p ${SETSDIR}
 cd ${SETSDIR}
 
 unpriv -f SHA256.sig ftp -Vmo SHA256.sig ${URL}SHA256.sig
 
-# XXX run this unpriv?
-SIGNIFY_KEY=/etc/signify/openbsd-$(sed -n \
-	's/^SHA256 (base\([0-9]\{2,3\}\)\.tgz) .*/\1/p' SHA256.sig)-base.pub
+_KEY=openbsd-${_KERNV[0]%.*}${_KERNV[0]#*.}-base.pub
+_NEXTKEY=openbsd-${NEXT_VERSION%.*}${NEXT_VERSION#*.}-base.pub
+
+read _LINE <SHA256.sig
+case ${_LINE} in
+*\ ${_KEY})	SIGNIFY_KEY=/etc/signify/${_KEY} ;;
+*\ ${_NEXTKEY})	SIGNIFY_KEY=/etc/signify/${_NEXTKEY} ;;
+*)		ug_err "invalid signing key" ;;
+esac
 
 [[ -f ${SIGNIFY_KEY} ]] || ug_err "cannot find ${SIGNIFY_KEY}"
 
-unpriv signify -qV -p "${SIGNIFY_KEY}" -x SHA256.sig -e -m /dev/null
+unpriv -f SHA256 signify -Ve -p "${SIGNIFY_KEY}" -x SHA256.sig -m SHA256
+rm SHA256.sig
 
-SETS=$(sed -e 's/^SHA256 (\(.*\)) .*/\1/' \
-    -e "/^INSTALL.${ARCH}\$/p;/^bsd/p;/$version\.tgz\$/p;d" SHA256.sig)
+if cmp -s /var/db/installed.SHA256 SHA256 && ! $FORCE; then
+	echo "Already on latest snapshot."
+	exit 0
+fi
+
+# INSTALL.*, bsd*, *.tgz
+SETS=$(sed -n -e 's/^SHA256 (\(.*\)) .*/\1/' \
+    -e '/^INSTALL\./p;/^bsd/p;/\.tgz$/p' SHA256)
 
 OLD_FILES=$(ls)
-OLD_FILES=$(rmel SHA256.sig $OLD_FILES)
+OLD_FILES=$(rmel SHA256 $OLD_FILES)
 DL=$SETS
 
-for f in $SETS; do
-	signify -C -p "${SIGNIFY_KEY}" -x SHA256.sig $f \
-	    >/dev/null 2>&1 && {
+[[ -n ${OLD_FILES} ]] && echo Verifying old sets.
+for f in ${OLD_FILES}; do
+	if cksum -C SHA256 $f >/dev/null 2>&1; then
 		DL=$(rmel $f ${DL})
 		OLD_FILES=$(rmel $f ${OLD_FILES})
-	}
+	fi
 done
 
 [[ -n ${OLD_FILES} ]] && rm ${OLD_FILES}
@@ -132,10 +176,33 @@ for f in ${DL}; do
 	unpriv -f $f ftp -Vmo ${f} ${URL}${f}
 done
 
-unpriv signify -C -p "${SIGNIFY_KEY}" -x SHA256.sig ${SETS}
+if [[ -n ${DL} ]]; then
+	echo Verifying sets.
+	unpriv cksum -qC SHA256 ${DL}
+fi
 
-cp bsd.rd /nbsd.upgrade
-ln /nbsd.upgrade /bsd.upgrade
-rm /nbsd.upgrade
+${KEEP} && > keep
 
-exec reboot
+cat <<__EOT >/auto_upgrade.conf
+Location of sets = disk
+Pathname to the sets = /home/_sysupgrade/
+Set name(s) = done
+Directory does not contain SHA256.sig. Continue without verification = yes
+__EOT
+
+if ! ${KEEP}; then
+	CLEAN=$(echo SHA256 ${SETS} | sed -e 's/ /,/g')
+	cat <<__EOT > /etc/rc.firsttime
+rm -f /home/_sysupgrade/{${CLEAN}}
+__EOT
+fi
+
+install -F -m 700 bsd.rd /bsd.upgrade
+sync
+
+if ${REBOOT}; then
+	echo Upgrading.
+	exec reboot
+else
+	echo "Will upgrade on next reboot"
+fi

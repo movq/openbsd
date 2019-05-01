@@ -1,4 +1,4 @@
-/*	$OpenBSD: vfs_lockf.c,v 1.39 2019/04/20 14:13:11 anton Exp $	*/
+/*	$OpenBSD: vfs_lockf.c,v 1.36 2019/03/31 11:33:11 visa Exp $	*/
 /*	$NetBSD: vfs_lockf.c,v 1.7 1996/02/04 02:18:21 christos Exp $	*/
 
 /*
@@ -43,38 +43,7 @@
 #include <sys/pool.h>
 #include <sys/fcntl.h>
 #include <sys/lockf.h>
-#include <sys/rwlock.h>
 #include <sys/unistd.h>
-
-/*
- * The lockf structure is a kernel structure which contains the information
- * associated with a byte range lock.  The lockf structures are linked into
- * the inode structure. Locks are sorted by the starting byte of the lock for
- * efficiency.
- */
-TAILQ_HEAD(locklist, lockf);
-
-struct lockf {
-	short	lf_flags;	 /* Lock semantics: F_POSIX, F_FLOCK, F_WAIT */
-	short	lf_type;	 /* Lock type: F_RDLCK, F_WRLCK */
-	off_t	lf_start;	 /* The byte # of the start of the lock */
-	off_t	lf_end;		 /* The byte # of the end of the lock (-1=EOF)*/
-	caddr_t	lf_id;		 /* The id of the resource holding the lock */
-	struct	lockf_state *lf_state;	/* State associated with the lock */
-	TAILQ_ENTRY(lockf) lf_entry;
-	struct	lockf *lf_blk;	 /* The lock that blocks us */
-	struct	locklist lf_blkhd;	/* The list of blocked locks */
-	TAILQ_ENTRY(lockf) lf_block; /* A request waiting for a lock */
-	uid_t	lf_uid;		/* User ID responsible */
-	pid_t	lf_pid;		/* POSIX - owner pid */
-};
-
-struct lockf_state {
-	TAILQ_HEAD(, lockf)	  ls_locks;	/* list of locks */
-	struct lockf_state	**ls_owner;	/* owner */
-	int		 	  ls_refs;	/* reference counter */
-	int			  ls_pending;	/* pending lock operations */
-};
 
 struct pool lockf_state_pool;
 struct pool lockf_pool;
@@ -83,7 +52,7 @@ struct pool lockf_pool;
  * This variable controls the maximum number of processes that will
  * be checked in doing deadlock detection.
  */
-int maxlockdepth = 50;
+int maxlockdepth = MAXDEPTH;
 
 #define SELF	0x1
 #define OTHERS	0x2
@@ -120,19 +89,13 @@ void lf_wakelock(struct lockf *, int);
 void ls_ref(struct lockf_state *);
 void ls_rele(struct lockf_state *);
 
-/*
- * Serializes access to each instance of struct lockf and struct lockf_state
- * and each pointer from a vnode to struct lockf_state.
- */
-struct rwlock lockf_lock = RWLOCK_INITIALIZER("lockflk");
-
 void
 lf_init(void)
 {
 	pool_init(&lockf_state_pool, sizeof(struct lockf_state), 0, IPL_NONE,
-	    PR_WAITOK | PR_RWLOCK, "lockfspl", NULL);
+	    PR_WAITOK, "lockfspl", NULL);
 	pool_init(&lockf_pool, sizeof(struct lockf), 0, IPL_NONE,
-	    PR_WAITOK | PR_RWLOCK, "lockfpl", NULL);
+	    PR_WAITOK, "lockfpl", NULL);
 }
 
 struct lockf *lf_alloc(uid_t, int);
@@ -141,16 +104,12 @@ void lf_free(struct lockf *);
 void
 ls_ref(struct lockf_state *ls)
 {
-	rw_assert_wrlock(&lockf_lock);
-
 	ls->ls_refs++;
 }
 
 void
 ls_rele(struct lockf_state *ls)
 {
-	rw_assert_wrlock(&lockf_lock);
-
 	if (--ls->ls_refs > 0)
 		return;
 
@@ -203,8 +162,6 @@ lf_free(struct lockf *lock)
 {
 	struct uidinfo *uip;
 
-	rw_assert_wrlock(&lockf_lock);
-
 	LFPRINT(("lf_free", lock), DEBUG_LINK);
 
 #ifdef LOCKF_DIAGNOSTIC
@@ -231,7 +188,7 @@ lf_advlock(struct lockf_state **state, off_t size, caddr_t id, int op,
 	struct lockf_state *ls;
 	struct lockf *lock;
 	off_t start, end;
-	int error = 0;
+	int error;
 
 	/*
 	 * Convert the flock structure into a start and end.
@@ -266,30 +223,35 @@ lf_advlock(struct lockf_state **state, off_t size, caddr_t id, int op,
 		end = -1;
 	}
 
-	rw_enter_write(&lockf_lock);
+	if (*state == NULL) {
+		ls = pool_get(&lockf_state_pool, PR_WAITOK | PR_ZERO);
+		/* pool_get() can sleep, ensure the race was won. */
+		if (*state == NULL) {
+			*state = ls;
+			ls->ls_owner = state;
+			TAILQ_INIT(&ls->ls_locks);
+		} else {
+			pool_put(&lockf_state_pool, ls);
+		}
+	}
 	ls = *state;
+	ls_ref(ls);
 
 	/*
 	 * Avoid the common case of unlocking when inode has no locks.
 	 */
-	if (ls == NULL && op != F_SETLK) {
-		fl->l_type = F_UNLCK;
-		goto out;
+	if (TAILQ_EMPTY(&ls->ls_locks)) {
+		if (op != F_SETLK) {
+			ls_rele(ls);
+			fl->l_type = F_UNLCK;
+			return (0);
+		}
 	}
-
-	if (ls == NULL) {
-		ls = pool_get(&lockf_state_pool, PR_WAITOK | PR_ZERO);
-		ls->ls_owner = state;
-		TAILQ_INIT(&ls->ls_locks);
-		*state = ls;
-	}
-	ls_ref(ls);
 
 	lock = lf_alloc(p->p_ucred->cr_uid, op == F_SETLK ? 1 : 2);
 	if (!lock) {
 		ls_rele(ls);
-		error = ENOLCK;
-		goto out;
+		return (ENOLCK);
 	}
 	lock->lf_flags = flags;
 	lock->lf_type = fl->l_type;
@@ -303,25 +265,20 @@ lf_advlock(struct lockf_state **state, off_t size, caddr_t id, int op,
 
 	switch (op) {
 	case F_SETLK:
-		error = lf_setlock(lock);
-		break;
+		return (lf_setlock(lock));
 	case F_UNLCK:
 		error = lf_clearlock(lock);
 		lf_free(lock);
-		break;
+		return (error);
 	case F_GETLK:
 		error = lf_getlock(lock, fl);
 		lf_free(lock);
-		break;
+		return (error);
 	default:
 		lf_free(lock);
-		error = EINVAL;
-		break;
+		return (EINVAL);
 	}
-
-out:
-	rw_exit_write(&lockf_lock);
-	return (error);
+	/* NOTREACHED */
 }
 
 /*
@@ -334,8 +291,6 @@ lf_setlock(struct lockf *lock)
 	struct lockf *overlap, *ltmp;
 	static char lockstr[] = "lockf";
 	int ovcase, priority, needtolink, error;
-
-	rw_assert_wrlock(&lockf_lock);
 
 	LFPRINT(("lf_setlock", lock), DEBUG_SETLOCK);
 
@@ -368,7 +323,6 @@ lf_setlock(struct lockf *lock)
 			int i = 0;
 
 			/* The block is waiting on something */
-			KERNEL_LOCK();
 			wproc = (struct proc *)block->lf_id;
 			while (wproc->p_wchan &&
 			    (wproc->p_wmesg == lockstr) &&
@@ -380,12 +334,10 @@ lf_setlock(struct lockf *lock)
 					break;
 				wproc = (struct proc *)waitblock->lf_id;
 				if (wproc == (struct proc *)lock->lf_id) {
-					KERNEL_UNLOCK();
 					lf_free(lock);
 					return (EDEADLK);
 				}
 			}
-			KERNEL_UNLOCK();
 		}
 		/*
 		 * For flock type locks, we must first remove
@@ -406,9 +358,7 @@ lf_setlock(struct lockf *lock)
 		LFPRINT(("lf_setlock: blocking on", block), DEBUG_SETLOCK);
 		TAILQ_INSERT_TAIL(&block->lf_blkhd, lock, lf_block);
 		lock->lf_state->ls_pending++;
-		KERNEL_LOCK();
-		error = rwsleep(lock, &lockf_lock, priority, lockstr, 0);
-		KERNEL_UNLOCK();
+		error = tsleep(lock, priority, lockstr, 0);
 		lock->lf_state->ls_pending--;
 		wakeup_one(lock->lf_state);
 		if (lock->lf_blk != NULL) {
@@ -556,15 +506,12 @@ lf_setlock(struct lockf *lock)
 int
 lf_clearlock(struct lockf *lock)
 {
-	struct lockf *lf, *overlap;
+	struct lockf *lf = TAILQ_FIRST(&lock->lf_state->ls_locks);
+	struct lockf *overlap;
 	int ovcase;
 
-	rw_assert_wrlock(&lockf_lock);
-
-	lf = TAILQ_FIRST(&lock->lf_state->ls_locks);
 	if (lf == NULL)
 		return (0);
-
 	LFPRINT(("lf_clearlock", lock), DEBUG_CLEARLOCK);
 	while ((ovcase = lf_findoverlap(lf, lock, SELF, &overlap))) {
 		lf_wakelock(overlap, 0);
@@ -615,8 +562,6 @@ lf_getlock(struct lockf *lock, struct flock *fl)
 {
 	struct lockf *block;
 
-	rw_assert_wrlock(&lockf_lock);
-
 	LFPRINT(("lf_getlock", lock), DEBUG_CLEARLOCK);
 
 	if ((block = lf_getblock(lock)) != NULL) {
@@ -642,8 +587,6 @@ struct lockf *
 lf_getblock(struct lockf *lock)
 {
 	struct lockf *overlap, *lf;
-
-	rw_assert_wrlock(&lockf_lock);
 
 	lf = TAILQ_FIRST(&lock->lf_state->ls_locks);
 	while (lf_findoverlap(lf, lock, OTHERS, &overlap) != 0) {
@@ -673,8 +616,6 @@ lf_findoverlap(struct lockf *lf, struct lockf *lock, int type,
     struct lockf **overlap)
 {
 	off_t start, end;
-
-	rw_assert_wrlock(&lockf_lock);
 
 	LFPRINT(("lf_findoverlap: looking for overlap in", lock), DEBUG_FINDOVR);
 
@@ -748,16 +689,12 @@ lf_findoverlap(struct lockf *lf, struct lockf *lock, int type,
  * Purge all locks associated with the given lock state.
  */
 void
-lf_purgelocks(struct lockf_state **state)
+lf_purgelocks(struct lockf_state *ls)
 {
-	struct lockf_state *ls;
 	struct lockf *lock;
 
-	rw_enter_write(&lockf_lock);
-
-	ls = *state;
 	if (ls == NULL)
-		goto out;
+		return;
 
 	ls_ref(ls);
 
@@ -767,9 +704,7 @@ lf_purgelocks(struct lockf_state **state)
 		lf_wakelock(lock, F_INTR);
 	}
 	while (ls->ls_pending > 0) {
-		KERNEL_LOCK();
-		rwsleep(ls, &lockf_lock, PLOCK, "lockfp", 0);
-		KERNEL_UNLOCK();
+		tsleep(ls, PLOCK, "lockfp", 0);
 	}
 
 	/*
@@ -786,9 +721,6 @@ lf_purgelocks(struct lockf_state **state)
 	KASSERT(ls->ls_refs == 1);
 #endif
 	ls_rele(ls);
-
-out:
-	rw_exit_write(&lockf_lock);
 }
 
 /*
@@ -799,8 +731,6 @@ void
 lf_split(struct lockf *lock1, struct lockf *lock2)
 {
 	struct lockf *splitlock;
-
-	rw_assert_wrlock(&lockf_lock);
 
 	LFPRINT(("lf_split", lock1), DEBUG_SPLIT);
 	LFPRINT(("splitting from", lock2), DEBUG_SPLIT);
@@ -849,8 +779,6 @@ lf_wakelock(struct lockf *lock, int flags)
 {
 	struct lockf *wakelock;
 
-	rw_assert_wrlock(&lockf_lock);
-
 	while ((wakelock = TAILQ_FIRST(&lock->lf_blkhd))) {
 		TAILQ_REMOVE(&lock->lf_blkhd, wakelock, lf_block);
 		wakelock->lf_blk = NULL;
@@ -875,7 +803,7 @@ lf_print(const char *tag, struct lockf *lock)
 		printf("\n");
 		return;
 	}
-	printf(", %s %p %s, start %lld, end %lld",
+	printf(", %s %p %s, start %llx, end %llx",
 		lock->lf_flags & F_POSIX ? "posix" : "flock",
 		lock->lf_id,
 		lock->lf_type == F_RDLCK ? "shared" :

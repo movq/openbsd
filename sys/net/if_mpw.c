@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_mpw.c,v 1.54 2019/04/23 10:53:45 dlg Exp $ */
+/*	$OpenBSD: if_mpw.c,v 1.49 2019/04/02 10:50:16 dlg Exp $ */
 
 /*
  * Copyright (c) 2015 Rafael Zalamena <rzalamena@openbsd.org>
@@ -53,8 +53,6 @@ struct mpw_softc {
 	struct arpcom		sc_ac;
 #define sc_if			sc_ac.ac_if
 
-	int			sc_txhprio;
-	int			sc_rxhprio;
 	unsigned int		sc_rdomain;
 	struct ifaddr		sc_ifa;
 	struct sockaddr_mpls	sc_smpls; /* Local label */
@@ -116,12 +114,9 @@ mpw_clone_create(struct if_clone *ifc, int unit)
 
 	sc->sc_dead = 0;
 
-	if_counters_alloc(ifp);
 	if_attach(ifp);
 	ether_ifattach(ifp);
 
-	sc->sc_txhprio = 0;
-	sc->sc_rxhprio = IF_HDRPRIO_PACKET;
 	sc->sc_rdomain = 0;
 	sc->sc_ifa.ifa_ifp = ifp;
 	sc->sc_ifa.ifa_addr = sdltosa(ifp->if_sadl);
@@ -470,28 +465,6 @@ mpw_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		ifr->ifr_rdomainid = sc->sc_rdomain;
 		break;
 
-	case SIOCSTXHPRIO:
-		error = if_txhprio_l2_check(ifr->ifr_hdrprio);
-		if (error != 0)
-			break;
-
-		sc->sc_txhprio = ifr->ifr_hdrprio;
-		break;
-	case SIOCGTXHPRIO:
-		ifr->ifr_hdrprio = sc->sc_txhprio;
-		break;
-
-	case SIOCSRXHPRIO:
-		error = if_rxhprio_l2_check(ifr->ifr_hdrprio);
-		if (error != 0)
-			break;
-
-		sc->sc_rxhprio = ifr->ifr_hdrprio;
-		break;
-	case SIOCGRXHPRIO:
-		ifr->ifr_hdrprio = sc->sc_rxhprio;
-		break;
-
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
 		break;
@@ -507,18 +480,16 @@ mpw_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 static void
 mpw_input(struct mpw_softc *sc, struct mbuf *m)
 {
+	struct mbuf_list ml = MBUF_LIST_INITIALIZER();
 	struct ifnet *ifp = &sc->sc_if;
 	struct shim_hdr *shim;
 	struct mbuf *n;
-	uint32_t exp;
-	int rxprio;
 	int off;
 
 	if (!ISSET(ifp->if_flags, IFF_RUNNING))
 		goto drop;
 
 	shim = mtod(m, struct shim_hdr *);
-	exp = ntohl(shim->shim_label & MPLS_EXP_MASK) >> MPLS_EXP_OFFSET;
 	if (sc->sc_fword) {
 		uint32_t flow;
 
@@ -592,19 +563,6 @@ mpw_input(struct mpw_softc *sc, struct mbuf *m)
 		m = n;
 	}
 
-	rxprio = sc->sc_rxhprio;
-	switch (rxprio) {
-	case IF_HDRPRIO_PACKET:
-		/* nop */
-		break;
-	case IF_HDRPRIO_OUTER:
-		m->m_pkthdr.pf.prio = exp;
-		break;
-	default:
-		m->m_pkthdr.pf.prio = rxprio;
-		break;
-	}
-
 	m->m_pkthdr.ph_ifidx = ifp->if_index;
 	m->m_pkthdr.ph_rtableid = ifp->if_rdomain;
 
@@ -612,7 +570,8 @@ mpw_input(struct mpw_softc *sc, struct mbuf *m)
         pf_pkt_addr_changed(m);
 #endif
 
-	if_vinput(ifp, m);
+	ml_enqueue(&ml, m);
+	if_input(ifp, &ml);
 	return;
 drop:
 	m_freem(m);
@@ -646,9 +605,7 @@ mpw_start(struct ifnet *ifp)
 		.smpls_len = sizeof(smpls),
 		.smpls_family = AF_MPLS,
 	};
-	int txprio = sc->sc_txhprio;
-	uint8_t prio;
-	uint32_t exp, bos;
+	uint32_t bos;
 
 	n = sc->sc_neighbor;
 	if (!ISSET(ifp->if_flags, IFF_RUNNING) ||
@@ -695,16 +652,6 @@ mpw_start(struct ifnet *ifp)
 			memset(shim, 0, sizeof(*shim));
 		}
 
-		switch (txprio) {
-		case IF_HDRPRIO_PACKET:
-			prio = m->m_pkthdr.pf.prio;
-			break;
-		default:
-			prio = txprio;
-			break;
-		}
-		exp = htonl(prio << MPLS_EXP_OFFSET);
-
 		bos = MPLS_BOS_MASK;
 		if (sc->sc_fword) {
 			uint32_t flow = sc->sc_flow;
@@ -718,7 +665,7 @@ mpw_start(struct ifnet *ifp)
 
 			shim = mtod(m0, struct shim_hdr *);
 			shim->shim_label = htonl(1) & MPLS_TTL_MASK;
-			shim->shim_label |= MPLS_LABEL2SHIM(flow) | exp | bos;
+			shim->shim_label = MPLS_LABEL2SHIM(flow) | bos;
 
 			bos = 0;
 		}
@@ -729,7 +676,7 @@ mpw_start(struct ifnet *ifp)
 
 		shim = mtod(m0, struct shim_hdr *);
 		shim->shim_label = htonl(mpls_defttl) & MPLS_TTL_MASK;
-		shim->shim_label |= n->n_rshim.shim_label | exp | bos;
+		shim->shim_label |= n->n_rshim.shim_label | bos;
 
 		m0->m_pkthdr.ph_rtableid = sc->sc_rdomain;
 		CLR(m0->m_flags, M_BCAST|M_MCAST);

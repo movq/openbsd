@@ -1,4 +1,4 @@
-/* $OpenBSD: status.c,v 1.195 2019/04/25 19:36:59 nicm Exp $ */
+/* $OpenBSD: status.c,v 1.192 2019/03/18 20:53:33 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -323,8 +323,8 @@ status_redraw(struct client *c)
 	u_int				 lines, i, width = c->tty.sx;
 	int				 flags, force = 0, changed = 0;
 	struct options_entry		*o;
-	union options_value		*ov;
 	struct format_tree		*ft;
+	const char			*fmt;
 	char				*expanded;
 
 	log_debug("%s enter", __func__);
@@ -370,14 +370,14 @@ status_redraw(struct client *c)
 		for (i = 0; i < lines; i++) {
 			screen_write_cursormove(&ctx, 0, i, 0);
 
-			ov = options_array_get(o, i);
-			if (ov == NULL) {
+			fmt = options_array_get(o, i);
+			if (fmt == NULL) {
 				screen_write_clearline(&ctx, gc.bg);
 				continue;
 			}
 			sle = &sl->entries[i];
 
-			expanded = format_expand_time(ft, ov->string);
+			expanded = format_expand_time(ft, fmt);
 			if (!force &&
 			    sle->expanded != NULL &&
 			    strcmp(expanded, sle->expanded) == 0) {
@@ -1321,9 +1321,10 @@ status_prompt_complete_list(u_int *size, const char *s)
 	if (o != NULL) {
 		a = options_array_first(o);
 		while (a != NULL) {
-			value = options_array_item_value(a)->string;
-			if ((cp = strchr(value, '=')) == NULL)
-			    goto next;
+			value = options_array_item_value(a);;
+			if (value == NULL || (cp = strchr(value, '=')) == NULL)
+				goto next;
+
 			valuelen = cp - value;
 			if (slen > valuelen || strncmp(value, s, slen) != 0)
 				goto next;

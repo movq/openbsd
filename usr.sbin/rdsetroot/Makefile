@@ -1,9 +1,7 @@
-#	$OpenBSD: Makefile,v 1.2 2019/04/16 06:09:52 sunil Exp $
+#	$OpenBSD: Makefile,v 1.1 2019/04/05 21:07:11 deraadt Exp $
 
 PROG=	rdsetroot
 MAN=	rdsetroot.8
-
-LDADD+=	-lelf
-DPADD+=	${LIBELF}
+SRCS=	rdsetroot.c elf32.c elf64.c
 
 .include <bsd.prog.mk>
