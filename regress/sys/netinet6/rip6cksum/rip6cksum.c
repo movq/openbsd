@@ -1,4 +1,4 @@
-/*	$OpenBSD: rip6cksum.c,v 1.1 2019/05/09 15:54:31 bluhm Exp $	*/
+/*	$OpenBSD: rip6cksum.c,v 1.1.1.1 2019/05/09 15:54:31 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  *
