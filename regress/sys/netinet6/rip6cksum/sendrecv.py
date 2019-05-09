@@ -1,5 +1,5 @@
 #!/usr/local/bin/python2.7
-# $OpenBSD: sendrecv.py,v 1.1 2019/05/09 15:54:31 bluhm Exp $
+# $OpenBSD: sendrecv.py,v 1.1.1.1 2019/05/09 15:54:31 bluhm Exp $
 
 import os
 from scapy.all import *
