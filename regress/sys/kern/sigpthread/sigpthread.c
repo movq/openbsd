@@ -1,4 +1,4 @@
-/*	$OpenBSD: sigpthread.c,v 1.1 2019/05/13 19:40:22 bluhm Exp $	*/
+/*	$OpenBSD: sigpthread.c,v 1.1.1.1 2019/05/13 19:40:22 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  *
