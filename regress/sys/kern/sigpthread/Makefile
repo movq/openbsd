@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2019/05/13 19:40:22 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2019/05/13 19:40:22 bluhm Exp $
 
 PROG =		sigpthread
 WARNINGS =	yes
