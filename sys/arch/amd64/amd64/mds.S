@@ -1,4 +1,4 @@
-/*	$OpenBSD: mds.S,v 1.1 2019/05/17 19:07:15 guenther Exp $	*/
+/*	$OpenBSD: mds.S,v 1.1.4.1 2019/05/28 14:23:50 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Philip Guenther <guenther@openbsd.org>
  *
