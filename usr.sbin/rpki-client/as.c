@@ -1,4 +1,4 @@
-/*	$Id: as.c,v 1.1 2019/06/17 14:31:30 job Exp $ */
+/*	$Id: as.c,v 1.1.1.1 2019/06/17 14:31:30 job Exp $ */
 /*
  * Copyright (c) 2019 Kristaps Dzonsons <kristaps@bsd.lv>
  *

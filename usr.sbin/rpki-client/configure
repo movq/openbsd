@@ -499,7 +499,7 @@ fi
 if [ ${HAVE_SYS_QUEUE} -eq 0 ]; then
 cat <<!!
 
-/*	$OpenBSD: configure,v 1.1 2019/06/17 14:31:31 job Exp $	*/
+/*	$OpenBSD: configure,v 1.1.1.1 2019/06/17 14:31:31 job Exp $	*/
 /*	$NetBSD: queue.h,v 1.11 1996/05/16 05:17:14 mycroft Exp $	*/
 
 /*
