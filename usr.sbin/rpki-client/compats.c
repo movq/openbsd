@@ -100,7 +100,7 @@ warnx(const char *fmt, ...)
 }
 #endif /* !HAVE_ERR */
 #if !HAVE_B64_NTOP
-/*	$OpenBSD: compats.c,v 1.1 2019/06/17 14:31:31 job Exp $	*/
+/*	$OpenBSD: compats.c,v 1.1.1.1 2019/06/17 14:31:31 job Exp $	*/
 
 /*
  * Copyright (c) 1996 by Internet Software Consortium.
@@ -1097,7 +1097,7 @@ strlcpy(char *dst, const char *src, size_t siz)
 }
 #endif /* !HAVE_STRLCPY */
 #if !HAVE_STRNDUP
-/*	$OpenBSD: compats.c,v 1.1 2019/06/17 14:31:31 job Exp $	*/
+/*	$OpenBSD: compats.c,v 1.1.1.1 2019/06/17 14:31:31 job Exp $	*/
 /*
  * Copyright (c) 2010 Todd C. Miller <Todd.Miller@courtesan.com>
  *
@@ -1137,7 +1137,7 @@ strndup(const char *str, size_t maxlen)
 }
 #endif /* !HAVE_STRNDUP */
 #if !HAVE_STRNLEN
-/*	$OpenBSD: compats.c,v 1.1 2019/06/17 14:31:31 job Exp $	*/
+/*	$OpenBSD: compats.c,v 1.1.1.1 2019/06/17 14:31:31 job Exp $	*/
 
 /*
  * Copyright (c) 2010 Todd C. Miller <Todd.Miller@courtesan.com>
