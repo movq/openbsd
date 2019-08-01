@@ -1,4 +1,4 @@
-/*	$OpenBSD: unveil-perm.c,v 1.1 2019/08/01 15:20:51 bluhm Exp $	*/
+/*	$OpenBSD: unveil-perm.c,v 1.1.1.1 2019/08/01 15:20:51 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  *
