@@ -1,4 +1,4 @@
-/*	$OpenBSD: realpath-chroot.c,v 1.1 2019/08/05 15:16:39 bluhm Exp $	*/
+/*	$OpenBSD: realpath-chroot.c,v 1.1.1.1 2019/08/05 15:16:39 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  * Copyright (c) 2019 Moritz Buhl <mbuhl@moritzbuhl.de>

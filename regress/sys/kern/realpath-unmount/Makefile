@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2019/08/05 15:16:39 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2019/08/05 15:16:39 bluhm Exp $
 
 # Call realpath(3) in combination with chroot(2), chdir(2).
 # Use umount(8) to check that the mountpoint leaks no vnode.
