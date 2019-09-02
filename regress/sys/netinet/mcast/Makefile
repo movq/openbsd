@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2019/09/02 22:17:28 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2019/09/02 22:17:28 bluhm Exp $
 
 PROGS =			mcsend mcrecv mcroute
 WARNINGS =		Yes

@@ -1,4 +1,4 @@
-/*	$OpenBSD: mcsend.c,v 1.1 2019/09/02 22:17:28 bluhm Exp $	*/
+/*	$OpenBSD: mcsend.c,v 1.1.1.1 2019/09/02 22:17:28 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  *
