@@ -1,4 +1,4 @@
-/*	$OpenBSD: mcroute.c,v 1.1 2019/09/02 22:17:28 bluhm Exp $	*/
+/*	$OpenBSD: mcroute.c,v 1.1.1.1 2019/09/02 22:17:28 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  *
