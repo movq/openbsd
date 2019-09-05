@@ -1,4 +1,4 @@
-/*	$OpenBSD: mc6route.c,v 1.1 2019/09/05 01:50:34 bluhm Exp $	*/
+/*	$OpenBSD: mc6route.c,v 1.1.1.1 2019/09/05 01:50:34 bluhm Exp $	*/
 /*
  * Copyright (c) 2019 Alexander Bluhm <bluhm@openbsd.org>
  *
