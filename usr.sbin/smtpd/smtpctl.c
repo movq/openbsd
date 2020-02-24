@@ -1,4 +1,4 @@
-/*	$OpenBSD: smtpctl.c,v 1.163 2019/01/14 09:37:40 eric Exp $	*/
+/*	$OpenBSD: smtpctl.c,v 1.163.2.1 2020/02/24 16:20:06 millert Exp $	*/
 
 /*
  * Copyright (c) 2013 Eric Faurot <eric@openbsd.org>
@@ -1124,7 +1124,7 @@ sendmail_compat(int argc, char **argv)
 		 */
 		for (i = 1; i < argc; i++)
 			if (strncmp(argv[i], "-bi", 3) == 0)
-				exit(makemap(P_NEWALIASES, argc, argv));
+				exit(makemap(P_SENDMAIL, argc, argv));
 
 		if (!srv_connect())
 			offlinefp = offline_file();

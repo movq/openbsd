@@ -1,4 +1,4 @@
-/*	$OpenBSD: smtpd.h,v 1.621 2019/04/08 08:22:32 eric Exp $	*/
+/*	$OpenBSD: smtpd.h,v 1.621.2.1 2020/02/24 16:20:06 millert Exp $	*/
 
 /*
  * Copyright (c) 2008 Gilles Chehade <gilles@poolp.org>
@@ -97,8 +97,9 @@
 #define MTA_EXT_DSN		0x400
 
 
-#define P_NEWALIASES	0
-#define P_MAKEMAP	1
+#define P_SENDMAIL	0
+#define P_NEWALIASES	1
+#define P_MAKEMAP	2
 
 #define	CERT_ERROR	-1
 #define	CERT_OK		 0
