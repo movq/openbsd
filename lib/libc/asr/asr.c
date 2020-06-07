@@ -1,4 +1,4 @@
-/*	$OpenBSD: asr.c,v 1.61 2018/10/22 17:31:24 krw Exp $	*/
+/*	$OpenBSD: asr.c,v 1.61.4.1 2020/06/07 16:16:17 deraadt Exp $	*/
 /*
  * Copyright (c) 2010-2012 Eric Faurot <eric@openbsd.org>
  *
@@ -142,6 +142,8 @@ int
 asr_run(struct asr_query *as, struct asr_result *ar)
 {
 	int	r, saved_errno = errno;
+
+	memset(ar, 0, sizeof(*ar));
 
 	DPRINT("asr: asr_run(%p, %p) %s ctx=[%p]\n", as, ar,
 	    _asr_querystr(as->as_type), as->as_ctx);
