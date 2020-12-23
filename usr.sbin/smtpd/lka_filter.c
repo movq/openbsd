@@ -1,4 +1,4 @@
-/*	$OpenBSD: lka_filter.c,v 1.62 2020/04/24 11:34:07 eric Exp $	*/
+/*	$OpenBSD: lka_filter.c,v 1.62.2.1 2020/12/23 20:20:03 millert Exp $	*/
 
 /*
  * Copyright (c) 2018 Gilles Chehade <gilles@poolp.org>
@@ -597,11 +597,6 @@ filter_session_io(struct io *io, int evt, void *arg)
 		filter_data(fs->id, line);
 
 		goto nextline;
-
-	case IO_DISCONNECTED:
-		io_free(fs->io);
-		fs->io = NULL;
-		break;
 	}
 }
 
