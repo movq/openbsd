@@ -1,4 +1,4 @@
-/* $OpenBSD: ssh-agent.c,v 1.257 2020/03/06 18:28:27 markus Exp $ */
+/* $OpenBSD: ssh-agent.c,v 1.257.2.1 2021/03/03 17:41:52 deraadt Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -482,6 +482,7 @@ process_add_identity(SocketEntry *e)
 				goto err;
 			}
 			free(ext_name);
+			ext_name = NULL;
 			break;
 		default:
 			error("%s: Unknown constraint %d", __func__, ctype);
