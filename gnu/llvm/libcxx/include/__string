@@ -17,18 +17,19 @@
 #include <__assert>
 #include <__compare/ordering.h>
 #include <__config>
+#include <__cstddef/ptrdiff_t.h>
 #include <__functional/hash.h>
 #include <__functional/identity.h>
 #include <__iterator/iterator_traits.h>
+#include <__std_mbstate_t.h>
 #include <__string/constexpr_c_functions.h>
 #include <__type_traits/is_constant_evaluated.h>
 #include <__utility/is_pointer_in_range.h>
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <iosfwd>
 
-#ifndef _LIBCPP_HAS_NO_WIDE_CHARACTERS
+#if _LIBCPP_HAS_WIDE_CHARACTERS
 #  include <cwchar> // for wmemcpy
 #endif
 
@@ -77,7 +78,7 @@ exposition-only to document what members a char_traits specialization should pro
 // char_traits<char>
 
 template <>
-struct _LIBCPP_TEMPLATE_VIS char_traits<char> {
+struct char_traits<char> {
   using char_type  = char;
   using int_type   = int;
   using off_type   = streamoff;
@@ -93,16 +94,17 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char> {
   }
 
   // TODO: Make this _LIBCPP_HIDE_FROM_ABI
-  static inline _LIBCPP_HIDDEN _LIBCPP_CONSTEXPR bool eq(char_type __c1, char_type __c2) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDDEN _LIBCPP_CONSTEXPR bool eq(char_type __c1, char_type __c2) _NOEXCEPT {
     return __c1 == __c2;
   }
-  static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR bool lt(char_type __c1, char_type __c2) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR bool
+  lt(char_type __c1, char_type __c2) _NOEXCEPT {
     return (unsigned char)__c1 < (unsigned char)__c2;
   }
 
   // __constexpr_memcmp requires a trivially lexicographically comparable type, but char is not when char is a signed
   // type
-  static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 int
+  [[__nodiscard__]] static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 int
   compare(const char_type* __lhs, const char_type* __rhs, size_t __count) _NOEXCEPT {
     if (__libcpp_is_constant_evaluated()) {
 #ifdef _LIBCPP_COMPILER_CLANG_BASED
@@ -125,14 +127,13 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char> {
     }
   }
 
-  static inline _LIBCPP_HIDE_FROM_ABI size_t _LIBCPP_CONSTEXPR_SINCE_CXX17 length(const char_type* __s) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI size_t _LIBCPP_CONSTEXPR_SINCE_CXX17
+  length(const char_type* __s) _NOEXCEPT {
     return std::__constexpr_strlen(__s);
   }
 
-  static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
+  [[__nodiscard__]] static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
   find(const char_type* __s, size_t __n, const char_type& __a) _NOEXCEPT {
-    if (__n == 0)
-      return nullptr;
     return std::__constexpr_memchr(__s, __a, __n);
   }
 
@@ -155,19 +156,24 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char> {
     return __s;
   }
 
-  static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR int_type not_eof(int_type __c) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR int_type not_eof(int_type __c) _NOEXCEPT {
     return eq_int_type(__c, eof()) ? ~eof() : __c;
   }
-  static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR char_type to_char_type(int_type __c) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR char_type
+  to_char_type(int_type __c) _NOEXCEPT {
     return char_type(__c);
   }
-  static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR int_type to_int_type(char_type __c) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR int_type
+  to_int_type(char_type __c) _NOEXCEPT {
     return int_type((unsigned char)__c);
   }
-  static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR bool eq_int_type(int_type __c1, int_type __c2) _NOEXCEPT {
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR bool
+  eq_int_type(int_type __c1, int_type __c2) _NOEXCEPT {
     return __c1 == __c2;
   }
-  static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR int_type eof() _NOEXCEPT { return int_type(EOF); }
+  [[__nodiscard__]] static inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR int_type eof() _NOEXCEPT {
+    return int_type(EOF);
+  }
 };
 
 template <class _CharT, class _IntT, _IntT _EOFVal>
@@ -188,11 +194,11 @@ struct __char_traits_base {
     __lhs = __rhs;
   }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR bool eq(char_type __lhs, char_type __rhs) _NOEXCEPT {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR bool eq(char_type __lhs, char_type __rhs) _NOEXCEPT {
     return __lhs == __rhs;
   }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR bool lt(char_type __lhs, char_type __rhs) _NOEXCEPT {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR bool lt(char_type __lhs, char_type __rhs) _NOEXCEPT {
     return __lhs < __rhs;
   }
 
@@ -214,78 +220,78 @@ struct __char_traits_base {
     return __str;
   }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR char_type to_char_type(int_type __c) _NOEXCEPT {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR char_type to_char_type(int_type __c) _NOEXCEPT {
     return char_type(__c);
   }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR int_type to_int_type(char_type __c) _NOEXCEPT { return int_type(__c); }
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR int_type to_int_type(char_type __c) _NOEXCEPT {
+    return int_type(__c);
+  }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR bool eq_int_type(int_type __lhs, int_type __rhs) _NOEXCEPT {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR bool
+  eq_int_type(int_type __lhs, int_type __rhs) _NOEXCEPT {
     return __lhs == __rhs;
   }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR int_type eof() _NOEXCEPT { return _EOFVal; }
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR int_type eof() _NOEXCEPT { return _EOFVal; }
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR int_type not_eof(int_type __c) _NOEXCEPT {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR int_type not_eof(int_type __c) _NOEXCEPT {
     return eq_int_type(__c, eof()) ? static_cast<int_type>(~eof()) : __c;
   }
 };
 
 // char_traits<wchar_t>
 
-#ifndef _LIBCPP_HAS_NO_WIDE_CHARACTERS
+#if _LIBCPP_HAS_WIDE_CHARACTERS
 template <>
-struct _LIBCPP_TEMPLATE_VIS char_traits<wchar_t> : __char_traits_base<wchar_t, wint_t, static_cast<wint_t>(WEOF)> {
-  static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 int
+struct char_traits<wchar_t> : __char_traits_base<wchar_t, wint_t, static_cast<wint_t>(WEOF)> {
+  [[__nodiscard__]] static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 int
   compare(const char_type* __s1, const char_type* __s2, size_t __n) _NOEXCEPT {
     if (__n == 0)
       return 0;
     return std::__constexpr_wmemcmp(__s1, __s2, __n);
   }
 
-  static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t length(const char_type* __s) _NOEXCEPT {
+  [[__nodiscard__]] static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t
+  length(const char_type* __s) _NOEXCEPT {
     return std::__constexpr_wcslen(__s);
   }
 
-  static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
+  [[__nodiscard__]] static _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
   find(const char_type* __s, size_t __n, const char_type& __a) _NOEXCEPT {
-    if (__n == 0)
-      return nullptr;
     return std::__constexpr_wmemchr(__s, __a, __n);
   }
 };
-#endif // _LIBCPP_HAS_NO_WIDE_CHARACTERS
+#endif // _LIBCPP_HAS_WIDE_CHARACTERS
 
-#ifndef _LIBCPP_HAS_NO_CHAR8_T
+#if _LIBCPP_HAS_CHAR8_T
 
 template <>
-struct _LIBCPP_TEMPLATE_VIS char_traits<char8_t>
-    : __char_traits_base<char8_t, unsigned int, static_cast<unsigned int>(EOF)> {
-  static _LIBCPP_HIDE_FROM_ABI constexpr int
+struct char_traits<char8_t> : __char_traits_base<char8_t, unsigned int, static_cast<unsigned int>(EOF)> {
+  [[nodiscard]] static _LIBCPP_HIDE_FROM_ABI constexpr int
   compare(const char_type* __s1, const char_type* __s2, size_t __n) noexcept {
     return std::__constexpr_memcmp(__s1, __s2, __element_count(__n));
   }
 
-  static _LIBCPP_HIDE_FROM_ABI constexpr size_t length(const char_type* __str) noexcept {
+  [[nodiscard]] static _LIBCPP_HIDE_FROM_ABI constexpr size_t length(const char_type* __str) noexcept {
     return std::__constexpr_strlen(__str);
   }
 
-  _LIBCPP_HIDE_FROM_ABI static constexpr const char_type*
+  [[nodiscard]] _LIBCPP_HIDE_FROM_ABI static constexpr const char_type*
   find(const char_type* __s, size_t __n, const char_type& __a) noexcept {
     return std::__constexpr_memchr(__s, __a, __n);
   }
 };
 
-#endif // _LIBCPP_HAS_NO_CHAR8_T
+#endif // _LIBCPP_HAS_CHAR8_T
 
 template <>
-struct _LIBCPP_TEMPLATE_VIS char_traits<char16_t>
-    : __char_traits_base<char16_t, uint_least16_t, static_cast<uint_least16_t>(0xFFFF)> {
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 int
+struct char_traits<char16_t> : __char_traits_base<char16_t, uint_least16_t, static_cast<uint_least16_t>(0xFFFF)> {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 int
   compare(const char_type* __s1, const char_type* __s2, size_t __n) _NOEXCEPT;
   _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t length(const char_type* __s) _NOEXCEPT;
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
   find(const char_type* __s, size_t __n, const char_type& __a) _NOEXCEPT {
     __identity __proj;
     const char_type* __match = std::__find(__s, __s + __n, __a, __proj);
@@ -295,7 +301,7 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char16_t>
   }
 };
 
-inline _LIBCPP_CONSTEXPR_SINCE_CXX17 int
+[[__nodiscard__]] inline _LIBCPP_CONSTEXPR_SINCE_CXX17 int
 char_traits<char16_t>::compare(const char_type* __s1, const char_type* __s2, size_t __n) _NOEXCEPT {
   for (; __n; --__n, ++__s1, ++__s2) {
     if (lt(*__s1, *__s2))
@@ -306,7 +312,8 @@ char_traits<char16_t>::compare(const char_type* __s1, const char_type* __s2, siz
   return 0;
 }
 
-inline _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t char_traits<char16_t>::length(const char_type* __s) _NOEXCEPT {
+[[__nodiscard__]] inline _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t
+char_traits<char16_t>::length(const char_type* __s) _NOEXCEPT {
   size_t __len = 0;
   for (; !eq(*__s, char_type(0)); ++__s)
     ++__len;
@@ -314,13 +321,12 @@ inline _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t char_traits<char16_t>::length(const 
 }
 
 template <>
-struct _LIBCPP_TEMPLATE_VIS char_traits<char32_t>
-    : __char_traits_base<char32_t, uint_least32_t, static_cast<uint_least32_t>(0xFFFFFFFF)> {
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 int
+struct char_traits<char32_t> : __char_traits_base<char32_t, uint_least32_t, static_cast<uint_least32_t>(0xFFFFFFFF)> {
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 int
   compare(const char_type* __s1, const char_type* __s2, size_t __n) _NOEXCEPT;
   _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t length(const char_type* __s) _NOEXCEPT;
 
-  _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
+  [[__nodiscard__]] _LIBCPP_HIDE_FROM_ABI static _LIBCPP_CONSTEXPR_SINCE_CXX17 const char_type*
   find(const char_type* __s, size_t __n, const char_type& __a) _NOEXCEPT {
     __identity __proj;
     const char_type* __match = std::__find(__s, __s + __n, __a, __proj);
@@ -330,7 +336,7 @@ struct _LIBCPP_TEMPLATE_VIS char_traits<char32_t>
   }
 };
 
-inline _LIBCPP_CONSTEXPR_SINCE_CXX17 int
+[[__nodiscard__]] inline _LIBCPP_CONSTEXPR_SINCE_CXX17 int
 char_traits<char32_t>::compare(const char_type* __s1, const char_type* __s2, size_t __n) _NOEXCEPT {
   for (; __n; --__n, ++__s1, ++__s2) {
     if (lt(*__s1, *__s2))
@@ -341,7 +347,8 @@ char_traits<char32_t>::compare(const char_type* __s1, const char_type* __s2, siz
   return 0;
 }
 
-inline _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t char_traits<char32_t>::length(const char_type* __s) _NOEXCEPT {
+[[__nodiscard__]] inline _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t
+char_traits<char32_t>::length(const char_type* __s) _NOEXCEPT {
   size_t __len = 0;
   for (; !eq(*__s, char_type(0)); ++__s)
     ++__len;
@@ -354,7 +361,7 @@ inline _LIBCPP_CONSTEXPR_SINCE_CXX17 size_t char_traits<char32_t>::length(const 
 template <class _CharT, class _SizeT, class _Traits, _SizeT __npos>
 inline _SizeT _LIBCPP_CONSTEXPR_SINCE_CXX14 _LIBCPP_HIDE_FROM_ABI
 __str_find(const _CharT* __p, _SizeT __sz, _CharT __c, _SizeT __pos) _NOEXCEPT {
-  if (__pos >= __sz)
+  if (__pos > __sz)
     return __npos;
   const _CharT* __r = _Traits::find(__p + __pos, __sz - __pos, __c);
   if (__r == nullptr)
@@ -374,6 +381,13 @@ _LIBCPP_HIDE_FROM_ABI inline _LIBCPP_CONSTEXPR_SINCE_CXX14 const _CharT* __searc
   ptrdiff_t __len1 = __last1 - __first1;
   if (__len1 < __len2)
     return __last1;
+
+  if (__builtin_constant_p(__len2 == 1) && __len2 == 1) {
+    auto __res = _Traits::find(__first1, __len1, *__first2);
+    if (__res == nullptr)
+      return __last1;
+    return __res;
+  }
 
   // First element of __first2 is loop invariant.
   _CharT __f2 = *__first2;
@@ -533,7 +547,7 @@ __str_find_last_not_of(const _CharT* __p, _SizeT __sz, _CharT __c, _SizeT __pos)
 template <class _Ptr>
 inline _LIBCPP_HIDE_FROM_ABI size_t __do_string_hash(_Ptr __p, _Ptr __e) {
   typedef typename iterator_traits<_Ptr>::value_type value_type;
-  return __murmur2_or_cityhash<size_t>()(__p, (__e - __p) * sizeof(value_type));
+  return std::__hash_memory(__p, (__e - __p) * sizeof(value_type));
 }
 
 _LIBCPP_END_NAMESPACE_STD
@@ -553,20 +567,22 @@ _LIBCPP_POP_MACROS
 #define _LIBCPP___STRING_CONSTEXPR_C_FUNCTIONS_H
 
 #include <__config>
+#include <__cstddef/size_t.h>
 #include <__memory/addressof.h>
 #include <__memory/construct_at.h>
 #include <__type_traits/datasizeof.h>
+#include <__type_traits/enable_if.h>
 #include <__type_traits/is_always_bitcastable.h>
 #include <__type_traits/is_assignable.h>
 #include <__type_traits/is_constant_evaluated.h>
 #include <__type_traits/is_constructible.h>
 #include <__type_traits/is_equality_comparable.h>
+#include <__type_traits/is_integral.h>
 #include <__type_traits/is_same.h>
-#include <__type_traits/is_trivially_copyable.h>
 #include <__type_traits/is_trivially_lexicographically_comparable.h>
 #include <__type_traits/remove_cv.h>
+#include <__utility/element_count.h>
 #include <__utility/is_pointer_in_range.h>
-#include <cstddef>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -574,17 +590,13 @@ _LIBCPP_POP_MACROS
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-// Type used to encode that a function takes an integer that represents a number
-// of elements as opposed to a number of bytes.
-enum class __element_count : size_t {};
-
 template <class _Tp>
 inline const bool __is_char_type = false;
 
 template <>
 inline const bool __is_char_type<char> = true;
 
-#ifndef _LIBCPP_HAS_NO_CHAR8_T
+#if _LIBCPP_HAS_CHAR8_T
 template <>
 inline const bool __is_char_type<char8_t> = true;
 #endif
@@ -607,13 +619,13 @@ inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 size_t __constexpr_st
   return __builtin_strlen(reinterpret_cast<const char*>(__str));
 }
 
-// Because of __libcpp_is_trivially_lexicographically_comparable we know that comparing the object representations is
+// Because of __is_trivially_lexicographically_comparable_v we know that comparing the object representations is
 // equivalent to a std::memcmp. Since we have multiple objects contiguously in memory, we can call memcmp once instead
 // of invoking it on every object individually.
 template <class _Tp, class _Up>
 _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 int
 __constexpr_memcmp(const _Tp* __lhs, const _Up* __rhs, __element_count __n) {
-  static_assert(__libcpp_is_trivially_lexicographically_comparable<_Tp, _Up>::value,
+  static_assert(__is_trivially_lexicographically_comparable_v<_Tp, _Up>,
                 "_Tp and _Up have to be trivially lexicographically comparable");
 
   auto __count = static_cast<size_t>(__n);
@@ -640,14 +652,13 @@ __constexpr_memcmp(const _Tp* __lhs, const _Up* __rhs, __element_count __n) {
   }
 }
 
-// Because of __libcpp_is_trivially_equality_comparable we know that comparing the object representations is equivalent
+// Because of __is_trivially_equality_comparable_v we know that comparing the object representations is equivalent
 // to a std::memcmp(...) == 0. Since we have multiple objects contiguously in memory, we can call memcmp once instead
 // of invoking it on every object individually.
 template <class _Tp, class _Up>
 _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 bool
 __constexpr_memcmp_equal(const _Tp* __lhs, const _Up* __rhs, __element_count __n) {
-  static_assert(__libcpp_is_trivially_equality_comparable<_Tp, _Up>::value,
-                "_Tp and _Up have to be trivially equality comparable");
+  static_assert(__is_trivially_equality_comparable_v<_Tp, _Up>, "_Tp and _Up have to be trivially equality comparable");
 
   auto __count = static_cast<size_t>(__n);
 
@@ -672,7 +683,7 @@ __constexpr_memcmp_equal(const _Tp* __lhs, const _Up* __rhs, __element_count __n
 
 template <class _Tp, class _Up>
 _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 _Tp* __constexpr_memchr(_Tp* __str, _Up __value, size_t __count) {
-  static_assert(sizeof(_Tp) == 1 && __libcpp_is_trivially_equality_comparable<_Tp, _Up>::value,
+  static_assert(sizeof(_Tp) == 1 && __is_trivially_equality_comparable_v<_Tp, _Up>,
                 "Calling memchr on non-trivially equality comparable types is unsafe.");
 
   if (__libcpp_is_constant_evaluated()) {
@@ -690,7 +701,7 @@ _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 _Tp* __constexpr_memchr(_Tp*
     return nullptr;
   } else {
     char __value_buffer = 0;
-    __builtin_memcpy(&__value_buffer, &__value, sizeof(char));
+    __builtin_memcpy(&__value_buffer, std::addressof(__value), sizeof(char));
     return static_cast<_Tp*>(__builtin_memchr(__str, __value_buffer, __count));
   }
 }
@@ -748,24 +759,29 @@ _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX20 _Tp& __assign_trivially_copy
   return __dest;
 }
 
-template <class _Tp, class _Up, __enable_if_t<__is_always_bitcastable<_Up, _Tp>::value, int> = 0>
+template <class _Tp, class _Up>
 _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 _Tp*
 __constexpr_memmove(_Tp* __dest, _Up* __src, __element_count __n) {
+  static_assert(__is_always_bitcastable<_Up, _Tp>::value);
   size_t __count = static_cast<size_t>(__n);
   if (__libcpp_is_constant_evaluated()) {
 #ifdef _LIBCPP_COMPILER_CLANG_BASED
-    if (is_same<__remove_cv_t<_Tp>, __remove_cv_t<_Up> >::value) {
+    if _LIBCPP_CONSTEXPR (is_same<__remove_cv_t<_Tp>, __remove_cv_t<_Up> >::value) {
       ::__builtin_memmove(__dest, __src, __count * sizeof(_Tp));
       return __dest;
-    }
+    } else
 #endif
-    if (std::__is_pointer_in_range(__src, __src + __count, __dest)) {
-      for (; __count > 0; --__count)
-        std::__assign_trivially_copyable(__dest[__count - 1], __src[__count - 1]);
-    } else {
-      for (size_t __i = 0; __i != __count; ++__i)
-        std::__assign_trivially_copyable(__dest[__i], __src[__i]);
+    {
+      if (std::__is_pointer_in_range(__src, __src + __count, __dest)) {
+        for (; __count > 0; --__count)
+          std::__assign_trivially_copyable(__dest[__count - 1], __src[__count - 1]);
+      } else {
+        for (size_t __i = 0; __i != __count; ++__i)
+          std::__assign_trivially_copyable(__dest[__i], __src[__i]);
+      }
     }
+  } else if _LIBCPP_CONSTEXPR (sizeof(_Tp) == __datasizeof_v<_Tp>) {
+    ::__builtin_memmove(__dest, __src, __count * sizeof(_Tp));
   } else if (__count > 0) {
     ::__builtin_memmove(__dest, __src, (__count - 1) * sizeof(_Tp) + __datasizeof_v<_Tp>);
   }
@@ -794,116 +810,77 @@ _LIBCPP_END_NAMESPACE_STD
 
 // clang-format off
 
-// We maintain 2 ABI lists:
+// We maintain multiple ABI lists:
+// - _LIBCPP_STRING_COMMON_EXTERN_TEMPLATE_LIST
 // - _LIBCPP_STRING_V1_EXTERN_TEMPLATE_LIST
 // - _LIBCPP_STRING_UNSTABLE_EXTERN_TEMPLATE_LIST
-// As the name implies, the ABI lists define the V1 (Stable) and unstable ABI.
+// As the name implies, the ABI lists define a common subset, the V1 (Stable) and unstable ABI.
 //
-// For unstable, we may explicitly remove function that are external in V1,
-// and add (new) external functions to better control inlining and compiler
-// optimization opportunities.
+// For unstable, we may explicitly remove function that are external in V1.
 //
 // For stable, the ABI list should rarely change, except for adding new
 // functions supporting new c++ version / API changes. Typically entries
 // must never be removed from the stable list.
-#define _LIBCPP_STRING_V1_EXTERN_TEMPLATE_LIST(_Func, _CharType) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::rfind(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init(value_type const*, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::basic_string(basic_string const&)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::basic_string(basic_string const&, allocator<_CharType> const&)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_last_not_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::~basic_string()) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_first_not_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::operator=(value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI const _CharType& basic_string<_CharType>::at(size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_first_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::assign(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::reserve(size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::assign(basic_string const&, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::copy(value_type*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::basic_string(basic_string const&, size_type, size_type, allocator<_CharType> const&)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find(value_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_last_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__grow_by(size_type, size_type, size_type, size_type, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__grow_by_and_replace(size_type, size_type, size_type, size_type, size_type, size_type, value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::push_back(value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::rfind(value_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI const basic_string<_CharType>::size_type basic_string<_CharType>::npos) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::assign(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::erase(size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(basic_string const&, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(value_type const*) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(size_type, size_type, value_type const*) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI _CharType& basic_string<_CharType>::at(size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::assign(value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(size_type, size_type, basic_string const&, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(size_type, size_type, value_type const*, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::operator=(basic_string const&)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, basic_string const&, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::iterator basic_string<_CharType>::insert(basic_string::const_iterator, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::resize(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, basic_string const&, size_type, size_type))
+#define _LIBCPP_STRING_COMMON_EXTERN_TEMPLATE_LIST(Func, CharT)                                                        \
+    Func(void basic_string<CharT>::__init(const value_type*, size_type))                                               \
+    Func(void basic_string<CharT>::__init(size_type, value_type))                                                      \
+    Func(basic_string<CharT>::basic_string(const basic_string&, size_type, size_type, const allocator<CharT>&))        \
+    Func(basic_string<CharT>::~basic_string())                                                                         \
+    Func(basic_string<CharT>& basic_string<CharT>::operator=(value_type))                                              \
+    Func(basic_string<CharT>& basic_string<CharT>::assign(size_type, value_type))                                      \
+    Func(basic_string<CharT>& basic_string<CharT>::assign(const basic_string&, size_type, size_type))                  \
+    Func(basic_string<CharT>& basic_string<CharT>::append(size_type, value_type))                                      \
+    Func(basic_string<CharT>& basic_string<CharT>::append(const value_type*))                                          \
+    Func(basic_string<CharT>& basic_string<CharT>::append(const value_type*, size_type))                               \
+    Func(basic_string<CharT>& basic_string<CharT>::append(const basic_string&, size_type, size_type))                  \
+    Func(void basic_string<CharT>::push_back(value_type))                                                              \
+    Func(basic_string<CharT>& basic_string<CharT>::insert(size_type, const value_type*))                               \
+    Func(basic_string<CharT>& basic_string<CharT>::insert(size_type, size_type, value_type))                           \
+    Func(basic_string<CharT>& basic_string<CharT>::insert(size_type, const value_type*, size_type))                    \
+    Func(basic_string<CharT>& basic_string<CharT>::insert(size_type, const basic_string&, size_type, size_type))       \
+    Func(basic_string<CharT>::iterator basic_string<CharT>::insert(basic_string::const_iterator, value_type))          \
+    Func(basic_string<CharT>& basic_string<CharT>::replace(size_type, size_type, const value_type*))                   \
+    Func(basic_string<CharT>& basic_string<CharT>::replace(size_type, size_type, size_type, value_type))               \
+    Func(basic_string<CharT>& basic_string<CharT>::replace(size_type, size_type, const value_type*, size_type))        \
+    Func(basic_string<CharT>& basic_string<CharT>::replace(size_type, size_type, const basic_string&, size_type, size_type)) \
+    Func(void basic_string<CharT>::__grow_by_and_replace(size_type, size_type, size_type, size_type, size_type, size_type, const value_type*)) \
+    Func(void basic_string<CharT>::resize(size_type, value_type))                                                      \
+    Func(void basic_string<CharT>::reserve(size_type))                                                                 \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::copy(value_type*, size_type, size_type) const)            \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::find(value_type, size_type) const)                        \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::find(const value_type*, size_type, size_type) const)      \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::rfind(value_type, size_type) const)                       \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::rfind(const value_type*, size_type, size_type) const)     \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::find_first_of(const value_type*, size_type, size_type) const) \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::find_last_of(const value_type*, size_type, size_type) const) \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::find_first_not_of(const value_type*, size_type, size_type) const) \
+    Func(basic_string<CharT>::size_type basic_string<CharT>::find_last_not_of(const value_type*, size_type, size_type) const) \
+    Func(CharT& basic_string<CharT>::at(size_type))                                                                    \
+    Func(const CharT& basic_string<CharT>::at(size_type) const)                                                        \
+    Func(int basic_string<CharT>::compare(const value_type*) const)                                                    \
+    Func(int basic_string<CharT>::compare(size_type, size_type, const value_type*) const)                              \
+    Func(int basic_string<CharT>::compare(size_type, size_type, const value_type*, size_type) const)                   \
+    Func(int basic_string<CharT>::compare(size_type, size_type, const basic_string&, size_type, size_type) const)      \
+    Func(const basic_string<CharT>::size_type basic_string<CharT>::npos)                                               \
 
-#define _LIBCPP_STRING_UNSTABLE_EXTERN_TEMPLATE_LIST(_Func, _CharType) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::rfind(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init(value_type const*, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_last_not_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::~basic_string()) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_first_not_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::operator=(value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init_copy_ctor_external(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI const _CharType& basic_string<_CharType>::at(size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_first_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::__assign_external(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::__assign_external(value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::reserve(size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::assign(basic_string const&, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::copy(value_type*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::basic_string(basic_string const&, size_type, size_type, allocator<_CharType> const&)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find(value_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__init(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find_last_of(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__grow_by_and_replace(size_type, size_type, size_type, size_type, size_type, size_type, value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::__assign_no_alias<false>(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::__assign_no_alias<true>(value_type const*, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::push_back(value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::rfind(value_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI const basic_string<_CharType>::size_type basic_string<_CharType>::npos) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::assign(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::__erase_external_with_move(size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(basic_string const&, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(value_type const*) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(size_type, size_type, value_type const*) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI _CharType& basic_string<_CharType>::at(size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::size_type basic_string<_CharType>::find(value_type const*, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(size_type, size_type, basic_string const&, size_type, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI int basic_string<_CharType>::compare(size_type, size_type, value_type const*, size_type) const) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::append(value_type const*)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::replace(size_type, size_type, basic_string const&, size_type, size_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>::iterator basic_string<_CharType>::insert(basic_string::const_iterator, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI void basic_string<_CharType>::resize(size_type, value_type)) \
-  _Func(_LIBCPP_EXPORTED_FROM_ABI basic_string<_CharType>& basic_string<_CharType>::insert(size_type, basic_string const&, size_type, size_type))
+#define _LIBCPP_STRING_V1_EXTERN_TEMPLATE_LIST(Func, CharT)                                                            \
+  _LIBCPP_STRING_COMMON_EXTERN_TEMPLATE_LIST(Func, CharT)                                                              \
+  Func(basic_string<CharT>::basic_string(const basic_string&))                                                         \
+  Func(basic_string<CharT>::basic_string(const basic_string&, const allocator<CharT>&))                                \
+  Func(basic_string<CharT>& basic_string<CharT>::assign(const value_type*))                                            \
+  Func(basic_string<CharT>& basic_string<CharT>::assign(const value_type*, size_type))                                 \
+  Func(basic_string<CharT>& basic_string<CharT>::operator=(basic_string const&))                                       \
+  Func(void basic_string<CharT>::__grow_by(size_type, size_type, size_type, size_type, size_type, size_type))          \
+  Func(basic_string<CharT>& basic_string<CharT>::erase(size_type, size_type))                                          \
+
+#define _LIBCPP_STRING_UNSTABLE_EXTERN_TEMPLATE_LIST(Func, CharT)                                                      \
+  _LIBCPP_STRING_COMMON_EXTERN_TEMPLATE_LIST(Func, CharT)                                                              \
+  Func(void basic_string<CharT>::__init_copy_ctor_external(const value_type*, size_type))                              \
+  Func(basic_string<CharT>& basic_string<CharT>::__assign_external(const value_type*, size_type))                      \
+  Func(basic_string<CharT>& basic_string<CharT>::__assign_external(const value_type*))                                 \
+  Func(basic_string<CharT>& basic_string<CharT>::__assign_no_alias<false>(const value_type*, size_type))               \
+  Func(basic_string<CharT>& basic_string<CharT>::__assign_no_alias<true>(const value_type*, size_type))                \
+  Func(void basic_string<CharT>::__erase_external_with_move(size_type, size_type))
 
 // clang-format on
 
