@@ -1,4 +1,4 @@
-/*	$OpenBSD: fpgetmask.c,v 1.1 2021/04/28 08:22:56 kettenis Exp $	*/
+/*	$OpenBSD: fpgetmask.c,v 1.2 2021/04/29 17:19:18 kettenis Exp $	*/
 /*
  * Copyright (c) 2018 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -17,10 +17,9 @@
 
 #include <ieeefp.h>
 
-__weak_alias(_fpgetmask,fpgetmask);
-
 fp_except
 fpgetmask(void)
 {
 	return 0;
 }
+DEF_WEAK(fpgetmask);
