@@ -1,4 +1,4 @@
-/*	$OpenBSD: sm2sigtest.c,v 1.1 2021/08/18 16:06:56 tb Exp $ */
+/*	$OpenBSD: sm2sigtest.c,v 1.1.1.1 2021/08/18 16:06:56 tb Exp $ */
 /*
  * Copyright (c) 2017, 2019 Ribose Inc
  *

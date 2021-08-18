@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2021/08/18 16:06:56 tb Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2021/08/18 16:06:56 tb Exp $
 
 PROGS +=	sm2crypttest
 PROGS +=	sm2evptest
