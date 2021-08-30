@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2021/08/30 17:27:45 tb Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2021/08/30 17:27:45 tb Exp $
 
 .if !(make(clean) || make(cleandir) || make(obj))
 . if !exists(/usr/local/libdata/perl5/site_perl/IO/Socket/SSL.pm)
