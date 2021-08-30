@@ -1,4 +1,4 @@
-/*	$OpenBSD: verify.c,v 1.1 2021/08/30 17:27:45 tb Exp $ */
+/*	$OpenBSD: verify.c,v 1.1.1.1 2021/08/30 17:27:45 tb Exp $ */
 /*
  * Copyright (c) 2021 Theo Buehler <tb@openbsd.org>
  *
