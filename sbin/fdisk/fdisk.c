@@ -1,4 +1,4 @@
-/*	$OpenBSD: fdisk.c,v 1.138 2021/09/29 22:55:40 krw Exp $	*/
+/*	$OpenBSD: fdisk.c,v 1.135 2021/08/28 11:55:17 krw Exp $	*/
 
 /*
  * Copyright (c) 1997 Tobias Weingartner
@@ -227,18 +227,19 @@ parse_bootprt(const char *arg)
 			*ptype++ = '\0';
 	}
 
-	blockcount = strtonum(arg, 1, UINT32_MAX, &errstr);
+	blockcount = strtonum(arg, BLOCKALIGNMENT, UINT32_MAX, &errstr);
 	if (errstr)
-		errx(1, "Block argument %s [%u..%u].", errstr, 1, UINT32_MAX);
+		errx(1, "Block argument %s [%u..%u].", errstr, BLOCKALIGNMENT,
+		    UINT32_MAX);
 
 	if (poffset == NULL)
 		goto done;
 
 	/* Second number: # of 512-byte blocks to offset partition start. */
-	blockoffset = strtonum(poffset, 1, UINT32_MAX, &errstr);
+	blockoffset = strtonum(poffset, BLOCKALIGNMENT, UINT32_MAX, &errstr);
 	if (errstr)
-		errx(1, "Block offset argument %s [%u..%u].", errstr, 1,
-		    UINT32_MAX);
+		errx(1, "Block offset argument %s [%u..%u].", errstr,
+		    BLOCKALIGNMENT, UINT32_MAX);
 
 	if (ptype == NULL)
 		goto done;
