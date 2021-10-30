@@ -1,4 +1,4 @@
-/*	$OpenBSD: bpf.c,v 1.203 2021/01/21 12:33:14 dlg Exp $	*/
+/*	$OpenBSD: bpf.c,v 1.203.2.1 2021/10/30 15:39:41 benno Exp $	*/
 /*	$NetBSD: bpf.c,v 1.33 1997/02/21 23:59:35 thorpej Exp $	*/
 
 /*
@@ -1566,6 +1566,7 @@ bpf_allocbufs(struct bpf_d *d)
 	d->bd_sbuf = malloc(d->bd_bufsize, M_DEVBUF, M_NOWAIT);
 	if (d->bd_sbuf == NULL) {
 		free(d->bd_fbuf, M_DEVBUF, d->bd_bufsize);
+		d->bd_fbuf = NULL;
 		return (ENOMEM);
 	}
 
