@@ -1,4 +1,4 @@
-/*	$Id: session.c,v 1.7 2019/05/08 20:00:25 benno Exp $ */
+/*	$Id: session.c,v 1.7.4.1 2021/11/09 13:41:24 benno Exp $ */
 /*
  * Copyright (c) 2019 Kristaps Dzonsons <kristaps@bsd.lv>
  *
@@ -14,7 +14,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#include <sys/param.h>
 
 #include <assert.h>
 #include <stdint.h>
