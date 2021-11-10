@@ -1,4 +1,4 @@
-/*	$OpenBSD: copy.c,v 1.2 2021/10/24 21:24:17 deraadt Exp $ */
+/*	$OpenBSD: copy.c,v 1.2.4.1 2021/11/10 09:07:20 bluhm Exp $ */
 /*
  * Copyright (c) 2021 Claudio Jeker <claudio@openbsd.org>
  *

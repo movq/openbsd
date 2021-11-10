@@ -1,7 +1,7 @@
 /*
  * Public domain, 2008, Todd C. Miller <millert@openbsd.org>
  *
- * $OpenBSD: charclass.h,v 1.1 2021/08/29 13:43:46 claudio Exp $
+ * $OpenBSD: charclass.h,v 1.1.4.1 2021/11/10 09:07:20 bluhm Exp $
  */
 
 /*
