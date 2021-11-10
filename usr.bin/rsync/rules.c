@@ -1,4 +1,4 @@
-/*	$OpenBSD: rules.c,v 1.4 2021/11/03 14:42:12 deraadt Exp $ */
+/*	$OpenBSD: rules.c,v 1.4.2.1 2021/11/10 09:07:20 bluhm Exp $ */
 /*
  * Copyright (c) 2021 Claudio Jeker <claudio@openbsd.org>
  *
