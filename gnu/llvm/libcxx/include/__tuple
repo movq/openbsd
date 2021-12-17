@@ -10,8 +10,8 @@
 #define _LIBCPP___TUPLE_FIND_INDEX_H
 
 #include <__config>
+#include <__cstddef/size_t.h>
 #include <__type_traits/is_same.h>
-#include <cstddef>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -68,143 +68,10 @@ _LIBCPP_END_NAMESPACE_STD
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef _LIBCPP___TUPLE_IGNORE_H
-#define _LIBCPP___TUPLE_IGNORE_H
-
-#include <__config>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-#ifndef _LIBCPP_CXX03_LANG
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-struct __ignore_type {
-  template <class _Tp>
-  _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 const __ignore_type& operator=(const _Tp&) const noexcept {
-    return *this;
-  }
-};
-
-#  if _LIBCPP_STD_VER >= 17
-inline constexpr __ignore_type ignore;
-#  else
-constexpr __ignore_type ignore;
-#  endif
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // _LIBCPP_CXX03_LANG
-
-#endif // _LIBCPP___TUPLE_IGNORE_H
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef _LIBCPP___TUPLE_MAKE_TUPLE_TYPES_H
-#define _LIBCPP___TUPLE_MAKE_TUPLE_TYPES_H
-
-#include <__config>
-#include <__fwd/array.h>
-#include <__fwd/tuple.h>
-#include <__tuple/tuple_element.h>
-#include <__tuple/tuple_indices.h>
-#include <__tuple/tuple_size.h>
-#include <__tuple/tuple_types.h>
-#include <__type_traits/copy_cvref.h>
-#include <__type_traits/remove_cv.h>
-#include <__type_traits/remove_reference.h>
-#include <cstddef>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-#ifndef _LIBCPP_CXX03_LANG
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-// __make_tuple_types<_Tuple<_Types...>, _Ep, _Sp>::type is a
-// __tuple_types<_Types...> using only those _Types in the range [_Sp, _Ep).
-// _Sp defaults to 0 and _Ep defaults to tuple_size<_Tuple>.  If _Tuple is a
-// lvalue_reference type, then __tuple_types<_Types&...> is the result.
-
-template <class _TupleTypes, class _TupleIndices>
-struct __make_tuple_types_flat;
-
-template <template <class...> class _Tuple, class... _Types, size_t... _Idx>
-struct __make_tuple_types_flat<_Tuple<_Types...>, __tuple_indices<_Idx...>> {
-  // Specialization for pair, tuple, and __tuple_types
-  template <class _Tp>
-  using __apply_quals _LIBCPP_NODEBUG = __tuple_types<__copy_cvref_t<_Tp, __type_pack_element<_Idx, _Types...>>...>;
-};
-
-template <class _Vt, size_t _Np, size_t... _Idx>
-struct __make_tuple_types_flat<array<_Vt, _Np>, __tuple_indices<_Idx...>> {
-  template <size_t>
-  using __value_type = _Vt;
-  template <class _Tp>
-  using __apply_quals = __tuple_types<__copy_cvref_t<_Tp, __value_type<_Idx>>...>;
-};
-
-template <class _Tp,
-          size_t _Ep     = tuple_size<__libcpp_remove_reference_t<_Tp> >::value,
-          size_t _Sp     = 0,
-          bool _SameSize = (_Ep == tuple_size<__libcpp_remove_reference_t<_Tp> >::value)>
-struct __make_tuple_types {
-  static_assert(_Sp <= _Ep, "__make_tuple_types input error");
-  using _RawTp = __remove_cv_t<__libcpp_remove_reference_t<_Tp> >;
-  using _Maker = __make_tuple_types_flat<_RawTp, typename __make_tuple_indices<_Ep, _Sp>::type>;
-  using type   = typename _Maker::template __apply_quals<_Tp>;
-};
-
-template <class... _Types, size_t _Ep>
-struct __make_tuple_types<tuple<_Types...>, _Ep, 0, true> {
-  typedef _LIBCPP_NODEBUG __tuple_types<_Types...> type;
-};
-
-template <class... _Types, size_t _Ep>
-struct __make_tuple_types<__tuple_types<_Types...>, _Ep, 0, true> {
-  typedef _LIBCPP_NODEBUG __tuple_types<_Types...> type;
-};
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // _LIBCPP_CXX03_LANG
-
-#endif // _LIBCPP___TUPLE_MAKE_TUPLE_TYPES_H
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
 #ifndef _LIBCPP___TUPLE_SFINAE_HELPERS_H
 #define _LIBCPP___TUPLE_SFINAE_HELPERS_H
 
 #include <__config>
-#include <__fwd/tuple.h>
-#include <__tuple/make_tuple_types.h>
-#include <__tuple/tuple_element.h>
-#include <__tuple/tuple_like_ext.h>
-#include <__tuple/tuple_size.h>
-#include <__tuple/tuple_types.h>
-#include <__type_traits/conjunction.h>
-#include <__type_traits/enable_if.h>
-#include <__type_traits/integral_constant.h>
-#include <__type_traits/is_constructible.h>
-#include <__type_traits/is_same.h>
-#include <__type_traits/remove_cvref.h>
-#include <__type_traits/remove_reference.h>
-#include <cstddef>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -214,36 +81,7 @@ _LIBCPP_BEGIN_NAMESPACE_STD
 
 #ifndef _LIBCPP_CXX03_LANG
 
-struct __tuple_sfinae_base {
-  template <template <class, class...> class _Trait, class... _LArgs, class... _RArgs>
-  static auto __do_test(__tuple_types<_LArgs...>,
-                        __tuple_types<_RArgs...>) -> __all<__enable_if_t<_Trait<_LArgs, _RArgs>::value, bool>{true}...>;
-  template <template <class...> class>
-  static auto __do_test(...) -> false_type;
-
-  template <class _FromArgs, class _ToArgs>
-  using __constructible = decltype(__do_test<is_constructible>(_ToArgs{}, _FromArgs{}));
-};
-
-// __tuple_constructible
-
-template <class _Tp,
-          class _Up,
-          bool = __tuple_like_ext<__libcpp_remove_reference_t<_Tp> >::value,
-          bool = __tuple_like_ext<_Up>::value>
-struct __tuple_constructible : public false_type {};
-
-template <class _Tp, class _Up>
-struct __tuple_constructible<_Tp, _Up, true, true>
-    : public __tuple_sfinae_base::__constructible< typename __make_tuple_types<_Tp>::type,
-                                                   typename __make_tuple_types<_Up>::type > {};
-
-template <size_t _Ip, class... _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_element<_Ip, tuple<_Tp...> > {
-  typedef _LIBCPP_NODEBUG typename tuple_element<_Ip, __tuple_types<_Tp...> >::type type;
-};
-
-struct _LIBCPP_EXPORTED_FROM_ABI __check_tuple_constructor_fail {
+struct __check_tuple_constructor_fail {
   static _LIBCPP_HIDE_FROM_ABI constexpr bool __enable_explicit_default() { return false; }
   static _LIBCPP_HIDE_FROM_ABI constexpr bool __enable_implicit_default() { return false; }
   template <class...>
@@ -333,9 +171,7 @@ _LIBCPP_END_NAMESPACE_STD
 #define _LIBCPP___TUPLE_TUPLE_ELEMENT_H
 
 #include <__config>
-#include <__tuple/tuple_indices.h>
-#include <__tuple/tuple_types.h>
-#include <cstddef>
+#include <__cstddef/size_t.h>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -344,37 +180,27 @@ _LIBCPP_END_NAMESPACE_STD
 _LIBCPP_BEGIN_NAMESPACE_STD
 
 template <size_t _Ip, class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_element;
+struct tuple_element;
 
 template <size_t _Ip, class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_element<_Ip, const _Tp> {
-  typedef _LIBCPP_NODEBUG const typename tuple_element<_Ip, _Tp>::type type;
+struct tuple_element<_Ip, const _Tp> {
+  using type _LIBCPP_NODEBUG = const typename tuple_element<_Ip, _Tp>::type;
 };
 
 template <size_t _Ip, class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_element<_Ip, volatile _Tp> {
-  typedef _LIBCPP_NODEBUG volatile typename tuple_element<_Ip, _Tp>::type type;
+struct tuple_element<_Ip, volatile _Tp> {
+  using type _LIBCPP_NODEBUG = volatile typename tuple_element<_Ip, _Tp>::type;
 };
 
 template <size_t _Ip, class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_element<_Ip, const volatile _Tp> {
-  typedef _LIBCPP_NODEBUG const volatile typename tuple_element<_Ip, _Tp>::type type;
-};
-
-#ifndef _LIBCPP_CXX03_LANG
-
-template <size_t _Ip, class... _Types>
-struct _LIBCPP_TEMPLATE_VIS tuple_element<_Ip, __tuple_types<_Types...> > {
-  static_assert(_Ip < sizeof...(_Types), "tuple_element index out of range");
-  typedef _LIBCPP_NODEBUG __type_pack_element<_Ip, _Types...> type;
+struct tuple_element<_Ip, const volatile _Tp> {
+  using type _LIBCPP_NODEBUG = const volatile typename tuple_element<_Ip, _Tp>::type;
 };
 
 #  if _LIBCPP_STD_VER >= 14
 template <size_t _Ip, class... _Tp>
 using tuple_element_t _LIBCPP_NODEBUG = typename tuple_element<_Ip, _Tp...>::type;
 #  endif
-
-#endif // _LIBCPP_CXX03_LANG
 
 _LIBCPP_END_NAMESPACE_STD
 
@@ -387,148 +213,17 @@ _LIBCPP_END_NAMESPACE_STD
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef _LIBCPP___TUPLE_MAKE_TUPLE_INDICES_H
-#define _LIBCPP___TUPLE_MAKE_TUPLE_INDICES_H
-
-#include <__config>
-#include <__utility/integer_sequence.h>
-#include <cstddef>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-#ifndef _LIBCPP_CXX03_LANG
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-template <size_t...>
-struct __tuple_indices {};
-
-template <size_t _Ep, size_t _Sp = 0>
-struct __make_tuple_indices {
-  static_assert(_Sp <= _Ep, "__make_tuple_indices input error");
-  typedef __make_indices_imp<_Ep, _Sp> type;
-};
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // _LIBCPP_CXX03_LANG
-
-#endif // _LIBCPP___TUPLE_MAKE_TUPLE_INDICES_H
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef _LIBCPP___TUPLE_TUPLE_LIKE_H
-#define _LIBCPP___TUPLE_TUPLE_LIKE_H
-
-#include <__config>
-#include <__fwd/subrange.h>
-#include <__tuple/tuple_like_no_subrange.h>
-#include <__tuple/tuple_size.h>
-#include <__type_traits/remove_cvref.h>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-#if _LIBCPP_STD_VER >= 20
-
-template <class _Tp>
-inline constexpr bool __is_ranges_subrange_v = false;
-
-template <class _Iter, class _Sent, ranges::subrange_kind _Kind>
-inline constexpr bool __is_ranges_subrange_v<ranges::subrange<_Iter, _Sent, _Kind>> = true;
-
-template <class _Tp>
-concept __tuple_like = __tuple_like_no_subrange<_Tp> || __is_ranges_subrange_v<remove_cvref_t<_Tp>>;
-
-// As of writing this comment every use of `pair-like` in the standard excludes `ranges::subrange`, so
-// you most likely want to use `__pair_like_no_subrange` if you're looking for `pair-like`.
-
-#endif // _LIBCPP_STD_VER >= 20
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // _LIBCPP___TUPLE_TUPLE_LIKE_H
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef _LIBCPP___TUPLE_TUPLE_LIKE_EXT_H
-#define _LIBCPP___TUPLE_TUPLE_LIKE_EXT_H
-
-#include <__config>
-#include <__fwd/array.h>
-#include <__fwd/pair.h>
-#include <__fwd/tuple.h>
-#include <__tuple/tuple_types.h>
-#include <__type_traits/integral_constant.h>
-#include <cstddef>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-template <class _Tp>
-struct __tuple_like_ext : false_type {};
-
-template <class _Tp>
-struct __tuple_like_ext<const _Tp> : public __tuple_like_ext<_Tp> {};
-template <class _Tp>
-struct __tuple_like_ext<volatile _Tp> : public __tuple_like_ext<_Tp> {};
-template <class _Tp>
-struct __tuple_like_ext<const volatile _Tp> : public __tuple_like_ext<_Tp> {};
-
-#ifndef _LIBCPP_CXX03_LANG
-template <class... _Tp>
-struct __tuple_like_ext<tuple<_Tp...> > : true_type {};
-#endif
-
-template <class _T1, class _T2>
-struct __tuple_like_ext<pair<_T1, _T2> > : true_type {};
-
-template <class _Tp, size_t _Size>
-struct __tuple_like_ext<array<_Tp, _Size> > : true_type {};
-
-template <class... _Tp>
-struct __tuple_like_ext<__tuple_types<_Tp...> > : true_type {};
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // _LIBCPP___TUPLE_TUPLE_LIKE_EXT_H
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
 #ifndef _LIBCPP___TUPLE_TUPLE_LIKE_NO_SUBRANGE_H
 #define _LIBCPP___TUPLE_TUPLE_LIKE_NO_SUBRANGE_H
 
 #include <__config>
+#include <__cstddef/size_t.h>
 #include <__fwd/array.h>
 #include <__fwd/complex.h>
 #include <__fwd/pair.h>
 #include <__fwd/tuple.h>
 #include <__tuple/tuple_size.h>
 #include <__type_traits/remove_cvref.h>
-#include <cstddef>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -583,11 +278,12 @@ _LIBCPP_END_NAMESPACE_STD
 #define _LIBCPP___TUPLE_TUPLE_SIZE_H
 
 #include <__config>
+#include <__cstddef/size_t.h>
 #include <__fwd/tuple.h>
-#include <__tuple/tuple_types.h>
+#include <__type_traits/enable_if.h>
+#include <__type_traits/integral_constant.h>
 #include <__type_traits/is_const.h>
 #include <__type_traits/is_volatile.h>
-#include <cstddef>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -596,45 +292,39 @@ _LIBCPP_END_NAMESPACE_STD
 _LIBCPP_BEGIN_NAMESPACE_STD
 
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size;
+struct tuple_size;
 
 #if !defined(_LIBCPP_CXX03_LANG)
 template <class _Tp, class...>
-using __enable_if_tuple_size_imp = _Tp;
+using __enable_if_tuple_size_imp _LIBCPP_NODEBUG = _Tp;
 
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<__enable_if_tuple_size_imp< const _Tp,
-                                                                   __enable_if_t<!is_volatile<_Tp>::value>,
-                                                                   integral_constant<size_t, sizeof(tuple_size<_Tp>)>>>
+struct tuple_size<
+    __enable_if_tuple_size_imp<const _Tp, __enable_if_t<!is_volatile<_Tp>::value>, decltype(tuple_size<_Tp>::value)>>
     : public integral_constant<size_t, tuple_size<_Tp>::value> {};
 
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<__enable_if_tuple_size_imp< volatile _Tp,
-                                                                   __enable_if_t<!is_const<_Tp>::value>,
-                                                                   integral_constant<size_t, sizeof(tuple_size<_Tp>)>>>
+struct tuple_size<
+    __enable_if_tuple_size_imp<volatile _Tp, __enable_if_t<!is_const<_Tp>::value>, decltype(tuple_size<_Tp>::value)>>
     : public integral_constant<size_t, tuple_size<_Tp>::value> {};
 
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS
-tuple_size<__enable_if_tuple_size_imp<const volatile _Tp, integral_constant<size_t, sizeof(tuple_size<_Tp>)>>>
+struct tuple_size<__enable_if_tuple_size_imp<const volatile _Tp, decltype(tuple_size<_Tp>::value)>>
     : public integral_constant<size_t, tuple_size<_Tp>::value> {};
 
 #else
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<const _Tp> : public tuple_size<_Tp> {};
+struct tuple_size<const _Tp> : public tuple_size<_Tp> {};
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<volatile _Tp> : public tuple_size<_Tp> {};
+struct tuple_size<volatile _Tp> : public tuple_size<_Tp> {};
 template <class _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<const volatile _Tp> : public tuple_size<_Tp> {};
+struct tuple_size<const volatile _Tp> : public tuple_size<_Tp> {};
 #endif
 
 #ifndef _LIBCPP_CXX03_LANG
 
 template <class... _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<tuple<_Tp...> > : public integral_constant<size_t, sizeof...(_Tp)> {};
-
-template <class... _Tp>
-struct _LIBCPP_TEMPLATE_VIS tuple_size<__tuple_types<_Tp...> > : public integral_constant<size_t, sizeof...(_Tp)> {};
+struct tuple_size<tuple<_Tp...> > : public integral_constant<size_t, sizeof...(_Tp)> {};
 
 #  if _LIBCPP_STD_VER >= 17
 template <class _Tp>
@@ -646,73 +336,3 @@ inline constexpr size_t tuple_size_v = tuple_size<_Tp>::value;
 _LIBCPP_END_NAMESPACE_STD
 
 #endif // _LIBCPP___TUPLE_TUPLE_SIZE_H
-// -*- C++ -*-
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef _LIBCPP___TUPLE_TUPLE_TRANSFORM_H
-#define _LIBCPP___TUPLE_TUPLE_TRANSFORM_H
-
-#include <__config>
-
-#include <__functional/invoke.h>
-#include <__utility/forward.h>
-#include <tuple>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-_LIBCPP_PUSH_MACROS
-#include <__undef_macros>
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-#if _LIBCPP_STD_VER >= 23
-
-template <class _Fun, class _Tuple>
-_LIBCPP_HIDE_FROM_ABI constexpr auto __tuple_transform(_Fun&& __f, _Tuple&& __tuple) {
-  return std::apply(
-      [&]<class... _Types>(_Types&&... __elements) {
-        return tuple<invoke_result_t<_Fun&, _Types>...>(std::invoke(__f, std::forward<_Types>(__elements))...);
-      },
-      std::forward<_Tuple>(__tuple));
-}
-
-#endif // _LIBCPP_STD_VER >= 23
-
-_LIBCPP_END_NAMESPACE_STD
-
-_LIBCPP_POP_MACROS
-
-#endif // _LIBCPP___TUPLE_TUPLE_TRANSFORM_H
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef _LIBCPP___TUPLE_TUPLE_TYPES_H
-#define _LIBCPP___TUPLE_TUPLE_TYPES_H
-
-#include <__config>
-
-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
-#  pragma GCC system_header
-#endif
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-template <class... _Tp>
-struct __tuple_types {};
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // _LIBCPP___TUPLE_TUPLE_TYPES_H
