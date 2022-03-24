@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2022/03/24 19:41:06 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2022/03/24 19:41:06 bluhm Exp $
 
 # compile and run zlib test files from upstream
 # https://github.com/madler/zlib/tree/master/test
