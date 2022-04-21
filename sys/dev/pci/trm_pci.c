@@ -1,4 +1,4 @@
-/*	$OpenBSD: trm_pci.c,v 1.11 2022/04/06 18:59:29 naddy Exp $
+/*	$OpenBSD: trm_pci.c,v 1.10 2020/07/20 14:41:14 krw Exp $
  * ------------------------------------------------------------
  *       O.S     : OpenBSD
  *    FILE NAME  : trm_pci.c
@@ -57,7 +57,7 @@
 int	trm_pci_probe (struct device *, void *, void *);
 void	trm_pci_attach (struct device *, struct device *, void *);
 
-const struct cfattach trm_pci_ca = {
+struct  cfattach trm_pci_ca = {
 	sizeof(struct trm_softc),
 	trm_pci_probe,
 	trm_pci_attach,

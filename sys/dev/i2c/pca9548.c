@@ -1,4 +1,4 @@
-/*	$OpenBSD: pca9548.c,v 1.6 2022/04/06 18:59:28 naddy Exp $	*/
+/*	$OpenBSD: pca9548.c,v 1.5 2020/11/14 21:50:51 patrick Exp $	*/
 
 /*
  * Copyright (c) 2020 Mark Kettenis
@@ -78,7 +78,7 @@ struct pcamux_crs {
 int	pcamux_match(struct device *, void *, void *);
 void	pcamux_attach(struct device *, struct device *, void *);
 
-const struct cfattach pcamux_ca = {
+struct cfattach pcamux_ca = {
 	sizeof(struct pcamux_softc), pcamux_match, pcamux_attach
 };
 

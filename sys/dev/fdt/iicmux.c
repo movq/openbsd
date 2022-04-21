@@ -1,4 +1,4 @@
-/*	$OpenBSD: iicmux.c,v 1.2 2022/04/06 18:59:28 naddy Exp $	*/
+/*	$OpenBSD: iicmux.c,v 1.1 2021/11/21 11:02:21 kettenis Exp $	*/
 /*
  * Copyright (c) 2021 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -58,7 +58,7 @@ struct iicmux_softc {
 int	iicmux_match(struct device *, void *, void *);
 void	iicmux_attach(struct device *, struct device *, void *);
 
-const struct cfattach iicmux_ca = {
+struct cfattach iicmux_ca = {
 	sizeof(struct iicmux_softc), iicmux_match, iicmux_attach
 };
 

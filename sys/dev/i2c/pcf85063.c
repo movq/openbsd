@@ -1,4 +1,4 @@
-/*	$OpenBSD: pcf85063.c,v 1.2 2022/04/06 18:59:28 naddy Exp $	*/
+/*	$OpenBSD: pcf85063.c,v 1.1 2021/11/22 20:20:20 kettenis Exp $	*/
 
 /*
  * Copyright (c) 2005 Kimihiro Nonaka
@@ -75,7 +75,7 @@ struct pcyrtc_softc {
 int pcyrtc_match(struct device *, void *, void *);
 void pcyrtc_attach(struct device *, struct device *, void *);
 
-const struct cfattach pcyrtc_ca = {
+struct cfattach pcyrtc_ca = {
 	sizeof(struct pcyrtc_softc), pcyrtc_match, pcyrtc_attach
 };
 

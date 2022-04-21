@@ -1,4 +1,4 @@
-/*	$OpenBSD: brswphy.c,v 1.4 2022/04/06 18:59:29 naddy Exp $	*/
+/*	$OpenBSD: brswphy.c,v 1.3 2020/04/06 00:01:08 pirofti Exp $	*/
 
 /*
  * Copyright (c) 2014 Paul Irofti <paul@irofti.net>
@@ -150,7 +150,7 @@ struct brswphy_softc {
 int	brswphymatch(struct device *, void *, void *);
 void	brswphyattach(struct device *, struct device *, void *);
 
-const struct cfattach brswphy_ca = { sizeof(struct brswphy_softc),
+struct cfattach brswphy_ca = { sizeof(struct brswphy_softc),
 	brswphymatch, brswphyattach, mii_phy_detach,
 };
 
