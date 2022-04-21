@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_re_cardbus.c,v 1.30 2022/04/06 18:59:28 naddy Exp $	*/
+/*	$OpenBSD: if_re_cardbus.c,v 1.29 2020/06/17 10:48:44 claudio Exp $	*/
 
 /*
  * Copyright (c) 2005 Peter Valchev <pvalchev@openbsd.org>
@@ -71,7 +71,7 @@ void	re_cardbus_setup(struct rl_softc *);
 /*
  * Cardbus autoconfig definitions
  */
-const struct cfattach re_cardbus_ca = {
+struct cfattach re_cardbus_ca = {
 	sizeof(struct re_cardbus_softc),
 	re_cardbus_probe,
 	re_cardbus_attach,

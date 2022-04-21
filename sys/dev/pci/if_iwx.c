@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_iwx.c,v 1.141 2022/04/06 18:59:29 naddy Exp $	*/
+/*	$OpenBSD: if_iwx.c,v 1.140 2022/03/20 12:01:58 stsp Exp $	*/
 
 /*
  * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
@@ -9937,7 +9937,7 @@ struct cfdriver iwx_cd = {
 	NULL, "iwx", DV_IFNET
 };
 
-const struct cfattach iwx_ca = {
+struct cfattach iwx_ca = {
 	sizeof(struct iwx_softc), iwx_match, iwx_attach,
 	NULL, iwx_activate
 };

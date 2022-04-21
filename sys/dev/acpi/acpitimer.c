@@ -1,4 +1,4 @@
-/* $OpenBSD: acpitimer.c,v 1.15 2022/04/06 18:59:27 naddy Exp $ */
+/* $OpenBSD: acpitimer.c,v 1.14 2021/02/23 04:44:31 cheloha Exp $ */
 /*
  * Copyright (c) 2005 Thorsten Lockert <tholo@sigmasoft.com>
  *
@@ -48,7 +48,7 @@ struct acpitimer_softc {
 	bus_space_handle_t	sc_ioh;
 };
 
-const struct cfattach acpitimer_ca = {
+struct cfattach acpitimer_ca = {
 	sizeof(struct acpitimer_softc), acpitimermatch, acpitimerattach
 };
 

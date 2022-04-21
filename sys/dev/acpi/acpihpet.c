@@ -1,4 +1,4 @@
-/* $OpenBSD: acpihpet.c,v 1.26 2022/04/06 18:59:27 naddy Exp $ */
+/* $OpenBSD: acpihpet.c,v 1.25 2021/02/23 04:44:31 cheloha Exp $ */
 /*
  * Copyright (c) 2005 Thorsten Lockert <tholo@sigmasoft.com>
  *
@@ -72,7 +72,7 @@ struct acpihpet_softc {
 	struct hpet_regs	sc_save;
 };
 
-const struct cfattach acpihpet_ca = {
+struct cfattach acpihpet_ca = {
 	sizeof(struct acpihpet_softc), acpihpet_match, acpihpet_attach,
 	NULL, acpihpet_activate
 };
