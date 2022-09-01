@@ -1,4 +1,4 @@
-/*	$OpenBSD: timer.c,v 1.1 2022/09/01 14:20:33 martijn Exp $	*/
+/*	$OpenBSD: timer.c,v 1.1.1.1 2022/09/01 14:20:33 martijn Exp $	*/
 
 /*
  * Copyright (c) 2008 Reyk Floeter <reyk@openbsd.org>

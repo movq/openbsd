@@ -1,4 +1,4 @@
-/*	$OpenBSD: mib.c,v 1.1 2022/09/01 14:20:34 martijn Exp $	*/
+/*	$OpenBSD: mib.c,v 1.1.1.1 2022/09/01 14:20:34 martijn Exp $	*/
 
 /*
  * Copyright (c) 2022 Martijn van Duren <martijn@openbsd.org>
