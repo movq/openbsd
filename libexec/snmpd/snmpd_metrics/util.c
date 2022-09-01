@@ -1,4 +1,4 @@
-/*	$OpenBSD: util.c,v 1.1 2022/09/01 14:20:33 martijn Exp $	*/
+/*	$OpenBSD: util.c,v 1.1.1.1 2022/09/01 14:20:33 martijn Exp $	*/
 /*
  * Copyright (c) 2014 Bret Stephen Lambert <blambert@openbsd.org>
  *
