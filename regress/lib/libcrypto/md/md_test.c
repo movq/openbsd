@@ -1,4 +1,4 @@
-/*	$OpenBSD: md_test.c,v 1.1 2022/09/02 13:34:48 tb Exp $ */
+/*	$OpenBSD: md_test.c,v 1.1.1.1 2022/09/02 13:34:48 tb Exp $ */
 /*
  * Copyright (c) 2022 Joshua Sing <joshua@hypera.dev>
  *
