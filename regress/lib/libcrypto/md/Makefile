@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2022/09/02 13:34:48 tb Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2022/09/02 13:34:48 tb Exp $
 
 PROG=	md_test
 LDADD=	-lcrypto
