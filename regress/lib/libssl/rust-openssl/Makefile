@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2022/10/20 07:33:14 tb Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2022/10/20 07:33:14 tb Exp $
 
 RUST_OPENSSL_TESTS =	/usr/local/share/rust-openssl-tests
 CARGO =			/usr/local/bin/cargo
