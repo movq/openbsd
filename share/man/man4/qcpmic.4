@@ -1,4 +1,4 @@
-.\"	$OpenBSD: qcpmic.4,v 1.1 2022/11/10 12:57:08 patrick Exp $
+.\"	$OpenBSD: qcpmic.4,v 1.2 2022/11/10 13:08:57 patrick Exp $
 .\"
 .\" Copyright (c) 2022 Patrick Wildt <patrick@blueri.se>
 .\"
@@ -23,6 +23,9 @@
 .Sh SYNOPSIS
 .Cd "qcpmic* at qcspmi?"
 .Cd "qcpmicgpio* at qcpmic?"
+.Cd "qcpon* at qcpmic?"
+.Cd "qcpwm* at qcpmic?"
+.Cd "qcrtc* at qcpmic?"
 .Sh DESCRIPTION
 The
 .Nm
@@ -33,6 +36,9 @@ implemented in the children attaching to this driver.
 .Sh SEE ALSO
 .Xr qcspmi 4 ,
 .Xr qcpmicgpio 4 ,
+.Xr qcpon 4 ,
+.Xr qcpwm 4 ,
+.Xr qcrtc 4 ,
 .Xr intro 4
 .Sh HISTORY
 The
