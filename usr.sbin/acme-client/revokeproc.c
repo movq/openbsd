@@ -1,4 +1,4 @@
-/*	$Id: revokeproc.c,v 1.19 2021/11/22 08:26:08 tb Exp $ */
+/*	$Id: revokeproc.c,v 1.19.4.1 2022/12/15 15:55:10 bluhm Exp $ */
 /*
  * Copyright (c) 2016 Kristaps Dzonsons <kristaps@bsd.lv>
  *
@@ -239,6 +239,7 @@ revokeproc(int fd, const char *certfile, int force,
 				goto out;
 			}
 			force = 2;
+			continue;
 		}
 		if (found[j]++) {
 			if (revocate) {
