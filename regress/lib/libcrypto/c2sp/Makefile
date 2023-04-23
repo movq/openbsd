@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2023/04/23 13:43:46 tb Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2023/04/23 13:43:46 tb Exp $
 
 C2SP_TESTVECTORS = /usr/local/share/c2sp-testvectors/
 
