@@ -1,4 +1,4 @@
-/*	$OpenBSD: cctv.go,v 1.1 2023/04/23 13:43:46 tb Exp $ */
+/*	$OpenBSD: cctv.go,v 1.1.1.1 2023/04/23 13:43:46 tb Exp $ */
 
 /*
  * Copyright (c) 2023 Theo Buehler <tb@openbsd.org>
