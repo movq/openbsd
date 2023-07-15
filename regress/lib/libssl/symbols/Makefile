@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2023/07/15 19:29:44 tb Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2023/07/15 19:29:44 tb Exp $
 
 PROG = symbols
 

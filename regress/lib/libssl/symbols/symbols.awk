@@ -1,4 +1,4 @@
-# $OpenBSD: symbols.awk,v 1.1 2023/07/15 19:29:44 tb Exp $
+# $OpenBSD: symbols.awk,v 1.1.1.1 2023/07/15 19:29:44 tb Exp $
 
 # Copyright (c) 2018,2020,2023 Theo Buehler <tb@openbsd.org>
 #
