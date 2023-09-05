@@ -4,7 +4,7 @@ D. J. Bernstein
 Public domain.
 */
 
-/* $OpenBSD: chacha_private.h,v 1.1 2023/09/05 11:07:47 sthen Exp $ */
+/* $OpenBSD: chacha_private.h,v 1.1.1.1 2023/09/05 11:07:47 sthen Exp $ */
 
 typedef unsigned char u8;
 typedef unsigned int u32;

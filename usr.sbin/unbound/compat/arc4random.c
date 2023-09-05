@@ -1,4 +1,4 @@
-/*      $OpenBSD: arc4random.c,v 1.1 2023/09/05 11:07:47 sthen Exp $ */
+/*      $OpenBSD: arc4random.c,v 1.1.1.1 2023/09/05 11:07:47 sthen Exp $ */
 
 /*
  * Copyright (c) 1996, David Mazieres <dm@uun.org>

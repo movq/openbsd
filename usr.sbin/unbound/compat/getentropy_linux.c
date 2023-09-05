@@ -1,4 +1,4 @@
-/*	$OpenBSD: getentropy_linux.c,v 1.1 2023/09/05 11:07:47 sthen Exp $	*/
+/*	$OpenBSD: getentropy_linux.c,v 1.1.1.1 2023/09/05 11:07:47 sthen Exp $	*/
 
 /*
  * Copyright (c) 2014 Theo de Raadt <deraadt@openbsd.org>
