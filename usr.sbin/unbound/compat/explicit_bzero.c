@@ -1,4 +1,4 @@
-/*	$OpenBSD: explicit_bzero.c,v 1.1 2023/09/05 11:07:47 sthen Exp $ */
+/*	$OpenBSD: explicit_bzero.c,v 1.1.1.1 2023/09/05 11:07:47 sthen Exp $ */
 /*
  * Public domain.
  * Written by Matthew Dempsky.
