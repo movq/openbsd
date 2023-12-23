@@ -7,8 +7,8 @@ no warnings 'once';
 BEGIN {
     chdir 't' if -d 't';
     require './test.pl';
-    set_up_inc('../lib');
     require './loc_tools.pl';
+    set_up_inc('../lib');
 }
 
 $::TEST_CHUNK = 'a';

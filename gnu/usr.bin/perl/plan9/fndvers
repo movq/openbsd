@@ -12,8 +12,3 @@ ed plan9/genconfig.pl<<!
 g/_P9P_VERSION/s//$p9pvers/g
 w plan9/genconfig.pl
 !
-
-ed plan9/aperl<<!
-g/_P9P_VERSION/s//$p9pvers/g
-w plan9/aperl
-!

@@ -172,9 +172,7 @@ threads->create( sub {
         ok($$obj == 2, "Thread: New object ID $$obj");
     } )->join();
 
-# Fixed by commit bb1bc619ea68d9703fbd3fe5bc65ae000f90151f
-my $todo = ($] <= 5.013001) ? "  # TODO - should be 2" : "";
-ok($$obj == 2, "Main: New object ID $$obj".$todo);
+ok($$obj == 2, "Main: New object ID $$obj  # TODO - should be 2");
 
 exit(0);
 

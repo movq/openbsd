@@ -1,15 +1,14 @@
-# DerivedBinaryProperties-14.0.0.txt
-# Date: 2021-06-04, 02:19:15 GMT
-# © 2021 Unicode®, Inc.
-# Unicode and the Unicode Logo are registered trademarks of Unicode, Inc. in the U.S. and other countries.
-# For terms of use, see http://www.unicode.org/terms_of_use.html
+# DerivedBinaryProperties-5.2.0.txt
+# Date: 2009-05-22, 18:51:12 GMT [MD]
 #
 # Unicode Character Database
-#   For documentation, see http://www.unicode.org/reports/tr44/
+# Copyright (c) 1991-2009 Unicode, Inc.
+# For terms of use, see http://www.unicode.org/terms_of_use.html
+# For documentation, see http://www.unicode.org/reports/tr44/
 
 # ================================================
 
-# Bidi_Mirrored (listing UnicodeData.txt, field 9: see UAX #44: https://www.unicode.org/reports/tr44/)
+# Bidi_Mirrored (listing UnicodeData.txt, field 9: see UAX #44: http://www.unicode.org/reports/tr44/)
 
 0028          ; Bidi_Mirrored # Ps       LEFT PARENTHESIS
 0029          ; Bidi_Mirrored # Pe       RIGHT PARENTHESIS
@@ -61,10 +60,7 @@
 22D0..22D1    ; Bidi_Mirrored # Sm   [2] DOUBLE SUBSET..DOUBLE SUPERSET
 22D6..22ED    ; Bidi_Mirrored # Sm  [24] LESS-THAN WITH DOT..DOES NOT CONTAIN AS NORMAL SUBGROUP OR EQUAL
 22F0..22FF    ; Bidi_Mirrored # Sm  [16] UP RIGHT DIAGONAL ELLIPSIS..Z NOTATION BAG MEMBERSHIP
-2308          ; Bidi_Mirrored # Ps       LEFT CEILING
-2309          ; Bidi_Mirrored # Pe       RIGHT CEILING
-230A          ; Bidi_Mirrored # Ps       LEFT FLOOR
-230B          ; Bidi_Mirrored # Pe       RIGHT FLOOR
+2308..230B    ; Bidi_Mirrored # Sm   [4] LEFT CEILING..RIGHT FLOOR
 2320..2321    ; Bidi_Mirrored # Sm   [2] TOP HALF INTEGRAL..BOTTOM HALF INTEGRAL
 2329          ; Bidi_Mirrored # Ps       LEFT-POINTING ANGLE BRACKET
 232A          ; Bidi_Mirrored # Pe       RIGHT-POINTING ANGLE BRACKET
@@ -87,7 +83,7 @@
 27C5          ; Bidi_Mirrored # Ps       LEFT S-SHAPED BAG DELIMITER
 27C6          ; Bidi_Mirrored # Pe       RIGHT S-SHAPED BAG DELIMITER
 27C8..27C9    ; Bidi_Mirrored # Sm   [2] REVERSE SOLIDUS PRECEDING SUBSET..SUPERSET PRECEDING SOLIDUS
-27CB..27CD    ; Bidi_Mirrored # Sm   [3] MATHEMATICAL RISING DIAGONAL..MATHEMATICAL FALLING DIAGONAL
+27CC          ; Bidi_Mirrored # Sm       LONG DIVISION
 27D3..27D6    ; Bidi_Mirrored # Sm   [4] LOWER RIGHT CORNER WITH DOT..RIGHT OUTER JOIN
 27DC..27DE    ; Bidi_Mirrored # Sm   [3] LEFT MULTIMAP..LONG LEFT TACK
 27E2..27E5    ; Bidi_Mirrored # Sm   [4] WHITE CONCAVE-SIDED DIAMOND WITH LEFTWARDS TICK..WHITE SQUARE WITH RIGHTWARDS TICK
@@ -123,8 +119,7 @@
 2996          ; Bidi_Mirrored # Pe       DOUBLE RIGHT ARC LESS-THAN BRACKET
 2997          ; Bidi_Mirrored # Ps       LEFT BLACK TORTOISE SHELL BRACKET
 2998          ; Bidi_Mirrored # Pe       RIGHT BLACK TORTOISE SHELL BRACKET
-299B..29A0    ; Bidi_Mirrored # Sm   [6] MEASURED ANGLE OPENING LEFT..SPHERICAL ANGLE OPENING LEFT
-29A2..29AF    ; Bidi_Mirrored # Sm  [14] TURNED ANGLE..MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING LEFT AND DOWN
+299B..29AF    ; Bidi_Mirrored # Sm  [21] MEASURED ANGLE OPENING LEFT..MEASURED ANGLE WITH OPEN ARM ENDING IN ARROW POINTING LEFT AND DOWN
 29B8          ; Bidi_Mirrored # Sm       CIRCLED REVERSE SOLIDUS
 29C0..29C5    ; Bidi_Mirrored # Sm   [6] CIRCLED LESS-THAN..SQUARED FALLING DIAGONAL SLASH
 29C9          ; Bidi_Mirrored # Sm       TWO JOINED SQUARES
@@ -164,7 +159,6 @@
 2AF3          ; Bidi_Mirrored # Sm       PARALLEL WITH TILDE OPERATOR
 2AF7..2AFB    ; Bidi_Mirrored # Sm   [5] TRIPLE NESTED LESS-THAN..TRIPLE SOLIDUS BINARY RELATION
 2AFD          ; Bidi_Mirrored # Sm       DOUBLE SOLIDUS OPERATOR
-2BFE          ; Bidi_Mirrored # So       REVERSED RIGHT ANGLE
 2E02          ; Bidi_Mirrored # Pi       LEFT SUBSTITUTION BRACKET
 2E03          ; Bidi_Mirrored # Pf       RIGHT SUBSTITUTION BRACKET
 2E04          ; Bidi_Mirrored # Pi       LEFT DOTTED SUBSTITUTION BRACKET
@@ -185,14 +179,6 @@
 2E27          ; Bidi_Mirrored # Pe       RIGHT SIDEWAYS U BRACKET
 2E28          ; Bidi_Mirrored # Ps       LEFT DOUBLE PARENTHESIS
 2E29          ; Bidi_Mirrored # Pe       RIGHT DOUBLE PARENTHESIS
-2E55          ; Bidi_Mirrored # Ps       LEFT SQUARE BRACKET WITH STROKE
-2E56          ; Bidi_Mirrored # Pe       RIGHT SQUARE BRACKET WITH STROKE
-2E57          ; Bidi_Mirrored # Ps       LEFT SQUARE BRACKET WITH DOUBLE STROKE
-2E58          ; Bidi_Mirrored # Pe       RIGHT SQUARE BRACKET WITH DOUBLE STROKE
-2E59          ; Bidi_Mirrored # Ps       TOP HALF LEFT PARENTHESIS
-2E5A          ; Bidi_Mirrored # Pe       TOP HALF RIGHT PARENTHESIS
-2E5B          ; Bidi_Mirrored # Ps       BOTTOM HALF LEFT PARENTHESIS
-2E5C          ; Bidi_Mirrored # Pe       BOTTOM HALF RIGHT PARENTHESIS
 3008          ; Bidi_Mirrored # Ps       LEFT ANGLE BRACKET
 3009          ; Bidi_Mirrored # Pe       RIGHT ANGLE BRACKET
 300A          ; Bidi_Mirrored # Ps       LEFT DOUBLE ANGLE BRACKET
@@ -236,6 +222,6 @@ FF63          ; Bidi_Mirrored # Pe       HALFWIDTH RIGHT CORNER BRACKET
 1D789         ; Bidi_Mirrored # Sm       MATHEMATICAL SANS-SERIF BOLD PARTIAL DIFFERENTIAL
 1D7C3         ; Bidi_Mirrored # Sm       MATHEMATICAL SANS-SERIF BOLD ITALIC PARTIAL DIFFERENTIAL
 
-# Total code points: 553
+# Total code points: 543
 
 # EOF

@@ -1,38 +1,8 @@
 package Tie::StdHandle; 
 
-use strict;
-
 use Tie::Handle;
 our @ISA = 'Tie::Handle';
-our $VERSION = '4.6';
-
-=head1 NAME
-
-Tie::StdHandle - base class definitions for tied handles
-
-=head1 SYNOPSIS
-
-    package NewHandle;
-    require Tie::Handle;
-
-    @ISA = qw(Tie::Handle);
-
-    sub READ { ... }		# Provide a needed method
-    sub TIEHANDLE { ... }	# Overrides inherited method
-
-
-    package main;
-
-    tie *FH, 'NewHandle';
-
-=head1 DESCRIPTION
-
-The B<Tie::StdHandle> package provide most methods for file handles described
-in L<perltie> (the exceptions are C<UNTIE> and C<DESTROY>).  It causes tied
-file handles to behave exactly like standard file handles and allow for
-selective overwriting of methods.
-
-=cut
+use Carp;
 
 sub TIEHANDLE 
 {
@@ -48,7 +18,7 @@ sub TELL    { tell($_[0]) }
 sub FILENO  { fileno($_[0]) }
 sub SEEK    { seek($_[0],$_[1],$_[2]) }
 sub CLOSE   { close($_[0]) }
-sub BINMODE { &CORE::binmode(shift, @_) }
+sub BINMODE { binmode($_[0]) }
 
 sub OPEN
 {
@@ -56,15 +26,14 @@ sub OPEN
  @_ == 2 ? open($_[0], $_[1]) : open($_[0], $_[1], $_[2]);
 }
 
-sub READ     { &CORE::read(shift, \shift, @_) }
+sub READ     { read($_[0],$_[1],$_[2]) }
 sub READLINE { my $fh = $_[0]; <$fh> }
 sub GETC     { getc($_[0]) }
 
 sub WRITE
 {
  my $fh = $_[0];
- local $\; # don't print any line terminator
- print $fh substr($_[1], $_[3], $_[2]);
+ print $fh substr($_[1],0,$_[2])
 }
 
 

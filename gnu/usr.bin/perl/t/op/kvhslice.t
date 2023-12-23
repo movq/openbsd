@@ -2,13 +2,13 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
 }
 
 # use strict;
 
-plan tests => 39;
+plan tests => 44;
 
 # simple use cases
 {
@@ -117,6 +117,13 @@ plan tests => 39;
         like $@, qr{^Can't modify key/value hash slice in local at},
             'local dies';
     }
+    # no delete
+    {
+        local $@;
+        eval 'delete %h{qw(a b)}';
+        like $@, qr{^delete argument is key/value hash slice, use hash slice},
+            'delete dies';
+    }
     # no assign
     {
         local $@;
@@ -127,12 +134,8 @@ plan tests => 39;
     # lvalue subs in assignment
     {
         local $@;
-        eval 'sub bar:lvalue{ %h{qw(a b)} }; (bar) = "1"';
+        eval 'sub bar:lvalue{ %h{qw(a b)} }; bar() = "1"';
         like $@, qr{^Can't modify key/value hash slice in list assignment},
-            'not allowed as result of lvalue sub';
-        eval 'sub bbar:lvalue{ %h{qw(a b)} }; bbar() = "1"';
-        like $@,
-             qr{^Can't modify key/value hash slice in scalar assignment},
             'not allowed as result of lvalue sub';
     }
 }
@@ -148,7 +151,7 @@ plan tests => 39;
         my $v = eval '%h{a}';
         is (scalar @warn, 1, 'warning in scalar context');
         like $warn[0],
-             qr{^%h\{"a"\} in scalar context better written as \$h\{"a"\}},
+             qr{^%h{"a"} in scalar context better written as \$h{"a"}},
             "correct warning text";
     }
     {
@@ -159,13 +162,20 @@ plan tests => 39;
         is (scalar @warn, 0, 'no warning in list context');
     }
 
+    # deprecated syntax
     {
         my $h = \%h;
-        eval '%$h->{a}';
-        like($@, qr/Can't use a hash as a reference/, 'hash reference is error' );
+        @warn = ();
+        ok( eq_array([eval '%$h->{a}'], ['A']), 'works, but deprecated' );
+        is (scalar @warn, 1, 'one warning');
+        like $warn[0], qr{^Using a hash as a reference is deprecated},
+            "correct warning text";
 
-        eval '%$h->{"b","c"}';
-        like($@, qr/Can't use a hash as a reference/, 'hash slice reference is error' );
+        @warn = ();
+        ok( eq_array([eval '%$h->{"b","c"}'], [undef]), 'works, but deprecated' );
+        is (scalar @warn, 1, 'one warning');
+        like $warn[0], qr{^Using a hash as a reference is deprecated},
+            "correct warning text";
     }
 }
 
@@ -181,19 +191,17 @@ plan tests => 39;
     ok( !exists $h{e}, "no autovivification" );
 }
 
-# keys/value/each refuse to compile kvhslice
+# keys/value/each treat argument as scalar
 {
     my %h = 'a'..'b';
     my %i = (foo => \%h);
-    eval '() = keys %i{foo=>}';
-    like($@, qr/Experimental keys on scalar is now forbidden/,
-         'keys %hash{key} forbidden');
-    eval '() = values %i{foo=>}';
-    like($@, qr/Experimental values on scalar is now forbidden/,
-         'values %hash{key} forbidden');
-    eval '() = each %i{foo=>}';
-    like($@, qr/Experimental each on scalar is now forbidden/,
-         'each %hash{key} forbidden');
+    no warnings 'syntax', 'experimental::autoderef';
+    my ($k,$v) = each %i{foo=>};
+    is $k, 'a', 'key returned by each %hash{key}';
+    is $v, 'b', 'val returned by each %hash{key}';
+    %h = 1..10;
+    is join('-', sort keys %i{foo=>}), '1-3-5-7-9', 'keys %hash{key}';
+    is join('-', sort values %i{foo=>}), '10-2-4-6-8', 'values %hash{key}';
 }
 
 # \% prototype expects hash deref

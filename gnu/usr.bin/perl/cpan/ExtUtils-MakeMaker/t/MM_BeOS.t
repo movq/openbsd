@@ -5,8 +5,6 @@ BEGIN {
 }
 chdir 't';
 
-use strict;
-use warnings;
 use Test::More;
 
 BEGIN {
@@ -25,8 +23,8 @@ use File::Basename;
 # Does this mimic ExtUtils::MakeMaker ok?
 {
     @MM::ISA = qw(
-        ExtUtils::MM_Unix
-        ExtUtils::Liblist::Kid
+        ExtUtils::MM_Unix 
+        ExtUtils::Liblist::Kid 
         ExtUtils::MakeMaker
     );
     # MM package faked up by messy MI entanglement
@@ -40,7 +38,7 @@ my $MM = bless { NAME => "Foo" }, 'MM';
 
 # init_linker
 {
-    my $libperl = File::Spec->catfile('$(PERL_INC)',
+    my $libperl = File::Spec->catfile('$(PERL_INC)', 
                                       $Config{libperl} || 'libperl.a' );
     my $export  = '';
     my $after   = '';

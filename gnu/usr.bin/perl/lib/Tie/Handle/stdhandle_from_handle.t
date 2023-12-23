@@ -5,7 +5,7 @@ BEGIN {
     @INC = '../lib';
 }
 
-use Test::More;
+use Test::More tests => 1;
 
 use Tie::Handle;
 
@@ -14,7 +14,5 @@ use Tie::Handle;
     @ISA = qw(Tie::StdHandle);
 }
 
-# For backwards compatibility with 5.8.x
+# For backwards compatabilty with 5.8.x
 ok( Foo->can("TIEHANDLE"), "loading Tie::Handle loads TieStdHandle" );
-
-done_testing();

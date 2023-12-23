@@ -1,7 +1,9 @@
 # Net::NNTP.pm
 #
-# Copyright (C) 1995-1997 Graham Barr.  All rights reserved.
-# Copyright (C) 2013-2016, 2020 Steve Hay.  All rights reserved.
+# Versions up to 2.24_1 Copyright (c) 1995-1997 Graham Barr <gbarr@pobox.com>.
+# All rights reserved.
+# Changes in Version 2.25 onwards Copyright (C) 2013-2015 Steve Hay.  All rights
+# reserved.
 # This module is free software; you can redistribute it and/or modify it under
 # the same terms as Perl itself, i.e. under the terms of either the GNU General
 # Public License or the Artistic License, as specified in the F<LICENCE> file.
@@ -19,7 +21,7 @@ use Net::Cmd;
 use Net::Config;
 use Time::Local;
 
-our $VERSION = "3.14";
+our $VERSION = "3.08_01";
 
 # Code for detecting if we can use SSL
 my $ssl_class = eval {
@@ -37,7 +39,7 @@ my $family_key = 'Domain';
 my $inet6_class = eval {
   require IO::Socket::IP;
   no warnings 'numeric';
-  IO::Socket::IP->VERSION(0.25) || die;
+  IO::Socket::IP->VERSION(0.20) || die;
   $family_key = 'Family';
 } && 'IO::Socket::IP' || eval {
   require IO::Socket::INET6;
@@ -96,6 +98,7 @@ sub new {
     if ($arg{SSL}) {
       Net::NNTP::_SSL->start_SSL($obj,%arg) or next;
     }
+    last:
   }
 
   return
@@ -175,7 +178,7 @@ sub starttls {
 
 
 sub article {
-  @_ >= 1 && @_ <= 3 or croak 'usage: $nntp->article([{$msgid|$msgnum}[, $fh]])';
+  @_ >= 1 && @_ <= 3 or croak 'usage: $nntp->article( [ MSGID ], [ FH ] )';
   my $nntp = shift;
   my @fh;
 
@@ -188,7 +191,7 @@ sub article {
 
 
 sub articlefh {
-  @_ >= 1 && @_ <= 2 or croak 'usage: $nntp->articlefh([{$msgid|$msgnum}])';
+  @_ >= 1 && @_ <= 2 or croak 'usage: $nntp->articlefh( [ MSGID ] )';
   my $nntp = shift;
 
   return unless $nntp->_ARTICLE(@_);
@@ -197,7 +200,7 @@ sub articlefh {
 
 
 sub authinfo {
-  @_ == 3 or croak 'usage: $nntp->authinfo($user, $pass)';
+  @_ == 3 or croak 'usage: $nntp->authinfo( USER, PASS )';
   my ($nntp, $user, $pass) = @_;
 
   $nntp->_AUTHINFO("USER",      $user) == CMD_MORE
@@ -206,7 +209,7 @@ sub authinfo {
 
 
 sub authinfo_simple {
-  @_ == 3 or croak 'usage: $nntp->authinfo_simple($user, $pass)';
+  @_ == 3 or croak 'usage: $nntp->authinfo( USER, PASS )';
   my ($nntp, $user, $pass) = @_;
 
   $nntp->_AUTHINFO('SIMPLE') == CMD_MORE
@@ -215,7 +218,7 @@ sub authinfo_simple {
 
 
 sub body {
-  @_ >= 1 && @_ <= 3 or croak 'usage: $nntp->body([{$msgid|$msgnum}[, $fh]])';
+  @_ >= 1 && @_ <= 3 or croak 'usage: $nntp->body( [ MSGID ], [ FH ] )';
   my $nntp = shift;
   my @fh;
 
@@ -228,7 +231,7 @@ sub body {
 
 
 sub bodyfh {
-  @_ >= 1 && @_ <= 2 or croak 'usage: $nntp->bodyfh([{$msgid|$msgnum}])';
+  @_ >= 1 && @_ <= 2 or croak 'usage: $nntp->bodyfh( [ MSGID ] )';
   my $nntp = shift;
   return unless $nntp->_BODY(@_);
   return $nntp->tied_fh;
@@ -236,7 +239,7 @@ sub bodyfh {
 
 
 sub head {
-  @_ >= 1 && @_ <= 3 or croak 'usage: $nntp->head([{$msgid|$msgnum}[, $fh]])';
+  @_ >= 1 && @_ <= 3 or croak 'usage: $nntp->head( [ MSGID ], [ FH ] )';
   my $nntp = shift;
   my @fh;
 
@@ -249,7 +252,7 @@ sub head {
 
 
 sub headfh {
-  @_ >= 1 && @_ <= 2 or croak 'usage: $nntp->headfh([{$msgid|$msgnum}])';
+  @_ >= 1 && @_ <= 2 or croak 'usage: $nntp->headfh( [ MSGID ] )';
   my $nntp = shift;
   return unless $nntp->_HEAD(@_);
   return $nntp->tied_fh;
@@ -257,7 +260,7 @@ sub headfh {
 
 
 sub nntpstat {
-  @_ == 1 || @_ == 2 or croak 'usage: $nntp->nntpstat([{$msgid|$msgnum}])';
+  @_ == 1 || @_ == 2 or croak 'usage: $nntp->nntpstat( [ MSGID ] )';
   my $nntp = shift;
 
   $nntp->_STAT(@_) && $nntp->message =~ /(<[^>]+>)/o
@@ -267,7 +270,7 @@ sub nntpstat {
 
 
 sub group {
-  @_ == 1 || @_ == 2 or croak 'usage: $nntp->group([$group])';
+  @_ == 1 || @_ == 2 or croak 'usage: $nntp->group( [ GROUP ] )';
   my $nntp = shift;
   my $grp  = ${*$nntp}{'net_nntp_group'};
 
@@ -307,11 +310,11 @@ sub help {
 
 
 sub ihave {
-  @_ >= 2 or croak 'usage: $nntp->ihave($msgid[, $message])';
-  my $nntp  = shift;
-  my $msgid = shift;
+  @_ >= 2 or croak 'usage: $nntp->ihave( MESSAGE-ID [, MESSAGE ])';
+  my $nntp = shift;
+  my $mid  = shift;
 
-  $nntp->_IHAVE($msgid) && $nntp->datasend(@_)
+  $nntp->_IHAVE($mid) && $nntp->datasend(@_)
     ? @_ == 0 || $nntp->dataend
     : undef;
 }
@@ -338,15 +341,15 @@ sub list {
 
 
 sub newgroups {
-  @_ >= 2 or croak 'usage: $nntp->newgroups($since[, $distributions])';
+  @_ >= 2 or croak 'usage: $nntp->newgroups( SINCE [, DISTRIBUTIONS ])';
   my $nntp = shift;
-  my $since = _timestr(shift);
-  my $distributions = shift || "";
+  my $time = _timestr(shift);
+  my $dist = shift || "";
 
-  $distributions = join(",", @{$distributions})
-    if ref($distributions);
+  $dist = join(",", @{$dist})
+    if ref($dist);
 
-  $nntp->_NEWGROUPS($since, $distributions)
+  $nntp->_NEWGROUPS($time, $dist)
     ? $nntp->_grouplist
     : undef;
 }
@@ -354,20 +357,20 @@ sub newgroups {
 
 sub newnews {
   @_ >= 2 && @_ <= 4
-    or croak 'usage: $nntp->newnews($since[, $groups[, $distributions]])';
+    or croak 'usage: $nntp->newnews( SINCE [, GROUPS [, DISTRIBUTIONS ]])';
   my $nntp = shift;
-  my $since = _timestr(shift);
-  my $groups = @_ ? shift : $nntp->group;
-  my $distributions = shift || "";
+  my $time = _timestr(shift);
+  my $grp  = @_ ? shift: $nntp->group;
+  my $dist = shift || "";
 
-  $groups ||= "*";
-  $groups = join(",", @{$groups})
-    if ref($groups);
+  $grp ||= "*";
+  $grp = join(",", @{$grp})
+    if ref($grp);
 
-  $distributions = join(",", @{$distributions})
-    if ref($distributions);
+  $dist = join(",", @{$dist})
+    if ref($dist);
 
-  $nntp->_NEWNEWS($groups, $since, $distributions)
+  $nntp->_NEWNEWS($grp, $time, $dist)
     ? $nntp->_articlelist
     : undef;
 }
@@ -384,7 +387,7 @@ sub next {
 
 
 sub post {
-  @_ >= 1 or croak 'usage: $nntp->post([$message])';
+  @_ >= 1 or croak 'usage: $nntp->post( [ MESSAGE ] )';
   my $nntp = shift;
 
   $nntp->_POST() && $nntp->datasend(@_)
@@ -422,7 +425,7 @@ sub slave {
 
 
 sub active {
-  @_ == 1 || @_ == 2 or croak 'usage: $nntp->active([$pattern])';
+  @_ == 1 || @_ == 2 or croak 'usage: $nntp->active( [ PATTERN ] )';
   my $nntp = shift;
 
   $nntp->_LIST('ACTIVE', @_)
@@ -452,7 +455,7 @@ sub distributions {
 
 
 sub distribution_patterns {
-  @_ == 1 or croak 'usage: $nntp->distribution_patterns()';
+  @_ == 1 or croak 'usage: $nntp->distributions()';
   my $nntp = shift;
 
   my $arr;
@@ -467,7 +470,7 @@ sub distribution_patterns {
 
 
 sub newsgroups {
-  @_ == 1 || @_ == 2 or croak 'usage: $nntp->newsgroups([$pattern])';
+  @_ == 1 || @_ == 2 or croak 'usage: $nntp->newsgroups( [ PATTERN ] )';
   my $nntp = shift;
 
   $nntp->_LIST('NEWSGROUPS', @_)
@@ -497,7 +500,7 @@ sub subscriptions {
 
 
 sub listgroup {
-  @_ == 1 || @_ == 2 or croak 'usage: $nntp->listgroup([$group])';
+  @_ == 1 || @_ == 2 or croak 'usage: $nntp->listgroup( [ GROUP ] )';
   my $nntp = shift;
 
   $nntp->_LISTGROUP(@_)
@@ -515,7 +518,7 @@ sub reader {
 
 
 sub xgtitle {
-  @_ == 1 || @_ == 2 or croak 'usage: $nntp->xgtitle([$pattern])';
+  @_ == 1 || @_ == 2 or croak 'usage: $nntp->xgtitle( [ PATTERN ] )';
   my $nntp = shift;
 
   $nntp->_XGTITLE(@_)
@@ -525,19 +528,19 @@ sub xgtitle {
 
 
 sub xhdr {
-  @_ >= 2 && @_ <= 4 or croak 'usage: $nntp->xhdr($header[, $message_spec])';
+  @_ >= 2 && @_ <= 4 or croak 'usage: $nntp->xhdr( HEADER, [ MESSAGE-SPEC ] )';
   my $nntp = shift;
-  my $header = shift;
-  my $arg = _msg_arg(@_);
+  my $hdr  = shift;
+  my $arg  = _msg_arg(@_);
 
-  $nntp->_XHDR($header, $arg)
+  $nntp->_XHDR($hdr, $arg)
     ? $nntp->_description
     : undef;
 }
 
 
 sub xover {
-  @_ == 2 || @_ == 3 or croak 'usage: $nntp->xover($message_spec)';
+  @_ == 2 || @_ == 3 or croak 'usage: $nntp->xover( MESSAGE-SPEC )';
   my $nntp = shift;
   my $arg  = _msg_arg(@_);
 
@@ -548,27 +551,27 @@ sub xover {
 
 
 sub xpat {
-  @_ == 4 || @_ == 5 or croak 'usage: $nntp->xpat($header, $pattern, $message_spec )';
+  @_ == 4 || @_ == 5 or croak '$nntp->xpat( HEADER, PATTERN, MESSAGE-SPEC )';
   my $nntp = shift;
-  my $header = shift;
-  my $pattern = shift;
-  my $arg = _msg_arg(@_);
+  my $hdr  = shift;
+  my $pat  = shift;
+  my $arg  = _msg_arg(@_);
 
-  $pattern = join(" ", @$pattern)
-    if ref($pattern);
+  $pat = join(" ", @$pat)
+    if ref($pat);
 
-  $nntp->_XPAT($header, $arg, $pattern)
+  $nntp->_XPAT($hdr, $arg, $pat)
     ? $nntp->_description
     : undef;
 }
 
 
 sub xpath {
-  @_ == 2 or croak 'usage: $nntp->xpath($message_id)';
-  my ($nntp, $message_id) = @_;
+  @_ == 2 or croak 'usage: $nntp->xpath( MESSAGE-ID )';
+  my ($nntp, $mid) = @_;
 
   return
-    unless $nntp->_XPATH($message_id);
+    unless $nntp->_XPATH($mid);
 
   my $m;
   ($m = $nntp->message) =~ s/^\d+\s+//o;
@@ -579,7 +582,7 @@ sub xpath {
 
 
 sub xrover {
-  @_ == 2 || @_ == 3 or croak 'usage: $nntp->xrover($message_spec)';
+  @_ == 2 || @_ == 3 or croak 'usage: $nntp->xrover( MESSAGE-SPEC )';
   my $nntp = shift;
   my $arg  = _msg_arg(@_);
 
@@ -595,7 +598,7 @@ sub date {
 
   $nntp->_DATE
     && $nntp->message =~ /(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)/
-    ? timegm($6, $5, $4, $3, $2 - 1, $1)
+    ? timegm($6, $5, $4, $3, $2 - 1, $1 - 1900)
     : undef;
 }
 
@@ -806,20 +809,20 @@ explicit TLS encryption, i.e. NNTPS or NNTP+STARTTLS.
 The Net::NNTP class is a subclass of Net::Cmd and (depending on avaibility) of
 IO::Socket::IP, IO::Socket::INET6 or IO::Socket::INET.
 
-=head2 Class Methods
+=head1 CONSTRUCTOR
 
 =over 4
 
-=item C<new([$host][, %options])>
+=item new ( [ HOST ] [, OPTIONS ])
 
-This is the constructor for a new Net::NNTP object. C<$host> is the
+This is the constructor for a new Net::NNTP object. C<HOST> is the
 name of the remote host to which a NNTP connection is required. If not
 given then it may be passed as the C<Host> option described below. If no host is passed
 then two environment variables are checked, first C<NNTPSERVER> then
 C<NEWSHOST>, then C<Net::Config> is checked, and if a host is not found
 then C<news> is used.
 
-C<%options> are passed in a hash like fashion, using key and value pairs.
+C<OPTIONS> are passed in a hash like fashion, using key and value pairs.
 Possible options are:
 
 B<Host> - NNTP host to connect to. It may be a single scalar, as defined for
@@ -842,10 +845,10 @@ NNTP server, a value of zero will cause all IO operations to block.
 B<Debug> - Enable the printing of debugging information to STDERR
 
 B<Reader> - If the remote server is INN then initially the connection
-will be to innd, by default C<Net::NNTP> will issue a C<MODE READER> command
-so that the remote server becomes nnrpd. If the C<Reader> option is given
+will be to nnrpd, by default C<Net::NNTP> will issue a C<MODE READER> command
+so that the remote server becomes innd. If the C<Reader> option is given
 with a value of zero, then this command will not be sent and the
-connection will be left talking to innd.
+connection will be left talking to nnrpd.
 
 B<LocalAddr> and B<LocalPort> - These parameters are passed directly
 to IO::Socket to allow binding the socket to a specific local address and port.
@@ -856,7 +859,7 @@ class. Alternatively B<Family> can be used.
 
 =back
 
-=head2 Object Methods
+=head1 METHODS
 
 Unless otherwise stated all methods return either a I<true> or I<false>
 value, with I<true> meaning that the operation was a success. When a method
@@ -869,58 +872,58 @@ documented here.
 
 =over 4
 
-=item C<host()>
+=item host ()
 
 Returns the value used by the constructor, and passed to IO::Socket::INET,
 to connect to the host.
 
-=item C<starttls()>
+=item starttls ()
 
 Upgrade existing plain connection to SSL.
 Any arguments necessary for SSL must be given in C<new> already.
 
-=item C<article([{$msgid|$msgnum}[, $fh]])>
+=item article ( [ MSGID|MSGNUM ], [FH] )
 
 Retrieve the header, a blank line, then the body (text) of the
 specified article. 
 
-If C<$fh> is specified then it is expected to be a valid filehandle
+If C<FH> is specified then it is expected to be a valid filehandle
 and the result will be printed to it, on success a true value will be
-returned. If C<$fh> is not specified then the return value, on success,
+returned. If C<FH> is not specified then the return value, on success,
 will be a reference to an array containing the article requested, each
 entry in the array will contain one line of the article.
 
 If no arguments are passed then the current article in the currently
 selected newsgroup is fetched.
 
-C<$msgnum> is a numeric id of an article in the current newsgroup, and
-will change the current article pointer.  C<$msgid> is the message id of
+C<MSGNUM> is a numeric id of an article in the current newsgroup, and
+will change the current article pointer.  C<MSGID> is the message id of
 an article as shown in that article's header.  It is anticipated that the
-client will obtain the C<$msgid> from a list provided by the C<newnews>
+client will obtain the C<MSGID> from a list provided by the C<newnews>
 command, from references contained within another article, or from the
 message-id provided in the response to some other commands.
 
 If there is an error then C<undef> will be returned.
 
-=item C<body([{$msgid|$msgnum}[, [$fh]])>
+=item body ( [ MSGID|MSGNUM ], [FH] )
 
 Like C<article> but only fetches the body of the article.
 
-=item C<head([{$msgid|$msgnum}[, [$fh]])>
+=item head ( [ MSGID|MSGNUM ], [FH] )
 
 Like C<article> but only fetches the headers for the article.
 
-=item C<articlefh([{$msgid|$msgnum}])>
+=item articlefh ( [ MSGID|MSGNUM ] )
 
-=item C<bodyfh([{$msgid|$msgnum}])>
+=item bodyfh ( [ MSGID|MSGNUM ] )
 
-=item C<headfh([{$msgid|$msgnum}])>
+=item headfh ( [ MSGID|MSGNUM ] )
 
 These are similar to article(), body() and head(), but rather than
 returning the requested data directly, they return a tied filehandle
 from which to read the article.
 
-=item C<nntpstat([{$msgid|$msgnum}])>
+=item nntpstat ( [ MSGID|MSGNUM ] )
 
 The C<nntpstat> command is similar to the C<article> command except that no
 text is returned.  When selecting by message number within a group,
@@ -933,9 +936,9 @@ selection by message-id does B<not> alter the "current article pointer".
 
 Returns the message-id of the "current article".
 
-=item C<group([$group])>
+=item group ( [ GROUP ] )
 
-Set and/or get the current group. If C<$group> is not given then information
+Set and/or get the current group. If C<GROUP> is not given then information
 is returned on the current group.
 
 In a scalar context it returns the group name.
@@ -944,45 +947,45 @@ In an array context the return value is a list containing, the number
 of articles in the group, the number of the first article, the number
 of the last article and the group name.
 
-=item C<help()>
+=item help ( )
 
 Request help text (a short summary of commands that are understood by this
 implementation) from the server. Returns the text or undef upon failure.
 
-=item C<ihave($msgid[, $message])>
+=item ihave ( MSGID [, MESSAGE ])
 
 The C<ihave> command informs the server that the client has an article
-whose id is C<$msgid>.  If the server desires a copy of that
-article and C<$message> has been given then it will be sent.
+whose id is C<MSGID>.  If the server desires a copy of that
+article and C<MESSAGE> has been given then it will be sent.
 
-Returns I<true> if the server desires the article and C<$message> was
+Returns I<true> if the server desires the article and C<MESSAGE> was
 successfully sent, if specified.
 
-If C<$message> is not specified then the message must be sent using the
+If C<MESSAGE> is not specified then the message must be sent using the
 C<datasend> and C<dataend> methods from L<Net::Cmd>
 
-C<$message> can be either an array of lines or a reference to an array
+C<MESSAGE> can be either an array of lines or a reference to an array
 and must be encoded by the caller to octets of whatever encoding is required,
 e.g. by using the Encode module's C<encode()> function.
 
-=item C<last()>
+=item last ()
 
 Set the "current article pointer" to the previous article in the current
 newsgroup.
 
 Returns the message-id of the article.
 
-=item C<date()>
+=item date ()
 
 Returns the date on the remote server. This date will be in a UNIX time
 format (seconds since 1970)
 
-=item C<postok()>
+=item postok ()
 
 C<postok> will return I<true> if the servers initial response indicated
 that it will allow posting.
 
-=item C<authinfo($user, $pass)>
+=item authinfo ( USER, PASS )
 
 Authenticates to the server (using the original AUTHINFO USER / AUTHINFO PASS
 form, defined in RFC2980) using the supplied username and password.  Please
@@ -990,61 +993,61 @@ note that the password is sent in clear text to the server.  This command
 should not be used with valuable passwords unless the connection to the server
 is somehow protected.
 
-=item C<authinfo_simple($user, $pass)>
+=item authinfo_simple ( USER, PASS )
 
 Authenticates to the server (using the proposed NNTP V2 AUTHINFO SIMPLE form,
 defined and deprecated in RFC2980) using the supplied username and password.
 As with L</authinfo> the password is sent in clear text.
 
-=item C<list()>
+=item list ()
 
 Obtain information about all the active newsgroups. The results is a reference
 to a hash where the key is a group name and each value is a reference to an
 array. The elements in this array are:- the last article number in the group,
 the first article number in the group and any information flags about the group.
 
-=item C<newgroups($since[, $distributions])>
+=item newgroups ( SINCE [, DISTRIBUTIONS ])
 
-C<$since> is a time value and C<$distributions> is either a distribution
+C<SINCE> is a time value and C<DISTRIBUTIONS> is either a distribution
 pattern or a reference to a list of distribution patterns.
 The result is the same as C<list>, but the
-groups return will be limited to those created after C<$since> and, if
-specified, in one of the distribution areas in C<$distributions>. 
+groups return will be limited to those created after C<SINCE> and, if
+specified, in one of the distribution areas in C<DISTRIBUTIONS>. 
 
-=item C<newnews($since[, $groups[, $distributions]])>
+=item newnews ( SINCE [, GROUPS [, DISTRIBUTIONS ]])
 
-C<$since> is a time value. C<$groups> is either a group pattern or a reference
-to a list of group patterns. C<$distributions> is either a distribution
+C<SINCE> is a time value. C<GROUPS> is either a group pattern or a reference
+to a list of group patterns. C<DISTRIBUTIONS> is either a distribution
 pattern or a reference to a list of distribution patterns.
 
 Returns a reference to a list which contains the message-ids of all news posted
-after C<$since>, that are in a groups which matched C<$groups> and a
-distribution which matches C<$distributions>.
+after C<SINCE>, that are in a groups which matched C<GROUPS> and a
+distribution which matches C<DISTRIBUTIONS>.
 
-=item C<next()>
+=item next ()
 
 Set the "current article pointer" to the next article in the current
 newsgroup.
 
 Returns the message-id of the article.
 
-=item C<post([$message])>
+=item post ( [ MESSAGE ] )
 
-Post a new article to the news server. If C<$message> is specified and posting
+Post a new article to the news server. If C<MESSAGE> is specified and posting
 is allowed then the message will be sent.
 
-If C<$message> is not specified then the message must be sent using the
+If C<MESSAGE> is not specified then the message must be sent using the
 C<datasend> and C<dataend> methods from L<Net::Cmd>
 
-C<$message> can be either an array of lines or a reference to an array
+C<MESSAGE> can be either an array of lines or a reference to an array
 and must be encoded by the caller to octets of whatever encoding is required,
 e.g. by using the Encode module's C<encode()> function.
 
-The message, either sent via C<datasend> or as the C<$message>
+The message, either sent via C<datasend> or as the C<MESSAGE>
 parameter, must be in the format as described by RFC822 and must
 contain From:, Newsgroups: and Subject: headers.
 
-=item C<postfh()>
+=item postfh ()
 
 Post a new article to the news server using a tied filehandle.  If
 posting is allowed, this method will return a tied filehandle that you
@@ -1053,85 +1056,85 @@ explicitly close() the filehandle when you are finished posting the
 article, and the return value from the close() call will indicate
 whether the message was successfully posted.
 
-=item C<slave()>
+=item slave ()
 
 Tell the remote server that I am not a user client, but probably another
 news server.
 
-=item C<quit()>
+=item quit ()
 
 Quit the remote server and close the socket connection.
 
-=item C<can_inet6()>
+=item can_inet6 ()
 
 Returns whether we can use IPv6.
 
-=item C<can_ssl()>
+=item can_ssl ()
 
 Returns whether we can use SSL.
 
 =back
 
-=head2 Extension Methods
+=head2 Extension methods
 
 These methods use commands that are not part of the RFC977 documentation. Some
 servers may not support all of them.
 
 =over 4
 
-=item C<newsgroups([$pattern])>
+=item newsgroups ( [ PATTERN ] )
 
 Returns a reference to a hash where the keys are all the group names which
-match C<$pattern>, or all of the groups if no pattern is specified, and
+match C<PATTERN>, or all of the groups if no pattern is specified, and
 each value contains the description text for the group.
 
-=item C<distributions()>
+=item distributions ()
 
 Returns a reference to a hash where the keys are all the possible
 distribution names and the values are the distribution descriptions.
 
-=item C<distribution_patterns()>
+=item distribution_patterns ()
 
 Returns a reference to an array where each element, itself an array
 reference, consists of the three fields of a line of the distrib.pats list
 maintained by some NNTP servers, namely: a weight, a wildmat and a value
 which the client may use to construct a Distribution header.
 
-=item C<subscriptions()>
+=item subscriptions ()
 
 Returns a reference to a list which contains a list of groups which
 are recommended for a new user to subscribe to.
 
-=item C<overview_fmt()>
+=item overview_fmt ()
 
 Returns a reference to an array which contain the names of the fields returned
 by C<xover>.
 
-=item C<active_times()>
+=item active_times ()
 
 Returns a reference to a hash where the keys are the group names and each
 value is a reference to an array containing the time the groups was created
 and an identifier, possibly an Email address, of the creator.
 
-=item C<active([$pattern])>
+=item active ( [ PATTERN ] )
 
 Similar to C<list> but only active groups that match the pattern are returned.
-C<$pattern> can be a group pattern.
+C<PATTERN> can be a group pattern.
 
-=item C<xgtitle($pattern)>
+=item xgtitle ( PATTERN )
 
 Returns a reference to a hash where the keys are all the group names which
-match C<$pattern> and each value is the description text for the group.
+match C<PATTERN> and each value is the description text for the group.
 
-=item C<xhdr($header, $message_spec)>
+=item xhdr ( HEADER, MESSAGE-SPEC )
 
-Obtain the header field C<$header> for all the messages specified. 
+Obtain the header field C<HEADER> for all the messages specified. 
 
 The return value will be a reference
 to a hash where the keys are the message numbers and each value contains
 the text of the requested header for that message.
 
-=item C<xover($message_spec)>
+=item xover ( MESSAGE-SPEC )
 
 The return value will be a reference
 to a hash where the keys are the message numbers and each value contains
@@ -1140,17 +1143,17 @@ message.
 
 The names of the fields can be obtained by calling C<overview_fmt>.
 
-=item C<xpath($message_id)>
+=item xpath ( MESSAGE-ID )
 
 Returns the path name to the file on the server which contains the specified
 message.
 
-=item C<xpat($header, $pattern, $message_spec)>
+=item xpat ( HEADER, PATTERN, MESSAGE-SPEC)
 
 The result is the same as C<xhdr> except the is will be restricted to
-headers where the text of the header matches C<$pattern>
+headers where the text of the header matches C<PATTERN>
 
-=item C<xrover($message_spec)>
+=item xrover ()
 
 The XROVER command returns reference information for the article(s)
 specified.
@@ -1158,12 +1161,12 @@ specified.
 Returns a reference to a HASH where the keys are the message numbers and the
 values are the References: lines from the articles
 
-=item C<listgroup([$group])>
+=item listgroup ( [ GROUP ] )
 
-Returns a reference to a list of all the active messages in C<$group>, or
-the current group if C<$group> is not specified.
+Returns a reference to a list of all the active messages in C<GROUP>, or
+the current group if C<GROUP> is not specified.
 
-=item C<reader()>
+=item reader ()
 
 Tell the server that you are a reader and not another server.
 
@@ -1178,7 +1181,7 @@ the response is harmless.
 
 =back
 
-=head2 Unsupported
+=head1 UNSUPPORTED
 
 The following NNTP command are unsupported by the package, and there are
 no plans to do so.
@@ -1188,16 +1191,16 @@ no plans to do so.
     XSEARCH
     XINDEX
 
-=head2 Definitions
+=head1 DEFINITIONS
 
 =over 4
 
-=item $message_spec
+=item MESSAGE-SPEC
 
-C<$message_spec> is either a single message-id, a single message number, or
+C<MESSAGE-SPEC> is either a single message-id, a single message number, or
 a reference to a list of two message numbers.
 
-If C<$message_spec> is a reference to a list of two message numbers and the
+If C<MESSAGE-SPEC> is a reference to a list of two message numbers and the
 second number in a range is less than or equal to the first then the range
 represents all messages in the group after the first message number.
 
@@ -1205,7 +1208,7 @@ B<NOTE> For compatibility reasons only with earlier versions of Net::NNTP
 a message spec can be passed as a list of two numbers, this is deprecated
 and a reference to the list should now be passed
 
-=item $pattern
+=item PATTERN
 
 The C<NNTP> protocol uses the C<WILDMAT> format for patterns.
 The WILDMAT format was first developed by Rich Salz based on
@@ -1274,48 +1277,26 @@ with a and ends with d.
 
 =back
 
-=head1 EXPORTS
-
-I<None>.
-
-=head1 KNOWN BUGS
-
-See L<https://rt.cpan.org/Dist/Display.html?Status=Active&Queue=libnet>.
-
 =head1 SEE ALSO
 
 L<Net::Cmd>,
-L<IO::Socket::SSL>.
+L<IO::Socket::SSL>
 
 =head1 AUTHOR
 
-Graham Barr E<lt>L<gbarr@pobox.com|mailto:gbarr@pobox.com>E<gt>.
+Graham Barr E<lt>F<gbarr@pobox.com>E<gt>
 
-Steve Hay E<lt>L<shay@cpan.org|mailto:shay@cpan.org>E<gt> is now maintaining
-libnet as of version 1.22_02.
+Steve Hay E<lt>F<shay@cpan.org>E<gt> is now maintaining libnet as of version
+1.22_02
 
 =head1 COPYRIGHT
 
-Copyright (C) 1995-1997 Graham Barr.  All rights reserved.
-
-Copyright (C) 2013-2016, 2020 Steve Hay.  All rights reserved.
-
-=head1 LICENCE
+Versions up to 2.24_1 Copyright (c) 1995-1997 Graham Barr. All rights reserved.
+Changes in Version 2.25 onwards Copyright (C) 2013-2015 Steve Hay.  All rights
+reserved.
 
 This module is free software; you can redistribute it and/or modify it under the
 same terms as Perl itself, i.e. under the terms of either the GNU General Public
 License or the Artistic License, as specified in the F<LICENCE> file.
-
-=head1 VERSION
-
-Version 3.14
-
-=head1 DATE
-
-23 Dec 2020
-
-=head1 HISTORY
-
-See the F<Changes> file.
 
 =cut

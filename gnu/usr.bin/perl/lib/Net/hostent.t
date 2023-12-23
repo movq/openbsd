@@ -14,12 +14,12 @@ BEGIN {
     {
 	plan skip_all => "Test uses Socket, Socket not built";
     }
-    if ($^O eq 'irix' && $Config{osvers} == 5) {
-	plan skip_all => "Test relies on resolution of localhost, fails on $^O ($Config{osvers})";
+    if ($^O eq 'MacOS') {
+	plan skip_all => "Test relies on resolution of localhost, fails on Mac OS";
     }
 }
 
-use Test::More;
+use Test::More tests => 7;
 
 BEGIN { use_ok 'Net::hostent' }
 
@@ -33,10 +33,6 @@ sub DIE {
 use Socket;
 
 my $h = gethost('localhost');
-SKIP: {
-skip "Can't resolve localhost and you don't have /etc/hosts", 6
-    if (!defined($h) && !-e '/etc/hosts');
-
 ok(defined $h,  "gethost('localhost')") ||
   DIE("Can't continue without working gethost: $!");
 
@@ -48,14 +44,6 @@ ok(defined $i,  "gethostbyaddr('127.0.0.1')") ||
 
 is( inet_ntoa($i->addr), "127.0.0.1",   'addr from gethostbyaddr' );
 
-$i = gethost("127.0.0.1");
-ok(defined $i,  "gethost('127.0.0.1')");
-is( inet_ntoa($i->addr), "127.0.0.1",   'addr from gethost' );
-
-"127.0.0.1" =~ /(.*)/;
-$i = gethost($1);
-ok(defined $i, 'gethost on capture variable');
-
 # need to skip the name comparisons on Win32 because windows will
 # return the name of the machine instead of "localhost" when resolving
 # 127.0.0.1 or even "localhost"
@@ -65,7 +53,7 @@ ok(defined $i, 'gethost on capture variable');
 
 SKIP: {
     skip "Windows will return the machine name instead of 'localhost'", 2
-      if $^O eq 'MSWin32' or $^O eq 'cygwin';
+      if $^O eq 'MSWin32' or $^O eq 'NetWare' or $^O eq 'cygwin';
 
     print "# name = " . $h->name . ", aliases = " . join (",", @{$h->aliases}) . "\n";
 
@@ -101,6 +89,3 @@ SKIP: {
         print "# " . $h->name . " " . join (",", @{$h->aliases}) . "\n";
     }
 }
-}
-
-done_testing();

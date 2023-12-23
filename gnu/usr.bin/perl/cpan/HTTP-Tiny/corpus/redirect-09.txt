@@ -10,7 +10,6 @@ expected_url
 POST /index.html HTTP/1.1
 Host: example.com
 Connection: close
-Content-Length: 0
 User-Agent: HTTP-Tiny/VERSION
 
 ----------

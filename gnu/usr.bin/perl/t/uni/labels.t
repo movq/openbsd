@@ -4,9 +4,8 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
-    skip_all_without_unicode_tables();
 }
 
 use utf8;
@@ -16,7 +15,7 @@ use feature qw 'unicode_strings evalbytes';
 
 use charnames qw( :full );
 
-plan(10);
+plan(9);
 
 ＬＡＢＥＬ: {
     pass("Sanity check, UTF-8 labels don't throw a syntax error.");
@@ -55,13 +54,11 @@ SKIP: {
     like $@, qr/Label not found for "next Ｅ" at/u, "next's error is UTF-8 clean";
 }
 
-my $d = 2;
+my $d = 4;
 LÁBEL: {
-    my $e = $@;
     my $prog = "redo L\N{LATIN CAPITAL LETTER A WITH ACUTE}BEL";
 
-    if ($d == 1) {
-        is $e, '', "redo UTF8 works";
+    if ($d % 2) {
         utf8::downgrade($prog);
     }
     if ($d--) {
@@ -71,8 +68,8 @@ LÁBEL: {
     }
 }
 
-like $@, qr/Unrecognized character/, "redo to downgradeable labels";
-is $d, 0, "Latin-1 labels are reachable";
+is $@, '', "redo to downgradeable labels works";
+is $d, -1, "Latin-1 labels reachable regardless of UTF-8ness";
 
 {
     no warnings;

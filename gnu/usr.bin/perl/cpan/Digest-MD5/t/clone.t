@@ -1,11 +1,9 @@
 #!perl -w
 
-use strict;
-use warnings;
-
-use Digest::MD5 qw(md5_hex);
-
 print "1..6\n";
+
+use strict;
+use Digest::MD5 qw(md5_hex);
 
 my $a = Digest::MD5->new;
 $a->add("a");

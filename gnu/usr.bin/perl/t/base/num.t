@@ -1,9 +1,9 @@
 #!./perl
 
-print "1..56\n";
+print "1..45\n";
 
 # First test whether the number stringification works okay.
-# (Testing with == would exercise the IV/NV part, not the PV.)
+# (Testing with == would exercize the IV/NV part, not the PV.)
 
 $a = 1; "$a";
 print $a eq "1"       ? "ok 1\n"  : "not ok 1 # $a\n";
@@ -50,8 +50,6 @@ print $a eq "256"     ? "ok 14\n" : "not ok 14 # $a\n";
 $a = 1000; "$a";
 print $a eq "1000"    ? "ok 15\n" : "not ok 15 # $a\n";
 
-# more hex and binary tests below starting at 51
-
 # Okay, now test the numerics.
 # We may be assuming too much, given the painfully well-known floating
 # point sloppiness, but the following are still quite reasonable
@@ -71,7 +69,7 @@ $a = -1.; "$a";
 print $a + 1 == 0     ? "ok 19\n" : "not ok 19 #" . $a + 1 . "\n";
 
 sub ok { # Can't assume too much of floating point numbers.
-    my ($a, $b, $c) = @_;
+    my ($a, $b, $c);
     abs($a - $b) <= $c;
 }
 
@@ -165,60 +163,4 @@ $a = 123.456; "$a";
 print $a eq "123.456" ? "ok 44\n" : "not ok 44 # $a\n";
 
 $a = 1e34; "$a";
-unless ($^O eq 'posix-bc')
-{ print $a eq "1e+34" || $a eq "1e+034" ? "ok 45\n" : "not ok 45 # $a\n"; }
-else
-{ print "ok 45 # skipped on $^O\n"; }
-
-# see bug #15073
-
-$a = 0.00049999999999999999999999999999999999999;
-$b = 0.0005000000000000000104;
-print $a <= $b ? "ok 46\n" : "not ok 46\n";
-
-if ($^O eq 'ultrix' || $^O eq 'VMS' ||
-    (pack("d", 1) =~ /^[\x80\x10]\x40/)  # VAX D_FLOAT, G_FLOAT.
-    ) {
-  # Ultrix enters looong nirvana over this. VMS blows up when configured with
-  # D_FLOAT (but with G_FLOAT or IEEE works fine).  The test should probably
-  # make the number of 0's a function of NV_DIG, but that's not in Config and 
-  # we probably don't want to suck Config into a base test anyway.
-  print "ok 47 # skipped on $^O\n";
-} else {
-  $a = 0.00000000000000000000000000000000000000000000000000000000000000000001;
-  print $a > 0 ? "ok 47\n" : "not ok 47\n";
-}
-
-$a = 80000.0000000000000000000000000;
-print $a == 80000.0 ? "ok 48\n" : "not ok 48\n";
-
-$a = 1.0000000000000000000000000000000000000000000000000000000000000000000e1;
-print $a == 10.0 ? "ok 49\n" : "not ok 49\n";
-
-# From Math/Trig - number has to be long enough to exceed at least DBL_DIG
-
-$a = 57.295779513082320876798154814169;
-print ok($a*10,572.95779513082320876798154814169,1e-10) ? "ok 50\n" :
-  "not ok 50 # $a\n";
-
-# Allow uppercase base markers (#76296)
-
-$a = 0Xabcdef; "$a";
-print $a eq "11259375"     ? "ok 51\n" : "not ok 51 # $a\n";
-
-$a = 0XFEDCBA; "$a";
-print $a eq "16702650"     ? "ok 52\n" : "not ok 52 # $a\n";
-
-$a = 0B1101; "$a";
-print $a eq "13"           ? "ok 53\n" : "not ok 53 # $a\n";
-
-# 0odddd octal constants
-
-$a = 0o100; "$a";
-print $a eq "64"       ? "ok 54\n" : "not ok 54 # $a\n";
-
-$a = 0o100; "$a";
-print $a + 1 == 0o101  ? "ok 55\n" : "not ok 55 #" . $a + 1 . "\n";
-
-$a = 0O1703; "$a";
-print $a eq "963"      ? "ok 56\n" : "not ok 56 # $a\n";
+print $a eq "1e+34" || $a eq "1e+034" ? "ok 45\n" : "not ok 45 $a\n";

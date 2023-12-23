@@ -9,7 +9,6 @@
 sub BEGIN {
   # This lets us distribute Test::More in t/
   unshift @INC, 't';
-  unshift @INC, 't/compat' if $] < 5.006002;
   require Config; import Config;
   if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
     print "1..0 # Skip: Storable was not built\n";
@@ -29,12 +28,10 @@ sub BEGIN {
 }
 
 use Test::More 'no_plan';
-use Storable qw (store retrieve freeze thaw nstore nfreeze dclone);
+use Storable qw (store retrieve freeze thaw nstore nfreeze);
 require 'testlib.pl';
-our $file;
+use vars '$file';
 use strict;
-
-# $Storable::flags = Storable::FLAGS_COMPAT;
 
 sub tester {
   my ($contents, $sub, $testersub, $what) = @_;
@@ -142,12 +139,4 @@ foreach (@tests) {
 
   $stored = nfreeze $input;
   tester($stored, \&freeze_and_thaw, $testsub, 'network string');
-}
-
-{
-    # [perl #134179] sv_upgrade from type 7 down to type 1
-    my $foo = [qr//,[]];
-    weaken($foo->[1][0][0] = $foo->[1]);
-    my $out = dclone($foo); # croaked here
-    is_deeply($out, $foo, "check they match");
 }

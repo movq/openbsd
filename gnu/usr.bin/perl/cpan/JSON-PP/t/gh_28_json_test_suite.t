@@ -2,7 +2,6 @@
 # by Nicolas Seriot (https://github.com/nst/JSONTestSuite)
 
 use strict;
-use warnings;
 use Test::More;
 
 BEGIN { plan skip_all => 'this test is for Perl 5.8 or later' if $] < 5.008; }

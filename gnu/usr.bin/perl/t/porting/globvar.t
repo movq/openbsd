@@ -4,7 +4,7 @@ use TestInit qw(T);
 use strict;
 use Config;
 
-require './t/test.pl';
+require 't/test.pl';
 
 skip_all("Code to read symbols not ported to $^O")
     if $^O eq 'VMS' or $^O eq 'MSWin32';
@@ -13,16 +13,12 @@ skip_all("Code to read symbols not ported to $^O")
 # received any bug reports about it causing problems:
 my %skip = map { ("PL_$_", 1) }
     qw(
-	  DBcv bitcount cshname generation lastgotoprobe
-	  mod_latin1_uc modcount no_symref_sv uudmap
-	  watchaddr watchok warn_uninit_sv hash_chars
+	  DBcv bitcount cshname force_link_funcs generation lastgotoprobe
+	  mod_latin1_uc modcount no_symref_sv timesbuf uudmap
+	  watchaddr watchok warn_uninit_sv
      );
 
-$skip{PL_hash_rand_bits}= $skip{PL_hash_rand_bits_enabled}= 1; # we can be compiled without these, so skip testing them
-$skip{PL_warn_locale}= 1; # we can be compiled without locales, so skip testing them
-
-
-my $trial = "$Config{nm} globals$Config{_o} 2>&1";
+my $trial = "nm globals$Config{_o} 2>&1";
 my $yes = `$trial`;
 
 skip_all("Could not run `$trial`") if $?;
@@ -47,7 +43,7 @@ close $fh or die "Problem running makedef.pl";
 my %unexported;
 
 foreach my $file (map {$_ . $Config{_o}} qw(globals regcomp)) {
-    open $fh, '-|', $Config{nm}, $file
+    open $fh, '-|', 'nm', $file
 	or die "Can't run nm $file";
 
     while (<$fh>) {
@@ -61,24 +57,13 @@ foreach my $file (map {$_ . $Config{_o}} qw(globals regcomp)) {
     close $fh or die "Problem running nm $file";
 }
 
-unless ($Config{d_double_has_inf}) {
-    $skip{PL_inf}++;
-}
-unless ($Config{d_double_has_nan}) {
-    $skip{PL_nan}++;
-}
-
-foreach (sort keys %exported) {
- SKIP: {
-    skip("We dont't export '$_' (Perl not built with this enabled?)",1) if $skip{$_};
-    fail("Attempting to export '$_' which is never defined");
- }
-}
+fail("Attempting to export '$_' which is never defined")
+    foreach sort keys %exported;
 
 foreach (sort keys %unexported) {
  SKIP: {
-        skip("We don't export '$_'", 1) if $skip{$_};
-        fail("'$_' is defined, but we do not export it");
+	skip("We don't export $_", 1) if $skip{$_};
+	fail("$_ is defined, but we do not export it");
     }
 }
 

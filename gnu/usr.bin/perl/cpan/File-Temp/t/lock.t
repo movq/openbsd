@@ -20,7 +20,7 @@ BEGIN {
 require Symbol if $] < 5.006;
 
 # Get a tempfile with O_EXLOCK
-my $fh = File::Temp->new(EXLOCK => 1);
+my $fh = new File::Temp();
 ok( -e "$fh", "temp file is present" );
 
 # try to open it with a lock
@@ -43,7 +43,7 @@ if ($@) {
 ok( !$status, "File $fh is locked" );
 
 # Now get a tempfile with locking disabled
-$fh = File::Temp->new( EXLOCK => 0 );
+$fh = new File::Temp( EXLOCK => 0 );
 
 eval {
    local $SIG{ALRM} = sub { die "alarm\n" }; # NB: \n required

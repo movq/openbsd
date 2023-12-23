@@ -1,14 +1,17 @@
 package TAP::Formatter::Base;
 
 use strict;
-use warnings;
-use base 'TAP::Base';
+use TAP::Base ();
 use POSIX qw(strftime);
+
+use vars qw($VERSION @ISA);
 
 my $MAX_ERRORS = 5;
 my %VALIDATION_FOR;
 
 BEGIN {
+    @ISA = qw(TAP::Base);
+
     %VALIDATION_FOR = (
         directives => sub { shift; shift },
         verbosity  => sub { shift; shift },
@@ -22,26 +25,12 @@ BEGIN {
         show_count => sub { shift; shift },
         stdout     => sub {
             my ( $self, $ref ) = @_;
-
             $self->_croak("option 'stdout' needs a filehandle")
-              unless $self->_is_filehandle($ref);
-
+              unless ( ref $ref || '' ) eq 'GLOB'
+              or eval { $ref->can('print') };
             return $ref;
         },
     );
-
-    sub _is_filehandle {
-        my ( $self, $ref ) = @_;
-
-        return 0 if !defined $ref;
-
-        return 1 if ref $ref eq 'GLOB';    # lexical filehandle
-        return 1 if !ref $ref && ref \$ref eq 'GLOB'; # bare glob like *STDOUT
-
-        return 1 if eval { $ref->can('print') };
-
-        return 0;
-    }
 
     my @getter_setters = qw(
       _longest
@@ -54,15 +43,15 @@ BEGIN {
 
 =head1 NAME
 
-TAP::Formatter::Base - Base class for harness output delegates
+TAP::Formatter::Console - Harness output delegate for default console output
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 
@@ -217,7 +206,7 @@ sub prepare {
 
     my $longest = 0;
 
-    for my $test (@tests) {
+    foreach my $test (@tests) {
         $longest = length $test if length $test > $longest;
     }
 
@@ -268,15 +257,13 @@ sub _output_success {
 
   $harness->summary( $aggregate );
 
-C<summary> prints the summary report after all tests are run. The first
-argument is an aggregate to summarise. An optional second argument may
-be set to a true value to indicate that the summary is being output as a
-result of an interrupted test run.
+C<summary> prints the summary report after all tests are run.  The argument is
+an aggregate.
 
 =cut
 
 sub summary {
-    my ( $self, $aggregate, $interrupted ) = @_;
+    my ( $self, $aggregate ) = @_;
 
     return if $self->silent;
 
@@ -292,9 +279,6 @@ sub summary {
         $self->_output( $self->_format_now(), "\n" );
     }
 
-    $self->_failure_output("Test run interrupted!\n")
-      if $interrupted;
-
     # TODO: Check this condition still works when all subtests pass but
     # the exit status is nonzero
 
@@ -306,7 +290,7 @@ sub summary {
     if ( $total != $passed or $aggregate->has_problems ) {
         $self->_output("\nTest Summary Report");
         $self->_output("\n-------------------\n");
-        for my $test (@$tests) {
+        foreach my $test (@$tests) {
             $self->_printed_summary_header(0);
             my ($parser) = $aggregate->parsers($test);
             $self->_output_summary_failure(
@@ -346,7 +330,7 @@ sub summary {
                     sprintf "  Parse errors: %s\n",
                     shift @errors
                 );
-                for my $error (@errors) {
+                foreach my $error (@errors) {
                     my $spaces = ' ' x 16;
                     $self->_failure_output("$spaces$error\n");
                 }
@@ -386,34 +370,9 @@ sub _summary_test_header {
     my $spaces = ' ' x ( $self->_longest - length $test );
     $spaces = ' ' unless $spaces;
     my $output = $self->_get_output_method($parser);
-    my $wait   = $parser->wait;
-
-    if (defined $wait) {
-        my $signum = $wait & 0x7f;
-
-        my $description;
-
-        if ($signum) {
-            require Config;
-            my @names = split ' ', $Config::Config{'sig_name'};
-            $description = "Signal: $names[$signum]";
-
-            my $dumped = $wait & 0x80;
-            $description .= ', dumped core' if $dumped;
-        }
-        elsif ($wait != 0) {
-            $description = sprintf 'exited %d', ($wait >> 8);
-        }
-
-        $wait .= " ($description)" if $wait != 0;
-    }
-    else {
-        $wait = '(none)';
-    }
-
     $self->$output(
-        sprintf "$test$spaces(Wstat: %s Tests: %d Failed: %d)\n",
-        $wait, $parser->tests_run, scalar $parser->failed
+        sprintf "$test$spaces(Wstat: %d Tests: %d Failed: %d)\n",
+        $parser->wait, $parser->tests_run, scalar $parser->failed
     );
     $self->_printed_summary_header(1);
 }
@@ -463,7 +422,7 @@ sub _range {
     @numbers = sort { $a <=> $b } @numbers;
     my ( $min, @range );
 
-    for my $i ( 0 .. $#numbers ) {
+    foreach my $i ( 0 .. $#numbers ) {
         my $num  = $numbers[$i];
         my $next = $numbers[ $i + 1 ];
         if ( defined $next && $next == $num + 1 ) {

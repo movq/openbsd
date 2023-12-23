@@ -2,27 +2,30 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    @INC = '../lib';
+    if ($^O eq 'MacOS') { 
+	@INC = qw(: ::lib ::macos:lib); 
+    } else { 
+	@INC = '.'; 
+	push @INC, '../lib'; 
+    }
     require Config; import Config;
     if ($Config{'extensions'} !~ /\bFile\/Glob\b/i) {
         print "1..0\n";
         exit 0;
     }
+    print "1..2\n";
 }
-
-use Test::More;
-BEGIN {
-    plan(
-        ${^TAINT}
-        ? (tests => 2)
-        : (skip_all => "Appear to running a perl without taint support")
-    );
+END {
+    print "not ok 1\n" unless $loaded;
 }
+use File::Glob;
+$loaded = 1;
+print "ok 1\n";
 
-BEGIN {
-    use_ok('File::Glob');
-}
-
+# all filenames should be tainted
 @a = File::Glob::bsd_glob("*");
 eval { $a = join("",@a), kill 0; 1 };
-like($@, qr/Insecure dependency/, 'all filenames should be tainted');
+unless ($@ =~ /Insecure dependency/) {
+    print "not ";
+}
+print "ok 2\n";

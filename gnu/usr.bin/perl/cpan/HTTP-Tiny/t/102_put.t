@@ -5,13 +5,12 @@ use warnings;
 
 use File::Basename;
 use Test::More 0.88;
-use lib 't';
-use Util qw[tmpfile rewind slurp monkey_patch dir_list parse_case
-  clear_socket_source set_socket_source sort_headers $CRLF $LF];
+use t::Util    qw[tmpfile rewind slurp monkey_patch dir_list parse_case
+                  set_socket_source sort_headers $CRLF $LF];
 use HTTP::Tiny;
 BEGIN { monkey_patch() }
 
-for my $file ( dir_list("corpus", qr/^put/ ) ) {
+for my $file ( dir_list("t/cases", qr/^put/ ) ) {
   my $data = do { local (@ARGV,$/) = $file; <> };
   my ($params, $expect_req, $give_res) = split /--+\n/, $data;
   # cleanup source data
@@ -34,9 +33,6 @@ for my $file ( dir_list("corpus", qr/^put/ ) ) {
   if ( $case->{content} ) {
     $options{content} = $case->{content}[0];
   }
-  elsif ( exists $case->{content} ) {
-    $options{content} = "";
-  }
   elsif ( $case->{content_cb} ) {
     $options{content} = eval join "\n", @{$case->{content_cb}};
   }
@@ -49,8 +45,7 @@ for my $file ( dir_list("corpus", qr/^put/ ) ) {
   my $res_fh = tmpfile($give_res);
   my $req_fh = tmpfile();
 
-  my $http = HTTP::Tiny->new( keep_alive => 0 );
-  clear_socket_source();
+  my $http = HTTP::Tiny->new;
   set_socket_source($req_fh, $res_fh);
 
   (my $url_basename = $url) =~ s{.*/}{};

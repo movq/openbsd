@@ -1,8 +1,5 @@
 package TieOut;
 
-use strict;
-use warnings;
-
 sub TIEHANDLE {
     my $scalar = '';
     bless( \$scalar, $_[0]);

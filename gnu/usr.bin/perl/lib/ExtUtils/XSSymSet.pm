@@ -1,16 +1,13 @@
 package ExtUtils::XSSymSet;
 
 use strict;
-use Config;
-our $VERSION = '1.4';
+use vars qw( $VERSION );
+$VERSION = '1.1';
 
 
 sub new { 
   my($pkg,$maxlen,$silent) = @_;
   $maxlen ||= 31;
-  # Allow absurdly long symbols here if we've told the compiler to
-  # do the shortening for us.
-  $maxlen = 2048 if $Config{'useshortenedsymbols'};
   $silent ||= 0;
   my($obj) = { '__M@xLen' => $maxlen, '__S!lent' => $silent };
   bless $obj, $pkg;
@@ -24,8 +21,6 @@ sub trimsym {
     if (ref $self) { $maxlen ||= $self->{'__M@xLen'}; }
     $maxlen ||= 31;
   }
-  $maxlen = 2048 if $Config{'useshortenedsymbols'};
-
   unless (defined $silent) {
     if (ref $self) { $silent ||= $self->{'__S!lent'}; }
     $silent ||= 0;
@@ -142,8 +137,7 @@ ExtUtils::XSSymSet - keep sets of symbol names palatable to the VMS linker
   $set = new ExtUtils::XSSymSet;
   while ($sym = make_symbol()) { $set->addsym($sym); }
   foreach $safesym ($set->all_trimmed) {
-    print "Processing $safesym (derived from ",
-        $self->get_orig($safesym), ")\n";
+    print "Processing $safesym (derived from ",$self->get_orig($safesym),")\n";
     do_stuff($safesym);
   }
 
@@ -171,10 +165,7 @@ Creates an empty C<ExtUtils::XSSymset> set of symbols.  This function may be
 called as a static method or via an existing object.  If C<$maxlen> or
 C<$silent> are specified, they are used as the defaults for maximum
 name length and warning behavior in future calls to addsym() or
-trimsym() via this object.  If the compiler has been instructed to do its
-own symbol shortening via C<$Config{'useshortenedsymbols'}>, a value of
-2048 is assumed for C<$maxlen> as a way of bypassing the shortening done by
-this module.
+trimsym() via this object.
 
 =item addsym($name[,$maxlen[,$silent]])
 
@@ -200,10 +191,7 @@ to 31.  Unless C<$silent> is true, a warning is output if C<$name>
 is altered in any way.  This function may be called either as a
 static method or via an existing object, but in the latter case no
 check is made to insure that the resulting name is unique in the
-set of symbols.    If the compiler has been instructed to do its
-own symbol shortening via C<$Config{'useshortenedsymbols'}>, a value
-of 2048 is assumed for C<$maxlen> as a way of bypassing the shortening
-done by this module.
+set of symbols.
 
 =item delsym($name)
 
@@ -245,5 +233,5 @@ Charles Bailey  E<lt>I<bailey@newman.upenn.edu>E<gt>
 
 =head1 REVISION
 
-Last revised 8-Oct-2010, for Perl 5.13.6.
+Last revised 14-Feb-1997, for Perl 5.004.
 

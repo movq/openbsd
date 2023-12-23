@@ -1,98 +1,8 @@
-#!./perl -w
+#!./perl -T
 
-# Uncomment this for testing, but don't leave it in for "production", as
-# we've not yet verified that use works.
-# use strict;
-
+use warnings;
+use strict;
 $|++;
-
-print "1..36\n";
-my $test = 0;
-
-sub failed {
-    my ($got, $expected, $name) = @_;
-
-    if ($::TODO) {
-	print "not ok $test - $name # TODO: $::TODO\n";
-    }
-    else {
-	print "not ok $test - $name\n";
-    }
-    my @caller = caller(1);
-    print "# Failed test at $caller[1] line $caller[2]\n";
-    if (defined $got) {
-	print "# Got '$got'\n";
-    } else {
-	print "# Got undef\n";
-    }
-    print "# Expected $expected\n";
-    return;
-}
-
-sub like {
-    my ($got, $pattern, $name) = @_;
-    $test = $test + 1;
-    if (defined $got && $got =~ $pattern) {
-	if ($::TODO) {
-	    print "ok $test - $name # TODO: $::TODO\n";
-	}
-	else {
-	    print "ok $test - $name\n";
-	}
-	# Principle of least surprise - maintain the expected interface, even
-	# though we aren't using it here (yet).
-	return 1;
-    }
-    failed($got, $pattern, $name);
-}
-
-sub is {
-    my ($got, $expect, $name) = @_;
-    $test = $test + 1;
-    if (defined $got && $got eq $expect) {
-	if ($::TODO) {
-	    print "ok $test - $name # TODO: $::TODO\n";
-	}
-	else {
-	    print "ok $test - $name\n";
-	}
-	return 1;
-    }
-    failed($got, "'$expect'", $name);
-}
-
-sub isnt {
-    my ($got, $expect, $name) = @_;
-    $test = $test + 1;
-    if (defined $got && $got ne $expect) {
-	if ($::TODO) {
-	    print "ok $test - $name # TODO: $::TODO\n";
-	}
-	else {
-	    print "ok $test - $name\n";
-	}
-	return 1;
-    }
-    failed($got, "not '$expect'", $name);
-}
-
-sub can_ok {
-    my ($class, $method) = @_;
-    $test = $test + 1;
-    if (eval { $class->can($method) }) {
-	if ($::TODO) {
-	    print "ok $test - $class->can('$method') # TODO: $::TODO\n";
-	}
-	else {
-	    print "ok $test - $class->can('$method')\n";
-	}
-	return 1;
-    }
-    my @caller = caller;
-    print "# Failed test at $caller[1] line $caller[2]\n";
-    print "# $class cannot $method\n";
-    return;
-}
 
 =pod
 
@@ -101,6 +11,8 @@ C<q()> operator.  Calling C<&q()> or C<main::q()> gets you the function.
 This test verifies this behavior for nine different operators.
 
 =cut
+
+use Test::More tests => 36;
 
 sub m  { return "m-".shift }
 sub q  { return "q-".shift }
@@ -115,7 +27,7 @@ sub y  { return "y-".shift }
 # m operator
 can_ok( 'main', "m" );
 SILENCE_WARNING: { # Complains because $_ is undef
-    local $^W;		       
+    no warnings;
     isnt( m('unqualified'), "m-unqualified", "m('unqualified') is oper" );
 }
 is( main::m('main'), "m-main", "main::m() is func" );
@@ -147,13 +59,11 @@ is( &qw('amper'), "qw-amper", "&qw() is func" );
 
 # qx operator
 can_ok( 'main', "qx" );
-eval q{
-    BEGIN {
-        *CORE::GLOBAL::readpipe = sub { die "readpipe called" };
-    }
-    qx('unqualified');
-};
-like( $@, qr/^readpipe called/, "qx('unqualified') is oper" );
+eval "qx('unqualified')";
+TODO: {
+    local $TODO = $^O eq 'MSWin32' ? "Tainting of PATH not working of Windows" : $TODO;
+    like( $@, qr/^Insecure/, "qx('unqualified') doesn't work" );
+}
 is( main::qx('main'), "qx-main", "main::qx() is func" );
 is( &qx('amper'), "qx-amper", "&qx() is func" );
 

@@ -38,17 +38,17 @@ BEGIN {
 
   $DB::package = '';    # current package space
   $DB::filename = '';   # current filename
-  $DB::subname = '';    # currently executing sub (fully qualified name)
+  $DB::subname = '';    # currently executing sub (fullly qualified name)
   $DB::lineno = '';     # current line number
 
-  $DB::VERSION = $DB::VERSION = '1.08';
+  $DB::VERSION = $DB::VERSION = '1.0';
 
   # initialize private globals to avoid warnings
 
   $running = 1;         # are we running, or are we stopped?
   @stack = (0);
   @clients = ();
-  $deep = 1000;
+  $deep = 100;
   $ready = 0;
   @saved = ();
   @skippkg = ();
@@ -63,7 +63,8 @@ sub sub {
   push(@stack, $DB::single);
   $DB::single &= 1;
   $DB::single |= 4 if $#stack == $deep;
-  if ($DB::sub eq 'DESTROY' or substr($DB::sub, -9) eq '::DESTROY' or not defined wantarray) {
+#  print $DB::sub, "\n";
+  if ($DB::sub =~ /(?:^|::)DESTROY$/ or not defined wantarray) {
     &$DB::sub;
     $DB::single |= pop(@stack);
     $DB::ret = undef;
@@ -92,7 +93,6 @@ sub DB {
 
   $usrctxt = "package $DB::package;";		# this won't let them modify, alas
   local(*DB::dbline) = "::_<$DB::filename";
-
   my ($stop, $action);
   if (($stop,$action) = split(/\0/,$DB::dbline{$DB::lineno})) {
     if ($stop eq '1') {
@@ -244,8 +244,8 @@ sub backtrace {
     for (@a) {
       s/'/\\'/g;
       s/([^\0]*)/'$1'/ unless /^-?[\d.]+$/;
-      require 'meta_notation.pm';
-      $_ = _meta_notation($_) if /[[:^print:]]/a;
+      s/([\200-\377])/sprintf("M-%c",ord($1)&0177)/eg;
+      s/([\0-\37\177])/sprintf("^%c",ord($1)^64)/eg;
     }
     $w = $w ? '@ = ' : '$ = ';
     $a = $h ? '(' . join(', ', @a) . ')' : '';
@@ -258,7 +258,7 @@ sub backtrace {
     } elsif ($s eq '(eval)') {
       $s = "eval {...}";
     }
-    $f = "file '$f'" unless $f eq '-e';
+    $f = "file `$f'" unless $f eq '-e';
     push @ret, "$w&$s$a from $f line $l";
     last if $DB::signal;
   }
@@ -406,7 +406,8 @@ sub _find_subline {
   $name = "main" . $name if substr($name,0,2) eq "::";
   my($fname, $from, $to) = ($DB::sub{$name} =~ /^(.*):(\d+)-(\d+)$/);
   if ($from) {
-    local *DB::dbline = "::_<$fname";
+    # XXX this needs local()-ization of some sort
+    *DB::dbline = "::_<$fname";
     ++$from while $DB::dbline[$from] == 0 && $from < $to;
     return $from;
   }
@@ -546,7 +547,8 @@ __END__
 
 =head1 NAME
 
-DB - programmatic interface to the Perl debugging API
+DB - programmatic interface to the Perl debugging API (draft, subject to
+change)
 
 =head1 SYNOPSIS
 
@@ -559,8 +561,7 @@ DB - programmatic interface to the Perl debugging API
     CLIENT->register()      # register a client package name
     CLIENT->done()          # de-register from the debugging API
     CLIENT->skippkg('hide::hide')  # ask DB not to stop in this package
-    CLIENT->cont([WHERE])       # run some more (until BREAK or 
-                                # another breakpointt)
+    CLIENT->cont([WHERE])       # run some more (until BREAK or another breakpt)
     CLIENT->step()              # single step
     CLIENT->next()              # step over
     CLIENT->ret()               # return from current subroutine
@@ -589,8 +590,7 @@ DB - programmatic interface to the Perl debugging API
     CLIENT->stop(FILE,LINE) # when execution stops
     CLIENT->idle()          # while stopped (can be a client event loop)
     CLIENT->cleanup()       # just before exit
-    CLIENT->output(LIST)    # called to print any output that
-                            # the API must show
+    CLIENT->output(LIST)    # called to print any output that API must show
 
 =head1 DESCRIPTION
 

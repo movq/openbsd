@@ -51,9 +51,8 @@ in F<Makefile.PL> for this purpose:
     eval { require 5.007 }
         or die <<EOD;
     ############
-    ### This module uses frobnication framework which is not available
-    ### before version 5.007 of Perl.  Upgrade your Perl before
-    ### installing Kara::Mba.
+    ### This module uses frobnication framework which is not available before
+    ### version 5.007 of Perl.  Upgrade your Perl before installing Kara::Mba.
     ############
     EOD
 
@@ -80,21 +79,6 @@ instead of saying "C<make test>", you should say "C<make test_static>".
 On systems that cannot build dynamically-loadable libraries at all, simply
 saying "C<make test>" is sufficient.
 
-=head2 Threads and PERL_NO_GET_CONTEXT
-
-For threaded builds, perl requires the context pointer for the current
-thread, without C<PERL_NO_GET_CONTEXT>, perl will call a function to
-retrieve the context.
-
-For improved performance, include:
-
-  #define PERL_NO_GET_CONTEXT
-
-as shown below.
-
-For more details, see L<perlguts|perlguts/How multiple interpreters
-and concurrency are supported>.
-
 =head1 TUTORIAL
 
 Now let's go on with the show!
@@ -115,15 +99,14 @@ Mytest directory.
 The file Makefile.PL should look something like this:
 
     use ExtUtils::MakeMaker;
-
     # See lib/ExtUtils/MakeMaker.pm for details of how to influence
     # the contents of the Makefile that is written.
     WriteMakefile(
-        NAME         => 'Mytest',
-        VERSION_FROM => 'Mytest.pm', # finds $VERSION
-        LIBS         => [''],        # e.g., '-lm'
-        DEFINE       => '',          # e.g., '-DHAVE_SOMETHING'
-        INC          => '-I',        # e.g., '-I. -I/usr/include/other'
+	NAME         => 'Mytest',
+	VERSION_FROM => 'Mytest.pm', # finds $VERSION
+	LIBS         => [''],   # e.g., '-lm'
+	DEFINE       => '',     # e.g., '-DHAVE_SOMETHING'
+	INC          => '',     # e.g., '-I/usr/include/other'
     );
 
 The file Mytest.pm should start with something like this:
@@ -156,15 +139,13 @@ The file Mytest.pm should start with something like this:
 
     1;
     __END__
-    # Below is the stub of documentation for your module. You better
-    # edit it!
+    # Below is the stub of documentation for your module. You better edit it!
 
 The rest of the .pm file contains sample code for providing documentation for
 the extension.
 
 Finally, the Mytest.xs file should look something like this:
 
-    #define PERL_NO_GET_CONTEXT
     #include "EXTERN.h"
     #include "perl.h"
     #include "XSUB.h"
@@ -197,22 +178,22 @@ Now, running make will produce output that looks something like this (some
 long lines have been shortened for clarity and some extraneous lines have
 been deleted):
 
- % make
- cp lib/Mytest.pm blib/lib/Mytest.pm
- perl xsubpp  -typemap typemap  Mytest.xs > Mytest.xsc && \
- mv Mytest.xsc Mytest.c
- Please specify prototyping behavior for Mytest.xs (see perlxs manual)
- cc -c     Mytest.c
- Running Mkbootstrap for Mytest ()
- chmod 644 Mytest.bs
- rm -f blib/arch/auto/Mytest/Mytest.so
- cc -shared -L/usr/local/lib Mytest.o -o blib/arch/auto/Mytest/Mytest.so
+    % make
+    cp lib/Mytest.pm blib/lib/Mytest.pm
+    perl xsubpp  -typemap typemap  Mytest.xs > Mytest.xsc && mv Mytest.xsc Mytest.c
+    Please specify prototyping behavior for Mytest.xs (see perlxs manual)
+    cc -c     Mytest.c
+    Running Mkbootstrap for Mytest ()
+    chmod 644 Mytest.bs
+    rm -f blib/arch/auto/Mytest/Mytest.so
+    cc  -shared -L/usr/local/lib Mytest.o  -o blib/arch/auto/Mytest/Mytest.so   \
+                \
 
- chmod 755 blib/arch/auto/Mytest/Mytest.so
- cp Mytest.bs blib/arch/auto/Mytest/Mytest.bs
- chmod 644 blib/arch/auto/Mytest/Mytest.bs
- Manifying blib/man3/Mytest.3pm
- %
+    chmod 755 blib/arch/auto/Mytest/Mytest.so
+    cp Mytest.bs blib/arch/auto/Mytest/Mytest.bs
+    chmod 644 blib/arch/auto/Mytest/Mytest.bs
+    Manifying blib/man3/Mytest.3pm
+    %
 
 You can safely ignore the line about "prototyping behavior" - it is
 explained in L<perlxs/"The PROTOTYPES: Keyword">.
@@ -273,24 +254,22 @@ when the test is correct, "not ok" when it is not.
 
     #########################
 
-    # Insert your test code below, the Test::More module is use()ed here
-    # so read its man page ( perldoc Test::More ) for help writing this
-    # test script.
+    # Insert your test code below, the Test::More module is use()ed here so read
+    # its man page ( perldoc Test::More ) for help writing this test script.
 
-    is( Mytest::is_even(0), 1 );
-    is( Mytest::is_even(1), 0 );
-    is( Mytest::is_even(2), 1 );
+    is(&Mytest::is_even(0), 1);
+    is(&Mytest::is_even(1), 0);
+    is(&Mytest::is_even(2), 1);
 
 We will be calling the test script through the command "C<make test>".  You
 should see output that looks something like this:
 
- %make test
- PERL_DL_NONLAZY=1 /usr/bin/perl "-MExtUtils::Command::MM" "-e"
- "test_harness(0, 'blib/lib', 'blib/arch')" t/*.t
- t/Mytest....ok
- All tests successful.
- Files=1, Tests=4, 0 wallclock secs ( 0.03 cusr + 0.00 csys = 0.03 CPU)
- %
+    %make test
+    PERL_DL_NONLAZY=1 /usr/bin/perl "-MExtUtils::Command::MM" "-e" "test_harness(0, 'blib/lib', 'blib/arch')" t/*.t
+    t/Mytest....ok
+    All tests successful.
+    Files=1, Tests=4,  0 wallclock secs ( 0.03 cusr +  0.00 csys =  0.03 CPU)
+    %
 
 =head2 What has gone on?
 
@@ -391,32 +370,16 @@ Add the following to the end of Mytest.xs:
 
 Edit the Makefile.PL file so that the corresponding line looks like this:
 
-	LIBS      => ['-lm'],   # e.g., '-lm'
+	'LIBS'      => ['-lm'],   # e.g., '-lm'
 
 Generate the Makefile and run make.  Change the test number in Mytest.t to
 "9" and add the following tests:
 
-	my $i;
-
-	$i = -1.5;
-	Mytest::round($i);
-	is( $i, -2.0, 'Rounding -1.5 to -2.0' );
-
-	$i = -1.1;
-	Mytest::round($i);
-	is( $i, -1.0, 'Rounding -1.1 to -1.0' );
-
-	$i = 0.0;
-	Mytest::round($i);
-	is( $i, 0.0, 'Rounding 0.0 to 0.0' );
-
-	$i = 0.5;
-	Mytest::round($i);
-	is( $i, 1.0, 'Rounding 0.5 to 1.0' );
-
-	$i = 1.2;
-	Mytest::round($i);
-	is( $i, 1.0, 'Rounding 1.2 to 1.0' );
+	$i = -1.5; &Mytest::round($i); is( $i, -2.0 );
+	$i = -1.1; &Mytest::round($i); is( $i, -1.0 );
+	$i = 0.0; &Mytest::round($i);  is( $i,  0.0 );
+	$i = 0.5; &Mytest::round($i);  is( $i,  1.0 );
+	$i = 1.2; &Mytest::round($i);  is( $i,  1.0 );
 
 Running "C<make test>" should now print out that all nine tests are okay.
 
@@ -424,7 +387,7 @@ Notice that in these new test cases, the argument passed to round was a
 scalar variable.  You might be wondering if you can round a constant or
 literal.  To see what happens, temporarily add the following line to Mytest.t:
 
-	Mytest::round(3);
+	&Mytest::round(3);
 
 Run "C<make test>" and notice that Perl dies with a fatal error.  Perl won't
 let you change the value of constants!
@@ -551,7 +514,7 @@ In the mylib directory, create a file mylib.h that looks like this:
 Also create a file mylib.c that looks like this:
 
 	#include <stdlib.h>
-	#include "mylib.h"
+	#include "./mylib.h"
 
 	double
 	foo(int a, long b, const char *c)
@@ -564,9 +527,9 @@ And finally create a file Makefile.PL that looks like this:
 	use ExtUtils::MakeMaker;
 	$Verbose = 1;
 	WriteMakefile(
-	    NAME  => 'Mytest2::mylib',
-	    SKIP  => [qw(all static static_lib dynamic dynamic_lib)],
-	    clean => {'FILES' => 'libmylib$(LIB_EXT)'},
+	    NAME   => 'Mytest2::mylib',
+	    SKIP   => [qw(all static static_lib dynamic dynamic_lib)],
+	    clean  => {'FILES' => 'libmylib$(LIB_EXT)'},
 	);
 
 
@@ -593,7 +556,7 @@ on Win32 systems.
 We will now create the main top-level Mytest2 files.  Change to the directory
 above Mytest2 and run the following command:
 
-	% h2xs -O -n Mytest2 Mytest2/mylib/mylib.h
+	% h2xs -O -n Mytest2 ./Mytest2/mylib/mylib.h
 
 This will print out a warning about overwriting Mytest2, but that's okay.
 Our files are stored in Mytest2/mylib, and will be untouched.
@@ -604,12 +567,12 @@ will be generating a library in it.  Let's add the argument MYEXTLIB to
 the WriteMakefile call so that it looks like this:
 
 	WriteMakefile(
-	    NAME         => 'Mytest2',
-	    VERSION_FROM => 'Mytest2.pm', # finds $VERSION
-	    LIBS         => [''],   # e.g., '-lm'
-	    DEFINE       => '',     # e.g., '-DHAVE_SOMETHING'
-	    INC          => '',     # e.g., '-I/usr/include/other'
-	    MYEXTLIB     => 'mylib/libmylib$(LIB_EXT)',
+	    'NAME'      => 'Mytest2',
+	    'VERSION_FROM' => 'Mytest2.pm', # finds $VERSION
+	    'LIBS'      => [''],   # e.g., '-lm'
+	    'DEFINE'    => '',     # e.g., '-DHAVE_SOMETHING'
+	    'INC'       => '',     # e.g., '-I/usr/include/other'
+	    'MYEXTLIB' => 'mylib/libmylib$(LIB_EXT)',
 	);
 
 and then at the end add a subroutine (which will override the pre-existing
@@ -623,7 +586,9 @@ with "cd"!
 	';
 	}
 
-Let's also fix the MANIFEST file by appending the following three lines:
+Let's also fix the MANIFEST file so that it accurately reflects the contents
+of our extension.  The single line that says "mylib" should be replaced by
+the following three lines:
 
 	mylib/Makefile.PL
 	mylib/mylib.c
@@ -649,7 +614,7 @@ Now we also need to create a typemap because the default Perl doesn't
 currently support the C<const char *> type.  Include a new TYPEMAP
 section in your XS code before the above function:
 
-        TYPEMAP: <<END
+        TYPEMAP: <<END;
 	const char *	T_PV
         END
 
@@ -657,19 +622,19 @@ Now run perl on the top-level Makefile.PL.  Notice that it also created a
 Makefile in the mylib directory.  Run make and watch that it does cd into
 the mylib directory and run make in there as well.
 
-Now edit the Mytest2.t script and change the number of tests to "5",
+Now edit the Mytest2.t script and change the number of tests to "4",
 and add the following lines to the end of the script:
 
-	is( Mytest2::foo( 1, 2, "Hello, world!" ), 7 );
-	is( Mytest2::foo( 1, 2, "0.0" ),           7 );
-	ok( abs( Mytest2::foo( 0, 0, "-3.4" ) - 0.6 ) <= 0.01 );
+	is( &Mytest2::foo(1, 2, "Hello, world!"), 7 );
+	is( &Mytest2::foo(1, 2, "0.0"), 7 );
+	ok( abs(&Mytest2::foo(0, 0, "-3.4") - 0.6) <= 0.01 );
 
 (When dealing with floating-point comparisons, it is best to not check for
 equality, but rather that the difference between the expected and actual
 result is below a certain amount (called epsilon) which is 0.01 in this case)
 
-Run "C<make test>" and all should be well. There are some warnings on missing
-tests for the Mytest2::mylib extension, but you can ignore them.
+Run "C<make test>" and all should be well. There are some warnings on missing tests
+for the Mytest2::mylib extension, but you can ignore them.
 
 =head2 What has happened here?
 
@@ -722,7 +687,7 @@ commands to build it.
 
 =head2 Anatomy of .xs file
 
-The .xs file of L</EXAMPLE 4> contained some new elements.  To understand
+The .xs file of L<"EXAMPLE 4"> contained some new elements.  To understand
 the meaning of these elements, pay attention to the line which reads
 
 	MODULE = Mytest2		PACKAGE = Mytest2
@@ -752,7 +717,7 @@ somewhat of an exception rather than the rule.
 
 =head2 Getting the fat out of XSUBs
 
-In L</EXAMPLE 4> the second part of .xs file contained the following
+In L<"EXAMPLE 4"> the second part of .xs file contained the following
 description of an XSUB:
 
 	double
@@ -880,12 +845,11 @@ For example, consider:
 		char	&a
 		char *	b
 
-The first Perl argument to this function would be treated as a char and
-assigned to the variable a, and its address would be passed into the function
-foo. The second Perl argument would be treated as a string pointer and assigned
-to the variable b. The I<value> of b would be passed into the function foo.
-The actual call to the function foo that B<xsubpp> generates would look like
-this:
+The first Perl argument to this function would be treated as a char and assigned
+to the variable a, and its address would be passed into the function foo.
+The second Perl argument would be treated as a string pointer and assigned to the
+variable b.  The I<value> of b would be passed into the function foo.  The
+actual call to the function foo that B<xsubpp> generates would look like this:
 
 	foo(&a, b);
 
@@ -981,7 +945,7 @@ to have write permission into the directories where Perl is installed,
 or ask your system administrator to run the make for you.
 
 Alternately, you can specify the exact directory to place the extension's
-files by placing a "PREFIX=/destination/directory" after the make install
+files by placing a "PREFIX=/destination/directory" after the make install.
 (or in between the make and install if you have a brain-dead version of make).
 This can be very useful if you are building an extension that will eventually
 be distributed to multiple systems.  You can then just archive the files in
@@ -1032,12 +996,9 @@ after the include of "XSUB.h":
 Also add the following code segment to Mytest.t while incrementing the "9"
 tests to "11":
 
-    my @a;
-
-	@a = Mytest::statfs("/blech");
+	@a = &Mytest::statfs("/blech");
 	ok( scalar(@a) == 1 && $a[0] == 2 );
-
-	@a = Mytest::statfs("/");
+	@a = &Mytest::statfs("/");
 	is( scalar(@a), 7 );
 
 =head2 New Things in this Example
@@ -1127,14 +1088,14 @@ Mytest.xs:
 	    SV * paths
 	INIT:
 	    AV * results;
-	    SSize_t numpaths = 0, n;
-	    int i;
+	    I32 numpaths = 0;
+	    int i, n;
 	    struct statfs buf;
 
 	    SvGETMAGIC(paths);
 	    if ((!SvROK(paths))
 		|| (SvTYPE(SvRV(paths)) != SVt_PVAV)
-		|| ((numpaths = av_top_index((AV *)SvRV(paths))) < 0))
+		|| ((numpaths = av_len((AV *)SvRV(paths))) < 0))
 	    {
 		XSRETURN_UNDEF;
 	    }
@@ -1143,8 +1104,7 @@ Mytest.xs:
 	    for (n = 0; n <= numpaths; n++) {
 		HV * rh;
 		STRLEN l;
-		SV * path = *av_fetch((AV *)SvRV(paths), n, 0);
-		char * fn = SvPVbyte(path, l);
+		char * fn = SvPV(*av_fetch((AV *)SvRV(paths), n, 0), l);
 
 		i = statfs(fn, &buf);
 		if (i != 0) {
@@ -1162,16 +1122,16 @@ Mytest.xs:
 		hv_store(rh, "f_files",  7, newSVnv(buf.f_files),  0);
 		hv_store(rh, "f_type",   6, newSVnv(buf.f_type),   0);
 
-		av_push(results, newRV_inc((SV *)rh));
+		av_push(results, newRV((SV *)rh));
 	    }
-	    RETVAL = newRV_inc((SV *)results);
+	    RETVAL = newRV((SV *)results);
 	OUTPUT:
 	    RETVAL
 
 And add the following code to Mytest.t, while incrementing the "11"
 tests to "13":
 
-	my $results = Mytest::multi_statfs([ '/', '/blech' ]);
+	$results = Mytest::multi_statfs([ '/', '/blech' ]);
 	ok( ref $results->[0] );
 	ok( ! ref $results->[1] );
 
@@ -1198,18 +1158,18 @@ true, which indicates that paths is a valid reference.  (Simply
 checking C<SvROK> won't trigger FETCH on a tied variable.)  It
 then verifies that the object referenced by paths is an array, using C<SvRV>
 to dereference paths, and C<SvTYPE> to discover its type.  As an added test,
-it checks that the array referenced by paths is non-empty, using the
-C<av_top_index> function (which returns -1 if the array is empty). The
-XSRETURN_UNDEF macro is used to abort the XSUB and return the undefined value
-whenever all three of these conditions are not met.
+it checks that the array referenced by paths is non-empty, using the C<av_len>
+function (which returns -1 if the array is empty).  The XSRETURN_UNDEF macro
+is used to abort the XSUB and return the undefined value whenever all three of
+these conditions are not met.
 
 =item *
 
 We manipulate several arrays in this XSUB.  Note that an array is represented
 internally by an AV* pointer.  The functions and macros for manipulating
-arrays are similar to the functions in Perl: C<av_top_index> returns the
-highest index in an AV*, much like $#array; C<av_fetch> fetches a single scalar
-value from an array, given its index; C<av_push> pushes a scalar value onto the
+arrays are similar to the functions in Perl: C<av_len> returns the highest
+index in an AV*, much like $#array; C<av_fetch> fetches a single scalar value
+from an array, given its index; C<av_push> pushes a scalar value onto the
 end of the array, automatically extending the array as necessary.
 
 Specifically, we read pathnames one at a time from the input array, and
@@ -1235,7 +1195,7 @@ for details.
 
 =item *
 
-To create a reference, we use the C<newRV_inc> function.  Note that you can
+To create a reference, we use the C<newRV> function.  Note that you can
 cast an AV* or an HV* to type SV* in this case (and many others).  This
 allows you to take references to arrays, hashes and scalars with the same
 function.  Conversely, the C<SvRV> function always returns an SV*, which may
@@ -1265,25 +1225,21 @@ typeglobs and stuff. Well, it isn't.
 Suppose that for some strange reason we need a wrapper around the
 standard C library function C<fputs()>. This is all we need:
 
-  #define PERLIO_NOT_STDIO 0  /* For co-existence with stdio only */
-  #define PERL_NO_GET_CONTEXT /* This is more efficient */
-  #include "EXTERN.h"
-  #include "perl.h"
-  #include "XSUB.h"
+	#define PERLIO_NOT_STDIO 0
+	#include "EXTERN.h"
+	#include "perl.h"
+	#include "XSUB.h"
 
-  #include <stdio.h>
+	#include <stdio.h>
 
-  int
-  fputs(s, stream)
-    char *          s
-    FILE *          stream
+	int
+	fputs(s, stream)
+		char *          s
+		FILE *	        stream
 
 The real work is done in the standard typemap.
 
-For more details, see
-L<perlapio/"Co-existence with stdio">.
-
-B<But> you lose all the fine stuff done by the perlio layers. This
+B<But> you loose all the fine stuff done by the perlio layers. This
 calls the stdio function C<fputs()>, which knows nothing about them.
 
 The standard typemap offers three variants of PerlIO *:
@@ -1404,7 +1360,7 @@ Some systems may have installed Perl version 5 as "perl5".
 =head1 See also
 
 For more information, consult L<perlguts>, L<perlapi>, L<perlxs>, L<perlmod>,
-L<perlapio>, and L<perlpod>
+and L<perlpod>.
 
 =head1 Author
 
@@ -1418,8 +1374,6 @@ by Nick Ing-Simmons.
 
 Changes for h2xs as of Perl 5.8.x by Renee Baecker
 
-This document is now maintained as part of Perl itself.
-
 =head2 Last Changed
 
-2020-10-05
+2012-01-20

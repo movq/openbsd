@@ -7,7 +7,7 @@ use Carp;
 use strict;
 use warnings;
 
-our $VERSION = "1.50";
+our $VERSION = "1.25_02";
 XSLoader::load 'IO', $VERSION;
 
 sub import {
@@ -18,8 +18,6 @@ sub import {
     
     my @l = @_ ? @_ : qw(Handle Seekable File Pipe Socket Dir);
 
-    local @INC = @INC;
-    pop @INC if $INC[-1] eq '.';
     eval join("", map { "require IO::" . (/(\w+)/)[0] . ";\n" } @l)
 	or croak $@;
 }
@@ -34,8 +32,8 @@ IO - load various IO modules
 
 =head1 SYNOPSIS
 
-   use IO qw(Handle File); # loads IO modules, here IO::Handle, IO::File
-   use IO;                 # DEPRECATED
+    use IO qw(Handle File);  # loads IO modules, here IO::Handle, IO::File
+    use IO;                  # DEPRECATED
 
 =head1 DESCRIPTION
 
@@ -53,7 +51,7 @@ in one go.  The IO modules belonging to the core are:
 
 Some other IO modules don't belong to the perl core but can be loaded
 as well if they have been installed from CPAN.  You can discover which
-ones exist with this query:  L<https://metacpan.org/search?q=IO%3A%3A>.
+ones exist by searching for "^IO::" on http://search.cpan.org.
 
 For more information on any of these modules, please see its respective
 documentation.

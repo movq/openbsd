@@ -11,7 +11,6 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
@@ -19,7 +18,7 @@ sub BEGIN {
     }
 }
 
-use Test::More tests => 16;
+use Test::More tests => 11;
 use Storable ();
 
 # Get the singleton
@@ -51,12 +50,7 @@ is( "$struct->[1]", "$thawed->[1]", 'Singleton thaws correctly' );
 
 # We can also test this empirically
 $struct->[1]->{value} = 'Goodbye cruel world!';
-is_deeply( $struct, $thawed, 'Empiric testing confirms correct behaviour' );
-
-$struct = [ $object, $object ];
-$frozen = Storable::freeze($struct);
-$thawed = Storable::thaw($frozen);
-is("$thawed->[0]", "$thawed->[1]", "Multiple Singletons thaw correctly");
+is_deeply( $struct, $thawed, 'Empiric testing corfirms correct behaviour' );
 
 # End Tests
 ###########

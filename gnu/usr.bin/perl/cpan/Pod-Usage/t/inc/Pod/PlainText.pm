@@ -17,7 +17,6 @@
 
 package Pod::PlainText;
 use strict;
-use warnings;
 
 require 5.005;
 
@@ -35,7 +34,7 @@ $VERSION = '2.06';
 BEGIN {
    if ($] < 5.006) {
       require Symbol;
-      Symbol->import;
+      import Symbol;
    }
 }
 

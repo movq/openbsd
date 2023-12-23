@@ -1,6 +1,12 @@
 ################################################################################
 #
-#  Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz <mhx@cpan.org>.
+#  $Revision: 2 $
+#  $Author: mhx $
+#  $Date: 2007/10/14 05:39:15 +0200 $
+#
+################################################################################
+#
+#  Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz <mhx@cpan.org>.
 #  Version 1.x, Copyright (C) 1999, Graham Barr <gbarr@pobox.com>.
 #
 #  This program is free software; you can redistribute it and/or
@@ -8,23 +14,21 @@
 #
 ################################################################################
 
-use strict;
-use warnings;
-
-our %Config;
 BEGIN {
   if ($ENV{'PERL_CORE'}) {
     chdir 't' if -d 't';
     @INC = '../lib' if -d '../lib' && -d '../ext';
   }
 
-  require Test::More; Test::More->import;
-  require Config; Config->import;
+  require Test::More; import Test::More;
+  require Config; import Config;
 
   if ($ENV{'PERL_CORE'} && $Config{'extensions'} !~ m[\bIPC/SysV\b]) {
     plan(skip_all => 'IPC::SysV was not built');
   }
 }
+
+use strict;
 
 my @modules = qw( IPC::SysV IPC::Msg IPC::Semaphore IPC::SharedMem );
 

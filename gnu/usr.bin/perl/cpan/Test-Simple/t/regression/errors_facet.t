@@ -14,7 +14,7 @@ use Test2::API qw/intercept context/;
 
         my $out = $self->common_facet_data;
 
-        $out->{errors} = [{tag => 'OOPS', fail => !$ENV{FAILURE_DO_PASS}, details => "An error occurred"}];
+        $out->{errors} = [{tag => 'OOPS', fail => !$ENV{FAILURE_DO_PASS}, details => "An error occured"}];
 
         return $out;
     }

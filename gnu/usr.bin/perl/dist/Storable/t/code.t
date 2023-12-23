@@ -8,7 +8,6 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
@@ -34,14 +33,14 @@ BEGIN {
     }
 }
 
-BEGIN { plan tests => 63 }
+BEGIN { plan tests => 59 }
 
 use Storable qw(retrieve store nstore freeze nfreeze thaw dclone);
 use Safe;
 
 #$Storable::DEBUGME = 1;
 
-our ($freezed, $thawed, @obj, @res, $blessed_code);
+use vars qw($freezed $thawed @obj @res $blessed_code);
 
 $blessed_code = bless sub { "blessed" }, "Some::Package";
 { package Another::Package; sub foo { __PACKAGE__ } }
@@ -60,7 +59,7 @@ local *FOO;
       \&Another::Package::foo,  # code in another package
       sub ($$;$) { 0 },         # prototypes
       sub { print "test\n" },
-      \&Storable::_store,       # large scalar
+      \&Test::More::ok,               # large scalar
      ],
 
      {"a" => sub { "srt" }, "b" => \&code},
@@ -71,7 +70,7 @@ local *FOO;
 
      \&dclone,                 # XS function
 
-     sub { open FOO, '<', "/" },
+     sub { open FOO, "/" },
     );
 
 $Storable::Deparse = 1;
@@ -102,7 +101,7 @@ is($thawed->{"b"}->(), "JAPH");
 $freezed = freeze $obj[2];
 $thawed  = thaw $freezed;
 
-is($thawed->(), (ord "A") == 193 ? -118 : 42);
+is($thawed->(), 42);
 
 ######################################################################
 
@@ -125,9 +124,8 @@ is($new_sub->(), $obj[2]->());
 ######################################################################
 # Test retrieve & store
 
-store $obj[0], "store$$";
-# $Storable::DEBUGME = 1;
-$thawed = retrieve "store$$";
+store $obj[0], 'store';
+$thawed = retrieve 'store';
 
 is($thawed->[0]->(), "JAPH");
 is($thawed->[1]->(), 42);
@@ -137,9 +135,9 @@ is(prototype($thawed->[4]), prototype($obj[0]->[4]));
 
 ######################################################################
 
-nstore $obj[0], "store$$";
-$thawed = retrieve "store$$";
-unlink "store$$";
+nstore $obj[0], 'store';
+$thawed = retrieve 'store';
+unlink 'store';
 
 is($thawed->[0]->(), "JAPH");
 is($thawed->[1]->(), 42);
@@ -192,7 +190,7 @@ is(prototype($thawed->[4]), prototype($obj[0]->[4]));
     my $devnull = File::Spec->devnull;
 
     open(SAVEERR, ">&STDERR");
-    open(STDERR, '>', $devnull) or
+    open(STDERR, ">$devnull") or
 	( print SAVEERR "Unable to redirect STDERR: $!\n" and exit(1) );
 
     eval { $freezed = freeze $obj[0]->[0] };
@@ -307,13 +305,3 @@ is(prototype($thawed->[4]), prototype($obj[0]->[4]));
     }
 
 }
-
-{
-    my @text = ("hello", "\x{a3}", "\x{a3} \x{2234}", "\x{2234}\x{2234}");
-
-    for my $text(@text) {
-        my $res = (thaw freeze eval "sub {'" . $text . "'}")->();
-        ok($res eq $text);
-    }
-}
-

@@ -1,4 +1,3 @@
-use strict;
 =pod
 
 $VERSION = 1;
@@ -7,6 +6,6 @@ $VERSION = 1;
 
 package InPod;
 
-our $VERSION = 2;
+$VERSION = 2;
 
 1;

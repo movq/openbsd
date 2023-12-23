@@ -1,56 +1,35 @@
+#!/usr/bin/perl -w                                         # -*- perl -*-
+
+
 BEGIN {
-    use File::Spec::Functions ':ALL';
-    @INC = map { rel2abs($_) }
-             (qw| ./lib ./t/lib ../../lib |);
+    require "t/pod2html-lib.pl";
 }
 
 use strict;
-use warnings;
-use Test::More;
-use Testing qw( setup_testing_dir xconvert );
 use Cwd;
-
-my $debug = 0;
-my $startdir = cwd();
-END { chdir($startdir) or die("Cannot change back to $startdir: $!"); }
-my ($expect_raw, $args);
-{ local $/; $expect_raw = <DATA>; }
-
-my $tdir = setup_testing_dir( {
-    debug       => $debug,
-} );
+use Test::More tests => 2;
 
 my $cwd = cwd();
 
 my $warn;
 $SIG{__WARN__} = sub { $warn .= $_[0] };
 
-$args = {
-    podstub => "feature2",
-    description => "misc pod-html features 2",
-    expect => $expect_raw,
-    p2h => {
-        backlink    => 1,
-        header      => 1,
-        podpath     => '.',
-        podroot     => $cwd,
-        norecurse   => 1,
-        verbose     => 1,
-    },
-    debug => $debug,
-};
-xconvert($args);
+convert_n_test("feature2", "misc pod-html features 2", 
+ "--backlink",
+ "--header",
+ "--podpath=.",
+ "--podroot=$cwd",
+ "--norecurse",
+ "--verbose",
+ "--quiet",
+ );
 
 like($warn,
     qr(
-    \Acaching\ directories\ for\ later\ use\n
-    Converting\ input\ file\ \S+[/\\\]]feature2\.pod\n
-    Cannot\ find\ file\ "crossref\.\*"\ directly\ under\ podpath,\ cannot\ find
-    \ suitable\ replacement:\ link\ remains\ unresolved\.\n\z
+	\Acaching\ directories\ for\ later\ use\n
+	Converting\ input\ file\ \S+[/\\\]]feature2\.pod\n\z	
     )x,
     "misc pod-html --verbose warnings");
-
-done_testing;
 
 __DATA__
 <?xml version="1.0" ?>
@@ -62,9 +41,9 @@ __DATA__
 <link rev="made" href="mailto:[PERLADMIN]" />
 </head>
 
-<body id="_podtop_">
+<body id="_podtop_" style="background-color: white">
 <table border="0" width="100%" cellspacing="0" cellpadding="3">
-<tr><td class="_podblock_" style="background-color: #cccccc; color: #000" valign="middle">
+<tr><td class="_podblock_" style="background-color: #cccccc" valign="middle">
 <big><strong><span class="_podblock_">&nbsp;</span></strong></big>
 </td></tr>
 </table>
@@ -91,7 +70,7 @@ some html
 <p>some text and a link <a>crossref</a></p>
 
 <table border="0" width="100%" cellspacing="0" cellpadding="3">
-<tr><td class="_podblock_" style="background-color: #cccccc; color: #000" valign="middle">
+<tr><td class="_podblock_" style="background-color: #cccccc" valign="middle">
 <big><strong><span class="_podblock_">&nbsp;</span></strong></big>
 </td></tr>
 </table>

@@ -4,15 +4,14 @@ use Test::More 0.88;
 
 use CPAN::Meta::Prereqs;
 
-delete $ENV{PERL_YAML_BACKEND};
-delete $ENV{PERL_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_DECODER};
+delete $ENV{$_} for qw/PERL_JSON_BACKEND PERL_YAML_BACKEND/; # use defaults
 
 sub dies_ok (&@) {
   my ($code, $qr, $comment) = @_;
 
-  if (eval { $code->(); 1 }) {
+  my $lived = eval { $code->(); 1 };
+
+  if ($lived) {
     fail("$comment: did not die");
   } else {
     like($@, $qr, $comment);
@@ -92,4 +91,3 @@ $clone->requirements_for(qw(develop suggests))->add_minimum(Foo => 1);
 pass('...and we can add stuff to it');
 
 done_testing;
-# vim: ts=2 sts=2 sw=2 et :

@@ -4,11 +4,14 @@
 # suite.  It provides some supporting functions to make it easier to write
 # tests.
 #
-# SPDX-License-Identifier: GPL-1.0-or-later OR Artistic-1.0-Perl
+# Copyright 2015, 2016 Russ Allbery <rra@cpan.org>
+#
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
 
 package Test::Podlators;
 
-use 5.008;
+use 5.006;
 use strict;
 use warnings;
 
@@ -28,7 +31,7 @@ our (@EXPORT_OK, @ISA, $VERSION);
 # consistency is good).
 BEGIN {
     @ISA       = qw(Exporter);
-    $VERSION   = '2.01';
+    $VERSION   = '2.00';
     @EXPORT_OK = qw(
       read_snippet read_test_data slurp test_snippet test_snippet_with_io
     );
@@ -90,7 +93,7 @@ sub _stderr_restore {
 # Read one test snippet from the provided relative file name and return it.
 # For the format, see t/data/snippets/README.
 #
-# $path     - Relative path to read test data from
+# $path - Relative path to read test data from
 #
 # Returns: Reference to hash of test data with the following keys:
 #            name      - Name of the test for status reporting
@@ -108,10 +111,11 @@ sub read_snippet {
     my ($line, $section);
     open(my $fh, '<', $path) or BAIL_OUT("cannot open $path: $!");
     while (defined($line = <$fh>)) {
+        $line = decode('UTF-8', $line);
         if ($line =~ m{ \A \s* \[ (\S+) \] \s* \z }xms) {
             $section = $1;
-            $data{$section} = q{};
         } elsif ($section) {
+            $data{$section} ||= q{};
             $data{$section} .= $line;
         }
     }
@@ -242,20 +246,11 @@ sub slurp {
 # loading the snippet, creating the formatter, running it, and checking the
 # results, and reports those results with Test::More.
 #
-# $class       - Class name of the formatter, as a string
-# $snippet     - Path to the snippet file defining the test
-# $options_ref - Hash of options with the following keys:
-#   encoding - Expect the output to be in this non-standard encoding
+# $class   - Class name of the formatter, as a string
+# $snippet - Path to the snippet file defining the test
 sub test_snippet {
-    my ($class, $snippet, $options_ref) = @_;
+    my ($class, $snippet) = @_;
     my $data_ref = read_snippet($snippet);
-
-    # Determine the encoding to expect for the output portion of the snippet.
-    my $encoding;
-    if (defined($options_ref)) {
-        $encoding = $options_ref->{encoding};
-    }
-    $encoding ||= 'UTF-8';
 
     # Create the formatter object.
     my $parser = $class->new(%{ $data_ref->{options} }, name => 'TEST');
@@ -276,18 +271,14 @@ sub test_snippet {
         $got =~ s{ \A .* \n [.]nh \n }{}xms;
     }
 
-    # Strip any trailing blank lines (Pod::Text likes to add them).
-    $got =~ s{ \n\s+ \z }{\n}xms;
-
     # Check the output, errors, and any exception.
-    my $expected = decode($encoding, $data_ref->{output});
-    is($got, $expected, "$data_ref->{name}: output");
-    if ($data_ref->{errors} || $stderr) {
-        is($stderr, $data_ref->{errors} || q{}, "$data_ref->{name}: errors");
+    is($got, $data_ref->{output}, "$data_ref->{name}: output");
+    if ($data_ref->{errors}) {
+        is($stderr, $data_ref->{errors}, "$data_ref->{name}: errors");
     }
     if ($data_ref->{exception} || $exception) {
         if ($exception) {
-            $exception =~ s{ [ ] at [ ] .* }{\n}xms;
+            $exception =~ s{ [ ] at [ ] .* }{}xms;
         }
         is($exception, $data_ref->{exception}, "$data_ref->{name}: exception");
     }
@@ -303,18 +294,10 @@ sub test_snippet {
 # $class       - Class name of the formatter, as a string
 # $snippet     - Path to the snippet file defining the test
 # $options_ref - Hash of options with the following keys:
-#   encoding    - Expect the snippet to be in this non-standard encoding
 #   perlio_utf8 - Set to 1 to set a PerlIO UTF-8 encoding on the output file
 sub test_snippet_with_io {
     my ($class, $snippet, $options_ref) = @_;
     my $data_ref = read_snippet($snippet);
-
-    # Determine the encoding to expect for the output portion of the snippet.
-    my $encoding;
-    if (defined($options_ref)) {
-        $encoding = $options_ref->{encoding};
-    }
-    $encoding ||= 'UTF-8';
 
     # Create the formatter object.
     my $parser = $class->new(%{ $data_ref->{options} }, name => 'TEST');
@@ -329,7 +312,7 @@ sub test_snippet_with_io {
     my $input_file = File::Spec->catfile('t', 'tmp', "tmp$$.pod");
     open(my $input, '>', $input_file)
       or BAIL_OUT("cannot create $input_file: $!");
-    print {$input} $data_ref->{input}
+    print {$input} encode('UTF-8', $data_ref->{input})
       or BAIL_OUT("cannot write to $input_file: $!");
     close($input) or BAIL_OUT("cannot flush output to $input_file: $!");
 
@@ -348,23 +331,20 @@ sub test_snippet_with_io {
     $parser->parse_from_file($input_file, $output);
     close($output) or BAIL_OUT("cannot flush output to $output_file: $!");
 
-    # Read back in the results.  For Pod::Man, also ensure that we didn't
-    # output the accent definitions if we wrote UTF-8 output.
+    # Read back in the results, checking to ensure that we didn't output the
+    # accent definitions if we wrote UTF-8 output.
     open(my $results, '<', $output_file)
       or BAIL_OUT("cannot open $output_file: $!");
     my ($line, $saw_accents);
-    if ($class eq 'Pod::Man') {
-        while (defined($line = <$results>)) {
-            $line = decode('UTF-8', $line);
-            if ($line =~ m{ Accent [ ] mark [ ] definitions }xms) {
-                $saw_accents = 1;
-            }
-            last if $line =~ m{ \A [.]nh }xms;
+    while (defined($line = <$results>)) {
+        $line = decode('UTF-8', $line);
+        if ($line =~ m{ Accent [ ] mark [ ] definitions }xms) {
+            $saw_accents = 1;
         }
+        last if $line =~ m{ \A [.]nh }xms;
     }
     my $saw = do { local $/ = undef; <$results> };
     $saw = decode('UTF-8', $saw);
-    $saw =~ s{ \n\s+ \z }{\n}xms;
     close($results) or BAIL_OUT("cannot close output file: $!");
 
     # Clean up.
@@ -372,18 +352,12 @@ sub test_snippet_with_io {
 
     # Check the accent definitions and the output.
     my $perlio = $options_ref->{perlio_utf8} ? ' (PerlIO)' : q{};
-    if ($class eq 'Pod::Man') {
-        is(
-            $saw_accents,
-            $data_ref->{options}{utf8} ? undef : 1,
-            "$data_ref->{name}: accent definitions$perlio"
-        );
-    }
     is(
-        $saw,
-        decode($encoding, $data_ref->{output}),
-        "$data_ref->{name}: output$perlio"
+        $saw_accents,
+        $data_ref->{options}{utf8} ? undef : 1,
+        "$data_ref->{name}: accent definitions$perlio"
     );
+    is($saw, $data_ref->{output}, "$data_ref->{name}: output$perlio");
     return;
 }
 
@@ -417,11 +391,14 @@ should be explicitly imported.
 
 =over 4
 
-=item read_snippet(PATH)
+=item read_snippet(PATH[, OPTIONS])
 
 Read one test snippet from the provided relative file name and return it.  The
 path should be relative to F<t/data/snippets>.  For the format, see
 F<t/data/snippets/README>.
+
+OPTIONS, if present, is a hash that currently supports only one key: C<utf8>,
+to set a PerlIO input encoding layer of UTF-8 when reading the snippet.
 
 The result will be a hash with the following keys:
 
@@ -499,15 +476,11 @@ The output data for the test.  This is always present.
 Read the contents of FILE and return it as a string.  If STRIP is set to
 C<man>, strip off any Pod::Man header from the file before returning it.
 
-=item test_snippet(CLASS, SNIPPET[, OPTIONS])
+=item test_snippet(CLASS, SNIPPET)
 
 Test a formatter on a particular POD snippet.  This does all the work of
 loading the snippet, creating the formatter by instantiating CLASS, running
 it, and checking the results.  Results are reported with Test::More.
-
-OPTIONS, if present, is a reference to a hash of options.  Currently, only
-one key is supported: C<encoding>, which, if set, specifies the encoding of
-the output portion of the snippet.
 
 =item test_snippet_with_io(CLASS, SNIPPET[, OPTIONS])
 
@@ -515,8 +488,8 @@ The same as test_snippet(), except, rather than parsing the input into a
 string buffer, this function uses real, temporary input and output files.
 This can be used to test I/O layer handling and proper encoding.
 
-OPTIONS, if present, is a reference to a hash of options.  Currently, only one
-key is supported: C<perlio_utf8>, which, if set to true, will set a PerlIO
+OPTIONS, if present, is a reference to a hash of options.  Currently, only
+one key is supported: C<perlio>, which, if set to true, will set a PerlIO
 UTF-8 encoding layer on the output file before writing to it.
 
 =back
@@ -527,13 +500,9 @@ Russ Allbery <rra@cpan.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2015-2016, 2018-2020 Russ Allbery <rra@cpan.org>
+Copyright 2015 Russ Allbery <rra@cpan.org>
 
 This program is free software; you may redistribute it and/or modify it
 under the same terms as Perl itself.
 
 =cut
-
-# Local Variables:
-# copyright-at-end-flag: t
-# End:

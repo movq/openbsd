@@ -1,6 +1,6 @@
 package ExtUtils::Constant;
 use vars qw (@ISA $VERSION @EXPORT_OK %EXPORT_TAGS);
-$VERSION = '0.25';
+$VERSION = 0.22;
 
 =head1 NAME
 
@@ -198,17 +198,17 @@ $XS_subname(sv)
 EOT
 
   if ($params->{IV}) {
-    $xs .= "	IV		iv = 0; /* avoid uninit var warning */\n";
+    $xs .= "	IV		iv;\n";
   } else {
     $xs .= "	/* IV\t\tiv;\tUncomment this if you need to return IVs */\n";
   }
   if ($params->{NV}) {
-    $xs .= "	NV		nv = 0.0; /* avoid uninit var warning */\n";
+    $xs .= "	NV		nv;\n";
   } else {
     $xs .= "	/* NV\t\tnv;\tUncomment this if you need to return NVs */\n";
   }
   if ($params->{PV}) {
-    $xs .= "	const char	*pv = NULL; /* avoid uninit var warning */\n";
+    $xs .= "	const char	*pv;\n";
   } else {
     $xs .=
       "	/* const char\t*pv;\tUncomment this if you need to return PVs */\n";
@@ -272,7 +272,7 @@ EOT
     $xs .= "        case PERL_constant_IS$type:\n";
     if (length $XS_Constant{$type}) {
       $xs .= << "EOT";
-          EXTEND(SP, 2);
+          EXTEND(SP, 1);
           PUSHs(&PL_sv_undef);
           $XS_Constant{$type};
 EOT
@@ -494,9 +494,6 @@ sub WriteConstants {
 
   croak "Module name not specified" unless length $ARGS{NAME};
 
-  # Do this before creating (empty) files, in case it fails:
-  require ExtUtils::Constant::ProxySubs if $ARGS{PROXYSUBS};
-
   my $c_fh = $ARGS{C_FH};
   if (!$c_fh) {
       if ($] <= 5.008) {
@@ -525,6 +522,7 @@ sub WriteConstants {
   # names.
   
   if ($ARGS{PROXYSUBS}) {
+      require ExtUtils::Constant::ProxySubs;
       $ARGS{C_FH} = $c_fh;
       $ARGS{XS_FH} = $xs_fh;
       ExtUtils::Constant::ProxySubs->WriteConstants(%ARGS);

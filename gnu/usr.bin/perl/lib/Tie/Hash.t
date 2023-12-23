@@ -2,7 +2,7 @@
 
 # These tests are not complete. Patches welcome.
 
-use Test::More;
+use Test::More tests => 3;
 
 BEGIN {use_ok( 'Tie::Hash' )};
 
@@ -11,5 +11,3 @@ for my $method (qw( TIEHASH EXISTS )) {
 	eval { Tie::Hash->$method() };
 	like( $@, qr/doesn't define an? $method/, "croaks on inherited $method()" );
 }
-
-done_testing();

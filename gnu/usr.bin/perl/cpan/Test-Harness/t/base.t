@@ -1,7 +1,6 @@
 #!/usr/bin/perl -wT
 
 use strict;
-use warnings;
 use lib 't/lib';
 
 use Test::More tests => 38;
@@ -14,7 +13,7 @@ use TAP::Base;
     can_ok 'TAP::Base', 'new';
     my $base = TAP::Base->new();
     isa_ok $base, 'TAP::Base', 'object of correct type';
-    for my $method (qw(callback _croak _callback_for _initialize)) {
+    foreach my $method (qw(callback _croak _callback_for _initialize)) {
         can_ok $base, $method;
     }
 
@@ -54,7 +53,8 @@ use TAP::Base;
 package CallbackOK;
 
 use TAP::Base;
-use base 'TAP::Base';
+use vars qw(@ISA);
+@ISA = 'TAP::Base';
 
 sub _initialize {
     my $self = shift;

@@ -10,7 +10,7 @@ L<htmllink/section 2>
 
 L</"item1">
 
-L</"non existent section">
+L</"non existant section">
 
 L<var-copy>
 

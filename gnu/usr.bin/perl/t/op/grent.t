@@ -2,79 +2,61 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-}
-
-eval {my @n = getgrgid 0};
-if ($@ =~ /(The \w+ function is unimplemented)/) {
-    skip_all "getgrgid unimplemented";
-}
-
-eval { require Config; import Config; };
-my $reason;
-if ($Config{'i_grp'} ne 'define') {
+    unshift @INC, "../lib" if -d "../lib";
+    eval {my @n = getgrgid 0};
+    if ($@ && $@ =~ /(The \w+ function is unimplemented)/) {
+	print "1..0 # Skip: $1\n";
+	exit 0;
+    }
+    eval { require Config; import Config; };
+    my $reason;
+    if ($Config{'i_grp'} ne 'define') {
 	$reason = '$Config{i_grp} not defined';
-}
-elsif (not -f "/etc/group" ) { # Play safe.
+    }
+    elsif (not -f "/etc/group" ) { # Play safe.
 	$reason = 'no /etc/group file';
-}
+    }
 
-if (not defined $where) {	# Try NIS.
-    foreach my $ypcat (qw(/usr/bin/ypcat /bin/ypcat /etc/ypcat)) {
-        if (-x $ypcat &&
-            open(GR, "$ypcat group 2>/dev/null |") &&
-            defined(<GR>)) 
-        {
-            print "# `ypcat group` worked\n";
+    if (not defined $where) {	# Try NIS.
+	foreach my $ypcat (qw(/usr/bin/ypcat /bin/ypcat /etc/ypcat)) {
+	    if (-x $ypcat &&
+		open(GR, "$ypcat group 2>/dev/null |") &&
+		defined(<GR>)) {
+		$where = "NIS group";
+		undef $reason;
+		last;
+	    }
+	}
+    }
 
-            # Check to make sure we are really using NIS.
-            if( open(NSSW, "/etc/nsswitch.conf" ) ) {
-                my($group) = grep /^\s*group:/, <NSSW>;
+    if (not defined $where) {	# Try NetInfo.
+	foreach my $nidump (qw(/usr/bin/nidump)) {
+	    if (-x $nidump &&
+		open(GR, "$nidump group . 2>/dev/null |") &&
+		defined(<GR>)) {
+		$where = "NetInfo group";
+		undef $reason;
+		last;
+	    }
+	}
+    }
 
-                # If there is no group line, assume it default to compat.
-                if( !$group || $group !~ /(nis|compat)/ ) {
-                    print "# Doesn't look like you're using NIS in ".
-                          "/etc/nsswitch.conf\n";
-                    last;
-                }
-            }
-            $where = "NIS group - $ypcat";
-            undef $reason;
-            last;
-        }
+    if (not defined $where) {	# Try local.
+	my $GR = "/etc/group";
+	if (-f $GR && open(GR, $GR) && defined(<GR>)) {
+	    undef $reason;
+	    $where = $GR;
+	}
+    }
+    if ($reason) {
+	print "1..0 # Skip: $reason\n";
+	exit 0;
     }
 }
 
-if (not defined $where) {	# Try NetInfo.
-    foreach my $nidump (qw(/usr/bin/nidump)) {
-        if (-x $nidump &&
-            open(GR, "$nidump group . 2>/dev/null |") &&
-            defined(<GR>)) 
-        {
-            $where = "NetInfo group - $nidump";
-            undef $reason;
-            last;
-        }
-    }
-}
+# By now GR filehandle should be open and full of juicy group entries.
 
-if (not defined $where) {	# Try local.
-    my $GR = "/etc/group";
-    if (-f $GR && open(GR, $GR) && defined(<GR>)) {
-        undef $reason;
-        $where = "local $GR";
-    }
-}
-
-if ($reason) {
-    skip_all $reason;
-}
-
-
-# By now the GR filehandle should be open and full of juicy group entries.
-
-plan tests => 3;
+print "1..1\n";
 
 # Go through at most this many groups.
 # (note that the first entry has been read away by now)
@@ -85,14 +67,9 @@ my $tst = 1;
 my %perfect;
 my %seen;
 
-print "# where $where\n";
-
-ok( setgrent(), 'setgrent' ) || print "# $!\n";
-
 while (<GR>) {
     chomp;
-    # LIMIT -1 so that groups with no users do not fall off
-    my @s = split /:/, $_, -1;
+    my @s = split /:/;
     my ($name_s,$passwd_s,$gid_s,$members_s) = @s;
     if (@s) {
 	push @{ $seen{$name_s} }, $.;
@@ -134,11 +111,7 @@ while (<GR>) {
     $n++;
 }
 
-endgrent();
-
-print "# max = $max, n = $n, perfect = ", scalar keys %perfect, "\n";
-
-if (keys %perfect == 0 && $n) {
+if (keys %perfect == 0) {
     $max++;
     print <<EOEX;
 #
@@ -154,35 +127,13 @@ if (keys %perfect == 0 && $n) {
 # matches at all, it suspects something is wrong.
 # 
 EOEX
-
-    fail();
-    print "#\t (not necessarily serious: run t/op/grent.t by itself)\n";
+    print "not ";
+    $not = 1;
 } else {
-    pass("getgrgid and getgrnam performed as expected");
+    $not = 0;
 }
-
-# Test both the scalar and list contexts.
-
-my @gr1;
-
-setgrent();
-for (1..$max) {
-    my $gr = scalar getgrent();
-    last unless defined $gr;
-    push @gr1, $gr;
-}
-endgrent();
-
-my @gr2;
-
-setgrent();
-for (1..$max) {
-    my ($gr) = (getgrent());
-    last unless defined $gr;
-    push @gr2, $gr;
-}
-endgrent();
-
-is("@gr1", "@gr2", "getgrent gave same results in scalar and list contexts");
+print "ok ", $tst++;
+print "\t# (not necessarily serious: run t/op/grent.t by itself)" if $not;
+print "\n";
 
 close(GR);

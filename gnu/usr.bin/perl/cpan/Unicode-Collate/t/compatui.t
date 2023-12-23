@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -8,7 +13,7 @@ BEGIN {
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..1331\n"; } # 1 + 70 x @Versions
+BEGIN { $| = 1; print "1..631\n"; } # 1 + 70 x @Versions
 my $count = 0;
 sub ok ($;$) {
     my $p = my $r = shift;
@@ -23,13 +28,9 @@ use Unicode::Collate;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
-my @Versions = ( 8,  9, 11, 14, 16, 18, 20, 22, 24, 26,
-		28, 30, 32, 34, 36, 38, 40, 41, 43);
+my @Versions = (8, 9, 11, 14, 16, 18, 20, 22, 24);
 
 # 12 compatibility ideographs are treated as unified ideographs:
 # FA0E, FA0F, FA11, FA13, FA14, FA1F, FA21, FA23, FA24, FA27, FA28, FA29.

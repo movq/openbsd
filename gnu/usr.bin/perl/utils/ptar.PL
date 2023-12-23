@@ -18,7 +18,7 @@ chdir dirname($0);
 my $file = basename($0, '.PL');
 $file .= '.com' if $^O eq 'VMS';
 
-open OUT, ">", $file or die "Can't create $file: $!";
+open OUT,">$file" or die "Can't create $file: $!";
 
 print "Extracting $file (with variable substitutions)\n";
 
@@ -28,17 +28,17 @@ print "Extracting $file (with variable substitutions)\n";
 print OUT <<"!GROK!THIS!";
 $Config{startperl}
     eval 'exec $Config{perlpath} -S \$0 \${1+"\$@"}'
-	if 0; # ^ Run only under a shell
+	if \$running_under_some_shell;
 !GROK!THIS!
 
 use File::Spec;
 
 my $script = File::Spec->catfile(
             File::Spec->catdir(
-                File::Spec->updir, qw[cpan Archive-Tar bin]
+                File::Spec->updir, qw[lib Archive Tar bin]
             ), "ptar");
 
-if (open(IN, '<', $script)) {
+if (open(IN, $script)) {
     print OUT <IN>;
     close IN;
 } else {

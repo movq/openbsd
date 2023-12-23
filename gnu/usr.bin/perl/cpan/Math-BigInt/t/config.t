@@ -1,150 +1,136 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 use strict;
-use warnings;
+use Test::More;
 
-use Test::More tests => 72;
+BEGIN
+  {
+  $| = 1;
+  chdir 't' if -d 't';
+  unshift @INC, '../lib'; # for running manually
+  plan tests => 55;
+  } 
 
-# test whether Math::BigInt->config() and Math::BigFloat->config() work
+# test whether Math::BigInt->config() and Math::BigFloat->config() works
 
 use Math::BigInt lib => 'Calc';
 use Math::BigFloat;
 
-my $mbi = 'Math::BigInt';
-my $mbf = 'Math::BigFloat';
-
-my @defaults =
-  ([ 'lib',         'Math::BigInt::Calc'           ],
-   [ 'lib_version', $Math::BigInt::Calc::VERSION, ],
-   [ 'upgrade',     undef,  ],
-   [ 'div_scale',   40,     ],
-   [ 'precision',   undef,  ],
-   [ 'accuracy',    undef,  ],
-   [ 'round_mode',  'even', ],
-   [ 'trap_nan',    0,      ],
-   [ 'trap_inf',    0,      ]);
+my $mbi = 'Math::BigInt'; my $mbf = 'Math::BigFloat';
 
 ##############################################################################
-# Math::BigInt
+# BigInt
 
-{
-    can_ok($mbi, 'config');
+ok ($mbi->can('config'));
 
-    my @table = @defaults;
-    unshift @table, ['class', $mbi ];
+my $cfg = $mbi->config();
 
-    # Test getting via the new-style $class->($key):
+ok (ref($cfg),'HASH');
 
-    for (my $i = 0 ; $i <= $#table ; ++ $i) {
-        my $key = $table[$i][0];
-        my $val = $table[$i][1];
-        is($mbi->config($key), $val, qq|$mbi->config("$key")|);
-    }
+is ($cfg->{lib},'Math::BigInt::Calc', 'lib');
+is ($cfg->{lib_version}, $Math::BigInt::Calc::VERSION, 'lib_version');
+is ($cfg->{class},$mbi,'class');
+is ($cfg->{upgrade}||'','', 'upgrade');
+is ($cfg->{div_scale},40, 'div_Scale');
 
-    # Test getting via the old-style $class->()->{$key}, which is still
-    # supported:
+is ($cfg->{precision}||0,0, 'precision');	# should test for undef
+is ($cfg->{accuracy}||0,0,'accuracy');
+is ($cfg->{round_mode},'even','round_mode');
 
-    my $cfg = $mbi->config();
-    is(ref($cfg), 'HASH', 'ref() of output from $mbi->config()');
+is ($cfg->{trap_nan},0, 'trap_nan');
+is ($cfg->{trap_inf},0, 'trap_inf');
 
-    for (my $i = 0 ; $i <= $#table ; ++ $i) {
-        my $key = $table[$i][0];
-        my $val = $table[$i][1];
-        is($cfg->{$key}, $val, qq|$mbi->config()->{$key}|);
-    }
+is ($mbi->config('lib'), 'Math::BigInt::Calc', 'config("lib")');
 
-    # can set via hash ref?
-    $cfg = $mbi->config({ trap_nan => 1 });
-    is($cfg->{trap_nan}, 1, 'can set "trap_nan" via hash ref');
+# can set via hash ref?
+$cfg = $mbi->config( { trap_nan => 1 } );
+is ($cfg->{trap_nan},1, 'can set via hash ref');
 
-    # reset for later
-    $mbi->config(trap_nan => 0);
-}
+# reset for later
+$mbi->config( trap_nan => 0 );
 
 ##############################################################################
-# Math::BigFloat
+# BigFloat
 
-{
-    can_ok($mbf, 'config');
+ok ($mbf->can('config'));
 
-    my @table = @defaults;
-    unshift @table, ['class', $mbf ];
+$cfg = $mbf->config();
 
-    # Test getting via the new-style $class->($key):
+ok (ref($cfg),'HASH');
 
-    for (my $i = 0 ; $i <= $#table ; ++ $i) {
-        my $key = $table[$i][0];
-        my $val = $table[$i][1];
-        is($mbf->config($key), $val, qq|$mbf->config("$key")|);
-    }
+is ($cfg->{lib},'Math::BigInt::Calc', 'lib');
+is ($cfg->{with},'Math::BigInt::Calc', 'with');
+is ($cfg->{lib_version}, $Math::BigInt::Calc::VERSION, 'lib_version');
+is ($cfg->{class},$mbf,'class');
+is ($cfg->{upgrade}||'','', 'upgrade');
+is ($cfg->{div_scale},40, 'div_Scale');
 
-    # Test getting via the old-style $class->()->{$key}, which is still
-    # supported:
+is ($cfg->{precision}||0,0, 'precision');	# should test for undef
+is ($cfg->{accuracy}||0,0,'accuracy');
+is ($cfg->{round_mode},'even','round_mode');
 
-    my $cfg = $mbf->config();
-    is(ref($cfg), 'HASH', 'ref() of output from $mbf->config()');
+is ($cfg->{trap_nan},0, 'trap_nan');
+is ($cfg->{trap_inf},0, 'trap_inf');
 
-    for (my $i = 0 ; $i <= $#table ; ++ $i) {
-        my $key = $table[$i][0];
-        my $val = $table[$i][1];
-        is($cfg->{$key}, $val, qq|$mbf->config()->{$key}|);
-    }
+is ($mbf->config('lib'), 'Math::BigInt::Calc', 'config("lib")');
 
-    # can set via hash ref?
-    $cfg = $mbf->config({ trap_nan => 1 });
-    is($cfg->{trap_nan}, 1, 'can set "trap_nan" via hash ref');
+# can set via hash ref?
+$cfg = $mbf->config( { trap_nan => 1 } );
+is ($cfg->{trap_nan},1, 'can set via hash ref');
 
-    # reset for later
-    $mbf->config(trap_nan => 0);
-}
+# reset for later
+$mbf->config( trap_nan => 0 );
 
 ##############################################################################
 # test setting values
 
 my $test = {
-    trap_nan   => 1,
-    trap_inf   => 1,
-    accuracy   => 2,
-    precision  => 3,
-    round_mode => 'zero',
-    div_scale  => '100',
-    upgrade    => 'Math::BigInt::SomeClass',
-    downgrade  => 'Math::BigInt::SomeClass',
-};
+   trap_nan => 1, 
+   trap_inf => 1, 
+   accuracy => 2,
+   precision => 3,
+   round_mode => 'zero',
+   div_scale => '100',
+   upgrade => 'Math::BigInt::SomeClass',
+   downgrade => 'Math::BigInt::SomeClass',
+  };
 
-my $cfg;
+my $c;
 
-foreach my $key (keys %$test) {
+foreach my $key (keys %$test)
+  {
+  # see if setting in MBI works
+  eval ( "$mbi\->config( $key => '$test->{$key}' );" );
+  $c = $mbi->config(); ok ("$key = $c->{$key}", "$key = $test->{$key}");
+  $c = $mbf->config(); 
+  # see if setting it in MBI leaves MBF alone
+  if (($c->{$key}||0) ne $test->{$key})
+    {
+    is (1,1);
+    }
+  else
+    {
+    is ("$key eq $c->{$key}","$key ne $test->{$key}", "$key");
+    }
 
-    # see if setting in MBI works
-    eval { $mbi->config($key => $test->{$key}); };
-    $cfg = $mbi->config();
-    is("$key = $cfg->{$key}", "$key = $test->{$key}", "$key = $test->{$key}");
-    $cfg = $mbf->config();
-
-    # see if setting it in MBI leaves MBF alone
-    ok(($cfg->{$key} || 0) ne $test->{$key},
-       "$key ne \$cfg->{$key}");
-
-    # see if setting in MBF works
-    eval { $mbf->config($key => $test->{$key}); };
-    $cfg = $mbf->config();
-    is("$key = $cfg->{$key}", "$key = $test->{$key}", "$key = $test->{$key}");
-}
+  # see if setting in MBF works
+  eval ( "$mbf\->config( $key => '$test->{$key}' );" );
+  $c = $mbf->config(); ok ("$key = $c->{$key}", "$key = $test->{$key}");
+  }
 
 ##############################################################################
 # test setting illegal keys (should croak)
+  
+$@ = ""; my $never_reached = 0;
+eval ("$mbi\->config( 'some_garbage' => 1 ); $never_reached = 1;");
+is ($never_reached,0);
 
-eval { $mbi->config('some_garbage' => 1); };
-like($@,
-     qr/ ^ Illegal \s+ key\(s\) \s+ 'some_garbage' \s+ passed \s+ to \s+
-         Math::BigInt->config\(\) \s+ at
-       /x,
-     'Passing invalid key to Math::BigInt->config() causes an error.');
+$@ = ""; $never_reached = 0;
+eval ("$mbf\->config( 'some_garbage' => 1 ); $never_reached = 1;");
+is ($never_reached,0);
 
-eval { $mbf->config('some_garbage' => 1); };
-like($@,
-     qr/ ^ Illegal \s+ key\(s\) \s+ 'some_garbage' \s+ passed \s+ to \s+
-         Math::BigFloat->config\(\) \s+ at
-       /x,
-     'Passing invalid key to Math::BigFloat->config() causes an error.');
+# this does not work. Why?
+#ok ($@ eq "Illegal keys 'some_garbage' passed to Math::BigInt->config() at ./config.t line 104", 1);
+
+# all tests done
+

@@ -1,5 +1,7 @@
 #!./perl
 
+# $RCSfile: subval.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:13 $
+
 sub foo1 {
     'true1';
     if ($_[0]) { 'true2'; }
@@ -31,7 +33,7 @@ sub foo6 {
     'true2' unless $_[0];
 }
 
-print "1..36\n";
+print "1..34\n";
 
 if (&foo1(0) eq '0') {print "ok 1\n";} else {print "not ok 1 $foo\n";}
 if (&foo1(1) eq 'true2') {print "ok 2\n";} else {print "not ok 2\n";}
@@ -112,14 +114,14 @@ package main;
 $i = 28;
 open(FOO,">Cmd_subval.tmp");
 print FOO "blah blah\n";
-close FOO or die "Can't close Cmd_subval.tmp: $!";
+close FOO;
 
 &file_main(*F);
-close F or die "Can't close: $!";
+close F;
 &info_main;
 
 &file_package(*F);
-close F or die "Can't close: $!";
+close F;
 &info_package;
 
 unlink 'Cmd_subval.tmp';
@@ -127,7 +129,7 @@ unlink 'Cmd_subval.tmp';
 sub file_main {
         local(*F) = @_;
 
-        open(F, 'Cmd_subval.tmp') || die "can't open: $!\n";
+        open(F, 'Cmd_subval.tmp') || die "can't open\n";
 	$i++;
         eof F ? print "not ok $i\n" : print "ok $i\n";
 }
@@ -135,11 +137,11 @@ sub file_main {
 sub info_main {
         local(*F);
 
-        open(F, 'Cmd_subval.tmp') || die "test: can't open: $!\n";
+        open(F, 'Cmd_subval.tmp') || die "test: can't open\n";
 	$i++;
         eof F ? print "not ok $i\n" : print "ok $i\n";
         &iseof(*F);
-	close F or die "Can't close: $!";
+	close F;
 }
 
 sub iseof {
@@ -154,7 +156,7 @@ sub iseof {
  sub main'file_package {
         local(*F) = @_;
 
-        open(F, 'Cmd_subval.tmp') || die "can't open: $!\n";
+        open(F, 'Cmd_subval.tmp') || die "can't open\n";
 	$main'i++;
         eof F ? print "not ok $main'i\n" : print "ok $main'i\n";
  }
@@ -162,7 +164,7 @@ sub iseof {
  sub main'info_package {
         local(*F);
 
-        open(F, 'Cmd_subval.tmp') || die "can't open: $!\n";
+        open(F, 'Cmd_subval.tmp') || die "can't open\n";
 	$main'i++;
         eof F ? print "not ok $main'i\n" : print "ok $main'i\n";
         &iseof(*F);
@@ -175,10 +177,3 @@ sub iseof {
         eof UNIQ ? print "not ok $main'i\n" : print "ok $main'i\n";
  }
 }
-
-sub autov { $_[0] = 23 };
-
-my $href = {};
-print keys %$href ? 'not ' : '', "ok 35\n";
-autov($href->{b});
-print join(':', %$href) eq 'b:23' ? '' : 'not ', "ok 36\n";

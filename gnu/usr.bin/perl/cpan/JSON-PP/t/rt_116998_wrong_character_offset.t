@@ -1,5 +1,4 @@
 use strict;
-use warnings;
 use Test::More;
 BEGIN { plan tests => 4 };
 BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }

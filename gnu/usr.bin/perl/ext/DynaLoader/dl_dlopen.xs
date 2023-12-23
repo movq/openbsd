@@ -1,18 +1,15 @@
 /* dl_dlopen.xs
  * 
  * Platform:	SunOS/Solaris, possibly others which use dlopen.
- * Author:	Paul Marquess (Paul.Marquess@btinternet.com)
+ * Author:	Paul Marquess (pmarquess@bfsec.bt.co.uk)
  * Created:	10th July 1994
  *
  * Modified:
- * 15th July 1994     - Added code to explicitly save any error messages.
- * 3rd August 1994    - Upgraded to v3 spec.
- * 9th August 1994    - Changed to use IV
- * 10th August 1994   - Tim Bunce: Added RTLD_LAZY, switchable debugging,
- *                      basic FreeBSD support, removed ClearError
- * 29th February 2000 - Alan Burlison: Added functionality to close dlopen'd
- *                      files when the interpreter exits
- * 2015-03-12         - rurban: Added optional 3rd dl_find_symbol argument
+ * 15th July 1994   - Added code to explicitly save any error messages.
+ * 3rd August 1994  - Upgraded to v3 spec.
+ * 9th August 1994  - Changed to use IV
+ * 10th August 1994 - Tim Bunce: Added RTLD_LAZY, switchable debugging,
+ *                    basic FreeBSD support, removed ClearError
  *
  */
 
@@ -40,17 +37,6 @@
      RTLD_LAZY (==2) on Solaris 2.
 
 
-   dlclose
-   -------
-     int
-     dlclose(handle)
-     void * handle;
-
-     This function takes the handle returned by a previous invocation of
-     dlopen and closes the associated dynamic object file.  It returns zero
-     on success, and non-zero on failure.
-
-
    dlsym
    ------
      void *
@@ -71,15 +57,7 @@
      Returns a null-terminated string which describes the last error
      that occurred with either dlopen or dlsym. After each call to
      dlerror the error message will be reset to a null pointer. The
-     SaveError function is used to save the error as soon as it happens.
-
-     Note that the POSIX standard does not require a per-thread buffer for
-     the error message, and so on multi-threaded builds, it can be overwritten
-     by another thread before SaveError accomplishes its task.  Some systems do
-     have a per-thread buffer.  The man page on your system should tell you.
-     If your code might be run on a system where this function is not thread
-     safe, you should protect your calls with mutexes.  See "Dealing with Error
-     Messages" below.
+     SaveError function is used to save the error as soo as it happens.
 
 
    Return Types
@@ -96,7 +74,8 @@
    Dean Roerich's Perl 5 API document. Also, have a look in the typemap 
    file (in the ext directory) for a fairly comprehensive list of types 
    that are already supported. If you are completely stuck, I suggest you
-   post a message to perl5-porters.
+   post a message to perl5-porters, comp.lang.perl.misc or if you are really 
+   desperate to me.
 
    Remember when you are making any changes that the return value from 
    dl_load_file is used as a parameter in the dl_find_symbol 
@@ -108,7 +87,7 @@
    ============================
    In order to make the handling of dynamic linking errors as generic as
    possible you should store any error messages associated with your
-   implementation with the SaveError function.
+   implementation with the StoreError function.
 
    In the case of SunOS the function dlerror returns the error message 
    associated with the last dynamic link error. As the SunOS dynamic 
@@ -120,19 +99,11 @@
 	    SaveError("%s",dlerror()) ;
 
    Note that SaveError() takes a printf format string. Use a "%s" as
-   the first parameter if the error may contain any % characters.
-   dlerror() may not be thread-safe on some systems; if this code is run on
-   any of those, a mutex should be added.  khw (who added this comment) has no
-   idea which systems aren't thread-safe, but consider this possibility when
-   debugging.
+   the first parameter if the error may contain and % characters.
 
 */
 
-#define PERL_NO_GET_CONTEXT
-#define PERL_EXT
-
 #include "EXTERN.h"
-#define PERL_IN_DL_DLOPEN_XS
 #include "perl.h"
 #include "XSUB.h"
 
@@ -160,102 +131,59 @@
 
 
 static void
-dl_private_init(pTHX)
+dl_private_init()
 {
-    (void)dl_generic_private_init(aTHX);
+    (void)dl_generic_private_init();
 }
 
 MODULE = DynaLoader	PACKAGE = DynaLoader
 
 BOOT:
-    (void)dl_private_init(aTHX);
+    (void)dl_private_init();
 
 
-void
-dl_load_file(filename, flags=0)
-    char *	filename
-    int		flags
-  PREINIT:
+void *
+dl_load_file(filename)
+    char *		filename
+    CODE:
     int mode = RTLD_LAZY;
-    void *handle;
-  CODE:
-{
-#if defined(DLOPEN_WONT_DO_RELATIVE_PATHS)
-    char pathbuf[PATH_MAX + 2];
-    if (*filename != '/' && strchr(filename, '/')) {
-        const size_t filename_len = strlen(filename);
-        if (getcwd(pathbuf, PATH_MAX - filename_len)) {
-            const size_t path_len = strlen(pathbuf);
-            pathbuf[path_len] = '/';
-            filename = (char *) memcpy(pathbuf + path_len + 1, filename, filename_len + 1);
-	}
-    }
-#endif
 #ifdef RTLD_NOW
-    {
-	dMY_CXT;
-	if (dl_nonlazy)
-	    mode = RTLD_NOW;
-    }
+    if (dl_nonlazy)
+	mode = RTLD_NOW;
 #endif
-    if (flags & 0x01)
-#ifdef RTLD_GLOBAL
-	mode |= RTLD_GLOBAL;
-#else
-	Perl_warn(aTHX_ "Can't make loaded symbols global on this platform while loading %s",filename);
-#endif
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_load_file(%s,%x):\n", filename,flags));
-    handle = dlopen(filename, mode) ;
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " libref=%lx\n", (unsigned long) handle));
+    DLDEBUG(1,fprintf(stderr,"dl_load_file(%s):\n", filename));
+    RETVAL = dlopen(filename, mode) ;
+    DLDEBUG(2,fprintf(stderr," libref=%x\n", RETVAL));
     ST(0) = sv_newmortal() ;
-    if (handle == NULL)
-	SaveError(aTHX_ "%s",dlerror()) ;
+    if (RETVAL == NULL)
+	SaveError("%s",dlerror()) ;
     else
-	sv_setiv( ST(0), PTR2IV(handle));
-}
+	sv_setiv( ST(0), (IV)RETVAL);
 
 
-int
-dl_unload_file(libref)
-    void *	libref
-  CODE:
-    DLDEBUG(1,PerlIO_printf(Perl_debug_log, "dl_unload_file(%lx):\n", PTR2ul(libref)));
-    RETVAL = (dlclose(libref) == 0 ? 1 : 0);
-    if (!RETVAL)
-        SaveError(aTHX_ "%s", dlerror()) ;
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, " retval = %d\n", RETVAL));
-  OUTPUT:
-    RETVAL
-
-
-void
-dl_find_symbol(libhandle, symbolname, ign_err=0)
+void *
+dl_find_symbol(libhandle, symbolname)
     void *	libhandle
     char *	symbolname
-    int	        ign_err
-    PREINIT:
-    void *sym;
     CODE:
 #ifdef DLSYM_NEEDS_UNDERSCORE
-    symbolname = Perl_form_nocontext("_%s", symbolname);
+    char symbolname_buf[1024];
+    symbolname = dl_add_underscore(symbolname, symbolname_buf);
 #endif
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
-			     "dl_find_symbol(handle=%lx, symbol=%s)\n",
-			     (unsigned long) libhandle, symbolname));
-    sym = dlsym(libhandle, symbolname);
-    DLDEBUG(2, PerlIO_printf(Perl_debug_log,
-			     "  symbolref = %lx\n", (unsigned long) sym));
-    ST(0) = sv_newmortal();
-    if (sym == NULL) {
-        if (!ign_err)
-	    SaveError(aTHX_ "%s", dlerror());
-    } else
-	sv_setiv( ST(0), PTR2IV(sym));
+    DLDEBUG(2,fprintf(stderr,"dl_find_symbol(handle=%x, symbol=%s)\n",
+	libhandle, symbolname));
+    RETVAL = dlsym(libhandle, symbolname);
+    DLDEBUG(2,fprintf(stderr,"  symbolref = %x\n", RETVAL));
+    ST(0) = sv_newmortal() ;
+    if (RETVAL == NULL)
+	SaveError("%s",dlerror()) ;
+    else
+	sv_setiv( ST(0), (IV)RETVAL);
 
 
 void
 dl_undef_symbols()
-    CODE:
+    PPCODE:
 
 
 
@@ -265,39 +193,18 @@ void
 dl_install_xsub(perl_name, symref, filename="$Package")
     char *		perl_name
     void *		symref 
-    const char *	filename
+    char *		filename
     CODE:
-    DLDEBUG(2,PerlIO_printf(Perl_debug_log, "dl_install_xsub(name=%s, symref=%" UVxf ")\n",
-		perl_name, PTR2UV(symref)));
-    ST(0) = sv_2mortal(newRV((SV*)newXS_flags(perl_name,
-					      DPTR2FPTR(XSUBADDR_t, symref),
-					      filename, NULL,
-					      XS_DYNAMIC_FILENAME)));
+    DLDEBUG(2,fprintf(stderr,"dl_install_xsub(name=%s, symref=%x)\n",
+		perl_name, symref));
+    ST(0)=sv_2mortal(newRV((SV*)newXS(perl_name, (void(*)())symref, filename)));
 
 
-SV *
+char *
 dl_error()
     CODE:
-    dMY_CXT;
-    RETVAL = newSVsv(MY_CXT.x_dl_last_error);
+    RETVAL = LastError ;
     OUTPUT:
     RETVAL
-
-#if defined(USE_ITHREADS)
-
-void
-CLONE(...)
-    CODE:
-    MY_CXT_CLONE;
-
-    PERL_UNUSED_VAR(items);
-
-    /* MY_CXT_CLONE just does a memcpy on the whole structure, so to avoid
-     * using Perl variables that belong to another thread, we create our 
-     * own for this thread.
-     */
-    MY_CXT.x_dl_last_error = newSVpvs("");
-
-#endif
 
 # end.

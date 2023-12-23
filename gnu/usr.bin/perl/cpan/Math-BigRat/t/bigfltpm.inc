@@ -1,25 +1,24 @@
 #include this file into another test for subclass testing...
 
-use strict;
-use warnings;
-
 ok ($class->config()->{lib},$CL);
+
+use strict;
 
 my $z;
 
 while (<DATA>)
   {
   chomp;
-  $_ =~ s/#.*$//;       # remove comments
-  $_ =~ s/\s+$//;       # trailing spaces
-  next if /^$/;         # skip empty lines & comments
+  $_ =~ s/#.*$//;	# remove comments
+  $_ =~ s/\s+$//;	# trailing spaces
+  next if /^$/;		# skip empty lines & comments
   if (s/^&//)
     {
     $f = $_;
     }
   elsif (/^\$/)
     {
-    $setup = $_; $setup =~ s/\$/\$${class}::/g; # round_mode, div_scale
+    $setup = $_; $setup =~ s/\$/\$${class}::/g;	# round_mode, div_scale
     #print "\$setup== $setup\n";
     }
   else
@@ -40,7 +39,7 @@ while (<DATA>)
       } elsif ($f eq "finf") {
         $try .= "\$x->finf('$args[1]');";
       } elsif ($f eq "is_inf") {
-        $try .= "\$x->is_inf('$args[1]');";
+        $try .= "\$x->is_inf('$args[1]');"; 
       } elsif ($f eq "fone") {
         $try .= "\$x->bone('$args[1]');";
       } elsif ($f eq "fstr") {
@@ -61,7 +60,7 @@ while (<DATA>)
       # some unary ops (test the fxxx form, since that is done by AUTOLOAD)
       } elsif ($f =~ /^f(nan|sstr|neg|floor|ceil|abs)$/) {
         $try .= "\$x->f$1();";
-      # some is_xxx test function
+      # some is_xxx test function	
       } elsif ($f =~ /^is_(zero|one|negative|positive|odd|even|nan|int)$/) {
         $try .= "\$x->$f();";
       } elsif ($f eq "finc") {
@@ -90,7 +89,7 @@ while (<DATA>)
     else
       {
       $try .= "\$y = $class->new(\"$args[1]\");";
-
+      
       if ($f eq "bgcd")
         {
         if (defined $args[2])
@@ -163,19 +162,19 @@ while (<DATA>)
         {
         print "# Tried: '$try'\n" if !ok ($ans1, $ans);
         if (ref($ans1) eq "$class")
-          {
-          # float numbers are normalized (for now), so mantissa shouldn't have
-          # trailing zeros
-          #print $ans1->_trailing_zeros(),"\n";
+	  {
+	  # float numbers are normalized (for now), so mantissa shouldn't have
+	  # trailing zeros
+	  #print $ans1->_trailing_zeros(),"\n";
           print "# Has trailing zeros after '$try'\n"
-           if !ok ($CL->_zeros( $ans1->{_m}), 0);
-          }
+	   if !ok ($CL->_zeros( $ans1->{_m}), 0);
+	  }
         }
       } # end pattern or string
     }
   } # end while
 
-# check whether $class->new( Math::BigInt->new()) destroys it
+# check whether $class->new( Math::BigInt->new()) destroys it 
 # ($y == 12 in this case)
 $x = Math::BigInt->new(1200); $y = $class->new($x);
 ok ($y,1200); ok ($x,1200);
@@ -192,22 +191,22 @@ ok ($y,1200); ok ($x,1200);
 my $monster = '1e1234567890123456789012345678901234567890';
 
 # new and exponent
-ok ($class->new($monster)->bsstr(),
-                '1e+1234567890123456789012345678901234567890');
-ok ($class->new($monster)->exponent(),
-                '1234567890123456789012345678901234567890');
+ok ($class->new($monster)->bsstr(), 
+		'1e+1234567890123456789012345678901234567890');
+ok ($class->new($monster)->exponent(), 
+		'1234567890123456789012345678901234567890');
 # cmp
 ok ($class->new($monster) > 0,1);
 
-# sub/mul
+# sub/mul 
 ok ($class->new($monster)->bsub( $monster),0);
 ok ($class->new($monster)->bmul(2)->bsstr(),
                 '2e+1234567890123456789012345678901234567890');
 
 # mantissa
 $monster = '1234567890123456789012345678901234567890e2';
-ok ($class->new($monster)->mantissa(),
-                '123456789012345678901234567890123456789');
+ok ($class->new($monster)->mantissa(), 
+		'123456789012345678901234567890123456789');
 
 ###############################################################################
 # zero,inf,one,nan
@@ -229,8 +228,8 @@ ok ($class->finf(),'inf');
 ok ($class->finf('+'),'inf');
 ok ($class->finf('-'),'-inf');
 ok ($class->finf('-inf'),'-inf');
-
-$class->accuracy(undef); $class->precision(undef);      # reset
+        
+$class->accuracy(undef); $class->precision(undef);	# reset
 
 ###############################################################################
 # bug in bsstr()/numify() showed up in after-rounding in bdiv()
@@ -242,6 +241,7 @@ ok ($x,'0.0027');
 ###############################################################################
 # fsqrt() with set global A/P or A/P enabled on $x, also a test whether fsqrt()
 # correctly modifies $x
+
 
 $x = $class->new(12); $class->precision(-2); $x->fsqrt(); ok ($x,'3.46');
 
@@ -265,7 +265,7 @@ $class->precision(-3); $x = $class->new(12); $x->fsqrt(); ok ($x,'3.464');
 
 {
   no strict;
-  $try =
+  $try = 
     '@args' . " = $class" . "::objectify(2,$class,4,5);".'join(" ",@args);';
   $ans = eval $try;
   ok ($ans,"$class 4 5");
@@ -322,7 +322,7 @@ ok ($x ** $y, 0, 'no warnings and zero result');
 #perl -MMath::BigFloat -lwe 'print Math::BigFloat->new(".222222222222222222222222222222222222222222")->bceil()'
 #Use of uninitialized value in numeric le (<=) at BigFloat.pm line 1851.
 
-$x = $class->new(".222222222222222222222222222222222222222222");
+$x = $class->new(".222222222222222222222222222222222222222222"); 
 ok ($x->bceil(), 1, 'no warnings and one as result');
 
 ###############################################################################
@@ -342,10 +342,10 @@ ok ($x, 2);
 
 $x = $class->new('2');
 $y = $class->new('18.2');
-$x <<= $y;              # 2 * (2 ** 18.2);
+$x <<= $y;		# 2 * (2 ** 18.2);
 
 ok ($x->copy()->bfround(-9), '602248.763144685');
-ok ($x >>= $y, 2);      # 2 * (2 ** 18.2) / (2 ** 18.2) => 2
+ok ($x >>= $y, 2);	# 2 * (2 ** 18.2) / (2 ** 18.2) => 2
 ok ($x, 2);
 
 1; # all done
@@ -646,7 +646,7 @@ abc:NaN
 -123456E-2:-1234.56
 1e1:10
 2e-11:0.00000000002
-# exercise _split
+# excercise _split
   .02e-1:0.002
    000001:1
    -00001:-1

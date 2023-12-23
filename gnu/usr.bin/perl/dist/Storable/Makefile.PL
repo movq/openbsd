@@ -1,55 +1,21 @@
 #
 #  Copyright (c) 1995-2000, Raphael Manfredi
-#  Copyright (c) 2017, Reini Urban
 #  
 #  You may redistribute only under the same terms as Perl 5, as specified
 #  in the README file that comes with the distribution.
 #
 
-use strict;
-use warnings;
-use ExtUtils::MakeMaker 6.31;
+use ExtUtils::MakeMaker;
 use Config;
 
 WriteMakefile(
     NAME                => 'Storable',
-    AUTHOR              => 'Perl 5 Porters',
-    LICENSE             => 'perl',
     DISTNAME            => "Storable",
-    PREREQ_PM           =>
-      {
-          XSLoader => 0,
-      },
-    ( $ExtUtils::MakeMaker::VERSION >= 6.64 ?
-        (
-            CONFIGURE_REQUIRES => {
-                'ExtUtils::MakeMaker' => '6.31',
-            },
-            BUILD_REQUIRES => {
-                'ExtUtils::MakeMaker' => '6.31',
-            },
-            TEST_REQUIRES => {
-                'Test::More' => '0.82',
-            },
-           )
-        : () ),
-    INSTALLDIRS => ($] >= 5.007 && $] < 5.012) ? 'perl' : 'site',
-    VERSION_FROM    => 'Storable.pm',
-    ABSTRACT_FROM   => 'Storable.pm',
-    ($ExtUtils::MakeMaker::VERSION > 6.45 ?
-     (META_MERGE        => { resources =>
-                               { bugtracker => 'https://github.com/Perl/perl5/issues' },
-                            provides    => {
-                                'Storable'  => {
-                                    file        => 'Storable.pm',
-                                    version     => MM->parse_version('Storable.pm'),
-                                },
-                            },
-
-                           },
-    ) : ()),
+# We now ship this in t/
+#    PREREQ_PM           => { 'Test::More' => '0.41' },
+    INSTALLDIRS		=> $] >= 5.007 ? 'perl' : 'site',
+    VERSION_FROM        => 'Storable.pm',
     dist                => { SUFFIX => 'gz', COMPRESS => 'gzip -f' },
-    clean               => { FILES => 'Storable-*' },
 );
 
 my $ivtype = $Config{ivtype};
@@ -70,17 +36,4 @@ in the Storable documentation for instructions on how to read your data.
 (You can find the documentation at the end of Storable.pm in POD format)
 
 EOM
-}
-
-package MY;
-
-sub depend {
-    "
-
-release : dist
-	git tag \$(VERSION)
-	cpan-upload \$(DISTVNAME).tar\$(SUFFIX)
-	git push
-	git push --tags
-"
 }

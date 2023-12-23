@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use Test::More tests =>  6;
+use lib qw( lib );
 use ExtUtils::ParseXS::Utilities qw(
   valid_proto_string
 );

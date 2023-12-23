@@ -5,8 +5,6 @@ BEGIN {
 }
 chdir 't';
 
-use strict;
-use warnings;
 use ExtUtils::Command;
 use Test::More tests => 1;
 

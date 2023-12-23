@@ -8,13 +8,13 @@ IO::Handle - supply object methods for I/O handles
 
     use IO::Handle;
 
-    $io = IO::Handle->new();
+    $io = new IO::Handle;
     if ($io->fdopen(fileno(STDIN),"r")) {
         print $io->getline;
         $io->close;
     }
 
-    $io = IO::Handle->new();
+    $io = new IO::Handle;
     if ($io->fdopen(fileno(STDOUT),"w")) {
         $io->print("Some text\n");
     }
@@ -122,8 +122,8 @@ otherwise.
 This works like <$io> described in L<perlop/"I/O Operators">
 except that it's more readable and can be safely called in a
 list context but still returns just one line.  If used as the conditional
-within a C<while> or C-style C<for> loop, however, you will need to
-emulate the functionality of <$io> with C<< defined($_ = $io->getline) >>.
++within a C<while> or C-style C<for> loop, however, you will need to
++emulate the functionality of <$io> with C<< defined($_ = $io->getline) >>.
 
 =item $io->getlines
 
@@ -139,12 +139,9 @@ guaranteed.
 
 =item $io->write ( BUF, LEN [, OFFSET ] )
 
-This C<write> is somewhat like C<write> found in C, in that it is the
+This C<write> is like C<write> found in C, that is it is the
 opposite of read. The wrapper for the perl C<write> function is
-called C<format_write>. However, whilst the C C<write> function returns
-the number of bytes written, this C<write> function simply returns true
-if successful (like C<print>). A more C-like C<write> is C<syswrite>
-(see above).
+called C<format_write>.
 
 =item $io->error
 
@@ -260,19 +257,21 @@ Derived from FileHandle.pm by Graham Barr E<lt>F<gbarr@pobox.com>E<gt>
 
 =cut
 
-use 5.008_001;
+use 5.006_001;
 use strict;
+our($VERSION, @EXPORT_OK, @ISA);
 use Carp;
 use Symbol;
 use SelectSaver;
 use IO ();	# Load the XS module
 
 require Exporter;
-our @ISA = qw(Exporter);
+@ISA = qw(Exporter);
 
-our $VERSION = "1.48";
+$VERSION = "1.28";
+$VERSION = eval $VERSION;
 
-our @EXPORT_OK = qw(
+@EXPORT_OK = qw(
     autoflush
     output_field_separator
     output_record_separator
@@ -310,25 +309,14 @@ our @EXPORT_OK = qw(
 
 sub new {
     my $class = ref($_[0]) || $_[0] || "IO::Handle";
-    if (@_ != 1) {
-	# Since perl will automatically require IO::File if needed, but
-	# also initialises IO::File's @ISA as part of the core we must
-	# ensure IO::File is loaded if IO::Handle is. This avoids effect-
-	# ively "half-loading" IO::File.
-	if ($] > 5.013 && $class eq 'IO::File' && !$INC{"IO/File.pm"}) {
-	    require IO::File;
-	    shift;
-	    return IO::File::->new(@_);
-	}
-	croak "usage: $class->new()";
-    }
+    @_ == 1 or croak "usage: new $class";
     my $io = gensym;
     bless $io, $class;
 }
 
 sub new_from_fd {
     my $class = ref($_[0]) || $_[0] || "IO::Handle";
-    @_ == 3 or croak "usage: $class->new_from_fd(FD, MODE)";
+    @_ == 3 or croak "usage: new_from_fd $class FD, MODE";
     my $io = gensym;
     shift;
     IO::Handle::fdopen($io, @_)
@@ -364,7 +352,7 @@ sub fdopen {
     my ($io, $fd, $mode) = @_;
     local(*GLOB);
 
-    if (ref($fd) && "$fd" =~ /GLOB\(/o) {
+    if (ref($fd) && "".$fd =~ /GLOB\(/o) {
 	# It's a glob reference; Alias it as we cannot get name of anon GLOBs
 	my $n = qualify(*GLOB);
 	*GLOB = *{*$fd};
@@ -431,6 +419,22 @@ sub say {
     print $this @_;
 }
 
+sub getline {
+    @_ == 1 or croak 'usage: $io->getline()';
+    my $this = shift;
+    return scalar <$this>;
+} 
+
+*gets = \&getline;  # deprecated
+
+sub getlines {
+    @_ == 1 or croak 'usage: $io->getlines()';
+    wantarray or
+	croak 'Can\'t call $io->getlines in a scalar context, use $io->getline';
+    my $this = shift;
+    return <$this>;
+}
+
 sub truncate {
     @_ == 2 or croak 'usage: $io->truncate(LEN)';
     truncate($_[0], $_[1]);
@@ -472,7 +476,7 @@ sub stat {
 ##
 
 sub autoflush {
-    my $old = SelectSaver->new(qualify($_[0], caller));
+    my $old = new SelectSaver qualify($_[0], caller);
     my $prev = $|;
     $| = @_ > 1 ? $_[1] : 1;
     $prev;
@@ -512,7 +516,7 @@ sub input_line_number {
 
 sub format_page_number {
     my $old;
-    $old = SelectSaver->new(qualify($_[0], caller)) if ref($_[0]);
+    $old = new SelectSaver qualify($_[0], caller) if ref($_[0]);
     my $prev = $%;
     $% = $_[1] if @_ > 1;
     $prev;
@@ -520,7 +524,7 @@ sub format_page_number {
 
 sub format_lines_per_page {
     my $old;
-    $old = SelectSaver->new(qualify($_[0], caller)) if ref($_[0]);
+    $old = new SelectSaver qualify($_[0], caller) if ref($_[0]);
     my $prev = $=;
     $= = $_[1] if @_ > 1;
     $prev;
@@ -528,7 +532,7 @@ sub format_lines_per_page {
 
 sub format_lines_left {
     my $old;
-    $old = SelectSaver->new(qualify($_[0], caller)) if ref($_[0]);
+    $old = new SelectSaver qualify($_[0], caller) if ref($_[0]);
     my $prev = $-;
     $- = $_[1] if @_ > 1;
     $prev;
@@ -536,7 +540,7 @@ sub format_lines_left {
 
 sub format_name {
     my $old;
-    $old = SelectSaver->new(qualify($_[0], caller)) if ref($_[0]);
+    $old = new SelectSaver qualify($_[0], caller) if ref($_[0]);
     my $prev = $~;
     $~ = qualify($_[1], caller) if @_ > 1;
     $prev;
@@ -544,7 +548,7 @@ sub format_name {
 
 sub format_top_name {
     my $old;
-    $old = SelectSaver->new(qualify($_[0], caller)) if ref($_[0]);
+    $old = new SelectSaver qualify($_[0], caller) if ref($_[0]);
     my $prev = $^;
     $^ = qualify($_[1], caller) if @_ > 1;
     $prev;
@@ -599,11 +603,11 @@ sub ioctl {
     return ioctl($io, $op, $_[2]);
 }
 
-# this sub is for compatibility with older releases of IO that used
-# a sub called constant to determine if a constant existed -- GMB
+# this sub is for compatability with older releases of IO that used
+# a sub called constant to detemine if a constant existed -- GMB
 #
 # The SEEK_* and _IO?BF constants were the only constants at that time
-# any new code should just check defined(&CONSTANT_NAME)
+# any new code should just chech defined(&CONSTANT_NAME)
 
 sub constant {
     no strict 'refs';
@@ -618,7 +622,7 @@ sub constant {
 sub printflush {
     my $io = shift;
     my $old;
-    $old = SelectSaver->new(qualify($io, caller)) if ref($io);
+    $old = new SelectSaver qualify($io, caller) if ref($io);
     local $| = 1;
     if(ref($io)) {
         print $io @_;

@@ -3,18 +3,16 @@ use 5.006;
 use strict;
 use warnings;
 package CPAN::Meta::History;
-
-our $VERSION = '2.150010';
+our $VERSION = '2.120630'; # VERSION
 
 1;
 
 # ABSTRACT: history of CPAN Meta Spec changes
 
+
+
 __END__
-
 =pod
-
-=encoding UTF-8
 
 =head1 NAME
 
@@ -22,7 +20,7 @@ CPAN::Meta::History - history of CPAN Meta Spec changes
 
 =head1 VERSION
 
-version 2.150010
+version 2.120630
 
 =head1 DESCRIPTION
 
@@ -176,6 +174,10 @@ November 2006
 
 =item *
 
+Clarified that all prerequisites take version range specifications
+
+=item *
+
 Added 'no_index' subkey 'directory' and removed 'dir' to match actual
 usage in the wild
 
@@ -206,10 +208,6 @@ Changed 'generated_by' to be mandatory
 =item *
 
 Changed 'license' to be mandatory
-
-=item *
-
-Added version range specifications for prerequisites
 
 =item *
 
@@ -304,17 +302,14 @@ David Golden <dagolden@cpan.org>
 
 Ricardo Signes <rjbs@cpan.org>
 
-=item *
-
-Adam Kennedy <adamk@cpan.org>
-
 =back
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2010 by David Golden, Ricardo Signes, Adam Kennedy and Contributors.
+This software is copyright (c) 2010 by David Golden and Ricardo Signes.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
 
 =cut
+

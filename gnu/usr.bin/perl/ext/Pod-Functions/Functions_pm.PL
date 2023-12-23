@@ -4,13 +4,7 @@ use Pod::Simple::SimpleTree;
 
 my ($tap, $test, %Missing);
 
-BEGIN {
-    @ARGV = grep { not($_ eq '--tap' and $tap = 1) } @ARGV;
-    if ($tap) {
-        require Test::More;
-        Test::More->import;
-    }
-}
+@ARGV = grep { not($_ eq '--tap' and $tap = 1) } @ARGV;
 
 my (%Kinds, %Flavor, @Types);
 my %Omit;
@@ -58,16 +52,13 @@ foreach my $TL_node (@$tree[2 .. $#$tree]) {
 
             foreach my $func (@$para[2 .. $#$para]) {
                 next unless ref $func eq 'ARRAY';
-                my $c_node =
-                    $func->[0] eq 'C' && !ref $func->[2] ? $func :
-                    $func->[0] eq 'L' && ref $func->[2]
-                        && $func->[2][0] eq 'C' && !ref $func->[2][2] ? $func->[2] :
-                    die "Expected only C<> blocks in paragraph after item at $TL_node->[$i-2][1]{start_line}";
-                # Everything is plain text (ie $c_node->[2] is everything)
+                die "Expected only C<> blocks in paragraph after item at $TL_node->[$i-2][1]{start_line}"
+                    unless $func->[0] eq 'C' && !ref $func->[2];
+                # Everything is plain text (ie $func->[2] is everything)
                 # except for C<-I<X>>. So untangle up to one level of nested <>
                 my $funcname = join '', map {
                     ref $_ ? $_->[2] : $_
-                } @$c_node[2..$#$c_node];
+                } @$func[2..$#$func];
                 $funcname =~ s!(q.?)//!$1/STRING/!;
                 push @{$Kinds{$text}}, $funcname;
             }
@@ -94,44 +85,44 @@ while (my ($type, $funcs) = each %Kinds) {
 }
 
 # We sort __SUB__ after sub, but before substr, but __PACKAGE__ after package,
-# and __END__ after END.  (We create a temporary array of two elements, where
-# the second has the underscores squeezed out, and sort on that element
-# first.)
+# and __END__ after END.
 sub sort_funcs {
     map { $_->[0] }
-        sort { uc $a->[1] cmp uc $b->[1]
-               || $b->[1] cmp $a->[1]
-               || $a->[0] =~ /^_/   # here $a and $b are identical when
-                                    # underscores squeezed out; so if $a
-                                    # begins with an underscore, it should
-                                    # sort after $b
-               || $a->[0] cmp $b->[0]
-             } map  { my $f = tr/_//dr; [ $_, $f ] }
+        sort { uc $a->[1] cmp uc $b->[1] || $b->[1] cmp $a->[1] || $a->[0] cmp $b->[0] }
+            map  { my $f = tr/_//dr; [ $_, $f ] }
                 @_;
 }
 
 if ($tap) {
     foreach my $func (sort_funcs(keys %Flavor)) {
-       ok ( $Type{$func}, "$func is mentioned in at least one category group");
+       ++$test;
+       my $ok = $Type{$func} ? 'ok' : 'not ok';
+       print "$ok $test - $func is mentioned in at least one category group\n";
     }
     foreach (sort keys %Missing) {
         # Ignore anything that looks like an alternative for a function we've
         # already seen;
         s!(?: [A-Z].*| \(\)|\( LIST \)| /PATTERN/.*)!!;
         next if $Flavor{$_};
+        ++$test;
         if (/^[_a-z]/) {
-            fail( "function '$_' has no summary for Pod::Functions" );
+            print "not ok $test - function '$_' has no summary for Pod::Functions\n";
         } else {
-            fail( "for Pod::Functions" );
+            print "not ok $test - section '$_' has no type for Pod::Functions\n";
         }
     }
     foreach my $kind (sort keys %Kinds) {
         my $funcs = $Kinds{$kind};
         ++$test;
         my $want = join ' ', sort_funcs(@$funcs);
-        is ("@$funcs", $want, "category $kind is correctly sorted" );
+        if ("@$funcs" eq $want) {
+            print "ok $test - category $kind is correctly sorted\n";
+        } else {
+            print "not ok $test - category $kind is correctly sorted\n";
+            print STDERR "# Have @$funcs\n# Want $want\n";
+        }
     }
-    done_testing();
+    print "1..$test\n";
     exit;
 }
 
@@ -161,7 +152,7 @@ Pod::Functions - Group Perl's functions a la perlfunc.pod
 =head1 SYNOPSIS
 
     use Pod::Functions;
-
+    
     my @misc_ops = @{ $Kinds{ 'Misc' } };
     my $misc_dsc = $Type_Description{ 'Misc' };
 
@@ -207,10 +198,11 @@ L<perlfunc/"Perl Functions by Category"> section.
 
 =cut
 
-our $VERSION = '1.14';
+our $VERSION = '1.05';
 
-use Exporter 'import';
+require Exporter;
 
+our @ISA = qw(Exporter);
 our @EXPORT = qw(%Kinds %Type %Flavor %Type_Description @Type_Order);
 
 our(%Kinds, %Type, %Flavor, %Type_Description, @Type_Order);
@@ -273,7 +265,7 @@ foreach my $func (sort_funcs(keys %Flavor)) {
     my $desc = $Flavor{$func};
     die "No types listed for $func" unless $Type{$func};
     next if $Omit{$func};
-    print $fh join("\t", $func, (sort @{$Type{$func}}), $desc), "\n";
+    print $fh join("\t", $func, @{$Type{$func}}, $desc), "\n";
 }
 
 close $fh or die "Can't close '$temp': $!";

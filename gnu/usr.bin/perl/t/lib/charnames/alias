@@ -12,16 +12,15 @@ unsupported special ':scoobydoo' in charnames at
 print "Here: \N{DIGIT ONE}\n";
 charnames::vianame("DIGIT TWO");
 EXPECT
-OPTIONS regex
-Undefined subroutine &charnames::vianame called at - line \d+.
+Undefined subroutine &charnames::vianame called at - line 2.
 Here: 1
 ########
 # NAME autoload doesn't get viacode
 print "Here: \N{DIGIT THREE}\n";
-charnames::viacode(utf8::unicode_to_native(0x34));
+charnames::viacode(0x34);
 EXPECT
 OPTIONS regex
-Undefined subroutine &charnames::viacode called at - line \d+.
+Undefined subroutine &charnames::viacode called at - line 2.
 Here: 3
 ########
 # NAME autoload doesn't get string_vianame
@@ -29,7 +28,7 @@ print "Here: \N{DIGIT FOUR}\n";
 charnames::string_vianame("DIGIT FIVE");
 EXPECT
 OPTIONS regex
-Undefined subroutine &charnames::string_vianame called at - line \d+.
+Undefined subroutine &charnames::string_vianame called at - line 2.
 Here: 4
 ########
 # NAME wrong type of alias (missing colon)
@@ -37,8 +36,8 @@ no warnings;
 use charnames "alias";
 "Here: \N{e_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'e_ACUTE' at
 ########
 # NAME alias without an argument
 use warnings;
@@ -56,14 +55,22 @@ EXPECT
 OPTIONS regex
 :alias cannot use existing pragma :full \(reversed order\?\) at
 ########
+# NAME alias with hashref but no :full
+use warnings;
+use charnames ":alias" => { e_ACUTE => "LATIN SMALL LETTER E WITH ACUTE" };
+"Here: \N{e_ACUTE}!\n";
+EXPECT
+OPTIONS regex
+Unknown charname 'LATIN SMALL LETTER E WITH ACUTE' at
+########
 # NAME alias with hashref but with :short
 use warnings;
 no warnings 'void';
 use charnames ":short", ":alias" => { e_ACUTE => "LATIN SMALL LETTER E WITH ACUTE" };
 "Here: \N{e_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN SMALL LETTER E WITH ACUTE' at
 ########
 # NAME alias with hashref to :full OK
 use warnings;
@@ -89,8 +96,8 @@ no warnings 'void';
 use charnames ":loose", ":alias" => { e_ACUTE => "latin SMALL LETTER E WITH ACUTE" };
 "Here: \N{e_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'latin SMALL LETTER E WITH ACUTE' at
 ########
 # NAME alias with hashref to :short but using :full
 use warnings;
@@ -98,8 +105,8 @@ no warnings 'void';
 use charnames ":full", ":alias" => { e_ACUTE => "LATIN:e WITH ACUTE" };
 "Here: \N{e_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN:e WITH ACUTE' at
 ########
 # NAME alias with hashref to :short OK
 use warnings;
@@ -145,8 +152,8 @@ use charnames ":short", ":alias" => {
     };
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'a_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname '' at
 ########
 # NAME alias with hashref two aliases
 use warnings;
@@ -168,8 +175,8 @@ use charnames ":short", ":alias" => {
     };
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'a_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN SMALL LETTER A WITH ACUT' at
 ########
 # NAME alias with hashref using mixed aliases
 use warnings;
@@ -179,8 +186,8 @@ use charnames ":short", ":alias" => {
     };
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'a_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN SMALL LETTER A WITH ACUTE' at
 ########
 # NAME alias with hashref using mixed aliases
 use warnings;
@@ -191,8 +198,8 @@ use charnames ":full", ":alias" => {
     };
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN:e WITH ACUTE' at
 ########
 # NAME alias with nonexisting file
 use warnings;
@@ -210,7 +217,7 @@ use charnames ":full", ":alias" => "xy 7-";
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
 OPTIONS regex
-Charnames alias file names can only have identifier characters at
+Charnames alias files can only have identifier characters at
 ########
 # NAME alias with non_absolute (existing) file name (which it should /not/ use)
 use warnings;
@@ -221,7 +228,7 @@ EXPECT
 OPTIONS regex
 unicore/perl_alias.pl cannot be used as alias file for charnames at
 ########
-# NAME alias with bad file
+# alias with bad file
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 0;
@@ -234,7 +241,7 @@ EXPECT
 OPTIONS regex
 unicore/xyzzy_alias.pl did not return a \(valid\) list of alias pairs at
 ########
-# NAME alias with file with empty list
+# alias with file with empty list
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 ();
@@ -244,10 +251,10 @@ no warnings 'void';
 use charnames ":full", ":alias" => "xyzzy";
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'e_ACUTE' at
 ########
-# NAME alias with file OK but file has :short aliases
+# alias with file OK but file has :short aliases
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 (   e_ACUTE => "LATIN:e WITH ACUTE",
@@ -259,10 +266,10 @@ no warnings 'void';
 use charnames ":full", ":alias" => "xyzzy";
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN:e WITH ACUTE' at
 ########
-# NAME alias with :short and file OK
+# alias with :short and file OK
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 (   e_ACUTE => "LATIN:e WITH ACUTE",
@@ -277,7 +284,7 @@ EXPECT
 OPTIONS regex
 $
 ########
-# NAME alias with :short and file OK has :long aliases
+# alias with :short and file OK has :long aliases
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 (   e_ACUTE => "LATIN SMALL LETTER E WITH ACUTE",
@@ -289,10 +296,10 @@ no warnings 'void';
 use charnames ":short", ":alias" => "xyzzy";
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN SMALL LETTER E WITH ACUTE' at
 ########
-# NAME alias with file implicit :full but file has :short aliases
+# alias with file implicit :full but file has :short aliases
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 (   e_ACUTE => "LATIN:e WITH ACUTE",
@@ -304,10 +311,10 @@ no warnings 'void';
 use charnames ":alias" => ":xyzzy";
 "Here: \N{e_ACUTE}\N{a_ACUTE}!\n";
 EXPECT
-OPTIONS regex fatal
-Unknown charname 'e_ACUTE' at - line \d+, within string
+OPTIONS regex
+Unknown charname 'LATIN:e WITH ACUTE' at
 ########
-# NAME alias with file implicit :full and file has :long aliases
+# alias with file implicit :full and file has :long aliases
 --FILE-- ../../lib/unicore/xyzzy_alias.pl
 #!perl
 (   e_ACUTE => "LATIN SMALL LETTER E WITH ACUTE",
@@ -327,7 +334,7 @@ use warnings;
 no warnings 'void';
 use charnames ();
 charnames::vianame('SPACE');
-charnames::viacode(utf8::unicode_to_native(0x41));
+charnames::viacode(0x41);
 EXPECT
 OPTIONS regex
 $
@@ -335,87 +342,7 @@ $
 # NAME no extraneous warning [perl #11560]
 use warnings;
 use charnames ();
-print charnames::viacode(utf8::unicode_to_native(0x80)), "\n";
+print charnames::viacode(0x80), "\n";
 EXPECT
 OPTIONS regex
 PADDING CHARACTER
-########
-# NAME A wrong character in :alias is an error
-# These next tests could be combined, but the messages can come out in
-# different orders on EBCDIC vs ASCII, and can't have both 'random' and 'regex'
-# options, and need 'regex' to avoid 'at line X' getting in the way.
-use charnames ":full", ":alias" => {
-                            "4e_ACUTE" => "LATIN SMALL LETTER E WITH ACUTE",
-                    };
-EXPECT
-OPTIONS regex
-Invalid character in charnames alias definition; marked by <-- HERE in '4<-- HERE e_ACUTE'
-########
-# NAME Another wrong character in :alias is an error
-use charnames ":full", ":alias" => {
-                            "e_A,CUTE" => "LATIN SMALL LETTER E WITH ACUTE",
-                    };
-EXPECT
-OPTIONS regex
-Invalid character in charnames alias definition; marked by <-- HERE in 'e_A,<-- HERE CUTE'
-########
-# NAME Another wrong character in :alias is an error
-# The EXPECT regex matches both the UTF-8 and non-UTF-8 form.
-# This is because under some circumstances the message gets output as UTF-8.
-# We use \xab, as that is invalid in both ASCII and EBCDIC platforms, and we
-# accept both UTF-8 and 1047 UTF-EBCDIC.
-use charnames ":full", ":alias" => {
-                            "e_ACUT\x{ab}E" => "LATIN SMALL LETTER E WITH ACUTE",
-                    };
-EXPECT
-OPTIONS regex
-Invalid character in charnames alias definition; marked by <-- HERE in 'e_ACUT(?:\x{ab}|\x{C2}\x{AB}|\x{80\x{73})<-- HERE E'
-########
-# RT#73022
-# NAME \N{...} interprets ... as octets rather than UTF-8
-use utf8;
-use open qw( :utf8 :std );
-use charnames ":full", ":alias" => { "自転車に乗る人" => "BICYCLIST" };
-print "ok\n" if "\N{自転車に乗る人}" eq "\x{1F6B4}";
-EXPECT
-ok
-########
-# NAME Misspelled \N{} UTF-8 names are errors
-use utf8;
-use open qw( :utf8 :std );
-use charnames ":full", ":alias" => { "自転車に乗る人" => "BICYCLIST" };
-print "ok\n" if "\N{転車に乗る人}" eq "\x{1F6B4}";
-EXPECT
-OPTIONS regex
-Unknown charname '転車に乗る人' at - line \d+, within string
-########
-# NAME various wrong UTF-8 characters in :alias are errors
-# First has a punctuation, KATAKANA MIDDLE DOT, in it; second begins with a
-# digit: ARABIC-INDIC DIGIT FOUR
-# Note that output order is alphabetical by character name
-use utf8;
-use open qw( :utf8 :std );
-use charnames ":full", ":alias" => { "自転車・に乗る人" => "BICYCLIST",
-                                     "٤転車に乗る人" => "BICYCLIST",
-                                "TOO  MANY SPACES" => "NO ENTRY SIGN",
-                                "TRAILING SPACE " => "FACE WITH NO GOOD GESTURE"
-                                    };
-print "ok\n" if "\N{TOO  MANY SPACES}" eq "\x{1F6AB}";
-print "ok\n" if "\N{TRAILING SPACE }" eq "\x{1F645}";
-print "ok\n" if "\N{自転車・に乗る人}" eq "\x{1F6B4}";
-print "ok\n" if "\N{٤転車に乗る人}" eq "\x{1F6B4}";
-EXPECT
-OPTIONS regex fatal
-charnames alias definitions may not contain a sequence of multiple spaces; marked by <-- HERE in 'TOO   <-- HERE MANY SPACES'
-charnames alias definitions may not contain trailing white-space; marked by <-- HERE in 'TRAILING SPACE  <-- HERE '
-Invalid character in charnames alias definition; marked by <-- HERE in '٤<-- HERE 転車に乗る人'
-Invalid character in charnames alias definition; marked by <-- HERE in '自転車・<-- HERE に乗る人' at - line \d+
-########
-# NAME Using NBSP in :alias names is deprecated
-use utf8;
-use open qw( :utf8 :std );
-use charnames ":alias" => { "NBSP SEPARATED SPACE" => "BLACK SMILING FACE" };
-print "ok\n" if "\N{NBSP SEPARATED SPACE}" eq "\x{263B}";
-EXPECT
-OPTIONS regex fatal
-Invalid character in charnames alias definition; marked by <-- HERE in 'NBSP <-- HERE SEPARATED SPACE' at - line 3

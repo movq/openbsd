@@ -1,7 +1,14 @@
-use strict; use warnings FATAL => 'all';
+#!perl
 
-BEGIN { eval sprintf 'sub NEED_REPEATED_DECODE () { %d }', $] lt '5.008' }
+BEGIN {
+	if ($] <= 5.010) {
+		print "1..0 # skip this test requires perl 5.010 or greater\n";
+		exit 0;
+	}
+}
 
+use strict;
+use warnings "FATAL" => "all";
 use Text::Wrap;
 
 $Text::Wrap::columns = 72;
@@ -11,6 +18,7 @@ require bytes;
 our $Errors = 0;
 
 $/ = q();
+binmode(DATA, ":utf8") || die "can't binmode DATA to utf8: $!";
 
 our @DATA = (
     [ # paragraph 0
@@ -34,7 +42,7 @@ our @DATA = (
     },
 );
 
-
+$| = 1;
 my $numtests = @DATA;
 print "1..$numtests\n";
 
@@ -78,9 +86,9 @@ sub check($$$$) {
 
 sub check_data { 
 
-    local($_);
+    binmode(DATA, ":utf8") || die "can't binmode DATA to utf8: $!";
+    local $_;
     while ( <DATA> ) {
-	$_ = pack "U0a*", $_;
 
 	my $bad = 0;
 
@@ -94,8 +102,8 @@ sub check_data {
 
 	$byte_count  = bytes::length($_);
 	$char_count  = length();
-	$chunk_count = () = /\PM/g;
-	$word_count  = () = /(?:\pL\pM*)+/g;
+	$chunk_count = () = /\X/g;
+	$word_count  = () = /(?:(?=\pL)\X)+/g;
 	$tab_count   = y/\t//;
 	$line_count  = y/\n//;
 
@@ -109,12 +117,11 @@ sub check_data {
 	my $nl = "\n" x chomp;
 
 	$_ = wrap("", "", $_) . $nl;
-	$_ = pack "U0a*", $_ if NEED_REPEATED_DECODE;
 
 	$byte_count  = bytes::length($_);
 	$char_count  = length();
-	$chunk_count = () = /\PM/g;
-	$word_count  = () = /(?:\pL\pM*)+/g;
+	$chunk_count = () = /\X/g;
+	$word_count  = () = /(?:(?=\pL)\X)+/g;
 	$tab_count   = y/\t//;
 	$line_count  = y/\n//;
 

@@ -1,7 +1,10 @@
 use strict;
 package Tie::Hash::NamedCapture;
 
-our $VERSION = "0.13";
+our $VERSION = "0.08";
+
+require XSLoader;
+XSLoader::load(); # This returns true, which makes require happy.
 
 __END__
 
@@ -37,9 +40,6 @@ C<%+>.
 The keys of C<%->-like hashes correspond to all buffer names found in the
 regular expression; the keys of C<%+>-like hashes list only the names of
 buffers that have captured (and that are thus associated to defined values).
-
-This implementation has been moved into the core executable, but you
-can still load this module for backward compatibility.
 
 =head1 SEE ALSO
 

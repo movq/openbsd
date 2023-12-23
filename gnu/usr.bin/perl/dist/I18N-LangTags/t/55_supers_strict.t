@@ -1,10 +1,12 @@
-use strict;
+
+# Time-stamp: "2004-03-30 17:49:58 AST"
 #sub I18N::LangTags::Detect::DEBUG () {10}
+use I18N::LangTags qw(implicate_supers_strictly);
 
-use Test::More tests => 19;
-BEGIN {use_ok('I18N::LangTags', 'implicate_supers_strictly');}
+use Test;
+BEGIN { plan tests => 19 };
 
-note('Testing strict (non-tight) insertion of super-ordinate language tags');
+print "#\n# Testing strict (non-tight) insertion of super-ordinate language tags...\n#\n";
 
 my @in = grep m/\S/, split /[\n\r]/, q{
  NIX => NIX
@@ -49,11 +51,28 @@ foreach my $in (@in) {
     my($i,$s) = ($1, $2);
     @in     = ($i =~ m/(\S+)/g);
     @should = ($s =~ m/(\S+)/g);
+    #print "{@in}{@should}\n";
   }
   my @out = I18N::LangTags::implicate_supers_strictly(
     ("@in" eq 'NIX') ? () : @in
   );
+  #print "O: ", join(' ', map "<$_>", @out), "\n";
   @out = 'NIX' unless @out;
 
-  is_deeply(\@out, \@should, "implicate_supers_strictly for [$in]");
+  
+  if( @out == @should
+      and lc( join "\e", @out ) eq lc( join "\e", @should )
+  ) {
+    print "#     Happily got [@out] from [$in]\n";
+    ok 1;
+  } else {
+    ok 0;
+    print "#!!Got:         [@out]\n",
+          "#!! but wanted: [@should]\n",
+          "#!! from \"$in\"\n#\n";
+  }
 }
+
+print "#\n#\n# Bye-bye!\n";
+ok 1;
+

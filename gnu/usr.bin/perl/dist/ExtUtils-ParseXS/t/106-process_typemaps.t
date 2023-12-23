@@ -2,9 +2,11 @@
 use strict;
 use warnings;
 use Carp;
-use Cwd qw(cwd);
+use Cwd;
+use File::Spec;
 use File::Temp qw( tempdir );
 use Test::More tests =>  2;
+use lib qw( lib );
 use ExtUtils::ParseXS::Utilities qw(
   process_typemaps
 );

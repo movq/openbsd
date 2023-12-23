@@ -22,20 +22,9 @@
 # Pod::Functions provided by a =for directive.
 
 BEGIN {
-    @INC = ('..', '../lib') if -f '../TestInit.pm';
+    @INC = '..' if -f '../TestInit.pm';
 }
 
-use Config;
 use TestInit qw(T A); # T is chdir to the top level, A makes paths absolute
-
-if ( $Config{usecrosscompile} ) {
-    print "1..0 # Not all files are available during cross-compilation\n";
-    exit 0;
-}
-
-if ( ord("A") == 193) {
-    print "1..0 # EBCDIC sorts differenly than expected\n";
-    exit 0;
-}
 
 system "$^X ext/Pod-Functions/Functions_pm.PL --tap pod/perlfunc.pod";

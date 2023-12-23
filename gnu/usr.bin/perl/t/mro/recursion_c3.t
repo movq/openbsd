@@ -1,20 +1,18 @@
 #!./perl
 
-BEGIN {
-    require './test.pl';
-    unless (-d 'blib') {
-        chdir 't' if -d 't';
-    }
-    set_up_inc('../lib');
-}
-
 use strict;
 use warnings;
+BEGIN {
+    unless (-d 'blib') {
+        chdir 't' if -d 't';
+        @INC = '../lib';
+    }
+}
+
+require './test.pl';
 
 plan(skip_all => "Your system has no SIGALRM") if !exists $SIG{ALRM};
 plan(tests => 8);
-
-require mro;
 
 =pod
 
@@ -62,7 +60,7 @@ into an infinite loop
     our @ISA = qw//;
 }
 
-# A series of 8 aberations that would cause infinite loops,
+# A series of 8 abberations that would cause infinite loops,
 #  each one undoing the work of the previous
 my @loopies = (
     sub { @E::ISA = qw/F/ },

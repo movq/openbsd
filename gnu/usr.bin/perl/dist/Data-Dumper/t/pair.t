@@ -3,10 +3,19 @@
 # test for $Data::Dumper::Pair AKA Data::Dumper->new([ ... ])->Pair('...')
 #
 
-use strict;
-use warnings;
+BEGIN {
+    if ($ENV{PERL_CORE}){
+        require Config; import Config;
+        no warnings 'once';
+        if ($Config{'extensions'} !~ /\bData\/Dumper\b/) {
+            print "1..0 # Skip: Data::Dumper was not built\n";
+            exit 0;
+        }
+    }
+}
 
-our ($want_colon, $want_comma);
+use strict;
+use vars qw($want_colon $want_comma);
 use Test::More tests => 9;
 
 no warnings qw(once);

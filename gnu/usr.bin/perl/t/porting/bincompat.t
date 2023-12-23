@@ -1,13 +1,12 @@
 #!./perl -w
 use strict;
 require './test.pl';
-skip_all("Sorting order differs under EBCDIC") if $::IS_EBCDIC || $::IS_EBCDIC;
 
 use Config;
 
 plan(2);
 
-# Defiantly a white box test...
+# Defiantely a white box test...
 
 # As we need to call it direct, we'll take advantage of its result ordering:
 my @to_check = qw(bincompat_options non_bincompat_options);

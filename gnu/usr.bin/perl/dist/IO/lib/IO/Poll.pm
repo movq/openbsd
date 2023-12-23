@@ -10,24 +10,25 @@ package IO::Poll;
 use strict;
 use IO::Handle;
 use Exporter ();
+our(@ISA, @EXPORT_OK, @EXPORT, $VERSION);
 
-our @ISA = qw(Exporter);
-our $VERSION = "1.49";
+@ISA = qw(Exporter);
+$VERSION = "0.07";
 
-our @EXPORT = qw( POLLIN
+@EXPORT = qw( POLLIN
 	      POLLOUT
 	      POLLERR
 	      POLLHUP
 	      POLLNVAL
 	    );
 
-our @EXPORT_OK = qw(
- POLLPRI
+@EXPORT_OK = qw(
+ POLLPRI   
  POLLRDNORM
  POLLWRNORM
  POLLRDBAND
  POLLWRBAND
- POLLNORM
+ POLLNORM  
 	       );
 
 # [0] maps fd's to requested masks
@@ -82,7 +83,7 @@ sub poll {
 	push(@poll,$fd => $mask);
     }
 
-    my $ret = _poll(defined($timeout) ? $timeout * 1000 : -1,@poll);
+    my $ret = @poll ? _poll(defined($timeout) ? $timeout * 1000 : -1,@poll) : 0;
 
     return $ret
 	unless $ret > 0;
@@ -139,7 +140,7 @@ IO::Poll - Object interface to system poll call
 
     use IO::Poll qw(POLLRDNORM POLLWRNORM POLLIN POLLHUP);
 
-    $poll = IO::Poll->new();
+    $poll = new IO::Poll;
 
     $poll->mask($input_handle => POLLIN);
     $poll->mask($output_handle => POLLOUT);
@@ -197,7 +198,7 @@ L<poll(2)>, L<IO::Handle>, L<IO::Select>
 =head1 AUTHOR
 
 Graham Barr. Currently maintained by the Perl Porters.  Please report all
-bugs at L<https://github.com/Perl/perl5/issues>.
+bugs to <perl5-porters@perl.org>.
 
 =head1 COPYRIGHT
 

@@ -2,11 +2,21 @@
 # t/purity_deepcopy_maxdepth.t - Test Purity(), Deepcopy(),
 # Maxdepth() and recursive structures
 
+BEGIN {
+    if ($ENV{PERL_CORE}){
+        require Config; import Config;
+        no warnings 'once';
+        if ($Config{'extensions'} !~ /\bData\/Dumper\b/) {
+            print "1..0 # Skip: Data::Dumper was not built\n";
+            exit 0;
+        }
+    }
+}
+
 use strict;
-use warnings;
 
 use Data::Dumper;
-use Test::More tests => 22;
+use Test::More tests => 24;
 use lib qw( ./t/lib );
 use Testing qw( _dumptostr );
 
@@ -70,6 +80,14 @@ note("\$Data::Dumper::Purity and Purity()");
 
     is($dumps{'noprev'}, $dumps{'objzero'},
         "No previous Purity setting equivalent to Purity(0)");
+
+    $purity = undef;
+    $obj = Data::Dumper->new([$a,$b,$c], [qw(a b c)]);
+    $obj->Purity($purity);
+   $dumps{'objundef'} = _dumptostr($obj);
+
+    is($dumps{'noprev'}, $dumps{'objundef'},
+        "No previous Purity setting equivalent to Purity(undef)");
 }
 
 {
@@ -345,6 +363,13 @@ note("\$Data::Dumper::Maxdepth and Maxdepth()");
 
     is($dumps{'noprev'}, $dumps{'maxdepthempty'},
         "No previous Maxdepth setting equivalent to Maxdepth() with no argument");
+
+    $obj = Data::Dumper->new([$f], [qw(f)]);
+    $obj->Maxdepth(undef);
+    $dumps{'maxdepthundef'} = _dumptostr($obj);
+
+    is($dumps{'noprev'}, $dumps{'maxdepthundef'},
+        "No previous Maxdepth setting equivalent to Maxdepth(undef)");
 
     $maxdepth = 3;
     $obj = Data::Dumper->new([$f], [qw(f)]);

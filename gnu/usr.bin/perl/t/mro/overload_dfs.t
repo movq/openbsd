@@ -5,12 +5,11 @@ use warnings;
 BEGIN {
     unless (-d 'blib') {
         chdir 't' if -d 't';
+        @INC = '../lib';
     }
-    require q(./test.pl);
-    set_up_inc('../lib');
 }
 
-plan(tests => 7);
+require q(./test.pl); plan(tests => 7);
 
 {
     package BaseTest;
@@ -36,10 +35,10 @@ plan(tests => 7);
 }
 
 my $x = InheritingFromOverloadedTest->new();
-object_ok($x, 'InheritingFromOverloadedTest');
+isa_ok($x, 'InheritingFromOverloadedTest');
 
 my $y = OverloadingTest->new();
-object_ok($y, 'OverloadingTest');
+isa_ok($y, 'OverloadingTest');
 
 is("$x", 'InheritingFromOverloadedTest stringified', '... got the right value when stringifing');
 is("$y", 'OverloadingTest stringified', '... got the right value when stringifing');

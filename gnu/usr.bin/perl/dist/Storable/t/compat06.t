@@ -8,15 +8,17 @@
 
 BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
         exit 0;
     }
+    require 'st-dump.pl';
 }
 
-use Test::More tests => 8;
+sub ok;
+
+print "1..8\n";
 
 use Storable qw(freeze nfreeze thaw);
 
@@ -97,29 +99,29 @@ if (!$is_EBCDIC) {			# ASCII machine
 }
 
 my $expected_length = $is_EBCDIC ? 217 : 278;
-is(length $data, $expected_length);
+ok 1, length $data == $expected_length;
   
 my $y = thaw($data);
-isnt($y, undef);
-is(ref $y, 'ROOT');
+ok 2, 1;
+ok 3, ref $y eq 'ROOT';
 
 $Storable::canonical = 1;		# Prevent "used once" warning
 $Storable::canonical = 1;
 # Allow for long double string conversions.
 $y->{num}->[3] += 0;
 $r->{num}->[3] += 0;
-is(nfreeze($y), nfreeze($r));
+ok 4, nfreeze($y) eq nfreeze($r);
 
-is($y->ref->{key1}, 'val1');
-is($y->ref->{key2}, 'val2');
-is($hash_fetch, 2);
+ok 5, $y->ref->{key1} eq 'val1';
+ok 6, $y->ref->{key2} eq 'val2';
+ok 7, $hash_fetch == 2;
 
 my $num = $r->num;
 my $ok = 1;
 for (my $i = 0; $i < @$num; $i++) {
 	do { $ok = 0; last } unless $num->[$i] == $y->num->[$i];
 }
-is($ok, 1);
+ok 8, $ok;
 
 __END__
 #

@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use Test::More tests =>  5;
+use lib qw( lib );
 use ExtUtils::ParseXS::Utilities qw(
   trim_whitespace
 );

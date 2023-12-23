@@ -1,22 +1,44 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 # Test use Math::BigFloat with => 'Math::BigInt::SomeSubclass';
 
+use Test;
 use strict;
-use warnings;
 
-use Test::More tests => 3070            # tests in require'd file
-                         + 1;           # tests in this file
+BEGIN
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/with_sub.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    # testing with the core distribution
+    @INC = qw(../t/lib);
+    }
+  unshift @INC, '../lib';
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
 
-use Math::BigFloat with => 'Math::BigInt::Subclass',
-                   lib  => 'Calc';
+  plan tests => 2308
+	+ 1;
+  }
 
-our ($CLASS, $LIB);
-$CLASS = "Math::BigFloat";
-$LIB   = "Math::BigInt::Calc";          # backend
+use Math::BigFloat with => 'Math::BigInt::Subclass', lib => 'Calc';
 
-# the "with" argument should be ignored
-is(Math::BigFloat->config("with"), 'Math::BigInt::Calc',
-   qq|Math::BigFloat->config("with")|);
+use vars qw ($class $try $x $y $f @args $ans $ans1 $ans1_str $setup $CL);
+$class = "Math::BigFloat";
+$CL = "Math::BigInt::Calc";
 
-require './t/bigfltpm.inc';     # all tests here for sharing
+# the with argument is ignored
+ok (Math::BigFloat->config()->{with}, 'Math::BigInt::Calc');
+
+require 'bigfltpm.inc';	# all tests here for sharing

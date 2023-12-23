@@ -8,7 +8,7 @@ __END__
 #  check illegal category is caught
 use warnings 'this-should-never-be-a-warning-category' ;
 EXPECT
-Unknown warnings category 'this-should-never-be-a-warning-category' at - line 3.
+Unknown warnings category 'this-should-never-be-a-warning-category' at - line 3
 BEGIN failed--compilation aborted at - line 3.
 ########
 
@@ -42,7 +42,7 @@ use warnings 'uninitialized' ;
 }
 my $b ; chop $b ;
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 8.
+Use of uninitialized value in scalar chop at - line 8.
 ########
 
 # Check runtime scope of pragma
@@ -53,7 +53,7 @@ no warnings ;
 }
 my $b ; chop $b ;
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 6.
+Use of uninitialized value in scalar chop at - line 6.
 ########
 
 # Check runtime scope of pragma
@@ -64,70 +64,13 @@ no warnings ;
 }
 &$a ;
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 6.
+Use of uninitialized value in scalar chop at - line 6.
 ########
 
 use warnings 'syntax' ;
 my $a =+ 1 ;
 EXPECT
 Reversed += operator at - line 3.
-########
--w
-no warnings 'reserved' ;
-foo.bar;
-EXPECT
-Useless use of a constant ("foobar") in void context at - line 3.
-########
-
-# Check -negative import with no other args
-use warnings qw(-syntax);
-sub foo { 'foo' }
-my $a =+ 1 ;          # syntax:        shouldn't warn, it was never turned on
-*foo = sub { 'bar' }; # redefine:      shouldn't warn, it was never turned on
-$a = 'foo' . undef;   # uninitialized: shouldn't warn, it was never turned on
-EXPECT
-########
-
-# Check -negative import after turning all warnings on
-use warnings qw(all -syntax);
-sub foo { 'foo' }
-my $a =+ 1 ;          # syntax:        shouldn't warn, we've turned that off
-*foo = sub { 'bar' }; # redefine:      should warn, as there was an explicit 'all'
-$a = 'foo' . undef;   # uninitialized: should warn, as there was an explicit 'all'
-EXPECT
-Subroutine main::foo redefined at - line 6.
-Use of uninitialized value in concatenation (.) or string at - line 7.
-########
-
-# Check -negative import with an explicit import
-use warnings qw(redefine -syntax);
-sub foo { 'foo' }
-my $a =+ 1 ;          # syntax:        shouldn't warn, it was never turned on
-*foo = sub { 'bar' }; # redefine:      should warn, as there was an explicit 'redefine'
-$a = 'foo' . undef;   # uninitialized: shouldn't warn, as explicit 'redefine' means no implicit 'all'
-EXPECT
-Subroutine main::foo redefined at - line 6.
-########
-
-# Check multiple -negative imports
-use warnings qw(all -syntax -uninitialized);
-sub foo { 'foo' }
-my $a =+ 1 ;          # syntax:        shouldn't warn, we've turned that off
-*foo = sub { 'bar' }; # redefine:      should warn, as there was an explicit 'all'
-$a = 'foo' . undef;   # uninitialized: shouldn't warn, we've turned it off
-EXPECT
-Subroutine main::foo redefined at - line 6.
-########
-
-# Check mixed list of +ve and -ve imports
-use warnings qw(all -once -syntax parenthesis);
-sub foo { 'foo' }
-*foo = sub { 'bar' };  # redefined:   should warn, as it was turned on by 'all'
-my $a =+ 1 ;           # syntax:      shouldn't warn, we've turned that off
-my $foo, $bar = @_;    # parenthesis: should warn, as we turned that back on after disabling 'syntax'
-EXPECT
-Parentheses missing around "my" list at - line 7.
-Subroutine main::foo redefined at - line 5.
 ########
 
 --FILE-- abc
@@ -160,7 +103,7 @@ require "./abc";
 my $a ; chop $a ;
 EXPECT
 Reversed += operator at ./abc line 2.
-Use of uninitialized value $a in scalar chop at - line 3.
+Use of uninitialized value in scalar chop at - line 3.
 ########
 
 --FILE-- abc.pm
@@ -173,7 +116,7 @@ use abc;
 my $a ; chop $a ;
 EXPECT
 Reversed += operator at abc.pm line 2.
-Use of uninitialized value $a in scalar chop at - line 3.
+Use of uninitialized value in scalar chop at - line 3.
 ########
 
 # Check scope of pragma with eval
@@ -200,7 +143,7 @@ use warnings;
     my $b ; chop $b ;
 }
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 8.
+Use of uninitialized value in scalar chop at - line 8.
 ########
 
 # Check scope of pragma with eval
@@ -213,8 +156,8 @@ no warnings;
     my $b ; chop $b ;
 }
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 7.
-Use of uninitialized value $b in scalar chop at - line 9.
+Use of uninitialized value in scalar chop at - line 7.
+Use of uninitialized value in scalar chop at - line 9.
 ########
 
 # Check scope of pragma with eval
@@ -228,7 +171,7 @@ no warnings;
     my $b ; chop $b ;
 }
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 10.
+Use of uninitialized value in scalar chop at - line 10.
 ########
 
 # Check scope of pragma with eval
@@ -310,7 +253,7 @@ use warnings;
     my $b ; chop $b ;
 }
 EXPECT
-Use of uninitialized value $b in scalar chop at (eval 1) line 3.
+Use of uninitialized value in scalar chop at (eval 1) line 3.
 ########
 
 # Check scope of pragma with eval
@@ -323,8 +266,8 @@ no warnings;
     my $b ; chop $b ;
 }
 EXPECT
-Use of uninitialized value $b in scalar chop at (eval 1) line 2.
-Use of uninitialized value $b in scalar chop at - line 9.
+Use of uninitialized value in scalar chop at (eval 1) line 2.
+Use of uninitialized value in scalar chop at - line 9.
 ########
 
 # Check scope of pragma with eval
@@ -338,7 +281,7 @@ no warnings;
     my $b ; chop $b ;
 }
 EXPECT
-Use of uninitialized value $b in scalar chop at - line 10.
+Use of uninitialized value in scalar chop at - line 10.
 ########
 
 # Check scope of pragma with eval
@@ -408,5 +351,4 @@ no warnings 'syntax' ;
 $a =+ 1 ;
 EXPECT
 Reversed += operator at - line 6.
-Use of uninitialized value $c in scalar chop at - line 9.
-########
+Use of uninitialized value in scalar chop at - line 9.

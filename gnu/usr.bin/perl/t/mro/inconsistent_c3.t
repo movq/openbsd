@@ -1,19 +1,15 @@
 #!./perl
 
+use strict;
+use warnings;
 BEGIN {
     unless (-d 'blib') {
         chdir 't' if -d 't';
+        @INC = '../lib';
     }
-    require q(./test.pl);
-    set_up_inc('../lib');
 }
 
-use strict;
-use warnings;
-
-plan(tests => 1);
-
-require mro;
+require q(./test.pl); plan(tests => 1);
 
 =pod
 
@@ -48,5 +44,4 @@ except TypeError:
 }
 
 eval { mro::get_linear_isa('Z', 'c3') };
-like($@, qr/^Inconsistent hierarchy during C3 merge of class 'Z'/,
-     '... got the right error with an inconsistent hierarchy');
+like($@, qr/^Inconsistent /, '... got the right error with an inconsistent hierarchy');

@@ -3,11 +3,10 @@
 # Check that too-new features of Perl are not being used.
 #
 # The canonical version of this file is maintained in the rra-c-util package,
-# which can be found at <https://www.eyrie.org/~eagle/software/rra-c-util/>.
+# which can be found at <http://www.eyrie.org/~eagle/software/rra-c-util/>.
 #
 # Written by Russ Allbery <eagle@eyrie.org>
-# Copyright 2019 Russ Allbery <eagle@eyrie.org>
-# Copyright 2013-2014
+# Copyright 2013, 2014
 #     The Board of Trustees of the Leland Stanford Junior University
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,19 +26,16 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
-#
-# SPDX-License-Identifier: MIT
 
-use 5.008;
+use 5.006;
 use strict;
 use warnings;
 
 use lib 't/lib';
 
+use Test::More;
 use Test::RRA qw(skip_unless_automated use_prereq);
 use Test::RRA::Config qw($MINIMUM_VERSION);
-
-use Test::More;
 
 # Skip for normal user installs since this doesn't affect functionality.
 skip_unless_automated('Minimum version tests');

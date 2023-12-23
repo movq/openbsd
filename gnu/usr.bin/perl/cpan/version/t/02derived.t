@@ -5,29 +5,24 @@
 #########################
 
 use Test::More qw/no_plan/;
-use File::Spec;
 use File::Temp qw/tempfile/;
 
 BEGIN {
-    my $coretests = File::Spec->rel2abs(
-        File::Spec->catpath(
-            (File::Spec->splitpath($0))[0,1], 'coretests.pm'
-        )
-    );
+    (my $coretests = $0) =~ s'[^/]+\.t'coretests.pm';
     require $coretests;
-    use_ok("version", 0.9929);
+    use_ok("version", 0.9909);
     # If we made it this far, we are ok.
 }
 
 use lib qw/./;
 
 package version::Bad;
-use base 'version';
+use parent 'version';
 sub new { my($self,$n)=@_;  bless \$n, $self }
 
 # Bad subclass for SemVer failures seen with pure Perl version.pm only
 package version::Bad2;
-use base 'version';
+use parent 'version';
 sub new {
     my ($class, $val) = @_;
     die 'Invalid version string format' unless version::is_strict($val);
@@ -50,8 +45,9 @@ my ($fh, $filename) = tempfile('tXXXXXXX', SUFFIX => '.pm', UNLINK => 1);
 print $fh <<"EOF";
 # This is an empty subclass
 package $package;
-use base 'version';
-our \$VERSION = 0.001;
+use parent 'version';
+use vars '\$VERSION';
+\$VERSION=0.001;
 EOF
 close $fh;
 

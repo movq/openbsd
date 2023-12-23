@@ -7,17 +7,14 @@ use CPAN::Meta::Validator;
 use CPAN::Meta::Converter;
 use File::Spec;
 use IO::Dir;
-use Parse::CPAN::Meta;
+use Parse::CPAN::Meta 1.4400;
 
-delete $ENV{PERL_YAML_BACKEND};
-delete $ENV{PERL_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_DECODER};
+delete $ENV{$_} for qw/PERL_JSON_BACKEND PERL_YAML_BACKEND/; # use defaults
 
 my $data_dir = IO::Dir->new( 't/data-fail' );
 my @files = sort grep { /^\w/ } $data_dir->read;
 
-*_spec_version = \&CPAN::Meta::Converter::_extract_spec_version;
+sub _spec_version { return $_[0]->{'meta-spec'}{version} || "1.0" }
 
 use Data::Dumper;
 
@@ -27,18 +24,18 @@ for my $f ( reverse sort @files ) {
   ok( $original, "loaded invalid $f" );
   my $original_v = _spec_version($original);
   # UPCONVERSION
-  if ( $original_v lt '2' ) {
+  if ( _spec_version( $original ) lt '2' ) {
     my $cmc = CPAN::Meta::Converter->new( $original );
-    my $fixed = eval { $cmc->convert( version => 2 ) };
+    eval { $cmc->convert( version => 2 ) };
     ok ( $@, "error thrown up converting" );
   }
   # DOWNCONVERSION
-  if ( $original_v gt '1.0' ) {
+  if ( _spec_version( $original ) gt '1.0' ) {
     my $cmc = CPAN::Meta::Converter->new( $original );
-    my $fixed = eval { $cmc->convert( version => '1.0' ) };
+    eval { $cmc->convert( version => '1.0' ) };
     ok ( $@, "error thrown down converting" );
   }
 }
 
 done_testing;
-# vim: ts=2 sts=2 sw=2 et :
+

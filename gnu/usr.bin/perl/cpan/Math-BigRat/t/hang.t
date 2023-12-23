@@ -1,20 +1,27 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 # test for bug #34584: hang in exp(1/2)
 
 use strict;
-use warnings;
+use Test::More;
 
-use Test::More tests => 1;
+BEGIN 
+  {
+  $| = 1;
+  chdir 't' if -d 't';
+  unshift @INC, '../lib'; # for running manually
+  plan tests => 1;
+  }
 
 use Math::BigRat;
 
 my $result = Math::BigRat->new('1/2')->bexp();
 
-is("$result", "824360635350064073424325393907081785827/500000000000000000000000000000000000000",
-   "exp(1/2) worked");
+is ("$result", "9535900335500879457687887524133067574481/5783815921445270815783609372070483523265",
+    "exp(1/2) worked");
 
 ##############################################################################
 # done
 
 1;
+

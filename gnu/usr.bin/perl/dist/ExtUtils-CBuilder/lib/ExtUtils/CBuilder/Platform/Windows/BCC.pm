@@ -1,9 +1,7 @@
 package ExtUtils::CBuilder::Platform::Windows::BCC;
 
-our $VERSION = '0.280236'; # VERSION
-
-use strict;
-use warnings;
+use vars qw($VERSION);
+$VERSION = '0.280206';
 
 sub format_compiler_cmd {
   my ($self, %spec) = @_;
@@ -44,7 +42,7 @@ sub write_compiler_script {
   # XXX Borland "response files" seem to be unable to accept macro
   # definitions containing quoted strings. Escaping strings with
   # backslash doesn't work, and any level of quotes are stripped. The
-  # result is a floating point number in the source file where a
+  # result is is a floating point number in the source file where a
   # string is expected. So we leave the macros on the command line.
   print $SCRIPT join( "\n",
     map { ref $_ ? @{$_} : $_ }
@@ -66,7 +64,7 @@ sub format_linker_cmd {
   }
 
   push( @{$spec{startup}}, 'c0d32.obj' )
-    unless ( $spec{startup} && @{$spec{startup}} );
+    unless ( $spec{starup} && @{$spec{startup}} );
 
   %spec = $self->write_linker_script(%spec)
     if $spec{use_scripts};

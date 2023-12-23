@@ -1,8 +1,4 @@
 #!/usr/bin/perl
-
-use strict;
-use warnings;
-
 #
 # Check ->defer and ->flush methods
 #
@@ -12,7 +8,7 @@ use warnings;
 #
 
 use POSIX 'SEEK_SET';
-my $file = "tf30-$$.txt";
+my $file = "tf$$.txt";
 $: = Tie::File::_default_recsep();
 my $data = "rec0$:rec1$:rec2$:";
 my ($o, $n);
@@ -23,12 +19,10 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 print F $data;
 close F;
-
-my @a;
 $o = tie @a, 'Tie::File', $file;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -95,7 +89,7 @@ check_contents(join $:, "r0".."r2", "", "r4".."r6", "");
 # 
 undef $o;  untie @a;
 $data = join "$:", map("record$_", 0..7), "";  # records are 8 or 9 bytes long
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 print F $data;
 close F;
@@ -227,7 +221,7 @@ check_contents(join("$:", qw(recordF recordB recordC
 undef $o;
 untie @a;
 # (79) We can't use check_contents any more, because the object is dead
-open F, '<', $file or die;
+open F, "< $file" or die;
 binmode F;
 { local $/ ; $z = <F> }
 close F;

@@ -2,7 +2,7 @@ package Test2::IPC::Driver;
 use strict;
 use warnings;
 
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 
 use Carp qw/confess/;
@@ -18,8 +18,7 @@ sub import {
     test2_ipc_add_driver($class);
 }
 
-sub pending { -1 }
-sub set_pending { -1 }
+sub use_shm { 0 }
 
 for my $meth (qw/send cull add_hub drop_hub waiting is_viable/) {
     no strict 'refs';
@@ -90,6 +89,11 @@ error.
 This is the same as C<< $ipc->abort($msg) >> except that it uses
 C<Carp::longmess> to add a stack trace to the message.
 
+=item $false = $self->use_shm
+
+The base class always returns false for this method. You may override it if you
+wish to use the SHM made available in L<Test2::API>/L<Test2::API::Instance>.
+
 =back
 
 =head1 LOADING DRIVERS
@@ -137,7 +141,8 @@ load it too late for it to be effective.
 
         ... # Send the event to the proper hub.
 
-        # This may notify other procs/threads that there is a pending event.
+        # If you are using the SHM you should notify other procs/threads that
+        # there is a pending event.
         Test2::API::test2_ipc_set_pending($uniq_val);
     }
 
@@ -208,7 +213,8 @@ process+thread.
 
         ... # Send the event to the proper hub.
 
-        # This may notify other procs/threads that there is a pending event.
+        # If you are using the SHM you should notify other procs/threads that
+        # there is a pending event.
         Test2::API::test2_ipc_set_pending($uniq_val);
     }
 
@@ -252,6 +258,15 @@ This is a hook called by C<< Test2::IPC::Driver->abort() >>. This is your
 chance to cleanup when an abort happens. You cannot prevent the abort, but you
 can gracefully except it.
 
+=item $bool = $ipc->use_shm()
+
+True if you want to make use of the L<Test2::API>/L<Test2::API::Instance> SHM.
+
+=item $bites = $ipc->shm_size()
+
+Use this to customize the size of the SHM space. There are no guarantees about
+what the size will be if you do not implement this.
+
 =back
 
 =head1 SOURCE
@@ -277,7 +292,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

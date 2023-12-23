@@ -5,7 +5,7 @@ use vars qw($VERSION);
 use Carp;
 use Text::Wrap;
 use ExtUtils::Constant::Utils qw(C_stringify perl_stringify);
-$VERSION = '0.07';
+$VERSION = '0.04';
 
 use constant is_perl56 => ($] < 5.007 && $] > 5.005_50);
 
@@ -81,18 +81,6 @@ sub macro_to_ifdef {
 	return $macro ? "#ifdef $macro\n" : "#if 0\n";
     }
     return "";
-}
-
-sub macro_to_ifndef {
-    my ($self, $macro) = @_;
-    if (ref $macro) {
-	# Can't invert these stylishly, so "bodge it"
-	return "$macro->[0]#else\n";
-    }
-    if (defined $macro && $macro ne "" && $macro ne "1") {
-	return $macro ? "#ifndef $macro\n" : "#if 1\n";
-    }
-    croak "Can't generate an ifndef for unconditional code";
 }
 
 sub macro_to_endif {
@@ -331,7 +319,7 @@ of C code to proceed and follow the assignment. I<pre> will be at the start
 of a block, so variables may be defined in it.
 
 =cut
-# Hmm. value undef to do NOTDEF? value () to do NOTFOUND?
+# Hmm. value undef to to NOTDEF? value () to do NOTFOUND?
 
 sub assign {
   my $self = shift;
@@ -581,8 +569,7 @@ sub switch_clause {
     $body .= $indent . "case '" . C_stringify ($char) . "':\n";
     foreach my $thisone (sort {
 	# Deal with the case of an item actually being an array ref to 1 or 2
-	# hashrefs. Don't assign to $a or $b, as they're aliases to the
-        # original
+	# hashrefs. Don't assign to $a or $b, as they're aliases to the orignal
 	my $l = ref $a eq 'ARRAY' ? ($a->[0] || $->[1]) : $a;
 	my $r = ref $b eq 'ARRAY' ? ($b->[0] || $->[1]) : $b;
 	# Sort by weight first
@@ -716,7 +703,7 @@ sub normalise_items
       # tr///c is broken on 5.6.1 for utf8, so my original tr/\0-\177//c
       # doesn't work. Upgrade to 5.8
       # if ($name !~ tr/\0-\177//c || $] < 5.005_50) {
-      if ($name !~ /[[:^ascii:]]/ || $] < 5.005_50
+      if ($name =~ tr/\0-\177// == length $name || $] < 5.005_50
 	 || $args->{disable_utf8_duplication}) {
         # No characters outside 7 bit ASCII.
         if (exists $items->{$name}) {

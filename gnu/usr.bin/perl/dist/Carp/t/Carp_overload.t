@@ -4,11 +4,6 @@ use Test::More tests => 7;
 
 use Carp;
 
-use Data::Dumper ();
-sub _dump ($) {
-  Data::Dumper->new(\@_)->Indent(1)->Terse(1)->Dump;
-}
-
 my $o = Stringable->new(key => 'Baz');
 
 my $msg = call(\&with_longmess, $o, {bar => 'buzz'});
@@ -21,7 +16,7 @@ like($msg, qr/, HASH\(0x[[:xdigit:]]+\)\)/, "HASH *not* stringified");
 
     local $Carp::RefArgFormatter = sub {
         $called++;
-        join '', _dump $_[0];
+        join '', explain $_[0];
     };
 
     $msg = call(\&with_longmess, $o, {bar => 'buzz'});
@@ -32,7 +27,7 @@ like($msg, qr/, HASH\(0x[[:xdigit:]]+\)\)/, "HASH *not* stringified");
 $o = CarpTracable->new(key => 'Bax');
 $msg = call(\&with_longmess, $o, {bar => 'buzz'});
 ok($o->{called}, "CARP_TRACE called");
-like($msg, qr/, TRACE:CarpTracable=Bax, /, "CARP_TRACE output used") or diag _dump $msg;
+like($msg, qr/, TRACE:CarpTracable=Bax, /, "CARP_TRACE output used") or diag explain $msg;
 like($msg, qr/, HASH\(0x[[:xdigit:]]+\)\)/, "HASH not stringified again");
 
 sub call
@@ -62,9 +57,7 @@ sub as_string
 
 package CarpTracable;
 
-# need to set inheritance of new() etc before the
-# CarpTracable->new calls higher up
-BEGIN { our @ISA = 'Stringable' }
+use parent -norequire => 'Stringable';
 
 sub CARP_TRACE
 {

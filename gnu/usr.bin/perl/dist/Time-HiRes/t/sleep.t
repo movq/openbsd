@@ -1,15 +1,14 @@
 use strict;
 
-use Test::More tests => 4;
-BEGIN { push @INC, '.' }
+use Test::More 0.82 tests => 4;
 use t::Watchdog;
 
 BEGIN { require_ok "Time::HiRes"; }
 
 use Config;
 
-my $xdefine = '';
-if (open(XDEFINE, "<", "xdefine")) {
+my $xdefine = ''; 
+if (open(XDEFINE, "xdefine")) {
     chomp($xdefine = <XDEFINE> || "");
     close(XDEFINE);
 }
@@ -22,17 +21,17 @@ my $can_subsecond_alarm =
 
 eval { Time::HiRes::sleep(-1) };
 like $@, qr/::sleep\(-1\): negative time not invented yet/,
-        "negative time error";
+	"negative time error";
 
 SKIP: {
     skip "no subsecond alarm", 2 unless $can_subsecond_alarm;
-    my $f = Time::HiRes::time;
-    print("# time...$f\n");
+    my $f = Time::HiRes::time; 
+    note "time...$f";
     ok 1;
 
     my $r = [Time::HiRes::gettimeofday()];
     Time::HiRes::sleep (0.5);
-    printf("# sleep...%s\n", Time::HiRes::tv_interval($r));
+    note "sleep...", Time::HiRes::tv_interval($r);
     ok 1;
 }
 

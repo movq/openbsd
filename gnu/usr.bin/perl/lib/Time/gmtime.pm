@@ -1,17 +1,10 @@
 package Time::gmtime;
 use strict;
-use 5.006_001;
-
 use Time::tm;
 
-our (@ISA, @EXPORT, @EXPORT_OK, %EXPORT_TAGS, $VERSION);
-our (   $tm_sec, $tm_min, $tm_hour, $tm_mday,
-        $tm_mon, $tm_year, $tm_wday, $tm_yday, 
-		$tm_isdst,
-);
- 
 BEGIN { 
     use Exporter   ();
+    use vars       qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION);
     @ISA         = qw(Exporter Time::tm);
     @EXPORT      = qw(gmtime gmctime);
     @EXPORT_OK   = qw(  
@@ -20,8 +13,9 @@ BEGIN {
 			$tm_isdst
 		    );
     %EXPORT_TAGS = ( FIELDS => [ @EXPORT_OK, @EXPORT ] );
-    $VERSION     = 1.04;
+    $VERSION     = 1.01;
 }
+use vars      @EXPORT_OK;
 
 sub populate (@) {
     return unless @_;
@@ -49,12 +43,11 @@ Time::gmtime - by-name interface to Perl's built-in gmtime() function
  use Time::gmtime;
  $gm = gmtime();
  printf "The day in Greenwich is %s\n", 
-    (qw(Sun Mon Tue Wed Thu Fri Sat Sun))[ $gm->wday() ];
+    (qw(Sun Mon Tue Wed Thu Fri Sat Sun))[ gm->wday() ];
 
- use Time::gmtime qw(:FIELDS);
- gmtime();
+ use Time::gmtime w(:FIELDS;
  printf "The day in Greenwich is %s\n", 
-    (qw(Sun Mon Tue Wed Thu Fri Sat Sun))[ $tm_wday ];
+    (qw(Sun Mon Tue Wed Thu Fri Sat Sun))[ gm_wday() ];
 
  $now = gmctime();
 
@@ -76,7 +69,7 @@ still overrides your core functions.)  Access these fields as variables
 named with a preceding C<tm_> in front their method names.  Thus,
 C<$tm_obj-E<gt>mday()> corresponds to $tm_mday if you import the fields.
 
-The gmctime() function provides a way of getting at the 
+The gmctime() funtion provides a way of getting at the 
 scalar sense of the original CORE::gmtime() function.
 
 To access this functionality without the core overrides,

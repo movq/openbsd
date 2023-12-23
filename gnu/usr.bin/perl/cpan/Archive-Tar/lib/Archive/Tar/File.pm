@@ -7,31 +7,32 @@ use File::Spec::Unix    ();
 use File::Spec          ();
 use File::Basename      ();
 
+### avoid circular use, so only require;
+require Archive::Tar;
 use Archive::Tar::Constant;
 
 use vars qw[@ISA $VERSION];
 #@ISA        = qw[Archive::Tar];
-$VERSION    = '2.40';
+$VERSION    = '0.02';
 
 ### set value to 1 to oct() it during the unpack ###
-
 my $tmpl = [
-        name        => 0,   # string					A100
-        mode        => 1,   # octal					A8
-        uid         => 1,   # octal					A8
-        gid         => 1,   # octal					A8
-        size        => 0,   # octal	# cdrake - not *always* octal..	A12
-        mtime       => 1,   # octal					A12
-        chksum      => 1,   # octal					A8
-        type        => 0,   # character					A1
-        linkname    => 0,   # string					A100
-        magic       => 0,   # string					A6
-        version     => 0,   # 2 bytes					A2
-        uname       => 0,   # string					A32
-        gname       => 0,   # string					A32
-        devmajor    => 1,   # octal					A8
-        devminor    => 1,   # octal					A8
-        prefix      => 0,	#					A155 x 12
+        name        => 0,   # string
+        mode        => 1,   # octal
+        uid         => 1,   # octal
+        gid         => 1,   # octal
+        size        => 1,   # octal
+        mtime       => 1,   # octal
+        chksum      => 1,   # octal
+        type        => 0,   # character
+        linkname    => 0,   # string
+        magic       => 0,   # string
+        version     => 0,   # 2 bytes
+        uname       => 0,   # string
+        gname       => 0,   # string
+        devmajor    => 1,   # octal
+        devminor    => 1,   # octal
+        prefix      => 0,
 
 ### end UNPACK items ###
         raw         => 0,   # the raw data chunk
@@ -213,20 +214,8 @@ sub _new_from_chunk {
     ### makes it start at 0 actually... :) ###
     my $i = -1;
     my %entry = map {
-	my ($s,$v)=($tmpl->[++$i],$tmpl->[++$i]);	# cdrake
-	($_)=($_=~/^([^\0]*)/) unless($s eq 'size');	# cdrake
-	$s=> $v ? oct $_ : $_				# cdrake
-	# $tmpl->[++$i] => $tmpl->[++$i] ? oct $_ : $_	# removed by cdrake - mucks up binary sizes >8gb
-    } unpack( UNPACK, $chunk );				# cdrake
-    # } map { /^([^\0]*)/ } unpack( UNPACK, $chunk );	# old - replaced now by cdrake
-
-
-    if(substr($entry{'size'}, 0, 1) eq "\x80") {	# binary size extension for files >8gigs (> octal 77777777777777)	# cdrake
-      my @sz=unpack("aCSNN",$entry{'size'}); $entry{'size'}=$sz[4]+(2**32)*$sz[3]+$sz[2]*(2**64);	# Use the low 80 bits (should use the upper 15 as well, but as at year 2011, that seems unlikely to ever be needed - the numbers are just too big...) # cdrake
-    } else {	# cdrake
-      ($entry{'size'})=($entry{'size'}=~/^([^\0]*)/); $entry{'size'}=oct $entry{'size'};	# cdrake
-    }	# cdrake
-
+        $tmpl->[++$i] => $tmpl->[++$i] ? oct $_ : $_
+    } map { /^([^\0]*)/ } unpack( UNPACK, $chunk );
 
     my $obj = bless { %entry, %args }, $class;
 
@@ -247,23 +236,23 @@ sub _new_from_chunk {
 
 sub _new_from_file {
     my $class       = shift;
-    my $path        = shift;
-
+    my $path        = shift;        
+    
     ### path has to at least exist
     return unless defined $path;
-
+    
     my $type        = __PACKAGE__->_filetype($path);
     my $data        = '';
 
-    READ: {
+    READ: { 
         unless ($type == DIR ) {
             my $fh = IO::File->new;
-
+        
             unless( $fh->open($path) ) {
                 ### dangling symlinks are fine, stop reading but continue
                 ### creating the object
                 last READ if $type == SYMLINK;
-
+                
                 ### otherwise, return from this function --
                 ### anything that's *not* a symlink should be
                 ### resolvable
@@ -394,30 +383,29 @@ sub _prefix_and_file {
     my $path = shift;
 
     my ($vol, $dirs, $file) = File::Spec->splitpath( $path, $self->is_dir );
-    my @dirs = File::Spec->splitdir( File::Spec->canonpath($dirs) );
+    my @dirs = File::Spec->splitdir( $dirs );
+
+    ### so sometimes the last element is '' -- probably when trailing
+    ### dir slashes are encountered... this is of course pointless,
+    ### so remove it
+    pop @dirs while @dirs and not length $dirs[-1];
 
     ### if it's a directory, then $file might be empty
     $file = pop @dirs if $self->is_dir and not length $file;
 
     ### splitting ../ gives you the relative path in native syntax
-    ### Remove the root (000000) directory
-    ### The volume from splitpath will also be in native syntax
-    if (ON_VMS) {
-        map { $_ = '..' if $_  eq '-'; $_ = '' if $_ eq '000000' } @dirs;
-        if (length($vol)) {
-            $vol = VMS::Filespec::unixify($vol);
-            unshift @dirs, $vol;
-        }
-    }
+    map { $_ = '..' if $_  eq '-' } @dirs if ON_VMS;
 
-    my $prefix = File::Spec::Unix->catdir(@dirs);
+    my $prefix = File::Spec::Unix->catdir(
+                        grep { length } $vol, @dirs
+                    );
     return( $prefix, $file );
 }
 
 sub _filetype {
     my $self = shift;
     my $file = shift;
-
+    
     return unless defined $file;
 
     return SYMLINK  if (-l $file);	# Symlink
@@ -454,7 +442,7 @@ sub _downgrade_to_plainfile {
 
 =head2 $bool = $file->extract( [ $alternative_name ] )
 
-Extract this object, optionally to an alternative name.
+Extract this object, optionally to an alternative name. 
 
 See C<< Archive::Tar->extract_file >> for details.
 
@@ -464,11 +452,9 @@ Returns true on success and false on failure.
 
 sub extract {
     my $self = shift;
-
+    
     local $Carp::CarpLevel += 1;
-
-    ### avoid circular use, so only require;
-    require Archive::Tar;
+    
     return Archive::Tar->_extract_file( $self, @_ );
 }
 
@@ -482,7 +468,7 @@ concatenation of the C<prefix> and C<name> fields.
 sub full_path {
     my $self = shift;
 
-    ### if prefix field is empty
+    ### if prefix field is emtpy
     return $self->name unless defined $self->prefix and length $self->prefix;
 
     ### or otherwise, catfile'd
@@ -590,7 +576,7 @@ Returns true on success and false on failure.
 sub rename {
     my $self = shift;
     my $path = shift;
-
+    
     return unless defined $path;
 
     my ($prefix,$file) = $self->_prefix_and_file( $path );
@@ -598,48 +584,6 @@ sub rename {
     $self->name( $file );
     $self->prefix( $prefix );
 
-	return 1;
-}
-
-=head2 $bool = $file->chmod $mode)
-
-Change mode of $file to $mode. The mode can be a string or a number
-which is interpreted as octal whether or not a leading 0 is given.
-
-Returns true on success and false on failure.
-
-=cut
-
-sub chmod {
-    my $self  = shift;
-    my $mode = shift; return unless defined $mode && $mode =~ /^[0-7]{1,4}$/;
-    $self->{mode} = oct($mode);
-    return 1;
-}
-
-=head2 $bool = $file->chown( $user [, $group])
-
-Change owner of $file to $user. If a $group is given that is changed
-as well. You can also pass a single parameter with a colon separating the
-use and group as in 'root:wheel'.
-
-Returns true on success and false on failure.
-
-=cut
-
-sub chown {
-    my $self = shift;
-    my $uname = shift;
-    return unless defined $uname;
-    my $gname;
-    if (-1 != index($uname, ':')) {
-	($uname, $gname) = split(/:/, $uname);
-    } else {
-	$gname = shift if @_ > 0;
-    }
-
-    $self->uname( $uname );
-    $self->gname( $gname ) if $gname;
 	return 1;
 }
 

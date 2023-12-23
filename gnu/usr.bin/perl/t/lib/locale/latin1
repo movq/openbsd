@@ -1,5 +1,5 @@
 no utf8; # naked Latin-1
-return split /\n/, <<EOF;
+$locales .= <<EOF;
 Català Catalan:ca:es:1 15
 Français French:fr:be ca ch fr lu:1 15
 Gáidhlig Gaelic:gd:gb uk:1 14 15

@@ -5,11 +5,9 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Config;
 
 use Test::More;
-use File::Temp qw[tempdir];
 
 unless( eval { require Data::Dumper } ) {
     plan skip_all => 'Data::Dumper not available';
@@ -30,11 +28,7 @@ my $Makefile = makefile_name();
 my $Is_VMS = $^O eq 'VMS';
 
 chdir 't';
-perl_lib; # sets $ENV{PERL5LIB} relative to t/
-
-my $tmpdir = tempdir( DIR => '../t', CLEANUP => 1 );
-use Cwd; my $cwd = getcwd; END { chdir $cwd } # so File::Temp can cleanup
-chdir $tmpdir;
+perl_lib;
 
 $| = 1;
 
@@ -51,7 +45,6 @@ unlink $Makefile;
 my $prereq_out = run(qq{$Perl Makefile.PL "PREREQ_PRINT=1"});
 ok( !-r $Makefile, "PREREQ_PRINT produces no $Makefile" );
 is( $?, 0,         '  exited normally' );
-$prereq_out =~ s/^'chcp' is not recognized.*batch file\.//s; # remove errors
 {
     package _Prereq::Print;
     no strict;
@@ -65,7 +58,7 @@ $prereq_out =~ s/^'chcp' is not recognized.*batch file\.//s; # remove errors
 $prereq_out = run(qq{$Perl Makefile.PL "PRINT_PREREQ=1"});
 ok( !-r $Makefile, "PRINT_PREREQ produces no $Makefile" );
 is( $?, 0,         '  exited normally' );
-::like( $prereq_out, qr/^perl\(strict\) \s* >= \s* 0 \s*$/mx,
+::like( $prereq_out, qr/^perl\(strict\) \s* >= \s* 0 \s*$/x, 
                                                       'prereqs dumped' );
 
 

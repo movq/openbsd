@@ -6,7 +6,6 @@
 # Authors: don
 
 use strict;
-use warnings;
 use Test;
 
 # main

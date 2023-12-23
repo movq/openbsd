@@ -8,7 +8,6 @@ BEGIN {
 
 use lib './lib';
 use strict;
-use warnings;
 use ExtUtils::MakeMaker;
 
 use Test::More "no_plan";

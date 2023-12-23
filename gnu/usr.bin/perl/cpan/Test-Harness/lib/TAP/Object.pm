@@ -1,7 +1,7 @@
 package TAP::Object;
 
 use strict;
-use warnings;
+use vars qw($VERSION);
 
 =head1 NAME
 
@@ -9,19 +9,22 @@ TAP::Object - Base class that provides common functionality to all C<TAP::*> mod
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 SYNOPSIS
 
     package TAP::Whatever;
 
     use strict;
+    use vars qw(@ISA);
 
-    use base 'TAP::Object';
+    use TAP::Object;
+
+    @ISA = qw(TAP::Object);
 
     # new() implementation by TAP::Object
     sub _initialize {
@@ -90,25 +93,6 @@ sub _croak {
     return;
 }
 
-=head3 C<_confess>
-
-Raise an exception using C<confess> from L<Carp>, eg:
-
-    $self->_confess( 'why me?', 'aaarrgh!' );
-
-May also be called as a I<class> method.
-
-    $class->_confess( 'this works too' );
-
-=cut
-
-sub _confess {
-    my $proto = shift;
-    require Carp;
-    Carp::confess(@_);
-    return;
-}
-
 =head3 C<_construct>
 
 Create a new instance of the specified class.
@@ -124,7 +108,7 @@ sub _construct {
     unless ( $class->can('new') ) {
         local $@;
         eval "require $class";
-        $self->_croak("Can't load $class: $@") if $@;
+        $self->_croak("Can't load $class") if $@;
     }
 
     return $class->new(@args);
@@ -140,7 +124,7 @@ Create simple getter/setters.
 
 sub mk_methods {
     my ( $class, @methods ) = @_;
-    for my $method_name (@methods) {
+    foreach my $method_name (@methods) {
         my $method = "${class}::$method_name";
         no strict 'refs';
         *$method = sub {

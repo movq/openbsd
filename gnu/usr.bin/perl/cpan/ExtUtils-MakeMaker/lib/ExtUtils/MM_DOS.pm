@@ -1,10 +1,8 @@
 package ExtUtils::MM_DOS;
 
 use strict;
-use warnings;
 
-our $VERSION = '7.64';
-$VERSION =~ tr/_//d;
+our $VERSION = 6.56;
 
 require ExtUtils::MM_Any;
 require ExtUtils::MM_Unix;
@@ -22,10 +20,10 @@ ExtUtils::MM_DOS - DOS specific subclass of ExtUtils::MM_Unix
 
 =head1 DESCRIPTION
 
-This is a subclass of L<ExtUtils::MM_Unix> which contains functionality
+This is a subclass of ExtUtils::MM_Unix which contains functionality
 for DOS.
 
-Unless otherwise stated, it works just like ExtUtils::MM_Unix.
+Unless otherwise stated, it works just like ExtUtils::MM_Unix
 
 =head2 Overridden methods
 
@@ -50,14 +48,6 @@ sub replace_manpage_separator {
 
     $man =~ s,/+,__,g;
     return $man;
-}
-
-=item xs_static_lib_is_xs
-
-=cut
-
-sub xs_static_lib_is_xs {
-    return 1;
 }
 
 =back

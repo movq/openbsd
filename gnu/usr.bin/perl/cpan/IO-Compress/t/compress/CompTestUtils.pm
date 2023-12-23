@@ -9,13 +9,13 @@ use bytes;
 #use lib qw(t t/compress);
 
 use Carp ;
-#use Test::More ;
+#use Test::More ; 
 
 
 
 sub title
 {
-    #diag "" ;
+    #diag "" ; 
     ok(1, $_[0]) ;
     #diag "" ;
 }
@@ -25,28 +25,19 @@ sub like_eval
     like $@, @_ ;
 }
 
-BEGIN {
-    eval {
-       require File::Temp;
-     } ;
-
-}
-
-
 {
     package LexFile ;
 
     our ($index);
     $index = '00000';
-
+    
     sub new
     {
         my $self = shift ;
         foreach (@_)
         {
-            Carp::croak "NO!!!!" if defined $_;
-            # autogenerate the name if none supplied
-            $_ = "tst" . $$ . "X" . $index ++ . ".tmp"
+            # autogenerate the name unless if none supplied
+            $_ = "tst" . $index ++ . ".tmp"
                 unless defined $_;
         }
         chmod 0777, @_;
@@ -67,79 +58,19 @@ BEGIN {
     package LexDir ;
 
     use File::Path;
-
-    our ($index);
-    $index = '00000';
-    our ($useTempFile);
-    our ($useTempDir);
-
     sub new
     {
         my $self = shift ;
-
-        if ( $useTempDir)
-        {
-            foreach (@_)
-            {
-                Carp::croak "NO!!!!" if defined $_;
-                $_ = File::Temp->newdir(DIR => '.');
-                # Subsequent manipulations assume Unix syntax, metacharacters, etc.
-                if ($^O eq 'VMS')
-                {
-                    $_->{DIRNAME} = VMS::Filespec::unixify($_->{DIRNAME});
-                    $_->{DIRNAME} =~ s/\/$//;
-                }
-            }
-            bless [ @_ ], $self ;
-        }
-        elsif ( $useTempFile)
-        {
-            foreach (@_)
-            {
-                Carp::croak "NO!!!!" if defined $_;
-                $_ = File::Temp::tempdir(DIR => '.', CLEANUP => 1);
-                # Subsequent manipulations assume Unix syntax, metacharacters, etc.
-                if ($^O eq 'VMS')
-                {
-                    $_ = VMS::Filespec::unixify($_);
-                    $_ =~ s/\/$//;
-                }
-            }
-            bless [ @_ ], $self ;
-        }
-        else
-        {
-            foreach (@_)
-            {
-                Carp::croak "NO!!!!" if defined $_;
-                # autogenerate the name if none supplied
-                $_ = "tmpdir" . $$ . "X" . $index ++ . ".tmp" ;
-            }
-            foreach (@_)
-            {
-                rmtree $_, {verbose => 0, safe => 1}
-                    if -d $_;
-                mkdir $_, 0777
-            }
-            bless [ @_ ], $self ;
-        }
-
+        foreach (@_) { rmtree $_ }
+        bless [ @_ ], $self ;
     }
 
     sub DESTROY
     {
-        if (! $useTempFile)
-        {
-            my $self = shift ;
-            foreach (@$self)
-            {
-                rmtree $_, {verbose => 0, safe => 1}
-                    if -d $_ ;
-            }
-        }
+        my $self = shift ;
+        foreach (@$self) { rmtree $_ }
     }
 }
-
 sub readFile
 {
     my $f = shift ;
@@ -150,15 +81,15 @@ sub readFile
     {
         my $pos = tell($f);
         seek($f, 0,0);
-        @strings = <$f> ;
+        @strings = <$f> ;	
         seek($f, 0, $pos);
     }
     else
     {
-        open (F, "<$f")
+        open (F, "<$f") 
             or croak "Cannot open $f: $!\n" ;
         binmode F;
-        @strings = <F> ;
+        @strings = <F> ;	
         close F ;
     }
 
@@ -175,7 +106,7 @@ sub writeFile
 {
     my($filename, @strings) = @_ ;
     1 while unlink $filename ;
-    open (F, ">$filename")
+    open (F, ">$filename") 
         or croak "Cannot open $filename: $!\n" ;
     binmode F;
     foreach (@strings) {
@@ -191,10 +122,10 @@ sub GZreadFile
 
     my ($uncomp) = "" ;
     my $line = "" ;
-    my $fil = gzopen($filename, "rb")
+    my $fil = gzopen($filename, "rb") 
         or croak "Cannopt open '$filename': $Compress::Zlib::gzerrno" ;
 
-    $uncomp .= $line
+    $uncomp .= $line 
         while $fil->gzread($line) > 0;
 
     $fil->gzclose ;
@@ -248,14 +179,14 @@ sub readHeaderInfo
 some text
 EOM
 
-    ok my $x = IO::Compress::Gzip->new( $name, %opts )
+    ok my $x = new IO::Compress::Gzip $name, %opts 
         or diag "GzipError is $IO::Compress::Gzip::GzipError" ;
     ok $x->write($string) ;
     ok $x->close ;
 
     #is GZreadFile($name), $string ;
 
-    ok my $gunz = IO::Uncompress::Gunzip->new( $name, Strict => 0 )
+    ok my $gunz = new IO::Uncompress::Gunzip $name, Strict => 0
         or diag "GunzipError is $IO::Uncompress::Gunzip::GunzipError" ;
     ok my $hdr = $gunz->getHeaderInfo();
     my $uncomp ;
@@ -395,17 +326,6 @@ my %TOP = (
                                 Raw      => 0,
                               },
 
-    'IO::Compress::Lzip' => { Inverse  => 'IO::Uncompress::UnLzip',
-                            Error    => 'LzipError',
-                            TopLevel => 'lzip',
-                            Raw      => 0,
-                          },
-    'IO::Uncompress::UnLzip' => { Inverse  => 'IO::Compress::Lzip',
-                                Error    => 'UnLzipError',
-                                TopLevel => 'unlzip',
-                                Raw      => 0,
-                              },
-
     'IO::Compress::PPMd' => { Inverse  => 'IO::Uncompress::UnPPMd',
                               Error    => 'PPMdError',
                               TopLevel => 'ppmd',
@@ -414,16 +334,6 @@ my %TOP = (
     'IO::Uncompress::UnPPMd' => { Inverse  => 'IO::Compress::PPMd',
                                   Error    => 'UnPPMdError',
                                   TopLevel => 'unppmd',
-                                  Raw      => 0,
-                                },
-    'IO::Compress::Zstd' => { Inverse  => 'IO::Uncompress::UnZstd',
-                              Error    => 'ZstdError',
-                              TopLevel => 'zstd',
-                              Raw      => 0,
-                            },
-    'IO::Uncompress::UnZstd' => { Inverse  => 'IO::Compress::Zstd',
-                                  Error    => 'UnZstdError',
-                                  TopLevel => 'unzstd',
                                   Raw      => 0,
                                 },
 
@@ -515,7 +425,7 @@ sub compressBuffer
 our ($AnyUncompressError);
 BEGIN
 {
-    eval ' use IO::Uncompress::AnyUncompress qw(anyuncompress $AnyUncompressError); ';
+    eval ' use IO::Uncompress::AnyUncompress qw($AnyUncompressError); ';
 }
 
 sub anyUncompress
@@ -562,13 +472,12 @@ sub anyUncompress
     }
 
     my $out = '';
-    my $o = IO::Uncompress::AnyUncompress->new( \$data,
-                    Append => 1,
-                    Transparent => 0,
+    my $o = new IO::Uncompress::AnyUncompress \$data, 
+                    Append => 1, 
+                    Transparent => 0, 
                     RawInflate => 1,
                     UnLzma     => 1,
                     @opts
-            )
         or croak "Cannot open buffer/file: $AnyUncompressError" ;
 
     1 while $o->read($out) > 0 ;
@@ -577,6 +486,7 @@ sub anyUncompress
         if $o->error() ;
 
     return $out ;
+
 }
 
 sub getHeaders
@@ -623,14 +533,13 @@ sub getHeaders
     }
 
     my $out = '';
-    my $o = IO::Uncompress::AnyUncompress->new( \$data,
-                MultiStream => 1,
-                Append => 1,
-                Transparent => 0,
+    my $o = new IO::Uncompress::AnyUncompress \$data, 
+                MultiStream => 1, 
+                Append => 1, 
+                Transparent => 0, 
                 RawInflate => 1,
                 UnLzma     => 1,
                 @opts
-            )
         or croak "Cannot open buffer/file: $AnyUncompressError" ;
 
     1 while $o->read($out) > 0 ;
@@ -669,7 +578,7 @@ sub mkComplete
         );
     }
 
-    my $z = $class->can('new')->( $class, \$buffer, %params)
+    my $z = new $class( \$buffer, %params)
         or croak "Cannot create $class object: $$Error";
     $z->write($data);
     $z->close();
@@ -677,7 +586,7 @@ sub mkComplete
     my $unc = getInverse($class);
     anyUncompress(\$buffer) eq $data
         or die "bad bad bad";
-    my $u = $unc->can('new')->( $unc, \$buffer);
+    my $u = new $unc( \$buffer);
     my $info = $u->getHeaderInfo() ;
 
 
@@ -740,7 +649,7 @@ sub getMultiValues
 {
     my $class = shift ;
 
-    return (0,0) if $class =~ /lzf|lzma|zstd/i;
+    return (0,0) if $class =~ /lzf|lzma/i;
     return (1,0);
 }
 

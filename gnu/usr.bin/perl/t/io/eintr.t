@@ -8,14 +8,14 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-    skip_all_without_dynamic_extension('Fcntl');
+    @INC = '../lib';
 }
 
 use warnings;
 use strict;
 use Config;
+
+require './test.pl';
 
 my $piped;
 eval {
@@ -49,17 +49,13 @@ if (exists $ENV{PERLIO} && $ENV{PERLIO} =~ /stdio/  ) {
 # Also skip on release builds, to avoid other possibly problematic
 # platforms
 
-my ($osmajmin) = $Config{osvers} =~ /^(\d+\.\d+)/;
-if ($^O eq 'VMS' || $^O eq 'MSWin32' || $^O eq 'cygwin' || $^O =~ /freebsd/ || $^O eq 'midnightbsd' ||
-     ($^O eq 'solaris' && $Config{osvers} eq '2.8') || $^O eq 'nto' ||
-     ($^O eq 'darwin' && $osmajmin < 9) ||
-    ((int($]*1000) & 1) == 0)
+if ($^O eq 'VMS' || $^O eq 'MSWin32' || $^O eq 'cygwin' || $^O =~ /freebsd/ || 
+     ($^O eq 'solaris' && $Config{osvers} eq '2.8')
+	|| ((int($]*1000) & 1) == 0)
 ) {
 	skip_all('various portability issues');
 	exit 0;
 }
-
-
 
 my ($in, $out, $st, $sigst, $buf);
 
@@ -69,7 +65,6 @@ plan(tests => 10);
 # make two handles that will always block
 
 sub fresh_io {
-	close $in if $in; close $out if $out;
 	undef $in; undef $out; # use fresh handles each time
 	pipe $in, $out;
 	$sigst = "";
@@ -98,65 +93,51 @@ alarm(0);
 ok(!$st, 'read/die: read status');
 ok(close($in), 'read/die: close status');
 
-SKIP: {
-    skip "Tests hang on older versions of Darwin", 5
-          if $^O eq 'darwin' && $osmajmin < 16;
+# close during print
 
-    # This used to be 1_000_000, but on Linux/ppc64 (POWER7) this kept
-    # consistently failing. At exactly 0x100000 it started passing
-    # again. Now we're asking the kernel what the pipe buffer is, and if
-    # that fails, hoping this number is bigger than any pipe buffer.
-    my $surely_this_arbitrary_number_is_fine = (eval {
-        use Fcntl qw(F_GETPIPE_SZ);
-        fcntl($out, F_GETPIPE_SZ, 0);
-    } || 0xfffff) + 1;
+fresh_io;
+$SIG{ALRM} = sub { $sigst = close($out) ? "ok" : "nok" };
+$buf = "a" x 1_000_000 . "\n"; # bigger than any pipe buffer hopefully
+select $out; $| = 1; select STDOUT;
+alarm(1);
+$st = print $out $buf;
+alarm(0);
+is($sigst, 'nok', 'print/close: sig handler close status');
+ok(!$st, 'print/close: print status');
+ok(!close($out), 'print/close: close status');
 
-    # close during print
+# die during print
 
-    fresh_io;
-    $SIG{ALRM} = sub { $sigst = close($out) ? "ok" : "nok" };
-    $buf = "a" x $surely_this_arbitrary_number_is_fine . "\n";
-    select $out; $| = 1; select STDOUT;
-    alarm(1);
-    $st = print $out $buf;
-    alarm(0);
-    is($sigst, 'nok', 'print/close: sig handler close status');
-    ok(!$st, 'print/close: print status');
-    ok(!close($out), 'print/close: close status');
+fresh_io;
+$SIG{ALRM} = sub { die };
+$buf = "a" x 1_000_000 . "\n"; # bigger than any pipe buffer hopefully
+select $out; $| = 1; select STDOUT;
+alarm(1);
+$st = eval { print $out $buf };
+alarm(0);
+ok(!$st, 'print/die: print status');
+# the close will hang since there's data to flush, so use alarm
+alarm(1);
+ok(!eval {close($out)}, 'print/die: close status');
+alarm(0);
 
-    # die during print
+# close during close
 
-    fresh_io;
-    $SIG{ALRM} = sub { die };
-    $buf = "a" x $surely_this_arbitrary_number_is_fine . "\n";
-    select $out; $| = 1; select STDOUT;
-    alarm(1);
-    $st = eval { print $out $buf };
-    alarm(0);
-    ok(!$st, 'print/die: print status');
-    # the close will hang since there's data to flush, so use alarm
-    alarm(1);
-    ok(!eval {close($out)}, 'print/die: close status');
-    alarm(0);
+# Apparently there's nothing in standard Linux that can cause an
+# EINTR in close(2); but run the code below just in case it does on some
+# platform, just to see if it segfaults.
+fresh_io;
+$SIG{ALRM} = sub { $sigst = close($in) ? "ok" : "nok" };
+alarm(1);
+close $in;
+alarm(0);
 
-    # close during close
+# die during close
 
-    # Apparently there's nothing in standard Linux that can cause an
-    # EINTR in close(2); but run the code below just in case it does on some
-    # platform, just to see if it segfaults.
-    fresh_io;
-    $SIG{ALRM} = sub { $sigst = close($in) ? "ok" : "nok" };
-    alarm(1);
-    close $in;
-    alarm(0);
-
-    # die during close
-
-    fresh_io;
-    $SIG{ALRM} = sub { die };
-    alarm(1);
-    eval { close $in };
-    alarm(0);
-}
+fresh_io;
+$SIG{ALRM} = sub { die };
+alarm(1);
+eval { close $in };
+alarm(0);
 
 # vim: ts=4 sts=4 sw=4:

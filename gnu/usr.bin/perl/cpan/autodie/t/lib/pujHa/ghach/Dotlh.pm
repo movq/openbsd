@@ -9,7 +9,7 @@ package pujHa'ghach::Dotlh;
 use strict;
 use warnings;
 
-use parent qw(autodie::exception);
+use base qw(autodie::exception);
 
 sub stringify {
     my ($this) = @_;

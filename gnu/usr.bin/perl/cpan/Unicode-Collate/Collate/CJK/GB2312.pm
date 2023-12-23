@@ -2,9 +2,8 @@ package Unicode::Collate::CJK::GB2312;
 
 use 5.006;
 use strict;
-use warnings;
 
-our $VERSION = '1.31';
+our $VERSION = '0.65';
 
 my %u2p;
 my $wt = 0x8000;

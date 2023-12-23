@@ -16,7 +16,6 @@ BEGIN {
 # This tests against that.
 
 use strict;
-use warnings;
 
 
 # Can't use Test.pm, that's a 5.005 thing.
@@ -59,14 +58,14 @@ ERR
 }
 
 {
-    # line 63
+    # line 62
     like("foo", "not a regex");
     $TB->is_eq($out->read, <<OUT);
 not ok 2
 OUT
 
     $TB->is_eq($err->read, <<OUT);
-#   Failed test at $0 line 63.
+#   Failed test at $0 line 62.
 #     'not a regex' doesn't look much like a regex to me.
 OUT
 

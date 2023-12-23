@@ -1,10 +1,6 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-}
+# $RCSfile: push.t,v $$Revision: 4.1 $$Date: 92/08/07 18:28:13 $
 
 @tests = split(/\n/, <<EOF);
 0 3,			0 1 2,		3 4 5 6 7
@@ -20,41 +16,16 @@ BEGIN {
 -4,			4 5 6 7,	0 1 2 3
 EOF
 
-plan tests => 10 + @tests*2;
+print "1..", 2 + @tests, "\n";
 die "blech" unless @tests;
 
 @x = (1,2,3);
 push(@x,@x);
-is( join(':',@x), '1:2:3:1:2:3', 'push array onto array');
-push(@x,4);
-is( join(':',@x), '1:2:3:1:2:3:4', 'push integer onto array');
+if (join(':',@x) eq '1:2:3:1:2:3') {print "ok 1\n";} else {print "not ok 1\n";}
+push(x,4);
+if (join(':',@x) eq '1:2:3:1:2:3:4') {print "ok 2\n";} else {print "not ok 2\n";}
 
-# test autovivification
-push @$undef1, 1, 2, 3;
-is( join(':',@$undef1), '1:2:3', 'autovivify array');
-
-# test implicit dereference errors
-eval "push 42, 0, 1, 2, 3";
-like ( $@, qr/must be array/, 'push onto a literal integer');
-
-$hashref = { };
-eval q{ push $hashref, 0, 1, 2, 3 };
-like( $@, qr/Experimental push on scalar is now forbidden/, 'push onto a hashref');
-
-eval q{ push bless([]), 0, 1, 2, 3 };
-like( $@, qr/Experimental push on scalar is now forbidden/, 'push onto a blessed array ref');
-
-$test = 13;
-
-# test context
-{
-    my($first, $second) = ([1], [2]);
-    sub two_things { return +($first, $second) }
-    push @{ two_things() }, 3;
-    is( join(':',@$first), '1', "\$first = [ @$first ];");
-    is( join(':',@$second), '2:3', "\$second = [ @$second ]");
-}
-
+$test = 3;
 foreach $line (@tests) {
     ($list,$get,$leave) = split(/,\t*/,$line);
     ($pos, $len, @list) = split(' ',$list);
@@ -67,21 +38,12 @@ foreach $line (@tests) {
     else {
 	@got = splice(@x, $pos);
     }
-    is(join(':',@got), join(':',@get),   "got: @got == @get");
-    is(join(':',@x),   join(':',@leave), "left: @x == @leave");
+    if (join(':',@got) eq join(':',@get) &&
+	join(':',@x) eq join(':',@leave)) {
+	print "ok ",$test++,"\n";
+    }
+    else {
+	print "not ok ",$test++," got: @got == @get left: @x == @leave\n";
+    }
 }
 
-# See RT#131000
-{
-    local $@;
-    my @readonly_array = 10..11;
-    Internals::SvREADONLY(@readonly_array, 1);
-    eval { push @readonly_array, () };
-    is $@, '', "can push empty list onto readonly array";
-
-    eval { push @readonly_array, 9 };
-    like $@, qr/^Modification of a read-only value/,
-        "croak when pushing onto readonly array";
-}
-
-1;  # this file is require'd by lib/tie-stdpush.t

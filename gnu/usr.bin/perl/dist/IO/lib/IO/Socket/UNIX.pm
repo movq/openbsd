@@ -7,11 +7,13 @@
 package IO::Socket::UNIX;
 
 use strict;
+our(@ISA, $VERSION);
 use IO::Socket;
 use Carp;
 
-our @ISA = qw(IO::Socket);
-our $VERSION = "1.49";
+@ISA = qw(IO::Socket);
+$VERSION = "1.23";
+$VERSION = eval $VERSION;
 
 IO::Socket::UNIX->register_domain( AF_UNIX );
 
@@ -30,10 +32,6 @@ sub configure {
     $sock->socket(AF_UNIX, $type, 0) or
 	return undef;
 
-    if(exists $arg->{Blocking}) {
-        $sock->blocking($arg->{Blocking}) or
-	    return undef;
-    }
     if(exists $arg->{Local}) {
 	my $addr = sockaddr_un($arg->{Local});
 	$sock->bind($addr) or
@@ -76,28 +74,6 @@ IO::Socket::UNIX - Object interface for AF_UNIX domain sockets
 
     use IO::Socket::UNIX;
 
-    my $SOCK_PATH = "$ENV{HOME}/unix-domain-socket-test.sock";
-
-    # Server:
-    my $server = IO::Socket::UNIX->new(
-        Type => SOCK_STREAM(),
-        Local => $SOCK_PATH,
-        Listen => 1,
-    );
-
-    my $count = 1;
-    while (my $conn = $server->accept()) {
-        $conn->print("Hello " . ($count++) . "\n");
-    }
-
-    # Client:
-    my $client = IO::Socket::UNIX->new(
-        Type => SOCK_STREAM(),
-        Peer => $SOCK_PATH,
-    );
-
-    # Now read and write from $client
-
 =head1 DESCRIPTION
 
 C<IO::Socket::UNIX> provides an object interface to creating and using sockets
@@ -120,24 +96,18 @@ C<IO::Socket::UNIX> provides.
     Type    	Type of socket (eg SOCK_STREAM or SOCK_DGRAM)
     Local   	Path to local fifo
     Peer    	Path to peer fifo
-    Listen  	Queue size for listen
+    Listen  	Create a listen socket
 
 If the constructor is only passed a single argument, it is assumed to
 be a C<Peer> specification.
 
-If the C<Listen> argument is given, but false, the queue size will be set to 5.
 
-If the constructor fails it will return C<undef> and set the
-C<$IO::Socket::errstr> package variable to contain an error message.
+ NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 
-    $sock = IO::Socket::UNIX->new(...)
-        or die "Cannot create socket - $IO::Socket::errstr\n";
+As of VERSION 1.18 all IO::Socket objects have autoflush turned on
+by default. This was not the case with earlier releases.
 
-For legacy reasons the error message is also set into the global C<$@>
-variable, and you may still find older code which looks here instead.
-
-    $sock = IO::Socket::UNIX->new(...)
-        or die "Cannot create socket - $@\n";
+ NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 
 =back
 
@@ -162,7 +132,7 @@ L<Socket>, L<IO::Socket>
 =head1 AUTHOR
 
 Graham Barr. Currently maintained by the Perl Porters.  Please report all
-bugs at L<https://github.com/Perl/perl5/issues>.
+bugs to <perl5-porters@perl.org>.
 
 =head1 COPYRIGHT
 

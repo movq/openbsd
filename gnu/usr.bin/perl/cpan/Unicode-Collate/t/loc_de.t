@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -8,7 +13,7 @@ BEGIN {
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..50\n"; }
+BEGIN { $| = 1; print "1..32\n"; }
 my $count = 0;
 sub ok ($;$) {
     my $p = my $r = shift;
@@ -23,17 +28,14 @@ use Unicode::Collate::Locale;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
-my $auml = _pack_U(0xE4);
-my $Auml = _pack_U(0xC4);
-my $ouml = _pack_U(0xF6);
-my $Ouml = _pack_U(0xD6);
-my $uuml = _pack_U(0xFC);
-my $Uuml = _pack_U(0xDC);
+my $auml = pack 'U', 0xE4;
+my $Auml = pack 'U', 0xC4;
+my $ouml = pack 'U', 0xF6;
+my $Ouml = pack 'U', 0xD6;
+my $uuml = pack 'U', 0xFC;
+my $Uuml = pack 'U', 0xDC;
 
 my $objDe = Unicode::Collate::Locale->
     new(locale => 'DE', normalization => undef);
@@ -69,29 +71,17 @@ ok($objDe->gt("O\x{308}", "O"));
 ok($objDe->gt("u\x{308}", "u"));
 ok($objDe->gt("U\x{308}", "U"));
 
-# 20
-
 ok($objDe->eq("a\x{308}", "A\x{308}"));
 ok($objDe->eq("o\x{308}", "O\x{308}"));
 ok($objDe->eq("u\x{308}", "U\x{308}"));
 
-ok($objDe->eq($auml, $Auml));
-ok($objDe->eq($ouml, $Ouml));
-ok($objDe->eq($uuml, $Uuml));
-
-# 26
+# 23
 
 $objDe->change(level => 3);
 
 ok($objDe->lt("a\x{308}", "A\x{308}"));
 ok($objDe->lt("o\x{308}", "O\x{308}"));
 ok($objDe->lt("u\x{308}", "U\x{308}"));
-
-ok($objDe->lt($auml, $Auml));
-ok($objDe->lt($ouml, $Ouml));
-ok($objDe->lt($uuml, $Uuml));
-
-# 32
 
 ok($objDe->eq("a\x{308}", $auml));
 ok($objDe->eq("A\x{308}", $Auml));
@@ -100,19 +90,4 @@ ok($objDe->eq("O\x{308}", $Ouml));
 ok($objDe->eq("u\x{308}", $uuml));
 ok($objDe->eq("U\x{308}", $Uuml));
 
-# 38
-
-ok($objDe->eq("a\x{308}\x{304}", "\x{1DF}"));
-ok($objDe->eq("A\x{308}\x{304}", "\x{1DE}"));
-ok($objDe->eq("o\x{308}\x{304}", "\x{22B}"));
-ok($objDe->eq("O\x{308}\x{304}", "\x{22A}"));
-ok($objDe->eq("u\x{308}\x{300}", "\x{1DC}"));
-ok($objDe->eq("U\x{308}\x{300}", "\x{1DB}"));
-ok($objDe->eq("u\x{308}\x{301}", "\x{1D8}"));
-ok($objDe->eq("U\x{308}\x{301}", "\x{1D7}"));
-ok($objDe->eq("u\x{308}\x{304}", "\x{1D6}"));
-ok($objDe->eq("U\x{308}\x{304}", "\x{1D5}"));
-ok($objDe->eq("u\x{308}\x{30C}", "\x{1DA}"));
-ok($objDe->eq("U\x{308}\x{30C}", "\x{1D9}"));
-
-# 50
+# 32

@@ -5,16 +5,13 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test::More;
 use File::Spec;
 use App::Prove;
-use Text::ParseWords qw(shellwords);
 
 my @SCHEDULE;
 
 BEGIN {
-    my $t_dir = File::Spec->catdir('t');
 
     # to add a new test to proverun, just list the name of the file in
     # t/sample-tests and a name for the test.  The rest is handled
@@ -27,15 +24,14 @@ BEGIN {
             name => 'Passing TODO',
         },
     );
-
-    # TODO: refactor this and add in a test for:
-    # prove --source 'File: {extensions: [.1]}' t/source_tests/source.1
-
-    for my $test (@tests) {
+    foreach my $test (@tests) {
 
         # let's fully expand that filename
-        $test->{file}
-          = File::Spec->catfile( $t_dir, 'sample-tests', $test->{file} );
+        $test->{file} = File::Spec->catfile(
+            't',
+            'sample-tests',
+            $test->{file}
+        );
     }
     @SCHEDULE = (
         map {
@@ -47,9 +43,6 @@ BEGIN {
                         {   merge   => undef,
                             command => [
                                 'PERL',
-                                $ENV{HARNESS_PERL_SWITCHES}
-                                ? shellwords( $ENV{HARNESS_PERL_SWITCHES} )
-                                : (),
                                 $_->{file},
                             ],
                             setup    => \'CODE',
@@ -59,7 +52,7 @@ BEGIN {
                     ]
                 ]
             }
-          } @tests,
+          } @tests
     );
 
     plan tests => @SCHEDULE * 3;
@@ -68,8 +61,9 @@ BEGIN {
 # Waaaaay too much boilerplate
 
 package FakeProve;
+use vars qw( @ISA );
 
-use base qw( App::Prove );
+@ISA = qw( App::Prove );
 
 sub new {
     my $class = shift;
@@ -94,11 +88,13 @@ package main;
     # Patch TAP::Parser::Iterator::Process
     my @call_log = ();
 
-    no warnings qw(redefine once);
+    local $^W;    # no warnings
 
     my $orig_new = TAP::Parser::Iterator::Process->can('new');
 
-    *TAP::Parser::Iterator::Process::new = sub {
+    # Avoid "used only once" warning
+    *TAP::Parser::Iterator::Process::new
+      = *TAP::Parser::Iterator::Process::new = sub {
         push @call_log, [ 'new', @_ ];
 
         # And then new turns round and tramples on our args...

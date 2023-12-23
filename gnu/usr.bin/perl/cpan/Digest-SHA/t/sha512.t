@@ -1,7 +1,22 @@
 use strict;
-use Digest::SHA qw(sha512_hex);
+
+my $MODULE;
+
+BEGIN {
+	$MODULE = ($ENV{PERL_CORE} || -d "src") ? "Digest::SHA" : "Digest::SHA::PurePerl";
+	eval "require $MODULE" || die $@;
+	$MODULE->import(qw(sha512_hex));
+}
+
+BEGIN {
+	if ($ENV{PERL_CORE}) {
+		chdir 't' if -d 't';
+		@INC = '../lib';
+	}
+}
 
 my @vecs = map { eval } <DATA>;
+$#vecs -= 2 if $MODULE eq "Digest::SHA::PurePerl";
 
 my $numtests = scalar(@vecs) / 2;
 print "1..$numtests\n";
@@ -14,7 +29,7 @@ for (1 .. $numtests) {
 	unless ($skip) {
 		print "not " unless sha512_hex($data) eq $digest;
 	}
-	print "ok ", $_, $skip ? " # skip: no 64-bit" : "", "\n";
+	print "ok ", $_, $skip ? " # skip: no 64 bit" : "", "\n";
 }
 
 __DATA__

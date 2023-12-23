@@ -1,14 +1,15 @@
 package TAP::Formatter::Console::ParallelSession;
 
 use strict;
-use warnings;
 use File::Spec;
 use File::Path;
+use TAP::Formatter::Console::Session;
 use Carp;
 
-use base 'TAP::Formatter::Console::Session';
-
 use constant WIDTH => 72;    # Because Eric says
+use vars qw($VERSION @ISA);
+
+@ISA = qw(TAP::Formatter::Console::Session);
 
 my %shared;
 
@@ -41,11 +42,11 @@ TAP::Formatter::Console::ParallelSession - Harness output delegate for parallel 
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 
@@ -93,7 +94,7 @@ sub _output_ruler {
 
     my $ruler = sprintf '===( %7d;%d  ', $context->{tests}, $now - $start;
 
-    for my $active ( @{ $context->{active} } ) {
+    foreach my $active ( @{ $context->{active} } ) {
         my $parser  = $active->parser;
         my $tests   = $parser->tests_run;
         my $planned = $parser->tests_planned || '?';

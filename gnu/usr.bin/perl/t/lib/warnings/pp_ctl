@@ -205,24 +205,6 @@ DESTROY { die "@{$_[0]} foo bar" }
 { bless ['B'], 'Foo' for 1..10 }
 EXPECT
 	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) A foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
-	(in cleanup) B foo bar at - line 4.
 	(in cleanup) B foo bar at - line 4.
 ########
 # pp_ctl.c
@@ -237,7 +219,19 @@ EXPECT
 use warnings;
 eval 'print $foo';
 EXPECT
-Use of uninitialized value $foo in print at (eval 1) line 1.
+Use of uninitialized value in print at (eval 1) line 1.
+########
+# pp_ctl.c
+use warnings 'portable';
+eval 'use 5.6.1';
+EXPECT
+v-string in use/require non-portable at (eval 1) line 2.
+########
+# pp_ctl.c
+use warnings 'portable';
+eval 'use v5.6.1';
+EXPECT
+v-string in use/require non-portable at (eval 1) line 2.
 ########
 # pp_ctl.c
 use warnings;
@@ -246,21 +240,3 @@ use warnings;
     eval 'print $foo';
 }
 EXPECT
-########
-# pp_ctl.c
-use warnings;
-eval 'use 5.006; use 5.10.0';
-EXPECT
-########
-# SKIP ? !$Config{default_inc_includes_dot}
-# NAME check warning for do with no . in @INC
-open my $fh, ">", "dounknown";
-close $fh;
-do "dounknown";
-do "./dounknown";
-no warnings 'deprecated';
-do "dounknown";
-do "./dounknown";
-unlink "dounknown";
-EXPECT
-do "dounknown" failed, '.' is no longer in @INC; did you mean do "./dounknown" at - line 3.

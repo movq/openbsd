@@ -1,9 +1,11 @@
 package EmptyParser;
 
 use strict;
-use warnings;
+use vars qw(@ISA);
 
-use base qw(TAP::Parser);
+use TAP::Parser ();
+
+@ISA = qw(TAP::Parser);
 
 sub _initialize {
     shift->_set_defaults;
@@ -13,7 +15,11 @@ sub _initialize {
 sub _set_defaults {
     my $self = shift;
 
-    for my $key (qw( grammar_class result_factory_class )) {
+    for my $key (
+        qw( source_class perl_source_class grammar_class
+        iterator_factory_class result_factory_class )
+      )
+    {
         my $default_method = "_default_$key";
         $self->$key( $self->$default_method() );
     }

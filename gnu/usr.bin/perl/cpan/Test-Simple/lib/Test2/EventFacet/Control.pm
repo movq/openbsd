@@ -2,10 +2,10 @@ package Test2::EventFacet::Control;
 use strict;
 use warnings;
 
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 BEGIN { require Test2::EventFacet; our @ISA = qw(Test2::EventFacet) }
-use Test2::Util::HashBase qw{ -global -terminate -halt -has_callback -encoding -phase };
+use Test2::Util::HashBase qw{ -global -terminate -halt -has_callback -encoding };
 
 1;
 
@@ -65,13 +65,6 @@ True if the C<callback($hub)> method on the event should be called.
 
 This can be used to change the encoding from this event onward.
 
-=item $phase = $control->{phase}
-
-=item $phase = $control->phase()
-
-Used to signal that a phase change has occurred. Currently only the perl END
-phase is signaled.
-
 =back
 
 =head1 SOURCE
@@ -97,7 +90,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

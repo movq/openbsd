@@ -1,16 +1,16 @@
 #!./perl
 
 BEGIN {
+    if ($^O eq 'VMS') {
+        print "1..0 # Skip on VMS -- too picky about line endings for record-oriented pipes\n";
+        exit;
+    }
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-    skip_all("VMS too picky about line endings for record-oriented pipes")
-	if $^O eq 'VMS';
+    @INC = '../lib';
 }
 
 use strict;
-
-++$|;
+require './test.pl';
 
 my $Perl = which_perl();
 
@@ -37,8 +37,8 @@ $c += 6;	# Tests with sleep()...
 
 print "1..$c\n";
 
-my $set_out = "binmode STDOUT, ':raw'";
-$set_out = "binmode STDOUT, ':raw:crlf'"
+my $set_out = '';
+$set_out = "binmode STDOUT, ':crlf'"
     if defined  $main::use_crlf && $main::use_crlf == 1;
 
 sub testread ($$$$$$$) {
@@ -74,24 +74,13 @@ sub testpipe ($$$$$$) {
     open $fh, '-|', qq[$Perl -we "$set_out;print for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
   } elsif ($how_w eq 'print/flush') {
     # shell-neutral and miniperl-enabled autoflush? qq(\x24\x7c) eq '$|'
-    if ($::IS_ASCII) {
-        open $fh, '-|', qq[$Perl -we "$set_out;eval qq(\\x24\\x7c = 1) or die;print for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
-    }
-    else {
-        open $fh, '-|', qq[$Perl -we "$set_out;eval qq(\\x5b\\x4f = 1) or die;print for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
-    }
+    open $fh, '-|', qq[$Perl -we "$set_out;eval qq(\\x24\\x7c = 1) or die;print for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
   } elsif ($how_w eq 'syswrite') {
     ### How to protect \$_
-    if ($::IS_ASCII) {
-        open $fh, '-|', qq[$Perl -we "$set_out;eval qq(sub w {syswrite STDOUT, \\x24_} 1) or die; w() for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
-    }
-    else {
-        open $fh, '-|', qq[$Perl -we "$set_out;eval qq(sub w {syswrite STDOUT, \\x5B_} 1) or die; w() for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
-    }
+    open $fh, '-|', qq[$Perl -we "$set_out;eval qq(sub w {syswrite STDOUT, \\x24_} 1) or die; w() for grep length, split /(.{1,$write_c})/s, qq($quoted)"] or die "open: $!";
   } else {
     die "Unrecognized write: '$how_w'";
   }
-  binmode $fh; # remove any :utf8 set by PERL_UNICODE
   binmode $fh, ':crlf'
       if defined $main::use_crlf && $main::use_crlf == 1;
   testread($fh, $str, $read_c, $how_r, $write_c, $how_w, "pipe$why");
@@ -101,10 +90,8 @@ sub testfile ($$$$$$) {
   my ($str, $write_c, $read_c, $how_w, $how_r, $why) = @_;
   my @data = grep length, split /(.{1,$write_c})/s, $str;
 
-  my $filename = tempfile();
-  open my $fh, '>', $filename or die "open: > $filename: $!";
+  open my $fh, '>', 'io_io.tmp' or die;
   select $fh;
-  binmode $fh; # remove any :utf8 set by PERL_UNICODE
   binmode $fh, ':crlf' 
       if defined $main::use_crlf && $main::use_crlf == 1;
   if ($how_w eq 'print') {	# AUTOFLUSH???
@@ -119,21 +106,14 @@ sub testfile ($$$$$$) {
     die "Unrecognized write: '$how_w'";
   }
   close $fh or die "close: $!";
-  open $fh, '<', $filename or die "open: < $filename: $!";
-  binmode $fh;
+  open $fh, '<', 'io_io.tmp' or die;
   binmode $fh, ':crlf'
       if defined $main::use_crlf && $main::use_crlf == 1;
   testread($fh, $str, $read_c, $how_r, $write_c, $how_w, "file$why");
 }
 
 # shell-neutral and miniperl-enabled autoflush? qq(\x24\x7c) eq '$|'
-my $fh;
-if ($::IS_ASCII) {
-    open $fh, '-|', qq[$Perl -we "eval qq(\\x24\\x7c = 1) or die; binmode STDOUT; sleep 1, print for split //, qq(a\nb\n\nc\n\n\n)"] or die "open: $!";
-}
-else {
-    open $fh, '-|', qq[$Perl -we "eval qq(\\x5B\\x4f = 1) or die; binmode STDOUT; sleep 1, print for split //, qq(a\nb\n\nc\n\n\n)"] or die "open: $!";
-}
+open my $fh, '-|', qq[$Perl -we "eval qq(\\x24\\x7c = 1) or die; binmode STDOUT; sleep 1, print for split //, qq(a\nb\n\nc\n\n\n)"] or die "open: $!";
 ok(1, 'open pipe');
 binmode $fh, q(:crlf);
 ok(1, 'binmode');
@@ -142,16 +122,7 @@ my @c;
 push @c, ord $c while $c = getc $fh;
 ok(1, 'got chars');
 is(scalar @c, 9, 'got 9 chars');
-is("@c", join(" ", utf8::unicode_to_native(97),
-                   utf8::unicode_to_native(10),
-                   utf8::unicode_to_native(98),
-                   utf8::unicode_to_native(10),
-                   utf8::unicode_to_native(10),
-                   utf8::unicode_to_native(99),
-                   utf8::unicode_to_native(10),
-                   utf8::unicode_to_native(10),
-                   utf8::unicode_to_native(10)),
-         'got expected chars');
+is("@c", '97 10 98 10 10 99 10 10 10', 'got expected chars');
 ok(close($fh), 'close');
 
 for my $s (1..2) {
@@ -171,5 +142,7 @@ for my $s (1..2) {
     }
   }
 }
+
+unlink 'io_io.tmp';
 
 1;

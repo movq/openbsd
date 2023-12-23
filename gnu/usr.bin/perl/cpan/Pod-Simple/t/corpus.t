@@ -10,10 +10,6 @@ BEGIN {
       print "1..0 # Skip: Encode was not built\n";
       exit 0;
     }
-    if (ord("A") != 65) {
-      print "1..0 # Skip: Encode not fully working on non-ASCII platforms at this time\n";
-      exit 0;
-    }
 }
 
 #use Pod::Simple::Debug (10);
@@ -22,7 +18,6 @@ use Test qw(plan ok skip);
 use File::Spec;
 #use utf8;
 use strict;
-use warnings;
 my(@testfiles, %xmlfiles, %wouldxml);
 #use Pod::Simple::Debug (10);
 BEGIN { 
@@ -172,8 +167,7 @@ foreach my $f (@testfiles) {
   if($skippy) {
     skip $skippy, 0;
   } else {
-    print STDERR "#  $outfilename and $xml don't match!\n";
-    print STDERR `diff $xml $outfilename`;
+    print "#  $outfilename and $xml don't match!\n";
     ok 0;
   }
 

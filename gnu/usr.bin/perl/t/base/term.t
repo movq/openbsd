@@ -1,23 +1,17 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-}
+# $RCSfile: term.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:07 $
 
-print "1..7\n";
+print "1..6\n";
 
 # check "" interpretation
 
 $x = "\n";
-# 10 is ASCII/Iso Latin, 13 is Mac OS, 21 is EBCDIC.
-if ($x eq chr(10)) { print "ok 1\n";}
-elsif ($x eq chr(13)) { print "ok 1 # Mac OS\n"; }
-elsif ($x eq chr(21)) { print "ok 1 # EBCDIC\n"; }
-else {print "not ok 1\n";}
+if ($x lt ' ') {print "ok 1\n";} else {print "not ok 1\n";}
 
 # check `` processing
 
-$x = `$^X -le "print 'hi there'"`;
+$x = `echo hi there`;
 if ($x eq "hi there\n") {print "ok 2\n";} else {print "not ok 2\n";}
 
 # check $#array
@@ -33,20 +27,16 @@ if ($#x == '1') {print "ok 3\n";} else {print "not ok 3\n";}
 $x = 1;
 if ($x == '1') {print "ok 4\n";} else {print "not ok 4\n";}
 
-$x = '1E2';
-if (($x | 1) == 101) {print "ok 5\n";} else {print "not ok 5\n";}
-
 # check <> pseudoliteral
 
 open(try, "/dev/null") || open(try,"nla0:") || (die "Can't open /dev/null.");
-
 if (<try> eq '') {
-    print "ok 6\n";
+    print "ok 5\n";
 }
 else {
-    print "not ok 6\n";
+    print "not ok 5\n";
     die "/dev/null IS NOT A CHARACTER SPECIAL FILE!!!!\n" unless -c '/dev/null';
 }
 
-open(try, "harness") || (die "Can't open harness.");
-if (<try> ne '') {print "ok 7\n";} else {print "not ok 7\n";}
+open(try, "../Configure") || (die "Can't open ../Configure.");
+if (<try> ne '') {print "ok 6\n";} else {print "not ok 6\n";}

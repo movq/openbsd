@@ -42,8 +42,7 @@ is_deeply(
             {
                 about => {
                     details => 'pass',
-                    package => 'Test2::Event::Pass',
-                    eid     => $one->subevents->[0]->eid,
+                    package => 'Test2::Event::Pass'
                 },
                 assert => {
                     details => 'xxx',
@@ -54,34 +53,5 @@ is_deeply(
     },
     "Got facet data"
 );
-
-$one->{start_stamp} = 123;
-$one->{stop_stamp} = 456;
-
-$facet_data = $one->facet_data;
-is_deeply(
-    $facet_data->{parent},
-    {
-        hid      => "1-1-1",
-        buffered => 1,
-        start_stamp => 123,
-        stop_stamp  => 456,
-        children => [
-            {
-                about => {
-                    details => 'pass',
-                    package => 'Test2::Event::Pass',
-                    eid     => $one->subevents->[0]->eid,
-                },
-                assert => {
-                    details => 'xxx',
-                    pass    => 1
-                },
-            }
-        ],
-    },
-    "Got facet data with stamps"
-);
-
 
 done_testing;

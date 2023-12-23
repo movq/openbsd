@@ -11,10 +11,10 @@ use Config;
 my $perlio_log = "perlio$$.txt";
 
 skip_all "DEBUGGING build required"
-  unless $::Config{ccflags} =~ /(?<!\S)-DDEBUGGING(?!\S)/
+  unless $::Config{ccflags} =~ /DEBUGGING/
          or $^O eq 'VMS' && $::Config{usedebugging_perl} eq 'Y';
 
-plan tests => 9;
+plan tests => 8;
 
 END {
     unlink $perlio_log;
@@ -26,21 +26,16 @@ END {
                   { stderr => 1 },
                   "No perlio debug file without -Di...");
     ok(!-e $perlio_log, "...no perlio.txt found");
-    fresh_perl_like("print qq(hello\n)", qr/\nEXECUTING...\n{1,2}hello\n?/,
+    fresh_perl_is("print qq(hello\n)", "\nEXECUTING...\n\nhello\n",
                   { stderr => 1, switches => [ "-Di" ] },
                   "Perlio debug file with both -Di and PERLIO_DEBUG...");
     ok(-e $perlio_log, "... perlio debugging file found with -Di and PERLIO_DEBUG");
 
     unlink $perlio_log;
-    SKIP: {
-        if (not $Config{taint_support}) {
-            skip("Your perl was built without taint support", 2);
-        }
-        fresh_perl_like("print qq(hello\n)", qr/define raw/,
-                      { stderr => 1, switches => [ "-TDi" ] },
-                      "Perlio debug output to stderr with -TDi (with PERLIO_DEBUG)...");
-        ok(!-e $perlio_log, "...no perlio debugging file found");
-    }
+    fresh_perl_like("print qq(hello\n)", qr/define raw/,
+                  { stderr => 1, switches => [ "-TDi" ] },
+                  "Perlio debug output to stderr with -TDi (with PERLIO_DEBUG)...");
+    ok(!-e $perlio_log, "...no perlio debugging file found");
 }
 
 {
@@ -52,10 +47,4 @@ END {
                     { stderr => 1, switches => [ '-TDi' ] },
                    "Perlio debug output to STDERR with -TDi (no PERLIO_DEBUG)");
 }
-{
-    # -DXv tests
-    fresh_perl_like('{ my $n=1; *foo= sub () { $n }; }',
-                    qr/To: CV=0x[a-f0-9]+ \(ANON\), OUTSIDE=0x0 \(null\)/,
-                    { stderr => 1, switches => [ '-DXv' ] },
-                    "-DXv does not assert when dumping anonymous constant sub");
-}
+

@@ -6,7 +6,7 @@ BEGIN {
     @INC = '../lib';
 }
 
-use Test::More;
+use Test::More tests => 54;
 
 use English qw( -no_match_vars ) ;
 use Config;
@@ -33,7 +33,11 @@ $ORS = "\n";
 
 {
 	local(*IN, *OUT);
-        pipe(IN, OUT);
+	if ($^O ne 'dos') {
+	    pipe(IN, OUT);
+	} else {
+	    open(OUT, ">en.tmp");
+	}
 	select(OUT);
 	$| = 1;
 	print 'ok', '7';
@@ -44,6 +48,7 @@ $ORS = "\n";
 	my $close = close OUT;
 	ok( !($close) == $CHILD_ERROR, '$CHILD_ERROR should be false' );
 
+	open(IN, "<en.tmp") if ($^O eq 'dos');
 	my $foo = <IN>;
 	like( $foo, qr/ok 7/, '$OFS' );
 
@@ -82,7 +87,6 @@ is( $PROGRAM_NAME, $0, '$PROGRAM_NAME' );
 is( $BASETIME, $^T, '$BASETIME' );
 
 is( $PERL_VERSION, $^V, '$PERL_VERSION' );
-is( $OLD_PERL_VERSION, $], '$OLD_PERL_VERSION' );
 is( $DEBUGGING, $^D, '$DEBUGGING' );
 
 is( $WARNING, 0, '$WARNING' );
@@ -95,7 +99,7 @@ ok( $SYSTEM_FD_MAX >= 2, '$SYSTEM_FD_MAX should be at least 2' );
 is( $INPLACE_EDIT, '.inplace', '$INPLACE_EDIT' );
 
 'aabbcc' =~ /(.{2}).+(.{2})(?{ 9 })/;
-is( $LAST_PAREN_MATCH, 'cc', '$LAST_PAREN_MATCH' );
+is( $LAST_PAREN_MATCH, 'cc', '$LAST_PARENT_MATCH' );
 is( $LAST_REGEXP_CODE_RESULT, 9, '$LAST_REGEXP_CODE_RESULT' );
 
 is( $LAST_MATCH_START[1], 0, '@LAST_MATCH_START' );
@@ -124,7 +128,7 @@ is( $keys[1], 'd|e|f', '$SUBSCRIPT_SEPARATOR' );
 eval { is( $EXCEPTIONS_BEING_CAUGHT, 1, '$EXCEPTIONS_BEING_CAUGHT' ) };
 ok( !$EXCEPTIONS_BEING_CAUGHT, '$EXCEPTIONS_BEING_CAUGHT should be false' );
 
-eval { local *F; my $f = 'asdasdasd'; ++$f while -e $f; open(F, '<', $f); };
+eval { local *F; my $f = 'asdasdasd'; ++$f while -e $f; open(F, $f); };
 is( $OS_ERROR, $ERRNO, '$OS_ERROR' );
 ok( $OS_ERROR{ENOENT}, '%OS_ERROR (ENOENT should be set)' );
 
@@ -138,12 +142,6 @@ main::is( $PREMATCH, 'a', '$PREMATCH defined' );
 main::is( $MATCH, 'b', '$MATCH defined' );
 main::is( $POSTMATCH, 'c', '$POSTMATCH defined' );
 
-{
-    my $s = "xyz";
-    $s =~ s/y/t$MATCH/;
-    main::is( $s, "xtyz", '$MATCH defined in right side of s///' );
-}
-
 package C;
 
 use English qw( -no_match_vars ) ;
@@ -153,19 +151,6 @@ use English qw( -no_match_vars ) ;
 main::ok( !$PREMATCH, '$PREMATCH disabled' );
 main::ok( !$MATCH, '$MATCH disabled' );
 main::ok( !$POSTMATCH, '$POSTMATCH disabled' );
-
-
-# Check that both variables change when localized.
-{
-    local $LIST_SEPARATOR = "wibble";
-    ::is $", 'wibble', '$" changes when $LIST_SEPARATOR is localized';
-
-    local $" = 'frooble';
-    ::is $LIST_SEPARATOR, 'frooble';
-}
-
-# because of the 'package' statements above, we have to prefix Test::More::
-Test::More::done_testing();
 
 __END__
 This is a line.

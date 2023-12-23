@@ -3,21 +3,20 @@
 # Tests for 256-color support.
 #
 # Copyright 2012 Kurt Starsinic <kstarsinic@gmail.com>
-# Copyright 2012-2013, 2016, 2020 Russ Allbery <rra@cpan.org>
+# Copyright 2012, 2013 Russ Allbery <rra@cpan.org>
 #
-# SPDX-License-Identifier: GPL-1.0-or-later OR Artistic-1.0-Perl
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
 
-use 5.008;
 use strict;
 use warnings;
 
-use Test::More tests => 100;
+use Test::More tests => 92;
 
 # Load the module.
 BEGIN {
     delete $ENV{ANSI_COLORS_ALIASES};
     delete $ENV{ANSI_COLORS_DISABLED};
-    delete $ENV{NO_COLOR};
     use_ok('Term::ANSIColor', qw(:constants256 color uncolor colorvalid));
 }
 
@@ -30,7 +29,7 @@ is(color('grey0'),  "\e[38;5;232m", 'Grey 0');
 is(color('grey23'), "\e[38;5;255m", 'Grey 23');
 
 # Errors at boundary cases.
-for my $color (qw(ansi256 rgb600 rgb060 rgb006 rgb666 rgb999 rgb0000 grey24)) {
+for my $color (qw(ansi16 rgb600 rgb060 rgb006 rgb666 rgb999 rgb0000 grey24)) {
     my $output = eval { color($color) };
     is($output, undef, 'color on unknown color name fails');
     like(
@@ -50,7 +49,6 @@ for my $color (qw(ansi0 ansi15 rgb000 rgb555 grey0 grey23)) {
 is_deeply([uncolor('38;5;0')],        ['ansi0'],    'uncolor of ansi0');
 is_deeply([uncolor("\e[38;5;231m")],  ['rgb555'],   'uncolor of rgb555');
 is_deeply([uncolor("\e[48;05;001m")], ['on_ansi1'], 'uncolor with leading 0s');
-is_deeply([uncolor("\e[38;5;233")],   ['grey1'],    'uncolor of grey1');
 
 # An invalid 256-color code should report an error on the part that makes it
 # invalid.  Check truncated codes (should report on the 38 or 48), codes with
@@ -81,13 +79,12 @@ while (my ($escape, $invalid) = each %uncolor_tests) {
 }
 
 # Test all the variations of a few different constants.
-is((ANSI0 't'),   "\e[38;5;0mt",   'Basic constant works for ANSI0');
-is((ANSI15 't'),  "\e[38;5;15mt",  '...and for ANSI15');
-is((ANSI255 't'), "\e[38;5;255mt", '...and for ANSI255');
-is((RGB000 't'),  "\e[38;5;16mt",  '...and for RGB000');
-is((RGB555 't'),  "\e[38;5;231mt", '...and for RGB555');
-is((GREY0 't'),   "\e[38;5;232mt", '...and for GREY0');
-is((GREY23 't'),  "\e[38;5;255mt", '...and for GREY23');
+is((ANSI0 't'),  "\e[38;5;0mt",   'Basic constant works for ANSI0');
+is((ANSI15 't'), "\e[38;5;15mt",  '...and for ANSI15');
+is((RGB000 't'), "\e[38;5;16mt",  '...and for RGB000');
+is((RGB555 't'), "\e[38;5;231mt", '...and for RGB555');
+is((GREY0 't'),  "\e[38;5;232mt", '...and for GREY0');
+is((GREY23 't'), "\e[38;5;255mt", '...and for GREY23');
 
 # Do the same for disabled colors.
 local $ENV{ANSI_COLORS_DISABLED} = 1;
@@ -98,16 +95,6 @@ is(RGB555, q{}, '...and for RGB555');
 is(GREY0,  q{}, '...and for GREY0');
 is(GREY23, q{}, '...and for GREY23');
 delete $ENV{ANSI_COLORS_DISABLED};
-
-# Do the same with NO_COLOR.
-local $ENV{NO_COLOR} = 0;
-is(ANSI0,  q{}, 'NO_COLOR works for ANSI0');
-is(ANSI15, q{}, '...and for ANSI15');
-is(RGB000, q{}, '...and for RGB000');
-is(RGB555, q{}, '...and for RGB555');
-is(GREY0,  q{}, '...and for GREY0');
-is(GREY23, q{}, '...and for GREY23');
-delete $ENV{NO_COLOR};
 
 # Do the same for AUTORESET.
 $Term::ANSIColor::AUTORESET = 1;

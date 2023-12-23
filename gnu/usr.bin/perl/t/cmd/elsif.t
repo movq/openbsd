@@ -1,5 +1,7 @@
 #!./perl
 
+# $RCSfile: elsif.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:08 $
+
 sub foo {
     if ($_[0] == 1) {
 	1;

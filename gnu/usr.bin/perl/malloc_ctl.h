@@ -1,5 +1,5 @@
-#ifndef PERL_MALLOC_CTL_H_
-#  define PERL_MALLOC_CTL_H_
+#ifndef MALLOC_CTL_H
+#  define MALLOC_CTL_H
 
 struct perl_mstats {
     UV *nfree;
@@ -14,12 +14,14 @@ struct perl_mstats {
 };
 typedef struct perl_mstats perl_mstats_t;
 
-PERL_CALLCONV Malloc_t Perl_malloc (MEM_SIZE nbytes);
-PERL_CALLCONV Malloc_t Perl_calloc (MEM_SIZE elements, MEM_SIZE size);
-PERL_CALLCONV Malloc_t Perl_realloc (Malloc_t where, MEM_SIZE nbytes);
+START_EXTERN_C
+Malloc_t Perl_malloc (MEM_SIZE nbytes);
+Malloc_t Perl_calloc (MEM_SIZE elements, MEM_SIZE size);
+Malloc_t Perl_realloc (Malloc_t where, MEM_SIZE nbytes);
 /* 'mfree' rather than 'free', since there is already a 'perl_free'
  * that causes clashes with case-insensitive linkers */
-PERL_CALLCONV Free_t   Perl_mfree (Malloc_t where);
+Free_t   Perl_mfree (Malloc_t where);
+END_EXTERN_C
 
 #ifndef NO_MALLOC_DYNAMIC_CFG
 

@@ -24,4 +24,3 @@ I_LIMITS
 I_STDARG
 index
 rindex
-const

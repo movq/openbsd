@@ -10,25 +10,25 @@ IO::File - supply object methods for filehandles
 
     use IO::File;
 
-    $fh = IO::File->new();
+    $fh = new IO::File;
     if ($fh->open("< file")) {
         print <$fh>;
         $fh->close;
     }
 
-    $fh = IO::File->new("> file");
+    $fh = new IO::File "> file";
     if (defined $fh) {
         print $fh "bar\n";
         $fh->close;
     }
 
-    $fh = IO::File->new("file", "r");
+    $fh = new IO::File "file", "r";
     if (defined $fh) {
         print <$fh>;
         undef $fh;       # automatically closes the file
     }
 
-    $fh = IO::File->new("file", O_WRONLY|O_APPEND);
+    $fh = new IO::File "file", O_WRONLY|O_APPEND;
     if (defined $fh) {
         print $fh "corge\n";
 
@@ -124,20 +124,22 @@ Derived from FileHandle.pm by Graham Barr E<lt>F<gbarr@pobox.com>E<gt>.
 
 =cut
 
-use 5.008_001;
+use 5.006_001;
 use strict;
+our($VERSION, @EXPORT, @EXPORT_OK, @ISA);
 use Carp;
 use Symbol;
 use SelectSaver;
 use IO::Seekable;
+use File::Spec;
 
 require Exporter;
 
-our @ISA = qw(IO::Handle IO::Seekable Exporter);
+@ISA = qw(IO::Handle IO::Seekable Exporter);
 
-our $VERSION = "1.48";
+$VERSION = "1.14";
 
-our @EXPORT = @IO::Seekable::EXPORT;
+@EXPORT = @IO::Seekable::EXPORT;
 
 eval {
     # Make all Fcntl O_XXX constants available for importing
@@ -155,7 +157,7 @@ sub new {
     my $type = shift;
     my $class = ref($type) || $type || "IO::File";
     @_ >= 0 && @_ <= 3
-	or croak "usage: $class->new([FILENAME [,MODE [,PERMS]]])";
+	or croak "usage: new $class [FILENAME [,MODE [,PERMS]]]";
     my $fh = $class->SUPER::new();
     if (@_) {
 	$fh->open(@_)

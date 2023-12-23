@@ -4,7 +4,7 @@
 #
 # Initially this test file just checked that CORE::foo got correctly
 # deparsed as CORE::foo, hence the name. It's since been expanded
-# to fully test both CORE:: versus none, plus that any arguments
+# to fully test both CORE:: verses none, plus that any arguments
 # are correctly deparsed. It also cross-checks against regen/keywords.pl
 # to make sure we've tested all keywords, and with the correct strength.
 #
@@ -36,88 +36,76 @@ BEGIN {
 
 use strict;
 use Test::More;
+plan tests => 2071;
 
 use feature (sprintf(":%vd", $^V)); # to avoid relying on the feature
                                     # logic to add CORE::
+no warnings 'experimental::autoderef';
 use B::Deparse;
-my $deparse = B::Deparse->new();
+my $deparse = new B::Deparse;
 
 my %SEEN;
-my %SEEN_STRENGTH;
+my %SEEN_STRENGH;
 
-# For a given keyword, create a sub of that name,
-# then deparse 3 different assignment expressions
-# using that keyword.  See if the $expr we get back
-# matches $expected_expr.
+# for a given keyword, create a sub of that name, then
+# deparse "() = $expr", and see if it matches $expected_expr
 
 sub testit {
-    my ($keyword, $expr, $expected_expr, $lexsub) = @_;
+    my ($keyword, $expr, $expected_expr) = @_;
 
     $expected_expr //= $expr;
     $SEEN{$keyword} = 1;
+
 
     # lex=0:   () = foo($a,$b,$c)
     # lex=1:   my ($a,$b); () = foo($a,$b,$c)
     # lex=2:   () = foo(my $a,$b,$c)
     for my $lex (0, 1, 2) {
-        next if ($lex and $keyword =~ /local|our|state|my/);
-        my $vars = $lex == 1 ? 'my($a, $b, $c, $d, $e);' . "\n    " : "";
+	if ($lex) {
+	    next if $keyword =~ /local|our|state|my/;
+	}
+	my $vars = $lex == 1 ? 'my($a, $b, $c, $d, $e);' . "\n    " : "";
 
-        if ($lex == 2) {
-            my $repl = 'my $a';
-            if ($expr =~ 'CORE::do') {
-                # do foo() is a syntax error, so B::Deparse emits
-                # do (foo()), but does not distinguish between foo and my,
-                # because it is too complicated.
-                $repl = '(my $a)';
-            }
-            s/\$a/$repl/ for $expr, $expected_expr;
-        }
+	if ($lex == 2) {
+	    my $repl = 'my $a';
+	    if ($expr =~ /\bmap\(\$a|CORE::(chomp|chop|lstat|stat)\b/) {
+		# for some reason only these do:
+		#  'foo my $a, $b,' => foo my($a), $b, ...
+		#  the rest don't parenthesize the my var.
+		$repl = 'my($a)';
+	    }
+	    s/\$a/$repl/ for $expr, $expected_expr;
+	}
 
-        my $desc = "$keyword: lex=$lex $expr => $expected_expr";
-        $desc .= " (lex sub)" if $lexsub;
+	my $desc = "$keyword: lex=$lex $expr => $expected_expr";
 
-        my $code;
-        my $code_ref;
-        if ($lexsub) {
-            package lexsubtest;
-            no warnings 'experimental::lexical_subs';
-            use feature 'lexical_subs';
-            no strict 'vars';
-            $code = "sub { state sub $keyword; ${vars}() = $expr }";
-            $code = "use feature 'isa';\n$code" if $keyword eq "isa";
-            $code = "use feature 'switch';\n$code" if $keyword eq "break";
-            $code_ref = eval $code or die "$@ in $expr";
-        }
-        else {
-            package test;
-            use subs ();
-            import subs $keyword;
-            $code = "no strict 'vars'; sub { ${vars}() = $expr }";
-            $code = "use feature 'isa';\n$code" if $keyword eq "isa";
-            $code = "use feature 'switch';\n$code" if $keyword eq "break";
-            $code_ref = eval $code or die "$@ in $expr";
-        }
 
-        my $got_text = $deparse->coderef2text($code_ref);
+	my $code_ref;
+	{
+	    package test;
+	    use subs ();
+	    import subs $keyword;
+	    $code_ref = eval "no strict 'vars'; sub { ${vars}() = $expr }"
+			    or die "$@ in $expr";
+	}
 
-        unless ($got_text =~ /
-    package (?:lexsub)?test;
-(?:    BEGIN \{\$\{\^WARNING_BITS\} = "[^"]+"\}
-)?    use strict 'refs', 'subs';
+	my $got_text = $deparse->coderef2text($code_ref);
+
+	unless ($got_text =~ /^{
+    package test;
+    BEGIN {\${\^WARNING_BITS} = "[^"]*"}
+    use strict 'refs', 'subs';
     use feature [^\n]+
-(?:    (?:CORE::)?state sub \w+;
-)?    \Q$vars\E\(\) = (.*)
-\}/s) {
-            ::fail($desc);
-            ::diag("couldn't extract line from boilerplate\n");
-            ::diag($got_text);
-            return;
-        }
+    \Q$vars\E\(\) = (.*)
+}/s) {
+	    ::fail($desc);
+	    ::diag("couldn't extract line from boilerplate\n");
+	    ::diag($got_text);
+	    return;
+	}
 
-        my $got_expr = $1;
-        is $got_expr, $expected_expr, $desc
-            or ::diag("ORIGINAL CODE:\n$code");;
+	my $got_expr = $1;
+	is $got_expr, $expected_expr, $desc;
     }
 }
 
@@ -125,13 +113,14 @@ sub testit {
 # Deparse can't distinguish 'and' from '&&' etc
 my %infix_map = qw(and && or ||);
 
-# Test a keyword that is a binary infix operator, like 'cmp'.
+
+# test a keyword that is a binary infix operator, like 'cmp'.
 # $parens - "$a op $b" is deparsed as "($a op $b)"
 # $strong - keyword is strong
 
 sub do_infix_keyword {
     my ($keyword, $parens, $strong) = @_;
-    $SEEN_STRENGTH{$keyword} = $strong;
+    $SEEN_STRENGH{$keyword} = $strong;
     my $expr = "(\$a $keyword \$b)";
     my $nkey = $infix_map{$keyword} // $keyword;
     my $expr = "(\$a $keyword \$b)";
@@ -142,20 +131,13 @@ sub do_infix_keyword {
     # so no need for Deparse to disambiguate with CORE::
     testit $keyword, "(\$a CORE::$keyword \$b)", $exp;
     testit $keyword, "(\$a $keyword \$b)", $exp;
-    testit $keyword, "(\$a CORE::$keyword \$b)", $exp, 1;
-    testit $keyword, "(\$a $keyword \$b)", $exp, 1;
     if (!$strong) {
-        # B::Deparse fully qualifies any sub whose name is a keyword,
-        # imported or not, since the importedness may not be reproduced by
-        # the deparsed code.  x is special.
-        my $pre = "test::" x ($keyword ne 'x');
-        testit $keyword, "$keyword(\$a, \$b)", "$pre$keyword(\$a, \$b);";
+	testit $keyword, "$keyword(\$a, \$b)", "$keyword(\$a, \$b);";
     }
-    testit $keyword, "$keyword(\$a, \$b)", "$keyword(\$a, \$b);", 1;
 }
 
-# Test a keyword that is a standard op/function, like 'index(...)'.
-# $narg   - how many args to test it with
+# test a keyword that is as tandard op/function, like 'index(...)'.
+# narg    - how many args to test it with
 # $parens - "foo $a, $b" is deparsed as "foo($a, $b)"
 # $dollar - an extra '$_' arg will appear in the deparsed output
 # $strong - keyword is strong
@@ -164,38 +146,21 @@ sub do_infix_keyword {
 sub do_std_keyword {
     my ($keyword, $narg, $parens, $dollar, $strong) = @_;
 
-    $SEEN_STRENGTH{$keyword} = $strong;
+    $SEEN_STRENGH{$keyword} = $strong;
 
     for my $core (0,1) { # if true, add CORE:: to keyword being deparsed
-        for my $lexsub (0,1) { # if true, define lex sub
-            my @code;
-            for my $do_exp(0, 1) { # first create expr, then expected-expr
-                my @args = map "\$$_", (undef,"a".."z")[1..$narg];
-                push @args, '$_'
-                    if $dollar && $do_exp && ($strong && !$lexsub or $core);
-                my $args = join(', ', @args);
-                # XXX $lex_parens is temporary, until lex subs are
-                #     deparsed properly.
-                my $lex_parens =
-                    !$core && $do_exp && $lexsub && $keyword ne 'map';
-                $args = ((!$core && !$strong) || $parens || $lex_parens)
-                    ? "($args)"
-                    :  @args
-                        ? " $args"
-                        : "";
-                push @code, (
-                    ($core && !($do_exp && $strong))
-                    ? "CORE::"
-                    : $lexsub && $do_exp
-                        ? "CORE::" x $core
-                        : $do_exp && !$core && !$strong
-                            ? "test::"
-                            : ""
-                ) . "$keyword$args;";
-            }
-            # code[0]: to run; code[1]: expected
-            testit $keyword, @code, $lexsub;
-        }
+	my @code;
+	for my $do_exp(0, 1) { # first create expr, then expected-expr
+	    my @args = map "\$$_", (undef,"a".."z")[1..$narg];
+	    push @args, '$_' if $dollar && $do_exp && ($strong || $core);
+	    my $args = join(', ', @args);
+	    $args = ((!$core && !$strong) || $parens)
+			? "($args)"
+			:  @args ? " $args" : "";
+	    push @code, (($core && !($do_exp && $strong)) ? "CORE::" : "")
+						       	. "$keyword$args;";
+	}
+	testit $keyword, @code; # code[0]: to run; code[1]: expected
     }
 }
 
@@ -218,18 +183,18 @@ while (<DATA>) {
     die "unrecognised flag(s): '$flags'" unless $flags =~ /^-?$/;
 
     if ($args eq 'B') { # binary infix
-        die "$keyword: binary (B) op can't have '\$' flag\\n" if $dollar;
-        die "$keyword: binary (B) op can't have '1' flag\\n" if $invert1;
-        do_infix_keyword($keyword, $parens, $strong);
+	die "$keyword: binary (B) op can't have '\$' flag\\n" if $dollar;
+	die "$keyword: binary (B) op can't have '1' flag\\n" if $invert1;
+	do_infix_keyword($keyword, $parens, $strong);
     }
     else {
-        my @narg = split //, $args;
-        for my $n (0..$#narg) {
-            my $narg = $narg[$n];
-            my $p = $parens;
-            $p = !$p if ($n == 0 && $invert1);
-            do_std_keyword($keyword, $narg, $p, (!$n && $dollar), $strong);
-        }
+	my @narg = split //, $args;
+	for my $n (0..$#narg) {
+	    my $narg = $narg[$n];
+	    my $p = $parens;
+	    $p = !$p if ($n == 0 && $invert1);
+	    do_std_keyword($keyword, $narg, $p, (!$n && $dollar), $strong);
+	}
     }
 }
 
@@ -240,32 +205,22 @@ testit dbmopen  => 'CORE::dbmopen(%foo, $bar, $baz);';
 testit dbmclose => 'CORE::dbmclose %foo;';
 
 testit delete   => 'CORE::delete $h{\'foo\'};', 'delete $h{\'foo\'};';
-testit delete   => 'CORE::delete $h{\'foo\'};', undef, 1;
-testit delete   => 'CORE::delete @h{\'foo\'};', undef, 1;
-testit delete   => 'CORE::delete $h[0];', undef, 1;
-testit delete   => 'CORE::delete @h[0];', undef, 1;
 testit delete   => 'delete $h{\'foo\'};',       'delete $h{\'foo\'};';
 
 # do is listed as strong, but only do { block } is strong;
 # do $file is weak,  so test it separately here
 testit do       => 'CORE::do $a;';
-testit do       => 'do $a;',                    'test::do($a);';
+testit do       => 'do $a;',                     'do($a);';
 testit do       => 'CORE::do { 1 }',
 		   "do {\n        1\n    };";
-testit do       => 'CORE::do { 1 }',
-		   "CORE::do {\n        1\n    };", 1;
 testit do       => 'do { 1 };',
 		   "do {\n        1\n    };";
 
 testit each     => 'CORE::each %bar;';
-testit each     => 'CORE::each @foo;';
 
 testit eof      => 'CORE::eof();';
 
 testit exists   => 'CORE::exists $h{\'foo\'};', 'exists $h{\'foo\'};';
-testit exists   => 'CORE::exists $h{\'foo\'};', undef, 1;
-testit exists   => 'CORE::exists &foo;', undef, 1;
-testit exists   => 'CORE::exists $h[0];', undef, 1;
 testit exists   => 'exists $h{\'foo\'};',       'exists $h{\'foo\'};';
 
 testit exec     => 'CORE::exec($foo $bar);';
@@ -278,31 +233,16 @@ testit glob     => 'CORE::glob $a;',              'CORE::glob($a);';
 testit grep     => 'CORE::grep { $a } $b, $c',    'grep({$a;} $b, $c);';
 
 testit keys     => 'CORE::keys %bar;';
-testit keys     => 'CORE::keys @bar;';
 
 testit map      => 'CORE::map { $a } $b, $c',    'map({$a;} $b, $c);';
 
 testit not      => '3 unless CORE::not $a && $b;';
-
-testit pop      => 'CORE::pop @foo;';
-
-testit push     => 'CORE::push @foo;',           'CORE::push(@foo);';
-testit push     => 'CORE::push @foo, 1;',        'CORE::push(@foo, 1);';
-testit push     => 'CORE::push @foo, 1, 2;',     'CORE::push(@foo, 1, 2);';
 
 testit readline => 'CORE::readline $a . $b;';
 
 testit readpipe => 'CORE::readpipe $a + $b;';
 
 testit reverse  => 'CORE::reverse sort(@foo);';
-
-testit shift    => 'CORE::shift @foo;';
-
-testit splice   => q{CORE::splice @foo;},                 q{CORE::splice(@foo);};
-testit splice   => q{CORE::splice @foo, 0;},              q{CORE::splice(@foo, 0);};
-testit splice   => q{CORE::splice @foo, 0, 1;},           q{CORE::splice(@foo, 0, 1);};
-testit splice   => q{CORE::splice @foo, 0, 1, 'a';},      q{CORE::splice(@foo, 0, 1, 'a');};
-testit splice   => q{CORE::splice @foo, 0, 1, 'a', 'b';}, q{CORE::splice(@foo, 0, 1, 'a', 'b');};
 
 # note that the test does '() = split...' which is why the
 # limit is optimised to 1
@@ -320,12 +260,7 @@ testit sub      => 'CORE::sub { $a, $b }',
 
 testit system   => 'CORE::system($foo $bar);';
 
-testit unshift  => 'CORE::unshift @foo;',        'CORE::unshift(@foo);';
-testit unshift  => 'CORE::unshift @foo, 1;',     'CORE::unshift(@foo, 1);';
-testit unshift  => 'CORE::unshift @foo, 1, 2;',  'CORE::unshift(@foo, 1, 2);';
-
 testit values   => 'CORE::values %bar;';
-testit values   => 'CORE::values @foo;';
 
 
 # XXX These are deparsed wrapped in parens.
@@ -354,6 +289,7 @@ my %not_tested = map { $_ => 1} qw(
     __FILE__
     __LINE__
     __PACKAGE__
+    __SUB__
     AUTOLOAD
     BEGIN
     CHECK
@@ -362,12 +298,9 @@ my %not_tested = map { $_ => 1} qw(
     END
     INIT
     UNITCHECK
-    catch
     default
-    defer
     else
     elsif
-    finally
     for
     foreach
     format
@@ -384,7 +317,6 @@ my %not_tested = map { $_ => 1} qw(
     require
     s
     tr
-    try
     unless
     until
     use
@@ -392,6 +324,8 @@ my %not_tested = map { $_ => 1} qw(
     while
     y
 );
+
+
 
 # Sanity check against keyword data:
 # make sure we haven't missed any keywords,
@@ -416,7 +350,7 @@ SKIP:
 		diag("keyword '$key' seen in $file, but not tested here!!");
 		$pass = 0;
 	    }
-	    if (exists $SEEN_STRENGTH{$key} and $SEEN_STRENGTH{$key} != $strength) {
+	    if (exists $SEEN_STRENGH{$key} and $SEEN_STRENGH{$key} != $strength) {
 		diag("keyword '$key' strengh as seen in $file doen't match here!!");
 		$pass = 0;
 	    }
@@ -434,7 +368,7 @@ SKIP:
     ok($pass, "sanity checks");
 }
 
-done_testing();
+
 
 __DATA__
 #
@@ -492,7 +426,7 @@ defined          01    $+
 die              @     p1
 # do handled specially
 # dump handled specially
-# each handled specially
+each             1     - # also tested specially
 endgrent         0     -
 endhostent       0     -
 endnetent        0     -
@@ -550,9 +484,8 @@ hex              01    $
 index            23    p
 int              01    $
 ioctl            3     p
-isa              B     -
-join             13    p
-# keys handled specially
+join             123   p
+keys             1     - # also tested specially
 kill             123   p
 # last handled specially
 lc               01    $
@@ -585,12 +518,12 @@ ord              01    $
 our              123   p+ # skip with 0 args, as our() => ()
 pack             123   p
 pipe             2     p
-pop              0     1 # also tested specially
+pop              01    1
 pos              01    $+
 print            @     p$+
 printf           @     p$+
 prototype        1     +
-# push handled specially
+push             123   p
 quotemeta        01    $
 rand             01    -
 read             34    p
@@ -631,7 +564,7 @@ setprotoent      1     -
 setpwent         0     -
 setservent       1     -
 setsockopt       4     p
-shift            0     1 # also tested specially
+shift            01    1
 shmctl           3     p
 shmget           3     p
 shmread          4     p
@@ -641,14 +574,14 @@ sin              01    $
 sleep            01    -
 socket           4     p
 socketpair       5     p
-sort             12    p+
+sort             @     p+
 # split handled specially
-# splice handled specially
+splice           12345 p
 sprintf          123   p
 sqrt             01    $
 srand            01    -
 stat             01    $
-state            123   p1+ # skip with 0 args, as state() => ()
+state            123   p+ # skip with 0 args, as state() => ()
 study            01    $+
 # sub handled specially
 substr           234   p
@@ -672,10 +605,10 @@ umask            01    -
 undef            01    +
 unlink           @     p$
 unpack           12    p$
-# unshift handled specially
+unshift          1     p
 untie            1     -
 utime            @     p1
-# values handled specially
+values           1     - # also tested specially
 vec              3     p
 wait             0     -
 waitpid          2     p

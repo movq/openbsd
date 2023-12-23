@@ -1,7 +1,4 @@
 ### Module::Load test suite ###
-use strict;
-use warnings;
-
 BEGIN {
     if( $ENV{PERL_CORE} ) {
         chdir '../lib/Module/Load' if -d '../lib/Module/Load';
@@ -11,6 +8,7 @@ BEGIN {
 
 BEGIN { chdir 't' if -d 't' }
 
+use strict;
 use lib qw[../lib to_load];
 use Module::Load;
 use Test::More 'no_plan';
@@ -19,7 +17,6 @@ use Test::More 'no_plan';
 {   my @Map = (
         # module               flag diagnostic
         [q|Must::Be::Loaded|,   1,  'module'],
-        [q|::Must::Be::Loaded|, 1,  'module'],
         [q|LoadMe.pl|,          0,  'file'  ],
         [q|LoadIt|,             1,  'ambiguous module'  ],
         [q|ToBeLoaded|,         0,  'ambiguous file'    ],

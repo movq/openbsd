@@ -15,8 +15,7 @@ const char *			T_PV
 char *			        T_PV
 uLong				T_UV
 z_off_t				T_UV
-STRLEN				T_UV
-DualType            T_DUAL
+DualType                	T_DUAL
 int_undef           T_IV_undef
 
 
@@ -41,6 +40,7 @@ T_PTROBJ_AV
         else if (sv_derived_from($arg, \"${ntype}\")) {
             IV tmp = SvIV(getInnerObject($arg)) ;
             $var = INT2PTR($type, tmp);
+            
         }
         else
             croak(\"$var is not of type ${ntype}\")
@@ -57,3 +57,5 @@ T_DUAL
 
 T_PV
         sv_setpv((SV*)$arg, $var);
+
+

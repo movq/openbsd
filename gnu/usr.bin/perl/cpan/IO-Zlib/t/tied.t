@@ -1,20 +1,21 @@
-use strict;
-use warnings;
-
 use IO::Zlib;
 
 sub ok
 {
     my ($no, $ok) = @_ ;
+
+    #++ $total ;
+    #++ $totalBad unless $ok ;
+
     print "ok $no\n" if $ok ;
     print "not ok $no\n" unless $ok ;
 }
 
-my $name = "test.gz";
+$name="test.gz";
 
 print "1..11\n";
 
-my $hello = <<EOM ;
+$hello = <<EOM ;
 hello world
 this is a test
 EOM
@@ -23,8 +24,6 @@ ok(1, tie *OUT, "IO::Zlib", $name, "wb");
 ok(2, printf OUT "%s - %d\n", "hello", 123);
 ok(3, print OUT $hello);
 ok(4, untie *OUT);
-
-my $uncomp;
 
 ok(5, tie *IN, "IO::Zlib", $name, "rb");
 ok(6, !eof IN);

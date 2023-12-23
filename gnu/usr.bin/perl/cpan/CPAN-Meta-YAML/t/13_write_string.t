@@ -1,8 +1,7 @@
 use strict;
 use warnings;
 use lib 't/lib/';
-use Test::More 0.88;
-use SubtestCompat;
+use Test::More 0.99;
 use TestUtils;
 use TestBridge;
 

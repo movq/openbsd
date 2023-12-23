@@ -1,47 +1,28 @@
+#!/usr/bin/perl -w                                         # -*- perl -*-
+
 BEGIN {
-    use File::Spec::Functions ':ALL';
-    @INC = map { rel2abs($_) }
-             (qw| ./lib ./t/lib ../../lib |);
+    require "t/pod2html-lib.pl";
 }
 
 use strict;
-use warnings;
-use Test::More;
-use Testing qw( setup_testing_dir xconvert );
 use Cwd;
-
-my $debug = 0;
-my $startdir = cwd();
-END { chdir($startdir) or die("Cannot change back to $startdir: $!"); }
-my ($expect_raw, $args);
-{ local $/; $expect_raw = <DATA>; }
-
-my $tdir = setup_testing_dir( {
-    debug       => $debug,
-} );
+use File::Spec::Functions;
+use Test::More tests => 1;
 
 my $cwd = cwd();
 
-$args = {
-    podstub => "feature",
-    description => "misc pod-html features",
-    expect => $expect_raw,
-    p2h => {
-        backlink        => 1,
-        css             => 'style.css',
-        header          => 1, # no styling b/c of --ccs
-        htmldir         => catdir($cwd, 't'),
-        noindex         => 1,
-        podpath         => 't',
-        podroot         => $cwd,
-        title           => 'a title',
-        quiet           => 1,
-    },
-    debug => $debug,
-};
-xconvert($args);
-
-done_testing;
+convert_n_test("feature", "misc pod-html features", 
+ "--backlink",
+ "--css=style.css",
+ "--header", # no styling b/c of --ccs
+ "--htmldir=". catdir($cwd, 't'),
+ "--noindex",
+ "--podpath=t",
+ "--podroot=$cwd",
+ "--title=a title",
+ "--quiet",
+ "--libpods=perlguts:perlootut",
+ );
 
 __DATA__
 <?xml version="1.0" ?>

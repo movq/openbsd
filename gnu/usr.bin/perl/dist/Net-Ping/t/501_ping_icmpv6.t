@@ -46,11 +46,7 @@ if (0 && !Net::Ping::_isroot()) {
 SKIP: {
   skip "icmpv6 ping requires root privileges.", 1
     if !Net::Ping::_isroot() or $^O eq 'MSWin32';
-  my $p;
-  eval { $p = new Net::Ping "icmpv6"; };
-  if ($@) {
-    plan skip_all => "no icmpv6 on this machine $@";
-  }
+  my $p = new Net::Ping "icmpv6";
   # message_type can't be used
   eval {
     $p->message_type();

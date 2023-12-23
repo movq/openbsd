@@ -11,7 +11,7 @@ if [ -z "$RTPASSWD" ]; then
 fi
 
 
-export RTSERVER=https://rt.perl.org/
+export RTSERVER=http://rt.perl.org/rt3
 
 
 

@@ -2,14 +2,12 @@
 
 # 2003-04-09 Tels: test the offset method from 0.94
 
-use strict;
-use warnings;
-
 use Test::More;
+use strict;
 use File::Spec;
 
 use POSIX 'SEEK_SET';
-my $file = "tf42-$$.txt";
+my $file = "tf$$.txt";
 
 BEGIN
   {

@@ -1,7 +1,7 @@
 #!./perl -T
 
 use warnings;
-our ( @warnings, $fagwoosh, $putt, $kloong );
+use vars qw{ @warnings $fagwoosh $putt $kloong};
 BEGIN {				# ...and save 'em for later
     $SIG{'__WARN__'} = sub { push @warnings, @_ }
 }
@@ -9,7 +9,7 @@ END { @warnings && print STDERR join "\n- ", "accumulated warnings:", @warnings 
 
 
 use strict;
-use Test::More tests => 109;
+use Test::More tests => 96;
 my $TB = Test::More->builder;
 
 BEGIN { use_ok('constant'); }
@@ -92,13 +92,11 @@ is ZERO3, '0.0';
 cmp_ok(abs(PI - 3.1416), '<', 0.0001);
 is Other::PI, 3.141;
 
-# Test that constant.pm can create a dualvar out of $!
-use constant A_DUALVAR_CONSTANT => $! = 7;
-cmp_ok A_DUALVAR_CONSTANT, '==', 7;
-# Make sure we have an error message string.  It does not
-# matter that 7 means different things on different platforms.
-# If this test fails, then either constant.pm or $! is broken:
-cmp_ok length(A_DUALVAR_CONSTANT), '>', 6;
+use constant E2BIG => $! = 7;
+cmp_ok E2BIG, '==', 7;
+# This is something like "Arg list too long", but the actual message
+# text may vary, so we can't test much better than this.
+cmp_ok length(E2BIG), '>', 6;
 
 is @warnings, 0 or diag join "\n- ", "unexpected warning:", @warnings;
 @warnings = ();		# just in case
@@ -124,7 +122,7 @@ print $output CCODE->($curr_test+4);
 $TB->current_test($curr_test+4);
 
 eval q{ CCODE->{foo} };
-ok scalar($@ =~ /^Constant is not a HASH|Not a HASH reference/);
+ok scalar($@ =~ /^Constant is not a HASH/);
 
 
 # Allow leading underscore
@@ -169,6 +167,7 @@ ok $constant::declared{'Other::IN_OTHER_PACK'};
 @warnings = ();
 eval q{
     no warnings;
+    #local $^W if $] < 5.006;
     use warnings 'constant';
     use constant 'BEGIN' => 1 ;
     use constant 'INIT' => 1 ;
@@ -348,78 +347,3 @@ $kloong = 'schlozhauer';
     eval 'use constant undef, 5; 1';
     like $@, qr/\ACan't use undef as constant name at /;
 }
-
-# Constants created by "use constant" should be read-only
-
-# This test will not test what we are trying to test if this glob entry
-# exists already, so test that, too.
-ok !exists $::{immutable};
-eval q{
-    use constant immutable => 23987423874;
-    for (immutable) { eval { $_ = 22 } }
-    like $@, qr/^Modification of a read-only value attempted at /,
-	'constant created in empty stash slot is immutable';
-    eval { for (immutable) { ${\$_} = 432 } };
-    SKIP: {
-	require Config;
-	if ($Config::Config{useithreads}) {
-	    skip "fails under threads", 1 if $] < 5.019003;
-	}
-	like $@, qr/^Modification of a read-only value attempted at /,
-	    '... and immutable through refgen, too';
-    }
-};
-() = \&{"immutable"}; # reify
-eval 'for (immutable) { $_ = 42 }';
-like $@, qr/^Modification of a read-only value attempted at /,
-    '... and after reification';
-
-# Use an existing stash element this time.
-# This next line is sufficient to trigger a different code path in
-# constant.pm.
-() = \%::existing_stash_entry;
-use constant existing_stash_entry => 23987423874;
-for (existing_stash_entry) { eval { $_ = 22 } }
-like $@, qr/^Modification of a read-only value attempted at /,
-    'constant created in existing stash slot is immutable';
-eval { for (existing_stash_entry) { ${\$_} = 432 } };
-SKIP: {
-    if ($Config::Config{useithreads}) {
-	skip "fails under threads", 1 if $] < 5.019003;
-    }
-    like $@, qr/^Modification of a read-only value attempted at /,
-	'... and immutable through refgen, too';
-}
-
-# Test that list constants are also immutable.  This only works under
-# 5.19.3 and later.
-SKIP: {
-    skip "fails under 5.19.2 and earlier", 3 if $] < 5.019003;
-    local $TODO = "disabled for now; breaks CPAN; see perl #119045";
-    use constant constant_list => 1..2;
-    for (constant_list) {
-	my $num = $_;
-	eval { $_++ };
-	like $@, qr/^Modification of a read-only value attempted at /,
-	    "list constant has constant elements ($num)";
-    }
-    undef $TODO;
-    # Whether values are modifiable or no, modifying them should not affect
-    # future return values.
-    my @values;
-    for(1..2) {
-	for ((constant_list)[0]) {
-	    push @values, $_;
-	    eval {$_++};
-	}
-    }
-    is $values[1], $values[0],
-	'modifying list const elements does not affect future retavls';
-}
-
-use constant { "tahi" => 1, "rua::rua" => 2, "toru'toru" => 3 };
-use constant "wha::wha" => 4;
-is tahi, 1, 'unqualified constant declared with constants in other pkgs';
-is rua::rua, 2, 'constant declared with ::';
-is toru::toru, 3, "constant declared with '";
-is wha::wha, 4, 'constant declared by itself with ::';

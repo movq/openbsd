@@ -5,29 +5,18 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 
 use Test::More;
 use IO::c55Capture;
 
-use Config;
-use POSIX;
-
 use TAP::Harness;
-
-# This is done to prevent the colors environment variables from
-# interfering.
-local $ENV{HARNESS_SUMMARY_COLOR_FAIL};
-local $ENV{HARNESS_SUMMARY_COLOR_SUCCESS};
-delete $ENV{HARNESS_SUMMARY_COLOR_FAIL};
-delete $ENV{HARNESS_SUMMARY_COLOR_SUCCESS};
 
 my $HARNESS = 'TAP::Harness';
 
 my $source_tests = 't/source_tests';
 my $sample_tests = 't/sample-tests';
 
-plan tests => 133;
+plan tests => 119;
 
 # note that this test will always pass when run through 'prove'
 ok $ENV{HARNESS_ACTIVE},  'HARNESS_ACTIVE env variable should be set';
@@ -67,9 +56,9 @@ is $@, '', '... and calling it with non-existent libs is fine';
 ok my $harness = $HARNESS->new,
   'Calling new() without arguments should succeed';
 
-for my $test_args ( get_arg_sets() ) {
+foreach my $test_args ( get_arg_sets() ) {
     my %args = %$test_args;
-    for my $key ( sort keys %args ) {
+    foreach my $key ( sort keys %args ) {
         $args{$key} = $args{$key}{in};
     }
     ok my $harness = $HARNESS->new( {%args} ),
@@ -85,7 +74,7 @@ for my $test_args ( get_arg_sets() ) {
 
 {
     my @output;
-    no warnings 'redefine';
+    local $^W;
     local *TAP::Formatter::Base::_output = sub {
         my $self = shift;
         push @output => grep { $_ ne '' }
@@ -133,7 +122,7 @@ for my $test_args ( get_arg_sets() ) {
     my $status           = pop @output;
     my $expected_status  = qr{^Result: PASS$};
     my $summary          = pop @output;
-    my $expected_summary = qr{^Files=1, Tests=1, +\d+ wallclock secs};
+    my $expected_summary = qr{^Files=1, Tests=1,  \d+ wallclock secs};
 
     is_deeply \@output, \@expected, '... and the output should be correct';
     like $status, $expected_status,
@@ -166,7 +155,7 @@ for my $test_args ( get_arg_sets() ) {
     $status           = pop @output;
     $expected_status  = qr{^Result: PASS$};
     $summary          = pop @output;
-    $expected_summary = qr{^Files=1, Tests=1, +\d+ wallclock secs};
+    $expected_summary = qr{^Files=1, Tests=1,  \d+ wallclock secs};
 
     is_deeply \@output, \@expected, '... and the output should be correct';
     like $status, $expected_status,
@@ -207,7 +196,7 @@ for my $test_args ( get_arg_sets() ) {
     $status           = pop @output;
     $expected_status  = qr{^Result: PASS$};
     $summary          = pop @output;
-    $expected_summary = qr{^Files=2, Tests=2, +\d+ wallclock secs};
+    $expected_summary = qr{^Files=2, Tests=2,  \d+ wallclock secs};
 
     is_deeply \@output, \@expected, '... and the output should be correct';
     like $status, $expected_status,
@@ -230,7 +219,7 @@ for my $test_args ( get_arg_sets() ) {
     $status           = pop @output;
     $expected_status  = qr{^Result: PASS$};
     $summary          = pop @output;
-    $expected_summary = qr/^Files=1, Tests=1, +\d+ wallclock secs/;
+    $expected_summary = qr/^Files=1, Tests=1,  \d+ wallclock secs/;
 
     is_deeply \@output, \@expected, '... and the output should be correct';
     like $status, $expected_status,
@@ -251,7 +240,7 @@ for my $test_args ( get_arg_sets() ) {
     $status           = pop @output;
     $expected_status  = qr{^Result: PASS$};
     $summary          = pop @output;
-    $expected_summary = qr/^Files=1, Tests=1, +\d+ wallclock secs/;
+    $expected_summary = qr/^Files=1, Tests=1,  \d+ wallclock secs/;
 
     is_deeply \@output, \@expected, '... and the output should be correct';
     like $status, $expected_status,
@@ -387,7 +376,7 @@ for my $test_args ( get_arg_sets() ) {
 
     $status           = pop @output;
     $summary          = pop @output;
-    $expected_summary = qr/^Files=1, Tests=3, +\d+ wallclock secs/;
+    $expected_summary = qr/^Files=1, Tests=3,  \d+ wallclock secs/;
 
     is_deeply \@output, \@expected, '... and the output should be correct';
     like $summary, $expected_summary,
@@ -497,7 +486,7 @@ for my $test_args ( get_arg_sets() ) {
 
     like $status, qr{^Result: FAIL$},
       '... and the status line should be correct';
-    $expected_summary = qr/^Files=1, Tests=2, +\d+ wallclock secs/;
+    $expected_summary = qr/^Files=1, Tests=2,  \d+ wallclock secs/;
     is_deeply \@output, \@expected, '... and the output should be correct';
 
     # check the status output for no tests
@@ -521,20 +510,8 @@ for my $test_args ( get_arg_sets() ) {
 
     like $status, qr{^Result: FAIL$},
       '... and the status line should be correct';
-    $expected_summary = qr/^Files=1, Tests=2, +\d+ wallclock secs/;
+    $expected_summary = qr/^Files=1, Tests=2,  \d+ wallclock secs/;
     is_deeply \@output, \@expected, '... and the output should be correct';
-
-    SKIP: {
-        skip "Skipping for now because of ASAN failures", 1; # Core-only modification
-        skip "No SIGSEGV on $^O", 1 if $^O eq 'MSWin32' or $Config::Config{'sig_name'} !~ m/SEGV/;
-
-        @output = ();
-        _runtests( $harness_failures, "$sample_tests/segfault" );
-
-        my $out_str = join q<>, @output;
-
-        like( $out_str, qr<SEGV>, 'SIGSEGV is parsed out' );
-    }
 
     #XXXX
 }
@@ -543,8 +520,6 @@ for my $test_args ( get_arg_sets() ) {
 SKIP: {
 
     my $cat = '/bin/cat';
-
-    # TODO: use TYPE on win32?
     unless ( -e $cat ) {
         skip "no '$cat'", 2;
     }
@@ -557,7 +532,12 @@ SKIP: {
         }
     );
 
-    eval { _runtests( $harness, 't/data/catme.1' ); };
+    eval {
+        _runtests(
+            $harness,
+            't/data/catme.1'
+        );
+    };
 
     my @output = tied($$capture)->dump;
     my $status = pop @output;
@@ -692,66 +672,6 @@ SKIP: {
     is( $output[-1], "All tests successful.\n",
         'No exec accumulation'
     );
-}
-
-# customize default File source
-{
-    my $capture = IO::c55Capture->new_handle;
-    my $harness = TAP::Harness->new(
-        {   verbosity => -2,
-            stdout    => $capture,
-            sources   => {
-                File => { extensions => ['.1'] },
-            },
-        }
-    );
-
-    _runtests( $harness, "$source_tests/source.1" );
-
-    my @output = tied($$capture)->dump;
-    my $status = pop @output;
-    like $status, qr{^Result: PASS$},
-      'customized File source has correct status line';
-    pop @output;    # get rid of summary line
-    my $answer = pop @output;
-    is( $answer, "All tests successful.\n", '... all tests passed' );
-}
-
-# load a custom source
-{
-    my $capture = IO::c55Capture->new_handle;
-    my $harness = TAP::Harness->new(
-        {   verbosity => -2,
-            stdout    => $capture,
-            sources   => {
-                MyFileSourceHandler => { extensions => ['.1'] },
-            },
-        }
-    );
-
-    my $source_test = "$source_tests/source.1";
-    eval { _runtests( $harness, "$source_tests/source.1" ); };
-    my $e = $@;
-    ok( !$e, 'no error on load custom source' ) || diag($e);
-
-    no warnings 'once';
-    can_ok( 'MyFileSourceHandler', 'make_iterator' );
-    ok( $MyFileSourceHandler::CAN_HANDLE,
-        '... MyFileSourceHandler->can_handle was called'
-    );
-    ok( $MyFileSourceHandler::MAKE_ITER,
-        '... MyFileSourceHandler->make_iterator was called'
-    );
-
-    my $raw_source = eval { ${ $MyFileSourceHandler::LAST_SOURCE->raw } };
-    is( $raw_source, $source_test, '... used the right source' );
-
-    my @output = tied($$capture)->dump;
-    my $status = pop(@output) || '';
-    like $status, qr{^Result: PASS$}, '... and test has correct status line';
-    pop @output;    # get rid of summary line
-    my $answer = pop @output;
-    is( $answer, "All tests successful.\n", '... all tests passed' );
 }
 
 sub trim {
@@ -899,86 +819,57 @@ sub _runtests {
 
 # coverage tests for the stdout key of VALIDATON_FOR, used by _initialize() in the ctor
 
-    {
+    # the coverage tests are
+    # 1. ref $ref => false
+    # 2. ref => ! GLOB and ref->can(print)
+    # 3. ref $ref => GLOB
 
-        # ref $ref => false
-        my @die;
+    # case 1
 
-        eval {
-            local $SIG{__DIE__} = sub { push @die, @_ };
+    my @die;
 
-            my $harness = TAP::Harness->new(
-                {   stdout => bless {}, '0',    # how evil is THAT !!!
-                }
-            );
-        };
-
-        is @die, 1, 'bad filehandle to stdout';
-        like pop @die, qr/option 'stdout' needs a filehandle/,
-          '... and we died as expected';
-    }
-
-    {
-
-        # ref => ! GLOB and ref->can(print)
-
-        package Printable;
-
-        sub new { return bless {}, shift }
-
-        sub print {return}
-
-        package main;
+    eval {
+        local $SIG{__DIE__} = sub { push @die, @_ };
 
         my $harness = TAP::Harness->new(
-            {   stdout => Printable->new(),
+            {   stdout => bless {}, '0',    # how evil is THAT !!!
             }
         );
+    };
 
-        isa_ok $harness, 'TAP::Harness';
-    }
+    is @die, 1, 'bad filehandle to stdout';
+    like pop @die, qr/option 'stdout' needs a filehandle/,
+      '... and we died as expected';
 
-    {
+    # case 2
 
-        # ref $ref => GLOB
+    @die = ();
 
-        my $harness = TAP::Harness->new(
-            {   stdout => bless {}, 'GLOB',    # again with the evil
-            }
-        );
+    package Printable;
 
-        isa_ok $harness, 'TAP::Harness';
-    }
+    sub new { return bless {}, shift }
 
-    {
+    sub print {return}
 
-        # bare glob
+    package main;
 
-        my $harness = TAP::Harness->new( { stdout => *STDOUT } );
+    my $harness = TAP::Harness->new(
+        {   stdout => Printable->new(),
+        }
+    );
 
-        isa_ok $harness, 'TAP::Harness';
-    }
+    isa_ok $harness, 'TAP::Harness';
 
-    {
+    # case 3
 
-        # string filehandle
+    @die = ();
 
-        my $string = '';
-        open my $fh, ">", \$string or die $!;
-        my $harness = TAP::Harness->new( { stdout => $fh } );
+    $harness = TAP::Harness->new(
+        {   stdout => bless {}, 'GLOB',    # again with the evil
+        }
+    );
 
-        isa_ok $harness, 'TAP::Harness';
-    }
-
-    {
-
-        # lexical filehandle reference
-
-        my $string = '';
-        open my $fh, ">", \$string or die $!;
-        ok !eval { TAP::Harness->new( { stdout => \$fh } ); };
-        like $@, qr/^option 'stdout' needs a filehandle /;
-    }
+    isa_ok $harness, 'TAP::Harness';
 }
 
 {
@@ -1009,7 +900,9 @@ sub _runtests {
 
     # coverage tests for the basically untested T::H::_open_spool
 
-    my @spool = ( 't', 'spool' );
+    my @spool = (
+        ( 't', 'spool' )
+    );
     $ENV{PERL_TEST_HARNESS_DUMP_TAP} = File::Spec->catfile(@spool);
 
 # now given that we're going to be writing stuff to the file system, make sure we have

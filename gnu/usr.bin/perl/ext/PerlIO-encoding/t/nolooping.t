@@ -8,10 +8,12 @@ BEGIN {
     }
 }
 
-use Test::More ord("A") == 65
-               ? (tests => 1)
-               : (skip_all => 'EBCDIC platform which doesnt have'
-                            . ' "use encoding" used by open ":locale")');
+use Config;
+
+use Test::More $Config{useperlio}
+    ? (tests => 1)
+    : (skip_all => 'No PerlIO enabled');
+
 BEGIN {
     $SIG{__WARN__} = sub { $warn .= $_[0] };
 }

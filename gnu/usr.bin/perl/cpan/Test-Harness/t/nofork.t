@@ -3,12 +3,9 @@
 # check nofork logic on systems which *can* fork()
 # NOTE maybe a good candidate for xt/author or something.
 
-BEGIN {
-    use lib 't/lib';
-}
+use lib 't/lib';
 
 use strict;
-use warnings;
 
 use Config;
 use Test::More (
@@ -52,10 +49,10 @@ my $mod = 'TAP::Parser::Iterator::Process';
             stdout    => $capture,
         }
     );
-    $harness->runtests('t/sample-tests/simple');
+    $harness->runtests( 't/sample-tests/simple' );
     my @output = tied($$capture)->dump;
     is pop @output, "Result: PASS\n", 'status OK';
-    pop @output;                 # get rid of summary line
+    pop @output;    # get rid of summary line
     is( $output[-1], "All tests successful.\n", 'ran with no fork' );
 }
 

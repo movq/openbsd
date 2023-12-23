@@ -1,5 +1,7 @@
 #!./perl
 
+# $RCSfile: dbm.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:43 $
+
 BEGIN {
     chdir 't' if -d 't';
     @INC = '../lib';
@@ -13,28 +15,28 @@ use Fcntl;
 
 
 $Is_Dosish = ($^O eq 'amigaos' || $^O eq 'MSWin32' ||
-	      $^O eq 'os2' ||
+	      $^O eq 'NetWare' || $^O eq 'dos' ||
+	      $^O eq 'os2' || $^O eq 'mint' ||
 	      $^O eq 'cygwin');
 
-my $filename = "Any_dbmx$$";
-unlink <"$filename*">;
+unlink <Op_dbmx*>;
 
 umask(0);
 
-ok( tie(%h,AnyDBM_File,"$filename", O_RDWR|O_CREAT, 0640), "Tie");
+ok( tie(%h,AnyDBM_File,'Op_dbmx', O_RDWR|O_CREAT, 0640), "Tie");
 
-$Dfile = "$filename.pag";
+$Dfile = "Op_dbmx.pag";
 if (! -e $Dfile) {
-	($Dfile) = <$filename*>;
+	($Dfile) = <Op_dbmx*>;
 }
 
 SKIP:
 {
     skip( "different file permission semantics",1)
-                      if $Is_Dosish;
+                      if ($Is_Dosish || $^O eq 'MacOS') ;
     ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,
      $blksize,$blocks) = stat($Dfile);
-    ok(($mode & 0777) == 0640 , "File permissions");
+    ok(($mode & 0777) == ($^O eq 'vos' ? 0750 : 0640) , "File permissions");
 }
 
 while (($key,$value) = each(%h)) {
@@ -63,7 +65,7 @@ $h{'goner2'} = 'snork';
 delete $h{'goner2'};
 
 untie(%h);
-ok(tie(%h,AnyDBM_File,"$filename", O_RDWR, 0640),"Re-tie hash");
+ok(tie(%h,AnyDBM_File,'Op_dbmx', O_RDWR, 0640),"Re-tie hash");
 
 $h{'j'} = 'J';
 $h{'k'} = 'K';
@@ -151,7 +153,7 @@ SKIP:
 untie %h;
 
 if ($^O eq 'VMS') {
-  unlink "$filename.sdbm_dir", $Dfile;
+  unlink 'Op_dbmx.sdbm_dir', $Dfile;
 } else {
-  unlink "$filename.dir", $Dfile;
+  unlink 'Op_dbmx.dir', $Dfile;  
 }

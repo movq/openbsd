@@ -1,9 +1,12 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
+use Carp;
+use Cwd;
 use File::Spec;
-use lib (-d 't' ? File::Spec->catdir(qw(t lib)) : 'lib');
+use File::Temp qw( tempdir );
 use Test::More tests => 13;
+use lib qw( lib t/lib );
 use ExtUtils::ParseXS;
 use ExtUtils::ParseXS::Utilities qw(
     check_conditional_preprocessor_statements

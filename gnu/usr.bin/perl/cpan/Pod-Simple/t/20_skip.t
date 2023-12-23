@@ -1,8 +1,4 @@
 # 20 skip under 5.8
-
-use strict;
-use warnings;
-
 BEGIN {
     if($ENV{PERL_CORE}) {
         chdir 't';

@@ -1,60 +1,15 @@
-#!./perl -w
+#!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-}
+# $RCSfile: mkdir.t,v $$Revision: 4.1 $$Date: 92/08/07 18:28:06 $
 
-plan tests => 17;
+print "1..7\n";
 
-unless (eval {
-    require File::Path;
-    File::Path::rmtree('blurfl') if -d 'blurfl';
-    1
-}) {
-    diag("$0 may fail if its temporary directory remains from a previous run");
-    diag("Attempted to load File::Path to delete directory t/blurfl - error was\n$@");
-    diag("\nIf you have problems, please manually delete t/blurfl");
-}    
+`rm -rf blurfl`;
 
-# tests 3 and 7 rather naughtily expect English error messages
-$ENV{'LC_ALL'} = 'C';
-$ENV{LANGUAGE} = 'C'; # GNU locale extension
-
-sub errno_or_skip {
-    SKIP: {
-	if (is_miniperl && !eval { local $!; require Errno }) {
-	    skip "Errno not built yet", 1;
-	}
-	eval "ok($_[0])";
-    }
-}
-
-ok(mkdir('blurfl',0777));
-ok(!mkdir('blurfl',0777));
-errno_or_skip('$!{EEXIST} || $! =~ /cannot move|exist|denied|unknown/i');
-ok(-d 'blurfl');
-ok(rmdir('blurfl'));
-ok(!rmdir('blurfl'));
-errno_or_skip('
-    $!{ENOENT}
-       || $! =~ /cannot find|such|exist|not found|not a directory|unknown/i
-');
-ok(mkdir('blurfl'));
-ok(rmdir('blurfl'));
-
-# trailing slashes will be removed before the system call to mkdir
-ok(mkdir('blurfl///'));
-ok(-d 'blurfl');
-ok(rmdir('blurfl///'));
-ok(!-d 'blurfl');
-
-# test default argument
-
-$_ = 'blurfl';
-ok(mkdir);
-ok(-d);
-ok(rmdir);
-ok(!-d);
-$_ = 'lfrulb';
+print (mkdir('blurfl',0777) ? "ok 1\n" : "not ok 1\n");
+print (mkdir('blurfl',0777) ? "not ok 2\n" : "ok 2\n");
+print ($! =~ /exist/ ? "ok 3\n" : "not ok 3\n");
+print (-d 'blurfl' ? "ok 4\n" : "not ok 4\n");
+print (rmdir('blurfl') ? "ok 5\n" : "not ok 5\n");
+print (rmdir('blurfl') ? "not ok 6\n" : "ok 6\n");
+print ($! =~ /such|exist/ ? "ok 7\n" : "not ok 7\n");

@@ -8,8 +8,8 @@
    This file is part of bzip2/libbzip2, a program and library for
    lossless, block-sorting data compression.
 
-   bzip2/libbzip2 version 1.0.8 of 13 July 2019
-   Copyright (C) 1996-2019 Julian Seward <jseward@acm.org>
+   bzip2/libbzip2 version 1.0.5 of 10 December 2007
+   Copyright (C) 1996-2007 Julian Seward <jseward@bzip.org>
 
    Please read the WARNING, DISCLAIMER and PATENTS sections in the 
    README file.
@@ -36,7 +36,7 @@
 
 /*-- General stuff. --*/
 
-#define BZ_VERSION  "1.0.8, 13-Jul-2019"
+#define BZ_VERSION  "1.0.5, 10-Dec-2007"
 
 typedef char            Char;
 typedef unsigned char   Bool;
@@ -128,7 +128,7 @@ extern void bz_internal_error ( int errcode );
 
 /*-- Stuff for randomising repetitive blocks. --*/
 
-extern const Int32 BZ2_rNums[512];
+extern Int32 BZ2_rNums[512];
 
 #define BZ_RAND_DECLS                          \
    Int32 rNToGo;                               \
@@ -152,7 +152,7 @@ extern const Int32 BZ2_rNums[512];
 
 /*-- Stuff for doing CRCs. --*/
 
-extern const UInt32 BZ2_crc32Table[256];
+extern UInt32 BZ2_crc32Table[256];
 
 #define BZ_INITIALISE_CRC(crcVar)              \
 {                                              \

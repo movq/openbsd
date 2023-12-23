@@ -1,8 +1,5 @@
 #!/usr/bin/perl -w
 
-use strict;
-use warnings;
-
 BEGIN {
     unshift @INC, 't/lib';
 }
@@ -21,7 +18,7 @@ can_ok( 'MM', 'os_flavor', 'os_flavor_is' );
 my @flavors = MM->os_flavor;
 ok( @flavors,   'os_flavor() returned something' );
 
-ok( MM->os_flavor_is($flavors[rand @flavors]),
+ok( MM->os_flavor_is($flavors[rand @flavors]), 
                                           'os_flavor_is() one flavor' );
 ok( MM->os_flavor_is($flavors[rand @flavors], 'BogusOS'),
                                           '    many flavors' );

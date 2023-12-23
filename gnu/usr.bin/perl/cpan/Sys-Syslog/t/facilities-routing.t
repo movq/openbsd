@@ -60,13 +60,12 @@ if ($child_pid) {
     POE::Kernel->run;
 
     # check if some messages are missing
-    my @miss = sort grep { $received{$_} < 2 } keys %received;
+    my @miss = grep { $received{$_} < 2 } keys %received;
     diag "@miss" if @miss;
 }
 else {
     # child: send messages to the syslog server
     sleep 2;
-    my $delay = .01;
     setlogsock({ host => $host, type => $proto, port => $port });
 
     # first way, set the facility each time with openlog()
@@ -76,7 +75,6 @@ else {
         for my $level (@levels) {
             eval { syslog($level => "<$facility\:$level>") }
                 or warn "error: syslog($level => '<$facility\:$level>'): $@";
-            select undef, undef, undef, $delay;
         }
     }
 
@@ -88,7 +86,6 @@ else {
         for my $level (@levels) {
             eval { syslog("$facility.$level" => "<$facility\:$level>") }
                 or warn "error: syslog('$facility.$level' => '<$facility\:$level>'): $@";
-            select undef, undef, undef, $delay;
         }
     }
 

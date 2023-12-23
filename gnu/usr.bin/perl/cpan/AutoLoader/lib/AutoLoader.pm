@@ -15,18 +15,11 @@ BEGIN {
     $is_epoc = $^O eq 'epoc';
     $is_vms = $^O eq 'VMS';
     $is_macos = $^O eq 'MacOS';
-    $VERSION = '5.74';
+    $VERSION = '5.70';
 }
 
 AUTOLOAD {
     my $sub = $AUTOLOAD;
-    autoload_sub($sub);
-    goto &$sub;
-}
-
-sub autoload_sub {
-    my $sub = shift;
-
     my $filename = AutoLoader::find_filename( $sub );
 
     my $save = $@;
@@ -55,8 +48,7 @@ sub autoload_sub {
 	}
     }
     $@ = $save;
-
-    return 1;
+    goto &$sub;
 }
 
 sub find_filename {
@@ -343,21 +335,6 @@ create the individual files.  L<ExtUtils::MakeMaker> will invoke
 B<AutoSplit> automatically if B<AutoLoader> is used in a module source
 file.
 
-=head2 Forcing AutoLoader to Load a Function
-
-Sometimes, it can be necessary or useful to make sure that a certain
-function is fully loaded by AutoLoader. This is the case, for example,
-when you need to wrap a function to inject debugging code. It is also
-helpful to force early loading of code before forking to make use of
-copy-on-write as much as possible.
-
-Starting with AutoLoader 5.73, you can call the
-C<AutoLoader::autoload_sub> function with the fully-qualified name of
-the function to load from its F<.al> file. The behaviour is exactly
-the same as if you called the function, triggering the regular
-C<AUTOLOAD> mechanism, but it does not actually execute the
-autoloaded function.
-
 =head1 CAVEATS
 
 AutoLoaders prior to Perl 5.002 had a slightly different interface.  Any
@@ -399,8 +376,7 @@ can benefit from bug fixes.
 This package has the same copyright and license as the perl core:
 
              Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-        2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-	2011, 2012, 2013
+        2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
         by Larry Wall and others
     
 			    All rights reserved.
@@ -424,8 +400,8 @@ This package has the same copyright and license as the perl core:
     
     You should also have received a copy of the GNU General Public License
     along with this program in the file named "Copying". If not, write to the 
-    Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-    MA 02110-1301, USA or visit their web page on the internet at
+    Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 
+    02111-1307, USA or visit their web page on the internet at
     http://www.gnu.org/copyleft/gpl.html.
     
     For those of you that choose to use the GNU General Public License,

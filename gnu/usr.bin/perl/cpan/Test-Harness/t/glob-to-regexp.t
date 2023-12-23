@@ -1,7 +1,6 @@
 #!/usr/bin/perl -w
 
 use strict;
-use warnings;
 
 use Test::More;
 
@@ -16,7 +15,7 @@ while (<DATA>) {
 
 plan tests => scalar @tests;
 
-for (@tests) {
+foreach (@tests) {
     my ( $glob, $pattern, $name ) = @$_;
     is( TAP::Parser::Scheduler->_glob_to_regexp($glob), $pattern,
         defined $name ? "$glob  -- $name" : $glob

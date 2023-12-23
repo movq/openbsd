@@ -1,10 +1,11 @@
+#!/usr/bin/perl
+
 use strict;
-use warnings;
 use Test::More tests => 4;
 
 use JSON::PP;
 
-my $json = JSON::PP->new->allow_nonref(1);
+my $json = JSON::PP->new->allow_nonref();
 
 my @vs = $json->incr_parse('"a\"bc');
 
@@ -15,7 +16,7 @@ ok( not scalar(@vs) );
 is( $vs[0], "a\"bc" );
 
 
-$json = JSON::PP->new->allow_nonref(0);
+$json = JSON::PP->new;
 
 @vs = $json->incr_parse('"a\"bc');
 ok( not scalar(@vs) );

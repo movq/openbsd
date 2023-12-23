@@ -1,26 +1,18 @@
 package AnyDBM_File;
-use warnings;
-use strict;
 
-use 5.006_001;
-our $VERSION = '1.01';
-our @ISA = qw(NDBM_File DB_File GDBM_File SDBM_File ODBM_File) unless @ISA;
+@ISA = qw(NDBM_File DB_File GDBM_File SDBM_File ODBM_File) unless @ISA;
 
-my $mod;
-for $mod (@ISA) {
-    if (eval "require $mod") {
-	@ISA = ($mod);	# if we leave @ISA alone, warnings abound
-	return 1;
-    }
-}
-
-die "No DBM package was successfully found or installed";
-
-__END__
+eval { require NDBM_File } ||
+eval { require DB_File } ||
+eval { require GDBM_File } ||
+eval { require SDBM_File } ||
+eval { require ODBM_File };
 
 =head1 NAME
 
 AnyDBM_File - provide framework for multiple DBMs
+
+NDBM_File, ODBM_File, SDBM_File, GDBM_File - various DBM implementations
 
 =head1 SYNOPSIS
 
@@ -35,14 +27,20 @@ L<DB_File>), GDBM, SDBM (which is always there--it comes with Perl), and
 finally ODBM.   This way old programs that used to use NDBM via dbmopen()
 can still do so, but new ones can reorder @ISA:
 
-    BEGIN { @AnyDBM_File::ISA = qw(DB_File GDBM_File NDBM_File) }
-    use AnyDBM_File;
+    @AnyDBM_File::ISA = qw(DB_File GDBM_File NDBM_File);
+
+Note, however, that an explicit use overrides the specified order:
+
+    use GDBM_File;
+    @AnyDBM_File::ISA = qw(DB_File GDBM_File NDBM_File);
+
+will only find GDBM_File.
 
 Having multiple DBM implementations makes it trivial to copy database formats:
 
-    use Fcntl; use NDBM_File; use DB_File;
-    tie %newhash,  'DB_File', $new_filename, O_CREAT|O_RDWR;
-    tie %oldhash,  'NDBM_File', $old_filename, 1, 0;
+    use POSIX; use NDBM_File; use DB_File;
+    tie %newhash,  DB_File, $new_filename, O_CREAT|O_RDWR;
+    tie %oldhash,  NDBM_File, $old_filename, 1, 0;
     %newhash = %oldhash;
 
 =head2 DBM Comparisons
@@ -89,6 +87,6 @@ By default, but can be redefined.
 
 =head1 SEE ALSO
 
-dbm(3), ndbm(3), DB_File(3), L<perldbmfilter>
+dbm(3), ndbm(3), DB_File(3)
 
 =cut

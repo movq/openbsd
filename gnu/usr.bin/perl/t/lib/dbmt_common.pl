@@ -43,7 +43,7 @@ if (! -e $Dfile) {
 }
 SKIP: {
     skip "different file permission semantics on $^O", 1
-	if $^O eq 'amigaos' || $^O eq 'os2' || $^O eq 'MSWin32' || $^O eq 'cygwin' || $^O eq 'vos';
+	if $^O eq 'amigaos' || $^O eq 'os2' || $^O eq 'MSWin32' || $^O eq 'NetWare' || $^O eq 'dos' || $^O eq 'cygwin' || $^O eq 'vos';
     my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,
 	$blksize,$blocks) = stat($Dfile);
     is($mode & 0777, 0640);
@@ -156,11 +156,12 @@ unlink <Op_dbmx*>, $Dfile;
 
    use strict;
    use warnings;
+   use vars qw(@ISA @EXPORT);
 
    require Exporter;
    use %s;
-   our @ISA=qw(%s);
-   our @EXPORT = @%s::EXPORT;
+   @ISA=qw(%s);
+   @EXPORT = @%s::EXPORT;
 
    sub STORE {
 	my $self = shift;
@@ -412,7 +413,7 @@ unlink <Op_dbmx*>, $Dfile;
 }
 
 {
-    # Bug ID 20001013.009 (#4434)
+    # Bug ID 20001013.009
     #
     # test that $hash{KEY} = undef doesn't produce the warning
     #     Use of uninitialized value in null operation

@@ -2,8 +2,8 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
 }
 
 use strict;
@@ -15,9 +15,6 @@ BEGIN {
         # FWIW: NaN actually seems to be working decently,
         # but Inf is completely broken (e.g. Inf + 0 -> NaN).
         skip_all "$^O with long doubles does not have sane inf/nan";
-    }
-    unless ($Config{d_double_has_inf} && $Config{d_double_has_nan}) {
-        skip_all "the doublekind $Config{doublekind} does not have inf/nan";
     }
 }
 
@@ -38,7 +35,7 @@ my @NaN = ("NAN", "nan", "qnan", "SNAN", "NanQ", "NANS",
            "1.#QNAN", "+1#SNAN", "-1.#NAN", "1#IND", "1.#IND00",
            "NAN(123)");
 
-my @printf_fmt = qw(e f g a d u o i b x);
+my @printf_fmt = qw(e f g a d u o i b x p);
 my @packi_fmt = qw(c C s S l L i I n N v V j J w W U);
 my @packf_fmt = qw(f d F);
 my @packs_fmt = qw(a4 A4 Z5 b20 B20 h10 H10 u);
@@ -243,7 +240,7 @@ TODO: {
     local $::TODO;
     my $here = "$^O $Config{osvers}";
     $::TODO = "$here: pow (9**9**9) doesn't give Inf"
-        if $here =~ /^(?:hpux 10)/;
+        if $here =~ /^(?:hpux 10|os390)/;
     is(9**9**9, $PInf, "9**9**9 is Inf");
 }
 
@@ -394,7 +391,7 @@ TODO: {
     local $::TODO;
     my $here = "$^O $Config{osvers}";
     $::TODO = "$here: pow (9**9**9) doesn't give Inf"
-        if $here =~ /^(?:hpux 10)/;
+        if $here =~ /^(?:hpux 10|os390)/;
     is(sin(9**9**9), $NaN, "sin(9**9**9) is NaN");
 }
 
@@ -526,66 +523,6 @@ cmp_ok('-1e-9999', '==', 0,     "underflow to 0 (runtime) from neg");
             is($w, "", "no warning expected");
         }
     }
-}
-
-# Size qualifiers shouldn't affect printing Inf/Nan
-#
-# Prior to the commit which introduced these tests and the fix,
-# the code path taken when int-ish formats saw an Inf/Nan was to
-# jump to the floating-point handler, but then that would
-# warn about (valid) qualifiers.
-
-{
-    my @w;
-    local $SIG{__WARN__} = sub { push @w, $_[0] };
-
-    for my $format (qw(B b c D d i O o U u X x)) {
-        # skip unportable: j L q
-        for my $size (qw(hh h l ll t z)) {
-            for my $num ($NInf, $PInf, $NaN) {
-                @w = ();
-                my $res = eval { sprintf "%${size}${format}", $num; };
-                my $desc = "sprintf(\"%${size}${format}\", $num)";
-                if ($format eq 'c') {
-                    like($@, qr/Cannot printf $num with 'c'/, "$desc: like");
-                }
-                else {
-                    is($res, $num, "$desc: equality");
-                }
-
-                is (@w, 0, "$desc: warnings")
-                    or do {
-                        diag("got warning: [$_]") for map { chomp; $_} @w;
-                    };
-            }
-        }
-    }
-}
-
-# "+Inf" should be converted to UV consistently
-{
-    my $uv_max = ~0;
-    my $x = 42;     # Some arbitrary integer.
-    $x = ' Inf ';   # Spaces will detect unwanted string/NV round-trip
-    is($x << 0, $uv_max, "' Inf ' converted to UV");
-    # Test twice just in case if SvUV is tricked by cached NV
-    is($x << 0, $uv_max, "second conversion of ' Inf ' to UV");
-    # Cached NV should be Inf even after conversion to UV returned UV_MAX
-    cmp_ok($x, '==', $PInf, "NV value of ' Inf ' after UV conversion");
-    # String value should not be changed
-    is($x, ' Inf ', "string shall be ' Inf ' after UV/NV conversion");
-}
-
-# "-Inf" should be converted to IV consistently
-{
-    use integer;
-    my $x = '-Inf';
-    my $y = $NInf;      # $NInf and $y shall be NV -Inf
-    my $z = $x | 0;     # "|" under "use integer;" requires IV operands
-    is($z, $y | 0, "'-Inf' should be converted to IV consistently");
-    # $z shall be IV_MIN here, but as the actual value of IV_MIN is not
-    # (easily) available in Perl so check its negative-ness as the next best.
-    cmp_ok($z, '<', 0, "'-Inf' should be converted to a negative IV");
 }
 
 done_testing();

@@ -1,58 +1,86 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -ws
 
-# output a list of:
-#  a) files listed in MANIFEST which don't exist
-#  b) files which exist but which aren't in MANIFEST
+#
+# manicheck - check files against the MANIFEST
+#
+# Without options prints out (possibly) two lines:
+#
+# extra: a b c
+# missing: d
+#
+# With option -x prints out only the missing files (and without the "extra: ")
+# With option -m prints out only the extra files (and without the "missing: ")
+#
 
-use v5.14;
-use warnings;
-use File::Find;
-use Getopt::Long;
-use constant SKIP => 125;
-
-my $exitstatus;
-GetOptions('exitstatus!', \$exitstatus)
-    or die "$0 [--exitstatus]";
-
-my %files;
-my $missing = 0;
-my $bonus = 0;
-
-open my $fh, '<', 'MANIFEST' or die "Can't read MANIFEST: $!\n";
-for my $line (<$fh>) {
-    my ($file) = $line =~ /^(\S+)/;
-    ++$files{$file};
-    next if -f $file;
-    ++$missing;
-    print "$file from MANIFEST doesn't exist\n";
+BEGIN {
+  $SIG{__WARN__} = sub {
+    help() if $_[0] =~ /"main::\w" used only once: possible typo at /;
+  };
 }
-close $fh;
 
-find {
-    wanted => sub {
-        return if -d;
-        return if $_ eq '.mailmap';
-        return if $_ eq '.gitignore';
-        return if $_ eq '.gitattributes';
-        return if $_ eq '.git_patch';
+use strict;
 
-        my $x = $File::Find::name =~ s!^\./!!r;
-        return if $x =~ /^\.git\b/;
-        return if $x =~ m{^\.github/};
-        return if $files{$x};
-        ++$bonus;
-        print "$x\t\tnot in MANIFEST\n";
-    },
-}, ".";
+sub help {
+  die <<EOF;
+$0: Usage: $0 [-x|-m|-l|-h]
+-x show only the extra files
+-m show only the missing files
+-l show the files one per line instead of one line
+-h show only this help
+EOF
+}
 
-my $exitcode = $exitstatus ? $missing + $bonus : 0;
+use vars qw($x $m $l $h);
 
-# We can't (meaningfully) exit with codes above 255, so we're going to have to
-# clamp them to some range whatever we do. So as we need the code anyway, use
-# 124 as our maximum instead, and then we can run as a useful git bisect run
-# script if needed...
+help() if $h;
 
-$exitcode = SKIP - 1
-    if $exitcode > SKIP;
+open(MANIFEST, "MANIFEST") or die "MANIFEST: $!";
 
-exit $exitcode;
+my %mani;
+my %mand = qw(. 1);
+use File::Basename qw(dirname);
+
+while (<MANIFEST>) {
+  if (/^(\S+)\t+(.+)$/) {
+    $mani{$1}++;
+    my $d = dirname($1);
+    while($d ne '.') {
+	$mand{$d}++;
+	$d = dirname($d);
+    }
+  } else {
+    warn "MANIFEST:$.:$_";
+  }
+}
+
+close(MANIFEST);
+
+my %find;
+use File::Find;
+find(sub {
+       my $n = $File::Find::name;
+       $n =~ s:^\./::;
+       $find{$n}++;
+     }, '.' );
+
+my @xtra;
+my @miss;
+
+for (sort keys %find) {
+  push @xtra, $_ unless $mani{$_} || $mand{$_};
+}
+
+for (sort keys %mani) {
+  push @miss, $_ unless $find{$_};
+}
+
+$" = "\n" if $l;
+
+unshift @xtra, "extra:"   if @xtra;
+unshift @miss, "missing:" if @miss;
+
+print "@xtra\n", if @xtra && !$m;
+print "@miss\n"  if @miss && !$x;
+
+exit 0;
+

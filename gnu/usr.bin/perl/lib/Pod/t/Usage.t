@@ -8,6 +8,7 @@ BEGIN {
 use File::Basename;
 use File::Spec;
 use Test::More;
+plan tests => 8;
 
 use_ok( 'Pod::Usage' );
 
@@ -35,7 +36,7 @@ SKIP: {
         pod2usage({ -verbose => 0, -exit => 'noexit', 
                     -output => \*FAKEOUT, -input => $file });
     };
-    like( $@, qr/^Can't open $file/, 
+    like( $@, qr/^Can't open $file for reading:/, 
           'File not found without -pathlist' );
 
     eval {
@@ -46,7 +47,8 @@ SKIP: {
     is( $$fake_out, $vbl_0, '-pathlist parameter' );
 }
 
-{ # Test exit status from pod2usage()
+SKIP: { # Test exit status from pod2usage()
+    skip "Exit status broken on Mac OS", 1 if $^O eq 'MacOS';
     my $exit = ($^O eq 'VMS' ? 2 : 42);
     my $dev_null = File::Spec->devnull;
     my $args = join ", ", (
@@ -56,6 +58,7 @@ SKIP: {
         "-input   => q{$0}",
     );
     my $cq = (($^O eq 'MSWin32'
+               || $^O eq 'NetWare'
                || $^O eq 'VMS') ? '"'
               : "");
     my @params = ( "${cq}-I../lib$cq",  "${cq}-MPod::Usage$cq", '-e' );
@@ -96,7 +99,6 @@ my $pod2usage = $$fake_out;
 
 is( $pod2usage, $pod2text, 'Verbose level >= 2 eq pod2text' );
 
-done_testing();
 
 package CatchOut;
 sub TIEHANDLE { bless \( my $self ), shift }

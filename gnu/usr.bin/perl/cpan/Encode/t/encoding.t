@@ -9,19 +9,13 @@ BEGIN {
     exit 0;
     }
     if (ord("A") == 193) {
-    print "1..0 # Skip: encoding pragma does not support EBCDIC platforms\n";
-    exit(0);
-    }
-    if ($] >= 5.025 and !$Config{usecperl}) {
-    print "1..0 # Skip: encoding pragma not supported in Perl 5.25 or later\n";
+    print "1..0 # encoding pragma does not support EBCDIC platforms\n";
     exit(0);
     }
 }
 
-print "1..33\n";
- 
+print "1..31\n";
 
-no warnings "deprecated";
 use encoding "latin1"; # ignored (overwritten by the next line)
 use encoding "greek";  # iso 8859-7 (no "latin" alias, surprise...)
 
@@ -206,14 +200,4 @@ print "ok 28\n";
     $h2{"\x{3af}"} = 42;
     print $h1{"\x{3af}"} == 41 ? "ok 30\n" : "not ok 30\n";
     print $h2{"\xdf"}    == 42 ? "ok 31\n" : "not ok 31\n";
-}
-
-# Order of finding the above-Latin1 code point should not matter: both should
-# assume Latin1/Unicode encoding
-{
-    use bytes;
-    print "not " if "\xDF\x{100}" =~ /\x{3af}\x{100}/;
-    print "ok 32\n";
-    print "not " if "\x{100}\xDF" =~ /\x{100}\x{3af}/;
-    print "ok 33\n";
 }

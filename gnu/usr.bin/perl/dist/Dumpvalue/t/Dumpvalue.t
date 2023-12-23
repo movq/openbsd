@@ -1,6 +1,10 @@
 #!./perl
 
 BEGIN {
+	if (ord('A') == 193) {
+	    print "1..0 # skip: EBCDIC\n";
+	    exit 0;
+	}
 	require Config;
 	if (($Config::Config{'extensions'} !~ m!\bList/Util\b!) ){
 	    print "1..0 # Skip -- Perl configured without List::Util module\n";
@@ -14,8 +18,8 @@ BEGIN {
 	$^W = 0;
 }
 
-use lib ("./t/lib");
-use TieOut;
+use vars qw( $foo @bar %baz );
+
 use Test::More tests => 88;
 
 use_ok( 'Dumpvalue' );
@@ -26,10 +30,7 @@ ok( $d = Dumpvalue->new(), 'create a new Dumpvalue object' );
 $d->set( globPrint => 1, dumpReused => 1 );
 is( $d->{globPrint}, 1, 'set an option correctly' );
 is( $d->get('globPrint'), 1, 'get an option correctly' );
-is_deeply( [ $d->get('globPrint', 'dumpReused') ],
-    [ 1, 1 ],
-    'get multiple options'
-);
+is( $d->get('globPrint', 'dumpReused'), qw( 1 1 ), 'get multiple options' );
 
 # check to see if unctrl works
 is( ref( Dumpvalue::unctrl(*FOO) ), 'GLOB', 'unctrl should not modify GLOB' );
@@ -56,15 +57,15 @@ is( $d->stringify('hi'), "'hi'", 'used single-quotes when appropriate' );
 $d->{unctrl} = 'unctrl';
 like( $d->stringify('double and whack:\ "'), qr!\\ \"!, 'escaped with unctrl' );
 like( $d->stringify("a\005"), qr/^"a\^/, 'escaped ASCII value in unctrl' );
-like( $d->stringify("b\xb6"), qr!^'b.'$!, 'no high-bit escape value in unctrl');
+like( $d->stringify("b\205"), qr!^'b.'$!, 'no high-bit escape value in unctrl');
 
 $d->{quoteHighBit} = 1;
-like( $d->stringify("b\266"), qr!^'b\\266!, 'high-bit now escaped in unctrl');
+like( $d->stringify("b\205"), qr!^'b\\205!, 'high-bit now escaped in unctrl');
 
 # if 'quote' is set
 $d->{unctrl} = 'quote';
 is( $d->stringify('5@ $1'), "'5\@ \$1'", 'quoted $ and @ fine' );
-is( $d->stringify("5@\e\$1"), '"5\@\e\$1"', 'quoted $ and @ and \e fine' );
+is( $d->stringify("5@\033\$1"), '"5\@\e\$1"', 'quoted $ and @ and \033 fine' );
 like( $d->stringify("\037"), qr/^"\\c/, 'escaped ASCII value okay' );
 
 # add ticks, if necessary
@@ -180,19 +181,19 @@ undef $DB::signal;
 $foo = 1;
 $d->dumpglob( '', 2, 'foo', local *foo = \$foo );
 is( $out->read, "  \$foo = 1\n", 'dumped glob for $foo correctly' );
-our @bar = (1, 2);
+@bar = (1, 2);
 
 # the key name is a little different here
 $d->dumpglob( '', 0, 'boo', *bar );
 is( $out->read, "\@boo = (\n   0..1  1 2\n)\n", 'dumped glob for @bar fine' );
 
-our %baz = ( one => 1, two => 2 );
+%baz = ( one => 1, two => 2 );
 $d->dumpglob( '', 0, 'baz', *baz );
 is( $out->read, "\%baz = (\n   'one' => 1, 'two' => 2\n)\n",
 	'dumped glob for %baz fine' );
 
 SKIP: {
-	skip( "Couldn't open $0 for reading", 1 ) unless open(FILE, '<', $0);
+	skip( "Couldn't open $0 for reading", 1 ) unless open(FILE, $0);
 	my $fileno = fileno(FILE);
 	$d->dumpglob( '', 0, 'FILE', *FILE );
 	is( $out->read, "FileHandle(FILE) => fileno($fileno)\n",
@@ -224,11 +225,8 @@ like( $out->read, qr/&TieOut::read in/, 'dumpsub found sub fine' );
 
 # test findsubs
 is( $d->findsubs(), undef, 'findsubs returns nothing without %DB::sub' );
-{
-    no warnings 'once';
-    $DB::sub{'TieOut::read'} = 'TieOut';
-    is( $d->findsubs( \&TieOut::read ), 'TieOut::read', 'findsubs reported sub' );
-}
+$DB::sub{'TieOut::read'} = 'TieOut';
+is( $d->findsubs( \&TieOut::read ), 'TieOut::read', 'findsubs reported sub' );
 
 # now that it's capable of finding the package...
 $d->dumpsub( '', 'TieOut::read' );
@@ -260,27 +258,45 @@ is( $d->hashUsage({ one => [ 1, 2, 3 ]}, 'c'), 6, 'complex hash okay' );
 is( $out->read, "\%c = 1 item (keys: 3; values: 3; total: 6 bytes)\n",
 	'hashUsage complex message okay' );
 
-our $folly = 'one';
-our @folly = ('two');
-our %folly = ( three => '123' );
-is( $d->globUsage(\*folly, 'folly'), 14, 'globUsage reports length correctly' );
-like( $out->read, qr/\@folly =.+\%folly =/s, 'globValue message okay' );
+$foo = 'one';
+@foo = ('two');
+%foo = ( three => '123' );
+is( $d->globUsage(\*foo, 'foo'), 14, 'globUsage reports length correctly' );
+like( $out->read, qr/\@foo =.+\%foo =/s, 'globValue message okay' );
 
 # and now, the real show
 $d->dumpValue(undef);
 is( $out->read, "undef\n", 'dumpValue caught undef value okay' );
-$d->dumpValue($folly);
+$d->dumpValue($foo);
 is( $out->read, "'one'\n", 'dumpValue worked' );
-$d->dumpValue(@folly);
+$d->dumpValue(@foo);
 is( $out->read, "'two'\n", 'dumpValue worked on array' );
-$d->dumpValue(\$folly);
+$d->dumpValue(\$foo);
 is( $out->read, "-> 'one'\n", 'dumpValue worked on scalar ref' );
 
 # dumpValues (the rest of these should be caught by unwrap)
 $d->dumpValues(undef);
 is( $out->read, "undef\n", 'dumpValues caught undef value fine' );
-$d->dumpValues(\@folly);
+$d->dumpValues(\@foo);
 is( $out->read, "0  0..0  'two'\n", 'dumpValues worked on array ref' );
 $d->dumpValues('one', 'two');
 is( $out->read, "0..1  'one' 'two'\n", 'dumpValues worked on multiple values' );
 
+
+package TieOut;
+use overload '"' => sub { "overloaded!" };
+
+sub TIEHANDLE {
+	my $class = shift;
+	bless(\( my $ref), $class);
+}
+
+sub PRINT {
+	my $self = shift;
+	$$self .= join('', @_);
+}
+
+sub read {
+	my $self = shift;
+	return substr($$self, 0, length($$self), '');
+}

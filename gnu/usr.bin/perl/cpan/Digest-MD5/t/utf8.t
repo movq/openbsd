@@ -7,12 +7,10 @@ BEGIN {
     }
 }
 
+print "1..3\n";
+
 use strict;
-use warnings;
-
 use Digest::MD5 qw(md5_hex);
-
-print "1..5\n";
 
 my $str;
 $str = "foo\xFF\x{100}";
@@ -35,21 +33,3 @@ print "ok 2\n";
 # reference
 print "not " unless md5_hex("foo\xFF") eq $exp;
 print "ok 3\n";
-
-# autopromotion
-if ($] >= 5.007003) {
-
-my $unistring = "Oslo.pm har sosialt medlemsmøte onsdag 1. April 2008, klokken 18:30. Vi treffes på Marhaba Café, Keysersgate 1.";
-
-require Encode;
-$unistring = Encode::decode_utf8($unistring);
-print "not " if ( not utf8::is_utf8($unistring));
-print "ok 4\n";
-
-md5_hex($unistring, "");
-print "not " if ( not utf8::is_utf8($unistring));
-print "ok 5\n"
-
-} else {
-    print "ok 4 # SKIP Your perl is too old to properly test unicode semantics\nok 5 # SKIP No, really\n";
-}

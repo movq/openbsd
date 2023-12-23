@@ -1,5 +1,10 @@
 #!./perl
 
+BEGIN {
+    chdir 't' if -d 't';
+    @INC = '../lib';
+}
+
 # A modest test: exercises only O_WRONLY, O_CREAT, and O_RDONLY.
 # Have to be modest to be portable: could possibly extend testing
 # also to O_RDWR and O_APPEND, but dunno about the portability of,
@@ -12,13 +17,11 @@ print "1..7\n";
 print "ok 1\n";
 
 if (sysopen(my $wo, "fcntl$$", O_WRONLY|O_CREAT)) {
-    binmode $wo;
     print "ok 2\n";
     if (syswrite($wo, "foo") == 3) {
 	print "ok 3\n";
 	close($wo);
 	if (sysopen(my $ro, "fcntl$$", O_RDONLY)) {
-            binmode $ro;
 	    print "ok 4\n";
 	    if (sysread($ro, my $read, 3)) {
 		print "ok 5\n";

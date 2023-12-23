@@ -194,7 +194,7 @@ sub get_I8_2_utf($) {
             $indent = "";
         }
         else {
-            $indent = "  " x $indent_level;
+            $indent = " " x (($indent_level * 4) - 1);
         }
 
         die "Unknown character set '$charset'" unless exists $ebcdic_translations{$charset};
@@ -207,18 +207,13 @@ sub get_I8_2_utf($) {
             # We use all the typical variant characters to construct the #if,
             # so that it is unlikely that a different code page will match
             # this #if
-            my @variant_chars = qw/A \\\ [ ] { } ^ ~ ! # | $ @ `/;
-            push @variant_chars, "\n";
-            for my $char (@variant_chars) {
+            for my $char (qw/A \\\ [ ] { } ^ ~ ! # | $ @ `/) {
                 my $compare;
                 my $ascii_ord = ord $char;
                 my $first_time = $return eq "";
 
                 $compare = $ebcdic_translations{$charset}[$ascii_ord];
                 $return .=  " && " unless $first_time;
-                $char = '\n' if $char eq "\n";
-                die "Non-graphical character ord=" . ord($char)
-                                                      if $char !~ /[[:graph:]]/;
                 $return .= "'$char' == $compare";
                 $return .= " /* $charset */" if $first_time;
                 last if $charset eq $ascii_key;
@@ -243,13 +238,13 @@ sub get_I8_2_utf($) {
 sub _UTF_START_MASK($) {
     # Internal
     my $len = shift;
-    return (0x7F >> ($len));
+    return (($len >= 7) ? 0x00 : (0x1F >> ($len - 2)));
 }
 
 sub _UTF_START_MARK($) {
     # Internal
     my $len = shift;
-    return (0xFF & ~(0xFF >> ($len)));
+    return (($len >  7) ? 0xFF : (0xFF & (0xFE << (7- $len))));
 }
 
 sub cp_2_utfbytes($$) {
@@ -275,21 +270,21 @@ sub cp_2_utfbytes($$) {
         my $I8_2_utf = get_I8_2_utf($charset);
 
         my $len = $ucp < 0xA0      ? 1 :
-                  $ucp < 0x400     ? 2 :
-                  $ucp < 0x4000    ? 3 :
-                  $ucp < 0x40000   ? 4 :
-                  $ucp < 0x400000  ? 5 :
-                  $ucp < 0x4000000 ? 6 :
-                  $ucp < 0x40000000? 7 :
+		  $ucp < 0x400     ? 2 :
+		  $ucp < 0x4000    ? 3 :
+		  $ucp < 0x40000   ? 4 :
+		  $ucp < 0x400000  ? 5 :
+		  $ucp < 0x4000000 ? 6 :
+		  $ucp < 0x40000000? 7 :
                                     $CHARSET_TRANSLATIONS::UTF_EBCDIC_MAXBYTES;
 
         my @str;
-        for (1 .. $len - 1) {
+	for (1 .. $len - 1) {
             unshift @str, chr $I8_2_utf->[($ucp & 0x1f) | 0xA0];
-            $ucp >>= 5;
-        }
+	    $ucp >>= 5;
+	}
 
-        unshift @str, chr $I8_2_utf->[($ucp & _UTF_START_MASK($len)) | _UTF_START_MARK($len)];
+	unshift @str, chr $I8_2_utf->[($ucp & _UTF_START_MASK($len)) | _UTF_START_MARK($len)];
 
         return join "", @str;
     }

@@ -1,28 +1,41 @@
 package Test::Harness;
 
-use 5.006;
+require 5.00405;
 
 use strict;
-use warnings;
 
 use constant IS_WIN32 => ( $^O =~ /^(MS)?Win32$/ );
 use constant IS_VMS => ( $^O eq 'VMS' );
 
-use TAP::Harness                     ();
-use TAP::Parser::Aggregator          ();
-use TAP::Parser::Source              ();
-use TAP::Parser::SourceHandler::Perl ();
+use TAP::Harness              ();
+use TAP::Parser::Aggregator   ();
+use TAP::Parser::Source::Perl ();
 
-use Text::ParseWords qw(shellwords);
+use TAP::Parser::Utils qw( split_shell );
 
 use Config;
-use base 'Exporter';
+use Exporter;
+
+# TODO: Emulate at least some of these
+use vars qw(
+  $VERSION
+  @ISA @EXPORT @EXPORT_OK
+  $Verbose $Switches $Debug
+  $verbose $switches $debug
+  $Columns
+  $Color
+  $Directives
+  $Timer
+  $Strap
+  $has_time_hires
+  $IgnoreExit
+);
 
 # $ML $Last_ML_Print
 
 BEGIN {
     eval q{use Time::HiRes 'time'};
-    our $has_time_hires = !$@;
+    $has_time_hires = !$@;
 }
 
 =head1 NAME
@@ -31,11 +44,11 @@ Test::Harness - Run Perl standard test scripts with statistics
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 # Backwards compatibility for exportable variable names.
 *verbose  = *Verbose;
@@ -52,17 +65,18 @@ END {
     delete $ENV{HARNESS_VERSION};
 }
 
-our @EXPORT    = qw(&runtests);
-our @EXPORT_OK = qw(&execute_tests $verbose $switches);
+@ISA       = ('Exporter');
+@EXPORT    = qw(&runtests);
+@EXPORT_OK = qw(&execute_tests $verbose $switches);
 
-our $Verbose = $ENV{HARNESS_VERBOSE} || 0;
-our $Debug   = $ENV{HARNESS_DEBUG}   || 0;
-our $Switches = '-w';
-our $Columns = $ENV{HARNESS_COLUMNS} || $ENV{COLUMNS} || 80;
+$Verbose = $ENV{HARNESS_VERBOSE} || 0;
+$Debug   = $ENV{HARNESS_DEBUG}   || 0;
+$Switches = '-w';
+$Columns = $ENV{HARNESS_COLUMNS} || $ENV{COLUMNS} || 80;
 $Columns--;    # Some shells have trouble with a full line of text.
-our $Timer      = $ENV{HARNESS_TIMER}       || 0;
-our $Color      = $ENV{HARNESS_COLOR}       || 0;
-our $IgnoreExit = $ENV{HARNESS_IGNORE_EXIT} || 0;
+$Timer      = $ENV{HARNESS_TIMER}       || 0;
+$Color      = $ENV{HARNESS_COLOR}       || 0;
+$IgnoreExit = $ENV{HARNESS_IGNORE_EXIT} || 0;
 
 =head1 SYNOPSIS
 
@@ -104,8 +118,8 @@ one of the messages in the DIAGNOSTICS section.
 
 sub _has_taint {
     my $test = shift;
-    return TAP::Parser::SourceHandler::Perl->get_taint(
-        TAP::Parser::Source->shebang($test) );
+    return TAP::Parser::Source::Perl->get_taint(
+        TAP::Parser::Source::Perl->shebang($test) );
 }
 
 sub _aggregate {
@@ -118,7 +132,7 @@ sub _aggregate {
     _aggregate_tests( $harness, $aggregate, @tests );
 }
 
-# Make sure the child sees all the extra junk in @INC
+# Make sure the child seens all the extra junk in @INC
 sub _apply_extra_INC {
     my $harness = shift;
 
@@ -147,7 +161,6 @@ sub runtests {
     my $harness   = _new_harness();
     my $aggregate = TAP::Parser::Aggregator->new();
 
-    local $ENV{PERL_USE_UNSAFE_INC} = 1 if not exists $ENV{PERL_USE_UNSAFE_INC};
     _aggregate( $harness, $aggregate, @tests );
 
     $harness->formatter->summary($aggregate);
@@ -194,7 +207,7 @@ sub _new_harness {
     my $sub_args = shift || {};
 
     my ( @lib, @switches );
-    my @opt = map { shellwords($_) } grep { defined } $Switches, $ENV{HARNESS_PERL_SWITCHES};
+    my @opt = split_shell( $Switches, $ENV{HARNESS_PERL_SWITCHES} );
     while ( my $opt = shift @opt ) {
         if ( $opt =~ /^ -I (.*) $ /x ) {
             push @lib, length($1) ? $1 : shift @opt;
@@ -212,7 +225,7 @@ sub _new_harness {
 
     my $args = {
         timer       => $Timer,
-        directives  => our $Directives,
+        directives  => $Directives,
         lib         => \@lib,
         switches    => \@switches,
         color       => $Color,
@@ -223,7 +236,6 @@ sub _new_harness {
     $args->{stdout} = $sub_args->{out}
       if exists $sub_args->{out};
 
-    my $class = $ENV{HARNESS_SUBCLASS} || 'TAP::Harness';
     if ( defined( my $env_opt = $ENV{HARNESS_OPTIONS} ) ) {
         for my $opt ( split /:/, $env_opt ) {
             if ( $opt =~ /^j(\d*)$/ ) {
@@ -232,23 +244,13 @@ sub _new_harness {
             elsif ( $opt eq 'c' ) {
                 $args->{color} = 1;
             }
-            elsif ( $opt =~ m/^f(.*)$/ ) {
-                my $fmt = $1;
-                $fmt =~ s/-/::/g;
-                $args->{formatter_class} = $fmt;
-            }
-            elsif ( $opt =~ m/^a(.*)$/ ) {
-                my $archive = $1;
-                $class = "TAP::Harness::Archive";
-                $args->{archive} = $archive;
-            }
             else {
                 die "Unknown HARNESS_OPTIONS item: $opt\n";
             }
         }
     }
 
-    return TAP::Harness->_construct( $class, $args );
+    return TAP::Harness->new($args);
 }
 
 # Get the parts of @INC which are changed from the stock list AND
@@ -266,7 +268,7 @@ sub _filtered_inc {
     elsif (IS_WIN32) {
 
         # Lose any trailing backslashes in the Win32 paths
-        s/[\\\/]+$// for @inc;
+        s/[\\\/]+$// foreach @inc;
     }
 
     my @default_inc = _default_inc();
@@ -303,7 +305,7 @@ sub _filtered_inc {
         my $perl = $ENV{HARNESS_PERL} || $^X;
 
         # Avoid using -l for the benefit of Perl 6
-        chomp( @inc = `"$perl" -e "print join qq[\\n], \@INC, q[]"` );
+        chomp( @inc = `$perl -e "print join qq[\\n], \@INC, q[]"` );
         return @inc;
     }
 }
@@ -355,7 +357,6 @@ sub execute_tests {
         }
     );
 
-    local $ENV{PERL_USE_UNSAFE_INC} = 1 if not exists $ENV{PERL_USE_UNSAFE_INC};
     _aggregate( $harness, $aggregate, @{ $args{tests} } );
 
     $tot{bench} = $aggregate->elapsed;
@@ -505,17 +506,6 @@ This is the version of C<Test::Harness>.
 
 =over 4
 
-=item C<HARNESS_PERL_SWITCHES>
-
-Setting this adds perl command line switches to each test file run.
-
-For example, C<HARNESS_PERL_SWITCHES=-T> will turn on taint mode.
-C<HARNESS_PERL_SWITCHES=-MDevel::Cover> will run C<Devel::Cover> for
-each test.
-
-C<-w> is always set.  You can turn this off in the test with C<BEGIN {
-$^W = 0 }>.
-
 =item C<HARNESS_TIMER>
 
 Setting this to true will make the harness display the number of
@@ -538,39 +528,15 @@ Provide additional options to the harness. Currently supported options are:
 
 Run <n> (default 9) parallel jobs.
 
-=item C<< c >>
+=item C<< f >>
 
-Try to color output. See L<TAP::Formatter::Base/"new">.
-
-=item C<< a<file.tgz> >>
-
-Will use L<TAP::Harness::Archive> as the harness class, and save the TAP to
-C<file.tgz>
-
-=item C<< fPackage-With-Dashes >>
-
-Set the formatter_class of the harness being run. Since the C<HARNESS_OPTIONS>
-is separated by C<:>, we use C<-> instead.
+Use forked parallelism.
 
 =back
 
 Multiple options may be separated by colons:
 
-    HARNESS_OPTIONS=j9:c make test
-
-=item C<HARNESS_SUBCLASS>
-
-Specifies a TAP::Harness subclass to be used in place of TAP::Harness.
-
-=item C<HARNESS_SUMMARY_COLOR_SUCCESS>
-
-Determines the L<Term::ANSIColor> for the summary in case it is successful.
-This color defaults to C<'green'>.
-
-=item C<HARNESS_SUMMARY_COLOR_FAIL>
-
-Determines the L<Term::ANSIColor> for the failure in case it is successful.
-This color defaults to C<'red'>.
+    HARNESS_OPTIONS=j9:f make test
 
 =back
 
@@ -580,9 +546,10 @@ Normally when a Perl program is run in taint mode the contents of the
 C<PERL5LIB> environment variable do not appear in C<@INC>.
 
 Because C<PERL5LIB> is often used during testing to add build
-directories to C<@INC> C<Test::Harness> passes the names of any
-directories found in C<PERL5LIB> as -I switches. The net effect of this
-is that C<PERL5LIB> is honoured even in taint mode.
+directories to C<@INC> C<Test::Harness> (actually
+L<TAP::Parser::Source::Perl>) passes the names of any directories found
+in C<PERL5LIB> as -I switches. The net effect of this is that
+C<PERL5LIB> is honoured even in taint mode.
 
 =head1 SEE ALSO
 
@@ -611,7 +578,7 @@ module is based) has this attribution:
 
 =head1 LICENCE AND COPYRIGHT
 
-Copyright (c) 2007-2011, Andy Armstrong C<< <andy@hexten.net> >>. All rights reserved.
+Copyright (c) 2007-2008, Andy Armstrong C<< <andy@hexten.net> >>. All rights reserved.
 
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself. See L<perlartistic>.

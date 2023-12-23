@@ -1,15 +1,11 @@
 #!/usr/bin/perl -w
 
 use strict;
-our (%Build, %Targets, $Verbose, $Test);
+use vars qw(%Build %Targets $Verbose $Test);
 use Text::Tabs;
 use Text::Wrap;
 use Getopt::Long;
-
-if (ord("A") == 193) {
-    print "1..0 # EBCDIC sort order is different\n";
-    exit;
-}
+use Carp;
 
 # Generate the sections of files listed in %Targets from pod/perl.pod
 # Mostly these are rules in Makefiles
@@ -18,20 +14,20 @@ if (ord("A") == 193) {
 # --build-all tries to build everything
 # --build-foo updates foo as follows
 # --showfiles shows the files to be changed
-# --tap emit TAP (testing) output describing the state of the pod files
+# --test exit if perl.pod, MANIFEST are consistent, and regenerated
+#   files are up to date, die otherwise.
 
 %Targets = (
             manifest => 'MANIFEST',
             vms => 'vms/descrip_mms.template',
             nmake => 'win32/Makefile',
-            gmake => 'win32/GNUmakefile',
+            dmake => 'win32/makefile.mk',
             podmak => 'win32/pod.mak',
             unix => 'Makefile.SH',
             # plan9 =>  'plan9/mkfile',
            );
 
-require './Porting/pod_lib.pl';
-require './Porting/manifest_lib.pl';
+require 'Porting/pod_lib.pl';
 sub my_die;
 
 # process command-line switches
@@ -62,7 +58,7 @@ sub my_die;
 }
 
 if ($Verbose) {
-    print "I will be building $_\n" foreach sort keys %Build;
+    print "I will be building $_\n" foreach keys %Build;
 }
 
 my $test = 1;
@@ -73,10 +69,10 @@ my $state = $Test
     ? get_pod_metadata(0, sub {
                            printf "1..%d\n", 1 + scalar keys %Build;
                            if (@_) {
-                               print "not ok $test # got Pod metadata\n";
+                               print "not ok $test\n";
                                die @_;
                            }
-                           print "ok $test # got Pod metadata\n";
+                           print "ok $test\n";
                        })
     : get_pod_metadata(1, sub { warn @_ if @_ }, values %Build);
 
@@ -134,26 +130,32 @@ sub generate_pod_mak {
     $line;
 }
 
+sub verify_contiguous {
+    my ($name, $content, $what) = @_;
+    my $sections = () = $content =~ m/\0+/g;
+    croak("$0: $name contains no $what") if $sections < 1;
+    croak("$0: $name contains discontiguous $what") if $sections > 1;
+}
+
 sub do_manifest {
     my ($name, $prev) = @_;
     my @manifest =
         grep {! m!^pod/[^. \t]+\.pod.*!}
             grep {! m!^README\.(\S+)! || $state->{ignore}{$1}} split "\n", $prev;
-    # NOTE - the sort code here is shared with Porting/manisort currently.
-    # If you change one, change the other. Or refactor them. :-)
-    join "\n",  sort_manifest(
-                    @manifest,
-                    &generate_manifest_pod(),
-                    &generate_manifest_readme()
-                ),
-                '', # elegant way to add a newline to the end
-    ;
+    join "\n", (
+                # Dictionary order - fold and handle non-word chars as nothing
+                map  { $_->[0] }
+                sort { $a->[1] cmp $b->[1] || $a->[0] cmp $b->[0] }
+                map  { my $f = lc $_; $f =~ s/[^a-z0-9\s]//g; [ $_, $f ] }
+                @manifest,
+                &generate_manifest_pod(),
+                &generate_manifest_readme()), '';
 }
 
 sub do_nmake {
     my ($name, $makefile) = @_;
-    my $re = qr/^\tcopy \.\.\\README[^\n]*\n/sm;
-    $makefile = verify_contiguous($name, $makefile, $re, 'README copies');
+    $makefile =~ s/^\tcopy \.\.\\README.*\n/\0/gm;
+    verify_contiguous($name, $makefile, 'README copies');
     # Now remove the other copies that follow
     1 while $makefile =~ s/\0\tcopy .*\n/\0/gm;
     $makefile =~ s/\0+/join ("", &generate_nmake_1)/se;
@@ -164,7 +166,7 @@ sub do_nmake {
 }
 
 # shut up used only once warning
-*do_gmake = *do_gmake = \&do_nmake;
+*do_dmake = *do_dmake = \&do_nmake;
 
 sub do_podmak {
     my ($name, $body) = @_;
@@ -182,9 +184,9 @@ sub do_vms {
     # Looking for the macro defining the current perldelta:
     #PERLDELTA_CURRENT = [.pod]perl5139delta.pod
 
-    my $re = qr{\nPERLDELTA_CURRENT\s+=\s+\Q[.pod]perl\E\d+delta\.pod\n}smx;
-    $makefile
-        = verify_contiguous($name, $makefile, $re, 'current perldelta macro');
+    $makefile =~ s{\nPERLDELTA_CURRENT\s+=\s+\Q[.pod]perl\E\d+delta\.pod\n}
+                  {\0}sx;
+    verify_contiguous($name, $makefile, 'current perldelta macro');
     $makefile =~ s/\0+/join "\n", '', "PERLDELTA_CURRENT = [.pod]$state->{delta_target}", ''/se;
 
     $makefile;
@@ -202,19 +204,15 @@ sub do_unix {
     # pod/perl511delta.pod: pod/perldelta.pod
     #         cd pod && $(LNS) perldelta.pod perl511delta.pod
 
-    # although it seems that HP-UX make gets confused, always tried to
-    # regenerate the symlink, and then the ln -s fails, as the target exists.
-
-    my $re = qr{(
+    $makefile_SH =~ s!(
 pod/perl[a-z0-9_]+\.pod: pod/perl[a-z0-9_]+\.pod
-	\$\(RMS\) pod/perl[a-z0-9_]+\.pod
 	\$\(LNS\) perl[a-z0-9_]+\.pod pod/perl[a-z0-9_]+\.pod
-)+}sm;
-    $makefile_SH = verify_contiguous($name, $makefile_SH, $re, 'copy rules');
+)+!\0!gm;
+
+    verify_contiguous($name, $makefile_SH, 'copy rules');
 
     my @copy_rules = map "
 pod/$_: pod/$state->{copies}{$_}
-	\$(RMS) pod/$_
 	\$(LNS) $state->{copies}{$_} pod/$_
 ", keys %{$state->{copies}};
 
@@ -223,7 +221,38 @@ pod/$_: pod/$state->{copies}{$_}
 }
 
 # Do stuff
-process($_, $Build{$_}, main->can("do_$_"), $Test && ++$test, $Verbose)
-    foreach sort keys %Build;
+while (my ($target, $name) = each %Build) {
+    print "Now processing $name\n" if $Verbose;
 
+    my $orig = slurp_or_die($name);
+    my_die "$name contains NUL bytes" if $orig =~ /\0/;
+
+    my $new = do {
+        no strict 'refs';
+        &{"do_$target"}($target, $orig);
+    };
+
+    if ($Test) {
+        printf "%s %d # $name is up to date\n",
+            $new eq $orig ? 'ok' : 'not ok',
+                ++$test;
+        next;
+    } elsif ($new eq $orig) {
+        print "Was not modified\n"
+            if $Verbose;
+        next;
+    }
+
+    my $mode = (stat $name)[2] // my_die "Can't stat $name: $!";
+    rename $name, "$name.old" or my_die "Can't rename $name to $name.old: $!";
+
+    write_or_die($name, $new);
+    chmod $mode & 0777, $name or my_die "can't chmod $mode $name: $!";
+}
+
+# Local variables:
+# cperl-indent-level: 4
+# indent-tabs-mode: nil
+# End:
+#
 # ex: set ts=8 sts=4 sw=4 et:

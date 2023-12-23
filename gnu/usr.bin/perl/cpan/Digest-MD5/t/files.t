@@ -1,28 +1,33 @@
-use strict;
-use warnings;
-
-use Digest::MD5 qw(md5 md5_hex md5_base64);
-
 print "1..3\n";
+
+use strict;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
 
 # To update the EBCDIC section even on a Latin 1 platform,
 # run this script with $ENV{EBCDIC_MD5SUM} set to a true value.
 # (You'll need to have Perl 5.7.3 or later, to have the Encode installed.)
 # (And remember that under the Perl core distribution you should
 #  also have the $ENV{PERL_CORE} set to a true value.)
+# Similarly, to update MacOS section, run with $ENV{MAC_MD5SUM} set.
 
 my $EXPECT;
 if (ord "A" == 193) { # EBCDIC
     $EXPECT = <<EOT;
-0956ffb4f6416082b27d6680b4cf73fc  README
-3fce99bf3f4df26d65843a6990849df0  MD5.xs
+11e8028ee426273db6b6db270a8bb38c  README
+6e556382813f67120863f4f91b7fcdc2  MD5.xs
 276da0aa4e9a08b7fe09430c9c5690aa  rfc1321.txt
+EOT
+} elsif ("\n" eq "\015") { # MacOS
+    $EXPECT = <<EOT;
+c95549c6c5e1e1c078b27042f1dc850f  README
+7aa380c810bc7c1a0bec22cf32bc50d4  MD5.xs
+754b9db19f79dbc4992f7166eb0f37ce  rfc1321.txt
 EOT
 } else {
     # This is the output of: 'md5sum README MD5.xs rfc1321.txt'
     $EXPECT = <<EOT;
-2f93400875dbb56f36691d5f69f3eba5  README
-5956d385c276e47faebef391177ee1d3  MD5.xs
+c95549c6c5e1e1c078b27042f1dc850f  README
+7aa380c810bc7c1a0bec22cf32bc50d4  MD5.xs
 754b9db19f79dbc4992f7166eb0f37ce  rfc1321.txt
 EOT
 }
@@ -45,8 +50,7 @@ for (split /^/, $EXPECT) {
      my $base = $file;
 #     print "# $base\n";
      if ($ENV{PERL_CORE}) {
-         # Don't have these in core.
-         if ($file eq 'rfc1321.txt' or $file eq 'README') {
+         if ($file eq 'rfc1321.txt') { # Don't have it in core.
 	     print "ok ", ++$testno, " # Skip: PERL_CORE\n";
 	     next;
 	 }
@@ -60,6 +64,13 @@ for (split /^/, $EXPECT) {
          require Encode;
 	 my $data = cat_file($file);	
 	 Encode::from_to($data, 'latin1', 'cp1047');
+	 print md5_hex($data), "  $base\n";
+	 next;
+     }
+     if ($ENV{MAC_MD5SUM}) {
+         require Encode;
+	 my $data = cat_file($file);	
+	 Encode::from_to($data, 'latin1', 'MacRoman');
 	 print md5_hex($data), "  $base\n";
 	 next;
      }

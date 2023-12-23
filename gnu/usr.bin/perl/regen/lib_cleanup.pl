@@ -1,8 +1,8 @@
 #!perl -w
 use strict;
-require './regen/regen_lib.pl';
-require './Porting/pod_lib.pl';
-our ($TAP, $Verbose);
+require 'regen/regen_lib.pl';
+require 'Porting/pod_lib.pl';
+use vars qw($TAP $Verbose);
 
 # For processing later
 my @ext;
@@ -48,7 +48,7 @@ foreach my $file (@ext) {
         or die "Can't parse '$file'";
 
     if ($path =~ /\.yml$/) {
-        next unless $path =~ s!^lib/!!;
+	next unless $path =~ s!^lib/!!;
     } elsif ($path =~ /\.pod$/) {
         unless ($path =~ s!^lib/!!) {
             # ExtUtils::MakeMaker will install it to a path based on the
@@ -72,12 +72,6 @@ foreach my $file (@ext) {
         while (<$fh>) {
             if (/^\s*package\s+([A-Za-z0-9_:]+)/) {
                 $package = $1;
-                last;
-            }
-            elsif (/^\s*package\s*$/) {
-                # If they're hiding their package name, we ignore them
-                ++$ignore{"/$path"};
-                $package='';
                 last;
             }
         }
@@ -160,18 +154,13 @@ sub edit_win32_makefile {
 }
 
 process('Makefile.SH', 'Makefile.SH', \&edit_makefile_SH, $TAP && '', $Verbose);
-foreach ('win32/Makefile', 'win32/GNUmakefile') {
+foreach ('win32/Makefile', 'win32/makefile.mk') {
     process($_, $_, \&edit_win32_makefile, $TAP && '', $Verbose);
 }
 
 # This must come last as it can exit early:
 if ($TAP && !-d '.git' && !-f 'lib/.gitignore') {
     print "ok # skip not being run from a git checkout, hence no lib/.gitignore\n";
-    exit 0;
-}
-
-if ($ENV{'PERL_BUILD_PACKAGING'}) {
-    print "ok # skip explicitly disabled git tests by PERL_BUILD_PACKAGING\n";
     exit 0;
 }
 

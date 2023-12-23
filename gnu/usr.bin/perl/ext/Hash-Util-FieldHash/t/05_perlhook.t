@@ -1,17 +1,18 @@
-use strict;
-use warnings;
+#!perl
+
+BEGIN {
+    if ($ENV{PERL_CORE}) {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+    }
+}
+
+use strict; use warnings;
 use Test::More;
+my $n_tests;
 
 use Hash::Util::FieldHash;
-no warnings 'experimental::builtin';
-use builtin qw(weaken);
-
-sub numbers_first { # Sort helper: All digit entries sort in front of others
-                    # Makes sorting portable across ASCII/EBCDIC
-    return $a cmp $b if ($a =~ /^\d+$/) == ($b =~ /^\d+$/);
-    return -1 if $a =~ /^\d+$/;
-    return 1;
-}
+use Scalar::Util qw( weaken);
 
 # The functions in Hash::Util::FieldHash
 # _test_uvar_get, _test_uvar_get and _test_uvar_both
@@ -38,7 +39,7 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
 
     weaken $magref;
     is( $counter, 1, "weaken doesn't trigger magic");
-
+    
     { my $x = $magref }
     is( $counter, 1, "read doesn't trigger magic");
 
@@ -54,11 +55,13 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
 
     $magref = my $other_ref = [];
     is( $counter, 2, "overwrite triggers");
-
+    
     undef $ref;
     is( $counter, 2, "ref expiry doesn't trigger after overwrite");
 
     is( $magref, $other_ref, "weak ref doesn't kill overwritten value");
+
+    BEGIN { $n_tests += 10 }
 }
 
 # magical hash (patches to mg.c and hv.c)
@@ -101,9 +104,9 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
     is( $counter, 1, "list each doesn't trigger");
     is( "@x", "abc 123", "the return is correct");
 
-    $x = scalar %h;
+    $x = %h;
     is( $counter, 1, "hash in scalar context doesn't trigger");
-    is( $x, 1, "correct result");
+    like( $x, qr!^\d+/\d+$!, "correct result");
 
     (@x) = %h;
     is( $counter, 1, "hash in list context doesn't trigger");
@@ -113,7 +116,7 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
     $h{ def} = 456;
     is( $counter, 2, "lvalue assign triggers");
 
-    (@x) = sort numbers_first %h;
+    (@x) = sort %h;
     is( $counter, 2, "hash in list context doesn't trigger");
     is( "@x", "123 456 abc def", "correct result");
 
@@ -126,14 +129,14 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
     delete $h{ def};
     is( $counter, 5, "good delete triggers");
 
-    (@x) = sort numbers_first %h;
+    (@x) = sort %h;
     is( $counter, 5, "hash in list context doesn't trigger");
     is( "@x", "123 abc", "correct result");
 
     delete $h{ xyz};
     is( $counter, 6, "bad delete triggers");
 
-    (@x) = sort numbers_first %h;
+    (@x) = sort %h;
     is( $counter, 6, "hash in list context doesn't trigger");
     is( "@x", "123 abc", "correct result");
 
@@ -143,7 +146,7 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
     $x = $h{ xyz};
     is( $counter, 8, "bad read triggers");
 
-    (@x) = sort numbers_first %h;
+    (@x) = sort %h;
     is( $counter, 8, "hash in list context doesn't trigger");
     is( "@x", "123 abc", "correct result");
 
@@ -173,7 +176,7 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
     () = values %i;
     $x = each %i;
     () = each %i;
-
+    
     is( $counter, 0, "normal set magic never triggers");
 
     bless \ %i, 'abc';
@@ -204,6 +207,9 @@ sub numbers_first { # Sort helper: All digit entries sort in front of others
 
     bless \ %j, 'abc';
     is( $counter, 1, "...except for bless");
+
+    BEGIN { $n_tests += 43 }
 }
 
-done_testing;
+BEGIN { plan tests => $n_tests }
+

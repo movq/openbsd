@@ -2,7 +2,8 @@ package Testing;
 use 5.006_001;
 use strict;
 use warnings;
-use Exporter 'import';
+require Exporter;
+our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
     create_file_ok
     mkdir_ok
@@ -27,7 +28,7 @@ sub mkdir_ok($$;$) {
     my ($dir, $mask) = @_[0..1];
     my $msg = $_[2] || "able to mkdir: $dir";
     ok( mkdir($dir, $mask), $msg )
-        or die("Unable to mkdir $!: $dir");
+        or die("Unable to mkdir: $dir");
 }
 
 sub symlink_ok($$;$) {

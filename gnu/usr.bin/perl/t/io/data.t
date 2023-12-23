@@ -4,8 +4,8 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require "./test.pl";
-    set_up_inc('../lib');
+    @INC = '../lib';
+    require './test.pl';
 }
 
 $|=1;
@@ -20,7 +20,7 @@ run_multiple_progs('', \*DATA);
 done_testing();
 
 __END__
-# https://github.com/Perl/perl5/issues/7207#issuecomment-543940952
+# http://rt.perl.org/rt3/Ticket/Display.html?id=28106#txn-82657
 while (<DATA>) {
     chomp;
     print "$.: '$_'\n";
@@ -35,7 +35,7 @@ EXPECT
 2: '2'
 3: '3'
 ########
-# https://github.com/Perl/perl5/issues/7207#issuecomment-543940955
+# http://rt.perl.org/rt3/Ticket/Display.html?id=28106#txn-83113
 my $line1 = <DATA>;
 `echo foo`;
 my $line2 = <DATA>;
@@ -48,7 +48,7 @@ EXPECT
 ok 1
 ok 2
 ########
-# https://github.com/Perl/perl5/issues/7207#issuecomment-543940992
+# http://rt.perl.org/rt3/Ticket/Attachment/828796/403048/perlbug.rep.txt
 my @data_positions = tell(DATA);
 while (<DATA>){
     if (/^__DATA__$/) {
@@ -79,12 +79,3 @@ lotsa junk
 nothing
 EXPECT
 ok
-########
-# Which package is __DATA__ in?
-package foo;
-BEGIN{*foo::=*bar::}
-print <DATA>;
-__DATA__
-123
-EXPECT
-123

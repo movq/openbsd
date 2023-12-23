@@ -1,14 +1,24 @@
 #!./perl
 
-use strict;
-use warnings;
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+}
 
 use List::Util qw(first);
 use Test::More;
-plan tests => 24;
+plan tests => 22 + ($::PERL_ONLY ? 0 : 2);
 my $v;
 
-ok(defined &first, 'defined');
+ok(defined &first,	'defined');
 
 $v = first { 8 == ($_ - 1) } 9,4,5,6;
 is($v, 9, 'one more than 8');
@@ -20,7 +30,7 @@ $v = first { 0 };
 is($v, undef, 'no args');
 
 $v = first { $_->[1] le "e" and "e" le $_->[2] }
-    [qw(a b c)], [qw(d e f)], [qw(g h i)];
+		[qw(a b c)], [qw(d e f)], [qw(g h i)];
 is_deeply($v, [qw(d e f)], 'reference args');
 
 # Check that eval{} inside the block works correctly
@@ -58,11 +68,7 @@ like($@, qr/^Can't undef active subroutine/, "undef active sub");
 # redefinition takes effect immediately depends on whether we're
 # running the Perl or XS implementation.
 
-sub self_updating {
-  no warnings 'redefine';
-  *self_updating = sub{1};
-  1
-}
+sub self_updating { local $^W; *self_updating = sub{1} ;1}
 eval { $v = first \&self_updating, 1,2; };
 is($@, '', 'redefine self');
 
@@ -89,9 +95,11 @@ SKIP: {
     is(&Internals::SvREFCNT(\&huge), $refcnt, "Refcount unchanged");
 }
 
-# These tests are only relevant for the real multicall implementation. The
-# pseudo-multicall implementation behaves differently.
-SKIP: {
+# The remainder of the tests are only relevant for the XS
+# implementation. The Perl-only implementation behaves differently
+# (and more flexibly) in a way that we can't emulate from XS.
+if (!$::PERL_ONLY) { SKIP: {
+
     $List::Util::REAL_MULTICALL ||= 0; # Avoid use only once
     skip("Poor man's MULTICALL can't cope", 2)
       if !$List::Util::REAL_MULTICALL;
@@ -103,7 +111,8 @@ SKIP: {
     # Can we goto a subroutine?
     eval {()=first{goto sub{}} 1,2;};
     like($@, qr/^Can't goto subroutine from a sort sub/, "goto sub");
-}
+
+} }
 
 use constant XSUBC_TRUE  => 1;
 use constant XSUBC_FALSE => 0;

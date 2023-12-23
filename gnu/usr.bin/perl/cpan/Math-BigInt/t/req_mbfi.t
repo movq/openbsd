@@ -1,15 +1,37 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w 
 
-# check that simple requiring Math::BigFloat and then binf() works
+# check that simple requiring BigFloat and then binf() works
 
 use strict;
-use warnings;
+use Test;
 
-use Test::More tests => 1;
+BEGIN
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/req_mbfi.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    # testing with the core distribution
+    @INC = qw(../t/lib);
+    }
+  unshift @INC, qw(../lib);     # to locate the modules
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
 
-require Math::BigFloat;
+  plan tests => 1;
+  } 
 
-my $x = Math::BigFloat->binf();
-is($x, 'inf', '$x is inf');
+require Math::BigFloat; my $x = Math::BigFloat->binf(); ok ($x,'inf');
 
 # all tests done
+

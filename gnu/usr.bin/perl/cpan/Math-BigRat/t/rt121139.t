@@ -1,4 +1,4 @@
-# -*- mode: perl; -*-
+#!perl
 
 # check for cpan rt #121139
 

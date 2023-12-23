@@ -4,7 +4,6 @@
 # process.
 
 use strict;
-use warnings;
 use lib 't/lib';
 use Config;
 
@@ -24,8 +23,6 @@ sub has_crazy_patch {
 use Test::More (
       $^O eq 'VMS' ? ( skip_all => 'VMS' )
     : has_crazy_patch() ? ( skip_all => 'Incompatible @INC patch' )
-    : exists $ENV{HARNESS_PERL_SWITCHES}
-    ? ( skip_all => 'Someone messed with HARNESS_PERL_SWITCHES' )
     : ( tests => 2 )
 );
 
@@ -37,9 +34,10 @@ use lib 'wibble';
 my $test_template = <<'END';
 #!/usr/bin/perl %s
 
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 is $INC[0], "wibble", 'basic order of @INC preserved' or diag "\@INC: @INC";
+like $ENV{PERL5LIB}, qr{wibble};
 
 END
 

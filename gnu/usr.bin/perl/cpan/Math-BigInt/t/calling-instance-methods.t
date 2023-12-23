@@ -1,11 +1,11 @@
-# -*- mode: perl; -*-
+#!perl
 
 # test calling conventions, and :constant overloading
 
 use strict;
 use warnings;
 
-use Test::More tests => 156;
+use Test::More tests => 140;
 
 ##############################################################################
 
@@ -51,7 +51,7 @@ while (<DATA>) {
     my @args = split /:/, $_, 99;
     $expected = pop @args;
     foreach my $class (qw/
-                             Math::BigInt       Math::BigFloat
+                             Math::BigInt Math::BigFloat
                              Math::BigInt::Test Math::BigFloat::Test
                          /)
     {
@@ -76,12 +76,6 @@ __END__
 &is_negative
 1:0
 -1:1
-&is_non_positive
-1:0
--1:1
-&is_non_negative
-1:1
--1:0
 &is_nan
 abc:1
 1:0

@@ -29,7 +29,7 @@ watchdog(15);
 
 package Multi;
 require IO::Socket::INET;
-our @ISA=qw(IO::Socket::INET);
+@ISA=qw(IO::Socket::INET);
 
 use Socket qw(inet_aton inet_ntoa unpack_sockaddr_in);
 
@@ -74,19 +74,18 @@ package main;
 
 use IO::Socket;
 
-my $listen = IO::Socket::INET->new(LocalAddr => 'localhost',
-				Listen => 2,
+$listen = IO::Socket::INET->new(Listen => 2,
 				Proto => 'tcp',
 				Timeout => 5,
 			       ) or die "$!";
 
 print "ok 1\n";
 
-my $port = $listen->sockport;
+$port = $listen->sockport;
 
-if (my $pid = fork()) {
+if($pid = fork()) {
 
-    my $sock = $listen->accept() or die "$!";
+    $sock = $listen->accept() or die "$!";
     print "ok 5\n";
 
     print $sock->getline();
@@ -100,7 +99,7 @@ if (my $pid = fork()) {
 
 } elsif(defined $pid) {
 
-    my $sock = Multi->new(PeerPort => $port,
+    $sock = Multi->new(PeerPort => $port,
 		       Proto => 'tcp',
 		       PeerAddr => 'localhost',
 		       MultiHomed => 1,

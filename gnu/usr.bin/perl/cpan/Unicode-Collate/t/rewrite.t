@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -23,14 +28,11 @@ use Unicode::Collate;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
 my $code = sub {
     my $line = shift;
-    $line =~ s/\[\.0000\..{4}\..{4}([.\]])/[.0000.0000.0000$1/g;
+    $line =~ s/\[\.0000\..{4}\..{4}\./[.0000.0000.0000./g;
     return $line;
   };
 

@@ -1,9 +1,6 @@
 #!/usr/bin/perl
 
-use strict;
-use warnings;
-
-my $file = "tf09-$$.txt";
+my $file = "tf$$.txt";
 
 print "1..59\n";
 
@@ -13,9 +10,7 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-my $RECSEP = 'blah';
-
-my @a;
+$RECSEP = 'blah';
 my $o = tie @a, 'Tie::File', $file, 
     recsep => $RECSEP, autochomp => 0, autodefer => 0;
 print $o ? "ok $N\n" : "not ok $N\n";
@@ -166,7 +161,7 @@ if (setup_badly_terminated_file(1)) {
 
 sub setup_badly_terminated_file {
   my $NTESTS = shift;
-  open F, '>', $file or die "Couldn't open $file: $!";
+  open F, "> $file" or die "Couldn't open $file: $!";
   binmode F;
   print F $badrec;
   close F;
@@ -202,7 +197,6 @@ sub check_contents {
 
   # now check FETCH:
   my $good = 1;
-  my $msg = '';
   for (0.. $#c) {
     unless ($a[$_] eq "$c[$_]$RECSEP") {
       $msg = "expected $c[$_]$RECSEP, got $a[$_]";

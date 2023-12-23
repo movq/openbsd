@@ -1,27 +1,37 @@
 #!./perl
 
-use strict;
-use warnings;
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+}
+
 
 use Test::More tests => 32;
 
 use Scalar::Util qw(refaddr);
-use vars qw(*F);
+use vars qw($t $y $x *F $v $r);
 use Symbol qw(gensym);
 
 # Ensure we do not trigger and tied methods
 tie *F, 'MyTie';
 
 my $i = 1;
-foreach my $v (undef, 10, 'string') {
+foreach $v (undef, 10, 'string') {
   is(refaddr($v), undef, "not " . (defined($v) ? "'$v'" : "undef"));
 }
 
-my $t;
-foreach my $r ({}, \$t, [], \*F, sub {}) {
+foreach $r ({}, \$t, [], \*F, sub {}) {
   my $n = "$r";
   $n =~ /0x(\w+)/;
-  my $addr = do { no warnings; hex $1 };
+  my $addr = do { local $^W; hex $1 };
   my $before = ref($r);
   is( refaddr($r), $addr, $n);
   is( ref($r), $before, $n);
@@ -51,10 +61,7 @@ foreach my $r ({}, \$t, [], \*F, sub {}) {
 {
   my $z = bless {}, '0';
   ok(refaddr($z));
-  {
-    no strict 'refs';
-    @{"0::ISA"} = qw(FooBar);
-  }
+  @{"0::ISA"} = qw(FooBar);
   my $a = {};
   my $r = refaddr($a);
   $z = bless $a, '0';
@@ -64,10 +71,9 @@ foreach my $r ({}, \$t, [], \*F, sub {}) {
 
 package FooBar;
 
-use overload
-    '0+'  => sub { 10 },
-    '+'   => sub { 10 + $_[1] },
-    '""'  => sub { "10" };
+use overload  '0+' => sub { 10 },
+		'+' => sub { 10 + $_[1] },
+		'""' => sub { "10" };
 
 package MyTie;
 
@@ -75,7 +81,6 @@ sub TIEHANDLE { bless {} }
 sub DESTROY {}
 
 sub AUTOLOAD {
-  our $AUTOLOAD;
   warn "$AUTOLOAD called";
   exit 1; # May be in an eval
 }
@@ -86,21 +91,21 @@ use Scalar::Util qw(refaddr);
 
 sub TIEHASH
 {
-    my $pkg = shift;
-    return bless [ @_ ], $pkg;
+	my $pkg = shift;
+	return bless [ @_ ], $pkg;
 }
 sub FETCH
 {
-    my $self = shift;
-    my $key = shift;
-    my ($underlying) = @$self;
-    return $underlying->{refaddr($key)};
+	my $self = shift;
+	my $key = shift;
+	my ($underlying) = @$self;
+	return $underlying->{refaddr($key)};
 }
 sub STORE
 {
-    my $self = shift;
-    my $key = shift;
-    my $value = shift;
-    my ($underlying) = @$self;
-    return ($underlying->{refaddr($key)} = $key);
+	my $self = shift;
+	my $key = shift;
+	my $value = shift;
+	my ($underlying) = @$self;
+	return ($underlying->{refaddr($key)} = $key);
 }

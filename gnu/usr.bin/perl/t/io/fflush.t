@@ -2,8 +2,7 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
+    @INC = '../lib';
 }
 
 # Script to test auto flush on fork/exec/system/qx.  The idea is to
@@ -19,16 +18,29 @@ use strict;
 # it here too or expect test gratuitous test failures.
 my $useperlio = defined $Config{useperlio} ? $Config{useperlio} eq 'define' ? 1 : 0 : 0;
 my $fflushNULL = defined $Config{fflushNULL} ? $Config{fflushNULL} eq 'define' ? 1 : 0 : 0;
+my $d_sfio = defined $Config{d_sfio} ? $Config{d_sfio} eq 'define' ? 1 : 0 : 0;
 my $fflushall = defined $Config{fflushall} ? $Config{fflushall} eq 'define' ? 1 : 0 : 0;
 my $d_fork = defined $Config{d_fork} ? $Config{d_fork} eq 'define' ? 1 : 0 : 0;
 
-skip_all('fflush(NULL) or equivalent not available')
-    unless $useperlio || $fflushNULL || $fflushall;
+if ($useperlio || $fflushNULL || $d_sfio) {
+    print "1..4\n";
+} else {
+    if ($fflushall) {
+	print "1..4\n";
+    } else {
+	print "1..0 # Skip: fflush(NULL) or equivalent not available\n";
+        exit;
+    }
+}
 
-plan(tests => 7);
+my $runperl = qq{$^X "-I../lib"};
+my @delete;
 
-my $runperl = $^X =~ m/\s/ ? qq{"$^X"} : $^X;
-$runperl .= qq{ "-I../lib"};
+END {
+    for (@delete) {
+	unlink $_ or warn "unlink $_: $!";
+    }
+}
 
 sub file_eq {
     my $f   = shift;
@@ -45,8 +57,7 @@ sub file_eq {
 
 # This script will be used as the command to execute from
 # child processes
-my $ffprog = tempfile();
-open PROG, "> $ffprog" or die "open $ffprog: $!";
+open PROG, "> ff-prog" or die "open ff-prog: $!";
 print PROG <<'EOF';
 my $f = shift;
 my $str = shift;
@@ -55,7 +66,8 @@ print OUT $str;
 close OUT;
 EOF
     ;
-close PROG or die "close $ffprog: $!";;
+close PROG or die "close ff-prog: $!";;
+push @delete, "ff-prog";
 
 $| = 0; # we want buffered output
 
@@ -63,7 +75,7 @@ $| = 0; # we want buffered output
 if (!$d_fork) {
     print "ok 1 # skipped: no fork\n";
 } else {
-    my $f = tempfile();
+    my $f = "ff-fork-$$";
     open OUT, "> $f" or die "open $f: $!";
     print OUT "Pe";
     my $pid = fork;
@@ -74,7 +86,7 @@ if (!$d_fork) {
     } elsif (defined $pid) {
 	# Kid
 	print OUT "r";
-	my $command = qq{$runperl "$ffprog" "$f" "l"};
+	my $command = qq{$runperl "ff-prog" "$f" "l"};
 	print "# $command\n";
 	exec $command or die $!;
 	exit;
@@ -84,6 +96,7 @@ if (!$d_fork) {
     }
 
     print file_eq($f, "Perl") ? "ok 1\n" : "not ok 1\n";
+    push @delete, $f;
 }
 
 # Test flush on system/qx/pipe open
@@ -105,27 +118,14 @@ my %subs = (
 my $t = 2;
 for (qw(system qx popen)) {
     my $code    = $subs{$_};
-    my $f       = tempfile();
-    my $command = qq{$runperl $ffprog "$f" "rl"};
+    my $f       = "ff-$_-$$";
+    my $command = qq{$runperl "ff-prog" "$f" "rl"};
     open OUT, "> $f" or die "open $f: $!";
     print OUT "Pe";
     close OUT or die "close $f: $!";;
     print "# $command\n";
     $code->($command);
     print file_eq($f, "Perl") ? "ok $t\n" : "not ok $t\n";
+    push @delete, $f;
     ++$t;
 }
-
-my $cmd = _create_runperl(
-			  switches => ['-l'],
-			  prog =>
-			  sprintf('print qq[ok $_] for (%d..%d)', $t, $t+2));
-print "# cmd = '$cmd'\n";
-open my $CMD, "$cmd |" or die "Can't open pipe to '$cmd': $!";
-while (<$CMD>) {
-    system("$runperl -e 0");
-    print;
-}
-close $CMD;
-$t += 3;
-curr_test($t);

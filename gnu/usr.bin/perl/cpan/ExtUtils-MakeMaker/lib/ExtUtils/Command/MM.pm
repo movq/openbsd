@@ -8,22 +8,12 @@ use warnings;
 require Exporter;
 our @ISA = qw(Exporter);
 
-our @EXPORT  = qw(test_harness pod2man perllocal_install uninstall
-                  warn_if_old_packlist test_s cp_nonempty);
-our $VERSION = '7.64';
-$VERSION =~ tr/_//d;
+our @EXPORT  = qw(test_harness pod2man perllocal_install uninstall 
+                  warn_if_old_packlist);
+our $VERSION = '6.56';
 
 my $Is_VMS = $^O eq 'VMS';
 
-sub mtime {
-  no warnings 'redefine';
-  local $@;
-  *mtime = (eval { require Time::HiRes } && defined &Time::HiRes::stat)
-    ? sub { (Time::HiRes::stat($_[0]))[9] }
-    : sub { (             stat($_[0]))[9] }
-  ;
-  goto &mtime;
-}
 
 =head1 NAME
 
@@ -109,7 +99,7 @@ sub pod2man {
         if( !eval { require Pod::Man } ) {
             warn "Pod::Man is not available: $@".
                  "Man pages will not be generated during this install.\n";
-            return 0;
+            return undef;
         }
     }
     require Getopt::Long;
@@ -118,13 +108,12 @@ sub pod2man {
     # our arguments into @ARGV.  Should be safe.
     my %options = ();
     Getopt::Long::config ('bundling_override');
-    Getopt::Long::GetOptions (\%options,
+    Getopt::Long::GetOptions (\%options, 
                 'section|s=s', 'release|r=s', 'center|c=s',
                 'date|d=s', 'fixed=s', 'fixedbold=s', 'fixeditalic=s',
                 'fixedbolditalic=s', 'official|o', 'quotes|q=s', 'lax|l',
-                'name|n=s', 'perm_rw=i', 'utf8|u'
+                'name|n=s', 'perm_rw=i'
     );
-    delete $options{utf8} unless $Pod::Man::VERSION >= 2.17;
 
     # If there's no files, don't bother going further.
     return 0 unless @ARGV;
@@ -137,16 +126,15 @@ sub pod2man {
     # This isn't a valid Pod::Man option and is only accepted for backwards
     # compatibility.
     delete $options{lax};
-    my $count = scalar @ARGV / 2;
-    my $plural = $count == 1 ? 'document' : 'documents';
-    print "Manifying $count pod $plural\n";
 
     do {{  # so 'next' works
         my ($pod, $man) = splice(@ARGV, 0, 2);
 
         next if ((-e $man) &&
-                 (mtime($man) > mtime($pod)) &&
-                 (mtime($man) > mtime("Makefile")));
+                 (-M $man < -M $pod) &&
+                 (-M $man < -M "Makefile"));
+
+        print "Manifying $man\n";
 
         my $parser = Pod::Man->new(%options);
         $parser->parse_from_file($pod, $man)
@@ -186,7 +174,7 @@ PACKLIST_WARNING
 
 =item B<perllocal_install>
 
-    perl "-MExtUtils::Command::MM" -e perllocal_install
+    perl "-MExtUtils::Command::MM" -e perllocal_install 
         <type> <module name> <key> <value> ...
 
     # VMS only, key|value pairs come on STDIN
@@ -205,7 +193,7 @@ Key/value pairs are extra information about the module.  Fields include:
     installed into      which directory your module was out into
     LINKTYPE            dynamic or static linking
     VERSION             module version number
-    EXE_FILES           any executables installed in a space separated
+    EXE_FILES           any executables installed in a space seperated 
                         list
 
 =cut
@@ -219,12 +207,11 @@ sub perllocal_install {
                            : @ARGV;
 
     my $pod;
-    my $time = gmtime($ENV{SOURCE_DATE_EPOCH} || time);
-    $pod = sprintf <<'POD', scalar($time), $type, $name, $name;
- =head2 %s: C<%s> L<%s|%s>
-
+    $pod = sprintf <<POD, scalar localtime;
+ =head2 %s: C<$type> L<$name|$name>
+ 
  =over 4
-
+ 
 POD
 
     do {
@@ -232,9 +219,9 @@ POD
 
         $pod .= <<POD
  =item *
-
+ 
  C<$key: $val>
-
+ 
 POD
 
     } while(@mod_info);
@@ -281,43 +268,8 @@ WARNING
 
 }
 
-=item B<test_s>
-
-   perl "-MExtUtils::Command::MM" -e test_s <file>
-
-Tests if a file exists and is not empty (size > 0).
-I<Exits> with 0 if it does, 1 if it does not.
-
-=cut
-
-sub test_s {
-  exit(-s $ARGV[0] ? 0 : 1);
-}
-
-=item B<cp_nonempty>
-
-  perl "-MExtUtils::Command::MM" -e cp_nonempty <srcfile> <dstfile> <perm>
-
-Tests if the source file exists and is not empty (size > 0). If it is not empty
-it copies it to the given destination with the given permissions.
-
 =back
 
 =cut
-
-sub cp_nonempty {
-  my @args = @ARGV;
-  return 0 unless -s $args[0];
-  require ExtUtils::Command;
-  {
-    local @ARGV = @args[0,1];
-    ExtUtils::Command::cp(@ARGV);
-  }
-  {
-    local @ARGV = @args[2,1];
-    ExtUtils::Command::chmod(@ARGV);
-  }
-}
-
 
 1;

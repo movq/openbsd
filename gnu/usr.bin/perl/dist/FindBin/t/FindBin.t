@@ -1,8 +1,5 @@
 #!./perl
 
-use strict;
-use warnings;
-
 print "1..2\n";
 
 use FindBin qw($Bin);

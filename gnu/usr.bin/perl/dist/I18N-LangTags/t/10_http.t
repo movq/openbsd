@@ -1,8 +1,10 @@
-use strict;
+
+# Time-stamp: "2004-06-17 23:06:22 PDT"
 
 use I18N::LangTags::Detect;
 
-use Test::More;
+use Test;
+BEGIN { plan tests => 87 };
 
 my @in = grep m/\S/, split /\n/, q{
 
@@ -56,7 +58,6 @@ my @in = grep m/\S/, split /\n/, q{
 [ NIX ] NIX
 };
 
-plan(tests => 2 * @in);
 foreach my $in (@in) {
   $in =~ s/^\s*\[([^\]]+)\]\s*//s or die "Bad input: $in";
   my @should = do { my $x = $1; $x =~ m/(\S+)/g };
@@ -65,25 +66,39 @@ foreach my $in (@in) {
 
   local $ENV{'HTTP_ACCEPT_LANGUAGE'};
   
-  foreach (
-	   ['arg', sub {
+  foreach my $modus (
+    sub {
       print "# Testing with arg...\n";
       $ENV{'HTTP_ACCEPT_LANGUAGE'} = 'PLORK';
       return $_[0];
-  }],
-	   ['HTTP_ACCEPT_LANGUAGE', sub {
+    },
+    sub {
       print "# Testing wath HTTP_ACCEPT_LANGUAGE...\n";
       $ENV{'HTTP_ACCEPT_LANGUAGE'} = $_[0];
      return();
-  }],
-	  ) {
-    my ($type, $modus) = @$_;
+    },
+  ) {
     my @args = &$modus($in);
 
     # ////////////////////////////////////////////////////
     my @out = I18N::LangTags::Detect->http_accept_langs(@args);
     # \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
-    is_deeply(\@out, \@should, "Testing [$in] with $type");
+    if(
+     @out == @should
+       and lc( join "\e", @out ) eq lc( join "\e", @should )
+    ) {
+      print "# Happily got [@out] from [$in]\n";
+      ok 1;
+    } else {
+      ok 0;
+      print "#Got:         [@out]\n",
+            "# but wanted: [@should]\n",
+            "# < \"$in\"\n#\n";
+    }
   }
 }
+
+print "#\n#\n# Bye-bye!\n";
+ok 1;
+

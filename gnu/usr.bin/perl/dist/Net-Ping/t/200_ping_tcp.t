@@ -1,5 +1,3 @@
-use strict;
-
 BEGIN {
   if ($ENV{PERL_CORE}) {
     unless ($ENV{PERL_TEST_Net_Ping}) {
@@ -17,9 +15,6 @@ BEGIN {
   }
 }
 
-# Hopefully this is never a routeable host
-my $fail_ip = $ENV{NET_PING_FAIL_IP} || "172.29.249.249";
-
 # Remote network test using tcp protocol.
 #
 # NOTE:
@@ -31,54 +26,41 @@ my $fail_ip = $ENV{NET_PING_FAIL_IP} || "172.29.249.249";
 #
 # $ PERL_CORE=1 make test
 
-use Test::More tests => 13;
-BEGIN {use_ok('Net::Ping');}
+use Test;
+use Net::Ping;
+plan tests => 13;
+
+# Everything loaded fine
+ok 1;
 
 my $p = new Net::Ping "tcp",9;
 
-isa_ok($p, 'Net::Ping', 'new() worked');
+# new() worked?
+ok !!$p;
 
-# message_type can't be used
-eval {
-  $p->message_type();
-};
-like($@, qr/message type only supported on 'icmp' protocol/, "message_type() API only concern 'icmp' protocol");
-
-my $localhost = $p->ping("localhost");
-if ($localhost) {
-  isnt($p->ping("localhost"), 0, 'Test on the default port');
-} else {
-  ok(1, "SKIP localhost on the default port on $^O");
-}
+# Test on the default port
+ok $p -> ping("localhost");
 
 # Change to use the more common web port.
 # This will pull from /etc/services on UNIX.
 # (Make sure getservbyname works in scalar context.)
-isnt($p->{port_num} = (getservbyname("http", "tcp") || 80), undef, "getservbyname http");
+ok ($p -> {port_num} = (getservbyname("http", "tcp") || 80));
 
-if ($localhost) {
-  isnt($p->ping("localhost"), 0, 'Test localhost on the web port');
-} else {
-  my $result = $p->ping("localhost");
-  if ($result) {
-    isnt($p->ping("localhost"), 0, "localhost on the web port unexpectedly worked on $^O");
-  } else {
-    ok(1, "SKIP localhost on the web port on $^O");
-  }
-}
+# Test localhost on the web port
+ok $p -> ping("localhost");
 
-is($p->ping($fail_ip), 0, "Can't reach $fail_ip");
+# Hopefully this is never a routeable host
+ok !$p -> ping("172.29.249.249");
 
 # Test a few remote servers
 # Hopefully they are up when the tests are run.
 
-if ($p->ping('google.com')) { # check for firewall
-  foreach (qw(google.com www.google.com www.wisc.edu
-              yahoo.com www.yahoo.com www.about.com)) {
-    isnt($p->ping($_), 0, "Can ping $_");
-  }
-} else {
- SKIP: {
-    skip "Cannot ping google.com: no TCP connection or firewall", 6;
-  }
-}
+ok $p -> ping("www.geocities.com");
+ok $p -> ping("ftp.geocities.com");
+
+ok $p -> ping("www.freeservers.com");
+ok $p -> ping("ftp.freeservers.com");
+
+ok $p -> ping("yahoo.com");
+ok $p -> ping("www.yahoo.com");
+ok $p -> ping("www.about.com");

@@ -1,22 +1,24 @@
-cpan/podlators/blib/script/pod2man
-cpan/podlators/blib/script/pod2text
-cpan/Pod-Usage/blib/script/pod2usage
-cpan/Pod-Checker/blib/script/podchecker
-utils/cpan
-utils/corelist
+lib/ExtUtils/xsubpp
+pod/pod2html
+pod/pod2latex
+pod/pod2man
+pod/pod2text
+pod/pod2usage
+pod/podchecker
+pod/podselect
+utils/c2ph      # link = utils/pstruct
+utils/dprofpp
 utils/enc2xs
-utils/encguess
 utils/h2ph
 utils/h2xs
-utils/instmodsh
 utils/libnetcfg
 utils/perlbug
+utils/perlcc
 utils/perldoc
 utils/perlivp
 utils/piconv
 utils/pl2pm
-utils/pod2html
-utils/prove
 utils/splain
-utils/streamzip
-utils/xsubpp
+x2p/a2p         # pod = x2p/a2p.pod
+x2p/find2perl
+x2p/s2p         # link = x2p/psed

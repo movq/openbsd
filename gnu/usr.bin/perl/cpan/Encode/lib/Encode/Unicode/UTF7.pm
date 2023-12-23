@@ -1,14 +1,15 @@
 #
-# $Id: UTF7.pm,v 2.10 2017/06/10 17:23:50 dankogai Exp $
+# $Id: UTF7.pm,v 2.4 2006/06/03 20:28:48 dankogai Exp $
 #
 package Encode::Unicode::UTF7;
 use strict;
 use warnings;
-use parent qw(Encode::Encoding);
+no warnings 'redefine';
+use base qw(Encode::Encoding);
 __PACKAGE__->Define('UTF-7');
-our $VERSION = do { my @r = ( q$Revision: 2.10 $ =~ /\d+/g ); sprintf "%d." . "%02d" x $#r, @r };
+our $VERSION = do { my @r = ( q$Revision: 2.4 $ =~ /\d+/g ); sprintf "%d." . "%02d" x $#r, @r };
 use MIME::Base64;
-use Encode qw(find_encoding);
+use Encode;
 
 #
 # Algorithms taken from Unicode::String by Gisle Aas
@@ -29,15 +30,12 @@ sub needs_lines { 1 }
 
 sub encode($$;$) {
     my ( $obj, $str, $chk ) = @_;
-    return undef unless defined $str;
     my $len = length($str);
     pos($str) = 0;
-    my $bytes = substr($str, 0, 0); # to propagate taintedness
+    my $bytes = '';
     while ( pos($str) < $len ) {
         if ( $str =~ /\G($re_asis+)/ogc ) {
-	    my $octets = $1;
-	    utf8::downgrade($octets);
-	    $bytes .= $octets;
+            $bytes .= $1;
         }
         elsif ( $str =~ /\G($re_encoded+)/ogsc ) {
             if ( $1 eq "+" ) {
@@ -59,12 +57,9 @@ sub encode($$;$) {
 }
 
 sub decode($$;$) {
-    use re 'taint';
     my ( $obj, $bytes, $chk ) = @_;
-    return undef unless defined $bytes;
     my $len = length($bytes);
-    my $str = substr($bytes, 0, 0); # to propagate taintedness;
-    pos($bytes) = 0;
+    my $str = "";
     no warnings 'uninitialized';
     while ( pos($bytes) < $len ) {
         if ( $bytes =~ /\G([^+]+)/ogc ) {

@@ -1,6 +1,8 @@
 #!./perl
 
-print "1..44\n";
+# $RCSfile: cmdopt.t,v $$Revision: 4.1 $$Date: 92/08/07 18:27:17 $
+
+print "1..40\n";
 
 # test the optimization of constants
 
@@ -79,10 +81,3 @@ if ($a !~ /a/ || $x) { print "ok 38\n";} else { print "not ok 38\n";}
 $x = '';
 if ($a =~ /a/ || $x) { print "ok 39\n";} else { print "not ok 39\n";}
 if ($a !~ /a/ || $x) { print "not ok 40\n";} else { print "ok 40\n";}
-
-$x = 1;
-if ($a eq 'a' xor $x) { print "not ok 41\n";} else { print "ok 41\n";}
-if ($a ne 'a' xor $x) { print "ok 42\n";} else { print "not ok 42\n";}
-$x = '';
-if ($a eq 'a' xor $x) { print "ok 43\n";} else { print "not ok 43\n";}
-if ($a ne 'a' xor $x) { print "not ok 44\n";} else { print "ok 44\n";}

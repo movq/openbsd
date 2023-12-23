@@ -1,16 +1,9 @@
 package Net::netent;
 use strict;
 
-use 5.006_001;
-our $VERSION = '1.01';
-our(@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
-our (
-    $n_name, @n_aliases,
-    $n_addrtype, $n_net
-);
- 
 BEGIN { 
     use Exporter   ();
+    use vars       qw(@EXPORT @EXPORT_OK %EXPORT_TAGS);
     @EXPORT      = qw(getnetbyname getnetbyaddr getnet);
     @EXPORT_OK   = qw(
 			$n_name	    	@n_aliases
@@ -18,6 +11,7 @@ BEGIN {
 		   );
     %EXPORT_TAGS = ( FIELDS => [ @EXPORT_OK, @EXPORT ] );
 }
+use vars      @EXPORT_OK;
 
 # Class::Struct forbids use of @ISA
 sub import { goto &Exporter::import }
@@ -98,7 +92,7 @@ $n_name if you import the fields.  Array references are available as
 regular array variables, so for example C<@{ $net_obj-E<gt>aliases()
 }> would be simply @n_aliases.
 
-The getnet() function is a simple front-end that forwards a numeric
+The getnet() funtion is a simple front-end that forwards a numeric
 argument to getnetbyaddr(), and the rest
 to getnetbyname().
 
@@ -125,26 +119,26 @@ This seems a bug, but here's how to deal with it:
  use strict;
  use Socket;
  use Net::netent;
-
+ 
  @ARGV = ('loopback') unless @ARGV;
-
+ 
  my($n, $net);
-
+ 
  for $net ( @ARGV ) {
-
+ 
      unless ($n = getnetbyname($net)) {
  	warn "$0: no such net: $net\n";
  	next;
      }
-
+ 
      printf "\n%s is %s%s\n", 
  	    $net, 
  	    lc($n->name) eq lc($net) ? "" : "*really* ",
  	    $n->name;
-
+ 
      print "\taliases are ", join(", ", @{$n->aliases}), "\n"
  		if @{$n->aliases};     
-
+ 
      # this is stupid; first, why is this not in binary?
      # second, why am i going through these convolutions
      # to make it looks right
@@ -153,7 +147,7 @@ This seems a bug, but here's how to deal with it:
  	shift @a while @a && $a[0] == 0;
  	printf "\taddr is %s [%d.%d.%d.%d]\n", $n->net, @a;
      }
-
+ 
      if ($n = getnetbyaddr($n->net)) {
  	if (lc($n->name) ne lc($net)) {
  	    printf "\tThat addr reverses to net %s!\n", $n->name;

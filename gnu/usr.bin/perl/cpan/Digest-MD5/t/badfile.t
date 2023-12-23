@@ -1,10 +1,8 @@
-use strict;
-use warnings;
+print "1..2\n";
 
 use Digest::MD5 ();
 
-print "1..2\n";
-my $md5 = Digest::MD5->new;
+$md5 = Digest::MD5->new;
 
 eval {
    use vars qw(*FOO);

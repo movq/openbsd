@@ -8,7 +8,6 @@ BEGIN {
 use lib '../lib';
 
 use strict;
-use warnings;
 use Test;
 BEGIN { plan tests => 5 };
 

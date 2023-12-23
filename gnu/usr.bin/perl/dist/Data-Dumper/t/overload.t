@@ -1,11 +1,19 @@
 #!./perl -w
 
-use strict;
-use warnings;
+BEGIN {
+    if ($ENV{PERL_CORE}){
+        require Config; import Config;
+        no warnings 'once';
+        if ($Config{'extensions'} !~ /\bData\/Dumper\b/) {
+            print "1..0 # Skip: Data::Dumper was not built\n";
+            exit 0;
+        }
+    }
+}
 
 use Data::Dumper;
 
-use Test::More tests => 4;
+print "1..1\n";
 
 package Foo;
 use overload '""' => 'as_string';
@@ -17,11 +25,12 @@ package main;
 
 my $f = Foo->new;
 
-isa_ok($f, 'Foo');
-is("$f", '%%%%', 'String overloading works');
+print "#\$f=$f\n";
 
-my $d = Dumper($f);
+$_ = Dumper($f);
+s/^/#/mg;
+print $_;
 
-like($d, qr/bar/);
-like($d, qr/Foo/);
+print "not " unless /bar/ && /Foo/;
+print "ok 1\n";
 

@@ -1,15 +1,11 @@
 #!./perl
 
 BEGIN {
-	unshift @INC, 't';
-	require Config;
-	if (($Config::Config{'extensions'} !~ /\bB\b/) ){
-		print "1..0 # Skip -- Perl configured without B module\n";
-		exit 0;
-	}
+	chdir 't' if -d 't';
+	@INC = '../lib';
 }
 
-use Test::More tests => 16;
+use Test::More tests => 15;
 
 use_ok( 'B::Terse' );
 
@@ -37,7 +33,7 @@ $sub->();
 # now build some regexes that should match the dumped ops
 my ($hex, $op) = ('\(0x[a-f0-9]+\)', '\s+\w+');
 my %ops = map { $_ => qr/$_ $hex$op/ }
-	qw ( OP	COP LOOP PMOP UNOP BINOP LOGOP LISTOP PVOP );
+	qw ( OP	COP	LOOP PMOP UNOP BINOP LOGOP LISTOP );
 
 # split up the output lines into individual ops (terse is, well, terse!)
 # use an array here so $_ is modifiable
@@ -49,8 +45,8 @@ foreach (@lines) {
 		my $op = $1;
 		next unless exists $ops{$op};
 		like( $_, $ops{$op}, "$op " );
-		s/$ops{$op}//;
 		delete $ops{$op};
+		s/$ops{$op}//;
 		redo if $_;
 	}
 }
@@ -59,11 +55,9 @@ warn "# didn't find " . join(' ', keys %ops) if keys %ops;
 
 # XXX:
 # this tries to get at all tersified optypes in B::Terse
-# if you can think of a way to produce AV, NULL, PADOP, or SPECIAL,
-# add it to the regex above too. (PADOPs are currently only produced
-# under ithreads, though).
+# if you add AV, NULL, PADOP, PVOP, or SPECIAL, add it to the regex above too
 #
-our ( $a, $b );
+use vars qw( $a $b );
 sub bar {
 	# OP SVOP COP IV here or in sub definition
 	my @bar = (1, 2, 3);
@@ -75,9 +69,9 @@ sub bar {
 	$a = 1.234;
 
 	# this is awful, but it gives a PMOP
-	our @ary = split('', $foo);
+	my $boo = split('', $foo);
 
-	# PVOP, LOOP
+	# PMOP
 	LOOP: for (1 .. 10) {
 		last LOOP if $_ % 2;
 	}
@@ -89,10 +83,17 @@ sub bar {
 	$foo =~ s/(a)/$1/;
 }
 
-# Schwern's example of finding an RV
-my $path = join " ", map { qq["-I$_"] } @INC;
-my $items = qx{$^X $path "-MO=Terse" -le "print \\42" 2>&1};
-like( $items, qr/IV $hex \\42/, 'RV (but now stored in an IV)' );
+SKIP: {
+    use Config;
+    skip("- B::Terse won't grok RVs under ithreads yet", 1)
+	if $Config{useithreads};
+    # Schwern's example of finding an RV
+    my $path = join " ", map { qq["-I$_"] } @INC;
+    $path = '-I::lib -MMac::err=unix' if $^O eq 'MacOS';
+    my $redir = $^O eq 'MacOS' ? '' : "2>&1";
+    my $items = qx{$^X $path "-MO=Terse" -le "print \\42" $redir};
+    like( $items, qr/RV $hex \\42/, 'RV' );
+}
 
 package TieOut;
 

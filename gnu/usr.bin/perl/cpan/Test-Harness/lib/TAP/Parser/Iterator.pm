@@ -1,39 +1,41 @@
 package TAP::Parser::Iterator;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
-use base 'TAP::Object';
+use TAP::Object ();
+
+@ISA = qw(TAP::Object);
 
 =head1 NAME
 
-TAP::Parser::Iterator - Base class for TAP source iterators
+TAP::Parser::Iterator - Internal base class for TAP::Parser Iterators
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 SYNOPSIS
 
+  # see TAP::Parser::IteratorFactory for general usage
+
   # to subclass:
+  use vars qw(@ISA);
   use TAP::Parser::Iterator ();
-  use base 'TAP::Parser::Iterator';
+  @ISA = qw(TAP::Parser::Iterator);
   sub _initialize {
     # see TAP::Object...
   }
 
-  sub next_raw { ... }
-  sub wait     { ... }
-  sub exit     { ... }
-
 =head1 DESCRIPTION
 
 This is a simple iterator base class that defines L<TAP::Parser>'s iterator
-API.  Iterators are typically created from L<TAP::Parser::SourceHandler>s.
+API.  See C<TAP::Parser::IteratorFactory> for the preferred way of creating
+iterators.
 
 =head1 METHODS
 
@@ -154,6 +156,7 @@ There's not much point repeating it here.
 
 L<TAP::Object>,
 L<TAP::Parser>,
+L<TAP::Parser::IteratorFactory>,
 L<TAP::Parser::Iterator::Array>,
 L<TAP::Parser::Iterator::Stream>,
 L<TAP::Parser::Iterator::Process>,

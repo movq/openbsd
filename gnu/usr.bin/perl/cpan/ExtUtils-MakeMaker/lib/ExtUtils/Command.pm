@@ -2,14 +2,13 @@ package ExtUtils::Command;
 
 use 5.00503;
 use strict;
-use warnings;
 require Exporter;
 use vars qw(@ISA @EXPORT @EXPORT_OK $VERSION);
 @ISA       = qw(Exporter);
 @EXPORT    = qw(cp rm_f rm_rf mv cat eqtime mkpath touch test_f test_d chmod
                 dos2unix);
-$VERSION = '7.64';
-$VERSION =~ tr/_//d;
+$VERSION = '7.10_02';
+$VERSION = eval $VERSION;
 
 my $Is_VMS   = $^O eq 'VMS';
 my $Is_VMS_mode = $Is_VMS;
@@ -351,7 +350,6 @@ sub dos2unix {
 	open ORIG, $_ or do { warn "dos2unix can't open $_: $!"; return };
 	open TEMP, ">$temp" or
 	    do { warn "dos2unix can't create .dos2unix_tmp: $!"; return };
-        binmode ORIG; binmode TEMP;
         while (my $line = <ORIG>) {
             $line =~ s/\015\012/\012/g;
             print TEMP $line;

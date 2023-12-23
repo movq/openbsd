@@ -25,8 +25,7 @@ BEGIN {
 
 package Foo;
 Exporter->import("import");
-our @EXPORT_OK = qw/bar/;
-
+@EXPORT_OK = "bar";
 
 package main;
 

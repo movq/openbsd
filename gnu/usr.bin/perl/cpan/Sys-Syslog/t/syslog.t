@@ -2,7 +2,6 @@
 
 use strict;
 use Config;
-use FileHandle;
 use File::Spec;
 use Test::More;
 
@@ -46,24 +45,12 @@ BEGIN { $tests += 1 }
 can_ok( 'Sys::Syslog' => qw(openlog syslog syslog setlogmask setlogsock closelog) );
 
 
-BEGIN { $tests += 4 }
+BEGIN { $tests += 1 }
 # check the diagnostics
 # setlogsock()
 eval { setlogsock() };
-like( $@, qr/^setlogsock\(\): Invalid number of arguments/, 
+like( $@, qr/^Invalid argument passed to setlogsock/, 
     "calling setlogsock() with no argument" );
-
-eval { setlogsock(undef) };
-like( $@, qr/^setlogsock\(\): Invalid type; must be one of /, 
-    "calling setlogsock() with undef" );
-
-eval { setlogsock(\"") };
-like( $@, qr/^setlogsock\(\): Unexpected scalar reference/, 
-    "calling setlogsock() with a scalar reference" );
-
-eval { setlogsock({}) };
-like( $@, qr/^setlogsock\(\): No argument given/, 
-    "calling setlogsock() with an empty hash reference" );
 
 BEGIN { $tests += 3 }
 # syslog()
@@ -97,11 +84,8 @@ SKIP: {
     is( $@, '', "setlogsock() called with '$sock_type'" );
     TODO: {
         local $TODO = "minor bug";
-        SKIP: { skip "TODO $TODO", 1 if $] < 5.006002;
         ok( $r, "setlogsock() should return true: '$r'" );
-        }
     }
-
 
     # open syslog with a "local0" facility
     SKIP: {
@@ -123,16 +107,15 @@ SKIP: {
     }
 }
 
+
+BEGIN { $tests += 22 * 8 }
 # try to open a syslog using all the available connection methods
-# handle inet and udp in a separate test file
-
 my @passed = ();
-
-BEGIN { $tests += 22 * 6 }
-for my $sock_type (qw(native eventlog unix pipe stream tcp )) {
+for my $sock_type (qw(native eventlog unix pipe stream inet tcp udp)) {
     SKIP: {
         skip "the 'stream' mechanism because a previous mechanism with similar interface succeeded", 22 
             if $sock_type eq 'stream' and grep {/pipe|unix/} @passed;
+
         # setlogsock() called with an arrayref
         $r = eval { setlogsock([$sock_type]) } || 0;
         skip "can't use '$sock_type' socket", 22 unless $r;
@@ -201,6 +184,7 @@ for my $sock_type (qw(native eventlog unix pipe stream tcp )) {
     }
 }
 
+
 BEGIN { $tests += 10 }
 SKIP: {
     skip "not testing setlogsock('stream') on Win32", 10 if $is_Win32;
@@ -243,9 +227,8 @@ SKIP: {
     # setlogsock() with "stream" and a local file
     SKIP: {
         my $logfile = "test.log";
-        my $fh = FileHandle->new;
-        open $fh, ">$logfile" or skip "can't create file '$logfile': $!", 2;
-        close $fh;
+        open(LOG, ">$logfile") or skip "can't create file '$logfile': $!", 2;
+        close(LOG);
         $r = eval { setlogsock("stream", $logfile ) } || '';
         is( $@, '', "setlogsock() called, with 'stream' and '$logfile' (file exists)" );
         ok( $r, "setlogsock() should return true: '$r'" );
@@ -281,45 +264,3 @@ BEGIN { $tests += 3 + 4 * 3 }
         setlogmask($oldmask);
     }
 }
-
-BEGIN { $tests += 4 }
-SKIP: {
-    # case: test the return value of setlogsock()
-
-    # setlogsock("stream") on a non-existent file must fail
-    eval { $r = setlogsock("stream", "plonk/log") };
-    is( $@, '', "setlogsock() didn't croak");
-    ok( !$r, "setlogsock() correctly failed with a non-existent stream path");
-
-    # setlogsock("tcp") must fail if the service is not declared
-    my $service = getservbyname("syslog", "tcp") || getservbyname("syslogng", "tcp");
-    skip "can't test setlogsock() tcp failure", 2 if $service;
-    eval { $r = setlogsock("tcp") };
-    is( $@, '', "setlogsock() didn't croak");
-    ok( !$r, "setlogsock() correctly failed when tcp services can't be resolved");
-}
-
-BEGIN { $tests += 3 }
-SKIP: {
-    # case: configure Sys::Syslog to use the stream mechanism on a
-    #       given file, but remove the file before openlog() is called,
-    #       so it fails.
-
-    # create the log file
-    my $log = "t/stream";
-    my $fh = FileHandle->new;
-    open $fh, ">$log" or skip "can't write file '$log': $!", 3;
-    close $fh;
-
-    # configure Sys::Syslog to use it
-    $r = eval { setlogsock("stream", $log) };
-    is( $@, "", "setlogsock('stream', '$log') -> $r" );
-    skip "can't test openlog() failure with a missing stream", 2 if !$r;
-
-    # remove the log and check that openlog() fails
-    unlink $log;
-    $r = eval { openlog('perl', 'ndelay', 'local0') };
-    ok( !$r, "openlog() correctly failed with a non-existent stream" );
-    like( $@, '/not writable/', "openlog() correctly croaked with a non-existent stream" );
-}
-

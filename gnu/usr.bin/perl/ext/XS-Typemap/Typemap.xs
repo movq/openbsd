@@ -1,3 +1,4 @@
+
 /*
    XS code to test the typemap entries
 
@@ -5,8 +6,6 @@
    All Rights Reserved
 
 */
-
-#define PERL_NO_GET_CONTEXT
 
 #include "EXTERN.h"   /* std perl include */
 #include "perl.h"     /* std perl include */
@@ -25,15 +24,10 @@ typedef int intRef; /* T_PTRREF */
 typedef int intObj; /* T_PTROBJ */
 typedef int intRefIv; /* T_REF_IV_PTR */
 typedef int intArray; /* T_ARRAY */
-typedef int intTINT; /* T_INT */
-typedef int intTLONG; /* T_LONG */
 typedef short shortOPQ;   /* T_OPAQUE */
 typedef int intOpq;   /* T_OPAQUEPTR */
-typedef unsigned intUnsigned; /* T_U_INT */
-typedef PerlIO * inputfh; /* T_IN */
-typedef PerlIO * outputfh; /* T_OUT */
 
-/* A structure to test T_OPAQUEPTR and T_PACKED */
+/* A structure to test T_OPAQUEPTR */
 struct t_opaqueptr {
   int a;
   int b;
@@ -41,7 +35,6 @@ struct t_opaqueptr {
 };
 
 typedef struct t_opaqueptr astruct;
-typedef struct t_opaqueptr anotherstruct;
 
 /* Some static memory for the tests */
 static I32 xst_anint;
@@ -49,13 +42,6 @@ static intRef xst_anintref;
 static intObj xst_anintobj;
 static intRefIv xst_anintrefiv;
 static intOpq xst_anintopq;
-
-/* A different type to refer to for testing the different
- * AV*, HV*, etc typemaps */
-typedef AV AV_FIXED;
-typedef HV HV_FIXED;
-typedef CV CV_FIXED;
-typedef SVREF SVREF_FIXED;
 
 /* Helper functions */
 
@@ -66,191 +52,26 @@ intArray * intArrayPtr( int nelem ) {
     return array;
 }
 
-/* test T_PACKED */
-STATIC void
-XS_pack_anotherstructPtr(SV *out, anotherstruct *in)
-{
-    dTHX;
-    HV *hash = newHV();
-    if (NULL == hv_stores(hash, "a", newSViv(in->a)))
-      croak("Failed to store data in hash");
-    if (NULL == hv_stores(hash, "b", newSViv(in->b)))
-      croak("Failed to store data in hash");
-    if (NULL == hv_stores(hash, "c", newSVnv(in->c)))
-      croak("Failed to store data in hash");
-    sv_setsv(out, sv_2mortal(newRV_noinc((SV*)hash)));
-}
-
-STATIC anotherstruct *
-XS_unpack_anotherstructPtr(SV *in)
-{
-    dTHX; /* rats, this is expensive */
-    /* this is similar to T_HVREF since we chose to use a hash */
-    HV *inhash;
-    SV **elem;
-    anotherstruct *out;
-    SV *const tmp = in;
-    SvGETMAGIC(tmp);
-    if (SvROK(tmp) && SvTYPE(SvRV(tmp)) == SVt_PVHV)
-       inhash = (HV*)SvRV(tmp);
-    else
-        Perl_croak(aTHX_ "Argument is not a HASH reference");
-
-    /* FIXME dunno if supposed to use perl mallocs here */
-    Newxz(out, 1, anotherstruct);
-
-    elem = hv_fetchs(inhash, "a", 0);
-    if (elem == NULL)
-      Perl_croak(aTHX_ "Shouldn't happen: hv_fetchs returns NULL");
-    out->a = SvIV(*elem);
-
-    elem = hv_fetchs(inhash, "b", 0);
-    if (elem == NULL)
-      Perl_croak(aTHX_ "Shouldn't happen: hv_fetchs returns NULL");
-    out->b = SvIV(*elem);
-
-    elem = hv_fetchs(inhash, "c", 0);
-    if (elem == NULL)
-      Perl_croak(aTHX_ "Shouldn't happen: hv_fetchs returns NULL");
-    out->c = SvNV(*elem);
-
-    return out;
-}
-
-/* test T_PACKEDARRAY */
-STATIC void
-XS_pack_anotherstructPtrPtr(SV *out, anotherstruct **in, UV cnt)
-{
-    dTHX;
-    UV i;
-    AV *ary = newAV();
-    for (i = 0; i < cnt; ++i) {
-        HV *hash = newHV();
-        if (NULL == hv_stores(hash, "a", newSViv(in[i]->a)))
-          croak("Failed to store data in hash");
-        if (NULL == hv_stores(hash, "b", newSViv(in[i]->b)))
-          croak("Failed to store data in hash");
-        if (NULL == hv_stores(hash, "c", newSVnv(in[i]->c)))
-          croak("Failed to store data in hash");
-        av_push(ary, newRV_noinc((SV*)hash));
-    }
-    sv_setsv(out, sv_2mortal(newRV_noinc((SV*)ary)));
-}
-
-STATIC anotherstruct **
-XS_unpack_anotherstructPtrPtr(SV *in)
-{
-    dTHX; /* rats, this is expensive */
-    /* this is similar to T_HVREF since we chose to use a hash */
-    HV *inhash;
-    AV *inary;
-    SV **elem;
-    anotherstruct **out;
-    UV nitems, i;
-    SV *tmp;
-
-    /* safely deref the input array ref */
-    tmp = in;
-    SvGETMAGIC(tmp);
-    if (SvROK(tmp) && SvTYPE(SvRV(tmp)) == SVt_PVAV)
-        inary = (AV*)SvRV(tmp);
-    else
-        Perl_croak(aTHX_ "Argument is not an ARRAY reference");
-
-    nitems = av_count(inary);
-
-    /* FIXME dunno if supposed to use perl mallocs here */
-    /* N+1 elements so we know the last one is NULL */
-    Newxz(out, nitems+1, anotherstruct*);
-
-    /* WARNING: in real code, we'd have to Safefree() on exception, but
-     *          since we're testing perl, if we croak() here, stuff is
-     *          rotten anyway! */
-    for (i = 0; i < nitems; ++i) {
-        Newxz(out[i], 1, anotherstruct);
-        elem = av_fetch(inary, i, 0);
-        if (elem == NULL)
-            Perl_croak(aTHX_ "Shouldn't happen: av_fetch returns NULL");
-        tmp = *elem;
-        SvGETMAGIC(tmp);
-        if (SvROK(tmp) && SvTYPE(SvRV(tmp)) == SVt_PVHV)
-            inhash = (HV*)SvRV(tmp);
-        else
-            Perl_croak(aTHX_ "Array element %" UVuf
-                             " is not a HASH reference", i);
-
-        elem = hv_fetchs(inhash, "a", 0);
-        if (elem == NULL)
-            Perl_croak(aTHX_ "Shouldn't happen: hv_fetchs returns NULL");
-        out[i]->a = SvIV(*elem);
-
-        elem = hv_fetchs(inhash, "b", 0);
-        if (elem == NULL)
-            Perl_croak(aTHX_ "Shouldn't happen: hv_fetchs returns NULL");
-        out[i]->b = SvIV(*elem);
-
-        elem = hv_fetchs(inhash, "c", 0);
-        if (elem == NULL)
-            Perl_croak(aTHX_ "Shouldn't happen: hv_fetchs returns NULL");
-        out[i]->c = SvNV(*elem);
-    }
-
-    return out;
-}
-
-/* no special meaning as far as typemaps are concerned,
- * just for convenience */
-void
-XS_release_anotherstructPtrPtr(anotherstruct **in)
-{
-    unsigned int i;
-    for (i = 0; in[i] != NULL; i++)
-        Safefree(in[i]);
-    Safefree(in);
-}
-
 
 MODULE = XS::Typemap   PACKAGE = XS::Typemap
 
 PROTOTYPES: DISABLE
 
-TYPEMAP: <<END_OF_TYPEMAP
+=head1 TYPEMAPS
 
-# Typemap file for typemap testing
-# includes bonus typemap entries
-# Mainly so that all the standard typemaps can be exercised even when
-# there is not a corresponding type explicitly identified in the standard
-# typemap
+Each C type is represented by an entry in the typemap file that
+is responsible for converting perl variables (SV, AV, HV and CV) to
+and from that type.
 
-svtype           T_ENUM
-intRef *         T_PTRREF
-intRef           T_IV
-intObj *         T_PTROBJ
-intObj           T_IV
-intRefIv *       T_REF_IV_PTR
-intRefIv         T_IV
-intArray *       T_ARRAY
-intOpq           T_IV
-intOpq   *       T_OPAQUEPTR
-intUnsigned      T_U_INT
-intTINT          T_INT
-intTLONG         T_LONG
-shortOPQ         T_OPAQUE
-shortOPQ *       T_OPAQUEPTR
-astruct *        T_OPAQUEPTR
-anotherstruct *  T_PACKED
-anotherstruct ** T_PACKEDARRAY
-AV_FIXED *	 T_AVREF_REFCOUNT_FIXED
-HV_FIXED *	 T_HVREF_REFCOUNT_FIXED
-CV_FIXED *	 T_CVREF_REFCOUNT_FIXED
-SVREF_FIXED	 T_SVREF_REFCOUNT_FIXED
-inputfh          T_IN
-outputfh         T_OUT
+=over 4
 
-END_OF_TYPEMAP
+=item T_SV
 
+This simply passes the C representation of the Perl variable (an SV*)
+in and out of the XS layer. This can be used if the C code wants
+to deal directly with the Perl variable.
 
-## T_SV
+=cut
 
 SV *
 T_SV( sv )
@@ -267,15 +88,11 @@ T_SV( sv )
  OUTPUT:
   RETVAL
 
-void
-T_SV_output(sv)
-  SV *sv
- CODE:
- sv = sv_2mortal(newSVpvn("test", 4));
- OUTPUT:
-  sv
+=item T_SVREF
 
-## T_SVREF
+Used to pass in and return a reference to an SV.
+
+=cut
 
 SVREF
 T_SVREF( svref )
@@ -285,25 +102,12 @@ T_SVREF( svref )
  OUTPUT:
   RETVAL
 
+=item T_AVREF
 
-## T_SVREF_FIXED
+From the perl level this is a reference to a perl array.
+From the C level this is a pointer to an AV.
 
-SVREF_FIXED
-T_SVREF_REFCOUNT_FIXED( svref )
-  SVREF_FIXED svref
- CODE:
-  SvREFCNT_inc(svref);
-  RETVAL = svref;
- OUTPUT:
-  RETVAL
-
-void
-T_SVREF_REFCOUNT_FIXED_output( OUT svref )
-  SVREF_FIXED svref
- CODE:
-  svref = newSVpvn("test", 4);
-
-## T_AVREF
+=cut
 
 AV *
 T_AVREF( av )
@@ -313,26 +117,12 @@ T_AVREF( av )
  OUTPUT:
   RETVAL
 
+=item T_HVREF
 
-## T_AVREF_REFCOUNT_FIXED
+From the perl level this is a reference to a perl hash.
+From the C level this is a pointer to an HV.
 
-AV_FIXED*
-T_AVREF_REFCOUNT_FIXED( av )
-  AV_FIXED * av
- CODE:
-  SvREFCNT_inc(av);
-  RETVAL = av;
- OUTPUT:
-  RETVAL
-
-void
-T_AVREF_REFCOUNT_FIXED_output( OUT avref)
-  AV_FIXED *avref;
- CODE:
-  avref = newAV();
-  av_push(avref, newSVpvs("test"));
-
-## T_HVREF
+=cut
 
 HV *
 T_HVREF( hv )
@@ -342,26 +132,13 @@ T_HVREF( hv )
  OUTPUT:
   RETVAL
 
+=item T_CVREF
 
-## T_HVREF_REFCOUNT_FIXED
+From the perl level this is a reference to a perl subroutine
+(e.g. $sub = sub { 1 };). From the C level this is a pointer
+to a CV.
 
-HV_FIXED*
-T_HVREF_REFCOUNT_FIXED( hv )
-  HV_FIXED * hv
- CODE:
-  SvREFCNT_inc(hv);
-  RETVAL = hv;
- OUTPUT:
-  RETVAL
-
-void
-T_HVREF_REFCOUNT_FIXED_output( OUT hvref)
-  HV_FIXED *hvref;
- CODE:
-  hvref = newHV();
-  hv_stores(hvref, "test", newSVpvs("value"));
-
-## T_CVREF
+=cut
 
 CV *
 T_CVREF( cv )
@@ -372,25 +149,22 @@ T_CVREF( cv )
   RETVAL
 
 
-## T_CVREF_REFCOUNT_FIXED
+=item T_SYSRET
 
-CV_FIXED *
-T_CVREF_REFCOUNT_FIXED( cv )
-  CV_FIXED * cv
- CODE:
-  SvREFCNT_inc(cv);
-  RETVAL = cv;
- OUTPUT:
-  RETVAL
+The T_SYSRET typemap is used to process return values from system calls.
+It is only meaningful when passing values from C to perl (there is
+no concept of passing a system return value from Perl to C).
 
-void
-T_CVREF_REFCOUNT_FIXED_output( OUT cvref)
-  CV_FIXED *cvref;
- CODE:
-  cvref = get_cv("XSLoader::load", 0);
-  SvREFCNT_inc(cvref);
+System calls return -1 on error (setting ERRNO with the reason)
+and (usually) 0 on success. If the return value is -1 this typemap
+returns C<undef>. If the return value is not -1, this typemap
+translates a 0 (perl false) to "0 but true" (which
+is perl true) or returns the value itself, to indicate that the
+command succeeded.
 
-## T_SYSRET
+The L<POSIX|POSIX> module makes extensive use of this type.
+
+=cut
 
 # Test a successful return
 
@@ -410,7 +184,11 @@ T_SYSRET_fail()
  OUTPUT:
   RETVAL
 
-## T_UV
+=item T_UV
+
+An unsigned integer.
+
+=cut
 
 unsigned int
 T_UV( uv )
@@ -420,8 +198,12 @@ T_UV( uv )
  OUTPUT:
   RETVAL
 
+=item T_IV
 
-## T_IV
+A signed integer. This is cast to the required  integer type when
+passed to C and converted to an IV when passed back to Perl.
+
+=cut
 
 long
 T_IV( iv )
@@ -431,19 +213,21 @@ T_IV( iv )
  OUTPUT:
   RETVAL
 
+=item T_INT
 
-## T_INT
+A signed integer. This typemap converts the Perl value to a native
+integer type (the C<int> type on the current platform). When returning
+the value to perl it is processed in the same way as for T_IV.
 
-intTINT
-T_INT( i )
-  intTINT i
- CODE:
-  RETVAL = i;
- OUTPUT:
-  RETVAL
+Its behaviour is identical to using an C<int> type in XS with T_IV.
 
+=item T_ENUM
 
-## T_ENUM
+An enum value. Used to transfer an enum component
+from C. There is no reason to pass an enum value to C since
+it is stored as an IV inside perl.
+
+=cut
 
 # The test should return the value for SVt_PVHV.
 # 11 at the present time but we can't not rely on this
@@ -456,8 +240,12 @@ T_ENUM()
  OUTPUT:
   RETVAL
 
+=item T_BOOL
 
-## T_BOOL
+A boolean type. This can be used to pass true and false values to and
+from C.
+
+=cut
 
 bool
 T_BOOL( in )
@@ -467,46 +255,27 @@ T_BOOL( in )
  OUTPUT:
   RETVAL
 
-bool
-T_BOOL_2( in )
-  bool in
- CODE:
-    PERL_UNUSED_VAR(RETVAL);
- OUTPUT:
-   in
+=item T_U_INT
 
-void
-T_BOOL_OUT( out, in )
-  bool out
-  bool in
- CODE:
- out = in;
- OUTPUT:
-   out
+This is for unsigned integers. It is equivalent to using T_UV
+but explicitly casts the variable to type C<unsigned int>.
+The default type for C<unsigned int> is T_UV.
 
-## T_U_INT
+=item T_SHORT
 
-intUnsigned
-T_U_INT( uint )
-  intUnsigned uint
- CODE:
-  RETVAL = uint;
- OUTPUT:
-  RETVAL
+Short integers. This is equivalent to T_IV but explicitly casts
+the return to type C<short>. The default typemap for C<short>
+is T_IV.
 
+=item T_U_SHORT
 
-## T_SHORT
+Unsigned short integers. This is equivalent to T_UV but explicitly
+casts the return to type C<unsigned short>. The default typemap for
+C<unsigned short> is T_UV.
 
-short
-T_SHORT( s )
-  short s
- CODE:
-  RETVAL = s;
- OUTPUT:
-  RETVAL
+T_U_SHORT is used for type C<U16> in the standard typemap.
 
-
-## T_U_SHORT
+=cut
 
 U16
 T_U_SHORT( in )
@@ -517,17 +286,21 @@ T_U_SHORT( in )
   RETVAL
 
 
-## T_LONG
+=item T_LONG
 
-intTLONG
-T_LONG( in )
-  intTLONG in
- CODE:
-  RETVAL = in;
- OUTPUT:
-  RETVAL
+Long integers. This is equivalent to T_IV but explicitly casts
+the return to type C<long>. The default typemap for C<long>
+is T_IV.
 
-## T_U_LONG
+=item T_U_LONG
+
+Unsigned long integers. This is equivalent to T_UV but explicitly
+casts the return to type C<unsigned long>. The default typemap for
+C<unsigned long> is T_UV.
+
+T_U_LONG is used for type C<U32> in the standard typemap.
+
+=cut
 
 U32
 T_U_LONG( in )
@@ -537,8 +310,11 @@ T_U_LONG( in )
  OUTPUT:
   RETVAL
 
+=item T_CHAR
 
-## T_CHAR
+Single 8-bit characters.
+
+=cut
 
 char
 T_CHAR( in );
@@ -549,7 +325,11 @@ T_CHAR( in );
   RETVAL
 
 
-## T_U_CHAR
+=item T_U_CHAR
+
+An unsigned byte.
+
+=cut
 
 unsigned char
 T_U_CHAR( in );
@@ -560,7 +340,12 @@ T_U_CHAR( in );
   RETVAL
 
 
-## T_FLOAT
+=item T_FLOAT
+
+A floating point number. This typemap guarantees to return a variable
+cast to a C<float>.
+
+=cut
 
 float
 T_FLOAT( in )
@@ -570,8 +355,13 @@ T_FLOAT( in )
  OUTPUT:
   RETVAL
 
+=item T_NV
 
-## T_NV
+A Perl floating point number. Similar to T_IV and T_UV in that the
+return type is cast to the requested numeric type rather than
+to a specific type.
+
+=cut
 
 NV
 T_NV( in )
@@ -581,8 +371,12 @@ T_NV( in )
  OUTPUT:
   RETVAL
 
+=item T_DOUBLE
 
-## T_DOUBLE
+A double precision floating point number. This typemap guarantees to
+return a variable cast to a C<double>.
+
+=cut
 
 double
 T_DOUBLE( in )
@@ -592,8 +386,11 @@ T_DOUBLE( in )
  OUTPUT:
   RETVAL
 
+=item T_PV
 
-## T_PV
+A string (char *).
+
+=cut
 
 char *
 T_PV( in )
@@ -603,15 +400,12 @@ T_PV( in )
  OUTPUT:
   RETVAL
 
-char *
-T_PV_null()
- CODE:
-  RETVAL = NULL;
- OUTPUT:
-  RETVAL
+=item T_PTR
 
+A memory address (pointer). Typically associated with a C<void *>
+type.
 
-## T_PTR
+=cut
 
 # Pass in a value. Store the value in some static memory and
 # then return the pointer
@@ -635,8 +429,16 @@ T_PTR_IN( ptr )
  OUTPUT:
   RETVAL
 
+=item T_PTRREF
 
-## T_PTRREF
+Similar to T_PTR except that the pointer is stored in a scalar and the
+reference to that scalar is returned to the caller. This can be used
+to hide the actual pointer value from the programmer since it is usually
+not required directly from within perl.
+
+The typemap checks that a scalar reference is passed from perl to XS.
+
+=cut
 
 # Similar test to T_PTR
 # Pass in a value. Store the value in some static memory and
@@ -662,7 +464,19 @@ T_PTRREF_IN( ptr )
   RETVAL
 
 
-## T_PTROBJ
+
+=item T_PTROBJ
+
+Similar to T_PTRREF except that the reference is blessed into a class.
+This allows the pointer to be used as an object. Most commonly used to
+deal with C structs. The typemap checks that the perl object passed
+into the XS routine is of the correct class (or part of a subclass).
+
+The pointer is blessed into a class that is derived from the name
+of type of the pointer but with all '*' in the name replaced with
+'Ptr'.
+
+=cut
 
 # Similar test to T_PTRREF
 # Pass in a value. Store the value in some static memory and
@@ -691,12 +505,21 @@ T_PTROBJ_IN( ptr )
 
 MODULE = XS::Typemap PACKAGE = XS::Typemap
 
+=item T_REF_IV_REF
 
-## T_REF_IV_REF
-## NOT YET
+NOT YET
 
+=item T_REF_IV_PTR
 
-## T_REF_IV_PTR
+Similar to T_PTROBJ in that the pointer is blessed into a scalar object.
+The difference is that when the object is passed back into XS it must be
+of the correct type (inheritance is not supported).
+
+The pointer is blessed into a class that is derived from the name
+of type of the pointer but with all '*' in the name replaced with
+'Ptr'.
+
+=cut
 
 # Similar test to T_PTROBJ
 # Pass in a value. Store the value in some static memory and
@@ -726,19 +549,37 @@ T_REF_IV_PTR_IN( ptr )
 
 MODULE = XS::Typemap PACKAGE = XS::Typemap
 
-## T_PTRDESC
-## NOT YET
+=item T_PTRDESC
 
+NOT YET
 
-## T_REFREF
-## NOT YET
+=item T_REFREF
 
+NOT YET
 
-## T_REFOBJ
-## NOT YET
+=item T_REFOBJ
 
+NOT YET
 
-## T_OPAQUEPTR
+=item T_OPAQUEPTR
+
+This can be used to store bytes in the string component of the
+SV. Here the representation of the data is irrelevant to perl and the
+bytes themselves are just stored in the SV. It is assumed that the C
+variable is a pointer (the bytes are copied from that memory
+location).  If the pointer is pointing to something that is
+represented by 8 bytes then those 8 bytes are stored in the SV (and
+length() will report a value of 8). This entry is similar to T_OPAQUE.
+
+In principal the unpack() command can be used to convert the bytes
+back to a number (if the underlying type is known to be a number).
+
+This entry can be used to store a C structure (the number
+of bytes to be copied is calculated using the C C<sizeof> function)
+and can be used as an alternative to T_PTRREF without having to worry
+about a memory leak (since Perl will clean up the SV).
+
+=cut
 
 intOpq *
 T_OPAQUEPTR_IN( val )
@@ -790,7 +631,24 @@ T_OPAQUEPTR_OUT_struct( test )
   XPUSHs(sv_2mortal(newSVnv(test->c)));
 
 
-## T_OPAQUE
+=item T_OPAQUE
+
+This can be used to store data from non-pointer types in the string
+part of an SV. It is similar to T_OPAQUEPTR except that the
+typemap retrieves the pointer directly rather than assuming it
+is being supplied. For example if an integer is imported into
+Perl using T_OPAQUE rather than T_IV the underlying bytes representing
+the integer will be stored in the SV but the actual integer value will not
+be available. i.e. The data is opaque to perl.
+
+The data may be retrieved using the C<unpack> function if the
+underlying type of the byte stream is known.
+
+T_OPAQUE supports input and output of simple types.
+T_OPAQUEPTR can be used to pass these bytes back into C if a pointer
+is acceptable.
+
+=cut
 
 shortOPQ
 T_OPAQUE_IN( val )
@@ -808,6 +666,25 @@ T_OPAQUE_OUT( val )
  OUTPUT:
   RETVAL
 
+=item Implicit array
+
+xsubpp supports a special syntax for returning
+packed C arrays to perl. If the XS return type is given as
+
+  array(type, nelem)
+
+xsubpp will copy the contents of C<nelem * sizeof(type)> bytes from
+RETVAL to an SV and push it onto the stack. This is only really useful
+if the number of items to be returned is known at compile time and you
+don't mind having a string of bytes in your SV.  Use T_ARRAY to push a
+variable number of arguments onto the return stack (they won't be
+packed as a single string though).
+
+This is similar to using T_OPAQUEPTR but can be used to process more than
+one element.
+
+=cut
+
 array(int,3)
 T_OPAQUE_array( a,b,c)
   int a
@@ -824,79 +701,57 @@ T_OPAQUE_array( a,b,c)
   RETVAL
 
 
-## T_PACKED
+=item T_PACKED
 
-void
-T_PACKED_in(in)
-  anotherstruct *in;
- PPCODE:
-  mXPUSHi(in->a);
-  mXPUSHi(in->b);
-  mXPUSHn(in->c);
-  Safefree(in);
-  XSRETURN(3);
+NOT YET
 
-anotherstruct *
-T_PACKED_out(a, b ,c)
-  int a;
-  int b;
-  double c;
- CODE:
-  Newxz(RETVAL, 1, anotherstruct);
-  RETVAL->a = a;
-  RETVAL->b = b;
-  RETVAL->c = c;
- OUTPUT: RETVAL
- CLEANUP:
-  Safefree(RETVAL);
+=item T_PACKEDARRAY
 
-## T_PACKEDARRAY
+NOT YET
 
-void
-T_PACKEDARRAY_in(in)
-  anotherstruct **in;
- PREINIT:
-  unsigned int i = 0;
- PPCODE:
-  while (in[i] != NULL) {
-    mXPUSHi(in[i]->a);
-    mXPUSHi(in[i]->b);
-    mXPUSHn(in[i]->c);
-    ++i;
-  }
-  XS_release_anotherstructPtrPtr(in);
-  XSRETURN(3*i);
+=item T_DATAUNIT
 
-anotherstruct **
-T_PACKEDARRAY_out(...)
- PREINIT:
-  unsigned int i, nstructs, count_anotherstructPtrPtr;
- CODE:
-  if ((items % 3) != 0)
-    croak("Need nitems divisible by 3");
-  nstructs = (unsigned int)(items / 3);
-  count_anotherstructPtrPtr = nstructs;
-  Newxz(RETVAL, nstructs+1, anotherstruct *);
-  for (i = 0; i < nstructs; ++i) {
-    Newxz(RETVAL[i], 1, anotherstruct);
-    RETVAL[i]->a = SvIV(ST(3*i));
-    RETVAL[i]->b = SvIV(ST(3*i+1));
-    RETVAL[i]->c = SvNV(ST(3*i+2));
-  }
- OUTPUT: RETVAL
- CLEANUP:
-  XS_release_anotherstructPtrPtr(RETVAL);
+NOT YET
 
+=item T_CALLBACK
 
-## T_DATAUNIT
-## NOT YET
+NOT YET
 
+=item T_ARRAY
 
-## T_CALLBACK
-## NOT YET
+This is used to convert the perl argument list to a C array
+and for pushing the contents of a C array onto the perl
+argument stack.
 
+The usual calling signature is
 
-## T_ARRAY
+  @out = array_func( @in );
+
+Any number of arguments can occur in the list before the array but
+the input and output arrays must be the last elements in the list.
+
+When used to pass a perl list to C the XS writer must provide a
+function (named after the array type but with 'Ptr' substituted for
+'*') to allocate the memory required to hold the list. A pointer
+should be returned. It is up to the XS writer to free the memory on
+exit from the function. The variable C<ix_$var> is set to the number
+of elements in the new array.
+
+When returning a C array to Perl the XS writer must provide an integer
+variable called C<size_$var> containing the number of elements in the
+array. This is used to determine how many elements should be pushed
+onto the return argument stack. This is not required on input since
+Perl knows how many arguments are on the stack when the routine is
+called. Ordinarily this variable would be called C<size_RETVAL>.
+
+Additionally, the type of each element is determined from the type of
+the array. If the array uses type C<intArray *> xsubpp will
+automatically work out that it contains variables of type C<int> and
+use that typemap entry to perform the copy of each element. All
+pointer '*' and 'Array' tags are removed from the name to determine
+the subtype.
+
+=cut
 
 # Test passes in an integer array and returns it along with
 # the number of elements
@@ -906,9 +761,6 @@ T_PACKEDARRAY_out(...)
 # using PPCODE. This means that only the first element
 # is returned. KLUGE this by using CLEANUP to return before the
 # end.
-# Note: I read this as: The "T_ARRAY" typemap is really rather broken,
-#       at least for OUTPUT. That is apart from the general design
-#       weaknesses. --Steffen
 
 intArray *
 T_ARRAY( dummy, array, ... )
@@ -927,7 +779,12 @@ T_ARRAY( dummy, array, ... )
   XSRETURN(size_RETVAL);
 
 
-## T_STDIO
+=item T_STDIO
+
+This is used for passing perl filehandles to and from C using
+C<FILE *> structures.
+
+=cut
 
 FILE *
 T_STDIO_open( file )
@@ -936,15 +793,6 @@ T_STDIO_open( file )
   RETVAL = xsfopen( file );
  OUTPUT:
   RETVAL
-
-void
-T_STDIO_open_ret_in_arg( file, io)
-  const char * file
-  FILE * io = NO_INIT
- CODE:
-  io = xsfopen( file );
- OUTPUT:
-  io
 
 SysRet
 T_STDIO_close( f )
@@ -972,32 +820,24 @@ T_STDIO_print( stream, string )
   RETVAL
 
 
-## T_INOUT
+=item T_IN
 
-PerlIO *
-T_INOUT(in)
-  PerlIO *in;
- CODE:
-  RETVAL = in; /* silly test but better than nothing */
- OUTPUT: RETVAL
+NOT YET
 
+=item T_INOUT
 
-## T_IN
+This is used for passing perl filehandles to and from C using
+C<PerlIO *> structures. The file handle can used for reading and
+writing.
 
-inputfh
-T_IN(in)
-  inputfh in;
- CODE:
-  RETVAL = in; /* silly test but better than nothing */
- OUTPUT: RETVAL
+See L<perliol> for more information on the Perl IO abstraction
+layer. Perl must have been built with C<-Duseperlio>.
 
+=item T_OUT
 
-## T_OUT
+NOT YET
 
-outputfh
-T_OUT(in)
-  outputfh in;
- CODE:
-  RETVAL = in; /* silly test but better than nothing */
- OUTPUT: RETVAL
+=back
+
+=cut
 

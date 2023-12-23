@@ -9,7 +9,6 @@
 
 package Pod::Select;
 use strict;
-use warnings;
 
 use vars qw($VERSION @ISA @EXPORT $MAX_HEADING_LEVEL %myData @section_headings @selected_sections);
 $VERSION = '1.60'; ## Current version of this package
@@ -45,7 +44,7 @@ or
     use Pod::Select;
 
     ## Create a parser object for selecting POD sections from the input
-    $parser = Pod::Select->new();
+    $parser = new Pod::Select();
 
     ## Select all the POD sections for each file in @filelist
     ## and print the result to tmp.out.
@@ -576,7 +575,7 @@ filenames are given).
 sub podselect {
     my(@argv) = @_;
     my %defaults = ();
-    my $pod_parser = Pod::Select->new(%defaults);
+    my $pod_parser = new Pod::Select(%defaults);
     my $num_inputs = 0;
     my $output = '>&STDOUT';
     my %opts;

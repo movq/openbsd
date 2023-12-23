@@ -5,10 +5,9 @@ use File::Path ();
 use File::Basename ();
 use Perl::OSType qw/os_type/;
 
-use warnings;
-use strict;
-our $VERSION = '0.280236'; # VERSION
-our @ISA;
+use vars qw($VERSION @ISA);
+$VERSION = '0.280206';
+$VERSION = eval $VERSION;
 
 # We only use this once - don't waste a symbol table entry on it.
 # More importantly, don't make it an inheritable method.
@@ -21,18 +20,17 @@ my $load = sub {
 
 {
   my @package = split /::/, __PACKAGE__;
-
+  
   my $ostype = os_type();
 
   if (grep {-e File::Spec->catfile($_, @package, 'Platform', $^O) . '.pm'} @INC) {
-      $load->(__PACKAGE__ . "::Platform::$^O");
-
-  } elsif ( $ostype &&
-            grep {-e File::Spec->catfile($_, @package, 'Platform', $ostype) . '.pm'} @INC) {
-      $load->(__PACKAGE__ . "::Platform::$ostype");
-
+    $load->(__PACKAGE__ . "::Platform::$^O");
+    
+  } elsif ( $ostype && grep {-e File::Spec->catfile($_, @package, 'Platform', $ostype) . '.pm'} @INC) {
+    $load->(__PACKAGE__ . "::Platform::$ostype");
+    
   } else {
-      $load->(__PACKAGE__ . "::Base");
+    $load->(__PACKAGE__ . "::Base");
   }
 }
 
@@ -272,9 +270,9 @@ for VMS.
 ExtUtils::CBuilder is maintained as part of the Perl 5 core.  Please
 submit any bug reports via the F<perlbug> tool included with Perl 5.
 Bug reports will be included in the Perl 5 ticket system at
-L<https://rt.perl.org>.
+L<http://rt.perl.org>.
 
-The Perl 5 source code is available at L<https://perl5.git.perl.org/perl.git>
+The Perl 5 source code is available at <http://perl5.git.perl.org/perl.git>
 and ExtUtils-CBuilder may be found in the F<dist/ExtUtils-CBuilder> directory
 of the repository.
 

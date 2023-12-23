@@ -4,54 +4,49 @@ my $PERLIO;
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
-    skip_all_without_perlio();
-    # FIXME - more of these could be tested without Encode or full perl
-    skip_all_without_dynamic_extension('Encode');
-
+    unless (find PerlIO::Layer 'perlio') {
+	print "1..0 # Skip: not perlio\n";
+	exit 0;
+    }
+    eval 'use Encode';
+    if ($@ =~ /dynamic loading not available/) {
+        print "1..0 # miniperl cannot load Encode\n";
+	exit 0;
+    }
     # Makes testing easier.
     $ENV{PERLIO} = 'stdio' if exists $ENV{PERLIO} && $ENV{PERLIO} eq '';
-    skip_all("PERLIO='$ENV{PERLIO}' unknown")
-	if exists $ENV{PERLIO} && $ENV{PERLIO} !~ /^(stdio|perlio|mmap)$/;
+    if (exists $ENV{PERLIO} && $ENV{PERLIO} !~ /^(stdio|perlio|mmap)$/) {
+	# We are not prepared for anything else.
+	print "1..0 # PERLIO='$ENV{PERLIO}' unknown\n";
+	exit 0;
+    }
     $PERLIO = exists $ENV{PERLIO} ? $ENV{PERLIO} : "(undef)";
 }
 
 use Config;
 
-my $DOSISH    = $^O =~ /^(?:MSWin32|os2)$/ ? 1 : 0;
+my $DOSISH    = $^O =~ /^(?:MSWin32|os2|dos|NetWare|mint)$/ ? 1 : 0;
+   $DOSISH    = 1 if !$DOSISH and $^O =~ /^uwin/;
 my $NONSTDIO  = exists $ENV{PERLIO} && $ENV{PERLIO} ne 'stdio'     ? 1 : 0;
 my $FASTSTDIO = $Config{d_faststdio} && $Config{usefaststdio}      ? 1 : 0;
-my $UTF8_STDIN;
-if (${^UNICODE} & 1) {
-    if (${^UNICODE} & 64) {
-	# Conditional on the locale
-	$UTF8_STDIN = ${^UTF8LOCALE};
-    } else {
-	# Unconditional
-	$UTF8_STDIN = 1;
-    }
-} else {
-    $UTF8_STDIN = 0;
-}
-my $NTEST = 60 - (($DOSISH || !$FASTSTDIO) ? 7 : 0) - ($DOSISH ? 7 : 0)
-    + $UTF8_STDIN;
 
-sub PerlIO::F_UTF8 () { 0x00008000 } # from perliol.h
+my $NTEST = 43 - (($DOSISH || !$FASTSTDIO) ? 7 : 0) - ($DOSISH ? 5 : 0);
 
 plan tests => $NTEST;
 
 print <<__EOH__;
-# PERLIO        = $PERLIO
-# DOSISH        = $DOSISH
-# NONSTDIO      = $NONSTDIO
-# FASTSTDIO     = $FASTSTDIO
-# UNICODE       = ${^UNICODE}
-# UTF8LOCALE    = ${^UTF8LOCALE}
-# UTF8_STDIN = $UTF8_STDIN
+# PERLIO    = $PERLIO
+# DOSISH    = $DOSISH
+# NONSTDIO  = $NONSTDIO
+# FASTSTDIO = $FASTSTDIO
 __EOH__
 
-{
+SKIP: {
+    skip("This perl does not have Encode", $NTEST)
+	unless " $Config{extensions} " =~ / Encode /;
+
     sub check {
 	my ($result, $expected, $id) = @_;
 	# An interesting dance follows where we try to make the following
@@ -91,10 +86,10 @@ __EOH__
 	    # 5 tests potentially skipped because
 	    # DOSISH systems already have a CRLF layer
 	    # which will make new ones not stick.
-	    splice @$expected, 1, 1 if $expected->[1] eq 'crlf';
+	    @$expected = grep { $_ ne 'crlf' } @$expected;
 	}
 	my $n = scalar @$expected;
-	is(scalar @$result, $n, "$id - layers == $n");
+	is($n, scalar @$expected, "$id - layers == $n");
 	for (my $i = 0; $i < $n; $i++) {
 	    my $j = $expected->[$i];
 	    if (ref $j eq 'CODE') {
@@ -108,35 +103,22 @@ __EOH__
     }
 
     check([ PerlIO::get_layers(STDIN) ],
-	  $UTF8_STDIN ? [ "stdio", "utf8" ] : [ "stdio" ],
+	  [ "stdio" ],
 	  "STDIN");
 
-    my $afile = tempfile();
-    open(F, ">:crlf", $afile);
+    open(F, ">:crlf", "afile");
 
     check([ PerlIO::get_layers(F) ],
 	  [ qw(stdio crlf) ],
 	  "open :crlf");
 
-    binmode(F, ":crlf");
+    binmode(F, ":encoding(sjis)"); # "sjis" will be canonized to "shiftjis"
 
     check([ PerlIO::get_layers(F) ],
-	  [ qw(stdio crlf) ],
-	  "binmode :crlf");
-
-    binmode(F, ":encoding(cp1047)"); 
-
-    check([ PerlIO::get_layers(F) ],
-	  [ qw[stdio crlf encoding(cp1047) utf8] ],
-	  ":encoding(cp1047)");
-
-    binmode(F, ":crlf");
-
-    check([ PerlIO::get_layers(F) ],
-	  [ qw[stdio crlf encoding(cp1047) utf8 crlf utf8] ],
-	  ":encoding(cp1047):crlf");
+	  [ qw[stdio crlf encoding(shiftjis) utf8] ],
+	  ":encoding(sjis)");
     
-    binmode(F, ":pop:pop");
+    binmode(F, ":pop");
 
     check([ PerlIO::get_layers(F) ],
 	  [ qw(stdio crlf) ],
@@ -193,20 +175,13 @@ __EOH__
 	  [ "stdio" ],
 	  "binmode");
 
-    # RT78844
-    {
-        local $@ = "foo";
-        binmode(F, ":encoding(utf8)");
-        is( $@, "foo", '$@ not clobbered by binmode and :encoding');
-    }
-
     close F;
 
     {
 	use open(IN => ":crlf", OUT => ":encoding(cp1252)");
 
-	open F, '<', $afile;
-	open G, '>', $afile;
+	open F, "<afile";
+	open G, ">afile";
 
 	check([ PerlIO::get_layers(F, input  => 1) ],
 	      [ qw(stdio crlf) ],
@@ -220,33 +195,5 @@ __EOH__
 	close G;
     }
 
-    # Check that PL_sigwarn's reference count is correct, and that 
-    # &PerlIO::Layer::NoWarnings isn't prematurely freed.
-    fresh_perl_like (<<"EOT", qr/^CODE/, {}, "Check PL_sigwarn's reference count");
-open(UTF, "<:raw:encoding(utf8)", '$afile') or die \$!;
-print ref *PerlIO::Layer::NoWarnings{CODE};
-EOT
-
-    # [perl #97956] Not calling FETCH all the time on tied variables
-    my $f;
-    sub TIESCALAR { bless [] }
-    sub FETCH { ++$f; $_[0][0] = $_[1] }
-    sub STORE { $_[0][0] }
-    tie my $t, "";
-    $t = *f;
-    $f = 0; PerlIO::get_layers $t;
-    is $f, 1, '1 fetch on tied glob';
-    $t = \*f;
-    $f = 0; PerlIO::get_layers $t;
-    is $f, 1, '1 fetch on tied globref';
-    $t = *f;
-    $f = 0; PerlIO::get_layers \$t;
-    is $f, 1, '1 fetch on referenced tied glob';
-    $t = '';
-    $f = 0; PerlIO::get_layers $t;
-    is $f, 1, '1 fetch on tied string';
-
-    # No distinction between nums and strings
-    open "12", "<:crlf", "test.pl" or die "$0 cannot open test.pl: $!";
-    ok PerlIO::get_layers(12), 'str/num arguments are treated identically';
+    1 while unlink "afile";
 }

@@ -2,11 +2,10 @@
  * Filename : Call.xs
  * 
  * Author   : Paul Marquess 
- * Date     : 2014-12-09 02:48:44 rurban
- * Version  : 1.60
+ * Date     : 25th February 2009
+ * Version  : 1.08
  *
- *    Copyright (c) 1995-2011 Paul Marquess. All rights reserved.
- *    Copyright (c) 2011-2014 Reini Urban. All rights reserved.
+ *    Copyright (c) 1995-2009 Paul Marquess. All rights reserved.
  *       This program is free software; you can redistribute it and/or
  *              modify it under the same terms as Perl itself.
  *
@@ -60,15 +59,13 @@ filter_call(pTHX_ int idx, SV *buf_sv, int maxlen)
     int n;
 
     if (fdebug)
-	warn("**** In filter_call - maxlen = %d, out len buf = %" IVdf " idx = %d my_sv = %" IVdf " [%s]\n",
-             maxlen, (IV)SvCUR(buf_sv), idx, (IV)SvCUR(my_sv), SvPVX(my_sv) ) ;
+	warn("**** In filter_call - maxlen = %d, out len buf = %d idx = %d my_sv = %d [%s]\n", 
+		maxlen, SvCUR(buf_sv), idx, SvCUR(my_sv), SvPVX(my_sv) ) ;
 
     while (1) {
 
 	/* anything left from last time */
-
-        if ((n = SvCUR(my_sv))) {
-            assert(SvCUR(my_sv) < PERL_INT_MAX) ;
+	if ((n = SvCUR(my_sv))) {
 
 	    out_ptr = SvPVX(my_sv) + BUF_OFFSET(my_sv) ;
 
@@ -99,8 +96,8 @@ filter_call(pTHX_ int idx, SV *buf_sv, int maxlen)
 		    BUF_OFFSET(my_sv) += (p - out_ptr + 1);
 	            SvCUR_set(my_sv, n) ;
 	            if (fdebug)
-		        warn("recycle %d - leaving %d, returning %" IVdf " [%s]",
-                             idx, n, (IV)SvCUR(buf_sv), SvPVX(buf_sv)) ;
+		        warn("recycle %d - leaving %d, returning %d [%s]", 
+				idx, n, SvCUR(buf_sv), SvPVX(buf_sv)) ;
 
 	            return SvCUR(buf_sv);
 	        }
@@ -133,26 +130,30 @@ filter_call(pTHX_ int idx, SV *buf_sv, int maxlen)
 	    DEFSV_set(newSVpv("", 0)) ; 
 
     	    PUSHMARK(sp) ;
+
 	    if (CODE_REF(my_sv)) {
 	    /* if (SvROK(PERL_OBJECT(my_sv)) && SvTYPE(SvRV(PERL_OBJECT(my_sv))) == SVt_PVCV) { */
     	        count = perl_call_sv((SV*)PERL_OBJECT(my_sv), G_SCALAR);
 	    }
 	    else {
                 XPUSHs((SV*)PERL_OBJECT(my_sv)) ;  
+	
     	        PUTBACK ;
+
     	        count = perl_call_method("filter", G_SCALAR);
 	    }
+
     	    SPAGAIN ;
 
             if (count != 1)
 	        croak("Filter::Util::Call - %s::filter returned %d values, 1 was expected \n", 
 			PERL_MODULE(my_sv), count ) ;
     
-	    n = (IV)POPi ;
+	    n = POPi ;
 
 	    if (fdebug)
-	        warn("status = %d, length op buf = %" IVdf " [%s]\n",
-		     n, (IV)SvCUR(DEFSV), SvPVX(DEFSV) ) ;
+	        warn("status = %d, length op buf = %d [%s]\n",
+		     n, SvCUR(DEFSV), SvPVX(DEFSV) ) ;
 	    if (SvCUR(DEFSV))
 	        sv_setpvn(my_sv, SvPVX(DEFSV), SvCUR(DEFSV)) ; 
 
@@ -170,8 +171,8 @@ filter_call(pTHX_ int idx, SV *buf_sv, int maxlen)
 	    /* Either EOF or an error */
 
 	    if (fdebug) 
-	        warn ("filter_read %d returned %d , returning %" IVdf "\n", idx, n,
-		      (SvCUR(buf_sv)>0) ? (IV)SvCUR(buf_sv) : (IV)n);
+	        warn ("filter_read %d returned %d , returning %d\n", idx, n,
+	            (SvCUR(buf_sv)>0) ? SvCUR(buf_sv) : n);
 
 	    /* PERL_MODULE(my_sv) ; */
 	    /* PERL_OBJECT(my_sv) ; */
@@ -182,7 +183,7 @@ filter_call(pTHX_ int idx, SV *buf_sv, int maxlen)
 		return n ;
 
 	    /* return what we have so far else signal eof */
-	    return (SvCUR(buf_sv)>0) ? (int)SvCUR(buf_sv) : n;
+	    return (SvCUR(buf_sv)>0) ? SvCUR(buf_sv) : n;
 	}
 
     }
@@ -217,7 +218,7 @@ void
 real_import(object, perlmodule, coderef)
     SV *	object
     char *	perlmodule 
-    IV		coderef
+    int		coderef
     PPCODE:
     {
         SV * sv = newSV(1) ;
@@ -248,20 +249,16 @@ void
 unimport(package="$Package", ...)
     const char *package
     PPCODE:
-    PERL_UNUSED_VAR(package);
     filter_del(filter_call);
 
 
 BOOT:
   {
     MY_CXT_INIT;
-#ifdef FDEBUG
-    fdebug = 1;
-#else
     fdebug = 0;
-#endif
     /* temporary hack to control debugging in toke.c */
     if (fdebug)
         filter_add(NULL, (fdebug) ? (SV*)"1" : (SV*)"0");  
   }
+
 

@@ -16,23 +16,11 @@ BEGIN {
     $extra = 1
         if eval { require Test::NoWarnings ;  import Test::NoWarnings; 1 };
 
-    plan tests => 1007 + $extra ;
+    plan tests => 986 + $extra ;
 
     use_ok('IO::Uncompress::AnyUncompress', qw(anyuncompress $AnyUncompressError)) ;
 
 }
-
-my $OriginalContent1 = <<EOM ;
-Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Ut tempus odio id
- dolor. Camelus perlus.  Larrius in lumen numen.  Dolor en quiquum filia
- est.  Quintus cenum parat.
-EOM
-
-my $OriginalContent2 = <<EOM ;
-LOREM ipsum dolor sit amet, consectetuer adipiscing elit. Ut tempus odio id
- dolor. Camelus perlus.  Larrius in lumen numen.  Dolor en quiquum filia
- est.  Quintus cenum PARAT.
-EOM
 
 sub run
 {
@@ -73,16 +61,16 @@ sub run
 
         my $in ;
         eval { $a = $Func->($in, \$x) ;} ;
-        like $@, mkErr("^$TopType: input filename is undef or null string"),
+        like $@, mkErr("^$TopType: input filename is undef or null string"), 
             '  Input filename undef' ;
 
-        $in = '';
+        $in = '';    
         eval { $a = $Func->($in, \$x) ;} ;
-        like $@, mkErr("^$TopType: input filename is undef or null string"),
+        like $@, mkErr("^$TopType: input filename is undef or null string"), 
             '  Input filename empty' ;
 
         {
-            my $lex1 = LexFile->new( my $in );
+            my $lex1 = new LexFile my $in ;
             writeFile($in, "abc");
             my $out = $in ;
             eval { $a = $Func->($in, $out) ;} ;
@@ -91,25 +79,25 @@ sub run
         }
 
         {
-            my $dir ;
-            my $lex = LexDir->new( $dir );
-            my $d = quotemeta $dir;
+            my $dir = "tmpdir";
+            my $lex = new LexDir $dir ;
+            mkdir $dir, 0777 ;
 
-            $a = $Func->("$dir", \$x) ;
+            $a = $Func->($dir, \$x) ;
             is $a, undef, "  $TopType returned undef";
-            like $$Error, "/input file '$d' is a directory/",
+            like $$Error, "/input file '$dir' is a directory/",
                 '  Input filename is a directory';
 
-            $a = $Func->(\$x, "$dir") ;
+            $a = $Func->(\$x, $dir) ;
             is $a, undef, "  $TopType returned undef";
-            like $$Error, "/output file '$d' is a directory/",
+            like $$Error, "/output file '$dir' is a directory/",
                 '  Output filename is a directory';
         }
 
         eval { $a = $Func->(\$in, \$in) ;} ;
         like $@, mkErr("^$TopType: input and output buffer are identical"),
             '  Input and Output buffer are the same';
-
+            
         SKIP:
         {
             # Threaded 5.6.x seems to have a problem comparing filehandles.
@@ -118,12 +106,12 @@ sub run
             skip 'Cannot compare filehandles with threaded $]', 2
                 if $] >= 5.006  && $] < 5.007 && $Config{useithreads};
 
-            my $lex = LexFile->new( my $out_file );
+            my $lex = new LexFile my $out_file ;
             open OUT, ">$out_file" ;
             eval { $a = $Func->(\*OUT, \*OUT) ;} ;
             like $@, mkErr("^$TopType: input and output handle are identical"),
                 '  Input and Output handle are the same';
-
+                
             close OUT;
             is -s $out_file, 0, "  File zero length" ;
         }
@@ -137,12 +125,12 @@ sub run
             eval { $a = $Func->(\$x, $object) ;} ;
             like $@, mkErr("^$TopType: illegal output parameter"),
                 '  Bad Output Param';
-
+                
             # Buffer not a scalar reference
             eval { $a = $Func->(\$x, \%x) ;} ;
             like $@, mkErr("^$TopType: illegal output parameter"),
                 '  Bad Output Param';
-
+                
 
             eval { $a = $Func->(\%x, \$x) ;} ;
             like $@, mkErr("^$TopType: illegal input parameter"),
@@ -159,13 +147,13 @@ sub run
         $a = $Func->($filename, \$x) ;
         is $a, undef, "  $TopType returned undef";
         like $$Error, "/^input file '$filename' does not exist\$/", "  input File '$filename' does not exist";
-
+            
         $filename = '/tmp/abd/abc.def';
         ok ! -e $filename, "  output File '$filename' does not exist";
         $a = $Func->(\$x, $filename) ;
         is $a, undef, "  $TopType returned undef";
         like $$Error, ("/^(cannot open file '$filename'|input file '$filename' does not exist):/"), "  output File '$filename' does not exist";
-
+            
         eval { $a = $Func->(\$x, '<abc>') } ;
         like $$Error, "/Need input fileglob for outout fileglob/",
                 '  Output fileglob with no input fileglob';
@@ -195,11 +183,9 @@ sub run
                 use Config;
 
                 skip 'readonly + threads', 1
-                    if $Config{useithreads} ;
+                    if $Config{useithreads};
 
-                skip '\\ returns mutable value in 5.19.3', 1
-                    if $] >= 5.019003;
-
+                
                 eval { $a = $Func->(\$in, \$out, TrailingData => \"abc") ;} ;
                 like $@, mkErr("^$TopType: Parameter 'TrailingData' not writable"),
                     '  TrailingData output not writable';
@@ -298,8 +284,9 @@ sub run
             my $already = '';
             $already = 'abcde' if $append ;
 
-            for my $buffer ( undef, '', $OriginalContent1 )
+            for my $buffer ( undef, '', "abcde" )
             {
+
                 my $disp_content = defined $buffer ? $buffer : '<undef>' ;
 
                 my $keep = $buffer;
@@ -315,8 +302,8 @@ sub run
                     is $keep, $buffer, "  Input buffer not changed" ;
                     my $got = anyUncompress(\$output, $already);
                     $got = undef if ! defined $buffer && $got eq '' ;
-                    ok ! $$Error, "  no error [$$Error]" ;
                     is $got, $buffer, "  Uncompressed matches original";
+
                 }
 
                 {
@@ -335,7 +322,7 @@ sub run
                 {
                     title "$TopType - From Array Ref to Array Ref content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file );
+                    my $lex = new LexFile my $in_file ;
                     writeFile($in_file, $buffer);
                     my @output = ('first') ;
                     my @input = ($in_file);
@@ -350,7 +337,7 @@ sub run
                 {
                     title "$TopType - From Buff to Filename content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $out_file );
+                    my $lex = new LexFile my $out_file ;
                     ok ! -e $out_file, "  Output file does not exist";
                     writeFile($out_file, $already);
 
@@ -365,11 +352,11 @@ sub run
                 {
                     title "$TopType - From Buff to Handle content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $out_file );
+                    my $lex = new LexFile my $out_file ;
 
                     ok ! -e $out_file, "  Output file does not exist";
                     writeFile($out_file, $already);
-                    my $of = IO::File->new( ">>$out_file" );
+                    my $of = new IO::File ">>$out_file" ;
                     ok $of, "  Created output filehandle" ;
 
                     ok &$Func(\$buffer, $of, AutoClose => 1, Append => $append), '  Compressed ok' ;
@@ -384,7 +371,7 @@ sub run
                 {
                     title "$TopType - From Filename to Filename content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
 
                     ok ! -e $out_file, "  Output file does not exist";
@@ -402,12 +389,12 @@ sub run
                 {
                     title "$TopType - From Filename to Handle content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
 
                     ok ! -e $out_file, "  Output file does not exist";
                     writeFile($out_file, $already);
-                    my $out = IO::File->new( ">>$out_file" );
+                    my $out = new IO::File ">>$out_file" ;
 
                     ok &$Func($in_file, $out, AutoClose => 1, Append => $append), '  Compressed ok' ;
 
@@ -421,7 +408,7 @@ sub run
                 {
                     title "$TopType - From Filename to Buffer content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
 
                     my $out = $already;
@@ -433,18 +420,18 @@ sub run
                     is $got, $buffer, "  Uncompressed matches original";
 
                 }
-
+                
                 {
                     title "$TopType - From Handle to Filename content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
-                    my $in = IO::File->new( "<$in_file" );
+                    my $in = new IO::File "<$in_file" ;
 
                     ok ! -e $out_file, "  Output file does not exist";
                     writeFile($out_file, $already);
 
-                    ok &$Func($in, $out_file, Append => $append), '  Compressed ok'
+                    ok &$Func($in, $out_file, Append => $append), '  Compressed ok' 
                         or diag "error is $$Error" ;
 
                     ok -e $out_file, "  Created output file";
@@ -457,13 +444,13 @@ sub run
                 {
                     title "$TopType - From Handle to Handle content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
-                    my $in = IO::File->new( "<$in_file" );
+                    my $in = new IO::File "<$in_file" ;
 
                     ok ! -e $out_file, "  Output file does not exist";
                     writeFile($out_file, $already);
-                    my $out = IO::File->new( ">>$out_file" );
+                    my $out = new IO::File ">>$out_file" ;
 
                     ok &$Func($in, $out, AutoClose => 1, Append => $append), '  Compressed ok' ;
 
@@ -477,9 +464,9 @@ sub run
                 {
                     title "$TopType - From Handle to Buffer content '$disp_content' Append $append" ;
 
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
-                    my $in = IO::File->new( "<$in_file" );
+                    my $in = new IO::File "<$in_file" ;
 
                     my $out = $already ;
 
@@ -491,28 +478,22 @@ sub run
 
                 }
 
-                SKIP:
                 {
                     title "$TopType - From stdin (via '-') to Buffer content '$disp_content' Append $append" ;
 
-                    # Older versions of Windows can hang on these tests
-                    skip 'Skipping STDIN tests', 3 + $append
-                        if $ENV{IO_COMPRESS_SKIP_STDIN_TESTS};
-
-                    my $lex = LexFile->new( my $in_file, my $out_file) ;
+                    my $lex = new LexFile(my $in_file, my $out_file) ;
                     writeFile($in_file, $buffer);
 
-                    open(SAVEIN, "<&STDIN");
-
+                       open(SAVEIN, "<&STDIN");
                     my $dummy = fileno SAVEIN ;
                     ok open(STDIN, "<$in_file"), "  redirect STDIN";
 
                     my $out = $already;
 
-                    ok &$Func('-', \$out, Append => $append), '  Compressed ok'
+                    ok &$Func('-', \$out, Append => $append), '  Compressed ok' 
                         or diag $$Error ;
 
-                    open(STDIN, "<&SAVEIN");
+                       open(STDIN, "<&SAVEIN");
 
                     my $got = anyUncompress(\$out, $already);
                     $got = undef if ! defined $buffer && $got eq '' ;
@@ -534,24 +515,24 @@ sub run
         my $FuncInverse = getTopFuncRef($TopTypeInverse);
         my $ErrorInverse = getErrorRef($TopTypeInverse);
 
-        my $lex = LexFile->new( my $file1, my $file2) ;
+        my $lex = new LexFile(my $file1, my $file2) ;
 
-        writeFile($file1, $OriginalContent1);
-        writeFile($file2, $OriginalContent2);
-        my $of = IO::File->new( "<$file1" );
+        writeFile($file1, "data1");
+        writeFile($file2, "data2");
+        my $of = new IO::File "<$file1" ;
         ok $of, "  Created output filehandle" ;
 
         #my @input = (   undef, "", $file2, \undef, \'', \"abcde", $of) ;
-        #my @expected = ("", "", $file2, "", "", "abcde", $OriginalContent1);
-        #my @uexpected = ("", "", $OriginalContent2, "", "", "abcde", $OriginalContent1);
+        #my @expected = ("", "", $file2, "", "", "abcde", "data1");
+        #my @uexpected = ("", "", "data2", "", "", "abcde", "data1");
         #my @input = (   $file2, \"abcde", $of) ;
-        #my @expected = ( $file2, "abcde", $OriginalContent1);
-        #my @uexpected = ($OriginalContent2, "abcde", $OriginalContent1);
+        #my @expected = ( $file2, "abcde", "data1");
+        #my @uexpected = ("data2", "abcde", "data1");
 
         my @input = (   $file1, $file2) ;
         #my @expected = ( $file1, $file2);
-        my @expected = ($OriginalContent1, $OriginalContent2);
-        my @uexpected = ($OriginalContent1, $OriginalContent2);
+        my @expected = ("data1", "data2");
+        my @uexpected = ("data1", "data2");
 
         my @keep = @input ;
 
@@ -580,7 +561,7 @@ sub run
                 $of->open("<$file1") ;
 
                 my $output  ;
-                ok &$Func(\@input, \$output, MultiStream => $ms, AutoClose => 0), '  Compressed ok'
+                ok &$Func(\@input, \$output, MultiStream => $ms, AutoClose => 0), '  Compressed ok' 
                     or diag $$Error;
 
                 my $got = anyUncompress([ \$output, MultiStream => $ms ]);
@@ -593,7 +574,7 @@ sub run
             {
                 title "$TopType - From Array Ref to Filename, MultiStream $ms" ;
 
-                my $lex = LexFile->new(  my $file3) ;
+                my $lex = new LexFile( my $file3) ;
 
                 # rewind the filehandle
                 $of->open("<$file1") ;
@@ -611,9 +592,9 @@ sub run
             {
                 title "$TopType - From Array Ref to Filehandle, MultiStream $ms" ;
 
-                my $lex = LexFile->new( my $file3) ;
+                my $lex = new LexFile(my $file3) ;
 
-                my $fh3 = IO::File->new( ">$file3" );
+                my $fh3 = new IO::File ">$file3";
 
                 # rewind the filehandle
                 $of->open("<$file1") ;
@@ -634,7 +615,7 @@ sub run
             {
                 title "Truncated file";
                 skip '', 7
-                    if $CompressClass =~ /lzop|lzf|lzma|zstd|lzip/i ;
+                    if $CompressClass =~ /lzop|lzf|lzma/i ;
 
                 my @in ;
                 push @in, "abcde" x 10;
@@ -660,33 +641,6 @@ sub run
         }
     }
 
-    foreach my $bit ($CompressClass)
-    {
-
-        my $Error = getErrorRef($bit);
-        my $Func = getTopFuncRef($bit);
-        my $TopType = getTopFuncName($bit);
-
-        my $TopTypeInverse = getInverse($bit);
-        my $FuncInverse = getTopFuncRef($TopTypeInverse);
-        my $ErrorInverse = getErrorRef($TopTypeInverse);
-
-        title 'Round trip binary data that happens to include \r\n' ;
-
-        my $lex = LexFile->new( my $file1, my $file2, my $file3) ;
-
-        my $original = join '', map { chr } 0x00 .. 0xff ;
-        $original .= "data1\r\ndata2\r\ndata3\r\n" ;
-
-        writeFile($file1, $original);
-        is readFile($file1), $original;
-
-        ok &$Func($file1 => $file2), '  Compressed ok' ;
-        ok &$FuncInverse($file2 => $file3), '  Uncompressed ok' ;
-        is readFile($file3), $original, "  round tripped ok";
-
-    }
-
     foreach my $bit ($UncompressClass,
                     #'IO::Uncompress::AnyUncompress',
                     )
@@ -698,20 +652,16 @@ sub run
         my $C_Func = getTopFuncRef($CompressClass);
 
 
-
+        
         my $data = "mary had a little lamb" ;
         my $keep = $data ;
         my $extra = "after the main event";
 
-        SKIP:
         foreach my $fb ( qw( filehandle buffer ) )
         {
             title "Trailingdata with $TopType, from $fb";
 
-            skip "zstd doesn't support trailing data", 9
-                if $CompressClass =~ /zstd/i ;
-
-            my $lex = LexFile->new( my $name );
+            my $lex = new LexFile my $name ;
             my $input ;
 
             my $compressed ;
@@ -726,7 +676,7 @@ sub run
             {
                 writeFile($name, $compressed);
 
-                $input = IO::File->new( "<$name" );
+                $input = new IO::File "<$name" ;
             }
 
             my $trailing;
@@ -741,7 +691,7 @@ sub run
             }
 
             is $trailing . $rest, $extra, "  Got trailing data";
-
+            
         }
     }
 
@@ -757,10 +707,10 @@ sub run
 #
 #        my @inFiles  = map { "in$_.tmp"  } 1..4;
 #        my @outFiles = map { "out$_.tmp" } 1..4;
-#        my $lex = LexFile->new( @inFiles, @outFiles);
+#        my $lex = new LexFile(@inFiles, @outFiles);
 #
 #        writeFile($_, "data $_") foreach @inFiles ;
-#
+#        
 #        {
 #            title "$TopType - Hash Ref: to filename" ;
 #
@@ -797,8 +747,8 @@ sub run
 #            my @buffer ;
 #            my %hash = ( $inFiles[0] => undef,
 #                         $inFiles[1] => undef,
-#                         $inFiles[2] => undef,
-#                     );
+#                         $inFiles[2] => undef, 
+#                     );  
 #
 #            ok &$Func( \%hash ), '  Compressed ok' ;
 #
@@ -851,10 +801,10 @@ sub run
 #
 #        my @inFiles  = map { "in$_.tmp"  } 1..4;
 #        my @outFiles = map { "out$_.tmp" } 1..4;
-#        my $lex = LexFile->new( @inFiles, @outFiles);
+#        my $lex = new LexFile(@inFiles, @outFiles);
 #
 #        writeFile($_, "data $_") foreach @inFiles ;
-#
+#        
 #
 #
 #    #    if (0)
@@ -894,7 +844,7 @@ sub run
 #    #        title "$TopType - From Array Ref to Filename" ;
 #    #
 #    #        my ($file3) = ("file3");
-#    #        my $lex = LexFile->new( $file3) ;
+#    #        my $lex = new LexFile($file3) ;
 #    #
 #    #        # rewind the filehandle
 #    #        $of->open("<$file1") ;
@@ -912,9 +862,9 @@ sub run
 #    #        title "$TopType - From Array Ref to Filehandle" ;
 #    #
 #    #        my ($file3) = ("file3");
-#    #        my $lex = LexFile->new( $file3) ;
+#    #        my $lex = new LexFile($file3) ;
 #    #
-#    #        my $fh3 = IO::File->new( ">$file3" );
+#    #        my $fh3 = new IO::File ">$file3";
 #    #
 #    #        # rewind the filehandle
 #    #        $of->open("<$file1") ;
@@ -940,24 +890,26 @@ sub run
         for my $files ( [qw(a1)], [qw(a1 a2 a3)] )
         {
 
-            my $tmpDir1 ;
-            my $tmpDir2 ;
-            my $lex = LexDir->new($tmpDir1, $tmpDir2) ;
-            my $d1 = quotemeta $tmpDir1 ;
-            my $d2 = quotemeta $tmpDir2 ;
+            my $tmpDir1 = 'tmpdir1';
+            my $tmpDir2 = 'tmpdir2';
+            my $lex = new LexDir($tmpDir1, $tmpDir2) ;
+
+            mkdir $tmpDir1, 0777;
+            mkdir $tmpDir2, 0777;
 
             ok   -d $tmpDir1, "  Temp Directory $tmpDir1 exists";
+            #ok ! -d $tmpDir2, "  Temp Directory $tmpDir2 does not exist";
 
             my @files = map { "$tmpDir1/$_.tmp" } @$files ;
             foreach (@files) { writeFile($_, "abc $_") }
 
             my @expected = map { "abc $_" } @files ;
-            my @outFiles = map { s/$d1/$tmpDir2/; $_ } @files ;
+            my @outFiles = map { s/$tmpDir1/$tmpDir2/; $_ } @files ;
 
             {
                 title "$TopType - From FileGlob to FileGlob files [@$files]" ;
 
-                ok &$Func("<$tmpDir1/a*.tmp>" => "<$tmpDir2/a#1.tmp>"), '  Compressed ok'
+                ok &$Func("<$tmpDir1/a*.tmp>" => "<$tmpDir2/a#1.tmp>"), '  Compressed ok' 
                     or diag $$Error ;
 
                 my @copy = @expected;
@@ -973,7 +925,7 @@ sub run
                 title "$TopType - From FileGlob to Array files [@$files]" ;
 
                 my @buffer = ('first') ;
-                ok &$Func("<$tmpDir1/a*.tmp>" => \@buffer), '  Compressed ok'
+                ok &$Func("<$tmpDir1/a*.tmp>" => \@buffer), '  Compressed ok' 
                     or diag $$Error ;
 
                 is shift @buffer, 'first';
@@ -993,8 +945,8 @@ sub run
                     title "$TopType - From FileGlob to Buffer files [@$files], MS $ms" ;
 
                     my $buffer ;
-                    ok &$Func("<$tmpDir1/a*.tmp>" => \$buffer,
-                               MultiStream => $ms), '  Compressed ok'
+                    ok &$Func("<$tmpDir1/a*.tmp>" => \$buffer, 
+                               MultiStream => $ms), '  Compressed ok' 
                         or diag $$Error ;
 
                     #hexDump(\$buffer);
@@ -1009,10 +961,11 @@ sub run
                 {
                     title "$TopType - From FileGlob to Filename files [@$files], MS $ms" ;
 
-                    my $lex = LexFile->new( my $filename) ;
-
+                    my $filename = "abcde";
+                    my $lex = new LexFile($filename) ;
+                    
                     ok &$Func("<$tmpDir1/a*.tmp>" => $filename,
-                              MultiStream => $ms), '  Compressed ok'
+                              MultiStream => $ms), '  Compressed ok' 
                         or diag $$Error ;
 
                     #hexDump(\$buffer);
@@ -1027,11 +980,12 @@ sub run
                 {
                     title "$TopType - From FileGlob to Filehandle files [@$files], MS $ms" ;
 
-                    my $lex = LexFile->new( my $filename) ;
-                    my $fh = IO::File->new( ">$filename" );
-
-                    ok &$Func("<$tmpDir1/a*.tmp>" => $fh,
-                              MultiStream => $ms, AutoClose => 1), '  Compressed ok'
+                    my $filename = "abcde";
+                    my $lex = new LexFile($filename) ;
+                    my $fh = new IO::File ">$filename";
+                    
+                    ok &$Func("<$tmpDir1/a*.tmp>" => $fh, 
+                              MultiStream => $ms, AutoClose => 1), '  Compressed ok' 
                         or diag $$Error ;
 
                     #hexDump(\$buffer);
@@ -1055,8 +1009,8 @@ sub run
         my $Func = getTopFuncRef($bit);
         my $TopType = getTopFuncName($bit);
 
-        my $buffer = $OriginalContent1;
-        my $buffer2 = $OriginalContent2;
+        my $buffer = "abcde" ;
+        my $buffer2 = "ABCDE" ;
         my $keep_orig = $buffer;
 
         my $comp = compressBuffer($UncompressClass, $buffer) ;
@@ -1102,7 +1056,7 @@ sub run
             {
                 title "$TopType - From Buff to Filename, Append($append)" ;
 
-                my $lex = LexFile->new( my $out_file) ;
+                my $lex = new LexFile(my $out_file) ;
                 if ($append)
                   { writeFile($out_file, $incumbent) }
                 else
@@ -1120,15 +1074,15 @@ sub run
             {
                 title "$TopType - From Buff to Handle, Append($append)" ;
 
-                my $lex = LexFile->new( my $out_file) ;
+                my $lex = new LexFile(my $out_file) ;
                 my $of ;
                 if ($append) {
                     writeFile($out_file, $incumbent) ;
-                    $of = IO::File->new( "+< $out_file" );
+                    $of = new IO::File "+< $out_file" ;
                 }
                 else {
                     ok ! -e $out_file, "  Output file does not exist" ;
-                    $of = IO::File->new( "> $out_file" );
+                    $of = new IO::File "> $out_file" ;
                 }
                 isa_ok $of, 'IO::File', '  $of' ;
 
@@ -1144,7 +1098,7 @@ sub run
             {
                 title "$TopType - From Filename to Filename, Append($append)" ;
 
-                my $lex = LexFile->new( my $in_file, my $out_file) ;
+                my $lex = new LexFile(my $in_file, my $out_file) ;
                 if ($append)
                   { writeFile($out_file, $incumbent) }
                 else
@@ -1164,15 +1118,15 @@ sub run
             {
                 title "$TopType - From Filename to Handle, Append($append)" ;
 
-                my $lex = LexFile->new( my $in_file, my $out_file) ;
+                my $lex = new LexFile(my $in_file, my $out_file) ;
                 my $out ;
                 if ($append) {
                     writeFile($out_file, $incumbent) ;
-                    $out = IO::File->new( "+< $out_file" );
+                    $out = new IO::File "+< $out_file" ;
                 }
                 else {
                     ok ! -e $out_file, "  Output file does not exist" ;
-                    $out = IO::File->new( "> $out_file" );
+                    $out = new IO::File "> $out_file" ;
                 }
                 isa_ok $out, 'IO::File', '  $out' ;
 
@@ -1190,7 +1144,7 @@ sub run
             {
                 title "$TopType - From Filename to Buffer, Append($append)" ;
 
-                my $lex = LexFile->new( my $in_file) ;
+                my $lex = new LexFile(my $in_file) ;
                 writeFile($in_file, $comp);
 
                 my $output ;
@@ -1205,14 +1159,14 @@ sub run
             {
                 title "$TopType - From Handle to Filename, Append($append)" ;
 
-                my $lex = LexFile->new( my $in_file, my $out_file) ;
+                my $lex = new LexFile(my $in_file, my $out_file) ;
                 if ($append)
                   { writeFile($out_file, $incumbent) }
                 else
                   { ok ! -e $out_file, "  Output file does not exist" }
 
                 writeFile($in_file, $comp);
-                my $in = IO::File->new( "<$in_file" );
+                my $in = new IO::File "<$in_file" ;
 
                 ok &$Func($in, $out_file, Append => $append, @opts), '  Uncompressed ok' ;
 
@@ -1226,20 +1180,20 @@ sub run
             {
                 title "$TopType - From Handle to Handle, Append($append)" ;
 
-                my $lex = LexFile->new( my $in_file, my $out_file) ;
+                my $lex = new LexFile(my $in_file, my $out_file) ;
                 my $out ;
                 if ($append) {
                     writeFile($out_file, $incumbent) ;
-                    $out = IO::File->new( "+< $out_file" );
+                    $out = new IO::File "+< $out_file" ;
                 }
                 else {
                     ok ! -e $out_file, "  Output file does not exist" ;
-                    $out = IO::File->new( "> $out_file" );
+                    $out = new IO::File "> $out_file" ;
                 }
                 isa_ok $out, 'IO::File', '  $out' ;
 
                 writeFile($in_file, $comp);
-                my $in = IO::File->new( "<$in_file" );
+                my $in = new IO::File "<$in_file" ;
 
                 ok &$Func($in, $out, Append => $append, AutoClose => 1, @opts), '  Uncompressed ok' ;
 
@@ -1253,9 +1207,9 @@ sub run
             {
                 title "$TopType - From Filename to Buffer, Append($append)" ;
 
-                my $lex = LexFile->new( my $in_file) ;
+                my $lex = new LexFile(my $in_file) ;
                 writeFile($in_file, $comp);
-                my $in = IO::File->new( "<$in_file" );
+                my $in = new IO::File "<$in_file" ;
 
                 my $output ;
                 $output = $incumbent if $append ;
@@ -1266,29 +1220,23 @@ sub run
                 is $output, $expected, "  Uncompressed matches original";
             }
 
-            SKIP:
             {
                 title "$TopType - From stdin (via '-') to Buffer content, Append($append) " ;
 
-                # Older versions of Windows can hang on these tests
-                skip 'Skipping STDIN tests', 4
-                    if $ENV{IO_COMPRESS_SKIP_STDIN_TESTS};
-
-                my $lex = LexFile->new( my $in_file) ;
+                my $lex = new LexFile(my $in_file) ;
                 writeFile($in_file, $comp);
 
-                open(SAVEIN, "<&STDIN");
-
+                   open(SAVEIN, "<&STDIN");
                 my $dummy = fileno SAVEIN ;
                 ok open(STDIN, "<$in_file"), "  redirect STDIN";
 
                 my $output ;
                 $output = $incumbent if $append ;
 
-                ok &$Func('-', \$output, Append => $append, @opts), '  Uncompressed ok'
+                ok &$Func('-', \$output, Append => $append, @opts), '  Uncompressed ok' 
                     or diag $$Error ;
 
-                open(STDIN, "<&SAVEIN");
+                   open(STDIN, "<&SAVEIN");
 
                 is $keep_comp, $comp, "  Input buffer not changed" ;
                 is $output, $expected, "  Uncompressed matches original";
@@ -1298,14 +1246,14 @@ sub run
         {
             title "$TopType - From Handle to Buffer, InputLength" ;
 
-            my $lex = LexFile->new( my $in_file, my $out_file) ;
+            my $lex = new LexFile(my $in_file, my $out_file) ;
             my $out ;
 
             my $expected = $buffer ;
             my $appended = 'appended';
             my $len_appended = length $appended;
             writeFile($in_file, $comp . $appended . $comp . $appended) ;
-            my $in = IO::File->new( "<$in_file" );
+            my $in = new IO::File "<$in_file" ;
 
             ok &$Func($in, \$out, Transparent => 0, InputLength => length $comp, @opts), '  Uncompressed ok' ;
 
@@ -1325,42 +1273,32 @@ sub run
             is $buff, $appended, "  Appended data ok";
         }
 
-        SKIP:
+        for my $stdin ('-', *STDIN) # , \*STDIN)
         {
+            title "$TopType - From stdin (via $stdin) to Buffer content, InputLength" ;
 
-            # Older versions of Windows can hang on these tests
-            skip 'Skipping STDIN tests', 12
-                if $ENV{IO_COMPRESS_SKIP_STDIN_TESTS};
+            my $lex = new LexFile my $in_file ;
+            my $expected = $buffer ;
+            my $appended = 'appended';
+            my $len_appended = length $appended;
+            writeFile($in_file, $comp . $appended ) ;
 
-            for my $stdin ('-', *STDIN) # , \*STDIN)
-            {
-                title "$TopType - From stdin (via $stdin) to Buffer content, InputLength" ;
+               open(SAVEIN, "<&STDIN");
+            my $dummy = fileno SAVEIN ;
+            ok open(STDIN, "<$in_file"), "  redirect STDIN";
 
+            my $output ;
 
+            ok &$Func($stdin, \$output, Transparent => 0, InputLength => length $comp, @opts), '  Uncompressed ok' 
+                or diag $$Error ;
 
-                my $lex = LexFile->new( my $in_file );
-                my $expected = $buffer ;
-                my $appended = 'appended';
-                my $len_appended = length $appended;
-                writeFile($in_file, $comp . $appended ) ;
+            my $buff ;
+            is read(STDIN, $buff, $len_appended), $len_appended, "  Length of Appended data ok";
 
-                open(SAVEIN, "<&STDIN");
-                my $dummy = fileno SAVEIN ;
-                ok open(STDIN, "<$in_file"), "  redirect STDIN";
+            is $output, $expected, "  Uncompressed matches original";
+            is $buff, $appended, "  Appended data ok";
 
-                my $output ;
-
-                ok &$Func($stdin, \$output, Transparent => 0, InputLength => length $comp, @opts), '  Uncompressed ok'
-                    or diag $$Error ;
-
-                my $buff ;
-                is read(STDIN, $buff, $len_appended), $len_appended, "  Length of Appended data ok";
-
-                is $output, $expected, "  Uncompressed matches original";
-                is $buff, $appended, "  Appended data ok";
-
-                open(STDIN, "<&SAVEIN");
-            }
+              open(STDIN, "<&SAVEIN");
         }
     }
 
@@ -1388,18 +1326,18 @@ sub run
 
         my $incumbent = "incumbent data" ;
 
-        my $lex = LexFile->new( my $file1, my $file2) ;
+        my $lex = new LexFile(my $file1, my $file2) ;
 
-        writeFile($file1, compressBuffer($UncompressClass, $OriginalContent1));
-        writeFile($file2, compressBuffer($UncompressClass, $OriginalContent2));
+        writeFile($file1, compressBuffer($UncompressClass,"data1"));
+        writeFile($file2, compressBuffer($UncompressClass,"data2"));
 
-        my $of = IO::File->new( "<$file1" );
+        my $of = new IO::File "<$file1" ;
         ok $of, "  Created output filehandle" ;
 
         #my @input    = ($file2, \$undef, \$null, \$comp, $of) ;
         #my @expected = ('data2', '',      '',    'abcde', 'data1');
         my @input    = ($file1, $file2);
-        my @expected = ($OriginalContent1, $OriginalContent2);
+        my @expected = ('data1', 'data2');
 
         my @keep = @input ;
 
@@ -1415,7 +1353,7 @@ sub run
         {
             title "$TopType - From ArrayRef to Filename" ;
 
-            my $lex = LexFile->new( my $output );
+            my $lex = new LexFile my $output;
             $of->open("<$file1") ;
 
             ok &$Func(\@input, $output, AutoClose => 0, @opts), '  UnCompressed ok' ;
@@ -1426,8 +1364,8 @@ sub run
         {
             title "$TopType - From ArrayRef to Filehandle" ;
 
-            my $lex = LexFile->new( my $output );
-            my $fh = IO::File->new( ">$output" );
+            my $lex = new LexFile my $output;
+            my $fh = new IO::File ">$output" ;
             $of->open("<$file1") ;
 
             ok &$Func(\@input, $fh, AutoClose => 0, @opts), '  UnCompressed ok' ;
@@ -1444,8 +1382,8 @@ sub run
             ok &$Func(\@input, \@output, AutoClose => 0, @opts), '  UnCompressed ok' ;
 
             is_deeply \@input, \@keep, "  Input array not changed" ;
-            is_deeply [map { defined $$_ ? $$_ : "" } @output],
-                      ['first', @expected],
+            is_deeply [map { defined $$_ ? $$_ : "" } @output], 
+                      ['first', @expected], 
                       "  Got Expected uncompressed data";
 
         }
@@ -1461,28 +1399,30 @@ sub run
         my $Func = getTopFuncRef($bit);
         my $TopType = getTopFuncName($bit);
 
-        my $tmpDir1 ;
-        my $tmpDir2 ;
-        my $lex = LexDir->new($tmpDir1, $tmpDir2) ;
-        my $d1 = quotemeta $tmpDir1 ;
-        my $d2 = quotemeta $tmpDir2 ;
+        my $tmpDir1 = 'tmpdir1';
+        my $tmpDir2 = 'tmpdir2';
+        my $lex = new LexDir($tmpDir1, $tmpDir2) ;
+
+        mkdir $tmpDir1, 0777;
+        mkdir $tmpDir2, 0777;
 
         my @opts = ();
         @opts = (RawInflate => 1, UnLzma => 1)
             if $bit eq 'IO::Uncompress::AnyUncompress';
 
         ok   -d $tmpDir1, "  Temp Directory $tmpDir1 exists";
+        #ok ! -d $tmpDir2, "  Temp Directory $tmpDir2 does not exist";
 
         my @files = map { "$tmpDir1/$_.tmp" } qw( a1 a2 a3) ;
         foreach (@files) { writeFile($_, compressBuffer($UncompressClass, "abc $_")) }
 
         my @expected = map { "abc $_" } @files ;
-        my @outFiles = map { s/$d1/$tmpDir2/; $_ } @files ;
+        my @outFiles = map { s/$tmpDir1/$tmpDir2/; $_ } @files ;
 
         {
             title "$TopType - From FileGlob to FileGlob" ;
 
-            ok &$Func("<$tmpDir1/a*.tmp>" => "<$tmpDir2/a#1.tmp>", @opts), '  UnCompressed ok'
+            ok &$Func("<$tmpDir1/a*.tmp>" => "<$tmpDir2/a#1.tmp>", @opts), '  UnCompressed ok' 
                 or diag $$Error ;
 
             my @copy = @expected;
@@ -1498,7 +1438,7 @@ sub run
             title "$TopType - From FileGlob to Arrayref" ;
 
             my @output = (\'first');
-            ok &$Func("<$tmpDir1/a*.tmp>" => \@output, @opts), '  UnCompressed ok'
+            ok &$Func("<$tmpDir1/a*.tmp>" => \@output, @opts), '  UnCompressed ok' 
                 or diag $$Error ;
 
             my @copy = ('first', @expected);
@@ -1514,7 +1454,7 @@ sub run
             title "$TopType - From FileGlob to Buffer" ;
 
             my $output ;
-            ok &$Func("<$tmpDir1/a*.tmp>" => \$output, @opts), '  UnCompressed ok'
+            ok &$Func("<$tmpDir1/a*.tmp>" => \$output, @opts), '  UnCompressed ok' 
                 or diag $$Error ;
 
             is $output, join('', @expected), "  got expected uncompressed data";
@@ -1523,9 +1463,9 @@ sub run
         {
             title "$TopType - From FileGlob to Filename" ;
 
-            my $lex = LexFile->new( my $output );
+            my $lex = new LexFile my $output ;
             ok ! -e $output, "  $output does not exist" ;
-            ok &$Func("<$tmpDir1/a*.tmp>" => $output, @opts), '  UnCompressed ok'
+            ok &$Func("<$tmpDir1/a*.tmp>" => $output, @opts), '  UnCompressed ok' 
                 or diag $$Error ;
 
             ok -e $output, "  $output does exist" ;
@@ -1535,9 +1475,10 @@ sub run
         {
             title "$TopType - From FileGlob to Filehandle" ;
 
-            my $lex = LexFile->new( my $output );
-            my $fh = IO::File->new( ">$output" );
-            ok &$Func("<$tmpDir1/a*.tmp>" => $fh, AutoClose => 1, @opts), '  UnCompressed ok'
+            my $output = 'abc' ;
+            my $lex = new LexFile $output ;
+            my $fh = new IO::File ">$output" ;
+            ok &$Func("<$tmpDir1/a*.tmp>" => $fh, AutoClose => 1, @opts), '  UnCompressed ok' 
                 or diag $$Error ;
 
             ok -e $output, "  $output does exist" ;
@@ -1556,7 +1497,7 @@ sub run
 
         title "More write tests" ;
 
-        my $lex = LexFile->new( my $file1, my $file2, my $file3) ;
+        my $lex = new LexFile(my $file1, my $file2, my $file3) ;
 
         writeFile($file1, "F1");
         writeFile($file2, "F2");
@@ -1573,9 +1514,9 @@ sub run
 #        {
 #            my ($send, $get) = @$data ;
 #
-#            my $fh1 = IO::File->new( "< $file1" );
-#            my $fh2 = IO::File->new( "< $file2" );
-#            my $fh3 = IO::File->new( "< $file3" );
+#            my $fh1 = new IO::File "< $file1" ;
+#            my $fh2 = new IO::File "< $file2" ;
+#            my $fh3 = new IO::File "< $file3" ;
 #
 #            title "$send";
 #            my ($copy);
@@ -1609,9 +1550,9 @@ sub run
         {
             my ($send, $get) = @$data ;
 
-            my $fh1 = IO::File->new( "< $file1" );
-            my $fh2 = IO::File->new( "< $file2" );
-            my $fh3 = IO::File->new( "< $file3" );
+            my $fh1 = new IO::File "< $file1" ;
+            my $fh2 = new IO::File "< $file2" ;
+            my $fh3 = new IO::File "< $file3" ;
 
             title "$send";
             my($copy);
@@ -1626,8 +1567,8 @@ sub run
         }
 
         @data = (
-                   '[""]',
-                   '[undef]',
+                   '[""]', 
+                   '[undef]', 
                 ) ;
 
 
@@ -1638,55 +1579,11 @@ sub run
             eval "\$copy = $send";
             my $Answer ;
             eval { &$Func($copy, \$Answer) } ;
-            like $@, mkErr("^$TopFuncName: input filename is undef or null string"),
+            like $@, mkErr("^$TopFuncName: input filename is undef or null string"), 
                 "  got error message";
 
         }
     }
-
-
-    {
-        # check setting $\
-
-        my $CompFunc = getTopFuncRef($CompressClass);
-        my $UncompFunc = getTopFuncRef($UncompressClass);
-        my $lex = LexFile->new( my $file );
-
-        local $\ = "\n" ;
-        my $input = "hello world";
-        my $compressed ;
-        my $output;
-        ok &$CompFunc(\$input => \$compressed), '  Compressed ok' ;
-        ok &$UncompFunc(\$compressed => $file), '  UnCompressed ok' ;
-        my $content = readFile($file) ;
-        is $content, $input, "round trip ok" ;
-
-    }
-
-    SKIP:
-    {
-        #95494: IO::Uncompress::Gunzip: Can no longer gunzip to in-memory file handle
-
-        skip "open filehandle to buffer not supported in Perl $]", 7
-            if $] < 5.008 ;
-
-        my $CompFunc = getTopFuncRef($CompressClass);
-        my $UncompFunc = getTopFuncRef($UncompressClass);
-
-        my $input = "hello world";
-        my $compressed ;
-        ok open my $fh_in1, '<', \$input ;
-        ok open my $fh_out1, '>', \$compressed ;
-        ok &$CompFunc($fh_in1 => $fh_out1), '  Compressed ok' ;
-
-        my $output;
-        ok open my $fh_in2, '<', \$compressed ;
-        ok open my $fh_out2, '>', \$output ;
-
-        ok &$UncompFunc($fh_in2 => $fh_out2), '  UnCompressed ok' ;
-        is $output, $input, "round trip ok" ;
-    }
-
 
 }
 

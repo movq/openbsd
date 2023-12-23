@@ -1,7 +1,7 @@
+# -*- perl -*-
 use strict;
-use warnings;
-use Pod::Html::Util qw( anchorify relativize_url );
-use Test::More;
+use Pod::Html qw( anchorify );
+use Test::More tests => 1;
 
 my @filedata;
 {
@@ -23,18 +23,18 @@ foreach $i (0..$#poddata) {
     $heads{anchorify($1)} = 1 if $poddata[$i] =~ /=head[1-6]\s+(.*)/;
 }
 my %expected = map { $_ => 1 } qw(
-    NAME
-    DESCRIPTION
-    Subroutine
-    Error
-    Method
-    Has_A_Wordspace
-    HasTrailingWordspace
-    HasLeadingWordspace
-    Has_Extra_InternalWordspace
-    Has_Quotes
-    Has_QuestionMark
-    Has_Hyphen_And_Space
+    name
+    description
+    subroutine
+    error
+    method
+    has_a_wordspace
+    hastrailingwordspace
+    hasleadingwordspace
+    has_extra_internalwordspace
+    hasquotes
+    hasquestionmark
+    has_hyphen_and_space
 );
 is_deeply(
     \%heads,
@@ -42,24 +42,10 @@ is_deeply(
     "Got expected POD heads"
 );
 
-{
-    # adapted from 'installhtml'
-    my $file = '/home/username/tmp/installhtml/pod/perlipc';
-    my $capture = 'NAME';
-    my $expected_url = '/home/username/tmp/installhtml/pod/perlipc/NAME.html';
-    my $expected_relativized_url = 'perlipc/NAME.html';
-    my $url = "$file/@{[anchorify(qq($capture))]}.html" ;
-    is($url, $expected_url, "anchorify() returned expected value");
-    my $relativized_url = relativize_url( $url, "$file.html" );
-    is($relativized_url, $expected_relativized_url, "relativize_url() returned expected value");
-}
-
-done_testing;
-
 __DATA__
 =head1 NAME
 
-anchorify - Test C<Pod::Html::Util::anchorify()>
+anchorify - Test C<Pod::Html::anchorify()>
 
 =head1 DESCRIPTION
 

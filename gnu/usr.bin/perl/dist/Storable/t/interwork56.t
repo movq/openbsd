@@ -14,7 +14,6 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
@@ -30,7 +29,7 @@ use Storable qw(freeze thaw);
 use strict;
 use Test::More tests=>30;
 
-our (%tests);
+use vars qw(%tests);
 
 {
     local $/ = "\n\nend\n";

@@ -1,7 +1,6 @@
 #!/usr/bin/perl -wT
 
 use strict;
-use warnings;
 use lib 't/lib';
 
 use Test::More tests => 7;
@@ -15,7 +14,8 @@ can_ok( 'TAP::Object', '_croak' );
 {
 
     package TAP::TestObj;
-    use base qw(TAP::Object);
+    use vars qw(@ISA);
+    @ISA = qw(TAP::Object);
 
     sub _initialize {
         my $self = shift;

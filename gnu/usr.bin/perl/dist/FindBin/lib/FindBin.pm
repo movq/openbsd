@@ -61,8 +61,9 @@ workaround was to force the C<BEGIN> block to be executed again:
 
 =head1 AUTHORS
 
-FindBin is supported as part of the core perl distribution.  Please submit bug
-reports at L<https://github.com/Perl/perl5/issues>.
+FindBin is supported as part of the core perl distribution. Please send bug
+reports to E<lt>F<perlbug@perl.org>E<gt> using the perlbug program
+included with perl.
 
 Graham Barr E<lt>F<gbarr@pobox.com>E<gt>
 Nick Ing-Simmons E<lt>F<nik@tiuk.ti.com>E<gt>
@@ -76,21 +77,19 @@ under the same terms as Perl itself.
 =cut
 
 package FindBin;
-use strict;
-use warnings;
-
 use Carp;
+require 5.000;
 require Exporter;
 use Cwd qw(getcwd cwd abs_path);
 use File::Basename;
 use File::Spec;
 
-our ($Bin, $Script, $RealBin, $RealScript, $Dir, $RealDir);
-our @EXPORT_OK = qw($Bin $Script $RealBin $RealScript $Dir $RealDir);
-our %EXPORT_TAGS = (ALL => [qw($Bin $Script $RealBin $RealScript $Dir $RealDir)]);
-our @ISA = qw(Exporter);
+@EXPORT_OK = qw($Bin $Script $RealBin $RealScript $Dir $RealDir);
+%EXPORT_TAGS = (ALL => [qw($Bin $Script $RealBin $RealScript $Dir $RealDir)]);
+@ISA = qw(Exporter);
 
-our $VERSION = "1.53";
+$VERSION = "1.51";
+
 
 # needed for VMS-specific filename translation
 if( $^O eq 'VMS' ) {

@@ -58,7 +58,7 @@ if (exists $opt{'output-file'}) {
 # %error = (
 #   error_name => {
 #                   stack_frame => {
-#                                    test_script => occurrences
+#                                    test_script => occurences
 #                                  }
 #                 }
 # );
@@ -66,7 +66,7 @@ if (exists $opt{'output-file'}) {
 # %leak = (
 #   leak_type => {
 #                  stack_frames => {
-#                                    test_script => occurrences
+#                                    test_script => occurences
 #                                  }
 #                } # stack frames are separated by '<'s
 # );

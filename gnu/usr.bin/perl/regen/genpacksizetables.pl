@@ -3,7 +3,7 @@
 # it will generate EBCDIC too. (TODO)
 use strict;
 use Encode;
-require './regen/regen_lib.pl';
+require 'regen/regen_lib.pl';
 
 sub make_text {
     my ($chrmap, $letter, $unpredictable, $nocsum, $size, $condition) = @_;
@@ -70,7 +70,7 @@ my %asciimap  = map {chr $_, chr $_} 0..255;
 # will work; just choose one
 my %ebcdicmap = map {chr $_, Encode::encode("posix-bc", chr $_)} 0..255;
 
-my $fh = open_new('packsizetables.inc', '>', { by => $0, from => 'its data'});
+my $fh = open_new('packsizetables.c', '>', { by => $0, from => 'its data'});
 
 print $fh <<"EOC";
 #if TYPE_IS_SHRIEKING != 0x100
@@ -125,4 +125,4 @@ Q			Uquad_t	IVSIZE >= 8
 f			float
 d			double
 F			=NVSIZE
-D			=LONG_DOUBLESIZE	defined(HAS_LONG_DOUBLE)
+D			=LONG_DOUBLESIZE	defined(HAS_LONG_DOUBLE) && defined(USE_LONG_DOUBLE)

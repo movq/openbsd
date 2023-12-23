@@ -1,14 +1,19 @@
 #!./perl
 
+if ($^O eq 'mpeix') {
+    print "1..0 # Skip: broken on MPE/iX\n";
+    exit 0;
+}
+
 select(STDERR); $| = 1;
 select(STDOUT); $| = 1;
 
-print "1..12\n";
+print "1..10\n";
 
 use IO::Handle;
 use IO::Poll qw(/POLL/);
 
-my $poll = IO::Poll->new();
+my $poll = new IO::Poll;
 
 my $stdout = \*STDOUT;
 my $dupout = IO::Handle->new_from_fd(fileno($stdout),"w");
@@ -76,12 +81,3 @@ close STDIN;
 print "not "
     if $poll->poll(0.1);
 print "ok 10\n";
-
-my $wait = IO::Poll->new;
-my $now = time;
-my $zero = $wait->poll(2);
-my $diff = time - $now;
-print "not " if !defined($zero) or $zero;
-print "ok 11\n";
-print "not " unless $diff >= 2;
-print "ok 12\n";

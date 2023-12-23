@@ -6,7 +6,6 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test;
 BEGIN { plan tests => 8 };
 
@@ -44,20 +43,11 @@ while(@from) {
     sub {
      $_[0]->code_handler(sub { $more .= $_[1] . ":" . $_[0] . "\n"       } );
      $_[0]->cut_handler( sub { $more .= "~" . $_[1] . ":" .  $_[0]. "\n" } );
-     $_[0]->pod_handler( sub { $more .= "+" . $_[1] . ":" .  $_[0]. "\n" } );
-     $_[0]->whiteline_handler( 
-                         sub { $more .= "=" . $_[1] . ":" .  $_[0]. "\n" } );
     } => join "\n",
-    " ", # space outside pod
+    "",
     "\t# This is handy...",
-    "=pod text",
-    "\t", # tab inside pod
-    "=cut more text",
-    "\t", # tab outside pod
-    "=pod",
-    " \t ", # spaces and tabs inside pod
     "=head1 I  LIKE   PIE",
-    " ", # space inside pod
+    "",
     "=cut",
     "use Test::Harness;",
     "runtests(sort glob 't/*.t');",
@@ -72,19 +62,12 @@ while(@from) {
   }
   
   ok scalar($got = $more), scalar($exp = join "\n" =>
-   "1: ",
+   "1:",
    "2:\t# This is handy...",
-   "=4:\t",
-   "+3:=pod text",
-   "~5:=cut more text",
-   "6:\t",
-   "=8: \t ",
-   "+7:=pod",
-   "=10: ",
-   "~11:=cut",
-   "12:use Test::Harness;",
-   "13:runtests(sort glob 't/*.t');",
-   "14:",
+   "~5:=cut",
+   "6:use Test::Harness;",
+   "7:runtests(sort glob 't/*.t');",
+   "8:",
    "",
   );
   unless($got eq $exp) {

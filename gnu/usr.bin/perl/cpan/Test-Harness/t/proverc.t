@@ -1,11 +1,6 @@
 #!/usr/bin/perl -w
 
-BEGIN {
-    unshift @INC, 't/lib';
-}
-
 use strict;
-use warnings;
 use lib 't/lib';
 use Test::More tests => 1;
 use File::Spec;

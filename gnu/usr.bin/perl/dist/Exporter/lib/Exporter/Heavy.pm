@@ -4,7 +4,7 @@ use strict;
 no strict 'refs';
 
 # On one line so MakeMaker will see it.
-our $VERSION = '5.77';
+require Exporter;  our $VERSION = $Exporter::VERSION;
 
 =head1 NAME
 
@@ -148,7 +148,7 @@ sub heavy_export {
 		    if (!$export_cache->{$sym}) {
 			# accumulate the non-exports
 			push @carp,
-			  qq["$sym" is not exported by the $pkg module];
+			  qq["$sym" is not exported by the $pkg module\n];
 			$oops++;
 		    }
 		}
@@ -156,7 +156,7 @@ sub heavy_export {
 	}
 	if ($oops) {
 	    require Carp;
-	    Carp::croak(join("\n", @carp, "Can't continue after import errors"));
+	    Carp::croak("@{carp}Can't continue after import errors");
 	}
     }
     else {

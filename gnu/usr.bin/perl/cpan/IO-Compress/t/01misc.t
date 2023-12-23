@@ -10,7 +10,7 @@ use strict;
 use warnings;
 use bytes;
 
-use Test::More ;
+use Test::More ; 
 use CompTestUtils;
 
 BEGIN {
@@ -19,7 +19,7 @@ BEGIN {
     $extra = 1
         if eval { require Test::NoWarnings ;  import Test::NoWarnings; 1 };
 
-    plan tests => 163 + $extra ;
+    plan tests => 118 + $extra ;
 
     use_ok('Scalar::Util');
     use_ok('IO::Compress::Base::Common');
@@ -36,159 +36,120 @@ EOM
 sub My::testParseParameters()
 {
     eval { ParseParameters(1, {}, 1) ; };
-    like $@, mkErr(': Expected even number of parameters, got 1'),
+    like $@, mkErr(': Expected even number of parameters, got 1'), 
             "Trap odd number of params";
 
     eval { ParseParameters(1, {}, undef) ; };
-    like $@, mkErr(': Expected even number of parameters, got 1'),
+    like $@, mkErr(': Expected even number of parameters, got 1'), 
             "Trap odd number of params";
 
     eval { ParseParameters(1, {}, []) ; };
-    like $@, mkErr(': Expected even number of parameters, got 1'),
+    like $@, mkErr(': Expected even number of parameters, got 1'), 
             "Trap odd number of params";
 
-    eval { ParseParameters(1, {'fred' => [Parse_boolean, 0]}, fred => 'joe') ; };
-    like $@, mkErr("Parameter 'fred' must be an int, got 'joe'"),
+    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_boolean, 0]}, Fred => 'joe') ; };
+    like $@, mkErr("Parameter 'Fred' must be an int, got 'joe'"), 
             "wanted unsigned, got undef";
 
-    eval { ParseParameters(1, {'fred' => [Parse_unsigned, 0]}, fred => undef) ; };
-    like $@, mkErr("Parameter 'fred' must be an unsigned int, got 'undef'"),
+    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_unsigned, 0]}, Fred => undef) ; };
+    like $@, mkErr("Parameter 'Fred' must be an unsigned int, got 'undef'"), 
             "wanted unsigned, got undef";
 
-    eval { ParseParameters(1, {'fred' => [Parse_signed, 0]}, fred => undef) ; };
-    like $@, mkErr("Parameter 'fred' must be a signed int, got 'undef'"),
+    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_signed, 0]}, Fred => undef) ; };
+    like $@, mkErr("Parameter 'Fred' must be a signed int, got 'undef'"), 
             "wanted signed, got undef";
 
-    eval { ParseParameters(1, {'fred' => [Parse_signed, 0]}, fred => 'abc') ; };
-    like $@, mkErr("Parameter 'fred' must be a signed int, got 'abc'"),
+    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_signed, 0]}, Fred => 'abc') ; };
+    like $@, mkErr("Parameter 'Fred' must be a signed int, got 'abc'"), 
             "wanted signed, got 'abc'";
-
-    eval { ParseParameters(1, {'fred' => [Parse_code, undef]}, fred => 'abc') ; };
-    like $@, mkErr("Parameter 'fred' must be a code reference, got 'abc'"),
-            "wanted code, got 'abc'";
 
 
     SKIP:
     {
         use Config;
 
-        skip 'readonly + threads', 2
+        skip 'readonly + threads', 1
             if $Config{useithreads};
 
-        eval { ParseParameters(1, {'fred' => [Parse_writable_scalar, 0]}, fred => 'abc') ; };
-        like $@, mkErr("Parameter 'fred' not writable"),
-                "wanted writable, got readonly";
-
-        skip '\\ returns mutable value in 5.19.3', 1
-            if $] >= 5.019003;
-
-        eval { ParseParameters(1, {'fred' => [Parse_writable_scalar, 0]}, fred => \'abc') ; };
-        like $@, mkErr("Parameter 'fred' not writable"),
+        eval { ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, 0]}, Fred => 'abc') ; };
+        like $@, mkErr("Parameter 'Fred' not writable"), 
                 "wanted writable, got readonly";
     }
 
     my @xx;
-    eval { ParseParameters(1, {'fred' => [Parse_writable_scalar, 0]}, fred => \@xx) ; };
-    like $@, mkErr("Parameter 'fred' not a scalar reference"),
+    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, 0]}, Fred => \@xx) ; };
+    like $@, mkErr("Parameter 'Fred' not a scalar reference"), 
             "wanted scalar reference";
 
     local *ABC;
-    eval { ParseParameters(1, {'fred' => [Parse_writable_scalar, 0]}, fred => *ABC) ; };
-    like $@, mkErr("Parameter 'fred' not a scalar"),
+    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, 0]}, Fred => *ABC) ; };
+    like $@, mkErr("Parameter 'Fred' not a scalar"), 
             "wanted scalar";
 
-    eval { ParseParameters(1, {'fred' => [Parse_any, 0]}, fred => 1, fred => 2) ; };
-    like $@, mkErr("Muliple instances of 'fred' found"),
-        "multiple instances";
+#    eval { ParseParameters(1, {'Fred' => [1, 1, Parse_any, 0]}, Fred => 1, Fred => 2) ; };
+#    like $@, mkErr("Muliple instances of 'Fred' found"),
+#        "wanted scalar";
 
-#    my $g = ParseParameters(1, {'fred' => [Parse_unsigned|Parse_multiple, 7]}, fred => 1, fred => 2) ;
-#    is_deeply $g->value('fred'), [ 1, 2 ] ;
-    ok 1;
+    my $g = ParseParameters(1, {'Fred' => [1, 1, Parse_unsigned|Parse_multiple, 7]}, Fred => 1, Fred => 2) ;
+    is_deeply $g->value('Fred'), [ 1, 2 ] ;
 
     #ok 1;
 
-    my $got = ParseParameters(1, {'fred' => [0x1000000, 0]}, fred => 'abc') ;
-    is $got->getValue('fred'), "abc", "other" ;
+    my $got = ParseParameters(1, {'Fred' => [1, 1, 0x1000000, 0]}, Fred => 'abc') ;
+    is $got->value('Fred'), "abc", "other" ;
 
-    $got = ParseParameters(1, {'fred' => [Parse_any, undef]}, fred => undef) ;
-    ok $got->parsed('fred'), "undef" ;
-    ok ! defined $got->getValue('fred'), "undef" ;
+    $got = ParseParameters(1, {'Fred' => [0, 1, Parse_any, undef]}, Fred => undef) ;
+    ok $got->parsed('Fred'), "undef" ;
+    ok ! defined $got->value('Fred'), "undef" ;
 
-    $got = ParseParameters(1, {'fred' => [Parse_string, undef]}, fred => undef) ;
-    ok $got->parsed('fred'), "undef" ;
-    is $got->getValue('fred'), "", "empty string" ;
+    $got = ParseParameters(1, {'Fred' => [0, 1, Parse_string, undef]}, Fred => undef) ;
+    ok $got->parsed('Fred'), "undef" ;
+    is $got->value('Fred'), "", "empty string" ;
 
     my $xx;
-    $got = ParseParameters(1, {'fred' => [Parse_writable_scalar, undef]}, fred => $xx) ;
+    $got = ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, undef]}, Fred => $xx) ;
 
-    ok $got->parsed('fred'), "parsed" ;
-    my $xx_ref = $got->getValue('fred');
+    ok $got->parsed('Fred'), "parsed" ;
+    my $xx_ref = $got->value('Fred');
     $$xx_ref = 77 ;
     is $xx, 77;
 
-    $got = ParseParameters(1, {'fred' => [Parse_writable_scalar, undef]}, fred => \$xx) ;
+    $got = ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, undef]}, Fred => \$xx) ;
 
-    ok $got->parsed('fred'), "parsed" ;
-    $xx_ref = $got->getValue('fred');
+    ok $got->parsed('Fred'), "parsed" ;
+    $xx_ref = $got->value('Fred');
 
     $$xx_ref = 666 ;
     is $xx, 666;
 
     {
-        my $got1 = ParseParameters(1, {'fred' => [Parse_writable_scalar, undef]}, $got) ;
+        my $got1 = ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, undef]}, $got) ;
         is $got1, $got, "Same object";
-
-        ok $got1->parsed('fred'), "parsed" ;
-        $xx_ref = $got1->getValue('fred');
-
+    
+        ok $got1->parsed('Fred'), "parsed" ;
+        $xx_ref = $got1->value('Fred');
+        
         $$xx_ref = 777 ;
         is $xx, 777;
     }
+    
+    my $got2 = ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, undef]}, '__xxx__' => $got) ;
+    isnt $got2, $got, "not the Same object";
 
-    for my $type (Parse_unsigned, Parse_signed, Parse_any)
-    {
-        my $value = 0;
-        my $got1 ;
-        eval { $got1 = ParseParameters(1, {'fred' => [$type, 1]}, fred => $value) } ;
+    ok $got2->parsed('Fred'), "parsed" ;
+    $xx_ref = $got2->value('Fred');
+    $$xx_ref = 888 ;
+    is $xx, 888;  
+      
+    my $other;
+    my $got3 = ParseParameters(1, {'Fred' => [1, 1, Parse_writable_scalar, undef]}, '__xxx__' => $got, Fred => \$other) ;
+    isnt $got3, $got, "not the Same object";
 
-        ok ! $@;
-        ok $got1->parsed('fred'), "parsed ok" ;
-        is $got1->getValue('fred'), 0;
-    }
-
-    {
-        # setValue/getValue
-        my $value = 0;
-        my $got1 ;
-        eval { $got1 = ParseParameters(1, {'fred' => [Parse_any, 1]}, fred => $value) } ;
-
-        ok ! $@;
-        ok $got1->parsed('fred'), "parsed ok" ;
-        is $got1->getValue('fred'), 0;
-        $got1->setValue('fred' => undef);
-        is $got1->getValue('fred'), undef;
-    }
-
-    {
-        # twice
-        my $value = 0;
-
-        my $got = IO::Compress::Base::Parameters::new();
-
-
-        ok $got->parse({'fred' => [Parse_any, 1]}, fred => $value) ;
-
-        ok $got->parsed('fred'), "parsed ok" ;
-        is $got->getValue('fred'), 0;
-
-        ok $got->parse({'fred' => [Parse_any, 1]}, fred => undef) ;
-        ok $got->parsed('fred'), "parsed ok" ;
-        is $got->getValue('fred'), undef;
-
-        ok $got->parse({'fred' => [Parse_any, 1]}, fred => 7) ;
-        ok $got->parsed('fred'), "parsed ok" ;
-        is $got->getValue('fred'), 7;
-    }
+    ok $got3->parsed('Fred'), "parsed" ;
+    $xx_ref = $got3->value('Fred');
+    $$xx_ref = 999 ;
+    is $other, 999;  
+    is $xx, 888;  
 }
 
 
@@ -208,7 +169,7 @@ My::testParseParameters();
 {
     title "whatIsInput" ;
 
-    my $lex = LexFile->new( my $out_file );
+    my $lex = new LexFile my $out_file ;
     open FH, ">$out_file" ;
     is whatIsInput(*FH), 'handle', "Match filehandle" ;
     close FH ;
@@ -227,7 +188,7 @@ My::testParseParameters();
 {
     title "whatIsOutput" ;
 
-    my $lex = LexFile->new( my $out_file );
+    my $lex = new LexFile my $out_file ;
     open FH, ">$out_file" ;
     is whatIsOutput(*FH), 'handle', "Match filehandle" ;
     close FH ;
@@ -248,34 +209,34 @@ My::testParseParameters();
 {
     title "U64" ;
 
-    my $x = U64->new();
+    my $x = new U64();
     is $x->getHigh, 0, "  getHigh is 0";
     is $x->getLow, 0, "  getLow is 0";
     ok ! $x->is64bit(), " ! is64bit";
 
-    $x = U64->new(1,2);
+    $x = new U64(1,2);
     is $x->getHigh, 1, "  getHigh is 1";
     is $x->getLow, 2, "  getLow is 2";
     ok $x->is64bit(), " is64bit";
 
-    $x = U64->new(0xFFFFFFFF,2);
+    $x = new U64(0xFFFFFFFF,2);
     is $x->getHigh, 0xFFFFFFFF, "  getHigh is 0xFFFFFFFF";
     is $x->getLow, 2, "  getLow is 2";
     ok $x->is64bit(), " is64bit";
 
-    $x = U64->new(7, 0xFFFFFFFF);
+    $x = new U64(7, 0xFFFFFFFF);
     is $x->getHigh, 7, "  getHigh is 7";
     is $x->getLow, 0xFFFFFFFF, "  getLow is 0xFFFFFFFF";
     ok $x->is64bit(), " is64bit";
 
-    $x = U64->new(666);
+    $x = new U64(666);
     is $x->getHigh, 0, "  getHigh is 0";
     is $x->getLow, 666, "  getLow is 666";
     ok ! $x->is64bit(), " ! is64bit";
 
     title "U64 - add" ;
 
-    $x = U64->new(0, 1);
+    $x = new U64(0, 1);
     is $x->getHigh, 0, "  getHigh is 0";
     is $x->getLow, 1, "  getLow is 1";
     ok ! $x->is64bit(), " ! is64bit";
@@ -285,7 +246,7 @@ My::testParseParameters();
     is $x->getLow, 2, "  getLow is 2";
     ok ! $x->is64bit(), " ! is64bit";
 
-    $x = U64->new(0, 0xFFFFFFFE);
+    $x = new U64(0, 0xFFFFFFFE);
     is $x->getHigh, 0, "  getHigh is 0";
     is $x->getLow, 0xFFFFFFFE, "  getLow is 0xFFFFFFFE";
     is $x->get32bit(),  0xFFFFFFFE, "  get32bit is 0xFFFFFFFE";
@@ -320,69 +281,27 @@ My::testParseParameters();
     is $x->get64bit(),  0xFFFFFFFF+3, "  get64bit is 0x100000002";
     ok $x->is64bit(), " is64bit";
 
-    $x = U64->new(1, 0xFFFFFFFE);
-    my $y = U64->new(2, 3);
+    $x = new U64(1, 0xFFFFFFFE);
+    my $y = new U64(2, 3);
 
     $x->add($y);
     is $x->getHigh, 4, "  getHigh is 4";
     is $x->getLow, 1, "  getLow is 1";
     ok $x->is64bit(), " is64bit";
 
-    title "U64 - subtract" ;
-
-    $x = U64->new(0, 1);
-    is $x->getHigh, 0, "  getHigh is 0";
-    is $x->getLow, 1, "  getLow is 1";
-    ok ! $x->is64bit(), " ! is64bit";
-
-    $x->subtract(1);
-    is $x->getHigh, 0, "  getHigh is 0";
-    is $x->getLow, 0, "  getLow is 0";
-    ok ! $x->is64bit(), " ! is64bit";
-
-    $x = U64->new(1, 0);
-    is $x->getHigh, 1, "  getHigh is 1";
-    is $x->getLow, 0, "  getLow is 0";
-    is $x->get32bit(),  0, "  get32bit is 0xFFFFFFFE";
-    is $x->get64bit(),  0xFFFFFFFF+1, "  get64bit is 0x100000000";
-    ok $x->is64bit(), " is64bit";
-
-    $x->subtract(1);
-    is $x->getHigh, 0, "  getHigh is 0";
-    is $x->getLow, 0xFFFFFFFF, "  getLow is 0xFFFFFFFF";
-    is $x->get32bit(),  0xFFFFFFFF, "  get32bit is 0xFFFFFFFF";
-    is $x->get64bit(),  0xFFFFFFFF, "  get64bit is 0xFFFFFFFF";
-    ok ! $x->is64bit(), " ! is64bit";
-
-    $x = U64->new(2, 2);
-    $y = U64->new(1, 3);
-
-    $x->subtract($y);
-    is $x->getHigh, 0, "  getHigh is 0";
-    is $x->getLow, 0xFFFFFFFF, "  getLow is 1";
-    ok ! $x->is64bit(), " ! is64bit";
-
-    $x = U64->new(0x01CADCE2, 0x4E815983);
-    $y = U64->new(0x19DB1DE, 0xD53E8000); # NTFS to Unix time delta
-
-    $x->subtract($y);
-    is $x->getHigh, 0x2D2B03, "  getHigh is 2D2B03";
-    is $x->getLow, 0x7942D983, "  getLow is 7942D983";
-    ok $x->is64bit(), " is64bit";
-
     title "U64 - equal" ;
 
-    $x = U64->new(0, 1);
+    $x = new U64(0, 1);
     is $x->getHigh, 0, "  getHigh is 0";
     is $x->getLow, 1, "  getLow is 1";
     ok ! $x->is64bit(), " ! is64bit";
 
-    $y = U64->new(0, 1);
+    $y = new U64(0, 1);
     is $y->getHigh, 0, "  getHigh is 0";
     is $y->getLow, 1, "  getLow is 1";
     ok ! $y->is64bit(), " ! is64bit";
 
-    my $z = U64->new(0, 2);
+    my $z = new U64(0, 2);
     is $z->getHigh, 0, "  getHigh is 0";
     is $z->getLow, 2, "  getLow is 2";
     ok ! $z->is64bit(), " ! is64bit";
@@ -391,16 +310,8 @@ My::testParseParameters();
     ok !$x->equal($z), "  ! equal";
 
     title "U64 - clone" ;
-    $x = U64->new(21, 77);
+    $x = new U64(21, 77);
     $z =  U64::clone($x);
     is $z->getHigh, 21, "  getHigh is 21";
     is $z->getLow, 77, "  getLow is 77";
-
-    title "U64 - cmp.gt" ;
-    $x = U64->new( 1 );
-    $y = U64->new( 0 );
-    cmp_ok $x->cmp($y), '>', 0, "  cmp > 0";
-    is $x->gt($y), 1, "  gt";
-    cmp_ok $y->cmp($x), '<', 0, "  cmp < 0";
-
 }

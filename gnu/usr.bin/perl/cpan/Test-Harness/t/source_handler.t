@@ -5,11 +5,9 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 
 use Test::More tests => 79;
 
-use Config;
 use IO::File;
 use IO::Handle;
 use File::Spec;
@@ -30,7 +28,7 @@ my $perl = $^X;
 
 my %file = map { $_ => File::Spec->catfile( $dir, $_ ) }
   qw( source source.1 source.bat source.pl source.sh source_args.sh source.t
-  source.tap );
+      source.tap );
 
 # Abstract base class tests
 {
@@ -88,7 +86,6 @@ my %file = map { $_ => File::Spec->catfile( $dir, $_ ) }
             {   name => "valid executable",
                 raw  => [
                     $perl, ( $ENV{PERL_CORE} ? '-I../../lib' : () ),
-                    (map { "-I$_" } split /$Config{path_sep}/, $ENV{PERL5LIB} || ''),
                     '-It/lib', '-T', $file{source}
                 ],
                 iclass        => 'TAP::Parser::Iterator::Process',
@@ -113,7 +110,7 @@ my %file = map { $_ => File::Spec->catfile( $dir, $_ ) }
             },
             {   name        => $file{'source_args.sh'},
                 raw         => { exec => [ $file{'source_args.sh'} ] },
-                test_args   => ['foo'],
+                test_args   => [ 'foo' ],
                 skip        => $HAS_SH && $HAS_ECHO ? 0 : 1,
                 skip_reason => 'no /bin/sh, /bin/echo',
                 iclass      => 'TAP::Parser::Iterator::Process',
@@ -360,11 +357,11 @@ sub test_handler {
             skip $test->{skip_reason}, $planned if $test->{skip};
 
             my $source = TAP::Parser::Source->new;
-            $source->raw( $test->{raw} )             if $test->{raw};
+            $source->raw( $test->{raw} )       if $test->{raw};
             $source->test_args( $test->{test_args} ) if $test->{test_args};
-            $source->meta( $test->{meta} )           if $test->{meta};
-            $source->config( $test->{config} )       if $test->{config};
-            $source->assemble_meta if $test->{assemble_meta};
+            $source->meta( $test->{meta} )     if $test->{meta};
+            $source->config( $test->{config} ) if $test->{config};
+            $source->assemble_meta             if $test->{assemble_meta};
 
             my $iterator = eval { $class->make_iterator($source) };
             my $e = $@;

@@ -8,7 +8,6 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
@@ -17,10 +16,11 @@ sub BEGIN {
     require 'st-dump.pl';
 }
 
-use Storable qw(freeze thaw);
-$Storable::flags = Storable::FLAGS_COMPAT;
+sub ok;
 
-use Test::More tests => 25;
+use Storable qw(freeze thaw);
+
+print "1..23\n";
 
 ($scalar_fetch, $array_fetch, $hash_fetch) = (0, 0, 0);
 
@@ -133,7 +133,7 @@ tie $scalar, TIED_SCALAR;
 
 ### If I say
 ###   $hash{'attribute'} = $d;
-### below, then dump() incorrectly dumps the hash value as a string the second
+### below, then dump() incorectly dumps the hash value as a string the second
 ### time it is reached. I have not investigated enough to tell whether it's
 ### a bug in my dump() routine or in the Perl tieing mechanism.
 $scalar = 'foo';
@@ -147,17 +147,16 @@ $array[2] = \@array;
 @a = ('first', 3, -4, -3.14159, 456, 4.5, $d, \$d,
 	$b, \$a, $a, $c, \$c, \%a, \@array, \%hash, \@tied);
 
-my $f = freeze(\@a);
-isnt($f, undef);
+ok 1, defined($f = freeze(\@a));
 
 $dumped = &dump(\@a);
-isnt($dumped, undef);
+ok 2, 1;
 
 $root = thaw($f);
-isnt($root, undef);
+ok 3, defined $root;
 
 $got = &dump($root);
-isnt($got, undef);
+ok 4, 1;
 
 ### Used to see the manifestation of the bug documented above.
 ### print "original: $dumped";
@@ -165,60 +164,52 @@ isnt($got, undef);
 ### print "got: $got";
 ### print "--------\n";
 
-is($got, $dumped);
+ok 5, $got eq $dumped; 
 
 $g = freeze($root);
-is(length $f, length $g);
+ok 6, length($f) == length($g);
 
 # Ensure the tied items in the retrieved image work
 @old = ($scalar_fetch, $array_fetch, $hash_fetch);
 @tied = ($tscalar, $tarray, $thash) = @{$root->[$#{$root}]};
 @type = qw(SCALAR  ARRAY  HASH);
 
-is(ref tied $$tscalar, 'TIED_SCALAR');
-is(ref tied @$tarray, 'TIED_ARRAY');
-is(ref tied %$thash, 'TIED_HASH');
+ok 7, tied $$tscalar;
+ok 8, tied @{$tarray};
+ok 9, tied %{$thash};
 
 @new = ($$tscalar, $tarray->[0], $thash->{'attribute'});
 @new = ($scalar_fetch, $array_fetch, $hash_fetch);
 
 # Tests 10..15
 for ($i = 0; $i < @new; $i++) {
-	is($new[$i], $old[$i] + 1);
-	is(ref $tied[$i], $type[$i]);
+	print "not " unless $new[$i] == $old[$i] + 1;
+	printf "ok %d\n", 10 + 2*$i;	# Tests 10,12,14
+	print "not " unless ref $tied[$i] eq $type[$i];
+	printf "ok %d\n", 11 + 2*$i;	# Tests 11,13,15
 }
 
 # Check undef ties
 my $h = {};
 tie $h->{'x'}, 'FAULT', $h, 'x';
 my $hf = freeze($h);
-isnt($hf, undef);
-is($FAULT::fault, 0);
-is($h->{'x'}, 1);
-is($FAULT::fault, 1);
+ok 16, defined $hf;
+ok 17, $FAULT::fault == 0;
+ok 18, $h->{'x'} == 1;
+ok 19, $FAULT::fault == 1;
 
 my $ht = thaw($hf);
-isnt($ht, undef);
-is($ht->{'x'}, 1);
-is($FAULT::fault, 2);
+ok 20, defined $ht;
+ok 21, $ht->{'x'} == 1;
+ok 22, $FAULT::fault == 2;
 
 {
     package P;
     use Storable qw(freeze thaw);
-    our ($a, $b);
+    use vars qw($a $b);
     $b = "not ok ";
     sub TIESCALAR { bless \$a } sub FETCH { "ok " }
     tie $a, P; my $r = thaw freeze \$a; $b = $$r;
-    main::is($b, "ok ");
+    print $b , 23, "\n";
 }
 
-{
-    # blessed ref to tied object should be thawed blessed
-    my @a;
-    tie @a, TIED_ARRAY;
-    my $r = bless \@a, 'FOO99';
-    my $f = freeze($r);
-    my $t = thaw($f);
-    isnt($t, undef);
-    like("$t", qr/^FOO99=ARRAY/);
-}

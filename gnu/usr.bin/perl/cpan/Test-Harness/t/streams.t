@@ -1,31 +1,28 @@
 #!/usr/bin/perl -wT
 
 use strict;
-use warnings;
 use lib 't/lib';
 
-use Test::More tests => 49;
+use Test::More tests => 47;
 
 use TAP::Parser;
-use TAP::Parser::Iterator::Array;
-use TAP::Parser::Iterator::Stream;
+use TAP::Parser::IteratorFactory;
 
+my $STREAMED   = 'TAP::Parser';
 my $ITER       = 'TAP::Parser::Iterator';
 my $ITER_FH    = "${ITER}::Stream";
 my $ITER_ARRAY = "${ITER}::Array";
 
-my $iterator = $ITER_FH->new( \*DATA );
-isa_ok $iterator, 'TAP::Parser::Iterator';
-my $parser = TAP::Parser->new( { iterator => $iterator } );
+my $factory = TAP::Parser::IteratorFactory->new;
+my $stream  = $factory->make_iterator( \*DATA );
+isa_ok $stream, 'TAP::Parser::Iterator';
+my $parser = TAP::Parser->new( { stream => $stream } );
 isa_ok $parser, 'TAP::Parser',
   '... and creating a streamed parser should succeed';
 
-can_ok $parser, '_iterator';
-is ref $parser->_iterator, $ITER_FH,
+can_ok $parser, '_stream';
+is ref $parser->_stream, $ITER_FH,
   '... and it should return the proper iterator';
-can_ok $parser, '_stream';    # deprecated
-is $parser->_stream, $parser->_iterator, '... _stream (deprecated)';
-
 can_ok $parser, 'next';
 is $parser->next->as_string, '1..5',
   '... and the plan should parse correctly';
@@ -60,10 +57,10 @@ ok 5 # skip we have no description
 1..5
 END_TAP
 
-$iterator = $ITER_ARRAY->new( [ split /\n/ => $tap ] );
-ok $parser = TAP::Parser->new( { iterator => $iterator } ),
+$stream = $factory->make_iterator( [ split /\n/ => $tap ] );
+ok $parser = TAP::Parser->new( { stream => $stream } ),
   'Now we create a parser with the plan at the end';
-isa_ok $parser->_iterator, $ITER_ARRAY,
+isa_ok $parser->_stream, $ITER_ARRAY,
   '... and now we should have an array iterator';
 is $parser->next->as_string, 'ok 1 - input file opened',
   '... and the first test should parse correctly';
@@ -98,9 +95,9 @@ not ok 4 - this is a real failure
 ok 5 # skip we have no description
 END_TAP
 
-$iterator = $ITER_ARRAY->new( [ split /\n/ => $tap ] );
+$stream = $factory->make_iterator( [ split /\n/ => $tap ] );
 
-ok $parser = TAP::Parser->new( { iterator => $iterator } ),
+ok $parser = TAP::Parser->new( { stream => $stream } ),
   'Now we create a parser with a plan as the second line';
 is $parser->next->as_string, 'ok 1 - input file opened',
   '... and the first test should parse correctly';
@@ -136,9 +133,9 @@ not ok 4 - this is a real failure
 ok 5 # skip we have no description
 END_TAP
 
-$iterator = $ITER_ARRAY->new( [ split /\n/ => $tap ] );
+$stream = $factory->make_iterator( [ split /\n/ => $tap ] );
 
-ok $parser = TAP::Parser->new( { iterator => $iterator } ),
+ok $parser = TAP::Parser->new( { stream => $stream } ),
   'Now we create a parser with the plan as the second to last line';
 is $parser->next->as_string, 'ok 1 - input file opened',
   '... and the first test should parse correctly';

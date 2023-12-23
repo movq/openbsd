@@ -1,4 +1,4 @@
-# svr5 hints, System V Release 5.x (UnixWare 7, OpenUNIX 8)
+# svr5 hints, System V Release 5.x (UnixWare 7)
 # mods after mail fm Andy Dougherty
 # Reworked by hops@sco.com Sept/Oct 1999 for UW7.1 platform support 
 #   Boyd Gerber, gerberb@zenez.com 1999/09/21 for threads support.
@@ -10,11 +10,8 @@
 case "$cc" in
 *gcc*)
     #  "$gccversion" not set yet
-    if [ "X$gccversion" = "X" ]; then
-	# Done too late in Configure if hinted
-	gccversion=`$cc -dumpversion`
-    fi
-    case $gccversion in
+    vers=`gcc -v 2>&1 | sed -n -e 's@.*version \([^ ][^ ]*\) .*@\1@p'`
+    case $vers in
     *2.95*)
          ccflags='-fno-strict-aliasing'
         # More optimisation provided in gcc-2.95 causes miniperl to segv.
@@ -27,7 +24,7 @@ case "$cc" in
     ;;  
 esac
 
-# Hardwire the processor to 586 for consistency with autoconf
+# Hardwire the processor to 586 for consistancy with autoconf
 # archname='i586-svr5'
 #  -- seems this is generally disliked by perl porters so leave it to float
 
@@ -48,15 +45,14 @@ esac
 	want_dbm='yes'		# use dbm if can find library in /usr/local/lib
 	want_gdbm='yes'		# use gdbm if can find library in /usr/local/lib
 	want_udk70=''		# link with old static libc pieces
-            # link with udk70 if building on 7.1 and want resulting binary
+            # link with udk70 if building on 7.1 abd want resulting binary 
             # to run on uw7.0* - it will link in referenced static symbols 
             # of libc that are (now) in the shared libc.so on 7.1 but were 
             # not there in 7.0.
             # There are still scenarios where this is still insufficient so 
             # overall it is preferable to get ptf7051e 
             #   ftp://ftp.sco.com/SLS/ptf7051e.Z
-            # installed on any/all 7.0 systems and leave the above unset
-            # (sadly this is unavailable as of 2009-08-03)
+            # installed on any/all 7.0 systems and leave the above unset.
 
 if [ "$want_ucb" ] ; then 
     ldflags= '-L/usr/ucblib'
@@ -66,7 +62,7 @@ else
     libswanted=`echo " $libswanted " | sed -e 's/ ucb / /'`
     glibpth=`echo " $glibpth " | sed -e 's/ \/usr\/ucblib / /'`
 
-    # If see libdbm in /usr/local and not overridden assume its the
+    # If see libdbm in /usr/local and not overidden assume its the 
     # non ucblib rebuild from skunkware  and use it
     if [ ! -f /usr/local/lib/libdbm.so -o ! "$want_dbm" ] ; then
         i_dbm='undef'
@@ -87,14 +83,16 @@ libswanted=`echo " $libswanted " | sed -e 's/ malloc / /' -e 's/ c / /'`
 
 # remove /shlib and /lib from library search path as both symlink to /usr/lib
 # where runtime shared libc is 
-glibpth=`echo " $glibpth " | sed -e 's/ \/shlib / /' -e 's/ \/lib / /'`
+glibpth=`echo " $glibpth " | sed -e 's/ \/shlib / /' -e 's/ \/lib / /`
 
 # Don't use BSD emulation pieces (/usr/ucblib) regardless
 # these would probably be autonondetected anyway but ...
-gconvert_preference='gcvt sprintf'	# Try gcvt() before gconvert().
+d_Gconvert='gcvt((x),(n),(b))'	# Try gcvt() before gconvert().
+d_bcopy='undef' d_bcmp='undef'  d_bzero='undef'  d_safebcpy='undef'
 d_index='undef' d_killpg='undef' d_getprior='undef' d_setprior='undef'
 d_setlinebuf='undef' 
 d_setregid='undef' d_setreuid='undef'  # -- in /usr/lib/libc.so.1
+
 
 # Broken C-Shell tests (Thanks to Tye McQueen):
 # The OS-specific checks may be obsoleted by the this generic test.
@@ -102,7 +100,7 @@ d_setregid='undef' d_setreuid='undef'  # -- in /usr/lib/libc.so.1
 	csh_cnt=`csh -f -c 'glob /*' 2>/dev/null | wc -c`
 	csh_cnt=`expr 1 + $csh_cnt`
 if [ "$sh_cnt" -ne "$csh_cnt" ]; then
-    echo "Your csh has a broken 'glob', disabling..." >&2
+    echo "You're csh has a broken 'glob', disabling..." >&2
     d_csh='undef'
 fi
 
@@ -115,15 +113,18 @@ fi
 	uw_ver=`uname -v`
 	uw_isuw=`uname -s 2>&1`
 
-if [ "$uw_isuw" = "UnixWare" -o "$uw_isuw" = "OpenUNIX" ]; then
+if [ "$uw_isuw" = "UnixWare" ]; then
    case $uw_ver in
-   8.*|7.1*)
+   7.1*)
 	d_csh='undef'
+	d_memcpy='define'
+	d_memset='define'
 	stdio_cnt='((fp)->__cnt)'
 	d_stdio_cnt_lval='define'
 	stdio_ptr='((fp)->__ptr)'
 	d_stdio_ptr_lval='define'
 
+        d_bcopy='define'    # In /usr/lib/libc.so.1
         d_setregid='define' #  " 
         d_setreuid='define' #  " 
 
@@ -133,6 +134,8 @@ if [ "$uw_isuw" = "UnixWare" -o "$uw_isuw" = "OpenUNIX" ]; then
 	;;
    7*)
 	d_csh='undef'
+	d_memcpy='define'
+	d_memset='define'
 	stdio_cnt='((fp)->__cnt)'
 	d_stdio_cnt_lval='define'
 	stdio_ptr='((fp)->__ptr)'
@@ -153,12 +156,8 @@ fi
 # cccdlflags: must tell the compiler to generate relocatable code
 # lddlflags : must tell the linker to output a shared library
 
-# use shared perl lib if the user doesn't choose otherwise
-if test "$uw_isuw" != "OpenUNIX"; then
-    if test "x$useshrplib" = "x"; then
-	useshrplib='true'
-    fi
-fi
+# use shared perl lib    
+useshrplib='true'
 
 case "$cc" in
        *gcc*)
@@ -184,7 +183,7 @@ case "$usethreads" in
 $define|true|[yY]*)
         ccflags="$ccflags"
         shift
-        libswanted="$libswanted $*"
+        libswanted="$*"
   case "$cc" in
        *gcc*)
            ccflags="-D_REENTRANT $ccflags -fpic -pthread"

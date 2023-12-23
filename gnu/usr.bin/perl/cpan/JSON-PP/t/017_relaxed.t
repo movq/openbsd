@@ -1,11 +1,16 @@
-# copied over from JSON::XS and modified to use JSON::PP
+# copied over from JSON::PP::XS and modified to use JSON::PP
 
-use strict;
-use warnings;
 use Test::More;
+use strict;
+
 BEGIN { plan tests => 8 };
 
 BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }
+
+BEGIN {
+    use lib qw(t);
+    use _unicode_handling;
+}
 
 use utf8;
 use JSON::PP;

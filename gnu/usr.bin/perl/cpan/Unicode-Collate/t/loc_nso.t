@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -22,9 +27,6 @@ sub ok ($;$) {
 use Unicode::Collate::Locale;
 
 ok(1);
-
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
 
 #########################
 
@@ -58,10 +60,10 @@ ok($objNso->lt("s\x{30C}", "S\x{30C}"));
 
 # 14
 
-ok($objNso->eq("e\x{302}", _pack_U(0xEA)));
-ok($objNso->eq("E\x{302}", _pack_U(0xCA)));
-ok($objNso->eq("o\x{302}", _pack_U(0xF4)));
-ok($objNso->eq("O\x{302}", _pack_U(0xD4)));
+ok($objNso->eq("e\x{302}", pack('U', 0xEA)));
+ok($objNso->eq("E\x{302}", pack('U', 0xCA)));
+ok($objNso->eq("o\x{302}", pack('U', 0xF4)));
+ok($objNso->eq("O\x{302}", pack('U', 0xD4)));
 ok($objNso->eq("s\x{30C}", "\x{161}"));
 ok($objNso->eq("S\x{30C}", "\x{160}"));
 

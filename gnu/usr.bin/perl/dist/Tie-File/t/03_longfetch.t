@@ -8,10 +8,7 @@
 # (tests _fill_offsets_to() )
 #
 
-use strict;
-use warnings;
-
-my $file = "tf03-$$.txt";
+my $file = "tf$$.txt";
 $: = Tie::File::_default_recsep();
 my $data = "rec0$:rec1$:rec2$:";
 
@@ -21,12 +18,12 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 print F $data;
 close F;
 
-my @a;
+
 my $o = tie @a, 'Tie::File', $file, autochomp => 0;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;

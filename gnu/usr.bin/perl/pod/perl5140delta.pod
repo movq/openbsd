@@ -723,7 +723,7 @@ The C<*$glob> on the second line returns a new immutable glob.  That new
 glob is made an alias to C<*bar>.  Then it is discarded.  So the second
 assignment has no effect.
 
-See L<https://github.com/Perl/perl5/issues/10625> for
+See L<http://rt.perl.org/rt3/Public/Bug/Display.html?id=77810> for
 more detail.
 
 =head3 Magic variables outside the main package
@@ -1210,7 +1210,7 @@ generation task.
 
 L<CPAN::Meta> version 2.110440 has been added as a dual-life module.  It
 provides a standard library to read, interpret and write CPAN distribution
-metadata files (like F<META.json> and F<META.yml>) that describe a
+metadata files (like F<META.json> and F<META.yml)> that describe a
 distribution, its contents, and the requirements for building it and
 installing it.  The latest CPAN distribution metadata specification is
 included as L<CPAN::Meta::Spec> and notes on changes in the specification
@@ -2461,7 +2461,7 @@ parser's API in a detectable way.
 
 =item refcnt: fd %d%s
 
-This new error only occurs if an internal consistency check fails when a
+This new error only occurs if a internal consistency check fails when a
 pipe is about to be closed.
 
 =item Regexp modifier "/%c" may not appear twice
@@ -4441,7 +4441,7 @@ take a block as their first argument, like
 
     foo { ... $_ ...} list
 
-See also: L<https://github.com/Perl/perl5/issues/9798>
+See also: L<http://rt.perl.org/rt3/Public/Bug/Display.html?id=67694>
 
 =item *
 

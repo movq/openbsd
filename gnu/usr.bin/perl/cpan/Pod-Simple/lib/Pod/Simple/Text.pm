@@ -6,7 +6,7 @@ use Carp ();
 use Pod::Simple::Methody ();
 use Pod::Simple ();
 use vars qw( @ISA $VERSION $FREAKYMODE);
-$VERSION = '3.43';
+$VERSION = '3.14';
 @ISA = ('Pod::Simple::Methody');
 BEGIN { *DEBUG = defined(&Pod::Simple::DEBUG)
           ? \&Pod::Simple::DEBUG
@@ -14,8 +14,7 @@ BEGIN { *DEBUG = defined(&Pod::Simple::DEBUG)
       }
 
 use Text::Wrap 98.112902 ();
-$Text::Wrap::huge = 'overflow';
-
+$Text::Wrap::wrap = 'overflow';
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 sub new {
@@ -72,7 +71,7 @@ sub end_L           {
     if (my $link = delete $_[0]{'Link'}) {
         # Append the URL to the output unless it's already present.
         $_[0]{'Thispara'} .= " <$link->{to}>"
-            unless $_[0]{'Thispara'} =~ /\b\Q$link->{to}/;
+            unless $_[0]{'Thispara'} =~ /\b\E$link->{to}/;
     }
 }
 
@@ -81,9 +80,9 @@ sub emit_par {
   my $indent = ' ' x ( 2 * $self->{'Indent'} + 4 + ($tweak_indent||0) );
    # Yes, 'STRING' x NEGATIVE gives '', same as 'STRING' x 0
 
-  $self->{'Thispara'} =~ s/$Pod::Simple::shy//g;
+  $self->{'Thispara'} =~ tr{\xAD}{}d if Pod::Simple::ASCII;
   my $out = Text::Wrap::wrap($indent, $indent, $self->{'Thispara'} .= "\n");
-  $out =~ s/$Pod::Simple::nbsp/ /g;
+  $out =~ tr{\xA0}{ } if Pod::Simple::ASCII;
   print {$self->{'output_fh'}} $out, "\n";
   $self->{'Thispara'} = '';
   
@@ -94,8 +93,10 @@ sub emit_par {
 
 sub end_Verbatim  {
   my $self = shift;
-  $self->{'Thispara'} =~ s/$Pod::Simple::nbsp/ /g;
-  $self->{'Thispara'} =~ s/$Pod::Simple::shy//g;
+  if(Pod::Simple::ASCII) {
+    $self->{'Thispara'} =~ tr{\xA0}{ };
+    $self->{'Thispara'} =~ tr{\xAD}{}d;
+  }
 
   my $i = ' ' x ( 2 * $self->{'Indent'} + 4);
   #my $i = ' ' x (4 + $self->{'Indent'});
@@ -147,8 +148,8 @@ pod-people@perl.org mail list. Send an empty email to
 pod-people-subscribe@perl.org to subscribe.
 
 This module is managed in an open GitHub repository,
-L<https://github.com/perl-pod/pod-simple/>. Feel free to fork and contribute, or
-to clone L<git://github.com/perl-pod/pod-simple.git> and send patches!
+L<http://github.com/theory/pod-simple/>. Feel free to fork and contribute, or
+to clone L<git://github.com/theory/pod-simple.git> and send patches!
 
 Patches against Pod::Simple are welcome. Please send bug reports to
 <bug-pod-simple@rt.cpan.org>.

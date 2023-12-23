@@ -1,8 +1,4 @@
 #!/usr/bin/perl
-
-use strict;
-use warnings;
-
 #
 # Formerly, on a Win32 system, Tie::File would create files with
 # \n-terminated records instead of \r\n-terminated.  The tests never
@@ -11,7 +7,7 @@ use warnings;
 #
 # These tests (Win32 only) make sure that the file had \r\n as it should.
 
-my $file = "tf21-$$.txt";
+my $file = "tf$$.txt";
 
 unless ($^O =~ /^(MSWin32|dos)$/) {
   print "1..0\n";
@@ -25,7 +21,6 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-my @a;
 my $o = tie @a, 'Tie::File', $file, autodefer => 0;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -36,7 +31,7 @@ my $n;
 @a = qw(fish dog carrot);
 undef $o;
 untie @a;
-open F, '<', $file or die "Couldn't open file $file: $!";
+open F, "< $file" or die "Couldn't open file $file: $!";
 binmode F;
 my $a = do {local $/ ; <F> };
 my $x = "fish\r\ndog\r\ncarrot\r\n" ;

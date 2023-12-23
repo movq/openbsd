@@ -8,52 +8,17 @@ BEGIN {
 }
 
 use strict;
-use warnings;
+use Test::More tests => 33;
 
 use TieOut;
 use MakeMaker::Test::Utils;
-use Config;
-use ExtUtils::MM;
-use Test::More
-    !MM->can_run(make()) && $ENV{PERL_CORE} && $Config{'usecrosscompile'}
-    ? (skip_all => "cross-compiling and make not available")
-    : (tests => 35);
+use MakeMaker::Test::Setup::MPV;
 use File::Path;
 
 use ExtUtils::MakeMaker;
-my $CM = eval { require CPAN::Meta; };
-
-my $DIRNAME = 'Min-PerlVers';
-my %FILES = (
-    'Makefile.PL'   => <<'END',
-use ExtUtils::MakeMaker;
-WriteMakefile(
-    NAME             => 'Min::PerlVers',
-    AUTHOR           => 'John Doe <jd@example.com>',
-    VERSION_FROM     => 'lib/Min/PerlVers.pm',
-    PREREQ_PM        => { strict => 0 },
-    MIN_PERL_VERSION => '5.005',
-);
-END
-
-    'lib/Min/PerlVers.pm'    => <<'END',
-package Min::PerlVers;
-$VERSION = 0.05;
-
-=head1 NAME
-
-Min::PerlVers - being picky about perl versions
-
-=cut
-
-1;
-END
-
-);
 
 # avoid environment variables interfering with our make runs
-delete @ENV{qw(PERL_JSON_BACKEND CPAN_META_JSON_BACKEND PERL_YAML_BACKEND)} if $ENV{PERL_CORE};
-delete @ENV{qw(LIB MAKEFLAGS PERL_CORE)};
+delete @ENV{qw(LIB MAKEFLAGS)};
 
 my $perl     = which_perl();
 my $make     = make_run();
@@ -63,17 +28,18 @@ chdir 't';
 
 perl_lib();
 
-rmtree($DIRNAME);
-hash2files($DIRNAME, \%FILES);
+ok( setup_recurs(), 'setup' );
 END {
     ok( chdir(File::Spec->updir), 'leaving dir' );
-    ok( rmtree($DIRNAME), 'teardown' );
+    ok( teardown_recurs(), 'teardown' );
 }
 
 ok( chdir 'Min-PerlVers', 'entering dir Min-PerlVers' ) ||
     diag("chdir failed: $!");
 
-note "Argument verification"; {
+{
+    # ----- argument verification -----
+
     my $stdout = tie *STDOUT, 'TieOut';
     ok( $stdout, 'capturing stdout' );
     my $warnings = '';
@@ -106,34 +72,12 @@ note "Argument verification"; {
     eval {
         WriteMakefile(
             NAME             => 'Min::PerlVers',
-            MIN_PERL_VERSION => 5.4.4,
-        );
-    };
-    is( $warnings, '', 'MIN_PERL_VERSION=X.Y.Z does not trigger a warning' );
-    is( $@, '',        '  nor a hard failure' );
-
-
-    $warnings = '';
-    eval {
-        WriteMakefile(
-            NAME             => 'Min::PerlVers',
-            MIN_PERL_VERSION => v5.4.4,
-        );
-    };
-    is( $warnings, '', 'MIN_PERL_VERSION=X.Y.Z does not trigger a warning' );
-    is( $@, '',        '  nor a hard failure' );
-
-
-    $warnings = '';
-    eval {
-        WriteMakefile(
-            NAME             => 'Min::PerlVers',
             MIN_PERL_VERSION => '999999',
         );
     };
     ok( '' ne $warnings, 'MIN_PERL_VERSION=999999 triggers a warning' );
     is( $warnings,
-        "Warning: Perl version 999999.000 or higher required. We run $].\n",
+        "Warning: Perl version 999999 or higher required. We run $].\n",
                          '  with expected message text' );
     is( $@, '',          '  and without a hard failure' );
 
@@ -147,7 +91,8 @@ note "Argument verification"; {
     };
     is( $warnings, '', 'MIN_PERL_VERSION=999999 and PREREQ_FATAL: no warning' );
     is( $@, <<"END",   '  correct exception' );
-MakeMaker FATAL: Perl version 999999.000 or higher required. We run $].
+MakeMaker FATAL: perl version too low for this distribution.
+Required is 999999. We run $].
 END
 
     $warnings = '';
@@ -157,18 +102,20 @@ END
             MIN_PERL_VERSION => 'foobar',
         );
     };
-    is( $@, <<'END', 'Invalid MIN_PERL_VERSION is fatal' );
-MakeMaker FATAL: MIN_PERL_VERSION (foobar) is not in a recognized format.
+    ok( '' ne $warnings,    'MIN_PERL_VERSION=foobar triggers a warning' );
+    is( $warnings, <<'END', '  with expected message text' );
+Warning: MIN_PERL_VERSION is not in a recognized format.
 Recommended is a quoted numerical value like '5.005' or '5.008001'.
 END
 
+    is( $@, '',             '  and without a hard failure' );
 }
 
 
-note "PREREQ_PRINT output"; {
+# ----- PREREQ_PRINT output -----
+{
     my $prereq_out = run(qq{$perl Makefile.PL "PREREQ_PRINT=1"});
     is( $?, 0,            'PREREQ_PRINT exiting normally' );
-    $prereq_out =~ s/.*(\$PREREQ_PM\s*=)/$1/s; # strip off errors eg from chcp
     my $prereq_out_sane = $prereq_out =~ /^\s*\$PREREQ_PM\s*=/;
     ok( $prereq_out_sane, '  and talking like we expect' ) ||
         diag($prereq_out);
@@ -178,7 +125,6 @@ note "PREREQ_PRINT output"; {
 
         package _Prereq::Print::WithMPV;          ## no critic
         our($PREREQ_PM, $BUILD_REQUIRES, $MIN_PERL_VERSION, $ERR);
-        $BUILD_REQUIRES = undef; # suppress "used only once"
         $ERR = '';
         eval {
             eval $prereq_out;                     ## no critic
@@ -191,17 +137,19 @@ note "PREREQ_PRINT output"; {
 }
 
 
-note "PRINT_PREREQ output"; {
+# ----- PRINT_PREREQ output -----
+{
     my $prereq_out = run(qq{$perl Makefile.PL "PRINT_PREREQ=1"});
     is( $?, 0,                      'PRINT_PREREQ exiting normally' );
     ok( $prereq_out !~ /^warning/i, '  and not complaining loudly' );
     like( $prereq_out,
-        qr/^perl\(perl\) \s* >= 5\.005 \s+ perl\(strict\) \s* >= \s* 0 \s*$/mx,
+        qr/^perl\(perl\) \s* >= 5\.005 \s+ perl\(strict\) \s* >= \s* 0 \s*$/x,
                                     'dump has prereqs and perl version' );
 }
 
 
-note "generated files verification"; {
+# ----- generated files verification -----
+{
     unlink $makefile;
     my @mpl_out = run(qq{$perl Makefile.PL});
     END { unlink $makefile, makefile_backup() }
@@ -211,7 +159,8 @@ note "generated files verification"; {
 }
 
 
-note "ppd output"; {
+# ----- ppd output -----
+{
     my $ppd_file = 'Min-PerlVers.ppd';
     my @make_out = run(qq{$make ppd});
     END { unlink $ppd_file }
@@ -226,29 +175,21 @@ note "ppd output"; {
 }
 
 
-note "META.yml output"; SKIP: {
-    skip 'Failed to load CPAN::Meta', 4 unless $CM;
+# ----- META.yml output -----
+{
     my $distdir  = 'Min-PerlVers-0.05';
     $distdir =~ s{\.}{_}g if $Is_VMS;
 
     my $meta_yml = "$distdir/META.yml";
-    my $meta_json = "$distdir/META.json";
     my @make_out    = run(qq{$make metafile});
-    END { rmtree $distdir if defined $distdir }
+    END { rmtree $distdir }
 
-    for my $case (
-        ['META.yml', $meta_yml],
-        ['META.json', $meta_json],
-    ) {
-        my ($label, $meta_name) = @$case;
-        ok(
-          my $obj = eval {
-            CPAN::Meta->load_file($meta_name, {lazy_validation => 0})
-          },
-          "$label validates"
-        );
-        is( $obj->prereqs->{runtime}{requires}{perl}, '5.005',
-          "$label has runtime/requires perl 5.005"
-        );
-    }
+    cmp_ok( $?, '==', 0, 'Make metafile exiting normally' ) || diag(@make_out);
+    my $meta = slurp($meta_yml);
+    ok( defined($meta),  '  META.yml present' );
+
+    like( $meta, qr{\nrequires:[^\S\n]*\n\s+perl:\s+5\.005\n\s+strict:\s+0\n},
+                         '  META.yml content good');
 }
+
+__END__

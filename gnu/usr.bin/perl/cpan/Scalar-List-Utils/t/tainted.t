@@ -1,19 +1,24 @@
 #!./perl -T
 
-use strict;
-use warnings;
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+    elsif(!grep {/blib/} @INC) {
+      unshift(@INC, qw(./inc ./blib/arch ./blib/lib));
+    }
+}
 
-use Config;
-use Test::More;
+use Test::More tests => 5;
+
 use Scalar::Util qw(tainted);
-
-if (exists($Config{taint_support}) && not $Config{taint_support}) {
-    plan skip_all => "your perl was built without taint support";
-}
-else {
-    plan tests => 5;
-}
-
 
 ok( !tainted(1), 'constant number');
 
@@ -21,10 +26,12 @@ my $var = 2;
 
 ok( !tainted($var), 'known variable');
 
-ok( tainted($^X), 'interpreter variable');
+my $key = (grep { !/^PERL/ } keys %ENV)[0];
 
-$var = $^X;
-ok( tainted($var), 'copy of interpreter variable');
+ok( tainted($ENV{$key}),	'environment variable');
+
+$var = $ENV{$key};
+ok( tainted($var),	'copy of environment variable');
 
 {
     package Tainted;

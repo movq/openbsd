@@ -1,19 +1,20 @@
 #!./perl
 
 BEGIN {
-    chdir 't' if -d 't';
+    chdir 't';
     @INC = '../lib';
     require './test.pl';	# for which_perl() etc
-    plan(3);
 }
 
 my $Perl = which_perl();
 
 my $filename = tempfile();
 
+print "1..3\n";
+
 $x = `$Perl -le "print 'ok';"`;
 
-is($x, "ok\n", "Got expected 'perl -le' output");
+if ($x eq "ok\n") {print "ok 1\n";} else {print "not ok 1\n";}
 
 open(try,">$filename") || (die "Can't open temp file.");
 print try 'print "ok\n";'; print try "\n";
@@ -21,8 +22,8 @@ close try or die "Could not close: $!";
 
 $x = `$Perl $filename`;
 
-is($x, "ok\n", "Got expected output of command from script");
+if ($x eq "ok\n") {print "ok 2\n";} else {print "not ok 2\n";}
 
 $x = `$Perl <$filename`;
 
-is($x, "ok\n", "Got expected output of command read from script");
+if ($x eq "ok\n") {print "ok 3\n";} else {print "not ok 3\n";}

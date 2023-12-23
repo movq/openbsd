@@ -9,7 +9,6 @@ BEGIN {
 my $expected = join "", <DATA>;
 
 use strict;
-use warnings;
 use lib '../lib';
 use Test::More;
 use File::Spec;

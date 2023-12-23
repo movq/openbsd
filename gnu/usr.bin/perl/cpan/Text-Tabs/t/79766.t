@@ -1,17 +1,18 @@
-use strict; use warnings;
+#!/usr/bin/perl -I.
 
-BEGIN { require './t/lib/ok.pl' }
+use warnings;
+use strict;
 use Text::Wrap;
-
-print "1..2\n";
+use Test::More tests => 2;
 
 my $r;
 my $s = q{xx xxxxxxxx xxxxxxxxx xx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=xxxxxxxxxxxxxxxxxxxxxxxx};
 
 eval { $r = wrap("", "", $s) };
 ok(! $@, $@);
-ok($r eq "xx xxxxxxxx xxxxxxxxx xx
+is($r, "xx xxxxxxxx xxxxxxxxx xx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=xxxxxxxxxxxxx
 xxxxxxxxxxx", "match");
+

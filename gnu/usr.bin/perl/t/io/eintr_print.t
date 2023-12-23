@@ -1,13 +1,13 @@
 #!./perl
 
 # print should not return EINTR
-# fails under 5.14.x see https://github.com/Perl/perl5/issues/13142
+# fails under 5.14.x see https://rt.perl.org/rt3/Ticket/Display.html?id=119097
 # also fails under 5.8.x
 
 BEGIN {
     chdir 't' if -d 't';
-    require "./test.pl";
-    set_up_inc('../lib');
+    @INC = '../lib';
+    require './test.pl';
     skip_all_if_miniperl("No XS under miniperl");
 }
 
@@ -20,7 +20,7 @@ use IO::Handle;
 
 skip_all("only for dev versions for now") if ((int($]*1000) & 1) == 0);
 skip_all("does not match platform whitelist")
-    unless ($^O =~ /^(linux|android|.*bsd|darwin|solaris)$/);
+    unless ($^O =~ /^(linux|.*bsd|darwin|solaris)$/);
 skip_all("ualarm() not implemented on this platform")
     unless Time::HiRes::d_ualarm();
 skip_all("usleep() not implemented on this platform")

@@ -1,15 +1,6 @@
-#define WIN32_LEAN_AND_MEAN
-#define _WIN32_WINNT 0x0500
-#include <wchar.h>
 #include <wctype.h>
 #include <windows.h>
 #include <shlobj.h>
-#include <wchar.h>
-#include <userenv.h>
-#include <lm.h>
-#if !defined(__GNUC__) || (((100000 * __GNUC__) + (1000 * __GNUC_MINOR__)) >= 408000)
-#  include <winhttp.h>
-#endif
 
 #define PERL_NO_GET_CONTEXT
 #include "EXTERN.h"
@@ -28,12 +19,25 @@
 
 #define GETPROC(fn) pfn##fn = (PFN##fn)GetProcAddress(module, #fn)
 
+typedef BOOL (WINAPI *PFNSHGetSpecialFolderPathA)(HWND, char*, int, BOOL);
+typedef BOOL (WINAPI *PFNSHGetSpecialFolderPathW)(HWND, WCHAR*, int, BOOL);
+typedef HRESULT (WINAPI *PFNSHGetFolderPathA)(HWND, int, HANDLE, DWORD, LPTSTR);
+typedef HRESULT (WINAPI *PFNSHGetFolderPathW)(HWND, int, HANDLE, DWORD, LPWSTR);
+typedef BOOL (WINAPI *PFNCreateEnvironmentBlock)(void**, HANDLE, BOOL);
+typedef BOOL (WINAPI *PFNDestroyEnvironmentBlock)(void*);
 typedef int (__stdcall *PFNDllRegisterServer)(void);
 typedef int (__stdcall *PFNDllUnregisterServer)(void);
+typedef DWORD (__stdcall *PFNNetApiBufferFree)(void*);
+typedef DWORD (__stdcall *PFNNetWkstaGetInfo)(LPWSTR, DWORD, void*);
+
+typedef BOOL (__stdcall *PFNOpenProcessToken)(HANDLE, DWORD, HANDLE*);
+typedef BOOL (__stdcall *PFNOpenThreadToken)(HANDLE, DWORD, BOOL, HANDLE*);
+typedef BOOL (__stdcall *PFNGetTokenInformation)(HANDLE, TOKEN_INFORMATION_CLASS, void*, DWORD, DWORD*);
+typedef BOOL (__stdcall *PFNAllocateAndInitializeSid)(PSID_IDENTIFIER_AUTHORITY, BYTE, DWORD, DWORD,
+                                                      DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, PSID*);
+typedef BOOL (__stdcall *PFNEqualSid)(PSID, PSID);
+typedef void* (__stdcall *PFNFreeSid)(PSID);
 typedef BOOL (__stdcall *PFNIsUserAnAdmin)(void);
-typedef BOOL (WINAPI *PFNGetProductInfo)(DWORD, DWORD, DWORD, DWORD, DWORD*);
-typedef void (WINAPI *PFNGetNativeSystemInfo)(LPSYSTEM_INFO lpSystemInfo);
-typedef LONG (WINAPI *PFNRegGetValueA)(HKEY, LPCSTR, LPCSTR, DWORD, LPDWORD, PVOID, LPDWORD);
 
 #ifndef CSIDL_MYMUSIC
 #   define CSIDL_MYMUSIC              0x000D
@@ -107,7 +111,7 @@ typedef LONG (WINAPI *PFNRegGetValueA)(HKEY, LPCSTR, LPCSTR, DWORD, LPDWORD, PVO
  * WORD type has been replaced by unsigned short because
  * WORD is already used by Perl itself.
  */
-struct g_osver_t {
+struct {
     DWORD dwOSVersionInfoSize;
     DWORD dwMajorVersion;
     DWORD dwMinorVersion;
@@ -119,10 +123,28 @@ struct g_osver_t {
     unsigned short wSuiteMask;
     BYTE  wProductType;
     BYTE  wReserved;
-} g_osver = {0, 0, 0, 0, 0, "", 0, 0, 0, 0, 0};
+}   g_osver = {0, 0, 0, 0, 0, "", 0, 0, 0, 0, 0};
 BOOL g_osver_ex = TRUE;
 
 #define ONE_K_BUFSIZE	1024
+
+int
+IsWin95(void)
+{
+    return (g_osver.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS);
+}
+
+int
+IsWinNT(void)
+{
+    return (g_osver.dwPlatformId == VER_PLATFORM_WIN32_NT);
+}
+
+int
+IsWin2000(void)
+{
+    return (g_osver.dwMajorVersion > 4);
+}
 
 /* Convert SV to wide character string.  The return value must be
  * freed using Safefree().
@@ -176,42 +198,74 @@ wstr_to_sv(pTHX_ WCHAR *wstr)
  * characters for the characters not in the ANSI codepage.
  */
 SV*
-get_unicode_env(pTHX_ const WCHAR *name)
+get_unicode_env(pTHX_ WCHAR *name)
 {
     SV *sv = NULL;
     void *env;
     HANDLE token;
+    HMODULE module;
+    PFNOpenProcessToken pfnOpenProcessToken;
 
     /* Get security token for the current process owner */
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &token))
+    module = LoadLibrary("advapi32.dll");
+    if (!module)
+        return NULL;
+
+    GETPROC(OpenProcessToken);
+
+    if (pfnOpenProcessToken == NULL ||
+        !pfnOpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &token))
     {
+        FreeLibrary(module);
         return NULL;
     }
+    FreeLibrary(module);
 
     /* Create a Unicode environment block for this process */
-    if (CreateEnvironmentBlock(&env, token, FALSE))
-    {
-        size_t name_len = wcslen(name);
-        WCHAR *entry = (WCHAR *)env;
-        while (*entry) {
-            size_t i;
-            size_t entry_len = wcslen(entry);
-            BOOL equal = (entry_len > name_len) && (entry[name_len] == '=');
+    module = LoadLibrary("userenv.dll");
+    if (module) {
+        PFNCreateEnvironmentBlock pfnCreateEnvironmentBlock;
+        PFNDestroyEnvironmentBlock pfnDestroyEnvironmentBlock;
 
-            for (i=0; equal && i < name_len; ++i)
-                equal = (towupper(entry[i]) == towupper(name[i]));
+        GETPROC(CreateEnvironmentBlock);
+        GETPROC(DestroyEnvironmentBlock);
 
-            if (equal) {
-                sv = wstr_to_sv(aTHX_ entry+name_len+1);
-                break;
+        if (pfnCreateEnvironmentBlock && pfnDestroyEnvironmentBlock &&
+            pfnCreateEnvironmentBlock(&env, token, FALSE))
+        {
+            size_t name_len = wcslen(name);
+            WCHAR *entry = env;
+            while (*entry) {
+                size_t i;
+                size_t entry_len = wcslen(entry);
+                BOOL equal = (entry_len > name_len) && (entry[name_len] == '=');
+
+                for (i=0; equal && i < name_len; ++i)
+                    equal = (towupper(entry[i]) == towupper(name[i]));
+
+                if (equal) {
+                    sv = wstr_to_sv(aTHX_ entry+name_len+1);
+                    break;
+                }
+                entry += entry_len+1;
             }
-            entry += entry_len+1;
+            pfnDestroyEnvironmentBlock(env);
         }
-        DestroyEnvironmentBlock(env);
+        FreeLibrary(module);
     }
     CloseHandle(token);
     return sv;
 }
+
+/* Define both an ANSI and a Wide version of win32_longpath */
+
+#define CHAR_T            char
+#define WIN32_FIND_DATA_T WIN32_FIND_DATAA
+#define FN_FINDFIRSTFILE  FindFirstFileA
+#define FN_STRLEN         strlen
+#define FN_STRCPY         strcpy
+#define LONGPATH          my_longpathA
+#include "longpath.inc"
 
 #define CHAR_T            WCHAR
 #define WIN32_FIND_DATA_T WIN32_FIND_DATAW
@@ -288,10 +342,20 @@ char*
 get_childdir(void)
 {
     dTHX;
-    WCHAR filename[MAX_PATH+1];
+    char* ptr;
 
-    GetCurrentDirectoryW(MAX_PATH+1, filename);
-    return my_ansipath(filename);
+    if (IsWin2000()) {
+        WCHAR filename[MAX_PATH+1];
+        GetCurrentDirectoryW(MAX_PATH+1, filename);
+        ptr = my_ansipath(filename);
+    }
+    else {
+        char filename[MAX_PATH+1];
+        GetCurrentDirectoryA(MAX_PATH+1, filename);
+        New(0, ptr, strlen(filename)+1, char);
+        strcpy(ptr, filename);
+    }
+    return ptr;
 }
 
 void
@@ -310,7 +374,6 @@ get_childenv(void)
 void
 free_childenv(void *d)
 {
-  PERL_UNUSED_ARG(d);
 }
 
 #  define PerlDir_mapA(dir) (dir)
@@ -320,17 +383,23 @@ free_childenv(void *d)
 XS(w32_ExpandEnvironmentStrings)
 {
     dXSARGS;
-    WCHAR value[31*1024];
-    WCHAR *source;
 
     if (items != 1)
-	croak("usage: Win32::ExpandEnvironmentStrings($String)");
+	croak("usage: Win32::ExpandEnvironmentStrings($String);\n");
 
-    source = sv_to_wstr(aTHX_ ST(0));
-    ExpandEnvironmentStringsW(source, value, countof(value)-1);
-    ST(0) = wstr_to_sv(aTHX_ value);
-    Safefree(source);
-    XSRETURN(1);
+    if (IsWin2000()) {
+        WCHAR value[31*1024];
+        WCHAR *source = sv_to_wstr(aTHX_ ST(0));
+        ExpandEnvironmentStringsW(source, value, countof(value)-1);
+        ST(0) = wstr_to_sv(aTHX_ value);
+        Safefree(source);
+        XSRETURN(1);
+    }
+    else {
+        char value[31*1024];
+        ExpandEnvironmentStringsA(SvPV_nolen(ST(0)), value, countof(value)-2);
+        XSRETURN_PV(value);
+    }
 }
 
 XS(w32_IsAdminUser)
@@ -338,6 +407,12 @@ XS(w32_IsAdminUser)
     dXSARGS;
     HMODULE                     module;
     PFNIsUserAnAdmin            pfnIsUserAnAdmin;
+    PFNOpenThreadToken          pfnOpenThreadToken;
+    PFNOpenProcessToken         pfnOpenProcessToken;
+    PFNGetTokenInformation      pfnGetTokenInformation;
+    PFNAllocateAndInitializeSid pfnAllocateAndInitializeSid;
+    PFNEqualSid                 pfnEqualSid;
+    PFNFreeSid                  pfnFreeSid;
     HANDLE                      hTok;
     DWORD                       dwTokInfoLen;
     TOKEN_GROUPS                *lpTokInfo;
@@ -349,61 +424,97 @@ XS(w32_IsAdminUser)
     if (items)
         croak("usage: Win32::IsAdminUser()");
 
+    /* There is no concept of "Administrator" user accounts on Win9x systems,
+       so just return true. */
+    if (IsWin95())
+        XSRETURN_YES;
+
     /* Use IsUserAnAdmin() when available.  On Vista this will only return TRUE
      * if the process is running with elevated privileges and not just when the
      * process owner is a member of the "Administrators" group.
      */
-    module = GetModuleHandleA("shell32.dll");
-    GETPROC(IsUserAnAdmin);
-    if (pfnIsUserAnAdmin) {
-        EXTEND(SP, 1);
-        ST(0) = sv_2mortal(newSViv(pfnIsUserAnAdmin() ? 1 : 0));
-        XSRETURN(1);
+    module = LoadLibrary("shell32.dll");
+    if (module) {
+        GETPROC(IsUserAnAdmin);
+        if (pfnIsUserAnAdmin) {
+            EXTEND(SP, 1);
+            ST(0) = sv_2mortal(newSViv(pfnIsUserAnAdmin() ? 1 : 0));
+            FreeLibrary(module);
+            XSRETURN(1);
+        }
+        FreeLibrary(module);
     }
 
-    if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, FALSE, &hTok)) {
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTok)) {
+    module = LoadLibrary("advapi32.dll");
+    if (!module) {
+        warn("Cannot load advapi32.dll library");
+        XSRETURN_UNDEF;
+    }
+
+    GETPROC(OpenThreadToken);
+    GETPROC(OpenProcessToken);
+    GETPROC(GetTokenInformation);
+    GETPROC(AllocateAndInitializeSid);
+    GETPROC(EqualSid);
+    GETPROC(FreeSid);
+
+    if (!(pfnOpenThreadToken && pfnOpenProcessToken &&
+          pfnGetTokenInformation && pfnAllocateAndInitializeSid &&
+          pfnEqualSid && pfnFreeSid))
+    {
+        warn("Cannot load functions from advapi32.dll library");
+        FreeLibrary(module);
+        XSRETURN_UNDEF;
+    }
+
+    if (!pfnOpenThreadToken(GetCurrentThread(), TOKEN_QUERY, FALSE, &hTok)) {
+        if (!pfnOpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTok)) {
             warn("Cannot open thread token or process token");
+            FreeLibrary(module);
             XSRETURN_UNDEF;
         }
     }
 
-    GetTokenInformation(hTok, TokenGroups, NULL, 0, &dwTokInfoLen);
+    pfnGetTokenInformation(hTok, TokenGroups, NULL, 0, &dwTokInfoLen);
     if (!New(1, lpTokInfo, dwTokInfoLen, TOKEN_GROUPS)) {
         warn("Cannot allocate token information structure");
         CloseHandle(hTok);
+        FreeLibrary(module);
         XSRETURN_UNDEF;
     }
 
-    if (!GetTokenInformation(hTok, TokenGroups, lpTokInfo, dwTokInfoLen,
+    if (!pfnGetTokenInformation(hTok, TokenGroups, lpTokInfo, dwTokInfoLen,
             &dwTokInfoLen))
     {
         warn("Cannot get token information");
         Safefree(lpTokInfo);
         CloseHandle(hTok);
+        FreeLibrary(module);
         XSRETURN_UNDEF;
     }
 
-    if (!AllocateAndInitializeSid(&NtAuth, 2, SECURITY_BUILTIN_DOMAIN_RID,
+    if (!pfnAllocateAndInitializeSid(&NtAuth, 2, SECURITY_BUILTIN_DOMAIN_RID,
             DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &pAdminSid))
     {
         warn("Cannot allocate administrators' SID");
         Safefree(lpTokInfo);
         CloseHandle(hTok);
+        FreeLibrary(module);
         XSRETURN_UNDEF;
     }
 
     iRetVal = 0;
     for (i = 0; i < lpTokInfo->GroupCount; ++i) {
-        if (EqualSid(lpTokInfo->Groups[i].Sid, pAdminSid)) {
+        if (pfnEqualSid(lpTokInfo->Groups[i].Sid, pAdminSid)) {
             iRetVal = 1;
             break;
         }
     }
 
-    FreeSid(pAdminSid);
+    pfnFreeSid(pAdminSid);
     Safefree(lpTokInfo);
     CloseHandle(hTok);
+    FreeLibrary(module);
 
     EXTEND(SP, 1);
     ST(0) = sv_2mortal(newSViv(iRetVal));
@@ -422,7 +533,7 @@ XS(w32_LookupAccountName)
 
     if (items != 5)
 	croak("usage: Win32::LookupAccountName($system, $account, $domain, "
-	      "$sid, $sidtype)");
+	      "$sid, $sidtype);\n");
 
     SIDLen = sizeof(SID);
     DomLen = sizeof(Domain);
@@ -456,7 +567,7 @@ XS(w32_LookupAccountSID)
     BOOL bResult;
 
     if (items != 5)
-	croak("usage: Win32::LookupAccountSID($system, $sid, $account, $domain, $sidtype)");
+	croak("usage: Win32::LookupAccountSID($system, $sid, $account, $domain, $sidtype);\n");
 
     sid = SvPV_nolen(ST(1));
     if (IsValidSid(sid)) {
@@ -487,7 +598,7 @@ XS(w32_InitiateSystemShutdown)
 
     if (items != 5)
 	croak("usage: Win32::InitiateSystemShutdown($machineName, $message, "
-	      "$timeOut, $forceClose, $reboot)");
+	      "$timeOut, $forceClose, $reboot);\n");
 
     machineName = SvPV_nolen(ST(0));
 
@@ -528,7 +639,7 @@ XS(w32_AbortSystemShutdown)
     char *machineName;
 
     if (items != 1)
-	croak("usage: Win32::AbortSystemShutdown($machineName)");
+	croak("usage: Win32::AbortSystemShutdown($machineName);\n");
 
     machineName = SvPV_nolen(ST(0));
 
@@ -564,23 +675,30 @@ XS(w32_MsgBox)
     dXSARGS;
     DWORD flags = MB_ICONEXCLAMATION;
     I32 result;
-    WCHAR *title = NULL, *msg;
 
     if (items < 1 || items > 3)
-	croak("usage: Win32::MsgBox($message [, $flags [, $title]])");
+	croak("usage: Win32::MsgBox($message [, $flags [, $title]]);\n");
 
-    msg = sv_to_wstr(aTHX_ ST(0));
     if (items > 1)
         flags = (DWORD)SvIV(ST(1));
-    if (items > 2)
-        title = sv_to_wstr(aTHX_ ST(2));
 
-    result = MessageBoxW(GetActiveWindow(), msg, title ? title : L"Perl", flags);
-
-    Safefree(msg);
-    if (title)
-        Safefree(title);
-
+    if (IsWin2000()) {
+        WCHAR *title = NULL;
+        WCHAR *msg = sv_to_wstr(aTHX_ ST(0));
+        if (items > 2)
+            title = sv_to_wstr(aTHX_ ST(2));
+        result = MessageBoxW(GetActiveWindow(), msg, title ? title : L"Perl", flags);
+        Safefree(msg);
+        if (title)
+            Safefree(title);
+    }
+    else {
+        char *title = "Perl";
+        char *msg = SvPV_nolen(ST(0));
+        if (items > 2)
+            title = SvPV_nolen(ST(2));
+        result = MessageBoxA(GetActiveWindow(), msg, title, flags);
+    }
     XSRETURN_IV(result);
 }
 
@@ -666,48 +784,16 @@ XS(w32_UnregisterServer)
 XS(w32_GetArchName)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetArchName()");
     XSRETURN_PV(getenv("PROCESSOR_ARCHITECTURE"));
-}
-
-XS(w32_GetChipArch)
-{
-    dXSARGS;
-    SYSTEM_INFO sysinfo;
-    HMODULE module;
-    PFNGetNativeSystemInfo pfnGetNativeSystemInfo;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetChipArch()");
-
-    Zero(&sysinfo,1,SYSTEM_INFO);
-    module = GetModuleHandle("kernel32.dll");
-    GETPROC(GetNativeSystemInfo);
-    if (pfnGetNativeSystemInfo)
-        pfnGetNativeSystemInfo(&sysinfo);
-    else
-        GetSystemInfo(&sysinfo);
-
-    XSRETURN_IV(sysinfo.wProcessorArchitecture);
 }
 
 XS(w32_GetChipName)
 {
     dXSARGS;
     SYSTEM_INFO sysinfo;
-    HMODULE module;
-    PFNGetNativeSystemInfo pfnGetNativeSystemInfo;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetChipName()");
 
     Zero(&sysinfo,1,SYSTEM_INFO);
-    module = GetModuleHandle("kernel32.dll");
-    GETPROC(GetNativeSystemInfo);
-    if (pfnGetNativeSystemInfo)
-        pfnGetNativeSystemInfo(&sysinfo);
-    else
-        GetSystemInfo(&sysinfo);
-
+    GetSystemInfo(&sysinfo);
     /* XXX docs say dwProcessorType is deprecated on NT */
     XSRETURN_IV(sysinfo.dwProcessorType);
 }
@@ -717,18 +803,11 @@ XS(w32_GuidGen)
     dXSARGS;
     GUID guid;
     char szGUID[50] = {'\0'};
-    HRESULT  hr;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GuidGen()");
+    HRESULT  hr     = CoCreateGuid(&guid);
 
-    hr     = CoCreateGuid(&guid);
     if (SUCCEEDED(hr)) {
 	LPOLESTR pStr = NULL;
-#ifdef __cplusplus
-	if (SUCCEEDED(StringFromCLSID(guid, &pStr))) {
-#else
 	if (SUCCEEDED(StringFromCLSID(&guid, &pStr))) {
-#endif
             WideCharToMultiByte(CP_ACP, 0, pStr, (int)wcslen(pStr), szGUID,
                                 sizeof(szGUID), NULL, NULL);
             CoTaskMemFree(pStr);
@@ -741,9 +820,11 @@ XS(w32_GuidGen)
 XS(w32_GetFolderPath)
 {
     dXSARGS;
+    char path[MAX_PATH+1];
     WCHAR wpath[MAX_PATH+1];
     int folder;
     int create = 0;
+    HMODULE module;
 
     if (items != 1 && items != 2)
 	croak("usage: Win32::GetFolderPath($csidl [, $create])\n");
@@ -752,25 +833,55 @@ XS(w32_GetFolderPath)
     if (items == 2)
         create = SvTRUE(ST(1)) ? CSIDL_FLAG_CREATE : 0;
 
-    if (SUCCEEDED(SHGetFolderPathW(NULL, folder|create, NULL, 0, wpath))) {
-        ST(0) = wstr_to_ansipath(aTHX_ wpath);
-        XSRETURN(1);
+    module = LoadLibrary("shfolder.dll");
+    if (module) {
+        PFNSHGetFolderPathA pfna;
+        if (IsWin2000()) {
+            PFNSHGetFolderPathW pfnw;
+            pfnw = (PFNSHGetFolderPathW)GetProcAddress(module, "SHGetFolderPathW");
+            if (pfnw && SUCCEEDED(pfnw(NULL, folder|create, NULL, 0, wpath))) {
+                FreeLibrary(module);
+                ST(0) = wstr_to_ansipath(aTHX_ wpath);
+                XSRETURN(1);
+            }
+        }
+        pfna = (PFNSHGetFolderPathA)GetProcAddress(module, "SHGetFolderPathA");
+        if (pfna && SUCCEEDED(pfna(NULL, folder|create, NULL, 0, path))) {
+            FreeLibrary(module);
+            XSRETURN_PV(path);
+        }
+        FreeLibrary(module);
     }
 
-    if (SHGetSpecialFolderPathW(NULL, wpath, folder, !!create)) {
-        ST(0) = wstr_to_ansipath(aTHX_ wpath);
-        XSRETURN(1);
+    module = LoadLibrary("shell32.dll");
+    if (module) {
+        PFNSHGetSpecialFolderPathA pfna;
+        if (IsWin2000()) {
+            PFNSHGetSpecialFolderPathW pfnw;
+            pfnw = (PFNSHGetSpecialFolderPathW)GetProcAddress(module, "SHGetSpecialFolderPathW");
+            if (pfnw && pfnw(NULL, wpath, folder, !!create)) {
+                FreeLibrary(module);
+                ST(0) = wstr_to_ansipath(aTHX_ wpath);
+                XSRETURN(1);
+            }
+        }
+        pfna = (PFNSHGetSpecialFolderPathA)GetProcAddress(module, "SHGetSpecialFolderPathA");
+        if (pfna && pfna(NULL, path, folder, !!create)) {
+            FreeLibrary(module);
+            XSRETURN_PV(path);
+        }
+        FreeLibrary(module);
     }
 
     /* SHGetFolderPathW() and SHGetSpecialFolderPathW() may fail on older
      * Perl versions that have replaced the Unicode environment with an
      * ANSI version.  Let's go spelunking in the registry now...
      */
-    {
+    if (IsWin2000()) {
         SV *sv;
         HKEY hkey;
         HKEY root = HKEY_CURRENT_USER;
-        const WCHAR *name = NULL;
+        WCHAR *name = NULL;
 
         switch (folder) {
         case CSIDL_ADMINTOOLS:                  name = L"Administrative Tools";        break;
@@ -871,7 +982,7 @@ XS(w32_GetFileVersion)
     char *data;
 
     if (items != 1)
-	croak("usage: Win32::GetFileVersion($filename)");
+	croak("usage: Win32::GetFileVersion($filename)\n");
 
     filename = SvPV_nolen(ST(0));
     size = GetFileVersionInfoSize(filename, &handle);
@@ -922,9 +1033,7 @@ XS(w32_SetChildShowWindow)
      * inside the thread_intern structure, the MSWin32 implementation
      * lives in win32/win32.c in the core Perl distribution.
      */
-    dSP;
-    I32 ax = POPMARK;
-    EXTEND(SP,1);
+    dXSARGS;
     XSRETURN_UNDEF;
 }
 #endif
@@ -932,12 +1041,8 @@ XS(w32_SetChildShowWindow)
 XS(w32_GetCwd)
 {
     dXSARGS;
-    char* ptr;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetCwd()");
-
     /* Make the host for current directory */
-    ptr = PerlEnv_get_childdir();
+    char* ptr = PerlEnv_get_childdir();
     /*
      * If ptr != Nullch
      *   then it worked, set PV valid,
@@ -965,7 +1070,7 @@ XS(w32_SetCwd)
     if (items != 1)
 	Perl_croak(aTHX_ "usage: Win32::SetCwd($cwd)");
 
-    if (SvUTF8(ST(0))) {
+    if (IsWin2000() && SvUTF8(ST(0))) {
         WCHAR *wide = sv_to_wstr(aTHX_ ST(0));
         char *ansi = my_ansipath(wide);
         int rc = PerlDir_chdir(ansi);
@@ -988,8 +1093,6 @@ XS(w32_GetNextAvailDrive)
     char ix = 'C';
     char root[] = "_:\\";
 
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetNextAvailDrive()");
     EXTEND(SP,1);
     while (ix <= 'Z') {
 	root[0] = ix++;
@@ -1004,8 +1107,6 @@ XS(w32_GetNextAvailDrive)
 XS(w32_GetLastError)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetLastError()");
     EXTEND(SP,1);
     XSRETURN_IV(GetLastError());
 }
@@ -1022,19 +1123,24 @@ XS(w32_SetLastError)
 XS(w32_LoginName)
 {
     dXSARGS;
-    WCHAR name[128];
-    DWORD size = countof(name);
-
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::LoginName()");
-
     EXTEND(SP,1);
-
-    if (GetUserNameW(name, &size)) {
-        ST(0) = wstr_to_sv(aTHX_ name);
-        XSRETURN(1);
+    if (IsWin2000()) {
+        WCHAR name[128];
+        DWORD size = countof(name);
+        if (GetUserNameW(name, &size)) {
+            ST(0) = wstr_to_sv(aTHX_ name);
+            XSRETURN(1);
+        }
     }
-
+    else {
+        char name[128];
+        DWORD size = countof(name);
+        if (GetUserNameA(name, &size)) {
+            /* size includes NULL */
+            ST(0) = sv_2mortal(newSVpvn(name, size-1));
+            XSRETURN(1);
+        }
+    }
     XSRETURN_UNDEF;
 }
 
@@ -1043,8 +1149,6 @@ XS(w32_NodeName)
     dXSARGS;
     char name[MAX_COMPUTERNAME_LENGTH+1];
     DWORD size = sizeof(name);
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::NodeName()");
     EXTEND(SP,1);
     if (GetComputerName(name,&size)) {
 	/* size does NOT include NULL :-( */
@@ -1058,31 +1162,63 @@ XS(w32_NodeName)
 XS(w32_DomainName)
 {
     dXSARGS;
-    char dname[256];
-    DWORD dnamelen = sizeof(dname);
-    WKSTA_INFO_100 *pwi;
-    DWORD retval;
+    HMODULE module = LoadLibrary("netapi32.dll");
+    PFNNetApiBufferFree pfnNetApiBufferFree;
+    PFNNetWkstaGetInfo pfnNetWkstaGetInfo;
 
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::DomainName()");
-
-    EXTEND(SP,1);
-
-    retval = NetWkstaGetInfo(NULL, 100, (LPBYTE*)&pwi);
-    /* NERR_Success *is* 0*/
-    if (retval == 0) {
-        if (pwi->wki100_langroup && *(pwi->wki100_langroup)) {
-            WideCharToMultiByte(CP_ACP, 0, pwi->wki100_langroup,
-                                -1, (LPSTR)dname, dnamelen, NULL, NULL);
-        }
-        else {
-            WideCharToMultiByte(CP_ACP, 0, pwi->wki100_computername,
-                                -1, (LPSTR)dname, dnamelen, NULL, NULL);
-        }
-        NetApiBufferFree(pwi);
-        XSRETURN_PV(dname);
+    if (module) {
+        GETPROC(NetApiBufferFree);
+        GETPROC(NetWkstaGetInfo);
     }
-    SetLastError(retval);
+    EXTEND(SP,1);
+    if (module && pfnNetWkstaGetInfo && pfnNetApiBufferFree) {
+	/* this way is more reliable, in case user has a local account. */
+	char dname[256];
+	DWORD dnamelen = sizeof(dname);
+	struct {
+	    DWORD   wki100_platform_id;
+	    LPWSTR  wki100_computername;
+	    LPWSTR  wki100_langroup;
+	    DWORD   wki100_ver_major;
+	    DWORD   wki100_ver_minor;
+	} *pwi;
+	DWORD retval;
+	retval = pfnNetWkstaGetInfo(NULL, 100, &pwi);
+	/* NERR_Success *is* 0*/
+	if (retval == 0) {
+	    if (pwi->wki100_langroup && *(pwi->wki100_langroup)) {
+		WideCharToMultiByte(CP_ACP, 0, pwi->wki100_langroup,
+				    -1, (LPSTR)dname, dnamelen, NULL, NULL);
+	    }
+	    else {
+		WideCharToMultiByte(CP_ACP, 0, pwi->wki100_computername,
+				    -1, (LPSTR)dname, dnamelen, NULL, NULL);
+	    }
+	    pfnNetApiBufferFree(pwi);
+	    FreeLibrary(module);
+	    XSRETURN_PV(dname);
+	}
+	FreeLibrary(module);
+	SetLastError(retval);
+    }
+    else {
+	/* Win95 doesn't have NetWksta*(), so do it the old way */
+	char name[256];
+	DWORD size = sizeof(name);
+	if (module)
+	    FreeLibrary(module);
+	if (GetUserName(name,&size)) {
+	    char sid[ONE_K_BUFSIZE];
+	    DWORD sidlen = sizeof(sid);
+	    char dname[256];
+	    DWORD dnamelen = sizeof(dname);
+	    SID_NAME_USE snu;
+	    if (LookupAccountName(NULL, name, (PSID)&sid, &sidlen,
+				  dname, &dnamelen, &snu)) {
+		XSRETURN_PV(dname);		/* all that for this */
+	    }
+	}
+    }
     XSRETURN_UNDEF;
 }
 
@@ -1091,10 +1227,8 @@ XS(w32_FsType)
     dXSARGS;
     char fsname[256];
     DWORD flags, filecomplen;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::FsType()");
     if (GetVolumeInformation(NULL, NULL, 0, NULL, &filecomplen,
-                             &flags, fsname, sizeof(fsname))) {
+			 &flags, fsname, sizeof(fsname))) {
 	if (GIMME_V == G_ARRAY) {
 	    XPUSHs(sv_2mortal(newSVpvn(fsname,strlen(fsname))));
 	    XPUSHs(sv_2mortal(newSViv(flags)));
@@ -1111,8 +1245,6 @@ XS(w32_FsType)
 XS(w32_GetOSVersion)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetOSVersion()");
 
     if (GIMME_V == G_SCALAR) {
         XSRETURN_IV(g_osver.dwPlatformId);
@@ -1135,19 +1267,15 @@ XS(w32_GetOSVersion)
 XS(w32_IsWinNT)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::IsWinNT()");
     EXTEND(SP,1);
-    XSRETURN_IV(g_osver.dwPlatformId == VER_PLATFORM_WIN32_NT);
+    XSRETURN_IV(IsWinNT());
 }
 
 XS(w32_IsWin95)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::IsWin95()");
     EXTEND(SP,1);
-    XSRETURN_IV(g_osver.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS);
+    XSRETURN_IV(IsWin95());
 }
 
 XS(w32_FormatMessage)
@@ -1206,6 +1334,8 @@ XS(w32_Spawn)
 		&stProcInfo))		/* <- Process info (if OK) */
     {
 	int pid = (int)stProcInfo.dwProcessId;
+	if (IsWin95() && pid < 0)
+	    pid = -pid;
 	sv_setiv(ST(2), pid);
 	CloseHandle(stProcInfo.hThread);/* library source code does this. */
 	bSuccess = TRUE;
@@ -1219,8 +1349,6 @@ XS(w32_GetTickCount)
 {
     dXSARGS;
     DWORD msec = GetTickCount();
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetTickCount()");
     EXTEND(SP,1);
     if ((IV)msec > 0)
 	XSRETURN_IV(msec);
@@ -1230,21 +1358,41 @@ XS(w32_GetTickCount)
 XS(w32_GetShortPathName)
 {
     dXSARGS;
+    SV *shortpath;
     DWORD len;
-    WCHAR wshort[MAX_PATH+1], *wlong;
 
     if (items != 1)
 	Perl_croak(aTHX_ "usage: Win32::GetShortPathName($longPathName)");
 
-    wlong = sv_to_wstr(aTHX_ ST(0));
-    len = GetShortPathNameW(wlong, wshort, countof(wshort));
-    Safefree(wlong);
-
-    if (len && len < sizeof(wshort)) {
-        ST(0) = wstr_to_sv(aTHX_ wshort);
-        XSRETURN(1);
+    if (IsWin2000()) {
+        WCHAR wshort[MAX_PATH+1];
+        WCHAR *wlong = sv_to_wstr(aTHX_ ST(0));
+        len = GetShortPathNameW(wlong, wshort, countof(wshort));
+        Safefree(wlong);
+        if (len && len < sizeof(wshort)) {
+            ST(0) = wstr_to_sv(aTHX_ wshort);
+            XSRETURN(1);
+        }
+        XSRETURN_UNDEF;
     }
 
+    shortpath = sv_mortalcopy(ST(0));
+    SvUPGRADE(shortpath, SVt_PV);
+    if (!SvPVX(shortpath) || !SvLEN(shortpath))
+        XSRETURN_UNDEF;
+
+    /* src == target is allowed */
+    do {
+	len = GetShortPathName(SvPVX(shortpath),
+			       SvPVX(shortpath),
+			       (DWORD)SvLEN(shortpath));
+    } while (len >= SvLEN(shortpath) && sv_grow(shortpath,len+1));
+    if (len) {
+	SvCUR_set(shortpath,len);
+	*SvEND(shortpath) = '\0';
+	ST(0) = shortpath;
+	XSRETURN(1);
+    }
     XSRETURN_UNDEF;
 }
 
@@ -1268,7 +1416,7 @@ XS(w32_GetFullPathName)
 	Perl_croak(aTHX_ "usage: Win32::GetFullPathName($filename)");
 
 #if __CYGWIN__ || !defined(PERL_IMPLICIT_SYS)
-    {
+    if (IsWin2000()) {
         WCHAR *filename = sv_to_wstr(aTHX_ ST(0));
         WCHAR full[2*MAX_PATH];
         DWORD len = GetFullPathNameW(filename, countof(full), full, NULL);
@@ -1276,6 +1424,12 @@ XS(w32_GetFullPathName)
         if (len == 0 || len >= countof(full))
             XSRETURN_EMPTY;
         ansi = fullname = my_ansipath(full);
+    }
+    else {
+        DWORD len = GetFullPathNameA(SvPV_nolen(ST(0)), countof(buffer), buffer, NULL);
+        if (len == 0 || len >= countof(buffer))
+            XSRETURN_EMPTY;
+        fullname = buffer;
     }
 #else
     /* Don't use my_ansipath() unless the $filename argument is in Unicode.
@@ -1287,7 +1441,7 @@ XS(w32_GetFullPathName)
      * XXX The one missing case is where we could downgrade $filename
      * XXX from UTF8 into the current codepage.
      */
-    if (SvUTF8(ST(0))) {
+    if (IsWin2000() && SvUTF8(ST(0))) {
         WCHAR *filename = sv_to_wstr(aTHX_ ST(0));
         WCHAR *mappedname = PerlDir_mapW(filename);
         Safefree(filename);
@@ -1319,8 +1473,7 @@ XS(w32_GetFullPathName)
             /* fullname is the MAX_PATH+1 sized buffer returned from PerlDir_mapA()
              * or the 2*MAX_PATH sized local buffer in the __CYGWIN__ case.
              */
-            if (lastchar - fullname < MAX_PATH - 1)
-                strcpy(lastchar+1, "\\");
+            strcpy(lastchar+1, "\\");
         }
     }
 
@@ -1347,23 +1500,38 @@ XS(w32_GetFullPathName)
 XS(w32_GetLongPathName)
 {
     dXSARGS;
-    WCHAR *wstr, *long_path, wide_path[MAX_PATH+1];
 
     if (items != 1)
 	Perl_croak(aTHX_ "usage: Win32::GetLongPathName($pathname)");
 
-    wstr = sv_to_wstr(aTHX_ ST(0));
+    if (IsWin2000()) {
+        WCHAR *wstr = sv_to_wstr(aTHX_ ST(0));
+        WCHAR wide_path[MAX_PATH+1];
+        WCHAR *long_path;
 
-    if (wcslen(wstr) < (size_t)countof(wide_path)) {
         wcscpy(wide_path, wstr);
+        Safefree(wstr);
         long_path = my_longpathW(wide_path);
         if (long_path) {
-            Safefree(wstr);
             ST(0) = wstr_to_sv(aTHX_ long_path);
             XSRETURN(1);
         }
     }
-    Safefree(wstr);
+    else {
+        SV *path;
+        char tmpbuf[MAX_PATH+1];
+        char *pathstr;
+        STRLEN len;
+
+        path = ST(0);
+        pathstr = SvPV(path,len);
+        strcpy(tmpbuf, pathstr);
+        pathstr = my_longpathA(tmpbuf);
+        if (pathstr) {
+            ST(0) = sv_2mortal(newSVpvn(pathstr, strlen(pathstr)));
+            XSRETURN(1);
+        }
+    }
     XSRETURN_EMPTY;
 }
 
@@ -1394,19 +1562,14 @@ XS(w32_CopyFile)
 {
     dXSARGS;
     BOOL bResult;
-    char *pszSourceFile;
     char szSourceFile[MAX_PATH+1];
 
     if (items != 3)
 	Perl_croak(aTHX_ "usage: Win32::CopyFile($from, $to, $overwrite)");
-
-    pszSourceFile = PerlDir_mapA(SvPV_nolen(ST(0)));
-    if (strlen(pszSourceFile) < sizeof(szSourceFile)) {
-        strcpy(szSourceFile, pszSourceFile);
-        bResult = CopyFileA(szSourceFile, PerlDir_mapA(SvPV_nolen(ST(1))), !SvTRUE(ST(2)));
-        if (bResult)
-            XSRETURN_YES;
-    }
+    strcpy(szSourceFile, PerlDir_mapA(SvPV_nolen(ST(0))));
+    bResult = CopyFileA(szSourceFile, PerlDir_mapA(SvPV_nolen(ST(1))), !SvTRUE(ST(2)));
+    if (bResult)
+	XSRETURN_YES;
     XSRETURN_NO;
 }
 
@@ -1430,8 +1593,6 @@ XS(w32_OutputDebugString)
 XS(w32_GetCurrentProcessId)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetCurrentProcessId()");
     EXTEND(SP,1);
     XSRETURN_IV(GetCurrentProcessId());
 }
@@ -1439,8 +1600,6 @@ XS(w32_GetCurrentProcessId)
 XS(w32_GetCurrentThreadId)
 {
     dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetCurrentThreadId()");
     EXTEND(SP,1);
     XSRETURN_IV(GetCurrentThreadId());
 }
@@ -1453,7 +1612,7 @@ XS(w32_CreateDirectory)
     if (items != 1)
 	Perl_croak(aTHX_ "usage: Win32::CreateDirectory($dir)");
 
-    if (SvUTF8(ST(0))) {
+    if (IsWin2000() && SvUTF8(ST(0))) {
         WCHAR *dir = sv_to_wstr(aTHX_ ST(0));
         result = CreateDirectoryW(dir, NULL);
         Safefree(dir);
@@ -1474,7 +1633,7 @@ XS(w32_CreateFile)
     if (items != 1)
 	Perl_croak(aTHX_ "usage: Win32::CreateFile($file)");
 
-    if (SvUTF8(ST(0))) {
+    if (IsWin2000() && SvUTF8(ST(0))) {
         WCHAR *file = sv_to_wstr(aTHX_ ST(0));
         handle = CreateFileW(file, GENERIC_WRITE, FILE_SHARE_WRITE,
                              NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -1492,533 +1651,13 @@ XS(w32_CreateFile)
     XSRETURN(1);
 }
 
-XS(w32_GetSystemMetrics)
-{
-    dXSARGS;
-
-    if (items != 1)
-	Perl_croak(aTHX_ "usage: Win32::GetSystemMetrics($index)");
-
-    XSRETURN_IV(GetSystemMetrics((int)SvIV(ST(0))));
-}
-
-XS(w32_GetProductInfo)
-{
-    dXSARGS;
-    DWORD type;
-    HMODULE module;
-    PFNGetProductInfo pfnGetProductInfo;
-
-    if (items != 4)
-	Perl_croak(aTHX_ "usage: Win32::GetProductInfo($major,$minor,$spmajor,$spminor)");
-
-    module = GetModuleHandle("kernel32.dll");
-    GETPROC(GetProductInfo);
-    if (pfnGetProductInfo &&
-        pfnGetProductInfo((DWORD)SvIV(ST(0)), (DWORD)SvIV(ST(1)),
-                          (DWORD)SvIV(ST(2)), (DWORD)SvIV(ST(3)), &type))
-    {
-        XSRETURN_IV(type);
-    }
-
-    /* PRODUCT_UNDEFINED */
-    XSRETURN_IV(0);
-}
-
-XS(w32_GetACP)
-{
-    dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetACP()");
-    EXTEND(SP,1);
-    XSRETURN_IV(GetACP());
-}
-
-XS(w32_GetConsoleCP)
-{
-    dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetConsoleCP()");
-    EXTEND(SP,1);
-    XSRETURN_IV(GetConsoleCP());
-}
-
-XS(w32_GetConsoleOutputCP)
-{
-    dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetConsoleOutputCP()");
-    EXTEND(SP,1);
-    XSRETURN_IV(GetConsoleOutputCP());
-}
-
-XS(w32_GetOEMCP)
-{
-    dXSARGS;
-    if (items)
-	Perl_croak(aTHX_ "usage: Win32::GetOEMCP()");
-    EXTEND(SP,1);
-    XSRETURN_IV(GetOEMCP());
-}
-
-XS(w32_SetConsoleCP)
-{
-    dXSARGS;
-
-    if (items != 1)
-	Perl_croak(aTHX_ "usage: Win32::SetConsoleCP($id)");
-
-    XSRETURN_IV(SetConsoleCP((int)SvIV(ST(0))));
-}
-
-XS(w32_SetConsoleOutputCP)
-{
-    dXSARGS;
-
-    if (items != 1)
-	Perl_croak(aTHX_ "usage: Win32::SetConsoleOutputCP($id)");
-
-    XSRETURN_IV(SetConsoleOutputCP((int)SvIV(ST(0))));
-}
-
-XS(w32_GetProcessPrivileges)
-{
-    dXSARGS;
-    BOOL ret;
-    HV *priv_hv;
-    HANDLE proc_handle, token;
-    char *priv_name = NULL;
-    TOKEN_PRIVILEGES *privs = NULL;
-    DWORD i, pid, priv_name_len = 100, privs_len = 300;
-
-    if (items > 1)
-        Perl_croak(aTHX_ "usage: Win32::GetProcessPrivileges([$pid])");
-
-    if (items == 0) {
-        EXTEND(SP, 1);
-        pid = GetCurrentProcessId();
-    }
-    else {
-        pid = (DWORD)SvUV(ST(0));
-    }
-
-    proc_handle = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-
-    if (!proc_handle)
-        XSRETURN_NO;
-
-    ret = OpenProcessToken(proc_handle, TOKEN_QUERY, &token);
-    CloseHandle(proc_handle);
-
-    if (!ret)
-        XSRETURN_NO;
-
-    do {
-        Renewc(privs, privs_len, char, TOKEN_PRIVILEGES);
-        ret = GetTokenInformation(
-            token, TokenPrivileges, privs, privs_len, &privs_len
-        );
-    } while (!ret && GetLastError() == ERROR_INSUFFICIENT_BUFFER);
-
-    CloseHandle(token);
-
-    if (!ret) {
-        Safefree(privs);
-        XSRETURN_NO;
-    }
-
-    priv_hv = newHV();
-    New(0, priv_name, priv_name_len, char);
-
-    for (i = 0; i < privs->PrivilegeCount; ++i) {
-        DWORD ret_len = 0;
-        LUID_AND_ATTRIBUTES *priv = &privs->Privileges[i];
-        BOOL is_enabled = !!(priv->Attributes & SE_PRIVILEGE_ENABLED);
-
-        if (priv->Attributes & SE_PRIVILEGE_REMOVED)
-            continue;
-
-        do {
-            ret_len = priv_name_len;
-            ret = LookupPrivilegeNameA(
-                NULL, &priv->Luid, priv_name, &ret_len
-            );
-
-            if (ret_len > priv_name_len) {
-                priv_name_len = ret_len + 1;
-                Renew(priv_name, priv_name_len, char);
-            }
-        } while (!ret && GetLastError() == ERROR_INSUFFICIENT_BUFFER);
-
-        if (!ret) {
-            SvREFCNT_dec((SV*)priv_hv);
-            Safefree(privs);
-            Safefree(priv_name);
-            XSRETURN_NO;
-        }
-
-        hv_store(priv_hv, priv_name, ret_len, newSViv(is_enabled), 0);
-    }
-
-    Safefree(privs);
-    Safefree(priv_name);
-
-    ST(0) = sv_2mortal(newRV_noinc((SV*)priv_hv));
-    XSRETURN(1);
-}
-
-XS(w32_IsDeveloperModeEnabled)
-{
-    dXSARGS;
-    LONG status;
-    DWORD val, val_size = sizeof(val);
-    PFNRegGetValueA pfnRegGetValueA;
-    HMODULE module;
-
-    if (items)
-        Perl_croak(aTHX_ "usage: Win32::IsDeveloperModeEnabled()");
-
-    EXTEND(SP, 1);
-
-    /* developer mode was introduced in Windows 10 */
-    if (g_osver.dwMajorVersion < 10)
-        XSRETURN_NO;
-
-    module = GetModuleHandleA("advapi32.dll");
-    GETPROC(RegGetValueA);
-    if (!pfnRegGetValueA)
-        XSRETURN_NO;
-
-    status = pfnRegGetValueA(
-        HKEY_LOCAL_MACHINE,
-        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock",
-        "AllowDevelopmentWithoutDevLicense",
-        RRF_RT_REG_DWORD | KEY_WOW64_64KEY,
-        NULL,
-        &val,
-        &val_size
-    );
-
-    if (status == ERROR_SUCCESS && val == 1)
-        XSRETURN_YES;
-
-    XSRETURN_NO;
-}
-
-#ifdef WINHTTPAPI
-
-XS(w32_HttpGetFile)
-{
-    dXSARGS;
-    WCHAR *url = NULL, *file = NULL, *hostName = NULL, *urlPath = NULL;
-    bool bIgnoreCertErrors = FALSE;
-    WCHAR msgbuf[ONE_K_BUFSIZE];
-    BOOL  bResults = FALSE;
-    HINTERNET  hSession = NULL,
-               hConnect = NULL,
-               hRequest = NULL;
-    HANDLE hOut = INVALID_HANDLE_VALUE;
-    BOOL   bParsed = FALSE,
-           bAborted = FALSE,
-           bFileError = FALSE,
-           bHttpError = FALSE;
-    DWORD error = 0;
-    URL_COMPONENTS urlComp;
-    LPCWSTR acceptTypes[] = { L"*/*", NULL };
-    DWORD dwHttpStatusCode = 0, dwQuerySize = 0;
-
-    if (items < 2 || items > 3)
-        croak("usage: Win32::HttpGetFile($url, $file[, $ignore_cert_errors])");
-
-    url = sv_to_wstr(aTHX_ ST(0));
-    file = sv_to_wstr(aTHX_ ST(1));
-
-    if (items == 3)
-        bIgnoreCertErrors = (BOOL)SvIV(ST(2));
-
-    /* Initialize the URL_COMPONENTS structure, setting the required
-     * component lengths to non-zero so that they get populated.
-     */
-    ZeroMemory(&urlComp, sizeof(urlComp));
-    urlComp.dwStructSize = sizeof(urlComp);
-    urlComp.dwSchemeLength    = (DWORD)-1;
-    urlComp.dwHostNameLength  = (DWORD)-1;
-    urlComp.dwUrlPathLength   = (DWORD)-1;
-    urlComp.dwExtraInfoLength = (DWORD)-1;
-
-    /* Parse the URL. */
-    bParsed = WinHttpCrackUrl(url, (DWORD)wcslen(url), 0, &urlComp);
-
-    /* Only support http and htts, not ftp, gopher, etc. */
-    if (bParsed
-        && !(urlComp.nScheme == INTERNET_SCHEME_HTTPS
-             || urlComp.nScheme == INTERNET_SCHEME_HTTP)) {
-        SetLastError(12006); /* not a recognized protocol */
-        bParsed = FALSE;
-    }
-
-    if (bParsed) {
-        New(0, hostName,  urlComp.dwHostNameLength + 1, WCHAR);
-        wcsncpy(hostName, urlComp.lpszHostName, urlComp.dwHostNameLength);
-        hostName[urlComp.dwHostNameLength] = 0;
-
-        New(0, urlPath,  urlComp.dwUrlPathLength + urlComp.dwExtraInfoLength + 1, WCHAR);
-        wcsncpy(urlPath, urlComp.lpszUrlPath, urlComp.dwUrlPathLength + urlComp.dwExtraInfoLength);
-        urlPath[urlComp.dwUrlPathLength + urlComp.dwExtraInfoLength] = 0;
-
-        /* Use WinHttpOpen to obtain a session handle. */
-        hSession = WinHttpOpen(L"Perl",
-                               WINHTTP_ACCESS_TYPE_NO_PROXY,
-                               WINHTTP_NO_PROXY_NAME,
-                               WINHTTP_NO_PROXY_BYPASS,
-                               0);
-    }
-
-    /* Specify an HTTP server. */
-    if (hSession)
-        hConnect = WinHttpConnect(hSession,
-                                  hostName,
-                                  urlComp.nPort,
-                                  0);
-
-    /* Create an HTTP request handle. */
-    if (hConnect)
-        hRequest = WinHttpOpenRequest(hConnect,
-                                      L"GET",
-                                      urlPath,
-                                      NULL,
-                                      WINHTTP_NO_REFERER,
-                                      acceptTypes,
-                                      urlComp.nScheme == INTERNET_SCHEME_HTTPS
-                                                      ? WINHTTP_FLAG_SECURE
-                                                      : 0);
-
-    /* If specified, disable certificate-related errors for https connections. */
-    if (hRequest
-        && bIgnoreCertErrors
-        && urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
-        DWORD secFlags = SECURITY_FLAG_IGNORE_CERT_CN_INVALID
-                         | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID
-                         | SECURITY_FLAG_IGNORE_UNKNOWN_CA
-                         | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
-        if(!WinHttpSetOption(hRequest,
-                             WINHTTP_OPTION_SECURITY_FLAGS,
-                             &secFlags,
-                             sizeof(secFlags))) {
-            bAborted = TRUE;
-        }
-    }
-
-    /* Call WinHttpGetProxyForUrl with our target URL. If auto-proxy succeeds,
-     * then set the proxy info on the request handle. If auto-proxy fails,
-     * ignore the error and attempt to send the HTTP request directly to the
-     * target server (using the default WINHTTP_ACCESS_TYPE_NO_PROXY
-     * configuration, which the request handle will inherit from the session).
-     */
-    if (hRequest && !bAborted) {
-        WINHTTP_AUTOPROXY_OPTIONS  AutoProxyOptions;
-        WINHTTP_PROXY_INFO         ProxyInfo;
-        DWORD                      cbProxyInfoSize = sizeof(ProxyInfo);
-
-        ZeroMemory(&AutoProxyOptions, sizeof(AutoProxyOptions));
-        ZeroMemory(&ProxyInfo, sizeof(ProxyInfo));
-        AutoProxyOptions.dwFlags = WINHTTP_AUTOPROXY_AUTO_DETECT;
-        AutoProxyOptions.dwAutoDetectFlags =
-                                    WINHTTP_AUTO_DETECT_TYPE_DHCP |
-                                    WINHTTP_AUTO_DETECT_TYPE_DNS_A;
-        AutoProxyOptions.fAutoLogonIfChallenged = TRUE;
-
-        if(WinHttpGetProxyForUrl(hSession,
-                                url,
-                                &AutoProxyOptions,
-                                &ProxyInfo)) {
-            if(!WinHttpSetOption(hRequest,
-                                WINHTTP_OPTION_PROXY,
-                                &ProxyInfo,
-                                cbProxyInfoSize)) {
-                bAborted = TRUE;
-                Perl_warn(aTHX_ "Win32::HttpGetFile: setting proxy options failed");
-            }
-            Safefree(ProxyInfo.lpszProxy);
-            Safefree(ProxyInfo.lpszProxyBypass);
-        }
-    }
-
-    /* Send a request. */
-    if (hRequest && !bAborted)
-        bResults = WinHttpSendRequest(hRequest,
-                                      WINHTTP_NO_ADDITIONAL_HEADERS,
-                                      0,
-                                      WINHTTP_NO_REQUEST_DATA,
-                                      0,
-                                      0,
-                                      0);
-
-    /* End the request. */
-    if (bResults)
-        bResults = WinHttpReceiveResponse(hRequest, NULL);
-
-    /* Retrieve HTTP status code. */
-    if (bResults) {
-        dwQuerySize = sizeof(dwHttpStatusCode);
-        bResults = WinHttpQueryHeaders(hRequest,
-                                       WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                                       WINHTTP_HEADER_NAME_BY_INDEX,
-                                       &dwHttpStatusCode,
-                                       &dwQuerySize,
-                                       WINHTTP_NO_HEADER_INDEX);
-    }
-
-    /* Retrieve HTTP status text. Note this may be a success message. */
-    if (bResults) {
-        dwQuerySize = ONE_K_BUFSIZE * 2 - 2;
-        ZeroMemory(&msgbuf, ONE_K_BUFSIZE * 2);
-        bResults = WinHttpQueryHeaders(hRequest,
-                                       WINHTTP_QUERY_STATUS_TEXT,
-                                       WINHTTP_HEADER_NAME_BY_INDEX,
-                                       msgbuf,
-                                       &dwQuerySize,
-                                       WINHTTP_NO_HEADER_INDEX);
-    }
-
-    /* There is no point in successfully downloading an error page from
-     * the server, so consider HTTP errors to be failures.
-     */
-    if (bResults) {
-        if (dwHttpStatusCode < 200 || dwHttpStatusCode > 299) {
-            bResults = FALSE;
-            bHttpError = TRUE;
-        }
-    }
-
-    /* Create output file for download. */
-    if (bResults) {
-        hOut = CreateFileW(file,
-                           GENERIC_WRITE,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE,
-                           NULL,
-                           CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL,
-                           NULL);
-
-        if (hOut == INVALID_HANDLE_VALUE)
-            bFileError = TRUE;
-    }
-
-    if (!bFileError && bResults) {
-        DWORD dwDownloaded = 0;
-        DWORD dwBytesWritten = 0;
-        DWORD dwSize = 65536;
-        char *pszOutBuffer;
-
-        New(0, pszOutBuffer, dwSize, char);
-
-        /* Keep checking for data until there is nothing left. */
-        while (1) {
-            if (!WinHttpReadData(hRequest,
-                                 (LPVOID)pszOutBuffer,
-                                 dwSize,
-                                 &dwDownloaded)) {
-                bAborted = TRUE;
-                break;
-            }
-            if (!dwDownloaded)
-                break;
-
-            /* Write what we just read to the output file */
-            if (!WriteFile(hOut,
-                           pszOutBuffer,
-                           dwDownloaded,
-                           &dwBytesWritten,
-                           NULL)) {
-                bAborted = TRUE;
-                bFileError = TRUE;
-                break;
-            }
-
-        }
-
-        Safefree(pszOutBuffer);
-    }
-    else {
-        bAborted = TRUE;
-    }
-
-    /* Clean-up may lose this. */
-    if (bAborted)
-        error = GetLastError();
-
-    /* If we successfully opened the output file but failed later, mark
-     * the file for deletion.
-     */
-    if (bAborted && hOut != INVALID_HANDLE_VALUE)
-        (void) DeleteFileW(file);
-
-    /* Close any open handles. */
-    if (hOut != INVALID_HANDLE_VALUE) CloseHandle(hOut);
-    if (hRequest) WinHttpCloseHandle(hRequest);
-    if (hConnect) WinHttpCloseHandle(hConnect);
-    if (hSession) WinHttpCloseHandle(hSession);
-
-    Safefree(url);
-    Safefree(file);
-    Safefree(hostName);
-    Safefree(urlPath);
-
-    /* Retrieve system and WinHttp error messages, or compose a user-defined
-     * error code if we got a failed HTTP status text above.  Conveniently, adding
-     * 1e9 to the HTTP status sets bit 29, denoting a user-defined error code,
-     * and also makes it easy to lop off the upper part and just get HTTP status.
-     */
-    if (bAborted) {
-        if (bHttpError) {
-            SetLastError(dwHttpStatusCode + 1000000000);
-        }
-        else {
-            DWORD msgFlags = bFileError
-                            ? FORMAT_MESSAGE_FROM_SYSTEM
-                            : FORMAT_MESSAGE_FROM_HMODULE;
-            msgFlags |= FORMAT_MESSAGE_IGNORE_INSERTS;
-
-            ZeroMemory(&msgbuf, ONE_K_BUFSIZE * 2);
-            if (!FormatMessageW(msgFlags,
-                                GetModuleHandleW(L"winhttp.dll"),
-                                error,
-                                0,
-                                msgbuf,
-                                ONE_K_BUFSIZE - 1, /* TCHARs, not bytes */
-                                NULL)) {
-                wcsncpy(msgbuf, L"unable to format error message", ONE_K_BUFSIZE - 1);
-            }
-            SetLastError(error);
-        }
-    }
-
-    if (GIMME_V == G_SCALAR) {
-        EXTEND(SP, 1);
-        ST(0) = !bAborted ? &PL_sv_yes : &PL_sv_no;
-        XSRETURN(1);
-    }
-    else if (GIMME_V == G_ARRAY) {
-        EXTEND(SP, 2);
-        ST(0) = !bAborted ? &PL_sv_yes : &PL_sv_no;
-        ST(1) = wstr_to_sv(aTHX_ msgbuf);
-        XSRETURN(2);
-    }
-    else {
-        XSRETURN_EMPTY;
-    }
-}
-
-#endif
-
 MODULE = Win32            PACKAGE = Win32
 
 PROTOTYPES: DISABLE
 
 BOOT:
 {
-    const char *file = __FILE__;
+    char *file = __FILE__;
 
     if (g_osver.dwOSVersionInfoSize == 0) {
         g_osver.dwOSVersionInfoSize = sizeof(g_osver);
@@ -2041,7 +1680,6 @@ BOOT:
     newXS("Win32::RegisterServer", w32_RegisterServer, file);
     newXS("Win32::UnregisterServer", w32_UnregisterServer, file);
     newXS("Win32::GetArchName", w32_GetArchName, file);
-    newXS("Win32::GetChipArch", w32_GetChipArch, file);
     newXS("Win32::GetChipName", w32_GetChipName, file);
     newXS("Win32::GuidGen", w32_GuidGen, file);
     newXS("Win32::GetFolderPath", w32_GetFolderPath, file);
@@ -2074,21 +1712,8 @@ BOOT:
     newXS("Win32::GetCurrentThreadId", w32_GetCurrentThreadId, file);
     newXS("Win32::CreateDirectory", w32_CreateDirectory, file);
     newXS("Win32::CreateFile", w32_CreateFile, file);
-    newXS("Win32::GetSystemMetrics", w32_GetSystemMetrics, file);
-    newXS("Win32::GetProductInfo", w32_GetProductInfo, file);
-    newXS("Win32::GetACP", w32_GetACP, file);
-    newXS("Win32::GetConsoleCP", w32_GetConsoleCP, file);
-    newXS("Win32::GetConsoleOutputCP", w32_GetConsoleOutputCP, file);
-    newXS("Win32::GetOEMCP", w32_GetOEMCP, file);
-    newXS("Win32::SetConsoleCP", w32_SetConsoleCP, file);
-    newXS("Win32::SetConsoleOutputCP", w32_SetConsoleOutputCP, file);
-    newXS("Win32::GetProcessPrivileges", w32_GetProcessPrivileges, file);
-    newXS("Win32::IsDeveloperModeEnabled", w32_IsDeveloperModeEnabled, file);
 #ifdef __CYGWIN__
     newXS("Win32::SetChildShowWindow", w32_SetChildShowWindow, file);
-#endif
-#ifdef WINHTTPAPI
-    newXS("Win32::HttpGetFile", w32_HttpGetFile, file);
 #endif
     XSRETURN_YES;
 }

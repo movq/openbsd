@@ -1,4 +1,4 @@
-# $Id: enc_data.t,v 2.6 2022/04/07 03:06:40 dankogai Exp dankogai $
+# $Id: enc_data.t,v 2.1 2006/05/03 18:24:10 dankogai Exp $
 
 BEGIN {
     require Config; import Config;
@@ -11,11 +11,7 @@ BEGIN {
     exit 0;
     }
     if (ord("A") == 193) {
-    print "1..0 # Skip: encoding pragma does not support EBCDIC platforms\n";
-    exit(0);
-    }
-    if ($] >= 5.025 and !$Config{usecperl}) {
-    print "1..0 # Skip: encoding pragma not supported in Perl 5.25 or later\n";
+    print "1..0 # encoding pragma does not support EBCDIC platforms\n";
     exit(0);
     }
     if ($] <= 5.008 and !$Config{perl_patchlevel}){
@@ -26,7 +22,6 @@ BEGIN {
 
 
 use strict;
-no warnings "deprecated";
 use encoding 'euc-jp';
 use Test::More tests => 4;
 

@@ -4,10 +4,7 @@
 # (07_rv_splice.t checks it aith autochomping off)
 #
 
-use strict;
-use warnings;
-
-my $file = "tf23-$$.txt";
+my $file = "tf$$.txt";
 $: = Tie::File::_default_recsep();
 my $data = "rec0$:rec1$:rec2$:";
 
@@ -19,7 +16,6 @@ print "ok $N\n"; $N++;  # partial credit just for showing up
 
 init_file($data);
 
-my @a;
 my $o = tie @a, 'Tie::File', $file, autochomp => 1;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -27,7 +23,7 @@ $N++;
 my $n;
 
 # (3-12) splicing at the beginning
-my @r = splice(@a, 0, 0, "rec4");
+@r = splice(@a, 0, 0, "rec4");
 check_result();
 @r = splice(@a, 0, 1, "rec5");       # same length
 check_result("rec4");
@@ -159,7 +155,7 @@ check_result(0..3);
 
 sub init_file {
   my $data = shift;
-  open F, '>', $file or die $!;
+  open F, "> $file" or die $!;
   binmode F;
   print F $data;
   close F;

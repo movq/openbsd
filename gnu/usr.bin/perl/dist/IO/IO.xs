@@ -11,9 +11,6 @@
 #define PERLIO_NOT_STDIO 1
 #include "perl.h"
 #include "XSUB.h"
-#define NEED_newCONSTSUB
-#define NEED_newSVpvn_flags
-#include "ppport.h"
 #include "poll.h"
 #ifdef I_UNISTD
 #  include <unistd.h>
@@ -48,16 +45,16 @@ typedef FILE * OutputStream;
 
 #define MY_start_subparse(fmt,flags) start_subparse(fmt,flags)
 
+#ifndef gv_stashpvn
+#define gv_stashpvn(str,len,flags) gv_stashpv(str,flags)
+#endif
+
 #ifndef __attribute__noreturn__
 #  define __attribute__noreturn__
 #endif
 
 #ifndef NORETURN_FUNCTION_END
 # define NORETURN_FUNCTION_END /* NOT REACHED */ return 0
-#endif
-
-#ifndef OpSIBLING
-#  define OpSIBLING(o) (o)->op_sibling
 #endif
 
 static int not_here(const char *s) __attribute__noreturn__;
@@ -68,6 +65,7 @@ not_here(const char *s)
     NORETURN_FUNCTION_END;
 }
 
+
 #ifndef PerlIO
 #define PerlIO_fileno(f) fileno(f)
 #endif
@@ -75,19 +73,13 @@ not_here(const char *s)
 static int
 io_blocking(pTHX_ InputStream f, int block)
 {
-    int fd = -1;
 #if defined(HAS_FCNTL)
     int RETVAL;
-    if (!f) {
+    if(!f) {
 	errno = EBADF;
 	return -1;
     }
-    fd = PerlIO_fileno(f);
-    if (fd < 0) {
-      errno = EBADF;
-      return -1;
-    }
-    RETVAL = fcntl(fd, F_GETFL, 0);
+    RETVAL = fcntl(PerlIO_fileno(f), F_GETFL, 0);
     if (RETVAL >= 0) {
 	int mode = RETVAL;
 	int newmode = mode;
@@ -122,7 +114,7 @@ io_blocking(pTHX_ InputStream f, int block)
 	}
 #endif
 	if (newmode != mode) {
-            const int ret = fcntl(fd, F_SETFL, newmode);
+	    const int ret = fcntl(PerlIO_fileno(f),F_SETFL,newmode);
 	    if (ret < 0)
 		RETVAL = ret;
 	}
@@ -130,26 +122,13 @@ io_blocking(pTHX_ InputStream f, int block)
     return RETVAL;
 #else
 #   ifdef WIN32
-    if (block >= 0) {
-	unsigned long flags = !block;
-	/* ioctl claims to take char* but really needs a u_long sized buffer */
-	const int ret = ioctl(fd, FIONBIO, (char*)&flags);
-	if (ret != 0)
-	    return -1;
-	/* Win32 has no way to get the current blocking status of a socket.
-	 * However, we don't want to just return undef, because there's no way
-	 * to tell that the ioctl succeeded.
-	 */
-	return flags;
-    }
-    /* TODO: Perhaps set $! to ENOTSUP? */
-    return -1;
+    char flags = (char)block;
+    return ioctl(PerlIO_fileno(f), FIONBIO, &flags);
 #   else
     return -1;
 #   endif
 #endif
 }
-
 
 MODULE = IO	PACKAGE = IO::Seekable	PREFIX = f
 
@@ -159,7 +138,7 @@ fgetpos(handle)
     CODE:
 	if (handle) {
 #ifdef PerlIO
-#if PERL_VERSION_LT(5,8,0)
+#if PERL_VERSION < 8
 	    Fpos_t pos;
 	    ST(0) = sv_newmortal();
 	    if (PerlIO_getpos(handle, &pos) != 0) {
@@ -179,7 +158,7 @@ fgetpos(handle)
 	    if (fgetpos(handle, &pos)) {
 		ST(0) = &PL_sv_undef;
 	    } else {
-#  if PERL_VERSION_GE(5,11,0)
+#  if PERL_VERSION >= 11
 		ST(0) = newSVpvn_flags((char*)&pos, sizeof(Fpos_t), SVs_TEMP);
 #  else
 		ST(0) = sv_2mortal(newSVpvn((char*)&pos, sizeof(Fpos_t)));
@@ -199,7 +178,7 @@ fsetpos(handle, pos)
     CODE:
 	if (handle) {
 #ifdef PerlIO
-#if PERL_VERSION_LT(5,8,0)
+#if PERL_VERSION < 8
 	    char *p;
 	    STRLEN len;
 	    if (SvOK(pos) && (p = SvPV(pos,len)) && len == sizeof(Fpos_t)) {
@@ -247,9 +226,9 @@ new_tmpfile(packname = "IO::File")
 #endif
 	gv = (GV*)SvREFCNT_inc(newGVgen(packname));
 	if (gv)
-	    (void) hv_delete(GvSTASH(gv), GvNAME(gv), GvNAMELEN(gv), G_DISCARD);
+	    hv_delete(GvSTASH(gv), GvNAME(gv), GvNAMELEN(gv), G_DISCARD);
 	if (gv && do_open(gv, "+>&", 3, FALSE, 0, 0, fp)) {
-	    ST(0) = sv_2mortal(newRV_inc((SV*)gv));
+	    ST(0) = sv_2mortal(newRV((SV*)gv));
 	    sv_bless(ST(0), gv_stashpv(packname, TRUE));
 	    SvREFCNT_dec(gv);   /* undo increment in newRV() */
 	}
@@ -267,11 +246,8 @@ PPCODE:
 {
 #ifdef HAS_POLL
     const int nfd = (items - 1) / 2;
-    SV *tmpsv = sv_2mortal(NEWSV(999,nfd * sizeof(struct pollfd)));
-    /* We should pass _some_ valid pointer even if nfd is zero, but it
-     * doesn't matter what it is, since we're telling it to not check any fds.
-     */
-    struct pollfd *fds = nfd ? (struct pollfd *)SvPVX(tmpsv) : (struct pollfd *)tmpsv;
+    SV *tmpsv = NEWSV(999,nfd * sizeof(struct pollfd));
+    struct pollfd *fds = (struct pollfd *)SvPVX(tmpsv);
     int i,j,ret;
     for(i=1, j=0  ; j < nfd ; j++) {
 	fds[j].fd = SvIV(ST(i));
@@ -286,6 +262,7 @@ PPCODE:
 	    sv_setiv(ST(i), fds[j].revents); i++;
 	}
     }
+    SvREFCNT_dec(tmpsv);
     XSRETURN_IV(ret);
 #else
 	not_here("IO::Poll::poll");
@@ -313,38 +290,14 @@ MODULE = IO	PACKAGE = IO::Handle	PREFIX = f
 int
 ungetc(handle, c)
 	InputStream	handle
-	SV *	        c
+	int		c
     CODE:
-	if (handle) {
+	if (handle)
 #ifdef PerlIO
-            UV v;
-
-            if ((SvIOK_notUV(c) && SvIV(c) < 0) || (SvNOK(c) && SvNV(c) < 0.0))
-                croak("Negative character number in ungetc()");
-
-            v = SvUV(c);
-            if (UVCHR_IS_INVARIANT(v) || (v <= 0xFF && !PerlIO_isutf8(handle)))
-                RETVAL = PerlIO_ungetc(handle, (int)v);
-            else {
-                U8 buf[UTF8_MAXBYTES + 1], *end;
-                Size_t len;
-
-                if (!PerlIO_isutf8(handle))
-                    croak("Wide character number in ungetc()");
-
-                /* This doesn't warn for non-chars, surrogate, and
-                 * above-Unicodes */
-                end = uvchr_to_utf8_flags(buf, v, 0);
-                len = end - buf;
-                if ((Size_t)PerlIO_unread(handle, &buf, len) == len)
-                    XSRETURN_UV(v);
-                else
-                    RETVAL = EOF;
-            }
+	    RETVAL = PerlIO_ungetc(handle, c);
 #else
-            RETVAL = ungetc((int)SvIV(c), handle);
+	    RETVAL = ungetc(c, handle);
 #endif
-        }
 	else {
 	    RETVAL = -1;
 	    errno = EINVAL;
@@ -354,17 +307,13 @@ ungetc(handle, c)
 
 int
 ferror(handle)
-	SV *	handle
-    PREINIT:
-        IO *io = sv_2io(handle);
-        InputStream in = IoIFP(io);
-        OutputStream out = IoOFP(io);
+	InputStream	handle
     CODE:
-	if (in)
+	if (handle)
 #ifdef PerlIO
-	    RETVAL = PerlIO_error(in) || (out && in != out && PerlIO_error(out));
+	    RETVAL = PerlIO_error(handle);
 #else
-	    RETVAL = ferror(in) || (out && in != out && ferror(out));
+	    RETVAL = ferror(handle);
 #endif
 	else {
 	    RETVAL = -1;
@@ -375,21 +324,13 @@ ferror(handle)
 
 int
 clearerr(handle)
-	SV *	handle
-    PREINIT:
-        IO *io = sv_2io(handle);
-        InputStream in = IoIFP(io);
-        OutputStream out = IoOFP(io);
+	InputStream	handle
     CODE:
 	if (handle) {
 #ifdef PerlIO
-	    PerlIO_clearerr(in);
-            if (in != out)
-                PerlIO_clearerr(out);
+	    PerlIO_clearerr(handle);
 #else
-	    clearerr(in);
-            if (in != out)
-                clearerr(out);
+	    clearerr(handle);
 #endif
 	    RETVAL = 0;
 	}
@@ -488,28 +429,13 @@ setvbuf(...)
 
 
 SysRet
-fsync(arg)
-	SV * arg
-    PREINIT:
-	OutputStream handle = NULL;
+fsync(handle)
+	OutputStream handle
     CODE:
-#if defined(HAS_FSYNC) || defined(_WIN32)
-	handle = IoOFP(sv_2io(arg));
-	if (!handle)
-	    handle = IoIFP(sv_2io(arg));
-	if (handle) {
-	    int fd = PerlIO_fileno(handle);
-	    if (fd >= 0) {
-#  ifdef _WIN32
-                RETVAL = _commit(fd);
-#  else
-		RETVAL = fsync(fd);
-#  endif
-	    } else {
-		RETVAL = -1;
-		errno = EBADF;
-	    }
-	} else {
+#ifdef HAS_FSYNC
+	if(handle)
+	    RETVAL = fsync(PerlIO_fileno(handle));
+	else {
 	    RETVAL = -1;
 	    errno = EINVAL;
 	}
@@ -519,71 +445,6 @@ fsync(arg)
     OUTPUT:
 	RETVAL
 
-# To make these two work correctly with the open pragma, the readline op
-# needs to pick up the lexical hints at the method's callsite. This doesn't
-# work in pure Perl, because the hints are read from the most recent nextstate,
-# and the nextstate of the Perl subroutines show *here* hold the lexical state
-# for the IO package.
-#
-# There's no clean way to implement this - this approach, while complex, seems
-# to be the most robust, and avoids manipulating external state (ie op checkers)
-#
-# sub getline {
-#     @_ == 1 or croak 'usage: $io->getline()';
-#     my $this = shift;
-#     return scalar <$this>;
-# }
-#
-# sub getlines {
-#     @_ == 1 or croak 'usage: $io->getlines()';
-#     wantarray or
-# 	croak 'Can\'t call $io->getlines in a scalar context, use $io->getline';
-#     my $this = shift;
-#     return <$this>;
-# }
-
-# If this is deprecated, should it warn, and should it be removed at some point?
-# *gets = \&getline;  # deprecated
-
-void
-getlines(...)
-ALIAS:
-    IO::Handle::getline       =  1
-    IO::Handle::gets          =  2
-INIT:
-    UNOP myop;
-    SV *io;
-    OP *was = PL_op;
-PPCODE:
-    if (items != 1)
-        Perl_croak(aTHX_ "usage: $io->%s()", ix ? "getline" : "getlines");
-    if (!ix && GIMME_V != G_LIST)
-        Perl_croak(aTHX_ "Can't call $io->getlines in a scalar context, use $io->getline");
-    Zero(&myop, 1, UNOP);
-    myop.op_flags = (ix ? OPf_WANT_SCALAR : OPf_WANT_LIST ) | OPf_STACKED;
-    myop.op_ppaddr = PL_ppaddr[OP_READLINE];
-    myop.op_type = OP_READLINE;
-    /* I don't know if we need this, but it's correct as far as the control flow
-       goes. However, if we *do* need it, do we need to set anything else up? */
-    myop.op_next = PL_op->op_next;
-    /* Sigh, because pp_readline calls pp_rv2gv, and *it* has this wonderful
-       state check for PL_op->op_type == OP_READLINE */
-    PL_op = (OP *) &myop;
-    io = ST(0);
-    /* Our target (which we need to provide, as we don't have a pad entry.
-       I think that this is only needed for G_SCALAR - maybe we can get away
-       with NULL for list context? */
-    PUSHs(sv_newmortal());
-    XPUSHs(io);
-    PUTBACK;
-    /* And effectively we get away with tail calling pp_readline, as it stacks
-       exactly the return value(s) we need to return. */
-    PL_ppaddr[OP_READLINE](aTHX);
-    PL_op = was;
-    /* And we don't want to reach the line
-       PL_stack_sp = sp;
-       that xsubpp adds after our body becase PL_stack_sp is correct, not sp */
-    return;
 
 MODULE = IO	PACKAGE = IO::Socket
 
@@ -594,21 +455,16 @@ sockatmark (sock)
    PREINIT:
      int fd;
    CODE:
+   {
      fd = PerlIO_fileno(sock);
-     if (fd < 0) {
-       errno = EBADF;
-       RETVAL = -1;
-     }
 #ifdef HAS_SOCKATMARK
-     else {
-       RETVAL = sockatmark(fd);
-     }
+     RETVAL = sockatmark(fd);
 #else
-     else {
+     {
        int flag = 0;
 #   ifdef SIOCATMARK
 #     if defined(NETWARE) || defined(WIN32)
-       if (ioctl(fd, SIOCATMARK, (char*)&flag) != 0)
+       if (ioctl(fd, SIOCATMARK, (void*)&flag) != 0)
 #     else
        if (ioctl(fd, SIOCATMARK, &flag) != 0)
 #     endif
@@ -619,6 +475,7 @@ sockatmark (sock)
        RETVAL = flag;
      }
 #endif
+   }
    OUTPUT:
      RETVAL
 

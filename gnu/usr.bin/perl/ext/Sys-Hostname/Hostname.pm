@@ -4,23 +4,23 @@ use strict;
 
 use Carp;
 
-use Exporter 'import';
+require Exporter;
+require AutoLoader;
 
+our @ISA     = qw/ Exporter AutoLoader /;
 our @EXPORT  = qw/ hostname /;
 
 our $VERSION;
 
-use warnings ();
-
 our $host;
 
 BEGIN {
-    $VERSION = '1.24';
+    $VERSION = '1.11';
     {
 	local $SIG{__DIE__};
 	eval {
 	    require XSLoader;
-	    XSLoader::load();
+	    XSLoader::load('Sys::Hostname', $VERSION);
 	};
 	warn $@ if $@;
     }
@@ -28,7 +28,6 @@ BEGIN {
 
 
 sub hostname {
-  @_ and croak("hostname() does not accepts arguments (it used to silently discard any provided)");
 
   # method 1 - we already know it
   return $host if defined $host;
@@ -66,6 +65,10 @@ sub hostname {
     chomp($host = `hostname 2> NUL`) unless defined $host;
     return $host;
   }
+  elsif ($^O eq 'epoc') {
+    $host = 'localhost';
+    return $host;
+  }
   else {  # Unix
     # is anyone going to make it here?
 
@@ -94,7 +97,7 @@ sub hostname {
     || eval {
 	local $SIG{__DIE__};
 	local $SIG{CHLD};
-	$host = `(hostname) 2>/dev/null`; # BSDish
+	$host = `(hostname) 2>/dev/null`; # bsdish
     }
 
     # method 4 - use POSIX::uname(), which strictly can't be expected to be
@@ -109,6 +112,13 @@ sub hostname {
     || eval {
 	local $SIG{__DIE__};
 	$host = `uname -n 2>/dev/null`; ## sysVish
+    }
+
+    # method 6 - Apollo pre-SR10
+    || eval {
+	local $SIG{__DIE__};
+        my($a,$b,$c,$d);
+	($host,$a,$b,$c,$d)=split(/[:\. ]/,`/com/host`,6);
     }
 
     # bummer

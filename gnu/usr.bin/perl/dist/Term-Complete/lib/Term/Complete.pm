@@ -5,7 +5,7 @@ require Exporter;
 use strict;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(Complete);
-our $VERSION = '1.403';
+our $VERSION = '1.402';
 
 #      @(#)complete.pl,v1.2            (me@anywhere.EBay.Sun.COM) 09/23/91
 
@@ -162,7 +162,7 @@ sub Complete {
                 };
 
                 # printable char
-                ord >= ord(" ") && do {
+                ord >= 32 && do {
                     $return .= $_;
                     $r++;
                     print;

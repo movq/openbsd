@@ -1,6 +1,3 @@
-use strict;
-use warnings;
-
 BEGIN {
         if ($ENV{PERL_CORE}) {
                 chdir 't' if -d 't';
@@ -10,12 +7,10 @@ BEGIN {
 
 use MIME::QuotedPrint;
 
-my $x70 = "x" x 70;
+$x70 = "x" x 70;
 
-my $IsASCII  = ord('A') == 65;
-my $IsEBCDIC = ord('A') == 193;
-
-my @tests;
+$IsASCII  = ord('A') == 65;
+$IsEBCDIC = ord('A') == 193;
 
 if ($IsASCII) {
 
@@ -67,7 +62,7 @@ y. -- H. L. Mencken=\n"],
    ["$x70!23"		=> "$x70!23=\n"],
    ["$x70!234"		=> "$x70!234=\n"],
    ["$x70!2345"		=> "$x70!2345=\n"],
-   ["$x70!23456"	=> "$x70!2345=\n6=\n"],
+   ["$x70!23456"	=> "$x70!23456=\n"],
    ["$x70!234567"	=> "$x70!2345=\n67=\n"],
    ["$x70!23456="	=> "$x70!2345=\n6=3D=\n"],
    ["$x70!23\n"		=> "$x70!23\n"],
@@ -83,13 +78,8 @@ y. -- H. L. Mencken=\n"],
    ["$x70!2===xxx"  => "$x70!2=3D=\n=3D=3Dxxx=\n"],
    ["$x70!23===xx"  => "$x70!23=\n=3D=3D=3Dxx=\n"],
    ["$x70!234===x"  => "$x70!234=\n=3D=3D=3Dx=\n"],
-   ["$x70!2="       => "$x70!2=3D=\n"],
-   ["$x70!23="      => "$x70!23=\n=3D=\n"],
-   ["$x70!234="     => "$x70!234=\n=3D=\n"],
-   ["$x70!2345="    => "$x70!2345=\n=3D=\n"],
-   ["$x70!23456="   => "$x70!2345=\n6=3D=\n"],
    ["$x70!2=\n"     => "$x70!2=3D\n"],
-   ["$x70!23=\n"    => "$x70!23=3D\n"],
+   ["$x70!23=\n"    => "$x70!23=\n=3D\n"],
    ["$x70!234=\n"   => "$x70!234=\n=3D\n"],
    ["$x70!2345=\n"  => "$x70!2345=\n=3D\n"],
    ["$x70!23456=\n" => "$x70!2345=\n6=3D\n"],
@@ -157,7 +147,7 @@ y. -- H. L. Mencken=\n"],
    ["$x70!23"		=> "$x70!23=\n"],
    ["$x70!234"		=> "$x70!234=\n"],
    ["$x70!2345"		=> "$x70!2345=\n"],
-   ["$x70!23456"	=> "$x70!2345=\n6=\n"],
+   ["$x70!23456"	=> "$x70!23456=\n"],
    ["$x70!234567"	=> "$x70!2345=\n67=\n"],
    ["$x70!23456="	=> "$x70!2345=\n6=7E=\n"],
    ["$x70!23\n"		=> "$x70!23\n"],
@@ -196,18 +186,18 @@ y. -- H. L. Mencken=\n"],
   die sprintf "Unknown character set: ord('A') == %d\n", ord('A');
 }
 
-my $notests = @tests + 16;
+$notests = @tests + 16;
 print "1..$notests\n";
 
-my $testno = 0;
+$testno = 0;
 for (@tests) {
     $testno++;
-    my ($plain, $encoded) = @$_;
+    ($plain, $encoded) = @$_;
     if (ord('A') == 193) {  # EBCDIC 8 bit chars are different
         if ($testno == 2) { $plain =~ s/\xe5/\x47/; $plain =~ s/\xe6/\x9c/g; $plain =~ s/\xf8/\x70/; }
         if ($testno == 7) { $plain =~ s/\xff/\xdf/; }
     }
-    my $x = encode_qp($plain);
+    $x = encode_qp($plain);
     if ($x ne $encoded) {
 	print "Encode test failed\n";
 	print "Got:      '$x'\n";

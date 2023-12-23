@@ -3,17 +3,15 @@
 # We assume that TestInit has been used.
 
 BEGIN {
-      chdir 't' if -d 't';
       require './test.pl';
 }
 
 use strict;
 use Config;
 
-plan tests => 29;
-$| = 1;
+plan tests => 26;
 
-watchdog(25);
+watchdog(15);
 
 $SIG{ALRM} = sub {
     die "Alarm!\n";
@@ -43,10 +41,8 @@ is($@, "Alarm!\n", 'after the second loop');
 SKIP: {
     skip('We can\'t test blocking without sigprocmask', 17)
 	if is_miniperl() || !$Config{d_sigprocmask};
-    skip("This doesn\'t work on $^O threaded builds RT#88814", 17)
-        if ($^O =~ /cygwin/ && $Config{useithreads});
-    skip("This doesn\'t work on $^O version $Config{osvers} RT#88814", 17)
-        if ($^O eq "openbsd" && $Config{osvers} < 5.2);
+    skip('This doesn\'t work on $^O threaded builds RT#88814', 17)
+        if $^O =~ /openbsd|cygwin/ && $Config{useithreads};
 
     require POSIX;
     my $pending = POSIX::SigSet->new();
@@ -99,9 +95,7 @@ TODO:
 	# of a reliable way to probe for this, so for now, just skip the
 	# tests on production releases
 	skip("some OSes hang here", 3) if (int($]*1000) & 1) == 0;
-    
-  SKIP: {
-	skip("Issues on Android", 3) if $^O =~ /android/;
+
 	my $action = POSIX::SigAction->new(sub { $gotit--, die }, POSIX::SigSet->new, 0);
 	POSIX::sigaction(&POSIX::SIGALRM, $action);
 	eval {
@@ -113,7 +107,6 @@ TODO:
 	} for 1..2;
 	is $gotit, 0, 'Received both signals';
     }
-}
 }
 
 SKIP: {
@@ -153,17 +146,4 @@ like $@, qr/No such hook: __DIE__\\0whoops at/;
 
     $SIG{"KILL\0"} = sub { 1 };
     like $w, qr/No such signal: SIGKILL\\0 at/, 'Arbitrary signal lookup through %SIG is clean';
-}
-
-# [perl #45173]
-{
-    my $int_called;
-    local $SIG{INT} = sub { $int_called = 1; };
-    $@ = "died";
-    is($@, "died");
-    kill 'INT', $$;
-    # this is needed to ensure signal delivery on MSWin32
-    sleep(1);
-    is($int_called, 1);
-    is($@, "died");
 }

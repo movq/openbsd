@@ -1,4 +1,4 @@
-use Test::More tests => 15;
+use Test::More tests => 7;
 
 BEGIN { use_ok('Time::Piece'); }
 
@@ -17,28 +17,3 @@ isa_ok($g, 'Time::Piece', 'current gmtime');
 
 my $l = localtime;
 isa_ok($l, 'Time::Piece', 'current localtime');
-
-#without export
-$g = Time::Piece::gmtime;
-isa_ok($g, 'Time::Piece', 'fully qualified gmtime');
-
-$l = Time::Piece::localtime;
-isa_ok($l, 'Time::Piece', 'full qualified localtime');
-
-#via new
-$l = Time::Piece->new(315532800);
-isa_ok($l, 'Time::Piece', 'custom localtime via new');
-
-#via new again
-$l = $l->new();
-isa_ok($l, 'Time::Piece', 'custom localtime via new again');
-
-#via clone
-my $l_clone = Time::Piece->new($l);
-isa_ok($l, 'Time::Piece', 'custom localtime via clone');
-cmp_ok("$l_clone", 'eq', "$l", 'Clones match');
-
-#via clone with gmtime
-my $g_clone = Time::Piece->new($g);
-isa_ok($g, 'Time::Piece', 'custom gmtime via clone');
-cmp_ok("$g_clone", 'eq', "$g", 'Clones match');

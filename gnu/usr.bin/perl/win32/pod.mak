@@ -1,733 +1,272 @@
-HTMLROOT = /	# Change this to fix cross-references in HTML
-POD2HTML_ARGS = --htmlroot=$(HTMLROOT) --podroot=.. --podpath=pod:lib:ext:vms
-POD2HTML = ../ext/Pod-Html/pod2html
-POD2MAN = ../cpan/podlators/pod2man
-POD2TEXT = ../cpan/podlators/pod2text
-PODCHECKER = ../cpan/Pod-Parser/podchecker
+CONVERTERS = pod2html pod2latex pod2man pod2text checkpods
 
-all: html
+HTMLROOT = /	# Change this to fix cross-references in HTML
+POD2HTML = pod2html \
+	    --htmlroot=$(HTMLROOT) \
+	    --podroot=.. --podpath=pod:lib:ext:vms \
+	    --libpods=perlfunc:perlguts:perlvar:perlrun:perlop
+
+all: $(CONVERTERS) html
 
 PERL = ..\miniperl.exe
-REALPERL = ..\perl.exe
+PL2BAT = ..\win32\bin\pl2bat.pl
 
-ICWD = -I..\dist\Cwd
-
-POD = perl.pod	\
-	perl5004delta.pod	\
-	perl5005delta.pod	\
-	perl5100delta.pod	\
-	perl5101delta.pod	\
-	perl5120delta.pod	\
-	perl5121delta.pod	\
-	perl5122delta.pod	\
-	perl5123delta.pod	\
-	perl5124delta.pod	\
-	perl5125delta.pod	\
-	perl5140delta.pod	\
-	perl5141delta.pod	\
-	perl5142delta.pod	\
-	perl5143delta.pod	\
-	perl5144delta.pod	\
-	perl5160delta.pod	\
-	perl5161delta.pod	\
-	perl5162delta.pod	\
-	perl5163delta.pod	\
-	perl5180delta.pod	\
-	perl5181delta.pod	\
-	perl5182delta.pod	\
-	perl5184delta.pod	\
-	perl5200delta.pod	\
-	perl5201delta.pod	\
-	perl5202delta.pod	\
-	perl5203delta.pod	\
-	perl5220delta.pod	\
-	perl5221delta.pod	\
-	perl5222delta.pod	\
-	perl5223delta.pod	\
-	perl5224delta.pod	\
-	perl5240delta.pod	\
-	perl5241delta.pod	\
-	perl5242delta.pod	\
-	perl5243delta.pod	\
-	perl5244delta.pod	\
-	perl5260delta.pod	\
-	perl5261delta.pod	\
-	perl5262delta.pod	\
-	perl5263delta.pod	\
-	perl5280delta.pod	\
-	perl5281delta.pod	\
-	perl5282delta.pod	\
-	perl5283delta.pod	\
-	perl5300delta.pod	\
-	perl5301delta.pod	\
-	perl5302delta.pod	\
-	perl5303delta.pod	\
-	perl5320delta.pod	\
-	perl5321delta.pod	\
-	perl5340delta.pod	\
-	perl5341delta.pod	\
-	perl5342delta.pod	\
-	perl5343delta.pod	\
-	perl5360delta.pod	\
-	perl5361delta.pod	\
-	perl5362delta.pod	\
-	perl5363delta.pod	\
-	perl561delta.pod	\
-	perl56delta.pod	\
-	perl581delta.pod	\
-	perl582delta.pod	\
-	perl583delta.pod	\
-	perl584delta.pod	\
-	perl585delta.pod	\
-	perl586delta.pod	\
-	perl587delta.pod	\
-	perl588delta.pod	\
-	perl589delta.pod	\
-	perl58delta.pod	\
-	perlapi.pod	\
-	perlapio.pod	\
-	perlartistic.pod	\
-	perlbook.pod	\
-	perlboot.pod	\
-	perlbot.pod	\
-	perlcall.pod	\
-	perlcheat.pod	\
-	perlclib.pod	\
-	perlcommunity.pod	\
-	perldata.pod	\
-	perldbmfilter.pod	\
-	perldebguts.pod	\
-	perldebtut.pod	\
-	perldebug.pod	\
+POD = \
+	perl.pod	\
 	perldelta.pod	\
-	perldeprecation.pod	\
-	perldiag.pod	\
-	perldocstyle.pod	\
-	perldsc.pod	\
-	perldtrace.pod	\
-	perlebcdic.pod	\
-	perlembed.pod	\
-	perlexperiment.pod	\
-	perlfilter.pod	\
-	perlfork.pod	\
-	perlform.pod	\
-	perlfunc.pod	\
-	perlgit.pod	\
-	perlgov.pod	\
-	perlgpl.pod	\
-	perlguts.pod	\
-	perlhack.pod	\
-	perlhacktips.pod	\
-	perlhacktut.pod	\
-	perlhist.pod	\
-	perlintern.pod	\
-	perlinterp.pod	\
-	perlintro.pod	\
-	perliol.pod	\
-	perlipc.pod	\
-	perllexwarn.pod	\
-	perllocale.pod	\
-	perllol.pod	\
-	perlmod.pod	\
-	perlmodinstall.pod	\
-	perlmodlib.pod	\
-	perlmodstyle.pod	\
-	perlmroapi.pod	\
-	perlnewmod.pod	\
-	perlnumber.pod	\
-	perlobj.pod	\
-	perlootut.pod	\
-	perlop.pod	\
-	perlopentut.pod	\
-	perlpacktut.pod	\
-	perlperf.pod	\
-	perlpod.pod	\
-	perlpodspec.pod	\
-	perlpodstyle.pod	\
-	perlpolicy.pod	\
-	perlport.pod	\
-	perlpragma.pod	\
-	perlre.pod	\
-	perlreapi.pod	\
-	perlrebackslash.pod	\
-	perlrecharclass.pod	\
-	perlref.pod	\
-	perlreftut.pod	\
-	perlreguts.pod	\
-	perlrepository.pod	\
-	perlrequick.pod	\
-	perlreref.pod	\
-	perlretut.pod	\
-	perlrun.pod	\
-	perlsec.pod	\
-	perlsecpolicy.pod	\
-	perlsource.pod	\
-	perlstyle.pod	\
-	perlsub.pod	\
+	perldata.pod	\
 	perlsyn.pod	\
-	perlthrtut.pod	\
-	perltie.pod	\
-	perltoc.pod	\
-	perltodo.pod	\
-	perltooc.pod	\
-	perltoot.pod	\
-	perltrap.pod	\
-	perlunicode.pod	\
-	perlunicook.pod	\
-	perlunifaq.pod	\
-	perluniintro.pod	\
-	perluniprops.pod	\
-	perlunitut.pod	\
-	perlutil.pod	\
+	perlop.pod	\
+	perlre.pod	\
+	perlrun.pod	\
+	perlfunc.pod	\
 	perlvar.pod	\
-	perlvms.pod
+	perlsub.pod	\
+	perlmod.pod	\
+	perlform.pod	\
+	perllocale.pod	\
+	perlref.pod	\
+	perldsc.pod	\
+	perllol.pod	\
+	perltoot.pod	\
+	perlobj.pod	\
+	perltie.pod	\
+	perlbot.pod	\
+	perlipc.pod	\
+	perldebug.pod	\
+	perldiag.pod	\
+	perlsec.pod	\
+	perltrap.pod	\
+	perlstyle.pod	\
+	perlpod.pod	\
+	perlbook.pod	\
+	perlembed.pod	\
+	perlapio.pod	\
+	perlxs.pod	\
+	perlxstut.pod	\
+	perlguts.pod	\
+	perlcall.pod	\
+	perlfaq.pod	\
+	perlfaq1.pod	\
+	perlfaq2.pod	\
+	perlfaq3.pod	\
+	perlfaq4.pod	\
+	perlfaq5.pod	\
+	perlfaq6.pod	\
+	perlfaq7.pod	\
+	perlfaq8.pod	\
+	perlfaq9.pod	\
+	perltoc.pod
 
-MAN = perl.man	\
-	perl5004delta.man	\
-	perl5005delta.man	\
-	perl5100delta.man	\
-	perl5101delta.man	\
-	perl5120delta.man	\
-	perl5121delta.man	\
-	perl5122delta.man	\
-	perl5123delta.man	\
-	perl5124delta.man	\
-	perl5125delta.man	\
-	perl5140delta.man	\
-	perl5141delta.man	\
-	perl5142delta.man	\
-	perl5143delta.man	\
-	perl5144delta.man	\
-	perl5160delta.man	\
-	perl5161delta.man	\
-	perl5162delta.man	\
-	perl5163delta.man	\
-	perl5180delta.man	\
-	perl5181delta.man	\
-	perl5182delta.man	\
-	perl5184delta.man	\
-	perl5200delta.man	\
-	perl5201delta.man	\
-	perl5202delta.man	\
-	perl5203delta.man	\
-	perl5220delta.man	\
-	perl5221delta.man	\
-	perl5222delta.man	\
-	perl5223delta.man	\
-	perl5224delta.man	\
-	perl5240delta.man	\
-	perl5241delta.man	\
-	perl5242delta.man	\
-	perl5243delta.man	\
-	perl5244delta.man	\
-	perl5260delta.man	\
-	perl5261delta.man	\
-	perl5262delta.man	\
-	perl5263delta.man	\
-	perl5280delta.man	\
-	perl5281delta.man	\
-	perl5282delta.man	\
-	perl5283delta.man	\
-	perl5300delta.man	\
-	perl5301delta.man	\
-	perl5302delta.man	\
-	perl5303delta.man	\
-	perl5320delta.man	\
-	perl5321delta.man	\
-	perl5340delta.man	\
-	perl5341delta.man	\
-	perl5342delta.man	\
-	perl5343delta.man	\
-	perl5360delta.man	\
-	perl5361delta.man	\
-	perl5362delta.man	\
-	perl5363delta.man	\
-	perl561delta.man	\
-	perl56delta.man	\
-	perl581delta.man	\
-	perl582delta.man	\
-	perl583delta.man	\
-	perl584delta.man	\
-	perl585delta.man	\
-	perl586delta.man	\
-	perl587delta.man	\
-	perl588delta.man	\
-	perl589delta.man	\
-	perl58delta.man	\
-	perlapi.man	\
-	perlapio.man	\
-	perlartistic.man	\
-	perlbook.man	\
-	perlboot.man	\
-	perlbot.man	\
-	perlcall.man	\
-	perlcheat.man	\
-	perlclib.man	\
-	perlcommunity.man	\
-	perldata.man	\
-	perldbmfilter.man	\
-	perldebguts.man	\
-	perldebtut.man	\
-	perldebug.man	\
+MAN = \
+	perl.man	\
 	perldelta.man	\
-	perldeprecation.man	\
-	perldiag.man	\
-	perldocstyle.man	\
-	perldsc.man	\
-	perldtrace.man	\
-	perlebcdic.man	\
-	perlembed.man	\
-	perlexperiment.man	\
-	perlfilter.man	\
-	perlfork.man	\
-	perlform.man	\
-	perlfunc.man	\
-	perlgit.man	\
-	perlgov.man	\
-	perlgpl.man	\
-	perlguts.man	\
-	perlhack.man	\
-	perlhacktips.man	\
-	perlhacktut.man	\
-	perlhist.man	\
-	perlintern.man	\
-	perlinterp.man	\
-	perlintro.man	\
-	perliol.man	\
-	perlipc.man	\
-	perllexwarn.man	\
-	perllocale.man	\
-	perllol.man	\
-	perlmod.man	\
-	perlmodinstall.man	\
-	perlmodlib.man	\
-	perlmodstyle.man	\
-	perlmroapi.man	\
-	perlnewmod.man	\
-	perlnumber.man	\
-	perlobj.man	\
-	perlootut.man	\
-	perlop.man	\
-	perlopentut.man	\
-	perlpacktut.man	\
-	perlperf.man	\
-	perlpod.man	\
-	perlpodspec.man	\
-	perlpodstyle.man	\
-	perlpolicy.man	\
-	perlport.man	\
-	perlpragma.man	\
-	perlre.man	\
-	perlreapi.man	\
-	perlrebackslash.man	\
-	perlrecharclass.man	\
-	perlref.man	\
-	perlreftut.man	\
-	perlreguts.man	\
-	perlrepository.man	\
-	perlrequick.man	\
-	perlreref.man	\
-	perlretut.man	\
-	perlrun.man	\
-	perlsec.man	\
-	perlsecpolicy.man	\
-	perlsource.man	\
-	perlstyle.man	\
-	perlsub.man	\
+	perldata.man	\
 	perlsyn.man	\
-	perlthrtut.man	\
-	perltie.man	\
-	perltoc.man	\
-	perltodo.man	\
-	perltooc.man	\
-	perltoot.man	\
-	perltrap.man	\
-	perlunicode.man	\
-	perlunicook.man	\
-	perlunifaq.man	\
-	perluniintro.man	\
-	perluniprops.man	\
-	perlunitut.man	\
-	perlutil.man	\
+	perlop.man	\
+	perlre.man	\
+	perlrun.man	\
+	perlfunc.man	\
 	perlvar.man	\
-	perlvms.man
+	perlsub.man	\
+	perlmod.man	\
+	perlform.man	\
+	perllocale.man	\
+	perlref.man	\
+	perldsc.man	\
+	perllol.man	\
+	perltoot.man	\
+	perlobj.man	\
+	perltie.man	\
+	perlbot.man	\
+	perlipc.man	\
+	perldebug.man	\
+	perldiag.man	\
+	perlsec.man	\
+	perltrap.man	\
+	perlstyle.man	\
+	perlpod.man	\
+	perlbook.man	\
+	perlembed.man	\
+	perlapio.man	\
+	perlxs.man	\
+	perlxstut.man	\
+	perlguts.man	\
+	perlcall.man	\
+	perlfaq.man	\
+	perlfaq1.man	\
+	perlfaq2.man	\
+	perlfaq3.man	\
+	perlfaq4.man	\
+	perlfaq5.man	\
+	perlfaq6.man	\
+	perlfaq7.man	\
+	perlfaq8.man	\
+	perlfaq9.man	\
+	perltoc.man
 
-HTML = perl.html	\
-	perl5004delta.html	\
-	perl5005delta.html	\
-	perl5100delta.html	\
-	perl5101delta.html	\
-	perl5120delta.html	\
-	perl5121delta.html	\
-	perl5122delta.html	\
-	perl5123delta.html	\
-	perl5124delta.html	\
-	perl5125delta.html	\
-	perl5140delta.html	\
-	perl5141delta.html	\
-	perl5142delta.html	\
-	perl5143delta.html	\
-	perl5144delta.html	\
-	perl5160delta.html	\
-	perl5161delta.html	\
-	perl5162delta.html	\
-	perl5163delta.html	\
-	perl5180delta.html	\
-	perl5181delta.html	\
-	perl5182delta.html	\
-	perl5184delta.html	\
-	perl5200delta.html	\
-	perl5201delta.html	\
-	perl5202delta.html	\
-	perl5203delta.html	\
-	perl5220delta.html	\
-	perl5221delta.html	\
-	perl5222delta.html	\
-	perl5223delta.html	\
-	perl5224delta.html	\
-	perl5240delta.html	\
-	perl5241delta.html	\
-	perl5242delta.html	\
-	perl5243delta.html	\
-	perl5244delta.html	\
-	perl5260delta.html	\
-	perl5261delta.html	\
-	perl5262delta.html	\
-	perl5263delta.html	\
-	perl5280delta.html	\
-	perl5281delta.html	\
-	perl5282delta.html	\
-	perl5283delta.html	\
-	perl5300delta.html	\
-	perl5301delta.html	\
-	perl5302delta.html	\
-	perl5303delta.html	\
-	perl5320delta.html	\
-	perl5321delta.html	\
-	perl5340delta.html	\
-	perl5341delta.html	\
-	perl5342delta.html	\
-	perl5343delta.html	\
-	perl5360delta.html	\
-	perl5361delta.html	\
-	perl5362delta.html	\
-	perl5363delta.html	\
-	perl561delta.html	\
-	perl56delta.html	\
-	perl581delta.html	\
-	perl582delta.html	\
-	perl583delta.html	\
-	perl584delta.html	\
-	perl585delta.html	\
-	perl586delta.html	\
-	perl587delta.html	\
-	perl588delta.html	\
-	perl589delta.html	\
-	perl58delta.html	\
-	perlapi.html	\
-	perlapio.html	\
-	perlartistic.html	\
-	perlbook.html	\
-	perlboot.html	\
-	perlbot.html	\
-	perlcall.html	\
-	perlcheat.html	\
-	perlclib.html	\
-	perlcommunity.html	\
-	perldata.html	\
-	perldbmfilter.html	\
-	perldebguts.html	\
-	perldebtut.html	\
-	perldebug.html	\
+HTML = \
+	perl.html	\
 	perldelta.html	\
-	perldeprecation.html	\
-	perldiag.html	\
-	perldocstyle.html	\
-	perldsc.html	\
-	perldtrace.html	\
-	perlebcdic.html	\
-	perlembed.html	\
-	perlexperiment.html	\
-	perlfilter.html	\
-	perlfork.html	\
-	perlform.html	\
-	perlfunc.html	\
-	perlgit.html	\
-	perlgov.html	\
-	perlgpl.html	\
-	perlguts.html	\
-	perlhack.html	\
-	perlhacktips.html	\
-	perlhacktut.html	\
-	perlhist.html	\
-	perlintern.html	\
-	perlinterp.html	\
-	perlintro.html	\
-	perliol.html	\
-	perlipc.html	\
-	perllexwarn.html	\
-	perllocale.html	\
-	perllol.html	\
-	perlmod.html	\
-	perlmodinstall.html	\
-	perlmodlib.html	\
-	perlmodstyle.html	\
-	perlmroapi.html	\
-	perlnewmod.html	\
-	perlnumber.html	\
-	perlobj.html	\
-	perlootut.html	\
-	perlop.html	\
-	perlopentut.html	\
-	perlpacktut.html	\
-	perlperf.html	\
-	perlpod.html	\
-	perlpodspec.html	\
-	perlpodstyle.html	\
-	perlpolicy.html	\
-	perlport.html	\
-	perlpragma.html	\
-	perlre.html	\
-	perlreapi.html	\
-	perlrebackslash.html	\
-	perlrecharclass.html	\
-	perlref.html	\
-	perlreftut.html	\
-	perlreguts.html	\
-	perlrepository.html	\
-	perlrequick.html	\
-	perlreref.html	\
-	perlretut.html	\
-	perlrun.html	\
-	perlsec.html	\
-	perlsecpolicy.html	\
-	perlsource.html	\
-	perlstyle.html	\
-	perlsub.html	\
+	perldata.html	\
 	perlsyn.html	\
-	perlthrtut.html	\
-	perltie.html	\
-	perltodo.html	\
-	perltooc.html	\
-	perltoot.html	\
-	perltrap.html	\
-	perlunicode.html	\
-	perlunicook.html	\
-	perlunifaq.html	\
-	perluniintro.html	\
-	perluniprops.html	\
-	perlunitut.html	\
-	perlutil.html	\
+	perlop.html	\
+	perlre.html	\
+	perlrun.html	\
+	perlfunc.html	\
 	perlvar.html	\
-	perlvms.html
+	perlsub.html	\
+	perlmod.html	\
+	perlform.html	\
+	perllocale.html	\
+	perlref.html	\
+	perldsc.html	\
+	perllol.html	\
+	perltoot.html	\
+	perlobj.html	\
+	perltie.html	\
+	perlbot.html	\
+	perlipc.html	\
+	perldebug.html	\
+	perldiag.html	\
+	perlsec.html	\
+	perltrap.html	\
+	perlstyle.html	\
+	perlpod.html	\
+	perlbook.html	\
+	perlembed.html	\
+	perlapio.html	\
+	perlxs.html	\
+	perlxstut.html	\
+	perlguts.html	\
+	perlcall.html	\
+	perlfaq.html	\
+	perlfaq1.html	\
+	perlfaq2.html	\
+	perlfaq3.html	\
+	perlfaq4.html	\
+	perlfaq5.html	\
+	perlfaq6.html	\
+	perlfaq7.html	\
+	perlfaq8.html	\
+	perlfaq9.html
 # not perltoc.html
 
-TEX = perl.tex	\
-	perl5004delta.tex	\
-	perl5005delta.tex	\
-	perl5100delta.tex	\
-	perl5101delta.tex	\
-	perl5120delta.tex	\
-	perl5121delta.tex	\
-	perl5122delta.tex	\
-	perl5123delta.tex	\
-	perl5124delta.tex	\
-	perl5125delta.tex	\
-	perl5140delta.tex	\
-	perl5141delta.tex	\
-	perl5142delta.tex	\
-	perl5143delta.tex	\
-	perl5144delta.tex	\
-	perl5160delta.tex	\
-	perl5161delta.tex	\
-	perl5162delta.tex	\
-	perl5163delta.tex	\
-	perl5180delta.tex	\
-	perl5181delta.tex	\
-	perl5182delta.tex	\
-	perl5184delta.tex	\
-	perl5200delta.tex	\
-	perl5201delta.tex	\
-	perl5202delta.tex	\
-	perl5203delta.tex	\
-	perl5220delta.tex	\
-	perl5221delta.tex	\
-	perl5222delta.tex	\
-	perl5223delta.tex	\
-	perl5224delta.tex	\
-	perl5240delta.tex	\
-	perl5241delta.tex	\
-	perl5242delta.tex	\
-	perl5243delta.tex	\
-	perl5244delta.tex	\
-	perl5260delta.tex	\
-	perl5261delta.tex	\
-	perl5262delta.tex	\
-	perl5263delta.tex	\
-	perl5280delta.tex	\
-	perl5281delta.tex	\
-	perl5282delta.tex	\
-	perl5283delta.tex	\
-	perl5300delta.tex	\
-	perl5301delta.tex	\
-	perl5302delta.tex	\
-	perl5303delta.tex	\
-	perl5320delta.tex	\
-	perl5321delta.tex	\
-	perl5340delta.tex	\
-	perl5341delta.tex	\
-	perl5342delta.tex	\
-	perl5343delta.tex	\
-	perl5360delta.tex	\
-	perl5361delta.tex	\
-	perl5362delta.tex	\
-	perl5363delta.tex	\
-	perl561delta.tex	\
-	perl56delta.tex	\
-	perl581delta.tex	\
-	perl582delta.tex	\
-	perl583delta.tex	\
-	perl584delta.tex	\
-	perl585delta.tex	\
-	perl586delta.tex	\
-	perl587delta.tex	\
-	perl588delta.tex	\
-	perl589delta.tex	\
-	perl58delta.tex	\
-	perlapi.tex	\
-	perlapio.tex	\
-	perlartistic.tex	\
-	perlbook.tex	\
-	perlboot.tex	\
-	perlbot.tex	\
-	perlcall.tex	\
-	perlcheat.tex	\
-	perlclib.tex	\
-	perlcommunity.tex	\
-	perldata.tex	\
-	perldbmfilter.tex	\
-	perldebguts.tex	\
-	perldebtut.tex	\
-	perldebug.tex	\
+TEX = \
+	perl.tex	\
 	perldelta.tex	\
-	perldeprecation.tex	\
-	perldiag.tex	\
-	perldocstyle.tex	\
-	perldsc.tex	\
-	perldtrace.tex	\
-	perlebcdic.tex	\
-	perlembed.tex	\
-	perlexperiment.tex	\
-	perlfilter.tex	\
-	perlfork.tex	\
-	perlform.tex	\
-	perlfunc.tex	\
-	perlgit.tex	\
-	perlgov.tex	\
-	perlgpl.tex	\
-	perlguts.tex	\
-	perlhack.tex	\
-	perlhacktips.tex	\
-	perlhacktut.tex	\
-	perlhist.tex	\
-	perlintern.tex	\
-	perlinterp.tex	\
-	perlintro.tex	\
-	perliol.tex	\
-	perlipc.tex	\
-	perllexwarn.tex	\
-	perllocale.tex	\
-	perllol.tex	\
-	perlmod.tex	\
-	perlmodinstall.tex	\
-	perlmodlib.tex	\
-	perlmodstyle.tex	\
-	perlmroapi.tex	\
-	perlnewmod.tex	\
-	perlnumber.tex	\
-	perlobj.tex	\
-	perlootut.tex	\
-	perlop.tex	\
-	perlopentut.tex	\
-	perlpacktut.tex	\
-	perlperf.tex	\
-	perlpod.tex	\
-	perlpodspec.tex	\
-	perlpodstyle.tex	\
-	perlpolicy.tex	\
-	perlport.tex	\
-	perlpragma.tex	\
-	perlre.tex	\
-	perlreapi.tex	\
-	perlrebackslash.tex	\
-	perlrecharclass.tex	\
-	perlref.tex	\
-	perlreftut.tex	\
-	perlreguts.tex	\
-	perlrepository.tex	\
-	perlrequick.tex	\
-	perlreref.tex	\
-	perlretut.tex	\
-	perlrun.tex	\
-	perlsec.tex	\
-	perlsecpolicy.tex	\
-	perlsource.tex	\
-	perlstyle.tex	\
-	perlsub.tex	\
+	perldata.tex	\
 	perlsyn.tex	\
-	perlthrtut.tex	\
-	perltie.tex	\
-	perltoc.tex	\
-	perltodo.tex	\
-	perltooc.tex	\
-	perltoot.tex	\
-	perltrap.tex	\
-	perlunicode.tex	\
-	perlunicook.tex	\
-	perlunifaq.tex	\
-	perluniintro.tex	\
-	perluniprops.tex	\
-	perlunitut.tex	\
-	perlutil.tex	\
+	perlop.tex	\
+	perlre.tex	\
+	perlrun.tex	\
+	perlfunc.tex	\
 	perlvar.tex	\
-	perlvms.tex
+	perlsub.tex	\
+	perlmod.tex	\
+	perlform.tex	\
+	perllocale.tex	\
+	perlref.tex	\
+	perldsc.tex	\
+	perllol.tex	\
+	perltoot.tex	\
+	perlobj.tex	\
+	perltie.tex	\
+	perlbot.tex	\
+	perlipc.tex	\
+	perldebug.tex	\
+	perldiag.tex	\
+	perlsec.tex	\
+	perltrap.tex	\
+	perlstyle.tex	\
+	perlpod.tex	\
+	perlbook.tex	\
+	perlembed.tex	\
+	perlapio.tex	\
+	perlxs.tex	\
+	perlxstut.tex	\
+	perlguts.tex	\
+	perlcall.tex	\
+	perlfaq.tex	\
+	perlfaq1.tex	\
+	perlfaq2.tex	\
+	perlfaq3.tex	\
+	perlfaq4.tex	\
+	perlfaq5.tex	\
+	perlfaq6.tex	\
+	perlfaq7.tex	\
+	perlfaq8.tex	\
+	perlfaq9.tex	\
+	perltoc.tex
 
-man:	$(POD2MAN) $(MAN)
+man:	pod2man $(MAN)
 
-html:	$(POD2HTML) $(HTML)
+html:	pod2html $(HTML)
+
+tex:	pod2latex $(TEX)
 
 toc:
-	$(PERL) -I../lib buildtoc >perltoc.pod
+	$(PERL) -I..\lib buildtoc >perltoc.pod
 
 .SUFFIXES: .pm .pod
 
 .SUFFIXES: .man
 
 .pm.man:
-	$(PERL) -I../lib $(POD2MAN) $*.pm >$*.man
+	$(PERL) -I..\lib pod2man $*.pm >$*.man
 
 .pod.man:
-	$(PERL) -I../lib $(POD2MAN) $*.pod >$*.man
+	$(PERL) -I..\lib pod2man $*.pod >$*.man
 
 .SUFFIXES: .html
 
 .pm.html:
-	$(PERL) -I../lib $(POD2HTML) $(POD2HTML_ARGS) --infile=$*.pm --outfile=$*.html
+	$(PERL) -I..\lib $(POD2HTML) --infile=$*.pm --outfile=$*.html
 
 .pod.html:
-	$(PERL) -I../lib $(POD2HTML) $(POD2HTML_ARGS) --infile=$*.pod --outfile=$*.html
+	$(PERL) -I..\lib $(POD2HTML) --infile=$*.pod --outfile=$*.html
+
+.SUFFIXES: .tex
+
+.pm.tex:
+	$(PERL) -I..\lib pod2latex $*.pm
+
+.pod.tex:
+	$(PERL) -I..\lib pod2latex $*.pod
 
 clean:
-	rm -f $(MAN)
-	rm -f $(HTML)
-	rm -f $(TEX)
-	rm -f pod2html-*cache
-	rm -f *.aux *.log *.exe
+	del /f $(MAN) $(HTML) $(TEX)
+	del /f pod2html-*cache
+	del /f *.aux *.log
 
 realclean:	clean
+	del /f $(CONVERTERS)
 
 distclean:	realclean
 
-check:	$(PODCHECKER)
+check:	checkpods
 	@echo "checking..."; \
-	$(PERL) -I../lib $(PODCHECKER) $(POD)
+	$(PERL) -I..\lib checkpods $(POD)
+
+# Dependencies.
+pod2latex:	pod2latex.PL ..\lib\Config.pm
+	$(PERL) -I..\lib pod2latex.PL
+	$(PERL) $(PL2BAT) pod2latex
+
+pod2html:	pod2html.PL ..\lib\Config.pm
+	$(PERL) -I..\lib pod2html.PL
+	$(PERL) $(PL2BAT) pod2html
+
+pod2man:	pod2man.PL ..\lib\Config.pm
+	$(PERL) -I..\lib pod2man.PL
+	$(PERL) $(PL2BAT) pod2man
+
+pod2text:	pod2text.PL ..\lib\Config.pm
+	$(PERL) -I..\lib pod2text.PL
+	$(PERL) $(PL2BAT) pod2text
+
+checkpods:	checkpods.PL ..\lib\Config.pm
+	$(PERL) -I..\lib checkpods.PL
+	$(PERL) $(PL2BAT) checkpods
+
+

@@ -7,7 +7,7 @@ d_voidsig=define
 d_charsprf=undef
 
 case "$cc" in
-*gcc*) ccflags="$ccflags -D_BSD_TYPES" ;;
+*gcc) ccflags="$ccflags -D_BSD_TYPES" ;;
 *) ccflags="$ccflags -ansiposix -signed" ;;
 esac
 
@@ -17,29 +17,8 @@ esac
 # I don't know if they affect versions of perl other than 5.000 or
 # versions of IRIX other than 4.0.4.
 #
-cat <<'EOM' >&4
+cat <<'EOM'
 If you have problems, you might have try including
-	-cckr
+	-DSTANDARD_C -cckr 
 in ccflags.
 EOM
-
-case "$usethreads" in
-$define|true|[yY]*)
-        cat >&4 <<EOM
-IRIX `uname -r` does not support POSIX threads.
-You should upgrade to at least IRIX 6.2 with pthread patches.
-EOM
-	exit 1
-	;;
-esac
-
-case " $use64bits $use64bitint $use64bitall " in
-*" $define "*|*" true "*|*" [yY] "*)
-	cat >&4 <<EOM
-IRIX `uname -r` does not support 64-bit types.
-You should upgrade to at least IRIX 6.2.
-Cannot continue, aborting.
-EOM
-	exit 1
-esac
-

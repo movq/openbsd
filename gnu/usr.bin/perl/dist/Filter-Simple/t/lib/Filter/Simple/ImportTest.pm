@@ -1,6 +1,6 @@
 package Filter::Simple::ImportTest;
 
-use parent qw(Exporter);
+use base 'Exporter';
 @EXPORT = qw(say);
 
 sub say { print @_ }

@@ -1,6 +1,12 @@
 ################################################################################
 #
-#  Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz <mhx@cpan.org>.
+#  $Revision: 18 $
+#  $Author: mhx $
+#  $Date: 2007/10/15 20:29:08 +0200 $
+#
+################################################################################
+#
+#  Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz <mhx@cpan.org>.
 #  Version 1.x, Copyright (C) 1997, Graham Barr <gbarr@pobox.com>.
 #
 #  This program is free software; you can redistribute it and/or
@@ -16,7 +22,8 @@ use strict;
 use vars qw($VERSION);
 use Carp;
 
-$VERSION = '2.09';
+$VERSION = do { my @r = '$Snapshot: /IPC-SysV/2.01 $' =~ /(\d+\.\d+(?:_\d+)?)/; @r ? $r[0] : '9.99' };
+$VERSION = eval $VERSION;
 
 # Figure out if we have support for native sized types
 my $N = do { my $foo = eval { pack "L!", 0 }; $@ ? '' : '!' };
@@ -39,7 +46,7 @@ my $N = do { my $foo = eval { pack "L!", 0 }; $@ ? '' : '!' };
 }
 
 sub new {
-    @_ == 4 || croak __PACKAGE__ . '->new( KEY, NSEMS, FLAGS )';
+    @_ == 4 || croak 'new ' . __PACKAGE__ . '( KEY, NSEMS, FLAGS )';
     my $class = shift;
 
     my $id = semget($_[0],$_[1],$_[2]);
@@ -56,9 +63,7 @@ sub id {
 
 sub remove {
     my $self = shift;
-    my $result = semctl($$self,0,IPC_RMID,0);
-    undef $$self;
-    $result;
+    (semctl($$self,0,IPC_RMID,0), undef $$self)[0];
 }
 
 sub getncnt {
@@ -242,7 +247,7 @@ Returns the system identifier for the semaphore set.
 C<OPLIST> is a list of operations to pass to C<semop>. C<OPLIST> is
 a concatenation of smaller lists, each which has three values. The
 first is the semaphore number, the second is the operation and the last
-is a flags value. See L<semop(2)> for more details. For example
+is a flags value. See L<semop> for more details. For example
 
     $sem->op(
 	0, -1, IPC_NOWAIT,
@@ -295,7 +300,7 @@ of these fields see your system documentation.
 
 =head1 SEE ALSO
 
-L<IPC::SysV>, L<Class::Struct>, L<semget(2)>, L<semctl(2)>, L<semop(2)>
+L<IPC::SysV>, L<Class::Struct>, L<semget>, L<semctl>, L<semop> 
 
 =head1 AUTHORS
 
@@ -304,7 +309,7 @@ Marcus Holland-Moritz <mhx@cpan.org>
 
 =head1 COPYRIGHT
 
-Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz.
+Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz.
 
 Version 1.x, Copyright (c) 1997, Graham Barr.
 

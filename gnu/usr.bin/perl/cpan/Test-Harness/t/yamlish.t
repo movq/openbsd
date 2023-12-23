@@ -1,7 +1,6 @@
 #!perl -w
 
 use strict;
-use warnings;
 use lib 't/lib';
 
 use Test::More;
@@ -136,74 +135,6 @@ BEGIN {
             out => {
                 one => { two => { three => '3', four => '4' }, five => '5' },
                 six => '6'
-            },
-        },
-        {   name => 'Edge cases for hash start vs. undefined scalar 1',
-            in   => [
-                '---',
-                'one:',
-                '  five: 5',
-                '  two:',
-                '  four: 4',
-                '  three: 3',
-                'six: 6',
-                '...',
-            ],
-            out => {
-                one => { two => undef, three => '3', four => '4', five => '5' },
-                six => '6'
-            },
-        },
-        {   name => 'Edge cases for hash start vs. undefined scalar 2',
-            in   => [
-                '---',
-                'one:',
-                '  five: 5',
-                '  two: ~',
-                '  four: 4',
-                '  three: 3',
-                'six: 6',
-                '...',
-            ],
-            out => {
-                one => { two => undef, three => '3', four => '4', five => '5' },
-                six => '6'
-            },
-        },
-        {   name => 'Edge cases for hash start vs. undefined scalar 3',
-            in   => [
-                '---',
-                'two:',
-                'four: 4',
-                'three: 3',
-                '...',
-            ],
-            out => {
-                two => undef, three => '3', four => '4',
-            },
-        },
-        {   name => 'Edge cases for hash start vs. undefined scalar 4',
-            in   => [
-                '---',
-                'two:',
-                '  four: 4',
-                '  three: 3',
-                '...',
-            ],
-            out => {
-                two => { three => '3', four => '4' },
-            },
-        },
-        {   name => 'Edge cases for hash start vs. undefined scalar 5',
-            in   => [
-                '---',
-                'two:',
-                '- four: 4',
-                '- three: 3',
-                '...',
-            ],
-            out => {
-                two => [ { four => '4' }, { three => '3' } ],
             },
         },
         {   name => 'Space after colon',
@@ -483,25 +414,6 @@ BEGIN {
             ],
             name => 'Regression: only_spaces'
         },
-        {   out => ['first','second'],
-            in  => [
-                '--- ',
-                '- first ',
-                '- second ',
-                '...'
-            ],
-            name => "Space after header for array",
-        },
-        {   out => {'key' => [{'value' => {'key2' => 'value2'}}]},
-            in  => [
-                '--- ',
-                'key: ',
-                '- value: ',
-                '    key2: value2 ',
-                '... '
-            ],
-            name => "Space after header for hash",
-        },
         {   out => [
                 undef,
                 {   'foo'  => 'bar',
@@ -519,7 +431,7 @@ BEGIN {
             ],
             name => 'Regression: inline_nested_hash'
         },
-        {   name => "Unprintables", # This is an ASCII centric test
+        {   name => "Unprintables",
             in   => [
                 "---",
                 "- \"\\z\\x01\\x02\\x03\\x04\\x05\\x06\\a\\x08\\t\\n\\v\\f\\r\\x0e\\x0f\"",

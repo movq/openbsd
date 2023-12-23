@@ -1,7 +1,7 @@
 package Filter::Simple::ExportTest;
 
 use Filter::Simple;
-use parent qw(Exporter);
+use base Exporter;
 
 @EXPORT_OK = qw(ok);
 

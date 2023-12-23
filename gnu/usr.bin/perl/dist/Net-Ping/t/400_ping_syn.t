@@ -1,10 +1,8 @@
-use strict;
-
 BEGIN {
   if ($ENV{PERL_CORE}) {
     unless ($ENV{PERL_TEST_Net_Ping}) {
       print "1..0 # Skip: network dependent test\n";
-      exit;
+        exit;
     }
   }
   unless (eval "require Socket") {
@@ -32,24 +30,28 @@ BEGIN {
 #
 # $ PERL_CORE=1 make test
 
-# Hopefully this is never a routeable host
-my $fail_ip = $ENV{NET_PING_FAIL_IP} || "172.29.249.249";
-
 # Try a few remote servers
-my %webs = (
-  $fail_ip => 0,
+my $webs = {
+  # Hopefully this is never a routeable host
+  "172.29.249.249" => 0,
 
   # Hopefully all these web ports are open
+  "www.geocities.com." => 1,
+  "www.freeservers.com." => 1,
   "yahoo.com." => 1,
   "www.yahoo.com." => 1,
   "www.about.com." => 1,
   "www.microsoft.com." => 1,
-);
+  "127.0.0.1" => 1,
+};
 
-use Test::More;
-plan tests => 4 + 2 * keys %webs;
+use strict;
+use Test;
+use Net::Ping;
+plan tests => ((keys %{ $webs }) * 2 + 3);
 
-use_ok('Net::Ping');
+# Everything loaded fine
+ok 1;
 
 my $can_alarm = eval {alarm 0; 1;};
 
@@ -59,55 +61,39 @@ sub Alarm {
 
 Alarm(50);
 $SIG{ALRM} = sub {
-  fail('Alarm timed out');
+  ok 0;
   die "TIMED OUT!";
 };
 
 my $p = new Net::Ping "syn", 10;
 
-isa_ok($p, 'Net::Ping', 'new() worked');
+# new() worked?
+ok !!$p;
 
 # Change to use the more common web port.
 # (Make sure getservbyname works in scalar context.)
-cmp_ok(($p->{port_num} = getservbyname("http", "tcp")), '>', 0, 'valid port');
+ok ($p -> {port_num} = getservbyname("http", "tcp"));
 
-# message_type can't be used
-eval {
-  $p->message_type();
-};
-like($@, qr/message type only supported on 'icmp' protocol/, "message_type() API only concern 'icmp' protocol");
-
-# check if network is up
-eval { $p->ping('www.google.com.'); };
-if ($@ =~ /getaddrinfo.*failed/) {
-  ok(1, "skip $@");
-  ok(1, "skip") for 0..12;
-  exit;
-}
-foreach my $host (keys %webs) {
+foreach my $host (keys %{ $webs }) {
   # ping() does dns resolution and
   # only sends the SYN at this point
   Alarm(50); # (Plenty for a DNS lookup)
-  is($p->ping($host), 1, "Can reach $host [" . ($p->{bad}->{$host} || "") . "]");
+  if (!ok $p -> ping($host)) {
+    print STDERR "CANNOT RESOLVE $host $p->{bad}->{$host}\n";
+  }
 }
 
-my $failed;
 Alarm(20);
 while (my $host = $p->ack()) {
-  next if $host eq 'www.google.com.';
-  $failed += !is($webs{$host}, 1, "supposed to be up: http://$host/");
-  delete $webs{$host};
+  if (!ok $webs->{$host}) {
+    print STDERR "SUPPOSED TO BE DOWN: http://$host/\n";
+  }
+  delete $webs->{$host};
 }
 
 Alarm(0);
-foreach my $host (keys %webs) {
-  $failed += !is($webs{$host}, 0,
-                "supposed to be down: http://$host/ [" . ($p->{bad}->{$host} || "") . "]");
-}
-
-if ($failed) {
-  diag ("NOTE: ",
-        "Network connectivity will be required for all tests to pass.\n",
-        "Firewalls may also cause some tests to fail, so test it ",
-        "on a clear network.");
+foreach my $host (keys %{ $webs }) {
+  if (!ok !$webs->{$host}) {
+    print STDERR "DOWN: http://$host/ [",($p->{bad}->{$host} || ""),"]\n";
+  }
 }

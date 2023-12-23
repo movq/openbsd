@@ -1,15 +1,24 @@
 #!./perl
 
-use strict;
-use warnings;
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+}
 
-use Test::More tests => 18;
+use Test::More tests => 13;
 
-use Config;
 use List::Util qw(sum);
 
 my $v = sum;
-is( $v, undef, 'no args');
+is( $v,	undef,	'no args');
 
 $v = sum(9);
 is( $v, 9, 'one arg');
@@ -27,9 +36,6 @@ is( $v, 0, 'variable arg');
 
 $v = sum(-3.5,3);
 is( $v, -0.5, 'real numbers');
-
-$v = sum(3,-3.5);
-is( $v, -0.5, 'initial integer, then real');
 
 my $one = Foo->new(1);
 my $two = Foo->new(2);
@@ -82,32 +88,10 @@ is($v, $v1 + 42 + 2, 'bigint + builtin int');
 
 {
   my $e1 = example->new(7, "test");
-  my $t = sum($e1, 7, 7);
+  $t = sum($e1, 7, 7);
   is($t, 21, 'overload returning non-overload');
   $t = sum(8, $e1, 8);
   is($t, 23, 'overload returning non-overload');
   $t = sum(9, 9, $e1);
   is($t, 25, 'overload returning non-overload');
-}
-
-SKIP: {
-  skip "IV is not at least 64bit", 4 unless $Config{ivsize} >= 8;
-
-  # Sum using NV will only preserve 53 bits of integer precision
-  my $t = sum(1152921504606846976, 1); # 1<<60, but Perl 5.6 does not compute constant correctly
-  cmp_ok($t, 'gt', 1152921504606846976, 'sum uses IV where it can'); # string comparison because Perl 5.6 does not compare it numerically correctly
-
-  SKIP: {
-    skip "known to fail on $]", 1 if $] le "5.006002";
-    $t = sum(1<<60, 1);
-    cmp_ok($t, '>', 1<<60, 'sum uses IV where it can');
-  }
-
-  my $min = -(1<<63);
-  my $max = 9223372036854775807; # (1<<63)-1, but Perl 5.6 does not compute constant correctly
-
-  $t = sum($min, $max);
-  is($t, -1, 'min + max');
-  $t = sum($max, $min);
-  is($t, -1, 'max + min');
 }

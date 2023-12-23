@@ -6,9 +6,8 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test;
-BEGIN { plan tests => 31 };
+BEGIN { plan tests => 30 };
 
 #use Pod::Simple::Debug (6);
 
@@ -27,12 +26,7 @@ require Pod::Simple::DumpAsXML; ok 1;
 
 require Pod::Simple::XMLOutStream; ok 1;
 
-BEGIN {
-  require FindBin;
-  unshift @INC, $FindBin::Bin . '/lib';
-  require helpers;
-  helpers->import;
-}
+sub e ($$) { Pod::Simple::DumpAsXML->_duo(@_) }
 
 print "# Simple identity tests...\n";
 
@@ -93,10 +87,6 @@ ok( Pod::Simple::XMLOutStream->_out("=head1 Chacha\n\nFoo\n"),
     '<Document><head1>Chacha</head1><Para>Foo</Para></Document>'
 );
 
-# Make sure an obviously invalid Pod tag is invalid.
-ok( Pod::Simple::XMLOutStream->_out("=F\0blah\n\nwhatever\n"),
-    qq{<Document\ncontentless="1"></Document>}
-);
 
 print "# Wrapping up... one for the road...\n";
 ok 1;

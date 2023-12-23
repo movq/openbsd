@@ -14,7 +14,6 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
@@ -22,8 +21,12 @@ sub BEGIN {
     }
 }
 
-use Test::More tests => 40;
+use Test::More tests => 35;
 use Storable ();
+
+
+
+
 
 #####################################################################
 # Error 1
@@ -67,7 +70,7 @@ use Storable ();
 	eval {
 		Storable::freeze( $badfreeze );
 	};
-	ok( $@, 'Storable dies correctly when STORABLE_freeze returns a reference' );
+	ok( $@, 'Storable dies correctly when STORABLE_freeze returns a referece' );
 	# Check for a unique substring of the error message
 	ok( $@ =~ /cannot return references/, 'Storable dies with the expected error' );
 
@@ -94,7 +97,7 @@ use Storable ();
 # Error 2
 #
 # If, for some reason, a STORABLE_attach object is accidentally stored
-# with references, this should be checked and an error should be thrown.
+# with references, this should be checked and and error should be throw.
 
 
 
@@ -209,41 +212,6 @@ use Storable ();
 	BEGIN {
 		@ISA = 'My::GoodAttach';
 	}
-}
-
-# Good case - multiple references to the same object should be attached properly
-{
-	my $obj = bless { id => 111 }, 'My::GoodAttach::MultipleReferences';
-    my $arr = [$obj];
-
-    push @$arr, $obj;
-
-	my $frozen = Storable::freeze($arr);
-
-	ok( $frozen, 'My::GoodAttach return as expected' );
-
-	my $thawed = eval {
-		Storable::thaw( $frozen );
-	};
-
-	isa_ok( $thawed->[0], 'My::GoodAttach::MultipleReferences' );
-	isa_ok( $thawed->[1], 'My::GoodAttach::MultipleReferences' );
-
-	is($thawed->[0], $thawed->[1], 'References to the same object are attached properly');
-	is($thawed->[1]{id}, $obj->{id}, 'Object with multiple references attached properly');
-
-    package My::GoodAttach::MultipleReferences;
-
-    sub STORABLE_freeze {
-        my ($obj) = @_;
-        $obj->{id}
-    }
-
-    sub STORABLE_attach {
-        my ($class, $cloning, $id) = @_;
-        bless { id => $id }, $class;
-    }
-
 }
 
 

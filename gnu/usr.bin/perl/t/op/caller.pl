@@ -1,4 +1,4 @@
-# tests shared between t/op/caller.t and ext/XS-APItest/t/op.t
+# tests shared between t/op/caller.t and ext/XS/APItest/t/op.t
 
 use strict;
 use warnings;
@@ -140,7 +140,7 @@ EOE
     if ($::testing_caller) {
 	# Perl_refcounted_he_fetch() insists that you have the key correctly
 	# normalised for the way hashes store them. As this one isn't
-	# normalised down to bytes, it won't work with
+	# normalised down to bytes, it won't t work with
 	# Perl_refcounted_he_fetch()
 	is(hint_fetch($k2), 2, "UTF-8 or not, it's the same");
     }

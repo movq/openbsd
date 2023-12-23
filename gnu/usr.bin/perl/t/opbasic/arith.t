@@ -1,36 +1,39 @@
 #!./perl -w
 
+BEGIN {
+    chdir 't' if -d 't';
+    @INC = '../lib';
+}
+
 # This file has been placed in t/opbasic to indicate that it should not use
 # functions imported from t/test.pl or Test::More, as those programs/libraries
 # use operators which are what is being tested in this file.
 
-print "1..180\n";
+print "1..167\n";
 
 sub try ($$$) {
-   print +($_[1] ? "ok" : "not ok") . " $_[0] - $_[2]\n";
+   print +($_[1] ? "ok" : "not ok"), " $_[0] - $_[2]\n";
 }
 sub tryeq ($$$$) {
-  my $status;
   if ($_[1] == $_[2]) {
-    $status = "ok $_[0]";
+    print "ok $_[0]";
   } else {
-    $status = "not ok $_[0] # $_[1] != $_[2]";
+    print "not ok $_[0] # $_[1] != $_[2]";
   }
-  print "$status - $_[3]\n";
+  print " - $_[3]\n";
 }
 sub tryeq_sloppy ($$$$) {
-  my $status;
   if ($_[1] == $_[2]) {
-    $status = "ok $_[0]";
+    print "ok $_[0]";
   } else {
     my $error = abs (($_[1] - $_[2]) / $_[1]);
     if ($error < 1e-9) {
-      $status = "ok $_[0] # $_[1] is close to $_[2], \$^O eq $^O";
+      print "ok $_[0] # $_[1] is close to $_[2], \$^O eq $^O";
     } else {
-      $status = "not ok $_[0] # $_[1] != $_[2]";
+      print "not ok $_[0] # $_[1] != $_[2]";
     }
   }
-  print "$status - $_[3]\n";
+  print " - $_[3]\n";
 }
 
 my $T = 1;
@@ -38,12 +41,6 @@ tryeq $T++,  13 %  4, 1, 'modulo: positive positive';
 tryeq $T++, -13 %  4, 3, 'modulo: negative positive';
 tryeq $T++,  13 % -4, -3, 'modulo: positive negative';
 tryeq $T++, -13 % -4, -1, 'modulo: negative negative';
-
-# Exercise some of the dright/dleft logic in pp_modulo
-
-tryeq $T++, 13.333333 % 5.333333, 3, 'modulo: 13.333333 % 5.333333';
-tryeq $T++, 13.333333 % 5,        3, 'modulo: 13.333333 % 5';
-tryeq $T++, 13 % 5.333333,        3, 'modulo: 13 % 5.333333';
 
 # Give abs() a good work-out before using it in anger
 tryeq $T++, abs(0), 0, 'abs(): 0 0';
@@ -423,18 +420,39 @@ $a = (97656250000000000 % $1);
 $b = (97656250000000000 % "$1");
 print "not "x($a ne $b), "ok ", $T++, qq ' - something % \$1 vs "\$1"\n';
 
-# string-to-nv should equal float literals
-try $T++, "1.23"   + 0 ==  1.23,  '1.23';
-try $T++, " 1.23"  + 0 ==  1.23,  '1.23 with leading space';
-try $T++, "1.23 "  + 0 ==  1.23,  '1.23 with trailing space';
-try $T++, "+1.23"  + 0 ==  1.23,  '1.23 with unary plus';
-try $T++, "-1.23"  + 0 == -1.23,  '1.23 with unary minus';
-try $T++, "1.23e4" + 0 ==  12300, '1.23e4';
+my $vms_no_ieee;
+if ($^O eq 'VMS') {
+  use vars '%Config';
+  eval {require Config; import Config};
+  $vms_no_ieee = 1 unless defined($Config{useieee});
+}
 
-# trigger various attempts to negate IV_MIN
+if ($^O eq 'vos') {
+  print "not ok ", $T++, " # TODO VOS raises SIGFPE instead of producing infinity.\n";
+}
+elsif ($vms_no_ieee) {
+ print $T++, " # SKIP -- the IEEE infinity model is unavailable in this configuration.\n"
+}
+elsif ($^O eq 'ultrix') {
+  print "not ok ", $T++, " # TODO Ultrix enters deep nirvana instead of producing infinity.\n";
+}
+else {
+  # The computation of $v should overflow and produce "infinity"
+  # on any system whose max exponent is less than 10**1506.
+  # The exact string used to represent infinity varies by OS,
+  # so we don't test for it; all we care is that we don't die.
+  #
+  # Perl considers it to be an error if SIGFPE is raised.
+  # Chances are the interpreter will die, since it doesn't set
+  # up a handler for SIGFPE.  That's why this test is last; to
+  # minimize the number of test failures.  --PG
 
-tryeq $T++,  0x80000000 / -0x80000000, -1, '(IV_MAX+1) / IV_MIN';
-tryeq $T++, -0x80000000 /  0x80000000, -1, 'IV_MIN / (IV_MAX+1)';
-tryeq $T++,  0x80000000 / -1, -0x80000000, '(IV_MAX+1) / -1';
-tryeq $T++,           0 % -0x80000000,  0, '0 % IV_MIN';
-tryeq $T++, -0x80000000 % -0x80000000,  0, 'IV_MIN % IV_MIN';
+  my $n = 5000;
+  my $v = 2;
+  while (--$n)
+  {
+    $v *= 2;
+  }
+  print "ok ", $T++, " - infinity\n";
+}
+

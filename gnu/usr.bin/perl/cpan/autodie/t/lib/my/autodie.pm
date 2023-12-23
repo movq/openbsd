@@ -2,7 +2,7 @@ package my::autodie;
 use strict;
 use warnings;
 
-use parent qw(autodie);
+use base qw(autodie);
 use autodie::exception;
 use autodie::hints;
 

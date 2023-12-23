@@ -1,12 +1,8 @@
 package Test2::Util::Trace;
 require Test2::EventFacet::Trace;
+@ISA = ('Test2::EventFacet::Trace');
 
-use warnings;
-use strict;
-
-our @ISA = ('Test2::EventFacet::Trace');
-
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 1;
 
@@ -48,7 +44,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -8,7 +13,7 @@ BEGIN {
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..134\n"; }
+BEGIN { $| = 1; print "1..130\n"; }
 my $count = 0;
 sub ok ($;$) {
     my $p = my $r = shift;
@@ -22,9 +27,6 @@ sub ok ($;$) {
 use Unicode::Collate::Locale;
 
 ok(1);
-
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
 
 #########################
 
@@ -98,8 +100,8 @@ my $objEsT = Unicode::Collate::Locale->new
 ok($objEsT->getlocale, 'es__traditional');
 
 my $objFr  = Unicode::Collate::Locale->new
-    (normalization => undef, locale => 'FR_CA');
-ok($objFr->getlocale, 'fr_CA');
+    (normalization => undef, locale => 'FR');
+ok($objFr->getlocale, 'fr');
 
 # 16
 
@@ -157,21 +159,3 @@ ok(Unicode::Collate::Locale::_locale('de-phonebk'),    'de__phonebook');
 ok(Unicode::Collate::Locale::_locale('de--phonebk'),   'de__phonebook');
 
 # 130
-
-my $objEs2  = Unicode::Collate::Locale->new
-    (normalization => undef, locale => 'ES',
-     level => 1,
-     entry => << 'ENTRIES',
-0000      ; [.FFFE.0020.0005.0000]
-00F1      ; [.0010.0020.0002.00F1] # LATIN SMALL LETTER N WITH TILDE
-006E 0303 ; [.0010.0020.0002.00F1] # LATIN SMALL LETTER N WITH TILDE
-ENTRIES
-);
-
-ok($objEs2->lt("abc\x{4E00}", "abc\0"));
-ok($objEs2->lt("abc\x{FFFD}", "abc\0"));
-ok($objEs2->lt("abc\x{FFFD}", "abc\0"));
-ok($objEs2->lt("n\x{303}", "N\x{303}"));
-
-# 134
-

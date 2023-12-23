@@ -3,7 +3,6 @@
 package CPAN::FTP;
 use strict;
 
-use Errno ();
 use Fcntl qw(:flock);
 use File::Basename qw(dirname);
 use File::Path qw(mkpath);
@@ -15,76 +14,44 @@ use vars qw($connect_to_internet_ok $Ua $Thesite $ThesiteURL $Themethod);
 use vars qw(
             $VERSION
 );
-$VERSION = "5.5016";
-
-sub _plus_append_open {
-    my($fh, $file) = @_;
-    my $parent_dir = dirname $file;
-    mkpath $parent_dir;
-    my($cnt);
-    until (open $fh, "+>>$file") {
-        next if exists &Errno::EAGAIN && $! == &Errno::EAGAIN; # don't increment on EAGAIN
-        $CPAN::Frontend->mydie("Could not open '$file' after 10000 tries: $!") if ++$cnt > 100000;
-        sleep 0.0001;
-        mkpath $parent_dir;
-    }
-}
+$VERSION = "5.5004";
 
 #-> sub CPAN::FTP::ftp_statistics
 # if they want to rewrite, they need to pass in a filehandle
 sub _ftp_statistics {
     my($self,$fh) = @_;
-    my $ftpstats_size = $CPAN::Config->{ftpstats_size};
-    return if defined $ftpstats_size && $ftpstats_size <= 0;
     my $locktype = $fh ? LOCK_EX : LOCK_SH;
-    # XXX On Windows flock() implements mandatory locking, so we can
-    # XXX only use shared locking to still allow _yaml_loadfile() to
-    # XXX read from the file using a different filehandle.
-    $locktype = LOCK_SH if $^O eq "MSWin32";
-
     $fh ||= FileHandle->new;
     my $file = File::Spec->catfile($CPAN::Config->{cpan_home},"FTPstats.yml");
-    _plus_append_open($fh,$file);
+    mkpath dirname $file;
+    open $fh, "+>>$file" or $CPAN::Frontend->mydie("Could not open '$file': $!");
     my $sleep = 1;
     my $waitstart;
     while (!CPAN::_flock($fh, $locktype|LOCK_NB)) {
         $waitstart ||= localtime();
         if ($sleep>3) {
-            my $now = localtime();
-            $CPAN::Frontend->mywarn("$now: waiting for read lock on '$file' (since $waitstart)\n");
+            $CPAN::Frontend->mywarn("Waiting for a read lock on '$file' (since $waitstart)\n");
         }
-        sleep($sleep); # this sleep must not be overridden;
-                       # Frontend->mysleep with AUTOMATED_TESTING has
-                       # provoked complete lock contention on my NFS
-        if ($sleep <= 6) {
-            $sleep+=0.5;
-        } else {
-            # retry to get a fresh handle. If it is NFS and the handle is stale, we will never get an flock
-            _plus_append_open($fh, $file);
+        $CPAN::Frontend->mysleep($sleep);
+        if ($sleep <= 3) {
+            $sleep+=0.33;
+        } elsif ($sleep <=6) {
+            $sleep+=0.11;
         }
     }
-    my $stats = eval { CPAN->_yaml_loadfile($file, {loadblessed => 1}); };
+    my $stats = eval { CPAN->_yaml_loadfile($file); };
     if ($@) {
         if (ref $@) {
             if (ref $@ eq "CPAN::Exception::yaml_not_installed") {
-                chomp $@;
-                $CPAN::Frontend->myprintonce("Warning (usually harmless): $@\n");
+                $CPAN::Frontend->myprint("Warning (usually harmless): $@\n");
                 return;
             } elsif (ref $@ eq "CPAN::Exception::yaml_process_error") {
-                my $time = time;
-                my $to = "$file.$time";
-                $CPAN::Frontend->mywarn("Error reading '$file': $@
-  Trying to stash it away as '$to' to prevent further interruptions.
-  You may want to remove that file later.\n");
-                # may fail because somebody else has moved it away in the meantime:
-                rename $file, $to or $CPAN::Frontend->mywarn("Could not rename '$file' to '$to': $!\n");
-                return;
+                $CPAN::Frontend->mydie($@);
             }
         } else {
             $CPAN::Frontend->mydie($@);
         }
     }
-    CPAN::_flock($fh, LOCK_UN);
     return $stats->[0];
 }
 
@@ -122,23 +89,18 @@ sub _add_to_statistics {
         my @debug;
         @debug = $time if $sdebug;
         my $fullstats = $self->_ftp_statistics($fh);
-        close $fh if $fh && defined(fileno($fh));
+        close $fh;
         $fullstats->{history} ||= [];
         push @debug, scalar @{$fullstats->{history}} if $sdebug;
         push @debug, time if $sdebug;
         push @{$fullstats->{history}}, $stats;
         # YAML.pm 0.62 is unacceptably slow with 999;
         # YAML::Syck 0.82 has no noticable performance problem with 999;
-        my $ftpstats_size = $CPAN::Config->{ftpstats_size};
-        $ftpstats_size = 99 unless defined $ftpstats_size;
+        my $ftpstats_size = $CPAN::Config->{ftpstats_size} || 99;
         my $ftpstats_period = $CPAN::Config->{ftpstats_period} || 14;
         while (
-               @{$fullstats->{history} || []}
-               &&
-               (
-                @{$fullstats->{history}} > $ftpstats_size
-                || $time - $fullstats->{history}[0]{start} > 86400*$ftpstats_period
-               )
+               @{$fullstats->{history}} > $ftpstats_size
+               || $time - $fullstats->{history}[0]{start} > 86400*$ftpstats_period
               ) {
             shift @{$fullstats->{history}}
         }
@@ -160,7 +122,7 @@ sub _add_to_statistics {
         unlink($sfile) if ($^O eq 'MSWin32' or $^O eq 'os2');
 	_copy_stat($sfile, "$sfile.$$") if -e $sfile;
         rename "$sfile.$$", $sfile
-            or $CPAN::Frontend->mywarn("Could not rename '$sfile.$$' to '$sfile': $!\nGiving up\n");
+            or $CPAN::Frontend->mydie("Could not rename '$sfile.$$' to '$sfile': $!\n");
     }
 }
 
@@ -319,190 +281,6 @@ sub localize {
         my $longmess = Carp::longmess();
         $self->debug("file[$file] aslocal[$aslocal] force[$force] carplongmess[$longmess]");
     }
-    for ($CPAN::Config->{connect_to_internet_ok}) {
-        $connect_to_internet_ok = $_ if not defined $connect_to_internet_ok and defined $_;
-    }
-    my $ph = $CPAN::Config->{pushy_https};
-    if (!defined $ph || $ph) {
-        return $self->localize_2021($file,$aslocal,$force,$with_defaults);
-    } else {
-        return $self->localize_1995ff($file,$aslocal,$force,$with_defaults);
-    }
-}
-
-sub have_promising_aslocal {
-    my($self, $aslocal, $force) = @_;
-    if (-f $aslocal && -r _ && !($force & 1)) {
-        my $size;
-        if ($size = -s $aslocal) {
-            $self->debug("aslocal[$aslocal]size[$size]") if $CPAN::DEBUG;
-            return 1;
-        } else {
-            # empty file from a previous unsuccessful attempt to download it
-            unlink $aslocal or
-                $CPAN::Frontend->mydie("Found a zero-length '$aslocal' that I ".
-                                       "could not remove.");
-        }
-    }
-    return;
-}
-
-#-> sub CPAN::FTP::localize ;
-sub localize_2021 {
-    my($self,$file,$aslocal,$force,$with_defaults) = @_;
-    return $aslocal if $self->have_promising_aslocal($aslocal, $force);
-    my($aslocal_dir) = dirname($aslocal);
-    my $ret;
-    $self->mymkpath($aslocal_dir);
-    my $aslocal_tempfile = $aslocal . ".tmp" . $$;
-    my $base;
-    if (
-           ($CPAN::META->has_usable('HTTP::Tiny')
-            && $CPAN::META->has_usable('Net::SSLeay')
-            && $CPAN::META->has_usable('IO::Socket::SSL')
-           )
-        || $CPAN::Config->{curl}
-        || $CPAN::Config->{wget}
-       ) {
-        for my $prx (qw(https_proxy no_proxy)) {
-            $ENV{$prx} = $CPAN::Config->{$prx} if $CPAN::Config->{$prx};
-        }
-        $base = "https://cpan.org/";
-    } else {
-        my @missing_modules = grep { ! $CPAN::META->has_usable($_) } qw(HTTP::Tiny Net::SSLeay IO::Socket::SSL);
-        my $miss = join ", ", map { "'$_'" } @missing_modules;
-        my $modules = @missing_modules == 1 ? "module" : "modules";
-        $CPAN::Frontend->mywarn("Missing or unusable $modules $miss, and found neither curl nor wget installed.\n");
-        if ($CPAN::META->has_usable('HTTP::Tiny')) {
-            $CPAN::Frontend->mywarn("Need to fall back to http.\n")
-        }
-        for my $prx (qw(http_proxy no_proxy)) {
-            $ENV{$prx} = $CPAN::Config->{$prx} if $CPAN::Config->{$prx};
-        }
-        $base = "http://www.cpan.org/";
-    }
-    $ret = $self->hostdl_2021($base,$file,$aslocal_tempfile);
-    if ($ret) { # c&p from below
-        CPAN->debug("ret[$ret]aslocal[$aslocal]") if $CPAN::DEBUG;
-        if ($ret eq $aslocal_tempfile) {
-            # if we got it exactly as we asked for, only then we
-            # want to rename
-            rename $aslocal_tempfile, $aslocal
-                or $CPAN::Frontend->mydie("Error while trying to rename ".
-                                          "'$ret' to '$aslocal': $!");
-            $ret = $aslocal;
-        }
-    } else {
-        unlink $aslocal_tempfile;
-        return;
-    }
-    return $ret;
-}
-
-sub hostdl_2021 {
-    my($self, $base, $file, $aslocal) = @_; # the $aslocal is $aslocal_tempfile in the caller (old convention)
-    my $proxy_vars = $self->_proxy_vars($base);
-    my($proto) = $base =~ /^(https?)/;
-    my $url = "$base$file";
-    # hostdl_2021 may be called with either http or https urls
-    if (
-        $CPAN::META->has_usable('HTTP::Tiny')
-        &&
-        (
-         $proto eq "http"
-         ||
-         (    $CPAN::META->has_usable('Net::SSLeay')
-              && $CPAN::META->has_usable('IO::Socket::SSL')   )
-        )
-       ){
-        # mostly c&p from below
-        require CPAN::HTTP::Client;
-        my $chc = CPAN::HTTP::Client->new(
-            proxy => $CPAN::Config->{http_proxy} || $ENV{http_proxy},
-            no_proxy => $CPAN::Config->{no_proxy} || $ENV{no_proxy},
-        );
-        for my $try ( $url, ( $url !~ /\.gz(?!\n)\Z/ ? "$url.gz" : () ) ) {
-            $CPAN::Frontend->myprint("Fetching with HTTP::Tiny:\n$try\n");
-            my $res = eval { $chc->mirror($try, $aslocal) };
-            if ( $res && $res->{success} ) {
-                my $now = time;
-                utime $now, $now, $aslocal; # download time is more
-                                            # important than upload
-                                            # time
-                return $aslocal;
-            }
-            elsif ( $res && $res->{status} ne '599') {
-                $CPAN::Frontend->myprint(sprintf(
-                        "HTTP::Tiny failed with code[%s] message[%s]\n",
-                        $res->{status},
-                        $res->{reason},
-                    )
-                );
-            }
-            elsif ( $res && $res->{status} eq '599') {
-                $CPAN::Frontend->myprint(sprintf(
-                        "HTTP::Tiny failed with an internal error: %s\n",
-                        $res->{content},
-                    )
-                );
-            }
-            else {
-                my $err = $@ || 'Unknown error';
-                $CPAN::Frontend->myprint(sprintf(
-                        "Error downloading with HTTP::Tiny: %s\n", $err
-                    )
-                );
-            }
-        }
-    } elsif ($CPAN::Config->{curl} || $CPAN::Config->{wget}){
-        # c&p from further down
-        my($src_switch, $stdout_redir);
-        my($devnull) = $CPAN::Config->{devnull} || "";
-      DLPRG: for my $dlprg (qw(curl wget)) {
-            my $dlprg_configured = $CPAN::Config->{$dlprg};
-            next unless defined $dlprg_configured && length $dlprg_configured;
-            my $funkyftp = CPAN::HandleConfig->safe_quote($dlprg_configured);
-            if ($dlprg eq "wget") {
-                $src_switch = " -O \"$aslocal\"";
-                $stdout_redir = "";
-            } elsif ($dlprg eq 'curl') {
-                $src_switch   = ' -L -f -s -S --netrc-optional';
-                $stdout_redir = " > \"$aslocal\"";
-                if ($proxy_vars->{http_proxy}) {
-                    $src_switch .= qq{ -U "$proxy_vars->{proxy_user}:$proxy_vars->{proxy_pass}" -x "$proxy_vars->{http_proxy}"};
-                }
-            }
-            $CPAN::Frontend->myprint(
-                                     qq[
-Trying with
-    $funkyftp$src_switch
-to get
-    $url
-]);
-            my($system) =
-                "$funkyftp$src_switch \"$url\" $devnull$stdout_redir";
-            $self->debug("system[$system]") if $CPAN::DEBUG;
-            my($wstatus) = system($system);
-            if ($wstatus == 0) {
-                return $aslocal;
-            } else {
-                my $estatus = $wstatus >> 8;
-                my $size = -f $aslocal ?
-                    ", left\n$aslocal with size ".-s _ :
-                    "\nWarning: expected file [$aslocal] doesn't exist";
-                $CPAN::Frontend->myprint(qq{
-    Function system("$system")
-    returned status $estatus (wstat $wstatus)$size
-    });
-            }
-        } # DLPRG
-    } # curl, wget
-    return;
-}
-
-#-> sub CPAN::FTP::localize ;
-sub localize_1995ff {
-    my($self,$file,$aslocal,$force,$with_defaults) = @_;
     if ($^O eq 'MacOS') {
         # Comment by AK on 2000-09-03: Uniq short filenames would be
         # available in CHECKSUMS file
@@ -527,7 +305,18 @@ sub localize_1995ff {
         }
     }
 
-    return $aslocal if $self->have_promising_aslocal($aslocal, $force);
+    if (-f $aslocal && -r _ && !($force & 1)) {
+        my $size;
+        if ($size = -s $aslocal) {
+            $self->debug("aslocal[$aslocal]size[$size]") if $CPAN::DEBUG;
+            return $aslocal;
+        } else {
+            # empty file from a previous unsuccessful attempt to download it
+            unlink $aslocal or
+                $CPAN::Frontend->mydie("Found a zero-length '$aslocal' that I ".
+                                       "could not remove.");
+        }
+    }
     my($maybe_restore) = 0;
     if (-f $aslocal) {
         rename $aslocal, "$aslocal.bak$$";
@@ -606,6 +395,9 @@ sub localize_1995ff {
         $CPAN::Config->{ftp_passive} : 1;
     my $ret;
     my $stats = $self->_new_stats($file);
+    for ($CPAN::Config->{connect_to_internet_ok}) {
+        $connect_to_internet_ok = $_ if not defined $connect_to_internet_ok and defined $_;
+    }
   LEVEL: for $levelno (0..$#levels) {
         my $level_tuple = $levels[$levelno];
         my($level,$scheme,$sitetag) = @$level_tuple;
@@ -746,7 +538,7 @@ sub hostdleasy { #called from hostdlxxx
     my($ro_url);
   HOSTEASY: for $ro_url (@$host_seq) {
         $self->_set_attempt($stats,"dleasy",$ro_url);
-        my $url = "$ro_url$file";
+        my $url .= "$ro_url$file";
         $self->debug("localizing perlish[$url]") if $CPAN::DEBUG;
         if ($url =~ /^file:/) {
             my $l;
@@ -771,7 +563,7 @@ sub hostdleasy { #called from hostdlxxx
                 $ThesiteURL = $ro_url;
                 return $l;
             }
-            # If request is for a compressed file and we can find the
+            # If request is for a compressed file and we can find the 
             # uncompressed file also, return the path of the uncompressed file
             # otherwise, decompress it and return the resulting path
             if ($l =~ /(.+)\.gz$/) {
@@ -780,16 +572,13 @@ sub hostdleasy { #called from hostdlxxx
                     $ThesiteURL = $ro_url;
                     return $ungz;
                 }
-                elsif (-f $l && -r _) {
+                else {
                     eval { CPAN::Tarzip->new($l)->gunzip($aslocal) };
-                    if ( -f $aslocal && -s _) {
+                    if ( -f $aslocal) {
                         $ThesiteURL = $ro_url;
                         return $aslocal;
                     }
-                    elsif (! -s $aslocal) {
-                        unlink $aslocal;
-                    }
-                    elsif (-f $l) {
+                    else {
                         $CPAN::Frontend->mywarn("Error decompressing '$l': $@\n")
                             if $@;
                         return;
@@ -856,46 +645,8 @@ sub hostdleasy { #called from hostdlxxx
                 # Net::FTP can still succeed where LWP fails. So we do not
                 # skip Net::FTP anymore when LWP is available.
             }
-        } elsif ($url =~ /^http:/i && $CPAN::META->has_usable('HTTP::Tiny')) {
-            require CPAN::HTTP::Client;
-            my $chc = CPAN::HTTP::Client->new(
-                proxy => $CPAN::Config->{http_proxy} || $ENV{http_proxy},
-                no_proxy => $CPAN::Config->{no_proxy} || $ENV{no_proxy},
-            );
-            for my $try ( $url, ( $url !~ /\.gz(?!\n)\Z/ ? "$url.gz" : () ) ) {
-                $CPAN::Frontend->myprint("Fetching with HTTP::Tiny:\n$try\n");
-                my $res = eval { $chc->mirror($try, $aslocal) };
-                if ( $res && $res->{success} ) {
-                    $ThesiteURL = $ro_url;
-                    my $now = time;
-                    utime $now, $now, $aslocal; # download time is more
-                                                # important than upload
-                                                # time
-                    return $aslocal;
-                }
-                elsif ( $res && $res->{status} ne '599') {
-                    $CPAN::Frontend->myprint(sprintf(
-                            "HTTP::Tiny failed with code[%s] message[%s]\n",
-                            $res->{status},
-                            $res->{reason},
-                        )
-                    );
-                }
-                elsif ( $res && $res->{status} eq '599') {
-                    $CPAN::Frontend->myprint(sprintf(
-                            "HTTP::Tiny failed with an internal error: %s\n",
-                            $res->{content},
-                        )
-                    );
-                }
-                else {
-                    my $err = $@ || 'Unknown error';
-                    $CPAN::Frontend->myprint(sprintf(
-                            "Error downloading with HTTP::Tiny: %s\n", $err
-                        )
-                    );
-                }
-            }
+        } else {
+            $CPAN::Frontend->mywarn("  LWP not available\n");
         }
         return if $CPAN::Signal;
         if ($url =~ m|^ftp://(.*?)/(.*)/(.*)|) {
@@ -1094,7 +845,7 @@ sub _proxy_vars {
         }
         if ($want_proxy) {
             my($user, $pass) =
-                CPAN::HTTP::Credentials->get_proxy_credentials();
+                &CPAN::LWP::UserAgent::get_proxy_credentials();
             $ret = {
                     proxy_user => $user,
                     proxy_pass => $pass,
@@ -1179,7 +930,7 @@ ftp config variable with
   Trying with external ftp to get
     '$url'
   $netrc_explain
-  Sending the dialog
+  Going to send the dialog
 $dialog
 }
                 );
@@ -1218,7 +969,7 @@ $dialog
         $CPAN::Frontend->myprint(qq{
   Trying with external ftp to get
     $url
-  Sending the dialog
+  Going to send the dialog
 $dialog
 }
         );

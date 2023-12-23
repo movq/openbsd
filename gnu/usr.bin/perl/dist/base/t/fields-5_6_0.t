@@ -8,7 +8,7 @@ if( $] >= 5.009 ) {
 }
 
 use strict;
-our $Total_tests;
+use vars qw($Total_tests);
 
 my $test_num = 1;
 BEGIN { $| = 1; $^W = 1; }
@@ -62,7 +62,7 @@ BEGIN {
 }
 
 use strict;
-our $DEBUG;
+use vars qw($DEBUG);
 
 package B1;
 use fields qw(b1 b2 b3);
@@ -182,7 +182,7 @@ ok( fstr($ph) eq 'a:1,b:2,c:3' );
 $ph = fields::phash([qw/a b c/], [1, 2, 3]);
 ok( fstr($ph) eq 'a:1,b:2,c:3' );
 
-# The way exists() works with pseudohashes changed from 5.005 to 5.6
+# The way exists() works with psuedohashes changed from 5.005 to 5.6
 $ph = fields::phash([qw/a b c/], [1]);
 if( $] > 5.006 ) {
     ok( !( exists $ph->{b} or exists $ph->{c} or !exists $ph->{a} ) );

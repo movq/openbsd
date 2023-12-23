@@ -1,5 +1,3 @@
-#define PERL_NO_GET_CONTEXT
-
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
@@ -13,12 +11,18 @@
 #  define MAXHOSTNAMELEN	256
 #endif
 
+/* swiped from POSIX.xs */
+#if defined(__VMS) && !defined(__POSIX_SOURCE)
+#  if ((__VMS_VER >= 70000000) && (__DECC_VER >= 50200000)) || (__CRTL_VER >= 70000000)
+#    include <utsname.h>
+#  endif
+#endif
+
 #ifdef I_SYSUTSNAME
 #  include <sys/utsname.h>
 #endif
 
 MODULE = Sys::Hostname		PACKAGE = Sys::Hostname
-PROTOTYPES: DISABLE
 
 void
 ghname()
@@ -31,7 +35,7 @@ ghname()
     {
 	char tmps[MAXHOSTNAMELEN];
 	retval = PerlSock_gethostname(tmps, sizeof(tmps));
-	sv = newSVpv(tmps, 0);
+	sv = newSVpvn(tmps, strlen(tmps));
     }
 #else
 #  ifdef HAS_PHOSTNAME
@@ -49,8 +53,9 @@ ghname()
 	    *p++ = c;
 	}
 	PerlProc_pclose(io);
+	*p = '\0';
 	retval = 0;
-	sv = newSVpvn(tmps, p - tmps);
+	sv = newSVpvn(tmps, strlen(tmps));
     }
 #  else
 #    ifdef HAS_UNAME
@@ -58,7 +63,7 @@ ghname()
 	struct utsname u;
 	if (PerlEnv_uname(&u) == -1)
 	    goto check_out;
-	sv = newSVpv(u.nodename, 0);
+	sv = newSVpvn(u.nodename, strlen(u.nodename));
         retval = 0;
     }
 #    endif

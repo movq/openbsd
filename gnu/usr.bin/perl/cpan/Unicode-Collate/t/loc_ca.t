@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -8,7 +13,7 @@ BEGIN {
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..54\n"; }
+BEGIN { $| = 1; print "1..41\n"; }
 my $count = 0;
 sub ok ($;$) {
     my $p = my $r = shift;
@@ -23,12 +28,9 @@ use Unicode::Collate::Locale;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
-my $dot  = _pack_U(0xB7);
+my $dot  = pack 'U', 0xB7;
 
 my $objCa = Unicode::Collate::Locale->
     new(locale => 'CA', normalization => undef);
@@ -50,9 +52,9 @@ ok($objCa->eq("a\x{300}a", "aa\x{300}"));
 
 $objCa->change(level => 2);
 
-ok($objCa->gt("a\x{300}a", "aa\x{300}"));
-ok($objCa->lt("Ca\x{300}ca\x{302}", "ca\x{302}ca\x{300}"));
-ok($objCa->lt("ca\x{300}ca\x{302}", "Ca\x{302}ca\x{300}"));
+ok($objCa->lt("a\x{300}a", "aa\x{300}"));
+ok($objCa->gt("Ca\x{300}ca\x{302}", "ca\x{302}ca\x{300}"));
+ok($objCa->gt("ca\x{300}ca\x{302}", "Ca\x{302}ca\x{300}"));
 
 # 12
 
@@ -92,29 +94,10 @@ ok($objCa->lt("LL", "L${dot}L"));
 
 # 38
 
-$objCa->change(upper_before_lower => 1);
+$objCa->change(backwards => undef, level => 2);
 
-ok($objCa->gt("ch", "cH"));
-ok($objCa->gt("cH", "Ch"));
-ok($objCa->gt("Ch", "CH"));
+ok($objCa->gt("a\x{300}a", "aa\x{300}"));
+ok($objCa->lt("Ca\x{300}ca\x{302}", "ca\x{302}ca\x{300}"));
+ok($objCa->lt("ca\x{300}ca\x{302}", "Ca\x{302}ca\x{300}"));
 
-ok($objCa->gt("ll", "lL"));
-ok($objCa->gt("lL", "Ll"));
-ok($objCa->gt("Ll", "LL"));
-ok($objCa->lt("ll", "l${dot}l"));
-ok($objCa->lt("lL", "l${dot}l"));
-ok($objCa->lt("lL", "l${dot}L"));
-ok($objCa->lt("Ll", "l${dot}L"));
-ok($objCa->lt("Ll", "L${dot}l"));
-ok($objCa->lt("LL", "L${dot}l"));
-ok($objCa->lt("LL", "L${dot}L"));
-
-# 51
-
-$objCa->change(backwards => 2, level => 2);
-
-ok($objCa->lt("a\x{300}a", "aa\x{300}"));
-ok($objCa->gt("Ca\x{300}ca\x{302}", "ca\x{302}ca\x{300}"));
-ok($objCa->gt("ca\x{300}ca\x{302}", "Ca\x{302}ca\x{300}"));
-
-# 54
+# 41

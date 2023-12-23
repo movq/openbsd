@@ -2,13 +2,13 @@ package File::Spec::Win32;
 
 use strict;
 
-use Cwd ();
+use vars qw(@ISA $VERSION);
 require File::Spec::Unix;
 
-our $VERSION = '3.84';
-$VERSION =~ tr/_//d;
+$VERSION = '3.48';
+$VERSION =~ tr/_//;
 
-our @ISA = qw(File::Spec::Unix);
+@ISA = qw(File::Spec::Unix);
 
 # Some regexes we use for path splitting
 my $DRIVE_RX = '[a-zA-Z]:';
@@ -84,17 +84,13 @@ sub tmpdir {
 MSWin32 case-tolerance depends on GetVolumeInformation() $ouFsFlags == FS_CASE_SENSITIVE,
 indicating the case significance when comparing file specifications.
 Since XP FS_CASE_SENSITIVE is effectively disabled for the NT subsubsystem.
-See L<http://cygwin.com/ml/cygwin/2007-07/msg00891.html>
+See http://cygwin.com/ml/cygwin/2007-07/msg00891.html
 Default: 1
 
 =cut
 
 sub case_tolerant {
-  eval {
-    local @INC = @INC;
-    pop @INC if $INC[-1] eq '.';
-    require Win32API::File;
-  } or return 1;
+  eval { require Win32API::File; } or return 1;
   my $drive = shift || "C:";
   my $osFsType = "\0"x256;
   my $osVolName = "\0"x256;
@@ -137,7 +133,7 @@ sub catfile {
     # Legacy / compatibility support
     #
     shift, return _canon_cat( "/", @_ )
-	if !@_ || $_[0] eq "";
+	if $_[0] eq "";
 
     # Compatibility with File::Spec <= 3.26:
     #     catfile('A:', 'foo') should return 'A:\foo'.
@@ -330,13 +326,14 @@ sub rel2abs {
 
     if ($is_abs) {
       # It's missing a volume, add one
-      my $vol = ($self->splitpath( Cwd::getcwd() ))[0];
+      my $vol = ($self->splitpath( $self->_cwd() ))[0];
       return $self->canonpath( $vol . $path );
     }
 
     if ( !defined( $base ) || $base eq '' ) {
+      require Cwd ;
       $base = Cwd::getdcwd( ($self->splitpath( $path ))[0] ) if defined &Cwd::getdcwd ;
-      $base = Cwd::getcwd() unless defined $base ;
+      $base = $self->_cwd() unless defined $base ;
     }
     elsif ( ! $self->file_name_is_absolute( $base ) ) {
       $base = $self->rel2abs( $base ) ;
@@ -407,6 +404,16 @@ sub _canon_cat				# @path -> path
 	       )+			# performance boost -- I do not know why
 	     }{\\}gx;
 
+    # XXX I do not know whether more dots are supported by the OS supporting
+    #     this ... annotation (NetWare or symbian but not MSWin32).
+    #     Then .... could easily become ../../.. etc:
+    # Replace \.\.\. by (\.\.\.+)  and substitute with
+    # { $1 . ".." . "\\.." x (length($2)-2) }gex
+	     				# ... --> ../..
+    $path =~ s{ (\A|\\)			# at begin or after a slash
+    		\.\.\.
+		(?=\\|\z) 		# at end or followed by slash
+	     }{$1..\\..}gx;
     					# xx\yy\..\zz --> xx\zz
     while ( $path =~ s{(?:
 		(?:\A|\\)		# at begin or after a slash

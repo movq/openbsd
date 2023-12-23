@@ -1,7 +1,5 @@
 package Tie::Scalar;
 
-our $VERSION = '1.06';
-
 =head1 NAME
 
 Tie::Scalar, Tie::StdScalar - base class definitions for tied scalars
@@ -10,27 +8,26 @@ Tie::Scalar, Tie::StdScalar - base class definitions for tied scalars
 
     package NewScalar;
     require Tie::Scalar;
-
-    @ISA = qw(Tie::Scalar);
-
+     
+    @ISA = (Tie::Scalar);
+     
     sub FETCH { ... }		# Provide a needed method
     sub TIESCALAR { ... }	# Overrides inherited method
-
-
+         
+     
     package NewStdScalar;
     require Tie::Scalar;
-
-    @ISA = qw(Tie::StdScalar);
-
-    # All methods provided by default, so define
-    # only what needs be overridden
+    
+    @ISA = (Tie::StdScalar);
+    
+    # All methods provided by default, so define only what needs be overridden
     sub FETCH { ... }
-
-
+    
+    
     package main;
-
-    tie $new_scalar, 'NewScalar';
-    tie $new_std_scalar, 'NewStdScalar';
+    
+    tie $new_scalar, NewScalar;
+    tie $new_std_scalar, NewStdScalar;
 
 =head1 DESCRIPTION
 
@@ -41,14 +38,14 @@ as methods C<TIESCALAR>, C<FETCH> and C<STORE>. The B<Tie::StdScalar>
 package provides all the methods specified in  L<perltie>. It inherits from
 B<Tie::Scalar> and causes scalars tied to it to behave exactly like the
 built-in scalars, allowing for selective overloading of methods. The C<new>
-method is provided as a means of legacy support for classes that forget to
+method is provided as a means of grandfathering, for classes that forget to
 provide their own C<TIESCALAR> method.
 
 For developers wishing to write their own tied-scalar classes, the methods
 are summarized below. The L<perltie> section not only documents these, but
 has sample code as well:
 
-=over 4
+=over
 
 =item TIESCALAR classname, LIST
 
@@ -74,18 +71,6 @@ destruction of an instance.
 
 =back
 
-=head2 Tie::Scalar vs Tie::StdScalar
-
-C<< Tie::Scalar >> provides all the necessary methods, but one should realize
-they do not do anything useful. Calling C<< Tie::Scalar::FETCH >> or 
-C<< Tie::Scalar::STORE >> results in a (trappable) croak. And if you inherit
-from C<< Tie::Scalar >>, you I<must> provide either a C<< new >> or a
-C<< TIESCALAR >> method. 
-
-If you are looking for a class that does everything for you that you don't
-define yourself, use the C<< Tie::StdScalar >> class, not the
-C<< Tie::Scalar >> one.
-
 =head1 MORE INFORMATION
 
 The L<perltie> section uses a good example of tying scalars by associating
@@ -94,31 +79,20 @@ process IDs with priority.
 =cut
 
 use Carp;
-use warnings::register;
 
 sub new {
     my $pkg = shift;
     $pkg->TIESCALAR(@_);
 }
 
-# Legacy support for new(), a la Tie::Hash
+# "Grandfather" the new, a la Tie::Hash
 
 sub TIESCALAR {
     my $pkg = shift;
-    my $pkg_new = $pkg -> can ('new');
-
-    if ($pkg_new and $pkg ne __PACKAGE__) {
-        my $my_new = __PACKAGE__ -> can ('new');
-        if ($pkg_new == $my_new) {  
-            #
-            # Prevent recursion
-            #
-            croak "$pkg must define either a TIESCALAR() or a new() method";
-        }
-
-	warnings::warnif ("WARNING: calling ${pkg}->new since " .
-                          "${pkg}->TIESCALAR is missing");
-	$pkg -> new (@_);
+    if (defined &{"{$pkg}::new"}) {
+	carp "WARNING: calling ${pkg}->new since ${pkg}->TIESCALAR is missing"
+	    if $^W;
+	$pkg->new(@_);
     }
     else {
 	croak "$pkg doesn't define a TIESCALAR method";
@@ -141,11 +115,11 @@ sub STORE {
 # tweak a small bit.
 #
 package Tie::StdScalar;
-@ISA = qw(Tie::Scalar);
+@ISA = (Tie::Scalar);
 
 sub TIESCALAR {
     my $class = shift;
-    my $instance = @_ ? shift : undef;
+    my $instance = shift || undef;
     return bless \$instance => $class;
 }
 

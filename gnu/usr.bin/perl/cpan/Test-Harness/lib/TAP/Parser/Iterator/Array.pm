@@ -1,24 +1,29 @@
 package TAP::Parser::Iterator::Array;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
-use base 'TAP::Parser::Iterator';
+use TAP::Parser::Iterator ();
+
+@ISA = 'TAP::Parser::Iterator';
 
 =head1 NAME
 
-TAP::Parser::Iterator::Array - Iterator for array-based TAP sources
+TAP::Parser::Iterator::Array - Internal TAP::Parser array Iterator
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 SYNOPSIS
 
+  # see TAP::Parser::IteratorFactory for preferred usage
+
+  # to use directly:
   use TAP::Parser::Iterator::Array;
   my @data = ('foo', 'bar', baz');
   my $it   = TAP::Parser::Iterator::Array->new(\@data);
@@ -27,8 +32,8 @@ our $VERSION = '3.44';
 =head1 DESCRIPTION
 
 This is a simple iterator wrapper for arrays of scalar content, used by
-L<TAP::Parser>.  Unless you're writing a plugin or subclassing, you probably
-won't need to use this module directly.
+L<TAP::Parser>.  Unless you're subclassing, you probably won't need to use
+this module directly.
 
 =head1 METHODS
 
@@ -95,6 +100,7 @@ Originally ripped off from L<Test::Harness>.
 L<TAP::Object>,
 L<TAP::Parser>,
 L<TAP::Parser::Iterator>,
+L<TAP::Parser::IteratorFactory>,
 
 =cut
 

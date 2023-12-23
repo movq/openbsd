@@ -1,7 +1,5 @@
 # Test to make sure hires feature works.
 
-use strict;
-
 BEGIN {
   if ($ENV{PERL_CORE}) {
     unless ($ENV{PERL_TEST_Net_Ping}) {
@@ -21,41 +19,44 @@ BEGIN {
     print "1..0 \# Skip: no echo port\n";
     exit;
   }
-  unless (Socket::getaddrinfo('localhost', &Socket::AF_INET())) {
-    print "1..0 \# Skip: no localhost resolver on $^O\n";
-    exit;
-  }
 }
 
-use Test::More tests => 8;
-BEGIN {use_ok('Net::Ping');}
+use Test qw(plan ok $TESTERR);
+use Net::Ping;
+plan tests => 8;
+
+# Everything loaded fine
+ok 1;
 
 my $p = new Net::Ping "tcp";
 
-isa_ok($p, 'Net::Ping', 'new() worked');
+# new() worked?
+ok !!$p;
 
-is($Net::Ping::hires, 1, 'Default is to use Time::HiRes');
+# Default is to not use Time::HiRes
+ok !$Net::Ping::hires;
 
+# Enable hires
 $p -> hires();
-isnt($Net::Ping::hires, 0, 'Enabled hires');
+ok $Net::Ping::hires;
 
+# Make sure disable works
 $p -> hires(0);
-is($Net::Ping::hires, 0, 'Make sure disable works');
+ok !$Net::Ping::hires;
 
+# Enable again
 $p -> hires(1);
-isnt($Net::Ping::hires, 0, 'Enable hires again');
+ok $Net::Ping::hires;
 
-SKIP: {
-  skip "unreliable ping localhost on $^O", 2
-    if $^O =~ /^(?:hpux|os390|irix|freebsd)$/;
+# Test on the default port
+my ($ret, $duration) = $p -> ping("localhost");
 
-  # Test on the default port
-  my ($ret, $duration) = $p -> ping("localhost");
+# localhost should always be reachable, right?
+ok $ret;
 
-  isnt($ret, 0, 'localhost should always be reachable');
-
-  # It is extremely likely that the duration contains a decimal
-  # point if Time::HiRes is functioning properly, except when it
-  # is fast enough to be "0", or slow enough to be exactly "1".
-  like($duration, qr/\.|^[01]$/, 'returned duration is valid');
+# It is extremely likely that the duration contains a decimal
+# point if Time::HiRes is functioning properly, except when it
+# is fast enough to be "0", or slow enough to be exactly "1".
+if (! ok($duration =~ /\.|^[01]$/)) {
+    print($TESTERR "# duration=[$duration]\n");
 }

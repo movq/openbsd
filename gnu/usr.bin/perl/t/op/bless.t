@@ -1,56 +1,51 @@
 #!./perl
 
+print "1..31\n";
+
 BEGIN {
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
+    @INC = '../lib';
 }
-
-plan (118);
-# Please do not eliminate the plan.  We have tests in DESTROY blocks.
 
 sub expected {
     my($object, $package, $type) = @_;
-    print "# $object $package $type\n";
-    is(ref($object), $package);
-    my $r = qr/^\Q$package\E=(\w+)\(0x([0-9a-f]+)\)$/;
-    like("$object", $r);
-    if ("$object" =~ $r) {
-	is($1, $type);
+    return "" if (
+	ref($object) eq $package
+	&& "$object" =~ /^\Q$package\E=(\w+)\(0x([0-9a-f]+)\)$/
+	&& $1 eq $type
 	# in 64-bit platforms hex warns for 32+ -bit values
-	cmp_ok(do {no warnings 'portable'; hex($2)}, '==', $object);
-    }
-    else {
-	fail(); fail();
-    }
+	&& do { no warnings 'portable'; hex($2) == $object }
+    );
+    print "# $object $package $type\n";
+    return "not ";
 }
 
 # test blessing simple types
 
 $a1 = bless {}, "A";
-expected($a1, "A", "HASH");
+print expected($a1, "A", "HASH"), "ok 1\n";
 $b1 = bless [], "B";
-expected($b1, "B", "ARRAY");
+print expected($b1, "B", "ARRAY"), "ok 2\n";
 $c1 = bless \(map "$_", "test"), "C";
-expected($c1, "C", "SCALAR");
+print expected($c1, "C", "SCALAR"), "ok 3\n";
 our $test = "foo"; $d1 = bless \*test, "D";
-expected($d1, "D", "GLOB");
+print expected($d1, "D", "GLOB"), "ok 4\n";
 $e1 = bless sub { 1 }, "E";
-expected($e1, "E", "CODE");
+print expected($e1, "E", "CODE"), "ok 5\n";
 $f1 = bless \[], "F";
-expected($f1, "F", "REF");
+print expected($f1, "F", "REF"), "ok 6\n";
 $g1 = bless \substr("test", 1, 2), "G";
-expected($g1, "G", "LVALUE");
+print expected($g1, "G", "LVALUE"), "ok 7\n";
 
 # blessing ref to object doesn't modify object
 
-expected(bless(\$a1, "F"), "F", "REF");
-expected($a1, "A", "HASH");
+print expected(bless(\$a1, "F"), "F", "REF"), "ok 8\n";
+print expected($a1, "A", "HASH"), "ok 9\n";
 
 # reblessing does modify object
 
 bless $a1, "A2";
-expected($a1, "A2", "HASH");
+print expected($a1, "A2", "HASH"), "ok 10\n";
 
 # local and my
 {
@@ -58,36 +53,37 @@ expected($a1, "A2", "HASH");
     local $b1 = bless [], "B3";
     my $c1 = bless $c1, "C3";		# should rebless outer $c1
     our $test2 = ""; my $d1 = bless \*test2, "D3";
-    expected($a1, "A3", "HASH");
-    expected($b1, "B3", "ARRAY");
-    expected($c1, "C3", "SCALAR");
-    expected($d1, "D3", "GLOB");
+    print expected($a1, "A3", "HASH"), "ok 11\n";
+    print expected($b1, "B3", "ARRAY"), "ok 12\n";
+    print expected($c1, "C3", "SCALAR"), "ok 13\n";
+    print expected($d1, "D3", "GLOB"), "ok 14\n";
 }
-expected($a1, "A3", "HASH");
-expected($b1, "B", "ARRAY");
-expected($c1, "C3", "SCALAR");
-expected($d1, "D", "GLOB");
+print expected($a1, "A3", "HASH"), "ok 15\n";
+print expected($b1, "B", "ARRAY"), "ok 16\n";
+print expected($c1, "C3", "SCALAR"), "ok 17\n";
+print expected($d1, "D", "GLOB"), "ok 18\n";
 
 # class is magic
 "E" =~ /(.)/;
-expected(bless({}, $1), "E", "HASH");
+print expected(bless({}, $1), "E", "HASH"), "ok 19\n";
 {
     local $! = 1;
     my $string = "$!";
     $! = 2;	# attempt to avoid cached string
     $! = 1;
-    expected(bless({}, $!), $string, "HASH");
+    print expected(bless({}, $!), $string, "HASH"), "ok 20\n";
 
 # ref is ref to magic
     {
 	{
 	    package F;
-	    sub test { main::is(${$_[0]}, $string) }
+	    sub test { ${$_[0]} eq $string or print "not " }
 	}
 	$! = 2;
 	$f1 = bless \$!, "F";
 	$! = 1;
 	$f1->test;
+	print "ok 21\n";
     }
 }
 
@@ -95,30 +91,30 @@ expected(bless({}, $1), "E", "HASH");
 ### example of magic variable that is a reference??
 
 # no class, or empty string (with a warning), or undef (with two)
-expected(bless([]), 'main', "ARRAY");
+print expected(bless([]), 'main', "ARRAY"), "ok 22\n";
 {
     local $SIG{__WARN__} = sub { push @w, join '', @_ };
     use warnings;
 
     $m = bless [];
-    expected($m, 'main', "ARRAY");
-    is (scalar @w, 0);
+    print expected($m, 'main', "ARRAY"), "ok 23\n";
+    print @w ? "not ok 24\t# @w\n" : "ok 24\n";
 
     @w = ();
     $m = bless [], '';
-    expected($m, 'main', "ARRAY");
-    is (scalar @w, 1);
+    print expected($m, 'main', "ARRAY"), "ok 25\n";
+    print @w != 1 ? "not ok 26\t# @w\n" : "ok 26\n";
 
     @w = ();
     $m = bless [], undef;
-    expected($m, 'main', "ARRAY");
-    is (scalar @w, 2);
+    print expected($m, 'main', "ARRAY"), "ok 27\n";
+    print @w != 2 ? "not ok 28\t# @w\n" : "ok 28\n";
 }
 
 # class is a ref
 $a1 = bless {}, "A4";
 $b1 = eval { bless {}, $a1 };
-like ($@, qr/^Attempt to bless into a reference at /, "class is a ref");
+print $@ ? "ok 29\n" : "not ok 29\t# $b1\n";
 
 # class is an overloaded ref
 {
@@ -127,110 +123,5 @@ like ($@, qr/^Attempt to bless into a reference at /, "class is a ref");
 }
 $h1 = bless {}, "H4";
 $c4 = eval { bless \$test, $h1 };
-is ($@, '', "class is an overloaded ref");
-expected($c4, 'C4', "SCALAR");
-
-{
-    my %h = 1..2;
-    my($k) = keys %h; 
-    my $x=\$k;
-    bless $x, 'pam';
-    is(ref $x, 'pam');
-
-    my $a = bless \(keys %h), 'zap';
-    is(ref $a, 'zap');
-}
-
-bless [], "main::";
-ok(1, 'blessing into main:: does not crash'); # [perl #87388]
-
-sub _117941 { package _117941; bless [] }
-delete $::{"_117941::"};
-eval { _117941() };
-like $@, qr/^Attempt to bless into a freed package at /,
-        'bless with one arg when current stash is freed';
-
-for(__PACKAGE__) {
-    eval { bless \$_ };
-    like $@, qr/^Modification of a read-only value attempted/,
-         'read-only COWs cannot be blessed';
-}
-
-sub TIESCALAR { bless \(my $thing = pop), shift }
-sub FETCH { ${$_[0]} }
-tie $tied, main => $untied = [];
-eval { bless $tied };
-is ref $untied, "main", 'blessing through tied refs' or diag $@;
-
-bless \$victim, "Food";
-eval 'bless \$Food::bard, "Bard"';
-sub Bard::DESTROY {
-    isnt ref(\$victim), '__ANON__',
-        'reblessing does not leave an object in limbo temporarily';
-    bless \$victim
-}
-undef *Food::;
-{
-    my $w;
-    # This should catch ‘Attempt to free unreferenced scalar’.
-    local $SIG{__WARN__} = sub { $w .= shift };
-    bless \$victim;
-    is $w, undef,
-       'no warnings when reblessing inside DESTROY triggered by reblessing'
-}
-
-TODO: {
-    my $ref;
-    sub new {
-        my ($class, $code) = @_;
-        my $ret = ref($code);
-        bless $code => $class;
-        return $ret;
-    }
-    for my $i (1 .. 2) {
-        $ref = main -> new (sub {$i});
-    }
-    is $ref, 'CODE', 'RT #3305: Code ref should not be blessed yet';
-
-    local $TODO = 'RT #3305';
-
-    for my $i (1 .. 2) {
-        $ref = main -> new (sub {});
-    }
-    is $ref, 'CODE', 'RT #3305: Code ref should not be blessed yet';
-}
-
-my $t_3306_c = 0;
-my $t_3306_s = 0;
-
-{
-    sub FooClosure::new {
-        my ($class, $code) = @_;
-        bless $code => $class;
-    }
-    sub FooClosure::DESTROY {
-        $t_3306_c++;
-    }
-
-    sub FooSub::new {
-        my ($class, $code) = @_;
-        bless $code => $class;
-    }
-    sub FooSub::DESTROY {
-        $t_3306_s++;
-    }
-
-    my $i = '';
-    FooClosure -> new (sub {$i});
-    FooSub -> new (sub {});
-}
-
-is $t_3306_c, 1, 'RT #3306: DESTROY should be called on CODE ref (works on closures)';
-
-TODO: {
-    local $TODO = 'RT #3306';
-    is $t_3306_s, 1, 'RT #3306: DESTROY should be called on CODE ref';
-}
-
-undef *FooClosure::;
-undef *FooSub::;
+print expected($c4, 'C4', "SCALAR"), "ok 30\n";
+print $@ ? "not ok 31\t# $@" : "ok 31\n";

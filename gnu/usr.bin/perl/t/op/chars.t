@@ -1,88 +1,74 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-}
-
-plan tests => 34;
+print "1..33\n";
 
 # because of ebcdic.c these should be the same on asciiish 
 # and ebcdic machines.
 # Peter Prymmer <pvhp@best.com>.
 
 my $c = "\c@";
-is (ord($c), 0, '\c@');
+print +((ord($c) == 0) ? "" : "not "),"ok 1\n";
 $c = "\cA";
-is (ord($c), 1, '\cA');
+print +((ord($c) == 1) ? "" : "not "),"ok 2\n";
 $c = "\cB";
-is (ord($c), 2, '\cB');
+print +((ord($c) == 2) ? "" : "not "),"ok 3\n";
 $c = "\cC";
-is (ord($c), 3, '\cC');
+print +((ord($c) == 3) ? "" : "not "),"ok 4\n";
 $c = "\cD";
-is (ord($c), 4, '\cD');
+print +((ord($c) == 4) ? "" : "not "),"ok 5\n";
 $c = "\cE";
-is (ord($c), 5, '\cE');
+print +((ord($c) == 5) ? "" : "not "),"ok 6\n";
 $c = "\cF";
-is (ord($c), 6, '\cF');
+print +((ord($c) == 6) ? "" : "not "),"ok 7\n";
 $c = "\cG";
-is (ord($c), 7, '\cG');
+print +((ord($c) == 7) ? "" : "not "),"ok 8\n";
 $c = "\cH";
-is (ord($c), 8, '\cH');
+print +((ord($c) == 8) ? "" : "not "),"ok 9\n";
 $c = "\cI";
-is (ord($c), 9, '\cI');
+print +((ord($c) == 9) ? "" : "not "),"ok 10\n";
 $c = "\cJ";
-is (ord($c), 10, '\cJ');
+print +((ord($c) == 10) ? "" : "not "),"ok 11\n";
 $c = "\cK";
-is (ord($c), 11, '\cK');
+print +((ord($c) == 11) ? "" : "not "),"ok 12\n";
 $c = "\cL";
-is (ord($c), 12, '\cL');
+print +((ord($c) == 12) ? "" : "not "),"ok 13\n";
 $c = "\cM";
-is (ord($c), 13, '\cM');
+print +((ord($c) == 13) ? "" : "not "),"ok 14\n";
 $c = "\cN";
-is (ord($c), 14, '\cN');
+print +((ord($c) == 14) ? "" : "not "),"ok 15\n";
 $c = "\cO";
-is (ord($c), 15, '\cO');
+print +((ord($c) == 15) ? "" : "not "),"ok 16\n";
 $c = "\cP";
-is (ord($c), 16, '\cP');
+print +((ord($c) == 16) ? "" : "not "),"ok 17\n";
 $c = "\cQ";
-is (ord($c), 17, '\cQ');
+print +((ord($c) == 17) ? "" : "not "),"ok 18\n";
 $c = "\cR";
-is (ord($c), 18, '\cR');
+print +((ord($c) == 18) ? "" : "not "),"ok 19\n";
 $c = "\cS";
-is (ord($c), 19, '\cS');
+print +((ord($c) == 19) ? "" : "not "),"ok 20\n";
 $c = "\cT";
-is (ord($c), 20, '\cT');
+print +((ord($c) == 20) ? "" : "not "),"ok 21\n";
 $c = "\cU";
-is (ord($c), 21, '\cU');
+print +((ord($c) == 21) ? "" : "not "),"ok 22\n";
 $c = "\cV";
-is (ord($c), 22, '\cV');
+print +((ord($c) == 22) ? "" : "not "),"ok 23\n";
 $c = "\cW";
-is (ord($c), 23, '\cW');
+print +((ord($c) == 23) ? "" : "not "),"ok 24\n";
 $c = "\cX";
-is (ord($c), 24, '\cX');
+print +((ord($c) == 24) ? "" : "not "),"ok 25\n";
 $c = "\cY";
-is (ord($c), 25, '\cY');
+print +((ord($c) == 25) ? "" : "not "),"ok 26\n";
 $c = "\cZ";
-is (ord($c), 26, '\cZ');
+print +((ord($c) == 26) ? "" : "not "),"ok 27\n";
 $c = "\c[";
-is (ord($c), 27, '\c[');
+print +((ord($c) == 27) ? "" : "not "),"ok 28\n";
 $c = "\c\\";
-is (ord($c), 28, '\c\\');
+print +((ord($c) == 28) ? "" : "not "),"ok 29\n";
 $c = "\c]";
-is (ord($c), 29, '\c]');
+print +((ord($c) == 29) ? "" : "not "),"ok 30\n";
 $c = "\c^";
-is (ord($c), 30, '\c^');
+print +((ord($c) == 30) ? "" : "not "),"ok 31\n";
 $c = "\c_";
-is (ord($c), 31, '\c_');
-
-# '\c?' is an outlier, and is treated differently on each platform.
-# It's DEL on ASCII, and APC on EBCDIC
+print +((ord($c) == 31) ? "" : "not "),"ok 32\n";
 $c = "\c?";
-is (ord($c), ($::IS_ASCII)
-             ? 127
-             : utf8::unicode_to_native(0x9F),
-              '\c?');
-$c = '';
-is (ord($c), 0, 'ord("") is 0');
+print +((ord($c) == 127) ? "" : "not "),"ok 33\n";

@@ -1,9 +1,12 @@
 package TAP::Parser::Result::Test;
 
 use strict;
-use warnings;
 
-use base 'TAP::Parser::Result';
+use vars qw($VERSION @ISA);
+use TAP::Parser::Result;
+@ISA = 'TAP::Parser::Result';
+
+use vars qw($VERSION);
 
 =head1 NAME
 
@@ -11,11 +14,11 @@ TAP::Parser::Result::Test - Test result token.
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 
@@ -98,7 +101,7 @@ sub directive { shift->{directive} }
   my $explanation = $result->explanation;
 
 If a test had either a C<TODO> or C<SKIP> directive, this method will return
-the accompanying explanation, if present.
+the accompanying explantion, if present.
 
   not ok 17 - 'Pigs can fly' # TODO not enough acid
 

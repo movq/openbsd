@@ -7,7 +7,7 @@ use Config;
 plan(skip_all => "POSIX is unavailable")
     unless $Config{extensions} =~ /\bPOSIX\b/;
 plan(skip_all => "sigemptyset is unavailable on $^O")
-    if $^O eq 'MSWin32';
+    if $^O eq 'MSWin32' || $^O eq 'NetWare';
 
 require POSIX;
 POSIX->import();
@@ -91,25 +91,6 @@ foreach ([$signo[0]],
     isa_ok($sigset, 'POSIX::SigSet', 'checking the type of the object');
     local $" = ', ';
     expected_signals($sigset, "new(@$_)", @$_);
-}
-
-SKIP:
-{
-    # CID 244386
-    # linux and freebsd do validate for positive and very large signal numbers
-    # darwin uses a macro that simply ignores large signals and shifts by
-    # a negative number for negative signals, always succeeding
-    #
-    # since the idea is to validate our code rather than the implementation
-    # of sigaddset, just test the platforms we know can fail
-    skip "Not all systems validate the signal number", 2
-      unless $^O =~ /^(linux|freebsd)$/;
-    my $badsig = -1;
-    note "badsig $badsig";
-    ok(!eval{ POSIX::SigSet->new($badsig); 1 },
-       "POSIX::SigSet->new should throw on large signal number");
-    like($@."", qr/POSIX::Sigset->new: failed to add signal $badsig/,
-         "check message");
 }
 
 done_testing();

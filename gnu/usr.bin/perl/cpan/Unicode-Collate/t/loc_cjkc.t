@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -8,7 +13,7 @@ BEGIN {
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..8025\n"; }
+BEGIN { $| = 1; print "1..7022\n"; }
 my $count = 0;
 sub ok ($;$) {
     my $p = my $r = shift;
@@ -22,9 +27,6 @@ sub ok ($;$) {
 use Unicode::Collate::Locale;
 
 ok(1);
-
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
 
 #########################
 
@@ -63,12 +65,7 @@ my $objS = Unicode::Collate::Locale->
 
 ok($objS->getlocale, 'zh__stroke');
 
-my $objZ = Unicode::Collate::Locale->
-    new(locale => 'ZH__zhuyin', normalization => undef);
-
-ok($objZ->getlocale, 'zh__zhuyin');
-
-for my $obj ($objDefault, $objB, $objG, $objJ, $objK, $objP, $objS, $objZ) {
+for my $obj ($objDefault, $objB, $objG, $objJ, $objK, $objP, $objS) {
     $obj->change(level => 3);
     ok($obj->eq("\x{4E0D}", "\x{F967}"));
     ok($obj->eq("\x{4E26}", "\x{FA70}"));

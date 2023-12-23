@@ -1,16 +1,26 @@
-use strict;
-use warnings;
+#!./perl -w
+
+BEGIN {
+    if ($ENV{PERL_CORE}) {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+    }
+}
 
 use Test::More;
+
+# use strict;
 use Hash::Util::FieldHash qw( :all);
 no warnings 'misc';
+
+plan tests => 215;
 
 my @comma = ("key", "value");
 
 # The peephole optimiser already knows that it should convert the string in
 # $foo{string} into a shared hash key scalar. It might be worth making the
 # tokeniser build the LHS of => as a shared hash key scalar too.
-# And so there's the possibility of it going wrong
+# And so there's the possiblility of it going wrong
 # And going right on 8 bit but wrong on utf8 keys.
 # And really we should also try utf8 literals in {} and => in utf8.t
 
@@ -24,17 +34,17 @@ my $key = 'ey';
 is ($comma{"k" . $key}, "value", 'is key present? (unoptimised)');
 # now with cunning:
 is ($comma{key}, "value", 'is key present? (maybe optimised)');
-# tokeniser may treat => differently.
+#tokeniser may treat => differently.
 my @temp = (key=>undef);
 is ($comma{$temp[0]}, "value", 'is key present? (using LHS of =>)');
 
 @temp = %comma;
-is_deeply (\@comma, \@temp, 'list from comma hash');
+ok (eq_array (\@comma, \@temp), 'list from comma hash');
 
 @temp = each %comma;
-is_deeply (\@comma, \@temp, 'first each from comma hash');
+ok (eq_array (\@comma, \@temp), 'first each from comma hash');
 @temp = each %comma;
-is_deeply ([], \@temp, 'last each from comma hash');
+ok (eq_array ([], \@temp), 'last each from comma hash');
 
 my %temp = %comma;
 
@@ -47,12 +57,12 @@ is ($temp{key}, "value", 'is key present? (maybe optimised)');
 is ($comma{$temp[0]}, "value", 'is key present? (using LHS of =>)');
 
 @temp = %temp;
-is_deeply (\@temp, \@temp, 'list from copy of comma hash');
+ok (eq_array (\@temp, \@temp), 'list from copy of comma hash');
 
 @temp = each %temp;
-is_deeply (\@temp, \@temp, 'first each from copy of comma hash');
+ok (eq_array (\@temp, \@temp), 'first each from copy of comma hash');
 @temp = each %temp;
-is_deeply ([], \@temp, 'last each from copy of comma hash');
+ok (eq_array ([], \@temp), 'last each from copy of comma hash');
 
 my @arrow = (Key =>"Value");
 
@@ -70,12 +80,12 @@ is ($arrow{Key}, "Value", 'is key present? (maybe optimised)');
 is ($arrow{$temp[0]}, "Value", 'is key present? (using LHS of =>)');
 
 @temp = %arrow;
-is_deeply (\@arrow, \@temp, 'list from arrow hash');
+ok (eq_array (\@arrow, \@temp), 'list from arrow hash');
 
 @temp = each %arrow;
-is_deeply (\@arrow, \@temp, 'first each from arrow hash');
+ok (eq_array (\@arrow, \@temp), 'first each from arrow hash');
 @temp = each %arrow;
-is_deeply ([], \@temp, 'last each from arrow hash');
+ok (eq_array ([], \@temp), 'last each from arrow hash');
 
 %temp = %arrow;
 
@@ -88,12 +98,12 @@ is ($temp{Key}, "Value", 'is key present? (maybe optimised)');
 is ($arrow{$temp[0]}, "Value", 'is key present? (using LHS of =>)');
 
 @temp = %temp;
-is_deeply (\@temp, \@temp, 'list from copy of arrow hash');
+ok (eq_array (\@temp, \@temp), 'list from copy of arrow hash');
 
 @temp = each %temp;
-is_deeply (\@temp, \@temp, 'first each from copy of arrow hash');
+ok (eq_array (\@temp, \@temp), 'first each from copy of arrow hash');
 @temp = each %temp;
-is_deeply ([], \@temp, 'last each from copy of arrow hash');
+ok (eq_array ([], \@temp), 'last each from copy of arrow hash');
 
 fieldhash my %direct;
 fieldhash my %slow;
@@ -101,9 +111,9 @@ fieldhash my %slow;
 $slow{Dromedary} = 1;
 $slow{Camel} = 2;
 
-is_deeply (\%slow, \%direct, "direct list assignment to hash");
+ok (eq_hash (\%slow, \%direct), "direct list assignment to hash");
 %direct = (Camel => 2, 'Dromedary' => 1);
-is_deeply (\%slow, \%direct, "direct list assignment to hash using =>");
+ok (eq_hash (\%slow, \%direct), "direct list assignment to hash using =>");
 
 $slow{Llama} = 0; # A llama is not a camel :-)
 ok (!eq_hash (\%direct, \%slow), "different hashes should not be equal!");
@@ -113,7 +123,7 @@ fieldhash %names;
 %names = ('$' => 'Scalar', '@' => 'Array', # Grr '
           '%', 'Hash', '&', 'Code');
 %names_copy = %names;
-is_deeply (\%names, \%names_copy, "check we can copy our hash");
+ok (eq_hash (\%names, \%names_copy), "check we can copy our hash");
 
 sub in {
   my %args = @_;
@@ -135,7 +145,7 @@ sub out {
 }
 %names_copy = out ();
 
-is_deeply (\%names, \%names_copy, "pass hash from a subroutine");
+ok (eq_hash (\%names, \%names_copy), "pass hash from a subroutine");
 
 sub out_method {
   my $self = shift;
@@ -143,7 +153,7 @@ sub out_method {
 }
 %names_copy = main->out_method ();
 
-is_deeply (\%names, \%names_copy, "pass hash from a method");
+ok (eq_hash (\%names, \%names_copy), "pass hash from a method");
 
 sub in_out {
   my %args = @_;
@@ -151,7 +161,7 @@ sub in_out {
 }
 %names_copy = in_out (%names);
 
-is_deeply (\%names, \%names_copy, "pass hash to and from a subroutine");
+ok (eq_hash (\%names, \%names_copy), "pass hash to and from a subroutine");
 
 sub in_out_method {
   my $self = shift;
@@ -160,26 +170,26 @@ sub in_out_method {
 }
 %names_copy = main->in_out_method (%names);
 
-is_deeply (\%names, \%names_copy, "pass hash to and from a method");
+ok (eq_hash (\%names, \%names_copy), "pass hash to and from a method");
 
 my %names_copy2 = %names;
-is_deeply (\%names, \%names_copy2, "check copy worked");
+ok (eq_hash (\%names, \%names_copy2), "check copy worked");
 
 # This should get ignored.
 %names_copy = ('%', 'Associative Array', %names);
 
-is_deeply (\%names, \%names_copy, "duplicates at the start of a list");
+ok (eq_hash (\%names, \%names_copy), "duplicates at the start of a list");
 
 # This should not
 %names_copy = ('*', 'Typeglob', %names);
 
 $names_copy2{'*'} = 'Typeglob';
-is_deeply (\%names_copy, \%names_copy2, "duplicates at the end of a list");
+ok (eq_hash (\%names_copy, \%names_copy2), "duplicates at the end of a list");
 
 %names_copy = ('%', 'Associative Array', '*', 'Endangered species', %names,
               '*', 'Typeglob',);
 
-is_deeply (\%names_copy, \%names_copy2, "duplicates at both ends");
+ok (eq_hash (\%names_copy, \%names_copy2), "duplicates at both ends");
 
 # And now UTF8
 
@@ -202,12 +212,12 @@ foreach my $chr (60, 200, 600, 6000, 60000) {
   is ($utf8c{$temp[0]}, $value, 'is key present? (using LHS of $tempval)');
 
   @temp = %utf8c;
-  is_deeply (\@utf8c, \@temp, 'list from utf8 comma hash');
+  ok (eq_array (\@utf8c, \@temp), 'list from utf8 comma hash');
 
   @temp = each %utf8c;
-  is_deeply (\@utf8c, \@temp, 'first each from utf8 comma hash');
+  ok (eq_array (\@utf8c, \@temp), 'first each from utf8 comma hash');
   @temp = each %utf8c;
-  is_deeply ([], \@temp, 'last each from utf8 comma hash');
+  ok (eq_array ([], \@temp), 'last each from utf8 comma hash');
 
   %temp = %utf8c;
 
@@ -221,12 +231,12 @@ foreach my $chr (60, 200, 600, 6000, 60000) {
   is ($temp{$temp[0]}, $value, "is key present? (using LHS of $tempval)");
 
   @temp = %temp;
-  is_deeply (\@temp, \@temp, 'list from copy of utf8 comma hash');
+  ok (eq_array (\@temp, \@temp), 'list from copy of utf8 comma hash');
 
   @temp = each %temp;
-  is_deeply (\@temp, \@temp, 'first each from copy of utf8 comma hash');
+  ok (eq_array (\@temp, \@temp), 'first each from copy of utf8 comma hash');
   @temp = each %temp;
-  is_deeply ([], \@temp, 'last each from copy of utf8 comma hash');
+  ok (eq_array ([], \@temp), 'last each from copy of utf8 comma hash');
 
   my $assign = sprintf '("\x{%x}" => "%d")', $chr, $chr;
   print "# $assign\n";
@@ -245,12 +255,12 @@ foreach my $chr (60, 200, 600, 6000, 60000) {
   is ($utf8a{$temp[0]}, $value, "is key present? (using LHS of $tempval)");
 
   @temp = %utf8a;
-  is_deeply (\@utf8a, \@temp, 'list from utf8 arrow hash');
+  ok (eq_array (\@utf8a, \@temp), 'list from utf8 arrow hash');
 
   @temp = each %utf8a;
-  is_deeply (\@utf8a, \@temp, 'first each from utf8 arrow hash');
+  ok (eq_array (\@utf8a, \@temp), 'first each from utf8 arrow hash');
   @temp = each %utf8a;
-  is_deeply ([], \@temp, 'last each from utf8 arrow hash');
+  ok (eq_array ([], \@temp), 'last each from utf8 arrow hash');
 
   %temp = %utf8a;
 
@@ -264,12 +274,12 @@ foreach my $chr (60, 200, 600, 6000, 60000) {
   is ($temp{$temp[0]}, $value, "is key present? (using LHS of $tempval)");
 
   @temp = %temp;
-  is_deeply (\@temp, \@temp, 'list from copy of utf8 arrow hash');
+  ok (eq_array (\@temp, \@temp), 'list from copy of utf8 arrow hash');
 
   @temp = each %temp;
-  is_deeply (\@temp, \@temp, 'first each from copy of utf8 arrow hash');
+  ok (eq_array (\@temp, \@temp), 'first each from copy of utf8 arrow hash');
   @temp = each %temp;
-  is_deeply ([], \@temp, 'last each from copy of utf8 arrow hash');
+  ok (eq_array ([], \@temp), 'last each from copy of utf8 arrow hash');
 
 }
 
@@ -279,11 +289,11 @@ foreach my $chr (60, 200, 600, 6000, 60000) {
     my %h; my $x; my $ar;
     fieldhash %h;
     is( (join ':', %h = (1) x 8), '1:1',
-        'hash assignment in list context removes duplicates' );
-    is( scalar( %h = (1,2,1,3,1,4,1,5) ), 8,
-        'hash assignment in scalar context' );
-    is( scalar( ($x,%h) = (0,1,2,1,3,1,4,1,5) ), 9,
-        'scalar + hash assignment in scalar context' );
+	'hash assignment in list context removes duplicates' );
+    is( scalar( %h = (1,2,1,3,1,4,1,5) ), 2,
+	'hash assignment in scalar context' );
+    is( scalar( ($x,%h) = (0,1,2,1,3,1,4,1,5) ), 3,
+	'scalar + hash assignment in scalar context' );
     $ar = [ %h = (1,2,1,3,1,4,1,5) ];
     is( $#$ar, 1, 'hash assignment in list context' );
     is( "@$ar", "1 5", '...gets the last values' );
@@ -309,5 +319,3 @@ foreach my $chr (60, 200, 600, 6000, 60000) {
     @expect{map "$_", @refs} = @types;
     ok (!eq_hash(\%h, \%expect), 'blessed ref stringification different');
 }
-
-done_testing;

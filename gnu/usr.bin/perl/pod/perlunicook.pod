@@ -21,19 +21,19 @@ to work correctly, with the C<#!> adjusted to work on your system:
 
  #!/usr/bin/env perl
 
- use v5.36;     # or later to get "unicode_strings" feature,
-                #   plus strict, warnings
  use utf8;      # so literals and identifiers can be in UTF-8
+ use v5.12;     # or later to get "unicode_strings" feature
+ use strict;    # quote strings, declare variables
+ use warnings;  # on by default
  use warnings  qw(FATAL utf8);    # fatalize encoding glitches
- use open      qw(:std :encoding(UTF-8)); # undeclared streams in UTF-8
+ use open      qw(:std :utf8);    # undeclared streams in UTF-8
  use charnames qw(:full :short);  # unneeded in v5.16
 
 This I<does> make even Unix programmers C<binmode> your binary streams,
 or open them with C<:raw>, but that's the only way to get at them
 portably anyway.
 
-B<WARNING>: C<use autodie> (pre 2.26) and C<use open> do not get along with each
-other.
+B<WARNING>: C<use autoload> and C<use open> do not get along with each other.
 
 =head2 ℞ 1: Generic Unicode-savvy filter
 
@@ -151,13 +151,6 @@ that is, it disregards case, whitespace, and underscores:
 
  "\N{euro sign}"                        # :loose (from v5.16)
 
-Starting in v5.32, you can also use
-
- qr/\p{name=euro sign}/
-
-to get official Unicode named characters in regular expressions.  Loose
-matching is always done for these.
-
 =head2 ℞ 9: Unicode named sequences
 
 These look just like character names but return multiple codepoints.
@@ -192,7 +185,7 @@ know how to understand its output.
  # cpan -i Unicode::Unihan
  use Unicode::Unihan;
  my $str = "東京";
- my $unhan = Unicode::Unihan->new;
+ my $unhan = new Unicode::Unihan;
  for my $lang (qw(Mandarin Cantonese Korean JapaneseOn JapaneseKun)) {
      printf "CJK $str in %-12s is ", $lang;
      say $unhan->$lang($str);
@@ -211,7 +204,7 @@ use the specific module:
 
  # cpan -i Lingua::JA::Romanize::Japanese
  use Lingua::JA::Romanize::Japanese;
- my $k2r = Lingua::JA::Romanize::Japanese->new;
+ my $k2r = new Lingua::JA::Romanize::Japanese;
  my $str = "東京";
  say "Japanese for $str is ", $k2r->chars($str);
 
@@ -240,8 +233,8 @@ C<binmode> as described later below.
  or
      $ export PERL_UNICODE=A
  or
-    use Encode qw(decode);
-    @ARGV = map { decode('UTF-8', $_, 1) } @ARGV;
+    use Encode qw(decode_utf8);
+    @ARGV = map { decode_utf8($_, 1) } @ARGV;
 
 =head2 ℞ 14: Decode program arguments as locale encoding
 
@@ -261,9 +254,9 @@ call C<binmode> explicitly:
  or
      $ export PERL_UNICODE=S
  or
-     use open qw(:std :encoding(UTF-8));
+     use open qw(:std :utf8);
  or
-     binmode(STDIN,  ":encoding(UTF-8)");
+     binmode(STDIN,  ":utf8");
      binmode(STDOUT, ":utf8");
      binmode(STDERR, ":utf8");
 
@@ -286,7 +279,7 @@ Files opened without an encoding argument will be in UTF-8:
  or
      $ export PERL_UNICODE=D
  or
-     use open qw(:encoding(UTF-8));
+     use open qw(:utf8);
 
 =head2 ℞ 18: Make all I/O and args default to utf8
 
@@ -294,9 +287,9 @@ Files opened without an encoding argument will be in UTF-8:
  or
      $ export PERL_UNICODE=SDA
  or
-     use open qw(:std :encoding(UTF-8));
-     use Encode qw(decode);
-     @ARGV = map { decode('UTF-8', $_, 1) } @ARGV;
+     use open qw(:std :utf8);
+     use Encode qw(decode_utf8);
+     @ARGV = map { decode_utf8($_, 1) } @ARGV;
 
 =head2 ℞ 19: Open file with specific encoding
 
@@ -397,7 +390,7 @@ one codepoint lacking that property.
  \p{Sk}, \p{Ps}, \p{Lt}
  \p{alpha}, \p{upper}, \p{lower}
  \p{Latin}, \p{Greek}
- \p{script_extensions=Latin}, \p{scx=Greek}
+ \p{script=Latin}, \p{script=Greek}
  \p{East_Asian_Width=Wide}, \p{EA=W}
  \p{Line_Break=Hyphen}, \p{LB=HY}
  \p{Numeric_Value=4}, \p{NV=4}
@@ -446,7 +439,7 @@ convert such strings manually.
  use Unicode::UCD qw(num);
  my $str = "got Ⅻ and ४५६७ and ⅞ and here";
  my @nums = ();
- while ($str =~ /(\d+|\N)/g) {  # not just ASCII!
+ while (/$str =~ (\d+|\N)/g) {  # not just ASCII!
     push @nums, num($1);
  }
  say "@nums";   #     12      4567      0.875
@@ -619,7 +612,7 @@ Break up text into lines according to Unicode rules.
  use charnames qw(:full);
 
  my $para = "This is a super\N{HYPHEN}long string. " x 20;
- my $fmt = Unicode::LineBreak->new;
+ my $fmt = new Unicode::LineBreak;
  print $fmt->break($para), "\n";
 
 =head2 ℞ 42: Unicode text in DBM hashes, the tedious way
@@ -644,7 +637,7 @@ won’t fit into a byte.  Here’s how to manually manage the translation:
     # assume $uni_key holds a normal Perl string (abstract Unicode)
     my $enc_key   = encode("UTF-8", $uni_key, 1);
     my $enc_value = $dbhash{$enc_key};
-    my $uni_value = decode("UTF-8", $enc_value, 1);
+    my $uni_value = decode("UTF-8", $enc_key, 1);
 
 =head2 ℞ 43: Unicode text in DBM hashes, the easy way
 
@@ -695,17 +688,19 @@ When run, the following program produces this nicely aligned output:
     寿司............... €9.99
     包子............... €7.50
 
-Here's that program.
+Here's that program; tested on v5.14.
 
  #!/usr/bin/env perl
  # umenu - demo sorting and printing of Unicode food
  #
  # (obligatory and increasingly long preamble)
  #
- use v5.36;
  use utf8;
+ use v5.14;                       # for locale sorting
+ use strict;
+ use warnings;
  use warnings  qw(FATAL utf8);    # fatalize encoding faults
- use open      qw(:std :encoding(UTF-8)); # undeclared streams in UTF-8
+ use open      qw(:std :utf8);    # undeclared streams in UTF-8
  use charnames qw(:full :short);  # unneeded in v5.16
 
  # std modules
@@ -715,6 +710,11 @@ Here's that program.
 
  # cpan modules
  use Unicode::GCString;           # from CPAN
+
+ # forward defs
+ sub pad($$$);
+ sub colwidth(_);
+ sub entitle(_);
 
  my %price = (
      "γύρος"             => 6.50, # gyros
@@ -739,27 +739,30 @@ Here's that program.
      "お好み焼き"        => 8.00, # okonomiyaki, Japanese
  );
 
- my $width = 5 + max map { colwidth($_) } keys %price;
+ my $width = 5 + max map { colwidth } keys %price;
 
  # So the Asian stuff comes out in an order that someone
  # who reads those scripts won't freak out over; the
  # CJK stuff will be in JIS X 0208 order that way.
- my $coll  = Unicode::Collate::Locale->new(locale => "ja");
+ my $coll  = new Unicode::Collate::Locale locale => "ja";
 
  for my $item ($coll->sort(keys %price)) {
      print pad(entitle($item), $width, ".");
      printf " €%.2f\n", $price{$item};
  }
 
- sub pad ($str, $width, $padchar) {
+ sub pad($$$) {
+     my($str, $width, $padchar) = @_;
      return $str . ($padchar x ($width - colwidth($str)));
  }
 
- sub colwidth ($str) {
+ sub colwidth(_) {
+     my($str) = @_;
      return Unicode::GCString->new($str)->columns;
  }
 
- sub entitle ($str) {
+ sub entitle(_) {
+     my($str) = @_;
      $str =~ s{ (?=\pL)(\S)     (\S*) }
               { ucfirst($1) . lc($2)  }xge;
      return $str;
@@ -851,3 +854,4 @@ Acknowledgement via code comment is polite but not required.
 =head1 REVISION HISTORY
 
 v1.0.0 – first public release, 2012-02-27
+

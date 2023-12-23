@@ -5,7 +5,6 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test::More;
 
 if( $^O eq 'VMS' ) {

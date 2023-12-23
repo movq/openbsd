@@ -14,12 +14,7 @@ CPAN::Plugin::Specfile - Proof of concept implementation of a trivial CPAN::Plug
   test Acme::Meta
 
   # disable
-  # if it is the last in plugin_list:
   o conf plugin_list pop
-  # otherwise, determine the index to splice:
-  o conf plugin_list
-  # and then use splice, e.g. to splice position 3:
-  o conf plugin_list splice 3 1
 
 =head1 DESCRIPTION
 
@@ -53,7 +48,7 @@ Andreas Koenig <andk@cpan.org>, Branislav Zahradnik <barney@cpan.org>
 
 package CPAN::Plugin::Specfile;
 
-our $VERSION = '0.02';
+our $VERSION = '0.01';
 
 use File::Path;
 use File::Spec;

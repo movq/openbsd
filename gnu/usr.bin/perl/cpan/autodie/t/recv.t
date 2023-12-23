@@ -13,8 +13,6 @@ $SIG{PIPE} = 'IGNORE';
 
 my ($sock1, $sock2);
 socketpair($sock1, $sock2, AF_UNIX, SOCK_STREAM, PF_UNSPEC);
-binmode $sock1;
-binmode $sock2;
 
 my $buffer;
 send($sock1, "xyz", 0);
@@ -40,16 +38,12 @@ SKIP: {
 }
 
 eval {
-    my $string = "now is the time...";
-    open(my $fh, '<', \$string) or die("Can't open \$string for read");
-    binmode $fh;
-    # $fh isn't a socket, so this should fail.
-    recv($fh,$buffer,1,0);
+    # STDIN isn't a socket, so this should fail.
+    recv(STDIN,$buffer,1,0);
 };
 
 ok($@,'recv dies on returning undef');
-isa_ok($@,'autodie::exception')
-    or diag("$@");
+isa_ok($@,'autodie::exception');
 
 $buffer = "# Not an empty string\n";
 

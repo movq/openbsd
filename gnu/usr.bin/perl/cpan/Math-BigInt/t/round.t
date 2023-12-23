@@ -1,18 +1,42 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 # test rounding with non-integer A and P parameters
 
 use strict;
-use warnings;
+use Test::More;
 
-use Test::More tests => 95;
+BEGIN
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/round.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    # testing with the core distribution
+    @INC = qw(../t/lib);
+    }
+  unshift @INC, qw(../lib);
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
+
+  plan tests => 95;
+  } 
 
 use Math::BigFloat;
 
-my $mbf = 'Math::BigFloat';
-#my $mbi = 'Math::BigInt';
+my $cf = 'Math::BigFloat';
+my $ci = 'Math::BigInt';
 
-my $x = $mbf->new('123456.123456');
+my $x = $cf->new('123456.123456');
 
 # unary ops with A
 _do_a($x, 'round', 3, '123000');
@@ -30,7 +54,7 @@ _do_a($x, 'bsqrt', 3, '351');
 _do_a($x, 'bsqrt', 2, '350');
 
 # setting P
-_do_p($x, 'bsqrt', 2, '350');
+_do_p($x, 'bsqrt', 2,  '350');
 _do_p($x, 'bsqrt', -2, '351.36');
 
 # binary ops
@@ -46,51 +70,51 @@ _do_2_p($x, 'bdiv', 2, -3, '61728.062');
 
 #############################################################################
 
-sub _do_a {
-    my ($x, $method, $A, $result) = @_;
+sub _do_a
+  { 
+  my ($x, $method, $A, $result) = @_;
 
-    is($x->copy->$method($A), $result, "$method($A)");
-    is($x->copy->$method($A.'.1'), $result, "$method(${A}.1)");
-    is($x->copy->$method($A.'.5'), $result, "$method(${A}.5)");
-    is($x->copy->$method($A.'.6'), $result, "$method(${A}.6)");
-    is($x->copy->$method($A.'.9'), $result, "$method(${A}.9)");
-}
+  is ($x->copy->$method($A), $result, "$method($A)");
+  is ($x->copy->$method($A.'.1'), $result, "$method(${A}.1)");
+  is ($x->copy->$method($A.'.5'), $result, "$method(${A}.5)");
+  is ($x->copy->$method($A.'.6'), $result, "$method(${A}.6)");
+  is ($x->copy->$method($A.'.9'), $result, "$method(${A}.9)");
+  }
 
-sub _do_p {
-    my ($x, $method, $P, $result) = @_;
+sub _do_p
+  { 
+  my ($x, $method, $P, $result) = @_;
 
-    is($x->copy->$method(undef, $P), $result, "$method(undef, $P)");
-    is($x->copy->$method(undef, $P.'.1'), $result, "$method(undef, ${P}.1)");
-    is($x->copy->$method(undef, $P.'.5'), $result, "$method(undef.${P}.5)");
-    is($x->copy->$method(undef, $P.'.6'), $result, "$method(undef, ${P}.6)");
-    is($x->copy->$method(undef, $P.'.9'), $result, "$method(undef, ${P}.9)");
-}
+  is ($x->copy->$method(undef,$P), $result, "$method(undef,$P)");
+  is ($x->copy->$method(undef,$P.'.1'), $result, "$method(undef,${P}.1)");
+  is ($x->copy->$method(undef,$P.'.5'), $result, "$method(undef.${P}.5)");
+  is ($x->copy->$method(undef,$P.'.6'), $result, "$method(undef,${P}.6)");
+  is ($x->copy->$method(undef,$P.'.9'), $result, "$method(undef,${P}.9)");
+  }
 
-sub _do_2_a {
-    my ($x, $method, $y, $A, $result) = @_;
+sub _do_2_a
+  { 
+  my ($x, $method, $y, $A, $result) = @_;
 
-    my $cy = $mbf->new($y);
+  my $cy = $cf->new($y);
 
-    is($x->copy->$method($cy, $A), $result, "$method($cy, $A)");
-    is($x->copy->$method($cy, $A.'.1'), $result, "$method($cy, ${A}.1)");
-    is($x->copy->$method($cy, $A.'.5'), $result, "$method($cy, ${A}.5)");
-    is($x->copy->$method($cy, $A.'.6'), $result, "$method($cy, ${A}.6)");
-    is($x->copy->$method($cy, $A.'.9'), $result, "$method($cy, ${A}.9)");
-}
+  is ($x->copy->$method($cy,$A), $result, "$method($cy,$A)");
+  is ($x->copy->$method($cy,$A.'.1'), $result, "$method($cy,${A}.1)");
+  is ($x->copy->$method($cy,$A.'.5'), $result, "$method($cy,${A}.5)");
+  is ($x->copy->$method($cy,$A.'.6'), $result, "$method($cy,${A}.6)");
+  is ($x->copy->$method($cy,$A.'.9'), $result, "$method($cy,${A}.9)");
+  }
 
-sub _do_2_p {
-    my ($x, $method, $y, $P, $result) = @_;
+sub _do_2_p
+  { 
+  my ($x, $method, $y, $P, $result) = @_;
 
-    my $cy = $mbf->new($y);
+  my $cy = $cf->new($y);
 
-    is($x->copy->$method($cy, undef, $P), $result,
-       "$method(undef, $P)");
-    is($x->copy->$method($cy, undef, $P.'.1'), $result,
-       "$method($cy, undef, ${P}.1)");
-    is($x->copy->$method($cy, undef, $P.'.5'), $result,
-       "$method($cy, undef, ${P}.5)");
-    is($x->copy->$method($cy, undef, $P.'.6'), $result,
-       "$method($cy, undef, ${P}.6)");
-    is($x->copy->$method($cy, undef, $P.'.9'), $result,
-       "$method($cy, undef, ${P}.9)");
-}
+  is ($x->copy->$method($cy,undef,$P), $result, "$method(undef,$P)");
+  is ($x->copy->$method($cy,undef,$P.'.1'), $result, "$method($cy,undef,${P}.1)");
+  is ($x->copy->$method($cy,undef,$P.'.5'), $result, "$method($cy,undef.${P}.5)");
+  is ($x->copy->$method($cy,undef,$P.'.6'), $result, "$method($cy,undef,${P}.6)");
+  is ($x->copy->$method($cy,undef,$P.'.9'), $result, "$method($cy,undef,${P}.9)");
+  }
+

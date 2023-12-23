@@ -4,7 +4,7 @@ use strict;
 # This needs to be able to run from a clean checkout, hence assume only system
 # perl, which may be too old to have autodie
 
-require './Porting/pod_lib.pl';
+require 'Porting/pod_lib.pl';
 
 my $state = get_pod_metadata(1);
 my (undef, $old_major, $old_minor) = @{$state->{delta_version}};
@@ -61,9 +61,6 @@ $olddelta =~ s{^(perl)(delta - what is new for perl v5.$old_major.$old_minor)$}
     or die "Can't find expected NAME contents in $olddelta";
 
 my $olddeltaname = "pod/perl5$old_major${old_minor}delta.pod";
-# in a built tree, $olddeltaname is a symlink to perldelta.pod, make sure
-# we don't write through it
-unlink($olddeltaname);
 write_or_die($olddeltaname, $olddelta);
 git_add_new($olddeltaname);
 
@@ -91,7 +88,7 @@ my $pod_master = slurp_or_die($filename);
 $pod_master =~ s{^(\s*perl5)($was_major$was_minor)(delta\s+Perl changes in version )(5\.\d+\.\d+)(.*)}
     {$1 . $old_major . $old_minor .$3 . "5.$old_major.$old_minor" . $5 . "\n" .
          "$1$2$3$4$5"}me
-    or warn "Couldn't find perldelta line (for perl5$was_major${was_minor}delta) in $filename";
+    or die "Can't find perldelta line (for perl5$was_major${was_minor}delta) in $filename";
 
 write_or_die($filename, $pod_master);
 git_add_modified($filename);
@@ -103,4 +100,9 @@ git_add_modified(map {chomp $_; $_} `$^X Porting/pod_rules.pl --showfiles`);
 
 notify_success();
 
+# Local variables:
+# cperl-indent-level: 4
+# indent-tabs-mode: nil
+# End:
+#
 # ex: set ts=8 sts=4 sw=4 et:

@@ -1,26 +1,49 @@
 package Locale::Maketext::GutsLoader;
 
-use Locale::Maketext;
+$VERSION = '1.13';
 
-our $VERSION = '1.20';
-
+use strict;
 sub zorp { return scalar @_ }
 
-=head1 NAME
+BEGIN {
+    $Locale::Maketext::GutsLoader::GUTSPATH = __FILE__;
+    *Locale::Maketext::DEBUG = sub () {0}
+    unless defined &Locale::Maketext::DEBUG;
+}
 
-Locale::Maketext::GutsLoader - Deprecated module to load Locale::Maketext utf8 code
+#
+# This whole drama is so that we can load the utf8'd code
+# in Locale::Maketext::Guts, but if that fails, snip the
+# utf8 and then try THAT.
+#
 
-=head1 SYNOPSIS
+$Locale::Maketext::GUTSPATH = '';
+Locale::Maketext::DEBUG and warn "Requiring Locale::Maketext::Guts...\n";
+eval 'require Locale::Maketext::Guts';
 
-  # Do this instead please
-  use Locale::Maketext
+if ($@) {
+    my $path = $Locale::Maketext::GUTSPATH;
 
-=head1 DESCRIPTION
+    die "Can't load Locale::Maketext::Guts\nAborting" unless $path;
 
-Previously Locale::Maketext::Guts performed some magic to load
-Locale::Maketext when utf8 was unavailable. The subs this module provided
-were merged back into Locale::Maketext.
+    die "No readable file $Locale::Maketext::GutsLoader::GUTSPATH\nAborting"
+    unless -e $path and -f _ and -r _;
 
-=cut
+    open(IN, $path) or die "Can't read-open $path\nAborting";
+
+    my $source;
+    { local $/;  $source = <IN>; }
+    close(IN);
+    unless( $source =~ s/\b(use utf8)/# $1/ ) {
+        Locale::Maketext::DEBUG and
+        print "I didn't see 'use utf8' in $path\n";
+    }
+    eval $source;
+    die "Can't compile $path\n...The error I got was:\n$@\nAborting" if $@;
+    Locale::Maketext::DEBUG and warn "Non-utf8'd Locale::Maketext::Guts fine\n";
+}
+else {
+    Locale::Maketext::DEBUG and warn "Loaded Locale::Maketext::Guts fine\n";
+}
 
 1;

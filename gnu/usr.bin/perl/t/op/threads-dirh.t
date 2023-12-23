@@ -11,7 +11,6 @@ BEGIN {
      require Config;
      skip_all_without_config('useithreads');
      skip_all_if_miniperl("no dynamic loading on miniperl, no threads");
-     skip_all("runs out of memory on some EBCDIC") if $ENV{PERL_SKIP_BIG_MEM_TESTS};
 
      plan(6);
 }
@@ -34,8 +33,6 @@ fresh_perl_is <<'# this is no comment', 'ok', {}, 'crash when duping dirh';
 
 my $dir;
 SKIP: {
- skip "telldir or seekdir not defined on this platform", 5
-    if !$Config::Config{d_telldir} || !$Config::Config{d_seekdir};
  my $skip = sub {
    chdir($dir);
    chdir updir;
@@ -51,7 +48,7 @@ SKIP: {
 
  $dir = catdir getcwd(), "thrext$$" . int rand() * 100000;
 
- rmtree($dir) if -d $dir;
+ rmtree($dir);
  mkdir($dir);
 
  # Create a dir structure like this:

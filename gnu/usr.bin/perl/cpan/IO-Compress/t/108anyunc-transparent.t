@@ -6,7 +6,7 @@ BEGIN {
 }
 
 use lib qw(t t/compress);
-
+ 
 use strict;
 use warnings;
 use bytes;
@@ -38,7 +38,7 @@ EOM
     {
         title "AnyUncompress with Non-compressed data (File $file)" ;
 
-        my $lex = LexFile->new( my $output );
+        my $lex = new LexFile my $output;
         my $input ;
 
         if ($file) {
@@ -52,12 +52,12 @@ EOM
 
         my $unc ;
         my $keep = $buffer ;
-        $unc = IO::Uncompress::AnyUncompress->new( $input, -Transparent => 0 );
+        $unc = new IO::Uncompress::AnyUncompress $input, -Transparent => 0 ;
         ok ! $unc,"  no AnyUncompress object when -Transparent => 0" ;
         is $buffer, $keep ;
 
         $buffer = $keep ;
-        $unc = IO::Uncompress::AnyUncompress->new( \$buffer, -Transparent => 1 );
+        $unc = new IO::Uncompress::AnyUncompress \$buffer, -Transparent => 1 ;
         ok $unc, "  AnyUncompress object when -Transparent => 1"  ;
 
         my $uncomp ;

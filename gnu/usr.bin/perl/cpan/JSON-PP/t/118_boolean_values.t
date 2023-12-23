@@ -1,5 +1,4 @@
 use strict;
-use warnings;
 use Test::More;
 BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }
 use JSON::PP;
@@ -37,14 +36,13 @@ if (eval "require Types::Serialiser; 1") {
     push @tests, [Types::Serialiser::true(), Types::Serialiser::false(), 'Types::Serialiser::BooleanBase', 'Types::Serialiser::BooleanBase'];
 }
 
-plan tests => 15 * @tests;
+plan tests => 13 * @tests;
 
 my $json = JSON::PP->new;
 for my $test (@tests) {
     my ($true, $false, $true_class, $false_class, $incompat) = @$test;
 
-    my $ret = $json->boolean_values($false, $true);
-    is $ret => $json, "returns the same object";
+    $json->boolean_values($false, $true);
     my ($new_false, $new_true) = $json->get_boolean_values;
     ok defined $new_true, "new true class is defined";
     ok defined $new_false, "new false class is defined";
@@ -71,8 +69,7 @@ for my $test (@tests) {
         is $should_false_json => 'false', "A $false_class object turns into JSON false";
     }
 
-    $ret = $json->boolean_values();
-    is $ret => $json, "returns the same object";
+    $json->boolean_values();
     ok !$json->get_boolean_values, "reset boolean values";
 
     $should_true = $json->allow_nonref(1)->decode('true');

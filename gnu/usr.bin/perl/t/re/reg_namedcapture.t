@@ -3,8 +3,8 @@
 BEGIN {
     chdir 't' if -d 't';
     @INC = '../lib';
-    unless (defined &DynaLoader::boot_DynaLoader) {
-      print "1..0 # Skip: no dynamic loading on miniperl, no Tie::Hash::NamedCapture\n";
+    unless ( -r "$INC[0]/Errno.pm") {
+      print "1..0 # Skip: Errno.pm not yet available\n";
       exit 0;
     }
 }

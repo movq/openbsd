@@ -1,6 +1,6 @@
 =head1 NAME
 
-perl585delta - what is new for perl v5.8.5
+perldelta - what is new for perl v5.8.5
 
 =head1 DESCRIPTION
 
@@ -167,7 +167,7 @@ been fixed.
 
 The internals of the ithreads implementation were not checking if OS-level
 thread creation had failed. threads->create() now returns C<undef> in if
-thread creation fails instead of crashing perl.
+thead creation fails instead of crashing perl.
 
 =back
 

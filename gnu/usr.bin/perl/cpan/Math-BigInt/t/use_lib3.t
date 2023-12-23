@@ -1,19 +1,41 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 # see if using Math::BigInt and Math::BigFloat works together nicely.
 # all use_lib*.t should be equivalent
 
 use strict;
-use warnings;
-use lib 't';
+use Test;
 
-use Test::More tests => 2;
+BEGIN
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/use_lib3.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    # testing with the core distribution
+    @INC = qw(../t/lib);
+    }
+  unshift @INC, qw(../lib);     # to locate the modules
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
 
-use Math::BigInt lib => 'BareCalc';             # ignores "BareCalc"
+  plan tests => 2;
+  } 
+
+use Math::BigInt lib => 'BareCalc';
 use Math::BigFloat;
 
-is(Math::BigInt->config('lib'), 'Math::BigInt::BareCalc',
-   "Math::BigInt->config('lib')");
+ok (Math::BigInt->config()->{lib},'Math::BigInt::BareCalc');
 
-is(Math::BigFloat->new(123)->badd(123), 246,
-   'Math::BigFloat->new(123)->badd(123)');
+ok (Math::BigFloat->new(123)->badd(123),246);
+

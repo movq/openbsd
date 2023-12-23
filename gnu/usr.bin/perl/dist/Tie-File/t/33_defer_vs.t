@@ -1,8 +1,4 @@
 #!/usr/bin/perl
-
-use strict;
-use warnings;
-
 #
 # Deferred caching of varying size records
 #
@@ -13,7 +9,7 @@ use warnings;
 #
 
 use POSIX 'SEEK_SET';
-my $file = "tf33-$$.txt";
+my $file = "tf$$.txt";
 # print "1..0\n"; exit;
 $: = Tie::File::_default_recsep();
 my $data = "$:1$:22$:";
@@ -25,12 +21,10 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 print F $data;
 close F;
-
-my @a;
 $o = tie @a, 'Tie::File', $file;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -72,7 +66,7 @@ check_contents("55555$:1$:aaaaaaaaaa$:$:7777777$:");
 
 # (23-26) Now two long batches
 $o->defer;
-my %l = qw(0 2  1 3  2 4  4 5  5 4  6 3);
+%l = qw(0 2  1 3  2 4  4 5  5 4  6 3);
 for (0..2, 4..6) {
   $a[$_] = $_ x $l{$_};
 }

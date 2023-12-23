@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -23,9 +28,6 @@ use Unicode::Collate;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
 use Unicode::Collate::CJK::Pinyin;
@@ -37,9 +39,9 @@ my $collator = Unicode::Collate->new(
 );
 
 sub hex_sort {
-    my @source = map _pack_U(hex $_), split ' ', shift;
+    my @source = map pack('U', hex $_), split ' ', shift;
     my @sorted = $collator->sort(@source);
-    return join " ", map sprintf("%04X", _unpack_U($_)), @sorted;
+    return join " ", map sprintf("%04X", unpack 'U', $_), @sorted;
 }
 
 # 1

@@ -18,7 +18,6 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
@@ -26,10 +25,6 @@ sub BEGIN {
     }
     unless ($Config{'useithreads'} and eval { require threads; 1 }) {
         print "1..0 # Skip: no threads\n";
-        exit 0;
-    }
-    if ($] eq "5.008" || $] eq "5.010000") {
-        print "1..0 # Skip: threads unreliable in perl-$]\n";
         exit 0;
     }
     # - is \W, so can't use \b at start. Negative look ahead and look behind
