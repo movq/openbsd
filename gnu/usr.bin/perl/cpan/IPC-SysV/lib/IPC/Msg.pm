@@ -1,6 +1,12 @@
 ################################################################################
 #
-#  Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz <mhx@cpan.org>.
+#  $Revision: 17 $
+#  $Author: mhx $
+#  $Date: 2007/10/15 20:29:06 +0200 $
+#
+################################################################################
+#
+#  Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz <mhx@cpan.org>.
 #  Version 1.x, Copyright (C) 1997, Graham Barr <gbarr@pobox.com>.
 #
 #  This program is free software; you can redistribute it and/or
@@ -15,7 +21,8 @@ use strict;
 use vars qw($VERSION);
 use Carp;
 
-$VERSION = '2.09';
+$VERSION = do { my @r = '$Snapshot: /IPC-SysV/2.01 $' =~ /(\d+\.\d+(?:_\d+)?)/; @r ? $r[0] : '9.99' };
+$VERSION = eval $VERSION;
 
 # Figure out if we have support for native sized types
 my $N = do { my $foo = eval { pack "L!", 0 }; $@ ? '' : '!' };
@@ -42,7 +49,7 @@ my $N = do { my $foo = eval { pack "L!", 0 }; $@ ? '' : '!' };
 }
 
 sub new {
-    @_ == 3 || croak 'IPC::Msg->new( KEY , FLAGS )';
+    @_ == 3 || croak 'new IPC::Msg ( KEY , FLAGS )';
     my $class = shift;
 
     my $id = msgget($_[0],$_[1]);
@@ -123,9 +130,9 @@ IPC::Msg - SysV Msg IPC object class
 
     $msg = IPC::Msg->new(IPC_PRIVATE, S_IRUSR | S_IWUSR);
 
-    $msg->snd($msgtype, $msgdata);
+    $msg->snd(pack("l! a*",$msgtype,$msg));
 
-    $msg->rcv($buf, 256);
+    $msg->rcv($buf,256);
 
     $ds = $msg->stat;
 
@@ -169,7 +176,7 @@ Returns the system message queue identifier.
 =item rcv ( BUF, LEN [, TYPE [, FLAGS ]] )
 
 Read a message from the queue. Returns the type of the message read.
-See L<msgrcv(2)>.  The BUF becomes tainted.
+See L<msgrcv>.  The  BUF becomes tainted.
 
 =item remove
 
@@ -193,7 +200,7 @@ or a list of I<name>-I<value> pairs.
 =item snd ( TYPE, MSG [, FLAGS ] )
 
 Place a message on the queue with the data from C<MSG> and with type C<TYPE>.
-See L<msgsnd(2)>.
+See L<msgsnd>.
 
 =item stat
 
@@ -227,7 +234,7 @@ Marcus Holland-Moritz <mhx@cpan.org>
 
 =head1 COPYRIGHT
 
-Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz.
+Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz.
 
 Version 1.x, Copyright (c) 1997, Graham Barr.
 

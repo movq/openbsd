@@ -3,7 +3,6 @@
 # Test that env vars are honoured.
 
 use strict;
-use warnings;
 use lib 't/lib';
 
 use Test::More (

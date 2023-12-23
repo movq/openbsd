@@ -1,6 +1,8 @@
 #!./perl -Tw
 
 BEGIN {
+    chdir 't' if -d 't';
+    @INC = '../lib';
     require Config; import Config;
     if ($^O ne 'VMS' and $Config{'extensions'} !~ /\bPOSIX\b/) {
 	print "1..0\n";
@@ -8,16 +10,9 @@ BEGIN {
     }
 }
 
-use Test::More;
-BEGIN {
-    plan(
-        ${^TAINT}
-        ? (tests => 7)
-        : (skip_all => "A perl without taint support")
-    );
-}
-
+use Test::More tests => 7;
 use Scalar::Util qw/tainted/;
+
 
 use POSIX qw(fcntl_h open read mkfifo);
 use strict ;
@@ -33,7 +28,10 @@ my $testfd;
 
 my $TAINT = substr($^X, 0, 0);
 
-my $file = 'POSIX.xs';
+# there is a bug in GUSI that causes problems trying to open
+# files and directories ... it is being fixed, this is just
+# a stopgap -- pudge
+my $file = $^O eq 'MacOS' ? 'TEST-OLD' : 'TEST';
 
 eval { mkfifo($TAINT. $file, 0) };
 like($@, qr/^Insecure dependency/,              'mkfifo with tainted data');
@@ -45,7 +43,7 @@ eval { $testfd = open($file, O_RDONLY, 0) };
 is($@, "",                                  'open with untainted data');
 
 read($testfd, $buffer, 2) if $testfd > 2;
-is( $buffer, "#d",	                          '    read' );
+is( $buffer, "#!",	                          '    read' );
 ok(tainted($buffer),                          '    scalar tainted');
 
 TODO: {

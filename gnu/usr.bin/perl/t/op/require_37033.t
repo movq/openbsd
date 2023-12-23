@@ -1,13 +1,11 @@
 #!perl -w
+use strict;
 
 # Check that require doesn't leave the handle it uses open, if it happens that
 # the handle it opens gets file descriptor 0. RT #37033.
 
-chdir 't' if -d 't';
 require './test.pl';
-set_up_inc( 'lib' );
-
-use strict;
+@INC = 'lib';
 
 sub test_require {
     my ($state, $want) = @_;

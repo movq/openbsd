@@ -7,7 +7,6 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use lib '../lib';
 use Test::More tests => 6;
 
@@ -34,7 +33,7 @@ is($results, <<'EOHTML', "a for block");
 
 EOHTML
 
-foreach my $target (qw(note tip warning)) {
+foreach my $target qw(note tip warning) {
   initialize($parser, $results);
   $parser->accept_targets_as_text( $target );
   $parser->parse_string_document(<<"EOPOD");

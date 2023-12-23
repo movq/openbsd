@@ -75,8 +75,6 @@ history. Returns the old value.
 returns an array with two strings that give most appropriate names for
 files for input and output using conventions C<"E<lt>$in">, C<"E<gt>out">.
 
-The strings returned may not be useful for 3-argument open().
-
 =item Attribs
 
 returns a reference to a hash which describes internal configuration
@@ -119,7 +117,7 @@ C<readline> method).
 =item C<event_loop>
 
 Registers call-backs to wait for user input (i.e., during C<readline>
-method).  This supersedes tkRunning.
+method).  This supercedes tkRunning.
 
 The first call-back registered is the call back for waiting.  It is
 expected that the callback will call the current event loop until
@@ -205,7 +203,7 @@ use strict;
 package Term::ReadLine::Stub;
 our @ISA = qw'Term::ReadLine::Tk Term::ReadLine::TermCap';
 
-$DB::emacs = $DB::emacs;	# To pacify -w
+$DB::emacs = $DB::emacs;	# To peacify -w
 our @rl_term_set;
 *rl_term_set = \@Term::ReadLine::TermCap::rl_term_set;
 
@@ -225,37 +223,39 @@ sub readline {
       if (${^UNICODE} & PERL_UNICODE_STDIN || defined ${^ENCODING}) &&
          utf8::valid($str);
   print $out $rl_term_set[3]; 
-  # bug in 5.000: chomping empty string creates length -1:
+  # bug in 5.000: chomping empty string creats length -1:
   chomp $str if defined $str;
   $str;
 }
 sub addhistory {}
 
-# used for testing purpose
-sub devtty { return '/dev/tty' }
-
 sub findConsole {
     my $console;
     my $consoleOUT;
 
-    my $devtty = devtty();
-
-    if ($^O ne 'MSWin32' and -e $devtty) {
-	$console = $devtty;
-    } elsif ($^O eq 'MSWin32' or $^O eq 'msys' or -e "con") {
+    if (-e "/dev/tty") {
+	$console = "/dev/tty";
+    } elsif (-e "con" or $^O eq 'MSWin32') {
        $console = 'CONIN$';
        $consoleOUT = 'CONOUT$';
-    } elsif ($^O eq 'VMS') {
-	$console = "sys\$command";
-    } elsif ($^O eq 'os2' && !$DB::emacs) {
-	$console = "/dev/con";
     } else {
+	$console = "sys\$command";
+    }
+
+    if (($^O eq 'amigaos') || ($^O eq 'beos') || ($^O eq 'epoc')) {
 	$console = undef;
+    }
+    elsif ($^O eq 'os2') {
+      if ($DB::emacs) {
+	$console = undef;
+      } else {
+	$console = "/dev/con";
+      }
     }
 
     $consoleOUT = $console unless defined $consoleOUT;
     $console = "&STDIN" unless defined $console;
-    if ($console eq $devtty && !open(my $fh, "<", $console)) {
+    if ($console eq "/dev/tty" && !open(my $fh, "<", $console)) {
       $console = "&STDIN";
       undef($consoleOUT);
     }
@@ -273,10 +273,11 @@ sub new {
   if (@_==2) {
     my($console, $consoleOUT) = $_[0]->findConsole;
 
+
     # the Windows CONIN$ needs GENERIC_WRITE mode to allow
     # a SetConsoleMode() if we end up using Term::ReadKey
-    open FIN, (( $^O eq 'MSWin32' && $console eq 'CONIN$' ) ? '+<' : '<' ), $console;
-    # RT #132008:  Still need 2-arg open here
+    open FIN, (  $^O eq 'MSWin32' && $console eq 'CONIN$' ) ? "+<$console" :
+                                                              "<$console";
     open FOUT,">$consoleOUT";
 
     #OUT->autoflush(1);		# Conflicts with debugger?
@@ -326,7 +327,7 @@ sub Features { \%features }
 
 package Term::ReadLine;		# So late to allow the above code be defined?
 
-our $VERSION = '1.17';
+our $VERSION = '1.09';
 
 my ($which) = exists $ENV{PERL_RL} ? split /\s+/, $ENV{PERL_RL} : undef;
 if ($which) {
@@ -343,7 +344,7 @@ if ($which) {
 } elsif (defined $which and $which ne '') {	# Defined but false
   # Do nothing fancy
 } else {
-  eval "use Term::ReadLine::Gnu; 1" or eval "use Term::ReadLine::EditLine; 1" or eval "use Term::ReadLine::Perl; 1";
+  eval "use Term::ReadLine::Gnu; 1" or eval "use Term::ReadLine::Perl; 1";
 }
 
 #require FileHandle;
@@ -353,8 +354,6 @@ if ($which) {
 our @ISA;
 if (defined &Term::ReadLine::Gnu::readline) {
   @ISA = qw(Term::ReadLine::Gnu Term::ReadLine::Stub);
-} elsif (defined &Term::ReadLine::EditLine::readline) {
-  @ISA = qw(Term::ReadLine::EditLine Term::ReadLine::Stub);
 } elsif (defined &Term::ReadLine::Perl::readline) {
   @ISA = qw(Term::ReadLine::Perl Term::ReadLine::Stub);
 } elsif (defined $which && defined &{"Term::ReadLine::$which\::readline"}) {
@@ -477,7 +476,7 @@ sub get_line {
       if (${^UNICODE} & PERL_UNICODE_STDIN || defined ${^ENCODING}) &&
          utf8::valid($str);
   print $out $rl_term_set[3];
-  # bug in 5.000: chomping empty string creates length -1:
+  # bug in 5.000: chomping empty string creats length -1:
   chomp $str if defined $str;
 
   $str;

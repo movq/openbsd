@@ -1,9 +1,10 @@
 package TAP::Parser::Result::Comment;
 
 use strict;
-use warnings;
 
-use base 'TAP::Parser::Result';
+use vars qw($VERSION @ISA);
+use TAP::Parser::Result;
+@ISA = 'TAP::Parser::Result';
 
 =head1 NAME
 
@@ -11,11 +12,11 @@ TAP::Parser::Result::Comment - Comment result token.
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 

@@ -6,24 +6,28 @@ use warnings;
 use bytes;
 
 our (@ISA, $VERSION, @EXPORT_OK, %EXPORT_TAGS);
-@ISA    = qw(IO::File Exporter);
+@ISA    = qw(Exporter IO::File);
 
 
-$VERSION = '2.106';
+$VERSION = '2.024';
 
 use constant G_EOF => 0 ;
 use constant G_ERR => -1 ;
 
-use IO::Compress::Base::Common 2.106 ;
+use IO::Compress::Base::Common 2.024 ;
+#use Parse::Parameters ;
 
 use IO::File ;
 use Symbol;
-use Scalar::Util ();
-use List::Util ();
+use Scalar::Util qw(readonly);
+use List::Util qw(min);
 use Carp ;
 
 %EXPORT_TAGS = ( );
 push @{ $EXPORT_TAGS{all} }, @EXPORT_OK ;
+#Exporter::export_ok_tags('all') ;
+
+
 
 sub smartRead
 {
@@ -33,16 +37,16 @@ sub smartRead
     $$out = "" ;
 
     my $offset = 0 ;
-    my $status = 1;
 
 
     if (defined *$self->{InputLength}) {
         return 0
             if *$self->{InputLengthRemaining} <= 0 ;
-        $size = List::Util::min($size, *$self->{InputLengthRemaining});
+        $size = min($size, *$self->{InputLengthRemaining});
     }
 
     if ( length *$self->{Prime} ) {
+        #$$out = substr(*$self->{Prime}, 0, $size, '') ;
         $$out = substr(*$self->{Prime}, 0, $size) ;
         substr(*$self->{Prime}, 0, $size) =  '' ;
         if (length $$out == $size) {
@@ -58,28 +62,28 @@ sub smartRead
 
     if (defined *$self->{FH}) {
         if ($offset) {
-            # Not using this
+            # Not using this 
             #
             #  *$self->{FH}->read($$out, $get_size, $offset);
             #
             # because the filehandle may not support the offset parameter
             # An example is Net::FTP
             my $tmp = '';
-            $status = *$self->{FH}->read($tmp, $get_size) ;
-            substr($$out, $offset) = $tmp
-                if defined $status && $status > 0 ;
+            *$self->{FH}->read($tmp, $get_size) &&
+                (substr($$out, $offset) = $tmp);
         }
         else
-          { $status = *$self->{FH}->read($$out, $get_size) }
+          { *$self->{FH}->read($$out, $get_size) }
     }
     elsif (defined *$self->{InputEvent}) {
         my $got = 1 ;
         while (length $$out < $size) {
-            last
+            last 
                 if ($got = *$self->{InputEvent}->($$out, $get_size)) <= 0;
         }
 
         if (length $$out > $size ) {
+            #*$self->{Prime} = substr($$out, $size, length($$out), '');
             *$self->{Prime} = substr($$out, $size, length($$out));
             substr($$out, $size, length($$out)) =  '';
         }
@@ -90,21 +94,17 @@ sub smartRead
        no warnings 'uninitialized';
        my $buf = *$self->{Buffer} ;
        $$buf = '' unless defined $$buf ;
+       #$$out = '' unless defined $$out ;
        substr($$out, $offset) = substr($$buf, *$self->{BufferOffset}, $get_size);
        if (*$self->{ConsumeInput})
          { substr($$buf, 0, $get_size) = '' }
-       else
+       else  
          { *$self->{BufferOffset} += length($$out) - $offset }
     }
 
-    *$self->{InputLengthRemaining} -= length($$out) #- $offset
+    *$self->{InputLengthRemaining} -= length($$out) #- $offset 
         if defined *$self->{InputLength};
-
-    if (! defined $status) {
-        $self->saveStatus($!) ;
-        return STATUS_ERROR;
-    }
-
+        
     $self->saveStatus(length $$out < 0 ? STATUS_ERROR : STATUS_OK) ;
 
     return length $$out;
@@ -140,37 +140,17 @@ sub smartSeek
     my $self   = shift ;
     my $offset = shift ;
     my $truncate = shift;
-    my $position = shift || SEEK_SET;
+    #print "smartSeek to $offset\n";
 
     # TODO -- need to take prime into account
-    *$self->{Prime} = '';
     if (defined *$self->{FH})
-      { *$self->{FH}->seek($offset, $position) }
+      { *$self->{FH}->seek($offset, SEEK_SET) }
     else {
-        if ($position == SEEK_END) {
-            *$self->{BufferOffset} = length(${ *$self->{Buffer} }) + $offset ;
-        }
-        elsif ($position == SEEK_CUR) {
-            *$self->{BufferOffset} += $offset ;
-        }
-        else {
-            *$self->{BufferOffset} = $offset ;
-        }
-
+        *$self->{BufferOffset} = $offset ;
         substr(${ *$self->{Buffer} }, *$self->{BufferOffset}) = ''
             if $truncate;
         return 1;
     }
-}
-
-sub smartTell
-{
-    my $self   = shift ;
-
-    if (defined *$self->{FH})
-      { return *$self->{FH}->tell() }
-    else
-      { return *$self->{BufferOffset} }
 }
 
 sub smartWrite
@@ -179,7 +159,7 @@ sub smartWrite
     my $out_data = shift ;
 
     if (defined *$self->{FH}) {
-        # flush needed for 5.8.0
+        # flush needed for 5.8.0 
         defined *$self->{FH}->write($out_data, length $out_data) &&
         defined *$self->{FH}->flush() ;
     }
@@ -199,7 +179,7 @@ sub smartReadExact
 sub smartEof
 {
     my ($self) = $_[0];
-    local $.;
+    local $.; 
 
     return 0 if length *$self->{Prime} || *$self->{PushMode};
 
@@ -207,25 +187,24 @@ sub smartEof
     {
         # Could use
         #
-        #  *$self->{FH}->eof()
+        #  *$self->{FH}->eof() 
         #
         # here, but this can cause trouble if
         # the filehandle is itself a tied handle, but it uses sysread.
-        # Then we get into mixing buffered & non-buffered IO,
-        # which will cause trouble
+        # Then we get into mixing buffered & non-buffered IO, which will cause trouble
 
         my $info = $self->getErrInfo();
-
+        
         my $buffer = '';
         my $status = $self->smartRead(\$buffer, 1);
         $self->pushBack($buffer) if length $buffer;
         $self->setErrInfo($info);
-
+        
         return $status == 0 ;
     }
     elsif (defined *$self->{InputEvent})
      { *$self->{EventEof} }
-    else
+    else 
      { *$self->{BufferOffset} >= length(${ *$self->{Buffer} }) }
 }
 
@@ -257,6 +236,8 @@ sub saveStatus
 {
     my $self   = shift ;
     my $errno = shift() + 0 ;
+    #return $errno unless $errno || ! defined *$self->{ErrorNo};
+    #return $errno unless $errno ;
 
     *$self->{ErrorNo}  = $errno;
     ${ *$self->{Error} } = '' ;
@@ -270,9 +251,12 @@ sub saveErrorString
     my $self   = shift ;
     my $retval = shift ;
 
-    ${ *$self->{Error} } = shift ;
-    *$self->{ErrorNo} = @_ ? shift() + 0 : STATUS_ERROR ;
+    #return $retval if ${ *$self->{Error} };
 
+    ${ *$self->{Error} } = shift ;
+    *$self->{ErrorNo} = shift() + 0 if @_ ;
+
+    #warn "saveErrorString: " . ${ *$self->{Error} } . " " . *$self->{Error} . "\n" ;
     return $retval;
 }
 
@@ -347,21 +331,21 @@ sub checkParams
     my $class = shift ;
 
     my $got = shift || IO::Compress::Base::Parameters::new();
-
+    
     my $Valid = {
-                    'blocksize'     => [IO::Compress::Base::Common::Parse_unsigned, 16 * 1024],
-                    'autoclose'     => [IO::Compress::Base::Common::Parse_boolean,  0],
-                    'strict'        => [IO::Compress::Base::Common::Parse_boolean,  0],
-                    'append'        => [IO::Compress::Base::Common::Parse_boolean,  0],
-                    'prime'         => [IO::Compress::Base::Common::Parse_any,      undef],
-                    'multistream'   => [IO::Compress::Base::Common::Parse_boolean,  0],
-                    'transparent'   => [IO::Compress::Base::Common::Parse_any,      1],
-                    'scan'          => [IO::Compress::Base::Common::Parse_boolean,  0],
-                    'inputlength'   => [IO::Compress::Base::Common::Parse_unsigned, undef],
-                    'binmodeout'    => [IO::Compress::Base::Common::Parse_boolean,  0],
-                   #'decode'        => [IO::Compress::Base::Common::Parse_any,      undef],
+                    'BlockSize'     => [1, 1, Parse_unsigned, 16 * 1024],
+                    'AutoClose'     => [1, 1, Parse_boolean,  0],
+                    'Strict'        => [1, 1, Parse_boolean,  0],
+                    'Append'        => [1, 1, Parse_boolean,  0],
+                    'Prime'         => [1, 1, Parse_any,      undef],
+                    'MultiStream'   => [1, 1, Parse_boolean,  0],
+                    'Transparent'   => [1, 1, Parse_any,      1],
+                    'Scan'          => [1, 1, Parse_boolean,  0],
+                    'InputLength'   => [1, 1, Parse_unsigned, undef],
+                    'BinModeOut'    => [1, 1, Parse_boolean,  0],
+                    #'Encode'        => [1, 1, Parse_any,       undef],
 
-                   #'consumeinput'  => [IO::Compress::Base::Common::Parse_boolean,  0],
+                   #'ConsumeInput'  => [1, 1, Parse_boolean,  0],
 
                     $self->getExtraParams(),
 
@@ -369,14 +353,14 @@ sub checkParams
                     # ContinueAfterEof
                 } ;
 
-    $Valid->{trailingdata} = [IO::Compress::Base::Common::Parse_writable_scalar, undef]
+    $Valid->{TrailingData} = [1, 1, Parse_writable_scalar, undef]
         if  *$self->{OneShot} ;
+        
+    $got->parse($Valid, @_ ) 
+        or $self->croakError("${class}: $got->{Error}")  ;
 
-    $got->parse($Valid, @_ )
-        or $self->croakError("${class}: " . $got->getError()) ;
-
-    $self->postCheckParams($got)
-        or $self->croakError("${class}: " . $self->error()) ;
+    $self->postCheckParams($got) 
+        or $self->croakError("${class}: " . $self->error())  ;
 
     return $got;
 }
@@ -393,7 +377,7 @@ sub _create
 
     my $inValue = shift ;
 
-    *$obj->{OneShot} = 0 ;
+    *$obj->{OneShot}           = 0 ;
 
     if (! $got)
     {
@@ -403,7 +387,7 @@ sub _create
 
     my $inType  = whatIsInput($inValue, 1);
 
-    $obj->ckInputParam($class, $inValue, 1)
+    $obj->ckInputParam($class, $inValue, 1) 
         or return undef ;
 
     *$obj->{InNew} = 1;
@@ -412,8 +396,8 @@ sub _create
         or $obj->croakError("${class}: " . *$obj->{Error});
 
     if ($inType eq 'buffer' || $inType eq 'code') {
-        *$obj->{Buffer} = $inValue ;
-        *$obj->{InputEvent} = $inValue
+        *$obj->{Buffer} = $inValue ;        
+        *$obj->{InputEvent} = $inValue 
            if $inType eq 'code' ;
     }
     else {
@@ -422,18 +406,18 @@ sub _create
             *$obj->{Handle} = 1 ;
 
             # Need to rewind for Scan
-            *$obj->{FH}->seek(0, SEEK_SET)
-                if $got->getValue('scan');
-        }
-        else {
+            *$obj->{FH}->seek(0, SEEK_SET) 
+                if $got->value('Scan');
+        }  
+        else {    
             no warnings ;
             my $mode = '<';
-            $mode = '+<' if $got->getValue('scan');
+            $mode = '+<' if $got->value('Scan');
             *$obj->{StdIO} = ($inValue eq '-');
-            *$obj->{FH} = IO::File->new( "$mode $inValue" )
+            *$obj->{FH} = new IO::File "$mode $inValue"
                 or return $obj->saveErrorString(undef, "cannot open file '$inValue': $!", $!) ;
         }
-
+        
         *$obj->{LineNo} = $. = 0;
         setBinModeInput(*$obj->{FH}) ;
 
@@ -441,40 +425,38 @@ sub _create
         *$obj->{Buffer} = \$buff ;
     }
 
-#    if ($got->getValue('decode')) {
-#        my $want_encoding = $got->getValue('decode');
-#        *$obj->{Encoding} = IO::Compress::Base::Common::getEncoding($obj, $class, $want_encoding);
-#    }
-#    else {
-#        *$obj->{Encoding} = undef;
-#    }
+    if ($got->parsed('Encode')) { 
+        my $want_encoding = $got->value('Encode');
+        *$obj->{Encoding} = getEncoding($obj, $class, $want_encoding);
+    }
 
-    *$obj->{InputLength}       = $got->parsed('inputlength')
-                                    ? $got->getValue('inputlength')
+
+    *$obj->{InputLength}       = $got->parsed('InputLength') 
+                                    ? $got->value('InputLength')
                                     : undef ;
-    *$obj->{InputLengthRemaining} = $got->getValue('inputlength');
+    *$obj->{InputLengthRemaining} = $got->value('InputLength');
     *$obj->{BufferOffset}      = 0 ;
-    *$obj->{AutoClose}         = $got->getValue('autoclose');
-    *$obj->{Strict}            = $got->getValue('strict');
-    *$obj->{BlockSize}         = $got->getValue('blocksize');
-    *$obj->{Append}            = $got->getValue('append');
-    *$obj->{AppendOutput}      = $append_mode || $got->getValue('append');
-    *$obj->{ConsumeInput}      = $got->getValue('consumeinput');
-    *$obj->{Transparent}       = $got->getValue('transparent');
-    *$obj->{MultiStream}       = $got->getValue('multistream');
+    *$obj->{AutoClose}         = $got->value('AutoClose');
+    *$obj->{Strict}            = $got->value('Strict');
+    *$obj->{BlockSize}         = $got->value('BlockSize');
+    *$obj->{Append}            = $got->value('Append');
+    *$obj->{AppendOutput}      = $append_mode || $got->value('Append');
+    *$obj->{ConsumeInput}      = $got->value('ConsumeInput');
+    *$obj->{Transparent}       = $got->value('Transparent');
+    *$obj->{MultiStream}       = $got->value('MultiStream');
 
     # TODO - move these two into RawDeflate
-    *$obj->{Scan}              = $got->getValue('scan');
-    *$obj->{ParseExtra}        = $got->getValue('parseextra')
-                                  || $got->getValue('strict')  ;
+    *$obj->{Scan}              = $got->value('Scan');
+    *$obj->{ParseExtra}        = $got->value('ParseExtra') 
+                                  || $got->value('Strict')  ;
     *$obj->{Type}              = '';
-    *$obj->{Prime}             = $got->getValue('prime') || '' ;
+    *$obj->{Prime}             = $got->value('Prime') || '' ;
     *$obj->{Pending}           = '';
     *$obj->{Plain}             = 0;
     *$obj->{PlainBytesRead}    = 0;
     *$obj->{InflatedBytesRead} = 0;
-    *$obj->{UnCompSize}        = U64->new;
-    *$obj->{CompSize}          = U64->new;
+    *$obj->{UnCompSize}        = new U64;
+    *$obj->{CompSize}          = new U64;
     *$obj->{TotalInflatedBytesRead} = 0;
     *$obj->{NewStream}         = 0 ;
     *$obj->{EventEof}          = 0 ;
@@ -492,35 +474,14 @@ sub _create
     return undef
         unless defined $status;
 
-    *$obj->{InNew} = 0;
-    *$obj->{Closed} = 0;
-
-    return $obj
-        if *$obj->{Pause} ;
-
-    if ($status) {
-        # Need to try uncompressing to catch the case
-        # where the compressed file uncompresses to an
-        # empty string - so eof is set immediately.
-
-        my $out_buffer = '';
-
-        $status = $obj->read(\$out_buffer);
-
-        if ($status < 0) {
-            *$obj->{ReadStatus} = [ $status, $obj->error(), $obj->errorNo() ];
-        }
-
-        $obj->ungetc($out_buffer)
-            if length $out_buffer;
-    }
-    else {
-        return undef
+    if ( !  $status) {
+        return undef 
             unless *$obj->{Transparent};
 
         $obj->clearError();
         *$obj->{Type} = 'plain';
         *$obj->{Plain} = 1;
+        #$status = $obj->mkIdentityUncomp($class, $got);
         $obj->pushBack(*$obj->{HeaderPending})  ;
     }
 
@@ -549,7 +510,7 @@ sub ckInputParam
 #
 #        if ($_[0] ne '-' && ! -e $_[0] )
 #        {
-#            return $self->saveErrorString(1,
+#            return $self->saveErrorString(1, 
 #                            "input file '$_[0]' does not exist", STATUS_ERROR);
 #        }
 #    }
@@ -573,46 +534,23 @@ sub _inf
     my $output = shift ;
 
 
-    my $x = IO::Compress::Base::Validator->new($class, *$obj->{Error}, $name, $input, $output)
+    my $x = new IO::Compress::Base::Validator($class, *$obj->{Error}, $name, $input, $output)
         or return undef ;
-
+    
     push @_, $output if $haveOut && $x->{Hash};
 
     *$obj->{OneShot} = 1 ;
-
+    
     my $got = $obj->checkParams($name, undef, @_)
         or return undef ;
 
-    if ($got->parsed('trailingdata'))
+    if ($got->parsed('TrailingData'))
     {
-#        my $value = $got->valueRef('TrailingData');
-#        warn "TD $value ";
-#        #$value = $$value;
-##                warn "TD $value $$value ";
-#
-#        return retErr($obj, "Parameter 'TrailingData' not writable")
-#            if readonly $$value ;
-#
-#        if (ref $$value)
-#        {
-#            return retErr($obj,"Parameter 'TrailingData' not a scalar reference")
-#                if ref $$value ne 'SCALAR' ;
-#
-#            *$obj->{TrailingData} = $$value ;
-#        }
-#        else
-#        {
-#            return retErr($obj,"Parameter 'TrailingData' not a scalar")
-#                if ref $value ne 'SCALAR' ;
-#
-#            *$obj->{TrailingData} = $value ;
-#        }
-
-        *$obj->{TrailingData} = $got->getValue('trailingdata');
+        *$obj->{TrailingData} = $got->value('TrailingData');
     }
 
-    *$obj->{MultiStream} = $got->getValue('multistream');
-    $got->setValue('multistream', 0);
+    *$obj->{MultiStream} = $got->value('MultiStream');
+    $got->value('MultiStream', 0);
 
     $x->{Got} = $got ;
 
@@ -620,7 +558,7 @@ sub _inf
 #    {
 #        while (my($k, $v) = each %$input)
 #        {
-#            $v = \$input->{$k}
+#            $v = \$input->{$k} 
 #                unless defined $v ;
 #
 #            $obj->_singleTarget($x, $k, $v, @_)
@@ -629,7 +567,7 @@ sub _inf
 #
 #        return keys %$input ;
 #    }
-
+    
     if ($x->{GlobMap})
     {
         $x->{oneInput} = 1 ;
@@ -645,11 +583,11 @@ sub _inf
 
     if (! $x->{oneOutput} )
     {
-        my $inFile = ($x->{inType} eq 'filenames'
+        my $inFile = ($x->{inType} eq 'filenames' 
                         || $x->{inType} eq 'filename');
 
         $x->{inType} = $inFile ? 'filename' : 'buffer';
-
+        
         foreach my $in ($x->{oneInput} ? $input : @$input)
         {
             my $out ;
@@ -684,7 +622,7 @@ sub _singleTarget
     my $x         = shift ;
     my $input     = shift;
     my $output    = shift;
-
+    
     my $buff = '';
     $x->{buff} = \$buff ;
 
@@ -692,49 +630,49 @@ sub _singleTarget
     if ($x->{outType} eq 'filename') {
         my $mode = '>' ;
         $mode = '>>'
-            if $x->{Got}->getValue('append') ;
-        $x->{fh} = IO::File->new( "$mode $output" )
+            if $x->{Got}->value('Append') ;
+        $x->{fh} = new IO::File "$mode $output" 
             or return retErr($x, "cannot open file '$output': $!") ;
-        binmode $x->{fh} ;
+        binmode $x->{fh} if $x->{Got}->valueOrDefault('BinModeOut');
 
     }
 
     elsif ($x->{outType} eq 'handle') {
         $x->{fh} = $output;
-        binmode $x->{fh} ;
-        if ($x->{Got}->getValue('append')) {
+        binmode $x->{fh} if $x->{Got}->valueOrDefault('BinModeOut');
+        if ($x->{Got}->value('Append')) {
                 seek($x->{fh}, 0, SEEK_END)
                     or return retErr($x, "Cannot seek to end of output filehandle: $!") ;
             }
     }
 
-
+    
     elsif ($x->{outType} eq 'buffer' )
     {
-        $$output = ''
-            unless $x->{Got}->getValue('append');
+        $$output = '' 
+            unless $x->{Got}->value('Append');
         $x->{buff} = $output ;
     }
 
     if ($x->{oneInput})
     {
         defined $self->_rd2($x, $input, $output)
-            or return undef;
+            or return undef; 
     }
     else
     {
         for my $element ( ($x->{inType} eq 'hash') ? keys %$input : @$input)
         {
-            defined $self->_rd2($x, $element, $output)
+            defined $self->_rd2($x, $element, $output) 
                 or return undef ;
         }
     }
 
 
-    if ( ($x->{outType} eq 'filename' && $output ne '-') ||
-         ($x->{outType} eq 'handle' && $x->{Got}->getValue('autoclose'))) {
-        $x->{fh}->close()
-            or return retErr($x, $!);
+    if ( ($x->{outType} eq 'filename' && $output ne '-') || 
+         ($x->{outType} eq 'handle' && $x->{Got}->value('AutoClose'))) {
+        $x->{fh}->close() 
+            or return retErr($x, $!); 
         delete $x->{fh};
     }
 
@@ -747,20 +685,19 @@ sub _rd2
     my $x         = shift ;
     my $input     = shift;
     my $output    = shift;
-
-    my $z = IO::Compress::Base::Common::createSelfTiedObject($x->{Class}, *$self->{Error});
-
+        
+    my $z = createSelfTiedObject($x->{Class}, *$self->{Error});
+    
     $z->_create($x->{Got}, 1, $input, @_)
         or return undef ;
 
     my $status ;
     my $fh = $x->{fh};
-
+    
     while (1) {
 
         while (($status = $z->read($x->{buff})) > 0) {
             if ($fh) {
-                local $\;
                 print $fh ${ $x->{buff} }
                     or return $z->saveErrorString(undef, "Error writing to output file: $!", $!);
                 ${ $x->{buff} } = '' ;
@@ -770,9 +707,9 @@ sub _rd2
         if (! $x->{oneOutput} ) {
             my $ot = $x->{outType} ;
 
-            if ($ot eq 'array')
+            if ($ot eq 'array') 
               { push @$output, $x->{buff} }
-            elsif ($ot eq 'hash')
+            elsif ($ot eq 'hash') 
               { $output->{$input} = $x->{buff} }
 
             my $buff = '';
@@ -780,13 +717,14 @@ sub _rd2
         }
 
         last if $status < 0 || $z->smartEof();
+        #last if $status < 0 ;
 
-        last
+        last 
             unless *$self->{MultiStream};
 
         $status = $z->nextStream();
 
-        last
+        last 
             unless $status == 1 ;
     }
 
@@ -796,7 +734,7 @@ sub _rd2
     ${ *$self->{TrailingData} } = $z->trailingData()
         if defined *$self->{TrailingData} ;
 
-    $z->close()
+    $z->close() 
         or return undef ;
 
     return 1 ;
@@ -808,7 +746,7 @@ sub TIEHANDLE
     die "OOPS\n" ;
 
 }
-
+  
 sub UNTIE
 {
     my $self = shift ;
@@ -833,13 +771,13 @@ sub readBlock
             *$self->{CompressedInputLengthDone} = 1;
             return STATUS_OK ;
         }
-        $size = List::Util::min($size, *$self->{CompressedInputLengthRemaining} );
+        $size = min($size, *$self->{CompressedInputLengthRemaining} );
         *$self->{CompressedInputLengthRemaining} -= $size ;
     }
-
+    
     my $status = $self->smartRead($buff, $size) ;
-    return $self->saveErrorString(STATUS_ERROR, "Error Reading Data: $!", $!)
-        if $status == STATUS_ERROR  ;
+    return $self->saveErrorString(STATUS_ERROR, "Error Reading Data")
+        if $status < 0  ;
 
     if ($status == 0 ) {
         *$self->{Closed} = 1 ;
@@ -861,10 +799,11 @@ sub _raw_read
     # >0 - ok, number of bytes read
     # =0 - ok, eof
     # <0 - not ok
-
+    
     my $self = shift ;
 
     return G_EOF if *$self->{Closed} ;
+    #return G_EOF if !length *$self->{Pending} && *$self->{EndStream} ;
     return G_EOF if *$self->{EndStream} ;
 
     my $buffer = shift ;
@@ -873,9 +812,9 @@ sub _raw_read
     if (*$self->{Plain}) {
         my $tmp_buff ;
         my $len = $self->smartRead(\$tmp_buff, *$self->{BlockSize}) ;
-
-        return $self->saveErrorString(G_ERR, "Error reading data: $!", $!)
-                if $len == STATUS_ERROR ;
+        
+        return $self->saveErrorString(G_ERR, "Error reading data: $!", $!) 
+                if $len < 0 ;
 
         if ($len == 0 ) {
             *$self->{EndStream} = 1 ;
@@ -898,13 +837,12 @@ sub _raw_read
         $$buffer .=  *$self->{Pending} ;
         my $len = length  *$self->{Pending} ;
         *$self->{Pending} = '';
-        return $len;
+        return $len; 
     }
 
     my $temp_buf = '';
     my $outSize = 0;
     my $status = $self->readBlock(\$temp_buf, *$self->{BlockSize}, $outSize) ;
-
     return G_ERR
         if $status == STATUS_ERROR  ;
 
@@ -915,37 +853,36 @@ sub _raw_read
         $status = *$self->{Uncomp}->uncompr(\$temp_buf, $buffer,
                                     defined *$self->{CompressedInputLengthDone} ||
                                                 $self->smartEof(), $outSize);
-
+                                                
         # Remember the input buffer if it wasn't consumed completely
         $self->pushBack($temp_buf) if *$self->{Uncomp}{ConsumesInput};
 
         return $self->saveErrorString(G_ERR, *$self->{Uncomp}{Error}, *$self->{Uncomp}{ErrorNo})
-            if $self->saveStatus($status) == STATUS_ERROR;
+            if $self->saveStatus($status) == STATUS_ERROR;    
 
         $self->postBlockChk($buffer, $before_len) == STATUS_OK
             or return G_ERR;
 
         $buf_len = defined $$buffer ? length($$buffer) - $before_len : 0;
-
+    
         *$self->{CompSize}->add($beforeC_len - length $temp_buf) ;
 
         *$self->{InflatedBytesRead} += $buf_len ;
         *$self->{TotalInflatedBytesRead} += $buf_len ;
         *$self->{UnCompSize}->add($buf_len) ;
 
-        $self->filterUncompressed($buffer, $before_len);
+        $self->filterUncompressed($buffer);
 
-#        if (*$self->{Encoding}) {
-#            use Encode ;
-#            *$self->{PendingDecode} .= substr($$buffer, $before_len) ;
-#            my $got = *$self->{Encoding}->decode(*$self->{PendingDecode}, Encode::FB_QUIET) ;
-#            substr($$buffer, $before_len) = $got;
-#        }
+        if (*$self->{Encoding}) {
+            $$buffer = *$self->{Encoding}->decode($$buffer);
+        }
     }
 
     if ($status == STATUS_ENDSTREAM) {
 
         *$self->{EndStream} = 1 ;
+#$self->pushBack($temp_buf)  ;
+#$temp_buf = '';
 
         my $trailer;
         my $trailer_size = *$self->{Info}{TrailerLength} ;
@@ -960,13 +897,13 @@ sub _raw_read
                 or return G_ERR;
         }
         else {
-            return $self->TrailerError("trailer truncated. Expected " .
+            return $self->TrailerError("trailer truncated. Expected " . 
                                       "$trailer_size bytes, got $got")
                 if *$self->{Strict};
             $self->pushBack($trailer)  ;
         }
 
-        # TODO - if want file pointer, do it here
+        # TODO - if want to file file pointer, do it here
 
         if (! $self->smartEof()) {
             *$self->{NewStream} = 1 ;
@@ -978,7 +915,7 @@ sub _raw_read
         }
 
     }
-
+    
 
     # return the number of uncompressed bytes read
     return $buf_len ;
@@ -1006,17 +943,9 @@ sub nextStream
 {
     my $self = shift ;
 
-    # An uncompressed file cannot have a next stream, so
-    # return immediately.
-    return 0
-        if *$self->{Plain} ;
-
     my $status = $self->gotoNextStream();
     $status == 1
         or return $status ;
-
-    *$self->{Pending} = ''
-        if $self !~ /IO::Uncompress::RawInflate/ && ! *$self->{MultiStream};
 
     *$self->{TotalInflatedBytesRead} = 0 ;
     *$self->{LineNo} = $. = 0;
@@ -1034,7 +963,7 @@ sub gotoNextStream
 
         # TODO - make this more efficient if know the offset for the end of
         # the stream and seekable
-        $status = $self->read($buffer)
+        $status = $self->read($buffer) 
             while $status > 0 ;
 
         return $status
@@ -1043,24 +972,19 @@ sub gotoNextStream
 
     *$self->{NewStream} = 0 ;
     *$self->{EndStream} = 0 ;
-    *$self->{CompressedInputLengthDone} = undef ;
-    *$self->{CompressedInputLength} = undef ;
     $self->reset();
     *$self->{UnCompSize}->reset();
     *$self->{CompSize}->reset();
 
     my $magic = $self->ckMagic();
+    #*$self->{EndStream} = 0 ;
 
     if ( ! defined $magic) {
-        if (! *$self->{Transparent} || $self->eof())
+        if (! *$self->{Transparent} )
         {
             *$self->{EndStream} = 1 ;
             return 0;
         }
-
-        # Not EOF, so Transparent mode kicks in now for trailing data
-        # Reset member name in case anyone calls getHeaderInfo()->{Name}
-        *$self->{Info} = { Name => undef, Type  => 'plain' };
 
         $self->clearError();
         *$self->{Type} = 'plain';
@@ -1079,7 +1003,7 @@ sub gotoNextStream
 
     push @{ *$self->{InfoList} }, *$self->{Info} ;
 
-    return 1;
+    return 1; 
 }
 
 sub streamCount
@@ -1095,15 +1019,8 @@ sub read
     # >0 - ok, number of bytes read
     # =0 - ok, eof
     # <0 - not ok
-
+    
     my $self = shift ;
-
-    if (defined *$self->{ReadStatus} ) {
-        my $status = *$self->{ReadStatus}[0];
-        $self->saveErrorString( @{ *$self->{ReadStatus} } );
-        delete  *$self->{ReadStatus} ;
-        return $status ;
-    }
 
     return G_EOF if *$self->{Closed} ;
 
@@ -1111,7 +1028,7 @@ sub read
 
     if (ref $_[0] ) {
         $self->croakError(*$self->{ClassName} . "::read: buffer parameter is read-only")
-            if Scalar::Util::readonly(${ $_[0] });
+            if readonly(${ $_[0] });
 
         $self->croakError(*$self->{ClassName} . "::read: not a scalar reference $_[0]" )
             unless ref $_[0] eq 'SCALAR' ;
@@ -1119,7 +1036,7 @@ sub read
     }
     else {
         $self->croakError(*$self->{ClassName} . "::read: buffer parameter is read-only")
-            if Scalar::Util::readonly($_[0]);
+            if readonly($_[0]);
 
         $buffer = \$_[0] ;
     }
@@ -1128,8 +1045,7 @@ sub read
     my $offset = $_[2] || 0;
 
     if (! *$self->{AppendOutput}) {
-        if (! $offset) {
-
+        if (! $offset) {    
             $$buffer = '' ;
         }
         else {
@@ -1140,9 +1056,6 @@ sub read
                 substr($$buffer, $offset) = '';
             }
         }
-    }
-    elsif (! defined $$buffer) {
-        $$buffer = '' ;
     }
 
     return G_EOF if !length *$self->{Pending} && *$self->{EndStream} ;
@@ -1166,13 +1079,13 @@ sub read
         }
         else {
             my $len = 0;
-            $len = $self->_raw_read($buffer)
+            $len = $self->_raw_read($buffer) 
                 while ! *$self->{EndStream} && $len == 0 ;
             return $len ;
         }
     }
 
-    # Need to jump through more hoops - either length or offset
+    # Need to jump through more hoops - either length or offset 
     # or both are specified.
     my $out_buffer = *$self->{Pending} ;
     *$self->{Pending} = '';
@@ -1181,17 +1094,17 @@ sub read
     while (! *$self->{EndStream} && length($out_buffer) < $length)
     {
         my $buf_len = $self->_raw_read(\$out_buffer);
-        return $buf_len
+        return $buf_len 
             if $buf_len < 0 ;
     }
 
-    $length = length $out_buffer
+    $length = length $out_buffer 
         if length($out_buffer) < $length ;
 
-    return 0
+    return 0 
         if $length == 0 ;
 
-    $$buffer = ''
+    $$buffer = '' 
         if ! defined $$buffer;
 
     $offset = length $$buffer
@@ -1200,6 +1113,7 @@ sub read
     *$self->{Pending} = $out_buffer;
     $out_buffer = \*$self->{Pending} ;
 
+    #substr($$buffer, $offset) = substr($$out_buffer, 0, $length, '') ;
     substr($$buffer, $offset) = substr($$out_buffer, 0, $length) ;
     substr($$out_buffer, 0, $length) =  '' ;
 
@@ -1209,88 +1123,80 @@ sub read
 sub _getline
 {
     my $self = shift ;
-    my $status = 0 ;
 
     # Slurp Mode
     if ( ! defined $/ ) {
         my $data ;
-        1 while ($status = $self->read($data)) > 0 ;
-        return ($status, \$data);
+        1 while $self->read($data) > 0 ;
+        return \$data ;
     }
 
     # Record Mode
     if ( ref $/ eq 'SCALAR' && ${$/} =~ /^\d+$/ && ${$/} > 0) {
         my $reclen = ${$/} ;
         my $data ;
-        $status = $self->read($data, $reclen) ;
-        return ($status, \$data);
+        $self->read($data, $reclen) ;
+        return \$data ;
     }
 
     # Paragraph Mode
     if ( ! length $/ ) {
-        my $paragraph ;
-        while (($status = $self->read($paragraph)) > 0 ) {
+        my $paragraph ;    
+        while ($self->read($paragraph) > 0 ) {
             if ($paragraph =~ s/^(.*?\n\n+)//s) {
                 *$self->{Pending}  = $paragraph ;
                 my $par = $1 ;
-                return (1, \$par);
+                return \$par ;
             }
         }
-        return ($status, \$paragraph);
+        return \$paragraph;
     }
 
     # $/ isn't empty, or a reference, so it's Line Mode.
     {
-        my $line ;
+        my $line ;    
+        my $offset;
         my $p = \*$self->{Pending}  ;
-        while (($status = $self->read($line)) > 0 ) {
+
+        if (length(*$self->{Pending}) && 
+                    ($offset = index(*$self->{Pending}, $/)) >=0) {
+            my $l = substr(*$self->{Pending}, 0, $offset + length $/ );
+            substr(*$self->{Pending}, 0, $offset + length $/) = '';    
+            return \$l;
+        }
+
+        while ($self->read($line) > 0 ) {
             my $offset = index($line, $/);
             if ($offset >= 0) {
                 my $l = substr($line, 0, $offset + length $/ );
-                substr($line, 0, $offset + length $/) = '';
+                substr($line, 0, $offset + length $/) = '';    
                 $$p = $line;
-                return (1, \$l);
+                return \$l;
             }
         }
 
-        return ($status, \$line);
+        return \$line;
     }
 }
 
 sub getline
 {
     my $self = shift;
-
-    if (defined *$self->{ReadStatus} ) {
-        $self->saveErrorString( @{ *$self->{ReadStatus} } );
-        delete  *$self->{ReadStatus} ;
-        return undef;
-    }
-
-    return undef
-        if *$self->{Closed} || (!length *$self->{Pending} && *$self->{EndStream}) ;
-
     my $current_append = *$self->{AppendOutput} ;
     *$self->{AppendOutput} = 1;
-
-    my ($status, $lineref) = $self->_getline();
+    my $lineref = $self->_getline();
+    $. = ++ *$self->{LineNo} if defined $$lineref ;
     *$self->{AppendOutput} = $current_append;
-
-    return undef
-        if $status < 0 || length $$lineref == 0 ;
-
-    $. = ++ *$self->{LineNo} ;
-
     return $$lineref ;
 }
 
 sub getlines
 {
     my $self = shift;
-    $self->croakError(*$self->{ClassName} .
+    $self->croakError(*$self->{ClassName} . 
             "::getlines: called in scalar context\n") unless wantarray;
     my($line, @lines);
-    push(@lines, $line)
+    push(@lines, $line) 
         while defined($line = $self->getline);
     return @lines;
 }
@@ -1312,8 +1218,8 @@ sub getc
 sub ungetc
 {
     my $self = shift;
-    *$self->{Pending} = ""  unless defined *$self->{Pending} ;
-    *$self->{Pending} = $_[0] . *$self->{Pending} ;
+    *$self->{Pending} = ""  unless defined *$self->{Pending} ;    
+    *$self->{Pending} = $_[0] . *$self->{Pending} ;    
 }
 
 
@@ -1337,7 +1243,7 @@ sub eof
     my $self = shift ;
 
     return (*$self->{Closed} ||
-              (!length *$self->{Pending}
+              (!length *$self->{Pending} 
                 && ( $self->smartEof() || *$self->{EndStream}))) ;
 }
 
@@ -1367,14 +1273,15 @@ sub close
 
     return 1 if *$self->{Closed} ;
 
-    untie *$self
+    untie *$self 
         if $] >= 5.008 ;
 
     my $status = 1 ;
 
     if (defined *$self->{FH}) {
         if ((! *$self->{Handle} || *$self->{AutoClose}) && ! *$self->{StdIO}) {
-            local $.;
+        #if ( *$self->{AutoClose}) {
+            local $.; 
             $! = 0 ;
             $status = *$self->{FH}->close();
             return $self->saveErrorString(0, $!, $!)
@@ -1441,7 +1348,7 @@ sub seek
     my $offset = $target - $here ;
 
     my $got;
-    while (($got = $self->read(my $buffer, List::Util::min($offset, *$self->{BlockSize})) ) > 0)
+    while (($got = $self->read(my $buffer, min($offset, *$self->{BlockSize})) ) > 0)
     {
         $offset -= $got;
         last if $offset == 0 ;
@@ -1454,8 +1361,8 @@ sub seek
 sub fileno
 {
     my $self = shift ;
-    return defined *$self->{FH}
-           ? fileno *$self->{FH}
+    return defined *$self->{FH} 
+           ? fileno *$self->{FH} 
            : undef ;
 }
 
@@ -1463,8 +1370,8 @@ sub binmode
 {
     1;
 #    my $self     = shift ;
-#    return defined *$self->{FH}
-#            ? binmode *$self->{FH}
+#    return defined *$self->{FH} 
+#            ? binmode *$self->{FH} 
 #            : 1 ;
 }
 
@@ -1477,8 +1384,8 @@ sub opened
 sub autoflush
 {
     my $self     = shift ;
-    return defined *$self->{FH}
-            ? *$self->{FH}->autoflush(@_)
+    return defined *$self->{FH} 
+            ? *$self->{FH}->autoflush(@_) 
             : undef ;
 }
 
@@ -1490,35 +1397,34 @@ sub input_line_number
     return $last;
 }
 
+
+*BINMODE  = \&binmode;
+*SEEK     = \&seek; 
+*READ     = \&read;
+*sysread  = \&read;
+*TELL     = \&tell;
+*EOF      = \&eof;
+
+*FILENO   = \&fileno;
+*CLOSE    = \&close;
+
 sub _notAvailable
 {
     my $name = shift ;
+    #return sub { croak "$name Not Available" ; } ;
     return sub { croak "$name Not Available: File opened only for intput" ; } ;
 }
 
-{
-    no warnings 'once';
 
-    *BINMODE  = \&binmode;
-    *SEEK     = \&seek;
-    *READ     = \&read;
-    *sysread  = \&read;
-    *TELL     = \&tell;
-    *EOF      = \&eof;
+*print    = _notAvailable('print');
+*PRINT    = _notAvailable('print');
+*printf   = _notAvailable('printf');
+*PRINTF   = _notAvailable('printf');
+*write    = _notAvailable('write');
+*WRITE    = _notAvailable('write');
 
-    *FILENO   = \&fileno;
-    *CLOSE    = \&close;
-
-    *print    = _notAvailable('print');
-    *PRINT    = _notAvailable('print');
-    *printf   = _notAvailable('printf');
-    *PRINTF   = _notAvailable('printf');
-    *write    = _notAvailable('write');
-    *WRITE    = _notAvailable('write');
-
-    #*sysread  = \&read;
-    #*syswrite = \&_notAvailable;
-}
+#*sysread  = \&read;
+#*syswrite = \&_notAvailable;
 
 
 
@@ -1530,7 +1436,7 @@ __END__
 
 =head1 NAME
 
-IO::Uncompress::Base - Base Class for IO::Uncompress modules
+IO::Uncompress::Base - Base Class for IO::Uncompress modules 
 
 =head1 SYNOPSIS
 
@@ -1539,19 +1445,13 @@ IO::Uncompress::Base - Base Class for IO::Uncompress modules
 =head1 DESCRIPTION
 
 This module is not intended for direct use in application code. Its sole
-purpose is to be sub-classed by IO::Uncompress modules.
-
-=head1 SUPPORT
-
-General feedback/questions/bug reports should be sent to
-L<https://github.com/pmqs/IO-Compress/issues> (preferred) or
-L<https://rt.cpan.org/Public/Dist/Display.html?Name=IO-Compress>.
+purpose if to to be sub-classed by IO::Unompress modules.
 
 =head1 SEE ALSO
 
-L<Compress::Zlib>, L<IO::Compress::Gzip>, L<IO::Uncompress::Gunzip>, L<IO::Compress::Deflate>, L<IO::Uncompress::Inflate>, L<IO::Compress::RawDeflate>, L<IO::Uncompress::RawInflate>, L<IO::Compress::Bzip2>, L<IO::Uncompress::Bunzip2>, L<IO::Compress::Lzma>, L<IO::Uncompress::UnLzma>, L<IO::Compress::Xz>, L<IO::Uncompress::UnXz>, L<IO::Compress::Lzip>, L<IO::Uncompress::UnLzip>, L<IO::Compress::Lzop>, L<IO::Uncompress::UnLzop>, L<IO::Compress::Lzf>, L<IO::Uncompress::UnLzf>, L<IO::Compress::Zstd>, L<IO::Uncompress::UnZstd>, L<IO::Uncompress::AnyInflate>, L<IO::Uncompress::AnyUncompress>
+L<Compress::Zlib>, L<IO::Compress::Gzip>, L<IO::Uncompress::Gunzip>, L<IO::Compress::Deflate>, L<IO::Uncompress::Inflate>, L<IO::Compress::RawDeflate>, L<IO::Uncompress::RawInflate>, L<IO::Compress::Bzip2>, L<IO::Uncompress::Bunzip2>, L<IO::Compress::Lzma>, L<IO::Uncompress::UnLzma>, L<IO::Compress::Xz>, L<IO::Uncompress::UnXz>, L<IO::Compress::Lzop>, L<IO::Uncompress::UnLzop>, L<IO::Compress::Lzf>, L<IO::Uncompress::UnLzf>, L<IO::Uncompress::AnyInflate>, L<IO::Uncompress::AnyUncompress>
 
-L<IO::Compress::FAQ|IO::Compress::FAQ>
+L<Compress::Zlib::FAQ|Compress::Zlib::FAQ>
 
 L<File::GlobMapper|File::GlobMapper>, L<Archive::Zip|Archive::Zip>,
 L<Archive::Tar|Archive::Tar>,
@@ -1559,7 +1459,7 @@ L<IO::Zlib|IO::Zlib>
 
 =head1 AUTHOR
 
-This module was written by Paul Marquess, C<pmqs@cpan.org>.
+This module was written by Paul Marquess, F<pmqs@cpan.org>. 
 
 =head1 MODIFICATION HISTORY
 
@@ -1567,7 +1467,8 @@ See the Changes file.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (c) 2005-2022 Paul Marquess. All rights reserved.
+Copyright (c) 2005-2010 Paul Marquess. All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
+

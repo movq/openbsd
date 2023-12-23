@@ -1,6 +1,6 @@
 #!perl
 BEGIN {
-    chdir 't' if -d 't';
+    chdir 't';
     require './test.pl';
 }
 

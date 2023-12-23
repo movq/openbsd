@@ -18,14 +18,13 @@ BEGIN {
     elsif (!$can_fork) {
         $reason = 'no fork';
     }
-    $reason = q[Test out of sequence on windows] if $^O eq 'MSWin32' && $ENV{CONTINUOUS_INTEGRATION};
     if ($reason) {
 	print "1..0 # Skip: $reason\n";
 	exit 0;
     }
 }
 
-my $has_perlio = PerlIO::Layer->find( 'perlio' );
+my $has_perlio = $] >= 5.008 && find PerlIO::Layer 'perlio';
 
 $| = 1;
 print "1..26\n";
@@ -37,8 +36,7 @@ eval {
 
 use IO::Socket;
 
-my $listen = IO::Socket::INET->new(LocalAddr => 'localhost',
-				Listen => 2,
+$listen = IO::Socket::INET->new(Listen => 2,
 				Proto => 'tcp',
 				# some systems seem to need as much as 10,
 				# so be generous with the timeout
@@ -54,11 +52,11 @@ if ($^O eq 'os2' and
     exit 0;
 }
 
-my $port = $listen->sockport;
+$port = $listen->sockport;
 
-if(my $pid = fork()) {
+if($pid = fork()) {
 
-    my $sock = $listen->accept() or die "accept failed: $!";
+    $sock = $listen->accept() or die "accept failed: $!";
     print "ok 2\n";
 
     $sock->autoflush(1);
@@ -74,7 +72,7 @@ if(my $pid = fork()) {
 
 } elsif(defined $pid) {
 
-    my $sock = IO::Socket::INET->new(PeerPort => $port,
+    $sock = IO::Socket::INET->new(PeerPort => $port,
 				  Proto => 'tcp',
 				  PeerAddr => 'localhost'
 				 )
@@ -99,13 +97,13 @@ if(my $pid = fork()) {
 
 # Test various other ways to create INET sockets that should
 # also work.
-$listen = IO::Socket::INET->new(LocalAddr => 'localhost', Listen => '', Timeout => 15) or die "$!";
+$listen = IO::Socket::INET->new(Listen => '', Timeout => 15) or die "$!";
 $port = $listen->sockport;
 
-if(my $pid = fork()) {
+if($pid = fork()) {
   SERVER_LOOP:
     while (1) {
-       last SERVER_LOOP unless my $sock = $listen->accept;
+       last SERVER_LOOP unless $sock = $listen->accept;
        while (<$sock>) {
            last SERVER_LOOP if /^quit/;
            last if /^done/;
@@ -116,7 +114,7 @@ if(my $pid = fork()) {
     $listen->close;
 } elsif (defined $pid) {
     # child, try various ways to connect
-    my $sock = IO::Socket::INET->new("localhost:$port")
+    $sock = IO::Socket::INET->new("localhost:$port")
          || IO::Socket::INET->new("127.0.0.1:$port");
     if ($sock) {
 	print "not " unless $sock->connected;
@@ -129,7 +127,7 @@ if(my $pid = fork()) {
        $sock->close;
     }
     else {
-	print "# $IO::Socket::errstr\n";
+	print "# $@\n";
 	print "not ok 6\n";
 	print "not ok 7\n";
 	print "not ok 8\n";
@@ -146,7 +144,7 @@ if(my $pid = fork()) {
        $sock->close;
     }
     else {
-	print "# $IO::Socket::errstr\n";
+	print "# $@\n";
 	print "not ok 10\n";
     }
 
@@ -171,7 +169,7 @@ if(my $pid = fork()) {
 }
 
 # Then test UDP sockets
-my $server = IO::Socket->new(Domain => AF_INET,
+$server = IO::Socket->new(Domain => AF_INET,
                           Proto  => 'udp',
                           LocalAddr => 'localhost')
        || IO::Socket->new(Domain => AF_INET,
@@ -179,13 +177,13 @@ my $server = IO::Socket->new(Domain => AF_INET,
                           LocalAddr => '127.0.0.1');
 $port = $server->sockport;
 
-if (my $pid = fork()) {
+if ($pid = fork()) {
     my $buf;
     $server->recv($buf, 100);
     print $buf;
 } elsif (defined($pid)) {
     #child
-    my $sock = IO::Socket::INET->new(Proto => 'udp',
+    $sock = IO::Socket::INET->new(Proto => 'udp',
                                   PeerAddr => "localhost:$port")
          || IO::Socket::INET->new(Proto => 'udp',
                                   PeerAddr => "127.0.0.1:$port");
@@ -211,11 +209,11 @@ if ( $^O eq 'qnx' ) {
 }
 
 ### TEST 15
-### Set up some data to be transferred between the server and
+### Set up some data to be transfered between the server and
 ### the client. We'll use own source code ...
 #
-my @data;
-if( !open( SRC, '<', $0)) {
+local @data;
+if( !open( SRC, "< $0")) {
     print "not ok 15 - $!\n";
 } else {
     @data = <SRC>;
@@ -226,7 +224,7 @@ if( !open( SRC, '<', $0)) {
 ### TEST 16
 ### Start the server
 #
-$listen = IO::Socket::INET->new(LocalAddr => 'localhost', Listen => 2, Proto => 'tcp', Timeout => 15) ||
+my $listen = IO::Socket::INET->new( Listen => 2, Proto => 'tcp', Timeout => 15) ||
     print "not ";
 print "ok 16\n";
 die if( !defined( $listen));
@@ -241,7 +239,7 @@ if( $server_pid) {
     ### TEST 18
     ### Get data from the server using a single stream
     #
-    my $sock = IO::Socket::INET->new("localhost:$serverport")
+    $sock = IO::Socket::INET->new("localhost:$serverport")
          || IO::Socket::INET->new("127.0.0.1:$serverport");
 
     if ($sock) {
@@ -266,7 +264,7 @@ if( $server_pid) {
     ### interrupted by eof calls.
     ### On perl-5.7.0@7673 this failed in a SOCKS environment, because eof
     ### did an getc followed by an ungetc in order to check for the streams
-    ### end. getc(3) got replaced by the SOCKS function, which ended up in
+    ### end. getc(3) got replaced by the SOCKS funktion, which ended up in
     ### a recv(2) call on the socket, while ungetc(3) put back a character
     ### to an IO buffer, which never again was read.
     #
@@ -343,7 +341,7 @@ if( $server_pid) {
     ### Child
     #
     SERVER_LOOP: while (1) {
-	last SERVER_LOOP unless my $sock = $listen->accept;
+	last SERVER_LOOP unless $sock = $listen->accept;
 	# Do not print ok/not ok for this binmode() since there's
 	# a race condition with our client, just die if we fail.
 	if ($has_perlio) { binmode($sock, ":utf8") or die }
@@ -383,7 +381,7 @@ if( $server_pid) {
 
 # test Blocking option in constructor
 
-my $sock = IO::Socket::INET->new(Blocking => 0)
+$sock = IO::Socket::INET->new(Blocking => 0)
     or print "not ";
 print "ok 25\n";
 

@@ -1,10 +1,12 @@
 package TAP::Parser::Aggregator;
 
 use strict;
-use warnings;
 use Benchmark;
+use vars qw($VERSION @ISA);
 
-use base 'TAP::Object';
+use TAP::Object ();
+
+@ISA = qw(TAP::Object);
 
 =head1 NAME
 
@@ -12,11 +14,11 @@ TAP::Parser::Aggregator - Aggregate TAP::Parser results
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 SYNOPSIS
 
@@ -72,7 +74,7 @@ BEGIN {    # install summary methods
     $SUMMARY_METHOD_FOR{total}   = 'tests_run';
     $SUMMARY_METHOD_FOR{planned} = 'tests_planned';
 
-    for my $method ( keys %SUMMARY_METHOD_FOR ) {
+    foreach my $method ( keys %SUMMARY_METHOD_FOR ) {
         next if 'total' eq $method;
         no strict 'refs';
         *$method = sub {
@@ -88,7 +90,7 @@ sub _initialize {
     my ($self) = @_;
     $self->{parser_for}  = {};
     $self->{parse_order} = [];
-    for my $summary ( keys %SUMMARY_METHOD_FOR ) {
+    foreach my $summary ( keys %SUMMARY_METHOD_FOR ) {
         $self->{$summary} = 0;
         next if 'total' eq $summary;
         $self->{"descriptions_for_$summary"} = [];
@@ -173,7 +175,7 @@ sub parsers {
 sub _get_parsers {
     my ( $self, @descriptions ) = @_;
     my @parsers;
-    for my $description (@descriptions) {
+    foreach my $description (@descriptions) {
         $self->_croak("A parser for ($description) could not be found")
           unless exists $self->{parser_for}{$description};
         push @parsers => $self->{parser_for}{$description};

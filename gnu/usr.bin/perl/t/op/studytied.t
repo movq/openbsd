@@ -2,14 +2,13 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
+    @INC = '../lib';
 }
 
 use strict;
 use warnings;
 
-plan tests => 14;
+use Test::More tests => 14;
 
 {
     package J;
@@ -23,7 +22,7 @@ plan tests => 14;
 # study() a tied variable, perl should know that the studying isn't
 # valid on subsequent references, and should account for it.
 
-for my $do_study (0,1) {
+for my $do_study qw( 0 1 ) {
     J::reset();
     my $x;
     tie $x, "J";

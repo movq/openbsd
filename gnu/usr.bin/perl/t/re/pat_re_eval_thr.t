@@ -1,3 +1,7 @@
 #!./perl
+
 chdir 't' if -d 't';
-require './thread_it.pl';
+@INC = ('../lib', '.');
+
+require 'thread_it.pl';
+thread_it(qw(re pat_re_eval.t));

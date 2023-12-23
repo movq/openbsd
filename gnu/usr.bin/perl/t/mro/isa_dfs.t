@@ -2,8 +2,8 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require "./test.pl";
-    set_up_inc('../lib');
 }
 
 use strict;
@@ -60,6 +60,6 @@ foreach my $package (qw(klonk urkkk kapow kayo thwacke zzzzzwap whamm)) {
     is("@{mro::get_linear_isa($package)}", "@$isa", "\@ISA for $package");
 
     foreach my $class ($package, @$isa, 'UNIVERSAL') {
-	object_ok($ref, $class, $package);
+	isa_ok($ref, $class, $package);
     }
 }

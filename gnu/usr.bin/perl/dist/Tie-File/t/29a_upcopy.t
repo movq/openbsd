@@ -1,8 +1,4 @@
 #!/usr/bin/perl
-
-use strict;
-use warnings;
-
 #
 # Unit tests of _upcopy function
 #
@@ -14,7 +10,7 @@ use warnings;
 # but the source and destination regions may overlap.)
 
 
-my $file = "tf29a-$$.txt";
+my $file = "tf$$.txt";
 
 print "1..55\n";
 
@@ -26,7 +22,7 @@ $: = Tie::File::_default_recsep();
 
 my @subtests = qw(x <x x> x><x <x> <x><x x><x> <x><x> <x><x><x> 0);
 
-my $FLEN = 40970;  # 2410 records of 17 chars each
+$FLEN = 40970;  # 2410 records of 17 chars each
 
 # (2-7) Trivial non-moves at start of file
 try(0, 0, 0);
@@ -102,7 +98,7 @@ try($FLEN-20000, 200, undef);
 
 sub try {
   my ($src, $dst, $len) = @_;
-  open F, '>', $file or die "Couldn't open file $file: $!";
+  open F, "> $file" or die "Couldn't open file $file: $!";
   binmode F;
 
   # The record has exactly 17 characters.  This will help ensure that
@@ -145,7 +141,7 @@ sub try {
     }
   }
 
-  open F, '<', $file or die "Couldn't open file $file: $!";
+  open F, "< $file" or die "Couldn't open file $file: $!";
   binmode F;
   my $actual;
   { local $/;
@@ -161,6 +157,45 @@ sub try {
   $N++;
 }
 
+
+
+use POSIX 'SEEK_SET';
+sub check_contents {
+  my @c = @_;
+  my $x = join $:, @c, '';
+  local *FH = $o->{fh};
+  seek FH, 0, SEEK_SET;
+#  my $open = open FH, "< $file";
+  my $a;
+  { local $/; $a = <FH> }
+  $a = "" unless defined $a;
+  if ($a eq $x) {
+    print "ok $N\n";
+  } else {
+    ctrlfix($a, $x);
+    print "not ok $N\n# expected <$x>, got <$a>\n";
+  }
+  $N++;
+
+  # now check FETCH:
+  my $good = 1;
+  my $msg;
+  for (0.. $#c) {
+    my $aa = $a[$_];
+    unless ($aa eq "$c[$_]$:") {
+      $msg = "expected <$c[$_]$:>, got <$aa>";
+      ctrlfix($msg);
+      $good = 0;
+    }
+  }
+  print $good ? "ok $N\n" : "not ok $N # $msg\n";
+  $N++;
+
+  print $o->_check_integrity($file, $ENV{INTEGRITY}) 
+      ? "ok $N\n" : "not ok $N\n";
+  $N++;
+}
+
 sub ctrlfix {
   for (@_) {
     s/\n/\\n/g;
@@ -169,6 +204,8 @@ sub ctrlfix {
 }
 
 END {
+  undef $o;
+  untie @a;
   1 while unlink $file;
 }
 

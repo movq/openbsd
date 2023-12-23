@@ -4,11 +4,9 @@ perltrap - Perl traps for the unwary
 
 =head1 DESCRIPTION
 
-The biggest trap of all is forgetting to C<use warnings> or use the B<-w>
-switch; see L<warnings> and L<perlrun/-w>. The second biggest trap is not
-making your entire program runnable under C<use strict>.  The third biggest
-trap is not reading the list of changes in this version of Perl; see
-L<perldelta>.
+The biggest trap of all is forgetting to use the B<-w> switch; see
+L<perlrun>.  The second biggest trap is not making your entire program
+runnable under C<use strict>.
 
 =head2 Awk Traps
 
@@ -18,17 +16,12 @@ Accustomed B<awk> users should take special note of the following:
 
 =item *
 
-A Perl program executes only once, not once for each input line.  You can
-do an implicit loop with C<-n> or C<-p>.
-
-=item *
-
 The English module, loaded via
 
     use English;
 
-allows you to refer to special variables (like C<$/>) with names (like
-$RS), as though they were in B<awk>; see L<perlvar> for details.
+allows you to refer to special variables (like $RS) as 
+though they were in B<awk>; see L<perlvar> for details.
 
 =item *
 
@@ -41,7 +34,7 @@ Curly brackets are required on C<if>s and C<while>s.
 
 =item *
 
-Variables begin with "$", "@" or "%" in Perl.
+Variables begin with "$" or "@" in Perl.
 
 =item *
 
@@ -54,7 +47,8 @@ You have to decide whether your array has numeric or string indices.
 
 =item *
 
-Hash values do not spring into existence upon mere reference.
+Associative array values do not spring into existence upon mere
+reference.
 
 =item *
 
@@ -64,8 +58,8 @@ comparisons.
 =item *
 
 Reading an input line does not split it for you.  You get to split it
-to an array yourself.  And the split() operator has different
-arguments than B<awk>'s.
+yourself to an array.  And split() operator has different
+arguments.
 
 =item *
 
@@ -75,13 +69,13 @@ executed.)  See L<perlvar>.
 
 =item *
 
-$<I<digit>> does not refer to fields--it refers to substrings matched
-by the last match pattern.
+$<I<digit>> does not refer to fields--it refers to substrings matched by
+the last match pattern.
 
 =item *
 
 The print() statement does not add field and record separators unless
-you set C<$,> and C<$\>.  You can set $OFS and $ORS if you're using
+you set C<$,> and C<$.>.  You can set $OFS and $ORS if you're using
 the English module.
 
 =item *
@@ -107,8 +101,8 @@ basically incompatible with C.)
 =item *
 
 The concatenation operator is ".", not the null string.  (Using the
-null string would render C</pat/ /pat/> unparsable, because the third slash
-would be interpreted as a division operator--the tokenizer is in fact
+null string would render C</pat/ /pat/> unparsable, since the third slash
+would be interpreted as a division operator--the tokener is in fact
 slightly context sensitive for operators like "/", "?", and ">".
 And in fact, "." itself can be the beginning of a number.)
 
@@ -122,7 +116,7 @@ The C<next>, C<exit>, and C<continue> keywords work differently.
 The following variables work differently:
 
       Awk	Perl
-      ARGC	scalar @ARGV (compare with $#ARGV)
+      ARGC	$#ARGV or scalar @ARGV
       ARGV[0]	$0
       FILENAME	$ARGV
       FNR	$. - something
@@ -148,9 +142,9 @@ gives you.
 
 =back
 
-=head2 C/C++ Traps
+=head2 C Traps
 
-Cerebral C and C++ programmers should take note of the following:
+Cerebral C programmers should take note of the following:
 
 =over 4
 
@@ -164,29 +158,32 @@ You must use C<elsif> rather than C<else if>.
 
 =item *
 
-The C<break> and C<continue> keywords from C become in Perl C<last>
-and C<next>, respectively.  Unlike in C, these do I<not> work within a
-C<do { } while> construct.  See L<perlsyn/"Loop Control">.
+The C<break> and C<continue> keywords from C become in 
+Perl C<last> and C<next>, respectively.
+Unlike in C, these do I<NOT> work within a C<do { } while> construct.
 
 =item *
 
-The switch statement is called C<given>/C<when> and only available in
-perl 5.10 or newer.  See L<perlsyn/"Switch Statements">.
+There's no switch statement.  (But it's easy to build one on the fly.)
 
 =item *
 
-Variables begin with "$", "@" or "%" in Perl.
+Variables begin with "$" or "@" in Perl.
 
 =item *
 
-Comments begin with "#", not "/*" or "//".  Perl may interpret C/C++
-comments as division operators, unterminated regular expressions or
-the defined-or operator.
+printf() does not implement the "*" format for interpolating
+field widths, but it's trivial to use interpolation of double-quoted
+strings to achieve the same effect.
+
+=item *
+
+Comments begin with "#", not "/*".
 
 =item *
 
 You can't take the address of anything, although a similar operator
-in Perl is the backslash, which creates a reference.
+in Perl 5 is the backslash, which creates a reference.
 
 =item *
 
@@ -196,7 +193,7 @@ ends up in C<$0>.
 =item *
 
 System calls such as link(), unlink(), rename(), etc. return nonzero for
-success, not 0. (system(), however, returns zero for success.)
+success, not 0.
 
 =item *
 
@@ -205,111 +202,11 @@ to find their names on your system.
 
 =back
 
-=head2 JavaScript Traps
-
-Judicious JavaScript programmers should take note of the following:
-
-=over 4
-
-=item *
-
-In Perl, binary C<+> is always addition.  C<$string1 + $string2> converts
-both strings to numbers and then adds them.  To concatenate two strings,
-use the C<.> operator.
-
-=item *
-
-The C<+> unary operator doesn't do anything in Perl.  It exists to avoid
-syntactic ambiguities.
-
-=item *
-
-Unlike C<for...in>, Perl's C<for> (also spelled C<foreach>) does not allow
-the left-hand side to be an arbitrary expression.  It must be a variable:
-
-   for my $variable (keys %hash) {
-	...
-   }
-
-Furthermore, don't forget the C<keys> in there, as
-C<foreach my $kv (%hash) {}> iterates over the keys and values, and is
-generally not useful ($kv would be a key, then a value, and so on).
-
-=item *
-
-To iterate over the indices of an array, use C<foreach my $i (0 .. $#array)
-{}>.  C<foreach my $v (@array) {}> iterates over the values.
-
-=item *
-
-Perl requires braces following C<if>, C<while>, C<foreach>, etc.
-
-=item *
-
-In Perl, C<else if> is spelled C<elsif>.
-
-=item *
-
-C<? :> has higher precedence than assignment.  In JavaScript, one can
-write:
-
-    condition ? do_something() : variable = 3
-
-and the variable is only assigned if the condition is false.  In Perl, you
-need parentheses:
-
-    $condition ? do_something() : ($variable = 3);
-
-Or just use C<if>.
-
-=item *
-
-Perl requires semicolons to separate statements.
-
-=item *
-
-Variables declared with C<my> only affect code I<after> the declaration.
-You cannot write C<$x = 1; my $x;> and expect the first assignment to
-affect the same variable.  It will instead assign to an C<$x> declared
-previously in an outer scope, or to a global variable.
-
-Note also that the variable is not visible until the following
-I<statement>.  This means that in C<my $x = 1 + $x> the second $x refers
-to one declared previously.
-
-=item *
-
-C<my> variables are scoped to the current block, not to the current
-function.  If you write C<{my $x;} $x;>, the second C<$x> does not refer to
-the one declared inside the block.
-
-=item *
-
-An object's members cannot be made accessible as variables.  The closest
-Perl equivalent to C<with(object) { method() }> is C<for>, which can alias
-C<$_> to the object:
-
-    for ($object) {
-	$_->method;
-    }
-
-=item *
-
-The object or class on which a method is called is passed as one of the
-method's arguments, not as a separate C<this> value.
-
-=back
-
 =head2 Sed Traps
 
 Seasoned B<sed> programmers should take note of the following:
 
 =over 4
-
-=item *
-
-A Perl program executes only once, not once for each input line.  You can
-do an implicit loop with C<-n> or C<-p>.
 
 =item *
 
@@ -334,7 +231,7 @@ Sharp shell programmers should take note of the following:
 
 =item *
 
-The backtick operator does variable interpolation without regard to
+The backtick operator does variable interpretation without regard to
 the presence of single quotes in the command.
 
 =item *
@@ -344,7 +241,7 @@ The backtick operator does no translation of the return value, unlike B<csh>.
 =item *
 
 Shells (especially B<csh>) do several levels of substitution on each
-command line.  Perl does substitution in only certain constructs
+command line.  Perl does substitution only in certain constructs
 such as double quotes, backticks, angle brackets, and search patterns.
 
 =item *
@@ -362,13 +259,6 @@ The arguments are available via @ARGV, not $1, $2, etc.
 The environment is not automatically made available as separate scalar
 variables.
 
-=item *
-
-The shell's C<test> uses "=", "!=", "<" etc for string comparisons and "-eq",
-"-ne", "-lt" etc for numeric comparisons. This is the reverse of Perl, which
-uses C<eq>, C<ne>, C<lt> for string comparisons, and C<==>, C<!=> C<< < >> etc
-for numeric comparisons.
-
 =back
 
 =head2 Perl Traps
@@ -384,38 +274,38 @@ context than they do in a scalar one.  See L<perldata> for details.
 
 =item *
 
-Avoid barewords if you can, especially all lowercase ones.
-You can't tell by just looking at it whether a bareword is
-a function or a string.  By using quotes on strings and
-parentheses on function calls, you won't ever get them confused.
+Avoid barewords if you can, especially all lower-case ones.
+You can't tell just by looking at it whether a bareword is 
+a function or a string.  By using quotes on strings and 
+parens on function calls, you won't ever get them confused.
 
 =item *
 
-You cannot discern from mere inspection which builtins
-are unary operators (like chop() and chdir())
+You cannot discern from mere inspection which built-ins
+are unary operators (like chop() and chdir()) 
 and which are list operators (like print() and unlink()).
-(Unless prototyped, user-defined subroutines can B<only> be list
-operators, never unary ones.)  See L<perlop> and L<perlsub>.
+(User-defined subroutines can B<only> be list operators, never
+unary ones.)  See L<perlop>.
 
 =item *
 
 People have a hard time remembering that some functions
 default to $_, or @ARGV, or whatever, but that others which
-you might expect to do not.
+you might expect to do not.  
 
-=item *
+=item * 
 
 The <FH> construct is not the name of the filehandle, it is a readline
-operation on that handle.  The data read is assigned to $_ only if the
+operation on that handle.  The data read is only assigned to $_ if the
 file read is the sole condition in a while loop:
 
     while (<FH>)      { }
-    while (defined($_ = <FH>)) { }..
+    while ($_ = <FH>) { }..
     <FH>;  # data discarded!
 
-=item *
+=item * 
 
-Remember not to use C<=> when you need C<=~>;
+Remember not to use "C<=>" when you need "C<=~>";
 these two constructs are quite different:
 
     $x =  /foo/;
@@ -423,14 +313,14 @@ these two constructs are quite different:
 
 =item *
 
-The C<do {}> construct isn't a real loop that you can use
+The C<do {}> construct isn't a real loop that you can use 
 loop control on.
 
 =item *
 
-Use C<my()> for local variables whenever you can get away with
-it (but see L<perlform> for where you can't).
-Using C<local()> actually gives a local value to a global
+Use my() for local variables whenever you can get away with 
+it (but see L<perlform> for where you can't).  
+Using local() actually gives a local value to a global 
 variable, which leaves you open to unforeseen side-effects
 of dynamic scoping.
 
@@ -442,6 +332,191 @@ external name is still an alias for the original.
 
 =back
 
-As always, if any of these are ever officially declared as bugs,
-they'll be fixed and removed.
+=head2 Perl4 Traps
 
+Penitent Perl 4 Programmers should take note of the following
+incompatible changes that occurred between release 4 and release 5:
+
+=over 4
+
+=item *
+
+C<@> now always interpolates an array in double-quotish strings.  Some programs
+may now need to use backslash to protect any C<@> that shouldn't interpolate.
+
+=item *
+
+Barewords that used to look like strings to Perl will now look like subroutine
+calls if a subroutine by that name is defined before the compiler sees them.
+For example:
+
+    sub SeeYa { die "Hasta la vista, baby!" }
+    $SIG{'QUIT'} = SeeYa;
+
+In Perl 4, that set the signal handler; in Perl 5, it actually calls the
+function!  You may use the B<-w> switch to find such places.
+
+=item *
+
+Symbols starting with C<_> are no longer forced into package C<main>, except
+for $_ itself (and @_, etc.).
+
+=item *
+
+Double-colon is now a valid package separator in an identifier.  Thus these
+behave differently in perl4 vs. perl5:
+
+    print "$a::$b::$c\n";
+    print "$var::abc::xyz\n";
+
+=item *
+
+C<s'$lhs'$rhs'> now does no interpolation on either side.  It used to
+interpolate C<$lhs> but not C<$rhs>.
+
+=item *
+
+The second and third arguments of splice() are now evaluated in scalar
+context (as the book says) rather than list context.
+
+=item *
+
+These are now semantic errors because of precedence:
+
+    shift @list + 20;	
+    $n = keys %map + 20; 
+
+Because if that were to work, then this couldn't:
+
+    sleep $dormancy + 20;
+
+=item *
+
+The precedence of assignment operators is now the same as the precedence
+of assignment.  Perl 4 mistakenly gave them the precedence of the associated
+operator.  So you now must parenthesize them in expressions like
+
+    /foo/ ? ($a += 2) : ($a -= 2);
+
+Otherwise
+
+    /foo/ ? $a += 2 : $a -= 2;
+
+would be erroneously parsed as
+
+    (/foo/ ? $a += 2 : $a) -= 2;
+
+On the other hand,
+
+    $a += /foo/ ? 1 : 2;
+
+now works as a C programmer would expect.
+
+=item *
+
+C<open FOO || die> is now incorrect.  You need parens around the filehandle.
+While temporarily supported, using such a construct will 
+generate a non-fatal (but non-suppressible) warning.
+
+=item *
+
+The elements of argument lists for formats are now evaluated in list
+context.  This means you can interpolate list values now.
+
+=item *
+
+You can't do a C<goto> into a block that is optimized away.  Darn.
+
+=item *
+
+It is no longer syntactically legal to use whitespace as the name
+of a variable, or as a delimiter for any kind of quote construct.
+Double darn.
+
+=item *
+
+The caller() function now returns a false value in a scalar context if there
+is no caller.  This lets library files determine if they're being required.
+
+=item *
+
+C<m//g> now attaches its state to the searched string rather than the
+regular expression.
+
+=item *
+
+C<reverse> is no longer allowed as the name of a sort subroutine.
+
+=item *
+
+B<taintperl> is no longer a separate executable.  There is now a B<-T>
+switch to turn on tainting when it isn't turned on automatically.
+
+=item *
+
+Double-quoted strings may no longer end with an unescaped C<$> or C<@>.
+
+=item *
+
+The archaic C<while/if> BLOCK BLOCK syntax is no longer supported.
+
+
+=item *
+
+Negative array subscripts now count from the end of the array.
+
+=item *
+
+The comma operator in a scalar context is now guaranteed to give a
+scalar context to its arguments.
+
+=item *
+
+The C<**> operator now binds more tightly than unary minus.  
+It was documented to work this way before, but didn't.
+
+=item *
+
+Setting C<$#array> lower now discards array elements.
+
+=item *
+
+delete() is not guaranteed to return the old value for tie()d arrays,
+since this capability may be onerous for some modules to implement.
+
+=item *
+
+The construct "this is $$x" used to interpolate the pid at that
+point, but now tries to dereference $x.  C<$$> by itself still
+works fine, however.
+
+=item *
+
+The meaning of foreach has changed slightly when it is iterating over a
+list which is not an array.  This used to assign the list to a
+temporary array, but no longer does so (for efficiency).  This means
+that you'll now be iterating over the actual values, not over copies of
+the values.  Modifications to the loop variable can change the original
+values.  To retain Perl 4 semantics you need to assign your list
+explicitly to a temporary array and then iterate over that.  For
+example, you might need to change
+
+    foreach $var (grep /x/, @list) { ... }
+
+to
+
+    foreach $var (my @tmp = grep /x/, @list) { ... }
+
+Otherwise changing C<$var> will clobber the values of @list.  (This most often
+happens when you use C<$_> for the loop variable, and call subroutines in
+the loop that don't properly localize C<$_>.)
+
+=item *
+
+Some error messages will be different.
+
+=item *
+
+Some bugs may have been inadvertently removed.
+
+=back

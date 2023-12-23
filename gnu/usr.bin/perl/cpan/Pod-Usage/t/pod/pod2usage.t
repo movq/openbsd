@@ -1,12 +1,9 @@
-use strict;
-use warnings;
-
 BEGIN {
    use File::Basename;
    my $THISDIR = dirname $0;
    unshift @INC, $THISDIR;
    require "testp2pt.pl";
-   TestPodIncPlainText->import;
+   import TestPodIncPlainText;
 }
 
 my %options = map { $_ => 1 } @ARGV;  ## convert cmdline to options-hash

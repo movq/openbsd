@@ -10,7 +10,6 @@ chdir 't';
 use Config;
 use File::Spec;
 use File::Path;
-use Errno qw(EACCES);
 
 use lib File::Spec->catdir('t', 'lib');
 use Test::More;
@@ -146,7 +145,7 @@ Cwd::chdir $Test_Dir;
 
 foreach my $func (qw(cwd getcwd fastcwd fastgetcwd)) {
   my $result = eval "$func()";
-  is $@, '', "No exception for ${func}() in string eval";
+  is $@, '';
   dir_ends_with( $result, $Test_Dir, "$func()" );
 }
 
@@ -172,7 +171,7 @@ rmtree($test_dirs[0], 0, 0);
   my $check = ($vms_mode ? qr|\b((?i)t)\]$| :
 			   qr|\bt$| );
   
-  like($ENV{PWD}, $check, "We're in a 't' directory");
+  like($ENV{PWD}, $check);
 }
 
 {
@@ -180,16 +179,12 @@ rmtree($test_dirs[0], 0, 0);
   my $start_pwd = $ENV{PWD};
   mkpath([$Test_Dir], 0, 0777);
   Cwd::abs_path($Test_Dir);
-  is $ENV{PWD}, $start_pwd, "abs_path() does not trample \$ENV{PWD}";
+  is $ENV{PWD}, $start_pwd;
   rmtree($test_dirs[0], 0, 0);
 }
 
 SKIP: {
     skip "no symlinks on this platform", 2+$EXTRA_ABSPATH_TESTS unless $Config{d_symlink} && $^O !~ m!^(qnx|nto)!;
-
-    # on Win32 GetCurrentDirectory() includes the symlink if
-    # you chdir() to a path including the symlink.
-    skip "Win32 symlinks are unusual", 2+$EXTRA_ABSPATH_TESTS if $^O eq "MSWin32";
 
     my $file = "linktest";
     mkpath([$Test_Dir], 0, 0777);
@@ -197,7 +192,6 @@ SKIP: {
 
     my $abs_path      =  Cwd::abs_path($file);
     my $fast_abs_path =  Cwd::fast_abs_path($file);
-    my $pas           =  Cwd::_perl_abs_path($file);
     my $want          =  quotemeta(
                            File::Spec->rel2abs( $Test_Dir )
                          );
@@ -211,17 +205,9 @@ SKIP: {
        $want = quotemeta($want);
     }
 
-    like($abs_path,      qr|$want$|i, "Cwd::abs_path produced $abs_path");
-    like($fast_abs_path, qr|$want$|i, "Cwd::fast_abs_path produced $fast_abs_path");
-    if ($EXTRA_ABSPATH_TESTS) {
-        # _perl_abs_path() can fail if some ancestor directory isn't readable
-        if (defined $pas) {
-            like($pas,           qr|$want$|i, "Cwd::_perl_abs_path produced $pas");
-        }
-        else {
-            is($!+0, EACCES, "check we got the expected error on failure");
-        }
-    }
+    like($abs_path,      qr|$want$|i);
+    like($fast_abs_path, qr|$want$|i);
+    like(Cwd::_perl_abs_path($file), qr|$want$|i) if $EXTRA_ABSPATH_TESTS;
 
     rmtree($test_dirs[0], 0, 0);
     1 while unlink $file;
@@ -262,8 +248,8 @@ SKIP: {
 
 SKIP: {
   my $dir = "${$}a\nx";
-  mkdir $dir or skip "OS does not support dir names containing LF", 1;
-  chdir $dir or skip "OS cannot chdir into LF", 1;
+  mkdir $dir or skip "OS does not support dir names containing LF";
+  chdir $dir or skip "OS cannot chdir into LF";
   eval { Cwd::fast_abs_path() };
   is $@, "", 'fast_abs_path does not die in dir whose name contains LF';
   chdir File::Spec->updir;

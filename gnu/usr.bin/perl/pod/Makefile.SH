@@ -1,4 +1,4 @@
-case $PERL_CONFIG_SH in
+case $CONFIG in
 '')
 	if test -f config.sh; then TOP=.;
 	elif test -f ../config.sh; then TOP=..;
@@ -45,51 +45,69 @@ HTML = $HTML
 
 TEX  = $TEX  
 
-# The following is used to include the current directory in
-# the dynamic loader path you are building a shared libperl.
-LDLIBPTH = $ldlibpth
-
 !GROK!THIS!
 
 ## In the following dollars and backticks do not need the extra backslash.
 $spitshell >>Makefile <<'!NO!SUBS!'
 
+CONVERTERS = pod2html pod2latex pod2man pod2text checkpods \
+		pod2usage podchecker podselect
+
 HTMLROOT = /	# Change this to fix cross-references in HTML
-POD2HTML_ARGS = --htmlroot=$(HTMLROOT) --podroot=.. --podpath=pod:lib:ext:vms
-POD2HTML = ../ext/Pod-Html/pod2html
-POD2MAN = ../cpan/podlators/pod2man
-PODCHECKER =  ../cpan/Pod-Parser/podchecker
+POD2HTML = pod2html \
+	    --htmlroot=$(HTMLROOT) \
+	    --podroot=.. --podpath=pod:lib:ext:vms \
+	    --libpods=perlfunc:perlguts:perlvar:perlrun:perlop
 
 PERL = ../miniperl
 PERLILIB = $(PERL) -I../lib
 REALPERL = ../perl
 
-all: man
+all: $(CONVERTERS) man
 
-man:	$(POD2MAN) $(MAN)
+converters: $(CONVERTERS)
 
-html:	$(POD2HTML) $(HTML)
+regen_pods: perlmodlib.pod toc
 
-toc perltoc.pod:	buildtoc
+buildtoc:	buildtoc.PL perl.pod ../MANIFEST
+	$(PERLILIB) buildtoc.PL
+
+perltoc.pod:	buildtoc
+
+man:	pod2man $(MAN)
+
+html:	pod2html $(HTML)
+
+tex:	pod2latex $(TEX)
+
+toc:	buildtoc
 	$(PERLILIB) buildtoc
 
 .SUFFIXES: .pm .pod
 
 .SUFFIXES: .man
 
-.pm.man:     $(POD2MAN)
-	$(REALPERL) -I../lib $(POD2MAN) $*.pm >$*.man
+.pm.man:     pod2man
+	$(PERL) -I../lib pod2man $*.pm >$*.man
 
-.pod.man:     $(POD2MAN)
-	$(REALPERL) -I../lib $(POD2MAN) $*.pod >$*.man
+.pod.man:     pod2man
+	$(PERL) -I../lib pod2man $*.pod >$*.man
 
 .SUFFIXES: .html
 
-.pm.html:    $(POD2HTML)
-	$(PERL) -I../lib $(POD2HTML) $(POD2HTML_ARGS) --infile=$*.pm --outfile=$*.html
+.pm.html:    pod2html
+	$(PERL) -I../lib $(POD2HTML) --infile=$*.pm --outfile=$*.html
 
-.pod.html:    $(POD2HTML)
-	$(PERL) -I../lib $(POD2HTML) $(POD2HTML_ARGS) --infile=$*.pod --outfile=$*.html
+.pod.html:    pod2html
+	$(PERL) -I../lib $(POD2HTML) --infile=$*.pod --outfile=$*.html
+
+.SUFFIXES: .tex
+
+.pm.tex: pod2latex
+	$(PERL) -I../lib pod2latex $*.pm
+
+.pod.tex: pod2latex
+	$(PERL) -I../lib pod2latex $*.pod
 
 clean:
 	rm -f $(MAN)
@@ -99,13 +117,51 @@ clean:
 	rm -f *.aux *.log *.exe
 
 realclean:	clean
+	rm -f $(CONVERTERS)
 
 distclean:	realclean
 
 veryclean:	distclean
 	-rm -f *~ *.orig
 
-check:	$(PODCHECKER)
+check:	checkpods
 	@echo "checking..."; \
-	$(PERL) -I../lib $(PODCHECKER) $(POD)
+	$(PERL) -I../lib checkpods $(POD)
+
+# Dependencies.
+pod2latex:	pod2latex.PL ../lib/Config.pm
+	$(PERL) -I../lib pod2latex.PL
+
+pod2html:	pod2html.PL ../lib/Config.pm
+	$(PERL) -I ../lib pod2html.PL
+
+pod2man:	pod2man.PL ../lib/Config.pm
+	$(PERL) -I ../lib pod2man.PL
+
+pod2text:	pod2text.PL ../lib/Config.pm
+	$(PERL) -I ../lib pod2text.PL
+
+checkpods:	checkpods.PL ../lib/Config.pm
+	$(PERL) -I ../lib checkpods.PL
+
+pod2usage:	pod2usage.PL ../lib/Config.pm
+	$(PERL) -I ../lib pod2usage.PL
+
+podchecker:	podchecker.PL ../lib/Config.pm
+	$(PERL) -I ../lib podchecker.PL
+
+podselect:	podselect.PL ../lib/Config.pm
+	$(PERL) -I ../lib podselect.PL
+
+perlmodlib.pod:	$(PERL) perlmodlib.PL ../mv-if-diff
+	rm -f perlmodlib.tmp
+	$(PERL) -I ../lib perlmodlib.PL
+	sh ../mv-if-diff perlmodlib.tmp perlmodlib.pod
+
+compile: all
+	$(REALPERL) -I../lib ../utils/perlcc -o pod2latex.exe pod2latex -log ../compilelog
+	$(REALPERL) -I../lib ../utils/perlcc -o pod2man.exe pod2man -log ../compilelog
+	$(REALPERL) -I../lib ../utils/perlcc -o pod2text.exe pod2text -log ../compilelog
+	$(REALPERL) -I../lib ../utils/perlcc -o checkpods.exe checkpods -log ../compilelog
+
 !NO!SUBS!

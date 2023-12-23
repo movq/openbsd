@@ -1,9 +1,20 @@
 package sort;
 
-use strict;
-use warnings;
+our $VERSION = '1.01';
 
-our $VERSION = '2.05';
+# Currently the hints for pp_sort are stored in the global variable
+# $sort::hints. An improvement would be to store them in $^H{SORT} and have
+# this information available somewhere in the listop OP_SORT, to allow lexical
+# scoping of this pragma. -- rgs 2002-04-30
+
+our $hints	       = 0;
+
+$sort::quicksort_bit   = 0x00000001;
+$sort::mergesort_bit   = 0x00000002;
+$sort::sort_bits       = 0x000000FF; # allow 256 different ones
+$sort::stable_bit      = 0x00000100;
+
+use strict;
 
 sub import {
     shift;
@@ -11,32 +22,33 @@ sub import {
 	require Carp;
 	Carp::croak("sort pragma requires arguments");
     }
-    $^H{sort} //= 0;
-    for my $subpragma (@_) {
-        next
-            if $subpragma eq 'stable' || $subpragma eq 'defaults';
-        require Carp;
-        Carp::croak("sort: unknown subpragma '$_'");
-    }
-}
-
-sub unimport {
-    shift;
-    if (@_ == 0) {
-	require Carp;
-	Carp::croak("sort pragma requires arguments");
-    }
-    for my $subpragma (@_) {
-        next
-            if $subpragma eq 'stable';
-        require Carp;
-        Carp::croak("sort: unknown subpragma '$_'");
+    local $_;
+    no warnings 'uninitialized';	# bitops would warn
+    while ($_ = shift(@_)) {
+	if (/^_q(?:uick)?sort$/) {
+	    $hints &= ~$sort::sort_bits;
+	    $hints |=  $sort::quicksort_bit;
+	} elsif ($_ eq '_mergesort') {
+	    $hints &= ~$sort::sort_bits;
+	    $hints |=  $sort::mergesort_bit;
+	} elsif ($_ eq 'stable') {
+	    $hints |=  $sort::stable_bit;
+	} else {
+	    require Carp;
+	    Carp::croak("sort: unknown subpragma '$_'");
+	}
     }
 }
 
 sub current {
-    warnings::warnif("deprecated", "sort::current is deprecated, and will always return 'stable'");
-    return 'stable';
+    my @sort;
+    if ($hints) {
+	push @sort, 'quicksort' if $hints & $sort::quicksort_bit;
+	push @sort, 'mergesort' if $hints & $sort::mergesort_bit;
+	push @sort, 'stable'    if $hints & $sort::stable_bit;
+    }
+    push @sort, 'mergesort' unless @sort;
+    join(' ', @sort);
 }
 
 1;
@@ -48,54 +60,54 @@ sort - perl pragma to control sort() behaviour
 
 =head1 SYNOPSIS
 
-The sort pragma is now a no-op, and its use is discouraged. These three
-operations are valid, but have no effect:
-
     use sort 'stable';		# guarantee stability
-    use sort 'defaults';	# revert to default behavior
-    no  sort 'stable';		# stability not important
+    use sort '_quicksort';	# use a quicksort algorithm
+    use sort '_mergesort';	# use a mergesort algorithm
+
+    use sort '_qsort';		# alias for quicksort
+
+    my $current = sort::current();	# identify prevailing algorithm
 
 =head1 DESCRIPTION
 
-Historically the C<sort> pragma you can control the behaviour of the builtin
-C<sort()> function.
+With the sort pragma you can control the behaviour of the builtin
+sort() function.
 
-Prior to v5.28.0 there were two other options:
+In Perl versions 5.6 and earlier the quicksort algorithm was used to
+implement sort(), but in Perl 5.8 a mergesort algorithm was also made
+available, mainly to guarantee worst case O(N log N) behaviour:
+the worst case of quicksort is O(N**2).  In Perl 5.8 and later,
+quicksort defends against quadratic behaviour by shuffling large
+arrays before sorting.
 
-    use sort '_mergesort';
-    use sort '_qsort';		# or '_quicksort'
+A stable sort means that for records that compare equal, the original
+input ordering is preserved.  Mergesort is stable, quicksort is not.
+Stability will matter only if elements that compare equal can be
+distinguished in some other way.  That means that simple numerical
+and lexical sorts do not profit from stability, since equal elements
+are indistinguishable.  However, with a comparison such as
 
-If you try and specify either of these in v5.28+ it will croak.
+   { substr($a, 0, 3) cmp substr($b, 0, 3) }
 
-The default sort has been stable since v5.8.0, and given this consistent
-behaviour for almost two decades, everyone has come to assume stability.
+stability might matter because elements that compare equal on the
+first 3 characters may be distinguished based on subsequent characters.
+In Perl 5.8 and later, quicksort can be stabilized, but doing so will
+add overhead, so it should only be done if it matters.
 
-Stability will remain the default - hence there is no need for a pragma for
-code to opt into stability "just in case" this changes - it won't.
-
-We do not foresee going back to offering multiple implementations of general
-purpose sorting - hence there is no future need to offer a pragma to choose
-between them.
-
-If you know that you care that much about performance of your sorting, and
-that for your use case and your data, it was worth investigating
-alternatives, possible to identify an alternative from our default that was
-better, and the cost of switching was worth it, then you know more than we
-do. Likely whatever choices we can give are not as good as implementing your
-own. (For example, a Radix sort can be faster than O(n log n), but can't be
-used for all keys and has larger overheads.)
-
-We are not averse to B<changing> the sort algorithm, but we don't see the
-benefit in offering the choice of two general purpose implementations.
+The best algorithm depends on many things.  On average, mergesort
+does fewer comparisons than quicksort, so it may be better when
+complicated comparison routines are used.  Mergesort also takes
+advantage of pre-existing order, so it would be favored for using
+sort to merge several sorted arrays.  On the other hand, quicksort
+is often faster for small arrays, and on platforms with small memory
+caches that are much faster than main memory.  You can force the
+choice of algorithm with this pragma, but this feels heavy-handed,
+so the subpragmas beginning with a C<_> may not persist beyond Perl 5.8.
 
 =head1 CAVEATS
 
-The function C<sort::current()> was provided to report the current state of
-the sort pragmata. This function was not exported, and there is no code to
-call it on CPAN. It is now deprecated, and will warn by default.
-
-As we no longer store any sort "state", it can no longer return the correct
-value, so it will always return the string C<stable>, as this is consistent
-with what we actually have implemented.
+This pragma is not lexically scoped : its effect is global to the program
+it appears in.  This may change in future versions.
 
 =cut
+

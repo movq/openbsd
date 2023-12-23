@@ -4,13 +4,13 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require "./test.pl";
-    set_up_inc('../lib');
+    @INC = '../lib';
 }
 
 package main;
+require './test.pl';
 
-plan( tests => 34 );
+plan( tests => 31 );
 
 my($x);
 
@@ -23,7 +23,7 @@ is($x // 1, 1, 		'	// : left-hand operand undef');
 $x='';
 is($x // 0, '',		'	// : left-hand operand defined but empty');
 
-like([] // 0, qr/^ARRAY/,	'	// : left-hand operand a reference');
+like([] // 0, qr/^ARRAY/,	'	// : left-hand operand a referece');
 
 $x=undef;
 $x //= 1;
@@ -56,45 +56,18 @@ for (qw(getc pos readline readlink undef umask <> <FOO> <$foo> -f)) {
 # Test for some ambiguous syntaxes
 
 eval q# sub f ($) { } f $x / 2; #;
-is( $@, '', "'/' correctly parsed as arithmetic operator" );
+is( $@, '' );
 eval q# sub f ($):lvalue { $y } f $x /= 2; #;
-is( $@, '', "'/=' correctly parsed as assignment operator" );
+is( $@, '' );
 eval q# sub f ($) { } f $x /2; #;
-like( $@, qr/^Search pattern not terminated/,
-    "Caught unterminated search pattern error message: empty subroutine" );
+like( $@, qr/^Search pattern not terminated/ );
 eval q# sub { print $fh / 2 } #;
-is( $@, '',
-    "'/' correctly parsed as arithmetic operator in sub with built-in function" );
+is( $@, '' );
 eval q# sub { print $fh /2 } #;
-like( $@, qr/^Search pattern not terminated/,
-    "Caught unterminated search pattern error message: sub with built-in function" );
+like( $@, qr/^Search pattern not terminated/ );
 
 # [perl #28123] Perl optimizes // away incorrectly
 
 is(0 // 2, 0, 		'	// : left-hand operand not optimized away');
 is('' // 2, '',		'	// : left-hand operand not optimized away');
 is(undef // 2, 2, 	'	// : left-hand operand optimized away');
-
-# Test that OP_DORs other branch isn't run when arg is defined
-# // returns the value if its defined, and we must test its
-# truthness after
-my $x = 0;
-my $y = 0;
-
-$x // 1 and $y = 1;
-is($y, 0, 'y is still 0 after "$x // 1 and $y = 1"');
-
-$y = 0;
-# $x is defined, so its value 0 is returned to the if block
-# and the block is skipped
-if ($x // 1) {
-    $y = 1;
-}
-is($y, 0, 'if ($x // 1) exited out early since $x is defined and 0');
-
-# This is actually (($x // $z) || 'cat'), so 0 from first dor
-# evaluates false, we should see 'cat'.
-$y = undef;
-
-$y = $x // $z || 'cat';
-is($y, 'cat', 'chained or/dor behaves correctly');

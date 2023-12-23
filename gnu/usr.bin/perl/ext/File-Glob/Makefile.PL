@@ -1,5 +1,5 @@
 use ExtUtils::MakeMaker;
-use ExtUtils::Constant 0.23 'WriteConstants';
+use ExtUtils::Constant 0.11 'WriteConstants';
 WriteMakefile(
     NAME		=> 'File::Glob',
     VERSION_FROM	=> 'Glob.pm',
@@ -22,14 +22,10 @@ sub MY::cflags {
 }
 
 WriteConstants(
-    PROXYSUBS => {autoload => 1},
     NAME => 'File::Glob',
     NAMES => [qw(GLOB_ABEND GLOB_ALPHASORT GLOB_ALTDIRFUNC GLOB_BRACE GLOB_ERR
                  GLOB_LIMIT GLOB_MARK GLOB_NOCASE GLOB_NOCHECK GLOB_NOMAGIC
                  GLOB_NOSORT GLOB_NOSPACE GLOB_QUOTE GLOB_TILDE),
-	     {name => 'GLOB_CSH',
-	      value => 'GLOB_BRACE|GLOB_NOMAGIC|GLOB_QUOTE|GLOB_TILDE|GLOB_ALPHASORT',
-	      macro => 1},
-	     ],
+              {name=>"GLOB_ERROR", macro=>["#ifdef GLOB_ERROR\n\tdMY_CXT;\n\n","#endif\n"]}],
     BREAKOUT_AT => 8,
 );

@@ -2,18 +2,9 @@ package Search::Dict;
 require 5.000;
 require Exporter;
 
-my $fc_available;
-BEGIN {
-  $fc_available = '5.015008';
-  if ( $] ge $fc_available ) {
-    require feature;
-    'feature'->import('fc'); # string avoids warning on old Perls <sigh>
-  }
-}
-
 use strict;
 
-our $VERSION = '1.07';
+our $VERSION = '1.04';
 our @ISA = qw(Exporter);
 our @EXPORT = qw(look);
 
@@ -69,19 +60,12 @@ sub look {
     }
     $comp = sub { $_[0] cmp $_[1] } unless defined $comp;
     local($_);
-    my $fno = fileno $fh;
-    my @stat;
-    if ( defined $fno && $fno >= 0 && ! tied *{$fh} ) { # real, open file
-      @stat = eval { stat($fh) }; # in case fileno lies
-    }
+    my(@stat) = stat($fh)
+	or return -1;
     my($size, $blksize) = @stat[7,11];
-    $size = do { seek($fh,0,2); my $s = tell($fh); seek($fh,0,0); $s }
-        unless defined $size;
     $blksize ||= 8192;
     $key =~ s/[^\w\s]//g if $dict;
-    if ( $fold ) {
-      $key = $] ge $fc_available ? fc($key) : lc($key);
-    }
+    $key = lc $key       if $fold;
     # find the right block
     my($min, $max) = (0, int($size / $blksize));
     my $mid;
@@ -94,9 +78,7 @@ sub look {
 	$_ = $xfrm->($_) if defined $xfrm;
 	chomp;
 	s/[^\w\s]//g if $dict;
-        if ( $fold ) {
-          $_ = $] ge $fc_available ? fc($_) : lc($_);
-        }
+	$_ = lc $_   if $fold;
 	if (defined($_) && $comp->($_, $key) < 0) {
 	    $min = $mid;
 	}
@@ -116,9 +98,7 @@ sub look {
 	$_ = $xfrm->($_) if defined $xfrm;
 	chomp;
 	s/[^\w\s]//g if $dict;
-        if ( $fold ) {
-          $_ = $] ge $fc_available ? fc($_) : lc($_);
-        }
+	$_ = lc $_   if $fold;
 	last if $comp->($_, $key) >= 0;
     }
     seek($fh,$min,0);

@@ -1,9 +1,6 @@
 #!/usr/bin/perl
 
-use strict;
-use warnings;
-
-my $file = "tf22-$$.txt";
+my $file = "tf$$.txt";
 $: = Tie::File::_default_recsep();
 
 print "1..71\n";
@@ -12,7 +9,6 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-my @a;
 my $o = tie @a, 'Tie::File', $file, autochomp => 1, autodefer => 0;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -96,8 +92,8 @@ my @sr;
 expect(join("-", @sr), "Gold-Frankincense");
 
 # (70-71) Didn't you forget that fetch may return an unchomped cached record?
-my $a1 = $a[0];                    # populate cache
-my $a2 = $a[0];
+$a1 = $a[0];                    # populate cache
+$a2 = $a[0];
 expect($a1, "Myrrh");
 expect($a2, "Myrrh");
 # Actually no, you didn't---_fetch might return such a record, but 
@@ -109,7 +105,7 @@ sub check_contents {
   my $x = join $:, @c, '';
   local *FH = $o->{fh};
   seek FH, 0, SEEK_SET;
-#  my $open = open FH, '<', $file;
+#  my $open = open FH, "< $file";
   my $a;
   { local $/; $a = <FH> }
   $a = "" unless defined $a;

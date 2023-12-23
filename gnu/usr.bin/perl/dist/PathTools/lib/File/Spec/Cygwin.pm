@@ -1,12 +1,13 @@
 package File::Spec::Cygwin;
 
 use strict;
+use vars qw(@ISA $VERSION);
 require File::Spec::Unix;
 
-our $VERSION = '3.84';
-$VERSION =~ tr/_//d;
+$VERSION = '3.48';
+$VERSION =~ tr/_//;
 
-our @ISA = qw(File::Spec::Unix);
+@ISA = qw(File::Spec::Unix);
 
 =head1 NAME
 
@@ -136,11 +137,7 @@ sub case_tolerant {
   if ($mntopts and ($mntopts =~ /,managed/)) {
     return 0;
   }
-  eval {
-      local @INC = @INC;
-      pop @INC if $INC[-1] eq '.';
-      require Win32API::File;
-  } or return 1;
+  eval { require Win32API::File; } or return 1;
   my $osFsType = "\0"x256;
   my $osVolName = "\0"x256;
   my $ouFsFlags = 0;

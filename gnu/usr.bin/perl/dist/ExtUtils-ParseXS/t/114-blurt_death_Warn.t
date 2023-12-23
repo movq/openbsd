@@ -2,9 +2,12 @@
 use strict;
 use warnings;
 $| = 1;
-use Test::More tests =>  7;
+use Carp;
+use Cwd;
 use File::Spec;
-use lib (-d 't' ? File::Spec->catdir(qw(t lib)) : 'lib');
+use File::Temp qw( tempdir );
+use Test::More tests =>  7;
+use lib qw( lib t/lib );
 use ExtUtils::ParseXS;
 use ExtUtils::ParseXS::Utilities qw(
     Warn
@@ -13,7 +16,7 @@ use ExtUtils::ParseXS::Utilities qw(
 );
 use PrimitiveCapture;
 
-my $self = ExtUtils::ParseXS->new;
+my $self = bless({} => 'ExtUtils::ParseXS');
 $self->{line} = [];
 $self->{line_no} = [];
 
@@ -99,7 +102,7 @@ $self->{line_no} = [];
         qr/$message in $self->{filename}, line 20/,
         "Got expected blurt output",
     );
-    is( $self->report_error_count, 1, "Error count incremented correctly" );
+    is( $self->{errors}, 1, "Error count incremented correctly" );
 }
 
 SKIP: {

@@ -6,25 +6,18 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test;
 BEGIN { plan tests => 24 };
 
 my $d;
 #use Pod::Simple::Debug (\$d,0);
 
-BEGIN {
-  require FindBin;
-  unshift @INC, $FindBin::Bin . '/lib';
-  require helpers;
-  helpers->import;
-}
-
 ok 1;
 
 use Pod::Simple::DumpAsXML;
 use Pod::Simple::XMLOutStream;
 print "# Pod::Simple version $Pod::Simple::VERSION\n";
+sub e ($$) { Pod::Simple::DumpAsXML->_duo(@_) }
 
 my $x = 'Pod::Simple::XMLOutStream';
 
@@ -98,9 +91,7 @@ ok( $x->_out("\n=over\n\n=item Foo\n\n Stuff\n\tSnork\n=cut\n\nCrunk\nZorp\n\n=i
 
 
 print "#\n# Test for mixed =item blocks...\n";
-ok( $x->_out(
-  sub { $_[0]->no_errata_section(1) }, # We know this will complain
-  "\n=over\n\n=item Foo\n\nStuff\n\n=item 2.\n\nBar I<baz>!\n\nQuux\n\n=item *\n\nThwoong\n\n=back\n\n"),
+ok( $x->_out("\n=over\n\n=item Foo\n\nStuff\n\n=item 2.\n\nBar I<baz>!\n\nQuux\n\n=item *\n\nThwoong\n\n=back\n\n"),
     qq{<Document><over-text indent="4"><item-text>Foo</item-text><Para>Stuff</Para>}
   . qq{<item-text>2.</item-text><Para>Bar <I>baz</I>!</Para><Para>Quux</Para>}
   . qq{<item-text>*</item-text><Para>Thwoong</Para></over-text></Document>}
@@ -196,22 +187,18 @@ ok( $x->_out( join "\n\n", '', '',
 $d = 11;
 print "# Now checking that document-end closes things right...\n";
 
-ok( $x->_out(
-  # We know there'd be a warning about implicit =back; disable it!
-  sub { $_[0]->no_whining(1); },
-  join( "\n\n", '', '',
+ok( $x->_out( join "\n\n", '', '', 
+  '=over',
+    '=item *',
+    'Stuff',
+    '=cut',
+    'Stuff',
     '=over',
-      '=item *',
-      'Stuff',
-      '=cut',
-      'Stuff',
-      '=over',
-        '=item 1.',
-          '=over 19',
-          'Gleiven',
-          'Squim F<.thingrc>!',
-    '', '',
-  ),
+      '=item 1.',
+        '=over 19',
+        'Gleiven',
+        'Squim F<.thingrc>!',
+  '', ''
   ), join '',
    '<Document>',
    '<over-bullet indent="4">',

@@ -108,30 +108,51 @@ EXPECT
 Octal number > 037777777777 non-portable at - line 5.
 ########
 # util.c
-# NAME 132683: Use of uninitialized value" in warn() with constant folding and overloaded numbers
-use strict;
 use warnings;
-
-package Foo;
-
-use overload log => sub {
-    warn "here\n";                  # Use of uninitialized value in warn
-    CORE::log($_[0]->{value});
-};
-
-sub import {
-    overload::constant
-        integer => sub { __PACKAGE__->new($_[0]) };
+$x = 1;
+if ($x) {
+    print $y;
 }
-
-sub new {
-    my ($class, $value) = @_;
-    bless {value => $value}, $class;
-}
-
-package main;
-
-BEGIN { Foo->import }
-my $x = log(2);
 EXPECT
-here
+Name "main::y" used only once: possible typo at - line 5.
+Use of uninitialized value in print at - line 5.
+########
+# util.c
+use warnings;
+$x = 1;
+if ($x) {
+    $x++;
+    print $y;
+}
+EXPECT
+Name "main::y" used only once: possible typo at - line 6.
+Use of uninitialized value in print at - line 6.
+########
+# util.c
+use warnings;
+$x = 0;
+if ($x) {
+    print "1\n";
+} elsif (!$x) {
+    print $y;
+} else {
+    print "0\n";
+}
+EXPECT
+Name "main::y" used only once: possible typo at - line 7.
+Use of uninitialized value in print at - line 7.
+########
+# util.c
+use warnings;
+$x = 0;
+if ($x) {
+    print "1\n";
+} elsif (!$x) {
+    $x++;
+    print $y;
+} else {
+    print "0\n";
+}
+EXPECT
+Name "main::y" used only once: possible typo at - line 8.
+Use of uninitialized value in print at - line 8.

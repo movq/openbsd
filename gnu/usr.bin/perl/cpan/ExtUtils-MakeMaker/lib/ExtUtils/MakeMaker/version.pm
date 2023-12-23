@@ -10,14 +10,12 @@
 
 package ExtUtils::MakeMaker::version;
 
-use 5.006001;
+use 5.006002;
 use strict;
-use warnings;
 
 use vars qw(@ISA $VERSION $CLASS $STRICT $LAX *declare *qv);
 
-$VERSION = '7.64';
-$VERSION =~ tr/_//d;
+$VERSION = '7.10_01';
 $CLASS = 'version';
 
 {
@@ -26,7 +24,7 @@ $CLASS = 'version';
     if ( $@ ) { # don't have any version.pm installed
         eval "use ExtUtils::MakeMaker::version::vpp";
         die "$@" if ( $@ );
-        no warnings;
+        local $^W;
         delete $INC{'version.pm'};
         $INC{'version.pm'} = $INC{'ExtUtils/MakeMaker/version.pm'};
         push @version::ISA, "ExtUtils::MakeMaker::version::vpp";
@@ -36,7 +34,7 @@ $CLASS = 'version';
         *version::_VERSION = \&ExtUtils::MakeMaker::version::vpp::_VERSION;
         *version::vcmp = \&ExtUtils::MakeMaker::version::vpp::vcmp;
         *version::new = \&ExtUtils::MakeMaker::version::vpp::new;
-        if ("$]" >= 5.009000) {
+        if ($] >= 5.009000) {
             no strict 'refs';
             *version::stringify = \&ExtUtils::MakeMaker::version::vpp::stringify;
             *{'version::(""'} = \&ExtUtils::MakeMaker::version::vpp::stringify;

@@ -37,9 +37,7 @@
  *
  */
 
-#define PERL_EXT
 #include "EXTERN.h"
-#define PERL_IN_DL_FREEMINT_XS
 #include "perl.h"
 #include "XSUB.h"
 
@@ -145,10 +143,9 @@ haverror:
 
 
 void
-dl_find_symbol(libhandle, symbolname, ign_err=0)
+dl_find_symbol(libhandle, symbolname)
     void *	libhandle
     char *	symbolname
-    int	        ign_err
     PREINIT:
     void *retv;
     CODE:
@@ -157,10 +154,9 @@ dl_find_symbol(libhandle, symbolname, ign_err=0)
     retv = (void *)dld_get_func(symbolname);
     DLDEBUG(2,PerlIO_printf(Perl_debug_log, "  symbolref = %x\n", (unsigned int)retv));
     ST(0) = sv_newmortal() ;
-    if (retv == NULL) {
-        if (!ign_err)
-	    SaveError(aTHX_ "dl_find_symbol: Unable to find '%s' symbol", symbolname) ;
-    } else
+    if (retv == NULL)
+	SaveError(aTHX_ "dl_find_symbol: Unable to find '%s' symbol", symbolname) ;
+    else
 	sv_setiv(ST(0), PTR2IV(retv));
     XSRETURN(1);
 
@@ -195,11 +191,12 @@ dl_install_xsub(perl_name, symref, filename="$Package")
 					      XS_DYNAMIC_FILENAME)));
     XSRETURN(1);
 
-SV *
+char *
 dl_error()
-    CODE:
+    PREINIT:
     dMY_CXT;
-    RETVAL = newSVsv(MY_CXT.x_dl_last_error);
+    CODE:
+    RETVAL = dl_last_error ;
     OUTPUT:
     RETVAL
 
@@ -214,7 +211,7 @@ CLONE(...)
      * using Perl variables that belong to another thread, we create our
      * own for this thread.
      */
-    MY_CXT.x_dl_last_error = newSVpvs("");
+    MY_CXT.x_dl_last_error = newSVpvn("", 0);
     dl_resolve_using   = get_av("DynaLoader::dl_resolve_using", GV_ADDMULTI);
     dl_require_symbols = get_av("DynaLoader::dl_require_symbols", GV_ADDMULTI);
 

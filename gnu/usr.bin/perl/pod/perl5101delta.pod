@@ -1,6 +1,6 @@
 =head1 NAME
 
-perl5101delta - what is new for perl v5.10.1
+perldelta - what is new for perl v5.10.1
 
 =head1 DESCRIPTION
 
@@ -127,7 +127,7 @@ if overload fallback is active, it will be used instead, as usual.)
 =item *
 
 The semantics of C<use feature :5.10*> have changed slightly.
-See L</"Modules and Pragmata"> for more information.
+See L<"Modules and Pragmata"> for more information.
 
 =item *
 
@@ -191,7 +191,7 @@ in a change of behaviour between 5.8.x and 5.10.0:
 
 The copy of the Unicode Character Database included in Perl 5.10.1 has
 been updated to 5.1.0 from 5.0.0. See
-L<http://www.unicode.org/versions/Unicode5.1.0/#Notable_Changes> for the
+L<http://www.unicode.org/versions/Unicode5.1.0/#NotableChanges> for the
 notable changes.
 
 =head2 A proper interface for pluggable Method Resolution Orders
@@ -1149,7 +1149,7 @@ file. This eliminates a potential race condition [RT #60904].
 
 =item *
 
-On some Unix systems, the value in C<$?> would not have the top bit set
+On some UNIX systems, the value in C<$?> would not have the top bit set
 (C<$? & 128>) even if the child core dumped.
 
 =item *
@@ -1751,8 +1751,7 @@ analysed by the Perl porting team.
 If the bug you are reporting has security implications, which make it
 inappropriate to send to a publicly archived mailing list, then please send
 it to perl5-security-report@perl.org. This points to a closed subscription
-unarchived mailing list, which includes
-all the core committers, who will be able
+unarchived mailing list, which includes all the core committers, who be able
 to help assess the impact of issues, figure out a resolution, and help
 co-ordinate the release of patches to mitigate or fix the problem across all
 platforms on which Perl is supported. Please only use this address for

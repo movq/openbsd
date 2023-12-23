@@ -1,6 +1,5 @@
 #!/usr/bin/perl -w
 use strict;
-use warnings;
 use Pod::Usage;
 
 my $h2 = shift @ARGV || '.*';

@@ -1,14 +1,13 @@
 #!/usr/bin/perl -w
 
 use strict;
-use warnings;
 use lib 't/lib';
 
 use Test::More tests => 76;
 
 use File::Spec;
 use TAP::Parser;
-use TAP::Parser::Iterator::Array;
+use TAP::Parser::IteratorFactory;
 use Config;
 
 sub array_ref_from {
@@ -29,7 +28,8 @@ my $setup    = sub { $did_setup++ };
 my $teardown = sub { $did_teardown++ };
 
 package NoForkProcess;
-use base qw( TAP::Parser::Iterator::Process );
+use vars qw( @ISA );
+@ISA = qw( TAP::Parser::Iterator::Process );
 
 sub _use_open3 {return}
 
@@ -82,6 +82,7 @@ sub _can_open3 {
     return $Config{d_fork};
 }
 
+my $factory = TAP::Parser::IteratorFactory->new;
 for my $test (@schedule) {
     SKIP: {
         my $name       = $test->{name};
@@ -90,41 +91,37 @@ for my $test (@schedule) {
         my $subclass = $test->{subclass};
         my $source   = $test->{source};
         my $class    = $test->{class};
-        my $iterator
+        my $iter
           = $class
           ? $class->new($source)
-          : make_iterator($source);
-
-        ok $iterator,     "$name: We should be able to create a new iterator";
-        isa_ok $iterator, 'TAP::Parser::Iterator',
+          : $factory->make_iterator($source);
+        ok $iter,     "$name: We should be able to create a new iterator";
+        isa_ok $iter, 'TAP::Parser::Iterator',
           '... and the object it returns';
-        isa_ok $iterator, $subclass, '... and the object it returns';
+        isa_ok $iter, $subclass, '... and the object it returns';
 
-        can_ok $iterator, 'exit';
-        ok !defined $iterator->exit,
+        can_ok $iter, 'exit';
+        ok !defined $iter->exit,
           "$name: ... and it should be undef before we are done ($subclass)";
 
-        can_ok $iterator, 'next';
-        is $iterator->next, 'one',
-          "$name: next() should return the first result";
+        can_ok $iter, 'next';
+        is $iter->next, 'one', "$name: next() should return the first result";
 
-        is $iterator->next, 'two',
+        is $iter->next, 'two',
           "$name: next() should return the second result";
 
-        is $iterator->next, '',
-          "$name: next() should return the third result";
+        is $iter->next, '', "$name: next() should return the third result";
 
-        is $iterator->next, 'three',
+        is $iter->next, 'three',
           "$name: next() should return the fourth result";
 
-        ok !defined $iterator->next,
+        ok !defined $iter->next,
           "$name: next() should return undef after it is empty";
 
-        is $iterator->exit, 0,
+        is $iter->exit, 0,
           "$name: ... and exit should now return 0 ($subclass)";
 
-        is $iterator->wait, 0,
-          "$name: wait should also now return 0 ($subclass)";
+        is $iter->wait, 0, "$name: wait should also now return 0 ($subclass)";
 
         if ( my $after = $test->{after} ) {
             $after->();
@@ -136,15 +133,16 @@ for my $test (@schedule) {
 
     # coverage tests for the ctor
 
-    my $iterator = make_iterator( IO::Handle->new );
+    my $stream = $factory->make_iterator( IO::Handle->new );
 
-    isa_ok $iterator, 'TAP::Parser::Iterator::Stream';
+    isa_ok $stream, 'TAP::Parser::Iterator::Stream';
 
     my @die;
 
     eval {
         local $SIG{__DIE__} = sub { push @die, @_ };
-        make_iterator( \1 );    # a ref to a scalar
+
+        $factory->make_iterator( \1 );    # a ref to a scalar
     };
 
     is @die, 1, 'coverage of error case';
@@ -157,23 +155,23 @@ for my $test (@schedule) {
 
     # coverage test for VMS case
 
-    my $iterator = make_iterator(
+    my $stream = $factory->make_iterator(
         [   'not ',
             'ok 1 - I hate VMS',
         ]
     );
 
-    is $iterator->next, 'not ok 1 - I hate VMS',
+    is $stream->next, 'not ok 1 - I hate VMS',
       'coverage of VMS line-splitting case';
 
     # coverage test for VMS case - nothing after 'not'
 
-    $iterator = make_iterator(
+    $stream = $factory->make_iterator(
         [   'not ',
         ]
     );
 
-    is $iterator->next, 'not ', '...and we find "not" by itself';
+    is $stream->next, 'not ', '...and we find "not" by itself';
 }
 
 SKIP: {
@@ -185,7 +183,8 @@ SKIP: {
 
     eval {
         local $SIG{__DIE__} = sub { push @die, @_ };
-        make_iterator( {} );
+
+        $factory->make_iterator( {} );
     };
 
     is @die, 1, 'coverage testing for TPI::Process';
@@ -193,7 +192,7 @@ SKIP: {
     like pop @die, qr/Must supply a command to execute/,
       '...and we died as expected';
 
-    my $parser = make_iterator(
+    my $parser = $factory->make_iterator(
         {   command => [
                 $^X,
                 File::Spec->catfile( 't', 'sample-tests', 'out_err_mix' )
@@ -209,24 +208,6 @@ SKIP: {
     # bug which frequently throws an error here otherwise.
     $parser->next;
 }
-
-sub make_iterator {
-    my $thing = shift;
-    my $ref   = ref $thing;
-    if ( $ref eq 'GLOB' || UNIVERSAL::isa( $ref, 'IO::Handle' ) ) {
-        return TAP::Parser::Iterator::Stream->new($thing);
-    }
-    elsif ( $ref eq 'ARRAY' ) {
-        return TAP::Parser::Iterator::Array->new($thing);
-    }
-    elsif ( $ref eq 'HASH' ) {
-        return TAP::Parser::Iterator::Process->new($thing);
-    }
-    else {
-        die "Can't iterate with a $ref";
-    }
-}
-
 __DATA__
 one
 two

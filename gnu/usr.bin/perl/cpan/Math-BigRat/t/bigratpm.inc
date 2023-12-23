@@ -1,184 +1,189 @@
 #include this file into another test for subclass testing...
 
-use strict;
-use warnings;
-
-our ($CLASS, $try, $x, $y, $z, $f, @args, $want, $got, $setup, $LIB);
-
-is($CLASS->config()->{lib}, $LIB);
+ok ($class->config()->{lib},$CL);
 
 $setup = '';
 
-while (<DATA>) {
-    s/#.*$//;                   # remove comments
-    s/\s+$//;                   # remove trailing whitespace
-    next unless length;         # skip empty lines
-
-    if (s/^&//) {
-        $f = $_;
-        next;
+while (<DATA>)
+  {
+  chomp;
+  $_ =~ s/#.*$//;	# remove comments
+  $_ =~ s/\s+$//;	# trailing spaces
+  next if /^$/;		# skip empty lines & comments
+  if (s/^&//)
+    {
+    $f = $_;
     }
-
-    if (/^\$/) {
-        $setup = $_;
-        $setup =~ s/\$/\$${CLASS}::/g;  # round_mode, div_scale
-        #print "\$setup== $setup\n";
-        next;
+  elsif (/^\$/)
+    {
+    $setup = $_; $setup =~ s/\$/\$${class}::/g;	# round_mode, div_scale
+    #print "\$setup== $setup\n";
     }
-
-    if (m|^(.*?):(/.+)$|) {
-        $want = $2;
-        @args = split(/:/, $1, 99);
-    } else {
-        @args = split(/:/, $_, 99);
-        $want = pop(@args);
-    }
-
-    $try = qq|\$x = $CLASS->new("$args[0]");|;
-    if ($f eq "bnorm") {
-        $try .= " \$x;";
-    } elsif ($f eq "finf") {
+  else
+    {
+    if (m|^(.*?):(/.+)$|)
+      {
+      $ans = $2;
+      @args = split(/:/,$1,99);
+      }
+    else
+      {
+      @args = split(/:/,$_,99); $ans = pop(@args);
+      }
+    $try = "\$x = new $class \"$args[0]\";";
+    if ($f eq "bnorm")
+      {
+        $try .= "\$x;";
+      } elsif ($f eq "finf") {
         my $a = $args[1] || '';
-        $try .= qq| \$x->binf("$a");|;
-    } elsif ($f eq "fone") {
-        $try .= qq| \$x->bone("$args[1]");|;
-    } elsif ($f eq "fstr") {
-        $try .= " \$x->accuracy($args[1]); \$x->precision($args[2]);";
-        $try .= ' $x->bstr();';
-    } elsif ($f eq "parts") {
+        $try .= "\$x->binf('$a');";
+      } elsif ($f eq "is_inf") {
+        $try .= "\$x->is_inf('$args[1]');"; 
+      } elsif ($f eq "fone") {
+        $try .= "\$x->bone('$args[1]');";
+      } elsif ($f eq "fstr") {
+        $try .= "\$x->accuracy($args[1]); \$x->precision($args[2]);";
+        $try .= '$x->bstr();';
+      } elsif ($f eq "parts") {
         # ->bstr() to see if an object is returned
-        $try .= ' ($a,$b) = $x->parts(); $a = $a->bstr(); $b = $b->bstr();';
-        $try .= ' "$a $b";';
-    } elsif ($f eq "numerator") {
+        $try .= '($a,$b) = $x->parts(); $a = $a->bstr(); $b = $b->bstr();';
+        $try .= '"$a $b";';
+      } elsif ($f eq "numerator") {
         # ->bstr() to see if an object is returned
-        $try .= ' $x->numerator()->bstr();';
-    } elsif ($f eq "denominator") {
+        $try .= '$x->numerator()->bstr();';
+      } elsif ($f eq "denominator") {
         # ->bstr() to see if an object is returned
-        $try .= ' $x->denominator()->bstr();';
-    } elsif ($f =~ /^(length|numify)$/) {
-        $try .= " \$x->$f();";
-        # some unary ops (can't test the fxxx form, since no AUTOLOAD in BigRat)
-    } elsif ($f =~ /^f(nan|sstr|neg|floor|ceil|abs)$/) {
-        $try .= " \$x->b$1();";
-        # overloaded functions
-    } elsif ($f =~ /^(log|exp|sin|cos|atan2|int|neg|abs|sqrt)$/) {
-        $try .= " \$x = $f(\$x);";
-        # some is_xxx test function
-    } elsif ($f =~ /^is_(zero|pos|neg|negative|positive|odd|even|nan|int)\z/) {
-        $try .= " \$x->$f();";
-    } elsif ($f =~ /^is_(one|inf)$/) {
-        $try .= @args == 1 ? qq| \$x->$f();|
-                           : qq| \$x->$f("$args[1]");|;
-    } elsif ($f =~ /^(as_number|as_int)\z/) {
-        $try .= " \$x->$1();";
-    } elsif ($f eq "finc") {
-        $try .= ' ++$x;';
-    } elsif ($f eq "fdec") {
-        $try .= ' --$x;';
-    } elsif ($f eq "digit") {
-        $try .= " \$x->digit($args[1]);";
-    } elsif ($f eq "fround") {
-        $try .= " $setup; \$x->bround($args[1]);";
-    } elsif ($f eq "ffround") {
-        $try .= " $setup; \$x->bfround($args[1]);";
-    } elsif ($f eq "fsqrt") {
-        $try .= " $setup; \$x->bsqrt();";
-    } elsif ($f eq "flog") {
-        $try .= " $setup; \$x->blog();";
-    } elsif ($f eq "ffac") {
-        $try .= " $setup; \$x->bfac();";
-    } else {
-        $try .= qq| \$y = $CLASS->new("$args[1]");|;
-        if ($f eq "bcmp") {
-            $try .= ' $x <=> $y;';
-        } elsif ($f eq "bacmp") {
-            $try .= ' $x->bacmp($y);';
-        } elsif ($f eq "bpow") {
-            $try .= ' $x->bpow($y);';
-        } elsif ($f eq "badd") {
-            $try .= ' $x + $y;';
-        } elsif ($f eq "bsub") {
-            $try .= ' $x - $y;';
-        } elsif ($f eq "bmul") {
-            $try .= ' $x * $y;';
-        } elsif ($f eq "bdiv") {
-            $try .= " $setup; \$x / \$y;";
-        } elsif ($f eq "bdiv-list") {
-            $try .= qq| $setup; join(",", \$x->bdiv(\$y));|;
-        } elsif ($f eq "brsft") {
-            $try .= ' $x >> $y;';
-        } elsif ($f eq "blsft") {
-            $try .= ' $x << $y;';
-        } elsif ($f eq "bmod") {
-            $try .= ' $x % $y;';
-        } elsif ($f eq "bmodinv") {
-            $try .= " \$x->bmodinv(\$y);";
-        } elsif ($f eq "blog") {
-            $try .= " \$x->blog(\$y);";
-        } else {
-            $try .= qq| \$z = $CLASS->new("$args[2]");|;
+        $try .= '$x->denominator()->bstr();';
+      } elsif ($f =~ /^(length|numify)$/) {
+        $try .= "\$x->$f();";
+      # some unary ops (can't test the fxxx form, since no AUTOLOAD in BigRat)
+      } elsif ($f =~ /^f(nan|sstr|neg|floor|ceil|abs)$/) {
+        $try .= "\$x->b$1();";
+      # some is_xxx test function	
+      } elsif ($f =~ /^is_(zero|one|pos|neg|negative|positive|odd|even|nan|int)\z/) {
+        $try .= "\$x->$f();";
+      } elsif ($f =~ /^(as_number|as_int)\z/){
+        $try .= "\$x->$1();";
+      } elsif ($f eq "finc") {
+        $try .= '++$x;';
+      } elsif ($f eq "fdec") {
+        $try .= '--$x;';
+      } elsif ($f eq "digit") {
+        $try .= "\$x->digit($args[1]);";
+      } elsif ($f eq "fround") {
+        $try .= "$setup; \$x->bround($args[1]);";
+      } elsif ($f eq "ffround") {
+        $try .= "$setup; \$x->bfround($args[1]);";
+      } elsif ($f eq "fsqrt") {
+        $try .= "$setup; \$x->bsqrt();";
+      } elsif ($f eq "flog") {
+        $try .= "$setup; \$x->blog();";
+      } elsif ($f eq "ffac") {
+        $try .= "$setup; \$x->bfac();";
+      }
+    else
+      {
+      $try .= "\$y = new $class \"$args[1]\";";
+      if ($f eq "bcmp") {
+        $try .= '$x <=> $y;';
+      } elsif ($f eq "bacmp") {
+        $try .= '$x->bacmp($y);';
+      } elsif ($f eq "bpow") {
+        $try .= '$x ** $y;';
+      } elsif ($f eq "fpow") {
+        $try .= '$x->bpow($y);';
+      } elsif ($f eq "badd") {
+        $try .= '$x + $y;';
+      } elsif ($f eq "bsub") {
+        $try .= '$x - $y;';
+      } elsif ($f eq "bmul") {
+        $try .= '$x * $y;';
+      } elsif ($f eq "bdiv") {
+        $try .= "$setup; \$x / \$y;";
+      } elsif ($f eq "fdiv-list") {
+        $try .= "$setup; join(',',\$x->bdiv(\$y));";
+      } elsif ($f eq "brsft") {
+        $try .= '$x >> $y;';
+      } elsif ($f eq "blsft") {
+        $try .= '$x << $y;';
+      } elsif ($f eq "bmod") {
+        $try .= '$x % $y;';
+      } elsif( $f eq "bmodinv") {
+       $try .= "\$x->bmodinv(\$y);";
+      } elsif( $f eq "blog") {
+       $try .= "\$x->blog(\$y);";
+      } else {
+        $try .= "\$z = $class->new(\"$args[2]\");";
 
-            # Functions with three arguments
-            if ($f eq "bmodpow") {
-                $try .= " \$x->bmodpow(\$y, \$z);";
-            } else {
-                warn "Unknown op '$f'";
-            }
-        }
+        # Functions with three arguments
+        if( $f eq "bmodpow") {
+          $try .= "\$x->bmodpow(\$y,\$z);";
+        } else { warn "Unknown op '$f'"; }
+      }
     }
     # print "# Trying: '$try'\n";
-    $got = eval $try;
-    if ($want =~ m|^/(.*)$|) {
-        my $pat = $1;
-        like($got, qr/$pat/, $try);
-    } else {
-        if ($want eq "") {
-            is($got, undef, $try);
-        } else {
-            is($got, $want, $try);
-            #if (ref($got) eq "$CLASS") {
-            #    # float numbers are normalized (for now), so mantissa shouldn't have
-            #    # trailing zeros
-            #    #print $got->_trailing_zeros(), "\n";
-            #    print "# Has trailing zeros after '$try'\n"
-            #      if !is($got->{_m}->_trailing_zeros(), 0);
-            #}
+    $ans1 = eval $try;
+    if ($ans =~ m|^/(.*)$|)
+      {
+      my $pat = $1;
+      if ($ans1 =~ /$pat/)
+        {
+        ok (1,1);
         }
-    }                           # end pattern or string
-}                               # end while
+      else
+        {
+        print "# '$try' expected: /$pat/ got: '$ans1'\n" if !ok(1,0);
+        }
+      }
+    else
+      {
+      if ($ans eq "")
+        {
+        ok_undef ($ans1);
+        }
+      else
+        {
+        print "# Tried: '$try'\n" if !ok ($ans1, $ans);
+#        if (ref($ans1) eq "$class")
+#	  {
+#	  # float numbers are normalized (for now), so mantissa shouldn't have
+#	  # trailing zeros
+#	  #print $ans1->_trailing_zeros(),"\n";
+#          print "# Has trailing zeros after '$try'\n"
+#	   if !ok ($ans1->{_m}->_trailing_zeros(), 0);
+#	  }
+        }
+      } # end pattern or string
+    }
+  } # end while
 
-# check whether $CLASS->new(Math::BigInt->new()) destroys it
+# check whether $class->new( Math::BigInt->new()) destroys it 
 # ($y == 12 in this case)
-$x = Math::BigInt->new(1200);
-$y = $CLASS->new($x);
-is($y, 1200, qq|\$x = Math::BigInt->new(1200); \$y = $CLASS->new(\$x); $y|);
-is($x, 1200, qq|\$x = Math::BigInt->new(1200); \$y = $CLASS->new(\$x); $x|);
+$x = Math::BigInt->new(1200); $y = $class->new($x);
+ok ($y,1200); ok ($x,1200);
 
 ###############################################################################
-# zero, inf, one, nan
+# zero,inf,one,nan
 
-$x = $CLASS->new(2);
-$x->bzero();
-is($x->{_a}, undef, qq|\$x = $CLASS->new(2); \$x->bzero(); \$x->{_a}|);
-is($x->{_p}, undef, qq|\$x = $CLASS->new(2); \$x->bzero(); \$x->{_p}|);
+$x = $class->new(2); $x->bzero(); ok_undef ($x->{_a}); ok_undef ($x->{_p});
+$x = $class->new(2); $x->binf();  ok_undef ($x->{_a}); ok_undef ($x->{_p});
+$x = $class->new(2); $x->bone();  ok_undef ($x->{_a}); ok_undef ($x->{_p});
+$x = $class->new(2); $x->bnan();  ok_undef ($x->{_a}); ok_undef ($x->{_p});
+        
+1; # all done
 
-$x = $CLASS->new(2);
-$x->binf();
-is($x->{_a}, undef, qq|\$x = $CLASS->new(2); \$x->binf(); \$x->{_a}|);
-is($x->{_p}, undef, qq|\$x = $CLASS->new(2); \$x->binf(); \$x->{_p}|);
+###############################################################################
+# Perl 5.005 does not like ok ($x,undef)
 
-$x = $CLASS->new(2);
-$x->bone();
-is($x->{_a}, undef, qq|\$x = $CLASS->new(2); \$x->bone(); \$x->{_a}|);
-is($x->{_p}, undef, qq|\$x = $CLASS->new(2); \$x->bone(); \$x->{_p}|);
+sub ok_undef
+  {
+  my $x = shift;
 
-$x = $CLASS->new(2);
-$x->bnan();
-is($x->{_a}, undef, qq|\$x = $CLASS->new(2); \$x->bnan(); \$x->{_a}|);
-is($x->{_p}, undef, qq|\$x = $CLASS->new(2); \$x->bnan(); \$x->{_p}|);
+  ok (1,1) and return if !defined $x;
+  ok ($x,'undef');
+  }
 
 __DATA__
-
 &digit
 123:2:1
 1234:0:4
@@ -191,7 +196,6 @@ __DATA__
 1234:-4:4
 0:0:0
 0:1:0
-
 &bmodinv
 # format: number:modulus:result
 # bmodinv Data errors
@@ -201,18 +205,17 @@ abc:5:NaN
 # bmodinv Expected Results from normal use
 1:5:1
 3:5:2
-3:-5:-3
 -2:5:2
 8:5033:4404
 1234567891:13:6
 -1234567891:13:7
 324958749843759385732954874325984357439658735983745:2348249874968739:1741662881064902
 ## bmodinv Error cases / useless use of function
+3:-5:NaN
 inf:5:NaN
 5:inf:NaN
 -inf:5:NaN
 5:-inf:NaN
-
 &as_number
 144/7:20
 12/1:12
@@ -221,7 +224,6 @@ inf:5:NaN
 NaN:NaN
 +inf:inf
 -inf:-inf
-
 &as_int
 144/7:20
 12/1:12
@@ -230,7 +232,6 @@ NaN:NaN
 NaN:NaN
 +inf:inf
 -inf:-inf
-
 &bmodpow
 # format: number:exponent:modulus:result
 # bmodpow Data errors
@@ -247,13 +248,12 @@ abc:5:5:NaN
 0:0:1:0
 8:7:5032:3840
 8:-1:5033:4404
-8:8:-5:-4
 98436739867439843769485798542749827593285729587325:43698764986460981048259837659386739857456983759328457:6943857329857295827698367:3104744730915914415259518
 # bmodpow Error cases
+8:8:-5:NaN
 8:-1:16:NaN
 inf:5:13:NaN
 5:inf:13:NaN
-
 &bmod
 NaN:1:NaN
 1:NaN:NaN
@@ -270,10 +270,9 @@ NaN:1:NaN
 -7/4:-4/32:0
 7/4:-4/32:0
 7/4:4/28:1/28
--7/4:4/28:3/28
-7/4:-4/28:-3/28
+-7/4:4/28:-1/28
+7/4:-4/28:1/28
 -7/4:-4/28:-1/28
-
 &fsqrt
 1:1
 0:0
@@ -285,31 +284,23 @@ NaN:NaN
 144/4:6
 25/16:5/4
 -3:NaN
-4/9:2/3
-36/49:6/7
-49/121:7/11
-999966000289/99999820000081:999983/9999991
-
 &flog
 NaN:NaN
-0:-inf
+0:NaN
 -2:NaN
-
 &blog
 NaN:NaN:NaN
 0:NaN:NaN
 NaN:0:NaN
 NaN:1:NaN
 1:NaN:NaN
-0:2:-inf
+0:2:NaN
 0:-2:NaN
 3:-2:NaN
-
 &finf
 1:+:inf
 2:-:-inf
 3:abc:inf
-
 &numify
 0:0
 +1:1
@@ -318,13 +309,14 @@ NaN:1:NaN
 5/2:2.5
 3/2:1.5
 5/4:1.25
-
+NaN:NaN
++inf:inf
+-inf:-inf
 &fnan
 abc:NaN
 2:NaN
 -2:NaN
 0:NaN
-
 &fone
 2:+:1
 -2:-:-1
@@ -334,7 +326,6 @@ abc:NaN
 -2::1
 abc::1
 2:abc:1
-
 &fsstr
 +inf:inf
 -inf:-inf
@@ -342,7 +333,6 @@ abcfsstr:NaN
 1:1/1
 3/1:3/1
 0.1:1/10
-
 &bnorm
 1:1
 -0:0
@@ -358,6 +348,10 @@ inf/-5:-inf
 -inf/-5:inf
 123:123
 -123.4567:-1234567/10000
+# invalid inputs
+1__2:NaN
+1E1__2:NaN
+11__2E2:NaN
 #1.E3:NaN
 .2E-3.:NaN
 #1e3e4:NaN
@@ -365,7 +359,7 @@ inf/-5:-inf
 inf:inf
 +inf:inf
 -inf:-inf
-+InFiNiTy:inf
++infinity:NaN
 +-inf:NaN
 abc:NaN
    1 a:NaN
@@ -414,7 +408,6 @@ abc:NaN
 1 / 3:1/3
 1/ 3:1/3
 1 /3:1/3
-
 &fneg
 fnegNaN:NaN
 +inf:-inf
@@ -429,7 +422,6 @@ fnegNaN:NaN
 123/7:-123/7
 -123/7:123/7
 123/-7:123/7
-
 &fabs
 fabsNaN:NaN
 +inf:inf
@@ -441,7 +433,6 @@ fabsNaN:NaN
 -123456789:123456789
 +123.456789:123456789/1000000
 -123456.789:123456789/1000
-
 &badd
 abc:abc:NaN
 abc:+0:NaN
@@ -490,7 +481,6 @@ baddNaN:+inf:NaN
 +123456789:-987654321:-864197532
 1/3:1/3:2/3
 2/3:-1/3:1/3
-
 &bsub
 abc:abc:NaN
 abc:+0:NaN
@@ -543,7 +533,6 @@ baddNaN:+inf:NaN
 -2/3:-2/3:0
 0:-123:123
 0:123:-123
-
 &bmul
 abc:abc:NaN
 abc:+0:NaN
@@ -596,21 +585,8 @@ NaNmul:-inf:NaN
 6:120:720
 10:10000:100000
 1/4:1/3:1/12
-
-&bdiv-list
-0:0:NaN,0
-0:1:0,0
-1:0:inf,1
--1:0:-inf,-1
-9:4:2,1
--9:4:-3,3
-9:-4:-3,-3
--9:-4:2,-1
-11/7:2/3:2,5/21
--11/7:2/3:-3,3/7
-
 &bdiv
-$div_scale = 40; $round_mode = "even"
+$div_scale = 40; $round_mode = 'even'
 abc:abc:NaN
 abc:+1:abc:NaN
 +1:abc:NaN
@@ -659,41 +635,25 @@ abc:+1:abc:NaN
 1/4:1/3:3/4
 # reset scale for further tests
 $div_scale = 40
-
 &is_nan
 123:0
 abc:1
 NaN:1
 -123:0
-
 &is_inf
-# without sign argument
-abc:0
-NaN:0
-+inf:1
--inf:1
--1:0
-0:0
-1:0
-# with sign argument "+"
-abc:+:0
-NaN:+:0
-+inf:+:1
--inf:+:0
--1:+:0
-0:+:0
-1:+:0
-# with sign argument "-"
-abc:-:0
-NaN:-:0
++inf::1
+-inf::1
+abc::0
+1::0
+NaN::0
+-1::0
 +inf:-:0
++inf:+:1
 -inf:-:1
--1:-:0
-0:-:0
-1:-:0
-+infinity:1
--infinity:1
-
+-inf:+:0
+# it must be exactly /^[+-]inf$/
++infinity::0
+-infinity::0
 &is_odd
 abc:0
 0:0
@@ -708,7 +668,6 @@ abc:0
 123.45:0
 -123.45:0
 2:0
-
 &is_int
 NaNis_int:0
 0:1
@@ -723,7 +682,6 @@ NaNis_int:0
 -0.002:0
 1/3:0
 3/1:1
-
 &is_even
 abc:0
 0:1
@@ -743,7 +701,6 @@ abc:0
 120:1
 1200:1
 -1200:1
-
 &is_pos
 0:0
 1:1
@@ -752,7 +709,6 @@ abc:0
 NaN:0
 -inf:0
 +inf:1
-
 &is_positive
 0:0
 1:1
@@ -761,7 +717,6 @@ NaN:0
 NaN:0
 -inf:0
 +inf:1
-
 &is_neg
 0:0
 1:0
@@ -770,7 +725,6 @@ NaN:0
 NaN:0
 -inf:1
 +inf:0
-
 &is_negative
 0:0
 1:0
@@ -779,7 +733,6 @@ NaN:0
 NaN:0
 -inf:1
 +inf:0
-
 &parts
 0:0 1
 1:1 1
@@ -791,14 +744,12 @@ NaN:0
 NaNparts:NaN NaN
 +inf:inf inf
 -inf:-inf inf
-
 &length
 123:3
 -123:3
 0:1
 1:1
 12345678901234567890:20
-
 &is_zero
 NaNzero:0
 +inf:0
@@ -810,43 +761,19 @@ NaNzero:0
 1/3:0
 -0/3:1
 5/inf:1
-
 &is_one
-# with no sign argument
-invalid:0
-NaN:0
+NaNone:0
 +inf:0
 -inf:0
--2:0
--1:0
 0:0
+2:0
 1:1
+-1:0
 -2:0
-# with sign argument "+"
-invalid:+:0
-NaN:+:0
-+inf:+:0
--inf:+:0
--2:+:0
--1:+:0
-0:+:0
-1:+:1
--2:+:0
-# with sign argument "-"
-invalid:-:0
-NaN:-:0
-+inf:-:0
--inf:-:0
--2:-:0
--1:-:1
-0:-:0
-1:-:0
--2:-:0
 1/3:0
 100/100:1
 0.1/0.1:1
 5/inf:0
-
 &ffloor
 0:0
 abc:NaN
@@ -870,7 +797,6 @@ abc:NaN
 -13/7:-2
 -14/7:-2
 -15/7:-3
-
 &fceil
 0:0
 abc:NaN
@@ -892,227 +818,14 @@ abc:NaN
 -13/7:-1
 -14/7:-2
 -15/7:-2
-
 &ffac
 NaN:NaN
 1:1
 -1:NaN
-
 &bpow
-#
-abc:123:NaN
-123:abc:NaN
-#
--inf:-inf:0
--inf:-3:0
--inf:-2:0
--inf:-3/2:0
--inf:-1:0
--inf:-1/2:0
--inf:0:NaN
--inf:1/2:inf    # directed infinity
--inf:1:-inf
--inf:3/2:inf    # directed infinity
--inf:2:inf
--inf:3:-inf
--inf:inf:inf    # complex infinity
--inf:NaN:NaN
-#
--3:-inf:0
--3:-3:-1/27
--3:-2:1/9
--3:-3/2:NaN
--3:-1:-1/3
--3:-1/2:NaN
--3:0:1
--3:1/2:NaN
--3:1:-3
--3:3/2:NaN
--3:2:9
--3:3:-27
--3:inf:inf      # complex infinity
--3:NaN:NaN
-#
--2:-inf:0
--2:-3:-1/8
--2:-2:1/4
--2:-3/2:NaN
--2:-1:-1/2
--2:-1/2:NaN
--2:0:1
--2:1/2:NaN
--2:1:-2
--2:3/2:NaN
--2:2:4
--2:3:-8
--2:inf:inf      # complex infinity
--2:NaN:NaN
-#
--3/2:-inf:0
--3/2:-3:-8/27
--3/2:-2:4/9
--3/2:-3/2:NaN
--3/2:-1:-2/3
--3/2:-1/2:NaN
--3/2:0:1
--3/2:1/2:NaN
--3/2:1:-3/2
--3/2:3/2:NaN
--3/2:2:9/4
--3/2:3:-27/8
--3/2:inf:inf    # complex infinity
--3/2:NaN:NaN
-#
--1:-inf:NaN
--1:-3:-1
--1:-2:1
--1:-3/2:NaN
--1:-1:-1
--1:-1/2:NaN
--1:0:1
--1:1/2:NaN
--1:1:-1
--1:3/2:NaN
--1:2:1
--1:3:-1
--1:inf:NaN
--1:NaN:NaN
-#
--1/2:-inf:inf   # complex infinity
--1/2:-3:-8
--1/2:-2:4
--1/2:-3/2:NaN
--1/2:-1:-2
--1/2:-1/2:NaN
--1/2:0:1
--1/2:1/2:NaN
--1/2:1:-1/2
--1/2:3/2:NaN
--1/2:2:1/4
--1/2:3:-1/8
--1/2:inf:0
--1/2:NaN:NaN
-#
-0:-inf:inf      # complex infinity
-0:-3:inf        # complex infinity
-0:-2:inf        # complex infinity
-0:-3/2:inf      # complex infinity
-0:-1:inf        # complex infinity
-0:-1/2:inf      # complex infinity
-0:0:1
-0:1/2:0
-0:1:0
-0:3/2:0
-0:2:0
-0:3:0
-0:inf:0
-0:NaN:NaN
-#
-1/2:-inf:inf
-1/2:-3:8
-1/2:-2:4
-#1/2:-3/2:2.828427124746190097603377448419396157139
-1/2:-1:2
-#1/2:-1/2:1.41421356237309504880168872420969807857
-1/2:0:1
-#1/2:1/2:0.7071067811865475244008443621048490392848
-1/2:1:1/2
-#1/2:3/2:0.3535533905932737622004221810524245196424
-1/2:2:1/4
-1/2:3:1/8
-1/2:inf:0
-1/2:NaN:NaN
-#
-1:-inf:1
-1:-3:1
-1:-2:1
-1:-3/2:1
-1:-1:1
-1:-1/2:1
-1:0:1
-1:1/2:1
-1:1:1
-1:3/2:1
-1:2:1
-1:3:1
-1:inf:1
-1:NaN:NaN
-#
-3/2:-inf:0
-3/2:-3:8/27
-3/2:-2:4/9
-#3/2:-3/2:0.5443310539518173551549520166013091982147
-3/2:-1:2/3
-#3/2:-1/2:0.816496580927726032732428024901963797322
-3/2:0:1
-#3/2:1/2:1.224744871391589049098642037352945695983
-3/2:1:3/2
-#3/2:3/2:1.837117307087383573647963056029418543974
-3/2:2:9/4
-3/2:3:27/8
-3/2:inf:inf
-3/2:NaN:NaN
-#
-2:-inf:0
-2:-3:1/8
-2:-2:1/4
-#2:-3/2:0.3535533905932737622004221810524245196424
-2:-1:1/2
-#2:-1/2:0.7071067811865475244008443621048490392848
-2:0:1
-#2:1/2:1.41421356237309504880168872420969807857
-2:1:2
-#2:3/2:2.828427124746190097603377448419396157139
+# bpow test for overload of **
 2:2:4
-2:3:8
-2:inf:inf
-2:NaN:NaN
-#
-3:-inf:0
-3:-3:1/27
-3:-2:1/9
-#3:-3/2:0.1924500897298752548363829268339858185492
-3:-1:1/3
-#3:-1/2:0.5773502691896257645091487805019574556476
-3:0:1
-#3:1/2:1.732050807568877293527446341505872366943
-3:1:3
-#3:3/2:5.196152422706631880582339024517617100828
-3:2:9
 3:3:27
-3:inf:inf
-3:NaN:NaN
-#
-inf:-inf:0
-inf:-3:0
-inf:-2:0
-inf:-3/2:0
-inf:-1:0
-inf:-1/2:0
-inf:0:NaN
-inf:1/2:inf
-inf:1:inf
-inf:3/2:inf
-inf:2:inf
-inf:3:inf
-inf:inf:inf
-inf:NaN:NaN
-#
-NaN:-inf:NaN
-NaN:-3:NaN
-NaN:-2:NaN
-NaN:-3/2:NaN
-NaN:-1:NaN
-NaN:-1/2:NaN
-NaN:0:NaN
-NaN:1/2:NaN
-NaN:1:NaN
-NaN:3/2:NaN
-NaN:2:NaN
-NaN:3:NaN
-NaN:inf:NaN
-NaN:NaN:NaN
-
 &bacmp
 +0:-0:0
 +0:+1:-1
@@ -1166,7 +879,19 @@ NaN:-inf:
 1/3:2/3:-1
 2/3:1/3:1
 2/3:2/3:0
-
+&fpow
+2/1:3/1:8
+3/1:3/1:27
+5/2:3/1:125/8
+-2/1:3/1:-8
+-3/1:3/1:-27
+-5/2:3/1:-125/8
+-2/1:4/1:16
+-3/1:4/1:81
+-5/2:4/1:625/16
+-5/2:-4/1:16/625
+1/5:-3:125
+-1/5:-3:-125
 &numerator
 NaN:NaN
 inf:inf
@@ -1176,7 +901,6 @@ inf:inf
 0:0
 1:1
 5/-3:-5
-
 &denominator
 NaN:NaN
 inf:1
@@ -1187,40 +911,15 @@ inf:1
 -1/1:1
 -3/7:7
 4/-5:5
-
 &finc
 3/2:5/2
 -15/6:-3/2
 NaN:NaN
 -1/3:2/3
 -2/7:5/7
-
 &fdec
 15/6:3/2
 -3/2:-5/2
 1/3:-2/3
 2/7:-5/7
 NaN:NaN
-
-&log
--1:NaN
-0:-inf
-1:0
-34803:3267955896544848894312057422508991/312500000000000000000000000000000
--inf:inf
-inf:inf
-NaN:NaN
-
-&exp
-
-&sin
-
-&cos
-
-&atan2
-
-&int
-
-&abs
-
-&sqrt

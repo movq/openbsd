@@ -8,9 +8,7 @@ BEGIN {
 }
 
 use strict;
-use warnings;
-use Config;
-use Test::More tests => 43;
+use Test::More tests => 35;
 
 use TieOut;
 use MakeMaker::Test::Utils;
@@ -19,12 +17,8 @@ use MakeMaker::Test::Setup::BFD;
 use ExtUtils::MakeMaker;
 
 chdir 't';
-perl_lib; # sets $ENV{PERL5LIB} relative to t/
 
-use File::Temp qw[tempdir];
-my $tmpdir = tempdir( DIR => '../t', CLEANUP => 1 );
-use Cwd; my $cwd = getcwd; END { chdir $cwd } # so File::Temp can cleanup
-chdir $tmpdir;
+perl_lib();
 
 ok( setup_recurs(), 'setup' );
 END {
@@ -39,11 +33,6 @@ ok( chdir 'Big-Dummy', "chdir'd to Big-Dummy" ) ||
     ok( my $stdout = tie *STDOUT, 'TieOut' );
     my $warnings = '';
     local $SIG{__WARN__} = sub {
-        if ( $Config{usecrosscompile} ) {
-            # libraries might not be present on the target system
-            # when cross-compiling
-            return if $_[0] =~ /\A\QWarning (mostly harmless): No library found for \E.+/
-        }
         $warnings .= join '', @_;
     };
 
@@ -72,7 +61,7 @@ VERIFY
     };
 
     is( $warnings, <<VERIFY );
-WARNING: AUTHOR takes a ARRAY reference not a CODE reference.
+WARNING: AUTHOR takes a string/number not a CODE reference.
          Please inform the author.
 VERIFY
 
@@ -223,65 +212,4 @@ VERIFY
     };
     is( $warnings, '' );
     is( $mm->{DISTVNAME}, 'Hooballoo' );
-
-
-    # AUTHOR / scalar
-    $warnings = '';
-    eval {
-        $mm = WriteMakefile(
-            NAME       => 'Big::Dummy',
-            VERSION    => '1.00',
-            AUTHOR     => "test",
-        );
-    };
-    is( $warnings, '' );
-    is_deeply( $mm->{AUTHOR},  ["test"] );
-
-
-    # AUTHOR / array
-    $warnings = '';
-    eval {
-        $mm = WriteMakefile(
-            NAME       => 'Big::Dummy',
-            VERSION    => '1.00',
-            AUTHOR     => ["test1", "test2"],
-        );
-    };
-    is( $warnings, '' );
-    is_deeply( $mm->{AUTHOR},  ["test1","test2"] );
-
-    # PERL_MM_OPT
-    {
-      local $ENV{PERL_MM_OPT} = 'CCFLAGS="-Wl,-rpath -Wl,/foo/bar/lib" LIBS="-lwibble -lwobble"';
-      $mm = WriteMakefile(
-          NAME            => 'Big::Dummy',
-          VERSION    => '1.00',
-      );
-
-      like( $mm->{CCFLAGS}, qr{-Wl,-rpath -Wl,/foo/bar/lib}, 'parse_args() splits like shell' );
-      is_deeply( $mm->{LIBS}, ['-lwibble -lwobble'], 'parse_args() splits like shell' );
-    }
-
-    # PERL_MM_OPT
-    {
-      local $ENV{PERL_MM_OPT} = 'INSTALL_BASE=/how/we/have/not/broken/local/lib';
-      $mm = WriteMakefile(
-          NAME            => 'Big::Dummy',
-          VERSION    => '1.00',
-      );
-
-      is( $mm->{INSTALL_BASE}, "/how/we/have/not/broken/local/lib", 'parse_args() splits like shell' );
-    }
-
-    # PERL_MM_OPT
-    {
-      local $ENV{PERL_MM_OPT} = 'INSTALL_BASE="/Users/miyagawa/tmp/car1  foo/foo bar"';
-      $mm = WriteMakefile(
-          NAME            => 'Big::Dummy',
-          VERSION    => '1.00',
-      );
-
-      is( $mm->{INSTALL_BASE}, "/Users/miyagawa/tmp/car1  foo/foo bar", 'parse_args() splits like shell' );
-    }
-
 }

@@ -1,21 +1,10 @@
 #!./perl -n
 
 BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
+    print "1..2\n";
     *ARGV = *DATA;
-    plan(tests => 3);
 }
-
-END {
-    pass("Final test");
-}
-
-chomp;
-is("ok ".$., $_, "Checking line $.");
-
-s/^/not /;
+print;
 
 __DATA__
 ok 1

@@ -1,16 +1,15 @@
 package App::Prove;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
-use TAP::Harness::Env;
-use Text::ParseWords qw(shellwords);
+use TAP::Object ();
+use TAP::Harness;
+use TAP::Parser::Utils qw( split_shell );
 use File::Spec;
 use Getopt::Long;
 use App::Prove::State;
 use Carp;
-
-use base 'TAP::Object';
 
 =head1 NAME
 
@@ -18,11 +17,11 @@ App::Prove - Implements the C<prove> command.
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 
@@ -52,14 +51,15 @@ use constant PLUGINS => 'App::Prove::Plugin';
 my @ATTR;
 
 BEGIN {
+    @ISA = qw(TAP::Object);
+
     @ATTR = qw(
       archive argv blib show_count color directives exec failures comments
       formatter harness includes modules plugins jobs lib merge parse quiet
       really_quiet recurse backwards shuffle taint_fail taint_warn timer
       verbose warnings_fail warnings_warn show_help show_man show_version
-      state_class test_args state dry extensions ignore_exit rules state_manager
-      normalize sources tapversion trap
-      statefile
+      state_class test_args state dry extension ignore_exit rules state_manager
+      normalize
     );
     __PACKAGE__->mk_methods(@ATTR);
 }
@@ -81,14 +81,11 @@ sub _initialize {
     my $self = shift;
     my $args = shift || {};
 
-    my @is_array = qw(
-      argv rc_opts includes modules state plugins rules sources
-    );
-
     # setup defaults:
-    for my $key (@is_array) {
+    for my $key (qw( argv rc_opts includes modules state plugins rules )) {
         $self->{$key} = [];
     }
+    $self->{harness_class} = 'TAP::Harness';
 
     for my $attr (@ATTR) {
         if ( exists $args->{$attr} ) {
@@ -98,6 +95,13 @@ sub _initialize {
         }
     }
 
+    my %env_provides_default = (
+        HARNESS_TIMER => 'timer',
+    );
+
+    while ( my ( $env, $attr ) = each %env_provides_default ) {
+        $self->{$attr} = 1 if $ENV{$env};
+    }
     $self->state_class('App::Prove::State');
     return $self;
 }
@@ -193,59 +197,49 @@ sub process_args {
 
     {
         local @ARGV = @args;
-        Getopt::Long::Configure(qw(no_ignore_case bundling pass_through));
+        Getopt::Long::Configure( 'no_ignore_case', 'bundling' );
 
         # Don't add coderefs to GetOptions
         GetOptions(
-            'v|verbose'  => \$self->{verbose},
-            'f|failures' => \$self->{failures},
-            'o|comments' => \$self->{comments},
-            'l|lib'      => \$self->{lib},
-            'b|blib'     => \$self->{blib},
-            's|shuffle'  => \$self->{shuffle},
-            'color!'     => \$self->{color},
-            'colour!'    => \$self->{color},
-            'count!'     => \$self->{show_count},
-            'c'          => \$self->{color},
-            'D|dry'      => \$self->{dry},
-            'ext=s@'     => sub {
-                my ( $opt, $val ) = @_;
-
-                # Workaround for Getopt::Long 2.25 handling of
-                # multivalue options
-                push @{ $self->{extensions} ||= [] }, $val;
-            },
-            'harness=s'    => \$self->{harness},
-            'ignore-exit'  => \$self->{ignore_exit},
-            'source=s@'    => $self->{sources},
-            'formatter=s'  => \$self->{formatter},
-            'r|recurse'    => \$self->{recurse},
-            'reverse'      => \$self->{backwards},
-            'p|parse'      => \$self->{parse},
-            'q|quiet'      => \$self->{quiet},
-            'Q|QUIET'      => \$self->{really_quiet},
-            'e|exec=s'     => \$self->{exec},
-            'm|merge'      => \$self->{merge},
-            'I=s@'         => $self->{includes},
-            'M=s@'         => $self->{modules},
-            'P=s@'         => $self->{plugins},
-            'state=s@'     => $self->{state},
-            'statefile=s'  => \$self->{statefile},
-            'directives'   => \$self->{directives},
-            'h|help|?'     => \$self->{show_help},
-            'H|man'        => \$self->{show_man},
-            'V|version'    => \$self->{show_version},
-            'a|archive=s'  => \$self->{archive},
-            'j|jobs=i'     => \$self->{jobs},
-            'timer'        => \$self->{timer},
-            'T'            => \$self->{taint_fail},
-            't'            => \$self->{taint_warn},
-            'W'            => \$self->{warnings_fail},
-            'w'            => \$self->{warnings_warn},
-            'normalize'    => \$self->{normalize},
-            'rules=s@'     => $self->{rules},
-            'tapversion=s' => \$self->{tapversion},
-            'trap'         => \$self->{trap},
+            'v|verbose'   => \$self->{verbose},
+            'f|failures'  => \$self->{failures},
+            'o|comments'  => \$self->{comments},
+            'l|lib'       => \$self->{lib},
+            'b|blib'      => \$self->{blib},
+            's|shuffle'   => \$self->{shuffle},
+            'color!'      => \$self->{color},
+            'colour!'     => \$self->{color},
+            'count!'      => \$self->{show_count},
+            'c'           => \$self->{color},
+            'D|dry'       => \$self->{dry},
+            'ext=s'       => \$self->{extension},
+            'harness=s'   => \$self->{harness},
+            'ignore-exit' => \$self->{ignore_exit},
+            'formatter=s' => \$self->{formatter},
+            'r|recurse'   => \$self->{recurse},
+            'reverse'     => \$self->{backwards},
+            'p|parse'     => \$self->{parse},
+            'q|quiet'     => \$self->{quiet},
+            'Q|QUIET'     => \$self->{really_quiet},
+            'e|exec=s'    => \$self->{exec},
+            'm|merge'     => \$self->{merge},
+            'I=s@'        => $self->{includes},
+            'M=s@'        => $self->{modules},
+            'P=s@'        => $self->{plugins},
+            'state=s@'    => $self->{state},
+            'directives'  => \$self->{directives},
+            'h|help|?'    => \$self->{show_help},
+            'H|man'       => \$self->{show_man},
+            'V|version'   => \$self->{show_version},
+            'a|archive=s' => \$self->{archive},
+            'j|jobs=i'    => \$self->{jobs},
+            'timer'       => \$self->{timer},
+            'T'           => \$self->{taint_fail},
+            't'           => \$self->{taint_warn},
+            'W'           => \$self->{warnings_fail},
+            'w'           => \$self->{warnings_warn},
+            'normalize'   => \$self->{normalize},
+            'rules=s@'    => $self->{rules},
         ) or croak('Unable to continue');
 
         # Stash the remainder of argv for later
@@ -281,15 +275,13 @@ sub _help {
 sub _color_default {
     my $self = shift;
 
-    return -t STDOUT && !$ENV{HARNESS_NOTTY};
+    return -t STDOUT && !$ENV{HARNESS_NOTTY} && !IS_WIN32;
 }
 
 sub _get_args {
     my $self = shift;
 
     my %args;
-
-    $args{trap} = 1 if $self->trap;
 
     if ( defined $self->color ? $self->color : $self->_color_default ) {
         $args{color} = 1;
@@ -318,11 +310,6 @@ sub _get_args {
         $args{formatter_class} = $formatter;
     }
 
-    for my $handler ( @{ $self->sources } ) {
-        my ( $name, $config ) = $self->_parse_source($handler);
-        $args{sources}->{$name} = $config;
-    }
-
     if ( $self->ignore_exit ) {
         $args{ignore_exit} = 1;
     }
@@ -344,13 +331,13 @@ sub _get_args {
     # Handle verbose, quiet, really_quiet flags
     my %verb_map = ( verbose => 1, quiet => -1, really_quiet => -2, );
 
-    my @verb_adj = map { $self->$_() ? $verb_map{$_} : () }
+    my @verb_adj = grep {$_} map { $self->$_() ? $verb_map{$_} : 0 }
       keys %verb_map;
 
     die "Only one of verbose, quiet or really_quiet should be specified\n"
       if @verb_adj > 1;
 
-    $args{verbosity} = shift @verb_adj if @verb_adj;
+    $args{verbosity} = shift @verb_adj || 0;
 
     for my $a (qw( merge failures comments timer directives normalize )) {
         $args{$a} = 1 if $self->$a();
@@ -361,8 +348,6 @@ sub _get_args {
     # defined but zero-length exec runs test files as binaries
     $args{exec} = [ split( /\s+/, $self->exec ) ]
       if ( defined( $self->exec ) );
-
-    $args{version} = $self->tapversion if defined( $self->tapversion );
 
     if ( defined( my $test_args = $self->test_args ) ) {
         $args{test_args} = $test_args;
@@ -380,9 +365,8 @@ sub _get_args {
         }
         $args{rules} = { par => [@rules] };
     }
-    $args{harness_class} = $self->{harness_class} if $self->{harness_class};
 
-    return \%args;
+    return ( \%args, $self->{harness_class} );
 }
 
 sub _find_module {
@@ -427,42 +411,6 @@ sub _load_extensions {
     $self->_load_extension( $_, @search ) for @$ext;
 }
 
-sub _parse_source {
-    my ( $self, $handler ) = @_;
-
-    # Load any options.
-    ( my $opt_name = lc $handler ) =~ s/::/-/g;
-    local @ARGV = @{ $self->{argv} };
-    my %config;
-    Getopt::Long::GetOptions(
-        "$opt_name-option=s%" => sub {
-            my ( $name, $k, $v ) = @_;
-            if ( $v =~ /(?<!\\)=/ ) {
-
-                # It's a hash option.
-                croak "Option $name must be consistently used as a hash"
-                  if exists $config{$k} && ref $config{$k} ne 'HASH';
-                $config{$k} ||= {};
-                my ( $hk, $hv ) = split /(?<!\\)=/, $v, 2;
-                $config{$k}{$hk} = $hv;
-            }
-            else {
-                $v =~ s/\\=/=/g;
-                if ( exists $config{$k} ) {
-                    $config{$k} = [ $config{$k} ]
-                      unless ref $config{$k} eq 'ARRAY';
-                    push @{ $config{$k} } => $v;
-                }
-                else {
-                    $config{$k} = $v;
-                }
-            }
-        }
-    );
-    $self->{argv} = \@ARGV;
-    return ( $handler, \%config );
-}
-
 =head3 C<run>
 
 Perform whatever actions the command line args specified. The C<prove>
@@ -481,7 +429,7 @@ sub run {
 
     unless ( $self->state_manager ) {
         $self->state_manager(
-            $self->state_class->new( { store => $self->statefile || STATE_FILE } ) );
+            $self->state_class->new( { store => STATE_FILE } ) );
     }
 
     if ( $self->show_help ) {
@@ -513,8 +461,8 @@ sub _get_tests {
     my $self = shift;
 
     my $state = $self->state_manager;
-    my $ext   = $self->extensions;
-    $state->extensions($ext) if defined $ext;
+    my $ext   = $self->extension;
+    $state->extension($ext) if defined $ext;
     if ( defined( my $state_switch = $self->state ) ) {
         $state->apply_switch(@$state_switch);
     }
@@ -528,8 +476,8 @@ sub _get_tests {
 }
 
 sub _runtests {
-    my ( $self, $args, @tests ) = @_;
-    my $harness = TAP::Harness::Env->create($args);
+    my ( $self, $args, $harness_class, @tests ) = @_;
+    my $harness = $harness_class->new($args);
 
     my $state = $self->state_manager;
 
@@ -567,6 +515,8 @@ sub _get_switches {
     elsif ( $self->warnings_warn ) {
         push @switches, '-w';
     }
+
+    push @switches, split_shell( $ENV{HARNESS_PERL_SWITCHES} );
 
     return @switches ? \@switches : ();
 }
@@ -636,7 +586,6 @@ current Perl.
 
 sub print_version {
     my $self = shift;
-    require TAP::Harness;
     printf(
         "TAP::Harness v%s and Perl v%vd\n",
         $TAP::Harness::VERSION, $^V
@@ -675,7 +624,7 @@ calling C<run>.
 
 =item C<exec>
 
-=item C<extensions>
+=item C<extension>
 
 =item C<failures>
 
@@ -736,10 +685,6 @@ calling C<run>.
 =item C<warnings_fail>
 
 =item C<warnings_warn>
-
-=item C<tapversion>
-
-=item C<trap>
 
 =back
 

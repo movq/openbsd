@@ -221,18 +221,19 @@ This document was last revised 8-DEC-2007, for Perl 5.10.0
 =cut
 
 package VMS::Filespec;
-require 5.006;
+require 5.002;
 
-our $VERSION = '1.13';
+our $VERSION = '1.12';
 
 # If you want to use this package on a non-VMS system,
 # uncomment the following line.
 # use AutoLoader;
-use Exporter 'import';
+require Exporter;
 
-our @EXPORT = qw( &vmsify &unixify &pathify &fileify
+@ISA = qw( Exporter );
+@EXPORT = qw( &vmsify &unixify &pathify &fileify
               &vmspath &unixpath &candelete &rmsexpand );
-our @EXPORT_OK = qw( &unixrealpath &vmsrealpath &case_tolerant_process );
+@EXPORT_OK = qw( &unixrealpath &vmsrealpath &case_tolerant_process );
 1;
 
 

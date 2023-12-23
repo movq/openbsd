@@ -1,18 +1,12 @@
 #!./perl -t
 
 BEGIN {
-    chdir 't' if -d 't';
+    chdir 't';
     @INC = '../lib';
     require './test.pl';
 }
 
-use Config;
-
-if (exists($Config{taint_support}) && !$Config{taint_support}) {
-    skip_all("perl built without taint support");
-}
-
-plan tests => 13;
+plan tests => 11;
 
 my $Perl = which_perl();
 
@@ -20,7 +14,7 @@ my $warning;
 local $SIG{__WARN__} = sub { $warning = join "\n", @_; };
 my $Tmsg = 'while running with -t switch';
 
-is( ${^TAINT}, -1, '${^TAINT} == -1' );
+ok( ${^TAINT},      '${^TAINT} defined' );
 
 my $out = `$Perl -le "print q(Hello)"`;
 is( $out, "Hello\n",                      '`` worked' );
@@ -35,9 +29,8 @@ like( $warning, qr/^Insecure .* $Tmsg/, '    taint warn' );
 }
 
 # Get ourselves a tainted variable.
-my $filename = tempfile();
 $file = $0;
-$file =~ s/.*/$filename/;
+$file =~ s/.*/some.tmp/;
 ok( open(FILE, ">$file"),   'open >' ) or DIE $!;
 print FILE "Stuff\n";
 close FILE;
@@ -50,23 +43,3 @@ like( $warning, qr/^Insecure dependency in unlink $Tmsg/,
 ok( !-e $file,  'unlink worked' );
 
 ok( !$^W,   "-t doesn't enable regular warnings" );
-
-
-mkdir('ttdir');
-open(FH,'>','ttdir/ttest.pl')or DIE $!;
-print FH 'return 42';
-close FH or DIE $!;
-
-SKIP: {
-    ($^O eq 'MSWin32') || skip('skip tainted do test with \ separator');
-    my $test = 0;
-    $test =  do '.\ttdir/ttest.pl';
-    is($test, 42, 'Could "do" .\ttdir/ttest.pl');
-}
-{
-    my $test = 0;
-    $test =  do './ttdir/ttest.pl';
-    is($test, 42, 'Could "do" ./ttdir/ttest.pl');
-}
-unlink ('./ttdir/ttest.pl');
-rmdir ('ttdir');

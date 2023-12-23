@@ -29,10 +29,10 @@ require q(./test.pl); plan(tests => 7);
 }
 
 my $x = InheritingFromOverloadedTest->new();
-object_ok($x, 'InheritingFromOverloadedTest');
+isa_ok($x, 'InheritingFromOverloadedTest');
 
 my $y = OverloadingTest->new();
-object_ok($y, 'OverloadingTest');
+isa_ok($y, 'OverloadingTest');
 
 is("$x", 'InheritingFromOverloadedTest stringified', '... got the right value when stringifing');
 is("$y", 'OverloadingTest stringified', '... got the right value when stringifing');

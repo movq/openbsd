@@ -1,20 +1,21 @@
-use strict;
-use warnings;
-
 use IO::Zlib;
 
 sub ok
 {
     my ($no, $ok) = @_ ;
+
+    #++ $total ;
+    #++ $totalBad unless $ok ;
+
     print "ok $no\n" if $ok ;
     print "not ok $no\n" unless $ok ;
 }
 
-my $name = "test.gz";
+$name="test.gz";
 
 print "1..23\n";
 
-my @text = (<<EOM, <<EOM, <<EOM, <<EOM) ;
+@text = (<<EOM, <<EOM, <<EOM, <<EOM) ;
 this is line 1
 EOM
 the second line
@@ -24,8 +25,7 @@ EOM
 the final line
 EOM
 
-my $text = join("", @text) ;
-my $file;
+$text = join("", @text) ;
 
 ok(1, $file = IO::Zlib->new($name, "wb"));
 ok(2, $file->print($text));
@@ -40,8 +40,6 @@ ok(9, $file->getline() eq $text[3]);
 ok(10, !defined($file->getline()));
 ok(11, $file->eof());
 ok(12, $file->close());
-
-my @lines;
 
 ok(13, $file = IO::Zlib->new($name, "rb"));
 ok(14, !$file->eof());

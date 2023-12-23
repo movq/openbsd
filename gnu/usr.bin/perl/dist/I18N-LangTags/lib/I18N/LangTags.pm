@@ -5,10 +5,11 @@
 require 5.000;
 package I18N::LangTags;
 use strict;
+use vars qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION %Panic);
 require Exporter;
-our @ISA = qw(Exporter);
-our @EXPORT = qw();
-our @EXPORT_OK = qw(is_language_tag same_language_tag
+@ISA = qw(Exporter);
+@EXPORT = qw();
+@EXPORT_OK = qw(is_language_tag same_language_tag
                 extract_language_tags super_languages
                 similarity_language_tag is_dialect_of
                 locale2language_tag alternate_language_tags
@@ -16,10 +17,9 @@ our @EXPORT_OK = qw(is_language_tag same_language_tag
                 implicate_supers
                 implicate_supers_strictly
                );
-our %EXPORT_TAGS = ('ALL' => \@EXPORT_OK);
+%EXPORT_TAGS = ('ALL' => \@EXPORT_OK);
 
-our $VERSION = "0.45";
-our %Panic;
+$VERSION = "0.35";
 
 sub uniq { my %seen; return grep(!($seen{$_}++), @_); } # a util function
 
@@ -460,7 +460,7 @@ interaction looks like:
 So far so good.  But suppose the way you're implementing this is:
 
           my %greetings;
-          die unless open(IN, "<", "in.dat");
+          die unless open(IN, "<in.dat");
           while(<IN>) {
             chomp;
             next unless /^([^=]+)=(.+)/s;
@@ -502,7 +502,7 @@ program with:
 
           use I18N::LangTags qw(encode_language_tag);
           my %greetings;
-          die unless open(IN, "<", "in.dat");
+          die unless open(IN, "<in.dat");
           while(<IN>) {
             chomp;
             next unless /^([^=]+)=(.+)/s;
@@ -579,16 +579,16 @@ tag ("ar") exists.
 
 Examples:
 
-  alternate_language_tags('no-bok')       is ('nb')
-  alternate_language_tags('nb')           is ('no-bok')
-  alternate_language_tags('he')           is ('iw')
-  alternate_language_tags('iw')           is ('he')
-  alternate_language_tags('i-hakka')      is ('zh-hakka', 'x-hakka')
-  alternate_language_tags('zh-hakka')     is ('i-hakka', 'x-hakka')
-  alternate_language_tags('en')           is ()
-  alternate_language_tags('x-mingo-tom')  is ('i-mingo-tom')
-  alternate_language_tags('x-klikitat')   is ('i-klikitat')
-  alternate_language_tags('i-klikitat')   is ('x-klikitat')
+          alternate_language_tags('no-bok')       is ('nb')
+          alternate_language_tags('nb')           is ('no-bok')
+          alternate_language_tags('he')           is ('iw')
+          alternate_language_tags('iw')           is ('he')
+          alternate_language_tags('i-hakka')      is ('zh-hakka', 'x-hakka')
+          alternate_language_tags('zh-hakka')     is ('i-hakka', 'x-hakka')
+          alternate_language_tags('en')           is ()
+          alternate_language_tags('x-mingo-tom')  is ('i-mingo-tom')
+          alternate_language_tags('x-klikitat')   is ('i-klikitat')
+          alternate_language_tags('i-klikitat')   is ('x-klikitat')
 
 This function returns empty-list if given anything other than a formally
 valid language tag.
@@ -677,8 +677,8 @@ sub alternate_language_tags {
    # And the panic languages for English is, of course, nil!
 
    # My guesses at Slavic intelligibility:
-   ([qw(ru be uk)]) x 2,  # Russian, Belarusian, Ukrainian
-   ([qw(sr hr bs)]) x 2,  # Serbian, Croatian, Bosnian
+   ([qw(ru be uk)]) x 2,  # Russian, Belarusian, Ukranian
+   'sr' => 'hr', 'hr' => 'sr', # Serb + Croat
    'cs' => 'sk', 'sk' => 'cs', # Czech + Slovak
 
    'ms' => 'id', 'id' => 'ms', # Malay + Indonesian
@@ -844,28 +844,28 @@ language tags with their ASCII characters shifted into Plane 14.
 
 * L<I18N::LangTags::List|I18N::LangTags::List>
 
-* RFC 3066, C<L<http://www.ietf.org/rfc/rfc3066.txt>>, "Tags for the
+* RFC 3066, C<ftp://ftp.isi.edu/in-notes/rfc3066.txt>, "Tags for the
 Identification of Languages".  (Obsoletes RFC 1766)
 
-* RFC 2277, C<L<http://www.ietf.org/rfc/rfc2277.txt>>, "IETF Policy on
+* RFC 2277, C<ftp://ftp.isi.edu/in-notes/rfc2277.txt>, "IETF Policy on
 Character Sets and Languages".
 
-* RFC 2231, C<L<http://www.ietf.org/rfc/rfc2231.txt>>, "MIME Parameter
+* RFC 2231, C<ftp://ftp.isi.edu/in-notes/rfc2231.txt>, "MIME Parameter
 Value and Encoded Word Extensions: Character Sets, Languages, and
 Continuations".
 
-* RFC 2482, C<L<http://www.ietf.org/rfc/rfc2482.txt>>,
+* RFC 2482, C<ftp://ftp.isi.edu/in-notes/rfc2482.txt>, 
 "Language Tagging in Unicode Plain Text".
 
 * Locale::Codes, in
-C<L<http://www.perl.com/CPAN/modules/by-module/Locale/>>
+C<http://www.perl.com/CPAN/modules/by-module/Locale/>
 
 * ISO 639-2, "Codes for the representation of names of languages",
 including two-letter and three-letter codes,
-C<L<http://www.loc.gov/standards/iso639-2/php/code_list.php>>
+C<http://www.loc.gov/standards/iso639-2/langcodes.html>
 
 * The IANA list of registered languages (hopefully up-to-date),
-C<L<http://www.iana.org/assignments/language-tags>>
+C<http://www.iana.org/assignments/language-tags>
 
 =head1 COPYRIGHT
 

@@ -37,7 +37,7 @@ while (<DATA>) {
     }
 }
 
-plan tests => 10 + 3*scalar(@tests);
+plan tests => 9 + 3*scalar(@tests);
 
 SKIP:
 {
@@ -74,8 +74,6 @@ SKIP:
     use re 'eval';
     ok(!eval { dclone($re) }, "should fail to clone, even with use re 'eval'");
 }
-
-is(ref(dclone(bless qr//, "Foo")), "Foo", "check reblessed regexps");
 
 for my $test (@tests) {
     my ($code, $not, $match, $matchc, $name) = @$test;
@@ -123,7 +121,7 @@ __DATA__
 A-; qr(\x2E) ; ".", !"a" ; \x2E - hex meta
 -; qr/\./ ; "." , !"a" ; \. - backslash meta
 8- ; qr/\x{100}/ ; "\x{100}" ; simple unicode
-A12- ; qr/fss/i ; "f\xDF\x{101}" ; case insensive unicode promoted
-A22-; qr/fss/ui ; "f\xDF" ; case insensitive unicode SS /iu
-A22-; qr/fss/aai ; !"f\xDF" ; case insensitive unicode SS /iaa
-A22-; qr/f\w/a ; "fo", !"f\xff" ; simple /a flag
+12- ; qr/fss/i ; "f\xDF\x{101}" ; case insensive unicode promoted
+22-; qr/fss/ui ; "f\xDF" ; case insensitive unicode SS /iu
+22-; qr/fss/aai ; !"f\xDF" ; case insensitive unicode SS /iaa
+22-; qr/f\w/a ; "fo", !"f\xff" ; simple /a flag

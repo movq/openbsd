@@ -1,8 +1,18 @@
-use strict;
-use warnings;
-use Test::More;
-use Config;
+#!perl
 
+BEGIN {
+    if ($ENV{PERL_CORE}) {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+    }
+}
+
+use strict; use warnings;
+use Test::More;
+my $n_tests = 0;
+
+use Config;
+BEGIN { $n_tests += 2 }
 {
     my $p = Impostor->new( 'Donald Duck');
     is( $p->greeting, "Hi, I'm Donald Duck", "blank title");
@@ -11,9 +21,9 @@ use Config;
 }
 
 # thread support?
-subtest 'threads' => sub {
-    plan skip_all => "No thread support" unless $Config{usethreads};
-
+BEGIN { $n_tests += 5 }
+SKIP: {
+    skip "No thread support", 5 unless $Config{ usethreads};
     require threads;
     treads->import if threads->can( 'import');
 
@@ -40,8 +50,9 @@ subtest 'threads' => sub {
         }
     )->join;
     is( $ans, "Hi, I'm Mr Donald Duck", "double thread: got greeting");
-};
+}
 
+BEGIN { plan tests => $n_tests }
 
 ############################################################################
 
@@ -83,7 +94,7 @@ BEGIN {
     }
 
     package Impostor;
-    use parent '-norequire', 'Person';
+    use base 'Person';
 
     {
         CFF::fieldhash my %assumed_title;
@@ -97,7 +108,7 @@ BEGIN {
         }
 
         sub title { $assumed_title{ shift()} }
-
+        
         sub assume_title {
             my $p = shift;
             $assumed_title{ $p} = shift || '';
@@ -105,5 +116,3 @@ BEGIN {
         }
     }
 }
-
-done_testing;

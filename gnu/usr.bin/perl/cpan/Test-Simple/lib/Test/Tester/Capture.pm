@@ -2,9 +2,6 @@ use strict;
 
 package Test::Tester::Capture;
 
-our $VERSION = '1.302190';
-
-
 use Test::Builder;
 
 use vars qw( @ISA );
@@ -13,8 +10,14 @@ use vars qw( @ISA );
 # Make Test::Tester::Capture thread-safe for ithreads.
 BEGIN {
 	use Config;
-	*share = sub { 0 };
-	*lock  = sub { 0 };
+	if( $] >= 5.008 && $Config{useithreads} ) {
+		require threads::shared;
+		threads::shared->import;
+	}
+	else {
+		*share = sub { 0 };
+		*lock  = sub { 0 };
+	}
 }
 
 my $Curr_Test = 0;      share($Curr_Test);
@@ -24,7 +27,7 @@ my $Prem_Diag = {diag => ""};	 share($Curr_Test);
 sub new
 {
   # Test::Tester::Capgture::new used to just return __PACKAGE__
-  # because Test::Builder::new enforced its singleton nature by
+  # because Test::Builder::new enforced it's singleton nature by
   # return __PACKAGE__. That has since changed, Test::Builder::new now
   # returns a blessed has and around version 0.78, Test::Builder::todo
   # started wanting to modify $self. To cope with this, we now return
@@ -39,8 +42,6 @@ sub new
 sub ok {
 	my($self, $test, $name) = @_;
 
-	my $ctx = $self->ctx;
-
 	# $test might contain an object which we don't want to accidentally
 	# store, so we turn it into a boolean.
 	$test = $test ? 1 : 0;
@@ -50,7 +51,7 @@ sub ok {
 
 	my($pack, $file, $line) = $self->caller;
 
-	my $todo = $self->todo();
+	my $todo = $self->todo($pack);
 
 	my $result = {};
 	share($result);
@@ -91,16 +92,12 @@ sub ok {
 	$result->{_level} = $Test::Builder::Level;
 	$result->{_depth} = Test::Tester::find_run_tests();
 
-	$ctx->release;
-
 	return $test ? 1 : 0;
 }
 
 sub skip {
 	my($self, $why) = @_;
 	$why ||= '';
-
-	my $ctx = $self->ctx;
 
 	lock($Curr_Test);
 	$Curr_Test++;
@@ -119,15 +116,12 @@ sub skip {
 	);
 	$Test_Results[$Curr_Test-1] = \%result;
 
-	$ctx->release;
 	return 1;
 }
 
 sub todo_skip {
 	my($self, $why) = @_;
 	$why ||= '';
-
-	my $ctx = $self->ctx;
 
 	lock($Curr_Test);
 	$Curr_Test++;
@@ -147,7 +141,6 @@ sub todo_skip {
 
 	$Test_Results[$Curr_Test-1] = \%result;
 
-	$ctx->release;
 	return 1;
 }
 
@@ -157,8 +150,6 @@ sub diag {
 
 	# Prevent printing headers when compiling (i.e. -c)
 	return if $^C;
-
-	my $ctx = $self->ctx;
 
 	# Escape each line with a #.
 	foreach (@msgs) {
@@ -171,7 +162,6 @@ sub diag {
 
 	$result->{diag} .= join("", @msgs);
 
-	$ctx->release;
 	return 0;
 }
 
@@ -223,7 +213,7 @@ Test::Tester::Capture - Help testing test modules built with Test::Builder
 =head1 DESCRIPTION
 
 This is a subclass of Test::Builder that overrides many of the methods so
-that they don't output anything. It also keeps track of its own set of test
+that they don't output anything. It also keeps track of it's own set of test
 results so that you can use Test::Builder based modules to perform tests on
 other Test::Builder based modules.
 

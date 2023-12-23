@@ -2,7 +2,7 @@ package autodie::test::au::exception;
 use strict;
 use warnings;
 
-use parent qw(autodie::exception);
+use base qw(autodie::exception);
 
 sub time_for_a_beer {
     return "Now's a good time for a beer.";

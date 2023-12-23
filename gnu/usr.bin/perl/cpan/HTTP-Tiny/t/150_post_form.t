@@ -6,15 +6,13 @@ use open IN => ':raw';
 
 use File::Basename;
 use Test::More 0.88;
-use lib 't';
-use Util qw[tmpfile rewind slurp monkey_patch dir_list parse_case
-  clear_socket_source set_socket_source sort_headers $CRLF $LF];
+use t::Util    qw[tmpfile rewind slurp monkey_patch dir_list parse_case
+                  set_socket_source sort_headers $CRLF $LF];
 use HTTP::Tiny;
 BEGIN { monkey_patch() }
 
-for my $file ( dir_list("corpus", qr/^form/ ) ) {
+for my $file ( dir_list("t/cases", qr/^form/ ) ) {
   my $data = do { local (@ARGV,$/) = $file; <> };
-  $data =~ s/$CRLF/$LF/gm if $^O eq 'MSWin32';
   my ($params, $expect_req, $give_res) = split /--+\n/, $data;
   # cleanup source data
   my $version = HTTP::Tiny->VERSION || 0;
@@ -35,12 +33,9 @@ for my $file ( dir_list("corpus", qr/^form/ ) ) {
 
   my @params = split "\\|", $case->{content}[0];
   my $formdata;
-  if ( $case->{datatype}[0] eq 'HASH' ) {
+  if ( $case->{datatype} eq 'HASH' ) {
     while ( @params ) {
       my ($key, $value) = splice( @params, 0, 2 );
-      if ($value eq "<undef>") {
-          $value = undef;
-      }
       if ( ref $formdata->{$key} ) {
         push @{$formdata->{$key}}, $value;
       }
@@ -53,15 +48,14 @@ for my $file ( dir_list("corpus", qr/^form/ ) ) {
     }
   }
   else {
-    $formdata = [ map { $_ eq "<undef>" ? undef : $_ } @params ];
+    $formdata = [ @params ];
   }
 
   # setup mocking and test
   my $res_fh = tmpfile($give_res);
   my $req_fh = tmpfile();
 
-  my $http = HTTP::Tiny->new( keep_alive => 0 );
-  clear_socket_source();
+  my $http = HTTP::Tiny->new;
   set_socket_source($req_fh, $res_fh);
 
   (my $url_basename = $url) =~ s{.*/}{};
@@ -71,7 +65,6 @@ for my $file ( dir_list("corpus", qr/^form/ ) ) {
   my $got_req = slurp($req_fh);
 
   my $label = basename($file);
-
 
   is( sort_headers($got_req), sort_headers($expect_req), "$label request" );
 

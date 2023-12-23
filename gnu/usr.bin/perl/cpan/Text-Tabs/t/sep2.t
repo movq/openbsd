@@ -1,9 +1,6 @@
-use strict; use warnings;
+#!/usr/bin/perl -I.
 
-BEGIN { require './t/lib/ok.pl' }
-use Text::Wrap;
-
-my @tests = (split(/\nEND\n/s, <<DONE));
+@tests = (split(/\nEND\n/s, <<DONE));
 TEST1
 This 
 is
@@ -101,11 +98,16 @@ END
 DONE
 
 
+$| = 1;
+
 print "1..", 1 +@tests, "\n";
 
+use Text::Wrap;
 $Text::Wrap::separator2 = '=';
 
-my @st;
+$rerun = $ENV{'PERL_DL_NONLAZY'} ? 0 : 1;
+
+$tn = 1;
 
 @st = @tests;
 while (@st) {
@@ -116,7 +118,28 @@ while (@st) {
 
 	my $back = wrap('   ', ' ', $in);
 
-	ok( $back eq $out );
+	if ($back eq $out) {
+		print "ok $tn\n";
+	} elsif ($rerun) {
+		my $oi = $in;
+		foreach ($in, $back, $out) {
+			s/\t/^I\t/gs;
+			s/\n/\$\n/gs;
+		}
+		print "------------ input ------------\n";
+		print $in;
+		print "\n------------ output -----------\n";
+		print $back;
+		print "\n------------ expected ---------\n";
+		print $out;
+		print "\n-------------------------------\n";
+		$Text::Wrap::debug = 1;
+		wrap('   ', ' ', $oi);
+		exit(1);
+	} else {
+		print "not ok $tn\n";
+	}
+	$tn++;
 
 }
 
@@ -132,12 +155,34 @@ while(@st) {
 	
 	my $back = wrap('   ', ' ', @in);
 
-	ok( $back eq $out );
+	if ($back eq $out) {
+		print "ok $tn\n";
+	} elsif ($rerun) {
+		my $oi = $in;
+		foreach ($in, $back, $out) {
+			s/\t/^I\t/gs;
+			s/\n/\$\n/gs;
+		}
+		print "------------ input2 ------------\n";
+		print $in;
+		print "\n------------ output2 -----------\n";
+		print $back;
+		print "\n------------ expected2 ---------\n";
+		print $out;
+		print "\n-------------------------------\n";
+		$Text::Wrap::debug = 1;
+		wrap('   ', ' ', $oi);
+		exit(1);
+	} else {
+		print "not ok $tn\n";
+	}
+	$tn++;
 }
 
 $Text::Wrap::huge = 'overflow';
 
 my $tw = 'This_is_a_word_that_is_too_long_to_wrap_we_want_to_make_sure_that_the_program_does_not_crash_and_burn';
 my $w = wrap('zzz','yyy',$tw);
-ok( $w eq "zzz$tw" );
+print (($w eq "zzz$tw") ? "ok $tn\n" : "not ok $tn");
+$tn++;
 

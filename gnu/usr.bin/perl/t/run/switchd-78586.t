@@ -2,7 +2,7 @@
 
 BEGIN {
     $^P = 0x122;
-    chdir 't' if -d 't';
+    chdir 't';
     @INC = ('../lib', 'lib');
     require './test.pl';
 }

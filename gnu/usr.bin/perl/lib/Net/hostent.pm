@@ -1,17 +1,9 @@
 package Net::hostent;
 use strict;
 
-use 5.006_001;
-our $VERSION = '1.03';
-our (@EXPORT, @EXPORT_OK, %EXPORT_TAGS);
-our (
-      $h_name, @h_aliases,
-      $h_addrtype, $h_length,
-      @h_addr_list, $h_addr
-);
- 
 BEGIN { 
     use Exporter   ();
+    use vars       qw(@EXPORT @EXPORT_OK %EXPORT_TAGS);
     @EXPORT      = qw(gethostbyname gethostbyaddr gethost);
     @EXPORT_OK   = qw(
 			$h_name	    	@h_aliases
@@ -20,6 +12,7 @@ BEGIN {
 		   );
     %EXPORT_TAGS = ( FIELDS => [ @EXPORT_OK, @EXPORT ] );
 }
+use vars      @EXPORT_OK;
 
 # Class::Struct forbids use of @ISA
 sub import { goto &Exporter::import }
@@ -58,14 +51,13 @@ sub gethostbyaddr ($;$) {
 } 
 
 sub gethost($) {
-    my $addr = shift;
-    if ($addr =~ /^\d+(?:\.\d+(?:\.\d+(?:\.\d+)?)?)?$/) {
-       require Socket;
-       &gethostbyaddr(Socket::inet_aton($addr));
+    if ($_[0] =~ /^\d+(?:\.\d+(?:\.\d+(?:\.\d+)?)?)?$/) {
+	require Socket;
+	&gethostbyaddr(Socket::inet_aton(shift));
     } else {
-       &gethostbyname($addr);
-    }
-}
+	&gethostbyname;
+    } 
+} 
 
 1;
 __END__
@@ -76,7 +68,7 @@ Net::hostent - by-name interface to Perl's built-in gethost*() functions
 
 =head1 SYNOPSIS
 
- use Net::hostent;
+ use Net::hostnet;
 
 =head1 DESCRIPTION
 
@@ -97,7 +89,7 @@ $h_name if you import the fields.  Array references are available as
 regular array variables, so for example C<@{ $host_obj-E<gt>aliases()
 }> would be simply @h_aliases.
 
-The gethost() function is a simple front-end that forwards a numeric
+The gethost() funtion is a simple front-end that forwards a numeric
 argument to gethostbyaddr() by way of Socket::inet_aton, and the rest
 to gethostbyname().
 

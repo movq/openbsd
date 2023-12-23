@@ -8,8 +8,8 @@
    This file is part of bzip2/libbzip2, a program and library for
    lossless, block-sorting data compression.
 
-   bzip2/libbzip2 version 1.0.8 of 13 July 2019
-   Copyright (C) 1996-2019 Julian Seward <jseward@acm.org>
+   bzip2/libbzip2 version 1.0.5 of 10 December 2007
+   Copyright (C) 1996-2007 Julian Seward <jseward@bzip.org>
 
    Please read the WARNING, DISCLAIMER and PATENTS sections in the 
    README file.
@@ -253,12 +253,11 @@ void sendMTFValues ( EState* s )
    --*/
 
 
-   UInt16 cost[BZ_N_GROUPS] = {0, 0, 0, 0, 0, 0};
-   Int32  fave[BZ_N_GROUPS] = {0, 0, 0, 0, 0, 0};
+   UInt16 cost[BZ_N_GROUPS];
+   Int32  fave[BZ_N_GROUPS];
 
    UInt16* mtfv = s->mtfv;
 
-   ((void)nBytes); /* Silence variable ‘nBytes’ set but not used warning */
    if (s->verbosity >= 3)
       VPrintf3( "      %d in block, %d after MTF & 1-2 coding, "
                 "%d+2 syms in use\n", 
@@ -455,7 +454,7 @@ void sendMTFValues ( EState* s )
 
    AssertH( nGroups < 8, 3002 );
    AssertH( nSelectors < 32768 &&
-            nSelectors <= BZ_MAX_SELECTORS,
+            nSelectors <= (2 + (900000 / BZ_G_SIZE)),
             3003 );
 
 

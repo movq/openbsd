@@ -3,18 +3,18 @@
 select(STDERR); $| = 1;
 select(STDOUT); $| = 1;
 
-print "1..27\n";
+print "1..23\n";
 
 use IO::Select 1.09;
 
-my $sel = IO::Select->new(\*STDIN);
+my $sel = new IO::Select(\*STDIN);
 $sel->add(4, 5) == 2 or print "not ";
 print "ok 1\n";
 
 $sel->add([\*STDOUT, 'foo']) == 1 or print "not ";
 print "ok 2\n";
 
-my @handles = $sel->handles;
+@handles = $sel->handles;
 print "not " unless $sel->count == 4 && @handles == 4;
 print "ok 3\n";
 #print $sel->as_string, "\n";
@@ -34,7 +34,7 @@ $sel->remove(1, 4);
 print "not " unless $sel->count == 0 && !defined($sel->bits);
 print "ok 7\n";
 
-$sel = IO::Select->new();
+$sel = new IO::Select;
 print "not " unless $sel->count == 0 && !defined($sel->bits);
 print "ok 8\n";
 
@@ -50,7 +50,7 @@ if ( grep $^O eq $_, qw(MSWin32 NetWare dos VMS riscos beos) ) {
     goto POST_SOCKET;
 }
 
-my @a = $sel->can_read();  # should return immediately
+@a = $sel->can_read();  # should return imediately
 print "not " unless @a == 0;
 print "ok 10\n";
 
@@ -70,7 +70,7 @@ $sel->add(\*STDOUT);  # update
 print "not " unless @a == 3;
 print "ok 13\n";
 
-my ($r, $w, $e) = @a;
+($r, $w, $e) = @a;
 
 print "not " unless @$r == 0 && @$w == 1 && @$e == 0;
 print "ok 14\n";
@@ -129,23 +129,3 @@ IO::Select::has_error();
 print "not " unless $w == 1 ;
 $w = 0 ;
 print "ok 23\n" ;
-
-{
-    # perl #75156 - test we can delete a closed handle
-    require IO::Socket::INET;
-    my $fh = IO::Socket::INET->new(
-      Listen => 5,
-    );
-    my $sel = IO::Select->new(\*STDIN);
-    $sel->add($fh);
-    my $oldbits = $sel->bits;
-    print "not " unless $sel->count == 2;
-    print "ok 24 - added socket\n";
-    close $fh;
-    print "not " unless $sel->remove($fh) == 1;
-    print "ok 25 - removed closed socket\n";
-    print "not " unless $sel->count == 1;
-    print "ok 26 - count() updated\n";
-    print "not " unless $sel->bits ne $oldbits;
-    print "ok 27 - bits() updated\n";
-}

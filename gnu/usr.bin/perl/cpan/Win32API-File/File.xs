@@ -14,7 +14,6 @@
 #endif
 
 #define  WIN32_LEAN_AND_MEAN	/* Tell windows.h to skip much */
-#include <wchar.h>
 #include <windows.h>
 #include <winioctl.h>
 
@@ -149,7 +148,7 @@ CreateFileA( sPath, uAccess, uShare, pSecAttr, uCreate, uFlags, hModel )
 	HANDLE	hModel
     CODE:
 	RETVAL= CreateFileA( sPath, uAccess, uShare,
-	  (LPSECURITY_ATTRIBUTES)pSecAttr, uCreate, uFlags, hModel );
+	  pSecAttr, uCreate, uFlags, hModel );
 	if(  INVALID_HANDLE_VALUE == RETVAL  ) {
 	    SaveErr( 1 );
 	    XSRETURN_NO;
@@ -171,7 +170,7 @@ CreateFileW( swPath, uAccess, uShare, pSecAttr, uCreate, uFlags, hModel )
 	HANDLE	hModel
     CODE:
 	RETVAL= CreateFileW( swPath, uAccess, uShare,
-	  (LPSECURITY_ATTRIBUTES)pSecAttr, uCreate, uFlags, hModel );
+	  pSecAttr, uCreate, uFlags, hModel );
 	if(  INVALID_HANDLE_VALUE == RETVAL  ) {
 	    SaveErr( 1 );
 	    XSRETURN_NO;
@@ -247,7 +246,7 @@ DeviceIoControl( hDevice, uIoControlCode, pInBuf, lInBuf, opOutBuf, lOutBuf, olR
 	}
 	grow_buf_l( opOutBuf,ST(4),char *, lOutBuf,ST(5) );
 	RETVAL= DeviceIoControl( hDevice, uIoControlCode, pInBuf, lInBuf,
-		  opOutBuf, lOutBuf, &olRetBytes, (LPOVERLAPPED)pOverlapped );
+		  opOutBuf, lOutBuf, &olRetBytes, pOverlapped );
 	SaveErr( !RETVAL );
     OUTPUT:
 	RETVAL
@@ -554,8 +553,7 @@ ReadFile( hFile, opBuffer, lBytes, olBytesRead, pOverlapped )
 	if(  0 == lBytes  &&  autosize(ST(2))  ) {
 	    lBytes= SvLEN( ST(1) ) - 1;
 	}
-	RETVAL= ReadFile( hFile, opBuffer, lBytes, &olBytesRead,
-		  (LPOVERLAPPED)pOverlapped );
+	RETVAL= ReadFile( hFile, opBuffer, lBytes, &olBytesRead, pOverlapped );
 	SaveErr( !RETVAL );
     OUTPUT:
 	RETVAL
@@ -642,28 +640,8 @@ WriteFile( hFile, pBuffer, lBytes, ouBytesWritten, pOverlapped )
 	      "Win32API::File::WriteFile", SvCUR(ST(1)), lBytes );
 	}
 	RETVAL= WriteFile( hFile, pBuffer, lBytes,
-		  &ouBytesWritten, (LPOVERLAPPED)pOverlapped );
+		  &ouBytesWritten, pOverlapped );
 	SaveErr( !RETVAL );
     OUTPUT:
 	RETVAL
 	ouBytesWritten
-
-void
-GetStdHandle(fd)
-    DWORD fd
-PPCODE:
-#ifdef _WIN64
-    XSRETURN_IV((DWORD_PTR)GetStdHandle(fd));
-#else
-    XSRETURN_IV((DWORD)GetStdHandle(fd));
-#endif
-
-void
-SetStdHandle(fd,handle)
-    DWORD fd
-    HANDLE handle
-PPCODE:
-    if (SetStdHandle(fd, handle))
-	XSRETURN_YES;
-    else
-	XSRETURN_NO;

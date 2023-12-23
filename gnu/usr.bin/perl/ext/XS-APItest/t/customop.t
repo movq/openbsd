@@ -3,7 +3,7 @@
 use warnings;
 use strict;
 
-use Test::More tests => 25;
+use Test::More tests => 23;
 use XS::APItest;
 
 my $ppaddr = xop_ppaddr;
@@ -45,8 +45,6 @@ xop_register;
 
 is $ops->{$ppaddr}, $xop,       "XOP registered OK";
 
-is xop_from_custom_op, $xop,    "XOP lookup from OP roundtrips";
-
 $av = xop_build_optree;
 my $OA_UNOP = xop_OA_UNOP;
 my ($unop, $kid) = ("???" x 2);
@@ -76,6 +74,3 @@ is $av->[3], "DESC:unknown custom operator",
                                 "clearing XOP resets desc";
 is $av->[4], "CLASS:0",         "clearing XOP resets class";
 is scalar @$av, 5,              "clearing XOP removes peep";
-
-ok test_newOP_CUSTOM(),
-  'newOP et al. do not fail assertions with OP_CUSTOM';

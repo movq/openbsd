@@ -1,29 +1,19 @@
 #! perl -w
 
 use strict ;
-require 5.006 ;
+require 5.004 ;
 
-use lib '.';
 use private::MakeUtil;
 use ExtUtils::MakeMaker 5.16 ;
 use ExtUtils::Install (); # only needed to check for version
-use Config;
 
 my $ZLIB_LIB ;
 my $ZLIB_INCLUDE ;
 my $BUILD_ZLIB = 0 ;
-my $USE_ZLIB_NG = 0;
 my $OLD_ZLIB = '' ;
 my $WALL = '' ;
 my $GZIP_OS_CODE = -1 ;
 my $USE_PPPORT_H = ($ENV{PERL_CORE}) ? '' : '-DUSE_PPPORT_H';
-my $OPTIMIZE = $Config{'optimize'};
-if ($Config{'gccversion'} and $OPTIMIZE =~ /-g (gdb)? 3/x) {
-  $OPTIMIZE =~ s/-g(gdb)?3/-g/g; # [88936] out of memory with -g3 since 2.062
-}
-
-# Windows uses a different name for the zlib library
-my $ZLIB_LIBRARY_NAME = $^O eq 'MSWin32' ? 'zlib' : 'z' ;
 
 #$WALL = ' -pedantic ' if $Config{'cc'} =~ /gcc/ ;
 #$WALL = ' -Wall -Wno-comment ' if $Config{'cc'} =~ /gcc/ ;
@@ -33,7 +23,7 @@ my $ZLIB_LIBRARY_NAME = $^O eq 'MSWin32' ? 'zlib' : 'z' ;
 # ExtUtils::Install.
 
 # Don't ask if MM_USE_DEFAULT is set -- enables perl core building on cygwin
-if ($^O =~ /cygwin/i and $ExtUtils::Install::VERSION < 1.39
+if ($^O =~ /cygwin/i and $ExtUtils::Install::VERSION < 1.39 
         and not ($ENV{PERL_MM_USE_DEFAULT} or $ENV{PERL_CORE}))
 {
     print <<EOM ;
@@ -56,7 +46,7 @@ EOM
 
     if ($answer =~ /^yes|y/i)
     {
-	print "continuing...\n"
+	print "continuing...\n" 
     }
     else
     {
@@ -69,44 +59,18 @@ EOM
 
 ParseCONFIG() ;
 
-UpDowngrade(getPerlFiles('MANIFEST'))
+UpDowngrade(getPerlFiles('MANIFEST')) 
     unless $ENV{PERL_CORE};
 
-my $OPT_Z_PREFIX =  '-DZ_PREFIX' ;
-my $OPT_ZLIB_INCLUDE = "-I$ZLIB_INCLUDE";
-my $OPT_ZLIB_LIB = "-L$ZLIB_LIB" ;
-my $OPT_SOLO = '-DZ_SOLO';
-my $OPT_USE_ZLIB_NG = "";
-
-if (! $BUILD_ZLIB)
-{
-    # When using  the system supplied zlib, we don't want to use our bespoke prefix
-    $OPT_Z_PREFIX =  '';
-
-    $OPT_ZLIB_INCLUDE = ''
-        if $ZLIB_INCLUDE eq './zlib-src' ;
-
-    $OPT_ZLIB_LIB = ''
-        if $ZLIB_LIB eq './zlib-src' ;
-
-    $OPT_SOLO = '';
-}
-
-if ( $USE_ZLIB_NG)
-{
-    $OPT_USE_ZLIB_NG = '-DUSE_ZLIB_NG';
-    $ZLIB_LIBRARY_NAME = $^O eq 'MSWin32' ? 'zlib-ng' : 'z-ng' ;
-}
-
-WriteMakefile(
+WriteMakefile( 
     NAME         => 'Compress::Raw::Zlib',
     VERSION_FROM => 'lib/Compress/Raw/Zlib.pm',
-    INC          => $OPT_ZLIB_INCLUDE ,
-    DEFINE       => "-DNO_VIZ $OPT_SOLO $OLD_ZLIB $WALL $OPT_Z_PREFIX $OPT_USE_ZLIB_NG -DGZIP_OS_CODE=$GZIP_OS_CODE $USE_PPPORT_H -DPerl_crz_BUILD_ZLIB=$BUILD_ZLIB" ,
+    INC          => "-I$ZLIB_INCLUDE" ,
+    DEFINE       => "$OLD_ZLIB $WALL -DGZIP_OS_CODE=$GZIP_OS_CODE $USE_PPPORT_H" ,
     XS           => { 'Zlib.xs' => 'Zlib.c'},
     'depend'     => { 'Makefile'   => 'config.in' },
     'clean'      => { FILES        => '*.c constants.h constants.xs' },
-    'dist'       => { COMPRESS     => 'gzip',
+    'dist'       => { COMPRESS     => 'gzip', 
                       TARFLAGS     => '-chvf',
                       SUFFIX       => 'gz',
                       DIST_DEFAULT => 'MyTrebleCheck tardist',
@@ -115,51 +79,15 @@ WriteMakefile(
     (
       $BUILD_ZLIB
         ? zlib_files($ZLIB_LIB)
-        : (LIBS => [ "$OPT_ZLIB_LIB -l$ZLIB_LIBRARY_NAME " ])
+        : (LIBS => [ "-L$ZLIB_LIB -lz " ])
     ),
-    OPTIMIZE => $OPTIMIZE,
-
-    INSTALLDIRS => ($] >= 5.009 && $] < 5.011 ? 'perl' : 'site'),
-
-     ( eval { ExtUtils::MakeMaker->VERSION(6.46) }
-        ? ( META_MERGE  => {
-
-                "meta-spec" => { version => 2 },
-
-                no_index => {
-                    directory => [ 't', 'private' ],
-                },
-
-                resources   => {
-
-                    bugtracker  => {
-                        web     => 'https://github.com/pmqs/Compress-Raw-Zlib/issues'
-                    },
-
-                    homepage    => 'https://github.com/pmqs/Compress-Raw-Zlib',
-
-                    repository  => {
-                        type    => 'git',
-                        url     => 'git://github.com/pmqs/Compress-Raw-Zlib.git',
-                        web     => 'https://github.com/pmqs/Compress-Raw-Zlib',
-                    },
-                },
-              }
-            )
-        : ()
-    ),
+      
+    INSTALLDIRS => ($] >= 5.009 ? 'perl' : 'site'),
 
     ((ExtUtils::MakeMaker->VERSION() gt '6.30') ?
-        ('LICENSE'  => 'perl')         : ()),
+        ('LICENSE'  => 'perl')         : ()),    
 
 ) ;
-
-sub version_Macro
-{
-    my $ver = shift ;
-
-    return [ "#if ZLIB_VERNUM >= 0x$ver\n", "#endif\n" ];
-}
 
 my @names = qw(
 
@@ -188,6 +116,7 @@ my @names = qw(
     Z_NEED_DICT
     Z_NO_COMPRESSION
     Z_NO_FLUSH
+    Z_NULL
     Z_OK
     Z_PARTIAL_FLUSH
     Z_RLE
@@ -197,21 +126,12 @@ my @names = qw(
     Z_UNKNOWN
     Z_VERSION_ERROR
 
-    ZLIBNG_VERNUM
-    ZLIBNG_VER_MAJOR
-    ZLIBNG_VER_MINOR
-    ZLIBNG_VER_REVISION
-    ZLIBNG_VER_STATUS
-    ZLIBNG_VER_MODIFIED
 );
-
-my %verSpecificNames = (
-    Z_TREES => '1240',
-);
+    #ZLIB_VERNUM
 
 if (eval {require ExtUtils::Constant; 1}) {
     # Check the constants above all appear in @EXPORT in Zlib.pm
-    my %names = %verSpecificNames, map { $_, 1} @names, 'ZLIB_VERSION';
+    my %names = map { $_, 1} @names, 'ZLIB_VERSION';
     open F, "<lib/Compress/Raw/Zlib.pm" or die "Cannot open Zlib.pm: $!\n";
     while (<F>)
     {
@@ -232,27 +152,17 @@ if (eval {require ExtUtils::Constant; 1}) {
         die "The following names are missing from \@EXPORT in Zlib.pm\n" .
             "\t$missing\n" ;
     }
-
-    push @names, { name => 'ZLIB_VERSION', type => 'PV' };
-
-    push @names, map { { name => $_,
-                         macro => version_Macro $verSpecificNames{$_}
-                       }
-                     }
-                 keys %verSpecificNames ;
-
-    push @names, { name => 'Z_NULL', type => 'UV' };
-    push @names, { name => 'ZLIBNG_VERSION', type => 'PV' };
+    
+    push @names, {name => 'ZLIB_VERSION', type => 'PV' };
 
     ExtUtils::Constant::WriteConstants(
                                      NAME => 'Zlib',
                                      NAMES => \@names,
                                      C_FILE  => 'constants.h',
                                      XS_FILE  => 'constants.xs',
-
+                                                                       
                                     );
-
-}
+} 
 else {
     foreach my $name (qw( constants.h constants.xs ))
     {
@@ -262,24 +172,12 @@ else {
     }
 }
 
-sub getBoolean
-{
-    my $name = shift ;
-    my $info = shift;
-
-    my $x = defined $ENV{$name}
-                ? $ENV{$name}
-                : $info->{$name} ;
-
-    return ($x =~ /^yes|on|true|1$/i) ? 1 : 0;
-}
-
 sub ParseCONFIG
 {
     my ($k, $v) ;
     my @badkey = () ;
     my %Info = () ;
-    my @Options = qw( INCLUDE LIB BUILD_ZLIB OLD_ZLIB GZIP_OS_CODE USE_ZLIB_NG) ;
+    my @Options = qw( INCLUDE LIB BUILD_ZLIB OLD_ZLIB GZIP_OS_CODE ) ;
     my %ValidOption = map {$_, 1} @Options ;
     my %Parsed = %ValidOption ;
     my $CONFIG = 'config.in' ;
@@ -309,58 +207,46 @@ sub ParseCONFIG
 
     # check parsed values
     my @missing = () ;
-    die "The following keys are missing from $CONFIG  [@missing]\n"
+    die "The following keys are missing from $CONFIG  [@missing]\n" 
         if @missing = keys %Parsed ;
 
-    $ZLIB_INCLUDE = defined $ENV{'ZLIB_INCLUDE'}
-                        ? $ENV{'ZLIB_INCLUDE'}
-                        : $Info{'INCLUDE'} ;
-
-    $ZLIB_LIB = defined $ENV{'ZLIB_LIB'}
-                    ?$ENV{'ZLIB_LIB'}
-                    : $Info{'LIB'} ;
-
-    $USE_ZLIB_NG = getBoolean('USE_ZLIB_NG', \%Info);
+    $ZLIB_INCLUDE = $ENV{'ZLIB_INCLUDE'} || $Info{'INCLUDE'} ;
+    $ZLIB_LIB = $ENV{'ZLIB_LIB'} || $Info{'LIB'} ;
 
     if ($^O eq 'VMS') {
         $ZLIB_INCLUDE = VMS::Filespec::vmspath($ZLIB_INCLUDE);
         $ZLIB_LIB = VMS::Filespec::vmspath($ZLIB_LIB);
     }
 
-    $OLD_ZLIB = '-DOLD_ZLIB'
-        if getBoolean('OLD_ZLIB', \%Info);
+    my $y = $ENV{'OLD_ZLIB'} || $Info{'OLD_ZLIB'} ;
+    $OLD_ZLIB = '-DOLD_ZLIB' if $y and $y =~ /^yes|on|true|1$/i;
 
-    $BUILD_ZLIB = getBoolean('BUILD_ZLIB', \%Info);
+    my $x = $ENV{'BUILD_ZLIB'} || $Info{'BUILD_ZLIB'} ;
 
-    if ($BUILD_ZLIB ) {
+    if ($x and $x =~ /^yes|on|true|1$/i ) {
 
-        # ZLIB_LIB & ZLIB_INCLUDE must point to the same place when
-        # BUILD_ZLIB is specified.
-        die "INCLUDE & LIB must be the same when BUILD_ZLIB is True\n"
-            if $ZLIB_LIB ne $ZLIB_INCLUDE ;
+        $BUILD_ZLIB = 1 ;
 
-        # Check the zlib source directory exists
-        die "LIB/INCLUDE directory '$ZLIB_LIB' does not exits\n"
-            unless -d $ZLIB_LIB ;
+	# ZLIB_LIB & ZLIB_INCLUDE must point to the same place when 
+	# BUILD_ZLIB is specified.
+	die "INCLUDE & LIB must be the same when BUILD_ZLIB is True\n"
+	    if $ZLIB_LIB ne $ZLIB_INCLUDE ;
 
-        # check for a well known file
-        if ($USE_ZLIB_NG)
-        {
-            die "LIB/INCLUDE directory, '$ZLIB_LIB', doesn't seem to have the zlib-ng source files\n"
-                unless -e catfile($ZLIB_LIB, 'zlib-ng.h') ;
-        }
-        else
-        {
-            die "LIB/INCLUDE directory, '$ZLIB_LIB', doesn't seem to have the zlib source files\n"
-                unless -e catfile($ZLIB_LIB, 'zlib.h') ;
-        }
+	# Check the zlib source directory exists
+	die "LIB/INCLUDE directory '$ZLIB_LIB' does not exits\n"
+	   unless -d $ZLIB_LIB ;
 
-        # write the Makefile
-        print "Building Zlib enabled\n" ;
+	# check for a well known file
+	die "LIB/INCLUDE directory, '$ZLIB_LIB', doesn't seem to have the zlib source files\n"
+	   unless -e catfile($ZLIB_LIB, 'zlib.h') ;
+
+
+	# write the Makefile
+	print "Building Zlib enabled\n" ;
     }
 
-    $GZIP_OS_CODE = defined $ENV{'GZIP_OS_CODE'}
-                          ? $ENV{'GZIP_OS_CODE'}
+    $GZIP_OS_CODE = defined $ENV{'GZIP_OS_CODE'} 
+                          ? $ENV{'GZIP_OS_CODE'} 
                           : $Info{'GZIP_OS_CODE'} ;
 
 	die "GZIP_OS_CODE not 'AUTO_DETECT' or a number between 0 and 255\n"
@@ -372,7 +258,7 @@ sub ParseCONFIG
         print "Auto Detect Gzip OS Code..\n" ;
         $GZIP_OS_CODE = getOSCode() ;
     }
-
+    
     my $name = getOSname($GZIP_OS_CODE);
     print "Setting Gzip OS Code to $GZIP_OS_CODE [$name]\n" ;
 
@@ -382,7 +268,6 @@ sub ParseCONFIG
     GZIP_OS_CODE    [$GZIP_OS_CODE]
     OLD_ZLIB        [$OLD_ZLIB]
     BUILD_ZLIB      [$BUILD_ZLIB]
-    USE_ZLIB_NG     [$USE_ZLIB_NG]
 
 EOM
 
@@ -398,22 +283,22 @@ sub zlib_files
 
     my @h_files = ();
     my @c_files = ();
-
+    
     if (-f catfile($dir, "infback.c")) {
         # zlib 1.2.0 or greater
         #
-        @h_files = qw(crc32.h    inffast.h inflate.h  trees.h    zconf.in.h
-    	              zutil.h    deflate.h inffixed.h inftrees.h zconf.h
-    		      zlib.h
+        @h_files = qw(crc32.h    inffast.h inflate.h  trees.h    zconf.in.h 
+    	              zutil.h    deflate.h inffixed.h inftrees.h zconf.h  
+    		      zlib.h 
     		 );
         @c_files = qw(adler32  crc32   infback  inflate  uncompr
-    		      compress deflate inffast  inftrees
-    		      trees    zutil
+    		      compress deflate inffast  inftrees  
+    		      trees    zutil 
     		 );
     }
     else {
         # zlib 1.1.x
-
+    
         @h_files = qw(deflate.h  infcodes.h inftrees.h zconf.h zutil.h
     		      infblock.h inffast.h  infutil.h  zlib.h
     		 );
@@ -422,20 +307,20 @@ sub zlib_files
     		      inftrees infcodes infutil  inffast
     		 );
     }
-
+    
     @h_files = map { catfile($dir, $_)  } @h_files ;
     my @o_files = map { "$_\$(OBJ_EXT)" } 'Zlib', @c_files;
     @c_files = map { "$_.c" } 'Zlib', @c_files ;
 
     foreach my $file (@c_files)
       { copy(catfile($dir, $file), '.') }
-
+    
     return (
         #'H'         =>  [ @h_files ],
     	'C'         =>  [ @c_files ] ,
         #'OBJECT'    => qq[ @o_files ],
         'OBJECT'    => q[ $(O_FILES) ],
-
+        
 
            ) ;
 }
@@ -469,7 +354,7 @@ BEGIN
     [ ''        => 255,  'Unknown OS'                   ],
   );
 
-  %OSnames = map { $$_[1] => $$_[2] }
+  %OSnames = map { $$_[1] => $$_[2] }  
              @GZIP_OS_Names ;
 }
 
@@ -498,3 +383,4 @@ sub getOSname
 }
 
 # end of file Makefile.PL
+

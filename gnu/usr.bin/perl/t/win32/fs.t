@@ -8,11 +8,6 @@ BEGIN {
     die $@ if $@ and !is_miniperl();
 }
 
-my $has_link = Win32::FsType() eq 'NTFS';
-
-$has_link
-  or skip_all("link() only works on NTFS");
-
 plan tests => 4;
 
 my $tmpfile1 = tempfile();

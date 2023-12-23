@@ -1,17 +1,23 @@
-use strict; use warnings;
 use ExtUtils::MakeMaker;
 
-my $define = '-DSDBM -DDUFF';
-
-my $dirfext = $^O eq 'VMS' ? '.sdbm_dir' : '.dir';
+# The existence of the ./sdbm/Makefile.PL file causes MakeMaker
+# to automatically include Makefile code for the targets
+#	config, all, clean, realclean and sdbm/Makefile
+# which perform the corresponding actions in the subdirectory.
 
 WriteMakefile(
-    NAME      => 'SDBM_File',
+    NAME	=> 'SDBM_File',
+    MYEXTLIB => 'sdbm/libsdbm$(LIB_EXT)',
+    MAN3PODS 	=> ' ', 	# Pods will be built by installman.
+    XSPROTOARG => '-noprototypes', 		# XXX remove later?
     VERSION_FROM => 'SDBM_File.pm',
-    DEFINE    => $define,
-    INC       => '-I$(PERL_INC)', # force PERL_INC dir ahead of system -I's
-    OBJECT    => '$(O_FILES)',
-    clean     => {'FILES' => "dbu dbd dba dbe x-dbu *${dirfext} *.pag"},
-    H         => [qw(tune.h sdbm.h pair.h $(PERL_INC)/config.h)],
-    C         => [qw(SDBM_File.c sdbm.c pair.c hash.c)],
 );
+
+
+sub MY::postamble {
+    '
+$(MYEXTLIB): sdbm/Makefile
+	cd sdbm; $(MAKE) all
+';
+}
+

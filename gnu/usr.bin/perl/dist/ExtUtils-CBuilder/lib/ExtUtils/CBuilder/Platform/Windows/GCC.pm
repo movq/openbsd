@@ -1,9 +1,7 @@
 package ExtUtils::CBuilder::Platform::Windows::GCC;
 
-our $VERSION = '0.280236'; # VERSION
-
-use warnings;
-use strict;
+use vars qw($VERSION);
+$VERSION = '0.280206';
 
 sub format_compiler_cmd {
   my ($self, %spec) = @_;
@@ -40,6 +38,15 @@ sub format_linker_cmd {
   unshift( @{$spec{other_ldflags}}, '-nostartfiles' )
     if ( $spec{startup} && @{$spec{startup}} );
 
+  # From ExtUtils::MM_Win32:
+  #
+  ## one thing for GCC/Mingw32:
+  ## we try to overcome non-relocateable-DLL problems by generating
+  ##    a (hopefully unique) image-base from the dll's name
+  ## -- BKS, 10-19-1999
+  File::Basename::basename( $spec{output} ) =~ /(....)(.{0,4})/;
+  $spec{image_base} = sprintf( "0x%x0000", unpack('n', $1 ^ $2) );
+
   %spec = $self->write_linker_script(%spec)
     if $spec{use_scripts};
 
@@ -63,7 +70,7 @@ sub format_linker_cmd {
     @ld                       ,
     '-o', $spec{output}       ,
     "-Wl,--base-file,$spec{base_file}"   ,
-    "-Wl,--enable-auto-image-base" ,
+    "-Wl,--image-base,$spec{image_base}" ,
     @{$spec{lddlflags}}       ,
     @{$spec{libpath}}         ,
     @{$spec{startup}}         ,
@@ -84,7 +91,7 @@ sub format_linker_cmd {
   push @cmds, [ grep {defined && length} (
     @ld                       ,
     '-o', $spec{output}       ,
-    "-Wl,--enable-auto-image-base" ,
+    "-Wl,--image-base,$spec{image_base}" ,
     @{$spec{lddlflags}}       ,
     @{$spec{libpath}}         ,
     @{$spec{startup}}         ,

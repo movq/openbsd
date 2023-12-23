@@ -1,40 +1,45 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
+use Test;
 use strict;
-use warnings;
 
-use Test::More tests => 2134            # tests in require'd file
-                         + 6;           # tests in this file
+BEGIN
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/upgrade.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    # testing with the core distribution
+    @INC = qw(../t/lib);
+    }
+  unshift @INC, qw(../lib);     # to locate the modules
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
 
-use Math::BigInt;
+  plan tests => 2112
+   + 2;			# our own tests
+  }
+
+use Math::BigInt upgrade => 'Math::BigFloat';
 use Math::BigFloat;
 
-my $x = Math::BigInt -> new(9);
-my $y = Math::BigInt -> new(4);
+use vars qw ($scale $class $try $x $y $f @args $ans $ans1 $ans1_str $setup
+             $ECL $CL);
+$class = "Math::BigInt";
+$CL = "Math::BigInt::Calc";
+$ECL = "Math::BigFloat";
 
-# Without upgrading.
+ok (Math::BigInt->upgrade(),'Math::BigFloat');
+ok (Math::BigInt->downgrade()||'','');
 
-my $zi = $x / $y;
-cmp_ok($zi, "==", 2, "9/4 = 2 without upgrading");
-is(ref($zi), "Math::BigInt", "9/4 gives a Math::BigInt without upgrading");
-
-# With upgrading.
-
-Math::BigInt -> upgrade("Math::BigFloat");
-my $zf = $x / $y;
-cmp_ok($zf, "==", 2.25, "9/4 = 2.25 with upgrading");
-is(ref($zf), "Math::BigFloat", "9/4 gives a Math::BigFloat with upgrading");
-
-# Other tests.
-
-our ($CLASS, $EXPECTED_CLASS, $LIB);
-$CLASS          = "Math::BigInt";
-$EXPECTED_CLASS = "Math::BigFloat";
-$LIB            = "Math::BigInt::Calc";         # backend
-
-is(Math::BigInt->upgrade(), "Math::BigFloat",
-   qq/Math::BigInt->upgrade()/);
-is(Math::BigInt->downgrade() || "", "",
-   qq/Math::BigInt->downgrade() || ""/);
-
-require './t/upgrade.inc';      # all tests here for sharing
+require 'upgrade.inc';	# all tests here for sharing

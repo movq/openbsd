@@ -1,13 +1,14 @@
 package Hash::Util::FieldHash;
 
+use 5.009004;
 use strict;
 use warnings;
-no warnings 'experimental::builtin';
-use builtin qw(reftype);
+use Scalar::Util qw( reftype);
 
-our $VERSION = '1.26';
+our $VERSION = '1.04';
 
-use Exporter 'import';
+require Exporter;
+our @ISA = qw(Exporter);
 our %EXPORT_TAGS = (
     'all' => [ qw(
         fieldhash
@@ -25,7 +26,7 @@ our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
     require XSLoader;
     my %ob_reg; # private object registry
     sub _ob_reg { \ %ob_reg }
-    XSLoader::load();
+    XSLoader::load('Hash::Util::FieldHash', $VERSION);
 }
 
 sub fieldhash (\%) {
@@ -102,8 +103,7 @@ Returns the reference address of a reference $obj.  If $obj is
 not a reference, returns $obj.
 
 This function is a stand-in replacement for
-L<Scalar::Util::refaddr|Scalar::Util/refaddr>,
-that is, it returns
+L<Scalar::Util::refaddr|Scalar::Util/refaddr>, that is, it returns
 the reference address of its argument as a numeric value.  The only
 difference is that C<refaddr()> returns C<undef> when given a
 non-reference while C<id()> returns its argument unchanged.
@@ -217,7 +217,7 @@ in this technique, classes that can advertise themselves as "Put me
 on your @ISA list and use my methods".  If the other class has different
 ideas about how the object body is used, there is trouble.
 
-For reference C<Name_hash> in L</Example 1> shows the standard implementation of
+For reference L<Name_hash> in L<Example 1> shows the standard implementation of
 a simple class C<Name> in the well-known hash based way.  It also demonstrates
 the predictable failure to construct a common subclass C<NamedFile>
 of C<Name> and the class C<IO::File> (whose objects I<must> be globrefs).
@@ -231,8 +231,8 @@ With I<inside-out> classes, each class declares a (typically lexical)
 hash for each field it wants to use.  The reference address of an
 object is used as the hash key.  By definition, the reference address
 is unique to each object so this guarantees a place for each field that
-is private to the class and unique to each object.  See C<Name_id>
-in L</Example 1> for a simple example.
+is private to the class and unique to each object.  See L<Name_id> in
+L<Example 1> for a simple example.
 
 In comparison to the standard implementation where the object is a
 hash and the fields correspond to hash keys, here the fields correspond
@@ -323,7 +323,7 @@ make things work, but the functions or methods used by the hooks
 must be provided by each inside-out class.
 
 A general solution to the serialization problem would require another
-level of registry, one that associates I<classes> and fields.
+level of registry, one that that associates I<classes> and fields.
 So far, the functions of C<Hash::Util::FieldHash> are unaware of
 any classes, which I consider a feature.  Therefore C<Hash::Util::FieldHash>
 doesn't address the serialization problems.
@@ -494,7 +494,7 @@ class.
 
 =item * C<Name_idhash>
 
-Idhash-based inside-out implementation.  Like C<Name_id> it needs
+Idhash-based inside-out implementation.  Like L<Name_id> it needs
 a C<DESTROY> method and would need C<CLONE> for thread support.
 
 =item * C<Name_id_reg>
@@ -522,8 +522,8 @@ to a file F<Example.pm>.
     use strict; use warnings;
 
     {
-        package Name_hash;  # standard implementation: the
-                            # object is a hash
+        package Name_hash; # standard implementation: the object is a hash
+
         sub init {
             my $obj = shift;
             my ($first, $last) = @_;
@@ -714,7 +714,7 @@ incompatibility of object bodies.
 
     {
         package Name;
-        use parent 'Name_id';  # define here which implementation to run
+        use base 'Name_id';      # define here which implementation to run
     }
 
 
@@ -737,8 +737,8 @@ incompatibility of object bodies.
 
     # Definition of NamedFile
     package NamedFile;
-    use parent 'Name';
-    use parent 'IO::File';
+    use base 'Name';
+    use base 'IO::File';
 
     sub init {
         my $obj = shift;
@@ -753,7 +753,7 @@ incompatibility of object bodies.
 =head1 GUTS
 
 To make C<Hash::Util::FieldHash> work, there were two changes to
-F<perl> itself.  C<PERL_MAGIC_uvar> was made available for hashes,
+F<perl> itself.  C<PERL_MAGIC_uvar> was made avalaible for hashes,
 and weak references now call uvar C<get> magic after a weakref has been
 cleared.  The first feature is used to make field hashes intercept
 their keys upon access.  The second one triggers garbage collection.

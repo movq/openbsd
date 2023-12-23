@@ -1,5 +1,10 @@
 #!./perl
 
+BEGIN {
+       chdir 't' if -d 't';
+       @INC = '../lib';
+}
+
 # This file has been placed in t/opbasic to indicate that it should not use
 # functions imported from t/test.pl or Test::More, as those programs/libraries
 # use operators which are what is being tested in this file.
@@ -30,7 +35,7 @@ $uv_bigi |= 0x0;
 my @array = qw(perl rules);
 
 my @raw, @upgraded, @utf8;
-foreach ("\0", "\x{1F4A9}", chr(163), 'N') {
+foreach ("\x{1F4A9}", chr(163), 'N') {
     push @raw, $_;
     my $temp = $_ . chr 256;
     chop $temp;

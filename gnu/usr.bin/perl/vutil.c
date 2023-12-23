@@ -1,9 +1,19 @@
 /* This file is part of the "version" CPAN distribution.  Please avoid
    editing it in the perl core. */
 
-#ifdef PERL_CORE
-#  include "vutil.h"
+#ifndef PERL_CORE
+#  define PERL_NO_GET_CONTEXT
+#  include "EXTERN.h"
+#  include "perl.h"
+#  include "XSUB.h"
+#  define NEED_my_snprintf
+#  define NEED_newRV_noinc
+#  define NEED_vnewSVpvf
+#  define NEED_newSVpvn_flags_GLOBAL
+#  define NEED_warner
+#  include "ppport.h"
 #endif
+#include "vutil.h"
 
 #define VERSION_MAX 0x7FFFFFFF
 
@@ -32,7 +42,6 @@ Perl_prescan_version(pTHX_ const char *s, bool strict,
     const char *d = s;
 
     PERL_ARGS_ASSERT_PRESCAN_VERSION;
-    PERL_UNUSED_CONTEXT;
 
     if (qv && isDIGIT(*d))
 	goto dotted_decimal_version;
@@ -215,11 +224,6 @@ version_prescan_finish:
 	/* trailing non-numeric data */
 	BADVERSION(s,errstr,"Invalid version format (non-numeric data)");
     }
-    if (saw_decimal > 1 && d[-1] == '.') {
-	/* no trailing period allowed */
-	BADVERSION(s,errstr,"Invalid version format (trailing decimal)");
-    }
-
 
     if (sqv)
 	*sqv = qv;
@@ -306,7 +310,7 @@ Perl_scan_version(pTHX_ const char *s, SV *rv, bool qv)
     if ( !qv && width < 3 )
 	(void)hv_stores(MUTABLE_HV(hv), "width", newSViv(width));
 
-    while (isDIGIT(*pos) || *pos == '_')
+    while (isDIGIT(*pos))
 	pos++;
     if (!isALPHA(*pos)) {
 	I32 rev;
@@ -326,8 +330,6 @@ Perl_scan_version(pTHX_ const char *s, SV *rv, bool qv)
 		if ( !qv && s > start && saw_decimal == 1 ) {
 		    mult *= 100;
  		    while ( s < end ) {
-			if (*s == '_')
-			    continue;
 			orev = rev;
  			rev += (*s - '0') * mult;
  			mult /= 10;
@@ -346,27 +348,17 @@ Perl_scan_version(pTHX_ const char *s, SV *rv, bool qv)
   		}
  		else {
  		    while (--end >= s) {
-			int i;
-			if (*end == '_')
-			    continue;
-			i = (*end - '0');
-                        if (   (mult == VERSION_MAX)
-                            || (i > VERSION_MAX / mult)
-                            || (i * mult > VERSION_MAX - rev))
-                        {
+			orev = rev;
+ 			rev += (*end - '0') * mult;
+ 			mult *= 10;
+			if (   (PERL_ABS(orev) > PERL_ABS(rev)) 
+			    || (PERL_ABS(rev) > VERSION_MAX )) {
 			    Perl_ck_warner(aTHX_ packWARN(WARN_OVERFLOW), 
 					   "Integer overflow in version");
 			    end = s - 1;
 			    rev = VERSION_MAX;
 			    vinf = 1;
 			}
-                        else
-                            rev += i * mult;
-
-                        if (mult > VERSION_MAX / 10)
-                            mult = VERSION_MAX;
-                        else
-                            mult *= 10;
  		    }
  		} 
   	    }
@@ -377,14 +369,8 @@ Perl_scan_version(pTHX_ const char *s, SV *rv, bool qv)
 		s = last;
 		break;
 	    }
-	    else if ( *pos == '.' ) {
-		pos++;
-		if (qv) {
-		    while (*pos == '0')
-			++pos;
-		}
-		s = pos;
-	    }
+	    else if ( *pos == '.' )
+		s = ++pos;
 	    else if ( *pos == '_' && isDIGIT(pos[1]) )
 		s = ++pos;
 	    else if ( *pos == ',' && isDIGIT(pos[1]) )
@@ -396,7 +382,7 @@ Perl_scan_version(pTHX_ const char *s, SV *rv, bool qv)
 		break;
 	    }
 	    if ( qv ) {
-		while ( isDIGIT(*pos) || *pos == '_')
+		while ( isDIGIT(*pos) )
 		    pos++;
 	    }
 	    else {
@@ -473,6 +459,7 @@ Perl_new_version2(pTHX_ SV *ver)
 Perl_new_version(pTHX_ SV *ver)
 #endif
 {
+    dVAR;
     SV * const rv = newSV(0);
     PERL_ARGS_ASSERT_NEW_VERSION;
     if ( ISA_VERSION_OBJ(ver) ) /* can just copy directly */
@@ -526,16 +513,7 @@ Perl_new_version(pTHX_ SV *ver)
 	if ( mg ) { /* already a v-string */
 	    const STRLEN len = mg->mg_len;
 	    const char * const version = (const char*)mg->mg_ptr;
-	    char *raw, *under;
-	    static const char underscore[] = "_";
 	    sv_setpvn(rv,version,len);
-	    raw = SvPV_nolen(rv);
-	    under = ninstr(raw, raw+len, underscore, underscore + 1);
-	    if (under) {
-		Move(under + 1, under, raw + len - under - 1, char);
-		SvCUR_set(rv, SvCUR(rv) - 1);
-		*SvEND(rv) = '\0';
-	    }
 	    /* this is for consistency with the pure Perl class */
 	    if ( isDIGIT(*version) )
 		sv_insert(rv, 0, 0, "v", 1);
@@ -609,140 +587,51 @@ VER_NV:
 
 	/* may get too much accuracy */ 
 	char tbuf[64];
-#ifdef __vax__
-	SV *sv = SvNVX(ver) > 10e37 ? newSV(64) : 0;
-#else
 	SV *sv = SvNVX(ver) > 10e50 ? newSV(64) : 0;
-#endif
 	char *buf;
-
-#if PERL_VERSION_GE(5,19,0)
-	if (SvPOK(ver)) {
-	    /* dualvar? */
-	    goto VER_PV;
-	}
-#endif
 #ifdef USE_LOCALE_NUMERIC
+        const char * const cur_numeric = setlocale(LC_NUMERIC, NULL);
+        assert(cur_numeric);
 
-	{
-            /* This may or may not be called from code that has switched
-             * locales without letting perl know, therefore we have to find it
-             * from first principals.  See [perl #121930]. */
-
-            /* In windows, or not threaded, or not thread-safe, if it isn't C,
-             * set it to C. */
-
-#  ifndef USE_POSIX_2008_LOCALE
-
-            const char * locale_name_on_entry;
-
-            LC_NUMERIC_LOCK(0);    /* Start critical section */
-
-            locale_name_on_entry = setlocale(LC_NUMERIC, NULL);
-            if (   strNE(locale_name_on_entry, "C")
-                && strNE(locale_name_on_entry, "POSIX"))
-            {
-                /* the setlocale() call might free or overwrite the name */
-                locale_name_on_entry = savepv(locale_name_on_entry);
-                setlocale(LC_NUMERIC, "C");
+        /* XS code can set the locale without us knowing.  To protect the
+         * version number parsing, which requires the radix character to be a
+         * dot, update our records as to what the locale is, so that our
+         * existing macro mechanism can correctly change it to a dot and back
+         * if necessary.  This code is extremely unlikely to be in a loop, so
+         * the extra work will have a negligible performance impact.  See [perl
+         * #121930].
+         *
+         * If the current locale is a standard one, but we are expecting it to
+         * be a different, underlying locale, update our records to make the
+         * underlying locale this (standard) one.  If the current locale is not
+         * a standard one, we should be expecting a non-standard one, the same
+         * one that we have recorded as the underlying locale.  If not, update
+         * our records. */
+        if (strEQ(cur_numeric, "C") || strEQ(cur_numeric, "POSIX")) {
+            if (! PL_numeric_standard) {
+                new_numeric(cur_numeric);
             }
-            else {  /* This value indicates to the restore code that we didn't
-                       change the locale */
-                locale_name_on_entry = NULL;
-            }
-
-# else
-
-            const locale_t locale_obj_on_entry = uselocale((locale_t) 0);
-            const char * locale_name_on_entry = NULL;
-            DECLARATION_FOR_LC_NUMERIC_MANIPULATION;
-
-            if (locale_obj_on_entry == LC_GLOBAL_LOCALE) {
-
-                /* in the global locale, we can call system setlocale and if it
-                 * isn't C, set it to C. */
-                LC_NUMERIC_LOCK(0);
-
-                locale_name_on_entry = setlocale(LC_NUMERIC, NULL);
-                if (   strNE(locale_name_on_entry, "C")
-                    && strNE(locale_name_on_entry, "POSIX"))
-                {
-                    /* the setlocale() call might free or overwrite the name */
-                    locale_name_on_entry = savepv(locale_name_on_entry);
-                    setlocale(LC_NUMERIC, "C");
-                }
-                else {  /* This value indicates to the restore code that we
-                           didn't change the locale */
-                    locale_name_on_entry = NULL;
-	    }
-	}
-            else if (locale_obj_on_entry == PL_underlying_numeric_obj) {
-                /* Here, the locale appears to have been changed to use the
-                 * program's underlying locale.  Just use our mechanisms to
-                 * switch back to C.   It might be possible for this pointer to
-                 * actually refer to something else if it got released and
-                 * reused somehow.  But it doesn't matter, our mechanisms will
-                 * work even so */
-                STORE_LC_NUMERIC_SET_STANDARD();
-            }
-            else if (locale_obj_on_entry != PL_C_locale_obj) {
-                /* The C object should be unchanged during a program's
-                 * execution, so it should be safe to assume it means what it
-                 * says, so if we are in it, no locale change is required.
-                 * Otherwise, simply use the thread-safe operation. */
-                uselocale(PL_C_locale_obj);
-            }
-
-# endif
-
-            /* Prevent recursed calls from trying to change back */
-            LOCK_LC_NUMERIC_STANDARD();
-
+        }
+        else if (PL_numeric_standard
+                 || ! PL_numeric_name
+                 || strNE(PL_numeric_name, cur_numeric))
+        {
+            new_numeric(cur_numeric);
+        }
 #endif
-
+        { /* Braces needed because macro just below declares a variable */
+        STORE_NUMERIC_LOCAL_SET_STANDARD();
 	if (sv) {
-                Perl_sv_setpvf(aTHX_ sv, "%.9" NVff, SvNVX(ver));
+	    Perl_sv_catpvf(aTHX_ sv, "%.9"NVff, SvNVX(ver));
 	    len = SvCUR(sv);
 	    buf = SvPVX(sv);
 	}
 	else {
-                len = my_snprintf(tbuf, sizeof(tbuf), "%.9" NVff, SvNVX(ver));
+	    len = my_snprintf(tbuf, sizeof(tbuf), "%.9"NVff, SvNVX(ver));
 	    buf = tbuf;
 	}
-
-#ifdef USE_LOCALE_NUMERIC
-
-            UNLOCK_LC_NUMERIC_STANDARD();
-
-#  ifndef USE_POSIX_2008_LOCALE
-
-            if (locale_name_on_entry) {
-                setlocale(LC_NUMERIC, locale_name_on_entry);
-                Safefree(locale_name_on_entry);
-            }
-
-            LC_NUMERIC_UNLOCK;  /* End critical section */
-
-#  else
-
-            if (locale_name_on_entry) {
-                setlocale(LC_NUMERIC, locale_name_on_entry);
-                Safefree(locale_name_on_entry);
-                LC_NUMERIC_UNLOCK;
-            }
-            else if (locale_obj_on_entry == PL_underlying_numeric_obj) {
-                RESTORE_LC_NUMERIC();
-            }
-            else if (locale_obj_on_entry != PL_C_locale_obj) {
-                uselocale(locale_obj_on_entry);
+        RESTORE_NUMERIC_LOCAL();
         }
-
-#  endif
-
-        }
-
-#endif  /* USE_LOCALE_NUMERIC */
-
 	while (buf[len-1] == '0' && len > 0) len--;
 	if ( buf[len-1] == '.' ) len--; /* eat the trailing decimal */
 	version = savepvn(buf, len);
@@ -757,12 +646,15 @@ VER_NV:
     }
 #endif
     else if ( SvPOK(ver))/* must be a string or something like a string */
+#if PERL_VERSION_LT(5,17,2)
 VER_PV:
+#endif
     {
 	STRLEN len;
 	version = savepvn(SvPV(ver,len), SvCUR(ver));
 	SAVEFREEPV(version);
 #ifndef SvVOK
+#  if PERL_VERSION > 5
 	/* This will only be executed for 5.6.0 - 5.8.0 inclusive */
 	if ( len >= 3 && !instr(version,".") && !instr(version,"_")) {
 	    /* may be a v-string */
@@ -795,6 +687,7 @@ VER_PV:
 		}
 	    }
 	}
+#  endif
 #endif
     }
 #if PERL_VERSION_LT(5,17,2)
@@ -903,6 +796,7 @@ Perl_vnumify(pTHX_ SV *vs)
 {
     SSize_t i, len;
     I32 digit;
+    int width;
     bool alpha = FALSE;
     SV *sv;
     AV *av;
@@ -917,11 +811,14 @@ Perl_vnumify(pTHX_ SV *vs)
     /* see if various flags exist */
     if ( hv_exists(MUTABLE_HV(vs), "alpha", 5 ) )
 	alpha = TRUE;
-
-    if (alpha) {
-	Perl_ck_warner(aTHX_ packWARN(WARN_NUMERIC),
-		       "alpha->numify() is lossy");
+    {
+	SV ** svp = hv_fetchs(MUTABLE_HV(vs), "width", FALSE);
+	if ( svp )
+	    width = SvIV(*svp);
+	else
+	    width = 3;
     }
+
 
     /* attempt to retrieve the version array */
     if ( !(av = MUTABLE_AV(SvRV(*hv_fetchs(MUTABLE_HV(vs), "version", FALSE))) ) ) {
@@ -939,14 +836,30 @@ Perl_vnumify(pTHX_ SV *vs)
 	digit = SvIV(tsv);
     }
     sv = Perl_newSVpvf(aTHX_ "%d.", (int)PERL_ABS(digit));
-    for ( i = 1 ; i <= len ; i++ )
+    for ( i = 1 ; i < len ; i++ )
     {
 	SV * tsv = *av_fetch(av, i, 0);
 	digit = SvIV(tsv);
-	Perl_sv_catpvf(aTHX_ sv, "%03d", (int)digit);
+	if ( width < 3 ) {
+	    const int denom = (width == 2 ? 10 : 100);
+	    const div_t term = div((int)PERL_ABS(digit),denom);
+	    Perl_sv_catpvf(aTHX_ sv, "%0*d_%d", width, term.quot, term.rem);
+	}
+	else {
+	    Perl_sv_catpvf(aTHX_ sv, "%0*d", width, (int)digit);
+	}
     }
 
-    if ( len == 0 ) {
+    if ( len > 0 )
+    {
+	SV * tsv = *av_fetch(av, len, 0);
+	digit = SvIV(tsv);
+	if ( alpha && width == 3 ) /* alpha version */
+	    sv_catpvs(sv,"_");
+	Perl_sv_catpvf(aTHX_ sv, "%0*d", width, (int)digit);
+    }
+    else /* len == 0 */
+    {
 	sv_catpvs(sv, "000");
     }
     return sv;
@@ -976,6 +889,7 @@ Perl_vnormal(pTHX_ SV *vs)
 #endif
 {
     I32 i, len, digit;
+    bool alpha = FALSE;
     SV *sv;
     AV *av;
 
@@ -986,6 +900,8 @@ Perl_vnormal(pTHX_ SV *vs)
     if ( ! vs )
 	Perl_croak(aTHX_ "Invalid version object");
 
+    if ( hv_exists(MUTABLE_HV(vs), "alpha", 5 ) )
+	alpha = TRUE;
     av = MUTABLE_AV(SvRV(*hv_fetchs(MUTABLE_HV(vs), "version", FALSE)));
 
     len = av_len(av);
@@ -997,11 +913,22 @@ Perl_vnormal(pTHX_ SV *vs)
 	SV * tsv = *av_fetch(av, 0, 0);
 	digit = SvIV(tsv);
     }
-    sv = Perl_newSVpvf(aTHX_ "v%" IVdf, (IV)digit);
-    for ( i = 1 ; i <= len ; i++ ) {
+    sv = Perl_newSVpvf(aTHX_ "v%"IVdf, (IV)digit);
+    for ( i = 1 ; i < len ; i++ ) {
 	SV * tsv = *av_fetch(av, i, 0);
 	digit = SvIV(tsv);
-	Perl_sv_catpvf(aTHX_ sv, ".%" IVdf, (IV)digit);
+	Perl_sv_catpvf(aTHX_ sv, ".%"IVdf, (IV)digit);
+    }
+
+    if ( len > 0 )
+    {
+	/* handle last digit specially */
+	SV * tsv = *av_fetch(av, len, 0);
+	digit = SvIV(tsv);
+	if ( alpha )
+	    Perl_sv_catpvf(aTHX_ sv, "_%"IVdf, (IV)digit);
+	else
+	    Perl_sv_catpvf(aTHX_ sv, ".%"IVdf, (IV)digit);
     }
 
     if ( len <= 2 ) { /* short version, must be at least three */
@@ -1043,11 +970,7 @@ Perl_vstringify(pTHX_ SV *vs)
     if (svp) {
 	SV *pv;
 	pv = *svp;
-	if ( SvPOK(pv)
-#if PERL_VERSION_LT(5,17,2)
-	    || SvPOKp(pv)
-#endif
-	)
+	if ( SvPOK(pv) )
 	    return newSVsv(pv);
 	else
 	    return &PL_sv_undef;
@@ -1078,6 +1001,8 @@ Perl_vcmp(pTHX_ SV *lhv, SV *rhv)
 {
     SSize_t i,l,m,r;
     I32 retval;
+    bool lalpha = FALSE;
+    bool ralpha = FALSE;
     I32 left = 0;
     I32 right = 0;
     AV *lav, *rav;
@@ -1092,9 +1017,13 @@ Perl_vcmp(pTHX_ SV *lhv, SV *rhv)
 
     /* get the left hand term */
     lav = MUTABLE_AV(SvRV(*hv_fetchs(MUTABLE_HV(lhv), "version", FALSE)));
+    if ( hv_exists(MUTABLE_HV(lhv), "alpha", 5 ) )
+	lalpha = TRUE;
 
     /* and the right hand term */
     rav = MUTABLE_AV(SvRV(*hv_fetchs(MUTABLE_HV(rhv), "version", FALSE)));
+    if ( hv_exists(MUTABLE_HV(rhv), "alpha", 5 ) )
+	ralpha = TRUE;
 
     l = av_len(lav);
     r = av_len(rav);
@@ -1113,6 +1042,19 @@ Perl_vcmp(pTHX_ SV *lhv, SV *rhv)
 	if ( left > right )
 	    retval = +1;
 	i++;
+    }
+
+    /* tiebreaker for alpha with identical terms */
+    if ( retval == 0 && l == r && left == right && ( lalpha || ralpha ) )
+    {
+	if ( lalpha && !ralpha )
+	{
+	    retval = -1;
+	}
+	else if ( ralpha && !lalpha)
+	{
+	    retval = +1;
+	}
     }
 
     if ( l != r && retval == 0 ) /* possible match except for trailing 0's */
@@ -1140,5 +1082,3 @@ Perl_vcmp(pTHX_ SV *lhv, SV *rhv)
     }
     return retval;
 }
-
-/* ex: set ro: */

@@ -1,6 +1,5 @@
 package TAP::Harness::TestSubclass;
 use strict;
-use warnings;
 use base 'TAP::Harness';
 
 sub aggregate_tests {

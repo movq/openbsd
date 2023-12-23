@@ -11,14 +11,6 @@ BEGIN {
         print("1..0 # SKIP Broken under HP-UX 10.20\n");
         exit(0);
     }
-
-    # https://lists.alioth.debian.org/pipermail/perl-maintainers/2011-June/002285.html
-    # There _is_ TLS support on m68k, but this stress test is overwhelming
-    # for the hardware
-    if ($^O eq 'linux' && $Config{archname} =~ /^m68k/) {
-        print("1..0 # Skip: m68k doesn't have enough oomph for these stress tests\n");
-        exit(0);
-    }
 }
 
 use ExtUtils::testlib;
@@ -42,48 +34,7 @@ use threads::shared;
 {
     my $cnt = 50;
 
-    # Depending on hardware and compiler options, the time for a busy loop can
-    # by a factor of (at least) 40, so one size doesn't fit all.
-    # For a fixed iteration count, on a particularly slow machine the timeout
-    # can fire before all threads have had a realistic chance to complete, but
-    # dropping the iteration count will cause fast machines to finish each
-    # thread too quickly.
-    # Fastest machine I tested can loop 20,000,000 times a second, slowest
-    # 500,000
-
-    my $busycount;
-    {
-        my $tries = 1e4;
-        # Try to align to the start of a second:
-        my $want = time + 1;
-        while (time < $want && --$tries) {
-            my $sum;
-            for (0..1e4) {
-                ++$sum;
-            }
-        }
-
-        if ($tries) {
-            $tries = 1e4;
-            ++$want;
-
-            while (time < $want && --$tries) {
-                my $sum;
-                for (0..1e4) {
-                    ++$sum;
-                }
-            }
-
-            # This should be about 0.025s
-            $busycount = (1e4 - $tries) * 250;
-        } else {
-            # Fall back to the old default if everything fails
-            $busycount = 500000;
-        }
-        print "# Looping for $busycount iterations should take about 0.025s\n";
-    }
-
-    my $TIMEOUT = 600;
+    my $TIMEOUT = 60;
 
     my $mutex = 1;
     share($mutex);
@@ -101,7 +52,7 @@ use threads::shared;
 
                             # Randomize the amount of work the thread does
                             my $sum;
-                            for (0..($busycount+int(rand($busycount)))) {
+                            for (0..(500000+int(rand(500000)))) {
                                 $sum++
                             }
 
@@ -179,7 +130,7 @@ use threads::shared;
     } elsif ($timeouts) {
         # Frequently fails under MSWin32 due to deadlocking bug in Windows
         # hence test is TODO under MSWin32
-        #   https://rt.perl.org/rt3/Public/Bug/Display.html?id=41574
+        #   http://rt.perl.org/rt3/Public/Bug/Display.html?id=41574
         #   http://support.microsoft.com/kb/175332
         if ($^O eq 'MSWin32') {
             print("not ok 1 # TODO - not reliable under MSWin32\n")

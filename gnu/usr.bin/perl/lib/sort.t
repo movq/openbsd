@@ -25,7 +25,10 @@ BEGIN {
 use strict;
 use warnings;
 
-use Test::More;
+use Test::More tests => @TestSizes * 2	# sort() tests
+			* 4		# number of pragmas to test
+			+ 1 		# extra test for qsort instability
+			+ 3;		# tests for sort::current
 
 # Generate array of specified size for testing sort.
 #
@@ -95,7 +98,7 @@ sub checkequal {
 # Test sort on arrays of various sizes (set up in @TestSizes)
 
 sub main {
-    my ($dothesort, $expect_unstable) = @_;
+    my ($expect_unstable) = @_;
     my ($ts, $unsorted, @sorted, $status);
     my $unstable_num = 0;
 
@@ -104,9 +107,9 @@ sub main {
 	# Sort only on item portion of each element.
 	# There will typically be many repeated items,
 	# and their order had better be preserved.
-	@sorted = $dothesort->(sub { substr($a, 0, $RootWidth)
+	@sorted = sort { substr($a, 0, $RootWidth)
 				    cmp
-	                 substr($b, 0, $RootWidth) }, $unsorted);
+	                 substr($b, 0, $RootWidth) } @$unsorted;
 	$status = checkorder(\@sorted);
 	# Put the items back into the original order.
 	# The contents of the arrays had better be identical.
@@ -115,101 +118,45 @@ sub main {
 	    ++$unstable_num;
 	}
 	is($status, '', "order ok for size $ts");
-	@sorted = $dothesort->(sub { substr($a, $RootWidth)
+	@sorted = sort { substr($a, $RootWidth)
 				    cmp
-			    substr($b, $RootWidth) }, \@sorted);
+	                 substr($b, $RootWidth) } @sorted;
 	$status = checkequal(\@sorted, $unsorted);
 	is($status, '', "contents ok for size $ts");
     }
+    # If the following test (#58) fails, see the comments in pp_sort.c
+    # for Perl_sortsv().
     if ($expect_unstable) {
 	ok($unstable_num > 0, 'Instability ok');
     }
 }
 
-# Test with no pragma yet loaded. Stability is expected from default sort.
-main(sub { sort {&{$_[0]}} @{$_[1]} }, 0);
+# Test with no pragma still loaded -- stability expected (this is a mergesort)
+main(0);
 
-# Verify that we have eliminated the segfault that could be triggered
-# by invoking a sort as part of a comparison routine.
-# No need for an explicit test. If we don't segfault, we're good.
+# XXX We're using this eval "..." trick to force recompilation,
+# to ensure that the correct pragma is enabled when main() is run.
+# Currently 'use sort' modifies $sort::hints at compile-time, but
+# pp_sort() fetches its value at run-time.
+# The order of those evals is important.
 
-{
-    sub dumbsort {
-	my ($a, $b) = @_;
-	use sort qw( defaults stable );
-	my @ignore = sort (5,4,3,2,1);
-	return $a <=> $b;
-    }
-    use sort qw( defaults stable );
-    my @nested = sort { dumbsort($a,$b) } (3,2,2,1);
-}
+eval q{
+    use sort qw(_qsort);
+    is(sort::current(), 'quicksort', 'sort::current for _qsort');
+    main(1);
+};
+die $@ if $@;
 
-{
-    use sort qw(stable);
-    my $sort_current;
-    BEGIN {
-        my $a = "" ;
-        local $SIG{__WARN__} = sub {$a = $_[0]};
-        $sort_current = sort::current();
-        like($a, qr/\Asort::current is deprecated\b/, "sort::current warns");
-    }
-    is($sort_current, 'stable', 'sort::current for stable');
-    main(sub { sort {&{$_[0]}} @{$_[1]} }, 0);
-}
+eval q{
+    use sort qw(_mergesort);
+    is(sort::current(), 'mergesort', 'sort::current for _mergesort');
+    main(0);
+};
+die $@ if $@;
 
-# Tests added to check "defaults" subpragma, and "no sort"
-
-{
-    use sort qw(defaults stable);
-    my $sort_current;
-    BEGIN {
-        my $a = "" ;
-        local $SIG{__WARN__} = sub {$a = $_[0]};
-        $sort_current = sort::current();
-        like($a, qr/\Asort::current is deprecated\b/, "sort::current warns");
-    }
-    is($sort_current, 'stable', 'sort::current after defaults stable');
-    main(sub { sort {&{$_[0]}} @{$_[1]} }, 0);
-}
-
-# Tests added to check how sort::current is deprecated
-
-{
-    no sort qw(stable);
-    my $sort_current;
-    BEGIN {
-        my $a = "" ;
-        local $SIG{__WARN__} = sub {$a = $_[0]};
-        $sort_current = sort::current();
-        like($a, qr/\Asort::current is deprecated\b/, "sort::current warns");
-    }
-    is($sort_current, 'stable', 'sort::current *always* stable');
-}
-
-{
-    use sort qw(defaults);
-    my $sort_current;
-    BEGIN {
-        no warnings qw(deprecated);
-        my $a = "" ;
-        local $SIG{__WARN__} = sub {$a = $_[0]};
-        $sort_current = sort::current();
-        is($a, "", "sort::current warning can be disabled");
-    }
-    is($sort_current, 'stable', 'sort::current *always* stable');
-}
-
-{
-    use sort qw(stable);
-    my $sort_current;
-    BEGIN {
-        no warnings qw(deprecated);
-        my $a = "" ;
-        local $SIG{__WARN__} = sub {$a = $_[0]};
-        $sort_current = sort::current();
-        is($a, "", "sort::current warning can be disabled");
-    }
-    is($sort_current, 'stable', 'sort::current for stable');
-}
-
-done_testing();
+eval q{
+    use sort qw(_qsort stable);
+    is(sort::current(), 'quicksort stable', 'sort::current for _qsort stable');
+    main(0);
+};
+die $@ if $@;

@@ -4,18 +4,15 @@
 # (including weird syntax errors)
 
 BEGIN {
-    chdir 't' if -d 't';
     require './test.pl';
-    require './charset_tools.pl';
-    skip_all_without_unicode_tables();
 }
 
-plan (tests => 58);
+plan (tests => 47);
 
 use utf8;
 use open qw( :utf8 :std );
 
-is *tèst, "*main::tèst", "sanity check.";
+ok *tèst, "*main::tèst", "sanity check.";
 ok $::{"tèst"}, "gets the right glob in the stash.";
 
 my $glob_by_sub = sub { *ｍａｉｎ::method }->();
@@ -84,7 +81,8 @@ closedir FÒÒ;
 sub участники { 1 }
 
 ok $::{"участники"}, "non-const sub declarations generate the right glob";
-is $::{"участники"}->(), 1;
+ok *{$::{"участники"}}{CODE};
+is *{$::{"участники"}}{CODE}->(), 1;
 
 sub 原 () { 1 }
 
@@ -110,48 +108,6 @@ is ${"main::\345\225\217"}, undef, "..and using the encoded form doesn't";
     $@ =~ s/eval \d+/eval 11/;
     is $@, 'Unrecognized character \x{1f42a}; marked by <-- HERE after  my $ニ <-- HERE near column 8 at (eval 11) line 1.
 ', "'Unrecognized character' croak is UTF-8 clean";
-
-    eval "q\0foobar\0 \x{FFFF}+1";
-    $@ =~ s/eval \d+/eval 11/;
-    is(
-        $@,
-       "Unrecognized character \\x{ffff}; marked by <-- HERE after q\0foobar\0 <-- HERE near column 11 at (eval 11) line 1.\n",
-       "...and nul-clean"
-    );
-
-    {
-        use re 'eval';
-        my $f = qq{(?{\$ネ+ 1; \x{1F42A} })};
-        eval { "a" =~ /^a$f/ };
-        my $e = $@;
-        $e =~ s/eval \d+/eval 11/;
-        is(
-            $e,
-            "Unrecognized character \\x{1f42a}; marked by <-- HERE after (?{\$ネ+ 1; <-- HERE near column 13 at (eval 11) line 1.\n",
-            "Messages from a re-eval are UTF-8 clean"
-        );
-
-        $f = qq{(?{q\0foobar\0 \x{FFFF}+1 })};
-        eval { "a" =~ /^a$f/ };
-        my $e = $@;
-        $e =~ s/eval \d+/eval 11/;
-        is(
-            $e,
-            "Unrecognized character \\x{ffff}; marked by <-- HERE after q\x{0}foobar\x{0} <-- HERE near column 16 at (eval 11) line 1.\n",
-           "...and nul-clean"
-        );
-    }
-    
-    {
-        eval qq{\$ネ+ 1; \x{1F42A}};
-        $@ =~ s/eval \d+/eval 11/;
-        is(
-            $@,
-            "Unrecognized character \\x{1f42a}; marked by <-- HERE after \$ネ+ 1; <-- HERE near column 8 at (eval 11) line 1.\n",
-            "Unrecognized character error doesn't cut off in the middle of characters"
-        )
-    }
-
 }
 
 {
@@ -189,96 +145,3 @@ eval q{ Ｆｏｏ::$bar };
 like( $@, qr/Bad name after Ｆｏｏ::/, 'Bad name after Ｆｏｏ::' );
 eval q{ Ｆｏｏ''bar };
 like( $@, qr/Bad name after Ｆｏｏ'/, 'Bad name after Ｆｏｏ\'' );
-
-{
-    no warnings 'utf8';
-    local $SIG{__WARN__} = sub { }; # The eval will also output a warning,
-                                    # which we ignore
-    my $malformed_to_be = ($::IS_EBCDIC)   # Overlong sequence
-                           ? "\x{74}\x{41}"
-                           : "\x{c0}\x{a0}";
-    CORE::evalbytes "use charnames ':full'; use utf8; my \$x = \"\\N{abc$malformed_to_be}\"";
-    like( $@, qr/Malformed UTF-8 character \(fatal\) at /, 'Malformed UTF-8 input to \N{}');
-}
-
-# RT# 124216: Perl_sv_clear: Assertion
-# If a parsing error occurred during a forced token within an interpolated
-# context, the stack unwinding failed to restore PL_lex_defer and so after
-# error recovery the state restored after the forced token was processed
-# was the wrong one, resulting in the lexer thinking we're still inside a
-# quoted string and things getting freed multiple times.
-#
-# The \x{3030} char isn't a legal var name, and this triggers the error.
-#
-# NB: this only failed if the closing quote of the interpolated string is
-# the last char of the file (i.e. no trailing \n).
-
-{
-    my $bad = "\x{3030}";
-    # Write out the individual utf8 bytes making up \x{3030}. This
-    # avoids 'Wide char in print' warnings from test.pl. (We may still
-    # get that warning when compiling the prog itself, since the
-    # error it prints to stderr contains a wide char.)
-    utf8::encode($bad);
-
-    fresh_perl_like(qq{use utf8; "\$$bad"},
-        qr/
-            \A
-            ( \QWide character in print at - line 1.\E\n )?
-            \Qsyntax error at - line 1, near \E"\$.*"\n
-            \QExecution of - aborted due to compilation errors.\E\z
-        /xm,
-
-        {stderr => 1}, "RT# 124216");
-}
-
-SKIP: {
-
-    use Config;
-    if ($Config{uvsize} < 8) {
-        skip("test is only valid on 64-bit ints", 4);
-    }
-    else {
-        my $a;
-        my $b;
-
-        # This caused a memory fault [perl #128738]
-        $b = byte_utf8a_to_utf8n("\xFE\x82\x80\x80\x80\x80\x80"); # 0x80000000
-        eval "\$a = q ${b}abc${b}";
-        is $@, "",
-               "No errors in eval'ing a string with large code point delimiter";
-        is $a, 'abc',
-               "Got expected result in eval'ing a string with a large code point"
-            . " delimiter";
-
-        $b = byte_utf8a_to_utf8n("\xFE\x83\xBF\xBF\xBF\xBF\xBF"); # 0xFFFFFFFF
-        eval "\$a = q ${b}Hello, \\\\whirled!${b}";
-        is $@, "",
-               "No errors in eval'ing a string with large code point delimiter";
-        is $a, 'Hello, \whirled!',
-               "Got expected result in eval'ing a string with a large code point"
-            . " delimiter";
-    }
-}
-
-fresh_perl_is(<<'EOS', <<'EXPECT', {}, 'no panic in pad_findmy_pvn (#134061)');
-use utf8;
-eval "sort \x{100}%";
-die $@;
-EOS
-syntax error at (eval 1) line 1, at EOF
-EXPECT
-
-# New tests go here ^^^^^
-
-# Keep this test last, as it will mess up line number reporting for any
-# subsequent tests.
-
-<<END;
-${
-#line 57
-qq ϟϟ }
-END
-is __LINE__, 59, '#line directive and qq with uni delims inside heredoc';
-
-# Put new tests above the line number tests.

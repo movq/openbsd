@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More;
+use Test::More tests => 11;
 use_ok('Tie::Hash');
 
 tie my %tied, 'Tie::ExtraHash';
@@ -39,4 +39,3 @@ is_deeply(\%tied, \%hash, "CLEAR");
 # SCALAR
 is(scalar(%tied), scalar(%hash), "SCALAR");
 
-done_testing();

@@ -4,18 +4,15 @@ use Test::More 0.88;
 
 use CPAN::Meta;
 
-delete $ENV{PERL_YAML_BACKEND};
-delete $ENV{PERL_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_DECODER};
+delete $ENV{$_} for qw/PERL_JSON_BACKEND PERL_YAML_BACKEND/; # use defaults
 
 my %distmeta = (
   name     => 'Module-Billed',
   abstract => 'inscrutable',
   version  => '1',
-  author   => [ 'Joe' ],
+  author   => 'Joe',
   release_status => 'stable',
-  license  => [ 'perl_5' ],
+  license  => 'perl_5',
   'meta-spec' => {
     version => '2',
     url     => 'http://search.cpan.org/perldoc?CPAN::Meta::Spec',
@@ -89,4 +86,3 @@ my %distmeta = (
 }
 
 done_testing;
-# vim: ts=2 sts=2 sw=2 et :

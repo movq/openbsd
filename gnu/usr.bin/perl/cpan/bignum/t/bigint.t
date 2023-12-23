@@ -1,50 +1,123 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 ###############################################################################
 
+use Test;
 use strict;
-use warnings;
 
-use Test::More tests => 17;
+BEGIN
+  {
+  $| = 1;
+  chdir 't' if -d 't';
+  unshift @INC, '../lib';
+  plan tests => 51;
+  }
 
-use bigint;
+use bigint qw/hex oct/;
+
+###############################################################################
+# _constant tests
+
+foreach (qw/ 
+  123:123
+  123.4:123
+  1.4:1
+  0.1:0
+  -0.1:0
+  -1.1:-1
+  -123.4:-123
+  -123:-123
+  123e2:123e2
+  123e-1:12
+  123e-4:0
+  123e-3:0
+  123.345e-1:12
+  123.456e+2:12345
+  1234.567e+3:1234567
+  1234.567e+4:1234567E1
+  1234.567e+6:1234567E3
+  /)
+  {
+  my ($x,$y) = split /:/;
+  print "# Try $x\n";
+  ok (bigint::_float_constant("$x"),"$y");
+  }
+
+foreach (qw/ 
+  0100:64
+  0200:128
+  0x100:256
+  0b1001:9
+  /)
+  {
+  my ($x,$y) = split /:/;
+  print "# Try $x\n";
+  ok (bigint::_binary_constant("$x"),"$y");
+  }
 
 ###############################################################################
 # general tests
 
-my $x = 5;
-is(ref($x), 'Math::BigInt', '$x = 5 makes $x a Math::BigInt');
+my $x = 5; ok (ref($x) =~ /^Math::BigInt/);		# :constant
 
-$x = 2 + 3.5;
-is($x, 5.5, '2 + 3.5 = 5.5');
-is(ref($x), 'Math::BigInt', '$x = 2 + 3.5 makes $x a Math::BigInt');
+# todo:  ok (2 + 2.5,4.5);				# should still work
+# todo: $x = 2 + 3.5; ok (ref($x),'Math::BigFloat');
 
-$x = 2 ** 255;
-is(ref($x), 'Math::BigInt', '$x = 2 ** 255 makes $x a Math::BigInt');
+$x = 2 ** 255; ok (ref($x) =~ /^Math::BigInt/);
 
-is(12->bfac(), 479001600, '12->bfac() = 479001600');
-is(9/4, 2, '9/4 = 2');
+ok (12->bfac(),479001600);
+ok (9/4,2);
 
-is(4.5 + 4.5, 8, '4.5 + 4.5 = 8');                         # truncate
-is(ref(4.5 + 4.5), 'Math::BigInt', '4.5 + 4.5 makes a Math::BigInt');
+ok (4.5+4.5,8);					# truncate
+ok (ref(4.5+4.5) =~ /^Math::BigInt/);
+
 
 ###############################################################################
-# accuracy and precision
+# accurarcy and precision
 
-is(bigint->accuracy(), undef, 'get accuracy');
-bigint->accuracy(12);
-is(bigint->accuracy(), 12, 'get accuracy again');
-bigint->accuracy(undef);
-is(bigint->accuracy(), undef, 'get accuracy again');
+ok_undef (bigint->accuracy());
+ok (bigint->accuracy(12),12);
+ok (bigint->accuracy(),12);
 
-is(bigint->precision(), undef, 'get precision');
-bigint->precision(12);
-is(bigint->precision(), 12, 'get precision again');
-bigint->precision(undef);
-is(bigint->precision(), undef, 'get precision again');
+ok_undef (bigint->precision());
+ok (bigint->precision(12),12);
+ok (bigint->precision(),12);
 
-is(bigint->round_mode(), 'even', 'get round mode');
-bigint->round_mode('odd');
-is(bigint->round_mode(), 'odd', 'get round mode again');
-bigint->round_mode('even');
-is(bigint->round_mode(), 'even', 'get round mode again');
+ok (bigint->round_mode(),'even');
+ok (bigint->round_mode('odd'),'odd');
+ok (bigint->round_mode(),'odd');
+
+###############################################################################
+# hex() and oct()
+
+my $c = 'Math::BigInt';
+
+ok (ref(hex(1)), $c);
+ok (ref(hex(0x1)), $c);
+ok (ref(hex("af")), $c);
+ok (hex("af"), Math::BigInt->new(0xaf));
+ok (ref(hex("0x1")), $c);
+
+ok (ref(oct("0x1")), $c);
+ok (ref(oct("01")), $c);
+ok (ref(oct("0b01")), $c);
+ok (ref(oct("1")), $c);
+ok (ref(oct(" 1")), $c);
+ok (ref(oct(" 0x1")), $c);
+
+ok (ref(oct(0x1)), $c);
+ok (ref(oct(01)), $c);
+ok (ref(oct(0b01)), $c);
+ok (ref(oct(1)), $c);
+
+###############################################################################
+###############################################################################
+# Perl 5.005 does not like ok ($x,undef)
+
+sub ok_undef
+  {
+  my $x = shift;
+
+  ok (1,1) and return if !defined $x;
+  ok ($x,'undef');
+  }

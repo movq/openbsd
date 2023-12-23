@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '0.03';
+our $VERSION = '0.01';
 
 BEGIN
 {
@@ -24,16 +24,17 @@ __END__
 
 =head1 NAME
 
-DBM_Filter::utf8 - filter for DBM_Filter
+DBM_Filter::utf8 -- UTF-8 DBM Filter
 
 =head1 SYNOPSIS
 
-    use SDBM_File; # or DB_File, GDBM_File, NDBM_File, or ODBM_File
-    use DBM_Filter;
+    use SDBM_File; # or DB_File, or GDBM_File, or NDBM_File, or ODBM_File
+    use DBM_Filter ;
+    
 
     $db = tie %hash, ...
     $db->Filter_Push('utf8');
-
+    
 =head1 DESCRIPTION
 
 This Filter will ensure that all data written to the DBM will be encoded

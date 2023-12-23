@@ -1,16 +1,15 @@
-#!perl
-
-use 5.008001;
-
-use strict;
-use warnings;
+#!./perl -w
 
 BEGIN {
-    if (!eval { require Socket }) {
-        print "1..0 # Skip: no Socket\n"; exit 0;
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
     }
-    if (ord('A') == 193 && !eval { require Convert::EBCDIC }) {
-        print "1..0 # Skip: EBCDIC but no Convert::EBCDIC\n"; exit 0;
+    if (!eval "require Socket") {
+	print "1..0 # no Socket\n"; exit 0;
+    }
+    if (ord('A') == 193 && !eval "require Convert::EBCDIC") {
+        print "1..0 # EBCDIC but no Convert::EBCDIC\n"; exit 0;
     }
 }
 

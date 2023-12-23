@@ -1,5 +1,5 @@
 #!/usr/local/bin/perl
-use strict;
+
 use Config;
 use File::Basename qw(&basename &dirname);
 use Cwd;
@@ -13,7 +13,6 @@ use Cwd;
 
 # This forces PL files to create target in same directory as PL file.
 # This is so that make depend always knows where to find PL derivatives.
-my ($origdir, $file);
 $origdir = cwd;
 chdir(dirname($0));
 ($file = basename($0)) =~ s/\.PL$//;
@@ -41,8 +40,9 @@ print OUT <<'!NO!SUBS!';
 # podchecker -- command to invoke the podchecker function in Pod::Checker
 #
 # Copyright (c) 1998-2000 by Bradford Appleton. All rights reserved.
-# This is free software; you can redistribute it and/or modify it under the
-# same terms as Perl itself.
+# This file is part of "PodParser". PodParser is free software;
+# you can redistribute it and/or modify it under the same terms
+# as Perl itself.
 #############################################################################
 
 use strict;
@@ -110,7 +110,7 @@ results, call B<podchecker> with one single argument only.
 
 =head1 SEE ALSO
 
-L<Pod::Simple> and L<Pod::Checker>
+L<Pod::Parser> and L<Pod::Checker>
 
 =head1 AUTHORS
 

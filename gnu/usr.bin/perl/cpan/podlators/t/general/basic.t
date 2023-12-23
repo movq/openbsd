@@ -12,15 +12,13 @@
 # the machinery to run small POD snippets through the specific formatter being
 # tested should probably be used instead.
 #
-# Copyright 2001-2002, 2004, 2006, 2009, 2012, 2014-2015, 2018-2019
+# Copyright 2001, 2002, 2004, 2006, 2009, 2012, 2014, 2015
 #     Russ Allbery <rra@cpan.org>
 #
 # This program is free software; you may redistribute it and/or modify it
 # under the same terms as Perl itself.
-#
-# SPDX-License-Identifier: GPL-1.0-or-later OR Artistic-1.0-Perl
 
-use 5.008;
+use 5.006;
 use strict;
 use warnings;
 
@@ -61,10 +59,13 @@ my %OUTPUT = (
     'Pod::Text::Termcap'    => File::Spec->catfile('t', 'data', 'basic.cap'),
 );
 
+# Options to pass to all formatting modules.  Match the pod2text default.
+my @OPTIONS = (sentence => 0);
+
 # Walk through teach of the modules and format the sample file, checking to
 # ensure the results match the pre-generated file.
 for my $module (sort keys %OUTPUT) {
-    my $parser = $module->new();
+    my $parser = $module->new(@OPTIONS);
     isa_ok($parser, $module, 'parser object');
 
     # Run the formatting module.  Store the output into a Perl variable
@@ -80,8 +81,9 @@ for my $module (sort keys %OUTPUT) {
         $got =~ s{ \A .* \n [.]nh \n }{}xms;
     }
 
-    # Try to convert on EBCDIC boxes so that the test still works.
-    if (ord "A" == 193 && $module eq 'Pod::Text::Termcap') {
+    # OS/390 is EBCDIC, which apparently uses a different character for ESC.
+    # Try to convert so that the test still works.
+    if ($^O eq 'os390' && $module eq 'Pod::Text::Termcap') {
         $got =~ tr{\033}{\047};
     }
 

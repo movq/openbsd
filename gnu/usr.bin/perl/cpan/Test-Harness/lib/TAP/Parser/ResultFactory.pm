@@ -1,8 +1,9 @@
 package TAP::Parser::ResultFactory;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA %CLASS_FOR);
 
+use TAP::Object                  ();
 use TAP::Parser::Result::Bailout ();
 use TAP::Parser::Result::Comment ();
 use TAP::Parser::Result::Plan    ();
@@ -12,7 +13,7 @@ use TAP::Parser::Result::Unknown ();
 use TAP::Parser::Result::Version ();
 use TAP::Parser::Result::YAML    ();
 
-use base 'TAP::Object';
+@ISA = 'TAP::Object';
 
 ##############################################################################
 
@@ -29,11 +30,11 @@ TAP::Parser::ResultFactory - Factory for creating TAP::Parser output objects
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head2 DESCRIPTION
 
@@ -82,7 +83,8 @@ a completely new type, eg:
   # create a custom result type:
   package MyResult;
   use strict;
-  use base 'TAP::Parser::Result';
+  use vars qw(@ISA);
+  @ISA = 'TAP::Parser::Result';
 
   # register with the factory:
   TAP::Parser::ResultFactory->register_type( 'my_type' => __PACKAGE__ );
@@ -94,16 +96,18 @@ Your custom type should then be picked up automatically by the L<TAP::Parser>.
 
 =cut
 
-our %CLASS_FOR = (
-	plan    => 'TAP::Parser::Result::Plan',
-	pragma  => 'TAP::Parser::Result::Pragma',
-	test    => 'TAP::Parser::Result::Test',
-	comment => 'TAP::Parser::Result::Comment',
-	bailout => 'TAP::Parser::Result::Bailout',
-	version => 'TAP::Parser::Result::Version',
-	unknown => 'TAP::Parser::Result::Unknown',
-	yaml    => 'TAP::Parser::Result::YAML',
-);
+BEGIN {
+    %CLASS_FOR = (
+        plan    => 'TAP::Parser::Result::Plan',
+        pragma  => 'TAP::Parser::Result::Pragma',
+        test    => 'TAP::Parser::Result::Test',
+        comment => 'TAP::Parser::Result::Comment',
+        bailout => 'TAP::Parser::Result::Bailout',
+        version => 'TAP::Parser::Result::Version',
+        unknown => 'TAP::Parser::Result::Unknown',
+        yaml    => 'TAP::Parser::Result::YAML',
+    );
+}
 
 sub class_for {
     my ( $class, $type ) = @_;
@@ -162,10 +166,12 @@ Of course, it's up to you to decide whether or not to ignore them.
   package MyResultFactory;
 
   use strict;
+  use vars '@ISA';
 
   use MyResult;
+  use TAP::Parser::ResultFactory;
 
-  use base 'TAP::Parser::ResultFactory';
+  @ISA = qw( TAP::Parser::ResultFactory );
 
   # force all results to be 'MyResult'
   sub class_for {

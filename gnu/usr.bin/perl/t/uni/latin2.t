@@ -1,14 +1,31 @@
-#!./perl -w
-
 BEGIN {
-    chdir 't' if -d 't';
+    if ($ENV{'PERL_CORE'}){
+        chdir 't';
+        @INC = '../lib';
+    }
+    require Config; import Config;
+    if ($Config{'extensions'} !~ /\bEncode\b/) {
+      print "1..0 # Skip: Encode was not built\n";
+      exit 0;
+    }
+    if (ord("A") == 193) {
+        print "1..0 # Skip: EBCDIC\n";
+        exit 0;
+    }
+    unless (PerlIO::Layer->find('perlio')){
+        print "1..0 # Skip: PerlIO required\n";
+        exit 0;
+    }
+    if ($ENV{PERL_CORE_MINITEST}) {
+        print "1..0 # Skip: no dynamic loading on miniperl, no Encode\n";
+        exit 0;
+    }
+    $| = 1;
     require './test.pl';
-    skip_all("encoding.pm is no longer supported by the perl core");
 }
 
 plan tests => 94;
 
-no warnings 'deprecated';
 use encoding "latin2"; # iso 8859-2
 
 # U+00C1, \xC1, \301, LATIN CAPITAL LETTER A WITH ACUTE

@@ -1,16 +1,12 @@
 #!./perl
 
 BEGIN {
-    chdir 't' if -d 't';
-    @INC = '../lib';
-    require './test.pl';
+    print "1..3\n";
     *ARGV = *DATA;
-    plan(tests => 3);
 }
-
-pass("first test");
-is( scalar <>, "ok 2\n", "read from aliased DATA filehandle");
-pass("last test");
+print "ok 1\n";
+print <>;
+print "ok 3\n";
 
 __DATA__
-ok 2
+ok 2 - read from aliased DATA filehandle

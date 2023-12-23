@@ -1,7 +1,7 @@
 package PerlIO::scalar;
-our $VERSION = '0.31';
-require XSLoader;
-XSLoader::load();
+our $VERSION = '0.07';
+use XSLoader ();
+XSLoader::load 'PerlIO::scalar';
 1;
 __END__
 
@@ -31,9 +31,6 @@ A filehandle is opened but the file operations are performed "in-memory"
 on a scalar variable.  All the normal file operations can be performed
 on the handle. The scalar is considered a stream of bytes.  Currently
 fileno($fh) returns -1.
-
-Attempting to open a read-only scalar for writing will fail, and if
-warnings are enabled, produce a warning.
 
 =head1 IMPLEMENTATION NOTE
 

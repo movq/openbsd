@@ -11,11 +11,12 @@ use warnings;
 use bytes;
 
 use Test::More ;
+use CompTestUtils;
 
-BEGIN
-{
+BEGIN 
+{ 
     plan(skip_all => "lvalue sub tests need Perl ??")
-        if $] < 5.006 ;
+        if $] < 5.006 ; 
 
     # use Test::NoWarnings, if available
     my $extra = 0 ;
@@ -26,9 +27,7 @@ BEGIN
 
     use_ok('Compress::Raw::Zlib', 2) ;
 }
-
-use CompTestUtils;
-
+ 
 
 
 my $hello = <<EOM ;
@@ -39,7 +38,9 @@ EOM
 my $len   = length $hello ;
 
 # Check zlib_version and ZLIB_VERSION are the same.
-test_zlib_header_matches_library();
+is Compress::Raw::Zlib::zlib_version, ZLIB_VERSION, 
+    "ZLIB_VERSION matches Compress::Raw::Zlib::zlib_version" ;
+
 
 {
     title 'deflate/inflate with lvalue sub';
@@ -57,15 +58,17 @@ test_zlib_header_matches_library();
     cmp_ok $x->deflate(getData, getX), '==',  Z_OK ;
 
     cmp_ok $x->flush(getX), '==', Z_OK ;
-
+     
     my $append = "Appended" ;
     $X .= $append ;
-
+     
     ok my $k = new Compress::Raw::Zlib::Inflate ( -AppendOutput => 1 ) ;
-
+     
     cmp_ok $k->inflate(getX, getZ), '==', Z_STREAM_END ; ;
-
+     
     ok $hello eq $Z ;
     is $X, $append;
-
+    
 }
+
+

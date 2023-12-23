@@ -1,9 +1,7 @@
 use strict;
-use warnings;
+print "1..256\n";
 
 use Digest::MD5 qw(md5_hex);
-
-print "1..256\n";
 
 my $Is_EBCDIC = ord('A') == 193;
 

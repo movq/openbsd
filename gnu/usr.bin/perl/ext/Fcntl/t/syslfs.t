@@ -3,6 +3,8 @@
 # If you modify/add tests here, remember to update also t/op/lfs.t.
 
 BEGIN {
+	chdir 't' if -d 't';
+	@INC = '../lib';
 	require Config; import Config;
 	# Don't bother if there are no quad offsets.
 	if ($Config{lseeksize} < 8) {
@@ -13,14 +15,23 @@ BEGIN {
 }
 
 use strict;
-use File::Temp 'tempfile';
-use Test::More;
+
+$| = 1;
 
 our @s;
+our $fail;
 
-(undef, my $big0) = tempfile(UNLINK => 1);
-(undef, my $big1) = tempfile(UNLINK => 1);
-(undef, my $big2) = tempfile(UNLINK => 1);
+sub zap {
+    close(BIG);
+    unlink("big");
+    unlink("big1");
+    unlink("big2");
+}
+
+sub bye {
+    zap(); 
+    exit(0);
+}
 
 my $explained;
 
@@ -43,24 +54,22 @@ sub explain {
 #
 EOM
     }
-    if (@_) {
-	plan(skip_all => "@_");
-    }
+    print "1..0 # Skip: @_\n" if @_;
 }
-
-$| = 1;
 
 print "# checking whether we have sparse files...\n";
 
 # Known have-nots.
-if ($^O eq 'MSWin32' || $^O eq 'VMS') {
-    plan(skip_all => "no sparse files in $^O");
+if ($^O eq 'MSWin32' || $^O eq 'NetWare' || $^O eq 'VMS') {
+    print "1..0 # Skip: no sparse files in $^O\n";
+    bye();
 }
 
 # Known haves that have problems running this test
 # (for example because they do not support sparse files, like UNICOS)
 if ($^O eq 'unicos') {
-    plan(skip_all => "no sparse files in $^O, unable to test large files");
+    print "1..0 # Skip: no sparse files in $^0, unable to test large files\n";
+    bye();
 }
 
 # Then try heuristically to deduce whether we have sparse files.
@@ -70,38 +79,38 @@ if ($^O eq 'unicos') {
 # consume less blocks than one megabyte (assuming nobody has
 # one megabyte blocks...)
 
-sysopen(BIG, $big1, O_WRONLY|O_CREAT|O_TRUNC) or
-    die "sysopen $big1 failed: $!";
-binmode BIG;
+sysopen(BIG, "big1", O_WRONLY|O_CREAT|O_TRUNC) or
+    do { warn "sysopen big1 failed: $!\n"; bye };
 sysseek(BIG, 1_000_000, SEEK_SET) or
-    die "sysseek $big1 failed: $!";
+    do { warn "sysseek big1 failed: $!\n"; bye };
 syswrite(BIG, "big") or
-    die "syswrite $big1 failed: $!";
+    do { warn "syswrite big1 failed; $!\n"; bye };
 close(BIG) or
-    die "close $big1 failed: $!";
+    do { warn "close big1 failed: $!\n"; bye };
 
-my @s1 = stat($big1);
+my @s1 = stat("big1");
 
 print "# s1 = @s1\n";
 
-sysopen(BIG, $big2, O_WRONLY|O_CREAT|O_TRUNC) or
-    die "sysopen $big2 failed: $!";
-binmode BIG;
+sysopen(BIG, "big2", O_WRONLY|O_CREAT|O_TRUNC) or
+    do { warn "sysopen big2 failed: $!\n"; bye };
 sysseek(BIG, 2_000_000, SEEK_SET) or
-    die "sysseek $big2 failed: $!";
+    do { warn "sysseek big2 failed: $!\n"; bye };
 syswrite(BIG, "big") or
-    die "syswrite $big2 failed: $!";
+    do { warn "syswrite big2 failed; $!\n"; bye };
 close(BIG) or
-    die "close $big2 failed: $!";
+    do { warn "close big2 failed: $!\n"; bye };
 
-my @s2 = stat($big2);
+my @s2 = stat("big2");
 
 print "# s2 = @s2\n";
 
+zap();
+
 unless ($s1[7] == 1_000_003 && $s2[7] == 2_000_003 &&
-	$s1[11] == $s2[11] && $s1[12] == $s2[12] &&
-	$s1[12] > 0) {
-    plan(skip_all => "no sparse files?");
+	$s1[11] == $s2[11] && $s1[12] == $s2[12]) {
+	print "1..0 # Skip: no sparse files?\n";
+	bye;
 }
 
 print "# we seem to have sparse files...\n";
@@ -112,29 +121,22 @@ print "# we seem to have sparse files...\n";
 
 $ENV{LC_ALL} = "C";
 
-my $perl = '../../perl';
-unless (-x $perl) {
-    plan(tests => 1);
-    fail("can't find perl: expected $perl");
-}
-my $r = system $perl, '-I../lib', '-e', <<"EOF";
+my $r = system '../perl', '-I../lib', '-e', <<'EOF';
 use Fcntl qw(/^O_/ /^SEEK_/);
-sysopen \$big, q{$big0}, O_WRONLY|O_CREAT|O_TRUNC or die qq{sysopen $big0 $!};
-sysseek \$big, 5_000_000_000, SEEK_SET or die qq{sysseek $big0 $!};
-syswrite \$big, "big" or die qq{syswrite $big0 $!};
-close \$big or die qq{close $big0: $!};
+sysopen(BIG, "big", O_WRONLY|O_CREAT|O_TRUNC) or die $!;
+my $sysseek = sysseek(BIG, 5_000_000_000, SEEK_SET);
+my $syswrite = syswrite(BIG, "big");
 exit 0;
 EOF
 
-
-sysopen(BIG, $big0, O_WRONLY|O_CREAT|O_TRUNC) or
-    die "sysopen $big0 failed: $!";
-binmode BIG;
+sysopen(BIG, "big", O_WRONLY|O_CREAT|O_TRUNC) or
+	do { warn "sysopen 'big' failed: $!\n"; bye };
 my $sysseek = sysseek(BIG, 5_000_000_000, SEEK_SET);
 unless (! $r && defined $sysseek && $sysseek == 5_000_000_000) {
     $sysseek = 'undef' unless defined $sysseek;
     explain("seeking past 2GB failed: ",
 	    $r ? 'signal '.($r & 0x7f) : "$! (sysseek returned $sysseek)");
+    bye();
 }
 
 # The syswrite will fail if there are are filesize limitations (process or fs).
@@ -152,18 +154,24 @@ unless($syswrite && $close) {
     } else {
 	explain("error: $!");
     }
+    bye();
 }
 
-@s = stat($big0);
+@s = stat("big");
 
 print "# @s\n";
 
 unless ($s[7] == 5_000_000_003) {
     explain("kernel/fs not configured to use large files?");
+    bye();
+}
+
+sub fail () {
+    print "not ";
+    $fail++;
 }
 
 sub offset ($$) {
-    local $Test::Builder::Level = $Test::Builder::Level + 1;
     my ($offset_will_be, $offset_want) = @_;
     my $offset_is = eval $offset_will_be;
     unless ($offset_is == $offset_want) {
@@ -180,65 +188,80 @@ sub offset ($$) {
 	        $offset_want,
 	        $offset_is;
         }
-        fail($offset_will_be);
-    } else {
-	pass($offset_will_be);
+        fail;
     }
 }
 
-plan(tests => 17);
+print "1..17\n";
 
-is($s[7], 5_000_000_003, 'exercises pp_stat');
-is(-s $big0, 5_000_000_003, 'exercises pp_ftsize');
+$fail = 0;
 
-is(-e $big0, 1);
-is(-f $big0, 1);
+fail unless $s[7] == 5_000_000_003;	# exercizes pp_stat
+print "ok 1\n";
 
-sysopen(BIG, $big0, O_RDONLY) or die "sysopen failed: $!";
-binmode BIG;
+fail unless -s "big" == 5_000_000_003;	# exercizes pp_ftsize
+print "ok 2\n";
+
+fail unless -e "big";
+print "ok 3\n";
+
+fail unless -f "big";
+print "ok 4\n";
+
+sysopen(BIG, "big", O_RDONLY) or do { warn "sysopen failed: $!\n"; bye };
+
 offset('sysseek(BIG, 4_500_000_000, SEEK_SET)', 4_500_000_000);
+print "ok 5\n";
 
 offset('sysseek(BIG, 0, SEEK_CUR)', 4_500_000_000);
+print "ok 6\n";
 
-# If you get 205_032_705 from here it means that
-# your tell() is returning 32-bit values since (I32)4_500_000_001
-# is exactly 205_032_705.
 offset('sysseek(BIG, 1, SEEK_CUR)', 4_500_000_001);
+print "ok 7\n";
 
 offset('sysseek(BIG, 0, SEEK_CUR)', 4_500_000_001);
+print "ok 8\n";
 
 offset('sysseek(BIG, -1, SEEK_CUR)', 4_500_000_000);
+print "ok 9\n";
 
 offset('sysseek(BIG, 0, SEEK_CUR)', 4_500_000_000);
+print "ok 10\n";
 
 offset('sysseek(BIG, -3, SEEK_END)', 5_000_000_000);
+print "ok 11\n";
 
 offset('sysseek(BIG, 0, SEEK_CUR)', 5_000_000_000);
+print "ok 12\n";
 
 my $big;
 
-is(sysread(BIG, $big, 3), 3);
+fail unless sysread(BIG, $big, 3) == 3;
+print "ok 13\n";
 
-is($big, "big");
+fail unless $big eq "big";
+print "ok 14\n";
 
 # 705_032_704 = (I32)5_000_000_000
 # See that we don't have "big" in the 705_... spot:
 # that would mean that we have a wraparound.
-isnt(sysseek(BIG, 705_032_704, SEEK_SET), undef);
+fail unless sysseek(BIG, 705_032_704, SEEK_SET);
+print "ok 15\n";
 
 my $zero;
 
-is(read(BIG, $zero, 3), 3);
+fail unless read(BIG, $zero, 3) == 3;
+print "ok 16\n";
 
-is($zero, "\0\0\0");
+fail unless $zero eq "\0\0\0";
+print "ok 17\n";
 
-explain() unless Test::Builder->new()->is_passing();
+explain() if $fail;
+
+bye(); # does the necessary cleanup
 
 END {
-    # unlink may fail if applied directly to a large file
-    # be paranoid about leaving 5 gig files lying around
-    open(BIG, '>', $big0); # truncate
-    close(BIG);
+   unlink "big"; # be paranoid about leaving 5 gig files lying around
 }
 
 # eof

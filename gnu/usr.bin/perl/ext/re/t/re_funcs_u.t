@@ -6,8 +6,7 @@ BEGIN {
 	print "1..0 # Skip -- Perl configured without re module\n";
 	    exit 0;
     }
-    require 'test.pl';      # For watchdog
-    require 'loc_tools.pl'; # To see if platform has locales
+    require 'test.pl'; # For watchdog
 }
 
 use strict;
@@ -34,7 +33,6 @@ use re qw(is_regexp regexp_pattern
     is(regexp_pattern($rx),'(?^upi:foo)', 'scalar regexp_pattern (bare REGEXP)');
 
     ok(!regexp_pattern(''),'!regexp_pattern("")');
-    is +()=regexp_pattern(''), 0, 'regexp_pattern("") in list cx';
 }
 
 if ('1234'=~/(?:(?<A>\d)|(?<C>!))(?<B>\d)(?<A>\d)(?<B>\d)/){
@@ -43,7 +41,7 @@ if ('1234'=~/(?:(?<A>\d)|(?<C>!))(?<B>\d)(?<A>\d)(?<B>\d)/){
     @names = sort +regnames(0);
     is("@names","A B","regnames");
     my $names = regnames();
-    ok(($names eq  "B" || $names eq "A"), "regnames in scalar context");
+    is($names, "B", "regnames in scalar context");
     @names = sort +regnames(1);
     is("@names","A B C","regnames");
     is(join("", @{regname("A",1)}),"13");
@@ -81,7 +79,7 @@ if ('1234'=~/(?:(?<A>\d)|(?<C>!))(?<B>\d)(?<A>\d)(?<B>\d)/){
 
 {
     # tests for new regexp flags
-    my $text = chr utf8::unicode_to_native(0xE4);
+    my $text = "\xE4";
     my $check;
 
     {
@@ -93,7 +91,7 @@ if ('1234'=~/(?:(?<A>\d)|(?<C>!))(?<B>\d)(?<A>\d)(?<B>\d)/){
     }
 
     SKIP: {
-        skip 'No locales available', 3 unless locales_enabled('LC_CTYPE');
+        skip_if_miniperl("no dynamic loading on miniperl, no POSIX", 3);
         require POSIX;
         my $current_locale = POSIX::setlocale( &POSIX::LC_CTYPE, 'de_DE.ISO-8859-1' );
         if ( !$current_locale || $current_locale ne 'de_DE.ISO-8859-1' ) {
@@ -109,7 +107,7 @@ if ('1234'=~/(?:(?<A>\d)|(?<C>!))(?<B>\d)(?<A>\d)(?<B>\d)/){
     }
 
     SKIP: {
-        skip 'No locales available', 3 unless locales_enabled('LC_CTYPE');
+        skip_if_miniperl("no dynamic loading on miniperl, no POSIX", 3);
         require POSIX;
         my $current_locale = POSIX::setlocale( &POSIX::LC_CTYPE, 'C' );
         if ( !$current_locale || $current_locale ne 'C' ) {

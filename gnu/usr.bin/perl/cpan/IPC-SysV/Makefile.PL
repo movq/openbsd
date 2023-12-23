@@ -1,6 +1,12 @@
 ################################################################################
 #
-#  Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz <mhx@cpan.org>.
+#  $Revision: 18 $
+#  $Author: mhx $
+#  $Date: 2008/11/26 23:12:58 +0100 $
+#
+################################################################################
+#
+#  Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz <mhx@cpan.org>.
 #  Version 1.x, Copyright (C) 1999, Graham Barr <gbarr@pobox.com>.
 #
 #  This program is free software; you can redistribute it and/or
@@ -46,18 +52,13 @@ sub configure
   }
 
   if ($ENV{'PERL_CORE'}) {
-    # clean out const-* files in the core
-    push @moreopts, realclean => { FILES => "const-c.inc const-xs.inc" },
-                    DEFINE => '-DNO_PPPORT_H';
+    # Pods will be built by installman.
+    push @moreopts, MAN3PODS  => {},
+                    realclean => { FILES => "const-c.inc const-xs.inc" };
   }
   else {
     # IPC::SysV is in the core since 5.005
-    # 5.11.0+ has site before perl
-    push @moreopts, INSTALLDIRS => (
-      ($] >= 5.005 and $] < 5.011)
-        ? 'perl'
-        : 'site'
-    );
+    push @moreopts, INSTALLDIRS => ($] >= 5.005 ? 'perl' : 'site');
   }
 
   $depend{'SysV.xs'} = 'const-c.inc const-xs.inc';

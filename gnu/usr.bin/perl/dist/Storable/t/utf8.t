@@ -1,3 +1,4 @@
+
 #!./perl -w
 #
 #  Copyright (c) 1995-2000, Raphael Manfredi
@@ -7,47 +8,51 @@
 #
 
 sub BEGIN {
+    if ($] < 5.006) {
+	print "1..0 # Skip: no utf8 support\n";
+	exit 0;
+    }
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
         exit 0;
     }
+    require 'st-dump.pl';
 }
 
 use strict;
+sub ok;
 
 use Storable qw(thaw freeze);
-use Test::More tests => 6;
+
+print "1..6\n";
 
 my $x = chr(1234);
-is($x, ${thaw freeze \$x});
+ok 1, $x eq ${thaw freeze \$x};
 
 # Long scalar
 $x = join '', map {chr $_} (0..1023);
-is($x, ${thaw freeze \$x});
+ok 2, $x eq ${thaw freeze \$x};
 
-# Char in the range 127-255 (probably) in utf8.  This just won't work for
-# EBCDIC for early Perls.
-$x = ($] lt 5.007_003) ? chr(175) : chr(utf8::unicode_to_native(175))
-   . chr (256);
+# Char in the range 127-255 (probably) in utf8
+$x = chr (175) . chr (256);
 chop $x;
-is($x, ${thaw freeze \$x});
+ok 3, $x eq ${thaw freeze \$x};
 
-# Storable needs to cope if a frozen string happens to be internal utf8
+# Storable needs to cope if a frozen string happens to be internall utf8
 # encoded
 
 $x = chr 256;
 my $data = freeze \$x;
-is($x, ${thaw $data});
+ok 4, $x eq ${thaw $data};
 
 $data .= chr 256;
 chop $data;
-is($x, ${thaw $data});
+ok 5, $x eq ${thaw $data};
 
 
 $data .= chr 256;
-# This definitely isn't valid
+# This definately isn't valid
 eval {thaw $data};
-like($@, qr/corrupt.*characters outside/);
+ok 6, $@ =~ /corrupt.*characters outside/;

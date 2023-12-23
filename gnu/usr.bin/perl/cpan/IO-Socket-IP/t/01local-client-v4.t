@@ -1,6 +1,5 @@
 #!/usr/bin/perl
 
-use v5;
 use strict;
 use warnings;
 
@@ -51,7 +50,6 @@ foreach my $socktype (qw( SOCK_STREAM SOCK_DGRAM )) {
    ok( defined $testclient, "accepted test $socktype client" );
 
    ok( $socket->connected, "\$socket is connected for $socktype" );
-   ok( $socket->blocking, "\$socket is in blocking mode after connect for $socktype" );
 
    is_deeply( [ unpack_sockaddr_in $socket->sockname ],
               [ unpack_sockaddr_in $testclient->peername ],

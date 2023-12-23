@@ -45,7 +45,7 @@ derive a "project class".
 The project class (with a name like "TkBocciBall::Localize",
 which you then use in your module) is in turn the base class
 for all the "language classes" for your project
-(with names "TkBocciBall::Localize::it",
+(with names "TkBocciBall::Localize::it", 
 "TkBocciBall::Localize::en",
 "TkBocciBall::Localize::fr", etc.).
 
@@ -122,9 +122,9 @@ If it runs thru the entire given list of language-tags, and finds no classes
 for those exact terms, it then tries "superordinate" language classes.
 So if no "en-US" class (i.e., YourProjClass::en_us)
 was found, nor classes for anything else in that list, we then try
-its superordinate, "en" (i.e., YourProjClass::en), and so on thru
+its superordinate, "en" (i.e., YourProjClass::en), and so on thru 
 the other language-tags in the given list: "es".
-(The other language-tags in our example list:
+(The other language-tags in our example list: 
 happen to have no superordinates.)
 
 If none of those language-tags leads to loadable classes, we then
@@ -166,8 +166,7 @@ file, you might consider something like this in your project class:
     my $lh;
     if($chosen_language) {
       $lh = $class->get_handle($chosen_language)
-       || die "No language handle for \"$chosen_language\""
-            . " or the like";
+       || die "No language handle for \"$chosen_language\" or the like";
     } else {
       # Config file missing, maybe?
       $lh = $class->get_handle()
@@ -307,13 +306,6 @@ interested in hearing about it.)
 These two methods are discussed in the section "Controlling
 Lookup Failure".
 
-=item $lh->denylist(@list) <or> $lh->blacklist(@list)
-
-=item $lh->allowlist(@list) <or> $lh->whitelist(@list)
-
-These methods are discussed in the section "Bracket Notation
-Security".
-
 =back
 
 =head2 Utility Methods
@@ -331,7 +323,7 @@ Bracket Notation or not).
 =item $language->quant($number, $singular, $plural, $negative)
 
 This is generally meant to be called from inside Bracket Notation
-(which is discussed later), as in
+(which is discussed later), as in 
 
      "Your search matched [quant,_1,document]!"
 
@@ -393,14 +385,6 @@ entirely.
 Note that numf is called by quant for stringifying all quantifying
 numbers.
 
-=item $language->numerate($number, $singular, $plural, $negative)
-
-This returns the given noun form which is appropriate for the quantity
-C<$number> according to this language's conventions.  C<numerate> is
-used internally by C<quant> to quantify nouns.  Use it directly --
-usually from bracket notation -- to avoid C<quant>'s implicit call to
-C<numf> and output of a numeric quantity.
-
 =item $language->sprintf($format, @items)
 
 This is just a wrapper around Perl's normal C<sprintf> function.
@@ -450,6 +434,10 @@ B<Remember: Don't be afraid to read the Maketext source if there's
 any point on which this documentation is unclear.>  This documentation
 is vastly longer than the module source itself.
 
+=over
+
+=back
+
 =head1 LANGUAGE CLASS HIERARCHIES
 
 These are Locale::Maketext's assumptions about the class
@@ -482,8 +470,8 @@ to YourProjClass . "::".  So this:
     'en-US', 'fr', 'kon', 'i-klingon', 'i-klingon-romanized'
   );
 
-will try loading the classes
-YourProjClass::en_us (note lowercase!), YourProjClass::fr,
+will try loading the classes 
+YourProjClass::en_us (note lowercase!), YourProjClass::fr, 
 YourProjClass::kon,
 YourProjClass::i_klingon
 and YourProjClass::i_klingon_romanized.  (And it'll stop at the
@@ -702,7 +690,7 @@ it's basically turned into:
       ")!\n",
   }
   # to be called by $lh->maketext(KEY, params...)
-
+   
 In other words, text outside bracket groups is turned into string
 literals.  Text in brackets is rather more complex, and currently follows
 these rules:
@@ -868,85 +856,6 @@ I do not anticipate that you will need (or particularly want)
 to nest bracket groups, but you are welcome to email me with
 convincing (real-life) arguments to the contrary.
 
-=head1 BRACKET NOTATION SECURITY
-
-Locale::Maketext does not use any special syntax to differentiate
-bracket notation methods from normal class or object methods. This
-design makes it vulnerable to format string attacks whenever it is
-used to process strings provided by untrusted users.
-
-Locale::Maketext does support denylist and allowlist functionality
-to limit which methods may be called as bracket notation methods.
-
-By default, Locale::Maketext denies all methods in the
-Locale::Maketext namespace that begin with the '_' character,
-and all methods which include Perl's namespace separator characters.
-
-The default denylist for Locale::Maketext also prevents use of the
-following methods in bracket notation:
-
-  denylist
-  encoding
-  fail_with
-  failure_handler_auto
-  fallback_language_classes
-  fallback_languages
-  get_handle
-  init
-  language_tag
-  maketext
-  new
-  allowlist
-  whitelist
-  blacklist
-
-This list can be extended by either deny-listing additional "known bad"
-methods, or allow-listing only "known good" methods.
-
-To prevent specific methods from being called in bracket notation, use
-the denylist() method:
-
-  my $lh = MyProgram::L10N->get_handle();
-  $lh->denylist(qw{my_internal_method my_other_method});
-  $lh->maketext('[my_internal_method]'); # dies
-
-To limit the allowed bracked notation methods to a specific list, use the
-allowlist() method:
-
-  my $lh = MyProgram::L10N->get_handle();
-  $lh->allowlist('numerate', 'numf');
-  $lh->maketext('[_1] [numerate, _1,shoe,shoes]', 12); # works
-  $lh->maketext('[my_internal_method]'); # dies
-
-The denylist() and allowlist() methods extend their internal lists
-whenever they are called. To reset the denylist or allowlist, create
-a new maketext object.
-
-  my $lh = MyProgram::L10N->get_handle();
-  $lh->denylist('numerate');
-  $lh->denylist('numf');
-  $lh->maketext('[_1] [numerate,_1,shoe,shoes]', 12); # dies
-
-For lexicons that use an internal cache, translations which have already
-been cached in their compiled form are not affected by subsequent changes
-to the allowlist or denylist settings. Lexicons that use an external
-cache will have their cache cleared whenever the allowlist or denylist
-settings change.  The difference between the two types of caching is explained
-in the "Readonly Lexicons" section.
-
-Methods disallowed by the denylist cannot be permitted by the
-allowlist.
-
-NOTE: denylist() is the preferred method name to use instead of the
-historical and non-inclusive method blacklist(). blacklist() may be
-removed in a future release of this package and so it's use should be
-removed from usage.
-
-NOTE: allowlist() is the preferred method name to use instead of the
-historical and non-inclusive method whitelist(). whitelist() may be
-removed in a future release of this package and so it's use should be
-removed from usage.
-
 =head1 AUTO LEXICONS
 
 If maketext goes to look in an individual %Lexicon for an entry
@@ -993,7 +902,7 @@ but since you anticipate localizing this, you write:
   }
 
 Now, right after you've just written the above lines, you'd
-normally have to go open the file
+normally have to go open the file 
 ThisProject/I18N/en.pm, and immediately add an entry:
 
   "Couldn't find file \"[_1]\"!\n"
@@ -1027,25 +936,6 @@ the underscore character -- I just wanted a way to have most
 lexicon keys be autoable, except for possibly a few, and I
 arbitrarily decided to use a leading underscore as a signal
 to distinguish those few.
-
-=head1 READONLY LEXICONS
-
-If your lexicon is a tied hash the simple act of caching the compiled value can be fatal.
-
-For example a L<GDBM_File> GDBM_READER tied hash will die with something like:
-
-   gdbm store returned -1, errno 2, key "..." at ...
-
-All you need to do is turn on caching outside of the lexicon hash itself like so:
-
-   sub init {
-       my ($lh) = @_;
-       ...
-       $lh->{'use_external_lex_cache'} = 1;
-       ...
-   }
-
-And then instead of storing the compiled value in the lexicon hash it will store it in $lh->{'_external_lex_cache'}
 
 =head1 CONTROLLING LOOKUP FAILURE
 
@@ -1081,10 +971,10 @@ The "fail" attribute can be accessed with the C<fail_with> method:
 
   # Set to a method name:
   $lh->fail_with( 'failure_method' );
-
+  
   # Set to nothing (i.e., so failure throws a plain exception)
   $lh->fail_with( undef );
-
+  
   # Get the current value
   $handler = $lh->fail_with();
 
@@ -1133,7 +1023,7 @@ there's no I<key> in any of those lexicons, maketext gives up with
 But failure_handler_auto, instead of dying or anything, compiles
 $key, caching it in
 
-    $lh->{'failure_lex'}{$key} = $compiled
+    $lh->{'failure_lex'}{$key} = $complied
 
 and then calls the compiled value, and returns that.  (I.e., if
 $key looks like bracket notation, $compiled is a sub, and we return
@@ -1197,10 +1087,10 @@ consisting minimally of:
   package Projname::L10N;
   use base qw(Locale::Maketext);
   ...any methods you might want all your languages to share...
-
+  
   # And, assuming you want the base class to be an _AUTO lexicon,
   # as is discussed a few sections up:
-
+  
   1;
 
 =item *
@@ -1224,7 +1114,7 @@ _AUTO lexicon.)
 
 =item *
 
-Go and write your program.  Everywhere in your program where
+Go and write your program.  Everywhere in your program where 
 you would say:
 
   print "Foobar $thing stuff\n";
@@ -1238,7 +1128,7 @@ If you get tired of constantly saying C<print $lh-E<gt>maketext>,
 consider making a functional wrapper for it, like so:
 
   use Projname::L10N;
-  our $lh;
+  use vars qw($lh);
   $lh = Projname::L10N->get_handle(...) || die "Language?";
   sub pmt (@) { print( $lh->maketext(@_)) }
    # "pmt" is short for "Print MakeText"
@@ -1268,7 +1158,7 @@ following phrase.
 
 =item *
 
-You may at this point want to consider whether your base class
+You may at this point want to consider whether your base class 
 (Projname::L10N), from which all lexicons inherit from (Projname::L10N::en,
 Projname::L10N::es, etc.), should be an _AUTO lexicon.  It may be true
 that in theory, all needed messages will be in each language class;
@@ -1335,7 +1225,7 @@ to infer the plural form from the singular.
 
 But for other languages (as is discussed at length
 in L<Locale::Maketext::TPJ13|Locale::Maketext::TPJ13>), simple
-C<quant>/C<numf> is not enough.  For the particularly problematic
+C<quant>/C<numerify> is not enough.  For the particularly problematic
 Slavic languages, what you may need is a method which you provide
 with the number, the citation form of the noun to quantify, and
 the case and gender that the sentence's syntax projects onto that
@@ -1387,7 +1277,7 @@ I recommend reading all of these:
 L<Locale::Maketext::TPJ13|Locale::Maketext::TPJ13> -- my I<The Perl
 Journal> article about Maketext.  It explains many important concepts
 underlying Locale::Maketext's design, and some insight into why
-Maketext is better than the plain old approach of having
+Maketext is better than the plain old approach of having 
 message catalogs that are just databases of sprintf formats.
 
 L<File::Findgrep|File::Findgrep> is a sample application/module
@@ -1399,23 +1289,23 @@ L<I18N::LangTags|I18N::LangTags>.
 L<Win32::Locale|Win32::Locale>.
 
 RFC 3066, I<Tags for the Identification of Languages>,
-as at L<http://sunsite.dk/RFC/rfc/rfc3066.html>
+as at http://sunsite.dk/RFC/rfc/rfc3066.html
 
 RFC 2277, I<IETF Policy on Character Sets and Languages>
-is at L<http://sunsite.dk/RFC/rfc/rfc2277.html> -- much of it is
+is at http://sunsite.dk/RFC/rfc/rfc2277.html -- much of it is
 just things of interest to protocol designers, but it explains
 some basic concepts, like the distinction between locales and
 language-tags.
 
 The manual for GNU C<gettext>.  The gettext dist is available in
-C<L<ftp://prep.ai.mit.edu/pub/gnu/>> -- get
+C<ftp://prep.ai.mit.edu/pub/gnu/> -- get
 a recent gettext tarball and look in its "doc/" directory, there's
 an easily browsable HTML version in there.  The
 gettext documentation asks lots of questions worth thinking
 about, even if some of their answers are sometimes wonky,
 particularly where they start talking about pluralization.
 
-The Locale/Maketext.pm source.  Observe that the module is much
+The Locale/Maketext.pm source.  Obverse that the module is much
 shorter than its documentation!
 
 =head1 COPYRIGHT AND DISCLAIMER

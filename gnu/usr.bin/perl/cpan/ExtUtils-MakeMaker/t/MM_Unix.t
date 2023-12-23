@@ -5,21 +5,20 @@ BEGIN {
 }
 chdir 't';
 
-BEGIN {
-    use Test::More;
+BEGIN { 
+    use Test::More; 
 
     if( $^O =~ /^VMS|os2|MacOS|MSWin32|cygwin|beos|netware$/i ) {
         plan skip_all => 'Non-Unix platform';
     }
     else {
-        plan tests => 114;
+        plan tests => 110;
     }
 }
 
 BEGIN { use_ok( 'ExtUtils::MM_Unix' ); }
 
 use strict;
-use warnings;
 use File::Spec;
 
 my $class = 'ExtUtils::MM_Unix';
@@ -27,9 +26,9 @@ my $class = 'ExtUtils::MM_Unix';
 # only one of the following can be true
 # test should be removed if MM_Unix ever stops handling other OS than Unix
 my $os =  ($ExtUtils::MM_Unix::Is{OS2}   || 0)
-        + ($ExtUtils::MM_Unix::Is{Win32} || 0)
+        + ($ExtUtils::MM_Unix::Is{Win32} || 0) 
         + ($ExtUtils::MM_Unix::Is{Dos}   || 0)
-        + ($ExtUtils::MM_Unix::Is{VMS}   || 0);
+        + ($ExtUtils::MM_Unix::Is{VMS}   || 0); 
 cmp_ok ( $os, '<=', 1,  'There can be only one (or none)');
 
 is($ExtUtils::MM_Unix::VERSION, $ExtUtils::MakeMaker::VERSION, 'MM_Unix has a $VERSION');
@@ -46,7 +45,7 @@ is ($class->catdir('xx','xx'), File::Spec->catdir('xx','xx'),
 is ($class->catfile('xx','xx','yy'), File::Spec->catfile('xx','xx','yy'),
      'catfile(xx, xx) => xx/xx');
 
-is ($class->file_name_is_absolute('Bombdadil'),
+is ($class->file_name_is_absolute('Bombdadil'), 
     File::Spec->file_name_is_absolute('Bombdadil'),
      'file_name_is_absolute()');
 
@@ -99,6 +98,7 @@ foreach ( qw /
   ppd
   prefixify
   processPL
+  quote_paren
   realclean
   static
   static_lib
@@ -130,7 +130,7 @@ ok ( join (' ', $class->dist_basics()), 'distclean :: realclean distcheck');
 # has_link_code tests
 
 my $t = bless { NAME => "Foo" }, $class;
-$t->{HAS_LINK_CODE} = 1;
+$t->{HAS_LINK_CODE} = 1; 
 is ($t->has_link_code(),1,'has_link_code'); is ($t->{HAS_LINK_CODE},1);
 
 $t->{HAS_LINK_CODE} = 0;
@@ -151,19 +151,6 @@ is ($t->has_link_code(),1); is ($t->{HAS_LINK_CODE},1);
 ###############################################################################
 # libscan
 
-{
-    # suppress noisy & unnecessary "WARNING: Older versions of ExtUtils::MakeMaker may errantly install README.pod..."
-    my @warnings = ();
-    local $SIG{__WARN__} = sub { push @warnings, shift; };
-    is ($t->libscan('Readme.pod'),      '', 'libscan excludes base Readme.pod');
-    is ($t->libscan('README.pod'),      '', 'libscan excludes base README.pod');
-    # verify that suppressed warnings are present
-    isnt (scalar(@warnings), 0);
-    if (scalar(@warnings)) {
-        note (sprintf('suppressed warnings: [ "%s" ]', do { my $s = join(q/" , "/, @warnings); $s =~ s/([^[:print:]])/sprintf('\x{%x}', ord($1))/egmsx; $s; }));
-    }
-}
-is ($t->libscan('lib/Foo/README.pod'),      'lib/Foo/README.pod', 'libscan accepts README.pod in a subdirectory');
 is ($t->libscan('foo/RCS/bar'),     '', 'libscan on RCS');
 is ($t->libscan('CVS/bar/car'),     '', 'libscan on CVS');
 is ($t->libscan('SCCS'),            '', 'libscan on SCCS');
@@ -211,9 +198,9 @@ foreach (qw/ post_constants postamble post_initialize/) {
 }
 
 ###############################################################################
-# replace_manpage_separator
+# replace_manpage_separator 
 
-is ($t->replace_manpage_separator('Foo/Bar'),'Foo::Bar','manpage_separator');
+is ($t->replace_manpage_separator('Foo/Bar'),'Foo::Bar','manpage_separator'); 
 
 ###############################################################################
 
@@ -221,7 +208,7 @@ $t->init_linker;
 foreach (qw/ EXPORT_LIST PERL_ARCHIVE PERL_ARCHIVE_AFTER /)
 {
     ok( exists $t->{$_}, "$_ was defined" );
-    is( $t->{$_}, '', "$_ is empty on Unix");
+    is( $t->{$_}, '', "$_ is empty on Unix"); 
 }
 
 
@@ -233,13 +220,6 @@ foreach (qw/ EXPORT_LIST PERL_ARCHIVE PERL_ARCHIVE_AFTER /)
     $t->cflags();
 
     # Brief bug where CCFLAGS was being blown away
-    like( $t->{CCFLAGS}, qr/\-DMY_THING/,    'cflags retains CCFLAGS' );
+    is( $t->{CCFLAGS}, '-DMY_THING',    'cflags retains CCFLAGS' );
 }
 
-{
-    my @targv = ("var=don't forget about spaces and single quotes");
-    local @ARGV = @targv;
-    my $t = bless { NAME => "Foo", FULLPERL => $0, DIR => [] }, $class;
-    $t->makeaperl( TARGET => "Tgt" );
-    is_deeply( \@ARGV, \@targv, 'ARGV is not polluted by makeaperl' );
-}

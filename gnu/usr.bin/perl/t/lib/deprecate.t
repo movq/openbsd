@@ -2,7 +2,6 @@
 use strict;
 
 BEGIN {
-    chdir 't' if -d 't';
     require './test.pl';
 }
 use File::Copy ();
@@ -58,7 +57,7 @@ for my $lib (sort keys %tests) {
     }
 
     delete $INC{$module};
-    unlink_all $pm;
+    unlink $pm;
 }
 
 my $sub_dir = 'Optionally';
@@ -84,7 +83,7 @@ for my $lib (sort keys %tests) {
     }
 
     delete $INC{"$sub_dir/$module"};
-    unlink_all $pm;
+    unlink $pm;
 }
 
 END { File::Path::remove_tree('lib') }

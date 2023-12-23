@@ -1,6 +1,8 @@
 #!./perl
 
 BEGIN {
+    chdir 't' if -d 't';
+    @INC = '../lib';
     require Config;
     if (($Config::Config{'extensions'} !~ /\bre\b/) ){
 	print "1..0 # Skip -- Perl configured without re module\n";
@@ -9,12 +11,12 @@ BEGIN {
 }
 
 use strict;
-BEGIN { require "../../t/test.pl"; }
+BEGIN { require "./test.pl"; }
 our $NUM_SECTS;
 chomp(my @strs= grep { !/^\s*\#/ } <DATA>);
-my $out = runperl(progfile => "t/regop.pl", stderr => 1 );
+my $out = runperl(progfile => "../ext/re/t/regop.pl", stderr => 1 );
 # VMS currently embeds linefeeds in the output.
-$out =~ s/\cJ//g if $^O eq 'VMS';
+$out =~ s/\cJ//g if $^O = 'VMS';
 my @tests = grep { /\S/ } split /(?=Compiling REx)/, $out;
 # on debug builds we get an EXECUTING... message in there at the top
 shift @tests
@@ -23,7 +25,7 @@ shift @tests
 plan( @tests + 2 + ( @strs - grep { !$_ or /^---/ } @strs ));
 
 is( scalar @tests, $NUM_SECTS,
-    "Expecting output for $NUM_SECTS patterns, got ". scalar(@tests) );
+    "Expecting output for $NUM_SECTS patterns" );
 ok( defined $out, 'regop.pl returned something defined' );
 
 $out ||= "";
@@ -41,9 +43,7 @@ foreach my $testout ( @tests ) {
         s/\s+$//;
         ok( $testout=~/\Q$_\E/, "$_: /$pattern/" )
             or do {
-                !$diaged++ and diag("PATTERN: /$pattern/\n\n"
-		    . "EXPECTED:\n$_\n\n"
-		    . "WITHIN GOT:\n$testout");
+                !$diaged++ and diag("$_: /$pattern/\n$testout");
             };
     }
 }
@@ -51,11 +51,11 @@ foreach my $testout ( @tests ) {
 # The format below is simple. Each line is an exact
 # string that must be found in the output.
 # Lines starting the # are comments.
-# Lines starting with --- are separators indicating
+# Lines starting with --- are seperators indicating
 # that the tests for this result set are finished.
 # If you add a test make sure you update $NUM_SECTS
 # the commented output is just for legacy/debugging purposes
-BEGIN{ $NUM_SECTS= 8 }
+BEGIN{ $NUM_SECTS= 6 }
 
 __END__
 #Compiling REx "X(A|[B]Q||C|D)Y"
@@ -96,9 +96,9 @@ TRIE-EXACT
 <BQ>
 matched empty string
 Match successful!
-Found floating substr "Y" at offset 1 (rx_origin now 0)...
-Found anchored substr "X" at offset 0 (rx_origin now 0)...
-Successfully guessed: match at offset 0
+Found floating substr "Y" at offset 1...
+Found anchored substr "X" at offset 0...
+Guessed: match at offset 0
 checking floating
 minlen 2
 S:1/6   
@@ -121,7 +121,7 @@ foobar
 checking anchored isall
 minlen 6
 anchored "foobar" at 0
-Successfully guessed: match at offset 0
+Guessed: match at offset 0
 Compiling REx "[f][o][o][b][a][r]"
 Freeing REx: "[f][o][o][b][a][r]"
 %MATCHED%
@@ -140,6 +140,7 @@ Freeing REx: "[f][o][o][b][a][r]"
 minlen 3
 ---
 # Compiling REx "(?:ABCP|ABCG|ABCE|ABCB|ABCA|ABCD)"
+# Got 164 bytes for offset annotations.
 #     TRIE(NATIVE): W:6 C:24 Uq:7 Min:4 Max:4
 #       Char : Match Base  Ofs     A   B   C   P   G   E   D
 #       State|---------------------------------------------------
@@ -153,18 +154,19 @@ minlen 3
 #       #   8| W   4 @   0 
 #       #   9| W   5 @   0 
 #       #   A| W   6 @   0 
-#     word_info N:(prev,char)= 1:(0,1) 2:(0,1) 3:(0,1) 4:(0,1) 5:(0,1) 6:(0,1)
 # Final program:
-#    1: EXACT <ABC> (3)
-#    3: TRIEC-EXACT<S:4/10 W:6 L:1/1 C:24/7>[A-EGP] (20)
+#    1: EXACT <ABC>(3)
+#    3: TRIEC-EXACT<S:4/10 W:6 L:1/1 C:24/7>[A-EGP](20)
 #       <P> 
 #       <G> 
 #       <E> 
 #       <B> 
 #       <A> 
 #       <D> 
-#   20: END (0)
+#   20: END(0)
 # anchored "ABC" at 0 (checking anchored) minlen 4 
+# Offsets: [20]
+# 	1:4[3] 3:4[15] 19:32[0] 20:34[0] 
 # Guessing start of match in sv for REx "(?:ABCP|ABCG|ABCE|ABCB|ABCA|ABCD)" against "ABCD"
 # Found anchored substr "ABC" at offset 0...
 # Guessed: match at offset 0
@@ -172,10 +174,10 @@ minlen 3
 #    0 <> <ABCD>               |  1:EXACT <ABC>(3)
 #    3 <ABC> <D>               |  3:TRIEC-EXACT<S:4/10 W:6 L:1/1 C:24/7>[A-EGP](20)
 #    3 <ABC> <D>               |    State:    4 Accepted:    0 Charid:  7 CP:  44 After State:    a
-#    4 <ABCD> <>               |    State:    a Accepted:    1 Charid:  7 CP:   0 After State:    0
+#    4 <ABCD> <>               |    State:    a Accepted:    1 Charid:  6 CP:   0 After State:    0
 #                                   got 1 possible matches
-#                                   TRIE matched word #6, continuing
-#    4 <ABCD> <>               | 20:  END(0)
+#                                   only one match left: #6 <D>
+#    4 <ABCD> <>               | 20:END(0)
 # Match successful!
 # %MATCHED%
 # Freeing REx: "(?:ABCP|ABCG|ABCE|ABCB|ABCA|ABCD)"
@@ -183,6 +185,7 @@ minlen 3
 EXACT <ABC>
 TRIEC-EXACT
 [A-EGP]
+only one match left: #6 <D>
 S:4/10
 W:6
 L:1/1
@@ -207,6 +210,8 @@ anchored "ABC" at 0
 #  47: EOL(48)
 #  48: END(0)
 #floating ""$ at 3..4 (checking floating) stclass "EXACTF <.>" minlen 3
+#Offsets: [48]
+#        1:1[1] 3:2[1] 5:2[81] 45:83[1] 47:84[1] 48:85[0]
 #Guessing start of match, REx "(\.COM|\.EXE|\.BAT|\.CMD|\.VBS|\.VBE|\.JS|\.JSE|\.WSF|\.WSH|..." against "D:dev/perl/ver/28321_/perl.exe"...
 #Found floating substr ""$ at offset 30...
 #Starting position does not contradict /^/m...
@@ -228,92 +233,29 @@ anchored "ABC" at 0
 #Freeing REx: "(\\.COM|\\.EXE|\\.BAT|\\.CMD|\\.VBS|\\.VBE|\\.JS|\\.JSE|\\."......
 %MATCHED%
 floating ""$ at 3..4 (checking floating)
-#stclass EXACTF <.> minlen 3
-#Found floating substr ""$ at offset 30...
-#Does not contradict STCLASS...
-#Guessed: match at offset 26
-#Matching stclass EXACTF <.> against ".exe"
+1:1[1] 3:2[1] 5:2[64] 45:83[1] 47:84[1] 48:85[0]
+stclass EXACTF <.> minlen 3
+Found floating substr ""$ at offset 30...
+Does not contradict STCLASS...
+Guessed: match at offset 26
+Matching stclass EXACTF <.> against ".exe"
 ---
 #Compiling REx "[q]"
+#size 12 nodes Got 100 bytes for offset annotations.
 #first at 1
 #Final program:
 #   1: EXACT <q>(3)
 #   3: END(0)
 #anchored "q" at 0 (checking anchored isall) minlen 1
+#Offsets: [12]
+#        1:1[3] 3:4[0]
 #Guessing start of match, REx "[q]" against "q"...
 #Found anchored substr "q" at offset 0...
 #Guessed: match at offset 0
 #%MATCHED%
 #Freeing REx: "[q]"
+Got 100 bytes for offset annotations.
+Offsets: [12]
+1:1[3] 3:4[0]
 %MATCHED%        
 Freeing REx: "[q]"
----
-#Compiling REx "^(\S{1,9}):\s*(\d+)$"
-#Final program:
-#   1: SBOL (2)
-#   2: OPEN1 (4)
-#   4:   CURLY {1,9} (7)
-#   6:     NPOSIXD[\s] (0)
-#   7: CLOSE1 (9)
-#   9: EXACT <:> (11)
-#  11: STAR (13)
-#  12:   POSIXD[\s] (0)
-#  13: OPEN2 (15)
-#  15:   PLUS (17)
-#  16:     POSIXD[\d] (0)
-#  17: CLOSE2 (19)
-#  19: EOL (20)
-#  20: END (0)
-#Freeing REx: "^(\S{1,9}):\s*(\d+)$"
-%MATCHED%
-Freeing REx: "^(\S{1,9}):\s*(\d+)$"
----
-#Compiling REx "(?(DEFINE)(?<foo>foo))(?(DEFINE)(?<bar>(?&foo)bar))(?(DEFINE"...
-study_chunk_recursed_count: 5
-#Final program:
-#   1: DEFINEP (3)
-#   3: IFTHEN (14)
-#   5:   OPEN1 'foo' (7)
-#   7:     EXACT <foo> (9)
-#   9:   CLOSE1 'foo' (14)
-#  11:   LONGJMP (13)
-#  13:   TAIL (14)
-#  14: DEFINEP (16)
-#  16: IFTHEN (30)
-#  18:   OPEN2 'bar' (20)
-#  20:     GOSUB1[-15] (23)
-#  23:     EXACT <bar> (25)
-#  25:   CLOSE2 'bar' (30)
-#  27:   LONGJMP (29)
-#  29:   TAIL (30)
-#  30: DEFINEP (32)
-#  32: IFTHEN (46)
-#  34:   OPEN3 'baz' (36)
-#  36:     GOSUB2[-18] (39)
-#  39:     EXACT <baz> (41)
-#  41:   CLOSE3 'baz' (46)
-#  43:   LONGJMP (45)
-#  45:   TAIL (46)
-#  46: DEFINEP (48)
-#  48: IFTHEN (62)
-#  50:   OPEN4 'bop' (52)
-#  52:     GOSUB3[-18] (55)
-#  55:     EXACT <bop> (57)
-#  57:   CLOSE4 'bop' (62)
-#  59:   LONGJMP (61)
-#  61:   TAIL (62)
-#  62: END (0)
-minlen 0
-#Matching REx "(?(DEFINE)(?<foo>foo))(?(DEFINE)(?<bar>(?&foo)bar))(?(DEFINE"... against ""
-#   0 <> <>                   |  1:DEFINEP(3)
-#   0 <> <>                   |  3:IFTHEN(14)
-#   0 <> <>                   | 14:DEFINEP(16)
-#   0 <> <>                   | 16:IFTHEN(30)
-#   0 <> <>                   | 30:DEFINEP(32)
-#   0 <> <>                   | 32:IFTHEN(46)
-#   0 <> <>                   | 46:DEFINEP(48)
-#   0 <> <>                   | 48:IFTHEN(62)
-#   0 <> <>                   | 62:END(0)
-#Match successful!
-%MATCHED%
-#Freeing REx: "(?(DEFINE)(?<foo>foo))(?(DEFINE)(?<bar>(?&foo)bar))(?(DEFINE"...

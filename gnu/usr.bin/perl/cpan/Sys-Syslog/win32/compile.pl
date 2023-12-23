@@ -83,7 +83,7 @@ $template =~ s/__MAX__/'$max'/g;
 $template =~ s/__TIME__/localtime()/ge;
 print $out $template;
 close $out;
-print "Updated Win32.pm and relevant message files\n";
+print "Updated Win32.pm and relevent message files\n";
 
 __END__
 package Sys::Syslog::Win32;
@@ -258,14 +258,6 @@ This module is a back-end plugin for C<Sys::Syslog>, for supporting the Win32
 event log. It is not expected to be directly used by any module other than 
 C<Sys::Syslog> therefore it's API may change at any time and no warranty is 
 made with regards to backward compatibility. You Have Been Warned. 
-
-In order to execute this script and compile the Win32 support files, you
-need some helper programs: mc.exe, rc.exe and link.exe
-
-mc.exe and rc.exe can be downloaded from
-http://www.microsoft.com/en-us/download/details.aspx?id=11310
-
-link.exe is usually shipped with Visual Studio.
 
 =head1 SEE ALSO
 

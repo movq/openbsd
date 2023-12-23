@@ -1,20 +1,26 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 # Test for memory leaks.
 
 # XXX TODO: This test file doesn't actually seem to work! If you remove
 # the sv_2mortal() in the XS file, it still happily passes all tests...
 
+use Test::More;
 use strict;
-use Test::More tests => 22;
+
+BEGIN
+  {
+  $| = 1;
+  chdir 't' if -d 't' && !$ENV{PERL_CORE};
+  unshift @INC, ('../lib', '../blib/arch');	# for running manually
+  plan tests => 22;
+  }
 
 use Math::BigInt::FastCalc;
 
 #############################################################################
 package Math::BigInt::FastCalc::LeakCheck;
-
-use Math::BigInt::FastCalc;
-our @ISA = qw< Math::BigInt::FastCalc >;
+use base qw(Math::BigInt::FastCalc);
 
 my $destroyed = 0;
 sub DESTROY { $destroyed++; }
@@ -78,3 +84,4 @@ sub _test_acmp
   my $n_2 = Math::BigInt::FastCalc->_str($n2);
   is ($destroyed, 1, "_acmp($n_1,$n_2) does not leak memory");
   }
+

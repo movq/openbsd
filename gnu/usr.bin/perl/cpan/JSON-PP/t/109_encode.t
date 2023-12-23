@@ -2,7 +2,6 @@
 # decode on Perl 5.005, 5.6, 5.8 or later
 #
 use strict;
-use warnings;
 use Test::More;
 
 BEGIN { plan tests => 7 };
@@ -10,6 +9,11 @@ BEGIN { plan tests => 7 };
 BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }
 
 use JSON::PP;
+
+BEGIN {
+    use lib qw(t);
+    use _unicode_handling;
+}
 
 no utf8;
 

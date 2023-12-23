@@ -1,7 +1,21 @@
 # HMAC-SHA-256 test vectors from draft-ietf-ipsec-ciph-sha-256-01.txt
 
 use strict;
-use Digest::SHA qw(hmac_sha256 hmac_sha256_hex);
+
+my $MODULE;
+
+BEGIN {
+	$MODULE = ($ENV{PERL_CORE} || -d "src") ? "Digest::SHA" : "Digest::SHA::PurePerl";
+	eval "require $MODULE" || die $@;
+	$MODULE->import(qw(hmac_sha256_hex));
+}
+
+BEGIN {
+	if ($ENV{PERL_CORE}) {
+		chdir 't' if -d 't';
+		@INC = '../lib';
+	}
+}
 
 my @data = map { eval } <DATA>;
 
@@ -37,11 +51,11 @@ my @out = (
 	"6355ac22e890d0a3c8481a5ca4825bc884d3e7a1ff98a2fc2ac7d8e064c3b2e6"
 );
 
-	# do first one using multi-argument data feed and binary output
+	# do the first one using multi-argument data feed
 
 my $testnum = 1;
 my @args = split(//, shift @data);
-print "not " unless hmac_sha256(@args, shift @keys) eq pack("H*", shift @out);
+print "not " unless hmac_sha256_hex(@args, shift @keys) eq shift @out;
 print "ok ", $testnum++, "\n";
 
 while (@data) {

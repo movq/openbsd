@@ -2,10 +2,13 @@
 use strict;
 use Test::More;
 use FindBin qw($Bin);
-use constant TMPFILE      => "$Bin/unlink_test_delete_me";
-use constant NO_SUCH_FILE => 'this_file_had_better_not_be_here_at_all';
+use constant TMPFILE => "$Bin/unlink_test_delete_me";
 
-make_file(TMPFILE);
+# Create a file to practice unlinking
+open(my $fh, ">", TMPFILE)
+	or plan skip_all => "Unable to create test file: $!";
+print {$fh} "Test\n";
+close $fh;
 
 # Check that file now exists
 -e TMPFILE or plan skip_all => "Failed to create test file";
@@ -17,14 +20,17 @@ unlink TMPFILE;
 if(-e TMPFILE) {plan skip_all => "Failed to delete test file: $!";}
 
 # Re-create file
-make_file(TMPFILE);
+open(my $fh2, ">", TMPFILE)
+	or plan skip_all => "Unable to create test file: $!";
+print {$fh2} "Test\n";
+close $fh2;
 
 # Check that file now exists
 -e TMPFILE or plan skip_all => "Failed to create test file";
 
-plan tests => 10;
+plan tests => 6;
 
-# Try to delete file (this should succeed)
+# Try to delete directory (this should succeed)
 eval {
 	use autodie;
 
@@ -44,25 +50,3 @@ isa_ok($@, "autodie::exception", "... errors are of the correct type");
 ok($@->matches("unlink"), "... it's also a unlink object");
 ok($@->matches(":filesys"), "... and a filesys object");
 
-# Autodie should throw if we delete a LIST of files, but can only
-# delete some of them.
-
-make_file(TMPFILE);
-ok(-e TMPFILE, "Sanity: file exists");
-
-eval {
-    use autodie;
-
-    unlink TMPFILE, NO_SUCH_FILE;
-};
-
-ok($@, "Failure when trying to delete missing file in list.");
-isa_ok($@, "autodie::exception", "... errors are of the correct type");
-is($@->return,1, "Failure on deleting missing file but true return value");
-
-sub make_file {
-    open(my $fh, ">", $_[0])
-            or plan skip_all => "Unable to create test file $_[0]: $!";
-    print {$fh} "Test\n";
-    close $fh;
-}

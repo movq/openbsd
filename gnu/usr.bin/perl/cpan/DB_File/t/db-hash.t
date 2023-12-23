@@ -1,12 +1,11 @@
-#!./perl
-
+#!./perl 
+ 
 use warnings;
 use strict;
 use Config;
-use File::Temp qw(tempdir) ;
-
+ 
 BEGIN {
-    if(-d "lib" && -f "TEST") {
+    if($ENV{PERL_CORE}) {
         if ($Config{'extensions'} !~ /\bDB_File\b/ ) {
             print "1..0 # Skip: DB_File was not built\n";
             exit 0;
@@ -14,7 +13,7 @@ BEGIN {
     }
 }
 
-use DB_File;
+use DB_File; 
 use Fcntl;
 
 print "1..166\n";
@@ -25,7 +24,7 @@ sub ok
 {
     my $no = shift ;
     my $result = shift ;
-
+ 
     print "not " unless $result ;
     print "ok $no\n" ;
 
@@ -40,22 +39,22 @@ sub ok
     {
         my $class = shift ;
         my $filename = shift ;
-        my $fh = gensym ;
-        open ($fh, ">$filename") || die "Cannot open $filename: $!" ;
-        my $real_stdout = select($fh) ;
-        return bless [$fh, $real_stdout ] ;
+	my $fh = gensym ;
+	open ($fh, ">$filename") || die "Cannot open $filename: $!" ;
+	my $real_stdout = select($fh) ;
+	return bless [$fh, $real_stdout ] ;
 
     }
     sub DESTROY
     {
         my $self = shift ;
-        close $self->[0] ;
-        select($self->[1]) ;
+	close $self->[0] ;
+	select($self->[1]) ;
     }
 }
 
 sub docat_del
-{
+{ 
     my $file = shift;
     local $/ = undef;
     open(CAT,$file) || die "Cannot open $file: $!";
@@ -64,12 +63,12 @@ sub docat_del
     $result = normalise($result) ;
     unlink $file ;
     return $result;
-}
+}   
 
 sub normalise
 {
     my $data = shift ;
-    $data =~ s#\r\n#\n#g
+    $data =~ s#\r\n#\n#g 
         if $^O eq 'cygwin' ;
     return $data ;
 }
@@ -83,13 +82,11 @@ sub safeUntie
     return $no_inner;
 }
 
-my $TEMPDIR = tempdir( CLEANUP => 1 );
-chdir $TEMPDIR;
 
 my $Dfile = "dbhash.tmp";
 my $Dfile2 = "dbhash2.tmp";
-my $null_keys_allowed = ($DB_File::db_ver < 2.004010
-                                || $DB_File::db_ver >= 3.1 );
+my $null_keys_allowed = ($DB_File::db_ver < 2.004010 
+				|| $DB_File::db_ver >= 3.1 );
 
 unlink $Dfile;
 
@@ -97,7 +94,7 @@ umask(0);
 
 # Check the interface to HASHINFO
 
-my $dbh = DB_File::HASHINFO->new();
+my $dbh = new DB_File::HASHINFO ;
 
 ok(1, ! defined $dbh->{bsize}) ;
 ok(2, ! defined $dbh->{ffactor}) ;
@@ -135,7 +132,7 @@ ok(14, $@ =~ /^DB_File::HASHINFO::FETCH - Unknown element 'fred' at/ );
 # Now check the interface to HASH
 my ($X, %h);
 ok(15, $X = tie(%h, 'DB_File',$Dfile, O_RDWR|O_CREAT, 0640, $DB_HASH ) );
-die "Could not tie: $!" unless defined $X;
+die "Could not tie: $!" unless $X;
 
 my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,
    $blksize,$blocks) = stat($Dfile);
@@ -225,8 +222,8 @@ ok(23, $#keys == 29 && $#values == 29) ;
 $i = 0 ;
 while (($key,$value) = each(%h)) {
     if ($key eq $keys[$i] && $value eq $values[$i] && $key eq lc($value)) {
-        $key =~ y/a-z/A-Z/;
-        $i++ if $key eq $value;
+	$key =~ y/a-z/A-Z/;
+	$i++ if $key eq $value;
     }
 }
 
@@ -268,11 +265,11 @@ ok(30, join(':',200..400) eq join(':',@foo) );
 
 # Check NOOVERWRITE will make put fail when attempting to overwrite
 # an existing record.
-
+ 
 my $status = $X->put( 'x', 'newvalue', R_NOOVERWRITE) ;
 ok(31, $status == 1 );
-
-# check that the value of the key 'x' has not been changed by the
+ 
+# check that the value of the key 'x' has not been changed by the 
 # previous test
 ok(32, $h{'x'} eq 'X' );
 
@@ -297,7 +294,7 @@ ok(36, $status == 0 );
     ok(37, $h{'q'} eq undef );
 }
 
-# Attempting to delete a non-existent key should fail
+# Attempting to delete a non-existant key should fail
 
 $status = $X->del('joe') ;
 ok(38, $status == 1 );
@@ -383,7 +380,7 @@ untie %h ;
     # check ability to override the default hashing
     my %x ;
     my $filename = "xyz" ;
-    my $hi = DB_File::HASHINFO->new();
+    my $hi = new DB_File::HASHINFO ;
     $::count = 0 ;
     $hi->{hash} = sub { ++$::count ; length $_[0] } ;
     ok(49, tie %x, 'DB_File', $filename, O_RDWR|O_CREAT, 0640, $hi ) ;
@@ -426,38 +423,38 @@ untie %h ;
    @ISA=qw(DB_File);
    @EXPORT = @DB_File::EXPORT ;
 
-   sub STORE {
-        my $self = shift ;
+   sub STORE { 
+	my $self = shift ;
         my $key = shift ;
         my $value = shift ;
         $self->SUPER::STORE($key, $value * 2) ;
    }
 
-   sub FETCH {
-        my $self = shift ;
+   sub FETCH { 
+	my $self = shift ;
         my $key = shift ;
         $self->SUPER::FETCH($key) - 1 ;
    }
 
-   sub put {
-        my $self = shift ;
+   sub put { 
+	my $self = shift ;
         my $key = shift ;
         my $value = shift ;
         $self->SUPER::put($key, $value * 3) ;
    }
 
-   sub get {
-        my $self = shift ;
+   sub get { 
+	my $self = shift ;
         $self->SUPER::get($_[0], $_[1]) ;
-        $_[1] -= 2 ;
+	$_[1] -= 2 ;
    }
 
    sub A_new_method
    {
-        my $self = shift ;
+	my $self = shift ;
         my $key = shift ;
         my $value = $self->FETCH($key) ;
-        return "[[$value]]" ;
+	return "[[$value]]" ;
    }
 
    1 ;
@@ -465,14 +462,14 @@ EOM
 
     close FILE ;
 
-    BEGIN { push @INC, '.'; }
+    BEGIN { push @INC, '.'; }             
     eval 'use SubDB ; ';
     main::ok(53, $@ eq "") ;
     my %h ;
     my $X ;
     eval '
-        $X = tie(%h, "SubDB","dbhash.tmp", O_RDWR|O_CREAT, 0640, $DB_HASH );
-        ' ;
+	$X = tie(%h, "SubDB","dbhash.tmp", O_RDWR|O_CREAT, 0640, $DB_HASH );
+	' ;
 
     main::ok(54, $@ eq "") ;
 
@@ -512,23 +509,23 @@ EOM
        no warnings 'uninitialized';
        my($fk, $sk, $fv, $sv) = @_ ;
 
-       print "# Fetch Key   : expected '$fk' got '$fetch_key'\n"
+       print "# Fetch Key   : expected '$fk' got '$fetch_key'\n" 
            if $fetch_key ne $fk ;
-       print "# Fetch Value : expected '$fv' got '$fetch_value'\n"
+       print "# Fetch Value : expected '$fv' got '$fetch_value'\n" 
            if $fetch_value ne $fv ;
-       print "# Store Key   : expected '$sk' got '$store_key'\n"
+       print "# Store Key   : expected '$sk' got '$store_key'\n" 
            if $store_key ne $sk ;
-       print "# Store Value : expected '$sv' got '$store_value'\n"
+       print "# Store Value : expected '$sv' got '$store_value'\n" 
            if $store_value ne $sv ;
-       print "# \$_          : expected 'original' got '$_'\n"
+       print "# \$_          : expected 'original' got '$_'\n" 
            if $_ ne 'original' ;
 
        return
-           $fetch_key   eq $fk && $store_key   eq $sk &&
-           $fetch_value eq $fv && $store_value eq $sv &&
-           $_ eq 'original' ;
+           $fetch_key   eq $fk && $store_key   eq $sk && 
+	   $fetch_value eq $fv && $store_value eq $sv &&
+	   $_ eq 'original' ;
    }
-
+   
    ok(63, $db = tie(%h, 'DB_File', $Dfile, O_RDWR|O_CREAT, 0640, $DB_HASH ) );
 
    $db->filter_fetch_key   (sub { $fetch_key = $_ }) ;
@@ -557,15 +554,15 @@ EOM
    ok(70, checkOutput( "fred", "fred", "joe", "")) ;
 
    # replace the filters, but remember the previous set
-   my ($old_fk) = $db->filter_fetch_key
-                        (sub { $_ = uc $_ ; $fetch_key = $_ }) ;
-   my ($old_sk) = $db->filter_store_key
-                        (sub { $_ = lc $_ ; $store_key = $_ }) ;
-   my ($old_fv) = $db->filter_fetch_value
-                        (sub { $_ = "[$_]"; $fetch_value = $_ }) ;
-   my ($old_sv) = $db->filter_store_value
-                        (sub { s/o/x/g; $store_value = $_ }) ;
-
+   my ($old_fk) = $db->filter_fetch_key   
+   			(sub { $_ = uc $_ ; $fetch_key = $_ }) ;
+   my ($old_sk) = $db->filter_store_key   
+   			(sub { $_ = lc $_ ; $store_key = $_ }) ;
+   my ($old_fv) = $db->filter_fetch_value 
+   			(sub { $_ = "[$_]"; $fetch_value = $_ }) ;
+   my ($old_sv) = $db->filter_store_value 
+   			(sub { s/o/x/g; $store_value = $_ }) ;
+   
    ($fetch_key, $store_key, $fetch_value, $store_value) = ("") x 4 ;
    $h{"Fred"} = "Joe" ;
    #                   fk   sk     fv    sv
@@ -579,7 +576,7 @@ EOM
    ($fetch_key, $store_key, $fetch_value, $store_value) = ("") x 4 ;
    $k = 'Fred'; $v ='';
    ok(74, ! $db->seq($k, $v, R_FIRST) ) ;
-   ok(75, $k eq "FRED") or
+   ok(75, $k eq "FRED") or 
     print "# k [$k]\n" ;
    ok(76, $v eq "[Jxe]") ;
    #                   fk   sk     fv    sv
@@ -634,7 +631,7 @@ EOM
    unlink $Dfile;
 }
 
-{
+{    
     # DBM Filter with a closure
 
     use warnings ;
@@ -649,13 +646,13 @@ EOM
     sub Closure
     {
         my ($name) = @_ ;
-        my $count = 0 ;
-        my @kept = () ;
+	my $count = 0 ;
+	my @kept = () ;
 
-        return sub { ++$count ;
-                     push @kept, $_ ;
-                     $result{$name} = "$name - $count: [@kept]" ;
-                   }
+	return sub { ++$count ; 
+		     push @kept, $_ ; 
+		     $result{$name} = "$name - $count: [@kept]" ;
+		   }
     }
 
     $db->filter_store_key(Closure("store key")) ;
@@ -696,7 +693,7 @@ EOM
     undef $db ;
     untie %h;
     unlink $Dfile;
-}
+}		
 
 {
    # DBM Filter recursion detection
@@ -711,7 +708,7 @@ EOM
 
    eval '$h{1} = 1234' ;
    ok(116, $@ =~ /^recursion detected in filter_store_key at/ );
-
+   
    undef $db ;
    untie %h;
    unlink $Dfile;
@@ -723,7 +720,7 @@ EOM
 
   my $file = "xyzt" ;
   {
-    my $redirect = Redirect->new( $file );
+    my $redirect = new Redirect $file ;
 
     use warnings FATAL => qw(all);
     use strict ;
@@ -731,7 +728,7 @@ EOM
     our (%h, $k, $v);
 
     unlink "fruit" ;
-    tie %h, "DB_File", "fruit", O_RDWR|O_CREAT, 0640, $DB_HASH
+    tie %h, "DB_File", "fruit", O_RDWR|O_CREAT, 0640, $DB_HASH 
         or die "Cannot open file 'fruit': $!\n";
 
     # Add a few key/value pairs to the file
@@ -753,7 +750,7 @@ EOM
     untie %h ;
 
     unlink "fruit" ;
-  }
+  }  
 
   ok(117, docat_del($file) eq <<'EOM') ;
 Banana Exists
@@ -762,14 +759,14 @@ orange -> orange
 tomato -> red
 banana -> yellow
 EOM
-
+   
 }
 
 {
     # Bug ID 20001013.009
     #
     # test that $hash{KEY} = undef doesn't produce the warning
-    #     Use of uninitialized value in null operation
+    #     Use of uninitialized value in null operation 
     use warnings ;
     use strict ;
     use DB_File ;
@@ -778,7 +775,7 @@ EOM
     my %h ;
     my $a = "";
     local $SIG{__WARN__} = sub {$a = $_[0]} ;
-
+    
     tie %h, 'DB_File', $Dfile or die "Can't open file: $!\n" ;
     $h{ABC} = undef;
     ok(118, $a eq "") ;
@@ -797,7 +794,7 @@ EOM
     my %h ;
     my $a = "";
     local $SIG{__WARN__} = sub {$a = $_[0]} ;
-
+    
     tie %h, 'DB_File', $Dfile or die "Can't open file: $!\n" ;
     %h = (); ;
     ok(119, $a eq "") ;
@@ -849,7 +846,7 @@ EOM
 
 {
     # now an error to pass 'hash' a non-code reference
-    my $dbh = DB_File::HASHINFO->new();
+    my $dbh = new DB_File::HASHINFO ;
 
     eval { $dbh->{hash} = 2 };
     ok(126, $@ =~ /^Key 'hash' not associated with a code reference at/);
@@ -862,15 +859,15 @@ EOM
 #    my %hash ;
 #    my $Dfile = "xxx.db";
 #    unlink $Dfile;
-#    my $dbh = DB_File::HASHINFO->new();
+#    my $dbh = new DB_File::HASHINFO ;
 #    $dbh->{hash} = sub { $hash{3} = 4 ; length $_[0] } ;
-#
-#
+# 
+# 
 #    ok(127, tie(%hash, 'DB_File',$Dfile, O_RDWR|O_CREAT, 0640, $dbh ) );
 #
-#    eval {     $hash{1} = 2;
-#               $hash{4} = 5;
-#        };
+#    eval {	$hash{1} = 2;
+#    		$hash{4} = 5;
+#	 };
 #
 #    ok(128, $@ =~ /^DB_File hash callback: recursion detected/);
 #    {
@@ -890,14 +887,14 @@ EOM
     my $h1_count = 0;
     my $h2_count = 0;
     unlink $Dfile, $Dfile2;
-    my $dbh1 = DB_File::HASHINFO->new();
+    my $dbh1 = new DB_File::HASHINFO ;
     $dbh1->{hash} = sub { ++ $h1_count ; length $_[0] } ;
 
-    my $dbh2 = DB_File::HASHINFO->new();
+    my $dbh2 = new DB_File::HASHINFO ;
     $dbh2->{hash} = sub { ++ $h2_count ; length $_[0] } ;
-
-
-
+ 
+ 
+ 
     my (%h);
     ok(127, tie(%hash1, 'DB_File',$Dfile, O_RDWR|O_CREAT, 0640, $dbh1 ) );
     ok(128, tie(%hash2, 'DB_File',$Dfile2, O_RDWR|O_CREAT, 0640, $dbh2 ) );
@@ -919,9 +916,9 @@ EOM
 }
 
 {
-    # Passing undef for flags and/or mode when calling tie could cause
+    # Passing undef for flags and/or mode when calling tie could cause 
     #     Use of uninitialized value in subroutine entry
-
+    
 
     my $warn_count = 0 ;
     #local $SIG{__WARN__} = sub { ++ $warn_count };
@@ -981,7 +978,7 @@ EOM
    ok(139, $h{"fred"} eq "joe");
 
    ok(140, $db->FIRSTKEY() eq "fred") ;
-
+   
    eval { my @r= grep { $h{$_} } (1, 2, 3) };
    ok (141, ! $@);
 
@@ -1041,7 +1038,7 @@ EOM
     # Regression Test for bug 30237
     # Check that substr can be used in the key to db_put
     # and that db_put does not trigger the warning
-    #
+    # 
     #     Use of uninitialized value in subroutine entry
 
 
@@ -1066,7 +1063,7 @@ EOM
         $db->put(substr($key,0), $value) ;
     }
 
-    ok 153, $warned eq ''
+    ok 153, $warned eq '' 
       or print "# Caught warning [$warned]\n" ;
 
     # db-put with substr of value
@@ -1079,7 +1076,7 @@ EOM
         $db->put($key, substr($value,0)) ;
     }
 
-    ok 154, $warned eq ''
+    ok 154, $warned eq '' 
       or print "# Caught warning [$warned]\n" ;
 
     # via the tied hash is not a problem, but check anyway
@@ -1093,7 +1090,7 @@ EOM
         $h{substr($key,0)} = $value ;
     }
 
-    ok 155, $warned eq ''
+    ok 155, $warned eq '' 
       or print "# Caught warning [$warned]\n" ;
 
     # via the tied hash is not a problem, but check anyway
@@ -1107,7 +1104,7 @@ EOM
         $h{$key} = substr($value,0) ;
     }
 
-    ok 156, $warned eq ''
+    ok 156, $warned eq '' 
       or print "# Caught warning [$warned]\n" ;
 
     my %bad = () ;
@@ -1117,7 +1114,7 @@ EOM
          $status = $db->seq(substr($key,0), substr($value,0), R_NEXT ) ) {
 
         #print "# key [$key] value [$value]\n" ;
-        if (defined $remember{$key} && defined $value &&
+        if (defined $remember{$key} && defined $value && 
              $remember{$key} eq $value) {
             delete $remember{$key} ;
         }
@@ -1125,7 +1122,7 @@ EOM
             $bad{$key} = $value ;
         }
     }
-
+    
     ok 157, keys %bad == 0 ;
     ok 158, keys %remember == 0 ;
 
@@ -1137,7 +1134,7 @@ EOM
     my $value = 'fred';
     $warned = '';
     $db->put(undef, $value) ;
-    ok 159, $warned eq ''
+    ok 159, $warned eq '' 
       or print "# Caught warning [$warned]\n" ;
     $warned = '';
 
@@ -1146,7 +1143,7 @@ EOM
     $value = '' ;
     $db->get(undef, $value) ;
     ok 160, $no_NULL || $value eq 'fred' or print "# got [$value]\n" ;
-    ok 161, $warned eq ''
+    ok 161, $warned eq '' 
       or print "# Caught warning [$warned]\n" ;
     $warned = '';
 
@@ -1205,7 +1202,7 @@ EOM
          $status = $db->seq($key, $value, R_NEXT ) ) {
 
         #print "# key [$key] value [$value]\n" ;
-        if (defined $remember{$key} && defined $value &&
+        if (defined $remember{$key} && defined $value && 
              $remember{$key} eq $value) {
             delete $remember{$key} ;
         }
@@ -1213,7 +1210,7 @@ EOM
             $bad{$key} = $value ;
         }
     }
-
+    
     ok 164, $_ eq 'fred';
     ok 165, keys %bad == 0 ;
     ok 166, keys %remember == 0 ;

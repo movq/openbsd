@@ -1,6 +1,7 @@
-use strict;
 package ExtUtils::Installed;
 
+use 5.00503;
+use strict;
 #use warnings; # XXX requires 5.6
 use Carp qw();
 use ExtUtils::Packlist;
@@ -15,7 +16,8 @@ my $DOSISH = ($^O =~ /^(MSWin\d\d|os2|dos|mint)$/);
 
 require VMS::Filespec if $Is_VMS;
 
-our $VERSION = '2.20';
+use vars qw($VERSION);
+$VERSION = '2.04';
 $VERSION = eval $VERSION;
 
 sub _is_prefix {
@@ -307,7 +309,7 @@ sub version {
     return($self->{$module}{version});
 }
 
-sub _debug_dump {
+sub debug_dump {
     my ($self, $module) = @_;
     $self= $self->new(default=>1) if !ref $self;
     local $self->{":private:"}{Config};

@@ -22,7 +22,7 @@ find(
 sub finder {
     my $file = $_;
 
-    return if -d $file or -B $file;
+    return if -B $file;
 
     open my $fh, '<', $file;
 
@@ -30,21 +30,21 @@ sub finder {
 
     next if
         # Test cases
-        $file =~ m[Pod-Simple/t];
+        $file ~~ m[Pod-Simple/t];
 
     my ($in_pod, $has_encoding, @non_ascii);
 
     FILE: while (my $line = <$fh>) {
         chomp $line;
-        if ($line =~ /^=[a-z]+/) {
+        if ($line ~~ /^=[a-z]+/) {
             $in_pod = 1;
         }
 
         if ($in_pod) {
-            if ($line =~ /^=encoding (\S+)/) {
+            if ($line ~~ /^=encoding (\S+)/) {
                 $has_encoding = 1;
                 last FILE;
-            } elsif ($line =~ /[^[:ascii:]]/) {
+            } elsif ($line ~~ /[^[:ascii:]]/) {
                 my $encoding = guess_encoding($line);
                 push @non_ascii => {
                     num => $.,
@@ -54,7 +54,7 @@ sub finder {
             }
         }
 
-        if ($line =~ /^=cut/) {
+        if ($line ~~ /^=cut/) {
             $in_pod = 0;
         }
     }

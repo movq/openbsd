@@ -82,8 +82,7 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
-                no_display => undef,
+                no_display => undef
             },
             control => {
                 has_callback => 0,
@@ -91,7 +90,7 @@ tests facet_data => sub {
                 global       => 0
             },
         },
-        "Facet data has control with only false values, and an about"
+        "Facet data has control with onyl false values, and an about"
     );
 
     $e->set_trace(Test2::EventFacet::Trace->new(frame => ['foo', 'foo.t', 42]));
@@ -101,8 +100,7 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
-                no_display => undef,
+                no_display => undef
             },
             control => {
                 has_callback => 0,
@@ -125,7 +123,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -156,7 +153,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -185,7 +181,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -216,7 +211,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -250,7 +244,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -280,7 +273,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -311,7 +303,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -343,7 +334,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -374,7 +364,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -406,7 +395,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef
             },
             control => {
@@ -443,7 +431,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => 1,
             },
             control => {
@@ -462,7 +449,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'Test2::Event::Generic',
-                eid        => $e->eid,
                 no_display => undef,
             },
             control => {
@@ -486,7 +472,6 @@ tests facet_data => sub {
             about => {
                 package    => 'Test2::Event::Generic',
                 details    => 'foo bar baz',
-                eid        => $e->eid,
                 no_display => undef,
             },
             control => {
@@ -592,7 +577,6 @@ tests common_facet_data => sub {
         {
             about => {
                 package => 'Test2::Event::Generic',
-                eid     => $e->eid,
             },
         },
         "Facet data has an about"
@@ -604,7 +588,6 @@ tests common_facet_data => sub {
         {
             about => {
                 package => 'Test2::Event::Generic',
-                eid     => $e->eid,
             },
             trace => {
                 frame => ['foo', 'foo.t', 42],
@@ -621,7 +604,6 @@ tests common_facet_data => sub {
         {
             about => {
                 package => 'Test2::Event::Generic',
-                eid     => $e->eid,
             },
             trace => {
                 frame => ['foo', 'foo.t', 42],
@@ -640,7 +622,6 @@ tests common_facet_data => sub {
         {
             about => {
                 package => 'Test2::Event::Generic',
-                eid     => $e->eid,
             },
             trace => {
                 frame => ['foo', 'foo.t', 42],

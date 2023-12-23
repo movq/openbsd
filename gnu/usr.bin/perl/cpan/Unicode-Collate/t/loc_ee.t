@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -8,7 +13,7 @@ BEGIN {
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..124\n"; }
+BEGIN { $| = 1; print "1..120\n"; }
 my $count = 0;
 sub ok ($;$) {
     my $p = my $r = shift;
@@ -23,9 +28,6 @@ use Unicode::Collate::Locale;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
 my $objEe = Unicode::Collate::Locale->
@@ -37,21 +39,39 @@ ok($objEe->getlocale, 'ee');
 
 $objEe->change(level => 1);
 
-my @prim = (
-    "d", "d\x{292}", "dz", "\x{256}", # 5
-    "e",  "\x{25B}", "f",  "\x{192}", # 9
-    "g", "gz", "gb", "\x{263}", "h",  # 14
-    "hz", "x", "i", "kz", "kp", "l",  # 20
-    "nz", "ny", "\x{14B}", "o",       # 24
-    "\x{254}", "p", "tz", "ts", "u",  # 29
-    "v", "\x{28B}", "w",
-);
+ok($objEe->lt("d", "d\x{292}"));
+ok($objEe->gt("dz","d\x{292}"));
+ok($objEe->lt("dz","\x{256}"));
+ok($objEe->gt("e", "\x{256}"));
+ok($objEe->lt("e", "\x{25B}"));
+ok($objEe->gt("f", "\x{25B}"));
+ok($objEe->lt("f", "\x{192}"));
+ok($objEe->gt("g", "\x{192}"));
 
-for (my $i = 1; $i < @prim; $i++) {
-    ok($objEe->lt($prim[$i-1], $prim[$i]));
-}
+ok($objEe->lt("gz","gb"));
+ok($objEe->lt("gb","\x{263}"));
+ok($objEe->gt("h", "\x{263}"));
+ok($objEe->lt("h", "hz"));
+ok($objEe->lt("hz","x"));
+ok($objEe->lt("x", "i"));
 
-# 32
+# 16
+
+ok($objEe->lt("kz","kp"));
+ok($objEe->lt("kp","l"));
+ok($objEe->lt("nz","ny"));
+ok($objEe->lt("ny","\x{14B}"));
+ok($objEe->gt("o", "\x{14B}"));
+ok($objEe->lt("o", "\x{254}"));
+ok($objEe->gt("p", "\x{254}"));
+
+ok($objEe->lt("tz","ts"));
+ok($objEe->lt("ts","u"));
+ok($objEe->lt("u", "v"));
+ok($objEe->lt("v", "\x{28B}"));
+ok($objEe->gt("w", "\x{28B}"));
+
+# 28
 
 ok($objEe->eq("\x{302}",  "\x{30C}"));
 ok($objEe->eq("a\x{302}", "a\x{30C}"));
@@ -67,7 +87,7 @@ ok($objEe->eq("U\x{302}", "U\x{30C}"));
 ok($objEe->eq("y\x{302}", "y\x{30C}"));
 ok($objEe->eq("Y\x{302}", "Y\x{30C}"));
 
-# 45
+# 41
 
 $objEe->change(level => 2);
 
@@ -85,7 +105,7 @@ ok($objEe->gt("U\x{302}", "U\x{30C}"));
 ok($objEe->gt("y\x{302}", "y\x{30C}"));
 ok($objEe->gt("Y\x{302}", "Y\x{30C}"));
 
-# 58
+# 54
 
 ok($objEe->eq("dz", "Dz"));
 ok($objEe->eq("Dz", "DZ"));
@@ -106,7 +126,7 @@ ok($objEe->eq("ts", "Ts"));
 ok($objEe->eq("Ts", "TS"));
 ok($objEe->eq("\x{28B}", "\x{1B2}"));
 
-# 76
+# 72
 
 $objEe->change(level => 3);
 
@@ -129,22 +149,22 @@ ok($objEe->lt("ts", "Ts"));
 ok($objEe->lt("Ts", "TS"));
 ok($objEe->lt("\x{28B}", "\x{1B2}"));
 
-# 94
+# 90
 
-ok($objEe->eq("a\x{302}", _pack_U(0xE2)));
-ok($objEe->eq("A\x{302}", _pack_U(0xC2)));
-ok($objEe->eq("e\x{302}", _pack_U(0xEA)));
-ok($objEe->eq("E\x{302}", _pack_U(0xCA)));
-ok($objEe->eq("i\x{302}", _pack_U(0xEE)));
-ok($objEe->eq("I\x{302}", _pack_U(0xCE)));
-ok($objEe->eq("o\x{302}", _pack_U(0xF4)));
-ok($objEe->eq("O\x{302}", _pack_U(0xD4)));
-ok($objEe->eq("u\x{302}", _pack_U(0xFB)));
-ok($objEe->eq("U\x{302}", _pack_U(0xDB)));
+ok($objEe->eq("a\x{302}", pack('U', 0xE2)));
+ok($objEe->eq("A\x{302}", pack('U', 0xC2)));
+ok($objEe->eq("e\x{302}", pack('U', 0xEA)));
+ok($objEe->eq("E\x{302}", pack('U', 0xCA)));
+ok($objEe->eq("i\x{302}", pack('U', 0xEE)));
+ok($objEe->eq("I\x{302}", pack('U', 0xCE)));
+ok($objEe->eq("o\x{302}", pack('U', 0xF4)));
+ok($objEe->eq("O\x{302}", pack('U', 0xD4)));
+ok($objEe->eq("u\x{302}", pack('U', 0xFB)));
+ok($objEe->eq("U\x{302}", pack('U', 0xDB)));
 ok($objEe->eq("y\x{302}", "\x{177}"));
 ok($objEe->eq("Y\x{302}", "\x{176}"));
 
-# 106
+# 102
 
 $objEe->change(upper_before_lower => 1);
 
@@ -167,4 +187,4 @@ ok($objEe->gt("ts", "Ts"));
 ok($objEe->gt("Ts", "TS"));
 ok($objEe->gt("\x{28B}", "\x{1B2}"));
 
-# 124
+# 120

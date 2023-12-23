@@ -1,36 +1,29 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
+use Test::More;
 use strict;
-use warnings;
 
-use Test::More tests => 6;
+BEGIN
+  {
+  $| = 1;
+  chdir 't' if -d 't';
+  unshift @INC, '../lib';
+  plan tests => 4;
+  }
 
-{
-    my $class = "Math::BigInt";
+my @C = qw/Math::BigInt Math::BigFloat/;
 
-    use bigint p => "12";
-    cmp_ok($class -> precision(), "==", 12, "$class precision = 12");
+use bignum p => '12';
 
-    bigint -> import(precision => "23");
-    cmp_ok($class -> precision(), "==", 23, "$class precision = 23");
-}
+foreach my $c (@C)
+  {
+  is ($c->precision(),12, "$c precision = 12");
+  }
 
-{
-    my $class = "Math::BigFloat";
+bignum->import( p => '42' );
 
-    use bigfloat p => "13";
-    cmp_ok($class -> precision(), "==", 13, "$class precision = 12");
+foreach my $c (@C)
+  {
+  is ($c->precision(),42, "$c precision = 42");
+  }
 
-    bigfloat -> import(precision => "24");
-    cmp_ok($class -> precision(), "==", 24, "$class precision = 23");
-}
-
-{
-    my $class = "Math::BigRat";
-
-    use bigrat p => "14";
-    cmp_ok($class -> precision(), "==", 14, "$class precision = 12");
-
-    bigrat -> import(precision => "25");
-    cmp_ok($class -> precision(), "==", 25, "$class precision = 23");
-}

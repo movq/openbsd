@@ -3,12 +3,13 @@
 package MyFileSourceHandler;
 
 use strict;
-use warnings;
-our ($LAST_OBJ, $CAN_HANDLE, $MAKE_ITER, $LAST_SOURCE);
+use vars qw( @ISA $LAST_OBJ $CAN_HANDLE $MAKE_ITER $LAST_SOURCE );
 
+use MyCustom;
 use TAP::Parser::IteratorFactory;
+use TAP::Parser::SourceHandler::File;
 
-use base qw( TAP::Parser::SourceHandler::File MyCustom );
+@ISA         = qw( TAP::Parser::SourceHandler::File MyCustom );
 $LAST_OBJ    = undef;
 $CAN_HANDLE  = undef;
 $MAKE_ITER   = undef;
@@ -20,7 +21,7 @@ sub can_handle {
     my $class = shift;
     $class->SUPER::can_handle(@_);
     $CAN_HANDLE++;
-    return 1;
+    return $class;
 }
 
 sub make_iterator {

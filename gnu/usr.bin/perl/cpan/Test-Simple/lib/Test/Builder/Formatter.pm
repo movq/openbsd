@@ -2,7 +2,7 @@ package Test::Builder::Formatter;
 use strict;
 use warnings;
 
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 BEGIN { require Test2::Formatter::TAP; our @ISA = qw(Test2::Formatter::TAP) }
 
@@ -33,8 +33,7 @@ sub debug_tap {
     my ($self, $f, $num) = @_;
     return if $self->{+NO_DIAG};
     my @out = $self->SUPER::debug_tap($f, $num);
-    $self->redirect(\@out) if @out && ref $f->{about} && defined $f->{about}->{package}
-        && $f->{about}->{package} eq 'Test::Builder::TodoDiag';
+    $self->redirect(\@out) if @out && $f->{about}->{package} eq 'Test::Builder::TodoDiag';
     return @out;
 }
 
@@ -42,8 +41,7 @@ sub info_tap {
     my ($self, $f) = @_;
     return if $self->{+NO_DIAG};
     my @out = $self->SUPER::info_tap($f);
-    $self->redirect(\@out) if @out && ref $f->{about} && defined $f->{about}->{package}
-        && $f->{about}->{package} eq 'Test::Builder::TodoDiag';
+    $self->redirect(\@out) if @out && $f->{about}->{package} eq 'Test::Builder::TodoDiag';
     return @out;
 }
 
@@ -97,7 +95,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

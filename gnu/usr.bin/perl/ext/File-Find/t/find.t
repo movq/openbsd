@@ -24,8 +24,13 @@ BEGIN {
 }
 
 my $symlink_exists = eval { symlink("",""); 1 };
+my $test_count = 102;
+$test_count += 127 if $symlink_exists;
+$test_count += 26 if $^O eq 'MSWin32';
+$test_count += 2 if $^O eq 'MSWin32' and $symlink_exists;
 
 use Test::More;
+plan tests => $test_count;
 use lib qw( ./t/lib );
 use Testing qw(
     create_file_ok
@@ -34,7 +39,6 @@ use Testing qw(
     dir_path
     file_path
 );
-use Errno ();
 
 my %Expect_File = (); # what we expect for $_
 my %Expect_Name = (); # what we expect for $File::Find::name/fullname
@@ -62,16 +66,6 @@ my $orig_dir = cwd();
 cleanup();
 
 ##### Sanity checks #####
-# Do find() and finddepth() work correctly with an empty list of
-# directories?
-{
-    ok(eval { find(\&noop_wanted); 1 },
-       "'find' successfully returned for an empty list of directories");
-
-    ok(eval { finddepth(\&noop_wanted); 1 },
-       "'finddepth' successfully returned for an empty list of directories");
-}
-
 # Do find() and finddepth() work correctly in the directory
 # from which we start?  (Test presumes the presence of 'taint.t' in same
 # directory as this test file.)
@@ -239,86 +233,22 @@ sub my_postprocess {
 mkdir_ok( dir_path('for_find'), 0770 );
 ok( chdir( dir_path('for_find')), "Able to chdir to 'for_find'")
     or die("Unable to chdir to 'for_find'");
-
-my @testing_basenames = ( qw| fb_ord fba_ord fa_ord faa_ord fab_ord faba_ord | );
-
 mkdir_ok( dir_path('fa'), 0770 );
 mkdir_ok( dir_path('fb'), 0770  );
-create_file_ok( file_path('fb', $testing_basenames[0]) );
+create_file_ok( file_path('fb', 'fb_ord') );
 mkdir_ok( dir_path('fb', 'fba'), 0770  );
-create_file_ok( file_path('fb', 'fba', $testing_basenames[1]) );
+create_file_ok( file_path('fb', 'fba', 'fba_ord') );
 if ($symlink_exists) {
-    if (symlink('../fb','fa/fsl')) {
-        pass("able to symlink from ../fb to fa/fsl");
-    }
-    else {
-        if ($^O eq "MSWin32" && ($! == &Errno::ENOSYS || $! == &Errno::EPERM)) {
-            $symlink_exists = 0;
-        }
-        else {
-            fail("able to symlink from ../fb to fa/fsl");
-        }
-    }
+    symlink_ok('../fb','fa/fsl');
 }
-create_file_ok( file_path('fa', $testing_basenames[2]) );
+create_file_ok( file_path('fa', 'fa_ord') );
 
 mkdir_ok( dir_path('fa', 'faa'), 0770  );
-create_file_ok( file_path('fa', 'faa', $testing_basenames[3]) );
+create_file_ok( file_path('fa', 'faa', 'faa_ord') );
 mkdir_ok( dir_path('fa', 'fab'), 0770  );
-create_file_ok( file_path('fa', 'fab', $testing_basenames[4]) );
+create_file_ok( file_path('fa', 'fab', 'fab_ord') );
 mkdir_ok( dir_path('fa', 'fab', 'faba'), 0770  );
-create_file_ok( file_path('fa', 'fab', 'faba', $testing_basenames[5]) );
-
-##### RT #122547 #####
-# Do find() and finddepth() correctly warn on invalid options?
-##### RT #133771 #####
-# When running tests in parallel, avoid clash with tests in
-# ext/File-Find/t/taint by moving into the temporary testing directory
-# before testing for warnings on invalid options.
-
-my %tb = map { $_ => 1 } @testing_basenames;
-
-{
-    my $bad_option = 'foobar';
-    my $second_bad_option = 'really_foobar';
-
-    $::count_tb = 0;
-    local $SIG{__WARN__} = sub { $warn_msg = $_[0]; };
-    {
-        find(
-            {
-                wanted => sub { s#\.$## if ($^O eq 'VMS' && $_ ne '.');
-                                ++$::count_tb if $tb{$_};
-                              },
-                $bad_option => undef,
-            },
-            File::Spec->curdir
-        );
-    };
-    like($warn_msg, qr/Invalid option/s, "Got warning for invalid option");
-    like($warn_msg, qr/$bad_option/s, "Got warning for $bad_option");
-    is($::count_tb, scalar(@testing_basenames), "count_tb incremented");
-    undef $warn_msg;
-
-    $::count_tb = 0;
-    {
-        finddepth(
-            {
-                wanted => sub { s#\.$## if ($^O eq 'VMS' && $_ ne '.');
-                                ++$::count_tb if $tb{$_};
-                              },
-                $bad_option => undef,
-                $second_bad_option => undef,
-            },
-            File::Spec->curdir
-        );
-    };
-    like($warn_msg, qr/Invalid option/s, "Got warning for invalid option");
-    like($warn_msg, qr/$bad_option/s, "Got warning for $bad_option");
-    like($warn_msg, qr/$second_bad_option/s, "Got warning for $second_bad_option");
-    is($::count_tb, scalar(@testing_basenames), "count_tb incremented");
-    undef $warn_msg;
-}
+create_file_ok( file_path('fa', 'fab', 'faba', 'faba_ord') );
 
 ##### Basic tests for find() #####
 # Set up list of files we expect to find.
@@ -891,7 +821,6 @@ if ($^O eq 'MSWin32') {
                    dir_path('fb') => 1,
                    dir_path('fba') => 1);
 
-    $FastFileTests_OK = 0;
     File::Find::find( {wanted => \&wanted_File_Dir}, topdir('fa'));
     is( scalar(keys %Expect_File), 0, "Got no files, as expected" );
 
@@ -1037,49 +966,46 @@ if ($^O eq 'MSWin32') {
         }
     }
     closedir $ROOT_DIR;
-  SKIP:
-    {
-        my $created_file;
-        unless (defined $expected_first_file) {
-            $expected_first_file = '__perl_File_Find_test.tmp';
-            open(F, ">", "/$expected_first_file") && close(F)
-                or skip "cannot create file in root directory: $!", 8;
-            $created_file = 1;
-        }
+    my $created_file;
+    unless (defined $expected_first_file) {
+        $expected_first_file = '__perl_File_Find_test.tmp';
+        open(F, ">", "/$expected_first_file") && close(F)
+            or die "cannot create file in root directory: $!\n";
+        $created_file = 1;
+    }
 
-        # Run F:F:f with/without no_chdir for each possible style of root path.
-        # NB. If HOME were "/", then an inadvertent chdir('') would fluke the
-        # expected result, so ensure it is something else:
-        local $ENV{HOME} = $orig_dir;
-        foreach my $no_chdir (0, 1) {
-            foreach my $root_dir ("/", "\\", "$drive/", "$drive\\") {
-                eval {
-                    File::Find::find({
-                        'no_chdir' => $no_chdir,
-                            'preprocess' => sub { return sort @_ },
-                            'wanted' => sub {
-                                -f or return; # the first call is for $root_dir itself.
-                                my $got = $File::Find::name;
-                                my $exp = "$root_dir$expected_first_file";
-                                print "# no_chdir=$no_chdir $root_dir '$got'\n";
-                                is($got, $exp,
-                                   "Win32: Run 'find' with 'no_chdir' set to $no_chdir" );
-                                die "done"; # do not process the entire drive!
-                        },
-                    }, $root_dir);
-                };
-                # If F:F:f did not die "done" then it did not Check() either.
-                unless ($@ and $@ =~ /done/) {
-                    print "# no_chdir=$no_chdir $root_dir ",
-                        ($@ ? "error: $@" : "no files found"), "\n";
-                    ok(0, "Win32: 0");
-                }
+    # Run F:F:f with/without no_chdir for each possible style of root path.
+    # NB. If HOME were "/", then an inadvertent chdir('') would fluke the
+    # expected result, so ensure it is something else:
+    local $ENV{HOME} = $orig_dir;
+    foreach my $no_chdir (0, 1) {
+        foreach my $root_dir ("/", "\\", "$drive/", "$drive\\") {
+            eval {
+                File::Find::find({
+                    'no_chdir' => $no_chdir,
+                    'preprocess' => sub { return sort @_ },
+                    'wanted' => sub {
+                        -f or return; # the first call is for $root_dir itself.
+                        my $got = $File::Find::name;
+                        my $exp = "$root_dir$expected_first_file";
+                        print "# no_chdir=$no_chdir $root_dir '$got'\n";
+                        is($got, $exp,
+                            "Win32: Run 'find' with 'no_chdir' set to $no_chdir" );
+                        die "done"; # do not process the entire drive!
+                    },
+                }, $root_dir);
+            };
+            # If F:F:f did not die "done" then it did not Check() either.
+            unless ($@ and $@ =~ /done/) {
+                print "# no_chdir=$no_chdir $root_dir ",
+                    ($@ ? "error: $@" : "no files found"), "\n";
+                ok(0, "Win32: 0");
             }
         }
-        if ($created_file) {
-            unlink("/$expected_first_file")
-                or warn "can't unlink /$expected_first_file: $!\n";
-        }
+    }
+    if ($created_file) {
+        unlink("/$expected_first_file")
+            or warn "can't unlink /$expected_first_file: $!\n";
     }
 }
 
@@ -1111,5 +1037,3 @@ if ($^O eq 'MSWin32') {
     like($@, qr/invalid top directory/,
         "find() correctly died due to undefined top directory");
 }
-
-done_testing();

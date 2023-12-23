@@ -2,17 +2,12 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    # We need '../../lib' as well as '../lib' because parts of Config are
-    # delay-loaded, after we've chdir()'ed into $testdir.
-    @INC = ('../lib', '../../lib');
+    @INC = '../lib';
     # XXX this could be further munged to enable some parts on other
     # platforms
-    require './test.pl';
-}
-
-BEGIN {
     unless ($^O =~ /^MSWin/) {
-        skip_all 'windows specific test';
+	print "1..0 # skipped: windows specific test\n";
+	exit 0;
     }
 }
 
@@ -37,10 +32,28 @@ open(my $F, ">$testdir/$exename.c")
     or die "Can't create $testdir/$exename.c: $!";
 print $F <<'EOT';
 #include <stdio.h>
+#ifdef __BORLANDC__
+#include <windows.h>
+#endif
 int
 main(int ac, char **av)
 {
     int i;
+#ifdef __BORLANDC__
+    char *s = GetCommandLine();
+    int j=0;
+    av[0] = s;
+    if (s[0]=='"') {
+	for(;s[++j]!='"';)
+	  ;
+	av[0]++;
+    }
+    else {
+	for(;s[++j]!=' ';)
+	  ;
+    }
+    s[j]=0;
+#endif
     for (i = 0; i < ac; i++)
 	printf("[%s]", av[i]);
     printf("\n");
@@ -82,10 +95,9 @@ close $F;
 chdir($testdir);
 END {
     chdir($cwd) && rmtree("$cwd/$testdir") if -d "$cwd/$testdir";
-    unlink "cmd.exe";
 }
 if (open(my $EIN, "$cwd/win32/${exename}_exe.uu")) {
-    note "Unpacking $exename.exe";
+    print "# Unpacking $exename.exe\n";
     my $e;
     {
 	local $/;
@@ -99,49 +111,46 @@ if (open(my $EIN, "$cwd/win32/${exename}_exe.uu")) {
 }
 else {
     my $minus_o = '';
-    if ($Config{cc} =~ /\bgcc/i)
+    if ($Config{cc} eq 'gcc')
      {
       $minus_o = "-o $exename.exe";
      }
-    note "Compiling $exename.c";
-    note "$Config{cc} $Config{ccflags} $exename.c";
-    if (system("$Config{cc} $Config{ccflags} $minus_o $exename.c >log 2>&1") != 0 ||
-        !-f "$exename.exe") {
-	note "Could not compile $exename.c, status $?";
-        note "Where is your C compiler?";
-        if (open(LOG,'<log'))
-        {
-            while(<LOG>) {
-                note $_;
-            }
-        }
+    print "# Compiling $exename.c\n# $Config{cc} $Config{ccflags} $exename.c\n";
+    if (system("$Config{cc} $Config{ccflags} $minus_o $exename.c >log 2>&1") != 0) {
+	print "# Could not compile $exename.c, status $?\n"
+	     ."# Where is your C compiler?\n"
+	     ."1..0 # skipped: can't build test executable\n";
+	exit(0);
+    }
+    unless (-f "$exename.exe") {
+	if (open(LOG,'<log'))
+         {
+          while(<LOG>) {
+	     print "# ",$_;
+          } 
+         }
         else {
-            warn "Cannot open log (in $testdir):$!";
+	  warn "Cannot open log (in $testdir):$!";
         }
-        skip_all "can't build test executable";
     }
 }
 copy("$plxname.bat","$plxname.cmd");
 chdir($cwd);
 unless (-x "$testdir/$exename.exe") {
-    note "Could not build $exename.exe";
-    skip_all "can't build test executable";
+    print "# Could not build $exename.exe\n"
+	 ."1..0 # skipped: can't build test executable\n";
+    exit(0);
 }
-
-# test we only look for cmd.exe in the standard place
-delete $ENV{PERLSHELL};
-copy("$testdir/$exename.exe", "$testdir/cmd.exe") or die $!;
-copy("$testdir/$exename.exe", "cmd.exe") or die $!;
-$ENV{PATH} = qq("$testdir";$ENV{PATH});
 
 open my $T, "$^X -I../lib -w win32/system_tests |"
     or die "Can't spawn win32/system_tests: $!";
 my $expect;
 my $comment = "";
+my $test = 0;
 while (<$T>) {
     chomp;
-    if (s/^1\.\.//) {
-	plan $_;
+    if (/^1\.\./) {
+	print "$_\n";
     }
     elsif (/^#+\s(.*)$/) {
 	$comment = $1;
@@ -153,11 +162,13 @@ while (<$T>) {
     }
     else {
 	if ($expect ne $_) {
-	    note $comment if $comment;
-	    note "want: $expect";
-	    note "got : $_";
+	    print "# $comment\n" if $comment;
+	    print "# want: $expect\n";
+	    print "# got : $_\n";
+	    print "not ";
 	}
-	ok($expect eq $_, $comment // '');
+	++$test;
+	print "ok $test\n";
     }
 }
 close $T;

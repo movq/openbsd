@@ -1,6 +1,5 @@
-use strict; use warnings;
+#!/usr/bin/perl -I.
 
-BEGIN { require './t/lib/ok.pl' }
 use Text::Wrap;
 
 print "1..1\n";
@@ -8,5 +7,5 @@ print "1..1\n";
 $Text::Wrap::columns = 1;
 eval { wrap('', '', ''); };
 
-ok( !$@ );
+print $@ ? "not ok 1\n" : "ok 1\n";
 

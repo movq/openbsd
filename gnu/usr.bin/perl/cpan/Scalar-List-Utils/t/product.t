@@ -1,11 +1,20 @@
 #!./perl
 
-use strict;
-use warnings;
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+}
 
-use Test::More tests => 27;
+use Test::More tests => 13;
 
-use Config;
 use List::Util qw(product);
 
 my $v = product;
@@ -19,25 +28,6 @@ is( $v, 24, '4 args');
 
 $v = product(-1);
 is( $v, -1, 'one -1');
-
-$v = product(0, 1, 2);
-is( $v, 0, 'first factor zero' );
-
-$v = product(0, 1);
-is( $v, 0, '0 * 1');
-
-$v = product(1, 0);
-is( $v, 0, '1 * 0');
-
-$v = product(0, 0);
-is( $v, 0, 'two 0');
-
-# RT139601 cornercases
-{
-  # Numify the result because some older perl versions see "-0" as a string
-  is( 0+product(-1.0, 0), 0, 'product(-1.0, 0)' );
-  is( 0+product(-1, 0), 0, 'product(-1, 0)' );
-}
 
 my $x = -3;
 
@@ -98,7 +88,7 @@ is($v, $v1 * 42 * 2, 'bigint + builtin int');
 
 {
   my $e1 = example->new(7, "test");
-  my $t = product($e1, 7, 7);
+  $t = product($e1, 7, 7);
   is($t, 343, 'overload returning non-overload');
   $t = product(8, $e1, 8);
   is($t, 448, 'overload returning non-overload');
@@ -106,30 +96,3 @@ is($v, $v1 * 42 * 2, 'bigint + builtin int');
   is($t, 567, 'overload returning non-overload');
 }
 
-SKIP: {
-  skip "IV is not at least 64bit", 8 unless $Config{ivsize} >= 8;
-
-  my $t;
-  my $min = -(1<<31);
-  my $max = (1<<31)-1;
-
-  $t = product($min, $min);
-  is($t,  1<<62, 'min * min');
-  $t = product($min, $max);
-  is($t, (1<<31) - (1<<62), 'min * max');
-  $t = product($max, $min);
-  is($t, (1<<31) - (1<<62), 'max * min');
-
-  $t = product($max, $max);
-  is($t,  4611686014132420609, 'max * max'); # (1<<62)-(1<<32)+1), but Perl 5.6 does not compute constant correctly
-
-  $t = product($min*8, $min);
-  cmp_ok($t, '>',  (1<<61), 'min*8*min'); # may be an NV
-  $t = product($min*8, $max);
-  cmp_ok($t, '<', -(1<<61), 'min*8*max'); # may be an NV
-  $t = product($max, $min*8);
-  cmp_ok($t, '<', -(1<<61), 'min*max*8'); # may be an NV
-  $t = product($max, $max*8);
-  cmp_ok($t, '>',  (1<<61), 'max*max*8'); # may be an NV
-
-}

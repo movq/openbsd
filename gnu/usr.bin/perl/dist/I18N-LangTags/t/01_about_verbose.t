@@ -1,14 +1,17 @@
-use strict;
+
+require 5;
+# Time-stamp: "2004-03-30 17:02:59 AST"
 
 # Summary of, well, things.
 
-use Test::More tests => 4;
+use Test;
+BEGIN {plan tests => 2};
 
-BEGIN {
-      use_ok('I18N::LangTags');
-      use_ok('I18N::LangTags::List');
-      use_ok('I18N::LangTags::Detect');
-}
+ok 1;
+
+use I18N::LangTags;
+use I18N::LangTags::List;
+use I18N::LangTags::Detect;
 
 #chdir "t" if -e "t";
 
@@ -38,8 +41,7 @@ BEGIN {
     next if $this eq 'main'; # %main:: is %::
 
     #print "Peeking at $this => ${$this . '::VERSION'}\n";
-
-    no strict 'refs';
+    
     if(defined ${$this . '::VERSION'} ) {
       $v{$this} = ${$this . '::VERSION'}
     } elsif(
@@ -61,7 +63,7 @@ BEGIN {
   push @out, " Modules in memory:\n";
   delete @v{'', '[none]'};
   foreach my $p (sort {lc($a) cmp lc($b)} keys %v) {
-    my $indent = ' ' x (2 + ($p =~ tr/:/:/));
+    $indent = ' ' x (2 + ($p =~ tr/:/:/));
     push @out,  '  ', $indent, $p, defined($v{$p}) ? " v$v{$p};\n" : ";\n";
   }
   push @out, sprintf "[at %s (local) / %s (GMT)]\n",
@@ -83,4 +85,5 @@ foreach my $x (sort {lc($a) cmp lc($b)} keys %INC) {
   print "#   [$x] = [", $INC{$x} || '', "]\n";
 }
 
-pass('done');
+ok 1;
+

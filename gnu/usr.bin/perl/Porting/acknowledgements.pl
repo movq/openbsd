@@ -7,7 +7,7 @@ Porting/acknowledgements.pl - Generate perldelta acknowledgements text
 =head1 SYNOPSIS
 
   perl Porting/acknowledgements.pl v5.15.0..HEAD
-
+  
 =head1 DESCRIPTION
 
 This generates the text which goes in the Acknowledgements section in
@@ -25,7 +25,7 @@ use Text::Wrap;
 use Time::Piece;
 use Time::Seconds;
 use version;
-$Text::Wrap::columns = 77;
+$Text::Wrap::columns = 80;
 
 my $since_until = shift;
 
@@ -38,11 +38,9 @@ my $previous_version = previous_version();
 my $next_version     = next_version();
 my $development_time = development_time();
 
-my ( $changes, $files, $code_changes, $code_files ) = changes_files();
+my ( $changes, $files ) = changes_files();
 my $formatted_changes = commify( round($changes) );
 my $formatted_files   = commify( round($files) );
-my $formatted_code_changes = commify( round($code_changes) );
-my $formatted_code_files   = commify( round($code_files) );
 
 my $authors = authors();
 my $nauthors = $authors =~ tr/,/,/;
@@ -53,11 +51,7 @@ my $text
 since Perl $previous_version and contains approximately $formatted_changes
 lines of changes across $formatted_files files from $nauthors authors.
 
-Excluding auto-generated files, documentation and release tools, there
-were approximately $formatted_code_changes lines of changes to
-$formatted_code_files .pm, .t, .c and .h files.
-
-Perl continues to flourish into its fourth decade thanks to a vibrant
+Perl continues to flourish into its third decade thanks to a vibrant
 community of users and developers. The following people are known to
 have contributed the improvements that became Perl $next_version:
 
@@ -106,7 +100,7 @@ sub development_time {
 
     my $development_time;
     if ( $months < 2 ) {
-        return "$weeks @{[$weeks == 1 ? q(week) : q(weeks)]}";
+        return "$weeks weeks";
     } else {
         return "$months months";
     }
@@ -125,17 +119,6 @@ sub _round {
 # version
 sub changes_files {
     my $output = qx(git diff --shortstat $since_until);
-    my $q = ($^O =~ /^(?:MSWin32|VMS)$/io) ? '"' : "'";
-    my @filenames = qx(git diff --numstat $since_until | $^X -anle ${q}next if m{^dist/Module-CoreList} or not /\\.(?:pm|c|h|t)\\z/; print \$F[2]$q);
-    chomp @filenames;
-    my $output_code_changed = qx# git diff --shortstat $since_until -- @filenames #;
-
-    return ( _changes_from_cmd ( $output ),
-             _changes_from_cmd ( $output_code_changed ) );
-}
-
-sub _changes_from_cmd {
-    my $output = shift || die "No git diff command output";
 
     # 585 files changed, 156329 insertions(+), 53586 deletions(-)
     my ( $files, $insertions, $deletions )

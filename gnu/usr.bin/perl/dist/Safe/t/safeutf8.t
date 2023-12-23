@@ -21,14 +21,13 @@ $safe->deny_only();
 # Expression that triggers require utf8 and call to SWASHNEW.
 # Fails with "Undefined subroutine PLPerl::utf8::SWASHNEW called"
 # if SWASHNEW is not shared, else returns true if unicode logic is working.
-# (For early Perls we don't take into account EBCDIC, so will fail there
-my $trigger = q{ my $a = pack('U',0xB6); $a =~ tr/\x{1234}//rd };
+my $trigger = q{ my $a = pack('U',0xC4); my $b = chr 0xE4; utf8::upgrade $b; $a =~ /$b/i };
 
 ok $safe->reval( $trigger ), 'trigger expression should return true';
 is $@, '', 'trigger expression should not die';
 
 # return a closure
-my $sub = $safe->reval(q{sub { warn pack('U',0xB6) }});
+my $sub = $safe->reval(q{sub { warn pack('U',0xC4) }});
 
 # define code outside Safe that'll be triggered from inside
 my @warns;

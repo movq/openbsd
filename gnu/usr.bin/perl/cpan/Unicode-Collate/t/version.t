@@ -1,36 +1,30 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
     }
 }
 
+use Test;
+BEGIN { plan tests => 17 };
+
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..17\n"; }
-my $count = 0;
-sub ok ($;$) {
-    my $p = my $r = shift;
-    if (@_) {
-	my $x = shift;
-	$p = !defined $x ? !defined $r : !defined $r ? 0 : $r eq $x;
-    }
-    print $p ? "ok" : "not ok", ' ', ++$count, "\n";
-}
-
 use Unicode::Collate;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
 # Fix me when UCA and/or keys.txt is upgraded.
-my $UCA_Version = "43";
-my $Base_Unicode_Version = "13.0.0";
+my $UCA_Version = "14";
+my $Base_Unicode_Version = "4.1.0";
 my $Key_Version = "3.1.1";
 
 ok(Unicode::Collate::UCA_Version, $UCA_Version);

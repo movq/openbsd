@@ -46,20 +46,15 @@ their tests, unlike other core modules.
 
 =item * F<ext/>
 
-Like F<lib/>, this directory contains modules which are only released
-as part of the core.  Unlike F<lib/>, however, a module under F<ext/>
-generally has a CPAN-style directory- and file-layout and its own
-F<Makefile.PL>.  There is no expectation that a module under F<ext/>
-will work with earlier versions of Perl 5.  Hence, such a module may
-take full advantage of syntactical and other improvements in Perl 5
-blead.
+This directory contains XS-using modules which are only released as
+part of the core. These modules generally have their F<Makefile.PL> and
+are laid out more like a typical CPAN module.
 
 =item * F<dist/>
 
 This directory is for dual-life modules where the blead source is
 canonical. Note that some modules in this directory may not yet have
-been released separately on CPAN.  Modules under F<dist/> should make
-an effort to work with earlier versions of Perl 5.
+been released separately on CPAN.
 
 =item * F<cpan/>
 
@@ -101,7 +96,7 @@ broken.
 
 =item * F<t/cmd/>
 
-Tests for basic control structures, C<if>/C<else>, C<while>, subroutines,
+Tests for basic control structures, C<if/else>, C<while>, subroutines,
 etc.
 
 =item * F<t/comp/>
@@ -120,13 +115,6 @@ Tests for perl's method resolution order implementations (see L<mro>).
 
 Tests for perl's built in functions that don't fit into any of the
 other directories.
-
-=item * F<t/opbasic/>
-
-Tests for perl's built in functions which, like those in F<t/op/>, do
-not fit into any of the other directories, but which, in addition,
-cannot use F<t/test.pl>,as that program depends on functionality which
-the test file itself is testing.
 
 =item * F<t/re/>
 
@@ -157,6 +145,10 @@ corresponding entry in the F<AUTHORS> file.
 The old home for the module tests, you shouldn't put anything new in
 here. There are still some bits and pieces hanging around in here that
 need to be moved. Perhaps you could move them?  Thanks!
+
+=item * F<t/x2p>
+
+A test suite for the s2p converter.
 
 =back
 
@@ -197,24 +189,20 @@ patched.
 
 =head2 Build system
 
-The Perl build system on *nix-like systems starts with the F<Configure>
-script in the root directory.
+The Perl build system starts with the F<Configure> script in the root
+directory.
 
 Platform-specific pieces of the build system also live in
 platform-specific directories like F<win32/>, F<vms/>, etc.
-Windows and VMS have their own Configure-like scripts, in their
-respective directories.
 
-The F<Configure> script (or a platform-specific similar script) is
-ultimately responsible for generating a F<Makefile> from F<Makefile.SH>.
+The F<Configure> script is ultimately responsible for generating a
+F<Makefile>.
 
 The build system that Perl uses is called metaconfig. This system is
-maintained separately from the Perl core, and knows about the
-platform-specific Configure-like scripts, as well as F<Configure>
-itself.
+maintained separately from the Perl core.
 
 The metaconfig system has its own git repository. Please see its README
-file in L<https://github.com/Perl/metaconfig> for more details.
+file in L<http://perl5.git.perl.org/metaconfig.git/> for more details.
 
 The F<Cross> directory contains various files related to
 cross-compiling Perl. See F<Cross/README> for more details.

@@ -1,10 +1,8 @@
 #!./perl
 
-use strict;
-use Test::More;
-plan tests => ( $] ge '5.008' ? 14 : 10 );
+print "1..4\n";
 
-my $DICT = <<EOT;
+$DICT = <<EOT;
 Aarhus
 Aaron
 Ababa
@@ -35,90 +33,50 @@ abating
 Abba
 EOT
 
-use Tie::Handle; # loads Tie::StdHandle
 use Search::Dict;
 
-open(DICT, '+>', "dict-$$") or die "Can't create dict-$$: $!";
+open(DICT, "+>dict-$$") or die "Can't create dict-$$: $!";
 binmode DICT;			# To make length expected one.
 print DICT $DICT;
 
-my $word;
-
 my $pos = look *DICT, "Ababa";
 chomp($word = <DICT>);
-cmp_ok $pos, ">=", 0;
-is $word, "Ababa", "found 'Ababa' from file";
+print "not " if $pos < 0 || $word ne "Ababa";
+print "ok 1\n";
 
 if (ord('a') > ord('A') ) {  # ASCII
 
     $pos = look *DICT, "foo";
-    $word = <DICT>;
+    chomp($word = <DICT>);
 
-    is $pos, length($DICT), "word not found will search to end of file";
+    print "not " if $pos != length($DICT);  # will search to end of file
+    print "ok 2\n";
 
     my $pos = look *DICT, "abash";
     chomp($word = <DICT>);
-    cmp_ok $pos, ">=", 0;
-    is $word, "abash";
+    print "not " if $pos < 0 || $word ne "abash";
+    print "ok 3\n";
+
 }
 else { # EBCDIC systems e.g. os390
 
     $pos = look *DICT, "FOO";
-    $word = <DICT>;
+    chomp($word = <DICT>);
 
-    is $pos, length($DICT);  # will search to end of file
+    print "not " if $pos != length($DICT);  # will search to end of file
+    print "ok 2\n";
 
     my $pos = look *DICT, "Abba";
     chomp($word = <DICT>);
-    cmp_ok $pos, ">=", 0;
-    is $word, "Abba";
+    print "not " if $pos < 0 || $word ne "Abba";
+    print "ok 3\n";
 }
 
 $pos = look *DICT, "aarhus", 1, 1;
 chomp($word = <DICT>);
 
-cmp_ok $pos, ">=", 0;
-is $word, "Aarhus";
+print "not " if $pos < 0 || $word ne "Aarhus";
+print "ok 4\n";
 
 close DICT or die "cannot close";
-
-{
-  local $^W = 1; # turn on global warnings for stat() in Search::Dict
-
-  my $warn = '';
-  local $SIG{__WARN__} = sub { $warn = join("\n",@_) };
-
-  tie *DICT, 'Tie::StdHandle', "<", "dict-$$";
-
-  $pos = look \*DICT, "aarhus", 1, 1;
-  is( $warn, '', "no warning seen" );
-
-  $word = <DICT>;
-  chomp $word;
-
-  cmp_ok $pos, ">=", 0, "case-insensitive search for 'aarhus' returned > 0";
-  is $word, "Aarhus", "case-insensitive search found 'Aarhus'";
-
-  untie *DICT;
-}
 unlink "dict-$$";
-
-if ( $] ge '5.008' ) {
-      open my $strfh, "<", \$DICT or die $!;
-
-      {
-          my $pos = look $strfh, 'Ababa';
-          chomp($word = <$strfh>);
-          cmp_ok $pos, ">=", 0;
-          is $word, "Ababa";
-      }
-
-      {
-          my $pos = look $strfh, "aarhus", 1, 1;
-          chomp($word = <$strfh>);
-          cmp_ok $pos, ">=", 0;
-          is $word, "Aarhus";
-      }
-
-      close $strfh;
-}

@@ -2,7 +2,7 @@
 0.4: Hashes dumped recursively.
      Additional fields for CV added.
 0.5: Prototypes for functions supported. 
-     Strings are consistently in quotes now.
+     Strings are consostently in quotes now.
      Name changed to Devel::Peek (former ExtUtils::Peek).
 0.7:
 	New function mstat added.
@@ -66,8 +66,3 @@
 1.02:
 	2004-10-22: Document "hash quality" output and update examples.
 
-1.09:
-	2012-07-23: Modify tests for 5.18's slightly different flags.
-1.10:
-        2012-08-22: Update so compiles under C++ with new PADLIST changes in
-                    the Perl core

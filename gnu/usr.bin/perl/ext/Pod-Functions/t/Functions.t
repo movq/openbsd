@@ -29,18 +29,18 @@ is( $pkg_ref, $exp_ref, '%Pod::Functions::Type_Description exported' );
 is( $pkg_ref, $exp_ref, '@Pod::Functions::Type_Order exported' );
 
 # Check @Type_Order
-my @categories = qw(
+my @catagories = qw(
     String  Regexp  Math   ARRAY  LIST      HASH    I/O
     Binary  File    Flow   Namespace Misc    Process
     Modules Objects Socket SysV   User      Network Time
 );
 
-is_deeply( \@Type_Order, \@categories,
+ok( eq_array( \@Type_Order, \@catagories ),
     '@Type_Order' );
 
 my @cat_keys = grep exists $Type_Description{ $_ } => @Type_Order;
 
-is_deeply( \@cat_keys, \@categories,
+ok( eq_array( \@cat_keys, \@catagories ),
     'keys() %Type_Description' );
 
 SKIP: {
@@ -110,7 +110,7 @@ Functions for fixed-length data or records:
 Functions for filehandles, files, or directories:
      -X, chdir, chmod, chown, chroot, fcntl, glob, ioctl, link,
      lstat, mkdir, open, opendir, readlink, rename, rmdir,
-     select, stat, symlink, sysopen, umask, unlink, utime
+     stat, symlink, sysopen, umask, unlink, utime
 
 Keywords related to the control flow of your Perl program:
      __FILE__, __LINE__, __PACKAGE__, __SUB__, break, caller,

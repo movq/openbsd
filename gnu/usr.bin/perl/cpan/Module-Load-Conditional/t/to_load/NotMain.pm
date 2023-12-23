@@ -1,4 +1,3 @@
-use strict;
-our $VERSION = 1.23;
+$VERSION = 1.23;
 
 1;

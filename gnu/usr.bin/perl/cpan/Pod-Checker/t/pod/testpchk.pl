@@ -1,10 +1,8 @@
 package TestPodChecker;
 
-use strict;
-use File::Basename qw(basename dirname fileparse);
-use File::Spec;
-
 BEGIN {
+   use File::Basename;
+   use File::Spec;
    push @INC, '..';
    my $THISDIR = dirname $0;
    unshift @INC, $THISDIR;
@@ -16,7 +14,7 @@ BEGIN {
 }
 
 use Pod::Checker;
-use vars qw(@ISA @EXPORT @EXPORT_OK $MYPKG);
+use vars qw(@ISA @EXPORT $MYPKG);
 #use strict;
 #use diagnostics;
 use Carp;
@@ -67,10 +65,9 @@ sub testpodcheck( @ ) {
          $_ = VMS::Filespec::unixify($_)  unless  ref;
       }
    }
-   podchecker($infile, $outfile, -warnings => 200);
+   podchecker($infile, $outfile);
    if ( testcmp({'-cmplines' => \&msgcmp}, $outfile, $cmpfile) ) {
        $different = "$outfile is different from $cmpfile";
-       system("diff -u $cmpfile $outfile") if $ENV{TEST_POD_CHECK_DIFF};
    }
    else {
        unlink($outfile);

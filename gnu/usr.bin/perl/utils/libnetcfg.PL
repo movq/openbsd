@@ -18,7 +18,7 @@ chdir dirname($0);
 my $file = basename($0, '.PL');
 $file .= '.com' if $^O eq 'VMS';
 
-open OUT, ">", $file or die "Can't create $file: $!";
+open OUT,">$file" or die "Can't create $file: $!";
 
 print "Extracting $file (with variable substitutions)\n";
 
@@ -28,7 +28,7 @@ print "Extracting $file (with variable substitutions)\n";
 print OUT <<"!GROK!THIS!";
 $Config{startperl}
     eval 'exec $Config{perlpath} -S \$0 \${1+"\$@"}'
-	if 0; # ^ Run only under a shell
+	if \$running_under_some_shell;
 !GROK!THIS!
 
 # In the following, perl variables are not expanded during extraction.
@@ -77,27 +77,26 @@ the C<-d> options.
 The default name of the old configuration file is by default
 "libnet.cfg", unless otherwise specified using the -i option,
 C<-i oldfile>, and it is searched first from the current directory,
-and then from your module path.
+and the from your module path.
 
-The default name of the new configuration file is "libnet.cfg", and by
+The default name of new configuration file is "libnet.cfg", and by
 default it is written to the current directory, unless otherwise
 specified using the -o option, C<-o newfile>.
 
 =head1 SEE ALSO
 
-L<Net::Config>, L<libnetFAQ>
+L<Net::Config>, L<Net::libnetFAQ>
 
 =head1 AUTHORS
 
 Graham Barr, the original Configure script of libnet.
 
-Jarkko Hietaniemi, conversion into libnetcfg for inclusion into Perl 5.8.
+Jarkko Hietaniemi, conversion into libnet cfg for inclusion into Perl 5.8.
 
 =cut
 
 # $Id: Configure,v 1.8 1997/03/04 09:22:32 gbarr Exp $
 
-BEGIN { pop @INC if $INC[-1] eq '.' }
 use strict;
 use IO::File;
 use Getopt::Std;
@@ -219,7 +218,7 @@ sub get_hostname
    print <<"EDQ";
 
 *** ERROR:
-    Hostname '$host' does not seem to exist, please enter again
+    Hostname `$host' does not seem to exist, please enter again
     or a single space to clear any default
 
 EDQ
@@ -343,7 +342,7 @@ my %oldcfg = ();
 $Net::Config::CONFIGURE = 1; # Suppress load of user overrides
 if( -f $libnet_cfg_in )
  {
-  %oldcfg = ( %{ local @INC = '.'; do $libnet_cfg_in } );
+  %oldcfg = ( %{ do $libnet_cfg_in } );
  }
 elsif (eval { require Net::Config }) 
  {
@@ -369,9 +368,9 @@ Without options, the old configuration is shown.
 The default name of the old configuration file is by default
 "libnet.cfg", unless otherwise specified using the -i option,
 C<-i oldfile>, and it is searched first from the current directory,
-and then from your module path.
+and the from your module path.
 
-The default name of the new configuration file is "libnet.cfg", and by
+The default name of new configuration file is "libnet.cfg", and by
 default it is written to the current directory, unless otherwise
 specified using the -o option.
 
@@ -685,9 +684,9 @@ $cfg{'inet_domain'} = ($ans =~ /(\S+)/)[0];
 $msg = <<EDQ;
 
 If you specified some default hosts above, it is possible for me to
-do some basic tests when you run 'make test'
+do some basic tests when you run `make test'
 
-This will cause 'make test' to be quite a bit slower and, if your
+This will cause `make test' to be quite a bit slower and, if your
 internet connection is via dialup, will require you to be on-line
 unless the hosts are local.
 
@@ -715,7 +714,7 @@ print "\n";
 #---------------------------------------------------------------------------
 
 my $fh = IO::File->new($libnet_cfg_out, "w") or
-	die "Cannot create '$libnet_cfg_out': $!";
+	die "Cannot create `$libnet_cfg_out': $!";
 
 print "Writing $libnet_cfg_out\n";
 

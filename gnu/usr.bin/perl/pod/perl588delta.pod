@@ -1,8 +1,6 @@
-=encoding utf8
-
 =head1 NAME
 
-perl588delta - what is new for perl v5.8.8
+perldelta - what is new for perl v5.8.8
 
 =head1 DESCRIPTION
 
@@ -431,7 +429,7 @@ C<ExtUtils::MakeMaker> upgraded to version 6.30 (was 6.17)
 
 =item *
 
-Too much to list here;  see L<http://search.cpan.org/dist/ExtUtils-MakeMaker/Changes>
+Too much to list here;  see L<http://search.cpan.org/src/MSCHWERN/ExtUtils-MakeMaker-6.30/Changes>
 
 =back
 
@@ -530,7 +528,7 @@ C<File::Spec> upgraded to version 3.12
 
 =item *
 
-C<< File::Spec->rootdir() >> now returns C<\> on Win32, instead of C</>
+C<File::Spec->rootdir()> now returns C<\> on Win32, instead of C</>
 
 =item *
 
@@ -1243,7 +1241,7 @@ Now implements UCA Revision 14 (based on Unicode 4.1.0).
 
 =item *
 
-C<< Unicode::Collate->new >> method no longer overwrites user's C<$_>
+C<Unicode::Collate->new> method no longer overwrites user's C<$_>
 
 =item *
 
@@ -1385,7 +1383,7 @@ happens at program exit, it may be skipped completely.
 
 =item *
 
-Salvador FandiÃ±o provided improvements to reduce the memory usage of C<sort>
+Salvador Fandiño provided improvements to reduce the memory usage of C<sort>
 and to speed up some cases.
 
 =item *
@@ -1474,7 +1472,7 @@ Trailing spaces are now trimmed from C<$!> and C<$^E>.
 
 =item *
 
-Operations that require perl to read a process's list of groups, such as reads
+Operations that require perl to read a process' list of groups, such as reads
 of C<$(> and C<$)>, now dynamically allocate memory rather than using a
 fixed sized array. The fixed size array could cause C stack exhaustion on
 systems configured to use large numbers of groups.
@@ -1535,7 +1533,7 @@ This is a new warning, produced in situations such as this:
 
 =head2 Non-string passed as bitmask
 
-This is a new warning, produced when number has been passed as an argument to
+This is a new warning, produced when number has been passed as a argument to
 select(), instead of a bitmask.
 
     # Wrong, will now warn

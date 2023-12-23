@@ -4,19 +4,10 @@
      add socketpair() dummy. */
 /* Modified 02-04-24 by Paul Green (Paul.Green@stratus.com) to
      have pow(0,0) return 1, avoiding c-1471. */
-/* Modified 06-09-25 by Paul Green (Paul.Green@stratus.com) to
-     add syslog entries. */
-/* Modified 08-02-04 by Paul Green (Paul.Green@stratus.com) to
-     open the syslog file in the working dir. */
-/* Modified 11-10-17 by Paul Green to remove the dummy copies
-     of socketpair() and the syslog functions. */
 /* End of modification history */
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -33,6 +24,18 @@ truncate(const char *path, off_t len)
    close(fd); 
  }
  return code;
+}
+
+/* VOS doesn't implement AF_UNIX (AF_LOCAL) style sockets, and
+   the perl emulation of them hangs on VOS (due to stcp-1257),
+   so we supply this version that always fails.  */
+
+int
+socketpair (int family, int type, int protocol, int fd[2]) {
+ fd[0] = 0;
+ fd[1] = 0;
+ errno = ENOSYS;
+ return -1;
 }
 
 /* Supply a private version of the power function that returns 1

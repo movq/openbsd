@@ -1,16 +1,13 @@
 #!/usr/bin/perl -w
 
-use strict;
-use warnings;
-
 BEGIN {
     unshift @INC, 't/lib';
 }
 
 use Test::More tests => 4;
 
-BEGIN {
-    use_ok 'ExtUtils::MakeMaker';
+BEGIN { 
+    use_ok 'ExtUtils::MakeMaker'; 
     use_ok 'ExtUtils::MM_VMS';
 }
 

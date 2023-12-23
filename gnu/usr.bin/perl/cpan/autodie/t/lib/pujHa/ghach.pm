@@ -17,7 +17,7 @@ package pujHa'ghach;
 use strict;
 use warnings;
 
-use parent qw(autodie);
+use base qw(autodie);
 
 sub exception_class {
     return "pujHa'ghach::Dotlh";      # Dotlh - status

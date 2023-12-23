@@ -1,4 +1,3 @@
-#!perl
 ################################################################################
 #
 #  $Revision: 6 $
@@ -16,10 +15,12 @@
 ################################################################################
 
 BEGIN {
-  chdir 't' if -d 't';
-  require "./test.pl";
-  set_up_inc('../lib') if -d '../lib' && -d '../ext';
+  if ($ENV{'PERL_CORE'}) {
+    chdir 't' if -d 't';
+    @INC = '../lib' if -d '../lib' && -d '../ext';
+  }
 
+  require "./test.pl";
   require Config; import Config;
 
   if ($ENV{'PERL_CORE'} && $Config{'extensions'} !~ m[\bIPC/SysV\b]) {
@@ -39,7 +40,7 @@ my $key;
 END { shmctl $key, IPC_RMID, 0 if defined $key }
 
 {
-	local $SIG{SYS} = sub { skip_all("SIGSYS caught") } if exists $SIG{SYS};
+	local $SIG{SYS} = sub { plan(skip_all => "SIGSYS caught") } if exists $SIG{SYS};
 	$key = shmget IPC_PRIVATE, 8, S_IRWXU;
 }
 
@@ -47,14 +48,14 @@ if (not defined $key) {
   my $info = "IPC::SharedMem->new failed: $!";
   if ($! == &IPC::SysV::ENOSPC || $! == &IPC::SysV::ENOSYS ||
       $! == &IPC::SysV::ENOMEM || $! == &IPC::SysV::EACCES) {
-    skip_all($info);
+    plan(skip_all => $info);
   }
   else {
     die $info;
   }
 }
 else {
-	plan(tests => 21);
+	plan(tests => 13);
 	pass('acquired shared mem');
 }
 
@@ -79,29 +80,3 @@ shmwrite $key, $int, 0, 1;
 shmread $key, $number, 0, 1;
 is("$number", $int, qq{"\$id" eq "$int"});
 cmp_ok($number + 0, '==', $int, "\$id + 0 == $int");
-
-my ($fetch, $store) = (0, 0);
-{ package Counted;
-  sub TIESCALAR { bless [undef] }
-  sub FETCH     { ++$fetch; $_[0][0] }
-  sub STORE     { ++$store; $_[0][0] = $_[1] } }
-tie $ct, 'Counted';
-shmread $key, $ct, 0, 1;
-is($fetch, 1, "shmread FETCH once");
-is($store, 1, "shmread STORE once");
-
-{
-    # check reading into an upgraded buffer is sane
-    my $text = "\xC0\F0AB";
-    ok(shmwrite($key, $text, 0, 4), "setup text");
-    my $rdbuf = "\x{101}";
-    ok(shmread($key, $rdbuf, 0, 4), "read it back");
-    is($rdbuf, $text, "check we got back the expected");
-
-    # check writing from an upgraded buffer
-    utf8::upgrade(my $utext = $text);
-    ok(shmwrite($key, $utext, 0, 4), "setup text (upgraded source)");
-    $rdbuf = "";
-    ok(shmread($key, $rdbuf, 0, 4), "read it back (upgraded source)");
-    is($rdbuf, $text, "check we got back the expected (upgraded source)");
-}

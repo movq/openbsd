@@ -1,170 +1,123 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 use strict;
-use warnings;
-use lib 't';
+use Test;
 
-use Test::More tests => 50;
+BEGIN 
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/bigints.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    @INC = qw(../t/lib);                # testing with the core distribution
+    }
+  unshift @INC, '../lib';       # for testing manually
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
+
+  plan tests => 51;
+  }
 
 # testing of Math::BigInt:Scalar (used by the testsuite),
 # primarily for interface/api and not for the math functionality
 
 use Math::BigInt::Scalar;
 
-my $class = 'Math::BigInt::Scalar'; # pass classname to sub's
+my $C = 'Math::BigInt::Scalar';	# pass classname to sub's
 
 # _new and _str
-
-my $x = $class->_new("123");
-my $y = $class->_new("321");
-is(ref($x), 'SCALAR', 'ref($x)');
-is($class->_str($x), 123, "$class->_str(\$x)");
-is($class->_str($y), 321, "$class->_str(\$y)");
+my $x = $C->_new("123"); my $y = $C->_new("321");
+ok (ref($x),'SCALAR'); ok ($C->_str($x),123); ok ($C->_str($y),321);
 
 # _add, _sub, _mul, _div
 
-is($class->_str($class->_add($x, $y)), 444,
-   "$class->_str($class->_add(\$x, \$y)");
-is($class->_str($class->_sub($x, $y)), 123,
-   "$class->_str($class->_sub(\$x, \$y)");
-is($class->_str($class->_mul($x, $y)), 39483,
-   "$class->_str($class->_mul(\$x, \$y))");
-is($class->_str($class->_div($x, $y)), 123,
-   "$class->_str($class->_div(\$x, \$y)");
+ok ($C->_str($C->_add($x,$y)),444);
+ok ($C->_str($C->_sub($x,$y)),123);
+ok ($C->_str($C->_mul($x,$y)),39483);
+ok ($C->_str($C->_div($x,$y)),123);
 
-$class->_mul($x, $y);
-is($class->_str($x), 39483, "$class->_str(\$x)");
-is($class->_str($y),   321, "$class->_str(\$y)");
+ok ($C->_str($C->_mul($x,$y)),39483);
+ok ($C->_str($x),39483);
+ok ($C->_str($y),321);
+my $z = $C->_new("2");
+ok ($C->_str($C->_add($x,$z)),39485);
+my ($re,$rr) = $C->_div($x,$y);
 
-my $z = $class->_new("2");
-is($class->_str($class->_add($x, $z)), 39485,
-   "$class->_str($class->_add(\$x, \$z)");
-
-my ($re, $rr) = $class->_div($x, $y);
-is($class->_str($re), 123, "$class->_str(\$re)");
-is($class->_str($rr),   2, "$class->_str(\$rr)");
+ok ($C->_str($re),123); ok ($C->_str($rr),2);
 
 # is_zero, _is_one, _one, _zero
+ok ($C->_is_zero($x),0);
+ok ($C->_is_one($x),0);
 
-is($class->_is_zero($x), 0, "$class->_is_zero($x)");
-is($class->_is_one($x),  0, "$class->_is_one($x)");
-
-is($class->_is_one($class->_one()), 1,
-   "$class->_is_one($class->_one())");
-is($class->_is_one($class->_zero()), 0,
-   "$class->_is_one($class->_zero())");
-is($class->_is_zero($class->_zero()), 1,
-   "$class->_is_zero($class->_zero())");
-is($class->_is_zero($class->_one()), 0,
-   "$class->_is_zero($class->_one())");
+ok ($C->_is_one($C->_one()),1); ok ($C->_is_one($C->_zero()),0);
+ok ($C->_is_zero($C->_zero()),1); ok ($C->_is_zero($C->_one()),0);
 
 # is_odd, is_even
-
-is($class->_is_odd($class->_one()), 1,
-   "$class->_is_odd($class->_one())");
-is($class->_is_odd($class->_zero()), 0,
-   "$class->_is_odd($class->_zero())");
-is($class->_is_even($class->_one()), 0,
-   "$class->_is_even($class->_one())");
-is($class->_is_even($class->_zero()), 1,
-   "$class->_is_even($class->_zero())");
+ok ($C->_is_odd($C->_one()),1); ok ($C->_is_odd($C->_zero()),0);
+ok ($C->_is_even($C->_one()),0); ok ($C->_is_even($C->_zero()),1);
 
 # _digit
-
-$x = $class->_new("123456789");
-is($class->_digit($x,  0), 9, "$class->_digit(\$x, 0)");
-is($class->_digit($x,  1), 8, "$class->_digit(\$x, 1)");
-is($class->_digit($x,  2), 7, "$class->_digit(\$x, 2)");
-is($class->_digit($x, -1), 1, "$class->_digit(\$x, -1)");
-is($class->_digit($x, -2), 2, "$class->_digit(\$x, -2)");
-is($class->_digit($x, -3), 3, "$class->_digit(\$x, -3)");
+$x = $C->_new("123456789");
+ok ($C->_digit($x,0),9);
+ok ($C->_digit($x,1),8);
+ok ($C->_digit($x,2),7);
+ok ($C->_digit($x,-1),1);
+ok ($C->_digit($x,-2),2);
+ok ($C->_digit($x,-3),3);
 
 # _copy
-
-$x = $class->_new("12356");
-is($class->_str($class->_copy($x)), 12356,
-   "$class->_str($class->_copy(\$x))");
+$x = $C->_new("12356");
+ok ($C->_str($C->_copy($x)),12356);
 
 # _acmp
-
-$x = $class->_new("123456789");
-$y = $class->_new("987654321");
-is($class->_acmp($x, $y), -1, "$class->_acmp(\$x, \$y)");
-is($class->_acmp($y, $x),  1, "$class->_acmp(\$y, \$x)");
-is($class->_acmp($x, $x),  0, "$class->_acmp(\$x, \$x)");
-is($class->_acmp($y, $y),  0, "$class->_acmp(\$y, \$y)");
+$x = $C->_new("123456789");
+$y = $C->_new("987654321");
+ok ($C->_acmp($x,$y),-1);
+ok ($C->_acmp($y,$x),1);
+ok ($C->_acmp($x,$x),0);
+ok ($C->_acmp($y,$y),0);
 
 # _div
-
-$x = $class->_new("3333");
-$y = $class->_new("1111");
-is($class->_str(scalar $class->_div($x, $y)), 3,
-   "$class->_str(scalar $class->_div(\$x, \$y))");
-
-$x = $class->_new("33333");
-$y = $class->_new("1111");
-($x, $y) = $class->_div($x, $y);
-is($class->_str($x), 30, "$class->_str(\$x)");
-is($class->_str($y),  3, "$class->_str(\$y)");
-
-$x = $class->_new("123");
-$y = $class->_new("1111");
-($x, $y) = $class->_div($x, $y);
-is($class->_str($x),   0, "$class->_str(\$x)");
-is($class->_str($y), 123, "$class->_str(\$y)");
+$x = $C->_new("3333"); $y = $C->_new("1111");
+ok ($C->_str( scalar $C->_div($x,$y)),3);
+$x = $C->_new("33333"); $y = $C->_new("1111"); ($x,$y) = $C->_div($x,$y);
+ok ($C->_str($x),30); ok ($C->_str($y),3);
+$x = $C->_new("123"); $y = $C->_new("1111"); 
+($x,$y) = $C->_div($x,$y); ok ($C->_str($x),0); ok ($C->_str($y),123);
 
 # _num
-
-$x = $class->_new("12345");
-$x = $class->_num($x);
-is(ref($x) || '', '', 'ref($x) || ""');
-is($x, 12345, '$x');
+$x = $C->_new("12345"); $x = $C->_num($x); ok (ref($x)||'',''); ok ($x,12345);
 
 # _len
-
-$x = $class->_new("12345");
-$x = $class->_len($x);
-is(ref($x) || '', '', 'ref($x) || ""');
-is($x, 5, '$x');
+$x = $C->_new("12345"); $x = $C->_len($x); ok (ref($x)||'',''); ok ($x,5);
 
 # _and, _or, _xor
-
-$x = $class->_new("3");
-$y = $class->_new("4");
-is($class->_str($class->_or($x, $y)), 7,
-   "$class->_str($class->_or($x, $y))");
-
-$x = $class->_new("1");
-$y = $class->_new("4");
-is($class->_str($class->_xor($x, $y)), 5,
-   "$class->_str($class->_xor($x, $y))");
-
-$x = $class->_new("7");
-$y = $class->_new("3");
-is($class->_str($class->_and($x, $y)), 3,
-   "$class->_str($class->_and($x, $y))");
+$x = $C->_new("3"); $y = $C->_new("4"); ok ($C->_str( $C->_or($x,$y)),7);
+$x = $C->_new("1"); $y = $C->_new("4"); ok ($C->_str( $C->_xor($x,$y)),5);
+$x = $C->_new("7"); $y = $C->_new("3"); ok ($C->_str( $C->_and($x,$y)),3);
 
 # _pow
+$x = $C->_new("2"); $y = $C->_new("4"); ok ($C->_str( $C->_pow($x,$y)),16);
+$x = $C->_new("2"); $y = $C->_new("5"); ok ($C->_str( $C->_pow($x,$y)),32);
+$x = $C->_new("3"); $y = $C->_new("3"); ok ($C->_str( $C->_pow($x,$y)),27);
 
-$x = $class->_new("2");
-$y = $class->_new("4");
-is($class->_str($class->_pow($x, $y)), 16,
-   "$class->_str($class->_pow($x, $y))");
-
-$x = $class->_new("2");
-$y = $class->_new("5");
-is($class->_str($class->_pow($x, $y)), 32,
-   "$class->_str($class->_pow($x, $y))");
-
-$x = $class->_new("3");
-$y = $class->_new("3");
-is($class->_str($class->_pow($x, $y)), 27,
-   "$class->_str($class->_pow($x, $y))");
 
 # _check
+$x = $C->_new("123456789");
+ok ($C->_check($x),0);
+ok ($C->_check(123),'123 is not a reference');
 
-$x = $class->_new("123456789");
-is($class->_check($x), 0,
-   "$class->_check(\$x)");
-is($class->_check(123), '123 is not a reference',
-   "$class->_check(123)");
+# done
+
+1;
+

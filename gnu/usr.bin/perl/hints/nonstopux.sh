@@ -15,6 +15,3 @@ case "$cc" in
 		;;
 esac
 
-libswanted=`echo " $libswanted " | sed -e 's/ ucb / /'`
-glibpth=`echo " $glibpth " | sed -e 's/ \/usr\/ucblib / /'`
-

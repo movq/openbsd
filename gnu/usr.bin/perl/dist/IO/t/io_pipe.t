@@ -37,20 +37,18 @@ my $is_win32=$^O eq 'MSWin32' ? "MSWin32 has broken pipes" : "";
 $| = 1;
 print "1..10\n";
 
-my $pipe;
-
 if ($is_win32) {
     print "ok $_ # skipped: $is_win32\n" for 1..4;
 } else {
-    $pipe = IO::Pipe->new()->reader($perl, '-e', 'print qq(not ok 1\n)');
+    $pipe = new IO::Pipe->reader($perl, '-e', 'print qq(not ok 1\n)');
     while (<$pipe>) {
       s/^not //;
       print;
     }
     $pipe->close or print "# \$!=$!\nnot ";
     print "ok 2\n";
-    my $cmd = 'BEGIN{$SIG{ALRM} = sub {print qq(not ok 4\n); exit}; alarm 10} s/not //';
-    $pipe = IO::Pipe->new()->writer($perl, '-pe', $cmd);
+    $cmd = 'BEGIN{$SIG{ALRM} = sub {print qq(not ok 4\n); exit}; alarm 10} s/not //';
+    $pipe = new IO::Pipe->writer($perl, '-pe', $cmd);
     print $pipe "not ok 3\n" ;
     $pipe->close or print "# \$!=$!\nnot ";
     print "ok 4\n";
@@ -63,9 +61,9 @@ if ($^O eq 'os2' and
     exit 0;
 }
 
-$pipe = IO::Pipe->new();
+$pipe = new IO::Pipe;
 
-my $pid = fork();
+$pid = fork();
 
 if($pid)
  {
@@ -78,7 +76,7 @@ if($pid)
 elsif(defined $pid)
  {
   $pipe->reader;
-  my $stdin = bless \*STDIN, "IO::Handle";
+  $stdin = bless \*STDIN, "IO::Handle";
   $stdin->fdopen($pipe,"r");
   exec $^X, '-pne', 'tr/YX/ko/';
  }
@@ -90,8 +88,8 @@ else
 if ($is_win32) {
     print "ok $_ # skipped: $is_win32\n" for 7..8;
 } else {
-    $pipe = IO::Pipe->new();
-    my $pid = fork();
+    $pipe = new IO::Pipe;
+    $pid = fork();
 
     if($pid)
  {
@@ -107,14 +105,10 @@ if ($is_win32) {
  {
   $pipe->writer;
 
-  my $stdout = bless \*STDOUT, "IO::Handle";
+  $stdout = bless \*STDOUT, "IO::Handle";
   $stdout->fdopen($pipe,"w");
   print STDOUT "not ok 7\n";
-  my @echo = 'echo';
-  if ( $^O =~ /android/ ) {
-     @echo = ('sh', '-c', q{echo $@}, '--');
-  }
-  exec @echo, 'not ok 8';
+  exec 'echo', 'not ok 8';
  }
     else
  {
@@ -124,7 +118,7 @@ if ($is_win32) {
 if ($is_win32) {
     print "ok $_ # skipped: $is_win32\n" for 9;
 } else {
-    $pipe = IO::Pipe->new;
+    $pipe = new IO::Pipe;
     $pipe->writer;
 
     $SIG{'PIPE'} = 'broken_pipe';

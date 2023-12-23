@@ -1,7 +1,7 @@
 package Hints_provider_easy_does_it;
 use strict;
 use warnings;
-use Exporter 5.57 'import';
+use base qw(Exporter);
 
 our @EXPORT_OK = qw(always_fail always_pass no_hints);
 

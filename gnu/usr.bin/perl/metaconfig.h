@@ -10,13 +10,25 @@
  * they won't be available unless used. When new symbols are probed
  * in Configure, this is the way to force them into availability.
  *
- * Symbols should only be here temporarily. Once they are actually used,
- * they should be removed from here.
- *
- * HAS_NON_INT_BITFIELDS
- * HAS_STRXFRM_L
- * HAS_NL_LANGINFO_L
- * HAS_FFS
- * HAS_FFSL
+ * CHARBITS
+ * HAS_ASCTIME64
+ * HAS_CTIME64
+ * HAS_DIFFTIME64
+ * HAS_GMTIME64
+ * HAS_ISBLANK
+ * HAS_LOCALTIME64
+ * HAS_IPV6_MREQ
+ * HAS_MKTIME64
+ * HAS_PRCTL
+ * HAS_PSEUDOFORK
+ * HAS_TIMEGM
+ * HAS_SOCKADDR_IN6
+ * I16SIZE
+ * I64SIZE
+ * I8SIZE
+ * LOCALTIME_R_NEEDS_TZSET
+ * U8SIZE
+ * USE_KERN_PROC_PATHNAME
+ * USE_NSGETEXECUTABLEPATH
  *
  */

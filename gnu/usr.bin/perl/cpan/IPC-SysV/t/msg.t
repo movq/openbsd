@@ -1,6 +1,12 @@
 ################################################################################
 #
-#  Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz <mhx@cpan.org>.
+#  $Revision: 11 $
+#  $Author: mhx $
+#  $Date: 2008/11/28 18:08:11 +0100 $
+#
+################################################################################
+#
+#  Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz <mhx@cpan.org>.
 #  Version 1.x, Copyright (C) 1999, Graham Barr <gbarr@pobox.com>.
 #
 #  This program is free software; you can redistribute it and/or
@@ -8,18 +14,14 @@
 #
 ################################################################################
 
-use strict;
-use warnings;
-
-our %Config;
 BEGIN {
   if ($ENV{'PERL_CORE'}) {
     chdir 't' if -d 't';
     @INC = '../lib' if -d '../lib' && -d '../ext';
   }
 
-  require Test::More; Test::More->import;
-  require Config; Config->import;
+  require Test::More; import Test::More;
+  require Config; import Config;
 
   if ($ENV{'PERL_CORE'} && $Config{'extensions'} !~ m[\bIPC/SysV\b]) {
     plan(skip_all => 'IPC::SysV was not built');
@@ -33,6 +35,7 @@ if ($Config{'d_sem'} ne 'define') {
 }
 
 use IPC::SysV qw(IPC_PRIVATE IPC_RMID IPC_NOWAIT IPC_STAT S_IRWXU S_IRWXG S_IRWXO);
+use strict;
 
 use IPC::Msg;
 #Creating a message queue
@@ -44,7 +47,7 @@ my $msq = sub {
     return $code->();
   }
   return $code->();
-}->(sub { IPC::Msg->new(IPC_PRIVATE, S_IRWXU | S_IRWXG | S_IRWXO) });
+}->(sub { new IPC::Msg(IPC_PRIVATE, S_IRWXU | S_IRWXG | S_IRWXO) });
 
 unless (defined $msq) {
   my $info = "IPC::Msg->new failed: $!";

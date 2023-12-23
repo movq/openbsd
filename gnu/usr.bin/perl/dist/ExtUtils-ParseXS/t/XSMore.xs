@@ -7,7 +7,6 @@ typedef IV MyType2;
 typedef IV MyType3;
 typedef IV MyType4;
 typedef IV MyType5;
-typedef IV MyType6;
 
 
 =for testing
@@ -36,36 +35,6 @@ STATIC void
 outlist(int* a, int* b){
 	*a = 'a';
 	*b = 'b';
-}
-
-STATIC bool
-outlist_bool(const char *a, const char *b, char **c)
-{
-   dTHX;
-   STRLEN lena = strlen(a);
-   STRLEN lenb = strlen(b);
-   STRLEN lenc = lena + lenb;
-   Newx(*c, lenc+1, char);
-   strcpy(*c, a);
-   strcat(*c, b);
-   SAVEFREEPV(*c);
-
-   return TRUE;
-}
-
-STATIC int
-outlist_int(const char *a, const char *b, char **c)
-{
-   dTHX;
-   STRLEN lena = strlen(a);
-   STRLEN lenb = strlen(b);
-   STRLEN lenc = lena + lenb;
-   Newx(*c, lenc+1, char);
-   strcpy(*c, a);
-   strcat(*c, b);
-   SAVEFREEPV(*c);
-
-   return 11;
 }
 
 STATIC int
@@ -130,9 +99,6 @@ T_WITHSEMICOLON
     $var = ($type)SvIV($arg); 
 END
 
-TYPEMAP: <<SEMICOLONHERE;
-MyType6	T_IV
-SEMICOLONHERE
 
 MyType
 typemaptest1()
@@ -156,14 +122,6 @@ typemaptest3(foo, bar, baz)
   CODE:
     PERL_UNUSED_VAR(bar);
     PERL_UNUSED_VAR(baz);
-    RETVAL = foo;
-  OUTPUT:
-    RETVAL
-
-MyType6
-typemaptest6(foo)
-    MyType6 foo
-  CODE:
     RETVAL = foo;
   OUTPUT:
     RETVAL
@@ -231,12 +189,6 @@ CLEANUP:
 void
 outlist(OUTLIST int a, OUTLIST int b)
 
-bool
-outlist_bool(const char *a, const char *b, OUTLIST char *c)
-
-int
-outlist_int(const char *a, const char *b, OUTLIST char *c)
-
 int
 len(char* s, int length(s))
 
@@ -251,17 +203,3 @@ INCLUDE: XSInclude.xsh
 # for testing #else directive
 
 #endif
-
-MODULE=XSMore PACKAGE=XSMore::More
-
-void
-dummy()
-PROTOTYPE: $$$$$
-CODE:
-  NOOP;
-
-void
-should_not_have_prototype()
-OVERLOAD: +
-CODE:
-  NOOP;

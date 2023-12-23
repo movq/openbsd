@@ -7,14 +7,15 @@
 package IO::Socket::INET;
 
 use strict;
+our(@ISA, $VERSION);
 use IO::Socket;
 use Socket;
 use Carp;
 use Exporter;
 use Errno;
 
-our @ISA = qw(IO::Socket);
-our $VERSION = "1.49";
+@ISA = qw(IO::Socket);
+$VERSION = "1.31";
 
 my $EINVAL = exists(&Errno::EINVAL) ? Errno::EINVAL() : 1;
 
@@ -49,7 +50,7 @@ sub _get_proto_number {
     return undef unless defined $name;
     return $proto_number{$name} if exists $proto_number{$name};
 
-    my @proto = eval { getprotobyname($name) };
+    my @proto = getprotobyname($name);
     return undef unless @proto;
     _cache_proto(@proto);
 
@@ -61,7 +62,7 @@ sub _get_proto_name {
     return undef unless defined $num;
     return $proto_name{$num} if exists $proto_name{$num};
 
-    my @proto = eval { getprotobynumber($num) };
+    my @proto = getprotobynumber($num);
     return undef unless @proto;
     _cache_proto(@proto);
 
@@ -79,7 +80,7 @@ sub _sock_info {
   if(defined $proto  && $proto =~ /\D/) {
     my $num = _get_proto_number($proto);
     unless (defined $num) {
-      $IO::Socket::errstr = $@ = "Bad protocol '$proto'";
+      $@ = "Bad protocol '$proto'";
       return;
     }
     $proto = $num;
@@ -94,7 +95,7 @@ sub _sock_info {
 
     $port = $serv[2] || $defport || $pnum;
     unless (defined $port) {
-	$IO::Socket::errstr = $@ = "Bad service '$origport'";
+	$@ = "Bad service '$origport'";
 	return;
     }
 
@@ -113,7 +114,7 @@ sub _error {
     {
       local($!);
       my $title = ref($sock).": ";
-      $IO::Socket::errstr = $@ = join("", $_[0] =~ /^$title/ ? "" : $title, @_);
+      $@ = join("", $_[0] =~ /^$title/ ? "" : $title, @_);
       $sock->close()
 	if(defined fileno($sock));
     }
@@ -337,28 +338,26 @@ In addition to the key-value pairs accepted by L<IO::Socket>,
 C<IO::Socket::INET> provides.
 
 
- PeerAddr    Remote host address          <hostname>[:<port>]
- PeerHost    Synonym for PeerAddr
- PeerPort    Remote port or service       <service>[(<no>)] | <no>
- LocalAddr   Local host bind address      hostname[:port]
- LocalHost   Synonym for LocalAddr
- LocalPort   Local host bind port         <service>[(<no>)] | <no>
- Proto       Protocol name (or number)    "tcp" | "udp" | ...
- Type        Socket type              SOCK_STREAM | SOCK_DGRAM | ...
- Listen      Queue size for listen
- ReuseAddr   Set SO_REUSEADDR before binding
- Reuse       Set SO_REUSEADDR before binding (deprecated,
-                                              prefer ReuseAddr)
- ReusePort   Set SO_REUSEPORT before binding
- Broadcast   Set SO_BROADCAST before binding
- Timeout     Timeout value for various operations
- MultiHomed  Try all addresses for multi-homed hosts
- Blocking    Determine if connection will be blocking mode
+    PeerAddr	Remote host address          <hostname>[:<port>]
+    PeerHost	Synonym for PeerAddr
+    PeerPort	Remote port or service       <service>[(<no>)] | <no>
+    LocalAddr	Local host bind	address      hostname[:port]
+    LocalHost	Synonym for LocalAddr
+    LocalPort	Local host bind	port         <service>[(<no>)] | <no>
+    Proto	Protocol name (or number)    "tcp" | "udp" | ...
+    Type	Socket type                  SOCK_STREAM | SOCK_DGRAM | ...
+    Listen	Queue size for listen
+    ReuseAddr	Set SO_REUSEADDR before binding
+    Reuse	Set SO_REUSEADDR before binding (deprecated, prefer ReuseAddr)
+    ReusePort	Set SO_REUSEPORT before binding
+    Broadcast	Set SO_BROADCAST before binding
+    Timeout	Timeout	value for various operations
+    MultiHomed  Try all addresses for multi-homed hosts
+    Blocking    Determine if connection will be blocking mode
 
 If C<Listen> is defined then a listen socket is created, else if the
 socket type, which is derived from the protocol, is SOCK_STREAM then
-connect() is called.  If the C<Listen> argument is given, but false,
-the queue size will be set to 5.
+connect() is called.
 
 Although it is not illegal, the use of C<MultiHomed> on a socket
 which is in non-blocking mode is of little use. This is because the
@@ -398,25 +397,19 @@ Examples:
 
    $sock = IO::Socket::INET->new('127.0.0.1:25');
 
-   $sock = IO::Socket::INET->new(
-                           PeerPort  => 9999,
-                           PeerAddr  => inet_ntoa(INADDR_BROADCAST),
-                           Proto     => 'udp',
-                           LocalAddr => 'localhost',
-                           Broadcast => 1 ) 
-                       or die "Can't bind : $IO::Socket::errstr\n";
+   $sock = IO::Socket::INET->new(PeerPort  => 9999,
+                                 PeerAddr  => inet_ntoa(INADDR_BROADCAST),
+                                 Proto     => udp,    
+                                 LocalAddr => 'localhost',
+                                 Broadcast => 1 ) 
+                             or die "Can't bind : $@\n";
 
-If the constructor fails it will return C<undef> and set the
-C<$IO::Socket::errstr> package variable to contain an error message.
+ NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 
-    $sock = IO::Socket::INET->new(...)
-        or die "Cannot create socket - $IO::Socket::errstr\n";
+As of VERSION 1.18 all IO::Socket objects have autoflush turned on
+by default. This was not the case with earlier releases.
 
-For legacy reasons the error message is also set into the global C<$@>
-variable, and you may still find older code which looks here instead.
-
-    $sock = IO::Socket::INET->new(...)
-        or die "Cannot create socket - $@\n";
+ NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE NOTE
 
 =back
 
@@ -460,7 +453,7 @@ L<Socket>, L<IO::Socket>
 =head1 AUTHOR
 
 Graham Barr. Currently maintained by the Perl Porters.  Please report all
-bugs at L<https://github.com/Perl/perl5/issues>.
+bugs to <perl5-porters@perl.org>.
 
 =head1 COPYRIGHT
 

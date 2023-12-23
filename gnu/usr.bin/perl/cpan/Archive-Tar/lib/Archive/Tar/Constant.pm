@@ -1,20 +1,16 @@
 package Archive::Tar::Constant;
 
-use strict;
-use warnings;
-
-use vars qw[$VERSION @ISA @EXPORT];
-
 BEGIN {
     require Exporter;
-
-    $VERSION    = '2.40';
+    
+    $VERSION    = '0.02';
     @ISA        = qw[Exporter];
 
     require Time::Local if $^O eq "MacOS";
 }
 
-@EXPORT = Archive::Tar::Constant->_list_consts( __PACKAGE__ );
+use Package::Constants;
+@EXPORT = Package::Constants->list( __PACKAGE__ );
 
 use constant FILE           => 0;
 use constant HARDLINK       => 1;
@@ -34,7 +30,6 @@ use constant BLOCK          => 512;
 
 use constant COMPRESS_GZIP  => 9;
 use constant COMPRESS_BZIP  => 'bzip2';
-use constant COMPRESS_XZ    => 'xz';
 
 use constant BLOCK_SIZE     => sub { my $n = int($_[0]/BLOCK); $n++ if $_[0] % BLOCK; $n * BLOCK };
 use constant TAR_PAD        => sub { my $x = shift || return; return "\0" x (BLOCK - ($x % BLOCK) ) };
@@ -56,12 +51,12 @@ use constant MODE           => do { 0666 & (0777 & ~umask) };
 use constant STRIP_MODE     => sub { shift() & 0777 };
 use constant CHECK_SUM      => "      ";
 
-use constant UNPACK         => 'a100 a8 a8 a8 a12 a12 a8 a1 a100 A6 a2 a32 a32 a8 a8 a155 x12';	# cdrake - size must be a12 - not A12 - or else screws up huge file sizes (>8gb)
+use constant UNPACK         => 'A100 A8 A8 A8 A12 A12 A8 A1 A100 A6 A2 A32 A32 A8 A8 A155 x12';
 use constant PACK           => 'a100 a8 a8 a8 a12 a12 A8 a1 a100 a6 a2 a32 a32 a8 a8 a155 x12';
 use constant NAME_LENGTH    => 100;
 use constant PREFIX_LENGTH  => 155;
 
-use constant TIME_OFFSET    => ($^O eq "MacOS") ? Time::Local::timelocal(0,0,0,1,0,1970) : 0;
+use constant TIME_OFFSET    => ($^O eq "MacOS") ? Time::Local::timelocal(0,0,0,1,0,70) : 0;    
 use constant MAGIC          => "ustar";
 use constant TAR_VERSION    => "00";
 use constant LONGLINK_NAME  => '././@LongLink';
@@ -70,58 +65,22 @@ use constant PAX_HEADER     => 'pax_global_header';
                             ### allow ZLIB to be turned off using ENV: DEBUG only
 use constant ZLIB           => do { !$ENV{'PERL5_AT_NO_ZLIB'} and
                                         eval { require IO::Zlib };
-                                    $ENV{'PERL5_AT_NO_ZLIB'} || $@ ? 0 : 1
+                                    $ENV{'PERL5_AT_NO_ZLIB'} || $@ ? 0 : 1 
                                 };
 
-                            ### allow BZIP to be turned off using ENV: DEBUG only
+                            ### allow BZIP to be turned off using ENV: DEBUG only                                
 use constant BZIP           => do { !$ENV{'PERL5_AT_NO_BZIP'} and
                                         eval { require IO::Uncompress::Bunzip2;
                                                require IO::Compress::Bzip2; };
-                                    $ENV{'PERL5_AT_NO_BZIP'} || $@ ? 0 : 1
-                                };
-
-                            ### allow XZ to be turned off using ENV: DEBUG only
-use constant XZ             => do { !$ENV{'PERL5_AT_NO_XZ'} and
-                                        eval { require IO::Compress::Xz;
-                                               require IO::Uncompress::UnXz; };
-                                    $ENV{'PERL5_AT_NO_XZ'} || $@ ? 0 : 1
+                                    $ENV{'PERL5_AT_NO_BZIP'} || $@ ? 0 : 1 
                                 };
 
 use constant GZIP_MAGIC_NUM => qr/^(?:\037\213|\037\235)/;
-
-                           # ASCII:  B   Z   h    0    9
-use constant BZIP_MAGIC_NUM => qr/^\x42\x5A\x68[\x30-\x39]/;
-
-use constant XZ_MAGIC_NUM   => qr/^\xFD\x37\x7A\x58\x5A\x00/;
+use constant BZIP_MAGIC_NUM => qr/^BZh\d/;
 
 use constant CAN_CHOWN      => sub { ($> == 0 and $^O ne "MacOS" and $^O ne "MSWin32") };
 use constant CAN_READLINK   => ($^O ne 'MSWin32' and $^O !~ /RISC(?:[ _])?OS/i and $^O ne 'VMS');
 use constant ON_UNIX        => ($^O ne 'MSWin32' and $^O ne 'MacOS' and $^O ne 'VMS');
-use constant ON_VMS         => $^O eq 'VMS';
-
-sub _list_consts {
-    my $class = shift;
-    my $pkg   = shift;
-    return unless defined $pkg; # some joker might use '0' as a pkg...
-
-    my @rv;
-    {   no strict 'refs';
-        my $stash = $pkg . '::';
-
-        for my $name (sort keys %$stash ) {
-
-            ### is it a subentry?
-            my $sub = $pkg->can( $name );
-            next unless defined $sub;
-
-            next unless defined prototype($sub) and
-                     not length prototype($sub);
-
-            push @rv, $name;
-        }
-    }
-
-    return sort @rv;
-}
+use constant ON_VMS         => $^O eq 'VMS'; 
 
 1;

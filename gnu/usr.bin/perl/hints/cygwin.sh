@@ -19,70 +19,30 @@ then
     plibpth=`cd $plibpth && pwd`
 fi
 so='dll'
-# - eliminate -lc, implied by gcc and a symlink to libcygwin.a
+# - eliminate -lc, implied by gcc
 libswanted=`echo " $libswanted " | sed -e 's/ c / /g'`
-# - eliminate -lm, symlink to libcygwin.a
-libswanted=`echo " $libswanted " | sed -e 's/ m / /g'`
-# - eliminate -lutil, symbols are all in libcygwin.a
-libswanted=`echo " $libswanted " | sed -e 's/ util / /g'`
-# - add libgdbm_compat $libswanted
-libswanted="$libswanted gdbm_compat"
-test -z "$optimize" && optimize='-O3'
-man3ext='3pm'
-test -z "$use64bitint" && use64bitint='define'
-test -z "$useithreads" && useithreads='define'
-ccflags="$ccflags -DPERL_USE_SAFE_PUTENV -U__STRICT_ANSI__ -D_GNU_SOURCE"
+libswanted="$libswanted cygipc cygwin kernel32"
 # - otherwise i686-cygwin
 archname='cygwin'
 
 # dynamic loading
 # - otherwise -fpic
 cccdlflags=' '
-lddlflags=' --shared'
-test -z "$ld" && ld='g++'
+ld='ld2'
 
-case "$osvers" in
-    # Configure gets these wrong if the IPC server isn't yet running:
-    # only use for 1.5.7 and onwards
-    [2-9]*|1.[6-9]*|1.[1-5][0-9]*|1.5.[7-9]*|1.5.[1-6][0-9]*)
-        d_semctl_semid_ds='define'
-        d_semctl_semun='define'
-        ;;
-esac
+# optional(ish)
+# - perl malloc needs to be unpolluted
+bincompat5005='undef'
 
-case "$osvers" in
-    [2-9]*|1.[6-9]*)
-        # IPv6 only since 1.7
-        d_inetntop='define'
-        d_inetpton='define'
-        ;;
-    *)
-        # IPv6 not implemented before cygwin-1.7
-        d_inetntop='undef'
-        d_inetpton='undef'
-esac
-
-# compile Win32CORE "module" as static. try to avoid the space.
-if test -z "$static_ext"; then
-  static_ext="Win32CORE"
-else
-  static_ext="$static_ext Win32CORE"
-fi
+# stubs (ENOSYS, not implemented)
+d_chroot='undef'
+d_seteuid='undef'
+d_setegid='undef'
 
 # Win9x problem with non-blocking read from a closed pipe
 d_eofnblk='define'
 
-# suppress auto-import warnings
-ldflags="$ldflags -Wl,--enable-auto-import -Wl,--export-all-symbols -Wl,--enable-auto-image-base"
-lddlflags="$lddlflags $ldflags"
-
-# strip exe's and dll's, better do it afterwards
+# strip exe's and dll's
 #ldflags="$ldflags -s"
 #ccdlflags="$ccdlflags -s"
 #lddlflags="$lddlflags -s"
-
-# Seems that exporting _Thread_local doesn't work on cygwin. This 6 year old
-# gcc bug suggests that maybe the problem really is binutils, but either way
-# it still doesn't work, despite our probes looking good:
-# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=64697
-d_thread_local=undef

@@ -1,36 +1,17 @@
-#define PERL_EXT_POSIX
-#define PERL_EXT
-
-#define PERL_NO_GET_CONTEXT
-
 #include "EXTERN.h"
-#define PERLIO_NOT_STDIO 1
 #include "perl.h"
 #include "XSUB.h"
-
-static int not_here(const char *s);
-
-#if defined(PERL_IMPLICIT_SYS)
-#  undef signal
-#  undef open
-#  undef setmode
-#  define open PerlLIO_open3
-#endif
 #include <ctype.h>
 #ifdef I_DIRENT    /* XXX maybe better to just rely on perl.h? */
 #include <dirent.h>
 #endif
 #include <errno.h>
-#ifdef WIN32
-#include <sys/errno2.h>
-#endif
+#ifdef I_FLOAT
 #include <float.h>
-#ifdef I_FENV
-#if !(defined(__vax__) && defined(__NetBSD__))
-#include <fenv.h>
 #endif
-#endif
+#ifdef I_LIMITS
 #include <limits.h>
+#endif
 #include <locale.h>
 #include <math.h>
 #ifdef I_PWD
@@ -38,1413 +19,155 @@ static int not_here(const char *s);
 #endif
 #include <setjmp.h>
 #include <signal.h>
+#ifdef I_STDARG
 #include <stdarg.h>
+#endif
+#ifdef I_STDDEF
 #include <stddef.h>
-
-#ifdef I_UNISTD
-#include <unistd.h>
 #endif
-
-#ifdef I_SYS_TIME
-# include <sys/time.h>
-#endif
-
-#ifdef I_SYS_RESOURCE
-# include <sys/resource.h>
-#endif
-
-/* Cygwin's stdio.h doesn't make cuserid() visible with -D_GNU_SOURCE,
-   unlike Linux.
-*/
-#ifdef __CYGWIN__
-# undef HAS_CUSERID
-#endif
-
-#if defined(USE_QUADMATH) && defined(I_QUADMATH)
-
-#  undef M_E
-#  undef M_LOG2E
-#  undef M_LOG10E
-#  undef M_LN2
-#  undef M_LN10
-#  undef M_PI
-#  undef M_PI_2
-#  undef M_PI_4
-#  undef M_1_PI
-#  undef M_2_PI
-#  undef M_2_SQRTPI
-#  undef M_SQRT2
-#  undef M_SQRT1_2
-
-#  define M_E        M_Eq
-#  define M_LOG2E    M_LOG2Eq
-#  define M_LOG10E   M_LOG10Eq
-#  define M_LN2      M_LN2q
-#  define M_LN10     M_LN10q
-#  define M_PI       M_PIq
-#  define M_PI_2     M_PI_2q
-#  define M_PI_4     M_PI_4q
-#  define M_1_PI     M_1_PIq
-#  define M_2_PI     M_2_PIq
-#  define M_2_SQRTPI M_2_SQRTPIq
-#  define M_SQRT2    M_SQRT2q
-#  define M_SQRT1_2  M_SQRT1_2q
-
-#else
-
-#  ifdef USE_LONG_DOUBLE
-#    undef M_E
-#    undef M_LOG2E
-#    undef M_LOG10E
-#    undef M_LN2
-#    undef M_LN10
-#    undef M_PI
-#    undef M_PI_2
-#    undef M_PI_4
-#    undef M_1_PI
-#    undef M_2_PI
-#    undef M_2_SQRTPI
-#    undef M_SQRT2
-#    undef M_SQRT1_2
-#    define FLOAT_C(c) CAT2(c,L)
-#  else
-#    define FLOAT_C(c) (c)
-#  endif
-
-#  ifndef M_E
-#    define M_E		FLOAT_C(2.71828182845904523536028747135266250)
-#  endif
-#  ifndef M_LOG2E
-#    define M_LOG2E	FLOAT_C(1.44269504088896340735992468100189214)
-#  endif
-#  ifndef M_LOG10E
-#    define M_LOG10E	FLOAT_C(0.434294481903251827651128918916605082)
-#  endif
-#  ifndef M_LN2
-#    define M_LN2	FLOAT_C(0.693147180559945309417232121458176568)
-#  endif
-#  ifndef M_LN10
-#    define M_LN10	FLOAT_C(2.30258509299404568401799145468436421)
-#  endif
-#  ifndef M_PI
-#    define M_PI	FLOAT_C(3.14159265358979323846264338327950288)
-#  endif
-#  ifndef M_PI_2
-#    define M_PI_2	FLOAT_C(1.57079632679489661923132169163975144)
-#  endif
-#  ifndef M_PI_4
-#    define M_PI_4	FLOAT_C(0.785398163397448309615660845819875721)
-#  endif
-#  ifndef M_1_PI
-#    define M_1_PI	FLOAT_C(0.318309886183790671537767526745028724)
-#  endif
-#  ifndef M_2_PI
-#    define M_2_PI	FLOAT_C(0.636619772367581343075535053490057448)
-#  endif
-#  ifndef M_2_SQRTPI
-#    define M_2_SQRTPI	FLOAT_C(1.12837916709551257389615890312154517)
-#  endif
-#  ifndef M_SQRT2
-#    define M_SQRT2	FLOAT_C(1.41421356237309504880168872420969808)
-#  endif
-#  ifndef M_SQRT1_2
-#    define M_SQRT1_2	FLOAT_C(0.707106781186547524400844362104849039)
-#  endif
-
-#endif
-
-#if !defined(INFINITY) && defined(NV_INF)
-#  define INFINITY NV_INF
-#endif
-
-#if !defined(NAN) && defined(NV_NAN)
-#  define NAN NV_NAN
-#endif
-
-#if !defined(Inf) && defined(NV_INF)
-#  define Inf NV_INF
-#endif
-
-#if !defined(NaN) && defined(NV_NAN)
-#  define NaN NV_NAN
-#endif
-
-/* We will have an emulation. */
-#ifndef FP_INFINITE
-#  define FP_INFINITE	0
-#  define FP_NAN	1
-#  define FP_NORMAL	2
-#  define FP_SUBNORMAL	3
-#  define FP_ZERO	4
-#endif
-
-/* We will have an emulation. */
-#ifndef FE_TONEAREST
-#  define FE_TOWARDZERO	0
-#  define FE_TONEAREST	1
-#  define FE_UPWARD	2
-#  define FE_DOWNWARD	3
-#endif
-
-/* C89 math.h:
-
-   acos asin atan atan2 ceil cos cosh exp fabs floor fmod frexp ldexp
-   log log10 modf pow sin sinh sqrt tan tanh
-
- * Implemented in core:
-
-   atan2 cos exp log pow sin sqrt
-
- * C99 math.h added:
-
-   acosh asinh atanh cbrt copysign erf erfc exp2 expm1 fdim fma fmax
-   fmin fpclassify hypot ilogb isfinite isgreater isgreaterequal isinf
-   isless islessequal islessgreater isnan isnormal isunordered lgamma
-   log1p log2 logb lrint lround nan nearbyint nextafter nexttoward remainder
-   remquo rint round scalbn signbit tgamma trunc
-
-   See:
-   http://pubs.opengroup.org/onlinepubs/009695399/basedefs/math.h.html
-
- * Berkeley/SVID extensions:
-
-   j0 j1 jn y0 y1 yn
-
- * Configure already (5.21.5) scans for:
-
-   copysign*l* fpclassify isfinite isinf isnan isnan*l* ilogb*l* signbit scalbn*l*
-
- * For floating-point round mode (which matters for e.g. lrint and rint)
-
-   fegetround fesetround
-
-*/
-
-/* XXX Constant FP_FAST_FMA (if true, FMA is faster) */
-
-/* XXX Add ldiv(), lldiv()?  It's C99, but from stdlib.h, not math.h  */
-
-/* XXX Beware old gamma() -- one cannot know whether that is the
- * gamma or the log of gamma, that's why the new tgamma and lgamma.
- * Though also remember lgamma_r. */
-
-/* Certain AIX releases have the C99 math, but not in long double.
- * The <math.h> has them, e.g. __expl128, but no library has them!
- *
- * Also see the comments in hints/aix.sh about long doubles. */
-
-#if defined(USE_QUADMATH) && defined(I_QUADMATH)
-#  define c99_acosh	acoshq
-#  define c99_asinh	asinhq
-#  define c99_atanh	atanhq
-#  define c99_cbrt	cbrtq
-#  define c99_copysign	copysignq
-#  define c99_erf	erfq
-#  define c99_erfc	erfcq
-/* no exp2q */
-#  define c99_expm1	expm1q
-#  define c99_fdim	fdimq
-#  define c99_fma	fmaq
-#  define c99_fmax	fmaxq
-#  define c99_fmin	fminq
-#  define c99_hypot	hypotq
-#  define c99_ilogb	ilogbq
-#  define c99_lgamma	lgammaq
-#  define c99_log1p	log1pq
-#  define c99_log2	log2q
-/* no logbq */
-#  if defined(USE_64_BIT_INT) && QUADKIND == QUAD_IS_LONG_LONG
-#    define c99_lrint	llrintq
-#    define c99_lround	llroundq
-#  else
-#    define c99_lrint	lrintq
-#    define c99_lround	lroundq
-#  endif
-#  define c99_nan	nanq
-#  define c99_nearbyint	nearbyintq
-#  define c99_nextafter	nextafterq
-/* no nexttowardq */
-#  define c99_remainder	remainderq
-#  define c99_remquo	remquoq
-#  define c99_rint	rintq
-#  define c99_round	roundq
-#  define c99_scalbn	scalbnq
-/* We already define Perl_signbit to signbitq in perl.h. */
-#  define c99_tgamma	tgammaq
-#  define c99_trunc	truncq
-#  define bessel_j0 j0q
-#  define bessel_j1 j1q
-#  define bessel_jn jnq
-#  define bessel_y0 y0q
-#  define bessel_y1 y1q
-#  define bessel_yn ynq
-#elif defined(USE_LONG_DOUBLE) && \
-  (defined(HAS_FREXPL) || defined(HAS_ILOGBL)) && defined(HAS_SQRTL)
-/* Use some of the Configure scans for long double math functions
- * as the canary for all the C99 *l variants being defined. */
-#  define c99_acosh	acoshl
-#  define c99_asinh	asinhl
-#  define c99_atanh	atanhl
-#  define c99_cbrt	cbrtl
-#  define c99_copysign	copysignl
-#  define c99_erf	erfl
-#  define c99_erfc	erfcl
-#  define c99_exp2	exp2l
-#  define c99_expm1	expm1l
-#  define c99_fdim	fdiml
-#  define c99_fma	fmal
-#  define c99_fmax	fmaxl
-#  define c99_fmin	fminl
-#  define c99_hypot	hypotl
-#  define c99_ilogb	ilogbl
-#  define c99_lgamma	lgammal
-#  define c99_log1p	log1pl
-#  define c99_log2	log2l
-#  define c99_logb	logbl
-#  if defined(USE_64_BIT_INT) && QUADKIND == QUAD_IS_LONG_LONG && defined(HAS_LLRINTL)
-#    define c99_lrint	llrintl
-#  elif defined(HAS_LRINTL)
-#    define c99_lrint	lrintl
-#  endif
-#  if defined(USE_64_BIT_INT) && QUADKIND == QUAD_IS_LONG_LONG && defined(HAS_LLROUNDL)
-#    define c99_lround	llroundl
-#  elif defined(HAS_LROUNDL)
-#    define c99_lround	lroundl
-#  endif
-#  define c99_nan	nanl
-#  define c99_nearbyint	nearbyintl
-#  define c99_nextafter	nextafterl
-#  define c99_nexttoward	nexttowardl
-#  define c99_remainder	remainderl
-#  define c99_remquo	remquol
-#  define c99_rint	rintl
-#  define c99_round	roundl
-#  define c99_scalbn	scalbnl
-/* We already define Perl_signbit in perl.h. */
-#  define c99_tgamma	tgammal
-#  define c99_trunc	truncl
-#else
-#  define c99_acosh	acosh
-#  define c99_asinh	asinh
-#  define c99_atanh	atanh
-#  define c99_cbrt	cbrt
-#  define c99_copysign	copysign
-#  define c99_erf	erf
-#  define c99_erfc	erfc
-#  define c99_exp2	exp2
-#  define c99_expm1	expm1
-#  define c99_fdim	fdim
-#  define c99_fma	fma
-#  define c99_fmax	fmax
-#  define c99_fmin	fmin
-#  define c99_hypot	hypot
-#  define c99_ilogb	ilogb
-#  define c99_lgamma	lgamma
-#  define c99_log1p	log1p
-#  define c99_log2	log2
-#  define c99_logb	logb
-#  if defined(USE_64_BIT_INT) && QUADKIND == QUAD_IS_LONG_LONG && defined(HAS_LLRINT)
-#    define c99_lrint	llrint
-#  else
-#    define c99_lrint	lrint
-#  endif
-#  if defined(USE_64_BIT_INT) && QUADKIND == QUAD_IS_LONG_LONG && defined(HAS_LLROUND)
-#    define c99_lround	llround
-#  else
-#    define c99_lround	lround
-#  endif
-#  define c99_nan	nan
-#  define c99_nearbyint	nearbyint
-#  define c99_nextafter	nextafter
-#  define c99_nexttoward	nexttoward
-#  define c99_remainder	remainder
-#  define c99_remquo	remquo
-#  define c99_rint	rint
-#  define c99_round	round
-#  define c99_scalbn	scalbn
-/* We already define Perl_signbit in perl.h. */
-#  define c99_tgamma	tgamma
-#  define c99_trunc	trunc
-#endif
-
-/* AIX xlc (__IBMC__) really doesn't have the following long double
- * math interfaces (no __acoshl128 aka acoshl, etc.), see
- * hints/aix.sh.  These are in the -lc128 but fail to be found
- * during dynamic linking/loading.
- *
- * XXX1 Better Configure scans
- * XXX2 Is this xlc version dependent? */
-#if defined(USE_LONG_DOUBLE) && defined(__IBMC__)
-#  undef c99_acosh
-#  undef c99_asinh
-#  undef c99_atanh
-#  undef c99_cbrt
-#  undef c99_copysign
-#  undef c99_exp2
-#  undef c99_expm1
-#  undef c99_fdim
-#  undef c99_fma
-#  undef c99_fmax
-#  undef c99_fmin
-#  undef c99_hypot
-#  undef c99_ilogb
-#  undef c99_lrint
-#  undef c99_lround
-#  undef c99_log1p
-#  undef c99_log2
-#  undef c99_logb
-#  undef c99_nan
-#  undef c99_nearbyint
-#  undef c99_nextafter
-#  undef c99_nexttoward
-#  undef c99_remainder
-#  undef c99_remquo
-#  undef c99_rint
-#  undef c99_round
-#  undef c99_scalbn
-#  undef c99_tgamma
-#  undef c99_trunc
-#endif
-
-/* The cc with NetBSD 8.0 and 9.0 claims to be a C11 hosted compiler,
- * but doesn't define several functions required by C99, let alone C11.
- * http://gnats.netbsd.org/53234
- */
-#if defined(USE_LONG_DOUBLE) && defined(__NetBSD__) \
-  && !defined(NETBSD_HAVE_FIXED_LONG_DOUBLE_MATH)
-#  undef c99_expm1
-#  undef c99_lgamma
-#  undef c99_log1p
-#  undef c99_log2
-#  undef c99_nexttoward
-#  undef c99_remainder
-#  undef c99_remquo
-#  undef c99_tgamma
-#endif
-
-#ifndef isunordered
-#  ifdef Perl_isnan
-#    define isunordered(x, y) (Perl_isnan(x) || Perl_isnan(y))
-#  elif defined(HAS_UNORDERED)
-#    define isunordered(x, y) unordered(x, y)
-#  endif
-#endif
-
-/* XXX these isgreater/isnormal/isunordered macros definitions should
- * be moved further in the file to be part of the emulations, so that
- * platforms can e.g. #undef c99_isunordered and have it work like
- * it does for the other interfaces. */
-
-#if !defined(isgreater) && defined(isunordered)
-#  define isgreater(x, y)         (!isunordered((x), (y)) && (x) > (y))
-#  define isgreaterequal(x, y)    (!isunordered((x), (y)) && (x) >= (y))
-#  define isless(x, y)            (!isunordered((x), (y)) && (x) < (y))
-#  define islessequal(x, y)       (!isunordered((x), (y)) && (x) <= (y))
-#  define islessgreater(x, y)     (!isunordered((x), (y)) && \
-                                     ((x) > (y) || (y) > (x)))
-#endif
-
-/* Check both the Configure symbol and the macro-ness (like C99 promises). */ 
-#if defined(HAS_FPCLASSIFY) && defined(fpclassify)
-#  define c99_fpclassify	fpclassify
-#endif
-/* Like isnormal(), the isfinite(), isinf(), and isnan() are also C99
-   and also (sizeof-arg-aware) macros, but they are already well taken
-   care of by Configure et al, and defined in perl.h as
-   Perl_isfinite(), Perl_isinf(), and Perl_isnan(). */
-#ifdef isnormal
-#  define c99_isnormal	isnormal
-#endif
-#ifdef isgreater /* canary for all the C99 is*<cmp>* macros. */
-#  define c99_isgreater	isgreater
-#  define c99_isgreaterequal	isgreaterequal
-#  define c99_isless		isless
-#  define c99_islessequal	islessequal
-#  define c99_islessgreater	islessgreater
-#  define c99_isunordered	isunordered
-#endif
-
-/* The Great Wall of Undef where according to the definedness of HAS_FOO symbols
- * the corresponding c99_foo wrappers are undefined.  This list doesn't include
- * the isfoo() interfaces because they are either type-aware macros, or dealt
- * separately, already in perl.h */
-
-#ifndef HAS_ACOSH
-#  undef c99_acosh
-#endif
-#ifndef HAS_ASINH
-#  undef c99_asinh
-#endif
-#ifndef HAS_ATANH
-#  undef c99_atanh
-#endif
-#ifndef HAS_CBRT
-#  undef c99_cbrt
-#endif
-#ifndef HAS_COPYSIGN
-#  undef c99_copysign
-#endif
-#ifndef HAS_ERF
-#  undef c99_erf
-#endif
-#ifndef HAS_ERFC
-#  undef c99_erfc
-#endif
-#ifndef HAS_EXP2
-#  undef c99_exp2
-#endif
-#ifndef HAS_EXPM1
-#  undef c99_expm1
-#endif
-#ifndef HAS_FDIM
-#  undef c99_fdim
-#endif
-#ifndef HAS_FMA
-#  undef c99_fma
-#endif
-#ifndef HAS_FMAX
-#  undef c99_fmax
-#endif
-#ifndef HAS_FMIN
-#  undef c99_fmin
-#endif
-#ifndef HAS_FPCLASSIFY
-#  undef c99_fpclassify
-#endif
-#ifndef HAS_HYPOT
-#  undef c99_hypot
-#endif
-#ifndef HAS_ILOGB
-#  undef c99_ilogb
-#endif
-#ifndef HAS_LGAMMA
-#  undef c99_lgamma
-#endif
-#ifndef HAS_LOG1P
-#  undef c99_log1p
-#endif
-#ifndef HAS_LOG2
-#  undef c99_log2
-#endif
-#ifndef HAS_LOGB
-#  undef c99_logb
-#endif
-#ifndef HAS_LRINT
-#  undef c99_lrint
-#endif
-#ifndef HAS_LROUND
-#  undef c99_lround
-#endif
-#ifndef HAS_NAN
-#  undef c99_nan
-#endif
-#ifndef HAS_NEARBYINT
-#  undef c99_nearbyint
-#endif
-#ifndef HAS_NEXTAFTER
-#  undef c99_nextafter
-#endif
-#ifndef HAS_NEXTTOWARD
-#  undef c99_nexttoward
-#endif
-#ifndef HAS_REMAINDER
-#  undef c99_remainder
-#endif
-#ifndef HAS_REMQUO
-#  undef c99_remquo
-#endif
-#ifndef HAS_RINT
-#  undef c99_rint
-#endif
-#ifndef HAS_ROUND
-#  undef c99_round
-#endif
-#ifndef HAS_SCALBN
-#  undef c99_scalbn
-#endif
-#ifndef HAS_TGAMMA
-#  undef c99_tgamma
-#endif
-#ifndef HAS_TRUNC
-#  undef c99_trunc
-#endif
-
-#ifdef _MSC_VER
-
-/* Some APIs exist under Win32 with "underbar" names. */
-#  undef c99_hypot
-#  undef c99_logb
-#  undef c99_nextafter
-#  define c99_hypot _hypot
-#  define c99_logb _logb
-#  define c99_nextafter _nextafter
-
-#  define bessel_j0 _j0
-#  define bessel_j1 _j1
-#  define bessel_jn _jn
-#  define bessel_y0 _y0
-#  define bessel_y1 _y1
-#  define bessel_yn _yn
-
-#endif
-
-/* The Bessel functions: BSD, SVID, XPG4, and POSIX.  But not C99. */
-#if defined(HAS_J0) && !defined(bessel_j0)
-#  if defined(USE_LONG_DOUBLE) && defined(HAS_J0L)
-#    define bessel_j0 j0l
-#    define bessel_j1 j1l
-#    define bessel_jn jnl
-#    define bessel_y0 y0l
-#    define bessel_y1 y1l
-#    define bessel_yn ynl
-#  else
-#    define bessel_j0 j0
-#    define bessel_j1 j1
-#    define bessel_jn jn
-#    define bessel_y0 y0
-#    define bessel_y1 y1
-#    define bessel_yn yn
-#  endif
-#endif
-
-/* Emulations for missing math APIs.
- *
- * Keep in mind that the point of many of these functions is that
- * they, if available, are supposed to give more precise/more
- * numerically stable results.
- *
- * See e.g. http://www.johndcook.com/math_h.html
- */
-
-#ifndef c99_acosh
-static NV my_acosh(NV x)
-{
-  return Perl_log(x + Perl_sqrt(x * x - 1));
-}
-#  define c99_acosh my_acosh
-#endif
-
-#ifndef c99_asinh
-static NV my_asinh(NV x)
-{
-  return Perl_log(x + Perl_sqrt(x * x + 1));
-}
-#  define c99_asinh my_asinh
-#endif
-
-#ifndef c99_atanh
-static NV my_atanh(NV x)
-{
-  return (Perl_log(1 + x) - Perl_log(1 - x)) / 2;
-}
-#  define c99_atanh my_atanh
-#endif
-
-#ifndef c99_cbrt
-static NV my_cbrt(NV x)
-{
-  static const NV one_third = (NV)1.0/3;
-  return x >= 0.0 ? Perl_pow(x, one_third) : -Perl_pow(-x, one_third);
-}
-#  define c99_cbrt my_cbrt
-#endif
-
-#ifndef c99_copysign
-static NV my_copysign(NV x, NV y)
-{
-  return y >= 0 ? (x < 0 ? -x : x) : (x < 0 ? x : -x);
-}
-#  define c99_copysign my_copysign
-#endif
-
-/* XXX cosh (though c89) */
-
-#ifndef c99_erf
-static NV my_erf(NV x)
-{
-  /* http://www.johndcook.com/cpp_erf.html -- public domain */
-  NV a1 =  0.254829592;
-  NV a2 = -0.284496736;
-  NV a3 =  1.421413741;
-  NV a4 = -1.453152027;
-  NV a5 =  1.061405429;
-  NV p  =  0.3275911;
-  NV t, y;
-  int sign = x < 0 ? -1 : 1; /* Save the sign. */
-  x = PERL_ABS(x);
-
-  /* Abramowitz and Stegun formula 7.1.26 */
-  t = 1.0 / (1.0 + p * x);
-  y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1) * t * Perl_exp(-x*x);
-
-  return sign * y;
-}
-#  define c99_erf my_erf
-#endif
-
-#ifndef c99_erfc
-static NV my_erfc(NV x) {
-  /* This is not necessarily numerically stable, but better than nothing. */
-  return 1.0 - c99_erf(x);
-}
-#  define c99_erfc my_erfc
-#endif
-
-#ifndef c99_exp2
-static NV my_exp2(NV x)
-{
-  return Perl_pow((NV)2.0, x);
-}
-#  define c99_exp2 my_exp2
-#endif
-
-#ifndef c99_expm1
-static NV my_expm1(NV x)
-{
-  if (PERL_ABS(x) < 1e-5)
-    /* http://www.johndcook.com/cpp_expm1.html -- public domain.
-     * Taylor series, the first four terms (the last term quartic). */
-    /* Probably not enough for long doubles. */
-    return x * (1.0 + x * (1/2.0 + x * (1/6.0 + x/24.0)));
-  else
-    return Perl_exp(x) - 1;
-}
-#  define c99_expm1 my_expm1
-#endif
-
-#ifndef c99_fdim
-static NV my_fdim(NV x, NV y)
-{
-#ifdef NV_NAN
-  return (Perl_isnan(x) || Perl_isnan(y)) ? NV_NAN : (x > y ? x - y : 0);
-#else
-  return (x > y ? x - y : 0);
-#endif
-}
-#  define c99_fdim my_fdim
-#endif
-
-#ifndef c99_fma
-static NV my_fma(NV x, NV y, NV z)
-{
-  return (x * y) + z;
-}
-#  define c99_fma my_fma
-#endif
-
-#ifndef c99_fmax
-static NV my_fmax(NV x, NV y)
-{
-#ifdef NV_NAN
-  if (Perl_isnan(x)) {
-    return Perl_isnan(y) ? NV_NAN : y;
-  } else if (Perl_isnan(y)) {
-    return x;
-  }
-#endif
-  return x > y ? x : y;
-}
-#  define c99_fmax my_fmax
-#endif
-
-#ifndef c99_fmin
-static NV my_fmin(NV x, NV y)
-{
-#ifdef NV_NAN
-  if (Perl_isnan(x)) {
-    return Perl_isnan(y) ? NV_NAN : y;
-  } else if (Perl_isnan(y)) {
-    return x;
-  }
-#endif
-  return x < y ? x : y;
-}
-#  define c99_fmin my_fmin
-#endif
-
-#ifndef c99_fpclassify
-
-static IV my_fpclassify(NV x)
-{
-#ifdef Perl_fp_class_inf
-  if (Perl_fp_class_inf(x))    return FP_INFINITE;
-  if (Perl_fp_class_nan(x))    return FP_NAN;
-  if (Perl_fp_class_norm(x))   return FP_NORMAL;
-  if (Perl_fp_class_denorm(x)) return FP_SUBNORMAL;
-  if (Perl_fp_class_zero(x))   return FP_ZERO;
-#  define c99_fpclassify my_fpclassify
-#endif
-  return -1;
-}
-
-#endif
-
-#ifndef c99_hypot
-static NV my_hypot(NV x, NV y)
-{
-  /* http://en.wikipedia.org/wiki/Hypot */
-  NV t;
-  x = PERL_ABS(x); /* Take absolute values. */
-  if (y == 0)
-    return x;
-#ifdef NV_INF
-  if (Perl_isnan(y))
-    return NV_INF;
-#endif
-  y = PERL_ABS(y);
-  if (x < y) { /* Swap so that y is less. */
-    t = x;
-    x = y;
-    y = t;
-  }
-  t = y / x;
-  return x * Perl_sqrt(1.0 + t * t);
-}
-#  define c99_hypot my_hypot
-#endif
-
-#ifndef c99_ilogb
-static IV my_ilogb(NV x)
-{
-  return (IV)(Perl_log(x) * M_LOG2E);
-}
-#  define c99_ilogb my_ilogb
-#endif
-
-/* tgamma and lgamma emulations based on
- * http://www.johndcook.com/cpp_gamma.html,
- * code placed in public domain.
- *
- * Note that these implementations (neither the johndcook originals
- * nor these) do NOT set the global signgam variable.  This is not
- * necessarily a bad thing. */
-
-/* Note that the tgamma() and lgamma() implementations
- * here depend on each other. */
-
-#if !defined(HAS_TGAMMA) || !defined(c99_tgamma)
-static NV my_tgamma(NV x);
-#  define c99_tgamma my_tgamma
-#  define USE_MY_TGAMMA
-#endif
-#if !defined(HAS_LGAMMA) || !defined(c99_lgamma)
-static NV my_lgamma(NV x);
-#  define c99_lgamma my_lgamma
-#  define USE_MY_LGAMMA
-#endif
-
-#ifdef USE_MY_TGAMMA
-static NV my_tgamma(NV x)
-{
-  const NV gamma = 0.577215664901532860606512090; /* Euler's gamma constant. */
-#ifdef NV_NAN
-  if (Perl_isnan(x) || x < 0.0)
-    return NV_NAN;
-#endif
-#ifdef NV_INF
-  if (x == 0.0 || x == NV_INF)
-#ifdef DOUBLE_IS_IEEE_FORMAT
-    return x == -0.0 ? -NV_INF : NV_INF;
-#else
-    return NV_INF;
-#endif
-#endif
-
-  /* The function domain is split into three intervals:
-   * (0, 0.001), [0.001, 12), and (12, infinity) */
-
-  /* First interval: (0, 0.001)
-   * For small values, 1/tgamma(x) has power series x + gamma x^2,
-   * so in this range, 1/tgamma(x) = x + gamma x^2 with error on the order of x^3.
-   * The relative error over this interval is less than 6e-7. */
-  if (x < 0.001)
-    return 1.0 / (x * (1.0 + gamma * x));
-
-  /* Second interval: [0.001, 12) */
-  if (x < 12.0) {
-    double y = x; /* Working copy. */
-    int n = 0;
-    /* Numerator coefficients for approximation over the interval (1,2) */
-    static const NV p[] = {
-      -1.71618513886549492533811E+0,
-      2.47656508055759199108314E+1,
-      -3.79804256470945635097577E+2,
-      6.29331155312818442661052E+2,
-      8.66966202790413211295064E+2,
-      -3.14512729688483675254357E+4,
-      -3.61444134186911729807069E+4,
-      6.64561438202405440627855E+4
-    };
-    /* Denominator coefficients for approximation over the interval (1, 2) */
-    static const NV q[] = {
-      -3.08402300119738975254353E+1,
-      3.15350626979604161529144E+2,
-      -1.01515636749021914166146E+3,
-      -3.10777167157231109440444E+3,
-      2.25381184209801510330112E+4,
-      4.75584627752788110767815E+3,
-      -1.34659959864969306392456E+5,
-      -1.15132259675553483497211E+5
-    };
-    NV num = 0.0;
-    NV den = 1.0;
-    NV z;
-    NV result;
-    int i;
-
-    if (x < 1.0)
-      y += 1.0;
-    else {
-      n = (int)Perl_floor(y) - 1;
-      y -= n;
-    }
-    z = y - 1;
-    for (i = 0; i < 8; i++) {
-      num = (num + p[i]) * z;
-      den = den * z + q[i];
-    }
-    result = num / den + 1.0;
-
-    if (x < 1.0) {
-      /* Use the identity tgamma(z) = tgamma(z+1)/z
-       * The variable "result" now holds tgamma of the original y + 1
-       * Thus we use y - 1 to get back the original y. */
-      result /= (y - 1.0);
-    }
-    else {
-      /* Use the identity tgamma(z+n) = z*(z+1)* ... *(z+n-1)*tgamma(z) */
-      for (i = 0; i < n; i++)
-        result *= y++;
-    }
-
-    return result;
-  }
-
-#ifdef NV_INF
-  /* Third interval: [12, +Inf) */
-#if LDBL_MANT_DIG == 113 /* IEEE quad prec */
-  if (x > 1755.548) {
-    return NV_INF;
-  }
-#else
-  if (x > 171.624) {
-    return NV_INF;
-  }
-#endif
-#endif
-
-  return Perl_exp(c99_lgamma(x));
-}
-#endif
-
-#ifdef USE_MY_LGAMMA
-static NV my_lgamma(NV x)
-{
-#ifdef NV_NAN
-  if (Perl_isnan(x))
-    return NV_NAN;
-#endif
-#ifdef NV_INF
-  if (x <= 0 || x == NV_INF)
-    return NV_INF;
-#endif
-  if (x == 1.0 || x == 2.0)
-    return 0;
-  if (x < 12.0)
-    return Perl_log(PERL_ABS(c99_tgamma(x)));
-  /* Abramowitz and Stegun 6.1.41
-   * Asymptotic series should be good to at least 11 or 12 figures
-   * For error analysis, see Whittiker and Watson
-   * A Course in Modern Analysis (1927), page 252 */
-  {
-    static const NV c[8] = {
-      1.0/12.0,
-      -1.0/360.0,
-      1.0/1260.0,
-      -1.0/1680.0,
-      1.0/1188.0,
-      -691.0/360360.0,
-      1.0/156.0,
-      -3617.0/122400.0
-    };
-    NV z = 1.0 / (x * x);
-    NV sum = c[7];
-    static const NV half_log_of_two_pi =
-      0.91893853320467274178032973640562;
-    NV series;
-    int i;
-    for (i = 6; i >= 0; i--) {
-      sum *= z;
-      sum += c[i];
-    }
-    series = sum / x;
-    return (x - 0.5) * Perl_log(x) - x + half_log_of_two_pi + series;
-  }
-}
-#endif
-
-#ifndef c99_log1p
-static NV my_log1p(NV x)
-{
-  /* http://www.johndcook.com/cpp_log_one_plus_x.html -- public domain.
-   * Taylor series, the first four terms (the last term quartic). */
-#ifdef NV_NAN
-  if (x < -1.0)
-    return NV_NAN;
-#endif
-#ifdef NV_INF
-  if (x == -1.0)
-    return -NV_INF;
-#endif
-  if (PERL_ABS(x) > 1e-4)
-    return Perl_log(1.0 + x);
-  else
-    /* Probably not enough for long doubles. */
-    return x * (1.0 + x * (-1/2.0 + x * (1/3.0 - x/4.0)));
-}
-#  define c99_log1p my_log1p
-#endif
-
-#ifndef c99_log2
-static NV my_log2(NV x)
-{
-  return Perl_log(x) * M_LOG2E;
-}
-#  define c99_log2 my_log2
-#endif
-
-/* XXX nextafter */
-
-/* XXX nexttoward */
-
-/* GCC's FLT_ROUNDS is (wrongly) hardcoded to 1 (at least up to 11.x) */
-#if defined(PERL_IS_GCC) /* && __GNUC__ < XXX */
-#  define BROKEN_FLT_ROUNDS
-#endif
-
-static int my_fegetround()
-{
-#ifdef HAS_FEGETROUND
-  return fegetround();
-#elif defined(HAS_FPGETROUND)
-  switch (fpgetround()) {
-  case FP_RN: return FE_TONEAREST;
-  case FP_RZ: return FE_TOWARDZERO;
-  case FP_RM: return FE_DOWNWARD;
-  case FP_RP: return FE_UPWARD;
-  default: return -1;
-  }
-#elif defined(FLT_ROUNDS)
-  switch (FLT_ROUNDS) {
-  case 0: return FE_TOWARDZERO;
-  case 1: return FE_TONEAREST;
-  case 2: return FE_UPWARD;
-  case 3: return FE_DOWNWARD;
-  default: return -1;
-  }
-#elif defined(__osf__) /* Tru64 */
-  switch (read_rnd()) {
-  case FP_RND_RN: return FE_TONEAREST;
-  case FP_RND_RZ: return FE_TOWARDZERO;
-  case FP_RND_RM: return FE_DOWNWARD;
-  case FP_RND_RP: return FE_UPWARD;
-  default: return -1;
-  }
-#else
-  return -1;
-#endif
-}
-
-/* Toward closest integer. */
-#define MY_ROUND_NEAREST(x) ((NV)((IV)((x) >= 0.0 ? (x) + 0.5 : (x) - 0.5)))
-
-/* Toward zero. */
-#define MY_ROUND_TRUNC(x) ((NV)((IV)(x)))
-
-/* Toward minus infinity. */
-#define MY_ROUND_DOWN(x) ((NV)((IV)((x) >= 0.0 ? (x) : (x) - 0.5)))
-
-/* Toward plus infinity. */
-#define MY_ROUND_UP(x) ((NV)((IV)((x) >= 0.0 ? (x) + 0.5 : (x))))
-
-#if (!defined(c99_nearbyint) || !defined(c99_lrint)) && defined(FE_TONEAREST)
-static NV my_rint(NV x)
-{
-#ifdef FE_TONEAREST
-  switch (my_fegetround()) {
-  case FE_TONEAREST:  return MY_ROUND_NEAREST(x);
-  case FE_TOWARDZERO: return MY_ROUND_TRUNC(x);
-  case FE_DOWNWARD:   return MY_ROUND_DOWN(x);
-  case FE_UPWARD:     return MY_ROUND_UP(x);
-  default: break;
-  }
-#elif defined(HAS_FPGETROUND)
-  switch (fpgetround()) {
-  case FP_RN: return MY_ROUND_NEAREST(x);
-  case FP_RZ: return MY_ROUND_TRUNC(x);
-  case FP_RM: return MY_ROUND_DOWN(x);
-  case FE_RP: return MY_ROUND_UP(x);
-  default: break;
-  }
-#endif
-  not_here("rint");
-  NOT_REACHED; /* NOTREACHED */
-}
-#endif
-
-/* XXX nearbyint() and rint() are not really identical -- but the difference
- * is messy: nearbyint is defined NOT to raise FE_INEXACT floating point
- * exceptions, while rint() is defined to MAYBE raise them.  At the moment
- * Perl is blissfully unaware of such fine detail of floating point. */
-#ifndef c99_nearbyint
-#  ifdef FE_TONEAREST
-#    define c99_nearbyrint my_rint
-#  endif
-#endif
-
-#ifndef c99_lrint
-#  ifdef FE_TONEAREST
-static IV my_lrint(NV x)
-{
-  return (IV)my_rint(x);
-}
-#    define c99_lrint my_lrint
-#  endif
-#endif
-
-#ifndef c99_lround
-static IV my_lround(NV x)
-{
-  return (IV)MY_ROUND_NEAREST(x);
-}
-#  define c99_lround my_lround
-#endif
-
-/* XXX remainder */
-
-/* XXX remquo */
-
-#ifndef c99_rint
-#  ifdef FE_TONEAREST
-#    define c99_rint my_rint
-#  endif
-#endif
-
-#ifndef c99_round
-static NV my_round(NV x)
-{
-  return MY_ROUND_NEAREST(x);
-}
-#  define c99_round my_round
-#endif
-
-#ifndef c99_scalbn
-#   if defined(Perl_ldexp) && FLT_RADIX == 2
-static NV my_scalbn(NV x, int y)
-{
-  return Perl_ldexp(x, y);
-}
-#    define c99_scalbn my_scalbn
-#  endif
-#endif
-
-/* XXX sinh (though c89) */
-
-/* tgamma -- see lgamma */
-
-/* XXX tanh (though c89) */
-
-#ifndef c99_trunc
-static NV my_trunc(NV x)
-{
-  return MY_ROUND_TRUNC(x);
-}
-#  define c99_trunc my_trunc
-#endif
-
-#ifdef NV_NAN
-
-#undef NV_PAYLOAD_DEBUG
-
-/* NOTE: the NaN payload API implementation is hand-rolled, since the
- * APIs are only proposed ones as of June 2015, so very few, if any,
- * platforms have implementations yet, so HAS_SETPAYLOAD and such are
- * unlikely to be helpful.
- *
- * XXX - if the core numification wants to actually generate
- * the nan payload in "nan(123)", and maybe "nans(456)", for
- * signaling payload", this needs to be moved to e.g. numeric.c
- * (look for grok_infnan)
- *
- * Conversely, if the core stringification wants the nan payload
- * and/or the nan quiet/signaling distinction, S_getpayload()
- * from this file needs to be moved, to e.g. sv.c (look for S_infnan_2pv),
- * and the (trivial) functionality of issignaling() copied
- * (for generating "NaNS", or maybe even "NaNQ") -- or maybe there
- * are too many formatting parameters for simple stringification?
- */
-
-/* While it might make sense for the payload to be UV or IV,
- * to avoid conversion loss, the proposed ISO interfaces use
- * a floating point input, which is then truncated to integer,
- * and only the integer part being used.  This is workable,
- * except for: (1) the conversion loss (2) suboptimal for
- * 32-bit integer platforms.  A workaround API for (2) and
- * in general for bit-honesty would be an array of integers
- * as the payload... but the proposed C API does nothing of
- * the kind. */
-#if NVSIZE == UVSIZE
-#  define NV_PAYLOAD_TYPE UV
-#else
-#  define NV_PAYLOAD_TYPE NV
-#endif
-
-#if defined(USE_LONG_DOUBLE) && defined(LONGDOUBLE_DOUBLEDOUBLE)
-#  define NV_PAYLOAD_SIZEOF_ASSERT(a) \
-    STATIC_ASSERT_STMT(sizeof(a) == NVSIZE / 2)
-#else
-#  define NV_PAYLOAD_SIZEOF_ASSERT(a) \
-    STATIC_ASSERT_STMT(sizeof(a) == NVSIZE)
-#endif
-
-static void S_setpayload(NV* nvp, NV_PAYLOAD_TYPE payload, bool signaling)
-{
-  dTHX;
-  static const U8 m[] = { NV_NAN_PAYLOAD_MASK };
-  static const U8 p[] = { NV_NAN_PAYLOAD_PERM };
-  UV a[(NVSIZE + UVSIZE - 1) / UVSIZE] = { 0 };
-  int i;
-  NV_PAYLOAD_SIZEOF_ASSERT(m);
-  NV_PAYLOAD_SIZEOF_ASSERT(p);
-  *nvp = NV_NAN;
-  /* Divide the input into the array in "base unsigned integer" in
-   * little-endian order.  Note that the integer might be smaller than
-   * an NV (if UV is U32, for example). */
-#if NVSIZE == UVSIZE
-  a[0] = payload;  /* The trivial case. */
-#else
-  {
-    NV t1 = c99_trunc(payload); /* towards zero (drop fractional) */
-#ifdef NV_PAYLOAD_DEBUG
-    Perl_warn(aTHX_ "t1 = %" NVgf " (payload %" NVgf ")\n", t1, payload);
-#endif
-    if (t1 <= UV_MAX) {
-      a[0] = (UV)t1;  /* Fast path, also avoids rounding errors (right?) */
-    } else {
-      /* UVSIZE < NVSIZE or payload > UV_MAX.
-       *
-       * This may happen for example if:
-       * (1) UVSIZE == 32 and common 64-bit double NV
-       *     (32-bit system not using -Duse64bitint)
-       * (2) UVSIZE == 64 and the x86-style 80-bit long double NV
-       *     (note that here the room for payload is actually the 64 bits)
-       * (3) UVSIZE == 64 and the 128-bit IEEE 764 quadruple NV
-       *     (112 bits in mantissa, 111 bits room for payload)
-       *
-       * NOTE: this is very sensitive to correctly functioning
-       * fmod()/fmodl(), and correct casting of big-unsigned-integer to NV.
-       * If these don't work right, especially the low order bits
-       * are in danger.  For example Solaris and AIX seem to have issues
-       * here, especially if using 32-bit UVs. */
-      NV t2;
-      for (i = 0, t2 = t1; i < (int)C_ARRAY_LENGTH(a); i++) {
-        a[i] = (UV)Perl_fmod(t2, (NV)UV_MAX);
-        t2 = Perl_floor(t2 / (NV)UV_MAX);
-      }
-    }
-  }
-#endif
-#ifdef NV_PAYLOAD_DEBUG
-  for (i = 0; i < (int)C_ARRAY_LENGTH(a); i++) {
-    Perl_warn(aTHX_ "a[%d] = 0x%" UVxf "\n", i, a[i]);
-  }
-#endif
-  for (i = 0; i < (int)sizeof(p); i++) {
-    if (m[i] && p[i] < sizeof(p)) {
-      U8 s = (p[i] % UVSIZE) << 3;
-      UV u = a[p[i] / UVSIZE] & ((UV)0xFF << s);
-      U8 b = (U8)((u >> s) & m[i]);
-      ((U8 *)(nvp))[i] &= ~m[i]; /* For NaNs with non-zero payload bits. */
-      ((U8 *)(nvp))[i] |= b;
-#ifdef NV_PAYLOAD_DEBUG
-      Perl_warn(aTHX_
-                "set p[%2d] = %02x (i = %d, m = %02x, s = %2d, b = %02x, u = %08"
-                UVxf ")\n", i, ((U8 *)(nvp))[i], i, m[i], s, b, u);
-#endif
-      a[p[i] / UVSIZE] &= ~u;
-    }
-  }
-  if (signaling) {
-    NV_NAN_SET_SIGNALING(nvp);
-  }
-#ifdef USE_LONG_DOUBLE
-# if LONG_DOUBLEKIND == 3 || LONG_DOUBLEKIND == 4
-#  if LONG_DOUBLESIZE > 10
-  memset((char *)nvp + 10, '\0', LONG_DOUBLESIZE - 10); /* x86 long double */
-#  endif
-# endif
-#endif
-  for (i = 0; i < (int)C_ARRAY_LENGTH(a); i++) {
-    if (a[i]) {
-      Perl_warn(aTHX_ "payload lost bits (%" UVxf ")", a[i]);
-      break;
-    }
-  }
-#ifdef NV_PAYLOAD_DEBUG
-  for (i = 0; i < NVSIZE; i++) {
-    PerlIO_printf(Perl_debug_log, "%02x ", ((U8 *)(nvp))[i]);
-  }
-  PerlIO_printf(Perl_debug_log, "\n");
-#endif
-}
-
-static NV_PAYLOAD_TYPE S_getpayload(NV nv)
-{
-  dTHX;
-  static const U8 m[] = { NV_NAN_PAYLOAD_MASK };
-  static const U8 p[] = { NV_NAN_PAYLOAD_PERM };
-  UV a[(NVSIZE + UVSIZE - 1) / UVSIZE] = { 0 };
-  int i;
-  NV payload;
-  NV_PAYLOAD_SIZEOF_ASSERT(m);
-  NV_PAYLOAD_SIZEOF_ASSERT(p);
-  payload = 0;
-  for (i = 0; i < (int)sizeof(p); i++) {
-    if (m[i] && p[i] < NVSIZE) {
-      U8 s = (p[i] % UVSIZE) << 3;
-      a[p[i] / UVSIZE] |= (UV)(((U8 *)(&nv))[i] & m[i]) << s;
-    }
-  }
-  for (i = (int)C_ARRAY_LENGTH(a) - 1; i >= 0; i--) {
-#ifdef NV_PAYLOAD_DEBUG
-    Perl_warn(aTHX_ "a[%d] = %" UVxf "\n", i, a[i]);
-#endif
-    payload *= (NV) UV_MAX;
-    payload += a[i];
-  }
-#ifdef NV_PAYLOAD_DEBUG
-  for (i = 0; i < NVSIZE; i++) {
-    PerlIO_printf(Perl_debug_log, "%02x ", ((U8 *)(&nv))[i]);
-  }
-  PerlIO_printf(Perl_debug_log, "\n");
-#endif
-  return payload;
-}
-
-#endif  /* #ifdef NV_NAN */
-
-/* XXX This comment is just to make I_TERMIO and I_SGTTY visible to
+/* XXX This comment is just to make I_TERMIO and I_SGTTY visible to 
    metaconfig for future extension writers.  We don't use them in POSIX.
    (This is really sneaky :-)  --AD
 */
 #if defined(I_TERMIOS)
 #include <termios.h>
 #endif
+#include <stdio.h>
+#ifdef I_STDLIB
 #include <stdlib.h>
-#ifndef __ultrix__
-#include <string.h>
 #endif
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
-#ifdef I_UNISTD
 #include <unistd.h>
-#endif
-#include <fcntl.h>
-
-#ifdef HAS_TZNAME
-#  if !defined(WIN32) && !defined(__CYGWIN__)
-extern char *tzname[];
-#  endif
-#else
-#if !defined(WIN32) || (defined(__MINGW32__) && !defined(tzname))
-char *tzname[] = { "" , "" };
-#endif
-#endif
-
 #if defined(__VMS) && !defined(__POSIX_SOURCE)
+#  include <file.h>         /* == fcntl.h for DECC; no fcntl.h for VAXC */
+#  include <libdef.h>       /* LIB$_INVARG constant */
+#  include <lib$routines.h> /* prototype for lib$ediv() */
+#  include <starlet.h>      /* prototype for sys$gettim() */
 
-#  include <utsname.h>
-
-#  undef mkfifo
+#  undef mkfifo  /* #defined in perl.h */
 #  define mkfifo(a,b) (not_here("mkfifo"),-1)
+#  define tzset() not_here("tzset")
+
+   /* The default VMS emulation of Unix signals isn't very POSIXish */
+   typedef int sigset_t;
+#  define sigpending(a) (not_here("sigpending"),0)
+
+   /* sigset_t is atomic under VMS, so these routines are easy */
+   int sigemptyset(sigset_t *set) {
+	if (!set) { SETERRNO(EFAULT,SS$_ACCVIO); return -1; }
+	*set = 0; return 0;
+   }
+   int sigfillset(sigset_t *set) {
+	int i;
+	if (!set) { SETERRNO(EFAULT,SS$_ACCVIO); return -1; }
+	for (i = 0; i < NSIG; i++) *set |= (1 << i);
+	return 0;
+   }
+   int sigaddset(sigset_t *set, int sig) {
+	if (!set) { SETERRNO(EFAULT,SS$_ACCVIO); return -1; }
+	if (sig > NSIG) { SETERRNO(EINVAL,LIB$_INVARG); return -1; }
+	*set |= (1 << (sig - 1));
+	return 0;
+   }
+   int sigdelset(sigset_t *set, int sig) {
+	if (!set) { SETERRNO(EFAULT,SS$_ACCVIO); return -1; }
+	if (sig > NSIG) { SETERRNO(EINVAL,LIB$_INVARG); return -1; }
+	*set &= ~(1 << (sig - 1));
+	return 0;
+   }
+   int sigismember(sigset_t *set, int sig) {
+	if (!set) { SETERRNO(EFAULT,SS$_ACCVIO); return -1; }
+	if (sig > NSIG) { SETERRNO(EINVAL,LIB$_INVARG); return -1; }
+	*set & (1 << (sig - 1));
+   }
+   /* The tools for sigprocmask() are there, just not the routine itself */
+#  ifndef SIG_UNBLOCK
+#    define SIG_UNBLOCK 1
+#  endif
+#  ifndef SIG_BLOCK
+#    define SIG_BLOCK 2
+#  endif
+#  ifndef SIG_SETMASK
+#    define SIG_SETMASK 3
+#  endif
+   int sigprocmask(int how, sigset_t *set, sigset_t *oset) {
+	if (!set || !oset) {
+	  set_errno(EFAULT); set_vaxc_errno(SS$_ACCVIO);
+	  return -1;
+	}
+	switch (how) {
+	  case SIG_SETMASK:
+	    *oset = sigsetmask(*set);
+	    break;
+	  case SIG_BLOCK:
+	    *oset = sigblock(*set);
+	    break;
+	  case SIG_UNBLOCK:
+	    *oset = sigblock(0);
+	    sigsetmask(*oset & ~*set);
+	    break;
+	  default:
+	    set_errno(EINVAL); set_vaxc_errno(LIB$_INVARG);
+	    return -1;
+	}
+	return 0;
+    }
+#  define sigaction sigvec
+#  define sa_flags sv_onstack
+#  define sa_handler sv_handler
+#  define sa_mask sv_mask
+#  define sigsuspend(set) sigpause(*set)
 
    /* The POSIX notion of ttyname() is better served by getname() under VMS */
    static char ttnambuf[64];
 #  define ttyname(fd) (isatty(fd) > 0 ? getname(fd,ttnambuf,0) : NULL)
 
+   /* The non-POSIX CRTL times() has void return type, so we just get the
+      current time directly */
+   clock_t vms_times(struct tms *bufptr) {
+	clock_t retval;
+	/* Get wall time and convert to 10 ms intervals to
+	 * produce the return value that the POSIX standard expects */
+#  if defined(__DECC) && defined (__ALPHA)
+#    include <ints.h>
+	uint64 vmstime;
+	_ckvmssts(sys$gettim(&vmstime));
+	vmstime /= 100000;
+	retval = vmstime & 0x7fffffff;
+#  else
+	/* (Older hw or ccs don't have an atomic 64-bit type, so we
+	 * juggle 32-bit ints (and a float) to produce a time_t result
+	 * with minimal loss of information.) */
+	long int vmstime[2],remainder,divisor = 100000;
+	_ckvmssts(sys$gettim((unsigned long int *)vmstime));
+	vmstime[1] &= 0x7fff;  /* prevent overflow in EDIV */
+	_ckvmssts(lib$ediv(&divisor,vmstime,(long int *)&retval,&remainder));
+#  endif
+	/* Fill in the struct tms using the CRTL routine . . .*/
+	times((tbuffer_t *)bufptr);
+	return (clock_t) retval;
+   }
+#  define times(t) vms_times(t)
 #else
-#if defined (__CYGWIN__)
-#    define tzname _tzname
-#endif
-#if defined (WIN32)
-#  undef mkfifo
-#  define mkfifo(a,b) not_here("mkfifo")
-#  define ttyname(a) (char*)not_here("ttyname")
-#  define sigset_t long
-#  define pid_t long
-#  ifdef _MSC_VER
-#    define mode_t short
-#  endif
-#  ifdef __MINGW32__
-#    define mode_t short
-#    ifndef tzset
-#      define tzset()		not_here("tzset")
-#    endif
-#    ifndef _POSIX_OPEN_MAX
-#      define _POSIX_OPEN_MAX	FOPEN_MAX	/* XXX bogus ? */
-#    endif
-#  endif
-#  define sigaction(a,b,c)	not_here("sigaction")
-#  define sigpending(a)		not_here("sigpending")
-#  define sigprocmask(a,b,c)	not_here("sigprocmask")
-#  define sigsuspend(a)		not_here("sigsuspend")
-#  define sigemptyset(a)	not_here("sigemptyset")
-#  define sigaddset(a,b)	not_here("sigaddset")
-#  define sigdelset(a,b)	not_here("sigdelset")
-#  define sigfillset(a)		not_here("sigfillset")
-#  define sigismember(a,b)	not_here("sigismember")
-#  undef setuid
-#  undef setgid
-#  define setuid(a)		not_here("setuid")
-#  define setgid(a)		not_here("setgid")
-#if !defined(USE_LONG_DOUBLE) && !defined(USE_QUADMATH)
-#  define strtold(s1,s2)	not_here("strtold")
-#endif  /* !(USE_LONG_DOUBLE) && !(USE_QUADMATH) */
-#else
-
-#  ifndef HAS_MKFIFO
-#    if defined(OS2) || defined(__amigaos4__)
-#      define mkfifo(a,b) not_here("mkfifo")
-#    else	/* !( defined OS2 ) */
-#      ifndef mkfifo
-#        define mkfifo(path, mode) (mknod((path), (mode) | S_IFIFO, 0))
-#      endif
-#    endif
-#  endif /* !HAS_MKFIFO */
-
-#  ifdef I_GRP
-#    include <grp.h>
-#  endif
+#  include <fcntl.h>
+#  include <grp.h>
 #  include <sys/times.h>
 #  ifdef HAS_UNAME
 #    include <sys/utsname.h>
 #  endif
-#  ifndef __amigaos4__
-#    include <sys/wait.h>
-#  endif
+#  include <sys/wait.h>
 #  ifdef I_UTIME
 #    include <utime.h>
 #  endif
-#endif /* WIN32 */
-#endif /* __VMS */
+#endif
 
 typedef int SysRet;
 typedef long SysRetLong;
 typedef sigset_t* POSIX__SigSet;
 typedef HV* POSIX__SigAction;
-typedef int POSIX__SigNo;
-typedef int POSIX__Fd;
 #ifdef I_TERMIOS
 typedef struct termios* POSIX__Termios;
 #else /* Define termios types to int, and call not_here for the functions.*/
@@ -1466,24 +189,18 @@ typedef struct termios* POSIX__Termios;
 #endif
 
 /* Possibly needed prototypes */
-#ifndef WIN32
-START_EXTERN_C
-double strtod (const char *, char **);
-long strtol (const char *, char **, int);
-unsigned long strtoul (const char *, char **, int);
-#ifdef HAS_STRTOLD
-long double strtold (const char *, char **);
-#endif
-END_EXTERN_C
-#endif
+char *cuserid _((char *));
 
+#ifndef HAS_CUSERID
+#define cuserid(a) (char *) not_here("cuserid")
+#endif
 #ifndef HAS_DIFFTIME
 #ifndef difftime
 #define difftime(a,b) not_here("difftime")
 #endif
 #endif
 #ifndef HAS_FPATHCONF
-#define fpathconf(f,n)	(SysRetLong) not_here("fpathconf")
+#define fpathconf(f,n) 	(SysRetLong) not_here("fpathconf")
 #endif
 #ifndef HAS_MKTIME
 #define mktime(a) not_here("mktime")
@@ -1492,10 +209,10 @@ END_EXTERN_C
 #define nice(a) not_here("nice")
 #endif
 #ifndef HAS_PATHCONF
-#define pathconf(f,n)	(SysRetLong) not_here("pathconf")
+#define pathconf(f,n) 	(SysRetLong) not_here("pathconf")
 #endif
 #ifndef HAS_SYSCONF
-#define sysconf(n)	(SysRetLong) not_here("sysconf")
+#define sysconf(n) 	(SysRetLong) not_here("sysconf")
 #endif
 #ifndef HAS_READLINK
 #define readlink(a,b,c) not_here("readlink")
@@ -1508,18 +225,6 @@ END_EXTERN_C
 #endif
 #ifndef HAS_STRCOLL
 #define strcoll(s1,s2) not_here("strcoll")
-#endif
-#ifndef HAS_STRTOD
-#define strtod(s1,s2) not_here("strtod")
-#endif
-#ifndef HAS_STRTOLD
-#define strtold(s1,s2) not_here("strtold")
-#endif
-#ifndef HAS_STRTOL
-#define strtol(s1,s2,b) not_here("strtol")
-#endif
-#ifndef HAS_STRTOUL
-#define strtoul(s1,s2,b) not_here("strtoul")
 #endif
 #ifndef HAS_STRXFRM
 #define strxfrm(s1,s2,n) not_here("strxfrm")
@@ -1540,14 +245,29 @@ END_EXTERN_C
 #define waitpid(a,b,c) not_here("waitpid")
 #endif
 
-#if ! defined(HAS_MBLEN) && ! defined(HAS_MBRLEN)
-#  define mblen(a,b) not_here("mblen")
+#ifndef HAS_FGETPOS
+#define fgetpos(a,b) not_here("fgetpos")
 #endif
-#if ! defined(HAS_MBTOWC) && ! defined(HAS_MBRTOWC)
-#  define mbtowc(pwc, s, n) not_here("mbtowc")
+#ifndef HAS_FSETPOS
+#define fsetpos(a,b) not_here("fsetpos")
 #endif
-#if ! defined(HAS_WCTOMB) && ! defined(HAS_WCRTOMB)
-#  define wctomb(s, wchar) not_here("wctomb")
+
+#ifndef HAS_MBLEN
+#ifndef mblen
+#define mblen(a,b) not_here("mblen")
+#endif
+#endif
+#ifndef HAS_MBSTOWCS
+#define mbstowcs(s, pwcs, n) not_here("mbstowcs")
+#endif
+#ifndef HAS_MBTOWC
+#define mbtowc(pwc, s, n) not_here("mbtowc")
+#endif
+#ifndef HAS_WCSTOMBS
+#define wcstombs(s, pwcs, n) not_here("wcstombs")
+#endif
+#ifndef HAS_WCTOMB
+#define wctomb(s, wchar) not_here("wcstombs")
 #endif
 #if !defined(HAS_MBLEN) && !defined(HAS_MBSTOWCS) && !defined(HAS_MBTOWC) && !defined(HAS_WCSTOMBS) && !defined(HAS_WCTOMB)
 /* If we don't have these functions, then we wouldn't have gotten a typedef
@@ -1560,84 +280,46 @@ END_EXTERN_C
 #endif
 #endif
 
-#if ! defined(HAS_LOCALECONV) && ! defined(HAS_LOCALECONV_L)
-#   define localeconv() not_here("localeconv")
+#ifndef HAS_LOCALECONV
+#define localeconv() not_here("localeconv")
+#endif
+
+#ifdef HAS_TZNAME
+extern char *tzname[];
 #else
-struct lconv_offset {
-    const char *name;
-    size_t offset;
-};
-
-static const struct lconv_offset lconv_strings[] = {
-#ifdef USE_LOCALE_NUMERIC
-    {"decimal_point",     STRUCT_OFFSET(struct lconv, decimal_point)},
-    {"thousands_sep",     STRUCT_OFFSET(struct lconv, thousands_sep)},
-#  ifndef NO_LOCALECONV_GROUPING
-    {"grouping",          STRUCT_OFFSET(struct lconv, grouping)},
-#  endif
+char *tzname[] = { "" , "" };
 #endif
-#ifdef USE_LOCALE_MONETARY
-    {"int_curr_symbol",   STRUCT_OFFSET(struct lconv, int_curr_symbol)},
-    {"currency_symbol",   STRUCT_OFFSET(struct lconv, currency_symbol)},
-    {"mon_decimal_point", STRUCT_OFFSET(struct lconv, mon_decimal_point)},
-#  ifndef NO_LOCALECONV_MON_THOUSANDS_SEP
-    {"mon_thousands_sep", STRUCT_OFFSET(struct lconv, mon_thousands_sep)},
-#  endif
-#  ifndef NO_LOCALECONV_MON_GROUPING
-    {"mon_grouping",      STRUCT_OFFSET(struct lconv, mon_grouping)},
-#  endif
-    {"positive_sign",     STRUCT_OFFSET(struct lconv, positive_sign)},
-    {"negative_sign",     STRUCT_OFFSET(struct lconv, negative_sign)},
-#endif
-    {NULL, 0}
-};
 
-#ifdef USE_LOCALE_NUMERIC
+/* XXX struct tm on some systems (SunOS4/BSD) contains extra (non POSIX)
+ * fields for which we don't have Configure support yet:
+ *   char *tm_zone;   -- abbreviation of timezone name
+ *   long tm_gmtoff;  -- offset from GMT in seconds
+ * To workaround core dumps from the uninitialised tm_zone we get the
+ * system to give us a reasonable struct to copy.  This fix means that
+ * strftime uses the tm_zone and tm_gmtoff values returned by
+ * localtime(time()). That should give the desired result most of the
+ * time. But probably not always!
+ *
+ * This is a temporary workaround to be removed once Configure
+ * support is added and NETaa14816 is considered in full.
+ * It does not address tzname aspects of NETaa14816.
+ */
+#ifdef STRUCT_TM_HASZONE
+static void
+init_tm(ptm)		/* see mktime, strftime and asctime	*/
+    struct tm *ptm;
+{
+    Time_t now;
+    (void)time(&now);
+    Copy(localtime(&now), ptm, 1, struct tm);
+}
 
-/* The Linux man pages say these are the field names for the structure
- * components that are LC_NUMERIC; the rest being LC_MONETARY */
-#   define isLC_NUMERIC_STRING(name) (   strEQ(name, "decimal_point")   \
-                                      || strEQ(name, "thousands_sep")   \
-                                                                        \
-                                      /* There should be no harm done   \
-                                       * checking for this, even if     \
-                                       * NO_LOCALECONV_GROUPING */      \
-                                      || strEQ(name, "grouping"))
 #else
-#   define isLC_NUMERIC_STRING(name) (0)
+# define init_tm(ptm)
 #endif
 
-static const struct lconv_offset lconv_integers[] = {
-#ifdef USE_LOCALE_MONETARY
-    {"int_frac_digits",   STRUCT_OFFSET(struct lconv, int_frac_digits)},
-    {"frac_digits",       STRUCT_OFFSET(struct lconv, frac_digits)},
-    {"p_cs_precedes",     STRUCT_OFFSET(struct lconv, p_cs_precedes)},
-    {"p_sep_by_space",    STRUCT_OFFSET(struct lconv, p_sep_by_space)},
-    {"n_cs_precedes",     STRUCT_OFFSET(struct lconv, n_cs_precedes)},
-    {"n_sep_by_space",    STRUCT_OFFSET(struct lconv, n_sep_by_space)},
-    {"p_sign_posn",       STRUCT_OFFSET(struct lconv, p_sign_posn)},
-    {"n_sign_posn",       STRUCT_OFFSET(struct lconv, n_sign_posn)},
-#ifdef HAS_LC_MONETARY_2008
-    {"int_p_cs_precedes",  STRUCT_OFFSET(struct lconv, int_p_cs_precedes)},
-    {"int_p_sep_by_space", STRUCT_OFFSET(struct lconv, int_p_sep_by_space)},
-    {"int_n_cs_precedes",  STRUCT_OFFSET(struct lconv, int_n_cs_precedes)},
-    {"int_n_sep_by_space", STRUCT_OFFSET(struct lconv, int_n_sep_by_space)},
-    {"int_p_sign_posn",    STRUCT_OFFSET(struct lconv, int_p_sign_posn)},
-    {"int_n_sign_posn",    STRUCT_OFFSET(struct lconv, int_n_sign_posn)},
-#endif
-#endif
-    {NULL, 0}
-};
 
-#endif /* HAS_LOCALECONV */
-
-#ifdef HAS_LONG_DOUBLE
-#  if LONG_DOUBLESIZE > NVSIZE
-#    undef HAS_LONG_DOUBLE  /* XXX until we figure out how to use them */
-#  endif
-#endif
-
-#ifndef HAS_LONG_DOUBLE
+#ifndef HAS_LONG_DOUBLE /* XXX What to do about long doubles? */
 #ifdef LDBL_MAX
 #undef LDBL_MAX
 #endif
@@ -1649,321 +331,2089 @@ static const struct lconv_offset lconv_integers[] = {
 #endif
 #endif
 
-/* Background: in most systems the low byte of the wait status
- * is the signal (the lowest 7 bits) and the coredump flag is
- * the eight bit, and the second lowest byte is the exit status.
- * BeOS bucks the trend and has the bytes in different order.
- * See beos/beos.c for how the reality is bent even in BeOS
- * to follow the traditional.  However, to make the POSIX
- * wait W*() macros to work in BeOS, we need to unbend the
- * reality back in place. --jhi */
-/* In actual fact the code below is to blame here. Perl has an internal
- * representation of the exit status ($?), which it re-composes from the
- * OS's representation using the W*() POSIX macros. The code below
- * incorrectly uses the W*() macros on the internal representation,
- * which fails for OSs that have a different representation (namely BeOS
- * and Haiku). WMUNGE() is a hack that converts the internal
- * representation into the OS specific one, so that the W*() macros work
- * as expected. The better solution would be not to use the W*() macros
- * in the first place, though. -- Ingo Weinhold
- */
-#if defined(__HAIKU__)
-#    define WMUNGE(x) (((x) & 0xFF00) >> 8 | (((U8) (x)) << 8))
-#else
-#    define WMUNGE(x) (x)
-#endif
-
 static int
-not_here(const char *s)
+not_here(s)
+char *s;
 {
     croak("POSIX::%s not implemented on this architecture", s);
     return -1;
 }
 
-#include "const-c.inc"
-
-static void
-restore_sigmask(pTHX_ SV *osset_sv)
+static double
+constant(name, arg)
+char *name;
+int arg;
 {
-     /* Fortunately, restoring the signal mask can't fail, because
-      * there's nothing we can do about it if it does -- we're not
-      * supposed to return -1 from sigaction unless the disposition
-      * was unaffected.
-      */
-#if !(defined(__amigaos4__) && defined(__NEWLIB__))
-     sigset_t *ossetp = (sigset_t *) SvPV_nolen( osset_sv );
-     (void)sigprocmask(SIG_SETMASK, ossetp, (sigset_t *)0);
+    errno = 0;
+    switch (*name) {
+    case 'A':
+	if (strEQ(name, "ARG_MAX"))
+#ifdef ARG_MAX
+	    return ARG_MAX;
+#else
+	    goto not_there;
 #endif
-}
-
-static void *
-allocate_struct(pTHX_ SV *rv, const STRLEN size, const char *packname) {
-    SV *const t = newSVrv(rv, packname);
-    void *const p = sv_grow(t, size + 1);
-
-    /* Ensure at least one use of not_here() to avoid "defined but not
-     * used" warning.  This is not at all related to allocate_struct(); I
-     * just needed somewhere to dump it - DAPM */
-    if (0) { not_here(""); }
-
-    SvCUR_set(t, size);
-    SvPOK_on(t);
-    return p;
-}
-
-#ifdef WIN32
-
-/*
- * (1) The CRT maintains its own copy of the environment, separate from
- * the Win32API copy.
- *
- * (2) CRT getenv() retrieves from this copy. CRT putenv() updates this
- * copy, and then calls SetEnvironmentVariableA() to update the Win32API
- * copy.
- *
- * (3) win32_getenv() and win32_putenv() call GetEnvironmentVariableA() and
- * SetEnvironmentVariableA() directly, bypassing the CRT copy of the
- * environment.
- *
- * (4) The CRT strftime() "%Z" implementation calls __tzset(). That
- * calls CRT tzset(), but only the first time it is called, and in turn
- * that uses CRT getenv("TZ") to retrieve the timezone info from the CRT
- * local copy of the environment and hence gets the original setting as
- * perl never updates the CRT copy when assigning to $ENV{TZ}.
- *
- * Therefore, we need to retrieve the value of $ENV{TZ} and call CRT
- * putenv() to update the CRT copy of the environment (if it is different)
- * whenever we're about to call tzset().
- *
- * In addition to all that, when perl is built with PERL_IMPLICIT_SYS
- * defined:
- *
- * (a) Each interpreter has its own copy of the environment inside the
- * perlhost structure. That allows applications that host multiple
- * independent Perl interpreters to isolate environment changes from
- * each other. (This is similar to how the perlhost mechanism keeps a
- * separate working directory for each Perl interpreter, so that calling
- * chdir() will not affect other interpreters.)
- *
- * (b) Only the first Perl interpreter instantiated within a process will
- * "write through" environment changes to the process environment.
- *
- * (c) Even the primary Perl interpreter won't update the CRT copy of the
- * environment, only the Win32API copy (it calls win32_putenv()).
- *
- * As with CPerlHost::Getenv() and CPerlHost::Putenv() themselves, it makes
- * sense to only update the process environment when inside the main
- * interpreter, but we don't have access to CPerlHost's m_bTopLevel member
- * from here so we'll just have to check PL_curinterp instead.
- *
- * Therefore, we can simply #undef getenv() and putenv() so that those names
- * always refer to the CRT functions, and explicitly call win32_getenv() to
- * access perl's %ENV.
- *
- * We also #undef malloc() and free() to be sure we are using the CRT
- * functions otherwise under PERL_IMPLICIT_SYS they are redefined to calls
- * into VMem::Malloc() and VMem::Free() and all allocations will be freed
- * when the Perl interpreter is being destroyed so we'd end up with a pointer
- * into deallocated memory in environ[] if a program embedding a Perl
- * interpreter continues to operate even after the main Perl interpreter has
- * been destroyed.
- *
- * Note that we don't free() the malloc()ed memory unless and until we call
- * malloc() again ourselves because the CRT putenv() function simply puts its
- * pointer argument into the environ[] array (it doesn't make a copy of it)
- * so this memory must otherwise be leaked.
- */
-
-#undef getenv
-#undef putenv
-#undef malloc
-#undef free
-
-static void
-fix_win32_tzenv(void)
-{
-    static char* oldenv = NULL;
-    char* newenv;
-    const char* perl_tz_env = win32_getenv("TZ");
-    const char* crt_tz_env = getenv("TZ");
-
-    if (perl_tz_env == NULL)
-        perl_tz_env = "";
-    if (crt_tz_env == NULL)
-        crt_tz_env = "";
-    if (strNE(perl_tz_env, crt_tz_env)) {
-        newenv = (char*)malloc((strlen(perl_tz_env) + 4) * sizeof(char));
-        if (newenv != NULL) {
-            sprintf(newenv, "TZ=%s", perl_tz_env);
-            putenv(newenv);
-            if (oldenv != NULL)
-                free(oldenv);
-            oldenv = newenv;
-        }
+	break;
+    case 'B':
+	if (strEQ(name, "BUFSIZ"))
+#ifdef BUFSIZ
+	    return BUFSIZ;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "BRKINT"))
+#ifdef BRKINT
+	    return BRKINT;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B9600"))
+#ifdef B9600
+	    return B9600;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B19200"))
+#ifdef B19200
+	    return B19200;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B38400"))
+#ifdef B38400
+	    return B38400;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B0"))
+#ifdef B0
+	    return B0;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B110"))
+#ifdef B110
+	    return B110;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B1200"))
+#ifdef B1200
+	    return B1200;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B134"))
+#ifdef B134
+	    return B134;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B150"))
+#ifdef B150
+	    return B150;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B1800"))
+#ifdef B1800
+	    return B1800;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B200"))
+#ifdef B200
+	    return B200;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B2400"))
+#ifdef B2400
+	    return B2400;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B300"))
+#ifdef B300
+	    return B300;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B4800"))
+#ifdef B4800
+	    return B4800;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B50"))
+#ifdef B50
+	    return B50;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B600"))
+#ifdef B600
+	    return B600;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "B75"))
+#ifdef B75
+	    return B75;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'C':
+	if (strEQ(name, "CHAR_BIT"))
+#ifdef CHAR_BIT
+	    return CHAR_BIT;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CHAR_MAX"))
+#ifdef CHAR_MAX
+	    return CHAR_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CHAR_MIN"))
+#ifdef CHAR_MIN
+	    return CHAR_MIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CHILD_MAX"))
+#ifdef CHILD_MAX
+	    return CHILD_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CLK_TCK"))
+#ifdef CLK_TCK
+	    return CLK_TCK;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CLOCAL"))
+#ifdef CLOCAL
+	    return CLOCAL;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CLOCKS_PER_SEC"))
+#ifdef CLOCKS_PER_SEC
+	    return CLOCKS_PER_SEC;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CREAD"))
+#ifdef CREAD
+	    return CREAD;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CS5"))
+#ifdef CS5
+	    return CS5;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CS6"))
+#ifdef CS6
+	    return CS6;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CS7"))
+#ifdef CS7
+	    return CS7;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CS8"))
+#ifdef CS8
+	    return CS8;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CSIZE"))
+#ifdef CSIZE
+	    return CSIZE;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "CSTOPB"))
+#ifdef CSTOPB
+	    return CSTOPB;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'D':
+	if (strEQ(name, "DBL_MAX"))
+#ifdef DBL_MAX
+	    return DBL_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_MIN"))
+#ifdef DBL_MIN
+	    return DBL_MIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_DIG"))
+#ifdef DBL_DIG
+	    return DBL_DIG;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_EPSILON"))
+#ifdef DBL_EPSILON
+	    return DBL_EPSILON;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_MANT_DIG"))
+#ifdef DBL_MANT_DIG
+	    return DBL_MANT_DIG;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_MAX_10_EXP"))
+#ifdef DBL_MAX_10_EXP
+	    return DBL_MAX_10_EXP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_MAX_EXP"))
+#ifdef DBL_MAX_EXP
+	    return DBL_MAX_EXP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_MIN_10_EXP"))
+#ifdef DBL_MIN_10_EXP
+	    return DBL_MIN_10_EXP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "DBL_MIN_EXP"))
+#ifdef DBL_MIN_EXP
+	    return DBL_MIN_EXP;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'E':
+	switch (name[1]) {
+	case 'A':
+	    if (strEQ(name, "EACCES"))
+#ifdef EACCES
+		return EACCES;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EAGAIN"))
+#ifdef EAGAIN
+		return EAGAIN;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'B':
+	    if (strEQ(name, "EBADF"))
+#ifdef EBADF
+		return EBADF;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EBUSY"))
+#ifdef EBUSY
+		return EBUSY;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'C':
+	    if (strEQ(name, "ECHILD"))
+#ifdef ECHILD
+		return ECHILD;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ECHO"))
+#ifdef ECHO
+		return ECHO;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ECHOE"))
+#ifdef ECHOE
+		return ECHOE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ECHOK"))
+#ifdef ECHOK
+		return ECHOK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ECHONL"))
+#ifdef ECHONL
+		return ECHONL;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'D':
+	    if (strEQ(name, "EDEADLK"))
+#ifdef EDEADLK
+		return EDEADLK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EDOM"))
+#ifdef EDOM
+		return EDOM;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'E':
+	    if (strEQ(name, "EEXIST"))
+#ifdef EEXIST
+		return EEXIST;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'F':
+	    if (strEQ(name, "EFAULT"))
+#ifdef EFAULT
+		return EFAULT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EFBIG"))
+#ifdef EFBIG
+		return EFBIG;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'I':
+	    if (strEQ(name, "EINTR"))
+#ifdef EINTR
+		return EINTR;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EINVAL"))
+#ifdef EINVAL
+		return EINVAL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EIO"))
+#ifdef EIO
+		return EIO;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EISDIR"))
+#ifdef EISDIR
+		return EISDIR;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'M':
+	    if (strEQ(name, "EMFILE"))
+#ifdef EMFILE
+		return EMFILE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EMLINK"))
+#ifdef EMLINK
+		return EMLINK;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'N':
+	    if (strEQ(name, "ENOMEM"))
+#ifdef ENOMEM
+		return ENOMEM;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOSPC"))
+#ifdef ENOSPC
+		return ENOSPC;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOEXEC"))
+#ifdef ENOEXEC
+		return ENOEXEC;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOTTY"))
+#ifdef ENOTTY
+		return ENOTTY;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOTDIR"))
+#ifdef ENOTDIR
+		return ENOTDIR;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOTEMPTY"))
+#ifdef ENOTEMPTY
+		return ENOTEMPTY;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENFILE"))
+#ifdef ENFILE
+		return ENFILE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENODEV"))
+#ifdef ENODEV
+		return ENODEV;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOENT"))
+#ifdef ENOENT
+		return ENOENT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOLCK"))
+#ifdef ENOLCK
+		return ENOLCK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENOSYS"))
+#ifdef ENOSYS
+		return ENOSYS;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENXIO"))
+#ifdef ENXIO
+		return ENXIO;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ENAMETOOLONG"))
+#ifdef ENAMETOOLONG
+		return ENAMETOOLONG;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'O':
+	    if (strEQ(name, "EOF"))
+#ifdef EOF
+		return EOF;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'P':
+	    if (strEQ(name, "EPERM"))
+#ifdef EPERM
+		return EPERM;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EPIPE"))
+#ifdef EPIPE
+		return EPIPE;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'R':
+	    if (strEQ(name, "ERANGE"))
+#ifdef ERANGE
+		return ERANGE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "EROFS"))
+#ifdef EROFS
+		return EROFS;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'S':
+	    if (strEQ(name, "ESPIPE"))
+#ifdef ESPIPE
+		return ESPIPE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "ESRCH"))
+#ifdef ESRCH
+		return ESRCH;
+#else
+		goto not_there;
+#endif
+	    break;
+	case 'X':
+	    if (strEQ(name, "EXIT_FAILURE"))
+#ifdef EXIT_FAILURE
+		return EXIT_FAILURE;
+#else
+		return 1;
+#endif
+	    if (strEQ(name, "EXIT_SUCCESS"))
+#ifdef EXIT_SUCCESS
+		return EXIT_SUCCESS;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "EXDEV"))
+#ifdef EXDEV
+		return EXDEV;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strEQ(name, "E2BIG"))
+#ifdef E2BIG
+	    return E2BIG;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'F':
+	if (strnEQ(name, "FLT_", 4)) {
+	    if (strEQ(name, "FLT_MAX"))
+#ifdef FLT_MAX
+		return FLT_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_MIN"))
+#ifdef FLT_MIN
+		return FLT_MIN;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_ROUNDS"))
+#ifdef FLT_ROUNDS
+		return FLT_ROUNDS;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_DIG"))
+#ifdef FLT_DIG
+		return FLT_DIG;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_EPSILON"))
+#ifdef FLT_EPSILON
+		return FLT_EPSILON;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_MANT_DIG"))
+#ifdef FLT_MANT_DIG
+		return FLT_MANT_DIG;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_MAX_10_EXP"))
+#ifdef FLT_MAX_10_EXP
+		return FLT_MAX_10_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_MAX_EXP"))
+#ifdef FLT_MAX_EXP
+		return FLT_MAX_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_MIN_10_EXP"))
+#ifdef FLT_MIN_10_EXP
+		return FLT_MIN_10_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_MIN_EXP"))
+#ifdef FLT_MIN_EXP
+		return FLT_MIN_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "FLT_RADIX"))
+#ifdef FLT_RADIX
+		return FLT_RADIX;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strnEQ(name, "F_", 2)) {
+	    if (strEQ(name, "F_DUPFD"))
+#ifdef F_DUPFD
+		return F_DUPFD;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_GETFD"))
+#ifdef F_GETFD
+		return F_GETFD;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_GETFL"))
+#ifdef F_GETFL
+		return F_GETFL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_GETLK"))
+#ifdef F_GETLK
+		return F_GETLK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_OK"))
+#ifdef F_OK
+		return F_OK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_RDLCK"))
+#ifdef F_RDLCK
+		return F_RDLCK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_SETFD"))
+#ifdef F_SETFD
+		return F_SETFD;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_SETFL"))
+#ifdef F_SETFL
+		return F_SETFL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_SETLK"))
+#ifdef F_SETLK
+		return F_SETLK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_SETLKW"))
+#ifdef F_SETLKW
+		return F_SETLKW;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_UNLCK"))
+#ifdef F_UNLCK
+		return F_UNLCK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "F_WRLCK"))
+#ifdef F_WRLCK
+		return F_WRLCK;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strEQ(name, "FD_CLOEXEC"))
+#ifdef FD_CLOEXEC
+	    return FD_CLOEXEC;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "FILENAME_MAX"))
+#ifdef FILENAME_MAX
+	    return FILENAME_MAX;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'H':
+	if (strEQ(name, "HUGE_VAL"))
+#ifdef HUGE_VAL
+	    return HUGE_VAL;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "HUPCL"))
+#ifdef HUPCL
+	    return HUPCL;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'I':
+	if (strEQ(name, "INT_MAX"))
+#ifdef INT_MAX
+	    return INT_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "INT_MIN"))
+#ifdef INT_MIN
+	    return INT_MIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "ICANON"))
+#ifdef ICANON
+	    return ICANON;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "ICRNL"))
+#ifdef ICRNL
+	    return ICRNL;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "IEXTEN"))
+#ifdef IEXTEN
+	    return IEXTEN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "IGNBRK"))
+#ifdef IGNBRK
+	    return IGNBRK;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "IGNCR"))
+#ifdef IGNCR
+	    return IGNCR;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "IGNPAR"))
+#ifdef IGNPAR
+	    return IGNPAR;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "INLCR"))
+#ifdef INLCR
+	    return INLCR;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "INPCK"))
+#ifdef INPCK
+	    return INPCK;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "ISIG"))
+#ifdef ISIG
+	    return ISIG;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "ISTRIP"))
+#ifdef ISTRIP
+	    return ISTRIP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "IXOFF"))
+#ifdef IXOFF
+	    return IXOFF;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "IXON"))
+#ifdef IXON
+	    return IXON;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'L':
+	if (strnEQ(name, "LC_", 3)) {
+	    if (strEQ(name, "LC_ALL"))
+#ifdef LC_ALL
+		return LC_ALL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LC_COLLATE"))
+#ifdef LC_COLLATE
+		return LC_COLLATE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LC_CTYPE"))
+#ifdef LC_CTYPE
+		return LC_CTYPE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LC_MONETARY"))
+#ifdef LC_MONETARY
+		return LC_MONETARY;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LC_NUMERIC"))
+#ifdef LC_NUMERIC
+		return LC_NUMERIC;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LC_TIME"))
+#ifdef LC_TIME
+		return LC_TIME;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strnEQ(name, "LDBL_", 5)) {
+	    if (strEQ(name, "LDBL_MAX"))
+#ifdef LDBL_MAX
+		return LDBL_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_MIN"))
+#ifdef LDBL_MIN
+		return LDBL_MIN;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_DIG"))
+#ifdef LDBL_DIG
+		return LDBL_DIG;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_EPSILON"))
+#ifdef LDBL_EPSILON
+		return LDBL_EPSILON;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_MANT_DIG"))
+#ifdef LDBL_MANT_DIG
+		return LDBL_MANT_DIG;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_MAX_10_EXP"))
+#ifdef LDBL_MAX_10_EXP
+		return LDBL_MAX_10_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_MAX_EXP"))
+#ifdef LDBL_MAX_EXP
+		return LDBL_MAX_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_MIN_10_EXP"))
+#ifdef LDBL_MIN_10_EXP
+		return LDBL_MIN_10_EXP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "LDBL_MIN_EXP"))
+#ifdef LDBL_MIN_EXP
+		return LDBL_MIN_EXP;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strnEQ(name, "L_", 2)) {
+	    if (strEQ(name, "L_ctermid"))
+#ifdef L_ctermid
+		return L_ctermid;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "L_cuserid"))
+#ifdef L_cuserid
+		return L_cuserid;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "L_tmpname"))
+#ifdef L_tmpname
+		return L_tmpname;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strEQ(name, "LONG_MAX"))
+#ifdef LONG_MAX
+	    return LONG_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "LONG_MIN"))
+#ifdef LONG_MIN
+	    return LONG_MIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "LINK_MAX"))
+#ifdef LINK_MAX
+	    return LINK_MAX;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'M':
+	if (strEQ(name, "MAX_CANON"))
+#ifdef MAX_CANON
+	    return MAX_CANON;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "MAX_INPUT"))
+#ifdef MAX_INPUT
+	    return MAX_INPUT;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "MB_CUR_MAX"))
+#ifdef MB_CUR_MAX
+	    return MB_CUR_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "MB_LEN_MAX"))
+#ifdef MB_LEN_MAX
+	    return MB_LEN_MAX;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'N':
+	if (strEQ(name, "NULL")) return 0;
+	if (strEQ(name, "NAME_MAX"))
+#ifdef NAME_MAX
+	    return NAME_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "NCCS"))
+#ifdef NCCS
+	    return NCCS;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "NGROUPS_MAX"))
+#ifdef NGROUPS_MAX
+	    return NGROUPS_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "NOFLSH"))
+#ifdef NOFLSH
+	    return NOFLSH;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'O':
+	if (strnEQ(name, "O_", 2)) {
+	    if (strEQ(name, "O_APPEND"))
+#ifdef O_APPEND
+		return O_APPEND;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_CREAT"))
+#ifdef O_CREAT
+		return O_CREAT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_TRUNC"))
+#ifdef O_TRUNC
+		return O_TRUNC;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_RDONLY"))
+#ifdef O_RDONLY
+		return O_RDONLY;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_RDWR"))
+#ifdef O_RDWR
+		return O_RDWR;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_WRONLY"))
+#ifdef O_WRONLY
+		return O_WRONLY;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_EXCL"))
+#ifdef O_EXCL
+		return O_EXCL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_NOCTTY"))
+#ifdef O_NOCTTY
+		return O_NOCTTY;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_NONBLOCK"))
+#ifdef O_NONBLOCK
+		return O_NONBLOCK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "O_ACCMODE"))
+#ifdef O_ACCMODE
+		return O_ACCMODE;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strEQ(name, "OPEN_MAX"))
+#ifdef OPEN_MAX
+	    return OPEN_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "OPOST"))
+#ifdef OPOST
+	    return OPOST;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'P':
+	if (strEQ(name, "PATH_MAX"))
+#ifdef PATH_MAX
+	    return PATH_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "PARENB"))
+#ifdef PARENB
+	    return PARENB;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "PARMRK"))
+#ifdef PARMRK
+	    return PARMRK;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "PARODD"))
+#ifdef PARODD
+	    return PARODD;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "PIPE_BUF"))
+#ifdef PIPE_BUF
+	    return PIPE_BUF;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'R':
+	if (strEQ(name, "RAND_MAX"))
+#ifdef RAND_MAX
+	    return RAND_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "R_OK"))
+#ifdef R_OK
+	    return R_OK;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'S':
+	if (strnEQ(name, "SIG", 3)) {
+	    if (name[3] == '_') {
+		if (strEQ(name, "SIG_BLOCK"))
+#ifdef SIG_BLOCK
+		    return SIG_BLOCK;
+#else
+		    goto not_there;
+#endif
+#ifdef SIG_DFL
+		if (strEQ(name, "SIG_DFL")) return (int)SIG_DFL;
+#endif
+#ifdef SIG_ERR
+		if (strEQ(name, "SIG_ERR")) return (int)SIG_ERR;
+#endif
+#ifdef SIG_IGN
+		if (strEQ(name, "SIG_IGN")) return (int)SIG_IGN;
+#endif
+		if (strEQ(name, "SIG_SETMASK"))
+#ifdef SIG_SETMASK
+		    return SIG_SETMASK;
+#else
+		    goto not_there;
+#endif
+		if (strEQ(name, "SIG_UNBLOCK"))
+#ifdef SIG_UNBLOCK
+		    return SIG_UNBLOCK;
+#else
+		    goto not_there;
+#endif
+		break;
+	    }
+	    if (strEQ(name, "SIGABRT"))
+#ifdef SIGABRT
+		return SIGABRT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGALRM"))
+#ifdef SIGALRM
+		return SIGALRM;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGCHLD"))
+#ifdef SIGCHLD
+		return SIGCHLD;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGCONT"))
+#ifdef SIGCONT
+		return SIGCONT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGFPE"))
+#ifdef SIGFPE
+		return SIGFPE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGHUP"))
+#ifdef SIGHUP
+		return SIGHUP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGILL"))
+#ifdef SIGILL
+		return SIGILL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGINT"))
+#ifdef SIGINT
+		return SIGINT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGKILL"))
+#ifdef SIGKILL
+		return SIGKILL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGPIPE"))
+#ifdef SIGPIPE
+		return SIGPIPE;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGQUIT"))
+#ifdef SIGQUIT
+		return SIGQUIT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGSEGV"))
+#ifdef SIGSEGV
+		return SIGSEGV;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGSTOP"))
+#ifdef SIGSTOP
+		return SIGSTOP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGTERM"))
+#ifdef SIGTERM
+		return SIGTERM;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGTSTP"))
+#ifdef SIGTSTP
+		return SIGTSTP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGTTIN"))
+#ifdef SIGTTIN
+		return SIGTTIN;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGTTOU"))
+#ifdef SIGTTOU
+		return SIGTTOU;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGUSR1"))
+#ifdef SIGUSR1
+		return SIGUSR1;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "SIGUSR2"))
+#ifdef SIGUSR2
+		return SIGUSR2;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (name[1] == '_') {
+	    if (strEQ(name, "S_ISGID"))
+#ifdef S_ISGID
+		return S_ISGID;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_ISUID"))
+#ifdef S_ISUID
+		return S_ISUID;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IRGRP"))
+#ifdef S_IRGRP
+		return S_IRGRP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IROTH"))
+#ifdef S_IROTH
+		return S_IROTH;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IRUSR"))
+#ifdef S_IRUSR
+		return S_IRUSR;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IRWXG"))
+#ifdef S_IRWXG
+		return S_IRWXG;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IRWXO"))
+#ifdef S_IRWXO
+		return S_IRWXO;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IRWXU"))
+#ifdef S_IRWXU
+		return S_IRWXU;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IWGRP"))
+#ifdef S_IWGRP
+		return S_IWGRP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IWOTH"))
+#ifdef S_IWOTH
+		return S_IWOTH;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IWUSR"))
+#ifdef S_IWUSR
+		return S_IWUSR;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IXGRP"))
+#ifdef S_IXGRP
+		return S_IXGRP;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IXOTH"))
+#ifdef S_IXOTH
+		return S_IXOTH;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "S_IXUSR"))
+#ifdef S_IXUSR
+		return S_IXUSR;
+#else
+		goto not_there;
+#endif
+	    errno = EAGAIN;		/* the following aren't constants */
+#ifdef S_ISBLK
+	    if (strEQ(name, "S_ISBLK")) return S_ISBLK(arg);
+#endif
+#ifdef S_ISCHR
+	    if (strEQ(name, "S_ISCHR")) return S_ISCHR(arg);
+#endif
+#ifdef S_ISDIR
+	    if (strEQ(name, "S_ISDIR")) return S_ISDIR(arg);
+#endif
+#ifdef S_ISFIFO
+	    if (strEQ(name, "S_ISFIFO")) return S_ISFIFO(arg);
+#endif
+#ifdef S_ISREG
+	    if (strEQ(name, "S_ISREG")) return S_ISREG(arg);
+#endif
+	    break;
+	}
+	if (strEQ(name, "SEEK_CUR"))
+#ifdef SEEK_CUR
+	    return SEEK_CUR;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SEEK_END"))
+#ifdef SEEK_END
+	    return SEEK_END;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SEEK_SET"))
+#ifdef SEEK_SET
+	    return SEEK_SET;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "STREAM_MAX"))
+#ifdef STREAM_MAX
+	    return STREAM_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SHRT_MAX"))
+#ifdef SHRT_MAX
+	    return SHRT_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SHRT_MIN"))
+#ifdef SHRT_MIN
+	    return SHRT_MIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SA_NOCLDSTOP"))
+#ifdef SA_NOCLDSTOP
+	    return SA_NOCLDSTOP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SCHAR_MAX"))
+#ifdef SCHAR_MAX
+	    return SCHAR_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SCHAR_MIN"))
+#ifdef SCHAR_MIN
+	    return SCHAR_MIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "SSIZE_MAX"))
+#ifdef SSIZE_MAX
+	    return SSIZE_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "STDIN_FILENO"))
+#ifdef STDIN_FILENO
+	    return STDIN_FILENO;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "STDOUT_FILENO"))
+#ifdef STDOUT_FILENO
+	    return STDOUT_FILENO;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "STRERR_FILENO"))
+#ifdef STRERR_FILENO
+	    return STRERR_FILENO;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'T':
+	if (strEQ(name, "TCIFLUSH"))
+#ifdef TCIFLUSH
+	    return TCIFLUSH;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCIOFF"))
+#ifdef TCIOFF
+	    return TCIOFF;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCIOFLUSH"))
+#ifdef TCIOFLUSH
+	    return TCIOFLUSH;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCION"))
+#ifdef TCION
+	    return TCION;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCOFLUSH"))
+#ifdef TCOFLUSH
+	    return TCOFLUSH;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCOOFF"))
+#ifdef TCOOFF
+	    return TCOOFF;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCOON"))
+#ifdef TCOON
+	    return TCOON;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCSADRAIN"))
+#ifdef TCSADRAIN
+	    return TCSADRAIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCSAFLUSH"))
+#ifdef TCSAFLUSH
+	    return TCSAFLUSH;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TCSANOW"))
+#ifdef TCSANOW
+	    return TCSANOW;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TMP_MAX"))
+#ifdef TMP_MAX
+	    return TMP_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TOSTOP"))
+#ifdef TOSTOP
+	    return TOSTOP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "TZNAME_MAX"))
+#ifdef TZNAME_MAX
+	    return TZNAME_MAX;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'U':
+	if (strEQ(name, "UCHAR_MAX"))
+#ifdef UCHAR_MAX
+	    return UCHAR_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "UINT_MAX"))
+#ifdef UINT_MAX
+	    return UINT_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "ULONG_MAX"))
+#ifdef ULONG_MAX
+	    return ULONG_MAX;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "USHRT_MAX"))
+#ifdef USHRT_MAX
+	    return USHRT_MAX;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'V':
+	if (strEQ(name, "VEOF"))
+#ifdef VEOF
+	    return VEOF;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VEOL"))
+#ifdef VEOL
+	    return VEOL;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VERASE"))
+#ifdef VERASE
+	    return VERASE;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VINTR"))
+#ifdef VINTR
+	    return VINTR;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VKILL"))
+#ifdef VKILL
+	    return VKILL;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VMIN"))
+#ifdef VMIN
+	    return VMIN;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VQUIT"))
+#ifdef VQUIT
+	    return VQUIT;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VSTART"))
+#ifdef VSTART
+	    return VSTART;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VSTOP"))
+#ifdef VSTOP
+	    return VSTOP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VSUSP"))
+#ifdef VSUSP
+	    return VSUSP;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "VTIME"))
+#ifdef VTIME
+	    return VTIME;
+#else
+	    goto not_there;
+#endif
+	break;
+    case 'W':
+	if (strEQ(name, "W_OK"))
+#ifdef W_OK
+	    return W_OK;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "WNOHANG"))
+#ifdef WNOHANG
+	    return WNOHANG;
+#else
+	    goto not_there;
+#endif
+	if (strEQ(name, "WUNTRACED"))
+#ifdef WUNTRACED
+	    return WUNTRACED;
+#else
+	    goto not_there;
+#endif
+	errno = EAGAIN;		/* the following aren't constants */
+#ifdef WEXITSTATUS
+	if (strEQ(name, "WEXITSTATUS")) return WEXITSTATUS(arg);
+#endif
+#ifdef WIFEXITED
+	if (strEQ(name, "WIFEXITED")) return WIFEXITED(arg);
+#endif
+#ifdef WIFSIGNALED
+	if (strEQ(name, "WIFSIGNALED")) return WIFSIGNALED(arg);
+#endif
+#ifdef WIFSTOPPED
+	if (strEQ(name, "WIFSTOPPED")) return WIFSTOPPED(arg);
+#endif
+#ifdef WSTOPSIG
+	if (strEQ(name, "WSTOPSIG")) return WSTOPSIG(arg);
+#endif
+#ifdef WTERMSIG
+	if (strEQ(name, "WTERMSIG")) return WTERMSIG(arg);
+#endif
+	break;
+    case 'X':
+	if (strEQ(name, "X_OK"))
+#ifdef X_OK
+	    return X_OK;
+#else
+	    goto not_there;
+#endif
+	break;
+    case '_':
+	if (strnEQ(name, "_PC_", 4)) {
+	    if (strEQ(name, "_PC_CHOWN_RESTRICTED"))
+#ifdef _PC_CHOWN_RESTRICTED
+		return _PC_CHOWN_RESTRICTED;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_LINK_MAX"))
+#ifdef _PC_LINK_MAX
+		return _PC_LINK_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_MAX_CANON"))
+#ifdef _PC_MAX_CANON
+		return _PC_MAX_CANON;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_MAX_INPUT"))
+#ifdef _PC_MAX_INPUT
+		return _PC_MAX_INPUT;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_NAME_MAX"))
+#ifdef _PC_NAME_MAX
+		return _PC_NAME_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_NO_TRUNC"))
+#ifdef _PC_NO_TRUNC
+		return _PC_NO_TRUNC;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_PATH_MAX"))
+#ifdef _PC_PATH_MAX
+		return _PC_PATH_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_PIPE_BUF"))
+#ifdef _PC_PIPE_BUF
+		return _PC_PIPE_BUF;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_PC_VDISABLE"))
+#ifdef _PC_VDISABLE
+		return _PC_VDISABLE;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
+	if (strnEQ(name, "_POSIX_", 7)) {
+	    if (strEQ(name, "_POSIX_ARG_MAX"))
+#ifdef _POSIX_ARG_MAX
+		return _POSIX_ARG_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_CHILD_MAX"))
+#ifdef _POSIX_CHILD_MAX
+		return _POSIX_CHILD_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_CHOWN_RESTRICTED"))
+#ifdef _POSIX_CHOWN_RESTRICTED
+		return _POSIX_CHOWN_RESTRICTED;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_JOB_CONTROL"))
+#ifdef _POSIX_JOB_CONTROL
+		return _POSIX_JOB_CONTROL;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_LINK_MAX"))
+#ifdef _POSIX_LINK_MAX
+		return _POSIX_LINK_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_MAX_CANON"))
+#ifdef _POSIX_MAX_CANON
+		return _POSIX_MAX_CANON;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_MAX_INPUT"))
+#ifdef _POSIX_MAX_INPUT
+		return _POSIX_MAX_INPUT;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_NAME_MAX"))
+#ifdef _POSIX_NAME_MAX
+		return _POSIX_NAME_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_NGROUPS_MAX"))
+#ifdef _POSIX_NGROUPS_MAX
+		return _POSIX_NGROUPS_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_NO_TRUNC"))
+#ifdef _POSIX_NO_TRUNC
+		return _POSIX_NO_TRUNC;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_OPEN_MAX"))
+#ifdef _POSIX_OPEN_MAX
+		return _POSIX_OPEN_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_PATH_MAX"))
+#ifdef _POSIX_PATH_MAX
+		return _POSIX_PATH_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_PIPE_BUF"))
+#ifdef _POSIX_PIPE_BUF
+		return _POSIX_PIPE_BUF;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_SAVED_IDS"))
+#ifdef _POSIX_SAVED_IDS
+		return _POSIX_SAVED_IDS;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_SSIZE_MAX"))
+#ifdef _POSIX_SSIZE_MAX
+		return _POSIX_SSIZE_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_STREAM_MAX"))
+#ifdef _POSIX_STREAM_MAX
+		return _POSIX_STREAM_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_TZNAME_MAX"))
+#ifdef _POSIX_TZNAME_MAX
+		return _POSIX_TZNAME_MAX;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_VDISABLE"))
+#ifdef _POSIX_VDISABLE
+		return _POSIX_VDISABLE;
+#else
+		return 0;
+#endif
+	    if (strEQ(name, "_POSIX_VERSION"))
+#ifdef _POSIX_VERSION
+		return _POSIX_VERSION;
+#else
+		return 0;
+#endif
+	    break;
+	}
+	if (strnEQ(name, "_SC_", 4)) {
+	    if (strEQ(name, "_SC_ARG_MAX"))
+#ifdef _SC_ARG_MAX
+		return _SC_ARG_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_CHILD_MAX"))
+#ifdef _SC_CHILD_MAX
+		return _SC_CHILD_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_CLK_TCK"))
+#ifdef _SC_CLK_TCK
+		return _SC_CLK_TCK;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_JOB_CONTROL"))
+#ifdef _SC_JOB_CONTROL
+		return _SC_JOB_CONTROL;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_NGROUPS_MAX"))
+#ifdef _SC_NGROUPS_MAX
+		return _SC_NGROUPS_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_OPEN_MAX"))
+#ifdef _SC_OPEN_MAX
+		return _SC_OPEN_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_SAVED_IDS"))
+#ifdef _SC_SAVED_IDS
+		return _SC_SAVED_IDS;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_STREAM_MAX"))
+#ifdef _SC_STREAM_MAX
+		return _SC_STREAM_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_TZNAME_MAX"))
+#ifdef _SC_TZNAME_MAX
+		return _SC_TZNAME_MAX;
+#else
+		goto not_there;
+#endif
+	    if (strEQ(name, "_SC_VERSION"))
+#ifdef _SC_VERSION
+		return _SC_VERSION;
+#else
+		goto not_there;
+#endif
+	    break;
+	}
     }
-}
+    errno = EINVAL;
+    return 0;
 
-#endif
-
-/*
- * my_tzset - wrapper to tzset() with a fix to make it work (better) on Win32.
- * This code is duplicated in the Time-Piece module, so any changes made here
- * should be made there too.
- */
-static void
-my_tzset(pTHX)
-{
-#ifdef WIN32
-#if defined(USE_ITHREADS) && defined(PERL_IMPLICIT_SYS)
-    if (PL_curinterp == aTHX)
-#endif
-        fix_win32_tzenv();
-#endif
-    tzset();
+not_there:
+    errno = ENOENT;
+    return 0;
 }
 
 MODULE = SigSet		PACKAGE = POSIX::SigSet		PREFIX = sig
 
-void
+POSIX::SigSet
 new(packname = "POSIX::SigSet", ...)
-    const char *	packname
+    char *		packname
     CODE:
 	{
 	    int i;
-	    sigset_t *const s
-		= (sigset_t *) allocate_struct(aTHX_ (ST(0) = sv_newmortal()),
-					       sizeof(sigset_t),
-					       packname);
-	    sigemptyset(s);
-	    for (i = 1; i < items; i++) {
-                IV sig = SvIV(ST(i));
-		if (sigaddset(s, sig) < 0)
-                    croak("POSIX::Sigset->new: failed to add signal %" IVdf, sig);
-            }
-	    XSRETURN(1);
+	    RETVAL = (sigset_t*)safemalloc(sizeof(sigset_t));
+	    sigemptyset(RETVAL);
+	    for (i = 1; i < items; i++)
+		sigaddset(RETVAL, SvIV(ST(i)));
 	}
-
-SysRet
-addset(sigset, sig)
-	POSIX::SigSet	sigset
-	POSIX::SigNo	sig
-   ALIAS:
-	delset = 1
-   CODE:
-	RETVAL = ix ? sigdelset(sigset, sig) : sigaddset(sigset, sig);
-   OUTPUT:
+    OUTPUT:
 	RETVAL
 
-SysRet
-emptyset(sigset)
+void
+DESTROY(sigset)
 	POSIX::SigSet	sigset
-   ALIAS:
-	fillset = 1
-   CODE:
-	RETVAL = ix ? sigfillset(sigset) : sigemptyset(sigset);
-   OUTPUT:
-	RETVAL
+    CODE:
+	safefree((char *)sigset);
+
+SysRet
+sigaddset(sigset, sig)
+	POSIX::SigSet	sigset
+	int		sig
+
+SysRet
+sigdelset(sigset, sig)
+	POSIX::SigSet	sigset
+	int		sig
+
+SysRet
+sigemptyset(sigset)
+	POSIX::SigSet	sigset
+
+SysRet
+sigfillset(sigset)
+	POSIX::SigSet	sigset
 
 int
 sigismember(sigset, sig)
 	POSIX::SigSet	sigset
-	POSIX::SigNo	sig
+	int		sig
+
 
 MODULE = Termios	PACKAGE = POSIX::Termios	PREFIX = cf
 
-void
+POSIX::Termios
 new(packname = "POSIX::Termios", ...)
-    const char *	packname
+    char *		packname
     CODE:
 	{
 #ifdef I_TERMIOS
-	    void *const p = allocate_struct(aTHX_ (ST(0) = sv_newmortal()),
-					    sizeof(struct termios), packname);
-	    /* The previous implementation stored a pointer to an uninitialised
-	       struct termios. Seems safer to initialise it, particularly as
-	       this implementation exposes the struct to prying from perl-space.
-	    */
-	    memset(p, 0, 1 + sizeof(struct termios));
-	    XSRETURN(1);
+	    RETVAL = (struct termios*)safemalloc(sizeof(struct termios));
 #else
 	    not_here("termios");
 #endif
 	}
+    OUTPUT:
+	RETVAL
+
+void
+DESTROY(termios_ref)
+	POSIX::Termios	termios_ref
+    CODE:
+#ifdef I_TERMIOS
+	safefree((char *)termios_ref);
+#else
+	    not_here("termios");
+#endif
 
 SysRet
 getattr(termios_ref, fd = 0)
 	POSIX::Termios	termios_ref
-	POSIX::Fd		fd
+	int		fd
     CODE:
 	RETVAL = tcgetattr(fd, termios_ref);
     OUTPUT:
 	RETVAL
 
-    # If we define TCSANOW here then both a found and not found constant sub
-    # are created causing a Constant subroutine TCSANOW redefined warning
-
-#ifndef TCSANOW
-#  define DEF_SETATTR_ACTION 0
-#else
-#  define DEF_SETATTR_ACTION TCSANOW
-#endif
 SysRet
-setattr(termios_ref, fd = 0, optional_actions = DEF_SETATTR_ACTION)
+setattr(termios_ref, fd = 0, optional_actions = 0)
 	POSIX::Termios	termios_ref
-	POSIX::Fd	fd
+	int		fd
 	int		optional_actions
     CODE:
-	/* The second argument to the call is mandatory, but we'd like to give
-	   it a useful default. 0 isn't valid on all operating systems - on
-           Solaris (at least) TCSANOW, TCSADRAIN and TCSAFLUSH have the same
-           values as the equivalent ioctls, TCSETS, TCSETSW and TCSETSF.  */
-	if (optional_actions < 0) {
-            SETERRNO(EINVAL, LIB_INVARG);
-            RETVAL = -1;
-        } else {
-            RETVAL = tcsetattr(fd, optional_actions, termios_ref);
-        }
+	RETVAL = tcsetattr(fd, optional_actions, termios_ref);
     OUTPUT:
 	RETVAL
 
 speed_t
-getispeed(termios_ref)
+cfgetispeed(termios_ref)
 	POSIX::Termios	termios_ref
-    ALIAS:
-	getospeed = 1
-    CODE:
-	RETVAL = ix ? cfgetospeed(termios_ref) : cfgetispeed(termios_ref);
-    OUTPUT:
-	RETVAL
+
+speed_t
+cfgetospeed(termios_ref)
+	POSIX::Termios	termios_ref
 
 tcflag_t
 getiflag(termios_ref)
 	POSIX::Termios	termios_ref
-    ALIAS:
-	getoflag = 1
-	getcflag = 2
-	getlflag = 3
     CODE:
 #ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
-	switch(ix) {
-	case 0:
-	    RETVAL = termios_ref->c_iflag;
-	    break;
-	case 1:
-	    RETVAL = termios_ref->c_oflag;
-	    break;
-	case 2:
-	    RETVAL = termios_ref->c_cflag;
-	    break;
-	case 3:
-	    RETVAL = termios_ref->c_lflag;
-	    break;
-        default:
-	    RETVAL = 0; /* silence compiler warning */
-	}
+	RETVAL = termios_ref->c_iflag;
 #else
-	not_here(GvNAME(CvGV(cv)));
-	RETVAL = 0;
+	    not_here("getiflag");
+#endif
+    OUTPUT:
+	RETVAL
+
+tcflag_t
+getoflag(termios_ref)
+	POSIX::Termios	termios_ref
+    CODE:
+#ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
+	RETVAL = termios_ref->c_oflag;
+#else
+	    not_here("getoflag");
+#endif
+    OUTPUT:
+	RETVAL
+
+tcflag_t
+getcflag(termios_ref)
+	POSIX::Termios	termios_ref
+    CODE:
+#ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
+	RETVAL = termios_ref->c_cflag;
+#else
+	    not_here("getcflag");
+#endif
+    OUTPUT:
+	RETVAL
+
+tcflag_t
+getlflag(termios_ref)
+	POSIX::Termios	termios_ref
+    CODE:
+#ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
+	RETVAL = termios_ref->c_lflag;
+#else
+	    not_here("getlflag");
 #endif
     OUTPUT:
 	RETVAL
@@ -1971,63 +2421,76 @@ getiflag(termios_ref)
 cc_t
 getcc(termios_ref, ccix)
 	POSIX::Termios	termios_ref
-	unsigned int	ccix
+	int		ccix
     CODE:
 #ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
 	if (ccix >= NCCS)
 	    croak("Bad getcc subscript");
 	RETVAL = termios_ref->c_cc[ccix];
 #else
-     not_here("getcc");
-     RETVAL = 0;
+	    not_here("getcc");
 #endif
     OUTPUT:
 	RETVAL
 
 SysRet
-setispeed(termios_ref, speed)
+cfsetispeed(termios_ref, speed)
 	POSIX::Termios	termios_ref
 	speed_t		speed
-    ALIAS:
-	setospeed = 1
-    CODE:
-	RETVAL = ix
-	    ? cfsetospeed(termios_ref, speed) : cfsetispeed(termios_ref, speed);
-    OUTPUT:
-	RETVAL
+
+SysRet
+cfsetospeed(termios_ref, speed)
+	POSIX::Termios	termios_ref
+	speed_t		speed
 
 void
-setiflag(termios_ref, flag)
+setiflag(termios_ref, iflag)
 	POSIX::Termios	termios_ref
-	tcflag_t	flag
-    ALIAS:
-	setoflag = 1
-	setcflag = 2
-	setlflag = 3
+	tcflag_t	iflag
     CODE:
 #ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
-	switch(ix) {
-	case 0:
-	    termios_ref->c_iflag = flag;
-	    break;
-	case 1:
-	    termios_ref->c_oflag = flag;
-	    break;
-	case 2:
-	    termios_ref->c_cflag = flag;
-	    break;
-	case 3:
-	    termios_ref->c_lflag = flag;
-	    break;
-	}
+	termios_ref->c_iflag = iflag;
 #else
-	not_here(GvNAME(CvGV(cv)));
+	    not_here("setiflag");
+#endif
+
+void
+setoflag(termios_ref, oflag)
+	POSIX::Termios	termios_ref
+	tcflag_t	oflag
+    CODE:
+#ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
+	termios_ref->c_oflag = oflag;
+#else
+	    not_here("setoflag");
+#endif
+
+void
+setcflag(termios_ref, cflag)
+	POSIX::Termios	termios_ref
+	tcflag_t	cflag
+    CODE:
+#ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
+	termios_ref->c_cflag = cflag;
+#else
+	    not_here("setcflag");
+#endif
+
+void
+setlflag(termios_ref, lflag)
+	POSIX::Termios	termios_ref
+	tcflag_t	lflag
+    CODE:
+#ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
+	termios_ref->c_lflag = lflag;
+#else
+	    not_here("setlflag");
 #endif
 
 void
 setcc(termios_ref, ccix, cc)
 	POSIX::Termios	termios_ref
-	unsigned int	ccix
+	int		ccix
 	cc_t		cc
     CODE:
 #ifdef I_TERMIOS /* References a termios structure member so ifdef it out. */
@@ -2041,69 +2504,140 @@ setcc(termios_ref, ccix, cc)
 
 MODULE = POSIX		PACKAGE = POSIX
 
-INCLUDE: const-xs.inc
+double
+constant(name,arg)
+	char *		name
+	int		arg
 
 int
-WEXITSTATUS(status)
-	int status
-    ALIAS:
-	POSIX::WIFEXITED = 1
-	POSIX::WIFSIGNALED = 2
-	POSIX::WIFSTOPPED = 3
-	POSIX::WSTOPSIG = 4
-	POSIX::WTERMSIG = 5
+isalnum(charstring)
+	char *		charstring
     CODE:
-#if !defined(WEXITSTATUS) || !defined(WIFEXITED) || !defined(WIFSIGNALED) \
-      || !defined(WIFSTOPPED) || !defined(WSTOPSIG) || !defined(WTERMSIG)
-        RETVAL = 0; /* Silence compilers that notice this, but don't realise
-		       that not_here() can't return.  */
-#endif
-	switch(ix) {
-	case 0:
-#ifdef WEXITSTATUS
-	    RETVAL = WEXITSTATUS(WMUNGE(status));
-#else
-	    not_here("WEXITSTATUS");
-#endif
-	    break;
-	case 1:
-#ifdef WIFEXITED
-	    RETVAL = WIFEXITED(WMUNGE(status));
-#else
-	    not_here("WIFEXITED");
-#endif
-	    break;
-	case 2:
-#ifdef WIFSIGNALED
-	    RETVAL = WIFSIGNALED(WMUNGE(status));
-#else
-	    not_here("WIFSIGNALED");
-#endif
-	    break;
-	case 3:
-#ifdef WIFSTOPPED
-	    RETVAL = WIFSTOPPED(WMUNGE(status));
-#else
-	    not_here("WIFSTOPPED");
-#endif
-	    break;
-	case 4:
-#ifdef WSTOPSIG
-	    RETVAL = WSTOPSIG(WMUNGE(status));
-#else
-	    not_here("WSTOPSIG");
-#endif
-	    break;
-	case 5:
-#ifdef WTERMSIG
-	    RETVAL = WTERMSIG(WMUNGE(status));
-#else
-	    not_here("WTERMSIG");
-#endif
-	    break;
-	default:
-	    croak("Illegal alias %d for POSIX::W*", (int)ix);
-	}
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isalnum(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isalpha(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isalpha(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+iscntrl(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!iscntrl(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isdigit(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isdigit(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isgraph(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isgraph(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+islower(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!islower(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isprint(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isprint(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+ispunct(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!ispunct(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isspace(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isspace(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isupper(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isupper(*s))
+		RETVAL = 0;
+    OUTPUT:
+	RETVAL
+
+int
+isxdigit(charstring)
+	char *		charstring
+    CODE:
+	char *s;
+	RETVAL = 1;
+	for (s = charstring; *s && RETVAL; s++)
+	    if (!isxdigit(*s))
+		RETVAL = 0;
     OUTPUT:
 	RETVAL
 
@@ -2123,1182 +2657,281 @@ open(filename, flags = O_RDONLY, mode = 0666)
 HV *
 localeconv()
     CODE:
-#ifndef HAS_LOCALECONV
-	localeconv(); /* A stub to call not_here(). */
-#else
+#ifdef HAS_LOCALECONV
 	struct lconv *lcbuf;
-#  if defined(USE_ITHREADS)                                             \
-   && defined(HAS_POSIX_2008_LOCALE)                                    \
-   && defined(HAS_LOCALECONV_L) /* Prefer this thread-safe version */
-        bool do_free = FALSE;
-        locale_t cur = NULL;
-#  elif defined(TS_W32_BROKEN_LOCALECONV)
-        const char * save_global;
-        const char * save_thread;
-#  endif
-        DECLARATION_FOR_LC_NUMERIC_MANIPULATION;
-
-        /* localeconv() deals with both LC_NUMERIC and LC_MONETARY, but
-         * LC_MONETARY is already in the correct locale */
-#  ifdef USE_LOCALE_MONETARY
-
-        const bool is_monetary_utf8 = _is_cur_LC_category_utf8(LC_MONETARY);
-#  endif
-#  ifdef USE_LOCALE_NUMERIC
-
-        bool is_numeric_utf8;
-
-        STORE_LC_NUMERIC_FORCE_TO_UNDERLYING();
-
-        is_numeric_utf8 = _is_cur_LC_category_utf8(LC_NUMERIC);
-#  endif
-
 	RETVAL = newHV();
-	sv_2mortal((SV*)RETVAL);
-#  if defined(USE_ITHREADS)                         \
-   && defined(HAS_POSIX_2008_LOCALE)                \
-   && defined(HAS_LOCALECONV_L)
-
-        cur = uselocale((locale_t) 0);
-        if (cur == LC_GLOBAL_LOCALE) {
-            cur = duplocale(LC_GLOBAL_LOCALE);
-            do_free = TRUE;
-        }
-
-        lcbuf = localeconv_l(cur);
-#  else
-        LOCALECONV_LOCK;    /* Prevent interference with other threads using
-                               localeconv() */
-#    ifdef TS_W32_BROKEN_LOCALECONV
-        /* This is a workaround for a Windows bug prior to VS 15, in which
-         * localeconv only looks at the global locale.  We toggle to the global
-         * locale; populate the return; then toggle back.  We have to use
-         * LC_ALL instead of the individual ones because of another bug in
-         * Windows */
-
-        save_thread  = savepv(Perl_setlocale(LC_NUMERIC, NULL));
-
-        _configthreadlocale(_DISABLE_PER_THREAD_LOCALE);
-
-        save_global  = savepv(Perl_setlocale(LC_ALL, NULL));
-
-        Perl_setlocale(LC_ALL,  save_thread);
-#    endif
-        lcbuf = localeconv();
-#  endif
-	if (lcbuf) {
-	    const struct lconv_offset *strings = lconv_strings;
-	    const struct lconv_offset *integers = lconv_integers;
-	    const char *ptr = (const char *) lcbuf;
-
-	    while (strings->name) {
-                /* This string may be controlled by either LC_NUMERIC, or
-                 * LC_MONETARY */
-                const bool is_utf8_locale =
-#  if defined(USE_LOCALE_NUMERIC) && defined(USE_LOCALE_MONETARY)
-                                        (isLC_NUMERIC_STRING(strings->name))
-                                        ? is_numeric_utf8
-                                        : is_monetary_utf8;
-#  elif defined(USE_LOCALE_NUMERIC)
-                                        is_numeric_utf8;
-#  elif defined(USE_LOCALE_MONETARY)
-                                        is_monetary_utf8;
-#  else
-                                        FALSE;
-#  endif
-
-		const char *value = *((const char **)(ptr + strings->offset));
-
-		if (value && *value) {
-                    const STRLEN value_len = strlen(value);
-
-                    /* We mark it as UTF-8 if a utf8 locale and is valid and
-                     * variant under UTF-8 */
-                    const bool is_utf8 = is_utf8_locale
-                                     &&  is_utf8_non_invariant_string(
-                                                                (U8*) value,
-                                                                value_len);
-		    (void) hv_store(RETVAL,
-                                    strings->name,
-                                    strlen(strings->name),
-                                    newSVpvn_utf8(value, value_len, is_utf8),
-                                    0);
-            }
-                strings++;
-	    }
-
-	    while (integers->name) {
-		const char value = *((const char *)(ptr + integers->offset));
-
-		if (value != CHAR_MAX)
-		    (void) hv_store(RETVAL, integers->name,
-				    strlen(integers->name), newSViv(value), 0);
-                integers++;
-            }
+	if (lcbuf = localeconv()) {
+	    /* the strings */
+	    if (lcbuf->decimal_point && *lcbuf->decimal_point)
+		hv_store(RETVAL, "decimal_point", 13,
+		    newSVpv(lcbuf->decimal_point, 0), 0);
+	    if (lcbuf->thousands_sep && *lcbuf->thousands_sep)
+		hv_store(RETVAL, "thousands_sep", 13,
+		    newSVpv(lcbuf->thousands_sep, 0), 0);
+	    if (lcbuf->grouping && *lcbuf->grouping)
+		hv_store(RETVAL, "grouping", 8,
+		    newSVpv(lcbuf->grouping, 0), 0);
+	    if (lcbuf->int_curr_symbol && *lcbuf->int_curr_symbol)
+		hv_store(RETVAL, "int_curr_symbol", 15,
+		    newSVpv(lcbuf->int_curr_symbol, 0), 0);
+	    if (lcbuf->currency_symbol && *lcbuf->currency_symbol)
+		hv_store(RETVAL, "currency_symbol", 15,
+		    newSVpv(lcbuf->currency_symbol, 0), 0);
+	    if (lcbuf->mon_decimal_point && *lcbuf->mon_decimal_point)
+		hv_store(RETVAL, "mon_decimal_point", 17,
+		    newSVpv(lcbuf->mon_decimal_point, 0), 0);
+	    if (lcbuf->mon_thousands_sep && *lcbuf->mon_thousands_sep)
+		hv_store(RETVAL, "mon_thousands_sep", 17,
+		    newSVpv(lcbuf->mon_thousands_sep, 0), 0);
+	    if (lcbuf->mon_grouping && *lcbuf->mon_grouping)
+		hv_store(RETVAL, "mon_grouping", 12,
+		    newSVpv(lcbuf->mon_grouping, 0), 0);
+	    if (lcbuf->positive_sign && *lcbuf->positive_sign)
+		hv_store(RETVAL, "positive_sign", 13,
+		    newSVpv(lcbuf->positive_sign, 0), 0);
+	    if (lcbuf->negative_sign && *lcbuf->negative_sign)
+		hv_store(RETVAL, "negative_sign", 13,
+		    newSVpv(lcbuf->negative_sign, 0), 0);
+	    /* the integers */
+	    if (lcbuf->int_frac_digits != CHAR_MAX)
+		hv_store(RETVAL, "int_frac_digits", 15,
+		    newSViv(lcbuf->int_frac_digits), 0);
+	    if (lcbuf->frac_digits != CHAR_MAX)
+		hv_store(RETVAL, "frac_digits", 11,
+		    newSViv(lcbuf->frac_digits), 0);
+	    if (lcbuf->p_cs_precedes != CHAR_MAX)
+		hv_store(RETVAL, "p_cs_precedes", 13,
+		    newSViv(lcbuf->p_cs_precedes), 0);
+	    if (lcbuf->p_sep_by_space != CHAR_MAX)
+		hv_store(RETVAL, "p_sep_by_space", 14,
+		    newSViv(lcbuf->p_sep_by_space), 0);
+	    if (lcbuf->n_cs_precedes != CHAR_MAX)
+		hv_store(RETVAL, "n_cs_precedes", 13,
+		    newSViv(lcbuf->n_cs_precedes), 0);
+	    if (lcbuf->n_sep_by_space != CHAR_MAX)
+		hv_store(RETVAL, "n_sep_by_space", 14,
+		    newSViv(lcbuf->n_sep_by_space), 0);
+	    if (lcbuf->p_sign_posn != CHAR_MAX)
+		hv_store(RETVAL, "p_sign_posn", 11,
+		    newSViv(lcbuf->p_sign_posn), 0);
+	    if (lcbuf->n_sign_posn != CHAR_MAX)
+		hv_store(RETVAL, "n_sign_posn", 11,
+		    newSViv(lcbuf->n_sign_posn), 0);
 	}
-#  if defined(USE_ITHREADS)                         \
-   && defined(HAS_POSIX_2008_LOCALE)                \
-   && defined(HAS_LOCALECONV_L)
-        if (do_free) {
-            freelocale(cur);
-        }
-#  else
-#    ifdef TS_W32_BROKEN_LOCALECONV
-        Perl_setlocale(LC_ALL, save_global);
-
-        _configthreadlocale(_ENABLE_PER_THREAD_LOCALE);
-
-        Perl_setlocale(LC_ALL, save_thread);
-
-        Safefree(save_global);
-        Safefree(save_thread);
-#    endif
-        LOCALECONV_UNLOCK;
-#  endif
-        RESTORE_LC_NUMERIC();
-#endif  /* HAS_LOCALECONV */
+#else
+	localeconv(); /* A stub to call not_here(). */
+#endif
     OUTPUT:
 	RETVAL
 
 char *
-setlocale(category, locale = 0)
+setlocale(category, locale)
 	int		category
-	const char *    locale
-    PREINIT:
-	char *		retval;
-    CODE:
-	retval = (char *) Perl_setlocale(category, locale);
-        if (! retval) {
-            XSRETURN_UNDEF;
-        }
+	char *		locale
 
-        RETVAL = retval;
-    OUTPUT:
-	RETVAL
-
-NV
+double
 acos(x)
-	NV		x
-    ALIAS:
-	acosh = 1
-	asin = 2
-	asinh = 3
-	atan = 4
-	atanh = 5
-	cbrt = 6
-	ceil = 7
-	cosh = 8
-	erf = 9
-	erfc = 10
-	exp2 = 11
-	expm1 = 12
-	floor = 13
-	j0 = 14
-	j1 = 15
-	lgamma = 16
-	log10 = 17
-	log1p = 18
-	log2 = 19
-	logb = 20
-	nearbyint = 21
-	rint = 22
-	round = 23
-	sinh = 24
-	tan = 25
-	tanh = 26
-	tgamma = 27
-	trunc = 28
-	y0 = 29
-	y1 = 30
-    CODE:
-	PERL_UNUSED_VAR(x);
-#ifdef NV_NAN
-	RETVAL = NV_NAN;
-#else
-	RETVAL = 0;
-#endif
-	switch (ix) {
-	case 0:
-	    RETVAL = Perl_acos(x); /* C89 math */
-	    break;
-	case 1:
-#ifdef c99_acosh
-	    RETVAL = c99_acosh(x);
-#else
-	    not_here("acosh");
-#endif
-	    break;
-	case 2:
-	    RETVAL = Perl_asin(x); /* C89 math */
-	    break;
-	case 3:
-#ifdef c99_asinh
-	    RETVAL = c99_asinh(x);
-#else
-	    not_here("asinh");
-#endif
-	    break;
-	case 4:
-	    RETVAL = Perl_atan(x); /* C89 math */
-	    break;
-	case 5:
-#ifdef c99_atanh
-	    RETVAL = c99_atanh(x);
-#else
-	    not_here("atanh");
-#endif
-	    break;
-	case 6:
-#ifdef c99_cbrt
-	    RETVAL = c99_cbrt(x);
-#else
-	    not_here("cbrt");
-#endif
-	    break;
-	case 7:
-	    RETVAL = Perl_ceil(x); /* C89 math */
-	    break;
-	case 8:
-	    RETVAL = Perl_cosh(x); /* C89 math */
-	    break;
-	case 9:
-#ifdef c99_erf
-	    RETVAL = c99_erf(x);
-#else
-	    not_here("erf");
-#endif
-	    break;
-	case 10:
-#ifdef c99_erfc
-	    RETVAL = c99_erfc(x);
-#else
-	    not_here("erfc");
-#endif
-	    break;
-	case 11:
-#ifdef c99_exp2
-	    RETVAL = c99_exp2(x);
-#else
-	    not_here("exp2");
-#endif
-	    break;
-	case 12:
-#ifdef c99_expm1
-	    RETVAL = c99_expm1(x);
-#else
-	    not_here("expm1");
-#endif
-	    break;
-	case 13:
-	    RETVAL = Perl_floor(x); /* C89 math */
-	    break;
-	case 14:
-#ifdef bessel_j0
-	    RETVAL = bessel_j0(x);
-#else
-	    not_here("j0");
-#endif
-	    break;
-	case 15:
-#ifdef bessel_j1
-	    RETVAL = bessel_j1(x);
-#else
-	    not_here("j1");
-#endif
-	    break;
-	case 16:
-        /* XXX Note: the lgamma modifies a global variable (signgam),
-         * which is evil.  Some platforms have lgamma_r, which has
-         * extra output parameter instead of the global variable. */
-#ifdef c99_lgamma
-	    RETVAL = c99_lgamma(x);
-#else
-	    not_here("lgamma");
-#endif
-	    break;
-	case 17:
-	    RETVAL = Perl_log10(x); /* C89 math */
-	    break;
-	case 18:
-#ifdef c99_log1p
-	    RETVAL = c99_log1p(x);
-#else
-	    not_here("log1p");
-#endif
-	    break;
-	case 19:
-#ifdef c99_log2
-	    RETVAL = c99_log2(x);
-#else
-	    not_here("log2");
-#endif
-	    break;
-	case 20:
-#ifdef c99_logb
-	    RETVAL = c99_logb(x);
-#elif defined(c99_log2) && FLT_RADIX == 2
-	    RETVAL = Perl_floor(c99_log2(PERL_ABS(x)));
-#else
-	    not_here("logb");
-#endif
-	    break;
-	case 21:
-#ifdef c99_nearbyint
-	    RETVAL = c99_nearbyint(x);
-#else
-	    not_here("nearbyint");
-#endif
-	    break;
-	case 22:
-#ifdef c99_rint
-	    RETVAL = c99_rint(x);
-#else
-	    not_here("rint");
-#endif
-	    break;
-	case 23:
-#ifdef c99_round
-	    RETVAL = c99_round(x);
-#else
-	    not_here("round");
-#endif
-	    break;
-	case 24:
-	    RETVAL = Perl_sinh(x); /* C89 math */
-	    break;
-	case 25:
-	    RETVAL = Perl_tan(x); /* C89 math */
-	    break;
-	case 26:
-	    RETVAL = Perl_tanh(x); /* C89 math */
-	    break;
-	case 27:
-#ifdef c99_tgamma
-	    RETVAL = c99_tgamma(x);
-#else
-	    not_here("tgamma");
-#endif
-	    break;
-	case 28:
-#ifdef c99_trunc
-	    RETVAL = c99_trunc(x);
-#else
-	    not_here("trunc");
-#endif
-	    break;
-	case 29:
-#ifdef bessel_y0
-	    RETVAL = bessel_y0(x);
-#else
-	    not_here("y0");
-#endif
-	    break;
-        case 30:
-	default:
-#ifdef bessel_y1
-	    RETVAL = bessel_y1(x);
-#else
-	    not_here("y1");
-#endif
-	}
-    OUTPUT:
-	RETVAL
+	double		x
 
-IV
-fegetround()
-    PROTOTYPE:
-    ALIAS:
-        FLT_ROUNDS = 1
-    CODE:
-        switch (ix) {
-        case 0:
-        default:
-#ifdef HAS_FEGETROUND
-            RETVAL = my_fegetround();
-#else
-            RETVAL = -1;
-            not_here("fegetround");
-#endif
-            break;
-        case 1:
-#if defined(FLT_ROUNDS) && !defined(BROKEN_FLT_ROUNDS)
-            RETVAL = FLT_ROUNDS;
-#elif defined(HAS_FEGETROUND) || defined(HAS_FPGETROUND) || defined(__osf__)
-            switch (my_fegetround()) {
-                /* C standard seems to say that each of the FE_* macros is
-                   defined if and only if the implementation supports it. */
-#  ifdef FE_TOWARDZERO
-            case FE_TOWARDZERO: RETVAL = 0;  break;
-#  endif
-#  ifdef FE_TONEAREST
-            case FE_TONEAREST:  RETVAL = 1;  break;
-#  endif
-#  ifdef FE_UPWARD
-            case FE_UPWARD:     RETVAL = 2;  break;
-#  endif
-#  ifdef FE_DOWNWARD
-            case FE_DOWNWARD:   RETVAL = 3;  break;
-#  endif
-            default:            RETVAL = -1; break;
-            }
-#else
-            RETVAL = -1;
-            not_here("FLT_ROUNDS");
-#endif
-            break;
-        }
-    OUTPUT:
-	RETVAL
+double
+asin(x)
+	double		x
 
-IV
-fesetround(x)
-	IV	x
-    CODE:
-#ifdef HAS_FEGETROUND /* canary for fesetround */
-	RETVAL = fesetround(x);
-#elif defined(HAS_FPGETROUND) /* canary for fpsetround */
-	switch (x) {
-	case FE_TONEAREST:  RETVAL = fpsetround(FP_RN); break;
-	case FE_TOWARDZERO: RETVAL = fpsetround(FP_RZ); break;
-	case FE_DOWNWARD:   RETVAL = fpsetround(FP_RM); break;
-	case FE_UPWARD:     RETVAL = fpsetround(FP_RP); break;
-        default: RETVAL = -1; break;
-	}
-#elif defined(__osf__) /* Tru64 */
-	switch (x) {
-	case FE_TONEAREST:  RETVAL = write_rnd(FP_RND_RN); break;
-	case FE_TOWARDZERO: RETVAL = write_rnd(FP_RND_RZ); break;
-	case FE_DOWNWARD:   RETVAL = write_rnd(FP_RND_RM); break;
-	case FE_UPWARD:     RETVAL = write_rnd(FP_RND_RP); break;
-        default: RETVAL = -1; break;
-	}
-#else
-	PERL_UNUSED_VAR(x);
-	RETVAL = -1;
-	not_here("fesetround");
-#endif
-    OUTPUT:
-	RETVAL
+double
+atan(x)
+	double		x
 
-IV
-fpclassify(x)
-	NV		x
-    ALIAS:
-	ilogb = 1
-	isfinite = 2
-	isinf = 3
-	isnan = 4
-	isnormal = 5
-	lrint = 6
-	lround = 7
-        signbit = 8
-    CODE:
-        PERL_UNUSED_VAR(x);
-	RETVAL = -1;
-	switch (ix) {
-	case 0:
-#ifdef c99_fpclassify
-	    RETVAL = c99_fpclassify(x);
-#else
-	    not_here("fpclassify");
-#endif
-	    break;
-	case 1:
-#ifdef c99_ilogb
-	    RETVAL = c99_ilogb(x);
-#else
-	    not_here("ilogb");
-#endif
-	    break;
-	case 2:
-	    RETVAL = Perl_isfinite(x);
-	    break;
-	case 3:
-	    RETVAL = Perl_isinf(x);
-	    break;
-	case 4:
-	    RETVAL = Perl_isnan(x);
-	    break;
-	case 5:
-#ifdef c99_isnormal
-	    RETVAL = c99_isnormal(x);
-#else
-	    not_here("isnormal");
-#endif
-	    break;
-	case 6:
-#ifdef c99_lrint
-	    RETVAL = c99_lrint(x);
-#else
-	    not_here("lrint");
-#endif
-	    break;
-	case 7:
-#ifdef c99_lround
-	    RETVAL = c99_lround(x);
-#else
-	    not_here("lround");
-#endif
-	    break;
-	case 8:
-	default:
-	    RETVAL = Perl_signbit(x);
-	    break;
-	}
-    OUTPUT:
-	RETVAL
+double
+ceil(x)
+	double		x
 
-NV
-getpayload(nv)
-	NV nv
-    CODE:
-#ifdef DOUBLE_HAS_NAN
-	RETVAL = S_getpayload(nv);
-#else
-        PERL_UNUSED_VAR(nv);
-        RETVAL = 0.0;
-	not_here("getpayload");
-#endif
-    OUTPUT:
-	RETVAL
+double
+cosh(x)
+	double		x
 
-void
-setpayload(nv, payload)
-	NV nv
-	NV payload
-    CODE:
-#ifdef DOUBLE_HAS_NAN
-	S_setpayload(&nv, payload, FALSE);
-#else
-        PERL_UNUSED_VAR(nv);
-        PERL_UNUSED_VAR(payload);
-	not_here("setpayload");
-#endif
-    OUTPUT:
-	nv
+double
+floor(x)
+	double		x
 
-void
-setpayloadsig(nv, payload)
-	NV nv
-	NV payload
-    CODE:
-#ifdef DOUBLE_HAS_NAN
-	nv = NV_NAN;
-	S_setpayload(&nv, payload, TRUE);
-#else
-        PERL_UNUSED_VAR(nv);
-        PERL_UNUSED_VAR(payload);
-	not_here("setpayloadsig");
-#endif
-    OUTPUT:
-	nv
-
-int
-issignaling(nv)
-	NV nv
-    CODE:
-#ifdef DOUBLE_HAS_NAN
-	RETVAL = Perl_isnan(nv) && NV_NAN_IS_SIGNALING(&nv);
-#else
-        PERL_UNUSED_VAR(nv);
-        RETVAL = 0.0;
-	not_here("issignaling");
-#endif
-    OUTPUT:
-	RETVAL
-
-NV
-copysign(x,y)
-	NV		x
-	NV		y
-    ALIAS:
-	fdim = 1
-	fmax = 2
-	fmin = 3
-	fmod = 4
-	hypot = 5
-	isgreater = 6
-	isgreaterequal = 7
-	isless = 8
-	islessequal = 9
-	islessgreater = 10
-	isunordered = 11
-	nextafter = 12
-	nexttoward = 13
-	remainder = 14
-    CODE:
-        PERL_UNUSED_VAR(x);
-        PERL_UNUSED_VAR(y);
-#ifdef NV_NAN
-	RETVAL = NV_NAN;
-#else
-	RETVAL = 0;
-#endif
-	switch (ix) {
-	case 0:
-#ifdef c99_copysign
-	    RETVAL = c99_copysign(x, y);
-#else
-	    not_here("copysign");
-#endif
-	    break;
-	case 1:
-#ifdef c99_fdim
-	    RETVAL = c99_fdim(x, y);
-#else
-	    not_here("fdim");
-#endif
-	    break;
-	case 2:
-#ifdef c99_fmax
-	    RETVAL = c99_fmax(x, y);
-#else
-	    not_here("fmax");
-#endif
-	    break;
-	case 3:
-#ifdef c99_fmin
-	    RETVAL = c99_fmin(x, y);
-#else
-	    not_here("fmin");
-#endif
-	    break;
-	case 4:
-	    RETVAL = Perl_fmod(x, y); /* C89 math */
-	    break;
-	case 5:
-#ifdef c99_hypot
-	    RETVAL = c99_hypot(x, y);
-#else
-	    not_here("hypot");
-#endif
-	    break;
-	case 6:
-#ifdef c99_isgreater
-	    RETVAL = c99_isgreater(x, y);
-#else
-	    not_here("isgreater");
-#endif
-	    break;
-	case 7:
-#ifdef c99_isgreaterequal
-	    RETVAL = c99_isgreaterequal(x, y);
-#else
-	    not_here("isgreaterequal");
-#endif
-	    break;
-	case 8:
-#ifdef c99_isless
-	    RETVAL = c99_isless(x, y);
-#else
-	    not_here("isless");
-#endif
-	    break;
-	case 9:
-#ifdef c99_islessequal
-	    RETVAL = c99_islessequal(x, y);
-#else
-	    not_here("islessequal");
-#endif
-	    break;
-	case 10:
-#ifdef c99_islessgreater
-	    RETVAL = c99_islessgreater(x, y);
-#else
-	    not_here("islessgreater");
-#endif
-	    break;
-	case 11:
-#ifdef c99_isunordered
-	    RETVAL = c99_isunordered(x, y);
-#else
-	    not_here("isunordered");
-#endif
-	    break;
-	case 12:
-#ifdef c99_nextafter
-	    RETVAL = c99_nextafter(x, y);
-#else
-	    not_here("nextafter");
-#endif
-	    break;
-	case 13:
-#ifdef c99_nexttoward
-	    RETVAL = c99_nexttoward(x, y);
-#else
-	    not_here("nexttoward");
-#endif
-	    break;
-	case 14:
-	default:
-#ifdef c99_remainder
-          RETVAL = c99_remainder(x, y);
-#else
-          not_here("remainder");
-#endif
-	    break;
-	}
-	OUTPUT:
-	    RETVAL
+double
+fmod(x,y)
+	double		x
+	double		y
 
 void
 frexp(x)
-	NV		x
+	double		x
     PPCODE:
 	int expvar;
 	/* (We already know stack is long enough.) */
-	PUSHs(sv_2mortal(newSVnv(Perl_frexp(x,&expvar)))); /* C89 math */
+	PUSHs(sv_2mortal(newSVnv(frexp(x,&expvar))));
 	PUSHs(sv_2mortal(newSViv(expvar)));
 
-NV
+double
 ldexp(x,exp)
-	NV		x
+	double		x
 	int		exp
-    CODE:
-        RETVAL = Perl_ldexp(x, exp);
-    OUTPUT:
-        RETVAL
+
+double
+log10(x)
+	double		x
 
 void
 modf(x)
-	NV		x
+	double		x
     PPCODE:
-	NV intvar;
+	double intvar;
 	/* (We already know stack is long enough.) */
-	PUSHs(sv_2mortal(newSVnv(Perl_modf(x,&intvar)))); /* C89 math */
+	PUSHs(sv_2mortal(newSVnv(modf(x,&intvar))));
 	PUSHs(sv_2mortal(newSVnv(intvar)));
 
-void
-remquo(x,y)
-	NV		x
-	NV		y
-    PPCODE:
-#ifdef c99_remquo
-        int intvar;
-        PUSHs(sv_2mortal(newSVnv(c99_remquo(x,y,&intvar))));
-        PUSHs(sv_2mortal(newSVnv(intvar)));
-#else
-	PERL_UNUSED_VAR(x);
-	PERL_UNUSED_VAR(y);
-	not_here("remquo");
-#endif
+double
+sinh(x)
+	double		x
 
-NV
-scalbn(x,y)
-	NV		x
-	IV		y
-    CODE:
-#ifdef c99_scalbn
-	RETVAL = c99_scalbn(x, y);
-#else
-	PERL_UNUSED_VAR(x);
-	PERL_UNUSED_VAR(y);
-	RETVAL = NV_NAN;
-	not_here("scalbn");
-#endif
-    OUTPUT:
-	RETVAL
+double
+tan(x)
+	double		x
 
-NV
-fma(x,y,z)
-	NV		x
-	NV		y
-	NV		z
-    CODE:
-#ifdef c99_fma
-	RETVAL = c99_fma(x, y, z);
-#else
-	PERL_UNUSED_VAR(x);
-	PERL_UNUSED_VAR(y);
-	PERL_UNUSED_VAR(z);
-	not_here("fma");
-#endif
-    OUTPUT:
-	RETVAL
-
-NV
-nan(payload = 0)
-	NV payload
-    CODE:
-#ifdef NV_NAN
-        /* If no payload given, just return the default NaN.
-         * This makes a difference in platforms where the default
-         * NaN is not all zeros. */
-	if (items == 0) {
-          RETVAL = NV_NAN;
-	} else {
-          S_setpayload(&RETVAL, payload, FALSE);
-        }
-#elif defined(c99_nan)
-	{
-	  STRLEN elen = my_snprintf(PL_efloatbuf, PL_efloatsize, "%g", payload);
-          if ((IV)elen == -1) {
-#ifdef NV_NAN
-	    RETVAL = NV_NAN;
-#else            
-            RETVAL = 0.0;
-            not_here("nan");
-#endif
-          } else {
-            RETVAL = c99_nan(PL_efloatbuf);
-          }
-        }
-#else
-	not_here("nan");
-#endif
-    OUTPUT:
-	RETVAL
-
-NV
-jn(x,y)
-	IV		x
-	NV		y
-    ALIAS:
-	yn = 1
-    CODE:
-#ifdef NV_NAN
-	RETVAL = NV_NAN;
-#else
-	RETVAL = 0;
-#endif
-        switch (ix) {
-	case 0:
-#ifdef bessel_jn
-          RETVAL = bessel_jn(x, y);
-#else
-	  PERL_UNUSED_VAR(x);
-	  PERL_UNUSED_VAR(y);
-          not_here("jn");
-#endif
-            break;
-	case 1:
-	default:
-#ifdef bessel_yn
-          RETVAL = bessel_yn(x, y);
-#else
-	  PERL_UNUSED_VAR(x);
-	  PERL_UNUSED_VAR(y);
-          not_here("yn");
-#endif
-            break;
-	}
-    OUTPUT:
-	RETVAL
+double
+tanh(x)
+	double		x
 
 SysRet
-sigaction(sig, optaction, oldaction = 0)
+sigaction(sig, action, oldaction = 0)
 	int			sig
-	SV *			optaction
+	POSIX::SigAction	action
 	POSIX::SigAction	oldaction
     CODE:
-#if defined(WIN32) || (defined(__amigaos4__) && defined(__NEWLIB__))
-	RETVAL = not_here("sigaction");
-#else
-# This code is really grody because we are trying to make the signal
+
+# This code is really grody because we're trying to make the signal
 # interface look beautiful, which is hard.
 
+	if (!siggv)
+	    gv_fetchpv("SIG", TRUE, SVt_PVHV);
+
 	{
-	    POSIX__SigAction action;
-	    GV *siggv = gv_fetchpvs("SIG", GV_ADD, SVt_PVHV);
 	    struct sigaction act;
 	    struct sigaction oact;
-	    sigset_t sset;
-	    SV *osset_sv;
-	    sigset_t osset;
 	    POSIX__SigSet sigset;
 	    SV** svp;
-	    SV** sigsvp;
+	    SV** sigsvp = hv_fetch(GvHVn(siggv),
+				 sig_name[sig],
+				 strlen(sig_name[sig]),
+				 TRUE);
 
-            if (sig < 0) {
-                croak("Negative signals are not allowed");
-            }
-
-	    if (sig == 0 && SvPOK(ST(0))) {
-	        const char *s = SvPVX_const(ST(0));
-		int i = whichsig(s);
-
-	        if (i < 0 && memBEGINs(s, SvCUR(ST(0)), "SIG"))
-		    i = whichsig(s + 3);
-	        if (i < 0) {
-	            if (ckWARN(WARN_SIGNAL))
-		        Perl_warner(aTHX_ packWARN(WARN_SIGNAL),
-                                    "No such signal: SIG%s", s);
-	            XSRETURN_UNDEF;
-		}
-	        else
-		    sig = i;
-            }
-#ifdef NSIG
-	    if (sig > NSIG) { /* NSIG - 1 is still okay. */
-	        Perl_warner(aTHX_ packWARN(WARN_SIGNAL),
-                            "No such signal: %d", sig);
-	        XSRETURN_UNDEF;
-	    }
-#endif
-	    sigsvp = hv_fetch(GvHVn(siggv),
-			      PL_sig_name[sig],
-			      strlen(PL_sig_name[sig]),
-			      TRUE);
-
-	    /* Check optaction and set action */
-	    if(SvTRUE(optaction)) {
-		if(sv_isa(optaction, "POSIX::SigAction"))
-			action = (HV*)SvRV(optaction);
-		else
-			croak("action is not of type POSIX::SigAction");
-	    }
-	    else {
-		action=0;
-	    }
-
-	    /* sigaction() is supposed to look atomic. In particular, any
-	     * signal handler invoked during a sigaction() call should
-	     * see either the old or the new disposition, and not something
-	     * in between. We use sigprocmask() to make it so.
-	     */
-	    sigfillset(&sset);
-	    RETVAL=sigprocmask(SIG_BLOCK, &sset, &osset);
-	    if(RETVAL == -1)
-               XSRETURN_UNDEF;
-	    ENTER;
-	    /* Restore signal mask no matter how we exit this block. */
-	    osset_sv = newSVpvn((char *)(&osset), sizeof(sigset_t));
-	    SAVEFREESV( osset_sv );
-	    SAVEDESTRUCTOR_X(restore_sigmask, osset_sv);
-
-	    RETVAL=-1; /* In case both oldaction and action are 0. */
-
-	    /* Remember old disposition if desired. */
+	    /* Remember old handler name if desired. */
 	    if (oldaction) {
-                int safe;
-
-		svp = hv_fetchs(oldaction, "HANDLER", TRUE);
-		if(!svp)
-		    croak("Can't supply an oldaction without a HANDLER");
-		if(SvTRUE(*sigsvp)) { /* TBD: what if "0"? */
-			sv_setsv(*svp, *sigsvp);
-		}
-		else {
-			sv_setpvs(*svp, "DEFAULT");
-		}
-		RETVAL = sigaction(sig, (struct sigaction *)0, & oact);
-		if(RETVAL == -1) {
-                   LEAVE;
-                   XSRETURN_UNDEF;
-                }
-		/* Get back the mask. */
-		svp = hv_fetchs(oldaction, "MASK", TRUE);
-		if (sv_isa(*svp, "POSIX::SigSet")) {
-		    sigset = (sigset_t *) SvPV_nolen(SvRV(*svp));
-		}
-		else {
-		    sigset = (sigset_t *) allocate_struct(aTHX_ *svp,
-							  sizeof(sigset_t),
-							  "POSIX::SigSet");
-		}
-		*sigset = oact.sa_mask;
-
-		/* Get back the flags. */
-		svp = hv_fetchs(oldaction, "FLAGS", TRUE);
-		sv_setiv(*svp, oact.sa_flags);
-
-		/* Get back whether the old handler used safe signals;
-                 * i.e. it used Perl_csighandler[13] rather than
-                 * Perl_sighandler[13]
-                 */
-                safe =
-#ifdef SA_SIGINFO
-                    (oact.sa_flags & SA_SIGINFO)
-                        ? (  oact.sa_sigaction == PL_csighandler3p
-#ifdef PERL_USE_3ARG_SIGHANDLER
-                          || oact.sa_sigaction == PL_csighandlerp
-#endif
-                          )
-                        :
-#endif
-                           (  oact.sa_handler   == PL_csighandler1p
-#ifndef PERL_USE_3ARG_SIGHANDLER
-                          || oact.sa_handler   == PL_csighandlerp
-#endif
-                           );
-
-		svp = hv_fetchs(oldaction, "SAFE", TRUE);
-		sv_setiv(*svp, safe);
+		char *hand = SvPVx(*sigsvp, na);
+		svp = hv_fetch(oldaction, "HANDLER", 7, TRUE);
+		sv_setpv(*svp, *hand ? hand : "DEFAULT");
 	    }
 
 	    if (action) {
-                int safe;
-
-		/* Set up any desired flags. */
-		svp = hv_fetchs(action, "FLAGS", FALSE);
-		act.sa_flags = svp ? SvIV(*svp) : 0;
-
-		/* Safe signals use "csighandler", which vectors through the
-		   PL_sighandlerp pointer when it's safe to do so.
-		   (BTW, "csighandler" is very different from "sighandler".) */
-		svp = hv_fetchs(action, "SAFE", FALSE);
-                safe = *svp && SvTRUE(*svp);
-#ifdef SA_SIGINFO
-                if (act.sa_flags & SA_SIGINFO) {
-                    /* 3-arg handler */
-                    act.sa_sigaction =
-			    safe ? PL_csighandler3p : PL_sighandler3p;
-                }
-                else
-#endif
-                {
-                    /* 1-arg handler */
-                    act.sa_handler =
-			    safe ? PL_csighandler1p : PL_sighandler1p;
-                }
-
-		/* Vector new Perl handler through %SIG.
-		   (The core signal handlers read %SIG to dispatch.) */
-		svp = hv_fetchs(action, "HANDLER", FALSE);
+		/* Vector new handler through %SIG.  (We always use sighandler
+		   for the C signal handler, which reads %SIG to dispatch.) */
+		svp = hv_fetch(action, "HANDLER", 7, FALSE);
 		if (!svp)
 		    croak("Can't supply an action without a HANDLER");
-		sv_setsv(*sigsvp, *svp);
-
-		/* This call actually calls sigaction() with almost the
-		   right settings, including appropriate interpretation
-		   of DEFAULT and IGNORE.  However, why are we doing
-		   this when we're about to do it again just below?  XXX */
-		SvSETMAGIC(*sigsvp);
-
-		/* And here again we duplicate -- DEFAULT/IGNORE checking. */
-		if(SvPOK(*svp)) {
-			const char *s=SvPVX_const(*svp);
-			if(strEQ(s,"IGNORE")) {
-				act.sa_handler = SIG_IGN;
-			}
-			else if(strEQ(s,"DEFAULT")) {
-				act.sa_handler = SIG_DFL;
-			}
-		}
+		sv_setpv(*sigsvp, SvPV(*svp, na));
+		mg_set(*sigsvp);	/* handles DEFAULT and IGNORE */
+		act.sa_handler = sighandler;
 
 		/* Set up any desired mask. */
-		svp = hv_fetchs(action, "MASK", FALSE);
+		svp = hv_fetch(action, "MASK", 4, FALSE);
 		if (svp && sv_isa(*svp, "POSIX::SigSet")) {
-		    sigset = (sigset_t *) SvPV_nolen(SvRV(*svp));
+		    unsigned long tmp;
+		    tmp = (unsigned long)SvNV((SV*)SvRV(*svp));
+		    sigset = (sigset_t*) tmp;
 		    act.sa_mask = *sigset;
 		}
 		else
 		    sigemptyset(& act.sa_mask);
 
-		/* Don't worry about cleaning up *sigsvp if this fails,
-		 * because that means we tried to disposition a
-		 * nonblockable signal, in which case *sigsvp is
-		 * essentially meaningless anyway.
-		 */
-		RETVAL = sigaction(sig, & act, (struct sigaction *)0);
-		if(RETVAL == -1) {
-                    LEAVE;
-		    XSRETURN_UNDEF;
-                }
+		/* Set up any desired flags. */
+		svp = hv_fetch(action, "FLAGS", 5, FALSE);
+		act.sa_flags = svp ? SvIV(*svp) : 0;
 	    }
 
-	    LEAVE;
+	    /* Now work around sigaction oddities */
+	    if (action && oldaction)
+		RETVAL = sigaction(sig, & act, & oact);
+	    else if (action)
+		RETVAL = sigaction(sig, & act, (struct sigaction *)0);
+	    else if (oldaction)
+		RETVAL = sigaction(sig, (struct sigaction *)0, & oact);
+	    else
+		RETVAL = -1;
+
+	    if (oldaction) {
+		/* Get back the mask. */
+		svp = hv_fetch(oldaction, "MASK", 4, TRUE);
+		if (sv_isa(*svp, "POSIX::SigSet")) {
+		    unsigned long tmp;
+		    tmp = (unsigned long)SvNV((SV*)SvRV(*svp));
+		    sigset = (sigset_t*) tmp;
+		}
+		else {
+		    sigset = (sigset_t*)safemalloc(sizeof(sigset_t));
+		    sv_setptrobj(*svp, sigset, "POSIX::SigSet");
+		}
+		*sigset = oact.sa_mask;
+
+		/* Get back the flags. */
+		svp = hv_fetch(oldaction, "FLAGS", 5, TRUE);
+		sv_setiv(*svp, oact.sa_flags);
+	    }
 	}
-#endif
     OUTPUT:
 	RETVAL
 
 SysRet
 sigpending(sigset)
 	POSIX::SigSet		sigset
-    ALIAS:
-	sigsuspend = 1
-    CODE:
-#ifdef __amigaos4__
-	RETVAL = not_here("sigpending");
-#else
-	RETVAL = ix ? sigsuspend(sigset) : sigpending(sigset);
-#endif
-    OUTPUT:
-	RETVAL
-    CLEANUP:
-    PERL_ASYNC_CHECK();
 
 SysRet
 sigprocmask(how, sigset, oldsigset = 0)
 	int			how
-	POSIX::SigSet		sigset = NO_INIT
-	POSIX::SigSet		oldsigset = NO_INIT
-INIT:
-	if (! SvOK(ST(1))) {
-	    sigset = NULL;
-	} else if (sv_isa(ST(1), "POSIX::SigSet")) {
-	    sigset = (sigset_t *) SvPV_nolen(SvRV(ST(1)));
-	} else {
-	    croak("sigset is not of type POSIX::SigSet");
-	}
+	POSIX::SigSet		sigset
+	POSIX::SigSet		oldsigset
 
-	if (items < 3 || ! SvOK(ST(2))) {
-	    oldsigset = NULL;
-	} else if (sv_isa(ST(2), "POSIX::SigSet")) {
-	    oldsigset = (sigset_t *) SvPV_nolen(SvRV(ST(2)));
-	} else {
-	    croak("oldsigset is not of type POSIX::SigSet");
-	}
+SysRet
+sigsuspend(signal_mask)
+	POSIX::SigSet		signal_mask
 
 void
 _exit(status)
 	int		status
 
 SysRet
+close(fd)
+	int		fd
+
+SysRet
+dup(fd)
+	int		fd
+
+SysRet
 dup2(fd1, fd2)
 	int		fd1
 	int		fd2
-    CODE:
-	if (fd1 >= 0 && fd2 >= 0) {
-#ifdef WIN32
-            /* RT #98912 - More Microsoft muppetry - failing to
-               actually implemented the well known documented POSIX
-               behaviour for a POSIX API.
-               http://msdn.microsoft.com/en-us/library/8syseb29.aspx  */
-            RETVAL = dup2(fd1, fd2) == -1 ? -1 : fd2;
-#else
-            RETVAL = dup2(fd1, fd2);
-#endif
-        } else {
-            SETERRNO(EBADF,RMS_IFI);
-            RETVAL = -1;
-        }
-    OUTPUT:
-	RETVAL
 
-SV *
+SysRetLong
 lseek(fd, offset, whence)
-	POSIX::Fd	fd
+	int		fd
 	Off_t		offset
 	int		whence
-    CODE:
-	{
-              Off_t pos = PerlLIO_lseek(fd, offset, whence);
-              RETVAL = sizeof(Off_t) > sizeof(IV)
-                ? newSVnv((NV)pos) : newSViv((IV)pos);
-        }
-    OUTPUT:
-	RETVAL
 
-void
+SysRet
 nice(incr)
 	int		incr
-    PPCODE:
-	errno = 0;
-	if ((incr = nice(incr)) != -1 || errno == 0) {
-	    if (incr == 0)
-		XPUSHs(newSVpvs_flags("0 but true", SVs_TEMP));
-	    else
-		XPUSHs(sv_2mortal(newSViv(incr)));
-	}
 
-void
+int
 pipe()
     PPCODE:
 	int fds[2];
 	if (pipe(fds) != -1) {
-	    EXTEND(SP,2);
+	    EXTEND(sp,2);
 	    PUSHs(sv_2mortal(newSViv(fds[0])));
 	    PUSHs(sv_2mortal(newSViv(fds[1])));
 	}
@@ -3308,15 +2941,16 @@ read(fd, buffer, nbytes)
     PREINIT:
         SV *sv_buffer = SvROK(ST(1)) ? SvRV(ST(1)) : ST(1);
     INPUT:
-	POSIX::Fd	fd
+        int             fd
         size_t          nbytes
         char *          buffer = sv_grow( sv_buffer, nbytes+1 );
     CLEANUP:
         if (RETVAL >= 0) {
-            SvCUR_set(sv_buffer, RETVAL);
+            SvCUR(sv_buffer) = RETVAL;
             SvPOK_only(sv_buffer);
             *SvEND(sv_buffer) = '\0';
-            SvTAINTED_on(sv_buffer);
+            if (tainting)
+                sv_magic(sv_buffer, 0, 't', 0, 0);
         }
 
 SysRet
@@ -3329,25 +2963,25 @@ setsid()
 
 pid_t
 tcgetpgrp(fd)
-	POSIX::Fd	fd
+	int		fd
 
 SysRet
 tcsetpgrp(fd, pgrp_id)
-	POSIX::Fd	fd
+	int		fd
 	pid_t		pgrp_id
 
-void
+int
 uname()
     PPCODE:
 #ifdef HAS_UNAME
 	struct utsname buf;
 	if (uname(&buf) >= 0) {
-	    EXTEND(SP, 5);
-	    PUSHs(newSVpvn_flags(buf.sysname, strlen(buf.sysname), SVs_TEMP));
-	    PUSHs(newSVpvn_flags(buf.nodename, strlen(buf.nodename), SVs_TEMP));
-	    PUSHs(newSVpvn_flags(buf.release, strlen(buf.release), SVs_TEMP));
-	    PUSHs(newSVpvn_flags(buf.version, strlen(buf.version), SVs_TEMP));
-	    PUSHs(newSVpvn_flags(buf.machine, strlen(buf.machine), SVs_TEMP));
+	    EXTEND(sp, 5);
+	    PUSHs(sv_2mortal(newSVpv(buf.sysname, 0)));
+	    PUSHs(sv_2mortal(newSVpv(buf.nodename, 0)));
+	    PUSHs(sv_2mortal(newSVpv(buf.release, 0)));
+	    PUSHs(sv_2mortal(newSVpv(buf.version, 0)));
+	    PUSHs(sv_2mortal(newSVpv(buf.machine, 0)));
 	}
 #else
 	uname((char *) 0); /* A stub to call not_here(). */
@@ -3355,298 +2989,68 @@ uname()
 
 SysRet
 write(fd, buffer, nbytes)
-	POSIX::Fd	fd
+	int		fd
 	char *		buffer
 	size_t		nbytes
+
+char *
+tmpnam(s = 0)
+	char *		s = 0;
 
 void
 abort()
 
-#if defined(HAS_MBRLEN) && (defined(USE_ITHREADS) || ! defined(HAS_MBLEN))
-#  define USE_MBRLEN
-#else
-#  undef USE_MBRLEN
-#endif
+int
+mblen(s, n)
+	char *		s
+	size_t		n
+
+size_t
+mbstowcs(s, pwcs, n)
+	wchar_t *	s
+	char *		pwcs
+	size_t		n
 
 int
-mblen(s, n = ~0)
-	SV *		s
+mbtowc(pwc, s, n)
+	wchar_t *	pwc
+	char *		s
 	size_t		n
-    CODE:
-        errno = 0;
-
-        SvGETMAGIC(s);
-        if (! SvOK(s)) {
-#ifdef USE_MBRLEN
-            /* Initialize the shift state in PL_mbrlen_ps.  The Standard says
-             * that should be all zeros. */
-            memzero(&PL_mbrlen_ps, sizeof(PL_mbrlen_ps));
-            RETVAL = 0;
-#else
-            MBLEN_LOCK;
-            RETVAL = mblen(NULL, 0);
-            MBLEN_UNLOCK;
-#endif
-        }
-        else {  /* Not resetting state */
-            SV * byte_s = sv_2mortal(newSVsv_nomg(s));
-            if (! sv_utf8_downgrade_nomg(byte_s, TRUE)) {
-                SETERRNO(EINVAL, LIB_INVARG);
-                RETVAL = -1;
-            }
-            else {
-                size_t len;
-                char * string = SvPV(byte_s, len);
-                if (n < len) len = n;
-#ifdef USE_MBRLEN
-                RETVAL = (SSize_t) mbrlen(string, len, &PL_mbrlen_ps);
-                if (RETVAL < 0) RETVAL = -1;    /* Use mblen() ret code for
-                                                   transparency */
-#else
-                /* Locking prevents races, but locales can be switched out
-                 * without locking, so this isn't a cure all */
-                MBLEN_LOCK;
-                RETVAL = mblen(string, len);
-                MBLEN_UNLOCK;
-#endif
-            }
-        }
-    OUTPUT:
-        RETVAL
-
-#if defined(HAS_MBRTOWC) && (defined(USE_ITHREADS) || ! defined(HAS_MBTOWC))
-#  define USE_MBRTOWC
-#else
-#  undef USE_MBRTOWC
-#endif
 
 int
-mbtowc(pwc, s, n = ~0)
-	SV *	        pwc
-	SV *		s
+wcstombs(s, pwcs, n)
+	char *		s
+	wchar_t *	pwcs
 	size_t		n
-    CODE:
-        errno = 0;
-        SvGETMAGIC(s);
-        if (! SvOK(s)) { /* Initialize state */
-#ifdef USE_MBRTOWC
-            /* Initialize the shift state to all zeros in PL_mbrtowc_ps. */
-            memzero(&PL_mbrtowc_ps, sizeof(PL_mbrtowc_ps));
-            RETVAL = 0;
-#else
-            MBTOWC_LOCK;
-            RETVAL = mbtowc(NULL, NULL, 0);
-            MBTOWC_UNLOCK;
-#endif
-        }
-        else {  /* Not resetting state */
-            wchar_t wc;
-            SV * byte_s = sv_2mortal(newSVsv_nomg(s));
-            if (! sv_utf8_downgrade_nomg(byte_s, TRUE)) {
-                SETERRNO(EINVAL, LIB_INVARG);
-                RETVAL = -1;
-            }
-            else {
-                size_t len;
-                char * string = SvPV(byte_s, len);
-                if (n < len) len = n;
-#ifdef USE_MBRTOWC
-                RETVAL = (SSize_t) mbrtowc(&wc, string, len, &PL_mbrtowc_ps);
-#else
-                /* Locking prevents races, but locales can be switched out
-                 * without locking, so this isn't a cure all */
-                MBTOWC_LOCK;
-                RETVAL = mbtowc(&wc, string, len);
-                MBTOWC_UNLOCK;
-#endif
-                if (RETVAL >= 0) {
-                    sv_setiv_mg(pwc, wc);
-                }
-                else { /* Use mbtowc() ret code for transparency */
-                    RETVAL = -1;
-                }
-            }
-        }
-    OUTPUT:
-        RETVAL
-
-#if defined(HAS_WCRTOMB) && (defined(USE_ITHREADS) || ! defined(HAS_WCTOMB))
-#  define USE_WCRTOMB
-#else
-#  undef USE_WCRTOMB
-#endif
 
 int
 wctomb(s, wchar)
-	SV *		s
+	char *		s
 	wchar_t		wchar
-    CODE:
-        errno = 0;
-        SvGETMAGIC(s);
-        if (s == &PL_sv_undef) {
-#ifdef USE_WCRTOMB
-            /* The man pages khw looked at are in agreement that this works.
-             * But probably memzero would too */
-            RETVAL = wcrtomb(NULL, L'\0', &PL_wcrtomb_ps);
-#else
-            WCTOMB_LOCK;
-            RETVAL = wctomb(NULL, L'\0');
-            WCTOMB_UNLOCK;
-#endif
-        }
-        else {  /* Not resetting state */
-            char buffer[MB_LEN_MAX];
-#ifdef USE_WCRTOMB
-            RETVAL = wcrtomb(buffer, wchar, &PL_wcrtomb_ps);
-#else
-            /* Locking prevents races, but locales can be switched out without
-             * locking, so this isn't a cure all */
-            WCTOMB_LOCK;
-            RETVAL = wctomb(buffer, wchar);
-            WCTOMB_UNLOCK;
-#endif
-            if (RETVAL >= 0) {
-                sv_setpvn_mg(s, buffer, RETVAL);
-            }
-        }
-    OUTPUT:
-        RETVAL
 
 int
 strcoll(s1, s2)
 	char *		s1
 	char *		s2
 
-void
-strtod(str)
-	char *		str
-    PREINIT:
-	double num;
-	char *unparsed;
-    PPCODE:
-        DECLARATION_FOR_LC_NUMERIC_MANIPULATION;
-        STORE_LC_NUMERIC_FORCE_TO_UNDERLYING();
-	num = strtod(str, &unparsed);
-        RESTORE_LC_NUMERIC();
-	PUSHs(sv_2mortal(newSVnv(num)));
-	if (GIMME_V == G_LIST) {
-	    EXTEND(SP, 1);
-	    if (unparsed)
-		PUSHs(sv_2mortal(newSViv(strlen(unparsed))));
-	    else
-		PUSHs(&PL_sv_undef);
-	}
-
-#ifdef HAS_STRTOLD
-
-void
-strtold(str)
-	char *		str
-    PREINIT:
-	long double num;
-	char *unparsed;
-    PPCODE:
-        DECLARATION_FOR_LC_NUMERIC_MANIPULATION;
-        STORE_LC_NUMERIC_FORCE_TO_UNDERLYING();
-	num = strtold(str, &unparsed);
-        RESTORE_LC_NUMERIC();
-	PUSHs(sv_2mortal(newSVnv(num)));
-	if (GIMME_V == G_LIST) {
-	    EXTEND(SP, 1);
-	    if (unparsed)
-		PUSHs(sv_2mortal(newSViv(strlen(unparsed))));
-	    else
-		PUSHs(&PL_sv_undef);
-	}
-
-#endif
-
-void
-strtol(str, base = 0)
-	char *		str
-	int		base
-    PREINIT:
-	long num;
-	char *unparsed;
-    PPCODE:
-	if (base == 0 || inRANGE(base, 2, 36)) {
-            num = strtol(str, &unparsed, base);
-#if IVSIZE < LONGSIZE
-            if (num < IV_MIN || num > IV_MAX)
-                PUSHs(sv_2mortal(newSVnv((NV)num)));
-            else
-#endif
-                PUSHs(sv_2mortal(newSViv((IV)num)));
-            if (GIMME_V == G_LIST) {
-                EXTEND(SP, 1);
-                if (unparsed)
-                    PUSHs(sv_2mortal(newSViv(strlen(unparsed))));
-                else
-                    PUSHs(&PL_sv_undef);
-            }
-        } else {
-	    SETERRNO(EINVAL, LIB_INVARG);
-            PUSHs(&PL_sv_undef);
-            if (GIMME_V == G_LIST) {
-               EXTEND(SP, 1);
-               PUSHs(&PL_sv_undef);
-            }
-        }
-
-void
-strtoul(str, base = 0)
-	const char *	str
-	int		base
-    PREINIT:
-	unsigned long num;
-	char *unparsed = NULL;
-    PPCODE:
-	PERL_UNUSED_VAR(str);
-	PERL_UNUSED_VAR(base);
-	if (base == 0 || inRANGE(base, 2, 36)) {
-            num = strtoul(str, &unparsed, base);
-#if UVSIZE < LONGSIZE
-            if (num > UV_MAX)
-                PUSHs(sv_2mortal(newSVnv((NV)num)));
-            else
-#endif
-                PUSHs(sv_2mortal(newSVuv((UV)num)));
-            if (GIMME_V == G_LIST) {
-                EXTEND(SP, 1);
-                if (unparsed)
-                    PUSHs(sv_2mortal(newSViv(strlen(unparsed))));
-                else
-                  PUSHs(&PL_sv_undef);
-            }
-	} else {
-	    SETERRNO(EINVAL, LIB_INVARG);
-            PUSHs(&PL_sv_undef);
-            if (GIMME_V == G_LIST) {
-               EXTEND(SP, 1);
-               PUSHs(&PL_sv_undef);
-            }
-        }
-
-void
+SV *
 strxfrm(src)
 	SV *		src
     CODE:
 	{
           STRLEN srclen;
           STRLEN dstlen;
-          STRLEN buflen;
           char *p = SvPV(src,srclen);
           srclen++;
-          buflen = srclen * 4 + 1;
-          ST(0) = sv_2mortal(newSV(buflen));
-          dstlen = strxfrm(SvPVX(ST(0)), p, (size_t)buflen);
-          if (dstlen >= buflen) {
+          ST(0) = sv_2mortal(NEWSV(800,srclen));
+          dstlen = strxfrm(SvPVX(ST(0)), p, (size_t)srclen);
+          if (dstlen > srclen) {
               dstlen++;
               SvGROW(ST(0), dstlen);
               strxfrm(SvPVX(ST(0)), p, (size_t)dstlen);
               dstlen--;
           }
-          SvCUR_set(ST(0), dstlen);
+          SvCUR(ST(0)) = dstlen;
 	    SvPOK_only(ST(0));
 	}
 
@@ -3654,56 +3058,35 @@ SysRet
 mkfifo(filename, mode)
 	char *		filename
 	Mode_t		mode
-    ALIAS:
-	access = 1
     CODE:
-	if(ix) {
-	    RETVAL = access(filename, mode);
-	} else {
-	    TAINT_PROPER("mkfifo");
-	    RETVAL = mkfifo(filename, mode);
-	}
+	TAINT_PROPER("mkfifo");
+	RETVAL = mkfifo(filename, mode);
     OUTPUT:
 	RETVAL
 
 SysRet
 tcdrain(fd)
-	POSIX::Fd	fd
-    ALIAS:
-	close = 1
-	dup = 2
-    CODE:
-	if (fd >= 0) {
-	    RETVAL = ix == 1 ? close(fd)
-	      : (ix < 1 ? tcdrain(fd) : dup(fd));
-	} else {
-	    SETERRNO(EBADF,RMS_IFI);
-	    RETVAL = -1;
-	}
-    OUTPUT:
-	RETVAL
+	int		fd
 
 
 SysRet
 tcflow(fd, action)
-	POSIX::Fd	fd
+	int		fd
 	int		action
-    ALIAS:
-	tcflush = 1
-	tcsendbreak = 2
-    CODE:
-        if (action >= 0) {
-            RETVAL = ix == 1 ? tcflush(fd, action)
-              : (ix < 1 ? tcflow(fd, action) : tcsendbreak(fd, action));
-        } else {
-            SETERRNO(EINVAL,LIB_INVARG);
-            RETVAL = -1;
-        }
-    OUTPUT:
-	RETVAL
 
-void
-asctime(sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = -1)
+
+SysRet
+tcflush(fd, queue_selector)
+	int		fd
+	int		queue_selector
+
+SysRet
+tcsendbreak(fd, duration)
+	int		fd
+	int		duration
+
+char *
+asctime(sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = 0)
 	int		sec
 	int		min
 	int		hour
@@ -3713,13 +3096,10 @@ asctime(sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = -1)
 	int		wday
 	int		yday
 	int		isdst
-    ALIAS:
-	mktime = 1
-    PPCODE:
+    CODE:
 	{
-	    dXSTARG;
 	    struct tm mytm;
-	    init_tm(&mytm);	/* XXX workaround - see init_tm() in core util.c */
+	    init_tm(&mytm);	/* XXX workaround - see init_tm() above */
 	    mytm.tm_sec = sec;
 	    mytm.tm_min = min;
 	    mytm.tm_hour = hour;
@@ -3729,20 +3109,10 @@ asctime(sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = -1)
 	    mytm.tm_wday = wday;
 	    mytm.tm_yday = yday;
 	    mytm.tm_isdst = isdst;
-	    if (ix) {
-	        const time_t result = mktime(&mytm);
-		if (result == (time_t)-1)
-		    SvOK_off(TARG);
-		else if (result == 0)
-		    sv_setpvs(TARG, "0 but true");
-		else
-		    sv_setiv(TARG, (IV)result);
-	    } else {
-		sv_setpv(TARG, asctime(&mytm));
-	    }
-	    ST(0) = TARG;
-	    XSRETURN(1);
+	    RETVAL = asctime(&mytm);
 	}
+    OUTPUT:
+	RETVAL
 
 long
 clock()
@@ -3757,24 +3127,20 @@ times()
 	struct tms tms;
 	clock_t realtime;
 	realtime = times( &tms );
-	EXTEND(SP,5);
-	PUSHs( sv_2mortal( newSViv( (IV) realtime ) ) );
-	PUSHs( sv_2mortal( newSViv( (IV) tms.tms_utime ) ) );
-	PUSHs( sv_2mortal( newSViv( (IV) tms.tms_stime ) ) );
-	PUSHs( sv_2mortal( newSViv( (IV) tms.tms_cutime ) ) );
-	PUSHs( sv_2mortal( newSViv( (IV) tms.tms_cstime ) ) );
+	EXTEND(sp,5);
+	PUSHs( sv_2mortal( newSVnv( realtime ) ) );
+	PUSHs( sv_2mortal( newSVnv( tms.tms_utime ) ) );
+	PUSHs( sv_2mortal( newSVnv( tms.tms_stime ) ) );
+	PUSHs( sv_2mortal( newSVnv( tms.tms_cutime ) ) );
+	PUSHs( sv_2mortal( newSVnv( tms.tms_cstime ) ) );
 
 double
 difftime(time1, time2)
 	Time_t		time1
 	Time_t		time2
 
-#XXX: if $xsubpp::WantOptimize is always the default
-#     sv_setpv(TARG, ...) could be used rather than
-#     ST(0) = sv_2mortal(newSVpv(...))
-void
-strftime(fmt, sec, min, hour, mday, mon, year, wday = -1, yday = -1, isdst = -1)
-	SV *		fmt
+SysRetLong
+mktime(sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = 0)
 	int		sec
 	int		min
 	int		hour
@@ -3786,92 +3152,79 @@ strftime(fmt, sec, min, hour, mday, mon, year, wday = -1, yday = -1, isdst = -1)
 	int		isdst
     CODE:
 	{
-	    char *buf;
-            SV *sv;
+	    struct tm mytm;
+	    init_tm(&mytm);	/* XXX workaround - see init_tm() above */
+	    mytm.tm_sec = sec;
+	    mytm.tm_min = min;
+	    mytm.tm_hour = hour;
+	    mytm.tm_mday = mday;
+	    mytm.tm_mon = mon;
+	    mytm.tm_year = year;
+	    mytm.tm_wday = wday;
+	    mytm.tm_yday = yday;
+	    mytm.tm_isdst = isdst;
+	    RETVAL = mktime(&mytm);
+	}
+    OUTPUT:
+	RETVAL
 
-            /* allowing user-supplied (rather than literal) formats
-             * is normally frowned upon as a potential security risk;
-             * but this is part of the API so we have to allow it */
-            GCC_DIAG_IGNORE_STMT(-Wformat-nonliteral);
-	    buf = my_strftime(SvPV_nolen(fmt), sec, min, hour, mday, mon, year, wday, yday, isdst);
-            GCC_DIAG_RESTORE_STMT;
-            sv = sv_newmortal();
-	    if (buf) {
-                STRLEN len = strlen(buf);
-		sv_usepvn_flags(sv, buf, len, SV_HAS_TRAILING_NUL);
-		if (       SvUTF8(fmt)
-                    || (   is_utf8_non_invariant_string((U8*) buf, len)
-#ifdef USE_LOCALE_TIME
-                        && _is_cur_LC_category_utf8(LC_TIME)
-#else   /* If can't check directly, at least can see if script is consistent,
-           under UTF-8, which gives us an extra measure of confidence. */
-
-                        && isSCRIPT_RUN((const U8 *) buf,
-                                        (const U8 *) buf + len,
-                                        TRUE) /* Means assume UTF-8 */
-#endif
-                )) {
-		    SvUTF8_on(sv);
-		}
-            }
-            else {  /* We can't distinguish between errors and just an empty
-                     * return; in all cases just return an empty string */
-                SvUPGRADE(sv, SVt_PV);
-                SvPV_set(sv, (char *) "");
-                SvPOK_on(sv);
-                SvCUR_set(sv, 0);
-                SvLEN_set(sv, 0);   /* Won't attempt to free the string when sv
-                                       gets destroyed */
-            }
-            ST(0) = sv;
+char *
+strftime(fmt, sec, min, hour, mday, mon, year, wday = 0, yday = 0, isdst = 0)
+	char *		fmt
+	int		sec
+	int		min
+	int		hour
+	int		mday
+	int		mon
+	int		year
+	int		wday
+	int		yday
+	int		isdst
+    CODE:
+	{
+	    char tmpbuf[128];
+	    struct tm mytm;
+	    int len;
+	    init_tm(&mytm);	/* XXX workaround - see init_tm() above */
+	    mytm.tm_sec = sec;
+	    mytm.tm_min = min;
+	    mytm.tm_hour = hour;
+	    mytm.tm_mday = mday;
+	    mytm.tm_mon = mon;
+	    mytm.tm_year = year;
+	    mytm.tm_wday = wday;
+	    mytm.tm_yday = yday;
+	    mytm.tm_isdst = isdst;
+	    len = strftime(tmpbuf, sizeof tmpbuf, fmt, &mytm);
+	    ST(0) = sv_2mortal(newSVpv(tmpbuf, len));
 	}
 
 void
 tzset()
-  PPCODE:
-    my_tzset(aTHX);
 
 void
 tzname()
     PPCODE:
-	EXTEND(SP,2);
-	PUSHs(newSVpvn_flags(tzname[0], strlen(tzname[0]), SVs_TEMP));
-	PUSHs(newSVpvn_flags(tzname[1], strlen(tzname[1]), SVs_TEMP));
+	EXTEND(sp,2);
+	PUSHs(sv_2mortal(newSVpv(tzname[0],strlen(tzname[0]))));
+	PUSHs(sv_2mortal(newSVpv(tzname[1],strlen(tzname[1]))));
+
+SysRet
+access(filename, mode)
+	char *		filename
+	Mode_t		mode
 
 char *
 ctermid(s = 0)
-	char *          s = 0;
-    CODE:
-#ifdef I_TERMIOS
-        /* On some systems L_ctermid is a #define; but not all; this code works
-         * for all cases (so far...) */
-	s = (char *) safemalloc((size_t) L_ctermid);
-#endif
-	RETVAL = ctermid(s);
-    OUTPUT:
-	RETVAL
-    CLEANUP:
-#ifdef I_TERMIOS
-	Safefree(s);
-#endif
+	char *		s = 0;
 
 char *
 cuserid(s = 0)
 	char *		s = 0;
-    CODE:
-#ifdef HAS_CUSERID
-  RETVAL = cuserid(s);
-#else
-  PERL_UNUSED_VAR(s);
-  RETVAL = 0;
-  not_here("cuserid");
-#endif
-    OUTPUT:
-  RETVAL
 
 SysRetLong
 fpathconf(fd, name)
-	POSIX::Fd	fd
+	int		fd
 	int		name
 
 SysRetLong
@@ -3881,24 +3234,6 @@ pathconf(filename, name)
 
 SysRet
 pause()
-    CLEANUP:
-    PERL_ASYNC_CHECK();
-
-unsigned int
-sleep(seconds)
-	unsigned int	seconds
-    CODE:
-	RETVAL = PerlProc_sleep(seconds);
-    OUTPUT:
-	RETVAL
-
-SysRet
-setgid(gid)
-	Gid_t		gid
-
-SysRet
-setuid(uid)
-	Uid_t		uid
 
 SysRetLong
 sysconf(name)
@@ -3906,32 +3241,4 @@ sysconf(name)
 
 char *
 ttyname(fd)
-	POSIX::Fd	fd
-
-void
-getcwd()
-    PPCODE:
-      {
-	dXSTARG;
-	getcwd_sv(TARG);
-	XSprePUSH; PUSHTARG;
-      }
-
-SysRet
-lchown(uid, gid, path)
-       Uid_t           uid
-       Gid_t           gid
-       char *          path
-    CODE:
-#ifdef HAS_LCHOWN
-       /* yes, the order of arguments is different,
-        * but consistent with CORE::chown() */
-       RETVAL = lchown(path, uid, gid);
-#else
-       PERL_UNUSED_VAR(uid);
-       PERL_UNUSED_VAR(gid);
-       PERL_UNUSED_VAR(path);
-       RETVAL = not_here("lchown");
-#endif
-    OUTPUT:
-       RETVAL
+	int		fd

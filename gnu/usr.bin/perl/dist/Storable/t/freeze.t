@@ -8,20 +8,18 @@
 
 sub BEGIN {
     unshift @INC, 't';
-    unshift @INC, 't/compat' if $] < 5.006002;
     require Config; import Config;
     if ($ENV{PERL_CORE} and $Config{'extensions'} !~ /\bStorable\b/) {
         print "1..0 # Skip: Storable was not built\n";
         exit 0;
     }
     require 'st-dump.pl';
+    sub ok;
 }
 
 use Storable qw(freeze nfreeze thaw);
 
-$Storable::flags = Storable::FLAGS_COMPAT;
-
-use Test::More tests => 21;
+print "1..20\n";
 
 $a = 'toto';
 $b = \$a;
@@ -35,19 +33,21 @@ $e->[0] = $d;
 @a = ('first', undef, 3, -4, -3.14159, 456, 4.5, $d, \$d, \$e, $e,
 	$b, \$a, $a, $c, \$c, \%a);
 
-my $f1 = freeze(\@a);
-isnt($f1, undef);
+print "not " unless defined ($f1 = freeze(\@a));
+print "ok 1\n";
 
 $dumped = &dump(\@a);
-isnt($dumped, undef);
+print "ok 2\n";
 
 $root = thaw($f1);
-isnt($root, undef);
+print "not " unless defined $root;
+print "ok 3\n";
 
 $got = &dump($root);
-isnt($got, undef);
+print "ok 4\n";
 
-is($got, $dumped);
+print "not " unless $got eq $dumped; 
+print "ok 5\n";
 
 package FOO; @ISA = qw(Storable);
 
@@ -60,27 +60,33 @@ sub make {
 package main;
 
 $foo = FOO->make;
-my $f2 = $foo->freeze;
-isnt($f2, undef);
+print "not " unless $f2 = $foo->freeze;
+print "ok 6\n";
 
-my $f3 = $foo->nfreeze;
-isnt($f3, undef);
+print "not " unless $f3 = $foo->nfreeze;
+print "ok 7\n";
 
 $root3 = thaw($f3);
-isnt($root3, undef);
+print "not " unless defined $root3;
+print "ok 8\n";
 
-is(&dump($foo), &dump($root3));
+print "not " unless &dump($foo) eq &dump($root3);
+print "ok 9\n";
 
 $root = thaw($f2);
-is(&dump($foo), &dump($root));
+print "not " unless &dump($foo) eq &dump($root);
+print "ok 10\n";
 
-is(&dump($root3), &dump($root));
+print "not " unless &dump($root3) eq &dump($root);
+print "ok 11\n";
 
 $other = freeze($root);
-is(length$other, length $f2);
+print "not " unless length($other) == length($f2);
+print "ok 12\n";
 
 $root2 = thaw($other);
-is(&dump($root2), &dump($root));
+print "not " unless &dump($root2) eq &dump($root);
+print "ok 13\n";
 
 $VAR1 = [
 	'method',
@@ -92,14 +98,16 @@ $VAR1 = [
 
 $x = nfreeze($VAR1);
 $VAR2 = thaw($x);
-is($VAR2->[3], $VAR1->[3]);
+print "not " unless $VAR2->[3] eq $VAR1->[3];
+print "ok 14\n";
 
 # Test the workaround for LVALUE bug in perl 5.004_04 -- from Gisle Aas
 sub foo { $_[0] = 1 }
 $foo = [];
 foo($foo->[1]);
 eval { freeze($foo) };
-is($@, '');
+print "not " if $@;
+print "ok 15\n";
 
 # Test cleanup bug found by Claudio Garcia -- RAM, 08/06/2001
 my $thaw_me = 'asdasdasdasd';
@@ -107,31 +115,32 @@ my $thaw_me = 'asdasdasdasd';
 eval {
 	my $thawed = thaw $thaw_me;
 };
-isnt($@, '');
+ok 16, $@;
 
 my %to_be_frozen = (foo => 'bar');
 my $frozen;
 eval {
 	$frozen = freeze \%to_be_frozen;
 };
-is($@, '');
+ok 17, !$@;
 
 freeze {};
 eval { thaw $thaw_me };
 eval { $frozen = freeze { foo => {} } };
-is($@, '');
+ok 18, !$@;
 
 thaw $frozen;			# used to segfault here
-pass("Didn't segfault");
+ok 19, 1;
 
-SKIP: {
-    my (@a, @b);
+if ($] >= 5.006) {
     eval '
         $a = []; $#$a = 2; $a->[1] = undef;
         $b = thaw freeze $a;
         @a = map { ~~ exists $a->[$_] } 0 .. $#$a;
         @b = map { ~~ exists $b->[$_] } 0 .. $#$b;
+        ok 20, "@a" eq "@b";
     ';
-    is($@, '');
-    is("@a", "@b");
+}
+else {
+    print "ok 20 # skipped (no av_exists)\n";
 }

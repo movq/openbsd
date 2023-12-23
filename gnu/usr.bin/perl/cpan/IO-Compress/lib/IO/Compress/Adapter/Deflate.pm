@@ -4,18 +4,12 @@ use strict;
 use warnings;
 use bytes;
 
-use IO::Compress::Base::Common 2.106 qw(:Status);
-use Compress::Raw::Zlib  2.103 qw( !crc32 !adler32 ) ;
+use IO::Compress::Base::Common  2.024 qw(:Status);
 
-require Exporter;
-our ($VERSION, @ISA, @EXPORT_OK, %EXPORT_TAGS, @EXPORT, %DEFLATE_CONSTANTS);
+use Compress::Raw::Zlib  2.024 qw(Z_OK Z_FINISH MAX_WBITS) ;
+our ($VERSION);
 
-$VERSION = '2.106';
-@ISA = qw(Exporter);
-@EXPORT_OK = @Compress::Raw::Zlib::DEFLATE_CONSTANTS;
-%EXPORT_TAGS = %Compress::Raw::Zlib::DEFLATE_CONSTANTS;
-@EXPORT = @EXPORT_OK;
-%DEFLATE_CONSTANTS = %EXPORT_TAGS ;
+$VERSION = '2.024';
 
 sub mkCompObject
 {
@@ -24,20 +18,20 @@ sub mkCompObject
     my $level    = shift ;
     my $strategy = shift ;
 
-    my ($def, $status) = Compress::Raw::Zlib::Deflate->new(
+    my ($def, $status) = new Compress::Raw::Zlib::Deflate
                                 -AppendOutput   => 1,
                                 -CRC32          => $crc32,
                                 -ADLER32        => $adler32,
                                 -Level          => $level,
                                 -Strategy       => $strategy,
-                                -WindowBits     => - MAX_WBITS);
+                                -WindowBits     => - MAX_WBITS;
 
-    return (undef, "Cannot create Deflate object: $status", $status)
-        if $status != Z_OK;
+    return (undef, "Cannot create Deflate object: $status", $status) 
+        if $status != Z_OK;    
 
     return bless {'Def'        => $def,
                   'Error'      => '',
-                 } ;
+                 } ;     
 }
 
 sub compr
@@ -51,11 +45,11 @@ sub compr
 
     if ($status != Z_OK)
     {
-        $self->{Error} = "Deflate Error: $status";
+        $self->{Error} = "Deflate Error: $status"; 
         return STATUS_ERROR;
     }
 
-    return STATUS_OK;
+    return STATUS_OK;    
 }
 
 sub flush
@@ -70,11 +64,12 @@ sub flush
 
     if ($status != Z_OK)
     {
-        $self->{Error} = "Deflate Error: $status";
+        $self->{Error} = "Deflate Error: $status"; 
         return STATUS_ERROR;
     }
 
-    return STATUS_OK;
+    return STATUS_OK;    
+    
 }
 
 sub close
@@ -97,14 +92,14 @@ sub reset
     $self->{ErrorNo} = $status;
     if ($status != Z_OK)
     {
-        $self->{Error} = "Deflate Error: $status";
+        $self->{Error} = "Deflate Error: $status"; 
         return STATUS_ERROR;
     }
 
-    return STATUS_OK;
+    return STATUS_OK;    
 }
 
-sub deflateParams
+sub deflateParams 
 {
     my $self = shift ;
 
@@ -114,11 +109,11 @@ sub deflateParams
     $self->{ErrorNo} = $status;
     if ($status != Z_OK)
     {
-        $self->{Error} = "deflateParams Error: $status";
+        $self->{Error} = "deflateParams Error: $status"; 
         return STATUS_ERROR;
     }
 
-    return STATUS_OK;
+    return STATUS_OK;   
 }
 
 
@@ -167,3 +162,4 @@ sub adler32
 1;
 
 __END__
+

@@ -1,10 +1,10 @@
 package MakeMaker::Test::Setup::BFD;
-use strict;
 
-our @ISA = qw(Exporter);
+@ISA = qw(Exporter);
 require Exporter;
-our @EXPORT = qw(setup_recurs teardown_recurs);
+@EXPORT = qw(setup_recurs teardown_recurs);
 
+use strict;
 use File::Path;
 use File::Basename;
 use MakeMaker::Test::Utils;
@@ -88,18 +88,6 @@ print "Big::Liar's vars\n";
 foreach my $key (qw(INST_LIB INST_ARCHLIB)) {
     print "$key = $mm->{$key}\n";
 }
-END
-
-             'Big-Dummy/lib/Dummy/Split.pm'     => <<'END',
-package Dummy::Split;
-$VERSION = 0.02;
-use AutoLoader 'AUTOLOAD';
-
-__END__
-
-sub split { print "split\n"; }
-
-1;
 END
 
             );

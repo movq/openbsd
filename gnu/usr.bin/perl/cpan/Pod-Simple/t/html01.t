@@ -8,15 +8,14 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test;
-BEGIN { plan tests => 16 };
+BEGIN { plan tests => 11 };
 
 #use Pod::Simple::Debug (10);
 
 use Pod::Simple::HTML;
 
-sub x {
+sub x ($;&) {
   my $code = $_[1];
   Pod::Simple::HTML->_out(
   sub{  $_[0]->bare_output(1); $code->($_[0]) if $code  },
@@ -79,25 +78,6 @@ ok(x(
   "heading building"
 );
 
-ok(x(
-'=head5 The number of the heading shall be five')
- => q{/\s*<h5><a[^<>]+>The\s+number\s+of\s+the\s+heading\s+shall\s+be\s+five</a></h5>\s*$/},
-  "heading building"
-);
-
-ok(x(
-'=head6 The sixth a heading is the perfect heading')
- => q{/\s*<h6><a[^<>]+>The\s+sixth\s+a\s+heading\s+is\s+the\s+perfect\s+heading</a></h6>\s*$/},
-  "heading building"
-);
-
-ok(x(
-'=head2 Yada Yada Operator
-X<...> X<... operator> X<yada yada operator>')
- => q{/name="Yada_Yada_Operator"/},
-  "heading anchor name"
-);
-
 ok(
     x("=over 4\n\n=item one\n\n=item two\n\nHello\n\n=back\n"),
     q{
@@ -116,23 +96,6 @@ ok(
 }
 );
 
-my $html = q{<tt>
-<pre>
-#include &lt;stdio.h&gt;
-
-int main(int argc,char *argv[]) {
-
-        printf("Hellow World\n");
-        return 0;
-
-}
-</pre>
-</tt>};
-ok(
-    x("=begin html\n\n$html\n\n=end html\n"),
-    "$html\n\n"
-);
-
 # Check subclass.
 SUBCLASS: {
     package My::Pod::HTML;
@@ -145,20 +108,10 @@ SUBCLASS: {
 ok(
     My::Pod::HTML->_out(
         sub{  $_[0]->bare_output(1)  },
-        "=pod\n\n=over\n\n=item Foo\n\n=back\n",
+        "=pod\n\n=over\n\n=item Foo\n\n",
     ),
     "\n<dl>\n<dt><a name=\"howdy\"\n>Foo</a></dt>\n</dl>\n",
 );
-
-{   # Test that strip_verbatim_indent() works.  github issue #i5
-    my $output;
-
-    my $obj = Pod::Simple::HTML->new;
-    $obj->strip_verbatim_indent("  ");
-    $obj->output_string(\$output);
-    $obj->parse_string_document("=pod\n\n  First line\n  2nd line\n");
-    ok($output, qr!<pre>First line\n2nd line</pre>!s);
-}
 
 print "# And one for the road...\n";
 ok 1;

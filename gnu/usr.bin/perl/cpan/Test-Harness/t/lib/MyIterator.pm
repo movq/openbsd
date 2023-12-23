@@ -3,9 +3,12 @@
 package MyIterator;
 
 use strict;
-use warnings;
+use vars '@ISA';
 
-use base qw( TAP::Parser::Iterator MyCustom );
+use MyCustom;
+use TAP::Parser::Iterator;
+
+@ISA = qw( TAP::Parser::Iterator MyCustom );
 
 sub _initialize {
     my $self = shift;

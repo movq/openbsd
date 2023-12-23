@@ -10,7 +10,7 @@
 # 	xxx xxx 4_52 umips mips
 
 # Speculative notes on getting cc to work added by
-# Andy Dougherty	<doughera@lafayette.edu>
+# Andy Dougherty	<doughera@lafcol.lafayette.edu>
 # Tue Aug 20 21:51:49 EDT 1996
     
 # Recommend the GNU C Compiler
@@ -31,6 +31,7 @@ esac
 #  POSIX support in RiscOS is not useable
 useposix='false'
 
+# Will give WHOA message, but the prototype are defined in the GCC inc dirs
 case "$cc" in
 *gcc*) d_shmatprototype='define' ;;
 esac

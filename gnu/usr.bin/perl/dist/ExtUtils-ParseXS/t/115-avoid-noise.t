@@ -3,10 +3,10 @@ use strict;
 use warnings;
 use File::Spec;
 use Test::More tests =>  1;
-use lib (-d 't' ? File::Spec->catdir(qw(t lib)) : 'lib');
+use lib qw( lib t/lib );
 use ExtUtils::ParseXS qw(process_file);
 
-chdir('t') if -d 't';
+chdir 't' or die "Can't chdir to t/, $!";
 
 # Module-Build uses ExtUtils::ParseXS with $^W set, try to avoid
 # warning in that case.

@@ -2,13 +2,13 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
 }
 
 # use strict;
 
-plan tests => 38;
+plan tests => 40;
 
 # simple use cases
 {
@@ -120,6 +120,13 @@ plan tests => 38;
         like $@, qr{^Can't modify index/value array slice in local at},
             'local dies';
     }
+    # no delete
+    {
+        local $@;
+        eval 'delete %a[1,2]';
+        like $@, qr{^delete argument is index/value array slice, use array slice},
+            'delete dies';
+    }
     # no assign
     {
         local $@;
@@ -171,19 +178,17 @@ plan tests => 38;
     ok( !exists $a[3], "no autovivification" );
 }
 
-# keys/value/each refuse to compile kvaslice
+# keys/value/each treat argument as scalar
 {
     my %h = 'a'..'b';
     my @i = \%h;
-    eval '() = keys %i[(0)]';
-    like($@, qr/Experimental keys on scalar is now forbidden/,
-         'keys %array[ix] forbidden');
-    eval '() = values %i[(0)]';
-    like($@, qr/Experimental values on scalar is now forbidden/,
-         'values %array[ix] forbidden');
-    eval '() = each %i[(0)]';
-    like($@, qr/Experimental each on scalar is now forbidden/,
-         'each %array[ix] forbidden');
+    no warnings 'syntax', 'experimental::autoderef';
+    my ($k,$v) = each %i[0];
+    is $k, 'a', 'key returned by each %array[ix]';
+    is $v, 'b', 'val returned by each %array[ix]';
+    %h = 1..10;
+    is join('-', sort keys %i[(0)]), '1-3-5-7-9', 'keys %array[ix]';
+    is join('-', sort values %i[(0)]), '10-2-4-6-8', 'values %array[ix]';
 }
 
 # \% prototype expects hash deref

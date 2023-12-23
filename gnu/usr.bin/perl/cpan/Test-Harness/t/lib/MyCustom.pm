@@ -2,11 +2,10 @@
 
 package MyCustom;
 use strict;
-use warnings;
 
 sub custom {
     my $self = shift;
-    $main::CUSTOM{ ref($self) || $self }++;
+    $main::CUSTOM{ ref($self) }++;
     return $self;
 }
 

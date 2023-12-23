@@ -1,13 +1,13 @@
 package ExtUtils::MM_AIX;
 
 use strict;
-use warnings;
-our $VERSION = '7.64';
-$VERSION =~ tr/_//d;
+our $VERSION = '6.56';
 
-use ExtUtils::MakeMaker::Config;
 require ExtUtils::MM_Unix;
 our @ISA = qw(ExtUtils::MM_Unix);
+
+use ExtUtils::MakeMaker qw(neatvalue);
+
 
 =head1 NAME
 
@@ -20,10 +20,10 @@ ExtUtils::MM_AIX - AIX specific subclass of ExtUtils::MM_Unix
 
 =head1 DESCRIPTION
 
-This is a subclass of L<ExtUtils::MM_Unix> which contains functionality for
+This is a subclass of ExtUtils::MM_Unix which contains functionality for
 AIX.
 
-Unless otherwise stated it works just like ExtUtils::MM_Unix.
+Unless otherwise stated it works just like ExtUtils::MM_Unix
 
 =head2 Overridden methods
 
@@ -35,36 +35,35 @@ Define DL_FUNCS and DL_VARS and write the *.exp files.
 
 sub dlsyms {
     my($self,%attribs) = @_;
-    return '' unless $self->needs_linking;
-    join "\n", $self->xs_dlsyms_iterator(\%attribs);
+
+    return '' unless $self->needs_linking();
+
+    my($funcs) = $attribs{DL_FUNCS} || $self->{DL_FUNCS} || {};
+    my($vars)  = $attribs{DL_VARS} || $self->{DL_VARS} || [];
+    my($funclist)  = $attribs{FUNCLIST} || $self->{FUNCLIST} || [];
+    my(@m);
+
+    push(@m,"
+dynamic :: $self->{BASEEXT}.exp
+
+") unless $self->{SKIPHASH}{'dynamic'}; # dynamic and static are subs, so...
+
+    push(@m,"
+static :: $self->{BASEEXT}.exp
+
+") unless $self->{SKIPHASH}{'static'};  # we avoid a warning if we tick them
+
+    push(@m,"
+$self->{BASEEXT}.exp: Makefile.PL
+",'	$(PERLRUN) -e \'use ExtUtils::Mksymlists; \\
+	Mksymlists("NAME" => "',$self->{NAME},'", "DL_FUNCS" => ',
+	neatvalue($funcs), ', "FUNCLIST" => ', neatvalue($funclist),
+	', "DL_VARS" => ', neatvalue($vars), ');\'
+');
+
+    join('',@m);
 }
 
-=head3 xs_dlsyms_ext
-
-On AIX, is C<.exp>.
-
-=cut
-
-sub xs_dlsyms_ext {
-    '.exp';
-}
-
-sub xs_dlsyms_arg {
-    my($self, $file) = @_;
-    my $arg = qq{-bE:${file}};
-    $arg = '-Wl,'.$arg if $Config{lddlflags} =~ /-Wl,-bE:/;
-    return $arg;
-}
-
-sub init_others {
-    my $self = shift;
-    $self->SUPER::init_others;
-    # perl "hints" add -bE:$(BASEEXT).exp to LDDLFLAGS. strip that out
-    # so right value can be added by xs_make_dynamic_lib to work for XSMULTI
-    $self->{LDDLFLAGS} ||= $Config{lddlflags};
-    $self->{LDDLFLAGS} =~ s#(\s*)\S*\Q$(BASEEXT)\E\S*(\s*)#$1$2#;
-    return;
-}
 
 =head1 AUTHOR
 

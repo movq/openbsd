@@ -2,196 +2,133 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
 }
 use strict;
 use warnings;
-our (@array, @r, $k, $v, $c);
+no warnings 'deprecated';
+use vars qw(@array @r $k $v);
 
-plan tests => 65;
+plan tests => 48;
 
 @array = qw(crunch zam bloop);
 
 (@r) = each @array;
-is (scalar @r, 2, "'each' on array returns index and value of next element");
-is ($r[0], 0, "got expected index");
-is ($r[1], 'crunch', "got expected value");
+is (scalar @r, 2);
+is ($r[0], 0);
+is ($r[1], 'crunch');
 ($k, $v) = each @array;
-is ($k, 1, "got expected index of next element");
-is ($v, 'zam', "got expected value of next element");
+is ($k, 1);
+is ($v, 'zam');
 ($k, $v) = each @array;
-is ($k, 2, "got expected index of remaining element");
-is ($v, 'bloop', "got expected value of remaining element");
+is ($k, 2);
+is ($v, 'bloop');
 (@r) = each @array;
-is (scalar @r, 0,
-    "no elements remaining to be iterated over in original array");
+is (scalar @r, 0);
 
 (@r) = each @array;
-is (scalar @r, 2, "start second iteration over original array");
-is ($r[0], 0, "got expected index");
-is ($r[1], 'crunch', "got expected value");
+is (scalar @r, 2);
+is ($r[0], 0);
+is ($r[1], 'crunch');
 ($k) = each @array;
-is ($k, 1, "got index when only index was assigned to variable");
+is ($k, 1);
+{
+    $[ = 2;
+    my ($k, $v) = each @array;
+    is ($k, 4);
+    is ($v, 'bloop');
+    (@r) = each @array;
+    is (scalar @r, 0);
+}
 
-my @lex_array = qw(PLOP SKLIZZORCH RATTLE);
+my @lex_array = qw(PLOP SKLIZZORCH RATTLE PBLRBLPSFT);
 
 (@r) = each @lex_array;
-is (scalar @r, 2, "'each' on array returns index and value of next element");
-is ($r[0], 0, "got expected index");
-is ($r[1], 'PLOP', "got expected value");
+is (scalar @r, 2);
+is ($r[0], 0);
+is ($r[1], 'PLOP');
 ($k, $v) = each @lex_array;
-is ($k, 1, "got expected index of next element");
-is ($v, 'SKLIZZORCH', "got expected value of next element");
+is ($k, 1);
+is ($v, 'SKLIZZORCH');
 ($k) = each @lex_array;
-is ($k, 2, "got expected index of remaining element");
+is ($k, 2);
+{
+    $[ = -42;
+    my ($k, $v) = each @lex_array;
+    is ($k, -39);
+    is ($v, 'PBLRBLPSFT');
+}
 (@r) = each @lex_array;
-is (scalar @r, 0,
-    "no elements remaining to be iterated over in original array");
+is (scalar @r, 0);
 
 my $ar = ['bacon'];
 
 (@r) = each @$ar;
-is (scalar @r, 2,
-    "'each' on array inside reference returns index and value of next element");
-is ($r[0], 0, "got expected index");
-is ($r[1], 'bacon', "got expected value of array element inside reference");
+is (scalar @r, 2);
+is ($r[0], 0);
+is ($r[1], 'bacon');
 
 (@r) = each @$ar;
-is (scalar @r, 0,
-    "no elements remaining to be iterated over in array inside reference");
+is (scalar @r, 0);
 
-is (each @$ar, 0, "scalar context 'each' on array returns expected index");
-is (scalar each @$ar, undef,
-    "no elements remaining to be iterated over; array reference case");
+is (each @$ar, 0);
+is (scalar each @$ar, undef);
 
 my @keys;
 @keys = keys @array;
-is ("@keys", "0 1 2",
-    "'keys' on array in list context returns list of indices");
+is ("@keys", "0 1 2");
 
 @keys = keys @lex_array;
-is ("@keys", "0 1 2",
-    "'keys' on another array in list context returns list of indices");
+is ("@keys", "0 1 2 3");
+
+{
+    $[ = 1;
+
+    @keys = keys @array;
+    is ("@keys", "1 2 3");
+
+    @keys = keys @lex_array;
+    is ("@keys", "1 2 3 4");
+}
 
 ($k, $v) = each @array;
-is ($k, 0, "got expected index");
-is ($v, 'crunch', "got expected value");
+is ($k, 0);
+is ($v, 'crunch');
 
 @keys = keys @array;
-is ("@keys", "0 1 2",
-    "'keys' on array in list context returns list of indices");
+is ("@keys", "0 1 2");
 
 ($k, $v) = each @array;
-is ($k, 0, "following 'keys', got expected index");
-is ($v, 'crunch', "following 'keys', got expected value");
+is ($k, 0);
+is ($v, 'crunch');
 
 
 
 my @values;
 @values = values @array;
-is ("@values", "@array",
-    "'values' on array returns list of values");
+is ("@values", "@array");
 
 @values = values @lex_array;
-is ("@values", "@lex_array",
-    "'values' on another array returns list of values");
+is ("@values", "@lex_array");
+
+{
+    $[ = 1;
+
+    @values = values @array;
+    is ("@values", "@array");
+
+    @values = values @lex_array;
+    is ("@values", "@lex_array");
+}
 
 ($k, $v) = each @array;
-is ($k, 0, "following 'values', got expected index");
-is ($v, 'crunch', "following 'values', got expected index");
+is ($k, 0);
+is ($v, 'crunch');
 
 @values = values @array;
-is ("@values", "@array",
-    "following 'values' and 'each', 'values' continues to return expected list of values");
+is ("@values", "@array");
 
 ($k, $v) = each @array;
-is ($k, 0,
-    "following 'values', 'each' and 'values', 'each' continues to return expected index");
-is ($v, 'crunch',
-    "following 'values', 'each' and 'values', 'each' continues to return expected value");
-
-# reset
-while (each @array) { }
-
-# each(ARRAY) in the conditional loop
-$c = 0;
-while (($k, $v) = each @array) {
-    is ($k, $c, "'each' on array in loop returns expected index '$c'");
-    is ($v, $array[$k],
-        "'each' on array in loop returns expected value '$array[$k]'");
-    $c++;
-}
-
-# each(ARRAY) on scalar context in conditional loop
-# should guarantee to be wrapped into defined() function.
-# first return value will be 0 --> [#90888]
-$c = 0;
-$k = 0;
-$v = 0;
-while ($k = each @array) {
-    is ($k, $v,
-        "'each' on array in scalar context in loop returns expected index '$v'");
-    $v++;
-}
-
-# each(ARRAY) in the conditional loop
-$c = 0;
-for (; ($k, $v) = each @array ;) {
-    is ($k, $c,
-        "'each' on array in list context in loop returns expected index '$c'");
-    is ($v, $array[$k],
-        "'each' on array in list context in loop returns expected value '$array[$k]'");
-    $c++;
-}
-
-# each(ARRAY) on scalar context in conditional loop
-# --> [#90888]
-$c = 0;
-$k = 0;
-$v = 0;
-for (; $k = each(@array) ;) {
-    is ($k, $v,
-        "'each' on array in scalar context in loop returns expected index '$v'");
-    $v++;
-}
-
-# Reset the iterator when the array is cleared [RT #75596]
-{
-    my @a = 'a' .. 'c';
-    my ($i, $v) = each @a;
-    is ("$i-$v", '0-a', "got expected index and value");
-    @a = 'A' .. 'C';
-    ($i, $v) = each @a;
-    is ("$i-$v", '0-A',
-        "got expected new index and value after array gets new content");
-}
-
-# Check that the iterator is reset when localization ends
-{
-    @array = 'a' .. 'c';
-    my ($i, $v) = each @array;
-    is ("$i-$v", '0-a', "got expected index and value");
-    {
-        local @array = 'A' .. 'C';
-        my ($i, $v) = each @array;
-        is ("$i-$v", '0-A',
-            "got expected new index and value after array is localized and gets new content");
-        ($i, $v) = each @array;
-        is ("$i-$v", '1-B',
-            "got expected next index and value after array is localized and gets new content");
-    }
-    ($i, $v) = each @array;
-    is ("$i-$v", '1-b',
-         "got expected next index and value upon return to pre-localized array");
-    # Explicit reset
-    while (each @array) { }
-}
-
-my $a = 7;
-*a = sub  { \@_ }->($a);
-($a, $b) = each our @a;
-is "$a $b", "0 7", 'each in list assignment';
-$a = 7;
-($a, $b) = (3, values @a);
-is "$a $b", "3 7", 'values in list assignment';
+is ($k, 0);
+is ($v, 'crunch');

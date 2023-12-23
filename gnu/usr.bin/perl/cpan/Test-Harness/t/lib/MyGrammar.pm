@@ -3,9 +3,12 @@
 package MyGrammar;
 
 use strict;
-use warnings;
+use vars '@ISA';
 
-use base qw( TAP::Parser::Grammar MyCustom );
+use MyCustom;
+use TAP::Parser::Grammar;
+
+@ISA = qw( TAP::Parser::Grammar MyCustom );
 
 sub _initialize {
     my $self = shift;

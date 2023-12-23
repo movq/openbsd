@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-perl5100delta - what is new for perl 5.10.0
+perldelta - what is new for perl 5.10.0
 
 =head1 DESCRIPTION
 
@@ -103,7 +103,7 @@ nested balanced angle brackets:
 	<                   #   match an opening angle bracket
 	(?:                 #   match one of:
 	    (?>             #     don't backtrack over the inside of this group
-	        [^<>]+      #       one or more non angle brackets
+		[^<>]+      #       one or more non angle brackets
 	    )               #     end non backtracking group
 	|                   #     ... or ...
 	    (?1)            #     recurse to bracket 1 and try it again
@@ -200,23 +200,6 @@ logically match their complements.
 C<\R> matches a generic linebreak, that is, vertical whitespace, plus
 the multi-character sequence C<"\x0D\x0A">.
 
-=item Optional pre-match and post-match captures with the /p flag
-
-There is a new flag C</p> for regular expressions.  Using this
-makes the engine preserve a copy of the part of the matched string before
-the matching substring to the new special variable C<${^PREMATCH}>, the
-part after the matching substring to C<${^POSTMATCH}>, and the matched
-substring itself to C<${^MATCH}>.
-
-Perl is still able to store these substrings to the special variables
-C<$`>, C<$'>, C<$&>, but using these variables anywhere in the program
-adds a penalty to all regular expression matches, whereas if you use
-the C</p> flag and the new special variables instead, you pay only for
-the regular expressions where the flag is used.
-
-For more detail on the new variables, see L<perlvar>; for the use of
-the regular expression flag, see L<perlop> and L<perlre>.
-
 =back
 
 =head2 C<say()>
@@ -245,9 +228,9 @@ overriding the lexical declaration with C<our $_>. (Rafael Garcia-Suarez)
 =head2 The C<_> prototype
 
 A new prototype character has been added. C<_> is equivalent to C<$> but
-defaults to C<$_> if the corresponding argument isn't supplied (both C<$>
-and C<_> denote a scalar). Due to the optional nature of the argument, 
-you can only use it at the end of a prototype, or before a semicolon.
+defaults to C<$_> if the corresponding argument isn't supplied. (both C<$>
+and C<_> denote a scalar). Due to the optional nature of the argument, you
+can only use it at the end of a prototype, or before a semicolon.
 
 This has a small incompatible consequence: the prototype() function has
 been adjusted to return C<_> for some built-ins in appropriate cases (for
@@ -290,7 +273,7 @@ Cwd::cwd() may return a short directory name, and glob() may return short
 names as well.  On the NTFS file system these short names can always be
 represented in the ANSI codepage.  This will not be true for all other file
 system drivers; e.g. the FAT filesystem stores short filenames in the OEM
-codepage, so some files on FAT volumes remain inaccessible through the
+codepage, so some files on FAT volumes remain unaccessible through the
 ANSI APIs.
 
 Similarly, $^X, @INC, and $ENV{PATH} are preprocessed at startup to make
@@ -330,7 +313,7 @@ To use state variables, one needs to enable them by using
     use feature 'state';
 
 or by using the C<-E> command-line switch in one-liners.
-See L<perlsub/"Persistent Private Variables">.
+See L<perlsub/"Persistent variables via state()">.
 
 =head2 Stacked filetest operators
 
@@ -413,7 +396,7 @@ details.
 
 This variable gives the native status returned by the last pipe close,
 backtick command, successful call to wait() or waitpid(), or from the
-system() operator. See L<perlvar> for details. (Contributed by Gisle Aas.)
+system() operator. See L<perlrun> for details. (Contributed by Gisle Aas.)
 
 =item C<${^RE_TRIE_MAXBUF}>
 
@@ -457,7 +440,7 @@ with it. (Larry Wall, Nicholas Clark)
 =head2 kill() on Windows
 
 On Windows platforms, C<kill(-9, $pid)> now kills a process tree.
-(On Unix, this delivers the signal to all processes in the same process
+(On UNIX, this delivers the signal to all processes in the same process
 group.)
 
 =head1 Incompatible Changes
@@ -641,27 +624,6 @@ C<@ISA> in such a way that it would cause recursive inheritance.
 Previously, the exception would not occur until Perl attempted to make
 use of the recursive inheritance while resolving a method or doing a
 C<$foo-E<gt>isa($bar)> lookup.
-
-=head2 warnings::enabled and warnings::warnif changed to favor users of modules
-
-The behaviour in 5.10.x favors the person using the module;
-The behaviour in 5.8.x favors the module writer;
-
-Assume the following code:
-
-  main calls Foo::Bar::baz()
-  Foo::Bar inherits from Foo::Base
-  Foo::Bar::baz() calls Foo::Base::_bazbaz()
-  Foo::Base::_bazbaz() calls: warnings::warnif('substr', 'some warning 
-message');
-
-On 5.8.x, the code warns when Foo::Bar contains C<use warnings;>
-It does not matter if Foo::Base or main have warnings enabled
-to disable the warning one has to modify Foo::Bar.
-
-On 5.10.0 and newer, the code warns when main contains C<use warnings;>
-It does not matter if Foo::Base or Foo::Bar have warnings enabled
-to disable the warning one has to modify main.
 
 =head1 Modules and Pragmata
 
@@ -861,7 +823,7 @@ of C<CPANPLUS>.
 =item *
 
 C<Archive::Extract> is a generic archive extraction mechanism
-for F<.tar> (plain, gzipped or bzipped) or F<.zip> files.
+for F<.tar> (plain, gziped or bzipped) or F<.zip> files.
 
 =item *
 
@@ -1015,7 +977,7 @@ The L<perlreapi> manpage describes the interface to the perl interpreter
 used to write pluggable regular expression engines (by Ævar Arnfjörð
 Bjarmason).
 
-The L<perlunitut> manpage is a tutorial for programming with Unicode and
+The L<perlunitut> manpage is an tutorial for programming with Unicode and
 string encodings in Perl, courtesy of Juerd Waalboer.
 
 A new manual page, L<perlunifaq> (the Perl Unicode FAQ), has been added
@@ -1068,7 +1030,7 @@ their system dependent constants - as a result C<use POSIX;> now takes about
 
 The new compilation flag C<PERL_DONT_CREATE_GVSV>, introduced as an option
 in perl 5.8.8, is turned on by default in perl 5.9.3. It prevents perl
-from creating an empty scalar with every new typeglob. See L<perl589delta>
+from creating an empty scalar with every new typeglob. See L<perl588delta>
 for details.
 
 =head2 Weak references are cheaper
@@ -1506,7 +1468,7 @@ to reflect this.)
 
 =head2 Elimination of SVt_PVBM
 
-Related to this, the internal type C<SVt_PVBM> has been removed. This
+Related to this, the internal type C<SVt_PVBM> has been been removed. This
 dedicated type of C<SV> was used by the C<index> operator and parts of the
 regexp engine to facilitate fast Boyer-Moore matches. Its use internally has
 been replaced by C<SV>s of type C<SVt_PVGV>.
@@ -1576,7 +1538,7 @@ inherits from C<B::SV> (it used to inherit from C<B::IV>).
 
 The anonymous hash and array constructors now take 1 op in the optree
 instead of 3, now that pp_anonhash and pp_anonlist return a reference to
-a hash/array when the op is flagged with OPf_SPECIAL. (Nicholas Clark)
+an hash/array when the op is flagged with OPf_SPECIAL. (Nicholas Clark)
 
 =head1 Known Problems
 

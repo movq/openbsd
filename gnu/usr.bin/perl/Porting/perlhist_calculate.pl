@@ -9,12 +9,6 @@ use File::Find;
 use warnings;
 use strict;
 
-sub emit {
-  my $H = '%-9s:';
-  my $D = '%6d';
-  printf "$H $D $D\n", @_;
-}
-
 sub calc_core {
 
 	my @core;
@@ -30,7 +24,7 @@ sub calc_core {
 	my $corenumber = scalar @core;
 	$coresize = int $coresize;
 
-  return $coresize, $corenumber;
+	say "core: $coresize $corenumber";
 }
 
 sub calc_lib {
@@ -46,7 +40,7 @@ sub calc_lib {
 	find(\&wanted_lib, 'lib');
 	$libsize = int $libsize;
 
-  return $libsize, $libnumber;
+	say "lib: $libsize $libnumber";
 }
 
 sub calc_ext {
@@ -67,7 +61,7 @@ sub calc_ext {
 
 	$extsize = int $extsize;
 
-  return $extsize, $extnumber;
+	say "ext: $extsize $extnumber";
 }
 
 sub calc_t {
@@ -84,7 +78,7 @@ sub calc_t {
 
 	$tsize = int $tsize;
 
-  return $tsize, $tnumber;
+	say "t: $tsize $tnumber";
 }
 
 sub calc_doc {
@@ -111,7 +105,7 @@ sub calc_doc {
 
 	$docsize = int $docsize;
 
-  return $docsize, $docnumber;
+	say "doc: $docsize $docnumber";
 }
 
 sub calc_dir {
@@ -131,19 +125,23 @@ sub calc_dir {
 
 	$dirsize = int $dirsize;
 
-  emit $dir => $dirsize, $dirnumber;
+	say "$dir: $dirsize $dirnumber";
 }
 
 
 sub calc_longtable {
 
-	print "\n\nTable:\n";
+	print "\n\nTable\n";
+
+	foreach my $dir (qw(beos)) {
+		calc_dir($dir);
+	}
 
 	my $configure_size = int ((-s 'Configure') / 1000);
 
-	emit Configure => $configure_size, 1;
+	say "Configure: $configure_size 1";
 
-	foreach my $dir (qw(Cross djgpp emacs h2pl hints os2 plan9 Porting qnx symbian utils vms vos win32)) {
+	foreach my $dir (qw(Cross djgpp emacs epoc h2pl hints mad mint mpeix NetWare os2 plan9 Porting qnx symbian utils uts vmesa vms vos win32 x2p)) {
 		calc_dir($dir);
 	}
 }
@@ -151,15 +149,11 @@ sub calc_longtable {
 say "Selected release sizes for perl tarball:";
 print "\n";
 
- #5.16.0         5562 109   1077  80  20504 2702   8750 2375   4815 152
-
-sub calc_line {
-  printf " %-12s %6s %3s %6s %3s %6s %4s %6s %4s %6s %3s\n",
-    '5.xx.0', calc_core(), calc_lib(), calc_ext(), calc_t(), calc_doc();
-}
-
-calc_line();
-
+calc_core();
+calc_lib();
+calc_ext();
+calc_t();
+calc_doc();
 calc_longtable();
 
 exit;

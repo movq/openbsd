@@ -2,7 +2,6 @@ package Test2::API;
 use strict;
 use warnings;
 
-use Time::HiRes qw/time/;
 use Test2::Util qw/USE_THREADS/;
 
 BEGIN {
@@ -10,43 +9,13 @@ BEGIN {
     $ENV{TEST2_ACTIVE} = 1;
 }
 
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 
 my $INST;
 my $ENDING = 0;
-sub test2_unset_is_end { $ENDING = 0 }
+sub test2_set_is_end { ($ENDING) = @_ ? @_ : (1) }
 sub test2_get_is_end { $ENDING }
-
-sub test2_set_is_end {
-    my $before = $ENDING;
-    ($ENDING) = @_ ? @_ : (1);
-
-    # Only send the event in a transition from false to true
-    return if $before;
-    return unless $ENDING;
-
-    return unless $INST;
-    my $stack = $INST->stack or return;
-    my $root = $stack->root or return;
-
-    return unless $root->count;
-
-    return unless $$ == $INST->pid;
-    return unless get_tid() == $INST->tid;
-
-    my $trace = Test2::EventFacet::Trace->new(
-        frame  => [__PACKAGE__, __FILE__, __LINE__, __PACKAGE__ . '::test2_set_is_end'],
-    );
-    my $ctx = Test2::API::Context->new(
-        trace => $trace,
-        hub   => $root,
-    );
-
-    $ctx->send_ev2(control => { phase => 'END', details => 'Transition to END phase' });
-
-    1;
-}
 
 use Test2::API::Instance(\$INST);
 
@@ -101,7 +70,7 @@ use Test2::Event::Subtest();
 
 use Carp qw/carp croak confess/;
 use Scalar::Util qw/blessed weaken/;
-use Test2::Util qw/get_tid clone_io pkg_to_file gen_uid/;
+use Test2::Util qw/get_tid clone_io pkg_to_file/;
 
 our @EXPORT_OK = qw{
     context release
@@ -116,10 +85,8 @@ our @EXPORT_OK = qw{
     test2_start_preload
     test2_stop_preload
     test2_in_preload
-    test2_is_testing_done
 
     test2_set_is_end
-    test2_unset_is_end
     test2_get_is_end
 
     test2_pid
@@ -131,8 +98,6 @@ our @EXPORT_OK = qw{
     test2_ipc_wait_enabled
 
     test2_add_uuid_via
-
-    test2_add_callback_testing_done
 
     test2_add_callback_context_aquire
     test2_add_callback_context_acquire
@@ -162,6 +127,7 @@ our @EXPORT_OK = qw{
     test2_ipc_set_pending
     test2_ipc_get_timeout
     test2_ipc_set_timeout
+    test2_ipc_enable_shm
 
     test2_formatter
     test2_formatters
@@ -209,46 +175,9 @@ sub test2_ipc_wait_enable  { $INST->set_no_wait(0) }
 sub test2_ipc_wait_disable { $INST->set_no_wait(1) }
 sub test2_ipc_wait_enabled { !$INST->no_wait }
 
-sub test2_is_testing_done {
-    # No instance? VERY DONE!
-    return 1 unless $INST;
-
-    # No stack? tests must be done, it is created pretty early
-    my $stack = $INST->stack or return 1;
-
-    # Nothing on the stack, no root hub yet, likely have not started testing
-    return 0 unless @$stack;
-
-    # Stack has a slot for the root hub (see above) but it is undefined, likely
-    # garbage collected, test is done
-    my $root_hub = $stack->[0] or return 1;
-
-    # If the root hub is ended than testing is done.
-    return 1 if $root_hub->ended;
-
-    # Looks like we are still testing!
-    return 0;
-}
-
 sub test2_no_wait {
     $INST->set_no_wait(@_) if @_;
     $INST->no_wait;
-}
-
-sub test2_add_callback_testing_done {
-    my $cb = shift;
-
-    test2_add_callback_post_load(sub {
-        my $stack = test2_stack();
-        $stack->top; # Insure we have a hub
-        my ($hub) = Test2::API::test2_stack->all;
-
-        $hub->set_active(1);
-
-        $hub->follow_up($cb);
-    });
-
-    return;
 }
 
 sub test2_add_callback_context_acquire   { $INST->add_context_acquire_callback(@_) }
@@ -284,7 +213,7 @@ sub test2_ipc_get_pending     { $INST->get_ipc_pending }
 sub test2_ipc_set_pending     { $INST->set_ipc_pending(@_) }
 sub test2_ipc_set_timeout     { $INST->set_ipc_timeout(@_) }
 sub test2_ipc_get_timeout     { $INST->ipc_timeout() }
-sub test2_ipc_enable_shm      { 0 }
+sub test2_ipc_enable_shm      { $INST->ipc_enable_shm }
 
 sub test2_formatter     {
     if ($ENV{T2_FORMATTER} && $ENV{T2_FORMATTER} =~ m/^(\+)?(.*)$/) {
@@ -360,6 +289,7 @@ sub no_context(&;$) {
 };
 
 my $UUID_VIA = _add_uuid_via_ref();
+my $CID = 1;
 sub context {
     # We need to grab these before anything else to ensure they are not
     # changed.
@@ -376,23 +306,6 @@ sub context {
 
     my $stack   = $params{stack} || $STACK;
     my $hub     = $params{hub}   || (@$stack ? $stack->[-1] : $stack->top);
-
-    # Catch an edge case where we try to get context after the root hub has
-    # been garbage collected resulting in a stack that has a single undef
-    # hub
-    if (!$hub && !exists($params{hub}) && @$stack) {
-        my $msg = Carp::longmess("Attempt to get Test2 context after testing has completed (did you attempt a testing event after done_testing?)");
-
-        # The error message is usually masked by the global destruction, so we have to print to STDER
-        print STDERR $msg;
-
-        # Make sure this is a failure, we are probably already in END, so set $? to change the exit code
-        $? = 1;
-
-        # Now we actually die to interrupt the program flow and avoid undefined his warnings
-        die $msg;
-    }
-
     my $hid     = $hub->{hid};
     my $current = $CONTEXTS->{$hid};
 
@@ -405,10 +318,10 @@ sub context {
     my $end_phase = $ENDING || $phase eq 'END' || $phase eq 'DESTRUCT';
 
     my $level = 1 + $params{level};
-    my ($pkg, $file, $line, $sub, @other) = $end_phase ? caller(0) : caller($level);
+    my ($pkg, $file, $line, $sub) = $end_phase ? caller(0) : caller($level);
     unless ($pkg || $end_phase) {
         confess "Could not find context at depth $level" unless $params{fudge};
-        ($pkg, $file, $line, $sub, @other) = caller(--$level) while ($level >= 0 && !$pkg);
+        ($pkg, $file, $line, $sub) = caller(--$level) while ($level >= 0 && !$pkg);
     }
 
     my $depth = $level;
@@ -456,12 +369,10 @@ sub context {
             frame  => [$pkg, $file, $line, $sub],
             pid    => $$,
             tid    => get_tid(),
-            cid    => gen_uid(),
+            cid    => 'C' . $CID++,
             hid    => $hid,
             nested => $hub->{nested},
             buffered => $hub->{buffered},
-
-            full_caller => [$pkg, $file, $line, $sub, @other],
 
             $$UUID_VIA ? (
                 huuid => $hub->{uuid},
@@ -598,10 +509,6 @@ sub _intercept {
     $ctx->stack->top; # Make sure there is a top hub before we begin.
     $ctx->stack->push($hub);
 
-    my $trace = $ctx->trace;
-    my $state = {};
-    $hub->clean_inherited(trace => $trace, state => $state);
-
     my ($ok, $err) = (1, undef);
     T2_SUBTEST_WRAPPER: {
         # Do not use 'try' cause it localizes __DIE__
@@ -618,8 +525,7 @@ sub _intercept {
     $hub->cull;
     $ctx->stack->pop($hub);
 
-    $hub->restore_inherited(trace => $trace, state => $state);
-
+    my $trace = $ctx->trace;
     $ctx->release;
 
     die $err unless $ok;
@@ -629,8 +535,7 @@ sub _intercept {
         && !$hub->no_ending
         && !$hub->ended;
 
-    require Test2::API::InterceptResult;
-    return Test2::API::InterceptResult->new_from_ref(\@events);
+    return \@events;
 }
 
 sub run_subtest {
@@ -681,8 +586,6 @@ sub run_subtest {
         };
     }
 
-    my $start_stamp = time;
-
     my ($ok, $err, $finished);
     T2_SUBTEST_WRAPPER: {
         # Do not use 'try' cause it localizes __DIE__
@@ -698,8 +601,6 @@ sub run_subtest {
             $finished = 1;
         }
     }
-
-    my $stop_stamp = time;
 
     if ($params->{no_fork}) {
         if ($$ != $ctx->trace->pid) {
@@ -751,8 +652,6 @@ sub run_subtest {
         subtest_uuid => $hub->uuid,
         buffered     => $buffered,
         subevents    => \@events,
-        start_stamp  => $start_stamp,
-        stop_stamp   => $stop_stamp,
     );
 
     my $plan_ok = $hub->check_plan;
@@ -856,9 +755,38 @@ generated by the test system:
         my_ok(0, "fail");
     };
 
-As of version 1.302178 this now returns an arrayref that is also an instance of
-L<Test2::API::InterceptResult>. See the L<Test2::API::InterceptResult>
-documentation for details on how to best use it.
+    my_ok(@$events == 2, "got 2 events, the pass and the fail");
+    my_ok($events->[0]->pass, "first event passed");
+    my_ok(!$events->[1]->pass, "second event failed");
+
+=head3 DEEP EVENT INTERCEPTION
+
+Normally C<intercept { ... }> only intercepts events sent to the main hub (as
+added by intercept itself). Nested hubs, such as those created by subtests,
+will not be intercepted. This is normally what you will still see the nested
+events by inspecting the subtest event. However there are times where you want
+to verify each event as it is sent, in that case use C<intercept_deep { ... }>.
+
+    my $events = intercept_Deep {
+        buffered_subtest foo => sub {
+            ok(1, "pass");
+        };
+    };
+
+C<$events> in this case will contain 3 items:
+
+=over 4
+
+=item The event from C<ok(1, "pass")>
+
+=item The plan event for the subtest
+
+=item The subtest event itself, with the first 2 events nested inside it as children.
+
+=back
+
+This lets you see the order in which the events were sent, unlike
+C<intercept { ... }> which only lets you see events as the main hub sees them.
 
 =head2 OTHER API FUNCTIONS
 
@@ -870,7 +798,6 @@ documentation for details on how to best use it.
         test2_ipc
         test2_formatter_set
         test2_formatter
-        test2_is_testing_done
     };
 
     my $init  = test2_init_done();
@@ -1147,13 +1074,8 @@ It will execute the codeblock, intercepting any generated events in the
 process. It will return an array reference with all the generated event
 objects. All events should be subclasses of L<Test2::Event>.
 
-As of version 1.302178 the events array that is returned is blssed as an
-L<Test2::API::InterceptResult> instance. L<Test2::API::InterceptResult>
-Provides a helpful interface for filtering and/or inspecting the events list
-overall, or individual events within the list.
-
-This is intended to help you test your test code. This is not intended for
-people simply writing tests.
+This is a very low-level subtest tool. This is useful for writing tools which
+produce subtests. This is not intended for people simply writing tests.
 
 =head2 run_subtest(...)
 
@@ -1319,26 +1241,6 @@ Check if Test2 believes it is the END phase.
 This will return the global L<Test2::API::Stack> instance. If this has not
 yet been initialized it will be initialized now.
 
-=item $bool = test2_is_testing_done()
-
-This will return true if testing is complete and no other events should be
-sent. This is useful in things like warning handlers where you might want to
-turn warnings into events, but need them to start acting like normal warnings
-when testing is done.
-
-    $SIG{__WARN__} = sub {
-        my ($warning) = @_;
-
-        if (test2_is_testing_done()) {
-            warn @_;
-        }
-        else {
-            my $ctx = context();
-            ...
-            $ctx->release
-        }
-    }
-
 =item test2_ipc_disable
 
 Disable IPC.
@@ -1379,7 +1281,7 @@ to turn this off.
 
 These functions return the filehandles that test output should be written to.
 They are primarily useful when writing a custom formatter and code that turns
-events into actual output (TAP, etc.).  They will return a dupe of the original
+events into actual output (TAP, etc.)  They will return a dupe of the original
 filehandles that formatted output can be sent to regardless of whatever state
 the currently running test may have left STDOUT and STDERR in.
 
@@ -1423,22 +1325,6 @@ from C<$exit>
 Add a callback that will be called when Test2 is finished loading. This
 means the callback will be run once, the first time a context is obtained.
 If Test2 has already finished loading then the callback will be run immediately.
-
-=item test2_add_callback_testing_done(sub { ... })
-
-This adds your coderef as a follow-up to the root hub after Test2 is finished loading.
-
-This is essentially a helper to do the following:
-
-    test2_add_callback_post_load(sub {
-        my $stack = test2_stack();
-        $stack->top; # Insure we have a hub
-        my ($hub) = Test2::API::test2_stack->all;
-
-        $hub->set_active(1);
-
-        $hub->follow_up(sub { ... }); # <-- Your coderef here
-    });
 
 =item test2_add_callback_context_acquire(sub { ... })
 
@@ -1555,7 +1441,8 @@ Turn off IPC polling.
 
 =item test2_ipc_enable_shm()
 
-Legacy, this is currently a no-op that returns 0;
+Turn on IPC SHM. Only some IPC drivers use this, and most will turn it on
+themselves.
 
 =item test2_ipc_set_pending($uniq_val)
 
@@ -1670,7 +1557,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

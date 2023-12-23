@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -22,9 +27,6 @@ sub ok ($;$) {
 use Unicode::Collate;
 
 ok(1);
-
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
 
 #########################
 

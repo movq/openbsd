@@ -1,50 +1,25 @@
+#!/usr/bin/perl -w                                         # -*- perl -*-
+
 BEGIN {
-    use File::Spec::Functions ':ALL';
-    @INC = map { rel2abs($_) }
-             (qw| ./lib ./t/lib ../../lib |);
+    require "t/pod2html-lib.pl";
 }
 
 use strict;
-use warnings;
-use Test::More;
-use Testing qw( setup_testing_dir xconvert );
-use Cwd;
+use Test::More tests => 1;
 
-my $debug = 0;
-my $startdir = cwd();
-END { chdir($startdir) or die("Cannot change back to $startdir: $!"); }
-my ($expect_raw, $args);
-{ local $/; $expect_raw = <DATA>; }
-
-my $tdir = setup_testing_dir( {
-    debug       => $debug,
-} );
-
-$args = {
-    podstub => "htmlview",
-    description => "html rendering",
-    expect => $expect_raw,
-    p2h => {
-        podpath => 't',
-        quiet  => 1,
-    },
-};
-
-xconvert($args);
-
-done_testing;
+convert_n_test("htmlview", "html rendering", "--quiet");
 
 __DATA__
 <?xml version="1.0" ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<title>Test HTML Rendering</title>
+<title></title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <link rev="made" href="mailto:[PERLADMIN]" />
 </head>
 
-<body>
+<body style="background-color: white">
 
 
 
@@ -54,8 +29,8 @@ __DATA__
   <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
   <li><a href="#METHODS-OTHER-STUFF">METHODS =&gt; OTHER STUFF</a>
     <ul>
-      <li><a href="#new">new()</a></li>
-      <li><a href="#old">old()</a></li>
+      <li><a href="#new-">new()</a></li>
+      <li><a href="#old-">old()</a></li>
     </ul>
   </li>
   <li><a href="#TESTING-FOR-AND-BEGIN">TESTING FOR AND BEGIN</a></li>
@@ -70,15 +45,15 @@ __DATA__
 
 <h1 id="SYNOPSIS">SYNOPSIS</h1>
 
-<pre><code>use My::Module;
+<pre><code>    use My::Module;
 
-my $module = My::Module-&gt;new();</code></pre>
+    my $module = My::Module-&gt;new();</code></pre>
 
 <h1 id="DESCRIPTION">DESCRIPTION</h1>
 
 <p>This is the description.</p>
 
-<pre><code>Here is a verbatim section.</code></pre>
+<pre><code>    Here is a verbatim section.</code></pre>
 
 <p>This is some more regular text.</p>
 
@@ -90,7 +65,7 @@ my $module = My::Module-&gt;new();</code></pre>
 
 <p>Here is a list of methods</p>
 
-<h2 id="new">new()</h2>
+<h2 id="new-">new()</h2>
 
 <p>Constructor method. Accepts the following config options:</p>
 
@@ -203,7 +178,7 @@ my $module = My::Module-&gt;new();</code></pre>
 </li>
 </ul>
 
-<h2 id="old">old()</h2>
+<h2 id="old-">old()</h2>
 
 <p>Destructor method</p>
 
@@ -218,11 +193,11 @@ blah blah
 
 <p>intermediate text</p>
 
+
+
 <more>
 HTML
-</more>
-
-some text
+</more>some text
 
 <h1 id="TESTING-URLs-hyperlinking">TESTING URLs hyperlinking</h1>
 
@@ -232,7 +207,7 @@ some text
 
 <p>This is an email link: mailto:foo@bar.com</p>
 
-<pre><code>This is a link in a verbatim block &lt;a href=&quot;http://perl.org&quot;&gt; Perl &lt;/a&gt;</code></pre>
+<pre><code>    This is a link in a verbatim block &lt;a href=&quot;http://perl.org&quot;&gt; Perl &lt;/a&gt;</code></pre>
 
 <h1 id="SEE-ALSO">SEE ALSO</h1>
 
@@ -244,7 +219,7 @@ some text
 
 <dl>
 
-<dt id="Around-line-45">Around line 45:</dt>
+<dt id="Around-line-45:">Around line 45:</dt>
 <dd>
 
 <p>You can&#39;t have =items (as at line 49) unless the first thing after the =over is an =item</p>

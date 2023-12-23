@@ -2,18 +2,17 @@ package Encode::Guess;
 use strict;
 use warnings;
 use Encode qw(:fallbacks find_encoding);
-our $VERSION = do { my @r = ( q$Revision: 2.8 $ =~ /\d+/g ); sprintf "%d." . "%02d" x $#r, @r };
+our $VERSION = do { my @r = ( q$Revision: 2.3 $ =~ /\d+/g ); sprintf "%d." . "%02d" x $#r, @r };
 
 my $Canon = 'Guess';
-use constant DEBUG => !!$ENV{PERL_ENCODE_DEBUG};
+sub DEBUG () { 0 }
 our %DEF_SUSPECTS = map { $_ => find_encoding($_) } qw(ascii utf8);
-my $obj = bless {
+$Encode::Encoding{$Canon} = bless {
     Name     => $Canon,
     Suspects => {%DEF_SUSPECTS},
 } => __PACKAGE__;
-Encode::define_encoding($obj, $Canon);
 
-use parent qw(Encode::Encoding);
+use base qw(Encode::Encoding);
 sub needs_lines { 1 }
 sub perlio_ok   { 0 }
 
@@ -54,7 +53,7 @@ sub decode($$;$) {
         require Carp;
         Carp::croak($guessed);
     }
-    my $utf8 = $guessed->decode( $octet, $chk || 0 );
+    my $utf8 = $guessed->decode( $octet, $chk );
     $_[1] = $octet if $chk;
     return $utf8;
 }
@@ -158,7 +157,7 @@ sub guess {
         $nline++;
     }
     $try{ascii}
-      or return "Encodings too ambiguous: " . join( " or ", keys %try );
+      or return "Encodings too ambiguous: ", join( " or ", keys %try );
     return $try{ascii};
 }
 
@@ -280,7 +279,7 @@ the internal suspects list.
   my $decoder = guess_encoding($data, qw/euc-jp euc-kr euc-cn/);
   die $decoder unless ref($decoder);
   my $utf8 = $decoder->decode($data);
-  # check only ascii, utf8 and UTF-(16|32) with BOM
+  # check only ascii and utf8
   my $decoder = guess_encoding($data);
 
 =back

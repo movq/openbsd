@@ -1,4 +1,4 @@
-# -*- mode: perl; -*-
+#!perl
 
 package Math::BigInt::Lib::TestUtil;
 

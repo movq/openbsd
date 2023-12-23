@@ -4,8 +4,6 @@ use Test::More;
 use strict;
 use lib '../lib';
 
-plan skip_all => "Files contain an alien character set" if ord "A" != 65;
-
 use File::Spec ();
 use File::Temp qw( tempfile );
 
@@ -45,8 +43,6 @@ push @file_only_archives, [qw( src short foo.tgz )]
   if Archive::Tar->has_zlib_support;
 push @file_only_archives, [qw( src short foo.tbz )]
   if Archive::Tar->has_bzip2_support;
-push @file_only_archives, [qw( src short foo.txz )]
-  if Archive::Tar->has_xz_support;
 
 @file_only_archives = map File::Spec->catfile(@$_), @file_only_archives;
 
@@ -78,7 +74,6 @@ for my $archive_name (@file_only_archives) {
       my @compress =
           $ext =~ /t?gz$/       ? (COMPRESS_GZIP)
         : $ext =~ /(tbz|bz2?)$/ ? (COMPRESS_BZIP)
-        : $ext =~ /(t?xz)$/     ? (COMPRESS_XZ)
         : ();
 
       my ( $fh, $filename ) = tempfile( UNLINK => 1 );

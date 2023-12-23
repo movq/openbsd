@@ -6,20 +6,10 @@ if ($] < 5.004_55) {
   exit 0;
 }
 
-BEGIN {
-    if ($ENV{PERL_CORE}) {
-        require Cwd;
-        unshift @INC, Cwd::cwd();
-    }
-}
-
 use strict;
 use warnings;
 
-use FindBin;
-use lib "$FindBin::Bin"; # required to load filter-util.pl
-
-require "filter-util.pl" ;
+require "./filter-util.pl" ;
 
 use vars qw( $Inc $Perl) ;
 

@@ -1,9 +1,10 @@
 package Safe;
 
 use 5.003_11;
-use Scalar::Util qw(reftype refaddr);
+use strict;
+use Scalar::Util qw(reftype);
 
-$Safe::VERSION = "2.43";
+$Safe::VERSION = "2.27";
 
 # *** Don't declare any lexicals above this point ***
 #
@@ -21,11 +22,10 @@ sub lexless_anon_sub {
     # Uses a closure (on $__ExPr__) to pass in the code to be executed.
     # (eval on one line to keep line numbers as expected by caller)
     eval sprintf
-    'package %s; %s sub { @_=(); eval q[local *SIG; my $__ExPr__;] . $__ExPr__; }',
-                $_[0], $_[1] ? 'use strict;' : '';
+    'package %s; %s strict; sub { @_=(); eval q[my $__ExPr__;] . $__ExPr__; }',
+                $_[0], $_[1] ? 'use' : 'no';
 }
 
-use strict;
 use Carp;
 BEGIN { eval q{
     use Carp::Heavy;
@@ -61,13 +61,12 @@ use Opcode 1.01, qw(
 # Safe is loaded. Then we can add utf8::SWASHNEW to $default_share.
 require utf8;
 # we must ensure that utf8_heavy.pl, where SWASHNEW is defined, is loaded
-# but without depending on too much knowledge of that implementation detail.
-# This code (//i on a unicode string) should ensure utf8 is fully loaded
-# and also loads the ToFold SWASH, unless things change so that these
-# particular code points don't cause it to load.
+# but without depending on knowledge of that implementation detail.
+# This code (//i on a unicode string) ensures utf8 is fully loaded
+# and also loads the ToFold SWASH.
 # (Swashes are cached internally by perl in PL_utf8_* variables
 # independent of being inside/outside of Safe. So once loaded they can be)
-do { my $a = pack('U',0x100); $a =~ m/\x{1234}/; $a =~ tr/\x{1234}//; };
+do { my $a = pack('U',0xC4); my $b = chr 0xE4; utf8::upgrade $b; $a =~ /$b/i };
 # now we can safely include utf8::SWASHNEW in $default_share defined below.
 
 my $default_root  = 0;
@@ -103,6 +102,15 @@ my $default_share = [qw[
     &re::regname
     &re::regnames
     &re::regnames_count
+    &Tie::Hash::NamedCapture::FETCH
+    &Tie::Hash::NamedCapture::STORE
+    &Tie::Hash::NamedCapture::DELETE
+    &Tie::Hash::NamedCapture::CLEAR
+    &Tie::Hash::NamedCapture::EXISTS
+    &Tie::Hash::NamedCapture::FIRSTKEY
+    &Tie::Hash::NamedCapture::NEXTKEY
+    &Tie::Hash::NamedCapture::SCALAR
+    &Tie::Hash::NamedCapture::flags
     &UNIVERSAL::DOES
     &version::()
     &version::new
@@ -126,23 +134,9 @@ my $default_share = [qw[
     &version::vxs::stringify
     &version::vxs::new
     &version::vxs::parse
-    &version::vxs::VCMP
 ]), ($] >= 5.011 && qw[
     &re::regexp_pattern
-]), ($] >= 5.010 && $] < 5.014 && qw[
-    &Tie::Hash::NamedCapture::FETCH
-    &Tie::Hash::NamedCapture::STORE
-    &Tie::Hash::NamedCapture::DELETE
-    &Tie::Hash::NamedCapture::CLEAR
-    &Tie::Hash::NamedCapture::EXISTS
-    &Tie::Hash::NamedCapture::FIRSTKEY
-    &Tie::Hash::NamedCapture::NEXTKEY
-    &Tie::Hash::NamedCapture::SCALAR
-    &Tie::Hash::NamedCapture::flags
 ])];
-if (defined $Devel::Cover::VERSION) {
-    push @$default_share, '&Devel::Cover::use_file';
-}
 
 sub new {
     my($class, $root, $mask) = @_;
@@ -355,33 +349,23 @@ sub _clean_stash {
 
 sub reval {
     my ($obj, $expr, $strict) = @_;
-    die "Bad Safe object" unless $obj->isa('Safe');
-
     my $root = $obj->{Root};
 
     my $evalsub = lexless_anon_sub($root, $strict, $expr);
     # propagate context
     my $sg = sub_generation();
-    my @subret;
-    if (defined wantarray) {
-        @subret = (wantarray)
+    my @subret = (wantarray)
                ?        Opcode::_safe_call_sv($root, $obj->{Mask}, $evalsub)
                : scalar Opcode::_safe_call_sv($root, $obj->{Mask}, $evalsub);
-    }
-    else {
-        Opcode::_safe_call_sv($root, $obj->{Mask}, $evalsub);
-    }
     _clean_stash($root.'::') if $sg != sub_generation();
     $obj->wrap_code_refs_within(@subret);
     return (wantarray) ? @subret : $subret[0];
 }
 
-my %OID;
 
 sub wrap_code_refs_within {
     my $obj = shift;
 
-    %OID = ();
     $obj->_find_code_refs('wrap_code_ref', @_);
 }
 
@@ -393,10 +377,6 @@ sub _find_code_refs {
     for my $item (@_) {
         my $reftype = $item && reftype $item
             or next;
-
-        # skip references already seen
-        next if ++$OID{refaddr $item} > 1;
-
         if ($reftype eq 'ARRAY') {
             $obj->_find_code_refs($visitor, @$item);
         }
@@ -413,7 +393,6 @@ sub _find_code_refs {
 
 sub wrap_code_ref {
     my ($obj, $sub) = @_;
-    die "Bad safe object" unless $obj->isa('Safe');
 
     # wrap code ref $sub with _safe_call_sv so that, when called, the
     # execution will happen with the compartment fully 'in effect'.
@@ -449,8 +428,6 @@ sub wrap_code_ref {
 
 sub rdo {
     my ($obj, $file) = @_;
-    die "Bad Safe object" unless $obj->isa('Safe');
-
     my $root = $obj->{Root};
 
     my $sg = sub_generation();
@@ -534,7 +511,7 @@ outside the compartment) placed into the compartment. For example,
 
     $cpt = new Safe;
     sub wrapper {
-      # vet arguments and perform potentially unsafe operations
+        # vet arguments and perform potentially unsafe operations
     }
     $cpt->share('&wrapper');
 
@@ -542,13 +519,6 @@ outside the compartment) placed into the compartment. For example,
 
 
 =head1 WARNING
-
-The Safe module does not implement an effective sandbox for
-evaluating untrusted code with the perl interpreter.
-
-Bugs in the perl interpreter that could be abused to bypass
-Safe restrictions are not treated as vulnerabilities. See
-L<perlsecpolicy> for additional information.
 
 The authors make B<no warranty>, implied or otherwise, about the
 suitability of this software for safety or security purposes.
@@ -603,7 +573,9 @@ Deny I<only> the listed operators from being used when compiling code
 in the compartment (I<all> other operators will be permitted, so you probably
 don't want to use this method).
 
-=head2 trap (OP, ...), untrap (OP, ...)
+=head2 trap (OP, ...)
+
+=head2 untrap (OP, ...)
 
 The trap and untrap methods are synonyms for deny and permit
 respectfully.
@@ -724,9 +696,6 @@ called from a compartment but not compiled within it.
 =head2 rdo (FILENAME)
 
 This evaluates the contents of file FILENAME inside the compartment.
-It uses the same rules as perl's built-in C<do> to locate the file,
-poossibly using C<@INC>.
-
 See above documentation on the B<reval> method for further details.
 
 =head2 root (NAMESPACE)
@@ -760,7 +729,7 @@ any I<further> compilation that the already compiled code may try to perform.
 This is particularly useful when applied to code references returned from reval().
 
 (It also provides a kind of workaround for RT#60374: "Safe.pm sort {} bug with
--Dusethreads". See L<https://rt.perl.org/rt3//Public/Bug/Display.html?id=60374>
+-Dusethreads". See L<http://rt.perl.org/rt3//Public/Bug/Display.html?id=60374>
 for I<much> more detail.)
 
 =head2 wrap_code_refs_within (...)

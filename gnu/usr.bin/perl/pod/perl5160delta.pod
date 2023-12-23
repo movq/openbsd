@@ -603,7 +603,7 @@ Thread.pm
 
 =back
 
-=head2 Platforms with no supporting programmers
+=head2 Platforms with no supporting programmers:
 
 These platforms will probably have their
 special build support removed during the
@@ -654,7 +654,7 @@ VM/ESA
 Swapping of $< and $>
 
 For more information about this future deprecation, see L<the relevant RT
-ticket|https://github.com/Perl/perl5/issues/11547>.
+ticket|https://rt.perl.org/rt3/Ticket/Display.html?id=96212>.
 
 =item *
 

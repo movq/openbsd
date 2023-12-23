@@ -1,8 +1,6 @@
 package TestModule;
 
 use strict;
-use warnings;
-
 require Exporter;
 use vars qw(@EXPORT @EXPORT_OK @ISA $IMPORTED);
 

@@ -1,8 +1,11 @@
 package TAP::Formatter::File::Session;
 
 use strict;
-use warnings;
-use base 'TAP::Formatter::Session';
+use TAP::Formatter::Session;
+
+use vars qw($VERSION @ISA);
+
+@ISA = qw(TAP::Formatter::Session);
 
 =head1 NAME
 
@@ -10,11 +13,11 @@ TAP::Formatter::File::Session - Harness output delegate for file output
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 
@@ -85,10 +88,22 @@ sub close_test {
         $self->_output_test_failure($parser);
     }
     else {
-        my $time_report = $self->time_report($formatter, $parser);
+        my $time_report = '';
+        if ( $formatter->timer ) {
+            my $start_time = $parser->start_time;
+            my $end_time   = $parser->end_time;
+            if ( defined $start_time and defined $end_time ) {
+                my $elapsed = $end_time - $start_time;
+                $time_report
+                  = $self->time_is_hires
+                  ? sprintf( ' %8d ms', $elapsed * 1000 )
+                  : sprintf( ' %8s s', $elapsed || '<1' );
+            }
+        }
+
         $formatter->_output( $pretty
               . ( $self->{results} ? "\n" . $self->{results} : "" )
-              . $self->_make_ok_line($time_report) );
+              . "ok$time_report\n" );
     }
 }
 

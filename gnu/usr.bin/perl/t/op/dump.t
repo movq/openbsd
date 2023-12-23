@@ -4,8 +4,9 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = qw(. ../lib);
     require './test.pl';
-    set_up_inc( qw(. ../lib) );
+
     skip_all_if_miniperl();
 }
 
@@ -23,10 +24,7 @@ skip_all("only tested on devel builds")
 # fork() and waitpid().
 
 skip_all("no point in dumping on $^O")
-  unless $^O =~ /^(linux|.*bsd|solaris|darwin)$/;
-
-skip_all("GH 18847: excessive writes to /var/log/messages on FreeBSD")
-    if $^O eq 'freebsd';
+  unless $^O =~ /^(linux|.*bsd|solaris)$/;
 
 skip_all("avoid coredump under ASan")
   if  $Config{ccflags} =~ /-fsanitize=/;
@@ -48,14 +46,14 @@ plan(2);
 
 # Depending on how perl is built, there may be extraneous stuff on stderr
 # such as "Aborted", which isn't caught by the '2>&1' that
-# fresh_perl_like() does. So execute each CORE::dump() in a sub-process.
+# fresh_perl_like() does. So execute each dump() in a sub-process.
 #
 # In detail:
 # fresh_perl_like() ends up doing a `` which invokes a shell with 2 args:
 #
 #   "sh", "-c", "perl /tmp/foo 2>&1"
 #
-# When the perl process coredumps after calling CORE::dump(), the parent
+# When the perl process coredumps after calling dump(), the parent
 # sh sees that the exit of the child flags a coredump and so prints
 # something like the following to stderr:
 #
@@ -66,13 +64,7 @@ plan(2);
 # By do the dump in a child, the parent perl process exits back to sh with
 # a normal exit value, so sh won't complain.
 
-# An unqualified dump() will give a deprecation warning. Usually, we'd
-# do a "no warnings 'deprecated'" to shut this off, but since we have
-# chdirred to /tmp, a 'no' won't find the pragma. Hence the fiddling with
-# $SIG{__WARN__}.
-
 fresh_perl_like(<<'PROG', qr/\AA(?!B\z)/, {}, "plain dump quits");
-BEGIN {$SIG {__WARN__} = sub {1;}}
 ++$|;
 my $pid = fork;
 die "fork: $!\n" unless defined $pid;
@@ -83,12 +75,12 @@ if ($pid) {
 else {
     # child
     print qq(A);
-    CORE::dump;
+    dump;
     print qq(B);
 }
 PROG
 
-fresh_perl_like(<<'PROG', qr/A(?!B\z)/, {}, "CORE::dump with label quits"); BEGIN {$SIG {__WARN__} = sub {1;}}
+fresh_perl_like(<<'PROG', qr/A(?!B\z)/, {}, "dump with label quits");
 ++$|;
 my $pid = fork;
 die "fork: $!\n" unless defined $pid;
@@ -98,7 +90,7 @@ if ($pid) {
 }
 else {
     print qq(A);
-    CORE::dump foo;
+    dump foo;
     foo:
     print qq(B);
 }

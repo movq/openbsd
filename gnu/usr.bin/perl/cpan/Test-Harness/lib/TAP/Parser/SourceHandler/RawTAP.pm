@@ -1,12 +1,13 @@
 package TAP::Parser::SourceHandler::RawTAP;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
+use TAP::Parser::SourceHandler   ();
 use TAP::Parser::IteratorFactory ();
 use TAP::Parser::Iterator::Array ();
 
-use base 'TAP::Parser::SourceHandler';
+@ISA = qw(TAP::Parser::SourceHandler);
 
 TAP::Parser::IteratorFactory->register_handler(__PACKAGE__);
 
@@ -16,11 +17,11 @@ TAP::Parser::SourceHandler::RawTAP - Stream output from raw TAP in a scalar/arra
 
 =head1 VERSION
 
-Version 3.44
+Version 3.23
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.23';
 
 =head1 SYNOPSIS
 

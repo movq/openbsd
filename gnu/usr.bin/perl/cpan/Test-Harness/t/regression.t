@@ -5,7 +5,6 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 
 use Test::More 'no_plan';
 
@@ -20,9 +19,8 @@ use constant NOT_ZERO => "__NOT_ZERO__";
 
 use TAP::Parser;
 
-my $IsVMS          = $^O eq 'VMS';
-my $IsWin32        = $^O eq 'MSWin32';
-my $NoTaintSupport = exists($Config{taint_support}) && !$Config{taint_support};
+my $IsVMS   = $^O eq 'VMS';
+my $IsWin32 = $^O eq 'MSWin32';
 
 my $SAMPLE_TESTS = File::Spec->catdir(
     File::Spec->curdir,
@@ -383,85 +381,6 @@ my %samples = (
         'exit'        => 0,
         wait          => 0,
         version       => 12,
-    },
-    space_after_plan_v13 => {
-        results => [
-            {   is_version => TRUE,
-                raw        => 'TAP version 13',
-            },
-            {   is_plan       => TRUE,
-                raw           => '1..5 ',
-                tests_planned => 5,
-                passed        => TRUE,
-                is_ok         => TRUE,
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 1,
-                description   => "",
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 2,
-                description   => "",
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 3,
-                description   => "",
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 4,
-                description   => "",
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 5,
-                description   => "",
-            },
-        ],
-        plan          => '1..5',
-        passed        => [ 1 .. 5 ],
-        actual_passed => [ 1 .. 5 ],
-        failed        => [],
-        actual_failed => [],
-        todo          => [],
-        todo_passed   => [],
-        skipped       => [],
-        good_plan     => TRUE,
-        is_good_plan  => TRUE,
-        tests_planned => 5,
-        tests_run     => 5,
-        parse_errors  => [],
-        'exit'        => 0,
-        wait          => 0,
-        version       => 13,
     },
     simple_yaml => {
         results => [
@@ -1362,7 +1281,6 @@ my %samples = (
         parse_errors  => [],
         'exit'        => 0,
         wait          => 0,
-        skip_if       => sub {$NoTaintSupport},
         version       => 12,
     },
     'die' => {
@@ -3205,76 +3123,12 @@ my %samples = (
         wait    => 0,
         version => 12,
     },
-    yaml_late_plan => {
-        results => [
-            {   is_version => TRUE,
-                raw        => 'TAP version 13',
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 1,
-                description   => "- test suite started",
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 2,
-                description   => "- bogomips",
-            },
-            {   is_yaml => TRUE,
-                data    => { 'Bogomips' => '5226.88' },
-                raw =>
-                  "  ---\n  Bogomips: 5226.88\n  ...",
-            },
-            {   actual_passed => TRUE,
-                is_actual_ok  => TRUE,
-                passed        => TRUE,
-                is_ok         => TRUE,
-                is_test       => TRUE,
-                has_skip      => FALSE,
-                has_todo      => FALSE,
-                number        => 3,
-                description   => "- test suite finished",
-            },
-            {   is_plan       => TRUE,
-                raw           => '1..3',
-                tests_planned => 3,
-                passed        => TRUE,
-                is_ok         => TRUE,
-            },
-        ],
-        plan          => '1..3',
-        passed        => [ 1 .. 3 ],
-        actual_passed => [ 1 .. 3 ],
-        failed        => [],
-        actual_failed => [],
-        todo          => [],
-        todo_passed   => [],
-        skipped       => [],
-        good_plan     => TRUE,
-        is_good_plan  => TRUE,
-        tests_planned => 3,
-        tests_run     => 3,
-        parse_errors  => [],
-        'exit'        => 0,
-        wait          => 0,
-        version       => 13,
-    },
 );
 
 my %HANDLER_FOR = (
-    NOT_ZERO, sub { no warnings; 0 != shift },
-    TRUE,     sub { no warnings; !!shift },
-    FALSE,    sub { no warnings; !shift },
+    NOT_ZERO, sub { local $^W; 0 != shift },
+    TRUE,     sub { local $^W; !!shift },
+    FALSE,    sub { local $^W; !shift },
 );
 
 my $can_open3 = ( $Config{d_fork} || $IsWin32 ) ? 1 : 0;
@@ -3282,7 +3136,7 @@ my $can_open3 = ( $Config{d_fork} || $IsWin32 ) ? 1 : 0;
 for my $hide_fork ( 0 .. $can_open3 ) {
     if ($hide_fork) {
         no strict 'refs';
-        no warnings 'redefine';
+        local $^W = 0;
         *{'TAP::Parser::Iterator::Process::_use_open3'} = sub {return};
     }
 
@@ -3333,7 +3187,7 @@ for my $hide_fork ( 0 .. $can_open3 ) {
                       "... and $method should return a reasonable value ($test)";
                 }
                 elsif ( !ref $answer ) {
-                    no warnings 'uninitialized';
+                    local $^W;    # uninit warnings
 
                     $answer = _vmsify_answer( $method, $answer );
 

@@ -1,10 +1,9 @@
 use strict;
 use warnings;
 use lib 't/lib/';
-use Test::More 0.88;
+use Test::More 0.99;
 use TestBridge;
-use File::Spec::Functions 'catfile';
-use File::Temp 0.19; # newdir
+use File::Temp qw(tempfile);
 
 #--------------------------------------------------------------------------#
 # This file test that the YAML.pm compatible Dump/Load/DumpFile/LoadFile
@@ -32,8 +31,8 @@ use CPAN::Meta::YAML;
     my $arrayref = [ 1 .. 5 ];
     my $hashref = { alpha => 'beta', gamma => 'delta' };
 
-    my $tempdir = File::Temp->newdir("YTXXXXXX", TMPDIR => 1 );
-    my $filename = catfile($tempdir, 'compat');
+    my ($fh, $filename) = tempfile;
+    close $fh; # or LOCK_SH will hang
 
     my $rv = CPAN::Meta::YAML::DumpFile(
         $filename, $scalar, $arrayref, $hashref);

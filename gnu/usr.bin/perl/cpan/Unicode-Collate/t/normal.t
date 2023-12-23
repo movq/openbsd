@@ -1,5 +1,9 @@
-
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -14,31 +18,15 @@ BEGIN {
 	exit;
     }
 }
+use Test;
+BEGIN { plan tests => 100 };
 
 use strict;
 use warnings;
-BEGIN { $| = 1; print "1..101\n"; }
-my $count = 0;
-sub ok ($;$) {
-    my $p = my $r = shift;
-    if (@_) {
-	my $x = shift;
-	$p = !defined $x ? !defined $r : !defined $r ? 0 : $r eq $x;
-    }
-    print $p ? "ok" : "not ok", ' ', ++$count, "\n";
-}
-
 use Unicode::Collate;
 
-ok(1);
-
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
-#########################
-
-our $Aring = _pack_U(0xC5);
-our $aring = _pack_U(0xE5);
+our $Aring = pack('U', 0xC5);
+our $aring = pack('U', 0xE5);
 
 our $entry = <<'ENTRIES';
 030A; [.0000.030A.0002] # COMBINING RING ABOVE

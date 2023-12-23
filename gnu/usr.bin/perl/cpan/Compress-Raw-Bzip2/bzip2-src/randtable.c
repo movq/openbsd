@@ -8,8 +8,8 @@
    This file is part of bzip2/libbzip2, a program and library for
    lossless, block-sorting data compression.
 
-   bzip2/libbzip2 version 1.0.8 of 13 July 2019
-   Copyright (C) 1996-2019 Julian Seward <jseward@acm.org>
+   bzip2/libbzip2 version 1.0.5 of 10 December 2007
+   Copyright (C) 1996-2007 Julian Seward <jseward@bzip.org>
 
    Please read the WARNING, DISCLAIMER and PATENTS sections in the 
    README file.
@@ -23,7 +23,7 @@
 
 
 /*---------------------------------------------*/
-const Int32 BZ2_rNums[512] = { 
+Int32 BZ2_rNums[512] = { 
    619, 720, 127, 481, 931, 816, 813, 233, 566, 247, 
    985, 724, 205, 454, 863, 491, 741, 242, 949, 214, 
    733, 859, 335, 708, 621, 574, 73, 654, 730, 472, 

@@ -2,16 +2,26 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-    skip_all_without_perlio();
-    skip_all_without_dynamic_extension('Fcntl'); # how did you get this far?
+    @INC = '../lib';
+    if ($ENV{PERL_CORE_MINITEST}) {
+	print "1..0 # Skip: no Fcntl under miniperl\n";
+	exit 0;
+    }
+    unless (find PerlIO::Layer 'perlio') {
+	print "1..0 # Skip: not perlio\n";
+	exit 0;
+    }
+    use Config;
+    unless (" $Config{extensions} " =~ / Fcntl /) {
+	print "1..0 # Skip: no Fcntl (how did you get this far?)\n";
+	exit 0;
+    }
 }
 
 use strict;
 use warnings;
 
-plan tests => 10;
+use Test::More tests => 6;
 
 use Fcntl qw(:seek);
 
@@ -31,16 +41,6 @@ use Fcntl qw(:seek);
     is($data, "the right read stuff", "found the right stuff");
 }
 
-SKIP:
-{
-    ok((open my $fh, "+>>", undef), "open my \$fh, '+>>', undef")
-      or skip "can't open temp for append: $!", 3;
-    print $fh "abc";
-    ok(seek($fh, 0, SEEK_SET), "seek to zero");
-    print $fh "xyz";
-    ok(seek($fh, 0, SEEK_SET), "seek to zero again");
-    my $data = <$fh>;
-    is($data, "abcxyz", "check the second write appended");
-}
+
 
 

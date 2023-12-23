@@ -1,11 +1,35 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
 # Test bpi() and bexp()
 
+use Test::More;
 use strict;
-use warnings;
 
-use Test::More tests => 8;
+BEGIN
+  {
+  $| = 1;
+  # to locate the testing files
+  my $location = $0; $location =~ s/big_pi_e.t//i;
+  if ($ENV{PERL_CORE})
+    {
+    # testing with the core distribution
+    @INC = qw(../lib);
+    }
+  unshift @INC, '../lib';
+  if (-d 't')
+    {
+    chdir 't';
+    require File::Spec;
+    unshift @INC, File::Spec->catdir(File::Spec->updir, $location);
+    }
+  else
+    {
+    unshift @INC, $location;
+    }
+  print "# INC = @INC\n";
+
+  plan tests => 8;
+  }
 
 use Math::BigFloat;
 
@@ -13,22 +37,23 @@ use Math::BigFloat;
 
 my $pi = Math::BigFloat::bpi();
 
-is($pi->{_a}, undef, 'A is not defined');
-is($pi->{_p}, undef, 'P is not defined');
+ok (!exists $pi->{_a}, 'A not set');
+ok (!exists $pi->{_p}, 'P not set');
 
 $pi = Math::BigFloat->bpi();
 
-is($pi->{_a}, undef, 'A is not defined');
-is($pi->{_p}, undef, 'P is not defined');
+ok (!exists $pi->{_a}, 'A not set');
+ok (!exists $pi->{_p}, 'P not set');
 
 $pi = Math::BigFloat->bpi(10);
 
-is($pi->{_a}, 10,    'A is defined');
-is($pi->{_p}, undef, 'P is not defined');
+is ($pi->{_a}, 10, 'A set');
+is ($pi->{_p}, undef, 'P not set');
 
 #############################################################################
-
 my $e = Math::BigFloat->new(1)->bexp();
 
-is($e->{_a}, undef, 'A is not defined');
-is($e->{_p}, undef, 'P is not defined');
+ok (!exists $e->{_a}, 'A not set');
+ok (!exists $e->{_p}, 'P not set');
+
+

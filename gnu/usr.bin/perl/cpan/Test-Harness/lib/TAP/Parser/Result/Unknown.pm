@@ -1,9 +1,12 @@
 package TAP::Parser::Result::Unknown;
 
 use strict;
-use warnings;
 
-use base 'TAP::Parser::Result';
+use vars qw($VERSION @ISA);
+use TAP::Parser::Result;
+@ISA = 'TAP::Parser::Result';
+
+use vars qw($VERSION);
 
 =head1 NAME
 
@@ -11,11 +14,11 @@ TAP::Parser::Result::Unknown - Unknown result token.
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 DESCRIPTION
 

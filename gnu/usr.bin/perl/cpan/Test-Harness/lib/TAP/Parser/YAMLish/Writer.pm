@@ -1,30 +1,22 @@
 package TAP::Parser::YAMLish::Writer;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
-use base 'TAP::Object';
+use TAP::Object ();
 
-our $VERSION = '3.44';
+@ISA     = 'TAP::Object';
+$VERSION = '3.17';
 
-                             # No EBCDIC support on early perls
-*from_native = (ord "A" == 65 || $] < 5.008)
-             ? sub { return shift }
-             : sub { utf8::native_to_unicode(shift) };
-
-my $ESCAPE_CHAR = qr{ [ [:cntrl:] \" ] }x;
+my $ESCAPE_CHAR = qr{ [ \x00-\x1f \" ] }x;
 my $ESCAPE_KEY  = qr{ (?: ^\W ) | $ESCAPE_CHAR }x;
 
-my @UNPRINTABLE;
-$UNPRINTABLE[$_] = sprintf("x%02x", from_native($_)) for 0 .. ord(" ") - 1;
-$UNPRINTABLE[ord "\0"] = 'z';
-$UNPRINTABLE[ord "\a"] = 'a';
-$UNPRINTABLE[ord "\t"] = 't';
-$UNPRINTABLE[ord "\n"] = 'n';
-$UNPRINTABLE[ord "\cK"] = 'v';
-$UNPRINTABLE[ord "\f"] = 'f';
-$UNPRINTABLE[ord "\r"] = 'r';
-$UNPRINTABLE[ord "\e"] = 'e';
+my @UNPRINTABLE = qw(
+  z    x01  x02  x03  x04  x05  x06  a
+  x08  t    n    v    f    r    x0e  x0f
+  x10  x11  x12  x13  x14  x15  x16  x17
+  x18  x19  x1a  e    x1c  x1d  x1e  x1f
+);
 
 # new() implementation supplied by TAP::Object
 
@@ -85,7 +77,7 @@ sub _enc_scalar {
     if ( $val =~ /$rule/ ) {
         $val =~ s/\\/\\\\/g;
         $val =~ s/"/\\"/g;
-        $val =~ s/ ( [[:cntrl:]] ) / '\\' . $UNPRINTABLE[ ord($1) ] /gex;
+        $val =~ s/ ( [\x00-\x1f] ) / '\\' . $UNPRINTABLE[ ord($1) ] /gex;
         return qq{"$val"};
     }
 
@@ -155,7 +147,7 @@ TAP::Parser::YAMLish::Writer - Write YAMLish data
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =head1 SYNOPSIS
 
@@ -251,7 +243,7 @@ L<http://use.perl.org/~Alias/journal/29427>
 
 =head1 COPYRIGHT
 
-Copyright 2007-2011 Andy Armstrong.
+Copyright 2007-2008 Andy Armstrong.
 
 This program is free software; you can redistribute
 it and/or modify it under the same terms as Perl itself.

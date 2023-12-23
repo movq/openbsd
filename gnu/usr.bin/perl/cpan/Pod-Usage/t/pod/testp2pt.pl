@@ -1,7 +1,5 @@
 package TestPodIncPlainText;
 
-my $PARENTDIR;
-
 BEGIN {
    use File::Basename;
    use File::Spec;
@@ -10,10 +8,9 @@ BEGIN {
    my $THISDIR = abs_path(dirname $0);
    unshift @INC, $THISDIR;
    require "testcmp.pl";
-   TestCompare->import;
-   # RT#130418: previous use of dirname() was failing on VMS
-   $PARENTDIR = File::Spec->catdir($THISDIR, File::Spec->updir());
-   push @INC, map { File::Spec->catdir($_, 'lib') } ($PARENTDIR, $THISDIR);
+   import TestCompare;
+   my $PARENTDIR = dirname $THISDIR;
+   push @INC, map { File::Spec->catfile($_, 'lib') } ($PARENTDIR, $THISDIR);
 }
 
 #use strict;
@@ -27,10 +24,6 @@ use vars qw($MYPKG @EXPORT @ISA);
 $MYPKG = eval { (caller)[0] };
 @EXPORT = qw(&testpodplaintext);
 BEGIN {
-    # we want this for testing only
-    unshift(@INC, File::Spec->catdir($PARENTDIR, 'inc'));
-    #print "INC=@INC\n";
-
     require Pod::PlainText;
     @ISA = qw( Pod::PlainText );
     require VMS::Filespec if $^O eq 'VMS';
@@ -40,7 +33,7 @@ BEGIN {
 ## reproducible results between environments
 @ENV{qw(TERMCAP COLUMNS)} = ('co=76:do=^J', 76);
 
-sub catdir(@) { File::Spec->catdir(@_); }
+sub catfile(@) { File::Spec->catfile(@_); }
 
 my $INSTDIR = abs_path(dirname $0);
 $INSTDIR = VMS::Filespec::unixpath($INSTDIR) if $^O eq 'VMS';
@@ -49,15 +42,15 @@ $INSTDIR =~ s#:$## if $^O eq 'MacOS';
 $INSTDIR = (dirname $INSTDIR) if (basename($INSTDIR) eq 'pod');
 $INSTDIR =~ s#:$## if $^O eq 'MacOS';
 $INSTDIR = (dirname $INSTDIR) if (basename($INSTDIR) eq 't');
-my @PODINCDIRS = ( catdir($INSTDIR, 'lib', 'Pod'),
-                   catdir($INSTDIR, 'scripts'),
-                   catdir($INSTDIR, 'pod'),
-                   catdir($INSTDIR, 't', 'pod')
+my @PODINCDIRS = ( catfile($INSTDIR, 'lib', 'Pod'),
+                   catfile($INSTDIR, 'scripts'),
+                   catfile($INSTDIR, 'pod'),
+                   catfile($INSTDIR, 't', 'pod')
                  );
 
 # FIXME - we should make the core capable of finding utilities built in
 # locations in ext.
-push @PODINCDIRS, catdir((File::Spec->updir()) x 2, 'pod') if $ENV{PERL_CORE};
+push @PODINCDIRS, catfile((File::Spec->updir()) x 2, 'pod') if $ENV{PERL_CORE};
 
 ## Find the path to the file to =include
 sub findinclude {
@@ -75,7 +68,7 @@ sub findinclude {
     my @podincdirs = ($thispoddir, $parentdir, @PODINCDIRS);
 
     for (@podincdirs) {
-       my $incfile = File::Spec->catfile($_, $incname);
+       my $incfile = catfile($_, $incname);
        return $incfile  if (-r $incfile);
     }
     warn("*** Can't find =include file $incname in @podincdirs\n");

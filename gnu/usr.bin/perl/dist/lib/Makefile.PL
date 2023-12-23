@@ -31,7 +31,7 @@ WriteMakefile(
   'PREREQ_PM' => {},
   'ABSTRACT_FROM' => 'lib_pm.PL',
   'AUTHOR' => 'Steffen Mueller <smueller@cpan.org>',
-  'INSTALLDIRS' => ($] < 5.012 ? 'perl' : 'site'),
+  'INSTALLDIRS' => 'perl',
   'PL_FILES' => {'lib_pm.PL' => 'lib.pm'},
   'PM' => {'lib.pm' => '$(INST_LIBDIR)/lib.pm'},
   'clean' => {FILES => 'lib.pm'},

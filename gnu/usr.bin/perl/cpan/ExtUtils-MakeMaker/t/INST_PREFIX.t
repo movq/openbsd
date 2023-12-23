@@ -10,7 +10,6 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test::More tests => 52;
 use MakeMaker::Test::Utils;
 use MakeMaker::Test::Setup::BFD;
@@ -22,12 +21,8 @@ use ExtUtils::MakeMaker::Config;
 my $Is_VMS = $^O eq 'VMS';
 
 chdir 't';
-perl_lib; # sets $ENV{PERL5LIB} relative to t/
 
-use File::Temp qw[tempdir];
-my $tmpdir = tempdir( DIR => '../t', CLEANUP => 1 );
-use Cwd; my $cwd = getcwd; END { chdir $cwd } # so File::Temp can cleanup
-chdir $tmpdir;
+perl_lib;
 
 $| = 1;
 
@@ -54,15 +49,11 @@ my $mm = WriteMakefile(
 );
 
 like( $stdout->read, qr{
-                        (?:Generating\ a\ \w+?-style\ $Makefile\n)?
-                        (?:Writing\ $Makefile\ for\ Big::Liar\n)?
-                        (?:Writing\ MYMETA.yml\ and\ MYMETA.json\n)?
+                        Writing\ $Makefile\ for\ Big::Liar\n
                         Big::Liar's\ vars\n
                         INST_LIB\ =\ \S+\n
                         INST_ARCHLIB\ =\ \S+\n
-                        Generating\ a\ \w+?-style\ $Makefile\n
                         Writing\ $Makefile\ for\ Big::Dummy\n
-                        (?:Writing\ MYMETA.yml\ and\ MYMETA.json\n)?
 }x );
 
 is( $mm->{PREFIX}, '$(SITEPREFIX)', 'PREFIX set based on INSTALLDIRS' );
@@ -86,15 +77,11 @@ $mm = WriteMakefile(
     PREFIX        => $PREFIX,
 );
 like( $stdout->read, qr{
-                        (?:Generating\ a\ \w+?-style\ $Makefile\n)?
-                        (?:Writing\ $Makefile\ for\ Big::Liar\n)?
-                        (?:Writing\ MYMETA.yml\ and\ MYMETA.json\n)?
+                        Writing\ $Makefile\ for\ Big::Liar\n
                         Big::Liar's\ vars\n
                         INST_LIB\ =\ \S+\n
                         INST_ARCHLIB\ =\ \S+\n
-                        Generating\ a\ \w+?-style\ $Makefile\n
                         Writing\ $Makefile\ for\ Big::Dummy\n
-                        (?:Writing\ MYMETA.yml\ and\ MYMETA.json\n)?
 }x );
 undef $stdout;
 untie *STDOUT;
@@ -109,7 +96,7 @@ is( !!$mm->{PERL_CORE}, !!$ENV{PERL_CORE}, 'PERL_CORE' );
 
 my($perl_src, $mm_perl_src);
 if( $ENV{PERL_CORE} ) {
-    $perl_src = File::Spec->catdir($Updir, $Updir, $Updir, $Updir, $Updir);
+    $perl_src = File::Spec->catdir($Updir, $Updir, $Updir, $Updir);
     $perl_src = File::Spec->canonpath($perl_src);
     $mm_perl_src = File::Spec->canonpath($mm->{PERL_SRC});
 }
@@ -129,8 +116,8 @@ my %Install_Vars = (
 
 while( my($type, $vars) = each %Install_Vars) {
     SKIP: {
-        skip "VMS must expand macros in INSTALL* vars", scalar @$vars
-          if $Is_VMS;
+        skip "VMS must expand macros in INSTALL* vars", scalar @$vars 
+          if $Is_VMS;    
         skip '$Config{usevendorprefix} not set', scalar @$vars
           if $type eq 'VENDOR' and !$Config{usevendorprefix};
 
@@ -143,10 +130,10 @@ while( my($type, $vars) = each %Install_Vars) {
                   if $mm->{uc $installvar} =~ /^\$\(INSTALL.*\)$/;
 
                 # support for man page skipping
-                $prefix = 'none' if $type eq 'PERL' &&
-                                    $var =~ /man/ &&
+                $prefix = 'none' if $type eq 'PERL' && 
+                                    $var =~ /man/ && 
                                     !$Config{$installvar};
-                like( $mm->{uc $installvar}, qr/^\Q$prefix\E/,
+                like( $mm->{uc $installvar}, qr/^\Q$prefix\E/, 
                       "$prefix + $var" );
             }
         }
@@ -194,9 +181,9 @@ while( my($type, $vars) = each %Install_Vars) {
                    INSTALLMAN3DIR=> 'foo/bar/baz',
                   );
 
-    is( $mm->{INSTALLVENDORMAN1DIR}, File::Spec->catdir('foo','bar'),
+    is( $mm->{INSTALLVENDORMAN1DIR}, File::Spec->catdir('foo','bar'), 
                       'installvendorman1dir (in %Config) not modified' );
-    isnt( $mm->{INSTALLVENDORMAN3DIR}, '',
+    isnt( $mm->{INSTALLVENDORMAN3DIR}, '', 
                       'installvendorman3dir (not in %Config) set'  );
 }
 
@@ -233,7 +220,7 @@ while( my($type, $vars) = each %Install_Vars) {
 }
 
 
-# Check that when usevendoprefix and installvendorman*dir aren't set in
+# Check that when usevendoprefix and installvendorman*dir aren't set in 
 # Config it leaves them unset.
 {
     _set_config(installman1dir => File::Spec->catdir('foo', 'bar') );

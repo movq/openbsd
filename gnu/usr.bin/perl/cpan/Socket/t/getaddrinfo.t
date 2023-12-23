@@ -1,7 +1,6 @@
-use v5.6.1;
 use strict;
 use warnings;
-use Test::More tests => 31;
+use Test::More tests => 30;
 
 use Socket qw(:addrinfo AF_INET SOCK_STREAM IPPROTO_TCP unpack_sockaddr_in inet_aton);
 
@@ -23,8 +22,8 @@ ok( defined $res[0]->{addr},
     '$res[0] addr is defined' );
 if (length $res[0]->{addr}) {
     is_deeply( [ unpack_sockaddr_in $res[0]->{addr} ],
-               [ 80, inet_aton( "127.0.0.1" ) ],
-               '$res[0] addr is {"127.0.0.1", 80}' );
+	       [ 80, inet_aton( "127.0.0.1" ) ],
+	       '$res[0] addr is {"127.0.0.1", 80}' );
 } else {
     fail( '$res[0] addr is empty: check $socksizetype' );
 }
@@ -51,12 +50,12 @@ cmp_ok( $err, "==", 0, '$err == 0 for host=127.0.0.1/service=undef' );
     cmp_ok( $err, "==", 0, '$err == 0 for host=$1' );
     ok( scalar @res > 0, '@res has results' );
     is( (unpack_sockaddr_in $res[0]->{addr})[1],
-        inet_aton( "127.0.0.1" ),
-        '$res[0] addr is {"127.0.0.1", ??}' );
+	inet_aton( "127.0.0.1" ),
+	'$res[0] addr is {"127.0.0.1", ??}' );
 }
 
-( $err, @res ) = getaddrinfo( "", "80", { family => AF_INET, socktype => SOCK_STREAM, protocol => IPPROTO_TCP } );
-cmp_ok( $err, "==", 0, '$err == 0 for service=80/family=AF_INET/socktype=STREAM/protocol=IPPROTO_TCP' );
+( $err, @res ) = getaddrinfo( "", "80", { family => AF_INET, socktype => SOCK_STREAM } );
+cmp_ok( $err, "==", 0, '$err == 0 for service=80/family=AF_INET/socktype=STREAM' );
 is( scalar @res, 1, '@res has 1 result' );
 
 # Just pick the first one
@@ -91,45 +90,20 @@ SKIP: {
     # Some OSes return $err == 0 but no results
     ( $err, @res ) = getaddrinfo( $missinghost, "ftp", { socktype => SOCK_STREAM } );
     ok( $err != 0 || ( $err == 0 && @res == 0 ),
-        '$err != 0 or @res == 0 for host=TbK4jM2M0OS.lm57DWIyu4i/service=ftp/socktype=SOCK_STREAM' );
+	'$err != 0 or @res == 0 for host=TbK4jM2M0OS.lm57DWIyu4i/service=ftp/socktype=SOCK_STREAM' );
     if( @res ) {
-        # Diagnostic that might help
-        while( my $r = shift @res ) {
-            diag( "family=$r->{family} socktype=$r->{socktype} protocol=$r->{protocol} addr=[" . length( $r->{addr} ) . " bytes]" );
-            diag( "  addr=" . join( ", ", map { sprintf '0x%02x', ord $_ } split m//, $r->{addr} ) );
-        }
+	# Diagnostic that might help
+	while( my $r = shift @res ) {
+	    diag( "family=$r->{family} socktype=$r->{socktype} protocol=$r->{protocol} addr=[" . length( $r->{addr} ) . " bytes]" );
+	    diag( "  addr=" . join( ", ", map { sprintf '0x%02x', ord $_ } split m//, $r->{addr} ) );
+	}
     }
-}
-
-# Numeric addresses with AI_NUMERICHOST should pass (RT95758)
-AI_NUMERICHOST: {
-    # Here we need a port that is open to the world. Not all places have all
-    # the ports. For example Solaris by default doesn't have http/80 in
-    # /etc/services, and that would fail. Let's try a couple of commonly open
-    # ports, and hope one of them will succeed. Conversely this means that
-    # sometimes this will fail.
-    #
-    # An alternative method would be to manually parse /etc/services and look
-    # for enabled services but that's kind of yuck, too.
-    my @port = (80, 7, 22, 25, 88, 123, 110, 389, 443, 445, 873, 2049, 3306);
-    foreach my $port ( @port ) {
-        ( $err, @res ) = getaddrinfo( "127.0.0.1", $port, { flags => AI_NUMERICHOST, socktype => SOCK_STREAM } );
-        if( $err == 0 ) {
-            ok( $err == 0, "\$err == 0 for 127.0.0.1/$port/flags=AI_NUMERICHOST" );
-            last AI_NUMERICHOST;
-        }
-    }
-    fail( "$err for 127.0.0.1/$port[-1]/flags=AI_NUMERICHOST (failed for ports @port)" );
 }
 
 # Now check that names with AI_NUMERICHOST fail
 
-SKIP: {
-    skip "Resolver has no answer for $goodhost", 1 unless gethostbyname( $goodhost );
-
-    ( $err, @res ) = getaddrinfo( $goodhost, "ftp", { flags => AI_NUMERICHOST, socktype => SOCK_STREAM } );
-    ok( $err != 0, "\$err != 0 for host=$goodhost/service=ftp/flags=AI_NUMERICHOST/socktype=SOCK_STREAM" );
-}
+( $err, @res ) = getaddrinfo( "localhost", "ftp", { flags => AI_NUMERICHOST, socktype => SOCK_STREAM } );
+ok( $err != 0, '$err != 0 for host=localhost/service=ftp/flags=AI_NUMERICHOST/socktype=SOCK_STREAM' );
 
 # Some sanity checking on the hints hash
 ok( defined eval { getaddrinfo( "127.0.0.1", "80", undef ); 1 },

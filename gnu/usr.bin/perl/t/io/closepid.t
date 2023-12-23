@@ -2,8 +2,12 @@
 
 BEGIN {
     chdir 't' if -d 't';
-    require "./test.pl";
-    set_up_inc('../lib');
+    @INC = '../lib';
+    require './test.pl';
+}
+
+if ($^O eq 'dos') {
+    skip_all("no multitasking");
 }
 
 plan tests => 3;

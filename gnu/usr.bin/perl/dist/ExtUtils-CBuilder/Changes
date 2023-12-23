@@ -1,166 +1,5 @@
 Revision history for Perl extension ExtUtils::CBuilder.
 
-0.280236 - 2021-02-12
-
-  Fix:
-
-  - Remove image-base generation on Win32/gcc and instead use GCC's built-in
-    `--enable-auto-image-base` linker option.
-
-0.280235 - 2020-11-01
-
-  Fix:
-
-  - Fix compilation on darwin with XCode 12 (-Werror=implicit-function-declaration) 
-    Thanks to DrHyde for the patch.
-
-0.280234 - 2020-01-21
-
-  Update:
-
-  - Updated standalone module from blead.
-
-0.280231 - 2019-03-31
-
-  Fixed:
-
-  - Protected RE interpolation in Base.pm
-
-
-0.280230 - 2017-11-22
-
-  Fixed:
-
-  - Updated Changes
-  - Used OurPkgVersion instead of PkgVersion
-
-0.280229 - 2017-10-13
-
-  Fixed:
-
-  - Remove dependency to 'vars' package.
-
-0.280228 - 2017-07-20
-
-  Fixed:
-
-  - Fix link() on Windows, broken in version 0.280226.
-
-0.280227 - 2017-07-19
-
-  Fixed:
-
-  - Restore compatibility of test suite to Perl 5.6.
-
-0.280226 - 2017-07-14
-
-  Fixed:
-
-  - Fix C++ compiler detection (RT #131749)
-    (thanks to stphnlyd)
-
-0.280225 - 2016-01-04
-
-  Fixed:
-
-  - New location of libperl on Win32 when building core (RT #126632)
-
-0.280224 - 2015-10-09
-
-  Enhancements:
-
-  - Use warnings/strict on all modules.
-
-0.280223 - 2015-06-02
-
-  Fixed:
-
-  - Impose deterministic order on cpp-definition options.
-    Heretofore, ExtUtils::CBuilder put cpp-definition options
-    into the cc command line in non-deterministic order. This
-    produced noise when diffing build logs.
-    Make this order deterministic.  (RT #124106)
-    
-  Added:
-
-  - Add tests for ascii-betical order in t/04-base.t.
-
-0.280220 - 2014-09-27
-
-  Fixed:
-
-  - Added missing 'use Config' from 'android.pm' (thanks Debian community)
-
-0.280219 - 2014-09-01
-
-  Fixed:
-
-  - Fixed regression on Android (thanks to Brian Fraser)
-
-0.280218 - 2014-09-01
-
-  Fixed:
-
-  - Mispelled 'starup' key in BCC support was fixed. #79574
-  - Fixed the version in the PM file (thanks to Jim Keenan)
-
-0.280217 - 2014-08-22
-
-  Fixed:
-
-  - Quoted perl path for Windows support #98245 [Alberto Simões] 
-
-0.280216 - 2014-03-07
-
-  Added:
-
-  - Android support [Brian Fraser and Piotr Roszatycki]
-
-  Fixed:
-
-  - Teach ExtUtils::CBuilder to handle mod2fname properly [Brian Fraser]
-
-0.280212 - 2013-09-08
-
-  Fixed:
-
-  - Reversion all modules.  
-
-0.280211 - 2013-09-08
-
-  Fixed:
-
-  - Missing dependency Perl::OSType [Leon Timmermans]
-  - Fixed repository location [Alberto Simões]
-
-0.280210 - 2013-09-06
-
-  Fixed:
-
-  - Update INSTALLDIRS to favor installation under 'site' (perl 116479)
-    [James E Keenan]
-
-0.280209 - 2012-10-20 (Perl v5.17.5)
-
-  Fixed:
-
-  - Allow options to be passed to prelink in Windows (perl #115100)
-    [Eric Brine]
-
-0.280208 - 2012-06-20 (Perl v5.17.1)
-
-  Fixed:
-
-  - Corrected location in which manifest file is looked for on
-    Windows (RT#35943, perl #111798) [snaury@gmail.com]
-
-0.280207 (Not released)
-
-  Fixed:
-
-  - Corrected test for existence of manifest file on Windows
-    (perl #111782) [Steve Hay]
-
 0.280206 - 2012-03-20 (Perl v5.15.9)
 
   Documented:
@@ -271,7 +110,7 @@ Revision history for Perl extension ExtUtils::CBuilder.
 
  Bugs fixed:
  - compile() now accepts both string & array for 'include_dirs'
-   argument, as documented.(RT#54606) [Alberto Simões]
+   argument, as documented.(RT#54606) [Alberto Sim�es]
 
 0.27 - Thu Oct 29 21:29:56 EDT 2009
 
@@ -466,7 +305,7 @@ Revision history for Perl extension ExtUtils::CBuilder.
    somehow never got into this copy. [Steve Hay]
 
  - Added a new 'defines' parameter to compile(), which gives a
-   platform-independent way to specify various -Dfoo=bar (or the
+   platform-independant way to specify various -Dfoo=bar (or the
    equivalent) compiler defines. [Randy W. Sims]
 
 0.14  Mon Sep 19 13:40:37 CDT 2005

@@ -1,3 +1,10 @@
+BEGIN {
+    if( $ENV{PERL_CORE} ) {
+        chdir '../lib/Archive/Tar' if -d '../lib/Archive/Tar';
+    }
+    use lib '../../..';
+}
+
 BEGIN { chdir 't' if -d 't' }
 
 use Test::More 'no_plan';
@@ -63,20 +70,6 @@ my $LONG_FILE = qq[directory/really-really-really-really-really-really-really-re
 my $TOO_LONG    =   ($^O eq 'MSWin32' or $^O eq 'cygwin' or $^O eq 'VMS')
                     && length( cwd(). $LONG_FILE ) > 247;
 
-if(!$TOO_LONG) {
-    my $alt = File::Spec->catfile( cwd(), $LONG_FILE);
-    eval 'mkpath([$alt]);';
-    if($@)
-    {
-        $TOO_LONG = 1;
-    }
-    else
-    {
-        $@ = '';
-        my $base = File::Spec->catfile( cwd(), 'directory');
-        rmtree $base;
-    }
-}
 ### warn if we are going to skip long file names
 if ($TOO_LONG) {
     diag("No long filename support - long filename extraction disabled") if ! $ENV{PERL_CORE};
@@ -99,11 +92,9 @@ my $TARX        = $Class->new;
 my $TAR_FILE        = File::Spec->catfile( @ROOT, 'bar.tar' );
 my $TGZ_FILE        = File::Spec->catfile( @ROOT, 'foo.tgz' );
 my $TBZ_FILE        = File::Spec->catfile( @ROOT, 'foo.tbz' );
-my $TXZ_FILE        = File::Spec->catfile( @ROOT, 'foo.txz' );
 my $OUT_TAR_FILE    = File::Spec->catfile( @ROOT, 'out.tar' );
 my $OUT_TGZ_FILE    = File::Spec->catfile( @ROOT, 'out.tgz' );
 my $OUT_TBZ_FILE    = File::Spec->catfile( @ROOT, 'out.tbz' );
-my $OUT_TXZ_FILE    = File::Spec->catfile( @ROOT, 'out.txz' );
 
 my $COMPRESS_FILE = 'copy';
 $^O eq 'VMS' and $COMPRESS_FILE .= '.';
@@ -112,8 +103,8 @@ chmod 0644, $COMPRESS_FILE;
 
 ### done setting up environment ###
 
-### check for zlib/bzip2/xz support
-{   for my $meth ( qw[has_zlib_support has_bzip2_support has_xz_support] ) {
+### check for zlib/bzip2 support
+{   for my $meth ( qw[has_zlib_support has_bzip2_support] ) {
         can_ok( $Class, $meth );
     }
 }
@@ -165,21 +156,10 @@ chmod 0644, $COMPRESS_FILE;
     }
 }
 
-my $ebcdic_skip_msg = "File contains an alien character set";
-
 ### read tests ###
-SKIP: {
-    my @to_try;
-
-    if (ord 'A' == 65) {
-        push @to_try, $TAR_FILE;
-        push @to_try, $TGZ_FILE if $Class->has_zlib_support;
-        push @to_try, $TBZ_FILE if $Class->has_bzip2_support;
-        push @to_try, $TXZ_FILE if $Class->has_xz_support;
-    }
-    else {
-        skip $ebcdic_skip_msg, 4;
-    }
+{   my @to_try = ($TAR_FILE);
+    push @to_try, $TGZ_FILE if $Class->has_zlib_support;
+    push @to_try, $TBZ_FILE if $Class->has_bzip2_support;
 
     for my $type( @to_try ) {
 
@@ -362,11 +342,7 @@ SKIP: {
 }
 
 ### rename/replace_content tests ###
-
-SKIP: {
-    skip $ebcdic_skip_msg, 9 if ord "A" != 65;
-
-    my $tar     = $Class->new;
+{   my $tar     = $Class->new;
     my $from    = 'c';
     my $to      = 'e';
 
@@ -397,10 +373,7 @@ SKIP: {
 }
 
 ### remove tests ###
-SKIP: {
-    skip $ebcdic_skip_msg, 3 if ord "A" != 65;
-
-    my $remove  = 'c';
+{   my $remove  = 'c';
     my $tar     = $Class->new;
 
     ok( $tar->read( $TAR_FILE ),    "Read in '$TAR_FILE'" );
@@ -416,8 +389,6 @@ SKIP: {
 
 ### write + read + extract tests ###
 SKIP: {                             ### pesky warnings
-    skip $ebcdic_skip_msg, 326 if ord "A" != 65;
-
     skip('no IO::String', 326) if   !$Archive::Tar::HAS_PERLIO &&
                                     !$Archive::Tar::HAS_PERLIO &&
                                     !$Archive::Tar::HAS_IO_STRING &&
@@ -484,7 +455,6 @@ SKIP: {                             ### pesky warnings
         {   my @out;
             push @out, [ $OUT_TGZ_FILE => 1             ] if $Class->has_zlib_support;
             push @out, [ $OUT_TBZ_FILE => COMPRESS_BZIP ] if $Class->has_bzip2_support;
-            push @out, [ $OUT_TXZ_FILE => COMPRESS_XZ   ] if $Class->has_xz_support;
 
             for my $entry ( @out ) {
 
@@ -527,10 +497,7 @@ SKIP: {                             ### pesky warnings
 
 
 ### limited read + extract tests ###
-SKIP: {                             ### pesky warnings
-    skip $ebcdic_skip_msg, 8 if ord "A" != 65;
-
-    my $tar     = $Class->new;
+{   my $tar     = $Class->new;
     my @files   = $tar->read( $TAR_FILE, 0, { limit => 1 } );
     my $obj     = $files[0];
 
@@ -571,10 +538,7 @@ SKIP: {                             ### pesky warnings
 
 
 ### clear tests ###
-SKIP: {                             ### pesky warnings
-    skip $ebcdic_skip_msg, 3 if ord "A" != 65;
-
-    my $tar     = $Class->new;
+{   my $tar     = $Class->new;
     my @files   = $tar->read( $TAR_FILE );
 
     my $cnt = $tar->list_files();
@@ -815,14 +779,8 @@ sub slurp_compressed_file {
     my $file = shift;
     my $fh;
 
-    ### xz
-    if( $file =~ /.txz$/ ) {
-        require IO::Uncompress::UnXz;
-        $fh = IO::Uncompress::UnXz->new( $file )
-            or warn( "Error opening '$file' with IO::Uncompress::UnXz" ), return
-
     ### bzip2
-    } elsif( $file =~ /.tbz$/ ) {
+    if( $file =~ /.tbz$/ ) {
         require IO::Uncompress::Bunzip2;
         $fh = IO::Uncompress::Bunzip2->new( $file )
             or warn( "Error opening '$file' with IO::Uncompress::Bunzip2" ), return
@@ -830,7 +788,7 @@ sub slurp_compressed_file {
     ### gzip
     } else {
         require IO::Zlib;
-        $fh = IO::Zlib->new();
+        $fh = new IO::Zlib;
         $fh->open( $file, READ_ONLY->(1) )
             or warn( "Error opening '$file' with IO::Zlib" ), return
     }

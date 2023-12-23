@@ -1,8 +1,5 @@
 #!perl -w
 
-use strict;
-use warnings;
-
 use Test qw(plan ok);
 plan tests => 2;
 

@@ -2,7 +2,6 @@
 # decode on Perl 5.005, 5.6, 5.8 or later
 #
 use strict;
-use warnings;
 use Test::More;
 
 BEGIN { plan tests => 6 };
@@ -10,6 +9,11 @@ BEGIN { plan tests => 6 };
 BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }
 
 use JSON::PP;
+
+BEGIN {
+    use lib qw(t);
+    use _unicode_handling;
+}
 
 no utf8;
 
@@ -31,7 +35,7 @@ is($json->decode(q|"\u3042"|), $str);
 
 my $utf8 = $json->decode(q|"\ud808\udf45"|); # chr 12345
 
-utf8::encode($utf8); # UTF-8 flagged off
+utf8::encode($utf8); # UTf-8 flaged off
 
 is($utf8, "\xf0\x92\x8d\x85");
 

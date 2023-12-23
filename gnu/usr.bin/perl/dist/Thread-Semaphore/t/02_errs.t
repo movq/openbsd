@@ -3,9 +3,9 @@ use warnings;
 
 use Thread::Semaphore;
 
-use Test::More 'tests' => 9;
+use Test::More 'tests' => 12;
 
-my $err = qr/^Semaphore initializer is not an integer: /;
+my $err = qr/^Semaphore .* is not .* integer: /;
 
 eval { Thread::Semaphore->new(undef); };
 like($@, $err, $@);
@@ -17,11 +17,7 @@ like($@, $err, $@);
 my $s = Thread::Semaphore->new();
 ok($s, 'New semaphore');
 
-$err = qr/^Argument to semaphore method .* is not a positive integer: /;
-
 eval { $s->down(undef); };
-like($@, $err, $@);
-eval { $s->down(0); };
 like($@, $err, $@);
 eval { $s->down(-1); };
 like($@, $err, $@);
@@ -30,7 +26,14 @@ like($@, $err, $@);
 eval { $s->down('foo'); };
 like($@, $err, $@);
 
-# No need to test ->up(), etc. as the arg validation code is common to them all
+eval { $s->up(undef); };
+like($@, $err, $@);
+eval { $s->up(-1); };
+like($@, $err, $@);
+eval { $s->up(1.5); };
+like($@, $err, $@);
+eval { $s->up('foo'); };
+like($@, $err, $@);
 
 exit(0);
 

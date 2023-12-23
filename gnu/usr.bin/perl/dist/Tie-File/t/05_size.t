@@ -4,12 +4,9 @@
 # PUSH POP SHIFT UNSHIFT
 #
 
-use strict;
-use warnings;
-
 use POSIX 'SEEK_SET';
 
-my $file = "tf05-$$.txt";
+my $file = "tf$$.txt";
 my ($o, $n);
 
 print "1..16\n";
@@ -19,11 +16,9 @@ use Tie::File;
 print "ok $N\n"; $N++;
 
 # 2-3 FETCHSIZE 0-length file
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 close F;
-
-my @a;
 $o = tie @a, 'Tie::File', $file;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -39,7 +34,7 @@ undef $o;
 untie @a;
 
 my $data = "rec0$:rec1$:rec2$:";
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 print F $data;
 close F;

@@ -31,26 +31,24 @@ __UNDEFINED__  newSVpvn_utf8(s, len, u)  newSVpvn_flags((s), (len), (u) ? SVf_UT
 __UNDEFINED__  SVf_UTF8  0
 
 #ifndef newSVpvn_flags
-#  if defined(PERL_USE_GCC_BRACE_GROUPS)
-#    define newSVpvn_flags(s, len, flags)                       \
-        ({                                                      \
-            SV * sv = newSVpvn(D_PPP_CONSTPV_ARG(s), (len));    \
-            SvFLAGS(sv) |= ((flags) & SVf_UTF8);                \
-            if ((flags) & SVs_TEMP) sv = sv_2mortal(sv);        \
-            sv;                                                 \
-        })
-#  else
-     PERL_STATIC_INLINE SV* D_PPP_newSVpvn_flags(const char *const s, const STRLEN len, const U32 flags)
-     {
-        dTHX;
-        SV * sv = newSVpvn(s, len);
-        SvFLAGS(sv) |= (flags & SVf_UTF8);
-        if (flags & SVs_TEMP) return sv_2mortal(sv);
-        return sv;
-     }
-#    define newSVpvn_flags(s, len, flags) D_PPP_newSVpvn_flags((s), (len), (flags))
-#  endif
+
+#if { NEED newSVpvn_flags }
+
+SV *
+newSVpvn_flags(pTHX_ const char *s, STRLEN len, U32 flags)
+{
+  SV *sv = newSVpvn(D_PPP_CONSTPV_ARG(s), len);
+  SvFLAGS(sv) |= (flags & SVf_UTF8);
+  return (flags & SVs_TEMP) ? sv_2mortal(sv) : sv;
+}
+
 #endif
+
+#endif
+
+=xsinit
+
+#define NEED_newSVpvn_flags
 
 =xsubs
 
@@ -84,28 +82,28 @@ newSVpvn_utf8()
 
 my @s = &Devel::PPPort::newSVpvn();
 ok(@s == 5);
-is($s[0], "test");
-is($s[1], "te");
-is($s[2], "");
+ok($s[0], "test");
+ok($s[1], "te");
+ok($s[2], "");
 ok(!defined($s[3]));
 ok(!defined($s[4]));
 
 @s = &Devel::PPPort::newSVpvn_flags();
 ok(@s == 5);
-is($s[0], "test");
-is($s[1], "te");
-is($s[2], "");
+ok($s[0], "test");
+ok($s[1], "te");
+ok($s[2], "");
 ok(!defined($s[3]));
 ok(!defined($s[4]));
 
 @s = &Devel::PPPort::newSVpvn_utf8();
 ok(@s == 1);
-is($s[0], "test");
+ok($s[0], "test");
 
-if (ivers($]) >= ivers("5.008001")) {
+if ($] >= 5.008001) {
   require utf8;
   ok(utf8::is_utf8($s[0]));
 }
 else {
-  skip("skip: no is_utf8()", 1);
+  skip("skip: no is_utf8()", 0);
 }

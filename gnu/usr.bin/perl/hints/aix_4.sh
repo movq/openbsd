@@ -113,19 +113,6 @@ case "$cc" in
     *gcc*) ;;
     *) ccflags="$ccflags -qmaxmem=-1 -qnoansialias" ;;
     esac
-
-# since change #28654, _XOPEN_SOURCE symbol needs to be defined on aix 4.2
-# to avoid the following build error in perlio.c :
-# 1506-294 (S) Syntax error in expression on #if directive.
-#
-case "$osvers" in
-    4.2.1.0)
-	ccflags="$ccflags -D_XOPEN_SOURCE"
-	# aix 4.2 does not have IPv6 support
-	d_inetpton='undef'
-	d_inetntop='undef'
-	;;
-    esac
 nm_opt='-B'
 
 # These functions don't work like Perl expects them to.
@@ -143,7 +130,7 @@ case "$cc" in
 	ccdlflags='-Xlinker'
 	if [ "X$gccversion" = "X" ]; then
 	    # Done too late in Configure if hinted
-	    gccversion=`$cc -dumpversion`
+	    gccversion=`$cc --version | sed 's/.*(GCC) *//'`
 	    fi
 	;;
 
@@ -229,11 +216,7 @@ regcomp_cflags='optimize='
 # -bI:$(PERL_INC)/perl.exp  Read the exported symbols from the perl binary
 # -bE:$(BASEEXT).exp	    Export these symbols.  This file contains only one
 #			    symbol: boot_$(EXP)	 can it be auto-generated?
-if test $usenativedlopen = 'true' ; then
-    lddlflags="$lddlflags -bhalt:4 -bexpall -G -bnoentry -lc"
-else
-    lddlflags="$lddlflags -bhalt:4 -bM:SRE -bI:\$(PERL_INC)/perl.exp -bE:\$(BASEEXT).exp -bnoentry -lc"
-    fi
+lddlflags="$lddlflags -bhalt:4 -bM:SRE -bI:\$(PERL_INC)/perl.exp -bE:\$(BASEEXT).exp -bnoentry -lc"
 
 case "$use64bitall" in
     $define|true|[yY]*) use64bitint="$define" ;;
@@ -396,10 +379,10 @@ ldflags_uselargefiles="`getconf XBS5_ILP32_OFFBIG_LDFLAGS 2>/dev/null`"
 	ldflags_uselargefiles="`echo $ldflags_uselargefiles`"
 	if test X"$use64bitint:$quadtype" = X"$define:long" -o X"$use64bitall" = Xdefine; then
 # Keep this at the left margin.
-libswanted_uselargefiles="`getconf XBS5_LP64_OFF64_LIBS 2>/dev/null|sed -e 's@^-l@@' -e 's@ -l@ @g'`"
+libswanted_uselargefiles="`getconf XBS5_LP64_OFF64_LIBS 2>/dev/null|sed -e 's@^-l@@' -e 's@ -l@ @g`"
 	else
 # Keep this at the left margin.
-libswanted_uselargefiles="`getconf XBS5_ILP32_OFFBIG_LIBS 2>/dev/null|sed -e 's@^-l@@' -e 's@ -l@ @g'`"
+libswanted_uselargefiles="`getconf XBS5_ILP32_OFFBIG_LIBS 2>/dev/null|sed -e 's@^-l@@' -e 's@ -l@ @g`"
 	    fi
 
 	case "$ccflags_uselargefiles$ldflags_uselargefiles$libs_uselargefiles" in
@@ -419,7 +402,6 @@ libswanted_uselargefiles="`getconf XBS5_ILP32_OFFBIG_LIBS 2>/dev/null|sed -e 's@
 	        ccflags="`echo $ccflags | sed -e 's@ -b@ -Wl,-b@g'`"
 	        ldflags="`echo ' '$ldflags | sed -e 's@ -b@ -Wl,-b@g'`"
 	        lddlflags="`echo ' '$lddlflags | sed -e 's@ -b@ -Wl,-b@g'`"
-		lddlflags="`echo ' '$lddlflags | sed -e 's@ -G @ -Wl,-G @g'`"
 	        ld='gcc'
 	        echo >&4 "(using ccflags   $ccflags)"
 	        echo >&4 "(using ldflags   $ldflags)"
@@ -507,7 +489,7 @@ EOM
 	# string is simply not detectable by any means.  Since it doesn't
 	# do any harm, I didn't pursue it. -- sh
 	qaldflags="`echo $qaldflags`"
-	qalibs="`getconf XBS5_LP64_OFF64_LIBS 2>/dev/null|sed -e 's@^-l@@' -e 's@ -l@ @g'`"
+	qalibs="`getconf XBS5_LP64_OFF64_LIBS 2>/dev/null|sed -e 's@^-l@@' -e 's@ -l@ @g`"
 	# -q32 and -b32 may have been set by uselargefiles or user.
 	# Remove them.
 	ccflags="`echo $ccflags | sed -e 's@-q32@@'`"

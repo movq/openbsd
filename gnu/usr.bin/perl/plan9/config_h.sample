@@ -50,6 +50,24 @@
 #define __attribute__(_arg_)
 #endif
 
+/* HAS_BCMP:
+ *	This symbol is defined if the bcmp() routine is available to
+ *	compare blocks of memory.
+ */
+#define HAS_BCMP	/**/
+
+/* HAS_BCOPY:
+ *	This symbol is defined if the bcopy() routine is available to
+ *	copy blocks of memory.
+ */
+#define HAS_BCOPY	/**/
+
+/* HAS_BZERO:
+ *	This symbol is defined if the bzero() routine is available to
+ *	set a memory block to 0.
+ */
+#define HAS_BZERO	/**/
+
 /* HAS_CHOWN:
  *	This symbol, if defined, indicates that the chown routine is
  *	available.
@@ -68,11 +86,30 @@
  */
 /*#define	HAS_CHSIZE		/ **/
 
+/* HASCONST:
+ *	This symbol, if defined, indicates that this C compiler knows about
+ *	the const type. There is no need to actually test for that symbol
+ *	within your programs. The mere use of the "const" keyword will
+ *	trigger the necessary tests.
+ */
+#define HASCONST	/**/
+#ifndef HASCONST
+#define const
+#endif
+
 /* HAS_CUSERID:
  *	This symbol, if defined, indicates that the cuserid routine is
  *	available to get character login names.
  */
 #define HAS_CUSERID		/**/
+
+/* HAS_DBL_DIG:
+ *	This symbol, if defined, indicates that this system's <float.h>
+ *	or <limits.h> defines the symbol DBL_DIG, which is the number
+ *	of significant digits in a double precision number.  If this
+ *	symbol is not defined, a guess of 15 is usually pretty good.
+ */
+#define HAS_DBL_DIG 	/* */
 
 /* HAS_DIFFTIME:
  *	This symbol, if defined, indicates that the difftime routine is
@@ -224,7 +261,7 @@
 
 /* HAS_MBLEN:
  *	This symbol, if defined, indicates that the mblen routine is available
- *	to find the number of bytes in a multibyte character.
+ *	to find the number of bytes in a multibye character.
  */
 #define HAS_MBLEN		/**/
 
@@ -239,6 +276,32 @@
  *	to covert a multibyte to a wide character.
  */
 #define HAS_MBTOWC		/**/
+
+/* HAS_MEMCMP:
+ *	This symbol, if defined, indicates that the memcmp routine is available
+ *	to compare blocks of memory.
+ */
+#define HAS_MEMCMP	/**/
+
+/* HAS_MEMCPY:
+ *	This symbol, if defined, indicates that the memcpy routine is available
+ *	to copy blocks of memory.
+ */
+#define HAS_MEMCPY	/**/
+
+/* HAS_MEMMOVE:
+ *	This symbol, if defined, indicates that the memmove routine is available
+ *	to copy potentially overlapping blocks of memory. This should be used
+ *	only when HAS_SAFE_BCOPY is not defined. If neither is there, roll your
+ *	own version.
+ */
+#define HAS_MEMMOVE	/**/
+
+/* HAS_MEMSET:
+ *	This symbol, if defined, indicates that the memset routine is available
+ *	to set blocks of memory.
+ */
+#define HAS_MEMSET	/**/
 
 /* HAS_MKDIR:
  *	This symbol, if defined, indicates that the mkdir routine is available
@@ -450,11 +513,30 @@
  */
 #define HAS_SETSID	/**/
 
+/* HAS_STRCHR:
+ *	This symbol is defined to indicate that the strchr()/strrchr()
+ *	functions are available for string searching. If not, try the
+ *	index()/rindex() pair.
+ */
+/* HAS_INDEX:
+ *	This symbol is defined to indicate that the index()/rindex()
+ *	functions are available for string searching.
+ */
+#define HAS_STRCHR	/**/
+/*#define HAS_INDEX	/ **/
+
 /* HAS_STRCOLL:
  *	This symbol, if defined, indicates that the strcoll routine is
  *	available to compare strings using collating information.
  */
 #define HAS_STRCOLL	/**/
+
+/* USE_STRUCT_COPY:
+ *	This symbol, if defined, indicates that this C compiler knows how
+ *	to copy structures.  If undefined, you'll need to use a block copy
+ *	routine of some sort instead.
+ */
+#define	USE_STRUCT_COPY	/**/
 
 /* HAS_STRTOD:
  *	This symbol, if defined, indicates that the strtod routine is
@@ -534,6 +616,15 @@
  */
 /*#define HAS_USLEEP		/ **/
 
+/* HASVOLATILE:
+ *	This symbol, if defined, indicates that this C compiler knows about
+ *	the volatile declaration.
+ */
+#define	HASVOLATILE	/**/
+#ifndef HASVOLATILE
+#define volatile
+#endif
+
 /* HAS_WAIT4:
  *	This symbol, if defined, indicates that wait4() exists.
  */
@@ -605,11 +696,37 @@
  */
 #define I_FCNTL	/**/
 
+/* I_FLOAT:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <float.h> to get definition of symbols like DBL_MAX or
+ *	DBL_MIN, i.e. machine dependent floating point values.
+ */
+#define I_FLOAT		/**/
+
+/* I_LIMITS:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <limits.h> to get definition of symbols like WORD_BIT or
+ *	LONG_MAX, i.e. machine dependant limitations.
+ */
+#define I_LIMITS		/**/
+
 /* I_LOCALE:
  *	This symbol, if defined, indicates to the C program that it should
  *	include <locale.h>.
  */
 #define	I_LOCALE		/**/
+
+/* I_MATH:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <math.h>.
+ */
+#define I_MATH		/**/
+
+/* I_MEMORY:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <memory.h>.
+ */
+/*#define I_MEMORY		/ **/
 
 /* I_NET_ERRNO:
  *	This symbol, if defined, indicates that <net/errno.h> exists and 
@@ -622,6 +739,30 @@
  *	include <netinet/in.h>. Otherwise, you may try <sys/in.h>.
  */
 #define I_NETINET_IN	/**/
+
+/* I_SFIO:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <sfio.h>.
+ */
+/*#define	I_SFIO		/ **/
+
+/* I_STDDEF:
+ *	This symbol, if defined, indicates that <stddef.h> exists and should
+ *	be included.
+ */
+#define I_STDDEF	/**/
+
+/* I_STDLIB:
+ *	This symbol, if defined, indicates that <stdlib.h> exists and should
+ *	be included.
+ */
+#define I_STDLIB		/**/
+
+/* I_STRING:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <string.h> (USG systems) instead of <strings.h> (BSD systems).
+ */
+#define I_STRING		/**/
 
 /* I_SYS_DIR:
  *	This symbol, if defined, indicates to the C program that it should
@@ -732,6 +873,14 @@
  */
 #define I_UTIME		/**/
 
+/* I_VALUES:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <values.h> to get definition of symbols like MINFLOAT or
+ *	MAXLONG, i.e. machine dependant limitations.  Probably, you
+ *	should use <limits.h> instead, if it is available.
+ */
+/*#define I_VALUES		/ **/
+
 /* I_VFORK:
  *	This symbol, if defined, indicates to the C program that it should
  *	include vfork.h.
@@ -765,7 +914,7 @@
 
 /* HAS_QUAD:
  *	This symbol, if defined, tells that there's a 64-bit integer type,
- *	Quad_t, and its unsigned counterpart, Uquad_t. QUADKIND will be one
+ *	Quad_t, and its unsigned counterpar, Uquad_t. QUADKIND will be one
  *	of QUAD_IS_INT, QUAD_IS_LONG, QUAD_IS_LONG_LONG, or QUAD_IS_INT64_T.
  */
 #define HAS_QUAD	/**/
@@ -821,7 +970,7 @@
  *	double, or a long double when applicable. Usual values are 2,
  *	4 and 8. The default is eight, for safety.
  */
-#if defined(MULTIARCH)
+#if defined(USE_CROSS_COMPILE) || defined(MULTIARCH)
 #  define MEM_ALIGNBYTES 8
 #else
 #define MEM_ALIGNBYTES 4
@@ -890,7 +1039,7 @@
  *	so the default case (for NeXT) is big endian to catch them. 
  *	This might matter for NeXT 3.0.
  */
-#if defined(MULTIARCH)
+#if defined(USE_CROSS_COMPILE) || defined(MULTIARCH)
 #  ifdef __LITTLE_ENDIAN__
 #    if LONGSIZE == 4
 #      define BYTEORDER 0x1234
@@ -1338,7 +1487,7 @@
 
 /* HAS_GETESPWNAM:
  *	This symbol, if defined, indicates that the getespwnam system call is
- *	available to retrieve enhanced (shadow) password entries by name.
+ *	available to retrieve enchanced (shadow) password entries by name.
  */
 /*#define HAS_GETESPWNAM		/ **/
 
@@ -1759,12 +1908,6 @@
  *	This symbol, if defined, indicates that the localtime_r routine
  *	is available to localtime re-entrantly.
  */
-/* LOCALTIME_R_NEEDS_TZSET:
- *	Many libc's localtime_r implementations do not call tzset,
- *	making them differ from localtime(), and making timezone
- *	changes using $ENV{TZ} without explicitly calling tzset
- *	impossible. This symbol makes us call tzset before localtime_r
- */
 /* LOCALTIME_R_PROTO:
  *	This symbol encodes the prototype of localtime_r.
  *	It is zero if d_localtime_r is undef, and one of the
@@ -1772,7 +1915,6 @@
  *	is defined.
  */
 /*#define HAS_LOCALTIME_R	   / **/
-/*#define LOCALTIME_R_NEEDS_TZSET	   / **/
 #define LOCALTIME_R_PROTO 0	   /**/
 
 /* HAS_LONG_DOUBLE:
@@ -1816,6 +1958,12 @@
  */
 /*#define HAS_MADVISE		/ **/
 
+/* HAS_MEMCHR:
+ *	This symbol, if defined, indicates that the memchr routine is available
+ *	to locate characters within a C string.
+ */
+#define HAS_MEMCHR	/**/
+
 /* HAS_MKDTEMP:
  *	This symbol, if defined, indicates that the mkdtemp routine is
  *	available to exclusively create a uniquely named temporary directory.
@@ -1831,7 +1979,7 @@
 
 /* HAS_MKSTEMPS:
  *	This symbol, if defined, indicates that the mkstemps routine is
- *	available to exclusively create and open a uniquely named
+ *	available to excluslvely create and open a uniquely named
  *	(with a suffix) temporary file.
  */
 /*#define HAS_MKSTEMPS		/ **/
@@ -1853,7 +2001,15 @@
  *	available to split a long double x into a fractional part f and
  *	an integer part i such that |f| < 1.0 and (f + i) = x.
  */
+/* HAS_MODFL_POW32_BUG:
+ *	This symbol, if defined, indicates that the modfl routine is
+ *	broken for long doubles >= pow(2, 32).
+ *	For example from 4294967303.150000 one would get 4294967302.000000
+ *	and 1.150000.  The bug has been seen in certain versions of glibc,
+ *	release 2.2.2 is known to be okay.
+ */
 /*#define HAS_MODFL		/ **/
+/*#define HAS_MODFL_POW32_BUG		/ **/
 
 /* HAS_MPROTECT:
  *	This symbol, if defined, indicates that the mprotect system call is
@@ -1951,6 +2107,29 @@
  *	available to send structured socket messages.
  */
 /*#define HAS_RECVMSG		/ **/
+
+/* HAS_SAFE_BCOPY:
+ *	This symbol, if defined, indicates that the bcopy routine is available
+ *	to copy potentially overlapping memory blocks. Normally, you should
+ *	probably use memmove() or memcpy(). If neither is defined, roll your
+ *	own version.
+ */
+/*#define HAS_SAFE_BCOPY	/ **/
+
+/* HAS_SAFE_MEMCPY:
+ *	This symbol, if defined, indicates that the memcpy routine is available
+ *	to copy potentially overlapping memory blocks.  If you need to
+ *	copy overlapping memory blocks, you should check HAS_MEMMOVE and
+ *	use memmove() instead, if available.
+ */
+/*#define HAS_SAFE_MEMCPY	/ **/
+
+/* HAS_SANE_MEMCMP:
+ *	This symbol, if defined, indicates that the memcmp routine is available
+ *	and can be used to compare relative magnitudes of chars with their high
+ *	bits set.  If it is not defined, roll your own version.
+ */
+#define HAS_SANE_MEMCMP	/**/
 
 /* HAS_SBRK_PROTO:
  *	This symbol, if defined, indicates that the system provides
@@ -2079,6 +2258,12 @@
  */
 #define HAS_SETVBUF		/**/
 
+/* USE_SFIO:
+ *	This symbol, if defined, indicates that sfio should
+ *	be used.
+ */
+/*#define	USE_SFIO		/ **/
+
 /* HAS_SHM:
  *	This symbol, if defined, indicates that the entire shm*(2) library is
  *	supported.
@@ -2130,8 +2315,44 @@
  *	This symbol, if defined, indicates that the BSD socketpair() call is
  *	supported.
  */
+/* HAS_MSG_CTRUNC:
+ *	This symbol, if defined, indicates that the MSG_CTRUNC is supported.
+ *	Checking just with #ifdef might not be enough because this symbol
+ *	has been known to be an enum.
+ */
+/* HAS_MSG_DONTROUTE:
+ *	This symbol, if defined, indicates that the MSG_DONTROUTE is supported.
+ *	Checking just with #ifdef might not be enough because this symbol
+ *	has been known to be an enum.
+ */
+/* HAS_MSG_OOB:
+ *	This symbol, if defined, indicates that the MSG_OOB is supported.
+ *	Checking just with #ifdef might not be enough because this symbol
+ *	has been known to be an enum.
+ */
+/* HAS_MSG_PEEK:
+ *	This symbol, if defined, indicates that the MSG_PEEK is supported.
+ *	Checking just with #ifdef might not be enough because this symbol
+ *	has been known to be an enum.
+ */
+/* HAS_MSG_PROXY:
+ *	This symbol, if defined, indicates that the MSG_PROXY is supported.
+ *	Checking just with #ifdef might not be enough because this symbol
+ *	has been known to be an enum.
+ */
+/* HAS_SCM_RIGHTS:
+ *	This symbol, if defined, indicates that the SCM_RIGHTS is supported.
+ *	Checking just with #ifdef might not be enough because this symbol
+ *	has been known to be an enum.
+ */
 #define	HAS_SOCKET		/**/
 #define	HAS_SOCKETPAIR	/**/
+/*#define	HAS_MSG_CTRUNC	/ **/
+/*#define	HAS_MSG_DONTROUTE	/ **/
+/*#define	HAS_MSG_OOB	/ **/
+/*#define	HAS_MSG_PEEK	/ **/
+/*#define	HAS_MSG_PROXY	/ **/
+/*#define	HAS_SCM_RIGHTS	/ **/
 
 /* HAS_SOCKS5_INIT:
  *	This symbol, if defined, indicates that the socks5_init routine is
@@ -2272,12 +2493,24 @@
 #define FILE_bufsiz(fp)	((fp)->_cnt + (fp)->_ptr - (fp)->_base)
 #endif
 
+/* HAS_STRERROR:
+ *	This symbol, if defined, indicates that the strerror routine is
+ *	available to translate error numbers to strings. See the writeup
+ *	of Strerror() in this file before you try to define your own.
+ */
 /* HAS_SYS_ERRLIST:
  *	This symbol, if defined, indicates that the sys_errlist array is
  *	available to translate error numbers to strings. The extern int
  *	sys_nerr gives the size of that table.
  */
+/* Strerror:
+ *	This preprocessor symbol is defined as a macro if strerror() is
+ *	not available to translate error numbers to strings but sys_errlist[]
+ *	array is there.
+ */
+#define HAS_STRERROR		/**/
 #define HAS_SYS_ERRLIST	/**/
+#define Strerror(e) strerror(e)
 
 /* HAS_STRERROR_R:
  *	This symbol, if defined, indicates that the strerror_r routine
@@ -2420,6 +2653,20 @@
  *	handler using "Signal_t handler(sig)".
  */
 #define Signal_t void	/* Signal handler's return type */
+
+/* HAS_VPRINTF:
+ *	This symbol, if defined, indicates that the vprintf routine is available
+ *	to printf with a pointer to an argument list.  If unavailable, you
+ *	may need to write your own, probably in terms of _doprnt().
+ */
+/* USE_CHAR_VSPRINTF:
+ *	This symbol is defined if this system has vsprintf() returning type
+ *	(char*).  The trend seems to be to declare it as "int vsprintf()".  It
+ *	is up to the package author to declare vsprintf correctly based on the
+ *	symbol.
+ */
+#define HAS_VPRINTF	/**/
+#define USE_CHAR_VSPRINTF 	/**/
 
 /* HAS_WRITEV:
  *	This symbol, if defined, indicates that the writev routine is
@@ -3198,7 +3445,7 @@
  *	unsigned long, int, etc.  It may be necessary to include
  *	<sys/types.h> to get any typedef'ed information.
  */
-#define Size_t size_t	 /* length parameter for string functions */
+#define Size_t size_t	 /* length paramater for string functions */
 
 /* Sock_size_t:
  *	This symbol holds the type used for the size argument of
@@ -3295,7 +3542,7 @@
  *	Defaults to define in Perls 5.8 and earlier, to undef later.
  */
 #ifndef USE_FAST_STDIO
-/*#define	USE_FAST_STDIO		/ **/
+#define	USE_FAST_STDIO		/**/
 #endif
 
 /* USE_LARGE_FILES:
@@ -3351,11 +3598,9 @@
  *	This symbol, if defined, indicates that Perl should be built to
  *	use the interpreter-based threading implementation.
  */
-/* USE_THREADS:
- *	This symbol, if defined, indicates that Perl should
- *	be built to use threads.  At present, it is a synonym for
- *	and USE_ITHREADS, but eventually the source ought to be
- *	changed to use this to mean _any_ threading implementation.
+/* USE_5005THREADS:
+ *	This symbol, if defined, indicates that Perl should be built to
+ *	use the 5.005-based threading implementation.
  */
 /* OLD_PTHREADS_API:
  *	This symbol, if defined, indicates that Perl should
@@ -3366,8 +3611,11 @@
  *	try to use the various _r versions of library functions.
  *	This is extremely experimental.
  */
+/*#define	USE_5005THREADS		/ **/
 /*#define	USE_ITHREADS		/ **/
-/*#define		USE_THREADS		/ **/
+#if defined(USE_5005THREADS) && !defined(USE_ITHREADS)
+#define		USE_THREADS		/* until src is revised*/
+#endif
 /*#define	OLD_PTHREADS_API		/ **/
 /*#define	USE_REENTRANT_API	/ **/
 
@@ -3400,6 +3648,66 @@
  */
 /*#define PERL_VENDORLIB_EXP ""		/ **/
 /*#define PERL_VENDORLIB_STEM ""		/ **/
+
+/* VOIDFLAGS:
+ *	This symbol indicates how much support of the void type is given by this
+ *	compiler.  What various bits mean:
+ *
+ *	    1 = supports declaration of void
+ *	    2 = supports arrays of pointers to functions returning void
+ *	    4 = supports comparisons between pointers to void functions and
+ *		    addresses of void functions
+ *	    8 = suports declaration of generic void pointers
+ *
+ *	The package designer should define VOIDUSED to indicate the requirements
+ *	of the package.  This can be done either by #defining VOIDUSED before
+ *	including config.h, or by defining defvoidused in Myinit.U.  If the
+ *	latter approach is taken, only those flags will be tested.  If the
+ *	level of void support necessary is not present, defines void to int.
+ */
+#ifndef VOIDUSED
+#define VOIDUSED 15
+#endif
+#define VOIDFLAGS 15
+#if (VOIDFLAGS & VOIDUSED) != VOIDUSED
+#define void int		/* is void to be avoided? */
+#define M_VOID			/* Xenix strikes again */
+#endif
+
+/* PERL_XS_APIVERSION:
+ *	This variable contains the version of the oldest perl binary
+ *	compatible with the present perl.  perl.c:incpush() and
+ *	lib/lib.pm will automatically search in /sys/lib/perl/5.8.0/site_perl/386 for older
+ *	directories across major versions back to xs_apiversion.
+ *	This is only useful if you have a perl library directory tree
+ *	structured like the default one.
+ *	See INSTALL for how this works.
+ *	The versioned site_perl directory was introduced in 5.005,
+ *	so that is the lowest possible value.
+ *	Since this can depend on compile time options
+ *	it is set by Configure.  Other non-default sources
+ *	of potential incompatibility, such as multiplicity, threads,
+ *	debugging, 64bits, sfio, etc., are not checked for currently,
+ *	though in principle we could go snooping around in old
+ *	Config.pm files.
+ */
+/* PERL_PM_APIVERSION:
+ *	This variable contains the version of the oldest perl
+ *	compatible with the present perl.  (That is, pure perl modules
+ *	written for pm_apiversion will still work for the current
+ *	version).  perl.c:incpush() and lib/lib.pm will automatically
+ *	search in /sys/lib/perl/5.8.0/site_perl for older directories across major versions
+ *	back to pm_apiversion.  This is only useful if you have a perl
+ *	library directory tree structured like the default one.  The
+ *	versioned site_perl library was introduced in 5.005, so that's
+ *	the default setting for this variable.  It's hard to imagine
+ *	it changing before Perl6.  It is included here for symmetry
+ *	with xs_apiveprsion -- the searching algorithms will
+ *	(presumably) be similar.
+ *	See the INSTALL file for how this works.
+ */
+#define PERL_XS_APIVERSION "5.8.0"
+#define PERL_PM_APIVERSION "5.005"
 
 /* HAS_CRYPT:
  *	This symbol, if defined, indicates that the crypt routine is available
@@ -3447,6 +3755,35 @@
  */
 /*#define I_NDBM	/ **/
 
+/* I_STDARG:
+ *	This symbol, if defined, indicates that <stdarg.h> exists and should
+ *	be included.
+ */
+/* I_VARARGS:
+ *	This symbol, if defined, indicates to the C program that it should
+ *	include <varargs.h>.
+ */
+#define I_STDARG		/**/
+/*#define I_VARARGS	/ **/
+
+/* CAN_PROTOTYPE:
+ *	If defined, this macro indicates that the C compiler can handle
+ *	function prototypes.
+ */
+/* _:
+ *	This macro is used to declare function parameters for folks who want
+ *	to make declarations with prototypes using a different style than
+ *	the above macros.  Use double parentheses.  For example:
+ *
+ *		int main _((int argc, char *argv[]));
+ */
+#define	CAN_PROTOTYPE	/**/
+#ifdef CAN_PROTOTYPE
+#define	_(args) args
+#else
+#define	_(args) ()
+#endif
+
 /* SH_PATH:
  *	This symbol contains the full pathname to the shell used on this
  *	on this system to execute Bourne shell scripts.  Usually, this will be
@@ -3473,12 +3810,6 @@
  *	available.  If aintl is also present we can emulate modfl.
  */
 /*#define HAS_COPYSIGNL		/**/
-
-/* USE_CPLUSPLUS:
- *	This symbol, if defined, indicates that a C++ compiler was
- *	used to compiled Perl and will be used to compile extensions.
- */
-/*#define USE_CPLUSPLUS		/**/
 
 /* HAS_DBMINIT_PROTO:
  *	This symbol, if defined, indicates that the system provides
@@ -3590,18 +3921,6 @@
  *	available to do time formatting.
  */
 #define HAS_STRFTIME		/**/
-
-/* HAS_STRLCAT
- *      This symbol, if defined, indicates that the strlcat routine is
- *      available to do string concatenation.
- */
-/*#define HAS_STRLCAT			/**/
-
-/* HAS_STRLCPY:
- *      This symbol, if defined, indicates that the strlcpy routine is
- *      available to do string copying.
- */
-/*#define HAS_STRLCPY			/**/
 
 /* HAS_SYSCALL_PROTO:
  *	This symbol, if defined, indicates that the system provides

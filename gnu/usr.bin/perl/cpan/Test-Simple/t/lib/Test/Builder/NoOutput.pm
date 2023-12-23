@@ -3,7 +3,6 @@ package Test::Builder::NoOutput;
 use strict;
 use warnings;
 
-use Symbol qw(gensym);
 use base qw(Test::Builder);
 
 
@@ -53,9 +52,6 @@ sub create {
     my $class = shift;
     my $self = $class->SUPER::create(@_);
 
-    require Test::Builder::Formatter;
-    $self->{Stack}->top->format(Test::Builder::Formatter->new);
-
     my %outputs = (
         all  => '',
         out  => '',
@@ -64,18 +60,16 @@ sub create {
     );
     $self->{_outputs} = \%outputs;
 
-    my($out, $err, $todo) = map { gensym() } 1..3;
-    tie *$out,  "Test::Builder::NoOutput::Tee", \$outputs{all}, \$outputs{out};
-    tie *$err,  "Test::Builder::NoOutput::Tee", \$outputs{all}, \$outputs{err};
-    tie *$todo, "Test::Builder::NoOutput::Tee", \$outputs{all}, \$outputs{todo};
+    tie *OUT,  "Test::Builder::NoOutput::Tee", \$outputs{all}, \$outputs{out};
+    tie *ERR,  "Test::Builder::NoOutput::Tee", \$outputs{all}, \$outputs{err};
+    tie *TODO, "Test::Builder::NoOutput::Tee", \$outputs{all}, \$outputs{todo};
 
-    $self->output($out);
-    $self->failure_output($err);
-    $self->todo_output($todo);
+    $self->output(*OUT);
+    $self->failure_output(*ERR);
+    $self->todo_output(*TODO);
 
     return $self;
 }
-
 
 sub read {
     my $self = shift;

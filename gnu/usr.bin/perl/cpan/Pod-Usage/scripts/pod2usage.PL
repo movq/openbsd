@@ -1,7 +1,5 @@
 #!/usr/local/bin/perl
 
-use strict;
-use warnings;
 use Config;
 use File::Basename qw(&basename &dirname);
 use Cwd;
@@ -15,19 +13,19 @@ use Cwd;
 
 # This forces PL files to create target in same directory as PL file.
 # This is so that make depend always knows where to find PL derivatives.
-my $origdir = cwd;
-chdir( dirname($0) );
-my $file = basename( $0, '.PL' );
+$origdir = cwd;
+chdir(dirname($0));
+$file = basename($0, '.PL');
 $file .= '.com' if $^O eq 'VMS';
 
-open my $OUT, '>', $file or die "Can't create $file: $!";
+open OUT,">$file" or die "Can't create $file: $!";
 
 print "Extracting $file (with variable substitutions)\n";
 
 # In this section, perl variables will be expanded during extraction.
 # You can use $Config{...} to use Configure variables.
 
-print {$OUT} <<"!GROK!THIS!";
+print OUT <<"!GROK!THIS!";
 $Config{'startperl'}
     eval 'exec perl -S \$0 "\$@"'
         if 0;
@@ -35,14 +33,13 @@ $Config{'startperl'}
 
 # In the following, perl variables are not expanded during extraction.
 
-print {$OUT} <<'!NO!SUBS!';
+print OUT <<'!NO!SUBS!';
 
 #############################################################################
 # pod2usage -- command to print usage messages from embedded pod docs
 #
 # Copyright (c) 1996-2000 by Bradford Appleton. All rights reserved.
-# Copyright (c) 2001-2016 by Marek Rouchal.
-# This file is part of "Pod-Usage". Pod-Usage is free software;
+# This file is part of "PodParser". PodParser is free software;
 # you can redistribute it and/or modify it under the same terms
 # as Perl itself.
 #############################################################################
@@ -67,7 +64,6 @@ pod2usage - print usage messages from embedded pod docs in files
 [B<-verbose> I<level>]
 [B<-pathlist> I<dirlist>]
 [B<-formatter> I<module>]
-[B<-utf8>]
 I<file>
 
 =back
@@ -114,17 +110,10 @@ Which text formatter to use. Default is L<Pod::Text>, or for very old
 Perl versions L<Pod::PlainText>. An alternative would be e.g. 
 L<Pod::Text::Termcap>.
 
-=item B<-utf8>
-
-This option assumes that the formatter (see above) understands the option
-"utf8". It turns on generation of utf8 output.
-
 =item I<file>
 
 The pathname of a file containing pod documentation to be output in
-usage message format. If omitted, standard input is read - but the
-output is then formatted with L<Pod::Text> only - unless a specific
-formatter has been specified with B<-formatter>.
+usage message format (defaults to standard input).
 
 =back
 
@@ -139,8 +128,7 @@ module. Please see L<Pod::Usage/pod2usage()>.
 
 =head1 SEE ALSO
 
-L<Pod::Usage>, L<pod2text>, L<Pod::Text>, L<Pod::Text::Termcap>,
-L<perldoc>
+L<Pod::Usage>, L<pod2text(1)>
 
 =head1 AUTHOR
 
@@ -165,7 +153,6 @@ my @opt_specs = (
     'pathlist=s',
     'formatter=s',
     'verbose=i',
-    'utf8!'
 );
 
 ## Parse options
@@ -179,25 +166,25 @@ pod2usage(VERBOSE => 2)  if ($options{man});
 ## Dont default to STDIN if connected to a terminal
 pod2usage(2) if ((@ARGV == 0) && (-t STDIN));
 
+@ARGV = ('-')  unless (@ARGV);
 if (@ARGV > 1) {
     print STDERR "pod2usage: Too many filenames given\n\n";
     pod2usage(2);
 }
 
 my %usage = ();
-$usage{-input}    = shift(@ARGV) || \*STDIN;
+$usage{-input}    = shift(@ARGV);
 $usage{-exitval}  = $options{'exit'}      if (defined $options{'exit'});
 $usage{-output}   = $options{'output'}    if (defined $options{'output'});
 $usage{-verbose}  = $options{'verbose'}   if (defined $options{'verbose'});
 $usage{-pathlist} = $options{'pathlist'}  if (defined $options{'pathlist'});
-$usage{-utf8}     = $options{'utf8'}      if (defined $options{'utf8'});
 
 pod2usage(\%usage);
 
 
 !NO!SUBS!
 
-close($OUT) or die "Can't close $file: $!";
-chmod( 0755, $file ) or die "Can't reset permissions for $file: $!\n";
+close OUT or die "Can't close $file: $!";
+chmod 0755, $file or die "Can't reset permissions for $file: $!\n";
 exec("$Config{'eunicefix'} $file") if $Config{'eunicefix'} ne ':';
-chdir($origdir);
+chdir $origdir;

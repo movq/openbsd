@@ -6,8 +6,6 @@ use Carp;
 BEGIN 
 {
 
-    require "../t/charset_tools.pl";
-
     eval { require Encode; };
     
     if ($@) {
@@ -18,20 +16,10 @@ BEGIN
 
 require "dbm_filter_util.pl";
 
-use Test::More;
+use Test::More tests => 20;
 
 BEGIN { use_ok('DBM_Filter') };
-my $db_file;
-BEGIN {
-    use Config;
-    foreach (qw/SDBM_File ODBM_File NDBM_File GDBM_File DB_File/) {
-        if ($Config{extensions} =~ /\b$_\b/) {
-            $db_file = $_;
-            last;
-        }
-    }
-    use_ok($db_file);
-};
+BEGIN { use_ok('SDBM_File') };
 BEGIN { use_ok('Fcntl') };
 BEGIN { use_ok('charnames', qw{greek})};
 
@@ -41,9 +29,9 @@ unlink <Op_dbmx*>;
 END { unlink <Op_dbmx*>; }
 
 my %h1 = () ;
-my $db1 = tie(%h1, $db_file,'Op_dbmx', O_RDWR|O_CREAT, 0640) ;
+my $db1 = tie(%h1, 'SDBM_File','Op_dbmx', O_RDWR|O_CREAT, 0640) ;
 
-ok $db1, "tied to $db_file";
+ok $db1, "tied to SDBM_File";
 
 eval { $db1->Filter_Push('utf8') };
 is $@, '', "push a 'utf8' filter" ;
@@ -77,17 +65,17 @@ undef $db1;
 
 # read the dbm file without the filter
 my %h2 = () ;
-my $db2 = tie(%h2, $db_file,'Op_dbmx', O_RDWR|O_CREAT, 0640) ;
+my $db2 = tie(%h2, 'SDBM_File','Op_dbmx', O_RDWR|O_CREAT, 0640) ;
 
-ok $db2, "tied to $db_file";
+ok $db2, "tied to SDBM_File";
 
 VerifyData(\%h2,
-        {
-        'alpha'	=> byte_utf8a_to_utf8n("\xCE\xB1"),
-        'beta'	=> byte_utf8a_to_utf8n("\xCE\xB2"),
-        byte_utf8a_to_utf8n("\xCE\xB3")=> "gamma",
-        ""		=> "",
-        });
+	{
+		'alpha'	=> "\xCE\xB1",
+		'beta'	=> "\xCE\xB2",
+		"\xCE\xB3"=> "gamma",
+		""		=> "",
+	});
 
 undef $db2;
 {
@@ -96,4 +84,3 @@ undef $db2;
     is $@, '', "untie without inner references" ;
 }
 
-done_testing();

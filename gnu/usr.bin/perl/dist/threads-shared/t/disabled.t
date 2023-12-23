@@ -1,47 +1,50 @@
 use strict;
 use warnings;
 
-use Test::More tests => 27;
+use Test;
+plan tests => 31;
 
 use threads::shared;
 
 ### Start of Testing ###
 
-ok( !$INC{"threads.pm"}, 'make sure threads are really off' );
+# Make sure threads are really off
+ok( !$INC{"threads.pm"} );
 
 # Check each faked function.
 foreach my $func (qw(share cond_wait cond_signal cond_broadcast)) {
-    isnt( __PACKAGE__->can($func), 0, "Have $func" );
+    ok( my $func_ref = __PACKAGE__->can($func) ? 1 : 0 );
 
     eval qq{$func()};
-    like( $@, qr/^Not enough arguments /, 'Expected error with no arguments');
+    ok( $@, qr/^Not enough arguments / );
 
     my %hash = (foo => 42, bar => 23);
     eval qq{$func(\%hash)};
-    is( $@, '', 'no error' );
-    is_deeply( \%hash, {foo => 42, bar => 23}, 'argument is unchanged' );
+    ok( $@, '' );
+    ok( $hash{foo}, 42 );
+    ok( $hash{bar}, 23 );
 }
 
 # These all have no return value.
 foreach my $func (qw(cond_wait cond_signal cond_broadcast)) {
     my @array = qw(1 2 3 4);
-    is( eval qq{$func(\@array)}, undef, "$func has no return value" );
-    is_deeply( \@array, [1, 2, 3, 4], 'argument is unchanged' );
+    ok( eval qq{$func(\@array)}, undef );
+    ok( "@array", "1 2 3 4" );
 }
 
+# share() is supposed to return back it's argument as a ref.
 {
     my @array = qw(1 2 3 4);
-    is_deeply( share(@array), \@array,
-	'share() is supposed to return back its argument as a ref' );
-    is( ref &share({}), 'HASH' );
-    is_deeply( \@array, [1, 2, 3, 4], 'argument is unchanged' );
+    ok( share(@array), \@array );
+    ok( ref &share({}), 'HASH' );
+    ok( "@array", "1 2 3 4" );
 }
 
 # lock() should be a no-op.  The return value is currently undefined.
 {
     my @array = qw(1 2 3 4);
     lock(@array);
-    is_deeply( \@array, [1, 2, 3, 4], 'lock() should be a no-op' );
+    ok( "@array", "1 2 3 4" );
 }
 
 exit(0);

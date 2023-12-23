@@ -9,8 +9,8 @@ sub readFile
     my ($filename) = @_ ;
     my ($string) = '' ;
 
-    open (F, "<", $filename)
-	or die "Cannot read $filename: $!\n" ;
+    open (F, "<$filename") 
+	or die "Cannot open $filename: $!\n" ;
     while (<F>)
       { $string .= $_ }
     close F ;
@@ -20,8 +20,8 @@ sub readFile
 sub writeFile
 {
     my($filename, @strings) = @_ ;
-    open (F, ">", $filename)
-	or die "Cannot write $filename: $!\n" ;
+    open (F, ">$filename") 
+	or die "Cannot open $filename: $!\n" ;
     binmode(F) if $filename =~ /bin$/i;
     foreach (@strings)
       { print F }
@@ -30,7 +30,7 @@ sub writeFile
 
 sub ok
 {
-    my ($number, $result, $note) = @_ ;
+    my($number, $result, $note) = @_ ;
  
     $note = "" if ! defined $note ;
     if ($note) {
@@ -40,17 +40,11 @@ sub ok
 
     print "not " if !$result ;
     print "ok ${number}${note}\n";
-    return $result;
-}
-
-sub diag {
-    print STDERR 
-      (map { /^#/ ? "$_\n" : "# $_\n" }
-       map { split /\n/ } @_);
 }
 
 $Inc = '' ;
-foreach (@INC) { $Inc .= "\"-I$_\" " }
+foreach (@INC)
+ { $Inc .= "\"-I$_\" " }
 $Inc = "-I::lib" if $^O eq 'MacOS';
 
 $Perl = '' ;

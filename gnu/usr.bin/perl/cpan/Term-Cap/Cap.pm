@@ -17,9 +17,47 @@ sub croak
 use strict;
 
 use vars qw($VERSION $VMS_TERMCAP);
+use vars qw($termpat $state $first $entry);
 
-$VERSION = '1.18';
+$VERSION = '1.12';
 
+# Version undef: Thu Dec 14 20:02:42 CST 1995 by sanders@bsdi.com
+# Version 1.00:  Thu Nov 30 23:34:29 EST 2000 by schwern@pobox.com
+#	[PATCH] $VERSION crusade, strict, tests, etc... all over lib/
+# Version 1.01:  Wed May 23 00:00:00 CST 2001 by d-lewart@uiuc.edu
+#	Avoid warnings in Tgetent and Tputs
+# Version 1.02:  Sat Nov 17 13:50:39 GMT 2001 by jns@gellyfish.com
+#       Altered layout of the POD
+#       Added Test::More to PREREQ_PM in Makefile.PL
+#       Fixed no argument Tgetent()
+# Version 1.03:  Wed Nov 28 10:09:38 GMT 2001
+#       VMS Support from Charles Lane <lane@DUPHY4.Physics.Drexel.Edu>
+# Version 1.04:  Thu Nov 29 16:22:03 GMT 2001
+#       Fixed warnings in test
+# Version 1.05:  Mon Dec  3 15:33:49 GMT 2001
+#       Don't try to fall back on infocmp if it's not there. From chromatic.
+# Version 1.06:  Thu Dec  6 18:43:22 GMT 2001
+#       Preload the default VMS termcap from Charles Lane
+#       Don't carp at setting OSPEED unless warnings are on.
+# Version 1.07:  Wed Jan  2 21:35:09 GMT 2002
+#       Sanity check on infocmp output from Norton Allen
+#       Repaired INSTALLDIRS thanks to Michael Schwern
+# Version 1.08:  Sat Sep 28 11:33:15 BST 2002
+#       Late loading of 'Carp' as per Michael Schwern
+# Version 1.09:  Tue Apr 20 12:06:51 BST 2004
+#       Merged in changes from and to Core
+#       Core (Fri Aug 30 14:15:55 CEST 2002):
+#       Cope with comments lines from 'infocmp' from Brendan O'Dea
+#       Allow for EBCDIC in Tgoto magic test.
+# Version 1.10: Thu Oct 18 16:52:20 BST 2007
+#       Don't use try to use $ENV{HOME} if it doesn't exist
+#       Give Win32 'dumb' if TERM isn't set
+#       Provide fallback 'dumb' termcap entry as last resort
+# Version 1.11: Thu Oct 25 09:33:07 BST 2007
+#       EBDIC fixes from Chun Bing Ge <gecb@cn.ibm.com>
+# Version 1.12: Sat Dec  8 00:10:21 GMT 2007
+#       QNX test fix from Matt Kraai <kraai@ftbfs.org>
+#
 # TODO:
 # support Berkeley DB termcaps
 # force $FH into callers package?
@@ -32,7 +70,7 @@ Term::Cap - Perl termcap interface
 =head1 SYNOPSIS
 
     require Term::Cap;
-    $terminal = Term::Cap->Tgetent({ TERM => undef, OSPEED => $ospeed });
+    $terminal = Tgetent Term::Cap { TERM => undef, OSPEED => $ospeed };
     $terminal->Trequire(qw/ce ku kd/);
     $terminal->Tgoto('cm', $col, $row, $FH);
     $terminal->Tputs('dl', $count, $FH);
@@ -47,6 +85,8 @@ More information on the terminal capabilities will be found in the
 termcap manpage on most Unix-like systems.
 
 =head2 METHODS
+
+=over 4
 
 The output strings for B<Tputs> are cached for counts of 1 for performance.
 B<Tgoto> and B<Tpad> do not cache.  C<$self-E<gt>{_xx}> is the raw termcap
@@ -90,7 +130,7 @@ sub termcap_path
     {
 
         # Add the users $TERMPATH
-        push( @termcap_path, split( /:|\s+/, $ENV{TERMPATH} ) );
+        push( @termcap_path, split( /(:|\s+)/, $ENV{TERMPATH} ) );
     }
     else
     {
@@ -104,8 +144,6 @@ sub termcap_path
     # return the list of those termcaps that exist
     return grep { defined $_ && -f $_ } @termcap_path;
 }
-
-=over 4
 
 =item B<Tgetent>
 
@@ -145,7 +183,7 @@ It takes a hash reference as an argument with two optional keys:
 
 The terminal output bit rate (often mistakenly called the baud rate)
 for this terminal - if not set a warning will be generated
-and it will be defaulted to 9600.  I<OSPEED> can be specified as
+and it will be defaulted to 9600.  I<OSPEED> can be be specified as
 either a POSIX termios/SYSV termio speeds (where 9600 equals 9600) or
 an old DSD-style speed ( where 13 equals 9600).
 
@@ -169,8 +207,8 @@ sub Tgetent
     $self = {} unless defined $self;
     bless $self, $class;
 
-    my ( $term, $cap, $search, $field, $tmp_term, $TERMCAP );
-    my ( $state, $first, $entry ); 
+    my ( $term, $cap, $search, $field, $max, $tmp_term, $TERMCAP );
+    local ( $termpat, $state, $first, $entry );    # used inside eval
     local $_;
 
     # Compute PADDING factor from OSPEED (to be used by Tpad)
@@ -205,7 +243,7 @@ sub Tgetent
        }
        else
        {
-          if ( $^O eq 'MSWin32' )
+          if ( $^O eq 'Win32' )
           {
              $self->{TERM} =  'dumb';
           }
@@ -220,24 +258,65 @@ sub Tgetent
 
     # $tmp_term is always the next term (possibly :tc=...:) we are looking for
     $tmp_term = $self->{TERM};
-    my $seen = {};
 
-    if (exists $ENV{TERMCAP}) {
-    	local $_ = $ENV{TERMCAP};
-	if ( !m:^/:s && m/(^|\|)\Q$tmp_term\E[:|]/s ) {
-	    $entry = $_;
-	    $seen->{$tmp_term} = 1;
-	}
+    # protect any pattern metacharacters in $tmp_term
+    $termpat = $tmp_term;
+    $termpat =~ s/(\W)/\\$1/g;
+
+    my $foo = ( exists $ENV{TERMCAP} ? $ENV{TERMCAP} : '' );
+
+    # $entry is the extracted termcap entry
+    if ( ( $foo !~ m:^/:s ) && ( $foo =~ m/(^|\|)${termpat}[:|]/s ) )
+    {
+        $entry = $foo;
     }
 
     my @termcap_path = termcap_path();
 
+    unless ( @termcap_path || $entry )
+    {
+
+        # last resort--fake up a termcap from terminfo
+        local $ENV{TERM} = $term;
+
+        if ( $^O eq 'VMS' )
+        {
+            $entry = $VMS_TERMCAP;
+        }
+        else
+        {
+            if ( grep { -x "$_/infocmp" } split /:/, $ENV{PATH} )
+            {
+                eval {
+                    my $tmp = `infocmp -C 2>/dev/null`;
+                    $tmp =~ s/^#.*\n//gm;    # remove comments
+                    if (   ( $tmp !~ m%^/%s )
+                        && ( $tmp =~ /(^|\|)${termpat}[:|]/s ) )
+                    {
+                        $entry = $tmp;
+                    }
+                };
+            }
+            else
+            {
+               # this is getting desperate now
+               if ( $self->{TERM} eq 'dumb' )
+               {
+                  $entry = 'dumb|80-column dumb tty::am::co#80::bl=^G:cr=^M:do=^J:sf=^J:';
+               }
+            }
+        }
+    }
+
+    croak "Can't find a valid termcap file" unless @termcap_path || $entry;
+
     $state = 1;    # 0 == finished
                    # 1 == next file
                    # 2 == search again
-		   # 3 == try infocmp
 
     $first = 0;    # first entry (keeps term name)
+
+    $max = 32;     # max :tc=...:'s
 
     if ($entry)
     {
@@ -248,6 +327,10 @@ sub Tgetent
         if ( $entry =~ s/:tc=([^:]+):/:/ )
         {
             $tmp_term = $1;
+
+            # protect any pattern metacharacters in $tmp_term
+            $termpat = $tmp_term;
+            $termpat =~ s/(\W)/\\$1/g;
         }
         else
         {
@@ -255,76 +338,57 @@ sub Tgetent
         }
     }
 
-
-    while ( $state != 0 )
-    {
-        if ( $state == 1 ) {
-            # get the next TERMCAP
-            $TERMCAP = shift @termcap_path or $state = 3;
-	} elsif ($state == 3) {
-	    croak "failed termcap lookup on $tmp_term";
-        } else {
-            # do the same file again
-            $state = 1;    # ok, maybe do a new file next time
-        }
-
-	my ($fh, $child);
-	if ($state == 3) {
-	    # need to do a proper fork, so that we can pass tmp_term
-	    # without having to quote it.
-	    $child = open($fh, "-|");
-	    warn "cannot run infocmp: $!" if !defined $child;
-	    if (!$child) {
-	    	open(STDERR, ">", "/dev/null");
-		exec('infocmp', '-CTrx', '--', $tmp_term);
-		exit(1);
-	    }
-	} else {
-	    open($fh, '<', $TERMCAP) || croak "open $TERMCAP: $!";
-	}
-	while (<$fh>) {
-	    next if /^\t/ || /^#/;
-	    if (m/(^|\|)\Q$tmp_term\E[:|]/) {
+    # This is eval'ed inside the while loop for each file
+    $search = q{
+	while (<TERMCAP>) {
+	    next if /^\\t/ || /^#/;
+	    if ($_ =~ m/(^|\\|)${termpat}[:|]/o) {
 		chomp;
 		s/^[^:]*:// if $first++;
 		$state = 0;
-		$seen->{$tmp_term} = 1;
-		while (s/\\$//) {
-		    defined(my $x = <$fh>) or last;
+		while ($_ =~ s/\\\\$//) {
+		    defined(my $x = <TERMCAP>) or last;
 		    $_ .= $x; chomp;
-		}
-		if (defined $entry) {
-		    $entry .= $_;
-		} else {
-		    $entry = $_;
 		}
 		last;
 	    }
 	}
-        close $fh;
-	waitpid($child, 0) if defined $child;
+	defined $entry or $entry = '';
+	$entry .= $_ if $_;
+    };
 
-	next if $state != 0;
+    while ( $state != 0 )
+    {
+        if ( $state == 1 )
+        {
+
+            # get the next TERMCAP
+            $TERMCAP = shift @termcap_path
+              || croak "failed termcap lookup on $tmp_term";
+        }
+        else
+        {
+
+            # do the same file again
+            # prevent endless recursion
+            $max-- || croak "failed termcap loop at $tmp_term";
+            $state = 1;    # ok, maybe do a new file next time
+        }
+
+        open( TERMCAP, "< $TERMCAP\0" ) || croak "open $TERMCAP: $!";
+        eval $search;
+        die $@ if $@;
+        close TERMCAP;
 
         # If :tc=...: found then search this file again
-	while ($entry =~ s/:tc=([^:]+):/:/) {
-	    $tmp_term = $1;
-	    next if $seen->{$tmp_term};
-	    $state = 2;
-	    last;
-	}
+        $entry =~ s/:tc=([^:]+):/:/ && ( $tmp_term = $1, $state = 2 );
+
+        # protect any pattern metacharacters in $tmp_term
+        $termpat = $tmp_term;
+        $termpat =~ s/(\W)/\\$1/g;
     }
 
-    if ( !defined $entry ) {
-        if ( $^O eq 'VMS' ) {
-            $entry = $VMS_TERMCAP;
-       # this is getting desperate now
-        } elsif ( $self->{TERM} eq 'dumb' ){
-	  $entry = 'dumb|80-column dumb tty::am::co#80::bl=^G:cr=^M:do=^J:sf=^J:';
-	}
-    }
-
-    croak "Can't find $term" if !defined $entry;
+    croak "Can't find $term" if $entry eq '';
     $entry =~ s/:+\s*:+/:/g;    # cleanup $entry
     $entry =~ s/:+/:/g;         # cleanup $entry
     $self->{TERMCAP} = $entry;  # save it
@@ -334,25 +398,25 @@ sub Tgetent
     $entry =~ s/^[^:]*://;
     foreach $field ( split( /:[\s:\\]*/, $entry ) )
     {
-        if ( defined $field && $field =~ /^(\w{2,})$/ )
+        if ( defined $field && $field =~ /^(\w\w)$/ )
         {
             $self->{ '_' . $field } = 1 unless defined $self->{ '_' . $1 };
 
             # print STDERR "DEBUG: flag $1\n";
         }
-        elsif ( defined $field && $field =~ /^(\w{2,})\@/ )
+        elsif ( defined $field && $field =~ /^(\w\w)\@/ )
         {
             $self->{ '_' . $1 } = "";
 
             # print STDERR "DEBUG: unset $1\n";
         }
-        elsif ( defined $field && $field =~ /^(\w{2,})#(.*)/ )
+        elsif ( defined $field && $field =~ /^(\w\w)#(.*)/ )
         {
             $self->{ '_' . $1 } = $2 unless defined $self->{ '_' . $1 };
 
             # print STDERR "DEBUG: numeric $1 = $2\n";
         }
-        elsif ( defined $field && $field =~ /^(\w{2,})=(.*)/ )
+        elsif ( defined $field && $field =~ /^(\w\w)=(.*)/ )
         {
 
             # print STDERR "DEBUG: string $1 = $2\n";
@@ -412,7 +476,7 @@ It takes three arguments:
 
 The literal string to be output.  If it starts with a number and an optional
 '*' then the padding will be increased by an amount relative to this number,
-if the '*' is present then this amount will be multiplied by $cnt.  This part
+if the '*' is present then this amount will me multiplied by $cnt.  This part
 of $string is removed before output/
 
 =item B<$cnt>
@@ -615,9 +679,9 @@ sub Tgoto
         elsif ( $code eq '>' )
         {
             ( $code, $tmp, $string ) = unpack( "CCa99", $string );
-            if ( $tmp[0] > $code )
+            if ( $tmp[$[] > $code )
             {
-                $tmp[0] += $tmp;
+                $tmp[$[] += $tmp;
             }
         }
         elsif ( $code eq '2' )
@@ -674,7 +738,7 @@ sub Trequire
 
     # Get terminal output speed
     require POSIX;
-    my $termios = POSIX::Termios->new;
+    my $termios = new POSIX::Termios;
     $termios->getattr;
     my $ospeed = $termios->getospeed;
 
@@ -684,7 +748,7 @@ sub Trequire
     #     ($ispeed,$ospeed) = unpack('cc',$sgtty);
 
     # allocate and initialize a terminal structure
-    my $terminal = Term::Cap->Tgetent({ TERM => undef, OSPEED => $ospeed });
+    $terminal = Tgetent Term::Cap { TERM => undef, OSPEED => $ospeed };
 
     # require certain capabilities to be available
     $terminal->Trequire(qw/ce ku kd/);
@@ -699,21 +763,12 @@ sub Trequire
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1995-2015 (c) perl5 porters.
-
-This software is free software and can be modified and distributed under
-the same terms as Perl itself.
-
-Please see the file README in the Perl source distribution for details of
-the Perl license.
+Please see the README file in distribution.
 
 =head1 AUTHOR
 
 This module is part of the core Perl distribution and is also maintained
-for CPAN by Jonathan Stowe <jns@gellyfish.co.uk>.
-
-The code is hosted on Github: https://github.com/jonathanstowe/Term-Cap
-please feel free to fork, submit patches etc, etc there.
+for CPAN by Jonathan Stowe <jns@gellyfish.com>.
 
 =head1 SEE ALSO
 

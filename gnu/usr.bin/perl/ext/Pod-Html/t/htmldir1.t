@@ -1,73 +1,61 @@
+#!/usr/bin/perl -w                                         # -*- perl -*-
+
 BEGIN {
-    use File::Spec::Functions ':ALL';
-    @INC = map { rel2abs($_) }
-             (qw| ./lib ./t/lib ../../lib |);
+    require "t/pod2html-lib.pl";
+}
+
+END {
+    rem_test_dir();
 }
 
 use strict;
-use warnings;
-use Test::More;
-use Testing qw( setup_testing_dir xconvert );
 use Cwd;
+use File::Spec;
+use File::Spec::Functions;
+use Test::More tests => 2;
 
-my $debug = 0;
-my $startdir = cwd();
-END { chdir($startdir) or die("Cannot change back to $startdir: $!"); }
-my ($expect_raw, $args);
-{ local $/; $expect_raw = <DATA>; }
+# XXX Separate tests that rely on test.lib from the others so they are the only
+# ones skipped (instead of all of them). This applies to htmldir{1,3,5}.t, and 
+# crossref.t (as of 10/29/11). 
+SKIP: {
+    my $output = make_test_dir();
+    skip "$output", 2 if $output;
 
-my $tdir = setup_testing_dir( {
-    debug       => $debug,
-} );
+    my ($v, $d) = splitpath(cwd(), 1);
+    my $relcwd = substr($d, length(File::Spec->rootdir()));
 
-my ($v, $d) = splitpath(cwd(), 1);
-my @dirs = splitdir($d);
-shift @dirs if $dirs[0] eq '';
-my $relcwd = join '/', @dirs;
+    my $data_pos = tell DATA; # to read <DATA> twice
 
-$args = {
-    podstub => "htmldir1",
-    description => "test --htmldir and --htmlroot 1a",
-    expect => $expect_raw,
-    p2h => {
-        podpath => File::Spec::Unix->catdir($relcwd, 't') . ":" .
-                   File::Spec::Unix->catdir($relcwd, 'corpus/test.lib'),
-        podroot => catpath($v, '/', ''),
-        htmldir => 't',
-        quiet   => 1,
-    },
-    debug => $debug,
-};
-xconvert($args);
 
-$args = {
-    podstub => "htmldir1",
-    description => "test --htmldir and --htmlroot 1b",
-    expect => $expect_raw,
-    p2h => {
-        podpath     => $relcwd,
-        podroot     => catpath($v, '/', ''),
-        htmldir     => catdir($relcwd, 't'),
-        htmlroot    => '/',
-        quiet       => 1,
-    },
-    debug => $debug,
-};
-xconvert($args);
+    convert_n_test("htmldir1", "test --htmldir and --htmlroot 1a", 
+     "--podpath=". catdir($relcwd, 't') . ":" . catfile($relcwd, 'testdir/test.lib'),
+     "--podroot=$v". File::Spec->rootdir,
+     "--htmldir=t",
+     "--quiet",
+    );
 
-done_testing;
+    seek DATA, $data_pos, 0; # to read <DATA> twice (expected output is the same)
+
+    convert_n_test("htmldir1", "test --htmldir and --htmlroot 1b", 
+     "--podpath=$relcwd",
+     "--podroot=$v". File::Spec->rootdir,
+     "--htmldir=". catdir($relcwd, 't'),
+     "--htmlroot=/",
+     "--quiet",
+    );
+}
 
 __DATA__
 <?xml version="1.0" ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<title>htmldir - Test --htmldir feature</title>
+<title></title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <link rev="made" href="mailto:[PERLADMIN]" />
 </head>
 
-<body>
+<body style="background-color: white">
 
 
 
@@ -82,11 +70,11 @@ __DATA__
 
 <h1 id="LINKS">LINKS</h1>
 
-<pre><code>Verbatim B&lt;means&gt; verbatim.</code></pre>
+<pre><code>  Verbatim B&lt;means&gt; verbatim.</code></pre>
 
 <p>Normal text, a <a>link</a> to nowhere,</p>
 
-<p>a link to <a href="/[RELCURRENTWORKINGDIRECTORY]/corpus/test.lib/var-copy.html">var-copy</a>,</p>
+<p>a link to <a href="/[RELCURRENTWORKINGDIRECTORY]/testdir/test.lib/var-copy.html">var-copy</a>,</p>
 
 <p><a href="/[RELCURRENTWORKINGDIRECTORY]/t/htmlescp.html">htmlescp</a>,</p>
 

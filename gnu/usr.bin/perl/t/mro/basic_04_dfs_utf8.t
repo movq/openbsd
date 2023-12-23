@@ -9,8 +9,6 @@ require q(./test.pl); plan(tests => 1);
 
 =pod 
 
-=encoding UTF-8
-
 From the parrot test t/pmc/object-meths.t
 
  ଅ   ᛒ ଅ   ऍ

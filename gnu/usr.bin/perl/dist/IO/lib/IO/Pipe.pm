@@ -6,19 +6,20 @@
 
 package IO::Pipe;
 
-use 5.008_001;
+use 5.006_001;
 
 use IO::Handle;
 use strict;
+our($VERSION);
 use Carp;
 use Symbol;
 
-our $VERSION = "1.49";
+$VERSION = "1.13";
 
 sub new {
     my $type = shift;
     my $class = ref($type) || $type || "IO::Pipe";
-    @_ == 0 || @_ == 2 or croak "usage: $class->([READFH, WRITEFH])";
+    @_ == 0 || @_ == 2 or croak "usage: new $class [READFH, WRITEFH]";
 
     my $me = bless gensym(), $class;
 
@@ -165,7 +166,7 @@ IO::Pipe - supply object methods for pipes
 
 	use IO::Pipe;
 
-	$pipe = IO::Pipe->new();
+	$pipe = new IO::Pipe;
 
 	if($pid = fork()) { # Parent
 	    $pipe->reader();
@@ -183,7 +184,7 @@ IO::Pipe - supply object methods for pipes
 
 	or
 
-	$pipe = IO::Pipe->new();
+	$pipe = new IO::Pipe;
 
 	$pipe->reader(qw(ls -l));
 
@@ -245,7 +246,7 @@ L<IO::Handle>
 =head1 AUTHOR
 
 Graham Barr. Currently maintained by the Perl Porters.  Please report all
-bugs at L<https://github.com/Perl/perl5/issues>.
+bugs to <perl5-porters@perl.org>.
 
 =head1 COPYRIGHT
 

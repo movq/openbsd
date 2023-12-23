@@ -5,8 +5,6 @@ Suppress errors
 errors none
 
 [input]
-=cut
-
 =over 4
 
 =item Foo

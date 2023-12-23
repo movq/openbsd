@@ -6,7 +6,7 @@
 # code on CPAN, and can break cflags.SH.
 #
 # Why do we test this?
-# See https://github.com/Perl/perl5/issues/12824
+# See https://rt.perl.org/rt3/Ticket/Display.html?id=116989
 #
 # It's broken - how do I fix it?
 # You added an initializer or static function to a header file that
@@ -23,13 +23,8 @@ use warnings;
 use Config;
 use File::Path 'rmtree';
 use Cwd;
-use IPC::Cmd qw(can_run);
 
-if ($Config{'usecrosscompile'} && !can_run($Config{'cc'})) {
-    skip_all("compiler not available (cross-compiling)");
-} else {
-    plan(tests => 1);
-}
+plan(tests => 1);
 
 my $VERBOSE = grep {$_ eq '-v'} @ARGV;
 
@@ -70,14 +65,13 @@ sub try_compile_and_link {
 	    return 0;
 	}
 
-	my $COREincdir =
-	    File::Spec->catdir(File::Spec->updir, File::Spec->updir);
+	my $COREincdir = File::Spec->catdir(File::Spec->updir);
 
 	my $ccflags = $Config{'ccflags'} . ' ' . "-I$COREincdir"
 	 . ' -DPERL_NO_INLINE_FUNCTIONS';
 
 	if ($^O eq "MSWin32") {
-	    $ccflags .= " -I../../win32 -I../../win32/include";
+	    $ccflags .= " -I../win32 -I../win32/include";
 	}
 
 	my $libs = '';

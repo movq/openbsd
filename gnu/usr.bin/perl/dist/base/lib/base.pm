@@ -1,14 +1,9 @@
-use 5.008;
 package base;
 
 use strict 'vars';
-our $VERSION = '2.27';
-$VERSION =~ tr/_//d;
-
-# simplest way to avoid indexing of the package: no package statement
-sub base::__inc::unhook { @INC = grep !(ref eq 'CODE' && $_ == $_[0]), @INC }
-# instance is blessed array of coderefs to be removed from @INC at scope exit
-sub base::__inc::scope_guard::DESTROY { base::__inc::unhook $_ for @{$_[0]} }
+use vars qw($VERSION);
+$VERSION = '2.15';
+$VERSION = eval $VERSION;
 
 # constant.pm is slow
 sub SUCCESS () { 1 }
@@ -25,6 +20,12 @@ sub has_fields {
     my($base) = shift;
     my $fglob = ${"$base\::"}{FIELDS};
     return( ($fglob && 'GLOB' eq ref($fglob) && *$fglob{HASH}) ? 1 : 0 );
+}
+
+sub has_version {
+    my($base) = shift;
+    my $vglob = ${$base.'::'}{VERSION};
+    return( ($vglob && *$vglob{SCALAR}) ? 1 : 0 );
 }
 
 sub has_attr {
@@ -60,23 +61,6 @@ else {
     }
 }
 
-if ($] < 5.008) {
-    *_module_to_filename = sub {
-        (my $fn = $_[0]) =~ s!::!/!g;
-        $fn .= '.pm';
-        return $fn;
-    }
-}
-else {
-    *_module_to_filename = sub {
-        (my $fn = $_[0]) =~ s!::!/!g;
-        $fn .= '.pm';
-        utf8::encode($fn);
-        return $fn;
-    }
-}
-
-
 sub import {
     my $class = shift;
 
@@ -86,6 +70,7 @@ sub import {
     my $fields_base;
 
     my $inheritor = caller(0);
+    my @isa_classes;
 
     my @bases;
     foreach my $base (@_) {
@@ -95,69 +80,18 @@ sub import {
 
         next if grep $_->isa($base), ($inheritor, @bases);
 
-        # Following blocks help isolate $SIG{__DIE__} and @INC changes
-        {
+        if (has_version($base)) {
+            ${$base.'::VERSION'} = '-1, set by base.pm' 
+              unless defined ${$base.'::VERSION'};
+        }
+        else {
             my $sigdie;
             {
                 local $SIG{__DIE__};
-                my $fn = _module_to_filename($base);
-                my $dot_hidden;
-                eval {
-                    my $guard;
-                    if ($INC[-1] eq '.' && %{"$base\::"}) {
-                        # So:  the package already exists   => this an optional load
-                        # And: there is a dot at the end of @INC  => we want to hide it
-                        # However: we only want to hide it during our *own* require()
-                        # (i.e. without affecting nested require()s).
-                        # So we add a hook to @INC whose job is to hide the dot, but which
-                        # first checks checks the callstack depth, because within nested
-                        # require()s the callstack is deeper.
-                        # Since CORE::GLOBAL::require makes it unknowable in advance what
-                        # the exact relevant callstack depth will be, we have to record it
-                        # inside a hook. So we put another hook just for that at the front
-                        # of @INC, where it's guaranteed to run -- immediately.
-                        # The dot-hiding hook does its job by sitting directly in front of
-                        # the dot and removing itself from @INC when reached. This causes
-                        # the dot to move up one index in @INC, causing the loop inside
-                        # pp_require() to skip it.
-                        # Loaded coded may disturb this precise arrangement, but that's OK
-                        # because the hook is inert by that time. It is only active during
-                        # the top-level require(), when @INC is in our control. The only
-                        # possible gotcha is if other hooks already in @INC modify @INC in
-                        # some way during that initial require().
-                        # Note that this jiggery hookery works just fine recursively: if
-                        # a module loaded via base.pm uses base.pm itself, there will be
-                        # one pair of hooks in @INC per base::import call frame, but the
-                        # pairs from different nestings do not interfere with each other.
-                        my $lvl;
-                        unshift @INC,        sub { return if defined $lvl; 1 while defined caller ++$lvl; () };
-                        splice  @INC, -1, 0, sub { return if defined caller $lvl; ++$dot_hidden, &base::__inc::unhook; () };
-                        $guard = bless [ @INC[0,-2] ], 'base::__inc::scope_guard';
-                    }
-                    require $fn
-                };
-                if ($dot_hidden && (my @fn = grep -e && !( -d _ || -b _ ), $fn.'c', $fn)) {
-                    require Carp;
-                    Carp::croak(<<ERROR);
-Base class package "$base" is not empty but "$fn[0]" exists in the current directory.
-    To help avoid security issues, base.pm now refuses to load optional modules
-    from the current working directory when it is the last entry in \@INC.
-    If your software worked on previous versions of Perl, the best solution
-    is to use FindBin to detect the path properly and to add that path to
-    \@INC.  As a last resort, you can re-enable looking in the current working
-    directory by adding "use lib '.'" to your code.
-ERROR
-                }
+                eval "require $base";
                 # Only ignore "Can't locate" errors from our eval require.
                 # Other fatal errors (syntax etc) must be reported.
-                #
-                # changing the check here is fragile - if the check
-                # here isn't catching every error you want, you should
-                # probably be using parent.pm, which doesn't try to
-                # guess whether require is needed or failed,
-                # see [perl #118561]
-                die if $@ && $@ !~ /^Can't locate \Q$fn\E .*? at .* line [0-9]+(?:, <[^>]*> (?:line|chunk) [0-9]+)?\.\n\z/s
-                          || $@ =~ /Compilation failed in require at .* line [0-9]+(?:, <[^>]*> (?:line|chunk) [0-9]+)?\.\n\z/;
+                die if $@ && $@ !~ /^Can't locate .*? at \(eval /;
                 unless (%{"$base\::"}) {
                     require Carp;
                     local $" = " ";
@@ -171,6 +105,8 @@ ERROR
             }
             # Make sure a global $SIG{__DIE__} makes it out of the localization.
             $SIG{__DIE__} = $sigdie if defined $sigdie;
+            ${$base.'::VERSION'} = "-1, set by base.pm"
+              unless defined ${$base.'::VERSION'};
         }
         push @bases, $base;
 
@@ -185,6 +121,8 @@ ERROR
         }
     }
     # Save this until the end so it's all or nothing if the above loop croaks.
+    push @{"$inheritor\::ISA"}, @isa_classes;
+
     push @{"$inheritor\::ISA"}, @bases;
 
     if( defined $fields_base ) {
@@ -268,26 +206,26 @@ those modules at the same time.  Roughly similar in effect to
         push @ISA, qw(Foo Bar);
     }
 
-When C<base> tries to C<require> a module, it will not die if it cannot find
-the module's file, but will die on any other error.  After all this, should
-your base class be empty, containing no symbols, C<base> will die. This is
-useful for inheriting from classes in the same file as yourself but where
-the filename does not match the base module name, like so:
+C<base> employs some heuristics to determine if a module has already been
+loaded, if it has it doesn't try again. If C<base> tries to C<require> the
+module it will not die if it cannot find the module's file, but will die on any
+other error. After all this, should your base class be empty, containing no
+symbols, it will die. This is useful for inheriting from classes in the same
+file as yourself, like so:
 
-        # in Bar.pm
         package Foo;
         sub exclaim { "I can have such a thing?!" }
-
+        
         package Bar;
         use base "Foo";
 
-There is no F<Foo.pm>, but because C<Foo> defines a symbol (the C<exclaim>
-subroutine), C<base> will not die when the C<require> fails to load F<Foo.pm>.
+If $VERSION is not detected even after loading it, <base> will define $VERSION
+in the base package, setting it to the string C<-1, set by base.pm>.
 
 C<base> will also initialize the fields if one of the base classes has it.
 Multiple inheritance of fields is B<NOT> supported, if two or more base classes
-each have inheritable fields the 'base' pragma will croak. See L<fields>
-for a description of this feature.
+each have inheritable fields the 'base' pragma will croak. See L<fields>,
+L<public> and L<protected> for a description of this feature.
 
 The base class' C<import> method is B<not> called.
 
@@ -305,7 +243,7 @@ found in your path.
 
 Attempting to inherit from yourself generates a warning.
 
-    package Foo;
+    use Foo;
     use base 'Foo';
 
 =back

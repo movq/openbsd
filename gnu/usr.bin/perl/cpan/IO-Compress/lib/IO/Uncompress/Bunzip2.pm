@@ -4,18 +4,18 @@ use strict ;
 use warnings;
 use bytes;
 
-use IO::Compress::Base::Common 2.106 qw(:Status );
+use IO::Compress::Base::Common 2.024 qw(:Status createSelfTiedObject);
 
-use IO::Uncompress::Base 2.106 ;
-use IO::Uncompress::Adapter::Bunzip2 2.106 ;
+use IO::Uncompress::Base 2.024 ;
+use IO::Uncompress::Adapter::Bunzip2 2.024 ;
 
 require Exporter ;
 our ($VERSION, @ISA, @EXPORT_OK, %EXPORT_TAGS, $Bunzip2Error);
 
-$VERSION = '2.106';
+$VERSION = '2.024';
 $Bunzip2Error = '';
 
-@ISA    = qw(IO::Uncompress::Base Exporter);
+@ISA    = qw( Exporter IO::Uncompress::Base );
 @EXPORT_OK = qw( $Bunzip2Error bunzip2 ) ;
 #%EXPORT_TAGS = %IO::Uncompress::Base::EXPORT_TAGS ;
 push @{ $EXPORT_TAGS{all} }, @EXPORT_OK ;
@@ -25,22 +25,26 @@ push @{ $EXPORT_TAGS{all} }, @EXPORT_OK ;
 sub new
 {
     my $class = shift ;
-    my $obj = IO::Compress::Base::Common::createSelfTiedObject($class, \$Bunzip2Error);
+    my $obj = createSelfTiedObject($class, \$Bunzip2Error);
 
     $obj->_create(undef, 0, @_);
 }
 
 sub bunzip2
 {
-    my $obj = IO::Compress::Base::Common::createSelfTiedObject(undef, \$Bunzip2Error);
+    my $obj = createSelfTiedObject(undef, \$Bunzip2Error);
     return $obj->_inf(@_);
 }
 
 sub getExtraParams
 {
+    my $self = shift ;
+
+    use IO::Compress::Base::Common 2.024 qw(:Parse);
+    
     return (
-            'verbosity'     => [IO::Compress::Base::Common::Parse_boolean,   0],
-            'small'         => [IO::Compress::Base::Common::Parse_boolean,   0],
+            'Verbosity'     => [1, 1, Parse_boolean,   0],
+            'Small'         => [1, 1, Parse_boolean,   0],
         );
 }
 
@@ -64,15 +68,15 @@ sub mkUncomp
     *$self->{Info} = $self->readHeader($magic)
         or return undef ;
 
-    my $Small     = $got->getValue('small');
-    my $Verbosity = $got->getValue('verbosity');
+    my $Small     = $got->value('Small');
+    my $Verbosity = $got->value('Verbosity');
 
     my ($obj, $errstr, $errno) =  IO::Uncompress::Adapter::Bunzip2::mkUncompObject(
                                                     $Small, $Verbosity);
 
     return $self->saveErrorString(undef, $errstr, $errno)
         if ! defined $obj;
-
+    
     *$self->{Uncomp} = $obj;
 
     return 1;
@@ -88,15 +92,15 @@ sub ckMagic
     $self->smartReadExact(\$magic, 4);
 
     *$self->{HeaderPending} = $magic ;
-
-    return $self->HeaderError("Header size is " .
-                                        4 . " bytes")
+    
+    return $self->HeaderError("Header size is " . 
+                                        4 . " bytes") 
         if length $magic != 4;
 
     return $self->HeaderError("Bad Magic.")
         if ! isBzip2Magic($magic) ;
-
-
+                      
+        
     *$self->{Type} = 'bzip2';
     return $magic;
 }
@@ -117,7 +121,7 @@ sub readHeader
         'TrailerLength'     => 0,
         'Header'            => '$magic'
         };
-
+    
 }
 
 sub chkTrailer
@@ -130,9 +134,7 @@ sub chkTrailer
 sub isBzip2Magic
 {
     my $buffer = shift ;
-
-                  # ASCII:  B   Z   h    0    9
-    return $buffer =~ qr/^\x42\x5A\x68[\x30-\x39]$/;
+    return $buffer =~ /^BZh\d$/;
 }
 
 1 ;
@@ -151,7 +153,7 @@ IO::Uncompress::Bunzip2 - Read bzip2 files/buffers
     my $status = bunzip2 $input => $output [,OPTS]
         or die "bunzip2 failed: $Bunzip2Error\n";
 
-    my $z = IO::Uncompress::Bunzip2->new( $input [OPTS] )
+    my $z = new IO::Uncompress::Bunzip2 $input [OPTS] 
         or die "bunzip2 failed: $Bunzip2Error\n";
 
     $status = $z->read($buffer)
@@ -203,21 +205,19 @@ section.
 
     use IO::Uncompress::Bunzip2 qw(bunzip2 $Bunzip2Error) ;
 
-    bunzip2 $input_filename_or_reference => $output_filename_or_reference [,OPTS]
+    bunzip2 $input => $output [,OPTS] 
         or die "bunzip2 failed: $Bunzip2Error\n";
 
 The functional interface needs Perl5.005 or better.
 
-=head2 bunzip2 $input_filename_or_reference => $output_filename_or_reference [, OPTS]
+=head2 bunzip2 $input => $output [, OPTS]
 
-C<bunzip2> expects at least two parameters,
-C<$input_filename_or_reference> and C<$output_filename_or_reference>
-and zero or more optional parameters (see L</Optional Parameters>)
+C<bunzip2> expects at least two parameters, C<$input> and C<$output>.
 
-=head3 The C<$input_filename_or_reference> parameter
+=head3 The C<$input> parameter
 
-The parameter, C<$input_filename_or_reference>, is used to define the
-source of the compressed data.
+The parameter, C<$input>, is used to define the source of
+the compressed data. 
 
 It can take one of the following forms:
 
@@ -225,112 +225,105 @@ It can take one of the following forms:
 
 =item A filename
 
-If the C<$input_filename_or_reference> parameter is a simple scalar, it is
-assumed to be a filename. This file will be opened for reading and the
-input data will be read from it.
+If the C<$input> parameter is a simple scalar, it is assumed to be a
+filename. This file will be opened for reading and the input data
+will be read from it.
 
 =item A filehandle
 
-If the C<$input_filename_or_reference> parameter is a filehandle, the input
-data will be read from it.  The string '-' can be used as an alias for
-standard input.
+If the C<$input> parameter is a filehandle, the input data will be
+read from it.
+The string '-' can be used as an alias for standard input.
 
-=item A scalar reference
+=item A scalar reference 
 
-If C<$input_filename_or_reference> is a scalar reference, the input data
-will be read from C<$$input_filename_or_reference>.
+If C<$input> is a scalar reference, the input data will be read
+from C<$$input>.
 
-=item An array reference
+=item An array reference 
 
-If C<$input_filename_or_reference> is an array reference, each element in
-the array must be a filename.
+If C<$input> is an array reference, each element in the array must be a
+filename.
 
-The input data will be read from each file in turn.
+The input data will be read from each file in turn. 
 
 The complete array will be walked to ensure that it only
 contains valid filenames before any data is uncompressed.
 
 =item An Input FileGlob string
 
-If C<$input_filename_or_reference> is a string that is delimited by the
-characters "<" and ">" C<bunzip2> will assume that it is an
-I<input fileglob string>. The input is the list of files that match the
-fileglob.
+If C<$input> is a string that is delimited by the characters "<" and ">"
+C<bunzip2> will assume that it is an I<input fileglob string>. The
+input is the list of files that match the fileglob.
+
+If the fileglob does not match any files ...
 
 See L<File::GlobMapper|File::GlobMapper> for more details.
 
 =back
 
-If the C<$input_filename_or_reference> parameter is any other type,
-C<undef> will be returned.
+If the C<$input> parameter is any other type, C<undef> will be returned.
 
-=head3 The C<$output_filename_or_reference> parameter
+=head3 The C<$output> parameter
 
-The parameter C<$output_filename_or_reference> is used to control the
-destination of the uncompressed data. This parameter can take one of
-these forms.
+The parameter C<$output> is used to control the destination of the
+uncompressed data. This parameter can take one of these forms.
 
 =over 5
 
 =item A filename
 
-If the C<$output_filename_or_reference> parameter is a simple scalar, it is
-assumed to be a filename.  This file will be opened for writing and the
-uncompressed data will be written to it.
+If the C<$output> parameter is a simple scalar, it is assumed to be a
+filename.  This file will be opened for writing and the uncompressed
+data will be written to it.
 
 =item A filehandle
 
-If the C<$output_filename_or_reference> parameter is a filehandle, the
-uncompressed data will be written to it.  The string '-' can be used as
-an alias for standard output.
+If the C<$output> parameter is a filehandle, the uncompressed data
+will be written to it.
+The string '-' can be used as an alias for standard output.
 
-=item A scalar reference
+=item A scalar reference 
 
-If C<$output_filename_or_reference> is a scalar reference, the
-uncompressed data will be stored in C<$$output_filename_or_reference>.
+If C<$output> is a scalar reference, the uncompressed data will be
+stored in C<$$output>.
 
 =item An Array Reference
 
-If C<$output_filename_or_reference> is an array reference,
-the uncompressed data will be pushed onto the array.
+If C<$output> is an array reference, the uncompressed data will be
+pushed onto the array.
 
 =item An Output FileGlob
 
-If C<$output_filename_or_reference> is a string that is delimited by the
-characters "<" and ">" C<bunzip2> will assume that it is an
-I<output fileglob string>. The output is the list of files that match the
-fileglob.
+If C<$output> is a string that is delimited by the characters "<" and ">"
+C<bunzip2> will assume that it is an I<output fileglob string>. The
+output is the list of files that match the fileglob.
 
-When C<$output_filename_or_reference> is an fileglob string,
-C<$input_filename_or_reference> must also be a fileglob string. Anything
-else is an error.
-
-See L<File::GlobMapper|File::GlobMapper> for more details.
+When C<$output> is an fileglob string, C<$input> must also be a fileglob
+string. Anything else is an error.
 
 =back
 
-If the C<$output_filename_or_reference> parameter is any other type,
-C<undef> will be returned.
+If the C<$output> parameter is any other type, C<undef> will be returned.
 
 =head2 Notes
 
-When C<$input_filename_or_reference> maps to multiple compressed
-files/buffers and C<$output_filename_or_reference> is
-a single file/buffer, after uncompression C<$output_filename_or_reference> will contain a
+When C<$input> maps to multiple compressed files/buffers and C<$output> is
+a single file/buffer, after uncompression C<$output> will contain a
 concatenation of all the uncompressed data from each of the input
 files/buffers.
 
 =head2 Optional Parameters
 
-The optional parameters for the one-shot function C<bunzip2>
-are (for the most part) identical to those used with the OO interface defined in the
-L</"Constructor Options"> section. The exceptions are listed below
+Unless specified below, the optional parameters for C<bunzip2>,
+C<OPTS>, are the same as those used with the OO interface defined in the
+L</"Constructor Options"> section below.
 
 =over 5
 
 =item C<< AutoClose => 0|1 >>
 
-This option applies to any input or output data streams to
+This option applies to any input or output data streams to 
 C<bunzip2> that are filehandles.
 
 If C<AutoClose> is specified, and the value is true, it will result in all
@@ -341,52 +334,14 @@ This parameter defaults to 0.
 
 =item C<< BinModeOut => 0|1 >>
 
-This option is now a no-op. All files will be written  in binmode.
+When writing to a file or filehandle, set C<binmode> before writing to the
+file.
+
+Defaults to 0.
 
 =item C<< Append => 0|1 >>
 
-The behaviour of this option is dependent on the type of output data
-stream.
-
-=over 5
-
-=item * A Buffer
-
-If C<Append> is enabled, all uncompressed data will be append to the end of
-the output buffer. Otherwise the output buffer will be cleared before any
-uncompressed data is written to it.
-
-=item * A Filename
-
-If C<Append> is enabled, the file will be opened in append mode. Otherwise
-the contents of the file, if any, will be truncated before any uncompressed
-data is written to it.
-
-=item * A Filehandle
-
-If C<Append> is enabled, the filehandle will be positioned to the end of
-the file via a call to C<seek> before any uncompressed data is
-written to it.  Otherwise the file pointer will not be moved.
-
-=back
-
-When C<Append> is specified, and set to true, it will I<append> all uncompressed
-data to the output data stream.
-
-So when the output is a filehandle it will carry out a seek to the eof
-before writing any uncompressed data. If the output is a filename, it will be opened for
-appending. If the output is a buffer, all uncompressed data will be
-appended to the existing buffer.
-
-Conversely when C<Append> is not specified, or it is present and is set to
-false, it will operate as follows.
-
-When the output is a filename, it will truncate the contents of the file
-before writing any uncompressed data. If the output is a filehandle
-its position will not be changed. If the output is a buffer, it will be
-wiped before any uncompressed data is output.
-
-Defaults to 0.
+TODO
 
 =item C<< MultiStream => 0|1 >>
 
@@ -398,7 +353,7 @@ Defaults to 0.
 =item C<< TrailingData => $scalar >>
 
 Returns the data, if any, that is present immediately after the compressed
-data stream once uncompression is complete.
+data stream once uncompression is complete. 
 
 This option can be used when there is useful information immediately
 following the compressed data stream, and you don't know the length of the
@@ -410,7 +365,7 @@ end of the compressed data stream to the end of the buffer.
 If the input is a filehandle, C<trailingData> will return the data that is
 left in the filehandle input buffer once the end of the compressed data
 stream has been reached. You can then use the filehandle to read the rest
-of the input file.
+of the input file. 
 
 Don't bother using C<trailingData> if the input is a filename.
 
@@ -423,7 +378,7 @@ C<InputLength> option.
 =head2 Examples
 
 To read the contents of the file C<file1.txt.bz2> and write the
-uncompressed data to the file C<file1.txt>.
+compressed data to the file C<file1.txt>.
 
     use strict ;
     use warnings ;
@@ -442,10 +397,10 @@ uncompressed data to a buffer, C<$buffer>.
     use IO::Uncompress::Bunzip2 qw(bunzip2 $Bunzip2Error) ;
     use IO::File ;
 
-    my $input = IO::File->new( "<file1.txt.bz2" )
+    my $input = new IO::File "<file1.txt.bz2"
         or die "Cannot open 'file1.txt.bz2': $!\n" ;
     my $buffer ;
-    bunzip2 $input => \$buffer
+    bunzip2 $input => \$buffer 
         or die "bunzip2 failed: $Bunzip2Error\n";
 
 To uncompress all files in the directory "/my/home" that match "*.txt.bz2" and store the compressed data in the same directory
@@ -467,7 +422,7 @@ and if you want to compress each file one at a time, this will do the trick
     {
         my $output = $input;
         $output =~ s/.bz2// ;
-        bunzip2 $input => $output
+        bunzip2 $input => $output 
             or die "Error compressing '$input': $Bunzip2Error\n";
     }
 
@@ -477,7 +432,7 @@ and if you want to compress each file one at a time, this will do the trick
 
 The format of the constructor for IO::Uncompress::Bunzip2 is shown below
 
-    my $z = IO::Uncompress::Bunzip2->new( $input [OPTS] )
+    my $z = new IO::Uncompress::Bunzip2 $input [OPTS]
         or die "IO::Uncompress::Bunzip2 failed: $Bunzip2Error\n";
 
 Returns an C<IO::Uncompress::Bunzip2> object on success and undef on failure.
@@ -508,10 +463,10 @@ If the C<$input> parameter is a filehandle, the compressed data will be
 read from it.
 The string '-' can be used as an alias for standard input.
 
-=item A scalar reference
+=item A scalar reference 
 
 If C<$input> is a scalar reference, the compressed data will be read from
-C<$$input>.
+C<$$output>.
 
 =back
 
@@ -566,7 +521,7 @@ the module will allow reading of it anyway.
 
 In addition, if the input file/buffer does contain compressed data and
 there is non-compressed data immediately following it, setting this option
-will make this module treat the whole file/buffer as a single data stream.
+will make this module treat the whole file/bufffer as a single data stream.
 
 This option defaults to 1.
 
@@ -583,7 +538,7 @@ When present this option will limit the number of compressed bytes read
 from the input file/buffer to C<$size>. This option can be used in the
 situation where there is useful data directly after the compressed data
 stream and you know beforehand the exact length of the compressed data
-stream.
+stream. 
 
 This option is mostly used when reading from a filehandle, in which case
 the file pointer will be left pointing to the first byte directly after the
@@ -611,7 +566,7 @@ This option is a no-op.
 
 When non-zero this options will make bzip2 use a decompression algorithm
 that uses less memory at the expense of increasing the amount of time
-taken for decompression.
+taken for decompression. 
 
 Default is 0.
 
@@ -621,7 +576,7 @@ Default is 0.
 
 TODO
 
-=head1 Methods
+=head1 Methods 
 
 =head2 read
 
@@ -629,7 +584,7 @@ Usage is
 
     $status = $z->read($buffer)
 
-Reads a block of compressed data (the size of the compressed block is
+Reads a block of compressed data (the size the the compressed block is
 determined by the C<Buffer> option in the constructor), uncompresses it and
 writes any uncompressed data into C<$buffer>. If the C<Append> parameter is
 set in the constructor, the uncompressed data will be appended to the
@@ -665,16 +620,16 @@ Usage is
     $line = $z->getline()
     $line = <$z>
 
-Reads a single line.
+Reads a single line. 
 
-This method fully supports the use of the variable C<$/> (or
+This method fully supports the use of of the variable C<$/> (or
 C<$INPUT_RECORD_SEPARATOR> or C<$RS> when C<English> is in use) to
 determine what constitutes an end of line. Paragraph mode, record mode and
-file slurp mode are all supported.
+file slurp mode are all supported. 
 
 =head2 getc
 
-Usage is
+Usage is 
 
     $char = $z->getc()
 
@@ -724,13 +679,6 @@ Provides a sub-set of the C<seek> functionality, with the restriction
 that it is only legal to seek forward in the input file/buffer.
 It is a fatal error to attempt to seek backward.
 
-Note that the implementation of C<seek> in this module does not provide
-true random access to a compressed file/buffer. It  works by uncompressing
-data from the current offset in the file/buffer until it reaches the
-uncompressed offset specified in the parameters to C<seek>. For very small
-files this may be acceptable behaviour. For large files it may cause an
-unacceptable delay.
-
 The C<$whence> parameter takes one the usual values, namely SEEK_SET,
 SEEK_CUR or SEEK_END.
 
@@ -749,7 +697,7 @@ This is a noop provided for completeness.
 
     $z->opened()
 
-Returns true if the object currently refers to a opened file/buffer.
+Returns true if the object currently refers to a opened file/buffer. 
 
 =head2 autoflush
 
@@ -776,7 +724,7 @@ Returns the current uncompressed line number. If C<EXPR> is present it has
 the effect of setting the line number. Note that setting the line number
 does not change the current position within the file/buffer being read.
 
-The contents of C<$/> are used to determine what constitutes a line
+The contents of C<$/> are used to to determine what constitutes a line
 terminator.
 
 =head2 fileno
@@ -788,7 +736,7 @@ If the C<$z> object is associated with a file or a filehandle, C<fileno>
 will return the underlying file descriptor. Once the C<close> method is
 called C<fileno> will return C<undef>.
 
-If the C<$z> object is associated with a buffer, this method will return
+If the C<$z> object is is associated with a buffer, this method will return
 C<undef>.
 
 =head2 close
@@ -796,7 +744,7 @@ C<undef>.
     $z->close() ;
     close $z ;
 
-Closes the output file/buffer.
+Closes the output file/buffer. 
 
 For most versions of Perl this method will be automatically invoked if
 the IO::Uncompress::Bunzip2 object is destroyed (either explicitly or by the
@@ -850,7 +798,7 @@ end of the compressed data stream to the end of the buffer.
 If the input is a filehandle, C<trailingData> will return the data that is
 left in the filehandle input buffer once the end of the compressed data
 stream has been reached. You can then use the filehandle to read the rest
-of the input file.
+of the input file. 
 
 Don't bother using C<trailingData> if the input is a filename.
 
@@ -858,9 +806,9 @@ If you know the length of the compressed data stream before you start
 uncompressing, you can avoid having to use C<trailingData> by setting the
 C<InputLength> option in the constructor.
 
-=head1 Importing
+=head1 Importing 
 
-No symbolic constants are required by IO::Uncompress::Bunzip2 at present.
+No symbolic constants are required by this IO::Uncompress::Bunzip2 at present. 
 
 =over 5
 
@@ -877,31 +825,25 @@ Same as doing this
 
 =head2 Working with Net::FTP
 
-See L<IO::Compress::FAQ|IO::Compress::FAQ/"Compressed files and Net::FTP">
-
-=head1 SUPPORT
-
-General feedback/questions/bug reports should be sent to
-L<https://github.com/pmqs/IO-Compress/issues> (preferred) or
-L<https://rt.cpan.org/Public/Dist/Display.html?Name=IO-Compress>.
+See L<IO::Uncompress::Bunzip2::FAQ|IO::Uncompress::Bunzip2::FAQ/"Compressed files and Net::FTP">
 
 =head1 SEE ALSO
 
-L<Compress::Zlib>, L<IO::Compress::Gzip>, L<IO::Uncompress::Gunzip>, L<IO::Compress::Deflate>, L<IO::Uncompress::Inflate>, L<IO::Compress::RawDeflate>, L<IO::Uncompress::RawInflate>, L<IO::Compress::Bzip2>, L<IO::Compress::Lzma>, L<IO::Uncompress::UnLzma>, L<IO::Compress::Xz>, L<IO::Uncompress::UnXz>, L<IO::Compress::Lzip>, L<IO::Uncompress::UnLzip>, L<IO::Compress::Lzop>, L<IO::Uncompress::UnLzop>, L<IO::Compress::Lzf>, L<IO::Uncompress::UnLzf>, L<IO::Compress::Zstd>, L<IO::Uncompress::UnZstd>, L<IO::Uncompress::AnyInflate>, L<IO::Uncompress::AnyUncompress>
+L<Compress::Zlib>, L<IO::Compress::Gzip>, L<IO::Uncompress::Gunzip>, L<IO::Compress::Deflate>, L<IO::Uncompress::Inflate>, L<IO::Compress::RawDeflate>, L<IO::Uncompress::RawInflate>, L<IO::Compress::Bzip2>, L<IO::Compress::Lzop>, L<IO::Uncompress::UnLzop>, L<IO::Compress::Lzf>, L<IO::Uncompress::UnLzf>, L<IO::Uncompress::AnyInflate>, L<IO::Uncompress::AnyUncompress>
 
-L<IO::Compress::FAQ|IO::Compress::FAQ>
+L<Compress::Zlib::FAQ|Compress::Zlib::FAQ>
 
 L<File::GlobMapper|File::GlobMapper>, L<Archive::Zip|Archive::Zip>,
 L<Archive::Tar|Archive::Tar>,
 L<IO::Zlib|IO::Zlib>
 
-The primary site for the bzip2 program is L<https://sourceware.org/bzip2/>.
+The primary site for the bzip2 program is F<http://www.bzip.org>.
 
 See the module L<Compress::Bzip2|Compress::Bzip2>
 
 =head1 AUTHOR
 
-This module was written by Paul Marquess, C<pmqs@cpan.org>.
+This module was written by Paul Marquess, F<pmqs@cpan.org>. 
 
 =head1 MODIFICATION HISTORY
 
@@ -909,7 +851,8 @@ See the Changes file.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (c) 2005-2022 Paul Marquess. All rights reserved.
+Copyright (c) 2005-2008 Paul Marquess. All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
+

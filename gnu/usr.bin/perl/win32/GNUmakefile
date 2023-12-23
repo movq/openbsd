@@ -1,12 +1,12 @@
 #
 # Makefile to build perl on Windows using GMAKE.
 # Supported compilers:
-#	Microsoft Visual C++ 12.0 or later
-#	MinGW with gcc-3.4.5-5.3.0
-#	MinGW64 with gcc-4.4.3 or later
+#	Microsoft Visual C++ 6.0 or later
+#	MinGW with gcc-3.4.5 or later
+#	Windows SDK 64-bit compiler and tools
 #
 # This is set up to build a perl.exe that runs off a shared library
-# (perl536.dll).  Also makes individual DLLs for the XS extensions.
+# (perl524.dll).  Also makes individual DLLs for the XS extensions.
 #
 # The easiest way to customize the build process is to use parameters like this:
 #
@@ -36,6 +36,10 @@ ifeq ($(GCCBIN),i686-w64-mingw32-gcc)
 GCCCROSS := i686-w64-mingw32
 endif
 
+GCCTARGET := $(shell $(GCCBIN) -dumpmachine)
+GCCVER1   := $(shell for /f "delims=. tokens=1,2,3" %%i in ('gcc -dumpversion') do echo %%i)
+GCCVER2   := $(shell for /f "delims=. tokens=1,2,3" %%i in ('gcc -dumpversion') do echo %%j)
+GCCVER3   := $(shell for /f "delims=. tokens=1,2,3" %%i in ('gcc -dumpversion') do echo %%k)
 
 ##
 ## Build configuration.  Edit the values below to suit your needs.
@@ -63,7 +67,7 @@ INST_TOP := $(INST_DRV)\perl
 # versioned installation can be obtained by setting INST_TOP above to a
 # path that includes an arbitrary version string.
 #
-#INST_VER	:= \5.36.3
+#INST_VER	:= \5.24.1
 
 #
 # Comment this out if you DON'T want your perl installation to have
@@ -115,9 +119,17 @@ USE_IMP_SYS	:= define
 USE_PERLIO	:= define
 
 #
+# Comment this out if you don't want to enable large file support for
+# some reason.  Should normally only be changed to maintain compatibility
+# with an older release of perl.
+#
+USE_LARGE_FILES	:= define
+
+#
 # Uncomment this if you're building a 32-bit perl and want 64-bit integers.
 # (If you're building a 64-bit perl then you will have 64-bit integers whether
 # or not this is uncommented.)
+# Note: This option is not supported in 32-bit MSVC60 builds.
 #
 #USE_64_BIT_INT	:= define
 
@@ -125,30 +137,7 @@ USE_PERLIO	:= define
 # Uncomment this if you want to support the use of long doubles in GCC builds.
 # This option is not supported for MSVC builds.
 #
-#USE_LONG_DOUBLE := define
-
-#
-# Uncomment these if you want to support the use of __float128 in GCC builds.
-# This option is not supported for MSVC builds.
-#
-#USE_QUADMATH := define
-#I_QUADMATH := define
-
-#
-# Comment this out if you want to build perl without __USE_MINGW_ANSI_STDIO defined.
-# (If you're building perl with USE_LONG_DOUBLE defined then
-# __USE_MINGW_ANSI_STDIO will be defined whether or not this is uncommented.)
-# The advantage of defining __USE_MINGW_ANSI_STDIO is that it provides correct
-# (s)printf formatting of numbers, whereas the MS runtime might not.
-# This option has no effect on MSVC builds.
-#
-USE_MINGW_ANSI_STDIO := define
-
-#
-# Comment this out if you want the legacy default behavior of including '.' at
-# the end of @INC.
-#
-DEFAULT_INC_EXCLUDES_DOT := define
+#USE_LONG_DOUBLE :=define
 
 #
 # Uncomment this if you want to disable looking up values from
@@ -160,28 +149,41 @@ DEFAULT_INC_EXCLUDES_DOT := define
 #
 # uncomment exactly one of the following
 #
-# Visual C++ 2013 (aka Visual C++ 12.0) (full version or Express Edition)
+# Visual C++ 6.0 (aka Visual C++ 98)
+#CCTYPE		:= MSVC60
+# Visual C++ .NET 2002/2003 (aka Visual C++ 7.0/7.1) (full version)
+#CCTYPE		:= MSVC70
+# Visual C++ Toolkit 2003 (aka Visual C++ 7.1) (free command-line tools)
+#CCTYPE		:= MSVC70FREE
+# Windows Server 2003 SP1 Platform SDK (April 2005)
+#CCTYPE		:= SDK2003SP1
+# Visual C++ 2005 (aka Visual C++ 8.0) (full version)
+#CCTYPE		:= MSVC80
+# Visual C++ 2005 Express Edition (aka Visual C++ 8.0) (free version)
+#CCTYPE		:= MSVC80FREE
+# Visual C++ 2008 (aka Visual C++ 9.0) (full version)
+#CCTYPE		:= MSVC90
+# Visual C++ 2008 Express Edition (aka Visual C++ 9.0) (free version)
+#CCTYPE		:= MSVC90FREE
+# Visual C++ 2010 (aka Visual C++ 10.0) (full version)
+#CCTYPE		:= MSVC100
+# Visual C++ 2010 Express Edition (aka Visual C++ 10.0) (free version)
+#CCTYPE		:= MSVC100FREE
+# Visual C++ 2012 (aka Visual C++ 11.0) (full version)
+#CCTYPE		:= MSVC110
+# Visual C++ 2012 Express Edition (aka Visual C++ 11.0) (free version)
+#CCTYPE		:= MSVC110FREE
+# Visual C++ 2013 (aka Visual C++ 12.0) (full version)
 #CCTYPE		:= MSVC120
-# Visual C++ 2015 (aka Visual C++ 14.0) (full version or Express Edition)
-#CCTYPE		:= MSVC140
-# Visual C++ 2017 (aka Visual C++ 14.1) (full version or Community Edition)
-#CCTYPE		:= MSVC141
-# Visual C++ 2019 (aka Visual C++ 14.2) (full version or Community Edition)
-#CCTYPE		:= MSVC142
-# Visual C++ 2022 (aka Visual C++ 14.3) (full version or Community Edition)
-#CCTYPE		:= MSVC143
+# Visual C++ 2013 Express Edition (aka Visual C++ 12.0) (free version)
+#CCTYPE		:= MSVC120FREE
 # MinGW or mingw-w64 with gcc-3.4.5 or later
-#CCTYPE		:= GCC
+CCTYPE		:= GCC
 
 #
 # If you are using Intel C++ Compiler uncomment this
 #
 #__ICC		:= define
-
-#
-# Uncomment this if you want to build everything in C++ mode
-#
-#USE_CPLUSPLUS	:= define
 
 #
 # uncomment next line if you want debug version of perl (big/slow)
@@ -219,29 +221,48 @@ DEFAULT_INC_EXCLUDES_DOT := define
 # set this to additionally provide a statically linked perl-static.exe.
 # Note that dynamic loading will not work with this perl, so you must
 # include required modules statically using the STATIC_EXT or ALL_STATIC
-# variables below. A static library perl536s.lib will also be created.
+# variables below. A static library perl524s.lib will also be created.
 # Ordinary perl.exe is not affected by this option.
 #
 #BUILD_STATIC	:= define
 
 #
 # in addition to BUILD_STATIC the option ALL_STATIC makes *every*
-# extension get statically built.
+# extension get statically built
 # This will result in a very large perl executable, but the main purpose
 # is to have proper linking set so as to be able to create miscellaneous
-# executables with different built-in extensions. It implies BUILD_STATIC.
+# executables with different built-in extensions
 #
 #ALL_STATIC	:= define
 
 #
-# set the install locations of the compiler
-# Running VCVARS32.BAT, VCVARSALL.BAT or similar is *required* when using
-# Visual C++.
+# set the install locations of the compiler include/libraries
+# Running VCVARS32.BAT is *required* when using Visual C.
+# Some versions of Visual C don't define MSVCDIR in the environment,
+# so you may have to set CCHOME explicitly (spaces in the path name should
+# not be quoted)
 #
-# For GCC builds this should be the directory containing the bin, include,
-# lib directories for your compiler.
+ifeq ($(CCTYPE),GCC)
+CCHOME		:= C:\MinGW
+else
+CCHOME		:= $(MSVCDIR)
+endif
+
 #
-#CCHOME		:= C:\MinGW
+# Following sets $Config{incpath} and $Config{libpth}
+#
+
+ifneq ($(GCCCROSS),)
+CCINCDIR := $(CCHOME)\$(GCCCROSS)\include
+CCLIBDIR := $(CCHOME)\$(GCCCROSS)\lib
+CCDLLDIR := $(CCLIBDIR)
+ARCHPREFIX := $(GCCCROSS)-
+else
+CCINCDIR := $(CCHOME)\include
+CCLIBDIR := $(CCHOME)\lib
+CCDLLDIR := $(CCHOME)\bin
+ARCHPREFIX :=
+endif
 
 #
 # Additional compiler flags can be specified here.
@@ -274,7 +295,7 @@ EXTRALIBDIRS	:=
 
 #
 # set this to your email address (perl will guess a value from
-# your loginname and your hostname, which may not be right)
+# from your loginname and your hostname, which may not be right)
 #
 #EMAIL		:=
 
@@ -295,9 +316,6 @@ USE_PERLIO	?= undef
 USE_LARGE_FILES	?= undef
 USE_64_BIT_INT	?= undef
 USE_LONG_DOUBLE	?= undef
-USE_QUADMATH	?= undef
-I_QUADMATH	?= undef
-DEFAULT_INC_EXCLUDES_DOT ?= undef
 USE_NO_REGISTRY	?= undef
 
 ifeq ($(USE_IMP_SYS),define)
@@ -325,7 +343,7 @@ BUILDOPT	+= -DUSE_SITECUSTOMIZE
 endif
 
 ifneq ($(USE_MULTI),undef)
-BUILDOPT	+= -DMULTIPLICITY
+BUILDOPT	+= -DPERL_IMPLICIT_CONTEXT
 endif
 
 ifneq ($(USE_IMP_SYS),undef)
@@ -337,69 +355,11 @@ BUILDOPT	+= -DWIN32_NO_REGISTRY
 endif
 
 ifeq ($(CCTYPE),GCC)
-GCCTARGET	:= $(shell $(GCCBIN) -dumpmachine)
-endif
-
-#no explicit CCTYPE given, do auto detection
-ifeq ($(CCTYPE),)
-GCCTARGET	:= $(shell $(GCCBIN) -dumpmachine 2>NUL)
-#do we have a GCC?
-ifneq ($(GCCTARGET),)
-CCTYPE		:= GCC
-else
-WIN64		:= $(shell for /f "tokens=3 delims=.^ " \
-	%%i in ('cl ^2^>^&1') do @if "%%i" == "32-bit" echo undef)
-#major version of CL has diff position based on 32 vs 64
-#Microsoft (R) C/C++ Optimizing Compiler Version 15.00.30729.01 for x64
-#Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 15.00.30729.01 for 80x86
-#use var to capture 1st line only, not 8th token of lines 2 & 3 in cl.exe output
-#removing the cmd /c (extra scope) on the echo causes the env var to be undef
-#when echo executes but it isn't undef for the "set MSVCVER", gmake or
-#cmd.exe bug?
-ifeq ($(WIN64),undef)
-MSVCVER		:= $(shell (set MSVCVER=) & (for /f "tokens=8,9 delims=.^ " \
-	%%i in ('cl ^2^>^&1') do if not defined MSVCVER if %%i%% geq 19 \
-	(set /A "MSVCVER=((%%i-5)*10)+(%%j/10)") \
-	else (set /A "MSVCVER=(%%i-6)*10")) & cmd /c echo %%MSVCVER%%)
-else
-MSVCVER		:= $(shell (set MSVCVER=) & (for /f "tokens=7,8 delims=.^ " \
-	%%i in ('cl ^2^>^&1') do if not defined MSVCVER if %%i%% geq 19 \
-	(set /A "MSVCVER=((%%i-5)*10)+(%%j/10)") \
-	else (set /A "MSVCVER=(%%i-6)*10")) & cmd /c echo %%MSVCVER%%)
-endif
-#autodetect failed, reset to empty string
-ifeq ($(MSVCVER),-50)
-CCTYPE		:= 
-else
-CCTYPE		:= MSVC$(MSVCVER)
-endif
-endif
-endif
-
-# Versions of Visual C++ up to VC++ 14.0 define $(VCINSTALLDIR), but for
-# VC++ 14.1 we need the subfolder given by $(VCToolsInstallDir).
-ifeq ($(CCHOME),)
-ifeq ($(CCTYPE),GCC)
-CCHOME		:= C:\MinGW
-else ifeq ($(CCTYPE),MSVC120)
-CCHOME		:= $(VCINSTALLDIR)
-else ifeq ($(CCTYPE),MSVC140)
-CCHOME		:= $(VCINSTALLDIR)
-else
-CCHOME		:= $(VCToolsInstallDir)
-endif
-endif
-
-# Check processor architecture from target triplet
-# possible values:
-# gcc: i686-w64-mingw32, x86_64-w64-mingw32
-# clang: i686-w64-windows-gnu, x86_64-w64-windows-gnu
-ifeq ($(CCTYPE),GCC)
-ifeq (x86_64, $(findstring x86_64, $(GCCTARGET)))
+ifeq ($(GCCTARGET),x86_64-w64-mingw32)
 WIN64 := define
 PROCESSOR_ARCHITECTURE := x64
 endif
-ifeq (i686, $(findstring i686, $(GCCTARGET)))
+ifeq ($(GCCTARGET),i686-w64-mingw32)
 WIN64 := undef
 PROCESSOR_ARCHITECTURE := x86
 endif
@@ -431,12 +391,23 @@ ifeq ($(WIN64),define)
 USE_64_BIT_INT	= define
 endif
 
+# Treat 64-bit MSVC60 (doesn't really exist) as SDK2003SP1 because
+# both link against MSVCRT.dll (which is part of Windows itself) and
+# not against a compiler specific versioned runtime.
+ifeq ("$(WIN64) $(CCTYPE)","define MSVC60")
+CCTYPE		= SDK2003SP1
+endif
+
+# Disable the 64-bit-int option for (32-bit) MSVC60 builds since that compiler
+# does not support it.
+ifeq ($(CCTYPE),MSVC60)
+USE_64_BIT_INT	= undef
+endif
+
 # Disable the long double option for MSVC builds since that compiler
 # does not support it.
 ifneq ($(CCTYPE),GCC)
 USE_LONG_DOUBLE	= undef
-USE_QUADMATH = undef
-I_QUADMATH = undef
 endif
 
 ARCHITECTURE = $(PROCESSOR_ARCHITECTURE)
@@ -475,60 +446,6 @@ ifeq ($(USE_LONG_DOUBLE),define)
 ARCHNAME	:= $(ARCHNAME)-ld
 endif
 
-ifeq ($(USE_QUADMATH),define)
-ARCHNAME	:= $(ARCHNAME)-quadmath
-endif
-
-ifeq ($(CCTYPE),GCC)
-GCCVER		:= $(shell $(GCCBIN) -dumpversion)
-GCCVER1		:= $(shell for /f "delims=. tokens=1,2,3" %%i in ('$(GCCBIN) -dumpversion') do echo %%i)
-GCCVER2		:= $(shell for /f "delims=. tokens=1,2,3" %%i in ('$(GCCBIN) -dumpversion') do echo %%j)
-GCCVER3		:= $(shell for /f "delims=. tokens=1,2,3" %%i in ('$(GCCBIN) -dumpversion') do echo %%k)
-endif
-
-# Set the install location of the compiler headers/libraries.
-# These are saved into $Config{incpath} and $Config{libpth}.
-ifneq ($(GCCCROSS),)
-CCINCDIR := $(CCHOME)\$(GCCCROSS)\include
-CCLIBDIR := $(CCHOME)\$(GCCCROSS)\lib
-ARCHPREFIX := $(GCCCROSS)-
-else ifeq ($(CCTYPE),GCC)
-CCINCDIR := $(CCHOME)\include
-CCLIBDIR := $(CCHOME)\lib;$(CCHOME)\$(GCCTARGET)\lib;$(CCHOME)\lib\gcc\$(GCCTARGET)\$(GCCVER)
-ARCHPREFIX :=
-else
-CCINCDIR := $(CCHOME)\include
-ifeq ($(CCTYPE),MSVC120)
-ifeq ($(WIN64),define)
-CCLIBDIR := $(CCHOME)\lib\amd64
-else
-CCLIBDIR := $(CCHOME)\lib
-endif
-else ifeq ($(CCTYPE),MSVC140)
-ifeq ($(WIN64),define)
-CCLIBDIR := $(CCHOME)\lib\amd64
-else
-CCLIBDIR := $(CCHOME)\lib
-endif
-else
-ifeq ($(WIN64),define)
-CCLIBDIR := $(CCHOME)\lib\x64
-else
-CCLIBDIR := $(CCHOME)\lib\x86
-endif
-endif
-ARCHPREFIX :=
-endif
-
-# Set DLL location for GCC compilers.
-ifeq ($(CCTYPE),GCC)
-ifneq ($(GCCCROSS),)
-CCDLLDIR := $(CCHOME)\$(GCCCROSS)\lib
-else
-CCDLLDIR := $(CCHOME)\bin
-endif
-endif
-
 ARCHDIR		= ..\lib\$(ARCHNAME)
 COREDIR		= ..\lib\CORE
 AUTODIR		= ..\lib\auto
@@ -539,6 +456,7 @@ CPANDIR		= ..\cpan
 PODDIR		= ..\pod
 HTMLDIR		= .\html
 
+#
 INST_SCRIPT	= $(INST_TOP)$(INST_VER)\bin
 INST_BIN	= $(INST_SCRIPT)$(INST_ARCH)
 INST_LIB	= $(INST_TOP)$(INST_VER)\lib
@@ -563,17 +481,12 @@ RSC		= $(ARCHPREFIX)windres
 ifeq ($(USE_LONG_DOUBLE),define)
 BUILDOPT        += -D__USE_MINGW_ANSI_STDIO
 MINIBUILDOPT    += -D__USE_MINGW_ANSI_STDIO
-else ifeq ($(USE_MINGW_ANSI_STDIO),define)
-BUILDOPT        += -D__USE_MINGW_ANSI_STDIO
-MINIBUILDOPT    += -D__USE_MINGW_ANSI_STDIO
 endif
 
-
-# By default add -fwrapv, since we depend on 2's complement behaviour
-# for signed numbers.
-# See https://github.com/Perl/perl5/issues/13690
+# If you are using GCC, 4.3 or later by default we add the -fwrapv option.
+# See https://rt.perl.org/Ticket/Display.html?id=121505
 #
-GCCWRAPV := define
+GCCWRAPV := $(shell if "$(GCCVER1)"=="4" (if "$(GCCVER2)" geq "3" echo define) else if "$(GCCVER1)" geq "5" (echo define))
 
 ifeq ($(GCCWRAPV),define)
 BUILDOPT        += -fwrapv
@@ -591,7 +504,7 @@ a = .a
 INCLUDES	= -I.\include -I. -I..
 DEFINES		= -DWIN32
 ifeq ($(WIN64),define)
-DEFINES		+= -DWIN64
+DEFINES		+= -DWIN64 -DCONSERVATIVE
 endif
 LOCDEFS		= -DPERLDLL -DPERL_CORE
 CXX_FLAG	= -xc++
@@ -600,25 +513,17 @@ LIBFILES	= $(LIBC) -lmoldname -lkernel32 -luser32 -lgdi32 -lwinspool \
 	-lcomdlg32 -ladvapi32 -lshell32 -lole32 -loleaut32 -lnetapi32 \
 	-luuid -lws2_32 -lmpr -lwinmm -lversion -lodbc32 -lodbccp32 -lcomctl32
 
-ifeq ($(USE_QUADMATH),define)
-LIBFILES	+= -lquadmath
-endif
-
 ifeq ($(CFG),Debug)
-OPTIMIZE	= -g -O2
+OPTIMIZE	= -g -O2 -DDEBUGGING
 LINK_DBG	= -g
-DEFINES		+= -DDEBUGGING
 else
-OPTIMIZE	= -O2
+OPTIMIZE	= -s -O2
 LINK_DBG	= -s
 endif
 
 EXTRACFLAGS	=
-ifeq ($(USE_CPLUSPLUS),define)
-EXTRACFLAGS	+= $(CXX_FLAG)
-endif
 CFLAGS		= $(EXTRACFLAGS) $(INCLUDES) $(DEFINES) $(LOCDEFS) $(OPTIMIZE)
-LINK_FLAGS	= $(LINK_DBG) -L"$(INST_COREDIR)" -L"$(subst ;," -L",$(CCLIBDIR))"
+LINK_FLAGS	= $(LINK_DBG) -L"$(INST_COREDIR)" -L"$(CCLIBDIR)"
 OBJOUT_FLAG	= -o
 EXEOUT_FLAG	= -o
 LIBOUT_FLAG	=
@@ -633,7 +538,9 @@ else
 
 o = .obj
 
-# Loading DLLs on demand makes the test suite run in about 10% less time.
+# All but the free version of VC++ 7.1 can load DLLs on demand.  Makes the test
+# suite run in about 10% less time.
+ifneq ($(CCTYPE),MSVC70FREE)
 # If no registry, advapi32 is only used for Perl_pp_getlogin/getlogin/GetUserNameA
 # which is rare to execute
 ifneq ($(USE_NO_REGISTRY),undef)
@@ -643,6 +550,29 @@ else
 DELAYLOAD	= -DELAYLOAD:ws2_32.dll delayimp.lib
 #miniperl never does any registry lookups
 MINIDELAYLOAD	= -DELAYLOAD:advapi32.dll
+endif
+endif
+
+# Visual C++ 2005 and 2008 (VC++ 8.0 and 9.0) create manifest files for EXEs and
+# DLLs. These either need copying everywhere with the binaries, or else need
+# embedding in them otherwise MSVCR80.dll or MSVCR90.dll won't be found. For
+# simplicity, embed them if they exist (and delete them afterwards so that they
+# don't get installed too).
+EMBED_EXE_MANI	= if exist $@.manifest mt -nologo -manifest $@.manifest -outputresource:$@;1 && \
+		  if exist $@.manifest del $@.manifest
+EMBED_DLL_MANI	= if exist $@.manifest mt -nologo -manifest $@.manifest -outputresource:$@;2 && \
+		  if exist $@.manifest del $@.manifest
+
+# Most relevant compiler-specific options fall into two groups:
+# either pre-MSVC80 or MSVC80 onwards, so define a macro for this.
+ifeq ($(CCTYPE),MSVC60)
+PREMSVC80	= define
+else ifeq ($(CCTYPE),MSVC70)
+PREMSVC80	= define
+else ifeq ($(CCTYPE),MSVC70FREE)
+PREMSVC80	= define
+else
+PREMSVC80	= undef
 endif
 
 ifneq ($(__ICC),define)
@@ -664,76 +594,67 @@ INCLUDES	= -I.\include -I. -I..
 DEFINES		= -DWIN32 -D_CONSOLE -DNO_STRICT
 LOCDEFS		= -DPERLDLL -DPERL_CORE
 CXX_FLAG	= -TP -EHsc
-EXTRACFLAGS	= -nologo -GF -W3
 
-ifeq ($(CCTYPE),MSVC120)
 LIBC		= msvcrt.lib
-else
-LIBC		= ucrt.lib
-endif
 
 ifeq ($(CFG),Debug)
-OPTIMIZE	= -Od -Zi
+OPTIMIZE	= -Od -MD -Zi -DDEBUGGING
 LINK_DBG	= -debug
-DEFINES		+= -DDEBUGGING
-EXTRACFLAGS	+= -MD
 else ifeq ($(CFG),DebugSymbols)
-OPTIMIZE	= -Od -Zi
+OPTIMIZE	= -Od -MD -Zi
 LINK_DBG	= -debug
-EXTRACFLAGS	+= -MD
 else ifeq ($(CFG),DebugFull)
-ifeq ($(CCTYPE),MSVC120)
 LIBC		= msvcrtd.lib
-else
-LIBC		= ucrtd.lib
-endif
-OPTIMIZE	= -Od -Zi
+OPTIMIZE	= -Od -MDd -Zi -D_DEBUG -DDEBUGGING
 LINK_DBG	= -debug
-DEFINES		+= -D_DEBUG -DDEBUGGING
-EXTRACFLAGS	+= -MDd
-
 else
-# Enable Whole Program Optimizations (WPO) and Link Time Code Generation (LTCG).
 # -O1 yields smaller code, which turns out to be faster than -O2 on x86 and x64
-OPTIMIZE	= -O1 -Zi -GL
+OPTIMIZE	= -O1 -MD -Zi -DNDEBUG
 # we enable debug symbols in release builds also
-LINK_DBG	= -debug -opt:ref,icf -ltcg
+LINK_DBG	= -debug -opt:ref,icf
 # you may want to enable this if you want COFF symbols in the executables
 # in addition to the PDB symbols.  The default Dr. Watson that ships with
-# Windows can use the former but not latter.  The free WinDbg can be
+# Windows can use the the former but not latter.  The free WinDbg can be
 # installed to get better stack traces from just the PDB symbols, so we
 # avoid the bloat of COFF symbols by default.
-#LINK_DBG	+= -debugtype:both
+#LINK_DBG	= $(LINK_DBG) -debugtype:both
+ifneq ($(CCTYPE),MSVC60)
+# enable Whole Program Optimizations (WPO) and Link Time Code Generation (LTCG)
+OPTIMIZE	+= -GL
+LINK_DBG	+= -ltcg
 LIB_FLAGS	= -ltcg
-EXTRACFLAGS	+= -MD
+endif
 endif
 
 ifeq ($(WIN64),define)
-DEFINES		+= -DWIN64
+DEFINES		+= -DWIN64 -DCONSERVATIVE
 OPTIMIZE	+= -fp:precise
 endif
 
-# For now, silence warnings about "unsafe" CRT functions
+# For now, silence warnings from VC++ 8.0 onwards about "unsafe" CRT functions
 # and POSIX CRT function names being deprecated.
+ifeq ($(PREMSVC80),undef)
 DEFINES		+= -D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE
+endif
 
-# Likewise for deprecated Winsock APIs in VC++ 14.0 onwards for now.
-ifneq ($(CCTYPE),MSVC120)
-DEFINES		+= -D_WINSOCK_DEPRECATED_NO_WARNINGS
+# In VS 2005 (VC++ 8.0) Microsoft changes time_t from 32-bit to
+# 64-bit, even in 32-bit mode.  It also provides the _USE_32BIT_TIME_T
+# preprocessor option to revert back to the old functionality for
+# backward compatibility.  We define this symbol here for older 32-bit
+# compilers only (which aren't using it at all) for the sole purpose
+# of getting it into $Config{ccflags}.  That way if someone builds
+# Perl itself with e.g. VC6 but later installs an XS module using VC8
+# the time_t types will still be compatible.
+ifeq ($(WIN64),undef)
+ifeq ((PREMSVC80),define)
+BUILDOPT	+= -D_USE_32BIT_TIME_T
+endif
 endif
 
 LIBBASEFILES	= oldnames.lib kernel32.lib user32.lib gdi32.lib winspool.lib \
 	comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib \
 	netapi32.lib uuid.lib ws2_32.lib mpr.lib winmm.lib version.lib \
 	odbc32.lib odbccp32.lib comctl32.lib
-
-ifneq ($(CCTYPE),MSVC120)
-ifeq ($(CFG),DebugFull)
-LIBBASEFILES	+= msvcrtd.lib vcruntimed.lib
-else
-LIBBASEFILES	+= msvcrt.lib vcruntime.lib
-endif
-endif
 
 # Avoid __intel_new_proc_init link error for libircmt.
 # libmmd is /MD equivelent, other variants exist.
@@ -743,8 +664,17 @@ ifeq ($(__ICC),define)
 LIBBASEFILES	+= libircmt.lib libmmd.lib
 endif
 
+# The 64 bit Windows Server 2003 SP1 SDK compilers link against MSVCRT.dll, which
+# doesn't include the buffer overrun verification code used by the /GS switch.
+# Since the code links against libraries that are compiled with /GS, this
+# "security cookie verification" code must be included via bufferoverflow.lib.
+ifeq ("$(WIN64) $(CCTYPE)","define SDK2003SP1")
+LIBBASEFILES    += bufferoverflowU.lib
+endif
+
 LIBFILES	= $(LIBBASEFILES) $(LIBC)
 
+EXTRACFLAGS	= -nologo -GF -W3
 ifeq ($(__ICC),define)
 EXTRACFLAGS	+= -Qstd=c99
 endif
@@ -767,19 +697,48 @@ endif
 
 CFLAGS_O	= $(CFLAGS) $(BUILDOPT)
 
-RSC_FLAGS	=
+ifeq ($(PREMSVC80),undef)
+PRIV_LINK_FLAGS	+= "/manifestdependency:type='Win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+else
+RSC_FLAGS	= -DINCLUDE_MANIFEST
+endif
 
-# VS 2017 (VC++ 14.1) requires at minimum Windows 7 SP1 (with latest Windows Updates)
 
 # For XP support in >= VS 2013 (VC++ 12.0), subsystem is always in Config.pm
-# LINK_FLAGS.
+# LINK_FLAGS else subsystem is only needed for EXE building, not XS DLL building
+# Console vs GUI makes no difference for DLLs, so use default for cleaner
+# building cmd lines
 
-ifneq ($(CCTYPE),GCC)
+ifeq ($(CCTYPE),MSVC120)
 ifeq ($(WIN64),define)
 LINK_FLAGS	+= -subsystem:console,"5.02"
 else
 LINK_FLAGS	+= -subsystem:console,"5.01"
 endif
+
+else ifeq ($(CCTYPE),MSVC120FREE)
+ifeq ($(WIN64),define)
+LINK_FLAGS	+= -subsystem:console,"5.02"
+else
+LINK_FLAGS	+= -subsystem:console,"5.01"
+endif
+
+else ifeq ($(CCTYPE),MSVC140)
+ifeq ($(WIN64),define)
+LINK_FLAGS	+= -subsystem:console,"5.02"
+else
+LINK_FLAGS	+= -subsystem:console,"5.01"
+endif
+
+else ifeq ($(CCTYPE),MSVC140FREE)
+ifeq ($(WIN64),define)
+LINK_FLAGS	+= -subsystem:console,"5.02"
+else
+LINK_FLAGS	+= -subsystem:console,"5.01"
+endif
+
+else ifneq ($(CCTYPE),GCC)
+PRIV_LINK_FLAGS	+= -subsystem:console
 endif
 
 BLINK_FLAGS	= $(PRIV_LINK_FLAGS) $(LINK_FLAGS)
@@ -845,7 +804,7 @@ endif
 UNIDATAFILES	 = ..\lib\unicore\Decomposition.pl ..\lib\unicore\TestProp.pl \
 		   ..\lib\unicore\CombiningClass.pl ..\lib\unicore\Name.pl \
 		   ..\lib\unicore\UCD.pl ..\lib\unicore\Name.pm            \
-		   ..\lib\unicore\mktables.lst
+		   ..\lib\unicore\Heavy.pl ..\lib\unicore\mktables.lst
 
 # Directories of Unicode data files generated by mktables
 UNIDATADIR1	= ..\lib\unicore\To
@@ -870,6 +829,8 @@ UTILS		=			\
 		..\utils\splain		\
 		..\utils\perlbug	\
 		..\utils\pl2pm 		\
+		..\utils\c2ph		\
+		..\utils\pstruct	\
 		..\utils\h2xs		\
 		..\utils\perldoc	\
 		..\utils\perlivp	\
@@ -899,9 +860,9 @@ ifeq ($(CCTYPE),GCC)
 
 CFGSH_TMPL	= config.gc
 CFGH_TMPL	= config_H.gc
-PERLIMPLIB	= $(COREDIR)\libperl536$(a)
-PERLIMPLIBBASE	= libperl536$(a)
-PERLSTATICLIB	= ..\libperl536s$(a)
+PERLIMPLIB	= $(COREDIR)\libperl524$(a)
+PERLIMPLIBBASE	= libperl524$(a)
+PERLSTATICLIB	= ..\libperl524s$(a)
 INT64		= long long
 
 else
@@ -914,12 +875,11 @@ endif
 
 # makedef.pl must be updated if this changes, and this should normally
 # only change when there is an incompatible revision of the public API.
-PERLIMPLIB	?= $(COREDIR)\perl536$(a)
-PERLIMPLIBBASE	?= perl536$(a)
-PERLEXPLIB	?= $(COREDIR)\perl536.exp
-PERLSTATICLIB	?= ..\perl536s$(a)
-PERLDLL		= ..\perl536.dll
-PERLDLLBASE	= perl536.dll
+PERLIMPLIB	?= $(COREDIR)\perl524$(a)
+PERLIMPLIBBASE	?= perl524$(a)
+PERLEXPLIB	?= $(COREDIR)\perl524.exp
+PERLSTATICLIB	?= ..\perl524s$(a)
+PERLDLL		= ..\perl524.dll
 
 # don't let "gmake -n all" try to run "miniperl.exe make_ext.pl"
 PLMAKE		= gmake
@@ -947,7 +907,6 @@ MICROCORE_SRC	=		\
 		..\dump.c	\
 		..\hv.c		\
 		..\av.c		\
-		..\builtin.c	\
 		..\caretx.c	\
 		..\deb.c	\
 		..\doio.c	\
@@ -961,6 +920,7 @@ MICROCORE_SRC	=		\
 		..\mg.c		\
 		..\numeric.c	\
 		..\pad.c	\
+		..\perlapi.c	\
 		..\perly.c	\
 		..\pp_sort.c	\
 		..\reentr.c	\
@@ -984,6 +944,12 @@ WIN32_SRC	=		\
 		.\win32sck.c	\
 		.\win32thread.c	\
 		.\fcrypt.c
+
+# We need this for miniperl build unless we override canned
+# config.h #define building mini\*
+#ifeq ($(USE_PERLIO)" == "define"
+WIN32_SRC	+= .\win32io.c
+#endif
 
 CORE_NOCFG_H	=		\
 		..\av.h		\
@@ -1032,8 +998,9 @@ UUDMAP_H	= ..\uudmap.h
 BITCOUNT_H	= ..\bitcount.h
 MG_DATA_H	= ..\mg_data.h
 GENERATED_HEADERS = $(UUDMAP_H) $(BITCOUNT_H) $(MG_DATA_H)
-
-HAVE_COREDIR	= .coreheaders
+#a stub ppport.h must be generated so building XS modules, .c->.obj wise, will
+#work, so this target also represents creating the COREDIR and filling it
+HAVE_COREDIR	= $(COREDIR)\ppport.h
 
 MICROCORE_OBJ	= $(MICROCORE_SRC:.c=$(o))
 CORE_OBJ	= $(MICROCORE_OBJ) $(EXTRACORE_SRC:.c=$(o))
@@ -1060,13 +1027,11 @@ ifeq ($(ALL_STATIC),define)
 # some exclusions, unfortunately, until fixed:
 #  - MakeMaker isn't capable enough for SDBM_File (small bug)
 STATIC_EXT	= * !SDBM_File
-NORMALIZE_STATIC = Normalize_static
 else
 # specify static extensions here, for example:
 # (be sure to include Win32CORE to load Win32 on demand)
 #STATIC_EXT	= Win32CORE Cwd Compress/Raw/Zlib
 STATIC_EXT	= Win32CORE
-NORMALIZE_DYN	= Normalize_dyn
 endif
 
 DYNALOADER	= ..\DynaLoader$(o)
@@ -1082,11 +1047,10 @@ CFG_VARS	=					\
 		"archname=$(ARCHNAME)"			\
 		"cc=$(CC)"				\
 		"ld=$(LINK32)"				\
-		"ccflags=$(subst ",\",$(EXTRACFLAGS) $(DEFINES) $(BUILDOPT))" \
+		"ccflags=$(subst ",\",$(EXTRACFLAGS) $(OPTIMIZE) $(DEFINES) $(BUILDOPT))" \
 		"usecplusplus=$(USE_CPLUSPLUS)"		\
 		"cf_email=$(EMAIL)"			\
 		"d_mymalloc=$(PERL_MALLOC)"		\
-		"i_quadmath=$(I_QUADMATH)"		\
 		"libs=$(LIBFILES)"			\
 		"incpath=$(subst ",\",$(CCINCDIR))"			\
 		"libperl=$(subst ",\",$(PERLIMPLIBBASE))"		\
@@ -1104,9 +1068,8 @@ CFG_VARS	=					\
 		"useperlio=$(USE_PERLIO)"		\
 		"use64bitint=$(USE_64_BIT_INT)"		\
 		"uselongdouble=$(USE_LONG_DOUBLE)"	\
-		"usequadmath=$(USE_QUADMATH)"		\
+		"uselargefiles=$(USE_LARGE_FILES)"	\
 		"usesitecustomize=$(USE_SITECUST)"	\
-		"default_inc_excludes_dot=$(DEFAULT_INC_EXCLUDES_DOT)"	\
 		"LINK_FLAGS=$(subst ",\",$(LINK_FLAGS))"\
 		"optimize=$(subst ",\",$(OPTIMIZE))"	\
 		"ARCHPREFIX=$(ARCHPREFIX)"		\
@@ -1121,24 +1084,15 @@ CFG_VARS	=					\
 all : info rebasePE Extensions_nonxs $(PERLSTATIC)
 
 info :
-ifeq ($(CCTYPE),GCC)
-	@echo # CCTYPE=$(CCTYPE)&& \
-	echo # GCCBIN=$(GCCBIN)&& \
-	echo # GCCVER=$(GCCVER1).$(GCCVER2).$(GCCVER3)&& \
-	echo # GCCTARGET=$(GCCTARGET)&& \
-	echo # GCCCROSS=$(GCCCROSS)&& \
-	echo # WIN64=$(WIN64)&& \
-	echo # ARCHITECTURE=$(ARCHITECTURE)&& \
-	echo # ARCHNAME=$(ARCHNAME)&& \
-	echo # MAKE=$(PLMAKE)
-else
-	@echo # CCTYPE=$(CCTYPE)&& \
-	echo # WIN64=$(WIN64)&& \
-	echo # ARCHITECTURE=$(ARCHITECTURE)&& \
-	echo # ARCHNAME=$(ARCHNAME)&& \
-	echo # MAKE=$(PLMAKE)
-endif
-ifeq ($(CCTYPE),)
+	@echo # GCCBIN=$(GCCBIN)
+	@echo # GCCVER=$(GCCVER1).$(GCCVER2).$(GCCVER3)
+	@echo # GCCTARGET=$(GCCTARGET)
+	@echo # GCCCROSS=$(GCCCROSS)
+	@echo # WIN64=$(WIN64)
+	@echo # ARCHITECTURE=$(ARCHITECTURE)
+	@echo # ARCHNAME=$(ARCHNAME)
+	@echo # MAKE=$(PLMAKE)
+ifeq ($(GCCTARGET),)
 	@echo Unable to detect gcc and/or architecture!
 	@exit 1
 endif
@@ -1158,10 +1112,10 @@ static: $(PERLEXESTATIC)
 
 $(GLOBEXE) : perlglob.c
 ifeq ($(CCTYPE),GCC)
-	$(LINK32) $(EXTRACFLAGS) $(OPTIMIZE) $(BLINK_FLAGS) -mconsole -o $@ perlglob.c $(LIBFILES)
+	$(LINK32) $(OPTIMIZE) $(BLINK_FLAGS) -mconsole -o $@ perlglob.c $(LIBFILES)
 else
-	$(CC) $(EXTRACFLAGS) $(OPTIMIZE) $(PDBOUT) -Fe$@ perlglob.c -link $(BLINK_FLAGS) \
-	setargv$(o) $(LIBFILES)
+	$(CC) $(OPTIMIZE) $(PDBOUT) -Fe$@ perlglob.c -link $(BLINK_FLAGS) \
+	setargv$(o) $(LIBFILES) && $(EMBED_EXE_MANI)
 endif
 
 ..\git_version.h : $(HAVEMINIPERL) ..\make_patchnum.pl
@@ -1178,7 +1132,7 @@ endif
 # with MULTI, ITHREADS, IMP_SYS, LARGE_FILES and PERLIO off), then make
 # this target to regenerate config_H.gc.
 regen_config_h:
-	$(MINIPERL) -I..\lib config_sh.PL --prebuilt $(CFG_VARS) $(CFGSH_TMPL) > ..\config.sh
+	$(MINIPERL) -I..\lib config_sh.PL $(CFG_VARS) $(CFGSH_TMPL) > ..\config.sh
 	$(MINIPERL) -I..\lib ..\configpm --chdir=..
 	-del /f $(CFGH_TMPL)
 	-$(MINIPERL) -I..\lib config_h.PL "ARCHPREFIX=$(ARCHPREFIX)"
@@ -1197,6 +1151,7 @@ ifeq ($(CCTYPE),GCC)
 else
 	$(LINK32) -out:$(MINIPERL) $(BLINK_FLAGS) \
 	    $(DELAYLOAD) $(MINIDELAYLOAD) $(LIBFILES) $(MINI_OBJ)
+	$(subst $@,$(MINIPERL),$(EMBED_EXE_MANI))
 
 endif
 	$(MINIPERL) -I..\lib -f ..\write_buildcustomize.pl ..
@@ -1221,6 +1176,9 @@ $(MINIDIR)\.exists : $(CFGH_TMPL)
 	@(echo.&& \
 	echo #ifndef _config_h_footer_&& \
 	echo #define _config_h_footer_&& \
+	echo #undef Off_t&& \
+	echo #undef LSEEKSIZE&& \
+	echo #undef Off_t_size&& \
 	echo #undef PTRSIZE&& \
 	echo #undef SSize_t&& \
 	echo #undef HAS_ATOLL&& \
@@ -1257,27 +1215,17 @@ $(MINIDIR)\.exists : $(CFGH_TMPL)
 	echo #undef NVef&& \
 	echo #undef NVff&& \
 	echo #undef NVgf&& \
-	echo #undef USE_LONG_DOUBLE&& \
-	echo #undef I_QUADMATH&& \
-	echo #undef USE_QUADMATH&& \
-	echo #undef USE_CPLUSPLUS)>> config.h
-ifneq ($(CCTYPE),MSVC120)
-	@(echo #undef FILE_ptr&& \
-	echo #undef FILE_cnt&& \
-	echo #undef FILE_base&& \
-	echo #undef FILE_bufsiz&& \
-	echo #define FILE_ptr^(fp^) PERLIO_FILE_ptr^(fp^)&& \
-	echo #define FILE_cnt^(fp^) PERLIO_FILE_cnt^(fp^)&& \
-	echo #define FILE_base^(fp^) PERLIO_FILE_base^(fp^)&& \
-	echo #define FILE_bufsiz^(fp^) ^(PERLIO_FILE_cnt^(fp^) + PERLIO_FILE_ptr^(fp^) - PERLIO_FILE_base^(fp^)^)&& \
-	echo #define I_STDBOOL)>> config.h
+	echo #undef USE_LONG_DOUBLE)>> config.h
+ifeq ($(USE_LARGE_FILES),define)
+	@(echo #define Off_t $(INT64)&& \
+	echo #define LSEEKSIZE ^8&& \
+	echo #define Off_t_size ^8)>> config.h
+else
+	@(echo #define Off_t long&& \
+	echo #define LSEEKSIZE ^4&& \
+	echo #define Off_t_size ^4)>> config.h
 endif
 ifeq ($(WIN64),define)
-ifeq ($(CCTYPE),GCC)
-	@(echo #define LONG_DOUBLESIZE ^16)>> config.h
-else
-	@(echo #define LONG_DOUBLESIZE ^8)>> config.h
-endif
 	@(echo #define PTRSIZE ^8&& \
 	echo #define SSize_t $(INT64)&& \
 	echo #define HAS_ATOLL&& \
@@ -1285,11 +1233,6 @@ endif
 	echo #define HAS_STRTOULL&& \
 	echo #define Size_t_size ^8)>> config.h
 else
-ifeq ($(CCTYPE),GCC)
-	@(echo #define LONG_DOUBLESIZE ^12)>> config.h
-else
-	@(echo #define LONG_DOUBLESIZE ^8)>> config.h
-endif
 	@(echo #define PTRSIZE ^4&& \
 	echo #define SSize_t int&& \
 	echo #undef HAS_ATOLL&& \
@@ -1303,9 +1246,6 @@ ifeq ($(USE_64_BIT_INT),define)
 	echo #define IVSIZE ^8&& \
 	echo #define UVSIZE ^8)>> config.h
 ifeq ($(USE_LONG_DOUBLE),define)
-	@(echo #define NV_PRESERVES_UV&& \
-	echo #define NV_PRESERVES_UV_BITS 64)>> config.h
-else ifeq ($(USE_QUADMATH),define)
 	@(echo #define NV_PRESERVES_UV&& \
 	echo #define NV_PRESERVES_UV_BITS 64)>> config.h
 else
@@ -1344,36 +1284,19 @@ ifeq ($(USE_LONG_DOUBLE),define)
 	echo #define PERL_PRIgldbl "Lg"&& \
 	echo #define PERL_PRIeldbl "Le"&& \
 	echo #define PERL_SCNfldbl "Lf"&& \
-	echo #define NVTYPE long double&& \
-	echo #define NVSIZE LONG_DOUBLESIZE&& \
-	echo #define NV_OVERFLOWS_INTEGERS_AT 256.0*256.0*256.0*256.0*256.0*256.0*256.0*2.0*2.0*2.0*2.0*2.0*2.0*2.0*2.0&& \
+	echo #define NVTYPE long double)>> config.h
+ifeq ($(WIN64),define)
+	@(echo #define NVSIZE ^16&& \
+	echo #define LONG_DOUBLESIZE ^16)>> config.h
+else
+	@(echo #define NVSIZE ^12&& \
+	echo #define LONG_DOUBLESIZE ^12)>> config.h
+endif
+	@(echo #define NV_OVERFLOWS_INTEGERS_AT 256.0*256.0*256.0*256.0*256.0*256.0*256.0*2.0*2.0*2.0*2.0*2.0*2.0*2.0*2.0&& \
 	echo #define NVef "Le"&& \
 	echo #define NVff "Lf"&& \
 	echo #define NVgf "Lg"&& \
-	echo #undef I_QUADMATH&& \
-	echo #undef USE_QUADMATH&& \
 	echo #define USE_LONG_DOUBLE)>> config.h
-else ifeq ($(USE_QUADMATH),define)
-	@(echo #define Gconvert^(x,n,t,b^) sprintf^(^(b^),"%%.*""Lg",^(n^),^(x^)^)&& \
-	echo #define HAS_FREXPL&& \
-	echo #define HAS_ISNANL&& \
-	echo #define HAS_MODFL&& \
-	echo #define HAS_MODFL_PROTO&& \
-	echo #define HAS_SQRTL&& \
-	echo #define HAS_STRTOLD&& \
-	echo #define PERL_PRIfldbl "Lf"&& \
-	echo #define PERL_PRIgldbl "Lg"&& \
-	echo #define PERL_PRIeldbl "Le"&& \
-	echo #define PERL_SCNfldbl "Lf"&& \
-	echo #define NVTYPE __float128&& \
-	echo #define NVSIZE 16&& \
-	echo #define NV_OVERFLOWS_INTEGERS_AT 256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*256.0*2.0&& \
-	echo #define NVef "Qe"&& \
-	echo #define NVff "Qf"&& \
-	echo #define NVgf "Qg"&& \
-	echo #undef USE_LONG_DOUBLE&& \
-	echo #define I_QUADMATH&& \
-	echo #define USE_QUADMATH)>> config.h
 else
 	@(echo #define Gconvert^(x,n,t,b^) sprintf^(^(b^),"%%.*g",^(n^),^(x^)^)&& \
 	echo #undef HAS_FREXPL&& \
@@ -1388,12 +1311,11 @@ else
 	echo #undef PERL_SCNfldbl&& \
 	echo #define NVTYPE double&& \
 	echo #define NVSIZE ^8&& \
+	echo #define LONG_DOUBLESIZE ^8&& \
 	echo #define NV_OVERFLOWS_INTEGERS_AT 256.0*256.0*256.0*256.0*256.0*256.0*2.0*2.0*2.0*2.0*2.0&& \
 	echo #define NVef "e"&& \
 	echo #define NVff "f"&& \
 	echo #define NVgf "g"&& \
-	echo #undef I_QUADMATH&& \
-	echo #undef USE_QUADMATH&& \
 	echo #undef USE_LONG_DOUBLE)>> config.h
 endif
 ifeq ($(USE_CPLUSPLUS),define)
@@ -1404,7 +1326,7 @@ else
 	echo #endif)>> config.h
 endif
 #separate line since this is sentinal that this target is done
-	@rem. > $(MINIDIR)\.exists
+	rem. > $(MINIDIR)\.exists
 
 $(MINICORE_OBJ) : $(CORE_NOCFG_H)
 	$(CC) -c $(CFLAGS) $(MINIBUILDOPT) -DPERL_EXTERNAL_GLOB -DPERL_IS_MINIPERL $(OBJOUT_FLAG)$@ $(PDBOUT) ..\$(*F).c
@@ -1413,7 +1335,7 @@ $(MINIWIN32_OBJ) : $(CORE_NOCFG_H)
 	$(CC) -c $(CFLAGS) $(MINIBUILDOPT) -DPERL_IS_MINIPERL $(OBJOUT_FLAG)$@ $(PDBOUT) $(*F).c
 
 # -DPERL_IMPLICIT_SYS needs C++ for perllib.c
-# rules wrapped in .IFs break Win9X build (we end up with unbalanced []s
+# rules wrapped in .IFs break Win9X build (we end up with unbalanced []s unless
 # unless the .IF is true), so instead we use a .ELSE with the default.
 # This is the only file that depends on perlhost.h, vmem.h, and vdir.h
 
@@ -1447,20 +1369,21 @@ $(PERLEXPLIB) : $(PERLIMPLIB)
 
 $(PERLIMPLIB) : perldll.def
 ifeq ($(CCTYPE),GCC)
-	$(IMPLIB) -k -d perldll.def -D $(PERLDLLBASE) -l $(PERLIMPLIB) -e $(PERLEXPLIB)
+	$(IMPLIB) -k -d perldll.def -l $(PERLIMPLIB) -e $(PERLEXPLIB)
 else
 	lib -def:perldll.def -machine:$(ARCHITECTURE) /OUT:$(PERLIMPLIB)
 endif
 
 $(PERLDLL): $(PERLEXPLIB) $(PERLDLL_OBJ) $(PERLDLL_RES) Extensions_static
 ifeq ($(CCTYPE),GCC)
-	$(LINK32) -shared -o $@ $(BLINK_FLAGS) \
+	$(LINK32) -mdll -o $@ $(BLINK_FLAGS) \
 	   $(PERLDLL_OBJ) $(shell type Extensions_static) $(LIBFILES) $(PERLEXPLIB)
 else
 	$(LINK32) -dll -out:$@ $(BLINK_FLAGS) \
 	    @Extensions_static \
-	    $(DELAYLOAD) $(LIBFILES) \
+	    -base:0x28000000 $(DELAYLOAD) $(LIBFILES) \
 	    $(PERLDLL_RES) $(PERLDLL_OBJ) $(PERLEXPLIB)
+	$(EMBED_DLL_MANI)
 endif
 
 $(PERLSTATICLIB): $(PERLDLL_OBJ) Extensions_static
@@ -1493,15 +1416,13 @@ ifeq ($(CCTYPE),GCC)
 	$(BLINK_FLAGS) $(LIBFILES)
 else
 	$(CC) $(CFLAGS_O) $(PDBOUT) -Fe..\generate_uudmap.exe ..\generate_uudmap.c -link $(LIBFILES) $(BLINK_FLAGS)
+	$(EMBED_EXE_MANI)
 endif
 
-.PHONY: MakePPPort
-
-MakePPPort : $(HAVEMINIPERL) $(CONFIGPM)
-	$(MINIPERL) -I..\lib ..\mkppport
-
-# also known as $(HAVE_COREDIR)
-.coreheaders : $(CORE_H)
+#This generates a stub ppport.h & creates & fills /lib/CORE to allow for XS
+#building .c->.obj wise (linking is a different thing). This target is AKA
+#$(HAVE_COREDIR).
+$(COREDIR)\ppport.h : $(CORE_H)
 	$(XCOPY) *.h $(COREDIR)\\*.*
 	$(RCOPY) include $(COREDIR)\\*.*
 	$(XCOPY) ..\\*.h $(COREDIR)\\*.*
@@ -1520,6 +1441,7 @@ ifeq ($(CCTYPE),GCC)
 else
 	$(LINK32) -out:$@ $(BLINK_FLAGS) \
 	    $(PERLEXE_OBJ) $(PERLEXE_RES) $(PERLIMPLIB) $(LIBFILES) $(SETARGV_OBJ)
+	$(EMBED_EXE_MANI)
 endif
 	copy $(PERLEXE) $(WPERLEXE)
 	$(MINIPERL) -I..\lib bin\exetype.pl $(WPERLEXE) WINDOWS
@@ -1531,6 +1453,7 @@ ifeq ($(CCTYPE),GCC)
 else
 	$(LINK32) -out:$@ $(BLINK_FLAGS) \
 	    $(PERLEXEST_OBJ) $(PERLEXE_RES) $(PERLSTATICLIB) $(LIBFILES) $(SETARGV_OBJ)
+	$(EMBED_EXE_MANI)
 endif
 
 #-------------------------------------------------------------------------------
@@ -1538,33 +1461,25 @@ endif
 # DynaLoader.pm, so this will have to do
 
 #most of deps of this target are in DYNALOADER and therefore omitted here
-Extensions : $(PERLDEP) $(DYNALOADER) Extension_lib $(GLOBEXE) MakePPPort
+Extensions : $(PERLDEP) $(DYNALOADER) $(GLOBEXE)
 	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --dynamic !Unicode/Normalize
 
-Normalize_static : $(CONFIGPM) $(GLOBEXE) $(HAVE_COREDIR) $(UNIDATAFILES)
-	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --static +Unicode/Normalize
-
-Normalize_dyn : $(PERLDEP) $(DYNALOADER) $(GLOBEXE) $(UNIDATAFILES)
+Extensions_normalize : $(PERLDEP) $(DYNALOADER) $(GLOBEXE) $(UNIDATAFILES)
 	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --dynamic +Unicode/Normalize
 
 Extensions_reonly : $(PERLDEP) $(DYNALOADER)
 	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --dynamic +re
 
-Exts_static_general : ..\make_ext.pl $(CONFIGPM) Extension_lib $(GLOBEXE) $(HAVE_COREDIR) MakePPPort
-	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --static !Unicode/Normalize
-
-Extensions_static : list_static_libs.pl Exts_static_general $(NORMALIZE_STATIC)
+Extensions_static : ..\make_ext.pl list_static_libs.pl $(CONFIGPM) $(GLOBEXE) $(HAVE_COREDIR)
+	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --static
 	$(MINIPERL) -I..\lib list_static_libs.pl > Extensions_static
 
 Extensions_nonxs : ..\make_ext.pl ..\pod\perlfunc.pod $(CONFIGPM) $(GLOBEXE)
 	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --nonxs !libs
 
-Extension_lib : ..\make_ext.pl $(CONFIGPM)
-	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) lib
-
 #lib must be built, it can't be buildcustomize.pl-ed, and is required for XS building
 $(DYNALOADER) : ..\make_ext.pl $(CONFIGPM) $(HAVE_COREDIR)
-	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(EXTDIR) --dir=$(DISTDIR) --dynaloader
+	$(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(EXTDIR) --dir=$(DISTDIR) --dynaloader lib
 
 Extensions_clean :
 	-if exist $(MINIPERL) $(MINIPERL) -I..\lib ..\make_ext.pl "MAKE=$(PLMAKE)" --dir=$(CPANDIR) --dir=$(DISTDIR) --dir=$(EXTDIR) --all --target=clean
@@ -1575,10 +1490,10 @@ Extensions_realclean :
 # all PE files need to be built by the time this target runs, PP files can still
 # be running in parallel like UNIDATAFILES, this target a placeholder for the
 # future
-ifeq ($(PERLSTATIC),static)
-rebasePE : Extensions $(PERLDLL) $(PERLEXE) $(PERLEXESTATIC)
+ifeq ($(BUILD_STATIC),define)
+rebasePE : Extensions $(PERLDLL) Extensions_normalize $(PERLEXE) $(PERLEXESTATIC)
 else
-rebasePE : Extensions $(PERLDLL) $(NORMALIZE_DYN) $(PERLEXE)
+rebasePE : Extensions $(PERLDLL) Extensions_normalize $(PERLEXE)
 endif
 	$(NOOP)
 
@@ -1600,8 +1515,10 @@ utils: $(HAVEMINIPERL) ..\utils\Makefile
 	copy ..\README.amiga    ..\pod\perlamiga.pod
 	copy ..\README.android  ..\pod\perlandroid.pod
 	copy ..\README.bs2000   ..\pod\perlbs2000.pod
+	copy ..\README.ce       ..\pod\perlce.pod
 	copy ..\README.cn       ..\pod\perlcn.pod
 	copy ..\README.cygwin   ..\pod\perlcygwin.pod
+	copy ..\README.dos      ..\pod\perldos.pod
 	copy ..\README.freebsd  ..\pod\perlfreebsd.pod
 	copy ..\README.haiku    ..\pod\perlhaiku.pod
 	copy ..\README.hpux     ..\pod\perlhpux.pod
@@ -1610,7 +1527,9 @@ utils: $(HAVEMINIPERL) ..\utils\Makefile
 	copy ..\README.jp       ..\pod\perljp.pod
 	copy ..\README.ko       ..\pod\perlko.pod
 	copy ..\README.linux    ..\pod\perllinux.pod
+	copy ..\README.macos    ..\pod\perlmacos.pod
 	copy ..\README.macosx   ..\pod\perlmacosx.pod
+	copy ..\README.netware  ..\pod\perlnetware.pod
 	copy ..\README.openbsd  ..\pod\perlopenbsd.pod
 	copy ..\README.os2      ..\pod\perlos2.pod
 	copy ..\README.os390    ..\pod\perlos390.pod
@@ -1619,17 +1538,18 @@ utils: $(HAVEMINIPERL) ..\utils\Makefile
 	copy ..\README.qnx      ..\pod\perlqnx.pod
 	copy ..\README.riscos   ..\pod\perlriscos.pod
 	copy ..\README.solaris  ..\pod\perlsolaris.pod
+	copy ..\README.symbian  ..\pod\perlsymbian.pod
 	copy ..\README.synology ..\pod\perlsynology.pod
 	copy ..\README.tru64    ..\pod\perltru64.pod
 	copy ..\README.tw       ..\pod\perltw.pod
 	copy ..\README.vos      ..\pod\perlvos.pod
 	copy ..\README.win32    ..\pod\perlwin32.pod
-	copy ..\pod\perldelta.pod ..\pod\perl5363delta.pod
+	copy ..\pod\perldelta.pod ..\pod\perl5241delta.pod
 	$(MINIPERL) -I..\lib $(PL2BAT) $(UTILS)
 	$(MINIPERL) -I..\lib ..\autodoc.pl ..
 	$(MINIPERL) -I..\lib ..\pod\perlmodlib.PL -q ..
 
-..\pod\perltoc.pod: $(PERLEXE) $(PERLDLL) Extensions Extensions_nonxs $(NORMALIZE_DYN) utils
+..\pod\perltoc.pod: $(PERLEXE) $(PERLDLL) Extensions Extensions_nonxs Extensions_normalize utils
 	$(PERLEXE) -f ..\pod\buildtoc -q
 
 # Note that the pod cleanup in this next section is parsed (and regenerated
@@ -1646,11 +1566,11 @@ distclean: realclean
 	-del /f $(LIBDIR)\SDBM_File.pm $(LIBDIR)\Socket.pm $(LIBDIR)\POSIX.pm
 	-del /f $(LIBDIR)\B.pm $(LIBDIR)\O.pm $(LIBDIR)\re.pm
 	-del /f $(LIBDIR)\File\Glob.pm
+	-del /f $(LIBDIR)\Storable.pm
 	-del /f $(LIBDIR)\Sys\Hostname.pm
 	-del /f $(LIBDIR)\Time\HiRes.pm
 	-del /f $(LIBDIR)\Unicode\Normalize.pm
 	-del /f $(LIBDIR)\Math\BigInt\FastCalc.pm
-	-del /f $(LIBDIR)\Storable.pm $(LIBDIR)\Storable\Limit.pm
 	-del /f $(LIBDIR)\Win32.pm
 	-del /f $(LIBDIR)\Win32CORE.pm
 	-del /f $(LIBDIR)\Win32API\File.pm
@@ -1658,7 +1578,6 @@ distclean: realclean
 	-del /f $(LIBDIR)\buildcustomize.pl
 	-del /f $(DISTDIR)\XSLoader\XSLoader.pm
 	-del /f *.def *.map
-	-if exist $(LIBDIR)\Amiga rmdir /s /q $(LIBDIR)\Amiga
 	-if exist $(LIBDIR)\App rmdir /s /q $(LIBDIR)\App
 	-if exist $(LIBDIR)\Archive rmdir /s /q $(LIBDIR)\Archive
 	-if exist $(LIBDIR)\Attribute rmdir /s /q $(LIBDIR)\Attribute
@@ -1696,12 +1615,10 @@ distclean: realclean
 	-if exist $(LIBDIR)\MIME rmdir /s /q $(LIBDIR)\MIME
 	-if exist $(LIBDIR)\Module rmdir /s /q $(LIBDIR)\Module
 	-if exist $(LIBDIR)\Net\FTP rmdir /s /q $(LIBDIR)\Net\FTP
-	-if exist $(LIBDIR)\OpenBSD rmdir /s /q $(LIBDIR)\OpenBSD
 	-if exist $(LIBDIR)\Params rmdir /s /q $(LIBDIR)\Params
 	-if exist $(LIBDIR)\Parse rmdir /s /q $(LIBDIR)\Parse
 	-if exist $(LIBDIR)\Perl rmdir /s /q $(LIBDIR)\Perl
 	-if exist $(LIBDIR)\PerlIO rmdir /s /q $(LIBDIR)\PerlIO
-	-if exist $(LIBDIR)\Pod\Html rmdir /s /q $(LIBDIR)\Pod\Html
 	-if exist $(LIBDIR)\Pod\Perldoc rmdir /s /q $(LIBDIR)\Pod\Perldoc
 	-if exist $(LIBDIR)\Pod\Simple rmdir /s /q $(LIBDIR)\Pod\Simple
 	-if exist $(LIBDIR)\Pod\Text rmdir /s /q $(LIBDIR)\Pod\Text
@@ -1712,7 +1629,6 @@ distclean: realclean
 	-if exist $(LIBDIR)\TAP rmdir /s /q $(LIBDIR)\TAP
 	-if exist $(LIBDIR)\Term rmdir /s /q $(LIBDIR)\Term
 	-if exist $(LIBDIR)\Test rmdir /s /q $(LIBDIR)\Test
-	-if exist $(LIBDIR)\Test2 rmdir /s /q $(LIBDIR)\Test2
 	-if exist $(LIBDIR)\Text rmdir /s /q $(LIBDIR)\Text
 	-if exist $(LIBDIR)\Thread rmdir /s /q $(LIBDIR)\Thread
 	-if exist $(LIBDIR)\threads rmdir /s /q $(LIBDIR)\threads
@@ -1724,15 +1640,17 @@ distclean: realclean
 	-if exist $(LIBDIR)\Win32API rmdir /s /q $(LIBDIR)\Win32API
 	-if exist $(LIBDIR)\XS rmdir /s /q $(LIBDIR)\XS
 	-cd $(PODDIR) && del /f *.html *.bat roffitall \
-	    perl5363delta.pod perlaix.pod perlamiga.pod perlandroid.pod \
-	    perlapi.pod perlbs2000.pod perlcn.pod perlcygwin.pod \
-	    perlfreebsd.pod perlhaiku.pod perlhpux.pod perlhurd.pod \
-	    perlintern.pod perlirix.pod perljp.pod perlko.pod perllinux.pod \
-	    perlmacosx.pod perlmodlib.pod perlopenbsd.pod perlos2.pod \
-	    perlos390.pod perlos400.pod perlplan9.pod perlqnx.pod \
-	    perlriscos.pod perlsolaris.pod perlsynology.pod perltoc.pod \
-	    perltru64.pod perltw.pod perlvos.pod perlwin32.pod
-	-cd ..\utils && del /f h2ph splain perlbug pl2pm h2xs \
+	    perl5241delta.pod perlaix.pod perlamiga.pod perlandroid.pod \
+	    perlapi.pod perlbs2000.pod perlce.pod perlcn.pod perlcygwin.pod \
+	    perldos.pod perlfreebsd.pod perlhaiku.pod perlhpux.pod \
+	    perlhurd.pod perlintern.pod perlirix.pod perljp.pod perlko.pod \
+	    perllinux.pod perlmacos.pod perlmacosx.pod perlmodlib.pod \
+	    perlnetware.pod perlopenbsd.pod perlos2.pod perlos390.pod \
+	    perlos400.pod perlplan9.pod perlqnx.pod perlriscos.pod \
+	    perlsolaris.pod perlsymbian.pod perlsynology.pod perltoc.pod \
+	    perltru64.pod perltw.pod perluniprops.pod perlvos.pod \
+	    perlwin32.pod
+	-cd ..\utils && del /f h2ph splain perlbug pl2pm c2ph pstruct h2xs \
 	    perldoc perlivp libnetcfg enc2xs encguess piconv cpan *.bat \
 	    xsubpp pod2html instmodsh json_pp prove ptar ptardiff ptargrep shasum corelist zipdetails
 	-del /f ..\config.sh perlmain.c dlutils.c config.h.new \
@@ -1802,7 +1720,6 @@ test-prep-gcc :
 	if exist $(CCDLLDIR)\libgcc_s_dw2-1.dll $(XCOPY) $(CCDLLDIR)\libgcc_s_dw2-1.dll ..\t\$(NULL)
 	if exist $(CCDLLDIR)\libstdc++-6.dll $(XCOPY) $(CCDLLDIR)\libstdc++-6.dll ..\t\$(NULL)
 	if exist $(CCDLLDIR)\libwinpthread-1.dll $(XCOPY) $(CCDLLDIR)\libwinpthread-1.dll ..\t\$(NULL)
-	if exist $(CCDLLDIR)\libquadmath-0.dll $(XCOPY) $(CCDLLDIR)\libquadmath-0.dll ..\t\$(NULL)
 
 endif
 
@@ -1851,7 +1768,6 @@ _clean :
 	-@erase $(PERLDLL)
 	-@erase $(CORE_OBJ)
 	-@erase $(GENUUDMAP) $(GENUUDMAP_OBJ) $(GENERATED_HEADERS)
-	-@erase .coreheaders
 	-if exist $(MINIDIR) rmdir /s /q $(MINIDIR)
 	-if exist $(UNIDATADIR1) rmdir /s /q $(UNIDATADIR1)
 	-if exist $(UNIDATADIR2) rmdir /s /q $(UNIDATADIR2)

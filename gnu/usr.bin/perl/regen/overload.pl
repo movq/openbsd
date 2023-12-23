@@ -3,7 +3,7 @@
 # Regenerate (overwriting only if changed):
 #
 #    overload.h
-#    overload.inc
+#    overload.c
 #    lib/overload/numbers.pm
 #
 # from information stored in the DATA section of this file.
@@ -16,7 +16,7 @@
 
 BEGIN {
     # Get function prototypes
-    require './regen/regen_lib.pl';
+    require 'regen/regen_lib.pl';
 }
 
 use strict;
@@ -32,14 +32,14 @@ while (<DATA>) {
 
 my ($c, $h) = map {
     open_new($_, '>',
-             { by => 'regen/overload.pl', file => $_, style => '*',
-               copyright => [1997, 1998, 2000, 2001, 2005 .. 2007, 2011] });
-} 'overload.inc', 'overload.h';
+	     { by => 'regen/overload.pl', file => $_, style => '*',
+	       copyright => [1997, 1998, 2000, 2001, 2005 .. 2007, 2011] });
+} 'overload.c', 'overload.h';
 
 mkdir("lib/overload", 0777) unless -d 'lib/overload';
 my $p = open_new('lib/overload/numbers.pm', '>',
-                 { by => 'regen/overload.pl',
-                   file => 'lib/overload/numbers.pm', copyright => [2008] });
+		 { by => 'regen/overload.pl',
+		   file => 'lib/overload/numbers.pm', copyright => [2008] });
 
 {
 local $" = "\n    ";
@@ -70,7 +70,7 @@ for (0..$#enums) {
     my $l =   3 - int((length($enums[$_]) + 9) / 8);
     $l = 1 if $l < 1;
     printf $h "    %s_amg,%s/* 0x%02x %-8s */\n", $enums[$_],
-        ("\t" x $l), $_, $op;
+	("\t" x $l), $_, $op;
 }
 
 print $h <<'EOF';
@@ -178,20 +178,13 @@ rshift		(>>
 rshift_ass	(>>=
 band		(&
 band_ass	(&=
-sband		(&.
-sband_ass	(&.=
 bor		(|
 bor_ass		(|=
-sbor		(|.
-sbor_ass	(|.=
 bxor		(^
 bxor_ass	(^=
-sbxor		(^.
-sbxor_ass	(^.=
 ncmp		(<=>
 scmp		(cmp
 compl		(~
-scompl		(~.
 atan2		(atan2
 cos		(cos
 sin		(sin
@@ -205,3 +198,5 @@ concat_ass	(.=
 smart		(~~
 ftest           (-X
 regexp          (qr
+# Note: Perl_Gv_AMupdate() assumes that DESTROY is the last entry
+DESTROY		DESTROY

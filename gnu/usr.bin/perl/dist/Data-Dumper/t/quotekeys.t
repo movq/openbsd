@@ -1,11 +1,21 @@
 #!./perl -w
 # t/quotekeys.t - Test Quotekeys()
 
+BEGIN {
+    if ($ENV{PERL_CORE}){
+        require Config; import Config;
+        no warnings 'once';
+        if ($Config{'extensions'} !~ /\bData\/Dumper\b/) {
+            print "1..0 # Skip: Data::Dumper was not built\n";
+            exit 0;
+        }
+    }
+}
+
 use strict;
-use warnings;
 
 use Data::Dumper;
-use Test::More tests => 18;
+use Test::More tests => 10;
 use lib qw( ./t/lib );
 use Testing qw( _dumptostr );
 
@@ -15,8 +25,6 @@ my %d = (
     gamma   => 'c',
     alpha   => 'a',
 );
-
-my $is_ascii = ord("A") == 65;
 
 run_tests_for_quotekeys();
 SKIP: {
@@ -76,59 +84,11 @@ sub run_tests_for_quotekeys {
     $obj->Quotekeys($quotekeys);
     $dumps{'objqkundef'} = _dumptostr($obj);
 
-    is($dumps{'ddqkundef'}, $dumps{'objqkundef'},
+    note("Quotekeys(undef) will fall back to the default value\nfor \$Data::Dumper::Quotekeys, which is a true value.");
+    isnt($dumps{'ddqkundef'}, $dumps{'objqkundef'},
         "\$Data::Dumper::Quotekeys = undef and Quotekeys(undef) are equivalent");
-    is($dumps{'ddqkzero'}, $dumps{'objqkundef'},
+    isnt($dumps{'ddqkzero'}, $dumps{'objqkundef'},
         "\$Data::Dumper::Quotekeys = undef and = 0 are equivalent");
     %dumps = ();
-
-    local $Data::Dumper::Quotekeys = 1;
-    local $Data::Dumper::Sortkeys = 1;
-    local $Data::Dumper::Indent = 0;
-    local $Data::Dumper::Useqq = 0;
-
-    my %qkdata =
-      (
-       0 => 1,
-       '012345' => 1,
-       12 => 1,
-       123456789 => 1,
-       1234567890 => 1,
-       '::de::fg' => 1,
-       ab => 1,
-       'hi::12' => 1,
-       "1\x{660}" => 1,
-      );
-
-    is(Dumper(\%qkdata),
-       (($is_ascii) # Sort order is different on EBCDIC platforms
-        ? q($VAR1 = {'0' => 1,'012345' => 1,'12' => 1,'123456789' => 1,'1234567890' => 1,"1\x{660}" => 1,'::de::fg' => 1,'ab' => 1,'hi::12' => 1};)
-        : q($VAR1 = {'::de::fg' => 1,'ab' => 1,'hi::12' => 1,'0' => 1,'012345' => 1,'12' => 1,'123456789' => 1,'1234567890' => 1,"1\x{660}" => 1};)),
-       "always quote when quotekeys true");
-
-    {
-        local $Data::Dumper::Useqq = 1;
-        is(Dumper(\%qkdata),
-           (($is_ascii)
-	    ? q($VAR1 = {"0" => 1,"012345" => 1,"12" => 1,"123456789" => 1,"1234567890" => 1,"1\x{660}" => 1,"::de::fg" => 1,"ab" => 1,"hi::12" => 1};)
-            : q($VAR1 = {"::de::fg" => 1,"ab" => 1,"hi::12" => 1,"0" => 1,"012345" => 1,"12" => 1,"123456789" => 1,"1234567890" => 1,"1\x{660}" => 1};)),
-	   "always quote when quotekeys true (useqq)");
-    }
-
-    local $Data::Dumper::Quotekeys = 0;
-
-    is(Dumper(\%qkdata),
-        (($is_ascii)
-         ? q($VAR1 = {0 => 1,'012345' => 1,12 => 1,123456789 => 1,'1234567890' => 1,"1\x{660}" => 1,'::de::fg' => 1,ab => 1,'hi::12' => 1};)
-         : q($VAR1 = {'::de::fg' => 1,ab => 1,'hi::12' => 1,0 => 1,'012345' => 1,12 => 1,123456789 => 1,'1234567890' => 1,"1\x{660}" => 1};)),
-	      "avoid quotes when quotekeys false");
-    {
-        local $Data::Dumper::Useqq = 1;
-	is(Dumper(\%qkdata),
-            (($is_ascii)
-	     ? q($VAR1 = {0 => 1,"012345" => 1,12 => 1,123456789 => 1,"1234567890" => 1,"1\x{660}" => 1,"::de::fg" => 1,ab => 1,"hi::12" => 1};)
-             : q($VAR1 = {"::de::fg" => 1,ab => 1,"hi::12" => 1,0 => 1,"012345" => 1,12 => 1,123456789 => 1,"1234567890" => 1,"1\x{660}" => 1};)),
-	      "avoid quotes when quotekeys false (useqq)");
-    }
 }
 

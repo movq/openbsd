@@ -1,36 +1,13 @@
+#!/usr/bin/perl -w                                         # -*- perl -*-
+
 BEGIN {
-    use File::Spec::Functions ':ALL';
-    @INC = map { rel2abs($_) }
-            (qw| ./lib ./t/lib ../../lib |);
+    require "t/pod2html-lib.pl";
 }
 
 use strict;
-use warnings;
-use Test::More;
+use Test::More tests => 1;
 
-use Testing qw( setup_testing_dir xconvert );
-use Cwd;
-
-my $debug = 0;
-my $startdir = cwd();
-END { chdir($startdir) or die("Cannot change back to $startdir: $!"); }
-my ($expect_raw, $args);
-{ local $/; $expect_raw = <DATA>; }
-
-my $tdir = setup_testing_dir( {
-    debug       => $debug,
-} );
-
-$args = {
-    podstub => "poderr",
-    description => "pod error section",
-    expect => $expect_raw,
-    debug => 1,
-};
-
-xconvert($args);
-
-done_testing;
+convert_n_test("poderr", "pod error section");
 
 __DATA__
 <?xml version="1.0" ?>
@@ -42,7 +19,7 @@ __DATA__
 <link rev="made" href="mailto:[PERLADMIN]" />
 </head>
 
-<body>
+<body style="background-color: white">
 
 
 
@@ -75,7 +52,7 @@ __DATA__
 
 <dl>
 
-<dt id="Around-line-5">Around line 5:</dt>
+<dt id="Around-line-5:">Around line 5:</dt>
 <dd>
 
 <p>You can&#39;t have =items (as at line 9) unless the first thing after the =over is an =item</p>

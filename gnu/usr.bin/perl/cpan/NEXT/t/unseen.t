@@ -1,35 +1,33 @@
-use strict;
-use warnings;
 use Test::More tests => 7;
+
+BEGIN {
+    if ($ENV{PERL_CORE}) {
+        chdir('t') if -d 't';
+        @INC = qw(../lib);
+    }
+}
 
 BEGIN { use_ok('NEXT') };
 my $order = 0;
 
 package A;
-our @ISA = qw/B C D/;
-use if $] >= 5.009005, 'mro', 'dfs';
+@ISA = qw/B C D/;
 
 sub test { ::ok(++$order==1,"test A"); $_[0]->NEXT::UNSEEN::test; 1}
 
 package B;
-
-our @ISA = qw/D C/;
-use if $] >= 5.009005, 'mro', 'dfs';
+@ISA = qw/D C/;
 sub test { ::ok(++$order==2,"test B"); $_[0]->NEXT::UNSEEN::test; 1}
 
 package C;
-our @ISA = qw/D/;
-use if $] >= 5.009005, 'mro', 'dfs';
-
+@ISA = qw/D/;
 sub test { ::ok(++$order==4,"test C"); $_[0]->NEXT::UNSEEN::test; 1}
 
 package D;
-use if $] >= 5.009005, 'mro', 'dfs';
 
 sub test { ::ok(++$order==3,"test D"); $_[0]->NEXT::UNSEEN::test; 1}
 
 package main;
-use if $] >= 5.009005, 'mro', 'dfs';
 
 my $foo = {};
 
@@ -40,7 +38,6 @@ eval{ $foo->test }
 	: fail("Shouldn't die on missing ancestor");
 
 package Diamond::Base;
-use if $] >= 5.009005, 'mro', 'dfs';
 my $seen;
 sub test {
 	$seen++ ? ::fail("Can't visit inherited test twice")
@@ -48,13 +45,9 @@ sub test {
 	shift->NEXT::UNSEEN::test;
 }
 
-package Diamond::Left;  our @ISA = qw[Diamond::Base];
-use if $] >= 5.009005, 'mro', 'dfs';
-package Diamond::Right; our @ISA = qw[Diamond::Base];
-use if $] >= 5.009005, 'mro', 'dfs';
-package Diamond::Top;   our @ISA = qw[Diamond::Left Diamond::Right];
-use if $] >= 5.009005, 'mro', 'dfs';
-
+package Diamond::Left;  @ISA = qw[Diamond::Base];
+package Diamond::Right; @ISA = qw[Diamond::Base];
+package Diamond::Top;   @ISA = qw[Diamond::Left Diamond::Right];
 
 package main;
 

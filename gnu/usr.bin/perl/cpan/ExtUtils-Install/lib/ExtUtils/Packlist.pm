@@ -1,10 +1,11 @@
 package ExtUtils::Packlist;
-use strict;
 
+use 5.00503;
+use strict;
 use Carp qw();
 use Config;
-our $Relocations;
-our $VERSION = '2.20';
+use vars qw($VERSION $Relocations);
+$VERSION = '2.04';
 $VERSION = eval $VERSION;
 
 # Used for generating filehandle globs.  IO::File might not be available!

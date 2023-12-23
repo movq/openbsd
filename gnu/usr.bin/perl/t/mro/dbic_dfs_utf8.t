@@ -9,8 +9,6 @@ require q(./test.pl); plan(tests => 1);
 
 =pod
 
-=encoding UTF-8
-
 This example is taken from the inheritance graph of DBIx::Class::Coﾚ in DBIx::Class v0.07002:
 (No ASCII art this time, this graph is insane)
 

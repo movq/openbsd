@@ -1,12 +1,11 @@
 #!./perl
 
 BEGIN {
-    chdir 't' if -d 't';
-    require "./test.pl";
-    set_up_inc('../lib');
+    chdir 't';
+    require "test.pl";
 }
 
-plan(26);
+plan(25);
 
 my $tmpfile = tempfile();
 open (tmp,'>', $tmpfile) || die "Can't create Cmd_while.tmp.";
@@ -123,7 +122,7 @@ is($` . $& . $', "abc");
 # check that scope cleanup happens right when there's a continue block
 {
     my $var = 16;
-    my ($got_var, $got_i);
+    my (@got_var, @got_i);
     while (my $i = ++$var) {
 	next if $i == 17;
 	last if $i > 17;
@@ -214,10 +213,3 @@ sub save_context { $_[0] = wantarray; $_[1] }
     }
     ok($a[0] ne $a[1]);
 }
-
-fresh_perl_is <<'72406', "foobar\n", {},
-{ package o; use overload bool => sub { die unless $::ok++; return 1 } }
-use constant OK => bless [], o::;
-do{print("foobar\n");}until OK;
-72406
-    "[perl #72406] segv with do{}until CONST where const is not folded";

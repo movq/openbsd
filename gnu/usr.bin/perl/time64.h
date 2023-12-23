@@ -1,8 +1,8 @@
 #include <time.h>
 #include "time64_config.h"
 
-#ifndef PERL_TIME64_H_
-#    define PERL_TIME64_H_
+#ifndef TIME64_H
+#    define TIME64_H
 
 
 /* Set our custom types */
@@ -28,7 +28,11 @@ struct TM64 {
 #endif
 
 #ifdef HAS_TM_TM_ZONE
-        const char *tm_zone;
+#  ifdef __GLIBC__
+        const char    *tm_zone;
+#  else
+        char    *tm_zone;
+#  endif
 #endif
 };
 
@@ -42,7 +46,21 @@ struct TM64 {
 
 
 /* Declare functions */
-struct TM *Perl_gmtime64_r    (const Time64_T *, struct TM *);
-struct TM *Perl_localtime64_r (const Time64_T *, struct TM *);
+static struct TM *S_gmtime64_r    (const Time64_T *, struct TM *);
+static struct TM *S_localtime64_r (const Time64_T *, struct TM *);
+static Time64_T   S_timegm64      (struct TM *);
+
+
+/* Not everyone has gm/localtime_r(), provide a replacement */
+#ifdef HAS_LOCALTIME_R
+#    define LOCALTIME_R(clock, result) (L_R_TZSET localtime_r(clock, result))
+#else
+#    define LOCALTIME_R(clock, result) (L_R_TZSET S_localtime_r(clock, result))
+#endif
+#ifdef HAS_GMTIME_R
+#    define GMTIME_R(clock, result)    gmtime_r(clock, result)
+#else
+#    define GMTIME_R(clock, result)    S_gmtime_r(clock, result)
+#endif
 
 #endif

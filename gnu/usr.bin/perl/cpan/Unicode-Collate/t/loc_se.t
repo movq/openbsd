@@ -1,5 +1,10 @@
 
 BEGIN {
+    unless ("A" eq pack('U', 0x41)) {
+	print "1..0 # Unicode::Collate " .
+	    "cannot stringify a Unicode code point\n";
+	exit 0;
+    }
     if ($ENV{PERL_CORE}) {
 	chdir('t') if -d 't';
 	@INC = $^O eq 'MacOS' ? qw(::lib) : qw(../lib);
@@ -23,20 +28,17 @@ use Unicode::Collate::Locale;
 
 ok(1);
 
-sub _pack_U   { Unicode::Collate::pack_U(@_) }
-sub _unpack_U { Unicode::Collate::unpack_U(@_) }
-
 #########################
 
 my $objSe = Unicode::Collate::Locale->
     new(locale => 'SE', normalization => undef);
 
-my $eth  = _pack_U(0xF0);
-my $ETH  = _pack_U(0xD0);
-my $thrn = _pack_U(0xFE);
-my $THRN = _pack_U(0xDE);
-my $ae   = _pack_U(0xE6);
-my $AE   = _pack_U(0xC6);
+my $eth  = pack 'U', 0xF0;
+my $ETH  = pack 'U', 0xD0;
+my $thrn = pack 'U', 0xFE;
+my $THRN = pack 'U', 0xDE;
+my $ae   = pack 'U', 0xE6;
+my $AE   = pack 'U', 0xC6;
 
 ok($objSe->getlocale, 'se');
 
@@ -175,10 +177,10 @@ ok($objSe->lt("o\x{328}", "O\x{328}"));
 
 # 116
 
-ok($objSe->eq("a\x{301}", _pack_U(0xE1)));
-ok($objSe->eq("a\x{341}", _pack_U(0xE1)));
-ok($objSe->eq("A\x{301}", _pack_U(0xC1)));
-ok($objSe->eq("A\x{341}", _pack_U(0xC1)));
+ok($objSe->eq("a\x{301}", pack('U', 0xE1)));
+ok($objSe->eq("a\x{341}", pack('U', 0xE1)));
+ok($objSe->eq("A\x{301}", pack('U', 0xC1)));
+ok($objSe->eq("A\x{341}", pack('U', 0xC1)));
 ok($objSe->eq("c\x{30C}", "\x{10D}"));
 ok($objSe->eq("C\x{30C}", "\x{10C}"));
 ok($objSe->eq("\x{1EF}", "\x{292}\x{30C}"));
@@ -193,12 +195,12 @@ ok($objSe->eq("n\x{301}", "\x{144}"));
 ok($objSe->eq("n\x{341}", "\x{144}"));
 ok($objSe->eq("N\x{301}", "\x{143}"));
 ok($objSe->eq("N\x{341}", "\x{143}"));
-ok($objSe->eq("n\x{303}", _pack_U(0xF1)));
-ok($objSe->eq("N\x{303}", _pack_U(0xD1)));
+ok($objSe->eq("n\x{303}", pack('U', 0xF1)));
+ok($objSe->eq("N\x{303}", pack('U', 0xD1)));
 ok($objSe->eq("s\x{30C}", "\x{161}"));
 ok($objSe->eq("S\x{30C}", "\x{160}"));
-ok($objSe->eq("u\x{308}", _pack_U(0xFC)));
-ok($objSe->eq("U\x{308}", _pack_U(0xDC)));
+ok($objSe->eq("u\x{308}", pack('U', 0xFC)));
+ok($objSe->eq("U\x{308}", pack('U', 0xDC)));
 ok($objSe->eq("u\x{30B}", "\x{171}"));
 ok($objSe->eq("U\x{30B}", "\x{170}"));
 
@@ -206,24 +208,24 @@ ok($objSe->eq("U\x{30B}", "\x{170}"));
 
 ok($objSe->eq("z\x{30C}", "\x{17E}"));
 ok($objSe->eq("Z\x{30C}", "\x{17D}"));
-ok($objSe->eq("o\x{338}", _pack_U(0xF8)));
-ok($objSe->eq("O\x{338}", _pack_U(0xD8)));
-ok($objSe->eq("a\x{30A}", _pack_U(0xE5)));
-ok($objSe->eq("A\x{30A}", _pack_U(0xC5)));
+ok($objSe->eq("o\x{338}", pack('U', 0xF8)));
+ok($objSe->eq("O\x{338}", pack('U', 0xD8)));
+ok($objSe->eq("a\x{30A}", pack('U', 0xE5)));
+ok($objSe->eq("A\x{30A}", pack('U', 0xC5)));
 ok($objSe->eq("a\x{307}", "\x{227}"));
 ok($objSe->eq("A\x{307}", "\x{226}"));
-ok($objSe->eq("a\x{308}", _pack_U(0xE4)));
-ok($objSe->eq("A\x{308}", _pack_U(0xC4)));
-ok($objSe->eq("a\x{303}", _pack_U(0xE3)));
-ok($objSe->eq("A\x{303}", _pack_U(0xC3)));
-ok($objSe->eq("o\x{308}", _pack_U(0xF6)));
-ok($objSe->eq("O\x{308}", _pack_U(0xD6)));
+ok($objSe->eq("a\x{308}", pack('U', 0xE4)));
+ok($objSe->eq("A\x{308}", pack('U', 0xC4)));
+ok($objSe->eq("a\x{303}", pack('U', 0xE3)));
+ok($objSe->eq("A\x{303}", pack('U', 0xC3)));
+ok($objSe->eq("o\x{308}", pack('U', 0xF6)));
+ok($objSe->eq("O\x{308}", pack('U', 0xD6)));
 ok($objSe->eq("o\x{30B}", "\x{151}"));
 ok($objSe->eq("O\x{30B}", "\x{150}"));
-ok($objSe->eq("o\x{303}", _pack_U(0xF5)));
-ok($objSe->eq("O\x{303}", _pack_U(0xD5)));
-ok($objSe->eq("o\x{302}", _pack_U(0xF4)));
-ok($objSe->eq("O\x{302}", _pack_U(0xD4)));
+ok($objSe->eq("o\x{303}", pack('U', 0xF5)));
+ok($objSe->eq("O\x{303}", pack('U', 0xD5)));
+ok($objSe->eq("o\x{302}", pack('U', 0xF4)));
+ok($objSe->eq("O\x{302}", pack('U', 0xD4)));
 ok($objSe->eq("o\x{328}", "\x{1EB}"));
 ok($objSe->eq("O\x{328}", "\x{1EA}"));
 
@@ -252,14 +254,14 @@ ok($objSe->eq("A\x{308}\x{304}", "\x{1DE}"));
 
 ok($objSe->eq("o\x{308}\x{304}", "\x{22B}"));
 ok($objSe->eq("O\x{308}\x{304}", "\x{22A}"));
-ok($objSe->eq("o\x{303}\x{301}", "\x{1E4D}"));
-ok($objSe->eq("O\x{303}\x{301}", "\x{1E4C}"));
+ok($objSe->eq("o\x{303}\x{301}","\x{1E4D}"));
+ok($objSe->eq("O\x{303}\x{301}","\x{1E4C}"));
 ok($objSe->eq("o\x{303}\x{304}", "\x{22D}"));
 ok($objSe->eq("O\x{303}\x{304}", "\x{22C}"));
-ok($objSe->eq("o\x{303}\x{308}", "\x{1E4F}"));
-ok($objSe->eq("O\x{303}\x{308}", "\x{1E4E}"));
-ok($objSe->eq("o\x{303}\x{31B}", "\x{1EE1}"));
-ok($objSe->eq("O\x{303}\x{31B}", "\x{1EE0}"));
+ok($objSe->eq("o\x{303}\x{308}","\x{1E4F}"));
+ok($objSe->eq("O\x{303}\x{308}","\x{1E4E}"));
+ok($objSe->eq("o\x{303}\x{31B}","\x{1EE1}"));
+ok($objSe->eq("O\x{303}\x{31B}","\x{1EE0}"));
 
 ok($objSe->eq("o\x{302}\x{300}", "\x{1ED3}"));
 ok($objSe->eq("O\x{302}\x{300}", "\x{1ED2}"));

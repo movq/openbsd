@@ -2,7 +2,7 @@ package Test2::EventFacet::Hub;
 use strict;
 use warnings;
 
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 sub is_list { 1 }
 sub facet_key { 'hubs' }
@@ -20,7 +20,7 @@ __END__
 
 =head1 NAME
 
-Test2::EventFacet::Hub - Facet for the hubs an event passes through.
+Test2::EventFacet::Hub
 
 =head1 DESCRIPTION
 
@@ -99,7 +99,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

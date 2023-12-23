@@ -3,14 +3,15 @@
 package MySourceHandler;
 
 use strict;
-use warnings;
+use vars '@ISA';
 
+use MyCustom;
 use MyIterator;
 use TAP::Parser::SourceHandler;
 use TAP::Parser::IteratorFactory;
 
-#use base qw( TAP::Parser::SourceHandler MyCustom );
-use base qw( MyCustom );
+#@ISA = qw( TAP::Parser::SourceHandler MyCustom );
+@ISA = qw( MyCustom );
 
 TAP::Parser::IteratorFactory->register_handler(__PACKAGE__);
 

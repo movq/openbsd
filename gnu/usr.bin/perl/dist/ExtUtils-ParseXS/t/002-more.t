@@ -9,20 +9,16 @@ use ExtUtils::CBuilder;
 use attributes;
 use overload;
 
-plan tests => 33;
+plan tests => 28;
 
 my ($source_file, $obj_file, $lib_file);
 
 require_ok( 'ExtUtils::ParseXS' );
 ExtUtils::ParseXS->import('process_file');
 
-chdir 't' if -d 't';
-push @INC, '.';
+chdir 't' or die "Can't chdir to t/, $!";
 
 use Carp; $SIG{__WARN__} = \&Carp::cluck;
-
-# See the comments about this in 001-basics.t
-@INC = map { File::Spec->rel2abs($_) } @INC;
 
 #########################
 
@@ -47,7 +43,7 @@ SKIP: {
 }
 
 SKIP: {
-  skip "no dynamic loading", 29
+  skip "no dynamic loading", 24
     if !$b->have_compiler || !$Config{usedl};
   my $module = 'XSMore';
   $lib_file = $b->link( objects => $obj_file, module_name => $module );
@@ -85,23 +81,11 @@ SKIP: {
   ok overload::Overloaded(XSMore->new), 'the FALLBACK keyword';
   is abs(XSMore->new), 42, 'the OVERLOAD keyword';
 
-  my $overload_sub_name = "XSMore::More::(+";
-  is prototype(\&$overload_sub_name), "", 'OVERLOAD following prototyped xsub';
-
   my @a;
   XSMore::hook(\@a);
   is_deeply \@a, [qw(INIT CODE POSTCALL CLEANUP)], 'the INIT & POSTCALL & CLEANUP keywords';
 
   is_deeply [XSMore::outlist()], [ord('a'), ord('b')], 'the OUTLIST keyword';
-
-  is_deeply [XSMore::outlist_bool("a", "b")], [ !0, "ab" ],
-             "OUTLIST with a bool RETVAL";
-
-  is_deeply [XSMore::outlist_int("c", "d")], [ 11, "cd" ],
-             "OUTLIST with an int RETVAL";
-
-  # eval so compile-time sees any prototype
-  is_deeply [ eval 'XSMore::outlist()' ], [ord('a'), ord('b')], 'OUTLIST prototypes';
 
   is XSMore::len("foo"), 3, 'the length keyword';
 
@@ -111,7 +95,6 @@ SKIP: {
   is XSMore::typemaptest1(), 42, 'Simple embedded typemap works';
   is XSMore::typemaptest2(), 42, 'Simple embedded typemap works with funny end marker';
   is XSMore::typemaptest3(12, 13, 14), 12, 'Simple embedded typemap works for input, too';
-  is XSMore::typemaptest6(5), 5, '<<END; (with semicolon) matches delimiter "END"';
 
   # Win32 needs to close the DLL before it can unlink it, but unfortunately
   # dl_unload_file was missing on Win32 prior to perl change #24679!

@@ -1,12 +1,22 @@
 #!./perl
 
-use strict;
-use warnings;
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+}
 
 use Test::More tests => 32;
 
 use Scalar::Util qw(reftype);
-use vars qw(*F);
+use vars qw($t $y $x *F);
 use Symbol qw(gensym);
 
 # Ensure we do not trigger and tied methods
@@ -16,23 +26,22 @@ my $RE = $] < 5.011 ? 'SCALAR' : 'REGEXP';
 my $s = []; # SvTYPE($s) is SVt_RV, and SvROK($s) is true
 $s = undef; # SvTYPE($s) is SVt_RV, but SvROK($s) is false
 
-my $t;
-my @test = (
-  [ undef, 1,             'number' ],
-  [ undef, 'A',           'string' ],
-  [ HASH   => {},         'HASH ref' ],
-  [ ARRAY  => [],         'ARRAY ref' ],
-  [ SCALAR => \$t,        'SCALAR ref' ],
-  [ SCALAR => \$s,        'SCALAR ref (but SVt_RV)' ],
-  [ REF    => \(\$t),     'REF ref' ],
-  [ GLOB   => \*F,        'tied GLOB ref' ],
-  [ GLOB   => gensym,     'GLOB ref' ],
-  [ CODE   => sub {},     'CODE ref' ],
-  [ IO     => *STDIN{IO}, 'IO ref' ],
-  [ $RE    => qr/x/,      'REGEEXP' ],
+@test = (
+ [ undef, 1,		'number'	],
+ [ undef, 'A',		'string'	],
+ [ HASH   => {},	'HASH ref'	],
+ [ ARRAY  => [],	'ARRAY ref'	],
+ [ SCALAR => \$t,	'SCALAR ref'	],
+ [ SCALAR => \$s,	'SCALAR ref (but SVt_RV)' ],
+ [ REF    => \(\$t),	'REF ref'	],
+ [ GLOB   => \*F,	'tied GLOB ref'	],
+ [ GLOB   => gensym,	'GLOB ref'	],
+ [ CODE   => sub {},	'CODE ref'	],
+ [ IO     => *STDIN{IO},'IO ref'        ],
+ [ $RE    => qr/x/,     'REGEEXP'       ],
 );
 
-foreach my $test (@test) {
+foreach $test (@test) {
   my($type,$what, $n) = @$test;
 
   is( reftype($what), $type, $n);
@@ -51,7 +60,6 @@ sub TIEHANDLE { bless {} }
 sub DESTROY {}
 
 sub AUTOLOAD {
-  our $AUTOLOAD;
   warn "$AUTOLOAD called";
   exit 1; # May be in an eval
 }

@@ -2,11 +2,12 @@ package VMS::DCLsym;
 
 use Carp;
 use DynaLoader;
+use vars qw( @ISA $VERSION );
 use strict;
 
 # Package globals
-our @ISA = ( 'DynaLoader' );
-our $VERSION = '1.09';              # remember to update version in POD!
+@ISA = ( 'DynaLoader' );
+$VERSION = '1.03';
 my(%Locsyms) = ( ':ID' => 'LOCAL' );
 my(%Gblsyms) = ( ':ID' => 'GLOBAL');
 my $DoCache = 1;
@@ -17,8 +18,6 @@ my $Cache_set = 0;
 
 sub new {
   my($pkg,$type) = @_;
-  $type ||= 'LOCAL';
-  $type = 'LOCAL' unless $type eq 'GLOBAL';
   bless { TYPE => $type }, $pkg;
 }
 
@@ -74,7 +73,7 @@ sub clearcache {
 #====> TIEHASH methods
 
 sub TIEHASH {
-  shift->new(@_);
+  $_[0]->new(@_);
 }
 
 sub FETCH {
@@ -104,7 +103,7 @@ sub FIRSTKEY {
   if (!$DoCache || !$Cache_set) {
     # We should eventually replace this with a C routine which walks the
     # CLI symbol table directly.  If I ever get 'hold of an I&DS manual . . .
-    open(P, '-|', 'Show Symbol *');
+    open(P,'Show Symbol * |');
     while (<P>) {
       ($name,$eqs,$val) = /^\s+(\S+) (=+) (.+)/
         or carp "VMS::DCLsym: unparseable line $_";
@@ -160,9 +159,8 @@ VMS::DCLsym - Perl extension to manipulate DCL symbols
 
   $handle = new VMS::DCLsym;
   $value = $handle->getsym($name);
-  $handle->setsym($name, $value, 'GLOBAL')
-      or die "Can't create symbol: $!\n";
-  $handle->delsym($name, 'LOCAL') or die "Can't delete symbol: $!\n";
+  $handle->setsym($name,$value,'GLOBAL') or die "Can't create symbol: $!\n";
+  $handle->delsym($name,'LOCAL') or die "Can't delete symbol: $!\n";
   $handle->clearcache();
 
 =head1 DESCRIPTION
@@ -185,8 +183,8 @@ defines a new symbol (or overwrites the old value of an existing symbol), and
 deleting an element deletes the corresponding symbol.  Setting an element to
 C<undef>, or C<undef>ing it directly, sets the corresponding symbol to the null
 string. You may also read the special keys ':GLOBAL' and ':LOCAL' to find out
-whether a default symbol table has been specified for this hash (see the next
-paragraph), or set either or these keys to specify a default symbol table.
+whether a default symbol table has been specified for this hash (see C<table>
+below), or set either or these keys to specify a default symbol table.
 
 When you call the C<tie> function to bind an associative array to this package,
 you may specify as an optional argument the symbol table in which you wish to
@@ -264,7 +262,7 @@ Charles Bailey  bailey@newman.upenn.edu
 
 =head1 VERSION
 
-1.09
+1.01  08-Dec-1996
 
 =head1 BUGS
 

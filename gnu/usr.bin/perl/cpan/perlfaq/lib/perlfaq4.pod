@@ -2,10 +2,6 @@
 
 perlfaq4 - Data Manipulation
 
-=head1 VERSION
-
-version 5.20210520
-
 =head1 DESCRIPTION
 
 This section of the FAQ answers questions related to manipulating
@@ -128,9 +124,10 @@ need yourself.
 To see why, notice how you'll still have an issue on half-way-point
 alternation:
 
-    for (my $i = -5; $i <= 5; $i += 0.5) { printf "%.0f ",$i }
+    for (my $i = 0; $i < 1.01; $i += 0.05) { printf "%.1f ",$i}
 
-    -5 -4 -4 -4 -3 -2 -2 -2 -1 -0 0 0 1 2 2 2 3 4 4 4 5
+    0.0 0.1 0.1 0.2 0.2 0.2 0.3 0.3 0.4 0.4 0.5 0.5 0.6 0.7 0.7
+    0.8 0.8 0.9 0.9 1.0 1.0
 
 Don't blame Perl. It's the same as in C. IEEE says we have to do
 this. Perl numbers whose absolute values are integers under 2**31 (on
@@ -401,7 +398,7 @@ random number between 0 and 5 that you can then add to 10.
 
 Hence you derive the following simple function to abstract
 that. It selects a random integer between the two given
-integers (inclusive). For example: C<random_int_between(50,120)>.
+integers (inclusive), For example: C<random_int_between(50,120)>.
 
     sub random_int_between {
         my($min, $max) = @_;
@@ -489,7 +486,7 @@ operators so you can compare them directly:
 You can also get differences with a subtraction, which returns a
 L<Time::Seconds> object:
 
-    my $date_diff = $date1 - $date2;
+    my $diff = $date1 - $date2;
     print "The difference is ", $date_diff->days, " days\n";
 
 If you want to work with formatted dates, the L<Date::Manip>,
@@ -733,7 +730,7 @@ L<Regexp::Common::balanced> and L<Regexp::Common::delimited>).
 More complex cases will require to write a parser, probably
 using a parsing module from CPAN, like
 L<Regexp::Grammars>, L<Parse::RecDescent>, L<Parse::Yapp>,
-L<Text::Balanced>, or L<Marpa::R2>.
+L<Text::Balanced>, or L<Marpa::XS>.
 
 =head2 How do I reverse a string?
 
@@ -1120,53 +1117,6 @@ signal that I missed something:
 
     print $string;
 
-
-=head2 Does Perl have anything like Ruby's #{} or Python's f string?
-
-Unlike the others, Perl allows you to embed a variable naked in a double
-quoted string, e.g. C<"variable $variable">. When there isn't whitespace or
-other non-word characters following the variable name, you can add braces
-(e.g. C<"foo ${foo}bar">) to ensure correct parsing.
-
-An array can also be embedded directly in a string, and will be expanded
-by default with spaces between the elements. The default
-L<LIST_SEPARATOR|perlvar/$LIST_SEPARATOR> can be changed by assigning a
-different string to the special variable C<$">, such as C<local $" = ', ';>.
-
-Perl also supports references within a string providing the equivalent of
-the features in the other two languages.
-
-C<${\ ... }> embedded within a string will work for most simple statements
-such as an object->method call. More complex code can be wrapped in a do
-block C<${\ do{...} }>.
-
-When you want a list to be expanded per C<$">, use C<@{[ ... ]}>.
-
-    use Time::Piece;
-    use Time::Seconds;
-    my $scalar = 'STRING';
-    my @array = ( 'zorro', 'a', 1, 'B', 3 );
-
-    # Print the current date and time and then Tommorrow
-    my $t = Time::Piece->new;
-    say "Now is: ${\ $t->cdate() }";
-    say "Tomorrow: ${\ do{ my $T=Time::Piece->new + ONE_DAY ; $T->fullday }}";
-
-    # some variables in strings
-    say "This is some scalar I have $scalar, this is an array @array.";
-    say "You can also write it like this ${scalar} @{array}.";
-
-    # Change the $LIST_SEPARATOR
-    local $" = ':';
-    say "Set \$\" to delimit with ':' and sort the Array @{[ sort @array ]}";
-
-You may also want to look at the module
-L<Quote::Code>, and templating tools such as L<Template::Toolkit> and
-L<Mojo::Template>.
-
-See also: L</"How can I expand variables in text strings?"> and
-L</"How do I expand function calls in a string?"> in this FAQ.
-
 =head2 What's wrong with always quoting "$vars"?
 
 The problem is that those double-quotes force
@@ -1291,10 +1241,6 @@ indentation correctly preserved:
         --Bilbo in /usr/src/perl/pp_ctl.c
     EVER_ON_AND_ON
 
-Beginning with Perl version 5.26, a much simpler and cleaner way to
-write indented here documents has been added to the language: the
-tilde (~) modifier. See L<perlop/"Indented Here-docs"> for details.
-
 =head1 Data: Arrays
 
 =head2 What is the difference between a list and an array?
@@ -1320,8 +1266,8 @@ for list operations, so list operations also work on arrays:
     wash_animals( qw( dog cat bird ) );
     wash_animals( @animals );
 
-Array operations, which change the scalars, rearrange them, or add
-or subtract some scalars, only work on arrays. These can't work on a
+Array operations, which change the scalars, rearranges them, or adds
+or subtracts some scalars, only work on arrays. These can't work on a
 list, which is fixed. Array operations include C<shift>, C<unshift>,
 C<push>, C<pop>, and C<splice>.
 
@@ -1469,7 +1415,21 @@ Hearing the word "in" is an I<in>dication that you probably should have
 used a hash, not a list or array, to store your data. Hashes are
 designed to answer this question quickly and efficiently. Arrays aren't.
 
-That being said, there are several ways to approach this. If you
+That being said, there are several ways to approach this. In Perl 5.10
+and later, you can use the smart match operator to check that an item is
+contained in an array or a hash:
+
+    use 5.010;
+
+    if( $item ~~ @array ) {
+        say "The array contains $item"
+    }
+
+    if( $item ~~ %hash ) {
+        say "The hash contains $item"
+    }
+
+With earlier versions of Perl, you have to do a bit more work. If you
 are going to make this query many times over arbitrary string values,
 the fastest way is probably to invert the original array and maintain a
 hash whose keys are the first array's values:
@@ -1505,16 +1465,16 @@ of the original list or array. They only pay off if you have to test
 multiple values against the same array.
 
 If you are testing only once, the standard module L<List::Util> exports
-the function C<any> for this purpose. It works by stopping once it
+the function C<first> for this purpose. It works by stopping once it
 finds the element. It's written in C for speed, and its Perl equivalent
 looks like this subroutine:
 
-    sub any (&@) {
+    sub first (&@) {
         my $code = shift;
         foreach (@_) {
-            return 1 if $code->();
+            return $_ if &{$code}();
         }
-        return 0;
+        undef;
     }
 
 If speed is of little concern, the common idiom uses grep in scalar context
@@ -1546,6 +1506,19 @@ Note that this is the I<symmetric difference>, that is, all elements
 in either A or in B but not in both. Think of it as an xor operation.
 
 =head2 How do I test whether two arrays or hashes are equal?
+
+With Perl 5.10 and later, the smart match operator can give you the answer
+with the least amount of work:
+
+    use 5.010;
+
+    if( @array1 ~~ @array2 ) {
+        say "The arrays are the same";
+    }
+
+    if( %hash1 ~~ %hash2 ) # doesn't check values!  {
+        say "The hash keys are the same";
+    }
 
 The following code works for single-level arrays. It uses a
 stringwise comparison, and does not distinguish defined versus
@@ -1642,7 +1615,7 @@ such as C<push>, C<pop>, C<shift>, C<unshift>, or C<splice> to do
 that.
 
 Sometimes, however, linked lists can be useful in situations where you
-want to "shard" an array so you have many small arrays instead of
+want to "shard" an array so you have have many small arrays instead of
 a single big array. You can keep arrays longer than Perl's largest
 array index, lock smaller arrays separately in threaded programs,
 reallocate less memory, or quickly insert elements in the middle of
@@ -2457,7 +2430,7 @@ Usually a hash ref, perhaps like this:
 References are documented in L<perlref> and L<perlreftut>.
 Examples of complex data structures are given in L<perldsc> and
 L<perllol>. Examples of structures and object-oriented classes are
-in L<perlootut>.
+in L<perltoot>.
 
 =head2 How can I use a reference as a hash key?
 
@@ -2579,23 +2552,24 @@ some gotchas. See the section on Regular Expressions.
 =head2 How do I determine whether a scalar is a number/whole/integer/float?
 
 Assuming that you don't care about IEEE notations like "NaN" or
-"Infinity", you probably just want to use a regular expression (see also
-L<perlretut> and L<perlre>):
+"Infinity", you probably just want to use a regular expression:
 
     use 5.010;
 
-    if ( /\D/ )
-        { say "\thas nondigits"; }
-    if ( /^\d+\z/ )
-        { say "\tis a whole number"; }
-    if ( /^-?\d+\z/ )
-        { say "\tis an integer"; }
-    if ( /^[+-]?\d+\z/ )
-        { say "\tis a +/- integer"; }
-    if ( /^-?(?:\d+\.?|\.\d)\d*\z/ )
-        { say "\tis a real number"; }
-    if ( /^[+-]?(?=\.?\d)\d*\.?\d*(?:e[+-]?\d+)?\z/i )
-        { say "\tis a C float" }
+    given( $number ) {
+        when( /\D/ )
+            { say "\thas nondigits"; continue }
+        when( /^\d+\z/ )
+            { say "\tis a whole number"; continue }
+        when( /^-?\d+\z/ )
+            { say "\tis an integer"; continue }
+        when( /^[+-]?\d+\z/ )
+            { say "\tis a +/- integer"; continue }
+        when( /^-?(?:\d+\.?|\.\d)\d*\z/ )
+            { say "\tis a real number"; continue }
+        when( /^[+-]?(?=\.?\d)\d*\.?\d*(?:e[+-]?\d+)?\z/i)
+            { say "\tis a C float" }
+    }
 
 There are also some commonly used modules for the task.
 L<Scalar::Util> (distributed with 5.8) provides access to perl's
@@ -2687,7 +2661,7 @@ The arrays.h/arrays.c code in the L<PGPLOT> module on CPAN does just this.
 If you're doing a lot of float or double processing, consider using
 the L<PDL> module from CPAN instead--it makes number-crunching easy.
 
-See L<https://metacpan.org/release/PGPLOT> for the code.
+See L<http://search.cpan.org/dist/PGPLOT> for the code.
 
 
 =head1 AUTHOR AND COPYRIGHT

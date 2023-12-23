@@ -4,9 +4,7 @@ use strict;
 use warnings;
 
 chdir 't' if -d 't';
-require q(./test.pl); plan(tests => 7);
-
-require mro;
+require q(./test.pl); plan(tests => 6);
 
 {
     package Foo;
@@ -14,7 +12,7 @@ require mro;
 }
 
 ok(!mro::get_pkg_gen('ReallyDoesNotExist'),
-    "pkg_gen 0 for non-existent pkg");
+    "pkg_gen 0 for non-existant pkg");
 
 my $f_gen = mro::get_pkg_gen('Foo');
 ok($f_gen > 0, 'Foo pkg_gen > 0');
@@ -36,7 +34,3 @@ is(mro::get_pkg_gen('Foo'), 1, "pkg_gen 1 for undef %Pkg::");
 
 delete $::{"Foo::"};
 is(mro::get_pkg_gen('Foo'), 0, 'pkg_gen 0 for delete $::{Pkg::}');
-
-delete $::{"Quux::"};
-push @Quux::ISA, "Woot"; # should not segfault
-ok(1, "No segfault on modification of ISA in a deleted stash");

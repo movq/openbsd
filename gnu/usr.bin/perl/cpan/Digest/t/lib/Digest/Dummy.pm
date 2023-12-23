@@ -1,20 +1,19 @@
 package Digest::Dummy;
 
 use strict;
-use warnings;
-
-our $VERSION = 1;
-our @ISA     = qw(Digest::base);
+use vars qw($VERSION @ISA);
+$VERSION = 1;
 
 require Digest::base;
+@ISA = qw(Digest::base);
 
 sub new {
     my $class = shift;
-    my $d     = shift || "ooo";
+    my $d = shift || "ooo";
     bless { d => $d }, $class;
 }
 
-sub add    { }
+sub add {}
 sub digest { shift->{d} }
 
 1;

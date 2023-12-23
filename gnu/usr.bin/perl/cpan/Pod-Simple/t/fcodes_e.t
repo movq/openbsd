@@ -7,16 +7,9 @@ BEGIN {
 }
 
 use strict;
-use warnings;
 use Test;
 BEGIN { plan tests => 20 };
 
-BEGIN {
-  require FindBin;
-  unshift @INC, $FindBin::Bin . '/lib';
-  require helpers;
-  helpers->import;
-}
 #use Pod::Simple::Debug (6);
 
 ok 1;
@@ -29,6 +22,9 @@ print "# Pod::Simple version $Pod::Simple::VERSION\n";
 print "# Pod::Escapes version $Pod::Escapes::VERSION\n",
  if $Pod::Escapes::VERSION;
 # Presumably that's the library being used
+
+
+sub e ($$) { Pod::Simple::DumpAsXML->_duo(@_) }
 
 &ok( e "", "" );
 &ok( e "\n", "", );

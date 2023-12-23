@@ -5,7 +5,6 @@ require Exporter;
 @EXPORT = qw(setup_recurs teardown_recurs);
 
 use strict;
-use warnings;
 use File::Path;
 use File::Basename;
 use MakeMaker::Test::Utils;
@@ -20,7 +19,7 @@ $VERSION = 0.01;
 
 =head1 NAME
 
-Big::Dummy - Try "our" hot dog's, $andwiche$ and $(ub)$!
+Big::Dummy - Try "our" hot dog's
 
 =cut
 
@@ -55,24 +54,17 @@ program - this is a program
 
 1;
 END
-             'Big-Dummy/usrbin/interp'       => <<'END',
-This is a dummy interpreter
-END
-
-             'Big-Dummy/test.pl'          => <<'END',
-print "1..1\n";
-print "ok 1 - testing test.pl\n";
-END
 
              'Big-Dummy/t/compile.t'          => <<'END',
-print "1..3\n";
+print "1..2\n";
+
 print eval "use Big::Dummy; 1;" ? "ok 1\n" : "not ok 1\n";
 print "ok 2 - TEST_VERBOSE\n";
-print "ok 3 - testing t/*.t\n";
 END
 
              'Big-Dummy/Liar/t/sanity.t'      => <<'END',
 print "1..3\n";
+
 print eval "use Big::Dummy; 1;" ? "ok 1\n" : "not ok 1\n";
 print eval "use Big::Liar; 1;" ? "ok 2\n" : "not ok 2\n";
 print "ok 3 - TEST_VERBOSE\n";
@@ -104,13 +96,13 @@ END
             );
 
 
-# if given args, those are inserted as components in resulting path, eg:
-# setup_recurs('dir') means instead of creating Big-Dummy/*, dir/Big-Dummy/*
 sub setup_recurs {
+    setup_mm_test_root();
+    chdir 'MM_TEST_ROOT:[t]' if $Is_VMS;
+
     while(my($file, $text) = each %Files) {
         # Convert to a relative, native file path.
-        $file = File::Spec->catfile(File::Spec->curdir, @_, split m{\/}, $file);
-        $file = File::Spec->rel2abs($file);
+        $file = File::Spec->catfile(File::Spec->curdir, split m{\/}, $file);
 
         my $dir = dirname($file);
         mkpath $dir;
@@ -127,7 +119,7 @@ sub setup_recurs {
     return 1;
 }
 
-sub teardown_recurs {
+sub teardown_recurs { 
     foreach my $file (keys %Files) {
         my $dir = dirname($file);
         if( -e $dir ) {

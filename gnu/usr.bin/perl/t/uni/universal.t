@@ -5,15 +5,15 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     $| = 1;
     require "./test.pl";
-    set_up_inc(qw '../lib ../dist/base/lib');
 }
 
 use utf8;
 use open qw( :utf8 :std );
 
-plan tests => 90;
+plan tests => 93;
 
 $a = {};
 bless $a, "Bòb";
@@ -116,6 +116,15 @@ cmp_ok UNIVERSAL::can(Àlìcè => "can"), '==', \&UNIVERSAL::can;
 
 eval 'sub UNIVERSAL::slèèp {}';
 ok $a->can("slèèp");
+
+{
+    package Pìckùp;
+    use UNIVERSAL qw( isa can VERSION );
+
+    ::ok isa "Pìckùp", UNIVERSAL;
+    ::cmp_ok can( "Pìckùp", "can" ), '==', \&UNIVERSAL::can;
+    ::ok VERSION "UNIVERSAL" ;
+}
 
 package Fòò;
 

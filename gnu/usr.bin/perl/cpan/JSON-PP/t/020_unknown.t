@@ -1,10 +1,13 @@
+#!/usr/bin/perl -w
+
 use strict;
-use warnings;
 
 use Test::More;
 BEGIN { plan tests => 10 };
 BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }
 
+
+use strict;
 use JSON::PP;
 
 my $json = JSON::PP->new;
@@ -39,7 +42,7 @@ my $fh;
 open( $fh, '>hoge.txt' ) or die $!;
 
 eval q| $json->encode( [ $fh ] ) |;
-ok( $@ =~ /encountered GLOB|cannot encode reference to scalar/, $@ );
+ok( $@ =~ /encountered GLOB/, $@ );
 
 $json->allow_unknown(1);
 

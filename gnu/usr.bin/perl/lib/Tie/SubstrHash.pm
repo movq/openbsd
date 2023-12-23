@@ -1,4 +1,4 @@
-package Tie::SubstrHash 1.01;
+package Tie::SubstrHash;
 
 =head1 NAME
 
@@ -8,7 +8,7 @@ Tie::SubstrHash - Fixed-table-size, fixed-key-length hashing
 
     require Tie::SubstrHash;
 
-    tie %myhash, 'Tie::SubstrHash', $key_len, $value_len, $table_size;
+    tie %myhash, Tie::SubstrHash, $key_len, $value_len, $table_size;
 
 =head1 DESCRIPTION
 
@@ -33,178 +33,143 @@ Because the current implementation uses the table and key sizes for the
 hashing algorithm, there is no means by which to dynamically change the
 value of any of the initialization parameters.
 
-The hash does not support exists().
-
 =cut
-
-use strict;
-use warnings;
-no warnings 'experimental::builtin';
 
 use Carp;
 
 sub TIEHASH {
-    my ($pack, $klen, $vlen, $tsize) = @_;
+    my $pack = shift;
+    my ($klen, $vlen, $tsize) = @_;
     my $rlen = 1 + $klen + $vlen;
-    $tsize = [$tsize, findgteprime($tsize * 1.1)]; # Allow 10% empty.
-    my $self = bless ["\0", $klen, $vlen, $tsize, $rlen, 0, -1];
-    $self->[0] x= $rlen * $tsize->[1];
+    $tsize = findprime($tsize * 1.1);	# Allow 10% empty.
+    $self = bless ["\0", $klen, $vlen, $tsize, $rlen, 0, -1];
+    $$self[0] x= $rlen * $tsize;
     $self;
 }
 
-sub CLEAR {
-    my ($self) = @_;
-    $self->[0] = "\0" x ($self->[4] * $self->[3][1]);
-    $self->[5] =  0;
-    $self->[6] = -1;
-}
-
 sub FETCH {
-    my ($self, $key) = @_;
-    my (undef, $klen, $vlen, $tsize, $rlen) = @$self;
-    my $hashbase = my $hash = hashkey($key, $klen, $tsize);
-    while (1) {
-        my $offset = $hash * $rlen;
-        my $record = substr($self->[0], $offset, $rlen);
-        if (ord($record) == 0) {
-            return undef;
-        }
-        elsif (ord($record) == 1) {
-        }
-        elsif (substr($record, 1, $klen) eq $key) {
-            return substr($record, 1+$klen, $vlen);
-        }
-        $hash = rehash($hash, $hashbase, $tsize);
+    local($self,$key) = @_;
+    local($klen, $vlen, $tsize, $rlen) = @$self[1..4];
+    &hashkey;
+    for (;;) {
+	$offset = $hash * $rlen;
+	$record = substr($$self[0], $offset, $rlen);
+	if (ord($record) == 0) {
+	    return undef;
+	}
+	elsif (ord($record) == 1) {
+	}
+	elsif (substr($record, 1, $klen) eq $key) {
+	    return substr($record, 1+$klen, $vlen);
+	}
+	&rehash;
     }
 }
 
 sub STORE {
-    my ($self, $key, $val) = @_;
-    my (undef, $klen, $vlen, $tsize, $rlen) = @$self;
-    croak("Table is full ($tsize->[0] elements)") if $self->[5] > $tsize->[0];
-    croak(qq/Value "$val" is not $vlen characters long/)
-        if length($val) != $vlen;
+    local($self,$key,$val) = @_;
+    local($klen, $vlen, $tsize, $rlen) = @$self[1..4];
+    croak("Table is full") if $self[5] == $tsize;
+    croak(qq/Value "$val" is not $vlen characters long./)
+	if length($val) != $vlen;
     my $writeoffset;
 
-    my $hashbase = my $hash = hashkey($key, $klen, $tsize);
-    while (1) {
-        my $offset = $hash * $rlen;
-        my $record = substr($self->[0], $offset, $rlen);
-        if (ord($record) == 0) {
-            $record = "\2". $key . $val;
-            die "panic" unless length($record) == $rlen;
-            $writeoffset //= $offset;
-            substr($self->[0], $writeoffset, $rlen) = $record;
-            ++$self->[5];
-            return;
-        }
-        elsif (ord($record) == 1) {
-            $writeoffset //= $offset;
-        }
-        elsif (substr($record, 1, $klen) eq $key) {
-            $record = "\2". $key . $val;
-            die "panic" unless length($record) == $rlen;
-            substr($self->[0], $offset, $rlen) = $record;
-            return;
-        }
-        $hash = rehash($hash, $hashbase, $tsize);
+    &hashkey;
+    for (;;) {
+	$offset = $hash * $rlen;
+	$record = substr($$self[0], $offset, $rlen);
+	if (ord($record) == 0) {
+	    $record = "\2". $key . $val;
+	    die "panic" unless length($record) == $rlen;
+	    $writeoffset = $offset unless defined $writeoffset;
+	    substr($$self[0], $writeoffset, $rlen) = $record;
+	    ++$$self[5];
+	    return;
+	}
+	elsif (ord($record) == 1) {
+	    $writeoffset = $offset unless defined $writeoffset;
+	}
+	elsif (substr($record, 1, $klen) eq $key) {
+	    $record = "\2". $key . $val;
+	    die "panic" unless length($record) == $rlen;
+	    substr($$self[0], $offset, $rlen) = $record;
+	    return;
+	}
+	&rehash;
     }
 }
 
 sub DELETE {
-    my ($self, $key) = @_;
-    my (undef, $klen, $vlen, $tsize, $rlen) = @$self;
-    my $hashbase = my $hash = hashkey($key, $klen, $tsize);
-    while (1) {
-        my $offset = $hash * $rlen;
-        my $record = substr($self->[0], $offset, $rlen);
-        if (ord($record) == 0) {
-            return undef;
-        }
-        elsif (ord($record) == 1) {
-        }
-        elsif (substr($record, 1, $klen) eq $key) {
-            substr($self->[0], $offset, 1) = "\1";
-            return substr($record, 1+$klen, $vlen);
-            --$self->[5];
-        }
-        $hash = rehash($hash, $hashbase, $tsize);
+    local($self,$key) = @_;
+    local($klen, $vlen, $tsize, $rlen) = @$self[1..4];
+    &hashkey;
+    for (;;) {
+	$offset = $hash * $rlen;
+	$record = substr($$self[0], $offset, $rlen);
+	if (ord($record) == 0) {
+	    return undef;
+	}
+	elsif (ord($record) == 1) {
+	}
+	elsif (substr($record, 1, $klen) eq $key) {
+	    substr($$self[0], $offset, 1) = "\1";
+	    return substr($record, 1+$klen, $vlen);
+	    --$$self[5];
+	}
+	&rehash;
     }
 }
 
 sub FIRSTKEY {
-    my ($self) = @_;
-    $self->[6] = -1;
-    goto &NEXTKEY;
+    local($self) = @_;
+    $$self[6] = -1;
+    &NEXTKEY;
 }
 
 sub NEXTKEY {
-    my ($self) = @_;
-    my (undef, $klen, $vlen, $tsize, $rlen, $entries, $iterix) = @$self;
-    for (++$iterix; $iterix < $tsize->[1]; ++$iterix) {
-        next unless substr($self->[0], $iterix * $rlen, 1) eq "\2";
-        $self->[6] = $iterix;
-        return substr($self->[0], $iterix * $rlen + 1, $klen);
+    local($self) = @_;
+    local($klen, $vlen, $tsize, $rlen, $entries, $iterix) = @$self[1..6];
+    for (++$iterix; $iterix < $tsize; ++$iterix) {
+	next unless substr($$self[0], $iterix * $rlen, 1) eq "\2";
+	$$self[6] = $iterix;
+	return substr($$self[0], $iterix * $rlen + 1, $klen);
     }
-    $self->[6] = -1;
+    $$self[6] = -1;
     undef;
 }
 
-sub EXISTS {
-    croak "Tie::SubstrHash does not support exists()";
-}
-
 sub hashkey {
-    my ($key, $klen, $tsize) = @_;
-    croak(qq/Key "$key" is not $klen characters long/)
-        if length($key) != $klen;
-    my $hash = 2;
+    croak(qq/Key "$key" is not $klen characters long.\n/)
+	if length($key) != $klen;
+    $hash = 2;
     for (unpack('C*', $key)) {
-        $hash = $hash * 33 + $_;
-        $hash = _hashwrap($hash, $tsize) if $hash >= 1e13;
+	$hash = $hash * 33 + $_;
     }
-    $hash = _hashwrap($hash, $tsize) if $hash >= $tsize->[1];
-    $hash ||= 1;
-    return $hash;
-}
-
-sub _hashwrap {
-    my ($hash, $tsize) = @_;
-    return $hash - int($hash / $tsize->[1]) * $tsize->[1];
+    $hash = $hash - int($hash / $tsize) * $tsize
+	if $hash >= $tsize;
+    $hash = 1 unless $hash;
+    $hashbase = $hash;
 }
 
 sub rehash {
-    my ($hash, $hashbase, $tsize) = @_;
     $hash += $hashbase;
-    $hash -= $tsize->[1] if $hash >= $tsize->[1];
-    return $hash;
+    $hash -= $tsize if $hash >= $tsize;
 }
 
-# See:
-#
-# http://www-groups.dcs.st-andrews.ac.uk/~history/HistTopics/Prime_numbers.html
-#
-
-sub findgteprime { # find the smallest prime integer greater than or equal to
+sub findprime {
     use integer;
 
-    my $num = builtin::ceil(shift);
-    return 2 if $num <= 2;
-
+    my $num = shift;
     $num++ unless $num % 2;
-    my $sqrtnum = int sqrt $num;
-    my $sqrtnumsquared = $sqrtnum * $sqrtnum;
+
+    $max = int sqrt $num;
 
   NUM:
     for (;; $num += 2) {
-        if ($sqrtnumsquared < $num) {
-            $sqrtnum++;
-            $sqrtnumsquared = $sqrtnum * $sqrtnum;
-        }
-        for (my $i = 3; $i <= $sqrtnum; $i += 2) {
-            next NUM unless $num % $i;
-        }
-        return $num;
+	for ($i = 3; $i <= $max; $i += 2) {
+	    next NUM unless $num % $i;
+	}
+	return $num;
     }
 }
 

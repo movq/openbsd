@@ -1,13 +1,12 @@
 #!/usr/bin/perl -wT
 
 use strict;
-use warnings;
 use lib 't/lib';
 
 use Test::More tests => 10;
 
 use TAP::Parser;
-use TAP::Parser::Iterator::Array;
+use TAP::Parser::IteratorFactory;
 
 my $tap = <<'END_TAP';
 1..5
@@ -37,9 +36,10 @@ my %callbacks = (
     }
 );
 
-my $iterator = TAP::Parser::Iterator::Array->new( [ split /\n/ => $tap ] );
-my $parser = TAP::Parser->new(
-    {   iterator  => $iterator,
+my $factory = TAP::Parser::IteratorFactory->new;
+my $stream  = $factory->make_iterator( [ split /\n/ => $tap ] );
+my $parser  = TAP::Parser->new(
+    {   stream    => $stream,
         callbacks => \%callbacks,
     }
 );
@@ -79,9 +79,9 @@ my $end  = 0;
     },
 );
 
-$iterator = TAP::Parser::Iterator::Array->new( [ split /\n/ => $tap ] );
+$stream = $factory->make_iterator( [ split /\n/ => $tap ] );
 $parser = TAP::Parser->new(
-    {   iterator  => $iterator,
+    {   stream    => $stream,
         callbacks => \%callbacks,
     }
 );
@@ -104,10 +104,10 @@ is $end,  1, 'EOF callback correctly called';
     ELSES    => sub { },
 );
 
-$iterator = TAP::Parser::Iterator::Array->new( [ split /\n/ => $tap ] );
+$stream = $factory->make_iterator( [ split /\n/ => $tap ] );
 eval {
     $parser = TAP::Parser->new(
-        {   iterator  => $iterator,
+        {   stream    => $stream,
             callbacks => \%callbacks,
         }
     );

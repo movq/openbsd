@@ -1,78 +1,50 @@
+#!/usr/bin/perl -w                                         # -*- perl -*-
+
 BEGIN {
-    use File::Spec::Functions ':ALL';
-    @INC = map { rel2abs($_) }
-             (qw| ./lib ./t/lib ../../lib |);
+    require "t/pod2html-lib.pl";
 }
 
 use strict;
-use warnings;
-use Test::More;
-use Testing qw( setup_testing_dir xconvert );
 use Cwd;
-
-my $debug = 0;
-my $startdir = cwd();
-END { chdir($startdir) or die("Cannot change back to $startdir: $!"); }
-my ($expect_raw, $args);
-{ local $/; $expect_raw = <DATA>; }
-
-my $tdir = setup_testing_dir( {
-    debug       => $debug,
-} );
-
-$args = {
-    podstub => "htmldir2",
-    description => "test --htmldir and --htmlroot 2a",
-    expect => $expect_raw,
-    p2h => {
-        podpath => 't',
-        htmldir => 't',
-        quiet   => 1,
-    },
-    debug => $debug,
-};
-xconvert($args);
-
-$args = {
-    podstub => "htmldir2",
-    description => "test --htmldir and --htmlroot 2b",
-    expect => $expect_raw,
-    p2h => {
-        podpath => 't',
-        quiet   => 1,
-    },
-    debug => $debug,
-};
-xconvert($args);
+use Test::More tests => 3;
 
 my $cwd = cwd();
-$args = {
-    podstub => "htmldir2",
-    description => "test --htmldir and --htmlroot 2c",
-    expect => $expect_raw,
-    p2h => {
-        podpath     => 't',
-        podroot     => $cwd,
-        norecurse   => 1, # testing --norecurse, too
-        quiet       => 1,
-    },
-    debug   => $debug,
-};
-xconvert($args);
+my $data_pos = tell DATA; # to read <DATA> twice
 
-done_testing;
+convert_n_test("htmldir2", "test --htmldir and --htmlroot 2a", 
+ "--podpath=t",
+ "--htmldir=t",
+ "--quiet",
+);
+
+seek DATA, $data_pos, 0; # to read <DATA> twice (expected output is the same)
+
+convert_n_test("htmldir2", "test --htmldir and --htmlroot 2b", 
+ "--podpath=t",
+ "--quiet",
+);
+
+seek DATA, $data_pos, 0; # to read <DATA> thrice (expected output is the same)
+
+# this test makes sure paths are absolute unless --htmldir is specified
+convert_n_test("htmldir2", "test --htmldir and --htmlroot 2c", 
+ "--podpath=t",
+ "--podroot=$cwd",
+ "--norecurse", # testing --norecurse, too
+ "--quiet",
+);
 
 __DATA__
 <?xml version="1.0" ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<title>htmldir - Test --htmldir feature</title>
+<title></title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <link rev="made" href="mailto:[PERLADMIN]" />
 </head>
 
-<body>
+<body style="background-color: white">
 
 
 

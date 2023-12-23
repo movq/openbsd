@@ -1,17 +1,13 @@
-use strict;
 use warnings;
-
+no warnings "once";
 use Config;
 
 use IPC::Open3 1.0103 qw(open3);
-use Test::More tests => 68;
+use Test::More tests => 60;
 
 sub runperl {
     my(%args) = @_;
     my($w, $r);
-
-    local $ENV{PERL5LIB} = join ($Config::Config{path_sep}, @INC);
-
     my $pid = open3($w, $r, undef, $^X, "-e", $args{prog});
     close $w;
     my $output = "";
@@ -29,33 +25,6 @@ BEGIN {
     # sets CORE::GLOBAL::caller
     ok !exists $CORE::GLOBAL::{caller},
         "Loading doesn't create CORE::GLOBAL::caller";
-}
-
-{
-  my $line = __LINE__; my $str = Carp::longmess("foo");
-  is(
-    $str,
-    "foo at $0 line $line.\n",
-    "we don't overshoot the top stack frame",
-  );
-}
-
-package MyClass;
-
-sub new { return bless +{ field => ['value1', 'SecondVal'] }; }
-
-package main;
-
-{
-    my $err = Carp::longmess(MyClass->new);
-
-    # See:
-    # https://rt.cpan.org/Public/Bug/Display.html?id=107225
-    is_deeply(
-        $err->{field},
-        ['value1', 'SecondVal',],
-        "longmess returns sth meaningful in scalar context when passed a ref.",
-    );
 }
 
 {
@@ -117,7 +86,7 @@ is( $info{sub_name}, "eval '$eval'", 'caller_info API' );
 
 # test for '...::CARP_NOT used only once' warning from Carp
 my $warning;
-eval { do {
+eval {
     BEGIN {
         local $SIG{__WARN__} = sub {
             if   ( defined $^S ) { warn $_[0] }
@@ -130,91 +99,91 @@ eval { do {
     BEGIN {
         eval { Carp::croak() };
     }
-} };
+};
 ok !$warning, q/'...::CARP_NOT used only once' warning from Carp/;
 
 # Test the location of error messages.
-like( XA::short(), qr/^Error at XC/, "Short messages skip carped package" );
+like( A::short(), qr/^Error at C/, "Short messages skip carped package" );
 
 {
-    local @XC::ISA = "XD";
-    like( XA::short(), qr/^Error at XB/, "Short messages skip inheritance" );
+    local @C::ISA = "D";
+    like( A::short(), qr/^Error at B/, "Short messages skip inheritance" );
 }
 
 {
-    local @XD::ISA = "XC";
-    like( XA::short(), qr/^Error at XB/, "Short messages skip inheritance" );
+    local @D::ISA = "C";
+    like( A::short(), qr/^Error at B/, "Short messages skip inheritance" );
 }
 
 {
-    local @XD::ISA = "XB";
-    local @XB::ISA = "XC";
-    like( XA::short(), qr/^Error at XA/, "Inheritance is transitive" );
+    local @D::ISA = "B";
+    local @B::ISA = "C";
+    like( A::short(), qr/^Error at A/, "Inheritance is transitive" );
 }
 
 {
-    local @XB::ISA = "XD";
-    local @XC::ISA = "XB";
-    like( XA::short(), qr/^Error at XA/, "Inheritance is transitive" );
+    local @B::ISA = "D";
+    local @C::ISA = "B";
+    like( A::short(), qr/^Error at A/, "Inheritance is transitive" );
 }
 
 {
-    local @XC::CARP_NOT = "XD";
-    like( XA::short(), qr/^Error at XB/, "Short messages see \@CARP_NOT" );
+    local @C::CARP_NOT = "D";
+    like( A::short(), qr/^Error at B/, "Short messages see \@CARP_NOT" );
 }
 
 {
-    local @XD::CARP_NOT = "XC";
-    like( XA::short(), qr/^Error at XB/, "Short messages see \@CARP_NOT" );
+    local @D::CARP_NOT = "C";
+    like( A::short(), qr/^Error at B/, "Short messages see \@CARP_NOT" );
 }
 
 {
-    local @XD::CARP_NOT = "XB";
-    local @XB::CARP_NOT = "XC";
-    like( XA::short(), qr/^Error at XA/, "\@CARP_NOT is transitive" );
+    local @D::CARP_NOT = "B";
+    local @B::CARP_NOT = "C";
+    like( A::short(), qr/^Error at A/, "\@CARP_NOT is transitive" );
 }
 
 {
-    local @XB::CARP_NOT = "XD";
-    local @XC::CARP_NOT = "XB";
-    like( XA::short(), qr/^Error at XA/, "\@CARP_NOT is transitive" );
+    local @B::CARP_NOT = "D";
+    local @C::CARP_NOT = "B";
+    like( A::short(), qr/^Error at A/, "\@CARP_NOT is transitive" );
 }
 
 {
-    local @XD::ISA      = "XC";
-    local @XD::CARP_NOT = "XB";
-    like( XA::short(), qr/^Error at XC/, "\@CARP_NOT overrides inheritance" );
+    local @D::ISA      = "C";
+    local @D::CARP_NOT = "B";
+    like( A::short(), qr/^Error at C/, "\@CARP_NOT overrides inheritance" );
 }
 
 {
-    local @XD::ISA      = "XB";
-    local @XD::CARP_NOT = "XC";
-    like( XA::short(), qr/^Error at XB/, "\@CARP_NOT overrides inheritance" );
+    local @D::ISA      = "B";
+    local @D::CARP_NOT = "C";
+    like( A::short(), qr/^Error at B/, "\@CARP_NOT overrides inheritance" );
 }
 
 # %Carp::Internal
 {
-    local $Carp::Internal{XC} = 1;
-    like( XA::short(), qr/^Error at XB/, "Short doesn't report Internal" );
+    local $Carp::Internal{C} = 1;
+    like( A::short(), qr/^Error at B/, "Short doesn't report Internal" );
 }
 
 {
-    local $Carp::Internal{XD} = 1;
-    like( XA::long(), qr/^Error at XC/, "Long doesn't report Internal" );
+    local $Carp::Internal{D} = 1;
+    like( A::long(), qr/^Error at C/, "Long doesn't report Internal" );
 }
 
 # %Carp::CarpInternal
 {
-    local $Carp::CarpInternal{XD} = 1;
+    local $Carp::CarpInternal{D} = 1;
     like(
-        XA::short(), qr/^Error at XB/,
+        A::short(), qr/^Error at B/,
         "Short doesn't report calls to CarpInternal"
     );
 }
 
 {
-    local $Carp::CarpInternal{XD} = 1;
-    like( XA::long(), qr/^Error at XC/, "Long doesn't report CarpInternal" );
+    local $Carp::CarpInternal{D} = 1;
+    like( A::long(), qr/^Error at C/, "Long doesn't report CarpInternal" );
 }
 
 # tests for global variables
@@ -225,7 +194,7 @@ sub w { cluck @_ }
 {
     my $aref = [
         qr/t at \S*(?i:carp.t) line \d+\./,
-        qr/t at \S*(?i:carp.t) line \d+\.\n\s*main::x\("t"\) called at \S*(?i:carp.t) line \d+/
+        qr/t at \S*(?i:carp.t) line \d+\.\n\s*main::x\('t'\) called at \S*(?i:carp.t) line \d+/
     ];
     my $i = 0;
 
@@ -257,30 +226,35 @@ sub w { cluck @_ }
     }
 }
 
+# $Carp::MaxArgLen
+{
+    for ( 0, 4 ) {
+        my $arg = 'testtest';
+        local $Carp::MaxArgLen = $_;
+        local $SIG{__WARN__} = sub {
+            "@_" =~ /'(.+?)'/;
+            is length($1),
+                length( $_ ? substr( $arg, 0, $_ ) : substr( $arg, 0 ) ),
+                'MaxArgLen';
+        };
+
+        package Z;
+        main::w($arg);
+    }
+}
+
 # $Carp::MaxArgNums
 {
+    my $i    = 0;
     my $aref = [
-        [ -1            => '(...)' ],
-        [ 0             => '(1, 2, 3, 4)' ],
-        [ '0 but true'  => '(...)' ],
-        [ 1             => '(1, ...)' ],
-        [ 3             => '(1, 2, 3, ...)' ],
-        [ 4             => '(1, 2, 3, 4)' ],
-        [ 5             => '(1, 2, 3, 4)' ],
+        qr/1234 at \S*(?i:carp.t) line \d+\.\n\s*main::w\(1, 2, 3, 4\) called at \S*(?i:carp.t) line \d+/,
+        qr/1234 at \S*(?i:carp.t) line \d+\.\n\s*main::w\(1, 2, \.\.\.\) called at \S*(?i:carp.t) line \d+/,
     ];
 
     for (@$aref) {
-        my ($arg_count, $expected_signature) = @$_;
-
-        my $expected = join('',
-            '1234 at \S*(?i:carp.t) line \d+\.\n\s*main::w',
-            quotemeta $expected_signature,
-            ' called at \S*(?i:carp.t) line \d+'
-        );
-
-        local $Carp::MaxArgNums = $arg_count;
+        local $Carp::MaxArgNums = $i++;
         local $SIG{__WARN__} = sub {
-            like "@_", qr/$expected/, "MaxArgNums=$arg_count";
+            like "@_", $_, 'MaxArgNums';
         };
 
         package Z;
@@ -332,7 +306,7 @@ sub cluck_undef {
 
     local $SIG{__WARN__} = sub {
         like $_[0],
-            qr/^Bang! at.+\b(?i:carp\.t) line \d+\.\n\tmain::cluck_undef\(0, "undef", 2, undef, 4\) called at.+\b(?i:carp\.t) line \d+$/,
+            qr/^Bang! at.+\b(?i:carp\.t) line \d+\.\n\tmain::cluck_undef\(0, 'undef', 2, undef, 4\) called at.+\b(?i:carp\.t) line \d+$/,
             "cluck doesn't quote undef";
     };
 
@@ -354,7 +328,6 @@ for my $bodge_job ( 2, 1, 0 ) { SKIP: {
         print "# required B\n";
     }
     my $accum = '';
-    no warnings 'once';
     local *CORE::GLOBAL::caller = sub {
         local *__ANON__ = "fakecaller";
         my @c = CORE::caller(@_);
@@ -373,10 +346,10 @@ for my $bodge_job ( 2, 1, 0 ) { SKIP: {
     like( $accum, qr/main::fakecaller/,
         "test CORE::GLOBAL::caller override in eval" );
     $accum = '';
-    my $got = XA::long(42);
+    my $got = A::long(42);
     like( $accum, qr/main::fakecaller/,
         "test CORE::GLOBAL::caller override in Carp" );
-    my $package = 'XA';
+    my $package = 'A';
     my $where = $bodge_job == 1 ? ' in &main::__ANON__' : '';
     my $warning
         = $bodge_job
@@ -392,8 +365,8 @@ for my $bodge_job ( 2, 1, 0 ) { SKIP: {
     }
     my $arg = $bodge_job ? $warning : 42;
     like(
-        $got, qr!XA::long\($arg\) called at.+\b(?i:carp\.t) line \d+!,
-        'Correct arguments for XA'
+        $got, qr!A::long\($arg\) called at.+\b(?i:carp\.t) line \d+!,
+        'Correct arguments for A'
     );
 } }
 
@@ -409,12 +382,12 @@ SKIP: {
 	}
     };
 
-    my $got = XA::long(42);
+    my $got = A::long(42);
 
     like(
 	$got,
-	qr!XA::long\(\Q** Incomplete caller override detected; \E\@DB::args\Q were not set **\E\) called at.+\b(?i:carp\.t) line \d+!,
-	'Correct arguments for XA'
+	qr!A::long\(\Q** Incomplete caller override detected; \E\@DB::args\Q were not set **\E\) called at.+\b(?i:carp\.t) line \d+!,
+	'Correct arguments for A'
     );
 }
 
@@ -437,22 +410,31 @@ SKIP:
     );
 }
 
+SKIP:
+{
+    skip "IPC::Open3::open3 needs porting", 1 if $Is_VMS;
+    skip("B:: always created when static", 1)
+      if $Config{static_ext} =~ /\bB\b/;
+    is(
+      runperl(
+	prog => q<
+	  use Carp;
+	  $SIG{__WARN__} = sub{};
+	  carp (qq(A duck, but which duck?));
+	  print q(ok) unless exists $::{q(B::)};
+	>,
+      ),
+      'ok',
+      'Carp does not autovivify *B::',
+    );
+}
+
 # [perl #96672]
-<XD::DATA> for 1..2;
+<D::DATA> for 1..2;
 eval { croak 'heek' };
 $@ =~ s/\n.*//; # just check first line
 is $@, "heek at ".__FILE__." line ".(__LINE__-2).", <DATA> line 2.\n",
     'last handle line num is mentioned';
-
-# [cpan #100183]
-{
-    local $/ = \6;
-    <XD::DATA>;
-    eval { croak 'jeek' };
-    $@ =~ s/\n.*//; # just check first line
-    is $@, "jeek at ".__FILE__." line ".(__LINE__-2).", <DATA> chunk 3.\n",
-        'last handle chunk num is mentioned';
-}
 
 SKIP:
 {
@@ -472,72 +454,43 @@ SKIP:
     );
 }
 
-{
-    package Foo::No::CARP_NOT;
-    eval { Carp::croak(1) };
-    ::is_deeply(
-        [ keys %Foo::No::CARP_NOT:: ],
-        [],
-        "Carp doesn't create CARP_NOT or ISA in the caller if they don't exist"
-    );
-
-    package Foo::No::Autovivify;
-    our $CARP_NOT = 1;
-    eval { Carp::croak(1) };
-    ::ok(
-        !defined *{$Foo::No::Autovivify::{CARP_NOT}}{ARRAY},
-        "Carp doesn't autovivify the CARP_NOT or ISA arrays if the globs exists but they lack the ARRAY slot"
-    );
-}
-
-{
-    package Mpar;
-    sub f { Carp::croak "tun syn" }
-
-    package Phou;
-    $Phou::{ISA} = \42;
-    eval { Mpar::f };
-}
-like $@, qr/tun syn/, 'Carp can handle non-glob ISA stash elems';
-
-
 # New tests go here
 
-# line 1 "XA"
-package XA;
+# line 1 "A"
+package A;
 
 sub short {
-    XB::short();
+    B::short();
 }
 
 sub long {
-    XB::long();
+    B::long();
 }
 
-# line 1 "XB"
-package XB;
+# line 1 "B"
+package B;
 
 sub short {
-    XC::short();
+    C::short();
 }
 
 sub long {
-    XC::long();
+    C::long();
 }
 
-# line 1 "XC"
-package XC;
+# line 1 "C"
+package C;
 
 sub short {
-    XD::short();
+    D::short();
 }
 
 sub long {
-    XD::long();
+    D::long();
 }
 
-# line 1 "XD"
-package XD;
+# line 1 "D"
+package D;
 
 sub short {
     eval { Carp::croak("Error") };
@@ -554,4 +507,3 @@ __DATA__
 1
 2
 3
-abcdefghijklmnopqrstuvwxyz

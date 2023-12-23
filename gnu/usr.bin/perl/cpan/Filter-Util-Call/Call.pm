@@ -1,26 +1,24 @@
+
 # Call.pm
 #
-# Copyright (c) 1995-2011 Paul Marquess. All rights reserved.
-# Copyright (c) 2011-2014 Reini Urban. All rights reserved.
-# Copyright (c) 2014-2017 cPanel Inc. All rights reserved.
+# Copyright (c) 1995-2009 Paul Marquess. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
  
 package Filter::Util::Call ;
 
-require 5.006 ; # our
+require 5.005 ;
+require DynaLoader;
 require Exporter;
-
-use XSLoader ();
+use Carp ;
 use strict;
 use warnings;
+use vars qw($VERSION @ISA @EXPORT) ;
 
-our @ISA = qw(Exporter);
-our @EXPORT = qw( filter_add filter_del filter_read filter_read_exact) ;
-our $VERSION = "1.60" ;
-our $XS_VERSION = $VERSION;
-$VERSION = eval $VERSION;
+@ISA = qw(Exporter DynaLoader);
+@EXPORT = qw( filter_add filter_del filter_read filter_read_exact) ;
+$VERSION = "1.08" ;
 
 sub filter_read_exact($)
 {
@@ -28,10 +26,8 @@ sub filter_read_exact($)
     my ($left)   = $size ;
     my ($status) ;
 
-    unless ( $size > 0 ) {
-        require Carp;
-        Carp::croak("filter_read_exact: size parameter must be > 0");
-    }
+    croak ("filter_read_exact: size parameter must be > 0")
+	unless $size > 0 ;
 
     # try to read a block which is exactly $size bytes long
     while ($left and ($status = filter_read($left)) > 0) {
@@ -49,18 +45,18 @@ sub filter_add($)
     my($obj) = @_ ;
 
     # Did we get a code reference?
-    my $coderef = (ref $obj eq 'CODE');
+    my $coderef = (ref $obj eq 'CODE') ;
 
     # If the parameter isn't already a reference, make it one.
-    if (!$coderef and (!ref($obj) or ref($obj) =~ /^ARRAY|HASH$/)) {
-      $obj = bless (\$obj, (caller)[0]);
-    }
+    $obj = \$obj unless ref $obj ;
+
+    $obj = bless ($obj, (caller)[0]) unless $coderef ;
 
     # finish off the installation of the filter in C.
     Filter::Util::Call::real_import($obj, (caller)[0], $coderef) ;
 }
 
-XSLoader::load('Filter::Util::Call');
+bootstrap Filter::Util::Call ;
 
 1;
 __END__
@@ -186,7 +182,7 @@ will result in the C<@_> array having the following values:
 Before terminating, the C<import> function must explicitly install the
 filter by calling C<filter_add>.
 
-=head2 B<filter_add()>
+B<filter_add()>
 
 The function, C<filter_add>, actually installs the filter. It takes one
 parameter which should be a reference. The kind of reference used will
@@ -197,7 +193,7 @@ If a CODE reference is used then a I<closure filter> will be assumed.
 If a CODE reference is not used, a I<method filter> will be assumed.
 In a I<method filter>, the reference can be used to store context
 information. The reference will be I<blessed> into the package by
-C<filter_add>, unless the reference was already blessed.
+C<filter_add>.
 
 See the filters at the end of this documents for examples of using
 context information using both I<method filters> and I<closure
@@ -290,34 +286,6 @@ does not affect the running of the filter. All it does is tell Perl not
 to call filter any more.
 
 See L<Example 4: Using filter_del> for details.
-
-=item I<real_import>
-
-Internal function which adds the filter, based on the L<filter_add>
-argument type.
-
-=item I<unimport()>
-
-May be used to disable a filter, but is rarely needed. See L<filter_del>.
-
-=back
-
-=head1 LIMITATIONS
-
-See L<perlfilter/LIMITATIONS> for an overview of the general problems
-filtering code in a textual line-level only.
-
-=over
-
-=item __DATA__ is ignored
-
-The content from the __DATA__ block is not filtered.
-This is a serious limitation, e.g. for the L<Switch> module.
-See L<http://search.cpan.org/perldoc?Switch#LIMITATIONS> for more.
-
-=item Max. codesize limited to 32-bit
-
-Currently internal buffer lengths are limited to 32-bit only.
 
 =back
 
@@ -515,7 +483,8 @@ Filter::Util::Call. Although it doesn't allow the fine control that
 Filter::Util::Call does, it should be adequate for the majority of
 applications. It's available at
 
-   http://search.cpan.org/dist/Filter-Simple/
+   http://www.cpan.org/modules/by-author/Damian_Conway/Filter-Simple.tar.gz
+   http://www.csse.monash.edu.au/~damian/CPAN/Filter-Simple.tar.gz
 
 =head1 AUTHOR
 
@@ -524,15 +493,6 @@ Paul Marquess
 =head1 DATE
 
 26th January 1996
-
-=head1 LICENSE
-
-Copyright (c) 1995-2011 Paul Marquess. All rights reserved.
-Copyright (c) 2011-2014 Reini Urban. All rights reserved.
-Copyright (c) 2014-2017 cPanel Inc. All rights reserved.
-
-This program is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
 
 =cut
 

@@ -8,7 +8,7 @@ use CPAN::Module;
 use vars qw(
             $VERSION
 );
-$VERSION = "5.5005";
+$VERSION = "5.5";
 
 sub look {
     my $self = shift;
@@ -21,11 +21,6 @@ sub undelay {
     delete $self->{later};
     for my $c ( $self->contains ) {
         my $obj = CPAN::Shell->expandany($c) or next;
-        if ($obj->id eq $self->id){
-            my $id = $obj->id;
-            $CPAN::Frontend->mywarn("$id seems to contain itself, skipping\n");
-            next;
-        }
         $obj->undelay;
     }
 }
@@ -44,12 +39,7 @@ sub color_cmd_tmps {
         && $color==1
         && $self->{incommandcolor}==$color;
     if ($depth>=$CPAN::MAX_RECURSION) {
-        my $e = CPAN::Exception::RecursiveDependency->new($ancestors);
-        if ($e->is_resolvable) {
-            return $self->{incommandcolor}=2;
-        } else {
-            die $e;
-        }
+        die(CPAN::Exception::RecursiveDependency->new($ancestors));
     }
     # warn "color_cmd_tmps $depth $color " . $self->id; # sleep 1;
 
@@ -87,11 +77,11 @@ sub contains {
         # Try to get at it in the cpan directory
         $self->debug("no inst_file") if $CPAN::DEBUG;
         my $cpan_file;
-        $CPAN::Frontend->mydie("I don't know a bundle with ID '$id'\n") unless
+        $CPAN::Frontend->mydie("I don't know a bundle with ID $id\n") unless
               $cpan_file = $self->cpan_file;
         if ($cpan_file eq "N/A") {
-            $CPAN::Frontend->mywarn("Bundle '$id' not found on disk and not on CPAN. Maybe stale symlink? Maybe removed during session?\n");
-            return;
+            $CPAN::Frontend->mydie("Bundle $id not found on disk and not on CPAN.
+  Maybe stale symlink? Maybe removed during session? Giving up.\n");
         }
         my $dist = $CPAN::META->instance('CPAN::Distribution',
                                          $self->cpan_file);
@@ -103,12 +93,7 @@ sub contains {
         @me = split /::/, $self->id;
         $me[-1] .= ".pm";
         $me = File::Spec->catfile(@me);
-        my $build_dir;
-        unless ($build_dir = $dist->{build_dir}) {
-            $CPAN::Frontend->mywarn("Warning: cannot determine bundle content without a build_dir.\n");
-            return;
-        }
-        $from = $self->find_bundle_file($build_dir,join('/',@me));
+        $from = $self->find_bundle_file($dist->{build_dir},join('/',@me));
         $to = File::Spec->catfile($todir,$me);
         File::Path::mkpath(File::Basename::dirname($to));
         File::Copy::copy($from, $to)
@@ -243,11 +228,7 @@ Going to $meth that.
         $self->debug("type[$type] s[$s]") if $CPAN::DEBUG;
         my $obj = $CPAN::META->instance($type,$s);
         $obj->{reqtype} = $self->{reqtype};
-        $obj->{viabundle} ||= { id => $id, reqtype => $self->{reqtype}, optional => !$self->{mandatory}};
-        # $obj->$meth();
-        # XXX should optional be based on whether bundle was optional? -- xdg, 2012-04-01
-        # A: Sure, what could demand otherwise? --andk, 2013-11-25
-        CPAN::Queue->queue_item(qmod => $obj->id, reqtype => $self->{reqtype}, optional => !$self->{mandatory});
+        $obj->$meth();
     }
 }
 
@@ -285,7 +266,7 @@ sub clean   { shift->rematein('clean',@_); }
 #-> sub CPAN::Bundle::uptodate ;
 sub uptodate {
     my($self) = @_;
-    return 0 unless $self->SUPER::uptodate; # we must have the current Bundle def
+    return 0 unless $self->SUPER::uptodate; # we mut have the current Bundle def
     my $c;
     foreach $c ($self->contains) {
         my $obj = CPAN::Shell->expandany($c);

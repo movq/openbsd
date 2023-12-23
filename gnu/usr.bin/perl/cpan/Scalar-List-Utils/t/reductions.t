@@ -8,7 +8,7 @@ use Test::More tests => 7;
 use List::Util qw( reductions );
 
 is_deeply( [ reductions { } ], [],
-  'empty list'
+  'emmpty list'
 );
 
 is_deeply(

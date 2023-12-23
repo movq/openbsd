@@ -1,155 +1,56 @@
 #!./perl
 
-BEGIN {
-    chdir 't' if -d 't';
-    require './test.pl';
-    set_up_inc('../lib');
-}
+# $RCSfile: undef.t,v $$Revision: 4.1 $$Date: 92/08/07 18:28:34 $
 
-use strict;
+print "1..21\n";
 
-my (@ary, %ary, %hash);
-
-plan 74;
-
-ok !defined($a);
+print defined($a) ? "not ok 1\n" : "ok 1\n";
 
 $a = 1+1;
-ok defined($a);
+print defined($a) ? "ok 2\n" : "not ok 2\n";
 
 undef $a;
-ok !defined($a);
+print defined($a) ? "not ok 3\n" : "ok 3\n";
 
 $a = "hi";
-ok defined($a);
+print defined($a) ? "ok 4\n" : "not ok 4\n";
 
 $a = $b;
-ok !defined($a);
+print defined($a) ? "not ok 5\n" : "ok 5\n";
 
 @ary = ("1arg");
 $a = pop(@ary);
-ok defined($a);
+print defined($a) ? "ok 6\n" : "not ok 6\n";
 $a = pop(@ary);
-ok !defined($a);
+print defined($a) ? "not ok 7\n" : "ok 7\n";
 
 @ary = ("1arg");
 $a = shift(@ary);
-ok defined($a);
+print defined($a) ? "ok 8\n" : "not ok 8\n";
 $a = shift(@ary);
-ok !defined($a);
+print defined($a) ? "not ok 9\n" : "ok 9\n";
 
 $ary{'foo'} = 'hi';
-ok defined($ary{'foo'});
-ok !defined($ary{'bar'});
+print defined($ary{'foo'}) ? "ok 10\n" : "not ok 10\n";
+print defined($ary{'bar'}) ? "not ok 11\n" : "ok 11\n";
 undef $ary{'foo'};
-ok !defined($ary{'foo'});
+print defined($ary{'foo'}) ? "not ok 12\n" : "ok 12\n";
 
-sub foo { pass; 1 }
+print defined(@ary) ? "ok 13\n" : "not ok 13\n";
+print defined(%ary) ? "ok 14\n" : "not ok 14\n";
+undef @ary;
+print defined(@ary) ? "not ok 15\n" : "ok 15\n";
+undef %ary;
+print defined(%ary) ? "not ok 16\n" : "ok 16\n";
+@ary = (1);
+print defined @ary ? "ok 17\n" : "not ok 17\n";
+%ary = (1,1);
+print defined %ary ? "ok 18\n" : "not ok 18\n";
 
-&foo || fail;
+sub foo { print "ok 19\n"; }
 
-ok defined &foo;
+&foo || print "not ok 19\n";
+
+print defined &foo ? "ok 20\n" : "not ok 20\n";
 undef &foo;
-ok !defined(&foo);
-
-eval { undef $1 };
-like $@, qr/^Modification of a read/;
-
-eval { $1 = undef };
-like $@, qr/^Modification of a read/;
-
-{
-    # [perl #17753] segfault when undef'ing unquoted string constant
-    eval 'undef tcp';
-    like $@, qr/^Can't modify constant item/;
-}
-
-# bugid 3096
-# undefing a hash may free objects with destructors that then try to
-# modify the hash. Ensure that the hash remains consistent
-
-{
-    my (%hash, %mirror);
-
-    my $iters = 5;
-
-    for (1..$iters) {
-	$hash{"k$_"} = bless ["k$_"], 'X';
-	$mirror{"k$_"} = "k$_";
-    }
-
-
-    my $c = $iters;
-    my $events;
-
-    sub X::DESTROY {
-	my $key = $_[0][0];
-	$events .= 'D';
-	note("----- DELETE($key) ------");
-	delete $mirror{$key};
-
-	is join('-', sort keys %hash), join('-', sort keys %mirror),
-	    "$key: keys";
-	is join('-', sort map $_->[0], values %hash),
-	    join('-', sort values %mirror), "$key: values";
-
-	# don't know exactly what we'll get from the iterator, but
-	# it must be a sensible value
-	my ($k, $v) = each %hash;
-	ok defined $k ? exists($mirror{$k}) : (keys(%mirror) == 0),
-	    "$key: each 1";
-
-	is delete $hash{$key}, undef, "$key: delete";
-	($k, $v) = each %hash;
-	ok defined $k ? exists($mirror{$k}) : (keys(%mirror) <= 1),
-	    "$key: each 2";
-
-	$c++;
-	if ($c <= $iters * 2) {
-	    $hash{"k$c"} = bless ["k$c"], 'X';
-	    $mirror{"k$c"} = "k$c";
-	}
-	$events .= 'E';
-    }
-
-    each %hash; # set eiter
-    undef %hash;
-
-    is scalar keys %hash, 0, "hash empty at end";
-    is $events, ('DE' x ($iters*2)), "events";
-    my ($k, $v) = each %hash;
-    is $k, undef, 'each undef at end';
-}
-
-# part of #105906: inlined undef constant getting copied
-BEGIN { $::{z} = \undef }
-for (z,z) {
-    push @_, \$_;
-}
-is $_[0], $_[1], 'undef constants preserve identity';
-
-# [perl #122556]
-my $messages;
-package Thingie;
-DESTROY { $messages .= 'destroyed ' }
-package main;
-sub body {
-    sub {
-        my $t = bless [], 'Thingie';
-        undef $t;
-    }->(), $messages .= 'after ';
-
-    return;
-}
-body();
-is $messages, 'destroyed after ', 'undef $scalar frees refs immediately';
-
-
-# this will segfault if it fails
-
-sub PVBM () { 'foo' }
-{ my $dummy = index 'foo', PVBM }
-
-my $pvbm = PVBM;
-undef $pvbm;
-ok !defined $pvbm;
+print defined(&foo) ? "not ok 21\n" : "ok 21\n";

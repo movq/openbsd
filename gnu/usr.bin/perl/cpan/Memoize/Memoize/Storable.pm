@@ -11,7 +11,7 @@ See L<Memoize>.
 =cut
 
 use Storable ();
-$VERSION = '1.03';
+$VERSION = 0.65;
 $Verbose = 0;
 
 sub TIEHASH {

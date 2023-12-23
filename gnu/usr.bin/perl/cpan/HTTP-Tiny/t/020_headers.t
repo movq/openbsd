@@ -4,8 +4,7 @@ use strict;
 use warnings;
 
 use Test::More qw[no_plan];
-use lib 't';
-use Util    qw[tmpfile rewind $CRLF $LF];
+use t::Util    qw[tmpfile rewind $CRLF $LF];
 use HTTP::Tiny;
 
 {
@@ -45,15 +44,6 @@ use HTTP::Tiny;
     my $fh      = tmpfile();
     my $handle  = HTTP::Tiny::Handle->new(fh => $fh);
     my $headers = { foo => ['Foo', 'Baz'], bar => 'Bar' };
-    $handle->write_header_lines($headers);
-    rewind($fh);
-    is_deeply($handle->read_header_lines, $headers, "roundtrip header lines");
-}
-
-{
-    my $fh      = tmpfile();
-    my $handle  = HTTP::Tiny::Handle->new(fh => $fh);
-    my $headers = { foo => ['Foo', 'Baz'], bar => 'Bar', baz => '' };
     $handle->write_header_lines($headers);
     rewind($fh);
     is_deeply($handle->read_header_lines, $headers, "roundtrip header lines");

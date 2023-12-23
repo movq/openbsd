@@ -2,7 +2,7 @@ package Test2::Event::V2;
 use strict;
 use warnings;
 
-our $VERSION = '1.302190';
+our $VERSION = '1.302133';
 
 use Scalar::Util qw/reftype/;
 use Carp qw/croak/;
@@ -33,8 +33,7 @@ sub init {
 
         $self->{+ABOUT}->{uuid} = $uuid;
     }
-    elsif ($self->{+ABOUT} && $self->{+ABOUT}->{uuid}) {
-        $uuid = $self->{+ABOUT}->{uuid};
+    elsif ($uuid = $self->{+ABOUT}->{uuid}) {
         $self->SUPER::set_uuid($uuid);
     }
 
@@ -61,8 +60,8 @@ sub facet_data {
     for my $k (keys %$f) {
         next if substr($k, 0, 1) eq '_';
 
-        my $data = $f->{$k} or next; # Key is there, but no facet
-        my $is_list = 'ARRAY' eq (reftype($data) || '');
+        my $data = $f->{$k};
+        my $is_list = reftype($data) eq 'ARRAY';
         $out{$k} = $is_list ? [ map { {%{$_}} } @$data ] : {%$data};
     }
 
@@ -229,7 +228,7 @@ F<http://github.com/Test-More/test-more/>.
 
 =head1 COPYRIGHT
 
-Copyright 2020 Chad Granum E<lt>exodist@cpan.orgE<gt>.
+Copyright 2018 Chad Granum E<lt>exodist@cpan.orgE<gt>.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

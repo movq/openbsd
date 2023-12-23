@@ -1,7 +1,6 @@
-# copied over from JSON::XS and modified to use JSON::PP
+# copied over from JSON::PP::XS and modified to use JSON::PP
 
 use strict;
-use warnings;
 use Test::More;
 BEGIN { plan tests => 2 };
 
@@ -10,7 +9,6 @@ BEGIN { $ENV{PERL_JSON_BACKEND} = 0; }
 use JSON::PP;
 use Tie::Hash;
 use Tie::Array;
-
 
 my $js = JSON::PP->new;
 

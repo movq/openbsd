@@ -55,14 +55,14 @@ my $rv;
 $Devel::PPPort::exception_caught = undef;
 
 $rv = eval { &Devel::PPPort::exception(0) };
-is($@, '');
+ok($@, '');
 ok(defined $rv);
-is($rv, 42);
-is($Devel::PPPort::exception_caught, 0);
+ok($rv, 42);
+ok($Devel::PPPort::exception_caught, 0);
 
 $Devel::PPPort::exception_caught = undef;
 
 $rv = eval { &Devel::PPPort::exception(1) };
-is($@, "boo\n");
+ok($@, "boo\n");
 ok(not defined $rv);
-is($Devel::PPPort::exception_caught, 1);
+ok($Devel::PPPort::exception_caught, 1);

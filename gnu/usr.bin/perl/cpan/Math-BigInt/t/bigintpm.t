@@ -1,81 +1,46 @@
-# -*- mode: perl; -*-
+#!/usr/bin/perl -w
 
+use Test;
 use strict;
-use warnings;
 
-use Test::More tests => 4280            # tests in require'd file
-                         + 20;          # tests in this file
+BEGIN
+  {
+  $| = 1;
+  unshift @INC, '../lib'; # for running manually
+  my $location = $0; $location =~ s/bigintpm.t//;
+  unshift @INC, $location; # to locate the testing files
+  chdir 't' if -d 't';
+  plan tests => 3273 + 6;
+  }
 
-use Math::BigInt only => 'Calc';
+use Math::BigInt lib => 'Calc';
 
-our ($CLASS, $LIB);
-$CLASS = "Math::BigInt";
-$LIB   = Math::BigInt -> config('lib');         # backend library
-
-my $x;
-
-#############################################################################
-# bgcd() as function, class method and instance method.
-
-my $gcd0 = Math::BigInt::bgcd(-12, 18, 27);
-isa_ok($gcd0, "Math::BigInt", "bgcd() as function");
-is($gcd0, 3, "bgcd() as function");
-
-my $gcd1 = Math::BigInt->bgcd(-12, 18, 27);
-isa_ok($gcd1, "Math::BigInt", "bgcd() as class method");
-is($gcd1, 3, "bgcd() as class method");
-
-$x = Math::BigInt -> new(-12);
-my $gcd2 = $x -> bgcd(18, 27);
-isa_ok($gcd2, "Math::BigInt", "bgcd() as instance method");
-is($gcd2, 3, "bgcd() as instance method");
-is($x, -12, "bgcd() does not modify invocand");
-
-#############################################################################
-# blcm() as function, class method and instance method.
-
-my $lcm0 = Math::BigInt::blcm(-12, 18, 27);
-isa_ok($lcm0, "Math::BigInt", "blcm() as function");
-is($lcm0, 108, "blcm() as function");
-
-my $lcm1 = Math::BigInt->blcm(-12, 18, 27);
-isa_ok($lcm1, "Math::BigInt", "blcm() as class method");
-is($lcm1, 108, "blcm() as class method");
-
-$x = Math::BigInt -> new(-12);
-my $lcm2 = $x -> blcm(18, 27);
-isa_ok($lcm2, "Math::BigInt", "blcm() as instance method");
-is($lcm2, 108, "blcm() as instance method");
-is($x, -12, "blcm() does not modify invocand");
+use vars qw ($scale $class $try $x $y $f @args $ans $ans1 $ans1_str $setup $CL);
+$class = "Math::BigInt";
+$CL = "Math::BigInt::Calc";
 
 #############################################################################
 # from_hex(), from_bin() and from_oct() tests
 
-$x = Math::BigInt->from_hex('0xcafe');
-is($x, "51966",
-   qq|Math::BigInt->from_hex("0xcafe")|);
-
+my $x = Math::BigInt->from_hex('0xcafe');
+ok ($x, "51966", 'from_hex() works');
+ 
 $x = Math::BigInt->from_hex('0xcafebabedead');
-is($x, "223195403574957",
-   qq|Math::BigInt->from_hex("0xcafebabedead")|);
-
+ok ($x, "223195403574957", 'from_hex() works with long numbers');
+ 
 $x = Math::BigInt->from_bin('0b1001');
-is($x, "9",
-   qq|Math::BigInt->from_bin("0b1001")|);
-
+ok ($x, "9", 'from_bin() works');
+ 
 $x = Math::BigInt->from_bin('0b1001100110011001100110011001');
-is($x, "161061273",
-   qq|Math::BigInt->from_bin("0b1001100110011001100110011001");|);
+ok ($x, "161061273", 'from_bin() works with big numbers');
 
 $x = Math::BigInt->from_oct('0775');
-is($x, "509",
-   qq|Math::BigInt->from_oct("0775");|);
-
+ok ($x, "509", 'from_oct() works');
+ 
 $x = Math::BigInt->from_oct('07777777777777711111111222222222');
-is($x, "9903520314281112085086151826",
-   qq|Math::BigInt->from_oct("07777777777777711111111222222222");|);
+ok ($x, "9903520314281112085086151826", 'from_oct() works with big numbers');
 
 #############################################################################
 # all the other tests
-
-require './t/bigintpm.inc';       # all tests here for sharing
+ 
+require 'bigintpm.inc';	# all tests here for sharing

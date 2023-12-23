@@ -1,12 +1,13 @@
 package TAP::Parser::SourceHandler::File;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
+use TAP::Parser::SourceHandler    ();
 use TAP::Parser::IteratorFactory  ();
 use TAP::Parser::Iterator::Stream ();
 
-use base 'TAP::Parser::SourceHandler';
+@ISA = qw(TAP::Parser::SourceHandler);
 
 TAP::Parser::IteratorFactory->register_handler(__PACKAGE__);
 
@@ -16,11 +17,11 @@ TAP::Parser::SourceHandler::File - Stream TAP from a text file.
 
 =head1 VERSION
 
-Version 3.44
+Version 3.23
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.23';
 
 =head1 SYNOPSIS
 
@@ -71,8 +72,7 @@ sub can_handle {
     return 0.9 if $file->{lc_ext} eq '.tap';
 
     if ( my $exts = $config->{extensions} ) {
-        my @exts = ref $exts eq 'ARRAY' ? @$exts : $exts;
-        return 0.9 if grep { lc($_) eq $file->{lc_ext} } @exts;
+        return 0.9 if grep { lc($_) eq $file->{lc_ext} } @$exts;
     }
 
     return 0;

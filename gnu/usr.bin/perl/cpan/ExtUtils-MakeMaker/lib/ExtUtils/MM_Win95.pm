@@ -1,10 +1,8 @@
 package ExtUtils::MM_Win95;
 
 use strict;
-use warnings;
 
-our $VERSION = '7.64';
-$VERSION =~ tr/_//d;
+our $VERSION = '6.56';
 
 require ExtUtils::MM_Win32;
 our @ISA = qw(ExtUtils::MM_Win32);
@@ -22,14 +20,63 @@ ExtUtils::MM_Win95 - method to customize MakeMaker for Win9X
 
 =head1 DESCRIPTION
 
-This is a subclass of L<ExtUtils::MM_Win32> containing changes necessary
+This is a subclass of ExtUtils::MM_Win32 containing changes necessary
 to get MakeMaker playing nice with command.com and other Win9Xisms.
 
 =head2 Overridden methods
 
 Most of these make up for limitations in the Win9x/nmake command shell.
+Mostly its lack of &&.
 
 =over 4
+
+
+=item xs_c
+
+The && problem.
+
+=cut
+
+sub xs_c {
+    my($self) = shift;
+    return '' unless $self->needs_linking();
+    '
+.xs.c:
+	$(XSUBPPRUN) $(XSPROTOARG) $(XSUBPPARGS) $*.xs > $*.c
+	'
+}
+
+
+=item xs_cpp
+
+The && problem
+
+=cut
+
+sub xs_cpp {
+    my($self) = shift;
+    return '' unless $self->needs_linking();
+    '
+.xs.cpp:
+	$(XSUBPPRUN) $(XSPROTOARG) $(XSUBPPARGS) $*.xs > $*.cpp
+	';
+}
+
+=item xs_o 
+
+The && problem.
+
+=cut
+
+sub xs_o {
+    my($self) = shift;
+    return '' unless $self->needs_linking();
+    '
+.xs$(OBJ_EXT):
+	$(XSUBPPRUN) $(XSPROTOARG) $(XSUBPPARGS) $*.xs > $*.c
+	$(CCCMD) $(CCCDLFLAGS) -I$(PERL_INC) $(DEFINE) $*.c
+	';
+}
 
 
 =item max_exec_len
@@ -69,7 +116,7 @@ Currently maintained by Michael G Schwern C<schwern@pobox.com>.
 
 Send patches and ideas to C<makemaker@perl.org>.
 
-See https://metacpan.org/release/ExtUtils-MakeMaker.
+See http://www.makemaker.org.
 
 =cut
 

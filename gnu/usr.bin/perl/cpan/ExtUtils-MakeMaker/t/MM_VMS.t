@@ -1,14 +1,9 @@
 #!/usr/bin/perl -w
 
-use strict;
-use warnings;
-
 BEGIN {
     unshift @INC, 't/lib';
 }
 chdir 't';
-
-my @Methods;
 
 BEGIN {
     @Methods = (qw(wraplist

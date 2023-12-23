@@ -92,7 +92,7 @@ C<system> operator. See L<perlvar> for details. (Contributed by Gisle Aas.)
 
 This variable controls the state of the internal UTF-8 offset caching code.
 1 for on (the default), 0 for off, -1 to debug the caching code by checking
-all its results against linear scans, and panicking on any discrepancy.
+all its results against linear scans, and panicing on any discrepancy.
 
 =back
 
@@ -314,7 +314,7 @@ properly deparse C<print readpipe $x, $y>.
 
 =item *
 
-now handles C<< ''->() >>, C<::()>, C<sub :: {}>, I<etc.> correctly [RT #43010].
+now handles C<''->()>, C<::()>, C<sub :: {}>, I<etc.> correctly [RT #43010].
 All bugs in parsing these kinds of syntax are now fixed:
 
     perl -MO=Deparse -e '"my %h = "->()'
@@ -1166,7 +1166,7 @@ between C<""> and C<< E<lt>E<gt> >> quoting in C<#include> statements.
 
 =item *
 
-now generates correct code for C<#if defined A || defined B>
+now generates correct correct code for C<#if defined A || defined B>
 [RT #39130]
 
 =back
@@ -1228,7 +1228,7 @@ Hanssen).
 
 =item *
 
-C<reverse> function documentation received scalar context examples.
+L<reverse> function documentation received scalar context examples.
 
 =back
 
@@ -1259,7 +1259,7 @@ L<perlsub> example is updated to use a lexical variable for C<opendir> syntax.
 L<perlvar> fixes confusion about real GID C<$(> and effective GID C<$)>. 
 
 Perl thread tutorial example is fixed in section
-L<perlthrtut/Queues: Passing Data Around> and L<perlthrtut>.
+L<perlthrtut/Queues: Passing Data Around> and L<perlothrtut>.
 
 L<perlhack> documentation extensively improved by Jarkko Hietaniemi and others.
 
@@ -1655,7 +1655,7 @@ a C<system> call.
 
 =item *
 
-Fixed bug RT #37886, symbolic dereferencing was allowed in the argument of
+Fixed bug RT #37886, symbolic deferencing was allowed in the argument of
 C<defined> even under the influence of C<use strict 'refs'>.
 
 =item *
@@ -1811,7 +1811,7 @@ The process id is no longer truncated to 16 bits on some Windows platforms
 
 =item *
 
-Fixed bug RT #54828 in F<perlio.c> where calling C<binmode> on Win32 and Cygwin
+Fixed bug RT #54828 in F<perlio.c> where calling C<binmode> on Win32 and Cgywin
 may cause a segmentation fault.
 
 =back
@@ -1834,7 +1834,7 @@ The reference count of C<PerlIO> file descriptors is now correctly handled.
 
 =item *
 
-On VMS, escaped dots will be preserved when converted to Unix syntax.
+On VMS, escaped dots will be preserved when converted to UNIX syntax.
 
 =item *
 
@@ -2096,7 +2096,7 @@ Calls all tests in F<t/op/inccode.t> after first tying C<@INC>.
 
 =item t/op/incfilter.t
 
-Tests for source filters returned from code references in C<@INC>.
+Tests for for source filters returned from code references in C<@INC>.
 
 =item t/op/kill0.t
 
@@ -2317,8 +2317,7 @@ the Perl 5 bugs at http://bugs.perl.org/
 If the bug you are reporting has security implications, which make it
 inappropriate to send to a publicly archived mailing list, then please send
 it to perl5-security-report@perl.org. This points to a closed subscription
-unarchived mailing list, which includes
-all the core committers, who will be able
+unarchived mailing list, which includes all the core committers, who be able
 to help assess the impact of issues, figure out a resolution, and help
 co-ordinate the release of patches to mitigate or fix the problem across all
 platforms on which Perl is supported. Please only use this address for security

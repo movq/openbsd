@@ -1,9 +1,11 @@
-use 5.005;
 use strict;
-use ExtUtils::MakeMaker;
-use File::Copy;
-use File::Spec;
 use Config;
+use ExtUtils::MakeMaker;
+eval 'use ExtUtils::MakeMaker::Coverage';
+use File::Copy;
+use File::Path;
+use File::Spec;
+require 5.005;
 
 
 # create a typemap for Perl 5.6
@@ -14,27 +16,26 @@ if ($] < 5.008) {
 }
 
 # create a lib/ dir in order to avoid warnings in Test::Distribution
-mkdir "lib", $ENV{PERL_CORE} ? 0770 : 0755;
+mkdir "lib", 0755;
 
 # virtual paths given to EU::MM
 my %virtual_path = ( 'Syslog.pm' => '$(INST_LIBDIR)/Syslog.pm' );
 
 # detect when to use Win32::EvenLog
 my (@extra_params, @extra_prereqs);
+my $use_eventlog = eval "use Win32::EventLog; 1";
 
-if ($^O =~ /Win32/) {
+if ($use_eventlog) {
     print " * Win32::EventLog detected.\n";
     my $name = "PerlLog";
 
     push @extra_prereqs, 
-        "Win32::EventLog"    => 0,
-        "Win32::TieRegistry" => 0,
-        "Win32::EventLog"    => 0;
+        Win32 => 0,  "Win32::TieRegistry" => 0,  "Win32::EventLog" => 0;
 
     $virtual_path{'win32/Win32.pm'   } = '$(INST_LIBDIR)/Syslog/Win32.pm';
     $virtual_path{'win32/PerlLog.dll'} = '$(INST_ARCHAUTODIR)/PerlLog.dll';
 
-    push @extra_params, CCFLAGS => "$Config{ccflags} -Ifallback";
+    push @extra_params, CCFLAGS => "-Ifallback";
 
     # recreate the DLL from its uuencoded form if it's not here
     if (! -f File::Spec->catfile("win32", "$name.dll")) {
@@ -52,9 +53,22 @@ if ($^O =~ /Win32/) {
         close(DLL);
     }
 }
+elsif ($^O =~ /Win32/) {
+    print <<"NOTICE"
+ *** You're running on a Win32 system,  but you lack the Win32::EventLog\a
+ *** module, part of the libwin32 distribution. Although Sys::Syslog can 
+ *** be used without Win32::EventLog, it won't be very useful except for 
+ *** sending remote syslog messages.  If you want to log messages on the 
+ *** local host as well, please install libwin32 then Sys::Syslog again.
+NOTICE
+}
 
 # detect when being built in Perl core
-if (not grep { $_ eq 'PERL_CORE=1' } @ARGV) {
+if (grep { $_ eq 'PERL_CORE=1' } @ARGV) {
+    push @extra_params, 
+        MAN3PODS    => {};      # Pods will be built by installman.
+}
+else {
     push @extra_params, 
         DEFINE      => '-DUSE_PPPORT_H';
 }
@@ -62,18 +76,13 @@ if (not grep { $_ eq 'PERL_CORE=1' } @ARGV) {
 # on pre-5.6 Perls, add warnings::compat to the prereq modules
 push @extra_prereqs, "warnings::compat" => "0.06"  if $] < 5.006;
 
-# starting with Perl 5.11, "site" and "vendor" directories finally are
-# before "perl" (core) in @INC, thus allowing dual-life modules to be
-# updated without the need to overwrite the old version
-my $installdirs = $] < 5.011 ? "perl" : "site";
-
 WriteMakefile(
     NAME            => 'Sys::Syslog',
     LICENSE         => 'perl',
     AUTHOR          => 'Sebastien Aperghis-Tramoni <sebastien@aperghis.net>',
     VERSION_FROM    => 'Syslog.pm', 
     ABSTRACT_FROM   => 'Syslog.pm', 
-    INSTALLDIRS     => $installdirs,
+    INSTALLDIRS     => 'perl',
     XSPROTOARG      => '-noprototypes',
     PM              => \%virtual_path, 
     PREREQ_PM       => {
@@ -89,11 +98,6 @@ WriteMakefile(
 
         # build/test prereqs
         'Test::More'        => 0,
-    },
-    META_MERGE          => {
-        resources       => {
-            repository  => "https://github.com/maddingue/Sys-Syslog.git",
-        },
     },
     PL_FILES        => {},
     dist            => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },

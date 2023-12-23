@@ -1,4 +1,4 @@
-/*
+/* $Id$
 
 Copyright 1997-2004 Gisle Aas
 
@@ -25,10 +25,34 @@ metamail, which comes with this message:
 */
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define PERL_NO_GET_CONTEXT     /* we want efficiency */
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
+#ifdef __cplusplus
+}
+#endif
+
+#ifndef PATCHLEVEL
+#    include <patchlevel.h>
+#    if !(defined(PERL_VERSION) || (SUBVERSION > 0 && defined(PATCHLEVEL)))
+#        include <could_not_find_Perl_patchlevel.h>
+#    endif
+#endif
+
+#if PATCHLEVEL <= 4 && !defined(PL_dowarn)
+   #define PL_dowarn dowarn
+#endif
+
+#ifdef G_WARN_ON
+   #define DOWARN (PL_dowarn & G_WARN_ON)
+#else
+   #define DOWARN PL_dowarn
+#endif
+
 
 #define MAX_LINE  76 /* size of encoded lines */
 
@@ -95,17 +119,15 @@ encode_base64(sv,...)
 	PREINIT:
 	char *str;     /* string to encode */
 	SSize_t len;   /* length of the string */
-	const char*eol;/* the end-of-line sequence to use */
+	char *eol;     /* the end-of-line sequence to use */
 	STRLEN eollen; /* length of the EOL sequence */
 	char *r;       /* result string */
 	STRLEN rlen;   /* length of result string */
 	unsigned char c1, c2, c3;
 	int chunk;
-	U32 had_utf8;
 
 	CODE:
 #if PERL_REVISION == 5 && PERL_VERSION >= 6
-	had_utf8 = SvUTF8(sv);
 	sv_utf8_downgrade(sv, FALSE);
 #endif
 	str = SvPV(sv, rlen); /* SvPV(sv, len) gives warning for signed len */
@@ -135,8 +157,8 @@ encode_base64(sv,...)
 	/* encode */
 	for (chunk=0; len > 0; len -= 3, chunk++) {
 	    if (chunk == (MAX_LINE/4)) {
-		const char *c = eol;
-		const char *e = eol + eollen;
+		char *c = eol;
+		char *e = eol + eollen;
 		while (c < e)
 		    *r++ = *c++;
 		chunk = 0;
@@ -159,16 +181,12 @@ encode_base64(sv,...)
 	}
 	if (rlen) {
 	    /* append eol to the result string */
-	    const char *c = eol;
-	    const char *e = eol + eollen;
+	    char *c = eol;
+	    char *e = eol + eollen;
 	    while (c < e)
 		*r++ = *c++;
 	}
 	*r = '\0';  /* every SV in perl should be NUL-terminated */
-#if PERL_REVISION == 5 && PERL_VERSION >= 6
-	if (had_utf8)
-	    sv_utf8_upgrade(sv);
-#endif
 
 	OUTPUT:
 	RETVAL
@@ -180,7 +198,7 @@ decode_base64(sv)
 
 	PREINIT:
 	STRLEN len;
-	register unsigned char *str = (unsigned char*)SvPV(sv, len);
+	register unsigned char *str = (unsigned char*)SvPVbyte(sv, len);
 	unsigned char const* end = str + len;
 	char *r;
 	unsigned char c[4];
@@ -203,6 +221,8 @@ decode_base64(sv)
 
 		if (str == end) {
 		    if (i < 4) {
+			if (i && DOWARN)
+			    warn("Premature end of base64 data");
 			if (i < 2) goto thats_it;
 			if (i == 2) c[2] = EQ;
 			c[3] = EQ;
@@ -212,6 +232,7 @@ decode_base64(sv)
             } while (i < 4);
 	
 	    if (c[0] == EQ || c[1] == EQ) {
+		if (DOWARN) warn("Premature padding of base64 data");
 		break;
             }
 	    /* printf("c0=%d,c1=%d,c2=%d,c3=%d\n", c[0],c[1],c[2],c[3]);*/
@@ -234,70 +255,6 @@ decode_base64(sv)
 	OUTPUT:
 	RETVAL
 
-int
-encoded_base64_length(sv,...)
-	SV* sv
-	PROTOTYPE: $;$
-
-	PREINIT:
-	SSize_t len;   /* length of the string */
-	STRLEN eollen; /* length of the EOL sequence */
-	U32 had_utf8;
-
-	CODE:
-#if PERL_REVISION == 5 && PERL_VERSION >= 6
-	had_utf8 = SvUTF8(sv);
-	sv_utf8_downgrade(sv, FALSE);
-#endif
-	len = SvCUR(sv);
-#if PERL_REVISION == 5 && PERL_VERSION >= 6
-	if (had_utf8)
-	    sv_utf8_upgrade(sv);
-#endif
-
-	if (items > 1 && SvOK(ST(1))) {
-	    eollen = SvCUR(ST(1));
-	} else {
-	    eollen = 1;
-	}
-
-	RETVAL = (len+2) / 3 * 4;	 /* encoded bytes */
-	if (RETVAL) {
-	    RETVAL += ((RETVAL-1) / MAX_LINE + 1) * eollen;
-	}
-
-	OUTPUT:
-	RETVAL
-
-int
-decoded_base64_length(sv)
-	SV* sv
-	PROTOTYPE: $
-
-	PREINIT:
-	STRLEN len;
-	register unsigned char *str = (unsigned char*)SvPV(sv, len);
-	unsigned char const* end = str + len;
-	int i = 0;
-
-	CODE:
-	RETVAL = 0;
-	while (str < end) {
-	    unsigned char uc = index_64[NATIVE_TO_ASCII(*str++)];
-	    if (uc == INVALID)
-		continue;
-	    if (uc == EQ)
-	        break;
-	    if (i++) {
-		RETVAL++;
-		if (i == 4)
-		    i = 0;
-	    }
-	}
-
-	OUTPUT:
-	RETVAL
-
 
 MODULE = MIME::Base64		PACKAGE = MIME::QuotedPrint
 
@@ -313,7 +270,7 @@ encode_qp(sv,...)
 	PROTOTYPE: $;$$
 
 	PREINIT:
-	const char *eol;
+	char *eol;
 	STRLEN eol_len;
 	int binary;
 	STRLEN sv_len;
@@ -323,11 +280,9 @@ encode_qp(sv,...)
 	char *p;
 	char *p_beg;
 	STRLEN p_len;
-	U32 had_utf8;
 
 	CODE:
 #if PERL_REVISION == 5 && PERL_VERSION >= 6
-        had_utf8 = SvUTF8(sv);
 	sv_utf8_downgrade(sv, FALSE);
 #endif
 	/* set up EOL from the second argument if present, default to "\n" */
@@ -365,8 +320,15 @@ encode_qp(sv,...)
 	    if (p_len) {
 	        /* output plain text (with line breaks) */
 	        if (eol_len) {
-		    while (p_len > MAX_LINE - 1 - linelen) {
+		    STRLEN max_last_line = (p == end || *p == '\n')
+					      ? MAX_LINE         /* .......\n */
+					      : ((p + 1) == end || *(p + 1) == '\n')
+	                                        ? MAX_LINE - 3   /* ....=XX\n */
+	                                        : MAX_LINE - 4;  /* ...=XX=\n */
+		    while (p_len + linelen > max_last_line) {
 			STRLEN len = MAX_LINE - 1 - linelen;
+			if (len > p_len)
+			    len = p_len;
 			sv_catpvn(RETVAL, p_beg, len);
 			p_beg += len;
 			p_len -= len;
@@ -385,21 +347,14 @@ encode_qp(sv,...)
 		break;
             }
 	    else if (*p == '\n' && eol_len && !binary) {
-		if (linelen == 1 && SvCUR(RETVAL) > eol_len + 1 && (SvEND(RETVAL)-eol_len)[-2] == '=') {
-		    /* fixup useless soft linebreak */
-		    (SvEND(RETVAL)-eol_len)[-2] = SvEND(RETVAL)[-1];
-		    SvCUR_set(RETVAL, SvCUR(RETVAL) - 1);
-		}
-		else {
-		    sv_catpvn(RETVAL, eol, eol_len);
-		}
-		p++;
+	        sv_catpvn(RETVAL, eol, eol_len);
+	        p++;
 		linelen = 0;
 	    }
 	    else {
 		/* output escaped char (with line breaks) */
 	        assert(p < end);
-		if (eol_len && linelen > MAX_LINE - 4 && !(linelen == MAX_LINE - 3 && p + 1 < end && p[1] == '\n' && !binary)) {
+		if (eol_len && linelen > MAX_LINE - 4) {
 		    sv_catpvn(RETVAL, "=", 1);
 		    sv_catpvn(RETVAL, eol, eol_len);
 		    linelen = 0;
@@ -420,10 +375,6 @@ encode_qp(sv,...)
 	    sv_catpvn(RETVAL, "=", 1);
 	    sv_catpvn(RETVAL, eol, eol_len);
 	}
-#if PERL_REVISION == 5 && PERL_VERSION >= 6
-	if (had_utf8)
-	    sv_utf8_upgrade(sv);
-#endif
 
 	OUTPUT:
 	RETVAL

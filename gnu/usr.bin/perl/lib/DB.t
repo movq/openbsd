@@ -3,11 +3,6 @@
 BEGIN {
         chdir 't' if -d 't';
         @INC = '../lib';
-	require Config;
-	if (($Config::Config{'extensions'} !~ m!\bList/Util\b!) ){
-		print "1..0 # Skip -- Perl configured without List::Util module\n";
-		exit 0;
-	}
 }
 
 # symbolic references used later
@@ -18,7 +13,7 @@ use Scalar::Util qw( dualvar );
 my $dualfalse = dualvar(0, 'false');
 my $dualtrue = dualvar(1, 'true');
 
-use Test::More;
+use Test::More tests => 106;
 
 # must happen at compile time for DB:: package variable localizations to work
 BEGIN {
@@ -86,7 +81,7 @@ BEGIN {
 # test DB::_clientname()
 is( DB::_clientname('foo=A(1)'), 'foo',
     'DB::_clientname should return refname');
-is( DB::_clientname('bar'), undef,
+cmp_ok( DB::_clientname('bar'), 'eq', '',
         'DB::_clientname should not return non refname');
 
 # test DB::next() and DB::step()
@@ -126,7 +121,7 @@ is( DB::_clientname('bar'), undef,
         my @ret = eval { DB->backtrace() };
         like( $ret[0], qr/file.+\Q$0\E/, 'DB::backtrace() should report current file');
         like( $ret[0], qr/line $line/, '... should report calling line number' );
-        like( $ret[0], qr/eval\Q {...}/, '... should catch eval BLOCK' );
+        like( $ret[0], qr/eval {...}/, '... should catch eval BLOCK' );
 
         @ret = eval "one(2)";
         is( scalar @ret, 1, '... should report from provided stack frame number' );
@@ -171,7 +166,7 @@ sub three { two(@_) }
         my @subs = DB->subs( 'foo', 'boo', 'bar' );
         is( scalar @subs, 2, '... should report only for requested subs' );
         my @expected = ( [ 'foo', 23, 45 ], [ 'ba:r', 7, 890 ] );
-        is_deeply( \@subs, \@expected, '... find file, start, end for subs' );
+        ok( eq_array( \@subs, \@expected ), '... find file, start, end for subs' );
 }
 
 # test DB::filesubs()
@@ -337,7 +332,7 @@ SKIP: {
                 '... should increment past lines with no events' );
                 
         ok( ! defined DB::_find_subline('sirnotappearinginthisfilm'),
-                '... should not find nonexistent sub' );
+                '... should not find nonexistant sub' );
 }
 
 # test DB::clr_breaks()
@@ -497,8 +492,6 @@ is( $FakeDB::output, '123123123',
 for my $method (qw( cprestop cpoststop awaken init stop idle cleanup output )) {
         ok( defined &{ "DB::$method" }, "DB::$method() should be defined" );
 }
-
-done_testing();
 
 # DB::skippkg() uses lexical
 # DB::ready() uses lexical

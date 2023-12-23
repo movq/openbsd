@@ -9,8 +9,9 @@ BEGIN {
 
 use strict;
 use feature 'isa';
+no warnings 'experimental::isa';
 
-plan 14;
+plan 11;
 
 package BaseClass {}
 package DerivedClass { our @ISA = qw(BaseClass) }
@@ -43,12 +44,6 @@ ok(not($customobj isa "SomethingElse"), '$customobj isa SomethingElse');
 
 ok(not(undef isa "BaseClass"), 'undef is not BaseClass');
 ok(not([] isa "BaseClass"),    'ARRAYref is not BaseClass');
-
-# Test that isa object method still works.
-
-ok($baseobj->isa('BaseClass'), '$baseobj isa BaseClass using object method');
-ok(not($baseobj->isa('DerivedClass')), '$baseobj is not BaseClass using object method');
-ok($derivedobj->isa('BaseClass'), '$derivedobj isa BaseClass using object method');
 
 # TODO: Consider 
 #    LHS = other class

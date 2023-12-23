@@ -1,20 +1,17 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2020 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2014 -- leonerd@leonerd.org.uk
 
 package IO::Socket::IP;
-
-use v5;
-use strict;
-use warnings;
-
 # $VERSION needs to be set before  use base 'IO::Socket'
 #  - https://rt.cpan.org/Ticket/Display.html?id=92107
 BEGIN {
-   our $VERSION = '0.41';
+   $VERSION = '0.29';
 }
 
+use strict;
+use warnings;
 use base qw( IO::Socket );
 
 use Carp;
@@ -34,7 +31,7 @@ use Socket 1.97 qw(
 my $AF_INET6 = eval { Socket::AF_INET6() }; # may not be defined
 my $AI_ADDRCONFIG = eval { Socket::AI_ADDRCONFIG() } || 0;
 use POSIX qw( dup2 );
-use Errno qw( EINVAL EINPROGRESS EISCONN ENOTCONN ETIMEDOUT EWOULDBLOCK EOPNOTSUPP );
+use Errno qw( EINVAL EINPROGRESS EISCONN );
 
 use constant HAVE_MSWIN32 => ( $^O eq "MSWin32" );
 
@@ -99,10 +96,11 @@ falling back to IPv4-only on systems which don't.
 
 =head1 REPLACING C<IO::Socket> DEFAULT BEHAVIOUR
 
-By placing C<-register> in the import list to C<IO::Socket::IP>, it will
-register itself with L<IO::Socket> as the class that handles C<PF_INET>. It
-will also ask to handle C<PF_INET6> as well, provided that constant is
-available.
+By placing C<-register> in the import list, L<IO::Socket> uses
+C<IO::Socket::IP> rather than C<IO::Socket::INET> as the class that handles
+C<PF_INET>.  C<IO::Socket> will also use C<IO::Socket::IP> rather than
+C<IO::Socket::INET6> to handle C<PF_INET6>, provided that the C<AF_INET6>
+constant is available.
 
 Changing C<IO::Socket>'s default behaviour means that calling the
 C<IO::Socket> constructor with either C<PF_INET> or C<PF_INET6> as the
@@ -156,7 +154,7 @@ sub import
       if( setsockopt $testsock, IPPROTO_IPV6, IPV6_V6ONLY, 0 ) {
          return $can_disable_v6only = 1;
       }
-      elsif( $! == EINVAL || $! == EOPNOTSUPP ) {
+      elsif( $! == EINVAL ) {
          return $can_disable_v6only = 0;
       }
       else {
@@ -169,9 +167,7 @@ sub import
 
 =cut
 
-=head2 new
-
-   $sock = IO::Socket::IP->new( %args )
+=head2 $sock = IO::Socket::IP->new( %args )
 
 Creates a new C<IO::Socket::IP> object, containing a newly created socket
 handle according to the named arguments passed. The recognised arguments are:
@@ -269,22 +265,6 @@ If true, set the C<SO_REUSEPORT> sockopt (not all OSes implement this sockopt)
 
 If true, set the C<SO_BROADCAST> sockopt
 
-=item Sockopts => ARRAY
-
-An optional array of other socket options to apply after the three listed
-above. The value is an ARRAY containing 2- or 3-element ARRAYrefs. Each inner
-array relates to a single option, giving the level and option name, and an
-optional value. If the value element is missing, it will be given the value of
-a platform-sized integer 1 constant (i.e. suitable to enable most of the
-common boolean options).
-
-For example, both options given below are equivalent to setting C<ReuseAddr>.
-
- Sockopts => [
-    [ SOL_SOCKET, SO_REUSEADDR ],
-    [ SOL_SOCKET, SO_REUSEADDR, pack( "i", 1 ) ],
- ]
-
 =item V6Only => BOOL
 
 If defined, set the C<IPV6_V6ONLY> sockopt when creating C<PF_INET6> sockets
@@ -324,22 +304,6 @@ If defined but false, the socket will be set to non-blocking mode. Otherwise
 it will default to blocking mode. See the NON-BLOCKING section below for more
 detail.
 
-=item Timeout => NUM
-
-If defined, gives a maximum time in seconds to block per C<connect()> call
-when in blocking mode. If missing, no timeout is applied other than that
-provided by the underlying operating system. When in non-blocking mode this
-parameter is ignored.
-
-Note that if the hostname resolves to multiple address candidates, the same
-timeout will apply to each connection attempt individually, rather than to the
-operation as a whole. Further note that the timeout does not apply to the
-initial hostname resolve operation, if connecting by hostname.
-
-This behviour is copied inspired by C<IO::Socket::INET>; for more fine grained
-control over connection timeouts, consider performing a nonblocking connect
-directly.
-
 =back
 
 If neither C<Type> nor C<Proto> hints are provided, a default of
@@ -357,9 +321,7 @@ If the constructor fails, it will set C<$@> to an appropriate error message;
 this may be from C<$!> or it may be some other string; not every failure
 necessarily has an associated C<errno> value.
 
-=head2 new (one arg)
-
-   $sock = IO::Socket::IP->new( $peeraddr )
+=head2 $sock = IO::Socket::IP->new( $peeraddr )
 
 As a special case, if the constructor is passed a single argument (as
 opposed to an even-sized list of key/value pairs), it is taken to be the value
@@ -418,12 +380,6 @@ sub _io_socket_ip__configure
    my @localinfos;
    my @peerinfos;
 
-   my $listenqueue = $arg->{Listen};
-   if( defined $listenqueue and
-       ( defined $arg->{PeerHost} || defined $arg->{PeerService} || defined $arg->{PeerAddrInfo} ) ) {
-      croak "Cannot Listen with a peer address";
-   }
-
    if( defined $arg->{GetAddrInfoFlags} ) {
       $hints{flags} = $arg->{GetAddrInfoFlags};
    }
@@ -469,16 +425,10 @@ sub _io_socket_ip__configure
       ref $info eq "ARRAY" or croak "Expected 'LocalAddrInfo' to be an ARRAY ref";
       @localinfos = @$info;
    }
-   elsif( defined $arg->{LocalHost} or
-          defined $arg->{LocalService} or
-          HAVE_MSWIN32 and $arg->{Listen} ) {
+   elsif( defined $arg->{LocalHost} or defined $arg->{LocalService} ) {
       # Either may be undef
       my $host = $arg->{LocalHost};
       my $service = $arg->{LocalService};
-
-      unless ( defined $host or defined $service ) {
-         $service = 0;
-      }
 
       local $1; # Placate a taint-related bug; [perl #67962]
       defined $service and $service =~ s/\((\d+)\)$// and
@@ -526,27 +476,14 @@ sub _io_socket_ip__configure
       }
    }
 
-   my $INT_1 = pack "i", 1;
-
    my @sockopts_enabled;
-   push @sockopts_enabled, [ SOL_SOCKET, SO_REUSEADDR, $INT_1 ] if $arg->{ReuseAddr};
-   push @sockopts_enabled, [ SOL_SOCKET, SO_REUSEPORT, $INT_1 ] if $arg->{ReusePort};
-   push @sockopts_enabled, [ SOL_SOCKET, SO_BROADCAST, $INT_1 ] if $arg->{Broadcast};
+   push @sockopts_enabled, SO_REUSEADDR if $arg->{ReuseAddr};
+   push @sockopts_enabled, SO_REUSEPORT if $arg->{ReusePort};
+   push @sockopts_enabled, SO_BROADCAST if $arg->{Broadcast};
 
-   if( my $sockopts = $arg->{Sockopts} ) {
-      ref $sockopts eq "ARRAY" or croak "Expected 'Sockopts' to be an ARRAY ref";
-      foreach ( @$sockopts ) {
-         ref $_ eq "ARRAY" or croak "Bad Sockopts item - expected ARRAYref";
-         @$_ >= 2 and @$_ <= 3 or
-            croak "Bad Sockopts item - expected 2 or 3 elements";
+   my $listenqueue = $arg->{Listen};
 
-         my ( $level, $optname, $value ) = @$_;
-         # TODO: consider more sanity checking on argument values
-
-         defined $value or $value = $INT_1;
-         push @sockopts_enabled, [ $level, $optname, $value ];
-      }
-   }
+   croak "Cannot Listen with a PeerHost" if defined $listenqueue and @peerinfos;
 
    my $blocking = $arg->{Blocking};
    defined $blocking or $blocking = 1;
@@ -646,8 +583,7 @@ sub setup
       $self->blocking( 0 ) unless ${*$self}{io_socket_ip_blocking};
 
       foreach my $sockopt ( @{ ${*$self}{io_socket_ip_sockopts} } ) {
-         my ( $level, $optname, $value ) = @$sockopt;
-         $self->setsockopt( $level, $optname, $value ) or ( $@ = "$!", return undef );
+         $self->setsockopt( SOL_SOCKET, $sockopt, pack "i", 1 ) or ( $@ = "$!", return undef );
       }
 
       if( defined ${*$self}{io_socket_ip_v6only} and defined $AF_INET6 and $info->{family} == $AF_INET6 ) {
@@ -670,17 +606,10 @@ sub setup
             return 1;
          }
 
-         if( $! == EINPROGRESS or $! == EWOULDBLOCK ) {
+         if( $! == EINPROGRESS or HAVE_MSWIN32 && $! == Errno::EWOULDBLOCK() ) {
             ${*$self}{io_socket_ip_connect_in_progress} = 1;
             return 0;
          }
-
-         # If connect failed but we have no system error there must be an error
-         # at the application layer, like a bad certificate with
-         # IO::Socket::SSL.
-         # In this case don't continue IP based multi-homing because the problem
-         # cannot be solved at the IP layer.
-         return 0 if ! $!;
 
          ${*$self}{io_socket_ip_errors}[0] = $!;
          next;
@@ -695,60 +624,17 @@ sub setup
    return undef;
 }
 
-sub connect :method
+sub connect
 {
    my $self = shift;
 
    # It seems that IO::Socket hides EINPROGRESS errors, making them look like
    # a success. This is annoying here.
    # Instead of putting up with its frankly-irritating intentional breakage of
-   # useful APIs I'm just going to end-run around it and call core's connect()
+   # useful APIs I'm just going to end-run around it and call CORE::connect()
    # directly
 
-   if( @_ ) {
-      my ( $addr ) = @_;
-
-      # Annoyingly IO::Socket's connect() is where the timeout logic is
-      # implemented, so we'll have to reinvent it here
-      my $timeout = ${*$self}{'io_socket_timeout'};
-
-      return connect( $self, $addr ) unless defined $timeout;
-
-      my $was_blocking = $self->blocking( 0 );
-
-      my $err = defined connect( $self, $addr ) ? 0 : $!+0;
-
-      if( !$err ) {
-         # All happy
-         $self->blocking( $was_blocking );
-         return 1;
-      }
-      elsif( not( $err == EINPROGRESS or $err == EWOULDBLOCK ) ) {
-         # Failed for some other reason
-         $self->blocking( $was_blocking );
-         return undef;
-      }
-      elsif( !$was_blocking ) {
-         # We shouldn't block anyway
-         return undef;
-      }
-
-      my $vec = ''; vec( $vec, $self->fileno, 1 ) = 1;
-      if( !select( undef, $vec, $vec, $timeout ) ) {
-         $self->blocking( $was_blocking );
-         $! = ETIMEDOUT;
-         return undef;
-      }
-
-      # Hoist the error by connect()ing a second time
-      $err = $self->getsockopt( SOL_SOCKET, SO_ERROR );
-      $err = 0 if $err == EISCONN; # Some OSes give EISCONN
-
-      $self->blocking( $was_blocking );
-
-      $! = $err, return undef if $err;
-      return 1;
-   }
+   return CORE::connect( $self, $_[0] ) if @_;
 
    return 1 if !${*$self}{io_socket_ip_connect_in_progress};
 
@@ -765,7 +651,7 @@ sub connect :method
    # (still in progress). This even works on MSWin32.
    my $addr = ${*$self}{io_socket_ip_infos}[${*$self}{io_socket_ip_idx}]{peeraddr};
 
-   if( connect( $self, $addr ) or $! == EISCONN ) {
+   if( $self->connect( $addr ) or $! == EISCONN ) {
       delete ${*$self}{io_socket_ip_connect_in_progress};
       $! = 0;
       return 1;
@@ -796,9 +682,6 @@ sub _get_host_service
    my $self = shift;
    my ( $addr, $flags, $xflags ) = @_;
 
-   defined $addr or
-      $! = ENOTCONN, return;
-
    $flags |= NI_DGRAM if $self->socktype == SOCK_DGRAM;
 
    my ( $err, $host, $service ) = getnameinfo( $addr, $flags, $xflags || 0 );
@@ -823,9 +706,7 @@ sub _unpack_sockaddr
    }
 }
 
-=head2 sockhost_service
-
-   ( $host, $service ) = $sock->sockhost_service( $numeric )
+=head2 ( $host, $service ) = $sock->sockhost_service( $numeric )
 
 Returns the hostname and service name of the local address (that is, the
 socket address given by the C<sockname> method).
@@ -848,41 +729,31 @@ sub sockhost_service
    $self->_get_host_service( $self->sockname, $numeric ? NI_NUMERICHOST|NI_NUMERICSERV : 0 );
 }
 
-=head2 sockhost
-
-   $addr = $sock->sockhost
+=head2 $addr = $sock->sockhost
 
 Return the numeric form of the local address as a textual representation
 
-=head2 sockport
-
-   $port = $sock->sockport
+=head2 $port = $sock->sockport
 
 Return the numeric form of the local port number
 
-=head2 sockhostname
-
-   $host = $sock->sockhostname
+=head2 $host = $sock->sockhostname
 
 Return the resolved name of the local address
 
-=head2 sockservice
-
-   $service = $sock->sockservice
+=head2 $service = $sock->sockservice
 
 Return the resolved name of the local port number
 
 =cut
 
-sub sockhost { my $self = shift; scalar +( $self->_get_host_service( $self->sockname, NI_NUMERICHOST, NIx_NOSERV ) )[0] }
-sub sockport { my $self = shift; scalar +( $self->_get_host_service( $self->sockname, NI_NUMERICSERV, NIx_NOHOST ) )[1] }
+sub sockhost { my $self = shift; ( $self->_get_host_service( $self->sockname, NI_NUMERICHOST, NIx_NOSERV ) )[0] }
+sub sockport { my $self = shift; ( $self->_get_host_service( $self->sockname, NI_NUMERICSERV, NIx_NOHOST ) )[1] }
 
-sub sockhostname { my $self = shift; scalar +( $self->_get_host_service( $self->sockname, 0, NIx_NOSERV ) )[0] }
-sub sockservice  { my $self = shift; scalar +( $self->_get_host_service( $self->sockname, 0, NIx_NOHOST ) )[1] }
+sub sockhostname { my $self = shift; ( $self->_get_host_service( $self->sockname, 0, NIx_NOSERV ) )[0] }
+sub sockservice  { my $self = shift; ( $self->_get_host_service( $self->sockname, 0, NIx_NOHOST ) )[1] }
 
-=head2 sockaddr
-
-   $addr = $sock->sockaddr
+=head2 $addr = $sock->sockaddr
 
 Return the local address as a binary octet string
 
@@ -890,9 +761,7 @@ Return the local address as a binary octet string
 
 sub sockaddr { my $self = shift; _unpack_sockaddr $self->sockname }
 
-=head2 peerhost_service
-
-   ( $host, $service ) = $sock->peerhost_service( $numeric )
+=head2 ( $host, $service ) = $sock->peerhost_service( $numeric )
 
 Returns the hostname and service name of the peer address (that is, the
 socket address given by the C<peername> method), similar to the
@@ -913,41 +782,31 @@ sub peerhost_service
    $self->_get_host_service( $self->peername, $numeric ? NI_NUMERICHOST|NI_NUMERICSERV : 0 );
 }
 
-=head2 peerhost
-
-   $addr = $sock->peerhost
+=head2 $addr = $sock->peerhost
 
 Return the numeric form of the peer address as a textual representation
 
-=head2 peerport
-
-   $port = $sock->peerport
+=head2 $port = $sock->peerport
 
 Return the numeric form of the peer port number
 
-=head2 peerhostname
-
-   $host = $sock->peerhostname
+=head2 $host = $sock->peerhostname
 
 Return the resolved name of the peer address
 
-=head2 peerservice
-
-   $service = $sock->peerservice
+=head2 $service = $sock->peerservice
 
 Return the resolved name of the peer port number
 
 =cut
 
-sub peerhost { my $self = shift; scalar +( $self->_get_host_service( $self->peername, NI_NUMERICHOST, NIx_NOSERV ) )[0] }
-sub peerport { my $self = shift; scalar +( $self->_get_host_service( $self->peername, NI_NUMERICSERV, NIx_NOHOST ) )[1] }
+sub peerhost { my $self = shift; ( $self->_get_host_service( $self->peername, NI_NUMERICHOST, NIx_NOSERV ) )[0] }
+sub peerport { my $self = shift; ( $self->_get_host_service( $self->peername, NI_NUMERICSERV, NIx_NOHOST ) )[1] }
 
-sub peerhostname { my $self = shift; scalar +( $self->_get_host_service( $self->peername, 0, NIx_NOSERV ) )[0] }
-sub peerservice  { my $self = shift; scalar +( $self->_get_host_service( $self->peername, 0, NIx_NOHOST ) )[1] }
+sub peerhostname { my $self = shift; ( $self->_get_host_service( $self->peername, 0, NIx_NOSERV ) )[0] }
+sub peerservice  { my $self = shift; ( $self->_get_host_service( $self->peername, 0, NIx_NOHOST ) )[1] }
 
-=head2 peeraddr
-
-   $addr = $peer->peeraddr
+=head2 $addr = $peer->peeraddr
 
 Return the peer address as a binary octet string
 
@@ -971,13 +830,13 @@ sub accept
 
 # This second unbelievably dodgy hack guarantees that $self->fileno doesn't
 # change, which is useful during nonblocking connect
-sub socket :method
+sub socket
 {
    my $self = shift;
    return $self->SUPER::socket(@_) if not defined $self->fileno;
 
    # I hate core prototypes sometimes...
-   socket( my $tmph, $_[0], $_[1], $_[2] ) or return undef;
+   CORE::socket( my $tmph, $_[0], $_[1], $_[2] ) or return undef;
 
    dup2( $tmph->fileno, $self->fileno ) or die "Unable to dup2 $tmph onto $self - $!";
 }
@@ -985,7 +844,7 @@ sub socket :method
 # Versions of IO::Socket before 1.35 may leave socktype undef if from, say, an
 #   ->fdopen call. In this case we'll apply a fix
 BEGIN {
-   if( eval($IO::Socket::VERSION) < 1.35 ) {
+   if( $IO::Socket::VERSION < 1.35 ) {
       *socktype = sub {
          my $self = shift;
          my $type = $self->SUPER::socktype;
@@ -997,9 +856,7 @@ BEGIN {
    }
 }
 
-=head2 as_inet
-
-   $inet = $sock->as_inet
+=head2 $inet = $sock->as_inet
 
 Returns a new L<IO::Socket::INET> instance wrapping the same filehandle. This
 may be useful in cases where it is required, for backward-compatibility, to
@@ -1121,9 +978,7 @@ If the C<...Host> argument is in this special form and the corresponding
 C<...Service> or C<...Port> argument is also defined, the one parsed from
 the C<...Host> argument will take precedence and the other will be ignored.
 
-=head2 split_addr
-
-   ( $host, $port ) = IO::Socket::IP->split_addr( $addr )
+=head2 ( $host, $port ) = IO::Socket::IP->split_addr( $addr )
 
 Utility method that provides the parsing functionality described above.
 Returns a 2-element list, containing either the split hostname and port
@@ -1159,9 +1014,7 @@ sub split_addr
    return ( $addr, undef );
 }
 
-=head2 join_addr
-
-   $addr = IO::Socket::IP->join_addr( $host, $port )
+=head2 $addr = IO::Socket::IP->join_addr( $host, $port )
 
 Utility method that performs the reverse of C<split_addr>, returning a string
 formed by joining the specified host address and port number. The host address
@@ -1229,37 +1082,6 @@ useable address from the results of the C<getaddrinfo(3)> call. The
 constructor will ignore the value of this argument, except if it is defined
 but false. An exception is thrown in this case, because that would request it
 disable the C<getaddrinfo(3)> search behaviour in the first place.
-
-=item *
-
-C<IO::Socket::IP> implements both the C<Blocking> and C<Timeout> parameters,
-but it implements the interaction of both in a different way.
-
-In C<::INET>, supplying a timeout overrides the non-blocking behaviour,
-meaning that the C<connect()> operation will still block despite that the
-caller asked for a non-blocking socket. This is not explicitly specified in
-its documentation, nor does this author believe that is a useful behaviour -
-it appears to come from a quirk of implementation.
-
-In C<::IP> therefore, the C<Blocking> parameter takes precedence - if a
-non-blocking socket is requested, no operation will block. The C<Timeout>
-parameter here simply defines the maximum time that a blocking C<connect()>
-call will wait, if it blocks at all.
-
-In order to specifically obtain the "blocking connect then non-blocking send
-and receive" behaviour of specifying this combination of options to C<::INET>
-when using C<::IP>, perform first a blocking connect, then afterwards turn the
-socket into nonblocking mode.
-
- my $sock = IO::Socket::IP->new(
-    PeerHost => $peer,
-    Timeout => 20,
- ) or die "Cannot connect - $@";
-
- $sock->blocking( 0 );
-
-This code will behave identically under both C<IO::Socket::INET> and
-C<IO::Socket::IP>.
 
 =back
 

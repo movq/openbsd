@@ -1,13 +1,11 @@
 #!./perl
 
-print "1..14\n";
+print "1..7\n";
 
 $blurfl = 123;
 $foo = 3;
 
-package xyz;
-
-sub new {bless [];}
+package XYZ;
 
 $bar = 4;
 
@@ -22,14 +20,10 @@ $ABC'dyick = 6;
 $xyz = 2;
 
 $main = join(':', sort(keys %main::));
-$xyz = join(':', sort(keys %xyz::));
+$XYZ = join(':', sort(keys %XYZ::));
 $ABC = join(':', sort(keys %ABC::));
 
-if ('a' lt 'A') {
-    print $xyz eq 'bar:main:new:xyz:ABC' ? "ok 1\n" : "not ok 1 '$xyz'\n";
-} else {
-    print $xyz eq 'ABC:bar:main:new:xyz' ? "ok 1\n" : "not ok 1 '$xyz'\n";
-}    
+print $XYZ eq 'ABC:XYZ:bar:main:xyz' ? "ok 1\n" : "not ok 1 '$XYZ'\n";
 print $ABC eq 'blurfl:dyick' ? "ok 2\n" : "not ok 2 '$ABC'\n";
 print $main'blurfl == 123 ? "ok 3\n" : "not ok 3\n";
 
@@ -39,36 +33,3 @@ print $blurfl == 5 ? "ok 4\n" : "not ok 4\n";
 eval 'print $blurfl == 5 ? "ok 5\n" : "not ok 5\n";';
 eval 'package main; print $blurfl == 123 ? "ok 6\n" : "not ok 6\n";';
 print $blurfl == 5 ? "ok 7\n" : "not ok 7\n";
-
-package main;
-
-sub c { caller(0) }
-
-sub foo {
-   my $s = shift;
-   if ($s) {
-	package PQR;
-	main::c();
-   }
-}
-
-print((foo(1))[0] eq 'PQR' ? "ok 8\n" : "not ok 8\n");
-
-my $Q = xyz->new();
-undef %xyz::;
-eval { $a = *xyz::new{PACKAGE}; };
-print $a eq "__ANON__" ? "ok 9\n" : "not ok 9 # '$a'\n";
-
-eval { $Q->param; };
-print $@ =~ /^Can't use anonymous symbol table for method lookup/ ?
-  "ok 10\n" : "not ok 10 # '$@'\n";
-
-print "$Q" =~ /^__ANON__=/ ? "ok 11\n" : "not ok 11 # '$Q'\n";
-
-print ref $Q eq "__ANON__" ? "ok 12\n" : "not ok 12 # '$Q'\n";
-
-package bug32562;
-
-print       __PACKAGE__  eq 'bug32562' ? "ok 13\n" : "not ok 13\n";
-print eval '__PACKAGE__' eq 'bug32562' ? "ok 14\n" : "not ok 14\n";
-

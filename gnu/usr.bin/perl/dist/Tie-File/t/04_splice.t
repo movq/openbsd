@@ -12,11 +12,8 @@
 # contents.
 
 
-use strict;
-use warnings;
-
 $| = 1;
-my $file = "tf04-$$.txt";
+my $file = "tf$$.txt";
 $: = Tie::File::_default_recsep();
 my $data = "rec0$:rec1$:rec2$:";
 print "1..118\n";
@@ -27,7 +24,6 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;  # partial credit just for showing up
 
-my @a;
 my $o = tie @a, 'Tie::File', $file;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -226,7 +222,7 @@ check_contents("0$:1$:2$:");
 
 sub init_file {
   my $data = shift;
-  open F, '>', $file or die $!;
+  open F, "> $file" or die $!;
   binmode F;
   print F $data;
   close F;

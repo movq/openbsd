@@ -1,14 +1,10 @@
 #!/usr/bin/perl
-
-use strict;
-use warnings;
-
 #
 # Tests for various caching errors
 #
 
 $|=1;
-my $file = "tf19-$$.txt";
+my $file = "tf$$.txt";
 $: = Tie::File::_default_recsep();
 my $data = join $:, "rec0" .. "rec9", "";
 my $V = $ENV{INTEGRITY};        # Verbose integrity checking?
@@ -19,12 +15,11 @@ my $N = 1;
 use Tie::File;
 print "ok $N\n"; $N++;
 
-open F, '>', $file or die $!;
+open F, "> $file" or die $!;
 binmode F;
 print F $data;
 close F;
 
-my @a;
 my $o = tie @a, 'Tie::File', $file;
 print $o ? "ok $N\n" : "not ok $N\n";
 $N++;
@@ -174,7 +169,7 @@ check();
 
 sub init_file {
   my $data = shift;
-  open F, '>', $file or die $!;
+  open F, "> $file" or die $!;
   binmode F;
   print F $data;
   close F;

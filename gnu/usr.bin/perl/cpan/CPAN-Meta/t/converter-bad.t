@@ -7,30 +7,24 @@ use CPAN::Meta::Validator;
 use CPAN::Meta::Converter;
 use File::Spec;
 use IO::Dir;
-use Parse::CPAN::Meta;
+use Parse::CPAN::Meta 1.4400;
 
-delete $ENV{PERL_YAML_BACKEND};
-delete $ENV{PERL_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_BACKEND};
-delete $ENV{CPAN_META_JSON_DECODER};
+delete $ENV{$_} for qw/PERL_JSON_BACKEND PERL_YAML_BACKEND/; # use defaults
 
-my @data_dirs = qw( t/data-valid t/data-fixable );
-my @files = sort map {
-  my $d = $_;
-  map { "$d/$_" } grep { substr($_,0,1) ne '.' } IO::Dir->new($d)->read
-} @data_dirs;
+my $data_dir = IO::Dir->new( 't/data-bad' );
+my @files = sort grep { /^\w/ } $data_dir->read;
 
-*_spec_version = \&CPAN::Meta::Converter::_extract_spec_version;
+sub _spec_version { return $_[0]->{'meta-spec'}{version} || "1.0" }
 
 #use Data::Dumper;
 
 for my $f ( reverse sort @files ) {
-  my $path = File::Spec->catfile($f);
+  my $path = File::Spec->catfile('t','data-bad',$f);
   my $original = Parse::CPAN::Meta->load_file( $path  );
   ok( $original, "loaded $f" );
   my $original_v = _spec_version($original);
   # UPCONVERSION
-  if ( $original_v lt '2' ) {
+  if ( _spec_version( $original ) lt '2' ) {
     my $cmc = CPAN::Meta::Converter->new( $original );
     my $converted = $cmc->convert( version => 2 );
     is ( _spec_version($converted), 2, "up converted spec version $original_v to spec version 2");
@@ -41,7 +35,7 @@ for my $f ( reverse sort @files ) {
     );
   }
   # UPCONVERSION - partial
-  if ( $original_v lt '1.4' ) {
+  if ( _spec_version( $original ) lt '1.4' ) {
     my $cmc = CPAN::Meta::Converter->new( $original );
     my $converted = $cmc->convert( version => '1.4' );
     is ( _spec_version($converted), 1.4, "up converted spec version $original_v to spec version 1.4");
@@ -52,7 +46,7 @@ for my $f ( reverse sort @files ) {
     );
   }
   # DOWNCONVERSION - partial
-  if ( $original_v gt '1.2' ) {
+  if ( _spec_version( $original ) gt '1.2' ) {
     my $cmc = CPAN::Meta::Converter->new( $original );
     my $converted = $cmc->convert( version => '1.2' );
     is ( _spec_version($converted), '1.2', "down converted spec version $original_v to spec version 1.2");
@@ -63,7 +57,7 @@ for my $f ( reverse sort @files ) {
     );
   }
   # DOWNCONVERSION
-  if ( $original_v gt '1.0' ) {
+  if ( _spec_version( $original ) gt '1.0' ) {
     my $cmc = CPAN::Meta::Converter->new( $original );
     my $converted = $cmc->convert( version => '1.0' );
     is ( _spec_version($converted), '1.0', "down converted spec version $original_v to spec version 1.0");
@@ -76,4 +70,4 @@ for my $f ( reverse sort @files ) {
 }
 
 done_testing;
-# vim: ts=2 sts=2 sw=2 et :
+

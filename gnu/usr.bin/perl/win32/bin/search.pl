@@ -47,12 +47,7 @@ $version = "950918.5";
 $stripped=0;
 
 &init;
-if (exists $ENV{'HOME'}) {
-    $rc_file = join('/', $ENV{'HOME'}, ".search");
-}
-else {
-    $rc_file = "";
-}
+$rc_file = join('/', $ENV{'HOME'}, ".search");
 
 &check_args;
 
@@ -76,7 +71,6 @@ sub init
 {
   ## initialize variables that might be reset by command-line args
   $DOREP=0; 		## set true by -dorep (redo multi-hardlink files)
-  $DOREP=1 if $^O eq 'MSWin32';
   $DO_SORT=0;           ## set by -sort (sort files in a dir before checking)
   $FIND_ONLY=0;         ## set by -find (don't search files)
   $LIST_ONLY=0;		## set true by -l (list filenames only)
@@ -182,6 +176,8 @@ However, duplicating things (such as -name '*.c' -name '*.txt') implies OR.
 If any letter in -newer/-older is upper case, "or equal" is
 inserted into the test.
 
+You can always find the latest version on the World Wide Web in
+   http://www.wg.omron.co.jp/~jfriedl/perl/
 INLINE_LITERAL_TEXT
 	  exit(0);
       }
@@ -196,7 +192,7 @@ INLINE_LITERAL_TEXT
       $iflag='i',           next if $arg eq '-i';       ## ignore case
       $norc=1,              next if $arg eq '-norc';    ## don't load rc file
       $showrc=1,            next if $arg eq '-showrc';  ## show rc file
-      $underlineOK=1,       next if $arg eq '-u';       ## look through underln.
+      $underlineOK=1,       next if $arg eq '-u';       ## look throuh underln.
       $words=1,             next if $arg eq '-w';       ## match "words" only
       &strip                     if $arg eq '-strip';   ## dump this program
       last                       if $arg eq '-e';
@@ -464,7 +460,7 @@ sub prepare_to_search
 	  ##
 	  if ($underlineOK) {
 	     if ($regex =~ m/[?*+{}()\\.|^\$[]/) {
-		warn "$0: warning, can't underline-safe '$regex'.\n";
+		warn "$0: warning, can't underline-safe ``$regex''.\n";
 	     } else {
 		$regex = join($underline_glue, split(//, $regex));
 	     }
@@ -624,16 +620,16 @@ sub read_rc
     local($line_num, $ln, $tag) = 0;
     local($use_default, @default) = 0;
 
-    { package magic; $^W= 0; } ## turn off warnings for when we run EXPR's
+    { package magic; $ = 0; } ## turn off warnings for when we run EXPR's
 
-    unless (open(RC, '<', $file)) {
+    unless (open(RC, "$file")) {
 	$use_default=1;
 	$file = "<internal default startup file>";
 	## no RC file -- use this default.
 	@default = split(/\n/,<<'--------INLINE_LITERAL_TEXT');
             magic: 32 : $H =~ m/[\x00-\x06\x10-\x1a\x1c-\x1f\x80\xff]{2}/
-	    option: -skip '.a .elc .gz .o .pbm .xbm .dvi'
-	    option: -iskip '.com .exe .lib .pdb .tarz .zip .z .lzh .jpg .jpeg .gif .uu'
+	    option: -skip '.a .COM .elc .EXE .gz .o .pbm .xbm .dvi'
+	    option: -iskip '.tarz .zip .z .lzh .jpg .jpeg .gif .uu'
 	    <!~> option: -skip '~ #'
 --------INLINE_LITERAL_TEXT
     }
@@ -871,7 +867,7 @@ sub dodir
     }
 
     ## skip things that are empty
-    unless (-s _ || -d _) {
+    unless (-s _) {
 	warn qq/skip (empty): $file\n/ if $WHY;
 	next;
     }
@@ -898,7 +894,7 @@ sub dodir
 	}
 
 	## _never_ redo a directory
-	if (defined $dir_done{$id} and $^O ne 'MSWin32') {
+	if (defined $dir_done{$id}) {
 	    warn qq/skip (did as "$dir_done{$id}"): $file\n/ if $WHY;
 	    next;
 	}
@@ -950,7 +946,7 @@ sub dodir
     }
 
     if ($DO_MAGIC_TESTS) {
-	if (!open(FILE_IN, '<', $file)) {
+	if (!open(FILE_IN, $file)) {
 	    &clear_message if $VERBOSE && $STDERR_SCREWS_STDOUT;
 	    warn qq/$0: can't open: $file\n/;
 	    next;
@@ -990,7 +986,7 @@ sub dodir
 	next;
     } else {
 	## if we weren't doing magic tests, file won't be open yet...
-	if (!$DO_MAGIC_TESTS && !open(FILE_IN, '<', $file)) {
+	if (!$DO_MAGIC_TESTS && !open(FILE_IN, $file)) {
 	    &clear_message if $VERBOSE && $STDERR_SCREWS_STDOUT;
 	    warn qq/$0: can't open: $file\n/;
 	    next;
@@ -1141,7 +1137,10 @@ more powerful and efficient (and intuitive, I think).
 
 This manual describes
 .I search
-as of version "941227.4".
+as of version "941227.4". You can always find the latest version at
+.nf
+   http://www.wg.omron.co.jp/~jfriedl/perl/index.html
+.fi
 
 .SH "QUICK EXAMPLE"
 Basic use is simple:
@@ -1169,7 +1168,7 @@ Note that in the case of these examples, the
 (list whole-words only) option would be useful.
 .PP
 Normally, various kinds of files are automatically removed from consideration.
-If it has a certain ending (such as ".tar", ".Z", ".o", .etc), or if
+If it has has a certain ending (such as ".tar", ".Z", ".o", .etc), or if
 the beginning of the file looks like a binary, it'll be excluded.
 You can control exactly how this works -- see below. One quick way to
 override this is to use the
@@ -1194,7 +1193,7 @@ add
 .fi
 (among others) to exclude those kinds of files (which you probably want to
 skip when searching for text, as is normal).
-Files that look to be binary will also be excluded.
+Files that look to be be binary will also be excluded.
 
 Files ending with "#" and "~" will also be excluded unless the
 .B -x~

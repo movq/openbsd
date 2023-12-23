@@ -6,20 +6,20 @@
 # -- Jarkko Hietaniemi	since Mar 1997
 # -- Daniel S. Lewart	since Sep 1997
 
-use strict;
-use warnings;
+BEGIN {
+    if ($ENV{PERL_CORE}) {
+	chdir 't' if -d 't';
+	#@INC = '../lib';
+    }
+}
 
 use Math::Complex 1.54;
 
-# they are used later in the test and not exported by Math::Complex
-*_stringify_cartesian = \&Math::Complex::_stringify_cartesian;
-*_stringify_polar     = \&Math::Complex::_stringify_polar;
+use vars qw($VERSION);
 
-our $vax_float = (pack("d",1) =~ /^[\x80\x10]\x40/);
-our $has_inf   = !$vax_float;
+$VERSION = 1.92;
 
 my ($args, $op, $target, $test, $test_set, $try, $val, $zvalue, @set, @val);
-my ($bad, $z);
 
 $test = 0;
 $| = 1;
@@ -33,15 +33,6 @@ if ($^O eq 'unicos') { 	# For some reason root() produces very inaccurate
     $eps = 1e-10;	# results in Cray UNICOS, and occasionally also
 }			# cos(), sin(), cosh(), sinh().  The division
 			# of doubles is the current suspect.
-
-$test++;
-push @script, "{ my \$t=$test; ".q{
-    my $a = Math::Complex->new(1);
-    my $b = $a;
-    $a += 2;
-    print "not " unless "$a" eq "3" && "$b" eq "1";
-    print "ok $t\n";
-}."}";
 
 while (<DATA>) {
 	s/^\s+//;
@@ -126,13 +117,8 @@ my $pii  = cplx(0, pi);
 my $pip2 = cplx(pi/2, 0);
 my $pip4 = cplx(pi/4, 0);
 my $zero = cplx(0, 0);
-';
-
-if ($has_inf) {
-    $constants .= <<'EOF';
 my $inf  = 9**9**9;
-EOF
-}
+';
 
 push(@script, $constants);
 
@@ -299,15 +285,6 @@ EOS
     push @script, <<EOS;
     print "# j = \$j\n";
     print "not " unless "\$j" =~ /^\\[1,2\\.09439510\\d+\\]\$/;
-    print "ok $test\n";
-
-    \$j->display_format('style' => 'polar', 'format' => "%.4g");
-EOS
-
-    $test++;
-    push @script, <<EOS;
-    print "# j = \$j\n";
-    print "not " unless "\$j" =~ /^\\[1,2\\.094\\]\$/;
     print "ok $test\n";
 
     \$j->display_format('style' => 'cartesian', 'format' => '(%.5g)');
@@ -721,7 +698,6 @@ __END__
 [1, pi/3]:"[1,pi/3]"
 [6, -2*pi/3]:"[6,-2pi/3]"
 [0.5, -9*pi/11]:"[0.5,-9pi/11]"
-[1, 0.5]:"[1, 0.5]"
 
 { (4,3); [3,2]; (-3,4); (0,2); [2,1] }
 

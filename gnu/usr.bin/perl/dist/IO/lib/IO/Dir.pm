@@ -6,26 +6,27 @@
 
 package IO::Dir;
 
-use 5.008_001;
+use 5.006;
 
 use strict;
 use Carp;
 use Symbol;
 use Exporter;
 use IO::File;
+our(@ISA, $VERSION, @EXPORT_OK);
 use Tie::Hash;
 use File::stat;
 use File::Spec;
 
-our @ISA = qw(Tie::Hash Exporter);
-our $VERSION = "1.49";
-
-our @EXPORT_OK = qw(DIR_UNLINK);
+@ISA = qw(Tie::Hash Exporter);
+$VERSION = "1.07";
+$VERSION = eval $VERSION;
+@EXPORT_OK = qw(DIR_UNLINK);
 
 sub DIR_UNLINK () { 1 }
 
 sub new {
-    @_ >= 1 && @_ <= 2 or croak 'usage: IO::Dir->new([DIRNAME])';
+    @_ >= 1 && @_ <= 2 or croak 'usage: new IO::Dir [DIRNAME]';
     my $class = shift;
     my $dh = gensym;
     if (@_) {
@@ -185,7 +186,7 @@ argument which,  if given, C<new> will pass to C<open>
 =back
 
 The following methods are wrappers for the directory related functions built
-into perl (the trailing 'dir' has been removed from the names). See L<perlfunc>
+into perl (the trailing `dir' has been removed from the names). See L<perlfunc>
 for details of these functions.
 
 =over 4
@@ -236,7 +237,7 @@ L<File::stat>
 =head1 AUTHOR
 
 Graham Barr. Currently maintained by the Perl Porters.  Please report all
-bugs at L<https://github.com/Perl/perl5/issues>.
+bugs to <perl5-porters@perl.org>.
 
 =head1 COPYRIGHT
 

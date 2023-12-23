@@ -1,29 +1,33 @@
 package TAP::Parser::Iterator::Process;
 
 use strict;
-use warnings;
+use vars qw($VERSION @ISA);
 
+use TAP::Parser::Iterator ();
 use Config;
 use IO::Handle;
 
-use base 'TAP::Parser::Iterator';
+@ISA = 'TAP::Parser::Iterator';
 
 my $IS_WIN32 = ( $^O =~ /^(MS)?Win32$/ );
 
 =head1 NAME
 
-TAP::Parser::Iterator::Process - Iterator for process-based TAP sources
+TAP::Parser::Iterator::Process - Internal TAP::Parser Iterator
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 =head1 SYNOPSIS
 
+  # see TAP::Parser::IteratorFactory for preferred usage
+
+  # to use directly:
   use TAP::Parser::Iterator::Process;
   my %args = (
    command  => ['python', 'setup.py', 'test'],
@@ -37,8 +41,8 @@ our $VERSION = '3.44';
 =head1 DESCRIPTION
 
 This is a simple iterator wrapper for executing external processes, used by
-L<TAP::Parser>.  Unless you're writing a plugin or subclassing, you probably
-won't need to use this module directly.
+L<TAP::Parser>.  Unless you're subclassing, you probably won't need to use
+this module directly.
 
 =head1 METHODS
 
@@ -76,18 +80,12 @@ Get the exit status for this iterator's process.
 
 =cut
 
-{
-
-    no warnings 'uninitialized';
-       # get around a catch22 in the test suite that causes failures on Win32:
-    local $SIG{__DIE__} = undef;
-    eval { require POSIX; &POSIX::WEXITSTATUS(0) };
-    if ($@) {
-        *_wait2exit = sub { $_[1] >> 8 };
-    }
-    else {
-        *_wait2exit = sub { POSIX::WEXITSTATUS( $_[1] ) }
-    }
+eval { require POSIX; &POSIX::WEXITSTATUS(0) };
+if ($@) {
+    *_wait2exit = sub { $_[1] >> 8 };
+}
+else {
+    *_wait2exit = sub { POSIX::WEXITSTATUS( $_[1] ) }
 }
 
 sub _use_open3 {
@@ -119,8 +117,6 @@ sub _initialize {
     my @command = @{ delete $args->{command} || [] }
       or die "Must supply a command to execute";
 
-    $self->{command} = [@command];
-
     # Private. Used to frig with chunk size during testing.
     my $chunk_size = delete $args->{_chunk_size} || 65536;
 
@@ -137,7 +133,7 @@ sub _initialize {
 
         # HOTPATCH {{{
         my $xclose = \&IPC::Open3::xclose;
-        no warnings;
+        local $^W;    # no warnings
         local *IPC::Open3::xclose = sub {
             my $fh = shift;
             no strict 'refs';
@@ -157,7 +153,9 @@ sub _initialize {
             };
             die "Could not execute (@command): $@" if $@;
             if ( $] >= 5.006 ) {
-                binmode($out, ":crlf");
+
+                # Kludge to avoid warning under 5.5
+                eval 'binmode($out, ":crlf")';
             }
         }
         else {
@@ -373,6 +371,7 @@ Originally ripped off from L<Test::Harness>.
 L<TAP::Object>,
 L<TAP::Parser>,
 L<TAP::Parser::Iterator>,
+L<TAP::Parser::IteratorFactory>,
 
 =cut
 

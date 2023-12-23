@@ -1,14 +1,17 @@
 package TAP::Harness;
 
 use strict;
-use warnings;
 use Carp;
 
 use File::Spec;
 use File::Path;
 use IO::Handle;
 
-use base 'TAP::Base';
+use TAP::Base;
+
+use vars qw($VERSION @ISA);
+
+@ISA = qw(TAP::Base);
 
 =head1 NAME
 
@@ -16,11 +19,11 @@ TAP::Harness - Run test scripts with statistics
 
 =head1 VERSION
 
-Version 3.44
+Version 3.17
 
 =cut
 
-our $VERSION = '3.44';
+$VERSION = '3.17';
 
 $ENV{HARNESS_ACTIVE}  = 1;
 $ENV{HARNESS_VERSION} = $VERSION;
@@ -81,10 +84,6 @@ BEGIN {
         test_args         => sub { shift; shift },
         ignore_exit       => sub { shift; shift },
         rules             => sub { shift; shift },
-        rulesfile         => sub { shift; shift },
-        sources           => sub { shift; shift },
-        version           => sub { shift; shift },
-        trap              => sub { shift; shift },
     );
 
     for my $method ( sort keys %VALIDATION_FOR ) {
@@ -193,16 +192,6 @@ only makes sense in the context of tests written in Perl.
 A reference to an C<@INC> style array of arguments to be passed to each
 test program.
 
-  test_args => ['foo', 'bar'],
-
-if you want to pass different arguments to each test then you should
-pass a hash of arrays, keyed by the alias for each test:
-
-  test_args => {
-    my_test    => ['foo', 'bar'],
-    other_test => ['baz'],
-  }
-
 =item * C<color>
 
 Attempt to produce color output.
@@ -240,40 +229,10 @@ will be interpreted as raw TAP or as a TAP stream, respectively.
 If C<merge> is true the harness will create parsers that merge STDOUT
 and STDERR together for any processes they start.
 
-=item * C<sources>
-
-I<NEW to 3.18>.
-
-If set, C<sources> must be a hashref containing the names of the
-L<TAP::Parser::SourceHandler>s to load and/or configure.  The values are a
-hash of configuration that will be accessible to the source handlers via
-L<TAP::Parser::Source/config_for>.
-
-For example:
-
-  sources => {
-    Perl => { exec => '/path/to/custom/perl' },
-    File => { extensions => [ '.tap', '.txt' ] },
-    MyCustom => { some => 'config' },
-  }
-
-The C<sources> parameter affects how C<source>, C<tap> and C<exec> parameters
-are handled.
-
-For more details, see the C<sources> parameter in L<TAP::Parser/new>,
-L<TAP::Parser::Source>, and L<TAP::Parser::IteratorFactory>.
-
 =item * C<aggregator_class>
 
 The name of the class to use to aggregate test results. The default is
 L<TAP::Parser::Aggregator>.
-
-=item * C<version>
-
-I<NEW to 3.22>.
-
-Assume this TAP version for L<TAP::Parser> instead of default TAP
-version 12.
 
 =item * C<formatter_class>
 
@@ -328,77 +287,24 @@ run only one test at a time.
 
 =item * C<rules>
 
-A reference to a hash of rules that control which tests may be executed in
-parallel. If no rules are declared and L<CPAN::Meta::YAML> is available,
-C<TAP::Harness> attempts to load rules from a YAML file specified by the
-C<rulesfile> parameter. If no rules file exists, the default is for all
-tests to be eligible to be run in parallel.
+A reference to a hash of rules that control which tests may be
+executed in parallel. This is an experimental feature and the
+interface may change.
 
-Here some simple examples. For the full details of the data structure
-and the related glob-style pattern matching, see
-L<TAP::Parser::Scheduler/"Rules data structure">.
-
-    # Run all tests in sequence, except those starting with "p"
-    $harness->rules({
-        par => 't/p*.t'
-    });
-
-    # Equivalent YAML file
-    ---
-    par: t/p*.t
-
-    # Run all tests in parallel, except those starting with "p"
-    $harness->rules({
-        seq => [
-                  { seq => 't/p*.t' },
-                  { par => '**'     },
-               ],
-    });
-
-    # Equivalent YAML file
-    ---
-    seq:
-        - seq: t/p*.t
-        - par: **
-
-    # Run some  startup tests in sequence, then some parallel tests than some
-    # teardown tests in sequence.
-    $harness->rules({
-        seq => [
-            { seq => 't/startup/*.t' },
-            { par => ['t/a/*.t','t/b/*.t','t/c/*.t'], }
-            { seq => 't/shutdown/*.t' },
-        ],
-
-    });
-
-    # Equivalent YAML file
-    ---
-    seq:
-        - seq: t/startup/*.t
-        - par:
-            - t/a/*.t
-            - t/b/*.t
-            - t/c/*.t
-        - seq: t/shutdown/*.t
-
-This is an experimental feature and the interface may change.
-
-=item * C<rulesfiles>
-
-This specifies where to find a YAML file of test scheduling rules.  If not
-provided, it looks for a default file to use.  It first checks for a file given
-in the C<HARNESS_RULESFILE> environment variable, then it checks for
-F<testrules.yml> and then F<t/testrules.yml>.
+    $harness->rules(
+        {   par => [
+                { seq => '../ext/DB_File/t/*' },
+                { seq => '../ext/IO_Compress_Zlib/t/*' },
+                { seq => '../lib/CPANPLUS/*' },
+                { seq => '../lib/ExtUtils/t/*' },
+                '*'
+            ]
+        }
+    );
 
 =item * C<stdout>
 
 A filehandle for catching standard output.
-
-=item * C<trap>
-
-Attempt to print summary information if run is interrupted by
-SIGINT (Ctrl-C).
 
 =back
 
@@ -447,10 +353,6 @@ Any keys for which the value is C<undef> will be ignored.
 
         $self->jobs(1) unless defined $self->jobs;
 
-        if ( ! defined $self->rules ) {
-            $self->_maybe_load_rulesfile;
-        }
-
         local $default_class{formatter_class} = 'TAP::Formatter::File'
           unless -t ( $arg_for{stdout} || \*STDOUT ) && !$ENV{HARNESS_NOTTY};
 
@@ -481,29 +383,6 @@ Any keys for which the value is C<undef> will be ignored.
 
         return $self;
     }
-
-    sub _maybe_load_rulesfile {
-        my ($self) = @_;
-
-        my ($rulesfile) =   defined $self->rulesfile ? $self->rulesfile :
-                            defined($ENV{HARNESS_RULESFILE}) ? $ENV{HARNESS_RULESFILE} :
-                            grep { -r } qw(./testrules.yml t/testrules.yml);
-
-        if ( defined $rulesfile && -r $rulesfile ) {
-            if ( ! eval { require CPAN::Meta::YAML; 1} ) {
-               warn "CPAN::Meta::YAML required to process $rulesfile" ;
-               return;
-            }
-            my $layer = $] lt "5.008" ? "" : ":encoding(UTF-8)";
-            open my $fh, "<$layer", $rulesfile
-                or die "Couldn't open $rulesfile: $!";
-            my $yaml_text = do { local $/; <$fh> };
-            my $yaml = CPAN::Meta::YAML->read_string($yaml_text)
-                or die CPAN::Meta::YAML->errstr;
-            $self->rules( $yaml->[0] );
-        }
-        return;
-    }
 }
 
 ##############################################################################
@@ -514,7 +393,7 @@ Any keys for which the value is C<undef> will be ignored.
 
     $harness->runtests(@tests);
 
-Accepts an array of C<@tests> to be run. This should generally be the
+Accepts and array of C<@tests> to be run. This should generally be the
 names of test files, but this is not required. Each element in C<@tests>
 will be passed to C<TAP::Parser::new()> as a C<source>. See
 L<TAP::Parser> for more information.
@@ -548,46 +427,23 @@ sub runtests {
 
     $self->_make_callback( 'before_runtests', $aggregate );
     $aggregate->start;
-    my $finish = sub {
-        my $interrupted = shift;
-        $aggregate->stop;
-        $self->summary( $aggregate, $interrupted );
-        $self->_make_callback( 'after_runtests', $aggregate );
-    };
-    my $run = sub {
-        my $bailout;
-        eval { $self->aggregate_tests( $aggregate, @tests ); 1 }
-            or do { $bailout = $@ || 'unknown_error' };
-        $finish->();
-        die $bailout if defined $bailout;
-    };
-
-    if ( $self->trap ) {
-        local $SIG{INT} = sub {
-            print "\n";
-            $finish->(1);
-            exit;
-        };
-        $run->();
-    }
-    else {
-        $run->();
-    }
+    $self->aggregate_tests( $aggregate, @tests );
+    $aggregate->stop;
+    $self->summary($aggregate);
+    $self->_make_callback( 'after_runtests', $aggregate );
 
     return $aggregate;
 }
 
 =head3 C<summary>
 
-  $harness->summary( $aggregator );
-
-Output the summary for a L<TAP::Parser::Aggregator>.
+Output the summary for a TAP::Parser::Aggregator.
 
 =cut
 
 sub summary {
-    my ( $self, @args ) = @_;
-    $self->formatter->summary(@args);
+    my ( $self, $aggregate ) = @_;
+    $self->formatter->summary($aggregate);
 }
 
 sub _after_test {
@@ -598,12 +454,7 @@ sub _after_test {
 }
 
 sub _bailout {
-    my ( $self, $result, $parser, $session, $aggregate, $job ) = @_;
-
-    $self->finish_parser( $parser, $session );
-    $self->_after_test( $aggregate, $job, $parser );
-    $job->finish;
-
+    my ( $self, $result ) = @_;
     my $explanation = $result->explanation;
     die "FAILED--Further testing stopped"
       . ( $explanation ? ": $explanation\n" : ".\n" );
@@ -627,18 +478,13 @@ sub _aggregate_parallel {
 
             my ( $parser, $session ) = $self->make_parser($job);
             $mux->add( $parser, [ $session, $job ] );
-
-            # The job has started: begin the timers
-            $parser->start_time( $parser->get_time );
-            $parser->start_times( $parser->get_times );
         }
 
         if ( my ( $parser, $stash, $result ) = $mux->next ) {
             my ( $session, $job ) = @$stash;
             if ( defined $result ) {
                 $session->result($result);
-                $self->_bailout($result, $parser, $session, $aggregate, $job )
-                    if $result->is_bailout;
+                $self->_bailout($result) if $result->is_bailout;
             }
             else {
 
@@ -670,7 +516,7 @@ sub _aggregate_single {
                 # Keep reading until input is exhausted in the hope
                 # of allowing any pending diagnostics to show up.
                 1 while $parser->next;
-                $self->_bailout($result, $parser, $session, $aggregate, $job );
+                $self->_bailout($result);
             }
         }
 
@@ -687,7 +533,7 @@ sub _aggregate_single {
   $harness->aggregate_tests( $aggregate, @tests );
 
 Run the named tests and display a summary of result. Tests will be run
-in the order found.
+in the order found. 
 
 Test results will be added to the supplied L<TAP::Parser::Aggregator>.
 C<aggregate_tests> may be called multiple times to run several sets of
@@ -715,23 +561,20 @@ are unsuitable for parallel execution.
 Note that for simpler testing requirements it will often be possible to
 replace the above code with a single call to C<runtests>.
 
-Each element of the C<@tests> array is either:
+Each elements of the @tests array is either
 
 =over
 
-=item * the source name of a test to run
+=item * the file name of a test script to run
 
-=item * a reference to a [ source name, display name ] array
+=item * a reference to a [ file name, display name ] array
 
 =back
-
-In the case of a perl test suite, typically I<source names> are simply the file
-names of the test scripts to run.
 
 When you supply a separate display name it becomes possible to run a
 test more than once; the display name is effectively the alias by which
 the test is known inside the harness. The harness doesn't care if it
-runs the same test more than once when each invocation uses a
+runs the same script more than once when each invocation uses a
 different name.
 
 =cut
@@ -796,13 +639,59 @@ should be set higher.
 
 ##############################################################################
 
+=head1 SUBCLASSING
+
+C<TAP::Harness> is designed to be (mostly) easy to subclass. If you
+don't like how a particular feature functions, just override the
+desired methods.
+
+=head2 Methods
+
+TODO: This is out of date
+
+The following methods are ones you may wish to override if you want to
+subclass C<TAP::Harness>.
+
+=head3 C<summary>
+
+  $harness->summary( \%args );
+
+C<summary> prints the summary report after all tests are run. The
+argument is a hashref with the following keys:
+
+=over 4
+
+=item * C<start>
+
+This is created with C<< Benchmark->new >> and it the time the tests
+started. You can print a useful summary time, if desired, with:
+
+    $self->output(
+        timestr( timediff( Benchmark->new, $start_time ), 'nop' ) );
+
+=item * C<tests>
+
+This is an array reference of all test names. To get the L<TAP::Parser>
+object for individual tests:
+
+ my $aggregate = $args->{aggregate};
+ my $tests     = $args->{tests};
+
+ for my $name ( @$tests ) {
+     my ($parser) = $aggregate->parsers($test);
+     ... do something with $parser
+ }
+
+This is a bit clunky and will be cleaned up in a later release.
+
+=back
+
+=cut
+
 sub _get_parser_args {
     my ( $self, $job ) = @_;
     my $test_prog = $job->filename;
     my %args      = ();
-
-    $args{sources} = $self->sources if $self->sources;
-
     my @switches;
     @switches = $self->lib if $self->lib;
     push @switches => $self->switches if $self->switches;
@@ -810,7 +699,6 @@ sub _get_parser_args {
     $args{spool}       = $self->_open_spool($test_prog);
     $args{merge}       = $self->merge;
     $args{ignore_exit} = $self->ignore_exit;
-    $args{version}     = $self->version if $self->version;
 
     if ( my $exec = $self->exec ) {
         $args{exec}
@@ -829,19 +717,6 @@ sub _get_parser_args {
     }
 
     if ( defined( my $test_args = $self->test_args ) ) {
-
-        if ( ref($test_args) eq 'HASH' ) {
-
-            # different args for each test
-            if ( exists( $test_args->{ $job->description } ) ) {
-                $test_args = $test_args->{ $job->description };
-            }
-            else {
-                $self->_croak( "TAP::Harness Can't find test_args for "
-                      . $job->description );
-            }
-        }
-
         $args{test_args} = $test_args;
     }
 
@@ -932,120 +807,6 @@ sub _croak {
     return;
 }
 
-1;
-
-__END__
-
-##############################################################################
-
-=head1 CONFIGURING
-
-C<TAP::Harness> is designed to be easy to configure.
-
-=head2 Plugins
-
-C<TAP::Parser> plugins let you change the way TAP is I<input> to and I<output>
-from the parser.
-
-L<TAP::Parser::SourceHandler>s handle TAP I<input>.  You can configure them
-and load custom handlers using the C<sources> parameter to L</new>.
-
-L<TAP::Formatter>s handle TAP I<output>.  You can load custom formatters by
-using the C<formatter_class> parameter to L</new>.  To configure a formatter,
-you currently need to instantiate it outside of L<TAP::Harness> and pass it in
-with the C<formatter> parameter to L</new>.  This I<may> be addressed by adding
-a I<formatters> parameter to L</new> in the future.
-
-=head2 C<Module::Build>
-
-L<Module::Build> version C<0.30> supports C<TAP::Harness>.
-
-To load C<TAP::Harness> plugins, you'll need to use the C<tap_harness_args>
-parameter to C<new>, typically from your C<Build.PL>.  For example:
-
-  Module::Build->new(
-      module_name        => 'MyApp',
-      test_file_exts     => [qw(.t .tap .txt)],
-      use_tap_harness    => 1,
-      tap_harness_args   => {
-          sources => {
-              MyCustom => {},
-              File => {
-                  extensions => ['.tap', '.txt'],
-              },
-          },
-          formatter_class => 'TAP::Formatter::HTML',
-      },
-      build_requires     => {
-          'Module::Build' => '0.30',
-          'TAP::Harness'  => '3.18',
-      },
-  )->create_build_script;
-
-See L</new>
-
-=head2 C<ExtUtils::MakeMaker>
-
-L<ExtUtils::MakeMaker> does not support L<TAP::Harness> out-of-the-box.
-
-=head2 C<prove>
-
-L<prove> supports C<TAP::Harness> plugins, and has a plugin system of its
-own.  See L<prove/FORMATTERS>, L<prove/SOURCE HANDLERS> and L<App::Prove>
-for more details.
-
-=head1 WRITING PLUGINS
-
-If you can't configure C<TAP::Harness> to do what you want, and you can't find
-an existing plugin, consider writing one.
-
-The two primary use cases supported by L<TAP::Harness> for plugins are I<input>
-and I<output>:
-
-=over 2
-
-=item Customize how TAP gets into the parser
-
-To do this, you can either extend an existing L<TAP::Parser::SourceHandler>,
-or write your own.  It's a pretty simple API, and they can be loaded and
-configured using the C<sources> parameter to L</new>.
-
-=item Customize how TAP results are output from the parser
-
-To do this, you can either extend an existing L<TAP::Formatter>, or write your
-own.  Writing formatters are a bit more involved than writing a
-I<SourceHandler>, as you'll need to understand the L<TAP::Parser> API.  A
-good place to start is by understanding how L</aggregate_tests> works.
-
-Custom formatters can be loaded configured using the C<formatter_class>
-parameter to L</new>.
-
-=back
-
-=head1 SUBCLASSING
-
-If you can't configure C<TAP::Harness> to do exactly what you want, and writing
-a plugin isn't an option, consider extending it.  It is designed to be (mostly)
-easy to subclass, though the cases when sub-classing is necessary should be few
-and far between.
-
-=head2 Methods
-
-The following methods are ones you may wish to override if you want to
-subclass C<TAP::Harness>.
-
-=over 4
-
-=item L</new>
-
-=item L</runtests>
-
-=item L</summary>
-
-=back
-
-=cut
-
 =head1 REPLACING
 
 If you like the C<prove> utility and L<TAP::Parser> but you want your
@@ -1063,5 +824,7 @@ to read over this code carefully to see how all of them are being used.
 L<Test::Harness>
 
 =cut
+
+1;
 
 # vim:ts=4:sw=4:et:sta

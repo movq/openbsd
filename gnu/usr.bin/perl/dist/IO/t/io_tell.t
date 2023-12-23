@@ -1,6 +1,5 @@
 #!./perl
 
-my $tell_file;
 BEGIN {
     $tell_file = "Makefile.PL";
 }
@@ -18,20 +17,20 @@ print "1..13\n";
 
 use IO::File;
 
-my $tst = IO::File->new("$tell_file","r") || die("Can't open $tell_file");
+$tst = IO::File->new("$tell_file","r") || die("Can't open $tell_file");
 binmode $tst; # its a nop unless it matters. Was only if ($^O eq 'MSWin32' or $^O eq 'dos');
 if ($tst->eof) { print "not ok 1\n"; } else { print "ok 1\n"; }
 
-my $firstline = <$tst>;
-my $secondpos = tell;
+$firstline = <$tst>;
+$secondpos = tell;
 
-my $x = 0;
+$x = 0;
 while (<$tst>) {
     if (eof) {$x++;}
 }
 if ($x == 1) { print "ok 2\n"; } else { print "not ok 2\n"; }
 
-my $lastpos = tell;
+$lastpos = tell;
 
 unless (eof) { print "not ok 3\n"; } else { print "ok 3\n"; }
 

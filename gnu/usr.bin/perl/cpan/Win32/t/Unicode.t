@@ -1,8 +1,6 @@
 use strict;
 use Test;
-use Config qw(%Config);
 use Cwd qw(cwd);
-use Encode qw();
 use Win32;
 
 BEGIN {
@@ -17,13 +15,6 @@ BEGIN {
     unless ((Win32::GetOSVersion())[1] > 4) {
 	print "1..0 # Skip: Unicode support requires Windows 2000 or later\n";
 	exit 0;
-    }
-    Win32::CreateFile("8dot3test_canary_Unicode $$");
-    my $canary = Win32::GetShortPathName("8dot3test_canary_Unicode $$");
-    unlink("8dot3test_canary_Unicode $$");
-    if ( length $canary > 12 ) {
-        print "1..0 # Skip: The system and/or current volume is not configured to support short names.\n";
-        exit 0;        
     }
 }
 
@@ -57,9 +48,6 @@ ok(-f Win32::GetANSIPathName($file));
 ok(opendir(my $dh, Win32::GetANSIPathName($dir)));
 while ($_ = readdir($dh)) {
     next if /^\./;
-    # On Cygwin 1.7 readdir() returns the utf8 representation of the
-    # filename but doesn't turn on the SvUTF8 bit
-    Encode::_utf8_on($_) if $^O eq "cygwin" && $Config{osvers} !~ /^1.5/;
     ok($file, Win32::GetLongPathName("$dir\\$_"));
 }
 closedir($dh);
@@ -90,8 +78,7 @@ if ($^O eq "cygwin") {
     $subdir = Cygwin::posix_to_win_path($subdir, 1);
 }
 $subdir =~ s,/,\\,g;
-# Cygwin64 no longer returns an ANSI name
-skip($^O eq "cygwin", Win32::GetLongPathName($subdir), $long);
+ok(Win32::GetLongPathName($subdir), $long);
 
 # We can chdir() into the Unicode directory if we use the ANSI name
 ok(chdir(Win32::GetANSIPathName($dir)));

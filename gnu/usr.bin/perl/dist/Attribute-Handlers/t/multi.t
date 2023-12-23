@@ -92,7 +92,7 @@ my %z :Aokay(1,19);
 sub z :Aokay(1,20) {};
 
 package DerTest;
-use parent qw(Test);
+use base 'Test';
 use warnings;
 
 my $x5 :Dokay(1,21);

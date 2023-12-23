@@ -9,7 +9,6 @@ BEGIN {
 ### Test the basic sanity of the link-section treelet class
 
 use strict;
-use warnings;
 use Test;
 BEGIN { plan tests => 8 };
 

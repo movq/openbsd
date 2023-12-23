@@ -3,12 +3,12 @@ use warnings;
 
 {
     package TEST;
-    use parent qw(Locale::Maketext);
+    use base 'Locale::Maketext';
 }
 
 {
     package TEST::en;
-    use parent -norequire, qw(TEST);
+    use base 'TEST';
     our %Lexicon = (
         _AUTO => 1,
     );
@@ -28,7 +28,7 @@ my $err = eval {
    $lh->maketext('this is ] an error');
 };
 is($err, undef, "no return from eval");
-like("$@", qr/Unbalanced\s'\]',\sin/ms, '$@ shows that ] was unbalanced'); 
+like("$@", qr/Unbalanced\s'\]',\sin/ms, '$@ shows that ] was unbalanced');  
 
 # _try_use doesn't pollute $@
 $@ = 'foo2';

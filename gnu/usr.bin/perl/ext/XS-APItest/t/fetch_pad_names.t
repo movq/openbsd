@@ -2,15 +2,7 @@ use strict;
 use warnings;
 use Encode ();
 
-use Test::More;
-if (ord("A") != 65) {
-    # pad_scalar() requires constant input.  To port this to EBCDIC would
-    # require copy, paste,  and changing all the values for each code page.
-    plan skip_all => "ASCII-centric tests";
-}
-else {
-    plan tests => 77;
-}
+use Test::More tests => 77;
 
 use XS::APItest qw( fetch_pad_names pad_scalar );
 
@@ -49,8 +41,8 @@ general_tests( $cv->(), $names_av, {
                ],
     pad_size => {
                     total     => { cmp => 2, msg => 'Sub has two lexicals.' },
-                    utf8      => { cmp => 2, msg => 'Sub has only UTF-8 vars.' },
-                    invariant => { cmp => 0, msg => 'Sub has no invariant vars.' },
+                    utf8      => { cmp => 0, msg => 'Sub has no UTF-8 encoded vars.' },
+                    invariant => { cmp => 2, msg => 'Sub has two invariant vars.' },
                 },
     vars    => [
                 { name => '$zest', msg => 'Sub has [\$zest].', type => 'ok' },
@@ -87,8 +79,8 @@ general_tests( $cv->(), $names_av, {
                ],
     pad_size => {
                     total     => { cmp => 2, msg => 'Sub has two lexicals, including those it closed over.' },
-                    utf8      => { cmp => 2, msg => 'UTF-8 in the pad.' },
-                    invariant => { cmp => 0, msg => '' },
+                    utf8      => { cmp => 1, msg => 'UTF-8 in the pad.' },
+                    invariant => { cmp => 1, msg => '' },
                 },
     vars    => [
                 { name => '$ascii', msg => 'Sub has [$ascii].', type => 'ok' },
@@ -128,8 +120,8 @@ general_tests( $cv->(), $names_av, {
                ],
     pad_size => {
                     total     => { cmp => 2, msg => 'Sub has two lexicals' },
-                    utf8      => { cmp => 2, msg => 'Latin-1 got upgraded to UTF-8.' },
-                    invariant => { cmp => 0, msg => '' },
+                    utf8      => { cmp => 0, msg => 'Latin-1 not upgraded to UTF-8.' },
+                    invariant => { cmp => 2, msg => '' },
                 },
     vars    => [
                 { name => '$Leon', msg => 'Sub has [$Leon].', type => 'ok' },
@@ -161,8 +153,8 @@ END_EVAL
         results => [ ({ SKIP => 1 }) x 3 ],
         pad_size => {
                   total => { cmp => 1, msg => 'Sub has one lexical, which it closed over.' },
-                  utf8      => { cmp => 1, msg => '' },
-                  invariant => { cmp => 0, msg => '' },
+                  utf8      => { cmp => 0, msg => '' },
+                  invariant => { cmp => 1, msg => '' },
                     },
         vars    => [
                 { name => '$Ceon', msg => "Sub doesn't have [\$Ceon].", type => 'not ok' },
@@ -197,8 +189,8 @@ general_tests( $cv->(), $names_av, {
                ],
     pad_size => {
                     total     => { cmp => 3, msg => 'Sub has three lexicals.' },
-                    utf8      => { cmp => 3, msg => 'Japanese stored as UTF-8.' },
-                    invariant => { cmp => 0, msg => '' },
+                    utf8      => { cmp => 1, msg => 'Japanese stored as UTF-8.' },
+                    invariant => { cmp => 2, msg => '' },
                 },
     vars    => [
                 { name => "\$\x{6226}\x{56fd}", msg => "Sub has [\$\x{6226}\x{56fd}].", type => 'ok' },
@@ -244,8 +236,8 @@ general_tests( $cv->(), $names_av, {
                ],
     pad_size => {
                     total     => { cmp => 1, msg => 'Sub has one lexical.' },
-                    utf8      => { cmp => 1, msg => '' },
-                    invariant => { cmp => 0, msg => '' },
+                    utf8      => { cmp => 0, msg => '' },
+                    invariant => { cmp => 1, msg => '' },
                 },
     vars    => [],
 });
@@ -315,16 +307,14 @@ sub general_tests {
     }
 
     is @$names_av, $tests->{pad_size}{total}{cmp}, $tests->{pad_size}{total}{msg};
-    is grep( Encode::is_utf8($_), @$names_av),
-       $tests->{pad_size}{utf8}{cmp}, $tests->{pad_size}{utf8}{msg};
-    is grep( !Encode::is_utf8($_), @$names_av), $tests->{pad_size}{invariant}{cmp},
-       $tests->{pad_size}{invariant}{msg};
+    is grep( Encode::is_utf8($_), @$names_av), $tests->{pad_size}{utf8}{cmp};
+    is grep( !Encode::is_utf8($_), @$names_av), $tests->{pad_size}{invariant}{cmp};
 
     for my $var (@{$tests->{vars}}) {
         if ($var->{type} eq 'ok') {
-            ok +(grep { $_ eq $var->{name} } @$names_av), $var->{msg};
+            ok $var->{name} ~~ $names_av, $var->{msg};
         } else {
-            ok !(grep { $_ eq $var->{name} } @$names_av), $var->{msg};
+            ok !($var->{name} ~~ $names_av), $var->{msg};
         }
     }
 

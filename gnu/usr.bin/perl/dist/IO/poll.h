@@ -12,8 +12,6 @@
 
 #if (defined(HAS_POLL) && defined(I_POLL)) || defined(POLLWRBAND)
 #  include <poll.h>
-#elif (defined(HAS_POLL) && defined(I_SYS_POLL))
-#  include <sys/poll.h>
 #else
 #ifdef HAS_SELECT
 

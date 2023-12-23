@@ -5,16 +5,11 @@
 #########################
 
 use Test::More qw/no_plan/;
-use File::Spec;
 
 BEGIN {
-    my $coretests = File::Spec->rel2abs(
-        File::Spec->catpath(
-            (File::Spec->splitpath($0))[0,1], 'coretests.pm'
-        )
-    );
+    (my $coretests = $0) =~ s'[^/]+\.t'coretests.pm';
     require $coretests;
-    use_ok('version', 0.9929);
+    use_ok('version', 0.9909);
 }
 
 BaseTests("version","new","qv");
@@ -46,10 +41,4 @@ ok defined($v), 'Fix for RT #47980';
     eval { $x = "version"; print version::new };
     like $@, qr'Usage: version::new\(class, version\)',
 	'No implicit object creation when called as function';
-}
-
-{
-    eval { version::vcmp($^V) };
-    like $@, qr{Usage: version::\S+\(lobj, robj, \.\.\.\)},
-	'vcmp method throws error on single argument';
 }

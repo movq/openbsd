@@ -1,6 +1,6 @@
 =head1 NAME
 
-perl5005delta - what's new for perl5.005
+perldelta - what's new for perl5.005
 
 =head1 DESCRIPTION
 
@@ -50,7 +50,7 @@ in a future version.
 
 Some new keywords have been introduced.  These are generally expected to
 have very little impact on compatibility.  See L<New C<INIT> keyword>,
-L<New C<lock> keyword>, and L<New C<qrE<sol>E<sol>> operator>.
+L<New C<lock> keyword>, and L<New C<qr//> operator>.
 
 Certain barewords are now reserved.  Use of these will provoke a warning
 if you have asked for them with the C<-w> switch.
@@ -63,15 +63,11 @@ the new features in this release.
 
 =over 4
 
-=item *
-
-Core sources now require ANSI C compiler
+=item Core sources now require ANSI C compiler
 
 An ANSI C compiler is now B<required> to build perl.  See F<INSTALL>.
 
-=item *
-
-All Perl global variables must now be referenced with an explicit prefix
+=item All Perl global variables must now be referenced with an explicit prefix
 
 All Perl global variables that are visible for use by extensions now
 have a C<PL_> prefix.  New extensions should C<not> refer to perl globals
@@ -89,11 +85,9 @@ begin with C<perl> be referenced with a C<Perl_> prefix.  The bare function
 names without the C<Perl_> prefix are supported with macros, but this
 support may cease in a future release.
 
-See L<perlapi>.
+See L<perlguts/"API LISTING">.
 
-=item *
-
-Enabling threads has source compatibility issues
+=item Enabling threads has source compatibility issues
 
 Perl built with threading enabled requires extensions to use the new
 C<dTHR> macro to initialize the handle to access per-thread data.
@@ -101,12 +95,12 @@ If you see a compiler error that talks about the variable C<thr> not
 being declared (when building a module that has XS code),  you need
 to add C<dTHR;> at the beginning of the block that elicited the error.
 
-The API function C<perl_get_sv("@",GV_ADD)> should be used instead of
+The API function C<perl_get_sv("@",FALSE)> should be used instead of
 directly accessing perl globals as C<GvSV(errgv)>.  The API call is
 backward compatible with existing perls and provides source compatibility
 with threading is enabled.
 
-See L</"C Source Compatibility"> for more information.
+See L<"C Source Compatibility"> for more information.
 
 =back
 
@@ -134,7 +128,7 @@ Oneliners with the C<-e> switch do not create temporary files anymore.
 
 Many new warnings that were introduced in 5.004 have been made
 optional.  Some of these warnings are still present, but perl's new
-features make them less often a problem.  See L</New Diagnostics>.
+features make them less often a problem.  See L<New Diagnostics>.
 
 =head2 Licensing
 
@@ -145,7 +139,7 @@ Most of the Perl documentation was previously under the implicit GNU
 General Public License or the Artistic License (at the user's choice).
 Now much of the documentation unambiguously states the terms under which
 it may be distributed.  Those terms are in general much less restrictive
-than the GNU GPL.  See L<perl> and the individual perl manpages listed
+than the GNU GPL.  See L<perl> and the individual perl man pages listed
 therein.
 
 =head1 Core Changes
@@ -255,7 +249,7 @@ The following new syntax elements are supported:
 
 =item New operator for precompiled regular expressions
 
-See L<New C<qrE<sol>E<sol>> operator>.
+See L<New C<qr//> operator>.
 
 =item Other improvements
 
@@ -492,7 +486,7 @@ In previous versions, this would print "hello", but it now prints "g'bye".
 
 If C<$/> is a reference to an integer, or a scalar that holds an integer,
 <> will read in records instead of lines. For more info, see
-L<perlvar/$E<sol>>.
+L<perlvar/$/>.
 
 =head1 Supported Platforms
 
@@ -509,7 +503,7 @@ as L<perldos> on some systems).
 
 MiNT is now supported.  See F<README.mint>.
 
-MPE/iX is now supported.  See README.mpeix.
+MPE/iX is now supported.  See F<README.mpeix>.
 
 MVS (aka OS390, aka Open Edition) is now supported.  See F<README.os390> 
 (installed as L<perlos390> on some systems).
@@ -523,7 +517,7 @@ encapsulation of Perl.  GCC and EGCS are now supported on Win32.
 See F<README.win32>, aka L<perlwin32>.
 
 VMS configuration system has been rewritten.  See F<README.vms> (installed 
-as F<README_vms> on some systems).
+as L<README_vms> on some systems).
 
 The hints files for most Unix platforms have seen incremental improvements.
 
@@ -531,7 +525,7 @@ The hints files for most Unix platforms have seen incremental improvements.
 
 =head2 New Modules
 
-=over 4
+=over
 
 =item B
 
@@ -572,7 +566,7 @@ in perl.
 
 =item Test
 
-A framework for writing test suites.
+A framework for writing testsuites.
 
 =item Tie::Array
 
@@ -602,14 +596,12 @@ Various pragmata to control behavior of regular expressions.
 
 =head2 Changes in existing modules
 
-=over 4
+=over
 
 =item Benchmark
 
 You can now run tests for I<x> seconds instead of guessing the right
 number of tests to run.
-
-Keeps better time.
 
 =item Carp
 
@@ -662,11 +654,15 @@ subtle incompatibilities.
 
 =item CPAN
 
-See L<perlmodinstall> and L<CPAN>.
+See <perlmodinstall> and L<CPAN>.
 
 =item Cwd
 
 Cwd::cwd is faster on most platforms.
+
+=item Benchmark
+
+Keeps better time.
 
 =back
 
@@ -706,7 +702,7 @@ L<perlthrtut> gives a tutorial on threads.
 
 =head1 New Diagnostics
 
-=over 4
+=over
 
 =item Ambiguous call resolved as CORE::%s(), qualify as such or use &
 
@@ -722,7 +718,7 @@ imported with the C<use subs> pragma).
 
 To silently interpret it as the Perl operator, use the C<CORE::> prefix
 on the operator (e.g. C<CORE::log($x)>) or by declaring the subroutine
-to be an object method (see L</attrs>).
+to be an object method (see L<attrs>).
 
 =item Bad index while coercing array into hash
 
@@ -766,7 +762,7 @@ only with arrays that have a hash reference at index 0.
 (F) You said something like C<< local $ar->{'key'} >>, where $ar is
 a reference to a pseudo-hash.  That hasn't been implemented yet, but
 you can get a similar effect by localizing the corresponding array
-element directly: C<< local $ar->[$ar->[0]{'key'}] >>.
+element directly -- C<< local $ar->[$ar->[0]{'key'}] >>.
 
 =item Can't use %%! because Errno.pm is not available
 
@@ -863,7 +859,7 @@ are outside the range which can be represented by integers internally.
 One possible workaround is to force Perl to use magical string
 increment by prepending "0" to your numbers.
 
-=item Recursive inheritance detected while looking for method '%s' %s
+=item Recursive inheritance detected while looking for method '%s' in package '%s'
 
 (F) More than 100 levels of inheritance were encountered while invoking a
 method.  Probably indicates an unintended loop in your inheritance hierarchy.
@@ -920,7 +916,7 @@ fix the problem can be found in L<perllocale/"LOCALE PROBLEMS">.
 
 =head1 Obsolete Diagnostics
 
-=over 4
+=over
 
 =item Can't mktemp()
 
@@ -964,7 +960,7 @@ because many scripts assume to find Perl in /usr/bin/perl.
 
 If you find what you think is a bug, you might check the headers of
 recently posted articles in the comp.lang.perl.misc newsgroup.
-There may also be information at http://www.perl.com/perl/ , the Perl
+There may also be information at http://www.perl.com/perl/, the Perl
 Home Page.
 
 If you believe you have an unreported bug, please run the B<perlbug>

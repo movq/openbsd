@@ -1,9 +1,8 @@
-/define PERL_REVISION/ {revision = $3}
-/define PERL_VERSION/ {version = $3}
-/define PERL_SUBVERSION/ {subvers = $3}
+/PATCHLEVEL/ {base = $3}
+/SUBVERSION/ {subvers = $3}
 END {
 if (subvers == 0) 
-	printf "p9pvers = %d.%d\n", revision, version> "buildinfo";
+	printf "p9pvers = 5.%03d\n", base> "buildinfo";
 else
-	printf "p9pvers = %d.%d.%d\n" , revision, version, subvers> "buildinfo";
+	printf "p9pvers = 5.%03d_%02d\n" , base, subvers> "buildinfo";
 }

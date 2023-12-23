@@ -1,7 +1,15 @@
-use strict;
-use warnings;
+#!perl
 
-use Test::More;
+BEGIN {
+    if ($ENV{PERL_CORE}) {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+    }
+}
+
+use strict; use warnings;
+
+use Test::More tests => 8;
 
 # see that Hash::Util::FieldHash and Hash::Util load and export what
 # they should
@@ -47,4 +55,3 @@ BEGIN {
     );
 }
 
-done_testing;

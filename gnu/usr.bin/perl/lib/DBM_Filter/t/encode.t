@@ -3,7 +3,6 @@ use strict;
 use warnings;
 use Carp;
 
-require "../t/charset_tools.pl";
 
 BEGIN 
 {
@@ -19,20 +18,10 @@ BEGIN
 
 require "dbm_filter_util.pl";
 
-use Test::More;
+use Test::More tests => 26;
 
 BEGIN { use_ok('DBM_Filter') };
-my $db_file;
-BEGIN {
-    use Config;
-    foreach (qw/SDBM_File ODBM_File NDBM_File GDBM_File DB_File/) {
-        if ($Config{extensions} =~ /\b$_\b/) {
-            $db_file = $_;
-            last;
-        }
-    }
-    use_ok($db_file);
-};
+BEGIN { use_ok('SDBM_File') };
 BEGIN { use_ok('Fcntl') };
 BEGIN { use_ok('charnames', qw{greek})};
 
@@ -42,12 +31,12 @@ unlink <Op_dbmx*>;
 END { unlink <Op_dbmx*>; }
 
 my %h1 = () ;
-my $db1 = tie(%h1, $db_file,'Op_dbmx', O_RDWR|O_CREAT, 0640) ;
+my $db1 = tie(%h1, 'SDBM_File','Op_dbmx', O_RDWR|O_CREAT, 0640) ;
 
-ok $db1, "tied to $db_file";
+ok $db1, "tied to SDBM_File";
 
 eval { $db1->Filter_Push('encode' => 'blah') };
-like $@, qr/^Encoding 'blah' is not available/, "push an illegal filter" ;
+like $@, qr/^Encoding 'blah' is not available/, "push an illigal filter" ;
 
 eval { $db1->Filter_Push('encode') };
 is $@, '', "push an 'encode' filter (default to utf-8)" ;
@@ -65,24 +54,17 @@ is $@, '', "push an 'encode' filter (default to utf-8)" ;
 
 }
 
-{
-    local $TODO = "Currently broken on EBCDIC" if $::IS_EBCDIC;
-    VerifyData(\%h1,
+VerifyData(\%h1,
 	{
 		'alpha'	=> "\N{alpha}",
 		"beta"	=> "\N{beta}",
 		"\N{gamma}"=> "gamma",
 		""		=> "",
 	});
-}
 
 eval { $db1->Filter_Pop() };
 is $@, '', "pop the 'utf8' filter" ;
 
-SKIP: {
-    skip "Encode doesn't currently work for most filters on EBCDIC, including 8859-16", 11 if $::IS_EBCDIC || $::IS_EBCDIC;
-    # Actually the only thing failing below is the euro, because that's the
-    # only thing that's added in 8859-16.
 eval { $db1->Filter_Push('encode' => 'iso-8859-16') };
 is $@, '', "push an 'encode' filter (specify iso-8859-16)" ;
 
@@ -101,18 +83,18 @@ undef $db1;
 
 # read the dbm file without the filter
 my %h2 = () ;
-my $db2 = tie(%h2, $db_file,'Op_dbmx', O_RDWR|O_CREAT, 0640) ;
+my $db2 = tie(%h2, 'SDBM_File','Op_dbmx', O_RDWR|O_CREAT, 0640) ;
 
-ok $db2, "tied to $db_file";
+ok $db2, "tied to SDBM_File";
 
 VerifyData(\%h2,
-	   {
-	    'alpha'	=> byte_utf8a_to_utf8n("\xCE\xB1"),
-	    'beta'	=> byte_utf8a_to_utf8n("\xCE\xB2"),
-	    byte_utf8a_to_utf8n("\xCE\xB3") => "gamma",
-	    'euro'	=> uni_to_native("\xA4"),
-	    ""		=> "",
-	   });
+	{
+		'alpha'	=> "\xCE\xB1",
+		'beta'	=> "\xCE\xB2",
+		"\xCE\xB3"=> "gamma",
+		'euro'	=> "\xA4",
+		""		=> "",
+	});
 
 undef $db2;
 {
@@ -121,6 +103,3 @@ undef $db2;
     is $@, '', "untie without inner references" ;
 }
 
-}
-
-done_testing();

@@ -2,11 +2,10 @@
 
 BEGIN {
     chdir 't' if -d 't';
+    @INC = '../lib';
     require './test.pl';
-    set_up_inc('../lib');
+    plan( tests => 8 );
 }
-
-plan( tests => 8 );
 
 use strict;
 
@@ -29,7 +28,7 @@ sub replaced { 'meth' }
 # simple removal
 sub removed2 { 24 }
 sub bound2 { removed2() }
-{ no strict; undef *{"removed2"} }
+undef $main::{removed2};
 eval { bound2() };
 like( $@, qr/Undefined subroutine &main::removed2 called/,
     'function not bound' );

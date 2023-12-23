@@ -1,5 +1,11 @@
 /*
- * ex: set ts=8 sts=4 sw=4 et:
+ * Local variables:
+ * c-indentation-style: bsd
+ * c-basic-offset: 4
+ * indent-tabs-mode: t
+ * End:
+ *
+ * ex: set ts=8 sts=4 sw=4 noet:
  */
 
 #define PERL_NO_GET_CONTEXT
@@ -23,9 +29,10 @@ typedef struct {
     STDCHAR *bbuf;              /* malloced buffer if map fails */
 } PerlIOMmap;
 
-static IV
+IV
 PerlIOMmap_map(pTHX_ PerlIO *f)
 {
+    dVAR;
     PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
     const IV flags = PerlIOBase(f)->flags;
     IV code = 0;
@@ -33,12 +40,8 @@ PerlIOMmap_map(pTHX_ PerlIO *f)
 	abort();
     if (flags & PERLIO_F_CANREAD) {
 	PerlIOBuf * const b = PerlIOSelf(f, PerlIOBuf);
-	Stat_t st;
 	const int fd = PerlIO_fileno(f);
-        if (fd < 0) {
-          SETERRNO(EBADF,RMS_IFI);
-          return -1;
-        }
+	Stat_t st;
 	code = Fstat(fd, &st);
 	if (code == 0 && S_ISREG(st.st_mode)) {
 	    SSize_t len = st.st_size - b->posn;
@@ -87,7 +90,7 @@ PerlIOMmap_map(pTHX_ PerlIO *f)
     return code;
 }
 
-static IV
+IV
 PerlIOMmap_unmap(pTHX_ PerlIO *f)
 {
     PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
@@ -115,7 +118,7 @@ PerlIOMmap_unmap(pTHX_ PerlIO *f)
     return code;
 }
 
-static STDCHAR *
+STDCHAR *
 PerlIOMmap_get_base(pTHX_ PerlIO *f)
 {
     PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
@@ -148,7 +151,7 @@ PerlIOMmap_get_base(pTHX_ PerlIO *f)
     return PerlIOBuf_get_base(aTHX_ f);
 }
 
-static SSize_t
+SSize_t
 PerlIOMmap_unread(pTHX_ PerlIO *f, const void *vbuf, Size_t count)
 {
     PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
@@ -179,7 +182,7 @@ PerlIOMmap_unread(pTHX_ PerlIO *f, const void *vbuf, Size_t count)
     return PerlIOBuf_unread(aTHX_ f, vbuf, count);
 }
 
-static SSize_t
+SSize_t
 PerlIOMmap_write(pTHX_ PerlIO *f, const void *vbuf, Size_t count)
 {
     PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
@@ -206,7 +209,7 @@ PerlIOMmap_write(pTHX_ PerlIO *f, const void *vbuf, Size_t count)
     return PerlIOBuf_write(aTHX_ f, vbuf, count);
 }
 
-static IV
+IV
 PerlIOMmap_flush(pTHX_ PerlIO *f)
 {
     PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
@@ -234,7 +237,7 @@ PerlIOMmap_flush(pTHX_ PerlIO *f)
     return code;
 }
 
-static IV
+IV
 PerlIOMmap_fill(pTHX_ PerlIO *f)
 {
     PerlIOBuf * const b = PerlIOSelf(f, PerlIOBuf);
@@ -248,14 +251,30 @@ PerlIOMmap_fill(pTHX_ PerlIO *f)
     return code;
 }
 
-static PerlIO *
+IV
+PerlIOMmap_close(pTHX_ PerlIO *f)
+{
+    PerlIOMmap * const m = PerlIOSelf(f, PerlIOMmap);
+    PerlIOBuf * const b = &m->base;
+    IV code = PerlIO_flush(f);
+    if (m->bbuf) {
+	b->buf = m->bbuf;
+	m->bbuf = NULL;
+	b->ptr = b->end = b->buf;
+    }
+    if (PerlIOBuf_close(aTHX_ f) != 0)
+	code = -1;
+    return code;
+}
+
+PerlIO *
 PerlIOMmap_dup(pTHX_ PerlIO *f, PerlIO *o, CLONE_PARAMS *param, int flags)
 {
  return PerlIOBase_dup(aTHX_ f, o, param, flags);
 }
 
 
-static PERLIO_FUNCS_DECL(PerlIO_mmap) = {
+PERLIO_FUNCS_DECL(PerlIO_mmap) = {
     sizeof(PerlIO_funcs),
     "mmap",
     sizeof(PerlIOMmap),

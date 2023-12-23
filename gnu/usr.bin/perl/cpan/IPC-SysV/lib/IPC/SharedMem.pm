@@ -1,6 +1,12 @@
 ################################################################################
 #
-#  Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz <mhx@cpan.org>.
+#  $Revision: 3 $
+#  $Author: mhx $
+#  $Date: 2008/11/26 23:12:27 +0100 $
+#
+################################################################################
+#
+#  Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz <mhx@cpan.org>.
 #  Version 1.x, Copyright (C) 1997, Graham Barr <gbarr@pobox.com>.
 #
 #  This program is free software; you can redistribute it and/or
@@ -15,7 +21,8 @@ use strict;
 use vars qw($VERSION);
 use Carp;
 
-$VERSION = '2.09';
+$VERSION = do { my @r = '$Snapshot: /IPC-SysV/2.01 $' =~ /(\d+\.\d+(?:_\d+)?)/; @r ? $r[0] : '9.99' };
+$VERSION = eval $VERSION;
 
 # Figure out if we have support for native sized types
 my $N = do { my $foo = eval { pack "L!", 0 }; $@ ? '' : '!' };
@@ -165,8 +172,8 @@ A class providing an object based interface to SysV IPC shared memory.
 
 =item new ( KEY , SIZE , FLAGS )
 
-Creates a new shared memory segment of C<SIZE> bytes size associated
-with C<KEY>. A new segment is created if
+Creates a new shared memory segment associated with C<KEY>. A new
+segment is created if
 
 =over 4
 
@@ -225,7 +232,7 @@ of these fields see you system documentation.
     segsz
     lpid
     cpid
-    nattch
+    nattach
     atime
     dtime
     ctime
@@ -235,12 +242,12 @@ of these fields see you system documentation.
 Permanently attach to the shared memory segment. When a C<IPC::SharedMem>
 object is attached, it will use L<memread> and L<memwrite> instead of
 L<shmread> and L<shmwrite> for accessing the shared memory segment.
-Returns true if successful, or false on error. See L<shmat(2)>.
+Returns true if successful, or false on error. See L<shmat>.
 
 =item detach
 
 Detach from the shared memory segment that previously has been attached
-to. Returns true if successful, or false on error. See L<shmdt(2)>.
+to. Returns true if successful, or false on error. See L<shmdt>.
 
 =item addr
 
@@ -260,7 +267,7 @@ Marcus Holland-Moritz <mhx@cpan.org>
 
 =head1 COPYRIGHT
 
-Version 2.x, Copyright (C) 2007-2013, Marcus Holland-Moritz.
+Version 2.x, Copyright (C) 2007, Marcus Holland-Moritz.
 
 Version 1.x, Copyright (c) 1997, Graham Barr.
 
