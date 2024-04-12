@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -71,30 +71,17 @@ int addr_tree_compare(const void* k1, const void* k2)
         return 0;
 }
 
-int addr_tree_addrport_compare(const void* k1, const void* k2)
-{
-	struct addr_tree_node* n1 = (struct addr_tree_node*)k1;
-	struct addr_tree_node* n2 = (struct addr_tree_node*)k2;
-	return sockaddr_cmp(&n1->addr, n1->addrlen, &n2->addr,
-		n2->addrlen);
-}
-
-void name_tree_init(rbtree_type* tree)
+void name_tree_init(rbtree_t* tree)
 {
 	rbtree_init(tree, &name_tree_compare);
 }
 
-void addr_tree_init(rbtree_type* tree)
+void addr_tree_init(rbtree_t* tree)
 {
 	rbtree_init(tree, &addr_tree_compare);
 }
 
-void addr_tree_addrport_init(rbtree_type* tree)
-{
-	rbtree_init(tree, &addr_tree_addrport_compare);
-}
-
-int name_tree_insert(rbtree_type* tree, struct name_tree_node* node, 
+int name_tree_insert(rbtree_t* tree, struct name_tree_node* node, 
         uint8_t* name, size_t len, int labs, uint16_t dclass)
 {
 	node->node.key = node;
@@ -106,7 +93,7 @@ int name_tree_insert(rbtree_type* tree, struct name_tree_node* node,
 	return rbtree_insert(tree, &node->node) != NULL;
 }
 
-int addr_tree_insert(rbtree_type* tree, struct addr_tree_node* node,
+int addr_tree_insert(rbtree_t* tree, struct addr_tree_node* node,
         struct sockaddr_storage* addr, socklen_t addrlen, int net)
 {
 	node->node.key = node;
@@ -117,12 +104,11 @@ int addr_tree_insert(rbtree_type* tree, struct addr_tree_node* node,
 	return rbtree_insert(tree, &node->node) != NULL;
 }
 
-void addr_tree_init_parents_node(struct addr_tree_node* node)
+void addr_tree_init_parents(rbtree_t* tree)
 {
-	struct addr_tree_node* prev = NULL, *p;
+        struct addr_tree_node* node, *prev = NULL, *p;
         int m;
-	for(; (rbnode_type*)node != RBTREE_NULL;
-		node = (struct addr_tree_node*)rbtree_next((rbnode_type*)node)) {
+        RBTREE_FOR(node, struct addr_tree_node*, tree) {
                 node->parent = NULL;
                 if(!prev || prev->addrlen != node->addrlen) {
                         prev = node;
@@ -144,13 +130,7 @@ void addr_tree_init_parents_node(struct addr_tree_node* node)
         }
 }
 
-void addr_tree_init_parents(rbtree_type* tree)
-{
-	addr_tree_init_parents_node(
-			(struct addr_tree_node*)rbtree_first(tree));
-}
-
-void name_tree_init_parents(rbtree_type* tree)
+void name_tree_init_parents(rbtree_t* tree)
 {
         struct name_tree_node* node, *prev = NULL, *p;
         int m;
@@ -176,7 +156,7 @@ void name_tree_init_parents(rbtree_type* tree)
         }
 }
 
-struct name_tree_node* name_tree_find(rbtree_type* tree, uint8_t* name, 
+struct name_tree_node* name_tree_find(rbtree_t* tree, uint8_t* name, 
         size_t len, int labs, uint16_t dclass)
 {
 	struct name_tree_node key;
@@ -188,10 +168,10 @@ struct name_tree_node* name_tree_find(rbtree_type* tree, uint8_t* name,
 	return (struct name_tree_node*)rbtree_search(tree, &key);
 }
 
-struct name_tree_node* name_tree_lookup(rbtree_type* tree, uint8_t* name,
+struct name_tree_node* name_tree_lookup(rbtree_t* tree, uint8_t* name,
         size_t len, int labs, uint16_t dclass)
 {
-        rbnode_type* res = NULL;
+        rbnode_t* res = NULL;
         struct name_tree_node *result;
         struct name_tree_node key;
         key.node.key = &key;
@@ -220,10 +200,10 @@ struct name_tree_node* name_tree_lookup(rbtree_type* tree, uint8_t* name,
 	return result;
 }
 
-struct addr_tree_node* addr_tree_lookup(rbtree_type* tree, 
+struct addr_tree_node* addr_tree_lookup(rbtree_t* tree, 
         struct sockaddr_storage* addr, socklen_t addrlen)
 {
-        rbnode_type* res = NULL;
+        rbnode_t* res = NULL;
         struct addr_tree_node* result;
         struct addr_tree_node key;
         key.node.key = &key;
@@ -251,24 +231,11 @@ struct addr_tree_node* addr_tree_lookup(rbtree_type* tree,
         return result;
 }
 
-struct addr_tree_node* addr_tree_find(rbtree_type* tree,
-        struct sockaddr_storage* addr, socklen_t addrlen, int net)
-{
-        rbnode_type* res = NULL;
-        struct addr_tree_node key;
-        key.node.key = &key;
-        memcpy(&key.addr, addr, addrlen);
-        key.addrlen = addrlen;
-        key.net = net;
-	res = rbtree_search(tree, &key);
-	return (struct addr_tree_node*)res;
-}
-
 int
-name_tree_next_root(rbtree_type* tree, uint16_t* dclass)
+name_tree_next_root(rbtree_t* tree, uint16_t* dclass)
 {
 	struct name_tree_node key;
-	rbnode_type* n;
+	rbnode_t* n;
 	struct name_tree_node* p;
 	if(*dclass == 0) {
 		/* first root item is first item in tree */

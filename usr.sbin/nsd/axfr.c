@@ -7,19 +7,17 @@
  *
  */
 
-#include "config.h"
+#include <config.h>
 
 #include "axfr.h"
 #include "dns.h"
 #include "packet.h"
 #include "options.h"
-#include "ixfr.h"
 
-/* draft-ietf-dnsop-rfc2845bis-06, section 5.3.1 says to sign every packet */
-#define AXFR_TSIG_SIGN_EVERY_NTH	0	/* tsig sign every N packets. */
+#define AXFR_TSIG_SIGN_EVERY_NTH	96	/* tsig sign every N packets. */
 
 query_state_type
-query_axfr(struct nsd *nsd, struct query *query, int wstats)
+query_axfr(struct nsd *nsd, struct query *query)
 {
 	domain_type *closest_match;
 	domain_type *closest_encloser;
@@ -34,6 +32,7 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 		query->maxlen = AXFR_MAX_MESSAGE_LEN;
 
 	assert(!query_overflow(query));
+#ifdef TSIG
 	/* only keep running values for most packets */
 	query->tsig_prepare_it = 0;
 	query->tsig_update_it = 1;
@@ -42,48 +41,43 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 		query->tsig_prepare_it = 1;
 		query->tsig_sign_it = 0;
 	}
+#endif /* TSIG */
 
 	if (query->axfr_zone == NULL) {
-		domain_type* qdomain;
 		/* Start AXFR.  */
-		if(wstats) {
-			STATUP(nsd, raxfr);
-		}
 		exact = namedb_lookup(nsd->db,
 				      query->qname,
 				      &closest_match,
 				      &closest_encloser);
 
-		qdomain = closest_encloser;
-		query->axfr_zone = domain_find_zone(nsd->db, closest_encloser);
+		query->domain = closest_encloser;
+		query->axfr_zone = domain_find_zone(closest_encloser);
 
 		if (!exact
 		    || query->axfr_zone == NULL
-		    || query->axfr_zone->apex != qdomain
-		    || query->axfr_zone->soa_rrset == NULL)
+		    || query->axfr_zone->apex != query->domain)
 		{
 			/* No SOA no transfer */
-			RCODE_SET(query->packet, RCODE_NOTAUTH);
+			RCODE_SET(query->packet, RCODE_REFUSE);
 			return QUERY_PROCESSED;
 		}
-		if(wstats) {
-			ZTATUP(nsd, query->axfr_zone, raxfr);
-		}
 
-		query->axfr_current_domain = qdomain;
+		query->axfr_current_domain
+			= (domain_type *) rbtree_first(nsd->db->domains->names_to_domains);
 		query->axfr_current_rrset = NULL;
 		query->axfr_current_rr = 0;
+#ifdef TSIG
 		if(query->tsig.status == TSIG_OK) {
 			query->tsig_sign_it = 1; /* sign first packet in stream */
 		}
+#endif /* TSIG */
 
-		query_add_compression_domain(query, qdomain, QHEADERSZ);
+		query_add_compression_domain(query, query->domain, QHEADERSZ);
 
 		assert(query->axfr_zone->soa_rrset->rr_count == 1);
 		added = packet_encode_rr(query,
 					 query->axfr_zone->apex,
-					 &query->axfr_zone->soa_rrset->rrs[0],
-					 query->axfr_zone->soa_rrset->rrs[0].ttl);
+					 &query->axfr_zone->soa_rrset->rrs[0]);
 		if (!added) {
 			/* XXX: This should never happen... generate error code? */
 			abort();
@@ -101,10 +95,9 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 	}
 
 	/* Add zone RRs until answer is full.  */
-	while (query->axfr_current_domain != NULL &&
-			domain_is_subdomain(query->axfr_current_domain,
-					    query->axfr_zone->apex))
-	{
+	assert(query->axfr_current_domain);
+
+	while ((rbnode_t *) query->axfr_current_domain != RBTREE_NULL) {
 		if (!query->axfr_current_rrset) {
 			query->axfr_current_rrset = domain_find_any_rrset(
 				query->axfr_current_domain,
@@ -116,25 +109,10 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 			    && query->axfr_current_rrset->zone == query->axfr_zone)
 			{
 				while (query->axfr_current_rr < query->axfr_current_rrset->rr_count) {
-					size_t oldmaxlen = query->maxlen;
-					if(total_added == 0)
-						/* RR > 16K can be first RR */
-						query->maxlen = (query->tcp?TCP_MAX_MESSAGE_LEN:UDP_MAX_MESSAGE_LEN);
 					added = packet_encode_rr(
 						query,
 						query->axfr_current_domain,
-						&query->axfr_current_rrset->rrs[query->axfr_current_rr],
-						query->axfr_current_rrset->rrs[query->axfr_current_rr].ttl);
-					if(total_added == 0) {
-						query->maxlen = oldmaxlen;
-						if(query_overflow(query)) {
-							if(added) {
-								++total_added;
-								++query->axfr_current_rr;
-								goto return_answer;
-							}
-						}
-					}
+						&query->axfr_current_rrset->rrs[query->axfr_current_rr]);
 					if (!added)
 						goto return_answer;
 					++total_added;
@@ -147,104 +125,37 @@ query_axfr(struct nsd *nsd, struct query *query, int wstats)
 		}
 		assert(query->axfr_current_domain);
 		query->axfr_current_domain
-			= domain_next(query->axfr_current_domain);
+			= (domain_type *) rbtree_next((rbnode_t *) query->axfr_current_domain);
 	}
 
 	/* Add terminating SOA RR.  */
 	assert(query->axfr_zone->soa_rrset->rr_count == 1);
 	added = packet_encode_rr(query,
 				 query->axfr_zone->apex,
-				 &query->axfr_zone->soa_rrset->rrs[0],
-				 query->axfr_zone->soa_rrset->rrs[0].ttl);
+				 &query->axfr_zone->soa_rrset->rrs[0]);
 	if (added) {
 		++total_added;
+#ifdef TSIG
 		query->tsig_sign_it = 1; /* sign last packet */
+#endif /* TSIG */
 		query->axfr_is_done = 1;
 	}
 
 return_answer:
-	AA_SET(query->packet);
 	ANCOUNT_SET(query->packet, total_added);
 	NSCOUNT_SET(query->packet, 0);
 	ARCOUNT_SET(query->packet, 0);
 
+#ifdef TSIG
 	/* check if it needs tsig signatures */
 	if(query->tsig.status == TSIG_OK) {
-#if AXFR_TSIG_SIGN_EVERY_NTH > 0
 		if(query->tsig.updates_since_last_prepare >= AXFR_TSIG_SIGN_EVERY_NTH) {
-#endif
 			query->tsig_sign_it = 1;
-#if AXFR_TSIG_SIGN_EVERY_NTH > 0
 		}
-#endif
 	}
+#endif /* TSIG */
 	query_clear_compression_tables(query);
 	return QUERY_IN_AXFR;
-}
-
-/* See if the query can be admitted. */
-static int axfr_ixfr_can_admit_query(struct nsd* nsd, struct query* q)
-{
-	struct acl_options *acl = NULL;
-	struct zone_options* zone_opt;
-	zone_opt = zone_options_find(nsd->options, q->qname);
-	if(zone_opt && q->is_proxied && acl_check_incoming_block_proxy(
-		zone_opt->pattern->provide_xfr, q, &acl) == -1) {
-		/* the proxy address is blocked */
-		if (verbosity >= 2) {
-			char address[128], proxy[128];
-			addr2str(&q->client_addr, address, sizeof(address));
-			addr2str(&q->remote_addr, proxy, sizeof(proxy));
-			VERBOSITY(2, (LOG_INFO, "%s for %s from %s via proxy %s refused because of proxy, %s %s",
-				(q->qtype==TYPE_AXFR?"axfr":"ixfr"),
-				dname_to_string(q->qname, NULL),
-				address, proxy,
-				(acl?acl->ip_address_spec:"."),
-				(acl ? ( acl->nokey    ? "NOKEY"
-				      : acl->blocked  ? "BLOCKED"
-				      : acl->key_name )
-				    : "no acl matches")));
-		}
-		RCODE_SET(q->packet, RCODE_REFUSE);
-		/* RFC8914 - Extended DNS Errors
-		 * 4.19.  Extended DNS Error Code 18 - Prohibited */
-		q->edns.ede = EDE_PROHIBITED;
-		return 0;
-	}
-	if(!zone_opt ||
-	   acl_check_incoming(zone_opt->pattern->provide_xfr, q, &acl)==-1)
-	{
-		if (verbosity >= 2) {
-			char a[128];
-			addr2str(&q->client_addr, a, sizeof(a));
-			VERBOSITY(2, (LOG_INFO, "%s for %s from %s refused, %s",
-				(q->qtype==TYPE_AXFR?"axfr":"ixfr"),
-				dname_to_string(q->qname, NULL), a, acl?"blocked":"no acl matches"));
-		}
-		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "%s refused, %s",
-			(q->qtype==TYPE_AXFR?"axfr":"ixfr"),
-			acl?"blocked":"no acl matches"));
-		if (!zone_opt) {
-			RCODE_SET(q->packet, RCODE_NOTAUTH);
-		} else {
-			RCODE_SET(q->packet, RCODE_REFUSE);
-			/* RFC8914 - Extended DNS Errors
-			 * 4.19.  Extended DNS Error Code 18 - Prohibited */
-			q->edns.ede = EDE_PROHIBITED;
-		}
-		return 0;
-	}
-	DEBUG(DEBUG_XFRD,1, (LOG_INFO, "%s admitted acl %s %s",
-		(q->qtype==TYPE_AXFR?"axfr":"ixfr"),
-		acl->ip_address_spec, acl->key_name?acl->key_name:"NOKEY"));
-	if (verbosity >= 1) {
-		char a[128];
-		addr2str(&q->client_addr, a, sizeof(a));
-		VERBOSITY(1, (LOG_INFO, "%s for %s from %s",
-			(q->qtype==TYPE_AXFR?"axfr":"ixfr"),
-			dname_to_string(q->qname, NULL), a));
-	}
-	return 1;
 }
 
 /*
@@ -253,30 +164,37 @@ static int axfr_ixfr_can_admit_query(struct nsd* nsd, struct query* q)
 query_state_type
 answer_axfr_ixfr(struct nsd *nsd, struct query *q)
 {
+	acl_options_t *acl;
 	/* Is it AXFR? */
 	switch (q->qtype) {
 	case TYPE_AXFR:
 		if (q->tcp) {
-			if(!axfr_ixfr_can_admit_query(nsd, q))
+			zone_options_t* zone_opt;
+			zone_opt = zone_options_find(nsd->options, q->qname);
+			if(!zone_opt ||
+			   acl_check_incoming(zone_opt->provide_xfr, q, &acl)==-1)
+			{
+				char address[128];
+
+				if (addr2ip(q->addr, address, 128)) {
+					DEBUG(DEBUG_XFRD,1, (LOG_INFO,
+						"addr2ip failed"));
+					strcpy(address, "[unknown]");
+				}
+
+				VERBOSITY(1, (LOG_INFO, "axfr for zone %s from client %s refused, %s", dname_to_string(q->qname, NULL), address, acl?"blocked":"no acl matches"));
+				DEBUG(DEBUG_XFRD,1, (LOG_INFO, "axfr refused, %s",
+						acl?"blocked":"no acl matches"));
+				RCODE_SET(q->packet, RCODE_REFUSE);
 				return QUERY_PROCESSED;
-			return query_axfr(nsd, q, 1);
+			}
+			DEBUG(DEBUG_XFRD,1, (LOG_INFO, "axfr admitted acl %s %s",
+				acl->ip_address_spec, acl->key_name?acl->key_name:"NOKEY"));
+			return query_axfr(nsd, q);
 		}
-		/* AXFR over UDP queries are discarded. */
+	case TYPE_IXFR:
 		RCODE_SET(q->packet, RCODE_IMPL);
 		return QUERY_PROCESSED;
-	case TYPE_IXFR:
-		if(!axfr_ixfr_can_admit_query(nsd, q)) {
-			/* get rid of authority section, if present */
-			NSCOUNT_SET(q->packet, 0);
-			ARCOUNT_SET(q->packet, 0);
-			if(QDCOUNT(q->packet) > 0 && (size_t)QHEADERSZ+4+
-				q->qname->name_size <= buffer_limit(q->packet)) {
-				buffer_set_position(q->packet, QHEADERSZ+4+
-					q->qname->name_size);
-			}
-			return QUERY_PROCESSED;
-		}
-		return query_ixfr(nsd, q);
 	default:
 		return QUERY_DISCARDED;
 	}

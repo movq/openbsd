@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -45,15 +45,9 @@
 #include "util/rbtree.h"
 #include "services/modstack.h"
 #include "libunbound/unbound.h"
-#include "libunbound/unbound-event.h"
 #include "util/data/packed_rrset.h"
 struct libworker;
 struct tube;
-struct sldns_buffer;
-struct ub_event_base;
-
-/** store that the logfile has a debug override */
-extern int ctx_logfile_overridden;
 
 /**
  * The context structure
@@ -65,17 +59,17 @@ extern int ctx_logfile_overridden;
 struct ub_ctx {
 	/* --- pipes --- */
 	/** mutex on query write pipe */
-	lock_basic_type qqpipe_lock;
+	lock_basic_t qqpipe_lock;
 	/** the query write pipe */
 	struct tube* qq_pipe;
 	/** mutex on result read pipe */
-	lock_basic_type rrpipe_lock;
+	lock_basic_t rrpipe_lock;
 	/** the result read pipe */
 	struct tube* rr_pipe;
 
 	/* --- shared data --- */
 	/** mutex for access to env.cfg, finalized and dothread */
-	lock_basic_type cfglock;
+	lock_basic_t cfglock;
 	/** 
 	 * The context has been finalized 
 	 * This is after config when the first resolve is done.
@@ -88,19 +82,13 @@ struct ub_ctx {
 	/** pid of bg worker process */
 	pid_t bg_pid;
 	/** tid of bg worker thread */
-	ub_thread_type bg_tid;
-	/** pid when pipes are created. This was the process when the
-	 * setup was called. Helps with clean up, so we can tell after a fork
-	 * which side of the fork the delete is on. */
-	pid_t pipe_pid;
-	/** when threaded, the worker that exists in the created thread. */
-	struct libworker* thread_worker;
+	ub_thread_t bg_tid;
 
 	/** do threading (instead of forking) for async resolution */
 	int dothread;
 	/** next thread number for new threads */
 	int thr_next_num;
-	/** if logfile is overridden */
+	/** if logfile is overriden */
 	int logfile_override;
 	/** what logfile to use instead */
 	FILE* log_out;
@@ -123,14 +111,6 @@ struct ub_ctx {
 	/** random state used to seed new random state structures */
 	struct ub_randstate* seed_rnd;
 
-	/** event base for event oriented interface */
-	struct ub_event_base* event_base;
-	/** true if the event_base is a pluggable base that is malloced
-	 * with a user event base inside, if so, clean up the pluggable alloc*/
-	int event_base_malloced;
-	/** libworker for event based interface */
-	struct libworker* event_worker;
-
 	/** next query number (to try) to use */
 	int next_querynum;
 	/** number of async queries outstanding */
@@ -142,7 +122,7 @@ struct ub_ctx {
 	 * Used to see if querynum is free for use.
 	 * Content of type ctx_query.
 	 */ 
-	rbtree_type queries;
+	rbtree_t queries;
 };
 
 /**
@@ -153,7 +133,7 @@ struct ub_ctx {
  */
 struct ctx_query {
 	/** node in rbtree, must be first entry, key is ptr to the querynum */
-	struct rbnode_type node;
+	struct rbnode_t node;
 	/** query id number, key for node */
 	int querynum;
 	/** was this an async query? */
@@ -161,10 +141,8 @@ struct ctx_query {
 	/** was this query cancelled (for bg worker) */
 	int cancelled;
 
-	/** for async query, the callback function of type ub_callback_type */
-	ub_callback_type cb;
-	/** for event callbacks the type is ub_event_callback_type */
-        ub_event_callback_type cb_event;
+	/** for async query, the callback function */
+	ub_callback_t cb;
 	/** for async query, the callback user arg */
 	void* cb_arg;
 
@@ -180,6 +158,35 @@ struct ctx_query {
 	/** result structure, also contains original query, type, class.
 	 * malloced ptr ready to hand to the client. */
 	struct ub_result* res;
+};
+
+/**
+ * The error constants
+ */
+enum ub_ctx_err {
+	/** no error */
+	UB_NOERROR = 0,
+	/** socket operation. Set to -1, so that if an error from _fd() is
+	 * passed (-1) it gives a socket error. */
+	UB_SOCKET = -1,
+	/** alloc failure */
+	UB_NOMEM = -2,
+	/** syntax error */
+	UB_SYNTAX = -3,
+	/** DNS service failed */
+	UB_SERVFAIL = -4,
+	/** fork() failed */
+	UB_FORKFAIL = -5,
+	/** cfg change after finalize() */
+	UB_AFTERFINAL = -6,
+	/** initialization failed (bad settings) */
+	UB_INITFAIL = -7,
+	/** error in pipe communication with async bg worker */
+	UB_PIPE = -8,
+	/** error reading from file (resolv.conf) */
+	UB_READFILE = -9,
+	/** error async_id does not exist or result already been delivered */
+	UB_NOID = -10
 };
 
 /**
@@ -224,13 +231,11 @@ void context_query_delete(struct ctx_query* q);
  * @param rrtype: type
  * @param rrclass: class
  * @param cb: callback for async, or NULL for sync.
- * @param cb_event: event callback for async, or NULL for sync.
  * @param cbarg: user arg for async queries.
  * @return new ctx_query or NULL for malloc failure.
  */
-struct ctx_query* context_new(struct ub_ctx* ctx, const char* name, int rrtype,
-        int rrclass,  ub_callback_type cb, ub_event_callback_type cb_event,
-	void* cbarg);
+struct ctx_query* context_new(struct ub_ctx* ctx, char* name, int rrtype,
+        int rrclass, ub_callback_t cb, void* cbarg);
 
 /**
  * Get a new alloc. Creates a new one or uses a cached one.
@@ -270,7 +275,7 @@ uint8_t* context_serialize_new_query(struct ctx_query* q, uint32_t* len);
  * @return: an alloc, or NULL on mem error.
  */
 uint8_t* context_serialize_answer(struct ctx_query* q, int err, 
-	struct sldns_buffer* pkt, uint32_t* len);
+	ldns_buffer* pkt, uint32_t* len);
 
 /**
  * Serialize a query cancellation. Serializes query async id

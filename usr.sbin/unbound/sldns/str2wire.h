@@ -23,27 +23,9 @@ extern "C" {
 #endif
 struct sldns_struct_lookup_table;
 
-#define LDNS_IP4ADDRLEN      (32/8)
-#define LDNS_IP6ADDRLEN      (128/8)
-
 /** buffer to read an RR, cannot be larger than 64K because of packet size */
 #define LDNS_RR_BUF_SIZE 65535 /* bytes */
 #define LDNS_DEFAULT_TTL	3600
-
-/* SVCB keys currently defined in draft-ietf-dnsop-svcb-https */
-#define SVCB_KEY_MANDATORY		0
-#define SVCB_KEY_ALPN			1
-#define SVCB_KEY_NO_DEFAULT_ALPN	2
-#define SVCB_KEY_PORT			3
-#define SVCB_KEY_IPV4HINT		4
-#define SVCB_KEY_ECH			5
-#define SVCB_KEY_IPV6HINT		6
-#define SVCB_KEY_DOHPATH		7
-#define SVCPARAMKEY_COUNT		8
-
-#define MAX_NUMBER_OF_SVCPARAMS	64
-
-#define SVCB_MAX_COMMA_SEPARATED_VALUES	1000
 
 /*
  * To convert class and type to string see
@@ -188,7 +170,7 @@ uint8_t* sldns_wirerr_get_rdatawl(uint8_t* rr, size_t len, size_t dname_len);
 #define LDNS_WIREPARSE_MASK 0x0fff
 #define LDNS_WIREPARSE_SHIFT 12
 #define LDNS_WIREPARSE_ERROR(e) ((e)&LDNS_WIREPARSE_MASK)
-#define LDNS_WIREPARSE_OFFSET(e) ((((unsigned)(e))&~LDNS_WIREPARSE_MASK)>>LDNS_WIREPARSE_SHIFT)
+#define LDNS_WIREPARSE_OFFSET(e) (((e)&~LDNS_WIREPARSE_MASK)>>LDNS_WIREPARSE_SHIFT)
 /* use lookuptable to get error string, sldns_wireparse_errors */
 #define LDNS_WIREPARSE_ERR_OK 0
 #define LDNS_WIREPARSE_ERR_GENERAL 342
@@ -222,21 +204,6 @@ uint8_t* sldns_wirerr_get_rdatawl(uint8_t* rr, size_t len, size_t dname_len);
 #define LDNS_WIREPARSE_ERR_SYNTAX_INTEGER_OVERFLOW 370
 #define LDNS_WIREPARSE_ERR_INCLUDE 371
 #define LDNS_WIREPARSE_ERR_PARENTHESIS 372
-#define LDNS_WIREPARSE_ERR_SVCB_UNKNOWN_KEY 373
-#define LDNS_WIREPARSE_ERR_SVCB_MISSING_PARAM 374
-#define LDNS_WIREPARSE_ERR_SVCB_TOO_MANY_PARAMS 375
-#define LDNS_WIREPARSE_ERR_SVCB_DUPLICATE_KEYS 376
-#define LDNS_WIREPARSE_ERR_SVCB_MANDATORY_TOO_MANY_KEYS 377
-#define LDNS_WIREPARSE_ERR_SVCB_MANDATORY_MISSING_PARAM 378
-#define LDNS_WIREPARSE_ERR_SVCB_MANDATORY_DUPLICATE_KEY 379
-#define LDNS_WIREPARSE_ERR_SVCB_MANDATORY_IN_MANDATORY 380
-#define LDNS_WIREPARSE_ERR_SVCB_PORT_VALUE_SYNTAX 381
-#define LDNS_WIREPARSE_ERR_SVCB_IPV4_TOO_MANY_ADDRESSES 382
-#define LDNS_WIREPARSE_ERR_SVCB_IPV6_TOO_MANY_ADDRESSES 383
-#define LDNS_WIREPARSE_ERR_SVCB_ALPN_KEY_TOO_LARGE 384
-#define LDNS_WIREPARSE_ERR_SVCB_NO_DEFAULT_ALPN_VALUE 385
-#define LDNS_WIREPARSE_ERR_SVCPARAM_BROKEN_RDATA 386
-
 
 /**
  * Get reference to a constant string for the (parse) error.
@@ -270,8 +237,6 @@ struct sldns_file_parse_state {
  * @param rr: this is malloced by the user and the result is stored here,
  * 	if an RR is read.  If no RR is read this is signalled with the
  * 	return len set to 0 (for ORIGIN, TTL directives).
- * 	The read line is available in the rr_buf (zero terminated), for
- * 	$DIRECTIVE style elements.
  * @param len: on input, the length of the rr buffer.  on output the rr len.
  * 	Buffer size of 64k should be enough.
  * @param dname_len: returns the length of the dname initial part of the rr.
@@ -453,24 +418,6 @@ int sldns_str2wire_time_buf(const char* str, uint8_t* rd, size_t* len);
 int sldns_str2wire_period_buf(const char* str, uint8_t* rd, size_t* len);
 
 /**
- * Convert rdf of type LDNS_RDF_TYPE_TSIGTIME from string to wireformat.
- * @param str: the text to convert for this rdata element.
- * @param rd: rdata buffer for the wireformat.
- * @param len: length of rd buffer on input, used length on output.
- * @return 0 on success, error on failure.
- */
-int sldns_str2wire_tsigtime_buf(const char* str, uint8_t* rd, size_t* len);
-
-/**
- * Convert rdf of type LDNS_RDF_TYPE_TSIGERROR from string to wireformat.
- * @param str: the text to convert for this rdata element.
- * @param rd: rdata buffer for the wireformat.
- * @param len: length of rd buffer on input, used length on output.
- * @return 0 on success, error on failure.
- */
-int sldns_str2wire_tsigerror_buf(const char* str, uint8_t* rd, size_t* len);
-
-/**
  * Convert rdf of type LDNS_RDF_TYPE_LOC from string to wireformat.
  * @param str: the text to convert for this rdata element.
  * @param rd: rdata buffer for the wireformat.
@@ -587,12 +534,6 @@ int sldns_str2wire_hip_buf(const char* str, uint8_t* rd, size_t* len);
  */
 int sldns_str2wire_int16_data_buf(const char* str, uint8_t* rd, size_t* len);
 
-/**
- * Strip whitespace from the start and the end of line.
- * @param line: modified with 0 to shorten it.
- * @return new start with spaces skipped.
- */
-char * sldns_strip_ws(char *line);
 #ifdef __cplusplus
 }
 #endif

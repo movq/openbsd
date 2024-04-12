@@ -1,5 +1,5 @@
 /*
- * tsig.c -- TSIG implementation (RFC 2845).
+ * tsig.h -- TSIG definitions (RFC 2845).
  *
  * Copyright (c) 2001-2006, NLnet Labs. All rights reserved.
  *
@@ -8,7 +8,7 @@
  */
 
 
-#include "config.h"
+#include <config.h>
 #include <stdlib.h>
 #include <ctype.h>
 
@@ -17,72 +17,16 @@
 #include "dns.h"
 #include "packet.h"
 #include "query.h"
-#include "rbtree.h"
-
-#if !defined(HAVE_SSL) || !defined(HAVE_CRYPTO_MEMCMP)
-/* we need fixed time compare */
-#define CRYPTO_memcmp memcmp_fixedtime
-int memcmp_fixedtime(const void *s1, const void *s2, size_t n)
-{
-	size_t i;
-	const uint8_t* u1 = (const uint8_t*)s1;
-	const uint8_t* u2 = (const uint8_t*)s2;
-	int ret = 0, haveit = 0, bret = 0, bhaveit = 0;
-	/* this routine loops for every byte in the strings.
-	 * every loop, it tests ==, < and >.  All three.  One succeeds,
-	 * as every time it must be equal, smaller or larger.  The one
-	 * that succeeds has one if-comparison and two assignments. */
-	for(i=0; i<n; i++) {
-		if(u1[i] == u2[i]) {
-			/* waste time equal to < and > statements */
-			if(haveit) {
-				bret = -1; /* waste time */
-				bhaveit = 1;
-			} else {
-				bret = 1; /* waste time */
-				bhaveit = 1;
-			}
-		}
-		if(u1[i] < u2[i]) {
-			if(haveit) {
-				bret = -1; /* waste time equal to the else */
-				bhaveit = 1;
-			} else {
-				ret = -1;
-				haveit = 1;
-			}
-		}
-		if(u1[i] > u2[i]) {
-			if(haveit) {
-				bret = 1; /* waste time equal to the else */
-				bhaveit = 1;
-			} else {
-				ret = 1;
-				haveit = 1;
-			}
-		}
-	}
-	/* use the variables to stop the compiler from excluding them */
-	if(bhaveit) {
-		if(bret == -2)
-			ret = 0; /* never happens */
-	} else {
-		if(bret == -2)
-			ret = 0; /* never happens */
-	}
-	return ret;
-}
-#endif
 
 static region_type *tsig_region;
 
 struct tsig_key_table
 {
-	rbnode_type node; /* by dname */
+	struct tsig_key_table *next;
 	tsig_key_type *key;
 };
 typedef struct tsig_key_table tsig_key_table_type;
-static rbtree_type *tsig_key_table;
+static tsig_key_table_type *tsig_key_table;
 
 struct tsig_algorithm_table
 {
@@ -92,6 +36,18 @@ struct tsig_algorithm_table
 typedef struct tsig_algorithm_table tsig_algorithm_table_type;
 static tsig_algorithm_table_type *tsig_algorithm_table;
 static size_t max_algo_digest_size = 0;
+
+tsig_lookup_algorithm_table tsig_supported_algorithms[] = {
+	{ TSIG_HMAC_MD5, "hmac-md5" },
+#ifdef HAVE_EVP_SHA1
+	{ TSIG_HMAC_SHA1, "hmac-sha1" },
+#endif /* HAVE_EVP_SHA1 */
+
+#ifdef HAVE_EVP_SHA256
+	{ TSIG_HMAC_SHA256, "hmac-sha256" },
+#endif /* HAVE_EVP_SHA256 */
+        { 0, NULL }
+};
 
 static void
 tsig_digest_variables(tsig_record_type *tsig, int tsig_timers_only)
@@ -140,53 +96,27 @@ tsig_digest_variables(tsig_record_type *tsig, int tsig_timers_only)
 	}
 }
 
-static int
-tree_dname_compare(const void* a, const void* b)
-{
-	return dname_compare((const dname_type*)a, (const dname_type*)b);
-}
-
 int
 tsig_init(region_type *region)
 {
 	tsig_region = region;
-	tsig_key_table = rbtree_create(region, &tree_dname_compare);
+	tsig_key_table = NULL;
 	tsig_algorithm_table = NULL;
 
-#if defined(HAVE_SSL)
+#if defined(TSIG) && defined(HAVE_SSL)
 	return tsig_openssl_init(region);
-#endif /* defined(HAVE_SSL) */
+#endif
 	return 1;
 }
 
 void
 tsig_add_key(tsig_key_type *key)
 {
-	tsig_key_table_type *entry = (tsig_key_table_type *) region_alloc_zero(
+	tsig_key_table_type *entry = (tsig_key_table_type *) region_alloc(
 		tsig_region, sizeof(tsig_key_table_type));
 	entry->key = key;
-	entry->node.key = entry->key->name;
-	(void)rbtree_insert(tsig_key_table, &entry->node);
-}
-
-void
-tsig_del_key(tsig_key_type *key)
-{
-	tsig_key_table_type *entry;
-	if(!key) return;
-	entry = (tsig_key_table_type*)rbtree_delete(tsig_key_table, key->name);
-	if(!entry) return;
-	region_recycle(tsig_region, entry, sizeof(tsig_key_table_type));
-}
-
-tsig_key_type*
-tsig_find_key(const dname_type* name)
-{
-	tsig_key_table_type* entry;
-	entry = (tsig_key_table_type*)rbtree_search(tsig_key_table, name);
-	if(entry)
-		return entry->key;
-	return NULL;
+	entry->next = tsig_key_table;
+	tsig_key_table = entry;
 }
 
 void
@@ -209,8 +139,8 @@ int
 tsig_strlowercmp(const char* str1, const char* str2)
 {
 	while (str1 && str2 && *str1 != '\0' && *str2 != '\0') {
-		if(tolower((unsigned char)*str1) != tolower((unsigned char)*str2)) {
-			if(tolower((unsigned char)*str1) < tolower((unsigned char)*str2))
+		if(tolower((int)*str1) != tolower((int)*str2)) {
+			if(tolower((int)*str1) < tolower((int)*str2))
 				return -1;
 			return 1;
 		}
@@ -247,14 +177,24 @@ tsig_get_algorithm_by_name(const char *name)
 		{
 			return algorithm_entry->algorithm;
 		}
-		if(strncmp("hmac-", algorithm_entry->algorithm->short_name, 5) == 0 && tsig_strlowercmp(name, algorithm_entry->algorithm->short_name+5) == 0) {
-			return algorithm_entry->algorithm;
-		}
 	}
 
 	return NULL;
 }
 
+/*
+ * Find an HMAC algorithm based on its id.
+ */
+tsig_algorithm_type *
+tsig_get_algorithm_by_id(uint8_t alg)
+{
+	int i=0;
+	for (/*empty*/; tsig_supported_algorithms[i].id > 0; i++) {
+		if (tsig_supported_algorithms[i].id == alg)
+			return tsig_get_algorithm_by_name(tsig_supported_algorithms[i].short_name);
+	}
+	return NULL;
+}
 
 const char *
 tsig_error(int error_code)
@@ -308,18 +248,8 @@ tsig_create_record_custom(tsig_record_type *tsig, region_type *region,
 		large_object_size, initial_cleanup_size, 0);
 	tsig->context_region = region_create_custom(xalloc, free, chunk_size,
 		large_object_size, initial_cleanup_size, 0);
-	if(region)
-		region_add_cleanup(region, tsig_cleanup, tsig);
+	region_add_cleanup(region, tsig_cleanup, tsig);
 	tsig_init_record(tsig, NULL, NULL);
-}
-
-void
-tsig_delete_record(tsig_record_type* tsig, region_type* region)
-{
-	if(region)
-		region_remove_cleanup(region, tsig_cleanup, tsig);
-	region_destroy(tsig->rr_region);
-	region_destroy(tsig->context_region);
 }
 
 void
@@ -342,6 +272,7 @@ tsig_init_record(tsig_record_type *tsig,
 int
 tsig_from_query(tsig_record_type *tsig)
 {
+	tsig_key_table_type *key_entry;
 	tsig_key_type *key = NULL;
 	tsig_algorithm_table_type *algorithm_entry;
 	tsig_algorithm_type *algorithm = NULL;
@@ -352,7 +283,16 @@ tsig_from_query(tsig_record_type *tsig)
 	assert(!tsig->algorithm);
 	assert(!tsig->key);
 
-	key = (tsig_key_type*)tsig_find_key(tsig->key_name);
+	/* XXX: TODO: slow linear check for keyname */
+	for (key_entry = tsig_key_table;
+	     key_entry;
+	     key_entry = key_entry->next)
+	{
+		if (dname_compare(tsig->key_name, key_entry->key->name) == 0) {
+			key = key_entry->key;
+			break;
+		}
+	}
 
 	for (algorithm_entry = tsig_algorithm_table;
 	     algorithm_entry;
@@ -530,7 +470,7 @@ tsig_verify(tsig_record_type *tsig)
 				    &tsig->prior_mac_size);
 
 	if (tsig->mac_size != tsig->prior_mac_size
-	    || CRYPTO_memcmp(tsig->mac_data,
+	    || memcmp(tsig->mac_data,
 		      tsig->prior_mac_data,
 		      tsig->mac_size) != 0)
 	{
@@ -546,21 +486,16 @@ int
 tsig_find_rr(tsig_record_type *tsig, buffer_type *packet)
 {
 	size_t saved_position = buffer_position(packet);
-	size_t rrcount = ((size_t)QDCOUNT(packet)
-			  + (size_t)ANCOUNT(packet)
-			  + (size_t)NSCOUNT(packet)
-			  + (size_t)ARCOUNT(packet));
+	size_t rrcount = (QDCOUNT(packet)
+			  + ANCOUNT(packet)
+			  + NSCOUNT(packet)
+			  + ARCOUNT(packet));
 	size_t i;
 	int result;
 
 	if (ARCOUNT(packet) == 0) {
 		tsig->status = TSIG_NOT_PRESENT;
 		return 1;
-	}
-	if(rrcount > 65530) {
-		/* impossibly high number of records in 64k, reject packet */
-		buffer_set_position(packet, saved_position);
-		return 0;
 	}
 
 	buffer_set_position(packet, QHEADERSZ);
@@ -640,12 +575,6 @@ tsig_parse_rr(tsig_record_type *tsig, buffer_type *packet)
 		tsig->mac_size = 0;
 		return 0;
 	}
-	if(tsig->mac_size > 16384) {
-		/* the hash should not be too big, really 512/8=64 bytes */
-		buffer_set_position(packet, tsig->position);
-		tsig->mac_size = 0;
-		return 0;
-	}
 	tsig->mac_data = (uint8_t *) region_alloc_init(
 		tsig->rr_region, buffer_current(packet), tsig->mac_size);
 	buffer_skip(packet, tsig->mac_size);
@@ -665,6 +594,8 @@ tsig_parse_rr(tsig_record_type *tsig, buffer_type *packet)
 		tsig->rr_region, buffer_current(packet), tsig->other_size);
 	buffer_skip(packet, tsig->other_size);
 	tsig->status = TSIG_OK;
+	tsig->error_code = TSIG_ERROR_NOERROR;
+
 	return 1;
 }
 
@@ -737,7 +668,7 @@ tsig_error_reply(tsig_record_type *tsig)
 void
 tsig_finalize()
 {
-#if defined(HAVE_SSL)
+#if defined(TSIG) && defined(HAVE_SSL)
 	tsig_openssl_finalize();
-#endif /* defined(HAVE_SSL) */
+#endif
 }

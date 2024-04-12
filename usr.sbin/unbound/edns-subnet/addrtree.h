@@ -66,10 +66,10 @@ struct addrtree {
 	struct addrnode *root;
 	/** Number of elements in the tree (not always equal to number of 
 	 * nodes) */
-	uint32_t node_count;
+	unsigned int node_count;
 	/** Maximum number of allowed nodes, will be enforced by LRU list.
 	 * Excluding the root node, 0 for unlimited */
-	uint32_t max_node_count;
+	unsigned int max_node_count;
 	/** Size of tree in bytes */
 	size_t size_bytes;
 	/** Maximum prefix length we are willing to cache. */
@@ -95,10 +95,6 @@ struct addrnode {
 	time_t ttl;
 	/** Number of significant bits in address. */
 	addrlen_t scope;
-	/** Only use the element for queries for subnet/0. Set if the query
-	 * for /0 was answered with scope 0. For query /x answer scope 0,
-	 * they can match anything and this is false. */
-	int only_match_scope_zero;
 	/** A node can have 0-2 edges, set to NULL for unused */
 	struct addredge *edge[2];
 	/** edge between this node and parent */
@@ -112,7 +108,7 @@ struct addrnode {
 struct addredge {
 	/** address of connected node */
 	addrkey_t *str;
-	/** length in bits of str */
+	/** lenght in bits of str */
 	addrlen_t len;
 	/** child node this edge is connected to */
 	struct addrnode *node;
@@ -141,7 +137,7 @@ size_t addrtree_size(const struct addrtree *tree);
  */
 struct addrtree * 
 addrtree_create(addrlen_t max_depth, void (*delfunc)(void *, void *), 
-	size_t (*sizefunc)(void *), void *env, uint32_t max_node_count);
+	size_t (*sizefunc)(void *), void *env, unsigned int max_node_count);
 
 /** 
  * Free tree and all nodes below.
@@ -161,12 +157,11 @@ void addrtree_delete(struct addrtree *tree);
  * @param scope: Number of significant bits in addr.
  * @param elem: data to store in the tree.
  * @param ttl: elem is valid up to this time, seconds.
- * @param only_match_scope_zero: set for when query /0 has scope /0 answer.
  * @param now: Current time in seconds.
  */
 void addrtree_insert(struct addrtree *tree, const addrkey_t *addr, 
 	addrlen_t sourcemask, addrlen_t scope, void *elem, time_t ttl, 
-	time_t now, int only_match_scope_zero);
+	time_t now);
 
 /**
  * Find a node containing an element in the tree.

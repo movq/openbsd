@@ -37,7 +37,7 @@
  * \file
  *
  * This file contains a module that facilitates opportunistic IPsec. It does so
- * by also querying for the IPSECKEY for A/AAAA queries and calling a
+ * by also quering for the IPSECKEY for A/AAAA queries and calling a
  * configurable hook (eg. signaling an IKE daemon) before replying.
  */
 
@@ -103,11 +103,11 @@ ipsecmod_new(struct module_qstate* qstate, int id)
 {
 	struct ipsecmod_qstate* iq = (struct ipsecmod_qstate*)regional_alloc(
 		qstate->region, sizeof(struct ipsecmod_qstate));
+	memset(iq, 0, sizeof(*iq));
 	qstate->minfo[id] = iq;
 	if(!iq)
 		return 0;
 	/* Initialise it. */
-	memset(iq, 0, sizeof(*iq));
 	iq->enabled = qstate->env->cfg->ipsecmod_enabled;
 	iq->is_whitelisted = ipsecmod_domain_is_whitelisted(
 		(struct ipsecmod_env*)qstate->env->modinfo[id], qstate->qinfo.qname,
@@ -151,17 +151,6 @@ generate_request(struct module_qstate* qstate, int id, uint8_t* name,
 	ask.qclass = qclass;
 	ask.local_alias = NULL;
 	log_query_info(VERB_ALGO, "ipsecmod: generate request", &ask);
-
-	/* Explicitly check for cycle before trying to attach. Will result in
-	 * cleaner error message. The attach_sub code also checks for cycle but the
-	 * message will be out of memory in both cases then. */
-	fptr_ok(fptr_whitelist_modenv_detect_cycle(qstate->env->detect_cycle));
-	if((*qstate->env->detect_cycle)(qstate, &ask,
-		(uint16_t)(BIT_RD|flags), 0, 0)) {
-		verbose(VERB_ALGO, "Could not generate request: cycle detected");
-		return 0;
-	}
-
 	fptr_ok(fptr_whitelist_modenv_attach_sub(qstate->env->attach_sub));
 	if(!(*qstate->env->attach_sub)(qstate, &ask,
 		(uint16_t)(BIT_RD|flags), 0, 0, &newq)){
@@ -170,71 +159,6 @@ generate_request(struct module_qstate* qstate, int id, uint8_t* name,
 	}
 	qstate->ext_state[id] = module_wait_subquery;
 	return 1;
-}
-
-/**
- * Check if the string passed is a valid domain name with safe characters to
- * pass to a shell.
- * This will only allow:
- *  - digits
- *  - alphas
- *  - hyphen (not at the start)
- *  - dot (not at the start, or the only character)
- *  - underscore
- * @param s: pointer to the string.
- * @param slen: string's length.
- * @return true if s only contains safe characters; false otherwise.
- */
-static int
-domainname_has_safe_characters(char* s, size_t slen) {
-	size_t i;
-	for(i = 0; i < slen; i++) {
-		if(s[i] == '\0') return 1;
-		if((s[i] == '-' && i != 0)
-			|| (s[i] == '.' && (i != 0 || s[1] == '\0'))
-			|| (s[i] == '_') || (s[i] >= '0' && s[i] <= '9')
-			|| (s[i] >= 'A' && s[i] <= 'Z')
-			|| (s[i] >= 'a' && s[i] <= 'z')) {
-			continue;
-		}
-		return 0;
-	}
-	return 1;
-}
-
-/**
- * Check if the stringified IPSECKEY RDATA contains safe characters to pass to
- * a shell.
- * This is only relevant for checking the gateway when the gateway type is 3
- * (domainname).
- * @param s: pointer to the string.
- * @param slen: string's length.
- * @return true if s contains only safe characters; false otherwise.
- */
-static int
-ipseckey_has_safe_characters(char* s, size_t slen) {
-	int precedence, gateway_type, algorithm;
-	char* gateway;
-	gateway = (char*)calloc(slen, sizeof(char));
-	if(!gateway) {
-		log_err("ipsecmod: out of memory when calling the hook");
-		return 0;
-	}
-	if(sscanf(s, "%d %d %d %s ",
-			&precedence, &gateway_type, &algorithm, gateway) != 4) {
-		free(gateway);
-		return 0;
-	}
-	if(gateway_type != 3) {
-		free(gateway);
-		return 1;
-	}
-	if(domainname_has_safe_characters(gateway, slen)) {
-		free(gateway);
-		return 1;
-	}
-	free(gateway);
-	return 0;
 }
 
 /**
@@ -251,7 +175,7 @@ call_hook(struct module_qstate* qstate, struct ipsecmod_qstate* iq,
 {
 	size_t slen, tempdata_len, tempstring_len, i;
 	char str[65535], *s, *tempstring;
-	int w = 0, w_temp, qtype;
+	int w;
 	struct ub_packed_rrset_key* rrset_key;
 	struct packed_rrset_data* rrset_data;
 	uint8_t *tempdata;
@@ -268,9 +192,9 @@ call_hook(struct module_qstate* qstate, struct ipsecmod_qstate* iq,
 	memset(s, 0, slen);
 
 	/* Copy the hook into the buffer. */
-	w += sldns_str_print(&s, &slen, "%s", qstate->env->cfg->ipsecmod_hook);
+	sldns_str_print(&s, &slen, "%s", qstate->env->cfg->ipsecmod_hook);
 	/* Put space into the buffer. */
-	w += sldns_str_print(&s, &slen, " ");
+	sldns_str_print(&s, &slen, " ");
 	/* Copy the qname into the buffer. */
 	tempstring = sldns_wire2str_dname(qstate->qinfo.qname,
 		qstate->qinfo.qname_len);
@@ -278,96 +202,68 @@ call_hook(struct module_qstate* qstate, struct ipsecmod_qstate* iq,
 		log_err("ipsecmod: out of memory when calling the hook");
 		return 0;
 	}
-	if(!domainname_has_safe_characters(tempstring, strlen(tempstring))) {
-		log_err("ipsecmod: qname has unsafe characters");
-		free(tempstring);
-		return 0;
-	}
-	w += sldns_str_print(&s, &slen, "\"%s\"", tempstring);
+	sldns_str_print(&s, &slen, "\"%s\"", tempstring);
 	free(tempstring);
 	/* Put space into the buffer. */
-	w += sldns_str_print(&s, &slen, " ");
+	sldns_str_print(&s, &slen, " ");
 	/* Copy the IPSECKEY TTL into the buffer. */
 	rrset_data = (struct packed_rrset_data*)iq->ipseckey_rrset->entry.data;
-	w += sldns_str_print(&s, &slen, "\"%ld\"", (long)rrset_data->ttl);
+	sldns_str_print(&s, &slen, "\"%ld\"", (long)rrset_data->ttl);
 	/* Put space into the buffer. */
-	w += sldns_str_print(&s, &slen, " ");
-	rrset_key = reply_find_answer_rrset(&qstate->return_msg->qinfo,
-		qstate->return_msg->rep);
-	/* Double check that the records are indeed A/AAAA.
-	 * This should never happen as this function is only executed for A/AAAA
-	 * queries but make sure we don't pass anything other than A/AAAA to the
-	 * shell. */
-	qtype = ntohs(rrset_key->rk.type);
-	if(qtype != LDNS_RR_TYPE_AAAA && qtype != LDNS_RR_TYPE_A) {
-		log_err("ipsecmod: Answer is not of A or AAAA type");
-		return 0;
-	}
-	rrset_data = (struct packed_rrset_data*)rrset_key->entry.data;
+	sldns_str_print(&s, &slen, " ");
 	/* Copy the A/AAAA record(s) into the buffer. Start and end this section
 	 * with a double quote. */
-	w += sldns_str_print(&s, &slen, "\"");
+	rrset_key = reply_find_answer_rrset(&qstate->return_msg->qinfo,
+		qstate->return_msg->rep);
+	rrset_data = (struct packed_rrset_data*)rrset_key->entry.data;
+	sldns_str_print(&s, &slen, "\"");
 	for(i=0; i<rrset_data->count; i++) {
 		if(i > 0) {
 			/* Put space into the buffer. */
-			w += sldns_str_print(&s, &slen, " ");
+			sldns_str_print(&s, &slen, " ");
 		}
 		/* Ignore the first two bytes, they are the rr_data len. */
-		w_temp = sldns_wire2str_rdata_buf(rrset_data->rr_data[i] + 2,
+		w = sldns_wire2str_rdata_buf(rrset_data->rr_data[i] + 2,
 			rrset_data->rr_len[i] - 2, s, slen, qstate->qinfo.qtype);
-		if(w_temp < 0) {
+		if(w < 0) {
 			/* Error in printout. */
-			log_err("ipsecmod: Error in printing IP address");
-			return 0;
-		} else if((size_t)w_temp >= slen) {
+			return -1;
+		} else if((size_t)w >= slen) {
 			s = NULL; /* We do not want str to point outside of buffer. */
 			slen = 0;
-			log_err("ipsecmod: shell command too long");
-			return 0;
+			return -1;
 		} else {
-			s += w_temp;
-			slen -= w_temp;
-			w += w_temp;
+			s += w;
+			slen -= w;
 		}
 	}
-	w += sldns_str_print(&s, &slen, "\"");
+	sldns_str_print(&s, &slen, "\"");
 	/* Put space into the buffer. */
-	w += sldns_str_print(&s, &slen, " ");
+	sldns_str_print(&s, &slen, " ");
 	/* Copy the IPSECKEY record(s) into the buffer. Start and end this section
 	 * with a double quote. */
-	w += sldns_str_print(&s, &slen, "\"");
+	sldns_str_print(&s, &slen, "\"");
 	rrset_data = (struct packed_rrset_data*)iq->ipseckey_rrset->entry.data;
 	for(i=0; i<rrset_data->count; i++) {
 		if(i > 0) {
 			/* Put space into the buffer. */
-			w += sldns_str_print(&s, &slen, " ");
+			sldns_str_print(&s, &slen, " ");
 		}
 		/* Ignore the first two bytes, they are the rr_data len. */
 		tempdata = rrset_data->rr_data[i] + 2;
 		tempdata_len = rrset_data->rr_len[i] - 2;
 		/* Save the buffer pointers. */
 		tempstring = s; tempstring_len = slen;
-		w_temp = sldns_wire2str_ipseckey_scan(&tempdata, &tempdata_len, &s,
-			&slen, NULL, 0, NULL);
+		w = sldns_wire2str_ipseckey_scan(&tempdata, &tempdata_len, &s, &slen,
+			NULL, 0);
 		/* There was an error when parsing the IPSECKEY; reset the buffer
 		 * pointers to their previous values. */
-		if(w_temp == -1) {
+		if(w == -1){
 			s = tempstring; slen = tempstring_len;
-		} else if(w_temp > 0) {
-			if(!ipseckey_has_safe_characters(
-					tempstring, tempstring_len - slen)) {
-				log_err("ipsecmod: ipseckey has unsafe characters");
-				return 0;
-			}
-			w += w_temp;
 		}
 	}
-	w += sldns_str_print(&s, &slen, "\"");
-	if(w >= (int)sizeof(str)) {
-		log_err("ipsecmod: shell command too long");
-		return 0;
-	}
-	verbose(VERB_ALGO, "ipsecmod: shell command: '%s'", str);
+	sldns_str_print(&s, &slen, "\"");
+	verbose(VERB_ALGO, "ipsecmod: hook command: '%s'", str);
 	/* ipsecmod-hook should return 0 on success. */
 	if(system(str) != 0)
 		return 0;
@@ -419,7 +315,6 @@ ipsecmod_handle_query(struct module_qstate* qstate,
 			if(!qstate->env->cfg->ipsecmod_ignore_bogus &&
 				rrset_data->security == sec_status_bogus) {
 				log_err("ipsecmod: bogus IPSECKEY");
-				errinf(qstate, "ipsecmod: bogus IPSECKEY");
 				ipsecmod_error(qstate, id);
 				return;
 			}
@@ -427,7 +322,6 @@ ipsecmod_handle_query(struct module_qstate* qstate,
 			if(!call_hook(qstate, iq, ie) &&
 				qstate->env->cfg->ipsecmod_strict) {
 				log_err("ipsecmod: ipsecmod-hook failed");
-				errinf(qstate, "ipsecmod: ipsecmod-hook failed");
 				ipsecmod_error(qstate, id);
 				return;
 			}
@@ -447,8 +341,6 @@ ipsecmod_handle_query(struct module_qstate* qstate,
 						qstate->env->cfg->ipsecmod_max_ttl;
 					qstate->return_msg->rep->prefetch_ttl = PREFETCH_TTL_CALC(
 						qstate->return_msg->rep->ttl);
-					qstate->return_msg->rep->serve_expired_ttl = qstate->return_msg->rep->ttl +
-						qstate->env->cfg->serve_expired_ttl;
 				}
 			}
 		}
@@ -456,7 +348,7 @@ ipsecmod_handle_query(struct module_qstate* qstate,
 	/* Store A/AAAA in cache. */
 	if(!dns_cache_store(qstate->env, &qstate->qinfo,
 		qstate->return_msg->rep, 0, qstate->prefetch_leeway,
-		0, qstate->region, qstate->query_flags, qstate->qstarttime)) {
+		0, qstate->region, qstate->query_flags)) {
 		log_err("ipsecmod: out of memory caching record");
 	}
 	qstate->ext_state[id] = module_finished;
@@ -499,7 +391,6 @@ ipsecmod_handle_response(struct module_qstate* qstate,
 			qstate->qinfo.qname_len, LDNS_RR_TYPE_IPSECKEY,
 			qstate->qinfo.qclass, 0)) {
 			log_err("ipsecmod: could not generate subquery.");
-			errinf(qstate, "ipsecmod: could not generate subquery.");
 			ipsecmod_error(qstate, id);
 		}
 		return;
@@ -523,7 +414,6 @@ ipsecmod_operate(struct module_qstate* qstate, enum module_ev event, int id,
 	if((event == module_event_new || event == module_event_pass) &&
 		iq == NULL) {
 		if(!ipsecmod_new(qstate, id)) {
-			errinf(qstate, "ipsecmod: could not ipsecmod_new");
 			ipsecmod_error(qstate, id);
 			return;
 		}
@@ -546,7 +436,6 @@ ipsecmod_operate(struct module_qstate* qstate, enum module_ev event, int id,
 	}
 	if(event == module_event_error) {
 		verbose(VERB_ALGO, "got called with event error, giving up");
-		errinf(qstate, "ipsecmod: got called with event error");
 		ipsecmod_error(qstate, id);
 		return;
 	}
@@ -557,7 +446,6 @@ ipsecmod_operate(struct module_qstate* qstate, enum module_ev event, int id,
 	}
 
 	log_err("ipsecmod: bad event %s", strmodulevent(event));
-	errinf(qstate, "ipsecmod: operate got bad event");
 	ipsecmod_error(qstate, id);
 	return;
 }

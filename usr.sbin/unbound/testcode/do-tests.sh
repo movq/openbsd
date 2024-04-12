@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
 . testdata/common.sh
-quiet=0
-if test "$1" = "-q"; then
-	quiet=1
-	tdirarg="-q"
-	shift
-fi
 
 NEED_SPLINT='00-lint.tdir'
 NEED_DOXYGEN='01-doc.tdir'
@@ -16,7 +10,6 @@ NEED_WHOAMI='07-confroot.tdir'
 NEED_IPV6='fwd_ancil.tdir fwd_tcp_tc6.tdir stub_udp6.tdir edns_cache.tdir'
 NEED_NOMINGW='tcp_sigpipe.tdir 07-confroot.tdir 08-host-lib.tdir fwd_ancil.tdir'
 NEED_DNSCRYPT_PROXY='dnscrypt_queries.tdir dnscrypt_queries_chacha.tdir'
-NEED_UNSHARE='acl_interface.tdir proxy_protocol.tdir'
 
 # test if dig and ldns-testns are available.
 test_tool_avail "dig"
@@ -36,11 +29,8 @@ else
 	HAVE_MINGW=no
 fi
 
-# stop tests from notifying systemd, if that is compiled in.
-export -n NOTIFY_SOCKET
-
 cd testdata;
-sh ../testcode/mini_tdir.sh $tdirarg clean
+sh ../testcode/mini_tdir.sh clean
 rm -f .perfstats.txt
 for test in `ls -d *.tdir`; do
 	SKIP=0
@@ -51,7 +41,6 @@ for test in `ls -d *.tdir`; do
 	skip_if_in_list $test "$NEED_NC" "nc"
 	skip_if_in_list $test "$NEED_WHOAMI" "whoami"
 	skip_if_in_list $test "$NEED_DNSCRYPT_PROXY" "dnscrypt-proxy"
-	skip_if_in_list $test "$NEED_UNSHARE" "unshare"
 
 	if echo $NEED_IPV6 | grep $test >/dev/null; then
 		if test "$HAVE_IPV6" = no; then
@@ -65,10 +54,10 @@ for test in `ls -d *.tdir`; do
 	fi
 	if test $SKIP -eq 0; then
 		echo $test
-		sh ../testcode/mini_tdir.sh -a ../.. $tdirarg exe $test
+		sh ../testcode/mini_tdir.sh -a ../.. exe $test
 	else
 		echo "skip $test"
 	fi
 done
-sh ../testcode/mini_tdir.sh $tdirarg report
+sh ../testcode/mini_tdir.sh report
 cat .perfstats.txt

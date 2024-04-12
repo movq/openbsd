@@ -45,7 +45,6 @@
 #include "util/alloc.h"
 #include "util/net_help.h"
 #include "util/storage/slabhash.h"
-#include "util/data/dname.h"
 #include "edns-subnet/addrtree.h"
 #include "edns-subnet/edns-subnet.h"
 
@@ -62,10 +61,6 @@ struct subnet_env {
 	/** allocation service */
 	struct alloc_cache alloc;
 	lock_rw_type biglock;
-	/** number of messages from cache */
-	size_t num_msg_cache;
-	/** number of messages not from cache */
-	size_t num_msg_nocache;
 };
 
 struct subnet_msg_cache_data {
@@ -76,7 +71,6 @@ struct subnet_msg_cache_data {
 struct subnet_qstate {
 	/** We need the hash for both cache lookup and insert */
 	hashvalue_type qinfo_hash;
-	int qinfo_hash_calculated;
 	/** ecs_data for client communication */
 	struct ecs_data	ecs_client_in;
 	struct ecs_data	ecs_client_out;
@@ -85,23 +79,6 @@ struct subnet_qstate {
 	struct ecs_data	ecs_server_out;
 	int subnet_downstream;
 	int subnet_sent;
-	/**
-	 * If there was no subnet sent because the client used source prefix
-	 * length 0 for omitting the information. Then the answer is cached
-	 * like subnet was a /0 scope. Like the subnet_sent flag, but when
-	 * the EDNS subnet option is omitted because the client asked.
-	 */
-	int subnet_sent_no_subnet;
-	/** keep track of longest received scope, set after receiving CNAME for
-	 * incoming QNAME. */
-	int track_max_scope;
-	/** longest received scope mask since track_max_scope is set. This value
-	 * is used for caching and answereing to client. */
-	uint8_t max_scope;
-	/** has the subnet module been started with no_cache_store? */
-	int started_no_cache_store;
-	/** has the subnet module been started with no_cache_lookup? */
-	int started_no_cache_lookup;
 };
 
 void subnet_data_delete(void* d, void* ATTR_UNUSED(arg));
@@ -142,7 +119,7 @@ int ecs_whitelist_check(struct query_info* qinfo, uint16_t flags,
 	socklen_t addrlen, uint8_t* zone, size_t zonelen,
 	struct regional* region, int id, void* cbargs);
 
-/** Check whether response from server contains ECS record, if so, skip cache
+/** Check whether reponse from server contains ECS record, if so, skip cache
  * store. Called just after parsing EDNS data from server. */
 int ecs_edns_back_parsed(struct module_qstate* qstate, int id, void* cbargs);
 
@@ -150,14 +127,4 @@ int ecs_edns_back_parsed(struct module_qstate* qstate, int id, void* cbargs);
 int ecs_query_response(struct module_qstate* qstate, struct dns_msg* response,
 	int id, void* cbargs);
 
-/** mark subnet msg to be deleted */
-void subnet_markdel(void* key);
-
-/** Add ecs struct to edns list, after parsing it to wire format. */
-void subnet_ecs_opt_list_append(struct ecs_data* ecs, struct edns_option** list,
-	struct module_qstate *qstate, struct regional *region);
-
-/** Create ecs_data from the sockaddr_storage information. */
-void subnet_option_from_ss(struct sockaddr_storage *ss, struct ecs_data* ecs,
-	struct config_file* cfg);
 #endif /* SUBNETMOD_H */

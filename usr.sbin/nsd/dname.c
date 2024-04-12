@@ -8,7 +8,7 @@
  */
 
 
-#include "config.h"
+#include <config.h>
 
 #include <sys/types.h>
 
@@ -63,7 +63,7 @@ dname_make(region_type *region, const uint8_t *name, int normalize)
 	result = (dname_type *) region_alloc(
 		region,
 		(sizeof(dname_type)
-		 + (((size_t)label_count) + ((size_t)name_size)) * sizeof(uint8_t)));
+		 + (label_count + name_size) * sizeof(uint8_t)));
 	result->name_size = name_size;
 	result->label_count = label_count;
 	memcpy((uint8_t *) dname_label_offsets(result),
@@ -76,7 +76,7 @@ dname_make(region_type *region, const uint8_t *name, int normalize)
 			ssize_t len = label_length(src);
 			*dst++ = *src++;
 			for (i = 0; i < len; ++i) {
-				*dst++ = DNAME_NORMALIZE((unsigned char)*src++);
+				*dst++ = DNAME_NORMALIZE(*src++);
 			}
 		}
 		*dst = *src;
@@ -109,9 +109,7 @@ dname_make_wire_from_packet(uint8_t *buf, buffer_type *packet,
 	const uint8_t *label;
 	ssize_t mark = -1;
 
-	if(sizeof(visited)<(buffer_limit(packet)+7)/8)
-		memset(visited, 0, sizeof(visited));
-	else	memset(visited, 0, (buffer_limit(packet)+7)/8);
+	memset(visited, 0, (buffer_limit(packet)+7)/8);
 
 	while (!done) {
 		if (!buffer_available(packet, 1)) {
@@ -215,7 +213,7 @@ int dname_parse_wire(uint8_t* dname, const char* name)
 			break;
 		case '\\':
 			/* Handle escaped characters (RFC1035 5.1) */
-			if (isdigit((unsigned char)s[1]) && isdigit((unsigned char)s[2]) && isdigit((unsigned char)s[3])) {
+			if (isdigit(s[1]) && isdigit(s[2]) && isdigit(s[3])) {
 				int val = (hexdigit_to_int(s[1]) * 100 +
 					   hexdigit_to_int(s[2]) * 10 +
 					   hexdigit_to_int(s[3]));
@@ -243,13 +241,9 @@ int dname_parse_wire(uint8_t* dname, const char* name)
 		}
 		*h = label_length;
 		h = p;
-		p++;
 	}
 
 	/* Add root label.  */
-	if (h - dname >= MAXDOMAINLEN) {
-		return 0;
-	}
 	*h = 0;
 
 	return p-dname;
@@ -334,8 +328,6 @@ dname_compare(const dname_type *left, const dname_type *right)
 	}
 
 	/* Dname with the fewest labels is "first".  */
-	/* the subtraction works because the size of int is much larger than
-	 * the label count and the values won't wrap around */
 	return (int) left->label_count - (int) right->label_count;
 }
 
@@ -362,8 +354,6 @@ label_compare(const uint8_t *left, const uint8_t *right)
 	if (result) {
 		return result;
 	} else {
-		/* the subtraction works because the size of int is much
-		 * larger than the lengths and the values won't wrap around */
 		return (int) left_length - (int) right_length;
 	}
 }
@@ -392,12 +382,6 @@ const char *
 dname_to_string(const dname_type *dname, const dname_type *origin)
 {
 	static char buf[MAXDOMAINLEN * 5];
-	return dname_to_string_buf(dname, origin, buf);
-}
-
-const char *
-dname_to_string_buf(const dname_type *dname, const dname_type *origin, char buf[MAXDOMAINLEN * 5])
-{
 	size_t i;
 	size_t labels_to_convert = dname->label_count - 1;
 	int absolute = 1;
@@ -405,7 +389,7 @@ dname_to_string_buf(const dname_type *dname, const dname_type *origin, char buf[
 	const uint8_t *src;
 
 	if (dname->label_count == 1) {
-		strlcpy(buf, ".", MAXDOMAINLEN * 5);
+		strcpy(buf, ".");
 		return buf;
 	}
 
@@ -423,7 +407,7 @@ dname_to_string_buf(const dname_type *dname, const dname_type *origin, char buf[
 		++src;
 		for (j = 0; j < len; ++j) {
 			uint8_t ch = *src++;
-			if (isalnum((unsigned char)ch) || ch == '-' || ch == '_' || ch == '*') {
+			if (isalnum(ch) || ch == '-' || ch == '_') {
 				*dst++ = ch;
 			} else if (ch == '.' || ch == '\\') {
 				*dst++ = '\\';
@@ -494,7 +478,7 @@ dname_replace(region_type* region,
 		return NULL;
 
 	res = (dname_type*)region_alloc(region, sizeof(dname_type) +
-		(x_labels+((int)dest->label_count) + x_len+((int)dest->name_size))
+		(x_labels+dest->label_count + x_len+dest->name_size)
 		*sizeof(uint8_t));
 	res->name_size = x_len+dest->name_size;
 	res->label_count = x_labels+dest->label_count;
@@ -511,77 +495,3 @@ dname_replace(region_type* region,
 	return res;
 }
 
-char* wirelabel2str(const uint8_t* label)
-{
-	static char buf[MAXDOMAINLEN*5+3];
-	char* p = buf;
-	uint8_t lablen;
-	lablen = *label++;
-	while(lablen--) {
-		uint8_t ch = *label++;
-		if (isalnum((unsigned char)ch) || ch == '-' || ch == '_' || ch == '*') {
-			*p++ = ch;
-		} else if (ch == '.' || ch == '\\') {
-			*p++ = '\\';
-			*p++ = ch;
-		} else {
-			snprintf(p, 5, "\\%03u", (unsigned int)ch);
-			p += 4;
-		}
-	}
-	*p++ = 0;
-	return buf;
-}
-
-char* wiredname2str(const uint8_t* dname)
-{
-	static char buf[MAXDOMAINLEN*5+3];
-	char* p = buf;
-	uint8_t lablen;
-	if(*dname == 0) {
-		strlcpy(buf, ".", sizeof(buf));
-		return buf;
-	}
-	lablen = *dname++;
-	while(lablen) {
-		while(lablen--) {
-			uint8_t ch = *dname++;
-			if (isalnum((unsigned char)ch) || ch == '-' || ch == '_' || ch == '*') {
-				*p++ = ch;
-			} else if (ch == '.' || ch == '\\') {
-				*p++ = '\\';
-				*p++ = ch;
-			} else {
-				snprintf(p, 5, "\\%03u", (unsigned int)ch);
-				p += 4;
-			}
-		}
-		lablen = *dname++;
-		*p++ = '.';
-	}
-	*p++ = 0;
-	return buf;
-}
-
-int dname_equal_nocase(uint8_t* a, uint8_t* b, uint16_t len)
-{
-	uint8_t i, lablen;
-	while(len > 0) {
-		/* check labellen */
-		if(*a != *b)
-			return 0;
-		lablen = *a++;
-		b++;
-		len--;
-		/* malformed or compression ptr; we stop scanning */
-		if((lablen & 0xc0) || len < lablen)
-			return (memcmp(a, b, len) == 0);
-		/* check the label, lowercased */
-		for(i=0; i<lablen; i++) {
-			if(DNAME_NORMALIZE((unsigned char)*a++) != DNAME_NORMALIZE((unsigned char)*b++))
-				return 0;
-		}
-		len -= lablen;
-	}
-	return 1;
-}

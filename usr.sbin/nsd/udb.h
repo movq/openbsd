@@ -40,21 +40,18 @@
 typedef struct udb_base udb_base;
 typedef struct udb_alloc udb_alloc;
 
-/** these checks are very slow, disabled by default */
-#if 0
 /** perform extra checks (when --enable-checking is used) */
 #ifndef NDEBUG
 #define UDB_CHECK 1
-#endif
 #endif
 
 /** pointers are stored like this */
 typedef uint64_t udb_void;
 
 /** convert relptr to usable pointer */
-#define UDB_REL(base, relptr) ((void*)((char*)(base) + (relptr)))
+#define UDB_REL(base, relptr) ((base) + (relptr))
 /** from system pointer to relative pointer */
-#define UDB_SYSTOREL(base, ptr) ((udb_void)((char*)(ptr) - (char*)(base)))
+#define UDB_SYSTOREL(base, ptr) ((udb_void)((void*)(ptr) - (base)))
 
 /** MAX 2**x exponent of alloced chunks, for 1Mbytes.  The smallest
  * chunk is 16bytes (8preamble+8data), so 0-3 is unused. */
@@ -144,7 +141,7 @@ struct udb_glob_d {
 	uint64_t hsize;
 	/** version number of this file */
 	uint8_t version;
-	/** was the file cleanly closed, 0 is not clean, 1 is clean */
+	/** was the file not cleanly closed, 0 is ok */
 	uint8_t clean_close;
 	/** an allocation operation was in progress, file needs to be salvaged
 	 * type enum udb_dirty_alloc */
@@ -165,9 +162,7 @@ struct udb_glob_d {
 	volatile uint64_t rb_size;
 	/** segment of move rollback, for an XL chunk that overlaps. */
 	volatile uint64_t rb_seg;
-	/** linked list for content-listing, 0 if empty;
-	 * this pointer is unused; and could be removed if the database
-	 * format is modified or updated. */
+	/** linked list for content-listing, 0 if empty */
 	udb_rel_ptr content_list;
 	/** user global data pointer */
 	udb_rel_ptr user_global;
@@ -198,7 +193,7 @@ struct udb_base {
 	udb_ptr** ram_hash;
 	/** size of the current udb_ptr hashtable array */
 	size_t ram_size;
-	/** mask for the current udb_ptr hashtable lookups */
+	/** mask for the curren udb_ptr hashtable lookups */
 	int ram_mask;
 	/** number of ptrs in ram, used to decide when to grow */
 	size_t ram_num;
@@ -206,11 +201,6 @@ struct udb_base {
 	udb_walk_relptr_func* walkfunc;
 	/** user data for walkfunc */
 	void* walkarg;
-
-	/** compaction is inhibited */
-	int inhibit_compact;
-	/** compaction is useful; deletions performed. */
-	int useful_compact;
 };
 
 typedef enum udb_chunk_type udb_chunk_type;
@@ -218,6 +208,14 @@ typedef enum udb_chunk_type udb_chunk_type;
 enum udb_chunk_type {
 	udb_chunk_type_free = 0,
 	udb_chunk_type_data, /* alloced data */
+	udb_chunk_type_index,
+	udb_chunk_type_radtree,
+	udb_chunk_type_radnode,
+	udb_chunk_type_radarray,
+	udb_chunk_type_zone,
+	udb_chunk_type_domain,
+	udb_chunk_type_rrset,
+	udb_chunk_type_rr,
 	udb_chunk_type_task,
 	udb_chunk_type_internal
 };
@@ -336,7 +334,7 @@ struct udb_alloc {
 /** magic string that starts an UDB file, uint64_t, note first byte=0, to mark
  * header start as a chunk. */
 #define UDB_MAGIC (((uint64_t)'u'<<48)|((uint64_t)'d'<<40)|((uint64_t)'b' \
-	<<32)|((uint64_t)'v'<<24)|((uint64_t)'0'<<16)|((uint64_t)'b'<<8))
+	<<32)|((uint64_t)'v'<<24)|((uint64_t)'0'<<16)|((uint64_t)'a'<<8))
 
 /* UDB BASE */
 /**
@@ -547,22 +545,6 @@ udb_void udb_alloc_realloc(udb_alloc* alloc, udb_void r, size_t osz,
  * @return false on failure to grow or re-mmap.
  */
 int udb_alloc_grow(udb_alloc* alloc, size_t sz, size_t num);
-
-/** 
- * attempt to compact the data and move free space to the end
- * can shrink the db, which calls sync on the db (for portability).
- * @param udb: the udb base.
- * @return 0 on failure (to remap the (possibly) changed udb base).
- */
-int udb_compact(udb_base* udb);
-
-/** 
- * set the udb to inhibit or uninhibit compaction.  Does not perform
- * the compaction itself if enabled, for that call udb_compact.
- * @param udb: the udb base
- * @param inhibit: 0 or 1.
- */
-void udb_compact_inhibited(udb_base* udb, int inhibit);
 
 /**
  * Set the alloc type for a newly alloced piece of data

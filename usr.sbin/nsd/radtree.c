@@ -137,10 +137,10 @@ radnode_find_prev_from_idx(struct radnode* n, unsigned from)
  * @return false if no prefix found, not even the root "" prefix.
  */
 static int radix_find_prefix_node(struct radtree* rt, uint8_t* k,
-	radstrlen_type len, struct radnode** result, radstrlen_type* respos)
+	radstrlen_t len, struct radnode** result, radstrlen_t* respos)
 {
 	struct radnode* n = rt->root;
-	radstrlen_type pos = 0;
+	radstrlen_t pos = 0;
 	uint8_t byte;
 	*respos = 0;
 	*result = n;
@@ -174,8 +174,6 @@ static int radix_find_prefix_node(struct radtree* rt, uint8_t* k,
 		*respos = pos;
 		*result = n;
 	}
-	/* cannot reach because of returns when !n above */
-	/* ENOTREACH */
 	return 1;
 }
 
@@ -191,7 +189,7 @@ radnode_array_grow(struct region* region, struct radnode* n, unsigned want)
 	if(ns > 256) ns = 256;
 	/* we do not use realloc, because we want to keep the old array
 	 * in case alloc fails, so that the tree is still usable */
-	a = (struct radsel*)region_alloc_array(region, ns, sizeof(struct radsel));
+	a = (struct radsel*)region_alloc(region, ns*sizeof(struct radsel));
 	if(!a) return 0;
 	assert(n->len <= n->capacity);
 	assert(n->capacity < ns);
@@ -262,7 +260,7 @@ radnode_array_space(struct region* region, struct radnode* n, uint8_t byte)
 /** create a prefix in the array strs */
 static int
 radsel_str_create(struct region* region, struct radsel* r, uint8_t* k,
-	radstrlen_type pos, radstrlen_type len)
+	radstrlen_t pos, radstrlen_t len)
 {
 	r->str = (uint8_t*)region_alloc(region, sizeof(uint8_t)*(len-pos));
 	if(!r->str)
@@ -274,8 +272,7 @@ radsel_str_create(struct region* region, struct radsel* r, uint8_t* k,
 
 /** see if one byte string p is a prefix of another x (equality is true) */
 static int
-bstr_is_prefix(uint8_t* p, radstrlen_type plen, uint8_t* x,
-	radstrlen_type xlen)
+bstr_is_prefix(uint8_t* p, radstrlen_t plen, uint8_t* x, radstrlen_t xlen)
 {
 	/* if plen is zero, it is an (empty) prefix */
 	if(plen == 0)
@@ -287,8 +284,8 @@ bstr_is_prefix(uint8_t* p, radstrlen_type plen, uint8_t* x,
 }
 
 /** number of bytes in common for the two strings */
-static radstrlen_type
-bstr_common(uint8_t* x, radstrlen_type xlen, uint8_t* y, radstrlen_type ylen)
+static radstrlen_t
+bstr_common(uint8_t* x, radstrlen_t xlen, uint8_t* y, radstrlen_t ylen)
 {
 	unsigned i, max = ((xlen<ylen)?xlen:ylen);
 	for(i=0; i<max; i++) {
@@ -300,15 +297,13 @@ bstr_common(uint8_t* x, radstrlen_type xlen, uint8_t* y, radstrlen_type ylen)
 
 
 int
-bstr_is_prefix_ext(uint8_t* p, radstrlen_type plen, uint8_t* x,
-	radstrlen_type xlen)
+bstr_is_prefix_ext(uint8_t* p, radstrlen_t plen, uint8_t* x, radstrlen_t xlen)
 {
 	return bstr_is_prefix(p, plen, x, xlen);
 }
 
-radstrlen_type
-bstr_common_ext(uint8_t* x, radstrlen_type xlen, uint8_t* y,
-	radstrlen_type ylen)
+radstrlen_t
+bstr_common_ext(uint8_t* x, radstrlen_t xlen, uint8_t* y, radstrlen_t ylen)
 {
 	return bstr_common(x, xlen, y, ylen);
 }
@@ -316,9 +311,9 @@ bstr_common_ext(uint8_t* x, radstrlen_type xlen, uint8_t* y,
 /** allocate remainder from prefixes for a split:
  * plen: len prefix, l: longer bstring, llen: length of l. */
 static int
-radsel_prefix_remainder(struct region* region, radstrlen_type plen,
-	uint8_t* l, radstrlen_type llen,
-	uint8_t** s, radstrlen_type* slen)
+radsel_prefix_remainder(struct region* region, radstrlen_t plen,
+	uint8_t* l, radstrlen_t llen,
+	uint8_t** s, radstrlen_t* slen)
 {
 	*slen = llen - plen;
 	*s = (uint8_t*)region_alloc(region, (*slen)*sizeof(uint8_t));
@@ -339,13 +334,13 @@ radsel_prefix_remainder(struct region* region, radstrlen_type plen,
  */
 static int
 radsel_split(struct region* region, struct radsel* r, uint8_t* k,
-	radstrlen_type pos, radstrlen_type len, struct radnode* add)
+	radstrlen_t pos, radstrlen_t len, struct radnode* add)
 {
 	uint8_t* addstr = k+pos;
-	radstrlen_type addlen = len-pos;
+	radstrlen_t addlen = len-pos;
 	if(bstr_is_prefix(addstr, addlen, r->str, r->len)) {
 		uint8_t* split_str=NULL, *dupstr=NULL;
-		radstrlen_type split_len=0;
+		radstrlen_t split_len=0;
 		/* 'add' is a prefix of r.node */
 		/* also for empty addstr */
 		/* set it up so that the 'add' node has r.node as child */
@@ -389,7 +384,7 @@ radsel_split(struct region* region, struct radsel* r, uint8_t* k,
 		r->len = addlen;
 	} else if(bstr_is_prefix(r->str, r->len, addstr, addlen)) {
 		uint8_t* split_str = NULL;
-		radstrlen_type split_len = 0;
+		radstrlen_t split_len = 0;
 		/* r.node is a prefix of 'add' */
 		/* set it up so that the 'r.node' has 'add' as child */
 		/* and basically, r.node is already completely fine,
@@ -419,7 +414,7 @@ radsel_split(struct region* region, struct radsel* r, uint8_t* k,
 		 * key name. */
 		struct radnode* com;
 		uint8_t* common_str=NULL, *s1_str=NULL, *s2_str=NULL;
-		radstrlen_type common_len, s1_len=0, s2_len=0;
+		radstrlen_t common_len, s1_len=0, s2_len=0;
 		common_len = bstr_common(r->str, r->len, addstr, addlen);
 		assert(common_len < r->len);
 		assert(common_len < addlen);
@@ -449,7 +444,7 @@ radsel_split(struct region* region, struct radsel* r, uint8_t* k,
 		/* create the shared prefix to go in r */
 		if(common_len > 0) {
 			common_str = (uint8_t*)region_alloc(region,
-				common_len*sizeof(uint8_t));
+				common_len*sizeof(uint8_t*));
 			if(!common_str) {
 				region_recycle(region, com, sizeof(*com));
 				region_recycle(region, s1_str, s1_len);
@@ -491,11 +486,11 @@ radsel_split(struct region* region, struct radsel* r, uint8_t* k,
 	return 1;
 }
 
-struct radnode* radix_insert(struct radtree* rt, uint8_t* k,
-	radstrlen_type len, void* elem)
+struct radnode* radix_insert(struct radtree* rt, uint8_t* k, radstrlen_t len,
+        void* elem)
 {
 	struct radnode* n;
-	radstrlen_type pos = 0;
+	radstrlen_t pos = 0;
 	/* create new element to add */
 	struct radnode* add = (struct radnode*)region_alloc_zero(rt->region,
 		sizeof(*add));
@@ -512,10 +507,7 @@ struct radnode* radix_insert(struct radtree* rt, uint8_t* k,
 			/* add a root to point to new node */
 			n = (struct radnode*)region_alloc_zero(rt->region,
 				sizeof(*n));
-			if(!n) {
-				region_recycle(rt->region, add, sizeof(*add));
-				return NULL;
-			}
+			if(!n) return NULL;
 			if(!radnode_array_space(rt->region, n, k[0])) {
 				region_recycle(rt->region, n->array,
 					n->capacity*sizeof(struct radsel));
@@ -628,7 +620,7 @@ radnode_cleanup_onechild(struct region* region, struct radnode* n,
 	struct radnode* par)
 {
 	uint8_t* join;
-	radstrlen_type joinlen;
+	radstrlen_t joinlen;
 	uint8_t pidx = n->pidx;
 	struct radnode* child = n->array[0].node;
 	/* node had one child, merge them into the parent. */
@@ -644,13 +636,11 @@ radnode_cleanup_onechild(struct region* region, struct radnode* n,
 		return 0;
 	}
 	/* we know that .str and join are malloced, thus aligned */
-	if(par->array[pidx].str)
-	    memcpy(join, par->array[pidx].str, par->array[pidx].len);
+	memcpy(join, par->array[pidx].str, par->array[pidx].len);
 	/* the array lookup is gone, put its character in the lookup string*/
 	join[par->array[pidx].len] = child->pidx + n->offset;
 	/* but join+len may not be aligned */
-	if(n->array[0].str)
-	    memmove(join+par->array[pidx].len+1, n->array[0].str, n->array[0].len);
+	memmove(join+par->array[pidx].len+1, n->array[0].str, n->array[0].len);
 	region_recycle(region, par->array[pidx].str, par->array[pidx].len);
 	par->array[pidx].str = join;
 	par->array[pidx].len = joinlen;
@@ -680,8 +670,8 @@ static void
 radnode_array_reduce_if_needed(struct region* region, struct radnode* n)
 {
 	if(n->len <= n->capacity/2 && n->len != n->capacity) {
-		struct radsel* a = (struct radsel*)region_alloc_array(region,
-			sizeof(*a), n->len);
+		struct radsel* a = (struct radsel*)region_alloc(region,
+			sizeof(*a)*n->len);
 		if(!a) return;
 		memcpy(a, n->array, sizeof(*a)*n->len);
 		region_recycle(region, n->array, n->capacity*sizeof(*a));
@@ -821,11 +811,10 @@ void radix_delete(struct radtree* rt, struct radnode* n)
 	}
 }
 
-struct radnode* radix_search(struct radtree* rt, uint8_t* k,
-	radstrlen_type len)
+struct radnode* radix_search(struct radtree* rt, uint8_t* k, radstrlen_t len)
 {
 	struct radnode* n = rt->root;
-	radstrlen_type pos = 0;
+	radstrlen_t pos = 0;
 	uint8_t byte;
 	while(n) {
 		if(pos == len)
@@ -860,11 +849,11 @@ static int ret_self_or_prev(struct radnode* n, struct radnode** result)
 	return 0;
 }
 
-int radix_find_less_equal(struct radtree* rt, uint8_t* k, radstrlen_type len,
+int radix_find_less_equal(struct radtree* rt, uint8_t* k, radstrlen_t len,
         struct radnode** result)
 {
 	struct radnode* n = rt->root;
-	radstrlen_type pos = 0;
+	radstrlen_t pos = 0;
 	uint8_t byte;
 	int r;
 	if(!n) {
@@ -964,7 +953,6 @@ struct radnode* radix_last(struct radtree* rt)
 
 struct radnode* radix_next(struct radnode* n)
 {
-	if(!n) return NULL;
 	if(n->len) {
 		/* go down */
 		struct radnode* s = radnode_first_in_subtree(n);
@@ -994,7 +982,6 @@ struct radnode* radix_next(struct radnode* n)
 
 struct radnode* radix_prev(struct radnode* n)
 {
-	if(!n) return NULL;
 	/* must go up, since all array nodes are after this node */
 	while(n->parent) {
 		uint8_t idx = n->pidx;
@@ -1044,7 +1031,7 @@ static void cpy_r2d(uint8_t* to, uint8_t* from, uint8_t len)
 }
 
 /* radname code: domain to radix-bstring */
-void radname_d2r(uint8_t* k, radstrlen_type* len, const uint8_t* dname,
+void radname_d2r(uint8_t* k, radstrlen_t* len, const uint8_t* dname,
 	size_t dlen)
 {
 	/* the domain name is converted as follows,
@@ -1116,7 +1103,7 @@ void radname_d2r(uint8_t* k, radstrlen_type* len, const uint8_t* dname,
 }
 
 /* radname code: radix-bstring to domain */
-void radname_r2d(uint8_t* k, radstrlen_type len, uint8_t* dname, size_t* dlen)
+void radname_r2d(uint8_t* k, radstrlen_t len, uint8_t* dname, size_t* dlen)
 {
 	/* find labels and push on stack */
 	uint8_t* labstart[130];
@@ -1173,7 +1160,7 @@ radname_insert(struct radtree* rt, const uint8_t* d, size_t max, void* elem)
 {
 	/* convert and insert */
 	uint8_t radname[300];
-	radstrlen_type len = (radstrlen_type)sizeof(radname);
+	radstrlen_t len = (radstrlen_t)sizeof(radname);
 	if(max > sizeof(radname))
 		return NULL; /* too long */
 	radname_d2r(radname, &len, d, max);
@@ -1198,7 +1185,7 @@ struct radnode* radname_search(struct radtree* rt, const uint8_t* d,
 	unsigned int lab, dpos, lpos;
 	struct radnode* n = rt->root;
 	uint8_t byte;
-	radstrlen_type i;
+	radstrlen_t i;
 	uint8_t b;
 
 	/* search for root? it is '' */
@@ -1283,7 +1270,7 @@ int radname_find_less_equal(struct radtree* rt, const uint8_t* d, size_t max,
 	unsigned int lab, dpos, lpos;
 	struct radnode* n = rt->root;
 	uint8_t byte;
-	radstrlen_type i;
+	radstrlen_t i;
 	uint8_t b;
 
 	/* empty tree */

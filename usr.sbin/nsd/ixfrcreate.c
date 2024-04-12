@@ -171,19 +171,16 @@ static int spool_zone_to_file(struct zone* zone, char* file_name,
 	if(!spool_dname(out, domain_dname(zone->apex))) {
 		log_msg(LOG_ERR, "could not write %s: %s",
 			file_name, strerror(errno));
-		fclose(out);
 		return 0;
 	}
 	if(!spool_u32(out, serial)) {
 		log_msg(LOG_ERR, "could not write %s: %s",
 			file_name, strerror(errno));
-		fclose(out);
 		return 0;
 	}
 	if(!spool_domains(out, zone)) {
 		log_msg(LOG_ERR, "could not write %s: %s",
 			file_name, strerror(errno));
-		fclose(out);
 		return 0;
 	}
 	fclose(out);
@@ -253,7 +250,7 @@ void ixfr_create_free(struct ixfr_create* ixfrcr)
 /* read uint16_t from spool */
 static int read_spool_u16(FILE* spool, uint16_t* val)
 {
-	if(fread(val, sizeof(*val), 1, spool) < 1)
+	if(!fread(val, sizeof(*val), 1, spool))
 		return 0;
 	return 1;
 }
@@ -261,7 +258,7 @@ static int read_spool_u16(FILE* spool, uint16_t* val)
 /* read uint32_t from spool */
 static int read_spool_u32(FILE* spool, uint32_t* val)
 {
-	if(fread(val, sizeof(*val), 1, spool) < 1)
+	if(!fread(val, sizeof(*val), 1, spool))
 		return 0;
 	return 1;
 }
@@ -271,14 +268,14 @@ static int read_spool_dname(FILE* spool, uint8_t* buf, size_t buflen,
 	size_t* dname_len)
 {
 	uint16_t len;
-	if(fread(&len, sizeof(len), 1, spool) < 1)
+	if(!fread(&len, sizeof(len), 1, spool))
 		return 0;
 	if(len > buflen) {
 		log_msg(LOG_ERR, "dname too long");
 		return 0;
 	}
 	if(len > 0) {
-		if(fread(buf, len, 1, spool) < 1)
+		if(!fread(buf, len, 1, spool))
 			return 0;
 	}
 	*dname_len = len;
@@ -414,11 +411,7 @@ static int process_diff_rrset(FILE* spool, struct ixfr_create* ixfrcr,
 			return 0;
 		}
 		/* because rdlen is uint16_t always smaller than sizeof(buf)*/
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wtype-limits"
-		assert(rdlen <= sizeof(buf));
-#pragma GCC diagnostic pop
-		if(fread(buf, rdlen, 1, spool) < 1) {
+		if(!fread(buf, rdlen, 1, spool)) {
 			log_msg(LOG_ERR, "error reading file %s: %s",
 				ixfrcr->file_name, strerror(errno));
 			return 0;
@@ -486,11 +479,7 @@ static int process_spool_delrrset(FILE* spool, struct ixfr_create* ixfrcr,
 			return 0;
 		}
 		/* because rdlen is uint16_t always smaller than sizeof(buf)*/
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wtype-limits"
-		assert(rdlen <= sizeof(buf));
-#pragma GCC diagnostic pop
-		if(fread(buf, rdlen, 1, spool) < 1) {
+		if(!fread(buf, rdlen, 1, spool)) {
 			log_msg(LOG_ERR, "error reading file %s: %s",
 				ixfrcr->file_name, strerror(errno));
 			return 0;
@@ -533,14 +522,16 @@ static int process_marktypes(struct ixfr_store* store, struct zone* zone,
 	/* walk through the rrsets in the zone, if it is not in the
 	 * marktypes list, then it is new and an added RRset */
 	rrset_type* s;
+	size_t atmarktype = 0;
 	qsort(marktypes, marktypes_used, sizeof(marktypes[0]), &sort_uint16);
 	for(s=domain->rrsets; s; s=s->next) {
 		uint16_t tp;
 		if(s->zone != zone)
 			continue;
 		tp = rrset_rrtype(s);
-		if(bsearch(&tp, marktypes, marktypes_used, sizeof(marktypes[0]), &sort_uint16)) {
+		if(atmarktype < marktypes_used && marktypes[atmarktype]==tp) {
 			/* the item is in the marked list, skip it */
+			atmarktype++;
 			continue;
 		}
 		if(!process_add_rrset(store, domain, s))
@@ -565,11 +556,6 @@ static int process_diff_domain(FILE* spool, struct ixfr_create* ixfrcr,
 			ixfrcr->file_name, strerror(errno));
 		return 0;
 	}
-	if(spool_type_count > sizeof(marktypes)) {
-		log_msg(LOG_ERR, "error reading file %s: spool type count "
-			"too large", ixfrcr->file_name);
-		return 0;
-	}
 	for(i=0; i<spool_type_count; i++) {
 		uint16_t tp, kl, rrcount;
 		struct rrset* rrset;
@@ -580,8 +566,6 @@ static int process_diff_domain(FILE* spool, struct ixfr_create* ixfrcr,
 				ixfrcr->file_name, strerror(errno));
 			return 0;
 		}
-		/* The rrcount is within limits of sizeof(marktypes), because
-		 * the uint16_t < 65536 */
 		rrset = domain_find_rrset(domain, zone, tp);
 		if(!rrset) {
 			/* rrset in spool but not in new zone, deleted RRset */
@@ -632,11 +616,6 @@ static int process_domain_del_RRs(struct ixfr_create* ixfrcr,
 			ixfrcr->file_name, strerror(errno));
 		return 0;
 	}
-	if(spool_type_count > 65536) {
-		log_msg(LOG_ERR, "error reading file %s: del RR spool type "
-			"count too large", ixfrcr->file_name);
-		return 0;
-	}
 	for(i=0; i<spool_type_count; i++) {
 		uint16_t tp, kl, rrcount;
 		if(!read_spool_u16(spool, &tp) ||
@@ -646,8 +625,6 @@ static int process_domain_del_RRs(struct ixfr_create* ixfrcr,
 				ixfrcr->file_name, strerror(errno));
 			return 0;
 		}
-		/* The rrcount is within reasonable limits, because
-		 * the uint16_t < 65536 */
 		if(!process_spool_delrrset(spool, ixfrcr, store, dname,
 			dname_len, tp, kl, rrcount))
 			return 0;
@@ -945,7 +922,8 @@ static int ixfr_perform_init(struct ixfr_create* ixfrcr, struct zone* zone,
 		return 0;
 	}
 	ixfrcr->new_serial = zone_get_current_serial(zone);
-	*store = ixfr_store_start(zone, store_mem);
+	*store = ixfr_store_start(zone, store_mem, ixfrcr->old_serial,
+		ixfrcr->new_serial);
 	if(!ixfr_create_store_newsoa(*store, zone)) {
 		fclose(*spool);
 		ixfr_store_free(*store);
@@ -1130,7 +1108,7 @@ int ixfr_create_from_difference(struct zone* zone, const char* zfile,
 	if(!zone->opts->pattern->create_ixfr)
 		return 0;
 	/* only if there is a zone in memory to compare with */
-	if(!zone->soa_rrset || !zone->apex)
+	if(!zone || !zone->soa_rrset || !zone->apex)
 		return 0;
 
 	old_serial = zone_get_current_serial(zone);

@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef QUERY_H
-#define QUERY_H
+#ifndef _QUERY_H_
+#define _QUERY_H_
 
 #include <assert.h>
 #include <string.h>
@@ -17,13 +17,11 @@
 #include "nsd.h"
 #include "packet.h"
 #include "tsig.h"
-struct ixfr_data;
 
 enum query_state {
 	QUERY_PROCESSED,
 	QUERY_DISCARDED,
-	QUERY_IN_AXFR,
-	QUERY_IN_IXFR
+	QUERY_IN_AXFR
 };
 typedef enum query_state query_state_type;
 
@@ -39,22 +37,11 @@ struct query {
 	 * The address the query was received from.
 	 */
 #ifdef INET6
-	struct sockaddr_storage remote_addr;
+	struct sockaddr_storage addr;
 #else
-	struct sockaddr_in remote_addr;
+	struct sockaddr_in addr;
 #endif
-	socklen_t remote_addrlen;
-
-	/* if set, the request came through a proxy */
-	int is_proxied;
-	/* the client address
-	 * the same as remote_addr if not proxied */
-#ifdef INET6
-	struct sockaddr_storage client_addr;
-#else
-	struct sockaddr_in client_addr;
-#endif
-	socklen_t client_addrlen;
+	socklen_t addrlen;
 
 	/*
 	 * Maximum supported query size.
@@ -69,10 +56,12 @@ struct query {
 	/* EDNS information provided by the client.  */
 	edns_record_type edns;
 
+#ifdef TSIG
 	/* TSIG record information and running hash for query-response */
 	tsig_record_type tsig;
 	/* tsig actions can be overridden, for axfr transfer. */
 	int tsig_prepare_it, tsig_update_it, tsig_sign_it;
+#endif /* TSIG */
 
 	int tcp;
 	uint16_t tcplen;
@@ -89,6 +78,9 @@ struct query {
 	/* The zone used to answer the query.  */
 	zone_type *zone;
 
+	/* The domain used to answer the query.  */
+	domain_type *domain;
+
 	/* The delegation domain, if any.  */
 	domain_type *delegation_domain;
 
@@ -100,26 +92,26 @@ struct query {
 
 	/*
 	 * The number of CNAMES followed.  After a CNAME is followed
-	 * we no longer clear AA for a delegation and do not REFUSE
-	 * or SERVFAIL if the destination zone of the CNAME does not exist,
-	 * or is configured but not present.
+	 * we no longer change the RCODE to NXDOMAIN and no longer add
+	 * SOA records to the authority section in case of NXDOMAIN
+	 * and NODATA.
 	 * Also includes number of DNAMES followed.
 	 */
 	int cname_count;
 
 	/* Used for dname compression.  */
 	uint16_t     compressed_dname_count;
-	domain_type **compressed_dnames;
+	domain_type *compressed_dnames[MAXRRSPP];
 
 	 /*
 	  * Indexed by domain->number, index 0 is reserved for the
 	  * query name when generated from a wildcard record.
 	  */
 	uint16_t    *compressed_dname_offsets;
-	size_t compressed_dname_offsets_size;
+	uint32_t compressed_dname_offsets_size;
 
 	/* number of temporary domains used for the query */
-	size_t number_temporary_domains;
+	uint32_t number_temporary_domains;
 
 	/*
 	 * Used for AXFR processing.
@@ -129,29 +121,6 @@ struct query {
 	domain_type *axfr_current_domain;
 	rrset_type  *axfr_current_rrset;
 	uint16_t     axfr_current_rr;
-
-	/* Used for IXFR processing,
-	 * indicates if the zone transfer is done, connection can close. */
-	int ixfr_is_done;
-	/* the ixfr data that is processed */
-	struct ixfr_data* ixfr_data;
-	/* the ixfr data that is the last segment */
-	struct ixfr_data* ixfr_end_data;
-	/* ixfr count of newsoa bytes added, 0 none, len means done */
-	size_t ixfr_count_newsoa;
-	/* ixfr count of oldsoa bytes added, 0 none, len means done */
-	size_t ixfr_count_oldsoa;
-	/* ixfr count of del bytes added, 0 none, len means done */
-	size_t ixfr_count_del;
-	/* ixfr count of add bytes added, 0 none, len means done */
-	size_t ixfr_count_add;
-	/* position for the end of SOA record, for UDP truncation */
-	size_t ixfr_pos_of_newsoa;
-
-#ifdef RATELIMIT
-	/* if we encountered a wildcard, its domain */
-	domain_type *wildcard_domain;
-#endif
 };
 
 
@@ -188,7 +157,7 @@ void query_clear_dname_offsets(struct query *query, size_t max_offset);
  * Clear the compression tables.
  */
 void query_clear_compression_tables(struct query *query);
-
+	
 /*
  * Enter the specified domain into the compression table starting at
  * the specified offset.
@@ -203,8 +172,7 @@ void query_add_compression_domain(struct query *query,
  */
 query_type *query_create(region_type *region,
 			 uint16_t *compressed_dname_offsets,
-			 size_t compressed_dname_size,
-			 domain_type **compressed_dnames);
+			 uint32_t compressed_dname_size);
 
 /*
  * Reset a query structure so it is ready for receiving and processing
@@ -215,7 +183,7 @@ void query_reset(query_type *query, size_t maxlen, int is_tcp);
 /*
  * Process a query and write the response in the query I/O buffer.
  */
-query_state_type query_process(query_type *q, nsd_type *nsd, uint32_t *now_p);
+query_state_type query_process(query_type *q, nsd_type *nsd);
 
 /*
  * Prepare the query structure for writing the response. The packet
@@ -228,7 +196,7 @@ void query_prepare_response(query_type *q);
 /*
  * Add EDNS0 information to the response if required.
  */
-void query_add_optional(query_type *q, nsd_type *nsd, uint32_t *now_p);
+void query_add_optional(query_type *q, nsd_type *nsd);
 
 /*
  * Write an error response into the query structure with the indicated
@@ -241,4 +209,9 @@ query_overflow(query_type *q)
 {
 	return buffer_position(q->packet) > (q->maxlen - q->reserved_space);
 }
-#endif /* QUERY_H */
+static inline int
+query_overflow_nsid(query_type *q, uint16_t nsid_len)
+{
+        return buffer_position(q->packet) > (q->maxlen - q->reserved_space - nsid_len);
+}
+#endif /* _QUERY_H_ */

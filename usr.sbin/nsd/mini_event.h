@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -54,11 +54,6 @@
 struct region;
 
 #if defined(USE_MINI_EVENT) && !defined(USE_WINSOCK)
-
-#ifdef	HAVE_SYS_SELECT_H
-/* for fd_set on OpenBSD */
-#include <sys/select.h>
-#endif
 
 #ifndef HAVE_EVENT_BASE_FREE
 #define HAVE_EVENT_BASE_FREE
@@ -87,7 +82,7 @@ struct region;
 struct event_base
 {
 	/** sorted by timeout (absolute), ptr */
-	rbtree_type* times;
+	rbtree_t* times;
 	/** array of 0 - maxfd of ptr to event for it */
 	struct event** fds;
 	/** max fd in use */
@@ -121,7 +116,7 @@ struct event_base
  */
 struct event {
 	/** node in timeout rbtree */
-	rbnode_type node;
+	rbnode_t node;
 	/** is event already added */
 	int added;
 
@@ -151,8 +146,6 @@ const char *event_get_method(void);
 int event_base_dispatch(struct event_base *);
 /** exit that loop */
 int event_base_loopexit(struct event_base *, struct timeval *);
-/** exit loop */
-int event_base_loopbreak(struct event_base *);
 /** run select once */
 #define EVLOOP_ONCE 1
 int event_base_loop(struct event_base* base, int flags);

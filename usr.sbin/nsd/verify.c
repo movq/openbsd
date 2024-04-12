@@ -112,11 +112,11 @@ static inline size_t print_line(struct verifier_stream *stream, int eof)
 		return 0;
 
 	if (len > LOGLINELEN) {
-		fmt = stream->cut ? "verifier: .. %.*s .." : "verifier: %.*s ..";
+		fmt = stream->cut ? ".. %.*s .." : "%.*s ..";
 		len = LOGLINELEN; // remainder printed next iteration
 		stream->cut = 1;
 	} else {
-		fmt = stream->cut ? "verifier: .. %.*s" : "verifier: %.*s";
+		fmt = stream->cut ? ".. %.*s" : "%.*s";
 		stream->cut = 0;
 	}
 	log_msg(stream->priority, fmt, len, stream->buf + stream->off);
@@ -274,10 +274,7 @@ void verify_handle_signal(int sig, short event, void *arg)
 	assert(arg != NULL);
 
 	nsd = (struct nsd *)arg;
-	if(write(nsd->verifier_pipe[1], buf, sizeof(buf)) == -1) {
-		log_msg(LOG_ERR, "verify_handle_signal: write failed: %s",
-				strerror(errno));
-	}
+	(void)write(nsd->verifier_pipe[1], buf, sizeof(buf));
 }
 
 /*
@@ -299,11 +296,7 @@ void verify_handle_exit(int fd, short event, void *arg)
 
 	nsd = (struct nsd *)arg;
 
-	if(read(fd, buf, sizeof(buf)) == -1) {
-		if(errno != EAGAIN && errno != EINTR && errno != EWOULDBLOCK)
-			log_msg(LOG_ERR, "verify_handle_exit: read failed: %s",
-				strerror(errno));
-	}
+	(void)read(fd, buf, sizeof(buf));
 
 	while(((pid = waitpid(-1, &wstatus, WNOHANG)) == -1 && errno == EINTR)
 	    || (pid > 0))

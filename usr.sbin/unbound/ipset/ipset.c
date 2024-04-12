@@ -8,7 +8,6 @@
 #include "config.h"
 #include "ipset/ipset.h"
 #include "util/regional.h"
-#include "util/net_help.h"
 #include "util/config_file.h"
 
 #include "services/cache/dns.h"
@@ -97,129 +96,97 @@ static int add_to_ipset(struct mnl_socket *mnl, const char *setname, const void 
 	return 0;
 }
 
-static void
-ipset_add_rrset_data(struct ipset_env *ie, struct mnl_socket *mnl,
-	struct packed_rrset_data *d, const char* setname, int af,
-	const char* dname)
-{
+static int ipset_update(struct module_env *env, struct dns_msg *return_msg, struct ipset_env *ie) {
 	int ret;
-	size_t j, rr_len, rd_len;
-	uint8_t *rr_data;
 
-	/* to d->count, not d->rrsig_count, because we do not want to add the RRSIGs, only the addresses */
-	for (j = 0; j < d->count; j++) {
-		rr_len = d->rr_len[j];
-		rr_data = d->rr_data[j];
+	struct mnl_socket *mnl;
 
-		rd_len = sldns_read_uint16(rr_data);
-		if(af == AF_INET && rd_len != INET_SIZE)
-			continue;
-		if(af == AF_INET6 && rd_len != INET6_SIZE)
-			continue;
-		if (rr_len - 2 >= rd_len) {
-			if(verbosity >= VERB_QUERY) {
-				char ip[128];
-				if(inet_ntop(af, rr_data+2, ip, (socklen_t)sizeof(ip)) == 0)
-					snprintf(ip, sizeof(ip), "(inet_ntop_error)");
-				verbose(VERB_QUERY, "ipset: add %s to %s for %s", ip, setname, dname);
-			}
-			ret = add_to_ipset(mnl, setname, rr_data + 2, af);
-			if (ret < 0) {
-				log_err("ipset: could not add %s into %s", dname, setname);
+	size_t i, j;
 
-				mnl_socket_close(mnl);
-				ie->mnl = NULL;
-				break;
-			}
-		}
-	}
-}
+	const char *setname;
 
-static int
-ipset_check_zones_for_rrset(struct module_env *env, struct ipset_env *ie,
-	struct mnl_socket *mnl, struct ub_packed_rrset_key *rrset,
-	const char *qname, const int qlen, const char *setname, int af)
-{
+	struct ub_packed_rrset_key *rrset;
+	struct packed_rrset_data *d;
+
+	int af;
+
 	static char dname[BUFF_LEN];
-	const char *ds, *qs;
+	const char *s;
 	int dlen, plen;
 
 	struct config_strlist *p;
-	struct packed_rrset_data *d;
 
-	dlen = sldns_wire2str_dname_buf(rrset->rk.dname, rrset->rk.dname_len, dname, BUFF_LEN);
-	if (dlen == 0) {
-		log_err("bad domain name");
-		return -1;
-	}
+	size_t rr_len, rd_len;
 
-	for (p = env->cfg->local_zones_ipset; p; p = p->next) {
-		ds = NULL;
-		qs = NULL;
-		plen = strlen(p->str);
-
-		if (dlen == plen || (dlen > plen && dname[dlen - plen - 1] == '.' )) {
-			ds = dname + (dlen - plen);
-		}
-		if (qlen == plen || (qlen > plen && qname[qlen - plen - 1] == '.' )) {
-			qs = qname + (qlen - plen);
-		}
-		if ((ds && strncasecmp(p->str, ds, plen) == 0)
-			|| (qs && strncasecmp(p->str, qs, plen) == 0)) {
-			d = (struct packed_rrset_data*)rrset->entry.data;
-			ipset_add_rrset_data(ie, mnl, d, setname,
-				af, dname);
-			break;
-		}
-	}
-	return 0;
-}
-
-static int ipset_update(struct module_env *env, struct dns_msg *return_msg,
-	struct query_info qinfo, struct ipset_env *ie)
-{
-	struct mnl_socket *mnl;
-	size_t i;
-	const char *setname;
-	struct ub_packed_rrset_key *rrset;
-	int af;
-	static char qname[BUFF_LEN];
-	int qlen;
+	uint8_t *rr_data;
 
 	mnl = (struct mnl_socket *)ie->mnl;
 	if (!mnl) {
-		/* retry to create mnl socket */
+		// retry to create mnl socket
 		mnl = open_mnl_socket();
 		if (!mnl) {
 			return -1;
 		}
+
 		ie->mnl = mnl;
 	}
 
-	qlen = sldns_wire2str_dname_buf(qinfo.qname, qinfo.qname_len,
-		qname, BUFF_LEN);
-	if(qlen == 0) {
-		log_err("bad domain name");
-		return -1;
-	}
-
-	for(i = 0; i < return_msg->rep->rrset_count; i++) {
+	for (i = 0; i < return_msg->rep->rrset_count; ++i) {
 		setname = NULL;
+
 		rrset = return_msg->rep->rrsets[i];
-		if(ntohs(rrset->rk.type) == LDNS_RR_TYPE_A &&
-			ie->v4_enabled == 1) {
+
+		if (rrset->rk.type == htons(LDNS_RR_TYPE_A)) {
 			af = AF_INET;
-			setname = ie->name_v4;
-		} else if(ntohs(rrset->rk.type) == LDNS_RR_TYPE_AAAA &&
-			ie->v6_enabled == 1) {
+			if ((ie->v4_enabled == 1)) {
+				setname = ie->name_v4;
+			}
+		} else {
 			af = AF_INET6;
-			setname = ie->name_v6;
+			if ((ie->v6_enabled == 1)) {
+				setname = ie->name_v6;
+			}
 		}
 
 		if (setname) {
-			if(ipset_check_zones_for_rrset(env, ie, mnl, rrset,
-				qname, qlen, setname, af) == -1)
+			dlen = sldns_wire2str_dname_buf(rrset->rk.dname, rrset->rk.dname_len, dname, BUFF_LEN);
+			if (dlen == 0) {
+				log_err("bad domain name");
 				return -1;
+			}
+			if (dname[dlen - 1] == '.') {
+				dlen--;
+			}
+
+			for (p = env->cfg->local_zones_ipset; p; p = p->next) {
+				plen = strlen(p->str);
+
+				if (dlen >= plen) {
+					s = dname + (dlen - plen);
+
+					if (strncasecmp(p->str, s, plen) == 0) {
+						d = (struct packed_rrset_data*)rrset->entry.data;
+						/* to d->count, not d->rrsig_count, because we do not want to add the RRSIGs, only the addresses */
+						for (j = 0; j < d->count; j++) {
+							rr_len = d->rr_len[j];
+							rr_data = d->rr_data[j];
+
+							rd_len = sldns_read_uint16(rr_data);
+							if (rr_len - 2 >= rd_len) {
+								ret = add_to_ipset(mnl, setname, rr_data + 2, af);
+								if (ret < 0) {
+									log_err("ipset: could not add %s into %s", dname, setname);
+
+									mnl_socket_close(mnl);
+									ie->mnl = NULL;
+									break;
+								}
+							}
+						}
+						break;
+					}
+				}
+			}
 		}
 	}
 
@@ -314,7 +281,7 @@ void ipset_operate(struct module_qstate *qstate, enum module_ev event, int id,
 
 	if (iq && (event == module_event_moddone)) {
 		if (qstate->return_msg && qstate->return_msg->rep) {
-			ipset_update(qstate->env, qstate->return_msg, qstate->qinfo, ie);
+			ipset_update(qstate->env, qstate->return_msg, ie);
 		}
 		qstate->ext_state[id] = module_finished;
 		return;

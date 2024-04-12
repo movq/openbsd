@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef ANSWER_H
-#define ANSWER_H
+#ifndef _ANSWER_H_
+#define _ANSWER_H_
 
 #include <sys/types.h>
 
@@ -44,4 +44,4 @@ int answer_add_rrset(answer_type *answer, rr_section_type section,
 		     domain_type *domain, rrset_type *rrset);
 
 
-#endif /* ANSWER_H */
+#endif /* _ANSWER_H_ */

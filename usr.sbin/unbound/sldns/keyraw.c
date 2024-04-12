@@ -23,19 +23,6 @@
 #ifdef HAVE_OPENSSL_ENGINE_H
 #  include <openssl/engine.h>
 #endif
-#ifdef HAVE_OPENSSL_BN_H
-#include <openssl/bn.h>
-#endif
-#ifdef HAVE_OPENSSL_PARAM_BUILD_H
-#  include <openssl/param_build.h>
-#else
-#  ifdef HAVE_OPENSSL_RSA_H
-#  include <openssl/rsa.h>
-#  endif
-#  ifdef HAVE_OPENSSL_DSA_H
-#  include <openssl/dsa.h>
-#  endif
-#endif
 #endif /* HAVE_SSL */
 
 size_t
@@ -93,14 +80,6 @@ sldns_rr_dnskey_key_size_raw(const unsigned char* keydata,
                 return 256;
         case LDNS_ECDSAP384SHA384:
                 return 384;
-#endif
-#ifdef USE_ED25519
-	case LDNS_ED25519:
-		return 256;
-#endif
-#ifdef USE_ED448
-	case LDNS_ED448:
-		return 456;
 #endif
 	default:
 		return 0;
@@ -195,63 +174,48 @@ void sldns_key_EVP_unload_gost(void)
 }
 #endif /* USE_GOST */
 
-/* Retrieve params as BIGNUM from raw buffer */
-static int
-sldns_key_dsa_buf_bignum(unsigned char* key, size_t len, BIGNUM** p,
-	BIGNUM** q, BIGNUM** g, BIGNUM** y)
+DSA *
+sldns_key_buf2dsa_raw(unsigned char* key, size_t len)
 {
 	uint8_t T;
 	uint16_t length;
 	uint16_t offset;
+	DSA *dsa;
+	BIGNUM *Q; BIGNUM *P;
+	BIGNUM *G; BIGNUM *Y;
 
 	if(len == 0)
-		return 0;
+		return NULL;
 	T = (uint8_t)key[0];
 	length = (64 + T * 8);
 	offset = 1;
 
 	if (T > 8) {
-		return 0;
+		return NULL;
 	}
 	if(len < (size_t)1 + SHA_DIGEST_LENGTH + 3*length)
-		return 0;
+		return NULL;
 
-	*q = BN_bin2bn(key+offset, SHA_DIGEST_LENGTH, NULL);
+	Q = BN_bin2bn(key+offset, SHA_DIGEST_LENGTH, NULL);
 	offset += SHA_DIGEST_LENGTH;
 
-	*p = BN_bin2bn(key+offset, (int)length, NULL);
+	P = BN_bin2bn(key+offset, (int)length, NULL);
 	offset += length;
 
-	*g = BN_bin2bn(key+offset, (int)length, NULL);
+	G = BN_bin2bn(key+offset, (int)length, NULL);
 	offset += length;
 
-	*y = BN_bin2bn(key+offset, (int)length, NULL);
+	Y = BN_bin2bn(key+offset, (int)length, NULL);
+	offset += length;
 
-	if(!*q || !*p || !*g || !*y) {
-		BN_free(*q);
-		BN_free(*p);
-		BN_free(*g);
-		BN_free(*y);
-		return 0;
-	}
-	return 1;
-}
-
-#ifndef HAVE_OSSL_PARAM_BLD_NEW
-DSA *
-sldns_key_buf2dsa_raw(unsigned char* key, size_t len)
-{
-	DSA *dsa;
-	BIGNUM *Q=NULL, *P=NULL, *G=NULL, *Y=NULL;
-	if(!sldns_key_dsa_buf_bignum(key, len, &P, &Q, &G, &Y)) {
-		return NULL;
-	}
 	/* create the key and set its properties */
-	if(!(dsa = DSA_new())) {
+	if(!Q || !P || !G || !Y || !(dsa = DSA_new())) {
+		BN_free(Q);
+		BN_free(P);
+		BN_free(G);
+		BN_free(Y);
 		return NULL;
 	}
-#if OPENSSL_VERSION_NUMBER < 0x10100000 || \
-        (defined(HAVE_LIBRESSL) && LIBRESSL_VERSION_NUMBER < 0x02070000f)
 #ifndef S_SPLINT_S
 	dsa->p = P;
 	dsa->q = Q;
@@ -259,132 +223,24 @@ sldns_key_buf2dsa_raw(unsigned char* key, size_t len)
 	dsa->pub_key = Y;
 #endif /* splint */
 
-#else /* OPENSSL_VERSION_NUMBER */
-	if (!DSA_set0_pqg(dsa, P, Q, G)) {
-		/* QPG not yet attached, need to free */
-		BN_free(Q);
-		BN_free(P);
-		BN_free(G);
-
-		DSA_free(dsa);
-		BN_free(Y);
-		return NULL;
-	}
-	if (!DSA_set0_key(dsa, Y, NULL)) {
-		/* QPG attached, cleaned up by DSA_fre() */
-		DSA_free(dsa);
-		BN_free(Y);
-		return NULL;
-	}
-#endif
-
 	return dsa;
 }
-#endif /* HAVE_OSSL_PARAM_BLD_NEW */
 
-EVP_PKEY *sldns_key_dsa2pkey_raw(unsigned char* key, size_t len)
-{
-#ifdef HAVE_OSSL_PARAM_BLD_NEW
-	EVP_PKEY* evp_key = NULL;
-	EVP_PKEY_CTX* ctx;
-	BIGNUM *p=NULL, *q=NULL, *g=NULL, *y=NULL;
-	OSSL_PARAM_BLD* param_bld;
-	OSSL_PARAM* params = NULL;
-	if(!sldns_key_dsa_buf_bignum(key, len, &p, &q, &g, &y)) {
-		return NULL;
-	}
-
-	param_bld = OSSL_PARAM_BLD_new();
-	if(!param_bld) {
-		BN_free(p);
-		BN_free(q);
-		BN_free(g);
-		BN_free(y);
-		return NULL;
-	}
-	if(!OSSL_PARAM_BLD_push_BN(param_bld, "p", p) ||
-	   !OSSL_PARAM_BLD_push_BN(param_bld, "g", g) ||
-	   !OSSL_PARAM_BLD_push_BN(param_bld, "q", q) ||
-	   !OSSL_PARAM_BLD_push_BN(param_bld, "pub", y)) {
-		OSSL_PARAM_BLD_free(param_bld);
-		BN_free(p);
-		BN_free(q);
-		BN_free(g);
-		BN_free(y);
-		return NULL;
-	}
-	params = OSSL_PARAM_BLD_to_param(param_bld);
-	OSSL_PARAM_BLD_free(param_bld);
-
-	ctx = EVP_PKEY_CTX_new_from_name(NULL, "DSA", NULL);
-	if(!ctx) {
-		OSSL_PARAM_free(params);
-		BN_free(p);
-		BN_free(q);
-		BN_free(g);
-		BN_free(y);
-		return NULL;
-	}
-	if(EVP_PKEY_fromdata_init(ctx) <= 0) {
-		EVP_PKEY_CTX_free(ctx);
-		OSSL_PARAM_free(params);
-		BN_free(p);
-		BN_free(q);
-		BN_free(g);
-		BN_free(y);
-		return NULL;
-	}
-	if(EVP_PKEY_fromdata(ctx, &evp_key, EVP_PKEY_PUBLIC_KEY, params) <= 0) {
-		EVP_PKEY_CTX_free(ctx);
-		OSSL_PARAM_free(params);
-		BN_free(p);
-		BN_free(q);
-		BN_free(g);
-		BN_free(y);
-		return NULL;
-	}
-
-	EVP_PKEY_CTX_free(ctx);
-	OSSL_PARAM_free(params);
-	BN_free(p);
-	BN_free(q);
-	BN_free(g);
-	BN_free(y);
-	return evp_key;
-#else
-	DSA* dsa;
-	EVP_PKEY* evp_key = EVP_PKEY_new();
-	if(!evp_key) {
-		return NULL;
-	}
-	dsa = sldns_key_buf2dsa_raw(key, len);
-	if(!dsa) {
-		EVP_PKEY_free(evp_key);
-		return NULL;
-	}
-	if(EVP_PKEY_assign_DSA(evp_key, dsa) == 0) {
-		DSA_free(dsa);
-		EVP_PKEY_free(evp_key);
-		return NULL;
-	}
-	return evp_key;
-#endif
-}
-
-/* Retrieve params as BIGNUM from raw buffer, n is modulus, e is exponent */
-static int
-sldns_key_rsa_buf_bignum(unsigned char* key, size_t len, BIGNUM** n,
-	BIGNUM** e)
+RSA *
+sldns_key_buf2rsa_raw(unsigned char* key, size_t len)
 {
 	uint16_t offset;
 	uint16_t exp;
 	uint16_t int16;
+	RSA *rsa;
+	BIGNUM *modulus;
+	BIGNUM *exponent;
 
 	if (len == 0)
-		return 0;
+		return NULL;
 	if (key[0] == 0) {
 		if(len < 3)
-			return 0;
+			return NULL;
 		memmove(&int16, key+1, 2);
 		exp = ntohs(int16);
 		offset = 3;
@@ -395,139 +251,35 @@ sldns_key_rsa_buf_bignum(unsigned char* key, size_t len, BIGNUM** n,
 
 	/* key length at least one */
 	if(len < (size_t)offset + exp + 1)
-		return 0;
+		return NULL;
 
 	/* Exponent */
-	*e = BN_new();
-	if(!*e) return 0;
-	(void) BN_bin2bn(key+offset, (int)exp, *e);
+	exponent = BN_new();
+	if(!exponent) return NULL;
+	(void) BN_bin2bn(key+offset, (int)exp, exponent);
 	offset += exp;
 
 	/* Modulus */
-	*n = BN_new();
-	if(!*n) {
-		BN_free(*e);
-		return 0;
+	modulus = BN_new();
+	if(!modulus) {
+		BN_free(exponent);
+		return NULL;
 	}
 	/* length of the buffer must match the key length! */
-	(void) BN_bin2bn(key+offset, (int)(len - offset), *n);
-	return 1;
-}
+	(void) BN_bin2bn(key+offset, (int)(len - offset), modulus);
 
-#ifndef HAVE_OSSL_PARAM_BLD_NEW
-RSA *
-sldns_key_buf2rsa_raw(unsigned char* key, size_t len)
-{
-	BIGNUM* modulus = NULL;
-	BIGNUM* exponent = NULL;
-	RSA *rsa;
-	if(!sldns_key_rsa_buf_bignum(key, len, &modulus, &exponent))
-		return NULL;
 	rsa = RSA_new();
 	if(!rsa) {
 		BN_free(exponent);
 		BN_free(modulus);
 		return NULL;
 	}
-#if OPENSSL_VERSION_NUMBER < 0x10100000 || \
-        (defined(HAVE_LIBRESSL) && LIBRESSL_VERSION_NUMBER < 0x02070000f)
 #ifndef S_SPLINT_S
 	rsa->n = modulus;
 	rsa->e = exponent;
 #endif /* splint */
 
-#else /* OPENSSL_VERSION_NUMBER */
-	if (!RSA_set0_key(rsa, modulus, exponent, NULL)) {
-		BN_free(exponent);
-		BN_free(modulus);
-		RSA_free(rsa);
-		return NULL;
-	}
-#endif
-
 	return rsa;
-}
-#endif /* HAVE_OSSL_PARAM_BLD_NEW */
-
-EVP_PKEY* sldns_key_rsa2pkey_raw(unsigned char* key, size_t len)
-{
-#ifdef HAVE_OSSL_PARAM_BLD_NEW
-	EVP_PKEY* evp_key = NULL;
-	EVP_PKEY_CTX* ctx;
-	BIGNUM *n=NULL, *e=NULL;
-	OSSL_PARAM_BLD* param_bld;
-	OSSL_PARAM* params = NULL;
-
-	if(!sldns_key_rsa_buf_bignum(key, len, &n, &e)) {
-		return NULL;
-	}
-
-	param_bld = OSSL_PARAM_BLD_new();
-	if(!param_bld) {
-		BN_free(n);
-		BN_free(e);
-		return NULL;
-	}
-	if(!OSSL_PARAM_BLD_push_BN(param_bld, "n", n)) {
-		OSSL_PARAM_BLD_free(param_bld);
-		BN_free(n);
-		BN_free(e);
-		return NULL;
-	}
-	if(!OSSL_PARAM_BLD_push_BN(param_bld, "e", e)) {
-		OSSL_PARAM_BLD_free(param_bld);
-		BN_free(n);
-		BN_free(e);
-		return NULL;
-	}
-	params = OSSL_PARAM_BLD_to_param(param_bld);
-	OSSL_PARAM_BLD_free(param_bld);
-
-	ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL);
-	if(!ctx) {
-		OSSL_PARAM_free(params);
-		BN_free(n);
-		BN_free(e);
-		return NULL;
-	}
-	if(EVP_PKEY_fromdata_init(ctx) <= 0) {
-		EVP_PKEY_CTX_free(ctx);
-		OSSL_PARAM_free(params);
-		BN_free(n);
-		BN_free(e);
-		return NULL;
-	}
-	if(EVP_PKEY_fromdata(ctx, &evp_key, EVP_PKEY_PUBLIC_KEY, params) <= 0) {
-		EVP_PKEY_CTX_free(ctx);
-		OSSL_PARAM_free(params);
-		BN_free(n);
-		BN_free(e);
-		return NULL;
-	}
-
-	EVP_PKEY_CTX_free(ctx);
-	OSSL_PARAM_free(params);
-	BN_free(n);
-	BN_free(e);
-	return evp_key;
-#else
-	RSA* rsa;
-	EVP_PKEY *evp_key = EVP_PKEY_new();
-	if(!evp_key) {
-		return NULL;
-	}
-	rsa = sldns_key_buf2rsa_raw(key, len);
-	if(!rsa) {
-		EVP_PKEY_free(evp_key);
-		return NULL;
-	}
-	if(EVP_PKEY_assign_RSA(evp_key, rsa) == 0) {
-		RSA_free(rsa);
-		EVP_PKEY_free(evp_key);
-		return NULL;
-	}
-	return evp_key;
-#endif
 }
 
 #ifdef USE_GOST
@@ -559,62 +311,6 @@ sldns_gost2pkey_raw(unsigned char* key, size_t keylen)
 EVP_PKEY*
 sldns_ecdsa2pkey_raw(unsigned char* key, size_t keylen, uint8_t algo)
 {
-#ifdef HAVE_OSSL_PARAM_BLD_NEW
-	unsigned char buf[256+2]; /* sufficient for 2*384/8+1 */
-	EVP_PKEY *evp_key = NULL;
-	EVP_PKEY_CTX* ctx;
-	OSSL_PARAM_BLD* param_bld;
-	OSSL_PARAM* params = NULL;
-	char* group = NULL;
-
-	/* check length, which uncompressed must be 2 bignums */
-	if(algo == LDNS_ECDSAP256SHA256) {
-		if(keylen != 2*256/8) return NULL;
-		group = "prime256v1";
-	} else if(algo == LDNS_ECDSAP384SHA384) {
-		if(keylen != 2*384/8) return NULL;
-		group = "P-384";
-	} else {
-		return NULL;
-	}
-	if(keylen+1 > sizeof(buf)) { /* sanity check */
-		return NULL;
-	}
-	/* prepend the 0x04 for uncompressed format */
-	buf[0] = POINT_CONVERSION_UNCOMPRESSED;
-	memmove(buf+1, key, keylen);
-
-	param_bld = OSSL_PARAM_BLD_new();
-	if(!param_bld) {
-		return NULL;
-	}
-	if(!OSSL_PARAM_BLD_push_utf8_string(param_bld, "group", group, 0) ||
-	   !OSSL_PARAM_BLD_push_octet_string(param_bld, "pub", buf, keylen+1)) {
-		OSSL_PARAM_BLD_free(param_bld);
-		return NULL;
-	}
-	params = OSSL_PARAM_BLD_to_param(param_bld);
-	OSSL_PARAM_BLD_free(param_bld);
-
-	ctx = EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL);
-	if(!ctx) {
-		OSSL_PARAM_free(params);
-		return NULL;
-	}
-	if(EVP_PKEY_fromdata_init(ctx) <= 0) {
-		EVP_PKEY_CTX_free(ctx);
-		OSSL_PARAM_free(params);
-		return NULL;
-	}
-	if(EVP_PKEY_fromdata(ctx, &evp_key, EVP_PKEY_PUBLIC_KEY, params) <= 0) {
-		EVP_PKEY_CTX_free(ctx);
-		OSSL_PARAM_free(params);
-		return NULL;
-	}
-	EVP_PKEY_CTX_free(ctx);
-	OSSL_PARAM_free(params);
-	return evp_key;
-#else
 	unsigned char buf[256+2]; /* sufficient for 2*384/8+1 */
         const unsigned char* pp = buf;
         EVP_PKEY *evp_key;
@@ -651,51 +347,8 @@ sldns_ecdsa2pkey_raw(unsigned char* key, size_t keylen, uint8_t algo)
 		return NULL;
 	}
         return evp_key;
-#endif /* HAVE_OSSL_PARAM_BLD_NEW */
 }
 #endif /* USE_ECDSA */
-
-#ifdef USE_ED25519
-EVP_PKEY*
-sldns_ed255192pkey_raw(const unsigned char* key, size_t keylen)
-{
-	/* ASN1 for ED25519 is 302a300506032b6570032100 <32byteskey> */
-	uint8_t pre[] = {0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65,
-		0x70, 0x03, 0x21, 0x00};
-	int pre_len = 12;
-	uint8_t buf[256];
-	EVP_PKEY *evp_key;
-	/* pp gets modified by d2i() */
-	const unsigned char* pp = (unsigned char*)buf;
-	if(keylen != 32 || keylen + pre_len > sizeof(buf))
-		return NULL; /* wrong length */
-	memmove(buf, pre, pre_len);
-	memmove(buf+pre_len, key, keylen);
-	evp_key = d2i_PUBKEY(NULL, &pp, (int)(pre_len+keylen));
-	return evp_key;
-}
-#endif /* USE_ED25519 */
-
-#ifdef USE_ED448
-EVP_PKEY*
-sldns_ed4482pkey_raw(const unsigned char* key, size_t keylen)
-{
-	/* ASN1 for ED448 is 3043300506032b6571033a00 <57byteskey> */
-	uint8_t pre[] = {0x30, 0x43, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65,
-		0x71, 0x03, 0x3a, 0x00};
-        int pre_len = 12;
-	uint8_t buf[256];
-        EVP_PKEY *evp_key;
-	/* pp gets modified by d2i() */
-        const unsigned char* pp = (unsigned char*)buf;
-	if(keylen != 57 || keylen + pre_len > sizeof(buf))
-		return NULL; /* wrong length */
-	memmove(buf, pre, pre_len);
-	memmove(buf+pre_len, key, keylen);
-	evp_key = d2i_PUBKEY(NULL, &pp, (int)(pre_len+keylen));
-        return evp_key;
-}
-#endif /* USE_ED448 */
 
 int
 sldns_digest_evp(unsigned char* data, unsigned int len, unsigned char* dest,

@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -46,7 +46,7 @@
 #ifndef DAEMON_REMOTE_H
 #define DAEMON_REMOTE_H
 #ifdef HAVE_OPENSSL_SSL_H
-#include <openssl/ssl.h>
+#include "openssl/ssl.h"
 #endif
 struct config_file;
 struct listen_list;
@@ -56,8 +56,8 @@ struct comm_reply;
 struct comm_point;
 struct daemon_remote;
 
-/** number of milliseconds timeout on incoming remote control handshake */
-#define REMOTE_CONTROL_TCP_TIMEOUT 120000
+/** number of seconds timeout on incoming remote control handshake */
+#define REMOTE_CONTROL_TCP_TIMEOUT 120
 
 /**
  * a busy control command connection, SSL state
@@ -69,12 +69,8 @@ struct rc_state {
 	struct comm_point* c;
 	/** in the handshake part */
 	enum { rc_none, rc_hs_read, rc_hs_write } shake_state;
-#ifdef HAVE_SSL
 	/** the ssl state */
 	SSL* ssl;
-#endif
-	/** file descriptor */
-        int fd;
 	/** the rc this is part of */
 	struct daemon_remote* rc;
 };
@@ -91,32 +87,15 @@ struct daemon_remote {
 	struct worker* worker;
 	/** commpoints for accepting remote control connections */
 	struct listen_list* accept_list;
-	/* if certificates are used */
-	int use_cert;
 	/** number of active commpoints that are handling remote control */
 	int active;
 	/** max active commpoints */
 	int max_active;
 	/** current commpoints busy; should be a short list, malloced */
 	struct rc_state* busy_list;
-#ifdef HAVE_SSL
 	/** the SSL context for creating new SSL streams */
 	SSL_CTX* ctx;
-#endif
 };
-
-/**
- * Connection to print to, either SSL or plain over fd
- */
-struct remote_stream {
-#ifdef HAVE_SSL
-	/** SSL structure, nonNULL if using SSL */
-	SSL* ssl;
-#endif
-	/** file descriptor for plain transfer */
-	int fd;
-};
-typedef struct remote_stream RES;
 
 /**
  * Create new remote control state for the daemon.
@@ -157,50 +136,45 @@ int daemon_remote_open_accept(struct daemon_remote* rc,
 	struct listen_port* ports, struct worker* worker);
 
 /**
- * Stop accept handlers for TCP (until enabled again)
- * @param rc: state
- */
-void daemon_remote_stop_accept(struct daemon_remote* rc);
-
-/**
- * Stop accept handlers for TCP (until enabled again)
- * @param rc: state
- */
-void daemon_remote_start_accept(struct daemon_remote* rc);
-
-/**
  * Handle nonthreaded remote cmd execution.
  * @param worker: this worker (the remote worker).
  */
 void daemon_remote_exec(struct worker* worker);
 
-#ifdef HAVE_SSL
+/** handle remote control accept callbacks */
+int remote_accept_callback(struct comm_point*, void*, int, struct comm_reply*);
+
+/** handle remote control data callbacks */
+int remote_control_callback(struct comm_point*, void*, int, struct comm_reply*);
+
 /** 
  * Print fixed line of text over ssl connection in blocking mode
  * @param ssl: print to
  * @param text: the text.
  * @return false on connection failure.
  */
-int ssl_print_text(RES* ssl, const char* text);
+int ssl_print_text(SSL* ssl, const char* text);
 
 /** 
  * printf style printing to the ssl connection
- * @param ssl: the RES connection to print to. Blocking.
+ * @param ssl: the SSL connection to print to. Blocking.
  * @param format: printf style format string.
  * @return success or false on a network failure.
  */
-int ssl_printf(RES* ssl, const char* format, ...)
+int ssl_printf(SSL* ssl, const char* format, ...)
         ATTR_FORMAT(printf, 2, 3);
 
 /**
  * Read until \n is encountered
- * If stream signals EOF, the string up to then is returned (without \n).
- * @param ssl: the RES connection to read from. blocking.
+ * If SSL signals EOF, the string up to then is returned (without \n).
+ * @param ssl: the SSL connection to read from. blocking.
  * @param buf: buffer to read to.
  * @param max: size of buffer.
  * @return false on connection failure.
  */
-int ssl_read_line(RES* ssl, char* buf, size_t max);
-#endif /* HAVE_SSL */
+int ssl_read_line(SSL* ssl, char* buf, size_t max);
+
+/** routine to printout option values over SSL */
+void remote_get_opt_ssl(char* line, void* arg);
 
 #endif /* DAEMON_REMOTE_H */

@@ -21,22 +21,22 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
  * \file
  *
- * This file contains a module that performs recursive iterative DNS query
+ * This file contains a module that performs recusive iterative DNS query
  * processing.
  */
 
@@ -51,89 +51,60 @@ struct iter_forwards;
 struct iter_donotq;
 struct iter_prep_list;
 struct iter_priv;
-struct rbtree_type;
 
-/** max number of targets spawned for a query and its subqueries */
-#define MAX_TARGET_COUNT	64
-/** max number of target lookups per qstate, per delegation point */
-#define MAX_DP_TARGET_COUNT	16
-/** max number of nxdomains allowed for target lookups for a query and
- * its subqueries */
-#define MAX_TARGET_NX		5
-/** max number of nxdomains allowed for target lookups for a query and
- * its subqueries when fallback has kicked in */
-#define MAX_TARGET_NX_FALLBACK	(MAX_TARGET_NX*2)
+/** max number of query restarts. Determines max number of CNAME chain. */
+#define MAX_RESTART_COUNT       8
 /** max number of referrals. Makes sure resolver does not run away */
 #define MAX_REFERRAL_COUNT	130
-/** max number of queries for which to perform dnsseclameness detection,
- * (rrsigs missing detection) after that, just pick up that response */
-#define DNSSEC_LAME_DETECT_COUNT 4
-/**
- * max number of QNAME minimisation iterations. Limits number of queries for
- * QNAMEs with a lot of labels.
-*/
-#define MAX_MINIMISE_COUNT	10
-/* max number of time-outs for minimised query. Prevents resolving failures
- * when the QNAME minimisation QTYPE is blocked. */
-#define MAX_MINIMISE_TIMEOUT_COUNT 3
-/**
- * number of labels from QNAME that are always send individually when using
- * QNAME minimisation, even when the number of labels of the QNAME is bigger
- * than MAX_MINIMISE_COUNT */
-#define MINIMISE_ONE_LAB	4
-#define MINIMISE_MULTIPLE_LABS	(MAX_MINIMISE_COUNT - MINIMISE_ONE_LAB)
+/** max number of queries-sent-out.  Make sure large NS set does not loop */
+#define MAX_SENT_COUNT		16
 /** at what query-sent-count to stop target fetch policy */
 #define TARGET_FETCH_STOP	3
 /** how nice is a server without further information, in msec 
  * Equals rtt initial timeout value.
  */
-extern int UNKNOWN_SERVER_NICENESS;
+#define UNKNOWN_SERVER_NICENESS 376
 /** maximum timeout before a host is deemed unsuitable, in msec. 
  * After host_ttl this will be timed out and the host will be tried again. 
- * Equals RTT_MAX_TIMEOUT, and thus when RTT_MAX_TIMEOUT is overwritten by
- * config infra_cache_max_rtt, it will be overwritten as well. */
-extern int USEFUL_SERVER_TOP_TIMEOUT;
-/** penalty to validation failed blacklisted IPs
- * Equals USEFUL_SERVER_TOP_TIMEOUT*4, and thus when RTT_MAX_TIMEOUT is
- * overwritten by config infra_cache_max_rtt, it will be overwritten as well. */
-extern int BLACKLIST_PENALTY;
+ * Equals RTT_MAX_TIMEOUT
+ */
+#define USEFUL_SERVER_TOP_TIMEOUT	120000
+/** Number of lost messages in a row that get a host blacklisted.
+ * With 16, a couple different queries have to time out and no working
+ * queries are happening */
+#define USEFUL_SERVER_MAX_LOST	16
+/** number of retries on outgoing queries */
+#define OUTBOUND_MSG_RETRY 5
 /** RTT band, within this amount from the best, servers are chosen randomly.
  * Chosen so that the UNKNOWN_SERVER_NICENESS falls within the band of a 
  * fast server, this causes server exploration as a side benefit. msec. */
 #define RTT_BAND 400
-/** Number of retries for empty nodata packets before it is accepted. */
-#define EMPTY_NODATA_RETRY_COUNT 2
+/** Start value for blacklisting a host, 2*USEFUL_SERVER_TOP_TIMEOUT in sec */
+#define INFRA_BACKOFF_INITIAL 240
 
 /**
- * Global state for the iterator.
+ * Global state for the iterator. 
  */
 struct iter_env {
+	/** 
+	 * The hints -- these aren't stored in the cache because they don't 
+	 * expire. The hints are always used to "prime" the cache. Note 
+	 * that both root hints and stub zone "hints" are stored in this 
+	 * data structure.
+	 */
+	struct iter_hints* hints;
+
 	/** A flag to indicate whether or not we have an IPv6 route */
 	int supports_ipv6;
 
 	/** A flag to indicate whether or not we have an IPv4 route */
 	int supports_ipv4;
 
-	/** A flag to locally apply NAT64 to make IPv4 addrs into IPv6 */
-	int use_nat64;
-
-	/** NAT64 prefix address, cf. dns64_env->prefix_addr */
-	struct sockaddr_storage nat64_prefix_addr;
-
-	/** sizeof(sockaddr_in6) */
-	socklen_t nat64_prefix_addrlen;
-
-	/** CIDR mask length of NAT64 prefix */
-	int nat64_prefix_net;
-
 	/** A set of inetaddrs that should never be queried. */
 	struct iter_donotq* donotq;
 
 	/** private address space and private domains */
 	struct iter_priv* priv;
-
-	/** whitelist for capsforid names */
-	struct rbtree_type* caps_white;
 
 	/** The maximum dependency depth that this resolver will pursue. */
 	int max_dependency_depth;
@@ -147,43 +118,6 @@ struct iter_env {
 	 * array of max_dependency_depth+1 size.
 	 */
 	int* target_fetch_policy;
-
-	/** lock on ratelimit counter */
-	lock_basic_type queries_ratelimit_lock;
-	/** number of queries that have been ratelimited */
-	size_t num_queries_ratelimited;
-
-	/** number of retries on outgoing queries */
-	int outbound_msg_retry;
-
-	/** number of queries_sent */
-	int max_sent_count;
-
-	/** max number of query restarts to limit length of CNAME chain */
-	int max_query_restarts;
-};
-
-/**
- * QNAME minimisation state
- */
-enum minimisation_state {
-	/**
-	 * (Re)start minimisation. Outgoing QNAME should be set to dp->name.
-	 * State entered on new query or after following referral or CNAME.
-	 */
-	INIT_MINIMISE_STATE = 0,
-	/**
-	 * QNAME minimisation ongoing. Increase QNAME on every iteration.
-	 */
-	MINIMISE_STATE,
-	/**
-	 * Don't increment QNAME this iteration
-	 */
-	SKIP_MINIMISE_STATE,
-	/**
-	 * Send out full QNAME + original QTYPE
-	 */
-	DONOT_MINIMISE_STATE,
 };
 
 /**
@@ -211,7 +145,7 @@ enum iter_state {
 	/**
 	 * Each time a delegation point changes for a given query or a 
 	 * query times out and/or wakes up, this state is (re)visited. 
-	 * This state is responsible for iterating through a list of 
+	 * This state is reponsible for iterating through a list of 
 	 * nameserver targets.
 	 */
 	QUERYTARGETS_STATE,
@@ -229,28 +163,9 @@ enum iter_state {
 	 * it spawns off queries for every class, it returns here. */
 	COLLECT_CLASS_STATE,
 
-	/** Find NS record to resolve DS record from, walking to the right
-	 * NS spot until we find it */
-	DSNS_FIND_STATE,
-
 	/** Responses that are to be returned upstream end at this state. 
 	 * As well as responses to target queries. */
 	FINISHED_STATE
-};
-
-/**
- * Shared counters for queries.
- */
-enum target_count_variables {
-	/** Reference count for the shared iter_qstate->target_count. */
-	TARGET_COUNT_REF = 0,
-	/** Number of target queries spawned for the query and subqueries. */
-	TARGET_COUNT_QUERIES,
-	/** Number of nxdomain responses encountered. */
-	TARGET_COUNT_NX,
-
-	/** This should stay last here, it is used for the allocation */
-	TARGET_COUNT_MAX,
 };
 
 /**
@@ -323,10 +238,8 @@ struct iter_qstate {
 	int caps_fallback;
 	/** state for capsfail: current server number to try */
 	size_t caps_server;
-	/** state for capsfail: stored query for comparisons. Can be NULL if
-	 * no response had been seen prior to starting the fallback. */
+	/** state for capsfail: stored query for comparisons */
 	struct reply_info* caps_reply;
-	struct dns_msg* caps_response;
 
 	/** Current delegation message - returned for non-RD queries */
 	struct dns_msg* deleg_msg;
@@ -340,28 +253,11 @@ struct iter_qstate {
 	/** the number of times this query has been restarted. */
 	int query_restart_count;
 
-	/** the number of times this query has followed a referral. */
+	/** the number of times this query as followed a referral. */
 	int referral_count;
 
 	/** number of queries fired off */
 	int sent_count;
-	
-	/** malloced-array shared with this query and its subqueries. It keeps
-	 * track of the defined enum target_count_variables counters. */
-	int* target_count;
-
-	/** number of target lookups per delegation point. Reset to 0 after
-	 * receiving referral answer. Not shared with subqueries. */
-	int dp_target_count;
-
-	/** Delegation point that triggered the NXNS fallback; shared with
-	 * this query and its subqueries, count-referenced by the reference
-	 * counter in target_count.
-	 * This also marks the fallback activation. */
-	uint8_t** nxns_dp;
-
-	/** if true, already tested for ratelimiting and passed the test */
-	int ratelimit_ok;
 
 	/**
 	 * The query must store NS records from referrals as parentside RRs
@@ -382,11 +278,6 @@ struct iter_qstate {
 	int query_for_pside_glue;
 	/** the parent-side-glue element (NULL if none, its first match) */
 	struct ub_packed_rrset_key* pside_glue;
-
-	/** If nonNULL we are walking upwards from DS query to find NS */
-	uint8_t* dsns_point;
-	/** length of the dname in dsns_point */
-	size_t dsns_point_len;
 
 	/** 
 	 * expected dnssec information for this iteration step. 
@@ -417,55 +308,8 @@ struct iter_qstate {
 	 */
 	int refetch_glue;
 
-	/**
-	 * This flag detects that a completely empty nodata was received,
-	 * already so that it is accepted later. */
-	int empty_nodata_found;
-
 	/** list of pending queries to authoritative servers. */
 	struct outbound_list outlist;
-
-	/** QNAME minimisation state, RFC9156 */
-	enum minimisation_state minimisation_state;
-
-	/** State for capsfail: QNAME minimisation state for comparisons. */
-	enum minimisation_state caps_minimisation_state;
-
-	/**
-	 * The query info that is sent upstream. Will be a subset of qchase
-	 * when qname minimisation is enabled.
-	 */
-	struct query_info qinfo_out;
-
-	/**
-	 * Count number of QNAME minimisation iterations. Used to limit number of
-	 * outgoing queries when QNAME minimisation is enabled.
-	 */
-	int minimise_count;
-
-	/**
-	 * Count number of time-outs. Used to prevent resolving failures when
-	 * the QNAME minimisation QTYPE is blocked. Used to determine if
-	 * capsforid fallback should be started.*/
-	int timeout_count;
-
-	/** True if the current response is from auth_zone */
-	int auth_zone_response;
-	/** True if the auth_zones should not be consulted for the query */
-	int auth_zone_avoid;
-	/** true if there have been scrubbing failures of reply packets */
-	int scrub_failures;
-	/** true if there have been parse failures of reply packets */
-	int parse_failures;
-	/** a failure printout address for last received answer */
-	union {
-		struct in_addr in;
-#ifdef AF_INET6
-		struct in6_addr in6;
-#endif
-	} fail_addr;
-	/** which fail_addr, 0 is nothing, 4 or 6 */
-	int fail_addr_type;
 };
 
 /**
@@ -509,7 +353,7 @@ void iter_operate(struct module_qstate* qstate, enum module_ev event, int id,
 	struct outbound_entry* outbound);
 
 /**
- * Return priming query results to interested super querystates.
+ * Return priming query results to interestes super querystates.
  * 
  * Sets the delegation point and delegation message (not nonRD queries).
  * This is a callback from walk_supers.

@@ -7,35 +7,28 @@
  *
  */
 
-#include "config.h"
+#include <config.h>
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
 #include "difffile.h"
-#include "xfrd-disk.h"
 #include "util.h"
 #include "packet.h"
 #include "rdata.h"
-#include "udb.h"
-#include "nsec3.h"
-#include "nsd.h"
-#include "rrl.h"
-#include "ixfr.h"
-#include "zonec.h"
-#include "xfrd-catalog-zones.h"
-
-static int
-write_64(FILE *out, uint64_t val)
-{
-	return write_data(out, &val, sizeof(val));
-}
 
 static int
 write_32(FILE *out, uint32_t val)
 {
 	val = htonl(val);
+	return write_data(out, &val, sizeof(val));
+}
+
+static int
+write_16(FILE *out, uint16_t val)
+{
+	val = htons(val);
 	return write_data(out, &val, sizeof(val));
 }
 
@@ -55,147 +48,143 @@ write_str(FILE *out, const char* str)
 }
 
 void
-diff_write_packet(const char* zone, const char* pat, uint32_t old_serial,
-	uint32_t new_serial, uint32_t seq_nr, uint8_t* data, size_t len,
-	struct nsd* nsd, uint64_t filenumber)
+diff_write_packet(const char* zone, uint32_t new_serial, uint16_t id,
+	uint32_t seq_nr, uint8_t* data, size_t len, nsd_options_t* opt)
 {
-	FILE* df = xfrd_open_xfrfile(nsd, filenumber, seq_nr?"a":"w");
-	if(!df) {
-		log_msg(LOG_ERR, "could not open transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
-		return;
-	}
-
-	/* if first part, first write the header */
-	if(seq_nr == 0) {
-		struct timeval tv;
-		if (gettimeofday(&tv, NULL) != 0) {
-			log_msg(LOG_ERR, "could not get timestamp for %s: %s",
-				zone, strerror(errno));
-		}
-		if(!write_32(df, DIFF_PART_XFRF) ||
-			!write_8(df, 0) /* notcommitted(yet) */ ||
-			!write_32(df, 0) /* numberofparts when done */ ||
-			!write_64(df, (uint64_t) tv.tv_sec) ||
-			!write_32(df, (uint32_t) tv.tv_usec) ||
-			!write_32(df, old_serial) ||
-			!write_32(df, new_serial) ||
-			!write_64(df, (uint64_t) tv.tv_sec) ||
-			!write_32(df, (uint32_t) tv.tv_usec) ||
-			!write_str(df, zone) ||
-			!write_str(df, pat)) {
-			log_msg(LOG_ERR, "could not write transfer %s file %lld: %s",
-				zone, (long long)filenumber, strerror(errno));
-			fclose(df);
-			return;
-		}
-	}
-
-	if(!write_32(df, DIFF_PART_XXFR) ||
-		!write_32(df, len) ||
-		!write_data(df, data, len) ||
-		!write_32(df, len))
-	{
-		log_msg(LOG_ERR, "could not write transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
-	}
-	fclose(df);
-}
-
-void
-diff_write_commit(const char* zone, uint32_t old_serial, uint32_t new_serial,
-	uint32_t num_parts, uint8_t commit, const char* log_str,
-	struct nsd* nsd, uint64_t filenumber)
-{
+	const char* filename = opt->difffile;
 	struct timeval tv;
-	FILE* df;
+	FILE *df;
+	uint32_t file_len = sizeof(uint32_t) + strlen(zone) +
+		sizeof(new_serial) + sizeof(id) + sizeof(seq_nr) + len;
 
 	if (gettimeofday(&tv, NULL) != 0) {
 		log_msg(LOG_ERR, "could not set timestamp for %s: %s",
-			zone, strerror(errno));
+			filename, strerror(errno));
+		return;
 	}
 
-	/* overwrite the first part of the file with 'committed = 1', 
-	 * as well as the end_time and number of parts.
-	 * also write old_serial and new_serial, so that a bad file mixup
-	 * will result in unusable serial numbers. */
-
-	df = xfrd_open_xfrfile(nsd, filenumber, "r+");
+	df = fopen(filename, "a");
 	if(!df) {
-		log_msg(LOG_ERR, "could not open transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
+		log_msg(LOG_ERR, "could not open file %s for append: %s",
+			filename, strerror(errno));
 		return;
 	}
-	if(!write_32(df, DIFF_PART_XFRF) ||
-		!write_8(df, commit) /* committed */ ||
-		!write_32(df, num_parts) ||
-		!write_64(df, (uint64_t) tv.tv_sec) ||
+
+	if(!write_32(df, DIFF_PART_IXFR) ||
+		!write_32(df, (uint32_t) tv.tv_sec) ||
 		!write_32(df, (uint32_t) tv.tv_usec) ||
-		!write_32(df, old_serial) ||
-		!write_32(df, new_serial))
+		!write_32(df, file_len) ||
+		!write_str(df, zone) ||
+		!write_32(df, new_serial) ||
+		!write_16(df, id) ||
+		!write_32(df, seq_nr) ||
+		!write_data(df, data, len) ||
+		!write_32(df, file_len))
 	{
-		log_msg(LOG_ERR, "could not write transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
-		fclose(df);
-		return;
-	}
-
-	/* append the log_str to the end of the file */
-	if(fseek(df, 0, SEEK_END) == -1) {
-		log_msg(LOG_ERR, "could not fseek transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
-		fclose(df);
-		return;
-	}
-	if(!write_str(df, log_str)) {
-		log_msg(LOG_ERR, "could not write transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
-		fclose(df);
-		return;
-
+		log_msg(LOG_ERR, "could not write to file %s: %s",
+			filename, strerror(errno));
 	}
 	fflush(df);
 	fclose(df);
 }
 
 void
-diff_update_commit(
-	const char* zone, uint8_t commit, struct nsd* nsd, uint64_t filenumber)
+diff_write_commit(const char* zone, uint32_t old_serial,
+	uint32_t new_serial, uint16_t id, uint32_t num_parts,
+	uint8_t commit, const char* log_str, nsd_options_t* opt)
 {
+	const char* filename = opt->difffile;
+	struct timeval tv;
 	FILE *df;
+	uint32_t len;
 
-	assert(zone != NULL);
-	assert(nsd != NULL);
-	assert(commit == DIFF_NOT_COMMITTED ||
-	       commit == DIFF_COMMITTED ||
-	       commit == DIFF_CORRUPT ||
-	       commit == DIFF_INCONSISTENT ||
-	       commit == DIFF_VERIFIED);
-
-	df = xfrd_open_xfrfile(nsd, filenumber, "r+");
-	if(!df) {
-		log_msg(LOG_ERR, "could not open transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
+	if (gettimeofday(&tv, NULL) != 0) {
+		log_msg(LOG_ERR, "could not set timestamp for %s: %s",
+			filename, strerror(errno));
 		return;
 	}
-	if(!write_32(df, DIFF_PART_XFRF) || !write_8(df, commit)) {
-		log_msg(LOG_ERR, "could not write transfer %s file %lld: %s",
-			zone, (long long)filenumber, strerror(errno));
-		fclose(df);
+
+	df = fopen(filename, "a");
+	if(!df) {
+		log_msg(LOG_ERR, "could not open file %s for append: %s",
+			filename, strerror(errno));
 		return;
+	}
+
+	len = strlen(zone) + sizeof(len) + sizeof(old_serial) +
+		sizeof(new_serial) + sizeof(id) + sizeof(num_parts) +
+		sizeof(commit) + strlen(log_str) + sizeof(len);
+
+	if(!write_32(df, DIFF_PART_SURE) ||
+		!write_32(df, (uint32_t) tv.tv_sec) ||
+		!write_32(df, (uint32_t) tv.tv_usec) ||
+		!write_32(df, len) ||
+		!write_str(df, zone) ||
+		!write_32(df, old_serial) ||
+		!write_32(df, new_serial) ||
+		!write_16(df, id) ||
+		!write_32(df, num_parts) ||
+		!write_8(df, commit) ||
+		!write_str(df, log_str) ||
+		!write_32(df, len))
+	{
+		log_msg(LOG_ERR, "could not write to file %s: %s",
+			filename, strerror(errno));
 	}
 	fflush(df);
 	fclose(df);
 }
 
+/*
+ * Checksum to signal no data change occured (for example, by a
+ * zonec run.
+ */
 int
-diff_read_64(FILE *in, uint64_t* result)
+db_crc_different(namedb_type* db)
 {
-	if (fread(result, sizeof(*result), 1, in) == 1) {
-		return 1;
-	} else {
-		return 0;
+	FILE *fd = fopen(db->filename, "r");
+	uint32_t crc_file;
+	char buf[NAMEDB_MAGIC_SIZE];
+	if(fd == NULL) {
+		log_msg(LOG_ERR, "unable to load %s: %s",
+			db->filename, strerror(errno));
+		return -1;
 	}
+
+	/* seek to position of CRC, check it and magic no */
+	if(fseeko(fd, db->crc_pos, SEEK_SET)==-1) {
+		log_msg(LOG_ERR, "unable to fseeko %s: %s. db changed?",
+			db->filename, strerror(errno));
+		fclose(fd);
+		return -1;
+	}
+
+	if(fread(&crc_file, sizeof(crc_file), 1, fd) != 1) {
+		if(!feof(fd))
+			log_msg(LOG_ERR, "could not read %s CRC: %s. "
+				"db changed?", db->filename, strerror(errno));
+		fclose(fd);
+		return -1;
+	}
+	crc_file = ntohl(crc_file);
+
+	if(fread(buf, sizeof(char), sizeof(buf), fd) != sizeof(buf)) {
+		if(!feof(fd))
+			log_msg(LOG_ERR, "could not read %s magic: %s. "
+				"db changed?", db->filename, strerror(errno));
+		fclose(fd);
+		return -1;
+	}
+	if(memcmp(buf, NAMEDB_MAGIC, NAMEDB_MAGIC_SIZE) != 0) {
+		fclose(fd);
+		return -1;
+	}
+
+	fclose(fd);
+
+	if(db->crc == crc_file)
+		return 0;
+	return 1;
 }
 
 int
@@ -210,13 +199,24 @@ diff_read_32(FILE *in, uint32_t* result)
 }
 
 int
+diff_read_16(FILE *in, uint16_t* result)
+{
+        if (fread(result, sizeof(*result), 1, in) == 1) {
+                *result = ntohs(*result);
+                return 1;
+        } else {
+                return 0;
+        }
+}
+
+int
 diff_read_8(FILE *in, uint8_t* result)
 {
-	if (fread(result, sizeof(*result), 1, in) == 1) {
-		return 1;
-	} else {
-		return 0;
-	}
+        if (fread(result, sizeof(*result), 1, in) == 1) {
+                return 1;
+        } else {
+                return 0;
+        }
 }
 
 int
@@ -259,7 +259,7 @@ has_data_below(domain_type* top)
 	assert(d != NULL);
 	/* in the canonical ordering subdomains are after this name */
 	d = domain_next(d);
-	while(d != NULL && domain_is_subdomain(d, top)) {
+	while(d != NULL && dname_is_subdomain(domain_dname(d), domain_dname(top))) {
 		if(d->is_existing)
 			return 1;
 		d = domain_next(d);
@@ -267,34 +267,6 @@ has_data_below(domain_type* top)
 	return 0;
 }
 
-/** check if domain with 0 rrsets has become empty (nonexist) */
-static domain_type*
-rrset_zero_nonexist_check(domain_type* domain, domain_type* ce)
-{
-	/* is the node now an empty node (completely deleted) */
-	if(domain->rrsets == 0) {
-		/* if there is no data below it, it becomes non existing.
-		   also empty nonterminals above it become nonexisting */
-		/* check for data below this node. */
-		if(!has_data_below(domain)) {
-			/* nonexist this domain and all parent empty nonterminals */
-			domain_type* p = domain;
-			while(p != NULL && p->rrsets == 0) {
-				if(p == ce || has_data_below(p))
-					return p;
-				p->is_existing = 0;
-				/* fixup wildcard child of parent */
-				if(p->parent &&
-					p->parent->wildcard_child_closest_match == p)
-					p->parent->wildcard_child_closest_match = domain_previous_existing_child(p);
-				p = p->parent;
-			}
-		}
-	}
-	return NULL;
-}
-
-/** remove rrset.  Adjusts zone params.  Does not remove domain */
 static void
 rrset_delete(namedb_type* db, domain_type* domain, rrset_type* rrset)
 {
@@ -311,363 +283,98 @@ rrset_delete(namedb_type* db, domain_type* domain, rrset_type* rrset)
 	*pp = rrset->next;
 
 	DEBUG(DEBUG_XFRD,2, (LOG_INFO, "delete rrset of %s type %s",
-		domain_to_string(domain),
+		dname_to_string(domain_dname(domain),0),
 		rrtype_to_string(rrset_rrtype(rrset))));
 
 	/* is this a SOA rrset ? */
 	if(rrset->zone->soa_rrset == rrset) {
 		rrset->zone->soa_rrset = 0;
+		rrset->zone->updated = 1;
 	}
 	if(rrset->zone->ns_rrset == rrset) {
 		rrset->zone->ns_rrset = 0;
 	}
+#ifdef DNSSEC
 	if(domain == rrset->zone->apex && rrset_rrtype(rrset) == TYPE_RRSIG) {
 		for (i = 0; i < rrset->rr_count; ++i) {
-			if(rr_rrsig_type_covered(&rrset->rrs[i])==TYPE_DNSKEY) {
+			if (rr_rrsig_type_covered(&rrset->rrs[i]) == TYPE_SOA) {
 				rrset->zone->is_secure = 0;
 				break;
 			}
 		}
 	}
+#endif
 	/* recycle the memory space of the rrset */
 	for (i = 0; i < rrset->rr_count; ++i)
 		add_rdata_to_recyclebin(db, &rrset->rrs[i]);
 	region_recycle(db->region, rrset->rrs,
 		sizeof(rr_type) * rrset->rr_count);
-	rrset->rr_count = 0;
 	region_recycle(db->region, rrset, sizeof(rrset_type));
+
+	/* is the node now an empty node (completely deleted) */
+	if(domain->rrsets == 0) {
+		/* if there is no data below it, it becomes non existing.
+		   also empty nonterminals above it become nonexisting */
+		/* check for data below this node. */
+		if(!has_data_below(domain)) {
+			/* nonexist this domain and all parent empty nonterminals */
+			domain_type* p = domain;
+			while(p != NULL && p->rrsets == 0) {
+				p->is_existing = 0;
+				p = p->parent;
+			}
+		}
+	}
+	rrset->rr_count = 0;
 }
 
 static int
-rdatas_equal(rdata_atom_type *a, rdata_atom_type *b, int num, uint16_t type,
-	int* rdnum, char** reason)
+rdatas_equal(rdata_atom_type *a, rdata_atom_type *b, int num, uint16_t type)
 {
-	int k, start, end;
-	start = 0;
-	end = num;
-	/**
-	 * SOA RDATA comparisons in XFR are more lenient,
-	 * only serial rdata is checked.
-	 **/
-	if (type == TYPE_SOA) {
-		start = 2;
-		end = 3;
-	}
-	for(k = start; k < end; k++)
+	int k;
+	for(k = 0; k < num; k++)
 	{
 		if(rdata_atom_is_domain(type, k)) {
 			if(dname_compare(domain_dname(a[k].domain),
-				domain_dname(b[k].domain))!=0) {
-				*rdnum = k;
-				*reason = "dname data";
+				domain_dname(b[k].domain))!=0)
 				return 0;
-			}
-		} else if(rdata_atom_is_literal_domain(type, k)) {
-			/* literal dname, but compare case insensitive */
-			if(a[k].data[0] != b[k].data[0]) {
-				*rdnum = k;
-				*reason = "literal dname len";
-				return 0; /* uncompressed len must be equal*/
-			}
-			if(!dname_equal_nocase((uint8_t*)(a[k].data+1),
-				(uint8_t*)(b[k].data+1), a[k].data[0])) {
-				*rdnum = k;
-				*reason = "literal dname data";
-				return 0;
-			}
 		} else {
 			/* check length */
-			if(a[k].data[0] != b[k].data[0]) {
-				*rdnum = k;
-				*reason = "rdata len";
+			if(a[k].data[0] != b[k].data[0])
 				return 0;
-			}
 			/* check data */
-			if(memcmp(a[k].data+1, b[k].data+1, a[k].data[0])!=0) {
-				*rdnum = k;
-				*reason = "rdata data";
+			if(memcmp(a[k].data+1, b[k].data+1, a[k].data[0])!=0)
 				return 0;
-			}
 		}
 	}
 	return 1;
 }
 
-static void
-debug_find_rr_num(rrset_type* rrset, uint16_t type, uint16_t klass,
+static int
+find_rr_num(rrset_type* rrset,
+	uint16_t type, uint16_t klass,
 	rdata_atom_type *rdatas, ssize_t rdata_num)
 {
-	int i, rd;
-	char* reason = "";
-
-	for(i=0; i < rrset->rr_count; ++i) {
-		if (rrset->rrs[i].type != type) {
-			log_msg(LOG_WARNING, "diff: RR <%s, %s> does not match "
-				"RR num %d type %s",
-				dname_to_string(domain_dname(rrset->rrs[i].owner),0),
-				rrtype_to_string(type),	i,
-				rrtype_to_string(rrset->rrs[i].type));
-		}
-		if (rrset->rrs[i].klass != klass) {
-			log_msg(LOG_WARNING, "diff: RR <%s, %s> class %d "
-				"does not match RR num %d class %d",
-				dname_to_string(domain_dname(rrset->rrs[i].owner),0),
-				rrtype_to_string(type),
-				klass, i,
-				rrset->rrs[i].klass);
-		}
-		if (rrset->rrs[i].rdata_count != rdata_num) {
-			log_msg(LOG_WARNING, "diff: RR <%s, %s> rdlen %u "
-				"does not match RR num %d rdlen %d",
-				dname_to_string(domain_dname(rrset->rrs[i].owner),0),
-				rrtype_to_string(type),
-				(unsigned) rdata_num, i,
-				(unsigned) rrset->rrs[i].rdata_count);
-		}
-		if (!rdatas_equal(rdatas, rrset->rrs[i].rdatas, rdata_num, type,
-			&rd, &reason)) {
-			log_msg(LOG_WARNING, "diff: RR <%s, %s> rdata element "
-				"%d differs from RR num %d rdata (%s)",
-				dname_to_string(domain_dname(rrset->rrs[i].owner),0),
-				rrtype_to_string(type),
-				rd, i, reason);
-		}
-	}
-}
-
-static int
-find_rr_num(rrset_type* rrset, uint16_t type, uint16_t klass,
-	rdata_atom_type *rdatas, ssize_t rdata_num, int add)
-{
-	int i, rd;
-	char* reason;
+	int i;
 
 	for(i=0; i < rrset->rr_count; ++i) {
 		if(rrset->rrs[i].type == type &&
 		   rrset->rrs[i].klass == klass &&
 		   rrset->rrs[i].rdata_count == rdata_num &&
-		   rdatas_equal(rdatas, rrset->rrs[i].rdatas, rdata_num, type,
-			&rd, &reason))
+		   rdatas_equal(rdatas, rrset->rrs[i].rdatas, rdata_num, type))
 		{
 			return i;
 		}
 	}
-	/* this is odd. Log why rr cannot be found. */
-	if (!add) {
-		debug_find_rr_num(rrset, type, klass, rdatas, rdata_num);
-	}
+
 	return -1;
 }
 
-#ifdef NSEC3
-/* see if nsec3 deletion triggers need action */
-static void
-nsec3_delete_rr_trigger(namedb_type* db, rr_type* rr, zone_type* zone)
-{
-	/* the RR has not actually been deleted yet, so we can inspect it */
-	if(!zone->nsec3_param)
-		return;
-	/* see if the domain was an NSEC3-domain in the chain, but no longer */
-	if(rr->type == TYPE_NSEC3 && rr->owner->nsec3 &&
-		rr->owner->nsec3->nsec3_node.key &&
-		nsec3_rr_uses_params(rr, zone) &&
-		nsec3_in_chain_count(rr->owner, zone) <= 1) {
-		domain_type* prev = nsec3_chain_find_prev(zone, rr->owner);
-		/* remove from prehash because no longer an NSEC3 domain */
-		if(domain_is_prehash(db->domains, rr->owner))
-			prehash_del(db->domains, rr->owner);
-		/* fixup the last in the zone */
-		if(rr->owner == zone->nsec3_last)
-			zone->nsec3_last = prev;
-		/* unlink from the nsec3tree */
-		zone_del_domain_in_hash_tree(zone->nsec3tree,
-			&rr->owner->nsec3->nsec3_node);
-		/* add previous NSEC3 to the prehash list */
-		if(prev && prev != rr->owner)
-			prehash_add(db->domains, prev);
-		else	nsec3_clear_precompile(db, zone);
-		/* this domain becomes ordinary data domain: done later */
-	}
-	/* see if the rr was NSEC3PARAM that we were using */
-	else if(rr->type == TYPE_NSEC3PARAM && rr == zone->nsec3_param) {
-		/* clear trees, wipe hashes, wipe precompile */
-		nsec3_clear_precompile(db, zone);
-		/* pick up new nsec3param (from udb, or avoid deleted rr) */
-		nsec3_find_zone_param(db, zone, rr, 0);
-		/* if no more NSEC3, done */
-		if(!zone->nsec3_param)
-			return;
-		nsec3_precompile_newparam(db, zone);
-	}
-}
-
-/* see if nsec3 prehash can be removed with new rrset content */
-static void
-nsec3_rrsets_changed_remove_prehash(domain_type* domain, zone_type* zone)
-{
-	/* deletion of rrset already done, we can check if conditions apply */
-	/* see if the domain is no longer precompiled */
-	/* it has a hash_node, but no longer fulfills conditions */
-	if(nsec3_domain_part_of_zone(domain, zone) && domain->nsec3 &&
-		domain->nsec3->hash_wc &&
-		domain->nsec3->hash_wc->hash.node.key &&
-		!nsec3_condition_hash(domain, zone)) {
-		/* remove precompile */
-		domain->nsec3->nsec3_cover = NULL;
-		domain->nsec3->nsec3_wcard_child_cover = NULL;
-		domain->nsec3->nsec3_is_exact = 0;
-		/* remove it from the hash tree */
-		zone_del_domain_in_hash_tree(zone->hashtree,
-			&domain->nsec3->hash_wc->hash.node);
-		zone_del_domain_in_hash_tree(zone->wchashtree,
-			&domain->nsec3->hash_wc->wc.node);
-	}
-	if(domain != zone->apex && domain->nsec3 &&
-		domain->nsec3->ds_parent_hash &&
-		domain->nsec3->ds_parent_hash->node.key &&
-		(!domain->parent || nsec3_domain_part_of_zone(domain->parent, zone)) &&
-		!nsec3_condition_dshash(domain, zone)) {
-		/* remove precompile */
-		domain->nsec3->nsec3_ds_parent_cover = NULL;
-		domain->nsec3->nsec3_ds_parent_is_exact = 0;
-		/* remove it from the hash tree */
-		zone_del_domain_in_hash_tree(zone->dshashtree,
-			&domain->nsec3->ds_parent_hash->node);
-	}
-}
-
-/* see if domain needs to get precompiled info */
-static void
-nsec3_rrsets_changed_add_prehash(namedb_type* db, domain_type* domain,
-	zone_type* zone)
-{
-	if(!zone->nsec3_param)
-		return;
-	if((!domain->nsec3 || !domain->nsec3->hash_wc
-	                   || !domain->nsec3->hash_wc->hash.node.key)
-		&& nsec3_condition_hash(domain, zone)) {
-		region_type* tmpregion = region_create(xalloc, free);
-		nsec3_precompile_domain(db, domain, zone, tmpregion);
-		region_destroy(tmpregion);
-	}
-	if((!domain->nsec3 || !domain->nsec3->ds_parent_hash
-	                   || !domain->nsec3->ds_parent_hash->node.key)
-		&& nsec3_condition_dshash(domain, zone)) {
-		nsec3_precompile_domain_ds(db, domain, zone);
-	}
-}
-
-/* see if nsec3 rrset-deletion triggers need action */
-static void
-nsec3_delete_rrset_trigger(namedb_type* db, domain_type* domain,
-	zone_type* zone, uint16_t type)
-{
-	if(!zone->nsec3_param)
-		return;
-	nsec3_rrsets_changed_remove_prehash(domain, zone);
-	/* for type nsec3, or a delegation, the domain may have become a
-	 * 'normal' domain with its remaining data now */
-	if(type == TYPE_NSEC3 || type == TYPE_NS || type == TYPE_DS)
-		nsec3_rrsets_changed_add_prehash(db, domain, zone);
-	/* for type DNAME or a delegation, obscured data may be revealed */
-	if(type == TYPE_NS || type == TYPE_DS || type == TYPE_DNAME) {
-		/* walk over subdomains and check them each */
-		domain_type *d;
-		for(d=domain_next(domain); d && domain_is_subdomain(d, domain);
-			d=domain_next(d)) {
-			nsec3_rrsets_changed_add_prehash(db, d, zone);
-		}
-	}
-}
-
-/* see if nsec3 addition triggers need action */
-static void
-nsec3_add_rr_trigger(namedb_type* db, rr_type* rr, zone_type* zone)
-{
-	/* the RR has been added in full, also to UDB (and thus NSEC3PARAM 
-	 * in the udb has been adjusted) */
-	if(zone->nsec3_param && rr->type == TYPE_NSEC3 &&
-		(!rr->owner->nsec3 || !rr->owner->nsec3->nsec3_node.key)
-		&& nsec3_rr_uses_params(rr, zone)) {
-		if(!zone->nsec3_last) {
-			/* all nsec3s have previously been deleted, but
-			 * we have nsec3 parameters, set it up again from
-			 * being cleared. */
-			nsec3_precompile_newparam(db, zone);
-		}
-		/* added NSEC3 into the chain */
-		nsec3_precompile_nsec3rr(db, rr->owner, zone);
-		/* the domain has become an NSEC3-domain, if it was precompiled
-		 * previously, remove that, neatly done in routine above */
-		nsec3_rrsets_changed_remove_prehash(rr->owner, zone);
-		/* set this NSEC3 to prehash */
-		prehash_add(db->domains, rr->owner);
-	} else if(!zone->nsec3_param && rr->type == TYPE_NSEC3PARAM) {
-		/* see if this means NSEC3 chain can be used */
-		nsec3_find_zone_param(db, zone, NULL, 0);
-		if(!zone->nsec3_param)
-			return;
-		nsec3_zone_trees_create(db->region, zone);
-		nsec3_precompile_newparam(db, zone);
-	}
-}
-
-/* see if nsec3 rrset-addition triggers need action */
-static void
-nsec3_add_rrset_trigger(namedb_type* db, domain_type* domain, zone_type* zone,
-	uint16_t type)
-{
-	/* the rrset has been added so we can inspect it */
-	if(!zone->nsec3_param)
-		return;
-	/* because the rrset is added we can check conditions easily.
-	 * check if domain needs to become precompiled now */
-	nsec3_rrsets_changed_add_prehash(db, domain, zone);
-	/* if a delegation, it changes from normal name to unhashed referral */
-	if(type == TYPE_NS || type == TYPE_DS) {
-		nsec3_rrsets_changed_remove_prehash(domain, zone);
-	}
-	/* if delegation or DNAME added, then some RRs may get obscured */
-	if(type == TYPE_NS || type == TYPE_DS || type == TYPE_DNAME) {
-		/* walk over subdomains and check them each */
-		domain_type *d;
-		for(d=domain_next(domain); d && domain_is_subdomain(d, domain);
-			d=domain_next(d)) {
-			nsec3_rrsets_changed_remove_prehash(d, zone);
-		}
-	}
-}
-#endif /* NSEC3 */
-
-/* fixup usage lower for domain names in the rdata */
-static void
-rr_lower_usage(namedb_type* db, rr_type* rr)
-{
-	unsigned i;
-	for(i=0; i<rr->rdata_count; i++) {
-		if(rdata_atom_is_domain(rr->type, i)) {
-			assert(rdata_atom_domain(rr->rdatas[i])->usage > 0);
-			rdata_atom_domain(rr->rdatas[i])->usage --;
-			if(rdata_atom_domain(rr->rdatas[i])->usage == 0)
-				domain_table_deldomain(db,
-					rdata_atom_domain(rr->rdatas[i]));
-		}
-	}
-}
-
-static void
-rrset_lower_usage(namedb_type* db, rrset_type* rrset)
-{
-	unsigned i;
-	for(i=0; i<rrset->rr_count; i++)
-		rr_lower_usage(db, &rrset->rrs[i]);
-}
-
-int
+static int
 delete_RR(namedb_type* db, const dname_type* dname,
 	uint16_t type, uint16_t klass,
 	buffer_type* packet, size_t rdatalen, zone_type *zone,
-	region_type* temp_region, int* softfail)
+	region_type* temp_region)
 {
 	domain_type *domain;
 	rrset_type *rrset;
@@ -676,7 +383,6 @@ delete_RR(namedb_type* db, const dname_type* dname,
 		log_msg(LOG_WARNING, "diff: domain %s does not exist",
 			dname_to_string(dname,0));
 		buffer_skip(packet, rdatalen);
-		*softfail = 1;
 		return 1; /* not fatal error */
 	}
 	rrset = domain_find_rrset(domain, zone, type);
@@ -684,7 +390,6 @@ delete_RR(namedb_type* db, const dname_type* dname,
 		log_msg(LOG_WARNING, "diff: rrset %s does not exist",
 			dname_to_string(dname,0));
 		buffer_skip(packet, rdatalen);
-		*softfail = 1;
 		return 1; /* not fatal error */
 	} else {
 		/* find the RR in the rrset */
@@ -703,34 +408,15 @@ delete_RR(namedb_type* db, const dname_type* dname,
 				dname_to_string(dname,0));
 			return 0;
 		}
-		rrnum = find_rr_num(rrset, type, klass, rdatas, rdata_num, 0);
-		if(rrnum == -1 && type == TYPE_SOA && domain == zone->apex
-			&& rrset->rr_count != 0)
-			rrnum = 0; /* replace existing SOA if no match */
+		rrnum = find_rr_num(rrset, type, klass, rdatas, rdata_num);
 		if(rrnum == -1) {
-			log_msg(LOG_WARNING, "diff: RR <%s, %s> does not exist",
-				dname_to_string(dname,0), rrtype_to_string(type));
-			*softfail = 1;
+			log_msg(LOG_WARNING, "diff: RR %s does not exist",
+				dname_to_string(dname,0));
 			return 1; /* not fatal error */
 		}
-#ifdef NSEC3
-		/* process triggers for RR deletions */
-		nsec3_delete_rr_trigger(db, &rrset->rrs[rrnum], zone);
-#endif
-		/* lower usage (possibly deleting other domains, and thus
-		 * invalidating the current RR's domain pointers) */
-		rr_lower_usage(db, &rrset->rrs[rrnum]);
 		if(rrset->rr_count == 1) {
 			/* delete entire rrset */
 			rrset_delete(db, domain, rrset);
-			/* check if domain is now nonexisting (or parents) */
-			rrset_zero_nonexist_check(domain, NULL);
-#ifdef NSEC3
-			/* cleanup nsec3 */
-			nsec3_delete_rrset_trigger(db, domain, zone, type);
-#endif
-			/* see if the domain can be deleted (and inspect parents) */
-			domain_table_deldomain(db, domain);
 		} else {
 			/* swap out the bad RR and decrease the count */
 			rr_type* rrs_orig = rrset->rrs;
@@ -739,49 +425,24 @@ delete_RR(namedb_type* db, const dname_type* dname,
 				rrset->rrs[rrnum] = rrset->rrs[rrset->rr_count-1];
 			memset(&rrset->rrs[rrset->rr_count-1], 0, sizeof(rr_type));
 			/* realloc the rrs array one smaller */
-			rrset->rrs = region_alloc_array_init(db->region, rrs_orig,
-				(rrset->rr_count-1), sizeof(rr_type));
+			rrset->rrs = region_alloc_init(db->region, rrs_orig,
+				sizeof(rr_type) * (rrset->rr_count-1));
 			if(!rrset->rrs) {
 				log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
 				exit(1);
 			}
 			region_recycle(db->region, rrs_orig,
 				sizeof(rr_type) * rrset->rr_count);
-#ifdef NSEC3
-			if(type == TYPE_NSEC3PARAM && zone->nsec3_param) {
-				/* fixup nsec3_param pointer to same RR */
-				assert(zone->nsec3_param >= rrs_orig &&
-					zone->nsec3_param <=
-					rrs_orig+rrset->rr_count);
-				/* last moved to rrnum, others at same index*/
-				if(zone->nsec3_param == &rrs_orig[
-					rrset->rr_count-1])
-					zone->nsec3_param = &rrset->rrs[rrnum];
-				else
-					zone->nsec3_param =
-						(void*)zone->nsec3_param
-						-(void*)rrs_orig +
-						(void*)rrset->rrs;
-			}
-#endif /* NSEC3 */
 			rrset->rr_count --;
-#ifdef NSEC3
-			/* for type nsec3, the domain may have become a
-			 * 'normal' domain with its remaining data now */
-			if(type == TYPE_NSEC3)
-				nsec3_rrsets_changed_add_prehash(db, domain,
-					zone);
-#endif /* NSEC3 */
 		}
 	}
 	return 1;
 }
 
-int
+static int
 add_RR(namedb_type* db, const dname_type* dname,
 	uint16_t type, uint16_t klass, uint32_t ttl,
-	buffer_type* packet, size_t rdatalen, zone_type *zone,
-	int* softfail)
+	buffer_type* packet, size_t rdatalen, zone_type *zone)
 {
 	domain_type* domain;
 	rrset_type* rrset;
@@ -789,9 +450,6 @@ add_RR(namedb_type* db, const dname_type* dname,
 	rr_type *rrs_old;
 	ssize_t rdata_num;
 	int rrnum;
-#ifdef NSEC3
-	int rrset_added = 0;
-#endif
 	domain = domain_table_find(db->domains, dname);
 	if(!domain) {
 		/* create the domain */
@@ -809,9 +467,6 @@ add_RR(namedb_type* db, const dname_type* dname,
 		rrset->rrs = 0;
 		rrset->rr_count = 0;
 		domain_add_rrset(domain, rrset);
-#ifdef NSEC3
-		rrset_added = 1;
-#endif
 	}
 
 	/* dnames in rdata are normalized, conform RFC 4035,
@@ -824,24 +479,18 @@ add_RR(namedb_type* db, const dname_type* dname,
 			dname_to_string(dname,0));
 		return 0;
 	}
-	rrnum = find_rr_num(rrset, type, klass, rdatas, rdata_num, 1);
+	rrnum = find_rr_num(rrset, type, klass, rdatas, rdata_num);
 	if(rrnum != -1) {
-		DEBUG(DEBUG_XFRD, 2, (LOG_ERR, "diff: RR <%s, %s> already exists",
-			dname_to_string(dname,0), rrtype_to_string(type)));
+		DEBUG(DEBUG_XFRD, 2, (LOG_ERR, "diff: RR %s already exists",
+			dname_to_string(dname,0)));
 		/* ignore already existing RR: lenient accepting of messages */
-		*softfail = 1;
 		return 1;
-	}
-	if(rrset->rr_count == 65535) {
-		log_msg(LOG_ERR, "diff: too many RRs at %s",
-			dname_to_string(dname,0));
-		return 0;
 	}
 
 	/* re-alloc the rrs and add the new */
 	rrs_old = rrset->rrs;
-	rrset->rrs = region_alloc_array(db->region,
-		(rrset->rr_count+1), sizeof(rr_type));
+	rrset->rrs = region_alloc(db->region,
+		(rrset->rr_count+1) * sizeof(rr_type));
 	if(!rrset->rrs) {
 		log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
 		exit(1);
@@ -860,165 +509,193 @@ add_RR(namedb_type* db, const dname_type* dname,
 
 	/* see if it is a SOA */
 	if(domain == zone->apex) {
-		apex_rrset_checks(db, rrset, domain);
-#ifdef NSEC3
-		if(type == TYPE_NSEC3PARAM && zone->nsec3_param) {
-			/* the pointer just changed, fix it up to point
-			 * to the same record */
-			assert(zone->nsec3_param >= rrs_old &&
-				zone->nsec3_param < rrs_old+rrset->rr_count);
-			/* in this order to make sure no overflow/underflow*/
-			zone->nsec3_param = (void*)zone->nsec3_param - 
-				(void*)rrs_old + (void*)rrset->rrs;
+		if(type == TYPE_SOA) {
+			uint32_t soa_minimum;
+			zone->soa_rrset = rrset;
+			zone->updated = 1;
+			/* BUG #103 tweaked SOA ttl value */
+			if(zone->soa_nx_rrset == 0) {
+				zone->soa_nx_rrset = region_alloc(db->region,
+					sizeof(rrset_type));
+				if(!zone->soa_nx_rrset) {
+					log_msg(LOG_ERR, "out of memory, %s:%d",
+						__FILE__, __LINE__);
+					exit(1);
+				}
+				zone->soa_nx_rrset->rr_count = 1;
+				zone->soa_nx_rrset->next = 0;
+				zone->soa_nx_rrset->zone = zone;
+				zone->soa_nx_rrset->rrs = region_alloc(db->region,
+					sizeof(rr_type));
+				if(!zone->soa_nx_rrset->rrs) {
+					log_msg(LOG_ERR, "out of memory, %s:%d",
+						__FILE__, __LINE__);
+					exit(1);
+				}
+			}
+			memcpy(zone->soa_nx_rrset->rrs, rrset->rrs, sizeof(rr_type));
+			memcpy(&soa_minimum, rdata_atom_data(rrset->rrs->rdatas[6]),
+				rdata_atom_size(rrset->rrs->rdatas[6]));
+			if (rrset->rrs->ttl > ntohl(soa_minimum)) {
+				rrset->zone->soa_nx_rrset->rrs[0].ttl = ntohl(soa_minimum);
+			}
 		}
-#endif /* NSEC3 */
-	}
-
-#ifdef NSEC3
-	if(rrset_added) {
-		domain_type* p = domain->parent;
-		nsec3_add_rrset_trigger(db, domain, zone, type);
-		/* go up and process (possibly created) empty nonterminals, 
-		 * until we hit the apex or root */
-		while(p && p->rrsets == NULL && !p->is_apex) {
-			nsec3_rrsets_changed_add_prehash(db, p, zone);
-			p = p->parent;
+		if(type == TYPE_NS) {
+			zone->ns_rrset = rrset;
 		}
+#ifdef DNSSEC
+		if(type == TYPE_RRSIG) {
+			int i;
+			for (i = 0; i < rrset->rr_count; ++i) {
+				if (rr_rrsig_type_covered(&rrset->rrs[i]) == TYPE_SOA) {
+					zone->is_secure = 1;
+					break;
+				}
+			}
+		}
+#endif
 	}
-	nsec3_add_rr_trigger(db, &rrset->rrs[rrset->rr_count - 1], zone);
-#endif /* NSEC3 */
 	return 1;
 }
 
 static zone_type*
-find_or_create_zone(namedb_type* db, const dname_type* zone_name,
-	struct nsd_options* opt, const char* zstr, const char* patname)
+find_zone(namedb_type* db, const dname_type* zone_name, nsd_options_t* opt,
+	size_t child_count)
 {
+	domain_type *domain;
 	zone_type* zone;
-	struct zone_options* zopt;
-	zone = namedb_find_zone(db, zone_name);
-	if(zone) {
-		return zone;
-	}
-	zopt = zone_options_find(opt, zone_name);
-	if(!zopt) {
-		/* if _implicit_ then insert as _part_of_config */
-		if(strncmp(patname, PATTERN_IMPLICIT_MARKER,
-			strlen(PATTERN_IMPLICIT_MARKER)) == 0) {
-			zopt = zone_options_create(opt->region);
-			if(!zopt) return 0;
-			zopt->part_of_config = 1;
-			zopt->name = region_strdup(opt->region, zstr);
-			zopt->pattern = pattern_options_find(opt, patname);
-			if(!zopt->name || !zopt->pattern) return 0;
-			if(!nsd_options_insert_zone(opt, zopt)) {
-				log_msg(LOG_ERR, "bad domain name or duplicate zone '%s' "
-					"pattern %s", zstr, patname);
-			}
-		} else {
-			/* create zone : presumably already added to zonelist
-			 * by xfrd, who wrote the AXFR or IXFR to disk, so we only
-			 * need to add it to our config.
-			 * This process does not need linesize and offset zonelist */
-			zopt = zone_list_zone_insert(opt, zstr, patname);
-			if(!zopt)
-				return 0;
+	domain = domain_table_find(db->domains, zone_name);
+	if(!domain) {
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "xfr: creating domain %s",
+			dname_to_string(zone_name,0)));
+		/* create the zone and domain of apex (zone has config options) */
+		domain = domain_table_insert(db->domains, zone_name);
+	} else {
+		/* O(1) if SOA exists */
+		zone = domain_find_zone(domain);
+		/* if domain was empty (no rrsets, empty zone) search in zonelist */
+		/* check apex to make sure we don't find a parent zone */
+		if(!zone || zone->apex != domain)
+			zone = namedb_find_zone(db, domain);
+		if(zone) {
+			assert(zone->apex == domain);
+			return zone;
 		}
 	}
-	zone = namedb_zone_create(db, zone_name, zopt);
+	/* create the zone */
+	DEBUG(DEBUG_XFRD,1, (LOG_INFO, "xfr: creating zone_type %s",
+		dname_to_string(zone_name,0)));
+	zone = (zone_type *) region_alloc(db->region, sizeof(zone_type));
+	if(!zone) {
+		log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
+		exit(1);
+	}
+	zone->next = db->zones;
+	db->zones = zone;
+	db->zone_count++;
+	zone->apex = domain;
+	zone->soa_rrset = 0;
+	zone->soa_nx_rrset = 0;
+	zone->ns_rrset = 0;
+#ifdef NSEC3
+	zone->nsec3_soa_rr = NULL;
+	zone->nsec3_last = NULL;
+#endif
+	zone->dirty = region_alloc(db->region, sizeof(uint8_t)*child_count);
+	if(!zone->dirty) {
+		log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
+		exit(1);
+	}
+	memset(zone->dirty, 0, sizeof(uint8_t)*child_count);
+	zone->opts = zone_options_find(opt, domain_dname(zone->apex));
+	if(!zone->opts) {
+		log_msg(LOG_ERR, "xfr: zone %s not in config.",
+			dname_to_string(zone_name,0));
+		return 0;
+	}
+	zone->number = db->zone_count;
+	zone->is_secure = 0;
+	zone->updated = 1;
+	zone->is_ok = 0;
 	return zone;
 }
 
-void
+static void
 delete_zone_rrs(namedb_type* db, zone_type* zone)
 {
 	rrset_type *rrset;
-	domain_type *domain = zone->apex, *next;
-	int nonexist_check = 0;
+	domain_type *domain = zone->apex;
 	/* go through entire tree below the zone apex (incl subzones) */
-	while(domain && domain_is_subdomain(domain, zone->apex))
+	while(domain && dname_is_subdomain(
+		domain_dname(domain), domain_dname(zone->apex)))
 	{
 		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "delete zone visit %s",
-			domain_to_string(domain)));
+			dname_to_string(domain_dname(domain),0)));
 		/* delete all rrsets of the zone */
 		while((rrset = domain_find_any_rrset(domain, zone))) {
-			/* lower usage can delete other domains */
-			rrset_lower_usage(db, rrset);
-			/* rrset del does not delete our domain(yet) */
 			rrset_delete(db, domain, rrset);
-			/* no rrset_zero_nonexist_check, do that later */
-			if(domain->rrsets == 0)
-				nonexist_check = 1;
 		}
-		/* the delete upcoming could delete parents, but nothing next
-		 * or after the domain so store next ptr */
-		next = domain_next(domain);
-		/* see if the domain can be deleted (and inspect parents) */
-		domain_table_deldomain(db, domain);
-		domain = next;
-	}
-
-	/* check if data deletions have created nonexisting domain entries,
-	 * but after deleting domains so the checks are faster */
-	if(nonexist_check) {
-		domain_type* ce = NULL; /* for speeding up has_data_below */
-		DEBUG(DEBUG_XFRD, 1, (LOG_INFO, "axfrdel: zero rrset check"));
-		domain = zone->apex;
-		while(domain && domain_is_subdomain(domain, zone->apex))
-		{
-			/* the interesting domains should be existing==1
-			 * and rrsets==0, speeding up out processing of
-			 * sub-zones, since we only spuriously check empty
-			 * nonterminals */
-			if(domain->is_existing)
-				ce = rrset_zero_nonexist_check(domain, ce);
-			domain = domain_next(domain);
-		}
+		domain = domain_next(domain);
 	}
 
 	DEBUG(DEBUG_XFRD, 1, (LOG_INFO, "axfrdel: recyclebin holds %lu bytes",
 		(unsigned long) region_get_recycle_size(db->region)));
 #ifndef NDEBUG
-	if(nsd_debug_level >= 2)
+	if(nsd_debug_level >= 1)
 		region_log_stats(db->region);
 #endif
 
 	assert(zone->soa_rrset == 0);
-	/* keep zone->soa_nx_rrset alloced: it is reused */
+	/* keep zone->soa_nx_rrset alloced */
 	assert(zone->ns_rrset == 0);
 	assert(zone->is_secure == 0);
+	assert(zone->updated == 1);
 }
 
-/* return value 0: syntaxerror,badIXFR, 1:OK, 2:done_and_skip_it */
 static int
-apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
-	uint32_t seq_nr, uint32_t seq_total,
+apply_ixfr(namedb_type* db, FILE *in, const off_t* startpos,
+	const char* zone, uint32_t serialno, nsd_options_t* opt,
+	uint16_t id, uint32_t seq_nr, uint32_t seq_total,
 	int* is_axfr, int* delete_mode, int* rr_count,
-	struct zone* zone, int* bytes,
-	int* softfail, struct ixfr_store* ixfr_store)
+	size_t child_count)
 {
-	uint32_t msglen, checklen, pkttype;
-	int qcount, ancount;
+	uint32_t filelen, msglen, pkttype, timestamp[2];
+	int qcount, ancount, counter;
 	buffer_type* packet;
 	region_type* region;
+	int i;
+	uint16_t rrlen;
+	const dname_type *dname_zone, *dname;
+	zone_type* zone_db;
+	char file_zone_name[3072];
+	uint32_t file_serial, file_seq_nr;
+	uint16_t file_id;
+	off_t mempos;
 
-	/* note that errors could not really happen due to format of the
-	 * packet since xfrd has checked all dnames and RRs before commit,
-	 * this is why the errors are fatal (exit process), it must be
-	 * something internal or a bad disk or something. */
-
+	memmove(&mempos, startpos, sizeof(off_t));
+	if(fseeko(in, mempos, SEEK_SET) == -1) {
+		log_msg(LOG_INFO, "could not fseeko: %s.", strerror(errno));
+		return 0;
+	}
 	/* read ixfr packet RRs and apply to in memory db */
-	if(!diff_read_32(in, &pkttype) || pkttype != DIFF_PART_XXFR) {
+
+	if(!diff_read_32(in, &pkttype) || pkttype != DIFF_PART_IXFR) {
 		log_msg(LOG_ERR, "could not read type or wrong type");
 		return 0;
 	}
+	if(!diff_read_32(in, &timestamp[0]) ||
+	   !diff_read_32(in, &timestamp[1])) {
+		log_msg(LOG_ERR, "could not read timestamp");
+		return 0;
+	}
 
-	if(!diff_read_32(in, &msglen)) {
+	if(!diff_read_32(in, &filelen)) {
 		log_msg(LOG_ERR, "could not read len");
 		return 0;
 	}
 
-	if(msglen < QHEADERSZ) {
+	/* read header */
+	if(filelen < QHEADERSZ + sizeof(uint32_t)*3 + sizeof(uint16_t)) {
 		log_msg(LOG_ERR, "msg too short");
 		return 0;
 	}
@@ -1028,7 +705,34 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 		log_msg(LOG_ERR, "out of memory");
 		return 0;
 	}
+
+	if(!diff_read_str(in, file_zone_name, sizeof(file_zone_name)) ||
+		!diff_read_32(in, &file_serial) ||
+		!diff_read_16(in, &file_id) ||
+		!diff_read_32(in, &file_seq_nr))
+	{
+		log_msg(LOG_ERR, "could not part data");
+		region_destroy(region);
+		return 0;
+	}
+
+	if(strcmp(file_zone_name, zone) != 0 || serialno != file_serial ||
+		id != file_id || seq_nr != file_seq_nr) {
+		log_msg(LOG_ERR, "internal error: reading part with changed id");
+		region_destroy(region);
+		return 0;
+	}
+	msglen = filelen - sizeof(uint32_t)*3 - sizeof(uint16_t)
+		- strlen(file_zone_name);
 	packet = buffer_create(region, QIOBUFSZ);
+	dname_zone = dname_parse(region, zone);
+	zone_db = find_zone(db, dname_zone, opt, child_count);
+	if(!zone_db) {
+		log_msg(LOG_ERR, "no zone exists");
+		region_destroy(region);
+		return 0;
+	}
+
 	if(msglen > QIOBUFSZ) {
 		log_msg(LOG_ERR, "msg too long");
 		region_destroy(region);
@@ -1042,45 +746,83 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 	}
 	buffer_set_limit(packet, msglen);
 
-	/* see if check on data fails: checks that we are not reading
-	 * random garbage */
-	if(!diff_read_32(in, &checklen) || checklen != msglen) {
-		log_msg(LOG_ERR, "transfer part has incorrect checkvalue");
-		return 0;
-	}
-	*bytes += msglen;
-
 	/* only answer section is really used, question, additional and
 	   authority section RRs are skipped */
 	qcount = QDCOUNT(packet);
 	ancount = ANCOUNT(packet);
 	buffer_skip(packet, QHEADERSZ);
-	/* qcount should be 0 or 1 really, ancount limited by 64k packet */
-	if(qcount > 64 || ancount > 65530) {
-		log_msg(LOG_ERR, "RR count impossibly high");
-		region_destroy(region);
-		return 0;
-	}
 
 	/* skip queries */
-	for(int i=0; i < qcount; ++i) {
+	for(i=0; i<qcount; ++i)
 		if(!packet_skip_rr(packet, 1)) {
 			log_msg(LOG_ERR, "bad RR in question section");
 			region_destroy(region);
 			return 0;
 		}
+
+	DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: started packet for zone %s",
+			dname_to_string(dname_zone, 0)));
+	/* first RR: check if SOA and correct zone & serialno */
+	if(*rr_count == 0) {
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s parse first RR",
+			dname_to_string(dname_zone, 0)));
+		dname = dname_make_from_packet(region, packet, 1, 1);
+		if(!dname) {
+			log_msg(LOG_ERR, "could not parse dname");
+			region_destroy(region);
+			return 0;
+		}
+		if(dname_compare(dname_zone, dname) != 0) {
+			log_msg(LOG_ERR, "SOA dname %s not equal to zone",
+				dname_to_string(dname,0));
+			log_msg(LOG_ERR, "zone dname is %s",
+				dname_to_string(dname_zone,0));
+			region_destroy(region);
+			return 0;
+		}
+		if(!buffer_available(packet, 10)) {
+			log_msg(LOG_ERR, "bad SOA RR");
+			region_destroy(region);
+			return 0;
+		}
+		if(buffer_read_u16(packet) != TYPE_SOA ||
+			buffer_read_u16(packet) != CLASS_IN) {
+			log_msg(LOG_ERR, "first RR not SOA IN");
+			region_destroy(region);
+			return 0;
+		}
+		buffer_skip(packet, sizeof(uint32_t)); /* ttl */
+		if(!buffer_available(packet, buffer_read_u16(packet)) ||
+			!packet_skip_dname(packet) /* skip prim_ns */ ||
+			!packet_skip_dname(packet) /* skip email */) {
+			log_msg(LOG_ERR, "bad SOA RR");
+			region_destroy(region);
+			return 0;
+		}
+		if(buffer_read_u32(packet) != serialno) {
+			buffer_skip(packet, -4);
+			log_msg(LOG_ERR, "SOA serial %d different from commit %d",
+				buffer_read_u32(packet), serialno);
+			region_destroy(region);
+			return 0;
+		}
+		buffer_skip(packet, sizeof(uint32_t)*4);
+		counter = 1;
+		*rr_count = 1;
+		*is_axfr = 0;
+		*delete_mode = 0;
+
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s start count %d, ax %d, delmode %d",
+			dname_to_string(dname_zone, 0), *rr_count, *is_axfr, *delete_mode));
 	}
+	else  counter = 0;
 
-	DEBUG(DEBUG_XFRD, 2, (LOG_INFO, "diff: started packet for zone %s",
-			domain_to_string(zone->apex)));
-
-	for(int i=0; i < ancount; ++i, ++(*rr_count)) {
-		const dname_type *owner;
-		uint16_t type, klass, rrlen;
+	for(; counter < ancount; ++counter,++(*rr_count))
+	{
+		uint16_t type, klass;
 		uint32_t ttl;
 
-		owner = dname_make_from_packet(region, packet, 1, 1);
-		if(!owner) {
+		if(!(dname=dname_make_from_packet(region, packet, 1,1))) {
 			log_msg(LOG_ERR, "bad xfr RR dname %d", *rr_count);
 			region_destroy(region);
 			return 0;
@@ -1100,119 +842,47 @@ apply_ixfr(nsd_type* nsd, FILE *in, uint32_t serialno,
 			region_destroy(region);
 			return 0;
 		}
-
 		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s parsed count %d, ax %d, delmode %d",
-			domain_to_string(zone->apex), *rr_count, *is_axfr, *delete_mode));
+			dname_to_string(dname_zone, 0), *rr_count, *is_axfr, *delete_mode));
 
-		if (type == TYPE_SOA) {
-			size_t position;
-			uint32_t serial;
-			position = buffer_position(packet);
-			if (!packet_skip_dname(packet) ||
-					!packet_skip_dname(packet) ||
-					buffer_remaining(packet) < sizeof(uint32_t) * 5)
+		if(*rr_count == 1 && type != TYPE_SOA) {
+			/* second RR: if not SOA: this is an AXFR; delete all zone contents */
+			delete_zone_rrs(db, zone_db);
+			/* add everything else (incl end SOA) */
+			*delete_mode = 0;
+			*is_axfr = 1;
+			DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s sawAXFR count %d, ax %d, delmode %d",
+				dname_to_string(dname_zone, 0), *rr_count, *is_axfr, *delete_mode));
+		}
+		if(*rr_count == 1 && type == TYPE_SOA) {
+			/* if the serial no of the SOA equals the serialno, then AXFR */
+			size_t bufpos = buffer_position(packet);
+			uint32_t thisserial;
+			if(!packet_skip_dname(packet) ||
+				!packet_skip_dname(packet) ||
+				buffer_remaining(packet) < sizeof(uint32_t)*5)
 			{
 				log_msg(LOG_ERR, "bad xfr SOA RR formerr.");
 				region_destroy(region);
 				return 0;
 			}
-
-			serial = buffer_read_u32(packet);
-			buffer_set_position(packet, position);
-
-			/* first RR: check if SOA and correct zone & serialno */
-			if (*rr_count == 0) {
-				assert(!*is_axfr);
-				assert(!*delete_mode);
-				if (klass != CLASS_IN) {
-					log_msg(LOG_ERR, "first RR not SOA IN");
-					region_destroy(region);
-					return 0;
-				}
-				if(dname_compare(domain_dname(zone->apex), owner) != 0) {
-					log_msg(LOG_ERR, "SOA dname not equal to zone %s",
-						domain_to_string(zone->apex));
-					region_destroy(region);
-					return 0;
-				}
-				if(serial != serialno) {
-					log_msg(LOG_ERR, "SOA serial %u different from commit %u",
-						(unsigned)serial, (unsigned)serialno);
-					region_destroy(region);
-					return 0;
-				}
-				buffer_skip(packet, rrlen);
-
-				if(ixfr_store)
-					ixfr_store_add_newsoa(ixfr_store, ttl, packet, rrlen);
-
-				continue;
-			} else if (*rr_count == 1) {
-				assert(!*is_axfr);
-				assert(!*delete_mode);
-				/* if the serial no of the SOA equals the serialno, then AXFR */
-				if (serial == serialno)
-					goto axfr;
-				*delete_mode = 1;
-				/* must have stuff in memory for a successful IXFR,
-				 * the serial number of the SOA has been checked
-				 * previously (by check_for_bad_serial) if it exists */
-				if(!domain_find_rrset(zone->apex, zone, TYPE_SOA)) {
-					log_msg(LOG_ERR, "%s SOA serial %u is not "
-						"in memory, skip IXFR", domain_to_string(zone->apex), serialno);
-					region_destroy(region);
-					/* break out and stop the IXFR, ignore it */
-					return 2;
-				}
-
-				if(ixfr_store)
-					ixfr_store_add_oldsoa(ixfr_store, ttl, packet, rrlen);
-			} else if (!*is_axfr) {
-				/* do not delete final SOA RR for IXFR */
-				if (i == ancount - 1 && seq_nr == seq_total - 1) {
-					if (ixfr_store) {
-						ixfr_store_add_newsoa(ixfr_store, ttl, packet, rrlen);
-					}
-					*delete_mode = 0;
-					buffer_skip(packet, rrlen);
-					continue;
-				} else
-					*delete_mode = !*delete_mode;
-
-				if (ixfr_store && *delete_mode) {
-					ixfr_store_add_newsoa(ixfr_store, ttl, packet, rrlen);
-					ixfr_store_finish(ixfr_store, nsd, NULL);
-					ixfr_store_start(zone, ixfr_store);
-					ixfr_store_add_oldsoa(ixfr_store, ttl, packet, rrlen);
-				}
-				/* switch from delete-part to add-part and back again,
-				   just before soa - so it gets deleted and added too */
-				DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s IXFRswapdel count %d, ax %d, delmode %d",
-					domain_to_string(zone->apex), *rr_count, *is_axfr, *delete_mode));
-			}
-		} else {
-			if (*rr_count == 0) {
-				log_msg(LOG_ERR, "first RR not SOA IN");
-				region_destroy(region);
-				return 0;
-			/* second RR: if not SOA: this is an AXFR; delete all zone contents */
-			} else if (*rr_count == 1) {
-axfr:
+			thisserial = buffer_read_u32(packet);
+			if(thisserial == serialno) {
+				/* AXFR */
+				delete_zone_rrs(db, zone_db);
+				*delete_mode = 0;
 				*is_axfr = 1;
-#ifdef NSEC3
-				nsec3_clear_precompile(nsd->db, zone);
-				zone->nsec3_param = NULL;
-#endif
-				delete_zone_rrs(nsd->db, zone);
-				if(ixfr_store) {
-					ixfr_store_cancel(ixfr_store);
-					ixfr_store_delixfrs(zone);
-				}
-				DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s sawAXFR count %d, ax %d, delmode %d",
-					domain_to_string(zone->apex), *rr_count, *is_axfr, *delete_mode));
 			}
+			buffer_set_position(packet, bufpos);
 		}
-
+		if(type == TYPE_SOA && !*is_axfr) {
+			/* switch from delete-part to add-part and back again,
+			   just before soa - so it gets deleted and added too */
+			/* this means we switch to delete mode for the final SOA */
+			*delete_mode = !*delete_mode;
+			DEBUG(DEBUG_XFRD,2, (LOG_INFO, "diff: %s IXFRswapdel count %d, ax %d, delmode %d",
+				dname_to_string(dname_zone, 0), *rr_count, *is_axfr, *delete_mode));
+		}
 		if(type == TYPE_TSIG || type == TYPE_OPT) {
 			/* ignore pseudo RRs */
 			buffer_skip(packet, rrlen);
@@ -1221,25 +891,24 @@ axfr:
 
 		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "xfr %s RR dname is %s type %s",
 			*delete_mode?"del":"add",
-			dname_to_string(owner, 0), rrtype_to_string(type)));
+			dname_to_string(dname,0), rrtype_to_string(type)));
 		if(*delete_mode) {
-			assert(!*is_axfr);
 			/* delete this rr */
-			if(ixfr_store)
-				ixfr_store_delrr(ixfr_store, owner, type,
-					klass, ttl, packet, rrlen, region);
-			if(!delete_RR(nsd->db, owner, type, klass, packet,
-				rrlen, zone, region, softfail)) {
+			if(!*is_axfr && type == TYPE_SOA && counter==ancount-1
+				&& seq_nr == seq_total-1) {
+				continue; /* do not delete final SOA RR for IXFR */
+			}
+			if(!delete_RR(db, dname, type, klass, packet,
+				rrlen, zone_db, region)) {
 				region_destroy(region);
 				return 0;
 			}
-		} else {
+		}
+		else
+		{
 			/* add this rr */
-			if(ixfr_store)
-				ixfr_store_addrr(ixfr_store, owner, type,
-					klass, ttl, packet, rrlen, region);
-			if(!add_RR(nsd->db, owner, type, klass, ttl, packet,
-				rrlen, zone, softfail)) {
+			if(!add_RR(db, dname, type, klass, ttl, packet,
+				rrlen, zone_db)) {
 				region_destroy(region);
 				return 0;
 			}
@@ -1259,7 +928,7 @@ check_for_bad_serial(namedb_type* db, const char* zone_str, uint32_t old_serial)
 	zone_type* zone = 0;
 	domain = domain_table_find(db->domains, zone_name);
 	if(domain)
-		zone = domain_find_zone(db, domain);
+		zone = domain_find_zone(domain);
 	if(zone && zone->apex == domain && zone->soa_rrset && old_serial)
 	{
 		uint32_t memserial;
@@ -1274,924 +943,548 @@ check_for_bad_serial(namedb_type* db, const char* zone_str, uint32_t old_serial)
 	return 0;
 }
 
-int
-apply_ixfr_for_zone(nsd_type* nsd, zone_type* zone, FILE* in,
-	struct nsd_options* ATTR_UNUSED(opt), udb_base* taskudb, udb_ptr* last_task,
-	uint32_t xfrfilenr)
+/* for multiple tcp packets use a data structure that has
+ * a rbtree (zone_names) with for each zone:
+ * 	has a rbtree by sequence number
+ *		with inside a serial_number and ID (for checking only)
+ *		and contains a off_t to the IXFR packet in the file.
+ * so when you get a commit for a zone, get zone obj, find sequence,
+ * then check if you have all sequence numbers available. Apply all packets.
+ */
+struct diff_read_data {
+	/* rbtree of struct diff_zone*/
+	rbtree_t* zones;
+	/* region for allocation */
+	region_type* region;
+};
+struct diff_zone {
+	/* key is dname of zone */
+	rbnode_t node;
+	/* rbtree of struct diff_xfrpart */
+	rbtree_t* parts;
+};
+struct diff_xfrpart {
+	/* key is sequence number */
+	rbnode_t node;
+	uint32_t seq_nr;
+	uint32_t new_serial;
+	uint16_t id;
+	off_t file_pos;
+};
+
+static struct diff_read_data*
+diff_read_data_create()
+{
+	region_type* region = region_create(xalloc, free);
+	struct diff_read_data* data = (struct diff_read_data*)
+		region_alloc(region, sizeof(struct diff_read_data));
+	if(!data) {
+		log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
+		exit(1);
+	}
+	data->region = region;
+	data->zones = rbtree_create(region,
+		(int (*)(const void *, const void *)) dname_compare);
+	return data;
+}
+
+static struct diff_zone*
+diff_read_find_zone(struct diff_read_data* data, const char* name)
+{
+	const dname_type* dname = dname_parse(data->region, name);
+	struct diff_zone* zp = (struct diff_zone*)
+		rbtree_search(data->zones, dname);
+	return zp;
+}
+
+static int intcompf(const void* a, const void* b)
+{
+	if(*(uint32_t*)a < *(uint32_t*)b)
+		return -1;
+	if(*(uint32_t*)a > *(uint32_t*)b)
+		return +1;
+	return 0;
+}
+
+static struct diff_zone*
+diff_read_insert_zone(struct diff_read_data* data, const char* name)
+{
+	const dname_type* dname = dname_parse(data->region, name);
+	struct diff_zone* zp = region_alloc(data->region,
+		sizeof(struct diff_zone));
+	if(!zp) {
+		log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
+		exit(1);
+	}
+	zp->node = *RBTREE_NULL;
+	zp->node.key = dname;
+	zp->parts = rbtree_create(data->region, intcompf);
+	rbtree_insert(data->zones, (rbnode_t*)zp);
+	return zp;
+}
+
+static struct diff_xfrpart*
+diff_read_find_part(struct diff_zone* zp, uint32_t seq_nr)
+{
+	struct diff_xfrpart* xp = (struct diff_xfrpart*)
+		rbtree_search(zp->parts, &seq_nr);
+	return xp;
+}
+
+static struct diff_xfrpart*
+diff_read_insert_part(struct diff_read_data* data,
+	struct diff_zone* zp, uint32_t seq_nr)
+{
+	struct diff_xfrpart* xp = region_alloc(data->region,
+		sizeof(struct diff_xfrpart));
+	if(!xp) {
+		log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
+		exit(1);
+	}
+	xp->node = *RBTREE_NULL;
+	xp->node.key = &xp->seq_nr;
+	xp->seq_nr = seq_nr;
+	rbtree_insert(zp->parts, (rbnode_t*)xp);
+	return xp;
+}
+
+/* mark commit as rollback and close inputfile, fatal exits */
+static void
+mark_and_exit(nsd_options_t* opt, FILE* f, off_t commitpos, const char* desc)
+{
+	const char* filename = opt->difffile;
+	fclose(f);
+	if(!(f = fopen(filename, "r+"))) {
+		log_msg(LOG_ERR, "mark xfr, failed to re-open difffile %s: %s",
+			filename, strerror(errno));
+	} else if(fseeko(f, commitpos, SEEK_SET) == -1) {
+		log_msg(LOG_INFO, "could not fseeko: %s.", strerror(errno));
+		fclose(f);
+	} else {
+		uint8_t c = 0;
+		fwrite(&c, sizeof(c), 1, f);
+		fclose(f);
+		log_msg(LOG_ERR, "marked xfr as failed: %s", desc);
+		log_msg(LOG_ERR, "marked xfr so that next reload can succeed");
+	}
+	exit(1);
+}
+
+static int
+read_sure_part(namedb_type* db, FILE *in, nsd_options_t* opt,
+	struct diff_read_data* data, struct diff_log** log,
+	size_t child_count)
 {
 	char zone_buf[3072];
 	char log_buf[5120];
-	char patname_buf[2048];
-
-	uint32_t old_serial, new_serial, num_parts, type;
-	uint64_t time_end_0, time_start_0;
-	uint32_t time_end_1, time_start_1;
+	uint32_t old_serial, new_serial, num_parts;
+	uint16_t id;
 	uint8_t committed;
+	struct diff_zone *zp;
 	uint32_t i;
-	int num_bytes = 0;
-	(void)last_task;
-	assert(zone);
+	int have_all_parts = 1;
+	struct diff_log* thislog = 0;
+	off_t commitpos;
 
 	/* read zone name and serial */
-	if(!diff_read_32(in, &type)) {
-		log_msg(LOG_ERR, "diff file too short");
-		return 0;
-	}
-	if(type != DIFF_PART_XFRF) {
-		log_msg(LOG_ERR, "xfr file has wrong format");
-		return 0;
-
-	}
-	/* committed and num_parts are first because they need to be
-	 * updated once the rest is written.  The log buf is not certain
-	 * until its done, so at end of file.  The patname is in case a
-	 * new zone is created, we know what the options-pattern is */
-	if(!diff_read_8(in, &committed) ||
-		!diff_read_32(in, &num_parts) ||
-		!diff_read_64(in, &time_end_0) ||
-		!diff_read_32(in, &time_end_1) ||
+	if(!diff_read_str(in, zone_buf, sizeof(zone_buf)) ||
 		!diff_read_32(in, &old_serial) ||
 		!diff_read_32(in, &new_serial) ||
-		!diff_read_64(in, &time_start_0) ||
-		!diff_read_32(in, &time_start_1) ||
-		!diff_read_str(in, zone_buf, sizeof(zone_buf)) ||
-		!diff_read_str(in, patname_buf, sizeof(patname_buf))) {
+		!diff_read_16(in, &id) ||
+		!diff_read_32(in, &num_parts)) {
+		log_msg(LOG_ERR, "diff file bad commit part");
+		return 0;
+	}
+	commitpos = ftello(in); /* position of commit byte */
+	if(commitpos == -1) {
+		log_msg(LOG_INFO, "could not ftello: %s.", strerror(errno));
+		return 0;
+	}
+	if(!diff_read_8(in, &committed) ||
+		!diff_read_str(in, log_buf, sizeof(log_buf)) )
+	{
 		log_msg(LOG_ERR, "diff file bad commit part");
 		return 0;
 	}
 
+	if(log) {
+		thislog = (struct diff_log*)region_alloc(db->region, sizeof(struct diff_log));
+		if(!thislog) {
+			log_msg(LOG_ERR, "out of memory, %s:%d", __FILE__, __LINE__);
+			exit(1);
+		}
+		thislog->zone_name = region_strdup(db->region, zone_buf);
+		thislog->comment = region_strdup(db->region, log_buf);
+		thislog->error = 0;
+		thislog->next = *log;
+		*log = thislog;
+	}
+
 	/* has been read in completely */
-	if(strcmp(zone_buf, domain_to_string(zone->apex)) != 0) {
-		log_msg(LOG_ERR, "file %s does not match task %s",
-			zone_buf, domain_to_string(zone->apex));
-		return 0;
+	zp = diff_read_find_zone(data, zone_buf);
+	if(!zp) {
+		log_msg(LOG_ERR, "diff file commit without IXFR");
+		if(thislog)
+			thislog->error = "error no IXFR parts";
+		return 1;
 	}
-	switch(committed) {
-	case DIFF_NOT_COMMITTED:
-		log_msg(LOG_ERR, "diff file %s was not committed", zone_buf);
-		return 0;
-	case DIFF_CORRUPT:
-		log_msg(LOG_ERR, "diff file %s was corrupt", zone_buf);
-		return 0;
-	case DIFF_INCONSISTENT:
-		log_msg(LOG_ERR, "diff file %s was inconsistent", zone_buf);
-		return 0;
-	case DIFF_VERIFIED:
-		log_msg(LOG_INFO, "diff file %s already verified", zone_buf);
-		break;
-	default:
-		break;
-	}
-	if(num_parts == 0) {
-		log_msg(LOG_ERR, "diff file %s was not completed", zone_buf);
-		return 0;
-	}
-	if(check_for_bad_serial(nsd->db, zone_buf, old_serial)) {
+	if(committed && check_for_bad_serial(db, zone_buf, old_serial)) {
 		DEBUG(DEBUG_XFRD,1, (LOG_ERR,
 			"skipping diff file commit with bad serial"));
-		return -2; /* Success in "main" process, failure in "xfrd" */
+		zp->parts->root = RBTREE_NULL;
+		zp->parts->count = 0;
+		if(thislog)
+			thislog->error = "error bad serial";
+		return 1;
+	}
+	for(i=0; i<num_parts; i++) {
+		struct diff_xfrpart *xp = diff_read_find_part(zp, i);
+		if(!xp || xp->id != id || xp->new_serial != new_serial) {
+			have_all_parts = 0;
+		}
+	}
+	if(!have_all_parts) {
+		DEBUG(DEBUG_XFRD,1, (LOG_ERR,
+			"skipping diff file commit without all parts"));
+		if(thislog)
+			thislog->error = "error missing parts";
 	}
 
-	if(!zone->is_skipped)
+	if(committed && have_all_parts)
 	{
-		int is_axfr=0, delete_mode=0, rr_count=0, softfail=0;
-		struct ixfr_store* ixfr_store = NULL, ixfr_store_mem;
+		int is_axfr=0, delete_mode=0, rr_count=0;
+		off_t resume_pos;
 
-		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "processing xfr: %s", zone_buf));
-		if(zone_is_ixfr_enabled(zone))
-			ixfr_store = ixfr_store_start(zone, &ixfr_store_mem);
-		/* read and apply all of the parts */
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "processing xfr: %s", log_buf));
+		resume_pos = ftello(in);
+		if(resume_pos == -1) {
+			log_msg(LOG_INFO, "could not ftello: %s.", strerror(errno));
+			return 0;
+		}
 		for(i=0; i<num_parts; i++) {
-			int ret;
+			struct diff_xfrpart *xp = diff_read_find_part(zp, i);
 			DEBUG(DEBUG_XFRD,2, (LOG_INFO, "processing xfr: apply part %d", (int)i));
-			ret = apply_ixfr(nsd, in, new_serial,
-				i, num_parts, &is_axfr, &delete_mode,
-				&rr_count, zone,
-				&num_bytes, &softfail, ixfr_store);
-			if(ret == 0) {
-				log_msg(LOG_ERR, "bad ixfr packet part %d in diff file for %s", (int)i, zone_buf);
-				diff_update_commit(
-					zone_buf, DIFF_CORRUPT, nsd, xfrfilenr);
-				/* the udb is still dirty, it is bad */
-				return -1; /* Fatal! */
-			} else if(ret == 2) {
-				break;
+			if(!apply_ixfr(db, in, &xp->file_pos, zone_buf, new_serial, opt,
+				id, xp->seq_nr, num_parts, &is_axfr, &delete_mode,
+				&rr_count, child_count)) {
+				log_msg(LOG_ERR, "bad ixfr packet part %d in %s", (int)i,
+					opt->difffile);
+				mark_and_exit(opt, in, commitpos, log_buf);
 			}
 		}
-		/* read the final log_str: but do not fail on it */
-		if(!diff_read_str(in, log_buf, sizeof(log_buf))) {
-			log_msg(LOG_ERR, "could not read log for transfer %s",
-				zone_buf);
-			snprintf(log_buf, sizeof(log_buf), "error reading log");
-		}
-#ifdef NSEC3
-		prehash_zone(nsd->db, zone);
-#endif /* NSEC3 */
-		zone->is_changed = 1;
-		zone->is_updated = 1;
-		zone->is_checked = (committed == DIFF_VERIFIED);
-		zone->mtime.tv_sec = time_end_0;
-		zone->mtime.tv_nsec = time_end_1*1000;
-		if(zone->logstr)
-			region_recycle(nsd->db->region, zone->logstr,
-				strlen(zone->logstr)+1);
-		zone->logstr = region_strdup(nsd->db->region, log_buf);
-		if(zone->filename)
-			region_recycle(nsd->db->region, zone->filename,
-				strlen(zone->filename)+1);
-		zone->filename = NULL;
-		if(softfail && taskudb && !is_axfr) {
-			log_msg(LOG_ERR, "Failed to apply IXFR cleanly "
-				"(deletes nonexistent RRs, adds existing RRs). "
-				"Zone %s contents is different from primary, "
-				"starting AXFR. Transfer %s", zone_buf, log_buf);
-			/* add/del failures in IXFR, get an AXFR */
-			diff_update_commit(
-				zone_buf, DIFF_INCONSISTENT, nsd, xfrfilenr);
-			return -1; /* Fatal! */
-		}
-		if(ixfr_store)
-			ixfr_store_finish(ixfr_store, nsd, log_buf);
-
-		if(1 <= verbosity) {
-			double elapsed = (double)(time_end_0 - time_start_0)+
-				(double)((double)time_end_1
-				-(double)time_start_1) / 1000000.0;
-			VERBOSITY(1, (LOG_INFO, "zone %s %s of %d bytes in %g seconds",
-				zone_buf, log_buf, num_bytes, elapsed));
+		if(fseeko(in, resume_pos, SEEK_SET) == -1) {
+			log_msg(LOG_INFO, "could not fseeko: %s.", strerror(errno));
+			return 0;
 		}
 	}
 	else {
-		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "skipping xfr: %s", zone_buf));
+	 	DEBUG(DEBUG_XFRD,1, (LOG_INFO, "skipping xfr: %s", log_buf));
 	}
+
+	/* clean out the parts for the zone after the commit/rollback */
+	zp->parts->root = RBTREE_NULL;
+	zp->parts->count = 0;
 	return 1;
-}
-
-static void udb_task_walk_chunk(void* base, void* d, uint64_t s, udb_walk_relptr_cb* cb, void *arg)
-{
-  struct task_list_d* p = (struct task_list_d*)d;
-  assert(s >= p->size);
-  (void)s;
-  (*cb)(base, &p->next, arg);
-}
-
-void udb_walkfunc(void* base, void* warg, uint8_t t, void* d, uint64_t s,
-  udb_walk_relptr_cb* cb, void *arg)
-{
-  (void)warg;
-  switch(t) {
-  case udb_chunk_type_task:
-    udb_task_walk_chunk(base, d, s, cb, arg);
-    break;
-  default:
-    /* no rel ptrs */
-    break;
-  }
-}
-
-struct udb_base* task_file_create(const char* file)
-{
-	return udb_base_create_new(file, &udb_walkfunc, NULL);
 }
 
 static int
-task_create_new_elem(struct udb_base* udb, udb_ptr* last, udb_ptr* e,
-	size_t sz, const dname_type* zname)
+store_ixfr_data(FILE *in, uint32_t len, struct diff_read_data* data, off_t* startpos)
 {
-	if(!udb_ptr_alloc_space(e, udb, udb_chunk_type_task, sz)) {
+	char zone_name[3072];
+	struct diff_zone* zp;
+	struct diff_xfrpart* xp;
+	uint32_t new_serial, seq;
+	uint16_t id;
+	if(!diff_read_str(in, zone_name, sizeof(zone_name)) ||
+		!diff_read_32(in, &new_serial) ||
+		!diff_read_16(in, &id) ||
+		!diff_read_32(in, &seq)) {
+		log_msg(LOG_INFO, "could not read ixfr store info: file format error");
 		return 0;
 	}
-	if(udb_ptr_is_null(last)) {
-		udb_base_set_userdata(udb, e->data);
-	} else {
-		udb_rptr_set_ptr(&TASKLIST(last)->next, udb, e);
+	len -= sizeof(uint32_t)*3 + sizeof(uint16_t) + strlen(zone_name);
+	if(fseeko(in, len, SEEK_CUR) == -1)
+		log_msg(LOG_INFO, "fseek failed: %s", strerror(errno));
+	/* store the info */
+	zp = diff_read_find_zone(data, zone_name);
+	if(!zp)
+		zp = diff_read_insert_zone(data, zone_name);
+	xp = diff_read_find_part(zp, seq);
+	if(xp) {
+		log_msg(LOG_INFO, "discarding partial xfr part: %s %d", zone_name, seq);
+		/* overwrite with newer value (which probably relates to next commit) */
 	}
-	udb_ptr_set_ptr(last, udb, e);
-
-	/* fill in tasklist item */
-	udb_rel_ptr_init(&TASKLIST(e)->next);
-	TASKLIST(e)->size = sz;
-	TASKLIST(e)->oldserial = 0;
-	TASKLIST(e)->newserial = 0;
-	TASKLIST(e)->yesno = 0;
-
-	if(zname) {
-		memmove(TASKLIST(e)->zname, zname, dname_total_size(zname));
+	else {
+		xp = diff_read_insert_part(data, zp, seq);
 	}
+	xp->new_serial = new_serial;
+	xp->id = id;
+	memmove(&xp->file_pos, startpos, sizeof(off_t));
 	return 1;
 }
 
-void task_new_soainfo(struct udb_base* udb, udb_ptr* last, struct zone* z,
-	enum soainfo_hint hint)
+static int
+read_process_part(namedb_type* db, FILE *in, uint32_t type,
+	nsd_options_t* opt, struct diff_read_data* data,
+	struct diff_log** log, size_t child_count, off_t* startpos)
 {
-	/* calculate size */
-	udb_ptr e;
-	size_t sz;
-	const dname_type* apex, *ns, *em;
-	if(!z || !z->apex || !domain_dname(z->apex))
-		return; /* safety check */
+	uint32_t len, len2;
 
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "nsd: add soa info for zone %s",
-		domain_to_string(z->apex)));
-	apex = domain_dname(z->apex);
-	sz = sizeof(struct task_list_d) + dname_total_size(apex);
-	if(z->soa_rrset && hint == soainfo_ok) {
-		ns = domain_dname(rdata_atom_domain(
-			z->soa_rrset->rrs[0].rdatas[0]));
-		em = domain_dname(rdata_atom_domain(
-			z->soa_rrset->rrs[0].rdatas[1]));
-		sz += sizeof(uint32_t)*6 + sizeof(uint8_t)*2
-			+ ns->name_size + em->name_size;
+	/* read length */
+	if(!diff_read_32(in, &len))
+		return 1;
+	/* read content */
+	if(type == DIFF_PART_IXFR) {
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "part IXFR len %d", len));
+		if(!store_ixfr_data(in, len, data, startpos))
+			return 0;
+	}
+	else if(type == DIFF_PART_SURE) {
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "part SURE len %d", len));
+		if(!read_sure_part(db, in, opt, data, log, child_count))
+			return 0;
 	} else {
-		ns = 0;
-		em = 0;
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "unknown part %x len %d", type, len));
+		return 0;
 	}
-
-	/* create new task_list item */
-	if(!task_create_new_elem(udb, last, &e, sz, apex)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add SOAINFO");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_soa_info;
-	TASKLIST(&e)->yesno = (uint64_t)hint;
-
-	if(z->soa_rrset && hint == soainfo_ok) {
-		uint32_t ttl = htonl(z->soa_rrset->rrs[0].ttl);
-		uint8_t* p = (uint8_t*)TASKLIST(&e)->zname;
-		p += dname_total_size(apex);
-		memmove(p, &ttl, sizeof(uint32_t));
-		p += sizeof(uint32_t);
-		memmove(p, &ns->name_size, sizeof(uint8_t));
-		p += sizeof(uint8_t);
-		memmove(p, dname_name(ns), ns->name_size);
-		p += ns->name_size;
-		memmove(p, &em->name_size, sizeof(uint8_t));
-		p += sizeof(uint8_t);
-		memmove(p, dname_name(em), em->name_size);
-		p += em->name_size;
-		memmove(p, rdata_atom_data(z->soa_rrset->rrs[0].rdatas[2]),
-			sizeof(uint32_t));
-		p += sizeof(uint32_t);
-		memmove(p, rdata_atom_data(z->soa_rrset->rrs[0].rdatas[3]),
-			sizeof(uint32_t));
-		p += sizeof(uint32_t);
-		memmove(p, rdata_atom_data(z->soa_rrset->rrs[0].rdatas[4]),
-			sizeof(uint32_t));
-		p += sizeof(uint32_t);
-		memmove(p, rdata_atom_data(z->soa_rrset->rrs[0].rdatas[5]),
-			sizeof(uint32_t));
-		p += sizeof(uint32_t);
-		memmove(p, rdata_atom_data(z->soa_rrset->rrs[0].rdatas[6]),
-			sizeof(uint32_t));
-	}
-	udb_ptr_unlink(&e, udb);
+	/* read length */
+	if(!diff_read_32(in, &len2))
+		return 1; /* short read is OK */
+	/* verify length */
+	if(len != len2)
+		return 0; /* bad data is wrong */
+	return 1;
 }
 
-void task_process_sync(struct udb_base* taskudb)
+/*
+ * Finds smallest offset in data structs
+ * returns 0 if no offsets in the data structs.
+ */
+static int
+find_smallest_offset(struct diff_read_data* data, off_t* offset)
 {
-	/* need to sync before other process uses the mmap? */
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "task procsync %s size %d",
-		taskudb->fname, (int)taskudb->base_size));
-	(void)taskudb;
-}
+	int found_any = 0;
+	struct diff_zone* dz;
+	struct diff_xfrpart* dx;
+	off_t mem_offset, mem_fpos;
 
-void task_remap(struct udb_base* taskudb)
-{
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "task remap %s size %d",
-		taskudb->fname, (int)taskudb->glob_data->fsize));
-	udb_base_remap_process(taskudb);
-}
+	if(!data || !data->zones)
+		return 0;
+	RBTREE_FOR(dz, struct diff_zone*, data->zones)
+	{
+		if(!dz->parts)
+			continue;
+		RBTREE_FOR(dx, struct diff_xfrpart*, dz->parts)
+		{
+			memmove(&mem_fpos, &dx->file_pos, sizeof(off_t));
 
-void task_clear(struct udb_base* taskudb)
-{
-	udb_ptr t, n;
-	udb_ptr_new(&t, taskudb, udb_base_get_userdata(taskudb));
-	udb_base_set_userdata(taskudb, 0);
-	udb_ptr_init(&n, taskudb);
-	while(!udb_ptr_is_null(&t)) {
-		udb_ptr_set_rptr(&n, taskudb, &TASKLIST(&t)->next);
-		udb_rptr_zero(&TASKLIST(&t)->next, taskudb);
-		udb_ptr_free_space(&t, taskudb, TASKLIST(&t)->size);
-		udb_ptr_set_ptr(&t, taskudb, &n);
+			if(found_any) {
+				memmove(&mem_offset, offset, sizeof(off_t));
+
+				if(mem_fpos < mem_offset)
+					memmove(offset, &mem_fpos, sizeof(off_t));
+			} else {
+				found_any = 1;
+				memmove(offset, &mem_fpos, sizeof(off_t));
+			}
+		}
 	}
-	udb_ptr_unlink(&t, taskudb);
-	udb_ptr_unlink(&n, taskudb);
-}
 
-void task_new_expire(struct udb_base* udb, udb_ptr* last,
-	const struct dname* z, int expired)
-{
-	udb_ptr e;
-	if(!z) return;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add expire info for zone %s",
-		dname_to_string(z,NULL)));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)+
-		dname_total_size(z), z)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add expire");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_expire;
-	TASKLIST(&e)->yesno = expired;
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_check_zonefiles(udb_base* udb, udb_ptr* last,
-	const dname_type* zone)
-{
-	udb_ptr e;
-	xfrd_check_catalog_consumer_zonefiles(zone);
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task checkzonefiles"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d) +
-		(zone?dname_total_size(zone):0), zone)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add check_zones");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_check_zonefiles;
-	TASKLIST(&e)->yesno = (zone!=NULL);
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_write_zonefiles(udb_base* udb, udb_ptr* last,
-	const dname_type* zone)
-{
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task writezonefiles"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d) +
-		(zone?dname_total_size(zone):0), zone)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add writezones");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_write_zonefiles;
-	TASKLIST(&e)->yesno = (zone!=NULL);
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_set_verbosity(udb_base* udb, udb_ptr* last, int v)
-{
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task set_verbosity"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d),
-		NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add set_v");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_set_verbosity;
-	TASKLIST(&e)->yesno = v;
-	udb_ptr_unlink(&e, udb);
-}
-
-void
-task_new_add_zone(udb_base* udb, udb_ptr* last, const char* zone,
-	const char* pattern, unsigned zonestatid)
-{
-	size_t zlen = strlen(zone);
-	size_t plen = strlen(pattern);
-	void *p;
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task addzone %s %s", zone, pattern));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)+
-		zlen + 1 + plen + 1, NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add addz");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_add_zone;
-	TASKLIST(&e)->yesno = zonestatid;
-	p = TASKLIST(&e)->zname;
-	memcpy(p, zone, zlen+1);
-	memmove((char*)p+zlen+1, pattern, plen+1);
-	udb_ptr_unlink(&e, udb);
-}
-
-void
-task_new_del_zone(udb_base* udb, udb_ptr* last, const dname_type* dname)
-{
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task delzone %s", dname_to_string(dname, 0)));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)
-		+dname_total_size(dname), dname)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add delz");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_del_zone;
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_add_key(udb_base* udb, udb_ptr* last, struct key_options* key)
-{
-	char* p;
-	udb_ptr e;
-	assert(key->name && key->algorithm && key->secret);
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task addkey"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)
-		+strlen(key->name)+1+strlen(key->algorithm)+1+
-		strlen(key->secret)+1, NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add addk");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_add_key;
-	p = (char*)TASKLIST(&e)->zname;
-	memmove(p, key->name, strlen(key->name)+1);
-	p+=strlen(key->name)+1;
-	memmove(p, key->algorithm, strlen(key->algorithm)+1);
-	p+=strlen(key->algorithm)+1;
-	memmove(p, key->secret, strlen(key->secret)+1);
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_del_key(udb_base* udb, udb_ptr* last, const char* name)
-{
-	char* p;
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task delkey"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)
-		+strlen(name)+1, NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add delk");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_del_key;
-	p = (char*)TASKLIST(&e)->zname;
-	memmove(p, name, strlen(name)+1);
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_add_cookie_secret(udb_base* udb, udb_ptr* last,
-                                 const char* secret) {
-	udb_ptr e;
-	char* p;
-	size_t const secret_size = strlen(secret) + 1;
-
-	DEBUG(DEBUG_IPC, 1, (LOG_INFO, "add task add_cookie_secret"));
-
-	if(!task_create_new_elem(udb, last, &e,
-	                         sizeof(struct task_list_d) + secret_size, NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add add_cookie_secret");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_add_cookie_secret;
-	p = (char*)TASKLIST(&e)->zname;
-	memmove(p, secret, secret_size);
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_drop_cookie_secret(udb_base* udb, udb_ptr* last) {
-	udb_ptr e;
-	DEBUG(DEBUG_IPC, 1, (LOG_INFO, "add task drop_cookie_secret"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d), NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add drop_cookie_secret");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_drop_cookie_secret;
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_activate_cookie_secret(udb_base* udb, udb_ptr* last) {
-	udb_ptr e;
-	DEBUG(DEBUG_IPC, 1, (LOG_INFO, "add task activate_cookie_secret"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d), NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add activate_cookie_secret");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_activate_cookie_secret;
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_add_pattern(udb_base* udb, udb_ptr* last,
-	struct pattern_options* p)
-{
-	region_type* temp;
-	buffer_type* buffer;
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task addpattern %s", p->pname));
-	temp = region_create(xalloc, free);
-	buffer = buffer_create(temp, 4096);
-	pattern_options_marshal(buffer, p);
-	buffer_flip(buffer);
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)
-		+ buffer_limit(buffer), NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add addp");
-		region_destroy(temp);
-		return;
-	}
-	TASKLIST(&e)->task_type = task_add_pattern;
-	TASKLIST(&e)->yesno = buffer_limit(buffer);
-	memmove(TASKLIST(&e)->zname, buffer_begin(buffer),
-		buffer_limit(buffer));
-	udb_ptr_unlink(&e, udb);
-	region_destroy(temp);
-}
-
-void task_new_del_pattern(udb_base* udb, udb_ptr* last, const char* name)
-{
-	char* p;
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task delpattern %s", name));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)
-		+strlen(name)+1, NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add delp");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_del_pattern;
-	p = (char*)TASKLIST(&e)->zname;
-	memmove(p, name, strlen(name)+1);
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_opt_change(udb_base* udb, udb_ptr* last, struct nsd_options* opt)
-{
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task opt_change"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d),
-		NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add o_c");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_opt_change;
-#ifdef RATELIMIT
-	TASKLIST(&e)->oldserial = opt->rrl_ratelimit;
-	TASKLIST(&e)->newserial = opt->rrl_whitelist_ratelimit;
-	TASKLIST(&e)->yesno = (uint64_t) opt->rrl_slip;
-#else
-	(void)opt;
-#endif
-	udb_ptr_unlink(&e, udb);
-}
-
-void task_new_zonestat_inc(udb_base* udb, udb_ptr* last, unsigned sz)
-{
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task zonestat_inc"));
-	if(sz == 0)
-		return; /* no need to decrease to 0 */
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d),
-		NULL)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add z_i");
-		return;
-	}
-	TASKLIST(&e)->task_type = task_zonestat_inc;
-	TASKLIST(&e)->oldserial = (uint32_t)sz;
-	udb_ptr_unlink(&e, udb);
+	return found_any;
 }
 
 int
-task_new_apply_xfr(udb_base* udb, udb_ptr* last, const dname_type* dname,
-	uint32_t old_serial, uint32_t new_serial, uint64_t filenumber)
+diff_read_file(namedb_type* db, nsd_options_t* opt, struct diff_log** log,
+	size_t child_count)
 {
-	udb_ptr e;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "add task apply_xfr"));
-	if(!task_create_new_elem(udb, last, &e, sizeof(struct task_list_d)
-		+dname_total_size(dname), dname)) {
-		log_msg(LOG_ERR, "tasklist: out of space, cannot add applyxfr");
+	const char* filename = opt->difffile;
+	FILE *df;
+	uint32_t type, timestamp[2], curr_timestamp[2];
+	struct diff_read_data* data = diff_read_data_create();
+	off_t startpos;
+
+	df = fopen(filename, "r");
+	if(!df) {
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "could not open file %s for reading: %s",
+			filename, strerror(errno)));
+		region_destroy(data->region);
+		return 1;
+	}
+
+	/* check timestamp */
+	curr_timestamp[0] = (uint32_t) db->diff_timestamp.tv_sec;
+	curr_timestamp[1] = (uint32_t) db->diff_timestamp.tv_usec;
+
+	if(!diff_read_32(df, &type)) {
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "difffile %s is empty",
+			filename));
+		db->diff_skip = 0;
+		db->diff_pos = 0;
+	}
+	else if (!diff_read_32(df, &timestamp[0]) ||
+		 !diff_read_32(df, &timestamp[1])) {
+		log_msg(LOG_ERR, "difffile %s bad first part: no timestamp",
+			filename);
+		region_destroy(data->region);
 		return 0;
 	}
-	TASKLIST(&e)->oldserial = old_serial;
-	TASKLIST(&e)->newserial = new_serial;
-	TASKLIST(&e)->yesno = filenumber;
-	TASKLIST(&e)->task_type = task_apply_xfr;
-	udb_ptr_unlink(&e, udb);
+	else if (curr_timestamp[0] != timestamp[0] ||
+		 curr_timestamp[1] != timestamp[1]) {
+		/* new timestamp, no skipping */
+		db->diff_timestamp.tv_sec = (time_t) timestamp[0];
+		db->diff_timestamp.tv_usec = (suseconds_t) timestamp[1];
+
+		if (db->diff_skip) {
+			DEBUG(DEBUG_XFRD,1, (LOG_INFO, "new timestamp on "
+				"difffile %s, restoring diff_skip and diff_pos "
+				"[old timestamp: %u.%u; new timestamp: %u.%u]",
+				filename, curr_timestamp[0], curr_timestamp[1],
+				timestamp[0], timestamp[1]));
+			db->diff_skip = 0;
+			db->diff_pos = 0;
+		}
+	}
+
+	/* Always seek, to diff_pos or to beginning of the file. */
+	if (fseeko(df, 0, SEEK_SET)==-1) {
+		log_msg(LOG_INFO, "could not fseeko file %s: %s.", filename,
+				strerror(errno));
+		region_destroy(data->region);
+		return 0;
+	}
+	if(db->diff_skip) {
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "skip diff file"));
+		if(fseeko(df, db->diff_pos, SEEK_SET)==-1) {
+			log_msg(LOG_INFO, "could not fseeko file %s: %s. "
+					  "Reread from start.", filename,
+				strerror(errno));
+		}
+	}
+
+	startpos = ftello(df);
+	if(startpos == -1) {
+		log_msg(LOG_INFO, "could not ftello: %s.", strerror(errno));
+		region_destroy(data->region);
+		return 0;
+	}
+
+	DEBUG(DEBUG_XFRD,1, (LOG_INFO, "start of diff file read at pos %u",
+		(uint32_t) db->diff_pos));
+	while(diff_read_32(df, &type))
+	{
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "iter loop"));
+
+		/* read timestamp */
+		if(!diff_read_32(df, &timestamp[0]) ||
+			!diff_read_32(df, &timestamp[1])) {
+			log_msg(LOG_INFO, "could not read timestamp: %s.",
+				strerror(errno));
+			region_destroy(data->region);
+			return 0;
+		}
+
+		if(!read_process_part(db, df, type, opt, data, log,
+			child_count, &startpos))
+		{
+			log_msg(LOG_INFO, "error processing diff file");
+			region_destroy(data->region);
+			return 0;
+		}
+		startpos = ftello(df);
+		if(startpos == -1) {
+			log_msg(LOG_INFO, "could not ftello: %s.", strerror(errno));
+			region_destroy(data->region);
+			return 0;
+		}
+	}
+	DEBUG(DEBUG_XFRD,1, (LOG_INFO, "end of diff file read"));
+
+	if(find_smallest_offset(data, &db->diff_pos)) {
+		/* can skip to the first unused element */
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "next time skip diff file"));
+		db->diff_skip = 1;
+	} else {
+		/* all processed, can skip to here next time */
+		DEBUG(DEBUG_XFRD,2, (LOG_INFO, "next time skip diff file"));
+		db->diff_skip = 1;
+		db->diff_pos = ftello(df);
+		if(db->diff_pos == -1) {
+			log_msg(LOG_INFO, "could not ftello: %s.",
+				strerror(errno));
+			db->diff_skip = 0;
+		}
+	}
+
+	region_destroy(data->region);
+	fclose(df);
 	return 1;
 }
 
-void
-task_process_expire(namedb_type* db, struct task_list_d* task)
+static int diff_broken(FILE *df, off_t* break_pos)
 {
-	uint8_t ok;
-	zone_type* z = namedb_find_zone(db, task->zname);
-	assert(task->task_type == task_expire);
-	if(!z) {
-		DEBUG(DEBUG_IPC, 1, (LOG_WARNING, "zone %s %s but not in zonetree",
-			dname_to_string(task->zname, NULL),
-			task->yesno?"expired":"unexpired"));
-		return;
+	uint32_t type, len, len2;
+	*break_pos = ftello(df);
+
+	/* try to read and validate parts of the file */
+	while(diff_read_32(df, &type)) /* cannot read type is no error, normal EOF */
+	{
+		/* check type */
+		if(type != DIFF_PART_IXFR && type != DIFF_PART_SURE)
+			return 1;
+		/* check length */
+		if(!diff_read_32(df, &len))
+			return 1; /* EOF inside the part is error */
+		if(fseeko(df, len, SEEK_CUR) == -1)
+		{
+			log_msg(LOG_INFO, "fseeko failed: %s", strerror(errno));
+			return 1;
+		}
+		/* fseek clears EOF flag, but try reading length value,
+		   if EOF, the part is truncated */
+		if(!diff_read_32(df, &len2))
+			return 1;
+		if(len != len2)
+			return 1; /* bad part, lengths must agree */
+		/* this part is ok */
+		*break_pos = ftello(df);
 	}
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "xfrd: expire task zone %s %s",
-		dname_to_string(task->zname,0),
-		task->yesno?"expired":"unexpired"));
-	/* find zone, set expire flag */
-	ok = !task->yesno;
-	/* only update zone->is_ok if needed to minimize copy-on-write
-	 * of memory pages shared after fork() */
-	if(ok && !z->is_ok)
-		z->is_ok = 1;
-	else if(!ok && z->is_ok)
-		z->is_ok = 0;
+	return 0;
 }
 
-static void
-task_process_set_verbosity(struct task_list_d* task)
+void diff_snip_garbage(namedb_type* db, nsd_options_t* opt)
 {
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "verbosity task %d", (int)task->yesno));
-	verbosity = task->yesno;
-}
+	off_t break_pos;
+	const char* filename = opt->difffile;
+	FILE *df;
 
-static void
-task_process_checkzones(struct nsd* nsd, udb_base* taskudb, udb_ptr* last_task,
-	struct task_list_d* task)
-{
-	/* on SIGHUP check if zone-text-files changed and if so,
-	 * reread.  When from xfrd-reload, no need to fstat the files */
-	if(task->yesno) {
-		struct zone_options* zo = zone_options_find(nsd->options,
-			task->zname);
-		if(zo)
-			namedb_check_zonefile(nsd, taskudb, last_task, zo);
-	} else {
-		/* check all zones */
-		namedb_check_zonefiles(nsd, nsd->options, taskudb, last_task);
-	}
-}
-
-static void
-task_process_writezones(struct nsd* nsd, struct task_list_d* task)
-{
-	if(task->yesno) {
-		struct zone_options* zo = zone_options_find(nsd->options,
-			task->zname);
-		if(zo)
-			namedb_write_zonefile(nsd, zo);
-	} else {
-		namedb_write_zonefiles(nsd, nsd->options);
-	}
-}
-
-static void
-task_process_add_zone(struct nsd* nsd, udb_base* udb, udb_ptr* last_task,
-	struct task_list_d* task)
-{
-	zone_type* z;
-	const dname_type* zdname;
-	const char* zname = (const char*)task->zname;
-	const char* pname = zname + strlen(zname)+1;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "addzone task %s %s", zname, pname));
-	zdname = dname_parse(nsd->db->region, zname);
-	if(!zdname) {
-		log_msg(LOG_ERR, "can not parse zone name %s", zname);
-		return;
-	}
-	/* create zone */
-	z = find_or_create_zone(nsd->db, zdname, nsd->options, zname, pname);
-	if(!z) {
-		region_recycle(nsd->db->region, (void*)zdname,
-			dname_total_size(zdname));
-		log_msg(LOG_ERR, "can not add zone %s %s", zname, pname);
-		return;
-	}
-	z->zonestatid = (unsigned)task->yesno;
-	/* if zone is empty, attempt to read the zonefile from disk (if any) */
-	if(!z->soa_rrset && z->opts->pattern->zonefile) {
-		namedb_read_zonefile(nsd, z, udb, last_task);
-	}
-}
-
-static void
-task_process_del_zone(struct nsd* nsd, struct task_list_d* task)
-{
-	zone_type* zone;
-	struct zone_options* zopt;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "delzone task %s", dname_to_string(
-		task->zname, NULL)));
-	zone = namedb_find_zone(nsd->db, task->zname);
-	if(!zone)
-		return;
-
-#ifdef NSEC3
-	nsec3_clear_precompile(nsd->db, zone);
-	zone->nsec3_param = NULL;
-#endif
-	delete_zone_rrs(nsd->db, zone);
-
-	/* remove from zonetree, apex, soa */
-	zopt = zone->opts;
-	namedb_zone_delete(nsd->db, zone);
-	/* remove from options (zone_list already edited by xfrd) */
-	zone_options_delete(nsd->options, zopt);
-}
-
-static void
-task_process_add_key(struct nsd* nsd, struct task_list_d* task)
-{
-	struct key_options key;
-	key.name = (char*)task->zname;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "addkey task %s", key.name));
-	key.algorithm = key.name + strlen(key.name)+1;
-	key.secret = key.algorithm + strlen(key.algorithm)+1;
-	key_options_add_modify(nsd->options, &key);
-	memset(key.secret, 0xdd, strlen(key.secret)); /* wipe secret */
-}
-
-static void
-task_process_del_key(struct nsd* nsd, struct task_list_d* task)
-{
-	char* name = (char*)task->zname;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "delkey task %s", name));
-	/* this is reload and nothing is using the TSIG key right now */
-	key_options_remove(nsd->options, name);
-}
-
-static void
-task_process_add_cookie_secret(struct nsd* nsd, struct task_list_d* task) {
-	uint8_t secret_tmp[NSD_COOKIE_SECRET_SIZE];
-	ssize_t decoded_len;
-	char* secret = (char*)task->zname;
-
-	DEBUG(DEBUG_IPC, 1, (LOG_INFO, "add_cookie_secret task %s", secret));
-
-	if( strlen(secret) != 32 ) {
-		log_msg(LOG_ERR, "invalid cookie secret: %s", secret);
-		explicit_bzero(secret, strlen(secret));
-		return;
-	}
-
-	decoded_len = hex_pton(secret, secret_tmp, NSD_COOKIE_SECRET_SIZE);
-	if( decoded_len != 16 ) {
-		explicit_bzero(secret_tmp, NSD_COOKIE_SECRET_SIZE);
-		log_msg(LOG_ERR, "unable to parse cookie secret: %s", secret);
-		explicit_bzero(secret, strlen(secret));
-		return;
-	}
-	explicit_bzero(secret, strlen(secret));
-	add_cookie_secret(nsd, secret_tmp);
-	explicit_bzero(secret_tmp, NSD_COOKIE_SECRET_SIZE);
-}
-
-static void
-task_process_drop_cookie_secret(struct nsd* nsd, struct task_list_d* task)
-{
-	(void)task;
-	DEBUG(DEBUG_IPC, 1, (LOG_INFO, "drop_cookie_secret task"));
-	if( nsd->cookie_count <= 1 ) {
-		log_msg(LOG_ERR, "can not drop the only active cookie secret");
-		return;
-	}
-	drop_cookie_secret(nsd);
-}
-
-static void
-task_process_activate_cookie_secret(struct nsd* nsd, struct task_list_d* task)
-{
-	(void)task;
-	DEBUG(DEBUG_IPC, 1, (LOG_INFO, "activate_cookie_secret task"));
-	if( nsd->cookie_count <= 1 ) {
-		log_msg(LOG_ERR, "can not activate the only active cookie secret");
-		return;
-	}
-	activate_cookie_secret(nsd);
-}
-
-static void
-task_process_add_pattern(struct nsd* nsd, struct task_list_d* task)
-{
-	region_type* temp = region_create(xalloc, free);
-	buffer_type buffer;
-	struct pattern_options *pat;
-	buffer_create_from(&buffer, task->zname, task->yesno);
-	pat = pattern_options_unmarshal(temp, &buffer);
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "addpattern task %s", pat->pname));
-	pattern_options_add_modify(nsd->options, pat);
-	region_destroy(temp);
-}
-
-static void
-task_process_del_pattern(struct nsd* nsd, struct task_list_d* task)
-{
-	char* name = (char*)task->zname;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "delpattern task %s", name));
-	pattern_options_remove(nsd->options, name);
-}
-
-static void
-task_process_opt_change(struct nsd* nsd, struct task_list_d* task)
-{
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "optchange task"));
-#ifdef RATELIMIT
-	nsd->options->rrl_ratelimit = task->oldserial;
-	nsd->options->rrl_whitelist_ratelimit = task->newserial;
-	nsd->options->rrl_slip = task->yesno;
-	rrl_set_limit(nsd->options->rrl_ratelimit, nsd->options->rrl_whitelist_ratelimit,
-		nsd->options->rrl_slip);
-#else
-	(void)nsd; (void)task;
-#endif
-}
-
-#ifdef USE_ZONE_STATS
-static void
-task_process_zonestat_inc(struct nsd* nsd, udb_base* udb, udb_ptr *last_task,
-	struct task_list_d* task)
-{
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "zonestat_inc task %u", (unsigned)task->oldserial));
-	nsd->zonestatdesired = (unsigned)task->oldserial;
-	/* send echo to xfrd to increment on its end */
-	task_new_zonestat_inc(udb, last_task, nsd->zonestatdesired);
-}
-#endif
-
-static void
-task_process_apply_xfr(struct nsd* nsd, udb_base* udb, udb_ptr *last_task,
-	udb_ptr* task)
-{
-	/* we have to use an udb_ptr task here, because the apply_xfr procedure
-	 * appends soa_info which may remap and change the pointer. */
-	zone_type* zone;
-	FILE* df;
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "applyxfr task %s", dname_to_string(
-		TASKLIST(task)->zname, NULL)));
-	zone = namedb_find_zone(nsd->db, TASKLIST(task)->zname);
-	if(!zone) {
-		/* assume the zone has been deleted and a zone transfer was
-		 * still waiting to be processed */
-		return;
-	}
-
-	/* apply the XFR */
-	/* oldserial, newserial, yesno is filenumber */
-	df = xfrd_open_xfrfile(nsd, TASKLIST(task)->yesno, "r");
+	/* open file here and keep open, so it cannot change under our nose */
+	df = fopen(filename, "r+");
 	if(!df) {
-		/* could not open file to update */
-		/* soainfo_gone will be communicated from server_reload, unless
-		   preceding updates have been applied */
-		zone->is_skipped = 1;
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "could not open file %s for garbage collecting: %s",
+			filename, strerror(errno)));
 		return;
 	}
-	/* read and apply zone transfer */
-	switch(apply_ixfr_for_zone(nsd, zone, df, nsd->options, udb, last_task,
-				TASKLIST(task)->yesno)) {
-	case 1: /* Success */
-		break;
-
-	case 0: /* Failure */
-		/* soainfo_gone will be communicated from server_reload, unless
-		   preceding updates have been applied  */
-		zone->is_skipped = 1;
-		break;
-
-	case -1:/* Fatal */
-		exit(1);
-		break;
-
-	default:break;
+	/* and skip into file, since nsd does not read anything before the pos */
+	if(db->diff_skip) {
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "garbage collect skip diff file"));
+		if(fseeko(df, db->diff_pos, SEEK_SET)==-1) {
+			log_msg(LOG_INFO, "could not fseeko file %s: %s.",
+				filename, strerror(errno));
+			fclose(df);
+			return;
+		}
 	}
+
+	/* detect break point */
+	if(diff_broken(df, &break_pos))
+	{
+		/* snip off at break_pos */
+		DEBUG(DEBUG_XFRD,1, (LOG_INFO, "snipping off trailing partial part of %s",
+			filename));
+		if(ftruncate(fileno(df), break_pos) == -1)
+			log_msg(LOG_ERR, "ftruncate %s failed: %s",
+				filename, strerror(errno));
+	}
+
 	fclose(df);
-}
-
-
-void task_process_in_reload(struct nsd* nsd, udb_base* udb, udb_ptr *last_task,
-        udb_ptr* task)
-{
-	switch(TASKLIST(task)->task_type) {
-	case task_expire:
-		task_process_expire(nsd->db, TASKLIST(task));
-		break;
-	case task_check_zonefiles:
-		task_process_checkzones(nsd, udb, last_task, TASKLIST(task));
-		break;
-	case task_write_zonefiles:
-		task_process_writezones(nsd, TASKLIST(task));
-		break;
-	case task_set_verbosity:
-		task_process_set_verbosity(TASKLIST(task));
-		break;
-	case task_add_zone:
-		task_process_add_zone(nsd, udb, last_task, TASKLIST(task));
-		break;
-	case task_del_zone:
-		task_process_del_zone(nsd, TASKLIST(task));
-		break;
-	case task_add_key:
-		task_process_add_key(nsd, TASKLIST(task));
-		break;
-	case task_del_key:
-		task_process_del_key(nsd, TASKLIST(task));
-		break;
-	case task_add_pattern:
-		task_process_add_pattern(nsd, TASKLIST(task));
-		break;
-	case task_del_pattern:
-		task_process_del_pattern(nsd, TASKLIST(task));
-		break;
-	case task_opt_change:
-		task_process_opt_change(nsd, TASKLIST(task));
-		break;
-#ifdef USE_ZONE_STATS
-	case task_zonestat_inc:
-		task_process_zonestat_inc(nsd, udb, last_task, TASKLIST(task));
-		break;
-#endif
-	case task_apply_xfr:
-		task_process_apply_xfr(nsd, udb, last_task, task);
-		break;
-	case task_add_cookie_secret:
-		task_process_add_cookie_secret(nsd, TASKLIST(task));
-		break;
-	case task_drop_cookie_secret:
-		task_process_drop_cookie_secret(nsd, TASKLIST(task));
-		break;
-	case task_activate_cookie_secret:
-		task_process_activate_cookie_secret(nsd, TASKLIST(task));
-		break;
-	default:
-		log_msg(LOG_WARNING, "unhandled task in reload type %d",
-			(int)TASKLIST(task)->task_type);
-		break;
-	}
-	udb_ptr_free_space(task, udb, TASKLIST(task)->size);
 }

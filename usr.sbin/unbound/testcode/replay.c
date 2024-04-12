@@ -2,24 +2,24 @@
  * testcode/replay.c - store and use a replay of events for the DNS resolver.
  *
  * Copyright (c) 2007, NLnet Labs. All rights reserved.
- *
+ * 
  * This software is open source.
- *
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- *
+ * 
  * Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
- *
+ * 
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
- *
+ * 
  * Neither the name of the NLNET LABS nor the names of its contributors may
  * be used to endorse or promote products derived from this software without
  * specific prior written permission.
- *
+ * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -51,7 +51,6 @@
 #include "testcode/testpkts.h"
 #include "testcode/fake_event.h"
 #include "sldns/str2wire.h"
-#include "util/timeval_func.h"
 
 /** max length of lines in file */
 #define MAX_LINE_LEN 10240
@@ -60,19 +59,35 @@
  * Expand a macro
  * @param store: value storage
  * @param runtime: replay runtime for other stuff.
- * @param text: the macro text, after the ${, Updated to after the } when
+ * @param text: the macro text, after the ${, Updated to after the } when 
  * 	done (successfully).
  * @return expanded text, malloced. NULL on failure.
  */
-static char* macro_expand(rbtree_type* store,
+static char* macro_expand(rbtree_type* store, 
 	struct replay_runtime* runtime, char** text);
 
-/** parse keyword in string.
+/** compare of time values */
+static int
+timeval_smaller(const struct timeval* x, const struct timeval* y)
+{
+#ifndef S_SPLINT_S
+	if(x->tv_sec < y->tv_sec)
+		return 1;
+	else if(x->tv_sec == y->tv_sec) {
+		if(x->tv_usec <= y->tv_usec)
+			return 1;
+		else	return 0;
+	}
+	else	return 0;
+#endif
+}
+
+/** parse keyword in string. 
  * @param line: if found, the line is advanced to after the keyword.
  * @param keyword: string.
- * @return: true if found, false if not.
+ * @return: true if found, false if not. 
  */
-static int
+static int 
 parse_keyword(char** line, const char* keyword)
 {
 	size_t len = (size_t)strlen(keyword);
@@ -109,7 +124,8 @@ replay_range_delete(struct replay_range* rng)
 	free(rng);
 }
 
-void
+/** strip whitespace from end of string */
+static void
 strip_end_white(char* p)
 {
 	size_t i;
@@ -120,8 +136,8 @@ strip_end_white(char* p)
 	}
 }
 
-/**
- * Read a range from file.
+/** 
+ * Read a range from file. 
  * @param remain: Rest of line (after RANGE keyword).
  * @param in: file to read from.
  * @param name: name to print in errors.
@@ -164,9 +180,8 @@ replay_range_read(char* remain, FILE* in, const char* name,
 			while(isspace((unsigned char)*parse))
 				parse++;
 			strip_end_white(parse);
-			if(!extstrtoaddr(parse, &rng->addr, &rng->addrlen,
-				UNBOUND_DNS_PORT)) {
-				log_err("Line %d: could not read ADDRESS: %s",
+			if(!extstrtoaddr(parse, &rng->addr, &rng->addrlen)) {
+				log_err("Line %d: could not read ADDRESS: %s", 
 					pstate->lineno, parse);
 				free(rng);
 				return NULL;
@@ -212,7 +227,7 @@ read_file_content(FILE* in, int* lineno, struct replay_moment* mom)
 		if(strncmp(line, "FILE_END", 8) == 0) {
 			return;
 		}
-		strip_end_white(line);
+		if(line[0]) line[strlen(line)-1] = 0; /* remove newline */
 		if(!cfg_strlist_insert(last, strdup(line)))
 			fatal_exit("malloc failure");
 		last = &( (*last)->next );
@@ -234,14 +249,14 @@ read_assign_step(char* remain, struct replay_moment* mom)
 	if(eq != '=')
 		fatal_exit("no '=' in assign: %s", remain);
 	remain += skip;
-	strip_end_white(remain);
+	if(remain[0]) remain[strlen(remain)-1]=0; /* remove newline */
 	mom->string = strdup(remain);
 	if(!mom->variable || !mom->string)
 		fatal_exit("out of memory");
 }
 
-/**
- * Read a replay moment 'STEP' from file.
+/** 
+ * Read a replay moment 'STEP' from file. 
  * @param remain: Rest of line (after STEP keyword).
  * @param in: file to read from.
  * @param name: name to print in errors.
@@ -273,8 +288,7 @@ replay_moment_read(char* remain, FILE* in, const char* name,
 	} else if(parse_keyword(&remain, "QUERY")) {
 		mom->evt_type = repevt_front_query;
 		readentry = 1;
-		if(!extstrtoaddr("127.0.0.1", &mom->addr, &mom->addrlen,
-			UNBOUND_DNS_PORT))
+		if(!extstrtoaddr("127.0.0.1", &mom->addr, &mom->addrlen))
 			fatal_exit("internal error");
 	} else if(parse_keyword(&remain, "CHECK_ANSWER")) {
 		mom->evt_type = repevt_front_reply;
@@ -304,7 +318,8 @@ replay_moment_read(char* remain, FILE* in, const char* name,
 		mom->evt_type = repevt_autotrust_check;
 		while(isspace((unsigned char)*remain))
 			remain++;
-		strip_end_white(remain);
+		if(strlen(remain)>0 && remain[strlen(remain)-1]=='\n')
+			remain[strlen(remain)-1] = 0;
 		mom->autotrust_id = strdup(remain);
 		if(!mom->autotrust_id) fatal_exit("out of memory");
 		read_file_content(in, &pstate->lineno, mom);
@@ -312,7 +327,8 @@ replay_moment_read(char* remain, FILE* in, const char* name,
 		mom->evt_type = repevt_tempfile_check;
 		while(isspace((unsigned char)*remain))
 			remain++;
-		strip_end_white(remain);
+		if(strlen(remain)>0 && remain[strlen(remain)-1]=='\n')
+			remain[strlen(remain)-1] = 0;
 		mom->autotrust_id = strdup(remain);
 		if(!mom->autotrust_id) fatal_exit("out of memory");
 		read_file_content(in, &pstate->lineno, mom);
@@ -341,9 +357,10 @@ replay_moment_read(char* remain, FILE* in, const char* name,
 		m++;
 		while(isspace((unsigned char)*m))
 			m++;
-		if(!extstrtoaddr(s, &mom->addr, &mom->addrlen, UNBOUND_DNS_PORT))
+		if(!extstrtoaddr(s, &mom->addr, &mom->addrlen))
 			fatal_exit("bad infra_rtt address %s", s);
-		strip_end_white(m);
+		if(strlen(m)>0 && m[strlen(m)-1]=='\n')
+			m[strlen(m)-1] = 0;
 		mom->variable = strdup(remain);
 		mom->string = strdup(m);
 		if(!mom->string) fatal_exit("out of memory");
@@ -358,21 +375,21 @@ replay_moment_read(char* remain, FILE* in, const char* name,
 	if(parse_keyword(&remain, "ADDRESS")) {
 		while(isspace((unsigned char)*remain))
 			remain++;
-		strip_end_white(remain);
-		if(!extstrtoaddr(remain, &mom->addr, &mom->addrlen,
-			UNBOUND_DNS_PORT)) {
-			log_err("line %d: could not parse ADDRESS: %s",
+		if(strlen(remain) > 0) /* remove \n */
+			remain[strlen(remain)-1] = 0;
+		if(!extstrtoaddr(remain, &mom->addr, &mom->addrlen)) {
+			log_err("line %d: could not parse ADDRESS: %s", 
 				pstate->lineno, remain);
 			free(mom);
 			return NULL;
 		}
-	}
+	} 
 	if(parse_keyword(&remain, "ELAPSE")) {
 		double sec;
 		errno = 0;
 		sec = strtod(remain, &remain);
 		if(sec == 0. && errno != 0) {
-			log_err("line %d: could not parse ELAPSE: %s (%s)",
+			log_err("line %d: could not parse ELAPSE: %s (%s)", 
 				pstate->lineno, remain, strerror(errno));
 			free(mom);
 			return NULL;
@@ -382,7 +399,7 @@ replay_moment_read(char* remain, FILE* in, const char* name,
 		mom->elapse.tv_usec = (int)((sec - (double)mom->elapse.tv_sec)
 			*1000000. + 0.5);
 #endif
-	}
+	} 
 
 	if(readentry) {
 		mom->match = read_entry(in, name, pstate, 1);
@@ -418,7 +435,7 @@ make_scenario(char* line)
 	return scen;
 }
 
-struct replay_scenario*
+struct replay_scenario* 
 replay_scenario_read(FILE* in, const char* name, int* lineno)
 {
 	char line[MAX_LINE_LEN];
@@ -436,22 +453,20 @@ replay_scenario_read(FILE* in, const char* name, int* lineno)
 		(*lineno)++;
 		while(isspace((unsigned char)*parse))
 			parse++;
-		if(!*parse)
+		if(!*parse) 
 			continue; /* empty line */
 		if(parse_keyword(&parse, ";"))
 			continue; /* comment */
 		if(parse_keyword(&parse, "SCENARIO_BEGIN")) {
-			if(scen)
-				fatal_exit("%d: double SCENARIO_BEGIN", *lineno);
 			scen = make_scenario(parse);
 			if(!scen)
 				fatal_exit("%d: could not make scen", *lineno);
 			continue;
-		}
+		} 
 		if(!scen)
 			fatal_exit("%d: expected SCENARIO", *lineno);
 		if(parse_keyword(&parse, "RANGE_BEGIN")) {
-			struct replay_range* newr = replay_range_read(parse,
+			struct replay_range* newr = replay_range_read(parse, 
 				in, name, &pstate, line);
 			if(!newr)
 				fatal_exit("%d: bad range", pstate.lineno);
@@ -459,12 +474,12 @@ replay_scenario_read(FILE* in, const char* name, int* lineno)
 			newr->next_range = scen->range_list;
 			scen->range_list = newr;
 		} else if(parse_keyword(&parse, "STEP")) {
-			struct replay_moment* mom = replay_moment_read(parse,
+			struct replay_moment* mom = replay_moment_read(parse, 
 				in, name, &pstate);
 			if(!mom)
 				fatal_exit("%d: bad moment", pstate.lineno);
 			*lineno = pstate.lineno;
-			if(scen->mom_last &&
+			if(scen->mom_last && 
 				scen->mom_last->time_step >= mom->time_step)
 				fatal_exit("%d: time goes backwards", *lineno);
 			if(scen->mom_last)
@@ -487,7 +502,7 @@ replay_scenario_read(FILE* in, const char* name, int* lineno)
 	return NULL;
 }
 
-void
+void 
 replay_scenario_delete(struct replay_scenario* scen)
 {
 	struct replay_moment* mom, *momn;
@@ -615,7 +630,7 @@ do_macro_recursion(rbtree_type* store, struct replay_runtime* runtime,
 {
 	char* after = at+2;
 	char* expand = macro_expand(store, runtime, &after);
-	if(!expand)
+	if(!expand) 
 		return NULL; /* expansion failed */
 	if(!do_buf_insert(at, remain, after, expand)) {
 		free(expand);
@@ -650,7 +665,7 @@ do_macro_variable(rbtree_type* store, char* buf, size_t remain)
 	}
 	/* terminator, we are working in macro_expand() buffer */
 	sv = *at;
-	*at = 0;
+	*at = 0; 
 	v = macro_getvar(store, name);
 	*at = sv;
 
@@ -676,11 +691,7 @@ do_macro_ctime(char* arg)
 		return NULL;
 	}
 	ctime_r(&tt, buf);
-#ifdef USE_WINSOCK
-	if(strlen(buf) > 10 && buf[7]==' ' && buf[8]=='0')
-		buf[8]=' '; /* fix error in windows ctime */
-#endif
-	strip_end_white(buf);
+	if(buf[0]) buf[strlen(buf)-1]=0; /* remove trailing newline */
 	return strdup(buf);
 }
 
@@ -702,7 +713,6 @@ perform_arith(double x, char op, double y, double* res)
 		*res = x*y;
 		break;
 	default:
-		*res = 0;
 		return 0;
 	}
 
@@ -791,19 +801,14 @@ macro_expand(rbtree_type* store, struct replay_runtime* runtime, char** text)
 
 	/* check for functions */
 	if(strcmp(buf, "time") == 0) {
-		if(runtime)
-			snprintf(buf, sizeof(buf), ARG_LL "d", (long long)runtime->now_secs);
-		else
-			snprintf(buf, sizeof(buf), ARG_LL "d", (long long)0);
+		snprintf(buf, sizeof(buf), ARG_LL "d", (long long)runtime->now_secs);
 		*text += len;
 		return strdup(buf);
 	} else if(strcmp(buf, "timeout") == 0) {
 		time_t res = 0;
-		if(runtime) {
-			struct fake_timer* t = first_timer(runtime);
-			if(t && (time_t)t->tv.tv_sec >= runtime->now_secs)
-				res = (time_t)t->tv.tv_sec - runtime->now_secs;
-		}
+		struct fake_timer* t = first_timer(runtime);
+		if(t && (time_t)t->tv.tv_sec >= runtime->now_secs) 
+			res = (time_t)t->tv.tv_sec - runtime->now_secs;
 		snprintf(buf, sizeof(buf), ARG_LL "d", (long long)res);
 		*text += len;
 		return strdup(buf);
@@ -840,9 +845,9 @@ macro_expand(rbtree_type* store, struct replay_runtime* runtime, char** text)
 	if(dofunc) {
 		/* post process functions, buf has the argument(s) */
 		if(strncmp(buf, "ctime", 5) == 0) {
-			return do_macro_ctime(buf+6);
+			return do_macro_ctime(buf+6);	
 		} else if(strncmp(buf, "range", 5) == 0) {
-			return do_macro_range(buf+6);
+			return do_macro_range(buf+6);	
 		}
 	}
 	return strdup(buf);
@@ -876,7 +881,7 @@ macro_process(rbtree_type* store, struct replay_runtime* runtime, char* text)
 	return strdup(buf);
 }
 
-char*
+char* 
 macro_lookup(rbtree_type* store, char* name)
 {
 	struct replay_var* x = macro_getvar(store, name);
@@ -892,7 +897,7 @@ void macro_print_debug(rbtree_type* store)
 	}
 }
 
-int
+int 
 macro_assign(rbtree_type* store, char* name, char* value)
 {
 	struct replay_var* x = macro_getvar(store, name);

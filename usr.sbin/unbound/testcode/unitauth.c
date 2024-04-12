@@ -42,7 +42,6 @@
 #include "testcode/unitmain.h"
 #include "util/regional.h"
 #include "util/net_help.h"
-#include "util/config_file.h"
 #include "util/data/msgreply.h"
 #include "services/cache/dns.h"
 #include "sldns/str2wire.h"
@@ -76,18 +75,10 @@ static const char* zone_example_com =
 "out.example.com.	3600	IN	CNAME	www.example.com.\n"
 "plan.example.com.	3600	IN	CNAME	nonexist.example.com.\n"
 "redir.example.com.	3600	IN	DNAME	redir.example.org.\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"obscured.redir2.example.com.	3600	IN	A	10.0.0.12\n"
-"under2.redir2.example.com.	3600	IN	DNAME	redir3.example.net.\n"
-"doubleobscured.under2.redir2.example.com.	3600	IN	A	10.0.0.13\n"
 "sub.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
 "sub.example.com.	3600	IN	NS	ns2.sub.example.com.\n"
 "ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
 "ns2.sub.example.com.	3600	IN	AAAA	2001::7\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-"obscured.sub2.example.com.	3600	IN	A	10.0.0.10\n"
-"under.sub2.example.com.	3600	IN	NS	ns.under.sub2.example.com.\n"
-"doubleobscured.under.sub2.example.com.	3600	IN	A	10.0.0.11\n"
 "*.wild.example.com.	3600	IN	A	10.0.0.8\n"
 "*.wild2.example.com.	3600	IN	CNAME	www.example.com.\n"
 "*.wild3.example.com.	3600	IN	A	10.0.0.8\n"
@@ -120,9 +111,8 @@ static const char* zone_example_com =
 /* just an RRSIG rrset with nothing else, 2 rrsigs */
 "z5.example.com.	3600	IN	RRSIG	A 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
 "z5.example.com.	3600	IN	RRSIG	A 8 3 10200 20170612005010 20170515005010 12345 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
-#if 1 /* comparison of file does not work on this part because duplicates */
+#if 0 /* comparison of file does not work on this part because duplicates */
       /* are removed and the rrsets are reordered */
-"end_of_check.z6.example.com. 3600 IN 	A	10.0.0.10\n"
 /* first rrsig, then A record */
 "z6.example.com.	3600	IN	RRSIG	A 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
 "z6.example.com.	3600	IN	A	10.0.0.10\n"
@@ -141,12 +131,6 @@ static const char* zone_example_com =
 "z9.example.com.	3600	IN	A	10.0.0.10\n"
 "z9.example.com.	3600	IN	RRSIG	A 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
 "z9.example.com.	3600	IN	RRSIG	A 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
-/* different covered types, first RRSIGs then, RRs, then another RRSIG */
-"zz10.example.com.	3600	IN	RRSIG	AAAA 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
-"zz10.example.com.	3600	IN	RRSIG	A 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
-"zz10.example.com.	3600	IN	A	10.0.0.10\n"
-"zz10.example.com.	3600	IN	RRSIG	CNAME 8 3 10200 20170612005010 20170515005010 42393 nlnetlabs.nl. NhEDrHkuIgHkjWhDRVsGOIJWZpSs+QdduilWFe5d+/ZhOheLJbaTYD5w6+ZZ3yPh1tNud+jlg+GyiOSVapLEO31swDCIarL1UfRjRSpxxDCHGag5Zu+S4hF+KURxO3cJk8jLBELMQyRuMRHoKrw/wsiLGVu1YpAyAPPMcjFBNbk=\n"
-"zz10.example.com.	3600	IN	AAAA	::11\n"
 #endif /* if0 for duplicates and reordering */
 ;
 
@@ -289,54 +273,6 @@ static struct q_ans example_com_queries[] = {
 "foo.abc.redir.example.com.	0	IN	CNAME	foo.abc.redir.example.org.\n"
 	},
 
-	{ "example.com", "redir2.example.com. DNAME", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-	},
-
-	{ "example.com", "abc.redir2.example.com. A", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"abc.redir2.example.com.	0	IN	CNAME	abc.redir2.example.org.\n"
-	},
-
-	{ "example.com", "obscured.redir2.example.com. A", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"obscured.redir2.example.com.	0	IN	CNAME	obscured.redir2.example.org.\n"
-	},
-
-	{ "example.com", "under2.redir2.example.com. A", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"under2.redir2.example.com.	0	IN	CNAME	under2.redir2.example.org.\n"
-	},
-
-	{ "example.com", "doubleobscured.under2.redir2.example.com. A", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"doubleobscured.under2.redir2.example.com.	0	IN	CNAME	doubleobscured.under2.redir2.example.org.\n"
-	},
-
-	{ "example.com", "foo.doubleobscured.under2.redir2.example.com. A", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"foo.doubleobscured.under2.redir2.example.com.	0	IN	CNAME	foo.doubleobscured.under2.redir2.example.org.\n"
-	},
-
-	{ "example.com", "foo.under2.redir2.example.com. A", "",
-";flags QR AA rcode NOERROR\n"
-";answer section\n"
-"redir2.example.com.	3600	IN	DNAME	redir2.example.org.\n"
-"foo.under2.redir2.example.com.	0	IN	CNAME	foo.under2.redir2.example.org.\n"
-	},
-
 	{ "example.com", "sub.example.com. NS", "",
 ";flags QR rcode NOERROR\n"
 ";authority section\n"
@@ -411,78 +347,6 @@ static struct q_ans example_com_queries[] = {
 ";additional section\n"
 "ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
 "ns2.sub.example.com.	3600	IN	AAAA	2001::7\n"
-	},
-
-	{ "example.com", "sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "sub2.example.com. NS", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "obscured.sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "abc.obscured.sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "under.sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "under.sub2.example.com. NS", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "abc.under.sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "doubleobscured.under.sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
-	},
-
-	{ "example.com", "abc.doubleobscured.under.sub2.example.com. A", "",
-";flags QR rcode NOERROR\n"
-";authority section\n"
-"sub2.example.com.	3600	IN	NS	ns1.sub.example.com.\n"
-";additional section\n"
-"ns1.sub.example.com.	3600	IN	A	10.0.0.6\n"
 	},
 
 	{ "example.com", "wild.example.com. A", "",
@@ -596,13 +460,8 @@ tmpfilecleanup(void)
 	int i;
 	char buf[256];
 	for(i=0; i<tempno; i++) {
-#ifdef USE_WINSOCK
-		snprintf(buf, sizeof(buf), "unbound.unittest.%u.%d",
-			(unsigned)getpid(), i);
-#else
 		snprintf(buf, sizeof(buf), "/tmp/unbound.unittest.%u.%d",
 			(unsigned)getpid(), i);
-#endif
 		if(vbmp) printf("cleanup: unlink %s\n", buf);
 		unlink(buf);
 	}
@@ -616,13 +475,8 @@ create_tmp_file(const char* s)
 	char *fname;
 	FILE *out;
 	size_t r;
-#ifdef USE_WINSOCK
-	snprintf(buf, sizeof(buf), "unbound.unittest.%u.%d",
-		(unsigned)getpid(), tempno++);
-#else
 	snprintf(buf, sizeof(buf), "/tmp/unbound.unittest.%u.%d",
 		(unsigned)getpid(), tempno++);
-#endif
 	fname = strdup(buf);
 	if(!fname) fatal_exit("out of memory");
 	/* if no string, just make the name */
@@ -655,13 +509,12 @@ del_tmp_file(char* fname)
 }
 
 /** Add zone from file for testing */
-struct auth_zone*
-authtest_addzone(struct auth_zones* az, const char* name, char* fname)
+static struct auth_zone*
+addzone(struct auth_zones* az, const char* name, char* fname)
 {
 	struct auth_zone* z;
 	size_t nmlen;
 	uint8_t* nm = sldns_str2wire_dname(name, &nmlen);
-	struct config_file* cfg;
 	if(!nm) fatal_exit("out of memory");
 	lock_rw_wrlock(&az->lock);
 	z = auth_zone_create(az, nm, nmlen, LDNS_RR_CLASS_IN);
@@ -669,16 +522,12 @@ authtest_addzone(struct auth_zones* az, const char* name, char* fname)
 	if(!z) fatal_exit("cannot find zone");
 	auth_zone_set_zonefile(z, fname);
 	z->for_upstream = 1;
-	cfg = config_create();
-	free(cfg->chrootdir);
-	cfg->chrootdir = NULL;
 
-	if(!auth_zone_read_zonefile(z, cfg)) {
+	if(!auth_zone_read_zonefile(z)) {
 		fatal_exit("parse failure for auth zone %s", name);
 	}
 	lock_rw_unlock(&z->lock);
 	free(nm);
-	config_delete(cfg);
 	return z;
 }
 
@@ -701,16 +550,11 @@ checkfile(char* f1, char *f2)
 		cp2 = fgets(buf2, (int)sizeof(buf2), i2);
 		if((!cp1 && !feof(i1)) || (!cp2 && !feof(i2)))
 			fatal_exit("fgets failed: %s", strerror(errno));
-		if(strncmp(buf1, "end_of_check", 12) == 0) {
-			fclose(i1);
-			fclose(i2);
-			return;
-		}
 		if(strcmp(buf1, buf2) != 0) {
 			log_info("in files %s and %s:%d", f1, f2, line);
 			log_info("'%s'", buf1);
 			log_info("'%s'", buf2);
-			fatal_exit("files are not equal");
+			fatal_exit("files are not eqaul");
 		}
 	}
 	unit_assert(feof(i1) && feof(i2));
@@ -731,7 +575,7 @@ check_read_exact(const char* name, const char* zone)
 
 	az = auth_zones_create();
 	unit_assert(az);
-	z = authtest_addzone(az, name, fname);
+	z = addzone(az, name, fname);
 	unit_assert(z);
 	outf = create_tmp_file(NULL);
 	if(!auth_zone_write_file(z, outf)) {
@@ -982,7 +826,7 @@ check_queries(const char* name, const char* zone, struct q_ans* queries)
 	fname = create_tmp_file(zone);
 	az = auth_zones_create();
 	if(!az) fatal_exit("out of memory");
-	z = authtest_addzone(az, name, fname);
+	z = addzone(az, name, fname);
 	if(!z) fatal_exit("could not read zone for queries test");
 	del_tmp_file(fname);
 

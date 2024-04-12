@@ -7,16 +7,8 @@
  * See LICENSE for the license.
  *
  */
-/* because flex keeps having sign-unsigned compare problems that are unfixed*/
-#if defined(__clang__)||(defined(__GNUC__)&&((__GNUC__ >4)||(defined(__GNUC_MINOR__)&&(__GNUC__ ==4)&&(__GNUC_MINOR__ >=2))))
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#endif
-/* ignore fallthrough warnings in the generated parse code case statements */
-#if defined(__clang__)||(defined(__GNUC__)&&(__GNUC__ >=7))
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#endif
 
-#include "config.h"
+#include <config.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -26,6 +18,8 @@
 #include "zonec.h"
 #include "dname.h"
 #include "zparser.h"
+
+#define YY_NO_UNPUT
 
 #if 0
 #define LEXOUT(s)  printf s /* used ONLY when debugging */
@@ -66,49 +60,12 @@ push_parser_state(FILE *input)
 static void
 pop_parser_state(void)
 {
-	if (parser->filename)
-		region_recycle(parser->region, (void *)parser->filename,
-			strlen(parser->filename)+1);
-
 	--include_stack_ptr;
 	parser->filename = zparser_stack[include_stack_ptr].filename;
 	parser->line = zparser_stack[include_stack_ptr].line;
 	parser->origin = zparser_stack[include_stack_ptr].origin;
 	yy_delete_buffer(YY_CURRENT_BUFFER);
 	yy_switch_to_buffer(include_stack[include_stack_ptr]);
-}
-
-static YY_BUFFER_STATE oldstate;
-/* Start string scan */
-void
-parser_push_stringbuf(char* str)
-{
-	oldstate = YY_CURRENT_BUFFER;
-	yy_switch_to_buffer(yy_scan_string(str));
-}
-
-void
-parser_pop_stringbuf(void)
-{
-	yy_delete_buffer(YY_CURRENT_BUFFER);
-	yy_switch_to_buffer(oldstate);
-	oldstate = NULL;
-}
-
-	static int paren_open = 0;
-	static enum lexer_state lexer_state = EXPECT_OWNER;
-void
-parser_flush(void)
-{
-	YY_FLUSH_BUFFER;
-	paren_open = 0;
-	lexer_state = EXPECT_OWNER;
-}
-
-int at_eof(void)
-{
-	static int once = 1;
-	return (once = !once) ? 0 : NL;
 }
 
 #ifndef yy_set_bol /* compat definition, for flex 2.4.6 */
@@ -121,23 +78,11 @@ int at_eof(void)
 #endif
 	
 %}
-%option noinput
-%option nounput
-%{
-#ifndef YY_NO_UNPUT
-#define YY_NO_UNPUT 1
-#endif
-#ifndef YY_NO_INPUT
-#define YY_NO_INPUT 1
-#endif
-%}
 
 SPACE   [ \t]
 LETTER  [a-zA-Z]
 NEWLINE [\n\r]
-ZONESTR [^ \t\n\r();.\"\$]|\\.|\\\n
-CHARSTR [^ \t\n\r();.\"]|\\.|\\\n
-QUOTE   \"
+ZONESTR [^ \t\n\r();.\"\$]
 DOLLAR  \$
 COMMENT ;
 DOT     \.
@@ -147,6 +92,8 @@ ANY     [^\"\n\\]|\\.
 %x	incl bitlabel quotedstring
 
 %%
+	static int paren_open = 0;
+	static enum lexer_state lexer_state = EXPECT_OWNER;
 {SPACE}*{COMMENT}.*	/* ignore */
 ^{DOLLAR}TTL            { lexer_state = PARSING_RDATA; return DOLLAR_TTL; }
 ^{DOLLAR}ORIGIN         { lexer_state = PARSING_RDATA; return DOLLAR_ORIGIN; }
@@ -157,9 +104,8 @@ ANY     [^\"\n\\]|\\.
 	 */
 ^{DOLLAR}INCLUDE        {
 	BEGIN(incl);
-	/* ignore case statement fallthrough on incl<EOF> flex rule */
 }
-<incl>\n		|
+<incl>\n 		|
 <incl><<EOF>>		{
 	int error_occurred = parser->error_occurred;
 	BEGIN(INITIAL);
@@ -198,13 +144,11 @@ ANY     [^\"\n\\]|\\.
 			/* split the original yytext */
 			*tmp = '\0';
 			strip_string(yytext);
-
+			
 			dname = dname_parse(parser->region, tmp + 1);
 			if (!dname) {
 				zc_error("incorrect include origin '%s'",
 					 tmp + 1);
-			} else if (*(tmp + strlen(tmp + 1)) != '.') {
-				zc_error("$INCLUDE directive requires absolute domain name");
 			} else {
 				origin = domain_table_insert(
 					parser->db->domains, dname);
@@ -230,17 +174,12 @@ ANY     [^\"\n\\]|\\.
 	parser->error_occurred = error_occurred;
 }
 <INITIAL><<EOF>>	{
-	int eo = at_eof();
 	yy_set_bol(1); /* Set beginning of line, so "^" rules match.  */
 	if (include_stack_ptr == 0) {
-		if(eo == NL)
-			return eo;
 		yyterminate();
 	} else {
 		fclose(yyin);
 		pop_parser_state();
-		if(eo == NL)
-			return eo;
 	}
 }
 ^{DOLLAR}{LETTER}+	{ zc_warning("Unknown directive: %s", yytext); }
@@ -303,8 +242,6 @@ ANY     [^\"\n\\]|\\.
 <bitlabel><<EOF>>	{
 	zc_error("EOF inside bitlabel");
 	BEGIN(INITIAL);
-	yyrestart(yyin); /* this is so that lex does not give an internal err */
-	yyterminate();
 }
 <bitlabel>{BIT}*	{ yymore(); }
 <bitlabel>\n		{ ++parser->line; yymore(); }
@@ -315,23 +252,21 @@ ANY     [^\"\n\\]|\\.
 }
 
 	/* Quoted strings.  Strip leading and ending quotes.  */
-{QUOTE}			{ BEGIN(quotedstring); LEXOUT(("\" ")); }
+\"			{ BEGIN(quotedstring); LEXOUT(("\" ")); }
 <quotedstring><<EOF>> 	{
 	zc_error("EOF inside quoted string");
 	BEGIN(INITIAL);
-	yyrestart(yyin); /* this is so that lex does not give an internal err */
-	yyterminate();
 }
-<quotedstring>{ANY}*	{ LEXOUT(("QSTR ")); yymore(); }
+<quotedstring>{ANY}*	{ LEXOUT(("STR ")); yymore(); }
 <quotedstring>\n 	{ ++parser->line; yymore(); }
-<quotedstring>{QUOTE} {
+<quotedstring>\" {
 	LEXOUT(("\" "));
 	BEGIN(INITIAL);
 	yytext[yyleng - 1] = '\0';
-	return parse_token(QSTR, yytext, &lexer_state);
+	return parse_token(STR, yytext, &lexer_state);
 }
 
-{ZONESTR}({CHARSTR})* {
+({ZONESTR}|\\.|\\\n)+ {
 	/* Any allowed word.  */
 	return parse_token(STR, yytext, &lexer_state);
 }
@@ -378,7 +313,7 @@ zoctet(char *text)
 		if (s[0] != '\\') {
 			/* Ordinary character.  */
 			*p = *s;
-		} else if (isdigit((unsigned char)s[1]) && isdigit((unsigned char)s[2]) && isdigit((unsigned char)s[3])) {
+		} else if (isdigit((int)s[1]) && isdigit((int)s[2]) && isdigit((int)s[3])) {
 			/* \DDD escape.  */
 			int val = (hexdigit_to_int(s[1]) * 100 +
 				   hexdigit_to_int(s[2]) * 10 +
@@ -406,8 +341,8 @@ zoctet(char *text)
 static int
 parse_token(int token, char *yytext, enum lexer_state *lexer_state)
 {
-	size_t len;
-	char *str;
+	char *str = region_strdup(parser->rr_region, yytext);
+	size_t len = zoctet(str);
 
 	if (*lexer_state == EXPECT_OWNER) {
 		*lexer_state = PARSING_OWNER;
@@ -417,7 +352,7 @@ parse_token(int token, char *yytext, enum lexer_state *lexer_state)
 		uint16_t rrclass;
 		
 		/* type */
-		token = rrtype_to_token(yytext, &yylval.type);
+		token = rrtype_to_token(str, &yylval.type);
 		if (token != 0) {
 			*lexer_state = PARSING_RDATA;
 			LEXOUT(("%d[%s] ", token, yytext));
@@ -425,7 +360,7 @@ parse_token(int token, char *yytext, enum lexer_state *lexer_state)
 		}
 
 		/* class */
-		rrclass = rrclass_from_string(yytext);
+		rrclass = rrclass_from_string(str);
 		if (rrclass != 0) {
 			yylval.klass = rrclass;
 			LEXOUT(("CLASS "));
@@ -433,15 +368,12 @@ parse_token(int token, char *yytext, enum lexer_state *lexer_state)
 		}
 
 		/* ttl */
-		yylval.ttl = strtottl(yytext, &t);
+		yylval.ttl = strtottl(str, &t);
 		if (*t == '\0') {
 			LEXOUT(("TTL "));
 			return T_TTL;
 		}
 	}
-
-	str = region_strdup(parser->rr_region, yytext);
-	len = zoctet(str);
 
 	yylval.data.str = str;
 	yylval.data.len = len;

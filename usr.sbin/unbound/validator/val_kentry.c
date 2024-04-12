@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -39,14 +39,13 @@
  * This file contains functions for dealing with validator key entries.
  */
 #include "config.h"
+#include <ldns/ldns.h>
 #include "validator/val_kentry.h"
 #include "util/data/packed_rrset.h"
 #include "util/data/dname.h"
 #include "util/storage/lookup3.h"
 #include "util/regional.h"
 #include "util/net_help.h"
-#include "sldns/rrdef.h"
-#include "sldns/keyraw.h"
 
 size_t 
 key_entry_sizefunc(void* key, void* data)
@@ -152,7 +151,7 @@ key_entry_copy_toregion(struct key_entry_key* kkey, struct regional* region)
 }
 
 struct key_entry_key* 
-key_entry_copy(struct key_entry_key* kkey, int copy_reason)
+key_entry_copy(struct key_entry_key* kkey)
 {
 	struct key_entry_key* newk;
 	if(!kkey)
@@ -190,7 +189,7 @@ key_entry_copy(struct key_entry_key* kkey, int copy_reason)
 			}
 			packed_rrset_ptr_fixup(newd->rrset_data);
 		}
-		if(copy_reason && d->reason && *d->reason != 0) {
+		if(d->reason) {
 			newd->reason = strdup(d->reason);
 			if(!newd->reason) {
 				free(newd->rrset_data);
@@ -199,8 +198,6 @@ key_entry_copy(struct key_entry_key* kkey, int copy_reason)
 				free(newk);
 				return NULL;
 			}
-		} else {
-			newd->reason = NULL;
 		}
 		if(d->algo) {
 			newd->algo = (uint8_t*)strdup((char*)d->algo);
@@ -239,19 +236,18 @@ key_entry_isbad(struct key_entry_key* kkey)
 	return (int)(d->isbad);
 }
 
+void
+key_entry_set_reason(struct key_entry_key* kkey, char* reason)
+{
+	struct key_entry_data* d = (struct key_entry_data*)kkey->entry.data;
+	d->reason = reason;
+}
+
 char*
 key_entry_get_reason(struct key_entry_key* kkey)
 {
 	struct key_entry_data* d = (struct key_entry_data*)kkey->entry.data;
 	return d->reason;
-}
-
-sldns_ede_code
-key_entry_get_reason_bogus(struct key_entry_key* kkey)
-{
-	struct key_entry_data* d = (struct key_entry_data*)kkey->entry.data;
-	return d->reason_bogus;
-
 }
 
 /** setup key entry in region */
@@ -279,9 +275,8 @@ key_entry_setup(struct regional* region,
 
 struct key_entry_key* 
 key_entry_create_null(struct regional* region,
-	uint8_t* name, size_t namelen, uint16_t dclass, time_t ttl,
-	sldns_ede_code reason_bogus, const char* reason,
-	time_t now)
+	uint8_t* name, size_t namelen, uint16_t dclass, uint32_t ttl,
+	uint32_t now)
 {
 	struct key_entry_key* k;
 	struct key_entry_data* d;
@@ -289,10 +284,7 @@ key_entry_create_null(struct regional* region,
 		return NULL;
 	d->ttl = now + ttl;
 	d->isbad = 0;
-	d->reason = (!reason || *reason == 0)
-		?NULL :(char*)regional_strdup(region, reason);
-		/* On allocation error we don't store the reason string */
-	d->reason_bogus = reason_bogus;
+	d->reason = NULL;
 	d->rrset_type = LDNS_RR_TYPE_DNSKEY;
 	d->rrset_data = NULL;
 	d->algo = NULL;
@@ -302,9 +294,7 @@ key_entry_create_null(struct regional* region,
 struct key_entry_key* 
 key_entry_create_rrset(struct regional* region,
 	uint8_t* name, size_t namelen, uint16_t dclass,
-	struct ub_packed_rrset_key* rrset, uint8_t* sigalg,
-	sldns_ede_code reason_bogus, const char* reason,
-	time_t now)
+	struct ub_packed_rrset_key* rrset, uint8_t* sigalg, uint32_t now)
 {
 	struct key_entry_key* k;
 	struct key_entry_data* d;
@@ -314,10 +304,7 @@ key_entry_create_rrset(struct regional* region,
 		return NULL;
 	d->ttl = rd->ttl + now;
 	d->isbad = 0;
-	d->reason = (!reason || *reason == 0)
-		?NULL :(char*)regional_strdup(region, reason);
-		/* On allocation error we don't store the reason string */
-	d->reason_bogus = reason_bogus;
+	d->reason = NULL;
 	d->rrset_type = ntohs(rrset->rk.type);
 	d->rrset_data = (struct packed_rrset_data*)regional_alloc_init(region,
 		rd, packed_rrset_sizeof(rd));
@@ -334,9 +321,8 @@ key_entry_create_rrset(struct regional* region,
 
 struct key_entry_key* 
 key_entry_create_bad(struct regional* region,
-	uint8_t* name, size_t namelen, uint16_t dclass, time_t ttl,
-	sldns_ede_code reason_bogus, const char* reason,
-	time_t now)
+	uint8_t* name, size_t namelen, uint16_t dclass, uint32_t ttl, 
+	uint32_t now)
 {
 	struct key_entry_key* k;
 	struct key_entry_data* d;
@@ -344,10 +330,7 @@ key_entry_create_bad(struct regional* region,
 		return NULL;
 	d->ttl = now + ttl;
 	d->isbad = 1;
-	d->reason = (!reason || *reason == 0)
-		?NULL :(char*)regional_strdup(region, reason);
-		/* On allocation error we don't store the reason string */
-	d->reason_bogus = reason_bogus;
+	d->reason = NULL;
 	d->rrset_type = LDNS_RR_TYPE_DNSKEY;
 	d->rrset_data = NULL;
 	d->algo = NULL;
@@ -394,7 +377,7 @@ dnskey_get_keysize(struct packed_rrset_data* data, size_t idx)
 	algo = (int)data->rr_data[idx][2+3];
 	pk = (unsigned char*)data->rr_data[idx]+2+4;
 	pklen = (unsigned)data->rr_len[idx]-2-4;
-	return sldns_rr_dnskey_key_size_raw(pk, pklen, algo);
+	return ldns_rr_dnskey_key_size_raw(pk, pklen, algo);
 }
 
 /** get dnskey flags from data */

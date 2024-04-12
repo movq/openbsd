@@ -21,29 +21,28 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
  * \file
  *
  * This file contains functions to resolve DNS queries and 
- * validate the answers. Synchronously and asynchronously.
+ * validate the answers. Synchonously and asynchronously.
  *
  */
 
 /* include the public api first, it should be able to stand alone */
 #include "libunbound/unbound.h"
-#include "libunbound/unbound-event.h"
 #include "config.h"
 #include <ctype.h>
 #include "libunbound/context.h"
@@ -57,45 +56,27 @@
 #include "util/random.h"
 #include "util/net_help.h"
 #include "util/tube.h"
-#include "util/ub_event.h"
-#include "util/edns.h"
 #include "services/modstack.h"
 #include "services/localzone.h"
 #include "services/cache/infra.h"
 #include "services/cache/rrset.h"
-#include "services/authzone.h"
-#include "services/listen_dnsport.h"
-#include "sldns/sbuffer.h"
-#ifdef HAVE_PTHREAD
-#include <signal.h>
-#endif
-#ifdef HAVE_SYS_WAIT_H
-#include <sys/wait.h>
-#endif
-#ifdef HAVE_TIME_H
-#include <time.h>
-#endif
 
 #if defined(UB_ON_WINDOWS) && defined (HAVE_WINDOWS_H)
 #include <windows.h>
 #include <iphlpapi.h>
 #endif /* UB_ON_WINDOWS */
 
-/** store that the logfile has a debug override */
-int ctx_logfile_overridden = 0;
-
-/** create context functionality, but no pipes */
-static struct ub_ctx* ub_ctx_create_nopipe(void)
+struct ub_ctx* 
+ub_ctx_create(void)
 {
 	struct ub_ctx* ctx;
+	unsigned int seed;
 #ifdef USE_WINSOCK
 	int r;
 	WSADATA wsa_data;
 #endif
 	
-	checklock_start();
-	if(!ctx_logfile_overridden)
-		log_init(NULL, 0, NULL); /* logs to stderr */
+	log_init(NULL, 0, NULL); /* logs to stderr */
 	log_ident_set("libunbound");
 #ifdef USE_WINSOCK
 	if((r = WSAStartup(MAKEWORD(2,2), &wsa_data)) != 0) {
@@ -104,7 +85,7 @@ static struct ub_ctx* ub_ctx_create_nopipe(void)
 		return NULL;
 	}
 #endif
-	verbosity = NO_VERBOSE; /* errors only */
+	verbosity = 0; /* errors only */
 	checklock_start();
 	ctx = (struct ub_ctx*)calloc(1, sizeof(*ctx));
 	if(!ctx) {
@@ -112,84 +93,18 @@ static struct ub_ctx* ub_ctx_create_nopipe(void)
 		return NULL;
 	}
 	alloc_init(&ctx->superalloc, NULL, 0);
-	if(!(ctx->seed_rnd = ub_initstate(NULL))) {
+	seed = (unsigned int)time(NULL) ^ (unsigned int)getpid();
+	if(!(ctx->seed_rnd = ub_initstate(seed, NULL))) {
+		seed = 0;
 		ub_randfree(ctx->seed_rnd);
 		free(ctx);
 		errno = ENOMEM;
 		return NULL;
 	}
-	lock_basic_init(&ctx->qqpipe_lock);
-	lock_basic_init(&ctx->rrpipe_lock);
-	lock_basic_init(&ctx->cfglock);
-	ctx->env = (struct module_env*)calloc(1, sizeof(*ctx->env));
-	if(!ctx->env) {
-		ub_randfree(ctx->seed_rnd);
-		free(ctx);
-		errno = ENOMEM;
-		return NULL;
-	}
-	ctx->env->cfg = config_create_forlib();
-	if(!ctx->env->cfg) {
-		free(ctx->env);
-		ub_randfree(ctx->seed_rnd);
-		free(ctx);
-		errno = ENOMEM;
-		return NULL;
-	}
-	/* init edns_known_options */
-	if(!edns_known_options_init(ctx->env)) {
-		config_delete(ctx->env->cfg);
-		free(ctx->env);
-		ub_randfree(ctx->seed_rnd);
-		free(ctx);
-		errno = ENOMEM;
-		return NULL;
-	}
-	ctx->env->auth_zones = auth_zones_create();
-	if(!ctx->env->auth_zones) {
-		edns_known_options_delete(ctx->env);
-		config_delete(ctx->env->cfg);
-		free(ctx->env);
-		ub_randfree(ctx->seed_rnd);
-		free(ctx);
-		errno = ENOMEM;
-		return NULL;
-	}
-	ctx->env->edns_strings = edns_strings_create();
-	if(!ctx->env->edns_strings) {
-		auth_zones_delete(ctx->env->auth_zones);
-		edns_known_options_delete(ctx->env);
-		config_delete(ctx->env->cfg);
-		free(ctx->env);
-		ub_randfree(ctx->seed_rnd);
-		free(ctx);
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	ctx->env->alloc = &ctx->superalloc;
-	ctx->env->worker = NULL;
-	ctx->env->need_to_validate = 0;
-	modstack_init(&ctx->mods);
-	rbtree_init(&ctx->queries, &context_query_cmp);
-	return ctx;
-}
-
-struct ub_ctx* 
-ub_ctx_create(void)
-{
-	struct ub_ctx* ctx = ub_ctx_create_nopipe();
-	if(!ctx)
-		return NULL;
+	seed = 0;
 	if((ctx->qq_pipe = tube_create()) == NULL) {
 		int e = errno;
 		ub_randfree(ctx->seed_rnd);
-		config_delete(ctx->env->cfg);
-		modstack_desetup(&ctx->mods, ctx->env);
-		listen_desetup_locks();
-		edns_known_options_delete(ctx->env);
-		edns_strings_delete(ctx->env->edns_strings);
-		free(ctx->env);
 		free(ctx);
 		errno = e;
 		return NULL;
@@ -198,63 +113,53 @@ ub_ctx_create(void)
 		int e = errno;
 		tube_delete(ctx->qq_pipe);
 		ub_randfree(ctx->seed_rnd);
-		config_delete(ctx->env->cfg);
-		modstack_desetup(&ctx->mods, ctx->env);
-		listen_desetup_locks();
-		edns_known_options_delete(ctx->env);
-		edns_strings_delete(ctx->env->edns_strings);
-		free(ctx->env);
 		free(ctx);
 		errno = e;
 		return NULL;
 	}
-	return ctx;
-}
-
-struct ub_ctx* 
-ub_ctx_create_ub_event(struct ub_event_base* ueb)
-{
-	struct ub_ctx* ctx = ub_ctx_create_nopipe();
-	if(!ctx)
-		return NULL;
-	/* no pipes, but we have the locks to make sure everything works */
-	ctx->created_bg = 0;
-	ctx->dothread = 1; /* the processing is in the same process,
-		makes ub_cancel and ub_ctx_delete do the right thing */
-	ctx->event_base = ueb;
-	return ctx;
-}
-
-struct ub_ctx* 
-ub_ctx_create_event(struct event_base* eb)
-{
-	struct ub_ctx* ctx = ub_ctx_create_nopipe();
-	if(!ctx)
-		return NULL;
-	/* no pipes, but we have the locks to make sure everything works */
-	ctx->created_bg = 0;
-	ctx->dothread = 1; /* the processing is in the same process,
-		makes ub_cancel and ub_ctx_delete do the right thing */
-	ctx->event_base = ub_libevent_event_base(eb);
-	if (!ctx->event_base) {
-		ub_ctx_delete(ctx);
+	lock_basic_init(&ctx->qqpipe_lock);
+	lock_basic_init(&ctx->rrpipe_lock);
+	lock_basic_init(&ctx->cfglock);
+	ctx->env = (struct module_env*)calloc(1, sizeof(*ctx->env));
+	if(!ctx->env) {
+		tube_delete(ctx->qq_pipe);
+		tube_delete(ctx->rr_pipe);
+		ub_randfree(ctx->seed_rnd);
+		free(ctx);
+		errno = ENOMEM;
 		return NULL;
 	}
-	ctx->event_base_malloced = 1;
+	ctx->env->cfg = config_create_forlib();
+	if(!ctx->env->cfg) {
+		tube_delete(ctx->qq_pipe);
+		tube_delete(ctx->rr_pipe);
+		free(ctx->env);
+		ub_randfree(ctx->seed_rnd);
+		free(ctx);
+		errno = ENOMEM;
+		return NULL;
+	}
+	ctx->env->alloc = &ctx->superalloc;
+	ctx->env->worker = NULL;
+	ctx->env->need_to_validate = 0;
+	modstack_init(&ctx->mods);
+	rbtree_init(&ctx->queries, &context_query_cmp);
 	return ctx;
 }
-	
+
 /** delete q */
 static void
-delq(rbnode_type* n, void* ATTR_UNUSED(arg))
+delq(rbnode_t* n, void* ATTR_UNUSED(arg))
 {
 	struct ctx_query* q = (struct ctx_query*)n;
 	context_query_delete(q);
 }
 
-/** stop the bg thread */
-static void ub_stop_bg(struct ub_ctx* ctx)
+void 
+ub_ctx_delete(struct ub_ctx* ctx)
 {
+	struct alloc_cache* a, *na;
+	if(!ctx) return;
 	/* stop the bg thread */
 	lock_basic_lock(&ctx->cfglock);
 	if(ctx->created_bg) {
@@ -285,77 +190,12 @@ static void ub_stop_bg(struct ub_ctx* ctx)
 			ub_thread_join(ctx->bg_tid);
 		} else {
 			lock_basic_unlock(&ctx->cfglock);
-#ifndef UB_ON_WINDOWS
-			if(waitpid(ctx->bg_pid, NULL, 0) == -1) {
-				if(verbosity > 2)
-					log_err("waitpid: %s", strerror(errno));
-			}
-#endif
 		}
 	}
 	else {
 		lock_basic_unlock(&ctx->cfglock);
 	}
-}
 
-void 
-ub_ctx_delete(struct ub_ctx* ctx)
-{
-	struct alloc_cache* a, *na;
-	int do_stop = 1;
-	if(!ctx) return;
-
-	/* if the delete is called but it has forked, and before the fork
-	 * the context was finalized, then the bg worker is not stopped
-	 * from here. There is one worker, but two contexts that refer to
-	 * it and only one should clean up, the one with getpid == pipe_pid.*/
-	if(ctx->created_bg && ctx->pipe_pid != getpid()) {
-		do_stop = 0;
-#ifndef USE_WINSOCK
-		/* Stop events from getting deregistered, if the backend is
-		 * epoll, the epoll fd is the same as the other process.
-		 * That process should deregister them. */
-		if(ctx->qq_pipe->listen_com)
-			ctx->qq_pipe->listen_com->event_added = 0;
-		if(ctx->qq_pipe->res_com)
-			ctx->qq_pipe->res_com->event_added = 0;
-		if(ctx->rr_pipe->listen_com)
-			ctx->rr_pipe->listen_com->event_added = 0;
-		if(ctx->rr_pipe->res_com)
-			ctx->rr_pipe->res_com->event_added = 0;
-#endif
-	}
-	/* see if bg thread is created and if threads have been killed */
-	/* no locks, because those may be held by terminated threads */
-	/* for processes the read pipe is closed and we see that on read */
-#ifdef HAVE_PTHREAD
-	if(ctx->created_bg && ctx->dothread && do_stop) {
-		if(pthread_kill(ctx->bg_tid, 0) == ESRCH) {
-			/* thread has been killed */
-			do_stop = 0;
-		}
-	}
-#endif /* HAVE_PTHREAD */
-	if(do_stop)
-		ub_stop_bg(ctx);
-	if(ctx->created_bg && ctx->pipe_pid != getpid() && ctx->thread_worker) {
-		/* This delete is happening from a different process. Delete
-		 * the thread worker from this process memory space. The
-		 * thread is not there to do so, so it is freed here. */
-		struct ub_event_base* evbase = comm_base_internal(
-			ctx->thread_worker->base);
-		libworker_delete_event(ctx->thread_worker);
-		ctx->thread_worker = NULL;
-#ifdef USE_MINI_EVENT
-		ub_event_base_free(evbase);
-#else
-		/* cannot event_base_free, because the epoll_fd cleanup
-		 * in libevent could stop the original event_base in the
-		 * other process from working. */
-		free(evbase);
-#endif
-	}
-	libworker_delete_event(ctx->event_worker);
 
 	modstack_desetup(&ctx->mods, ctx->env);
 	a = ctx->alloc_list;
@@ -377,21 +217,11 @@ ub_ctx_delete(struct ub_ctx* ctx)
 		rrset_cache_delete(ctx->env->rrset_cache);
 		infra_delete(ctx->env->infra_cache);
 		config_delete(ctx->env->cfg);
-		edns_known_options_delete(ctx->env);
-		edns_strings_delete(ctx->env->edns_strings);
-		auth_zones_delete(ctx->env->auth_zones);
 		free(ctx->env);
 	}
 	ub_randfree(ctx->seed_rnd);
 	alloc_clear(&ctx->superalloc);
-	listen_desetup_locks();
 	traverse_postorder(&ctx->queries, delq, NULL);
-	if(ctx_logfile_overridden) {
-		log_file(NULL);
-		ctx_logfile_overridden = 0;
-	}
-	if(ctx->event_base_malloced)
-		free(ctx->event_base);
 	free(ctx);
 #ifdef USE_WINSOCK
 	WSACleanup();
@@ -399,7 +229,7 @@ ub_ctx_delete(struct ub_ctx* ctx)
 }
 
 int 
-ub_ctx_set_option(struct ub_ctx* ctx, const char* opt, const char* val)
+ub_ctx_set_option(struct ub_ctx* ctx, char* opt, char* val)
 {
 	lock_basic_lock(&ctx->cfglock);
 	if(ctx->finalized) {
@@ -415,7 +245,7 @@ ub_ctx_set_option(struct ub_ctx* ctx, const char* opt, const char* val)
 }
 
 int
-ub_ctx_get_option(struct ub_ctx* ctx, const char* opt, char** str)
+ub_ctx_get_option(struct ub_ctx* ctx, char* opt, char** str)
 {
 	int r;
 	lock_basic_lock(&ctx->cfglock);
@@ -428,7 +258,7 @@ ub_ctx_get_option(struct ub_ctx* ctx, const char* opt, char** str)
 }
 
 int 
-ub_ctx_config(struct ub_ctx* ctx, const char* fname)
+ub_ctx_config(struct ub_ctx* ctx, char* fname)
 {
 	lock_basic_lock(&ctx->cfglock);
 	if(ctx->finalized) {
@@ -444,7 +274,7 @@ ub_ctx_config(struct ub_ctx* ctx, const char* fname)
 }
 
 int 
-ub_ctx_add_ta(struct ub_ctx* ctx, const char* ta)
+ub_ctx_add_ta(struct ub_ctx* ctx, char* ta)
 {
 	char* dup = strdup(ta);
 	if(!dup) return UB_NOMEM;
@@ -456,6 +286,7 @@ ub_ctx_add_ta(struct ub_ctx* ctx, const char* ta)
 	}
 	if(!cfg_strlist_insert(&ctx->env->cfg->trust_anchor_list, dup)) {
 		lock_basic_unlock(&ctx->cfglock);
+		free(dup);
 		return UB_NOMEM;
 	}
 	lock_basic_unlock(&ctx->cfglock);
@@ -463,7 +294,7 @@ ub_ctx_add_ta(struct ub_ctx* ctx, const char* ta)
 }
 
 int 
-ub_ctx_add_ta_file(struct ub_ctx* ctx, const char* fname)
+ub_ctx_add_ta_file(struct ub_ctx* ctx, char* fname)
 {
 	char* dup = strdup(fname);
 	if(!dup) return UB_NOMEM;
@@ -475,25 +306,7 @@ ub_ctx_add_ta_file(struct ub_ctx* ctx, const char* fname)
 	}
 	if(!cfg_strlist_insert(&ctx->env->cfg->trust_anchor_file_list, dup)) {
 		lock_basic_unlock(&ctx->cfglock);
-		return UB_NOMEM;
-	}
-	lock_basic_unlock(&ctx->cfglock);
-	return UB_NOERROR;
-}
-
-int ub_ctx_add_ta_autr(struct ub_ctx* ctx, const char* fname)
-{
-	char* dup = strdup(fname);
-	if(!dup) return UB_NOMEM;
-	lock_basic_lock(&ctx->cfglock);
-	if(ctx->finalized) {
-		lock_basic_unlock(&ctx->cfglock);
 		free(dup);
-		return UB_AFTERFINAL;
-	}
-	if(!cfg_strlist_insert(&ctx->env->cfg->auto_trust_anchor_file_list,
-		dup)) {
-		lock_basic_unlock(&ctx->cfglock);
 		return UB_NOMEM;
 	}
 	lock_basic_unlock(&ctx->cfglock);
@@ -501,7 +314,7 @@ int ub_ctx_add_ta_autr(struct ub_ctx* ctx, const char* fname)
 }
 
 int 
-ub_ctx_trustedkeys(struct ub_ctx* ctx, const char* fname)
+ub_ctx_trustedkeys(struct ub_ctx* ctx, char* fname)
 {
 	char* dup = strdup(fname);
 	if(!dup) return UB_NOMEM;
@@ -513,6 +326,7 @@ ub_ctx_trustedkeys(struct ub_ctx* ctx, const char* fname)
 	}
 	if(!cfg_strlist_insert(&ctx->env->cfg->trusted_keys_file_list, dup)) {
 		lock_basic_unlock(&ctx->cfglock);
+		free(dup);
 		return UB_NOMEM;
 	}
 	lock_basic_unlock(&ctx->cfglock);
@@ -533,7 +347,6 @@ int ub_ctx_debugout(struct ub_ctx* ctx, void* out)
 {
 	lock_basic_lock(&ctx->cfglock);
 	log_file((FILE*)out);
-	ctx_logfile_overridden = 1;
 	ctx->logfile_override = 1;
 	ctx->log_out = out;
 	lock_basic_unlock(&ctx->cfglock);
@@ -573,7 +386,7 @@ ub_fd(struct ub_ctx* ctx)
 /** process answer from bg worker */
 static int
 process_answer_detail(struct ub_ctx* ctx, uint8_t* msg, uint32_t len,
-	ub_callback_type* cb, void** cbarg, int* err,
+	ub_callback_t* cb, void** cbarg, int* err,
 	struct ub_result** res)
 {
 	struct ctx_query* q;
@@ -606,21 +419,21 @@ process_answer_detail(struct ub_ctx* ctx, uint8_t* msg, uint32_t len,
 		ub_resolve_free(q->res);
 	} else {
 		/* parse the message, extract rcode, fill result */
-		sldns_buffer* buf = sldns_buffer_new(q->msg_len);
+		ldns_buffer* buf = ldns_buffer_new(q->msg_len);
 		struct regional* region = regional_create();
 		*res = q->res;
 		(*res)->rcode = LDNS_RCODE_SERVFAIL;
 		if(region && buf) {
-			sldns_buffer_clear(buf);
-			sldns_buffer_write(buf, q->msg, q->msg_len);
-			sldns_buffer_flip(buf);
+			ldns_buffer_clear(buf);
+			ldns_buffer_write(buf, q->msg, q->msg_len);
+			ldns_buffer_flip(buf);
 			libworker_enter_result(*res, buf, region,
 				q->msg_security);
 		}
 		(*res)->answer_packet = q->msg;
 		(*res)->answer_len = (int)q->msg_len;
 		q->msg = NULL;
-		sldns_buffer_free(buf);
+		ldns_buffer_free(buf);
 		regional_destroy(region);
 	}
 	q->res = NULL;
@@ -640,7 +453,7 @@ static int
 process_answer(struct ub_ctx* ctx, uint8_t* msg, uint32_t len)
 {
 	int err;
-	ub_callback_type cb;
+	ub_callback_t cb;
 	void* cbarg;
 	struct ub_result* res;
 	int r;
@@ -683,7 +496,7 @@ int
 ub_wait(struct ub_ctx* ctx)
 {
 	int err;
-	ub_callback_type cb;
+	ub_callback_t cb;
 	void* cbarg;
 	struct ub_result* res;
 	int r;
@@ -734,7 +547,7 @@ ub_wait(struct ub_ctx* ctx)
 }
 
 int 
-ub_resolve(struct ub_ctx* ctx, const char* name, int rrtype, 
+ub_resolve(struct ub_ctx* ctx, char* name, int rrtype, 
 	int rrclass, struct ub_result** result)
 {
 	struct ctx_query* q;
@@ -751,7 +564,7 @@ ub_resolve(struct ub_ctx* ctx, const char* name, int rrtype,
 	}
 	/* create new ctx_query and attempt to add to the list */
 	lock_basic_unlock(&ctx->cfglock);
-	q = context_new(ctx, name, rrtype, rrclass, NULL, NULL, NULL);
+	q = context_new(ctx, name, rrtype, rrclass, NULL, NULL);
 	if(!q)
 		return UB_NOMEM;
 	/* become a resolver thread for a bit */
@@ -778,50 +591,8 @@ ub_resolve(struct ub_ctx* ctx, const char* name, int rrtype,
 }
 
 int 
-ub_resolve_event(struct ub_ctx* ctx, const char* name, int rrtype, 
-	int rrclass, void* mydata, ub_event_callback_type callback,
-	int* async_id)
-{
-	struct ctx_query* q;
-	int r;
-
-	if(async_id)
-		*async_id = 0;
-	lock_basic_lock(&ctx->cfglock);
-	if(!ctx->finalized) {
-		r = context_finalize(ctx);
-		if(r) {
-			lock_basic_unlock(&ctx->cfglock);
-			return r;
-		}
-	}
-	lock_basic_unlock(&ctx->cfglock);
-	if(!ctx->event_worker) {
-		ctx->event_worker = libworker_create_event(ctx,
-			ctx->event_base);
-		if(!ctx->event_worker) {
-			return UB_INITFAIL;
-		}
-	}
-
-	/* set time in case answer comes from cache */
-	ub_comm_base_now(ctx->event_worker->base);
-
-	/* create new ctx_query and attempt to add to the list */
-	q = context_new(ctx, name, rrtype, rrclass, NULL, callback, mydata);
-	if(!q)
-		return UB_NOMEM;
-
-	/* attach to mesh */
-	if((r=libworker_attach_mesh(ctx, q, async_id)) != 0)
-		return r;
-	return UB_NOERROR;
-}
-
-
-int 
-ub_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype, 
-	int rrclass, void* mydata, ub_callback_type callback, int* async_id)
+ub_resolve_async(struct ub_ctx* ctx, char* name, int rrtype, 
+	int rrclass, void* mydata, ub_callback_t callback, int* async_id)
 {
 	struct ctx_query* q;
 	uint8_t* msg = NULL;
@@ -853,7 +624,7 @@ ub_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype,
 	}
 
 	/* create new ctx_query and attempt to add to the list */
-	q = context_new(ctx, name, rrtype, rrclass, callback, NULL, mydata);
+	q = context_new(ctx, name, rrtype, rrclass, callback, mydata);
 	if(!q)
 		return UB_NOMEM;
 
@@ -961,7 +732,7 @@ ub_strerror(int err)
 }
 
 int 
-ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr)
+ub_ctx_set_fwd(struct ub_ctx* ctx, char* addr)
 {
 	struct sockaddr_storage storage;
 	socklen_t stlen;
@@ -988,7 +759,7 @@ ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr)
 	lock_basic_unlock(&ctx->cfglock);
 
 	/* check syntax for addr */
-	if(!extstrtoaddr(addr, &storage, &stlen, UNBOUND_DNS_PORT)) {
+	if(!extstrtoaddr(addr, &storage, &stlen)) {
 		errno=EINVAL;
 		return UB_SYNTAX;
 	}
@@ -1023,6 +794,7 @@ ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr)
 		return UB_NOMEM;
 	}
 	if(!cfg_strlist_insert(&s->addrs, dupl)) {
+		free(dupl);
 		lock_basic_unlock(&ctx->cfglock);
 		errno=ENOMEM;
 		return UB_NOMEM;
@@ -1031,102 +803,8 @@ ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr)
 	return UB_NOERROR;
 }
 
-int ub_ctx_set_tls(struct ub_ctx* ctx, int tls)
-{
-	lock_basic_lock(&ctx->cfglock);
-	if(ctx->finalized) {
-		lock_basic_unlock(&ctx->cfglock);
-		errno=EINVAL;
-		return UB_AFTERFINAL;
-	}
-	ctx->env->cfg->ssl_upstream = tls;
-	lock_basic_unlock(&ctx->cfglock);
-	return UB_NOERROR;
-}
-
-int ub_ctx_set_stub(struct ub_ctx* ctx, const char* zone, const char* addr,
-	int isprime)
-{
-	char* a;
-	struct config_stub **prev, *elem;
-
-	/* check syntax for zone name */
-	if(zone) {
-		uint8_t* nm;
-		int nmlabs;
-		size_t nmlen;
-		if(!parse_dname(zone, &nm, &nmlen, &nmlabs)) {
-			errno=EINVAL;
-			return UB_SYNTAX;
-		}
-		free(nm);
-	} else {
-		zone = ".";
-	}
-
-	/* check syntax for addr (if not NULL) */
-	if(addr) {
-		struct sockaddr_storage storage;
-		socklen_t stlen;
-		if(!extstrtoaddr(addr, &storage, &stlen, UNBOUND_DNS_PORT)) {
-			errno=EINVAL;
-			return UB_SYNTAX;
-		}
-	}
-
-	lock_basic_lock(&ctx->cfglock);
-	if(ctx->finalized) {
-		lock_basic_unlock(&ctx->cfglock);
-		errno=EINVAL;
-		return UB_AFTERFINAL;
-	}
-
-	/* arguments all right, now find or add the stub */
-	prev = &ctx->env->cfg->stubs;
-	elem = cfg_stub_find(&prev, zone);
-	if(!elem && !addr) {
-		/* not found and we want to delete, nothing to do */
-		lock_basic_unlock(&ctx->cfglock);
-		return UB_NOERROR;
-	} else if(elem && !addr) {
-		/* found, and we want to delete */
-		*prev = elem->next;
-		config_delstub(elem);
-		lock_basic_unlock(&ctx->cfglock);
-		return UB_NOERROR;
-	} else if(!elem) {
-		/* not found, create the stub entry */
-		elem=(struct config_stub*)calloc(1, sizeof(struct config_stub));
-		if(elem) elem->name = strdup(zone);
-		if(!elem || !elem->name) {
-			free(elem);
-			lock_basic_unlock(&ctx->cfglock);
-			errno = ENOMEM;
-			return UB_NOMEM;
-		}
-		elem->next = ctx->env->cfg->stubs;
-		ctx->env->cfg->stubs = elem;
-	}
-
-	/* add the address to the list and set settings */
-	elem->isprime = isprime;
-	a = strdup(addr);
-	if(!a) {
-		lock_basic_unlock(&ctx->cfglock);
-		errno = ENOMEM;
-		return UB_NOMEM;
-	}
-	if(!cfg_strlist_insert(&elem->addrs, a)) {
-		lock_basic_unlock(&ctx->cfglock);
-		errno = ENOMEM;
-		return UB_NOMEM;
-	}
-	lock_basic_unlock(&ctx->cfglock);
-	return UB_NOERROR;
-}
-
 int 
-ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
+ub_ctx_resolvconf(struct ub_ctx* ctx, char* fname)
 {
 	FILE* in;
 	int numserv = 0;
@@ -1159,7 +837,7 @@ ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
 			while (ptr) {
 				numserv++;
 				if((retval=ub_ctx_set_fwd(ctx, 
-					ptr->IpAddress.String))!=0) {
+					ptr->IpAddress.String)!=0)) {
 					free(info);
 					return retval;
 				}
@@ -1192,7 +870,7 @@ ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
 				parse++;
 			addr = parse;
 			/* skip [0-9a-fA-F.:]*, i.e. IP4 and IP6 address */
-			while(isxdigit((unsigned char)*parse) || *parse=='.' || *parse==':')
+			while(isxdigit(*parse) || *parse=='.' || *parse==':')
 				parse++;
 			/* terminate after the address, remove newline */
 			*parse = 0;
@@ -1212,10 +890,10 @@ ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
 }
 
 int
-ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
+ub_ctx_hosts(struct ub_ctx* ctx, char* fname)
 {
 	FILE* in;
-	char buf[1024], ldata[2048];
+	char buf[1024], ldata[1024];
 	char* parse, *addr, *name, *ins;
 	lock_basic_lock(&ctx->cfglock);
 	if(ctx->finalized) {
@@ -1241,6 +919,7 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 					"\\hosts");
 				retval=ub_ctx_hosts(ctx, buf);
 			}
+			free(name);
 			return retval;
 		}
 		return UB_READFILE;
@@ -1263,9 +942,7 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 		/* format: <addr> spaces <name> spaces <name> ... */
 		addr = parse;
 		/* skip addr */
-		while(isxdigit((unsigned char)*parse) || *parse == '.' || *parse == ':')
-			parse++;
-		if(*parse == '\r')
+		while(isxdigit(*parse) || *parse == '.' || *parse == ':')
 			parse++;
 		if(*parse == '\n' || *parse == 0)
 			continue;
@@ -1280,8 +957,7 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 		*parse++ = 0; /* end delimiter for addr ... */
 		/* go to names and add them */
 		while(*parse) {
-			while(*parse == ' ' || *parse == '\t' || *parse=='\n'
-				|| *parse=='\r')
+			while(*parse == ' ' || *parse == '\t' || *parse=='\n')
 				parse++;
 			if(*parse == 0 || *parse == '#')
 				break;
@@ -1305,6 +981,7 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 				ins)) {
 				lock_basic_unlock(&ctx->cfglock);
 				fclose(in);
+				free(ins);
 				errno=ENOMEM;
 				return UB_NOMEM;
 			}
@@ -1339,8 +1016,7 @@ int ub_ctx_print_local_zones(struct ub_ctx* ctx)
 }
 
 /* Add a new zone */
-int ub_ctx_zone_add(struct ub_ctx* ctx, const char *zone_name, 
-	const char *zone_type)
+int ub_ctx_zone_add(struct ub_ctx* ctx, char *zone_name, char *zone_type)
 {
 	enum localzone_type t;
 	struct local_zone* z;
@@ -1359,28 +1035,28 @@ int ub_ctx_zone_add(struct ub_ctx* ctx, const char *zone_name,
 		return UB_SYNTAX;
 	}
 
-	lock_rw_wrlock(&ctx->local_zones->lock);
+	lock_quick_lock(&ctx->local_zones->lock);
 	if((z=local_zones_find(ctx->local_zones, nm, nmlen, nmlabs, 
 		LDNS_RR_CLASS_IN))) {
 		/* already present in tree */
 		lock_rw_wrlock(&z->lock);
 		z->type = t; /* update type anyway */
 		lock_rw_unlock(&z->lock);
-		lock_rw_unlock(&ctx->local_zones->lock);
+		lock_quick_unlock(&ctx->local_zones->lock);
 		free(nm);
 		return UB_NOERROR;
 	}
 	if(!local_zones_add_zone(ctx->local_zones, nm, nmlen, nmlabs, 
 		LDNS_RR_CLASS_IN, t)) {
-		lock_rw_unlock(&ctx->local_zones->lock);
+		lock_quick_unlock(&ctx->local_zones->lock);
 		return UB_NOMEM;
 	}
-	lock_rw_unlock(&ctx->local_zones->lock);
+	lock_quick_unlock(&ctx->local_zones->lock);
 	return UB_NOERROR;
 }
 
 /* Remove zone */
-int ub_ctx_zone_remove(struct ub_ctx* ctx, const char *zone_name)
+int ub_ctx_zone_remove(struct ub_ctx* ctx, char *zone_name)
 {   
 	struct local_zone* z;
 	uint8_t* nm;
@@ -1394,29 +1070,37 @@ int ub_ctx_zone_remove(struct ub_ctx* ctx, const char *zone_name)
 		return UB_SYNTAX;
 	}
 
-	lock_rw_wrlock(&ctx->local_zones->lock);
+	lock_quick_lock(&ctx->local_zones->lock);
 	if((z=local_zones_find(ctx->local_zones, nm, nmlen, nmlabs, 
 		LDNS_RR_CLASS_IN))) {
 		/* present in tree */
 		local_zones_del_zone(ctx->local_zones, z);
 	}
-	lock_rw_unlock(&ctx->local_zones->lock);
+	lock_quick_unlock(&ctx->local_zones->lock);
 	free(nm);
 	return UB_NOERROR;
 }
 
 /* Add new RR data */
-int ub_ctx_data_add(struct ub_ctx* ctx, const char *data)
+int ub_ctx_data_add(struct ub_ctx* ctx, char *data)
 {
+	ldns_buffer* buf;
 	int res = ub_ctx_finalize(ctx);
 	if (res) return res;
 
-	res = local_zones_add_RR(ctx->local_zones, data);
+	lock_basic_lock(&ctx->cfglock);
+	buf = ldns_buffer_new(ctx->env->cfg->msg_buffer_size);
+	lock_basic_unlock(&ctx->cfglock);
+	if(!buf) return UB_NOMEM;
+
+	res = local_zones_add_RR(ctx->local_zones, data, buf);
+
+	ldns_buffer_free(buf);
 	return (!res) ? UB_NOMEM : UB_NOERROR;
 }
 
 /* Remove RR data */
-int ub_ctx_data_remove(struct ub_ctx* ctx, const char *data)
+int ub_ctx_data_remove(struct ub_ctx* ctx, char *data)
 {
 	uint8_t* nm;
 	int nmlabs;
@@ -1437,29 +1121,4 @@ int ub_ctx_data_remove(struct ub_ctx* ctx, const char *data)
 const char* ub_version(void)
 {
 	return PACKAGE_VERSION;
-}
-
-int 
-ub_ctx_set_event(struct ub_ctx* ctx, struct event_base* base) {
-	struct ub_event_base* new_base;
-
-	if (!ctx || !ctx->event_base || !base) {
-		return UB_INITFAIL;
-	}
-	if (ub_libevent_get_event_base(ctx->event_base) == base) {
-		/* already set */
-		return UB_NOERROR;
-	}
-	
-	lock_basic_lock(&ctx->cfglock);
-	/* destroy the current worker - safe to pass in NULL */
-	libworker_delete_event(ctx->event_worker);
-	ctx->event_worker = NULL;
-	new_base = ub_libevent_event_base(base);
-	if (new_base)
-		ctx->event_base = new_base;	
-	ctx->created_bg = 0;
-	ctx->dothread = 1;
-	lock_basic_unlock(&ctx->cfglock);
-	return new_base ? UB_NOERROR : UB_INITFAIL;
 }

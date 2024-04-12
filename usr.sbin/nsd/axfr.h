@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef AXFR_H
-#define AXFR_H
+#ifndef _AXFR_H_
+#define _AXFR_H_
 
 #include "nsd.h"
 #include "query.h"
@@ -20,6 +20,6 @@
 #define AXFR_MAX_MESSAGE_LEN MAX_COMPRESSION_OFFSET
 
 query_state_type answer_axfr_ixfr(struct nsd *nsd, struct query *q);
-query_state_type query_axfr(struct nsd *nsd, struct query *query, int wstats);
+query_state_type query_axfr(struct nsd *nsd, struct query *query);
 
-#endif /* AXFR_H */
+#endif /* _AXFR_H_ */

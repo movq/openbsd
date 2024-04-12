@@ -23,16 +23,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -80,39 +80,15 @@ regional_init(struct regional* r)
 	r->total_large = 0;
 }
 
-/**
- * Create a new region, with custom first block and large-object sizes.
- * @param size: length of first block.
- * @param large_object_size: outside of chunk allocation threshold.
- * @return: newly allocated regional.
- */
-static struct regional*
-regional_create_custom_large_object(size_t size, size_t large_object_size)
+struct regional* 
+regional_create_custom(size_t size)
 {
-	struct regional* r;
-	size = ALIGN_UP(size, ALIGNMENT);
-	r = (struct regional*)malloc(size);
+	struct regional* r = (struct regional*)malloc(size);
 	log_assert(sizeof(struct regional) <= size);
 	if(!r) return NULL;
 	r->first_size = size;
-	r->large_object_size = large_object_size;
 	regional_init(r);
 	return r;
-}
-
-struct regional*
-regional_create_custom(size_t size)
-{
-	if(size < sizeof(struct regional))
-		size = sizeof(struct regional);
-	return regional_create_custom_large_object(size,
-		REGIONAL_LARGE_OBJECT_SIZE);
-}
-
-struct regional*
-regional_create_nochunk(size_t size)
-{
-	return regional_create_custom_large_object(size, 0);
 }
 
 void 
@@ -144,20 +120,10 @@ regional_destroy(struct regional *r)
 void *
 regional_alloc(struct regional *r, size_t size)
 {
-	size_t a;
+	size_t a = ALIGN_UP(size, ALIGNMENT);
 	void *s;
-	if(
-#if SIZEOF_SIZE_T == 8
-		(unsigned long long)size >= 0xffffffffffffff00ULL
-#else
-		(unsigned)size >= (unsigned)0xffffff00UL
-#endif
-		)
-		return NULL; /* protect against integer overflow in
-			malloc and ALIGN_UP */
-	a = ALIGN_UP(size, ALIGNMENT);
 	/* large objects */
-	if(a > r->large_object_size) {
+	if(a > REGIONAL_LARGE_OBJECT_SIZE) {
 		s = malloc(ALIGNMENT + size);
 		if(!s) return NULL;
 		r->total_large += ALIGNMENT+size;
@@ -186,7 +152,7 @@ regional_alloc_init(struct regional* r, const void *init, size_t size)
 {
 	void *s = regional_alloc(r, size);
 	if(!s) return NULL;
-	memmove(s, init, size);
+	memcpy(s, init, size);
 	return s;
 }
 
@@ -242,7 +208,7 @@ regional_log_stats(struct regional *r)
 	/* some basic assertions put here (non time critical code) */
 	log_assert(ALIGNMENT >= sizeof(char*));
 	log_assert(REGIONAL_CHUNK_SIZE > ALIGNMENT);
-	log_assert(REGIONAL_CHUNK_SIZE-ALIGNMENT > r->large_object_size);
+	log_assert(REGIONAL_CHUNK_SIZE-ALIGNMENT > REGIONAL_LARGE_OBJECT_SIZE);
 	log_assert(REGIONAL_CHUNK_SIZE >= sizeof(struct regional));
 	/* debug print */
 	log_info("regional %u chunks, %u large",

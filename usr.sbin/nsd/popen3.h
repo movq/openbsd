@@ -6,8 +6,8 @@
  * See LICENSE for the license.
  *
  */
-#ifndef POPEN3_H
-#define POPEN3_H
+#ifndef _POPEN3_H_
+#define _POPEN3_H_
 
 #include <stdio.h>
 #include <sys/types.h>
@@ -20,8 +20,8 @@
  * of the pointers will have been set.
  */
 pid_t popen3(char *const *command,
-             int *fdinptr,
-             int *fdoutptr,
-             int *fderrptr);
+             FILE **finptr,
+             FILE **foutptr,
+             FILE **ferrptr);
 
-#endif /* POPEN3_H */
+#endif /* _POPEN3_H_ */

@@ -5,16 +5,16 @@
  * module actions.
  */
 #include "config.h"
-#include "dynlibmod/dynlibmod.h"
 #include "util/module.h"
 #include "util/config_file.h"
+#include "dynlibmod/dynlibmod.h"
 
 #if HAVE_WINDOWS_H
 #include <windows.h>
 #define __DYNMOD HMODULE
 #define __DYNSYM FARPROC
 #define __LOADSYM GetProcAddress
-static void log_dlerror() {
+void log_dlerror() {
     DWORD dwLastError = GetLastError();
     LPSTR MessageBuffer;
     DWORD dwBufferLength;
@@ -37,11 +37,11 @@ static void log_dlerror() {
 
 }
 
-static HMODULE open_library(const char* fname) {
+HMODULE open_library(const char* fname) {
     return LoadLibrary(fname);
 }
 
-static void close_library(const char* fname, __DYNMOD handle) {
+void close_library(const char* fname, __DYNMOD handle) {
 	(void)fname;
 	(void)handle;
 }
@@ -50,15 +50,15 @@ static void close_library(const char* fname, __DYNMOD handle) {
 #define __DYNMOD void*
 #define __DYNSYM void*
 #define __LOADSYM dlsym
-static void log_dlerror() {
+void log_dlerror() {
     log_err("dynlibmod: %s", dlerror());
 }
 
-static void* open_library(const char* fname) {
+void* open_library(const char* fname) {
     return dlopen(fname, RTLD_LAZY | RTLD_GLOBAL);
 }
 
-static void close_library(const char* fname, __DYNMOD handle) {
+void close_library(const char* fname, __DYNMOD handle) {
 	if(!handle) return;
 	if(dlclose(handle) != 0) {
 		log_err("dlclose %s: %s", fname, strerror(errno));
@@ -75,7 +75,6 @@ int dynlibmod_init(struct module_env* env, int id) {
     struct config_strlist* cfg_item = env->cfg->dynlib_file;
     struct dynlibmod_env* de = (struct dynlibmod_env*)calloc(1, sizeof(struct dynlibmod_env));
     __DYNMOD dynamic_library;
-    int i;
     if (!de)
     {
         log_err("dynlibmod[%d]: malloc failure", dynlib_mod_idx);
@@ -85,7 +84,7 @@ int dynlibmod_init(struct module_env* env, int id) {
     env->modinfo[id] = (void*) de;
 
     de->fname = NULL;
-    for(i = dynlib_mod_idx;
+    for(int i = dynlib_mod_idx;
         i != 0 && cfg_item != NULL;
         i--, cfg_item = cfg_item->next) {}
 
@@ -213,10 +212,10 @@ size_t dynlibmod_get_mem(struct module_env* env, int id) {
 int dynlib_inplace_cb_reply_generic(struct query_info* qinfo,
     struct module_qstate* qstate, struct reply_info* rep, int rcode,
     struct edns_data* edns, struct edns_option** opt_list_out,
-    struct comm_reply* repinfo, struct regional* region,
-    struct timeval* start_time, int id, void* callback) {
+    struct comm_reply* repinfo, struct regional* region, int id,
+    void* callback) {
     struct cb_pair* cb_pair = (struct cb_pair*) callback;
-    return ((inplace_cb_reply_func_type*) cb_pair->cb)(qinfo, qstate, rep, rcode, edns, opt_list_out, repinfo, region, start_time, id, cb_pair->cb_arg);
+    return ((inplace_cb_reply_func_type*) cb_pair->cb)(qinfo, qstate, rep, rcode, edns, opt_list_out, repinfo, region, id, cb_pair->cb_arg);
 }
 
 int dynlib_inplace_cb_query_generic(struct query_info* qinfo, uint16_t flags,
@@ -243,10 +242,6 @@ int
 inplace_cb_register_wrapped(void* cb, enum inplace_cb_list_type type, void* cbarg,
     struct module_env* env, int id) {
     struct cb_pair* cb_pair = malloc(sizeof(struct cb_pair));
-    if(cb_pair == NULL) {
-	log_err("dynlibmod[%d]: malloc failure", id);
-        return 0;
-    }
     cb_pair->cb = cb;
     cb_pair->cb_arg = cbarg;
     if(type >= inplace_cb_reply && type <= inplace_cb_reply_servfail) {
@@ -258,7 +253,6 @@ inplace_cb_register_wrapped(void* cb, enum inplace_cb_list_type type, void* cbar
     } else if(type == inplace_cb_edns_back_parsed) {
         return inplace_cb_register(&dynlib_inplace_cb_edns_back_parsed, type, (void*) cb_pair, env, id);
     } else {
-        free(cb_pair);
         return 0;
     }
 }

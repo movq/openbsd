@@ -94,7 +94,7 @@ test_bin_find_entry(struct lruhash* table)
 	bin_overflow_remove(&bin, &k->entry);
 
 	/* find in empty list */
-	unit_assert( bin_find_entry(table, &bin, h, k, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, h, k) == NULL );
 
 	/* insert */
 	lock_quick_lock(&bin.lock);
@@ -102,20 +102,20 @@ test_bin_find_entry(struct lruhash* table)
 	lock_quick_unlock(&bin.lock);
 
 	/* find, hash not OK. */
-	unit_assert( bin_find_entry(table, &bin, myhash(13), k, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, myhash(13), k) == NULL );
 
 	/* find, hash OK, but cmp not */
 	unit_assert( k->entry.hash == k2->entry.hash );
-	unit_assert( bin_find_entry(table, &bin, h, k2, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, h, k2) == NULL );
 
 	/* find, hash OK, and cmp too */
-	unit_assert( bin_find_entry(table, &bin, h, k, NULL) == &k->entry );
+	unit_assert( bin_find_entry(table, &bin, h, k) == &k->entry );
 
 	/* remove the element */
 	lock_quick_lock(&bin.lock);
 	bin_overflow_remove(&bin, &k->entry);
 	lock_quick_unlock(&bin.lock);
-	unit_assert( bin_find_entry(table, &bin, h, k, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, h, k) == NULL );
 
 	/* prepend two different elements; so the list is long */
 	/* one has the same hash, but different cmp */
@@ -127,28 +127,28 @@ test_bin_find_entry(struct lruhash* table)
 	lock_quick_unlock(&bin.lock);
 
 	/* find, hash not OK. */
-	unit_assert( bin_find_entry(table, &bin, myhash(13), k, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, myhash(13), k) == NULL );
 
 	/* find, hash OK, but cmp not */
 	unit_assert( k->entry.hash == k2->entry.hash );
-	unit_assert( bin_find_entry(table, &bin, h, k2, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, h, k2) == NULL );
 
 	/* find, hash OK, and cmp too */
-	unit_assert( bin_find_entry(table, &bin, h, k, NULL) == &k->entry );
+	unit_assert( bin_find_entry(table, &bin, h, k) == &k->entry );
 
 	/* remove middle element */
-	unit_assert( bin_find_entry(table, &bin, k4->entry.hash, k4, NULL)
+	unit_assert( bin_find_entry(table, &bin, k4->entry.hash, k4) 
 		== &k4->entry );
 	lock_quick_lock(&bin.lock);
 	bin_overflow_remove(&bin, &k4->entry);
 	lock_quick_unlock(&bin.lock);
-	unit_assert( bin_find_entry(table, &bin, k4->entry.hash, k4, NULL) == NULL);
+	unit_assert( bin_find_entry(table, &bin, k4->entry.hash, k4) == NULL);
 
 	/* remove last element */
 	lock_quick_lock(&bin.lock);
 	bin_overflow_remove(&bin, &k->entry);
 	lock_quick_unlock(&bin.lock);
-	unit_assert( bin_find_entry(table, &bin, h, k, NULL) == NULL );
+	unit_assert( bin_find_entry(table, &bin, h, k) == NULL );
 
 	lock_quick_destroy(&bin.lock);
 	delkey(k);

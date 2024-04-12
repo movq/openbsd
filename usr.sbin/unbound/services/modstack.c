@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -43,28 +43,11 @@
 #include "services/modstack.h"
 #include "util/module.h"
 #include "util/fptr_wlist.h"
-#include "dns64/dns64.h"
 #include "iterator/iterator.h"
 #include "validator/validator.h"
-#include "respip/respip.h"
 
 #ifdef WITH_PYTHONMODULE
 #include "pythonmod/pythonmod.h"
-#endif
-#ifdef WITH_DYNLIBMODULE
-#include "dynlibmod/dynlibmod.h"
-#endif
-#ifdef USE_CACHEDB
-#include "cachedb/cachedb.h"
-#endif
-#ifdef USE_IPSECMOD
-#include "ipsecmod/ipsecmod.h"
-#endif
-#ifdef CLIENT_SUBNET
-#include "edns-subnet/subnetmod.h"
-#endif
-#ifdef USE_IPSET
-#include "ipset/ipset.h"
 #endif
 
 /** count number of modules (words) in the string */
@@ -76,94 +59,68 @@ count_modules(const char* s)
                 return 0;
         while(*s) {
                 /* skip whitespace */
-                while(*s && isspace((unsigned char)*s))
+                while(*s && isspace((int)*s))
                         s++;
-                if(*s && !isspace((unsigned char)*s)) {
+                if(*s && !isspace((int)*s)) {
                         /* skip identifier */
                         num++;
-                        while(*s && !isspace((unsigned char)*s))
+                        while(*s && !isspace((int)*s))
                                 s++;
                 }
         }
         return num;
 }
 
-void
+void 
 modstack_init(struct module_stack* stack)
 {
 	stack->num = 0;
 	stack->mod = NULL;
 }
 
-int
+int 
 modstack_config(struct module_stack* stack, const char* module_conf)
 {
-	int i;
-	verbose(VERB_QUERY, "module config: \"%s\"", module_conf);
-	stack->num = count_modules(module_conf);
-	if(stack->num == 0) {
-		log_err("error: no modules specified");
-		return 0;
-	}
-	if(stack->num > MAX_MODULE) {
-		log_err("error: too many modules (%d max %d)",
-			stack->num, MAX_MODULE);
-		return 0;
-	}
-	stack->mod = (struct module_func_block**)calloc((size_t)
-		stack->num, sizeof(struct module_func_block*));
-	if(!stack->mod) {
-		log_err("out of memory");
-		return 0;
-	}
-	for(i=0; i<stack->num; i++) {
-		stack->mod[i] = module_factory(&module_conf);
-		if(!stack->mod[i]) {
-			char md[256];
-			char * s = md;
-			snprintf(md, sizeof(md), "%s", module_conf);
-			/* Leading spaces are present on errors. */
-			while (*s && isspace((unsigned char)*s))
-				s++;
-			if(strchr(s, ' ')) *(strchr(s, ' ')) = 0;
-			if(strchr(s, '\t')) *(strchr(s, '\t')) = 0;
-			log_err("Unknown value in module-config, module: '%s'."
-				" This module is not present (not compiled in),"
-				" See the list of linked modules with unbound -V", s);
-			return 0;
-		}
-	}
-	return 1;
+        int i;
+        verbose(VERB_QUERY, "module config: \"%s\"", module_conf);
+        stack->num = count_modules(module_conf);
+        if(stack->num == 0) {
+                log_err("error: no modules specified");
+                return 0;
+        }
+        if(stack->num > MAX_MODULE) {
+                log_err("error: too many modules (%d max %d)",
+                        stack->num, MAX_MODULE);
+                return 0;
+        }
+        stack->mod = (struct module_func_block**)calloc((size_t)
+                stack->num, sizeof(struct module_func_block*));
+        if(!stack->mod) {
+                log_err("out of memory");
+                return 0;
+        }
+        for(i=0; i<stack->num; i++) {
+                stack->mod[i] = module_factory(&module_conf);
+                if(!stack->mod[i]) {
+                        log_err("Unknown value for next module: '%s'",
+                                module_conf);
+                        return 0;
+                }
+        }
+        return 1;
 }
 
 /** The list of module names */
 const char**
 module_list_avail(void)
 {
-	/* these are the modules available */
-	static const char* names[] = {
-		"dns64",
+        /* these are the modules available */
+        static const char* names[] = {
 #ifdef WITH_PYTHONMODULE
-		"python",
+		"python", 
 #endif
-#ifdef WITH_DYNLIBMODULE
-		"dynlib",
-#endif
-#ifdef USE_CACHEDB
-		"cachedb",
-#endif
-#ifdef USE_IPSECMOD
-		"ipsecmod",
-#endif
-#ifdef CLIENT_SUBNET
-		"subnetcache",
-#endif
-#ifdef USE_IPSET
-		"ipset",
-#endif
-		"respip",
-		"validator",
-		"iterator",
+		"validator", 
+		"iterator", 
 		NULL};
 	return names;
 }
@@ -176,40 +133,23 @@ static fbgetfunctype*
 module_funcs_avail(void)
 {
         static struct module_func_block* (*fb[])(void) = {
-		&dns64_get_funcblock,
 #ifdef WITH_PYTHONMODULE
-		&pythonmod_get_funcblock,
+		&pythonmod_get_funcblock, 
 #endif
-#ifdef WITH_DYNLIBMODULE
-		&dynlibmod_get_funcblock,
-#endif
-#ifdef USE_CACHEDB
-		&cachedb_get_funcblock,
-#endif
-#ifdef USE_IPSECMOD
-		&ipsecmod_get_funcblock,
-#endif
-#ifdef CLIENT_SUBNET
-		&subnetmod_get_funcblock,
-#endif
-#ifdef USE_IPSET
-		&ipset_get_funcblock,
-#endif
-		&respip_get_funcblock,
-		&val_get_funcblock,
-		&iter_get_funcblock,
+		&val_get_funcblock, 
+		&iter_get_funcblock, 
 		NULL};
 	return fb;
 }
 
-struct
+struct 
 module_func_block* module_factory(const char** str)
 {
         int i = 0;
         const char* s = *str;
 	const char** names = module_list_avail();
 	fbgetfunctype* fb = module_funcs_avail();
-        while(*s && isspace((unsigned char)*s))
+        while(*s && isspace((int)*s))
                 s++;
 	while(names[i]) {
                 if(strncmp(names[i], s, strlen(names[i])) == 0) {
@@ -264,21 +204,9 @@ int
 modstack_find(struct module_stack* stack, const char* name)
 {
 	int i;
-	for(i=0; i<stack->num; i++) {
+        for(i=0; i<stack->num; i++) {
 		if(strcmp(stack->mod[i]->name, name) == 0)
 			return i;
 	}
 	return -1;
-}
-
-size_t
-mod_get_mem(struct module_env* env, const char* name)
-{
-	int m = modstack_find(&env->mesh->mods, name);
-	if(m != -1) {
-		fptr_ok(fptr_whitelist_mod_get_mem(env->mesh->
-			mods.mod[m]->get_mem));
-		return (*env->mesh->mods.mod[m]->get_mem)(env, m);
-	}
-	return 0;
 }

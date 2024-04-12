@@ -2,35 +2,7 @@
 # Copyright 2009, Wouter Wijngaards, NLnet Labs.   
 # BSD licensed.
 #
-# Version 46
-# 2023-05-04 fix to remove unused whitespace.
-# 2023-01-26 fix -Wstrict-prototypes.
-# 2022-09-01 fix checking if nonblocking sockets work on OpenBSD.
-# 2021-08-17 fix sed script in ssldir split handling.
-# 2021-08-17 fix for openssl to detect split version, with ssldir_include
-# 	     and ssldir_lib output directories.
-# 2021-07-30 fix for openssl use of lib64 directory.
-# 2021-06-14 fix nonblocking test to use host instead of target for mingw test.
-# 2021-05-17 fix nonblocking socket test from grep on mingw32 to mingw for
-# 	     64bit compatibility.
-# 2021-03-24 fix ACX_FUNC_DEPRECATED to use CPPFLAGS and CFLAGS.
-# 2021-01-05 fix defun for aclocal
-# 2021-01-05 autoconf 2.70 autoupdate and fixes, no AC_TRY_COMPILE
-# 2020-08-24 Use EVP_sha256 instead of HMAC_Update (for openssl-3.0.0).
-# 2016-03-21 Check -ldl -pthread for libcrypto for ldns and openssl 1.1.0.
-# 2016-03-21 Use HMAC_Update instead of HMAC_CTX_Init (for openssl-1.1.0).
-# 2016-01-04 -D_DEFAULT_SOURCE defined with -D_BSD_SOURCE for Linux glibc 2.20
-# 2015-12-11 FLTO check for new OSX, clang.
-# 2015-11-18 spelling check fix.
-# 2015-11-05 ACX_SSL_CHECKS no longer adds -ldl needlessly.
-# 2015-08-28 ACX_CHECK_PIE and ACX_CHECK_RELRO_NOW added.
-# 2015-03-17 AHX_CONFIG_REALLOCARRAY added
-# 2013-09-19 FLTO help text improved.
-# 2013-07-18 Enable ACX_CHECK_COMPILER_FLAG to test for -Wstrict-prototypes
-# 2013-06-25 FLTO has --disable-flto option.
-# 2013-05-03 Update W32_SLEEP for newer mingw that links but not defines it.
-# 2013-03-22 Fix ACX_RSRC_VERSION for long version numbers.
-# 2012-02-09 Fix AHX_MEMCMP_BROKEN with undef in compat/memcmp.h.
+# Version 20
 # 2012-01-20 Fix COMPILER_FLAGS_UNBOUND for gcc 4.6.2 assigned-not-used-warns.
 # 2011-12-05 Fix getaddrinfowithincludes on windows with fedora16 mingw32-gcc.
 # 	     Fix ACX_MALLOC for redefined malloc error.
@@ -44,7 +16,7 @@
 # 2010-07-02 Add check for ss_family (for minix).
 # 2010-04-26 Fix to use CPPFLAGS for CHECK_COMPILER_FLAGS.
 # 2010-03-01 Fix RPATH using CONFIG_COMMANDS to run at the very end.
-# 2010-02-18 WITH_SSL outputs the LIBSSL_LDFLAGS, LIBS, CPPFLAGS separate, -ldl
+# 2010-02-18 WITH_SSL outputs the LIBSSL_LDFLAGS, LIBS, CPPFLAGS seperate, -ldl
 # 2010-02-01 added ACX_CHECK_MEMCMP_SIGNED, AHX_MEMCMP_BROKEN
 # 2010-01-20 added AHX_COONFIG_STRLCAT
 # 2009-07-14 U_CHAR detection improved for windows crosscompile.
@@ -115,8 +87,6 @@
 # ACX_CHECK_MEMCMP_SIGNED	- check if memcmp uses signed characters.
 # AHX_MEMCMP_BROKEN		- replace memcmp func for CHECK_MEMCMP_SIGNED.
 # ACX_CHECK_SS_FAMILY           - check for sockaddr_storage.ss_family
-# ACX_CHECK_PIE			- add --enable-pie option and check if works
-# ACX_CHECK_RELRO_NOW		- add --enable-relro-now option and check it
 #
 
 dnl Escape backslashes as \\, for C:\ paths, for the C preprocessor defines.
@@ -130,7 +100,7 @@ dnl Calculate comma separated windows-resource numbers from package version.
 dnl Picks the first three(,0) or four numbers out of the name.
 dnl $1: variable for the result
 AC_DEFUN([ACX_RSRC_VERSION], 
-[$1=[`echo $PACKAGE_VERSION | sed -e 's/^[^0-9]*\([0-9][0-9]*\)[^0-9][^0-9]*\([0-9][0-9]*\)[^0-9][^0-9]*\([0-9][0-9]*\)[^0-9][^0-9]*\([0-9][0-9]*\).*$/\1,\2,\3,\4/' -e 's/^[^0-9]*\([0-9][0-9]*\)[^0-9][^0-9]*\([0-9][0-9]*\)[^0-9][^0-9]*\([0-9][0-9]*\)[^0-9]*$/\1,\2,\3,0/' `]
+[$1=[`echo $PACKAGE_VERSION | sed -e 's/^[^0-9]*\([0-9]\)[^0-9]*\([0-9]\)[^0-9]*\([0-9]\)[^0-9]*\([0-9]\).*$/\1,\2,\3,\4/' -e 's/^[^0-9]*\([0-9]\)[^0-9]*\([0-9]\)[^0-9]*\([0-9]\)[^0-9]*$/\1,\2,\3,0/' `]
 ])
 
 dnl Routine to help check for compiler flags.
@@ -145,7 +115,7 @@ AC_MSG_CHECKING(whether $CC supports -$1)
 cache=`echo $1 | sed 'y%.=/+-%___p_%'`
 AC_CACHE_VAL(cv_prog_cc_flag_$cache,
 [
-echo 'void f(void){}' >conftest.c
+echo 'void f(){}' >conftest.c
 if test -z "`$CC $CPPFLAGS $CFLAGS -$1 -c conftest.c 2>&1`"; then
 eval "cv_prog_cc_flag_$cache=yes"
 else
@@ -189,7 +159,7 @@ dnl cache=`echo $1 | sed 'y%.=/+- %___p__%'`
 AC_CACHE_VAL(cv_prog_cc_flag_needed_$cache,
 [
 echo '$2' > conftest.c
-echo 'void f(void){}' >>conftest.c
+echo 'void f(){}' >>conftest.c
 if test -z "`$CC $CPPFLAGS $CFLAGS $ERRFLAG -c conftest.c 2>&1`"; then
 eval "cv_prog_cc_flag_needed_$cache=no"
 else
@@ -235,7 +205,7 @@ dnl DEPFLAG: set to flag that generates dependencies.
 AC_DEFUN([ACX_DEPFLAG],
 [
 AC_MSG_CHECKING([$CC dependency flag])
-echo 'void f(void){}' >conftest.c
+echo 'void f(){}' >conftest.c
 if test "`$CC -MM conftest.c 2>&1`" = "conftest.o: conftest.c"; then
 	DEPFLAG="-MM"
 else 
@@ -259,7 +229,7 @@ ACX_CHECK_COMPILER_FLAG(xc99, [C99FLAG="-xc99"])
 
 AC_CHECK_HEADERS([getopt.h time.h],,, [AC_INCLUDES_DEFAULT])
 
-ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED=1 -D_ALL_SOURCE,
+ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED=1 -D_ALL_SOURCE,
 [
 #include "confdefs.h"
 #include <stdlib.h>
@@ -274,7 +244,7 @@ ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_DEFAUL
 #include <getopt.h>
 #endif
 
-int test(void) {
+int test() {
 	int a;
 	char **opts = NULL;
 	struct timeval tv;
@@ -294,9 +264,9 @@ int test(void) {
 		a = 0;
 	return a;
 }
-], [CFLAGS="$CFLAGS $C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED=1 -D_ALL_SOURCE"])
+], [CFLAGS="$CFLAGS $C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED=1 -D_ALL_SOURCE"])
 
-ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_ALL_SOURCE,
+ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_ALL_SOURCE,
 [
 #include "confdefs.h"
 #include <stdlib.h>
@@ -311,7 +281,7 @@ ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_DEFAUL
 #include <getopt.h>
 #endif
 
-int test(void) {
+int test() {
 	int a;
 	char **opts = NULL;
 	struct timeval tv;
@@ -331,34 +301,34 @@ int test(void) {
 		a = 0;
 	return a;
 }
-], [CFLAGS="$CFLAGS $C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_ALL_SOURCE"])
+], [CFLAGS="$CFLAGS $C99FLAG -D__EXTENSIONS__ -D_BSD_SOURCE -D_POSIX_C_SOURCE=200112 -D_XOPEN_SOURCE=600 -D_ALL_SOURCE"])
 
 ACX_CHECK_COMPILER_FLAG_NEEDED($C99FLAG,
 [
 #include <stdbool.h>
 #include <ctype.h>
-int test(void) {
+int test() {
         int a = 0;
         return a;
 }
 ], [CFLAGS="$CFLAGS $C99FLAG"])
 
-ACX_CHECK_COMPILER_FLAG_NEEDED(-D_BSD_SOURCE -D_DEFAULT_SOURCE,
+ACX_CHECK_COMPILER_FLAG_NEEDED(-D_BSD_SOURCE,
 [
 #include <ctype.h>
 
-int test(void) {
+int test() {
         int a;
         a = isascii(32);
         return a;
 }
-], [CFLAGS="$CFLAGS -D_BSD_SOURCE -D_DEFAULT_SOURCE"])
+], [CFLAGS="$CFLAGS -D_BSD_SOURCE"])
 
 ACX_CHECK_COMPILER_FLAG_NEEDED(-D_GNU_SOURCE,
 [
 #include <netinet/in.h>
 
-int test(void) {
+int test() {
         struct in6_pktinfo inf;
 	int a = (int)sizeof(inf);
         return a;
@@ -372,7 +342,7 @@ ACX_CHECK_COMPILER_FLAG_NEEDED(-D_GNU_SOURCE -D_FRSRESGID,
 [
 #include <unistd.h>
 
-int test(void) {
+int test() {
 	int a = setresgid(0,0,0);
 	a = setresuid(0,0,0);
         return a;
@@ -387,7 +357,7 @@ ACX_CHECK_COMPILER_FLAG_NEEDED(-D_POSIX_C_SOURCE=200112,
 #endif
 #include <netdb.h>
 
-int test(void) {
+int test() {
         int a = 0;
         char *t;
         time_t time = 0;
@@ -415,7 +385,7 @@ ACX_CHECK_COMPILER_FLAG_NEEDED(-D__EXTENSIONS__,
 #include <getopt.h>
 #endif
 
-int test(void) {
+int test() {
         int a;
         char **opts = NULL;
         struct timeval tv;
@@ -434,22 +404,19 @@ int test(void) {
 dnl Check if CC supports -flto.
 dnl in a way that supports clang and suncc (that flag does something else,
 dnl but fails to link).  It sets it in CFLAGS if it works.
-AC_DEFUN([ACX_CHECK_FLTO], [
-    AC_ARG_ENABLE([flto], AS_HELP_STRING([--disable-flto], [Disable link-time optimization (gcc specific option)]))
-    AS_IF([test "x$enable_flto" != "xno"], [
-        AC_MSG_CHECKING([if $CC supports -flto])
-        BAKCFLAGS="$CFLAGS"
-        CFLAGS="$CFLAGS -flto"
-        AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])], [
-            if $CC $CFLAGS -o conftest conftest.c 2>&1 | $GREP -e "warning: no debug symbols in executable" -e "warning: object" >/dev/null; then
-                CFLAGS="$BAKCFLAGS"
-                AC_MSG_RESULT(no)
-            else
-                AC_MSG_RESULT(yes)
-            fi
-            rm -f conftest conftest.c conftest.o
-        ], [CFLAGS="$BAKCFLAGS" ; AC_MSG_RESULT(no)])
-    ])
+AC_DEFUN([ACX_CHECK_FLTO],
+[AC_MSG_CHECKING([if $CC supports -flto])
+BAKCFLAGS="$CFLAGS"
+CFLAGS="$CFLAGS -flto"
+AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])], [
+    if $CC $CFLAGS -o conftest conftest.c 2>&1 | grep "warning: no debug symbols in executable" >/dev/null; then
+	CFLAGS="$BAKCFLAGS"
+	AC_MSG_RESULT(no)
+    else
+	AC_MSG_RESULT(yes)
+    fi
+    rm -f conftest conftest.c conftest.o
+], [CFLAGS="$BAKCFLAGS" ; AC_MSG_RESULT(no)])
 ])
 
 dnl Check the printf-format attribute (if any)
@@ -460,12 +427,15 @@ AC_DEFUN([ACX_CHECK_FORMAT_ATTRIBUTE],
 AC_MSG_CHECKING(whether the C compiler (${CC-cc}) accepts the "format" attribute)
 AC_CACHE_VAL(ac_cv_c_format_attribute,
 [ac_cv_c_format_attribute=no
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>
+AC_TRY_COMPILE(
+[#include <stdio.h>
 void f (char *format, ...) __attribute__ ((format (printf, 1, 2)));
 void (*pf) (char *format, ...) __attribute__ ((format (printf, 1, 2)));
-]], [[
+], [
    f ("%s", "str");
-]])],[ac_cv_c_format_attribute="yes"],[ac_cv_c_format_attribute="no"])
+],
+[ac_cv_c_format_attribute="yes"],
+[ac_cv_c_format_attribute="no"])
 ])
 
 AC_MSG_RESULT($ac_cv_c_format_attribute)
@@ -477,7 +447,7 @@ fi
 dnl Setup ATTR_FORMAT config.h parts.
 dnl make sure you call ACX_CHECK_FORMAT_ATTRIBUTE also.
 AC_DEFUN([AHX_CONFIG_FORMAT_ATTRIBUTE],
-[
+[ 
 #ifdef HAVE_ATTR_FORMAT
 #  define ATTR_FORMAT(archetype, string_index, first_to_check) \
     __attribute__ ((format (archetype, string_index, first_to_check)))
@@ -494,11 +464,14 @@ AC_DEFUN([ACX_CHECK_UNUSED_ATTRIBUTE],
 AC_MSG_CHECKING(whether the C compiler (${CC-cc}) accepts the "unused" attribute)
 AC_CACHE_VAL(ac_cv_c_unused_attribute,
 [ac_cv_c_unused_attribute=no
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>
+AC_TRY_COMPILE(
+[#include <stdio.h>
 void f (char *u __attribute__((unused)));
-]], [[
+], [
    f ("x");
-]])],[ac_cv_c_unused_attribute="yes"],[ac_cv_c_unused_attribute="no"])
+],
+[ac_cv_c_unused_attribute="yes"],
+[ac_cv_c_unused_attribute="no"])
 ])
 
 dnl Setup ATTR_UNUSED config.h parts.
@@ -555,7 +528,7 @@ dnl as a requirement so that is gets called before LIBTOOL
 dnl because libtools 'AC_REQUIRE' names are right after this one, before
 dnl this function contents.
 AC_REQUIRE([ACX_LIBTOOL_C_PRE])
-LT_INIT
+AC_PROG_LIBTOOL
 ])
 
 dnl Detect if u_char type is defined, otherwise define it.
@@ -653,30 +626,6 @@ AC_DEFUN([ACX_SSL_CHECKS], [
     withval=$1
     if test x_$withval != x_no; then
         AC_MSG_CHECKING(for SSL)
-	if test -n "$withval"; then
-		dnl look for openssl install with different version, eg.
-		dnl in /usr/include/openssl11/openssl/ssl.h
-		dnl and /usr/lib64/openssl11/libssl.so
-		dnl with the --with-ssl=/usr/include/openssl11
-		if test ! -f "$withval/include/openssl/ssl.h" -a -f "$withval/openssl/ssl.h"; then
-			ssldir="$withval"
-			found_ssl="yes"
-			withval=""
-			ssldir_include="$ssldir"
-			dnl find the libdir
-			ssldir_lib=`echo $ssldir | sed -e 's/include/lib/'`
-			if test -f "$ssldir_lib/libssl.a" -o -f "$ssldir_lib/libssl.so"; then
-				: # found here
-			else
-				ssldir_lib=`echo $ssldir | sed -e 's/include/lib64/'`
-				if test -f "$ssldir_lib/libssl.a" -o -f "$ssldir_lib/libssl.so"; then
-					: # found here
-				else
-					AC_MSG_ERROR([Could not find openssl lib file, $ssldir_lib/libssl.[so,a], pass like "/usr/local" or "/usr/include/openssl11"])
-				fi
-			fi
-		fi
-	fi
         if test x_$withval = x_ -o x_$withval = x_yes; then
             withval="/usr/local/ssl /usr/lib/ssl /usr/ssl /usr/pkg /usr/local /opt/local /usr/sfw /usr"
         fi
@@ -684,12 +633,12 @@ AC_DEFUN([ACX_SSL_CHECKS], [
             ssldir="$dir"
             if test -f "$dir/include/openssl/ssl.h"; then
                 found_ssl="yes"
-		ssldir_include="$ssldir/include"
-		if test ! -d "$ssldir/lib" -a -d "$ssldir/lib64"; then
-			ssldir_lib="$ssldir/lib64"
-		else
-			ssldir_lib="$ssldir/lib"
-		fi
+                AC_DEFINE_UNQUOTED([HAVE_SSL], [], [Define if you have the SSL libraries installed.])
+                dnl assume /usr/include is already in the include-path.
+                if test "$ssldir" != "/usr"; then
+                        CPPFLAGS="$CPPFLAGS -I$ssldir/include"
+                        LIBSSL_CPPFLAGS="$LIBSSL_CPPFLAGS -I$ssldir/include"
+                fi
                 break;
             fi
         done
@@ -697,41 +646,38 @@ AC_DEFUN([ACX_SSL_CHECKS], [
             AC_MSG_ERROR(Cannot find the SSL libraries in $withval)
         else
             AC_MSG_RESULT(found in $ssldir)
-            AC_DEFINE_UNQUOTED([HAVE_SSL], [], [Define if you have the SSL libraries installed.])
             HAVE_SSL=yes
-	    dnl assume /usr is already in the include, lib and dynlib paths.
-            if test "$ssldir" != "/usr"; then
-		    CPPFLAGS="$CPPFLAGS -I$ssldir_include"
-		    LIBSSL_CPPFLAGS="$LIBSSL_CPPFLAGS -I$ssldir_include"
-		    LDFLAGS="$LDFLAGS -L$ssldir_lib"
-		    LIBSSL_LDFLAGS="$LIBSSL_LDFLAGS -L$ssldir_lib"
-	    	    ACX_RUNTIME_PATH_ADD([$ssldir_lib])
-	    fi
+            dnl assume /usr is already in the lib and dynlib paths.
+            if test "$ssldir" != "/usr" -a "$ssldir" != ""; then
+                LDFLAGS="$LDFLAGS -L$ssldir/lib"
+                LIBSSL_LDFLAGS="$LIBSSL_LDFLAGS -L$ssldir/lib"
+                ACX_RUNTIME_PATH_ADD([$ssldir/lib])
+            fi
         
-            AC_MSG_CHECKING([for EVP_sha256 in -lcrypto])
+            AC_MSG_CHECKING([for HMAC_CTX_init in -lcrypto])
             LIBS="$LIBS -lcrypto"
             LIBSSL_LIBS="$LIBSSL_LIBS -lcrypto"
-            AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
-                int EVP_sha256(void);
-                (void)EVP_sha256();
-              ]])],[
+            AC_TRY_LINK(, [
+                int HMAC_CTX_init(void);
+                (void)HMAC_CTX_init();
+              ], [
                 AC_MSG_RESULT(yes)
-                AC_DEFINE([HAVE_EVP_SHA256], 1,
-                          [If you have EVP_sha256])
-              ],[
+                AC_DEFINE([HAVE_HMAC_CTX_INIT], 1, 
+                          [If you have HMAC_CTX_init])
+              ], [
                 AC_MSG_RESULT(no)
                 # check if -lwsock32 or -lgdi32 are needed.	
                 BAKLIBS="$LIBS"
                 BAKSSLLIBS="$LIBSSL_LIBS"
-		LIBS="$LIBS -lgdi32 -lws2_32"
-		LIBSSL_LIBS="$LIBSSL_LIBS -lgdi32 -lws2_32"
+                LIBS="$LIBS -lgdi32"
+                LIBSSL_LIBS="$LIBSSL_LIBS -lgdi32"
                 AC_MSG_CHECKING([if -lcrypto needs -lgdi32])
-                AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
-                    int EVP_sha256(void);
-                    (void)EVP_sha256();
-                  ]])],[
-                    AC_DEFINE([HAVE_EVP_SHA256], 1,
-                        [If you have EVP_sha256])
+                AC_TRY_LINK([], [
+                    int HMAC_CTX_init(void);
+                    (void)HMAC_CTX_init();
+                  ],[
+                    AC_DEFINE([HAVE_HMAC_CTX_INIT], 1, 
+                        [If you have HMAC_CTX_init])
                     AC_MSG_RESULT(yes) 
                   ],[
                     AC_MSG_RESULT(no)
@@ -740,37 +686,28 @@ AC_DEFUN([ACX_SSL_CHECKS], [
                     LIBS="$LIBS -ldl"
                     LIBSSL_LIBS="$LIBSSL_LIBS -ldl"
                     AC_MSG_CHECKING([if -lcrypto needs -ldl])
-                    AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
-                        int EVP_sha256(void);
-                        (void)EVP_sha256();
-                      ]])],[
-                        AC_DEFINE([HAVE_EVP_SHA256], 1,
-                            [If you have EVP_sha256])
+                    AC_TRY_LINK([], [
+                        int HMAC_CTX_init(void);
+                        (void)HMAC_CTX_init();
+                      ],[
+                        AC_DEFINE([HAVE_HMAC_CTX_INIT], 1, 
+                            [If you have HMAC_CTX_init])
                         AC_MSG_RESULT(yes) 
                       ],[
                         AC_MSG_RESULT(no)
-                        LIBS="$BAKLIBS"
-                        LIBSSL_LIBS="$BAKSSLLIBS"
-                        LIBS="$LIBS -ldl -pthread"
-                        LIBSSL_LIBS="$LIBSSL_LIBS -ldl -pthread"
-                        AC_MSG_CHECKING([if -lcrypto needs -ldl -pthread])
-                        AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
-                            int EVP_sha256(void);
-                            (void)EVP_sha256();
-                          ]])],[
-                            AC_DEFINE([HAVE_EVP_SHA256], 1,
-                                [If you have EVP_sha256])
-                            AC_MSG_RESULT(yes) 
-                          ],[
-                            AC_MSG_RESULT(no)
-                            AC_MSG_ERROR([OpenSSL found in $ssldir, but version 0.9.7 or higher is required])
-			])
+                    AC_MSG_ERROR([OpenSSL found in $ssldir, but version 0.9.7 or higher is required])
                     ])
                 ])
             ])
         fi
         AC_SUBST(HAVE_SSL)
         AC_SUBST(RUNTIME_PATH)
+	# openssl engine functionality needs dlopen().
+	BAKLIBS="$LIBS"
+	AC_SEARCH_LIBS([dlopen], [dl])
+	if test "$LIBS" != "$BAKLIBS"; then
+		LIBSSL_LIBS="$LIBSSL_LIBS -ldl"
+	fi
     fi
 AC_CHECK_HEADERS([openssl/ssl.h],,, [AC_INCLUDES_DEFAULT])
 AC_CHECK_HEADERS([openssl/err.h],,, [AC_INCLUDES_DEFAULT])
@@ -784,8 +721,9 @@ dnl Checks main header files of SSL.
 dnl
 AC_DEFUN([ACX_WITH_SSL],
 [
-AC_ARG_WITH(ssl, AS_HELP_STRING([--with-ssl=pathname],[enable SSL (will check /usr/local/ssl
-                            /usr/lib/ssl /usr/ssl /usr/pkg /usr/local /opt/local /usr/sfw /usr or specify like /usr/include/openssl11)]),[
+AC_ARG_WITH(ssl, AC_HELP_STRING([--with-ssl=pathname],
+                                    [enable SSL (will check /usr/local/ssl
+                            /usr/lib/ssl /usr/ssl /usr/pkg /usr/local /opt/local /usr/sfw /usr)]),[
         ],[
             withval="yes"
         ])
@@ -802,8 +740,9 @@ dnl Checks main header files of SSL.
 dnl
 AC_DEFUN([ACX_WITH_SSL_OPTIONAL],
 [
-AC_ARG_WITH(ssl, AS_HELP_STRING([--with-ssl=pathname],[enable SSL (will check /usr/local/ssl
-                                /usr/lib/ssl /usr/ssl /usr/pkg /usr/local /opt/local /usr/sfw /usr or specify like /usr/include/openssl11)]),[
+AC_ARG_WITH(ssl, AC_HELP_STRING([--with-ssl=pathname],
+                                [enable SSL (will check /usr/local/ssl
+                                /usr/lib/ssl /usr/ssl /usr/pkg /usr/local /opt/local /usr/sfw /usr)]),[
         ],[
             withval="yes"
         ])
@@ -836,7 +775,7 @@ dnl try to see if an additional _LARGEFILE_SOURCE 1 is needed to get fseeko
 ACX_CHECK_COMPILER_FLAG_NEEDED(-D_LARGEFILE_SOURCE=1,
 [
 #include <stdio.h>
-int test(void) {
+int test() {
         int a = fseeko(stdin, 0, 0);
         return a;
 }
@@ -861,7 +800,7 @@ char* (*f) () = getaddrinfo;
 #ifdef __cplusplus
 }
 #endif
-int main(void) {
+int main() {
         ;
         return 0;
 }
@@ -872,11 +811,7 @@ dnl see if on windows
 if test "$ac_cv_header_windows_h" = "yes"; then
 	AC_DEFINE(USE_WINSOCK, 1, [Whether the windows socket API is used])
 	USE_WINSOCK="1"
-	if echo $LIBS | grep 'lws2_32' >/dev/null; then
-		:
-	else
-		LIBS="$LIBS -lws2_32"
-	fi
+	LIBS="$LIBS -lws2_32"
 fi
 ],
 dnl no quick getaddrinfo, try mingw32 and winsock2 library.
@@ -925,8 +860,8 @@ cache=`echo $1 | sed 'y%.=/+-%___p_%'`
 AC_CACHE_VAL(cv_cc_deprecated_$cache,
 [
 echo '$3' >conftest.c
-echo 'void f(void){ $2 }' >>conftest.c
-if test -z "`$CC $CPPFLAGS $CFLAGS -c conftest.c 2>&1 | grep -e deprecated -e unavailable`"; then
+echo 'void f(){ $2 }' >>conftest.c
+if test -z "`$CC -c conftest.c 2>&1 | grep deprecated`"; then
 eval "cv_cc_deprecated_$cache=no"
 else
 eval "cv_cc_deprecated_$cache=yes"
@@ -952,7 +887,7 @@ dnl a nonblocking socket do not work, a new call to select is necessary.
 AC_DEFUN([ACX_CHECK_NONBLOCKING_BROKEN],
 [
 AC_MSG_CHECKING([if nonblocking sockets work])
-if echo $host | grep mingw >/dev/null; then
+if echo $target | grep mingw32 >/dev/null; then 
 	AC_MSG_RESULT([no (windows)])
 	AC_DEFINE([NONBLOCKING_IS_BROKEN], 1, [Define if the network stack does not fully support nonblocking io (causes lower performance).])
 else
@@ -965,9 +900,6 @@ AC_LANG_SOURCE([[
 #include <errno.h>
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
 #endif
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
@@ -1097,7 +1029,7 @@ dnl defines MKDIR_HAS_ONE_ARG
 AC_DEFUN([ACX_MKDIR_ONE_ARG],
 [
 AC_MSG_CHECKING([whether mkdir has one arg])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+AC_TRY_COMPILE([
 #include <stdio.h>
 #include <unistd.h>
 #ifdef HAVE_WINSOCK2_H
@@ -1106,12 +1038,14 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
-]], [[
+], [
 	(void)mkdir("directory");
-]])],[AC_MSG_RESULT(yes)
+],
+AC_MSG_RESULT(yes)
 AC_DEFINE(MKDIR_HAS_ONE_ARG, 1, [Define if mkdir has one argument.])
-],[AC_MSG_RESULT(no)
-])
+,
+AC_MSG_RESULT(no)
+)
 ])dnl end of ACX_MKDIR_ONE_ARG
 
 dnl Check for ioctlsocket function. works on mingw32 too.
@@ -1270,20 +1204,10 @@ struct tm *gmtime_r(const time_t *timep, struct tm *result);
 #endif
 ])
 
-dnl provide reallocarray compat prototype.
-dnl $1: unique name for compat code
-AC_DEFUN([AHX_CONFIG_REALLOCARRAY],
-[
-#ifndef HAVE_REALLOCARRAY
-#define reallocarray reallocarray$1
-void* reallocarray(void *ptr, size_t nmemb, size_t size);
-#endif
-])
-
 dnl provide w32 compat definition for sleep
 AC_DEFUN([AHX_CONFIG_W32_SLEEP],
 [
-#if !defined(HAVE_SLEEP) || defined(HAVE_WINDOWS_H)
+#ifndef HAVE_SLEEP
 #define sleep(x) Sleep((x)*1000) /* on win32 */
 #endif /* HAVE_SLEEP */
 ])
@@ -1319,7 +1243,7 @@ AC_DEFUN([AHX_CONFIG_W32_FD_SET_T],
 #ifdef HAVE_WINSOCK2_H
 #define FD_SET_T (u_int)
 #else
-#define FD_SET_T
+#define FD_SET_T 
 #endif
 ])
 
@@ -1341,7 +1265,6 @@ AC_DEFUN([ACX_STRIP_EXT_FLAGS],
   AC_MSG_NOTICE([Stripping extension flags...])
   ACX_CFLAGS_STRIP(-D_GNU_SOURCE)
   ACX_CFLAGS_STRIP(-D_BSD_SOURCE)
-  ACX_CFLAGS_STRIP(-D_DEFAULT_SOURCE)
   ACX_CFLAGS_STRIP(-D__EXTENSIONS__)
   ACX_CFLAGS_STRIP(-D_POSIX_C_SOURCE=200112)
   ACX_CFLAGS_STRIP(-D_XOPEN_SOURCE=600)
@@ -1357,7 +1280,7 @@ dnl $3: define value, 1
 AC_DEFUN([AHX_CONFIG_FLAG_OMITTED],
 [#if defined($1) && !defined($2)
 #define $2 $3
-[#]endif])
+[#]endif ])
 
 dnl Wrapper for AHX_CONFIG_FLAG_OMITTED for -D style flags
 dnl $1: the -DNAME or -DNAME=value string.
@@ -1369,7 +1292,6 @@ dnl config.h part to define omitted cflags, use with ACX_STRIP_EXT_FLAGS.
 AC_DEFUN([AHX_CONFIG_EXT_FLAGS],
 [AHX_CONFIG_FLAG_EXT(-D_GNU_SOURCE)
 AHX_CONFIG_FLAG_EXT(-D_BSD_SOURCE)
-AHX_CONFIG_FLAG_EXT(-D_DEFAULT_SOURCE)
 AHX_CONFIG_FLAG_EXT(-D__EXTENSIONS__)
 AHX_CONFIG_FLAG_EXT(-D_POSIX_C_SOURCE=200112)
 AHX_CONFIG_FLAG_EXT(-D_XOPEN_SOURCE=600)
@@ -1404,7 +1326,9 @@ int main(void)
 dnl define memcmp to its replacement, pass unique id for program as arg
 AC_DEFUN([AHX_MEMCMP_BROKEN], [
 #ifdef MEMCMP_IS_BROKEN
-#include "compat/memcmp.h"
+#  ifdef memcmp
+#  undef memcmp
+#  endif
 #define memcmp memcmp_$1
 int memcmp(const void *x, const void *y, size_t n);
 #endif
@@ -1443,47 +1367,5 @@ AC_DEFUN([ACX_CHECK_SS_FAMILY],
 #include <arpa/inet.h>
 #endif
 ]) ])
-
-dnl Check if CC and linker support -fPIE and -pie.
-dnl If so, sets them in CFLAGS / LDFLAGS.
-AC_DEFUN([ACX_CHECK_PIE], [
-    AC_ARG_ENABLE([pie], AS_HELP_STRING([--enable-pie], [Enable Position-Independent Executable (eg. to fully benefit from ASLR, small performance penalty)]))
-    AS_IF([test "x$enable_pie" = "xyes"], [
-	AC_MSG_CHECKING([if $CC supports PIE])
-	BAKLDFLAGS="$LDFLAGS"
-	BAKCFLAGS="$CFLAGS"
-	LDFLAGS="$LDFLAGS -pie"
-	CFLAGS="$CFLAGS -fPIE"
-	AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])], [
-	    if $CC $CFLAGS $LDFLAGS -o conftest conftest.c 2>&1 | grep "warning: no debug symbols in executable" >/dev/null; then
-		LDFLAGS="$BAKLDFLAGS"
-		AC_MSG_RESULT(no)
-	    else
-		AC_MSG_RESULT(yes)
-	    fi
-	    rm -f conftest conftest.c conftest.o
-	], [LDFLAGS="$BAKLDFLAGS" ; CFLAGS="$BAKCFLAGS" ; AC_MSG_RESULT(no)])
-    ])
-])
-
-dnl Check if linker supports -Wl,-z,relro,-z,now.
-dnl If so, adds it to LDFLAGS.
-AC_DEFUN([ACX_CHECK_RELRO_NOW], [
-    AC_ARG_ENABLE([relro_now], AS_HELP_STRING([--enable-relro-now], [Enable full relocation binding at load-time (RELRO NOW, to protect GOT and .dtor areas)]))
-    AS_IF([test "x$enable_relro_now" = "xyes"], [
-	AC_MSG_CHECKING([if $CC supports -Wl,-z,relro,-z,now])
-	BAKLDFLAGS="$LDFLAGS"
-	LDFLAGS="$LDFLAGS -Wl,-z,relro,-z,now"
-	AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])], [
-	    if $CC $CFLAGS $LDFLAGS -o conftest conftest.c 2>&1 | grep "warning: no debug symbols in executable" >/dev/null; then
-		LDFLAGS="$BAKLDFLAGS"
-		AC_MSG_RESULT(no)
-	    else
-		AC_MSG_RESULT(yes)
-	    fi
-	    rm -f conftest conftest.c conftest.o
-	], [LDFLAGS="$BAKLDFLAGS" ; AC_MSG_RESULT(no)])
-    ])
-])
 
 dnl End of file
