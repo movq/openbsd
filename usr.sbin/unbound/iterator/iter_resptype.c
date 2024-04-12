@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -40,14 +40,12 @@
  * one of the response types.
  */
 #include "config.h"
+#include <ldns/packet.h>
 #include "iterator/iter_resptype.h"
 #include "iterator/iter_delegpt.h"
-#include "iterator/iterator.h"
 #include "services/cache/dns.h"
 #include "util/net_help.h"
 #include "util/data/dname.h"
-#include "sldns/rrdef.h"
-#include "sldns/pkthdr.h"
 
 enum response_type 
 response_type_from_cache(struct dns_msg* msg, 
@@ -106,8 +104,7 @@ response_type_from_cache(struct dns_msg* msg,
 
 enum response_type 
 response_type_from_server(int rdset,
-	struct dns_msg* msg, struct query_info* request, struct delegpt* dp,
-	int* empty_nodata_found)
+	struct dns_msg* msg, struct query_info* request, struct delegpt* dp)
 {
 	uint8_t* origzone = (uint8_t*)"\000"; /* the default */
 	struct ub_packed_rrset_key* s;
@@ -115,11 +112,7 @@ response_type_from_server(int rdset,
 
 	if(!msg || !request)
 		return RESPONSE_TYPE_THROWAWAY;
-	/* If the TC flag is set, the response is incomplete. Too large to
-	 * fit even in TCP or so. Discard it, it cannot be retrieved here. */
-	if((msg->rep->flags & BIT_TC))
-		return RESPONSE_TYPE_THROWAWAY;
-
+	
 	/* If the message is NXDOMAIN, then it answers the question. */
 	if(FLAGS_GET_RCODE(msg->rep->flags) == LDNS_RCODE_NXDOMAIN) {
 		/* make sure its not recursive when we don't want it to */
@@ -286,22 +279,6 @@ response_type_from_server(int rdset,
 
 	/* If we've gotten this far, this is NOERROR/NODATA (which could 
 	 * be an entirely empty message) */
-	/* For entirely empty messages, try again, at first, then accept
-	 * it it happens more. A regular noerror/nodata response has a soa
-	 * negative ttl value in the authority section. This makes it try
-	 * again at another authority. And decides between storing a 5 second
-	 * empty message or a 5 second servfail response. */
-	if(msg->rep->an_numrrsets == 0 && msg->rep->ns_numrrsets == 0 &&
-		msg->rep->ar_numrrsets == 0) {
-		if(empty_nodata_found) {
-			/* detect as throwaway at first, but accept later. */
-			(*empty_nodata_found)++;
-			if(*empty_nodata_found < EMPTY_NODATA_RETRY_COUNT)
-				return RESPONSE_TYPE_THROWAWAY;
-			return RESPONSE_TYPE_ANSWER;
-		}
-		return RESPONSE_TYPE_ANSWER;
-	}
 	/* check if recursive answer; saying it has empty cache */
 	if( (msg->rep->flags&BIT_RA) && !(msg->rep->flags&BIT_AA) && !rdset)
 		return RESPONSE_TYPE_REC_LAME;

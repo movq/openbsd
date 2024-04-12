@@ -21,34 +21,28 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
  * \file
  *
- * This file contains the infrastructure cache, as well as rate limiting.
- * Note that there are two sorts of rate-limiting here:
- *  - Pre-cache, per-query rate limiting (query ratelimits)
- *  - Post-cache, per-domain name rate limiting (infra-ratelimits)
+ * This file contains the infrastructure cache.
  */
 
 #ifndef SERVICES_CACHE_INFRA_H
 #define SERVICES_CACHE_INFRA_H
 #include "util/storage/lruhash.h"
-#include "util/storage/dnstree.h"
 #include "util/rtt.h"
-#include "util/netevent.h"
-#include "util/data/msgreply.h"
 struct slabhash;
 struct config_file;
 
@@ -74,10 +68,10 @@ struct infra_key {
  */
 struct infra_data {
 	/** TTL value for this entry. absolute time. */
-	time_t ttl;
+	uint32_t ttl;
 
 	/** time in seconds (absolute) when probing re-commences, 0 disabled */
-	time_t probedelay;
+	uint32_t probedelay;
 	/** round trip times for timeout calculation */
 	struct rtt_info rtt;
 
@@ -97,13 +91,6 @@ struct infra_data {
 	uint8_t lame_type_A;
 	/** the host is lame (not authoritative) for other query types */
 	uint8_t lame_other;
-
-	/** timeouts counter for type A */
-	uint8_t timeout_A;
-	/** timeouts counter for type AAAA */
-	uint8_t timeout_AAAA;
-	/** timeouts counter for others */
-	uint8_t timeout_other;
 };
 
 /**
@@ -114,79 +101,7 @@ struct infra_cache {
 	struct slabhash* hosts;
 	/** TTL value for host information, in seconds */
 	int host_ttl;
-	/** the hosts that are down are kept probed for recovery */
-	int infra_keep_probing;
-	/** hash table with query rates per name: rate_key, rate_data */
-	struct slabhash* domain_rates;
-	/** ratelimit settings for domains, struct domain_limit_data */
-	rbtree_type domain_limits;
-	/** hash table with query rates per client ip: ip_rate_key, ip_rate_data */
-	struct slabhash* client_ip_rates;
 };
-
-/** ratelimit, unless overridden by domain_limits, 0 is off */
-extern int infra_dp_ratelimit;
-
-/**
- * ratelimit settings for domains
- */
-struct domain_limit_data {
-	/** key for rbtree, must be first in struct, name of domain */
-	struct name_tree_node node;
-	/** ratelimit for exact match with this name, -1 if not set */
-	int lim;
-	/** ratelimit for names below this name, -1 if not set */
-	int below;
-};
-
-/**
- * key for ratelimit lookups, a domain name
- */
-struct rate_key {
-	/** lruhash key entry */
-	struct lruhash_entry entry;
-	/** domain name in uncompressed wireformat */
-	uint8_t* name;
-	/** length of name */
-	size_t namelen;
-};
-
-/** ip ratelimit, 0 is off */
-extern int infra_ip_ratelimit;
-/** ip ratelimit for DNS Cookie clients, 0 is off */
-extern int infra_ip_ratelimit_cookie;
-
-/**
- * key for ip_ratelimit lookups, a source IP.
- */
-struct ip_rate_key {
-	/** lruhash key entry */
-	struct lruhash_entry entry;
-	/** client ip information */
-	struct sockaddr_storage addr;
-	/** length of address */
-	socklen_t addrlen;
-};
-
-/** number of seconds to track qps rate */
-#define RATE_WINDOW 2
-
-/**
- * Data for ratelimits per domain name
- * It is incremented when a non-cache-lookup happens for that domain name.
- * The name is the delegation point we have for the name.
- * If a new delegation point is found (a referral reply), the previous
- * delegation point is decremented, and the new one is charged with the query.
- */
-struct rate_data {
-	/** queries counted, for that second. 0 if not in use. */
-	int qps[RATE_WINDOW];
-	/** what the timestamp is of the qps array members, counter is
-	 * valid for that timestamp.  Usually now and now-1. */
-	time_t timestamp[RATE_WINDOW];
-};
-
-#define ip_rate_data rate_data
 
 /** infra host cache default hash lookup size */
 #define INFRA_HOST_STARTSIZE 32
@@ -251,7 +166,7 @@ struct lruhash_entry* infra_lookup_nottl(struct infra_cache* infra,
  */
 int infra_host(struct infra_cache* infra, struct sockaddr_storage* addr, 
 	socklen_t addrlen, uint8_t* name, size_t namelen,
-	time_t timenow, int* edns_vs, uint8_t* edns_lame_known, int* to);
+	uint32_t timenow, int* edns_vs, uint8_t* edns_lame_known, int* to);
 
 /**
  * Set a host to be lame for the given zone.
@@ -270,7 +185,7 @@ int infra_host(struct infra_cache* infra, struct sockaddr_storage* addr,
  */
 int infra_set_lame(struct infra_cache* infra,
         struct sockaddr_storage* addr, socklen_t addrlen,
-	uint8_t* name, size_t namelen, time_t timenow, int dnsseclame,
+	uint8_t* name, size_t namelen, uint32_t timenow, int dnsseclame,
 	int reclame, uint16_t qtype);
 
 /**
@@ -280,7 +195,6 @@ int infra_set_lame(struct infra_cache* infra,
  * @param addrlen: length of addr.
  * @param name: zone name
  * @param namelen: zone name length
- * @param qtype: query type.
  * @param roundtrip: estimate of roundtrip time in milliseconds or -1 for 
  * 	timeout.
  * @param orig_rtt: original rtt for the query that timed out (roundtrip==-1).
@@ -289,8 +203,8 @@ int infra_set_lame(struct infra_cache* infra,
  * @return: 0 on error. new rto otherwise.
  */
 int infra_rtt_update(struct infra_cache* infra, struct sockaddr_storage* addr,
-	socklen_t addrlen, uint8_t* name, size_t namelen, int qtype,
-	int roundtrip, int orig_rtt, time_t timenow);
+	socklen_t addrlen, uint8_t* name, size_t namelen,
+	int roundtrip, int orig_rtt, uint32_t timenow);
 
 /**
  * Update information for the host, store that a TCP transaction works.
@@ -318,7 +232,7 @@ void infra_update_tcp_works(struct infra_cache* infra,
  */
 int infra_edns_update(struct infra_cache* infra,
         struct sockaddr_storage* addr, socklen_t addrlen,
-	uint8_t* name, size_t namelen, int edns_version, time_t timenow);
+	uint8_t* name, size_t namelen, int edns_version, uint32_t timenow);
 
 /**
  * Get Lameness information and average RTT if host is in the cache.
@@ -341,7 +255,7 @@ int infra_edns_update(struct infra_cache* infra,
 int infra_get_lame_rtt(struct infra_cache* infra,
         struct sockaddr_storage* addr, socklen_t addrlen, 
 	uint8_t* name, size_t namelen, uint16_t qtype, 
-	int* lame, int* dnsseclame, int* reclame, int* rtt, time_t timenow);
+	int* lame, int* dnsseclame, int* reclame, int* rtt, uint32_t timenow);
 
 /**
  * Get additional (debug) info on timing.
@@ -353,82 +267,12 @@ int infra_get_lame_rtt(struct infra_cache* infra,
  * @param rtt: the rtt_info is copied into here (caller alloced return struct).
  * @param delay: probe delay (if any).
  * @param timenow: what time it is now.
- * @param tA: timeout counter on type A.
- * @param tAAAA: timeout counter on type AAAA.
- * @param tother: timeout counter on type other.
  * @return TTL the infra host element is valid for. If -1: not found in cache.
  *	TTL -2: found but expired.
  */
-long long infra_get_host_rto(struct infra_cache* infra,
+int infra_get_host_rto(struct infra_cache* infra,
         struct sockaddr_storage* addr, socklen_t addrlen, uint8_t* name,
-	size_t namelen, struct rtt_info* rtt, int* delay, time_t timenow,
-	int* tA, int* tAAAA, int* tother);
-
-/**
- * Increment the query rate counter for a delegation point.
- * @param infra: infra cache.
- * @param name: zone name
- * @param namelen: zone name length
- * @param timenow: what time it is now.
- * @param backoff: if backoff is enabled.
- * @param qinfo: for logging, query name.
- * @param replylist: for logging, querier's address (if any).
- * @return 1 if it could be incremented. 0 if the increment overshot the
- * ratelimit or if in the previous second the ratelimit was exceeded.
- * Failures like alloc failures are not returned (probably as 1).
- */
-int infra_ratelimit_inc(struct infra_cache* infra, uint8_t* name,
-	size_t namelen, time_t timenow, int backoff, struct query_info* qinfo,
-	struct comm_reply* replylist);
-
-/**
- * Decrement the query rate counter for a delegation point.
- * Because the reply received for the delegation point was pleasant,
- * we do not charge this delegation point with it (i.e. it was a referral).
- * Should call it with same second as when inc() was called.
- * @param infra: infra cache.
- * @param name: zone name
- * @param namelen: zone name length
- * @param timenow: what time it is now.
- */
-void infra_ratelimit_dec(struct infra_cache* infra, uint8_t* name,
-	size_t namelen, time_t timenow);
-
-/**
- * See if the query rate counter for a delegation point is exceeded.
- * So, no queries are going to be allowed.
- * @param infra: infra cache.
- * @param name: zone name
- * @param namelen: zone name length
- * @param timenow: what time it is now.
- * @param backoff: if backoff is enabled.
- * @return true if exceeded.
- */
-int infra_ratelimit_exceeded(struct infra_cache* infra, uint8_t* name,
-	size_t namelen, time_t timenow, int backoff);
-
-/** find the maximum rate stored. 0 if no information.
- *  When backoff is enabled look for the maximum in the whole RATE_WINDOW. */
-int infra_rate_max(void* data, time_t now, int backoff);
-
-/** find the ratelimit in qps for a domain. 0 if no limit for domain. */
-int infra_find_ratelimit(struct infra_cache* infra, uint8_t* name,
-	size_t namelen);
-
-/** Update query ratelimit hash and decide
- *  whether or not a query should be dropped.
- *  @param infra: infra cache
- *  @param addr: client address
- *  @param addrlen: client address length
- *  @param timenow: what time it is now.
- *  @param has_cookie: if the request came with a DNS Cookie.
- *  @param backoff: if backoff is enabled.
- *  @param buffer: with query for logging.
- *  @return 1 if it could be incremented. 0 if the increment overshot the
- *  ratelimit and the query should be dropped. */
-int infra_ip_ratelimit_inc(struct infra_cache* infra,
-	struct sockaddr_storage* addr, socklen_t addrlen, time_t timenow,
-	int has_cookie, int backoff, struct sldns_buffer* buffer);
+	size_t namelen, struct rtt_info* rtt, int* delay, uint32_t timenow);
 
 /**
  * Get memory used by the infra cache.
@@ -449,29 +293,5 @@ void infra_delkeyfunc(void* k, void* arg);
 
 /** delete data and destroy the lameness hashtable */
 void infra_deldatafunc(void* d, void* arg);
-
-/** calculate size for the hashtable */
-size_t rate_sizefunc(void* k, void* d);
-
-/** compare two names, returns -1, 0, or +1 */
-int rate_compfunc(void* key1, void* key2);
-
-/** delete key, and destroy the lock */
-void rate_delkeyfunc(void* k, void* arg);
-
-/** delete data */
-void rate_deldatafunc(void* d, void* arg);
-
-/* calculate size for the client ip hashtable */
-size_t ip_rate_sizefunc(void* k, void* d);
-
-/* compare two addresses */
-int ip_rate_compfunc(void* key1, void* key2);
-
-/* delete key, and destroy the lock */
-void ip_rate_delkeyfunc(void* d, void* arg);
-
-/* delete data */
-#define ip_rate_deldatafunc rate_deldatafunc
 
 #endif /* SERVICES_CACHE_INFRA_H */

@@ -7,7 +7,7 @@
  *
  */
 
-#include "config.h"
+#include <config.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -17,325 +17,444 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdio.h>		/* DEBUG */
 
 #include "dns.h"
 #include "namedb.h"
 #include "util.h"
 #include "options.h"
-#include "rdata.h"
-#include "udb.h"
-#include "zonec.h"
-#include "nsec3.h"
-#include "difffile.h"
-#include "nsd.h"
-#include "ixfr.h"
-#include "ixfrcreate.h"
 
-void
-namedb_close(struct namedb* db)
+int
+namedb_lookup(struct namedb    *db,
+	      const dname_type *dname,
+	      domain_type     **closest_match,
+	      domain_type     **closest_encloser)
 {
-	if(db) {
-		zonec_desetup_parser();
-		region_destroy(db->region);
+	return domain_table_search(
+		db->domains, dname, closest_match, closest_encloser);
+}
+
+static int
+read_magic(namedb_type *db)
+{
+	char buf[NAMEDB_MAGIC_SIZE];
+
+	if (fread(buf, sizeof(char), sizeof(buf), db->fd) != sizeof(buf))
+		return 0;
+
+	return memcmp(buf, NAMEDB_MAGIC, NAMEDB_MAGIC_SIZE) == 0;
+}
+
+static const dname_type *
+read_dname(FILE *fd, region_type *region)
+{
+	uint8_t size;
+	uint8_t temp[MAXDOMAINLEN];
+
+	if (fread(&size, sizeof(uint8_t), 1, fd) != 1)
+		return NULL;
+	if (fread(temp, sizeof(uint8_t), size, fd) != size)
+		return NULL;
+
+	return dname_make(region, temp, 1);
+}
+
+static int
+read_size(namedb_type *db, uint32_t *result)
+{
+	if (fread(result, sizeof(*result), 1, db->fd) == 1) {
+		*result = ntohl(*result);
+		return 1;
+	} else {
+		return 0;
 	}
 }
 
-void
-namedb_free_ixfr(struct namedb* db)
+static domain_type *
+read_domain(namedb_type *db, uint32_t domain_count, domain_type **domains)
 {
-	struct radnode* n;
-	for(n=radix_first(db->zonetree); n; n=radix_next(n)) {
-		zone_ixfr_free(((zone_type*)n->elem)->ixfr);
+	uint32_t domain_number;
+
+	if (!read_size(db, &domain_number))
+		return NULL;
+
+	if (domain_number == 0 || domain_number > domain_count)
+		return NULL;
+
+	return domains[domain_number - 1];
+}
+
+static zone_type *
+read_zone(namedb_type *db, uint32_t zone_count, zone_type **zones)
+{
+	uint32_t zone_number;
+
+	if (!read_size(db, &zone_number))
+		return NULL;
+
+	if (zone_number == 0 || zone_number > zone_count)
+		return NULL;
+
+	return zones[zone_number - 1];
+}
+
+static int
+read_rdata_atom(namedb_type *db, uint16_t type, int index, uint32_t domain_count, domain_type **domains, rdata_atom_type *result)
+{
+	uint8_t data[65536];
+
+	if (rdata_atom_is_domain(type, index)) {
+		result->domain = read_domain(db, domain_count, domains);
+		if (!result->domain)
+			return 0;
+	} else {
+		uint16_t size;
+
+		if (fread(&size, sizeof(size), 1, db->fd) != 1)
+			return 0;
+		size = ntohs(size);
+		if (fread(data, sizeof(uint8_t), size, db->fd) != size)
+			return 0;
+
+		result->data = (uint16_t *) region_alloc(
+			db->region, sizeof(uint16_t) + size);
+		memcpy(result->data, &size, sizeof(uint16_t));
+		memcpy((uint8_t *) result->data + sizeof(uint16_t), data, size);
 	}
+
+	return 1;
 }
 
-/** create a zone */
-zone_type*
-namedb_zone_create(namedb_type* db, const dname_type* dname,
-	struct zone_options* zo)
+static rrset_type *
+read_rrset(namedb_type *db,
+	   uint32_t domain_count, domain_type **domains,
+	   uint32_t zone_count, zone_type **zones)
 {
-	zone_type* zone = (zone_type *) region_alloc(db->region,
-		sizeof(zone_type));
-	zone->node = radname_insert(db->zonetree, dname_name(dname),
-		dname->name_size, zone);
-	assert(zone->node);
-	zone->apex = domain_table_insert(db->domains, dname);
-	zone->apex->usage++; /* the zone.apex reference */
-	zone->apex->is_apex = 1;
-	zone->soa_rrset = NULL;
-	zone->soa_nx_rrset = NULL;
-	zone->ns_rrset = NULL;
-#ifdef NSEC3
-	zone->nsec3_param = NULL;
-	zone->nsec3_last = NULL;
-	zone->nsec3tree = NULL;
-	zone->hashtree = NULL;
-	zone->wchashtree = NULL;
-	zone->dshashtree = NULL;
-#endif
-	zone->opts = zo;
-	zone->ixfr = NULL;
-	zone->filename = NULL;
-	zone->logstr = NULL;
-	zone->mtime.tv_sec = 0;
-	zone->mtime.tv_nsec = 0;
-	zone->zonestatid = 0;
-	zone->is_secure = 0;
-	zone->is_changed = 0;
-	zone->is_updated = 0;
-	zone->is_skipped = 0;
-	zone->is_checked = 0;
-	zone->is_bad = 0;
-	zone->is_ok = 1;
-	return zone;
-}
+	rrset_type *rrset;
+	int i, j;
+	domain_type *owner;
+	uint16_t type;
+	uint16_t klass;
+	uint32_t soa_minimum;
 
-void
-namedb_zone_delete(namedb_type* db, zone_type* zone)
-{
-	/* RRs and UDB and NSEC3 and so on must be already deleted */
-	radix_delete(db->zonetree, zone->node);
+	owner = read_domain(db, domain_count, domains);
+	if (!owner)
+		return NULL;
 
-	/* see if apex can be deleted */
-	if(zone->apex) {
-		zone->apex->usage --;
-		zone->apex->is_apex = 0;
-		if(zone->apex->usage == 0) {
-			/* delete the apex, possibly */
-			domain_table_deldomain(db, zone->apex);
+	rrset = (rrset_type *) region_alloc(db->region, sizeof(rrset_type));
+
+	rrset->zone = read_zone(db, zone_count, zones);
+	if (!rrset->zone)
+		return NULL;
+
+	if (fread(&type, sizeof(type), 1, db->fd) != 1)
+		return NULL;
+	type = ntohs(type);
+
+	if (fread(&klass, sizeof(klass), 1, db->fd) != 1)
+		return NULL;
+	klass = ntohs(klass);
+
+	if (fread(&rrset->rr_count, sizeof(rrset->rr_count), 1, db->fd) != 1)
+		return NULL;
+	rrset->rr_count = ntohs(rrset->rr_count);
+	rrset->rrs = (rr_type *) region_alloc(
+		db->region, rrset->rr_count * sizeof(rr_type));
+
+	assert(rrset->rr_count > 0);
+
+	for (i = 0; i < rrset->rr_count; ++i) {
+		rr_type *rr = &rrset->rrs[i];
+
+		rr->owner = owner;
+		rr->type = type;
+		rr->klass = klass;
+
+		if (fread(&rr->rdata_count, sizeof(rr->rdata_count), 1, db->fd) != 1)
+			return NULL;
+		rr->rdata_count = ntohs(rr->rdata_count);
+		rr->rdatas = (rdata_atom_type *) region_alloc(
+			db->region, rr->rdata_count * sizeof(rdata_atom_type));
+
+		if (fread(&rr->ttl, sizeof(rr->ttl), 1, db->fd) != 1)
+			return NULL;
+		rr->ttl = ntohl(rr->ttl);
+
+		for (j = 0; j < rr->rdata_count; ++j) {
+			if (!read_rdata_atom(db, rr->type, j, domain_count, domains, &rr->rdatas[j]))
+				return NULL;
 		}
 	}
 
-	/* soa_rrset is freed when the SOA was deleted */
-	if(zone->soa_nx_rrset) {
-		region_recycle(db->region, zone->soa_nx_rrset->rrs,
-			sizeof(rr_type));
-		region_recycle(db->region, zone->soa_nx_rrset,
-			sizeof(rrset_type));
+	domain_add_rrset(owner, rrset);
+
+	if (rrset_rrtype(rrset) == TYPE_SOA) {
+		assert(owner == rrset->zone->apex);
+		rrset->zone->soa_rrset = rrset;
+
+		/* BUG #103 add another soa with a tweaked ttl */
+		rrset->zone->soa_nx_rrset = region_alloc(db->region, sizeof(rrset_type));
+		rrset->zone->soa_nx_rrset->rrs =
+			region_alloc(db->region, rrset->rr_count * sizeof(rr_type));
+
+		memcpy(rrset->zone->soa_nx_rrset->rrs, rrset->rrs, sizeof(rr_type));
+		rrset->zone->soa_nx_rrset->rr_count = 1;
+		rrset->zone->soa_nx_rrset->next = 0;
+
+		/* also add a link to the zone */
+		rrset->zone->soa_nx_rrset->zone = rrset->zone;
+
+		/* check the ttl and MINIMUM value and set accordinly */
+		memcpy(&soa_minimum, rdata_atom_data(rrset->rrs->rdatas[6]),
+				rdata_atom_size(rrset->rrs->rdatas[6]));
+		if (rrset->rrs->ttl > ntohl(soa_minimum)) {
+			rrset->zone->soa_nx_rrset->rrs[0].ttl = ntohl(soa_minimum);
+		}
+
+	} else if (owner == rrset->zone->apex
+		   && rrset_rrtype(rrset) == TYPE_NS)
+	{
+		rrset->zone->ns_rrset = rrset;
 	}
-#ifdef NSEC3
-	hash_tree_delete(db->region, zone->nsec3tree);
-	hash_tree_delete(db->region, zone->hashtree);
-	hash_tree_delete(db->region, zone->wchashtree);
-	hash_tree_delete(db->region, zone->dshashtree);
+
+#ifdef DNSSEC
+	if (rrset_rrtype(rrset) == TYPE_RRSIG && owner == rrset->zone->apex) {
+		for (i = 0; i < rrset->rr_count; ++i) {
+			if (rr_rrsig_type_covered(&rrset->rrs[i]) == TYPE_SOA) {
+				rrset->zone->is_secure = 1;
+				break;
+			}
+		}
+	}
 #endif
-	zone_ixfr_free(zone->ixfr);
-	if(zone->filename)
-		region_recycle(db->region, zone->filename,
-			strlen(zone->filename)+1);
-	if(zone->logstr)
-		region_recycle(db->region, zone->logstr,
-			strlen(zone->logstr)+1);
-	region_recycle(db->region, zone, sizeof(zone_type));
+	return rrset;
 }
 
 struct namedb *
-namedb_open (struct nsd_options* opt)
+namedb_open (const char *filename, nsd_options_t* opt, size_t num_children)
 {
-	namedb_type* db;
+	namedb_type *db;
 
 	/*
 	 * Region used to store the loaded database.  The region is
 	 * freed in namedb_close.
 	 */
-	region_type* db_region;
+	region_type *db_region;
 
-	(void)opt;
+	/*
+	 * Temporary region used while loading domain names from the
+	 * database.  The region is freed after each time a dname is
+	 * read from the database.
+	 */
+	region_type *dname_region;
 
-#ifdef USE_MMAP_ALLOC
-	db_region = region_create_custom(mmap_alloc, mmap_free, MMAP_ALLOC_CHUNK_SIZE,
-		MMAP_ALLOC_LARGE_OBJECT_SIZE, MMAP_ALLOC_INITIAL_CLEANUP_SIZE, 1);
-#else /* !USE_MMAP_ALLOC */
+	/*
+	 * Temporary region used to store array of domains and zones
+	 * while loading the database.  The region is freed before
+	 * returning.
+	 */
+	region_type *temp_region;
+
+	uint32_t dname_count;
+	domain_type **domains;	/* Indexed by domain number.  */
+
+	uint32_t zone_count;
+	zone_type **zones;	/* Indexed by zone number.  */
+
+	uint32_t i;
+	uint32_t rrset_count = 0;
+	uint32_t rr_count = 0;
+
+	rrset_type *rrset;
+
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(namedb_type) = %lu\n", (unsigned long) sizeof(namedb_type)));
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(zone_type) = %lu\n", (unsigned long) sizeof(zone_type)));
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(domain_type) = %lu\n", (unsigned long) sizeof(domain_type)));
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(rrset_type) = %lu\n", (unsigned long) sizeof(rrset_type)));
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(rr_type) = %lu\n", (unsigned long) sizeof(rr_type)));
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(rdata_atom_type) = %lu\n", (unsigned long) sizeof(rdata_atom_type)));
+	DEBUG(DEBUG_DBACCESS, 2,
+	      (LOG_INFO, "sizeof(rbnode_t) = %lu\n", (unsigned long) sizeof(rbnode_t)));
+
 	db_region = region_create_custom(xalloc, free, DEFAULT_CHUNK_SIZE,
 		DEFAULT_LARGE_OBJECT_SIZE, DEFAULT_INITIAL_CLEANUP_SIZE, 1);
-#endif /* !USE_MMAP_ALLOC */
 	db = (namedb_type *) region_alloc(db_region, sizeof(struct namedb));
 	db->region = db_region;
 	db->domains = domain_table_create(db->region);
-	db->zonetree = radix_tree_create(db->region);
+	db->zones = NULL;
+	db->zone_count = 0;
+	db->filename = region_strdup(db->region, filename);
+	db->crc = 0xffffffff;
 	db->diff_skip = 0;
-	db->diff_pos = 0;
-	zonec_setup_parser(db);
 
 	if (gettimeofday(&(db->diff_timestamp), NULL) != 0) {
-		log_msg(LOG_ERR, "unable to load namedb: cannot initialize timestamp");
+		log_msg(LOG_ERR, "unable to load %s: cannot initialize"
+				 "timestamp", db->filename);
+		region_destroy(db_region);
+                return NULL;
+        }
+
+	/* Open it... */
+	db->fd = fopen(db->filename, "r");
+	if (db->fd == NULL) {
+		log_msg(LOG_ERR, "unable to load %s: %s",
+			db->filename, strerror(errno));
 		region_destroy(db_region);
 		return NULL;
 	}
 
+	if (!read_magic(db)) {
+		log_msg(LOG_ERR, "corrupted database (read magic): %s", db->filename);
+		namedb_close(db);
+		return NULL;
+	}
+
+	if (!read_size(db, &zone_count)) {
+		log_msg(LOG_ERR, "corrupted database (read size): %s", db->filename);
+		namedb_close(db);
+		return NULL;
+	}
+
+	DEBUG(DEBUG_DBACCESS, 1,
+	      (LOG_INFO, "Retrieving %lu zones\n", (unsigned long) zone_count));
+
+	temp_region = region_create(xalloc, free);
+	dname_region = region_create(xalloc, free);
+
+	db->zone_count = zone_count;
+	zones = (zone_type **) region_alloc(temp_region,
+					    zone_count * sizeof(zone_type *));
+	for (i = 0; i < zone_count; ++i) {
+		const dname_type *dname = read_dname(db->fd, dname_region);
+		if (!dname) {
+			log_msg(LOG_ERR, "corrupted database (read dname): %s", db->filename);
+			region_destroy(dname_region);
+			region_destroy(temp_region);
+			namedb_close(db);
+			return NULL;
+		}
+		zones[i] = (zone_type *) region_alloc(db->region,
+						      sizeof(zone_type));
+		zones[i]->next = db->zones;
+		db->zones = zones[i];
+		zones[i]->apex = domain_table_insert(db->domains, dname);
+		zones[i]->soa_rrset = NULL;
+		zones[i]->soa_nx_rrset = NULL;
+		zones[i]->ns_rrset = NULL;
+#ifdef NSEC3
+		zones[i]->nsec3_soa_rr = NULL;
+		zones[i]->nsec3_last = NULL;
+#endif
+		zones[i]->opts = zone_options_find(opt, domain_dname(zones[i]->apex));
+		zones[i]->number = i + 1;
+		zones[i]->is_secure = 0;
+		zones[i]->updated = 1;
+		zones[i]->is_ok = 0;
+		zones[i]->dirty = region_alloc(db->region, sizeof(uint8_t)*num_children);
+		memset(zones[i]->dirty, 0, sizeof(uint8_t)*num_children);
+		if(!zones[i]->opts) {
+			log_msg(LOG_ERR, "cannot load database. Zone %s in db "
+					 "%s, but not in config file (might "
+					 "happen if you edited the config "
+					 "file). Please rebuild database and "
+					 "start again.",
+				dname_to_string(dname, NULL), db->filename);
+			region_destroy(dname_region);
+			region_destroy(temp_region);
+			namedb_close(db);
+			return NULL;
+		}
+
+		region_free_all(dname_region);
+	}
+
+	if (!read_size(db, &dname_count)) {
+		log_msg(LOG_ERR, "corrupted database (read size): %s", db->filename);
+		region_destroy(dname_region);
+		region_destroy(temp_region);
+		namedb_close(db);
+		return NULL;
+	}
+
+	DEBUG(DEBUG_DBACCESS, 1,
+	      (LOG_INFO, "Retrieving %lu domain names\n", (unsigned long) dname_count));
+
+	domains = (domain_type **) region_alloc(
+		temp_region, dname_count * sizeof(domain_type *));
+	for (i = 0; i < dname_count; ++i) {
+		const dname_type *dname = read_dname(db->fd, dname_region);
+		if (!dname) {
+			log_msg(LOG_ERR, "corrupted database (read dname): %s", db->filename);
+			region_destroy(dname_region);
+			region_destroy(temp_region);
+			namedb_close(db);
+			return NULL;
+		}
+		domains[i] = domain_table_insert(db->domains, dname);
+		region_free_all(dname_region);
+	}
+
+	region_destroy(dname_region);
+
+#ifndef NDEBUG
+	fprintf(stderr, "database region after loading domain names: ");
+	region_dump_stats(db->region, stderr);
+	fprintf(stderr, "\n");
+#endif
+
+	while ((rrset = read_rrset(db, dname_count, domains, zone_count, zones))) {
+		++rrset_count;
+		rr_count += rrset->rr_count;
+	}
+
+	DEBUG(DEBUG_DBACCESS, 1,
+	      (LOG_INFO, "Retrieved %lu RRs in %lu RRsets\n",
+	       (unsigned long) rr_count, (unsigned long) rrset_count));
+
+	region_destroy(temp_region);
+
+	if ((db->crc_pos = ftello(db->fd)) == -1) {
+		log_msg(LOG_ERR, "ftello %s failed: %s",
+			db->filename, strerror(errno));
+		namedb_close(db);
+		return NULL;
+	}
+	if (!read_size(db, &db->crc)) {
+		log_msg(LOG_ERR, "corrupted database (read size): %s", db->filename);
+		namedb_close(db);
+		return NULL;
+	}
+	if (!read_magic(db)) {
+		log_msg(LOG_ERR, "corrupted database (read magic): %s", db->filename);
+		namedb_close(db);
+		return NULL;
+	}
+
+	fclose(db->fd);
+	db->fd = NULL;
+
+#ifndef NDEBUG
+	fprintf(stderr, "database region after loading database: ");
+	region_dump_stats(db->region, stderr);
+	fprintf(stderr, "\n");
+#endif
+
 	return db;
 }
 
-/** get the file mtime stat (or nonexist or error) */
-int
-file_get_mtime(const char* file, struct timespec* mtime, int* nonexist)
-{
-	struct stat s;
-	if(stat(file, &s) != 0) {
-		mtime->tv_sec = 0;
-		mtime->tv_nsec = 0;
-		*nonexist = (errno == ENOENT);
-		return 0;
-	}
-	*nonexist = 0;
-	mtime->tv_sec = s.st_mtime;
-#ifdef HAVE_STRUCT_STAT_ST_MTIMENSEC
-	mtime->tv_nsec = s.st_mtimensec;
-#elif defined(HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC)
-	mtime->tv_nsec = s.st_mtim.tv_nsec;
-#else
-	mtime->tv_nsec = 0;
-#endif
-	return 1;
-}
-
 void
-namedb_read_zonefile(struct nsd* nsd, struct zone* zone, udb_base* taskudb,
-	udb_ptr* last_task)
+namedb_close (struct namedb *db)
 {
-	struct timespec mtime;
-	int nonexist = 0;
-	unsigned int errors;
-	const char* fname;
-	struct ixfr_create* ixfrcr = NULL;
-	int ixfr_create_already_done = 0;
-	if(!nsd->db || !zone || !zone->opts || !zone->opts->pattern->zonefile)
-		return;
-	mtime.tv_sec = 0;
-	mtime.tv_nsec = 0;
-	fname = config_make_zonefile(zone->opts, nsd);
-	assert(fname);
-	if(!file_get_mtime(fname, &mtime, &nonexist)) {
-		if(nonexist) {
-			if(zone_is_slave(zone->opts)) {
-				/* for slave zones not as bad, no zonefile
-				 * may just mean we have to transfer it */
-				VERBOSITY(2, (LOG_INFO, "zonefile %s does not exist",
-					fname));
-			} else {
-				/* without a download option, we can never
-				 * serve data, more severe error printout */
-				log_msg(LOG_ERR, "zonefile %s does not exist", fname);
-			}
-
-		} else
-			log_msg(LOG_ERR, "zonefile %s: %s",
-				fname, strerror(errno));
-		if(taskudb) task_new_soainfo(taskudb, last_task, zone, 0);
-		return;
-	} else {
-		const char* zone_fname = zone->filename;
-		struct timespec zone_mtime = zone->mtime;
-		/* if no zone_fname, then it was acquired in zone transfer,
-		 * see if the file is newer than the zone transfer
-		 * (regardless if this is a different file), because the
-		 * zone transfer is a different content source too */
-		if(!zone_fname && timespec_compare(&zone_mtime, &mtime) >= 0) {
-			VERBOSITY(3, (LOG_INFO, "zonefile %s is older than "
-				"zone transfer in memory", fname));
-			return;
-
-		/* if zone_fname, then the file was acquired from reading it,
-		 * and see if filename changed or mtime newer to read it */
-		} else if(zone_fname && strcmp(zone_fname, fname) == 0 &&
-		   timespec_compare(&zone_mtime, &mtime) == 0) {
-			VERBOSITY(3, (LOG_INFO, "zonefile %s is not modified",
-				fname));
-			return;
+	if (db) {
+		if (db->fd) {
+			fclose(db->fd);
 		}
-	}
-	if(ixfr_create_from_difference(zone, fname,
-		&ixfr_create_already_done)) {
-		ixfrcr = ixfr_create_start(zone, fname,
-			zone->opts->pattern->ixfr_size, 0);
-		if(!ixfrcr) {
-			/* leaves the ixfrcr at NULL, so it is not created */
-			log_msg(LOG_ERR, "out of memory starting ixfr create");
-		}
-	}
-
-	assert(parser);
-	/* wipe zone from memory */
-#ifdef NSEC3
-	nsec3_clear_precompile(nsd->db, zone);
-	zone->nsec3_param = NULL;
-#endif
-	delete_zone_rrs(nsd->db, zone);
-	errors = zonec_read(zone->opts->name, fname, zone);
-	if(errors > 0) {
-		log_msg(LOG_ERR, "zone %s file %s read with %u errors",
-			zone->opts->name, fname, errors);
-		/* wipe (partial) zone from memory */
-		zone->is_ok = 1;
-#ifdef NSEC3
-		nsec3_clear_precompile(nsd->db, zone);
-		zone->nsec3_param = NULL;
-#endif
-		delete_zone_rrs(nsd->db, zone);
-		if(zone->filename)
-			region_recycle(nsd->db->region, zone->filename,
-				strlen(zone->filename)+1);
-		zone->filename = NULL;
-		if(zone->logstr)
-			region_recycle(nsd->db->region, zone->logstr,
-				strlen(zone->logstr)+1);
-		zone->logstr = NULL;
-	} else {
-		VERBOSITY(1, (LOG_INFO, "zone %s read with success",
-			zone->opts->name));
-		zone->is_ok = 1;
-		zone->is_changed = 0;
-		/* store zone into udb */
-		zone->mtime = mtime;
-		if(zone->filename)
-			region_recycle(nsd->db->region, zone->filename,
-				strlen(zone->filename)+1);
-		zone->filename = region_strdup(nsd->db->region, fname);
-		if(zone->logstr)
-			region_recycle(nsd->db->region, zone->logstr,
-				strlen(zone->logstr)+1);
-		zone->logstr = NULL;
-		if(ixfr_create_already_done) {
-			ixfr_readup_exist(zone, nsd, fname);
-		} else if(ixfrcr) {
-			if(!ixfr_create_perform(ixfrcr, zone, 1, nsd, fname,
-				zone->opts->pattern->ixfr_number)) {
-				log_msg(LOG_ERR, "failed to create IXFR");
-			} else {
-				VERBOSITY(2, (LOG_INFO, "zone %s created IXFR %s.ixfr",
-					zone->opts->name, fname));
-			}
-			ixfr_create_free(ixfrcr);
-		} else if(zone_is_ixfr_enabled(zone)) {
-			ixfr_read_from_file(nsd, zone, fname);
-		}
-	}
-	if(taskudb) task_new_soainfo(taskudb, last_task, zone, 0);
-#ifdef NSEC3
-	prehash_zone_complete(nsd->db, zone);
-#endif
-}
-
-void namedb_check_zonefile(struct nsd* nsd, udb_base* taskudb,
-	udb_ptr* last_task, struct zone_options* zopt)
-{
-	zone_type* zone;
-	const dname_type* dname = (const dname_type*)zopt->node.key;
-	/* find zone to go with it, or create it */
-	zone = namedb_find_zone(nsd->db, dname);
-	if(!zone) {
-		zone = namedb_zone_create(nsd->db, dname, zopt);
-	}
-	namedb_read_zonefile(nsd, zone, taskudb, last_task);
-}
-
-void namedb_check_zonefiles(struct nsd* nsd, struct nsd_options* opt,
-	udb_base* taskudb, udb_ptr* last_task)
-{
-	struct zone_options* zo;
-	/* check all zones in opt, create if not exist in main db */
-	RBTREE_FOR(zo, struct zone_options*, opt->zone_options) {
-		namedb_check_zonefile(nsd, taskudb, last_task, zo);
-		if(nsd->signal_hint_shutdown) break;
+		region_destroy(db->region);
 	}
 }

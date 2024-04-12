@@ -14,78 +14,79 @@ AC_DEFUN([AC_PYTHON_DEVEL],[
         fi
 
         if test -z "$PYTHON_VERSION"; then
-		PYTHON_VERSION=`$PYTHON -c "import sys; \
-			print(sys.version.split()[[0]])"`
-	fi
-	# calculate the version number components.
-	[
-	v="$PYTHON_VERSION"
-	PYTHON_VERSION_MAJOR=`echo $v | sed 's/[^0-9].*//'`
-	if test -z "$PYTHON_VERSION_MAJOR"; then PYTHON_VERSION_MAJOR="0"; fi
-	v=`echo $v | sed -e 's/^[0-9]*$//' -e 's/[0-9]*[^0-9]//'`
-	PYTHON_VERSION_MINOR=`echo $v | sed 's/[^0-9].*//'`
-	if test -z "$PYTHON_VERSION_MINOR"; then PYTHON_VERSION_MINOR="0"; fi
-	v=`echo $v | sed -e 's/^[0-9]*$//' -e 's/[0-9]*[^0-9]//'`
-	PYTHON_VERSION_PATCH=`echo $v | sed 's/[^0-9].*//'`
-	if test -z "$PYTHON_VERSION_PATCH"; then PYTHON_VERSION_PATCH="0"; fi
-	]
-
-	# For some systems, sysconfig exists, but has the wrong paths,
-	# on Debian 10, for python 2.7 and 3.7. So, we check the version,
-	# and for older versions try distutils.sysconfig first. For newer
-	# versions>=3.10, where distutils.sysconfig is deprecated, use
-	# sysconfig first and then attempt the other one.
-	py_distutils_first="no"
-	if test $PYTHON_VERSION_MAJOR -lt 3; then
-		py_distutils_first="yes"
-	fi
-	if test $PYTHON_VERSION_MAJOR -eq 3 -a $PYTHON_VERSION_MINOR -lt 10; then
-		py_distutils_first="yes"
+		PYTHON_VERSION=`$PYTHON -c "import sys, string; \
+			print string.split(sys.version)[[0]]"`
 	fi
 
-	# Check if you have the first module
-	if test "$py_distutils_first" = "yes"; then m="distutils"; else m="sysconfig"; fi
-	sysconfig_module=""
-	AC_MSG_CHECKING([for the $m Python module])
-        if ac_modulecheck_result1=`$PYTHON -c "import $m" 2>&1`; then
+        #
+        # Check for a version of Python >= 2.1.0
+        #
+        AC_MSG_CHECKING([for a version of Python >= '2.1.0'])
+        ac_supports_python_ver=`$PYTHON -c "import sys, string; \
+                ver = string.split(sys.version)[[0]]; \
+                print ver >= '2.1.0'"`
+        if test "$ac_supports_python_ver" != "True"; then
+                if test -z "$PYTHON_NOVERSIONCHECK"; then
+                        AC_MSG_RESULT([no])
+                        AC_MSG_FAILURE([
+This version of the AC@&t@_PYTHON_DEVEL macro
+doesn't work properly with versions of Python before
+2.1.0. You may need to re-run configure, setting the
+variables PYTHON_CPPFLAGS, PYTHON_LDFLAGS, PYTHON_SITE_PKG,
+PYTHON_EXTRA_LIBS and PYTHON_EXTRA_LDFLAGS by hand.
+Moreover, to disable this check, set PYTHON_NOVERSIONCHECK
+to something else than an empty string.
+])
+                else
+                        AC_MSG_RESULT([skip at user request])
+                fi
+        else
                 AC_MSG_RESULT([yes])
-		sysconfig_module="$m"
-	else
-                AC_MSG_RESULT([no])
-	fi
+        fi
 
-	# if not found, try the other one.
-	if test -z "$sysconfig_module"; then
-		if test "$py_distutils_first" = "yes"; then m2="sysconfig"; else m2="distutils"; fi
-		AC_MSG_CHECKING([for the $m2 Python module])
-		if ac_modulecheck_result2=`$PYTHON -c "import $m2" 2>&1`; then
-			AC_MSG_RESULT([yes])
-			sysconfig_module="$m2"
-		else
-			AC_MSG_RESULT([no])
-			AC_MSG_ERROR([cannot import Python module "$m", or "$m2".
-	Please check your Python installation. The errors are:
-	$m
-	$ac_modulecheck_result1
-	$m2
-	$ac_modulecheck_result2])
-			PYTHON_VERSION=""
-		fi
-	fi
-	if test "$sysconfig_module" = "distutils"; then sysconfig_module="distutils.sysconfig"; fi
+        #
+        # if the macro parameter ``version'' is set, honour it
+        #
+        if test -n "$1"; then
+                AC_MSG_CHECKING([for a version of Python $1])
+                ac_supports_python_ver=`$PYTHON -c "import sys, string; \
+                        ver = string.split(sys.version)[[0]]; \
+                        print ver $1"`
+                if test "$ac_supports_python_ver" = "True"; then
+                   AC_MSG_RESULT([yes])
+                else
+                        AC_MSG_RESULT([no])
+                        AC_MSG_ERROR([this package requires Python $1.
+If you have it installed, but it isn't the default Python
+interpreter in your system path, please pass the PYTHON_VERSION
+variable to configure. See ``configure --help'' for reference.
+])
+                        PYTHON_VERSION=""
+                fi
+        fi
+
+        #
+        # Check if you have distutils, else fail
+        #
+        AC_MSG_CHECKING([for the distutils Python package])
+        ac_distutils_result=`$PYTHON -c "import distutils" 2>&1`
+        if test -z "$ac_distutils_result"; then
+                AC_MSG_RESULT([yes])
+        else
+                AC_MSG_RESULT([no])
+                AC_MSG_ERROR([cannot import Python module "distutils".
+Please check your Python installation. The error was:
+$ac_distutils_result])
+                PYTHON_VERSION=""
+        fi
 
         #
         # Check for Python include path
         #
         AC_MSG_CHECKING([for Python include path])
         if test -z "$PYTHON_CPPFLAGS"; then
-		if test "$sysconfig_module" = "sysconfig"; then
-			python_path=`$PYTHON -c 'import sysconfig; \
-				print(sysconfig.get_path("include"));'`
-		else
-			python_path=`$PYTHON -c "import distutils.sysconfig; \
-				print(distutils.sysconfig.get_python_inc());"`
-		fi
+                python_path=`$PYTHON -c "import distutils.sysconfig; \
+                        print distutils.sysconfig.get_python_inc();"`
                 if test -n "${python_path}"; then
                         python_path="-I$python_path"
                 fi
@@ -99,32 +100,63 @@ AC_DEFUN([AC_PYTHON_DEVEL],[
         #
         AC_MSG_CHECKING([for Python library path])
         if test -z "$PYTHON_LDFLAGS"; then
-                PYTHON_LDFLAGS=`$PYTHON -c "from $sysconfig_module import *; \
-                        print('-L'+get_config_var('LIBDIR')+' -L'+get_config_var('LIBDEST')+' '+get_config_var('BLDLIBRARY'));"`
+                # (makes two attempts to ensure we've got a version number
+                # from the interpreter)
+                py_version=`$PYTHON -c "from distutils.sysconfig import *; \
+                        from string import join; \
+                        print join(get_config_vars('VERSION'))"`
+                if test "$py_version" = "[None]"; then
+                        if test -n "$PYTHON_VERSION"; then
+                                py_version=$PYTHON_VERSION
+                        else
+                                py_version=`$PYTHON -c "import sys; \
+                                        print sys.version[[:3]]"`
+                        fi
+                fi
+
+                PYTHON_LDFLAGS=`$PYTHON -c "from distutils.sysconfig import *; \
+                        from string import join; \
+                        print '-L' + get_python_lib(0,1), \
+                        '-L' + os.path.dirname(get_python_lib(0,1)), \
+                        '-lpython';"`$py_version
         fi
         AC_MSG_RESULT([$PYTHON_LDFLAGS])
         AC_SUBST([PYTHON_LDFLAGS])
-
-        if test -z "$PYTHON_LIBDIR"; then
-                PYTHON_LIBDIR=`$PYTHON -c "from $sysconfig_module import *; \
-                        print(get_config_var('LIBDIR'));"`
-        fi
 
         #
         # Check for site packages
         #
         AC_MSG_CHECKING([for Python site-packages path])
         if test -z "$PYTHON_SITE_PKG"; then
-		if test "$sysconfig_module" = "sysconfig"; then
-			PYTHON_SITE_PKG=`$PYTHON -c 'import sysconfig; \
-				print(sysconfig.get_path("platlib"));'`
-		else
-			PYTHON_SITE_PKG=`$PYTHON -c "import distutils.sysconfig; \
-				print(distutils.sysconfig.get_python_lib(1,0));"`
-		fi
+                PYTHON_SITE_PKG=`$PYTHON -c "import distutils.sysconfig; \
+                        print distutils.sysconfig.get_python_lib(1,0);"`
         fi
         AC_MSG_RESULT([$PYTHON_SITE_PKG])
         AC_SUBST([PYTHON_SITE_PKG])
+
+        #
+        # libraries which must be linked in when embedding
+        #
+        AC_MSG_CHECKING(python extra libraries)
+        if test -z "$PYTHON_EXTRA_LIBS"; then
+           PYTHON_EXTRA_LIBS=`$PYTHON -c "import distutils.sysconfig; \
+                conf = distutils.sysconfig.get_config_var; \
+                print conf('LOCALMODLIBS'), conf('LIBS')"`
+        fi
+        AC_MSG_RESULT([$PYTHON_EXTRA_LIBS])
+        AC_SUBST(PYTHON_EXTRA_LIBS)
+
+        #
+        # linking flags needed when embedding
+        #
+        AC_MSG_CHECKING(python extra linking flags)
+        if test -z "$PYTHON_EXTRA_LDFLAGS"; then
+                PYTHON_EXTRA_LDFLAGS=`$PYTHON -c "import distutils.sysconfig; \
+                        conf = distutils.sysconfig.get_config_var; \
+                        print conf('LINKFORSHARED')"`
+        fi
+        AC_MSG_RESULT([$PYTHON_EXTRA_LDFLAGS])
+        AC_SUBST(PYTHON_EXTRA_LDFLAGS)
 
         #
         # final check to see if everything compiles alright
@@ -132,16 +164,13 @@ AC_DEFUN([AC_PYTHON_DEVEL],[
         AC_MSG_CHECKING([consistency of all components of python development environment])
         AC_LANG_PUSH([C])
         # save current global flags
-        ac_save_LIBS="$LIBS"
-        ac_save_CPPFLAGS="$CPPFLAGS"
-
-        LIBS="$LIBS $PYTHON_LDFLAGS"
-        CPPFLAGS="$CPPFLAGS $PYTHON_CPPFLAGS"
-        AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+        LIBS="$ac_save_LIBS $PYTHON_LDFLAGS"
+        CPPFLAGS="$ac_save_CPPFLAGS $PYTHON_CPPFLAGS"
+        AC_TRY_LINK([
                 #include <Python.h>
-        ]],[[
+        ],[
                 Py_Initialize();
-        ]])],[pythonexists=yes],[pythonexists=no])
+        ],[pythonexists=yes],[pythonexists=no])
 
         AC_MSG_RESULT([$pythonexists])
 

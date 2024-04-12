@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 /**
  * \file
@@ -63,35 +63,19 @@
 #ifndef UTIL_DATA_MSGPARSE_H
 #define UTIL_DATA_MSGPARSE_H
 #include "util/storage/lruhash.h"
-#include "sldns/pkthdr.h"
-#include "sldns/rrdef.h"
-struct sldns_buffer;
+#include <ldns/packet.h>
 struct rrset_parse;
 struct rr_parse;
 struct regional;
-struct edns_option;
-struct config_file;
-struct comm_point;
-struct comm_reply;
 
 /** number of buckets in parse rrset hash table. Must be power of 2. */
 #define PARSE_TABLE_SIZE 32
 /** Maximum TTL that is allowed. */
-extern time_t MAX_TTL;
+extern uint32_t MAX_TTL;
 /** Minimum TTL that is allowed. */
-extern time_t MIN_TTL;
-/** Maximum Negative TTL that is allowed */
-extern time_t MAX_NEG_TTL;
-/** If we serve expired entries and prefetch them */
-extern int SERVE_EXPIRED;
-/** Time to serve records after expiration */
-extern time_t SERVE_EXPIRED_TTL;
-/** TTL to use for expired records */
-extern time_t SERVE_EXPIRED_REPLY_TTL;
+extern uint32_t MIN_TTL;
 /** Negative cache time (for entries without any RRs.) */
 #define NORR_TTL 5 /* seconds */
-/** If we serve the original TTL or decrementing TTLs */
-extern int SERVE_ORIGINAL_TTL;
 
 /**
  * Data stored in scratch pad memory during parsing.
@@ -149,11 +133,11 @@ struct rrset_parse {
 	/** next in list of all rrsets */
 	struct rrset_parse* rrset_all_next;
 	/** hash value of rrset */
-	hashvalue_type hash;
+	hashvalue_t hash;
 	/** which section was it found in: one of
 	 * LDNS_SECTION_ANSWER, LDNS_SECTION_AUTHORITY, LDNS_SECTION_ADDITIONAL
 	 */
-	sldns_pkt_section section;
+	ldns_pkt_section section;
 	/** start of (possibly compressed) dname in packet */
 	uint8_t* dname;
 	/** length of the dname uncompressed wireformat */
@@ -214,10 +198,11 @@ struct rr_parse {
 
 /**
  * EDNS data storage
- * rdata is parsed in a list (has accessor functions). allocated in a
- * region.
+ * EDNS rdata is ignored.
  */
 struct edns_data {
+	/** if EDNS OPT record was present */
+	int edns_present;
 	/** Extended RCODE */
 	uint8_t ext_rcode;
 	/** The EDNS version number */
@@ -226,39 +211,6 @@ struct edns_data {
 	uint16_t bits;
 	/** UDP reassembly size. */
 	uint16_t udp_size;
-	/** rdata element list of options of an incoming packet created at
-	 * parse time, or NULL if none */
-	struct edns_option* opt_list_in;
-	/** rdata element list of options to encode for outgoing packets,
-	 * or NULL if none */
-	struct edns_option* opt_list_out;
-	/** rdata element list of outgoing edns options from modules
-	 * or NULL if none */
-	struct edns_option* opt_list_inplace_cb_out;
-	/** block size to pad */
-	uint16_t padding_block_size;
-	/** if EDNS OPT record was present */
-	unsigned int edns_present   : 1;
-	/** if a cookie was present */
-	unsigned int cookie_present : 1;
-	/** if the cookie validated */
-	unsigned int cookie_valid   : 1;
-	/** if the cookie holds only the client part */
-	unsigned int cookie_client  : 1;
-};	
-
-/**
- * EDNS option
- */
-struct edns_option {
-	/** next item in list */
-	struct edns_option* next;
-	/** type of this edns option */
-	uint16_t opt_code;
-	/** length of this edns option (cannot exceed uint16 in encoding) */
-	size_t opt_len;
-	/** data of this edns option; allocated in region, or NULL if len=0 */
-	uint8_t* opt_data;
 };
 
 /**
@@ -267,7 +219,7 @@ struct edns_option {
  * @param rdf: the rdf type from the descriptor.
  * @return: size in octets. 0 on failure.
  */
-size_t get_rdf_size(sldns_rdf_type rdf);
+size_t get_rdf_size(ldns_rdf_type rdf);
 
 /**
  * Parse the packet.
@@ -277,7 +229,7 @@ size_t get_rdf_size(sldns_rdf_type rdf);
  * @param region: how to alloc results.
  * @return: 0 if OK, or rcode on error.
  */
-int parse_packet(struct sldns_buffer* pkt, struct msg_parse* msg, 
+int parse_packet(ldns_buffer* pkt, struct msg_parse* msg, 
 	struct regional* region);
 
 /**
@@ -293,21 +245,10 @@ int parse_packet(struct sldns_buffer* pkt, struct msg_parse* msg,
  * @param msg: parsed message structure. Modified on exit, if EDNS was present
  * 	it is removed from the additional section.
  * @param edns: the edns data is stored here. Does not have to be initialised.
- * @param region: region to alloc results in (edns option contents)
  * @return: 0 on success. or an RCODE on an error.
  *	RCODE formerr if OPT in wrong section, and so on.
  */
-int parse_extract_edns_from_response_msg(struct msg_parse* msg,
-	struct edns_data* edns, struct regional* region);
-
-/**
- * Skip RRs from packet
- * @param pkt: the packet. position at start must be right after the query
- *	section. At end, right after EDNS data or no movement if failed.
- * @param num: Limit of the number of records we want to parse.
- * @return: 0 on success, 1 on failure.
- */
-int skip_pkt_rrs(struct sldns_buffer* pkt, int num);
+int parse_extract_edns(struct msg_parse* msg, struct edns_data* edns);
 
 /**
  * If EDNS data follows a query section, extract it and initialize edns struct.
@@ -315,17 +256,10 @@ int skip_pkt_rrs(struct sldns_buffer* pkt, int num);
  *	section. At end, right after EDNS data or no movement if failed.
  * @param edns: the edns data allocated by the caller. Does not have to be
  *	initialised.
- * @param cfg: the configuration (with nsid value etc.)
- * @param c: commpoint to determine transport (if needed)
- * @param repinfo: commreply to determine the client address
- * @param now: current time
- * @param region: region to alloc results in (edns option contents)
  * @return: 0 on success, or an RCODE on error.
  *	RCODE formerr if OPT is badly formatted and so on.
  */
-int parse_edns_from_query_pkt(struct sldns_buffer* pkt, struct edns_data* edns,
-	struct config_file* cfg, struct comm_point* c,
-	struct comm_reply* repinfo, time_t now, struct regional* region);
+int parse_edns_from_pkt(ldns_buffer* pkt, struct edns_data* edns);
 
 /**
  * Calculate hash value for rrset in packet.
@@ -336,8 +270,8 @@ int parse_edns_from_query_pkt(struct sldns_buffer* pkt, struct edns_data* edns,
  * @param rrset_flags: rrset flags (same as packed_rrset flags).
  * @return hash value
  */
-hashvalue_type pkt_hash_rrset(struct sldns_buffer* pkt, uint8_t* dname,
-	uint16_t type, uint16_t dclass, uint32_t rrset_flags);
+hashvalue_t pkt_hash_rrset(ldns_buffer* pkt, uint8_t* dname, uint16_t type,
+        uint16_t dclass, uint32_t rrset_flags);
 
 /**
  * Lookup in msg hashtable to find a rrset.
@@ -352,7 +286,7 @@ hashvalue_type pkt_hash_rrset(struct sldns_buffer* pkt, uint8_t* dname,
  * @return NULL or the rrset_parse if found.
  */
 struct rrset_parse* msgparse_hashtable_lookup(struct msg_parse* msg, 
-	struct sldns_buffer* pkt, hashvalue_type h, uint32_t rrset_flags, 
+	ldns_buffer* pkt, hashvalue_t h, uint32_t rrset_flags, 
 	uint8_t* dname, size_t dnamelen, uint16_t type, uint16_t dclass);
 
 /**
@@ -361,32 +295,5 @@ struct rrset_parse* msgparse_hashtable_lookup(struct msg_parse* msg,
  * @param rrset: with hash value and id info.
  */
 void msgparse_bucket_remove(struct msg_parse* msg, struct rrset_parse* rrset);
-
-/**
- * Log the edns options in the edns option list.
- * @param level: the verbosity level.
- * @param info_str: the informational string to be printed before the options.
- * @param list: the edns option list.
- */
-void log_edns_opt_list(enum verbosity_value level, const char* info_str,
-	struct edns_option* list);
-
-/**
- * Remove RR from msgparse RRset.
- * @param str: this string is used for logging if verbose. If NULL, there is
- *	no logging of the remove.
- * @param pkt: packet in buffer that is removed from. Used to log the name
- * 	of the item removed.
- * @param rrset: RRset that the RR is removed from.
- * @param prev: previous RR in list, or NULL.
- * @param rr: RR that is removed.
- * @param addr: address used for logging, if verbose, or NULL then it is not
- *	used.
- * @param addrlen: length of addr, if that is not NULL.
- * @return true if rrset is entirely bad, it would then need to be removed.
- */
-int msgparse_rrset_remove_rr(const char* str, struct sldns_buffer* pkt,
-	struct rrset_parse* rrset, struct rr_parse* prev, struct rr_parse* rr,
-	struct sockaddr_storage* addr, socklen_t addrlen);
 
 #endif /* UTIL_DATA_MSGPARSE_H */

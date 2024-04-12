@@ -1,5 +1,5 @@
 /*
- * util/ub_event.c - directly call libevent (compatibility) functions
+ * util/ub_event.c - directly call libevent (compatability) functions
  *
  * Copyright (c) 2007, NLnet Labs. All rights reserved.
  *
@@ -95,7 +95,6 @@ UB_EV_BITS_CB(comm_timer_callback)
 UB_EV_BITS_CB(comm_signal_callback)
 UB_EV_BITS_CB(comm_point_local_handle_callback)
 UB_EV_BITS_CB(comm_point_raw_handle_callback)
-UB_EV_BITS_CB(comm_point_http_handle_callback)
 UB_EV_BITS_CB(tube_handle_signal)
 UB_EV_BITS_CB(comm_base_handle_slow_accept)
 
@@ -117,17 +116,12 @@ static void (*NATIVE_BITS_CB(void (*cb)(int, short, void*)))(int, short, void*)
 		return my_comm_point_local_handle_callback;
 	else if(cb == comm_point_raw_handle_callback)
 		return my_comm_point_raw_handle_callback;
-	else if(cb == comm_point_http_handle_callback)
-		return my_comm_point_http_handle_callback;
 	else if(cb == tube_handle_signal)
 		return my_tube_handle_signal;
 	else if(cb == comm_base_handle_slow_accept)
 		return my_comm_base_handle_slow_accept;
-	else {
-		log_assert(0); /* this NULL callback pointer should not happen,
-			we should have the necessary routine listed above */
+	else
 		return NULL;
-	}
 }
 #else 
 #  define NATIVE_BITS(b) (b)
@@ -138,17 +132,21 @@ static void (*NATIVE_BITS_CB(void (*cb)(int, short, void*)))(int, short, void*)
 #define EVFLAG_AUTO 0
 #endif
 
-#define AS_EVENT_BASE(x) ((struct event_base*)x)
-#define AS_UB_EVENT_BASE(x) ((struct ub_event_base*)x)
-#define AS_EVENT(x) ((struct event*)x)
-#define AS_UB_EVENT(x) ((struct ub_event*)x)
+#define AS_EVENT_BASE(x) \
+	(((union {struct ub_event_base* a; struct event_base* b;})x).b)
+#define AS_UB_EVENT_BASE(x) \
+	(((union {struct event_base* a; struct ub_event_base* b;})x).b)
+#define AS_EVENT(x) \
+	(((union {struct ub_event* a; struct event* b;})x).b)
+#define AS_UB_EVENT(x) \
+	(((union {struct event* a; struct ub_event* b;})x).b)
 
-const char* ub_event_get_version(void)
+const char* ub_event_get_version()
 {
 	return event_get_version();
 }
 
-#if (defined(HAVE_EV_LOOP) || defined(HAVE_EV_DEFAULT_LOOP)) && defined(EV_FEATURE_BACKENDS)
+#if (defined(HAVE_EV_LOOP) || defined(HAVE_EV_DEFAULT_LOOP)) && defined(EVBACKEND_SELECT)
 static const char* ub_ev_backend2str(int b)
 {
 	switch(b) {
@@ -184,7 +182,7 @@ ub_get_event_sys(struct ub_event_base* base, const char** n, const char** s,
 	*n = "libev";
 	if (!b)
 		b = (struct event_base*)ev_default_loop(EVFLAG_AUTO);
-#    ifdef EV_FEATURE_BACKENDS
+#    ifdef EVBACKEND_SELECT
 	*m = ub_ev_backend2str(ev_backend((struct ev_loop*)b));
 #    else
 	*m = "not obtainable";
@@ -295,18 +293,11 @@ ub_event_new(struct ub_event_base* base, int fd, short bits,
 	if (!ev)
 		return NULL;
 
-#ifndef HAVE_EVENT_ASSIGN
 	event_set(ev, fd, NATIVE_BITS(bits), NATIVE_BITS_CB(cb), arg);
 	if (event_base_set(AS_EVENT_BASE(base), ev) != 0) {
 		free(ev);
 		return NULL;
 	}
-#else
-	if (event_assign(ev, AS_EVENT_BASE(base), fd, bits, cb, arg) != 0) {
-		free(ev);
-		return NULL;
-	}
-#endif
 	return AS_UB_EVENT(ev);
 }
 
@@ -319,18 +310,11 @@ ub_signal_new(struct ub_event_base* base, int fd,
 	if (!ev)
 		return NULL;
 
-#if !HAVE_DECL_EVSIGNAL_ASSIGN
 	signal_set(ev, fd, NATIVE_BITS_CB(cb), arg);
 	if (event_base_set(AS_EVENT_BASE(base), ev) != 0) {
 		free(ev);
 		return NULL;
 	}
-#else
-	if (evsignal_assign(ev, AS_EVENT_BASE(base), fd, cb, arg) != 0) {
-		free(ev);
-		return NULL;
-	}
-#endif
 	return AS_UB_EVENT(ev);
 }
 
@@ -447,7 +431,7 @@ ub_winsock_tcp_wouldblock(struct ub_event* ev, int eventbits)
 
 void ub_comm_base_now(struct comm_base* cb)
 {
-#ifdef USE_MINI_EVENT
+	#ifdef USE_MINI_EVENT
 /** minievent updates the time when it blocks. */
 	(void)cb; /* nothing to do */
 #else /* !USE_MINI_EVENT */
@@ -458,9 +442,7 @@ void ub_comm_base_now(struct comm_base* cb)
 	if(gettimeofday(tv, NULL) < 0) {
 		log_err("gettimeofday: %s", strerror(errno));
 	}
-#ifndef S_SPLINT_S
 	*tt = tv->tv_sec;
-#endif
 #endif /* USE_MINI_EVENT */
 }
 

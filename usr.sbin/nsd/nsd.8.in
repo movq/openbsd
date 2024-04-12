@@ -1,10 +1,12 @@
-.TH "NSD" "8" "Apr  4, 2024" "NLnet Labs" "NSD 4.9.1"
-.\" Copyright (c) 2001\-2008, NLnet Labs. All rights reserved.
+.TH "NSD" "8" "Mar 22, 2011" "NLnet Labs" "NSD 3.2.8"
+.\" Copyright (c) 2001\-2011, NLnet Labs. All rights reserved.
 .\" See LICENSE for the license.
 .SH "NAME"
+.LP
 .B nsd
-\- Name Server Daemon (NSD) version 4.9.1.
+\- Name Server Daemon (NSD) version 3.2.8.
 .SH "SYNOPSIS"
+.LP
 .B nsd
 .RB [ \-4 ] 
 .RB [ \-6 ] 
@@ -40,6 +42,7 @@
 .IR level ]
 .RB [ \-v ]
 .SH "DESCRIPTION"
+.LP
 .B NSD
 is a complete implementation of an authoritative DNS nameserver. 
 Upon startup,
@@ -53,7 +56,7 @@ argument and put itself into background and answers queries on port
 .I port
 option. The
 .I database
-is created if it does not exist. By default,
+must be generated beforehand with zonec(8). By default, 
 .B NSD 
 will bind to all local interfaces available. Use the 
 .B \-a
@@ -67,6 +70,7 @@ separately. If IPv6 is enabled when
 is compiled an IPv6 address can also be specified.
 .P
 .SH "OPTIONS"
+.LP
 All the options can be specified in the configfile (
 .B \-c 
 argument), except for the 
@@ -79,7 +83,7 @@ configfile.
 .P
 Normally
 .B NSD
-should be started with the `nsd\-control(8) start` command invoked from a
+should be started with the `nsdc(8) start` command invoked from a
 .I /etc/rc.d/nsd.sh
 script or similar at the operating system startup.
 .TP
@@ -103,13 +107,22 @@ listens to the wildcard interface.
 .TP
 .B \-c\fI configfile
 Read specified 
-.I configfile
-instead of the default
+.I configfile instead of the default
 .IR @nsdconfigfile@ .
 For format description see nsd.conf(5).
 .TP
 .B \-d
-Do not fork, stay in the foreground.
+Turn on debugging mode, do not fork, stay in the foreground.
+.TP
+.B \-f\fI database
+Use the specified
+.I database
+instead of the default of
+.IR @dbfile@ .
+If a 
+.B zonesdir: 
+is specified in the config file this path can be relative to that 
+directory.
 .TP
 .B \-h
 Print help information and exit.
@@ -120,14 +133,14 @@ Return the specified
 when asked for
 .I CH TXT ID.SERVER
 (This option is used to determine which server is answering the queries
-when they are anycast). The default is the name returned by gethostname(3).
+when they are multicast). The default is the name returned by
+gethostname(3).
 .TP
 .B \-I\fI nsid
 Add the specified
 .I nsid
 to the EDNS section of the answer when queried with an NSID EDNS 
-enabled packet.  As a sequence of hex characters or with ascii_ prefix
-and then an ascii string.
+enabled packet.
 .TP
 .B \-l\fI logfile
 Log messages to the specified 
@@ -148,7 +161,7 @@ only useful on machines with multiple CPUs and/or network adapters.
 The maximum
 .I number
 of concurrent TCP connection that can be handled by each server. The
-default is 100.
+default is 10.
 .TP
 .B \-P\fI pidfile
 Use the specified
@@ -207,12 +220,16 @@ SIGTERM
 Stop answering queries, shutdown, and exit normally.
 .TP 
 SIGHUP
-Reload.  Scans zone files and if changed (mtime) reads
-them in.  Also reopens the logfile (assists logrotation).
+Reload the database.
 .TP
 SIGUSR1
 Dump BIND8\-style statistics into the log. Ignored otherwise.
 .SH "FILES"
+.TP
+@dbfile@
+default
+.B NSD
+database
 .TP
 @pidfile@
 the process id of the name server.
@@ -222,15 +239,27 @@ default
 .B NSD
 configuration file
 .SH "DIAGNOSTICS"
-.B NSD
+.LP
 will log all the problems via the standard syslog(8)
 .I daemon
 facility, unless the
 .B \-d
 option is specified.
 .SH "SEE ALSO"
-\fInsd.conf\fR(5), \fInsd\-checkconf\fR(8), \fInsd\-control\fR(8)
+.LP
+nsdc(8), nsd.conf(5), nsd\-checkconf(8), nsd\-notify(8), 
+nsd\-patch(8), nsd\-xfer(8), zonec(8)
 .SH "AUTHORS"
+.LP
 .B NSD
 was written by NLnet Labs and RIPE NCC joint team. Please see
 CREDITS file in the distribution for further details.
+.SH "BUGS"
+.LP
+.B NSD
+will answer the queries erroneously if the
+.I database
+was not properly compiled with zonec(8). Therefore problems with 
+misconfigured master zone files or zonec(8) bugs may not be visible 
+until the queries are actually answered with
+.BR NSD .

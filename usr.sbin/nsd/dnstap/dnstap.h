@@ -1,4 +1,4 @@
-/* dnstap support for NSD */
+/* dnstap support for Unbound */
 
 /*
  * Copyright (c) 2013-2014, Farsight Security, Inc.
@@ -32,17 +32,17 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef NSD_DNSTAP_H
-#define NSD_DNSTAP_H
+#ifndef UNBOUND_DNSTAP_H
+#define UNBOUND_DNSTAP_H
 
 #include "dnstap/dnstap_config.h"
 
 #ifdef USE_DNSTAP
 
-struct nsd_options;
+struct config_file;
 struct fstrm_io;
 struct fstrm_queue;
-struct dt_tls_writer;
+struct sldns_buffer;
 
 struct dt_env {
 	/** dnstap I/O thread */
@@ -63,13 +63,18 @@ struct dt_env {
 	/** length of "version" field */
 	unsigned len_version;
 
-	/** whether to log Message/AUTH_QUERY */
-	unsigned log_auth_query_messages : 1;
-	/** whether to log Message/AUTH_RESPONSE */
-	unsigned log_auth_response_messages : 1;
-
-	/** tls writer object, or NULL */
-	struct dt_tls_writer* tls_writer;
+	/** whether to log Message/RESOLVER_QUERY */
+	unsigned log_resolver_query_messages : 1;
+	/** whether to log Message/RESOLVER_RESPONSE */
+	unsigned log_resolver_response_messages : 1;
+	/** whether to log Message/CLIENT_QUERY */
+	unsigned log_client_query_messages : 1;
+	/** whether to log Message/CLIENT_RESPONSE */
+	unsigned log_client_response_messages : 1;
+	/** whether to log Message/FORWARDER_QUERY */
+	unsigned log_forwarder_query_messages : 1;
+	/** whether to log Message/FORWARDER_RESPONSE */
+	unsigned log_forwarder_response_messages : 1;
 };
 
 /**
@@ -79,23 +84,12 @@ struct dt_env {
  * of the structure) to ensure lock-free access to its own per-worker circular
  * queue.  Duplicate the environment object if more than one worker needs to
  * share access to the dnstap I/O socket.
- * @param socket_path: path to dnstap logging socket, must be non-NULL if used.
- * @param ip: if NULL or "" use socket path, otherwise IP or IP@port.
+ * @param socket_path: path to dnstap logging socket, must be non-NULL.
  * @param num_workers: number of worker threads, must be > 0.
- * @param tls: set to true to use TLS, otherwise, TCP. Used when ip is set.
- * @param tls_server_name: name for authenticating the upstream server, or
- * 	NULL or "".
- * @param tls_cert_bundle: pem bundle to verify server with. Or NULL or "".
- * @param tls_client_key_file: key file for client authentication. Or NULL
- * 	or "".
- * @param tls_client_cert_file: cert file for client authentication. Or NULL
- * 	or "".
  * @return dt_env object, NULL on failure.
  */
 struct dt_env *
-dt_create(const char *socket_path, char* ip, unsigned num_workers,
-	int tls, char* tls_server_name, char* tls_cert_bundle,
-	char* tls_client_key_file, char* tls_client_cert_file);
+dt_create(const char *socket_path, unsigned num_workers);
 
 /**
  * Apply config settings.
@@ -103,7 +97,7 @@ dt_create(const char *socket_path, char* ip, unsigned num_workers,
  * @param cfg: new config settings.
  */
 void
-dt_apply_cfg(struct dt_env *env, struct nsd_options *cfg);
+dt_apply_cfg(struct dt_env *env, struct config_file *cfg);
 
 /**
  * Initialize per-worker state in dnstap environment object.
@@ -121,49 +115,74 @@ void
 dt_delete(struct dt_env *env);
 
 /**
- * Create and send a new dnstap "Message" event of type AUTH_QUERY.
+ * Create and send a new dnstap "Message" event of type CLIENT_QUERY.
  * @param env: dnstap environment object.
- * @param local_addr: address/port of server (local address).
- * @param addr: address/port of client.
- * @param is_tcp: true for tcp, false for udp.
- * @param zone: zone name, or NULL. in wireformat.
- * @param zonelen: length of zone in bytes.
- * @param pkt: query message.
- * @param pktlen: length of pkt.
+ * @param qsock: address/port of client.
+ * @param cptype: comm_udp or comm_tcp.
+ * @param qmsg: query message.
  */
 void
-dt_msg_send_auth_query(struct dt_env *env,
-#ifdef INET6
-	struct sockaddr_storage* local_addr,
-	struct sockaddr_storage* addr,
-#else
-	struct sockaddr_in* local_addr,
-	struct sockaddr_in* addr,
-#endif
-	int is_tcp, uint8_t* zone, size_t zonelen, uint8_t* pkt, size_t pktlen);
+dt_msg_send_client_query(struct dt_env *env,
+			 struct sockaddr_storage *qsock,
+			 enum comm_point_type cptype,
+			 struct sldns_buffer *qmsg);
 
 /**
- * Create and send a new dnstap "Message" event of type AUTH_RESPONSE.
+ * Create and send a new dnstap "Message" event of type CLIENT_RESPONSE.
  * @param env: dnstap environment object.
- * @param local_addr: address/port of server (local address).
- * @param addr: address/port of client.
- * @param is_tcp: true for tcp, false for udp.
- * @param zone: zone name, or NULL. in wireformat.
- * @param zonelen: length of zone in bytes.
- * @param pkt: response message.
- * @param pktlen: length of pkt.
+ * @param qsock: address/port of client.
+ * @param cptype: comm_udp or comm_tcp.
+ * @param rmsg: response message.
  */
 void
-dt_msg_send_auth_response(struct dt_env *env,
-#ifdef INET6
-	struct sockaddr_storage* local_addr,
-	struct sockaddr_storage* addr,
-#else
-	struct sockaddr_in* local_addr,
-	struct sockaddr_in* addr,
-#endif
-	int is_tcp, uint8_t* zone, size_t zonelen, uint8_t* pkt, size_t pktlen);
+dt_msg_send_client_response(struct dt_env *env,
+			    struct sockaddr_storage *qsock,
+			    enum comm_point_type cptype,
+			    struct sldns_buffer *rmsg);
+
+/**
+ * Create and send a new dnstap "Message" event of type RESOLVER_QUERY or
+ * FORWARDER_QUERY. The type used is dependent on the value of the RD bit
+ * in the query header.
+ * @param env: dnstap environment object.
+ * @param rsock: address/port of server the query is being sent to.
+ * @param cptype: comm_udp or comm_tcp.
+ * @param zone: query zone.
+ * @param zone_len: length of zone.
+ * @param qmsg: query message.
+ */
+void
+dt_msg_send_outside_query(struct dt_env *env,
+			  struct sockaddr_storage *rsock,
+			  enum comm_point_type cptype,
+			  uint8_t *zone, size_t zone_len,
+			  struct sldns_buffer *qmsg);
+
+/**
+ * Create and send a new dnstap "Message" event of type RESOLVER_RESPONSE or
+ * FORWARDER_RESPONSE. The type used is dependent on the value of the RD bit
+ * in the query header.
+ * @param env: dnstap environment object.
+ * @param rsock: address/port of server the response was received from.
+ * @param cptype: comm_udp or comm_tcp.
+ * @param zone: query zone.
+ * @param zone_len: length of zone.
+ * @param qbuf: outside_network's qbuf key.
+ * @param qbuf_len: length of outside_network's qbuf key.
+ * @param qtime: time query message was sent.
+ * @param rtime: time response message was sent.
+ * @param rmsg: response message.
+ */
+void
+dt_msg_send_outside_response(struct dt_env *env,
+			     struct sockaddr_storage *rsock,
+			     enum comm_point_type cptype,
+			     uint8_t *zone, size_t zone_len,
+			     uint8_t *qbuf, size_t qbuf_len,
+			     const struct timeval *qtime,
+			     const struct timeval *rtime,
+			     struct sldns_buffer *rmsg);
 
 #endif /* USE_DNSTAP */
 
-#endif /* NSD_DNSTAP_H */
+#endif /* UNBOUND_DNSTAP_H */

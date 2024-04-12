@@ -1,4 +1,4 @@
-.TH "unbound-anchor" "8" "Mar  7, 2024" "NLnet Labs" "unbound 1.19.2"
+.TH "unbound-anchor" "8" "Feb  2, 2012" "NLnet Labs" "unbound 1.4.16"
 .\"
 .\" unbound-anchor.8 -- unbound anchor maintenance utility manual
 .\"
@@ -8,6 +8,7 @@
 .\"
 .\"
 .SH "NAME"
+.LP
 .B unbound\-anchor
 \- Unbound anchor utility.
 .SH "SYNOPSIS"
@@ -16,8 +17,6 @@
 .SH "DESCRIPTION"
 .B Unbound\-anchor
 performs setup or update of the root trust anchor for DNSSEC validation.
-The program fetches the trust anchor with the method from RFC7958 when
-regular RFC5011 update fails to bring it up to date.
 It can be run (as root) from the commandline, or run as part of startup
 scripts.  Before you start the \fIunbound\fR(8) DNS server.
 .P
@@ -26,14 +25,14 @@ Suggested usage:
 .nf
 	# in the init scripts.
 	# provide or update the root anchor (if necessary)
-	unbound-anchor \-a "@UNBOUND_ROOTKEY_FILE@"
+	unbound-anchor -a "@UNBOUND_ROOTKEY_FILE@"
 	# Please note usage of this root anchor is at your own risk
 	# and under the terms of our LICENSE (see source).
 	#
 	# start validating resolver
 	# the unbound.conf contains:
 	#   auto-trust-anchor-file: "@UNBOUND_ROOTKEY_FILE@"
-	unbound \-c unbound.conf
+	unbound -c unbound.conf
 .fi
 .P
 This tool provides builtin default contents for the root anchor and root
@@ -41,12 +40,12 @@ update certificate files.
 .P
 It tests if the root anchor file works, and if not, and an update is possible,
 attempts to update the root anchor using the root update certificate.
-It performs a https fetch of root-anchors.xml and checks the results (RFC7958),
-if all checks are successful, it updates the root anchor file.  Otherwise
+It performs a https fetch of root-anchors.xml and checks the results, if
+all checks are successful, it updates the root anchor file.  Otherwise
 the root anchor file is unchanged.  It performs RFC5011 tracking if the
 DNSSEC information available via the DNS makes that possible.
 .P
-It does not perform an update if the certificate is expired, if the network
+If does not perform an update if the certificate is expired, if the network
 is down or other errors occur.
 .P
 The available options are:
@@ -67,14 +66,7 @@ List the builtin root key and builtin root update certificate on stdout.
 .B \-u \fIname
 The server name, it connects to https://name.  Specify without https:// prefix.
 The default is "data.iana.org".  It connects to the port specified with \-P.
-You can pass an IPv4 address or IPv6 address (no brackets) if you want.
-.TP
-.B \-S
-Do not use SNI for the HTTPS connection.  Default is to use SNI.
-.TP
-.B \-b \fIaddress
-The source address to bind to for domain resolution and contacting the server
-on https.  May be either an IPv4 address or IPv6 address (no brackets).
+You can pass an IPv4 addres or IPv6 address (no brackets) if you want.
 .TP
 .B \-x \fIpath
 The pathname to the root\-anchors.xml file on the server. (forms URL with \-u).
@@ -84,11 +76,6 @@ The default is /root\-anchors/root\-anchors.xml.
 The pathname to the root\-anchors.p7s file on the server. (forms URL with \-u).
 The default is /root\-anchors/root\-anchors.p7s.  This file has to be a PKCS7
 signature over the xml file, using the pem file (\-c) as trust anchor.
-.TP
-.B \-n \fIname
-The emailAddress for the Subject of the signer's certificate from the p7s
-signature file.  Only signatures from this name are allowed.  default is
-dnssec@iana.org.  If you pass "" then the emailAddress is not checked.
 .TP
 .B \-4
 Use IPv4 for domain resolution and contacting the server on https.  Default is
@@ -116,11 +103,6 @@ It does so, because the tool when used for bootstrapping the recursive
 resolver, cannot use that recursive resolver itself because it is bootstrapping
 that server.
 .TP
-.B \-R
-Allow fallback from \-f resolv.conf file to direct root servers query.
-It allows you to prefer local resolvers, but fallback automatically
-to direct root query if they do not respond or do not support DNSSEC.
-.TP
 .B \-v
 More verbose. Once prints informational messages, multiple times may enable
 large debug amounts (such as full certificates or byte\-dumps of downloaded
@@ -144,6 +126,9 @@ but then ignores the result and goes on to use the xml fallback method.
 .TP
 .B \-h
 Show the version and commandline option help.
+.TP
+.B \-v
+More verbose.  Prints output detailing what happens.
 .SH "EXIT CODE"
 This tool exits with value 1 if the root anchor was updated using the
 certificate or if the builtin root-anchor was used.  It exits with code
@@ -152,14 +137,14 @@ tracking, or if an error occurred.
 .P
 You can check the exit value in this manner:
 .nf
-	unbound-anchor \-a "root.key" || logger "Please check root.key"
+	unbound-anchor -a "root.key" || logger "Please check root.key"
 .fi
 Or something more suitable for your operational environment.
 .SH "TRUST"
 The root keys and update certificate included in this tool
 are provided for convenience and under the terms of our
 license (see the LICENSE file in the source distribution or
-https://github.com/NLnetLabs/unbound/blob/master/LICENSE) and might be stale or
+http://unbound.nlnetlabs.nl/svn/trunk/LICENSE) and might be stale or
 not suitable to your purpose.
 .P
 By running "unbound\-anchor \-l" the  keys and certificate that are
@@ -185,5 +170,5 @@ Source for the root key information.
 .I https://data.iana.org/root\-anchors/root\-anchors.p7s
 Signature on the root key information.
 .SH "SEE ALSO"
-\fIunbound.conf\fR(5),
+\fIunbound.conf\fR(5), 
 \fIunbound\fR(8).

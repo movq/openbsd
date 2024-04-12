@@ -6,6 +6,7 @@
  */
 #include "config.h"
 #include <errno.h>
+#include <ctype.h>
 #include "rrl.h"
 #include "util.h"
 #include "lookup3.h"
@@ -32,8 +33,6 @@ struct rrl_bucket {
 	/* rate, in queries per second, which due to rate=r(t)+r(t-1)/2 is
 	 * equal to double the queries per second */
 	uint32_t rate;
-	/* the full hash */
-	uint32_t hash;
 	/* counter for queries arrived in this second */
 	uint32_t counter;
 	/* timestamp, which time is the time of the counter, the rate is from
@@ -47,18 +46,44 @@ struct rrl_bucket {
 static struct rrl_bucket* rrl_array = NULL;
 static size_t rrl_array_size = RRL_BUCKETS;
 static uint32_t rrl_ratelimit = RRL_LIMIT; /* 2x qps */
-static uint8_t rrl_slip_ratio = RRL_SLIP;
-static uint8_t rrl_ipv4_prefixlen = RRL_IPV4_PREFIX_LENGTH;
-static uint8_t rrl_ipv6_prefixlen = RRL_IPV6_PREFIX_LENGTH;
-static uint64_t rrl_ipv6_mask; /* max prefixlen 64 */
 static uint32_t rrl_whitelist_ratelimit = RRL_WLIST_LIMIT; /* 2x qps */
 
 /* the array of mmaps for the children (saved between reloads) */
 static void** rrl_maps = NULL;
 static size_t rrl_maps_num = 0;
 
-void rrl_mmap_init(int numch, size_t numbuck, size_t lm, size_t wlm, size_t sm,
-	size_t plf, size_t pls)
+/* from NSD4 for RRL logs */
+static char* wiredname2str(const uint8_t* dname)
+{
+	static char buf[MAXDOMAINLEN*5+3];
+	char* p = buf;
+	uint8_t lablen;
+	if(*dname == 0) {
+		strlcpy(buf, ".", sizeof(buf));
+		return buf;
+	}
+	lablen = *dname++;
+	while(lablen) {
+		while(lablen--) {
+			uint8_t ch = *dname++;
+			if (isalnum(ch) || ch == '-' || ch == '_') {
+				*p++ = ch;
+			} else if (ch == '.' || ch == '\\') {
+				*p++ = '\\';
+				*p++ = ch;
+			} else {
+				snprintf(p, 5, "\\%03u", (unsigned int)ch);
+				p += 4;
+			}
+		}
+		lablen = *dname++;
+		*p++ = '.';
+	}
+	*p++ = 0;
+	return buf;
+}
+
+void rrl_mmap_init(int numch, size_t numbuck, size_t lm, size_t wlm)
 {
 #ifdef HAVE_MMAP
 	size_t i;
@@ -66,24 +91,15 @@ void rrl_mmap_init(int numch, size_t numbuck, size_t lm, size_t wlm, size_t sm,
 	if(numbuck != 0)
 		rrl_array_size = numbuck;
 	rrl_ratelimit = lm*2;
-	rrl_slip_ratio = sm;
-	rrl_ipv4_prefixlen = plf;
-	rrl_ipv6_prefixlen = pls;
-	if (pls <= 32) {
-		rrl_ipv6_mask = ((uint64_t) htonl(0xffffffff << (32-pls))) << 32;
-	} else {
-		rrl_ipv6_mask =  ((uint64_t) htonl(0xffffffff << (64-pls))) |
-			(((uint64_t)0xffffffff)<<32);
-	}
 	rrl_whitelist_ratelimit = wlm*2;
 #ifdef HAVE_MMAP
 	/* allocate the ratelimit hashtable in a memory map so it is
 	 * preserved across reforks (every child its own table) */
 	rrl_maps_num = (size_t)numch;
-	rrl_maps = (void**)xmallocarray(rrl_maps_num, sizeof(void*));
+	rrl_maps = (void**)xalloc(sizeof(void*)*rrl_maps_num);
 	for(i=0; i<rrl_maps_num; i++) {
 		rrl_maps[i] = mmap(NULL,
-			sizeof(struct rrl_bucket)*rrl_array_size,
+			sizeof(struct rrl_bucket)*rrl_array_size, 
 			PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 		if(rrl_maps[i] == MAP_FAILED) {
 			log_msg(LOG_ERR, "rrl: mmap failed: %s",
@@ -100,73 +116,44 @@ void rrl_mmap_init(int numch, size_t numbuck, size_t lm, size_t wlm, size_t sm,
 #endif
 }
 
-void rrl_mmap_deinit(void)
-{
-#ifdef HAVE_MMAP
-	size_t i;
-	for(i=0; i<rrl_maps_num; i++) {
-		munmap(rrl_maps[i], sizeof(struct rrl_bucket)*rrl_array_size);
-		rrl_maps[i] = NULL;
-	}
-	free(rrl_maps);
-	rrl_maps = NULL;
-#endif
-}
-
-void rrl_mmap_deinit_keep_mmap(void)
-{
-#ifdef HAVE_MMAP
-	free(rrl_maps);
-	rrl_maps = NULL;
-#endif
-}
-
-void rrl_set_limit(size_t lm, size_t wlm, size_t sm)
+void rrl_set_limit(size_t lm, size_t wlm)
 {
 	rrl_ratelimit = lm*2;
 	rrl_whitelist_ratelimit = wlm*2;
-	rrl_slip_ratio = sm;
 }
 
 void rrl_init(size_t ch)
 {
 	if(!rrl_maps || ch >= rrl_maps_num)
-	    rrl_array = xalloc_array_zero(sizeof(struct rrl_bucket),
-	    	rrl_array_size);
+	    rrl_array = xalloc_zero(sizeof(struct rrl_bucket)*rrl_array_size);
 #ifdef HAVE_MMAP
 	else rrl_array = (struct rrl_bucket*)rrl_maps[ch];
 #endif
-}
-
-void rrl_deinit(size_t ch)
-{
-	if(!rrl_maps || ch >= rrl_maps_num)
-		free(rrl_array);
-	rrl_array = NULL;
 }
 
 /** return the source netblock of the query, this is the genuine source
  * for genuine queries and the target for reflected packets */
 static uint64_t rrl_get_source(query_type* query, uint16_t* c2)
 {
+	/* we take a /24 for IPv4 and /64 for IPv6 */
 	/* note there is an IPv6 subnet, that maps
 	 * to the same buckets as IPv4 space, but there is a flag in c2
 	 * that makes the hash different */
 #ifdef INET6
-	if( ((struct sockaddr_in*)&query->client_addr)->sin_family == AF_INET) {
+	if( ((struct sockaddr_in*)&query->addr)->sin_family == AF_INET) {
 		*c2 = 0;
-		return ((struct sockaddr_in*)&query->client_addr)->
-			sin_addr.s_addr & htonl(0xffffffff << (32-rrl_ipv4_prefixlen));
+		return ((struct sockaddr_in*)&query->addr)->
+			sin_addr.s_addr & htonl(0xffffff00);
 	} else {
 		uint64_t s;
 		*c2 = rrl_ip6;
-		memmove(&s, &((struct sockaddr_in6*)&query->client_addr)->sin6_addr,
+		memmove(&s, &((struct sockaddr_in6*)&query->addr)->sin6_addr,
 			sizeof(s));
-		return s & rrl_ipv6_mask;
+		return s;
 	}
 #else
 	*c2 = 0;
-	return query->client_addr.sin_addr.s_addr & htonl(0xffffffff << (32-rrl_ipv4_prefixlen));
+	return query->addr.sin_addr.s_addr & htonl(0xffffff00);
 #endif
 }
 
@@ -183,25 +170,15 @@ static const char* rrlsource2str(uint64_t s, uint16_t c2)
 		memmove(&a6, &s, sizeof(s));
 		if(!inet_ntop(AF_INET6, &a6, buf, sizeof(buf)))
 			strlcpy(buf, "[ip6 ntop failed]", sizeof(buf));
-		else {
-			static char prefix[5];
-			snprintf(prefix, sizeof(prefix), "/%d", rrl_ipv6_prefixlen);
-			strlcat(buf, &prefix[0], sizeof(buf));
-		}
+		else	strlcat(buf, "/64", sizeof(buf));
 		return buf;
 	}
-#else
-	(void)c2;
 #endif
 	/* ipv4 */
 	a4.s_addr = (uint32_t)s;
 	if(!inet_ntop(AF_INET, &a4, buf, sizeof(buf)))
 		strlcpy(buf, "[ip4 ntop failed]", sizeof(buf));
-	else {
-		static char prefix[5];
-		snprintf(prefix, sizeof(prefix), "/%d", rrl_ipv4_prefixlen);
-		strlcat(buf, &prefix[0], sizeof(buf));
-	}
+	else	strlcat(buf, "/24", sizeof(buf));
 	return buf;
 }
 
@@ -239,7 +216,7 @@ const char* rrltype2str(enum rrl_type c)
 
 /** classify the query in a number of different types, each has separate
  * ratelimiting, so that positive queries are not impeded by others */
-static uint16_t rrl_classify(query_type* query, const uint8_t** d,
+static uint16_t rrl_classify(query_type* query, const uint8_t** d,	
 	size_t* d_len)
 {
 	if(RCODE(query->packet) == RCODE_NXDOMAIN) {
@@ -310,13 +287,13 @@ static void examine_query(query_type* query, uint32_t* hash, uint64_t* source,
 	uint16_t c, c2;
 	/* size with 16 bytes to spare */
 	uint8_t buf[MAXDOMAINLEN + sizeof(*source) + sizeof(c) + 16];
-	const uint8_t* dname = NULL; size_t dname_len = 0;
+	const uint8_t* dname = NULL; size_t dname_len;
 	uint32_t r = 0x267fcd16;
 
 	*source = rrl_get_source(query, &c2);
 	c = rrl_classify(query, &dname, &dname_len);
-	if(query->zone && query->zone->opts &&
-		(query->zone->opts->pattern->rrl_whitelist & c))
+	if(query->zone && query->zone->opts && 
+		(query->zone->opts->rrl_whitelist & c))
 		*lm = rrl_whitelist_ratelimit;
 	if(*lm == 0) return;
 	c |= c2;
@@ -357,18 +334,15 @@ rrl_msg(query_type* query, const char* str)
 	const uint8_t* d = NULL;
 	size_t d_len;
 	uint64_t s;
-	char address[128];
-	if(verbosity < 1) return;
-	addr2str(&query->client_addr, address, sizeof(address));
+	if(verbosity < 2) return;
 	s = rrl_get_source(query, &c2);
 	c = rrl_classify(query, &d, &d_len) | c2;
-	if(query->zone && query->zone->opts &&
-		(query->zone->opts->pattern->rrl_whitelist & c))
+	if(query->zone && query->zone->opts && 
+		(query->zone->opts->rrl_whitelist & c))
 		wl = 1;
-	log_msg(LOG_INFO, "ratelimit %s %s type %s%s target %s query %s %s",
+	log_msg(LOG_INFO, "ratelimit %s %s type %s%s target %s",
 		str, d?wiredname2str(d):"", rrltype2str(c),
-		wl?"(whitelisted)":"", rrlsource2str(s, c2),
-		address, rrtype_to_string(query->qtype));
+		wl?"(whitelisted)":"", rrlsource2str(s, c2));
 }
 
 /** true if the query used to be blocked by the ratelimit */
@@ -388,20 +362,14 @@ uint32_t rrl_update(query_type* query, uint32_t hash, uint64_t source,
 		(long long unsigned)source, hash, b->rate, b->counter, b->stamp));
 
 	/* check if different source */
-	if(b->source != source || b->flags != flags || b->hash != hash) {
+	if(b->source != source || b->flags != flags) {
 		/* initialise */
 		/* potentially the wrong limit here, used lower nonwhitelim */
-		if(verbosity >= 1 &&
-			used_to_block(b->rate, b->counter, rrl_ratelimit)) {
-			char address[128];
-			addr2str(&query->client_addr, address, sizeof(address));
-			log_msg(LOG_INFO, "ratelimit unblock ~ type %s target %s query %s %s (%s collision)",
+		if(verbosity >=2 &&
+			used_to_block(b->rate, b->counter, rrl_ratelimit))
+			log_msg(LOG_INFO, "ratelimit unblock ~ type %s target %s",
 				rrltype2str(b->flags),
-				rrlsource2str(b->source, b->flags),
-				address, rrtype_to_string(query->qtype),
-				(b->hash!=hash?"bucket":"hash"));
-		}
-		b->hash = hash;
+				rrlsource2str(b->source, b->flags));
 		b->source = source;
 		b->flags = flags;
 		b->counter = 1;
@@ -457,7 +425,6 @@ int rrl_process_query(query_type* query)
 {
 	uint64_t source;
 	uint32_t hash;
-	/* we can use circular arithmetic here, so int32 works after 2038 */
 	int32_t now = (int32_t)time(NULL);
 	uint32_t lm = rrl_ratelimit;
 	uint16_t flags;
@@ -476,14 +443,8 @@ int rrl_process_query(query_type* query)
 
 query_state_type rrl_slip(query_type* query)
 {
-	/* discard number the packets, randomly */
-#ifdef HAVE_ARC4RANDOM_UNIFORM
-	if((rrl_slip_ratio > 0) && ((rrl_slip_ratio == 1) || ((arc4random_uniform(rrl_slip_ratio)) == 0))) {
-#elif HAVE_ARC4RANDOM
-	if((rrl_slip_ratio > 0) && ((rrl_slip_ratio == 1) || ((arc4random() % rrl_slip_ratio) == 0))) {
-#else
-	if((rrl_slip_ratio > 0) && ((rrl_slip_ratio == 1) || ((random() % rrl_slip_ratio) == 0))) {
-#endif
+	/* discard half the packets, randomly */
+	if((random() & 0x1)) {
 		/* set TC on the rest */
 		TC_SET(query->packet);
 		ANCOUNT_SET(query->packet, 0);

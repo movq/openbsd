@@ -5,8 +5,8 @@
  *
  * See LICENSE for the license.
  */
-#ifndef VERIFY_H
-#define VERIFY_H
+#ifndef _VERIFY_H_
+#define _VERIFY_H_
 
 #ifndef USE_MINI_EVENT
 #  ifdef HAVE_EVENT_H
@@ -77,4 +77,4 @@ void verify_handle_exit(int fd, short event, void *arg);
 
 void verify_handle_command(int fd, short event, void *arg);
 
-#endif /* VERIFY_H */
+#endif /* _VERIFY_H_ */

@@ -7,18 +7,13 @@
  *
  */
 
-#ifndef DNS_H
-#define DNS_H
+#ifndef _DNS_H_
+#define _DNS_H_
 
 enum rr_section {
 	QUESTION_SECTION,
 	ANSWER_SECTION,
 	AUTHORITY_SECTION,
-	/*
-	 * Use a split authority section to ensure that optional
-	 * NS RRsets in the response can be omitted.
-	 */
-	OPTIONAL_AUTHORITY_SECTION,
 	ADDITIONAL_SECTION,
 	/*
 	 * Use a split additional section to ensure A records appear
@@ -135,24 +130,8 @@ typedef enum nsd_rc nsd_rc_type;
 #define TYPE_DHCID	49	/* RFC4701 DHCP information */
 #define TYPE_NSEC3	50	/* NSEC3, secure denial, prevents zonewalking */
 #define TYPE_NSEC3PARAM 51	/* NSEC3PARAM at zone apex nsec3 parameters */
-#define TYPE_TLSA	52	/* RFC 6698 */
-#define TYPE_SMIMEA	53	/* RFC 8162 */
-#define TYPE_CDS	59	/* RFC 7344 */
-#define TYPE_CDNSKEY	60	/* RFC 7344 */
-#define TYPE_OPENPGPKEY 61	/* RFC 7929 */
-#define TYPE_CSYNC	62	/* RFC 7477 */
-#define TYPE_ZONEMD	63	/* draft-ietf-dnsop-dns-zone-digest */
-#define TYPE_SVCB	64	/* draft-ietf-dnsop-svcb-https-03 */
-#define TYPE_HTTPS	65	/* draft-ietf-dnsop-svcb-https-03 */
 
 #define TYPE_SPF        99      /* RFC 4408 */
-
-#define TYPE_NID        104     /* RFC 6742 */
-#define TYPE_L32        105     /* RFC 6742 */
-#define TYPE_L64        106     /* RFC 6742 */
-#define TYPE_LP         107     /* RFC 6742 */
-#define TYPE_EUI48      108     /* RFC 7043 */
-#define TYPE_EUI64      109     /* RFC 7043 */
 
 #define TYPE_TSIG	250
 #define TYPE_IXFR	251
@@ -160,27 +139,14 @@ typedef enum nsd_rc nsd_rc_type;
 #define TYPE_MAILB	253	/* A request for mailbox-related records (MB, MG or MR) */
 #define TYPE_MAILA	254	/* A request for mail agent RRs (Obsolete - see MX) */
 #define TYPE_ANY	255	/* any type (wildcard) */
-#define TYPE_URI	256	/* RFC 7553 */
-#define TYPE_CAA	257	/* RFC 6844 */
-#define TYPE_AVC	258
 
 #define TYPE_DLV	32769	/* RFC 4431 */
 #define PSEUDO_TYPE_DLV	RRTYPE_DESCRIPTORS_LENGTH
 
-#define SVCB_KEY_MANDATORY		0
-#define SVCB_KEY_ALPN			1
-#define SVCB_KEY_NO_DEFAULT_ALPN	2
-#define SVCB_KEY_PORT			3
-#define SVCB_KEY_IPV4HINT		4
-#define SVCB_KEY_ECH		5
-#define SVCB_KEY_IPV6HINT		6
-#define SVCB_KEY_DOHPATH		7
-#define SVCPARAMKEY_COUNT 8
-
 #define MAXLABELLEN	63
 #define MAXDOMAINLEN	255
 
-#define MAXRDATALEN	64      /* This is more than enough, think multiple TXT. */
+#define MAXRDATALEN	64      /* This is more than enough, think multiple TXT.  */
 #define MAX_RDLENGTH	65535
 
 /* Maximum size of a single RR.  */
@@ -189,10 +155,6 @@ typedef enum nsd_rc nsd_rc_type;
 
 #define IP4ADDRLEN	(32/8)
 #define IP6ADDRLEN	(128/8)
-#define EUI48ADDRLEN	(48/8)
-#define EUI64ADDRLEN	(64/8)
-
-#define NSEC3_HASH_LEN 20
 
 /*
  * The different types of RDATA wireformat data.
@@ -202,22 +164,16 @@ enum rdata_wireformat
 	RDATA_WF_COMPRESSED_DNAME,   /* Possibly compressed domain name.  */
 	RDATA_WF_UNCOMPRESSED_DNAME, /* Uncompressed domain name.  */
 	RDATA_WF_LITERAL_DNAME,      /* Literal (not downcased) dname.  */
-	RDATA_WF_BYTE,               /* 8-bit integer.  */
-	RDATA_WF_SHORT,              /* 16-bit integer.  */
-	RDATA_WF_LONG,               /* 32-bit integer.  */
-	RDATA_WF_TEXT,               /* Text string.  */
-	RDATA_WF_TEXTS,              /* Text string sequence.  */
-	RDATA_WF_A,                  /* 32-bit IPv4 address.  */
-	RDATA_WF_AAAA,               /* 128-bit IPv6 address.  */
-	RDATA_WF_BINARY,             /* Binary data (unknown length).  */
+	RDATA_WF_BYTE,		     /* 8-bit integer.  */
+	RDATA_WF_SHORT,		     /* 16-bit integer.  */
+	RDATA_WF_LONG,		     /* 32-bit integer.  */
+	RDATA_WF_TEXT,		     /* Text string.  */
+	RDATA_WF_A,		     /* 32-bit IPv4 address.  */
+	RDATA_WF_AAAA,		     /* 128-bit IPv6 address.  */
+	RDATA_WF_BINARY, 	     /* Binary data (unknown length).  */
 	RDATA_WF_BINARYWITHLENGTH,   /* Binary data preceded by 1 byte length */
-	RDATA_WF_APL,                /* APL data.  */
-	RDATA_WF_IPSECGATEWAY,       /* IPSECKEY gateway ip4, ip6 or dname. */
-	RDATA_WF_ILNP64,             /* 64-bit uncompressed IPv6 address.  */
-	RDATA_WF_EUI48,	             /* 48-bit address.  */
-	RDATA_WF_EUI64,              /* 64-bit address.  */
-	RDATA_WF_LONG_TEXT,          /* Long (>255) text string. */
-	RDATA_WF_SVCPARAM            /* SvcParam <key>[=<value>] */
+	RDATA_WF_APL,		     /* APL data.  */
+	RDATA_WF_IPSECGATEWAY	     /* IPSECKEY gateway ip4, ip6 or dname. */
 };
 typedef enum rdata_wireformat rdata_wireformat_type;
 
@@ -229,7 +185,6 @@ enum rdata_zoneformat
 	RDATA_ZF_DNAME,		/* Domain name.  */
 	RDATA_ZF_LITERAL_DNAME,	/* DNS name (not lowercased domain name).  */
 	RDATA_ZF_TEXT,		/* Text string.  */
-	RDATA_ZF_TEXTS,		/* Text string sequence.  */
 	RDATA_ZF_BYTE,		/* 8-bit integer.  */
 	RDATA_ZF_SHORT,		/* 16-bit integer.  */
 	RDATA_ZF_LONG,		/* 32-bit integer.  */
@@ -251,12 +206,6 @@ enum rdata_zoneformat
 	RDATA_ZF_NXT,		/* NXT type bitmap.  */
 	RDATA_ZF_NSEC,		/* NSEC type bitmap.  */
 	RDATA_ZF_LOC,		/* Location data.  */
-	RDATA_ZF_ILNP64,	/* 64-bit uncompressed IPv6 address.  */
-	RDATA_ZF_EUI48,		/* EUI48 address.  */
-	RDATA_ZF_EUI64,		/* EUI64 address.  */
-	RDATA_ZF_LONG_TEXT,	/* Long (>255) text string. */
-	RDATA_ZF_TAG,		/* Text string without quotes. */
-	RDATA_ZF_SVCPARAM,	/* SvcParam <key>[=<value>] */
 	RDATA_ZF_UNKNOWN	/* Unknown data.  */
 };
 typedef enum rdata_zoneformat rdata_zoneformat_type;
@@ -266,8 +215,8 @@ struct rrtype_descriptor
 	uint16_t    type;	/* RR type */
 	const char *name;	/* Textual name.  */
 	int         token;	/* Parser token.  */
-	uint32_t    minimum;	/* Minimum number of RDATAs.  */
-	uint32_t    maximum;	/* Maximum number of RDATAs.  */
+	uint8_t     minimum;	/* Minimum number of RDATAs.  */
+	uint8_t     maximum;	/* Maximum number of RDATAs.  */
 	uint8_t     wireformat[MAXRDATALEN]; /* rdata_wireformat_type */
 	uint8_t     zoneformat[MAXRDATALEN]; /* rdata_zoneformat_type  */
 };
@@ -277,9 +226,9 @@ typedef struct rrtype_descriptor rrtype_descriptor_type;
  * Indexed by type.  The special type "0" can be used to get a
  * descriptor for unknown types (with one binary rdata).
  *
- * AVC + 1
+ * spf + 1
  */
-#define RRTYPE_DESCRIPTORS_LENGTH  (TYPE_AVC + 1)
+#define RRTYPE_DESCRIPTORS_LENGTH  (TYPE_SPF + 1)
 rrtype_descriptor_type *rrtype_descriptor_by_name(const char *name);
 rrtype_descriptor_type *rrtype_descriptor_by_type(uint16_t type);
 
@@ -305,4 +254,4 @@ operator++(rr_section_type &lhs)
 }
 #endif /* __cplusplus */
 
-#endif /* DNS_H */
+#endif /* _DNS_H_ */

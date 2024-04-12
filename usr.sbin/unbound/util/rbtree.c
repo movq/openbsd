@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -50,7 +50,7 @@
 #define	RED	1
 
 /** the NULL node, global alloc */
-rbnode_type	rbtree_null_node = {
+rbnode_t	rbtree_null_node = {
 	RBTREE_NULL,		/* Parent.  */
 	RBTREE_NULL,		/* Left.  */
 	RBTREE_NULL,		/* Right.  */
@@ -59,28 +59,27 @@ rbnode_type	rbtree_null_node = {
 };
 
 /** rotate subtree left (to preserve redblack property) */
-static void rbtree_rotate_left(rbtree_type *rbtree, rbnode_type *node);
+static void rbtree_rotate_left(rbtree_t *rbtree, rbnode_t *node);
 /** rotate subtree right (to preserve redblack property) */
-static void rbtree_rotate_right(rbtree_type *rbtree, rbnode_type *node);
+static void rbtree_rotate_right(rbtree_t *rbtree, rbnode_t *node);
 /** Fixup node colours when insert happened */
-static void rbtree_insert_fixup(rbtree_type *rbtree, rbnode_type *node);
+static void rbtree_insert_fixup(rbtree_t *rbtree, rbnode_t *node);
 /** Fixup node colours when delete happened */
-static void rbtree_delete_fixup(rbtree_type* rbtree, rbnode_type* child,
-	rbnode_type* child_parent);
+static void rbtree_delete_fixup(rbtree_t* rbtree, rbnode_t* child, rbnode_t* child_parent);
 
 /*
- * Creates a new red black tree, initializes and returns a pointer to it.
+ * Creates a new red black tree, intializes and returns a pointer to it.
  *
  * Return NULL on failure.
  *
  */
-rbtree_type *
+rbtree_t *
 rbtree_create (int (*cmpf)(const void *, const void *))
 {
-	rbtree_type *rbtree;
+	rbtree_t *rbtree;
 
 	/* Allocate memory for it */
-	rbtree = (rbtree_type *) malloc(sizeof(rbtree_type));
+	rbtree = (rbtree_t *) malloc(sizeof(rbtree_t));
 	if (!rbtree) {
 		return NULL;
 	}
@@ -92,7 +91,7 @@ rbtree_create (int (*cmpf)(const void *, const void *))
 }
 
 void 
-rbtree_init(rbtree_type *rbtree, int (*cmpf)(const void *, const void *))
+rbtree_init(rbtree_t *rbtree, int (*cmpf)(const void *, const void *))
 {
 	/* Initialize it */
 	rbtree->root = RBTREE_NULL;
@@ -105,9 +104,9 @@ rbtree_init(rbtree_type *rbtree, int (*cmpf)(const void *, const void *))
  *
  */
 static void
-rbtree_rotate_left(rbtree_type *rbtree, rbnode_type *node)
+rbtree_rotate_left(rbtree_t *rbtree, rbnode_t *node)
 {
-	rbnode_type *right = node->right;
+	rbnode_t *right = node->right;
 	node->right = right->left;
 	if (right->left != RBTREE_NULL)
 		right->left->parent = node;
@@ -132,9 +131,9 @@ rbtree_rotate_left(rbtree_type *rbtree, rbnode_type *node)
  *
  */
 static void
-rbtree_rotate_right(rbtree_type *rbtree, rbnode_type *node)
+rbtree_rotate_right(rbtree_t *rbtree, rbnode_t *node)
 {
-	rbnode_type *left = node->left;
+	rbnode_t *left = node->left;
 	node->left = left->right;
 	if (left->right != RBTREE_NULL)
 		left->right->parent = node;
@@ -155,9 +154,9 @@ rbtree_rotate_right(rbtree_type *rbtree, rbnode_type *node)
 }
 
 static void
-rbtree_insert_fixup(rbtree_type *rbtree, rbnode_type *node)
+rbtree_insert_fixup(rbtree_t *rbtree, rbnode_t *node)
 {
-	rbnode_type	*uncle;
+	rbnode_t	*uncle;
 
 	/* While not at the root and need fixing... */
 	while (node != rbtree->root && node->parent->color == RED) {
@@ -224,15 +223,15 @@ rbtree_insert_fixup(rbtree_type *rbtree, rbnode_type *node)
  * Returns NULL on failure or the pointer to the newly added node
  * otherwise.
  */
-rbnode_type *
-rbtree_insert (rbtree_type *rbtree, rbnode_type *data)
+rbnode_t *
+rbtree_insert (rbtree_t *rbtree, rbnode_t *data)
 {
 	/* XXX Not necessary, but keeps compiler quiet... */
 	int r = 0;
 
 	/* We start at the root of the tree */
-	rbnode_type	*node = rbtree->root;
-	rbnode_type	*parent = RBTREE_NULL;
+	rbnode_t	*node = rbtree->root;
+	rbnode_t	*parent = RBTREE_NULL;
 
 	fptr_ok(fptr_whitelist_rbtree_cmp(rbtree->cmp));
 	/* Lets find the new parent... */
@@ -277,10 +276,10 @@ rbtree_insert (rbtree_type *rbtree, rbnode_type *data)
  * Searches the red black tree, returns the data if key is found or NULL otherwise.
  *
  */
-rbnode_type *
-rbtree_search (rbtree_type *rbtree, const void *key)
+rbnode_t *
+rbtree_search (rbtree_t *rbtree, const void *key)
 {
-	rbnode_type *node;
+	rbnode_t *node;
 
 	if (rbtree_find_less_equal(rbtree, key, &node)) {
 		return node;
@@ -296,14 +295,13 @@ static void swap_int8(uint8_t* x, uint8_t* y)
 }
 
 /** helpers for delete: swap node pointers */
-static void swap_np(rbnode_type** x, rbnode_type** y) 
+static void swap_np(rbnode_t** x, rbnode_t** y) 
 {
-	rbnode_type* t = *x; *x = *y; *y = t; 
+	rbnode_t* t = *x; *x = *y; *y = t; 
 }
 
 /** Update parent pointers of child trees of 'parent' */
-static void change_parent_ptr(rbtree_type* rbtree, rbnode_type* parent,
-	rbnode_type* old, rbnode_type* new)
+static void change_parent_ptr(rbtree_t* rbtree, rbnode_t* parent, rbnode_t* old, rbnode_t* new)
 {
 	if(parent == RBTREE_NULL)
 	{
@@ -317,19 +315,18 @@ static void change_parent_ptr(rbtree_type* rbtree, rbnode_type* parent,
 	if(parent->right == old) parent->right = new;
 }
 /** Update parent pointer of a node 'child' */
-static void change_child_ptr(rbnode_type* child, rbnode_type* old,
-	rbnode_type* new)
+static void change_child_ptr(rbnode_t* child, rbnode_t* old, rbnode_t* new)
 {
 	if(child == RBTREE_NULL) return;
 	log_assert(child->parent == old || child->parent == new);
 	if(child->parent == old) child->parent = new;
 }
 
-rbnode_type* 
-rbtree_delete(rbtree_type *rbtree, const void *key)
+rbnode_t* 
+rbtree_delete(rbtree_t *rbtree, const void *key)
 {
-	rbnode_type *to_delete;
-	rbnode_type *child;
+	rbnode_t *to_delete;
+	rbnode_t *child;
 	if((to_delete = rbtree_search(rbtree, key)) == 0) return 0;
 	rbtree->count--;
 
@@ -337,11 +334,11 @@ rbtree_delete(rbtree_type *rbtree, const void *key)
 	if(to_delete->left != RBTREE_NULL && to_delete->right != RBTREE_NULL)
 	{
 		/* swap with smallest from right subtree (or largest from left) */
-		rbnode_type *smright = to_delete->right;
+		rbnode_t *smright = to_delete->right;
 		while(smright->left != RBTREE_NULL)
 			smright = smright->left;
 		/* swap the smright and to_delete elements in the tree,
-		 * but the rbnode_type is first part of user data struct
+		 * but the rbnode_t is first part of user data struct
 		 * so cannot just swap the keys and data pointers. Instead
 		 * readjust the pointers left,right,parent */
 
@@ -403,10 +400,9 @@ rbtree_delete(rbtree_type *rbtree, const void *key)
 	return to_delete;
 }
 
-static void rbtree_delete_fixup(rbtree_type* rbtree, rbnode_type* child,
-	rbnode_type* child_parent)
+static void rbtree_delete_fixup(rbtree_t* rbtree, rbnode_t* child, rbnode_t* child_parent)
 {
-	rbnode_type* sibling;
+	rbnode_t* sibling;
 	int go_up = 1;
 
 	/* determine sibling to the node that is one-black short */
@@ -508,11 +504,10 @@ static void rbtree_delete_fixup(rbtree_type* rbtree, rbnode_type* child,
 }
 
 int
-rbtree_find_less_equal(rbtree_type *rbtree, const void *key,
-	rbnode_type **result)
+rbtree_find_less_equal(rbtree_t *rbtree, const void *key, rbnode_t **result)
 {
 	int r;
-	rbnode_type *node;
+	rbnode_t *node;
 
 	log_assert(result);
 	
@@ -545,19 +540,19 @@ rbtree_find_less_equal(rbtree_type *rbtree, const void *key,
  * Finds the first element in the red black tree
  *
  */
-rbnode_type *
-rbtree_first (rbtree_type *rbtree)
+rbnode_t *
+rbtree_first (rbtree_t *rbtree)
 {
-	rbnode_type *node;
+	rbnode_t *node;
 
 	for (node = rbtree->root; node->left != RBTREE_NULL; node = node->left);
 	return node;
 }
 
-rbnode_type *
-rbtree_last (rbtree_type *rbtree)
+rbnode_t *
+rbtree_last (rbtree_t *rbtree)
 {
-	rbnode_type *node;
+	rbnode_t *node;
 
 	for (node = rbtree->root; node->right != RBTREE_NULL; node = node->right);
 	return node;
@@ -567,10 +562,10 @@ rbtree_last (rbtree_type *rbtree)
  * Returns the next node...
  *
  */
-rbnode_type *
-rbtree_next (rbnode_type *node)
+rbnode_t *
+rbtree_next (rbnode_t *node)
 {
-	rbnode_type *parent;
+	rbnode_t *parent;
 
 	if (node->right != RBTREE_NULL) {
 		/* One right, then keep on going left... */
@@ -586,10 +581,10 @@ rbtree_next (rbnode_type *node)
 	return node;
 }
 
-rbnode_type *
-rbtree_previous(rbnode_type *node)
+rbnode_t *
+rbtree_previous(rbnode_t *node)
 {
-	rbnode_type *parent;
+	rbnode_t *parent;
 
 	if (node->left != RBTREE_NULL) {
 		/* One left, then keep on going right... */
@@ -607,7 +602,7 @@ rbtree_previous(rbnode_type *node)
 
 /** recursive descent traverse */
 static void 
-traverse_post(void (*func)(rbnode_type*, void*), void* arg, rbnode_type* node)
+traverse_post(void (*func)(rbnode_t*, void*), void* arg, rbnode_t* node)
 {
 	if(!node || node == RBTREE_NULL)
 		return;
@@ -619,8 +614,7 @@ traverse_post(void (*func)(rbnode_type*, void*), void* arg, rbnode_type* node)
 }
 
 void 
-traverse_postorder(rbtree_type* tree, void (*func)(rbnode_type*, void*),
-	void* arg)
+traverse_postorder(rbtree_t* tree, void (*func)(rbnode_t*, void*), void* arg)
 {
 	traverse_post(func, arg, tree->root);
 }

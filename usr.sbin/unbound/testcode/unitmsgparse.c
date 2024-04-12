@@ -137,7 +137,7 @@ test_buffers(sldns_buffer* pkt, sldns_buffer* out)
 	/* compare packets */
 	unit_assert(match_all(sldns_buffer_begin(pkt), sldns_buffer_limit(pkt),
 		sldns_buffer_begin(out), sldns_buffer_limit(out), 1,
-		matches_nolocation, 0));
+		matches_nolocation));
 	return 0;
 }
 
@@ -179,7 +179,7 @@ perf_encode(struct query_info* qi, struct reply_info* rep, uint16_t id,
 	/* encode a couple times */
 	for(i=0; i<max; i++) {
 		ret = reply_info_encode(qi, rep, id, flags, out, timenow,
-			r2, 65535, (int)(edns->bits & EDNS_DO), 0);
+			r2, 65535, (int)(edns->bits & EDNS_DO) );
 		unit_assert(ret != 0); /* udp packets should fit */
 		attach_edns_record(out, edns);
 		regional_free_all(r2);
@@ -342,7 +342,7 @@ testpkt(sldns_buffer* pkt, struct alloc_cache* alloc, sldns_buffer* out,
 	} else if(!check_formerr_gone) {
 		const size_t lim = 512;
 		ret = reply_info_encode(&qi, rep, id, flags, out, timenow,
-			region, 65535, (int)(edns.bits & EDNS_DO), 0);
+			region, 65535, (int)(edns.bits & EDNS_DO) );
 		unit_assert(ret != 0); /* udp packets should fit */
 		attach_edns_record(out, &edns);
 		if(vbmp) printf("inlen %u outlen %u\n", 
@@ -357,7 +357,7 @@ testpkt(sldns_buffer* pkt, struct alloc_cache* alloc, sldns_buffer* out,
 			ret = reply_info_encode(&qi, rep, id, flags, out, 
 				timenow, region, 
 				lim - calc_edns_field_size(&edns),
-				(int)(edns.bits & EDNS_DO), 0);
+				(int)(edns.bits & EDNS_DO));
 			unit_assert(ret != 0); /* should fit, but with TC */
 			attach_edns_record(out, &edns);
 			if( LDNS_QDCOUNT(sldns_buffer_begin(out)) !=
@@ -495,11 +495,6 @@ testfromdrillfile(sldns_buffer* pkt, struct alloc_cache* alloc,
 	fclose(in);
 }
 
-#define xstr(s) str(s)
-#define str(s) #s
-
-#define SRCDIRSTR xstr(SRCDIR)
-
 void msgparse_test(void)
 {
 	time_t origttl = MAX_NEG_TTL;
@@ -514,27 +509,27 @@ void msgparse_test(void)
 	unit_show_feature("message parse");
 	simpletest(pkt, &alloc, out);
 	/* plain hex dumps, like pcat */
-	testfromfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.1");
-	testfromfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.2");
-	testfromfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.3");
+	testfromfile(pkt, &alloc, out, "testdata/test_packets.1");
+	testfromfile(pkt, &alloc, out, "testdata/test_packets.2");
+	testfromfile(pkt, &alloc, out, "testdata/test_packets.3");
 	/* like from drill -w - */
-	testfromdrillfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.4");
-	testfromdrillfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.5");
+	testfromdrillfile(pkt, &alloc, out, "testdata/test_packets.4");
+	testfromdrillfile(pkt, &alloc, out, "testdata/test_packets.5");
 
 	matches_nolocation = 1; /* RR order not important for the next test */
-	testfromdrillfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.6");
+	testfromdrillfile(pkt, &alloc, out, "testdata/test_packets.6");
 	check_rrsigs = 1;
-	testfromdrillfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.7");
+	testfromdrillfile(pkt, &alloc, out, "testdata/test_packets.7");
 	check_rrsigs = 0;
 	matches_nolocation = 0; 
 
 	check_formerr_gone = 1;
-	testfromdrillfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.8");
+	testfromdrillfile(pkt, &alloc, out, "testdata/test_packets.8");
 	check_formerr_gone = 0;
 
 	check_rrsigs = 1;
 	check_nosameness = 1;
-	testfromdrillfile(pkt, &alloc, out, SRCDIRSTR "/testdata/test_packets.9");
+	testfromdrillfile(pkt, &alloc, out, "testdata/test_packets.9");
 	check_nosameness = 0;
 	check_rrsigs = 0;
 

@@ -44,10 +44,9 @@
 #include "sldns/sbuffer.h"
 #include "sldns/str2wire.h"
 #include "sldns/wire2str.h"
-#include "sldns/parseutil.h"
 
 /** verbose this unit test */
-static int vbmp = 0;
+static int vbmp = 0; 
 
 /** print buffer to hex into string */
 static void
@@ -200,75 +199,15 @@ rr_test_file(const char* input, const char* check)
 	free(back);
 }
 
-#define xstr(s) str(s)
-#define str(s) #s
-
-#define SRCDIRSTR xstr(SRCDIR)
-
 /** read rrs to and from string, to and from wireformat */
 static void
 rr_tests(void)
 {
-	rr_test_file(SRCDIRSTR "/testdata/test_ldnsrr.1",
-		SRCDIRSTR "/testdata/test_ldnsrr.c1");
-	rr_test_file(SRCDIRSTR "/testdata/test_ldnsrr.2",
-		SRCDIRSTR "/testdata/test_ldnsrr.c2");
-	rr_test_file(SRCDIRSTR "/testdata/test_ldnsrr.3",
-		SRCDIRSTR "/testdata/test_ldnsrr.c3");
-	rr_test_file(SRCDIRSTR "/testdata/test_ldnsrr.4",
-		SRCDIRSTR "/testdata/test_ldnsrr.c4");
-	rr_test_file(SRCDIRSTR "/testdata/test_ldnsrr.5",
-		SRCDIRSTR "/testdata/test_ldnsrr.c5");
-}
-
-/** test various base64 decoding options */
-static void
-b64_test(void)
-{
-	/* "normal" b64 alphabet, with padding */
-	char* p1 = "aGVsbG8="; /* "hello" */
-	char* p2 = "aGVsbG8+"; /* "hello>" */
-	char* p3 = "aGVsbG8/IQ=="; /* "hello?!" */
-	char* p4 = "aGVsbG8"; /* "hel" + extra garbage */
-
-	/* base64 url, without padding */
-	char* u1 = "aGVsbG8"; /* "hello" */
-	char* u2 = "aGVsbG8-"; /* "hello>" */
-	char* u3 = "aGVsbG8_IQ"; /* "hello?!" */
-	char* u4 = "aaaaa"; /* garbage */
-
-	char target[128];
-	size_t tarsize = 128;
-	int result;
-
-	memset(target, 0, sizeof(target));
-	result = sldns_b64_pton(p1, (uint8_t*)target, tarsize);
-	unit_assert(result == (int)strlen("hello") && strcmp(target, "hello") == 0);
-	memset(target, 0, sizeof(target));
-	result = sldns_b64_pton(p2, (uint8_t*)target, tarsize);
-	unit_assert(result == (int)strlen("hello>") && strcmp(target, "hello>") == 0);
-	memset(target, 0, sizeof(target));
-	result = sldns_b64_pton(p3, (uint8_t*)target, tarsize);
-	unit_assert(result == (int)strlen("hello?!") && strcmp(target, "hello?!") == 0);
-	memset(target, 0, sizeof(target));
-	result = sldns_b64_pton(p4, (uint8_t*)target, tarsize);
-	/* when padding is used everything that is not a block of 4 will be
-	 * ignored */
-	unit_assert(result == (int)strlen("hel") && strcmp(target, "hel") == 0);
-
-	memset(target, 0, sizeof(target));
-	result = sldns_b64url_pton(u1, strlen(u1), (uint8_t*)target, tarsize);
-	unit_assert(result == (int)strlen("hello") && strcmp(target, "hello") == 0);
-	memset(target, 0, sizeof(target));
-	result = sldns_b64url_pton(u2, strlen(u2), (uint8_t*)target, tarsize);
-	unit_assert(result == (int)strlen("hello>") && strcmp(target, "hello>") == 0);
-	memset(target, 0, sizeof(target));
-	result = sldns_b64url_pton(u3, strlen(u3), (uint8_t*)target, tarsize);
-	unit_assert(result == (int)strlen("hello+/") && strcmp(target, "hello?!") == 0);
-	/* one item in block of four is not allowed */
-	memset(target, 0, sizeof(target));
-	result = sldns_b64url_pton(u4, strlen(u4), (uint8_t*)target, tarsize);
-	unit_assert(result == -1);
+	rr_test_file("testdata/test_ldnsrr.1", "testdata/test_ldnsrr.c1");
+	rr_test_file("testdata/test_ldnsrr.2", "testdata/test_ldnsrr.c2");
+	rr_test_file("testdata/test_ldnsrr.3", "testdata/test_ldnsrr.c3");
+	rr_test_file("testdata/test_ldnsrr.4", "testdata/test_ldnsrr.c4");
+	rr_test_file("testdata/test_ldnsrr.5", "testdata/test_ldnsrr.c5");
 }
 
 void
@@ -276,5 +215,4 @@ ldns_test(void)
 {
 	unit_show_feature("sldns");
 	rr_tests();
-	b64_test();
 }

@@ -158,7 +158,7 @@ static void consistency_test(void)
 {
 	addrlen_t l;
 	time_t i;
-	uint32_t count;
+	unsigned int count;
 	addrkey_t *k;
 	struct addrtree* t;
 	struct module_env env;
@@ -173,7 +173,7 @@ static void consistency_test(void)
 	for (i = 0; i < 1000; i++) {
 		l = randomkey(&k, 128);
 		elem = (struct reply_info *) calloc(1, sizeof(struct reply_info));
-		addrtree_insert(t, k, l, 64, elem, timenow + 10, timenow, 0);
+		addrtree_insert(t, k, l, 64, elem, timenow + 10, timenow);
 		/* This should always hold because no items ever expire. They
 		 * could be overwritten, though. */
 		unit_assert( count <= t->node_count );
@@ -189,7 +189,7 @@ static void consistency_test(void)
 	for (i = 0; i < 1000; i++) {
 		l = randomkey(&k, 128);
 		elem = (struct reply_info *) calloc(1, sizeof(struct reply_info));
-		addrtree_insert(t, k, l, 64, elem, i + 10, i, 0);
+		addrtree_insert(t, k, l, 64, elem, i + 10, i);
 		free(k);
 		unit_assert( !addrtree_inconsistent(t) );
 	}
@@ -201,7 +201,7 @@ static void consistency_test(void)
 	for (i = 0; i < 1000; i++) {
 		l = randomkey(&k, 128);
 		elem = (struct reply_info *) calloc(1, sizeof(struct reply_info));
-		addrtree_insert(t, k, l, 64, elem, i + 10, i, 0);
+		addrtree_insert(t, k, l, 64, elem, i + 10, i);
 		unit_assert( t->node_count <= 27);
 		free(k);
 		unit_assert( !addrtree_inconsistent(t) );

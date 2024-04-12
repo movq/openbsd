@@ -1,14 +1,9 @@
 /*
-  May 2019(Wouter) patch to enable the valgrind clean implementation all the
-     time.  This enables better security audit and checks, which is better
-     than the speedup.  Git issue #30.  Renamed the define ARRAY_CLEAN_ACCESS.
-  February 2013(Wouter) patch defines for BSD endianness, from Brad Smith.
   January 2012(Wouter) added randomised initial value, fallout from 28c3.
   March 2007(Wouter) adapted from lookup3.c original, add config.h include.
      added #ifdef VALGRIND to remove 298,384,660 'unused variable k8' warnings.
      added include of lookup3.h to check definitions match declarations.
      removed include of stdint - config.h takes care of platform independence.
-     added fallthrough comments for new gcc warning suppression.
   url http://burtleburtle.net/bob/hash/index.html.
 */
 /*
@@ -47,84 +42,49 @@ on 1 byte), but shoehorning those bytes into integers efficiently is messy.
 -------------------------------------------------------------------------------
 */
 /*#define SELF_TEST 1*/
-#define ARRAY_CLEAN_ACCESS 1
 
 #include "config.h"
 #include "util/storage/lookup3.h"
 #include <stdio.h>      /* defines printf for tests */
 #include <time.h>       /* defines time_t for timings in the test */
-
-/*
- * If our build system provides endianness info, signalled by
- * HAVE_TARGET_ENDIANNESS and the presence or absence of TARGET_IS_BIG_ENDIAN,
- * use that. Otherwise try to work out the endianness.
- */
-#if defined(HAVE_TARGET_ENDIANNESS)
-# if defined(TARGET_IS_BIG_ENDIAN)
-#  define HASH_LITTLE_ENDIAN 0
-#  define HASH_BIG_ENDIAN 1
-# else
-#  define HASH_LITTLE_ENDIAN 1
-#  define HASH_BIG_ENDIAN 0
-# endif
-#else
-# include <sys/param.h>  /* attempt to define endianness */
-# ifdef HAVE_SYS_TYPES_H
-#  include <sys/types.h> /* attempt to define endianness (solaris) */
-# endif
-# if defined(linux) || defined(__OpenBSD__)
-#  ifdef HAVE_ENDIAN_H
-#    include <endian.h>    /* attempt to define endianness */
-#  else
-#    include <machine/endian.h> /* on older OpenBSD */
-#  endif
-# endif
-# if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-#  include <sys/endian.h> /* attempt to define endianness */
-# endif
-  /*
-   * My best guess at if you are big-endian or little-endian.  This may
-   * need adjustment.
-   */
-# if (defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && \
-      __BYTE_ORDER == __LITTLE_ENDIAN) || \
-     (defined(i386) || defined(__i386__) || defined(__i486__) || \
-      defined(__i586__) || defined(__i686__) || defined(vax) || defined(MIPSEL) || defined(__x86))
-#  define HASH_LITTLE_ENDIAN 1
-#  define HASH_BIG_ENDIAN 0
-# elif (defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && \
-        __BYTE_ORDER == __BIG_ENDIAN) || \
-       (defined(sparc) || defined(__sparc) || defined(__sparc__) || defined(POWERPC) || defined(mc68000) || defined(sel))
-#  define HASH_LITTLE_ENDIAN 0
-#  define HASH_BIG_ENDIAN 1
-# elif defined(_MACHINE_ENDIAN_H_)
-  /* test for machine_endian_h protects failure if some are empty strings */
-#  if defined(_BYTE_ORDER) && defined(_BIG_ENDIAN) && _BYTE_ORDER == _BIG_ENDIAN
-#   define HASH_LITTLE_ENDIAN 0
-#   define HASH_BIG_ENDIAN 1
-#  endif
-#  if defined(_BYTE_ORDER) && defined(_LITTLE_ENDIAN) && _BYTE_ORDER == _LITTLE_ENDIAN
-#   define HASH_LITTLE_ENDIAN 1
-#   define HASH_BIG_ENDIAN 0
-#  endif /* _MACHINE_ENDIAN_H_ */
-# else
-#  define HASH_LITTLE_ENDIAN 0
-#  define HASH_BIG_ENDIAN 0
-# endif
-#endif /* defined(HAVE_TARGET_ENDIANNESS) */
-
-#define hashsize(n) ((uint32_t)1<<(n))
-#define hashmask(n) (hashsize(n)-1)
-#define rot(x,k) (((x)<<(k)) | ((x)>>(32-(k))))
+/*#include <stdint.h>     defines uint32_t etc  (from config.h) */
+#include <sys/param.h>  /* attempt to define endianness */
+#ifdef linux
+# include <endian.h>    /* attempt to define endianness */
+#endif
 
 /* random initial value */
-static uint32_t raninit = (uint32_t)0xdeadbeef;
+static uint32_t raninit = 0xdeadbeef;
 
 void
 hash_set_raninit(uint32_t v)
 {
 	raninit = v;
 }
+
+/*
+ * My best guess at if you are big-endian or little-endian.  This may
+ * need adjustment.
+ */
+#if (defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && \
+     __BYTE_ORDER == __LITTLE_ENDIAN) || \
+    (defined(i386) || defined(__i386__) || defined(__i486__) || \
+     defined(__i586__) || defined(__i686__) || defined(vax) || defined(MIPSEL))
+# define HASH_LITTLE_ENDIAN 1
+# define HASH_BIG_ENDIAN 0
+#elif (defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && \
+       __BYTE_ORDER == __BIG_ENDIAN) || \
+      (defined(sparc) || defined(POWERPC) || defined(mc68000) || defined(sel))
+# define HASH_LITTLE_ENDIAN 0
+# define HASH_BIG_ENDIAN 1
+#else
+# define HASH_LITTLE_ENDIAN 0
+# define HASH_BIG_ENDIAN 0
+#endif
+
+#define hashsize(n) ((uint32_t)1<<(n))
+#define hashmask(n) (hashsize(n)-1)
+#define rot(x,k) (((x)<<(k)) | ((x)>>(32-(k))))
 
 /*
 -------------------------------------------------------------------------------
@@ -254,9 +214,7 @@ uint32_t        initval)         /* the previous hash, or an arbitrary value */
   switch(length)                     /* all the case statements fall through */
   { 
   case 3 : c+=k[2];
-  	/* fallthrough */
   case 2 : b+=k[1];
-  	/* fallthrough */
   case 1 : a+=k[0];
     final(a,b,c);
   case 0:     /* case 0: nothing left to add */
@@ -354,7 +312,7 @@ uint32_t hashlittle( const void *key, size_t length, uint32_t initval)
   u.ptr = key;
   if (HASH_LITTLE_ENDIAN && ((u.i & 0x3) == 0)) {
     const uint32_t *k = (const uint32_t *)key;         /* read 32-bit chunks */
-#ifdef ARRAY_CLEAN_ACCESS
+#ifdef VALGRIND
     const uint8_t  *k8;
 #endif
 
@@ -377,9 +335,9 @@ uint32_t hashlittle( const void *key, size_t length, uint32_t initval)
      * rest of the string.  Every machine with memory protection I've seen
      * does it on word boundaries, so is OK with this.  But VALGRIND will
      * still catch it and complain.  The masking trick does make the hash
-     * noticeably faster for short strings (like English words).
+     * noticably faster for short strings (like English words).
      */
-#ifndef ARRAY_CLEAN_ACCESS
+#ifndef VALGRIND
 
     switch(length)
     {
@@ -494,27 +452,16 @@ uint32_t hashlittle( const void *key, size_t length, uint32_t initval)
     switch(length)                   /* all the case statements fall through */
     {
     case 12: c+=((uint32_t)k[11])<<24;
-  	/* fallthrough */
     case 11: c+=((uint32_t)k[10])<<16;
-  	/* fallthrough */
     case 10: c+=((uint32_t)k[9])<<8;
-  	/* fallthrough */
     case 9 : c+=k[8];
-  	/* fallthrough */
     case 8 : b+=((uint32_t)k[7])<<24;
-  	/* fallthrough */
     case 7 : b+=((uint32_t)k[6])<<16;
-  	/* fallthrough */
     case 6 : b+=((uint32_t)k[5])<<8;
-  	/* fallthrough */
     case 5 : b+=k[4];
-  	/* fallthrough */
     case 4 : a+=((uint32_t)k[3])<<24;
-  	/* fallthrough */
     case 3 : a+=((uint32_t)k[2])<<16;
-  	/* fallthrough */
     case 2 : a+=((uint32_t)k[1])<<8;
-  	/* fallthrough */
     case 1 : a+=k[0];
              break;
     case 0 : return c;
@@ -576,7 +523,7 @@ void hashlittle2(
      * rest of the string.  Every machine with memory protection I've seen
      * does it on word boundaries, so is OK with this.  But VALGRIND will
      * still catch it and complain.  The masking trick does make the hash
-     * noticeably faster for short strings (like English words).
+     * noticably faster for short strings (like English words).
      */
 #ifndef VALGRIND
 
@@ -757,7 +704,7 @@ uint32_t hashbig( const void *key, size_t length, uint32_t initval)
      * rest of the string.  Every machine with memory protection I've seen
      * does it on word boundaries, so is OK with this.  But VALGRIND will
      * still catch it and complain.  The masking trick does make the hash
-     * noticeably faster for short strings (like English words).
+     * noticably faster for short strings (like English words).
      */
 #ifndef VALGRIND
 
@@ -852,7 +799,7 @@ uint32_t hashbig( const void *key, size_t length, uint32_t initval)
 #ifdef SELF_TEST
 
 /* used for timings */
-void driver1(void)
+void driver1()
 {
   uint8_t buf[256];
   uint32_t i;
@@ -874,7 +821,7 @@ void driver1(void)
 #define HASHLEN   1
 #define MAXPAIR 60
 #define MAXLEN  70
-void driver2(void)
+void driver2()
 {
   uint8_t qa[MAXLEN+1], qb[MAXLEN+2], *a = &qa[0], *b = &qb[1];
   uint32_t c[HASHSTATE], d[HASHSTATE], i=0, j=0, k, l, m=0, z;
@@ -890,7 +837,7 @@ void driver2(void)
     {
       for (j=0; j<8; ++j)   /*------------------------ for each input bit, */
       {
-	for (m=1; m<8; ++m) /*------------ for several possible initvals, */
+	for (m=1; m<8; ++m) /*------------ for serveral possible initvals, */
 	{
 	  for (l=0; l<HASHSTATE; ++l)
 	    e[l]=f[l]=g[l]=h[l]=x[l]=y[l]=~((uint32_t)0);
@@ -944,7 +891,7 @@ void driver2(void)
 }
 
 /* Check for reading beyond the end of the buffer and alignment problems */
-void driver3(void)
+void driver3()
 {
   uint8_t buf[MAXLEN+20], *b;
   uint32_t len;
@@ -1035,7 +982,7 @@ void driver3(void)
 }
 
 /* check for problems with nulls */
- void driver4(void)
+ void driver4()
 {
   uint8_t buf[1];
   uint32_t h,i,state[HASHSTATE];
@@ -1052,7 +999,7 @@ void driver3(void)
 }
 
 
-int main(void)
+int main()
 {
   driver1();   /* test that the key is hashed: used for timings */
   driver2();   /* test that whole key is hashed thoroughly */

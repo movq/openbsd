@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -48,6 +48,7 @@ struct tube;
 struct tube_res_list;
 #ifdef USE_WINSOCK
 #include "util/locks.h"
+#include "util/winsock_event.h"
 #endif
 
 /**
@@ -55,7 +56,7 @@ struct tube_res_list;
  * void mycallback(tube, msg, len, error, user_argument);
  * if error is true (NETEVENT_*), msg is probably NULL.
  */
-typedef void tube_callback_type(struct tube*, uint8_t*, size_t, int, void*);
+typedef void tube_callback_t(struct tube*, uint8_t*, size_t, int, void*);
 
 /**
  * A pipe
@@ -70,7 +71,7 @@ struct tube {
 	/** listen commpoint */
 	struct comm_point* listen_com;
 	/** listen callback */
-	tube_callback_type* listen_cb;
+	tube_callback_t* listen_cb;
 	/** listen callback user arg */
 	void* listen_arg;
 	/** are we currently reading a command, 0 if not, else bytecount */
@@ -82,7 +83,7 @@ struct tube {
 
 	/** background write queue, commpoint to write results back */
 	struct comm_point* res_com;
-	/** are we currently writing a result, 0 if not, else bytecount into
+	/** are we curently writing a result, 0 if not, else bytecount into
 	 * the res_list first entry. */
 	size_t res_write;
 	/** list of outstanding results to be written back */
@@ -92,16 +93,16 @@ struct tube {
 
 #else /* USE_WINSOCK */
 	/** listen callback */
-	tube_callback_type* listen_cb;
+	tube_callback_t* listen_cb;
 	/** listen callback user arg */
 	void* listen_arg;
 	/** the windows sockets event (signaled if items in pipe) */
 	WSAEVENT event;
 	/** winsock event storage when registered with event base */
-	struct ub_event* ev_listen;
+	struct event ev_listen;
 
 	/** lock on the list of outstanding items */
-	lock_basic_type res_lock;
+	lock_basic_t res_lock;
 	/** list of outstanding results on pipe */
 	struct tube_res_list* res_list;
 	/** last in list */
@@ -205,14 +206,6 @@ int tube_poll(struct tube* tube);
 int tube_wait(struct tube* tube);
 
 /**
- * Wait for data to be ready with a timeout.
- * @param tube: the tube to wait on.
- * @param msec: timeout in milliseconds.
- * @return 1 if there is something to read within timeout, readability.
- * 	0 on a timeout. On failures -1, like errors. */
-int tube_wait_timeout(struct tube* tube, int msec);
-
-/**
  * Get FD that is readable when new information arrives.
  * @param tube
  * @return file descriptor.
@@ -230,7 +223,7 @@ int tube_read_fd(struct tube* tube);
  * @return true if successful, false on error.
  */
 int tube_setup_bg_listen(struct tube* tube, struct comm_base* base,
-	tube_callback_type* cb, void* arg);
+	tube_callback_t* cb, void* arg);
 
 /**
  * Remove bg listen setup from event base.

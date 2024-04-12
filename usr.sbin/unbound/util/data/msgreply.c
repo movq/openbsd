@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -40,6 +40,7 @@
  */
 
 #include "config.h"
+#include <ldns/ldns.h>
 #include "util/data/msgreply.h"
 #include "util/storage/lookup3.h"
 #include "util/log.h"
@@ -50,29 +51,15 @@
 #include "util/regional.h"
 #include "util/data/msgparse.h"
 #include "util/data/msgencode.h"
-#include "sldns/sbuffer.h"
-#include "sldns/wire2str.h"
-#include "util/module.h"
-#include "util/fptr_wlist.h"
 
 /** MAX TTL default for messages and rrsets */
-time_t MAX_TTL = 3600 * 24 * 10; /* ten days */
+uint32_t MAX_TTL = 3600 * 24 * 10; /* ten days */
 /** MIN TTL default for messages and rrsets */
-time_t MIN_TTL = 0;
-/** MAX Negative TTL, for SOA records in authority section */
-time_t MAX_NEG_TTL = 3600; /* one hour */
-/** If we serve expired entries and prefetch them */
-int SERVE_EXPIRED = 0;
-/** Time to serve records after expiration */
-time_t SERVE_EXPIRED_TTL = 0;
-/** TTL to use for expired records */
-time_t SERVE_EXPIRED_REPLY_TTL = 30;
-/** If we serve the original TTL or decrementing TTLs */
-int SERVE_ORIGINAL_TTL = 0;
+uint32_t MIN_TTL = 0;
 
 /** allocate qinfo, return 0 on error */
 static int
-parse_create_qinfo(sldns_buffer* pkt, struct msg_parse* msg, 
+parse_create_qinfo(ldns_buffer* pkt, struct msg_parse* msg, 
 	struct query_info* qinf, struct regional* region)
 {
 	if(msg->qname) {
@@ -86,21 +73,19 @@ parse_create_qinfo(sldns_buffer* pkt, struct msg_parse* msg,
 	qinf->qname_len = msg->qname_len;
 	qinf->qtype = msg->qtype;
 	qinf->qclass = msg->qclass;
-	qinf->local_alias = NULL;
 	return 1;
 }
 
 /** constructor for replyinfo */
-struct reply_info*
+static struct reply_info*
 construct_reply_info_base(struct regional* region, uint16_t flags, size_t qd,
-	time_t ttl, time_t prettl, time_t expttl, size_t an, size_t ns,
-	size_t ar, size_t total, enum sec_status sec, sldns_ede_code reason_bogus)
+	uint32_t ttl, uint32_t prettl, size_t an, size_t ns, size_t ar, 
+	size_t total, enum sec_status sec)
 {
 	struct reply_info* rep;
 	/* rrset_count-1 because the first ref is part of the struct. */
 	size_t s = sizeof(struct reply_info) - sizeof(struct rrset_ref) +
 		sizeof(struct ub_packed_rrset_key*) * total;
-	if(total >= RR_COUNT_MAX) return NULL; /* sanity check on numRRS*/
 	if(region)
 		rep = (struct reply_info*)regional_alloc(region, s);
 	else	rep = (struct reply_info*)malloc(s + 
@@ -111,15 +96,11 @@ construct_reply_info_base(struct regional* region, uint16_t flags, size_t qd,
 	rep->qdcount = qd;
 	rep->ttl = ttl;
 	rep->prefetch_ttl = prettl;
-	rep->serve_expired_ttl = expttl;
 	rep->an_numrrsets = an;
 	rep->ns_numrrsets = ns;
 	rep->ar_numrrsets = ar;
 	rep->rrset_count = total;
 	rep->security = sec;
-	rep->reason_bogus = reason_bogus;
-	/* this is only allocated and used for caching on copy */
-	rep->reason_bogus_str = NULL;
 	rep->authoritative = 0;
 	/* array starts after the refs */
 	if(region)
@@ -138,15 +119,16 @@ parse_create_repinfo(struct msg_parse* msg, struct reply_info** rep,
 	struct regional* region)
 {
 	*rep = construct_reply_info_base(region, msg->flags, msg->qdcount, 0, 
-		0, 0, msg->an_rrsets, msg->ns_rrsets, msg->ar_rrsets, 
-		msg->rrset_count, sec_status_unchecked, LDNS_EDE_NONE);
+		0, msg->an_rrsets, msg->ns_rrsets, msg->ar_rrsets, 
+		msg->rrset_count, sec_status_unchecked);
 	if(!*rep)
 		return 0;
 	return 1;
 }
 
-int
-reply_info_alloc_rrset_keys(struct reply_info* rep, struct alloc_cache* alloc,
+/** allocate (special) rrset keys, return 0 on error */
+static int
+repinfo_alloc_rrset_keys(struct reply_info* rep, struct alloc_cache* alloc, 
 	struct regional* region)
 {
 	size_t i;
@@ -169,73 +151,20 @@ reply_info_alloc_rrset_keys(struct reply_info* rep, struct alloc_cache* alloc,
 	return 1;
 }
 
-struct reply_info *
-make_new_reply_info(const struct reply_info* rep, struct regional* region,
-	size_t an_numrrsets, size_t copy_rrsets)
-{
-	struct reply_info* new_rep;
-	size_t i;
-
-	/* create a base struct.  we specify 'insecure' security status as
-	 * the modified response won't be DNSSEC-valid.  In our faked response
-	 * the authority and additional sections will be empty (except possible
-	 * EDNS0 OPT RR in the additional section appended on sending it out),
-	 * so the total number of RRsets is an_numrrsets. */
-	new_rep = construct_reply_info_base(region, rep->flags,
-		rep->qdcount, rep->ttl, rep->prefetch_ttl,
-		rep->serve_expired_ttl, an_numrrsets, 0, 0, an_numrrsets,
-		sec_status_insecure, LDNS_EDE_NONE);
-	if(!new_rep)
-		return NULL;
-	if(!reply_info_alloc_rrset_keys(new_rep, NULL, region))
-		return NULL;
-	for(i=0; i<copy_rrsets; i++)
-		new_rep->rrsets[i] = rep->rrsets[i];
-
-	return new_rep;
-}
-
-/** find the minimumttl in the rdata of SOA record */
-static time_t
-soa_find_minttl(struct rr_parse* rr)
-{
-	uint16_t rlen = sldns_read_uint16(rr->ttl_data+4);
-	if(rlen < 20)
-		return 0; /* rdata too small for SOA (dname, dname, 5*32bit) */
-	/* minimum TTL is the last 32bit value in the rdata of the record */
-	/* at position ttl_data + 4(ttl) + 2(rdatalen) + rdatalen - 4(timeval)*/
-	return (time_t)sldns_read_uint32(rr->ttl_data+6+rlen-4);
-}
-
 /** do the rdata copy */
 static int
-rdata_copy(sldns_buffer* pkt, struct packed_rrset_data* data, uint8_t* to, 
-	struct rr_parse* rr, time_t* rr_ttl, uint16_t type,
-	sldns_pkt_section section)
+rdata_copy(ldns_buffer* pkt, struct packed_rrset_data* data, uint8_t* to, 
+	struct rr_parse* rr, uint32_t* rr_ttl, uint16_t type)
 {
 	uint16_t pkt_len;
-	const sldns_rr_descriptor* desc;
+	const ldns_rr_descriptor* desc;
 
-	*rr_ttl = sldns_read_uint32(rr->ttl_data);
+	*rr_ttl = ldns_read_uint32(rr->ttl_data);
 	/* RFC 2181 Section 8. if msb of ttl is set treat as if zero. */
 	if(*rr_ttl & 0x80000000U)
 		*rr_ttl = 0;
-	if(type == LDNS_RR_TYPE_SOA && section == LDNS_SECTION_AUTHORITY) {
-		/* negative response. see if TTL of SOA record larger than the
-		 * minimum-ttl in the rdata of the SOA record */
-		if(*rr_ttl > soa_find_minttl(rr))
-			*rr_ttl = soa_find_minttl(rr);
-	}
-	if(!SERVE_ORIGINAL_TTL && (*rr_ttl < MIN_TTL))
+	if(*rr_ttl < MIN_TTL)
 		*rr_ttl = MIN_TTL;
-	if(!SERVE_ORIGINAL_TTL && (*rr_ttl > MAX_TTL))
-		*rr_ttl = MAX_TTL;
-	if(type == LDNS_RR_TYPE_SOA && section == LDNS_SECTION_AUTHORITY) {
-		/* max neg ttl overrides the min and max ttl of everything
-		 * else, it is for a more specific record */
-		if(*rr_ttl > MAX_NEG_TTL)
-			*rr_ttl = MAX_NEG_TTL;
-	}
 	if(*rr_ttl < data->ttl)
 		data->ttl = *rr_ttl;
 
@@ -245,18 +174,18 @@ rdata_copy(sldns_buffer* pkt, struct packed_rrset_data* data, uint8_t* to,
 		return 1;
 	}
 
-	sldns_buffer_set_position(pkt, (size_t)
-		(rr->ttl_data - sldns_buffer_begin(pkt) + sizeof(uint32_t)));
+	ldns_buffer_set_position(pkt, (size_t)
+		(rr->ttl_data - ldns_buffer_begin(pkt) + sizeof(uint32_t)));
 	/* insert decompressed size into rdata len stored in memory */
 	/* -2 because rdatalen bytes are not included. */
 	pkt_len = htons(rr->size - 2);
 	memmove(to, &pkt_len, sizeof(uint16_t));
 	to += 2;
 	/* read packet rdata len */
-	pkt_len = sldns_buffer_read_u16(pkt);
-	if(sldns_buffer_remaining(pkt) < pkt_len)
+	pkt_len = ldns_buffer_read_u16(pkt);
+	if(ldns_buffer_remaining(pkt) < pkt_len)
 		return 0;
-	desc = sldns_rr_descript(type);
+	desc = ldns_rr_descript(type);
 	if(pkt_len > 0 && desc && desc->_dname_count > 0) {
 		int count = (int)desc->_dname_count;
 		int rdf = 0;
@@ -266,26 +195,26 @@ rdata_copy(sldns_buffer* pkt, struct packed_rrset_data* data, uint8_t* to,
 		while(pkt_len > 0 && count) {
 			switch(desc->_wireformat[rdf]) {
 			case LDNS_RDF_TYPE_DNAME:
-				oldpos = sldns_buffer_position(pkt);
+				oldpos = ldns_buffer_position(pkt);
 				dname_pkt_copy(pkt, to, 
-					sldns_buffer_current(pkt));
+					ldns_buffer_current(pkt));
 				to += pkt_dname_len(pkt);
-				pkt_len -= sldns_buffer_position(pkt)-oldpos;
+				pkt_len -= ldns_buffer_position(pkt)-oldpos;
 				count--;
 				len = 0;
 				break;
 			case LDNS_RDF_TYPE_STR:
-				len = sldns_buffer_current(pkt)[0] + 1;
+				len = ldns_buffer_current(pkt)[0] + 1;
 				break;
 			default:
 				len = get_rdf_size(desc->_wireformat[rdf]);
 				break;
 			}
 			if(len) {
-				log_assert(len <= pkt_len);
-				memmove(to, sldns_buffer_current(pkt), len);
+				memmove(to, ldns_buffer_current(pkt), len);
 				to += len;
-				sldns_buffer_skip(pkt, (ssize_t)len);
+				ldns_buffer_skip(pkt, (ssize_t)len);
+				log_assert(len <= pkt_len);
 				pkt_len -= len;
 			}
 			rdf++;
@@ -293,14 +222,14 @@ rdata_copy(sldns_buffer* pkt, struct packed_rrset_data* data, uint8_t* to,
 	}
 	/* copy remaining rdata */
 	if(pkt_len >  0)
-		memmove(to, sldns_buffer_current(pkt), pkt_len);
+		memmove(to, ldns_buffer_current(pkt), pkt_len);
 	
 	return 1;
 }
 
 /** copy over the data into packed rrset */
 static int
-parse_rr_copy(sldns_buffer* pkt, struct rrset_parse* pset, 
+parse_rr_copy(ldns_buffer* pkt, struct rrset_parse* pset, 
 	struct packed_rrset_data* data)
 {
 	size_t i;
@@ -316,14 +245,14 @@ parse_rr_copy(sldns_buffer* pkt, struct rrset_parse* pset,
 	data->rr_len = (size_t*)((uint8_t*)data + 
 		sizeof(struct packed_rrset_data));
 	data->rr_data = (uint8_t**)&(data->rr_len[total]);
-	data->rr_ttl = (time_t*)&(data->rr_data[total]);
+	data->rr_ttl = (uint32_t*)&(data->rr_data[total]);
 	nextrdata = (uint8_t*)&(data->rr_ttl[total]);
 	for(i=0; i<data->count; i++) {
 		data->rr_len[i] = rr->size;
 		data->rr_data[i] = nextrdata;
 		nextrdata += rr->size;
 		if(!rdata_copy(pkt, data, data->rr_data[i], rr, 
-			&data->rr_ttl[i], pset->type, pset->section))
+			&data->rr_ttl[i], pset->type))
 			return 0;
 		rr = rr->next;
 	}
@@ -334,7 +263,7 @@ parse_rr_copy(sldns_buffer* pkt, struct rrset_parse* pset,
 		data->rr_data[i] = nextrdata;
 		nextrdata += rr->size;
 		if(!rdata_copy(pkt, data, data->rr_data[i], rr, 
-			&data->rr_ttl[i], LDNS_RR_TYPE_RRSIG, pset->section))
+			&data->rr_ttl[i], LDNS_RR_TYPE_RRSIG))
 			return 0;
 		rr = rr->next;
 	}
@@ -343,29 +272,22 @@ parse_rr_copy(sldns_buffer* pkt, struct rrset_parse* pset,
 
 /** create rrset return 0 on failure */
 static int
-parse_create_rrset(sldns_buffer* pkt, struct rrset_parse* pset,
+parse_create_rrset(ldns_buffer* pkt, struct rrset_parse* pset,
 	struct packed_rrset_data** data, struct regional* region)
 {
 	/* allocate */
-	size_t s;
-	if(pset->rr_count > RR_COUNT_MAX || pset->rrsig_count > RR_COUNT_MAX ||
-		pset->size > RR_COUNT_MAX)
-		return 0; /* protect against integer overflow */
-	s = sizeof(struct packed_rrset_data) + 
+	size_t s = sizeof(struct packed_rrset_data) + 
 		(pset->rr_count + pset->rrsig_count) * 
-		(sizeof(size_t)+sizeof(uint8_t*)+sizeof(time_t)) + 
+		(sizeof(size_t)+sizeof(uint8_t*)+sizeof(uint32_t)) + 
 		pset->size;
 	if(region)
-		*data = regional_alloc_zero(region, s);
-	else	*data = calloc(1, s);
+		*data = regional_alloc(region, s);
+	else	*data = malloc(s);
 	if(!*data)
 		return 0;
 	/* copy & decompress */
 	if(!parse_rr_copy(pkt, pset, *data)) {
-		if(!region) {
-			free(*data);
-			*data = NULL;
-		}
+		if(!region) free(*data);
 		return 0;
 	}
 	return 1;
@@ -410,7 +332,7 @@ get_rrset_trust(struct msg_parse* msg, struct rrset_parse* rrset)
 }
 
 int
-parse_copy_decompress_rrset(sldns_buffer* pkt, struct msg_parse* msg,
+parse_copy_decompress_rrset(ldns_buffer* pkt, struct msg_parse* msg,
 	struct rrset_parse *pset, struct regional* region, 
 	struct ub_packed_rrset_key* pk)
 {
@@ -430,13 +352,8 @@ parse_copy_decompress_rrset(sldns_buffer* pkt, struct msg_parse* msg,
 	pk->rk.type = htons(pset->type);
 	pk->rk.rrset_class = pset->rrset_class;
 	/** read data part. */
-	if(!parse_create_rrset(pkt, pset, &data, region)) {
-		if(!region) {
-			free(pk->rk.dname);
-			pk->rk.dname = NULL;
-		}
+	if(!parse_create_rrset(pkt, pset, &data, region))
 		return 0;
-	}
 	pk->entry.data = (void*)data;
 	pk->entry.key = (void*)pk;
 	pk->entry.hash = pset->hash;
@@ -453,7 +370,7 @@ parse_copy_decompress_rrset(sldns_buffer* pkt, struct msg_parse* msg,
  * @return 0 on failure.
  */
 static int
-parse_copy_decompress(sldns_buffer* pkt, struct msg_parse* msg,
+parse_copy_decompress(ldns_buffer* pkt, struct msg_parse* msg,
 	struct reply_info* rep, struct regional* region)
 {
 	size_t i;
@@ -476,12 +393,11 @@ parse_copy_decompress(sldns_buffer* pkt, struct msg_parse* msg,
 		pset = pset->rrset_all_next;
 	}
 	rep->prefetch_ttl = PREFETCH_TTL_CALC(rep->ttl);
-	rep->serve_expired_ttl = rep->ttl + SERVE_EXPIRED_TTL;
 	return 1;
 }
 
 int 
-parse_create_msg(sldns_buffer* pkt, struct msg_parse* msg,
+parse_create_msg(ldns_buffer* pkt, struct msg_parse* msg,
 	struct alloc_cache* alloc, struct query_info* qinf, 
 	struct reply_info** rep, struct regional* region)
 {
@@ -490,18 +406,14 @@ parse_create_msg(sldns_buffer* pkt, struct msg_parse* msg,
 		return 0;
 	if(!parse_create_repinfo(msg, rep, region))
 		return 0;
-	if(!reply_info_alloc_rrset_keys(*rep, alloc, region)) {
-		if(!region) reply_info_parsedelete(*rep, alloc);
+	if(!repinfo_alloc_rrset_keys(*rep, alloc, region))
 		return 0;
-	}
-	if(!parse_copy_decompress(pkt, msg, *rep, region)) {
-		if(!region) reply_info_parsedelete(*rep, alloc);
+	if(!parse_copy_decompress(pkt, msg, *rep, region))
 		return 0;
-	}
 	return 1;
 }
 
-int reply_info_parse(sldns_buffer* pkt, struct alloc_cache* alloc,
+int reply_info_parse(ldns_buffer* pkt, struct alloc_cache* alloc,
         struct query_info* qinf, struct reply_info** rep, 
 	struct regional* region, struct edns_data* edns)
 {
@@ -510,24 +422,24 @@ int reply_info_parse(sldns_buffer* pkt, struct alloc_cache* alloc,
 	int ret;
 	
 	qinf->qname = NULL;
-	qinf->local_alias = NULL;
 	*rep = NULL;
 	if(!(msg = regional_alloc(region, sizeof(*msg)))) {
 		return LDNS_RCODE_SERVFAIL;
 	}
 	memset(msg, 0, sizeof(*msg));
 	
-	sldns_buffer_set_position(pkt, 0);
+	ldns_buffer_set_position(pkt, 0);
 	if((ret = parse_packet(pkt, msg, region)) != 0) {
 		return ret;
 	}
-	if((ret = parse_extract_edns_from_response_msg(msg, edns, region)) != 0)
+	if((ret = parse_extract_edns(msg, edns)) != 0)
 		return ret;
 
 	/* parse OK, allocate return structures */
 	/* this also performs dname decompression */
 	if(!parse_create_msg(pkt, msg, alloc, qinf, rep, NULL)) {
 		query_info_clear(qinf);
+		reply_info_parsedelete(*rep, alloc);
 		*rep = NULL;
 		return LDNS_RCODE_SERVFAIL;
 	}
@@ -553,12 +465,11 @@ reply_info_sortref(struct reply_info* rep)
 }
 
 void 
-reply_info_set_ttls(struct reply_info* rep, time_t timenow)
+reply_info_set_ttls(struct reply_info* rep, uint32_t timenow)
 {
 	size_t i, j;
 	rep->ttl += timenow;
 	rep->prefetch_ttl += timenow;
-	rep->serve_expired_ttl += timenow;
 	for(i=0; i<rep->rrset_count; i++) {
 		struct packed_rrset_data* data = (struct packed_rrset_data*)
 			rep->ref[i].key->entry.data;
@@ -568,7 +479,6 @@ reply_info_set_ttls(struct reply_info* rep, time_t timenow)
 		for(j=0; j<data->count + data->rrsig_count; j++) {
 			data->rr_ttl[j] += timenow;
 		}
-		data->ttl_add = timenow;
 	}
 }
 
@@ -582,33 +492,27 @@ reply_info_parsedelete(struct reply_info* rep, struct alloc_cache* alloc)
 	for(i=0; i<rep->rrset_count; i++) {
 		ub_packed_rrset_parsedelete(rep->rrsets[i], alloc);
 	}
-	if(rep->reason_bogus_str) {
-		free(rep->reason_bogus_str);
-		rep->reason_bogus_str = NULL;
-	}
 	free(rep);
 }
 
 int 
-query_info_parse(struct query_info* m, sldns_buffer* query)
+query_info_parse(struct query_info* m, ldns_buffer* query)
 {
-	uint8_t* q = sldns_buffer_begin(query);
+	uint8_t* q = ldns_buffer_begin(query);
 	/* minimum size: header + \0 + qtype + qclass */
-	if(sldns_buffer_limit(query) < LDNS_HEADER_SIZE + 5)
+	if(ldns_buffer_limit(query) < LDNS_HEADER_SIZE + 5)
 		return 0;
-	if((LDNS_OPCODE_WIRE(q) != LDNS_PACKET_QUERY && LDNS_OPCODE_WIRE(q) !=
-		LDNS_PACKET_NOTIFY) || LDNS_QDCOUNT(q) != 1 ||
-		sldns_buffer_position(query) != 0)
+	if(LDNS_OPCODE_WIRE(q) != LDNS_PACKET_QUERY || 
+		LDNS_QDCOUNT(q) != 1 || ldns_buffer_position(query) != 0)
 		return 0;
-	sldns_buffer_skip(query, LDNS_HEADER_SIZE);
-	m->qname = sldns_buffer_current(query);
+	ldns_buffer_skip(query, LDNS_HEADER_SIZE);
+	m->qname = ldns_buffer_current(query);
 	if((m->qname_len = query_dname_len(query)) == 0)
 		return 0; /* parse error */
-	if(sldns_buffer_remaining(query) < 4)
+	if(ldns_buffer_remaining(query) < 4)
 		return 0; /* need qtype, qclass */
-	m->qtype = sldns_buffer_read_u16(query);
-	m->qclass = sldns_buffer_read_u16(query);
-	m->local_alias = NULL;
+	m->qtype = ldns_buffer_read_u16(query);
+	m->qclass = ldns_buffer_read_u16(query);
 	return 1;
 }
 
@@ -667,20 +571,14 @@ void
 reply_info_delete(void* d, void* ATTR_UNUSED(arg))
 {
 	struct reply_info* r = (struct reply_info*)d;
-	if(r->reason_bogus_str) {
-		free(r->reason_bogus_str);
-		r->reason_bogus_str = NULL;
-	}
 	free(r);
 }
 
-hashvalue_type
-query_info_hash(struct query_info *q, uint16_t flags)
+hashvalue_t 
+query_info_hash(struct query_info *q)
 {
-	hashvalue_type h = 0xab;
+	hashvalue_t h = 0xab;
 	h = hashlittle(&q->qtype, sizeof(q->qtype), h);
-	if(q->qtype == LDNS_RR_TYPE_AAAA && (flags&BIT_CD))
-		h++;
 	h = hashlittle(&q->qclass, sizeof(q->qclass), h);
 	h = dname_query_hash(q->qname, h);
 	return h;
@@ -688,7 +586,7 @@ query_info_hash(struct query_info *q, uint16_t flags)
 
 struct msgreply_entry* 
 query_info_entrysetup(struct query_info* q, struct reply_info* r, 
-	hashvalue_type h)
+	hashvalue_t h)
 {
 	struct msgreply_entry* e = (struct msgreply_entry*)malloc( 
 		sizeof(struct msgreply_entry));
@@ -698,14 +596,9 @@ query_info_entrysetup(struct query_info* q, struct reply_info* r,
 	e->entry.key = e;
 	e->entry.data = r;
 	lock_rw_init(&e->entry.lock);
-	lock_protect(&e->entry.lock, &e->key.qname, sizeof(e->key.qname));
-	lock_protect(&e->entry.lock, &e->key.qname_len, sizeof(e->key.qname_len));
-	lock_protect(&e->entry.lock, &e->key.qtype, sizeof(e->key.qtype));
-	lock_protect(&e->entry.lock, &e->key.qclass, sizeof(e->key.qclass));
-	lock_protect(&e->entry.lock, &e->key.local_alias, sizeof(e->key.local_alias));
-	lock_protect(&e->entry.lock, &e->entry.hash, sizeof(e->entry.hash));
-	lock_protect(&e->entry.lock, &e->entry.key, sizeof(e->entry.key));
-	lock_protect(&e->entry.lock, &e->entry.data, sizeof(e->entry.data));
+	lock_protect(&e->entry.lock, &e->key, sizeof(e->key));
+	lock_protect(&e->entry.lock, &e->entry.hash, sizeof(e->entry.hash) +
+		sizeof(e->entry.key) + sizeof(e->entry.data));
 	lock_protect(&e->entry.lock, e->key.qname, e->key.qname_len);
 	q->qname = NULL;
 	return e;
@@ -747,38 +640,19 @@ repinfo_copy_rrsets(struct reply_info* dest, struct reply_info* from,
 	return 1;
 }
 
-struct reply_info*
-reply_info_copy(struct reply_info* rep, struct alloc_cache* alloc,
+struct reply_info* 
+reply_info_copy(struct reply_info* rep, struct alloc_cache* alloc, 
 	struct regional* region)
 {
 	struct reply_info* cp;
-	cp = construct_reply_info_base(region, rep->flags, rep->qdcount,
-		rep->ttl, rep->prefetch_ttl, rep->serve_expired_ttl,
-		rep->an_numrrsets, rep->ns_numrrsets, rep->ar_numrrsets,
-		rep->rrset_count, rep->security, rep->reason_bogus);
+	cp = construct_reply_info_base(region, rep->flags, rep->qdcount, 
+		rep->ttl, rep->prefetch_ttl, rep->an_numrrsets, 
+		rep->ns_numrrsets, rep->ar_numrrsets, rep->rrset_count, 
+		rep->security);
 	if(!cp)
 		return NULL;
-
-	if(rep->reason_bogus_str && *rep->reason_bogus_str != 0) {
-		if(region) {
-			cp->reason_bogus_str = (char*)regional_alloc(region,
-				sizeof(char)
-				* (strlen(rep->reason_bogus_str)+1));
-		} else {
-			cp->reason_bogus_str = malloc(sizeof(char)
-				* (strlen(rep->reason_bogus_str)+1));
-		}
-		if(!cp->reason_bogus_str) {
-			if(!region)
-				reply_info_parsedelete(cp, alloc);
-			return NULL;
-		}
-		memcpy(cp->reason_bogus_str, rep->reason_bogus_str,
-			strlen(rep->reason_bogus_str)+1);
-	}
-
 	/* allocate ub_key structures special or not */
-	if(!reply_info_alloc_rrset_keys(cp, alloc, region)) {
+	if(!repinfo_alloc_rrset_keys(cp, alloc, region)) {
 		if(!region)
 			reply_info_parsedelete(cp, alloc);
 		return NULL;
@@ -890,72 +764,36 @@ void
 log_dns_msg(const char* str, struct query_info* qinfo, struct reply_info* rep)
 {
 	/* not particularly fast but flexible, make wireformat and print */
-	sldns_buffer* buf = sldns_buffer_new(65535);
+	ldns_buffer* buf = ldns_buffer_new(65535);
 	struct regional* region = regional_create();
-	if(!(buf && region)) {
-		log_err("%s: log_dns_msg: out of memory", str);
-		sldns_buffer_free(buf);
-		regional_destroy(region);
-		return;
-	}
-	if(!reply_info_encode(qinfo, rep, 0, rep->flags, buf, 0,
-		region, 65535, 1, 0)) {
-		log_err("%s: log_dns_msg: out of memory", str);
+	if(!reply_info_encode(qinfo, rep, 0, rep->flags, buf, 0, 
+		region, 65535, 1)) {
+		log_info("%s: log_dns_msg: out of memory", str);
 	} else {
-		char* s = sldns_wire2str_pkt(sldns_buffer_begin(buf),
-			sldns_buffer_limit(buf));
-		if(!s) {
-			log_info("%s: log_dns_msg: ldns tostr failed", str);
+		ldns_status s;
+		ldns_pkt* pkt = NULL;
+		s = ldns_buffer2pkt_wire(&pkt, buf);
+		if(s != LDNS_STATUS_OK) {
+			log_info("%s: log_dns_msg: ldns parse gave: %s",
+				str, ldns_get_errorstr_by_id(s));
 		} else {
-			log_info("%s %s", str, s);
+			ldns_buffer_clear(buf);
+			s = ldns_pkt2buffer_str(buf, pkt);
+			if(s != LDNS_STATUS_OK) {
+				log_info("%s: log_dns_msg: ldns tostr gave: %s",
+					str, ldns_get_errorstr_by_id(s));
+			} else {
+				log_info("%s %s", 
+					str, (char*)ldns_buffer_begin(buf));
+			}
 		}
-		free(s);
+		ldns_pkt_free(pkt);
 	}
-	sldns_buffer_free(buf);
+	ldns_buffer_free(buf);
 	regional_destroy(region);
 }
 
-void
-log_reply_info(enum verbosity_value v, struct query_info *qinf,
-	struct sockaddr_storage *addr, socklen_t addrlen, struct timeval dur,
-	int cached, struct sldns_buffer *rmsg)
-{
-	char qname_buf[LDNS_MAX_DOMAINLEN+1];
-	char clientip_buf[128];
-	char rcode_buf[16];
-	char type_buf[16];
-	char class_buf[16];
-	size_t pktlen;
-	uint16_t rcode = FLAGS_GET_RCODE(sldns_buffer_read_u16_at(rmsg, 2));
-
-	if(verbosity < v)
-	  return;
-
-	sldns_wire2str_rcode_buf((int)rcode, rcode_buf, sizeof(rcode_buf));
-	addr_to_str(addr, addrlen, clientip_buf, sizeof(clientip_buf));
-	if(rcode == LDNS_RCODE_FORMERR)
-	{
-		if(LOG_TAG_QUERYREPLY)
-			log_reply("%s - - - %s - - - ", clientip_buf, rcode_buf);
-		else	log_info("%s - - - %s - - - ", clientip_buf, rcode_buf);
-	} else {
-		if(qinf->qname)
-			dname_str(qinf->qname, qname_buf);
-		else	snprintf(qname_buf, sizeof(qname_buf), "null");
-		pktlen = sldns_buffer_limit(rmsg);
-		sldns_wire2str_type_buf(qinf->qtype, type_buf, sizeof(type_buf));
-		sldns_wire2str_class_buf(qinf->qclass, class_buf, sizeof(class_buf));
-		if(LOG_TAG_QUERYREPLY)
-		     log_reply("%s %s %s %s %s " ARG_LL "d.%6.6d %d %d",
-			clientip_buf, qname_buf, type_buf, class_buf,
-			rcode_buf, (long long)dur.tv_sec, (int)dur.tv_usec, cached, (int)pktlen);
-		else log_info("%s %s %s %s %s " ARG_LL "d.%6.6d %d %d",
-			clientip_buf, qname_buf, type_buf, class_buf,
-			rcode_buf, (long long)dur.tv_sec, (int)dur.tv_usec, cached, (int)pktlen);
-	}
-}
-
-void
+void 
 log_query_info(enum verbosity_value v, const char* str, 
 	struct query_info* qinf)
 {
@@ -963,13 +801,13 @@ log_query_info(enum verbosity_value v, const char* str,
 }
 
 int
-reply_check_cname_chain(struct query_info* qinfo, struct reply_info* rep) 
+reply_check_cname_chain(struct reply_info* rep) 
 {
 	/* check only answer section rrs for matching cname chain.
 	 * the cache may return changed rdata, but owner names are untouched.*/
 	size_t i;
-	uint8_t* sname = qinfo->qname;
-	size_t snamelen = qinfo->qname_len;
+	uint8_t* sname = rep->rrsets[0]->rk.dname;
+	size_t snamelen = rep->rrsets[0]->rk.dname_len;
 	for(i=0; i<rep->an_numrrsets; i++) {
 		uint16_t t = ntohs(rep->rrsets[i]->rk.type);
 		if(t == LDNS_RR_TYPE_DNAME)
@@ -997,392 +835,4 @@ reply_all_rrsets_secure(struct reply_info* rep)
 		return 0;
 	}
 	return 1;
-}
-
-struct reply_info*
-parse_reply_in_temp_region(sldns_buffer* pkt, struct regional* region,
-	struct query_info* qi)
-{
-	struct reply_info* rep;
-	struct msg_parse* msg;
-	if(!(msg = regional_alloc(region, sizeof(*msg)))) {
-		return NULL;
-	}
-	memset(msg, 0, sizeof(*msg));
-	sldns_buffer_set_position(pkt, 0);
-	if(parse_packet(pkt, msg, region) != 0){
-		return 0;
-	}
-	if(!parse_create_msg(pkt, msg, NULL, qi, &rep, region)) {
-		return 0;
-	}
-	return rep;
-}
-
-int edns_opt_list_append_ede(struct edns_option** list, struct regional* region,
-	sldns_ede_code code, const char *txt)
-{
-	struct edns_option** prevp;
-	struct edns_option* opt;
-	size_t txt_len = txt ? strlen(txt) : 0;
-
-	/* allocate new element */
-	opt = (struct edns_option*)regional_alloc(region, sizeof(*opt));
-	if(!opt)
-		return 0;
-	opt->next = NULL;
-	opt->opt_code = LDNS_EDNS_EDE;
-	opt->opt_len = txt_len + sizeof(uint16_t);
-	opt->opt_data = regional_alloc(region, txt_len + sizeof(uint16_t));
-	if(!opt->opt_data)
-		return 0;
-	sldns_write_uint16(opt->opt_data, (uint16_t)code);
-	if (txt_len)
-		memmove(opt->opt_data + 2, txt, txt_len);
-
-	/* append at end of list */
-	prevp = list;
-	while(*prevp != NULL)
-		prevp = &((*prevp)->next);
-	verbose(VERB_ALGO, "attached EDE code: %d with message: %s", code, (txt?txt:"\"\""));
-	*prevp = opt;
-	return 1;
-}
-
-int edns_opt_list_append_keepalive(struct edns_option** list, int msec,
-	struct regional* region)
-{
-	uint8_t data[2]; /* For keepalive value */
-	data[0] = (uint8_t)((msec >> 8) & 0xff);
-	data[1] = (uint8_t)(msec & 0xff);
-	return edns_opt_list_append(list, LDNS_EDNS_KEEPALIVE, sizeof(data),
-		data, region);
-}
-
-int edns_opt_list_append(struct edns_option** list, uint16_t code, size_t len,
-	uint8_t* data, struct regional* region)
-{
-	struct edns_option** prevp;
-	struct edns_option* opt;
-
-	/* allocate new element */
-	opt = (struct edns_option*)regional_alloc(region, sizeof(*opt));
-	if(!opt)
-		return 0;
-	opt->next = NULL;
-	opt->opt_code = code;
-	opt->opt_len = len;
-	opt->opt_data = NULL;
-	if(len > 0) {
-		opt->opt_data = regional_alloc_init(region, data, len);
-		if(!opt->opt_data)
-			return 0;
-	}
-
-	/* append at end of list */
-	prevp = list;
-	while(*prevp != NULL) {
-		prevp = &((*prevp)->next);
-	}
-	*prevp = opt;
-	return 1;
-}
-
-int edns_opt_list_remove(struct edns_option** list, uint16_t code)
-{
-	/* The list should already be allocated in a region. Freeing the
-	 * allocated space in a region is not possible. We just unlink the
-	 * required elements and they will be freed together with the region. */
-
-	struct edns_option* prev;
-	struct edns_option* curr;
-	if(!list || !(*list)) return 0;
-
-	/* Unlink and repoint if the element(s) are first in list */
-	while(list && *list && (*list)->opt_code == code) {
-		*list = (*list)->next;
-	}
-
-	if(!list || !(*list)) return 1;
-	/* Unlink elements and reattach the list */
-	prev = *list;
-	curr = (*list)->next;
-	while(curr != NULL) {
-		if(curr->opt_code == code) {
-			prev->next = curr->next;
-			curr = curr->next;
-		} else {
-			prev = curr;
-			curr = curr->next;
-		}
-	}
-	return 1;
-}
-
-static int inplace_cb_reply_call_generic(
-    struct inplace_cb* callback_list, enum inplace_cb_list_type type,
-	struct query_info* qinfo, struct module_qstate* qstate,
-	struct reply_info* rep, int rcode, struct edns_data* edns,
-	struct comm_reply* repinfo, struct regional* region,
-	struct timeval* start_time)
-{
-	struct inplace_cb* cb;
-	struct edns_option* opt_list_out = NULL;
-#if defined(EXPORT_ALL_SYMBOLS)
-	(void)type; /* param not used when fptr_ok disabled */
-#endif
-	if(qstate)
-		opt_list_out = qstate->edns_opts_front_out;
-	for(cb=callback_list; cb; cb=cb->next) {
-		fptr_ok(fptr_whitelist_inplace_cb_reply_generic(
-			(inplace_cb_reply_func_type*)cb->cb, type));
-		(void)(*(inplace_cb_reply_func_type*)cb->cb)(qinfo, qstate, rep,
-			rcode, edns, &opt_list_out, repinfo, region, start_time, cb->id, cb->cb_arg);
-	}
-	edns->opt_list_inplace_cb_out = opt_list_out;
-	return 1;
-}
-
-int inplace_cb_reply_call(struct module_env* env, struct query_info* qinfo,
-	struct module_qstate* qstate, struct reply_info* rep, int rcode,
-	struct edns_data* edns, struct comm_reply* repinfo, struct regional* region,
-	struct timeval* start_time)
-{
-	return inplace_cb_reply_call_generic(
-		env->inplace_cb_lists[inplace_cb_reply], inplace_cb_reply, qinfo,
-		qstate, rep, rcode, edns, repinfo, region, start_time);
-}
-
-int inplace_cb_reply_cache_call(struct module_env* env,
-	struct query_info* qinfo, struct module_qstate* qstate,
-	struct reply_info* rep, int rcode, struct edns_data* edns,
-	struct comm_reply* repinfo, struct regional* region,
-	struct timeval* start_time)
-{
-	return inplace_cb_reply_call_generic(
-		env->inplace_cb_lists[inplace_cb_reply_cache], inplace_cb_reply_cache,
-		qinfo, qstate, rep, rcode, edns, repinfo, region, start_time);
-}
-
-int inplace_cb_reply_local_call(struct module_env* env,
-	struct query_info* qinfo, struct module_qstate* qstate,
-	struct reply_info* rep, int rcode, struct edns_data* edns,
-	struct comm_reply* repinfo, struct regional* region,
-	struct timeval* start_time)
-{
-	return inplace_cb_reply_call_generic(
-		env->inplace_cb_lists[inplace_cb_reply_local], inplace_cb_reply_local,
-		qinfo, qstate, rep, rcode, edns, repinfo, region, start_time);
-}
-
-int inplace_cb_reply_servfail_call(struct module_env* env,
-	struct query_info* qinfo, struct module_qstate* qstate,
-	struct reply_info* rep, int rcode, struct edns_data* edns,
-	struct comm_reply* repinfo, struct regional* region,
-	struct timeval* start_time)
-{
-	/* We are going to servfail. Remove any potential edns options. */
-	if(qstate)
-		qstate->edns_opts_front_out = NULL;
-	return inplace_cb_reply_call_generic(
-		env->inplace_cb_lists[inplace_cb_reply_servfail],
-		inplace_cb_reply_servfail, qinfo, qstate, rep, rcode, edns, repinfo,
-		region, start_time);
-}
-
-int inplace_cb_query_call(struct module_env* env, struct query_info* qinfo,
-	uint16_t flags, struct sockaddr_storage* addr, socklen_t addrlen,
-	uint8_t* zone, size_t zonelen, struct module_qstate* qstate,
-	struct regional* region)
-{
-	struct inplace_cb* cb = env->inplace_cb_lists[inplace_cb_query];
-	for(; cb; cb=cb->next) {
-		fptr_ok(fptr_whitelist_inplace_cb_query(
-			(inplace_cb_query_func_type*)cb->cb));
-		(void)(*(inplace_cb_query_func_type*)cb->cb)(qinfo, flags,
-			qstate, addr, addrlen, zone, zonelen, region,
-			cb->id, cb->cb_arg);
-	}
-	return 1;
-}
-
-int inplace_cb_edns_back_parsed_call(struct module_env* env, 
-	struct module_qstate* qstate)
-{
-	struct inplace_cb* cb =
-		env->inplace_cb_lists[inplace_cb_edns_back_parsed];
-	for(; cb; cb=cb->next) {
-		fptr_ok(fptr_whitelist_inplace_cb_edns_back_parsed(
-			(inplace_cb_edns_back_parsed_func_type*)cb->cb));
-		(void)(*(inplace_cb_edns_back_parsed_func_type*)cb->cb)(qstate,
-			cb->id, cb->cb_arg);
-	}
-	return 1;
-}
-
-int inplace_cb_query_response_call(struct module_env* env,
-	struct module_qstate* qstate, struct dns_msg* response) {
-	struct inplace_cb* cb =
-		env->inplace_cb_lists[inplace_cb_query_response];
-	for(; cb; cb=cb->next) {
-		fptr_ok(fptr_whitelist_inplace_cb_query_response(
-			(inplace_cb_query_response_func_type*)cb->cb));
-		(void)(*(inplace_cb_query_response_func_type*)cb->cb)(qstate,
-			response, cb->id, cb->cb_arg);
-	}
-	return 1;
-}
-
-struct edns_option* edns_opt_copy_region(struct edns_option* list,
-	struct regional* region)
-{
-	struct edns_option* result = NULL, *cur = NULL, *s;
-	while(list) {
-		/* copy edns option structure */
-		s = regional_alloc_init(region, list, sizeof(*list));
-		if(!s) return NULL;
-		s->next = NULL;
-
-		/* copy option data */
-		if(s->opt_data) {
-			s->opt_data = regional_alloc_init(region, s->opt_data,
-				s->opt_len);
-			if(!s->opt_data)
-				return NULL;
-		}
-
-		/* link into list */
-		if(cur)
-			cur->next = s;
-		else	result = s;
-		cur = s;
-
-		/* examine next element */
-		list = list->next;
-	}
-	return result;
-}
-
-struct edns_option* edns_opt_copy_filter_region(struct edns_option* list,
-	uint16_t* filter_list, size_t filter_list_len, struct regional* region)
-{
-	struct edns_option* result = NULL, *cur = NULL, *s;
-	size_t i;
-	while(list) {
-		for(i=0; i<filter_list_len; i++)
-			if(filter_list[i] == list->opt_code) goto found;
-		if(i == filter_list_len) goto next;
-found:
-		/* copy edns option structure */
-		s = regional_alloc_init(region, list, sizeof(*list));
-		if(!s) return NULL;
-		s->next = NULL;
-
-		/* copy option data */
-		if(s->opt_data) {
-			s->opt_data = regional_alloc_init(region, s->opt_data,
-				s->opt_len);
-			if(!s->opt_data)
-				return NULL;
-		}
-
-		/* link into list */
-		if(cur)
-			cur->next = s;
-		else	result = s;
-		cur = s;
-
-next:
-		/* examine next element */
-		list = list->next;
-	}
-	return result;
-}
-
-int edns_opt_compare(struct edns_option* p, struct edns_option* q)
-{
-	if(!p && !q) return 0;
-	if(!p) return -1;
-	if(!q) return 1;
-	log_assert(p && q);
-	if(p->opt_code != q->opt_code)
-		return (int)q->opt_code - (int)p->opt_code;
-	if(p->opt_len != q->opt_len)
-		return (int)q->opt_len - (int)p->opt_len;
-	if(p->opt_len != 0)
-		return memcmp(p->opt_data, q->opt_data, p->opt_len);
-	return 0;
-}
-
-int edns_opt_list_compare(struct edns_option* p, struct edns_option* q)
-{
-	int r;
-	while(p && q) {
-		r = edns_opt_compare(p, q);
-		if(r != 0)
-			return r;
-		p = p->next;
-		q = q->next;
-	}
-	if(p || q) {
-		/* uneven length lists */
-		if(p) return 1;
-		if(q) return -1;
-	}
-	return 0;
-}
-
-void edns_opt_list_free(struct edns_option* list)
-{
-	struct edns_option* n;
-	while(list) {
-		free(list->opt_data);
-		n = list->next;
-		free(list);
-		list = n;
-	}
-}
-
-struct edns_option* edns_opt_copy_alloc(struct edns_option* list)
-{
-	struct edns_option* result = NULL, *cur = NULL, *s;
-	while(list) {
-		/* copy edns option structure */
-		s = memdup(list, sizeof(*list));
-		if(!s) {
-			edns_opt_list_free(result);
-			return NULL;
-		}
-		s->next = NULL;
-
-		/* copy option data */
-		if(s->opt_data) {
-			s->opt_data = memdup(s->opt_data, s->opt_len);
-			if(!s->opt_data) {
-				free(s);
-				edns_opt_list_free(result);
-				return NULL;
-			}
-		}
-
-		/* link into list */
-		if(cur)
-			cur->next = s;
-		else	result = s;
-		cur = s;
-
-		/* examine next element */
-		list = list->next;
-	}
-	return result;
-}
-
-struct edns_option* edns_opt_list_find(struct edns_option* list, uint16_t code)
-{
-	struct edns_option* p;
-	for(p=list; p; p=p->next) {
-		if(p->opt_code == code)
-			return p;
-	}
-	return NULL;
 }

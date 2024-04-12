@@ -121,7 +121,7 @@ int shm_main_init(struct daemon* daemon)
 		shmctl(daemon->shm_info->id_arr, IPC_RMID, NULL);
 
 	/* SHM: Create the segment */
-	daemon->shm_info->id_ctl = shmget(daemon->shm_info->key, sizeof(struct ub_shm_stat_info), IPC_CREAT | 0644);
+	daemon->shm_info->id_ctl = shmget(daemon->shm_info->key, sizeof(struct ub_shm_stat_info), IPC_CREAT | 0666);
 
 	if (daemon->shm_info->id_ctl < 0)
 	{
@@ -130,12 +130,11 @@ int shm_main_init(struct daemon* daemon)
 
 		/* Just release memory unused */
 		free(daemon->shm_info);
-		daemon->shm_info = NULL;
 
 		return 0;
 	}
 
-	daemon->shm_info->id_arr = shmget(daemon->shm_info->key + 1, shm_size, IPC_CREAT | 0644);
+	daemon->shm_info->id_arr = shmget(daemon->shm_info->key + 1, shm_size, IPC_CREAT | 0666);
 
 	if (daemon->shm_info->id_arr < 0)
 	{
@@ -144,7 +143,6 @@ int shm_main_init(struct daemon* daemon)
 
 		/* Just release memory unused */
 		free(daemon->shm_info);
-		daemon->shm_info = NULL;
 
 		return 0;
 	}
@@ -158,7 +156,6 @@ int shm_main_init(struct daemon* daemon)
 
 		/* Just release memory unused */
 		free(daemon->shm_info);
-		daemon->shm_info = NULL;
 
 		return 0;
 	}
@@ -173,7 +170,6 @@ int shm_main_init(struct daemon* daemon)
 
 		/* Just release memory unused */
 		free(daemon->shm_info);
-		daemon->shm_info = NULL;
 
 		return 0;
 	}
@@ -214,8 +210,6 @@ void shm_main_shutdown(struct daemon* daemon)
 	if (daemon->shm_info->ptr_arr)
 		shmdt(daemon->shm_info->ptr_arr);
 
-	free(daemon->shm_info);
-	daemon->shm_info = NULL;
 #else
 	(void)daemon;
 #endif /* HAVE_SHMGET */
@@ -229,10 +223,8 @@ void shm_main_run(struct worker *worker)
 	struct ub_stats_info *stat_info;
 	int offset;
 
-#ifndef S_SPLINT_S
 	verbose(VERB_DETAIL, "SHM run - worker [%d] - daemon [%p] - timenow(%u) - timeboot(%u)",
 		worker->thread_num, worker->daemon, (unsigned)worker->env.now_tv->tv_sec, (unsigned)worker->daemon->time_boot.tv_sec);
-#endif
 
 	offset = worker->thread_num + 1;
 	stat_total = worker->daemon->shm_info->ptr_arr;
@@ -248,26 +240,15 @@ void shm_main_run(struct worker *worker)
 		memset(stat_total, 0, sizeof(struct ub_stats_info));
 
 		/* Point to data into SHM */
-#ifndef S_SPLINT_S
 		shm_stat = worker->daemon->shm_info->ptr_ctl;
 		shm_stat->time.now_sec = (long long)worker->env.now_tv->tv_sec;
 		shm_stat->time.now_usec = (long long)worker->env.now_tv->tv_usec;
-#endif
 
 		stat_timeval_subtract(&shm_stat->time.up_sec, &shm_stat->time.up_usec, worker->env.now_tv, &worker->daemon->time_boot);
 		stat_timeval_subtract(&shm_stat->time.elapsed_sec, &shm_stat->time.elapsed_usec, worker->env.now_tv, &worker->daemon->time_last_stat);
 
 		shm_stat->mem.msg = (long long)slabhash_get_mem(worker->env.msg_cache);
 		shm_stat->mem.rrset = (long long)slabhash_get_mem(&worker->env.rrset_cache->table);
-		shm_stat->mem.dnscrypt_shared_secret = 0;
-#ifdef USE_DNSCRYPT
-		if(worker->daemon->dnscenv) {
-			shm_stat->mem.dnscrypt_shared_secret = (long long)slabhash_get_mem(
-				worker->daemon->dnscenv->shared_secrets_cache);
-			shm_stat->mem.dnscrypt_nonce = (long long)slabhash_get_mem(
-				worker->daemon->dnscenv->nonces_cache);
-		}
-#endif
 		shm_stat->mem.val = (long long)mod_get_mem(&worker->env,
 			"validator");
 		shm_stat->mem.iter = (long long)mod_get_mem(&worker->env,
@@ -281,7 +262,7 @@ void shm_main_run(struct worker *worker)
 		shm_stat->mem.subnet = 0;
 #ifdef CLIENT_SUBNET
 		shm_stat->mem.subnet = (long long)mod_get_mem(&worker->env,
-			"subnetcache");
+			"subnet");
 #endif
 		/* ipsecmod mem value is available in shm, also when not enabled,
 		 * to make the struct easier to memmap by other applications,
@@ -290,10 +271,6 @@ void shm_main_run(struct worker *worker)
 #ifdef USE_IPSECMOD
 		shm_stat->mem.ipsecmod = (long long)mod_get_mem(&worker->env,
 			"ipsecmod");
-#endif
-#ifdef WITH_DYNLIBMODULE
-		shm_stat->mem.dynlib = (long long)mod_get_mem(&worker->env,
-			"dynlib");
 #endif
 	}
 

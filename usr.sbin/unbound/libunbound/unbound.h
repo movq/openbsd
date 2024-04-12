@@ -4,40 +4,40 @@
  * Copyright (c) 2007, NLnet Labs. All rights reserved.
  *
  * This software is open source.
- *
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- *
+ * 
  * Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
- *
+ * 
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
- *
+ * 
  * Neither the name of the NLNET LABS nor the names of its contributors may
  * be used to endorse or promote products derived from this software without
  * specific prior written permission.
- *
+ * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
  * \file
  *
- * This file contains functions to resolve DNS queries and
- * validate the answers. Synchronously and asynchronously.
+ * This file contains functions to resolve DNS queries and 
+ * validate the answers. Synchonously and asynchronously.
  *
  * Several ways to use this interface from an application wishing
  * to perform (validated) DNS lookups.
@@ -65,7 +65,7 @@
  *	... or process() calls my_callback() with results.
  *
  *      ... if the application has nothing more to do, wait for answer
- *      ub_wait(ctx);
+ *      ub_wait(ctx); 
  *
  * Application threaded. Blocking.
  *	Blocking, same as above. The current thread does the work.
@@ -78,12 +78,8 @@
  *	... same as async for non-threaded
  *	... the callbacks are called in the thread that calls process(ctx)
  *
- * Openssl needs to have locking in place, and the application must set
- * it up, because a mere library cannot do this, use the calls
- * CRYPTO_set_id_callback and CRYPTO_set_locking_callback.
- *
  * If no threading is compiled in, the above async example uses fork(2) to
- * create a process to perform the work. The forked process exits when the
+ * create a process to perform the work. The forked process exits when the 
  * calling process exits, or ctx_delete() is called.
  * Otherwise, for asynchronous with threading, a worker thread is created.
  *
@@ -94,17 +90,12 @@
  * The second calls another worker thread (or process) to perform the work.
  * And no buffers need to be set up, but a context-switch happens.
  */
-#ifndef UB_UNBOUND_H
-#define UB_UNBOUND_H
+#ifndef _UB_UNBOUND_H
+#define _UB_UNBOUND_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/** the version of this header file */
-#define UNBOUND_VERSION_MAJOR @UNBOUND_VERSION_MAJOR@
-#define UNBOUND_VERSION_MINOR @UNBOUND_VERSION_MINOR@
-#define UNBOUND_VERSION_MICRO @UNBOUND_VERSION_MICRO@
 
 /**
  * The validation context is created to hold the resolver status,
@@ -128,10 +119,10 @@ struct ub_result {
 	/** the class asked for */
 	int qclass;
 
-	/**
-	 * a list of network order DNS rdata items, terminated with a
+	/** 
+	 * a list of network order DNS rdata items, terminated with a 
 	 * NULL pointer, so that data[0] is the first result entry,
-	 * data[1] the second, and the last entry is NULL.
+	 * data[1] the second, and the last entry is NULL. 
 	 * If there was no data, data[0] is NULL.
 	 */
 	char** data;
@@ -139,8 +130,8 @@ struct ub_result {
 	/** the length in bytes of the data items, len[i] for data[i] */
 	int* len;
 
-	/**
-	 * canonical name for the result (the final cname).
+	/** 
+	 * canonical name for the result (the final cname). 
 	 * zero terminated string.
 	 * May be NULL if no canonical name exists.
 	 */
@@ -165,9 +156,9 @@ struct ub_result {
 	 */
 	int havedata;
 
-	/**
+	/** 
 	 * If there was no data, and the domain did not exist, this is true.
-	 * If it is false, and there was no data, then the domain name
+	 * If it is false, and there was no data, then the domain name 
 	 * is purported to exist, but the requested data type is not available.
 	 */
 	int nxdomain;
@@ -177,24 +168,24 @@ struct ub_result {
 	 * False, if validation failed or domain queried has no security info.
 	 *
 	 * It is possible to get a result with no data (havedata is false),
-	 * and secure is true. This means that the non-existence of the data
+	 * and secure is true. This means that the non-existance of the data
 	 * was cryptographically proven (with signatures).
 	 */
 	int secure;
 
-	/**
-	 * If the result was not secure (secure==0), and this result is due
+	/** 
+	 * If the result was not secure (secure==0), and this result is due 
 	 * to a security failure, bogus is true.
 	 * This means the data has been actively tampered with, signatures
-	 * failed, expected signatures were not present, timestamps on
+	 * failed, expected signatures were not present, timestamps on 
 	 * signatures were out of date and so on.
 	 *
-	 * If !secure and !bogus, this can happen if the data is not secure
-	 * because security is disabled for that domain name.
+	 * If !secure and !bogus, this can happen if the data is not secure 
+	 * because security is disabled for that domain name. 
 	 * This means the data is from a domain where data is not signed.
 	 */
 	int bogus;
-
+	
 	/**
 	 * If the result is bogus this contains a string (zero terminated)
 	 * that describes the failure.  There may be other errors as well
@@ -202,19 +193,6 @@ struct ub_result {
 	 * Is NULL if the result is not bogus.
 	 */
 	char* why_bogus;
-
-	/**
-	 * If the query or one of its subqueries was ratelimited.  Useful if
-	 * ratelimiting is enabled and answer to the client is SERVFAIL as a
-	 * result.
-	 */
-	int was_ratelimited;
-
-	/**
-	 * TTL for the result, in seconds.  If the security is bogus, then
-	 * you also cannot trust this value.
-	 */
-	int ttl;
 };
 
 /**
@@ -222,44 +200,15 @@ struct ub_result {
  * The readable function definition looks like:
  * void my_callback(void* my_arg, int err, struct ub_result* result);
  * It is called with
- *	void* my_arg: your pointer to a (struct of) data of your choice,
+ *	void* my_arg: your pointer to a (struct of) data of your choice, 
  *		or NULL.
- *	int err: if 0 all is OK, otherwise an error occurred and no results
+ *	int err: if 0 all is OK, otherwise an error occured and no results
  *	     are forthcoming.
  *	struct result: pointer to more detailed result structure.
  *		This structure is allocated on the heap and needs to be
  *		freed with ub_resolve_free(result);
  */
-typedef void (*ub_callback_type)(void*, int, struct ub_result*);
-
-/**
- * The error constants
- */
-enum ub_ctx_err {
-	/** no error */
-	UB_NOERROR = 0,
-	/** socket operation. Set to -1, so that if an error from _fd() is
-	 * passed (-1) it gives a socket error. */
-	UB_SOCKET = -1,
-	/** alloc failure */
-	UB_NOMEM = -2,
-	/** syntax error */
-	UB_SYNTAX = -3,
-	/** DNS service failed */
-	UB_SERVFAIL = -4,
-	/** fork() failed */
-	UB_FORKFAIL = -5,
-	/** cfg change after finalize() */
-	UB_AFTERFINAL = -6,
-	/** initialization failed (bad settings) */
-	UB_INITFAIL = -7,
-	/** error in pipe communication with async bg worker */
-	UB_PIPE = -8,
-	/** error reading from file (resolv.conf) */
-	UB_READFILE = -9,
-	/** error async_id does not exist or result already been delivered */
-	UB_NOID = -10
-};
+typedef void (*ub_callback_t)(void*, int, struct ub_result*);
 
 /**
  * Create a resolving and validation context.
@@ -290,7 +239,7 @@ void ub_ctx_delete(struct ub_ctx* ctx);
  * @param val: value of the option.
  * @return: 0 if OK, else error.
  */
-int ub_ctx_set_option(struct ub_ctx* ctx, const char* opt, const char* val);
+int ub_ctx_set_option(struct ub_ctx* ctx, char* opt, char* val);
 
 /**
  * Get an option from the context.
@@ -301,12 +250,12 @@ int ub_ctx_set_option(struct ub_ctx* ctx, const char* opt, const char* val);
  * 	This is a power-users interface that lets you specify all sorts
  * 	of options.
  * @param str: the string is malloced and returned here. NULL on error.
- * 	The caller must free() the string.  In cases with multiple
- * 	entries (auto-trust-anchor-file), a newline delimited list is
+ * 	The caller must free() the string.  In cases with multiple 
+ * 	entries (auto-trust-anchor-file), a newline delimited list is 
  * 	returned in the string.
  * @return 0 if OK else an error code (malloc failure, syntax error).
  */
-int ub_ctx_get_option(struct ub_ctx* ctx, const char* opt, char** str);
+int ub_ctx_get_option(struct ub_ctx* ctx, char* opt, char** str);
 
 /**
  * setup configuration for the given context.
@@ -318,13 +267,13 @@ int ub_ctx_get_option(struct ub_ctx* ctx, const char* opt, char** str);
  * 	routines exist.
  * @return: 0 if OK, else error.
  */
-int ub_ctx_config(struct ub_ctx* ctx, const char* fname);
+int ub_ctx_config(struct ub_ctx* ctx, char* fname);
 
 /**
- * Set machine to forward DNS queries to, the caching resolver to use.
- * IP4 or IP6 address. Forwards all DNS requests to that machine, which
- * is expected to run a recursive resolver. If the proxy is not
- * DNSSEC-capable, validation may fail. Can be called several times, in
+ * Set machine to forward DNS queries to, the caching resolver to use. 
+ * IP4 or IP6 address. Forwards all DNS requests to that machine, which 
+ * is expected to run a recursive resolver. If the proxy is not 
+ * DNSSEC-capable, validation may fail. Can be called several times, in 
  * that case the addresses are used as backup servers.
  *
  * To read the list of nameservers from /etc/resolv.conf (from DHCP or so),
@@ -337,39 +286,7 @@ int ub_ctx_config(struct ub_ctx* ctx, const char* fname);
  * 	If the addr is NULL, forwarding is disabled.
  * @return 0 if OK, else error.
  */
-int ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr);
-
-/**
- * Use DNS over TLS to send queries to machines set with ub_ctx_set_fwd().
- *
- * @param ctx: context.
- *	At this time it is only possible to set configuration before the
- *	first resolve is done.
- * @param tls: enable or disable DNS over TLS
- * @return 0 if OK, else error.
- */
-int ub_ctx_set_tls(struct ub_ctx* ctx, int tls);
-
-/**
- * Add a stub zone, with given address to send to.  This is for custom
- * root hints or pointing to a local authoritative dns server.
- * For dns resolvers and the 'DHCP DNS' ip address, use ub_ctx_set_fwd.
- * This is similar to a stub-zone entry in unbound.conf.
- *
- * @param ctx: context.
- *	It is only possible to set configuration before the
- *	first resolve is done.
- * @param zone: name of the zone, string.
- * @param addr: address, IP4 or IP6 in string format.
- * 	The addr is added to the list of stub-addresses if the entry exists.
- * 	If the addr is NULL the stub entry is removed.
- * @param isprime: set to true to set stub-prime to yes for the stub.
- * 	For local authoritative servers, people usually set it to false,
- * 	For root hints it should be set to true.
- * @return 0 if OK, else error.
- */
-int ub_ctx_set_stub(struct ub_ctx* ctx, const char* zone, const char* addr,
-	int isprime);
+int ub_ctx_set_fwd(struct ub_ctx* ctx, char* addr);
 
 /**
  * Read list of nameservers to use from the filename given.
@@ -385,11 +302,11 @@ int ub_ctx_set_stub(struct ub_ctx* ctx, const char* zone, const char* addr,
  * @param fname: file name string. If NULL "/etc/resolv.conf" is used.
  * @return 0 if OK, else error.
  */
-int ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname);
+int ub_ctx_resolvconf(struct ub_ctx* ctx, char* fname);
 
 /**
  * Read list of hosts from the filename given.
- * Usually "/etc/hosts".
+ * Usually "/etc/hosts". 
  * These addresses are not flagged as DNSSEC secure when queried for.
  *
  * @param ctx: context.
@@ -398,12 +315,12 @@ int ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname);
  * @param fname: file name string. If NULL "/etc/hosts" is used.
  * @return 0 if OK, else error.
  */
-int ub_ctx_hosts(struct ub_ctx* ctx, const char* fname);
+int ub_ctx_hosts(struct ub_ctx* ctx, char* fname);
 
 /**
  * Add a trust anchor to the given context.
  * The trust anchor is a string, on one line, that holds a valid DNSKEY or
- * DS RR.
+ * DS RR. 
  * @param ctx: context.
  *	At this time it is only possible to add trusted keys before the
  *	first resolve is done.
@@ -411,7 +328,7 @@ int ub_ctx_hosts(struct ub_ctx* ctx, const char* fname);
  * 	[domainname] [TTL optional] [type] [class optional] [rdata contents]
  * @return 0 if OK, else error.
  */
-int ub_ctx_add_ta(struct ub_ctx* ctx, const char* ta);
+int ub_ctx_add_ta(struct ub_ctx* ctx, char* ta);
 
 /**
  * Add trust anchors to the given context.
@@ -422,22 +339,7 @@ int ub_ctx_add_ta(struct ub_ctx* ctx, const char* ta);
  * @param fname: filename of file with keyfile with trust anchors.
  * @return 0 if OK, else error.
  */
-int ub_ctx_add_ta_file(struct ub_ctx* ctx, const char* fname);
-
-/**
- * Add trust anchor to the given context that is tracked with RFC5011
- * automated trust anchor maintenance.  The file is written to when the
- * trust anchor is changed.
- * Pass the name of a file that was output from eg. unbound-anchor,
- * or you can start it by providing a trusted DNSKEY or DS record on one
- * line in the file.
- * @param ctx: context.
- *	At this time it is only possible to add trusted keys before the
- *	first resolve is done.
- * @param fname: filename of file with trust anchor.
- * @return 0 if OK, else error.
- */
-int ub_ctx_add_ta_autr(struct ub_ctx* ctx, const char* fname);
+int ub_ctx_add_ta_file(struct ub_ctx* ctx, char* fname);
 
 /**
  * Add trust anchors to the given context.
@@ -449,7 +351,7 @@ int ub_ctx_add_ta_autr(struct ub_ctx* ctx, const char* fname);
  * 	anchors.
  * @return 0 if OK, else error.
  */
-int ub_ctx_trustedkeys(struct ub_ctx* ctx, const char* fname);
+int ub_ctx_trustedkeys(struct ub_ctx* ctx, char* fname);
 
 /**
  * Set debug output (and error output) to the specified stream.
@@ -465,7 +367,7 @@ int ub_ctx_debugout(struct ub_ctx* ctx, void* out);
  * Set debug verbosity for the context
  * Output is directed to stderr.
  * @param ctx: context.
- * @param d: debug level, 0 is off, 1 is very minimal, 2 is detailed,
+ * @param d: debug level, 0 is off, 1 is very minimal, 2 is detailed, 
  *	and 3 is lots.
  * @return 0 if OK, else error.
  */
@@ -474,10 +376,10 @@ int ub_ctx_debuglevel(struct ub_ctx* ctx, int d);
 /**
  * Set a context behaviour for asynchronous action.
  * @param ctx: context.
- * @param dothread: if true, enables threading and a call to resolve_async()
+ * @param dothread: if true, enables threading and a call to resolve_async() 
  *	creates a thread to handle work in the background.
  *	If false, a process is forked to handle work in the background.
- *	Changes to this setting after async() calls have been made have
+ *	Changes to this setting after async() calls have been made have 
  *	no effect (delete and re-create the context to change).
  * @return 0 if OK, else error.
  */
@@ -495,7 +397,7 @@ int ub_poll(struct ub_ctx* ctx);
 
 /**
  * Wait for a context to finish with results. Calls ub_process() after
- * the wait for you. After the wait, there are no more outstanding
+ * the wait for you. After the wait, there are no more outstanding 
  * asynchronous queries.
  * @param ctx: context.
  * @return: 0 if OK, else error.
@@ -530,11 +432,11 @@ int ub_process(struct ub_ctx* ctx);
  * @param rrtype: type of RR in host order, 1 is A (address).
  * @param rrclass: class of RR in host order, 1 is IN (for internet).
  * @param result: the result data is returned in a newly allocated result
- * 	structure. May be NULL on return, return value is set to an error
+ * 	structure. May be NULL on return, return value is set to an error 
  * 	in that case (out of memory).
  * @return 0 if OK, else error.
  */
-int ub_resolve(struct ub_ctx* ctx, const char* name, int rrtype,
+int ub_resolve(struct ub_ctx* ctx, char* name, int rrtype, 
 	int rrclass, struct ub_result** result);
 
 /**
@@ -561,12 +463,12 @@ int ub_resolve(struct ub_ctx* ctx, const char* name, int rrtype,
  * 	If an error happens during processing, your callback will be called
  * 	with error set to a nonzero value (and result==NULL).
  * @param async_id: if you pass a non-NULL value, an identifier number is
- *	returned for the query as it is in progress. It can be used to
+ *	returned for the query as it is in progress. It can be used to 
  *	cancel the query.
  * @return 0 if OK, else error.
  */
-int ub_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype,
-	int rrclass, void* mydata, ub_callback_type callback, int* async_id);
+int ub_resolve_async(struct ub_ctx* ctx, char* name, int rrtype, 
+	int rrclass, void* mydata, ub_callback_t callback, int* async_id);
 
 /**
  * Cancel an async query in progress.
@@ -589,10 +491,9 @@ int ub_cancel(struct ub_ctx* ctx, int async_id);
  */
 void ub_resolve_free(struct ub_result* result);
 
-/**
+/** 
  * Convert error value to a human readable string.
- * @param err: error code from one of the libunbound functions.
- * 	The error codes are from the type enum ub_ctx_err.
+ * @param err: error code from one of the ub_val* functions.
  * @return pointer to constant text string, zero terminated.
  */
 const char* ub_strerror(int err);
@@ -605,7 +506,7 @@ const char* ub_strerror(int err);
 int ub_ctx_print_local_zones(struct ub_ctx* ctx);
 
 /**
- * Add a new zone with the zonetype to the local authority info of the
+ * Add a new zone with the zonetype to the local authority info of the 
  * library.
  * @param ctx: context.  Is finalized by the routine.
  * @param zone_name: name of the zone in text, "example.com"
@@ -613,8 +514,7 @@ int ub_ctx_print_local_zones(struct ub_ctx* ctx);
  * @param zone_type: type of the zone (like for unbound.conf) in text.
  * @return 0 if OK, else error.
  */
-int ub_ctx_zone_add(struct ub_ctx* ctx, const char *zone_name,
-	const char *zone_type);
+int ub_ctx_zone_add(struct ub_ctx* ctx, char *zone_name, char *zone_type);
 
 /**
  * Remove zone from local authority info of the library.
@@ -623,7 +523,7 @@ int ub_ctx_zone_add(struct ub_ctx* ctx, const char *zone_name,
  *	If it does not exist, nothing happens.
  * @return 0 if OK, else error.
  */
-int ub_ctx_zone_remove(struct ub_ctx* ctx, const char *zone_name);
+int ub_ctx_zone_remove(struct ub_ctx* ctx, char *zone_name);
 
 /**
  * Add localdata to the library local authority info.
@@ -633,7 +533,7 @@ int ub_ctx_zone_remove(struct ub_ctx* ctx, const char *zone_name);
  *	"www.example.com IN A 127.0.0.1"
  * @return 0 if OK, else error.
  */
-int ub_ctx_data_add(struct ub_ctx* ctx, const char *data);
+int ub_ctx_data_add(struct ub_ctx* ctx, char *data);
 
 /**
  * Remove localdata from the library local authority info.
@@ -641,7 +541,7 @@ int ub_ctx_data_add(struct ub_ctx* ctx, const char *data);
  * @param data: the name to delete all data from, like "www.example.com".
  * @return 0 if OK, else error.
  */
-int ub_ctx_data_remove(struct ub_ctx* ctx, const char *data);
+int ub_ctx_data_remove(struct ub_ctx* ctx, char *data);
 
 /**
  * Get a version string from the libunbound implementation.
@@ -649,231 +549,8 @@ int ub_ctx_data_remove(struct ub_ctx* ctx, const char *data);
  */
 const char* ub_version(void);
 
-/**
- * Some global statistics that are not in struct stats_info,
- * this struct is shared on a shm segment (shm-key in unbound.conf)
- */
-struct ub_shm_stat_info {
-	int num_threads;
-
-	struct {
-		long long now_sec, now_usec;
-		long long up_sec, up_usec;
-		long long elapsed_sec, elapsed_usec;
-	} time;
-
-	struct {
-		long long msg;
-		long long rrset;
-		long long val;
-		long long iter;
-		long long subnet;
-		long long ipsecmod;
-		long long respip;
-		long long dnscrypt_shared_secret;
-		long long dnscrypt_nonce;
-		long long dynlib;
-	} mem;
-};
-
-/** number of qtype that is stored for in array */
-#define UB_STATS_QTYPE_NUM 256
-/** number of qclass that is stored for in array */
-#define UB_STATS_QCLASS_NUM 256
-/** number of rcodes in stats */
-#define UB_STATS_RCODE_NUM 16
-/** number of opcodes in stats */
-#define UB_STATS_OPCODE_NUM 16
-/** number of histogram buckets */
-#define UB_STATS_BUCKET_NUM 40
-/** number of RPZ actions */
-#define UB_STATS_RPZ_ACTION_NUM 10
-
-/** per worker statistics. */
-struct ub_server_stats {
-	/** number of queries from clients received. */
-	long long num_queries;
-	/** number of queries that have been dropped/ratelimited by ip. */
-	long long num_queries_ip_ratelimited;
-	/** number of queries with a valid DNS Cookie. */
-	long long num_queries_cookie_valid;
-	/** number of queries with only the client part of the DNS Cookie. */
-	long long num_queries_cookie_client;
-	/** number of queries with invalid DNS Cookie. */
-	long long num_queries_cookie_invalid;
-	/** number of queries that had a cache-miss. */
-	long long num_queries_missed_cache;
-	/** number of prefetch queries - cachehits with prefetch */
-	long long num_queries_prefetch;
-	/** number of queries which are too late to process */
-	long long num_queries_timed_out;
-	/** the longest wait time in the queue */
-	long long max_query_time_us;
-	/**
-	 * Sum of the querylistsize of the worker for
-	 * every query that missed cache. To calculate average.
-	 */
-	long long sum_query_list_size;
-	/** max value of query list size reached. */
-	long long max_query_list_size;
-
-	/** Extended stats below (bool) */
-	int extended;
-
-	/** qtype stats */
-	long long qtype[UB_STATS_QTYPE_NUM];
-	/** bigger qtype values not in array */
-	long long qtype_big;
-	/** qclass stats */
-	long long qclass[UB_STATS_QCLASS_NUM];
-	/** bigger qclass values not in array */
-	long long qclass_big;
-	/** query opcodes */
-	long long qopcode[UB_STATS_OPCODE_NUM];
-	/** number of queries over TCP */
-	long long qtcp;
-	/** number of outgoing queries over TCP */
-	long long qtcp_outgoing;
-	/** number of outgoing queries over UDP */
-	long long qudp_outgoing;
-	/** number of queries over (DNS over) TLS */
-	long long qtls;
-	/** number of queries over (DNS over) HTTPS */
-	long long qhttps;
-	/** number of queries over IPv6 */
-	long long qipv6;
-	/** number of queries with QR bit */
-	long long qbit_QR;
-	/** number of queries with AA bit */
-	long long qbit_AA;
-	/** number of queries with TC bit */
-	long long qbit_TC;
-	/** number of queries with RD bit */
-	long long qbit_RD;
-	/** number of queries with RA bit */
-	long long qbit_RA;
-	/** number of queries with Z bit */
-	long long qbit_Z;
-	/** number of queries with AD bit */
-	long long qbit_AD;
-	/** number of queries with CD bit */
-	long long qbit_CD;
-	/** number of queries with EDNS OPT record */
-	long long qEDNS;
-	/** number of queries with EDNS with DO flag */
-	long long qEDNS_DO;
-	/** answer rcodes */
-	long long ans_rcode[UB_STATS_RCODE_NUM];
-	/** answers with pseudo rcode 'nodata' */
-	long long ans_rcode_nodata;
-	/** answers that were secure (AD) */
-	long long ans_secure;
-	/** answers that were bogus (withheld as SERVFAIL) */
-	long long ans_bogus;
-	/** rrsets marked bogus by validator */
-	long long rrset_bogus;
-	/** number of queries that have been ratelimited by domain recursion. */
-	long long queries_ratelimited;
-	/** unwanted traffic received on server-facing ports */
-	long long unwanted_replies;
-	/** unwanted traffic received on client-facing ports */
-	long long unwanted_queries;
-	/** usage of tcp accept list */
-	long long tcp_accept_usage;
-	/** expired answers served from cache */
-	long long ans_expired;
-	/** histogram data exported to array
-	 * if the array is the same size, no data is lost, and
-	 * if all histograms are same size (is so by default) then
-	 * adding up works well. */
-	long long hist[UB_STATS_BUCKET_NUM];
-
-	/** number of message cache entries */
-	long long msg_cache_count;
-	/** number of rrset cache entries */
-	long long rrset_cache_count;
-	/** number of infra cache entries */
-	long long infra_cache_count;
-	/** number of key cache entries */
-	long long key_cache_count;
-
-	/** maximum number of collisions in the msg cache */
-	long long msg_cache_max_collisions;
-	/** maximum number of collisions in the rrset cache */
-	long long rrset_cache_max_collisions;
-
-	/** number of queries that used dnscrypt */
-	long long num_query_dnscrypt_crypted;
-	/** number of queries that queried dnscrypt certificates */
-	long long num_query_dnscrypt_cert;
-	/** number of queries in clear text and not asking for the certificates */
-	long long num_query_dnscrypt_cleartext;
-	/** number of malformed encrypted queries */
-	long long num_query_dnscrypt_crypted_malformed;
-	/** number of queries which did not have a shared secret in cache */
-	long long num_query_dnscrypt_secret_missed_cache;
-	/** number of dnscrypt shared secret cache entries */
-	long long shared_secret_cache_count;
-	/** number of queries which are replays */
-	long long num_query_dnscrypt_replay;
-	/** number of dnscrypt nonces cache entries */
-	long long nonce_cache_count;
-	/** number of queries for unbound's auth_zones, upstream query */
-	long long num_query_authzone_up;
-	/** number of queries for unbound's auth_zones, downstream answers */
-	long long num_query_authzone_down;
-	/** number of times neg cache records were used to generate NOERROR
-	 * responses. */
-	long long num_neg_cache_noerror;
-	/** number of times neg cache records were used to generate NXDOMAIN
-	 * responses. */
-	long long num_neg_cache_nxdomain;
-	/** number of queries answered from edns-subnet specific data */
-	long long num_query_subnet;
-	/** number of queries answered from edns-subnet specific data, and
-	 * the answer was from the edns-subnet cache. */
-	long long num_query_subnet_cache;
-	/** number of queries served from cachedb */
-	long long num_query_cachedb;
-	/** number of bytes in the stream wait buffers */
-	long long mem_stream_wait;
-	/** number of bytes in the HTTP2 query buffers */
-	long long mem_http2_query_buffer;
-	/** number of bytes in the HTTP2 response buffers */
-	long long mem_http2_response_buffer;
-	/** number of TLS connection resume */
-	long long qtls_resume;
-	/** RPZ action stats */
-	long long rpz_action[UB_STATS_RPZ_ACTION_NUM];
-};
-
-/**
- * Statistics to send over the control pipe when asked
- * This struct is made to be memcopied, sent in binary.
- * shm mapped with (number+1) at num_threads+1, with first as total
- */
-struct ub_stats_info {
-	/** the thread stats */
-	struct ub_server_stats svr;
-
-	/** mesh stats: current number of states */
-	long long mesh_num_states;
-	/** mesh stats: current number of reply (user) states */
-	long long mesh_num_reply_states;
-	/** mesh stats: number of reply states overwritten with a new one */
-	long long mesh_jostled;
-	/** mesh stats: number of incoming queries dropped */
-	long long mesh_dropped;
-	/** mesh stats: replies sent */
-	long long mesh_replies_sent;
-	/** mesh stats: sum of waiting times for the replies */
-	long long mesh_replies_sum_wait_sec, mesh_replies_sum_wait_usec;
-	/** mesh stats: median of waiting times for replies (in sec) */
-	double mesh_time_median;
-};
-
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* UB_UNBOUND_H */
+#endif /* _UB_UNBOUND_H */

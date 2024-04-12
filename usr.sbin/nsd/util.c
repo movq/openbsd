@@ -7,7 +7,7 @@
  *
  */
 
-#include "config.h"
+#include <config.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -16,60 +16,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef HAVE_SCHED_H
-#include <sched.h>
-#endif /* HAVE_SCHED_H */
-#ifdef HAVE_SYS_CPUSET_H
-#include <sys/cpuset.h>
-#endif /* HAVE_SYS_CPUSET_H */
 #ifdef HAVE_SYSLOG_H
 #include <syslog.h>
 #endif /* HAVE_SYSLOG_H */
 #include <unistd.h>
-#ifdef HAVE_SYS_RANDOM_H
-#include <sys/random.h>
-#endif
 
 #include "util.h"
 #include "region-allocator.h"
 #include "dname.h"
 #include "namedb.h"
 #include "rdata.h"
-#include "zonec.h"
-#include "nsd.h"
-
-#ifdef USE_MMAP_ALLOC
-#include <sys/mman.h>
-
-#if defined(MAP_ANON) && !defined(MAP_ANONYMOUS)
-#define	MAP_ANONYMOUS	MAP_ANON
-#elif defined(MAP_ANONYMOUS) && !defined(MAP_ANON)
-#define	MAP_ANON	MAP_ANONYMOUS
-#endif
-
-#endif /* USE_MMAP_ALLOC */
 
 #ifndef NDEBUG
 unsigned nsd_debug_facilities = 0xffff;
 int nsd_debug_level = 0;
 #endif
 
-#define MSB_32 0x80000000
-
 int verbosity = 0;
 
 static const char *global_ident = NULL;
 static log_function_type *current_log_function = log_file;
 static FILE *current_log_file = NULL;
-int log_time_asc = 1;
-
-#ifdef USE_LOG_PROCESS_ROLE
-void
-log_set_process_role(const char *process_role)
-{
-	global_ident = process_role;
-}
-#endif
 
 void
 log_init(const char *ident)
@@ -100,10 +67,7 @@ void
 log_reopen(const char *filename, uint8_t verbose)
 {
 	if (filename) {
-		FILE *file;
-		if(strcmp(filename, "/dev/stdout")==0 || strcmp(filename, "/dev/stderr")==0)
-			return;
-		file = fopen(filename, "a");
+		FILE *file = fopen(filename, "a");
 		if (!file) {
 			if (verbose)
 				VERBOSITY(2, (LOG_WARNING,
@@ -154,24 +118,7 @@ log_file(int priority, const char *message)
 	}
 
 	/* Bug #104, add time_t timestamp */
-#if defined(HAVE_STRFTIME) && defined(HAVE_LOCALTIME_R)
-	if(log_time_asc) {
-		struct timeval tv;
-		char tmbuf[32];
-		tmbuf[0]=0;
-		tv.tv_usec = 0;
-		if(gettimeofday(&tv, NULL) == 0) {
-			struct tm tm;
-			time_t now = (time_t)tv.tv_sec;
-			strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S",
-				localtime_r(&now, &tm));
-		}
-		fprintf(current_log_file, "[%s.%3.3d] %s[%d]: %s: %s",
-			tmbuf, (int)tv.tv_usec/1000,
-			global_ident, (int) getpid(), priority_text, message);
- 	} else
-#endif /* have time functions */
-		fprintf(current_log_file, "[%d] %s[%d]: %s: %s",
+	fprintf(current_log_file, "[%d] %s[%d]: %s: %s",
 		(int)time(NULL), global_ident, (int) getpid(), priority_text, message);
 	length = strlen(message);
 	if (length == 0 || message[length - 1] != '\n') {
@@ -187,17 +134,6 @@ log_syslog(int priority, const char *message)
 	syslog(priority, "%s", message);
 #endif /* !HAVE_SYSLOG_H */
 	log_file(priority, message);
-}
-
-void
-log_only_syslog(int priority, const char *message)
-{
-#ifdef HAVE_SYSLOG_H
-	syslog(priority, "%s", message);
-#else /* !HAVE_SYSLOG_H */
-	/* no syslog, use stderr */
-	log_file(priority, message);
-#endif
 }
 
 void
@@ -275,19 +211,6 @@ lookup_by_id(lookup_table_type *table, int id)
 	return NULL;
 }
 
-char *
-xstrdup(const char *src)
-{
-	char *result = strdup(src);
-
-	if(!result) {
-		log_msg(LOG_ERR, "strdup failed: %s", strerror(errno));
-		exit(1);
-	}
-
-	return result;
-}
-
 void *
 xalloc(size_t size)
 {
@@ -301,36 +224,10 @@ xalloc(size_t size)
 }
 
 void *
-xmallocarray(size_t num, size_t size)
-{
-        void *result = reallocarray(NULL, num, size);
-
-        if (!result) {
-                log_msg(LOG_ERR, "reallocarray failed: %s", strerror(errno));
-                exit(1);
-        }
-        return result;
-}
-
-void *
 xalloc_zero(size_t size)
 {
-	void *result = calloc(1, size);
-	if (!result) {
-		log_msg(LOG_ERR, "calloc failed: %s", strerror(errno));
-		exit(1);
-	}
-	return result;
-}
-
-void *
-xalloc_array_zero(size_t num, size_t size)
-{
-	void *result = calloc(num, size);
-	if (!result) {
-		log_msg(LOG_ERR, "calloc failed: %s", strerror(errno));
-		exit(1);
-	}
+	void *result = xalloc(size);
+	memset(result, 0, size);
 	return result;
 }
 
@@ -344,54 +241,6 @@ xrealloc(void *ptr, size_t size)
 	}
 	return ptr;
 }
-
-#ifdef USE_MMAP_ALLOC
-
-void *
-mmap_alloc(size_t size)
-{
-	void *base;
-
-	size += MMAP_ALLOC_HEADER_SIZE;
-#ifdef HAVE_MMAP
-	base = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (base == MAP_FAILED) {
-		log_msg(LOG_ERR, "mmap failed: %s", strerror(errno));
-		exit(1);
-	}
-#else /* !HAVE_MMAP */
-	log_msg(LOG_ERR, "mmap failed: don't have mmap");
-	exit(1);
-#endif /* HAVE_MMAP */
-
-	*((size_t*) base) = size;
-	return (void*)((uintptr_t)base + MMAP_ALLOC_HEADER_SIZE);
-}
-
-
-void
-mmap_free(void *ptr)
-{
-	void *base;
-	size_t size;
-
-	if (!ptr) return;
-
-	base = (void*)((uintptr_t)ptr - MMAP_ALLOC_HEADER_SIZE);
-	size = *((size_t*) base);
-
-#ifdef HAVE_MUNMAP
-	if (munmap(base, size) == -1) {
-		log_msg(LOG_ERR, "munmap failed: %s", strerror(errno));
-		exit(1);
-	}
-#else /* !HAVE_MUNMAP */
-	log_msg(LOG_ERR, "munmap failed: don't have munmap");
-	exit(1);
-#endif /* HAVE_MUNMAP */
-}
-
-#endif /* USE_MMAP_ALLOC */
 
 int
 write_data(FILE *file, const void *data, size_t size)
@@ -414,8 +263,7 @@ write_data(FILE *file, const void *data, size_t size)
 	}
 }
 
-int
-write_socket(int s, const void *buf, size_t size)
+int write_socket(int s, const void *buf, size_t size)
 {
 	const char* data = (const char*)buf;
 	size_t total_count = 0;
@@ -433,28 +281,6 @@ write_socket(int s, const void *buf, size_t size)
 		total_count += count;
 	}
 	return 1;
-}
-
-void get_time(struct timespec* t)
-{
-	struct timeval tv;
-#ifdef HAVE_CLOCK_GETTIME
-	/* first try nanosecond precision */
-	if(clock_gettime(CLOCK_REALTIME, t)>=0) {
-		return; /* success */
-	}
-	log_msg(LOG_ERR, "clock_gettime: %s", strerror(errno));
-#endif
-	/* try millisecond precision */
-	if(gettimeofday(&tv, NULL)>=0) {
-		t->tv_sec = tv.tv_sec;
-		t->tv_nsec = tv.tv_usec*1000;
-		return; /* success */
-	}
-	log_msg(LOG_ERR, "gettimeofday: %s", strerror(errno));
-	/* whole seconds precision */
-	t->tv_sec = time(0);
-	t->tv_nsec = 0;
 }
 
 int
@@ -529,15 +355,11 @@ strtoserial(const char* nptr, const char** endptr)
 		case '7':
 		case '8':
 		case '9':
-			if((i*10)/10 != i)
-				/* number too large, return i
-				 * with *endptr != 0 as a failure*/
-				return i;
 			i *= 10;
 			i += (**endptr - '0');
 			break;
 		default:
-			return 0;
+			break;
 		}
 	}
 	serial += i;
@@ -595,22 +417,10 @@ strtottl(const char *nptr, const char **endptr)
 			break;
 		default:
 			seconds += i;
-			/**
-			 * According to RFC2308, Section 8, the MSB
-			 * (sign bit) should be set to zero.
-			 * If we encounter a value larger than 2^31 -1,
-			 * we fall back to the default TTL.
-			 */
-			if ((seconds & MSB_32)) {
-				seconds = DEFAULT_TTL;
-			}
 			return seconds;
 		}
 	}
 	seconds += i;
-	if ((seconds & MSB_32)) {
-		seconds = DEFAULT_TTL;
-	}
 	return seconds;
 }
 
@@ -644,8 +454,7 @@ hex_pton(const char* src, uint8_t* target, size_t targsize)
 		return -1;
 	}
 	while(*src) {
-		if(!isxdigit((unsigned char)src[0]) ||
-			!isxdigit((unsigned char)src[1]))
+		if(!isxdigit((int)src[0]) || !isxdigit((int)src[1]))
 			return -1;
 		*t++ = hexdigit_to_int(src[0]) * 16 +
 			hexdigit_to_int(src[1]) ;
@@ -723,10 +532,10 @@ b32_ntop(uint8_t const *src, size_t srclength, char *target, size_t targsize)
 	}
 	if(srclength)
 	{
-		size_t tlen = strlcpy(target, buf, targsize);
-		if (tlen >= targsize)
+		if(targsize < strlen(buf)+1)
 			return -1;
-		len += tlen;
+		strcpy(target, buf);
+		len += strlen(buf);
 	}
 	else if(targsize < 1)
 		return -1;
@@ -750,7 +559,7 @@ b32_pton(const char *src, uint8_t *target, size_t tsize)
 		if(p+5 >= tsize*8)
 		       return -1;
 
-		if(isspace((unsigned char)ch))
+		if(isspace(ch))
 			continue;
 
 		if(ch >= '0' && ch <= '9')
@@ -782,13 +591,13 @@ strip_string(char *str)
 	char *start = str;
 	char *end = str + strlen(str) - 1;
 
-	while (isspace((unsigned char)*start))
+	while (isspace(*start))
 		++start;
 	if (start > end) {
 		/* Completely blank. */
 		str[0] = '\0';
 	} else {
-		while (isspace((unsigned char)*end))
+		while (isspace(*end))
 			--end;
 		*++end = '\0';
 
@@ -873,7 +682,7 @@ mktime_from_utc(const struct tm *tm)
    http://www.tsfr.org/~orc/Code/bsd/bsd-current/cksum/crc.c.
    or http://gobsd.com/code/freebsd/usr.bin/cksum/crc.c
    The polynomial is 0x04c11db7L. */
-static uint32_t crctab[] = {
+static u_long crctab[] = {
 	0x0,
 	0x04c11db7, 0x09823b6e, 0x0d4326d9, 0x130476dc, 0x17c56b6b,
 	0x1a864db2, 0x1e475005, 0x2608edb8, 0x22c9f00f, 0x2f8ad6d6,
@@ -930,8 +739,7 @@ static uint32_t crctab[] = {
 
 #define	COMPUTE(var, ch)	(var) = (var) << 8 ^ crctab[(var) >> 24 ^ (ch)]
 
-uint32_t
-compute_crc(uint32_t crc, uint8_t* data, size_t len)
+uint32_t compute_crc(uint32_t crc, uint8_t* data, size_t len)
 {
 	size_t i;
 	for(i=0; i<len; ++i)
@@ -939,8 +747,7 @@ compute_crc(uint32_t crc, uint8_t* data, size_t len)
 	return crc;
 }
 
-int
-write_data_crc(FILE *file, const void *data, size_t size, uint32_t* crc)
+int write_data_crc(FILE *file, const void *data, size_t size, uint32_t* crc)
 {
 	int ret = write_data(file, data, size);
 	*crc = compute_crc(*crc, (uint8_t*)data, size);
@@ -948,8 +755,7 @@ write_data_crc(FILE *file, const void *data, size_t size, uint32_t* crc)
 }
 
 #define SERIAL_BITS      32
-int
-compare_serial(uint32_t a, uint32_t b)
+int compare_serial(uint32_t a, uint32_t b)
 {
         const uint32_t cutoff = ((uint32_t) 1 << (SERIAL_BITS - 1));
 
@@ -960,43 +766,6 @@ compare_serial(uint32_t a, uint32_t b)
         } else {
                 return 1;
         }
-}
-
-uint16_t
-qid_generate(void)
-{
-#ifdef HAVE_GETRANDOM
-	uint16_t r;
-	if(getrandom(&r, sizeof(r), 0) == -1) {
-		log_msg(LOG_ERR, "getrandom failed: %s", strerror(errno));
-		exit(1);
-	}
-	return r;
-#elif defined(HAVE_ARC4RANDOM)
-    /* arc4random_uniform not needed because range is a power of 2 */
-    return (uint16_t) arc4random();
-#else
-    return (uint16_t) random();
-#endif
-}
-
-int
-random_generate(int max)
-{
-#ifdef HAVE_GETRANDOM
-	int r;
-	if(getrandom(&r, sizeof(r), 0) == -1) {
-		log_msg(LOG_ERR, "getrandom failed: %s", strerror(errno));
-		exit(1);
-	}
-	return (int)(((unsigned)r)%max);
-#elif defined(HAVE_ARC4RANDOM_UNIFORM)
-    return (int) arc4random_uniform(max);
-#elif defined(HAVE_ARC4RANDOM)
-    return (int) (arc4random() % max);
-#else
-    return (int) ((unsigned)random() % max);
-#endif
 }
 
 void
@@ -1031,271 +800,161 @@ set_previous_owner(struct state_pretty_rr *state, const dname_type *dname)
 int
 print_rr(FILE *out,
          struct state_pretty_rr *state,
-         rr_type *record,
-	 region_type* rr_region,
-	 buffer_type* output)
+         rr_type *record)
 {
+	region_type *region = region_create(xalloc, free);
+        buffer_type *output = buffer_create(region, MAX_RDLENGTH);
         rrtype_descriptor_type *descriptor
                 = rrtype_descriptor_by_type(record->type);
         int result;
         const dname_type *owner = domain_dname(record->owner);
-	buffer_clear(output);
-        if (state) {
-		if (!state->previous_owner
-			|| dname_compare(state->previous_owner, owner) != 0) {
-			const dname_type *owner_origin
-				= dname_origin(rr_region, owner);
-			int origin_changed = (!state->previous_owner_origin
-				|| dname_compare(state->previous_owner_origin,
-				   owner_origin) != 0);
-			if (origin_changed) {
-				buffer_printf(output, "$ORIGIN %s\n",
-					dname_to_string(owner_origin, NULL));
-			}
+        const dname_type *owner_origin
+                = dname_origin(region, owner);
+        int owner_changed
+                = (!state->previous_owner
+                   || dname_compare(state->previous_owner, owner) != 0);
+        if (owner_changed) {
+                int origin_changed = (!state->previous_owner_origin
+                                      || dname_compare(
+                                              state->previous_owner_origin,
+                                              owner_origin) != 0);
+                if (origin_changed) {
+                        buffer_printf(
+                                output,
+                                "$ORIGIN %s\n",
+                                dname_to_string(owner_origin, NULL));
+                }
 
-			set_previous_owner(state, owner);
-			buffer_printf(output, "%s",
-				dname_to_string(owner,
-					state->previous_owner_origin));
-			region_free_all(rr_region);
-		}
-	} else {
-		buffer_printf(output, "%s", dname_to_string(owner, NULL));
-	}
+                set_previous_owner(state, owner);
+                buffer_printf(output,
+                              "%s",
+                              dname_to_string(owner,
+                                              state->previous_owner_origin));
+        }
 
-	buffer_printf(output, "\t%lu\t%s\t%s",
-		(unsigned long) record->ttl,
-		rrclass_to_string(record->klass),
-		rrtype_to_string(record->type));
+        buffer_printf(output,
+                      "\t%lu\t%s\t%s",
+                      (unsigned long) record->ttl,
+                      rrclass_to_string(record->klass),
+                      rrtype_to_string(record->type));
 
-	result = print_rdata(output, descriptor, record);
-	if (!result) {
-		/*
-		 * Some RDATA failed to print, so print the record's
-		 * RDATA in unknown format.
-		 */
-		result = rdata_atoms_to_unknown_string(output,
-			descriptor, record->rdata_count, record->rdatas);
-	}
+        result = print_rdata(output, descriptor, record);
+        if (!result) {
+                /*
+                 * Some RDATA failed to print, so print the record's
+                 * RDATA in unknown format.
+                 */
+                result = rdata_atoms_to_unknown_string(output,
+                                                       descriptor,
+                                                       record->rdata_count,
+                                                       record->rdatas);
+        }
 
-	if (result) {
-		buffer_printf(output, "\n");
-		buffer_flip(output);
-		result = write_data(out, buffer_current(output),
-		buffer_remaining(output));
-	}
-	return result;
+        if (result) {
+                buffer_printf(output, "\n");
+                buffer_flip(output);
+		(void)write_data(out, buffer_current(output), buffer_remaining(output));
+/*              fflush(out); */
+        }
+
+	region_destroy(region);
+        return result;
 }
 
 const char*
 rcode2str(int rc)
 {
-	switch(rc) {
-		case RCODE_OK:
-			return "NO ERROR";
-		case RCODE_FORMAT:
-			return "FORMAT ERROR";
-		case RCODE_SERVFAIL:
-			return "SERVFAIL";
-		case RCODE_NXDOMAIN:
-			return "NAME ERROR";
-		case RCODE_IMPL:
-			return "NOT IMPL";
-		case RCODE_REFUSE:
-			return "REFUSED";
-		case RCODE_YXDOMAIN:
-			return "YXDOMAIN";
-		case RCODE_YXRRSET:
-			return "YXRRSET";
-		case RCODE_NXRRSET:
-			return "NXRRSET";
-		case RCODE_NOTAUTH:
-			return "SERVER NOT AUTHORITATIVE FOR ZONE";
-		case RCODE_NOTZONE:
-			/* Name not contained in zone */
-			return "NOTZONE";
-		default:
-			return "UNKNOWN ERROR";
-	}
-	return NULL; /* ENOREACH */
+        switch(rc)
+        {
+        case RCODE_OK:
+                return "NO ERROR";
+        case RCODE_FORMAT:
+                return "FORMAT ERROR";
+        case RCODE_SERVFAIL:
+                return "SERV FAIL";
+        case RCODE_NXDOMAIN:
+                return "NAME ERROR";
+        case RCODE_IMPL:
+                return "NOT IMPL";
+        case RCODE_REFUSE:
+                return "REFUSED";
+	case RCODE_YXDOMAIN:
+		return "YXDOMAIN";
+	case RCODE_YXRRSET:
+		return "YXRRSET";
+	case RCODE_NXRRSET:
+		return "NXRRSET";
+        case RCODE_NOTAUTH:
+                return "SERVER NOT AUTHORITATIVE FOR ZONE";
+	case RCODE_NOTZONE:
+		return "NOTZONE";
+        default:
+                return "UNKNOWN ERROR";
+        }
+        return NULL; /* ENOREACH */
+}
+
+stack_type*
+stack_create(struct region* region, size_t size)
+{
+	stack_type* stack = (stack_type*)region_alloc(region,
+		sizeof(stack_type));
+	stack->capacity = size;
+	stack->num = 0;
+	stack->data = (void**) region_alloc(region, sizeof(void*)*size);
+	memset(stack->data, 0, sizeof(void*)*size);
+	return stack;
 }
 
 void
-addr2str(
-#ifdef INET6
-	struct sockaddr_storage *addr
-#else
-	struct sockaddr_in *addr
-#endif
-	, char* str, size_t len)
+stack_push(stack_type* stack, void* elem)
 {
-#ifdef INET6
-	if (addr->ss_family == AF_INET6) {
-		if (!inet_ntop(AF_INET6,
-			&((struct sockaddr_in6 *)addr)->sin6_addr, str, len))
-			strlcpy(str, "[unknown ip6, inet_ntop failed]", len);
+	assert(stack);
+	if(stack->num >= stack->capacity) {
+		/* stack out of capacity, elem falls off stack */
 		return;
 	}
-#endif
-	if (!inet_ntop(AF_INET, &((struct sockaddr_in *)addr)->sin_addr,
-		str, len))
-		strlcpy(str, "[unknown ip4, inet_ntop failed]", len);
+	stack->data[stack->num] = elem;
+	stack->num ++;
 }
 
-void
-addrport2str(
-#ifdef INET6
-	struct sockaddr_storage *addr
-#else
-	struct sockaddr_in *addr
-#endif
-	, char* str, size_t len)
+void*
+stack_pop(stack_type* stack)
 {
-	char ip[256];
-#ifdef INET6
-	if (addr->ss_family == AF_INET6) {
-		if (!inet_ntop(AF_INET6,
-			&((struct sockaddr_in6 *)addr)->sin6_addr, ip, sizeof(ip)))
-			strlcpy(ip, "[unknown ip6, inet_ntop failed]", sizeof(ip));
-		/* append port number */
-		snprintf(str, len, "%s@%u", ip,
-			(unsigned)ntohs(((struct sockaddr_in6 *)addr)->sin6_port));
-		return;
-	} else
-#endif
-	if (!inet_ntop(AF_INET, &((struct sockaddr_in *)addr)->sin_addr,
-		ip, sizeof(ip)))
-		strlcpy(ip, "[unknown ip4, inet_ntop failed]", sizeof(ip));
-	/* append port number */
-	snprintf(str, len, "%s@%u", ip,
-		(unsigned)ntohs(((struct sockaddr_in *)addr)->sin_port));
-}
-
-void
-append_trailing_slash(const char** dirname, region_type* region)
-{
-	int l = strlen(*dirname);
-	if (l>0 && (*dirname)[l-1] != '/' && l < 0xffffff) {
-		char *dirname_slash = region_alloc(region, l+2);
-		memcpy(dirname_slash, *dirname, l+1);
-		strlcat(dirname_slash, "/", l+2);
-		/* old dirname is leaked, this is only used for chroot, once */
-		*dirname = dirname_slash;
-	}
+	void* elem;
+	assert(stack);
+	if(stack->num <= 0)
+		return NULL;
+	stack->num --;
+	elem = stack->data[stack->num];
+	stack->data[stack->num] = NULL;
+	return elem;
 }
 
 int
-file_inside_chroot(const char* fname, const char* chr)
-{
-	/* true if filename starts with chroot or is not absolute */
-	return ((fname && fname[0] && strncmp(fname, chr, strlen(chr)) == 0) ||
-		(fname && fname[0] != '/'));
-}
-
-/*
- * Something went wrong, give error messages and exit.
- */
-void
-error(const char *format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	log_vmsg(LOG_ERR, format, args);
-	va_end(args);
-	exit(1);
-}
-
-#ifdef HAVE_CPUSET_T
-#if defined(HAVE_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
-/* exists on Linux and FreeBSD */
-int number_of_cpus(void)
-{
-	return (int)sysconf(_SC_NPROCESSORS_CONF);
-}
+addr2ip(
+#ifdef INET6
+        struct sockaddr_storage addr
 #else
-int number_of_cpus(void)
-{
-	return -1;
-}
+        struct sockaddr_in addr
 #endif
-#ifdef __gnu_hurd__
-/* HURD has no sched_setaffinity implementation, but links an always fail,
- * with a linker error, we print an error when it is used */
-int set_cpu_affinity(cpuset_t *ATTR_UNUSED(set))
+, char *address, socklen_t size)
 {
-	log_err("sched_setaffinity: not available on this system");
-	return -1;
-}
-#elif defined(HAVE_SCHED_SETAFFINITY)
-/* Linux */
-int set_cpu_affinity(cpuset_t *set)
-{
-	assert(set != NULL);
-	return sched_setaffinity(getpid(), sizeof(*set), set);
-}
+#ifdef INET6
+	if (addr.ss_family == AF_INET6) {
+		if (!inet_ntop(AF_INET6,
+			&((struct sockaddr_in6 *)&addr)->sin6_addr,
+			address, size))
+			return (1);
 #else
-/* FreeBSD */
-int set_cpu_affinity(cpuset_t *set)
-{
-	assert(set != NULL);
-	return cpuset_setaffinity(
-		CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, sizeof(*set), set);
-}
+	if (0) {
 #endif
-#endif /* HAVE_CPUSET_T */
-
-void add_cookie_secret(struct nsd* nsd, uint8_t* secret)
-{
-	/* New cookie secret becomes the staging secret (position 1)
-	 * unless there is no active cookie yet, then it becomes the active
-	 * secret.  If the NSD_COOKIE_HISTORY_SIZE > 2 then all staging cookies
-	 * are moved one position down.
-	 */
-	if(nsd->cookie_count == 0) {
-		memcpy( nsd->cookie_secrets->cookie_secret
-		       , secret, NSD_COOKIE_SECRET_SIZE);
-		nsd->cookie_count = 1;
-		explicit_bzero(secret, NSD_COOKIE_SECRET_SIZE);
-		return;
+	} else {
+		if (!inet_ntop(AF_INET,
+			&((struct sockaddr_in *)&addr)->sin_addr,
+			address, size))
+			return (1);
 	}
-#if NSD_COOKIE_HISTORY_SIZE > 2
-	memmove( &nsd->cookie_secrets[2], &nsd->cookie_secrets[1]
-	       , sizeof(struct cookie_secret) * (NSD_COOKIE_HISTORY_SIZE - 2));
-#endif
-	memcpy( nsd->cookie_secrets[1].cookie_secret
-	      , secret, NSD_COOKIE_SECRET_SIZE);
-	nsd->cookie_count = nsd->cookie_count     < NSD_COOKIE_HISTORY_SIZE
-	                  ? nsd->cookie_count + 1 : NSD_COOKIE_HISTORY_SIZE;
-	explicit_bzero(secret, NSD_COOKIE_SECRET_SIZE);
-}
 
-void activate_cookie_secret(struct nsd* nsd)
-{
-	uint8_t active_secret[NSD_COOKIE_SECRET_SIZE];
-	/* The staging secret becomes the active secret.
-	 * The active secret becomes a staging secret.
-	 * If the NSD_COOKIE_HISTORY_SIZE > 2 then all staging secrets are moved
-	 * one position up and the previously active secret becomes the last
-	 * staging secret.
-	 */
-	if(nsd->cookie_count < 2)
-		return;
-	memcpy( active_secret, nsd->cookie_secrets[0].cookie_secret
-	      , NSD_COOKIE_SECRET_SIZE);
-	memmove( &nsd->cookie_secrets[0], &nsd->cookie_secrets[1]
-	       , sizeof(struct cookie_secret) * (NSD_COOKIE_HISTORY_SIZE - 1));
-	memcpy( nsd->cookie_secrets[nsd->cookie_count - 1].cookie_secret
-	      , active_secret, NSD_COOKIE_SECRET_SIZE);
-	explicit_bzero(active_secret, NSD_COOKIE_SECRET_SIZE);
-}
-
-void drop_cookie_secret(struct nsd* nsd)
-{
-	/* Drops a staging cookie secret. If there are more than one, it will
-	 * drop the last staging secret. */
-	if(nsd->cookie_count < 2)
-		return;
-	explicit_bzero( nsd->cookie_secrets[nsd->cookie_count - 1].cookie_secret
-	              , NSD_COOKIE_SECRET_SIZE);
-	nsd->cookie_count -= 1;
+	return (0);
 }

@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef RDATA_H
-#define RDATA_H
+#ifndef _RDATA_H_
+#define _RDATA_H_
 
 #include "dns.h"
 #include "namedb.h"
@@ -19,7 +19,6 @@
 
 extern lookup_table_type dns_certificate_types[];
 extern lookup_table_type dns_algorithms[];
-extern const char *svcparamkey_strs[];
 
 int rdata_atom_to_string(buffer_type *output, rdata_zoneformat_type type,
 			 rdata_atom_type rdata, rr_type *rr);
@@ -58,4 +57,4 @@ int rdata_atoms_to_unknown_string(buffer_type *out,
 int print_rdata(buffer_type *output, rrtype_descriptor_type *descriptor,
             rr_type *record);
 
-#endif /* RDATA_H */
+#endif /* _DNS_H_ */

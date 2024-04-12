@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -40,12 +40,9 @@
  */
 #include "config.h"
 #include "iterator/iter_delegpt.h"
-#include "iterator/iter_utils.h"
 #include "validator/val_nsec.h"
-#include "validator/val_utils.h"
 #include "services/cache/dns.h"
 #include "services/cache/rrset.h"
-#include "util/data/msgparse.h"
 #include "util/data/msgreply.h"
 #include "util/data/packed_rrset.h"
 #include "util/data/dname.h"
@@ -53,41 +50,26 @@
 #include "util/net_help.h"
 #include "util/regional.h"
 #include "util/config_file.h"
-#include "sldns/sbuffer.h"
 
 /** store rrsets in the rrset cache. 
  * @param env: module environment with caches.
  * @param rep: contains list of rrsets to store.
  * @param now: current time.
- * @param leeway: during prefetch how much leeway to update TTLs.
- * 	This makes rrsets (other than type NS) timeout sooner so they get
- * 	updated with a new full TTL.
- * 	Type NS does not get this, because it must not be refreshed from the
- * 	child domain, but keep counting down properly.
- * @param pside: if from parentside discovered NS, so that its NS is okay
- * 	in a prefetch situation to be updated (without becoming sticky).
  * @param qrep: update rrsets here if cache is better
  * @param region: for qrep allocs.
- * @param qstarttime: time when delegations were looked up, this is perhaps
- *	earlier than the time in now. The time is used to determine if RRsets
- *	of type NS have expired, so that they can only be updated using
- *	lookups of delegation points that did not use them, since they had
- *	expired then.
  */
 static void
-store_rrsets(struct module_env* env, struct reply_info* rep, time_t now,
-	time_t leeway, int pside, struct reply_info* qrep,
-	struct regional* region, time_t qstarttime)
+store_rrsets(struct module_env* env, struct reply_info* rep, uint32_t now,
+	struct reply_info* qrep, struct regional* region)
 {
-	size_t i;
-	/* see if rrset already exists in cache, if not insert it. */
-	for(i=0; i<rep->rrset_count; i++) {
-		rep->ref[i].key = rep->rrsets[i];
-		rep->ref[i].id = rep->rrsets[i]->id;
-		/* update ref if it was in the cache */
+        size_t i;
+        /* see if rrset already exists in cache, if not insert it. */
+        for(i=0; i<rep->rrset_count; i++) {
+                rep->ref[i].key = rep->rrsets[i];
+                rep->ref[i].id = rep->rrsets[i]->id;
+		/* update ref if it was in the cache */ 
 		switch(rrset_cache_update(env->rrset_cache, &rep->ref[i],
-				env->alloc, ((ntohs(rep->ref[i].key->rk.type)==
-				LDNS_RR_TYPE_NS && !pside)?qstarttime:now + leeway))) {
+                        env->alloc, now)) {
 		case 0: /* ref unchanged, item inserted */
 			break;
 		case 2: /* ref updated, cache is superior */
@@ -106,40 +88,19 @@ store_rrsets(struct module_env* env, struct reply_info* rep, time_t now,
 				}
 			}
 			/* no break: also copy key item */
-			/* the line below is matched by gcc regex and silences
-			 * the fallthrough warning */
-			/* fallthrough */
 		case 1: /* ref updated, item inserted */
-			rep->rrsets[i] = rep->ref[i].key;
+                        rep->rrsets[i] = rep->ref[i].key;
 		}
-	}
-}
-
-/** delete message from message cache */
-void
-msg_cache_remove(struct module_env* env, uint8_t* qname, size_t qnamelen, 
-	uint16_t qtype, uint16_t qclass, uint16_t flags)
-{
-	struct query_info k;
-	hashvalue_type h;
-
-	k.qname = qname;
-	k.qname_len = qnamelen;
-	k.qtype = qtype;
-	k.qclass = qclass;
-	k.local_alias = NULL;
-	h = query_info_hash(&k, flags);
-	slabhash_remove(env->msg_cache, h, &k);
+        }
 }
 
 void 
 dns_cache_store_msg(struct module_env* env, struct query_info* qinfo,
-	hashvalue_type hash, struct reply_info* rep, time_t leeway, int pside,
-	struct reply_info* qrep, uint32_t flags, struct regional* region,
-	time_t qstarttime)
+	hashvalue_t hash, struct reply_info* rep, uint32_t leeway,
+	struct reply_info* qrep, struct regional* region)
 {
 	struct msgreply_entry* e;
-	time_t ttl = rep->ttl;
+	uint32_t ttl = rep->ttl;
 	size_t i;
 
 	/* store RRsets */
@@ -151,26 +112,12 @@ dns_cache_store_msg(struct module_env* env, struct query_info* qinfo,
 	/* there was a reply_info_sortref(rep) here but it seems to be
 	 * unnecessary, because the cache gets locked per rrset. */
 	reply_info_set_ttls(rep, *env->now);
-	store_rrsets(env, rep, *env->now, leeway, pside, qrep, region,
-		qstarttime);
-	if(ttl == 0 && !(flags & DNSCACHE_STORE_ZEROTTL)) {
+	store_rrsets(env, rep, *env->now+leeway, qrep, region);
+	if(ttl == 0) {
 		/* we do not store the message, but we did store the RRs,
 		 * which could be useful for delegation information */
 		verbose(VERB_ALGO, "TTL 0: dropped msg from cache");
-		reply_info_delete(rep, NULL);
-		/* if the message is in the cache, remove that msg,
-		 * so that the TTL 0 response can be returned for future
-		 * responses (i.e. don't get answered from
-		 * cache, but instead go to recursion to get this TTL0
-		 * response).
-		 * Possible messages that could be in the cache:
-		 * - SERVFAIL
-		 * - NXDOMAIN
-		 * - NODATA
-		 * - an older record that is expired
-		 * - an older record that did not yet expire */
-		msg_cache_remove(env, qinfo->qname, qinfo->qname_len,
-			qinfo->qtype, qinfo->qclass, flags);
+		free(rep);
 		return;
 	}
 
@@ -183,51 +130,10 @@ dns_cache_store_msg(struct module_env* env, struct query_info* qinfo,
 	slabhash_insert(env->msg_cache, hash, &e->entry, rep, env->alloc);
 }
 
-/** see if an rrset is expired above the qname, return upper qname. */
-static int
-rrset_expired_above(struct module_env* env, uint8_t** qname, size_t* qnamelen,
-	uint16_t searchtype, uint16_t qclass, time_t now, uint8_t* expiretop,
-	size_t expiretoplen)
-{
-	struct ub_packed_rrset_key *rrset;
-	uint8_t lablen;
-
-	while(*qnamelen > 0) {
-		/* look one label higher */
-		lablen = **qname;
-		*qname += lablen + 1;
-		*qnamelen -= lablen + 1;
-		if(*qnamelen <= 0)
-			break;
-
-		/* looks up with a time of 0, to see expired entries */
-		if((rrset = rrset_cache_lookup(env->rrset_cache, *qname,
-			*qnamelen, searchtype, qclass, 0, 0, 0))) {
-			struct packed_rrset_data* data =
-				(struct packed_rrset_data*)rrset->entry.data;
-			if(now > data->ttl) {
-				/* it is expired, this is not wanted */
-				lock_rw_unlock(&rrset->entry.lock);
-				log_nametypeclass(VERB_ALGO, "this rrset is expired", *qname, searchtype, qclass);
-				return 1;
-			}
-			/* it is not expired, continue looking */
-			lock_rw_unlock(&rrset->entry.lock);
-		}
-
-		/* do not look above the expiretop. */
-		if(expiretop && *qnamelen == expiretoplen &&
-			query_dname_compare(*qname, expiretop)==0)
-			break;
-	}
-	return 0;
-}
-
 /** find closest NS or DNAME and returns the rrset (locked) */
 static struct ub_packed_rrset_key*
 find_closest_of_type(struct module_env* env, uint8_t* qname, size_t qnamelen, 
-	uint16_t qclass, time_t now, uint16_t searchtype, int stripfront,
-	int noexpiredabove, uint8_t* expiretop, size_t expiretoplen)
+	uint16_t qclass, uint32_t now, uint16_t searchtype, int stripfront)
 {
 	struct ub_packed_rrset_key *rrset;
 	uint8_t lablen;
@@ -242,40 +148,8 @@ find_closest_of_type(struct module_env* env, uint8_t* qname, size_t qnamelen,
 	/* snip off front part of qname until the type is found */
 	while(qnamelen > 0) {
 		if((rrset = rrset_cache_lookup(env->rrset_cache, qname, 
-			qnamelen, searchtype, qclass, 0, now, 0))) {
-			uint8_t* origqname = qname;
-			size_t origqnamelen = qnamelen;
-			if(!noexpiredabove)
-				return rrset;
-			/* if expiretop set, do not look above it, but
-			 * qname is equal, so the just found result is also
-			 * the nonexpired above part. */
-			if(expiretop && qnamelen == expiretoplen &&
-				query_dname_compare(qname, expiretop)==0)
-				return rrset;
-			/* check for expiry, but we have to let go of the rrset
-			 * for the lock ordering */
-			lock_rw_unlock(&rrset->entry.lock);
-			/* the expired_above function always takes off one
-			 * label (if qnamelen>0) and returns the final qname
-			 * where it searched, so we can continue from there
-			 * turning the O N*N search into O N. */
-			if(!rrset_expired_above(env, &qname, &qnamelen,
-				searchtype, qclass, now, expiretop,
-				expiretoplen)) {
-				/* we want to return rrset, but it may be
-				 * gone from cache, if so, just loop like
-				 * it was not in the cache in the first place.
-				 */
-				if((rrset = rrset_cache_lookup(env->
-					rrset_cache, origqname, origqnamelen,
-					searchtype, qclass, 0, now, 0))) {
-					return rrset;
-				}
-			}
-			log_nametypeclass(VERB_ALGO, "ignoring rrset because expired rrsets exist above it", origqname, searchtype, qclass);
-			continue;
-		}
+			qnamelen, searchtype, qclass, 0, now, 0)))
+			return rrset;
 
 		/* snip off front label */
 		lablen = *qname;
@@ -288,7 +162,7 @@ find_closest_of_type(struct module_env* env, uint8_t* qname, size_t qnamelen,
 /** add addr to additional section */
 static void
 addr_to_additional(struct ub_packed_rrset_key* rrset, struct regional* region,
-	struct dns_msg* msg, time_t now)
+	struct dns_msg* msg, uint32_t now)
 {
 	if((msg->rep->rrsets[msg->rep->rrset_count] = 
 		packed_rrset_copy_region(rrset, region, now))) {
@@ -298,20 +172,19 @@ addr_to_additional(struct ub_packed_rrset_key* rrset, struct regional* region,
 }
 
 /** lookup message in message cache */
-struct msgreply_entry* 
+static struct msgreply_entry* 
 msg_cache_lookup(struct module_env* env, uint8_t* qname, size_t qnamelen, 
-	uint16_t qtype, uint16_t qclass, uint16_t flags, time_t now, int wr)
+	uint16_t qtype, uint16_t qclass, uint32_t now, int wr)
 {
 	struct lruhash_entry* e;
 	struct query_info k;
-	hashvalue_type h;
+	hashvalue_t h;
 
 	k.qname = qname;
 	k.qname_len = qnamelen;
 	k.qtype = qtype;
 	k.qclass = qclass;
-	k.local_alias = NULL;
-	h = query_info_hash(&k, flags);
+	h = query_info_hash(&k);
 	e = slabhash_lookup(env->msg_cache, h, &k, wr);
 
 	if(!e) return NULL;
@@ -325,7 +198,7 @@ msg_cache_lookup(struct module_env* env, uint8_t* qname, size_t qnamelen,
 /** find and add A and AAAA records for nameservers in delegpt */
 static int
 find_add_addrs(struct module_env* env, uint16_t qclass, 
-	struct regional* region, struct delegpt* dp, time_t now, 
+	struct regional* region, struct delegpt* dp, uint32_t now, 
 	struct dns_msg** msg)
 {
 	struct delegpt_ns* ns;
@@ -335,7 +208,7 @@ find_add_addrs(struct module_env* env, uint16_t qclass,
 		akey = rrset_cache_lookup(env->rrset_cache, ns->name, 
 			ns->namelen, LDNS_RR_TYPE_A, qclass, 0, now, 0);
 		if(akey) {
-			if(!delegpt_add_rrset_A(dp, region, akey, 0, NULL)) {
+			if(!delegpt_add_rrset_A(dp, region, akey, 0)) {
 				lock_rw_unlock(&akey->entry.lock);
 				return 0;
 			}
@@ -343,10 +216,8 @@ find_add_addrs(struct module_env* env, uint16_t qclass,
 				addr_to_additional(akey, region, *msg, now);
 			lock_rw_unlock(&akey->entry.lock);
 		} else {
-			/* BIT_CD on false because delegpt lookup does
-			 * not use dns64 translation */
 			neg = msg_cache_lookup(env, ns->name, ns->namelen,
-				LDNS_RR_TYPE_A, qclass, 0, now, 0);
+				LDNS_RR_TYPE_A, qclass, now, 0);
 			if(neg) {
 				delegpt_add_neg_msg(dp, neg);
 				lock_rw_unlock(&neg->entry.lock);
@@ -355,7 +226,7 @@ find_add_addrs(struct module_env* env, uint16_t qclass,
 		akey = rrset_cache_lookup(env->rrset_cache, ns->name, 
 			ns->namelen, LDNS_RR_TYPE_AAAA, qclass, 0, now, 0);
 		if(akey) {
-			if(!delegpt_add_rrset_AAAA(dp, region, akey, 0, NULL)) {
+			if(!delegpt_add_rrset_AAAA(dp, region, akey, 0)) {
 				lock_rw_unlock(&akey->entry.lock);
 				return 0;
 			}
@@ -363,10 +234,8 @@ find_add_addrs(struct module_env* env, uint16_t qclass,
 				addr_to_additional(akey, region, *msg, now);
 			lock_rw_unlock(&akey->entry.lock);
 		} else {
-			/* BIT_CD on false because delegpt lookup does
-			 * not use dns64 translation */
 			neg = msg_cache_lookup(env, ns->name, ns->namelen,
-				LDNS_RR_TYPE_AAAA, qclass, 0, now, 0);
+				LDNS_RR_TYPE_AAAA, qclass, now, 0);
 			if(neg) {
 				delegpt_add_neg_msg(dp, neg);
 				lock_rw_unlock(&neg->entry.lock);
@@ -384,16 +253,12 @@ cache_fill_missing(struct module_env* env, uint16_t qclass,
 	struct delegpt_ns* ns;
 	struct msgreply_entry* neg;
 	struct ub_packed_rrset_key* akey;
-	time_t now = *env->now;
+	uint32_t now = *env->now;
 	for(ns = dp->nslist; ns; ns = ns->next) {
-		if(ns->cache_lookup_count > ITERATOR_NAME_CACHELOOKUP_MAX)
-			continue;
-		ns->cache_lookup_count++;
 		akey = rrset_cache_lookup(env->rrset_cache, ns->name, 
 			ns->namelen, LDNS_RR_TYPE_A, qclass, 0, now, 0);
 		if(akey) {
-			if(!delegpt_add_rrset_A(dp, region, akey, ns->lame,
-				NULL)) {
+			if(!delegpt_add_rrset_A(dp, region, akey, (int)ns->lame)) {
 				lock_rw_unlock(&akey->entry.lock);
 				return 0;
 			}
@@ -401,10 +266,8 @@ cache_fill_missing(struct module_env* env, uint16_t qclass,
 				ns->name, LDNS_RR_TYPE_A, qclass);
 			lock_rw_unlock(&akey->entry.lock);
 		} else {
-			/* BIT_CD on false because delegpt lookup does
-			 * not use dns64 translation */
 			neg = msg_cache_lookup(env, ns->name, ns->namelen,
-				LDNS_RR_TYPE_A, qclass, 0, now, 0);
+				LDNS_RR_TYPE_A, qclass, now, 0);
 			if(neg) {
 				delegpt_add_neg_msg(dp, neg);
 				lock_rw_unlock(&neg->entry.lock);
@@ -413,8 +276,7 @@ cache_fill_missing(struct module_env* env, uint16_t qclass,
 		akey = rrset_cache_lookup(env->rrset_cache, ns->name, 
 			ns->namelen, LDNS_RR_TYPE_AAAA, qclass, 0, now, 0);
 		if(akey) {
-			if(!delegpt_add_rrset_AAAA(dp, region, akey, ns->lame,
-				NULL)) {
+			if(!delegpt_add_rrset_AAAA(dp, region, akey, (int)ns->lame)) {
 				lock_rw_unlock(&akey->entry.lock);
 				return 0;
 			}
@@ -422,10 +284,8 @@ cache_fill_missing(struct module_env* env, uint16_t qclass,
 				ns->name, LDNS_RR_TYPE_AAAA, qclass);
 			lock_rw_unlock(&akey->entry.lock);
 		} else {
-			/* BIT_CD on false because delegpt lookup does
-			 * not use dns64 translation */
 			neg = msg_cache_lookup(env, ns->name, ns->namelen,
-				LDNS_RR_TYPE_AAAA, qclass, 0, now, 0);
+				LDNS_RR_TYPE_AAAA, qclass, now, 0);
 			if(neg) {
 				delegpt_add_neg_msg(dp, neg);
 				lock_rw_unlock(&neg->entry.lock);
@@ -438,7 +298,7 @@ cache_fill_missing(struct module_env* env, uint16_t qclass,
 /** find and add DS or NSEC to delegation msg */
 static void
 find_add_ds(struct module_env* env, struct regional* region, 
-	struct dns_msg* msg, struct delegpt* dp, time_t now)
+	struct dns_msg* msg, struct delegpt* dp, uint32_t now)
 {
 	/* Lookup the DS or NSEC at the delegation point. */
 	struct ub_packed_rrset_key* rrset = rrset_cache_lookup(
@@ -483,17 +343,13 @@ dns_msg_create(uint8_t* qname, size_t qnamelen, uint16_t qtype,
 	msg->qinfo.qname_len = qnamelen;
 	msg->qinfo.qtype = qtype;
 	msg->qinfo.qclass = qclass;
-	msg->qinfo.local_alias = NULL;
 	/* non-packed reply_info, because it needs to grow the array */
 	msg->rep = (struct reply_info*)regional_alloc_zero(region, 
 		sizeof(struct reply_info)-sizeof(struct rrset_ref));
 	if(!msg->rep)
 		return NULL;
-	if(capacity > RR_COUNT_MAX)
-		return NULL; /* integer overflow protection */
 	msg->rep->flags = BIT_QR; /* with QR, no AA */
 	msg->rep->qdcount = 1;
-	msg->rep->reason_bogus = LDNS_EDE_NONE;
 	msg->rep->rrsets = (struct ub_packed_rrset_key**)
 		regional_alloc(region, 
 		capacity*sizeof(struct ub_packed_rrset_key*));
@@ -504,7 +360,7 @@ dns_msg_create(uint8_t* qname, size_t qnamelen, uint16_t qtype,
 
 int
 dns_msg_authadd(struct dns_msg* msg, struct regional* region, 
-	struct ub_packed_rrset_key* rrset, time_t now)
+	struct ub_packed_rrset_key* rrset, uint32_t now)
 {
 	if(!(msg->rep->rrsets[msg->rep->rrset_count++] = 
 		packed_rrset_copy_region(rrset, region, now)))
@@ -513,22 +369,10 @@ dns_msg_authadd(struct dns_msg* msg, struct regional* region,
 	return 1;
 }
 
-int
-dns_msg_ansadd(struct dns_msg* msg, struct regional* region, 
-	struct ub_packed_rrset_key* rrset, time_t now)
-{
-	if(!(msg->rep->rrsets[msg->rep->rrset_count++] = 
-		packed_rrset_copy_region(rrset, region, now)))
-		return 0;
-	msg->rep->an_numrrsets++;
-	return 1;
-}
-
 struct delegpt* 
 dns_cache_find_delegation(struct module_env* env, uint8_t* qname, 
 	size_t qnamelen, uint16_t qtype, uint16_t qclass, 
-	struct regional* region, struct dns_msg** msg, time_t now,
-	int noexpiredabove, uint8_t* expiretop, size_t expiretoplen)
+	struct regional* region, struct dns_msg** msg, uint32_t now)
 {
 	/* try to find closest NS rrset */
 	struct ub_packed_rrset_key* nskey;
@@ -536,7 +380,7 @@ dns_cache_find_delegation(struct module_env* env, uint8_t* qname,
 	struct delegpt* dp;
 
 	nskey = find_closest_of_type(env, qname, qnamelen, qclass, now,
-		LDNS_RR_TYPE_NS, 0, noexpiredabove, expiretop, expiretoplen);
+		LDNS_RR_TYPE_NS, 0);
 	if(!nskey) /* hope the caller has hints to prime or something */
 		return NULL;
 	nsdata = (struct packed_rrset_data*)nskey->entry.data;
@@ -591,10 +435,6 @@ gen_dns_msg(struct regional* region, struct query_info* q, size_t num)
 		sizeof(struct reply_info) - sizeof(struct rrset_ref));
 	if(!msg->rep)
 		return NULL;
-	msg->rep->reason_bogus = LDNS_EDE_NONE;
-	msg->rep->reason_bogus_str = NULL;
-	if(num > RR_COUNT_MAX)
-		return NULL; /* integer overflow protection */
 	msg->rep->rrsets = (struct ub_packed_rrset_key**)
 		regional_alloc(region,
 		num * sizeof(struct ub_packed_rrset_key*));
@@ -603,68 +443,35 @@ gen_dns_msg(struct regional* region, struct query_info* q, size_t num)
 	return msg;
 }
 
-struct dns_msg*
-tomsg(struct module_env* env, struct query_info* q, struct reply_info* r,
-	struct regional* region, time_t now, int allow_expired,
-	struct regional* scratch)
+/** generate dns_msg from cached message */
+static struct dns_msg*
+tomsg(struct module_env* env, struct query_info* q, struct reply_info* r, 
+	struct regional* region, uint32_t now, struct regional* scratch)
 {
 	struct dns_msg* msg;
 	size_t i;
-	int is_expired = 0;
-	time_t now_control = now;
-	if(now > r->ttl) {
-		/* Check if we are allowed to serve expired */
-		if(allow_expired) {
-			if(env->cfg->serve_expired_ttl &&
-				r->serve_expired_ttl < now) {
-				return NULL;
-			}
-			/* Ignore expired failure answers */
-			if(FLAGS_GET_RCODE(r->flags) !=
-				LDNS_RCODE_NOERROR &&
-				FLAGS_GET_RCODE(r->flags) !=
-				LDNS_RCODE_NXDOMAIN &&
-				FLAGS_GET_RCODE(r->flags) !=
-				LDNS_RCODE_YXDOMAIN)
-				return 0;
-		} else {
-			return NULL;
-		}
-		/* Change the current time so we can pass the below TTL checks when
-		 * serving expired data. */
-		now_control = r->ttl - env->cfg->serve_expired_reply_ttl;
-		is_expired = 1;
-	}
-
+	if(now > r->ttl)
+		return NULL;
 	msg = gen_dns_msg(region, q, r->rrset_count);
-	if(!msg) return NULL;
+	if(!msg)
+		return NULL;
 	msg->rep->flags = r->flags;
 	msg->rep->qdcount = r->qdcount;
-	msg->rep->ttl = is_expired
-		?SERVE_EXPIRED_REPLY_TTL
-		:r->ttl - now;
+	msg->rep->ttl = r->ttl - now;
 	if(r->prefetch_ttl > now)
 		msg->rep->prefetch_ttl = r->prefetch_ttl - now;
-	else
-		msg->rep->prefetch_ttl = PREFETCH_TTL_CALC(msg->rep->ttl);
-	msg->rep->serve_expired_ttl = msg->rep->ttl + SERVE_EXPIRED_TTL;
+	else	msg->rep->prefetch_ttl = PREFETCH_TTL_CALC(msg->rep->ttl);
 	msg->rep->security = r->security;
 	msg->rep->an_numrrsets = r->an_numrrsets;
 	msg->rep->ns_numrrsets = r->ns_numrrsets;
 	msg->rep->ar_numrrsets = r->ar_numrrsets;
 	msg->rep->rrset_count = r->rrset_count;
-	msg->rep->authoritative = r->authoritative;
-	msg->rep->reason_bogus = r->reason_bogus;
-	if(r->reason_bogus_str) {
-		msg->rep->reason_bogus_str = regional_strdup(region, r->reason_bogus_str);
-	}
-
-	if(!rrset_array_lock(r->ref, r->rrset_count, now_control)) {
+        msg->rep->authoritative = r->authoritative;
+	if(!rrset_array_lock(r->ref, r->rrset_count, now))
 		return NULL;
-	}
 	if(r->an_numrrsets > 0 && (r->rrsets[0]->rk.type == htons(
 		LDNS_RR_TYPE_CNAME) || r->rrsets[0]->rk.type == htons(
-		LDNS_RR_TYPE_DNAME)) && !reply_check_cname_chain(q, r)) {
+		LDNS_RR_TYPE_DNAME)) && !reply_check_cname_chain(r)) {
 		/* cname chain is now invalid, reconstruct msg */
 		rrset_array_unlock(r->ref, r->rrset_count);
 		return NULL;
@@ -675,47 +482,22 @@ tomsg(struct module_env* env, struct query_info* q, struct reply_info* r,
 		return NULL;
 	}
 	for(i=0; i<msg->rep->rrset_count; i++) {
-		msg->rep->rrsets[i] = packed_rrset_copy_region(r->rrsets[i],
+		msg->rep->rrsets[i] = packed_rrset_copy_region(r->rrsets[i], 
 			region, now);
 		if(!msg->rep->rrsets[i]) {
 			rrset_array_unlock(r->ref, r->rrset_count);
 			return NULL;
 		}
 	}
-	if(env)
-		rrset_array_unlock_touch(env->rrset_cache, scratch, r->ref, 
+	rrset_array_unlock_touch(env->rrset_cache, scratch, r->ref, 
 		r->rrset_count);
-	else
-		rrset_array_unlock(r->ref, r->rrset_count);
 	return msg;
-}
-
-struct dns_msg*
-dns_msg_deepcopy_region(struct dns_msg* origin, struct regional* region)
-{
-	size_t i;
-	struct dns_msg* res = NULL;
-	res = gen_dns_msg(region, &origin->qinfo, origin->rep->rrset_count);
-	if(!res) return NULL;
-	*res->rep = *origin->rep;
-	if(origin->rep->reason_bogus_str) {
-		res->rep->reason_bogus_str = regional_strdup(region,
-			origin->rep->reason_bogus_str);
-	}
-	for(i=0; i<res->rep->rrset_count; i++) {
-		res->rep->rrsets[i] = packed_rrset_copy_region(
-			origin->rep->rrsets[i], region, 0);
-		if(!res->rep->rrsets[i]) {
-			return NULL;
-		}
-	}
-	return res;
 }
 
 /** synthesize RRset-only response from cached RRset item */
 static struct dns_msg*
 rrset_msg(struct ub_packed_rrset_key* rrset, struct regional* region, 
-	time_t now, struct query_info* q)
+	uint32_t now, struct query_info* q)
 {
 	struct dns_msg* msg;
 	struct packed_rrset_data* d = (struct packed_rrset_data*)
@@ -730,13 +512,11 @@ rrset_msg(struct ub_packed_rrset_key* rrset, struct regional* region,
 	msg->rep->qdcount = 1;
 	msg->rep->ttl = d->ttl - now;
 	msg->rep->prefetch_ttl = PREFETCH_TTL_CALC(msg->rep->ttl);
-	msg->rep->serve_expired_ttl = msg->rep->ttl + SERVE_EXPIRED_TTL;
 	msg->rep->security = sec_status_unchecked;
 	msg->rep->an_numrrsets = 1;
 	msg->rep->ns_numrrsets = 0;
 	msg->rep->ar_numrrsets = 0;
 	msg->rep->rrset_count = 1;
-	msg->rep->reason_bogus = LDNS_EDE_NONE;
 	msg->rep->rrsets[0] = packed_rrset_copy_region(rrset, region, now);
 	if(!msg->rep->rrsets[0]) /* copy CNAME */
 		return NULL;
@@ -746,7 +526,7 @@ rrset_msg(struct ub_packed_rrset_key* rrset, struct regional* region,
 /** synthesize DNAME+CNAME response from cached DNAME item */
 static struct dns_msg*
 synth_dname_msg(struct ub_packed_rrset_key* rrset, struct regional* region, 
-	time_t now, struct query_info* q, enum sec_status* sec_status)
+	uint32_t now, struct query_info* q)
 {
 	struct dns_msg* msg;
 	struct ub_packed_rrset_key* ck;
@@ -758,9 +538,8 @@ synth_dname_msg(struct ub_packed_rrset_key* rrset, struct regional* region,
 		return NULL;
 	/* only allow validated (with DNSSEC) DNAMEs used from cache 
 	 * for insecure DNAMEs, query again. */
-	*sec_status = d->security;
-	/* return sec status, so the status of the CNAME can be checked
-	 * by the calling routine. */
+	if(d->security != sec_status_secure)
+		return NULL;
 	msg = gen_dns_msg(region, q, 2); /* DNAME + CNAME RRset */
 	if(!msg)
 		return NULL;
@@ -769,13 +548,11 @@ synth_dname_msg(struct ub_packed_rrset_key* rrset, struct regional* region,
 	msg->rep->qdcount = 1;
 	msg->rep->ttl = d->ttl - now;
 	msg->rep->prefetch_ttl = PREFETCH_TTL_CALC(msg->rep->ttl);
-	msg->rep->serve_expired_ttl = msg->rep->ttl + SERVE_EXPIRED_TTL;
 	msg->rep->security = sec_status_unchecked;
 	msg->rep->an_numrrsets = 1;
 	msg->rep->ns_numrrsets = 0;
 	msg->rep->ar_numrrsets = 0;
 	msg->rep->rrset_count = 1;
-	msg->rep->reason_bogus = LDNS_EDE_NONE;
 	msg->rep->rrsets[0] = packed_rrset_copy_region(rrset, region, now);
 	if(!msg->rep->rrsets[0]) /* copy DNAME */
 		return NULL;
@@ -813,7 +590,7 @@ synth_dname_msg(struct ub_packed_rrset_key* rrset, struct regional* region,
 	ck->entry.hash = rrset_key_hash(&ck->rk);
 	newd = (struct packed_rrset_data*)regional_alloc_zero(region,
 		sizeof(struct packed_rrset_data) + sizeof(size_t) + 
-		sizeof(uint8_t*) + sizeof(time_t) + sizeof(uint16_t) 
+		sizeof(uint8_t*) + sizeof(uint32_t) + sizeof(uint16_t) 
 		+ newlen);
 	if(!newd)
 		return NULL;
@@ -829,90 +606,22 @@ synth_dname_msg(struct ub_packed_rrset_key* rrset, struct regional* region,
 	newd->rr_ttl[0] = newd->ttl;
 	msg->rep->ttl = newd->ttl;
 	msg->rep->prefetch_ttl = PREFETCH_TTL_CALC(newd->ttl);
-	msg->rep->serve_expired_ttl = newd->ttl + SERVE_EXPIRED_TTL;
-	sldns_write_uint16(newd->rr_data[0], newlen);
+	ldns_write_uint16(newd->rr_data[0], newlen);
 	memmove(newd->rr_data[0] + sizeof(uint16_t), newname, newlen);
 	msg->rep->an_numrrsets ++;
 	msg->rep->rrset_count ++;
 	return msg;
 }
 
-/** Fill TYPE_ANY response with some data from cache */
-static struct dns_msg*
-fill_any(struct module_env* env,
-	uint8_t* qname, size_t qnamelen, uint16_t qtype, uint16_t qclass,
-	struct regional* region)
-{
-	time_t now = *env->now;
-	struct dns_msg* msg = NULL;
-	uint16_t lookup[] = {LDNS_RR_TYPE_A, LDNS_RR_TYPE_AAAA,
-		LDNS_RR_TYPE_MX, LDNS_RR_TYPE_SOA, LDNS_RR_TYPE_NS,
-		LDNS_RR_TYPE_DNAME, 0};
-	int i, num=6; /* number of RR types to look up */
-	log_assert(lookup[num] == 0);
-
-	if(env->cfg->deny_any) {
-		/* return empty message */
-		msg = dns_msg_create(qname, qnamelen, qtype, qclass,
-			region, 0);
-		if(!msg) {
-			return NULL;
-		}
-		/* set NOTIMPL for RFC 8482 */
-		msg->rep->flags |= LDNS_RCODE_NOTIMPL;
-		msg->rep->security = sec_status_indeterminate;
-		return msg;
-	}
-
-	for(i=0; i<num; i++) {
-		/* look up this RR for inclusion in type ANY response */
-		struct ub_packed_rrset_key* rrset = rrset_cache_lookup(
-			env->rrset_cache, qname, qnamelen, lookup[i],
-			qclass, 0, now, 0);
-		struct packed_rrset_data *d;
-		if(!rrset)
-			continue;
-
-		/* only if rrset from answer section */
-		d = (struct packed_rrset_data*)rrset->entry.data;
-		if(d->trust == rrset_trust_add_noAA ||
-			d->trust == rrset_trust_auth_noAA ||
-			d->trust == rrset_trust_add_AA ||
-			d->trust == rrset_trust_auth_AA) {
-			lock_rw_unlock(&rrset->entry.lock);
-			continue;
-		}
-
-		/* create msg if none */
-		if(!msg) {
-			msg = dns_msg_create(qname, qnamelen, qtype, qclass,
-				region, (size_t)(num-i));
-			if(!msg) {
-				lock_rw_unlock(&rrset->entry.lock);
-				return NULL;
-			}
-		}
-
-		/* add RRset to response */
-		if(!dns_msg_ansadd(msg, region, rrset, now)) {
-			lock_rw_unlock(&rrset->entry.lock);
-			return NULL;
-		}
-		lock_rw_unlock(&rrset->entry.lock);
-	}
-	return msg;
-}
-
 struct dns_msg* 
 dns_cache_lookup(struct module_env* env,
 	uint8_t* qname, size_t qnamelen, uint16_t qtype, uint16_t qclass,
-	uint16_t flags, struct regional* region, struct regional* scratch,
-	int no_partial, uint8_t* dpname, size_t dpnamelen)
+	struct regional* region, struct regional* scratch)
 {
 	struct lruhash_entry* e;
 	struct query_info k;
-	hashvalue_type h;
-	time_t now = *env->now;
+	hashvalue_t h;
+	uint32_t now = *env->now;
 	struct ub_packed_rrset_key* rrset;
 
 	/* lookup first, this has both NXdomains and ANSWER responses */
@@ -920,13 +629,12 @@ dns_cache_lookup(struct module_env* env,
 	k.qname_len = qnamelen;
 	k.qtype = qtype;
 	k.qclass = qclass;
-	k.local_alias = NULL;
-	h = query_info_hash(&k, flags);
+	h = query_info_hash(&k);
 	e = slabhash_lookup(env->msg_cache, h, &k, 0);
 	if(e) {
 		struct msgreply_entry* key = (struct msgreply_entry*)e->key;
 		struct reply_info* data = (struct reply_info*)e->data;
-		struct dns_msg* msg = tomsg(env, &key->key, data, region, now, 0,
+		struct dns_msg* msg = tomsg(env, &key->key, data, region, now, 
 			scratch);
 		if(msg) {
 			lock_rw_unlock(&e->lock);
@@ -939,65 +647,33 @@ dns_cache_lookup(struct module_env* env,
 	/* see if a DNAME exists. Checked for first, to enforce that DNAMEs
 	 * are more important, the CNAME is resynthesized and thus 
 	 * consistent with the DNAME */
-	if(!no_partial &&
-		(rrset=find_closest_of_type(env, qname, qnamelen, qclass, now,
-		LDNS_RR_TYPE_DNAME, 1, 0, NULL, 0))) {
+	if( (rrset=find_closest_of_type(env, qname, qnamelen, qclass, now,
+		LDNS_RR_TYPE_DNAME, 1))) {
 		/* synthesize a DNAME+CNAME message based on this */
-		enum sec_status sec_status = sec_status_unchecked;
-		struct dns_msg* msg = synth_dname_msg(rrset, region, now, &k,
-			&sec_status);
+		struct dns_msg* msg = synth_dname_msg(rrset, region, now, &k);
 		if(msg) {
-			struct ub_packed_rrset_key* cname_rrset;
 			lock_rw_unlock(&rrset->entry.lock);
-			/* now, after unlocking the DNAME rrset lock,
-			 * check the sec_status, and see if we need to look
-			 * up the CNAME record associated before it can
-			 * be used */
-			/* normally, only secure DNAMEs allowed from cache*/
-			if(sec_status == sec_status_secure)
-				return msg;
-			/* but if we have a CNAME cached with this name, then we
-			 * have previously already allowed this name to pass.
-			 * the next cache lookup is going to fetch that CNAME itself,
-			 * but it is better to have the (unsigned)DNAME + CNAME in
-			 * that case */
-			cname_rrset = rrset_cache_lookup(
-				env->rrset_cache, qname, qnamelen,
-				LDNS_RR_TYPE_CNAME, qclass, 0, now, 0);
-			if(cname_rrset) {
-				/* CNAME already synthesized by
-				 * synth_dname_msg routine, so we can
-				 * straight up return the msg */
-				lock_rw_unlock(&cname_rrset->entry.lock);
-				return msg;
-			}
-		} else {
-			lock_rw_unlock(&rrset->entry.lock);
-		}
-	}
-
-	/* see if we have CNAME for this domain,
-	 * but not for DS records (which are part of the parent) */
-	if(!no_partial && qtype != LDNS_RR_TYPE_DS &&
-	   (rrset=rrset_cache_lookup(env->rrset_cache, qname, qnamelen, 
-		LDNS_RR_TYPE_CNAME, qclass, 0, now, 0))) {
-		uint8_t* wc = NULL;
-		size_t wl;
-		/* if the rrset is not a wildcard expansion, with wcname */
-		/* because, if we return that CNAME rrset on its own, it is
-		 * missing the NSEC or NSEC3 proof */
-		if(!(val_rrset_wildcard(rrset, &wc, &wl) && wc != NULL)) {
-			struct dns_msg* msg = rrset_msg(rrset, region, now, &k);
-			if(msg) {
-				lock_rw_unlock(&rrset->entry.lock);
-				return msg;
-			}
+			return msg;
 		}
 		lock_rw_unlock(&rrset->entry.lock);
 	}
 
-	/* construct DS, DNSKEY messages from rrset cache. */
-	if((qtype == LDNS_RR_TYPE_DS || qtype == LDNS_RR_TYPE_DNSKEY) &&
+	/* see if we have CNAME for this domain,
+	 * but not for DS records (which are part of the parent) */
+	if( qtype != LDNS_RR_TYPE_DS &&
+	   (rrset=rrset_cache_lookup(env->rrset_cache, qname, qnamelen, 
+		LDNS_RR_TYPE_CNAME, qclass, 0, now, 0))) {
+		struct dns_msg* msg = rrset_msg(rrset, region, now, &k);
+		if(msg) {
+			lock_rw_unlock(&rrset->entry.lock);
+			return msg;
+		}
+		lock_rw_unlock(&rrset->entry.lock);
+	}
+
+	/* construct DS, DNSKEY, DLV messages from rrset cache. */
+	if((qtype == LDNS_RR_TYPE_DS || qtype == LDNS_RR_TYPE_DNSKEY ||
+		qtype == LDNS_RR_TYPE_DLV) &&
 		(rrset=rrset_cache_lookup(env->rrset_cache, qname, qnamelen, 
 		qtype, qclass, 0, now, 0))) {
 		/* if the rrset is from the additional section, and the
@@ -1027,63 +703,45 @@ dns_cache_lookup(struct module_env* env,
 	 * Empty nonterminals are NOERROR, so an NXDOMAIN for foo
 	 * means bla.foo also does not exist.  The DNSSEC proofs are
 	 * the same.  We search upwards for NXDOMAINs. */
-	if(env->cfg->harden_below_nxdomain) {
-		while(!dname_is_root(k.qname)) {
-			if(dpname && dpnamelen
-				&& !dname_subdomain_c(k.qname, dpname))
-				break; /* no synth nxdomain above the stub */
-			dname_remove_label(&k.qname, &k.qname_len);
-			h = query_info_hash(&k, flags);
-			e = slabhash_lookup(env->msg_cache, h, &k, 0);
-			if(!e && k.qtype != LDNS_RR_TYPE_A &&
-				env->cfg->qname_minimisation) {
-				k.qtype = LDNS_RR_TYPE_A;
-				h = query_info_hash(&k, flags);
-				e = slabhash_lookup(env->msg_cache, h, &k, 0);
-			}
-			if(e) {
-				struct reply_info* data = (struct reply_info*)e->data;
-				struct dns_msg* msg;
-				if(FLAGS_GET_RCODE(data->flags) == LDNS_RCODE_NXDOMAIN
-					&& data->security == sec_status_secure
-					&& (data->an_numrrsets == 0 ||
-						ntohs(data->rrsets[0]->rk.type) != LDNS_RR_TYPE_CNAME)
-					&& (msg=tomsg(env, &k, data, region, now, 0, scratch))) {
-					lock_rw_unlock(&e->lock);
-					msg->qinfo.qname=qname;
-					msg->qinfo.qname_len=qnamelen;
-					/* check that DNSSEC really works out */
-					msg->rep->security = sec_status_unchecked;
-					iter_scrub_nxdomain(msg);
-					return msg;
-				}
+	if(env->cfg->harden_below_nxdomain)
+	    while(!dname_is_root(k.qname)) {
+		dname_remove_label(&k.qname, &k.qname_len);
+		h = query_info_hash(&k);
+		e = slabhash_lookup(env->msg_cache, h, &k, 0);
+		if(e) {
+			struct reply_info* data = (struct reply_info*)e->data;
+			struct dns_msg* msg;
+			if(FLAGS_GET_RCODE(data->flags) == LDNS_RCODE_NXDOMAIN
+			  && data->security == sec_status_secure
+			  && (msg=tomsg(env, &k, data, region, now, scratch))){
 				lock_rw_unlock(&e->lock);
+				msg->qinfo.qname=qname;
+				msg->qinfo.qname_len=qnamelen;
+				/* check that DNSSEC really works out */
+				msg->rep->security = sec_status_unchecked;
+				return msg;
 			}
-			k.qtype = qtype;
+			lock_rw_unlock(&e->lock);
 		}
-	}
-
-	/* fill common RR types for ANY response to avoid requery */
-	if(qtype == LDNS_RR_TYPE_ANY) {
-		return fill_any(env, qname, qnamelen, qtype, qclass, region);
 	}
 
 	return NULL;
 }
 
-int
+int 
 dns_cache_store(struct module_env* env, struct query_info* msgqinf,
-        struct reply_info* msgrep, int is_referral, time_t leeway, int pside,
-	struct regional* region, uint32_t flags, time_t qstarttime)
+        struct reply_info* msgrep, int is_referral, uint32_t leeway,
+	struct regional* region)
 {
 	struct reply_info* rep = NULL;
 	/* alloc, malloc properly (not in region, like msg is) */
 	rep = reply_info_copy(msgrep, env->alloc, NULL);
 	if(!rep)
 		return 0;
-	/* ttl must be relative ;i.e. 0..86400 not  time(0)+86400.
+	/* ttl must be relative ;i.e. 0..86400 not  time(0)+86400. 
 	 * the env->now is added to message and RRsets in this routine. */
 	/* the leeway is used to invalidate other rrsets earlier */
+
 	if(is_referral) {
 		/* store rrsets */
 		struct rrset_ref ref;
@@ -1094,18 +752,15 @@ dns_cache_store(struct module_env* env, struct query_info* msgqinf,
 			ref.key = rep->rrsets[i];
 			ref.id = rep->rrsets[i]->id;
 			/*ignore ret: it was in the cache, ref updated */
-			/* no leeway for typeNS */
 			(void)rrset_cache_update(env->rrset_cache, &ref, 
-				env->alloc,
-				((ntohs(ref.key->rk.type)==LDNS_RR_TYPE_NS
-				 && !pside) ? qstarttime:*env->now + leeway));
+				env->alloc, *env->now + leeway);
 		}
-		reply_info_delete(rep, NULL);
+		free(rep);
 		return 1;
 	} else {
 		/* store msg, and rrsets */
 		struct query_info qinf;
-		hashvalue_type h;
+		hashvalue_t h;
 
 		qinf = *msgqinf;
 		qinf.qname = memdup(msgqinf->qname, msgqinf->qname_len);
@@ -1118,31 +773,11 @@ dns_cache_store(struct module_env* env, struct query_info* msgqinf,
 		 * Not AA from cache. Not CD in cache (depends on client bit). */
 		rep->flags |= (BIT_RA | BIT_QR);
 		rep->flags &= ~(BIT_AA | BIT_CD);
-		h = query_info_hash(&qinf, (uint16_t)flags);
-		dns_cache_store_msg(env, &qinf, h, rep, leeway, pside, msgrep,
-			flags, region, qstarttime);
+		h = query_info_hash(&qinf);
+		dns_cache_store_msg(env, &qinf, h, rep, leeway, msgrep, region);
 		/* qname is used inside query_info_entrysetup, and set to 
 		 * NULL. If it has not been used, free it. free(0) is safe. */
 		free(qinf.qname);
 	}
 	return 1;
-}
-
-int 
-dns_cache_prefetch_adjust(struct module_env* env, struct query_info* qinfo,
-        time_t adjust, uint16_t flags)
-{
-	struct msgreply_entry* msg;
-	msg = msg_cache_lookup(env, qinfo->qname, qinfo->qname_len,
-		qinfo->qtype, qinfo->qclass, flags, *env->now, 1);
-	if(msg) {
-		struct reply_info* rep = (struct reply_info*)msg->entry.data;
-		if(rep) {
-			rep->prefetch_ttl += adjust;
-			lock_rw_unlock(&msg->entry.lock);
-			return 1;
-		}
-		lock_rw_unlock(&msg->entry.lock);
-	}
-	return 0;
 }

@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef IXFR_H
-#define IXFR_H
+#ifndef _IXFR_H_
+#define _IXFR_H_
 struct nsd;
 #include "query.h"
 #include "rbtree.h"
@@ -133,7 +133,8 @@ struct ixfr_store {
  * 	IXFR with this serial number. The NULL is on error.
  */
 struct ixfr_store* ixfr_store_start(struct zone* zone,
-	struct ixfr_store* ixfr_store_mem);
+	struct ixfr_store* ixfr_store_mem, uint32_t old_serial,
+	uint32_t new_serial);
 
 /*
  * Cancel the ixfr store in progress. The pointer remains valid, no store done.
@@ -162,13 +163,14 @@ void ixfr_store_finish_data(struct ixfr_store* ixfr_store);
 /*
  * Add the new SOA record to the ixfr store.
  * ixfr_store: stores ixfr data that is collected.
- * ttl: the TTL of the SOA record
  * packet: DNS packet that contains the SOA. position restored on function
  * 	exit.
- * rrlen: wire rdata length of the SOA.
+ * ttlpos: position, just before the ttl, rdatalen, rdata of the SOA record.
+ * 	we do not need to pass the name, because that is the zone name, or
+ * 	the type or class of the record, because we already know.
  */
-void ixfr_store_add_newsoa(struct ixfr_store* ixfr_store, uint32_t ttl,
-	struct buffer* packet, size_t rrlen);
+void ixfr_store_add_newsoa(struct ixfr_store* ixfr_store,
+	struct buffer* packet, size_t ttlpos);
 
 /*
  * Add the old SOA record to the ixfr store.
@@ -263,4 +265,4 @@ int ixfr_unlink_it(const char* zname, const char* zfile, int file_num,
 void ixfr_delete_superfluous_files(struct zone* zone, const char* zfile,
 	int dest_num_files);
 
-#endif /* IXFR_H */
+#endif /* _IXFR_H_ */

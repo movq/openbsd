@@ -144,10 +144,12 @@ struct my_event {
 	struct event ev;
 };
 
-#define AS_MY_EVENT_BASE(x) ((struct my_event_base*)x)
-#define AS_MY_EVENT(x) ((struct my_event*)x)
+#define AS_MY_EVENT_BASE(x) \
+	(((union {struct ub_event_base* a; struct my_event_base* b;})x).b)
+#define AS_MY_EVENT(x) \
+	(((union {struct ub_event* a; struct my_event* b;})x).b)
 
-const char* ub_event_get_version(void)
+const char* ub_event_get_version()
 {
 	return "pluggable-event"PACKAGE_VERSION;
 }
@@ -453,7 +455,7 @@ ub_get_event_sys(struct ub_event_base* ub_base, const char** n, const char** s,
 	 * ub_base is guaranteed to exist and to be the default
 	 * event base.
 	 */
-	assert(b != NULL);
+	assert(b);
 	*n = "pluggable-event";
 	*s = event_get_version();
 #  if defined(HAVE_EV_LOOP) || defined(HAVE_EV_DEFAULT_LOOP)
@@ -595,7 +597,7 @@ ub_event_add(struct ub_event* ev, struct timeval* tv)
 int
 ub_event_del(struct ub_event* ev)
 {
-	if (ev && ev->magic == UB_EVENT_MAGIC) {
+	if (ev->magic == UB_EVENT_MAGIC) {
 		fptr_ok(ev->vmt != &default_event_vmt ||
 			ev->vmt->del == my_event_del);
 		return (*ev->vmt->del)(ev);
@@ -618,7 +620,7 @@ ub_timer_add(struct ub_event* ev, struct ub_event_base* base,
 int
 ub_timer_del(struct ub_event* ev)
 {
-	if (ev && ev->magic == UB_EVENT_MAGIC) {
+	if (ev->magic == UB_EVENT_MAGIC) {
 		fptr_ok(ev->vmt != &default_event_vmt ||
 			ev->vmt->del_timer == my_timer_del);
 		return (*ev->vmt->del_timer)(ev);
@@ -640,7 +642,7 @@ ub_signal_add(struct ub_event* ev, struct timeval* tv)
 int
 ub_signal_del(struct ub_event* ev)
 {
-	if (ev && ev->magic == UB_EVENT_MAGIC) {
+	if (ev->magic == UB_EVENT_MAGIC) {
 		fptr_ok(ev->vmt != &default_event_vmt ||
 			ev->vmt->del_signal == my_signal_del);
 		return (*ev->vmt->del_signal)(ev);
@@ -651,7 +653,7 @@ ub_signal_del(struct ub_event* ev)
 void
 ub_winsock_unregister_wsaevent(struct ub_event* ev)
 {
-	if (ev && ev->magic == UB_EVENT_MAGIC) {
+	if (ev->magic == UB_EVENT_MAGIC) {
 		fptr_ok(ev->vmt != &default_event_vmt ||
 			ev->vmt->winsock_unregister_wsaevent ==
 			my_winsock_unregister_wsaevent);
@@ -666,8 +668,7 @@ ub_winsock_tcp_wouldblock(struct ub_event* ev, int eventbits)
 		fptr_ok(ev->vmt != &default_event_vmt ||
 			ev->vmt->winsock_tcp_wouldblock ==
 			my_winsock_tcp_wouldblock);
-		if (ev->vmt->winsock_tcp_wouldblock)
-			(*ev->vmt->winsock_tcp_wouldblock)(ev, eventbits);
+		(*ev->vmt->winsock_tcp_wouldblock)(ev, eventbits);
 	}
 }
 
@@ -688,8 +689,6 @@ void ub_comm_base_now(struct comm_base* cb)
 	if(gettimeofday(tv, NULL) < 0) {
 		log_err("gettimeofday: %s", strerror(errno));
 	}
-#ifndef S_SPLINT_S
 	*tt = tv->tv_sec;
-#endif
 }
 

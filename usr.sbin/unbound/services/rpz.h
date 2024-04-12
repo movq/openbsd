@@ -50,7 +50,6 @@
 #include "sldns/sbuffer.h"
 #include "daemon/stats.h"
 #include "respip/respip.h"
-struct iter_qstate;
 
 /**
  * RPZ triggers, only the QNAME trigger is currently supported in Unbound.
@@ -84,52 +83,28 @@ enum rpz_action {
 	RPZ_CNAME_OVERRIDE_ACTION, /* RPZ CNAME action override*/
 };
 
-struct clientip_synthesized_rrset {
-	struct regional* region;
-	struct rbtree_type entries;
-	/** lock on the entries tree */
-	lock_rw_type lock;
-};
-
-struct clientip_synthesized_rr {
-	/** node in address tree */
-	struct addr_tree_node node;
-	/** lock on the node item */
-	lock_rw_type lock;
-	/** action for this address span */
-	enum rpz_action action;
-	/** "local data" for this node */
-	struct local_rrset* data;
-};
-
 /**
  * RPZ containing policies. Pointed to from corresponding auth-zone. Part of a
  * linked list to keep configuration order. Iterating or changing the linked
- * list requires the rpz_lock from struct auth_zones. Changing items in this
- * struct require the lock from struct auth_zone.
+ * list requires the rpz_lock from struct auth_zones.
  */
 struct rpz {
 	struct local_zones* local_zones;
 	struct respip_set* respip_set;
-	struct clientip_synthesized_rrset* client_set;
-	struct clientip_synthesized_rrset* ns_set;
-	struct local_zones* nsdname_zones;
 	uint8_t* taglist;
 	size_t taglistlen;
 	enum rpz_action action_override;
 	struct ub_packed_rrset_key* cname_override;
 	int log;
 	char* log_name;
-	/** signal NXDOMAIN blocked with unset RA flag */
-	int signal_nxdomain_ra;
+	struct rpz* next;
+	struct rpz* prev;
 	struct regional* region;
-	int disabled;
 };
 
 /**
  * Create policy from RR and add to this RPZ.
  * @param r: the rpz to add the policy to.
- * @param azname: dname of the auth-zone
  * @param aznamelen: the length of the auth-zone name
  * @param dname: dname of the RR
  * @param dnamelen: length of the dname
@@ -142,14 +117,13 @@ struct rpz {
  * @param rr_len: the length of the complete RR
  * @return: 0 on error
  */
-int rpz_insert_rr(struct rpz* r, uint8_t* azname, size_t aznamelen, uint8_t* dname,
+int rpz_insert_rr(struct rpz* r, size_t aznamelen, uint8_t* dname,
 	size_t dnamelen, uint16_t rr_type, uint16_t rr_class, uint32_t rr_ttl,
 	uint8_t* rdatawl, size_t rdatalen, uint8_t* rr, size_t rr_len);
 
 /**
  * Delete policy matching RR, used for IXFR.
  * @param r: the rpz to add the policy to.
- * @param azname: dname of the auth-zone
  * @param aznamelen: the length of the auth-zone name
  * @param dname: dname of the RR
  * @param dnamelen: length of the dname
@@ -158,9 +132,9 @@ int rpz_insert_rr(struct rpz* r, uint8_t* azname, size_t aznamelen, uint8_t* dna
  * @param rdatawl: rdata of the RR, prepended with the rdata size
  * @param rdatalen: length if the RR, including the prepended rdata size
  */
-void rpz_remove_rr(struct rpz* r, uint8_t* azname, size_t aznamelen,
-	uint8_t* dname, size_t dnamelen, uint16_t rr_type, uint16_t rr_class,
-	uint8_t* rdatawl, size_t rdatalen);
+void rpz_remove_rr(struct rpz* r, size_t aznamelen, uint8_t* dname,
+	size_t dnamelen, uint16_t rr_type, uint16_t rr_class, uint8_t* rdatawl,
+	size_t rdatalen);
 
 /**
  * Walk over the RPZ zones to find and apply a QNAME trigger policy.
@@ -172,39 +146,14 @@ void rpz_remove_rr(struct rpz* r, uint8_t* azname, size_t aznamelen,
  * @param temp: scratchpad
  * @param repinfo: reply info
  * @param taglist: taglist to lookup.
- * @param taglen: length of taglist.
+ * @param taglen: lenth of taglist.
  * @param stats: worker stats struct
- * @param passthru: returns if the query can passthru further rpz processing.
  * @return: 1 if client answer is ready, 0 to continue resolving
  */
-int rpz_callback_from_worker_request(struct auth_zones* az, struct module_env* env,
+int rpz_apply_qname_trigger(struct auth_zones* az, struct module_env* env,
 	struct query_info* qinfo, struct edns_data* edns, sldns_buffer* buf,
 	struct regional* temp, struct comm_reply* repinfo,
-	uint8_t* taglist, size_t taglen, struct ub_server_stats* stats,
-	int* passthru);
-
-/**
- * Callback to process when the iterator module is about to send queries.
- * Checks for nsip and nsdname triggers.
- * @param qstate: the query state.
- * @param iq: iterator module query state.
- * @return NULL if nothing is done. Or a new message with the contents from
- * 	the rpz, based on the delegation point. It is allocated in the
- * 	qstate region.
- */
-struct dns_msg* rpz_callback_from_iterator_module(struct module_qstate* qstate,
-	struct iter_qstate* iq);
-
-/**
- * Callback to process when the iterator module has followed a cname.
- * There can be a qname trigger for the new query name.
- * @param qstate: the query state.
- * @param iq: iterator module query state.
- * @return NULL if nothing is done. Or a new message with the contents from
- * 	the rpz, based on the iq.qchase. It is allocated in the qstate region.
- */
-struct dns_msg* rpz_callback_from_iterator_cname(struct module_qstate* qstate,
-	struct iter_qstate* iq);
+	uint8_t* taglist, size_t taglen, struct ub_server_stats* stats);
 
 /**
  * Delete RPZ
@@ -236,7 +185,7 @@ enum rpz_action
 respip_action_to_rpz_action(enum respip_action a);
 
 /**
- * Prepare RPZ after processing feed content.
+ * Prepare RPZ after procesing feed content.
  * @param r: RPZ to use
  */
 void rpz_finish_config(struct rpz* r);
@@ -248,17 +197,5 @@ void rpz_finish_config(struct rpz* r);
  */
 enum respip_action
 rpz_action_to_respip_action(enum rpz_action a);
-
-/**
- * Enable RPZ
- * @param r: RPZ struct to enable
- */
-void rpz_enable(struct rpz* r);
-
-/**
- * Disable RPZ
- * @param r: RPZ struct to disable
- */
-void rpz_disable(struct rpz* r);
 
 #endif /* SERVICES_RPZ_H */

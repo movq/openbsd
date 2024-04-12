@@ -26,7 +26,6 @@
 
 #include "config.h"
 #include "dnscrypt/cert.h"
-#include "util/locks.h"
 
 #define DNSCRYPT_QUERY_HEADER_SIZE \
     (DNSCRYPT_MAGIC_HEADER_LEN + crypto_box_PUBLICKEYBYTES + crypto_box_HALF_NONCEBYTES + crypto_box_MACBYTES)
@@ -39,7 +38,6 @@
 struct sldns_buffer;
 struct config_file;
 struct comm_reply;
-struct slabhash;
 
 typedef struct KeyPair_ {
     uint8_t crypt_publickey[crypto_box_PUBLICKEYBYTES];
@@ -54,10 +52,8 @@ typedef struct cert_ {
 
 struct dnsc_env {
 	struct SignedCert *signed_certs;
-	struct SignedCert **rotated_certs;
-	dnsccert *certs;
+    dnsccert *certs;
 	size_t signed_certs_count;
-	size_t rotated_certs_count;
 	uint8_t provider_publickey[crypto_sign_ed25519_PUBLICKEYBYTES];
 	uint8_t provider_secretkey[crypto_sign_ed25519_SECRETKEYBYTES];
 	KeyPair *keypairs;
@@ -65,20 +61,6 @@ struct dnsc_env {
 	uint64_t nonce_ts_last;
 	unsigned char hash_key[crypto_shorthash_KEYBYTES];
 	char * provider_name;
-
-    /** Caches */
-	struct slabhash *shared_secrets_cache;
-	/** lock on shared secret cache counters */
-	lock_basic_type shared_secrets_cache_lock;
-	/** number of misses from shared_secrets_cache */
-	size_t num_query_dnscrypt_secret_missed_cache;
-
-	/** slabhash keeping track of nonce/cient pk/server sk pairs. */
-	struct slabhash *nonces_cache;
-	/** lock on nonces_cache, used to avoid race condition in updating the hash */
-	lock_basic_type nonces_cache_lock;
-	/** number of replayed queries */
-	size_t num_query_dnscrypt_replay;
 };
 
 struct dnscrypt_query_header {
@@ -89,7 +71,7 @@ struct dnscrypt_query_header {
 };
 
 /**
- * Initialize DNSCrypt environment.
+ * Initialize DNSCrypt enviroment.
  * Initialize sodium library and allocate the dnsc_env structure.
  * \return an uninitialized struct dnsc_env.
  */
@@ -107,14 +89,8 @@ struct dnsc_env * dnsc_create(void);
 int dnsc_apply_cfg(struct dnsc_env *env, struct config_file *cfg);
 
 /**
- * Delete DNSCrypt environment
- *
- */
-void dnsc_delete(struct dnsc_env *env);
-
-/**
  * handle a crypted dnscrypt request.
- * Determine whether or not a query is coming over the dnscrypt listener and
+ * Determine wether or not a query is coming over the dnscrypt listener and
  * attempt to uncurve it or detect if it is a certificate query.
  * return 0 in case of failure.
  */
@@ -122,54 +98,12 @@ int dnsc_handle_curved_request(struct dnsc_env* dnscenv,
                                struct comm_reply* repinfo);
 /**
  * handle an unencrypted dnscrypt request.
- * Determine whether or not a query is going over the dnscrypt channel and
+ * Determine wether or not a query is going over the dnscrypt channel and
  * attempt to curve it unless it was not crypted like when  it is a
  * certificate query.
  * \return 0 in case of failure.
  */
 
 int dnsc_handle_uncurved_request(struct comm_reply *repinfo);
-
-/**
- * Computes the size of the shared secret cache entry.
- */
-size_t dnsc_shared_secrets_sizefunc(void *k, void *d);
-
-/**
- * Compares two shared secret cache keys.
- */
-int dnsc_shared_secrets_compfunc(void *m1, void *m2);
-
-/**
- * Function to delete a shared secret cache key.
- */
-void dnsc_shared_secrets_delkeyfunc(void *k, void* arg);
-
-/**
- * Function to delete a share secret cache value.
- */
-void dnsc_shared_secrets_deldatafunc(void* d, void* arg);
-
-/**
- * Computes the size of the nonce cache entry.
- */
-size_t dnsc_nonces_sizefunc(void *k, void *d);
-
-/**
- * Compares two nonce cache keys.
- */
-int dnsc_nonces_compfunc(void *m1, void *m2);
-
-/**
- * Function to delete a nonce cache key.
- */
-void dnsc_nonces_delkeyfunc(void *k, void* arg);
-
-/**
- * Function to delete a nonce cache value.
- */
-void dnsc_nonces_deldatafunc(void* d, void* arg);
-
-
 #endif /* USE_DNSCRYPT */
 #endif

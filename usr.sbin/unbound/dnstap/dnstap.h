@@ -40,16 +40,16 @@
 #ifdef USE_DNSTAP
 
 struct config_file;
+struct fstrm_io;
+struct fstrm_queue;
 struct sldns_buffer;
-struct dt_msg_queue;
 
 struct dt_env {
-	/** the io thread (made by the struct daemon) */
-	struct dt_io_thread* dtio;
+	/** dnstap I/O thread */
+	struct fstrm_iothr *iothr;
 
-	/** valid in worker struct, not in daemon struct, the per-worker
-	 * message list */
-	struct dt_msg_queue* msgqueue;
+	/** dnstap I/O thread input queue */
+	struct fstrm_iothr_queue *ioq;
 
 	/** dnstap "identity" field, NULL if disabled */
 	char *identity;
@@ -84,11 +84,12 @@ struct dt_env {
  * of the structure) to ensure lock-free access to its own per-worker circular
  * queue.  Duplicate the environment object if more than one worker needs to
  * share access to the dnstap I/O socket.
- * @param cfg: with config settings.
+ * @param socket_path: path to dnstap logging socket, must be non-NULL.
+ * @param num_workers: number of worker threads, must be > 0.
  * @return dt_env object, NULL on failure.
  */
 struct dt_env *
-dt_create(struct config_file* cfg);
+dt_create(const char *socket_path, unsigned num_workers);
 
 /**
  * Apply config settings.
@@ -101,16 +102,10 @@ dt_apply_cfg(struct dt_env *env, struct config_file *cfg);
 /**
  * Initialize per-worker state in dnstap environment object.
  * @param env: dnstap environment object to initialize, created with dt_create().
- * @param base: event base for wakeup timer.
  * @return: true on success, false on failure.
  */
 int
-dt_init(struct dt_env *env, struct comm_base* base);
-
-/**
- * Deletes the per-worker state created by dt_init
- */
-void dt_deinit(struct dt_env *env);
+dt_init(struct dt_env *env);
 
 /**
  * Delete dnstap environment object. Closes dnstap I/O socket and deletes all
@@ -123,31 +118,25 @@ dt_delete(struct dt_env *env);
  * Create and send a new dnstap "Message" event of type CLIENT_QUERY.
  * @param env: dnstap environment object.
  * @param qsock: address/port of client.
- * @param rsock: local (service) address/port.
  * @param cptype: comm_udp or comm_tcp.
  * @param qmsg: query message.
- * @param tstamp: timestamp or NULL if none provided.
  */
 void
 dt_msg_send_client_query(struct dt_env *env,
 			 struct sockaddr_storage *qsock,
-			 struct sockaddr_storage *rsock,
 			 enum comm_point_type cptype,
-			 struct sldns_buffer *qmsg,
-			 struct timeval* tstamp);
+			 struct sldns_buffer *qmsg);
 
 /**
  * Create and send a new dnstap "Message" event of type CLIENT_RESPONSE.
  * @param env: dnstap environment object.
  * @param qsock: address/port of client.
- * @param rsock: local (service) address/port.
  * @param cptype: comm_udp or comm_tcp.
  * @param rmsg: response message.
  */
 void
 dt_msg_send_client_response(struct dt_env *env,
 			    struct sockaddr_storage *qsock,
-			    struct sockaddr_storage *rsock,
 			    enum comm_point_type cptype,
 			    struct sldns_buffer *rmsg);
 
@@ -156,8 +145,7 @@ dt_msg_send_client_response(struct dt_env *env,
  * FORWARDER_QUERY. The type used is dependent on the value of the RD bit
  * in the query header.
  * @param env: dnstap environment object.
- * @param rsock: address/port of server (upstream) the query is being sent to.
- * @param qsock: address/port of server (local) the query is being sent from.
+ * @param rsock: address/port of server the query is being sent to.
  * @param cptype: comm_udp or comm_tcp.
  * @param zone: query zone.
  * @param zone_len: length of zone.
@@ -166,7 +154,6 @@ dt_msg_send_client_response(struct dt_env *env,
 void
 dt_msg_send_outside_query(struct dt_env *env,
 			  struct sockaddr_storage *rsock,
-			  struct sockaddr_storage *qsock,
 			  enum comm_point_type cptype,
 			  uint8_t *zone, size_t zone_len,
 			  struct sldns_buffer *qmsg);
@@ -176,8 +163,7 @@ dt_msg_send_outside_query(struct dt_env *env,
  * FORWARDER_RESPONSE. The type used is dependent on the value of the RD bit
  * in the query header.
  * @param env: dnstap environment object.
- * @param rsock: address/port of server (upstream) the response was received from.
- * @param qsock: address/port of server (local) the response was received to.
+ * @param rsock: address/port of server the response was received from.
  * @param cptype: comm_udp or comm_tcp.
  * @param zone: query zone.
  * @param zone_len: length of zone.
@@ -190,7 +176,6 @@ dt_msg_send_outside_query(struct dt_env *env,
 void
 dt_msg_send_outside_response(struct dt_env *env,
 			     struct sockaddr_storage *rsock,
-			     struct sockaddr_storage *qsock,
 			     enum comm_point_type cptype,
 			     uint8_t *zone, size_t zone_len,
 			     uint8_t *qbuf, size_t qbuf_len,

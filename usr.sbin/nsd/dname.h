@@ -7,15 +7,14 @@
  *
  */
 
-#ifndef DNAME_H
-#define DNAME_H
+#ifndef _DNAME_H_
+#define _DNAME_H_
 
 #include <assert.h>
 #include <stdio.h>
 
 #include "buffer.h"
 #include "region-allocator.h"
-#include "dns.h" /* for MAXDOMAINLEN */
 
 #if defined(NAMEDB_UPPERCASE) || defined(USE_NAMEDB_UPPERCASE)
 #define DNAME_NORMALIZE        toupper
@@ -173,7 +172,7 @@ dname_label(const dname_type *dname, uint8_t label)
 
 
 /*
- * Compare two domain names.  The comparison defines a lexicographical
+ * Compare two domain names.  The comparison defines a lexographical
  * ordering based on the domain name's labels, starting with the most
  * significant label.
  *
@@ -186,7 +185,7 @@ int dname_compare(const dname_type *left, const dname_type *right);
 
 
 /*
- * Compare two labels.  The comparison defines a lexicographical
+ * Compare two labels.  The comparison defines a lexographical
  * ordering based on the characters in the labels.
  *
  * Return < 0 if LEFT < RIGHT, 0 if LEFT == RIGHT, and > 0 if LEFT >
@@ -218,7 +217,7 @@ static inline size_t
 dname_total_size(const dname_type *dname)
 {
 	return (sizeof(dname_type)
-		+ ((((size_t)dname->label_count) + ((size_t)dname->name_size))
+		+ ((dname->label_count + dname->name_size)
 		   * sizeof(uint8_t)));
 }
 
@@ -347,19 +346,6 @@ label_next(const uint8_t *label)
 const char *dname_to_string(const dname_type *dname,
 			    const dname_type *origin);
 
-/*
- * Convert DNAME to its string representation.  The result if written
- * to the provided buffer buf, which must be at least 5 times
- * MAXDOMAINNAMELEN.
- *
- * If ORIGIN is provided and DNAME is a subdomain of ORIGIN the dname
- * will be represented relative to ORIGIN.
- *
- * Pre: dname != NULL
- */
-const char *dname_to_string_buf(const dname_type *dname,
-                                const dname_type *origin,
-                                char buf[MAXDOMAINLEN * 5]);
 
 /*
  * Create a dname containing the single label specified by STR
@@ -388,11 +374,4 @@ const dname_type *dname_replace(region_type* region,
 				const dname_type* src,
 				const dname_type* dest);
 
-/** Convert uncompressed wireformat dname to a string */
-char* wiredname2str(const uint8_t* dname);
-/** convert uncompressed label to string */
-char* wirelabel2str(const uint8_t* label);
-/** check if two uncompressed dnames of the same total length are equal */
-int dname_equal_nocase(uint8_t* a, uint8_t* b, uint16_t len);
-
-#endif /* DNAME_H */
+#endif /* _DNAME_H_ */

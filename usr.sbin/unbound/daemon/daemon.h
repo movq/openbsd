@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -45,6 +45,9 @@
 #include "util/locks.h"
 #include "util/alloc.h"
 #include "services/modstack.h"
+#ifdef UB_ON_WINDOWS
+#  include "util/winsock_event.h"
+#endif
 struct config_file;
 struct worker;
 struct listen_port;
@@ -53,21 +56,8 @@ struct module_env;
 struct rrset_cache;
 struct acl_list;
 struct local_zones;
-struct views;
 struct ub_randstate;
 struct daemon_remote;
-struct respip_set;
-struct shm_main_info;
-
-#include "dnstap/dnstap_config.h"
-#ifdef USE_DNSTAP
-struct dt_env;
-#endif
-
-#include "dnscrypt/dnscrypt_config.h"
-#ifdef USE_DNSCRYPT
-struct dnsc_env;
-#endif
 
 /**
  * Structure holding worker list.
@@ -82,13 +72,8 @@ struct daemon {
 	char* pidfile;
 	/** port number that has ports opened. */
 	int listening_port;
-	/** array of listening ports, opened.  Listening ports per worker,
-	 * or just one element[0] shared by the worker threads. */
-	struct listen_port** ports;
-	/** size of ports array */
-	size_t num_ports;
-	/** reuseport is enabled if true */
-	int reuseport;
+	/** listening ports, opened, to be shared by threads */
+	struct listen_port* ports;
 	/** port number for remote that has ports opened. */
 	int rc_port;
 	/** listening ports for remote control */
@@ -99,12 +84,8 @@ struct daemon {
 	void* listen_sslctx, *connect_sslctx;
 	/** num threads allocated */
 	int num;
-	/** num threads allocated in the previous config or 0 at first */
-	int old_num;
 	/** the worker entries */
 	struct worker** workers;
-	/** per-worker allocation cache */
-	struct alloc_cache **worker_allocs;
 	/** do we need to exit unbound (or is it only a reload?) */
 	int need_to_exit;
 	/** master random table ; used for port div between threads on reload*/
@@ -117,35 +98,12 @@ struct daemon {
 	struct module_stack mods;
 	/** access control, which client IPs are allowed to connect */
 	struct acl_list* acl;
-	/** access control, which interfaces are allowed to connect */
-	struct acl_list* acl_interface;
-	/** TCP connection limit, limit connections from client IPs */
-	struct tcl_list* tcl;
 	/** local authority zones */
 	struct local_zones* local_zones;
 	/** last time of statistics printout */
 	struct timeval time_last_stat;
 	/** time when daemon started */
 	struct timeval time_boot;
-	/** views structure containing view tree */
-	struct views* views;
-#ifdef USE_DNSTAP
-	/** the dnstap environment master value, copied and changed by threads*/
-	struct dt_env* dtenv;
-#endif
-	struct shm_main_info* shm_info;
-	/** response-ip set with associated actions and tags. */
-	struct respip_set* respip_set;
-	/** some response-ip tags or actions are configured if true */
-	int use_response_ip;
-	/** some RPZ policies are configured */
-	int use_rpz;
-#ifdef USE_DNSCRYPT
-	/** the dnscrypt environment */
-	struct dnsc_env* dnscenv;
-#endif
-	/** reuse existing cache on reload if other conditions allow it. */
-	int reuse_cache;
 };
 
 /**

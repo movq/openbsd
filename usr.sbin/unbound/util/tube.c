@@ -21,16 +21,16 @@
  * specific prior written permission.
  * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -44,10 +44,6 @@
 #include "util/net_help.h"
 #include "util/netevent.h"
 #include "util/fptr_wlist.h"
-#include "util/ub_event.h"
-#ifdef HAVE_POLL_H
-#include <poll.h>
-#endif
 
 #ifndef USE_WINSOCK
 /* on unix */
@@ -122,8 +118,10 @@ void tube_remove_bg_listen(struct tube* tube)
 		comm_point_delete(tube->listen_com);
 		tube->listen_com = NULL;
 	}
-	free(tube->cmd_msg);
-	tube->cmd_msg = NULL;
+	if(tube->cmd_msg) {
+		free(tube->cmd_msg);
+		tube->cmd_msg = NULL;
+	}
 }
 
 void tube_remove_bg_write(struct tube* tube)
@@ -307,8 +305,6 @@ int tube_write_msg(struct tube* tube, uint8_t* buf, uint32_t len,
 	d = r;
 	while(d != (ssize_t)sizeof(len)) {
 		if((r=write(fd, ((char*)&len)+d, sizeof(len)-d)) == -1) {
-			if(errno == EAGAIN)
-				continue; /* temporarily unavail: try again*/
 			log_err("tube msg write failed: %s", strerror(errno));
 			(void)fd_set_nonblock(fd);
 			return 0;
@@ -318,8 +314,6 @@ int tube_write_msg(struct tube* tube, uint8_t* buf, uint32_t len,
 	d = 0;
 	while(d != (ssize_t)len) {
 		if((r=write(fd, buf+d, len-d)) == -1) {
-			if(errno == EAGAIN)
-				continue; /* temporarily unavail: try again*/
 			log_err("tube msg write failed: %s", strerror(errno));
 			(void)fd_set_nonblock(fd);
 			return 0;
@@ -366,11 +360,6 @@ int tube_read_msg(struct tube* tube, uint8_t** buf, uint32_t* len,
 		}
 		d += r;
 	}
-	if (*len >= 65536*2) {
-		log_err("tube msg length %u is too big", (unsigned)*len);
-		(void)fd_set_nonblock(fd);
-		return 0;
-	}
 	*buf = (uint8_t*)malloc(*len);
 	if(!*buf) {
 		log_err("tube read out of memory");
@@ -378,7 +367,7 @@ int tube_read_msg(struct tube* tube, uint8_t** buf, uint32_t* len,
 		return 0;
 	}
 	d = 0;
-	while(d < (ssize_t)*len) {
+	while(d != (ssize_t)*len) {
 		if((r=read(fd, (*buf)+d, (size_t)((ssize_t)*len)-d)) == -1) {
 			log_err("tube msg read failed: %s", strerror(errno));
 			(void)fd_set_nonblock(fd);
@@ -399,28 +388,20 @@ int tube_read_msg(struct tube* tube, uint8_t** buf, uint32_t* len,
 	return 1;
 }
 
-/** perform poll() on the fd */
+/** perform a select() on the fd */
 static int
 pollit(int fd, struct timeval* t)
 {
-	struct pollfd fds;
-	int pret;
-	int msec = -1;
-	memset(&fds, 0, sizeof(fds));
-	fds.fd = fd;
-	fds.events = POLLIN | POLLERR | POLLHUP;
+	fd_set r;
 #ifndef S_SPLINT_S
-	if(t)
-		msec = t->tv_sec*1000 + t->tv_usec/1000;
+	FD_ZERO(&r);
+	FD_SET(FD_SET_T fd, &r);
 #endif
-
-	pret = poll(&fds, 1, msec);
-
-	if(pret == -1)
+	if(select(fd+1, &r, NULL, NULL, t) == -1) {
 		return 0;
-	if(pret != 0)
-		return 1;
-	return 0;
+	}
+	errno = 0;
+	return (int)(FD_ISSET(fd, &r));
 }
 
 int tube_poll(struct tube* tube)
@@ -435,38 +416,13 @@ int tube_wait(struct tube* tube)
 	return pollit(tube->sr, NULL);
 }
 
-int tube_wait_timeout(struct tube* tube, int msec)
-{
-	int ret = 0;
-
-	while(1) {
-		struct pollfd fds;
-		memset(&fds, 0, sizeof(fds));
-
-		fds.fd = tube->sr;
-		fds.events = POLLIN | POLLERR | POLLHUP;
-		ret = poll(&fds, 1, msec);
-
-		if(ret == -1) {
-			if(errno == EAGAIN || errno == EINTR)
-				continue;
-			return -1;
-		}
-		break;
-	}
-
-	if(ret != 0)
-		return 1;
-	return 0;
-}
-
 int tube_read_fd(struct tube* tube)
 {
 	return tube->sr;
 }
 
 int tube_setup_bg_listen(struct tube* tube, struct comm_base* base,
-        tube_callback_type* cb, void* arg)
+        tube_callback_t* cb, void* arg)
 {
 	tube->listen_cb = cb;
 	tube->listen_arg = arg;
@@ -494,9 +450,8 @@ int tube_setup_bg_write(struct tube* tube, struct comm_base* base)
 
 int tube_queue_item(struct tube* tube, uint8_t* msg, size_t len)
 {
-	struct tube_res_list* item;
-	if(!tube || !tube->res_com) return 0;
-	item = (struct tube_res_list*)malloc(sizeof(*item));
+	struct tube_res_list* item = 
+		(struct tube_res_list*)malloc(sizeof(*item));
 	if(!item) {
 		free(msg);
 		log_err("out of memory for async answer");
@@ -543,7 +498,6 @@ struct tube* tube_create(void)
 	if(tube->event == WSA_INVALID_EVENT) {
 		free(tube);
 		log_err("WSACreateEvent: %s", wsa_strerror(WSAGetLastError()));
-		return NULL;
 	}
 	if(!WSAResetEvent(tube->event)) {
 		log_err("WSAResetEvent: %s", wsa_strerror(WSAGetLastError()));
@@ -584,7 +538,7 @@ void tube_close_write(struct tube* ATTR_UNUSED(tube))
 void tube_remove_bg_listen(struct tube* tube)
 {
 	verbose(VERB_ALGO, "tube remove_bg_listen");
-	ub_winsock_unregister_wsaevent(tube->ev_listen);
+	winsock_unregister_wsaevent(&tube->ev_listen);
 }
 
 void tube_remove_bg_write(struct tube* tube)
@@ -686,26 +640,6 @@ int tube_wait(struct tube* tube)
 	return 1;
 }
 
-int tube_wait_timeout(struct tube* tube, int msec)
-{
-	/* block on eventhandle */
-	DWORD res = WSAWaitForMultipleEvents(
-		1 /* one event in array */,
-		&tube->event /* the event to wait for, our pipe signal */,
-		0 /* wait for all events is false */,
-		msec /* wait for timeout */,
-		0 /* we are not alertable for IO completion routines */
-		);
-	if(res == WSA_WAIT_TIMEOUT) {
-		return 0;
-	}
-	if(res == WSA_WAIT_IO_COMPLETION) {
-		/* a bit unexpected, since we were not alertable */
-		return -1;
-	}
-	return 1;
-}
-
 int tube_read_fd(struct tube* ATTR_UNUSED(tube))
 {
 	/* nothing sensible on Windows */
@@ -729,15 +663,14 @@ tube_handle_write(struct comm_point* ATTR_UNUSED(c), void* ATTR_UNUSED(arg),
 }
 
 int tube_setup_bg_listen(struct tube* tube, struct comm_base* base,
-        tube_callback_type* cb, void* arg)
+        tube_callback_t* cb, void* arg)
 {
 	tube->listen_cb = cb;
 	tube->listen_arg = arg;
 	if(!comm_base_internal(base))
 		return 1; /* ignore when no comm base - testing */
-	tube->ev_listen = ub_winsock_register_wsaevent(
-	    comm_base_internal(base), tube->event, &tube_handle_signal, tube);
-	return tube->ev_listen ? 1 : 0;
+	return winsock_register_wsaevent(comm_base_internal(base), 
+		&tube->ev_listen, tube->event, &tube_handle_signal, tube);
 }
 
 int tube_setup_bg_write(struct tube* ATTR_UNUSED(tube), 
@@ -749,9 +682,8 @@ int tube_setup_bg_write(struct tube* ATTR_UNUSED(tube),
 
 int tube_queue_item(struct tube* tube, uint8_t* msg, size_t len)
 {
-	struct tube_res_list* item;
-	if(!tube) return 0;
-	item = (struct tube_res_list*)malloc(sizeof(*item));
+	struct tube_res_list* item = 
+		(struct tube_res_list*)malloc(sizeof(*item));
 	verbose(VERB_ALGO, "tube queue_item len %d", (int)len);
 	if(!item) {
 		free(msg);
@@ -780,7 +712,7 @@ void tube_handle_signal(int ATTR_UNUSED(fd), short ATTR_UNUSED(events),
 {
 	struct tube* tube = (struct tube*)arg;
 	uint8_t* buf;
-	uint32_t len = 0;
+	uint32_t len;
 	verbose(VERB_ALGO, "tube handle_signal");
 	while(tube_poll(tube)) {
 		if(tube_read_msg(tube, &buf, &len, 1)) {

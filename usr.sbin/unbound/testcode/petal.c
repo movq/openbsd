@@ -220,11 +220,8 @@ read_http_headers(SSL* ssl, char* file, size_t flen, char* host, size_t hlen,
 	host[0] = 0;
 	while(read_ssl_line(ssl, buf, sizeof(buf))) {
 		if(verb>=2) printf("read: %s\n", buf);
-		if(buf[0] == 0) {
-			int e = ERR_peek_error();
-			printf("error string: %s\n", ERR_reason_error_string(e));
+		if(buf[0] == 0)
 			return 1;
-		}
 		if(!process_one_header(buf, file, flen, host, hlen, vs))
 			return 0;
 	}
@@ -237,18 +234,10 @@ setup_ctx(char* key, char* cert)
 {
 	SSL_CTX* ctx = SSL_CTX_new(SSLv23_server_method());
 	if(!ctx) print_exit("out of memory");
-#if SSL_OP_NO_SSLv2 != 0
 	(void)SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2);
-#endif
 	(void)SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);
-#ifdef HAVE_SSL_CTX_SET_SECURITY_LEVEL
-	SSL_CTX_set_security_level(ctx, 0); /* for keys in tests */
-#endif
-	if(!SSL_CTX_use_certificate_chain_file(ctx, cert)) {
-		int e = ERR_peek_error();
-		printf("error string: %s\n", ERR_reason_error_string(e));
+	if(!SSL_CTX_use_certificate_chain_file(ctx, cert))
 		print_exit("cannot read cert");
-	}
 	if(!SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM))
 		print_exit("cannot read key");
 	if(!SSL_CTX_check_private_key(ctx))
@@ -312,7 +301,7 @@ setup_ssl(int s, SSL_CTX* ctx)
 	SSL* ssl = SSL_new(ctx);
 	if(!ssl) return NULL;
 	SSL_set_accept_state(ssl);
-	(void)SSL_set_mode(ssl, (long)SSL_MODE_AUTO_RETRY);
+	(void)SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
 	if(!SSL_set_fd(ssl, s)) {
 		SSL_free(ssl);
 		return NULL;
@@ -334,9 +323,9 @@ file_name_is_safe(char* s)
 	return 1;
 }
 
-/** adjust host */
+/** adjust host and filename */
 static void
-adjust_host(char* host)
+adjust_host_file(char* host, char* file)
 {
 	size_t i, len;
 	/* remove a port number if present */
@@ -346,13 +335,6 @@ adjust_host(char* host)
 	len = strlen(host);
 	for(i=0; i<len; i++)
 		host[i] = tolower((unsigned char)host[i]);
-}
-
-/** adjust filename */
-static void
-adjust_file(char* file)
-{
-	size_t i, len;
 	len = strlen(file);
 	for(i=0; i<len; i++)
 		file[i] = tolower((unsigned char)file[i]);
@@ -435,7 +417,7 @@ provide_file_10(SSL* ssl, char* fname)
 	}
 	fclose(in);
 	at += len;
-	/* avail -= len; unused */
+	avail -= len;
 	if(SSL_write(ssl, buf, at-buf) <= 0) {
 		/* write failure */
 	}
@@ -524,7 +506,7 @@ provide_file_chunked(SSL* ssl, char* fname)
 			snprintf(at, avail, "\r\n");
 			r = strlen(at);
 			at += r;
-			/* avail -= r; unused */
+			avail -= r;
 		}
 		/* send chunk */
 		if(SSL_write(ssl, buf, at-buf) <= 0) {
@@ -552,8 +534,7 @@ service_ssl(SSL* ssl, struct sockaddr_storage* from, socklen_t falen)
 	if(!read_http_headers(ssl, file, sizeof(file), host, sizeof(host),
 		&vs))
 		return;
-	if(host[0] != 0) adjust_host(host);
-	if(file[0] != 0) adjust_file(file);
+	adjust_host_file(host, file);
 	if(host[0] == 0 || !host_name_is_safe(host))
 		(void)strlcpy(host, "default", sizeof(host));
 	if(!file_name_is_safe(file)) {
@@ -582,14 +563,13 @@ do_service(char* addr, int port, char* key, char* cert)
 {
 	SSL_CTX* sslctx = setup_ctx(key, cert);
 	int fd = setup_fd(addr, port);
+	int go = 1;
 	if(fd == -1) print_exit("could not setup sockets");
 	if(verb) {printf("petal start\n"); fflush(stdout);}
-	while(1) {
+	while(go) {
 		struct sockaddr_storage from;
 		socklen_t flen = (socklen_t)sizeof(from);
-		int s;
-		memset(&from, 0, sizeof(from));
-		s = accept(fd, (struct sockaddr*)&from, &flen);
+		int s = accept(fd, (struct sockaddr*)&from, &flen);
 		if(verb) fflush(stdout);
 		if(s != -1) {
 			SSL* ssl = setup_ssl(s, sslctx);
@@ -653,7 +633,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	argc -= optind;
-	/* argv += optind; not using further arguments */
+	argv += optind;
 	if(argc != 0)
 		usage();
 
@@ -667,9 +647,7 @@ int main(int argc, char* argv[])
 	ERR_load_SSL_strings();
 #endif
 #if OPENSSL_VERSION_NUMBER < 0x10100000 || !defined(HAVE_OPENSSL_INIT_CRYPTO)
-#  ifndef S_SPLINT_S
 	OpenSSL_add_all_algorithms();
-#  endif
 #else
 	OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS
 		| OPENSSL_INIT_ADD_ALL_DIGESTS
