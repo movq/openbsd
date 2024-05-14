@@ -118,3 +118,41 @@ Revision history for Perl extension Filter::Simple
     - Explicit dependency on Text::Balanced 1.97 because that fixed
       a problem with HERE-docs. (RT #27326)
 
+0.85    Sun Sep  5 16:03:00 CET 2010
+
+    - Port changes from core: Remove unnecessary PERL_CORE check
+      from tests.
+
+0.86
+    - Never released to CPAN (only part of the perl core 5.14.0)
+
+0.87    Fri May 20 20:00:00 CET 2011
+
+    - Port changes from core: Whitespace fix that is significant for
+      POD correctness.
+
+0.88    Mon Dec 19 18:26:00 CET 2011
+
+    - [perl #92436] Make Filter::Simple match variables better
+      (Father Chrysostomos)
+
+    - [perl #92436] Filter::Simple can’t find end of POD
+      (Father Chrysostomos)
+
+0.91    Fri Mar  7 08:30:00 CET 2014
+
+    - Various small documentation fixes.
+
+    - Swap out base.pm use for parent.pm.
+
+0.94    Thu Aug  3 18:00:00 CET 2017
+
+    - Remove use of deprecated \C regex feature.
+
+    - Filter::Simple was erroneously signalling eof if it encountered a
+      ‘no MyFilter’ right after ‘use’:
+        use MyFilter;
+        no MyFilter;
+      In this case it should simply not filter anything.
+
+
