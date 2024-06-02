@@ -9,7 +9,7 @@
 #include "llvm-c/Core.h"
 #include "llvm-c/Error.h"
 #include "llvm-c/Initialization.h"
-#include "llvm-c/LLJIT.h"
+#include "llvm-c/Orc.h"
 #include "llvm-c/Support.h"
 #include "llvm-c/Target.h"
 
@@ -27,7 +27,7 @@ int32_t add(int32_t X, int32_t Y) { return X + Y; }
 
 int32_t mul(int32_t X, int32_t Y) { return X * Y; }
 
-int allowedSymbols(void *Ctx, LLVMOrcSymbolStringPoolEntryRef Sym) {
+int allowedSymbols(LLVMOrcSymbolStringPoolEntryRef Sym, void *Ctx) {
   assert(Ctx && "Cannot call allowedSymbols with a null context");
 
   LLVMOrcSymbolStringPoolEntryRef *AllowList =
@@ -45,7 +45,7 @@ int allowedSymbols(void *Ctx, LLVMOrcSymbolStringPoolEntryRef Sym) {
   return 0;
 }
 
-LLVMOrcThreadSafeModuleRef createDemoModule(void) {
+LLVMOrcThreadSafeModuleRef createDemoModule() {
   // Create a new ThreadSafeContext and underlying LLVMContext.
   LLVMOrcThreadSafeContextRef TSCtx = LLVMOrcCreateNewThreadSafeContext();
 
@@ -100,9 +100,6 @@ LLVMOrcThreadSafeModuleRef createDemoModule(void) {
   //  - Build the return instruction.
   LLVMBuildRet(Builder, AddResult);
 
-  //  - Free the builder.
-  LLVMDisposeBuilder(Builder);
-
   // Our demo module is now complete. Wrap it and our ThreadSafeContext in a
   // ThreadSafeModule.
   LLVMOrcThreadSafeModuleRef TSM = LLVMOrcCreateNewThreadSafeModule(M, TSCtx);
@@ -146,7 +143,7 @@ int main(int argc, char *argv[]) {
       LLVMOrcLLJITMangleAndIntern(J, "add"), 0};
 
   {
-    LLVMOrcDefinitionGeneratorRef ProcessSymbolsGenerator = 0;
+    LLVMOrcJITDylibDefinitionGeneratorRef ProcessSymbolsGenerator = 0;
     LLVMErrorRef Err;
     if ((Err = LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess(
              &ProcessSymbolsGenerator, LLVMOrcLLJITGetGlobalPrefix(J),

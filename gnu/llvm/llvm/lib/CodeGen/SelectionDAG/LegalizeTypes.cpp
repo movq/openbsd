@@ -13,7 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "LegalizeTypes.h"
+#include "SDNodeDbgValue.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/IR/CallingConv.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -25,7 +28,7 @@ using namespace llvm;
 static cl::opt<bool>
 EnableExpensiveChecks("enable-legalize-types-checking", cl::Hidden);
 
-/// Do extensive, expensive, basic correctness checking.
+/// Do extensive, expensive, sanity checking.
 void DAGTypeLegalizer::PerformExpensiveChecks() {
   // If a node is not processed, then none of its values should be mapped by any
   // of PromotedIntegers, ExpandedIntegers, ..., ReplacedValues.
@@ -80,52 +83,47 @@ void DAGTypeLegalizer::PerformExpensiveChecks() {
       SDValue Res(&Node, i);
       bool Failed = false;
       // Don't create a value in map.
-      auto ResId = ValueToIdMap.lookup(Res);
+      auto ResId = (ValueToIdMap.count(Res)) ? ValueToIdMap[Res] : 0;
 
       unsigned Mapped = 0;
-      if (ResId) {
-        auto I = ReplacedValues.find(ResId);
-        if (I != ReplacedValues.end()) {
-          Mapped |= 1;
-          // Check that remapped values are only used by nodes marked NewNode.
-          for (SDNode::use_iterator UI = Node.use_begin(), UE = Node.use_end();
-               UI != UE; ++UI)
-            if (UI.getUse().getResNo() == i)
-              assert(UI->getNodeId() == NewNode &&
-                     "Remapped value has non-trivial use!");
+      if (ResId && (ReplacedValues.find(ResId) != ReplacedValues.end())) {
+        Mapped |= 1;
+        // Check that remapped values are only used by nodes marked NewNode.
+        for (SDNode::use_iterator UI = Node.use_begin(), UE = Node.use_end();
+             UI != UE; ++UI)
+          if (UI.getUse().getResNo() == i)
+            assert(UI->getNodeId() == NewNode &&
+                   "Remapped value has non-trivial use!");
 
-          // Check that the final result of applying ReplacedValues is not
-          // marked NewNode.
-          auto NewValId = I->second;
+        // Check that the final result of applying ReplacedValues is not
+        // marked NewNode.
+        auto NewValId = ReplacedValues[ResId];
+        auto I = ReplacedValues.find(NewValId);
+        while (I != ReplacedValues.end()) {
+          NewValId = I->second;
           I = ReplacedValues.find(NewValId);
-          while (I != ReplacedValues.end()) {
-            NewValId = I->second;
-            I = ReplacedValues.find(NewValId);
-          }
-          SDValue NewVal = getSDValue(NewValId);
-          (void)NewVal;
-          assert(NewVal.getNode()->getNodeId() != NewNode &&
-                 "ReplacedValues maps to a new node!");
         }
-        if (PromotedIntegers.count(ResId))
-          Mapped |= 2;
-        if (SoftenedFloats.count(ResId))
-          Mapped |= 4;
-        if (ScalarizedVectors.count(ResId))
-          Mapped |= 8;
-        if (ExpandedIntegers.count(ResId))
-          Mapped |= 16;
-        if (ExpandedFloats.count(ResId))
-          Mapped |= 32;
-        if (SplitVectors.count(ResId))
-          Mapped |= 64;
-        if (WidenedVectors.count(ResId))
-          Mapped |= 128;
-        if (PromotedFloats.count(ResId))
-          Mapped |= 256;
-        if (SoftPromotedHalfs.count(ResId))
-          Mapped |= 512;
+        SDValue NewVal = getSDValue(NewValId);
+        (void)NewVal;
+        assert(NewVal.getNode()->getNodeId() != NewNode &&
+               "ReplacedValues maps to a new node!");
       }
+      if (ResId && PromotedIntegers.find(ResId) != PromotedIntegers.end())
+        Mapped |= 2;
+      if (ResId && SoftenedFloats.find(ResId) != SoftenedFloats.end())
+        Mapped |= 4;
+      if (ResId && ScalarizedVectors.find(ResId) != ScalarizedVectors.end())
+        Mapped |= 8;
+      if (ResId && ExpandedIntegers.find(ResId) != ExpandedIntegers.end())
+        Mapped |= 16;
+      if (ResId && ExpandedFloats.find(ResId) != ExpandedFloats.end())
+        Mapped |= 32;
+      if (ResId && SplitVectors.find(ResId) != SplitVectors.end())
+        Mapped |= 64;
+      if (ResId && WidenedVectors.find(ResId) != WidenedVectors.end())
+        Mapped |= 128;
+      if (ResId && PromotedFloats.find(ResId) != PromotedFloats.end())
+        Mapped |= 256;
 
       if (Node.getNodeId() != Processed) {
         // Since we allow ReplacedValues to map deleted nodes, it may map nodes
@@ -143,16 +141,8 @@ void DAGTypeLegalizer::PerformExpensiveChecks() {
         }
       } else {
         if (Mapped == 0) {
-          SDValue NodeById = IdToValueMap.lookup(ResId);
-          // It is possible the node has been remapped to another node and had
-          // its Id updated in the Value to Id table. The node it remapped to
-          // may not have been processed yet. Look up the Id in the Id to Value
-          // table and re-check the Processed state. If the node hasn't been
-          // remapped we'll get the same state as we got earlier.
-          if (NodeById->getNodeId() == Processed) {
-            dbgs() << "Processed value not in any map!";
-            Failed = true;
-          }
+          dbgs() << "Processed value not in any map!";
+          Failed = true;
         } else if (Mapped & (Mapped - 1)) {
           dbgs() << "Value in multiple maps!";
           Failed = true;
@@ -178,22 +168,19 @@ void DAGTypeLegalizer::PerformExpensiveChecks() {
           dbgs() << " WidenedVectors";
         if (Mapped & 256)
           dbgs() << " PromotedFloats";
-        if (Mapped & 512)
-          dbgs() << " SoftPromoteHalfs";
         dbgs() << "\n";
         llvm_unreachable(nullptr);
       }
     }
   }
 
-#ifndef NDEBUG
   // Checked that NewNodes are only used by other NewNodes.
   for (unsigned i = 0, e = NewNodes.size(); i != e; ++i) {
     SDNode *N = NewNodes[i];
-    for (SDNode *U : N->uses())
-      assert(U->getNodeId() == NewNode && "NewNode used by non-NewNode!");
+    for (SDNode::use_iterator UI = N->use_begin(), UE = N->use_end();
+         UI != UE; ++UI)
+      assert(UI->getNodeId() == NewNode && "NewNode used by non-NewNode!");
   }
-#endif
 }
 
 /// This is the main entry point for the type legalizer. This does a top-down
@@ -231,7 +218,8 @@ bool DAGTypeLegalizer::run() {
 #endif
       PerformExpensiveChecks();
 
-    SDNode *N = Worklist.pop_back_val();
+    SDNode *N = Worklist.back();
+    Worklist.pop_back();
     assert(N->getNodeId() == ReadyToProcess &&
            "Node should be ready if on worklist!");
 
@@ -251,9 +239,6 @@ bool DAGTypeLegalizer::run() {
       case TargetLowering::TypeLegal:
         LLVM_DEBUG(dbgs() << "Legal result type\n");
         break;
-      case TargetLowering::TypeScalarizeScalableVector:
-        report_fatal_error(
-            "Scalarization of scalable vectors is not supported.");
       // The following calls must take care of *all* of the node's results,
       // not just the illegal result they were passed (this includes results
       // with a legal type).  Results can be remapped using ReplaceValueWith,
@@ -291,10 +276,6 @@ bool DAGTypeLegalizer::run() {
         PromoteFloatResult(N, i);
         Changed = true;
         goto NodeDone;
-      case TargetLowering::TypeSoftPromoteHalf:
-        SoftPromoteHalfResult(N, i);
-        Changed = true;
-        goto NodeDone;
       }
     }
 
@@ -309,16 +290,13 @@ ScanOperands:
       if (IgnoreNodeResults(N->getOperand(i).getNode()))
         continue;
 
-      const auto &Op = N->getOperand(i);
+      const auto Op = N->getOperand(i);
       LLVM_DEBUG(dbgs() << "Analyzing operand: "; Op.dump(&DAG));
       EVT OpVT = Op.getValueType();
       switch (getTypeAction(OpVT)) {
       case TargetLowering::TypeLegal:
         LLVM_DEBUG(dbgs() << "Legal operand\n");
         continue;
-      case TargetLowering::TypeScalarizeScalableVector:
-        report_fatal_error(
-            "Scalarization of scalable vectors is not supported.");
       // The following calls must either replace all of the node's results
       // using ReplaceValueWith, and return "false"; or update the node's
       // operands in place, and return "true".
@@ -352,10 +330,6 @@ ScanOperands:
         break;
       case TargetLowering::TypePromoteFloat:
         NeedsReanalyzing = PromoteFloatOperand(N, i);
-        Changed = true;
-        break;
-      case TargetLowering::TypeSoftPromoteHalf:
-        NeedsReanalyzing = SoftPromoteHalfOperand(N, i);
         Changed = true;
         break;
       }
@@ -402,7 +376,9 @@ NodeDone:
     assert(N->getNodeId() == ReadyToProcess && "Node ID recalculated?");
     N->setNodeId(Processed);
 
-    for (SDNode *User : N->uses()) {
+    for (SDNode::use_iterator UI = N->use_begin(), E = N->use_end();
+         UI != E; ++UI) {
+      SDNode *User = *UI;
       int NodeId = User->getNodeId();
 
       // This node has two options: it can either be a new node or its Node ID
@@ -542,8 +518,7 @@ SDNode *DAGTypeLegalizer::AnalyzeNewNode(SDNode *N) {
       // The node morphed into a different node.  Normally for this to happen
       // the original node would have to be marked NewNode.  However this can
       // in theory momentarily not be the case while ReplaceValueWith is doing
-      // its stuff.  Mark the original node NewNode to help basic correctness
-      // checking.
+      // its stuff.  Mark the original node NewNode to help sanity checking.
       N->setNodeId(NewNode);
       if (M->getNodeId() != NewNode && M->getNodeId() != Unanalyzed)
         // It morphed into a previously analyzed node - nothing more to do.
@@ -668,7 +643,8 @@ void DAGTypeLegalizer::ReplaceValueWith(SDValue From, SDValue To) {
 
     // Process the list of nodes that need to be reanalyzed.
     while (!NodesToAnalyze.empty()) {
-      SDNode *N = NodesToAnalyze.pop_back_val();
+      SDNode *N = NodesToAnalyze.back();
+      NodesToAnalyze.pop_back();
       if (N->getNodeId() != DAGTypeLegalizer::NewNode)
         // The node was analyzed while reanalyzing an earlier node - it is safe
         // to skip.  Note that this is not a morphing node - otherwise it would
@@ -722,13 +698,9 @@ void DAGTypeLegalizer::SetPromotedInteger(SDValue Op, SDValue Result) {
 }
 
 void DAGTypeLegalizer::SetSoftenedFloat(SDValue Op, SDValue Result) {
-#ifndef NDEBUG
-  EVT VT = Result.getValueType();
-  LLVMContext &Ctx = *DAG.getContext();
-  assert((VT == EVT::getIntegerVT(Ctx, 80) ||
-          VT == TLI.getTypeToTransformTo(Ctx, Op.getValueType())) &&
+  assert(Result.getValueType() ==
+         TLI.getTypeToTransformTo(*DAG.getContext(), Op.getValueType()) &&
          "Invalid type for softened float");
-#endif
   AnalyzeNewValue(Result);
 
   auto &OpIdEntry = SoftenedFloats[getTableId(Op)];
@@ -747,24 +719,11 @@ void DAGTypeLegalizer::SetPromotedFloat(SDValue Op, SDValue Result) {
   OpIdEntry = getTableId(Result);
 }
 
-void DAGTypeLegalizer::SetSoftPromotedHalf(SDValue Op, SDValue Result) {
-  assert(Result.getValueType() == MVT::i16 &&
-         "Invalid type for soft-promoted half");
-  AnalyzeNewValue(Result);
-
-  auto &OpIdEntry = SoftPromotedHalfs[getTableId(Op)];
-  assert((OpIdEntry == 0) && "Node is already promoted!");
-  OpIdEntry = getTableId(Result);
-}
-
 void DAGTypeLegalizer::SetScalarizedVector(SDValue Op, SDValue Result) {
   // Note that in some cases vector operation operands may be greater than
   // the vector element type. For example BUILD_VECTOR of type <1 x i1> with
   // a constant i8 operand.
-
-  // We don't currently support the scalarization of scalable vector types.
-  assert(Result.getValueSizeInBits().getFixedValue() >=
-             Op.getScalarValueSizeInBits() &&
+  assert(Result.getValueSizeInBits() >= Op.getScalarValueSizeInBits() &&
          "Invalid type for scalarized vector");
   AnalyzeNewValue(Result);
 
@@ -846,9 +805,9 @@ void DAGTypeLegalizer::GetSplitVector(SDValue Op, SDValue &Lo,
 void DAGTypeLegalizer::SetSplitVector(SDValue Op, SDValue Lo,
                                       SDValue Hi) {
   assert(Lo.getValueType().getVectorElementType() ==
-             Op.getValueType().getVectorElementType() &&
-         Lo.getValueType().getVectorElementCount() * 2 ==
-             Op.getValueType().getVectorElementCount() &&
+         Op.getValueType().getVectorElementType() &&
+         2*Lo.getValueType().getVectorNumElements() ==
+         Op.getValueType().getVectorNumElements() &&
          Hi.getValueType() == Lo.getValueType() &&
          "Invalid type for split vector");
   // Lo/Hi may have been newly allocated, if so, add nodeid's as relevant.
@@ -900,19 +859,12 @@ SDValue DAGTypeLegalizer::CreateStackStoreLoad(SDValue Op,
   SDLoc dl(Op);
   // Create the stack frame object.  Make sure it is aligned for both
   // the source and destination types.
-
-  // In cases where the vector is illegal it will be broken down into parts
-  // and stored in parts - we should use the alignment for the smallest part.
-  Align DestAlign = DAG.getReducedAlign(DestVT, /*UseABI=*/false);
-  Align OpAlign = DAG.getReducedAlign(Op.getValueType(), /*UseABI=*/false);
-  Align Align = std::max(DestAlign, OpAlign);
-  SDValue StackPtr =
-      DAG.CreateStackTemporary(Op.getValueType().getStoreSize(), Align);
+  SDValue StackPtr = DAG.CreateStackTemporary(Op.getValueType(), DestVT);
   // Emit a store to the stack slot.
-  SDValue Store = DAG.getStore(DAG.getEntryNode(), dl, Op, StackPtr,
-                               MachinePointerInfo(), Align);
+  SDValue Store =
+      DAG.getStore(DAG.getEntryNode(), dl, Op, StackPtr, MachinePointerInfo());
   // Result is a load from the stack slot.
-  return DAG.getLoad(DestVT, dl, Store, StackPtr, MachinePointerInfo(), Align);
+  return DAG.getLoad(DestVT, dl, Store, StackPtr, MachinePointerInfo());
 }
 
 /// Replace the node's results with custom code provided by the target and
@@ -937,6 +889,17 @@ bool DAGTypeLegalizer::CustomLowerNode(SDNode *N, EVT VT, bool LegalizeResult) {
   if (Results.empty())
     // The target didn't want to custom lower it after all.
     return false;
+
+  // When called from DAGTypeLegalizer::ExpandIntegerResult, we might need to
+  // provide the same kind of custom splitting behavior.
+  if (Results.size() == N->getNumValues() + 1 && LegalizeResult) {
+    // We've legalized a return type by splitting it. If there is a chain,
+    // replace that too.
+    SetExpandedInteger(SDValue(N, 0), Results[0], Results[1]);
+    if (N->getNumValues() > 1)
+      ReplaceValueWith(SDValue(N, 1), Results[2]);
+    return true;
+  }
 
   // Make everything that once used N's values now use those in Results instead.
   assert(Results.size() == N->getNumValues() &&
@@ -966,12 +929,11 @@ bool DAGTypeLegalizer::CustomWidenLowerNode(SDNode *N, EVT VT) {
   assert(Results.size() == N->getNumValues() &&
          "Custom lowering returned the wrong number of results!");
   for (unsigned i = 0, e = Results.size(); i != e; ++i) {
-    // If this is a chain output or already widened just replace it.
-    bool WasWidened = SDValue(N, i).getValueType() != Results[i].getValueType();
-    if (WasWidened)
-      SetWidenedVector(SDValue(N, i), Results[i]);
-    else
+    // If this is a chain output just replace it.
+    if (Results[i].getValueType() == MVT::Other)
       ReplaceValueWith(SDValue(N, i), Results[i]);
+    else
+      SetWidenedVector(SDValue(N, i), Results[i]);
   }
   return true;
 }
@@ -1019,7 +981,11 @@ SDValue DAGTypeLegalizer::JoinIntegers(SDValue Lo, SDValue Hi) {
 ///
 /// ValVT is the type of values that produced the boolean.
 SDValue DAGTypeLegalizer::PromoteTargetBoolean(SDValue Bool, EVT ValVT) {
-  return TLI.promoteTargetBoolean(DAG, Bool, ValVT);
+  SDLoc dl(Bool);
+  EVT BoolVT = getSetCCResultType(ValVT);
+  ISD::NodeType ExtendCode =
+      TargetLowering::getExtendForContent(TLI.getBooleanContents(ValVT));
+  return DAG.getNode(ExtendCode, dl, BoolVT, Bool);
 }
 
 /// Return the lower LoVT bits of Op in Lo and the upper HiVT bits in Hi.

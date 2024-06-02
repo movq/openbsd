@@ -12,5 +12,7 @@ static_library("plugin") {
     "//clang/lib/Tooling",
   ]
 
-  sources = [ "ClangTidyPlugin.cpp" ]
+  sources = [
+    "ClangTidyPlugin.cpp",
+  ]
 }

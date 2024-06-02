@@ -11,16 +11,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Remarks/RemarkStringTable.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Remarks/Remark.h"
 #include "llvm/Remarks/RemarkParser.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/EndianStream.h"
+#include "llvm/Support/Error.h"
 #include <vector>
 
 using namespace llvm;
 using namespace llvm::remarks;
 
-StringTable::StringTable(const ParsedStringTable &Other) {
+StringTable::StringTable(const ParsedStringTable &Other) : StrTab() {
   for (unsigned i = 0, e = Other.size(); i < e; ++i)
     if (Expected<StringRef> MaybeStr = Other[i])
       add(*MaybeStr);

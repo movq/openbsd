@@ -59,7 +59,10 @@ def RetCC_PPC_Cold : CallingConv<[
 
   CCIfType<[f32], CCAssignToReg<[F1]>>,
   CCIfType<[f64], CCAssignToReg<[F1]>>,
-  CCIfType<[f128], CCIfSubtarget<"hasAltivec()", CCAssignToReg<[V2]>>>,
+  CCIfType<[f128], CCIfSubtarget<"hasP9Vector()", CCAssignToReg<[V2]>>>,
+
+  CCIfType<[v4f64, v4f32, v4i1],
+           CCIfSubtarget<"hasQPX()", CCAssignToReg<[QF1]>>>,
 
   CCIfType<[v16i8, v8i16, v4i32, v2i64, v1i128, v4f32, v2f64],
            CCIfSubtarget<"hasAltivec()",
@@ -92,9 +95,13 @@ def RetCC_PPC : CallingConv<[
 
   // For P9, f128 are passed in vector registers.
   CCIfType<[f128],
-           CCIfSubtarget<"hasAltivec()",
+           CCIfSubtarget<"hasP9Vector()",
            CCAssignToReg<[V2, V3, V4, V5, V6, V7, V8, V9]>>>,
 
+  // QPX vectors are returned in QF1 and QF2. 
+  CCIfType<[v4f64, v4f32, v4i1],
+           CCIfSubtarget<"hasQPX()", CCAssignToReg<[QF1, QF2]>>>,
+ 
   // Vector types returned as "direct" go into V2 .. V9; note that only the
   // ELFv2 ABI fully utilizes all these registers.
   CCIfType<[v16i8, v8i16, v4i32, v2i64, v1i128, v4f32, v2f64],
@@ -149,8 +156,10 @@ def RetCC_PPC64_ELF_FIS : CallingConv<[
   CCIfType<[f32],  CCAssignToReg<[F1, F2, F3, F4, F5, F6, F7, F8]>>,
   CCIfType<[f64],  CCAssignToReg<[F1, F2, F3, F4, F5, F6, F7, F8]>>,
   CCIfType<[f128],
-           CCIfSubtarget<"hasAltivec()",
+           CCIfSubtarget<"hasP9Vector()",
            CCAssignToReg<[V2, V3, V4, V5, V6, V7, V8, V9]>>>,
+  CCIfType<[v4f64, v4f32, v4i1],
+           CCIfSubtarget<"hasQPX()", CCAssignToReg<[QF1, QF2]>>>,
   CCIfType<[v16i8, v8i16, v4i32, v2i64, v1i128, v4f32, v2f64],
            CCIfSubtarget<"hasAltivec()",
            CCAssignToReg<[V2, V3, V4, V5, V6, V7, V8, V9]>>>
@@ -206,12 +215,20 @@ def CC_PPC32_SVR4_Common : CallingConv<[
   
   CCIfType<[i32], CCAssignToStack<4, 4>>,
   
-  CCIfType<[f32], CCAssignToStack<4, 4>>,
-  CCIfType<[f64], CCAssignToStack<8, 8>>,
+  // Floats are stored in double precision format, thus they have the same
+  // alignment and size as doubles.
+  // With SPE floats are stored as single precision, so have alignment and
+  // size of int.
+  CCIfType<[f32,f64], CCIfNotSubtarget<"hasSPE()", CCAssignToStack<8, 8>>>,
+  CCIfType<[f32], CCIfSubtarget<"hasSPE()", CCAssignToStack<4, 4>>>,
+  CCIfType<[f64], CCIfSubtarget<"hasSPE()", CCAssignToStack<8, 8>>>,
+
+  // QPX vectors that are stored in double precision need 32-byte alignment.
+  CCIfType<[v4f64, v4i1], CCAssignToStack<32, 32>>,
 
   // Vectors and float128 get 16-byte stack slots that are 16-byte aligned.
   CCIfType<[v16i8, v8i16, v4i32, v4f32, v2f64, v2i64], CCAssignToStack<16, 16>>,
-  CCIfType<[f128], CCIfSubtarget<"hasAltivec()", CCAssignToStack<16, 16>>>
+  CCIfType<[f128], CCIfSubtarget<"hasP9Vector()", CCAssignToStack<16, 16>>>
 ]>;
 
 // This calling convention puts vector arguments always on the stack. It is used
@@ -226,6 +243,10 @@ def CC_PPC32_SVR4_VarArg : CallingConv<[
 // put vector arguments in vector registers before putting them on the stack.
 let Entry = 1 in
 def CC_PPC32_SVR4 : CallingConv<[
+  // QPX vectors mirror the scalar FP convention.
+  CCIfType<[v4f64, v4f32, v4i1], CCIfSubtarget<"hasQPX()",
+    CCAssignToReg<[QF1, QF2, QF3, QF4, QF5, QF6, QF7, QF8]>>>,
+
   // The first 12 Vector arguments are passed in AltiVec registers.
   CCIfType<[v16i8, v8i16, v4i32, v2i64, v1i128, v4f32, v2f64],
            CCIfSubtarget<"hasAltivec()", CCAssignToReg<[V2, V3, V4, V5, V6, V7,
@@ -233,7 +254,7 @@ def CC_PPC32_SVR4 : CallingConv<[
 
   // Float128 types treated as vector arguments.
   CCIfType<[f128],
-           CCIfSubtarget<"hasAltivec()", CCAssignToReg<[V2, V3, V4, V5, V6, V7,
+           CCIfSubtarget<"hasP9Vector()", CCAssignToReg<[V2, V3, V4, V5, V6, V7,
                           V8, V9, V10, V11, V12, V13]>>>,
            
   CCDelegateTo<CC_PPC32_SVR4_Common>
@@ -262,6 +283,15 @@ def CC_PPC32_SVR4_ByVal : CallingConv<[
 def CSR_Altivec : CalleeSavedRegs<(add V20, V21, V22, V23, V24, V25, V26, V27,
                                        V28, V29, V30, V31)>;
 
+def CSR_Darwin32 : CalleeSavedRegs<(add R13, R14, R15, R16, R17, R18, R19, R20,
+                                        R21, R22, R23, R24, R25, R26, R27, R28,
+                                        R29, R30, R31, F14, F15, F16, F17, F18,
+                                        F19, F20, F21, F22, F23, F24, F25, F26,
+                                        F27, F28, F29, F30, F31, CR2, CR3, CR4
+                                   )>;
+
+def CSR_Darwin32_Altivec : CalleeSavedRegs<(add CSR_Darwin32, CSR_Altivec)>;
+
 // SPE does not use FPRs, so break out the common register set as base.
 def CSR_SVR432_COMM : CalleeSavedRegs<(add R14, R15, R16, R17, R18, R19, R20,
                                           R21, R22, R23, R24, R25, R26, R27,
@@ -272,18 +302,12 @@ def CSR_SVR432 :  CalleeSavedRegs<(add CSR_SVR432_COMM, F14, F15, F16, F17, F18,
                                         F27, F28, F29, F30, F31
                                    )>;
 def CSR_SPE : CalleeSavedRegs<(add S14, S15, S16, S17, S18, S19, S20, S21, S22,
-                                   S23, S24, S25, S26, S27, S28, S29, S30 
+                                   S23, S24, S25, S26, S27, S28, S29, S30, S31
                               )>;
-
-def CSR_SPE_NO_S30_31 : CalleeSavedRegs<(add S14, S15, S16, S17, S18, S19, S20, S21,
-				          S22, S23, S24, S25, S26, S27, S28, S29
-			      )>;
 
 def CSR_SVR432_Altivec : CalleeSavedRegs<(add CSR_SVR432, CSR_Altivec)>;
 
 def CSR_SVR432_SPE : CalleeSavedRegs<(add CSR_SVR432_COMM, CSR_SPE)>;
-
-def CSR_SVR432_SPE_NO_S30_31 : CalleeSavedRegs<(add CSR_SVR432_COMM, CSR_SPE_NO_S30_31)>;
 
 def CSR_AIX32 : CalleeSavedRegs<(add R13, R14, R15, R16, R17, R18, R19, R20,
                                      R21, R22, R23, R24, R25, R26, R27, R28,
@@ -292,22 +316,45 @@ def CSR_AIX32 : CalleeSavedRegs<(add R13, R14, R15, R16, R17, R18, R19, R20,
                                      F27, F28, F29, F30, F31, CR2, CR3, CR4
                                 )>;
 
-def CSR_AIX32_Altivec : CalleeSavedRegs<(add CSR_AIX32, CSR_Altivec)>;
-
-// Common CalleeSavedRegs for SVR4 and AIX.
-def CSR_PPC64   : CalleeSavedRegs<(add X14, X15, X16, X17, X18, X19, X20,
+def CSR_Darwin64 : CalleeSavedRegs<(add X13, X14, X15, X16, X17, X18, X19, X20,
                                         X21, X22, X23, X24, X25, X26, X27, X28,
                                         X29, X30, X31, F14, F15, F16, F17, F18,
                                         F19, F20, F21, F22, F23, F24, F25, F26,
                                         F27, F28, F29, F30, F31, CR2, CR3, CR4
                                    )>;
 
+def CSR_Darwin64_Altivec : CalleeSavedRegs<(add CSR_Darwin64, CSR_Altivec)>;
 
-def CSR_PPC64_Altivec : CalleeSavedRegs<(add CSR_PPC64, CSR_Altivec)>;
+def CSR_SVR464   : CalleeSavedRegs<(add X14, X15, X16, X17, X18, X19, X20,
+                                        X21, X22, X23, X24, X25, X26, X27, X28,
+                                        X29, X30, X31, F14, F15, F16, F17, F18,
+                                        F19, F20, F21, F22, F23, F24, F25, F26,
+                                        F27, F28, F29, F30, F31, CR2, CR3, CR4
+                                   )>;
 
-def CSR_PPC64_R2 : CalleeSavedRegs<(add CSR_PPC64, X2)>;
+def CSR_AIX64 : CalleeSavedRegs<(add X14, X15, X16, X17, X18, X19, X20,
+                                     X21, X22, X23, X24, X25, X26, X27, X28,
+                                     X29, X30, X31, F14, F15, F16, F17, F18,
+                                     F19, F20, F21, F22, F23, F24, F25, F26,
+                                     F27, F28, F29, F30, F31, CR2, CR3, CR4
+                                )>;
 
-def CSR_PPC64_R2_Altivec : CalleeSavedRegs<(add CSR_PPC64_Altivec, X2)>;
+// CSRs that are handled by prologue, epilogue.
+def CSR_SRV464_TLS_PE : CalleeSavedRegs<(add)>;
+
+def CSR_SVR464_ViaCopy : CalleeSavedRegs<(add CSR_SVR464)>;
+
+def CSR_SVR464_Altivec : CalleeSavedRegs<(add CSR_SVR464, CSR_Altivec)>;
+
+def CSR_SVR464_Altivec_ViaCopy : CalleeSavedRegs<(add CSR_SVR464_Altivec)>;
+
+def CSR_SVR464_R2 : CalleeSavedRegs<(add CSR_SVR464, X2)>;
+
+def CSR_SVR464_R2_ViaCopy : CalleeSavedRegs<(add CSR_SVR464_R2)>;
+
+def CSR_SVR464_R2_Altivec : CalleeSavedRegs<(add CSR_SVR464_Altivec, X2)>;
+
+def CSR_SVR464_R2_Altivec_ViaCopy : CalleeSavedRegs<(add CSR_SVR464_R2_Altivec)>;
 
 def CSR_NoRegs : CalleeSavedRegs<(add)>;
 
@@ -356,39 +403,6 @@ def CSR_64_AllRegs: CalleeSavedRegs<(add X0, (sequence "X%u", 3, 10),
 def CSR_64_AllRegs_Altivec : CalleeSavedRegs<(add CSR_64_AllRegs,
                                              (sequence "V%u", 0, 31))>;
 
-def CSR_64_AllRegs_AIX_Dflt_Altivec : CalleeSavedRegs<(add CSR_64_AllRegs,
-                                             (sequence "V%u", 0, 19))>;
-
 def CSR_64_AllRegs_VSX : CalleeSavedRegs<(add CSR_64_AllRegs_Altivec,
                                          (sequence "VSL%u", 0, 31))>;
 
-def CSR_64_AllRegs_AIX_Dflt_VSX : CalleeSavedRegs<(add CSR_64_AllRegs_Altivec,
-                                         (sequence "VSL%u", 0, 19))>;
-
-def CSR_ALL_VSRP : CalleeSavedRegs<(sequence "VSRp%u", 0, 31)>;
-
-def CSR_VSRP :
-  CalleeSavedRegs<(add VSRp26, VSRp27, VSRp28, VSRp29, VSRp30, VSRp31)>;
-
-def CSR_SVR432_VSRP : CalleeSavedRegs<(add CSR_SVR432_Altivec, CSR_VSRP)>;
-
-def CSR_SVR464_VSRP : CalleeSavedRegs<(add CSR_PPC64_Altivec, CSR_VSRP)>;
-
-def CSR_SVR464_R2_VSRP : CalleeSavedRegs<(add CSR_SVR464_VSRP, X2)>;
-
-def CSR_SVR32_ColdCC_VSRP : CalleeSavedRegs<(add CSR_SVR32_ColdCC_Altivec,
-                                            (sub CSR_ALL_VSRP, VSRp17))>;
-
-def CSR_SVR64_ColdCC_VSRP : CalleeSavedRegs<(add CSR_SVR64_ColdCC,
-                                            (sub CSR_ALL_VSRP, VSRp17))>;
-
-def CSR_SVR64_ColdCC_R2_VSRP : CalleeSavedRegs<(add CSR_SVR64_ColdCC_VSRP, X2)>;
-
-def CSR_64_AllRegs_VSRP :
-  CalleeSavedRegs<(add CSR_64_AllRegs_VSX, CSR_ALL_VSRP)>;
-
-def CSR_AIX64_VSRP : CalleeSavedRegs<(add CSR_PPC64_Altivec, CSR_VSRP)>;
-
-def CSR_AIX64_R2_VSRP : CalleeSavedRegs<(add CSR_AIX64_VSRP, X2)>;
-
-def CSR_AIX32_VSRP : CalleeSavedRegs<(add CSR_AIX32_Altivec, CSR_VSRP)>;

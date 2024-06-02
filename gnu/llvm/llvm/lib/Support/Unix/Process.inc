@@ -14,8 +14,8 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/config.h"
+#include "llvm/Support/ManagedStatic.h"
 #include <mutex>
-#include <optional>
 #if HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
@@ -31,7 +31,7 @@
 #if HAVE_SIGNAL_H
 #include <signal.h>
 #endif
-#if defined(HAVE_MALLINFO) || defined(HAVE_MALLINFO2)
+#if defined(HAVE_MALLINFO)
 #include <malloc.h>
 #endif
 #if defined(HAVE_MALLCTL)
@@ -41,10 +41,10 @@
 #include <malloc/malloc.h>
 #endif
 #ifdef HAVE_SYS_IOCTL_H
-#include <sys/ioctl.h>
+#  include <sys/ioctl.h>
 #endif
 #ifdef HAVE_TERMIOS_H
-#include <termios.h>
+#  include <termios.h>
 #endif
 
 //===----------------------------------------------------------------------===//
@@ -55,22 +55,15 @@
 using namespace llvm;
 using namespace sys;
 
-static std::pair<std::chrono::microseconds, std::chrono::microseconds>
-getRUsageTimes() {
+static std::pair<std::chrono::microseconds, std::chrono::microseconds> getRUsageTimes() {
 #if defined(HAVE_GETRUSAGE)
   struct rusage RU;
   ::getrusage(RUSAGE_SELF, &RU);
-  return {toDuration(RU.ru_utime), toDuration(RU.ru_stime)};
+  return { toDuration(RU.ru_utime), toDuration(RU.ru_stime) };
 #else
 #warning Cannot get usage times on this platform
-  return {std::chrono::microseconds::zero(), std::chrono::microseconds::zero()};
+  return { std::chrono::microseconds::zero(), std::chrono::microseconds::zero() };
 #endif
-}
-
-Process::Pid Process::getProcessId() {
-  static_assert(sizeof(Pid) >= sizeof(pid_t),
-                "Process::Pid should be big enough to store pid_t");
-  return Pid(::getpid());
 }
 
 // On Cygwin, getpagesize() returns 64k(AllocationGranularity) and
@@ -90,18 +83,14 @@ Expected<unsigned> Process::getPageSize() {
 }
 
 size_t Process::GetMallocUsage() {
-#if defined(HAVE_MALLINFO2)
-  struct mallinfo2 mi;
-  mi = ::mallinfo2();
-  return mi.uordblks;
-#elif defined(HAVE_MALLINFO)
+#if defined(HAVE_MALLINFO)
   struct mallinfo mi;
   mi = ::mallinfo();
   return mi.uordblks;
 #elif defined(HAVE_MALLOC_ZONE_STATISTICS) && defined(HAVE_MALLOC_MALLOC_H)
   malloc_statistics_t Stats;
   malloc_zone_statistics(malloc_default_zone(), &Stats);
-  return Stats.size_in_use; // darwin
+  return Stats.size_in_use;   // darwin
 #elif defined(HAVE_MALLCTL)
   size_t alloc, sz;
   sz = sizeof(size_t);
@@ -111,9 +100,9 @@ size_t Process::GetMallocUsage() {
 #elif defined(HAVE_SBRK)
   // Note this is only an approximation and more closely resembles
   // the value returned by mallinfo in the arena field.
-  static char *StartOfMemory = reinterpret_cast<char *>(::sbrk(0));
-  char *EndOfMemory = (char *)sbrk(0);
-  if (EndOfMemory != ((char *)-1) && StartOfMemory != ((char *)-1))
+  static char *StartOfMemory = reinterpret_cast<char*>(::sbrk(0));
+  char *EndOfMemory = (char*)sbrk(0);
+  if (EndOfMemory != ((char*)-1) && StartOfMemory != ((char*)-1))
     return EndOfMemory - StartOfMemory;
   return 0;
 #else
@@ -122,8 +111,7 @@ size_t Process::GetMallocUsage() {
 #endif
 }
 
-void Process::GetTimeUsage(TimePoint<> &elapsed,
-                           std::chrono::nanoseconds &user_time,
+void Process::GetTimeUsage(TimePoint<> &elapsed, std::chrono::nanoseconds &user_time,
                            std::chrono::nanoseconds &sys_time) {
   elapsed = std::chrono::system_clock::now();
   std::tie(user_time, sys_time) = getRUsageTimes();
@@ -152,9 +140,10 @@ void Process::PreventCoreFiles() {
   exception_port_t OriginalPorts[EXC_TYPES_COUNT];
   exception_behavior_t OriginalBehaviors[EXC_TYPES_COUNT];
   thread_state_flavor_t OriginalFlavors[EXC_TYPES_COUNT];
-  kern_return_t err = task_get_exception_ports(
-      mach_task_self(), EXC_MASK_ALL, OriginalMasks, &Count, OriginalPorts,
-      OriginalBehaviors, OriginalFlavors);
+  kern_return_t err =
+    task_get_exception_ports(mach_task_self(), EXC_MASK_ALL, OriginalMasks,
+                             &Count, OriginalPorts, OriginalBehaviors,
+                             OriginalFlavors);
   if (err == KERN_SUCCESS) {
     // replace each with MACH_PORT_NULL.
     for (unsigned i = 0; i != Count; ++i)
@@ -165,20 +154,20 @@ void Process::PreventCoreFiles() {
 
   // Disable crash reporting on Mac OS X 10.5
   signal(SIGABRT, _exit);
-  signal(SIGILL, _exit);
-  signal(SIGFPE, _exit);
+  signal(SIGILL,  _exit);
+  signal(SIGFPE,  _exit);
   signal(SIGSEGV, _exit);
-  signal(SIGBUS, _exit);
+  signal(SIGBUS,  _exit);
 #endif
 
   coreFilesPrevented = true;
 }
 
-std::optional<std::string> Process::GetEnv(StringRef Name) {
+Optional<std::string> Process::GetEnv(StringRef Name) {
   std::string NameStr = Name.str();
   const char *Val = ::getenv(NameStr.c_str());
   if (!Val)
-    return std::nullopt;
+    return None;
   return std::string(Val);
 }
 
@@ -199,7 +188,7 @@ private:
   int &FD;
   bool KeepOpen;
 };
-} // namespace
+}
 
 std::error_code Process::FixupStandardFileDescriptors() {
   int NullFD = -1;
@@ -237,11 +226,11 @@ std::error_code Process::FixupStandardFileDescriptors() {
 
 std::error_code Process::SafelyCloseFileDescriptor(int FD) {
   // Create a signal set filled with *all* signals.
-  sigset_t FullSet, SavedSet;
-  if (sigfillset(&FullSet) < 0 || sigfillset(&SavedSet) < 0)
+  sigset_t FullSet;
+  if (sigfillset(&FullSet) < 0)
     return std::error_code(errno, std::generic_category());
-
-    // Atomically swap our current signal mask with a full mask.
+  // Atomically swap our current signal mask with a full mask.
+  sigset_t SavedSet;
 #if LLVM_ENABLE_THREADS
   if (int EC = pthread_sigmask(SIG_SETMASK, &FullSet, &SavedSet))
     return std::error_code(EC, std::generic_category());
@@ -291,7 +280,7 @@ bool Process::FileDescriptorIsDisplayed(int fd) {
 #endif
 }
 
-static unsigned getColumns() {
+static unsigned getColumns(int FileID) {
   // If COLUMNS is defined in the environment, wrap to that many columns.
   if (const char *ColumnsStr = std::getenv("COLUMNS")) {
     int Columns = std::atoi(ColumnsStr);
@@ -299,26 +288,34 @@ static unsigned getColumns() {
       return Columns;
   }
 
-  // We used to call ioctl TIOCGWINSZ to determine the width. It is considered
-  // unuseful.
-  return 0;
+  unsigned Columns = 0;
+
+#if defined(HAVE_SYS_IOCTL_H) && defined(HAVE_TERMIOS_H) \
+  && !(defined(_XOPEN_SOURCE) || defined(_POSIX_C_SOURCE))
+  // Try to determine the width of the terminal.
+  struct winsize ws;
+  if (ioctl(FileID, TIOCGWINSZ, &ws) == 0)
+    Columns = ws.ws_col;
+#endif
+
+  return Columns;
 }
 
 unsigned Process::StandardOutColumns() {
   if (!StandardOutIsDisplayed())
     return 0;
 
-  return getColumns();
+  return getColumns(1);
 }
 
 unsigned Process::StandardErrColumns() {
   if (!StandardErrIsDisplayed())
     return 0;
 
-  return getColumns();
+  return getColumns(2);
 }
 
-#ifdef LLVM_ENABLE_TERMINFO
+#ifdef HAVE_TERMINFO
 // We manually declare these extern functions because finding the correct
 // headers from various terminfo, curses, or other sources is harder than
 // writing their specs down.
@@ -328,34 +325,19 @@ extern "C" int del_curterm(struct term *termp);
 extern "C" int tigetnum(char *capname);
 #endif
 
-bool checkTerminalEnvironmentForColors() {
-  if (const char *TermStr = std::getenv("TERM")) {
-    return StringSwitch<bool>(TermStr)
-        .Case("ansi", true)
-        .Case("cygwin", true)
-        .Case("linux", true)
-        .StartsWith("screen", true)
-        .StartsWith("xterm", true)
-        .StartsWith("vt100", true)
-        .StartsWith("rxvt", true)
-        .EndsWith("color", true)
-        .Default(false);
-  }
-
-  return false;
-}
+#ifdef HAVE_TERMINFO
+static ManagedStatic<std::mutex> TermColorMutex;
+#endif
 
 static bool terminalHasColors(int fd) {
 #if defined(__OpenBSD__)
   return false;
 #endif
 
-#ifdef LLVM_ENABLE_TERMINFO
+#ifdef HAVE_TERMINFO
   // First, acquire a global lock because these C routines are thread hostile.
-  static std::mutex TermColorMutex;
-  std::lock_guard<std::mutex> G(TermColorMutex);
+  std::lock_guard<std::mutex> G(*TermColorMutex);
 
-  struct term *previous_term = set_curterm(nullptr);
   int errret = 0;
   if (setupterm(nullptr, fd, &errret) != 0)
     // Regardless of why, if we can't get terminfo, we shouldn't try to print
@@ -375,22 +357,35 @@ static bool terminalHasColors(int fd) {
   //
   // The 'tigetnum' routine returns -2 or -1 on errors, and might return 0 if
   // the terminfo says that no colors are supported.
-  int colors_ti = tigetnum(const_cast<char *>("colors"));
-  bool HasColors =
-      colors_ti >= 0 ? colors_ti : checkTerminalEnvironmentForColors();
+  bool HasColors = tigetnum(const_cast<char *>("colors")) > 0;
 
   // Now extract the structure allocated by setupterm and free its memory
   // through a really silly dance.
-  struct term *termp = set_curterm(previous_term);
+  struct term *termp = set_curterm(nullptr);
   (void)del_curterm(termp); // Drop any errors here.
 
   // Return true if we found a color capabilities for the current terminal.
-  return HasColors;
+  if (HasColors)
+    return true;
 #else
   // When the terminfo database is not available, check if the current terminal
   // is one of terminals that are known to support ANSI color escape codes.
-  return checkTerminalEnvironmentForColors();
+  if (const char *TermStr = std::getenv("TERM")) {
+    return StringSwitch<bool>(TermStr)
+      .Case("ansi", true)
+      .Case("cygwin", true)
+      .Case("linux", true)
+      .StartsWith("screen", true)
+      .StartsWith("xterm", true)
+      .StartsWith("vt100", true)
+      .StartsWith("rxvt", true)
+      .EndsWith("color", true)
+      .Default(false);
+  }
 #endif
+
+  // Otherwise, be conservative.
+  return false;
 }
 
 bool Process::FileDescriptorHasColors(int fd) {
@@ -417,14 +412,20 @@ bool Process::ColorNeedsFlush() {
 }
 
 const char *Process::OutputColor(char code, bool bold, bool bg) {
-  return colorcodes[bg ? 1 : 0][bold ? 1 : 0][code & 7];
+  return colorcodes[bg?1:0][bold?1:0][code&7];
 }
 
-const char *Process::OutputBold(bool bg) { return "\033[1m"; }
+const char *Process::OutputBold(bool bg) {
+  return "\033[1m";
+}
 
-const char *Process::OutputReverse() { return "\033[7m"; }
+const char *Process::OutputReverse() {
+  return "\033[7m";
+}
 
-const char *Process::ResetColor() { return "\033[0m"; }
+const char *Process::ResetColor() {
+  return "\033[0m";
+}
 
 #if !HAVE_DECL_ARC4RANDOM
 static unsigned GetRandomNumberSeed() {
@@ -460,5 +461,3 @@ unsigned llvm::sys::Process::GetRandomNumber() {
   return ::rand();
 #endif
 }
-
-[[noreturn]] void Process::ExitNoCleanup(int RetCode) { _Exit(RetCode); }

@@ -14,17 +14,18 @@
 #include "llvm/DebugInfo/DWARF/DWARFAddressRange.h"
 #include "llvm/DebugInfo/DWARF/DWARFDie.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
+
 #include <cstdint>
 #include <map>
 #include <set>
 
 namespace llvm {
 class raw_ostream;
-struct DWARFAddressRange;
-class DWARFUnit;
-class DWARFUnitVector;
 struct DWARFAttribute;
 class DWARFContext;
+class DWARFDie;
+class DWARFUnit;
+class DWARFCompileUnit;
 class DWARFDataExtractor;
 class DWARFDebugAbbrev;
 class DataExtractor;
@@ -50,16 +51,26 @@ public:
     DieRangeInfo(std::vector<DWARFAddressRange> Ranges)
         : Ranges(std::move(Ranges)) {}
 
+    typedef std::vector<DWARFAddressRange>::const_iterator
+        address_range_iterator;
     typedef std::set<DieRangeInfo>::const_iterator die_range_info_iterator;
 
     /// Inserts the address range. If the range overlaps with an existing
-    /// range, the range that it overlaps with will be returned and the two
-    /// address ranges will be unioned together in "Ranges".
+    /// range, the range is *not* added and an iterator to the overlapping
+    /// range is returned.
     ///
-    /// This is used for finding overlapping ranges in the DW_AT_ranges
-    /// attribute of a DIE. It is also used as a set of address ranges that
-    /// children address ranges must all be contained in.
-    std::optional<DWARFAddressRange> insert(const DWARFAddressRange &R);
+    /// This is used for finding overlapping ranges within the same DIE.
+    address_range_iterator insert(const DWARFAddressRange &R);
+
+    /// Finds an address range in the sorted vector of ranges.
+    address_range_iterator findRange(const DWARFAddressRange &R) const {
+      auto Begin = Ranges.begin();
+      auto End = Ranges.end();
+      auto Iter = std::upper_bound(Begin, End, R);
+      if (Iter != Begin)
+        --Iter;
+      return Iter;
+    }
 
     /// Inserts the address range info. If any of its ranges overlaps with a
     /// range in an existing range info, the range info is *not* added and an
@@ -80,11 +91,14 @@ private:
   raw_ostream &OS;
   DWARFContext &DCtx;
   DIDumpOptions DumpOpts;
+  /// A map that tracks all references (converted absolute references) so we
+  /// can verify each reference points to a valid DIE and not an offset that
+  /// lies between to valid DIEs.
+  std::map<uint64_t, std::set<uint64_t>> ReferenceToDIEOffsets;
   uint32_t NumDebugLineErrors = 0;
   // Used to relax some checks that do not currently work portably
   bool IsObjectFile;
   bool IsMachOObject;
-  using ReferenceMap = std::map<uint64_t, std::set<uint64_t>>;
 
   raw_ostream &error() const;
   raw_ostream &warn() const;
@@ -126,7 +140,6 @@ private:
   bool verifyUnitHeader(const DWARFDataExtractor DebugInfoData,
                         uint64_t *Offset, unsigned UnitIndex, uint8_t &UnitType,
                         bool &isUnitDWARF64);
-  bool verifyName(const DWARFDie &Die);
 
   /// Verifies the header of a unit in a .debug_info or .debug_types section.
   ///
@@ -143,22 +156,17 @@ private:
   /// \param Unit      The DWARF Unit to verify.
   ///
   /// \returns The number of errors that occurred during verification.
-  unsigned verifyUnitContents(DWARFUnit &Unit,
-                              ReferenceMap &UnitLocalReferences,
-                              ReferenceMap &CrossUnitReferences);
+  unsigned verifyUnitContents(DWARFUnit &Unit);
 
   /// Verifies the unit headers and contents in a .debug_info or .debug_types
   /// section.
   ///
   /// \param S           The DWARF Section to verify.
+  /// \param SectionKind The object-file section kind that S comes from.
   ///
   /// \returns The number of errors that occurred during verification.
-  unsigned verifyUnitSection(const DWARFSection &S);
-  unsigned verifyUnits(const DWARFUnitVector &Units);
-
-  unsigned verifyIndexes(const DWARFObject &DObj);
-  unsigned verifyIndex(StringRef Name, DWARFSectionKind SectionKind,
-                       StringRef Index);
+  unsigned verifyUnitSection(const DWARFSection &S,
+                             DWARFSectionKind SectionKind);
 
   /// Verifies that a call site entry is nested within a subprogram with a
   /// DW_AT_call attribute.
@@ -200,9 +208,7 @@ private:
   ///
   /// \returns NumErrors The number of errors occurred during verification of
   /// attributes' forms in a unit
-  unsigned verifyDebugInfoForm(const DWARFDie &Die, DWARFAttribute &AttrValue,
-                               ReferenceMap &UnitLocalReferences,
-                               ReferenceMap &CrossUnitReferences);
+  unsigned verifyDebugInfoForm(const DWARFDie &Die, DWARFAttribute &AttrValue);
 
   /// Verifies the all valid references that were found when iterating through
   /// all of the DIE attributes.
@@ -214,9 +220,7 @@ private:
   ///
   /// \returns NumErrors The number of errors occurred during verification of
   /// references for the .debug_info and .debug_types sections
-  unsigned verifyDebugInfoReferences(
-      const ReferenceMap &,
-      llvm::function_ref<DWARFUnit *(uint64_t)> GetUnitForDieOffset);
+  unsigned verifyDebugInfoReferences();
 
   /// Verify the DW_AT_stmt_list encoding and value and ensure that no
   /// compile units that have the same DW_AT_stmt_list value.
@@ -304,24 +308,6 @@ public:
   /// \returns true if all sections verify successfully, false otherwise.
   bool handleDebugInfo();
 
-  /// Verify the information in the .debug_cu_index section.
-  ///
-  /// Any errors are reported to the stream that was this object was
-  /// constructed with.
-  ///
-  /// \returns true if the .debug_cu_index verifies successfully, false
-  /// otherwise.
-  bool handleDebugCUIndex();
-
-  /// Verify the information in the .debug_tu_index section.
-  ///
-  /// Any errors are reported to the stream that was this object was
-  /// constructed with.
-  ///
-  /// \returns true if the .debug_tu_index verifies successfully, false
-  /// otherwise.
-  bool handleDebugTUIndex();
-
   /// Verify the information in the .debug_line section.
   ///
   /// Any errors are reported to the stream that was this object was
@@ -347,4 +333,4 @@ static inline bool operator<(const DWARFVerifier::DieRangeInfo &LHS,
 
 } // end namespace llvm
 
-#endif // LLVM_DEBUGINFO_DWARF_DWARFVERIFIER_H
+#endif // LLVM_DEBUGINFO_DWARF_DWARFCONTEXT_H

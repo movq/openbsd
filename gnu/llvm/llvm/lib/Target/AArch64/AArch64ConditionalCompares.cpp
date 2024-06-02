@@ -18,6 +18,7 @@
 
 #include "AArch64.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineBranchProbabilityInfo.h"
@@ -156,7 +157,7 @@ public:
   MachineInstr *CmpMI;
 
 private:
-  /// The branch condition in Head as determined by analyzeBranch.
+  /// The branch condition in Head as determined by AnalyzeBranch.
   SmallVector<MachineOperand, 4> HeadCond;
 
   /// The condition code that makes Head branch to CmpBB.
@@ -246,8 +247,8 @@ void SSACCmpConv::updateTailPHIs() {
     for (unsigned oi = I.getNumOperands(); oi > 2; oi -= 2) {
       // PHI operands are (Reg, MBB) at (oi-2, oi-1).
       if (I.getOperand(oi - 1).getMBB() == CmpBB) {
-        I.removeOperand(oi - 1);
-        I.removeOperand(oi - 2);
+        I.RemoveOperand(oi - 1);
+        I.RemoveOperand(oi - 2);
       }
     }
   }
@@ -266,7 +267,7 @@ bool SSACCmpConv::isDeadDef(unsigned DstReg) {
   return MRI->use_nodbg_empty(DstReg);
 }
 
-// Parse a condition code returned by analyzeBranch, and compute the CondCode
+// Parse a condition code returned by AnalyzeBranch, and compute the CondCode
 // corresponding to TBB.
 // Return
 static bool parseCond(ArrayRef<MachineOperand> Cond, AArch64CC::CondCode &CC) {
@@ -316,7 +317,7 @@ MachineInstr *SSACCmpConv::findConvertibleCompare(MachineBasicBlock *MBB) {
 
   // Now find the instruction controlling the terminator.
   for (MachineBasicBlock::iterator B = MBB->begin(); I != B;) {
-    I = prev_nodbg(I, MBB->begin());
+    --I;
     assert(!I->isTerminator() && "Spurious terminator");
     switch (I->getOpcode()) {
     // cmp is an alias for subs with a dead destination register.
@@ -332,7 +333,7 @@ MachineInstr *SSACCmpConv::findConvertibleCompare(MachineBasicBlock *MBB) {
         ++NumImmRangeRejs;
         return nullptr;
       }
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case AArch64::SUBSWrr:
     case AArch64::SUBSXrr:
     case AArch64::ADDSWrr:
@@ -508,7 +509,7 @@ bool SSACCmpConv::canConvert(MachineBasicBlock *MBB) {
   // landing pad.
   if (!TBB || HeadCond.empty()) {
     LLVM_DEBUG(
-        dbgs() << "analyzeBranch didn't find conditional branch in Head.\n");
+        dbgs() << "AnalyzeBranch didn't find conditional branch in Head.\n");
     ++NumHeadBranchRejs;
     return false;
   }
@@ -535,7 +536,7 @@ bool SSACCmpConv::canConvert(MachineBasicBlock *MBB) {
 
   if (!TBB || CmpBBCond.empty()) {
     LLVM_DEBUG(
-        dbgs() << "analyzeBranch didn't find conditional branch in CmpBB.\n");
+        dbgs() << "AnalyzeBranch didn't find conditional branch in CmpBB.\n");
     ++NumCmpBranchRejs;
     return false;
   }
@@ -709,7 +710,7 @@ void SSACCmpConv::convert(SmallVectorImpl<MachineBasicBlock *> &RemovedBlocks) {
         .add(CmpMI->getOperand(1)); // Branch target.
   }
   CmpMI->eraseFromParent();
-  Head->updateTerminator(CmpBB->getNextNode());
+  Head->updateTerminator();
 
   RemovedBlocks.push_back(CmpBB);
   CmpBB->eraseFromParent();
@@ -827,7 +828,7 @@ void AArch64ConditionalCompares::updateDomTree(
     assert(Node != HeadNode && "Cannot erase the head node");
     assert(Node->getIDom() == HeadNode && "CmpBB should be dominated by Head");
     while (Node->getNumChildren())
-      DomTree->changeImmediateDominator(Node->back(), HeadNode);
+      DomTree->changeImmediateDominator(Node->getChildren().back(), HeadNode);
     DomTree->eraseNode(RemovedMBB);
   }
 }

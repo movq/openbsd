@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DWARFLinker/DWARFLinkerDeclContext.h"
-#include "llvm/DWARFLinker/DWARFLinkerCompileUnit.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/DebugInfo/DWARF/DWARFDie.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
@@ -41,9 +40,9 @@ bool DeclContext::setLastSeenDIE(CompileUnit &U, const DWARFDie &Die) {
   return true;
 }
 
-PointerIntPair<DeclContext *, 1>
-DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
-                                     CompileUnit &U, bool InClangModule) {
+PointerIntPair<DeclContext *, 1> DeclContextTree::getChildDeclContext(
+    DeclContext &Context, const DWARFDie &DIE, CompileUnit &U,
+    UniquingStringPool &StringPool, bool InClangModule) {
   unsigned Tag = DIE.getTag();
 
   // FIXME: dsymutil-classic compat: We should bail out here if we
@@ -64,7 +63,7 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
          Context.getTag() == dwarf::DW_TAG_compile_unit) &&
         !dwarf::toUnsigned(DIE.find(dwarf::DW_AT_external), 0))
       return PointerIntPair<DeclContext *, 1>(nullptr);
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case dwarf::DW_TAG_member:
   case dwarf::DW_TAG_namespace:
   case dwarf::DW_TAG_structure_type:
@@ -81,20 +80,23 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
     break;
   }
 
+  const char *Name = DIE.getName(DINameKind::LinkageName);
+  const char *ShortName = DIE.getName(DINameKind::ShortName);
   StringRef NameRef;
+  StringRef ShortNameRef;
   StringRef FileRef;
 
-  if (const char *LinkageName = DIE.getLinkageName())
-    NameRef = StringPool.internString(LinkageName);
-  else if (const char *ShortName = DIE.getShortName())
-    NameRef = StringPool.internString(ShortName);
-
-  bool IsAnonymousNamespace = NameRef.empty() && Tag == dwarf::DW_TAG_namespace;
-  if (IsAnonymousNamespace) {
+  if (Name)
+    NameRef = StringPool.internString(Name);
+  else if (Tag == dwarf::DW_TAG_namespace)
     // FIXME: For dsymutil-classic compatibility. I think uniquing within
     // anonymous namespaces is wrong. There is no ODR guarantee there.
-    NameRef = "(anonymous namespace)";
-  }
+    NameRef = StringPool.internString("(anonymous namespace)");
+
+  if (ShortName && ShortName != Name)
+    ShortNameRef = StringPool.internString(ShortName);
+  else
+    ShortNameRef = NameRef;
 
   if (Tag != dwarf::DW_TAG_class_type && Tag != dwarf::DW_TAG_structure_type &&
       Tag != dwarf::DW_TAG_union_type &&
@@ -115,7 +117,7 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
     // module-defined types do not have a file and line.
     ByteSize = dwarf::toUnsigned(DIE.find(dwarf::DW_AT_byte_size),
                                  std::numeric_limits<uint64_t>::max());
-    if (Tag != dwarf::DW_TAG_namespace || IsAnonymousNamespace) {
+    if (Tag != dwarf::DW_TAG_namespace || !Name) {
       if (unsigned FileNum =
               dwarf::toUnsigned(DIE.find(dwarf::DW_AT_decl_file), 0)) {
         if (const auto *LT = U.getOrigUnit().getContext().getLineTableForUnit(
@@ -123,14 +125,29 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
           // FIXME: dsymutil-classic compatibility. I'd rather not
           // unique anything in anonymous namespaces, but if we do, then
           // verify that the file and line correspond.
-          if (IsAnonymousNamespace)
+          if (!Name && Tag == dwarf::DW_TAG_namespace)
             FileNum = 1;
 
           if (LT->hasFileAtIndex(FileNum)) {
             Line = dwarf::toUnsigned(DIE.find(dwarf::DW_AT_decl_line), 0);
             // Cache the resolved paths based on the index in the line table,
-            // because calling realpath is expensive.
-            FileRef = getResolvedPath(U, FileNum, *LT);
+            // because calling realpath is expansive.
+            StringRef ResolvedPath = U.getResolvedPath(FileNum);
+            if (!ResolvedPath.empty()) {
+              FileRef = ResolvedPath;
+            } else {
+              std::string File;
+              bool FoundFileName = LT->getFileNameByIndex(
+                  FileNum, U.getOrigUnit().getCompilationDir(),
+                  DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath,
+                  File);
+              (void)FoundFileName;
+              assert(FoundFileName && "Must get file name from line table");
+              // Second level of caching, this time based on the file's parent
+              // path.
+              FileRef = PathResolver.resolve(File, StringPool);
+              U.setResolvedPath(FileNum, FileRef);
+            }
           }
         }
       }
@@ -154,7 +171,7 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
 
   // FIXME: dsymutil-classic compatibility: when we don't have a name,
   // use the filename.
-  if (IsAnonymousNamespace)
+  if (Tag == dwarf::DW_TAG_namespace && NameRef == "(anonymous namespace)")
     Hash = hash_combine(Hash, FileRef);
 
   // Now look if this context already exists.
@@ -174,7 +191,7 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
              !(*ContextIter)->setLastSeenDIE(U, DIE)) {
     // The context was found, but it is ambiguous with another context
     // in the same file. Mark it invalid.
-    return PointerIntPair<DeclContext *, 1>(*ContextIter, /* IntVal= */ 1);
+    return PointerIntPair<DeclContext *, 1>(*ContextIter, /* Invalid= */ 1);
   }
 
   assert(ContextIter != Contexts.end());
@@ -184,33 +201,9 @@ DeclContextTree::getChildDeclContext(DeclContext &Context, const DWARFDie &DIE,
        Context.getTag() != dwarf::DW_TAG_structure_type &&
        Context.getTag() != dwarf::DW_TAG_class_type) ||
       (Tag == dwarf::DW_TAG_union_type))
-    return PointerIntPair<DeclContext *, 1>(*ContextIter, /* IntVal= */ 1);
+    return PointerIntPair<DeclContext *, 1>(*ContextIter, /* Invalid= */ 1);
 
   return PointerIntPair<DeclContext *, 1>(*ContextIter);
-}
-
-StringRef
-DeclContextTree::getResolvedPath(CompileUnit &CU, unsigned FileNum,
-                                 const DWARFDebugLine::LineTable &LineTable) {
-  std::pair<unsigned, unsigned> Key = {CU.getUniqueID(), FileNum};
-
-  ResolvedPathsMap::const_iterator It = ResolvedPaths.find(Key);
-  if (It == ResolvedPaths.end()) {
-    std::string FileName;
-    bool FoundFileName = LineTable.getFileNameByIndex(
-        FileNum, CU.getOrigUnit().getCompilationDir(),
-        DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath, FileName);
-    (void)FoundFileName;
-    assert(FoundFileName && "Must get file name from line table");
-
-    // Second level of caching, this time based on the file's parent
-    // path.
-    StringRef ResolvedPath = PathResolver.resolve(FileName, StringPool);
-
-    It = ResolvedPaths.insert(std::make_pair(Key, ResolvedPath)).first;
-  }
-
-  return It->second;
 }
 
 } // namespace llvm

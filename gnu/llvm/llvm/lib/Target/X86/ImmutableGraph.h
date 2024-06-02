@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-/// \file
+///
 /// Description: ImmutableGraph is a fast DAG implementation that cannot be
 /// modified, except by creating a new ImmutableGraph. ImmutableGraph is
 /// implemented as two arrays: one containing nodes, and one containing edges.
@@ -28,6 +28,7 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <iterator>
 #include <utility>
@@ -72,7 +73,7 @@ public:
     // node.
     const Edge *edges_end() const { return (this + 1)->Edges; }
     ArrayRef<Edge> edges() const {
-      return ArrayRef(edges_begin(), edges_end());
+      return makeArrayRef(edges_begin(), edges_end());
     }
   };
 
@@ -87,11 +88,11 @@ protected:
   ImmutableGraph &operator=(ImmutableGraph &&) = delete;
 
 public:
-  ArrayRef<Node> nodes() const { return ArrayRef(Nodes.get(), NodesSize); }
+  ArrayRef<Node> nodes() const { return makeArrayRef(Nodes.get(), NodesSize); }
   const Node *nodes_begin() const { return nodes().begin(); }
   const Node *nodes_end() const { return nodes().end(); }
 
-  ArrayRef<Edge> edges() const { return ArrayRef(Edges.get(), EdgesSize); }
+  ArrayRef<Edge> edges() const { return makeArrayRef(Edges.get(), EdgesSize); }
   const Edge *edges_begin() const { return edges().begin(); }
   const Edge *edges_end() const { return edges().end(); }
 

@@ -7,15 +7,23 @@
 //===----------------------------------------------------------------------===//
 //
 /// \file
-/// R600EmitClauseMarker pass emits CFAlu instruction in a conservative manner.
+/// R600EmitClauseMarker pass emits CFAlu instruction in a conservative maneer.
 /// This pass is merging consecutive CFAlus where applicable.
 /// It needs to be called after IfCvt for best results.
 //===----------------------------------------------------------------------===//
 
-#include "MCTargetDesc/R600MCTargetDesc.h"
-#include "R600.h"
-#include "R600Subtarget.h"
+#include "AMDGPU.h"
+#include "AMDGPUSubtarget.h"
+#include "R600Defines.h"
+#include "R600InstrInfo.h"
+#include "R600MachineFunctionInfo.h"
+#include "R600RegisterInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 
@@ -178,7 +186,9 @@ bool R600ClauseMergePass::runOnMachineFunction(MachineFunction &MF) {
   const R600Subtarget &ST = MF.getSubtarget<R600Subtarget>();
   TII = ST.getInstrInfo();
 
-  for (MachineBasicBlock &MBB : MF) {
+  for (MachineFunction::iterator BB = MF.begin(), BB_E = MF.end();
+                                                  BB != BB_E; ++BB) {
+    MachineBasicBlock &MBB = *BB;
     MachineBasicBlock::iterator I = MBB.begin(),  E = MBB.end();
     MachineBasicBlock::iterator LatestCFAlu = E;
     while (I != E) {

@@ -7,8 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/DWARF/DWARFAddressRange.h"
-#include "llvm/DebugInfo/DIContext.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -18,9 +18,8 @@ void DWARFAddressRange::dump(raw_ostream &OS, uint32_t AddressSize,
                              const DWARFObject *Obj) const {
 
   OS << (DumpOpts.DisplayRawContents ? " " : "[");
-  DWARFFormValue::dumpAddress(OS, AddressSize, LowPC);
-  OS << ", ";
-  DWARFFormValue::dumpAddress(OS, AddressSize, HighPC);
+  OS << format("0x%*.*" PRIx64 ", ", AddressSize * 2, AddressSize * 2, LowPC)
+     << format("0x%*.*" PRIx64, AddressSize * 2, AddressSize * 2, HighPC);
   OS << (DumpOpts.DisplayRawContents ? "" : ")");
 
   if (Obj)

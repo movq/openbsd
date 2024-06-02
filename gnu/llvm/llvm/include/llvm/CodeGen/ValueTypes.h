@@ -75,7 +75,9 @@ namespace llvm {
       MVT M = MVT::getVectorVT(VT.V, NumElements, IsScalable);
       if (M.SimpleTy != MVT::INVALID_SIMPLE_VALUE_TYPE)
         return M;
-      return getExtendedVectorVT(Context, VT, NumElements, IsScalable);
+
+      assert(!IsScalable && "We don't support extended scalable types yet");
+      return getExtendedVectorVT(Context, VT, NumElements);
     }
 
     /// Returns the EVT that represents a vector EC.Min elements in length,
@@ -84,27 +86,27 @@ namespace llvm {
       MVT M = MVT::getVectorVT(VT.V, EC);
       if (M.SimpleTy != MVT::INVALID_SIMPLE_VALUE_TYPE)
         return M;
-      return getExtendedVectorVT(Context, VT, EC);
+      assert (!EC.Scalable && "We don't support extended scalable types yet");
+      return getExtendedVectorVT(Context, VT, EC.Min);
     }
 
     /// Return a vector with the same number of elements as this vector, but
     /// with the element type converted to an integer type with the same
     /// bitwidth.
     EVT changeVectorElementTypeToInteger() const {
-      if (isSimple())
-        return getSimpleVT().changeVectorElementTypeToInteger();
-      return changeExtendedVectorElementTypeToInteger();
-    }
-
-    /// Return a VT for a vector type whose attributes match ourselves
-    /// with the exception of the element type that is chosen by the caller.
-    EVT changeVectorElementType(EVT EltVT) const {
-      if (isSimple()) {
-        assert(EltVT.isSimple() &&
-               "Can't change simple vector VT to have extended element VT");
-        return getSimpleVT().changeVectorElementType(EltVT.getSimpleVT());
+      if (!isSimple()) {
+        assert (!isScalableVector() &&
+                "We don't support extended scalable types yet");
+        return changeExtendedVectorElementTypeToInteger();
       }
-      return changeExtendedVectorElementType(EltVT);
+      MVT EltTy = getSimpleVT().getVectorElementType();
+      unsigned BitWidth = EltTy.getSizeInBits();
+      MVT IntTy = MVT::getIntegerVT(BitWidth);
+      MVT VecTy = MVT::getVectorVT(IntTy, getVectorNumElements(),
+                                   isScalableVector());
+      assert(VecTy.SimpleTy != MVT::INVALID_SIMPLE_VALUE_TYPE &&
+             "Simple vector VT not representable by simple integer vector VT!");
+      return VecTy;
     }
 
     /// Return the type converted to an equivalently sized integer or vector
@@ -115,14 +117,9 @@ namespace llvm {
         return changeVectorElementTypeToInteger();
 
       if (isSimple())
-        return getSimpleVT().changeTypeToInteger();
-      return changeExtendedTypeToInteger();
-    }
+        return MVT::getIntegerVT(getSizeInBits());
 
-    /// Test if the given EVT has zero size, this will fail if called on a
-    /// scalable type
-    bool isZeroSized() const {
-      return !isScalableVector() && getSizeInBits() == 0;
+      return changeExtendedTypeToInteger();
     }
 
     /// Test if the given EVT is simple (as opposed to being extended).
@@ -158,12 +155,12 @@ namespace llvm {
     /// Return true if this is a vector type where the runtime
     /// length is machine dependent
     bool isScalableVector() const {
-      return isSimple() ? V.isScalableVector() : isExtendedScalableVector();
-    }
-
-    bool isFixedLengthVector() const {
-      return isSimple() ? V.isFixedLengthVector()
-                        : isExtendedFixedLengthVector();
+      // FIXME: We don't support extended scalable types yet, because the
+      // matching IR type doesn't exist. Once it has been added, this can
+      // be changed to call isExtendedScalableVector.
+      if (!isSimple())
+        return false;
+      return V.isScalableVector();
     }
 
     /// Return true if this is a 16-bit vector type.
@@ -213,7 +210,7 @@ namespace llvm {
 
     /// Return true if the bit size is a multiple of 8.
     bool isByteSized() const {
-      return !isZeroSized() && getSizeInBits().isKnownMultipleOf(8);
+      return getSizeInBits().isByteSized();
     }
 
     /// Return true if the size is a power-of-two number of bytes.
@@ -230,58 +227,28 @@ namespace llvm {
       return getSizeInBits() == VT.getSizeInBits();
     }
 
-    /// Return true if we know at compile time this has more bits than VT.
-    bool knownBitsGT(EVT VT) const {
-      return TypeSize::isKnownGT(getSizeInBits(), VT.getSizeInBits());
-    }
-
-    /// Return true if we know at compile time this has more than or the same
-    /// bits as VT.
-    bool knownBitsGE(EVT VT) const {
-      return TypeSize::isKnownGE(getSizeInBits(), VT.getSizeInBits());
-    }
-
-    /// Return true if we know at compile time this has fewer bits than VT.
-    bool knownBitsLT(EVT VT) const {
-      return TypeSize::isKnownLT(getSizeInBits(), VT.getSizeInBits());
-    }
-
-    /// Return true if we know at compile time this has fewer than or the same
-    /// bits as VT.
-    bool knownBitsLE(EVT VT) const {
-      return TypeSize::isKnownLE(getSizeInBits(), VT.getSizeInBits());
-    }
-
     /// Return true if this has more bits than VT.
     bool bitsGT(EVT VT) const {
       if (EVT::operator==(VT)) return false;
-      assert(isScalableVector() == VT.isScalableVector() &&
-             "Comparison between scalable and fixed types");
-      return knownBitsGT(VT);
+      return getSizeInBits() > VT.getSizeInBits();
     }
 
     /// Return true if this has no less bits than VT.
     bool bitsGE(EVT VT) const {
       if (EVT::operator==(VT)) return true;
-      assert(isScalableVector() == VT.isScalableVector() &&
-             "Comparison between scalable and fixed types");
-      return knownBitsGE(VT);
+      return getSizeInBits() >= VT.getSizeInBits();
     }
 
     /// Return true if this has less bits than VT.
     bool bitsLT(EVT VT) const {
       if (EVT::operator==(VT)) return false;
-      assert(isScalableVector() == VT.isScalableVector() &&
-             "Comparison between scalable and fixed types");
-      return knownBitsLT(VT);
+      return getSizeInBits() < VT.getSizeInBits();
     }
 
     /// Return true if this has no more bits than VT.
     bool bitsLE(EVT VT) const {
       if (EVT::operator==(VT)) return true;
-      assert(isScalableVector() == VT.isScalableVector() &&
-             "Comparison between scalable and fixed types");
-      return knownBitsLE(VT);
+      return getSizeInBits() <= VT.getSizeInBits();
     }
 
     /// Return the SimpleValueType held in the specified simple EVT.
@@ -307,15 +274,9 @@ namespace llvm {
     /// Given a vector type, return the number of elements it contains.
     unsigned getVectorNumElements() const {
       assert(isVector() && "Invalid vector type!");
-
-      if (isScalableVector())
-        llvm::reportInvalidSizeRequest(
-            "Possible incorrect use of EVT::getVectorNumElements() for "
-            "scalable vector. Scalable flag may be dropped, use "
-            "EVT::getVectorElementCount() instead");
-
-      return isSimple() ? V.getVectorNumElements()
-                        : getExtendedVectorNumElements();
+      if (isSimple())
+        return V.getVectorNumElements();
+      return getExtendedVectorNumElements();
     }
 
     // Given a (possibly scalable) vector type, return the ElementCount
@@ -324,12 +285,9 @@ namespace llvm {
       if (isSimple())
         return V.getVectorElementCount();
 
-      return getExtendedVectorElementCount();
-    }
-
-    /// Given a vector type, return the minimum number of elements it contains.
-    unsigned getVectorMinNumElements() const {
-      return getVectorElementCount().getKnownMinValue();
+      assert(!isScalableVector() &&
+             "We don't support extended scalable types yet");
+      return {getExtendedVectorNumElements(), false};
     }
 
     /// Return the size of the specified value type in bits.
@@ -343,14 +301,8 @@ namespace llvm {
       return getExtendedSizeInBits();
     }
 
-    /// Return the size of the specified fixed width value type in bits. The
-    /// function will assert if the type is scalable.
-    uint64_t getFixedSizeInBits() const {
-      return getSizeInBits().getFixedValue();
-    }
-
-    uint64_t getScalarSizeInBits() const {
-      return getScalarType().getSizeInBits().getFixedValue();
+    TypeSize getScalarSizeInBits() const {
+      return getScalarType().getSizeInBits();
     }
 
     /// Return the number of bytes overwritten by a store of the specified value
@@ -361,13 +313,7 @@ namespace llvm {
     /// base size.
     TypeSize getStoreSize() const {
       TypeSize BaseSize = getSizeInBits();
-      return {(BaseSize.getKnownMinValue() + 7) / 8, BaseSize.isScalable()};
-    }
-
-    // Return the number of bytes overwritten by a store of this value type or
-    // this value type's element type in the case of a vector.
-    uint64_t getScalarStoreSize() const {
-      return getScalarType().getStoreSize().getFixedValue();
+      return {(BaseSize.getKnownMinSize() + 7) / 8, BaseSize.isScalable()};
     }
 
     /// Return the number of bits overwritten by a store of the specified value
@@ -388,7 +334,7 @@ namespace llvm {
       unsigned BitWidth = getSizeInBits();
       if (BitWidth <= 8)
         return EVT(MVT::i8);
-      return getIntegerVT(Context, llvm::bit_ceil(BitWidth));
+      return getIntegerVT(Context, 1 << Log2_32_Ceil(BitWidth));
     }
 
     /// Finds the smallest simple value type that is greater than or equal to
@@ -420,22 +366,13 @@ namespace llvm {
     EVT getHalfNumVectorElementsVT(LLVMContext &Context) const {
       EVT EltVT = getVectorElementType();
       auto EltCnt = getVectorElementCount();
-      assert(EltCnt.isKnownEven() && "Splitting vector, but not in half!");
-      return EVT::getVectorVT(Context, EltVT, EltCnt.divideCoefficientBy(2));
-    }
-
-    // Return a VT for a vector type with the same element type but
-    // double the number of elements. The type returned may be an
-    // extended type.
-    EVT getDoubleNumVectorElementsVT(LLVMContext &Context) const {
-      EVT EltVT = getVectorElementType();
-      auto EltCnt = getVectorElementCount();
-      return EVT::getVectorVT(Context, EltVT, EltCnt * 2);
+      assert(!(EltCnt.Min & 1) && "Splitting vector, but not in half!");
+      return EVT::getVectorVT(Context, EltVT, EltCnt / 2);
     }
 
     /// Returns true if the given vector is a power of 2.
     bool isPow2VectorType() const {
-      unsigned NElts = getVectorMinNumElements();
+      unsigned NElts = getVectorNumElements();
       return !(NElts & (NElts - 1));
     }
 
@@ -443,10 +380,10 @@ namespace llvm {
     /// and returns that type.
     EVT getPow2VectorType(LLVMContext &Context) const {
       if (!isPow2VectorType()) {
-        ElementCount NElts = getVectorElementCount();
-        unsigned NewMinCount = 1 << Log2_32_Ceil(NElts.getKnownMinValue());
-        NElts = ElementCount::get(NewMinCount, NElts.isScalable());
-        return EVT::getVectorVT(Context, getVectorElementType(), NElts);
+        unsigned NElts = getVectorNumElements();
+        unsigned Pow2NElts = 1 <<  Log2_32_Ceil(NElts);
+        return EVT::getVectorVT(Context, getVectorElementType(), Pow2NElts,
+                                isScalableVector());
       }
       else {
         return *this;
@@ -489,13 +426,10 @@ namespace llvm {
     // These are all out-of-line to prevent users of this header file
     // from having a dependency on Type.h.
     EVT changeExtendedTypeToInteger() const;
-    EVT changeExtendedVectorElementType(EVT EltVT) const;
     EVT changeExtendedVectorElementTypeToInteger() const;
     static EVT getExtendedIntegerVT(LLVMContext &C, unsigned BitWidth);
-    static EVT getExtendedVectorVT(LLVMContext &C, EVT VT, unsigned NumElements,
-                                   bool IsScalable);
-    static EVT getExtendedVectorVT(LLVMContext &Context, EVT VT,
-                                   ElementCount EC);
+    static EVT getExtendedVectorVT(LLVMContext &C, EVT VT,
+                                   unsigned NumElements);
     bool isExtendedFloatingPoint() const LLVM_READONLY;
     bool isExtendedInteger() const LLVM_READONLY;
     bool isExtendedScalarInteger() const LLVM_READONLY;
@@ -508,11 +442,8 @@ namespace llvm {
     bool isExtended512BitVector() const LLVM_READONLY;
     bool isExtended1024BitVector() const LLVM_READONLY;
     bool isExtended2048BitVector() const LLVM_READONLY;
-    bool isExtendedFixedLengthVector() const LLVM_READONLY;
-    bool isExtendedScalableVector() const LLVM_READONLY;
     EVT getExtendedVectorElementType() const;
     unsigned getExtendedVectorNumElements() const LLVM_READONLY;
-    ElementCount getExtendedVectorElementCount() const LLVM_READONLY;
     TypeSize getExtendedSizeInBits() const LLVM_READONLY;
   };
 

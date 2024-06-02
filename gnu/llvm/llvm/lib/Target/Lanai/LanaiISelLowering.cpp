@@ -138,7 +138,11 @@ LanaiTargetLowering::LanaiTargetLowering(const TargetMachine &TM,
     setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i1, Promote);
   }
 
-  setTargetDAGCombine({ISD::ADD, ISD::SUB, ISD::AND, ISD::OR, ISD::XOR});
+  setTargetDAGCombine(ISD::ADD);
+  setTargetDAGCombine(ISD::SUB);
+  setTargetDAGCombine(ISD::AND);
+  setTargetDAGCombine(ISD::OR);
+  setTargetDAGCombine(ISD::XOR);
 
   // Function alignments
   setMinFunctionAlignment(Align(4));
@@ -280,7 +284,7 @@ LanaiTargetLowering::getSingleConstraintMatchWeight(
 void LanaiTargetLowering::LowerAsmOperandForConstraint(
     SDValue Op, std::string &Constraint, std::vector<SDValue> &Ops,
     SelectionDAG &DAG) const {
-  SDValue Result;
+  SDValue Result(nullptr, 0);
 
   // Only support length 1 constraints for now.
   if (Constraint.length() > 1)
@@ -384,7 +388,7 @@ static bool CC_Lanai32_VarArg(unsigned ValNo, MVT ValVT, MVT LocVT,
   }
 
   // VarArgs get passed on stack
-  unsigned Offset = State.AllocateStack(4, Align(4));
+  unsigned Offset = State.AllocateStack(4, 4);
   State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
   return false;
 }
@@ -482,7 +486,7 @@ SDValue LanaiTargetLowering::LowerCCCArguments(
         llvm_unreachable("unhandled argument type");
       }
     } else {
-      // Only arguments passed on the stack should make it here.
+      // Sanity check
       assert(VA.isMemLoc());
       // Load the argument to a virtual register
       unsigned ObjSize = VA.getLocVT().getSizeInBits() / 8;
@@ -507,7 +511,7 @@ SDValue LanaiTargetLowering::LowerCCCArguments(
   // the sret argument into rv for the return. Save the argument into
   // a virtual register so that we can access it from the return points.
   if (MF.getFunction().hasStructRetAttr()) {
-    Register Reg = LanaiMFI->getSRetReturnReg();
+    unsigned Reg = LanaiMFI->getSRetReturnReg();
     if (!Reg) {
       Reg = MF.getRegInfo().createVirtualRegister(getRegClassFor(MVT::i32));
       LanaiMFI->setSRetReturnReg(Reg);
@@ -524,15 +528,6 @@ SDValue LanaiTargetLowering::LowerCCCArguments(
   }
 
   return Chain;
-}
-
-bool LanaiTargetLowering::CanLowerReturn(
-    CallingConv::ID CallConv, MachineFunction &MF, bool IsVarArg,
-    const SmallVectorImpl<ISD::OutputArg> &Outs, LLVMContext &Context) const {
-  SmallVector<CCValAssign, 16> RVLocs;
-  CCState CCInfo(CallConv, IsVarArg, MF, RVLocs, Context);
-
-  return CCInfo.CheckReturn(Outs, RetCC_Lanai32);
 }
 
 SDValue
@@ -573,7 +568,7 @@ LanaiTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
   if (DAG.getMachineFunction().getFunction().hasStructRetAttr()) {
     MachineFunction &MF = DAG.getMachineFunction();
     LanaiMachineFunctionInfo *LanaiMFI = MF.getInfo<LanaiMachineFunctionInfo>();
-    Register Reg = LanaiMFI->getSRetReturnReg();
+    unsigned Reg = LanaiMFI->getSRetReturnReg();
     assert(Reg &&
            "SRetReturnReg should have been set in LowerFormalArguments().");
     SDValue Val =
@@ -638,13 +633,13 @@ SDValue LanaiTargetLowering::LowerCCCCallTo(
 
     SDValue Arg = OutVals[I];
     unsigned Size = Flags.getByValSize();
-    Align Alignment = Flags.getNonZeroByValAlign();
+    unsigned Align = Flags.getByValAlign();
 
-    int FI = MFI.CreateStackObject(Size, Alignment, false);
+    int FI = MFI.CreateStackObject(Size, Align, false);
     SDValue FIPtr = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
     SDValue SizeNode = DAG.getConstant(Size, DL, MVT::i32);
 
-    Chain = DAG.getMemcpy(Chain, DL, FIPtr, Arg, SizeNode, Alignment,
+    Chain = DAG.getMemcpy(Chain, DL, FIPtr, Arg, SizeNode, Align,
                           /*IsVolatile=*/false,
                           /*AlwaysInline=*/false,
                           /*isTailCall=*/false, MachinePointerInfo(),
@@ -761,7 +756,11 @@ SDValue LanaiTargetLowering::LowerCCCCallTo(
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain, NumBytes, 0, InFlag, DL);
+  Chain = DAG.getCALLSEQ_END(
+      Chain,
+      DAG.getConstant(NumBytes, DL, getPointerTy(DAG.getDataLayout()), true),
+      DAG.getConstant(0, DL, getPointerTy(DAG.getDataLayout()), true), InFlag,
+      DL);
   InFlag = Chain.getValue(1);
 
   // Handle result values, copying them out of physregs into vregs that we
@@ -951,7 +950,8 @@ SDValue LanaiTargetLowering::LowerMUL(SDValue Op, SelectionDAG &DAG) const {
 
   // Assemble multiplication from shift, add, sub using NAF form and running
   // sum.
-  for (unsigned int I = 0; I < std::size(SignedDigit); ++I) {
+  for (unsigned int I = 0; I < sizeof(SignedDigit) / sizeof(SignedDigit[0]);
+       ++I) {
     if (SignedDigit[I] == 0)
       continue;
 
@@ -1020,7 +1020,7 @@ SDValue LanaiTargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   SDValue Size = Op.getOperand(1);
   SDLoc DL(Op);
 
-  Register SPReg = getStackPointerRegisterToSaveRestore();
+  unsigned SPReg = getStackPointerRegisterToSaveRestore();
 
   // Get a reference to the stack pointer.
   SDValue StackPointer = DAG.getCopyFromReg(Chain, DL, SPReg, MVT::i32);
@@ -1068,7 +1068,7 @@ SDValue LanaiTargetLowering::LowerRETURNADDR(SDValue Op,
 
   // Return the link register, which contains the return address.
   // Mark it an implicit live-in.
-  Register Reg = MF.addLiveIn(TRI->getRARegister(), getRegClassFor(MVT::i32));
+  unsigned Reg = MF.addLiveIn(TRI->getRARegister(), getRegClassFor(MVT::i32));
   return DAG.getCopyFromReg(DAG.getEntryNode(), DL, Reg, VT);
 }
 
@@ -1136,7 +1136,7 @@ SDValue LanaiTargetLowering::LowerConstantPool(SDValue Op,
   if (getTargetMachine().getCodeModel() == CodeModel::Small ||
       TLOF->isConstantInSmallSection(DAG.getDataLayout(), C)) {
     SDValue Small = DAG.getTargetConstantPool(
-        C, MVT::i32, N->getAlign(), N->getOffset(), LanaiII::MO_NO_FLAG);
+        C, MVT::i32, N->getAlignment(), N->getOffset(), LanaiII::MO_NO_FLAG);
     return DAG.getNode(ISD::OR, DL, MVT::i32,
                        DAG.getRegister(Lanai::R0, MVT::i32),
                        DAG.getNode(LanaiISD::SMALL, DL, MVT::i32, Small));
@@ -1144,9 +1144,9 @@ SDValue LanaiTargetLowering::LowerConstantPool(SDValue Op,
     uint8_t OpFlagHi = LanaiII::MO_ABS_HI;
     uint8_t OpFlagLo = LanaiII::MO_ABS_LO;
 
-    SDValue Hi = DAG.getTargetConstantPool(C, MVT::i32, N->getAlign(),
+    SDValue Hi = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
                                            N->getOffset(), OpFlagHi);
-    SDValue Lo = DAG.getTargetConstantPool(C, MVT::i32, N->getAlign(),
+    SDValue Lo = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
                                            N->getOffset(), OpFlagLo);
     Hi = DAG.getNode(LanaiISD::HI, DL, MVT::i32, Hi);
     Lo = DAG.getNode(LanaiISD::LO, DL, MVT::i32, Lo);
@@ -1167,7 +1167,7 @@ SDValue LanaiTargetLowering::LowerGlobalAddress(SDValue Op,
 
   // If the code model is small or global variable will be placed in the small
   // section, then assume address will fit in 21-bits.
-  const GlobalObject *GO = GV->getAliaseeObject();
+  const GlobalObject *GO = GV->getBaseObject();
   if (TLOF->isGlobalInSmallSection(GO, getTargetMachine())) {
     SDValue Small = DAG.getTargetGlobalAddress(
         GV, DL, getPointerTy(DAG.getDataLayout()), Offset, LanaiII::MO_NO_FLAG);
@@ -1391,7 +1391,8 @@ static bool isConditionalZeroOrAllOnes(SDNode *N, bool AllOnes, SDValue &CC,
       // value is 0.
       OtherOp = DAG.getConstant(0, dl, VT);
     else
-      OtherOp = DAG.getAllOnesConstant(dl, VT);
+      OtherOp =
+          DAG.getConstant(APInt::getAllOnesValue(VT.getSizeInBits()), dl, VT);
     return true;
   }
   }
@@ -1499,7 +1500,8 @@ void LanaiTargetLowering::computeKnownBitsForTargetNode(
     KnownBits Known2;
     Known = DAG.computeKnownBits(Op->getOperand(0), Depth + 1);
     Known2 = DAG.computeKnownBits(Op->getOperand(1), Depth + 1);
-    Known = KnownBits::commonBits(Known, Known2);
+    Known.Zero &= Known2.Zero;
+    Known.One &= Known2.One;
     break;
   }
 }

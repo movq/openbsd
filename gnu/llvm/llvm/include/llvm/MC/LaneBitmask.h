@@ -31,7 +31,6 @@
 
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Printable.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -39,9 +38,9 @@ namespace llvm {
 
   struct LaneBitmask {
     // When changing the underlying type, change the format string as well.
-    using Type = uint64_t;
+    using Type = unsigned;
     enum : unsigned { BitWidth = 8*sizeof(Type) };
-    constexpr static const char *const FormatStr = "%016llX";
+    constexpr static const char *const FormatStr = "%08X";
 
     constexpr LaneBitmask() = default;
     explicit constexpr LaneBitmask(Type V) : Mask(V) {}
@@ -73,9 +72,11 @@ namespace llvm {
 
     constexpr Type getAsInteger() const { return Mask; }
 
-    unsigned getNumLanes() const { return llvm::popcount(Mask); }
+    unsigned getNumLanes() const {
+      return countPopulation(Mask);
+    }
     unsigned getHighestLane() const {
-      return Log2_64(Mask);
+      return Log2_32(Mask);
     }
 
     static constexpr LaneBitmask getNone() { return LaneBitmask(0); }

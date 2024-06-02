@@ -11,6 +11,9 @@
 #include "MCTargetDesc/HexagonBaseInfo.h"
 #include "RDFCopy.h"
 #include "RDFDeadCode.h"
+#include "RDFGraph.h"
+#include "RDFLiveness.h"
+#include "RDFRegisters.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
@@ -21,9 +24,6 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/RDFGraph.h"
-#include "llvm/CodeGen/RDFLiveness.h"
-#include "llvm/CodeGen/RDFRegisters.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -132,7 +132,7 @@ bool HexagonCP::interpretAsCopy(const MachineInstr *MI, EqualityMap &EM) {
       const MachineOperand &A = MI->getOperand(2);
       if (!A.isImm() || A.getImm() != 0)
         return false;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     }
     case Hexagon::A2_tfr: {
       const MachineOperand &DstOp = MI->getOperand(0);
@@ -201,7 +201,7 @@ void HexagonDCE::removeOperand(NodeAddr<InstrNode*> IA, unsigned OpNum) {
   for (NodeAddr<RefNode*> RA : Refs)
     OpMap.insert(std::make_pair(RA.Id, getOpNum(RA.Addr->getOp())));
 
-  MI->removeOperand(OpNum);
+  MI->RemoveOperand(OpNum);
 
   for (NodeAddr<RefNode*> RA : Refs) {
     unsigned N = OpMap[RA.Id];
@@ -299,7 +299,8 @@ bool HexagonRDFOpt::runOnMachineFunction(MachineFunction &MF) {
   if (RDFDump)
     MF.print(dbgs() << "Before " << getPassName() << "\n", nullptr);
 
-  DataFlowGraph G(MF, HII, HRI, *MDT, MDF);
+  TargetOperandInfo TOI(HII);
+  DataFlowGraph G(MF, HII, HRI, *MDT, MDF, TOI);
   // Dead phi nodes are necessary for copy propagation: we can add a use
   // of a register in a block where it would need a phi node, but which
   // was dead (and removed) during the graph build time.

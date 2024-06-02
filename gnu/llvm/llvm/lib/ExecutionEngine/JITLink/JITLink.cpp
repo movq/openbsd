@@ -1,18 +1,18 @@
 //===------------- JITLink.cpp - Core Run-time JIT linker APIs ------------===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 
 #include "llvm/BinaryFormat/Magic.h"
-#include "llvm/ExecutionEngine/JITLink/COFF.h"
-#include "llvm/ExecutionEngine/JITLink/ELF.h"
 #include "llvm/ExecutionEngine/JITLink/MachO.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -41,6 +41,8 @@ public:
   }
 };
 
+static ManagedStatic<JITLinkerErrorCategory> JITLinkerErrorCategory;
+
 } // namespace
 
 namespace llvm {
@@ -48,11 +50,10 @@ namespace jitlink {
 
 char JITLinkError::ID = 0;
 
-void JITLinkError::log(raw_ostream &OS) const { OS << ErrMsg; }
+void JITLinkError::log(raw_ostream &OS) const { OS << ErrMsg << "\n"; }
 
 std::error_code JITLinkError::convertToErrorCode() const {
-  static JITLinkerErrorCategory TheJITLinkerErrorCategory;
-  return std::error_code(GenericJITLinkError, TheJITLinkerErrorCategory);
+  return std::error_code(GenericJITLinkError, *JITLinkerErrorCategory);
 }
 
 const char *getGenericEdgeKindName(Edge::Kind K) {
@@ -62,7 +63,7 @@ const char *getGenericEdgeKindName(Edge::Kind K) {
   case Edge::KeepAlive:
     return "Keep-Alive";
   default:
-    return "<Unrecognized edge kind>";
+    llvm_unreachable("Unrecognized relocation kind");
   }
 }
 
@@ -89,9 +90,8 @@ const char *getScopeName(Scope S) {
 }
 
 raw_ostream &operator<<(raw_ostream &OS, const Block &B) {
-  return OS << B.getAddress() << " -- " << (B.getAddress() + B.getSize())
-            << ": "
-            << "size = " << formatv("{0:x8}", B.getSize()) << ", "
+  return OS << formatv("{0:x16}", B.getAddress()) << " -- "
+            << formatv("{0:x16}", B.getAddress() + B.getSize()) << ": "
             << (B.isZeroFill() ? "zero-fill" : "content")
             << ", align = " << B.getAlignment()
             << ", align-ofs = " << B.getAlignmentOffset()
@@ -99,45 +99,47 @@ raw_ostream &operator<<(raw_ostream &OS, const Block &B) {
 }
 
 raw_ostream &operator<<(raw_ostream &OS, const Symbol &Sym) {
-  OS << Sym.getAddress() << " (" << (Sym.isDefined() ? "block" : "addressable")
-     << " + " << formatv("{0:x8}", Sym.getOffset())
-     << "): size: " << formatv("{0:x8}", Sym.getSize())
-     << ", linkage: " << formatv("{0:6}", getLinkageName(Sym.getLinkage()))
-     << ", scope: " << formatv("{0:8}", getScopeName(Sym.getScope())) << ", "
-     << (Sym.isLive() ? "live" : "dead") << "  -   "
-     << (Sym.hasName() ? Sym.getName() : "<anonymous symbol>");
+  OS << "<";
+  if (Sym.getName().empty())
+    OS << "*anon*";
+  else
+    OS << Sym.getName();
+  OS << ": flags = ";
+  switch (Sym.getLinkage()) {
+  case Linkage::Strong:
+    OS << 'S';
+    break;
+  case Linkage::Weak:
+    OS << 'W';
+    break;
+  }
+  switch (Sym.getScope()) {
+  case Scope::Default:
+    OS << 'D';
+    break;
+  case Scope::Hidden:
+    OS << 'H';
+    break;
+  case Scope::Local:
+    OS << 'L';
+    break;
+  }
+  OS << (Sym.isLive() ? '+' : '-')
+     << ", size = " << formatv("{0:x8}", Sym.getSize())
+     << ", addr = " << formatv("{0:x16}", Sym.getAddress()) << " ("
+     << formatv("{0:x16}", Sym.getAddressable().getAddress()) << " + "
+     << formatv("{0:x8}", Sym.getOffset());
+  if (Sym.isDefined())
+    OS << " " << Sym.getBlock().getSection().getName();
+  OS << ")>";
   return OS;
 }
 
 void printEdge(raw_ostream &OS, const Block &B, const Edge &E,
                StringRef EdgeKindName) {
-  OS << "edge@" << B.getAddress() + E.getOffset() << ": " << B.getAddress()
-     << " + " << formatv("{0:x}", E.getOffset()) << " -- " << EdgeKindName
-     << " -> ";
-
-  auto &TargetSym = E.getTarget();
-  if (TargetSym.hasName())
-    OS << TargetSym.getName();
-  else {
-    auto &TargetBlock = TargetSym.getBlock();
-    auto &TargetSec = TargetBlock.getSection();
-    orc::ExecutorAddr SecAddress(~uint64_t(0));
-    for (auto *B : TargetSec.blocks())
-      if (B->getAddress() < SecAddress)
-        SecAddress = B->getAddress();
-
-    orc::ExecutorAddrDiff SecDelta = TargetSym.getAddress() - SecAddress;
-    OS << TargetSym.getAddress() << " (section " << TargetSec.getName();
-    if (SecDelta)
-      OS << " + " << formatv("{0:x}", SecDelta);
-    OS << " / block " << TargetBlock.getAddress();
-    if (TargetSym.getOffset())
-      OS << " + " << formatv("{0:x}", TargetSym.getOffset());
-    OS << ")";
-  }
-
-  if (E.getAddend() != 0)
-    OS << " + " << E.getAddend();
+  OS << "edge@" << formatv("{0:x16}", B.getAddress() + E.getOffset()) << ": "
+     << formatv("{0:x16}", B.getAddress()) << " + " << E.getOffset() << " -- "
+     << EdgeKindName << " -> " << E.getTarget() << " + " << E.getAddend();
 }
 
 Section::~Section() {
@@ -164,12 +166,12 @@ Block &LinkGraph::splitBlock(Block &B, size_t SplitIndex,
           ? createZeroFillBlock(B.getSection(), SplitIndex, B.getAddress(),
                                 B.getAlignment(), B.getAlignmentOffset())
           : createContentBlock(
-                B.getSection(), B.getContent().slice(0, SplitIndex),
+                B.getSection(), B.getContent().substr(0, SplitIndex),
                 B.getAddress(), B.getAlignment(), B.getAlignmentOffset());
 
   // Modify B to cover [ SplitIndex, B.size() ).
   B.setAddress(B.getAddress() + SplitIndex);
-  B.setContent(B.getContent().slice(SplitIndex));
+  B.setContent(B.getContent().substr(SplitIndex));
   B.setAlignmentOffset((B.getAlignmentOffset() + SplitIndex) %
                        B.getAlignment());
 
@@ -178,14 +180,18 @@ Block &LinkGraph::splitBlock(Block &B, size_t SplitIndex,
     // Copy edges to NewBlock (recording their iterators so that we can remove
     // them from B), and update of Edges remaining on B.
     std::vector<Block::edge_iterator> EdgesToRemove;
-    for (auto I = B.edges().begin(); I != B.edges().end();) {
+    for (auto I = B.edges().begin(), E = B.edges().end(); I != E; ++I) {
       if (I->getOffset() < SplitIndex) {
         NewBlock.addEdge(*I);
-        I = B.removeEdge(I);
-      } else {
+        EdgesToRemove.push_back(I);
+      } else
         I->setOffset(I->getOffset() - SplitIndex);
-        ++I;
-      }
+    }
+
+    // Remove edges that were transfered to NewBlock from B.
+    while (!EdgesToRemove.empty()) {
+      B.removeEdge(EdgesToRemove.back());
+      EdgesToRemove.pop_back();
     }
   }
 
@@ -195,7 +201,7 @@ Block &LinkGraph::splitBlock(Block &B, size_t SplitIndex,
     SplitBlockCache LocalBlockSymbolsCache;
     if (!Cache)
       Cache = &LocalBlockSymbolsCache;
-    if (*Cache == std::nullopt) {
+    if (*Cache == None) {
       *Cache = SplitBlockCache::value_type();
       for (auto *Sym : B.getSection().symbols())
         if (&Sym->getBlock() == &B)
@@ -210,12 +216,7 @@ Block &LinkGraph::splitBlock(Block &B, size_t SplitIndex,
     // Transfer all symbols with offset less than SplitIndex to NewBlock.
     while (!BlockSymbols.empty() &&
            BlockSymbols.back()->getOffset() < SplitIndex) {
-      auto *Sym = BlockSymbols.back();
-      // If the symbol extends beyond the split, update the size to be within
-      // the new block.
-      if (Sym->getOffset() + Sym->getSize() > SplitIndex)
-        Sym->setSize(SplitIndex - Sym->getOffset());
-      Sym->setBlock(NewBlock);
+      BlockSymbols.back()->setBlock(NewBlock);
       BlockSymbols.pop_back();
     }
 
@@ -227,100 +228,42 @@ Block &LinkGraph::splitBlock(Block &B, size_t SplitIndex,
   return NewBlock;
 }
 
-void LinkGraph::dump(raw_ostream &OS) {
-  DenseMap<Block *, std::vector<Symbol *>> BlockSymbols;
+void LinkGraph::dump(raw_ostream &OS,
+                     std::function<StringRef(Edge::Kind)> EdgeKindToName) {
+  if (!EdgeKindToName)
+    EdgeKindToName = [](Edge::Kind K) { return StringRef(); };
 
-  // Map from blocks to the symbols pointing at them.
-  for (auto *Sym : defined_symbols())
-    BlockSymbols[&Sym->getBlock()].push_back(Sym);
+  OS << "Symbols:\n";
+  for (auto *Sym : defined_symbols()) {
+    OS << "  " << format("0x%016" PRIx64, Sym->getAddress()) << ": " << *Sym
+       << "\n";
+    if (Sym->isDefined()) {
+      for (auto &E : Sym->getBlock().edges()) {
+        OS << "    ";
+        StringRef EdgeName = (E.getKind() < Edge::FirstRelocation
+                                  ? getGenericEdgeKindName(E.getKind())
+                                  : EdgeKindToName(E.getKind()));
 
-  // For each block, sort its symbols by something approximating
-  // relevance.
-  for (auto &KV : BlockSymbols)
-    llvm::sort(KV.second, [](const Symbol *LHS, const Symbol *RHS) {
-      if (LHS->getOffset() != RHS->getOffset())
-        return LHS->getOffset() < RHS->getOffset();
-      if (LHS->getLinkage() != RHS->getLinkage())
-        return LHS->getLinkage() < RHS->getLinkage();
-      if (LHS->getScope() != RHS->getScope())
-        return LHS->getScope() < RHS->getScope();
-      if (LHS->hasName()) {
-        if (!RHS->hasName())
-          return true;
-        return LHS->getName() < RHS->getName();
-      }
-      return false;
-    });
-
-  for (auto &Sec : sections()) {
-    OS << "section " << Sec.getName() << ":\n\n";
-
-    std::vector<Block *> SortedBlocks;
-    llvm::copy(Sec.blocks(), std::back_inserter(SortedBlocks));
-    llvm::sort(SortedBlocks, [](const Block *LHS, const Block *RHS) {
-      return LHS->getAddress() < RHS->getAddress();
-    });
-
-    for (auto *B : SortedBlocks) {
-      OS << "  block " << B->getAddress()
-         << " size = " << formatv("{0:x8}", B->getSize())
-         << ", align = " << B->getAlignment()
-         << ", alignment-offset = " << B->getAlignmentOffset();
-      if (B->isZeroFill())
-        OS << ", zero-fill";
-      OS << "\n";
-
-      auto BlockSymsI = BlockSymbols.find(B);
-      if (BlockSymsI != BlockSymbols.end()) {
-        OS << "    symbols:\n";
-        auto &Syms = BlockSymsI->second;
-        for (auto *Sym : Syms)
-          OS << "      " << *Sym << "\n";
-      } else
-        OS << "    no symbols\n";
-
-      if (!B->edges_empty()) {
-        OS << "    edges:\n";
-        std::vector<Edge> SortedEdges;
-        llvm::copy(B->edges(), std::back_inserter(SortedEdges));
-        llvm::sort(SortedEdges, [](const Edge &LHS, const Edge &RHS) {
-          return LHS.getOffset() < RHS.getOffset();
-        });
-        for (auto &E : SortedEdges) {
-          OS << "      " << B->getFixupAddress(E) << " (block + "
-             << formatv("{0:x8}", E.getOffset()) << "), addend = ";
-          if (E.getAddend() >= 0)
-            OS << formatv("+{0:x8}", E.getAddend());
-          else
-            OS << formatv("-{0:x8}", -E.getAddend());
-          OS << ", kind = " << getEdgeKindName(E.getKind()) << ", target = ";
-          if (E.getTarget().hasName())
-            OS << E.getTarget().getName();
-          else
-            OS << "addressable@"
-               << formatv("{0:x16}", E.getTarget().getAddress()) << "+"
-               << formatv("{0:x8}", E.getTarget().getOffset());
-          OS << "\n";
+        if (!EdgeName.empty())
+          printEdge(OS, Sym->getBlock(), E, EdgeName);
+        else {
+          auto EdgeNumberString = std::to_string(E.getKind());
+          printEdge(OS, Sym->getBlock(), E, EdgeNumberString);
         }
-      } else
-        OS << "    no edges\n";
-      OS << "\n";
+        OS << "\n";
+      }
     }
   }
 
   OS << "Absolute symbols:\n";
-  if (!absolute_symbols().empty()) {
-    for (auto *Sym : absolute_symbols())
-      OS << "  " << Sym->getAddress() << ": " << *Sym << "\n";
-  } else
-    OS << "  none\n";
+  for (auto *Sym : absolute_symbols())
+    OS << "  " << format("0x%016" PRIx64, Sym->getAddress()) << ": " << *Sym
+       << "\n";
 
-  OS << "\nExternal symbols:\n";
-  if (!external_symbols().empty()) {
-    for (auto *Sym : external_symbols())
-      OS << "  " << Sym->getAddress() << ": " << *Sym << "\n";
-  } else
-    OS << "  none\n";
+  OS << "External symbols:\n";
+  for (auto *Sym : external_symbols())
+    OS << "  " << format("0x%016" PRIx64, Sym->getAddress()) << ": " << *Sym
+       << "\n";
 }
 
 raw_ostream &operator<<(raw_ostream &OS, const SymbolLookupFlags &LF) {
@@ -335,7 +278,7 @@ raw_ostream &operator<<(raw_ostream &OS, const SymbolLookupFlags &LF) {
 
 void JITLinkAsyncLookupContinuation::anchor() {}
 
-JITLinkContext::~JITLinkContext() = default;
+JITLinkContext::~JITLinkContext() {}
 
 bool JITLinkContext::shouldAddDefaultTargetPasses(const Triple &TT) const {
   return true;
@@ -345,7 +288,7 @@ LinkGraphPassFunction JITLinkContext::getMarkLivePass(const Triple &TT) const {
   return LinkGraphPassFunction();
 }
 
-Error JITLinkContext::modifyPassConfig(LinkGraph &G,
+Error JITLinkContext::modifyPassConfig(const Triple &TT,
                                        PassConfiguration &Config) {
   return Error::success();
 }
@@ -356,76 +299,13 @@ Error markAllSymbolsLive(LinkGraph &G) {
   return Error::success();
 }
 
-Error makeTargetOutOfRangeError(const LinkGraph &G, const Block &B,
-                                const Edge &E) {
-  std::string ErrMsg;
-  {
-    raw_string_ostream ErrStream(ErrMsg);
-    Section &Sec = B.getSection();
-    ErrStream << "In graph " << G.getName() << ", section " << Sec.getName()
-              << ": relocation target ";
-    if (E.getTarget().hasName()) {
-      ErrStream << "\"" << E.getTarget().getName() << "\"";
-    } else
-      ErrStream << E.getTarget().getBlock().getSection().getName() << " + "
-                << formatv("{0:x}", E.getOffset());
-    ErrStream << " at address " << formatv("{0:x}", E.getTarget().getAddress())
-              << " is out of range of " << G.getEdgeKindName(E.getKind())
-              << " fixup at " << formatv("{0:x}", B.getFixupAddress(E)) << " (";
-
-    Symbol *BestSymbolForBlock = nullptr;
-    for (auto *Sym : Sec.symbols())
-      if (&Sym->getBlock() == &B && Sym->hasName() && Sym->getOffset() == 0 &&
-          (!BestSymbolForBlock ||
-           Sym->getScope() < BestSymbolForBlock->getScope() ||
-           Sym->getLinkage() < BestSymbolForBlock->getLinkage()))
-        BestSymbolForBlock = Sym;
-
-    if (BestSymbolForBlock)
-      ErrStream << BestSymbolForBlock->getName() << ", ";
-    else
-      ErrStream << "<anonymous block> @ ";
-
-    ErrStream << formatv("{0:x}", B.getAddress()) << " + "
-              << formatv("{0:x}", E.getOffset()) << ")";
-  }
-  return make_error<JITLinkError>(std::move(ErrMsg));
-}
-
-Error makeAlignmentError(llvm::orc::ExecutorAddr Loc, uint64_t Value, int N,
-                         const Edge &E) {
-  return make_error<JITLinkError>("0x" + llvm::utohexstr(Loc.getValue()) +
-                                  " improper alignment for relocation " +
-                                  formatv("{0:d}", E.getKind()) + ": 0x" +
-                                  llvm::utohexstr(Value) +
-                                  " is not aligned to " + Twine(N) + " bytes");
-}
-
-Expected<std::unique_ptr<LinkGraph>>
-createLinkGraphFromObject(MemoryBufferRef ObjectBuffer) {
-  auto Magic = identify_magic(ObjectBuffer.getBuffer());
+void jitLink(std::unique_ptr<JITLinkContext> Ctx) {
+  auto Magic = identify_magic(Ctx->getObjectBuffer().getBuffer());
   switch (Magic) {
   case file_magic::macho_object:
-    return createLinkGraphFromMachOObject(ObjectBuffer);
-  case file_magic::elf_relocatable:
-    return createLinkGraphFromELFObject(ObjectBuffer);
-  case file_magic::coff_object:
-    return createLinkGraphFromCOFFObject(ObjectBuffer);
+    return jitLink_MachO(std::move(Ctx));
   default:
-    return make_error<JITLinkError>("Unsupported file format");
-  };
-}
-
-void link(std::unique_ptr<LinkGraph> G, std::unique_ptr<JITLinkContext> Ctx) {
-  switch (G->getTargetTriple().getObjectFormat()) {
-  case Triple::MachO:
-    return link_MachO(std::move(G), std::move(Ctx));
-  case Triple::ELF:
-    return link_ELF(std::move(G), std::move(Ctx));
-  case Triple::COFF:
-    return link_COFF(std::move(G), std::move(Ctx));
-  default:
-    Ctx->notifyFailed(make_error<JITLinkError>("Unsupported object format"));
+    Ctx->notifyFailed(make_error<JITLinkError>("Unsupported file format"));
   };
 }
 

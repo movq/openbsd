@@ -41,14 +41,14 @@ std::string CoveragePrinter::getOutputPath(StringRef Path, StringRef Extension,
     sys::path::append(FullPath, getCoverageDir());
 
   SmallString<256> ParentPath = sys::path::parent_path(Path);
-  sys::path::remove_dots(ParentPath, /*remove_dot_dot=*/true);
+  sys::path::remove_dots(ParentPath, /*remove_dot_dots=*/true);
   sys::path::append(FullPath, sys::path::relative_path(ParentPath));
 
   auto PathFilename = (sys::path::filename(Path) + "." + Extension).str();
   sys::path::append(FullPath, PathFilename);
   sys::path::native(FullPath);
 
-  return std::string(FullPath.str());
+  return FullPath.str();
 }
 
 Expected<CoveragePrinter::OwnedStream>
@@ -132,8 +132,7 @@ bool SourceCoverageView::shouldRenderRegionMarkers(
 }
 
 bool SourceCoverageView::hasSubViews() const {
-  return !ExpansionSubViews.empty() || !InstantiationSubViews.empty() ||
-         !BranchSubViews.empty();
+  return !ExpansionSubViews.empty() || !InstantiationSubViews.empty();
 }
 
 std::unique_ptr<SourceCoverageView>
@@ -157,21 +156,15 @@ SourceCoverageView::create(StringRef SourceName, const MemoryBuffer &File,
 
 std::string SourceCoverageView::getSourceName() const {
   SmallString<128> SourceText(SourceName);
-  sys::path::remove_dots(SourceText, /*remove_dot_dot=*/true);
+  sys::path::remove_dots(SourceText, /*remove_dot_dots=*/true);
   sys::path::native(SourceText);
-  return std::string(SourceText.str());
+  return SourceText.str();
 }
 
 void SourceCoverageView::addExpansion(
     const CounterMappingRegion &Region,
     std::unique_ptr<SourceCoverageView> View) {
   ExpansionSubViews.emplace_back(Region, std::move(View));
-}
-
-void SourceCoverageView::addBranch(unsigned Line,
-                                   ArrayRef<CountedRegion> Regions,
-                                   std::unique_ptr<SourceCoverageView> View) {
-  BranchSubViews.emplace_back(Line, Regions, std::move(View));
 }
 
 void SourceCoverageView::addInstantiation(
@@ -194,17 +187,14 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
   renderTableHeader(OS, (ViewDepth > 0) ? 0 : getFirstUncoveredLineNo(),
                     ViewDepth);
 
-  // We need the expansions, instantiations, and branches sorted so we can go
-  // through them while we iterate lines.
+  // We need the expansions and instantiations sorted so we can go through them
+  // while we iterate lines.
   llvm::stable_sort(ExpansionSubViews);
   llvm::stable_sort(InstantiationSubViews);
-  llvm::stable_sort(BranchSubViews);
   auto NextESV = ExpansionSubViews.begin();
   auto EndESV = ExpansionSubViews.end();
   auto NextISV = InstantiationSubViews.begin();
   auto EndISV = InstantiationSubViews.end();
-  auto NextBRV = BranchSubViews.begin();
-  auto EndBRV = BranchSubViews.end();
 
   // Get the coverage information for the file.
   auto StartSegment = CoverageInfo.begin();
@@ -244,7 +234,7 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
     if (shouldRenderRegionMarkers(*LCI))
       renderRegionMarkers(OS, *LCI, ViewDepth);
 
-    // Show the expansions, instantiations, and branches for this line.
+    // Show the expansions and instantiations for this line.
     bool RenderedSubView = false;
     for (; NextESV != EndESV && NextESV->getLine() == LI.line_number();
          ++NextESV) {
@@ -265,11 +255,6 @@ void SourceCoverageView::print(raw_ostream &OS, bool WholeFile,
     for (; NextISV != EndISV && NextISV->Line == LI.line_number(); ++NextISV) {
       renderViewDivider(OS, ViewDepth + 1);
       renderInstantiationView(OS, *NextISV, ViewDepth + 1);
-      RenderedSubView = true;
-    }
-    for (; NextBRV != EndBRV && NextBRV->Line == LI.line_number(); ++NextBRV) {
-      renderViewDivider(OS, ViewDepth + 1);
-      renderBranchView(OS, *NextBRV, ViewDepth + 1);
       RenderedSubView = true;
     }
     if (RenderedSubView)

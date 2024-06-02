@@ -127,7 +127,7 @@ static MachineOperand *getCallTargetRegOpnd(MachineInstr &MI) {
 
   MachineOperand &MO = MI.getOperand(0);
 
-  if (!MO.isReg() || !MO.isUse() || !MO.getReg().isVirtual())
+  if (!MO.isReg() || !MO.isUse() || !Register::isVirtualRegister(MO.getReg()))
     return nullptr;
 
   return &MO;
@@ -170,7 +170,7 @@ static void eraseGPOpnd(MachineInstr &MI) {
   for (unsigned I = 0; I < MI.getNumOperands(); ++I) {
     MachineOperand &MO = MI.getOperand(I);
     if (MO.isReg() && MO.getReg() == Reg) {
-      MI.removeOperand(I);
+      MI.RemoveOperand(I);
       return;
     }
   }
@@ -194,7 +194,7 @@ void MBBInfo::postVisit() {
 
 // OptimizePICCall methods.
 bool OptimizePICCall::runOnMachineFunction(MachineFunction &F) {
-  if (F.getSubtarget<MipsSubtarget>().inMips16Mode())
+  if (static_cast<const MipsSubtarget &>(F.getSubtarget()).inMips16Mode())
     return false;
 
   // Do a pre-order traversal of the dominator tree.
@@ -218,7 +218,8 @@ bool OptimizePICCall::runOnMachineFunction(MachineFunction &F) {
     MBBI.preVisit(ScopedHT);
     Changed |= visitNode(MBBI);
     const MachineDomTreeNode *Node = MBBI.getNode();
-    WorkList.append(Node->begin(), Node->end());
+    const std::vector<MachineDomTreeNode *> &Children = Node->getChildren();
+    WorkList.append(Children.begin(), Children.end());
   }
 
   return Changed;

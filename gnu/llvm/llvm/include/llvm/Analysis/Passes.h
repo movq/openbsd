@@ -17,7 +17,19 @@
 namespace llvm {
   class FunctionPass;
   class ImmutablePass;
+  class LoopPass;
   class ModulePass;
+  class Pass;
+  class PassInfo;
+
+  //===--------------------------------------------------------------------===//
+  //
+  // createObjCARCAAWrapperPass - This pass implements ObjC-ARC-based
+  // alias analysis.
+  //
+  ImmutablePass *createObjCARCAAWrapperPass();
+
+  FunctionPass *createPAEvalPass();
 
   //===--------------------------------------------------------------------===//
   //

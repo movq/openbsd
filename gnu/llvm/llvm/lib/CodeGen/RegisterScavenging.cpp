@@ -37,9 +37,11 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
 #include <iterator>
 #include <limits>
+#include <string>
 #include <utility>
 
 using namespace llvm;
@@ -89,18 +91,18 @@ void RegScavenger::enterBasicBlockEnd(MachineBasicBlock &MBB) {
   LiveUnits.addLiveOuts(MBB);
 
   // Move internal iterator at the last instruction of the block.
-  if (!MBB.empty()) {
+  if (MBB.begin() != MBB.end()) {
     MBBI = std::prev(MBB.end());
     Tracking = true;
   }
 }
 
-void RegScavenger::addRegUnits(BitVector &BV, MCRegister Reg) {
+void RegScavenger::addRegUnits(BitVector &BV, Register Reg) {
   for (MCRegUnitIterator RUI(Reg, TRI); RUI.isValid(); ++RUI)
     BV.set(*RUI);
 }
 
-void RegScavenger::removeRegUnits(BitVector &BV, MCRegister Reg) {
+void RegScavenger::removeRegUnits(BitVector &BV, Register Reg) {
   for (MCRegUnitIterator RUI(Reg, TRI); RUI.isValid(); ++RUI)
     BV.reset(*RUI);
 }
@@ -117,7 +119,7 @@ void RegScavenger::determineKillsAndDefs() {
   DefRegUnits.reset();
   for (const MachineOperand &MO : MI.operands()) {
     if (MO.isRegMask()) {
-      TmpRegUnits.reset();
+      TmpRegUnits.clear();
       for (unsigned RU = 0, RUEnd = TRI->getNumRegUnits(); RU != RUEnd; ++RU) {
         for (MCRegUnitRootIterator RURI(RU, TRI); RURI.isValid(); ++RURI) {
           if (MO.clobbersPhysReg(*RURI)) {
@@ -132,9 +134,9 @@ void RegScavenger::determineKillsAndDefs() {
     }
     if (!MO.isReg())
       continue;
-    if (!MO.getReg().isPhysical() || isReserved(MO.getReg()))
+    Register Reg = MO.getReg();
+    if (!Register::isPhysicalRegister(Reg) || isReserved(Reg))
       continue;
-    MCRegister Reg = MO.getReg().asMCReg();
 
     if (MO.isUse()) {
       // Ignore undef uses.
@@ -152,6 +154,25 @@ void RegScavenger::determineKillsAndDefs() {
   }
 }
 
+void RegScavenger::unprocess() {
+  assert(Tracking && "Cannot unprocess because we're not tracking");
+
+  MachineInstr &MI = *MBBI;
+  if (!MI.isDebugInstr()) {
+    determineKillsAndDefs();
+
+    // Commit the changes.
+    setUnused(DefRegUnits);
+    setUsed(KillRegUnits);
+  }
+
+  if (MBBI == MBB->begin()) {
+    MBBI = MachineBasicBlock::iterator(nullptr);
+    Tracking = false;
+  } else
+    --MBBI;
+}
+
 void RegScavenger::forward() {
   // Move ptr forward.
   if (!Tracking) {
@@ -165,15 +186,16 @@ void RegScavenger::forward() {
 
   MachineInstr &MI = *MBBI;
 
-  for (ScavengedInfo &I : Scavenged) {
-    if (I.Restore != &MI)
+  for (SmallVectorImpl<ScavengedInfo>::iterator I = Scavenged.begin(),
+         IE = Scavenged.end(); I != IE; ++I) {
+    if (I->Restore != &MI)
       continue;
 
-    I.Reg = 0;
-    I.Restore = nullptr;
+    I->Reg = 0;
+    I->Restore = nullptr;
   }
 
-  if (MI.isDebugOrPseudoInstr())
+  if (MI.isDebugInstr())
     return;
 
   determineKillsAndDefs();
@@ -184,7 +206,7 @@ void RegScavenger::forward() {
     if (!MO.isReg())
       continue;
     Register Reg = MO.getReg();
-    if (!Reg.isPhysical() || isReserved(Reg))
+    if (!Register::isPhysicalRegister(Reg) || isReserved(Reg))
       continue;
     if (MO.isUse()) {
       if (MO.isUndef())
@@ -296,7 +318,7 @@ Register RegScavenger::findSurvivorReg(MachineBasicBlock::iterator StartMI,
 
   bool inVirtLiveRange = false;
   for (++MI; InstrLimit > 0 && MI != ME; ++MI, --InstrLimit) {
-    if (MI->isDebugOrPseudoInstr()) {
+    if (MI->isDebugInstr()) {
       ++InstrLimit; // Don't count debug instructions
       continue;
     }
@@ -308,7 +330,7 @@ Register RegScavenger::findSurvivorReg(MachineBasicBlock::iterator StartMI,
         Candidates.clearBitsNotInMask(MO.getRegMask());
       if (!MO.isReg() || MO.isUndef() || !MO.getReg())
         continue;
-      if (MO.getReg().isVirtual()) {
+      if (Register::isVirtualRegister(MO.getReg())) {
         if (MO.isDef())
           isVirtDefInsn = true;
         else if (MO.isKill())
@@ -367,10 +389,6 @@ findSurvivorBackwards(const MachineRegisterInfo &MRI,
   const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
   LiveRegUnits Used(TRI);
 
-  assert(From->getParent() == To->getParent() &&
-         "Target instruction is in other than current basic block, use "
-         "enterBasicBlockEnd first");
-
   for (MachineBasicBlock::iterator I = From;; --I) {
     const MachineInstr &MI = *I;
 
@@ -394,13 +412,6 @@ findSurvivorBackwards(const MachineRegisterInfo &MRI,
         Used.accumulate(*std::next(From));
     }
     if (FoundTo) {
-      // Don't search to FrameSetup instructions if we were searching from
-      // Non-FrameSetup instructions. Otherwise, the spill position may point
-      // before FrameSetup instructions.
-      if (!From->getFlag(MachineInstr::FrameSetup) &&
-          MI.getFlag(MachineInstr::FrameSetup))
-        break;
-
       if (Survivor == 0 || !Used.available(Survivor)) {
         MCPhysReg AvilableReg = 0;
         for (MCPhysReg Reg : AllocationOrder) {
@@ -420,7 +431,7 @@ findSurvivorBackwards(const MachineRegisterInfo &MRI,
       // be usefull for this other vreg as well later.
       bool FoundVReg = false;
       for (const MachineOperand &MO : MI.operands()) {
-        if (MO.isReg() && MO.getReg().isVirtual()) {
+        if (MO.isReg() && Register::isVirtualRegister(MO.getReg())) {
           FoundVReg = true;
           break;
         }
@@ -432,8 +443,6 @@ findSurvivorBackwards(const MachineRegisterInfo &MRI,
       if (I == MBB.begin())
         break;
     }
-    assert(I != MBB.begin() && "Did not find target instruction while "
-                               "iterating backwards");
   }
 
   return std::make_pair(Survivor, Pos);
@@ -457,7 +466,7 @@ RegScavenger::spill(Register Reg, const TargetRegisterClass &RC, int SPAdj,
   const MachineFunction &MF = *Before->getMF();
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   unsigned NeedSize = TRI->getSpillSize(RC);
-  Align NeedAlign = TRI->getSpillAlign(RC);
+  unsigned NeedAlign = TRI->getSpillAlignment(RC);
 
   unsigned SI = Scavenged.size(), Diff = std::numeric_limits<unsigned>::max();
   int FIB = MFI.getObjectIndexBegin(), FIE = MFI.getObjectIndexEnd();
@@ -469,7 +478,7 @@ RegScavenger::spill(Register Reg, const TargetRegisterClass &RC, int SPAdj,
     if (FI < FIB || FI >= FIE)
       continue;
     unsigned S = MFI.getObjectSize(FI);
-    Align A = MFI.getObjectAlign(FI);
+    unsigned A = MFI.getObjectAlignment(FI);
     if (NeedSize > S || NeedAlign > A)
       continue;
     // Avoid wasting slots with large size and/or large alignment. Pick one
@@ -478,7 +487,7 @@ RegScavenger::spill(Register Reg, const TargetRegisterClass &RC, int SPAdj,
     // larger register is reserved before a slot for a smaller one. When
     // trying to spill a smaller register, the large slot would be found
     // first, thus making it impossible to spill the larger register later.
-    unsigned D = (S - NeedSize) + (A.value() - NeedAlign.value());
+    unsigned D = (S-NeedSize) + (A-NeedAlign);
     if (D < Diff) {
       SI = I;
       Diff = D;
@@ -500,20 +509,21 @@ RegScavenger::spill(Register Reg, const TargetRegisterClass &RC, int SPAdj,
     // Spill the scavenged register before \p Before.
     int FI = Scavenged[SI].FrameIndex;
     if (FI < FIB || FI >= FIE) {
-      report_fatal_error(Twine("Error while trying to spill ") +
-                         TRI->getName(Reg) + " from class " +
-                         TRI->getRegClassName(&RC) +
-                         ": Cannot scavenge register without an emergency "
-                         "spill slot!");
+      std::string Msg = std::string("Error while trying to spill ") +
+          TRI->getName(Reg) + " from class " + TRI->getRegClassName(&RC) +
+          ": Cannot scavenge register without an emergency spill slot!";
+      report_fatal_error(Msg.c_str());
     }
-    TII->storeRegToStackSlot(*MBB, Before, Reg, true, FI, &RC, TRI, Register());
+    TII->storeRegToStackSlot(*MBB, Before, Reg, true, Scavenged[SI].FrameIndex,
+                             &RC, TRI);
     MachineBasicBlock::iterator II = std::prev(Before);
 
     unsigned FIOperandNum = getFrameIndexOperandNum(*II);
     TRI->eliminateFrameIndex(II, SPAdj, FIOperandNum, this);
 
     // Restore the scavenged register before its use (or first terminator).
-    TII->loadRegFromStackSlot(*MBB, UseMI, Reg, FI, &RC, TRI, Register());
+    TII->loadRegFromStackSlot(*MBB, UseMI, Reg, Scavenged[SI].FrameIndex,
+                              &RC, TRI);
     II = std::prev(UseMI);
 
     FIOperandNum = getFrameIndexOperandNum(*II);
@@ -533,25 +543,9 @@ Register RegScavenger::scavengeRegister(const TargetRegisterClass *RC,
   // Exclude all the registers being used by the instruction.
   for (const MachineOperand &MO : MI.operands()) {
     if (MO.isReg() && MO.getReg() != 0 && !(MO.isUse() && MO.isUndef()) &&
-        !MO.getReg().isVirtual())
+        !Register::isVirtualRegister(MO.getReg()))
       for (MCRegAliasIterator AI(MO.getReg(), TRI, true); AI.isValid(); ++AI)
         Candidates.reset(*AI);
-  }
-
-  // If we have already scavenged some registers, remove them from the
-  // candidates. If we end up recursively calling eliminateFrameIndex, we don't
-  // want to be clobbering previously scavenged registers or their associated
-  // stack slots.
-  for (ScavengedInfo &SI : Scavenged) {
-    if (SI.Reg) {
-      if (isRegUsed(SI.Reg)) {
-        LLVM_DEBUG(
-          dbgs() << "Removing " << printReg(SI.Reg, TRI) <<
-          " from scavenging candidates since it was already scavenged\n");
-        for (MCRegAliasIterator AI(SI.Reg, TRI, true); AI.isValid(); ++AI)
-          Candidates.reset(*AI);
-      }
-    }
   }
 
   // Try to find a register that's unused if there is one, as then we won't
@@ -573,12 +567,6 @@ Register RegScavenger::scavengeRegister(const TargetRegisterClass *RC,
 
   if (!AllowSpill)
     return 0;
-
-#ifndef NDEBUG
-  for (ScavengedInfo &SI : Scavenged) {
-    assert(SI.Reg != SReg && "scavenged a previously scavenged register");
-  }
-#endif
 
   ScavengedInfo &Scavenged = spill(SReg, *RC, SPAdj, I, UseMI);
   Scavenged.Restore = &*std::prev(UseMI);
@@ -604,8 +592,9 @@ Register RegScavenger::scavengeRegisterBackwards(const TargetRegisterClass &RC,
                             RestoreAfter);
   MCPhysReg Reg = P.first;
   MachineBasicBlock::iterator SpillBefore = P.second;
+  assert(Reg != 0 && "No register left to scavenge!");
   // Found an available register?
-  if (Reg != 0 && SpillBefore == MBB.end()) {
+  if (SpillBefore == MBB.end()) {
     LLVM_DEBUG(dbgs() << "Scavenged free register: " << printReg(Reg, TRI)
                << '\n');
     return Reg;
@@ -613,8 +602,6 @@ Register RegScavenger::scavengeRegisterBackwards(const TargetRegisterClass &RC,
 
   if (!AllowSpill)
     return 0;
-
-  assert(Reg != 0 && "No register left to scavenge!");
 
   MachineBasicBlock::iterator ReloadAfter =
     RestoreAfter ? std::next(MBBI) : MBBI;
@@ -665,10 +652,11 @@ static Register scavengeVReg(MachineRegisterInfo &MRI, RegScavenger &RS,
   // we get a single contiguous lifetime.
   //
   // Definitions in MRI.def_begin() are unordered, search for the first.
-  MachineRegisterInfo::def_iterator FirstDef = llvm::find_if(
-      MRI.def_operands(VReg), [VReg, &TRI](const MachineOperand &MO) {
-        return !MO.getParent()->readsRegister(VReg, &TRI);
-      });
+  MachineRegisterInfo::def_iterator FirstDef =
+    std::find_if(MRI.def_begin(VReg), MRI.def_end(),
+                 [VReg, &TRI](const MachineOperand &MO) {
+      return !MO.getParent()->readsRegister(VReg, &TRI);
+    });
   assert(FirstDef != MRI.def_end() &&
          "Must have one definition that does not redefine vreg");
   MachineInstr &DefMI = *FirstDef->getParent();
@@ -711,7 +699,7 @@ static bool scavengeFrameVirtualRegsInBlock(MachineRegisterInfo &MRI,
         // We only care about virtual registers and ignore virtual registers
         // created by the target callbacks in the process (those will be handled
         // in a scavenging round).
-        if (!Reg.isVirtual() ||
+        if (!Register::isVirtualRegister(Reg) ||
             Register::virtReg2Index(Reg) >= InitialNumVirtRegs)
           continue;
         if (!MO.readsReg())
@@ -731,7 +719,7 @@ static bool scavengeFrameVirtualRegsInBlock(MachineRegisterInfo &MRI,
         continue;
       Register Reg = MO.getReg();
       // Only vregs, no newly created vregs (see above).
-      if (!Reg.isVirtual() ||
+      if (!Register::isVirtualRegister(Reg) ||
           Register::virtReg2Index(Reg) >= InitialNumVirtRegs)
         continue;
       // We have to look at all operands anyway so we can precalculate here
@@ -750,7 +738,7 @@ static bool scavengeFrameVirtualRegsInBlock(MachineRegisterInfo &MRI,
   }
 #ifndef NDEBUG
   for (const MachineOperand &MO : MBB.front().operands()) {
-    if (!MO.isReg() || !MO.getReg().isVirtual())
+    if (!MO.isReg() || !Register::isVirtualRegister(MO.getReg()))
       continue;
     assert(!MO.isInternalRead() && "Cannot assign inside bundles");
     assert((!MO.isUndef() || MO.isDef()) && "Cannot handle undef uses");

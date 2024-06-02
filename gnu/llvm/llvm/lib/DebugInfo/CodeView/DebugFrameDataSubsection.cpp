@@ -8,8 +8,6 @@
 
 #include "llvm/DebugInfo/CodeView/DebugFrameDataSubsection.h"
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamWriter.h"
 
 using namespace llvm;
 using namespace llvm::codeview;
@@ -49,10 +47,11 @@ Error DebugFrameDataSubsection::commit(BinaryStreamWriter &Writer) const {
   }
 
   std::vector<FrameData> SortedFrames(Frames.begin(), Frames.end());
-  llvm::sort(SortedFrames, [](const FrameData &LHS, const FrameData &RHS) {
-    return LHS.RvaStart < RHS.RvaStart;
-  });
-  if (auto EC = Writer.writeArray(ArrayRef(SortedFrames)))
+  std::sort(SortedFrames.begin(), SortedFrames.end(),
+            [](const FrameData &LHS, const FrameData &RHS) {
+              return LHS.RvaStart < RHS.RvaStart;
+            });
+  if (auto EC = Writer.writeArray(makeArrayRef(SortedFrames)))
     return EC;
   return Error::success();
 }

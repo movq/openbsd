@@ -8,12 +8,12 @@
 
 #include "llvm/DebugInfo/CodeView/LazyRandomTypeCollection.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
 #include "llvm/DebugInfo/CodeView/RecordName.h"
-#include "llvm/DebugInfo/CodeView/RecordSerialization.h"
+#include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
@@ -49,8 +49,9 @@ LazyRandomTypeCollection::LazyRandomTypeCollection(ArrayRef<uint8_t> Data,
 
 LazyRandomTypeCollection::LazyRandomTypeCollection(StringRef Data,
                                                    uint32_t RecordCountHint)
-    : LazyRandomTypeCollection(ArrayRef(Data.bytes_begin(), Data.bytes_end()),
-                               RecordCountHint) {}
+    : LazyRandomTypeCollection(
+          makeArrayRef(Data.bytes_begin(), Data.bytes_end()), RecordCountHint) {
+}
 
 LazyRandomTypeCollection::LazyRandomTypeCollection(const CVTypeArray &Types,
                                                    uint32_t NumRecords)
@@ -96,13 +97,13 @@ CVType LazyRandomTypeCollection::getType(TypeIndex Index) {
   return Records[Index.toArrayIndex()].Type;
 }
 
-std::optional<CVType> LazyRandomTypeCollection::tryGetType(TypeIndex Index) {
+Optional<CVType> LazyRandomTypeCollection::tryGetType(TypeIndex Index) {
   if (Index.isSimple())
-    return std::nullopt;
+    return None;
 
   if (auto EC = ensureTypeExists(Index)) {
     consumeError(std::move(EC));
-    return std::nullopt;
+    return None;
   }
 
   assert(contains(Index));
@@ -171,10 +172,10 @@ Error LazyRandomTypeCollection::visitRangeForType(TypeIndex TI) {
   if (PartialOffsets.empty())
     return fullScanForType(TI);
 
-  auto Next = llvm::upper_bound(PartialOffsets, TI,
-                                [](TypeIndex Value, const TypeIndexOffset &IO) {
-                                  return Value < IO.Type;
-                                });
+  auto Next = std::upper_bound(PartialOffsets.begin(), PartialOffsets.end(), TI,
+                               [](TypeIndex Value, const TypeIndexOffset &IO) {
+                                 return Value < IO.Type;
+                               });
 
   assert(Next != PartialOffsets.begin());
   auto Prev = std::prev(Next);
@@ -184,7 +185,7 @@ Error LazyRandomTypeCollection::visitRangeForType(TypeIndex TI) {
     // They've asked us to fetch a type index, but the entry we found in the
     // partial offsets array has already been visited.  Since we visit an entire
     // block every time, that means this record should have been previously
-    // discovered.  Ultimately, this means this is a request for a non-existent
+    // discovered.  Ultimately, this means this is a request for a non-existant
     // type index.
     return make_error<CodeViewError>("Invalid type index");
   }
@@ -200,22 +201,22 @@ Error LazyRandomTypeCollection::visitRangeForType(TypeIndex TI) {
   return Error::success();
 }
 
-std::optional<TypeIndex> LazyRandomTypeCollection::getFirst() {
+Optional<TypeIndex> LazyRandomTypeCollection::getFirst() {
   TypeIndex TI = TypeIndex::fromArrayIndex(0);
   if (auto EC = ensureTypeExists(TI)) {
     consumeError(std::move(EC));
-    return std::nullopt;
+    return None;
   }
   return TI;
 }
 
-std::optional<TypeIndex> LazyRandomTypeCollection::getNext(TypeIndex Prev) {
+Optional<TypeIndex> LazyRandomTypeCollection::getNext(TypeIndex Prev) {
   // We can't be sure how long this type stream is, given that the initial count
   // given to the constructor is just a hint.  So just try to make sure the next
   // record exists, and if anything goes wrong, we must be at the end.
   if (auto EC = ensureTypeExists(Prev + 1)) {
     consumeError(std::move(EC));
-    return std::nullopt;
+    return None;
   }
 
   return Prev + 1;
@@ -275,9 +276,4 @@ void LazyRandomTypeCollection::visitRange(TypeIndex Begin, uint32_t BeginOffset,
     ++Begin;
     ++RI;
   }
-}
-
-bool LazyRandomTypeCollection::replaceType(TypeIndex &Index, CVType Data,
-                                           bool Stabilize) {
-  llvm_unreachable("Method cannot be called");
 }

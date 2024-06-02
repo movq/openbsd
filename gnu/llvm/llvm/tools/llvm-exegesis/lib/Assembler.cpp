@@ -11,7 +11,6 @@
 #include "SnippetRepetitor.h"
 #include "Target.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -129,11 +128,7 @@ void BasicBlockFiller::addReturn(const DebugLoc &DL) {
   } else {
     MachineIRBuilder MIB(MF);
     MIB.setMBB(*MBB);
-
-    FunctionLoweringInfo FuncInfo;
-    FuncInfo.CanLowerReturn = true;
-    MF.getSubtarget().getCallLowering()->lowerReturn(MIB, nullptr, {},
-                                                     FuncInfo);
+    MF.getSubtarget().getCallLowering()->lowerReturn(MIB, nullptr, {});
   }
 }
 
@@ -153,7 +148,7 @@ ArrayRef<unsigned> FunctionFiller::getRegistersSetUp() const {
 }
 
 static std::unique_ptr<Module>
-createModule(const std::unique_ptr<LLVMContext> &Context, const DataLayout &DL) {
+createModule(const std::unique_ptr<LLVMContext> &Context, const DataLayout DL) {
   auto Mod = std::make_unique<Module>(ModuleID, *Context);
   Mod->setDataLayout(DL);
   return Mod;
@@ -172,11 +167,11 @@ BitVector getFunctionReservedRegs(const TargetMachine &TM) {
   return MF.getSubtarget().getRegisterInfo()->getReservedRegs(MF);
 }
 
-Error assembleToStream(const ExegesisTarget &ET,
-                       std::unique_ptr<LLVMTargetMachine> TM,
-                       ArrayRef<unsigned> LiveIns,
-                       ArrayRef<RegisterValue> RegisterInitialValues,
-                       const FillFunction &Fill, raw_pwrite_stream &AsmStream) {
+void assembleToStream(const ExegesisTarget &ET,
+                      std::unique_ptr<LLVMTargetMachine> TM,
+                      ArrayRef<unsigned> LiveIns,
+                      ArrayRef<RegisterValue> RegisterInitialValues,
+                      const FillFunction &Fill, raw_pwrite_stream &AsmStream) {
   auto Context = std::make_unique<LLVMContext>();
   std::unique_ptr<Module> Module =
       createModule(Context, TM->createDataLayout());
@@ -209,7 +204,6 @@ Error assembleToStream(const ExegesisTarget &ET,
 
   // If the snippet setup is not complete, we disable liveliness tracking. This
   // means that we won't know what values are in the registers.
-  // FIXME: this should probably be an assertion.
   if (!IsSnippetSetupComplete)
     Properties.reset(MachineFunctionProperties::Property::TracksLiveness);
 
@@ -240,15 +234,15 @@ Error assembleToStream(const ExegesisTarget &ET,
   for (const char *PassName :
        {"postrapseudos", "machineverifier", "prologepilog"})
     if (addPass(PM, PassName, *TPC))
-      return make_error<Failure>("Unable to add a mandatory pass");
+      report_fatal_error("Unable to add a mandatory pass");
   TPC->setInitialized();
 
   // AsmPrinter is responsible for generating the assembly into AsmBuffer.
-  if (TM->addAsmPrinter(PM, AsmStream, nullptr, CGFT_ObjectFile, MCContext))
-    return make_error<Failure>("Cannot add AsmPrinter passes");
+  if (TM->addAsmPrinter(PM, AsmStream, nullptr, CGFT_ObjectFile,
+                        MCContext))
+    report_fatal_error("Cannot add AsmPrinter passes");
 
   PM.run(*Module); // Run all the passes
-  return Error::success();
 }
 
 object::OwningBinary<object::ObjectFile>
@@ -310,7 +304,7 @@ ExecutableFunction::ExecutableFunction(
               std::make_unique<TrackingSectionMemoryManager>(&CodeSize))
           .create(TM.release()));
   if (!ExecEngine)
-    report_fatal_error(Twine(Error));
+    report_fatal_error(Error);
   // Adding the generated object file containing the assembled function.
   // The ExecutionEngine makes sure the object file is copied into an
   // executable page.

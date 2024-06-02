@@ -14,12 +14,12 @@
 #ifndef LLVM_CODEGEN_DEBUGHANDLERBASE_H
 #define LLVM_CODEGEN_DEBUGHANDLERBASE_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/CodeGen/AsmPrinterHandler.h"
 #include "llvm/CodeGen/DbgEntityHistoryCalculator.h"
 #include "llvm/CodeGen/LexicalScopes.h"
+#include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/DebugLoc.h"
-#include <optional>
 
 namespace llvm {
 
@@ -37,14 +37,14 @@ struct DbgVariableLocation {
   SmallVector<int64_t, 1> LoadChain;
 
   /// Present if the location is part of a larger variable.
-  std::optional<llvm::DIExpression::FragmentInfo> FragmentInfo;
+  llvm::Optional<llvm::DIExpression::FragmentInfo> FragmentInfo;
 
   /// Extract a VariableLocation from a MachineInstr.
   /// This will only work if Instruction is a debug value instruction
   /// and the associated DIExpression is in one of the supported forms.
   /// If these requirements are not met, the returned Optional will not
   /// have a value.
-  static std::optional<DbgVariableLocation>
+  static Optional<DbgVariableLocation>
   extractFromMachineInstruction(const MachineInstr &Instruction);
 };
 
@@ -71,9 +71,6 @@ protected:
   /// This location indicates end of function prologue and beginning of
   /// function body.
   DebugLoc PrologEndLoc;
-
-  /// This block includes epilogue instructions.
-  const MachineBasicBlock *EpilogBeginBlock;
 
   /// If nonnull, stores the current machine instruction we're processing.
   const MachineInstr *CurMI = nullptr;
@@ -113,21 +110,13 @@ protected:
   virtual void endFunctionImpl(const MachineFunction *MF) = 0;
   virtual void skippedNonDebugFunction() {}
 
-private:
-  InstructionOrdering InstOrdering;
-
   // AsmPrinterHandler overrides.
 public:
-  void beginModule(Module *M) override;
-
   void beginInstruction(const MachineInstr *MI) override;
   void endInstruction() override;
 
   void beginFunction(const MachineFunction *MF) override;
   void endFunction(const MachineFunction *MF) override;
-
-  void beginBasicBlockSection(const MachineBasicBlock &MBB) override;
-  void endBasicBlockSection(const MachineBasicBlock &MBB) override;
 
   /// Return Label preceding the instruction.
   MCSymbol *getLabelBeforeInsn(const MachineInstr *MI);
@@ -135,15 +124,14 @@ public:
   /// Return Label immediately following the instruction.
   MCSymbol *getLabelAfterInsn(const MachineInstr *MI);
 
+  /// Return the function-local offset of an instruction. A label for the
+  /// instruction \p MI should exist (\ref getLabelAfterInsn).
+  const MCExpr *getFunctionLocalOffsetAfterInsn(const MachineInstr *MI);
+
   /// If this type is derived from a base type then return base type size.
   static uint64_t getBaseTypeSize(const DIType *Ty);
-
-  /// Return true if type encoding is unsigned.
-  static bool isUnsignedDIType(const DIType *Ty);
-
-  const InstructionOrdering &getInstOrdering() const { return InstOrdering; }
 };
 
-} // namespace llvm
+}
 
 #endif

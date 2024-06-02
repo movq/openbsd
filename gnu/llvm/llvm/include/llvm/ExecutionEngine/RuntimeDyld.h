@@ -56,11 +56,12 @@ private:
 class RuntimeDyldImpl;
 
 class RuntimeDyld {
-public:
+protected:
   // Change the address associated with a section when resolving relocations.
   // Any relocations already associated with the symbol will be re-resolved.
   void reassignSectionAddress(unsigned SectionID, uint64_t Addr);
 
+public:
   using NotifyStubEmittedFunction = std::function<void(
       StringRef FileName, StringRef SectionName, StringRef SymbolName,
       unsigned SectionID, uint32_t StubOffset)>;
@@ -112,20 +113,6 @@ public:
                                          StringRef SectionName,
                                          bool IsReadOnly) = 0;
 
-    /// An allocated TLS section
-    struct TLSSection {
-      /// The pointer to the initialization image
-      uint8_t *InitializationImage;
-      /// The TLS offset
-      intptr_t Offset;
-    };
-
-    /// Allocate a memory block of (at least) the given size to be used for
-    /// thread-local storage (TLS).
-    virtual TLSSection allocateTLSSection(uintptr_t Size, unsigned Alignment,
-                                          unsigned SectionID,
-                                          StringRef SectionName);
-
     /// Inform the memory manager about the total amount of memory required to
     /// allocate all sections to be loaded:
     /// \p CodeSize - the total size of all code sections
@@ -134,18 +121,14 @@ public:
     ///
     /// Note that by default the callback is disabled. To enable it
     /// redefine the method needsToReserveAllocationSpace to return true.
-    virtual void reserveAllocationSpace(uintptr_t CodeSize, Align CodeAlign,
-                                        uintptr_t RODataSize, Align RODataAlign,
+    virtual void reserveAllocationSpace(uintptr_t CodeSize, uint32_t CodeAlign,
+                                        uintptr_t RODataSize,
+                                        uint32_t RODataAlign,
                                         uintptr_t RWDataSize,
-                                        Align RWDataAlign) {}
+                                        uint32_t RWDataAlign) {}
 
     /// Override to return true to enable the reserveAllocationSpace callback.
     virtual bool needsToReserveAllocationSpace() { return false; }
-
-    /// Override to return false to tell LLVM no stub space will be needed.
-    /// This requires some guarantees depending on architecuture, but when
-    /// you know what you are doing it saves allocated space.
-    virtual bool allowStubAllocation() const { return true; }
 
     /// Register the EH frames with the runtime so that c++ exceptions work.
     ///
@@ -230,7 +213,7 @@ public:
   StringRef getSectionContent(unsigned SectionID) const;
 
   /// If the section was loaded, return the section's load address,
-  /// otherwise return std::nullopt.
+  /// otherwise return None.
   uint64_t getSectionLoadAddress(unsigned SectionID) const;
 
   /// Set the NotifyStubEmitted callback. This is used for debugging
@@ -284,16 +267,15 @@ public:
   void finalizeWithMemoryManagerLocking();
 
 private:
-  friend void jitLinkForORC(
-      object::OwningBinary<object::ObjectFile> O,
-      RuntimeDyld::MemoryManager &MemMgr, JITSymbolResolver &Resolver,
-      bool ProcessAllSections,
-      unique_function<Error(const object::ObjectFile &Obj, LoadedObjectInfo &,
-                            std::map<StringRef, JITEvaluatedSymbol>)>
-          OnLoaded,
-      unique_function<void(object::OwningBinary<object::ObjectFile> O,
-                           std::unique_ptr<LoadedObjectInfo>, Error)>
-          OnEmitted);
+  friend void
+  jitLinkForORC(object::ObjectFile &Obj,
+                std::unique_ptr<MemoryBuffer> UnderlyingBuffer,
+                RuntimeDyld::MemoryManager &MemMgr, JITSymbolResolver &Resolver,
+                bool ProcessAllSections,
+                unique_function<Error(std::unique_ptr<LoadedObjectInfo>,
+                                      std::map<StringRef, JITEvaluatedSymbol>)>
+                    OnLoaded,
+                unique_function<void(Error)> OnEmitted);
 
   // RuntimeDyldImpl is the actual class. RuntimeDyld is just the public
   // interface.
@@ -311,16 +293,13 @@ private:
 // instance and uses continuation passing to perform the fix-up and finalize
 // steps asynchronously.
 void jitLinkForORC(
-    object::OwningBinary<object::ObjectFile> O,
+    object::ObjectFile &Obj, std::unique_ptr<MemoryBuffer> UnderlyingBuffer,
     RuntimeDyld::MemoryManager &MemMgr, JITSymbolResolver &Resolver,
     bool ProcessAllSections,
-    unique_function<Error(const object::ObjectFile &Obj,
-                          RuntimeDyld::LoadedObjectInfo &,
+    unique_function<Error(std::unique_ptr<RuntimeDyld::LoadedObjectInfo>,
                           std::map<StringRef, JITEvaluatedSymbol>)>
         OnLoaded,
-    unique_function<void(object::OwningBinary<object::ObjectFile>,
-                         std::unique_ptr<RuntimeDyld::LoadedObjectInfo>, Error)>
-        OnEmitted);
+    unique_function<void(Error)> OnEmitted);
 
 } // end namespace llvm
 

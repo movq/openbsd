@@ -23,7 +23,7 @@ machine.
 To specify the architecture that you want to target, we use a string
 called a "target triple". This takes the form
 ``<arch><sub>-<vendor>-<sys>-<abi>`` (see the `cross compilation docs
-<https://clang.llvm.org/docs/CrossCompilation.html#target-triple>`_).
+<http://clang.llvm.org/docs/CrossCompilation.html#target-triple>`_).
 
 As an example, we can see what clang thinks is our current target
 triple:
@@ -130,8 +130,8 @@ layout.
 .. code-block:: c++
 
   TheModule->setDataLayout(TargetMachine->createDataLayout());
-  TheModule->setTargetTriple(TargetTriple);
-
+  TheModule->setTargetTriple(TargetTriple);   
+  
 Emit Object Code
 ================
 
@@ -179,7 +179,7 @@ Let's run it, and define a simple ``average`` function. Press Ctrl-D
 when you're done.
 
 ::
-
+   
     $ ./toy
     ready> def average(x y) (x + y) * 0.5;
     ^D

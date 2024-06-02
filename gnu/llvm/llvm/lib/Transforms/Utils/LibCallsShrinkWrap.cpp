@@ -30,19 +30,18 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-
-#include <cmath>
-
 using namespace llvm;
 
 #define DEBUG_TYPE "libcalls-shrinkwrap"
@@ -305,7 +304,7 @@ void LibCallsShrinkWrap::checkCandidate(CallInst &CI) {
   if (!TLI.getLibFunc(*Callee, Func) || !TLI.has(Func))
     return;
 
-  if (CI.arg_empty())
+  if (CI.getNumArgOperands() == 0)
     return;
   // TODO: Handle long double in other formats.
   Type *ArgType = CI.getArgOperand(0)->getType();
@@ -496,7 +495,7 @@ void LibCallsShrinkWrap::shrinkWrapCI(CallInst *CI, Value *Cond) {
   assert(SuccBB && "The split block should have a single successor");
   SuccBB->setName("cdce.end");
   CI->removeFromParent();
-  CI->insertInto(CallBB, CallBB->getFirstInsertionPt());
+  CallBB->getInstList().insert(CallBB->getFirstInsertionPt(), CI);
   LLVM_DEBUG(dbgs() << "== Basic Block After ==");
   LLVM_DEBUG(dbgs() << *CallBB->getSinglePredecessor() << *CallBB
                     << *CallBB->getSingleSuccessor() << "\n");
@@ -556,6 +555,7 @@ PreservedAnalyses LibCallsShrinkWrapPass::run(Function &F,
   if (!runImpl(F, TLI, DT))
     return PreservedAnalyses::all();
   auto PA = PreservedAnalyses();
+  PA.preserve<GlobalsAA>();
   PA.preserve<DominatorTreeAnalysis>();
   return PA;
 }

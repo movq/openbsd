@@ -164,6 +164,8 @@ createARMInstructionSelector(const ARMBaseTargetMachine &TM,
 }
 }
 
+const unsigned zero_reg = 0;
+
 #define GET_GLOBALISEL_IMPL
 #include "ARMGenGlobalISel.inc"
 #undef GET_GLOBALISEL_IMPL
@@ -171,8 +173,8 @@ createARMInstructionSelector(const ARMBaseTargetMachine &TM,
 ARMInstructionSelector::ARMInstructionSelector(const ARMBaseTargetMachine &TM,
                                                const ARMSubtarget &STI,
                                                const ARMRegisterBankInfo &RBI)
-    : TII(*STI.getInstrInfo()), TRI(*STI.getRegisterInfo()), TM(TM), RBI(RBI),
-      STI(STI), Opcodes(STI),
+    : InstructionSelector(), TII(*STI.getInstrInfo()),
+      TRI(*STI.getRegisterInfo()), TM(TM), RBI(RBI), STI(STI), Opcodes(STI),
 #define GET_GLOBALISEL_PREDICATES_INIT
 #include "ARMGenGlobalISel.inc"
 #undef GET_GLOBALISEL_PREDICATES_INIT
@@ -212,7 +214,7 @@ static bool selectCopy(MachineInstr &I, const TargetInstrInfo &TII,
                        MachineRegisterInfo &MRI, const TargetRegisterInfo &TRI,
                        const RegisterBankInfo &RBI) {
   Register DstReg = I.getOperand(0).getReg();
-  if (DstReg.isPhysical())
+  if (Register::isPhysicalRegister(DstReg))
     return true;
 
   const TargetRegisterClass *RC = guessRegClass(DstReg, MRI, TRI, RBI);
@@ -237,17 +239,17 @@ static bool selectMergeValues(MachineInstrBuilder &MIB,
 
   // We only support G_MERGE_VALUES as a way to stick together two scalar GPRs
   // into one DPR.
-  Register VReg0 = MIB.getReg(0);
+  Register VReg0 = MIB->getOperand(0).getReg();
   (void)VReg0;
   assert(MRI.getType(VReg0).getSizeInBits() == 64 &&
          RBI.getRegBank(VReg0, MRI, TRI)->getID() == ARM::FPRRegBankID &&
          "Unsupported operand for G_MERGE_VALUES");
-  Register VReg1 = MIB.getReg(1);
+  Register VReg1 = MIB->getOperand(1).getReg();
   (void)VReg1;
   assert(MRI.getType(VReg1).getSizeInBits() == 32 &&
          RBI.getRegBank(VReg1, MRI, TRI)->getID() == ARM::GPRRegBankID &&
          "Unsupported operand for G_MERGE_VALUES");
-  Register VReg2 = MIB.getReg(2);
+  Register VReg2 = MIB->getOperand(2).getReg();
   (void)VReg2;
   assert(MRI.getType(VReg2).getSizeInBits() == 32 &&
          RBI.getRegBank(VReg2, MRI, TRI)->getID() == ARM::GPRRegBankID &&
@@ -269,17 +271,17 @@ static bool selectUnmergeValues(MachineInstrBuilder &MIB,
 
   // We only support G_UNMERGE_VALUES as a way to break up one DPR into two
   // GPRs.
-  Register VReg0 = MIB.getReg(0);
+  Register VReg0 = MIB->getOperand(0).getReg();
   (void)VReg0;
   assert(MRI.getType(VReg0).getSizeInBits() == 32 &&
          RBI.getRegBank(VReg0, MRI, TRI)->getID() == ARM::GPRRegBankID &&
          "Unsupported operand for G_UNMERGE_VALUES");
-  Register VReg1 = MIB.getReg(1);
+  Register VReg1 = MIB->getOperand(1).getReg();
   (void)VReg1;
   assert(MRI.getType(VReg1).getSizeInBits() == 32 &&
          RBI.getRegBank(VReg1, MRI, TRI)->getID() == ARM::GPRRegBankID &&
          "Unsupported operand for G_UNMERGE_VALUES");
-  Register VReg2 = MIB.getReg(2);
+  Register VReg2 = MIB->getOperand(2).getReg();
   (void)VReg2;
   assert(MRI.getType(VReg2).getSizeInBits() == 64 &&
          RBI.getRegBank(VReg2, MRI, TRI)->getID() == ARM::FPRRegBankID &&
@@ -528,7 +530,7 @@ bool ARMInstructionSelector::selectCmp(CmpConstants Helper,
                                        MachineRegisterInfo &MRI) const {
   const InsertInfo I(MIB);
 
-  auto ResReg = MIB.getReg(0);
+  auto ResReg = MIB->getOperand(0).getReg();
   if (!validReg(MRI, ResReg, 1, ARM::GPRRegBankID))
     return false;
 
@@ -540,8 +542,8 @@ bool ARMInstructionSelector::selectCmp(CmpConstants Helper,
     return true;
   }
 
-  auto LHSReg = MIB.getReg(2);
-  auto RHSReg = MIB.getReg(3);
+  auto LHSReg = MIB->getOperand(2).getReg();
+  auto RHSReg = MIB->getOperand(3).getReg();
   if (!validOpRegPair(MRI, LHSReg, RHSReg, Helper.OperandSize,
                       Helper.OperandRegBankID))
     return false;
@@ -624,12 +626,12 @@ bool ARMInstructionSelector::selectGlobal(MachineInstrBuilder &MIB,
 
   bool UseMovt = STI.useMovt();
 
-  LLT PtrTy = MRI.getType(MIB->getOperand(0).getReg());
-  const Align Alignment(4);
+  unsigned Size = TM.getPointerSize(0);
+  unsigned Alignment = 4;
 
-  auto addOpsForConstantPoolLoad = [&MF, Alignment, PtrTy](
-                                       MachineInstrBuilder &MIB,
-                                       const GlobalValue *GV, bool IsSBREL) {
+  auto addOpsForConstantPoolLoad = [&MF, Alignment,
+                                    Size](MachineInstrBuilder &MIB,
+                                          const GlobalValue *GV, bool IsSBREL) {
     assert((MIB->getOpcode() == ARM::LDRi12 ||
             MIB->getOpcode() == ARM::t2LDRpci) &&
            "Unsupported instruction");
@@ -644,7 +646,7 @@ bool ARMInstructionSelector::selectGlobal(MachineInstrBuilder &MIB,
     MIB.addConstantPoolIndex(CPIndex, /*Offset*/ 0, /*TargetFlags*/ 0)
         .addMemOperand(MF.getMachineMemOperand(
             MachinePointerInfo::getConstantPool(MF), MachineMemOperand::MOLoad,
-            PtrTy, Alignment));
+            Size, Alignment));
     if (MIB->getOpcode() == ARM::LDRi12)
       MIB.addImm(0);
     MIB.add(predOps(ARMCC::AL));
@@ -685,7 +687,7 @@ bool ARMInstructionSelector::selectGlobal(MachineInstrBuilder &MIB,
 
     if (Indirect) {
       if (!UseOpcodeThatLoads) {
-        auto ResultReg = MIB.getReg(0);
+        auto ResultReg = MIB->getOperand(0).getReg();
         auto AddressReg = MRI.createVirtualRegister(&ARM::GPRRegClass);
 
         MIB->getOperand(0).setReg(AddressReg);
@@ -733,7 +735,7 @@ bool ARMInstructionSelector::selectGlobal(MachineInstrBuilder &MIB,
 
     // Add the offset to the SB register.
     MIB->setDesc(TII.get(Opcodes.ADDrr));
-    MIB->removeOperand(1);
+    MIB->RemoveOperand(1);
     MIB.addReg(ARM::R9) // FIXME: don't hardcode R9
         .addReg(Offset)
         .add(predOps(ARMCC::AL))
@@ -748,7 +750,7 @@ bool ARMInstructionSelector::selectGlobal(MachineInstrBuilder &MIB,
     } else {
       // Load the global's address from the constant pool.
       MIB->setDesc(TII.get(Opcodes.ConstPoolLoad));
-      MIB->removeOperand(1);
+      MIB->RemoveOperand(1);
       addOpsForConstantPoolLoad(MIB, GV, /*IsSBREL*/ false);
     }
   } else if (STI.isTargetMachO()) {
@@ -771,7 +773,7 @@ bool ARMInstructionSelector::selectSelect(MachineInstrBuilder &MIB,
   auto &DbgLoc = MIB->getDebugLoc();
 
   // Compare the condition to 1.
-  auto CondReg = MIB.getReg(1);
+  auto CondReg = MIB->getOperand(1).getReg();
   assert(validReg(MRI, CondReg, 1, ARM::GPRRegBankID) &&
          "Unsupported types for select operation");
   auto CmpI = BuildMI(MBB, InsertBefore, DbgLoc, TII.get(Opcodes.TSTri))
@@ -783,9 +785,9 @@ bool ARMInstructionSelector::selectSelect(MachineInstrBuilder &MIB,
 
   // Move a value into the result register based on the result of the
   // comparison.
-  auto ResReg = MIB.getReg(0);
-  auto TrueReg = MIB.getReg(2);
-  auto FalseReg = MIB.getReg(3);
+  auto ResReg = MIB->getOperand(0).getReg();
+  auto TrueReg = MIB->getOperand(2).getReg();
+  auto FalseReg = MIB->getOperand(3).getReg();
   assert(validOpRegPair(MRI, ResReg, TrueReg, 32, ARM::GPRRegBankID) &&
          validOpRegPair(MRI, TrueReg, FalseReg, 32, ARM::GPRRegBankID) &&
          "Unsupported types for select operation");
@@ -861,7 +863,7 @@ bool ARMInstructionSelector::select(MachineInstr &I) {
   switch (I.getOpcode()) {
   case G_SEXT:
     isSExt = true;
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case G_ZEXT: {
     assert(MRI.getType(I.getOperand(0).getReg()).getSizeInBits() <= 32 &&
            "Unsupported destination size for extension");
@@ -988,7 +990,7 @@ bool ARMInstructionSelector::select(MachineInstr &I) {
   case G_FCONSTANT: {
     // Load from constant pool
     unsigned Size = MRI.getType(I.getOperand(0).getReg()).getSizeInBits() / 8;
-    Align Alignment(Size);
+    unsigned Alignment = Size;
 
     assert((Size == 4 || Size == 8) && "Unsupported FP constant type");
     auto LoadOpcode = Size == 4 ? ARM::VLDRS : ARM::VLDRD;
@@ -997,7 +999,7 @@ bool ARMInstructionSelector::select(MachineInstr &I) {
     auto CPIndex =
         ConstPool->getConstantPoolIndex(I.getOperand(1).getFPImm(), Alignment);
     MIB->setDesc(TII.get(LoadOpcode));
-    MIB->removeOperand(1);
+    MIB->RemoveOperand(1);
     MIB.addConstantPoolIndex(CPIndex, /*Offset*/ 0, /*TargetFlags*/ 0)
         .addMemOperand(
             MF.getMachineMemOperand(MachinePointerInfo::getConstantPool(MF),
@@ -1095,6 +1097,24 @@ bool ARMInstructionSelector::select(MachineInstr &I) {
     const auto NewOpc = selectLoadStoreOpCode(I.getOpcode(), RegBank, ValSize);
     if (NewOpc == G_LOAD || NewOpc == G_STORE)
       return false;
+
+    if (ValSize == 1 && NewOpc == Opcodes.STORE8) {
+      // Before storing a 1-bit value, make sure to clear out any unneeded bits.
+      Register OriginalValue = I.getOperand(0).getReg();
+
+      Register ValueToStore = MRI.createVirtualRegister(&ARM::GPRRegClass);
+      I.getOperand(0).setReg(ValueToStore);
+
+      auto InsertBefore = I.getIterator();
+      auto AndI = BuildMI(MBB, InsertBefore, I.getDebugLoc(), TII.get(Opcodes.AND))
+        .addDef(ValueToStore)
+        .addUse(OriginalValue)
+        .addImm(1)
+        .add(predOps(ARMCC::AL))
+        .add(condCodeOp());
+      if (!constrainSelectedInstRegOperands(*AndI, TII, TRI, RBI))
+        return false;
+    }
 
     I.setDesc(TII.get(NewOpc));
 

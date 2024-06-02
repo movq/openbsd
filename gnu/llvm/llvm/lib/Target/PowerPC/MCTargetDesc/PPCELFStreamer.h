@@ -1,8 +1,9 @@
 //===- PPCELFStreamer.h - ELF Object Output --------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -42,14 +43,7 @@ public:
   void emitLabel(MCSymbol *Symbol, SMLoc Loc = SMLoc()) override;
 private:
   void emitPrefixedInstruction(const MCInst &Inst, const MCSubtargetInfo &STI);
-  void emitGOTToPCRelReloc(const MCInst &Inst);
-  void emitGOTToPCRelLabel(const MCInst &Inst);
 };
-
-// Check if the instruction Inst is part of a pair of instructions that make up
-// a link time GOT PC Rel optimization.
-std::optional<bool> isPartOfGOTToPCRelPair(const MCInst &Inst,
-                                           const MCSubtargetInfo &STI);
 
 MCELFStreamer *createPPCELFStreamer(MCContext &Context,
                                     std::unique_ptr<MCAsmBackend> MAB,

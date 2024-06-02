@@ -16,8 +16,8 @@
 #define LLVM_IR_INTRINSICS_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/TypeSize.h"
-#include <optional>
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/Optional.h"
 #include <string>
 
 namespace llvm {
@@ -33,9 +33,6 @@ class AttributeList;
 /// function known by LLVM. The enum values are returned by
 /// Function::getIntrinsicID().
 namespace Intrinsic {
-  // Abstraction for the arguments of the noalias intrinsics
-  static const int NoAliasScopeDeclScopeArg = 0;
-
   // Intrinsic ID type. This is an opaque typedef to facilitate splitting up
   // the enum into target-specific enums.
   typedef unsigned ID;
@@ -54,30 +51,24 @@ namespace Intrinsic {
   /// version of getName if overloads are required.
   StringRef getName(ID id);
 
-  /// Return the LLVM name for an intrinsic, without encoded types for
-  /// overloading, such as "llvm.ssa.copy".
-  StringRef getBaseName(ID id);
-
-  /// Return the LLVM name for an intrinsic, such as "llvm.ppc.altivec.lvx" or
-  /// "llvm.ssa.copy.p0s_s.1". Note, this version of getName supports overloads.
-  /// This is less efficient than the StringRef version of this function.  If no
-  /// overloads are required, it is safe to use this version, but better to use
-  /// the StringRef version. If one of the types is based on an unnamed type, a
-  /// function type will be computed. Providing FT will avoid this computation.
-  std::string getName(ID Id, ArrayRef<Type *> Tys, Module *M,
-                      FunctionType *FT = nullptr);
-
-  /// Return the LLVM name for an intrinsic. This is a special version only to
-  /// be used by LLVMIntrinsicCopyOverloadedName. It only supports overloads
-  /// based on named types.
-  std::string getNameNoUnnamedTypes(ID Id, ArrayRef<Type *> Tys);
+  /// Return the LLVM name for an intrinsic, such as "llvm.ppc.altivec.lvx".
+  /// Note, this version of getName supports overloads, but is less efficient
+  /// than the StringRef version of this function.  If no overloads are
+  /// requried, it is safe to use this version, but better to use the StringRef
+  /// version.
+  std::string getName(ID id, ArrayRef<Type*> Tys);
 
   /// Return the function type for an intrinsic.
   FunctionType *getType(LLVMContext &Context, ID id,
-                        ArrayRef<Type *> Tys = std::nullopt);
+                        ArrayRef<Type*> Tys = None);
 
   /// Returns true if the intrinsic can be overloaded.
   bool isOverloaded(ID id);
+
+  /// Returns true if the intrinsic is a leaf, i.e. it does not make any calls
+  /// itself.  Most intrinsics are leafs, the exceptions being the patchpoint
+  /// and statepoint intrinsics. These call (or invoke) their "target" argument.
+  bool isLeaf(ID id);
 
   /// Return the attributes for an intrinsic.
   AttributeList getAttributes(LLVMContext &C, ID id);
@@ -89,8 +80,7 @@ namespace Intrinsic {
   /// using iAny, fAny, vAny, or iPTRAny).  For a declaration of an overloaded
   /// intrinsic, Tys must provide exactly one type for each overloaded type in
   /// the intrinsic.
-  Function *getDeclaration(Module *M, ID id,
-                           ArrayRef<Type *> Tys = std::nullopt);
+  Function *getDeclaration(Module *M, ID id, ArrayRef<Type*> Tys = None);
 
   /// Looks up Name in NameTable via binary search. NameTable must be sorted
   /// and all entries must start with "llvm.".  If NameTable contains an exact
@@ -99,8 +89,8 @@ namespace Intrinsic {
   int lookupLLVMIntrinsicByName(ArrayRef<const char *> NameTable,
                                 StringRef Name);
 
-  /// Map a Clang builtin name to an intrinsic ID.
-  ID getIntrinsicForClangBuiltin(const char *Prefix, StringRef BuiltinName);
+  /// Map a GCC builtin name to an intrinsic ID.
+  ID getIntrinsicForGCCBuiltin(const char *Prefix, StringRef BuiltinName);
 
   /// Map a MS builtin name to an intrinsic ID.
   ID getIntrinsicForMSBuiltin(const char *Prefix, StringRef BuiltinName);
@@ -109,44 +99,21 @@ namespace Intrinsic {
   /// intrinsic. This is returned by getIntrinsicInfoTableEntries.
   struct IITDescriptor {
     enum IITDescriptorKind {
-      Void,
-      VarArg,
-      MMX,
-      Token,
-      Metadata,
-      Half,
-      BFloat,
-      Float,
-      Double,
-      Quad,
-      Integer,
-      Vector,
-      Pointer,
-      Struct,
-      Argument,
-      ExtendArgument,
-      TruncArgument,
-      HalfVecArgument,
-      SameVecWidthArgument,
-      PtrToArgument,
-      PtrToElt,
-      VecOfAnyPtrsToElt,
-      VecElementArgument,
-      Subdivide2Argument,
-      Subdivide4Argument,
-      VecOfBitcastsToInt,
-      AMX,
-      PPCQuad,
-      AnyPtrToElt,
+      Void, VarArg, MMX, Token, Metadata, Half, Float, Double, Quad,
+      Integer, Vector, Pointer, Struct,
+      Argument, ExtendArgument, TruncArgument, HalfVecArgument,
+      SameVecWidthArgument, PtrToArgument, PtrToElt, VecOfAnyPtrsToElt,
+      VecElementArgument, ScalableVecArgument, Subdivide2Argument,
+      Subdivide4Argument, VecOfBitcastsToInt
     } Kind;
 
     union {
       unsigned Integer_Width;
       unsigned Float_Width;
+      unsigned Vector_Width;
       unsigned Pointer_AddressSpace;
       unsigned Struct_NumElements;
       unsigned Argument_Info;
-      ElementCount Vector_Width;
     };
 
     enum ArgKind {
@@ -176,15 +143,14 @@ namespace Intrinsic {
       return (ArgKind)(Argument_Info & 7);
     }
 
-    // VecOfAnyPtrsToElt and AnyPtrToElt uses both an overloaded argument (for
-    // address space) and a reference argument (for matching vector width and
-    // element types)
+    // VecOfAnyPtrsToElt uses both an overloaded argument (for address space)
+    // and a reference argument (for matching vector width and element types)
     unsigned getOverloadArgNumber() const {
-      assert(Kind == VecOfAnyPtrsToElt || Kind == AnyPtrToElt);
+      assert(Kind == VecOfAnyPtrsToElt);
       return Argument_Info >> 16;
     }
     unsigned getRefArgNumber() const {
-      assert(Kind == VecOfAnyPtrsToElt || Kind == AnyPtrToElt);
+      assert(Kind == VecOfAnyPtrsToElt);
       return Argument_Info & 0xFFFF;
     }
 
@@ -197,12 +163,6 @@ namespace Intrinsic {
                              unsigned short Lo) {
       unsigned Field = Hi << 16 | Lo;
       IITDescriptor Result = {K, {Field}};
-      return Result;
-    }
-
-    static IITDescriptor getVector(unsigned Width, bool IsScalable) {
-      IITDescriptor Result = {Vector, {0}};
-      Result.Vector_Width = ElementCount::get(Width, IsScalable);
       return Result;
     }
   };
@@ -233,18 +193,9 @@ namespace Intrinsic {
   /// This method returns true on error.
   bool matchIntrinsicVarArg(bool isVarArg, ArrayRef<IITDescriptor> &Infos);
 
-  /// Gets the type arguments of an intrinsic call by matching type contraints
-  /// specified by the .td file. The overloaded types are pushed into the
-  /// AgTys vector.
-  ///
-  /// Returns false if the given function is not a valid intrinsic call.
-  bool getIntrinsicSignature(Function *F, SmallVectorImpl<Type *> &ArgTys);
-
   // Checks if the intrinsic name matches with its signature and if not
   // returns the declaration with the same signature and remangled name.
-  // An existing GlobalValue with the wanted name but with a wrong prototype
-  // or of the wrong kind will be renamed by adding ".renamed" to the name.
-  std::optional<Function *> remangleIntrinsicFunction(Function *F);
+  llvm::Optional<Function*> remangleIntrinsicFunction(Function *F);
 
 } // End Intrinsic namespace
 

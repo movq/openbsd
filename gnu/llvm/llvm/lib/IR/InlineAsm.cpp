@@ -19,33 +19,31 @@
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/Errc.h"
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <cstddef>
 #include <cstdlib>
 
 using namespace llvm;
 
 InlineAsm::InlineAsm(FunctionType *FTy, const std::string &asmString,
                      const std::string &constraints, bool hasSideEffects,
-                     bool isAlignStack, AsmDialect asmDialect, bool canThrow)
+                     bool isAlignStack, AsmDialect asmDialect)
     : Value(PointerType::getUnqual(FTy), Value::InlineAsmVal),
       AsmString(asmString), Constraints(constraints), FTy(FTy),
       HasSideEffects(hasSideEffects), IsAlignStack(isAlignStack),
-      Dialect(asmDialect), CanThrow(canThrow) {
-#ifndef NDEBUG
+      Dialect(asmDialect) {
   // Do various checks on the constraint string and type.
-  cantFail(verify(getFunctionType(), constraints));
-#endif
+  assert(Verify(getFunctionType(), constraints) &&
+         "Function type not legal for constraints!");
 }
 
 InlineAsm *InlineAsm::get(FunctionType *FTy, StringRef AsmString,
                           StringRef Constraints, bool hasSideEffects,
-                          bool isAlignStack, AsmDialect asmDialect,
-                          bool canThrow) {
+                          bool isAlignStack, AsmDialect asmDialect) {
   InlineAsmKeyType Key(AsmString, Constraints, FTy, hasSideEffects,
-                       isAlignStack, asmDialect, canThrow);
+                       isAlignStack, asmDialect);
   LLVMContextImpl *pImpl = FTy->getContext().pImpl;
   return pImpl->InlineAsms.getOrCreate(PointerType::getUnqual(FTy), Key);
 }
@@ -57,19 +55,6 @@ void InlineAsm::destroyConstant() {
 
 FunctionType *InlineAsm::getFunctionType() const {
   return FTy;
-}
-
-void InlineAsm::collectAsmStrs(SmallVectorImpl<StringRef> &AsmStrs) const {
-  StringRef AsmStr(AsmString);
-  AsmStrs.clear();
-
-  // TODO: 1) Unify delimiter for inline asm, we also meet other delimiters
-  // for example "\0A", ";".
-  // 2) Enhance StringRef. Some of the special delimiter ("\0") can't be
-  // split in StringRef. Also empty StringRef can not call split (will stuck).
-  if (AsmStr.empty())
-    return;
-  AsmStr.split(AsmStrs, "\n\t", -1, false);
 }
 
 /// Parse - Analyze the specified string (e.g. "==&{eax}") and fill in the
@@ -106,9 +91,6 @@ bool InlineAsm::ConstraintInfo::Parse(StringRef Str,
   } else if (*I == '=') {
     ++I;
     Type = isOutput;
-  } else if (*I == '!') {
-    ++I;
-    Type = isLabel;
   }
 
   if (*I == '*') {
@@ -154,14 +136,14 @@ bool InlineAsm::ConstraintInfo::Parse(StringRef Str,
       // Find the end of the register name.
       StringRef::iterator ConstraintEnd = std::find(I+1, E, '}');
       if (ConstraintEnd == E) return true;  // "{foo"
-      pCodes->push_back(std::string(StringRef(I, ConstraintEnd + 1 - I)));
+      pCodes->push_back(StringRef(I, ConstraintEnd+1 - I));
       I = ConstraintEnd+1;
     } else if (isdigit(static_cast<unsigned char>(*I))) { // Matching Constraint
       // Maximal munch numbers.
       StringRef::iterator NumStart = I;
       while (I != E && isdigit(static_cast<unsigned char>(*I)))
         ++I;
-      pCodes->push_back(std::string(StringRef(NumStart, I - NumStart)));
+      pCodes->push_back(StringRef(NumStart, I - NumStart));
       unsigned N = atoi(pCodes->back().c_str());
       // Check that this is a valid matching constraint!
       if (N >= ConstraintsSoFar.size() || ConstraintsSoFar[N].Type != isOutput||
@@ -197,7 +179,7 @@ bool InlineAsm::ConstraintInfo::Parse(StringRef Str,
     } else if (*I == '^') {
       // Multi-letter constraint
       // FIXME: For now assuming these are 2-character constraints.
-      pCodes->push_back(std::string(StringRef(I + 1, 2)));
+      pCodes->push_back(StringRef(I+1, 2));
       I += 3;
     } else if (*I == '@') {
       // Multi-letter constraint
@@ -207,11 +189,11 @@ bool InlineAsm::ConstraintInfo::Parse(StringRef Str,
       int N = C - '0';
       assert(N > 0 && "Found a zero letter constraint!");
       ++I;
-      pCodes->push_back(std::string(StringRef(I, N)));
+      pCodes->push_back(StringRef(I, N));
       I += N;
     } else {
       // Single letter constraint.
-      pCodes->push_back(std::string(StringRef(I, 1)));
+      pCodes->push_back(StringRef(I, 1));
       ++I;
     }
   }
@@ -266,76 +248,54 @@ InlineAsm::ParseConstraints(StringRef Constraints) {
   return Result;
 }
 
-static Error makeStringError(const char *Msg) {
-  return createStringError(errc::invalid_argument, Msg);
-}
-
-Error InlineAsm::verify(FunctionType *Ty, StringRef ConstStr) {
-  if (Ty->isVarArg())
-    return makeStringError("inline asm cannot be variadic");
+/// Verify - Verify that the specified constraint string is reasonable for the
+/// specified function type, and otherwise validate the constraint string.
+bool InlineAsm::Verify(FunctionType *Ty, StringRef ConstStr) {
+  if (Ty->isVarArg()) return false;
 
   ConstraintInfoVector Constraints = ParseConstraints(ConstStr);
 
   // Error parsing constraints.
-  if (Constraints.empty() && !ConstStr.empty())
-    return makeStringError("failed to parse constraints");
+  if (Constraints.empty() && !ConstStr.empty()) return false;
 
   unsigned NumOutputs = 0, NumInputs = 0, NumClobbers = 0;
-  unsigned NumIndirect = 0, NumLabels = 0;
+  unsigned NumIndirect = 0;
 
-  for (const ConstraintInfo &Constraint : Constraints) {
-    switch (Constraint.Type) {
+  for (unsigned i = 0, e = Constraints.size(); i != e; ++i) {
+    switch (Constraints[i].Type) {
     case InlineAsm::isOutput:
-      if ((NumInputs-NumIndirect) != 0 || NumClobbers != 0 || NumLabels != 0)
-        return makeStringError("output constraint occurs after input, "
-                               "clobber or label constraint");
-
-      if (!Constraint.isIndirect) {
+      if ((NumInputs-NumIndirect) != 0 || NumClobbers != 0)
+        return false;  // outputs before inputs and clobbers.
+      if (!Constraints[i].isIndirect) {
         ++NumOutputs;
         break;
       }
       ++NumIndirect;
-      [[fallthrough]]; // We fall through for Indirect Outputs.
+      LLVM_FALLTHROUGH; // We fall through for Indirect Outputs.
     case InlineAsm::isInput:
-      if (NumClobbers)
-        return makeStringError("input constraint occurs after clobber "
-                               "constraint");
+      if (NumClobbers) return false;               // inputs before clobbers.
       ++NumInputs;
       break;
     case InlineAsm::isClobber:
       ++NumClobbers;
-      break;
-    case InlineAsm::isLabel:
-      if (NumClobbers)
-        return makeStringError("label constraint occurs after clobber "
-                               "constraint");
-
-      ++NumLabels;
       break;
     }
   }
 
   switch (NumOutputs) {
   case 0:
-    if (!Ty->getReturnType()->isVoidTy())
-      return makeStringError("inline asm without outputs must return void");
+    if (!Ty->getReturnType()->isVoidTy()) return false;
     break;
   case 1:
-    if (Ty->getReturnType()->isStructTy())
-      return makeStringError("inline asm with one output cannot return struct");
+    if (Ty->getReturnType()->isStructTy()) return false;
     break;
   default:
     StructType *STy = dyn_cast<StructType>(Ty->getReturnType());
     if (!STy || STy->getNumElements() != NumOutputs)
-      return makeStringError("number of output constraints does not match "
-                             "number of return struct elements");
+      return false;
     break;
   }
 
-  if (Ty->getNumParams() != NumInputs)
-    return makeStringError("number of input constraints does not match number "
-                           "of parameters");
-
-  // We don't have access to labels here, NumLabels will be checked separately.
-  return Error::success();
+  if (Ty->getNumParams() != NumInputs) return false;
+  return true;
 }

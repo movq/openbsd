@@ -17,7 +17,7 @@
 using namespace llvm;
 
 unsigned AddressPool::getIndex(const MCSymbol *Sym, bool TLS) {
-  resetUsedFlag(true);
+  HasBeenUsed = true;
   auto IterBool =
       Pool.insert(std::make_pair(Sym, AddressPoolEntry(Pool.size(), TLS)));
   return IterBool.first->second.Number;
@@ -25,9 +25,14 @@ unsigned AddressPool::getIndex(const MCSymbol *Sym, bool TLS) {
 
 MCSymbol *AddressPool::emitHeader(AsmPrinter &Asm, MCSection *Section) {
   static const uint8_t AddrSize = Asm.getDataLayout().getPointerSize();
+  StringRef Prefix = "debug_addr_";
+  MCSymbol *BeginLabel = Asm.createTempSymbol(Prefix + "start");
+  MCSymbol *EndLabel = Asm.createTempSymbol(Prefix + "end");
 
-  MCSymbol *EndLabel =
-      Asm.emitDwarfUnitLength("debug_addr", "Length of contribution");
+  Asm.OutStreamer->AddComment("Length of contribution");
+  Asm.EmitLabelDifference(EndLabel, BeginLabel,
+                          4); // TODO: Support DWARF64 format.
+  Asm.OutStreamer->EmitLabel(BeginLabel);
   Asm.OutStreamer->AddComment("DWARF version number");
   Asm.emitInt16(Asm.getDwarfVersion());
   Asm.OutStreamer->AddComment("Address size");
@@ -44,7 +49,7 @@ void AddressPool::emit(AsmPrinter &Asm, MCSection *AddrSection) {
     return;
 
   // Start the dwarf addr section.
-  Asm.OutStreamer->switchSection(AddrSection);
+  Asm.OutStreamer->SwitchSection(AddrSection);
 
   MCSymbol *EndLabel = nullptr;
 
@@ -53,7 +58,7 @@ void AddressPool::emit(AsmPrinter &Asm, MCSection *AddrSection) {
 
   // Define the symbol that marks the start of the contribution.
   // It is referenced via DW_AT_addr_base.
-  Asm.OutStreamer->emitLabel(AddressTableBaseSym);
+  Asm.OutStreamer->EmitLabel(AddressTableBaseSym);
 
   // Order the address pool entries by ID
   SmallVector<const MCExpr *, 64> Entries(Pool.size());
@@ -65,8 +70,8 @@ void AddressPool::emit(AsmPrinter &Asm, MCSection *AddrSection) {
             : MCSymbolRefExpr::create(I.first, Asm.OutContext);
 
   for (const MCExpr *Entry : Entries)
-    Asm.OutStreamer->emitValue(Entry, Asm.getDataLayout().getPointerSize());
+    Asm.OutStreamer->EmitValue(Entry, Asm.getDataLayout().getPointerSize());
 
   if (EndLabel)
-    Asm.OutStreamer->emitLabel(EndLabel);
+    Asm.OutStreamer->EmitLabel(EndLabel);
 }

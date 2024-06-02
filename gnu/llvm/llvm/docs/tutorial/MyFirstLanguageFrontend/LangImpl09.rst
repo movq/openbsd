@@ -165,13 +165,13 @@ DWARF Emission Setup
 ====================
 
 Similar to the ``IRBuilder`` class we have a
-`DIBuilder <https://llvm.org/doxygen/classllvm_1_1DIBuilder.html>`_ class
+`DIBuilder <http://llvm.org/doxygen/classllvm_1_1DIBuilder.html>`_ class
 that helps in constructing debug metadata for an LLVM IR file. It
 corresponds 1:1 similarly to ``IRBuilder`` and LLVM IR, but with nicer names.
 Using it does require that you be more familiar with DWARF terminology than
 you needed to be with ``IRBuilder`` and ``Instruction`` names, but if you
 read through the general documentation on the
-`Metadata Format <https://llvm.org/docs/SourceLevelDebugging.html>`_ it
+`Metadata Format <http://llvm.org/docs/SourceLevelDebugging.html>`_ it
 should be a little more clear. We'll be using this class to construct all
 of our IR level descriptions. Construction for it takes a module so we
 need to construct it shortly after we construct our module. We've left it
@@ -261,10 +261,9 @@ information) and construct our function definition:
   unsigned ScopeLine = 0;
   DISubprogram *SP = DBuilder->createFunction(
       FContext, P.getName(), StringRef(), Unit, LineNo,
-      CreateFunctionType(TheFunction->arg_size()),
-      ScopeLine,
-      DINode::FlagPrototyped,
-      DISubprogram::SPFlagDefinition);
+      CreateFunctionType(TheFunction->arg_size(), Unit),
+      false /* internal linkage */, true /* definition */, ScopeLine,
+      DINode::FlagPrototyped, false);
   TheFunction->setSubprogram(SP);
 
 and we now have an DISubprogram that contains a reference to all of our
@@ -342,7 +341,7 @@ We use a small helper function for this:
     else
       Scope = LexicalBlocks.back();
     Builder.SetCurrentDebugLocation(
-        DILocation::get(Scope->getContext(), AST->getLine(), AST->getCol(), Scope));
+        DebugLoc::get(AST->getLine(), AST->getCol(), Scope));
   }
 
 This both tells the main ``IRBuilder`` where we are, but also what scope
@@ -401,7 +400,7 @@ argument allocas in ``FunctionAST::codegen``.
           true);
 
       DBuilder->insertDeclare(Alloca, D, DBuilder->createExpression(),
-                              DILocation::get(SP->getContext(), LineNo, 0, SP),
+                              DebugLoc::get(LineNo, 0, SP),
                               Builder.GetInsertBlock());
 
       // Store the initial value into the alloca.
@@ -453,7 +452,7 @@ debug information. To build this example, use:
 .. code-block:: bash
 
     # Compile
-    clang++ -g toy.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native` -O3 -o toy
+    clang++ -g toy.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core mcjit native` -O3 -o toy
     # Run
     ./toy
 

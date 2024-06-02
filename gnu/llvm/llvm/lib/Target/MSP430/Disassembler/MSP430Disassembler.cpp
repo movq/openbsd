@@ -10,17 +10,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MCTargetDesc/MSP430MCTargetDesc.h"
 #include "MSP430.h"
+#include "MCTargetDesc/MSP430MCTargetDesc.h"
 #include "TargetInfo/MSP430TargetInfo.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCDecoderOps.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
+#include "llvm/MC/MCFixedLenDisassembler.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 
@@ -65,14 +65,14 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMSP430Disassembler() {
 
 static const unsigned GR8DecoderTable[] = {
   MSP430::PCB,  MSP430::SPB,  MSP430::SRB,  MSP430::CGB,
-  MSP430::R4B,  MSP430::R5B,  MSP430::R6B,  MSP430::R7B,
+  MSP430::FPB,  MSP430::R5B,  MSP430::R6B,  MSP430::R7B,
   MSP430::R8B,  MSP430::R9B,  MSP430::R10B, MSP430::R11B,
   MSP430::R12B, MSP430::R13B, MSP430::R14B, MSP430::R15B
 };
 
 static DecodeStatus DecodeGR8RegisterClass(MCInst &MI, uint64_t RegNo,
                                            uint64_t Address,
-                                           const MCDisassembler *Decoder) {
+                                           const void *Decoder) {
   if (RegNo > 15)
     return MCDisassembler::Fail;
 
@@ -83,14 +83,14 @@ static DecodeStatus DecodeGR8RegisterClass(MCInst &MI, uint64_t RegNo,
 
 static const unsigned GR16DecoderTable[] = {
   MSP430::PC,  MSP430::SP,  MSP430::SR,  MSP430::CG,
-  MSP430::R4,  MSP430::R5,  MSP430::R6,  MSP430::R7,
+  MSP430::FP,  MSP430::R5,  MSP430::R6,  MSP430::R7,
   MSP430::R8,  MSP430::R9,  MSP430::R10, MSP430::R11,
   MSP430::R12, MSP430::R13, MSP430::R14, MSP430::R15
 };
 
 static DecodeStatus DecodeGR16RegisterClass(MCInst &MI, uint64_t RegNo,
                                             uint64_t Address,
-                                            const MCDisassembler *Decoder) {
+                                            const void *Decoder) {
   if (RegNo > 15)
     return MCDisassembler::Fail;
 
@@ -100,16 +100,16 @@ static DecodeStatus DecodeGR16RegisterClass(MCInst &MI, uint64_t RegNo,
 }
 
 static DecodeStatus DecodeCGImm(MCInst &MI, uint64_t Bits, uint64_t Address,
-                                const MCDisassembler *Decoder);
+                                const void *Decoder);
 
 static DecodeStatus DecodeMemOperand(MCInst &MI, uint64_t Bits,
                                      uint64_t Address,
-                                     const MCDisassembler *Decoder);
+                                     const void *Decoder);
 
 #include "MSP430GenDisassemblerTables.inc"
 
 static DecodeStatus DecodeCGImm(MCInst &MI, uint64_t Bits, uint64_t Address,
-                                const MCDisassembler *Decoder) {
+                                const void *Decoder) {
   int64_t Imm;
   switch (Bits) {
   default:
@@ -127,7 +127,7 @@ static DecodeStatus DecodeCGImm(MCInst &MI, uint64_t Bits, uint64_t Address,
 
 static DecodeStatus DecodeMemOperand(MCInst &MI, uint64_t Bits,
                                      uint64_t Address,
-                                     const MCDisassembler *Decoder) {
+                                     const void *Decoder) {
   unsigned Reg = Bits & 15;
   unsigned Imm = Bits >> 4;
 

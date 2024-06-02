@@ -17,9 +17,4 @@ add_llvm_component_library(LLVMXRay
   ADDITIONAL_HEADER_DIRS
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/ADT
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/XRay
-
-  LINK_COMPONENTS
-  Support
-  Object
-  TargetParser
   )

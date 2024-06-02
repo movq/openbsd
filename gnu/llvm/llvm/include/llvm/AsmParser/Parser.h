@@ -13,24 +13,17 @@
 #ifndef LLVM_ASMPARSER_PARSER_H
 #define LLVM_ASMPARSER_PARSER_H
 
-#include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/StringRef.h"
-#include <memory>
-#include <optional>
+#include "llvm/Support/MemoryBuffer.h"
 
 namespace llvm {
 
 class Constant;
 class LLVMContext;
-class MemoryBufferRef;
 class Module;
 class ModuleSummaryIndex;
 struct SlotMapping;
 class SMDiagnostic;
 class Type;
-
-typedef llvm::function_ref<std::optional<std::string>(StringRef, StringRef)>
-    DataLayoutCallbackTy;
 
 /// This function is a main interface to the LLVM Assembly Parser. It parses
 /// an ASCII file that (presumably) contains LLVM Assembly code. It returns a
@@ -43,9 +36,14 @@ typedef llvm::function_ref<std::optional<std::string>(StringRef, StringRef)>
 /// \param Context Context in which to allocate globals info.
 /// \param Slots The optional slot mapping that will be initialized during
 ///              parsing.
-std::unique_ptr<Module> parseAssemblyFile(StringRef Filename, SMDiagnostic &Err,
-                                          LLVMContext &Context,
-                                          SlotMapping *Slots = nullptr);
+/// \param UpgradeDebugInfo Run UpgradeDebugInfo, which runs the Verifier.
+///                         This option should only be set to false by llvm-as
+///                         for use inside the LLVM testuite!
+/// \param DataLayoutString Override datalayout in the llvm assembly.
+std::unique_ptr<Module>
+parseAssemblyFile(StringRef Filename, SMDiagnostic &Err, LLVMContext &Context,
+                  SlotMapping *Slots = nullptr, bool UpgradeDebugInfo = true,
+                  StringRef DataLayoutString = "");
 
 /// The function is a secondary interface to the LLVM Assembly Parser. It parses
 /// an ASCII string that (presumably) contains LLVM Assembly code. It returns a
@@ -58,10 +56,16 @@ std::unique_ptr<Module> parseAssemblyFile(StringRef Filename, SMDiagnostic &Err,
 /// \param Context Context in which to allocate globals info.
 /// \param Slots The optional slot mapping that will be initialized during
 ///              parsing.
+/// \param UpgradeDebugInfo Run UpgradeDebugInfo, which runs the Verifier.
+///                         This option should only be set to false by llvm-as
+///                         for use inside the LLVM testuite!
+/// \param DataLayoutString Override datalayout in the llvm assembly.
 std::unique_ptr<Module> parseAssemblyString(StringRef AsmString,
                                             SMDiagnostic &Err,
                                             LLVMContext &Context,
-                                            SlotMapping *Slots = nullptr);
+                                            SlotMapping *Slots = nullptr,
+                                            bool UpgradeDebugInfo = true,
+                                            StringRef DataLayoutString = "");
 
 /// Holds the Module and ModuleSummaryIndex returned by the interfaces
 /// that parse both.
@@ -82,18 +86,15 @@ struct ParsedModuleAndIndex {
 /// \param Context Context in which to allocate globals info.
 /// \param Slots The optional slot mapping that will be initialized during
 ///              parsing.
-/// \param DataLayoutCallback Override datalayout in the llvm assembly.
-ParsedModuleAndIndex parseAssemblyFileWithIndex(
-    StringRef Filename, SMDiagnostic &Err, LLVMContext &Context,
-    SlotMapping *Slots = nullptr,
-    DataLayoutCallbackTy DataLayoutCallback = [](StringRef, StringRef) {
-      return std::nullopt;
-    });
-
-/// Only for use in llvm-as for testing; this does not produce a valid module.
-ParsedModuleAndIndex parseAssemblyFileWithIndexNoUpgradeDebugInfo(
-    StringRef Filename, SMDiagnostic &Err, LLVMContext &Context,
-    SlotMapping *Slots, DataLayoutCallbackTy DataLayoutCallback);
+/// \param UpgradeDebugInfo Run UpgradeDebugInfo, which runs the Verifier.
+///                         This option should only be set to false by llvm-as
+///                         for use inside the LLVM testuite!
+/// \param DataLayoutString Override datalayout in the llvm assembly.
+ParsedModuleAndIndex
+parseAssemblyFileWithIndex(StringRef Filename, SMDiagnostic &Err,
+                           LLVMContext &Context, SlotMapping *Slots = nullptr,
+                           bool UpgradeDebugInfo = true,
+                           StringRef DataLayoutString = "");
 
 /// This function is a main interface to the LLVM Assembly Parser. It parses
 /// an ASCII file that (presumably) contains LLVM Assembly code for a module
@@ -106,30 +107,21 @@ ParsedModuleAndIndex parseAssemblyFileWithIndexNoUpgradeDebugInfo(
 std::unique_ptr<ModuleSummaryIndex>
 parseSummaryIndexAssemblyFile(StringRef Filename, SMDiagnostic &Err);
 
-/// The function is a secondary interface to the LLVM Assembly Parser. It parses
-/// an ASCII string that (presumably) contains LLVM Assembly code for a module
-/// summary. It returns a a ModuleSummaryIndex with the corresponding features.
-/// Note that this does not verify that the generated Index is valid, so you
-/// should run the verifier after parsing the file to check that it is okay.
-/// Parse LLVM Assembly from a string
-/// \param AsmString The string containing assembly
-/// \param Err Error result info.
-std::unique_ptr<ModuleSummaryIndex>
-parseSummaryIndexAssemblyString(StringRef AsmString, SMDiagnostic &Err);
-
 /// parseAssemblyFile and parseAssemblyString are wrappers around this function.
 /// Parse LLVM Assembly from a MemoryBuffer.
 /// \param F The MemoryBuffer containing assembly
 /// \param Err Error result info.
 /// \param Slots The optional slot mapping that will be initialized during
 ///              parsing.
-/// \param DataLayoutCallback Override datalayout in the llvm assembly.
-std::unique_ptr<Module> parseAssembly(
-    MemoryBufferRef F, SMDiagnostic &Err, LLVMContext &Context,
-    SlotMapping *Slots = nullptr,
-    DataLayoutCallbackTy DataLayoutCallback = [](StringRef, StringRef) {
-      return std::nullopt;
-    });
+/// \param UpgradeDebugInfo Run UpgradeDebugInfo, which runs the Verifier.
+///                         This option should only be set to false by llvm-as
+///                         for use inside the LLVM testuite!
+/// \param DataLayoutString Override datalayout in the llvm assembly.
+std::unique_ptr<Module> parseAssembly(MemoryBufferRef F, SMDiagnostic &Err,
+                                      LLVMContext &Context,
+                                      SlotMapping *Slots = nullptr,
+                                      bool UpgradeDebugInfo = true,
+                                      StringRef DataLayoutString = "");
 
 /// Parse LLVM Assembly including the summary index from a MemoryBuffer.
 ///
@@ -137,12 +129,18 @@ std::unique_ptr<Module> parseAssembly(
 /// \param Err Error result info.
 /// \param Slots The optional slot mapping that will be initialized during
 ///              parsing.
+/// \param UpgradeDebugInfo Run UpgradeDebugInfo, which runs the Verifier.
+///                         This option should only be set to false by llvm-as
+///                         for use inside the LLVM testuite!
+/// \param DataLayoutString Override datalayout in the llvm assembly.
 ///
 /// parseAssemblyFileWithIndex is a wrapper around this function.
 ParsedModuleAndIndex parseAssemblyWithIndex(MemoryBufferRef F,
                                             SMDiagnostic &Err,
                                             LLVMContext &Context,
-                                            SlotMapping *Slots = nullptr);
+                                            SlotMapping *Slots = nullptr,
+                                            bool UpgradeDebugInfo = true,
+                                            StringRef DataLayoutString = "");
 
 /// Parse LLVM Assembly for summary index from a MemoryBuffer.
 ///
@@ -165,13 +163,14 @@ parseSummaryIndexAssembly(MemoryBufferRef F, SMDiagnostic &Err);
 /// \param Slots The optional slot mapping that will be initialized during
 ///              parsing.
 /// \return true on error.
-/// \param DataLayoutCallback Override datalayout in the llvm assembly.
-bool parseAssemblyInto(
-    MemoryBufferRef F, Module *M, ModuleSummaryIndex *Index, SMDiagnostic &Err,
-    SlotMapping *Slots = nullptr,
-    DataLayoutCallbackTy DataLayoutCallback = [](StringRef, StringRef) {
-      return std::nullopt;
-    });
+/// \param UpgradeDebugInfo Run UpgradeDebugInfo, which runs the Verifier.
+///                         This option should only be set to false by llvm-as
+///                         for use inside the LLVM testuite!
+/// \param DataLayoutString Override datalayout in the llvm assembly.
+bool parseAssemblyInto(MemoryBufferRef F, Module *M, ModuleSummaryIndex *Index,
+                       SMDiagnostic &Err, SlotMapping *Slots = nullptr,
+                       bool UpgradeDebugInfo = true,
+                       StringRef DataLayoutString = "");
 
 /// Parse a type and a constant value in the given string.
 ///

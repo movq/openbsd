@@ -5,11 +5,10 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines the ilist_node class template, which is a convenient
-/// base class for creating classes that can be used with ilists.
-///
+//
+// This file defines the ilist_node class template, which is a convenient
+// base class for creating classes that can be used with ilists.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_ILIST_NODE_H

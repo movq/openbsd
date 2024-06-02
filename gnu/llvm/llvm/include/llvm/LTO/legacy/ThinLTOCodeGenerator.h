@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LTO_LEGACY_THINLTOCODEGENERATOR_H
-#define LLVM_LTO_LEGACY_THINLTOCODEGENERATOR_H
+#ifndef LLVM_LTO_THINLTOCODEGENERATOR_H
+#define LLVM_LTO_THINLTOCODEGENERATOR_H
 
 #include "llvm-c/lto.h"
 #include "llvm/ADT/StringSet.h"
@@ -29,6 +29,7 @@
 
 namespace llvm {
 class StringRef;
+class LLVMContext;
 class TargetMachine;
 
 /// Helper to gather options relevant to the target machine creation
@@ -37,7 +38,7 @@ struct TargetMachineBuilder {
   std::string MCpu;
   std::string MAttr;
   TargetOptions Options;
-  std::optional<Reloc::Model> RelocModel;
+  Optional<Reloc::Model> RelocModel;
   CodeGenOpt::Level CGOptLevel = CodeGenOpt::Aggressive;
 
   std::unique_ptr<TargetMachine> create() const;
@@ -211,7 +212,7 @@ public:
   void setFreestanding(bool Enabled) { Freestanding = Enabled; }
 
   /// CodeModel
-  void setCodePICModel(std::optional<Reloc::Model> Model) {
+  void setCodePICModel(Optional<Reloc::Model> Model) {
     TMBuilder.RelocModel = Model;
   }
 
@@ -224,9 +225,6 @@ public:
   void setOptLevel(unsigned NewOptLevel) {
     OptLevel = (NewOptLevel > 3) ? 3 : NewOptLevel;
   }
-
-  /// Enable or disable debug output for the new pass manager.
-  void setDebugPassManager(unsigned Enabled) { DebugPassManager = Enabled; }
 
   /// Disable CodeGen, only run the stages till codegen and stop. The output
   /// will be bitcode.
@@ -343,10 +341,6 @@ private:
 
   /// IR Optimization Level [0-3].
   unsigned OptLevel = 3;
-
-  /// Flag to indicate whether debug output should be enabled for the new pass
-  /// manager.
-  bool DebugPassManager = false;
 };
 }
 #endif

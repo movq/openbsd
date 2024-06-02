@@ -13,9 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Frontend/OpenMP/OMPContext.h"
-#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -41,7 +40,6 @@ OMPContext::OMPContext(bool IsDeviceCompilation, Triple TargetTriple) {
   case Triple::mips64:
   case Triple::mips64el:
   case Triple::ppc:
-  case Triple::ppcle:
   case Triple::ppc64:
   case Triple::ppc64le:
   case Triple::x86:
@@ -59,13 +57,9 @@ OMPContext::OMPContext(bool IsDeviceCompilation, Triple TargetTriple) {
 
   // Add the appropriate device architecture trait based on the triple.
 #define OMP_TRAIT_PROPERTY(Enum, TraitSetEnum, TraitSelectorEnum, Str)         \
-  if (TraitSelector::TraitSelectorEnum == TraitSelector::device_arch) {        \
+  if (TraitSelector::TraitSelectorEnum == TraitSelector::device_arch)          \
     if (TargetTriple.getArch() == TargetTriple.getArchTypeForLLVMName(Str))    \
-      ActiveTraits.set(unsigned(TraitProperty::Enum));                         \
-    if (StringRef(Str) == StringRef("x86_64") &&                               \
-        TargetTriple.getArch() == Triple::x86_64)                              \
-      ActiveTraits.set(unsigned(TraitProperty::Enum));                         \
-  }
+      ActiveTraits.set(unsigned(TraitProperty::Enum));
 #include "llvm/Frontend/OpenMP/OMPKinds.def"
 
   // TODO: What exactly do we want to see as device ISA trait?
@@ -163,29 +157,29 @@ static int isVariantApplicableInContextHelper(
   // context based on the match kind selected by the user via
   // `implementation={extensions(match_[all,any,none])}'
   auto HandleTrait = [MK](TraitProperty Property,
-                          bool WasFound) -> std::optional<bool> /* Result */ {
+                          bool WasFound) -> Optional<bool> /* Result */ {
     // For kind "any" a single match is enough but we ignore non-matched
     // properties.
     if (MK == MK_ANY) {
       if (WasFound)
         return true;
-      return std::nullopt;
+      return None;
     }
 
     // In "all" or "none" mode we accept a matching or non-matching property
     // respectively and move on. We are not done yet!
     if ((WasFound && MK == MK_ALL) || (!WasFound && MK == MK_NONE))
-      return std::nullopt;
+      return None;
 
     // We missed a property, provide some debug output and indicate failure.
     LLVM_DEBUG({
       if (MK == MK_ALL)
         dbgs() << "[" << DEBUG_TYPE << "] Property "
-               << getOpenMPContextTraitPropertyName(Property, "")
+               << getOpenMPContextTraitPropertyName(Property)
                << " was not in the OpenMP context but match kind is all.\n";
       if (MK == MK_NONE)
         dbgs() << "[" << DEBUG_TYPE << "] Property "
-               << getOpenMPContextTraitPropertyName(Property, "")
+               << getOpenMPContextTraitPropertyName(Property)
                << " was in the OpenMP context but match kind is none.\n";
     });
     return false;
@@ -204,16 +198,9 @@ static int isVariantApplicableInContextHelper(
       continue;
 
     bool IsActiveTrait = Ctx.ActiveTraits.test(unsigned(Property));
-
-    // We overwrite the isa trait as it is actually up to the OMPContext hook to
-    // check the raw string(s).
-    if (Property == TraitProperty::device_isa___ANY)
-      IsActiveTrait = llvm::all_of(VMI.ISATraits, [&](StringRef RawString) {
-        return Ctx.matchesISATrait(RawString);
-      });
-
-    if (std::optional<bool> Result = HandleTrait(Property, IsActiveTrait))
-      return *Result;
+    Optional<bool> Result = HandleTrait(Property, IsActiveTrait);
+    if (Result.hasValue())
+      return Result.getValue();
   }
 
   if (!DeviceSetOnly) {
@@ -232,12 +219,13 @@ static int isVariantApplicableInContextHelper(
       if (ConstructMatches)
         ConstructMatches->push_back(ConstructIdx - 1);
 
-      if (std::optional<bool> Result = HandleTrait(Property, FoundInOrder))
-        return *Result;
+      Optional<bool> Result = HandleTrait(Property, FoundInOrder);
+      if (Result.hasValue())
+        return Result.getValue();
 
       if (!FoundInOrder) {
         LLVM_DEBUG(dbgs() << "[" << DEBUG_TYPE << "] Construct property "
-                          << getOpenMPContextTraitPropertyName(Property, "")
+                          << getOpenMPContextTraitPropertyName(Property)
                           << " was not nested properly.\n");
         return false;
       }
@@ -437,12 +425,8 @@ StringRef llvm::omp::getOpenMPContextTraitSelectorName(TraitSelector Kind) {
   llvm_unreachable("Unknown trait selector!");
 }
 
-TraitProperty llvm::omp::getOpenMPContextTraitPropertyKind(
-    TraitSet Set, TraitSelector Selector, StringRef S) {
-  // Special handling for `device={isa(...)}` as we accept anything here. It is
-  // up to the target to decide if the feature is available.
-  if (Set == TraitSet::device && Selector == TraitSelector::device_isa)
-    return TraitProperty::device_isa___ANY;
+TraitProperty llvm::omp::getOpenMPContextTraitPropertyKind(TraitSet Set,
+                                                           StringRef S) {
 #define OMP_TRAIT_PROPERTY(Enum, TraitSetEnum, TraitSelectorEnum, Str)         \
   if (Set == TraitSet::TraitSetEnum && Str == S)                               \
     return TraitProperty::Enum;
@@ -460,10 +444,7 @@ llvm::omp::getOpenMPContextTraitPropertyForSelector(TraitSelector Selector) {
 #include "llvm/Frontend/OpenMP/OMPKinds.def"
       .Default(TraitProperty::invalid);
 }
-StringRef llvm::omp::getOpenMPContextTraitPropertyName(TraitProperty Kind,
-                                                       StringRef RawString) {
-  if (Kind == TraitProperty::device_isa___ANY)
-    return RawString;
+StringRef llvm::omp::getOpenMPContextTraitPropertyName(TraitProperty Kind) {
   switch (Kind) {
 #define OMP_TRAIT_PROPERTY(Enum, TraitSetEnum, TraitSelectorEnum, Str)         \
   case TraitProperty::Enum:                                                    \

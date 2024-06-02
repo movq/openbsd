@@ -15,6 +15,7 @@
 #include "ARMCallLowering.h"
 #include "ARMLegalizerInfo.h"
 #include "ARMRegisterBankInfo.h"
+#include "ARMSubtarget.h"
 #include "ARMFrameLowering.h"
 #include "ARMInstrInfo.h"
 #include "ARMSubtarget.h"
@@ -27,7 +28,6 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelect.h"
-#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
@@ -35,7 +35,6 @@
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/ARMTargetParser.h"
 #include "llvm/Support/TargetParser.h"
 #include "llvm/Target/TargetOptions.h"
 
@@ -53,15 +52,19 @@ UseFusedMulOps("arm-use-mulops",
 
 enum ITMode {
   DefaultIT,
-  RestrictedIT
+  RestrictedIT,
+  NoRestrictedIT
 };
 
 static cl::opt<ITMode>
-    IT(cl::desc("IT block support"), cl::Hidden, cl::init(DefaultIT),
-       cl::values(clEnumValN(DefaultIT, "arm-default-it",
-                             "Generate any type of IT block"),
-                  clEnumValN(RestrictedIT, "arm-restrict-it",
-                             "Disallow complex IT blocks")));
+IT(cl::desc("IT block support"), cl::Hidden, cl::init(DefaultIT),
+   cl::ZeroOrMore,
+   cl::values(clEnumValN(DefaultIT, "arm-default-it",
+                         "Generate IT block based on arch"),
+              clEnumValN(RestrictedIT, "arm-restrict-it",
+                         "Disallow deprecated IT based on ARMv8"),
+              clEnumValN(NoRestrictedIT, "arm-no-restrict-it",
+                         "Allow IT blocks based on ARMv7")));
 
 /// ForceFastISel - Use the fast-isel, even for subtargets where it is not
 /// currently supported (for testing only).
@@ -94,9 +97,9 @@ ARMSubtarget::ARMSubtarget(const Triple &TT, const std::string &CPU,
                            const std::string &FS,
                            const ARMBaseTargetMachine &TM, bool IsLittle,
                            bool MinSize)
-    : ARMGenSubtargetInfo(TT, CPU, /*TuneCPU*/ CPU, FS),
-      UseMulOps(UseFusedMulOps), CPUString(CPU), OptMinSize(MinSize),
-      IsLittle(IsLittle), TargetTriple(TT), Options(TM.Options), TM(TM),
+    : ARMGenSubtargetInfo(TT, CPU, FS), UseMulOps(UseFusedMulOps),
+      CPUString(CPU), OptMinSize(MinSize), IsLittle(IsLittle),
+      TargetTriple(TT), Options(TM.Options), TM(TM),
       FrameLowering(initializeFrameLowering(CPU, FS)),
       // At this point initializeSubtargetDependencies has been called so
       // we can query directly.
@@ -180,9 +183,9 @@ void ARMSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
     if (!ArchFS.empty())
       ArchFS = (Twine(ArchFS) + "," + FS).str();
     else
-      ArchFS = std::string(FS);
+      ArchFS = FS;
   }
-  ParseSubtargetFeatures(CPUString, /*TuneCPU*/ CPUString, ArchFS);
+  ParseSubtargetFeatures(CPUString, ArchFS);
 
   // FIXME: This used enable V6T2 support implicitly for Thumb2 mode.
   // Assert this for now to make the change obvious.
@@ -227,17 +230,20 @@ void ARMSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
   // registers are the 4 used for parameters.  We don't currently do this
   // case.
 
-  SupportsTailCall = !isThumb1Only() || hasV8MBaselineOps();
+  SupportsTailCall = !isThumb() || hasV8MBaselineOps();
 
   if (isTargetMachO() && isTargetIOS() && getTargetTriple().isOSVersionLT(5, 0))
     SupportsTailCall = false;
 
   switch (IT) {
   case DefaultIT:
-    RestrictIT = false;
+    RestrictIT = hasV8Ops();
     break;
   case RestrictedIT:
     RestrictIT = true;
+    break;
+  case NoRestrictedIT:
+    RestrictIT = false;
     break;
   }
 
@@ -245,7 +251,7 @@ void ARMSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
   const FeatureBitset &Bits = getFeatureBits();
   if ((Bits[ARM::ProcA5] || Bits[ARM::ProcA8]) && // Where this matters
       (Options.UnsafeFPMath || isTargetDarwin()))
-    HasNEONForFP = true;
+    UseNEONForSinglePrecisionFP = true;
 
   if (isRWPI())
     ReserveR9 = true;
@@ -286,19 +292,12 @@ void ARMSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
   case CortexA73:
   case CortexA75:
   case CortexA76:
-  case CortexA77:
-  case CortexA78:
-  case CortexA78C:
-  case CortexA710:
   case CortexR4:
   case CortexR4F:
   case CortexR5:
   case CortexR7:
   case CortexM3:
-  case CortexM7:
   case CortexR52:
-  case CortexX1:
-  case CortexX1C:
     break;
   case Exynos:
     LdStMultipleTiming = SingleIssuePlusExtras;
@@ -312,8 +311,6 @@ void ARMSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
     PreISelOperandLatencyAdjustment = 1;
     break;
   case NeoverseN1:
-  case NeoverseN2:
-  case NeoverseV1:
     break;
   case Swift:
     MaxInterleaveFactor = 2;
@@ -385,21 +382,7 @@ bool ARMSubtarget::enableMachineScheduler() const {
   return useMachineScheduler();
 }
 
-bool ARMSubtarget::enableSubRegLiveness() const {
-  if (EnableSubRegLiveness.getNumOccurrences())
-    return EnableSubRegLiveness;
-  // Enable SubRegLiveness for MVE to better optimize s subregs for mqpr regs
-  // and q subregs for qqqqpr regs.
-  return hasMVEIntegerOps();
-}
-
-bool ARMSubtarget::enableMachinePipeliner() const {
-  // Enable the MachinePipeliner before register allocation for subtargets
-  // with the use-mipipeliner feature.
-  return getSchedModel().hasInstrSchedModel() && useMachinePipeliner();
-}
-
-bool ARMSubtarget::useDFAforSMS() const { return false; }
+bool ARMSubtarget::enableSubRegLiveness() const { return EnableSubRegLiveness; }
 
 // This overrides the PostRAScheduler bit in the SchedModel for any CPU.
 bool ARMSubtarget::enablePostRAScheduler() const {
@@ -418,6 +401,8 @@ bool ARMSubtarget::enablePostRAMachineScheduler() const {
     return false;
   return !isThumb1Only();
 }
+
+bool ARMSubtarget::enableAtomicExpand() const { return hasAnyDataBarrier(); }
 
 bool ARMSubtarget::useStride4VFPs() const {
   // For general targets, the prologue can grow when VFPs are allocated with
@@ -490,13 +475,4 @@ bool ARMSubtarget::ignoreCSRForAllocationOrder(const MachineFunction &MF,
   // they are CSR because usually push/pop can be folded into existing ones.
   return isThumb2() && MF.getFunction().hasMinSize() &&
          ARM::GPRRegClass.contains(PhysReg);
-}
-
-bool ARMSubtarget::splitFramePointerPush(const MachineFunction &MF) const {
-  const Function &F = MF.getFunction();
-  if (!MF.getTarget().getMCAsmInfo()->usesWindowsCFI() ||
-      !F.needsUnwindTableEntry())
-    return false;
-  const MachineFrameInfo &MFI = MF.getFrameInfo();
-  return MFI.hasVarSizedObjects() || getRegisterInfo()->hasStackRealignment(MF);
 }

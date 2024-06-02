@@ -12,6 +12,7 @@
 
 #include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/Analysis/BlockFrequencyInfoImpl.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -22,14 +23,12 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/GraphWriter.h"
-#include <optional>
 #include <string>
 
 using namespace llvm;
 
 #define DEBUG_TYPE "machine-block-freq"
 
-namespace llvm {
 static cl::opt<GVDAGType> ViewMachineBlockFreqPropagationDAG(
     "view-machine-block-freq-propagation-dags", cl::Hidden,
     cl::desc("Pop up a window to show a dag displaying how machine block "
@@ -76,7 +75,6 @@ static cl::opt<bool> PrintMachineBlockFreq(
 // Command line option to specify the name of the function for block frequency
 // dump. Defined in Analysis/BlockFrequencyInfo.cpp.
 extern cl::opt<std::string> PrintBlockFreqFuncName;
-} // namespace llvm
 
 static GVDAGType getGVDT() {
   if (ViewBlockLayoutWithBFI != GVDT_None)
@@ -231,39 +229,22 @@ MachineBlockFrequencyInfo::getBlockFreq(const MachineBasicBlock *MBB) const {
   return MBFI ? MBFI->getBlockFreq(MBB) : 0;
 }
 
-std::optional<uint64_t> MachineBlockFrequencyInfo::getBlockProfileCount(
+Optional<uint64_t> MachineBlockFrequencyInfo::getBlockProfileCount(
     const MachineBasicBlock *MBB) const {
-  if (!MBFI)
-    return std::nullopt;
-
   const Function &F = MBFI->getFunction()->getFunction();
-  return MBFI->getBlockProfileCount(F, MBB);
+  return MBFI ? MBFI->getBlockProfileCount(F, MBB) : None;
 }
 
-std::optional<uint64_t>
+Optional<uint64_t>
 MachineBlockFrequencyInfo::getProfileCountFromFreq(uint64_t Freq) const {
-  if (!MBFI)
-    return std::nullopt;
-
   const Function &F = MBFI->getFunction()->getFunction();
-  return MBFI->getProfileCountFromFreq(F, Freq);
+  return MBFI ? MBFI->getProfileCountFromFreq(F, Freq) : None;
 }
 
-bool MachineBlockFrequencyInfo::isIrrLoopHeader(
-    const MachineBasicBlock *MBB) const {
+bool
+MachineBlockFrequencyInfo::isIrrLoopHeader(const MachineBasicBlock *MBB) {
   assert(MBFI && "Expected analysis to be available");
   return MBFI->isIrrLoopHeader(MBB);
-}
-
-void MachineBlockFrequencyInfo::onEdgeSplit(
-    const MachineBasicBlock &NewPredecessor,
-    const MachineBasicBlock &NewSuccessor,
-    const MachineBranchProbabilityInfo &MBPI) {
-  assert(MBFI && "Expected analysis to be available");
-  auto NewSuccFreq = MBFI->getBlockFreq(&NewPredecessor) *
-                     MBPI.getEdgeProbability(&NewPredecessor, &NewSuccessor);
-
-  MBFI->setBlockFreq(&NewSuccessor, NewSuccFreq.getFrequency());
 }
 
 const MachineFunction *MachineBlockFrequencyInfo::getFunction() const {

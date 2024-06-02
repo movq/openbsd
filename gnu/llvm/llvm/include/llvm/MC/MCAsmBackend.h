@@ -10,32 +10,29 @@
 #define LLVM_MC_MCASMBACKEND_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCFixup.h"
+#include "llvm/MC/MCFragment.h"
 #include "llvm/Support/Endian.h"
 #include <cstdint>
 
 namespace llvm {
 
-class MCAlignFragment;
-class MCDwarfCallFrameFragment;
-class MCDwarfLineAddrFragment;
-class MCFragment;
-class MCRelaxableFragment;
-class MCSymbol;
 class MCAsmLayout;
 class MCAssembler;
 class MCCFIInstruction;
 struct MCFixupKindInfo;
+class MCFragment;
 class MCInst;
 class MCObjectStreamer;
 class MCObjectTargetWriter;
 class MCObjectWriter;
+class MCRelaxableFragment;
 class MCSubtargetInfo;
 class MCValue;
 class raw_pwrite_stream;
-class StringRef;
-class raw_ostream;
 
 /// Generic interface to target specific assembler backends.
 class MCAsmBackend {
@@ -52,17 +49,12 @@ public:
   /// Return true if this target might automatically pad instructions and thus
   /// need to emit padding enable/disable directives around sensative code.
   virtual bool allowAutoPadding() const { return false; }
-  /// Return true if this target allows an unrelaxable instruction to be
-  /// emitted into RelaxableFragment and then we can increase its size in a
-  /// tricky way for optimization.
-  virtual bool allowEnhancedRelaxation() const { return false; }
 
   /// Give the target a chance to manipulate state related to instruction
-  /// alignment (e.g. padding for optimization), instruction relaxablility, etc.
-  /// before and after actually emitting the instruction.
-  virtual void emitInstructionBegin(MCObjectStreamer &OS, const MCInst &Inst,
-                                    const MCSubtargetInfo &STI) {}
-  virtual void emitInstructionEnd(MCObjectStreamer &OS, const MCInst &Inst) {}
+  /// alignment (e.g. padding for optimization) before and after actually
+  /// emitting the instruction.
+  virtual void alignBranchesBegin(MCObjectStreamer &OS, const MCInst &Inst) {}
+  virtual void alignBranchesEnd(MCObjectStreamer &OS, const MCInst &Inst) {}
 
   /// lifetime management
   virtual void reset() {}
@@ -88,7 +80,7 @@ public:
   virtual unsigned getNumFixupKinds() const = 0;
 
   /// Map a relocation name used in .reloc to a fixup kind.
-  virtual std::optional<MCFixupKind> getFixupKind(StringRef Name) const;
+  virtual Optional<MCFixupKind> getFixupKind(StringRef Name) const;
 
   /// Get information on a fixup kind.
   virtual const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const;
@@ -135,6 +127,10 @@ public:
                           uint64_t Value, bool IsResolved,
                           const MCSubtargetInfo *STI) const = 0;
 
+  /// Check whether the given target requires emitting differences of two
+  /// symbols as a set of relocations.
+  virtual bool requiresDiffExpressionRelocations() const { return false; }
+
   /// @}
 
   /// \name Target Relaxation Interfaces
@@ -146,9 +142,7 @@ public:
   /// \param STI - The MCSubtargetInfo in effect when the instruction was
   /// encoded.
   virtual bool mayNeedRelaxation(const MCInst &Inst,
-                                 const MCSubtargetInfo &STI) const {
-    return false;
-  }
+                                 const MCSubtargetInfo &STI) const = 0;
 
   /// Target specific predicate for whether a given fixup requires the
   /// associated instruction to be relaxed.
@@ -165,21 +159,12 @@ public:
 
   /// Relax the instruction in the given fragment to the next wider instruction.
   ///
-  /// \param [out] Inst The instruction to relax, which is also the relaxed
-  /// instruction.
+  /// \param Inst The instruction to relax, which may be the same as the
+  /// output.
   /// \param STI the subtarget information for the associated instruction.
-  virtual void relaxInstruction(MCInst &Inst,
-                                const MCSubtargetInfo &STI) const {};
-
-  virtual bool relaxDwarfLineAddr(MCDwarfLineAddrFragment &DF,
-                                  MCAsmLayout &Layout, bool &WasRelaxed) const {
-    return false;
-  }
-
-  virtual bool relaxDwarfCFA(MCDwarfCallFrameFragment &DF, MCAsmLayout &Layout,
-                             bool &WasRelaxed) const {
-    return false;
-  }
+  /// \param [out] Res On return, the relaxed instruction.
+  virtual void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
+                                MCInst &Res) const = 0;
 
   /// @}
 
@@ -189,18 +174,11 @@ public:
   ///
   virtual unsigned getMinimumNopSize() const { return 1; }
 
-  /// Returns the maximum size of a nop in bytes on this target.
-  ///
-  virtual unsigned getMaximumNopSize(const MCSubtargetInfo &STI) const {
-    return 0;
-  }
-
   /// Write an (optimal) nop sequence of Count bytes to the given output. If the
   /// target cannot generate such a sequence, it should return an error.
   ///
   /// \return - True on success.
-  virtual bool writeNopData(raw_ostream &OS, uint64_t Count,
-                            const MCSubtargetInfo *STI) const = 0;
+  virtual bool writeNopData(raw_ostream &OS, uint64_t Count) const = 0;
 
   /// Give backend an opportunity to finish layout after relaxation
   virtual void finishLayout(MCAssembler const &Asm,

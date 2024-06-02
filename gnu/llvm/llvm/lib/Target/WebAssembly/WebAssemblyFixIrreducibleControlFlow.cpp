@@ -55,7 +55,6 @@
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
 #include "WebAssembly.h"
 #include "WebAssemblySubtarget.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
@@ -66,17 +65,6 @@ namespace {
 
 using BlockVector = SmallVector<MachineBasicBlock *, 4>;
 using BlockSet = SmallPtrSet<MachineBasicBlock *, 4>;
-
-static BlockVector getSortedEntries(const BlockSet &Entries) {
-  BlockVector SortedEntries(Entries.begin(), Entries.end());
-  llvm::sort(SortedEntries,
-             [](const MachineBasicBlock *A, const MachineBasicBlock *B) {
-               auto ANum = A->getNumber();
-               auto BNum = B->getNumber();
-               return ANum < BNum;
-             });
-  return SortedEntries;
-}
 
 // Calculates reachability in a region. Ignores branches to blocks outside of
 // the region, and ignores branches to the region entry (for the case where
@@ -222,8 +210,10 @@ private:
       assert(!Enterers.count(MBB));
       if (Blocks.insert(MBB).second) {
         for (auto *Pred : MBB->predecessors()) {
-          if (AddedToWorkList.insert(Pred).second)
+          if (!AddedToWorkList.count(Pred)) {
             WorkList.push_back(Pred);
+            AddedToWorkList.insert(Pred);
+          }
         }
       }
     }
@@ -251,6 +241,7 @@ public:
 bool WebAssemblyFixIrreducibleControlFlow::processRegion(
     MachineBasicBlock *Entry, BlockSet &Blocks, MachineFunction &MF) {
   bool Changed = false;
+
   // Remove irreducibility before processing child loops, which may take
   // multiple iterations.
   while (true) {
@@ -258,17 +249,11 @@ bool WebAssemblyFixIrreducibleControlFlow::processRegion(
 
     bool FoundIrreducibility = false;
 
-    for (auto *LoopEntry : getSortedEntries(Graph.getLoopEntries())) {
+    for (auto *LoopEntry : Graph.getLoopEntries()) {
       // Find mutual entries - all entries which can reach this one, and
       // are reached by it (that always includes LoopEntry itself). All mutual
       // entries must be in the same loop, so if we have more than one, then we
       // have irreducible control flow.
-      //
-      // (Note that we need to sort the entries here, as otherwise the order can
-      // matter: being mutual is a symmetric relationship, and each set of
-      // mutuals will be handled properly no matter which we see first. However,
-      // there can be multiple disjoint sets of mutuals, and which we process
-      // first changes the output.)
       //
       // Note that irreducibility may involve inner loops, e.g. imagine A
       // starts one loop, and it has B inside it which starts an inner loop.
@@ -340,10 +325,16 @@ void WebAssemblyFixIrreducibleControlFlow::makeSingleEntryLoop(
   assert(Entries.size() >= 2);
 
   // Sort the entries to ensure a deterministic build.
-  BlockVector SortedEntries = getSortedEntries(Entries);
+  BlockVector SortedEntries(Entries.begin(), Entries.end());
+  llvm::sort(SortedEntries,
+             [&](const MachineBasicBlock *A, const MachineBasicBlock *B) {
+               auto ANum = A->getNumber();
+               auto BNum = B->getNumber();
+               return ANum < BNum;
+             });
 
 #ifndef NDEBUG
-  for (auto *Block : SortedEntries)
+  for (auto Block : SortedEntries)
     assert(Block->getNumber() != -1);
   if (SortedEntries.size() > 1) {
     for (auto I = SortedEntries.begin(), E = SortedEntries.end() - 1; I != E;
@@ -412,33 +403,31 @@ void WebAssemblyFixIrreducibleControlFlow::makeSingleEntryLoop(
   }
 
   // Record if each entry has a layout predecessor. This map stores
-  // <<loop entry, Predecessor is within the loop?>, layout predecessor>
-  DenseMap<PointerIntPair<MachineBasicBlock *, 1, bool>, MachineBasicBlock *>
+  // <<Predecessor is within the loop?, loop entry>, layout predecessor>
+  std::map<std::pair<bool, MachineBasicBlock *>, MachineBasicBlock *>
       EntryToLayoutPred;
-  for (auto *Pred : AllPreds) {
-    bool PredInLoop = InLoop.count(Pred);
+  for (auto *Pred : AllPreds)
     for (auto *Entry : Pred->successors())
       if (Entries.count(Entry) && Pred->isLayoutSuccessor(Entry))
-        EntryToLayoutPred[{Entry, PredInLoop}] = Pred;
-  }
+        EntryToLayoutPred[std::make_pair(InLoop.count(Pred), Entry)] = Pred;
 
   // We need to create at most two routing blocks per entry: one for
   // predecessors outside the loop and one for predecessors inside the loop.
   // This map stores
-  // <<loop entry, Predecessor is within the loop?>, routing block>
-  DenseMap<PointerIntPair<MachineBasicBlock *, 1, bool>, MachineBasicBlock *>
-      Map;
+  // <<Predecessor is within the loop?, loop entry>, routing block>
+  std::map<std::pair<bool, MachineBasicBlock *>, MachineBasicBlock *> Map;
   for (auto *Pred : AllPreds) {
     bool PredInLoop = InLoop.count(Pred);
     for (auto *Entry : Pred->successors()) {
-      if (!Entries.count(Entry) || Map.count({Entry, PredInLoop}))
+      if (!Entries.count(Entry) ||
+          Map.count(std::make_pair(InLoop.count(Pred), Entry)))
         continue;
       // If there exists a layout predecessor of this entry and this predecessor
       // is not that, we rather create a routing block after that layout
       // predecessor to save a branch.
-      if (auto *OtherPred = EntryToLayoutPred.lookup({Entry, PredInLoop}))
-        if (OtherPred != Pred)
-          continue;
+      if (EntryToLayoutPred.count(std::make_pair(PredInLoop, Entry)) &&
+          EntryToLayoutPred[std::make_pair(PredInLoop, Entry)] != Pred)
+        continue;
 
       // This is a successor we need to rewrite.
       MachineBasicBlock *Routing = MF.CreateMachineBasicBlock();
@@ -454,7 +443,7 @@ void WebAssemblyFixIrreducibleControlFlow::makeSingleEntryLoop(
           .addImm(Indices[Entry]);
       BuildMI(Routing, DebugLoc(), TII.get(WebAssembly::BR)).addMBB(Dispatch);
       Routing->addSuccessor(Dispatch);
-      Map[{Entry, PredInLoop}] = Routing;
+      Map[std::make_pair(PredInLoop, Entry)] = Routing;
     }
   }
 
@@ -464,12 +453,12 @@ void WebAssemblyFixIrreducibleControlFlow::makeSingleEntryLoop(
     for (MachineInstr &Term : Pred->terminators())
       for (auto &Op : Term.explicit_uses())
         if (Op.isMBB() && Indices.count(Op.getMBB()))
-          Op.setMBB(Map[{Op.getMBB(), PredInLoop}]);
+          Op.setMBB(Map[std::make_pair(PredInLoop, Op.getMBB())]);
 
     for (auto *Succ : Pred->successors()) {
       if (!Entries.count(Succ))
         continue;
-      auto *Routing = Map[{Succ, PredInLoop}];
+      auto *Routing = Map[std::make_pair(PredInLoop, Succ)];
       Pred->replaceSuccessor(Succ, Routing);
     }
   }
@@ -490,46 +479,6 @@ FunctionPass *llvm::createWebAssemblyFixIrreducibleControlFlow() {
   return new WebAssemblyFixIrreducibleControlFlow();
 }
 
-// Test whether the given register has an ARGUMENT def.
-static bool hasArgumentDef(unsigned Reg, const MachineRegisterInfo &MRI) {
-  for (const auto &Def : MRI.def_instructions(Reg))
-    if (WebAssembly::isArgument(Def.getOpcode()))
-      return true;
-  return false;
-}
-
-// Add a register definition with IMPLICIT_DEFs for every register to cover for
-// register uses that don't have defs in every possible path.
-// TODO: This is fairly heavy-handed; find a better approach.
-static void addImplicitDefs(MachineFunction &MF) {
-  const MachineRegisterInfo &MRI = MF.getRegInfo();
-  const auto &TII = *MF.getSubtarget<WebAssemblySubtarget>().getInstrInfo();
-  MachineBasicBlock &Entry = *MF.begin();
-  for (unsigned I = 0, E = MRI.getNumVirtRegs(); I < E; ++I) {
-    Register Reg = Register::index2VirtReg(I);
-
-    // Skip unused registers.
-    if (MRI.use_nodbg_empty(Reg))
-      continue;
-
-    // Skip registers that have an ARGUMENT definition.
-    if (hasArgumentDef(Reg, MRI))
-      continue;
-
-    BuildMI(Entry, Entry.begin(), DebugLoc(),
-            TII.get(WebAssembly::IMPLICIT_DEF), Reg);
-  }
-
-  // Move ARGUMENT_* instructions to the top of the entry block, so that their
-  // liveness reflects the fact that these really are live-in values.
-  for (MachineInstr &MI : llvm::make_early_inc_range(Entry)) {
-    if (WebAssembly::isArgument(MI.getOpcode())) {
-      MI.removeFromParent();
-      Entry.insert(Entry.begin(), &MI);
-    }
-  }
-}
-
 bool WebAssemblyFixIrreducibleControlFlow::runOnMachineFunction(
     MachineFunction &MF) {
   LLVM_DEBUG(dbgs() << "********** Fixing Irreducible Control Flow **********\n"
@@ -544,15 +493,8 @@ bool WebAssemblyFixIrreducibleControlFlow::runOnMachineFunction(
 
   if (LLVM_UNLIKELY(processRegion(&*MF.begin(), AllBlocks, MF))) {
     // We rewrote part of the function; recompute relevant things.
+    MF.getRegInfo().invalidateLiveness();
     MF.RenumberBlocks();
-    // Now we've inserted dispatch blocks, some register uses can have incoming
-    // paths without a def. For example, before this pass register %a was
-    // defined in BB1 and used in BB2, and there was only one path from BB1 and
-    // BB2. But if this pass inserts a dispatch block having multiple
-    // predecessors between the two BBs, now there are paths to BB2 without
-    // visiting BB1, and %a's use in BB2 is not dominated by its def. Adding
-    // IMPLICIT_DEFs to all regs is one simple way to fix it.
-    addImplicitDefs(MF);
     return true;
   }
 

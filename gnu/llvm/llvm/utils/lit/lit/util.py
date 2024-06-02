@@ -12,6 +12,13 @@ import sys
 import threading
 
 
+def norm_path(path):
+    path = os.path.realpath(path)
+    path = os.path.normpath(path)
+    path = os.path.normcase(path)
+    return path
+
+
 def is_string(value):
     try:
         # Python 2 and Python 3 are different here.
@@ -109,23 +116,32 @@ def to_unicode(s):
     return s
 
 
-def usable_core_count():
-    """Return the number of cores the current process can use, if supported.
-    Otherwise, return the total number of cores (like `os.cpu_count()`).
-    Default to 1 if undetermined.
+# TODO(yln): multiprocessing.cpu_count()
+# TODO(python3): len(os.sched_getaffinity(0)) and os.cpu_count()
+def detectCPUs():
+    """Detects the number of CPUs on a system.
+
+    Cribbed from pp.
 
     """
-    try:
-        n = len(os.sched_getaffinity(0))
-    except AttributeError:
-        n = os.cpu_count() or 1
-
-    # On Windows with more than 60 processes, multiprocessing's call to
-    # _winapi.WaitForMultipleObjects() prints an error and lit hangs.
-    if platform.system() == 'Windows':
-        return min(n, 60)
-
-    return n
+    # Linux, Unix and MacOS:
+    if hasattr(os, 'sysconf'):
+        if 'SC_NPROCESSORS_ONLN' in os.sysconf_names:
+            # Linux & Unix:
+            ncpus = os.sysconf('SC_NPROCESSORS_ONLN')
+            if isinstance(ncpus, int) and ncpus > 0:
+                return ncpus
+        else:  # OSX:
+            return int(subprocess.check_output(['sysctl', '-n', 'hw.ncpu'],
+                                               stderr=subprocess.STDOUT))
+    # Windows:
+    if 'NUMBER_OF_PROCESSORS' in os.environ:
+        ncpus = int(os.environ['NUMBER_OF_PROCESSORS'])
+        if ncpus > 0:
+            # With more than 32 processes, process creation often fails with
+            # "Too many open files".  FIXME: Check if there's a better fix.
+            return min(ncpus, 32)
+    return 1  # Default
 
 
 def mkdir(path):
@@ -232,7 +248,7 @@ def which(command, paths=None):
         for ext in pathext:
             p = os.path.join(path, command + ext)
             if os.path.exists(p) and not os.path.isdir(p):
-                return os.path.normcase(os.path.abspath(p))
+                return os.path.normcase(os.path.normpath(p))
 
     return None
 
@@ -273,9 +289,9 @@ def printHistogram(items, title='Items'):
 
     barW = 40
     hr = '-' * (barW + 34)
-    print('Slowest %s:' % title)
+    print('\nSlowest %s:' % title)
     print(hr)
-    for name, value in reversed(items[-20:]):
+    for name, value in items[-20:]:
         print('%.2fs: %s' % (value, name))
     print('\n%s Times:' % title)
     print(hr)
@@ -288,13 +304,12 @@ def printHistogram(items, title='Items'):
                                     'Percentage'.center(barW),
                                     'Count'.center(cDigits * 2 + 1)))
     print(hr)
-    for i, row in reversed(list(enumerate(histo))):
+    for i, row in enumerate(histo):
         pct = float(len(row)) / len(items)
         w = int(barW * pct)
         print('[%*.*fs,%*.*fs) :: [%s%s] :: [%*d/%*d]' % (
             pDigits, pfDigits, i * barH, pDigits, pfDigits, (i + 1) * barH,
             '*' * w, ' ' * (barW - w), cDigits, len(row), cDigits, len(items)))
-    print(hr)
 
 
 class ExecuteCommandTimeoutException(Exception):
@@ -314,8 +329,7 @@ class ExecuteCommandTimeoutException(Exception):
 kUseCloseFDs = not (platform.system() == 'Windows')
 
 
-def executeCommand(command, cwd=None, env=None, input=None, timeout=0,
-                   redirect_stderr=False):
+def executeCommand(command, cwd=None, env=None, input=None, timeout=0):
     """Execute command ``command`` (list of arguments or string) with.
 
     * working directory ``cwd`` (str), use None to use the current
@@ -324,7 +338,6 @@ def executeCommand(command, cwd=None, env=None, input=None, timeout=0,
     * Input to the command ``input`` (str), use string to pass
       no input.
     * Max execution time ``timeout`` (int) seconds. Use 0 for no timeout.
-    * ``redirect_stderr`` (bool), use True if redirect stderr to stdout
 
     Returns a tuple (out, err, exitCode) where
     * ``out`` (str) is the standard output of running the command
@@ -337,11 +350,10 @@ def executeCommand(command, cwd=None, env=None, input=None, timeout=0,
     """
     if input is not None:
         input = to_bytes(input)
-    err_out = subprocess.STDOUT if redirect_stderr else subprocess.PIPE
     p = subprocess.Popen(command, cwd=cwd,
                          stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE,
-                         stderr=err_out,
+                         stderr=subprocess.PIPE,
                          env=env, close_fds=kUseCloseFDs)
     timerObject = None
     # FIXME: Because of the way nested function scopes work in Python 2.x we
@@ -368,7 +380,7 @@ def executeCommand(command, cwd=None, env=None, input=None, timeout=0,
 
     # Ensure the resulting output is always of string type.
     out = to_string(out)
-    err = '' if redirect_stderr else to_string(err)
+    err = to_string(err)
 
     if hitTimeOut[0]:
         raise ExecuteCommandTimeoutException(
@@ -385,17 +397,10 @@ def executeCommand(command, cwd=None, env=None, input=None, timeout=0,
     return out, err, exitCode
 
 
-def isMacOSTriple(target_triple):
-    """Whether the given target triple is for macOS,
-       e.g. x86_64-apple-darwin, arm64-apple-macos
-    """
-    return 'darwin' in target_triple or 'macos' in target_triple
-
-
 def usePlatformSdkOnDarwin(config, lit_config):
     # On Darwin, support relocatable SDKs by providing Clang with a
     # default system root path.
-    if isMacOSTriple(config.target_triple):
+    if 'darwin' in config.target_triple:
         try:
             cmd = subprocess.Popen(['xcrun', '--show-sdk-path', '--sdk', 'macosx'],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -411,7 +416,7 @@ def usePlatformSdkOnDarwin(config, lit_config):
 
 
 def findPlatformSdkVersionOnMacOS(config, lit_config):
-    if isMacOSTriple(config.target_triple):
+    if 'darwin' in config.target_triple:
         try:
             cmd = subprocess.Popen(['xcrun', '--show-sdk-version', '--sdk', 'macosx'],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -474,3 +479,17 @@ def killProcessAndChildren(pid):
             psutilProc.kill()
         except psutil.NoSuchProcess:
             pass
+
+
+try:
+    import win32api
+except ImportError:
+    win32api = None
+
+def abort_now():
+    """Abort the current process without doing any exception teardown"""
+    sys.stdout.flush()
+    if win32api:
+        win32api.TerminateProcess(win32api.GetCurrentProcess(), 3)
+    else:
+        os.kill(0, 9)

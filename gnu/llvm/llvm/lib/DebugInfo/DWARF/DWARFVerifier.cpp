@@ -6,28 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 #include "llvm/DebugInfo/DWARF/DWARFVerifier.h"
-#include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/SmallSet.h"
-#include "llvm/BinaryFormat/Dwarf.h"
-#include "llvm/DebugInfo/DWARF/DWARFAbbreviationDeclaration.h"
-#include "llvm/DebugInfo/DWARF/DWARFAttribute.h"
 #include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
-#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
-#include "llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h"
 #include "llvm/DebugInfo/DWARF/DWARFDebugLine.h"
-#include "llvm/DebugInfo/DWARF/DWARFDebugLoc.h"
 #include "llvm/DebugInfo/DWARF/DWARFDie.h"
 #include "llvm/DebugInfo/DWARF/DWARFExpression.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
-#include "llvm/DebugInfo/DWARF/DWARFLocationExpression.h"
-#include "llvm/DebugInfo/DWARF/DWARFObject.h"
 #include "llvm/DebugInfo/DWARF/DWARFSection.h"
-#include "llvm/DebugInfo/DWARF/DWARFUnit.h"
-#include "llvm/Object/Error.h"
 #include "llvm/Support/DJB.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
@@ -39,37 +26,28 @@ using namespace llvm;
 using namespace dwarf;
 using namespace object;
 
-namespace llvm {
-class DWARFDebugInfoEntry;
-}
-
-std::optional<DWARFAddressRange>
+DWARFVerifier::DieRangeInfo::address_range_iterator
 DWARFVerifier::DieRangeInfo::insert(const DWARFAddressRange &R) {
   auto Begin = Ranges.begin();
   auto End = Ranges.end();
   auto Pos = std::lower_bound(Begin, End, R);
 
   if (Pos != End) {
-    DWARFAddressRange Range(*Pos);
-    if (Pos->merge(R))
-      return Range;
-  }
-  if (Pos != Begin) {
-    auto Iter = Pos - 1;
-    DWARFAddressRange Range(*Iter);
-    if (Iter->merge(R))
-      return Range;
+    if (Pos->intersects(R))
+      return std::move(Pos);
+    if (Pos != Begin) {
+      auto Iter = Pos - 1;
+      if (Iter->intersects(R))
+        return std::move(Iter);
+    }
   }
 
   Ranges.insert(Pos, R);
-  return std::nullopt;
+  return Ranges.end();
 }
 
 DWARFVerifier::DieRangeInfo::die_range_info_iterator
 DWARFVerifier::DieRangeInfo::insert(const DieRangeInfo &RI) {
-  if (RI.Ranges.empty())
-    return Children.end();
-
   auto End = Children.end();
   auto Iter = Children.begin();
   while (Iter != End) {
@@ -134,9 +112,11 @@ bool DWARFVerifier::verifyUnitHeader(const DWARFDataExtractor DebugInfoData,
   bool ValidAbbrevOffset = true;
 
   uint64_t OffsetStart = *Offset;
-  DwarfFormat Format;
-  std::tie(Length, Format) = DebugInfoData.getInitialLength(Offset);
-  isUnitDWARF64 = Format == DWARF64;
+  Length = DebugInfoData.getU32(Offset);
+  if (Length == dwarf::DW_LENGTH_DWARF64) {
+    Length = DebugInfoData.getU64(Offset);
+    isUnitDWARF64 = true;
+  }
   Version = DebugInfoData.getU16(Offset);
 
   if (Version >= 5) {
@@ -155,7 +135,7 @@ bool DWARFVerifier::verifyUnitHeader(const DWARFDataExtractor DebugInfoData,
 
   ValidLength = DebugInfoData.isValidOffset(OffsetStart + Length + 3);
   ValidVersion = DWARFContext::isSupportedVersion(Version);
-  ValidAddrSize = DWARFContext::isAddressSizeSupported(AddrSize);
+  ValidAddrSize = AddrSize == 4 || AddrSize == 8;
   if (!ValidLength || !ValidVersion || !ValidAddrSize || !ValidAbbrevOffset ||
       !ValidType) {
     Success = false;
@@ -178,30 +158,7 @@ bool DWARFVerifier::verifyUnitHeader(const DWARFDataExtractor DebugInfoData,
   return Success;
 }
 
-bool DWARFVerifier::verifyName(const DWARFDie &Die) {
-  // FIXME Add some kind of record of which DIE names have already failed and
-  // don't bother checking a DIE that uses an already failed DIE.
-
-  std::string ReconstructedName;
-  raw_string_ostream OS(ReconstructedName);
-  std::string OriginalFullName;
-  Die.getFullName(OS, &OriginalFullName);
-  OS.flush();
-  if (OriginalFullName.empty() || OriginalFullName == ReconstructedName)
-    return false;
-
-  error() << "Simplified template DW_AT_name could not be reconstituted:\n"
-          << formatv("         original: {0}\n"
-                     "    reconstituted: {1}\n",
-                     OriginalFullName, ReconstructedName);
-  dump(Die) << '\n';
-  dump(Die.getDwarfUnit()->getUnitDIE()) << '\n';
-  return true;
-}
-
-unsigned DWARFVerifier::verifyUnitContents(DWARFUnit &Unit,
-                                           ReferenceMap &UnitLocalReferences,
-                                           ReferenceMap &CrossUnitReferences) {
+unsigned DWARFVerifier::verifyUnitContents(DWARFUnit &Unit) {
   unsigned NumUnitErrors = 0;
   unsigned NumDies = Unit.getNumDIEs();
   for (unsigned I = 0; I < NumDies; ++I) {
@@ -212,19 +169,7 @@ unsigned DWARFVerifier::verifyUnitContents(DWARFUnit &Unit,
 
     for (auto AttrValue : Die.attributes()) {
       NumUnitErrors += verifyDebugInfoAttribute(Die, AttrValue);
-      NumUnitErrors += verifyDebugInfoForm(Die, AttrValue, UnitLocalReferences,
-                                           CrossUnitReferences);
-    }
-
-    NumUnitErrors += verifyName(Die);
-
-    if (Die.hasChildren()) {
-      if (Die.getFirstChild().isValid() &&
-          Die.getFirstChild().getTag() == DW_TAG_null) {
-        warn() << dwarf::TagString(Die.getTag())
-               << " has DW_CHILDREN_yes but DIE has no children: ";
-        Die.dump(OS);
-      }
+      NumUnitErrors += verifyDebugInfoForm(Die, AttrValue);
     }
 
     NumUnitErrors += verifyDebugInfoCallSite(Die);
@@ -284,10 +229,11 @@ unsigned DWARFVerifier::verifyDebugInfoCallSite(const DWARFDie &Die) {
     return 1;
   }
 
-  std::optional<DWARFFormValue> CallAttr = Curr.find(
-      {DW_AT_call_all_calls, DW_AT_call_all_source_calls,
-       DW_AT_call_all_tail_calls, DW_AT_GNU_all_call_sites,
-       DW_AT_GNU_all_source_call_sites, DW_AT_GNU_all_tail_call_sites});
+  Optional<DWARFFormValue> CallAttr =
+      Curr.find({DW_AT_call_all_calls, DW_AT_call_all_source_calls,
+                 DW_AT_call_all_tail_calls, DW_AT_GNU_all_call_sites,
+                 DW_AT_GNU_all_source_call_sites,
+                 DW_AT_GNU_all_tail_call_sites});
   if (!CallAttr) {
     error() << "Subprogram with call site entry has no DW_AT_call attribute:";
     Curr.dump(OS);
@@ -332,56 +278,57 @@ bool DWARFVerifier::handleDebugAbbrev() {
   return NumErrors == 0;
 }
 
-unsigned DWARFVerifier::verifyUnits(const DWARFUnitVector &Units) {
-  unsigned NumDebugInfoErrors = 0;
-  ReferenceMap CrossUnitReferences;
-
-  unsigned Index = 1;
-  for (const auto &Unit : Units) {
-    OS << "Verifying unit: " << Index << " / " << Units.getNumUnits();
-    if (const char* Name = Unit->getUnitDIE(true).getShortName())
-      OS << ", \"" << Name << '\"';
-    OS << '\n';
-    OS.flush();
-    ReferenceMap UnitLocalReferences;
-    NumDebugInfoErrors +=
-        verifyUnitContents(*Unit, UnitLocalReferences, CrossUnitReferences);
-    NumDebugInfoErrors += verifyDebugInfoReferences(
-        UnitLocalReferences, [&](uint64_t Offset) { return Unit.get(); });
-    ++Index;
-  }
-
-  NumDebugInfoErrors += verifyDebugInfoReferences(
-      CrossUnitReferences, [&](uint64_t Offset) -> DWARFUnit * {
-        if (DWARFUnit *U = Units.getUnitForOffset(Offset))
-          return U;
-        return nullptr;
-      });
-
-  return NumDebugInfoErrors;
-}
-
-unsigned DWARFVerifier::verifyUnitSection(const DWARFSection &S) {
+unsigned DWARFVerifier::verifyUnitSection(const DWARFSection &S,
+                                          DWARFSectionKind SectionKind) {
   const DWARFObject &DObj = DCtx.getDWARFObj();
   DWARFDataExtractor DebugInfoData(DObj, S, DCtx.isLittleEndian(), 0);
   unsigned NumDebugInfoErrors = 0;
-  uint64_t Offset = 0, UnitIdx = 0;
+  uint64_t OffsetStart = 0, Offset = 0, UnitIdx = 0;
   uint8_t UnitType = 0;
   bool isUnitDWARF64 = false;
   bool isHeaderChainValid = true;
   bool hasDIE = DebugInfoData.isValidOffset(Offset);
   DWARFUnitVector TypeUnitVector;
   DWARFUnitVector CompileUnitVector;
-  /// A map that tracks all references (converted absolute references) so we
-  /// can verify each reference points to a valid DIE and not an offset that
-  /// lies between to valid DIEs.
-  ReferenceMap CrossUnitReferences;
   while (hasDIE) {
+    OffsetStart = Offset;
     if (!verifyUnitHeader(DebugInfoData, &Offset, UnitIdx, UnitType,
                           isUnitDWARF64)) {
       isHeaderChainValid = false;
       if (isUnitDWARF64)
         break;
+    } else {
+      DWARFUnitHeader Header;
+      Header.extract(DCtx, DebugInfoData, &OffsetStart, SectionKind);
+      DWARFUnit *Unit;
+      switch (UnitType) {
+      case dwarf::DW_UT_type:
+      case dwarf::DW_UT_split_type: {
+        Unit = TypeUnitVector.addUnit(std::make_unique<DWARFTypeUnit>(
+            DCtx, S, Header, DCtx.getDebugAbbrev(), &DObj.getRangesSection(),
+            &DObj.getLocSection(), DObj.getStrSection(),
+            DObj.getStrOffsetsSection(), &DObj.getAppleObjCSection(),
+            DObj.getLineSection(), DCtx.isLittleEndian(), false,
+            TypeUnitVector));
+        break;
+      }
+      case dwarf::DW_UT_skeleton:
+      case dwarf::DW_UT_split_compile:
+      case dwarf::DW_UT_compile:
+      case dwarf::DW_UT_partial:
+      // UnitType = 0 means that we are verifying a compile unit in DWARF v4.
+      case 0: {
+        Unit = CompileUnitVector.addUnit(std::make_unique<DWARFCompileUnit>(
+            DCtx, S, Header, DCtx.getDebugAbbrev(), &DObj.getRangesSection(),
+            &DObj.getLocSection(), DObj.getStrSection(),
+            DObj.getStrOffsetsSection(), &DObj.getAppleObjCSection(),
+            DObj.getLineSection(), DCtx.isLittleEndian(), false,
+            CompileUnitVector));
+        break;
+      }
+      default: { llvm_unreachable("Invalid UnitType."); }
+      }
+      NumDebugInfoErrors += verifyUnitContents(*Unit);
     }
     hasDIE = DebugInfoData.isValidOffset(Offset);
     ++UnitIdx;
@@ -392,60 +339,8 @@ unsigned DWARFVerifier::verifyUnitSection(const DWARFSection &S) {
   }
   if (!isHeaderChainValid)
     ++NumDebugInfoErrors;
+  NumDebugInfoErrors += verifyDebugInfoReferences();
   return NumDebugInfoErrors;
-}
-
-unsigned DWARFVerifier::verifyIndex(StringRef Name,
-                                    DWARFSectionKind InfoColumnKind,
-                                    StringRef IndexStr) {
-  if (IndexStr.empty())
-    return 0;
-  OS << "Verifying " << Name << "...\n";
-  DWARFUnitIndex Index(InfoColumnKind);
-  DataExtractor D(IndexStr, DCtx.isLittleEndian(), 0);
-  if (!Index.parse(D))
-    return 1;
-  using MapType = IntervalMap<uint64_t, uint64_t>;
-  MapType::Allocator Alloc;
-  std::vector<std::unique_ptr<MapType>> Sections(Index.getColumnKinds().size());
-  for (const DWARFUnitIndex::Entry &E : Index.getRows()) {
-    uint64_t Sig = E.getSignature();
-    if (!E.getContributions())
-      continue;
-    for (auto E : enumerate(
-             InfoColumnKind == DW_SECT_INFO
-                 ? ArrayRef(E.getContributions(), Index.getColumnKinds().size())
-                 : ArrayRef(E.getContribution(), 1))) {
-      const DWARFUnitIndex::Entry::SectionContribution &SC = E.value();
-      int Col = E.index();
-      if (SC.getLength() == 0)
-        continue;
-      if (!Sections[Col])
-        Sections[Col] = std::make_unique<MapType>(Alloc);
-      auto &M = *Sections[Col];
-      auto I = M.find(SC.getOffset());
-      if (I != M.end() && I.start() < (SC.getOffset() + SC.getLength())) {
-        error() << llvm::formatv(
-            "overlapping index entries for entries {0:x16} "
-            "and {1:x16} for column {2}\n",
-            *I, Sig, toString(Index.getColumnKinds()[Col]));
-        return 1;
-      }
-      M.insert(SC.getOffset(), SC.getOffset() + SC.getLength() - 1, Sig);
-    }
-  }
-
-  return 0;
-}
-
-bool DWARFVerifier::handleDebugCUIndex() {
-  return verifyIndex(".debug_cu_index", DWARFSectionKind::DW_SECT_INFO,
-                     DCtx.getDWARFObj().getCUIndexSection()) == 0;
-}
-
-bool DWARFVerifier::handleDebugTUIndex() {
-  return verifyIndex(".debug_tu_index", DWARFSectionKind::DW_SECT_EXT_TYPES,
-                     DCtx.getDWARFObj().getTUIndexSection()) == 0;
 }
 
 bool DWARFVerifier::handleDebugInfo() {
@@ -454,19 +349,13 @@ bool DWARFVerifier::handleDebugInfo() {
 
   OS << "Verifying .debug_info Unit Header Chain...\n";
   DObj.forEachInfoSections([&](const DWARFSection &S) {
-    NumErrors += verifyUnitSection(S);
+    NumErrors += verifyUnitSection(S, DW_SECT_INFO);
   });
 
   OS << "Verifying .debug_types Unit Header Chain...\n";
   DObj.forEachTypesSections([&](const DWARFSection &S) {
-    NumErrors += verifyUnitSection(S);
+    NumErrors += verifyUnitSection(S, DW_SECT_TYPES);
   });
-
-  OS << "Verifying non-dwo Units...\n";
-  NumErrors += verifyUnits(DCtx.getNormalUnitsVector());
-
-  OS << "Verifying dwo Units...\n";
-  NumErrors += verifyUnits(DCtx.getDWOUnitsVector());
   return NumErrors == 0;
 }
 
@@ -477,18 +366,15 @@ unsigned DWARFVerifier::verifyDieRanges(const DWARFDie &Die,
   if (!Die.isValid())
     return NumErrors;
 
-  DWARFUnit *Unit = Die.getDwarfUnit();
-
   auto RangesOrError = Die.getAddressRanges();
   if (!RangesOrError) {
     // FIXME: Report the error.
-    if (!Unit->isDWOUnit())
-      ++NumErrors;
+    ++NumErrors;
     llvm::consumeError(RangesOrError.takeError());
     return NumErrors;
   }
 
-  const DWARFAddressRangesVector &Ranges = RangesOrError.get();
+  DWARFAddressRangesVector Ranges = RangesOrError.get();
   // Build RI for this DIE and check that ranges within this DIE do not
   // overlap.
   DieRangeInfo RI(Die);
@@ -513,30 +399,22 @@ unsigned DWARFVerifier::verifyDieRanges(const DWARFDie &Die,
   // processing an object file.
 
   if (!IsObjectFile || IsMachOObject || Die.getTag() != DW_TAG_compile_unit) {
-    bool DumpDieAfterError = false;
-    for (const auto &Range : Ranges) {
+    for (auto Range : Ranges) {
       if (!Range.valid()) {
         ++NumErrors;
         error() << "Invalid address range " << Range << "\n";
-        DumpDieAfterError = true;
         continue;
       }
 
-      // Verify that ranges don't intersect and also build up the DieRangeInfo
-      // address ranges. Don't break out of the loop below early, or we will
-      // think this DIE doesn't have all of the address ranges it is supposed
-      // to have. Compile units often have DW_AT_ranges that can contain one or
-      // more dead stripped address ranges which tend to all be at the same
-      // address: 0 or -1.
-      if (auto PrevRange = RI.insert(Range)) {
+      // Verify that ranges don't intersect.
+      const auto IntersectingRange = RI.insert(Range);
+      if (IntersectingRange != RI.Ranges.end()) {
         ++NumErrors;
-        error() << "DIE has overlapping ranges in DW_AT_ranges attribute: "
-                << *PrevRange << " and " << Range << '\n';
-        DumpDieAfterError = true;
+        error() << "DIE has overlapping address ranges: " << Range << " and "
+                << *IntersectingRange << "\n";
+        break;
       }
     }
-    if (DumpDieAfterError)
-      dump(Die, 2) << '\n';
   }
 
   // Verify that children don't intersect.
@@ -549,7 +427,7 @@ unsigned DWARFVerifier::verifyDieRanges(const DWARFDie &Die,
   }
 
   // Verify that ranges are contained within their parent.
-  bool ShouldBeContained = !RI.Ranges.empty() && !ParentRI.Ranges.empty() &&
+  bool ShouldBeContained = !Ranges.empty() && !ParentRI.Ranges.empty() &&
                            !(Die.getTag() == DW_TAG_subprogram &&
                              ParentRI.Die.getTag() == DW_TAG_subprogram);
   if (ShouldBeContained && !ParentRI.contains(RI)) {
@@ -576,23 +454,13 @@ unsigned DWARFVerifier::verifyDebugInfoAttribute(const DWARFDie &Die,
   };
 
   const DWARFObject &DObj = DCtx.getDWARFObj();
-  DWARFUnit *U = Die.getDwarfUnit();
   const auto Attr = AttrValue.Attr;
   switch (Attr) {
   case DW_AT_ranges:
     // Make sure the offset in the DW_AT_ranges attribute is valid.
     if (auto SectionOffset = AttrValue.Value.getAsSectionOffset()) {
-      unsigned DwarfVersion = U->getVersion();
-      const DWARFSection &RangeSection = DwarfVersion < 5
-                                             ? DObj.getRangesSection()
-                                             : DObj.getRnglistsSection();
-      if (U->isDWOUnit() && RangeSection.Data.empty())
-        break;
-      if (*SectionOffset >= RangeSection.Data.size())
-        ReportError(
-            "DW_AT_ranges offset is beyond " +
-            StringRef(DwarfVersion < 5 ? ".debug_ranges" : ".debug_rnglists") +
-            " bounds: " + llvm::formatv("{0:x8}", *SectionOffset));
+      if (*SectionOffset >= DObj.getRangesSection().Data.size())
+        ReportError("DW_AT_ranges offset is beyond .debug_ranges bounds:");
       break;
     }
     ReportError("DIE has invalid DW_AT_ranges encoding:");
@@ -600,7 +468,7 @@ unsigned DWARFVerifier::verifyDebugInfoAttribute(const DWARFDie &Die,
   case DW_AT_stmt_list:
     // Make sure the offset in the DW_AT_stmt_list attribute is valid.
     if (auto SectionOffset = AttrValue.Value.getAsSectionOffset()) {
-      if (*SectionOffset >= U->getLineSection().Data.size())
+      if (*SectionOffset >= DObj.getLineSection().Data.size())
         ReportError("DW_AT_stmt_list offset is beyond .debug_line bounds: " +
                     llvm::formatv("{0:x8}", *SectionOffset));
       break;
@@ -608,35 +476,21 @@ unsigned DWARFVerifier::verifyDebugInfoAttribute(const DWARFDie &Die,
     ReportError("DIE has invalid DW_AT_stmt_list encoding:");
     break;
   case DW_AT_location: {
-    // FIXME: It might be nice if there's a way to walk location expressions
-    // without trying to resolve the address ranges - it'd be a more efficient
-    // API (since the API is currently unnecessarily resolving addresses for
-    // this use case which only wants to validate the expressions themselves) &
-    // then the expressions could be validated even if the addresses can't be
-    // resolved.
-    // That sort of API would probably look like a callback "for each
-    // expression" with some way to lazily resolve the address ranges when
-    // needed (& then the existing API used here could be built on top of that -
-    // using the callback API to build the data structure and return it).
     if (Expected<std::vector<DWARFLocationExpression>> Loc =
             Die.getLocations(DW_AT_location)) {
+      DWARFUnit *U = Die.getDwarfUnit();
       for (const auto &Entry : *Loc) {
         DataExtractor Data(toStringRef(Entry.Expr), DCtx.isLittleEndian(), 0);
-        DWARFExpression Expression(Data, U->getAddressByteSize(),
-                                   U->getFormParams().Format);
-        bool Error =
-            any_of(Expression, [](const DWARFExpression::Operation &Op) {
-              return Op.isError();
-            });
+        DWARFExpression Expression(Data, U->getVersion(),
+                                   U->getAddressByteSize());
+        bool Error = any_of(Expression, [](DWARFExpression::Operation &Op) {
+          return Op.isError();
+        });
         if (Error || !Expression.verify(U))
           ReportError("DIE contains invalid DWARF expression:");
       }
-    } else if (Error Err = handleErrors(
-                   Loc.takeError(), [&](std::unique_ptr<ResolverError> E) {
-                     return U->isDWOUnit() ? Error::success()
-                                           : Error(std::move(E));
-                   }))
-      ReportError(toString(std::move(Err)));
+    } else
+      ReportError(toString(Loc.takeError()));
     break;
   }
   case DW_AT_specification:
@@ -669,49 +523,6 @@ unsigned DWARFVerifier::verifyDebugInfoAttribute(const DWARFDie &Die,
     }
     break;
   }
-  case DW_AT_call_file:
-  case DW_AT_decl_file: {
-    if (auto FileIdx = AttrValue.Value.getAsUnsignedConstant()) {
-      if (U->isDWOUnit() && !U->isTypeUnit())
-        break;
-      const auto *LT = U->getContext().getLineTableForUnit(U);
-      if (LT) {
-        if (!LT->hasFileAtIndex(*FileIdx)) {
-          bool IsZeroIndexed = LT->Prologue.getVersion() >= 5;
-          if (std::optional<uint64_t> LastFileIdx =
-                  LT->getLastValidFileIndex()) {
-            ReportError("DIE has " + AttributeString(Attr) +
-                        " with an invalid file index " +
-                        llvm::formatv("{0}", *FileIdx) +
-                        " (valid values are [" + (IsZeroIndexed ? "0-" : "1-") +
-                        llvm::formatv("{0}", *LastFileIdx) + "])");
-          } else {
-            ReportError("DIE has " + AttributeString(Attr) +
-                        " with an invalid file index " +
-                        llvm::formatv("{0}", *FileIdx) +
-                        " (the file table in the prologue is empty)");
-          }
-        }
-      } else {
-        ReportError("DIE has " + AttributeString(Attr) +
-                    " that references a file with index " +
-                    llvm::formatv("{0}", *FileIdx) +
-                    " and the compile unit has no line table");
-      }
-    } else {
-      ReportError("DIE has " + AttributeString(Attr) +
-                  " with invalid encoding");
-    }
-    break;
-  }
-  case DW_AT_call_line:
-  case DW_AT_decl_line: {
-    if (!AttrValue.Value.getAsUnsignedConstant()) {
-      ReportError("DIE has " + AttributeString(Attr) +
-                  " with invalid encoding");
-    }
-    break;
-  }
   default:
     break;
   }
@@ -719,9 +530,8 @@ unsigned DWARFVerifier::verifyDebugInfoAttribute(const DWARFDie &Die,
 }
 
 unsigned DWARFVerifier::verifyDebugInfoForm(const DWARFDie &Die,
-                                            DWARFAttribute &AttrValue,
-                                            ReferenceMap &LocalReferences,
-                                            ReferenceMap &CrossUnitReferences) {
+                                            DWARFAttribute &AttrValue) {
+  const DWARFObject &DObj = DCtx.getDWARFObj();
   auto DieCU = Die.getDwarfUnit();
   unsigned NumErrors = 0;
   const auto Form = AttrValue.Value.getForm();
@@ -732,7 +542,7 @@ unsigned DWARFVerifier::verifyDebugInfoForm(const DWARFDie &Die,
   case DW_FORM_ref8:
   case DW_FORM_ref_udata: {
     // Verify all CU relative references are valid CU offsets.
-    std::optional<uint64_t> RefVal = AttrValue.Value.getAsReference();
+    Optional<uint64_t> RefVal = AttrValue.Value.getAsReference();
     assert(RefVal);
     if (RefVal) {
       auto CUSize = DieCU->getNextUnitOffset() - DieCU->getOffset();
@@ -748,7 +558,7 @@ unsigned DWARFVerifier::verifyDebugInfoForm(const DWARFDie &Die,
       } else {
         // Valid reference, but we will verify it points to an actual
         // DIE later.
-        LocalReferences[*RefVal].insert(Die.getOffset());
+        ReferenceToDIEOffsets[*RefVal].insert(Die.getOffset());
       }
     }
     break;
@@ -756,7 +566,7 @@ unsigned DWARFVerifier::verifyDebugInfoForm(const DWARFDie &Die,
   case DW_FORM_ref_addr: {
     // Verify all absolute DIE references have valid offsets in the
     // .debug_info section.
-    std::optional<uint64_t> RefVal = AttrValue.Value.getAsReference();
+    Optional<uint64_t> RefVal = AttrValue.Value.getAsReference();
     assert(RefVal);
     if (RefVal) {
       if (*RefVal >= DieCU->getInfoSection().Data.size()) {
@@ -767,20 +577,56 @@ unsigned DWARFVerifier::verifyDebugInfoForm(const DWARFDie &Die,
       } else {
         // Valid reference, but we will verify it points to an actual
         // DIE later.
-        CrossUnitReferences[*RefVal].insert(Die.getOffset());
+        ReferenceToDIEOffsets[*RefVal].insert(Die.getOffset());
       }
     }
     break;
   }
-  case DW_FORM_strp:
+  case DW_FORM_strp: {
+    auto SecOffset = AttrValue.Value.getAsSectionOffset();
+    assert(SecOffset); // DW_FORM_strp is a section offset.
+    if (SecOffset && *SecOffset >= DObj.getStrSection().size()) {
+      ++NumErrors;
+      error() << "DW_FORM_strp offset beyond .debug_str bounds:\n";
+      dump(Die) << '\n';
+    }
+    break;
+  }
   case DW_FORM_strx:
   case DW_FORM_strx1:
   case DW_FORM_strx2:
   case DW_FORM_strx3:
   case DW_FORM_strx4: {
-    if (Error E = AttrValue.Value.getAsCString().takeError()) {
+    auto Index = AttrValue.Value.getRawUValue();
+    auto DieCU = Die.getDwarfUnit();
+    // Check that we have a valid DWARF v5 string offsets table.
+    if (!DieCU->getStringOffsetsTableContribution()) {
       ++NumErrors;
-      error() << toString(std::move(E)) << ":\n";
+      error() << FormEncodingString(Form)
+              << " used without a valid string offsets table:\n";
+      dump(Die) << '\n';
+      break;
+    }
+    // Check that the index is within the bounds of the section.
+    unsigned ItemSize = DieCU->getDwarfStringOffsetsByteSize();
+    // Use a 64-bit type to calculate the offset to guard against overflow.
+    uint64_t Offset =
+        (uint64_t)DieCU->getStringOffsetsBase() + Index * ItemSize;
+    if (DObj.getStrOffsetsSection().Data.size() < Offset + ItemSize) {
+      ++NumErrors;
+      error() << FormEncodingString(Form) << " uses index "
+              << format("%" PRIu64, Index) << ", which is too large:\n";
+      dump(Die) << '\n';
+      break;
+    }
+    // Check that the string offset is valid.
+    uint64_t StringOffset = *DieCU->getStringOffsetSectionItem(Index);
+    if (StringOffset >= DObj.getStrSection().size()) {
+      ++NumErrors;
+      error() << FormEncodingString(Form) << " uses index "
+              << format("%" PRIu64, Index)
+              << ", but the referenced string"
+                 " offset is beyond .debug_str bounds:\n";
       dump(Die) << '\n';
     }
     break;
@@ -791,24 +637,20 @@ unsigned DWARFVerifier::verifyDebugInfoForm(const DWARFDie &Die,
   return NumErrors;
 }
 
-unsigned DWARFVerifier::verifyDebugInfoReferences(
-    const ReferenceMap &References,
-    llvm::function_ref<DWARFUnit *(uint64_t)> GetUnitForOffset) {
-  auto GetDIEForOffset = [&](uint64_t Offset) {
-    if (DWARFUnit *U = GetUnitForOffset(Offset))
-      return U->getDIEForOffset(Offset);
-    return DWARFDie();
-  };
+unsigned DWARFVerifier::verifyDebugInfoReferences() {
+  // Take all references and make sure they point to an actual DIE by
+  // getting the DIE by offset and emitting an error
+  OS << "Verifying .debug_info references...\n";
   unsigned NumErrors = 0;
   for (const std::pair<const uint64_t, std::set<uint64_t>> &Pair :
-       References) {
-    if (GetDIEForOffset(Pair.first))
+       ReferenceToDIEOffsets) {
+    if (DCtx.getDIEForOffset(Pair.first))
       continue;
     ++NumErrors;
     error() << "invalid DIE reference " << format("0x%08" PRIx64, Pair.first)
             << ". Offset is in between DIEs:\n";
     for (auto Offset : Pair.second)
-      dump(GetDIEForOffset(Offset)) << '\n';
+      dump(DCtx.getDIEForOffset(Offset)) << '\n';
     OS << "\n";
   }
   return NumErrors;
@@ -916,7 +758,7 @@ void DWARFVerifier::verifyDebugLineRows() {
                 << "] row[" << RowIndex
                 << "] decreases in address from previous row:\n";
 
-        DWARFDebugLine::Row::dumpTableHeader(OS, 0);
+        DWARFDebugLine::Row::dumpTableHeader(OS);
         if (RowIndex > 0)
           LineTable->Rows[RowIndex - 1].dump(OS);
         Row.dump(OS);
@@ -934,7 +776,7 @@ void DWARFVerifier::verifyDebugLineRows() {
                 << " (valid values are [" << (isDWARF5 ? "0," : "1,")
                 << LineTable->Prologue.FileNames.size()
                 << (isDWARF5 ? ")" : "]") << "):\n";
-        DWARFDebugLine::Row::dumpTableHeader(OS, 0);
+        DWARFDebugLine::Row::dumpTableHeader(OS);
         Row.dump(OS);
         OS << '\n';
       }
@@ -1338,14 +1180,16 @@ DWARFVerifier::verifyNameIndexAbbrevs(const DWARFDebugNames::NameIndex &NI) {
 static SmallVector<StringRef, 2> getNames(const DWARFDie &DIE,
                                           bool IncludeLinkageName = true) {
   SmallVector<StringRef, 2> Result;
-  if (const char *Str = DIE.getShortName())
+  if (const char *Str = DIE.getName(DINameKind::ShortName))
     Result.emplace_back(Str);
   else if (DIE.getTag() == dwarf::DW_TAG_namespace)
     Result.emplace_back("(anonymous namespace)");
 
   if (IncludeLinkageName) {
-    if (const char *Str = DIE.getLinkageName())
-      Result.emplace_back(Str);
+    if (const char *Str = DIE.getName(DINameKind::LinkageName)) {
+      if (Result.empty() || Result[0] != Str)
+        Result.emplace_back(Str);
+    }
   }
 
   return Result;
@@ -1446,14 +1290,12 @@ static bool isVariableIndexable(const DWARFDie &Die, DWARFContext &DCtx) {
   for (const auto &Entry : *Loc) {
     DataExtractor Data(toStringRef(Entry.Expr), DCtx.isLittleEndian(),
                        U->getAddressByteSize());
-    DWARFExpression Expression(Data, U->getAddressByteSize(),
-                               U->getFormParams().Format);
-    bool IsInteresting =
-        any_of(Expression, [](const DWARFExpression::Operation &Op) {
-          return !Op.isError() && (Op.getCode() == DW_OP_addr ||
-                                   Op.getCode() == DW_OP_form_tls_address ||
-                                   Op.getCode() == DW_OP_GNU_push_tls_address);
-        });
+    DWARFExpression Expression(Data, U->getVersion(), U->getAddressByteSize());
+    bool IsInteresting = any_of(Expression, [](DWARFExpression::Operation &Op) {
+      return !Op.isError() && (Op.getCode() == DW_OP_addr ||
+                               Op.getCode() == DW_OP_form_tls_address ||
+                               Op.getCode() == DW_OP_GNU_push_tls_address);
+    });
     if (IsInteresting)
       return true;
   }
@@ -1488,7 +1330,9 @@ unsigned DWARFVerifier::verifyNameIndexCompleteness(
   // "The name index must contain an entry for each debugging information entry
   // that defines a named subprogram, label, variable, type, or namespace,
   // subject to ..."
-  // Explicitly exclude all TAGs that we know shouldn't be indexed.
+  // Instead whitelisting all TAGs representing a "type" or a "subprogram", to
+  // make sure we catch any missing items, we instead blacklist all TAGs that we
+  // know shouldn't be indexed.
   switch (Die.getTag()) {
   // Compile units and modules have names but shouldn't be indexed.
   case DW_TAG_compile_unit:
@@ -1588,7 +1432,7 @@ unsigned DWARFVerifier::verifyDebugNames(const DWARFSection &AccelSection,
   if (NumErrors > 0)
     return NumErrors;
   for (const auto &NI : AccelTable)
-    for (const DWARFDebugNames::NameTableEntry &NTE : NI)
+    for (DWARFDebugNames::NameTableEntry NTE : NI)
       NumErrors += verifyNameIndexEntries(NI, NTE);
 
   if (NumErrors > 0)

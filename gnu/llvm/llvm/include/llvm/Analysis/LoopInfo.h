@@ -44,23 +44,23 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Allocator.h"
 #include <algorithm>
-#include <optional>
 #include <utility>
 
 namespace llvm {
 
 class DominatorTree;
-class InductionDescriptor;
-class Instruction;
 class LoopInfo;
 class Loop;
+class InductionDescriptor;
 class MDNode;
 class MemorySSAUpdater;
+class PHINode;
 class ScalarEvolution;
 class raw_ostream;
 template <class N, bool IsPostDom> class DominatorTreeBase;
@@ -103,31 +103,7 @@ public:
     return D;
   }
   BlockT *getHeader() const { return getBlocks().front(); }
-  /// Return the parent loop if it exists or nullptr for top
-  /// level loops.
-
-  /// A loop is either top-level in a function (that is, it is not
-  /// contained in any other loop) or it is entirely enclosed in
-  /// some other loop.
-  /// If a loop is top-level, it has no parent, otherwise its
-  /// parent is the innermost loop in which it is enclosed.
   LoopT *getParentLoop() const { return ParentLoop; }
-
-  /// Get the outermost loop in which this loop is contained.
-  /// This may be the loop itself, if it already is the outermost loop.
-  const LoopT *getOutermostLoop() const {
-    const LoopT *L = static_cast<const LoopT *>(this);
-    while (L->ParentLoop)
-      L = L->ParentLoop;
-    return L;
-  }
-
-  LoopT *getOutermostLoop() {
-    LoopT *L = static_cast<LoopT *>(this);
-    while (L->ParentLoop)
-      L = L->ParentLoop;
-    return L;
-  }
 
   /// This is a raw interface for bypassing addChildLoop.
   void setParentLoop(LoopT *L) {
@@ -172,17 +148,7 @@ public:
   iterator end() const { return getSubLoops().end(); }
   reverse_iterator rbegin() const { return getSubLoops().rbegin(); }
   reverse_iterator rend() const { return getSubLoops().rend(); }
-
-  // LoopInfo does not detect irreducible control flow, just natural
-  // loops. That is, it is possible that there is cyclic control
-  // flow within the "innermost loop" or around the "outermost
-  // loop".
-
-  /// Return true if the loop does not contain any (natural) loops.
-  bool isInnermost() const { return getSubLoops().empty(); }
-  /// Return true if the loop does not have a parent (natural) loop
-  // (i.e. it is outermost, which is the same as top-level).
-  bool isOutermost() const { return getParentLoop() == nullptr; }
+  bool empty() const { return getSubLoops().empty(); }
 
   /// Get a list of the basic blocks which make up this loop.
   ArrayRef<BlockT *> getBlocks() const {
@@ -318,9 +284,6 @@ public:
   /// If getUniqueExitBlocks would return exactly one block, return that block.
   /// Otherwise return null.
   BlockT *getUniqueExitBlock() const;
-
-  /// Return true if this loop does not have any exit blocks.
-  bool hasNoExitBlocks() const;
 
   /// Edge type.
   typedef std::pair<BlockT *, BlockT *> Edge;
@@ -496,8 +459,7 @@ public:
   bool isAnnotatedParallel() const { return false; }
 
   /// Print loop with all the BBs inside it.
-  void print(raw_ostream &OS, bool Verbose = false, bool PrintNested = true,
-             unsigned Depth = 0) const;
+  void print(raw_ostream &OS, unsigned Depth = 0, bool Verbose = false) const;
 
 protected:
   friend class LoopInfoBase<BlockT, LoopT>;
@@ -544,7 +506,7 @@ extern template class LoopBase<BasicBlock, Loop>;
 
 /// Represents a single loop in the control flow graph.  Note that not all SCCs
 /// in the CFG are necessarily loops.
-class LLVM_EXTERNAL_VISIBILITY Loop : public LoopBase<BasicBlock, Loop> {
+class Loop : public LoopBase<BasicBlock, Loop> {
 public:
   /// A range representing the start and end location of a loop.
   class LocRange {
@@ -552,7 +514,7 @@ public:
     DebugLoc End;
 
   public:
-    LocRange() = default;
+    LocRange() {}
     LocRange(DebugLoc Start) : Start(Start), End(Start) {}
     LocRange(DebugLoc Start, DebugLoc End)
         : Start(std::move(Start)), End(std::move(End)) {}
@@ -574,33 +536,28 @@ public:
 
   /// If the given value is an instruction inside of the loop and it can be
   /// hoisted, do so to make it trivially loop-invariant.
-  /// Return true if \c V is already loop-invariant, and false if \c V can't
-  /// be made loop-invariant. If \c V is made loop-invariant, \c Changed is
-  /// set to true. This function can be used as a slightly more aggressive
-  /// replacement for isLoopInvariant.
+  /// Return true if the value after any hoisting is loop invariant. This
+  /// function can be used as a slightly more aggressive replacement for
+  /// isLoopInvariant.
   ///
   /// If InsertPt is specified, it is the point to hoist instructions to.
   /// If null, the terminator of the loop preheader is used.
-  ///
   bool makeLoopInvariant(Value *V, bool &Changed,
                          Instruction *InsertPt = nullptr,
-                         MemorySSAUpdater *MSSAU = nullptr,
-                         ScalarEvolution *SE = nullptr) const;
+                         MemorySSAUpdater *MSSAU = nullptr) const;
 
   /// If the given instruction is inside of the loop and it can be hoisted, do
   /// so to make it trivially loop-invariant.
-  /// Return true if \c I is already loop-invariant, and false if \c I can't
-  /// be made loop-invariant. If \c I is made loop-invariant, \c Changed is
-  /// set to true. This function can be used as a slightly more aggressive
-  /// replacement for isLoopInvariant.
+  /// Return true if the instruction after any hoisting is loop invariant. This
+  /// function can be used as a slightly more aggressive replacement for
+  /// isLoopInvariant.
   ///
   /// If InsertPt is specified, it is the point to hoist instructions to.
   /// If null, the terminator of the loop preheader is used.
   ///
   bool makeLoopInvariant(Instruction *I, bool &Changed,
                          Instruction *InsertPt = nullptr,
-                         MemorySSAUpdater *MSSAU = nullptr,
-                         ScalarEvolution *SE = nullptr) const;
+                         MemorySSAUpdater *MSSAU = nullptr) const;
 
   /// Check to see if the loop has a canonical induction variable: an integer
   /// recurrence that starts at 0 and increments by one each time through the
@@ -610,9 +567,6 @@ public:
   /// variable.
   ///
   PHINode *getCanonicalInductionVariable() const;
-
-  /// Get the latch condition instruction.
-  ICmpInst *getLatchCmpInst() const;
 
   /// Obtain the unique incoming and back edge. Return false if they are
   /// non-unique or the loop is dead; otherwise, return true.
@@ -665,8 +619,8 @@ public:
     /// - the final value of the induction variable can be found
     ///
     /// Else None.
-    static std::optional<Loop::LoopBounds>
-    getBounds(const Loop &L, PHINode &IndVar, ScalarEvolution &SE);
+    static Optional<Loop::LoopBounds> getBounds(const Loop &L, PHINode &IndVar,
+                                                ScalarEvolution &SE);
 
     /// Get the initial value of the loop induction variable.
     Value &getInitialIVValue() const { return InitialIVValue; }
@@ -750,8 +704,8 @@ public:
   };
 
   /// Return the struct LoopBounds collected if all struct members are found,
-  /// else std::nullopt.
-  std::optional<LoopBounds> getBounds(ScalarEvolution &SE) const;
+  /// else None.
+  Optional<LoopBounds> getBounds(ScalarEvolution &SE) const;
 
   /// Return the loop induction variable if found, else return nullptr.
   /// An instruction is considered as the loop induction variable if
@@ -817,15 +771,11 @@ public:
   /// by one each time through the loop.
   bool isCanonical(ScalarEvolution &SE) const;
 
-  /// Return true if the Loop is in LCSSA form. If \p IgnoreTokens is set to
-  /// true, token values defined inside loop are allowed to violate LCSSA form.
-  bool isLCSSAForm(const DominatorTree &DT, bool IgnoreTokens = true) const;
+  /// Return true if the Loop is in LCSSA form.
+  bool isLCSSAForm(DominatorTree &DT) const;
 
-  /// Return true if this Loop and all inner subloops are in LCSSA form. If \p
-  /// IgnoreTokens is set to true, token values defined inside loop are allowed
-  /// to violate LCSSA form.
-  bool isRecursivelyLCSSAForm(const DominatorTree &DT, const LoopInfo &LI,
-                              bool IgnoreTokens = true) const;
+  /// Return true if this Loop and all inner subloops are in LCSSA form.
+  bool isRecursivelyLCSSAForm(DominatorTree &DT, const LoopInfo &LI) const;
 
   /// Return true if the Loop is in the form that the LoopSimplify form
   /// transforms loops to, which is sometimes called normal form.
@@ -871,9 +821,6 @@ public:
   /// from being unrolled more than is directed by a pragma if the loop
   /// unrolling pass is run more than once (which it generally is).
   void setLoopAlreadyUnrolled();
-
-  /// Add llvm.loop.mustprogress to this loop's loop id metadata.
-  void setLoopMustProgress();
 
   void dump() const;
   void dumpVerbose() const;
@@ -922,7 +869,7 @@ template <class BlockT, class LoopT> class LoopInfoBase {
   LoopInfoBase(const LoopInfoBase &) = delete;
 
 public:
-  LoopInfoBase() = default;
+  LoopInfoBase() {}
   ~LoopInfoBase() { releaseMemory(); }
 
   LoopInfoBase(LoopInfoBase &&Arg)
@@ -975,7 +922,7 @@ public:
   ///
   /// Note that because loops form a forest of trees, preorder is equivalent to
   /// reverse postorder.
-  SmallVector<LoopT *, 4> getLoopsInPreorder() const;
+  SmallVector<LoopT *, 4> getLoopsInPreorder();
 
   /// Return all of the loops in the function in preorder across the loop
   /// nests, with siblings in *reverse* program order.
@@ -985,7 +932,7 @@ public:
   ///
   /// Also note that this is *not* a reverse preorder. Only the siblings are in
   /// reverse program order.
-  SmallVector<LoopT *, 4> getLoopsInReverseSiblingPreorder() const;
+  SmallVector<LoopT *, 4> getLoopsInReverseSiblingPreorder();
 
   /// Return the inner most loop that BB lives in. If a basic block is in no
   /// loop (for example the entry node), null is returned.
@@ -1007,19 +954,13 @@ public:
     return L && L->getHeader() == BB;
   }
 
-  /// Return the top-level loops.
-  const std::vector<LoopT *> &getTopLevelLoops() const { return TopLevelLoops; }
-
-  /// Return the top-level loops.
-  std::vector<LoopT *> &getTopLevelLoopsVector() { return TopLevelLoops; }
-
   /// This removes the specified top-level loop from this loop info object.
   /// The loop is not deleted, as it will presumably be inserted into
   /// another loop.
   LoopT *removeLoop(iterator I) {
     assert(I != end() && "Cannot remove end iterator!");
     LoopT *L = *I;
-    assert(L->isOutermost() && "Not a top-level loop!");
+    assert(!L->getParentLoop() && "Not a top-level loop!");
     TopLevelLoops.erase(TopLevelLoops.begin() + (I - begin()));
     return L;
   }
@@ -1047,7 +988,7 @@ public:
 
   /// This adds the specified loop to the collection of top-level loops.
   void addTopLevelLoop(LoopT *New) {
-    assert(New->isOutermost() && "Loop already in subloop!");
+    assert(!New->getParentLoop() && "Loop already in subloop!");
     TopLevelLoops.push_back(New);
   }
 
@@ -1114,7 +1055,7 @@ class LoopInfo : public LoopInfoBase<BasicBlock, Loop> {
   LoopInfo(const LoopInfo &) = delete;
 
 public:
-  LoopInfo() = default;
+  LoopInfo() {}
   explicit LoopInfo(const DominatorTreeBase<BasicBlock, false> &DomTree);
 
   LoopInfo(LoopInfo &&Arg) : BaseT(std::move(static_cast<BaseT &>(Arg))) {}
@@ -1228,22 +1169,7 @@ public:
 
     return true;
   }
-
-  // Return true if a new use of V added in ExitBB would require an LCSSA PHI
-  // to be inserted at the begining of the block.  Note that V is assumed to
-  // dominate ExitBB, and ExitBB must be the exit block of some loop.  The
-  // IR is assumed to be in LCSSA form before the planned insertion.
-  bool wouldBeOutOfLoopUseRequiringLCSSA(const Value *V,
-                                         const BasicBlock *ExitBB) const;
-
 };
-
-/// Enable verification of loop info.
-///
-/// The flag enables checks which are expensive and are disabled by default
-/// unless the `EXPENSIVE_CHECKS` macro is defined.  The `-verify-loop-info`
-/// flag allows the checks to be enabled selectively without re-compilation.
-extern bool VerifyLoopInfo;
 
 // Allow clients to walk the list of nested loops...
 template <> struct GraphTraits<const Loop *> {
@@ -1326,41 +1252,6 @@ MDNode *findOptionMDForLoopID(MDNode *LoopID, StringRef Name);
 /// following operands are the metadata's values. If no metadata with @p Name is
 /// found, return nullptr.
 MDNode *findOptionMDForLoop(const Loop *TheLoop, StringRef Name);
-
-std::optional<bool> getOptionalBoolLoopAttribute(const Loop *TheLoop,
-                                                 StringRef Name);
-
-/// Returns true if Name is applied to TheLoop and enabled.
-bool getBooleanLoopAttribute(const Loop *TheLoop, StringRef Name);
-
-/// Find named metadata for a loop with an integer value.
-std::optional<int> getOptionalIntLoopAttribute(const Loop *TheLoop,
-                                               StringRef Name);
-
-/// Find named metadata for a loop with an integer value. Return \p Default if
-/// not set.
-int getIntLoopAttribute(const Loop *TheLoop, StringRef Name, int Default = 0);
-
-/// Find string metadata for loop
-///
-/// If it has a value (e.g. {"llvm.distribute", 1} return the value as an
-/// operand or null otherwise.  If the string metadata is not found return
-/// Optional's not-a-value.
-std::optional<const MDOperand *> findStringMetadataForLoop(const Loop *TheLoop,
-                                                           StringRef Name);
-
-/// Look for the loop attribute that requires progress within the loop.
-/// Note: Most consumers probably want "isMustProgress" which checks
-/// the containing function attribute too.
-bool hasMustProgress(const Loop *L);
-
-/// Return true if this loop can be assumed to make progress.  (i.e. can't
-/// be infinite without side effects without also being undefined)
-bool isMustProgress(const Loop *L);
-
-/// Return true if this loop can be assumed to run for a finite number of
-/// iterations.
-bool isFinite(const Loop *L);
 
 /// Return whether an MDNode might represent an access group.
 ///

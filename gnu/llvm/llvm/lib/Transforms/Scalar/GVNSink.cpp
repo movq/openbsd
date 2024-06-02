@@ -35,13 +35,17 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -154,7 +158,8 @@ public:
 
   void restrictToBlocks(SmallSetVector<BasicBlock *, 4> &Blocks) {
     for (auto II = Insts.begin(); II != Insts.end();) {
-      if (!llvm::is_contained(Blocks, (*II)->getParent())) {
+      if (std::find(Blocks.begin(), Blocks.end(), (*II)->getParent()) ==
+          Blocks.end()) {
         ActiveBlocks.remove((*II)->getParent());
         II = Insts.erase(II);
       } else {
@@ -272,7 +277,8 @@ public:
     auto VI = Values.begin();
     while (BI != Blocks.end()) {
       assert(VI != Values.end());
-      if (!llvm::is_contained(NewBlocks, *BI)) {
+      if (std::find(NewBlocks.begin(), NewBlocks.end(), *BI) ==
+          NewBlocks.end()) {
         BI = Blocks.erase(BI);
         VI = Values.erase(VI);
       } else {
@@ -286,7 +292,7 @@ public:
   ArrayRef<Value *> getValues() const { return Values; }
 
   bool areAllIncomingValuesSame() const {
-    return llvm::all_equal(Values);
+    return llvm::all_of(Values, [&](Value *V) { return V == Values[0]; });
   }
 
   bool areAllIncomingValuesSameType() const {
@@ -344,7 +350,6 @@ using ModelledPHISet = DenseSet<ModelledPHI, DenseMapInfo<ModelledPHI>>;
 class InstructionUseExpr : public GVNExpression::BasicExpression {
   unsigned MemoryUseOrder = -1;
   bool Volatile = false;
-  ArrayRef<int> ShuffleMask;
 
 public:
   InstructionUseExpr(Instruction *I, ArrayRecycler<Value *> &R,
@@ -353,9 +358,6 @@ public:
     allocateOperands(R, A);
     setOpcode(I->getOpcode());
     setType(I->getType());
-
-    if (ShuffleVectorInst *SVI = dyn_cast<ShuffleVectorInst>(I))
-      ShuffleMask = SVI->getShuffleMask().copy(A);
 
     for (auto &U : I->uses())
       op_push_back(U.getUser());
@@ -367,19 +369,17 @@ public:
 
   hash_code getHashValue() const override {
     return hash_combine(GVNExpression::BasicExpression::getHashValue(),
-                        MemoryUseOrder, Volatile, ShuffleMask);
+                        MemoryUseOrder, Volatile);
   }
 
   template <typename Function> hash_code getHashValue(Function MapFn) {
-    hash_code H = hash_combine(getOpcode(), getType(), MemoryUseOrder, Volatile,
-                               ShuffleMask);
+    hash_code H =
+        hash_combine(getOpcode(), getType(), MemoryUseOrder, Volatile);
     for (auto *V : operands())
       H = hash_combine(H, MapFn(V));
     return H;
   }
 };
-
-using BasicBlocksSet = SmallPtrSet<const BasicBlock *, 32>;
 
 class ValueTable {
   DenseMap<Value *, uint32_t> ValueNumbering;
@@ -388,7 +388,6 @@ class ValueTable {
   BumpPtrAllocator Allocator;
   ArrayRecycler<Value *> Recycler;
   uint32_t nextValueNumber = 1;
-  BasicBlocksSet ReachableBBs;
 
   /// Create an expression for I based on its opcode and its uses. If I
   /// touches or reads memory, the expression is also based upon its memory
@@ -420,11 +419,6 @@ class ValueTable {
 public:
   ValueTable() = default;
 
-  /// Set basic blocks reachable from entry block.
-  void setReachableBBs(const BasicBlocksSet &ReachableBBs) {
-    this->ReachableBBs = ReachableBBs;
-  }
-
   /// Returns the value number for the specified value, assigning
   /// it a new number if it did not have one before.
   uint32_t lookupOrAdd(Value *V) {
@@ -438,9 +432,6 @@ public:
     }
 
     Instruction *I = cast<Instruction>(V);
-    if (!ReachableBBs.contains(I->getParent()))
-      return ~0U;
-
     InstructionUseExpr *exp = nullptr;
     switch (I->getOpcode()) {
     case Instruction::Load:
@@ -484,7 +475,6 @@ public:
     case Instruction::PtrToInt:
     case Instruction::IntToPtr:
     case Instruction::BitCast:
-    case Instruction::AddrSpaceCast:
     case Instruction::Select:
     case Instruction::ExtractElement:
     case Instruction::InsertElement:
@@ -577,7 +567,6 @@ public:
 
     unsigned NumSunk = 0;
     ReversePostOrderTraversal<Function*> RPOT(&F);
-    VN.setReachableBBs(BasicBlocksSet(RPOT.begin(), RPOT.end()));
     for (auto *N : RPOT)
       NumSunk += sinkBB(N);
 
@@ -587,7 +576,7 @@ public:
 private:
   ValueTable VN;
 
-  bool shouldAvoidSinkingInstruction(Instruction *I) {
+  bool isInstructionBlacklisted(Instruction *I) {
     // These instructions may change or break semantics if moved.
     if (isa<PHINode>(I) || I->isEHPad() || isa<AllocaInst>(I) ||
         I->getType()->isTokenTy())
@@ -597,8 +586,8 @@ private:
 
   /// The main heuristic function. Analyze the set of instructions pointed to by
   /// LRI and return a candidate solution if these instructions can be sunk, or
-  /// std::nullopt otherwise.
-  std::optional<SinkingInstructionCandidate> analyzeInstructionForSinking(
+  /// None otherwise.
+  Optional<SinkingInstructionCandidate> analyzeInstructionForSinking(
       LockstepReverseIterator &LRI, unsigned &InstNum, unsigned &MemoryInstNum,
       ModelledPHISet &NeededPHIs, SmallPtrSetImpl<Value *> &PHIContents);
 
@@ -632,18 +621,15 @@ private:
       if (PN->getIncomingValue(0) != PN)
         PN->replaceAllUsesWith(PN->getIncomingValue(0));
       else
-        PN->replaceAllUsesWith(PoisonValue::get(PN->getType()));
+        PN->replaceAllUsesWith(UndefValue::get(PN->getType()));
       PN->eraseFromParent();
     }
   }
 };
 
-std::optional<SinkingInstructionCandidate>
-GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
-                                      unsigned &InstNum,
-                                      unsigned &MemoryInstNum,
-                                      ModelledPHISet &NeededPHIs,
-                                      SmallPtrSetImpl<Value *> &PHIContents) {
+Optional<SinkingInstructionCandidate> GVNSink::analyzeInstructionForSinking(
+  LockstepReverseIterator &LRI, unsigned &InstNum, unsigned &MemoryInstNum,
+  ModelledPHISet &NeededPHIs, SmallPtrSetImpl<Value *> &PHIContents) {
   auto Insts = *LRI;
   LLVM_DEBUG(dbgs() << " -- Analyzing instruction set: [\n"; for (auto *I
                                                                   : Insts) {
@@ -655,15 +641,20 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
     uint32_t N = VN.lookupOrAdd(I);
     LLVM_DEBUG(dbgs() << " VN=" << Twine::utohexstr(N) << " for" << *I << "\n");
     if (N == ~0U)
-      return std::nullopt;
+      return None;
     VNums[N]++;
   }
   unsigned VNumToSink =
-      std::max_element(VNums.begin(), VNums.end(), llvm::less_second())->first;
+      std::max_element(VNums.begin(), VNums.end(),
+                       [](const std::pair<uint32_t, unsigned> &I,
+                          const std::pair<uint32_t, unsigned> &J) {
+                         return I.second < J.second;
+                       })
+          ->first;
 
   if (VNums[VNumToSink] == 1)
     // Can't sink anything!
-    return std::nullopt;
+    return None;
 
   // Now restrict the number of incoming blocks down to only those with
   // VNumToSink.
@@ -677,8 +668,8 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
       NewInsts.push_back(I);
   }
   for (auto *I : NewInsts)
-    if (shouldAvoidSinkingInstruction(I))
-      return std::nullopt;
+    if (isInstructionBlacklisted(I))
+      return None;
 
   // If we've restricted the incoming blocks, restrict all needed PHIs also
   // to that set.
@@ -698,8 +689,10 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
   ModelledPHI NewPHI(NewInsts, ActivePreds);
 
   // Does sinking this instruction render previous PHIs redundant?
-  if (NeededPHIs.erase(NewPHI))
+  if (NeededPHIs.find(NewPHI) != NeededPHIs.end()) {
+    NeededPHIs.erase(NewPHI);
     RecomputePHIContents = true;
+  }
 
   if (RecomputePHIContents) {
     // The needed PHIs have changed, so recompute the set of all needed
@@ -716,7 +709,7 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
       // V exists in this PHI, but the whole PHI is different to NewPHI
       // (else it would have been removed earlier). We cannot continue
       // because this isn't representable.
-      return std::nullopt;
+      return None;
 
   // Which operands need PHIs?
   // FIXME: If any of these fail, we should partition up the candidates to
@@ -729,7 +722,7 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
     return I->getNumOperands() != I0->getNumOperands();
   };
   if (any_of(NewInsts, hasDifferentNumOperands))
-    return std::nullopt;
+    return None;
 
   for (unsigned OpNum = 0, E = I0->getNumOperands(); OpNum != E; ++OpNum) {
     ModelledPHI PHI(NewInsts, OpNum, ActivePreds);
@@ -737,15 +730,15 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
       continue;
     if (!canReplaceOperandWithVariable(I0, OpNum))
       // We can 't create a PHI from this instruction!
-      return std::nullopt;
+      return None;
     if (NeededPHIs.count(PHI))
       continue;
     if (!PHI.areAllIncomingValuesSameType())
-      return std::nullopt;
+      return None;
     // Don't create indirect calls! The called value is the final operand.
     if ((isa<CallInst>(I0) || isa<InvokeInst>(I0)) && OpNum == E - 1 &&
         PHI.areAnyIncomingValuesConstant())
-      return std::nullopt;
+      return None;
 
     NeededPHIs.reserve(NeededPHIs.size());
     NeededPHIs.insert(PHI);
@@ -760,7 +753,8 @@ GVNSink::analyzeInstructionForSinking(LockstepReverseIterator &LRI,
   Cand.NumMemoryInsts = MemoryInstNum;
   Cand.NumBlocks = ActivePreds.size();
   Cand.NumPHIs = NeededPHIs.size();
-  append_range(Cand.Blocks, ActivePreds);
+  for (auto *C : ActivePreds)
+    Cand.Blocks.push_back(C);
 
   return Cand;
 }
@@ -782,9 +776,12 @@ unsigned GVNSink::sinkBB(BasicBlock *BBEnd) {
 
   unsigned NumOrigPreds = Preds.size();
   // We can only sink instructions through unconditional branches.
-  llvm::erase_if(Preds, [](BasicBlock *BB) {
-    return BB->getTerminator()->getNumSuccessors() != 1;
-  });
+  for (auto I = Preds.begin(); I != Preds.end();) {
+    if ((*I)->getTerminator()->getNumSuccessors() != 1)
+      I = Preds.erase(I);
+    else
+      ++I;
+  }
 
   LockstepReverseIterator LRI(Preds);
   SmallVector<SinkingInstructionCandidate, 4> Candidates;
@@ -915,7 +912,10 @@ PreservedAnalyses GVNSinkPass::run(Function &F, FunctionAnalysisManager &AM) {
   GVNSink G;
   if (!G.run(F))
     return PreservedAnalyses::all();
-  return PreservedAnalyses::none();
+
+  PreservedAnalyses PA;
+  PA.preserve<GlobalsAA>();
+  return PA;
 }
 
 char GVNSinkLegacyPass::ID = 0;

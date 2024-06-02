@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/BinaryFormat/Magic.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/WindowsMachineFlag.h"
 #include "llvm/Object/WindowsResource.h"
@@ -21,6 +21,7 @@
 #include "llvm/Support/BinaryStreamError.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Process.h"
@@ -44,14 +45,11 @@ enum ID {
 #undef OPTION
 };
 
-#define PREFIX(NAME, VALUE)                                                    \
-  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
-  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
-                                                std::size(NAME##_init) - 1);
+#define PREFIX(NAME, VALUE) const char *const NAME[] = VALUE;
 #include "Opts.inc"
 #undef PREFIX
 
-static constexpr opt::OptTable::Info InfoTable[] = {
+static const opt::OptTable::Info InfoTable[] = {
 #define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
                HELPTEXT, METAVAR, VALUES)                                      \
   {                                                                            \
@@ -63,13 +61,13 @@ static constexpr opt::OptTable::Info InfoTable[] = {
 #undef OPTION
 };
 
-class CvtResOptTable : public opt::GenericOptTable {
+class CvtResOptTable : public opt::OptTable {
 public:
-  CvtResOptTable() : opt::GenericOptTable(InfoTable, true) {}
+  CvtResOptTable() : OptTable(InfoTable, true) {}
 };
 }
 
-[[noreturn]] static void reportError(Twine Msg) {
+LLVM_ATTRIBUTE_NORETURN void reportError(Twine Msg) {
   errs() << Msg;
   exit(1);
 }
@@ -78,15 +76,13 @@ static void reportError(StringRef Input, std::error_code EC) {
   reportError(Twine(Input) + ": " + EC.message() + ".\n");
 }
 
-static void error(StringRef Input, Error EC) {
+void error(std::error_code EC) {
   if (!EC)
     return;
-  handleAllErrors(std::move(EC), [&](const ErrorInfoBase &EI) {
-    reportError(Twine(Input) + ": " + EI.message() + ".\n");
-  });
+  reportError(EC.message() + ".\n");
 }
 
-static void error(Error EC) {
+void error(Error EC) {
   if (!EC)
     return;
   handleAllErrors(std::move(EC),
@@ -106,26 +102,16 @@ template <typename T> T error(Expected<T> EC) {
   return std::move(EC.get());
 }
 
-template <typename T> T error(StringRef Input, Expected<T> EC) {
-  if (!EC)
-    error(Input, EC.takeError());
-  return std::move(EC.get());
-}
-
-template <typename T> T error(StringRef Input, ErrorOr<T> &&EC) {
-  return error(Input, errorOrToExpected(std::move(EC)));
-}
-
 int main(int Argc, const char **Argv) {
   InitLLVM X(Argc, Argv);
 
   CvtResOptTable T;
   unsigned MAI, MAC;
-  ArrayRef<const char *> ArgsArr = ArrayRef(Argv + 1, Argc - 1);
+  ArrayRef<const char *> ArgsArr = makeArrayRef(Argv + 1, Argc - 1);
   opt::InputArgList InputArgs = T.ParseArgs(ArgsArr, MAI, MAC);
 
   if (InputArgs.hasArg(OPT_HELP)) {
-    T.printHelp(outs(), "llvm-cvtres [options] file...", "Resource Converter");
+    T.PrintHelp(outs(), "llvm-cvtres [options] file...", "Resource Converter");
     return 0;
   }
 
@@ -176,17 +162,15 @@ int main(int Argc, const char **Argv) {
   WindowsResourceParser Parser;
 
   for (const auto &File : InputFiles) {
-    std::unique_ptr<MemoryBuffer> Buffer = error(
-        File, MemoryBuffer::getFileOrSTDIN(File, /*IsText=*/false,
-                                           /*RequiresNullTerminator=*/false));
-    file_magic Type = identify_magic(Buffer->getMemBufferRef().getBuffer());
-    if (Type != file_magic::windows_resource)
-      reportError(File + ": unrecognized file format.\n");
-    std::unique_ptr<WindowsResource> Binary = error(
-        File,
-        WindowsResource::createWindowsResource(Buffer->getMemBufferRef()));
+    Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
+    if (!BinaryOrErr)
+      reportError(File, errorToErrorCode(BinaryOrErr.takeError()));
 
-    WindowsResource *RF = Binary.get();
+    Binary &Binary = *BinaryOrErr.get().getBinary();
+
+    WindowsResource *RF = dyn_cast<WindowsResource>(&Binary);
+    if (!RF)
+      reportError(File + ": unrecognized file format.\n");
 
     if (Verbose) {
       int EntryNumber = 0;
@@ -222,14 +206,12 @@ int main(int Argc, const char **Argv) {
   error(FileBuffer->commit());
 
   if (Verbose) {
-    std::unique_ptr<MemoryBuffer> Buffer =
-        error(OutputFile,
-              MemoryBuffer::getFileOrSTDIN(OutputFile, /*IsText=*/false,
-                                           /*RequiresNullTerminator=*/false));
-
+    Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(OutputFile);
+    if (!BinaryOrErr)
+      reportError(OutputFile, errorToErrorCode(BinaryOrErr.takeError()));
+    Binary &Binary = *BinaryOrErr.get().getBinary();
     ScopedPrinter W(errs());
-    W.printBinaryBlock("Output File Raw Data",
-                       Buffer->getMemBufferRef().getBuffer());
+    W.printBinaryBlock("Output File Raw Data", Binary.getData());
   }
 
   return 0;

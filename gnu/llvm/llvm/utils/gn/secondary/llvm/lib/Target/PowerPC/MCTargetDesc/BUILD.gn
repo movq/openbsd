@@ -47,20 +47,18 @@ static_library("MCTargetDesc") {
     "//llvm/lib/MC",
     "//llvm/lib/Support",
     "//llvm/lib/Target/PowerPC/TargetInfo",
-    "//llvm/lib/TargetParser",
   ]
   include_dirs = [ ".." ]
   sources = [
     "PPCAsmBackend.cpp",
     "PPCELFObjectWriter.cpp",
-    "PPCELFStreamer.cpp",
     "PPCInstPrinter.cpp",
     "PPCMCAsmInfo.cpp",
     "PPCMCCodeEmitter.cpp",
     "PPCMCExpr.cpp",
     "PPCMCTargetDesc.cpp",
+    "PPCMachObjectWriter.cpp",
     "PPCPredicates.cpp",
     "PPCXCOFFObjectWriter.cpp",
-    "PPCXCOFFStreamer.cpp",
   ]
 }

@@ -14,14 +14,21 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/IR/Function.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Mangler.h"
+#include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSymbol.h"
+#include "llvm/Support/FormattedStream.h"
+#include "llvm/Target/TargetOptions.h"
 using namespace llvm;
 
-ARMException::ARMException(AsmPrinter *A) : EHStreamer(A) {}
+ARMException::ARMException(AsmPrinter *A) : DwarfCFIExceptionBase(A) {}
 
-ARMException::~ARMException() = default;
+ARMException::~ARMException() {}
 
 ARMTargetStreamer &ARMException::getTargetStreamer() {
   MCTargetStreamer &TS = *Asm->OutStreamer->getTargetStreamer();
@@ -32,25 +39,20 @@ void ARMException::beginFunction(const MachineFunction *MF) {
   if (Asm->MAI->getExceptionHandlingType() == ExceptionHandling::ARM)
     getTargetStreamer().emitFnStart();
   // See if we need call frame info.
-  AsmPrinter::CFISection CFISecType = Asm->getFunctionCFISectionType(*MF);
-  assert(CFISecType != AsmPrinter::CFISection::EH &&
+  AsmPrinter::CFIMoveType MoveType = Asm->needsCFIMoves();
+  assert(MoveType != AsmPrinter::CFI_M_EH &&
          "non-EH CFI not yet supported in prologue with EHABI lowering");
 
-  if (CFISecType == AsmPrinter::CFISection::Debug) {
+  if (MoveType == AsmPrinter::CFI_M_Debug) {
     if (!hasEmittedCFISections) {
-      if (Asm->getModuleCFISectionType() == AsmPrinter::CFISection::Debug)
-        Asm->OutStreamer->emitCFISections(false, true);
+      if (Asm->needsOnlyDebugCFIMoves())
+        Asm->OutStreamer->EmitCFISections(false, true);
       hasEmittedCFISections = true;
     }
 
     shouldEmitCFI = true;
-    Asm->OutStreamer->emitCFIStartProc(false);
+    Asm->OutStreamer->EmitCFIStartProc(false);
   }
-}
-
-void ARMException::markFunctionEnd() {
-  if (shouldEmitCFI)
-    Asm->OutStreamer->emitCFIEndProc();
 }
 
 /// endFunction - Gather and emit post-function exception information.
@@ -73,6 +75,7 @@ void ARMException::endFunction(const MachineFunction *MF) {
     // Emit references to personality.
     if (Per) {
       MCSymbol *PerSym = Asm->getSymbol(Per);
+      Asm->OutStreamer->EmitSymbolAttribute(PerSym, MCSA_Global);
       ATS.emitPersonality(PerSym);
     }
 
@@ -99,22 +102,22 @@ void ARMException::emitTypeInfos(unsigned TTypeEncoding,
   // Emit the Catch TypeInfos.
   if (VerboseAsm && !TypeInfos.empty()) {
     Asm->OutStreamer->AddComment(">> Catch TypeInfos <<");
-    Asm->OutStreamer->addBlankLine();
+    Asm->OutStreamer->AddBlankLine();
     Entry = TypeInfos.size();
   }
 
   for (const GlobalValue *GV : reverse(TypeInfos)) {
     if (VerboseAsm)
       Asm->OutStreamer->AddComment("TypeInfo " + Twine(Entry--));
-    Asm->emitTTypeReference(GV, TTypeEncoding);
+    Asm->EmitTTypeReference(GV, TTypeEncoding);
   }
 
-  Asm->OutStreamer->emitLabel(TTBaseLabel);
+  Asm->OutStreamer->EmitLabel(TTBaseLabel);
 
   // Emit the Exception Specifications.
   if (VerboseAsm && !FilterIds.empty()) {
     Asm->OutStreamer->AddComment(">> Filter TypeInfos <<");
-    Asm->OutStreamer->addBlankLine();
+    Asm->OutStreamer->AddBlankLine();
     Entry = 0;
   }
   for (std::vector<unsigned>::const_iterator
@@ -126,7 +129,7 @@ void ARMException::emitTypeInfos(unsigned TTypeEncoding,
         Asm->OutStreamer->AddComment("FilterInfo " + Twine(Entry));
     }
 
-    Asm->emitTTypeReference((TypeID == 0 ? nullptr : TypeInfos[TypeID - 1]),
+    Asm->EmitTTypeReference((TypeID == 0 ? nullptr : TypeInfos[TypeID - 1]),
                             TTypeEncoding);
   }
 }

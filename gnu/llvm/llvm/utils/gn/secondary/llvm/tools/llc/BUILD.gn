@@ -11,12 +11,13 @@ executable("llc") {
     "//llvm/lib/Support",
     "//llvm/lib/Target",
     "//llvm/lib/Target:TargetsToBuild",
-    "//llvm/lib/TargetParser",
     "//llvm/lib/Transforms/Scalar",
     "//llvm/lib/Transforms/Utils",
     "//llvm/lib/Transforms/Vectorize",
   ]
-  sources = [ "llc.cpp" ]
+  sources = [
+    "llc.cpp",
+  ]
 
   # Support plugins.
   # FIXME: Disable dead stripping once other binaries are dead-stripped.

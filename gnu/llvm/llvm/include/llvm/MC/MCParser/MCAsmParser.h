@@ -9,12 +9,13 @@
 #ifndef LLVM_MC_MCPARSER_MCASMPARSER_H
 #define LLVM_MC_MCPARSER_MCASMPARSER_H
 
-#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/MC/MCAsmMacro.h"
+#include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/Support/SMLoc.h"
 #include <cstdint>
 #include <string>
@@ -22,7 +23,6 @@
 
 namespace llvm {
 
-class MCAsmLexer;
 class MCAsmInfo;
 class MCAsmParserExtension;
 class MCContext;
@@ -88,20 +88,6 @@ struct InlineAsmIdentifierInfo {
 private:
   // Discriminate using the current kind.
   IdKind Kind;
-};
-
-// Generic type information for an assembly object.
-// All sizes measured in bytes.
-struct AsmTypeInfo {
-  StringRef Name;
-  unsigned Size = 0;
-  unsigned ElementSize = 0;
-  unsigned Length = 0;
-};
-
-struct AsmFieldInfo {
-  AsmTypeInfo Type;
-  unsigned Offset = 0;
 };
 
 /// Generic Sema callback for assembly parser.
@@ -179,58 +165,37 @@ public:
   /// Run the parser on the input source buffer.
   virtual bool Run(bool NoInitialTextSection, bool NoFinalize = false) = 0;
 
-  virtual void setParsingMSInlineAsm(bool V) = 0;
-  virtual bool isParsingMSInlineAsm() = 0;
-
-  virtual bool discardLTOSymbol(StringRef) const { return false; }
-
-  virtual bool isParsingMasm() const { return false; }
-
-  virtual bool defineMacro(StringRef Name, StringRef Value) { return true; }
-
-  virtual bool lookUpField(StringRef Name, AsmFieldInfo &Info) const {
-    return true;
-  }
-  virtual bool lookUpField(StringRef Base, StringRef Member,
-                           AsmFieldInfo &Info) const {
-    return true;
-  }
-
-  virtual bool lookUpType(StringRef Name, AsmTypeInfo &Info) const {
-    return true;
-  }
+  virtual void setParsingInlineAsm(bool V) = 0;
+  virtual bool isParsingInlineAsm() = 0;
 
   /// Parse MS-style inline assembly.
   virtual bool parseMSInlineAsm(
-      std::string &AsmString, unsigned &NumOutputs, unsigned &NumInputs,
-      SmallVectorImpl<std::pair<void *, bool>> &OpDecls,
+      void *AsmLoc, std::string &AsmString, unsigned &NumOutputs,
+      unsigned &NumInputs, SmallVectorImpl<std::pair<void *, bool>> &OpDecls,
       SmallVectorImpl<std::string> &Constraints,
       SmallVectorImpl<std::string> &Clobbers, const MCInstrInfo *MII,
       const MCInstPrinter *IP, MCAsmParserSemaCallback &SI) = 0;
 
   /// Emit a note at the location \p L, with the message \p Msg.
-  virtual void Note(SMLoc L, const Twine &Msg,
-                    SMRange Range = std::nullopt) = 0;
+  virtual void Note(SMLoc L, const Twine &Msg, SMRange Range = None) = 0;
 
   /// Emit a warning at the location \p L, with the message \p Msg.
   ///
   /// \return The return value is true, if warnings are fatal.
-  virtual bool Warning(SMLoc L, const Twine &Msg,
-                       SMRange Range = std::nullopt) = 0;
+  virtual bool Warning(SMLoc L, const Twine &Msg, SMRange Range = None) = 0;
 
   /// Return an error at the location \p L, with the message \p Msg. This
   /// may be modified before being emitted.
   ///
   /// \return The return value is always true, as an idiomatic convenience to
   /// clients.
-  bool Error(SMLoc L, const Twine &Msg, SMRange Range = std::nullopt);
+  bool Error(SMLoc L, const Twine &Msg, SMRange Range = None);
 
   /// Emit an error at the location \p L, with the message \p Msg.
   ///
   /// \return The return value is always true, as an idiomatic convenience to
   /// clients.
-  virtual bool printError(SMLoc L, const Twine &Msg,
-                          SMRange Range = std::nullopt) = 0;
+  virtual bool printError(SMLoc L, const Twine &Msg, SMRange Range = None) = 0;
 
   bool hasPendingError() { return !PendingErrors.empty(); }
 
@@ -255,7 +220,7 @@ public:
   const AsmToken &getTok() const;
 
   /// Report an error at the current lexer location.
-  bool TokError(const Twine &Msg, SMRange Range = std::nullopt);
+  bool TokError(const Twine &Msg, SMRange Range = None);
 
   bool parseTokenLoc(SMLoc &Loc);
   bool parseToken(AsmToken::TokenKind T, const Twine &Msg = "unexpected token");
@@ -263,9 +228,6 @@ public:
   /// success.
   bool parseOptionalToken(AsmToken::TokenKind T);
 
-  bool parseComma() { return parseToken(AsmToken::Comma, "expected comma"); }
-  bool parseRParen() { return parseToken(AsmToken::RParen, "expected ')'"); }
-  bool parseEOL();
   bool parseEOL(const Twine &ErrMsg);
 
   bool parseMany(function_ref<bool()> parseOne, bool hasComma = true);
@@ -288,10 +250,6 @@ public:
   /// characters and return the string contents.
   virtual bool parseEscapedString(std::string &Data) = 0;
 
-  /// Parse an angle-bracket delimited string at the current position if one is
-  /// present, returning the string contents.
-  virtual bool parseAngleBracketString(std::string &Data) = 0;
-
   /// Skip to the end of the current statement, for error recovery.
   virtual void eatToEndOfStatement() = 0;
 
@@ -308,8 +266,7 @@ public:
   /// \param Res - The value of the expression. The result is undefined
   /// on error.
   /// \return - False on success.
-  virtual bool parsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc,
-                                AsmTypeInfo *TypeInfo) = 0;
+  virtual bool parsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) = 0;
 
   /// Parse an arbitrary expression, assuming that an initial '(' has
   /// already been consumed.
@@ -341,18 +298,11 @@ public:
   /// \return - False on success.
   virtual bool parseParenExprOfDepth(unsigned ParenDepth, const MCExpr *&Res,
                                      SMLoc &EndLoc) = 0;
-
-  /// Parse a .gnu_attribute.
-  bool parseGNUAttribute(SMLoc L, int64_t &Tag, int64_t &IntegerValue);
 };
 
-/// Create an MCAsmParser instance for parsing assembly similar to gas syntax
+/// Create an MCAsmParser instance.
 MCAsmParser *createMCAsmParser(SourceMgr &, MCContext &, MCStreamer &,
                                const MCAsmInfo &, unsigned CB = 0);
-
-/// Create an MCAsmParser instance for parsing Microsoft MASM-style assembly
-MCAsmParser *createMCMasmParser(SourceMgr &, MCContext &, MCStreamer &,
-                                const MCAsmInfo &, struct tm, unsigned CB = 0);
 
 } // end namespace llvm
 

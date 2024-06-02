@@ -35,15 +35,12 @@
 #define LLVM_ANALYSIS_ALIASANALYSISSUMMARY_H
 
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/InstrTypes.h"
 #include <bitset>
-#include <optional>
 
 namespace llvm {
-
-class CallBase;
-class Value;
-
 namespace cflaa {
 
 //===----------------------------------------------------------------------===//
@@ -203,8 +200,8 @@ struct InstantiatedValue {
   Value *Val;
   unsigned DerefLevel;
 };
-std::optional<InstantiatedValue>
-instantiateInterfaceValue(InterfaceValue IValue, CallBase &Call);
+Optional<InstantiatedValue> instantiateInterfaceValue(InterfaceValue IValue,
+                                                      CallBase &Call);
 
 inline bool operator==(InstantiatedValue LHS, InstantiatedValue RHS) {
   return LHS.Val == RHS.Val && LHS.DerefLevel == RHS.DerefLevel;
@@ -232,7 +229,7 @@ struct InstantiatedRelation {
   InstantiatedValue From, To;
   int64_t Offset;
 };
-std::optional<InstantiatedRelation>
+Optional<InstantiatedRelation>
 instantiateExternalRelation(ExternalRelation ERelation, CallBase &Call);
 
 /// This is the result of instantiating ExternalAttribute at a particular
@@ -241,8 +238,8 @@ struct InstantiatedAttr {
   InstantiatedValue IValue;
   AliasAttrs Attr;
 };
-std::optional<InstantiatedAttr>
-instantiateExternalAttribute(ExternalAttribute EAttr, CallBase &Call);
+Optional<InstantiatedAttr> instantiateExternalAttribute(ExternalAttribute EAttr,
+                                                        CallBase &Call);
 }
 
 template <> struct DenseMapInfo<cflaa::InstantiatedValue> {

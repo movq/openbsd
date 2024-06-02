@@ -14,10 +14,6 @@
 // Thumb specific DAG Nodes.
 //
 
-def ARMtsecall : SDNode<"ARMISD::tSECALL", SDT_ARMcall,
-                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
-                         SDNPVariadic]>;
-
 def imm_sr_XFORM: SDNodeXForm<imm, [{
   unsigned Imm = N->getZExtValue();
   return CurDAG->getTargetConstant((Imm == 32 ? 0 : Imm), SDLoc(N), MVT::i32);
@@ -168,7 +164,6 @@ def thumb_cb_target : Operand<OtherVT> {
   let EncoderMethod = "getThumbCBTargetOpValue";
   let DecoderMethod = "DecodeThumbCmpBROperand";
 }
-} // OperandType = "OPERAND_PCREL"
 
 // t_addrmode_pc := <label> => pc + imm8 * 4
 //
@@ -177,6 +172,7 @@ def t_addrmode_pc : MemOperand {
   let DecoderMethod = "DecodeThumbAddrModePC";
   let PrintMethod = "printThumbLdrLabelOperand";
   let ParserMatchClass = ThumbMemPC;
+}
 }
 
 // t_addrmode_rr := reg + reg
@@ -503,10 +499,6 @@ let isReturn = 1, isTerminator = 1, isBarrier = 1 in {
   def tBX_RET : tPseudoExpand<(outs), (ins pred:$p), 2, IIC_Br,
                    [(ARMretflag)], (tBX LR, pred:$p)>, Sched<[WriteBr]>;
 
-  // alternative return for CMSE entry functions
-  def tBXNS_RET : tPseudoInst<(outs), (ins), 2, IIC_Br,
-                  [(ARMseretflag)]>, Sched<[WriteBr]>;
-
   // Alternative return instruction used by vararg functions.
   def tBX_RET_vararg : tPseudoExpand<(outs), (ins tGPR:$Rm, pred:$p),
                    2, IIC_Br, [],
@@ -548,18 +540,14 @@ let isCall = 1,
 
   // Also used for Thumb2
   def tBLXr : TI<(outs), (ins pred:$p, GPR:$func), IIC_Br,
-                  "blx${p}\t$func", []>,
+                  "blx${p}\t$func",
+                  [(ARMcall GPR:$func)]>,
               Requires<[IsThumb, HasV5T]>,
               T1Special<{1,1,1,?}>, Sched<[WriteBrL]> { // A6.2.3 & A8.6.24;
     bits<4> func;
     let Inst{6-3} = func;
     let Inst{2-0} = 0b000;
   }
-  def tBLXr_noip :  ARMPseudoExpand<(outs), (ins pred:$p, GPRnoip:$func),
-                   2, IIC_Br, [], (tBLXr pred:$p, GPR:$func)>,
-                   Requires<[IsThumb, HasV5T]>,
-                   Sched<[WriteBrL]>;
-
 
   // ARMv8-M Security Extensions
   def tBLXNSr : TI<(outs), (ins pred:$p, GPRnopc:$func), IIC_Br,
@@ -571,10 +559,6 @@ let isCall = 1,
     let Inst{2-0} = 0b100;
     let Unpredictable{1-0} = 0b11;
   }
-
-  def tBLXNS_CALL : PseudoInst<(outs), (ins GPRnopc:$func), IIC_Br,
-                    [(ARMtsecall GPRnopc:$func)]>,
-                    Requires<[IsThumb, Has8MSecExt]>, Sched<[WriteBr]>;
 
   // ARMv4T
   def tBX_CALL : tPseudoInst<(outs), (ins tGPR:$func),
@@ -589,11 +573,6 @@ let isCall = 1,
                   []>,
              Requires<[IsThumb]>, Sched<[WriteBr]>;
 }
-
-def : ARMPat<(ARMcall GPR:$func), (tBLXr $func)>,
-      Requires<[IsThumb, HasV5T, NoSLSBLRMitigation]>;
-def : ARMPat<(ARMcall GPRnoip:$func), (tBLXr_noip $func)>,
-      Requires<[IsThumb, HasV5T, SLSBLRMitigation]>;
 
 let isBranch = 1, isTerminator = 1, isBarrier = 1 in {
   let isPredicable = 1 in
@@ -1520,7 +1499,6 @@ def tTBH_JT : tPseudoInst<(outs),
 let isCall = 1, Defs = [R0, R12, LR, CPSR], Uses = [SP] in
 def tTPsoft : tPseudoInst<(outs), (ins), 4, IIC_Br,
                           [(set R0, ARMthread_pointer)]>,
-                          Requires<[IsThumb, IsReadTPSoft]>,
                           Sched<[WriteBr]>;
 
 //===----------------------------------------------------------------------===//
@@ -1535,30 +1513,27 @@ def tTPsoft : tPseudoInst<(outs), (ins), 4, IIC_Br,
 // tromped upon when we get here from a longjmp(). We force everything out of
 // registers except for our own input by listing the relevant registers in
 // Defs. By doing so, we also cause the prologue/epilogue code to actively
-// preserve all of the callee-saved registers, which is exactly what we want.
+// preserve all of the callee-saved resgisters, which is exactly what we want.
 // $val is a scratch register for our use.
-// This gets lowered to an instruction sequence of 12 bytes
 let Defs = [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7, R12, CPSR ],
-    hasSideEffects = 1, isBarrier = 1, isCodeGenOnly = 1, Size = 12,
+    hasSideEffects = 1, isBarrier = 1, isCodeGenOnly = 1,
     usesCustomInserter = 1 in
 def tInt_eh_sjlj_setjmp : ThumbXI<(outs),(ins tGPR:$src, tGPR:$val),
                                   AddrModeNone, 0, NoItinerary, "","",
                           [(set R0, (ARMeh_sjlj_setjmp tGPR:$src, tGPR:$val))]>;
 
-// This gets lowered to an instruction sequence of 10 bytes
 // FIXME: Non-IOS version(s)
 let isBarrier = 1, hasSideEffects = 1, isTerminator = 1, isCodeGenOnly = 1,
-    Size = 10, Defs = [ R7, LR, SP ] in
+    Defs = [ R7, LR, SP ] in
 def tInt_eh_sjlj_longjmp : XI<(outs), (ins tGPR:$src, tGPR:$scratch),
                               AddrModeNone, 0, IndexModeNone,
                               Pseudo, NoItinerary, "", "",
                               [(ARMeh_sjlj_longjmp tGPR:$src, tGPR:$scratch)]>,
                              Requires<[IsThumb,IsNotWindows]>;
 
-// This gets lowered to an instruction sequence of 12 bytes
 // (Windows is Thumb2-only)
 let isBarrier = 1, hasSideEffects = 1, isTerminator = 1, isCodeGenOnly = 1,
-    Size = 12, Defs = [ R11, LR, SP ] in
+    Defs = [ R11, LR, SP ] in
 def tInt_WIN_eh_sjlj_longjmp
   : XI<(outs), (ins GPR:$src, GPR:$scratch), AddrModeNone, 0, IndexModeNone,
        Pseudo, NoItinerary, "", "", [(ARMeh_sjlj_longjmp GPR:$src, GPR:$scratch)]>,
@@ -1579,8 +1554,6 @@ def : T1Pat<(srl (bswap (extloadi16 t_addrmode_is2:$addr)), (i32 16)),
             (tREV16 (tLDRHi t_addrmode_is2:$addr))>;
 def : T1Pat<(srl (bswap (extloadi16 t_addrmode_rr:$addr)), (i32 16)),
             (tREV16 (tLDRHr t_addrmode_rr:$addr))>;
-def : T1Pat<(srl (bswap top16Zero:$Rn), (i32 16)),
-            (tREV16 tGPR:$Rn)>;
 def : T1Pat<(truncstorei16 (srl (bswap tGPR:$Rn), (i32 16)),
                            t_addrmode_is2:$addr),
             (tSTRHi(tREV16 tGPR:$Rn), t_addrmode_is2:$addr)>;
@@ -1665,16 +1638,19 @@ def : T1Pat<(post_store tGPR:$Rt, tGPR:$Rn, 4),
             (tSTMIA_UPD tGPR:$Rn, tGPR:$Rt)>;
 
 // If it's impossible to use [r,r] address mode for sextload, select to
-// ldsr{b|h} r, 0 instead, in a hope that the mov 0 will be more likely to be
-// commoned out than a sxth.
-let AddedComplexity = 10 in {
-def : T1Pat<(sextloadi8 tGPR:$Rn),
-            (tLDRSB tGPR:$Rn, (tMOVi8 0))>,
+// ldr{b|h} + sxt{b|h} instead.
+def : T1Pat<(sextloadi8 t_addrmode_is1:$addr),
+            (tSXTB (tLDRBi t_addrmode_is1:$addr))>,
       Requires<[IsThumb, IsThumb1Only, HasV6]>;
-def : T1Pat<(sextloadi16 tGPR:$Rn),
-            (tLDRSH tGPR:$Rn, (tMOVi8 0))>,
+def : T1Pat<(sextloadi8 t_addrmode_rr:$addr),
+            (tSXTB (tLDRBr t_addrmode_rr:$addr))>,
       Requires<[IsThumb, IsThumb1Only, HasV6]>;
-}
+def : T1Pat<(sextloadi16 t_addrmode_is2:$addr),
+            (tSXTH (tLDRHi t_addrmode_is2:$addr))>,
+      Requires<[IsThumb, IsThumb1Only, HasV6]>;
+def : T1Pat<(sextloadi16 t_addrmode_rr:$addr),
+            (tSXTH (tLDRHr t_addrmode_rr:$addr))>,
+      Requires<[IsThumb, IsThumb1Only, HasV6]>;
 
 def : T1Pat<(sextloadi8 t_addrmode_is1:$addr),
             (tASRri (tLSLri (tLDRBi t_addrmode_is1:$addr), 24), 24)>;
@@ -1772,25 +1748,3 @@ def : tInstAlias<"asr${s}${p} $Rdm, $imm",
 def tLDRConstPool
   : tAsmPseudo<"ldr${p} $Rt, $immediate",
                (ins tGPR:$Rt, const_pool_asm_imm:$immediate, pred:$p)>;
-
-//===----------------------------------
-// Atomic cmpxchg for -O0
-//===----------------------------------
-
-// See ARMInstrInfo.td. These two thumb specific pseudos are required to
-// restrict the register class for the UXTB/UXTH ops used in the expansion.
-
-let Constraints = "@earlyclobber $Rd,@earlyclobber $temp",
-    mayLoad = 1, mayStore = 1 in {
-def tCMP_SWAP_8 : PseudoInst<(outs GPR:$Rd, tGPR:$temp),
-                             (ins GPR:$addr, tGPR:$desired, GPR:$new),
-                             NoItinerary, []>, Sched<[]>;
-
-def tCMP_SWAP_16 : PseudoInst<(outs GPR:$Rd, tGPR:$temp),
-                              (ins GPR:$addr, tGPR:$desired, GPR:$new),
-                              NoItinerary, []>, Sched<[]>;
-
-def tCMP_SWAP_32 : PseudoInst<(outs GPR:$Rd, tGPR:$temp),
-                              (ins GPR:$addr, GPR:$desired, GPR:$new),
-                              NoItinerary, []>, Sched<[]>;
-}

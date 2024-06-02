@@ -17,14 +17,14 @@
 
 namespace llvm {
 class Function;
-class Pass;
-class PassRegistry;
+class Loop;
+class LPMUpdater;
 
 // New pass manager boilerplate.
 class WarnMissedTransformationsPass
     : public PassInfoMixin<WarnMissedTransformationsPass> {
 public:
-  explicit WarnMissedTransformationsPass() = default;
+  explicit WarnMissedTransformationsPass() {}
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };

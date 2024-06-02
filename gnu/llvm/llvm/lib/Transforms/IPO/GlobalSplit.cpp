@@ -111,9 +111,6 @@ static bool splitGlobal(GlobalVariable &GV) {
                             ConstantInt::get(Int32Ty, ByteOffset - SplitBegin)),
                         Type->getOperand(1)}));
     }
-
-    if (GV.hasMetadata(LLVMContext::MD_vcall_visibility))
-      SplitGV->setVCallVisibilityMetadata(GV.getVCallVisibility());
   }
 
   for (User *U : GV.users()) {
@@ -134,9 +131,9 @@ static bool splitGlobal(GlobalVariable &GV) {
   }
 
   // Finally, remove the original global. Any remaining uses refer to invalid
-  // elements of the global, so replace with poison.
+  // elements of the global, so replace with undef.
   if (!GV.use_empty())
-    GV.replaceAllUsesWith(PoisonValue::get(GV.getType()));
+    GV.replaceAllUsesWith(UndefValue::get(GV.getType()));
   GV.eraseFromParent();
   return true;
 }
@@ -154,8 +151,11 @@ static bool splitGlobals(Module &M) {
     return false;
 
   bool Changed = false;
-  for (GlobalVariable &GV : llvm::make_early_inc_range(M.globals()))
+  for (auto I = M.global_begin(); I != M.global_end();) {
+    GlobalVariable &GV = *I;
+    ++I;
     Changed |= splitGlobal(GV);
+  }
   return Changed;
 }
 

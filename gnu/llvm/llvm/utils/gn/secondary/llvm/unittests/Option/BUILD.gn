@@ -1,5 +1,5 @@
 import("//llvm/utils/TableGen/tablegen.gni")
-import("//third-party/unittest/unittest.gni")
+import("//llvm/utils/unittest/unittest.gni")
 
 tablegen("Opts") {
   visibility = [ ":OptionTests" ]
@@ -13,7 +13,6 @@ unittest("OptionTests") {
     "//llvm/lib/Support",
   ]
   sources = [
-    "OptionMarshallingTest.cpp",
     "OptionParsingTest.cpp",
   ]
 }

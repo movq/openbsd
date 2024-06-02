@@ -15,13 +15,6 @@ using namespace llvm;
 
 void XCoreFunctionInfo::anchor() { }
 
-MachineFunctionInfo *XCoreFunctionInfo::clone(
-    BumpPtrAllocator &Allocator, MachineFunction &DestMF,
-    const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
-    const {
-  return DestMF.cloneInfo<XCoreFunctionInfo>(*this);
-}
-
 bool XCoreFunctionInfo::isLargeFrame(const MachineFunction &MF) const {
   if (CachedEStackSize == -1) {
     CachedEStackSize = MF.getFrameInfo().estimateStackSize(MF);
@@ -50,7 +43,7 @@ int XCoreFunctionInfo::createLRSpillSlot(MachineFunction &MF) {
     LRSpillSlot = MFI.CreateFixedObject(TRI.getSpillSize(RC), 0, true);
   } else {
     LRSpillSlot = MFI.CreateStackObject(TRI.getSpillSize(RC),
-                                        TRI.getSpillAlign(RC), true);
+                                        TRI.getSpillAlignment(RC), true);
   }
   LRSpillSlotSet = true;
   return LRSpillSlot;
@@ -63,8 +56,8 @@ int XCoreFunctionInfo::createFPSpillSlot(MachineFunction &MF) {
   const TargetRegisterClass &RC = XCore::GRRegsRegClass;
   const TargetRegisterInfo &TRI = *MF.getSubtarget().getRegisterInfo();
   MachineFrameInfo &MFI = MF.getFrameInfo();
-  FPSpillSlot =
-      MFI.CreateStackObject(TRI.getSpillSize(RC), TRI.getSpillAlign(RC), true);
+  FPSpillSlot = MFI.CreateStackObject(TRI.getSpillSize(RC),
+                                      TRI.getSpillAlignment(RC), true);
   FPSpillSlotSet = true;
   return FPSpillSlot;
 }
@@ -77,9 +70,9 @@ const int* XCoreFunctionInfo::createEHSpillSlot(MachineFunction &MF) {
   const TargetRegisterInfo &TRI = *MF.getSubtarget().getRegisterInfo();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   unsigned Size = TRI.getSpillSize(RC);
-  Align Alignment = TRI.getSpillAlign(RC);
-  EHSpillSlot[0] = MFI.CreateStackObject(Size, Alignment, true);
-  EHSpillSlot[1] = MFI.CreateStackObject(Size, Alignment, true);
+  unsigned Align = TRI.getSpillAlignment(RC);
+  EHSpillSlot[0] = MFI.CreateStackObject(Size, Align, true);
+  EHSpillSlot[1] = MFI.CreateStackObject(Size, Align, true);
   EHSpillSlotSet = true;
   return EHSpillSlot;
 }

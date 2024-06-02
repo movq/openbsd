@@ -9,6 +9,7 @@
 #ifndef LLVM_DEBUGINFO_GSYM_GSYMREADER_H
 #define LLVM_DEBUGINFO_GSYM_GSYMREADER_H
 
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/DebugInfo/GSYM/FileEntry.h"
 #include "llvm/DebugInfo/GSYM/FunctionInfo.h"
@@ -18,9 +19,11 @@
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/ErrorOr.h"
+
 #include <inttypes.h>
 #include <memory>
 #include <stdint.h>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -137,77 +140,22 @@ public:
   ///
   /// \param Index An index into the file table.
   /// \returns An optional FileInfo that will be valid if the file index is
-  /// valid, or std::nullopt if the file index is out of bounds,
-  std::optional<FileEntry> getFile(uint32_t Index) const {
+  /// valid, or llvm::None if the file index is out of bounds,
+  Optional<FileEntry> getFile(uint32_t Index) const {
     if (Index < Files.size())
       return Files[Index];
-    return std::nullopt;
+    return llvm::None;
   }
 
-  /// Dump the entire Gsym data contained in this object.
-  ///
-  /// \param  OS The output stream to dump to.
-  void dump(raw_ostream &OS);
-
-  /// Dump a FunctionInfo object.
-  ///
-  /// This function will convert any string table indexes and file indexes
-  /// into human readable format.
-  ///
-  /// \param  OS The output stream to dump to.
-  ///
-  /// \param FI The object to dump.
-  void dump(raw_ostream &OS, const FunctionInfo &FI);
-
-  /// Dump a LineTable object.
-  ///
-  /// This function will convert any string table indexes and file indexes
-  /// into human readable format.
-  ///
-  ///
-  /// \param  OS The output stream to dump to.
-  ///
-  /// \param LT The object to dump.
-  void dump(raw_ostream &OS, const LineTable &LT);
-
-  /// Dump a InlineInfo object.
-  ///
-  /// This function will convert any string table indexes and file indexes
-  /// into human readable format.
-  ///
-  /// \param  OS The output stream to dump to.
-  ///
-  /// \param II The object to dump.
-  ///
-  /// \param Indent The indentation as number of spaces. Used for recurive
-  /// dumping.
-  void dump(raw_ostream &OS, const InlineInfo &II, uint32_t Indent = 0);
-
-  /// Dump a FileEntry object.
-  ///
-  /// This function will convert any string table indexes into human readable
-  /// format.
-  ///
-  /// \param  OS The output stream to dump to.
-  ///
-  /// \param FE The object to dump.
-  void dump(raw_ostream &OS, std::optional<FileEntry> FE);
-
-  /// Get the number of addresses in this Gsym file.
-  uint32_t getNumAddresses() const {
-    return Hdr->NumAddresses;
-  }
-
+protected:
   /// Gets an address from the address table.
   ///
   /// Addresses are stored as offsets frrom the gsym::Header::BaseAddress.
   ///
   /// \param Index A index into the address table.
   /// \returns A resolved virtual address for adddress in the address table
-  /// or std::nullopt if Index is out of bounds.
-  std::optional<uint64_t> getAddress(size_t Index) const;
-
-protected:
+  /// or llvm::None if Index is out of bounds.
+  Optional<uint64_t> getAddress(size_t Index) const;
 
   /// Get an appropriate address info offsets array.
   ///
@@ -236,13 +184,13 @@ protected:
   ///
   /// \param Index An index into the AddrOffsets array.
   /// \returns An virtual address that matches the original object file for the
-  /// address as the specified index, or std::nullopt if Index is out of bounds.
-  template <class T>
-  std::optional<uint64_t> addressForIndex(size_t Index) const {
+  /// address as the specified index, or llvm::None if Index is out of bounds.
+  template <class T> Optional<uint64_t>
+  addressForIndex(size_t Index) const {
     ArrayRef<T> AIO = getAddrOffsets<T>();
     if (Index < AIO.size())
       return AIO[Index] + Hdr->BaseAddress;
-    return std::nullopt;
+    return llvm::None;
   }
   /// Lookup an address offset in the AddrOffsets table.
   ///
@@ -254,16 +202,11 @@ protected:
   /// \returns The matching address offset index. This index will be used to
   /// extract the FunctionInfo data's offset from the AddrInfoOffsets array.
   template <class T>
-  std::optional<uint64_t>
-  getAddressOffsetIndex(const uint64_t AddrOffset) const {
+  uint64_t getAddressOffsetIndex(const uint64_t AddrOffset) const {
     ArrayRef<T> AIO = getAddrOffsets<T>();
     const auto Begin = AIO.begin();
     const auto End = AIO.end();
     auto Iter = std::lower_bound(Begin, End, AddrOffset);
-    // Watch for addresses that fall between the gsym::Header::BaseAddress and
-    // the first address offset.
-    if (Iter == Begin && AddrOffset < *Begin)
-      return std::nullopt;
     if (Iter == End || AddrOffset < *Iter)
       --Iter;
     return std::distance(Begin, Iter);
@@ -302,10 +245,10 @@ protected:
   /// \param Index An index into the address table.
   /// \returns An optional GSYM data offset for the offset of the FunctionInfo
   /// that needs to be decoded.
-  std::optional<uint64_t> getAddressInfoOffset(size_t Index) const;
+  Optional<uint64_t> getAddressInfoOffset(size_t Index) const;
 };
 
 } // namespace gsym
 } // namespace llvm
 
-#endif // LLVM_DEBUGINFO_GSYM_GSYMREADER_H
+#endif // #ifndef LLVM_DEBUGINFO_GSYM_GSYMREADER_H

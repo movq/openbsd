@@ -1,4 +1,4 @@
-//===-- SymbolStringPool.h -- Thread-safe pool for JIT symbols --*- C++ -*-===//
+//===- SymbolStringPool.h - Multi-threaded pool for JIT symbols -*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Contains a thread-safe string pool suitable for use with ORC.
+// Contains a multi-threaded string pool suitable for use with ORC.
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,9 +19,6 @@
 #include <mutex>
 
 namespace llvm {
-
-class raw_ostream;
-
 namespace orc {
 
 class SymbolStringPtr;
@@ -29,10 +26,6 @@ class SymbolStringPtr;
 /// String pool for symbol names used by the JIT.
 class SymbolStringPool {
   friend class SymbolStringPtr;
-
-  // Implemented in DebugUtils.h.
-  friend raw_ostream &operator<<(raw_ostream &OS, const SymbolStringPool &SSP);
-
 public:
   /// Destroy a SymbolStringPool.
   ~SymbolStringPool();
@@ -55,13 +48,11 @@ private:
 
 /// Pointer to a pooled string representing a symbol name.
 class SymbolStringPtr {
-  friend class OrcV2CAPIHelper;
   friend class SymbolStringPool;
   friend struct DenseMapInfo<SymbolStringPtr>;
 
 public:
   SymbolStringPtr() = default;
-  SymbolStringPtr(std::nullptr_t) {}
   SymbolStringPtr(const SymbolStringPtr &Other)
     : S(Other.S) {
     if (isRealPoolEntry(S))
@@ -69,10 +60,8 @@ public:
   }
 
   SymbolStringPtr& operator=(const SymbolStringPtr &Other) {
-    if (isRealPoolEntry(S)) {
-      assert(S->getValue() && "Releasing SymbolStringPtr with zero ref count");
+    if (isRealPoolEntry(S))
       --S->getValue();
-    }
     S = Other.S;
     if (isRealPoolEntry(S))
       ++S->getValue();
@@ -84,23 +73,17 @@ public:
   }
 
   SymbolStringPtr& operator=(SymbolStringPtr &&Other) {
-    if (isRealPoolEntry(S)) {
-      assert(S->getValue() && "Releasing SymbolStringPtr with zero ref count");
+    if (isRealPoolEntry(S))
       --S->getValue();
-    }
     S = nullptr;
     std::swap(S, Other.S);
     return *this;
   }
 
   ~SymbolStringPtr() {
-    if (isRealPoolEntry(S)) {
-      assert(S->getValue() && "Releasing SymbolStringPtr with zero ref count");
+    if (isRealPoolEntry(S))
       --S->getValue();
-    }
   }
-
-  explicit operator bool() const { return S; }
 
   StringRef operator*() const { return S->first(); }
 
@@ -120,8 +103,7 @@ public:
   }
 
 private:
-  using PoolEntry = SymbolStringPool::PoolMapEntry;
-  using PoolEntryPtr = PoolEntry *;
+  using PoolEntryPtr = SymbolStringPool::PoolMapEntry *;
 
   SymbolStringPtr(SymbolStringPool::PoolMapEntry *S)
       : S(S) {

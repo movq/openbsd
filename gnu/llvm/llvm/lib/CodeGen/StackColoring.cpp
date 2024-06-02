@@ -36,12 +36,14 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/SlotIndexes.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/WinEHFuncInfo.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Use.h"
@@ -371,36 +373,6 @@ STATISTIC(EscapedAllocas, "Number of allocas that escaped the lifetime region");
 // before visiting the memcpy block (which will contain the lifetime start
 // for "b" then it will appear that 'b' has a degenerate lifetime.
 //
-// Handle Windows Exception with LifetimeStartOnFirstUse:
-// -----------------
-//
-// There was a bug for using LifetimeStartOnFirstUse in win32.
-// class Type1 {
-// ...
-// ~Type1(){ write memory;}
-// }
-// ...
-// try{
-// Type1 V
-// ...
-// } catch (Type2 X){
-// ...
-// }
-// For variable X in catch(X), we put point pX=&(&X) into ConservativeSlots
-// to prevent using LifetimeStartOnFirstUse. Because pX may merged with
-// object V which may call destructor after implicitly writing pX. All these
-// are done in C++ EH runtime libs (through CxxThrowException), and can't
-// obviously check it in IR level.
-//
-// The loader of pX, without obvious writing IR, is usually the first LOAD MI
-// in EHPad, Some like:
-// bb.x.catch.i (landing-pad, ehfunclet-entry):
-// ; predecessors: %bb...
-//   successors: %bb...
-//  %n:gr32 = MOV32rm %stack.pX ...
-//  ...
-// The Type2** %stack.pX will only be written in EH runtime libs, so we
-// check the StoreSlots to screen it out.
 
 namespace {
 
@@ -461,9 +433,6 @@ class StackColoring : public MachineFunctionPass {
   /// FI slots that need to be handled conservatively (for these
   /// slots lifetime-start-on-first-use is disabled).
   BitVector ConservativeSlots;
-
-  /// Record the FI slots referenced by a 'may write to memory'.
-  BitVector StoreSlots;
 
   /// Number of iterations taken during data flow analysis.
   unsigned NumIterations;
@@ -660,13 +629,10 @@ unsigned StackColoring::collectMarkers(unsigned NumSlot) {
   InterestingSlots.resize(NumSlot);
   ConservativeSlots.clear();
   ConservativeSlots.resize(NumSlot);
-  StoreSlots.clear();
-  StoreSlots.resize(NumSlot);
 
   // number of start and end lifetime ops for each slot
   SmallVector<int, 8> NumStartLifetimes(NumSlot, 0);
   SmallVector<int, 8> NumEndLifetimes(NumSlot, 0);
-  SmallVector<int, 8> NumLoadInCatchPad(NumSlot, 0);
 
   // Step 1: collect markers and populate the "InterestingSlots"
   // and "ConservativeSlots" sets.
@@ -676,8 +642,9 @@ unsigned StackColoring::collectMarkers(unsigned NumSlot) {
     // to this bb).
     BitVector BetweenStartEnd;
     BetweenStartEnd.resize(NumSlot);
-    for (const MachineBasicBlock *Pred : MBB->predecessors()) {
-      BlockBitVecMap::const_iterator I = SeenStartMap.find(Pred);
+    for (MachineBasicBlock::const_pred_iterator PI = MBB->pred_begin(),
+             PE = MBB->pred_end(); PI != PE; ++PI) {
+      BlockBitVecMap::const_iterator I = SeenStartMap.find(*PI);
       if (I != SeenStartMap.end()) {
         BetweenStartEnd |= I->second;
       }
@@ -685,8 +652,6 @@ unsigned StackColoring::collectMarkers(unsigned NumSlot) {
 
     // Walk the instructions in the block to look for start/end ops.
     for (MachineInstr &MI : *MBB) {
-      if (MI.isDebugInstr())
-        continue;
       if (MI.getOpcode() == TargetOpcode::LIFETIME_START ||
           MI.getOpcode() == TargetOpcode::LIFETIME_END) {
         int Slot = getStartOrEndSlot(MI);
@@ -722,13 +687,6 @@ unsigned StackColoring::collectMarkers(unsigned NumSlot) {
           if (! BetweenStartEnd.test(Slot)) {
             ConservativeSlots.set(Slot);
           }
-          // Here we check the StoreSlots to screen catch point out. For more
-          // information, please refer "Handle Windows Exception with
-          // LifetimeStartOnFirstUse" at the head of this file.
-          if (MI.mayStore())
-            StoreSlots.set(Slot);
-          if (MF->getWinEHFuncInfo() && MBB->isEHPad() && MI.mayLoad())
-            NumLoadInCatchPad[Slot] += 1;
         }
       }
     }
@@ -739,14 +697,11 @@ unsigned StackColoring::collectMarkers(unsigned NumSlot) {
     return 0;
   }
 
-  // 1) PR27903: slots with multiple start or end lifetime ops are not
+  // PR27903: slots with multiple start or end lifetime ops are not
   // safe to enable for "lifetime-start-on-first-use".
-  // 2) And also not safe for variable X in catch(X) in windows.
-  for (unsigned slot = 0; slot < NumSlot; ++slot) {
-    if (NumStartLifetimes[slot] > 1 || NumEndLifetimes[slot] > 1 ||
-        (NumLoadInCatchPad[slot] > 1 && !StoreSlots.test(slot)))
+  for (unsigned slot = 0; slot < NumSlot; ++slot)
+    if (NumStartLifetimes[slot] > 1 || NumEndLifetimes[slot] > 1)
       ConservativeSlots.set(slot);
-  }
   LLVM_DEBUG(dumpBV("Conservative slots", ConservativeSlots));
 
   // Step 2: compute begin/end sets for each block
@@ -818,8 +773,9 @@ void StackColoring::calculateLocalLiveness() {
 
       // Compute LiveIn by unioning together the LiveOut sets of all preds.
       BitVector LocalLiveIn;
-      for (MachineBasicBlock *Pred : BB->predecessors()) {
-        LivenessMap::const_iterator I = BlockLiveness.find(Pred);
+      for (MachineBasicBlock::const_pred_iterator PI = BB->pred_begin(),
+           PE = BB->pred_end(); PI != PE; ++PI) {
+        LivenessMap::const_iterator I = BlockLiveness.find(*PI);
         // PR37130: transformations prior to stack coloring can
         // sometimes leave behind statically unreachable blocks; these
         // can be safely skipped here.
@@ -957,11 +913,6 @@ void StackColoring::remapInstructions(DenseMap<int, int> &SlotRemap) {
     assert(To && From && "Invalid allocation object");
     Allocas[From] = To;
 
-    // If From is before wo, its possible that there is a use of From between
-    // them.
-    if (From->comesBefore(To))
-      const_cast<AllocaInst*>(To)->moveBefore(const_cast<AllocaInst*>(From));
-
     // AA might be used later for instruction scheduling, and we need it to be
     // able to deduce the correct aliasing releationships between pointers
     // derived from the alloca being remapped and the target of that remapping.
@@ -1092,7 +1043,7 @@ void StackColoring::remapInstructions(DenseMap<int, int> &SlotRemap) {
         if (MMO->getAAInfo()) {
           if (const Value *MMOV = MMO->getValue()) {
             SmallVector<Value *, 4> Objs;
-            getUnderlyingObjectsForCodeGen(MMOV, Objs);
+            getUnderlyingObjectsForCodeGen(MMOV, Objs, MF->getDataLayout());
 
             if (Objs.empty())
               MayHaveConflictingAAMD = true;
@@ -1143,9 +1094,6 @@ void StackColoring::remapInstructions(DenseMap<int, int> &SlotRemap) {
   LLVM_DEBUG(dbgs() << "Fixed " << FixedMemOp << " machine memory operands.\n");
   LLVM_DEBUG(dbgs() << "Fixed " << FixedDbg << " debug locations.\n");
   LLVM_DEBUG(dbgs() << "Fixed " << FixedInstr << " machine instructions.\n");
-  (void) FixedMemOp;
-  (void) FixedDbg;
-  (void) FixedInstr;
 }
 
 void StackColoring::removeInvalidSlotRanges() {
@@ -1288,7 +1236,7 @@ bool StackColoring::runOnMachineFunction(MachineFunction &Func) {
 
   // This is a simple greedy algorithm for merging allocas. First, sort the
   // slots, placing the largest slots first. Next, perform an n^2 scan and look
-  // for disjoint slots. When you find disjoint slots, merge the smaller one
+  // for disjoint slots. When you find disjoint slots, merge the samller one
   // into the bigger one and update the live interval. Remove the small alloca
   // and continue.
 
@@ -1320,11 +1268,6 @@ bool StackColoring::runOnMachineFunction(MachineFunction &Func) {
 
         int FirstSlot = SortedSlots[I];
         int SecondSlot = SortedSlots[J];
-
-        // Objects with different stack IDs cannot be merged.
-        if (MFI->getStackID(FirstSlot) != MFI->getStackID(SecondSlot))
-          continue;
-
         LiveInterval *First = &*Intervals[FirstSlot];
         LiveInterval *Second = &*Intervals[SecondSlot];
         auto &FirstS = LiveStarts[FirstSlot];
@@ -1347,8 +1290,8 @@ bool StackColoring::runOnMachineFunction(MachineFunction &Func) {
           SortedSlots[J] = -1;
           LLVM_DEBUG(dbgs() << "Merging #" << FirstSlot << " and slots #"
                             << SecondSlot << " together.\n");
-          Align MaxAlignment = std::max(MFI->getObjectAlign(FirstSlot),
-                                        MFI->getObjectAlign(SecondSlot));
+          unsigned MaxAlignment = std::max(MFI->getObjectAlignment(FirstSlot),
+                                           MFI->getObjectAlignment(SecondSlot));
 
           assert(MFI->getObjectSize(FirstSlot) >=
                  MFI->getObjectSize(SecondSlot) &&

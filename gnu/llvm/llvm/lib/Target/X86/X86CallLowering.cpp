@@ -22,7 +22,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CallingConvLower.h"
-#include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/LowLevelType.h"
@@ -51,21 +50,112 @@ using namespace llvm;
 X86CallLowering::X86CallLowering(const X86TargetLowering &TLI)
     : CallLowering(&TLI) {}
 
+bool X86CallLowering::splitToValueTypes(const ArgInfo &OrigArg,
+                                        SmallVectorImpl<ArgInfo> &SplitArgs,
+                                        const DataLayout &DL,
+                                        MachineRegisterInfo &MRI,
+                                        SplitArgTy PerformArgSplit) const {
+  const X86TargetLowering &TLI = *getTLI<X86TargetLowering>();
+  LLVMContext &Context = OrigArg.Ty->getContext();
+
+  SmallVector<EVT, 4> SplitVTs;
+  SmallVector<uint64_t, 4> Offsets;
+  ComputeValueVTs(TLI, DL, OrigArg.Ty, SplitVTs, &Offsets, 0);
+  assert(OrigArg.Regs.size() == 1 && "Can't handle multple regs yet");
+
+  if (OrigArg.Ty->isVoidTy())
+    return true;
+
+  EVT VT = SplitVTs[0];
+  unsigned NumParts = TLI.getNumRegisters(Context, VT);
+
+  if (NumParts == 1) {
+    // replace the original type ( pointer -> GPR ).
+    SplitArgs.emplace_back(OrigArg.Regs[0], VT.getTypeForEVT(Context),
+                           OrigArg.Flags, OrigArg.IsFixed);
+    return true;
+  }
+
+  SmallVector<Register, 8> SplitRegs;
+
+  EVT PartVT = TLI.getRegisterType(Context, VT);
+  Type *PartTy = PartVT.getTypeForEVT(Context);
+
+  for (unsigned i = 0; i < NumParts; ++i) {
+    ArgInfo Info =
+        ArgInfo{MRI.createGenericVirtualRegister(getLLTForType(*PartTy, DL)),
+                PartTy, OrigArg.Flags};
+    SplitArgs.push_back(Info);
+    SplitRegs.push_back(Info.Regs[0]);
+  }
+
+  PerformArgSplit(SplitRegs);
+  return true;
+}
+
 namespace {
 
-struct X86OutgoingValueAssigner : public CallLowering::OutgoingValueAssigner {
-private:
-  uint64_t StackSize = 0;
-  unsigned NumXMMRegs = 0;
+struct OutgoingValueHandler : public CallLowering::ValueHandler {
+  OutgoingValueHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
+                       MachineInstrBuilder &MIB, CCAssignFn *AssignFn)
+      : ValueHandler(MIRBuilder, MRI, AssignFn), MIB(MIB),
+        DL(MIRBuilder.getMF().getDataLayout()),
+        STI(MIRBuilder.getMF().getSubtarget<X86Subtarget>()) {}
 
-public:
-  uint64_t getStackSize() { return StackSize; }
-  unsigned getNumXmmRegs() { return NumXMMRegs; }
+  bool isIncomingArgumentHandler() const override { return false; }
 
-  X86OutgoingValueAssigner(CCAssignFn *AssignFn_)
-      : CallLowering::OutgoingValueAssigner(AssignFn_) {}
+  Register getStackAddress(uint64_t Size, int64_t Offset,
+                           MachinePointerInfo &MPO) override {
+    LLT p0 = LLT::pointer(0, DL.getPointerSizeInBits(0));
+    LLT SType = LLT::scalar(DL.getPointerSizeInBits(0));
+    Register SPReg = MRI.createGenericVirtualRegister(p0);
+    MIRBuilder.buildCopy(SPReg, STI.getRegisterInfo()->getStackRegister());
 
-  bool assignArg(unsigned ValNo, EVT OrigVT, MVT ValVT, MVT LocVT,
+    Register OffsetReg = MRI.createGenericVirtualRegister(SType);
+    MIRBuilder.buildConstant(OffsetReg, Offset);
+
+    Register AddrReg = MRI.createGenericVirtualRegister(p0);
+    MIRBuilder.buildPtrAdd(AddrReg, SPReg, OffsetReg);
+
+    MPO = MachinePointerInfo::getStack(MIRBuilder.getMF(), Offset);
+    return AddrReg;
+  }
+
+  void assignValueToReg(Register ValVReg, Register PhysReg,
+                        CCValAssign &VA) override {
+    MIB.addUse(PhysReg, RegState::Implicit);
+
+    Register ExtReg;
+    // If we are copying the value to a physical register with the
+    // size larger than the size of the value itself - build AnyExt
+    // to the size of the register first and only then do the copy.
+    // The example of that would be copying from s32 to xmm0, for which
+    // case ValVT == LocVT == MVT::f32. If LocSize and ValSize are not equal
+    // we expect normal extendRegister mechanism to work.
+    unsigned PhysRegSize =
+        MRI.getTargetRegisterInfo()->getRegSizeInBits(PhysReg, MRI);
+    unsigned ValSize = VA.getValVT().getSizeInBits();
+    unsigned LocSize = VA.getLocVT().getSizeInBits();
+    if (PhysRegSize > ValSize && LocSize == ValSize) {
+      assert((PhysRegSize == 128 || PhysRegSize == 80)  && "We expect that to be 128 bit");
+      auto MIB = MIRBuilder.buildAnyExt(LLT::scalar(PhysRegSize), ValVReg);
+      ExtReg = MIB->getOperand(0).getReg();
+    } else
+      ExtReg = extendRegister(ValVReg, VA);
+
+    MIRBuilder.buildCopy(PhysReg, ExtReg);
+  }
+
+  void assignValueToAddress(Register ValVReg, Register Addr, uint64_t Size,
+                            MachinePointerInfo &MPO, CCValAssign &VA) override {
+    Register ExtReg = extendRegister(ValVReg, VA);
+    auto MMO = MIRBuilder.getMF().getMachineMemOperand(
+        MPO, MachineMemOperand::MOStore, VA.getLocVT().getStoreSize(),
+        /* Alignment */ 1);
+    MIRBuilder.buildStore(ExtReg, Addr, *MMO);
+  }
+
+  bool assignArg(unsigned ValNo, MVT ValVT, MVT LocVT,
                  CCValAssign::LocInfo LocInfo,
                  const CallLowering::ArgInfo &Info, ISD::ArgFlagsTy Flags,
                  CCState &State) override {
@@ -80,94 +170,53 @@ public:
 
     return Res;
   }
-};
 
-struct X86OutgoingValueHandler : public CallLowering::OutgoingValueHandler {
-  X86OutgoingValueHandler(MachineIRBuilder &MIRBuilder,
-                          MachineRegisterInfo &MRI, MachineInstrBuilder &MIB)
-      : OutgoingValueHandler(MIRBuilder, MRI), MIB(MIB),
-        DL(MIRBuilder.getMF().getDataLayout()),
-        STI(MIRBuilder.getMF().getSubtarget<X86Subtarget>()) {}
-
-  Register getStackAddress(uint64_t Size, int64_t Offset,
-                           MachinePointerInfo &MPO,
-                           ISD::ArgFlagsTy Flags) override {
-    LLT p0 = LLT::pointer(0, DL.getPointerSizeInBits(0));
-    LLT SType = LLT::scalar(DL.getPointerSizeInBits(0));
-    auto SPReg =
-        MIRBuilder.buildCopy(p0, STI.getRegisterInfo()->getStackRegister());
-
-    auto OffsetReg = MIRBuilder.buildConstant(SType, Offset);
-
-    auto AddrReg = MIRBuilder.buildPtrAdd(p0, SPReg, OffsetReg);
-
-    MPO = MachinePointerInfo::getStack(MIRBuilder.getMF(), Offset);
-    return AddrReg.getReg(0);
-  }
-
-  void assignValueToReg(Register ValVReg, Register PhysReg,
-                        CCValAssign VA) override {
-    MIB.addUse(PhysReg, RegState::Implicit);
-    Register ExtReg = extendRegister(ValVReg, VA);
-    MIRBuilder.buildCopy(PhysReg, ExtReg);
-  }
-
-  void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
-                            MachinePointerInfo &MPO, CCValAssign &VA) override {
-    MachineFunction &MF = MIRBuilder.getMF();
-    Register ExtReg = extendRegister(ValVReg, VA);
-
-    auto *MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
-                                        inferAlignFromPtrInfo(MF, MPO));
-    MIRBuilder.buildStore(ExtReg, Addr, *MMO);
-  }
+  uint64_t getStackSize() { return StackSize; }
+  uint64_t getNumXmmRegs() { return NumXMMRegs; }
 
 protected:
   MachineInstrBuilder &MIB;
+  uint64_t StackSize = 0;
   const DataLayout &DL;
   const X86Subtarget &STI;
+  unsigned NumXMMRegs = 0;
 };
 
 } // end anonymous namespace
 
-bool X86CallLowering::canLowerReturn(
-    MachineFunction &MF, CallingConv::ID CallConv,
-    SmallVectorImpl<CallLowering::BaseArgInfo> &Outs, bool IsVarArg) const {
-  LLVMContext &Context = MF.getFunction().getContext();
-  SmallVector<CCValAssign, 16> RVLocs;
-  CCState CCInfo(CallConv, IsVarArg, MF, RVLocs, Context);
-  return checkReturn(CCInfo, Outs, RetCC_X86);
-}
-
-bool X86CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
-                                  const Value *Val, ArrayRef<Register> VRegs,
-                                  FunctionLoweringInfo &FLI) const {
+bool X86CallLowering::lowerReturn(
+    MachineIRBuilder &MIRBuilder, const Value *Val,
+    ArrayRef<Register> VRegs) const {
   assert(((Val && !VRegs.empty()) || (!Val && VRegs.empty())) &&
          "Return value without a vreg");
-  MachineFunction &MF = MIRBuilder.getMF();
   auto MIB = MIRBuilder.buildInstrNoInsert(X86::RET).addImm(0);
-  const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
-  bool Is64Bit = STI.is64Bit();
 
-  if (!FLI.CanLowerReturn) {
-    insertSRetStores(MIRBuilder, Val->getType(), VRegs, FLI.DemoteRegister);
-    MIRBuilder.buildCopy(Is64Bit ? X86::RAX : X86::EAX, FLI.DemoteRegister);
-  } else if (!VRegs.empty()) {
+  if (!VRegs.empty()) {
+    MachineFunction &MF = MIRBuilder.getMF();
     const Function &F = MF.getFunction();
     MachineRegisterInfo &MRI = MF.getRegInfo();
-    const DataLayout &DL = MF.getDataLayout();
+    auto &DL = MF.getDataLayout();
+    LLVMContext &Ctx = Val->getType()->getContext();
+    const X86TargetLowering &TLI = *getTLI<X86TargetLowering>();
 
-    ArgInfo OrigRetInfo(VRegs, Val->getType(), 0);
-    setArgFlags(OrigRetInfo, AttributeList::ReturnIndex, DL, F);
+    SmallVector<EVT, 4> SplitEVTs;
+    ComputeValueVTs(TLI, DL, Val->getType(), SplitEVTs);
+    assert(VRegs.size() == SplitEVTs.size() &&
+           "For each split Type there should be exactly one VReg.");
 
-    SmallVector<ArgInfo, 4> SplitRetInfos;
-    splitToValueTypes(OrigRetInfo, SplitRetInfos, DL, F.getCallingConv());
+    SmallVector<ArgInfo, 8> SplitArgs;
+    for (unsigned i = 0; i < SplitEVTs.size(); ++i) {
+      ArgInfo CurArgInfo = ArgInfo{VRegs[i], SplitEVTs[i].getTypeForEVT(Ctx)};
+      setArgFlags(CurArgInfo, AttributeList::ReturnIndex, DL, F);
+      if (!splitToValueTypes(CurArgInfo, SplitArgs, DL, MRI,
+                             [&](ArrayRef<Register> Regs) {
+                               MIRBuilder.buildUnmerge(Regs, VRegs[i]);
+                             }))
+        return false;
+    }
 
-    X86OutgoingValueAssigner Assigner(RetCC_X86);
-    X86OutgoingValueHandler Handler(MIRBuilder, MRI, MIB);
-    if (!determineAndHandleAssignments(Handler, Assigner, SplitRetInfos,
-                                       MIRBuilder, F.getCallingConv(),
-                                       F.isVarArg()))
+    OutgoingValueHandler Handler(MIRBuilder, MRI, MIB, RetCC_X86);
+    if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
       return false;
   }
 
@@ -177,42 +226,67 @@ bool X86CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
 
 namespace {
 
-struct X86IncomingValueHandler : public CallLowering::IncomingValueHandler {
-  X86IncomingValueHandler(MachineIRBuilder &MIRBuilder,
-                          MachineRegisterInfo &MRI)
-      : IncomingValueHandler(MIRBuilder, MRI),
+struct IncomingValueHandler : public CallLowering::ValueHandler {
+  IncomingValueHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
+                       CCAssignFn *AssignFn)
+      : ValueHandler(MIRBuilder, MRI, AssignFn),
         DL(MIRBuilder.getMF().getDataLayout()) {}
 
+  bool isIncomingArgumentHandler() const override { return true; }
+
   Register getStackAddress(uint64_t Size, int64_t Offset,
-                           MachinePointerInfo &MPO,
-                           ISD::ArgFlagsTy Flags) override {
+                           MachinePointerInfo &MPO) override {
     auto &MFI = MIRBuilder.getMF().getFrameInfo();
-
-    // Byval is assumed to be writable memory, but other stack passed arguments
-    // are not.
-    const bool IsImmutable = !Flags.isByVal();
-
-    int FI = MFI.CreateFixedObject(Size, Offset, IsImmutable);
+    int FI = MFI.CreateFixedObject(Size, Offset, true);
     MPO = MachinePointerInfo::getFixedStack(MIRBuilder.getMF(), FI);
 
-    return MIRBuilder
-        .buildFrameIndex(LLT::pointer(0, DL.getPointerSizeInBits(0)), FI)
-        .getReg(0);
+    Register AddrReg = MRI.createGenericVirtualRegister(
+        LLT::pointer(0, DL.getPointerSizeInBits(0)));
+    MIRBuilder.buildFrameIndex(AddrReg, FI);
+    return AddrReg;
   }
 
-  void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
+  void assignValueToAddress(Register ValVReg, Register Addr, uint64_t Size,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
-    MachineFunction &MF = MIRBuilder.getMF();
-    auto *MMO = MF.getMachineMemOperand(
-        MPO, MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant, MemTy,
-        inferAlignFromPtrInfo(MF, MPO));
+    auto MMO = MIRBuilder.getMF().getMachineMemOperand(
+        MPO, MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant, Size,
+        1);
     MIRBuilder.buildLoad(ValVReg, Addr, *MMO);
   }
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
-                        CCValAssign VA) override {
+                        CCValAssign &VA) override {
     markPhysRegUsed(PhysReg);
-    IncomingValueHandler::assignValueToReg(ValVReg, PhysReg, VA);
+
+    switch (VA.getLocInfo()) {
+    default: {
+      // If we are copying the value from a physical register with the
+      // size larger than the size of the value itself - build the copy
+      // of the phys reg first and then build the truncation of that copy.
+      // The example of that would be copying from xmm0 to s32, for which
+      // case ValVT == LocVT == MVT::f32. If LocSize and ValSize are not equal
+      // we expect this to be handled in SExt/ZExt/AExt case.
+      unsigned PhysRegSize =
+          MRI.getTargetRegisterInfo()->getRegSizeInBits(PhysReg, MRI);
+      unsigned ValSize = VA.getValVT().getSizeInBits();
+      unsigned LocSize = VA.getLocVT().getSizeInBits();
+      if (PhysRegSize > ValSize && LocSize == ValSize) {
+        auto Copy = MIRBuilder.buildCopy(LLT::scalar(PhysRegSize), PhysReg);
+        MIRBuilder.buildTrunc(ValVReg, Copy);
+        return;
+      }
+
+      MIRBuilder.buildCopy(ValVReg, PhysReg);
+      break;
+    }
+    case CCValAssign::LocInfo::SExt:
+    case CCValAssign::LocInfo::ZExt:
+    case CCValAssign::LocInfo::AExt: {
+      auto Copy = MIRBuilder.buildCopy(LLT{VA.getLocVT()}, PhysReg);
+      MIRBuilder.buildTrunc(ValVReg, Copy);
+      break;
+    }
+    }
   }
 
   /// How the physical register gets marked varies between formal
@@ -224,9 +298,10 @@ protected:
   const DataLayout &DL;
 };
 
-struct FormalArgHandler : public X86IncomingValueHandler {
-  FormalArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI)
-      : X86IncomingValueHandler(MIRBuilder, MRI) {}
+struct FormalArgHandler : public IncomingValueHandler {
+  FormalArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
+                   CCAssignFn *AssignFn)
+      : IncomingValueHandler(MIRBuilder, MRI, AssignFn) {}
 
   void markPhysRegUsed(unsigned PhysReg) override {
     MIRBuilder.getMRI()->addLiveIn(PhysReg);
@@ -234,10 +309,10 @@ struct FormalArgHandler : public X86IncomingValueHandler {
   }
 };
 
-struct CallReturnHandler : public X86IncomingValueHandler {
+struct CallReturnHandler : public IncomingValueHandler {
   CallReturnHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
-                    MachineInstrBuilder &MIB)
-      : X86IncomingValueHandler(MIRBuilder, MRI), MIB(MIB) {}
+                    CCAssignFn *AssignFn, MachineInstrBuilder &MIB)
+      : IncomingValueHandler(MIRBuilder, MRI, AssignFn), MIB(MIB) {}
 
   void markPhysRegUsed(unsigned PhysReg) override {
     MIB.addDef(PhysReg, RegState::Implicit);
@@ -249,25 +324,24 @@ protected:
 
 } // end anonymous namespace
 
-bool X86CallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
-                                           const Function &F,
-                                           ArrayRef<ArrayRef<Register>> VRegs,
-                                           FunctionLoweringInfo &FLI) const {
-  MachineFunction &MF = MIRBuilder.getMF();
-  MachineRegisterInfo &MRI = MF.getRegInfo();
-  auto DL = MF.getDataLayout();
-
-  SmallVector<ArgInfo, 8> SplitArgs;
-
-  if (!FLI.CanLowerReturn)
-    insertSRetIncomingArgument(F, SplitArgs, FLI.DemoteRegister, MRI, DL);
+bool X86CallLowering::lowerFormalArguments(
+    MachineIRBuilder &MIRBuilder, const Function &F,
+    ArrayRef<ArrayRef<Register>> VRegs) const {
+  if (F.arg_empty())
+    return true;
 
   // TODO: handle variadic function
   if (F.isVarArg())
     return false;
 
+  MachineFunction &MF = MIRBuilder.getMF();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  auto DL = MF.getDataLayout();
+
+  SmallVector<ArgInfo, 8> SplitArgs;
   unsigned Idx = 0;
-  for (const auto &Arg : F.args()) {
+  for (auto &Arg : F.args()) {
+
     // TODO: handle not simple cases.
     if (Arg.hasAttribute(Attribute::ByVal) ||
         Arg.hasAttribute(Attribute::InReg) ||
@@ -277,23 +351,22 @@ bool X86CallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
         Arg.hasAttribute(Attribute::Nest) || VRegs[Idx].size() > 1)
       return false;
 
-    ArgInfo OrigArg(VRegs[Idx], Arg.getType(), Idx);
+    ArgInfo OrigArg(VRegs[Idx], Arg.getType());
     setArgFlags(OrigArg, Idx + AttributeList::FirstArgIndex, DL, F);
-    splitToValueTypes(OrigArg, SplitArgs, DL, F.getCallingConv());
+    if (!splitToValueTypes(OrigArg, SplitArgs, DL, MRI,
+                           [&](ArrayRef<Register> Regs) {
+                             MIRBuilder.buildMerge(VRegs[Idx][0], Regs);
+                           }))
+      return false;
     Idx++;
   }
-
-  if (SplitArgs.empty())
-    return true;
 
   MachineBasicBlock &MBB = MIRBuilder.getMBB();
   if (!MBB.empty())
     MIRBuilder.setInstr(*MBB.begin());
 
-  X86OutgoingValueAssigner Assigner(CC_X86);
-  FormalArgHandler Handler(MIRBuilder, MRI);
-  if (!determineAndHandleAssignments(Handler, Assigner, SplitArgs, MIRBuilder,
-                                     F.getCallingConv(), F.isVarArg()))
+  FormalArgHandler Handler(MIRBuilder, MRI, CC_X86);
+  if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
     return false;
 
   // Move back to the end of the basic block.
@@ -307,10 +380,10 @@ bool X86CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   MachineFunction &MF = MIRBuilder.getMF();
   const Function &F = MF.getFunction();
   MachineRegisterInfo &MRI = MF.getRegInfo();
-  const DataLayout &DL = F.getParent()->getDataLayout();
+  auto &DL = F.getParent()->getDataLayout();
   const X86Subtarget &STI = MF.getSubtarget<X86Subtarget>();
   const TargetInstrInfo &TII = *STI.getInstrInfo();
-  const X86RegisterInfo *TRI = STI.getRegisterInfo();
+  auto TRI = STI.getRegisterInfo();
 
   // Handle only Linux C, X86_64_SysV calling conventions for now.
   if (!STI.isTargetLinux() || !(Info.CallConv == CallingConv::C ||
@@ -341,13 +414,15 @@ bool X86CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
     if (OrigArg.Regs.size() > 1)
       return false;
 
-    splitToValueTypes(OrigArg, SplitArgs, DL, Info.CallConv);
+    if (!splitToValueTypes(OrigArg, SplitArgs, DL, MRI,
+                           [&](ArrayRef<Register> Regs) {
+                             MIRBuilder.buildUnmerge(Regs, OrigArg.Regs[0]);
+                           }))
+      return false;
   }
   // Do the actual argument marshalling.
-  X86OutgoingValueAssigner Assigner(CC_X86);
-  X86OutgoingValueHandler Handler(MIRBuilder, MRI, MIB);
-  if (!determineAndHandleAssignments(Handler, Assigner, SplitArgs, MIRBuilder,
-                                     Info.CallConv, Info.IsVarArg))
+  OutgoingValueHandler Handler(MIRBuilder, MRI, MIB, CC_X86);
+  if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
     return false;
 
   bool IsFixed = Info.OrigArgs.empty() ? true : Info.OrigArgs.back().IsFixed;
@@ -362,7 +437,7 @@ bool X86CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
 
     MIRBuilder.buildInstr(X86::MOV8ri)
         .addDef(X86::AL)
-        .addImm(Assigner.getNumXmmRegs());
+        .addImm(Handler.getNumXmmRegs());
     MIB.addUse(X86::AL, RegState::Implicit);
   }
 
@@ -382,37 +457,35 @@ bool X86CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   // symmetry with the arguments, the physical register must be an
   // implicit-define of the call instruction.
 
-  if (Info.CanLowerReturn && !Info.OrigRet.Ty->isVoidTy()) {
+  if (!Info.OrigRet.Ty->isVoidTy()) {
     if (Info.OrigRet.Regs.size() > 1)
       return false;
 
     SplitArgs.clear();
     SmallVector<Register, 8> NewRegs;
 
-    splitToValueTypes(Info.OrigRet, SplitArgs, DL, Info.CallConv);
+    if (!splitToValueTypes(Info.OrigRet, SplitArgs, DL, MRI,
+                           [&](ArrayRef<Register> Regs) {
+                             NewRegs.assign(Regs.begin(), Regs.end());
+                           }))
+      return false;
 
-    X86OutgoingValueAssigner Assigner(RetCC_X86);
-    CallReturnHandler Handler(MIRBuilder, MRI, MIB);
-    if (!determineAndHandleAssignments(Handler, Assigner, SplitArgs, MIRBuilder,
-                                       Info.CallConv, Info.IsVarArg))
+    CallReturnHandler Handler(MIRBuilder, MRI, RetCC_X86, MIB);
+    if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
       return false;
 
     if (!NewRegs.empty())
-      MIRBuilder.buildMergeLikeInstr(Info.OrigRet.Regs[0], NewRegs);
+      MIRBuilder.buildMerge(Info.OrigRet.Regs[0], NewRegs);
   }
 
-  CallSeqStart.addImm(Assigner.getStackSize())
+  CallSeqStart.addImm(Handler.getStackSize())
       .addImm(0 /* see getFrameTotalSize */)
       .addImm(0 /* see getFrameAdjustment */);
 
   unsigned AdjStackUp = TII.getCallFrameDestroyOpcode();
   MIRBuilder.buildInstr(AdjStackUp)
-      .addImm(Assigner.getStackSize())
+      .addImm(Handler.getStackSize())
       .addImm(0 /* NumBytesForCalleeToPop */);
-
-  if (!Info.CanLowerReturn)
-    insertSRetLoads(MIRBuilder, Info.OrigRet.Ty, Info.OrigRet.Regs,
-                    Info.DemoteRegister, Info.DemoteStackIndex);
 
   return true;
 }

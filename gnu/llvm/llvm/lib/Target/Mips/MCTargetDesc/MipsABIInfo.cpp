@@ -9,10 +9,9 @@
 #include "MipsABIInfo.h"
 #include "MipsRegisterInfo.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/LowLevelTypeImpl.h"
 
 using namespace llvm;
 
@@ -22,11 +21,6 @@ cl::opt<bool>
 EmitJalrReloc("mips-jalr-reloc", cl::Hidden,
               cl::desc("MIPS: Emit R_{MICRO}MIPS_JALR relocation with jalr"),
               cl::init(true));
-
-cl::opt<bool>
-FixLoongson2FBTB("fix-loongson2f-btb", cl::Hidden,
-                 cl::desc("MIPS: Enable Loongson 2F BTB workaround"),
-                 cl::init(false));
 
 namespace {
 static const MCPhysReg O32IntRegs[4] = {Mips::A0, Mips::A1, Mips::A2, Mips::A3};
@@ -38,17 +32,17 @@ static const MCPhysReg Mips64IntRegs[8] = {
 
 ArrayRef<MCPhysReg> MipsABIInfo::GetByValArgRegs() const {
   if (IsO32())
-    return ArrayRef(O32IntRegs);
+    return makeArrayRef(O32IntRegs);
   if (IsN32() || IsN64())
-    return ArrayRef(Mips64IntRegs);
+    return makeArrayRef(Mips64IntRegs);
   llvm_unreachable("Unhandled ABI");
 }
 
 ArrayRef<MCPhysReg> MipsABIInfo::GetVarArgRegs() const {
   if (IsO32())
-    return ArrayRef(O32IntRegs);
+    return makeArrayRef(O32IntRegs);
   if (IsN32() || IsN64())
-    return ArrayRef(Mips64IntRegs);
+    return makeArrayRef(Mips64IntRegs);
   llvm_unreachable("Unhandled ABI");
 }
 

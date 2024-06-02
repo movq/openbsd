@@ -11,9 +11,8 @@
 //  llvm-bcanalyzer [options] x.bc - Read LLVM bitcode from the x.bc file
 //
 //  Options:
-//      --help            - Output information about command line switches
-//      --dump            - Dump low-level bitcode structure in readable format
-//      --dump-blockinfo  - Dump the BLOCKINFO_BLOCK, when used with --dump
+//      --help      - Output information about command line switches
+//      --dump      - Dump low-level bitcode structure in readable format
 //
 // This tool provides analytical information about a bitcode file. It is
 // intended as an aid to developers of bitcode reading and writing software. It
@@ -27,59 +26,43 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/Bitcode/BitcodeAnalyzer.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
-#include <optional>
 using namespace llvm;
 
-static cl::OptionCategory BCAnalyzerCategory("BC Analyzer Options");
+static cl::opt<std::string>
+    InputFilename(cl::Positional, cl::desc("<input bitcode>"), cl::init("-"));
 
-static cl::opt<std::string> InputFilename(cl::Positional,
-                                          cl::desc("<input bitcode>"),
-                                          cl::init("-"),
-                                          cl::cat(BCAnalyzerCategory));
-
-static cl::opt<bool> Dump("dump", cl::desc("Dump low level bitcode trace"),
-                          cl::cat(BCAnalyzerCategory));
-
-static cl::opt<bool> DumpBlockinfo("dump-blockinfo",
-                                   cl::desc("Include BLOCKINFO details in low"
-                                            " level dump"),
-                                   cl::cat(BCAnalyzerCategory));
+static cl::opt<bool> Dump("dump", cl::desc("Dump low level bitcode trace"));
 
 //===----------------------------------------------------------------------===//
 // Bitcode specific analysis.
 //===----------------------------------------------------------------------===//
 
 static cl::opt<bool> NoHistogram("disable-histogram",
-                                 cl::desc("Do not print per-code histogram"),
-                                 cl::cat(BCAnalyzerCategory));
+                                 cl::desc("Do not print per-code histogram"));
 
 static cl::opt<bool> NonSymbolic("non-symbolic",
                                  cl::desc("Emit numeric info in dump even if"
-                                          " symbolic info is available"),
-                                 cl::cat(BCAnalyzerCategory));
+                                          " symbolic info is available"));
 
 static cl::opt<std::string>
     BlockInfoFilename("block-info",
-                      cl::desc("Use the BLOCK_INFO from the given file"),
-                      cl::cat(BCAnalyzerCategory));
+                      cl::desc("Use the BLOCK_INFO from the given file"));
 
 static cl::opt<bool>
     ShowBinaryBlobs("show-binary-blobs",
-                    cl::desc("Print binary blobs using hex escapes"),
-                    cl::cat(BCAnalyzerCategory));
+                    cl::desc("Print binary blobs using hex escapes"));
 
 static cl::opt<std::string> CheckHash(
     "check-hash",
-    cl::desc("Check module hash using the argument as a string table"),
-    cl::cat(BCAnalyzerCategory));
+    cl::desc("Check module hash using the argument as a string table"));
 
 static Error reportError(StringRef Message) {
   return createStringError(std::errc::illegal_byte_sequence, Message.data());
@@ -102,8 +85,6 @@ static Expected<std::unique_ptr<MemoryBuffer>> openBitcodeFile(StringRef Path) {
 
 int main(int argc, char **argv) {
   InitLLVM X(argc, argv);
-
-  cl::HideUnrelatedOptions({&BCAnalyzerCategory, &getColorCategory()});
   cl::ParseCommandLineOptions(argc, argv, "llvm-bcanalyzer file analyzer\n");
   ExitOnError ExitOnErr("llvm-bcanalyzer: ");
 
@@ -113,19 +94,17 @@ int main(int argc, char **argv) {
     BlockInfoMB = ExitOnErr(openBitcodeFile(BlockInfoFilename));
 
   BitcodeAnalyzer BA(MB->getBuffer(),
-                     BlockInfoMB
-                         ? std::optional<StringRef>(BlockInfoMB->getBuffer())
-                         : std::nullopt);
+                     BlockInfoMB ? Optional<StringRef>(BlockInfoMB->getBuffer())
+                                 : None);
 
   BCDumpOptions O(outs());
   O.Histogram = !NoHistogram;
   O.Symbolic = !NonSymbolic;
   O.ShowBinaryBlobs = ShowBinaryBlobs;
-  O.DumpBlockinfo = DumpBlockinfo;
 
   ExitOnErr(BA.analyze(
-      Dump ? std::optional<BCDumpOptions>(O) : std::optional<BCDumpOptions>(),
-      CheckHash.empty() ? std::nullopt : std::optional<StringRef>(CheckHash)));
+      Dump ? Optional<BCDumpOptions>(O) : Optional<BCDumpOptions>(None),
+      CheckHash.empty() ? None : Optional<StringRef>(CheckHash)));
 
   if (Dump)
     outs() << "\n\n";

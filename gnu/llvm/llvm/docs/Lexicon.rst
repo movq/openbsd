@@ -54,15 +54,8 @@ C
 -
 
 **CFI**
-    This abbreviation has two meanings.
-    Either:
     Call Frame Information. Used in DWARF debug info and in C++ unwind info
     to show how the function prolog lays out the stack frame.
-
-    Or:
-    Control Flow Integrity. A general term for computer security techniques
-    that prevent a wide variety of malware attacks from redirecting the flow
-    of execution (the control flow) of a program.
 
 **CIE**
     Common Information Entry.  A kind of CFI used to reduce the size of FDEs.
@@ -99,19 +92,6 @@ D
 **DSE**
     Dead Store Elimination
 
-E
--
-
-**ento**
-    This namespace houses the
-    `Clang Static Analyzer <https://clang.llvm.org/docs/ClangStaticAnalyzer.html>`_.
-    It is an abbreviation of `entomology <https://en.wikipedia.org/wiki/Entomology>`_.
-
-      *"Entomology is the scientific study of insects."*
-
-    In the past, this namespace had not only the name `GR` (aka. Graph Reachability)
-    but also `entoSA`.
-
 F
 -
 
@@ -132,7 +112,7 @@ G
 **GEP**
     ``GetElementPtr``. An LLVM IR instruction that is used to get the address
     of a subelement of an aggregate data structure. It is documented in detail
-    `here <https://llvm.org/docs/GetElementPtr.html>`_.
+    `here <http://llvm.org/docs/GetElementPtr.html>`_.
 
 **GVN**
     Global Value Numbering. GVN is a pass that partitions values computed by a
@@ -158,12 +138,6 @@ I
     that occur in LLVM or Clang as they are compiling source code. For example,
     if a valid C++ source program were to trigger an assert in Clang when
     compiled, that could be referred to as an "ICE".
-
-**ICF**
-    Identical Code Folding
-
-**ICP**
-    Indirect Call Promotion
 
 **IPA**
     Inter-Procedural Analysis. Refers to any variety of code analysis that
@@ -256,10 +230,6 @@ R
     and other optimization.  For example, changing ``(A+B-A)`` into ``(B+A-A)``,
     permitting it to be optimized into ``(B+0)`` then ``(B)``.
 
-**RFC**
-  Request for Comment. An email sent to a project mailing list in order to
-  solicit feedback on a proposed change.
-
 .. _roots:
 .. _stack roots:
 
@@ -280,7 +250,7 @@ S
 **Safe Point**
     In garbage collection, it is necessary to identify `stack roots`_ so that
     reachability analysis may proceed. It may be infeasible to provide this
-    information for every instruction, so instead the information is
+    information for every instruction, so instead the information may is
     calculated only at designated safe points. With a copying collector,
     `derived pointers`_ must not be retained across safe points and `object
     pointers`_ must be reloaded from stack roots.
@@ -321,11 +291,4 @@ T
 
 **TBAA**
     Type-Based Alias Analysis
-
-
-W
--
-
-**WPD**
-    Whole Program Devirtualization
 

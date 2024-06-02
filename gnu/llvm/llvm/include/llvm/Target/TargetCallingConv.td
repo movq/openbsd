@@ -41,19 +41,9 @@ class CCIf<string predicate, CCAction A> : CCPredicateAction<A> {
 class CCIfByVal<CCAction A> : CCIf<"ArgFlags.isByVal()", A> {
 }
 
-/// CCIfPreallocated - If the current argument has Preallocated parameter attribute,
-/// apply Action A.
-class CCIfPreallocated<CCAction A> : CCIf<"ArgFlags.isPreallocated()", A> {
-}
-
 /// CCIfSwiftSelf - If the current argument has swiftself parameter attribute,
 /// apply Action A.
 class CCIfSwiftSelf<CCAction A> : CCIf<"ArgFlags.isSwiftSelf()", A> {
-}
-
-/// CCIfSwiftAsync - If the current argument has swiftasync parameter attribute,
-/// apply Action A.
-class CCIfSwiftAsync<CCAction A> : CCIf<"ArgFlags.isSwiftAsync()", A> {
 }
 
 /// CCIfSwiftError - If the current argument has swifterror parameter attribute,
@@ -141,15 +131,6 @@ class CCAssignToStackWithShadow<int size,
   list<Register> ShadowRegList = shadowList;
 }
 
-/// CCAssignToRegAndStack - Same as CCAssignToReg, but also allocates a stack
-/// slot, when some register is used. Basically, it works like:
-/// CCIf<CCAssignToReg<regList>, CCAssignToStack<size, align>>.
-class CCAssignToRegAndStack<list<Register> regList, int size, int align>
-    : CCAssignToReg<regList> {
-  int Size = size;
-  int Align = align;
-}
-
 /// CCPassByVal - This action always matches: it assigns the value to a stack
 /// slot to implement ByVal aggregate parameter passing. Size and alignment
 /// specify the minimum size and alignment for the stack slot.
@@ -201,15 +182,15 @@ class CallingConv<list<CCAction> actions> {
 
   /// If true, this calling convention will be emitted as externally visible in
   /// the llvm namespaces instead of as a static function.
-  bit Entry = false;
+  bit Entry = 0;
 
-  bit Custom = false;
+  bit Custom = 0;
 }
 
 /// CustomCallingConv - An instance of this is used to declare calling
 /// conventions that are implemented using a custom function of the same name.
 class CustomCallingConv : CallingConv<[]> {
-  let Custom = true;
+  let Custom = 1;
 }
 
 /// CalleeSavedRegs - A list of callee saved registers for a given calling

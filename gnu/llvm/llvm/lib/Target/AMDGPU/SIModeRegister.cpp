@@ -14,10 +14,20 @@
 //===----------------------------------------------------------------------===//
 //
 #include "AMDGPU.h"
-#include "GCNSubtarget.h"
-#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
+#include "AMDGPUInstrInfo.h"
+#include "AMDGPUSubtarget.h"
+#include "SIInstrInfo.h"
+#include "SIMachineFunctionInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
 #include <queue>
 
 #define DEBUG_TYPE "si-mode-register"
@@ -73,7 +83,9 @@ struct Status {
     return ((Mask & S.Mask) == S.Mask) && ((Mode & S.Mask) == S.Mode);
   }
 
-  bool isCombinable(Status &S) { return !(Mask & S.Mask) || isCompatible(S); }
+  bool isCombinable(Status &S) {
+    return !(Mask & S.Mask) || isCompatible(S);
+  }
 };
 
 class BlockData {
@@ -98,11 +110,7 @@ public:
   // which is used in Phase 3 if we need to insert a mode change.
   MachineInstr *FirstInsertionPoint;
 
-  // A flag to indicate whether an Exit value has been set (we can't tell by
-  // examining the Exit value itself as all values may be valid results).
-  bool ExitSet;
-
-  BlockData() : FirstInsertionPoint(nullptr), ExitSet(false){};
+  BlockData() : FirstInsertionPoint(nullptr) {};
 };
 
 namespace {
@@ -122,8 +130,6 @@ public:
   unsigned DefaultMode = FP_ROUND_ROUND_TO_NEAREST;
   Status DefaultStatus =
       Status(FP_ROUND_MODE_DP(0x3), FP_ROUND_MODE_DP(DefaultMode));
-
-  bool Changed = false;
 
 public:
   SIModeRegister() : MachineFunctionPass(ID) {}
@@ -163,9 +169,7 @@ FunctionPass *llvm::createSIModeRegisterPass() { return new SIModeRegister(); }
 // double precision setting.
 Status SIModeRegister::getInstructionMode(MachineInstr &MI,
                                           const SIInstrInfo *TII) {
-  if (TII->usesFPDPRounding(MI) ||
-      MI.getOpcode() == AMDGPU::FPTRUNC_UPWARD_PSEUDO ||
-      MI.getOpcode() == AMDGPU::FPTRUNC_DOWNWARD_PSEUDO) {
+  if (TII->usesFPDPRounding(MI)) {
     switch (MI.getOpcode()) {
     case AMDGPU::V_INTERP_P1LL_F16:
     case AMDGPU::V_INTERP_P1LV_F16:
@@ -173,40 +177,6 @@ Status SIModeRegister::getInstructionMode(MachineInstr &MI,
       // f16 interpolation instructions need double precision round to zero
       return Status(FP_ROUND_MODE_DP(3),
                     FP_ROUND_MODE_DP(FP_ROUND_ROUND_TO_ZERO));
-    case AMDGPU::FPTRUNC_UPWARD_PSEUDO: {
-      // Replacing the pseudo by a real instruction in place
-      if (TII->getSubtarget().hasTrue16BitInsts()) {
-        MachineBasicBlock &MBB = *MI.getParent();
-        MachineInstrBuilder B(*MBB.getParent(), MI);
-        MI.setDesc(TII->get(AMDGPU::V_CVT_F16_F32_t16_e64));
-        MachineOperand Src0 = MI.getOperand(1);
-        MI.removeOperand(1);
-        B.addImm(0); // src0_modifiers
-        B.add(Src0); // re-add src0 operand
-        B.addImm(0); // clamp
-        B.addImm(0); // omod
-      } else
-        MI.setDesc(TII->get(AMDGPU::V_CVT_F16_F32_e32));
-      return Status(FP_ROUND_MODE_DP(3),
-                    FP_ROUND_MODE_DP(FP_ROUND_ROUND_TO_INF));
-    }
-    case AMDGPU::FPTRUNC_DOWNWARD_PSEUDO: {
-      // Replacing the pseudo by a real instruction in place
-      if (TII->getSubtarget().hasTrue16BitInsts()) {
-        MachineBasicBlock &MBB = *MI.getParent();
-        MachineInstrBuilder B(*MBB.getParent(), MI);
-        MI.setDesc(TII->get(AMDGPU::V_CVT_F16_F32_t16_e64));
-        MachineOperand Src0 = MI.getOperand(1);
-        MI.removeOperand(1);
-        B.addImm(0); // src0_modifiers
-        B.add(Src0); // re-add src0 operand
-        B.addImm(0); // clamp
-        B.addImm(0); // omod
-      } else
-        MI.setDesc(TII->get(AMDGPU::V_CVT_F16_F32_e32));
-      return Status(FP_ROUND_MODE_DP(3),
-                    FP_ROUND_MODE_DP(FP_ROUND_ROUND_TO_NEGINF));
-    }
     default:
       return DefaultStatus;
     }
@@ -225,13 +195,12 @@ void SIModeRegister::insertSetreg(MachineBasicBlock &MBB, MachineInstr *MI,
     unsigned Offset = countTrailingZeros<unsigned>(InstrMode.Mask);
     unsigned Width = countTrailingOnes<unsigned>(InstrMode.Mask >> Offset);
     unsigned Value = (InstrMode.Mode >> Offset) & ((1 << Width) - 1);
-    BuildMI(MBB, MI, nullptr, TII->get(AMDGPU::S_SETREG_IMM32_B32))
+    BuildMI(MBB, MI, 0, TII->get(AMDGPU::S_SETREG_IMM32_B32))
         .addImm(Value)
         .addImm(((Width - 1) << AMDGPU::Hwreg::WIDTH_M1_SHIFT_) |
                 (Offset << AMDGPU::Hwreg::OFFSET_SHIFT_) |
                 (AMDGPU::Hwreg::ID_MODE << AMDGPU::Hwreg::ID_SHIFT_));
     ++NumSetregInserted;
-    Changed = true;
     InstrMode.Mask &= ~(((1 << Width) - 1) << Offset);
   }
 }
@@ -262,16 +231,14 @@ void SIModeRegister::processBlockPhase1(MachineBasicBlock &MBB,
   // RequirePending is used to indicate whether we are collecting the initial
   // requirements for the block, and need to defer the first InsertionPoint to
   // Phase 3. It is set to false once we have set FirstInsertionPoint, or when
-  // we discover an explicit setreg that means this block doesn't have any
+  // we discover an explict setreg that means this block doesn't have any
   // initial requirements.
   bool RequirePending = true;
   Status IPChange;
   for (MachineInstr &MI : MBB) {
     Status InstrMode = getInstructionMode(MI, TII);
-    if (MI.getOpcode() == AMDGPU::S_SETREG_B32 ||
-        MI.getOpcode() == AMDGPU::S_SETREG_B32_mode ||
-        MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32 ||
-        MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32_mode) {
+    if ((MI.getOpcode() == AMDGPU::S_SETREG_B32) ||
+        (MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32)) {
       // We preserve any explicit mode register setreg instruction we encounter,
       // as we assume it has been inserted by a higher authority (this is
       // likely to be a very rare occurrence).
@@ -295,8 +262,7 @@ void SIModeRegister::processBlockPhase1(MachineBasicBlock &MBB,
       // If this is an immediate then we know the value being set, but if it is
       // not an immediate then we treat the modified bits of the mode register
       // as unknown.
-      if (MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32 ||
-          MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32_mode) {
+      if (MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32) {
         unsigned Val = TII->getNamedOperand(MI, AMDGPU::OpName::imm)->getImm();
         unsigned Mode = (Val << Offset) & Mask;
         Status Setreg = Status(Mask, Mode);
@@ -359,63 +325,35 @@ void SIModeRegister::processBlockPhase1(MachineBasicBlock &MBB,
 // exit value is propagated.
 void SIModeRegister::processBlockPhase2(MachineBasicBlock &MBB,
                                         const SIInstrInfo *TII) {
-  bool RevisitRequired = false;
-  bool ExitSet = false;
+//  BlockData *BI = BlockInfo[MBB.getNumber()];
   unsigned ThisBlock = MBB.getNumber();
   if (MBB.pred_empty()) {
     // There are no predecessors, so use the default starting status.
     BlockInfo[ThisBlock]->Pred = DefaultStatus;
-    ExitSet = true;
   } else {
     // Build a status that is common to all the predecessors by intersecting
     // all the predecessor exit status values.
-    // Mask bits (which represent the Mode bits with a known value) can only be
-    // added by explicit SETREG instructions or the initial default value -
-    // the intersection process may remove Mask bits.
-    // If we find a predecessor that has not yet had an exit value determined
-    // (this can happen for example if a block is its own predecessor) we defer
-    // use of that value as the Mask will be all zero, and we will revisit this
-    // block again later (unless the only predecessor without an exit value is
-    // this block).
     MachineBasicBlock::pred_iterator P = MBB.pred_begin(), E = MBB.pred_end();
     MachineBasicBlock &PB = *(*P);
-    unsigned PredBlock = PB.getNumber();
-    if ((ThisBlock == PredBlock) && (std::next(P) == E)) {
-      BlockInfo[ThisBlock]->Pred = DefaultStatus;
-      ExitSet = true;
-    } else if (BlockInfo[PredBlock]->ExitSet) {
-      BlockInfo[ThisBlock]->Pred = BlockInfo[PredBlock]->Exit;
-      ExitSet = true;
-    } else if (PredBlock != ThisBlock)
-      RevisitRequired = true;
+    BlockInfo[ThisBlock]->Pred = BlockInfo[PB.getNumber()]->Exit;
 
     for (P = std::next(P); P != E; P = std::next(P)) {
       MachineBasicBlock *Pred = *P;
-      unsigned PredBlock = Pred->getNumber();
-      if (BlockInfo[PredBlock]->ExitSet) {
-        if (BlockInfo[ThisBlock]->ExitSet) {
-          BlockInfo[ThisBlock]->Pred =
-              BlockInfo[ThisBlock]->Pred.intersect(BlockInfo[PredBlock]->Exit);
-        } else {
-          BlockInfo[ThisBlock]->Pred = BlockInfo[PredBlock]->Exit;
-        }
-        ExitSet = true;
-      } else if (PredBlock != ThisBlock)
-        RevisitRequired = true;
+      BlockInfo[ThisBlock]->Pred = BlockInfo[ThisBlock]->Pred.intersect(BlockInfo[Pred->getNumber()]->Exit);
     }
   }
-  Status TmpStatus =
-      BlockInfo[ThisBlock]->Pred.merge(BlockInfo[ThisBlock]->Change);
+  Status TmpStatus = BlockInfo[ThisBlock]->Pred.merge(BlockInfo[ThisBlock]->Change);
   if (BlockInfo[ThisBlock]->Exit != TmpStatus) {
     BlockInfo[ThisBlock]->Exit = TmpStatus;
     // Add the successors to the work list so we can propagate the changed exit
     // status.
-    for (MachineBasicBlock *Succ : MBB.successors())
-      Phase2List.push(Succ);
+    for (MachineBasicBlock::succ_iterator S = MBB.succ_begin(),
+                                          E = MBB.succ_end();
+         S != E; S = std::next(S)) {
+      MachineBasicBlock &B = *(*S);
+      Phase2List.push(&B);
+    }
   }
-  BlockInfo[ThisBlock]->ExitSet = ExitSet;
-  if (RevisitRequired)
-    Phase2List.push(&MBB);
 }
 
 // In Phase 3 we revisit each block and if it has an insertion point defined we
@@ -423,10 +361,10 @@ void SIModeRegister::processBlockPhase2(MachineBasicBlock &MBB,
 // not we insert an appropriate setreg instruction to modify the Mode register.
 void SIModeRegister::processBlockPhase3(MachineBasicBlock &MBB,
                                         const SIInstrInfo *TII) {
+//  BlockData *BI = BlockInfo[MBB.getNumber()];
   unsigned ThisBlock = MBB.getNumber();
   if (!BlockInfo[ThisBlock]->Pred.isCompatible(BlockInfo[ThisBlock]->Require)) {
-    Status Delta =
-        BlockInfo[ThisBlock]->Pred.delta(BlockInfo[ThisBlock]->Require);
+    Status Delta = BlockInfo[ThisBlock]->Pred.delta(BlockInfo[ThisBlock]->Require);
     if (BlockInfo[ThisBlock]->FirstInsertionPoint)
       insertSetreg(MBB, BlockInfo[ThisBlock]->FirstInsertionPoint, TII, Delta);
     else
@@ -463,5 +401,5 @@ bool SIModeRegister::runOnMachineFunction(MachineFunction &MF) {
 
   BlockInfo.clear();
 
-  return Changed;
+  return NumSetregInserted > 0;
 }

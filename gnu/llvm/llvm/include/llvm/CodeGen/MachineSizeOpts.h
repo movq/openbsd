@@ -10,8 +10,8 @@
 // code.
 //
 //===----------------------------------------------------------------------===//
-#ifndef LLVM_CODEGEN_MACHINESIZEOPTS_H
-#define LLVM_CODEGEN_MACHINESIZEOPTS_H
+#ifndef LLVM_CODEGEN_MACHINE_SIZEOPTS_H
+#define LLVM_CODEGEN_MACHINE_SIZEOPTS_H
 
 #include "llvm/Transforms/Utils/SizeOpts.h"
 
@@ -21,7 +21,6 @@ class ProfileSummaryInfo;
 class MachineBasicBlock;
 class MachineBlockFrequencyInfo;
 class MachineFunction;
-class MBFIWrapper;
 
 /// Returns true if machine function \p MF is suggested to be size-optimized
 /// based on the profile.
@@ -34,13 +33,7 @@ bool shouldOptimizeForSize(const MachineBasicBlock *MBB,
                            ProfileSummaryInfo *PSI,
                            const MachineBlockFrequencyInfo *MBFI,
                            PGSOQueryType QueryType = PGSOQueryType::Other);
-/// Returns true if machine basic block \p MBB is suggested to be size-optimized
-/// based on the profile.
-bool shouldOptimizeForSize(const MachineBasicBlock *MBB,
-                           ProfileSummaryInfo *PSI,
-                           MBFIWrapper *MBFIWrapper,
-                           PGSOQueryType QueryType = PGSOQueryType::Other);
 
 } // end namespace llvm
 
-#endif // LLVM_CODEGEN_MACHINESIZEOPTS_H
+#endif // LLVM_CODEGEN_MACHINE_SIZEOPTS_H

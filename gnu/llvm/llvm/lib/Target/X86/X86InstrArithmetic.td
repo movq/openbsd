@@ -541,7 +541,7 @@ class X86TypeInfo<ValueType vt, string instrsuffix, RegisterClass regclass,
                   Operand immoperand, SDPatternOperator immoperator,
                   Operand imm8operand, SDPatternOperator imm8operator,
                   bit hasOddOpcode, OperandSize opSize,
-                  bit hasREX_W> {
+                  bit hasREX_WPrefix> {
   /// VT - This is the value type itself.
   ValueType VT = vt;
 
@@ -596,25 +596,25 @@ class X86TypeInfo<ValueType vt, string instrsuffix, RegisterClass regclass,
   /// to Opsize16. i32 sets this to OpSize32.
   OperandSize OpSize = opSize;
 
-  /// HasREX_W - This bit is set to true if the instruction should have
+  /// HasREX_WPrefix - This bit is set to true if the instruction should have
   /// the 0x40 REX prefix.  This is set for i64 types.
-  bit HasREX_W = hasREX_W;
+  bit HasREX_WPrefix = hasREX_WPrefix;
 }
 
 def invalid_node : SDNode<"<<invalid_node>>", SDTIntLeaf,[],"<<invalid_node>>">;
 
 
 def Xi8  : X86TypeInfo<i8, "b", GR8, loadi8, i8mem,
-                       Imm8, i8imm, imm_su, i8imm, invalid_node,
+                       Imm8, i8imm, relocImm8_su, i8imm, invalid_node,
                        0, OpSizeFixed, 0>;
 def Xi16 : X86TypeInfo<i16, "w", GR16, loadi16, i16mem,
-                       Imm16, i16imm, imm_su, i16i8imm, i16immSExt8_su,
+                       Imm16, i16imm, relocImm16_su, i16i8imm, i16immSExt8_su,
                        1, OpSize16, 0>;
 def Xi32 : X86TypeInfo<i32, "l", GR32, loadi32, i32mem,
-                       Imm32, i32imm, imm_su, i32i8imm, i32immSExt8_su,
+                       Imm32, i32imm, relocImm32_su, i32i8imm, i32immSExt8_su,
                        1, OpSize32, 0>;
 def Xi64 : X86TypeInfo<i64, "q", GR64, loadi64, i64mem,
-                       Imm32S, i64i32imm, i64immSExt32_su, i64i8imm, i64immSExt8_su,
+                       Imm32S, i64i32imm, i64relocImmSExt32_su, i64i8imm, i64immSExt8_su,
                        1, OpSizeFixed, 1>;
 
 /// ITy - This instruction base class takes the type info for the instruction.
@@ -634,7 +634,7 @@ class ITy<bits<8> opcode, Format f, X86TypeInfo typeinfo, dag outs, dag ins,
 
   // Infer instruction prefixes from type info.
   let OpSize = typeinfo.OpSize;
-  let hasREX_W  = typeinfo.HasREX_W;
+  let hasREX_WPrefix  = typeinfo.HasREX_WPrefix;
 }
 
 // BinOpRR - Instructions like "add reg, reg, reg".
@@ -708,19 +708,6 @@ class BinOpRM<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
         mnemonic, "{$src2, $src1|$src1, $src2}", pattern>,
     Sched<[sched.Folded, sched.ReadAfterFold]>;
 
-// BinOpRM - Instructions like "adc reg, reg, [mem]".
-// There is an implicit register read at the end of the operand sequence.
-class BinOpRM_ImplicitUse<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
-              dag outlist, X86FoldableSchedWrite sched, list<dag> pattern>
-  : ITy<opcode, MRMSrcMem, typeinfo, outlist,
-        (ins typeinfo.RegClass:$src1, typeinfo.MemOperand:$src2),
-        mnemonic, "{$src2, $src1|$src1, $src2}", pattern>,
-    Sched<[sched.Folded, sched.ReadAfterFold,
-           // base, scale, index, offset, segment.
-           ReadDefault, ReadDefault, ReadDefault, ReadDefault, ReadDefault,
-           // implicit register read.
-           sched.ReadAfterFold]>;
-
 // BinOpRM_F - Instructions like "cmp reg, [mem]".
 class BinOpRM_F<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
                 SDNode opnode>
@@ -738,7 +725,7 @@ class BinOpRM_RF<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
 // BinOpRM_RFF - Instructions like "adc reg, reg, [mem]".
 class BinOpRM_RFF<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
                  SDNode opnode>
-  : BinOpRM_ImplicitUse<opcode, mnemonic, typeinfo, (outs typeinfo.RegClass:$dst), WriteADC,
+  : BinOpRM<opcode, mnemonic, typeinfo, (outs typeinfo.RegClass:$dst), WriteADC,
             [(set typeinfo.RegClass:$dst, EFLAGS,
             (opnode typeinfo.RegClass:$src1, (typeinfo.LoadNode addr:$src2),
                     EFLAGS))]>;
@@ -818,11 +805,7 @@ class BinOpMR_RMW<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
                   SDNode opnode>
   : BinOpMR<opcode, mnemonic, typeinfo,
           [(store (opnode (load addr:$dst), typeinfo.RegClass:$src), addr:$dst),
-           (implicit EFLAGS)]>, Sched<[WriteALURMW,
-                                       // base, scale, index, offset, segment
-                                       ReadDefault, ReadDefault, ReadDefault,
-                                       ReadDefault, ReadDefault,
-                                       WriteALU.ReadAfterFold]>;  // reg
+           (implicit EFLAGS)]>, Sched<[WriteALURMW]>;
 
 // BinOpMR_RMW_FF - Instructions like "adc [mem], reg".
 class BinOpMR_RMW_FF<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
@@ -830,12 +813,7 @@ class BinOpMR_RMW_FF<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
   : BinOpMR<opcode, mnemonic, typeinfo,
             [(store (opnode (load addr:$dst), typeinfo.RegClass:$src, EFLAGS),
                     addr:$dst),
-             (implicit EFLAGS)]>, Sched<[WriteADCRMW,
-                                         // base, scale, index, offset, segment
-                                         ReadDefault, ReadDefault, ReadDefault,
-                                         ReadDefault, ReadDefault,
-                                         WriteALU.ReadAfterFold,    // reg
-                                         WriteALU.ReadAfterFold]>;  // EFLAGS
+             (implicit EFLAGS)]>, Sched<[WriteADCRMW]>;
 
 // BinOpMR_F - Instructions like "cmp [mem], reg".
 class BinOpMR_F<bits<8> opcode, string mnemonic, X86TypeInfo typeinfo,
@@ -1204,15 +1182,6 @@ defm SUB : ArithBinOp_RF<0x28, 0x2A, 0x2C, "sub", MRM5r, MRM5m,
                          X86sub_flag, sub, 0, 1, 0>;
 }
 
-// Version of XOR8rr_NOREX that use GR8_NOREX. This is used by the handling of
-// __builtin_parity where the last step xors an h-register with an l-register.
-let isCodeGenOnly = 1, hasSideEffects = 0, Constraints = "$src1 = $dst",
-    Defs = [EFLAGS], isCommutable = 1 in
-def XOR8rr_NOREX : I<0x30, MRMDestReg, (outs GR8_NOREX:$dst),
-                     (ins GR8_NOREX:$src1, GR8_NOREX:$src2),
-                     "xor{b}\t{$src2, $dst|$dst, $src2}", []>,
-                     Sched<[WriteALU]>;
-
 // Arithmetic.
 defm ADC : ArithBinOp_RFF<0x10, 0x12, 0x14, "adc", MRM2r, MRM2m, X86adc_flag,
                           1, 0>;
@@ -1248,146 +1217,6 @@ def : Pat<(store (X86adc_flag GR64:$src, (loadi64 addr:$dst), EFLAGS),
                  addr:$dst),
           (ADC64mr addr:$dst, GR64:$src)>;
 
-// Patterns for basic arithmetic ops with relocImm for the immediate field.
-multiclass ArithBinOp_RF_relocImm_Pats<SDNode OpNodeFlag, SDNode OpNode> {
-  def : Pat<(OpNodeFlag GR8:$src1, relocImm8_su:$src2),
-            (!cast<Instruction>(NAME#"8ri") GR8:$src1, relocImm8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR16:$src1, i16relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"16ri8") GR16:$src1, i16relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR16:$src1, relocImm16_su:$src2),
-            (!cast<Instruction>(NAME#"16ri") GR16:$src1, relocImm16_su:$src2)>;
-  def : Pat<(OpNodeFlag GR32:$src1, i32relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"32ri8") GR32:$src1, i32relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR32:$src1, relocImm32_su:$src2),
-            (!cast<Instruction>(NAME#"32ri") GR32:$src1, relocImm32_su:$src2)>;
-  def : Pat<(OpNodeFlag GR64:$src1, i64relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"64ri8") GR64:$src1, i64relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR64:$src1, i64relocImmSExt32_su:$src2),
-            (!cast<Instruction>(NAME#"64ri32") GR64:$src1, i64relocImmSExt32_su:$src2)>;
-
-  def : Pat<(store (OpNode (load addr:$dst), relocImm8_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"8mi") addr:$dst, relocImm8_su:$src)>;
-  def : Pat<(store (OpNode (load addr:$dst), i16relocImmSExt8_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"16mi8") addr:$dst, i16relocImmSExt8_su:$src)>;
-  def : Pat<(store (OpNode (load addr:$dst), relocImm16_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"16mi") addr:$dst, relocImm16_su:$src)>;
-  def : Pat<(store (OpNode (load addr:$dst), i32relocImmSExt8_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"32mi8") addr:$dst, i32relocImmSExt8_su:$src)>;
-  def : Pat<(store (OpNode (load addr:$dst), relocImm32_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"32mi") addr:$dst, relocImm32_su:$src)>;
-  def : Pat<(store (OpNode (load addr:$dst), i64relocImmSExt8_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"64mi8") addr:$dst, i64relocImmSExt8_su:$src)>;
-  def : Pat<(store (OpNode (load addr:$dst), i64relocImmSExt32_su:$src), addr:$dst),
-            (!cast<Instruction>(NAME#"64mi32") addr:$dst, i64relocImmSExt32_su:$src)>;
-}
-
-multiclass ArithBinOp_RFF_relocImm_Pats<SDNode OpNodeFlag> {
-  def : Pat<(OpNodeFlag GR8:$src1, relocImm8_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"8ri") GR8:$src1, relocImm8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR16:$src1, i16relocImmSExt8_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"16ri8") GR16:$src1, i16relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR16:$src1, relocImm16_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"16ri") GR16:$src1, relocImm16_su:$src2)>;
-  def : Pat<(OpNodeFlag GR32:$src1, i32relocImmSExt8_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"32ri8") GR32:$src1, i32relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR32:$src1, relocImm32_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"32ri") GR32:$src1, relocImm32_su:$src2)>;
-  def : Pat<(OpNodeFlag GR64:$src1, i64relocImmSExt8_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"64ri8") GR64:$src1, i64relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR64:$src1, i64relocImmSExt32_su:$src2, EFLAGS),
-            (!cast<Instruction>(NAME#"64ri32") GR64:$src1, i64relocImmSExt32_su:$src2)>;
-
-  def : Pat<(store (OpNodeFlag (load addr:$dst), relocImm8_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"8mi") addr:$dst, relocImm8_su:$src)>;
-  def : Pat<(store (OpNodeFlag (load addr:$dst), i16relocImmSExt8_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"16mi8") addr:$dst, i16relocImmSExt8_su:$src)>;
-  def : Pat<(store (OpNodeFlag (load addr:$dst), relocImm16_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"16mi") addr:$dst, relocImm16_su:$src)>;
-  def : Pat<(store (OpNodeFlag (load addr:$dst), i32relocImmSExt8_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"32mi8") addr:$dst, i32relocImmSExt8_su:$src)>;
-  def : Pat<(store (OpNodeFlag (load addr:$dst), relocImm32_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"32mi") addr:$dst, relocImm32_su:$src)>;
-  def : Pat<(store (OpNodeFlag (load addr:$dst), i64relocImmSExt8_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"64mi8") addr:$dst, i64relocImmSExt8_su:$src)>;
-  def : Pat<(store (OpNodeFlag (load addr:$dst), i64relocImmSExt32_su:$src, EFLAGS), addr:$dst),
-            (!cast<Instruction>(NAME#"64mi32") addr:$dst, i64relocImmSExt32_su:$src)>;
-}
-
-multiclass ArithBinOp_F_relocImm_Pats<SDNode OpNodeFlag> {
-  def : Pat<(OpNodeFlag GR8:$src1, relocImm8_su:$src2),
-            (!cast<Instruction>(NAME#"8ri") GR8:$src1, relocImm8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR16:$src1, i16relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"16ri8") GR16:$src1, i16relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR16:$src1, relocImm16_su:$src2),
-            (!cast<Instruction>(NAME#"16ri") GR16:$src1, relocImm16_su:$src2)>;
-  def : Pat<(OpNodeFlag GR32:$src1, i32relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"32ri8") GR32:$src1, i32relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR32:$src1, relocImm32_su:$src2),
-            (!cast<Instruction>(NAME#"32ri") GR32:$src1, relocImm32_su:$src2)>;
-  def : Pat<(OpNodeFlag GR64:$src1, i64relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"64ri8") GR64:$src1, i64relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag GR64:$src1, i64relocImmSExt32_su:$src2),
-            (!cast<Instruction>(NAME#"64ri32") GR64:$src1, i64relocImmSExt32_su:$src2)>;
-
-  def : Pat<(OpNodeFlag (loadi8 addr:$src1), relocImm8_su:$src2),
-            (!cast<Instruction>(NAME#"8mi") addr:$src1, relocImm8_su:$src2)>;
-  def : Pat<(OpNodeFlag (loadi16 addr:$src1), i16relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"16mi8") addr:$src1, i16relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag (loadi16 addr:$src1), relocImm16_su:$src2),
-            (!cast<Instruction>(NAME#"16mi") addr:$src1, relocImm16_su:$src2)>;
-  def : Pat<(OpNodeFlag (loadi32 addr:$src1), i32relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"32mi8") addr:$src1, i32relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag (loadi32 addr:$src1), relocImm32_su:$src2),
-            (!cast<Instruction>(NAME#"32mi") addr:$src1, relocImm32_su:$src2)>;
-  def : Pat<(OpNodeFlag (loadi64 addr:$src1), i64relocImmSExt8_su:$src2),
-            (!cast<Instruction>(NAME#"64mi8") addr:$src1, i64relocImmSExt8_su:$src2)>;
-  def : Pat<(OpNodeFlag (loadi64 addr:$src1), i64relocImmSExt32_su:$src2),
-            (!cast<Instruction>(NAME#"64mi32") addr:$src1, i64relocImmSExt32_su:$src2)>;
-}
-
-defm AND : ArithBinOp_RF_relocImm_Pats<X86and_flag, and>;
-defm OR  : ArithBinOp_RF_relocImm_Pats<X86or_flag, or>;
-defm XOR : ArithBinOp_RF_relocImm_Pats<X86xor_flag, xor>;
-defm ADD : ArithBinOp_RF_relocImm_Pats<X86add_flag, add>;
-defm SUB : ArithBinOp_RF_relocImm_Pats<X86sub_flag, sub>;
-
-defm ADC : ArithBinOp_RFF_relocImm_Pats<X86adc_flag>;
-defm SBB : ArithBinOp_RFF_relocImm_Pats<X86sbb_flag>;
-
-defm CMP : ArithBinOp_F_relocImm_Pats<X86cmp>;
-
-// ADC is commutable, but we can't indicate that to tablegen. So manually
-// reverse the operands.
-def : Pat<(X86adc_flag GR8:$src1, relocImm8_su:$src2, EFLAGS),
-          (ADC8ri relocImm8_su:$src2, GR8:$src1)>;
-def : Pat<(X86adc_flag i16relocImmSExt8_su:$src2, GR16:$src1, EFLAGS),
-          (ADC16ri8 GR16:$src1, i16relocImmSExt8_su:$src2)>;
-def : Pat<(X86adc_flag relocImm16_su:$src2, GR16:$src1, EFLAGS),
-          (ADC16ri GR16:$src1, relocImm16_su:$src2)>;
-def : Pat<(X86adc_flag i32relocImmSExt8_su:$src2, GR32:$src1, EFLAGS),
-          (ADC32ri8 GR32:$src1, i32relocImmSExt8_su:$src2)>;
-def : Pat<(X86adc_flag relocImm32_su:$src2, GR32:$src1, EFLAGS),
-          (ADC32ri GR32:$src1, relocImm32_su:$src2)>;
-def : Pat<(X86adc_flag i64relocImmSExt8_su:$src2, GR64:$src1, EFLAGS),
-          (ADC64ri8 GR64:$src1, i64relocImmSExt8_su:$src2)>;
-def : Pat<(X86adc_flag i64relocImmSExt32_su:$src2, GR64:$src1, EFLAGS),
-          (ADC64ri32 GR64:$src1, i64relocImmSExt32_su:$src2)>;
-
-def : Pat<(store (X86adc_flag relocImm8_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC8mi addr:$dst, relocImm8_su:$src)>;
-def : Pat<(store (X86adc_flag i16relocImmSExt8_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC16mi8 addr:$dst, i16relocImmSExt8_su:$src)>;
-def : Pat<(store (X86adc_flag relocImm16_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC16mi addr:$dst, relocImm16_su:$src)>;
-def : Pat<(store (X86adc_flag i32relocImmSExt8_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC32mi8 addr:$dst, i32relocImmSExt8_su:$src)>;
-def : Pat<(store (X86adc_flag relocImm32_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC32mi addr:$dst, relocImm32_su:$src)>;
-def : Pat<(store (X86adc_flag i64relocImmSExt8_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC64mi8 addr:$dst, i64relocImmSExt8_su:$src)>;
-def : Pat<(store (X86adc_flag i64relocImmSExt32_su:$src, (load addr:$dst), EFLAGS), addr:$dst),
-          (ADC64mi32 addr:$dst, i64relocImmSExt32_su:$src)>;
-
 //===----------------------------------------------------------------------===//
 // Semantically, test instructions are similar like AND, except they don't
 // generate a result.  From an encoding perspective, they are very different:
@@ -1418,6 +1247,7 @@ let isCompare = 1 in {
     def TEST8ri    : BinOpRI_F<0xF6, "test", Xi8 , X86testpat, MRM0r>;
     def TEST16ri   : BinOpRI_F<0xF6, "test", Xi16, X86testpat, MRM0r>;
     def TEST32ri   : BinOpRI_F<0xF6, "test", Xi32, X86testpat, MRM0r>;
+    let Predicates = [In64BitMode] in
     def TEST64ri32 : BinOpRI_F<0xF6, "test", Xi64, X86testpat, MRM0r>;
 
     def TEST8mi    : BinOpMI_F<0xF6, "test", Xi8 , X86testpat, MRM0m>;
@@ -1436,25 +1266,6 @@ let isCompare = 1 in {
   def TEST64i32  : BinOpAI_F<0xA8, "test", Xi64, RAX,
                              "{$src, %rax|rax, $src}">;
 } // isCompare
-
-// Patterns to match a relocImm into the immediate field.
-def : Pat<(X86testpat GR8:$src1, relocImm8_su:$src2),
-          (TEST8ri GR8:$src1, relocImm8_su:$src2)>;
-def : Pat<(X86testpat GR16:$src1, relocImm16_su:$src2),
-          (TEST16ri GR16:$src1, relocImm16_su:$src2)>;
-def : Pat<(X86testpat GR32:$src1, relocImm32_su:$src2),
-          (TEST32ri GR32:$src1, relocImm32_su:$src2)>;
-def : Pat<(X86testpat GR64:$src1, i64relocImmSExt32_su:$src2),
-          (TEST64ri32 GR64:$src1, i64relocImmSExt32_su:$src2)>;
-
-def : Pat<(X86testpat (loadi8 addr:$src1), relocImm8_su:$src2),
-          (TEST8mi addr:$src1, relocImm8_su:$src2)>;
-def : Pat<(X86testpat (loadi16 addr:$src1), relocImm16_su:$src2),
-          (TEST16mi addr:$src1, relocImm16_su:$src2)>;
-def : Pat<(X86testpat (loadi32 addr:$src1), relocImm32_su:$src2),
-          (TEST32mi addr:$src1, relocImm32_su:$src2)>;
-def : Pat<(X86testpat (loadi64 addr:$src1), i64relocImmSExt32_su:$src2),
-          (TEST64mi32 addr:$src1, i64relocImmSExt32_su:$src2)>;
 
 //===----------------------------------------------------------------------===//
 // ANDN Instruction
@@ -1495,36 +1306,23 @@ let Predicates = [HasBMI], AddedComplexity = -6 in {
 multiclass bmi_mulx<string mnemonic, RegisterClass RC, X86MemOperand x86memop,
                     X86FoldableSchedWrite sched> {
 let hasSideEffects = 0 in {
+  let isCommutable = 1 in
   def rr : I<0xF6, MRMSrcReg, (outs RC:$dst1, RC:$dst2), (ins RC:$src),
              !strconcat(mnemonic, "\t{$src, $dst2, $dst1|$dst1, $dst2, $src}"),
-             []>, T8XD, VEX_4V, Sched<[WriteIMulH, sched]>;
+             []>, T8XD, VEX_4V, Sched<[sched, WriteIMulH]>;
 
   let mayLoad = 1 in
   def rm : I<0xF6, MRMSrcMem, (outs RC:$dst1, RC:$dst2), (ins x86memop:$src),
              !strconcat(mnemonic, "\t{$src, $dst2, $dst1|$dst1, $dst2, $src}"),
-             []>, T8XD, VEX_4V,
-             Sched<[WriteIMulHLd, sched.Folded,
-                    // Memory operand.
-                    ReadDefault, ReadDefault, ReadDefault, ReadDefault, ReadDefault,
-                    // Implicit read of EDX/RDX
-                    sched.ReadAfterFold]>;
-
-  // Pseudo instructions to be used when the low result isn't used. The
-  // instruction is defined to keep the high if both destinations are the same.
-  def Hrr : PseudoI<(outs RC:$dst), (ins RC:$src),
-                    []>, Sched<[sched]>;
-
-  let mayLoad = 1 in
-  def Hrm : PseudoI<(outs RC:$dst), (ins x86memop:$src),
-                    []>, Sched<[sched.Folded]>;
+             []>, T8XD, VEX_4V, Sched<[sched.Folded, WriteIMulH]>;
 }
 }
 
 let Predicates = [HasBMI2] in {
   let Uses = [EDX] in
-    defm MULX32 : bmi_mulx<"mulx{l}", GR32, i32mem, WriteMULX32>;
+    defm MULX32 : bmi_mulx<"mulx{l}", GR32, i32mem, WriteIMul32>;
   let Uses = [RDX] in
-    defm MULX64 : bmi_mulx<"mulx{q}", GR64, i64mem, WriteMULX64>, VEX_W;
+    defm MULX64 : bmi_mulx<"mulx{q}", GR64, i64mem, WriteIMul64>, VEX_W;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1551,12 +1349,7 @@ let Predicates = [HasADX], Defs = [EFLAGS], Uses = [EFLAGS],
                     "adox{q}\t{$src2, $dst|$dst, $src2}", []>, T8XS;
   } // SchedRW
 
-  let mayLoad = 1,
-      SchedRW = [WriteADC.Folded, WriteADC.ReadAfterFold,
-                 // Memory operand.
-                 ReadDefault, ReadDefault, ReadDefault, ReadDefault, ReadDefault,
-                 // Implicit read of EFLAGS
-                 WriteADC.ReadAfterFold] in {
+  let mayLoad = 1, SchedRW = [WriteADC.Folded, WriteADC.ReadAfterFold] in {
   def ADCX32rm : I<0xF6, MRMSrcMem, (outs GR32:$dst),
                    (ins GR32:$src1, i32mem:$src2),
                    "adcx{l}\t{$src2, $dst|$dst, $src2}", []>, T8PD;

@@ -27,7 +27,6 @@ static_library("LLVMSystemZCodeGen") {
     "//llvm/lib/MC",
     "//llvm/lib/Support",
     "//llvm/lib/Target",
-    "//llvm/lib/TargetParser",
     "//llvm/lib/Transforms/Scalar",
   ]
   include_dirs = [ "." ]
@@ -35,7 +34,6 @@ static_library("LLVMSystemZCodeGen") {
     "SystemZAsmPrinter.cpp",
     "SystemZCallingConv.cpp",
     "SystemZConstantPoolValue.cpp",
-    "SystemZCopyPhysRegs.cpp",
     "SystemZElimCompare.cpp",
     "SystemZFrameLowering.cpp",
     "SystemZHazardRecognizer.cpp",

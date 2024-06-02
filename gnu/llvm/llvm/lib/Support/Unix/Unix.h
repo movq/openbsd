@@ -36,6 +36,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
+
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
 #endif
@@ -67,10 +71,11 @@ static inline bool MakeErrMsg(
 }
 
 // Include StrError(errnum) in a fatal error message.
-[[noreturn]] static inline void ReportErrnumFatal(const char *Msg, int errnum) {
+LLVM_ATTRIBUTE_NORETURN static inline void ReportErrnumFatal(const char *Msg,
+                                                             int errnum) {
   std::string ErrMsg;
   MakeErrMsg(&ErrMsg, Msg, errnum);
-  llvm::report_fatal_error(llvm::Twine(ErrMsg));
+  llvm::report_fatal_error(ErrMsg);
 }
 
 namespace llvm {

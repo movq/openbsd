@@ -9,7 +9,7 @@
 #ifndef LLVM_SUPPORT_CRASHRECOVERYCONTEXT_H
 #define LLVM_SUPPORT_CRASHRECOVERYCONTEXT_H
 
-#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/STLExtras.h"
 
 namespace llvm {
 class CrashRecoveryContextCleanup;
@@ -44,11 +44,11 @@ class CrashRecoveryContextCleanup;
 /// executed in any case, whether crash occurs or not. These actions may be used
 /// to reclaim resources in the case of crash.
 class CrashRecoveryContext {
-  void *Impl = nullptr;
-  CrashRecoveryContextCleanup *head = nullptr;
+  void *Impl;
+  CrashRecoveryContextCleanup *head;
 
 public:
-  CrashRecoveryContext();
+  CrashRecoveryContext() : Impl(nullptr), head(nullptr) {}
   ~CrashRecoveryContext();
 
   /// Register cleanup handler, which is used when the recovery context is
@@ -87,7 +87,7 @@ public:
   /// a protected context which is run in another thread (optionally with a
   /// requested stack size).
   ///
-  /// See RunSafely().
+  /// See RunSafely() and llvm_execute_on_thread().
   ///
   /// On Darwin, if PRIO_DARWIN_BG is set on the calling thread, it will be
   /// propagated to the new thread as well.
@@ -99,14 +99,8 @@ public:
 
   /// Explicitly trigger a crash recovery in the current process, and
   /// return failure from RunSafely(). This function does not return.
-  [[noreturn]] void HandleExit(int RetCode);
-
-  /// Return true if RetCode indicates that a signal or an exception occurred.
-  static bool isCrash(int RetCode);
-
-  /// Throw again a signal or an exception, after it was catched once by a
-  /// CrashRecoveryContext.
-  static bool throwIfCrash(int RetCode);
+  LLVM_ATTRIBUTE_NORETURN
+  void HandleExit(int RetCode);
 
   /// In case of a crash, this is the crash identifier.
   int RetCode = 0;
@@ -187,7 +181,7 @@ public:
       : CrashRecoveryContextCleanupBase<
             CrashRecoveryContextDestructorCleanup<T>, T>(context, resource) {}
 
-  void recoverResources() override {
+  virtual void recoverResources() {
     this->resource->~T();
   }
 };

@@ -11,9 +11,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/DataTypes.h"
-#include "llvm/Support/MemoryBufferRef.h"
 #include <iterator>
-#include <optional>
 
 namespace llvm {
 
@@ -30,8 +28,9 @@ class MemoryBuffer;
 /// character.
 ///
 /// Note that this iterator requires the buffer to be nul terminated.
-class line_iterator {
-  std::optional<MemoryBufferRef> Buffer;
+class line_iterator
+    : public std::iterator<std::forward_iterator_tag, StringRef> {
+  const MemoryBuffer *Buffer = nullptr;
   char CommentMarker = '\0';
   bool SkipBlanks = true;
 
@@ -39,18 +38,8 @@ class line_iterator {
   StringRef CurrentLine;
 
 public:
-  using iterator_category = std::forward_iterator_tag;
-  using value_type = StringRef;
-  using difference_type = std::ptrdiff_t;
-  using pointer = value_type *;
-  using reference = value_type &;
-
   /// Default construct an "end" iterator.
   line_iterator() = default;
-
-  /// Construct a new iterator around an unowned memory buffer.
-  explicit line_iterator(const MemoryBufferRef &Buffer, bool SkipBlanks = true,
-                         char CommentMarker = '\0');
 
   /// Construct a new iterator around some memory buffer.
   explicit line_iterator(const MemoryBuffer &Buffer, bool SkipBlanks = true,

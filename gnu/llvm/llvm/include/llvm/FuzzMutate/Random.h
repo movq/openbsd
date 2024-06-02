@@ -13,8 +13,8 @@
 #ifndef LLVM_FUZZMUTATE_RANDOM_H
 #define LLVM_FUZZMUTATE_RANDOM_H
 
-#include "llvm/Support/raw_ostream.h"
 #include <random>
+#include "llvm/Support/raw_ostream.h"
 namespace llvm {
 
 /// Return a uniformly distributed random value between \c Min and \c Max
@@ -32,7 +32,7 @@ template <typename T, typename GenT> T uniform(GenT &Gen) {
 /// elements, which may each be weighted to be more likely choices.
 template <typename T, typename GenT> class ReservoirSampler {
   GenT &RandGen;
-  std::remove_const_t<T> Selection = {};
+  typename std::remove_const<T>::type Selection = {};
   uint64_t TotalWeight = 0;
 
 public:
@@ -46,7 +46,7 @@ public:
     return Selection;
   }
 
-  explicit operator bool() const { return !isEmpty(); }
+  explicit operator bool() const { return !isEmpty();}
   const T &operator*() const { return getSelection(); }
 
   /// Sample each item in \c Items with unit weight
@@ -70,8 +70,8 @@ public:
 };
 
 template <typename GenT, typename RangeT,
-          typename ElT = std::remove_reference_t<
-              decltype(*std::begin(std::declval<RangeT>()))>>
+          typename ElT = typename std::remove_reference<
+              decltype(*std::begin(std::declval<RangeT>()))>::type>
 ReservoirSampler<ElT, GenT> makeSampler(GenT &RandGen, RangeT &&Items) {
   ReservoirSampler<ElT, GenT> RS(RandGen);
   RS.sample(Items);
@@ -91,6 +91,6 @@ ReservoirSampler<T, GenT> makeSampler(GenT &RandGen) {
   return ReservoirSampler<T, GenT>(RandGen);
 }
 
-} // namespace llvm
+} // End llvm namespace
 
 #endif // LLVM_FUZZMUTATE_RANDOM_H

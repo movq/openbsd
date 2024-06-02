@@ -13,8 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_SUPPORT_X86DISASSEMBLERDECODERCOMMON_H
-#define LLVM_SUPPORT_X86DISASSEMBLERDECODERCOMMON_H
+#ifndef LLVM_LIB_TARGET_X86_DISASSEMBLER_X86DISASSEMBLERDECODERCOMMON_H
+#define LLVM_LIB_TARGET_X86_DISASSEMBLER_X86DISASSEMBLERDECODERCOMMON_H
 
 #include "llvm/Support/DataTypes.h"
 
@@ -31,8 +31,6 @@ namespace X86Disassembler {
 #define XOP9_MAP_SYM      x86DisassemblerXOP9Opcodes
 #define XOPA_MAP_SYM      x86DisassemblerXOPAOpcodes
 #define THREEDNOW_MAP_SYM x86Disassembler3DNowOpcodes
-#define MAP5_SYM          x86DisassemblerMap5Opcodes
-#define MAP6_SYM          x86DisassemblerMap6Opcodes
 
 #define INSTRUCTIONS_STR  "x86DisassemblerInstrSpecifiers"
 #define CONTEXTS_STR      "x86DisassemblerContexts"
@@ -44,8 +42,6 @@ namespace X86Disassembler {
 #define XOP9_MAP_STR      "x86DisassemblerXOP9Opcodes"
 #define XOPA_MAP_STR      "x86DisassemblerXOPAOpcodes"
 #define THREEDNOW_MAP_STR "x86Disassembler3DNowOpcodes"
-#define MAP5_STR          "x86DisassemblerMap5Opcodes"
-#define MAP6_STR          "x86DisassemblerMap6Opcodes"
 
 // Attributes of an instruction that must be known before the opcode can be
 // processed correctly.  Most of these indicate the presence of particular
@@ -294,9 +290,7 @@ enum OpcodeType {
   XOP8_MAP      = 4,
   XOP9_MAP      = 5,
   XOPA_MAP      = 6,
-  THREEDNOW_MAP = 7,
-  MAP5          = 8,
-  MAP6          = 9
+  THREEDNOW_MAP = 7
 };
 
 // The following structs are used for the hierarchical decode table.  After
@@ -367,7 +361,6 @@ enum ModRMDecisionType {
   ENUM_ENTRY(ENCODING_RM_CD16,"R/M operand with CDisp scaling of 16")          \
   ENUM_ENTRY(ENCODING_RM_CD32,"R/M operand with CDisp scaling of 32")          \
   ENUM_ENTRY(ENCODING_RM_CD64,"R/M operand with CDisp scaling of 64")          \
-  ENUM_ENTRY(ENCODING_SIB,      "Force SIB operand in ModR/M byte.")           \
   ENUM_ENTRY(ENCODING_VSIB,     "VSIB operand in ModR/M byte.")                \
   ENUM_ENTRY(ENCODING_VSIB_CD2, "VSIB operand with CDisp scaling of 2")        \
   ENUM_ENTRY(ENCODING_VSIB_CD4, "VSIB operand with CDisp scaling of 4")        \
@@ -381,7 +374,7 @@ enum ModRMDecisionType {
   ENUM_ENTRY(ENCODING_IW,     "2-byte")                                        \
   ENUM_ENTRY(ENCODING_ID,     "4-byte")                                        \
   ENUM_ENTRY(ENCODING_IO,     "8-byte")                                        \
-  ENUM_ENTRY(ENCODING_RB,     "(AL..DIL, R8B..R15B) Register code added to "   \
+  ENUM_ENTRY(ENCODING_RB,     "(AL..DIL, R8L..R15L) Register code added to "   \
                               "the opcode byte")                               \
   ENUM_ENTRY(ENCODING_RW,     "(AX..DI, R8W..R15W)")                           \
   ENUM_ENTRY(ENCODING_RD,     "(EAX..EDI, R8D..R15D)")                         \
@@ -418,7 +411,6 @@ enum OperandEncoding {
   ENUM_ENTRY(TYPE_IMM,        "immediate operand")                             \
   ENUM_ENTRY(TYPE_UIMM8,      "1-byte unsigned immediate operand")             \
   ENUM_ENTRY(TYPE_M,          "Memory operand")                                \
-  ENUM_ENTRY(TYPE_MSIB,       "Memory operand force sib encoding")             \
   ENUM_ENTRY(TYPE_MVSIBX,     "Memory operand using XMM index")                \
   ENUM_ENTRY(TYPE_MVSIBY,     "Memory operand using YMM index")                \
   ENUM_ENTRY(TYPE_MVSIBZ,     "Memory operand using ZMM index")                \
@@ -432,7 +424,6 @@ enum OperandEncoding {
   ENUM_ENTRY(TYPE_ZMM,        "64-byte")                                       \
   ENUM_ENTRY(TYPE_VK,         "mask register")                                 \
   ENUM_ENTRY(TYPE_VK_PAIR,    "mask register pair")                            \
-  ENUM_ENTRY(TYPE_TMM,        "tile")                                          \
   ENUM_ENTRY(TYPE_SEGMENTREG, "Segment register operand")                      \
   ENUM_ENTRY(TYPE_DEBUGREG,   "Debug register operand")                        \
   ENUM_ENTRY(TYPE_CONTROLREG, "Control register operand")                      \

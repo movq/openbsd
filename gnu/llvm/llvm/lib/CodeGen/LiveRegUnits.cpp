@@ -11,21 +11,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/LiveRegUnits.h"
+
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/MC/MCRegisterInfo.h"
 
 using namespace llvm;
 
 void LiveRegUnits::removeRegsNotPreserved(const uint32_t *RegMask) {
   for (unsigned U = 0, E = TRI->getNumRegUnits(); U != E; ++U) {
     for (MCRegUnitRootIterator RootReg(U, TRI); RootReg.isValid(); ++RootReg) {
-      if (MachineOperand::clobbersPhysReg(RegMask, *RootReg)) {
+      if (MachineOperand::clobbersPhysReg(RegMask, *RootReg))
         Units.reset(U);
-        break;
-      }
     }
   }
 }
@@ -33,54 +35,42 @@ void LiveRegUnits::removeRegsNotPreserved(const uint32_t *RegMask) {
 void LiveRegUnits::addRegsInMask(const uint32_t *RegMask) {
   for (unsigned U = 0, E = TRI->getNumRegUnits(); U != E; ++U) {
     for (MCRegUnitRootIterator RootReg(U, TRI); RootReg.isValid(); ++RootReg) {
-      if (MachineOperand::clobbersPhysReg(RegMask, *RootReg)) {
+      if (MachineOperand::clobbersPhysReg(RegMask, *RootReg))
         Units.set(U);
-        break;
-      }
     }
   }
 }
 
 void LiveRegUnits::stepBackward(const MachineInstr &MI) {
   // Remove defined registers and regmask kills from the set.
-  for (const MachineOperand &MOP : MI.operands()) {
-    if (MOP.isReg()) {
-      if (MOP.isDef() && MOP.getReg().isPhysical())
-        removeReg(MOP.getReg());
-      continue;
-    }
-
+  for (const MachineOperand &MOP : phys_regs_and_masks(MI)) {
     if (MOP.isRegMask()) {
       removeRegsNotPreserved(MOP.getRegMask());
       continue;
     }
+
+    if (MOP.isDef())
+      removeReg(MOP.getReg());
   }
 
   // Add uses to the set.
-  for (const MachineOperand &MOP : MI.operands()) {
+  for (const MachineOperand &MOP : phys_regs_and_masks(MI)) {
     if (!MOP.isReg() || !MOP.readsReg())
       continue;
-
-    if (MOP.getReg().isPhysical())
-      addReg(MOP.getReg());
+    addReg(MOP.getReg());
   }
 }
 
 void LiveRegUnits::accumulate(const MachineInstr &MI) {
   // Add defs, uses and regmask clobbers to the set.
-  for (const MachineOperand &MOP : MI.operands()) {
-    if (MOP.isReg()) {
-      if (!MOP.getReg().isPhysical())
-        continue;
-      if (MOP.isDef() || MOP.readsReg())
-        addReg(MOP.getReg());
-      continue;
-    }
-
+  for (const MachineOperand &MOP : phys_regs_and_masks(MI)) {
     if (MOP.isRegMask()) {
       addRegsInMask(MOP.getRegMask());
       continue;
     }
+    if (!MOP.isDef() && !MOP.readsReg())
+      continue;
+    addReg(MOP.getReg());
   }
 }
 
@@ -95,17 +85,8 @@ static void addBlockLiveIns(LiveRegUnits &LiveUnits,
 static void addCalleeSavedRegs(LiveRegUnits &LiveUnits,
                                const MachineFunction &MF) {
   const MachineRegisterInfo &MRI = MF.getRegInfo();
-  const MachineFrameInfo &MFI = MF.getFrameInfo();
-  for (const MCPhysReg *CSR = MRI.getCalleeSavedRegs(); CSR && *CSR; ++CSR) {
-    const unsigned N = *CSR;
-
-    const auto &CSI = MFI.getCalleeSavedInfo();
-    auto Info =
-        llvm::find_if(CSI, [N](auto Info) { return Info.getReg() == N; });
-    // If we have no info for this callee-saved register, assume it is liveout
-    if (Info == CSI.end() || Info->isRestored())
-      LiveUnits.addReg(N);
-  }
+  for (const MCPhysReg *CSR = MRI.getCalleeSavedRegs(); CSR && *CSR; ++CSR)
+    LiveUnits.addReg(*CSR);
 }
 
 void LiveRegUnits::addPristines(const MachineFunction &MF) {

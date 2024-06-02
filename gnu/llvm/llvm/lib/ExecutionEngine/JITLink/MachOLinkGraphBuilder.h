@@ -13,13 +13,11 @@
 #ifndef LIB_EXECUTIONENGINE_JITLINK_MACHOLINKGRAPHBUILDER_H
 #define LIB_EXECUTIONENGINE_JITLINK_MACHOLINKGRAPHBUILDER_H
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
-#include "llvm/Object/MachO.h"
 
 #include "EHFrameSupportImpl.h"
 #include "JITLinkGeneric.h"
+#include "llvm/Object/MachO.h"
 
 #include <list>
 
@@ -37,9 +35,8 @@ protected:
     friend class MachOLinkGraphBuilder;
 
   private:
-    NormalizedSymbol(std::optional<StringRef> Name, uint64_t Value,
-                     uint8_t Type, uint8_t Sect, uint16_t Desc, Linkage L,
-                     Scope S)
+    NormalizedSymbol(Optional<StringRef> Name, uint64_t Value, uint8_t Type,
+                     uint8_t Sect, uint16_t Desc, Linkage L, Scope S)
         : Name(Name), Value(Value), Type(Type), Sect(Sect), Desc(Desc), L(L),
           S(S) {
       assert((!Name || !Name->empty()) && "Name must be none or non-empty");
@@ -51,7 +48,7 @@ protected:
     NormalizedSymbol(NormalizedSymbol &&) = delete;
     NormalizedSymbol &operator=(NormalizedSymbol &&) = delete;
 
-    std::optional<StringRef> Name;
+    Optional<StringRef> Name;
     uint64_t Value = 0;
     uint8_t Type = 0;
     uint8_t Sect = 0;
@@ -61,8 +58,6 @@ protected:
     Symbol *GraphSymbol = nullptr;
   };
 
-  // Normalized section representation. Section and segment names are guaranteed
-  // to be null-terminated, hence the extra bytes on SegName and SectName.
   class NormalizedSection {
     friend class MachOLinkGraphBuilder;
 
@@ -70,21 +65,17 @@ protected:
     NormalizedSection() = default;
 
   public:
-    char SectName[17];
-    char SegName[17];
-    orc::ExecutorAddr Address;
+    Section *GraphSection = nullptr;
+    uint64_t Address = 0;
     uint64_t Size = 0;
     uint64_t Alignment = 0;
     uint32_t Flags = 0;
     const char *Data = nullptr;
-    Section *GraphSection = nullptr;
-    std::map<orc::ExecutorAddr, Symbol *> CanonicalSymbols;
   };
 
   using SectionParserFunction = std::function<Error(NormalizedSection &S)>;
 
-  MachOLinkGraphBuilder(const object::MachOObjectFile &Obj, Triple TT,
-                        LinkGraph::GetEdgeKindNameFunction GetEdgeKindName);
+  MachOLinkGraphBuilder(const object::MachOObjectFile &Obj);
 
   LinkGraph &getGraph() const { return *G; }
 
@@ -119,7 +110,7 @@ protected:
     auto I = IndexToSection.find(Index);
     if (I == IndexToSection.end())
       return make_error<JITLinkError>("No section recorded for index " +
-                                      formatv("{0:d}", Index));
+                                      formatv("{0:u}", Index));
     return I->second;
   }
 
@@ -127,31 +118,30 @@ protected:
   /// given index is out of range, or if no symbol has been added for the given
   /// index.
   Expected<NormalizedSymbol &> findSymbolByIndex(uint64_t Index) {
-    auto I = IndexToSymbol.find(Index);
-    if (I == IndexToSymbol.end())
+    if (Index >= IndexToSymbol.size())
+      return make_error<JITLinkError>("Symbol index out of range");
+    auto *Sym = IndexToSymbol[Index];
+    if (!Sym)
       return make_error<JITLinkError>("No symbol at index " +
-                                      formatv("{0:d}", Index));
-    assert(I->second && "Null symbol at index");
-    return *I->second;
+                                      formatv("{0:u}", Index));
+    return *Sym;
   }
 
   /// Returns the symbol with the highest address not greater than the search
   /// address, or null if no such symbol exists.
-  Symbol *getSymbolByAddress(NormalizedSection &NSec,
-                             orc::ExecutorAddr Address) {
-    auto I = NSec.CanonicalSymbols.upper_bound(Address);
-    if (I == NSec.CanonicalSymbols.begin())
+  Symbol *getSymbolByAddress(JITTargetAddress Address) {
+    auto I = AddrToCanonicalSymbol.upper_bound(Address);
+    if (I == AddrToCanonicalSymbol.begin())
       return nullptr;
     return std::prev(I)->second;
   }
 
   /// Returns the symbol with the highest address not greater than the search
   /// address, or an error if no such symbol exists.
-  Expected<Symbol &> findSymbolByAddress(NormalizedSection &NSec,
-                                         orc::ExecutorAddr Address) {
-    auto *Sym = getSymbolByAddress(NSec, Address);
+  Expected<Symbol &> findSymbolByAddress(JITTargetAddress Address) {
+    auto *Sym = getSymbolByAddress(Address);
     if (Sym)
-      if (Address <= Sym->getAddress() + Sym->getSize())
+      if (Address < Sym->getAddress() + Sym->getSize())
         return *Sym;
     return make_error<JITLinkError>("No symbol covering address " +
                                     formatv("{0:x16}", Address));
@@ -161,29 +151,12 @@ protected:
   static Scope getScope(StringRef Name, uint8_t Type);
   static bool isAltEntry(const NormalizedSymbol &NSym);
 
-  static bool isDebugSection(const NormalizedSection &NSec);
-  static bool isZeroFillSection(const NormalizedSection &NSec);
-
-  MachO::relocation_info
-  getRelocationInfo(const object::relocation_iterator RelItr) {
-    MachO::any_relocation_info ARI =
-        getObject().getRelocation(RelItr->getRawDataRefImpl());
-    MachO::relocation_info RI;
-    RI.r_address = ARI.r_word0;
-    RI.r_symbolnum = ARI.r_word1 & 0xffffff;
-    RI.r_pcrel = (ARI.r_word1 >> 24) & 1;
-    RI.r_length = (ARI.r_word1 >> 25) & 3;
-    RI.r_extern = (ARI.r_word1 >> 27) & 1;
-    RI.r_type = (ARI.r_word1 >> 28);
-    return RI;
-  }
-
 private:
   static unsigned getPointerSize(const object::MachOObjectFile &Obj);
   static support::endianness getEndianness(const object::MachOObjectFile &Obj);
 
-  void setCanonicalSymbol(NormalizedSection &NSec, Symbol &Sym) {
-    auto *&CanonicalSymEntry = NSec.CanonicalSymbols[Sym.getAddress()];
+  void setCanonicalSymbol(Symbol &Sym) {
+    auto *&CanonicalSymEntry = AddrToCanonicalSymbol[Sym.getAddress()];
     // There should be no symbol at this address, or, if there is,
     // it should be a zero-sized symbol from an empty section (which
     // we can safely override).
@@ -193,9 +166,8 @@ private:
   }
 
   Section &getCommonSection();
-  void addSectionStartSymAndBlock(unsigned SecIndex, Section &GraphSec,
-                                  orc::ExecutorAddr Address, const char *Data,
-                                  orc::ExecutorAddrDiff Size,
+  void addSectionStartSymAndBlock(Section &GraphSec, uint64_t Address,
+                                  const char *Data, uint64_t Size,
                                   uint32_t Alignment, bool IsLive);
 
   Error createNormalizedSections();
@@ -205,20 +177,8 @@ private:
   /// all defined symbols in sections without custom parsers.
   Error graphifyRegularSymbols();
 
-  /// Create and return a graph symbol for the given normalized symbol.
-  ///
-  /// NSym's GraphSymbol member will be updated to point at the newly created
-  /// symbol.
-  Symbol &createStandardGraphSymbol(NormalizedSymbol &Sym, Block &B,
-                                    size_t Size, bool IsText,
-                                    bool IsNoDeadStrip, bool IsCanonical);
-
   /// Create graph blocks and symbols for all sections.
   Error graphifySectionsWithCustomParsers();
-
-  /// Graphify cstring section.
-  Error graphifyCStringSection(NormalizedSection &NSec,
-                               std::vector<NormalizedSymbol *> NSyms);
 
   // Put the BumpPtrAllocator first so that we don't free any of the underlying
   // memory until the Symbol/Addressable destructors have been run.
@@ -227,23 +187,12 @@ private:
   const object::MachOObjectFile &Obj;
   std::unique_ptr<LinkGraph> G;
 
-  bool SubsectionsViaSymbols = false;
   DenseMap<unsigned, NormalizedSection> IndexToSection;
   Section *CommonSection = nullptr;
 
   DenseMap<uint32_t, NormalizedSymbol *> IndexToSymbol;
+  std::map<JITTargetAddress, Symbol *> AddrToCanonicalSymbol;
   StringMap<SectionParserFunction> CustomSectionParserFunctions;
-};
-
-/// A pass to split up __LD,__compact_unwind sections.
-class CompactUnwindSplitter {
-public:
-  CompactUnwindSplitter(StringRef CompactUnwindSectionName)
-      : CompactUnwindSectionName(CompactUnwindSectionName) {}
-  Error operator()(LinkGraph &G);
-
-private:
-  StringRef CompactUnwindSectionName;
 };
 
 } // end namespace jitlink

@@ -16,7 +16,6 @@
 #include "VEInstrInfo.h"
 #include "VESubtarget.h"
 #include "llvm/Target/TargetMachine.h"
-#include <optional>
 
 namespace llvm {
 
@@ -30,9 +29,8 @@ class VETargetMachine : public LLVMTargetMachine {
 public:
   VETargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                   StringRef FS, const TargetOptions &Options,
-                  std::optional<Reloc::Model> RM,
-                  std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
-                  bool JIT);
+                  Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                  CodeGenOpt::Level OL, bool JIT);
   ~VETargetMachine() override;
 
   const VESubtarget *getSubtargetImpl() const { return &Subtarget; }
@@ -49,15 +47,9 @@ public:
     return TLOF.get();
   }
 
-  MachineFunctionInfo *
-  createMachineFunctionInfo(BumpPtrAllocator &Allocator, const Function &F,
-                            const TargetSubtargetInfo *STI) const override;
-
   bool isMachineVerifierClean() const override { return false; }
 
-  TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
-
-  unsigned getSjLjDataSize() const override { return 64; }
+  TargetTransformInfo getTargetTransformInfo(const Function &F) override;
 };
 
 } // namespace llvm

@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/StringTableBuilder.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
@@ -34,12 +33,7 @@ void StringTableBuilder::initSize() {
   case DWARF:
     Size = 0;
     break;
-  case MachOLinked:
-  case MachO64Linked:
-    Size = 2;
-    break;
   case MachO:
-  case MachO64:
   case ELF:
     // Start the table with a NUL byte.
     Size = 1;
@@ -52,7 +46,7 @@ void StringTableBuilder::initSize() {
   }
 }
 
-StringTableBuilder::StringTableBuilder(Kind K, Align Alignment)
+StringTableBuilder::StringTableBuilder(Kind K, unsigned Alignment)
     : K(K), Alignment(Alignment) {
   initSize();
 }
@@ -151,7 +145,7 @@ void StringTableBuilder::finalizeStringTable(bool Optimize) {
       StringRef S = P->first.val();
       if (Previous.endswith(S)) {
         size_t Pos = Size - S.size() - (K != RAW);
-        if (isAligned(Alignment, Pos)) {
+        if (!(Pos & (Alignment - 1))) {
           P->second = Pos;
           continue;
         }
@@ -167,16 +161,8 @@ void StringTableBuilder::finalizeStringTable(bool Optimize) {
     }
   }
 
-  if (K == MachO || K == MachOLinked)
+  if (K == MachO)
     Size = alignTo(Size, 4); // Pad to multiple of 4.
-  if (K == MachO64 || K == MachO64Linked)
-    Size = alignTo(Size, 8); // Pad to multiple of 8.
-
-  // According to ld64 the string table of a final linked Mach-O binary starts
-  // with " ", i.e. the first byte is ' ' and the second byte is zero. In
-  // 'initSize()' we reserved the first two bytes for holding this string.
-  if (K == MachOLinked || K == MachO64Linked)
-    StringIndexMap[CachedHashStringRef(" ")] = 0;
 
   // The first byte in an ELF string table must be null, according to the ELF
   // specification. In 'initSize()' we reserved the first byte to hold null for

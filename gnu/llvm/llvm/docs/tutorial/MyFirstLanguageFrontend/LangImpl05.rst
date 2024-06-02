@@ -213,8 +213,8 @@ Kaleidoscope looks like this:
     }
 
 To visualize the control flow graph, you can use a nifty feature of the
-LLVM '`opt <https://llvm.org/cmds/opt.html>`_' tool. If you put this LLVM
-IR into "t.ll" and run "``llvm-as < t.ll | opt -passes=view-cfg``", `a
+LLVM '`opt <http://llvm.org/cmds/opt.html>`_' tool. If you put this LLVM
+IR into "t.ll" and run "``llvm-as < t.ll | opt -analyze -view-cfg``", `a
 window will pop up <../../ProgrammersManual.html#viewing-graphs-while-debugging-code>`_ and you'll
 see this graph:
 
@@ -355,12 +355,12 @@ beginning of the block. :)
 Once the insertion point is set, we recursively codegen the "then"
 expression from the AST. To finish off the "then" block, we create an
 unconditional branch to the merge block. One interesting (and very
-important) aspect of the LLVM IR is that it :ref:`requires all basic
-blocks to be "terminated" <functionstructure>` with a :ref:`control
-flow instruction <terminators>`  such as return or branch. This means
-that all control flow, *including fall throughs* must be made explicit
-in the LLVM IR. If you violate this rule, the verifier will emit an
-error.
+important) aspect of the LLVM IR is that it `requires all basic blocks
+to be "terminated" <../LangRef.html#functionstructure>`_ with a `control
+flow instruction <../LangRef.html#terminators>`_ such as return or
+branch. This means that all control flow, *including fall throughs* must
+be made explicit in the LLVM IR. If you violate this rule, the verifier
+will emit an error.
 
 The final line here is quite subtle, but is very important. The basic
 issue is that when we create the Phi node in the merge block, we need to
@@ -377,7 +377,7 @@ value for code that will set up the Phi node.
 .. code-block:: c++
 
       // Emit else block.
-      TheFunction->insert(TheFunction->end(), ElseBB);
+      TheFunction->getBasicBlockList().push_back(ElseBB);
       Builder.SetInsertPoint(ElseBB);
 
       Value *ElseV = Else->codegen();
@@ -398,7 +398,7 @@ code:
 .. code-block:: c++
 
       // Emit merge block.
-      TheFunction->insert(TheFunction->end(), MergeBB);
+      TheFunction->getBasicBlockList().push_back(MergeBB);
       Builder.SetInsertPoint(MergeBB);
       PHINode *PN =
         Builder.CreatePHI(Type::getDoubleTy(TheContext), 2, "iftmp");
@@ -801,7 +801,7 @@ the if/then/else and for expressions. To build this example, use:
 .. code-block:: bash
 
     # Compile
-    clang++ -g toy.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native` -O3 -o toy
+    clang++ -g toy.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core mcjit native` -O3 -o toy
     # Run
     ./toy
 

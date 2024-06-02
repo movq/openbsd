@@ -29,11 +29,9 @@ class ByteStreamer {
 
  public:
   // For now we're just handling the calls we need for dwarf emission/hashing.
-  virtual void emitInt8(uint8_t Byte, const Twine &Comment = "") = 0;
-  virtual void emitSLEB128(uint64_t DWord, const Twine &Comment = "") = 0;
-  virtual void emitULEB128(uint64_t DWord, const Twine &Comment = "",
-                           unsigned PadTo = 0) = 0;
-  virtual unsigned emitDIERef(const DIE &D) = 0;
+  virtual void EmitInt8(uint8_t Byte, const Twine &Comment = "") = 0;
+  virtual void EmitSLEB128(uint64_t DWord, const Twine &Comment = "") = 0;
+  virtual void EmitULEB128(uint64_t DWord, const Twine &Comment = "", unsigned PadTo = 0) = 0;
 };
 
 class APByteStreamer final : public ByteStreamer {
@@ -42,27 +40,17 @@ private:
 
 public:
   APByteStreamer(AsmPrinter &Asm) : AP(Asm) {}
-  void emitInt8(uint8_t Byte, const Twine &Comment) override {
+  void EmitInt8(uint8_t Byte, const Twine &Comment) override {
     AP.OutStreamer->AddComment(Comment);
     AP.emitInt8(Byte);
   }
-  void emitSLEB128(uint64_t DWord, const Twine &Comment) override {
+  void EmitSLEB128(uint64_t DWord, const Twine &Comment) override {
     AP.OutStreamer->AddComment(Comment);
-    AP.emitSLEB128(DWord);
+    AP.EmitSLEB128(DWord);
   }
-  void emitULEB128(uint64_t DWord, const Twine &Comment,
-                   unsigned PadTo) override {
+  void EmitULEB128(uint64_t DWord, const Twine &Comment, unsigned PadTo) override {
     AP.OutStreamer->AddComment(Comment);
-    AP.emitULEB128(DWord, nullptr, PadTo);
-  }
-  unsigned emitDIERef(const DIE &D) override {
-    uint64_t Offset = D.getOffset();
-    static constexpr unsigned ULEB128PadSize = 4;
-    assert(Offset < (1ULL << (ULEB128PadSize * 7)) && "Offset wont fit");
-    emitULEB128(Offset, "", ULEB128PadSize);
-    // Return how many comments to skip in DwarfDebug::emitDebugLocEntry to keep
-    // comments aligned with debug loc entries.
-    return ULEB128PadSize;
+    AP.EmitULEB128(DWord);
   }
 };
 
@@ -70,20 +58,15 @@ class HashingByteStreamer final : public ByteStreamer {
  private:
   DIEHash &Hash;
  public:
-   HashingByteStreamer(DIEHash &H) : Hash(H) {}
-   void emitInt8(uint8_t Byte, const Twine &Comment) override {
-     Hash.update(Byte);
+ HashingByteStreamer(DIEHash &H) : Hash(H) {}
+  void EmitInt8(uint8_t Byte, const Twine &Comment) override {
+    Hash.update(Byte);
   }
-  void emitSLEB128(uint64_t DWord, const Twine &Comment) override {
+  void EmitSLEB128(uint64_t DWord, const Twine &Comment) override {
     Hash.addSLEB128(DWord);
   }
-  void emitULEB128(uint64_t DWord, const Twine &Comment,
-                   unsigned PadTo) override {
+  void EmitULEB128(uint64_t DWord, const Twine &Comment, unsigned PadTo) override {
     Hash.addULEB128(DWord);
-  }
-  unsigned emitDIERef(const DIE &D) override {
-    Hash.hashRawTypeReference(D);
-    return 0; // Only used together with the APByteStreamer.
   }
 };
 
@@ -102,12 +85,12 @@ public:
                      std::vector<std::string> &Comments, bool GenerateComments)
       : Buffer(Buffer), Comments(Comments), GenerateComments(GenerateComments) {
   }
-  void emitInt8(uint8_t Byte, const Twine &Comment) override {
+  void EmitInt8(uint8_t Byte, const Twine &Comment) override {
     Buffer.push_back(Byte);
     if (GenerateComments)
       Comments.push_back(Comment.str());
   }
-  void emitSLEB128(uint64_t DWord, const Twine &Comment) override {
+  void EmitSLEB128(uint64_t DWord, const Twine &Comment) override {
     raw_svector_ostream OSE(Buffer);
     unsigned Length = encodeSLEB128(DWord, OSE);
     if (GenerateComments) {
@@ -119,8 +102,7 @@ public:
 
     }
   }
-  void emitULEB128(uint64_t DWord, const Twine &Comment,
-                   unsigned PadTo) override {
+  void EmitULEB128(uint64_t DWord, const Twine &Comment, unsigned PadTo) override {
     raw_svector_ostream OSE(Buffer);
     unsigned Length = encodeULEB128(DWord, OSE, PadTo);
     if (GenerateComments) {
@@ -129,14 +111,8 @@ public:
       // with each other.
       for (size_t i = 1; i < Length; ++i)
         Comments.push_back("");
+
     }
-  }
-  unsigned emitDIERef(const DIE &D) override {
-    uint64_t Offset = D.getOffset();
-    static constexpr unsigned ULEB128PadSize = 4;
-    assert(Offset < (1ULL << (ULEB128PadSize * 7)) && "Offset wont fit");
-    emitULEB128(Offset, "", ULEB128PadSize);
-    return 0; // Only used together with the APByteStreamer.
   }
 };
 

@@ -20,30 +20,30 @@
 // ST1 arguments when returning values on the x87 stack.
 let isTerminator = 1, isReturn = 1, isBarrier = 1,
     hasCtrlDep = 1, FPForm = SpecialFP, SchedRW = [WriteJumpLd] in {
-  def RET32  : I   <0xC3, RawFrm, (outs), (ins variable_ops),
+  def RETL   : I   <0xC3, RawFrm, (outs), (ins variable_ops),
                     "ret{l}", []>, OpSize32, Requires<[Not64BitMode]>;
-  def RET64  : I   <0xC3, RawFrm, (outs), (ins variable_ops),
+  def RETQ   : I   <0xC3, RawFrm, (outs), (ins variable_ops),
                     "ret{q}", []>, OpSize32, Requires<[In64BitMode]>;
-  def RET16  : I   <0xC3, RawFrm, (outs), (ins),
+  def RETW   : I   <0xC3, RawFrm, (outs), (ins),
                     "ret{w}", []>, OpSize16;
-  def RETI32 : Ii16<0xC2, RawFrm, (outs), (ins i16imm:$amt, variable_ops),
+  def RETIL  : Ii16<0xC2, RawFrm, (outs), (ins i16imm:$amt, variable_ops),
                     "ret{l}\t$amt", []>, OpSize32, Requires<[Not64BitMode]>;
-  def RETI64 : Ii16<0xC2, RawFrm, (outs), (ins i16imm:$amt, variable_ops),
+  def RETIQ  : Ii16<0xC2, RawFrm, (outs), (ins i16imm:$amt, variable_ops),
                     "ret{q}\t$amt", []>, OpSize32, Requires<[In64BitMode]>;
-  def RETI16 : Ii16<0xC2, RawFrm, (outs), (ins i16imm:$amt),
+  def RETIW  : Ii16<0xC2, RawFrm, (outs), (ins i16imm:$amt),
                     "ret{w}\t$amt", []>, OpSize16;
-  def LRET32 : I   <0xCB, RawFrm, (outs), (ins),
+  def LRETL  : I   <0xCB, RawFrm, (outs), (ins),
                     "{l}ret{l|f}", []>, OpSize32;
-  def LRET64 : RI  <0xCB, RawFrm, (outs), (ins),
+  def LRETQ  : RI  <0xCB, RawFrm, (outs), (ins),
                     "{l}ret{|f}q", []>, Requires<[In64BitMode]>;
-  def LRET16 : I   <0xCB, RawFrm, (outs), (ins),
+  def LRETW  : I   <0xCB, RawFrm, (outs), (ins),
                     "{l}ret{w|f}", []>, OpSize16;
-  def LRETI32 : Ii16<0xCA, RawFrm, (outs), (ins i16imm:$amt),
-                     "{l}ret{l|f}\t$amt", []>, OpSize32;
-  def LRETI64 : RIi16<0xCA, RawFrm, (outs), (ins i16imm:$amt),
-                      "{l}ret{|f}q\t$amt", []>, Requires<[In64BitMode]>;
-  def LRETI16 : Ii16<0xCA, RawFrm, (outs), (ins i16imm:$amt),
-                     "{l}ret{w|f}\t$amt", []>, OpSize16;
+  def LRETIL : Ii16<0xCA, RawFrm, (outs), (ins i16imm:$amt),
+                    "{l}ret{l|f}\t$amt", []>, OpSize32;
+  def LRETIQ : RIi16<0xCA, RawFrm, (outs), (ins i16imm:$amt),
+                    "{l}ret{|f}q\t$amt", []>, Requires<[In64BitMode]>;
+  def LRETIW : Ii16<0xCA, RawFrm, (outs), (ins i16imm:$amt),
+                    "{l}ret{w|f}\t$amt", []>, OpSize16;
 
   // The machine return from interrupt instruction, but sometimes we need to
   // perform a post-epilogue stack adjustment. Codegen emits the pseudo form
@@ -147,7 +147,7 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
 
   // Win64 wants indirect jumps leaving the function to have a REX_W prefix.
   // These are switched from TAILJMPr/m64_REX in MCInstLower.
-  let isCodeGenOnly = 1, hasREX_W = 1 in {
+  let isCodeGenOnly = 1, hasREX_WPrefix = 1 in {
     def JMP64r_REX : I<0xFF, MRM4r, (outs), (ins GR64:$dst),
                        "rex64 jmp{q}\t{*}$dst", []>, Sched<[WriteJump]>;
     let mayLoad = 1 in
@@ -193,20 +193,18 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
                             "ljmp{l}\t$seg, $off", []>,
                             OpSize32, Sched<[WriteJump]>;
   }
-  let mayLoad = 1 in {
-    def FARJMP64m  : RI<0xFF, MRM5m, (outs), (ins opaquemem:$dst),
-                        "ljmp{q}\t{*}$dst", []>, Sched<[WriteJump]>, Requires<[In64BitMode]>;
+  def FARJMP64   : RI<0xFF, MRM5m, (outs), (ins opaquemem:$dst),
+                      "ljmp{q}\t{*}$dst", []>, Sched<[WriteJump]>, Requires<[In64BitMode]>;
 
-    let AsmVariantName = "att" in
-    def FARJMP16m  : I<0xFF, MRM5m, (outs), (ins opaquemem:$dst),
-                       "ljmp{w}\t{*}$dst", []>, OpSize16, Sched<[WriteJumpLd]>;
-    def FARJMP32m  : I<0xFF, MRM5m, (outs), (ins opaquemem:$dst),
-                       "{l}jmp{l}\t{*}$dst", []>, OpSize32, Sched<[WriteJumpLd]>;
-  }
+  let AsmVariantName = "att" in
+  def FARJMP16m  : I<0xFF, MRM5m, (outs), (ins opaquemem:$dst),
+                     "ljmp{w}\t{*}$dst", []>, OpSize16, Sched<[WriteJumpLd]>;
+  def FARJMP32m  : I<0xFF, MRM5m, (outs), (ins opaquemem:$dst),
+                     "{l}jmp{l}\t{*}$dst", []>, OpSize32, Sched<[WriteJumpLd]>;
 }
 
 // Loop instructions
-let isBranch = 1, isTerminator = 1, SchedRW = [WriteJump] in {
+let SchedRW = [WriteJump] in {
 def LOOP   : Ii8PCRel<0xE2, RawFrm, (outs), (ins brtarget8:$dst), "loop\t$dst", []>;
 def LOOPE  : Ii8PCRel<0xE1, RawFrm, (outs), (ins brtarget8:$dst), "loope\t$dst", []>;
 def LOOPNE : Ii8PCRel<0xE0, RawFrm, (outs), (ins brtarget8:$dst), "loopne\t$dst", []>;
@@ -239,13 +237,13 @@ let isCall = 1 in
                         Sched<[WriteJumpLd]>;
     def CALL32r     : I<0xFF, MRM2r, (outs), (ins GR32:$dst),
                         "call{l}\t{*}$dst", [(X86call GR32:$dst)]>, OpSize32,
-                        Requires<[Not64BitMode,NotUseIndirectThunkCalls]>,
+                        Requires<[Not64BitMode,NotUseRetpolineIndirectCalls]>,
                         Sched<[WriteJump]>;
     def CALL32m     : I<0xFF, MRM2m, (outs), (ins i32mem:$dst),
                         "call{l}\t{*}$dst", [(X86call (loadi32 addr:$dst))]>,
                         OpSize32,
                         Requires<[Not64BitMode,FavorMemIndirectCall,
-                                  NotUseIndirectThunkCalls]>,
+                                  NotUseRetpolineIndirectCalls]>,
                         Sched<[WriteJumpLd]>;
 
     // Non-tracking calls for IBT, use with caution.
@@ -277,12 +275,10 @@ let isCall = 1 in
                                OpSize32, Sched<[WriteJump]>;
     }
 
-    let mayLoad = 1 in {
-      def FARCALL16m  : I<0xFF, MRM3m, (outs), (ins opaquemem:$dst),
-                          "lcall{w}\t{*}$dst", []>, OpSize16, Sched<[WriteJumpLd]>;
-      def FARCALL32m  : I<0xFF, MRM3m, (outs), (ins opaquemem:$dst),
-                          "{l}call{l}\t{*}$dst", []>, OpSize32, Sched<[WriteJumpLd]>;
-    }
+    def FARCALL16m  : I<0xFF, MRM3m, (outs), (ins opaquemem:$dst),
+                        "lcall{w}\t{*}$dst", []>, OpSize16, Sched<[WriteJumpLd]>;
+    def FARCALL32m  : I<0xFF, MRM3m, (outs), (ins opaquemem:$dst),
+                        "{l}call{l}\t{*}$dst", []>, OpSize32, Sched<[WriteJumpLd]>;
   }
 
 
@@ -338,11 +334,11 @@ let isCall = 1, Uses = [RSP, SSP], SchedRW = [WriteJump] in {
                       Requires<[In64BitMode]>;
   def CALL64r       : I<0xFF, MRM2r, (outs), (ins GR64:$dst),
                         "call{q}\t{*}$dst", [(X86call GR64:$dst)]>,
-                      Requires<[In64BitMode,NotUseIndirectThunkCalls]>;
+                      Requires<[In64BitMode,NotUseRetpolineIndirectCalls]>;
   def CALL64m       : I<0xFF, MRM2m, (outs), (ins i64mem:$dst),
                         "call{q}\t{*}$dst", [(X86call (loadi64 addr:$dst))]>,
                       Requires<[In64BitMode,FavorMemIndirectCall,
-                                NotUseIndirectThunkCalls]>;
+                                NotUseRetpolineIndirectCalls]>;
 
   // Non-tracking calls for IBT, use with caution.
   let isCodeGenOnly = 1 in {
@@ -355,8 +351,7 @@ let isCall = 1, Uses = [RSP, SSP], SchedRW = [WriteJump] in {
                        Requires<[In64BitMode,FavorMemIndirectCall]>, NOTRACK;
   }
 
-  let mayLoad = 1 in
-  def FARCALL64m  : RI<0xFF, MRM3m, (outs), (ins opaquemem:$dst),
+  def FARCALL64   : RI<0xFF, MRM3m, (outs), (ins opaquemem:$dst),
                        "lcall{q}\t{*}$dst", []>;
 }
 
@@ -384,7 +379,7 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1,
                            []>, Sched<[WriteJumpLd]>;
 
   // Win64 wants indirect jumps leaving the function to have a REX_W prefix.
-  let hasREX_W = 1 in {
+  let hasREX_WPrefix = 1 in {
     def TAILJMPr64_REX : PseudoI<(outs), (ins ptr_rc_tailcall:$dst),
                                  []>, Sched<[WriteJump]>;
 
@@ -398,37 +393,21 @@ let isPseudo = 1, isCall = 1, isCodeGenOnly = 1,
     Uses = [RSP, SSP],
     usesCustomInserter = 1,
     SchedRW = [WriteJump] in {
-  def INDIRECT_THUNK_CALL32 :
+  def RETPOLINE_CALL32 :
     PseudoI<(outs), (ins GR32:$dst), [(X86call GR32:$dst)]>,
-            Requires<[Not64BitMode,UseIndirectThunkCalls]>;
+            Requires<[Not64BitMode,UseRetpolineIndirectCalls]>;
 
-  def INDIRECT_THUNK_CALL64 :
+  def RETPOLINE_CALL64 :
     PseudoI<(outs), (ins GR64:$dst), [(X86call GR64:$dst)]>,
-            Requires<[In64BitMode,UseIndirectThunkCalls]>;
+            Requires<[In64BitMode,UseRetpolineIndirectCalls]>;
 
-  // Indirect thunk variant of indirect tail calls.
+  // Retpoline variant of indirect tail calls.
   let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
-    def INDIRECT_THUNK_TCRETURN64 :
+    def RETPOLINE_TCRETURN64 :
       PseudoI<(outs), (ins GR64:$dst, i32imm:$offset), []>;
-    def INDIRECT_THUNK_TCRETURN32 :
+    def RETPOLINE_TCRETURN32 :
       PseudoI<(outs), (ins GR32:$dst, i32imm:$offset), []>;
   }
-}
-
-let isPseudo = 1, isCall = 1, isCodeGenOnly = 1,
-    Uses = [RSP, SSP],
-    SchedRW = [WriteJump] in {
-  def CALL64m_RVMARKER :
-     PseudoI<(outs), (ins i64imm:$rvfunc, i64mem:$dst), [(X86call_rvmarker tglobaladdr:$rvfunc, (loadi64 addr:$dst))]>,
-             Requires<[In64BitMode]>;
-
-  def CALL64r_RVMARKER :
-    PseudoI<(outs), (ins i64imm:$rvfunc, GR64:$dst), [(X86call_rvmarker tglobaladdr:$rvfunc, GR64:$dst)]>,
-            Requires<[In64BitMode]>;
-
-  def CALL64pcrel32_RVMARKER :
-    PseudoI<(outs), (ins i64imm:$rvfunc, i64i32imm_brtarget:$dst), []>,
-            Requires<[In64BitMode]>;
 }
 
 // Conditional tail calls are similar to the above, but they are branches

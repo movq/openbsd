@@ -1,4 +1,4 @@
-//===-- M68kRegisterInfo.cpp - CPU0 Register Information --------*- C++ -*-===//
+//===-- M68kRegisterInfo.cpp - CPU0 Register Information -----*- C++ -*--===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -19,7 +19,6 @@
 
 #include "MCTargetDesc/M68kMCTargetDesc.h"
 
-#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Type.h"
@@ -162,7 +161,7 @@ BitVector M68kRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   return Reserved;
 }
 
-bool M68kRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
+void M68kRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                                            int SPAdj, unsigned FIOperandNum,
                                            RegScavenger *RS) const {
   MachineInstr &MI = *II;
@@ -208,7 +207,6 @@ bool M68kRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     FIOffset += SPAdj;
 
   Disp.ChangeToImmediate(FIOffset + Imm);
-  return false;
 }
 
 bool M68kRegisterInfo::requiresRegisterScavenging(

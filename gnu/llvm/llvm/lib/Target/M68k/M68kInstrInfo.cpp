@@ -1,4 +1,4 @@
-//===-- M68kInstrInfo.cpp - M68k Instruction Information --------*- C++ -*-===//
+//===-- M68kInstrInfo.cpp - M68k Instruction Information ----*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -24,9 +24,8 @@
 #include "llvm/CodeGen/LiveVariables.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/Regex.h"
+#include "llvm/Support/TargetRegistry.h"
 
 #include <functional>
 
@@ -349,8 +348,8 @@ void M68kInstrInfo::AddZExt(MachineBasicBlock &MBB,
 bool M68kInstrInfo::ExpandMOVX_RR(MachineInstrBuilder &MIB, MVT MVTDst,
                                   MVT MVTSrc) const {
   unsigned Move = MVTDst == MVT::i16 ? M68k::MOV16rr : M68k::MOV32rr;
-  Register Dst = MIB->getOperand(0).getReg();
-  Register Src = MIB->getOperand(1).getReg();
+  unsigned Dst = MIB->getOperand(0).getReg();
+  unsigned Src = MIB->getOperand(1).getReg();
 
   assert(Dst != Src && "You cannot use the same Regs with MOVX_RR");
 
@@ -395,8 +394,8 @@ bool M68kInstrInfo::ExpandMOVSZX_RR(MachineInstrBuilder &MIB, bool IsSigned,
   else // i32
     Move = M68k::MOV32rr;
 
-  Register Dst = MIB->getOperand(0).getReg();
-  Register Src = MIB->getOperand(1).getReg();
+  unsigned Dst = MIB->getOperand(0).getReg();
+  unsigned Src = MIB->getOperand(1).getReg();
 
   assert(Dst != Src && "You cannot use the same Regs with MOVSX_RR");
 
@@ -438,7 +437,7 @@ bool M68kInstrInfo::ExpandMOVSZX_RM(MachineInstrBuilder &MIB, bool IsSigned,
                                     MVT MVTSrc) const {
   LLVM_DEBUG(dbgs() << "Expand " << *MIB.getInstr() << " to LOAD and ");
 
-  Register Dst = MIB->getOperand(0).getReg();
+  unsigned Dst = MIB->getOperand(0).getReg();
 
   // We need the subreg of Dst to make instruction verifier happy because the
   // real machine instruction consumes and produces values of the same size and
@@ -560,7 +559,7 @@ bool M68kInstrInfo::ExpandMOVEM(MachineInstrBuilder &MIB,
 static bool Expand2AddrUndef(MachineInstrBuilder &MIB,
                              const MCInstrDesc &Desc) {
   assert(Desc.getNumOperands() == 3 && "Expected two-addr instruction.");
-  Register Reg = MIB->getOperand(0).getReg();
+  unsigned Reg = MIB->getOperand(0).getReg();
   MIB->setDesc(Desc);
 
   // MachineInstr::addOperand() will insert explicit operands before any
@@ -602,26 +601,40 @@ bool M68kInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
 bool M68kInstrInfo::isPCRelRegisterOperandLegal(
     const MachineOperand &MO) const {
   assert(MO.isReg());
+  const auto *MI = MO.getParent();
+  const uint8_t *Beads = M68k::getMCInstrBeads(MI->getOpcode());
+  assert(*Beads);
 
-  // Check whether this MO belongs to an instruction with addressing mode 'k',
-  // Refer to TargetInstrInfo.h for more information about this function.
+  // Only addressing mode k has (non-pc) register with PCRel
+  // So we're looking for EA Beads equal to
+  // `3Bits<011>_1Bit<1>_2Bits<11>`
+  // FIXME: There is an important caveat and two assumptions
+  // here: The caveat is that EA encoding always sit on the LSB.
+  // Where the assumptions are that if there are more than one
+  // operands, the EA encoding for the source operand always sit
+  // on the LSB. At the same time, k addressing mode can not be used
+  // on destination operand.
+  // The last assumption is kinda dirty so we need to find a way around
+  // it
+  const uint8_t EncEAk[3] = {0b011, 0b1, 0b11};
+  for (const uint8_t Pat : EncEAk) {
+    uint8_t Bead = *(Beads++);
+    if (!Bead)
+      return false;
 
-  const MachineInstr *MI = MO.getParent();
-  const unsigned NameIndices = M68kInstrNameIndices[MI->getOpcode()];
-  StringRef InstrName(&M68kInstrNameData[NameIndices]);
-  const unsigned OperandNo = MI->getOperandNo(&MO);
-
-  // If this machine operand is the 2nd operand, then check
-  // whether the instruction has destination addressing mode 'k'.
-  if (OperandNo == 1)
-    return Regex("[A-Z]+(8|16|32)k[a-z](_TC)?$").match(InstrName);
-
-  // If this machine operand is the last one, then check
-  // whether the instruction has source addressing mode 'k'.
-  if (OperandNo == MI->getNumExplicitOperands() - 1)
-    return Regex("[A-Z]+(8|16|32)[a-z]k(_TC)?$").match(InstrName);
-
-  return false;
+    switch (Bead & 0xF) {
+    default:
+      return false;
+    case M68kBeads::Bits1:
+    case M68kBeads::Bits2:
+    case M68kBeads::Bits3: {
+      uint8_t Val = (Bead & 0xF0) >> 4;
+      if (Val != Pat)
+        return false;
+    }
+    }
+  }
+  return true;
 }
 
 void M68kInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
@@ -702,7 +715,7 @@ unsigned getLoadStoreRegOpcode(unsigned Reg, const TargetRegisterClass *RC,
     llvm_unreachable("Unknown spill size");
   case 8:
     if (M68k::DR8RegClass.hasSubClassEq(RC))
-      return load ? M68k::MOV8dp : M68k::MOV8pd;
+      return load ? M68k::MOVM8mp_P : M68k::MOVM8pm_P;
     if (M68k::CCRCRegClass.hasSubClassEq(RC))
       return load ? M68k::MOV16cp : M68k::MOV16pc;
 
@@ -739,14 +752,15 @@ bool M68kInstrInfo::getStackSlotRange(const TargetRegisterClass *RC,
   return true;
 }
 
-void M68kInstrInfo::storeRegToStackSlot(
-    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, Register SrcReg,
-    bool IsKill, int FrameIndex, const TargetRegisterClass *RC,
-    const TargetRegisterInfo *TRI, Register VReg) const {
-  const MachineFrameInfo &MFI = MBB.getParent()->getFrameInfo();
-  assert(MFI.getObjectSize(FrameIndex) >= TRI->getSpillSize(*RC) &&
-         "Stack slot is too small to store");
-
+void M68kInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
+                                        MachineBasicBlock::iterator MI,
+                                        Register SrcReg, bool IsKill,
+                                        int FrameIndex,
+                                        const TargetRegisterClass *RC,
+                                        const TargetRegisterInfo *TRI) const {
+  const MachineFunction &MF = *MBB.getParent();
+  assert(MF.getFrameInfo().getObjectSize(FrameIndex) == 4 &&
+         "Stack slot too small for store");
   unsigned Opc = getStoreRegOpcode(SrcReg, RC, TRI, Subtarget);
   DebugLoc DL = MBB.findDebugLoc(MI);
   // (0,FrameIndex) <- $reg
@@ -758,12 +772,10 @@ void M68kInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                          MachineBasicBlock::iterator MI,
                                          Register DstReg, int FrameIndex,
                                          const TargetRegisterClass *RC,
-                                         const TargetRegisterInfo *TRI,
-                                         Register VReg) const {
-  const MachineFrameInfo &MFI = MBB.getParent()->getFrameInfo();
-  assert(MFI.getObjectSize(FrameIndex) >= TRI->getSpillSize(*RC) &&
-         "Stack slot is too small to load");
-
+                                         const TargetRegisterInfo *TRI) const {
+  const MachineFunction &MF = *MBB.getParent();
+  assert(MF.getFrameInfo().getObjectSize(FrameIndex) == 4 &&
+         "Stack slot too small for store");
   unsigned Opc = getLoadRegOpcode(DstReg, RC, TRI, Subtarget);
   DebugLoc DL = MBB.findDebugLoc(MI);
   M68k::addFrameReference(BuildMI(MBB, MI, DL, get(Opc), DstReg), FrameIndex);
@@ -810,7 +822,7 @@ M68kInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
       {MO_GOTOFF, "m68k-gotoff"},
       {MO_GOTPCREL, "m68k-gotpcrel"},
       {MO_PLT, "m68k-plt"}};
-  return ArrayRef(TargetFlags);
+  return makeArrayRef(TargetFlags);
 }
 
 namespace {

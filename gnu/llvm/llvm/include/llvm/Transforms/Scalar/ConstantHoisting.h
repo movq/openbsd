@@ -40,6 +40,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/PassManager.h"
 #include <algorithm>
@@ -197,6 +198,7 @@ private:
   // constant GEP base.
   bool emitBaseConstants(GlobalVariable *BaseGV);
   void deleteDeadCastInst() const;
+  bool optimizeConstants(Function &Fn);
 };
 
 } // end namespace llvm

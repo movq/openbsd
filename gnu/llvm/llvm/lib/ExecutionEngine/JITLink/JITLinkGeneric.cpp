@@ -20,13 +20,16 @@
 namespace llvm {
 namespace jitlink {
 
-JITLinkerBase::~JITLinkerBase() = default;
+JITLinkerBase::~JITLinkerBase() {}
 
 void JITLinkerBase::linkPhase1(std::unique_ptr<JITLinkerBase> Self) {
 
-  LLVM_DEBUG({
-    dbgs() << "Starting link phase 1 for graph " << G->getName() << "\n";
-  });
+  // Build the link graph.
+  if (auto GraphOrErr = buildGraph(Ctx->getObjectBuffer()))
+    G = std::move(*GraphOrErr);
+  else
+    return Ctx->notifyFailed(GraphOrErr.takeError());
+  assert(G && "Graph should have been created by buildGraph above");
 
   // Prune and optimize the graph.
   if (auto Err = runPasses(Passes.PrePrunePasses))
@@ -34,157 +37,94 @@ void JITLinkerBase::linkPhase1(std::unique_ptr<JITLinkerBase> Self) {
 
   LLVM_DEBUG({
     dbgs() << "Link graph \"" << G->getName() << "\" pre-pruning:\n";
-    G->dump(dbgs());
+    dumpGraph(dbgs());
   });
 
   prune(*G);
 
   LLVM_DEBUG({
     dbgs() << "Link graph \"" << G->getName() << "\" post-pruning:\n";
-    G->dump(dbgs());
+    dumpGraph(dbgs());
   });
 
   // Run post-pruning passes.
   if (auto Err = runPasses(Passes.PostPrunePasses))
     return Ctx->notifyFailed(std::move(Err));
 
-  Ctx->getMemoryManager().allocate(
-      Ctx->getJITLinkDylib(), *G,
-      [S = std::move(Self)](AllocResult AR) mutable {
-        // FIXME: Once MSVC implements c++17 order of evaluation rules for calls
-        // this can be simplified to
-        //          S->linkPhase2(std::move(S), std::move(AR));
-        auto *TmpSelf = S.get();
-        TmpSelf->linkPhase2(std::move(S), std::move(AR));
-      });
-}
+  // Sort blocks into segments.
+  auto Layout = layOutBlocks();
 
-void JITLinkerBase::linkPhase2(std::unique_ptr<JITLinkerBase> Self,
-                               AllocResult AR) {
-
-  if (AR)
-    Alloc = std::move(*AR);
-  else
-    return Ctx->notifyFailed(AR.takeError());
-
-  LLVM_DEBUG({
-    dbgs() << "Link graph \"" << G->getName()
-           << "\" before post-allocation passes:\n";
-    G->dump(dbgs());
-  });
-
-  // Run post-allocation passes.
-  if (auto Err = runPasses(Passes.PostAllocationPasses))
+  // Allocate memory for segments.
+  if (auto Err = allocateSegments(Layout))
     return Ctx->notifyFailed(std::move(Err));
 
   // Notify client that the defined symbols have been assigned addresses.
-  LLVM_DEBUG(dbgs() << "Resolving symbols defined in " << G->getName() << "\n");
-
-  if (auto Err = Ctx->notifyResolved(*G))
-    return Ctx->notifyFailed(std::move(Err));
+  Ctx->notifyResolved(*G);
 
   auto ExternalSymbols = getExternalSymbolNames();
-
-  // If there are no external symbols then proceed immediately with phase 3.
-  if (ExternalSymbols.empty()) {
-    LLVM_DEBUG({
-      dbgs() << "No external symbols for " << G->getName()
-             << ". Proceeding immediately with link phase 3.\n";
-    });
-    // FIXME: Once MSVC implements c++17 order of evaluation rules for calls
-    // this can be simplified. See below.
-    auto &TmpSelf = *Self;
-    TmpSelf.linkPhase3(std::move(Self), AsyncLookupResult());
-    return;
-  }
-
-  // Otherwise look up the externals.
-  LLVM_DEBUG({
-    dbgs() << "Issuing lookup for external symbols for " << G->getName()
-           << " (may trigger materialization/linking of other graphs)...\n";
-  });
 
   // We're about to hand off ownership of ourself to the continuation. Grab a
   // pointer to the context so that we can call it to initiate the lookup.
   //
-  // FIXME: Once MSVC implements c++17 order of evaluation rules for calls this
-  // can be simplified to:
+  // FIXME: Once callee expressions are defined to be sequenced before argument
+  // expressions (c++17) we can simplify all this to:
   //
   // Ctx->lookup(std::move(UnresolvedExternals),
   //             [Self=std::move(Self)](Expected<AsyncLookupResult> Result) {
-  //               Self->linkPhase3(std::move(Self), std::move(Result));
+  //               Self->linkPhase2(std::move(Self), std::move(Result));
   //             });
-  Ctx->lookup(std::move(ExternalSymbols),
-              createLookupContinuation(
-                  [S = std::move(Self)](
-                      Expected<AsyncLookupResult> LookupResult) mutable {
-                    auto &TmpSelf = *S;
-                    TmpSelf.linkPhase3(std::move(S), std::move(LookupResult));
-                  }));
+  auto *TmpCtx = Ctx.get();
+  TmpCtx->lookup(std::move(ExternalSymbols),
+                 createLookupContinuation(
+                     [S = std::move(Self), L = std::move(Layout)](
+                         Expected<AsyncLookupResult> LookupResult) mutable {
+                       auto &TmpSelf = *S;
+                       TmpSelf.linkPhase2(std::move(S), std::move(LookupResult),
+                                          std::move(L));
+                     }));
 }
 
-void JITLinkerBase::linkPhase3(std::unique_ptr<JITLinkerBase> Self,
-                               Expected<AsyncLookupResult> LR) {
-
-  LLVM_DEBUG({
-    dbgs() << "Starting link phase 3 for graph " << G->getName() << "\n";
-  });
-
+void JITLinkerBase::linkPhase2(std::unique_ptr<JITLinkerBase> Self,
+                               Expected<AsyncLookupResult> LR,
+                               SegmentLayoutMap Layout) {
   // If the lookup failed, bail out.
   if (!LR)
-    return abandonAllocAndBailOut(std::move(Self), LR.takeError());
+    return deallocateAndBailOut(LR.takeError());
 
   // Assign addresses to external addressables.
   applyLookupResult(*LR);
 
   LLVM_DEBUG({
-    dbgs() << "Link graph \"" << G->getName()
-           << "\" before pre-fixup passes:\n";
-    G->dump(dbgs());
-  });
-
-  if (auto Err = runPasses(Passes.PreFixupPasses))
-    return abandonAllocAndBailOut(std::move(Self), std::move(Err));
-
-  LLVM_DEBUG({
     dbgs() << "Link graph \"" << G->getName() << "\" before copy-and-fixup:\n";
-    G->dump(dbgs());
+    dumpGraph(dbgs());
   });
 
-  // Fix up block content.
-  if (auto Err = fixUpBlocks(*G))
-    return abandonAllocAndBailOut(std::move(Self), std::move(Err));
+  // Copy block content to working memory and fix up.
+  if (auto Err = copyAndFixUpBlocks(Layout, *Alloc))
+    return deallocateAndBailOut(std::move(Err));
 
   LLVM_DEBUG({
     dbgs() << "Link graph \"" << G->getName() << "\" after copy-and-fixup:\n";
-    G->dump(dbgs());
+    dumpGraph(dbgs());
   });
 
   if (auto Err = runPasses(Passes.PostFixupPasses))
-    return abandonAllocAndBailOut(std::move(Self), std::move(Err));
+    return deallocateAndBailOut(std::move(Err));
 
-  Alloc->finalize([S = std::move(Self)](FinalizeResult FR) mutable {
-    // FIXME: Once MSVC implements c++17 order of evaluation rules for calls
-    // this can be simplified to
-    //          S->linkPhase2(std::move(S), std::move(AR));
-    auto *TmpSelf = S.get();
-    TmpSelf->linkPhase4(std::move(S), std::move(FR));
-  });
+  // FIXME: Use move capture once we have c++14.
+  auto *UnownedSelf = Self.release();
+  auto Phase3Continuation = [UnownedSelf](Error Err) {
+    std::unique_ptr<JITLinkerBase> Self(UnownedSelf);
+    UnownedSelf->linkPhase3(std::move(Self), std::move(Err));
+  };
+
+  Alloc->finalizeAsync(std::move(Phase3Continuation));
 }
 
-void JITLinkerBase::linkPhase4(std::unique_ptr<JITLinkerBase> Self,
-                               FinalizeResult FR) {
-
-  LLVM_DEBUG({
-    dbgs() << "Starting link phase 4 for graph " << G->getName() << "\n";
-  });
-
-  if (!FR)
-    return Ctx->notifyFailed(FR.takeError());
-
-  Ctx->notifyFinalized(std::move(*FR));
-
-  LLVM_DEBUG({ dbgs() << "Link of graph " << G->getName() << " complete\n"; });
+void JITLinkerBase::linkPhase3(std::unique_ptr<JITLinkerBase> Self, Error Err) {
+  if (Err)
+    return deallocateAndBailOut(std::move(Err));
+  Ctx->notifyFinalized(std::move(Alloc));
 }
 
 Error JITLinkerBase::runPasses(LinkGraphPassList &Passes) {
@@ -194,17 +134,141 @@ Error JITLinkerBase::runPasses(LinkGraphPassList &Passes) {
   return Error::success();
 }
 
+JITLinkerBase::SegmentLayoutMap JITLinkerBase::layOutBlocks() {
+
+  SegmentLayoutMap Layout;
+
+  /// Partition blocks based on permissions and content vs. zero-fill.
+  for (auto *B : G->blocks()) {
+    auto &SegLists = Layout[B->getSection().getProtectionFlags()];
+    if (!B->isZeroFill())
+      SegLists.ContentBlocks.push_back(B);
+    else
+      SegLists.ZeroFillBlocks.push_back(B);
+  }
+
+  /// Sort blocks within each list.
+  for (auto &KV : Layout) {
+
+    auto CompareBlocks = [](const Block *LHS, const Block *RHS) {
+      // Sort by section, address and size
+      if (LHS->getSection().getOrdinal() != RHS->getSection().getOrdinal())
+        return LHS->getSection().getOrdinal() < RHS->getSection().getOrdinal();
+      if (LHS->getAddress() != RHS->getAddress())
+        return LHS->getAddress() < RHS->getAddress();
+      return LHS->getSize() < RHS->getSize();
+    };
+
+    auto &SegLists = KV.second;
+    llvm::sort(SegLists.ContentBlocks, CompareBlocks);
+    llvm::sort(SegLists.ZeroFillBlocks, CompareBlocks);
+  }
+
+  LLVM_DEBUG({
+    dbgs() << "Segment ordering:\n";
+    for (auto &KV : Layout) {
+      dbgs() << "  Segment "
+             << static_cast<sys::Memory::ProtectionFlags>(KV.first) << ":\n";
+      auto &SL = KV.second;
+      for (auto &SIEntry :
+           {std::make_pair(&SL.ContentBlocks, "content block"),
+            std::make_pair(&SL.ZeroFillBlocks, "zero-fill block")}) {
+        dbgs() << "    " << SIEntry.second << ":\n";
+        for (auto *B : *SIEntry.first)
+          dbgs() << "      " << *B << "\n";
+      }
+    }
+  });
+
+  return Layout;
+}
+
+Error JITLinkerBase::allocateSegments(const SegmentLayoutMap &Layout) {
+
+  // Compute segment sizes and allocate memory.
+  LLVM_DEBUG(dbgs() << "JIT linker requesting: { ");
+  JITLinkMemoryManager::SegmentsRequestMap Segments;
+  for (auto &KV : Layout) {
+    auto &Prot = KV.first;
+    auto &SegLists = KV.second;
+
+    uint64_t SegAlign = 1;
+
+    // Calculate segment content size.
+    size_t SegContentSize = 0;
+    for (auto *B : SegLists.ContentBlocks) {
+      SegAlign = std::max(SegAlign, B->getAlignment());
+      SegContentSize = alignToBlock(SegContentSize, *B);
+      SegContentSize += B->getSize();
+    }
+
+    uint64_t SegZeroFillStart = SegContentSize;
+    uint64_t SegZeroFillEnd = SegZeroFillStart;
+
+    for (auto *B : SegLists.ZeroFillBlocks) {
+      SegAlign = std::max(SegAlign, B->getAlignment());
+      SegZeroFillEnd = alignToBlock(SegZeroFillEnd, *B);
+      SegZeroFillEnd += B->getSize();
+    }
+
+    Segments[Prot] = {SegAlign, SegContentSize,
+                      SegZeroFillEnd - SegZeroFillStart};
+
+    LLVM_DEBUG({
+      dbgs() << (&KV == &*Layout.begin() ? "" : "; ")
+             << static_cast<sys::Memory::ProtectionFlags>(Prot)
+             << ": alignment = " << SegAlign
+             << ", content size = " << SegContentSize
+             << ", zero-fill size = " << (SegZeroFillEnd - SegZeroFillStart);
+    });
+  }
+  LLVM_DEBUG(dbgs() << " }\n");
+
+  if (auto AllocOrErr = Ctx->getMemoryManager().allocate(Segments))
+    Alloc = std::move(*AllocOrErr);
+  else
+    return AllocOrErr.takeError();
+
+  LLVM_DEBUG({
+    dbgs() << "JIT linker got working memory:\n";
+    for (auto &KV : Layout) {
+      auto Prot = static_cast<sys::Memory::ProtectionFlags>(KV.first);
+      dbgs() << "  " << Prot << ": "
+             << (const void *)Alloc->getWorkingMemory(Prot).data() << "\n";
+    }
+  });
+
+  // Update block target addresses.
+  for (auto &KV : Layout) {
+    auto &Prot = KV.first;
+    auto &SL = KV.second;
+
+    JITTargetAddress NextBlockAddr =
+        Alloc->getTargetMemory(static_cast<sys::Memory::ProtectionFlags>(Prot));
+
+    for (auto *SIList : {&SL.ContentBlocks, &SL.ZeroFillBlocks})
+      for (auto *B : *SIList) {
+        NextBlockAddr = alignToBlock(NextBlockAddr, *B);
+        B->setAddress(NextBlockAddr);
+        NextBlockAddr += B->getSize();
+      }
+  }
+
+  return Error::success();
+}
+
 JITLinkContext::LookupMap JITLinkerBase::getExternalSymbolNames() const {
   // Identify unresolved external symbols.
   JITLinkContext::LookupMap UnresolvedExternals;
   for (auto *Sym : G->external_symbols()) {
-    assert(!Sym->getAddress() &&
+    assert(Sym->getAddress() == 0 &&
            "External has already been assigned an address");
     assert(Sym->getName() != StringRef() && Sym->getName() != "" &&
            "Externals must be named");
     SymbolLookupFlags LookupFlags =
-        Sym->isWeaklyReferenced() ? SymbolLookupFlags::WeaklyReferencedSymbol
-                                  : SymbolLookupFlags::RequiredSymbol;
+        Sym->getLinkage() == Linkage::Weak
+            ? SymbolLookupFlags::WeaklyReferencedSymbol
+            : SymbolLookupFlags::RequiredSymbol;
     UnresolvedExternals[Sym->getName()] = LookupFlags;
   }
   return UnresolvedExternals;
@@ -214,54 +278,39 @@ void JITLinkerBase::applyLookupResult(AsyncLookupResult Result) {
   for (auto *Sym : G->external_symbols()) {
     assert(Sym->getOffset() == 0 &&
            "External symbol is not at the start of its addressable block");
-    assert(!Sym->getAddress() && "Symbol already resolved");
+    assert(Sym->getAddress() == 0 && "Symbol already resolved");
     assert(!Sym->isDefined() && "Symbol being resolved is already defined");
     auto ResultI = Result.find(Sym->getName());
-    if (ResultI != Result.end()) {
-      Sym->getAddressable().setAddress(
-          orc::ExecutorAddr(ResultI->second.getAddress()));
-      Sym->setLinkage(ResultI->second.getFlags().isWeak() ? Linkage::Weak
-                                                          : Linkage::Strong);
-      Sym->setScope(ResultI->second.getFlags().isExported() ? Scope::Default
-                                                            : Scope::Hidden);
-    } else
-      assert(Sym->isWeaklyReferenced() &&
+    if (ResultI != Result.end())
+      Sym->getAddressable().setAddress(ResultI->second.getAddress());
+    else
+      assert(Sym->getLinkage() == Linkage::Weak &&
              "Failed to resolve non-weak reference");
   }
 
   LLVM_DEBUG({
     dbgs() << "Externals after applying lookup result:\n";
-    for (auto *Sym : G->external_symbols()) {
+    for (auto *Sym : G->external_symbols())
       dbgs() << "  " << Sym->getName() << ": "
-             << formatv("{0:x16}", Sym->getAddress().getValue());
-      switch (Sym->getLinkage()) {
-      case Linkage::Strong:
-        break;
-      case Linkage::Weak:
-        dbgs() << " (weak)";
-        break;
-      }
-      switch (Sym->getScope()) {
-      case Scope::Local:
-        llvm_unreachable("External symbol should not have local linkage");
-      case Scope::Hidden:
-        break;
-      case Scope::Default:
-        dbgs() << " (exported)";
-        break;
-      }
-      dbgs() << "\n";
-    }
+             << formatv("{0:x16}", Sym->getAddress()) << "\n";
   });
+  assert(llvm::all_of(G->external_symbols(),
+                      [](Symbol *Sym) {
+                        return Sym->getAddress() != 0 ||
+                               Sym->getLinkage() == Linkage::Weak;
+                      }) &&
+         "All strong external symbols should have been resolved by now");
 }
 
-void JITLinkerBase::abandonAllocAndBailOut(std::unique_ptr<JITLinkerBase> Self,
-                                           Error Err) {
+void JITLinkerBase::deallocateAndBailOut(Error Err) {
   assert(Err && "Should not be bailing out on success value");
-  assert(Alloc && "can not call abandonAllocAndBailOut before allocation");
-  Alloc->abandon([S = std::move(Self), E1 = std::move(Err)](Error E2) mutable {
-    S->Ctx->notifyFailed(joinErrors(std::move(E1), std::move(E2)));
-  });
+  assert(Alloc && "can not call deallocateAndBailOut before allocation");
+  Ctx->notifyFailed(joinErrors(std::move(Err), Alloc->deallocate()));
+}
+
+void JITLinkerBase::dumpGraph(raw_ostream &OS) {
+  assert(G && "Graph is not set yet");
+  G->dump(dbgs(), [this](Edge::Kind K) { return getEdgeKindName(K); });
 }
 
 void prune(LinkGraph &G) {
@@ -287,19 +336,16 @@ void prune(LinkGraph &G) {
     VisitedBlocks.insert(&B);
 
     for (auto &E : Sym->getBlock().edges()) {
-      // If the edge target is a defined symbol that is being newly marked live
-      // then add it to the worklist.
-      if (E.getTarget().isDefined() && !E.getTarget().isLive())
+      if (E.getTarget().isDefined() && !E.getTarget().isLive()) {
+        E.getTarget().setLive(true);
         Worklist.push_back(&E.getTarget());
-
-      // Mark the target live.
-      E.getTarget().setLive(true);
+      }
     }
   }
 
-  // Collect all defined symbols to remove, then remove them.
+  // Collect all the symbols to remove, then remove them.
   {
-    LLVM_DEBUG(dbgs() << "Dead-stripping defined symbols:\n");
+    LLVM_DEBUG(dbgs() << "Dead-stripping symbols:\n");
     std::vector<Symbol *> SymbolsToRemove;
     for (auto *Sym : G.defined_symbols())
       if (!Sym->isLive())
@@ -320,19 +366,6 @@ void prune(LinkGraph &G) {
     for (auto *B : BlocksToRemove) {
       LLVM_DEBUG(dbgs() << "  " << *B << "...\n");
       G.removeBlock(*B);
-    }
-  }
-
-  // Collect all external symbols to remove, then remove them.
-  {
-    LLVM_DEBUG(dbgs() << "Removing unused external symbols:\n");
-    std::vector<Symbol *> SymbolsToRemove;
-    for (auto *Sym : G.external_symbols())
-      if (!Sym->isLive())
-        SymbolsToRemove.push_back(Sym);
-    for (auto *Sym : SymbolsToRemove) {
-      LLVM_DEBUG(dbgs() << "  " << *Sym << "...\n");
-      G.removeExternalSymbol(*Sym);
     }
   }
 }

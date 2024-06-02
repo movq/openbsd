@@ -12,12 +12,36 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MCTargetDesc/R600MCTargetDesc.h"
-#include "R600.h"
+#include "AMDGPU.h"
+#include "AMDGPUSubtarget.h"
+#include "R600Defines.h"
+#include "R600InstrInfo.h"
 #include "R600MachineFunctionInfo.h"
-#include "R600Subtarget.h"
+#include "R600RegisterInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/Function.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
 #include <set>
+#include <utility>
+#include <vector>
 
 using namespace llvm;
 
@@ -60,7 +84,12 @@ unsigned CFStack::getLoopDepth() {
 }
 
 bool CFStack::branchStackContains(CFStack::StackItem Item) {
-  return llvm::is_contained(BranchStack, Item);
+  for (std::vector<CFStack::StackItem>::const_iterator I = BranchStack.begin(),
+       E = BranchStack.end(); I != E; ++I) {
+    if (*I == Item)
+      return true;
+  }
+  return false;
 }
 
 bool CFStack::requiresWorkAroundForInst(unsigned Opcode) {
@@ -130,7 +159,8 @@ unsigned CFStack::getSubEntrySize(CFStack::StackItem Item) {
 }
 
 void CFStack::updateMaxStackSize() {
-  unsigned CurrentStackSize = CurrentEntries + divideCeil(CurrentSubEntries, 4);
+  unsigned CurrentStackSize =
+      CurrentEntries + (alignTo(CurrentSubEntries, 4) / 4);
   MaxStackSize = std::max(CurrentStackSize, MaxStackSize);
 }
 
@@ -278,7 +308,7 @@ private:
           DstMI = Reg;
         else
           DstMI = TRI->getMatchingSuperReg(Reg,
-              R600RegisterInfo::getSubRegFromChannel(TRI->getHWRegChan(Reg)),
+              AMDGPURegisterInfo::getSubRegFromChannel(TRI->getHWRegChan(Reg)),
               &R600::R600_Reg128RegClass);
       }
       if (MO.isUse()) {
@@ -287,7 +317,7 @@ private:
           SrcMI = Reg;
         else
           SrcMI = TRI->getMatchingSuperReg(Reg,
-              R600RegisterInfo::getSubRegFromChannel(TRI->getHWRegChan(Reg)),
+              AMDGPURegisterInfo::getSubRegFromChannel(TRI->getHWRegChan(Reg)),
               &R600::R600_Reg128RegClass);
       }
     }
@@ -441,8 +471,9 @@ private:
     CounterPropagateAddr(*Clause.first, CfCount);
     MachineBasicBlock *BB = Clause.first->getParent();
     BuildMI(BB, DL, TII->get(R600::FETCH_CLAUSE)).addImm(CfCount);
-    for (MachineInstr *MI : Clause.second)
-      BB->splice(InsertPos, BB, MI);
+    for (unsigned i = 0, e = Clause.second.size(); i < e; ++i) {
+      BB->splice(InsertPos, BB, Clause.second[i]);
+    }
     CfCount += 2 * Clause.second.size();
   }
 
@@ -452,8 +483,9 @@ private:
     CounterPropagateAddr(*Clause.first, CfCount);
     MachineBasicBlock *BB = Clause.first->getParent();
     BuildMI(BB, DL, TII->get(R600::ALU_CLAUSE)).addImm(CfCount);
-    for (MachineInstr *MI : Clause.second)
-      BB->splice(InsertPos, BB, MI);
+    for (unsigned i = 0, e = Clause.second.size(); i < e; ++i) {
+      BB->splice(InsertPos, BB, Clause.second[i]);
+    }
     CfCount += Clause.second.size();
   }
 
@@ -527,7 +559,7 @@ public:
             CFStack.pushBranch(R600::CF_PUSH_EG);
           } else
             CFStack.pushBranch(R600::CF_ALU_PUSH_BEFORE);
-          [[fallthrough]];
+          LLVM_FALLTHROUGH;
         case R600::CF_ALU:
           I = MI;
           AluClauses.push_back(MakeALUClause(MBB, I));
@@ -634,10 +666,10 @@ public:
             CfCount++;
           }
           MI->eraseFromParent();
-          for (ClauseFile &CF : FetchClauses)
-            EmitFetchClause(I, DL, CF, CfCount);
-          for (ClauseFile &CF : AluClauses)
-            EmitALUClause(I, DL, CF, CfCount);
+          for (unsigned i = 0, e = FetchClauses.size(); i < e; i++)
+            EmitFetchClause(I, DL, FetchClauses[i], CfCount);
+          for (unsigned i = 0, e = AluClauses.size(); i < e; i++)
+            EmitALUClause(I, DL, AluClauses[i], CfCount);
           break;
         }
         default:
@@ -648,7 +680,8 @@ public:
           break;
         }
       }
-      for (MachineInstr *Alu : ToPopAfter) {
+      for (unsigned i = 0, e = ToPopAfter.size(); i < e; ++i) {
+        MachineInstr *Alu = ToPopAfter[i];
         BuildMI(MBB, Alu, MBB.findDebugLoc((MachineBasicBlock::iterator)Alu),
             TII->get(R600::CF_ALU_POP_AFTER))
             .addImm(Alu->getOperand(0).getImm())

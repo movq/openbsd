@@ -22,14 +22,11 @@
 #define LLVM_CODEGEN_GLOBALISEL_LOCALIZER_H
 
 #include "llvm/ADT/SetVector.h"
+#include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 
 namespace llvm {
 // Forward declarations.
-class AnalysisUsage;
-class MachineBasicBlock;
-class MachineInstr;
-class MachineOperand;
 class MachineRegisterInfo;
 class TargetTransformInfo;
 
@@ -55,6 +52,9 @@ private:
   /// TTI used for getting remat costs for instructions.
   TargetTransformInfo *TTI;
 
+  /// Check whether or not \p MI needs to be moved close to its uses.
+  bool shouldLocalize(const MachineInstr &MI);
+
   /// Check if \p MOUse is used in the same basic block as \p Def.
   /// If the use is in the same block, we say it is local.
   /// When the use is not local, \p InsertMBB will contain the basic
@@ -66,11 +66,6 @@ private:
   void init(MachineFunction &MF);
 
   typedef SmallSetVector<MachineInstr *, 32> LocalizedSetVecT;
-
-  /// If \p Op is a phi operand and not unique in that phi, that is,
-  /// there are other operands in the phi with the same register,
-  /// return true.
-  bool isNonUniquePhiValue(MachineOperand &Op) const;
 
   /// Do inter-block localization from the entry block.
   bool localizeInterBlock(MachineFunction &MF,
@@ -87,7 +82,9 @@ public:
 
   MachineFunctionProperties getRequiredProperties() const override {
     return MachineFunctionProperties()
-        .set(MachineFunctionProperties::Property::IsSSA);
+        .set(MachineFunctionProperties::Property::IsSSA)
+        .set(MachineFunctionProperties::Property::Legalized)
+        .set(MachineFunctionProperties::Property::RegBankSelected);
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override;

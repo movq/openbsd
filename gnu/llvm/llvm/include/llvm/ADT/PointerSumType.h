@@ -214,7 +214,7 @@ struct PointerSumTypeHelper : MemberTs... {
   LookupOverload(PointerSumTypeMember<N, PointerT, TraitsT> *);
   template <TagT N> static void LookupOverload(...);
   template <TagT N> struct Lookup {
-    // Compute a particular member type by resolving the lookup helper overload.
+    // Compute a particular member type by resolving the lookup helper ovorload.
     using MemberT = decltype(
         LookupOverload<N>(static_cast<PointerSumTypeHelper *>(nullptr)));
 
@@ -272,12 +272,11 @@ struct DenseMapInfo<PointerSumType<TagT, MemberTs...>> {
   using SomePointerInfo = DenseMapInfo<SomePointerT>;
 
   static inline SumType getEmptyKey() {
-    return SumType::template create<SomeTag>(SomePointerInfo::getEmptyKey());
+    return SumType::create<SomeTag>(SomePointerInfo::getEmptyKey());
   }
 
   static inline SumType getTombstoneKey() {
-    return SumType::template create<SomeTag>(
-        SomePointerInfo::getTombstoneKey());
+    return SumType::create<SomeTag>(SomePointerInfo::getTombstoneKey());
   }
 
   static unsigned getHashValue(const SumType &Arg) {

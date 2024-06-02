@@ -17,13 +17,17 @@ namespace llvm {
 
 class NVPTXTargetObjectFile : public TargetLoweringObjectFile {
 public:
-  NVPTXTargetObjectFile() = default;
+  NVPTXTargetObjectFile() : TargetLoweringObjectFile() {}
 
   ~NVPTXTargetObjectFile() override;
 
+  void Initialize(MCContext &ctx, const TargetMachine &TM) override {
+    TargetLoweringObjectFile::Initialize(ctx, TM);
+  }
+
   MCSection *getSectionForConstant(const DataLayout &DL, SectionKind Kind,
                                    const Constant *C,
-                                   Align &Alignment) const override {
+                                   unsigned &Align) const override {
     return ReadOnlySection;
   }
 

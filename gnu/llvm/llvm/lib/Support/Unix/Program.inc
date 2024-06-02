@@ -1,4 +1,4 @@
-//===- llvm/Support/Unix/Program.inc ----------------------------*- C++ -*-===//
+//===- llvm/Support/Unix/Program.cpp -----------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,11 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-//=== WARNING: Implementation here must contain only generic UNIX
-//===          code that is guaranteed to work on *all* UNIX variants.
+//=== WARNING: Implementation here must contain only generic UNIX code that
+//===          is guaranteed to work on *all* UNIX variants.
 //===----------------------------------------------------------------------===//
-
-#include "llvm/Support/Program.h"
 
 #include "Unix.h"
 #include "llvm/ADT/StringExtras.h"
@@ -55,13 +53,14 @@
 #endif
 
 #if !USE_NSGETENVIRON
-extern char **environ;
+  extern char **environ;
 #else
 #include <crt_externs.h> // _NSGetEnviron
 #endif
 #endif
 
-using namespace llvm;
+namespace llvm {
+
 using namespace sys;
 
 ProcessInfo::ProcessInfo() : Pid(0), ReturnCode(0) {}
@@ -71,7 +70,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
   assert(!Name.empty() && "Must have a name!");
   // Use the given path verbatim if it contains any slashes; this matches
   // the behavior of sh(1) and friends.
-  if (Name.contains('/'))
+  if (Name.find('/') != StringRef::npos)
     return std::string(Name);
 
   SmallVector<StringRef, 16> EnvironmentPaths;
@@ -94,7 +93,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
   return errc::no_such_file_or_directory;
 }
 
-static bool RedirectIO(std::optional<StringRef> Path, int FD, std::string *ErrMsg) {
+static bool RedirectIO(Optional<StringRef> Path, int FD, std::string* ErrMsg) {
   if (!Path) // Noop
     return false;
   std::string File;
@@ -102,13 +101,13 @@ static bool RedirectIO(std::optional<StringRef> Path, int FD, std::string *ErrMs
     // Redirect empty paths to /dev/null
     File = "/dev/null";
   else
-    File = std::string(*Path);
+    File = *Path;
 
   // Open the file
-  int InFD = open(File.c_str(), FD == 0 ? O_RDONLY : O_WRONLY | O_CREAT, 0666);
+  int InFD = open(File.c_str(), FD == 0 ? O_RDONLY : O_WRONLY|O_CREAT, 0666);
   if (InFD == -1) {
-    MakeErrMsg(ErrMsg, "Cannot open file '" + File + "' for " +
-                           (FD == 0 ? "input" : "output"));
+    MakeErrMsg(ErrMsg, "Cannot open file '" + File + "' for "
+              + (FD == 0 ? "input" : "output"));
     return true;
   }
 
@@ -118,7 +117,7 @@ static bool RedirectIO(std::optional<StringRef> Path, int FD, std::string *ErrMs
     close(InFD);
     return true;
   }
-  close(InFD); // Close the original FD
+  close(InFD);      // Close the original FD
   return false;
 }
 
@@ -135,30 +134,34 @@ static bool RedirectIO_PS(const std::string *Path, int FD, std::string *ErrMsg,
     File = Path->c_str();
 
   if (int Err = posix_spawn_file_actions_addopen(
-          FileActions, FD, File, FD == 0 ? O_RDONLY : O_WRONLY | O_CREAT, 0666))
+          FileActions, FD, File,
+          FD == 0 ? O_RDONLY : O_WRONLY | O_CREAT, 0666))
     return MakeErrMsg(ErrMsg, "Cannot posix_spawn_file_actions_addopen", Err);
   return false;
 }
 #endif
 
-static void TimeOutHandler(int Sig) {}
+static void TimeOutHandler(int Sig) {
+}
 
 static void SetMemoryLimits(unsigned size) {
 #if HAVE_SYS_RESOURCE_H && HAVE_GETRLIMIT && HAVE_SETRLIMIT
   struct rlimit r;
-  __typeof__(r.rlim_cur) limit = (__typeof__(r.rlim_cur))(size)*1048576;
+  __typeof__ (r.rlim_cur) limit = (__typeof__ (r.rlim_cur)) (size) * 1048576;
 
   // Heap size
-  getrlimit(RLIMIT_DATA, &r);
+  getrlimit (RLIMIT_DATA, &r);
   r.rlim_cur = limit;
-  setrlimit(RLIMIT_DATA, &r);
+  setrlimit (RLIMIT_DATA, &r);
 #ifdef RLIMIT_RSS
   // Resident set size.
-  getrlimit(RLIMIT_RSS, &r);
+  getrlimit (RLIMIT_RSS, &r);
   r.rlim_cur = limit;
-  setrlimit(RLIMIT_RSS, &r);
+  setrlimit (RLIMIT_RSS, &r);
 #endif
 #endif
+}
+
 }
 
 static std::vector<const char *>
@@ -171,19 +174,15 @@ toNullTerminatedCStringArray(ArrayRef<StringRef> Strings, StringSaver &Saver) {
 }
 
 static bool Execute(ProcessInfo &PI, StringRef Program,
-                    ArrayRef<StringRef> Args, std::optional<ArrayRef<StringRef>> Env,
-                    ArrayRef<std::optional<StringRef>> Redirects,
-                    unsigned MemoryLimit, std::string *ErrMsg,
-                    BitVector *AffinityMask) {
+                    ArrayRef<StringRef> Args, Optional<ArrayRef<StringRef>> Env,
+                    ArrayRef<Optional<StringRef>> Redirects,
+                    unsigned MemoryLimit, std::string *ErrMsg) {
   if (!llvm::sys::fs::exists(Program)) {
     if (ErrMsg)
       *ErrMsg = std::string("Executable \"") + Program.str() +
                 std::string("\" doesn't exist!");
     return false;
   }
-
-  assert(!AffinityMask && "Starting a process with an affinity mask is "
-                          "currently not supported on Unix!");
 
   BumpPtrAllocator Allocator;
   StringSaver Saver(Allocator);
@@ -214,7 +213,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program,
       std::string *RedirectsStr[3] = {nullptr, nullptr, nullptr};
       for (int I = 0; I < 3; ++I) {
         if (Redirects[I]) {
-          RedirectsStorage[I] = std::string(*Redirects[I]);
+          RedirectsStorage[I] = *Redirects[I];
           RedirectsStr[I] = &RedirectsStorage[I];
         }
       }
@@ -261,7 +260,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program,
       posix_spawn_file_actions_destroy(FileActions);
 
     if (Err)
-      return !MakeErrMsg(ErrMsg, "posix_spawn failed", Err);
+     return !MakeErrMsg(ErrMsg, "posix_spawn failed", Err);
 
     PI.Pid = PID;
     PI.Process = PID;
@@ -273,62 +272,56 @@ static bool Execute(ProcessInfo &PI, StringRef Program,
   // Create a child process.
   int child = fork();
   switch (child) {
-  // An error occurred:  Return to the caller.
-  case -1:
-    MakeErrMsg(ErrMsg, "Couldn't fork");
-    return false;
+    // An error occurred:  Return to the caller.
+    case -1:
+      MakeErrMsg(ErrMsg, "Couldn't fork");
+      return false;
 
-  // Child process: Execute the program.
-  case 0: {
-    // Redirect file descriptors...
-    if (!Redirects.empty()) {
-      // Redirect stdin
-      if (RedirectIO(Redirects[0], 0, ErrMsg)) {
-        return false;
-      }
-      // Redirect stdout
-      if (RedirectIO(Redirects[1], 1, ErrMsg)) {
-        return false;
-      }
-      if (Redirects[1] && Redirects[2] && *Redirects[1] == *Redirects[2]) {
-        // If stdout and stderr should go to the same place, redirect stderr
-        // to the FD already open for stdout.
-        if (-1 == dup2(1, 2)) {
-          MakeErrMsg(ErrMsg, "Can't redirect stderr to stdout");
-          return false;
-        }
-      } else {
-        // Just redirect stderr
-        if (RedirectIO(Redirects[2], 2, ErrMsg)) {
-          return false;
+    // Child process: Execute the program.
+    case 0: {
+      // Redirect file descriptors...
+      if (!Redirects.empty()) {
+        // Redirect stdin
+        if (RedirectIO(Redirects[0], 0, ErrMsg)) { return false; }
+        // Redirect stdout
+        if (RedirectIO(Redirects[1], 1, ErrMsg)) { return false; }
+        if (Redirects[1] && Redirects[2] && *Redirects[1] == *Redirects[2]) {
+          // If stdout and stderr should go to the same place, redirect stderr
+          // to the FD already open for stdout.
+          if (-1 == dup2(1,2)) {
+            MakeErrMsg(ErrMsg, "Can't redirect stderr to stdout");
+            return false;
+          }
+        } else {
+          // Just redirect stderr
+          if (RedirectIO(Redirects[2], 2, ErrMsg)) { return false; }
         }
       }
+
+      // Set memory limits
+      if (MemoryLimit!=0) {
+        SetMemoryLimits(MemoryLimit);
+      }
+
+      // Execute!
+      std::string PathStr = Program;
+      if (Envp != nullptr)
+        execve(PathStr.c_str(), const_cast<char **>(Argv),
+               const_cast<char **>(Envp));
+      else
+        execv(PathStr.c_str(), const_cast<char **>(Argv));
+      // If the execve() failed, we should exit. Follow Unix protocol and
+      // return 127 if the executable was not found, and 126 otherwise.
+      // Use _exit rather than exit so that atexit functions and static
+      // object destructors cloned from the parent process aren't
+      // redundantly run, and so that any data buffered in stdio buffers
+      // cloned from the parent aren't redundantly written out.
+      _exit(errno == ENOENT ? 127 : 126);
     }
 
-    // Set memory limits
-    if (MemoryLimit != 0) {
-      SetMemoryLimits(MemoryLimit);
-    }
-
-    // Execute!
-    std::string PathStr = std::string(Program);
-    if (Envp != nullptr)
-      execve(PathStr.c_str(), const_cast<char **>(Argv),
-             const_cast<char **>(Envp));
-    else
-      execv(PathStr.c_str(), const_cast<char **>(Argv));
-    // If the execve() failed, we should exit. Follow Unix protocol and
-    // return 127 if the executable was not found, and 126 otherwise.
-    // Use _exit rather than exit so that atexit functions and static
-    // object destructors cloned from the parent process aren't
-    // redundantly run, and so that any data buffered in stdio buffers
-    // cloned from the parent aren't redundantly written out.
-    _exit(errno == ENOENT ? 127 : 126);
-  }
-
-  // Parent process: Break out of the switch to do our processing.
-  default:
-    break;
+    // Parent process: Break out of the switch to do our processing.
+    default:
+      break;
   }
 
   PI.Pid = child;
@@ -338,68 +331,17 @@ static bool Execute(ProcessInfo &PI, StringRef Program,
 }
 
 namespace llvm {
-namespace sys {
 
-#ifndef _AIX
-using ::wait4;
-#else
-static pid_t(wait4)(pid_t pid, int *status, int options, struct rusage *usage);
-#endif
-
-} // namespace sys
-} // namespace llvm
-
-#ifdef _AIX
-#ifndef _ALL_SOURCE
-extern "C" pid_t(wait4)(pid_t pid, int *status, int options,
-                        struct rusage *usage);
-#endif
-pid_t(llvm::sys::wait4)(pid_t pid, int *status, int options,
-                        struct rusage *usage) {
-  assert(pid > 0 && "Only expecting to handle actual PID values!");
-  assert((options & ~WNOHANG) == 0 && "Expecting WNOHANG at most!");
-  assert(usage && "Expecting usage collection!");
-
-  // AIX wait4 does not work well with WNOHANG.
-  if (!(options & WNOHANG))
-    return ::wait4(pid, status, options, usage);
-
-  // For WNOHANG, we use waitid (which supports WNOWAIT) until the child process
-  // has terminated.
-  siginfo_t WaitIdInfo;
-  WaitIdInfo.si_pid = 0;
-  int WaitIdRetVal =
-      waitid(P_PID, pid, &WaitIdInfo, WNOWAIT | WEXITED | options);
-
-  if (WaitIdRetVal == -1 || WaitIdInfo.si_pid == 0)
-    return WaitIdRetVal;
-
-  assert(WaitIdInfo.si_pid == pid);
-
-  // The child has already terminated, so a blocking wait on it is okay in the
-  // absence of indiscriminate `wait` calls from the current process (which
-  // would cause the call here to fail with ECHILD).
-  return ::wait4(pid, status, options & ~WNOHANG, usage);
-}
-#endif
-
-ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
-                            std::optional<unsigned> SecondsToWait,
-                            std::string *ErrMsg,
-                            std::optional<ProcessStatistics> *ProcStat,
-                            bool Polling) {
+ProcessInfo sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
+                      bool WaitUntilTerminates, std::string *ErrMsg) {
   struct sigaction Act, Old;
   assert(PI.Pid && "invalid pid to wait on, process not started?");
 
   int WaitPidOptions = 0;
   pid_t ChildPid = PI.Pid;
-  bool WaitUntilTerminates = false;
-  if (!SecondsToWait) {
-    WaitUntilTerminates = true;
-  } else {
-    if (*SecondsToWait == 0)
-      WaitPidOptions = WNOHANG;
-
+  if (WaitUntilTerminates) {
+    SecondsToWait = 0;
+  } else if (SecondsToWait) {
     // Install a timeout handler.  The handler itself does nothing, but the
     // simple fact of having a handler at all causes the wait below to return
     // with EINTR, unlike if we used SIG_IGN.
@@ -407,19 +349,16 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
     Act.sa_handler = TimeOutHandler;
     sigemptyset(&Act.sa_mask);
     sigaction(SIGALRM, &Act, &Old);
-    // FIXME The alarm signal may be delivered to another thread.
-    alarm(*SecondsToWait);
-  }
+    alarm(SecondsToWait);
+  } else if (SecondsToWait == 0)
+    WaitPidOptions = WNOHANG;
 
   // Parent process: Wait for the child process to terminate.
-  int status = 0;
+  int status;
   ProcessInfo WaitResult;
-  rusage Info;
-  if (ProcStat)
-    ProcStat->reset();
 
   do {
-    WaitResult.Pid = sys::wait4(ChildPid, &status, WaitPidOptions, &Info);
+    WaitResult.Pid = waitpid(ChildPid, &status, WaitPidOptions);
   } while (WaitUntilTerminates && WaitResult.Pid == -1 && errno == EINTR);
 
   if (WaitResult.Pid != PI.Pid) {
@@ -427,7 +366,7 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
       // Non-blocking wait.
       return WaitResult;
     } else {
-      if (SecondsToWait && errno == EINTR && !Polling) {
+      if (SecondsToWait && errno == EINTR) {
         // Kill the child.
         kill(PI.Pid, SIGKILL);
 
@@ -436,8 +375,6 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
         sigaction(SIGALRM, &Old, nullptr);
 
         // Wait for child to die
-        // FIXME This could grab some other child process out from another
-        // waiting thread and then leave a zombie anyway.
         if (wait(&status) != ChildPid)
           MakeErrMsg(ErrMsg, "Child timed out but wouldn't die");
         else
@@ -457,16 +394,6 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
   if (SecondsToWait && !WaitUntilTerminates) {
     alarm(0);
     sigaction(SIGALRM, &Old, nullptr);
-  }
-
-  if (ProcStat) {
-    std::chrono::microseconds UserT = toDuration(Info.ru_utime);
-    std::chrono::microseconds KernelT = toDuration(Info.ru_stime);
-    uint64_t PeakMemory = 0;
-#ifndef __HAIKU__
-    PeakMemory = static_cast<uint64_t>(Info.ru_maxrss);
-#endif
-    *ProcStat = ProcessStatistics{UserT + KernelT, UserT, PeakMemory};
   }
 
   // Return the proper exit status. Detect error conditions
@@ -503,24 +430,12 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
   return WaitResult;
 }
 
-std::error_code llvm::sys::ChangeStdinMode(fs::OpenFlags Flags) {
-  if (!(Flags & fs::OF_Text))
-    return ChangeStdinToBinary();
-  return std::error_code();
-}
-
-std::error_code llvm::sys::ChangeStdoutMode(fs::OpenFlags Flags) {
-  if (!(Flags & fs::OF_Text))
-    return ChangeStdoutToBinary();
-  return std::error_code();
-}
-
-std::error_code llvm::sys::ChangeStdinToBinary() {
+std::error_code sys::ChangeStdinToBinary() {
   // Do nothing, as Unix doesn't differentiate between text and binary.
   return std::error_code();
 }
 
-std::error_code llvm::sys::ChangeStdoutToBinary() {
+std::error_code sys::ChangeStdoutToBinary() {
   // Do nothing, as Unix doesn't differentiate between text and binary.
   return std::error_code();
 }
@@ -529,8 +444,7 @@ std::error_code
 llvm::sys::writeFileWithEncoding(StringRef FileName, StringRef Contents,
                                  WindowsEncodingMethod Encoding /*unused*/) {
   std::error_code EC;
-  llvm::raw_fd_ostream OS(FileName, EC,
-                          llvm::sys::fs::OpenFlags::OF_TextWithCRLF);
+  llvm::raw_fd_ostream OS(FileName, EC, llvm::sys::fs::OpenFlags::OF_Text);
 
   if (EC)
     return EC;
@@ -582,4 +496,5 @@ bool llvm::sys::commandLineFitsWithinSystemLimits(StringRef Program,
   }
 
   return true;
+}
 }

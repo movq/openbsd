@@ -10,21 +10,16 @@
 #define LLVM_CODEGEN_SWITCHLOWERINGUTILS_H
 
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
-#include "llvm/IR/InstrTypes.h"
+#include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/Support/BranchProbability.h"
-#include <vector>
 
 namespace llvm {
 
-class BlockFrequencyInfo;
-class ConstantInt;
 class FunctionLoweringInfo;
 class MachineBasicBlock;
-class ProfileSummaryInfo;
-class TargetLowering;
-class TargetMachine;
+class BlockFrequencyInfo;
 
 namespace SwitchCG {
 
@@ -183,12 +178,12 @@ struct JumpTableHeader {
   const Value *SValue;
   MachineBasicBlock *HeaderBB;
   bool Emitted;
-  bool FallthroughUnreachable = false;
+  bool OmitRangeCheck;
 
   JumpTableHeader(APInt F, APInt L, const Value *SV, MachineBasicBlock *H,
                   bool E = false)
       : First(std::move(F)), Last(std::move(L)), SValue(SV), HeaderBB(H),
-        Emitted(E) {}
+        Emitted(E), OmitRangeCheck(false) {}
 };
 using JumpTableBlock = std::pair<JumpTableHeader, JumpTable>;
 
@@ -218,14 +213,14 @@ struct BitTestBlock {
   BitTestInfo Cases;
   BranchProbability Prob;
   BranchProbability DefaultProb;
-  bool FallthroughUnreachable = false;
+  bool OmitRangeCheck;
 
   BitTestBlock(APInt F, APInt R, const Value *SV, unsigned Rg, MVT RgVT, bool E,
                bool CR, MachineBasicBlock *P, MachineBasicBlock *D,
                BitTestInfo C, BranchProbability Pr)
       : First(std::move(F)), Range(std::move(R)), SValue(SV), Reg(Rg),
         RegVT(RgVT), Emitted(E), ContiguousRange(CR), Parent(P), Default(D),
-        Cases(std::move(C)), Prob(Pr) {}
+        Cases(std::move(C)), Prob(Pr), OmitRangeCheck(false) {}
 };
 
 /// Return the range of values within a range.

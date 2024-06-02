@@ -15,7 +15,6 @@
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include <optional>
 #include <type_traits>
 
 using namespace llvm;
@@ -75,7 +74,7 @@ int MCSchedModel::computeInstrLatency(const MCSubtargetInfo &STI,
 
   unsigned CPUID = getProcessorID();
   while (SCDesc->isVariant()) {
-    SchedClass = STI.resolveVariantSchedClass(SchedClass, &Inst, &MCII, CPUID);
+    SchedClass = STI.resolveVariantSchedClass(SchedClass, &Inst, CPUID);
     SCDesc = getSchedClassDesc(SchedClass);
   }
 
@@ -88,7 +87,7 @@ int MCSchedModel::computeInstrLatency(const MCSubtargetInfo &STI,
 double
 MCSchedModel::getReciprocalThroughput(const MCSubtargetInfo &STI,
                                       const MCSchedClassDesc &SCDesc) {
-  std::optional<double> Throughput;
+  Optional<double> Throughput;
   const MCSchedModel &SM = STI.getSchedModel();
   const MCWriteProcResEntry *I = STI.getWriteProcResBegin(&SCDesc);
   const MCWriteProcResEntry *E = STI.getWriteProcResEnd(&SCDesc);
@@ -97,10 +96,10 @@ MCSchedModel::getReciprocalThroughput(const MCSubtargetInfo &STI,
       continue;
     unsigned NumUnits = SM.getProcResource(I->ProcResourceIdx)->NumUnits;
     double Temp = NumUnits * 1.0 / I->Cycles;
-    Throughput = Throughput ? std::min(*Throughput, Temp) : Temp;
+    Throughput = Throughput ? std::min(Throughput.getValue(), Temp) : Temp;
   }
-  if (Throughput)
-    return 1.0 / *Throughput;
+  if (Throughput.hasValue())
+    return 1.0 / Throughput.getValue();
 
   // If no throughput value was calculated, assume that we can execute at the
   // maximum issue width scaled by number of micro-ops for the schedule class.
@@ -121,7 +120,7 @@ MCSchedModel::getReciprocalThroughput(const MCSubtargetInfo &STI,
 
   unsigned CPUID = getProcessorID();
   while (SCDesc->isVariant()) {
-    SchedClass = STI.resolveVariantSchedClass(SchedClass, &Inst, &MCII, CPUID);
+    SchedClass = STI.resolveVariantSchedClass(SchedClass, &Inst, CPUID);
     SCDesc = getSchedClassDesc(SchedClass);
   }
 
@@ -134,17 +133,17 @@ MCSchedModel::getReciprocalThroughput(const MCSubtargetInfo &STI,
 double
 MCSchedModel::getReciprocalThroughput(unsigned SchedClass,
                                       const InstrItineraryData &IID) {
-  std::optional<double> Throughput;
+  Optional<double> Throughput;
   const InstrStage *I = IID.beginStage(SchedClass);
   const InstrStage *E = IID.endStage(SchedClass);
   for (; I != E; ++I) {
     if (!I->getCycles())
       continue;
-    double Temp = llvm::popcount(I->getUnits()) * 1.0 / I->getCycles();
-    Throughput = Throughput ? std::min(*Throughput, Temp) : Temp;
+    double Temp = countPopulation(I->getUnits()) * 1.0 / I->getCycles();
+    Throughput = Throughput ? std::min(Throughput.getValue(), Temp) : Temp;
   }
-  if (Throughput)
-    return 1.0 / *Throughput;
+  if (Throughput.hasValue())
+    return 1.0 / Throughput.getValue();
 
   // If there are no execution resources specified for this class, then assume
   // that it can execute at the maximum default issue width.

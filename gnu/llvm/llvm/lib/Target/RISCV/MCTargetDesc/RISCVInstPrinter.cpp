@@ -11,8 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "RISCVInstPrinter.h"
-#include "RISCVBaseInfo.h"
-#include "RISCVMCExpr.h"
+#include "MCTargetDesc/RISCVMCExpr.h"
+#include "Utils/RISCVBaseInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -30,16 +30,20 @@ using namespace llvm;
 #define PRINT_ALIAS_INSTR
 #include "RISCVGenAsmWriter.inc"
 
+// Include the auto-generated portion of the compress emitter.
+#define GEN_UNCOMPRESS_INSTR
+#include "RISCVGenCompressInstEmitter.inc"
+
 static cl::opt<bool>
     NoAliases("riscv-no-aliases",
               cl::desc("Disable the emission of assembler pseudo instructions"),
               cl::init(false), cl::Hidden);
 
-// Print architectural register names rather than the ABI names (such as x2
-// instead of sp).
-// TODO: Make RISCVInstPrinter::getRegisterName non-static so that this can a
-// member.
-static bool ArchRegNames;
+static cl::opt<bool>
+    ArchRegNames("riscv-arch-reg-names",
+                 cl::desc("Print architectural register names rather than the "
+                          "ABI names (such as x2 instead of sp)"),
+                 cl::init(false), cl::Hidden);
 
 // The command-line flags above are used by llvm-mc and llc. They can be used by
 // `llvm-objdump`, but we override their values here to handle options passed to
@@ -48,7 +52,7 @@ static bool ArchRegNames;
 // this way.
 bool RISCVInstPrinter::applyTargetSpecificCLOption(StringRef Opt) {
   if (Opt == "no-aliases") {
-    PrintAliases = false;
+    NoAliases = true;
     return true;
   }
   if (Opt == "numeric") {
@@ -65,23 +69,23 @@ void RISCVInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   bool Res = false;
   const MCInst *NewMI = MI;
   MCInst UncompressedMI;
-  if (PrintAliases && !NoAliases)
-    Res = RISCVRVC::uncompress(UncompressedMI, *MI, STI);
+  if (!NoAliases)
+    Res = uncompressInst(UncompressedMI, *MI, MRI, STI);
   if (Res)
     NewMI = const_cast<MCInst *>(&UncompressedMI);
-  if (!PrintAliases || NoAliases || !printAliasInstr(NewMI, Address, STI, O))
+  if (NoAliases || !printAliasInstr(NewMI, STI, O))
     printInstruction(NewMI, Address, STI, O);
   printAnnotation(O, Annot);
 }
 
-void RISCVInstPrinter::printRegName(raw_ostream &O, MCRegister Reg) const {
-  O << getRegisterName(Reg);
+void RISCVInstPrinter::printRegName(raw_ostream &O, unsigned RegNo) const {
+  O << getRegisterName(RegNo);
 }
 
 void RISCVInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
                                     const MCSubtargetInfo &STI, raw_ostream &O,
                                     const char *Modifier) {
-  assert((Modifier == nullptr || Modifier[0] == 0) && "No modifiers supported");
+  assert((Modifier == 0 || Modifier[0] == 0) && "No modifiers supported");
   const MCOperand &MO = MI->getOperand(OpNo);
 
   if (MO.isReg()) {
@@ -96,24 +100,6 @@ void RISCVInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
 
   assert(MO.isExpr() && "Unknown operand kind in printOperand");
   MO.getExpr()->print(O, &MAI);
-}
-
-void RISCVInstPrinter::printBranchOperand(const MCInst *MI, uint64_t Address,
-                                          unsigned OpNo,
-                                          const MCSubtargetInfo &STI,
-                                          raw_ostream &O) {
-  const MCOperand &MO = MI->getOperand(OpNo);
-  if (!MO.isImm())
-    return printOperand(MI, OpNo, STI, O);
-
-  if (PrintBranchImmAsAddress) {
-    uint64_t Target = Address + MO.getImm();
-    if (!STI.hasFeature(RISCV::Feature64Bit))
-      Target &= 0xffffffff;
-    O << formatHex(Target);
-  } else {
-    O << MO.getImm();
-  }
 }
 
 void RISCVInstPrinter::printCSRSystemRegister(const MCInst *MI, unsigned OpNo,
@@ -142,7 +128,7 @@ void RISCVInstPrinter::printFenceArg(const MCInst *MI, unsigned OpNo,
   if ((FenceArg & RISCVFenceField::W) != 0)
     O << 'w';
   if (FenceArg == 0)
-    O << "0";
+    O << "unknown";
 }
 
 void RISCVInstPrinter::printFRMArg(const MCInst *MI, unsigned OpNo,
@@ -152,45 +138,19 @@ void RISCVInstPrinter::printFRMArg(const MCInst *MI, unsigned OpNo,
   O << RISCVFPRndMode::roundingModeToString(FRMArg);
 }
 
-void RISCVInstPrinter::printZeroOffsetMemOp(const MCInst *MI, unsigned OpNo,
-                                            const MCSubtargetInfo &STI,
-                                            raw_ostream &O) {
+void RISCVInstPrinter::printAtomicMemOp(const MCInst *MI, unsigned OpNo,
+                                        const MCSubtargetInfo &STI,
+                                        raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
 
-  assert(MO.isReg() && "printZeroOffsetMemOp can only print register operands");
+  assert(MO.isReg() && "printAtomicMemOp can only print register operands");
   O << "(";
   printRegName(O, MO.getReg());
   O << ")";
+  return;
 }
 
-void RISCVInstPrinter::printVTypeI(const MCInst *MI, unsigned OpNo,
-                                   const MCSubtargetInfo &STI, raw_ostream &O) {
-  unsigned Imm = MI->getOperand(OpNo).getImm();
-  // Print the raw immediate for reserved values: vlmul[2:0]=4, vsew[2:0]=0b1xx,
-  // or non-zero in bits 8 and above.
-  if (RISCVVType::getVLMUL(Imm) == RISCVII::VLMUL::LMUL_RESERVED ||
-      RISCVVType::getSEW(Imm) > 64 || (Imm >> 8) != 0) {
-    O << Imm;
-    return;
-  }
-  // Print the text form.
-  RISCVVType::printVType(Imm, O);
-}
-
-void RISCVInstPrinter::printVMaskReg(const MCInst *MI, unsigned OpNo,
-                                     const MCSubtargetInfo &STI,
-                                     raw_ostream &O) {
-  const MCOperand &MO = MI->getOperand(OpNo);
-
-  assert(MO.isReg() && "printVMaskReg can only print register operands");
-  if (MO.getReg() == RISCV::NoRegister)
-    return;
-  O << ", ";
-  printRegName(O, MO.getReg());
-  O << ".t";
-}
-
-const char *RISCVInstPrinter::getRegisterName(MCRegister Reg) {
-  return getRegisterName(Reg, ArchRegNames ? RISCV::NoRegAltName
-                                           : RISCV::ABIRegAltName);
+const char *RISCVInstPrinter::getRegisterName(unsigned RegNo) {
+  return getRegisterName(RegNo, ArchRegNames ? RISCV::NoRegAltName
+                                             : RISCV::ABIRegAltName);
 }

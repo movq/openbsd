@@ -6,16 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFO_CODEVIEW_DEBUGSUBSECTION_H
-#define LLVM_DEBUGINFO_CODEVIEW_DEBUGSUBSECTION_H
+#ifndef LLVM_DEBUGINFO_CODEVIEW_MODULEDEBUGFRAGMENT_H
+#define LLVM_DEBUGINFO_CODEVIEW_MODULEDEBUGFRAGMENT_H
 
 #include "llvm/DebugInfo/CodeView/CodeView.h"
-#include "llvm/Support/Error.h"
-
-#include <cstdint>
+#include "llvm/Support/BinaryStreamWriter.h"
+#include "llvm/Support/Casting.h"
 
 namespace llvm {
-class BinaryStreamWriter;
 namespace codeview {
 
 class DebugSubsectionRef {
@@ -50,4 +48,4 @@ protected:
 } // namespace codeview
 } // namespace llvm
 
-#endif // LLVM_DEBUGINFO_CODEVIEW_DEBUGSUBSECTION_H
+#endif // LLVM_DEBUGINFO_CODEVIEW_MODULEDEBUGFRAGMENT_H

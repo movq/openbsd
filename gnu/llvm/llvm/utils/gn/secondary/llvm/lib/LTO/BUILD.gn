@@ -6,7 +6,6 @@ static_library("LTO") {
     "//llvm/lib/Bitcode/Reader",
     "//llvm/lib/Bitcode/Writer",
     "//llvm/lib/CodeGen",
-    "//llvm/lib/Extensions",
     "//llvm/lib/IR",
     "//llvm/lib/Linker",
     "//llvm/lib/MC",
@@ -14,7 +13,6 @@ static_library("LTO") {
     "//llvm/lib/Passes",
     "//llvm/lib/Support",
     "//llvm/lib/Target",
-    "//llvm/lib/TargetParser",
     "//llvm/lib/Transforms/AggressiveInstCombine",
     "//llvm/lib/Transforms/IPO",
     "//llvm/lib/Transforms/InstCombine",
@@ -23,6 +21,7 @@ static_library("LTO") {
     "//llvm/lib/Transforms/Utils",
   ]
   sources = [
+    "Caching.cpp",
     "LTO.cpp",
     "LTOBackend.cpp",
     "LTOCodeGenerator.cpp",

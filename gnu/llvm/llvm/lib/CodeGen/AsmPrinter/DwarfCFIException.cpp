@@ -11,26 +11,52 @@
 //===----------------------------------------------------------------------===//
 
 #include "DwarfException.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Mangler.h"
+#include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSymbol.h"
+#include "llvm/MC/MachineLocation.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormattedStream.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 using namespace llvm;
 
-DwarfCFIException::DwarfCFIException(AsmPrinter *A) : EHStreamer(A) {}
+DwarfCFIExceptionBase::DwarfCFIExceptionBase(AsmPrinter *A)
+    : EHStreamer(A), shouldEmitCFI(false), hasEmittedCFISections(false) {}
 
-DwarfCFIException::~DwarfCFIException() = default;
+void DwarfCFIExceptionBase::markFunctionEnd() {
+  endFragment();
 
-void DwarfCFIException::addPersonality(const GlobalValue *Personality) {
-  if (!llvm::is_contained(Personalities, Personality))
-    Personalities.push_back(Personality);
+  // Map all labels and get rid of any dead landing pads.
+  if (!Asm->MF->getLandingPads().empty()) {
+    MachineFunction *NonConstMF = const_cast<MachineFunction*>(Asm->MF);
+    NonConstMF->tidyLandingPads();
+  }
 }
+
+void DwarfCFIExceptionBase::endFragment() {
+  if (shouldEmitCFI)
+    Asm->OutStreamer->EmitCFIEndProc();
+}
+
+DwarfCFIException::DwarfCFIException(AsmPrinter *A)
+    : DwarfCFIExceptionBase(A), shouldEmitPersonality(false),
+      forceEmitPersonality(false), shouldEmitLSDA(false),
+      shouldEmitMoves(false) {}
+
+DwarfCFIException::~DwarfCFIException() {}
 
 /// endModule - Emit all exception information that should come after the
 /// content.
@@ -46,30 +72,36 @@ void DwarfCFIException::endModule() {
   if ((PerEncoding & 0x80) != dwarf::DW_EH_PE_indirect)
     return;
 
-  // Emit indirect reference table for all used personality functions
-  for (const GlobalValue *Personality : Personalities) {
+  // Emit references to all used personality functions
+  for (const Function *Personality : MMI->getPersonalities()) {
+    if (!Personality)
+      continue;
     MCSymbol *Sym = Asm->getSymbol(Personality);
     TLOF.emitPersonalityValue(*Asm->OutStreamer, Asm->getDataLayout(), Sym);
   }
-  Personalities.clear();
+}
+
+static MCSymbol *getExceptionSym(AsmPrinter *Asm) {
+  return Asm->getCurExceptionSym();
 }
 
 void DwarfCFIException::beginFunction(const MachineFunction *MF) {
-  shouldEmitPersonality = shouldEmitLSDA = false;
+  shouldEmitMoves = shouldEmitPersonality = shouldEmitLSDA = false;
   const Function &F = MF->getFunction();
 
   // If any landing pads survive, we need an EH table.
   bool hasLandingPads = !MF->getLandingPads().empty();
 
   // See if we need frame move info.
-  bool shouldEmitMoves =
-      Asm->getFunctionCFISectionType(*MF) != AsmPrinter::CFISection::None;
+  AsmPrinter::CFIMoveType MoveType = Asm->needsCFIMoves();
+
+  shouldEmitMoves = MoveType != AsmPrinter::CFI_M_None;
 
   const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
   unsigned PerEncoding = TLOF.getPersonalityEncoding();
-  const GlobalValue *Per = nullptr;
+  const Function *Per = nullptr;
   if (F.hasPersonalityFn())
-    Per = dyn_cast<GlobalValue>(F.getPersonalityFn()->stripPointerCasts());
+    Per = dyn_cast<Function>(F.getPersonalityFn()->stripPointerCasts());
 
   // Emit a personality function even when there are no landing pads
   forceEmitPersonality =
@@ -89,56 +121,47 @@ void DwarfCFIException::beginFunction(const MachineFunction *MF) {
   shouldEmitLSDA = shouldEmitPersonality &&
     LSDAEncoding != dwarf::DW_EH_PE_omit;
 
-  const MCAsmInfo &MAI = *MF->getMMI().getContext().getAsmInfo();
-  if (MAI.getExceptionHandlingType() != ExceptionHandling::None)
-    shouldEmitCFI =
-        MAI.usesCFIForEH() && (shouldEmitPersonality || shouldEmitMoves);
-  else
-    shouldEmitCFI = Asm->needsCFIForDebug() && shouldEmitMoves;
+  shouldEmitCFI = MF->getMMI().getContext().getAsmInfo()->usesCFIForEH() &&
+                  (shouldEmitPersonality || shouldEmitMoves);
+  beginFragment(&*MF->begin(), getExceptionSym);
 }
 
-void DwarfCFIException::beginBasicBlockSection(const MachineBasicBlock &MBB) {
+void DwarfCFIException::beginFragment(const MachineBasicBlock *MBB,
+                                      ExceptionSymbolProvider ESP) {
   if (!shouldEmitCFI)
     return;
 
   if (!hasEmittedCFISections) {
-    AsmPrinter::CFISection CFISecType = Asm->getModuleCFISectionType();
-    // If we don't say anything it implies `.cfi_sections .eh_frame`, so we
-    // chose not to be verbose in that case. And with `ForceDwarfFrameSection`,
-    // we should always emit .debug_frame.
-    if (CFISecType == AsmPrinter::CFISection::Debug ||
-        Asm->TM.Options.ForceDwarfFrameSection)
-      Asm->OutStreamer->emitCFISections(
-          CFISecType == AsmPrinter::CFISection::EH, true);
+    if (Asm->needsOnlyDebugCFIMoves())
+      Asm->OutStreamer->EmitCFISections(false, true);
+    else if (Asm->TM.Options.ForceDwarfFrameSection)
+      Asm->OutStreamer->EmitCFISections(true, true);
     hasEmittedCFISections = true;
   }
 
-  Asm->OutStreamer->emitCFIStartProc(/*IsSimple=*/false);
+  Asm->OutStreamer->EmitCFIStartProc(/*IsSimple=*/false);
 
   // Indicate personality routine, if any.
   if (!shouldEmitPersonality)
     return;
 
-  auto &F = MBB.getParent()->getFunction();
-  auto *P = dyn_cast<GlobalValue>(F.getPersonalityFn()->stripPointerCasts());
+  auto &F = MBB->getParent()->getFunction();
+  auto *P = dyn_cast<Function>(F.getPersonalityFn()->stripPointerCasts());
   assert(P && "Expected personality function");
-  // Record the personality function.
-  addPersonality(P);
+
+  // If we are forced to emit this personality, make sure to record
+  // it because it might not appear in any landingpad
+  if (forceEmitPersonality)
+    MMI->addPersonality(P);
 
   const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
   unsigned PerEncoding = TLOF.getPersonalityEncoding();
   const MCSymbol *Sym = TLOF.getCFIPersonalitySymbol(P, Asm->TM, MMI);
-  Asm->OutStreamer->emitCFIPersonality(Sym, PerEncoding);
+  Asm->OutStreamer->EmitCFIPersonality(Sym, PerEncoding);
 
   // Provide LSDA information.
   if (shouldEmitLSDA)
-    Asm->OutStreamer->emitCFILsda(Asm->getMBBExceptionSym(MBB),
-                                  TLOF.getLSDAEncoding());
-}
-
-void DwarfCFIException::endBasicBlockSection(const MachineBasicBlock &MBB) {
-  if (shouldEmitCFI)
-    Asm->OutStreamer->emitCFIEndProc();
+    Asm->OutStreamer->EmitCFILsda(ESP(Asm), TLOF.getLSDAEncoding());
 }
 
 /// endFunction - Gather and emit post-function exception information.

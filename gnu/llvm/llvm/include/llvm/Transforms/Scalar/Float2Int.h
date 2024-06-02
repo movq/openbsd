@@ -16,18 +16,12 @@
 
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/MapVector.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/IR/ConstantRange.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/PassManager.h"
 
 namespace llvm {
-class DominatorTree;
-class Function;
-class Instruction;
-class LLVMContext;
-class Type;
-class Value;
-
 class Float2IntPass : public PassInfoMixin<Float2IntPass> {
 public:
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
@@ -36,20 +30,20 @@ public:
   bool runImpl(Function &F, const DominatorTree &DT);
 
 private:
-  void findRoots(Function &F, const DominatorTree &DT);
+  void findRoots(Function &F, const DominatorTree &DT,
+                 SmallPtrSet<Instruction *, 8> &Roots);
   void seen(Instruction *I, ConstantRange R);
   ConstantRange badRange();
   ConstantRange unknownRange();
   ConstantRange validateRange(ConstantRange R);
-  std::optional<ConstantRange> calcRange(Instruction *I);
-  void walkBackwards();
+  void walkBackwards(const SmallPtrSetImpl<Instruction *> &Roots);
   void walkForwards();
   bool validateAndTransform();
   Value *convert(Instruction *I, Type *ToTy);
   void cleanup();
 
   MapVector<Instruction *, ConstantRange> SeenInsts;
-  SmallSetVector<Instruction *, 8> Roots;
+  SmallPtrSet<Instruction *, 8> Roots;
   EquivalenceClasses<Instruction *> ECs;
   MapVector<Instruction *, Value *> ConvertedInsts;
   LLVMContext *Ctx;

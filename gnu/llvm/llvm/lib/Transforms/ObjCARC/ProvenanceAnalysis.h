@@ -26,13 +26,13 @@
 #define LLVM_LIB_TRANSFORMS_OBJCARC_PROVENANCEANALYSIS_H
 
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/IR/PassManager.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/IR/ValueHandle.h"
 #include <utility>
 
 namespace llvm {
 
-class AAResults;
+class DataLayout;
 class PHINode;
 class SelectInst;
 class Value;
@@ -49,17 +49,16 @@ namespace objcarc {
 /// not two pointers have the same provenance source and thus could
 /// potentially be related.
 class ProvenanceAnalysis {
-  AAResults *AA;
+  AliasAnalysis *AA;
 
   using ValuePairTy = std::pair<const Value *, const Value *>;
   using CachedResultsTy = DenseMap<ValuePairTy, bool>;
 
   CachedResultsTy CachedResults;
 
-  DenseMap<const Value *, std::pair<WeakVH, WeakTrackingVH>>
-      UnderlyingObjCPtrCache;
+  DenseMap<const Value *, WeakTrackingVH> UnderlyingObjCPtrCache;
 
-  bool relatedCheck(const Value *A, const Value *B);
+  bool relatedCheck(const Value *A, const Value *B, const DataLayout &DL);
   bool relatedSelect(const SelectInst *A, const Value *B);
   bool relatedPHI(const PHINode *A, const Value *B);
 
@@ -68,11 +67,11 @@ public:
   ProvenanceAnalysis(const ProvenanceAnalysis &) = delete;
   ProvenanceAnalysis &operator=(const ProvenanceAnalysis &) = delete;
 
-  void setAA(AAResults *aa) { AA = aa; }
+  void setAA(AliasAnalysis *aa) { AA = aa; }
 
-  AAResults *getAA() const { return AA; }
+  AliasAnalysis *getAA() const { return AA; }
 
-  bool related(const Value *A, const Value *B);
+  bool related(const Value *A, const Value *B, const DataLayout &DL);
 
   void clear() {
     CachedResults.clear();

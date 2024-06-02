@@ -9,9 +9,13 @@
 #ifndef LLVM_DEBUGINFO_CODEVIEW_CODEVIEWRECORDIO_H
 #define LLVM_DEBUGINFO_CODEVIEW_CODEVIEWRECORDIO_H
 
+#include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
+#include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/BinaryStreamWriter.h"
 #include "llvm/Support/Error.h"
@@ -21,18 +25,13 @@
 
 namespace llvm {
 
-template <typename T> class ArrayRef;
-class APSInt;
-
 namespace codeview {
-class TypeIndex;
-struct GUID;
 
 class CodeViewRecordStreamer {
 public:
-  virtual void emitBytes(StringRef Data) = 0;
-  virtual void emitIntValue(uint64_t Value, unsigned Size) = 0;
-  virtual void emitBinaryData(StringRef Data) = 0;
+  virtual void EmitBytes(StringRef Data) = 0;
+  virtual void EmitIntValue(uint64_t Value, unsigned Size) = 0;
+  virtual void EmitBinaryData(StringRef Data) = 0;
   virtual void AddComment(const Twine &T) = 0;
   virtual void AddRawComment(const Twine &T) = 0;
   virtual bool isVerboseAsm() = 0;
@@ -61,7 +60,7 @@ public:
   explicit CodeViewRecordIO(CodeViewRecordStreamer &Streamer)
       : Streamer(&Streamer) {}
 
-  Error beginRecord(std::optional<uint32_t> MaxLength);
+  Error beginRecord(Optional<uint32_t> MaxLength);
   Error endRecord();
 
   Error mapInteger(TypeIndex &TypeInd, const Twine &Comment = "");
@@ -82,7 +81,7 @@ public:
     if (isStreaming()) {
       StringRef BytesSR =
           StringRef((reinterpret_cast<const char *>(&Value)), sizeof(Value));
-      Streamer->emitBytes(BytesSR);
+      Streamer->EmitBytes(BytesSR);
       incrStreamedLen(sizeof(T));
       return Error::success();
     }
@@ -100,7 +99,7 @@ public:
   template <typename T> Error mapInteger(T &Value, const Twine &Comment = "") {
     if (isStreaming()) {
       emitComment(Comment);
-      Streamer->emitIntValue((int)Value, sizeof(T));
+      Streamer->EmitIntValue((int)Value, sizeof(T));
       incrStreamedLen(sizeof(T));
       return Error::success();
     }
@@ -115,7 +114,7 @@ public:
     if (!isStreaming() && sizeof(Value) > maxFieldLength())
       return make_error<CodeViewError>(cv_error_code::insufficient_buffer);
 
-    using U = std::underlying_type_t<T>;
+    using U = typename std::underlying_type<T>::type;
     U X;
 
     if (isWriting() || isStreaming())
@@ -146,7 +145,7 @@ public:
     if (isStreaming()) {
       Size = static_cast<SizeType>(Items.size());
       emitComment(Comment);
-      Streamer->emitIntValue(Size, sizeof(Size));
+      Streamer->EmitIntValue(Size, sizeof(Size));
       incrStreamedLen(sizeof(Size)); // add 1 for the delimiter
 
       for (auto &X : Items) {
@@ -243,11 +242,11 @@ private:
 
   struct RecordLimit {
     uint32_t BeginOffset;
-    std::optional<uint32_t> MaxLength;
+    Optional<uint32_t> MaxLength;
 
-    std::optional<uint32_t> bytesRemaining(uint32_t CurrentOffset) const {
-      if (!MaxLength)
-        return std::nullopt;
+    Optional<uint32_t> bytesRemaining(uint32_t CurrentOffset) const {
+      if (!MaxLength.hasValue())
+        return None;
       assert(CurrentOffset >= BeginOffset);
 
       uint32_t BytesUsed = CurrentOffset - BeginOffset;

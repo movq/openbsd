@@ -11,17 +11,6 @@ add_llvm_component_library(LLVMAArch64Desc
   AArch64TargetStreamer.cpp
   AArch64WinCOFFObjectWriter.cpp
   AArch64WinCOFFStreamer.cpp
-
-  LINK_COMPONENTS
-  AArch64Info
-  AArch64Utils
-  MC
-  BinaryFormat
-  Support
-  TargetParser
-
-  ADD_TO_COMPONENT
-  AArch64
 )
 add_dependencies(LLVMAArch64Desc AArch64CommonTableGen)
 

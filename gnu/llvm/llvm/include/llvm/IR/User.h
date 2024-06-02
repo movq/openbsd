@@ -45,7 +45,7 @@ class User : public Value {
   template <unsigned>
   friend struct HungoffOperandTraits;
 
-  LLVM_ATTRIBUTE_ALWAYS_INLINE static void *
+  LLVM_ATTRIBUTE_ALWAYS_INLINE inline static void *
   allocateFixedOperandUser(size_t, unsigned, unsigned);
 
 protected:
@@ -218,11 +218,6 @@ public:
     NumUserOperands = NumOps;
   }
 
-  /// A droppable user is a user for which uses can be dropped without affecting
-  /// correctness and should be dropped rather than preventing a transformation
-  /// from happening.
-  bool isDroppable() const;
-
   // ---------------------------------------------------------------------------
   // Operand Iterator interface...
   //
@@ -304,8 +299,8 @@ public:
   /// Replace uses of one Value with another.
   ///
   /// Replaces all references to the "From" definition with references to the
-  /// "To" definition. Returns whether any uses were replaced.
-  bool replaceUsesOfWith(Value *From, Value *To);
+  /// "To" definition.
+  void replaceUsesOfWith(Value *From, Value *To);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static bool classof(const Value *V) {

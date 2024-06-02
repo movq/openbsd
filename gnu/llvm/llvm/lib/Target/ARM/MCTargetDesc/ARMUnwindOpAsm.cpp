@@ -64,11 +64,8 @@ namespace {
 } // end anonymous namespace
 
 void UnwindOpcodeAssembler::EmitRegSave(uint32_t RegSave) {
-  if (RegSave == 0u) {
-    // That's the special case for RA PAC.
-    EmitInt8(ARM::EHABI::UNWIND_OPCODE_POP_RA_AUTH_CODE);
+  if (RegSave == 0u)
     return;
-  }
 
   // One byte opcode to save register r14 and r11-r4
   if (RegSave & (1u << 4)) {
@@ -110,7 +107,7 @@ void UnwindOpcodeAssembler::EmitVFPRegSave(uint32_t VFPRegSave) {
   for (uint32_t Regs : {VFPRegSave & 0xffff0000u, VFPRegSave & 0x0000ffffu}) {
     while (Regs) {
       // Now look for a run of set bits. Remember the MSB and LSB of the run.
-      auto RangeMSB = llvm::bit_width(Regs);
+      auto RangeMSB = 32 - countLeadingZeros(Regs);
       auto RangeLen = countLeadingOnes(Regs << (32 - RangeMSB));
       auto RangeLSB = RangeMSB - RangeLen;
 
@@ -137,7 +134,7 @@ void UnwindOpcodeAssembler::EmitSPOffset(int64_t Offset) {
     uint8_t Buff[16];
     Buff[0] = ARM::EHABI::UNWIND_OPCODE_INC_VSP_ULEB128;
     size_t ULEBSize = encodeULEB128((Offset - 0x204) >> 2, Buff + 1);
-    emitBytes(Buff, ULEBSize + 1);
+    EmitBytes(Buff, ULEBSize + 1);
   } else if (Offset > 0) {
     if (Offset > 0x100) {
       EmitInt8(ARM::EHABI::UNWIND_OPCODE_INC_VSP | 0x3fu);

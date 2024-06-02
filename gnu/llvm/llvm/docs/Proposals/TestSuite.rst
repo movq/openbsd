@@ -1,5 +1,5 @@
 =====================
-Test-Suite Extensions
+Test-Suite Extentions
 =====================
 
 .. contents::
@@ -191,7 +191,7 @@ CORAL-2 Benchmarks
 ------------------
 https://asc.llnl.gov/coral-2-benchmarks/
 
-Many of its programs have already been integrated in
+Many of its programs have already been integreated in
 MultiSource/Benchmarks/DOE-ProxyApps-C and
 MultiSource/Benchmarks/DOE-ProxyApps-C++.
 
@@ -219,7 +219,7 @@ http://www.nwchem-sw.org/index.php/Benchmarks
 
 TVM
 ----
-https://github.com/dmlc/tvm/tree/main/apps/benchmark
+https://github.com/dmlc/tvm/tree/master/apps/benchmark
 
 HydroBench
 ----------
@@ -227,7 +227,7 @@ https://github.com/HydroBench/Hydro
 
 ParRes
 ------
-https://github.com/ParRes/Kernels/tree/default/Cxx11
+https://github.com/ParRes/Kernels/tree/master/Cxx11
 
 Applications/Libraries
 ======================

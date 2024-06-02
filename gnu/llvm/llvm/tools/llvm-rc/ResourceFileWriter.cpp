@@ -11,11 +11,11 @@
 //===---------------------------------------------------------------------===//
 
 #include "ResourceFileWriter.h"
+
 #include "llvm/Object/WindowsResource.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/EndianStream.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
@@ -99,7 +99,7 @@ static bool stripQuotes(StringRef &Str, bool &IsLongString) {
     return false;
 
   // Just take the contents of the string, checking if it's been marked long.
-  IsLongString = Str.startswith_insensitive("L");
+  IsLongString = Str.startswith_lower("L");
   if (IsLongString)
     Str = Str.drop_front();
 
@@ -138,8 +138,7 @@ enum class NullHandlingMethod {
 };
 
 // Parses an identifier or string and returns a processed version of it:
-//   * Strip the string boundary quotes.
-//   * Convert the input code page characters to UTF16.
+//   * String the string boundary quotes.
 //   * Squash "" to a single ".
 //   * Replace the escape sequences with their processed version.
 // For identifiers, this is no-op.
@@ -875,7 +874,7 @@ Error ResourceFileWriter::visitIconOrCursorResource(const RCResource *Base) {
     FileStr = IconRes->IconLoc;
     Type = IconCursorGroupType::Icon;
   } else {
-    auto *CursorRes = cast<CursorResource>(Base);
+    auto *CursorRes = dyn_cast<CursorResource>(Base);
     FileStr = CursorRes->CursorLoc;
     Type = IconCursorGroupType::Cursor;
   }
@@ -988,8 +987,8 @@ Error ResourceFileWriter::writeSingleDialogControl(const Control &Ctl,
 
   auto TypeInfo = Control::SupportedCtls.lookup(Ctl.Type);
   IntWithNotMask CtlStyle(TypeInfo.Style);
-  CtlStyle |= Ctl.Style.value_or(RCInt(0));
-  uint32_t CtlExtStyle = Ctl.ExtStyle.value_or(0);
+  CtlStyle |= Ctl.Style.getValueOr(RCInt(0));
+  uint32_t CtlExtStyle = Ctl.ExtStyle.getValueOr(0);
 
   // DIALOG(EX) item header prefix.
   if (!IsExtended) {
@@ -1003,7 +1002,7 @@ Error ResourceFileWriter::writeSingleDialogControl(const Control &Ctl,
       ulittle32_t HelpID;
       ulittle32_t ExtStyle;
       ulittle32_t Style;
-    } Prefix{ulittle32_t(Ctl.HelpID.value_or(0)), ulittle32_t(CtlExtStyle),
+    } Prefix{ulittle32_t(Ctl.HelpID.getValueOr(0)), ulittle32_t(CtlExtStyle),
              ulittle32_t(CtlStyle.getValue())};
     writeObject(Prefix);
   }
@@ -1059,7 +1058,7 @@ Error ResourceFileWriter::writeDialogBody(const RCResource *Base) {
   const uint32_t StyleFontFlag = 0x40;
   const uint32_t StyleCaptionFlag = 0x00C00000;
 
-  uint32_t UsedStyle = ObjectData.Style.value_or(DefaultStyle);
+  uint32_t UsedStyle = ObjectData.Style.getValueOr(DefaultStyle);
   if (ObjectData.Font)
     UsedStyle |= StyleFontFlag;
   else
@@ -1071,7 +1070,7 @@ Error ResourceFileWriter::writeDialogBody(const RCResource *Base) {
     UsedStyle |= StyleCaptionFlag;
 
   const uint16_t DialogExMagic = 0xFFFF;
-  uint32_t ExStyle = ObjectData.ExStyle.value_or(0);
+  uint32_t ExStyle = ObjectData.ExStyle.getValueOr(0);
 
   // Write DIALOG(EX) header prefix. These are pretty different.
   if (!Res->IsExtended) {
@@ -1181,10 +1180,8 @@ Error ResourceFileWriter::writeMenuDefinition(
 
   if (auto *MenuItemPtr = dyn_cast<MenuItem>(DefPtr)) {
     writeInt<uint16_t>(Flags);
-    // Some resource files use -1, i.e. UINT32_MAX, for empty menu items.
-    if (MenuItemPtr->Id != static_cast<uint32_t>(-1))
-      RETURN_IF_ERROR(
-          checkNumberFits<uint16_t>(MenuItemPtr->Id, "MENUITEM action ID"));
+    RETURN_IF_ERROR(
+        checkNumberFits<uint16_t>(MenuItemPtr->Id, "MENUITEM action ID"));
     writeInt<uint16_t>(MenuItemPtr->Id);
     RETURN_IF_ERROR(writeCString(MenuItemPtr->Name));
     return Error::success();
@@ -1247,8 +1244,7 @@ Error ResourceFileWriter::visitStringTableBundle(const RCResource *Res) {
 }
 
 Error ResourceFileWriter::insertStringIntoBundle(
-    StringTableInfo::Bundle &Bundle, uint16_t StringID,
-    const std::vector<StringRef> &String) {
+    StringTableInfo::Bundle &Bundle, uint16_t StringID, StringRef String) {
   uint16_t StringLoc = StringID & 15;
   if (Bundle.Data[StringLoc])
     return createError("Multiple STRINGTABLE strings located under ID " +
@@ -1263,15 +1259,13 @@ Error ResourceFileWriter::writeStringTableBundleBody(const RCResource *Base) {
     // The string format is a tiny bit different here. We
     // first output the size of the string, and then the string itself
     // (which is not null-terminated).
+    bool IsLongString;
     SmallVector<UTF16, 128> Data;
-    if (Res->Bundle.Data[ID]) {
-      bool IsLongString;
-      for (StringRef S : *Res->Bundle.Data[ID])
-        RETURN_IF_ERROR(processString(S, NullHandlingMethod::CutAtDoubleNull,
-                                      IsLongString, Data, Params.CodePage));
-      if (AppendNull)
-        Data.push_back('\0');
-    }
+    RETURN_IF_ERROR(processString(Res->Bundle.Data[ID].getValueOr(StringRef()),
+                                  NullHandlingMethod::CutAtDoubleNull,
+                                  IsLongString, Data, Params.CodePage));
+    if (AppendNull && Res->Bundle.Data[ID])
+      Data.push_back('\0');
     RETURN_IF_ERROR(
         checkNumberFits<uint16_t>(Data.size(), "STRINGTABLE string size"));
     writeInt<uint16_t>(Data.size());
@@ -1514,26 +1508,16 @@ ResourceFileWriter::loadFile(StringRef File) const {
   SmallString<128> Cwd;
   std::unique_ptr<MemoryBuffer> Result;
 
-  // 0. The file path is absolute or has a root directory, so we shouldn't
-  // try to append it on top of other base directories. (An absolute path
-  // must have a root directory, but e.g. the path "\dir\file" on windows
-  // isn't considered absolute, but it does have a root directory. As long as
-  // sys::path::append doesn't handle appending an absolute path or a path
-  // starting with a root directory on top of a base, we must handle this
-  // case separately at the top. C++17's path::append handles that case
-  // properly though, so if using that to append paths below, this early
-  // exception case could be removed.)
-  if (sys::path::has_root_directory(File))
-    return errorOrToExpected(MemoryBuffer::getFile(
-        File, /*IsText=*/false, /*RequiresNullTerminator=*/false));
+  // 0. The file path is absolute and the file exists.
+  if (sys::path::is_absolute(File))
+    return errorOrToExpected(MemoryBuffer::getFile(File, -1, false));
 
   // 1. The current working directory.
   sys::fs::current_path(Cwd);
   Path.assign(Cwd.begin(), Cwd.end());
   sys::path::append(Path, File);
   if (sys::fs::exists(Path))
-    return errorOrToExpected(MemoryBuffer::getFile(
-        Path, /*IsText=*/false, /*RequiresNullTerminator=*/false));
+    return errorOrToExpected(MemoryBuffer::getFile(Path, -1, false));
 
   // 2. The directory of the input resource file, if it is different from the
   // current working directory.
@@ -1541,23 +1525,19 @@ ResourceFileWriter::loadFile(StringRef File) const {
   Path.assign(InputFileDir.begin(), InputFileDir.end());
   sys::path::append(Path, File);
   if (sys::fs::exists(Path))
-    return errorOrToExpected(MemoryBuffer::getFile(
-        Path, /*IsText=*/false, /*RequiresNullTerminator=*/false));
+    return errorOrToExpected(MemoryBuffer::getFile(Path, -1, false));
 
   // 3. All of the include directories specified on the command line.
   for (StringRef ForceInclude : Params.Include) {
     Path.assign(ForceInclude.begin(), ForceInclude.end());
     sys::path::append(Path, File);
     if (sys::fs::exists(Path))
-      return errorOrToExpected(MemoryBuffer::getFile(
-          Path, /*IsText=*/false, /*RequiresNullTerminator=*/false));
+      return errorOrToExpected(MemoryBuffer::getFile(Path, -1, false));
   }
 
-  if (!Params.NoInclude) {
-    if (auto Result = llvm::sys::Process::FindInEnvPath("INCLUDE", File))
-      return errorOrToExpected(MemoryBuffer::getFile(
-          *Result, /*IsText=*/false, /*RequiresNullTerminator=*/false));
-  }
+  if (auto Result =
+          llvm::sys::Process::FindInEnvPath("INCLUDE", File, Params.NoInclude))
+    return errorOrToExpected(MemoryBuffer::getFile(*Result, -1, false));
 
   return make_error<StringError>("error : file not found : " + Twine(File),
                                  inconvertibleErrorCode());

@@ -5,11 +5,10 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines the SparseBitVector class.  See the doxygen comment for
-/// SparseBitVector for more details on the algorithm used.
-///
+//
+// This file defines the SparseBitVector class.  See the doxygen comment for
+// SparseBitVector for more details on the algorithm used.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_SPARSEBITVECTOR_H
@@ -120,7 +119,7 @@ public:
   size_type count() const {
     unsigned NumBits = 0;
     for (unsigned i = 0; i < BITWORDS_PER_ELEMENT; ++i)
-      NumBits += llvm::popcount(Bits[i]);
+      NumBits += countPopulation(Bits[i]);
     return NumBits;
   }
 

@@ -8,15 +8,12 @@
 
 #include "AMDGPU.h"
 #include "AMDGPUSubtarget.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/IntrinsicsR600.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/LowerMemIntrinsics.h"
 
 #define DEBUG_TYPE "amdgpu-lower-intrinsics"
@@ -25,15 +22,7 @@ using namespace llvm;
 
 namespace {
 
-static int MaxStaticSize;
-
-static cl::opt<int, true> MemIntrinsicExpandSizeThresholdOpt(
-  "amdgpu-mem-intrinsic-expand-size",
-  cl::desc("Set minimum mem intrinsic size to expand in IR"),
-  cl::location(MaxStaticSize),
-  cl::init(1024),
-  cl::Hidden);
-
+const unsigned MaxStaticSize = 1024;
 
 class AMDGPULowerIntrinsics : public ModulePass {
 private:
@@ -68,15 +57,16 @@ INITIALIZE_PASS(AMDGPULowerIntrinsics, DEBUG_TYPE, "Lower intrinsics", false,
 // require splitting based on alignment)
 static bool shouldExpandOperationWithSize(Value *Size) {
   ConstantInt *CI = dyn_cast<ConstantInt>(Size);
-  return !CI || (CI->getSExtValue() > MaxStaticSize);
+  return !CI || (CI->getZExtValue() > MaxStaticSize);
 }
 
 bool AMDGPULowerIntrinsics::expandMemIntrinsicUses(Function &F) {
   Intrinsic::ID ID = F.getIntrinsicID();
   bool Changed = false;
 
-  for (User *U : llvm::make_early_inc_range(F.users())) {
-    Instruction *Inst = cast<Instruction>(U);
+  for (auto I = F.user_begin(), E = F.user_end(); I != E;) {
+    Instruction *Inst = cast<Instruction>(*I);
+    ++I;
 
     switch (ID) {
     case Intrinsic::memcpy: {
@@ -133,9 +123,7 @@ bool AMDGPULowerIntrinsics::makeLIDRangeMetadata(Function &F) const {
     if (!CI)
       continue;
 
-    Function *Caller = CI->getParent()->getParent();
-    const AMDGPUSubtarget &ST = AMDGPUSubtarget::get(TM, *Caller);
-    Changed |= ST.makeLIDRangeMetadata(CI);
+    Changed |= AMDGPUSubtarget::get(TM, F).makeLIDRangeMetadata(CI);
   }
   return Changed;
 }
@@ -155,8 +143,11 @@ bool AMDGPULowerIntrinsics::runOnModule(Module &M) {
         Changed = true;
       break;
 
+    case Intrinsic::amdgcn_workitem_id_x:
     case Intrinsic::r600_read_tidig_x:
+    case Intrinsic::amdgcn_workitem_id_y:
     case Intrinsic::r600_read_tidig_y:
+    case Intrinsic::amdgcn_workitem_id_z:
     case Intrinsic::r600_read_tidig_z:
     case Intrinsic::r600_read_local_size_x:
     case Intrinsic::r600_read_local_size_y:

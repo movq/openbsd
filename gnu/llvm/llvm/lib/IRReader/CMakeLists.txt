@@ -6,10 +6,4 @@ add_llvm_component_library(LLVMIRReader
 
   DEPENDS
   intrinsics_gen
-
-  LINK_COMPONENTS
-  AsmParser
-  BitReader
-  Core
-  Support
   )

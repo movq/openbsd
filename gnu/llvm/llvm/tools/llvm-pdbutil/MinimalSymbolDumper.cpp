@@ -8,19 +8,17 @@
 
 #include "MinimalSymbolDumper.h"
 
+#include "FormatUtil.h"
+#include "InputFile.h"
+#include "LinePrinter.h"
+
 #include "llvm/DebugInfo/CodeView/CVRecord.h"
 #include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/Formatters.h"
 #include "llvm/DebugInfo/CodeView/LazyRandomTypeCollection.h"
 #include "llvm/DebugInfo/CodeView/SymbolRecord.h"
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
-#include "llvm/DebugInfo/PDB/Native/FormatUtil.h"
-#include "llvm/DebugInfo/PDB/Native/InputFile.h"
-#include "llvm/DebugInfo/PDB/Native/LinePrinter.h"
-#include "llvm/DebugInfo/PDB/Native/NativeSession.h"
-#include "llvm/DebugInfo/PDB/Native/PDBFile.h"
 #include "llvm/DebugInfo/PDB/Native/PDBStringTable.h"
-#include "llvm/Object/COFF.h"
 #include "llvm/Support/FormatVariadic.h"
 
 using namespace llvm;
@@ -209,7 +207,6 @@ static std::string formatSourceLanguage(SourceLanguage Lang) {
     RETURN_CASE(SourceLanguage, HLSL, "hlsl");
     RETURN_CASE(SourceLanguage, D, "d");
     RETURN_CASE(SourceLanguage, Swift, "swift");
-    RETURN_CASE(SourceLanguage, Rust, "rust");
   }
   return formatUnknownEnum(Lang);
 }
@@ -264,9 +261,6 @@ static std::string formatMachineType(CPUType Cpu) {
     RETURN_CASE(CPUType, ARM_WMMX, "arm wmmx");
     RETURN_CASE(CPUType, ARM7, "arm 7");
     RETURN_CASE(CPUType, ARM64, "arm64");
-    RETURN_CASE(CPUType, ARM64EC, "arm64ec");
-    RETURN_CASE(CPUType, ARM64X, "arm64x");
-    RETURN_CASE(CPUType, HybridX86ARM64, "hybrid x86 arm64");
     RETURN_CASE(CPUType, Omni, "omni");
     RETURN_CASE(CPUType, Ia64, "intel itanium ia64");
     RETURN_CASE(CPUType, Ia64_2, "intel itanium ia64 2");
@@ -294,18 +288,7 @@ static std::string formatCookieKind(FrameCookieKind Kind) {
 }
 
 static std::string formatRegisterId(RegisterId Id, CPUType Cpu) {
-  if (Cpu == CPUType::ARMNT) {
-    switch (Id) {
-#define CV_REGISTERS_ARM
-#define CV_REGISTER(name, val) RETURN_CASE(RegisterId, name, #name)
-#include "llvm/DebugInfo/CodeView/CodeViewRegisters.def"
-#undef CV_REGISTER
-#undef CV_REGISTERS_ARM
-
-    default:
-      break;
-    }
-  } else if (Cpu == CPUType::ARM64) {
+  if (Cpu == CPUType::ARM64) {
     switch (Id) {
 #define CV_REGISTERS_ARM64
 #define CV_REGISTER(name, val) RETURN_CASE(RegisterId, name, #name)
@@ -388,9 +371,9 @@ std::string MinimalSymbolDumper::typeOrIdIndex(codeview::TypeIndex TI,
   StringRef Name = Container.getTypeName(TI);
   if (Name.size() > 32) {
     Name = Name.take_front(32);
-    return std::string(formatv("{0} ({1}...)", TI, Name));
+    return formatv("{0} ({1}...)", TI, Name);
   } else
-    return std::string(formatv("{0} ({1})", TI, Name));
+    return formatv("{0} ({1})", TI, Name);
 }
 
 std::string MinimalSymbolDumper::idIndex(codeview::TypeIndex TI) const {
@@ -565,7 +548,7 @@ Error MinimalSymbolDumper::visitKnownRecord(CVSymbol &CVR,
   P.format(" `{0}`", Constant.Name);
   AutoIndent Indent(P, 7);
   P.formatLine("type = {0}, value = {1}", typeIndex(Constant.Type),
-               toString(Constant.Value, 10));
+               Constant.Value.toString(10));
   return Error::success();
 }
 
@@ -588,7 +571,8 @@ Error MinimalSymbolDumper::visitKnownRecord(CVSymbol &CVR,
   AutoIndent Indent(P, 7);
   P.formatLine("offset = {0}, range = {1}", Def.Hdr.Offset,
                formatRange(Def.Range));
-  P.formatLine("gaps = [{0}]", formatGaps(P.getIndentLevel() + 9, Def.Gaps));
+  P.formatLine("gaps = {2}", Def.Hdr.Offset,
+               formatGaps(P.getIndentLevel() + 9, Def.Gaps));
   return Error::success();
 }
 
@@ -600,7 +584,7 @@ Error MinimalSymbolDumper::visitKnownRecord(CVSymbol &CVR,
                formatRegisterId(Def.Hdr.Register, CompilationCPU),
                int32_t(Def.Hdr.BasePointerOffset), Def.offsetInParent(),
                Def.hasSpilledUDTMember());
-  P.formatLine("range = {0}, gaps = [{1}]", formatRange(Def.Range),
+  P.formatLine("range = {0}, gaps = {1}", formatRange(Def.Range),
                formatGaps(P.getIndentLevel() + 9, Def.Gaps));
   return Error::success();
 }
@@ -627,7 +611,7 @@ Error MinimalSymbolDumper::visitKnownRecord(CVSymbol &CVR,
   P.formatLine("register = {0}, may have no name = {1}, offset in parent = {2}",
                formatRegisterId(Def.Hdr.Register, CompilationCPU), NoName,
                uint32_t(Def.Hdr.OffsetInParent));
-  P.formatLine("range = {0}, gaps = [{1}]", formatRange(Def.Range),
+  P.formatLine("range = {0}, gaps = {1}", formatRange(Def.Range),
                formatGaps(P.getIndentLevel() + 9, Def.Gaps));
   return Error::success();
 }
@@ -637,7 +621,7 @@ Error MinimalSymbolDumper::visitKnownRecord(CVSymbol &CVR,
   AutoIndent Indent(P, 7);
   P.formatLine("program = {0}, offset in parent = {1}, range = {2}",
                Def.Program, Def.OffsetInParent, formatRange(Def.Range));
-  P.formatLine("gaps = [{0}]", formatGaps(P.getIndentLevel() + 9, Def.Gaps));
+  P.formatLine("gaps = {0}", formatGaps(P.getIndentLevel() + 9, Def.Gaps));
   return Error::success();
 }
 
@@ -645,7 +629,7 @@ Error MinimalSymbolDumper::visitKnownRecord(CVSymbol &CVR, DefRangeSym &Def) {
   AutoIndent Indent(P, 7);
   P.formatLine("program = {0}, range = {1}", Def.Program,
                formatRange(Def.Range));
-  P.formatLine("gaps = [{0}]", formatGaps(P.getIndentLevel() + 9, Def.Gaps));
+  P.formatLine("gaps = {0}", formatGaps(P.getIndentLevel() + 9, Def.Gaps));
   return Error::success();
 }
 

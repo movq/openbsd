@@ -20,7 +20,7 @@ using namespace llvm;
 
 char SlotIndexes::ID = 0;
 
-SlotIndexes::SlotIndexes() : MachineFunctionPass(ID) {
+SlotIndexes::SlotIndexes() : MachineFunctionPass(ID), mf(nullptr) {
   initializeSlotIndexesPass(*PassRegistry::getPassRegistry());
 }
 
@@ -83,7 +83,7 @@ bool SlotIndexes::runOnMachineFunction(MachineFunction &fn) {
     SlotIndex blockStartIndex(&indexList.back(), SlotIndex::Slot_Block);
 
     for (MachineInstr &MI : MBB) {
-      if (MI.isDebugOrPseudoInstr())
+      if (MI.isDebugInstr())
         continue;
 
       // Insert a store index for the instr.
@@ -112,10 +112,9 @@ bool SlotIndexes::runOnMachineFunction(MachineFunction &fn) {
   return false;
 }
 
-void SlotIndexes::removeMachineInstrFromMaps(MachineInstr &MI,
-                                             bool AllowBundled) {
-  assert((AllowBundled || !MI.isBundledWithPred()) &&
-         "Use removeSingleMachineInstrFromMaps() instead");
+void SlotIndexes::removeMachineInstrFromMaps(MachineInstr &MI) {
+  assert(!MI.isBundledWithPred() &&
+         "Use removeSingleMachineInstrFromMaps() instread");
   Mi2IndexMap::iterator mi2iItr = mi2iMap.find(&MI);
   if (mi2iItr == mi2iMap.end())
     return;
@@ -142,7 +141,7 @@ void SlotIndexes::removeSingleMachineInstrFromMaps(MachineInstr &MI) {
   // instruction.
   if (MI.isBundledWithSucc()) {
     // Only the first instruction of a bundle should have an index assigned.
-    assert(!MI.isBundledWithPred() && "Should be first bundle instruction");
+    assert(!MI.isBundledWithPred() && "Should have first bundle isntruction");
 
     MachineBasicBlock::instr_iterator Next = std::next(MI.getIterator());
     MachineInstr &NextMI = *Next;
@@ -179,12 +178,21 @@ void SlotIndexes::renumberIndexes(IndexList::iterator curItr) {
 void SlotIndexes::repairIndexesInRange(MachineBasicBlock *MBB,
                                        MachineBasicBlock::iterator Begin,
                                        MachineBasicBlock::iterator End) {
+  // FIXME: Is this really necessary? The only caller repairIntervalsForRange()
+  // does the same thing.
+  // Find anchor points, which are at the beginning/end of blocks or at
+  // instructions that already have indexes.
+  while (Begin != MBB->begin() && !hasIndex(*Begin))
+    --Begin;
+  while (End != MBB->end() && !hasIndex(*End))
+    ++End;
+
   bool includeStart = (Begin == MBB->begin());
   SlotIndex startIdx;
   if (includeStart)
     startIdx = getMBBStartIdx(MBB);
   else
-    startIdx = getInstructionIndex(*--Begin);
+    startIdx = getInstructionIndex(*Begin);
 
   SlotIndex endIdx;
   if (End == MBB->end())
@@ -232,18 +240,19 @@ void SlotIndexes::repairIndexesInRange(MachineBasicBlock *MBB,
   for (MachineBasicBlock::iterator I = End; I != Begin;) {
     --I;
     MachineInstr &MI = *I;
-    if (!MI.isDebugOrPseudoInstr() && mi2iMap.find(&MI) == mi2iMap.end())
+    if (!MI.isDebugInstr() && mi2iMap.find(&MI) == mi2iMap.end())
       insertMachineInstrInMaps(MI);
   }
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 LLVM_DUMP_METHOD void SlotIndexes::dump() const {
-  for (const IndexListEntry &ILE : indexList) {
-    dbgs() << ILE.getIndex() << " ";
+  for (IndexList::const_iterator itr = indexList.begin();
+       itr != indexList.end(); ++itr) {
+    dbgs() << itr->getIndex() << " ";
 
-    if (ILE.getInstr()) {
-      dbgs() << *ILE.getInstr();
+    if (itr->getInstr()) {
+      dbgs() << *itr->getInstr();
     } else {
       dbgs() << "\n";
     }
@@ -270,3 +279,4 @@ LLVM_DUMP_METHOD void SlotIndex::dump() const {
   dbgs() << "\n";
 }
 #endif
+

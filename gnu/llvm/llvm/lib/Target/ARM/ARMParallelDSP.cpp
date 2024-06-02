@@ -19,10 +19,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Analysis/AssumptionCache.h"
-#include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/LoopAccessAnalysis.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/OrderedBasicBlock.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicsARM.h"
@@ -30,6 +28,7 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Pass.h"
 #include "llvm/PassRegistry.h"
+#include "llvm/PassSupport.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -202,7 +201,8 @@ namespace {
   public:
     WidenedLoad(SmallVectorImpl<LoadInst*> &Lds, LoadInst *Wide)
       : NewLd(Wide) {
-      append_range(Loads, Lds);
+      for (auto *I : Lds)
+        Loads.push_back(I);
     }
     LoadInst *getLoad() {
       return NewLd;
@@ -299,6 +299,14 @@ namespace {
   };
 }
 
+template<typename MemInst>
+static bool AreSequentialAccesses(MemInst *MemOp0, MemInst *MemOp1,
+                                  const DataLayout &DL, ScalarEvolution &SE) {
+  if (isConsecutiveAccess(MemOp0, MemOp1, DL, SE))
+    return true;
+  return false;
+}
+
 bool ARMParallelDSP::AreSequentialLoads(LoadInst *Ld0, LoadInst *Ld1,
                                         MemInstList &VecMem) {
   if (!Ld0 || !Ld1)
@@ -344,6 +352,7 @@ bool ARMParallelDSP::RecordMemoryOps(BasicBlock *BB) {
   SmallVector<Instruction*, 8> Writes;
   LoadPairs.clear();
   WideLoads.clear();
+  OrderedBasicBlock OrderedBB(BB);
 
   // Collect loads and instruction that may write to memory. For now we only
   // record loads which are simple, sign-extended and have a single user.
@@ -366,15 +375,16 @@ bool ARMParallelDSP::RecordMemoryOps(BasicBlock *BB) {
   DepMap RAWDeps;
 
   // Record any writes that may alias a load.
-  const auto Size = LocationSize::beforeOrAfterPointer();
-  for (auto *Write : Writes) {
-    for (auto *Read : Loads) {
+  const auto Size = LocationSize::unknown();
+  for (auto Write : Writes) {
+    for (auto Read : Loads) {
       MemoryLocation ReadLoc =
         MemoryLocation(Read->getPointerOperand(), Size);
 
-      if (!isModOrRefSet(AA->getModRefInfo(Write, ReadLoc)))
+      if (!isModOrRefSet(intersectModRef(AA->getModRefInfo(Write, ReadLoc),
+          ModRefInfo::ModRef)))
         continue;
-      if (Write->comesBefore(Read))
+      if (OrderedBB.dominates(Write, Read))
         RAWDeps[Read].insert(Write);
     }
   }
@@ -382,17 +392,16 @@ bool ARMParallelDSP::RecordMemoryOps(BasicBlock *BB) {
   // Check whether there's not a write between the two loads which would
   // prevent them from being safely merged.
   auto SafeToPair = [&](LoadInst *Base, LoadInst *Offset) {
-    bool BaseFirst = Base->comesBefore(Offset);
-    LoadInst *Dominator = BaseFirst ? Base : Offset;
-    LoadInst *Dominated = BaseFirst ? Offset : Base;
+    LoadInst *Dominator = OrderedBB.dominates(Base, Offset) ? Base : Offset;
+    LoadInst *Dominated = OrderedBB.dominates(Base, Offset) ? Offset : Base;
 
     if (RAWDeps.count(Dominated)) {
       InstSet &WritesBefore = RAWDeps[Dominated];
 
-      for (auto *Before : WritesBefore) {
+      for (auto Before : WritesBefore) {
         // We can't move the second load backward, past a write, to merge
         // with the first load.
-        if (Dominator->comesBefore(Before))
+        if (OrderedBB.dominates(Dominator, Before))
           return false;
       }
     }
@@ -405,7 +414,7 @@ bool ARMParallelDSP::RecordMemoryOps(BasicBlock *BB) {
       if (Base == Offset || OffsetLoads.count(Offset))
         continue;
 
-      if (isConsecutiveAccess(Base, Offset, *DL, *SE) &&
+      if (AreSequentialAccesses<LoadInst>(Base, Offset, *DL, *SE) &&
           SafeToPair(Base, Offset)) {
         LoadPairs[Base] = Offset;
         OffsetLoads.insert(Offset);
@@ -457,10 +466,6 @@ bool ARMParallelDSP::Search(Value *V, BasicBlock *BB, Reduction &R) {
 
     if (ValidLHS && ValidRHS)
       return true;
-
-    // Ensure we don't add the root as the incoming accumulator.
-    if (R.getRoot() == I)
-      return false;
 
     return R.InsertAcc(I);
   }
@@ -538,7 +543,6 @@ bool ARMParallelDSP::MatchSMLAD(Function &F) {
       InsertParallelMACs(R);
       Changed = true;
       AllAdds.insert(R.getAdds().begin(), R.getAdds().end());
-      LLVM_DEBUG(dbgs() << "BB after inserting parallel MACs:\n" << BB);
     }
   }
 
@@ -566,10 +570,6 @@ bool ARMParallelDSP::CreateParallelPairs(Reduction &R) {
     auto Ld1 = static_cast<LoadInst*>(PMul1->LHS);
     auto Ld2 = static_cast<LoadInst*>(PMul0->RHS);
     auto Ld3 = static_cast<LoadInst*>(PMul1->RHS);
-
-    // Check that each mul is operating on two different loads.
-    if (Ld0 == Ld2 || Ld1 == Ld3)
-      return false;
 
     if (AreSequentialLoads(Ld0, Ld1, PMul0->VecLd)) {
       if (AreSequentialLoads(Ld2, Ld3, PMul1->VecLd)) {
@@ -705,11 +705,12 @@ void ARMParallelDSP::InsertParallelMACs(Reduction &R) {
   }
 
   // Roughly sort the mul pairs in their program order.
-  llvm::sort(R.getMulPairs(), [](auto &PairA, auto &PairB) {
-    const Instruction *A = PairA.first->Root;
-    const Instruction *B = PairB.first->Root;
-    return A->comesBefore(B);
-  });
+  OrderedBasicBlock OrderedBB(R.getRoot()->getParent());
+  llvm::sort(R.getMulPairs(), [&OrderedBB](auto &PairA, auto &PairB) {
+               const Instruction *A = PairA.first->Root;
+               const Instruction *B = PairB.first->Root;
+               return OrderedBB.dominates(A, B);
+             });
 
   IntegerType *Ty = IntegerType::get(M->getContext(), 32);
   for (auto &Pair : R.getMulPairs()) {
@@ -771,7 +772,8 @@ LoadInst* ARMParallelDSP::CreateWideLoad(MemInstList &Loads,
   const unsigned AddrSpace = DomLoad->getPointerAddressSpace();
   Value *VecPtr = IRB.CreateBitCast(Base->getPointerOperand(),
                                     LoadTy->getPointerTo(AddrSpace));
-  LoadInst *WideLoad = IRB.CreateAlignedLoad(LoadTy, VecPtr, Base->getAlign());
+  LoadInst *WideLoad = IRB.CreateAlignedLoad(LoadTy, VecPtr,
+                                             Base->getAlignment());
 
   // Make sure everything is in the correct order in the basic block.
   MoveBefore(Base->getPointerOperand(), VecPtr);

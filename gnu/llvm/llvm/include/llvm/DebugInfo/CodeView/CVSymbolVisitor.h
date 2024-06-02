@@ -10,7 +10,10 @@
 #define LLVM_DEBUGINFO_CODEVIEW_CVSYMBOLVISITOR_H
 
 #include "llvm/DebugInfo/CodeView/CVRecord.h"
-#include "llvm/Support/Error.h"
+#include "llvm/DebugInfo/CodeView/CodeView.h"
+#include "llvm/DebugInfo/CodeView/SymbolRecord.h"
+#include "llvm/DebugInfo/CodeView/SymbolVisitorDelegate.h"
+#include "llvm/Support/ErrorOr.h"
 
 namespace llvm {
 namespace codeview {
@@ -18,20 +21,12 @@ class SymbolVisitorCallbacks;
 
 class CVSymbolVisitor {
 public:
-  struct FilterOptions {
-    std::optional<uint32_t> SymbolOffset;
-    std::optional<uint32_t> ParentRecursiveDepth;
-    std::optional<uint32_t> ChildRecursiveDepth;
-  };
-
   CVSymbolVisitor(SymbolVisitorCallbacks &Callbacks);
 
   Error visitSymbolRecord(CVSymbol &Record);
   Error visitSymbolRecord(CVSymbol &Record, uint32_t Offset);
   Error visitSymbolStream(const CVSymbolArray &Symbols);
   Error visitSymbolStream(const CVSymbolArray &Symbols, uint32_t InitialOffset);
-  Error visitSymbolStreamFiltered(const CVSymbolArray &Symbols,
-                                  const FilterOptions &Filter);
 
 private:
   SymbolVisitorCallbacks &Callbacks;

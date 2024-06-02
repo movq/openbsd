@@ -16,7 +16,6 @@
 #include "X86InstComments.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
-#include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/Casting.h"
@@ -35,8 +34,8 @@ using namespace llvm;
 #define PRINT_ALIAS_INSTR
 #include "X86GenAsmWriter.inc"
 
-void X86ATTInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
-  OS << markup("<reg:") << '%' << getRegisterName(Reg) << markup(">");
+void X86ATTInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {
+  OS << markup("<reg:") << '%' << getRegisterName(RegNo) << markup(">");
 }
 
 void X86ATTInstPrinter::printInst(const MCInst *MI, uint64_t Address,
@@ -46,7 +45,7 @@ void X86ATTInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   if (CommentStream)
     HasCustomInstComment = EmitAnyX86InstComments(MI, *CommentStream, MII);
 
-  printInstFlags(MI, OS, STI);
+  printInstFlags(MI, OS);
 
   // Output CALLpcrel32 as "callq" in 64-bit mode.
   // In Intel annotation it's always emitted as "call".
@@ -55,9 +54,9 @@ void X86ATTInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   // InstrInfo.td as soon as Requires clause is supported properly
   // for InstAlias.
   if (MI->getOpcode() == X86::CALLpcrel32 &&
-      (STI.getFeatureBits()[X86::Is64Bit])) {
+      (STI.getFeatureBits()[X86::Mode64Bit])) {
     OS << "\tcallq\t";
-    printPCRelImm(MI, Address, 0, OS);
+    printPCRelImm(MI, 0, OS);
   }
   // data16 and data32 both have the same encoding of 0x66. While data32 is
   // valid only in 16 bit systems, data16 is valid in the rest.
@@ -65,11 +64,12 @@ void X86ATTInstPrinter::printInst(const MCInst *MI, uint64_t Address,
   // 0x66 to be interpreted as "data16" by the asm printer.
   // Thus we add an adjustment here in order to print the "right" instruction.
   else if (MI->getOpcode() == X86::DATA16_PREFIX &&
-           STI.getFeatureBits()[X86::Is16Bit]) {
-    OS << "\tdata32";
+           STI.getFeatureBits()[X86::Mode16Bit]) {
+   OS << "\tdata32";
   }
   // Try to print any aliases first.
-  else if (!printAliasInstr(MI, Address, OS) && !printVecCompareInstr(MI, OS))
+  else if (!printAliasInstr(MI, OS) &&
+           !printVecCompareInstr(MI, OS))
     printInstruction(MI, Address, OS);
 
   // Next always print the annotation.
@@ -153,20 +153,6 @@ bool X86ATTInstPrinter::printVecCompareInstr(const MCInst *MI,
   case X86::VCMPPSZrrib:    case X86::VCMPPSZrribk:
   case X86::VCMPSDZrrb_Int: case X86::VCMPSDZrrb_Intk:
   case X86::VCMPSSZrrb_Int: case X86::VCMPSSZrrb_Intk:
-  case X86::VCMPPHZ128rmi:  case X86::VCMPPHZ128rri:
-  case X86::VCMPPHZ256rmi:  case X86::VCMPPHZ256rri:
-  case X86::VCMPPHZrmi:     case X86::VCMPPHZrri:
-  case X86::VCMPSHZrm:      case X86::VCMPSHZrr:
-  case X86::VCMPSHZrm_Int:  case X86::VCMPSHZrr_Int:
-  case X86::VCMPPHZ128rmik: case X86::VCMPPHZ128rrik:
-  case X86::VCMPPHZ256rmik: case X86::VCMPPHZ256rrik:
-  case X86::VCMPPHZrmik:    case X86::VCMPPHZrrik:
-  case X86::VCMPSHZrm_Intk: case X86::VCMPSHZrr_Intk:
-  case X86::VCMPPHZ128rmbi: case X86::VCMPPHZ128rmbik:
-  case X86::VCMPPHZ256rmbi: case X86::VCMPPHZ256rmbik:
-  case X86::VCMPPHZrmbi:    case X86::VCMPPHZrmbik:
-  case X86::VCMPPHZrrib:    case X86::VCMPPHZrribk:
-  case X86::VCMPSHZrrb_Int: case X86::VCMPSHZrrb_Intk:
     if (Imm >= 0 && Imm <= 31) {
       OS << '\t';
       printCMPMnemonic(MI, /*IsVCMP*/true, OS);
@@ -176,15 +162,11 @@ bool X86ATTInstPrinter::printVecCompareInstr(const MCInst *MI,
       if ((Desc.TSFlags & X86II::FormMask) == X86II::MRMSrcMem) {
         if (Desc.TSFlags & X86II::EVEX_B) {
           // Broadcast form.
-          // Load size is word for TA map. Otherwise it is based on W-bit.
-          if ((Desc.TSFlags & X86II::OpMapMask) == X86II::TA) {
-            assert(!(Desc.TSFlags & X86II::VEX_W) && "Unknown W-bit value!");
-            printwordmem(MI, CurOp--, OS);
-          } else if (Desc.TSFlags & X86II::VEX_W) {
+          // Load size is based on W-bit.
+          if (Desc.TSFlags & X86II::VEX_W)
             printqwordmem(MI, CurOp--, OS);
-          } else {
+          else
             printdwordmem(MI, CurOp--, OS);
-          }
 
           // Print the number of elements broadcasted.
           unsigned NumElts;
@@ -194,28 +176,18 @@ bool X86ATTInstPrinter::printVecCompareInstr(const MCInst *MI,
             NumElts = (Desc.TSFlags & X86II::VEX_W) ? 4 : 8;
           else
             NumElts = (Desc.TSFlags & X86II::VEX_W) ? 2 : 4;
-          if ((Desc.TSFlags & X86II::OpMapMask) == X86II::TA) {
-            assert(!(Desc.TSFlags & X86II::VEX_W) && "Unknown W-bit value!");
-            NumElts *= 2;
-          }
           OS << "{1to" << NumElts << "}";
         } else {
-          if ((Desc.TSFlags & X86II::OpPrefixMask) == X86II::XS) {
-            if ((Desc.TSFlags & X86II::OpMapMask) == X86II::TA)
-              printwordmem(MI, CurOp--, OS);
-            else
-              printdwordmem(MI, CurOp--, OS);
-          } else if ((Desc.TSFlags & X86II::OpPrefixMask) == X86II::XD) {
-            assert((Desc.TSFlags & X86II::OpMapMask) != X86II::TA &&
-                   "Unexpected op map!");
+          if ((Desc.TSFlags & X86II::OpPrefixMask) == X86II::XS)
+            printdwordmem(MI, CurOp--, OS);
+          else if ((Desc.TSFlags & X86II::OpPrefixMask) == X86II::XD)
             printqwordmem(MI, CurOp--, OS);
-          } else if (Desc.TSFlags & X86II::EVEX_L2) {
+          else if (Desc.TSFlags & X86II::EVEX_L2)
             printzmmwordmem(MI, CurOp--, OS);
-          } else if (Desc.TSFlags & X86II::VEX_L) {
+          else if (Desc.TSFlags & X86II::VEX_L)
             printymmwordmem(MI, CurOp--, OS);
-          } else {
+          else
             printxmmwordmem(MI, CurOp--, OS);
-          }
         }
       } else {
         if (Desc.TSFlags & X86II::EVEX_B)
@@ -413,16 +385,6 @@ void X86ATTInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
 
 void X86ATTInstPrinter::printMemReference(const MCInst *MI, unsigned Op,
                                           raw_ostream &O) {
-  // Do not print the exact form of the memory operand if it references a known
-  // binary object.
-  if (SymbolizeOperands && MIA) {
-    uint64_t Target;
-    if (MIA->evaluateBranch(*MI, 0, 0, Target))
-      return;
-    if (MIA->evaluateMemoryOperandAddress(*MI, /*STI=*/nullptr, 0, 0))
-      return;
-  }
-
   const MCOperand &BaseReg = MI->getOperand(Op + X86::AddrBaseReg);
   const MCOperand &IndexReg = MI->getOperand(Op + X86::AddrIndexReg);
   const MCOperand &DispSpec = MI->getOperand(Op + X86::AddrDisp);

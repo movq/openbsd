@@ -22,7 +22,7 @@ class LitConfig(object):
 
     def __init__(self, progname, path, quiet,
                  useValgrind, valgrindLeakCheck, valgrindArgs,
-                 noExecute, debug, isWindows, order,
+                 noExecute, debug, isWindows,
                  params, config_prefix = None,
                  maxIndividualTestTime = 0,
                  parallelism_groups = {},
@@ -38,7 +38,6 @@ class LitConfig(object):
         self.noExecute = noExecute
         self.debug = debug
         self.isWindows = bool(isWindows)
-        self.order = order
         self.params = dict(params)
         self.bashPath = None
 
@@ -166,24 +165,11 @@ class LitConfig(object):
         f = inspect.currentframe()
         # Step out of _write_message, and then out of wrapper.
         f = f.f_back.f_back
-        file = os.path.abspath(inspect.getsourcefile(f))
-        line = inspect.getlineno(f)
-        sys.stderr.write('%s: %s:%d: %s: %s\n' % (self.progname, file, line,
-                                                  kind, message))
-        if self.isWindows:
-            # In a git bash terminal, the writes to sys.stderr aren't visible
-            # on screen immediately. Flush them here to avoid broken/misoredered
-            # output.
-            sys.stderr.flush()
+        file,line,_,_,_ = inspect.getframeinfo(f)
+        location = '%s:%d' % (file, line)
 
-    def substitute(self, string):
-        """substitute - Interpolate params into a string"""
-        try:
-          return string % self.params
-        except KeyError as e:
-          key, = e.args
-          self.fatal("unable to find %r parameter, use '--param=%s=VALUE'" % (
-              key,key))
+        sys.stderr.write('%s: %s: %s: %s\n' % (self.progname, location,
+                                               kind, message))
 
     def note(self, message):
         if not self.quiet:

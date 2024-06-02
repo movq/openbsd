@@ -12,39 +12,17 @@
 
 using namespace llvm;
 
-SystemZMCAsmInfoELF::SystemZMCAsmInfoELF(const Triple &TT) {
-  AssemblerDialect = AD_ATT;
-  CalleeSaveStackSlotSize = 8;
+SystemZMCAsmInfo::SystemZMCAsmInfo(const Triple &TT) {
   CodePointerSize = 8;
-  Data64bitsDirective = "\t.quad\t";
-  ExceptionsType = ExceptionHandling::DwarfCFI;
+  CalleeSaveStackSlotSize = 8;
   IsLittleEndian = false;
-  MaxInstLength = 6;
-  SupportsDebugInformation = true;
-  UsesELFSectionDirectiveForBSS = true;
+
+  CommentString = "#";
   ZeroDirective = "\t.space\t";
-}
-
-SystemZMCAsmInfoGOFF::SystemZMCAsmInfoGOFF(const Triple &TT) {
-  AllowAdditionalComments = false;
-  AllowAtInName = true;
-  AllowAtAtStartOfIdentifier = true;
-  AllowDollarAtStartOfIdentifier = true;
-  AllowHashAtStartOfIdentifier = true;
-  AssemblerDialect = AD_HLASM;
-  CalleeSaveStackSlotSize = 8;
-  CodePointerSize = 8;
-  CommentString = "*";
-  DotIsPC = false;
-  EmitGNUAsmStartIndentationMarker = false;
-  EmitLabelsInUpperCase = true;
-  IsLittleEndian = false;
-  MaxInstLength = 6;
-  RestrictCommentStringToStartOfStatement = true;
-  StarIsPC = true;
+  Data64bitsDirective = "\t.quad\t";
+  UsesELFSectionDirectiveForBSS = true;
   SupportsDebugInformation = true;
-}
+  ExceptionsType = ExceptionHandling::DwarfCFI;
 
-bool SystemZMCAsmInfoGOFF::isAcceptableChar(char C) const {
-  return MCAsmInfo::isAcceptableChar(C) || C == '#';
+  UseIntegratedAssembler = true;
 }

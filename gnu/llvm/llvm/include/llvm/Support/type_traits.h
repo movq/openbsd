@@ -28,7 +28,7 @@ namespace llvm {
 /// Also note that enum classes aren't implicitly convertible to integral types,
 /// the value may therefore need to be explicitly converted before being used.
 template <typename T> class is_integral_or_enum {
-  using UnderlyingT = std::remove_reference_t<T>;
+  using UnderlyingT = typename std::remove_reference<T>::type;
 
 public:
   static const bool value =
@@ -45,7 +45,7 @@ struct add_lvalue_reference_if_not_pointer { using type = T &; };
 
 template <typename T>
 struct add_lvalue_reference_if_not_pointer<
-    T, std::enable_if_t<std::is_pointer<T>::value>> {
+    T, typename std::enable_if<std::is_pointer<T>::value>::type> {
   using type = T;
 };
 
@@ -55,8 +55,9 @@ template<typename T, typename Enable = void>
 struct add_const_past_pointer { using type = const T; };
 
 template <typename T>
-struct add_const_past_pointer<T, std::enable_if_t<std::is_pointer<T>::value>> {
-  using type = const std::remove_pointer_t<T> *;
+struct add_const_past_pointer<
+    T, typename std::enable_if<std::is_pointer<T>::value>::type> {
+  using type = const typename std::remove_pointer<T>::type *;
 };
 
 template <typename T, typename Enable = void>
@@ -64,8 +65,8 @@ struct const_pointer_or_const_ref {
   using type = const T &;
 };
 template <typename T>
-struct const_pointer_or_const_ref<T,
-                                  std::enable_if_t<std::is_pointer<T>::value>> {
+struct const_pointer_or_const_ref<
+    T, typename std::enable_if<std::is_pointer<T>::value>::type> {
   using type = typename add_const_past_pointer<T>::type;
 };
 
@@ -130,6 +131,61 @@ struct is_move_assignable {
     static std::false_type get(...);
     static constexpr bool value = decltype(get((T*)nullptr))::value;
 };
+
+
+// An implementation of `std::is_trivially_copyable` since STL version
+// is not equally supported by all compilers, especially GCC 4.9.
+// Uniform implementation of this trait is important for ABI compatibility
+// as it has an impact on SmallVector's ABI (among others).
+template <typename T>
+class is_trivially_copyable {
+
+  // copy constructors
+  static constexpr bool has_trivial_copy_constructor =
+      std::is_copy_constructible<detail::trivial_helper<T>>::value;
+  static constexpr bool has_deleted_copy_constructor =
+      !std::is_copy_constructible<T>::value;
+
+  // move constructors
+  static constexpr bool has_trivial_move_constructor =
+      std::is_move_constructible<detail::trivial_helper<T>>::value;
+  static constexpr bool has_deleted_move_constructor =
+      !std::is_move_constructible<T>::value;
+
+  // copy assign
+  static constexpr bool has_trivial_copy_assign =
+      is_copy_assignable<detail::trivial_helper<T>>::value;
+  static constexpr bool has_deleted_copy_assign =
+      !is_copy_assignable<T>::value;
+
+  // move assign
+  static constexpr bool has_trivial_move_assign =
+      is_move_assignable<detail::trivial_helper<T>>::value;
+  static constexpr bool has_deleted_move_assign =
+      !is_move_assignable<T>::value;
+
+  // destructor
+  static constexpr bool has_trivial_destructor =
+      std::is_destructible<detail::trivial_helper<T>>::value;
+
+  public:
+
+  static constexpr bool value =
+      has_trivial_destructor &&
+      (has_deleted_move_assign || has_trivial_move_assign) &&
+      (has_deleted_move_constructor || has_trivial_move_constructor) &&
+      (has_deleted_copy_assign || has_trivial_copy_assign) &&
+      (has_deleted_copy_constructor || has_trivial_copy_constructor);
+
+#ifdef HAVE_STD_IS_TRIVIALLY_COPYABLE
+  static_assert(value == std::is_trivially_copyable<T>::value,
+                "inconsistent behavior between llvm:: and std:: implementation of is_trivially_copyable");
+#endif
+};
+template <typename T>
+class is_trivially_copyable<T*> : public std::true_type {
+};
+
 
 } // end namespace llvm
 

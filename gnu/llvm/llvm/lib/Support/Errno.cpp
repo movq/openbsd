@@ -12,7 +12,8 @@
 
 #include "llvm/Support/Errno.h"
 #include "llvm/Config/config.h"
-#include <cstring>
+#include "llvm/Support/raw_ostream.h"
+#include <string.h>
 
 #if HAVE_ERRNO_H
 #include <errno.h>

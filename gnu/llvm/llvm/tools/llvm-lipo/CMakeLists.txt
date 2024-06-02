@@ -3,10 +3,7 @@ set(LLVM_LINK_COMPONENTS
   Object
   Option
   Support
-  TargetParser
   TextAPI
-  Core
-  BinaryFormat
 )
 
 set(LLVM_TARGET_DEFINITIONS LipoOpts.td)
@@ -17,7 +14,6 @@ add_llvm_tool(llvm-lipo
   llvm-lipo.cpp
   DEPENDS
   LipoOptsTableGen
-  GENERATE_DRIVER
 )
 
 if(LLVM_INSTALL_CCTOOLS_SYMLINKS)

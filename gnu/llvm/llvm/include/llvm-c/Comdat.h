@@ -19,20 +19,14 @@
 
 LLVM_C_EXTERN_C_BEGIN
 
-/**
- * @defgroup LLVMCCoreComdat Comdats
- * @ingroup LLVMCCore
- *
- * @{
- */
-
 typedef enum {
   LLVMAnyComdatSelectionKind,        ///< The linker may choose any COMDAT.
   LLVMExactMatchComdatSelectionKind, ///< The data referenced by the COMDAT must
                                      ///< be the same.
   LLVMLargestComdatSelectionKind,    ///< The linker will choose the largest
                                      ///< COMDAT.
-  LLVMNoDeduplicateComdatSelectionKind, ///< No deduplication is performed.
+  LLVMNoDuplicatesComdatSelectionKind, ///< No other Module may specify this
+                                       ///< COMDAT.
   LLVMSameSizeComdatSelectionKind ///< The data referenced by the COMDAT must be
                                   ///< the same size.
 } LLVMComdatSelectionKind;
@@ -72,10 +66,6 @@ LLVMComdatSelectionKind LLVMGetComdatSelectionKind(LLVMComdatRef C);
  * @see llvm::Comdat::setSelectionKind()
  */
 void LLVMSetComdatSelectionKind(LLVMComdatRef C, LLVMComdatSelectionKind Kind);
-
-/**
- * @}
- */
 
 LLVM_C_EXTERN_C_END
 

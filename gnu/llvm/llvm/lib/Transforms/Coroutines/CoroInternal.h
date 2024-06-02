@@ -13,23 +13,43 @@
 
 #include "CoroInstr.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Transforms/Coroutines.h"
 
 namespace llvm {
 
 class CallGraph;
+class CallGraphSCC;
+class PassRegistry;
+
+void initializeCoroEarlyLegacyPass(PassRegistry &);
+void initializeCoroSplitLegacyPass(PassRegistry &);
+void initializeCoroElideLegacyPass(PassRegistry &);
+void initializeCoroCleanupLegacyPass(PassRegistry &);
+
+// CoroEarly pass marks every function that has coro.begin with a string
+// attribute "coroutine.presplit"="0". CoroSplit pass processes the coroutine
+// twice. First, it lets it go through complete IPO optimization pipeline as a
+// single function. It forces restart of the pipeline by inserting an indirect
+// call to an empty function "coro.devirt.trigger" which is devirtualized by
+// CoroElide pass that triggers a restart of the pipeline by CGPassManager.
+// When CoroSplit pass sees the same coroutine the second time, it splits it up,
+// adds coroutine subfunctions to the SCC to be processed by IPO pipeline.
+
+#define CORO_PRESPLIT_ATTR "coroutine.presplit"
+#define UNPREPARED_FOR_SPLIT "0"
+#define PREPARED_FOR_SPLIT "1"
+
+#define CORO_DEVIRT_TRIGGER_FN "coro.devirt.trigger"
 
 namespace coro {
 
-bool declaresAnyIntrinsic(const Module &M);
 bool declaresIntrinsics(const Module &M,
                         const std::initializer_list<StringRef>);
+void replaceAllCoroAllocs(CoroBeginInst *CB, bool Replacement);
+void replaceAllCoroFrees(CoroBeginInst *CB, Value *Replacement);
 void replaceCoroFree(CoroIdInst *CoroId, bool Elide);
-
-/// Recover a dbg.declare prepared by the frontend and emit an alloca
-/// holding a pointer to the coroutine frame.
-void salvageDebugInfo(
-    SmallDenseMap<llvm::Value *, llvm::AllocaInst *, 4> &DbgPtrAllocaCache,
-    DbgVariableIntrinsic *DVI, bool OptimizeFrame);
+void updateCallGraph(Function &Caller, ArrayRef<Function *> Funcs,
+                     CallGraph &CG, CallGraphSCC &SCC);
 
 // Keeps data and helper functions for lowering coroutine intrinsics.
 struct LowererBase {
@@ -61,20 +81,14 @@ enum class ABI {
   /// suspend at most once during its execution, and the return value of
   /// the continuation is void.
   RetconOnce,
-
-  /// The "async continuation" lowering, where each suspend point creates a
-  /// single continuation function. The continuation function is available as an
-  /// intrinsic.
-  Async,
 };
 
 // Holds structural Coroutine Intrinsics for a particular function and other
 // values used during CoroSplit pass.
 struct LLVM_LIBRARY_VISIBILITY Shape {
   CoroBeginInst *CoroBegin;
-  SmallVector<AnyCoroEndInst *, 4> CoroEnds;
+  SmallVector<CoroEndInst *, 4> CoroEnds;
   SmallVector<CoroSizeInst *, 2> CoroSizes;
-  SmallVector<CoroAlignInst *, 2> CoroAligns;
   SmallVector<AnyCoroSuspendInst *, 4> CoroSuspends;
   SmallVector<CallInst*, 2> SwiftErrorOps;
 
@@ -82,37 +96,25 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
   struct SwitchFieldIndex {
     enum {
       Resume,
-      Destroy
-
-      // The promise field is always at a fixed offset from the start of
-      // frame given its type, but the index isn't a constant for all
-      // possible frames.
-
-      // The switch-index field isn't at a fixed offset or index, either;
-      // we just work it in where it fits best.
+      Destroy,
+      Promise,
+      Index,
+      /// The index of the first spill field.
+      FirstSpill
     };
   };
 
   coro::ABI ABI;
 
   StructType *FrameTy;
-  Align FrameAlign;
-  uint64_t FrameSize;
-  Value *FramePtr;
+  Instruction *FramePtr;
   BasicBlock *AllocaSpillBlock;
-
-  /// This would only be true if optimization are enabled.
-  bool OptimizeFrame;
 
   struct SwitchLoweringStorage {
     SwitchInst *ResumeSwitch;
     AllocaInst *PromiseAlloca;
     BasicBlock *ResumeEntryBlock;
-    unsigned IndexField;
-    unsigned IndexAlign;
-    unsigned IndexOffset;
     bool HasFinalSuspend;
-    bool HasUnwindCoroEnd;
   };
 
   struct RetconLoweringStorage {
@@ -123,24 +125,9 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
     bool IsFrameInlineInStorage;
   };
 
-  struct AsyncLoweringStorage {
-    FunctionType *AsyncFuncTy;
-    Value *Context;
-    CallingConv::ID AsyncCC;
-    unsigned ContextArgNo;
-    uint64_t ContextHeaderSize;
-    uint64_t ContextAlignment;
-    uint64_t FrameOffset; // Start of the frame.
-    uint64_t ContextSize; // Includes frame size.
-    GlobalVariable *AsyncFuncPointer;
-
-    Align getContextAlignment() const { return Align(ContextAlignment); }
-  };
-
   union {
     SwitchLoweringStorage SwitchLowering;
     RetconLoweringStorage RetconLowering;
-    AsyncLoweringStorage AsyncLowering;
   };
 
   CoroIdInst *getSwitchCoroId() const {
@@ -154,20 +141,10 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
     return cast<AnyCoroIdRetconInst>(CoroBegin->getId());
   }
 
-  CoroIdAsyncInst *getAsyncCoroId() const {
-    assert(ABI == coro::ABI::Async);
-    return cast<CoroIdAsyncInst>(CoroBegin->getId());
-  }
-
-  unsigned getSwitchIndexField() const {
-    assert(ABI == coro::ABI::Switch);
-    assert(FrameTy && "frame type not assigned");
-    return SwitchLowering.IndexField;
-  }
   IntegerType *getIndexType() const {
     assert(ABI == coro::ABI::Switch);
     assert(FrameTy && "frame type not assigned");
-    return cast<IntegerType>(FrameTy->getElementType(getSwitchIndexField()));
+    return cast<IntegerType>(FrameTy->getElementType(SwitchFieldIndex::Index));
   }
   ConstantInt *getIndex(uint64_t Value) const {
     return ConstantInt::get(getIndexType(), Value);
@@ -181,17 +158,14 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
 
   FunctionType *getResumeFunctionType() const {
     switch (ABI) {
-    case coro::ABI::Switch:
-      return FunctionType::get(Type::getVoidTy(FrameTy->getContext()),
-                               FrameTy->getPointerTo(), /*IsVarArg*/false);
+    case coro::ABI::Switch: {
+      auto *FnPtrTy = getSwitchResumePointerType();
+      return cast<FunctionType>(FnPtrTy->getPointerElementType());
+    }
     case coro::ABI::Retcon:
     case coro::ABI::RetconOnce:
       return RetconLowering.ResumePrototype->getFunctionType();
-    case coro::ABI::Async:
-      // Not used. The function type depends on the active suspend.
-      return nullptr;
     }
-
     llvm_unreachable("Unknown coro::ABI enum");
   }
 
@@ -225,8 +199,18 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
     case coro::ABI::Retcon:
     case coro::ABI::RetconOnce:
       return RetconLowering.ResumePrototype->getCallingConv();
-    case coro::ABI::Async:
-      return AsyncLowering.AsyncCC;
+    }
+    llvm_unreachable("Unknown coro::ABI enum");
+  }
+
+  unsigned getFirstSpillFieldIndex() const {
+    switch (ABI) {
+    case coro::ABI::Switch:
+      return SwitchFieldIndex::FirstSpill;
+
+    case coro::ABI::Retcon:
+    case coro::ABI::RetconOnce:
+      return 0;
     }
     llvm_unreachable("Unknown coro::ABI enum");
   }
@@ -235,12 +219,6 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
     if (ABI == coro::ABI::Switch)
       return SwitchLowering.PromiseAlloca;
     return nullptr;
-  }
-
-  Instruction *getInsertPtAfterFramePtr() const {
-    if (auto *I = dyn_cast<Instruction>(FramePtr))
-      return I->getNextNode();
-    return &cast<Argument>(FramePtr)->getParent()->getEntryBlock().front();
   }
 
   /// Allocate memory according to the rules of the active lowering.
@@ -254,16 +232,12 @@ struct LLVM_LIBRARY_VISIBILITY Shape {
   void emitDealloc(IRBuilder<> &Builder, Value *Ptr, CallGraph *CG) const;
 
   Shape() = default;
-  explicit Shape(Function &F, bool OptimizeFrame = false)
-      : OptimizeFrame(OptimizeFrame) {
-    buildFrom(F);
-  }
+  explicit Shape(Function &F) { buildFrom(F); }
   void buildFrom(Function &F);
 };
 
 void buildCoroutineFrame(Function &F, Shape &Shape);
-CallInst *createMustTailCall(DebugLoc Loc, Function *MustTailCallFn,
-                             ArrayRef<Value *> Arguments, IRBuilder<> &);
+
 } // End namespace coro.
 } // End namespace llvm
 

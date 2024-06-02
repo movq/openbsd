@@ -27,14 +27,13 @@ namespace coverage {
 /// Writer of the filenames section for the instrumentation
 /// based code coverage.
 class CoverageFilenamesSectionWriter {
-  ArrayRef<std::string> Filenames;
+  ArrayRef<StringRef> Filenames;
 
 public:
-  CoverageFilenamesSectionWriter(ArrayRef<std::string> Filenames);
+  CoverageFilenamesSectionWriter(ArrayRef<StringRef> Filenames);
 
-  /// Write encoded filenames to the given output stream. If \p Compress is
-  /// true, attempt to compress the filenames.
-  void write(raw_ostream &OS, bool Compress = true);
+  /// Write encoded filenames to the given output stream.
+  void write(raw_ostream &OS);
 };
 
 /// Writer for instrumentation based coverage mapping data.

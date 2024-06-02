@@ -5,8 +5,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-#ifndef LLVM_XRAY_FDRRECORDCONSUMER_H
-#define LLVM_XRAY_FDRRECORDCONSUMER_H
+#ifndef LLVM_INCLUDE_LLVM_XRAY_FDRRECORDCONSUMER_H_
+#define LLVM_INCLUDE_LLVM_XRAY_FDRRECORDCONSUMER_H_
 
 #include "llvm/Support/Error.h"
 #include "llvm/XRay/FDRRecords.h"
@@ -30,7 +30,7 @@ class LogBuilderConsumer : public RecordConsumer {
 
 public:
   explicit LogBuilderConsumer(std::vector<std::unique_ptr<Record>> &R)
-      : Records(R) {}
+      : RecordConsumer(), Records(R) {}
 
   Error consume(std::unique_ptr<Record> R) override;
 };
@@ -42,7 +42,8 @@ class PipelineConsumer : public RecordConsumer {
   std::vector<RecordVisitor *> Visitors;
 
 public:
-  PipelineConsumer(std::initializer_list<RecordVisitor *> V) : Visitors(V) {}
+  PipelineConsumer(std::initializer_list<RecordVisitor *> V)
+      : RecordConsumer(), Visitors(V) {}
 
   Error consume(std::unique_ptr<Record> R) override;
 };
@@ -50,4 +51,4 @@ public:
 } // namespace xray
 } // namespace llvm
 
-#endif // LLVM_XRAY_FDRRECORDCONSUMER_H
+#endif // LLVM_INCLUDE_LLVM_XRAY_FDRRECORDCONSUMER_H_

@@ -20,27 +20,25 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/CodeGenCommonISel.h"
-#include "llvm/CodeGen/FunctionLoweringInfo.h"
-#include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/GlobalISel/CSEMIRBuilder.h"
+#include "llvm/CodeGen/GlobalISel/Types.h"
 #include "llvm/CodeGen/SwiftErrorValueTracking.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/SwitchLoweringUtils.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/Support/CodeGen.h"
 #include <memory>
 #include <utility>
 
 namespace llvm {
 
 class AllocaInst;
-class AssumptionCache;
 class BasicBlock;
 class CallInst;
 class CallLowering;
 class Constant;
-class ConstrainedFPIntrinsic;
 class DataLayout;
+class FunctionLoweringInfo;
 class Instruction;
 class MachineBasicBlock;
 class MachineFunction;
@@ -48,7 +46,6 @@ class MachineInstr;
 class MachineRegisterInfo;
 class OptimizationRemarkEmitter;
 class PHINode;
-class TargetLibraryInfo;
 class TargetPassConfig;
 class User;
 class Value;
@@ -205,10 +202,6 @@ private:
   /// \return true if the materialization succeeded.
   bool translate(const Constant &C, Register Reg);
 
-  // Translate U as a copy of V.
-  bool translateCopy(const User &U, const Value &V,
-                     MachineIRBuilder &MIRBuilder);
-
   /// Translate an LLVM bitcast into generic IR. Either a COPY or a G_BITCAST is
   /// emitted.
   bool translateBitCast(const User &U, MachineIRBuilder &MIRBuilder);
@@ -221,14 +214,12 @@ private:
 
   /// Translate an LLVM string intrinsic (memcpy, memset, ...).
   bool translateMemFunc(const CallInst &CI, MachineIRBuilder &MIRBuilder,
-                        unsigned Opcode);
+                        Intrinsic::ID ID);
 
   void getStackGuard(Register DstReg, MachineIRBuilder &MIRBuilder);
 
   bool translateOverflowIntrinsic(const CallInst &CI, unsigned Op,
                                   MachineIRBuilder &MIRBuilder);
-  bool translateFixedPointIntrinsic(unsigned Op, const CallInst &CI,
-                                    MachineIRBuilder &MIRBuilder);
 
   /// Helper function for translateSimpleIntrinsic.
   /// \return The generic opcode for \p IntrinsicID if \p IntrinsicID is a
@@ -241,33 +232,24 @@ private:
   bool translateSimpleIntrinsic(const CallInst &CI, Intrinsic::ID ID,
                                 MachineIRBuilder &MIRBuilder);
 
-  bool translateConstrainedFPIntrinsic(const ConstrainedFPIntrinsic &FPI,
-                                       MachineIRBuilder &MIRBuilder);
-
   bool translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
                                MachineIRBuilder &MIRBuilder);
 
-  bool translateInlineAsm(const CallBase &CB, MachineIRBuilder &MIRBuilder);
+  bool translateInlineAsm(const CallInst &CI, MachineIRBuilder &MIRBuilder);
+
+  /// Returns true if the value should be split into multiple LLTs.
+  /// If \p Offsets is given then the split type's offsets will be stored in it.
+  /// If \p Offsets is not empty it will be cleared first.
+  bool valueIsSplit(const Value &V,
+                    SmallVectorImpl<uint64_t> *Offsets = nullptr);
 
   /// Common code for translating normal calls or invokes.
-  bool translateCallBase(const CallBase &CB, MachineIRBuilder &MIRBuilder);
+  bool translateCallSite(const ImmutableCallSite &CS,
+                         MachineIRBuilder &MIRBuilder);
 
   /// Translate call instruction.
   /// \pre \p U is a call instruction.
   bool translateCall(const User &U, MachineIRBuilder &MIRBuilder);
-
-  /// When an invoke or a cleanupret unwinds to the next EH pad, there are
-  /// many places it could ultimately go. In the IR, we have a single unwind
-  /// destination, but in the machine CFG, we enumerate all the possible blocks.
-  /// This function skips over imaginary basic blocks that hold catchswitch
-  /// instructions, and finds all the "real" machine
-  /// basic block destinations. As those destinations may not be successors of
-  /// EHPadBB, here we also calculate the edge probability to those
-  /// destinations. The passed-in Prob is the edge probability to EHPadBB.
-  bool findUnwindDestinations(
-      const BasicBlock *EHPadBB, BranchProbability Prob,
-      SmallVectorImpl<std::pair<MachineBasicBlock *, BranchProbability>>
-          &UnwindDests);
 
   bool translateInvoke(const User &U, MachineIRBuilder &MIRBuilder);
 
@@ -300,36 +282,10 @@ private:
   /// MachineBasicBlocks for the function have been created.
   void finishPendingPhis();
 
-  /// Translate \p Inst into a unary operation \p Opcode.
-  /// \pre \p U is a unary operation.
-  bool translateUnaryOp(unsigned Opcode, const User &U,
-                        MachineIRBuilder &MIRBuilder);
-
   /// Translate \p Inst into a binary operation \p Opcode.
   /// \pre \p U is a binary operation.
   bool translateBinaryOp(unsigned Opcode, const User &U,
                          MachineIRBuilder &MIRBuilder);
-
-  /// If the set of cases should be emitted as a series of branches, return
-  /// true. If we should emit this as a bunch of and/or'd together conditions,
-  /// return false.
-  bool shouldEmitAsBranches(const std::vector<SwitchCG::CaseBlock> &Cases);
-  /// Helper method for findMergedConditions.
-  /// This function emits a branch and is used at the leaves of an OR or an
-  /// AND operator tree.
-  void emitBranchForMergedCondition(const Value *Cond, MachineBasicBlock *TBB,
-                                    MachineBasicBlock *FBB,
-                                    MachineBasicBlock *CurBB,
-                                    MachineBasicBlock *SwitchBB,
-                                    BranchProbability TProb,
-                                    BranchProbability FProb, bool InvertCond);
-  /// Used during condbr translation to find trees of conditions that can be
-  /// optimized.
-  void findMergedConditions(const Value *Cond, MachineBasicBlock *TBB,
-                            MachineBasicBlock *FBB, MachineBasicBlock *CurBB,
-                            MachineBasicBlock *SwitchBB,
-                            Instruction::BinaryOps Opc, BranchProbability TProb,
-                            BranchProbability FProb, bool InvertCond);
 
   /// Translate branch (br) instruction.
   /// \pre \p U is a branch instruction.
@@ -344,37 +300,25 @@ private:
   void emitSwitchCase(SwitchCG::CaseBlock &CB, MachineBasicBlock *SwitchBB,
                       MachineIRBuilder &MIB);
 
-  /// Generate for for the BitTest header block, which precedes each sequence of
-  /// BitTestCases.
-  void emitBitTestHeader(SwitchCG::BitTestBlock &BTB,
-                         MachineBasicBlock *SwitchMBB);
-  /// Generate code to produces one "bit test" for a given BitTestCase \p B.
-  void emitBitTestCase(SwitchCG::BitTestBlock &BB, MachineBasicBlock *NextMBB,
-                       BranchProbability BranchProbToNext, Register Reg,
-                       SwitchCG::BitTestCase &B, MachineBasicBlock *SwitchBB);
+  bool lowerJumpTableWorkItem(SwitchCG::SwitchWorkListItem W,
+                              MachineBasicBlock *SwitchMBB,
+                              MachineBasicBlock *CurMBB,
+                              MachineBasicBlock *DefaultMBB,
+                              MachineIRBuilder &MIB,
+                              MachineFunction::iterator BBI,
+                              BranchProbability UnhandledProbs,
+                              SwitchCG::CaseClusterIt I,
+                              MachineBasicBlock *Fallthrough,
+                              bool FallthroughUnreachable);
 
-  bool lowerJumpTableWorkItem(
-      SwitchCG::SwitchWorkListItem W, MachineBasicBlock *SwitchMBB,
-      MachineBasicBlock *CurMBB, MachineBasicBlock *DefaultMBB,
-      MachineIRBuilder &MIB, MachineFunction::iterator BBI,
-      BranchProbability UnhandledProbs, SwitchCG::CaseClusterIt I,
-      MachineBasicBlock *Fallthrough, bool FallthroughUnreachable);
-
-  bool lowerSwitchRangeWorkItem(SwitchCG::CaseClusterIt I, Value *Cond,
+  bool lowerSwitchRangeWorkItem(SwitchCG::CaseClusterIt I,
+                                Value *Cond,
                                 MachineBasicBlock *Fallthrough,
                                 bool FallthroughUnreachable,
                                 BranchProbability UnhandledProbs,
                                 MachineBasicBlock *CurMBB,
                                 MachineIRBuilder &MIB,
                                 MachineBasicBlock *SwitchMBB);
-
-  bool lowerBitTestWorkItem(
-      SwitchCG::SwitchWorkListItem W, MachineBasicBlock *SwitchMBB,
-      MachineBasicBlock *CurMBB, MachineBasicBlock *DefaultMBB,
-      MachineIRBuilder &MIB, MachineFunction::iterator BBI,
-      BranchProbability DefaultProb, BranchProbability UnhandledProbs,
-      SwitchCG::CaseClusterIt I, MachineBasicBlock *Fallthrough,
-      bool FallthroughUnreachable);
 
   bool lowerSwitchWorkItem(SwitchCG::SwitchWorkListItem W, Value *Cond,
                            MachineBasicBlock *SwitchMBB,
@@ -401,6 +345,8 @@ private:
   /// this to succeed.
   /// \pre \p U is a return instruction.
   bool translateRet(const User &U, MachineIRBuilder &MIRBuilder);
+
+  bool translateFSub(const User &U, MachineIRBuilder &MIRBuilder);
 
   bool translateFNeg(const User &U, MachineIRBuilder &MIRBuilder);
 
@@ -462,8 +408,9 @@ private:
   bool translateSIToFP(const User &U, MachineIRBuilder &MIRBuilder) {
     return translateCast(TargetOpcode::G_SITOFP, U, MIRBuilder);
   }
-  bool translateUnreachable(const User &U, MachineIRBuilder &MIRBuilder);
-
+  bool translateUnreachable(const User &U, MachineIRBuilder &MIRBuilder) {
+    return true;
+  }
   bool translateSExt(const User &U, MachineIRBuilder &MIRBuilder) {
     return translateCast(TargetOpcode::G_SEXT, U, MIRBuilder);
   }
@@ -484,9 +431,6 @@ private:
 
   bool translateFAdd(const User &U, MachineIRBuilder &MIRBuilder) {
     return translateBinaryOp(TargetOpcode::G_FADD, U, MIRBuilder);
-  }
-  bool translateFSub(const User &U, MachineIRBuilder &MIRBuilder) {
-    return translateBinaryOp(TargetOpcode::G_FSUB, U, MIRBuilder);
   }
   bool translateFMul(const User &U, MachineIRBuilder &MIRBuilder) {
     return translateBinaryOp(TargetOpcode::G_FMUL, U, MIRBuilder);
@@ -509,7 +453,6 @@ private:
   bool translateAtomicCmpXchg(const User &U, MachineIRBuilder &MIRBuilder);
   bool translateAtomicRMW(const User &U, MachineIRBuilder &MIRBuilder);
   bool translateFence(const User &U, MachineIRBuilder &MIRBuilder);
-  bool translateFreeze(const User &U, MachineIRBuilder &MIRBuilder);
 
   // Stubs to keep the compiler happy while we implement the rest of the
   // translation.
@@ -540,6 +483,9 @@ private:
   bool translateUserOp2(const User &U, MachineIRBuilder &MIRBuilder) {
     return false;
   }
+  bool translateFreeze(const User &U, MachineIRBuilder &MIRBuilder) {
+    return false;
+  }
 
   /// @}
 
@@ -566,14 +512,9 @@ private:
   /// Current target configuration. Controls how the pass handles errors.
   const TargetPassConfig *TPC;
 
-  CodeGenOpt::Level OptLevel;
-
   /// Current optimization remark emitter. Used to report failures.
   std::unique_ptr<OptimizationRemarkEmitter> ORE;
 
-  AAResults *AA;
-  AssumptionCache *AC;
-  const TargetLibraryInfo *LibInfo;
   FunctionLoweringInfo FuncInfo;
 
   // True when either the Target Machine specifies no optimizations or the
@@ -584,8 +525,6 @@ private:
   /// stop translating such blocks early.
   bool HasTailCall = false;
 
-  StackProtectorDescriptor SPDescriptor;
-
   /// Switch analysis and optimization.
   class GISelSwitchLowering : public SwitchCG::SwitchLowering {
   public:
@@ -594,7 +533,7 @@ private:
       assert(irt && "irt is null!");
     }
 
-    void addSuccessorWithProb(
+    virtual void addSuccessorWithProb(
         MachineBasicBlock *Src, MachineBasicBlock *Dst,
         BranchProbability Prob = BranchProbability::getUnknown()) override {
       IRT->addSuccessorWithProb(Src, Dst, Prob);
@@ -614,34 +553,8 @@ private:
   // * Clear the different maps.
   void finalizeFunction();
 
-  // Processing steps done per block. E.g. emitting jump tables, stack
-  // protectors etc. Returns true if no errors, false if there was a problem
-  // that caused an abort.
-  bool finalizeBasicBlock(const BasicBlock &BB, MachineBasicBlock &MBB);
-
-  /// Codegen a new tail for a stack protector check ParentMBB which has had its
-  /// tail spliced into a stack protector check success bb.
-  ///
-  /// For a high level explanation of how this fits into the stack protector
-  /// generation see the comment on the declaration of class
-  /// StackProtectorDescriptor.
-  ///
-  /// \return true if there were no problems.
-  bool emitSPDescriptorParent(StackProtectorDescriptor &SPD,
-                              MachineBasicBlock *ParentBB);
-
-  /// Codegen the failure basic block for a stack protector check.
-  ///
-  /// A failure stack protector machine basic block consists simply of a call to
-  /// __stack_chk_fail().
-  ///
-  /// For a high level explanation of how this fits into the stack protector
-  /// generation see the comment on the declaration of class
-  /// StackProtectorDescriptor.
-  ///
-  /// \return true if there were no problems.
-  bool emitSPDescriptorFailure(StackProtectorDescriptor &SPD,
-                               MachineBasicBlock *FailureBB);
+  // Handle emitting jump tables for each basic block.
+  void finalizeBasicBlock();
 
   /// Get the VRegs that represent \p Val.
   /// Non-aggregate types have just one corresponding VReg and the list can be
@@ -669,7 +582,7 @@ private:
   /// Get the alignment of the given memory operation instruction. This will
   /// either be the explicitly specified value or the ABI-required alignment for
   /// the type being accessed (according to the Module's DataLayout).
-  Align getMemOpAlign(const Instruction &I);
+  unsigned getMemOpAlignment(const Instruction &I);
 
   /// Get the MachineBasicBlock that represents \p BB. Specifically, the block
   /// returned will be the head of the translated block (suitable for branch
@@ -698,12 +611,12 @@ private:
   BranchProbability getEdgeProbability(const MachineBasicBlock *Src,
                                        const MachineBasicBlock *Dst) const;
 
-  void addSuccessorWithProb(
-      MachineBasicBlock *Src, MachineBasicBlock *Dst,
-      BranchProbability Prob = BranchProbability::getUnknown());
+  void addSuccessorWithProb(MachineBasicBlock *Src, MachineBasicBlock *Dst,
+                            BranchProbability Prob);
 
 public:
-  IRTranslator(CodeGenOpt::Level OptLevel = CodeGenOpt::None);
+  // Ctor, nothing fancy.
+  IRTranslator();
 
   StringRef getPassName() const override { return "IRTranslator"; }
 

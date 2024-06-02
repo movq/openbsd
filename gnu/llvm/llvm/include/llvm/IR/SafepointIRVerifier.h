@@ -15,8 +15,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_IR_SAFEPOINTIRVERIFIER_H
-#define LLVM_IR_SAFEPOINTIRVERIFIER_H
+#ifndef LLVM_IR_SAFEPOINT_IR_VERIFIER
+#define LLVM_IR_SAFEPOINT_IR_VERIFIER
 
 #include "llvm/IR/PassManager.h"
 
@@ -37,10 +37,10 @@ FunctionPass *createSafepointIRVerifierPass();
 class SafepointIRVerifierPass : public PassInfoMixin<SafepointIRVerifierPass> {
 
 public:
-  explicit SafepointIRVerifierPass() = default;
+  explicit SafepointIRVerifierPass() {}
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
 }
 
-#endif // LLVM_IR_SAFEPOINTIRVERIFIER_H
+#endif // LLVM_IR_SAFEPOINT_IR_VERIFIER

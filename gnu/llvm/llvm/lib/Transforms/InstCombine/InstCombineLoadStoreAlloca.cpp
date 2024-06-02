@@ -14,56 +14,60 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/Loads.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/PatternMatch.h"
-#include "llvm/Transforms/InstCombine/InstCombiner.h"
-#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 using namespace llvm;
 using namespace PatternMatch;
 
 #define DEBUG_TYPE "instcombine"
 
-STATISTIC(NumDeadStore, "Number of dead stores eliminated");
+STATISTIC(NumDeadStore,    "Number of dead stores eliminated");
 STATISTIC(NumGlobalCopies, "Number of allocas copied from constant global");
 
-static cl::opt<unsigned> MaxCopiedFromConstantUsers(
-    "instcombine-max-copied-from-constant-users", cl::init(128),
-    cl::desc("Maximum users to visit in copy from constant transform"),
-    cl::Hidden);
+/// pointsToConstantGlobal - Return true if V (possibly indirectly) points to
+/// some part of a constant global variable.  This intentionally only accepts
+/// constant expressions because we can't rewrite arbitrary instructions.
+static bool pointsToConstantGlobal(Value *V) {
+  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
+    return GV->isConstant();
 
-/// isOnlyCopiedFromConstantMemory - Recursively walk the uses of a (derived)
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(V)) {
+    if (CE->getOpcode() == Instruction::BitCast ||
+        CE->getOpcode() == Instruction::AddrSpaceCast ||
+        CE->getOpcode() == Instruction::GetElementPtr)
+      return pointsToConstantGlobal(CE->getOperand(0));
+  }
+  return false;
+}
+
+/// isOnlyCopiedFromConstantGlobal - Recursively walk the uses of a (derived)
 /// pointer to an alloca.  Ignore any reads of the pointer, return false if we
 /// see any stores or other unknown uses.  If we see pointer arithmetic, keep
 /// track of whether it moves the pointer (with IsOffset) but otherwise traverse
 /// the uses.  If we see a memcpy/memmove that targets an unoffseted pointer to
-/// the alloca, and if the source pointer is a pointer to a constant memory
-/// location, we can optimize this.
+/// the alloca, and if the source pointer is a pointer to a constant global, we
+/// can optimize this.
 static bool
-isOnlyCopiedFromConstantMemory(AAResults *AA, AllocaInst *V,
-                               MemTransferInst *&TheCopy,
+isOnlyCopiedFromConstantGlobal(Value *V, MemTransferInst *&TheCopy,
                                SmallVectorImpl<Instruction *> &ToDelete) {
   // We track lifetime intrinsics as we encounter them.  If we decide to go
-  // ahead and replace the value with the memory location, this lets the caller
-  // quickly eliminate the markers.
+  // ahead and replace the value with the global, this lets the caller quickly
+  // eliminate the markers.
 
-  using ValueAndIsOffset = PointerIntPair<Value *, 1, bool>;
-  SmallVector<ValueAndIsOffset, 32> Worklist;
-  SmallPtrSet<ValueAndIsOffset, 32> Visited;
-  Worklist.emplace_back(V, false);
-  while (!Worklist.empty()) {
-    ValueAndIsOffset Elem = Worklist.pop_back_val();
-    if (!Visited.insert(Elem).second)
-      continue;
-    if (Visited.size() > MaxCopiedFromConstantUsers)
-      return false;
-
-    const auto [Value, IsOffset] = Elem;
-    for (auto &U : Value->uses()) {
+  SmallVector<std::pair<Value *, bool>, 35> ValuesToInspect;
+  ValuesToInspect.emplace_back(V, false);
+  while (!ValuesToInspect.empty()) {
+    auto ValuePair = ValuesToInspect.pop_back_val();
+    const bool IsOffset = ValuePair.second;
+    for (auto &U : ValuePair.first->uses()) {
       auto *I = cast<Instruction>(U.getUser());
 
       if (auto *LI = dyn_cast<LoadInst>(I)) {
@@ -72,22 +76,15 @@ isOnlyCopiedFromConstantMemory(AAResults *AA, AllocaInst *V,
         continue;
       }
 
-      if (isa<PHINode, SelectInst>(I)) {
-        // We set IsOffset=true, to forbid the memcpy from occurring after the
-        // phi: If one of the phi operands is not based on the alloca, we
-        // would incorrectly omit a write.
-        Worklist.emplace_back(I, true);
-        continue;
-      }
-      if (isa<BitCastInst, AddrSpaceCastInst>(I)) {
+      if (isa<BitCastInst>(I) || isa<AddrSpaceCastInst>(I)) {
         // If uses of the bitcast are ok, we are ok.
-        Worklist.emplace_back(I, IsOffset);
+        ValuesToInspect.emplace_back(I, IsOffset);
         continue;
       }
       if (auto *GEP = dyn_cast<GetElementPtrInst>(I)) {
         // If the GEP has all zero indices, it doesn't offset the pointer. If it
         // doesn't, it does.
-        Worklist.emplace_back(I, IsOffset || !GEP->hasAllZeroIndices());
+        ValuesToInspect.emplace_back(I, IsOffset || !GEP->hasAllZeroIndices());
         continue;
       }
 
@@ -104,12 +101,11 @@ isOnlyCopiedFromConstantMemory(AAResults *AA, AllocaInst *V,
         if (IsArgOperand && Call->isInAllocaArgument(DataOpNo))
           return false;
 
-        // If this call site doesn't modify the memory, then we know it is just
-        // a load (but one that potentially returns the value itself), so we can
+        // If this is a readonly/readnone call site, then we know it is just a
+        // load (but one that potentially returns the value itself), so we can
         // ignore it if we know that the value isn't captured.
-        bool NoCapture = Call->doesNotCapture(DataOpNo);
-        if ((Call->onlyReadsMemory() && (Call->use_empty() || NoCapture)) ||
-            (Call->onlyReadsMemory(DataOpNo) && NoCapture))
+        if (Call->onlyReadsMemory() &&
+            (Call->use_empty() || Call->doesNotCapture(DataOpNo)))
           continue;
 
         // If this is being passed as a byval argument, the caller is making a
@@ -131,14 +127,12 @@ isOnlyCopiedFromConstantMemory(AAResults *AA, AllocaInst *V,
       if (!MI)
         return false;
 
-      // If the transfer is volatile, reject it.
-      if (MI->isVolatile())
-        return false;
-
       // If the transfer is using the alloca as a source of the transfer, then
       // ignore it since it is a load (unless the transfer is volatile).
-      if (U.getOperandNo() == 1)
+      if (U.getOperandNo() == 1) {
+        if (MI->isVolatile()) return false;
         continue;
+      }
 
       // If we already have seen a copy, reject the second one.
       if (TheCopy) return false;
@@ -150,8 +144,8 @@ isOnlyCopiedFromConstantMemory(AAResults *AA, AllocaInst *V,
       // If the memintrinsic isn't using the alloca as the dest, reject it.
       if (U.getOperandNo() != 0) return false;
 
-      // If the source of the memcpy/move is not constant, reject it.
-      if (isModSet(AA->getModRefInfoMask(MI->getSource())))
+      // If the source of the memcpy/move is not a constant global, reject it.
+      if (!pointsToConstantGlobal(MI->getSource()))
         return false;
 
       // Otherwise, the transform is safe.  Remember the copy instruction.
@@ -161,16 +155,14 @@ isOnlyCopiedFromConstantMemory(AAResults *AA, AllocaInst *V,
   return true;
 }
 
-/// isOnlyCopiedFromConstantMemory - Return true if the specified alloca is only
-/// modified by a copy from a constant memory location. If we can prove this, we
-/// can replace any uses of the alloca with uses of the memory location
-/// directly.
+/// isOnlyCopiedFromConstantGlobal - Return true if the specified alloca is only
+/// modified by a copy from a constant global.  If we can prove this, we can
+/// replace any uses of the alloca with uses of the global directly.
 static MemTransferInst *
-isOnlyCopiedFromConstantMemory(AAResults *AA,
-                               AllocaInst *AI,
+isOnlyCopiedFromConstantGlobal(AllocaInst *AI,
                                SmallVectorImpl<Instruction *> &ToDelete) {
   MemTransferInst *TheCopy = nullptr;
-  if (isOnlyCopiedFromConstantMemory(AA, AI, TheCopy, ToDelete))
+  if (isOnlyCopiedFromConstantGlobal(AI, TheCopy, ToDelete))
     return TheCopy;
   return nullptr;
 }
@@ -183,12 +175,11 @@ static bool isDereferenceableForAllocaSize(const Value *V, const AllocaInst *AI,
   uint64_t AllocaSize = DL.getTypeStoreSize(AI->getAllocatedType());
   if (!AllocaSize)
     return false;
-  return isDereferenceableAndAlignedPointer(V, AI->getAlign(),
+  return isDereferenceableAndAlignedPointer(V, Align(AI->getAlignment()),
                                             APInt(64, AllocaSize), DL);
 }
 
-static Instruction *simplifyAllocaArraySize(InstCombinerImpl &IC,
-                                            AllocaInst &AI, DominatorTree &DT) {
+static Instruction *simplifyAllocaArraySize(InstCombiner &IC, AllocaInst &AI) {
   // Check for array size of 1 (scalar allocation).
   if (!AI.isArrayAllocation()) {
     // i32 1 is the canonical array size for scalar allocations.
@@ -196,18 +187,17 @@ static Instruction *simplifyAllocaArraySize(InstCombinerImpl &IC,
       return nullptr;
 
     // Canonicalize it.
-    return IC.replaceOperand(AI, 0, IC.Builder.getInt32(1));
+    Value *V = IC.Builder.getInt32(1);
+    AI.setOperand(0, V);
+    return &AI;
   }
 
   // Convert: alloca Ty, C - where C is a constant != 1 into: alloca [C x Ty], 1
   if (const ConstantInt *C = dyn_cast<ConstantInt>(AI.getArraySize())) {
     if (C->getValue().getActiveBits() <= 64) {
       Type *NewTy = ArrayType::get(AI.getAllocatedType(), C->getZExtValue());
-      AllocaInst *New = IC.Builder.CreateAlloca(NewTy, AI.getAddressSpace(),
-                                                nullptr, AI.getName());
-      New->setAlignment(AI.getAlign());
-
-      replaceAllDbgUsesWith(AI, *New, *New, DT);
+      AllocaInst *New = IC.Builder.CreateAlloca(NewTy, nullptr, AI.getName());
+      New->setAlignment(MaybeAlign(AI.getAlignment()));
 
       // Scan to the end of the allocation instructions, to skip over a block of
       // allocas if possible...also skip interleaved debug info
@@ -240,7 +230,8 @@ static Instruction *simplifyAllocaArraySize(InstCombinerImpl &IC,
   Type *IntPtrTy = IC.getDataLayout().getIntPtrType(AI.getType());
   if (AI.getArraySize()->getType() != IntPtrTy) {
     Value *V = IC.Builder.CreateIntCast(AI.getArraySize(), IntPtrTy, false);
-    return IC.replaceOperand(AI, 0, V);
+    AI.setOperand(0, V);
+    return &AI;
   }
 
   return nullptr;
@@ -259,100 +250,46 @@ namespace {
 // instruction.
 class PointerReplacer {
 public:
-  PointerReplacer(InstCombinerImpl &IC, Instruction &Root)
-    : IC(IC), Root(Root) {}
-
-  bool collectUsers();
-  void replacePointer(Value *V);
+  PointerReplacer(InstCombiner &IC) : IC(IC) {}
+  void replacePointer(Instruction &I, Value *V);
 
 private:
-  bool collectUsersRecursive(Instruction &I);
+  void findLoadAndReplace(Instruction &I);
   void replace(Instruction *I);
   Value *getReplacement(Value *I);
-  bool isAvailable(Instruction *I) const {
-    return I == &Root || Worklist.contains(I);
-  }
 
-  SmallPtrSet<Instruction *, 32> ValuesToRevisit;
-  SmallSetVector<Instruction *, 4> Worklist;
+  SmallVector<Instruction *, 4> Path;
   MapVector<Value *, Value *> WorkMap;
-  InstCombinerImpl &IC;
-  Instruction &Root;
+  InstCombiner &IC;
 };
 } // end anonymous namespace
 
-bool PointerReplacer::collectUsers() {
-  if (!collectUsersRecursive(Root))
-    return false;
-
-  // Ensure that all outstanding (indirect) users of I
-  // are inserted into the Worklist. Return false
-  // otherwise.
-  for (auto *Inst : ValuesToRevisit)
-    if (!Worklist.contains(Inst))
-      return false;
-  return true;
-}
-
-bool PointerReplacer::collectUsersRecursive(Instruction &I) {
-  for (auto *U : I.users()) {
-    auto *Inst = cast<Instruction>(&*U);
-    if (auto *Load = dyn_cast<LoadInst>(Inst)) {
-      if (Load->isVolatile())
-        return false;
-      Worklist.insert(Load);
-    } else if (auto *PHI = dyn_cast<PHINode>(Inst)) {
-      // All incoming values must be instructions for replacability
-      if (any_of(PHI->incoming_values(),
-                 [](Value *V) { return !isa<Instruction>(V); }))
-        return false;
-
-      // If at least one incoming value of the PHI is not in Worklist,
-      // store the PHI for revisiting and skip this iteration of the
-      // loop.
-      if (any_of(PHI->incoming_values(), [this](Value *V) {
-            return !isAvailable(cast<Instruction>(V));
-          })) {
-        ValuesToRevisit.insert(Inst);
-        continue;
-      }
-
-      Worklist.insert(PHI);
-      if (!collectUsersRecursive(*PHI))
-        return false;
-    } else if (auto *SI = dyn_cast<SelectInst>(Inst)) {
-      if (!isa<Instruction>(SI->getTrueValue()) ||
-          !isa<Instruction>(SI->getFalseValue()))
-        return false;
-
-      if (!isAvailable(cast<Instruction>(SI->getTrueValue())) ||
-          !isAvailable(cast<Instruction>(SI->getFalseValue()))) {
-        ValuesToRevisit.insert(Inst);
-        continue;
-      }
-      Worklist.insert(SI);
-      if (!collectUsersRecursive(*SI))
-        return false;
-    } else if (isa<GetElementPtrInst, BitCastInst>(Inst)) {
-      Worklist.insert(Inst);
-      if (!collectUsersRecursive(*Inst))
-        return false;
-    } else if (auto *MI = dyn_cast<MemTransferInst>(Inst)) {
-      if (MI->isVolatile())
-        return false;
-      Worklist.insert(Inst);
-    } else if (Inst->isLifetimeStartOrEnd()) {
-      continue;
+void PointerReplacer::findLoadAndReplace(Instruction &I) {
+  for (auto U : I.users()) {
+    auto *Inst = dyn_cast<Instruction>(&*U);
+    if (!Inst)
+      return;
+    LLVM_DEBUG(dbgs() << "Found pointer user: " << *U << '\n');
+    if (isa<LoadInst>(Inst)) {
+      for (auto P : Path)
+        replace(P);
+      replace(Inst);
+    } else if (isa<GetElementPtrInst>(Inst) || isa<BitCastInst>(Inst)) {
+      Path.push_back(Inst);
+      findLoadAndReplace(*Inst);
+      Path.pop_back();
     } else {
-      LLVM_DEBUG(dbgs() << "Cannot handle pointer user: " << *U << '\n');
-      return false;
+      return;
     }
   }
-
-  return true;
 }
 
-Value *PointerReplacer::getReplacement(Value *V) { return WorkMap.lookup(V); }
+Value *PointerReplacer::getReplacement(Value *V) {
+  auto Loc = WorkMap.find(V);
+  if (Loc != WorkMap.end())
+    return Loc->second;
+  return nullptr;
+}
 
 void PointerReplacer::replace(Instruction *I) {
   if (getReplacement(I))
@@ -361,103 +298,67 @@ void PointerReplacer::replace(Instruction *I) {
   if (auto *LT = dyn_cast<LoadInst>(I)) {
     auto *V = getReplacement(LT->getPointerOperand());
     assert(V && "Operand not replaced");
-    auto *NewI = new LoadInst(LT->getType(), V, "", LT->isVolatile(),
-                              LT->getAlign(), LT->getOrdering(),
-                              LT->getSyncScopeID());
+    auto *NewI = new LoadInst(I->getType(), V);
     NewI->takeName(LT);
-    copyMetadataForLoad(*NewI, *LT);
-
     IC.InsertNewInstWith(NewI, *LT);
     IC.replaceInstUsesWith(*LT, NewI);
     WorkMap[LT] = NewI;
-  } else if (auto *PHI = dyn_cast<PHINode>(I)) {
-    Type *NewTy = getReplacement(PHI->getIncomingValue(0))->getType();
-    auto *NewPHI = PHINode::Create(NewTy, PHI->getNumIncomingValues(),
-                                   PHI->getName(), PHI);
-    for (unsigned int I = 0; I < PHI->getNumIncomingValues(); ++I)
-      NewPHI->addIncoming(getReplacement(PHI->getIncomingValue(I)),
-                          PHI->getIncomingBlock(I));
-    WorkMap[PHI] = NewPHI;
   } else if (auto *GEP = dyn_cast<GetElementPtrInst>(I)) {
     auto *V = getReplacement(GEP->getPointerOperand());
     assert(V && "Operand not replaced");
     SmallVector<Value *, 8> Indices;
     Indices.append(GEP->idx_begin(), GEP->idx_end());
-    auto *NewI =
-        GetElementPtrInst::Create(GEP->getSourceElementType(), V, Indices);
+    auto *NewI = GetElementPtrInst::Create(
+        V->getType()->getPointerElementType(), V, Indices);
     IC.InsertNewInstWith(NewI, *GEP);
     NewI->takeName(GEP);
     WorkMap[GEP] = NewI;
   } else if (auto *BC = dyn_cast<BitCastInst>(I)) {
     auto *V = getReplacement(BC->getOperand(0));
     assert(V && "Operand not replaced");
-    auto *NewT = PointerType::getWithSamePointeeType(
-        cast<PointerType>(BC->getType()),
-        V->getType()->getPointerAddressSpace());
+    auto *NewT = PointerType::get(BC->getType()->getPointerElementType(),
+                                  V->getType()->getPointerAddressSpace());
     auto *NewI = new BitCastInst(V, NewT);
     IC.InsertNewInstWith(NewI, *BC);
     NewI->takeName(BC);
     WorkMap[BC] = NewI;
-  } else if (auto *SI = dyn_cast<SelectInst>(I)) {
-    auto *NewSI = SelectInst::Create(
-        SI->getCondition(), getReplacement(SI->getTrueValue()),
-        getReplacement(SI->getFalseValue()), SI->getName(), nullptr, SI);
-    IC.InsertNewInstWith(NewSI, *SI);
-    NewSI->takeName(SI);
-    WorkMap[SI] = NewSI;
-  } else if (auto *MemCpy = dyn_cast<MemTransferInst>(I)) {
-    auto *SrcV = getReplacement(MemCpy->getRawSource());
-    // The pointer may appear in the destination of a copy, but we don't want to
-    // replace it.
-    if (!SrcV) {
-      assert(getReplacement(MemCpy->getRawDest()) &&
-             "destination not in replace list");
-      return;
-    }
-
-    IC.Builder.SetInsertPoint(MemCpy);
-    auto *NewI = IC.Builder.CreateMemTransferInst(
-        MemCpy->getIntrinsicID(), MemCpy->getRawDest(), MemCpy->getDestAlign(),
-        SrcV, MemCpy->getSourceAlign(), MemCpy->getLength(),
-        MemCpy->isVolatile());
-    AAMDNodes AAMD = MemCpy->getAAMetadata();
-    if (AAMD)
-      NewI->setAAMetadata(AAMD);
-
-    IC.eraseInstFromFunction(*MemCpy);
-    WorkMap[MemCpy] = NewI;
   } else {
     llvm_unreachable("should never reach here");
   }
 }
 
-void PointerReplacer::replacePointer(Value *V) {
+void PointerReplacer::replacePointer(Instruction &I, Value *V) {
 #ifndef NDEBUG
-  auto *PT = cast<PointerType>(Root.getType());
+  auto *PT = cast<PointerType>(I.getType());
   auto *NT = cast<PointerType>(V->getType());
-  assert(PT != NT && PT->hasSameElementTypeAs(NT) && "Invalid usage");
+  assert(PT != NT && PT->getElementType() == NT->getElementType() &&
+         "Invalid usage");
 #endif
-  WorkMap[&Root] = V;
-
-  for (Instruction *Workitem : Worklist)
-    replace(Workitem);
+  WorkMap[&I] = V;
+  findLoadAndReplace(I);
 }
 
-Instruction *InstCombinerImpl::visitAllocaInst(AllocaInst &AI) {
-  if (auto *I = simplifyAllocaArraySize(*this, AI, DT))
+Instruction *InstCombiner::visitAllocaInst(AllocaInst &AI) {
+  if (auto *I = simplifyAllocaArraySize(*this, AI))
     return I;
 
   if (AI.getAllocatedType()->isSized()) {
+    // If the alignment is 0 (unspecified), assign it the preferred alignment.
+    if (AI.getAlignment() == 0)
+      AI.setAlignment(
+          MaybeAlign(DL.getPrefTypeAlignment(AI.getAllocatedType())));
+
     // Move all alloca's of zero byte objects to the entry block and merge them
     // together.  Note that we only do this for alloca's, because malloc should
     // allocate and return a unique pointer, even for a zero byte allocation.
-    if (DL.getTypeAllocSize(AI.getAllocatedType()).getKnownMinValue() == 0) {
+    if (DL.getTypeAllocSize(AI.getAllocatedType()) == 0) {
       // For a zero sized alloca there is no point in doing an array allocation.
       // This is helpful if the array size is a complicated expression not used
       // elsewhere.
-      if (AI.isArrayAllocation())
-        return replaceOperand(AI, 0,
-            ConstantInt::get(AI.getArraySize()->getType(), 1));
+      if (AI.isArrayAllocation()) {
+        AI.setOperand(0, ConstantInt::get(AI.getArraySize()->getType(), 1));
+        return &AI;
+      }
 
       // Get the first instruction in the entry block.
       BasicBlock &EntryBlock = AI.getParent()->getParent()->getEntryBlock();
@@ -468,16 +369,21 @@ Instruction *InstCombinerImpl::visitAllocaInst(AllocaInst &AI) {
         // dominance as the array size was forced to a constant earlier already.
         AllocaInst *EntryAI = dyn_cast<AllocaInst>(FirstInst);
         if (!EntryAI || !EntryAI->getAllocatedType()->isSized() ||
-            DL.getTypeAllocSize(EntryAI->getAllocatedType())
-                    .getKnownMinValue() != 0) {
+            DL.getTypeAllocSize(EntryAI->getAllocatedType()) != 0) {
           AI.moveBefore(FirstInst);
           return &AI;
         }
 
+        // If the alignment of the entry block alloca is 0 (unspecified),
+        // assign it the preferred alignment.
+        if (EntryAI->getAlignment() == 0)
+          EntryAI->setAlignment(
+              MaybeAlign(DL.getPrefTypeAlignment(EntryAI->getAllocatedType())));
         // Replace this zero-sized alloca with the one at the start of the entry
         // block after ensuring that the address will be aligned enough for both
         // types.
-        const Align MaxAlign = std::max(EntryAI->getAlign(), AI.getAlign());
+        const MaybeAlign MaxAlign(
+            std::max(EntryAI->getAlignment(), AI.getAlignment()));
         EntryAI->setAlignment(MaxAlign);
         if (AI.getType() != EntryAI->getType())
           return new BitCastInst(EntryAI, AI.getType());
@@ -486,46 +392,40 @@ Instruction *InstCombinerImpl::visitAllocaInst(AllocaInst &AI) {
     }
   }
 
-  // Check to see if this allocation is only modified by a memcpy/memmove from
-  // a memory location whose alignment is equal to or exceeds that of the
-  // allocation. If this is the case, we can change all users to use the
-  // constant memory location instead.  This is commonly produced by the CFE by
-  // constructs like "void foo() { int A[] = {1,2,3,4,5,6,7,8,9...}; }" if 'A'
-  // is only subsequently read.
-  SmallVector<Instruction *, 4> ToDelete;
-  if (MemTransferInst *Copy = isOnlyCopiedFromConstantMemory(AA, &AI, ToDelete)) {
-    Value *TheSrc = Copy->getSource();
-    Align AllocaAlign = AI.getAlign();
-    Align SourceAlign = getOrEnforceKnownAlignment(
-      TheSrc, AllocaAlign, DL, &AI, &AC, &DT);
-    if (AllocaAlign <= SourceAlign &&
-        isDereferenceableForAllocaSize(TheSrc, &AI, DL) &&
-        !isa<Instruction>(TheSrc)) {
-      // FIXME: Can we sink instructions without violating dominance when TheSrc
-      // is an instruction instead of a constant or argument?
-      LLVM_DEBUG(dbgs() << "Found alloca equal to global: " << AI << '\n');
-      LLVM_DEBUG(dbgs() << "  memcpy = " << *Copy << '\n');
-      unsigned SrcAddrSpace = TheSrc->getType()->getPointerAddressSpace();
-      auto *DestTy = PointerType::get(AI.getAllocatedType(), SrcAddrSpace);
-      if (AI.getAddressSpace() == SrcAddrSpace) {
-        for (Instruction *Delete : ToDelete)
-          eraseInstFromFunction(*Delete);
-
-        Value *Cast = Builder.CreateBitCast(TheSrc, DestTy);
-        Instruction *NewI = replaceInstUsesWith(AI, Cast);
-        eraseInstFromFunction(*Copy);
-        ++NumGlobalCopies;
-        return NewI;
-      }
-
-      PointerReplacer PtrReplacer(*this, AI);
-      if (PtrReplacer.collectUsers()) {
-        for (Instruction *Delete : ToDelete)
-          eraseInstFromFunction(*Delete);
-
-        Value *Cast = Builder.CreateBitCast(TheSrc, DestTy);
-        PtrReplacer.replacePointer(Cast);
-        ++NumGlobalCopies;
+  if (AI.getAlignment()) {
+    // Check to see if this allocation is only modified by a memcpy/memmove from
+    // a constant global whose alignment is equal to or exceeds that of the
+    // allocation.  If this is the case, we can change all users to use
+    // the constant global instead.  This is commonly produced by the CFE by
+    // constructs like "void foo() { int A[] = {1,2,3,4,5,6,7,8,9...}; }" if 'A'
+    // is only subsequently read.
+    SmallVector<Instruction *, 4> ToDelete;
+    if (MemTransferInst *Copy = isOnlyCopiedFromConstantGlobal(&AI, ToDelete)) {
+      unsigned SourceAlign = getOrEnforceKnownAlignment(
+          Copy->getSource(), AI.getAlignment(), DL, &AI, &AC, &DT);
+      if (AI.getAlignment() <= SourceAlign &&
+          isDereferenceableForAllocaSize(Copy->getSource(), &AI, DL)) {
+        LLVM_DEBUG(dbgs() << "Found alloca equal to global: " << AI << '\n');
+        LLVM_DEBUG(dbgs() << "  memcpy = " << *Copy << '\n');
+        for (unsigned i = 0, e = ToDelete.size(); i != e; ++i)
+          eraseInstFromFunction(*ToDelete[i]);
+        Constant *TheSrc = cast<Constant>(Copy->getSource());
+        auto *SrcTy = TheSrc->getType();
+        auto *DestTy = PointerType::get(AI.getType()->getPointerElementType(),
+                                        SrcTy->getPointerAddressSpace());
+        Constant *Cast =
+            ConstantExpr::getPointerBitCastOrAddrSpaceCast(TheSrc, DestTy);
+        if (AI.getType()->getPointerAddressSpace() ==
+            SrcTy->getPointerAddressSpace()) {
+          Instruction *NewI = replaceInstUsesWith(AI, Cast);
+          eraseInstFromFunction(*Copy);
+          ++NumGlobalCopies;
+          return NewI;
+        } else {
+          PointerReplacer PtrReplacer(*this);
+          PtrReplacer.replacePointer(AI, Cast);
+          ++NumGlobalCopies;
+        }
       }
     }
   }
@@ -548,22 +448,29 @@ static bool isSupportedAtomicType(Type *Ty) {
 /// that pointer type, load it, etc.
 ///
 /// Note that this will create all of the instructions with whatever insert
-/// point the \c InstCombinerImpl currently is using.
-LoadInst *InstCombinerImpl::combineLoadToNewType(LoadInst &LI, Type *NewTy,
-                                                 const Twine &Suffix) {
+/// point the \c InstCombiner currently is using.
+LoadInst *InstCombiner::combineLoadToNewType(LoadInst &LI, Type *NewTy,
+                                             const Twine &Suffix) {
   assert((!LI.isAtomic() || isSupportedAtomicType(NewTy)) &&
          "can't fold an atomic load to requested type");
 
   Value *Ptr = LI.getPointerOperand();
   unsigned AS = LI.getPointerAddressSpace();
-  Type *NewPtrTy = NewTy->getPointerTo(AS);
   Value *NewPtr = nullptr;
   if (!(match(Ptr, m_BitCast(m_Value(NewPtr))) &&
-        NewPtr->getType() == NewPtrTy))
-    NewPtr = Builder.CreateBitCast(Ptr, NewPtrTy);
+        NewPtr->getType()->getPointerElementType() == NewTy &&
+        NewPtr->getType()->getPointerAddressSpace() == AS))
+    NewPtr = Builder.CreateBitCast(Ptr, NewTy->getPointerTo(AS));
+
+  unsigned Align = LI.getAlignment();
+  if (!Align)
+    // If old load did not have an explicit alignment specified,
+    // manually preserve the implied (ABI) alignment of the load.
+    // Else we may inadvertently incorrectly over-promise alignment.
+    Align = getDataLayout().getABITypeAlignment(LI.getType());
 
   LoadInst *NewLoad = Builder.CreateAlignedLoad(
-      NewTy, NewPtr, LI.getAlign(), LI.isVolatile(), LI.getName() + Suffix);
+      NewTy, NewPtr, Align, LI.isVolatile(), LI.getName() + Suffix);
   NewLoad->setAtomic(LI.getOrdering(), LI.getSyncScopeID());
   copyMetadataForLoad(*NewLoad, LI);
   return NewLoad;
@@ -572,8 +479,7 @@ LoadInst *InstCombinerImpl::combineLoadToNewType(LoadInst &LI, Type *NewTy,
 /// Combine a store to a new type.
 ///
 /// Returns the newly created store instruction.
-static StoreInst *combineStoreToNewValue(InstCombinerImpl &IC, StoreInst &SI,
-                                         Value *V) {
+static StoreInst *combineStoreToNewValue(InstCombiner &IC, StoreInst &SI, Value *V) {
   assert((!SI.isAtomic() || isSupportedAtomicType(V->getType())) &&
          "can't fold an atomic store of requested type");
 
@@ -584,7 +490,7 @@ static StoreInst *combineStoreToNewValue(InstCombinerImpl &IC, StoreInst &SI,
 
   StoreInst *NewStore = IC.Builder.CreateAlignedStore(
       V, IC.Builder.CreateBitCast(Ptr, V->getType()->getPointerTo(AS)),
-      SI.getAlign(), SI.isVolatile());
+      SI.getAlignment(), SI.isVolatile());
   NewStore->setAtomic(SI.getOrdering(), SI.getSyncScopeID());
   for (const auto &MDPair : MD) {
     unsigned ID = MDPair.first;
@@ -599,7 +505,6 @@ static StoreInst *combineStoreToNewValue(InstCombinerImpl &IC, StoreInst &SI,
     // here.
     switch (ID) {
     case LLVMContext::MD_dbg:
-    case LLVMContext::MD_DIAssignID:
     case LLVMContext::MD_tbaa:
     case LLVMContext::MD_prof:
     case LLVMContext::MD_fpmath:
@@ -614,7 +519,6 @@ static StoreInst *combineStoreToNewValue(InstCombinerImpl &IC, StoreInst &SI,
       break;
     case LLVMContext::MD_invariant_load:
     case LLVMContext::MD_nonnull:
-    case LLVMContext::MD_noundef:
     case LLVMContext::MD_range:
     case LLVMContext::MD_align:
     case LLVMContext::MD_dereferenceable:
@@ -632,7 +536,7 @@ static StoreInst *combineStoreToNewValue(InstCombinerImpl &IC, StoreInst &SI,
 static bool isMinMaxWithLoads(Value *V, Type *&LoadTy) {
   assert(V->getType()->isPointerTy() && "Expected pointer type.");
   // Ignore possible ty* to ixx* bitcast.
-  V = InstCombiner::peekThroughBitcast(V);
+  V = peekThroughBitcast(V);
   // Check that select is select ((cmp load V1, load V2), V1, V2) - minmax
   // pattern.
   CmpInst::Predicate Pred;
@@ -667,52 +571,77 @@ static bool isMinMaxWithLoads(Value *V, Type *&LoadTy) {
 /// or a volatile load. This is debatable, and might be reasonable to change
 /// later. However, it is risky in case some backend or other part of LLVM is
 /// relying on the exact type loaded to select appropriate atomic operations.
-static Instruction *combineLoadToOperationType(InstCombinerImpl &IC,
-                                               LoadInst &Load) {
+static Instruction *combineLoadToOperationType(InstCombiner &IC, LoadInst &LI) {
   // FIXME: We could probably with some care handle both volatile and ordered
   // atomic loads here but it isn't clear that this is important.
-  if (!Load.isUnordered())
+  if (!LI.isUnordered())
     return nullptr;
 
-  if (Load.use_empty())
+  if (LI.use_empty())
     return nullptr;
 
   // swifterror values can't be bitcasted.
-  if (Load.getPointerOperand()->isSwiftError())
+  if (LI.getPointerOperand()->isSwiftError())
     return nullptr;
 
-  // Fold away bit casts of the loaded value by loading the desired type.
-  // Note that we should not do this for pointer<->integer casts,
-  // because that would result in type punning.
-  if (Load.hasOneUse()) {
-    // Don't transform when the type is x86_amx, it makes the pass that lower
-    // x86_amx type happy.
-    Type *LoadTy = Load.getType();
-    if (auto *BC = dyn_cast<BitCastInst>(Load.user_back())) {
-      assert(!LoadTy->isX86_AMXTy() && "Load from x86_amx* should not happen!");
-      if (BC->getType()->isX86_AMXTy())
-        return nullptr;
-    }
+  Type *Ty = LI.getType();
+  const DataLayout &DL = IC.getDataLayout();
 
-    if (auto *CastUser = dyn_cast<CastInst>(Load.user_back())) {
-      Type *DestTy = CastUser->getDestTy();
-      if (CastUser->isNoopCast(IC.getDataLayout()) &&
-          LoadTy->isPtrOrPtrVectorTy() == DestTy->isPtrOrPtrVectorTy() &&
-          (!Load.isAtomic() || isSupportedAtomicType(DestTy))) {
-        LoadInst *NewLoad = IC.combineLoadToNewType(Load, DestTy);
-        CastUser->replaceAllUsesWith(NewLoad);
-        IC.eraseInstFromFunction(*CastUser);
-        return &Load;
+  // Try to canonicalize loads which are only ever stored to operate over
+  // integers instead of any other type. We only do this when the loaded type
+  // is sized and has a size exactly the same as its store size and the store
+  // size is a legal integer type.
+  // Do not perform canonicalization if minmax pattern is found (to avoid
+  // infinite loop).
+  Type *Dummy;
+  if (!Ty->isIntegerTy() && Ty->isSized() &&
+      !(Ty->isVectorTy() && Ty->getVectorIsScalable()) &&
+      DL.isLegalInteger(DL.getTypeStoreSizeInBits(Ty)) &&
+      DL.typeSizeEqualsStoreSize(Ty) &&
+      !DL.isNonIntegralPointerType(Ty) &&
+      !isMinMaxWithLoads(
+          peekThroughBitcast(LI.getPointerOperand(), /*OneUseOnly=*/true),
+          Dummy)) {
+    if (all_of(LI.users(), [&LI](User *U) {
+          auto *SI = dyn_cast<StoreInst>(U);
+          return SI && SI->getPointerOperand() != &LI &&
+                 !SI->getPointerOperand()->isSwiftError();
+        })) {
+      LoadInst *NewLoad = IC.combineLoadToNewType(
+          LI, Type::getIntNTy(LI.getContext(), DL.getTypeStoreSizeInBits(Ty)));
+      // Replace all the stores with stores of the newly loaded value.
+      for (auto UI = LI.user_begin(), UE = LI.user_end(); UI != UE;) {
+        auto *SI = cast<StoreInst>(*UI++);
+        IC.Builder.SetInsertPoint(SI);
+        combineStoreToNewValue(IC, *SI, NewLoad);
+        IC.eraseInstFromFunction(*SI);
       }
+      assert(LI.use_empty() && "Failed to remove all users of the load!");
+      // Return the old load so the combiner can delete it safely.
+      return &LI;
     }
   }
+
+  // Fold away bit casts of the loaded value by loading the desired type.
+  // We can do this for BitCastInsts as well as casts from and to pointer types,
+  // as long as those are noops (i.e., the source or dest type have the same
+  // bitwidth as the target's pointers).
+  if (LI.hasOneUse())
+    if (auto* CI = dyn_cast<CastInst>(LI.user_back()))
+      if (CI->isNoopCast(DL))
+        if (!LI.isAtomic() || isSupportedAtomicType(CI->getDestTy())) {
+          LoadInst *NewLoad = IC.combineLoadToNewType(LI, CI->getDestTy());
+          CI->replaceAllUsesWith(NewLoad);
+          IC.eraseInstFromFunction(*CI);
+          return &LI;
+        }
 
   // FIXME: We should also canonicalize loads of vectors when their elements are
   // cast to other types.
   return nullptr;
 }
 
-static Instruction *unpackLoadToAggregate(InstCombinerImpl &IC, LoadInst &LI) {
+static Instruction *unpackLoadToAggregate(InstCombiner &IC, LoadInst &LI) {
   // FIXME: We could probably with some care handle both volatile and atomic
   // stores here but it isn't clear that this is important.
   if (!LI.isSimple())
@@ -723,6 +652,7 @@ static Instruction *unpackLoadToAggregate(InstCombinerImpl &IC, LoadInst &LI) {
     return nullptr;
 
   StringRef Name = LI.getName();
+  assert(LI.getAlignment() && "Alignment must be set at this point");
 
   if (auto *ST = dyn_cast<StructType>(T)) {
     // If the struct only have one element, we unpack.
@@ -730,9 +660,11 @@ static Instruction *unpackLoadToAggregate(InstCombinerImpl &IC, LoadInst &LI) {
     if (NumElements == 1) {
       LoadInst *NewLoad = IC.combineLoadToNewType(LI, ST->getTypeAtIndex(0U),
                                                   ".unpack");
-      NewLoad->setAAMetadata(LI.getAAMetadata());
+      AAMDNodes AAMD;
+      LI.getAAMetadata(AAMD);
+      NewLoad->setAAMetadata(AAMD);
       return IC.replaceInstUsesWith(LI, IC.Builder.CreateInsertValue(
-        PoisonValue::get(T), NewLoad, 0, Name));
+        UndefValue::get(T), NewLoad, 0, Name));
     }
 
     // We don't want to break loads with padding here as we'd loose
@@ -742,24 +674,29 @@ static Instruction *unpackLoadToAggregate(InstCombinerImpl &IC, LoadInst &LI) {
     if (SL->hasPadding())
       return nullptr;
 
-    const auto Align = LI.getAlign();
+    auto Align = LI.getAlignment();
+    if (!Align)
+      Align = DL.getABITypeAlignment(ST);
+
     auto *Addr = LI.getPointerOperand();
     auto *IdxType = Type::getInt32Ty(T->getContext());
     auto *Zero = ConstantInt::get(IdxType, 0);
 
-    Value *V = PoisonValue::get(T);
+    Value *V = UndefValue::get(T);
     for (unsigned i = 0; i < NumElements; i++) {
       Value *Indices[2] = {
         Zero,
         ConstantInt::get(IdxType, i),
       };
-      auto *Ptr = IC.Builder.CreateInBoundsGEP(ST, Addr, ArrayRef(Indices),
+      auto *Ptr = IC.Builder.CreateInBoundsGEP(ST, Addr, makeArrayRef(Indices),
                                                Name + ".elt");
-      auto *L = IC.Builder.CreateAlignedLoad(
-          ST->getElementType(i), Ptr,
-          commonAlignment(Align, SL->getElementOffset(i)), Name + ".unpack");
+      auto EltAlign = MinAlign(Align, SL->getElementOffset(i));
+      auto *L = IC.Builder.CreateAlignedLoad(ST->getElementType(i), Ptr,
+                                             EltAlign, Name + ".unpack");
       // Propagate AA metadata. It'll still be valid on the narrowed load.
-      L->setAAMetadata(LI.getAAMetadata());
+      AAMDNodes AAMD;
+      LI.getAAMetadata(AAMD);
+      L->setAAMetadata(AAMD);
       V = IC.Builder.CreateInsertValue(V, L, i);
     }
 
@@ -772,9 +709,11 @@ static Instruction *unpackLoadToAggregate(InstCombinerImpl &IC, LoadInst &LI) {
     auto NumElements = AT->getNumElements();
     if (NumElements == 1) {
       LoadInst *NewLoad = IC.combineLoadToNewType(LI, ET, ".unpack");
-      NewLoad->setAAMetadata(LI.getAAMetadata());
+      AAMDNodes AAMD;
+      LI.getAAMetadata(AAMD);
+      NewLoad->setAAMetadata(AAMD);
       return IC.replaceInstUsesWith(LI, IC.Builder.CreateInsertValue(
-        PoisonValue::get(T), NewLoad, 0, Name));
+        UndefValue::get(T), NewLoad, 0, Name));
     }
 
     // Bail out if the array is too large. Ideally we would like to optimize
@@ -786,25 +725,28 @@ static Instruction *unpackLoadToAggregate(InstCombinerImpl &IC, LoadInst &LI) {
 
     const DataLayout &DL = IC.getDataLayout();
     auto EltSize = DL.getTypeAllocSize(ET);
-    const auto Align = LI.getAlign();
+    auto Align = LI.getAlignment();
+    if (!Align)
+      Align = DL.getABITypeAlignment(T);
 
     auto *Addr = LI.getPointerOperand();
     auto *IdxType = Type::getInt64Ty(T->getContext());
     auto *Zero = ConstantInt::get(IdxType, 0);
 
-    Value *V = PoisonValue::get(T);
+    Value *V = UndefValue::get(T);
     uint64_t Offset = 0;
     for (uint64_t i = 0; i < NumElements; i++) {
       Value *Indices[2] = {
         Zero,
         ConstantInt::get(IdxType, i),
       };
-      auto *Ptr = IC.Builder.CreateInBoundsGEP(AT, Addr, ArrayRef(Indices),
+      auto *Ptr = IC.Builder.CreateInBoundsGEP(AT, Addr, makeArrayRef(Indices),
                                                Name + ".elt");
-      auto *L = IC.Builder.CreateAlignedLoad(AT->getElementType(), Ptr,
-                                             commonAlignment(Align, Offset),
-                                             Name + ".unpack");
-      L->setAAMetadata(LI.getAAMetadata());
+      auto *L = IC.Builder.CreateAlignedLoad(
+          AT->getElementType(), Ptr, MinAlign(Align, Offset), Name + ".unpack");
+      AAMDNodes AAMD;
+      LI.getAAMetadata(AAMD);
+      L->setAAMetadata(AAMD);
       V = IC.Builder.CreateInsertValue(V, L, i);
       Offset += EltSize;
     }
@@ -841,7 +783,8 @@ static bool isObjectSizeLessThanOrEq(Value *V, uint64_t MaxSize,
     }
 
     if (PHINode *PN = dyn_cast<PHINode>(P)) {
-      append_range(Worklist, PN->incoming_values());
+      for (Value *IncValue : PN->incoming_values())
+        Worklist.push_back(IncValue);
       continue;
     }
 
@@ -862,13 +805,10 @@ static bool isObjectSizeLessThanOrEq(Value *V, uint64_t MaxSize,
       if (!CS)
         return false;
 
-      TypeSize TS = DL.getTypeAllocSize(AI->getAllocatedType());
-      if (TS.isScalable())
-        return false;
+      uint64_t TypeSize = DL.getTypeAllocSize(AI->getAllocatedType());
       // Make sure that, even if the multiplication below would wrap as an
       // uint64_t, we still do the right thing.
-      if ((CS->getValue().zext(128) * APInt(128, TS.getFixedValue()))
-              .ugt(MaxSize))
+      if ((CS->getValue().zextOrSelf(128)*APInt(128, TypeSize)).ugt(MaxSize))
         return false;
       continue;
     }
@@ -904,9 +844,8 @@ static bool isObjectSizeLessThanOrEq(Value *V, uint64_t MaxSize,
 // not zero. Currently, we only handle the first such index. Also, we could
 // also search through non-zero constant indices if we kept track of the
 // offsets those indices implied.
-static bool canReplaceGEPIdxWithZero(InstCombinerImpl &IC,
-                                     GetElementPtrInst *GEPI, Instruction *MemI,
-                                     unsigned &Idx) {
+static bool canReplaceGEPIdxWithZero(InstCombiner &IC, GetElementPtrInst *GEPI,
+                                     Instruction *MemI, unsigned &Idx) {
   if (GEPI->getNumOperands() < 2)
     return false;
 
@@ -935,17 +874,12 @@ static bool canReplaceGEPIdxWithZero(InstCombinerImpl &IC,
     return false;
 
   SmallVector<Value *, 4> Ops(GEPI->idx_begin(), GEPI->idx_begin() + Idx);
-  Type *SourceElementType = GEPI->getSourceElementType();
-  // Size information about scalable vectors is not available, so we cannot
-  // deduce whether indexing at n is undefined behaviour or not. Bail out.
-  if (isa<ScalableVectorType>(SourceElementType))
-    return false;
-
-  Type *AllocTy = GetElementPtrInst::getIndexedType(SourceElementType, Ops);
+  Type *AllocTy =
+    GetElementPtrInst::getIndexedType(GEPI->getSourceElementType(), Ops);
   if (!AllocTy || !AllocTy->isSized())
     return false;
   const DataLayout &DL = IC.getDataLayout();
-  uint64_t TyAllocSize = DL.getTypeAllocSize(AllocTy).getFixedValue();
+  uint64_t TyAllocSize = DL.getTypeAllocSize(AllocTy);
 
   // If there are more indices after the one we might replace with a zero, make
   // sure they're all non-negative. If any of them are negative, the overall
@@ -980,7 +914,7 @@ static bool canReplaceGEPIdxWithZero(InstCombinerImpl &IC,
 // access, but the object has only one element, we can assume that the index
 // will always be zero. If we replace the GEP, return it.
 template <typename T>
-static Instruction *replaceGEPIdxWithZero(InstCombinerImpl &IC, Value *Ptr,
+static Instruction *replaceGEPIdxWithZero(InstCombiner &IC, Value *Ptr,
                                           T &MemI) {
   if (GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(Ptr)) {
     unsigned Idx;
@@ -1022,7 +956,7 @@ static bool canSimplifyNullLoadOrGEP(LoadInst &LI, Value *Op) {
   return false;
 }
 
-Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
+Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
   Value *Op = LI.getOperand(0);
 
   // Try to canonicalize the loaded type.
@@ -1030,14 +964,20 @@ Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
     return Res;
 
   // Attempt to improve the alignment.
-  Align KnownAlign = getOrEnforceKnownAlignment(
-      Op, DL.getPrefTypeAlign(LI.getType()), DL, &LI, &AC, &DT);
-  if (KnownAlign > LI.getAlign())
-    LI.setAlignment(KnownAlign);
+  unsigned KnownAlign = getOrEnforceKnownAlignment(
+      Op, DL.getPrefTypeAlignment(LI.getType()), DL, &LI, &AC, &DT);
+  unsigned LoadAlign = LI.getAlignment();
+  unsigned EffectiveLoadAlign =
+      LoadAlign != 0 ? LoadAlign : DL.getABITypeAlignment(LI.getType());
+
+  if (KnownAlign > EffectiveLoadAlign)
+    LI.setAlignment(MaybeAlign(KnownAlign));
+  else if (LoadAlign == 0)
+    LI.setAlignment(MaybeAlign(EffectiveLoadAlign));
 
   // Replace GEP indices if possible.
   if (Instruction *NewGEPI = replaceGEPIdxWithZero(*this, Op, LI)) {
-      Worklist.push(NewGEPI);
+      Worklist.Add(NewGEPI);
       return &LI;
   }
 
@@ -1047,8 +987,10 @@ Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
   // Do really simple store-to-load forwarding and load CSE, to catch cases
   // where there are several consecutive memory accesses to the same location,
   // separated by a few arithmetic operations.
+  BasicBlock::iterator BBI(LI);
   bool IsLoadCSE = false;
-  if (Value *AvailableVal = FindAvailableLoadedValue(&LI, *AA, &IsLoadCSE)) {
+  if (Value *AvailableVal = FindAvailableLoadedValue(
+          &LI, LI.getParent(), BBI, DefMaxInstsToScan, AA, &IsLoadCSE)) {
     if (IsLoadCSE)
       combineMetadataForCSE(cast<LoadInst>(AvailableVal), &LI, false);
 
@@ -1069,10 +1011,10 @@ Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
     // that this code is not reachable.  We do this instead of inserting
     // an unreachable instruction directly because we cannot modify the
     // CFG.
-    StoreInst *SI = new StoreInst(PoisonValue::get(LI.getType()),
+    StoreInst *SI = new StoreInst(UndefValue::get(LI.getType()),
                                   Constant::getNullValue(Op->getType()), &LI);
     SI->setDebugLoc(LI.getDebugLoc());
-    return replaceInstUsesWith(LI, PoisonValue::get(LI.getType()));
+    return replaceInstUsesWith(LI, UndefValue::get(LI.getType()));
   }
 
   if (Op->hasOneUse()) {
@@ -1088,7 +1030,7 @@ Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
     //
     if (SelectInst *SI = dyn_cast<SelectInst>(Op)) {
       // load (select (Cond, &V1, &V2))  --> select(Cond, load &V1, load &V2).
-      Align Alignment = LI.getAlign();
+      const MaybeAlign Alignment(LI.getAlignment());
       if (isSafeToLoadUnconditionally(SI->getOperand(1), LI.getType(),
                                       Alignment, DL, SI) &&
           isSafeToLoadUnconditionally(SI->getOperand(2), LI.getType(),
@@ -1110,14 +1052,18 @@ Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
       // load (select (cond, null, P)) -> load P
       if (isa<ConstantPointerNull>(SI->getOperand(1)) &&
           !NullPointerIsDefined(SI->getFunction(),
-                                LI.getPointerAddressSpace()))
-        return replaceOperand(LI, 0, SI->getOperand(2));
+                                LI.getPointerAddressSpace())) {
+        LI.setOperand(0, SI->getOperand(2));
+        return &LI;
+      }
 
       // load (select (cond, P, null)) -> load P
       if (isa<ConstantPointerNull>(SI->getOperand(2)) &&
           !NullPointerIsDefined(SI->getFunction(),
-                                LI.getPointerAddressSpace()))
-        return replaceOperand(LI, 0, SI->getOperand(1));
+                                LI.getPointerAddressSpace())) {
+        LI.setOperand(0, SI->getOperand(1));
+        return &LI;
+      }
     }
   }
   return nullptr;
@@ -1137,7 +1083,7 @@ Instruction *InstCombinerImpl::visitLoadInst(LoadInst &LI) {
 /// and the layout of a <2 x double> is isomorphic to a [2 x double],
 /// then %V1 can be safely approximated by a conceptual "bitcast" of %U.
 /// Note that %U may contain non-undef values where %V1 has undef.
-static Value *likeBitCastFromVector(InstCombinerImpl &IC, Value *V) {
+static Value *likeBitCastFromVector(InstCombiner &IC, Value *V) {
   Value *U = nullptr;
   while (auto *IV = dyn_cast<InsertValueInst>(V)) {
     auto *E = dyn_cast<ExtractElementInst>(IV->getInsertedValueOperand());
@@ -1153,7 +1099,7 @@ static Value *likeBitCastFromVector(InstCombinerImpl &IC, Value *V) {
       return nullptr;
     V = IV->getAggregateOperand();
   }
-  if (!match(V, m_Undef()) || !U)
+  if (!isa<UndefValue>(V) ||!U)
     return nullptr;
 
   auto *UT = cast<VectorType>(U->getType());
@@ -1164,11 +1110,11 @@ static Value *likeBitCastFromVector(InstCombinerImpl &IC, Value *V) {
     return nullptr;
   }
   if (auto *AT = dyn_cast<ArrayType>(VT)) {
-    if (AT->getNumElements() != cast<FixedVectorType>(UT)->getNumElements())
+    if (AT->getNumElements() != UT->getNumElements())
       return nullptr;
   } else {
     auto *ST = cast<StructType>(VT);
-    if (ST->getNumElements() != cast<FixedVectorType>(UT)->getNumElements())
+    if (ST->getNumElements() != UT->getNumElements())
       return nullptr;
     for (const auto *EltT : ST->elements()) {
       if (EltT != UT->getElementType())
@@ -1198,7 +1144,7 @@ static Value *likeBitCastFromVector(InstCombinerImpl &IC, Value *V) {
 /// the caller must erase the store instruction. We have to let the caller erase
 /// the store instruction as otherwise there is no way to signal whether it was
 /// combined or not: IC.EraseInstFromFunction returns a null pointer.
-static bool combineStoreToValueType(InstCombinerImpl &IC, StoreInst &SI) {
+static bool combineStoreToValueType(InstCombiner &IC, StoreInst &SI) {
   // FIXME: We could probably with some care handle both volatile and ordered
   // atomic stores here but it isn't clear that this is important.
   if (!SI.isUnordered())
@@ -1212,13 +1158,7 @@ static bool combineStoreToValueType(InstCombinerImpl &IC, StoreInst &SI) {
 
   // Fold away bit casts of the stored value by storing the original type.
   if (auto *BC = dyn_cast<BitCastInst>(V)) {
-    assert(!BC->getType()->isX86_AMXTy() &&
-           "store to x86_amx* should not happen!");
     V = BC->getOperand(0);
-    // Don't transform when the type is x86_amx, it makes the pass that lower
-    // x86_amx type happy.
-    if (V->getType()->isX86_AMXTy())
-      return false;
     if (!SI.isAtomic() || isSupportedAtomicType(V->getType())) {
       combineStoreToNewValue(IC, SI, V);
       return true;
@@ -1236,7 +1176,7 @@ static bool combineStoreToValueType(InstCombinerImpl &IC, StoreInst &SI) {
   return false;
 }
 
-static bool unpackStoreToAggregate(InstCombinerImpl &IC, StoreInst &SI) {
+static bool unpackStoreToAggregate(InstCombiner &IC, StoreInst &SI) {
   // FIXME: We could probably with some care handle both volatile and atomic
   // stores here but it isn't clear that this is important.
   if (!SI.isSimple())
@@ -1264,7 +1204,9 @@ static bool unpackStoreToAggregate(InstCombinerImpl &IC, StoreInst &SI) {
     if (SL->hasPadding())
       return false;
 
-    const auto Align = SI.getAlign();
+    auto Align = SI.getAlignment();
+    if (!Align)
+      Align = DL.getABITypeAlignment(ST);
 
     SmallString<16> EltName = V->getName();
     EltName += ".elt";
@@ -1279,12 +1221,14 @@ static bool unpackStoreToAggregate(InstCombinerImpl &IC, StoreInst &SI) {
         Zero,
         ConstantInt::get(IdxType, i),
       };
-      auto *Ptr =
-          IC.Builder.CreateInBoundsGEP(ST, Addr, ArrayRef(Indices), AddrName);
+      auto *Ptr = IC.Builder.CreateInBoundsGEP(ST, Addr, makeArrayRef(Indices),
+                                               AddrName);
       auto *Val = IC.Builder.CreateExtractValue(V, i, EltName);
-      auto EltAlign = commonAlignment(Align, SL->getElementOffset(i));
+      auto EltAlign = MinAlign(Align, SL->getElementOffset(i));
       llvm::Instruction *NS = IC.Builder.CreateAlignedStore(Val, Ptr, EltAlign);
-      NS->setAAMetadata(SI.getAAMetadata());
+      AAMDNodes AAMD;
+      SI.getAAMetadata(AAMD);
+      NS->setAAMetadata(AAMD);
     }
 
     return true;
@@ -1308,7 +1252,9 @@ static bool unpackStoreToAggregate(InstCombinerImpl &IC, StoreInst &SI) {
 
     const DataLayout &DL = IC.getDataLayout();
     auto EltSize = DL.getTypeAllocSize(AT->getElementType());
-    const auto Align = SI.getAlign();
+    auto Align = SI.getAlignment();
+    if (!Align)
+      Align = DL.getABITypeAlignment(T);
 
     SmallString<16> EltName = V->getName();
     EltName += ".elt";
@@ -1325,12 +1271,14 @@ static bool unpackStoreToAggregate(InstCombinerImpl &IC, StoreInst &SI) {
         Zero,
         ConstantInt::get(IdxType, i),
       };
-      auto *Ptr =
-          IC.Builder.CreateInBoundsGEP(AT, Addr, ArrayRef(Indices), AddrName);
+      auto *Ptr = IC.Builder.CreateInBoundsGEP(AT, Addr, makeArrayRef(Indices),
+                                               AddrName);
       auto *Val = IC.Builder.CreateExtractValue(V, i, EltName);
-      auto EltAlign = commonAlignment(Align, Offset);
+      auto EltAlign = MinAlign(Align, Offset);
       Instruction *NS = IC.Builder.CreateAlignedStore(Val, Ptr, EltAlign);
-      NS->setAAMetadata(SI.getAAMetadata());
+      AAMDNodes AAMD;
+      SI.getAAMetadata(AAMD);
+      NS->setAAMetadata(AAMD);
       Offset += EltSize;
     }
 
@@ -1372,7 +1320,7 @@ static bool equivalentAddressValues(Value *A, Value *B) {
 /// Converts store (bitcast (load (bitcast (select ...)))) to
 /// store (load (select ...)), where select is minmax:
 /// select ((cmp load V1, load V2), V1, V2).
-static bool removeBitcastsFromLoadStoreOnMinMax(InstCombinerImpl &IC,
+static bool removeBitcastsFromLoadStoreOnMinMax(InstCombiner &IC,
                                                 StoreInst &SI) {
   // bitcast?
   if (!match(SI.getPointerOperand(), m_BitCast(m_Value())))
@@ -1402,8 +1350,7 @@ static bool removeBitcastsFromLoadStoreOnMinMax(InstCombinerImpl &IC,
   if (!all_of(LI->users(), [LI, LoadAddr](User *U) {
         auto *SI = dyn_cast<StoreInst>(U);
         return SI && SI->getPointerOperand() != LI &&
-               InstCombiner::peekThroughBitcast(SI->getPointerOperand()) !=
-                   LoadAddr &&
+               peekThroughBitcast(SI->getPointerOperand()) != LoadAddr &&
                !SI->getPointerOperand()->isSwiftError();
       }))
     return false;
@@ -1416,12 +1363,12 @@ static bool removeBitcastsFromLoadStoreOnMinMax(InstCombinerImpl &IC,
     IC.Builder.SetInsertPoint(USI);
     combineStoreToNewValue(IC, *USI, NewLI);
   }
-  IC.replaceInstUsesWith(*LI, PoisonValue::get(LI->getType()));
+  IC.replaceInstUsesWith(*LI, UndefValue::get(LI->getType()));
   IC.eraseInstFromFunction(*LI);
   return true;
 }
 
-Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
+Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   Value *Val = SI.getOperand(0);
   Value *Ptr = SI.getOperand(1);
 
@@ -1430,10 +1377,16 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
     return eraseInstFromFunction(SI);
 
   // Attempt to improve the alignment.
-  const Align KnownAlign = getOrEnforceKnownAlignment(
-      Ptr, DL.getPrefTypeAlign(Val->getType()), DL, &SI, &AC, &DT);
-  if (KnownAlign > SI.getAlign())
+  const Align KnownAlign = Align(getOrEnforceKnownAlignment(
+      Ptr, DL.getPrefTypeAlignment(Val->getType()), DL, &SI, &AC, &DT));
+  const MaybeAlign StoreAlign = MaybeAlign(SI.getAlignment());
+  const Align EffectiveStoreAlign =
+      StoreAlign ? *StoreAlign : Align(DL.getABITypeAlignment(Val->getType()));
+
+  if (KnownAlign > EffectiveStoreAlign)
     SI.setAlignment(KnownAlign);
+  else if (!StoreAlign)
+    SI.setAlignment(EffectiveStoreAlign);
 
   // Try to canonicalize the stored type.
   if (unpackStoreToAggregate(*this, SI))
@@ -1444,7 +1397,7 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
 
   // Replace GEP indices if possible.
   if (Instruction *NewGEPI = replaceGEPIdxWithZero(*this, Ptr, SI)) {
-      Worklist.push(NewGEPI);
+      Worklist.Add(NewGEPI);
       return &SI;
   }
 
@@ -1468,7 +1421,7 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
   // If we have a store to a location which is known constant, we can conclude
   // that the store must be storing the constant value (else the memory
   // wouldn't be constant), and this must be a noop.
-  if (!isModSet(AA->getModRefInfoMask(Ptr)))
+  if (AA->pointsToConstantMemory(Ptr))
     return eraseInstFromFunction(SI);
 
   // Do really simple DSE, to catch cases where there are several consecutive
@@ -1480,7 +1433,7 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
     --BBI;
     // Don't count debug info directives, lest they affect codegen,
     // and we skip pointer-to-pointer bitcasts, which are NOPs.
-    if (BBI->isDebugOrPseudoInst() ||
+    if (isa<DbgInfoIntrinsic>(BBI) ||
         (isa<BitCastInst>(BBI) && BBI->getType()->isPointerTy())) {
       ScanInsts++;
       continue;
@@ -1488,15 +1441,13 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
 
     if (StoreInst *PrevSI = dyn_cast<StoreInst>(BBI)) {
       // Prev store isn't volatile, and stores to the same location?
-      if (PrevSI->isUnordered() &&
-          equivalentAddressValues(PrevSI->getOperand(1), SI.getOperand(1)) &&
-          PrevSI->getValueOperand()->getType() ==
-              SI.getValueOperand()->getType()) {
+      if (PrevSI->isUnordered() && equivalentAddressValues(PrevSI->getOperand(1),
+                                                        SI.getOperand(1))) {
         ++NumDeadStore;
         // Manually add back the original store to the worklist now, so it will
         // be processed after the operands of the removed store, as this may
         // expose additional DSE opportunities.
-        Worklist.push(&SI);
+        Worklist.Add(&SI);
         eraseInstFromFunction(*PrevSI);
         return nullptr;
       }
@@ -1525,16 +1476,30 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
   // store X, null    -> turns into 'unreachable' in SimplifyCFG
   // store X, GEP(null, Y) -> turns into 'unreachable' in SimplifyCFG
   if (canSimplifyNullStoreOrGEP(SI)) {
-    if (!isa<PoisonValue>(Val))
-      return replaceOperand(SI, 0, PoisonValue::get(Val->getType()));
+    if (!isa<UndefValue>(Val)) {
+      SI.setOperand(0, UndefValue::get(Val->getType()));
+      if (Instruction *U = dyn_cast<Instruction>(Val))
+        Worklist.Add(U);  // Dropped a use.
+    }
     return nullptr;  // Do not modify these!
   }
 
   // store undef, Ptr -> noop
-  // FIXME: This is technically incorrect because it might overwrite a poison
-  // value. Change to PoisonValue once #52930 is resolved.
   if (isa<UndefValue>(Val))
     return eraseInstFromFunction(SI);
+
+  // If this store is the second-to-last instruction in the basic block
+  // (excluding debug info and bitcasts of pointers) and if the block ends with
+  // an unconditional branch, try to move the store to the successor block.
+  BBI = SI.getIterator();
+  do {
+    ++BBI;
+  } while (isa<DbgInfoIntrinsic>(BBI) ||
+           (isa<BitCastInst>(BBI) && BBI->getType()->isPointerTy()));
+
+  if (BranchInst *BI = dyn_cast<BranchInst>(BBI))
+    if (BI->isUnconditional())
+      mergeStoreIntoSuccessor(SI);
 
   return nullptr;
 }
@@ -1544,9 +1509,9 @@ Instruction *InstCombinerImpl::visitStoreInst(StoreInst &SI) {
 /// or:
 ///   *P = v1; if () { *P = v2; }
 /// into a phi node with a store in the successor.
-bool InstCombinerImpl::mergeStoreIntoSuccessor(StoreInst &SI) {
-  if (!SI.isUnordered())
-    return false; // This code has not been audited for volatile/ordered case.
+bool InstCombiner::mergeStoreIntoSuccessor(StoreInst &SI) {
+  assert(SI.isUnordered() &&
+         "This code has not been audited for volatile or ordered store case.");
 
   // Check if the successor block has exactly 2 incoming edges.
   BasicBlock *StoreBB = SI.getParent();
@@ -1576,8 +1541,8 @@ bool InstCombinerImpl::mergeStoreIntoSuccessor(StoreInst &SI) {
   StoreInst *OtherStore = nullptr;
   if (OtherBr->isUnconditional()) {
     --BBI;
-    // Skip over debugging info and pseudo probes.
-    while (BBI->isDebugOrPseudoInst() ||
+    // Skip over debugging info.
+    while (isa<DbgInfoIntrinsic>(BBI) ||
            (isa<BitCastInst>(BBI) && BBI->getType()->isPointerTy())) {
       if (BBI==OtherBB->begin())
         return false;
@@ -1638,17 +1603,19 @@ bool InstCombinerImpl::mergeStoreIntoSuccessor(StoreInst &SI) {
 
   // Advance to a place where it is safe to insert the new store and insert it.
   BBI = DestBB->getFirstInsertionPt();
-  StoreInst *NewSI =
-      new StoreInst(MergedVal, SI.getOperand(1), SI.isVolatile(), SI.getAlign(),
-                    SI.getOrdering(), SI.getSyncScopeID());
+  StoreInst *NewSI = new StoreInst(MergedVal, SI.getOperand(1), SI.isVolatile(),
+                                   MaybeAlign(SI.getAlignment()),
+                                   SI.getOrdering(), SI.getSyncScopeID());
   InsertNewInstBefore(NewSI, *BBI);
   NewSI->setDebugLoc(MergedLoc);
-  NewSI->mergeDIAssignID({&SI, OtherStore});
 
   // If the two stores had AA tags, merge them.
-  AAMDNodes AATags = SI.getAAMetadata();
-  if (AATags)
-    NewSI->setAAMetadata(AATags.merge(OtherStore->getAAMetadata()));
+  AAMDNodes AATags;
+  SI.getAAMetadata(AATags);
+  if (AATags) {
+    OtherStore->getAAMetadata(AATags, /* Merge = */ true);
+    NewSI->setAAMetadata(AATags);
+  }
 
   // Nuke the old stores.
   eraseInstFromFunction(SI);

@@ -10,11 +10,9 @@
 #define _AMDGPU_LIBFUNC_H_
 
 #include "llvm/ADT/StringRef.h"
-#include <memory>
 
 namespace llvm {
 
-class FunctionCallee;
 class FunctionType;
 class Function;
 class Module;
@@ -324,8 +322,8 @@ public:
 
 class AMDGPULibFuncImpl : public AMDGPULibFuncBase {
 public:
-  AMDGPULibFuncImpl() = default;
-  virtual ~AMDGPULibFuncImpl() = default;
+  AMDGPULibFuncImpl() {}
+  virtual ~AMDGPULibFuncImpl() {}
 
   /// Get unmangled name for mangled library function and name for unmangled
   /// library function.
@@ -343,7 +341,7 @@ public:
   /// and unmangled function name for unmangled library functions.
   virtual std::string mangle() const = 0;
 
-  void setName(StringRef N) { Name = std::string(N); }
+  void setName(StringRef N) { Name = N; }
   void setPrefix(ENamePrefix pfx) { FKind = pfx; }
 
   virtual FunctionType *getFunctionType(Module &M) const = 0;
@@ -440,7 +438,7 @@ class AMDGPUUnmangledLibFunc : public AMDGPULibFuncImpl {
 public:
   explicit AMDGPUUnmangledLibFunc();
   explicit AMDGPUUnmangledLibFunc(StringRef FName, FunctionType *FT) {
-    Name = std::string(FName);
+    Name = FName;
     FuncTy = FT;
   }
   std::string getName() const override { return Name; }

@@ -23,10 +23,8 @@ def FalkorModel : SchedMachineModel {
   let MispredictPenalty = 11;  // Minimum branch misprediction penalty.
   let CompleteModel = 1;
 
-  list<Predicate> UnsupportedFeatures = !listconcat(SVEUnsupported.F,
-                                                    PAUnsupported.F,
-                                                    SMEUnsupported.F,
-                                                    [HasMTE]);
+  list<Predicate> UnsupportedFeatures = SVEUnsupported.F;
+
   // FIXME: Remove when all errors have been fixed.
   let FullInstRWOverlapCheck = 0;
 }
@@ -93,8 +91,7 @@ def : WriteRes<WriteFCopy, []>   { let Unsupported = 1; }
 def : WriteRes<WriteFImm, []>    { let Unsupported = 1; }
 def : WriteRes<WriteFMul, []>    { let Unsupported = 1; }
 def : WriteRes<WriteFDiv, []>    { let Unsupported = 1; }
-def : WriteRes<WriteVd, []>      { let Unsupported = 1; }
-def : WriteRes<WriteVq, []>      { let Unsupported = 1; }
+def : WriteRes<WriteV, []>       { let Unsupported = 1; }
 def : WriteRes<WriteVLD, []>     { let Unsupported = 1; }
 def : WriteRes<WriteVST, []>     { let Unsupported = 1; }
 def : WriteRes<WriteSys, []>     { let Unsupported = 1; }
@@ -113,7 +110,6 @@ def : ReadAdvance<ReadID,      0>;
 def : ReadAdvance<ReadExtrHi,  0>;
 def : ReadAdvance<ReadAdrBase, 0>;
 def : ReadAdvance<ReadVLD,     0>;
-def : ReadAdvance<ReadST,      0>;
 
 // Detailed Refinements
 // -----------------------------------------------------------------------------

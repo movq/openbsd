@@ -16,7 +16,8 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/TableGen/Record.h"
 #include "llvm/TableGen/SetTheory.h"
 
@@ -25,6 +26,7 @@ namespace llvm {
 class CodeGenTarget;
 class CodeGenSchedModels;
 class CodeGenInstruction;
+class CodeGenRegisterClass;
 
 using RecVec = std::vector<Record*>;
 using RecIter = std::vector<Record*>::const_iterator;
@@ -56,7 +58,7 @@ struct CodeGenSchedRW {
       HasVariants(false), IsVariadic(false), IsSequence(false) {}
   CodeGenSchedRW(unsigned Idx, Record *Def)
     : Index(Idx), TheDef(Def), IsAlias(false), IsVariadic(false) {
-    Name = std::string(Def->getName());
+    Name = Def->getName();
     IsRead = Def->isSubClassOf("SchedRead");
     HasVariants = Def->isSubClassOf("SchedVariant");
     if (HasVariants)
@@ -92,7 +94,7 @@ struct CodeGenSchedRW {
 /// Represent a transition between SchedClasses induced by SchedVariant.
 struct CodeGenSchedTransition {
   unsigned ToClassIdx;
-  unsigned ProcIndex;
+  IdxVec ProcIndices;
   RecVec PredTerm;
 };
 
@@ -137,15 +139,14 @@ struct CodeGenSchedClass {
   // Instructions should be ignored by this class because they have been split
   // off to join another inferred class.
   RecVec InstRWs;
-  // InstRWs processor indices. Filled in inferFromInstRWs
-  DenseSet<unsigned> InstRWProcIndices;
 
   CodeGenSchedClass(unsigned Index, std::string Name, Record *ItinClassDef)
     : Index(Index), Name(std::move(Name)), ItinClassDef(ItinClassDef) {}
 
   bool isKeyEqual(Record *IC, ArrayRef<unsigned> W,
                   ArrayRef<unsigned> R) const {
-    return ItinClassDef == IC && ArrayRef(Writes) == W && ArrayRef(Reads) == R;
+    return ItinClassDef == IC && makeArrayRef(Writes) == W &&
+           makeArrayRef(Reads) == R;
   }
 
   // Is this class generated from a variants if existing classes? Instructions
@@ -357,7 +358,8 @@ public:
   OpcodeGroup(OpcodeGroup &&Other) = default;
 
   void addOpcode(const Record *Opcode) {
-    assert(!llvm::is_contained(Opcodes, Opcode) && "Opcode already in set!");
+    assert(std::find(Opcodes.begin(), Opcodes.end(), Opcode) == Opcodes.end() &&
+           "Opcode already in set!");
     Opcodes.push_back(Opcode);
   }
 
@@ -405,8 +407,6 @@ public:
   ArrayRef<OpcodeGroup> getGroups() const { return Groups; }
 };
 
-using ProcModelMapTy = DenseMap<const Record *, unsigned>;
-
 /// Top level container for machine model data.
 class CodeGenSchedModels {
   RecordKeeper &Records;
@@ -419,6 +419,7 @@ class CodeGenSchedModels {
   std::vector<CodeGenProcModel> ProcModels;
 
   // Map Processor's MachineModel or ProcItin to a CodeGenProcModel index.
+  using ProcModelMapTy = DenseMap<Record*, unsigned>;
   ProcModelMapTy ProcModelMap;
 
   // Per-operand SchedReadWrite types.
@@ -440,7 +441,6 @@ class CodeGenSchedModels {
   InstClassMapTy InstrClassMap;
 
   std::vector<STIPredicateFunction> STIPredicates;
-  std::vector<unsigned> getAllProcIndices() const;
 
 public:
   CodeGenSchedModels(RecordKeeper& RK, const CodeGenTarget &TGT);

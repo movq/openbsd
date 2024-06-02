@@ -19,6 +19,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
@@ -28,9 +29,10 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdint>
-#include <utility>
+#include <vector>
 
 using namespace llvm;
 
@@ -110,7 +112,7 @@ static Value *getBoundsCheckCond(Value *Ptr, Value *InstVal,
 ///
 /// \p GetTrapBB is a callable that returns the trap BB to use on failure.
 template <typename GetTrapBBT>
-static void insertBoundsCheck(Value *Or, BuilderTy &IRB, GetTrapBBT GetTrapBB) {
+static void insertBoundsCheck(Value *Or, BuilderTy IRB, GetTrapBBT GetTrapBB) {
   // check if the comparison is always false
   ConstantInt *C = dyn_cast_or_null<ConstantInt>(Or);
   if (C) {
@@ -140,13 +142,9 @@ static void insertBoundsCheck(Value *Or, BuilderTy &IRB, GetTrapBBT GetTrapBB) {
 
 static bool addBoundsChecking(Function &F, TargetLibraryInfo &TLI,
                               ScalarEvolution &SE) {
-  if (F.hasFnAttribute(Attribute::NoSanitizeBounds))
-    return false;
-
   const DataLayout &DL = F.getParent()->getDataLayout();
   ObjectSizeOpts EvalOpts;
   EvalOpts.RoundToAlign = true;
-  EvalOpts.EvalMode = ObjectSizeOpts::Mode::ExactUnderlyingSizeAndOffset;
   ObjectSizeOffsetEvaluator ObjSizeEval(DL, &TLI, F.getContext(), EvalOpts);
 
   // check HANDLE_MEMORY_INST in include/llvm/Instruction.def for memory
@@ -156,22 +154,17 @@ static bool addBoundsChecking(Function &F, TargetLibraryInfo &TLI,
     Value *Or = nullptr;
     BuilderTy IRB(I.getParent(), BasicBlock::iterator(&I), TargetFolder(DL));
     if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
-      if (!LI->isVolatile())
-        Or = getBoundsCheckCond(LI->getPointerOperand(), LI, DL, TLI,
-                                ObjSizeEval, IRB, SE);
+      Or = getBoundsCheckCond(LI->getPointerOperand(), LI, DL, TLI,
+                              ObjSizeEval, IRB, SE);
     } else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
-      if (!SI->isVolatile())
-        Or = getBoundsCheckCond(SI->getPointerOperand(), SI->getValueOperand(),
-                                DL, TLI, ObjSizeEval, IRB, SE);
+      Or = getBoundsCheckCond(SI->getPointerOperand(), SI->getValueOperand(),
+                              DL, TLI, ObjSizeEval, IRB, SE);
     } else if (AtomicCmpXchgInst *AI = dyn_cast<AtomicCmpXchgInst>(&I)) {
-      if (!AI->isVolatile())
-        Or =
-            getBoundsCheckCond(AI->getPointerOperand(), AI->getCompareOperand(),
-                               DL, TLI, ObjSizeEval, IRB, SE);
+      Or = getBoundsCheckCond(AI->getPointerOperand(), AI->getCompareOperand(),
+                              DL, TLI, ObjSizeEval, IRB, SE);
     } else if (AtomicRMWInst *AI = dyn_cast<AtomicRMWInst>(&I)) {
-      if (!AI->isVolatile())
-        Or = getBoundsCheckCond(AI->getPointerOperand(), AI->getValOperand(),
-                                DL, TLI, ObjSizeEval, IRB, SE);
+      Or = getBoundsCheckCond(AI->getPointerOperand(), AI->getValOperand(), DL,
+                              TLI, ObjSizeEval, IRB, SE);
     }
     if (Or)
       TrapInfo.push_back(std::make_pair(&I, Or));
@@ -221,4 +214,36 @@ PreservedAnalyses BoundsCheckingPass::run(Function &F, FunctionAnalysisManager &
     return PreservedAnalyses::all();
 
   return PreservedAnalyses::none();
+}
+
+namespace {
+struct BoundsCheckingLegacyPass : public FunctionPass {
+  static char ID;
+
+  BoundsCheckingLegacyPass() : FunctionPass(ID) {
+    initializeBoundsCheckingLegacyPassPass(*PassRegistry::getPassRegistry());
+  }
+
+  bool runOnFunction(Function &F) override {
+    auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
+    auto &SE = getAnalysis<ScalarEvolutionWrapperPass>().getSE();
+    return addBoundsChecking(F, TLI, SE);
+  }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequired<TargetLibraryInfoWrapperPass>();
+    AU.addRequired<ScalarEvolutionWrapperPass>();
+  }
+};
+} // namespace
+
+char BoundsCheckingLegacyPass::ID = 0;
+INITIALIZE_PASS_BEGIN(BoundsCheckingLegacyPass, "bounds-checking",
+                      "Run-time bounds checking", false, false)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
+INITIALIZE_PASS_END(BoundsCheckingLegacyPass, "bounds-checking",
+                    "Run-time bounds checking", false, false)
+
+FunctionPass *llvm::createBoundsCheckingLegacyPass() {
+  return new BoundsCheckingLegacyPass();
 }

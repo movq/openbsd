@@ -13,26 +13,27 @@
 #ifndef LLVM_OBJECT_OBJECTFILE_H
 #define LLVM_OBJECT_OBJECTFILE_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/BinaryFormat/Magic.h"
-#include "llvm/BinaryFormat/Swift.h"
+#include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/Error.h"
 #include "llvm/Object/SymbolicFile.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <system_error>
 
 namespace llvm {
 
-class SubtargetFeatures;
+class ARMAttributeParser;
 
 namespace object {
 
@@ -99,8 +100,8 @@ public:
   uint64_t getSize() const;
   Expected<StringRef> getContents() const;
 
-  /// Get the alignment of this section.
-  Align getAlignment() const;
+  /// Get the alignment of this section as the actual value (not log 2).
+  uint64_t getAlignment() const;
 
   bool isCompressed() const;
   /// Whether this section contains instructions.
@@ -122,9 +123,6 @@ public:
   /// contains data (e.g. PROGBITS), but is not text.
   bool isBerkeleyData() const;
 
-  /// Whether this section is a debug section.
-  bool isDebugSection() const;
-
   bool containsSymbol(SymbolRef S) const;
 
   relocation_iterator relocation_begin() const;
@@ -132,9 +130,6 @@ public:
   iterator_range<relocation_iterator> relocations() const {
     return make_range(relocation_begin(), relocation_end());
   }
-
-  /// Returns the related section if this section contains relocations. The
-  /// returned section may or may not have applied its relocations.
   Expected<section_iterator> getRelocatedSection() const;
 
   DataRefImpl getRawDataRefImpl() const;
@@ -170,11 +165,11 @@ class SymbolRef : public BasicSymbolRef {
 public:
   enum Type {
     ST_Unknown, // Type not specified
-    ST_Other,
     ST_Data,
     ST_Debug,
     ST_File,
     ST_Function,
+    ST_Other
   };
 
   SymbolRef() = default;
@@ -190,7 +185,7 @@ public:
 
   /// Return the value of the symbol depending on the object this can be an
   /// offset or a virtual address.
-  Expected<uint64_t> getValue() const;
+  uint64_t getValue() const;
 
   /// Get the alignment of this symbol as the actual value (not log 2).
   uint32_t getAlignment() const;
@@ -277,7 +272,6 @@ protected:
   virtual bool isSectionStripped(DataRefImpl Sec) const;
   virtual bool isBerkeleyText(DataRefImpl Sec) const;
   virtual bool isBerkeleyData(DataRefImpl Sec) const;
-  virtual bool isDebugSection(DataRefImpl Sec) const;
   virtual relocation_iterator section_rel_begin(DataRefImpl Sec) const = 0;
   virtual relocation_iterator section_rel_end(DataRefImpl Sec) const = 0;
   virtual Expected<section_iterator> getRelocatedSection(DataRefImpl Sec) const;
@@ -291,23 +285,14 @@ protected:
   virtual void getRelocationTypeName(DataRefImpl Rel,
                                      SmallVectorImpl<char> &Result) const = 0;
 
-  virtual llvm::binaryformat::Swift5ReflectionSectionKind
-  mapReflectionSectionNameToEnumValue(StringRef SectionName) const {
-    return llvm::binaryformat::Swift5ReflectionSectionKind::unknown;
-  };
-
-  Expected<uint64_t> getSymbolValue(DataRefImpl Symb) const;
+  uint64_t getSymbolValue(DataRefImpl Symb) const;
 
 public:
   ObjectFile() = delete;
   ObjectFile(const ObjectFile &other) = delete;
 
   uint64_t getCommonSymbolSize(DataRefImpl Symb) const {
-    Expected<uint32_t> SymbolFlagsOrErr = getSymbolFlags(Symb);
-    if (!SymbolFlagsOrErr)
-      // TODO: Actually report errors helpfully.
-      report_fatal_error(SymbolFlagsOrErr.takeError());
-    assert(*SymbolFlagsOrErr & SymbolRef::SF_Common);
+    assert(getSymbolFlags(Symb) & SymbolRef::SF_Common);
     return getCommonSymbolSizeImpl(Symb);
   }
 
@@ -328,18 +313,13 @@ public:
     return section_iterator_range(section_begin(), section_end());
   }
 
-  virtual bool hasDebugInfo() const;
-
   /// The number of bytes used to represent an address in this object
   ///        file format.
   virtual uint8_t getBytesInAddress() const = 0;
 
   virtual StringRef getFileFormatName() const = 0;
   virtual Triple::ArchType getArch() const = 0;
-  virtual Expected<SubtargetFeatures> getFeatures() const = 0;
-  virtual std::optional<StringRef> tryGetCPUName() const {
-    return std::nullopt;
-  };
+  virtual SubtargetFeatures getFeatures() const = 0;
   virtual void setARMSubArch(Triple &TheTriple) const { }
   virtual Expected<uint64_t> getStartAddress() const {
     return errorCodeToError(object_error::parse_failed);
@@ -354,11 +334,6 @@ public:
   /// True if this is a relocatable object (.o/.obj).
   virtual bool isRelocatableObject() const = 0;
 
-  /// True if the reflection section can be stripped by the linker.
-  bool isReflectionSectionStrippable(
-      llvm::binaryformat::Swift5ReflectionSectionKind ReflectionSectionKind)
-      const;
-
   /// @returns Pointer to ObjectFile subclass to handle this type of object.
   /// @param ObjectPath The path to the object file. ObjectPath.isObject must
   ///        return true.
@@ -367,8 +342,7 @@ public:
   createObjectFile(StringRef ObjectPath);
 
   static Expected<std::unique_ptr<ObjectFile>>
-  createObjectFile(MemoryBufferRef Object, llvm::file_magic Type,
-                   bool InitContent = true);
+  createObjectFile(MemoryBufferRef Object, llvm::file_magic Type);
   static Expected<std::unique_ptr<ObjectFile>>
   createObjectFile(MemoryBufferRef Object) {
     return createObjectFile(Object, llvm::file_magic::unknown);
@@ -385,7 +359,7 @@ public:
   createXCOFFObjectFile(MemoryBufferRef Object, unsigned FileType);
 
   static Expected<std::unique_ptr<ObjectFile>>
-  createELFObjectFile(MemoryBufferRef Object, bool InitContent = true);
+  createELFObjectFile(MemoryBufferRef Object);
 
   static Expected<std::unique_ptr<MachOObjectFile>>
   createMachOObjectFile(MemoryBufferRef Object,
@@ -408,7 +382,7 @@ inline Expected<uint64_t> SymbolRef::getAddress() const {
   return getObject()->getSymbolAddress(getRawDataRefImpl());
 }
 
-inline Expected<uint64_t> SymbolRef::getValue() const {
+inline uint64_t SymbolRef::getValue() const {
   return getObject()->getSymbolValue(getRawDataRefImpl());
 }
 
@@ -481,9 +455,8 @@ inline Expected<StringRef> SectionRef::getContents() const {
   return StringRef(reinterpret_cast<const char *>(Res->data()), Res->size());
 }
 
-inline Align SectionRef::getAlignment() const {
-  return MaybeAlign(OwningObject->getSectionAlignment(SectionPimpl))
-      .valueOrOne();
+inline uint64_t SectionRef::getAlignment() const {
+  return OwningObject->getSectionAlignment(SectionPimpl);
 }
 
 inline bool SectionRef::isCompressed() const {
@@ -520,10 +493,6 @@ inline bool SectionRef::isBerkeleyText() const {
 
 inline bool SectionRef::isBerkeleyData() const {
   return OwningObject->isBerkeleyData(SectionPimpl);
-}
-
-inline bool SectionRef::isDebugSection() const {
-  return OwningObject->isDebugSection(SectionPimpl);
 }
 
 inline relocation_iterator SectionRef::relocation_begin() const {

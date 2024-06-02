@@ -11,8 +11,6 @@
 // of disjoint sets. Each AliasSet object constructed by the AliasSetTracker
 // object refers to memory disjoint from the other sets.
 //
-// An AliasSetTracker can only be used on immutable IR.
-//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ANALYSIS_ALIASSETTRACKER_H
@@ -22,25 +20,26 @@
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
-#include "llvm/Analysis/MemoryLocation.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/IR/Instruction.h"
-#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/ValueHandle.h"
+#include "llvm/Support/Casting.h"
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <vector>
 
 namespace llvm {
 
-class AliasResult;
 class AliasSetTracker;
+class BasicBlock;
+class LoadInst;
+class Loop;
+class MemorySSA;
 class AnyMemSetInst;
 class AnyMemTransferInst;
-class BasicBlock;
-class BatchAAResults;
-class LoadInst;
-enum class ModRefInfo : uint8_t;
 class raw_ostream;
 class StoreInst;
 class VAArgInst;
@@ -88,7 +87,12 @@ class AliasSet : public ilist_node<AliasSet> {
         AAInfo = NewAAInfo;
       else {
         AAMDNodes Intersection(AAInfo.intersect(NewAAInfo));
-        SizeChanged |= Intersection != AAInfo;
+        if (!Intersection.TBAA || !Intersection.Scope ||
+            !Intersection.NoAlias) {
+          // NewAAInfo conflicts with AAInfo.
+          AAInfo = DenseMapInfo<AAMDNodes>::getTombstoneKey();
+          SizeChanged = true;
+        }
         AAInfo = Intersection;
       }
       return SizeChanged;
@@ -143,7 +147,10 @@ class AliasSet : public ilist_node<AliasSet> {
   AliasSet *Forward = nullptr;
 
   /// All instructions without a specific address in this alias set.
-  std::vector<AssertingVH<Instruction>> UnknownInsts;
+  /// In rare cases this vector can have a null'ed out WeakVH
+  /// instances (can happen if some other loop pass deletes an
+  /// instruction in this list).
+  std::vector<WeakVH> UnknownInsts;
 
   /// Number of nodes pointing to this AliasSet plus the number of AliasSets
   /// forwarding to it.
@@ -188,6 +195,11 @@ class AliasSet : public ilist_node<AliasSet> {
       removeFromTracker(AST);
   }
 
+  Instruction *getUnknownInst(unsigned i) const {
+    assert(i < UnknownInsts.size());
+    return cast_or_null<Instruction>(UnknownInsts[i]);
+  }
+
 public:
   AliasSet(const AliasSet &) = delete;
   AliasSet &operator=(const AliasSet &) = delete;
@@ -203,7 +215,7 @@ public:
   bool isForwardingAliasSet() const { return Forward; }
 
   /// Merge the specified alias set into this alias set.
-  void mergeSetIn(AliasSet &AS, AliasSetTracker &AST, BatchAAResults &BatchAA);
+  void mergeSetIn(AliasSet &AS, AliasSetTracker &AST);
 
   // Alias Set iteration - Allow access to all of the pointers which are part of
   // this alias set.
@@ -216,20 +228,19 @@ public:
   // track of the list's exact size.
   unsigned size() { return SetSize; }
 
+  /// If this alias set is known to contain a single instruction and *only* a
+  /// single unique instruction, return it.  Otherwise, return nullptr.
+  Instruction* getUniqueInstruction();
+
   void print(raw_ostream &OS) const;
   void dump() const;
 
   /// Define an iterator for alias sets... this is just a forward iterator.
-  class iterator {
+  class iterator : public std::iterator<std::forward_iterator_tag,
+                                        PointerRec, ptrdiff_t> {
     PointerRec *CurNode;
 
   public:
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = PointerRec;
-    using difference_type = std::ptrdiff_t;
-    using pointer = value_type *;
-    using reference = value_type &;
-
     explicit iterator(PointerRec *CN = nullptr) : CurNode(CN) {}
 
     bool operator==(const iterator& x) const {
@@ -287,15 +298,26 @@ private:
   void addPointer(AliasSetTracker &AST, PointerRec &Entry, LocationSize Size,
                   const AAMDNodes &AAInfo, bool KnownMustAlias = false,
                   bool SkipSizeUpdate = false);
-  void addUnknownInst(Instruction *I, BatchAAResults &AA);
+  void addUnknownInst(Instruction *I, AliasAnalysis &AA);
+
+  void removeUnknownInst(AliasSetTracker &AST, Instruction *I) {
+    bool WasEmpty = UnknownInsts.empty();
+    for (size_t i = 0, e = UnknownInsts.size(); i != e; ++i)
+      if (UnknownInsts[i] == I) {
+        UnknownInsts[i] = UnknownInsts.back();
+        UnknownInsts.pop_back();
+        --i; --e;  // Revisit the moved entry.
+      }
+    if (!WasEmpty && UnknownInsts.empty())
+      dropRef(AST);
+  }
 
 public:
   /// If the specified pointer "may" (or must) alias one of the members in the
   /// set return the appropriate AliasResult. Otherwise return NoAlias.
   AliasResult aliasesPointer(const Value *Ptr, LocationSize Size,
-                             const AAMDNodes &AAInfo, BatchAAResults &AA) const;
-  ModRefInfo aliasesUnknownInst(const Instruction *Inst,
-                                BatchAAResults &AA) const;
+                             const AAMDNodes &AAInfo, AliasAnalysis &AA) const;
+  bool aliasesUnknownInst(const Instruction *Inst, AliasAnalysis &AA) const;
 };
 
 inline raw_ostream& operator<<(raw_ostream &OS, const AliasSet &AS) {
@@ -304,10 +326,30 @@ inline raw_ostream& operator<<(raw_ostream &OS, const AliasSet &AS) {
 }
 
 class AliasSetTracker {
-  BatchAAResults &AA;
+  /// A CallbackVH to arrange for AliasSetTracker to be notified whenever a
+  /// Value is deleted.
+  class ASTCallbackVH final : public CallbackVH {
+    AliasSetTracker *AST;
+
+    void deleted() override;
+    void allUsesReplacedWith(Value *) override;
+
+  public:
+    ASTCallbackVH(Value *V, AliasSetTracker *AST = nullptr);
+
+    ASTCallbackVH &operator=(Value *V);
+  };
+  /// Traits to tell DenseMap that tell us how to compare and hash the value
+  /// handle.
+  struct ASTCallbackVHDenseMapInfo : public DenseMapInfo<Value *> {};
+
+  AliasAnalysis &AA;
+  MemorySSA *MSSA = nullptr;
+  Loop *L = nullptr;
   ilist<AliasSet> AliasSets;
 
-  using PointerMapType = DenseMap<AssertingVH<Value>, AliasSet::PointerRec *>;
+  using PointerMapType = DenseMap<ASTCallbackVH, AliasSet::PointerRec *,
+                                  ASTCallbackVHDenseMapInfo>;
 
   // Map from pointers to their node
   PointerMapType PointerMap;
@@ -315,7 +357,9 @@ class AliasSetTracker {
 public:
   /// Create an empty collection of AliasSets, and use the specified alias
   /// analysis object to disambiguate load and store addresses.
-  explicit AliasSetTracker(BatchAAResults &AA) : AA(AA) {}
+  explicit AliasSetTracker(AliasAnalysis &aa) : AA(aa) {}
+  explicit AliasSetTracker(AliasAnalysis &aa, MemorySSA *mssa, Loop *l)
+      : AA(aa), MSSA(mssa), L(l) {}
   ~AliasSetTracker() { clear(); }
 
   /// These methods are used to add different types of instructions to the alias
@@ -340,6 +384,7 @@ public:
   void add(BasicBlock &BB);       // Add all instructions in basic block
   void add(const AliasSetTracker &AST); // Add alias relations from another AST
   void addUnknown(Instruction *I);
+  void addAllInstructionsInLoopUsingMSSA();
 
   void clear();
 
@@ -353,7 +398,19 @@ public:
   AliasSet &getAliasSetFor(const MemoryLocation &MemLoc);
 
   /// Return the underlying alias analysis object used by this tracker.
-  BatchAAResults &getAliasAnalysis() const { return AA; }
+  AliasAnalysis &getAliasAnalysis() const { return AA; }
+
+  /// This method is used to remove a pointer value from the AliasSetTracker
+  /// entirely. It should be used when an instruction is deleted from the
+  /// program to update the AST. If you don't use this, you would have dangling
+  /// pointers to deleted instructions.
+  void deleteValue(Value *PtrVal);
+
+  /// This method should be used whenever a preexisting value in the program is
+  /// copied or cloned, introducing a new value.  Note that it is ok for clients
+  /// that use this method to introduce the same value multiple times: if the
+  /// tracker already knows about a value, it will ignore the request.
+  void copyValue(Value *From, Value *To);
 
   using iterator = ilist<AliasSet>::iterator;
   using const_iterator = ilist<AliasSet>::const_iterator;
@@ -382,7 +439,7 @@ private:
   /// Just like operator[] on the map, except that it creates an entry for the
   /// pointer if it doesn't already exist.
   AliasSet::PointerRec &getEntryFor(Value *V) {
-    AliasSet::PointerRec *&Entry = PointerMap[V];
+    AliasSet::PointerRec *&Entry = PointerMap[ASTCallbackVH(V, this)];
     if (!Entry)
       Entry = new AliasSet::PointerRec(V);
     return *Entry;
@@ -404,14 +461,6 @@ inline raw_ostream& operator<<(raw_ostream &OS, const AliasSetTracker &AST) {
   AST.print(OS);
   return OS;
 }
-
-class AliasSetsPrinterPass : public PassInfoMixin<AliasSetsPrinterPass> {
-  raw_ostream &OS;
-
-public:
-  explicit AliasSetsPrinterPass(raw_ostream &OS);
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
-};
 
 } // end namespace llvm
 

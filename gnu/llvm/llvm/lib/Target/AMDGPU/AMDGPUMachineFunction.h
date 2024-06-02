@@ -9,17 +9,12 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_AMDGPUMACHINEFUNCTION_H
 #define LLVM_LIB_TARGET_AMDGPU_AMDGPUMACHINEFUNCTION_H
 
-#include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalValue.h"
-#include "llvm/IR/GlobalVariable.h"
+#include "Utils/AMDGPUBaseInfo.h"
 
 namespace llvm {
 
-class AMDGPUSubtarget;
 class GCNSubtarget;
 
 class AMDGPUMachineFunction : public MachineFunctionInfo {
@@ -28,62 +23,47 @@ class AMDGPUMachineFunction : public MachineFunctionInfo {
   SmallDenseMap<const GlobalValue *, unsigned, 4> LocalMemoryObjects;
 
 protected:
-  uint64_t ExplicitKernArgSize = 0; // Cache for this.
+  uint64_t ExplicitKernArgSize; // Cache for this.
   Align MaxKernArgAlign;        // Cache for this.
 
   /// Number of bytes in the LDS that are being used.
-  uint32_t LDSSize = 0;
-  uint32_t GDSSize = 0;
+  unsigned LDSSize;
 
-  /// Number of bytes in the LDS allocated statically. This field is only used
-  /// in the instruction selector and not part of the machine function info.
-  uint32_t StaticLDSSize = 0;
-  uint32_t StaticGDSSize = 0;
+  // State of MODE register, assumed FP mode.
+  AMDGPU::SIModeRegisterDefaults Mode;
 
-  /// Align for dynamic shared memory if any. Dynamic shared memory is
-  /// allocated directly after the static one, i.e., LDSSize. Need to pad
-  /// LDSSize to ensure that dynamic one is aligned accordingly.
-  /// The maximal alignment is updated during IR translation or lowering
-  /// stages.
-  Align DynLDSAlign;
-
-  // Kernels + shaders. i.e. functions called by the hardware and not called
+  // Kernels + shaders. i.e. functions called by the driver and not called
   // by other functions.
-  bool IsEntryFunction = false;
+  bool IsEntryFunction;
 
-  // Entry points called by other functions instead of directly by the hardware.
-  bool IsModuleEntryFunction = false;
-
-  bool NoSignedZerosFPMath = false;
+  bool NoSignedZerosFPMath;
 
   // Function may be memory bound.
-  bool MemoryBound = false;
+  bool MemoryBound;
 
   // Kernel may need limited waves per EU for better performance.
-  bool WaveLimiter = false;
+  bool WaveLimiter;
 
 public:
-  AMDGPUMachineFunction(const Function &F, const AMDGPUSubtarget &ST);
+  AMDGPUMachineFunction(const MachineFunction &MF);
 
   uint64_t getExplicitKernArgSize() const {
     return ExplicitKernArgSize;
   }
 
-  Align getMaxKernArgAlign() const { return MaxKernArgAlign; }
+  unsigned getMaxKernArgAlign() const { return MaxKernArgAlign.value(); }
 
-  uint32_t getLDSSize() const {
+  unsigned getLDSSize() const {
     return LDSSize;
   }
 
-  uint32_t getGDSSize() const {
-    return GDSSize;
+  AMDGPU::SIModeRegisterDefaults getMode() const {
+    return Mode;
   }
 
   bool isEntryFunction() const {
     return IsEntryFunction;
   }
-
-  bool isModuleEntryFunction() const { return IsModuleEntryFunction; }
 
   bool hasNoSignedZerosFPMath() const {
     return NoSignedZerosFPMath;
@@ -97,33 +77,7 @@ public:
     return WaveLimiter;
   }
 
-  unsigned allocateLDSGlobal(const DataLayout &DL, const GlobalVariable &GV) {
-    return allocateLDSGlobal(DL, GV, DynLDSAlign);
-  }
-
-  unsigned allocateLDSGlobal(const DataLayout &DL, const GlobalVariable &GV,
-                             Align Trailing);
-
-  void allocateKnownAddressLDSGlobal(const Function &F);
-
-  // A kernel function may have an associated LDS allocation, and a kernel-scope
-  // LDS allocation must have an associated kernel function
-
-  // LDS allocation should have an associated kernel function
-  static const Function *
-  getKernelLDSFunctionFromGlobal(const GlobalVariable &GV);
-  static const GlobalVariable *
-  getKernelLDSGlobalFromFunction(const Function &F);
-
-  // Module or kernel scope LDS variable
-  static bool isKnownAddressLDSGlobal(const GlobalVariable &GV);
-  static unsigned calculateKnownAddressOfLDSGlobal(const GlobalVariable &GV);
-
-  static std::optional<uint32_t> getLDSKernelIdMetadata(const Function &F);
-
-  Align getDynLDSAlign() const { return DynLDSAlign; }
-
-  void setDynLDSAlign(const DataLayout &DL, const GlobalVariable &GV);
+  unsigned allocateLDSGlobal(const DataLayout &DL, const GlobalValue &GV);
 };
 
 }

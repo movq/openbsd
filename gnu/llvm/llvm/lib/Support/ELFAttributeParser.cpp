@@ -7,14 +7,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/ELFAttributeParser.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Errc.h"
+#include "llvm/Support/LEB128.h"
 #include "llvm/Support/ScopedPrinter.h"
 
 using namespace llvm;
 using namespace llvm::ELFAttrs;
 
-static constexpr EnumEntry<unsigned> tagNames[] = {
+static const EnumEntry<unsigned> tagNames[] = {
     {"Tag_File", ELFAttrs::File},
     {"Tag_Section", ELFAttrs::Section},
     {"Tag_Symbol", ELFAttrs::Symbol},
@@ -53,7 +55,7 @@ Error ELFAttributeParser::stringAttribute(unsigned tag) {
   StringRef tagName =
       ELFAttrs::attrTypeAsString(tag, tagToStringMap, /*hasTagPrefix=*/false);
   StringRef desc = de.getCStrRef(cursor);
-  setAttributeString(tag, desc);
+  attributesStr.insert(std::make_pair(tag, desc));
 
   if (sw) {
     DictScope scope(*sw, "Attribute");
@@ -140,7 +142,7 @@ Error ELFAttributeParser::parseSubsection(uint32_t length) {
       return cursor.takeError();
 
     if (sw) {
-      sw->printEnum("Tag", tag, ArrayRef(tagNames));
+      sw->printEnum("Tag", tag, makeArrayRef(tagNames));
       sw->printNumber("Size", size);
     }
     if (size < 5)
@@ -198,7 +200,7 @@ Error ELFAttributeParser::parse(ArrayRef<uint8_t> section,
 
   // Unrecognized format-version.
   uint8_t formatVersion = de.getU8(cursor);
-  if (formatVersion != ELFAttrs::Format_Version)
+  if (formatVersion != 'A')
     return createStringError(errc::invalid_argument,
                              "unrecognized format-version: 0x" +
                                  utohexstr(formatVersion));

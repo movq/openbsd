@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 """Converts a .exports file to a format consumable by linkers.
 
@@ -25,7 +25,7 @@ def main():
     symbols = open(args.source).readlines()
 
     if args.format == 'linux':
-        output_lines = (['LLVM_0 {\n',
+        output_lines = (['FOO {\n',
                          '  global:\n',] +
                         ['    %s;\n' % s.rstrip() for s in symbols] +
                         ['  local:\n',

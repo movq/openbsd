@@ -20,7 +20,7 @@ later. LLVM 3.6 and before will not work with it. Also note that you
 need to use a version of this tutorial that matches your LLVM release:
 If you are using an official LLVM release, use the version of the
 documentation included with your release or on the `llvm.org releases
-page <https://llvm.org/releases/>`_.
+page <http://llvm.org/releases/>`_.
 
 Code Generation Setup
 =====================
@@ -34,7 +34,7 @@ class:
     /// ExprAST - Base class for all expression nodes.
     class ExprAST {
     public:
-      virtual ~ExprAST() = default;
+      virtual ~ExprAST() {}
       virtual Value *codegen() = 0;
     };
 
@@ -44,7 +44,7 @@ class:
 
     public:
       NumberExprAST(double Val) : Val(Val) {}
-      Value *codegen() override;
+      virtual Value *codegen();
     };
     ...
 
@@ -67,7 +67,7 @@ way to model this. Again, this tutorial won't dwell on good software
 engineering practices: for our purposes, adding a virtual method is
 simplest.
 
-The second thing we want is a "LogError" method like we used for the
+The second thing we want is an "LogError" method like we used for the
 parser, which will be used to report errors found during code generation
 (for example, use of an undeclared parameter):
 
@@ -90,7 +90,7 @@ detail, we just need a single instance to pass into APIs that require it.
 
 The ``Builder`` object is a helper object that makes it easy to generate
 LLVM instructions. Instances of the
-`IRBuilder <https://llvm.org/doxygen/IRBuilder_8h_source.html>`_
+`IRBuilder <http://llvm.org/doxygen/IRBuilder_8h-source.html>`_
 class template keep track of the current place to insert instructions
 and has methods to create new instructions.
 
@@ -197,7 +197,7 @@ suffix. Local value names for instructions are purely optional, but it
 makes it much easier to read the IR dumps.
 
 `LLVM instructions <../../LangRef.html#instruction-reference>`_ are constrained by strict
-rules: for example, the Left and Right operands of an `add
+rules: for example, the Left and Right operators of an `add
 instruction <../../LangRef.html#add-instruction>`_ must have the same type, and the
 result type of the add must match the operand types. Because all values
 in Kaleidoscope are doubles, this makes for very simple code for add,
@@ -549,7 +549,7 @@ Full Code Listing
 Here is the complete code listing for our running example, enhanced with
 the LLVM code generator. Because this uses the LLVM libraries, we need
 to link them in. To do this, we use the
-`llvm-config <https://llvm.org/cmds/llvm-config.html>`_ tool to inform
+`llvm-config <http://llvm.org/cmds/llvm-config.html>`_ tool to inform
 our makefile/command line about which options to use:
 
 .. code-block:: bash

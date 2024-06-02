@@ -9,8 +9,8 @@
 // Recalculate the liveness information given a data flow graph.
 // This includes block live-ins and kill flags.
 
-#ifndef LLVM_CODEGEN_RDFLIVENESS_H
-#define LLVM_CODEGEN_RDFLIVENESS_H
+#ifndef LLVM_LIB_TARGET_HEXAGON_RDFLIVENESS_H
+#define LLVM_LIB_TARGET_HEXAGON_RDFLIVENESS_H
 
 #include "RDFGraph.h"
 #include "RDFRegisters.h"
@@ -18,8 +18,6 @@
 #include "llvm/MC/LaneBitmask.h"
 #include <map>
 #include <set>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace llvm {
@@ -30,30 +28,6 @@ class MachineDominatorTree;
 class MachineRegisterInfo;
 class TargetRegisterInfo;
 
-} // namespace llvm
-
-namespace llvm {
-namespace rdf {
-namespace detail {
-
-using NodeRef = std::pair<NodeId, LaneBitmask>;
-
-} // namespace detail
-} // namespace rdf
-} // namespace llvm
-
-namespace std {
-
-template <> struct hash<llvm::rdf::detail::NodeRef> {
-  std::size_t operator()(llvm::rdf::detail::NodeRef R) const {
-    return std::hash<llvm::rdf::NodeId>{}(R.first) ^
-           std::hash<llvm::LaneBitmask::Type>{}(R.second.getAsInteger());
-  }
-};
-
-} // namespace std
-
-namespace llvm {
 namespace rdf {
 
   struct Liveness {
@@ -72,9 +46,10 @@ namespace rdf {
       std::map<MachineBasicBlock*,RegisterAggr> Map;
     };
 
-    using NodeRef = detail::NodeRef;
-    using NodeRefSet = std::unordered_set<NodeRef>;
-    using RefMap = std::unordered_map<RegisterId, NodeRefSet>;
+    using NodeRef = std::pair<NodeId, LaneBitmask>;
+    using NodeRefSet = std::set<NodeRef>;
+    // RegisterId in RefMap must be normalized.
+    using RefMap = std::map<RegisterId, NodeRefSet>;
 
     Liveness(MachineRegisterInfo &mri, const DataFlowGraph &g)
         : DFG(g), TRI(g.getTRI()), PRI(g.getPRI()), MDT(g.getDT()),
@@ -135,14 +110,15 @@ namespace rdf {
     // Cache of mapping from node ids (for RefNodes) to the containing
     // basic blocks. Not computing it each time for each node reduces
     // the liveness calculation time by a large fraction.
-    DenseMap<NodeId, MachineBasicBlock *> NBMap;
+    using NodeBlockMap = DenseMap<NodeId, MachineBasicBlock *>;
+    NodeBlockMap NBMap;
 
     // Phi information:
     //
     // RealUseMap
     // map: NodeId -> (map: RegisterId -> NodeRefSet)
     //      phi id -> (map: register -> set of reached non-phi uses)
-    DenseMap<NodeId, RefMap> RealUseMap;
+    std::map<NodeId, RefMap> RealUseMap;
 
     // Inverse iterated dominance frontier.
     std::map<MachineBasicBlock*,std::set<MachineBasicBlock*>> IIDF;
@@ -172,4 +148,4 @@ namespace rdf {
 
 } // end namespace llvm
 
-#endif // LLVM_CODEGEN_RDFLIVENESS_H
+#endif // LLVM_LIB_TARGET_HEXAGON_RDFLIVENESS_H

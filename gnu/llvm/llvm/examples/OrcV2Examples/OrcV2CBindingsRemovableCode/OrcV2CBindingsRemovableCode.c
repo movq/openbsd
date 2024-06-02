@@ -22,7 +22,7 @@ int handleError(LLVMErrorRef Err) {
   return 1;
 }
 
-LLVMOrcThreadSafeModuleRef createDemoModule(void) {
+LLVMOrcThreadSafeModuleRef createDemoModule() {
   // Create a new ThreadSafeContext and underlying LLVMContext.
   LLVMOrcThreadSafeContextRef TSCtx = LLVMOrcCreateNewThreadSafeContext();
 
@@ -54,9 +54,6 @@ LLVMOrcThreadSafeModuleRef createDemoModule(void) {
 
   //  - Build the return instruction.
   LLVMBuildRet(Builder, Result);
-
-  //  - Free the builder.
-  LLVMDisposeBuilder(Builder);
 
   // Our demo module is now complete. Wrap it and our ThreadSafeContext in a
   // ThreadSafeModule.

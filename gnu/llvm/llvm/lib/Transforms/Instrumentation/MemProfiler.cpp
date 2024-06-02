@@ -19,22 +19,21 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
-#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
-#include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
@@ -108,10 +107,6 @@ static cl::opt<int>
                          cl::desc("granularity of memprof shadow mapping"),
                          cl::Hidden, cl::init(DefaultShadowGranularity));
 
-static cl::opt<bool> ClStack("memprof-instrument-stack",
-                             cl::desc("Instrument scalar stack variables"),
-                             cl::Hidden, cl::init(false));
-
 // Debug flags.
 
 static cl::opt<int> ClDebug("memprof-debug", cl::desc("debug"), cl::Hidden,
@@ -128,8 +123,6 @@ static cl::opt<int> ClDebugMax("memprof-debug-max", cl::desc("Debug max inst"),
 
 STATISTIC(NumInstrumentedReads, "Number of instrumented reads");
 STATISTIC(NumInstrumentedWrites, "Number of instrumented writes");
-STATISTIC(NumSkippedStackReads, "Number of non-instrumented stack reads");
-STATISTIC(NumSkippedStackWrites, "Number of non-instrumented stack writes");
 
 namespace {
 
@@ -155,7 +148,7 @@ static uint64_t getCtorAndDtorPriority(Triple &TargetTriple) {
 struct InterestingMemoryAccess {
   Value *Addr = nullptr;
   bool IsWrite;
-  Type *AccessTy;
+  unsigned Alignment;
   uint64_t TypeSize;
   Value *MaybeMask = nullptr;
 };
@@ -171,8 +164,8 @@ public:
 
   /// If it is an interesting memory access, populate information
   /// about the access and return a InterestingMemoryAccess struct.
-  /// Otherwise return std::nullopt.
-  std::optional<InterestingMemoryAccess>
+  /// Otherwise return None.
+  Optional<InterestingMemoryAccess>
   isInterestingMemoryAccess(Instruction *I) const;
 
   void instrumentMop(Instruction *I, const DataLayout &DL,
@@ -180,7 +173,8 @@ public:
   void instrumentAddress(Instruction *OrigIns, Instruction *InsertBefore,
                          Value *Addr, uint32_t TypeSize, bool IsWrite);
   void instrumentMaskedLoadOrStore(const DataLayout &DL, Value *Mask,
-                                   Instruction *I, Value *Addr, Type *AccessTy,
+                                   Instruction *I, Value *Addr,
+                                   unsigned Alignment, uint32_t TypeSize,
                                    bool IsWrite);
   void instrumentMemIntrinsic(MemIntrinsic *MI);
   Value *memToShadow(Value *Shadow, IRBuilder<> &IRB);
@@ -204,6 +198,22 @@ private:
   Value *DynamicShadowOffset = nullptr;
 };
 
+class MemProfilerLegacyPass : public FunctionPass {
+public:
+  static char ID;
+
+  explicit MemProfilerLegacyPass() : FunctionPass(ID) {
+    initializeMemProfilerLegacyPassPass(*PassRegistry::getPassRegistry());
+  }
+
+  StringRef getPassName() const override { return "MemProfilerFunctionPass"; }
+
+  bool runOnFunction(Function &F) override {
+    MemProfiler Profiler(*F.getParent());
+    return Profiler.instrumentFunction(F);
+  }
+};
+
 class ModuleMemProfiler {
 public:
   ModuleMemProfiler(Module &M) { TargetTriple = Triple(M.getTargetTriple()); }
@@ -216,9 +226,27 @@ private:
   Function *MemProfCtorFunction = nullptr;
 };
 
+class ModuleMemProfilerLegacyPass : public ModulePass {
+public:
+  static char ID;
+
+  explicit ModuleMemProfilerLegacyPass() : ModulePass(ID) {
+    initializeModuleMemProfilerLegacyPassPass(*PassRegistry::getPassRegistry());
+  }
+
+  StringRef getPassName() const override { return "ModuleMemProfiler"; }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {}
+
+  bool runOnModule(Module &M) override {
+    ModuleMemProfiler MemProfiler(M);
+    return MemProfiler.instrumentModule(M);
+  }
+};
+
 } // end anonymous namespace
 
-MemProfilerPass::MemProfilerPass() = default;
+MemProfilerPass::MemProfilerPass() {}
 
 PreservedAnalyses MemProfilerPass::run(Function &F,
                                        AnalysisManager<Function> &AM) {
@@ -227,9 +255,11 @@ PreservedAnalyses MemProfilerPass::run(Function &F,
   if (Profiler.instrumentFunction(F))
     return PreservedAnalyses::none();
   return PreservedAnalyses::all();
+
+  return PreservedAnalyses::all();
 }
 
-ModuleMemProfilerPass::ModuleMemProfilerPass() = default;
+ModuleMemProfilerPass::ModuleMemProfilerPass() {}
 
 PreservedAnalyses ModuleMemProfilerPass::run(Module &M,
                                              AnalysisManager<Module> &AM) {
@@ -237,6 +267,30 @@ PreservedAnalyses ModuleMemProfilerPass::run(Module &M,
   if (Profiler.instrumentModule(M))
     return PreservedAnalyses::none();
   return PreservedAnalyses::all();
+}
+
+char MemProfilerLegacyPass::ID = 0;
+
+INITIALIZE_PASS_BEGIN(MemProfilerLegacyPass, "memprof",
+                      "MemProfiler: profile memory allocations and accesses.",
+                      false, false)
+INITIALIZE_PASS_END(MemProfilerLegacyPass, "memprof",
+                    "MemProfiler: profile memory allocations and accesses.",
+                    false, false)
+
+FunctionPass *llvm::createMemProfilerFunctionPass() {
+  return new MemProfilerLegacyPass();
+}
+
+char ModuleMemProfilerLegacyPass::ID = 0;
+
+INITIALIZE_PASS(ModuleMemProfilerLegacyPass, "memprof-module",
+                "MemProfiler: profile memory allocations and accesses."
+                "ModulePass",
+                false, false)
+
+ModulePass *llvm::createModuleMemProfilerLegacyPassPass() {
+  return new ModuleMemProfilerLegacyPass();
 }
 
 Value *MemProfiler::memToShadow(Value *Shadow, IRBuilder<> &IRB) {
@@ -267,37 +321,45 @@ void MemProfiler::instrumentMemIntrinsic(MemIntrinsic *MI) {
   MI->eraseFromParent();
 }
 
-std::optional<InterestingMemoryAccess>
+Optional<InterestingMemoryAccess>
 MemProfiler::isInterestingMemoryAccess(Instruction *I) const {
   // Do not instrument the load fetching the dynamic shadow address.
   if (DynamicShadowOffset == I)
-    return std::nullopt;
+    return None;
 
   InterestingMemoryAccess Access;
 
+  const DataLayout &DL = I->getModule()->getDataLayout();
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
     if (!ClInstrumentReads)
-      return std::nullopt;
+      return None;
     Access.IsWrite = false;
-    Access.AccessTy = LI->getType();
+    Access.TypeSize = DL.getTypeStoreSizeInBits(LI->getType());
+    Access.Alignment = LI->getAlignment();
     Access.Addr = LI->getPointerOperand();
   } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
     if (!ClInstrumentWrites)
-      return std::nullopt;
+      return None;
     Access.IsWrite = true;
-    Access.AccessTy = SI->getValueOperand()->getType();
+    Access.TypeSize =
+        DL.getTypeStoreSizeInBits(SI->getValueOperand()->getType());
+    Access.Alignment = SI->getAlignment();
     Access.Addr = SI->getPointerOperand();
   } else if (AtomicRMWInst *RMW = dyn_cast<AtomicRMWInst>(I)) {
     if (!ClInstrumentAtomics)
-      return std::nullopt;
+      return None;
     Access.IsWrite = true;
-    Access.AccessTy = RMW->getValOperand()->getType();
+    Access.TypeSize =
+        DL.getTypeStoreSizeInBits(RMW->getValOperand()->getType());
+    Access.Alignment = 0;
     Access.Addr = RMW->getPointerOperand();
   } else if (AtomicCmpXchgInst *XCHG = dyn_cast<AtomicCmpXchgInst>(I)) {
     if (!ClInstrumentAtomics)
-      return std::nullopt;
+      return None;
     Access.IsWrite = true;
-    Access.AccessTy = XCHG->getCompareOperand()->getType();
+    Access.TypeSize =
+        DL.getTypeStoreSizeInBits(XCHG->getCompareOperand()->getType());
+    Access.Alignment = 0;
     Access.Addr = XCHG->getPointerOperand();
   } else if (auto *CI = dyn_cast<CallInst>(I)) {
     auto *F = CI->getCalledFunction();
@@ -306,68 +368,54 @@ MemProfiler::isInterestingMemoryAccess(Instruction *I) const {
       unsigned OpOffset = 0;
       if (F->getIntrinsicID() == Intrinsic::masked_store) {
         if (!ClInstrumentWrites)
-          return std::nullopt;
+          return None;
         // Masked store has an initial operand for the value.
         OpOffset = 1;
-        Access.AccessTy = CI->getArgOperand(0)->getType();
         Access.IsWrite = true;
       } else {
         if (!ClInstrumentReads)
-          return std::nullopt;
-        Access.AccessTy = CI->getType();
+          return None;
         Access.IsWrite = false;
       }
 
       auto *BasePtr = CI->getOperand(0 + OpOffset);
+      auto *Ty = cast<PointerType>(BasePtr->getType())->getElementType();
+      Access.TypeSize = DL.getTypeStoreSizeInBits(Ty);
+      if (auto *AlignmentConstant =
+              dyn_cast<ConstantInt>(CI->getOperand(1 + OpOffset)))
+        Access.Alignment = (unsigned)AlignmentConstant->getZExtValue();
+      else
+        Access.Alignment = 1; // No alignment guarantees. We probably got Undef
       Access.MaybeMask = CI->getOperand(2 + OpOffset);
       Access.Addr = BasePtr;
     }
   }
 
   if (!Access.Addr)
-    return std::nullopt;
+    return None;
 
-  // Do not instrument accesses from different address spaces; we cannot deal
+  // Do not instrument acesses from different address spaces; we cannot deal
   // with them.
   Type *PtrTy = cast<PointerType>(Access.Addr->getType()->getScalarType());
   if (PtrTy->getPointerAddressSpace() != 0)
-    return std::nullopt;
+    return None;
 
   // Ignore swifterror addresses.
   // swifterror memory addresses are mem2reg promoted by instruction
   // selection. As such they cannot have regular uses like an instrumentation
   // function and it makes no sense to track them as memory.
   if (Access.Addr->isSwiftError())
-    return std::nullopt;
+    return None;
 
-  // Peel off GEPs and BitCasts.
-  auto *Addr = Access.Addr->stripInBoundsOffsets();
-
-  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Addr)) {
-    // Do not instrument PGO counter updates.
-    if (GV->hasSection()) {
-      StringRef SectionName = GV->getSection();
-      // Check if the global is in the PGO counters section.
-      auto OF = Triple(I->getModule()->getTargetTriple()).getObjectFormat();
-      if (SectionName.endswith(
-              getInstrProfSectionName(IPSK_cnts, OF, /*AddSegmentInfo=*/false)))
-        return std::nullopt;
-    }
-
-    // Do not instrument accesses to LLVM internal variables.
-    if (GV->getName().startswith("__llvm"))
-      return std::nullopt;
-  }
-
-  const DataLayout &DL = I->getModule()->getDataLayout();
-  Access.TypeSize = DL.getTypeStoreSizeInBits(Access.AccessTy);
   return Access;
 }
 
 void MemProfiler::instrumentMaskedLoadOrStore(const DataLayout &DL, Value *Mask,
                                               Instruction *I, Value *Addr,
-                                              Type *AccessTy, bool IsWrite) {
-  auto *VTy = cast<FixedVectorType>(AccessTy);
+                                              unsigned Alignment,
+                                              uint32_t TypeSize, bool IsWrite) {
+  auto *VTy = cast<FixedVectorType>(
+      cast<PointerType>(Addr->getType())->getElementType());
   uint64_t ElemTypeSize = DL.getTypeStoreSizeInBits(VTy->getScalarType());
   unsigned Num = VTy->getNumElements();
   auto *Zero = ConstantInt::get(IntptrTy, 0);
@@ -400,15 +448,6 @@ void MemProfiler::instrumentMaskedLoadOrStore(const DataLayout &DL, Value *Mask,
 
 void MemProfiler::instrumentMop(Instruction *I, const DataLayout &DL,
                                 InterestingMemoryAccess &Access) {
-  // Skip instrumentation of stack accesses unless requested.
-  if (!ClStack && isa<AllocaInst>(getUnderlyingObject(Access.Addr))) {
-    if (Access.IsWrite)
-      ++NumSkippedStackWrites;
-    else
-      ++NumSkippedStackReads;
-    return;
-  }
-
   if (Access.IsWrite)
     NumInstrumentedWrites++;
   else
@@ -416,7 +455,8 @@ void MemProfiler::instrumentMop(Instruction *I, const DataLayout &DL,
 
   if (Access.MaybeMask) {
     instrumentMaskedLoadOrStore(DL, Access.MaybeMask, I, Access.Addr,
-                                Access.AccessTy, Access.IsWrite);
+                                Access.Alignment, Access.TypeSize,
+                                Access.IsWrite);
   } else {
     // Since the access counts will be accumulated across the entire allocation,
     // we only update the shadow access count for the first location and thus
@@ -562,6 +602,8 @@ bool MemProfiler::instrumentFunction(Function &F) {
 
   initializeCallbacks(*F.getParent());
 
+  FunctionModified |= insertDynamicShadowAtFunctionEntry(F);
+
   SmallVector<Instruction *, 16> ToInstrument;
 
   // Fill the set of memory operations to instrument.
@@ -572,20 +614,11 @@ bool MemProfiler::instrumentFunction(Function &F) {
     }
   }
 
-  if (ToInstrument.empty()) {
-    LLVM_DEBUG(dbgs() << "MEMPROF done instrumenting: " << FunctionModified
-                      << " " << F << "\n");
-
-    return FunctionModified;
-  }
-
-  FunctionModified |= insertDynamicShadowAtFunctionEntry(F);
-
   int NumInstrumented = 0;
   for (auto *Inst : ToInstrument) {
     if (ClDebugMin < 0 || ClDebugMax < 0 ||
         (NumInstrumented >= ClDebugMin && NumInstrumented <= ClDebugMax)) {
-      std::optional<InterestingMemoryAccess> Access =
+      Optional<InterestingMemoryAccess> Access =
           isInterestingMemoryAccess(Inst);
       if (Access)
         instrumentMop(Inst, F.getParent()->getDataLayout(), *Access);

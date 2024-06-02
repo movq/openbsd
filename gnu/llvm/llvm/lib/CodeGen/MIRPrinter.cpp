@@ -13,11 +13,14 @@
 
 #include "llvm/CodeGen/MIRPrinter.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/CodeGen/GlobalISel/RegisterBank.h"
 #include "llvm/CodeGen/MIRYamlMapping.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -26,22 +29,31 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
-#include "llvm/CodeGen/MachineModuleSlotTracker.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
-#include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/IR/Value.h"
 #include "llvm/MC/LaneBitmask.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCDwarf.h"
+#include "llvm/MC/MCSymbol.h"
+#include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -50,6 +62,7 @@
 #include "llvm/Support/LowLevelTypeImpl.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include <algorithm>
 #include <cassert>
@@ -65,9 +78,6 @@ using namespace llvm;
 static cl::opt<bool> SimplifyMIR(
     "simplify-mir", cl::Hidden,
     cl::desc("Leave out unnecessary information when printing MIR"));
-
-static cl::opt<bool> PrintLocations("mir-debug-loc", cl::Hidden, cl::init(true),
-                                    cl::desc("Print MIR debug-locations"));
 
 namespace {
 
@@ -122,9 +132,6 @@ public:
   void convertCallSiteObjects(yaml::MachineFunction &YMF,
                               const MachineFunction &MF,
                               ModuleSlotTracker &MST);
-  void convertMachineMetadataNodes(yaml::MachineFunction &YMF,
-                                   const MachineFunction &MF,
-                                   MachineModuleSlotTracker &MST);
 
 private:
   void initRegisterMaskIds(const MachineFunction &MF);
@@ -155,9 +162,8 @@ public:
   void print(const MachineInstr &MI);
   void printStackObjectReference(int FrameIndex);
   void print(const MachineInstr &MI, unsigned OpIdx,
-             const TargetRegisterInfo *TRI, const TargetInstrInfo *TII,
-             bool ShouldPrintRegisterTies, LLT TypeToPrint,
-             bool PrintDef = true);
+             const TargetRegisterInfo *TRI, bool ShouldPrintRegisterTies,
+             LLT TypeToPrint, bool PrintDef = true);
 };
 
 } // end namespace llvm
@@ -191,16 +197,9 @@ void MIRPrinter::print(const MachineFunction &MF) {
 
   yaml::MachineFunction YamlMF;
   YamlMF.Name = MF.getName();
-  YamlMF.Alignment = MF.getAlignment();
+  YamlMF.Alignment = MF.getAlignment().value();
   YamlMF.ExposesReturnsTwice = MF.exposesReturnsTwice();
   YamlMF.HasWinCFI = MF.hasWinCFI();
-
-  YamlMF.CallsEHReturn = MF.callsEHReturn();
-  YamlMF.CallsUnwindInit = MF.callsUnwindInit();
-  YamlMF.HasEHCatchret = MF.hasEHCatchret();
-  YamlMF.HasEHScopes = MF.hasEHScopes();
-  YamlMF.HasEHFunclets = MF.hasEHFunclets();
-  YamlMF.UseDebugInstrRef = MF.useDebugInstrRef();
 
   YamlMF.Legalized = MF.getProperties().hasProperty(
       MachineFunctionProperties::Property::Legalized);
@@ -210,25 +209,13 @@ void MIRPrinter::print(const MachineFunction &MF) {
       MachineFunctionProperties::Property::Selected);
   YamlMF.FailedISel = MF.getProperties().hasProperty(
       MachineFunctionProperties::Property::FailedISel);
-  YamlMF.FailsVerification = MF.getProperties().hasProperty(
-      MachineFunctionProperties::Property::FailsVerification);
-  YamlMF.TracksDebugUserValues = MF.getProperties().hasProperty(
-      MachineFunctionProperties::Property::TracksDebugUserValues);
 
   convert(YamlMF, MF.getRegInfo(), MF.getSubtarget().getRegisterInfo());
-  MachineModuleSlotTracker MST(&MF);
+  ModuleSlotTracker MST(MF.getFunction().getParent());
   MST.incorporateFunction(MF.getFunction());
   convert(MST, YamlMF.FrameInfo, MF.getFrameInfo());
   convertStackObjects(YamlMF, MF, MST);
   convertCallSiteObjects(YamlMF, MF, MST);
-  for (const auto &Sub : MF.DebugValueSubstitutions) {
-    const auto &SubSrc = Sub.Src;
-    const auto &SubDest = Sub.Dest;
-    YamlMF.DebugValueSubstitutions.push_back({SubSrc.first, SubSrc.second,
-                                              SubDest.first,
-                                              SubDest.second,
-                                              Sub.Subreg});
-  }
   if (const auto *ConstantPool = MF.getConstantPool())
     convert(YamlMF, *ConstantPool);
   if (const auto *JumpTableInfo = MF.getJumpTableInfo())
@@ -248,10 +235,6 @@ void MIRPrinter::print(const MachineFunction &MF) {
     IsNewlineNeeded = true;
   }
   StrOS.flush();
-  // Convert machine metadata collected during the print of the machine
-  // function.
-  convertMachineMetadataNodes(YamlMF, MF, MST);
-
   yaml::Output Out(OS);
   if (!SimplifyMIR)
       Out.setWriteDefaultValues(true);
@@ -307,13 +290,13 @@ void MIRPrinter::convert(yaml::MachineFunction &MF,
 
   // Print the virtual register definitions.
   for (unsigned I = 0, E = RegInfo.getNumVirtRegs(); I < E; ++I) {
-    Register Reg = Register::index2VirtReg(I);
+    unsigned Reg = Register::index2VirtReg(I);
     yaml::VirtualRegisterDefinition VReg;
     VReg.ID = I;
     if (RegInfo.getVRegName(Reg) != "")
       continue;
     ::printRegClassOrBank(Reg, VReg.Class, RegInfo, TRI);
-    Register PreferredReg = RegInfo.getSimpleHint(Reg);
+    unsigned PreferredReg = RegInfo.getSimpleHint(Reg);
     if (PreferredReg)
       printRegMIR(PreferredReg, VReg.PreferredRegister, TRI);
     MF.VirtualRegisters.push_back(VReg);
@@ -350,7 +333,7 @@ void MIRPrinter::convert(ModuleSlotTracker &MST,
   YamlMFI.HasPatchPoint = MFI.hasPatchPoint();
   YamlMFI.StackSize = MFI.getStackSize();
   YamlMFI.OffsetAdjustment = MFI.getOffsetAdjustment();
-  YamlMFI.MaxAlignment = MFI.getMaxAlign().value();
+  YamlMFI.MaxAlignment = MFI.getMaxAlignment();
   YamlMFI.AdjustsStack = MFI.adjustsStack();
   YamlMFI.HasCalls = MFI.hasCalls();
   YamlMFI.MaxCallFrameSize = MFI.isMaxCallFrameSizeComputed()
@@ -360,7 +343,6 @@ void MIRPrinter::convert(ModuleSlotTracker &MST,
   YamlMFI.HasOpaqueSPAdjustment = MFI.hasOpaqueSPAdjustment();
   YamlMFI.HasVAStart = MFI.hasVAStart();
   YamlMFI.HasMustTailInVarArgFunc = MFI.hasMustTailInVarArgFunc();
-  YamlMFI.HasTailCall = MFI.hasTailCall();
   YamlMFI.LocalFrameSize = MFI.getLocalFrameSize();
   if (MFI.getSavePoint()) {
     raw_string_ostream StrOS(YamlMFI.SavePoint.Value);
@@ -377,17 +359,9 @@ void MIRPrinter::convertStackObjects(yaml::MachineFunction &YMF,
                                      ModuleSlotTracker &MST) {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
-
   // Process fixed stack objects.
-  assert(YMF.FixedStackObjects.empty());
-  SmallVector<int, 32> FixedStackObjectsIdx;
-  const int BeginIdx = MFI.getObjectIndexBegin();
-  if (BeginIdx < 0)
-    FixedStackObjectsIdx.reserve(-BeginIdx);
-
   unsigned ID = 0;
-  for (int I = BeginIdx; I < 0; ++I, ++ID) {
-    FixedStackObjectsIdx.push_back(-1); // Fill index for possible dead.
+  for (int I = MFI.getObjectIndexBegin(); I < 0; ++I, ++ID) {
     if (MFI.isDeadObjectIndex(I))
       continue;
 
@@ -398,34 +372,26 @@ void MIRPrinter::convertStackObjects(yaml::MachineFunction &YMF,
                           : yaml::FixedMachineStackObject::DefaultType;
     YamlObject.Offset = MFI.getObjectOffset(I);
     YamlObject.Size = MFI.getObjectSize(I);
-    YamlObject.Alignment = MFI.getObjectAlign(I);
+    YamlObject.Alignment = MFI.getObjectAlignment(I);
     YamlObject.StackID = (TargetStackID::Value)MFI.getStackID(I);
     YamlObject.IsImmutable = MFI.isImmutableObjectIndex(I);
     YamlObject.IsAliased = MFI.isAliasedObjectIndex(I);
-    // Save the ID' position in FixedStackObjects storage vector.
-    FixedStackObjectsIdx[ID] = YMF.FixedStackObjects.size();
     YMF.FixedStackObjects.push_back(YamlObject);
     StackObjectOperandMapping.insert(
         std::make_pair(I, FrameIndexOperand::createFixed(ID)));
   }
 
   // Process ordinary stack objects.
-  assert(YMF.StackObjects.empty());
-  SmallVector<unsigned, 32> StackObjectsIdx;
-  const int EndIdx = MFI.getObjectIndexEnd();
-  if (EndIdx > 0)
-    StackObjectsIdx.reserve(EndIdx);
   ID = 0;
-  for (int I = 0; I < EndIdx; ++I, ++ID) {
-    StackObjectsIdx.push_back(-1); // Fill index for possible dead.
+  for (int I = 0, E = MFI.getObjectIndexEnd(); I < E; ++I, ++ID) {
     if (MFI.isDeadObjectIndex(I))
       continue;
 
     yaml::MachineStackObject YamlObject;
     YamlObject.ID = ID;
     if (const auto *Alloca = MFI.getObjectAllocation(I))
-      YamlObject.Name.Value = std::string(
-          Alloca->hasName() ? Alloca->getName() : "");
+      YamlObject.Name.Value =
+          Alloca->hasName() ? Alloca->getName() : "<unnamed alloca>";
     YamlObject.Type = MFI.isSpillSlotObjectIndex(I)
                           ? yaml::MachineStackObject::SpillSlot
                           : MFI.isVariableSizedObjectIndex(I)
@@ -433,45 +399,44 @@ void MIRPrinter::convertStackObjects(yaml::MachineFunction &YMF,
                                 : yaml::MachineStackObject::DefaultType;
     YamlObject.Offset = MFI.getObjectOffset(I);
     YamlObject.Size = MFI.getObjectSize(I);
-    YamlObject.Alignment = MFI.getObjectAlign(I);
+    YamlObject.Alignment = MFI.getObjectAlignment(I);
     YamlObject.StackID = (TargetStackID::Value)MFI.getStackID(I);
 
-    // Save the ID' position in StackObjects storage vector.
-    StackObjectsIdx[ID] = YMF.StackObjects.size();
     YMF.StackObjects.push_back(YamlObject);
     StackObjectOperandMapping.insert(std::make_pair(
         I, FrameIndexOperand::create(YamlObject.Name.Value, ID)));
   }
 
   for (const auto &CSInfo : MFI.getCalleeSavedInfo()) {
-    const int FrameIdx = CSInfo.getFrameIdx();
-    if (!CSInfo.isSpilledToReg() && MFI.isDeadObjectIndex(FrameIdx))
+    if (!CSInfo.isSpilledToReg() && MFI.isDeadObjectIndex(CSInfo.getFrameIdx()))
       continue;
 
     yaml::StringValue Reg;
     printRegMIR(CSInfo.getReg(), Reg, TRI);
     if (!CSInfo.isSpilledToReg()) {
-      assert(FrameIdx >= MFI.getObjectIndexBegin() &&
-             FrameIdx < MFI.getObjectIndexEnd() &&
+      auto StackObjectInfo = StackObjectOperandMapping.find(CSInfo.getFrameIdx());
+      assert(StackObjectInfo != StackObjectOperandMapping.end() &&
              "Invalid stack object index");
-      if (FrameIdx < 0) { // Negative index means fixed objects.
-        auto &Object =
-            YMF.FixedStackObjects
-                [FixedStackObjectsIdx[FrameIdx + MFI.getNumFixedObjects()]];
-        Object.CalleeSavedRegister = Reg;
-        Object.CalleeSavedRestored = CSInfo.isRestored();
+      const FrameIndexOperand &StackObject = StackObjectInfo->second;
+      if (StackObject.IsFixed) {
+        YMF.FixedStackObjects[StackObject.ID].CalleeSavedRegister = Reg;
+        YMF.FixedStackObjects[StackObject.ID].CalleeSavedRestored =
+          CSInfo.isRestored();
       } else {
-        auto &Object = YMF.StackObjects[StackObjectsIdx[FrameIdx]];
-        Object.CalleeSavedRegister = Reg;
-        Object.CalleeSavedRestored = CSInfo.isRestored();
+        YMF.StackObjects[StackObject.ID].CalleeSavedRegister = Reg;
+        YMF.StackObjects[StackObject.ID].CalleeSavedRestored =
+          CSInfo.isRestored();
       }
     }
   }
   for (unsigned I = 0, E = MFI.getLocalFrameObjectCount(); I < E; ++I) {
     auto LocalObject = MFI.getLocalFrameObjectMap(I);
-    assert(LocalObject.first >= 0 && "Expected a locally mapped stack object");
-    YMF.StackObjects[StackObjectsIdx[LocalObject.first]].LocalOffset =
-        LocalObject.second;
+    auto StackObjectInfo = StackObjectOperandMapping.find(LocalObject.first);
+    assert(StackObjectInfo != StackObjectOperandMapping.end() &&
+           "Invalid stack object index");
+    const FrameIndexOperand &StackObject = StackObjectInfo->second;
+    assert(!StackObject.IsFixed && "Expected a locally mapped stack object");
+    YMF.StackObjects[StackObject.ID].LocalOffset = LocalObject.second;
   }
 
   // Print the stack object references in the frame information class after
@@ -482,25 +447,18 @@ void MIRPrinter::convertStackObjects(yaml::MachineFunction &YMF,
         .printStackObjectReference(MFI.getStackProtectorIndex());
   }
 
-  if (MFI.hasFunctionContextIndex()) {
-    raw_string_ostream StrOS(YMF.FrameInfo.FunctionContext.Value);
-    MIPrinter(StrOS, MST, RegisterMaskIds, StackObjectOperandMapping)
-        .printStackObjectReference(MFI.getFunctionContextIndex());
-  }
-
   // Print the debug variable information.
   for (const MachineFunction::VariableDbgInfo &DebugVar :
        MF.getVariableDbgInfo()) {
-    assert(DebugVar.Slot >= MFI.getObjectIndexBegin() &&
-           DebugVar.Slot < MFI.getObjectIndexEnd() &&
+    auto StackObjectInfo = StackObjectOperandMapping.find(DebugVar.Slot);
+    assert(StackObjectInfo != StackObjectOperandMapping.end() &&
            "Invalid stack object index");
-    if (DebugVar.Slot < 0) { // Negative index means fixed objects.
-      auto &Object =
-          YMF.FixedStackObjects[FixedStackObjectsIdx[DebugVar.Slot +
-                                                     MFI.getNumFixedObjects()]];
+    const FrameIndexOperand &StackObject = StackObjectInfo->second;
+    if (StackObject.IsFixed) {
+      auto &Object = YMF.FixedStackObjects[StackObject.ID];
       printStackObjectDbgInfo(DebugVar, Object, MST);
     } else {
-      auto &Object = YMF.StackObjects[StackObjectsIdx[DebugVar.Slot]];
+      auto &Object = YMF.StackObjects[StackObject.ID];
       printStackObjectDbgInfo(DebugVar, Object, MST);
     }
   }
@@ -540,19 +498,6 @@ void MIRPrinter::convertCallSiteObjects(yaml::MachineFunction &YMF,
              });
 }
 
-void MIRPrinter::convertMachineMetadataNodes(yaml::MachineFunction &YMF,
-                                             const MachineFunction &MF,
-                                             MachineModuleSlotTracker &MST) {
-  MachineModuleSlotTracker::MachineMDNodeListType MDList;
-  MST.collectMachineMDNodes(MDList);
-  for (auto &MD : MDList) {
-    std::string NS;
-    raw_string_ostream StrOS(NS);
-    MD.second->print(StrOS, MST, MF.getFunction().getParent());
-    YMF.MachineMetadataNodes.push_back(StrOS.str());
-  }
-}
-
 void MIRPrinter::convert(yaml::MachineFunction &MF,
                          const MachineConstantPool &ConstantPool) {
   unsigned ID = 0;
@@ -568,7 +513,7 @@ void MIRPrinter::convert(yaml::MachineFunction &MF,
     yaml::MachineConstantPoolValue YamlConstant;
     YamlConstant.ID = ID++;
     YamlConstant.Value = StrOS.str();
-    YamlConstant.Alignment = Constant.getAlign();
+    YamlConstant.Alignment = Constant.getAlignment();
     YamlConstant.IsTargetSpecific = Constant.isMachineConstantPoolEntry();
 
     MF.Constants.push_back(YamlConstant);
@@ -659,10 +604,38 @@ bool MIPrinter::canPredictSuccessors(const MachineBasicBlock &MBB) const {
 
 void MIPrinter::print(const MachineBasicBlock &MBB) {
   assert(MBB.getNumber() >= 0 && "Invalid MBB number");
-  MBB.printName(OS,
-                MachineBasicBlock::PrintNameIr |
-                    MachineBasicBlock::PrintNameAttributes,
-                &MST);
+  OS << "bb." << MBB.getNumber();
+  bool HasAttributes = false;
+  if (const auto *BB = MBB.getBasicBlock()) {
+    if (BB->hasName()) {
+      OS << "." << BB->getName();
+    } else {
+      HasAttributes = true;
+      OS << " (";
+      int Slot = MST.getLocalSlot(BB);
+      if (Slot == -1)
+        OS << "<ir-block badref>";
+      else
+        OS << (Twine("%ir-block.") + Twine(Slot)).str();
+    }
+  }
+  if (MBB.hasAddressTaken()) {
+    OS << (HasAttributes ? ", " : " (");
+    OS << "address-taken";
+    HasAttributes = true;
+  }
+  if (MBB.isEHPad()) {
+    OS << (HasAttributes ? ", " : " (");
+    OS << "landing-pad";
+    HasAttributes = true;
+  }
+  if (MBB.getAlignment() != Align::None()) {
+    OS << (HasAttributes ? ", " : " (");
+    OS << "align " << MBB.getAlignment().value();
+    HasAttributes = true;
+  }
+  if (HasAttributes)
+    OS << ")";
   OS << ":\n";
 
   bool HasLineAttributes = false;
@@ -692,11 +665,11 @@ void MIPrinter::print(const MachineBasicBlock &MBB) {
 
   // Print the live in registers.
   const MachineRegisterInfo &MRI = MBB.getParent()->getRegInfo();
-  if (!MBB.livein_empty()) {
+  if (MRI.tracksLiveness() && !MBB.livein_empty()) {
     const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
     OS.indent(2) << "liveins: ";
     bool First = true;
-    for (const auto &LI : MBB.liveins_dbg()) {
+    for (const auto &LI : MBB.liveins()) {
       if (!First)
         OS << ", ";
       First = false;
@@ -748,7 +721,7 @@ void MIPrinter::print(const MachineInstr &MI) {
        ++I) {
     if (I)
       OS << ", ";
-    print(MI, I, TRI, TII, ShouldPrintRegisterTies,
+    print(MI, I, TRI, ShouldPrintRegisterTies,
           MI.getTypeToPrint(I, PrintedTypes, MRI),
           /*PrintDef=*/false);
   }
@@ -781,8 +754,6 @@ void MIPrinter::print(const MachineInstr &MI) {
     OS << "exact ";
   if (MI.getFlag(MachineInstr::NoFPExcept))
     OS << "nofpexcept ";
-  if (MI.getFlag(MachineInstr::NoMerge))
-    OS << "nomerge ";
 
   OS << TII->getName(MI.getOpcode());
   if (I < E)
@@ -792,7 +763,7 @@ void MIPrinter::print(const MachineInstr &MI) {
   for (; I < E; ++I) {
     if (NeedComma)
       OS << ", ";
-    print(MI, I, TRI, TII, ShouldPrintRegisterTies,
+    print(MI, I, TRI, ShouldPrintRegisterTies,
           MI.getTypeToPrint(I, PrintedTypes, MRI));
     NeedComma = true;
   }
@@ -820,34 +791,12 @@ void MIPrinter::print(const MachineInstr &MI) {
     HeapAllocMarker->printAsOperand(OS, MST);
     NeedComma = true;
   }
-  if (MDNode *PCSections = MI.getPCSections()) {
-    if (NeedComma)
-      OS << ',';
-    OS << " pcsections ";
-    PCSections->printAsOperand(OS, MST);
-    NeedComma = true;
-  }
-  if (uint32_t CFIType = MI.getCFIType()) {
-    if (NeedComma)
-      OS << ',';
-    OS << " cfi-type " << CFIType;
-    NeedComma = true;
-  }
 
-  if (auto Num = MI.peekDebugInstrNum()) {
+  if (const DebugLoc &DL = MI.getDebugLoc()) {
     if (NeedComma)
       OS << ',';
-    OS << " debug-instr-number " << Num;
-    NeedComma = true;
-  }
-
-  if (PrintLocations) {
-    if (const DebugLoc &DL = MI.getDebugLoc()) {
-      if (NeedComma)
-        OS << ',';
-      OS << " debug-location ";
-      DL->printAsOperand(OS, MST);
-    }
+    OS << " debug-location ";
+    DL->printAsOperand(OS, MST);
   }
 
   if (!MI.memoperands_empty()) {
@@ -873,20 +822,11 @@ void MIPrinter::printStackObjectReference(int FrameIndex) {
                                             Operand.Name);
 }
 
-static std::string formatOperandComment(std::string Comment) {
-  if (Comment.empty())
-    return Comment;
-  return std::string(" /* " + Comment + " */");
-}
-
 void MIPrinter::print(const MachineInstr &MI, unsigned OpIdx,
                       const TargetRegisterInfo *TRI,
-                      const TargetInstrInfo *TII,
                       bool ShouldPrintRegisterTies, LLT TypeToPrint,
                       bool PrintDef) {
   const MachineOperand &Op = MI.getOperand(OpIdx);
-  std::string MOComment = TII->createMIROperandComment(MI, Op, OpIdx, TRI);
-
   switch (Op.getType()) {
   case MachineOperand::MO_Immediate:
     if (MI.isOperandSubregIdx(OpIdx)) {
@@ -894,7 +834,7 @@ void MIPrinter::print(const MachineInstr &MI, unsigned OpIdx,
       MachineOperand::printSubRegIdx(OS, Op.getImm(), TRI);
       break;
     }
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case MachineOperand::MO_Register:
   case MachineOperand::MO_CImmediate:
   case MachineOperand::MO_FPImmediate:
@@ -911,7 +851,6 @@ void MIPrinter::print(const MachineInstr &MI, unsigned OpIdx,
   case MachineOperand::MO_IntrinsicID:
   case MachineOperand::MO_Predicate:
   case MachineOperand::MO_BlockAddress:
-  case MachineOperand::MO_DbgInstrRef:
   case MachineOperand::MO_ShuffleMask: {
     unsigned TiedOperandIdx = 0;
     if (ShouldPrintRegisterTies && Op.isReg() && Op.isTied() && !Op.isDef())
@@ -919,7 +858,6 @@ void MIPrinter::print(const MachineInstr &MI, unsigned OpIdx,
     const TargetIntrinsicInfo *TII = MI.getMF()->getTarget().getIntrinsicInfo();
     Op.print(OS, MST, TypeToPrint, OpIdx, PrintDef, /*IsStandalone=*/false,
              ShouldPrintRegisterTies, TiedOperandIdx, TRI, TII);
-      OS << formatOperandComment(MOComment);
     break;
   }
   case MachineOperand::MO_FrameIndex:

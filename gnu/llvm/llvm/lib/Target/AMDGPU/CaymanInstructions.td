@@ -48,6 +48,8 @@ def SIN_cm : SIN_Common<0x8D>;
 def COS_cm : COS_Common<0x8E>;
 } // End isVector = 1
 
+def : RsqPat<RECIPSQRT_IEEE_cm, f32>;
+
 def : SqrtPat<RECIPSQRT_IEEE_cm, RECIP_IEEE_cm>;
 
 def : POW_Common <LOG_IEEE_cm, EXP_IEEE_cm, MUL>;
@@ -55,12 +57,11 @@ def : POW_Common <LOG_IEEE_cm, EXP_IEEE_cm, MUL>;
 defm DIV_cm : DIV_Common<RECIP_IEEE_cm>;
 
 // RECIP_UINT emulation for Cayman
-// The multiplication scales from [0,1) to the unsigned integer range,
-// rounding down a bit to avoid unwanted overflow.
+// The multiplication scales from [0,1] to the unsigned integer range
 def : R600Pat <
   (AMDGPUurecip i32:$src0),
   (FLT_TO_UINT_eg (MUL_IEEE (RECIP_IEEE_cm (UINT_TO_FLT_eg $src0)),
-                            (MOV_IMM_I32 CONST.FP_4294966784)))
+                            (MOV_IMM_I32 CONST.FP_UINT_MAX_PLUS_1)))
 >;
 
 def CF_END_CM : CF_CLAUSE_EG<32, (ins), "CF_END"> {

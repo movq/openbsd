@@ -14,19 +14,20 @@
 #define LLVM_CODEGEN_PSEUDOSOURCEVALUE_H
 
 #include "llvm/ADT/StringMap.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/ValueMap.h"
 #include <map>
 
 namespace llvm {
 
-class GlobalValue;
 class MachineFrameInfo;
 class MachineMemOperand;
 class MIRFormatter;
-class PseudoSourceValue;
 class raw_ostream;
-class TargetMachine;
+class TargetInstrInfo;
 
+raw_ostream &operator<<(raw_ostream &OS, const MachineMemOperand &MMO);
+class PseudoSourceValue;
 raw_ostream &operator<<(raw_ostream &OS, const PseudoSourceValue* PSV);
 
 /// Special value supplied for machine level alias analysis. It indicates that
@@ -59,7 +60,7 @@ private:
   virtual void printCustom(raw_ostream &O) const;
 
 public:
-  explicit PseudoSourceValue(unsigned Kind, const TargetMachine &TM);
+  explicit PseudoSourceValue(unsigned Kind, const TargetInstrInfo &TII);
 
   virtual ~PseudoSourceValue();
 
@@ -95,8 +96,8 @@ class FixedStackPseudoSourceValue : public PseudoSourceValue {
   const int FI;
 
 public:
-  explicit FixedStackPseudoSourceValue(int FI, const TargetMachine &TM)
-      : PseudoSourceValue(FixedStack, TM), FI(FI) {}
+  explicit FixedStackPseudoSourceValue(int FI, const TargetInstrInfo &TII)
+      : PseudoSourceValue(FixedStack, TII), FI(FI) {}
 
   static bool classof(const PseudoSourceValue *V) {
     return V->kind() == FixedStack;
@@ -115,7 +116,7 @@ public:
 
 class CallEntryPseudoSourceValue : public PseudoSourceValue {
 protected:
-  CallEntryPseudoSourceValue(unsigned Kind, const TargetMachine &TM);
+  CallEntryPseudoSourceValue(unsigned Kind, const TargetInstrInfo &TII);
 
 public:
   bool isConstant(const MachineFrameInfo *) const override;
@@ -128,7 +129,8 @@ class GlobalValuePseudoSourceValue : public CallEntryPseudoSourceValue {
   const GlobalValue *GV;
 
 public:
-  GlobalValuePseudoSourceValue(const GlobalValue *GV, const TargetMachine &TM);
+  GlobalValuePseudoSourceValue(const GlobalValue *GV,
+                               const TargetInstrInfo &TII);
 
   static bool classof(const PseudoSourceValue *V) {
     return V->kind() == GlobalValueCallEntry;
@@ -142,7 +144,7 @@ class ExternalSymbolPseudoSourceValue : public CallEntryPseudoSourceValue {
   const char *ES;
 
 public:
-  ExternalSymbolPseudoSourceValue(const char *ES, const TargetMachine &TM);
+  ExternalSymbolPseudoSourceValue(const char *ES, const TargetInstrInfo &TII);
 
   static bool classof(const PseudoSourceValue *V) {
     return V->kind() == ExternalSymbolCallEntry;
@@ -153,7 +155,7 @@ public:
 
 /// Manages creation of pseudo source values.
 class PseudoSourceValueManager {
-  const TargetMachine &TM;
+  const TargetInstrInfo &TII;
   const PseudoSourceValue StackPSV, GOTPSV, JumpTablePSV, ConstantPoolPSV;
   std::map<int, std::unique_ptr<FixedStackPseudoSourceValue>> FSValues;
   StringMap<std::unique_ptr<const ExternalSymbolPseudoSourceValue>>
@@ -163,7 +165,7 @@ class PseudoSourceValueManager {
       GlobalCallEntries;
 
 public:
-  PseudoSourceValueManager(const TargetMachine &TM);
+  PseudoSourceValueManager(const TargetInstrInfo &TII);
 
   /// Return a pseudo source value referencing the area below the stack frame of
   /// a function, e.g., the argument space.

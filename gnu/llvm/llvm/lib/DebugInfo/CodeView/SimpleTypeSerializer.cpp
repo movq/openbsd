@@ -1,16 +1,4 @@
-//===- SimpleTypeSerializer.cpp -----------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
 #include "llvm/DebugInfo/CodeView/SimpleTypeSerializer.h"
-#include "llvm/DebugInfo/CodeView/CVRecord.h"
-#include "llvm/DebugInfo/CodeView/RecordSerialization.h"
-#include "llvm/DebugInfo/CodeView/TypeRecordMapping.h"
-#include "llvm/Support/BinaryStreamWriter.h"
 
 using namespace llvm;
 using namespace llvm::codeview;
@@ -30,7 +18,7 @@ static void addPadding(BinaryStreamWriter &Writer) {
 
 SimpleTypeSerializer::SimpleTypeSerializer() : ScratchBuffer(MaxRecordLength) {}
 
-SimpleTypeSerializer::~SimpleTypeSerializer() = default;
+SimpleTypeSerializer::~SimpleTypeSerializer() {}
 
 template <typename T>
 ArrayRef<uint8_t> SimpleTypeSerializer::serialize(T &Record) {
@@ -54,7 +42,7 @@ ArrayRef<uint8_t> SimpleTypeSerializer::serialize(T &Record) {
   Prefix->RecordKind = CVT.kind();
   Prefix->RecordLen = Writer.getOffset() - sizeof(uint16_t);
 
-  return {ScratchBuffer.data(), static_cast<size_t>(Writer.getOffset())};
+  return {ScratchBuffer.data(), Writer.getOffset()};
 }
 
 // Explicitly instantiate the member function for each known type so that we can

@@ -76,9 +76,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/MergedLoadStoreMotion.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/GlobalsModRef.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/Analysis/Loads.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -220,29 +224,27 @@ PHINode *MergedLoadStoreMotion::getPHIOperand(BasicBlock *BB, StoreInst *S0,
 }
 
 ///
-/// Check if 2 stores can be sunk, optionally together with corresponding GEPs.
+/// Check if 2 stores can be sunk together with corresponding GEPs
 ///
 bool MergedLoadStoreMotion::canSinkStoresAndGEPs(StoreInst *S0,
                                                  StoreInst *S1) const {
-  if (S0->getPointerOperand() == S1->getPointerOperand())
-    return true;
-  auto *GEP0 = dyn_cast<GetElementPtrInst>(S0->getPointerOperand());
-  auto *GEP1 = dyn_cast<GetElementPtrInst>(S1->getPointerOperand());
-  return GEP0 && GEP1 && GEP0->isIdenticalTo(GEP1) && GEP0->hasOneUse() &&
-         (GEP0->getParent() == S0->getParent()) && GEP1->hasOneUse() &&
-         (GEP1->getParent() == S1->getParent());
+  auto *A0 = dyn_cast<Instruction>(S0->getPointerOperand());
+  auto *A1 = dyn_cast<Instruction>(S1->getPointerOperand());
+  return A0 && A1 && A0->isIdenticalTo(A1) && A0->hasOneUse() &&
+         (A0->getParent() == S0->getParent()) && A1->hasOneUse() &&
+         (A1->getParent() == S1->getParent()) && isa<GetElementPtrInst>(A0);
 }
 
 ///
 /// Merge two stores to same address and sink into \p BB
 ///
-/// Optionally also sinks GEP instruction computing the store address
+/// Also sinks GEP instruction computing the store address
 ///
 void MergedLoadStoreMotion::sinkStoresAndGEPs(BasicBlock *BB, StoreInst *S0,
                                               StoreInst *S1) {
-  Value *Ptr0 = S0->getPointerOperand();
-  Value *Ptr1 = S1->getPointerOperand();
   // Only one definition?
+  auto *A0 = dyn_cast<Instruction>(S0->getPointerOperand());
+  auto *A1 = dyn_cast<Instruction>(S1->getPointerOperand());
   LLVM_DEBUG(dbgs() << "Sink Instruction into BB \n"; BB->dump();
              dbgs() << "Instruction Left\n"; S0->dump(); dbgs() << "\n";
              dbgs() << "Instruction Right\n"; S1->dump(); dbgs() << "\n");
@@ -251,30 +253,25 @@ void MergedLoadStoreMotion::sinkStoresAndGEPs(BasicBlock *BB, StoreInst *S0,
   // Intersect optional metadata.
   S0->andIRFlags(S1);
   S0->dropUnknownNonDebugMetadata();
-  S0->applyMergedLocation(S0->getDebugLoc(), S1->getDebugLoc());
-  S0->mergeDIAssignID(S1);
 
   // Create the new store to be inserted at the join point.
   StoreInst *SNew = cast<StoreInst>(S0->clone());
+  Instruction *ANew = A0->clone();
   SNew->insertBefore(&*InsertPt);
+  ANew->insertBefore(SNew);
+
+  assert(S0->getParent() == A0->getParent());
+  assert(S1->getParent() == A1->getParent());
+
   // New PHI operand? Use it.
   if (PHINode *NewPN = getPHIOperand(BB, S0, S1))
     SNew->setOperand(0, NewPN);
   S0->eraseFromParent();
   S1->eraseFromParent();
-
-  if (Ptr0 != Ptr1) {
-    auto *GEP0 = cast<GetElementPtrInst>(Ptr0);
-    auto *GEP1 = cast<GetElementPtrInst>(Ptr1);
-    Instruction *GEPNew = GEP0->clone();
-    GEPNew->insertBefore(SNew);
-    GEPNew->applyMergedLocation(GEP0->getDebugLoc(), GEP1->getDebugLoc());
-    SNew->setOperand(1, GEPNew);
-    GEP0->replaceAllUsesWith(GEPNew);
-    GEP0->eraseFromParent();
-    GEP1->replaceAllUsesWith(GEPNew);
-    GEP1->eraseFromParent();
-  }
+  A0->replaceAllUsesWith(ANew);
+  A0->eraseFromParent();
+  A1->replaceAllUsesWith(ANew);
+  A1->eraseFromParent();
 }
 
 ///
@@ -357,11 +354,15 @@ bool MergedLoadStoreMotion::run(Function &F, AliasAnalysis &AA) {
   // optimization opportunities.
   // This loop doesn't care about newly inserted/split blocks 
   // since they never will be diamond heads.
-  for (BasicBlock &BB : make_early_inc_range(F))
+  for (Function::iterator FI = F.begin(), FE = F.end(); FI != FE;) {
+    BasicBlock *BB = &*FI++;
+
     // Hoist equivalent loads and sink stores
     // outside diamonds when possible
-    if (isDiamondHead(&BB))
-      Changed |= mergeStores(&BB);
+    if (isDiamondHead(BB)) {
+      Changed |= mergeStores(BB);
+    }
+  }
   return Changed;
 }
 
@@ -421,14 +422,6 @@ MergedLoadStoreMotionPass::run(Function &F, FunctionAnalysisManager &AM) {
   PreservedAnalyses PA;
   if (!Options.SplitFooterBB)
     PA.preserveSet<CFGAnalyses>();
+  PA.preserve<GlobalsAA>();
   return PA;
-}
-
-void MergedLoadStoreMotionPass::printPipeline(
-    raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
-  static_cast<PassInfoMixin<MergedLoadStoreMotionPass> *>(this)->printPipeline(
-      OS, MapClassName2PassName);
-  OS << "<";
-  OS << (Options.SplitFooterBB ? "" : "no-") << "split-footer-bb";
-  OS << ">";
 }

@@ -12,7 +12,6 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/VirtualFileSystem.h"
 
 #include <string>
 
@@ -31,35 +30,18 @@ struct ArchAndFile {
   llvm::Error createTempFile();
   llvm::StringRef path() const;
 
-  ArchAndFile(StringRef Arch) : Arch(std::string(Arch)) {}
+  ArchAndFile(StringRef Arch) : Arch(Arch) {}
   ArchAndFile(ArchAndFile &&A) = default;
   ArchAndFile &operator=(ArchAndFile &&A) = default;
   ~ArchAndFile();
 };
 
-struct DwarfRelocationApplicationInfo {
-  // The position in the stream that should be patched, starting from the
-  // Dwarf's segment file address.
-  uint64_t AddressFromDwarfStart;
-  int32_t Value;
-  // If we should subtract the Dwarf segment's VM address from value before
-  // writing it.
-  bool ShouldSubtractDwarfVM;
-
-  DwarfRelocationApplicationInfo(uint64_t AddressFromDwarfVM, uint32_t Value,
-                                 bool ShouldSubtractDwarfVM)
-      : AddressFromDwarfStart(AddressFromDwarfVM), Value(Value),
-        ShouldSubtractDwarfVM(ShouldSubtractDwarfVM) {}
-};
-
 bool generateUniversalBinary(SmallVectorImpl<ArchAndFile> &ArchFiles,
                              StringRef OutputFileName, const LinkOptions &,
                              StringRef SDKPath);
-bool generateDsymCompanion(
-    llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS, const DebugMap &DM,
-    SymbolMapTranslator &Translator, MCStreamer &MS, raw_fd_ostream &OutFile,
-    const std::vector<MachOUtils::DwarfRelocationApplicationInfo>
-        &RelocationsToApply);
+
+bool generateDsymCompanion(const DebugMap &DM, SymbolMapTranslator &Translator,
+                           MCStreamer &MS, raw_fd_ostream &OutFile);
 
 std::string getArchName(StringRef Arch);
 } // namespace MachOUtils

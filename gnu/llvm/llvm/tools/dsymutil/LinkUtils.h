@@ -13,33 +13,28 @@
 
 #include "llvm/ADT/Twine.h"
 #include "llvm/Remarks/RemarkFormat.h"
-#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/WithColor.h"
 
-#include "llvm/DWARFLinker/DWARFLinker.h"
-#include "llvm/DWARFLinker/DWARFStreamer.h"
 #include <string>
 
 namespace llvm {
 namespace dsymutil {
 
-enum class DsymutilAccelTableKind : uint8_t {
-  None,
+enum class OutputFileType {
+  Object,
+  Assembly,
+};
+
+/// The kind of accelerator tables we should emit.
+enum class AccelTableKind {
   Apple,   ///< .apple_names, .apple_namespaces, .apple_types, .apple_objc.
   Dwarf,   ///< DWARF v5 .debug_names.
   Default, ///< Dwarf for DWARF5 or later, Apple otherwise.
-  Pub,     ///< .debug_pubnames, .debug_pubtypes
 };
 
 struct LinkOptions {
   /// Verbosity
   bool Verbose = false;
-
-  /// Statistics
-  bool Statistics = false;
-
-  /// Verify the input DWARF.
-  bool VerifyInputDWARF = false;
 
   /// Skip emitting output
   bool NoOutput = false;
@@ -50,12 +45,11 @@ struct LinkOptions {
   /// Update
   bool Update = false;
 
+  /// Minimize
+  bool Minimize = false;
+
   /// Do not check swiftmodule timestamp
   bool NoTimestamp = false;
-
-  /// Whether we want a static variable to force us to keep its enclosing
-  /// function.
-  bool KeepFunctionForStatic = false;
 
   /// Number of threads.
   unsigned Threads = 1;
@@ -64,23 +58,16 @@ struct LinkOptions {
   OutputFileType FileType = OutputFileType::Object;
 
   /// The accelerator table kind
-  DsymutilAccelTableKind TheAccelTableKind;
+  AccelTableKind TheAccelTableKind;
 
   /// -oso-prepend-path
   std::string PrependPath;
 
-  /// The -object-prefix-map.
-  std::map<std::string, std::string> ObjectPrefixMap;
-
   /// The Resources directory in the .dSYM bundle.
-  std::optional<std::string> ResourceDir;
+  Optional<std::string> ResourceDir;
 
   /// Symbol map translator.
   SymbolMapTranslator Translator;
-
-  /// Virtual File System.
-  llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS =
-      vfs::getRealFileSystem();
 
   /// Fields used for linking and placing remarks into the .dSYM bundle.
   /// @{

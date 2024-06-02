@@ -14,9 +14,21 @@
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 
 using namespace llvm;
 
+bool MCInstrDesc::getDeprecatedInfo(MCInst &MI, const MCSubtargetInfo &STI,
+                                    std::string &Info) const {
+  if (ComplexDeprecationInfo)
+    return ComplexDeprecationInfo(MI, STI, Info);
+  if (DeprecatedFeature != -1 && STI.getFeatureBits()[DeprecatedFeature]) {
+    // FIXME: it would be nice to include the subtarget feature here.
+    Info = "deprecated";
+    return true;
+  }
+  return false;
+}
 bool MCInstrDesc::mayAffectControlFlow(const MCInst &MI,
                                        const MCRegisterInfo &RI) const {
   if (isBranch() || isCall() || isReturn() || isIndirectBranch())
@@ -31,9 +43,10 @@ bool MCInstrDesc::mayAffectControlFlow(const MCInst &MI,
 
 bool MCInstrDesc::hasImplicitDefOfPhysReg(unsigned Reg,
                                           const MCRegisterInfo *MRI) const {
-  for (MCPhysReg ImpDef : implicit_defs())
-    if (ImpDef == Reg || (MRI && MRI->isSubRegister(Reg, ImpDef)))
-      return true;
+  if (const MCPhysReg *ImpDefs = ImplicitDefs)
+    for (; *ImpDefs; ++ImpDefs)
+      if (*ImpDefs == Reg || (MRI && MRI->isSubRegister(Reg, *ImpDefs)))
+        return true;
   return false;
 }
 

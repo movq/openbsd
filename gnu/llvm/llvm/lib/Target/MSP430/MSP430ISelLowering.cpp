@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/CallingConv.h"
@@ -458,12 +459,12 @@ static void AnalyzeArguments(CCState &State,
   static const MCPhysReg CRegList[] = {
     MSP430::R12, MSP430::R13, MSP430::R14, MSP430::R15
   };
-  static const unsigned CNbRegs = std::size(CRegList);
+  static const unsigned CNbRegs = array_lengthof(CRegList);
   static const MCPhysReg BuiltinRegList[] = {
     MSP430::R8, MSP430::R9, MSP430::R10, MSP430::R11,
     MSP430::R12, MSP430::R13, MSP430::R14, MSP430::R15
   };
-  static const unsigned BuiltinNbRegs = std::size(BuiltinRegList);
+  static const unsigned BuiltinNbRegs = array_lengthof(BuiltinRegList);
 
   ArrayRef<MCPhysReg> RegList;
   unsigned NbRegs;
@@ -513,7 +514,7 @@ static void AnalyzeArguments(CCState &State,
 
     // Handle byval arguments
     if (ArgFlags.isByVal()) {
-      State.HandleByVal(ValNo++, ArgVT, LocVT, LocInfo, 2, Align(2), ArgFlags);
+      State.HandleByVal(ValNo++, ArgVT, LocVT, LocInfo, 2, 2, ArgFlags);
       continue;
     }
 
@@ -670,17 +671,16 @@ SDValue MSP430TargetLowering::LowerCCCArguments(
         InVals.push_back(ArgValue);
       }
     } else {
-      // Only arguments passed on the stack should make it here.
+      // Sanity check
       assert(VA.isMemLoc());
 
       SDValue InVal;
       ISD::ArgFlagsTy Flags = Ins[i].Flags;
 
       if (Flags.isByVal()) {
-        MVT PtrVT = VA.getLocVT();
         int FI = MFI.CreateFixedObject(Flags.getByValSize(),
                                        VA.getLocMemOffset(), true);
-        InVal = DAG.getFrameIndex(FI, PtrVT);
+        InVal = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       } else {
         // Load the argument to a virtual register
         unsigned ObjSize = VA.getLocVT().getSizeInBits()/8;
@@ -706,7 +706,7 @@ SDValue MSP430TargetLowering::LowerCCCArguments(
 
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     if (Ins[i].Flags.isSRet()) {
-      Register Reg = FuncInfo->getSRetReturnReg();
+      unsigned Reg = FuncInfo->getSRetReturnReg();
       if (!Reg) {
         Reg = MF.getRegInfo().createVirtualRegister(
             getRegClassFor(MVT::i16));
@@ -773,19 +773,18 @@ MSP430TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 
   if (MF.getFunction().hasStructRetAttr()) {
     MSP430MachineFunctionInfo *FuncInfo = MF.getInfo<MSP430MachineFunctionInfo>();
-    Register Reg = FuncInfo->getSRetReturnReg();
+    unsigned Reg = FuncInfo->getSRetReturnReg();
 
     if (!Reg)
       llvm_unreachable("sret virtual register not created in entry block");
 
-    MVT PtrVT = getFrameIndexTy(DAG.getDataLayout());
     SDValue Val =
-      DAG.getCopyFromReg(Chain, dl, Reg, PtrVT);
+      DAG.getCopyFromReg(Chain, dl, Reg, getPointerTy(DAG.getDataLayout()));
     unsigned R12 = MSP430::R12;
 
     Chain = DAG.getCopyToReg(Chain, dl, R12, Val, Flag);
     Flag = Chain.getValue(1);
-    RetOps.push_back(DAG.getRegister(R12, PtrVT));
+    RetOps.push_back(DAG.getRegister(R12, getPointerTy(DAG.getDataLayout())));
   }
 
   unsigned Opc = (CallConv == CallingConv::MSP430_INTR ?
@@ -816,7 +815,7 @@ SDValue MSP430TargetLowering::LowerCCCCallTo(
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = CCInfo.getNextStackOffset();
-  MVT PtrVT = getFrameIndexTy(DAG.getDataLayout());
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
 
   Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, dl);
 
@@ -864,11 +863,13 @@ SDValue MSP430TargetLowering::LowerCCCCallTo(
 
       if (Flags.isByVal()) {
         SDValue SizeNode = DAG.getConstant(Flags.getByValSize(), dl, MVT::i16);
-        MemOp = DAG.getMemcpy(
-            Chain, dl, PtrOff, Arg, SizeNode, Flags.getNonZeroByValAlign(),
-            /*isVolatile*/ false,
-            /*AlwaysInline=*/true,
-            /*isTailCall=*/false, MachinePointerInfo(), MachinePointerInfo());
+        MemOp = DAG.getMemcpy(Chain, dl, PtrOff, Arg, SizeNode,
+                              Flags.getByValAlign(),
+                              /*isVolatile*/false,
+                              /*AlwaysInline=*/true,
+                              /*isTailCall=*/false,
+                              MachinePointerInfo(),
+                              MachinePointerInfo());
       } else {
         MemOp = DAG.getStore(Chain, dl, Arg, PtrOff, MachinePointerInfo());
       }
@@ -919,7 +920,8 @@ SDValue MSP430TargetLowering::LowerCCCCallTo(
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain, NumBytes, 0, InFlag, dl);
+  Chain = DAG.getCALLSEQ_END(Chain, DAG.getConstant(NumBytes, dl, PtrVT, true),
+                             DAG.getConstant(0, dl, PtrVT, true), InFlag, dl);
   InFlag = Chain.getValue(1);
 
   // Handle result values, copying them out of physregs into vregs that we
@@ -1011,7 +1013,7 @@ SDValue MSP430TargetLowering::LowerGlobalAddress(SDValue Op,
                                                  SelectionDAG &DAG) const {
   const GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
   int64_t Offset = cast<GlobalAddressSDNode>(Op)->getOffset();
-  EVT PtrVT = Op.getValueType();
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
 
   // Create the TargetGlobalAddress node, folding in the constant offset.
   SDValue Result = DAG.getTargetGlobalAddress(GV, SDLoc(Op), PtrVT, Offset);
@@ -1022,7 +1024,7 @@ SDValue MSP430TargetLowering::LowerExternalSymbol(SDValue Op,
                                                   SelectionDAG &DAG) const {
   SDLoc dl(Op);
   const char *Sym = cast<ExternalSymbolSDNode>(Op)->getSymbol();
-  EVT PtrVT = Op.getValueType();
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
   SDValue Result = DAG.getTargetExternalSymbol(Sym, PtrVT);
 
   return DAG.getNode(MSP430ISD::Wrapper, dl, PtrVT, Result);
@@ -1031,8 +1033,8 @@ SDValue MSP430TargetLowering::LowerExternalSymbol(SDValue Op,
 SDValue MSP430TargetLowering::LowerBlockAddress(SDValue Op,
                                                 SelectionDAG &DAG) const {
   SDLoc dl(Op);
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
   const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
-  EVT PtrVT = Op.getValueType();
   SDValue Result = DAG.getTargetBlockAddress(BA, PtrVT);
 
   return DAG.getNode(MSP430ISD::Wrapper, dl, PtrVT, Result);
@@ -1063,7 +1065,7 @@ static SDValue EmitCMP(SDValue &LHS, SDValue &RHS, SDValue &TargetCC,
     break;
   case ISD::SETULE:
     std::swap(LHS, RHS);
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case ISD::SETUGE:
     // Turn lhs u>= rhs with lhs constant into rhs u< lhs+1, this allows us to
     // fold constant into instruction.
@@ -1077,7 +1079,7 @@ static SDValue EmitCMP(SDValue &LHS, SDValue &RHS, SDValue &TargetCC,
     break;
   case ISD::SETUGT:
     std::swap(LHS, RHS);
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case ISD::SETULT:
     // Turn lhs u< rhs with lhs constant into rhs u>= lhs+1, this allows us to
     // fold constant into instruction.
@@ -1091,7 +1093,7 @@ static SDValue EmitCMP(SDValue &LHS, SDValue &RHS, SDValue &TargetCC,
     break;
   case ISD::SETLE:
     std::swap(LHS, RHS);
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case ISD::SETGE:
     // Turn lhs >= rhs with lhs constant into rhs < lhs+1, this allows us to
     // fold constant into instruction.
@@ -1105,7 +1107,7 @@ static SDValue EmitCMP(SDValue &LHS, SDValue &RHS, SDValue &TargetCC,
     break;
   case ISD::SETGT:
     std::swap(LHS, RHS);
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case ISD::SETLT:
     // Turn lhs < rhs with lhs constant into rhs >= lhs+1, this allows us to
     // fold constant into instruction.
@@ -1151,7 +1153,7 @@ SDValue MSP430TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
   // lowering & isel wouldn't diverge.
   bool andCC = false;
   if (ConstantSDNode *RHSC = dyn_cast<ConstantSDNode>(RHS)) {
-    if (RHSC->isZero() && LHS.hasOneUse() &&
+    if (RHSC->isNullValue() && LHS.hasOneUse() &&
         (LHS.getOpcode() == ISD::AND ||
          (LHS.getOpcode() == ISD::TRUNCATE &&
           LHS.getOperand(0).getOpcode() == ISD::AND))) {
@@ -1209,8 +1211,9 @@ SDValue MSP430TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
     return SR;
   } else {
     SDValue Zero = DAG.getConstant(0, dl, VT);
+    SDVTList VTs = DAG.getVTList(Op.getValueType(), MVT::Glue);
     SDValue Ops[] = {One, Zero, TargetCC, Flag};
-    return DAG.getNode(MSP430ISD::SELECT_CC, dl, Op.getValueType(), Ops);
+    return DAG.getNode(MSP430ISD::SELECT_CC, dl, VTs, Ops);
   }
 }
 
@@ -1226,9 +1229,10 @@ SDValue MSP430TargetLowering::LowerSELECT_CC(SDValue Op,
   SDValue TargetCC;
   SDValue Flag = EmitCMP(LHS, RHS, TargetCC, CC, dl, DAG);
 
+  SDVTList VTs = DAG.getVTList(Op.getValueType(), MVT::Glue);
   SDValue Ops[] = {TrueV, FalseV, TargetCC, Flag};
 
-  return DAG.getNode(MSP430ISD::SELECT_CC, dl, Op.getValueType(), Ops);
+  return DAG.getNode(MSP430ISD::SELECT_CC, dl, VTs, Ops);
 }
 
 SDValue MSP430TargetLowering::LowerSIGN_EXTEND(SDValue Op,
@@ -1249,11 +1253,11 @@ MSP430TargetLowering::getReturnAddressFrameIndex(SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
   MSP430MachineFunctionInfo *FuncInfo = MF.getInfo<MSP430MachineFunctionInfo>();
   int ReturnAddrIndex = FuncInfo->getRAIndex();
-  MVT PtrVT = getFrameIndexTy(MF.getDataLayout());
+  auto PtrVT = getPointerTy(MF.getDataLayout());
 
   if (ReturnAddrIndex == 0) {
     // Set up a frame object for the return address.
-    uint64_t SlotSize = PtrVT.getStoreSize();
+    uint64_t SlotSize = MF.getDataLayout().getPointerSize();
     ReturnAddrIndex = MF.getFrameInfo().CreateFixedObject(SlotSize, -SlotSize,
                                                            true);
     FuncInfo->setRAIndex(ReturnAddrIndex);
@@ -1272,12 +1276,12 @@ SDValue MSP430TargetLowering::LowerRETURNADDR(SDValue Op,
 
   unsigned Depth = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
   SDLoc dl(Op);
-  EVT PtrVT = Op.getValueType();
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
 
   if (Depth > 0) {
     SDValue FrameAddr = LowerFRAMEADDR(Op, DAG);
     SDValue Offset =
-      DAG.getConstant(PtrVT.getStoreSize(), dl, MVT::i16);
+        DAG.getConstant(DAG.getDataLayout().getPointerSize(), dl, MVT::i16);
     return DAG.getLoad(PtrVT, dl, DAG.getEntryNode(),
                        DAG.getNode(ISD::ADD, dl, PtrVT, FrameAddr, Offset),
                        MachinePointerInfo());
@@ -1298,7 +1302,7 @@ SDValue MSP430TargetLowering::LowerFRAMEADDR(SDValue Op,
   SDLoc dl(Op);  // FIXME probably not meaningful
   unsigned Depth = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
   SDValue FrameAddr = DAG.getCopyFromReg(DAG.getEntryNode(), dl,
-                                         MSP430::R4, VT);
+                                         MSP430::FP, VT);
   while (Depth--)
     FrameAddr = DAG.getLoad(VT, dl, DAG.getEntryNode(), FrameAddr,
                             MachinePointerInfo());
@@ -1309,9 +1313,7 @@ SDValue MSP430TargetLowering::LowerVASTART(SDValue Op,
                                            SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
   MSP430MachineFunctionInfo *FuncInfo = MF.getInfo<MSP430MachineFunctionInfo>();
-
-  SDValue Ptr = Op.getOperand(1);
-  EVT PtrVT = Ptr.getValueType();
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
 
   // Frame index of first vararg argument
   SDValue FrameIndex =
@@ -1319,14 +1321,14 @@ SDValue MSP430TargetLowering::LowerVASTART(SDValue Op,
   const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
 
   // Create a store of the frame index to the location operand
-  return DAG.getStore(Op.getOperand(0), SDLoc(Op), FrameIndex, Ptr,
+  return DAG.getStore(Op.getOperand(0), SDLoc(Op), FrameIndex, Op.getOperand(1),
                       MachinePointerInfo(SV));
 }
 
 SDValue MSP430TargetLowering::LowerJumpTable(SDValue Op,
                                              SelectionDAG &DAG) const {
     JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
-    EVT PtrVT = Op.getValueType();
+    auto PtrVT = getPointerTy(DAG.getDataLayout());
     SDValue Result = DAG.getTargetJumpTable(JT->getIndex(), PtrVT);
     return DAG.getNode(MSP430ISD::Wrapper, SDLoc(JT), PtrVT, Result);
 }
@@ -1392,25 +1394,24 @@ bool MSP430TargetLowering::isTruncateFree(Type *Ty1,
   if (!Ty1->isIntegerTy() || !Ty2->isIntegerTy())
     return false;
 
-  return (Ty1->getPrimitiveSizeInBits().getFixedValue() >
-          Ty2->getPrimitiveSizeInBits().getFixedValue());
+  return (Ty1->getPrimitiveSizeInBits() > Ty2->getPrimitiveSizeInBits());
 }
 
 bool MSP430TargetLowering::isTruncateFree(EVT VT1, EVT VT2) const {
   if (!VT1.isInteger() || !VT2.isInteger())
     return false;
 
-  return (VT1.getFixedSizeInBits() > VT2.getFixedSizeInBits());
+  return (VT1.getSizeInBits() > VT2.getSizeInBits());
 }
 
 bool MSP430TargetLowering::isZExtFree(Type *Ty1, Type *Ty2) const {
   // MSP430 implicitly zero-extends 8-bit results in 16-bit registers.
-  return false && Ty1->isIntegerTy(8) && Ty2->isIntegerTy(16);
+  return 0 && Ty1->isIntegerTy(8) && Ty2->isIntegerTy(16);
 }
 
 bool MSP430TargetLowering::isZExtFree(EVT VT1, EVT VT2) const {
   // MSP430 implicitly zero-extends 8-bit results in 16-bit registers.
-  return false && VT1 == MVT::i8 && VT2 == MVT::i16;
+  return 0 && VT1 == MVT::i8 && VT2 == MVT::i16;
 }
 
 bool MSP430TargetLowering::isZExtFree(SDValue Val, EVT VT2) const {

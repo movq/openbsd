@@ -1,5 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 r"""Writes ExtensionDepencencies.inc."""
+
+from __future__ import print_function
 
 import argparse
 import os

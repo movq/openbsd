@@ -12,13 +12,31 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// Operand and SDNode transformation definitions.
+//===----------------------------------------------------------------------===//
+
+// A parse method for (${gpr}) or 0(${gpr}), where the 0 is be silently ignored.
+// Used for GNU as Compatibility.
+def AtomicMemOpOperand : AsmOperandClass {
+  let Name = "AtomicMemOpOperand";
+  let RenderMethod = "addRegOperands";
+  let PredicateMethod = "isGPR";
+  let ParserMethod = "parseAtomicMemOp";
+}
+
+def GPRMemAtomic : RegisterOperand<GPR> {
+  let ParserMatchClass = AtomicMemOpOperand;
+  let PrintMethod = "printAtomicMemOp";
+}
+
+//===----------------------------------------------------------------------===//
 // Instruction class templates
 //===----------------------------------------------------------------------===//
 
 let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
 class LR_r<bit aq, bit rl, bits<3> funct3, string opcodestr>
     : RVInstRAtomic<0b00010, aq, rl, funct3, OPC_AMO,
-                    (outs GPR:$rd), (ins GPRMemZeroOffset:$rs1),
+                    (outs GPR:$rd), (ins GPRMemAtomic:$rs1),
                     opcodestr, "$rd, $rs1"> {
   let rs2 = 0;
 }
@@ -33,7 +51,7 @@ multiclass LR_r_aq_rl<bits<3> funct3, string opcodestr> {
 let hasSideEffects = 0, mayLoad = 1, mayStore = 1 in
 class AMO_rr<bits<5> funct5, bit aq, bit rl, bits<3> funct3, string opcodestr>
     : RVInstRAtomic<funct5, aq, rl, funct3, OPC_AMO,
-                    (outs GPR:$rd), (ins GPRMemZeroOffset:$rs1, GPR:$rs2),
+                    (outs GPR:$rd), (ins GPRMemAtomic:$rs1, GPR:$rs2),
                     opcodestr, "$rd, $rs2, $rs1">;
 
 multiclass AMO_rr_aq_rl<bits<5> funct5, bits<3> funct3, string opcodestr> {
@@ -43,10 +61,15 @@ multiclass AMO_rr_aq_rl<bits<5> funct5, bits<3> funct3, string opcodestr> {
   def _AQ_RL : AMO_rr<funct5, 1, 1, funct3, opcodestr # ".aqrl">;
 }
 
-multiclass AtomicStPat<PatFrag StoreOp, RVInst Inst, RegisterClass StTy,
-                       ValueType vt = XLenVT> {
-  def : Pat<(StoreOp (AddrRegImm GPR:$rs1, simm12:$imm12), (vt StTy:$rs2)),
+multiclass AtomicStPat<PatFrag StoreOp, RVInst Inst, RegisterClass StTy> {
+  def : Pat<(StoreOp GPR:$rs1, StTy:$rs2), (Inst StTy:$rs2, GPR:$rs1, 0)>;
+  def : Pat<(StoreOp AddrFI:$rs1, StTy:$rs2), (Inst StTy:$rs2, AddrFI:$rs1, 0)>;
+  def : Pat<(StoreOp (add GPR:$rs1, simm12:$imm12), StTy:$rs2),
             (Inst StTy:$rs2, GPR:$rs1, simm12:$imm12)>;
+  def : Pat<(StoreOp (add AddrFI:$rs1, simm12:$imm12), StTy:$rs2),
+            (Inst StTy:$rs2, AddrFI:$rs1, simm12:$imm12)>;
+  def : Pat<(StoreOp (IsOrAdd AddrFI:$rs1, simm12:$imm12), StTy:$rs2),
+            (Inst StTy:$rs2, AddrFI:$rs1, simm12:$imm12)>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -105,25 +128,20 @@ defm AMOMAXU_D  : AMO_rr_aq_rl<0b11100, 0b011, "amomaxu.d">,
 // Pseudo-instructions and codegen patterns
 //===----------------------------------------------------------------------===//
 
-// Atomic load/store are available under both +a and +force-atomics.
+let Predicates = [HasStdExtA] in {
+
+/// Atomic loads and stores
+
 // Fences will be inserted for atomic load/stores according to the logic in
 // RISCVTargetLowering::{emitLeadingFence,emitTrailingFence}.
-let Predicates = [HasAtomicLdSt] in {
-  defm : LdPat<atomic_load_8,  LB>;
-  defm : LdPat<atomic_load_16, LH>;
-  defm : LdPat<atomic_load_32, LW>;
 
-  defm : AtomicStPat<atomic_store_8,  SB, GPR>;
-  defm : AtomicStPat<atomic_store_16, SH, GPR>;
-  defm : AtomicStPat<atomic_store_32, SW, GPR>;
-}
+defm : LdPat<atomic_load_8,  LB>;
+defm : LdPat<atomic_load_16, LH>;
+defm : LdPat<atomic_load_32, LW>;
 
-let Predicates = [HasAtomicLdSt, IsRV64] in {
-  defm : LdPat<atomic_load_64, LD, i64>;
-  defm : AtomicStPat<atomic_store_64, SD, GPR, i64>;
-}
-
-let Predicates = [HasStdExtA] in {
+defm : AtomicStPat<atomic_store_8,  SB, GPR>;
+defm : AtomicStPat<atomic_store_16, SH, GPR>;
+defm : AtomicStPat<atomic_store_32, SW, GPR>;
 
 /// AMOs
 
@@ -171,7 +189,6 @@ class PseudoAMO : Pseudo<(outs GPR:$res, GPR:$scratch),
   let hasSideEffects = 0;
 }
 
-let Size = 20 in
 def PseudoAtomicLoadNand32 : PseudoAMO;
 // Ordering constants must be kept in sync with the AtomicOrdering enum in
 // AtomicOrdering.h.
@@ -218,43 +235,35 @@ class PseudoMaskedAMOUMinUMax
 
 class PseudoMaskedAMOPat<Intrinsic intrin, Pseudo AMOInst>
     : Pat<(intrin GPR:$addr, GPR:$incr, GPR:$mask, timm:$ordering),
-          (AMOInst GPR:$addr, GPR:$incr, GPR:$mask, timm:$ordering)>;
+          (AMOInst GPR:$addr, GPR:$incr, GPR:$mask, imm:$ordering)>;
 
 class PseudoMaskedAMOMinMaxPat<Intrinsic intrin, Pseudo AMOInst>
     : Pat<(intrin GPR:$addr, GPR:$incr, GPR:$mask, GPR:$shiftamt,
            timm:$ordering),
           (AMOInst GPR:$addr, GPR:$incr, GPR:$mask, GPR:$shiftamt,
-           timm:$ordering)>;
+           imm:$ordering)>;
 
-let Size = 28 in
 def PseudoMaskedAtomicSwap32 : PseudoMaskedAMO;
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_xchg_i32,
                          PseudoMaskedAtomicSwap32>;
-let Size = 28 in
 def PseudoMaskedAtomicLoadAdd32 : PseudoMaskedAMO;
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_add_i32,
                          PseudoMaskedAtomicLoadAdd32>;
-let Size = 28 in
 def PseudoMaskedAtomicLoadSub32 : PseudoMaskedAMO;
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_sub_i32,
                          PseudoMaskedAtomicLoadSub32>;
-let Size = 32 in
 def PseudoMaskedAtomicLoadNand32 : PseudoMaskedAMO;
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_nand_i32,
                          PseudoMaskedAtomicLoadNand32>;
-let Size = 44 in
 def PseudoMaskedAtomicLoadMax32 : PseudoMaskedAMOMinMax;
 def : PseudoMaskedAMOMinMaxPat<int_riscv_masked_atomicrmw_max_i32,
                                PseudoMaskedAtomicLoadMax32>;
-let Size = 44 in
 def PseudoMaskedAtomicLoadMin32 : PseudoMaskedAMOMinMax;
 def : PseudoMaskedAMOMinMaxPat<int_riscv_masked_atomicrmw_min_i32,
                                PseudoMaskedAtomicLoadMin32>;
-let Size = 36 in
 def PseudoMaskedAtomicLoadUMax32 : PseudoMaskedAMOUMinUMax;
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_umax_i32,
                          PseudoMaskedAtomicLoadUMax32>;
-let Size = 36 in
 def PseudoMaskedAtomicLoadUMin32 : PseudoMaskedAMOUMinUMax;
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_umin_i32,
                          PseudoMaskedAtomicLoadUMin32>;
@@ -268,7 +277,6 @@ class PseudoCmpXchg
   let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 0;
-  let Size = 16;
 }
 
 // Ordering constants must be kept in sync with the AtomicOrdering enum in
@@ -297,17 +305,23 @@ def PseudoMaskedCmpXchg32
   let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 0;
-  let Size = 32;
 }
 
 def : Pat<(int_riscv_masked_cmpxchg_i32
             GPR:$addr, GPR:$cmpval, GPR:$newval, GPR:$mask, timm:$ordering),
           (PseudoMaskedCmpXchg32
-            GPR:$addr, GPR:$cmpval, GPR:$newval, GPR:$mask, timm:$ordering)>;
+            GPR:$addr, GPR:$cmpval, GPR:$newval, GPR:$mask, imm:$ordering)>;
 
 } // Predicates = [HasStdExtA]
 
 let Predicates = [HasStdExtA, IsRV64] in {
+
+/// 64-bit atomic loads and stores
+
+// Fences will be inserted for atomic load/stores according to the logic in
+// RISCVTargetLowering::{emitLeadingFence,emitTrailingFence}.
+defm : LdPat<atomic_load_64, LD>;
+defm : AtomicStPat<atomic_store_64, SD, GPR>;
 
 defm : AMOPat<"atomic_swap_64", "AMOSWAP_D">;
 defm : AMOPat<"atomic_load_add_64", "AMOADD_D">;
@@ -321,32 +335,31 @@ defm : AMOPat<"atomic_load_umin_64", "AMOMINU_D">;
 
 /// 64-bit AMOs
 
-def : Pat<(i64 (atomic_load_sub_64_monotonic GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_sub_64_monotonic GPR:$addr, GPR:$incr),
           (AMOADD_D GPR:$addr, (SUB X0, GPR:$incr))>;
-def : Pat<(i64 (atomic_load_sub_64_acquire GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_sub_64_acquire GPR:$addr, GPR:$incr),
           (AMOADD_D_AQ GPR:$addr, (SUB X0, GPR:$incr))>;
-def : Pat<(i64 (atomic_load_sub_64_release GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_sub_64_release GPR:$addr, GPR:$incr),
           (AMOADD_D_RL GPR:$addr, (SUB X0, GPR:$incr))>;
-def : Pat<(i64 (atomic_load_sub_64_acq_rel GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_sub_64_acq_rel GPR:$addr, GPR:$incr),
           (AMOADD_D_AQ_RL GPR:$addr, (SUB X0, GPR:$incr))>;
-def : Pat<(i64 (atomic_load_sub_64_seq_cst GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_sub_64_seq_cst GPR:$addr, GPR:$incr),
           (AMOADD_D_AQ_RL GPR:$addr, (SUB X0, GPR:$incr))>;
 
 /// 64-bit pseudo AMOs
 
-let Size = 20 in
 def PseudoAtomicLoadNand64 : PseudoAMO;
 // Ordering constants must be kept in sync with the AtomicOrdering enum in
 // AtomicOrdering.h.
-def : Pat<(i64 (atomic_load_nand_64_monotonic GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_nand_64_monotonic GPR:$addr, GPR:$incr),
           (PseudoAtomicLoadNand64 GPR:$addr, GPR:$incr, 2)>;
-def : Pat<(i64 (atomic_load_nand_64_acquire GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_nand_64_acquire GPR:$addr, GPR:$incr),
           (PseudoAtomicLoadNand64 GPR:$addr, GPR:$incr, 4)>;
-def : Pat<(i64 (atomic_load_nand_64_release GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_nand_64_release GPR:$addr, GPR:$incr),
           (PseudoAtomicLoadNand64 GPR:$addr, GPR:$incr, 5)>;
-def : Pat<(i64 (atomic_load_nand_64_acq_rel GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_nand_64_acq_rel GPR:$addr, GPR:$incr),
           (PseudoAtomicLoadNand64 GPR:$addr, GPR:$incr, 6)>;
-def : Pat<(i64 (atomic_load_nand_64_seq_cst GPR:$addr, GPR:$incr)),
+def : Pat<(atomic_load_nand_64_seq_cst GPR:$addr, GPR:$incr),
           (PseudoAtomicLoadNand64 GPR:$addr, GPR:$incr, 7)>;
 
 def : PseudoMaskedAMOPat<int_riscv_masked_atomicrmw_xchg_i64,
@@ -374,5 +387,5 @@ defm : PseudoCmpXchgPat<"atomic_cmp_swap_64", PseudoCmpXchg64>;
 def : Pat<(int_riscv_masked_cmpxchg_i64
             GPR:$addr, GPR:$cmpval, GPR:$newval, GPR:$mask, timm:$ordering),
           (PseudoMaskedCmpXchg32
-            GPR:$addr, GPR:$cmpval, GPR:$newval, GPR:$mask, timm:$ordering)>;
+            GPR:$addr, GPR:$cmpval, GPR:$newval, GPR:$mask, imm:$ordering)>;
 } // Predicates = [HasStdExtA, IsRV64]

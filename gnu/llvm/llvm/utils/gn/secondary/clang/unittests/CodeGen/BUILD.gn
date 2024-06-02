@@ -1,4 +1,4 @@
-import("//third-party/unittest/unittest.gni")
+import("//llvm/utils/unittest/unittest.gni")
 
 unittest("ClangCodeGenTests") {
   configs += [ "//llvm/utils/gn/build:clang_code" ]
@@ -11,12 +11,11 @@ unittest("ClangCodeGenTests") {
     "//clang/lib/Parse",
     "//llvm/lib/IR",
     "//llvm/lib/Support",
-    "//llvm/lib/TargetParser",
   ]
   sources = [
     "BufferSourceTest.cpp",
-    "CheckTargetFeaturesTest.cpp",
     "CodeGenExternalTest.cpp",
+    "IncrementalProcessingTest.cpp",
     "TBAAMetadataTest.cpp",
   ]
 }

@@ -14,7 +14,6 @@
 #ifndef LLVM_SUPPORT_SIGNALS_H
 #define LLVM_SUPPORT_SIGNALS_H
 
-#include <cstdint>
 #include <string>
 
 namespace llvm {
@@ -51,9 +50,7 @@ namespace sys {
   void DisableSystemDialogsOnCrash();
 
   /// Print the stack trace using the given \c raw_ostream object.
-  /// \param Depth refers to the number of stackframes to print. If not
-  ///        specified, the entire frame is printed.
-  void PrintStackTrace(raw_ostream &OS, int Depth = 0);
+  void PrintStackTrace(raw_ostream &OS);
 
   // Run all registered signal handlers.
   void RunSignalHandlers();
@@ -102,16 +99,13 @@ namespace sys {
   /// functions.  A null handler pointer disables the current installed
   /// function.  Note also that the handler may be executed on a
   /// different thread on some platforms.
+  ///
+  /// This is a no-op on Windows.
   void SetOneShotPipeSignalFunction(void (*Handler)());
 
-  /// On Unix systems and Windows, this function exits with an "IO error" exit
-  /// code.
+  /// On Unix systems, this function exits with an "IO error" exit code.
+  /// This is a no-op on Windows.
   void DefaultOneShotPipeSignalHandler();
-
-#ifdef _WIN32
-  /// Windows does not support signals and this handler must be called manually.
-  void CallOneShotPipeSignalHandler();
-#endif
 
   /// This function does the following:
   /// - clean up any temporary files registered with RemoveFileOnSignal()
@@ -121,8 +115,6 @@ namespace sys {
   /// Context is a system-specific failure context: it is the signal type on
   /// Unix; the ExceptionContext on Windows.
   void CleanupOnSignal(uintptr_t Context);
-
-  void unregisterHandlers();
 } // End sys namespace
 } // End llvm namespace
 

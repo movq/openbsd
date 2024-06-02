@@ -10,9 +10,6 @@ This script:
 
 This is a total of four clean builds of clang (by default). This may take a
 while. :)
-
-This scripts duplicates https://llvm.org/docs/AdvancedBuilds.html#multi-stage-pgo
-Eventually, it will be updated to instead call the cmake cache mentioned there.
 """
 
 import argparse
@@ -149,9 +146,9 @@ class Env:
 
     def has_llvm_subproject(self, name):
         if name == 'compiler-rt':
-            subdir = '../compiler-rt'
+            subdir = 'projects/compiler-rt'
         elif name == 'clang':
-            subdir = '../clang'
+            subdir = 'tools/clang'
         else:
             raise ValueError('Unknown subproject: %s' % name)
 
@@ -164,8 +161,9 @@ class Env:
                     cwd=None,
                     check=False,
                     silent_unless_error=False):
+        cmd_str = ' '.join(shlex.quote(s) for s in cmd)
         print(
-            'Running `%s` in %s' % (cmd, shlex.quote(cwd or os.getcwd())))
+            'Running `%s` in %s' % (cmd_str, shlex.quote(cwd or os.getcwd())))
 
         if self.dry_run:
             return
@@ -320,7 +318,7 @@ Args = collections.namedtuple('Args', [
 def _parse_args():
     parser = argparse.ArgumentParser(
         description='Builds LLVM and Clang with instrumentation, collects '
-        'instrumentation profiles for them, and (optionally) builds things '
+        'instrumentation profiles for them, and (optionally) builds things'
         'with these PGO profiles. By default, it\'s assumed that you\'re '
         'running this from your LLVM root, and all build artifacts will be '
         'saved to $PWD/out.')
@@ -374,8 +372,7 @@ def _parse_args():
     else:
         output_dir = os.path.abspath(args.out_dir)
 
-    extra_args = {'CMAKE_BUILD_TYPE': 'Release',
-                  'LLVM_ENABLE_PROJECTS': 'clang;compiler-rt;lld'}
+    extra_args = {'CMAKE_BUILD_TYPE': 'Release'}
     for arg in args.cmake_extra_arg:
         if arg.startswith('-D'):
             arg = arg[2:]

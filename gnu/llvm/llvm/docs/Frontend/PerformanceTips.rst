@@ -27,7 +27,7 @@ can often be useful to write a quick C program with the semantics you're trying
 to model and see what decisions Clang's IRGen makes about what IR to emit.
 Studying Clang's CodeGen directory can also be a good source of ideas.  Note
 that Clang and LLVM are explicitly version locked so you'll need to make sure
-you're using a Clang built from the same git revision or release as the LLVM
+you're using a Clang built from the same svn revision or release as the LLVM
 library you're using.  As always, it's *strongly* recommended that you track
 tip of tree development, particularly during bring up of a new project.
 
@@ -81,7 +81,7 @@ Prefer zext over sext when legal
 On some architectures (X86_64 is one), sign extension can involve an extra
 instruction whereas zero extension can be folded into a load.  LLVM will try to
 replace a sext with a zext when it can be proven safe, but if you have
-information in your source language about the range of an integer value, it can
+information in your source language about the range of a integer value, it can
 be profitable to use a zext rather than a sext.
 
 Alternatively, you can :ref:`specify the range of the value using metadata
@@ -170,7 +170,8 @@ Other Things to Consider
    comparison type.  The GVN pass *will* optimize redundant equalities even if
    the type of comparison is inverted, but GVN only runs late in the pipeline.
    As a result, you may miss the opportunity to run other important
-   optimizations.
+   optimizations.  Improvements to EarlyCSE to remove this issue are tracked in
+   Bug 23333.
 
 #. Avoid using arithmetic intrinsics unless you are *required* by your source
    language specification to emit a particular code sequence.  The optimizer
@@ -226,12 +227,6 @@ Describing Aliasing Properties
 
 #. Use inbounds on geps.  This can help to disambiguate some aliasing queries.
 
-Undefined Values
-^^^^^^^^^^^^^^^^
-
-#. Use poison values instead of undef values whenever possible.
-
-#. Tag function parameters with the noundef attribute whenever possible.
 
 Modeling Memory Effects
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -260,11 +255,11 @@ couple specific suggestions:
 
 #. For languages with numerous rarely executed guard conditions (e.g. null
    checks, type checks, range checks) consider adding an extra execution or
-   two of LoopUnswitch and LICM to your pass order.  The standard pass order,
+   two of LoopUnswith and LICM to your pass order.  The standard pass order,
    which is tuned for C and C++ applications, may not be sufficient to remove
    all dischargeable checks from loops.
 
-#. If your language uses range checks, consider using the IRCE pass.  It is not
+#. If you language uses range checks, consider using the IRCE pass.  It is not
    currently part of the standard pass order.
 
 #. A useful sanity check to run is to run your optimized IR back through the
@@ -281,8 +276,8 @@ relatively common and are generally well received by the community.  You will
 need to ensure that your proposal is sufficiently general so that it benefits
 others if you wish to contribute it upstream.
 
-You should also consider describing the problem you're facing on `Discourse
-<https://discourse.llvm.org>`_ and asking for advice.
+You should also consider describing the problem you're facing on `llvm-dev
+<http://lists.llvm.org/mailman/listinfo/llvm-dev>`_ and asking for advice.
 It's entirely possible someone has encountered your problem before and can
 give good advice.  If there are multiple interested parties, that also
 increases the chances that a metadata extension would be well received by the
@@ -295,7 +290,8 @@ If you run across a case that you feel deserves to be covered here, please send
 a patch to `llvm-commits
 <http://lists.llvm.org/mailman/listinfo/llvm-commits>`_ for review.
 
-If you have questions on these items, please ask them on `Discourse
-<https://discourse.llvm.org>`_.  The more relevant
+If you have questions on these items, please direct them to `llvm-dev
+<http://lists.llvm.org/mailman/listinfo/llvm-dev>`_.  The more relevant
 context you are able to give to your question, the more likely it is to be
 answered.
+

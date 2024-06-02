@@ -15,7 +15,6 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/ModRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <string>
@@ -44,7 +43,7 @@ namespace {
 
 } // end anonymous namespace
 
-static void emitInlineAsm(LLVMContext &C, BasicBlock *BB, StringRef AsmText) {
+static void EmitInlineAsm(LLVMContext &C, BasicBlock *BB, StringRef AsmText) {
   std::vector<Type *> AsmArgTypes;
   std::vector<Value *> AsmArgs;
 
@@ -261,7 +260,7 @@ static void assureFPCallStub(Function &F, Module *M,
     return;
   LLVMContext &Context = M->getContext();
   bool LE = TM.isLittleEndian();
-  std::string Name(F.getName());
+  std::string Name = F.getName();
   std::string SectionName = ".mips16.call.fp." + Name;
   std::string StubName = "__call_stub_fp_" + Name;
   //
@@ -340,7 +339,7 @@ static void assureFPCallStub(Function &F, Module *M,
     AsmText += "jr $$18\n";
   else
     AsmText += "jr $$25\n";
-  emitInlineAsm(Context, BB, AsmText);
+  EmitInlineAsm(Context, BB, AsmText);
 
   new UnreachableInst(Context, BB);
 }
@@ -360,7 +359,7 @@ static const char *const IntrinsicInline[] = {
   "llvm.log10.f32", "llvm.log10.f64",
   "llvm.nearbyint.f32", "llvm.nearbyint.f64",
   "llvm.pow.f32", "llvm.pow.f64",
-  "llvm.powi.f32.i32", "llvm.powi.f64.i32",
+  "llvm.powi.f32", "llvm.powi.f64",
   "llvm.rint.f32", "llvm.rint.f64",
   "llvm.round.f32", "llvm.round.f64",
   "llvm.sin.f32", "llvm.sin.f64",
@@ -409,10 +408,12 @@ static bool fixupFPReturnAndCall(Function &F, Module *M,
         // during call setup, the proper call lowering to the helper
         // functions will take place.
         //
-        A = A.addFnAttribute(C, "__Mips16RetHelper");
-        A = A.addFnAttribute(
-            C, Attribute::getWithMemoryEffects(C, MemoryEffects::none()));
-        A = A.addFnAttribute(C, Attribute::NoInline);
+        A = A.addAttribute(C, AttributeList::FunctionIndex,
+                           "__Mips16RetHelper");
+        A = A.addAttribute(C, AttributeList::FunctionIndex,
+                           Attribute::ReadNone);
+        A = A.addAttribute(C, AttributeList::FunctionIndex,
+                           Attribute::NoInline);
         FunctionCallee F = (M->getOrInsertFunction(Name, A, MyVoid, T));
         CallInst::Create(F, Params, "", &I);
       } else if (const CallInst *CI = dyn_cast<CallInst>(&I)) {
@@ -447,7 +448,7 @@ static void createFPFnStub(Function *F, Module *M, FPParamVariant PV,
   bool PicMode = TM.isPositionIndependent();
   bool LE = TM.isLittleEndian();
   LLVMContext &Context = M->getContext();
-  std::string Name(F->getName());
+  std::string Name = F->getName();
   std::string SectionName = ".mips16.fn." + Name;
   std::string StubName = "__fn_stub_" + Name;
   std::string LocalName = "$$__fn_local_" + Name;
@@ -474,19 +475,21 @@ static void createFPFnStub(Function *F, Module *M, FPParamVariant PV,
   AsmText += swapFPIntParams(PV, M, LE, false);
   AsmText += "jr $$25\n";
   AsmText += LocalName + " = " + Name + "\n";
-  emitInlineAsm(Context, BB, AsmText);
+  EmitInlineAsm(Context, BB, AsmText);
 
   new UnreachableInst(FStub->getContext(), BB);
 }
 
 // remove the use-soft-float attribute
 static void removeUseSoftFloat(Function &F) {
+  AttrBuilder B;
   LLVM_DEBUG(errs() << "removing -use-soft-float\n");
-  F.removeFnAttr("use-soft-float");
+  B.addAttribute("use-soft-float", "false");
+  F.removeAttributes(AttributeList::FunctionIndex, B);
   if (F.hasFnAttribute("use-soft-float")) {
     LLVM_DEBUG(errs() << "still has -use-soft-float\n");
   }
-  F.addFnAttr("use-soft-float", "false");
+  F.addAttributes(AttributeList::FunctionIndex, B);
 }
 
 // This pass only makes sense when the underlying chip has floating point but

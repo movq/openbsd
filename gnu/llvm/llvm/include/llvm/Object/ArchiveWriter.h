@@ -13,7 +13,10 @@
 #ifndef LLVM_OBJECT_ARCHIVEWRITER_H
 #define LLVM_OBJECT_ARCHIVEWRITER_H
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Object/Archive.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 
 namespace llvm {
 
@@ -25,11 +28,6 @@ struct NewArchiveMember {
 
   NewArchiveMember() = default;
   NewArchiveMember(MemoryBufferRef BufRef);
-
-  // Detect the archive format from the object or bitcode file. This helps
-  // assume the archive format when creating or editing archives in the case
-  // one isn't explicitly set.
-  object::Archive::Kind detectKindFromObject() const;
 
   static Expected<NewArchiveMember>
   getOldMember(const object::Archive::Child &OldMember, bool Deterministic);
@@ -44,12 +42,6 @@ Error writeArchive(StringRef ArcName, ArrayRef<NewArchiveMember> NewMembers,
                    bool WriteSymtab, object::Archive::Kind Kind,
                    bool Deterministic, bool Thin,
                    std::unique_ptr<MemoryBuffer> OldArchiveBuf = nullptr);
-
-// writeArchiveToBuffer is similar to writeArchive but returns the Archive in a
-// buffer instead of writing it out to a file.
-Expected<std::unique_ptr<MemoryBuffer>>
-writeArchiveToBuffer(ArrayRef<NewArchiveMember> NewMembers, bool WriteSymtab,
-                     object::Archive::Kind Kind, bool Deterministic, bool Thin);
 }
 
 #endif

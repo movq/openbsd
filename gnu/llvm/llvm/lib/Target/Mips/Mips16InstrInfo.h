@@ -54,14 +54,14 @@ public:
 
   void storeRegToStack(MachineBasicBlock &MBB,
                        MachineBasicBlock::iterator MBBI,
-                       Register SrcReg, bool isKill, int FrameIndex,
+                       unsigned SrcReg, bool isKill, int FrameIndex,
                        const TargetRegisterClass *RC,
                        const TargetRegisterInfo *TRI,
                        int64_t Offset) const override;
 
   void loadRegFromStack(MachineBasicBlock &MBB,
                         MachineBasicBlock::iterator MBBI,
-                        Register DestReg, int FrameIndex,
+                        unsigned DestReg, int FrameIndex,
                         const TargetRegisterClass *RC,
                         const TargetRegisterInfo *TRI,
                         int64_t Offset) const override;
@@ -106,8 +106,7 @@ protected:
   /// If the specific machine instruction is a instruction that moves/copies
   /// value from one register to another register return destination and source
   /// registers as machine operands.
-  std::optional<DestSourcePair>
-  isCopyInstrImpl(const MachineInstr &MI) const override;
+  Optional<DestSourcePair> isCopyInstrImpl(const MachineInstr &MI) const override;
 
 private:
   unsigned getAnalyzableBrOpc(unsigned Opc) const override;

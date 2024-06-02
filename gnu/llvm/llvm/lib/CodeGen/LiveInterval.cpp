@@ -348,8 +348,23 @@ private:
 //===----------------------------------------------------------------------===//
 
 LiveRange::iterator LiveRange::find(SlotIndex Pos) {
-  return llvm::partition_point(*this,
-                               [&](const Segment &X) { return X.end <= Pos; });
+  // This algorithm is basically std::upper_bound.
+  // Unfortunately, std::upper_bound cannot be used with mixed types until we
+  // adopt C++0x. Many libraries can do it, but not all.
+  if (empty() || Pos >= endIndex())
+    return end();
+  iterator I = begin();
+  size_t Len = size();
+  do {
+    size_t Mid = Len >> 1;
+    if (Pos < I[Mid].end) {
+      Len = Mid;
+    } else {
+      I += Mid + 1;
+      Len -= Mid + 1;
+    }
+  } while (Len);
+  return I;
 }
 
 VNInfo *LiveRange::createDeadDef(SlotIndex Def, VNInfo::Allocator &VNIAlloc) {
@@ -472,7 +487,7 @@ bool LiveRange::overlaps(const LiveRange &Other, const CoalescerPair &CP,
 /// by [Start, End).
 bool LiveRange::overlaps(SlotIndex Start, SlotIndex End) const {
   assert(Start < End && "Invalid range");
-  const_iterator I = lower_bound(*this, End);
+  const_iterator I = std::lower_bound(begin(), end(), End);
   return I != begin() && (--I)->end > Start;
 }
 
@@ -577,10 +592,21 @@ void LiveRange::removeSegment(SlotIndex Start, SlotIndex End,
   VNInfo *ValNo = I->valno;
   if (I->start == Start) {
     if (I->end == End) {
-      segments.erase(I);  // Removed the whole Segment.
+      if (RemoveDeadValNo) {
+        // Check if val# is dead.
+        bool isDead = true;
+        for (const_iterator II = begin(), EE = end(); II != EE; ++II)
+          if (II != I && II->valno == ValNo) {
+            isDead = false;
+            break;
+          }
+        if (isDead) {
+          // Now that ValNo is dead, remove it.
+          markValNoForDeletion(ValNo);
+        }
+      }
 
-      if (RemoveDeadValNo)
-        removeValNoIfDead(ValNo);
+      segments.erase(I);  // Removed the whole Segment.
     } else
       I->start = End;
     return;
@@ -601,25 +627,13 @@ void LiveRange::removeSegment(SlotIndex Start, SlotIndex End,
   segments.insert(std::next(I), Segment(End, OldEnd, ValNo));
 }
 
-LiveRange::iterator LiveRange::removeSegment(iterator I, bool RemoveDeadValNo) {
-  VNInfo *ValNo = I->valno;
-  I = segments.erase(I);
-  if (RemoveDeadValNo)
-    removeValNoIfDead(ValNo);
-  return I;
-}
-
-void LiveRange::removeValNoIfDead(VNInfo *ValNo) {
-  if (none_of(*this, [=](const Segment &S) { return S.valno == ValNo; }))
-    markValNoForDeletion(ValNo);
-}
-
 /// removeValNo - Remove all the segments defined by the specified value#.
 /// Also remove the value# from value# list.
 void LiveRange::removeValNo(VNInfo *ValNo) {
   if (empty()) return;
-  llvm::erase_if(segments,
-                 [ValNo](const Segment &S) { return S.valno == ValNo; });
+  segments.erase(remove_if(*this, [ValNo](const Segment &S) {
+    return S.valno == ValNo;
+  }), end());
   // Now that ValNo is dead, remove it.
   markValNoForDeletion(ValNo);
 }
@@ -937,9 +951,9 @@ void LiveInterval::refineSubRanges(
       MatchingRange = createSubRangeFrom(Allocator, Matching, SR);
       // Now that the subrange is split in half, make sure we
       // only keep in the subranges the VNIs that touch the related half.
-      stripValuesNotDefiningMask(reg(), *MatchingRange, Matching, Indexes, TRI,
+      stripValuesNotDefiningMask(reg, *MatchingRange, Matching, Indexes, TRI,
                                  ComposeSubRegIdx);
-      stripValuesNotDefiningMask(reg(), SR, SR.LaneMask, Indexes, TRI,
+      stripValuesNotDefiningMask(reg, SR, SR.LaneMask, Indexes, TRI,
                                  ComposeSubRegIdx);
     }
     Apply(*MatchingRange);
@@ -963,11 +977,11 @@ void LiveInterval::computeSubRangeUndefs(SmallVectorImpl<SlotIndex> &Undefs,
                                          LaneBitmask LaneMask,
                                          const MachineRegisterInfo &MRI,
                                          const SlotIndexes &Indexes) const {
-  assert(reg().isVirtual());
-  LaneBitmask VRegMask = MRI.getMaxLaneMaskForVReg(reg());
+  assert(Register::isVirtualRegister(reg));
+  LaneBitmask VRegMask = MRI.getMaxLaneMaskForVReg(reg);
   assert((VRegMask & LaneMask).any());
   const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
-  for (const MachineOperand &MO : MRI.def_operands(reg())) {
+  for (const MachineOperand &MO : MRI.def_operands(reg)) {
     if (!MO.isUndef())
       continue;
     unsigned SubReg = MO.getSubReg();
@@ -1005,7 +1019,7 @@ void LiveRange::print(raw_ostream &OS) const {
 
   // Print value number info.
   if (getNumValNums()) {
-    OS << ' ';
+    OS << "  ";
     unsigned vnum = 0;
     for (const_vni_iterator i = vni_begin(), e = vni_end(); i != e;
          ++i, ++vnum) {
@@ -1024,17 +1038,17 @@ void LiveRange::print(raw_ostream &OS) const {
 }
 
 void LiveInterval::SubRange::print(raw_ostream &OS) const {
-  OS << "  L" << PrintLaneMask(LaneMask) << ' '
-     << static_cast<const LiveRange &>(*this);
+  OS << " L" << PrintLaneMask(LaneMask) << ' '
+     << static_cast<const LiveRange&>(*this);
 }
 
 void LiveInterval::print(raw_ostream &OS) const {
-  OS << printReg(reg()) << ' ';
+  OS << printReg(reg) << ' ';
   super::print(OS);
   // Print subranges
   for (const SubRange &SR : subranges())
     OS << SR;
-  OS << "  weight:" << Weight;
+  OS << " weight:" << weight;
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
@@ -1073,7 +1087,7 @@ void LiveInterval::verify(const MachineRegisterInfo *MRI) const {
 
   // Make sure SubRanges are fine and LaneMasks are disjunct.
   LaneBitmask Mask;
-  LaneBitmask MaxMask = MRI != nullptr ? MRI->getMaxLaneMaskForVReg(reg())
+  LaneBitmask MaxMask = MRI != nullptr ? MRI->getMaxLaneMaskForVReg(reg)
                                        : LaneBitmask::getAll();
   for (const SubRange &SR : subranges()) {
     // Subrange lanemask should be disjunct to any previous subrange masks.
@@ -1322,8 +1336,9 @@ unsigned ConnectedVNInfoEqClasses::Classify(const LiveRange &LR) {
       const MachineBasicBlock *MBB = LIS.getMBBFromIndex(VNI->def);
       assert(MBB && "Phi-def has no defining MBB");
       // Connect to values live out of predecessors.
-      for (MachineBasicBlock *Pred : MBB->predecessors())
-        if (const VNInfo *PVNI = LR.getVNInfoBefore(LIS.getMBBEndIdx(Pred)))
+      for (MachineBasicBlock::const_pred_iterator PI = MBB->pred_begin(),
+           PE = MBB->pred_end(); PI != PE; ++PI)
+        if (const VNInfo *PVNI = LR.getVNInfoBefore(LIS.getMBBEndIdx(*PI)))
           EqClass.join(VNI->id, PVNI->id);
     } else {
       // Normal value defined by an instruction. Check for two-addr redef.
@@ -1346,9 +1361,11 @@ unsigned ConnectedVNInfoEqClasses::Classify(const LiveRange &LR) {
 void ConnectedVNInfoEqClasses::Distribute(LiveInterval &LI, LiveInterval *LIV[],
                                           MachineRegisterInfo &MRI) {
   // Rewrite instructions.
-  for (MachineOperand &MO :
-       llvm::make_early_inc_range(MRI.reg_operands(LI.reg()))) {
-    MachineInstr *MI = MO.getParent();
+  for (MachineRegisterInfo::reg_iterator RI = MRI.reg_begin(LI.reg),
+       RE = MRI.reg_end(); RI != RE;) {
+    MachineOperand &MO = *RI;
+    MachineInstr *MI = RI->getParent();
+    ++RI;
     const VNInfo *VNI;
     if (MI->isDebugValue()) {
       // DBG_VALUE instructions don't have slot indexes, so get the index of
@@ -1365,7 +1382,7 @@ void ConnectedVNInfoEqClasses::Distribute(LiveInterval &LI, LiveInterval *LIV[],
     if (!VNI)
       continue;
     if (unsigned EqClass = getEqClass(VNI))
-      MO.setReg(LIV[EqClass - 1]->reg());
+      MO.setReg(LIV[EqClass-1]->reg);
   }
 
   // Distribute subregister liveranges.

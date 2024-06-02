@@ -59,7 +59,7 @@ multiple file formats.
 
  Remove most local symbols from the output. Different file formats may limit
  this to a subset of the local symbols. For example, file and section symbols in
- ELF objects will not be discarded. Additionally, remove all debug sections.
+ ELF objects will not be discarded.
 
 .. option:: --dump-section <section>=<file>
 
@@ -127,47 +127,8 @@ multiple file formats.
 
 .. option:: --set-section-alignment <section>=<align>
 
- Set the alignment of section ``<section>`` to ``<align>``. Can be specified
+ Set the alignment of section ``<section>`` to `<align>``. Can be specified
  multiple times to update multiple sections.
-
-.. option:: --set-section-flags <section>=<flag>[,<flag>,...]
-
- Set section properties in the output of section ``<section>`` based on the
- specified ``<flag>`` values. Can be specified multiple times to update multiple
- sections.
-
- Supported flag names are `alloc`, `load`, `noload`, `readonly`, `exclude`,
- `debug`, `code`, `data`, `rom`, `share`, `contents`, `merge` and `strings`. Not
- all flags are meaningful for all object file formats.
-
- For ELF objects, the flags have the following effects:
-
- - `alloc` = add the `SHF_ALLOC` flag.
- - `load` = if the section has `SHT_NOBITS` type, mark it as a `SHT_PROGBITS`
-   section.
- - `readonly` = if this flag is not specified, add the `SHF_WRITE` flag.
- - `exclude` = add the `SHF_EXCLUDE` flag.
- - `code` = add the `SHF_EXECINSTR` flag.
- - `merge` = add the `SHF_MERGE` flag.
- - `strings` = add the `SHF_STRINGS` flag.
- - `contents` = if the section has `SHT_NOBITS` type, mark it as a `SHT_PROGBITS`
-   section.
-
- For COFF objects, the flags have the following effects:
-
- - `alloc` = add the `IMAGE_SCN_CNT_UNINITIALIZED_DATA` and `IMAGE_SCN_MEM_READ`
-   flags, unless the `load` flag is specified.
- - `noload` = add the `IMAGE_SCN_LNK_REMOVE` and `IMAGE_SCN_MEM_READ` flags.
- - `readonly` = if this flag is not specified, add the `IMAGE_SCN_MEM_WRITE`
-   flag.
- - `exclude` = add the `IMAGE_SCN_LNK_REMOVE` and `IMAGE_SCN_MEM_READ` flags.
- - `debug` = add the `IMAGE_SCN_CNT_INITIALIZED_DATA`,
-   `IMAGE_SCN_MEM_DISCARDABLE` and  `IMAGE_SCN_MEM_READ` flags.
- - `code` = add the `IMAGE_SCN_CNT_CODE`, `IMAGE_SCN_MEM_EXECUTE` and
-   `IMAGE_SCN_MEM_READ` flags.
- - `data` = add the `IMAGE_SCN_CNT_INITIALIZED_DATA` and `IMAGE_SCN_MEM_READ`
-   flags.
- - `share` = add the `IMAGE_SCN_MEM_SHARED` and `IMAGE_SCN_MEM_READ` flags.
 
 .. option:: --strip-all-gnu
 
@@ -217,15 +178,13 @@ multiple file formats.
  Remove from the output all local or undefined symbols that are not required by
  relocations. Also remove all debug sections.
 
-.. option:: --update-section <name>=<file>
-
- Replace the contents of the section ``<name>`` with contents from the file
- ``<file>``. If the section ``<name>`` is part of a segment, the new contents
- cannot be larger than the existing section.
-
 .. option:: --version, -V
 
  Display the version of the :program:`llvm-objcopy` executable.
+
+.. option:: @<FILE>
+
+ Read command-line options and commands from response file `<FILE>`.
 
 .. option:: --wildcard, -w
 
@@ -251,9 +210,12 @@ multiple file formats.
   The order of wildcards does not matter. For example, ``-w -N '*' -N '!x'`` is
   the same as ``-w -N '!x' -N '*'``.
 
-.. option:: @<FILE>
+COFF-SPECIFIC OPTIONS
+---------------------
 
- Read command-line options and commands from response file `<FILE>`.
+The following options are implemented only for COFF objects. If used with other
+objects, :program:`llvm-objcopy` will either emit an error or silently ignore
+them.
 
 ELF-SPECIFIC OPTIONS
 --------------------
@@ -291,15 +253,33 @@ them.
  Allow :program:`llvm-objcopy` to remove sections even if it would leave invalid
  section references. Any invalid sh_link fields will be set to zero.
 
+.. option:: --build-id-link-dir <dir>
+
+ Set the directory used by :option:`--build-id-link-input` and
+ :option:`--build-id-link-output`.
+
+.. option:: --build-id-link-input <suffix>
+
+ Hard-link the input to ``<dir>/xx/xxx<suffix>``, where ``<dir>`` is the directory
+ specified by :option:`--build-id-link-dir`. The path used is derived from the
+ hex build ID.
+
+.. option:: --build-id-link-output <suffix>
+
+ Hard-link the output to ``<dir>/xx/xxx<suffix>``, where ``<dir>`` is the directory
+ specified by :option:`--build-id-link-dir`. The path used is derived from the
+ hex build ID.
+
 .. option:: --change-start <incr>, --adjust-start
 
  Add ``<incr>`` to the program's start address. Can be specified multiple
  times, in which case the values will be applied cumulatively.
 
-.. option:: --compress-debug-sections [<format>]
+.. option:: --compress-debug-sections [<style>]
 
- Compress DWARF debug sections in the output, using the specified format.
- Supported formats are ``zlib`` and ``zstd``. Use ``zlib`` if ``<format>`` is omitted.
+ Compress DWARF debug sections in the output, using the specified style.
+ Supported styles are `zlib-gnu` and `zlib`. Defaults to `zlib` if no style is
+ specified.
 
 .. option:: --decompress-debug-sections
 
@@ -343,7 +323,7 @@ them.
 
  Keep symbols of type `STT_FILE`, even if they would otherwise be stripped.
 
-.. option:: --keep-global-symbol <symbol>, -G
+.. option:: --keep-global-symbol <symbol>
 
  Make all symbols local in the output, except for symbols with the name
  ``<symbol>``. Can be specified multiple times to ignore multiple symbols.
@@ -388,7 +368,7 @@ them.
  represents a single symbol, with leading and trailing whitespace ignored, as is
  anything following a '#'. Can be specified multiple times to read names from
  multiple files.
-
+ 
 .. option:: --new-symbol-visibility <visibility>
 
  Specify the visibility of the symbols automatically created when using binary
@@ -405,8 +385,7 @@ them.
 
  Write the output as the specified format. See `SUPPORTED FORMATS`_ for a list
  of valid ``<format>`` values. If unspecified, the output format is assumed to
- be the same as the value specified for :option:`--input-target` or the input
- file's format if that option is also unspecified.
+ be the same as the input file's format.
 
 .. option:: --prefix-alloc-sections <prefix>
 
@@ -427,10 +406,26 @@ them.
  specified ``<flag>`` values. See :option:`--set-section-flags` for a list of
  supported flags. Can be specified multiple times to rename multiple sections.
 
-.. option:: --set-section-type <section>=<type>
+.. option:: --set-section-flags <section>=<flag>[,<flag>,...]
 
- Set the type of section ``<section>`` to the integer ``<type>``. Can be
- specified multiple times to update multiple sections.
+ Set section properties in the output of section ``<section>`` based on the
+ specified ``<flag>`` values. Can be specified multiple times to update multiple
+ sections.
+
+ Following is a list of supported flags and their effects:
+
+ - `alloc` = add the `SHF_ALLOC` flag.
+ - `load` = if the section has `SHT_NOBITS` type, mark it as a `SHT_PROGBITS`
+   section.
+ - `readonly` = if this flag is not specified, add the `SHF_WRITE` flag.
+ - `code` = add the `SHF_EXECINSTR` flag.
+ - `merge` = add the `SHF_MERGE` flag.
+ - `strings` = add the `SHF_STRINGS` flag.
+ - `contents` = if the section has `SHT_NOBITS` type, mark it as a `SHT_PROGBITS`
+   section.
+
+ The following flags are also accepted, but are ignored for GNU compatibility:
+ `noload`, `debug`, `data`, `rom`, `share`.
 
 .. option:: --set-start-addr <addr>
 
@@ -479,20 +474,6 @@ them.
 .. option:: --weaken
 
  Mark all defined global symbols as weak in the output.
-
-MACH-O-SPECIFIC OPTIONS
------------------------
-
-.. option:: --keep-undefined
-
- Keep undefined symbols, even if they would otherwise be stripped.
-
-COFF-SPECIFIC OPTIONS
----------------------
-
-.. option:: --subsystem <name>[:<version>]
-
- Set the PE subsystem, and optionally subsystem version.
 
 SUPPORTED FORMATS
 -----------------
@@ -553,7 +534,7 @@ Otherwise, it exits with code 0.
 BUGS
 ----
 
-To report bugs, please visit <https://github.com/llvm/llvm-project/labels/tools:llvm-objcopy/strip/>.
+To report bugs, please visit <http://llvm.org/bugs/>.
 
 There is a known issue with :option:`--input-target` and :option:`--target`
 causing only ``binary`` and ``ihex`` formats to have any effect. Other values

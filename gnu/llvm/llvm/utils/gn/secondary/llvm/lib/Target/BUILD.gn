@@ -1,7 +1,6 @@
 import("//llvm/lib/Target/targets.gni")
 import("//llvm/lib/Target/targets_with_asm_parsers.gni")
 import("//llvm/lib/Target/targets_with_disassemblers.gni")
-import("//llvm/lib/Target/targets_with_mcas.gni")
 
 # This build file has two parts:
 # 1. The actual //llvm/lib/Target build target, which is just a static
@@ -28,7 +27,6 @@ static_library("Target") {
     "//llvm/lib/IR",
     "//llvm/lib/MC",
     "//llvm/lib/Support",
-    "//llvm/lib/TargetParser",
   ]
   public_deps = [
     # This is a bit of a hack: llvm-c/Target.h includes llvm/Config/Targets.def,
@@ -49,7 +47,9 @@ static_library("Target") {
 
 # 2. Forwarding targets.
 group("NativeTarget") {
-  deps = [ "$native_target" ]
+  deps = [
+    "$native_target",
+  ]
 }
 
 group("TargetsToBuild") {
@@ -60,13 +60,6 @@ group("AllTargetsAsmParsers") {
   deps = []
   foreach(target, targets_with_asm_parsers) {
     deps += [ "$target/AsmParser" ]
-  }
-}
-
-group("AllTargetsCodeGens") {
-  deps = []
-  foreach(target, llvm_targets_to_build) {
-    deps += [ "$target:LLVM${target}CodeGen" ]
   }
 }
 
@@ -88,12 +81,5 @@ group("AllTargetsInfos") {
   deps = []
   foreach(target, llvm_targets_to_build) {
     deps += [ "$target/TargetInfo" ]
-  }
-}
-
-group("AllTargetsMCAs") {
-  deps = []
-  foreach(target, targets_with_mcas) {
-    deps += [ "$target/MCA" ]
   }
 }

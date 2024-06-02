@@ -156,7 +156,7 @@ llvm::createMips16TargetLowering(const MipsTargetMachine &TM,
 }
 
 bool Mips16TargetLowering::allowsMisalignedMemoryAccesses(
-    EVT VT, unsigned, Align, MachineMemOperand::Flags, unsigned *Fast) const {
+    EVT VT, unsigned, unsigned, MachineMemOperand::Flags, bool *Fast) const {
   return false;
 }
 
@@ -246,7 +246,7 @@ bool Mips16TargetLowering::isEligibleForTailCallOptimization(
 }
 
 void Mips16TargetLowering::setMips16HardFloatLibCalls() {
-  for (unsigned I = 0; I != std::size(HardFloatLibCalls); ++I) {
+  for (unsigned I = 0; I != array_lengthof(HardFloatLibCalls); ++I) {
     assert((I == 0 || HardFloatLibCalls[I - 1] < HardFloatLibCalls[I]) &&
            "Array not sorted!");
     if (HardFloatLibCalls[I].Libcall != RTLIB::UNKNOWN_LIBCALL)
@@ -451,7 +451,7 @@ getOpndList(SmallVectorImpl<SDValue> &Ops,
           // So for now we always save S2. The optimization will be done
           // in a follow-on patch.
           //
-          if (true || (Signature->RetSig != Mips16HardFloatInfo::NoFPRet))
+          if (1 || (Signature->RetSig != Mips16HardFloatInfo::NoFPRet))
             FuncInfo->setSaveS2();
         }
         // one more look at list of intrinsics
@@ -492,7 +492,7 @@ getOpndList(SmallVectorImpl<SDValue> &Ops,
       ExternalSymbolSDNode *S = cast<ExternalSymbolSDNode>(JumpTarget);
       JumpTarget = getAddrGlobal(S, CLI.DL, JumpTarget.getValueType(), DAG,
                                  MipsII::MO_GOT, Chain,
-                                 FuncInfo->callPtrInfo(MF, S->getSymbol()));
+                                 FuncInfo->callPtrInfo(S->getSymbol()));
     } else
       RegsToPass.push_front(std::make_pair((unsigned)Mips::T9, Callee));
   }

@@ -27,7 +27,7 @@ public:
 
 public:
   const uint16_t *
-  getCalleeSavedRegs(const MachineFunction *MF = nullptr) const override;
+  getCalleeSavedRegs(const MachineFunction *MF = 0) const override;
   const uint32_t *getCallPreservedMask(const MachineFunction &MF,
                                        CallingConv::ID CC) const override;
   BitVector getReservedRegs(const MachineFunction &MF) const override;
@@ -37,9 +37,9 @@ public:
                             const MachineFunction &MF) const override;
 
   /// Stack Frame Processing Methods
-  bool eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
+  void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
                            unsigned FIOperandNum,
-                           RegScavenger *RS = nullptr) const override;
+                           RegScavenger *RS = NULL) const override;
 
   Register getFrameRegister(const MachineFunction &MF) const override;
 
@@ -49,11 +49,18 @@ public:
 
   /// Splits a 16-bit `DREGS` register into the lo/hi register pair.
   /// \param Reg A 16-bit register to split.
-  void splitReg(Register Reg, Register &LoReg, Register &HiReg) const;
+  void splitReg(unsigned Reg, unsigned &LoReg, unsigned &HiReg) const;
 
-  bool shouldCoalesce(MachineInstr *MI, const TargetRegisterClass *SrcRC,
-                      unsigned SubReg, const TargetRegisterClass *DstRC,
-                      unsigned DstSubReg, const TargetRegisterClass *NewRC,
+  bool trackLivenessAfterRegAlloc(const MachineFunction &) const override {
+    return true;
+  }
+
+  bool shouldCoalesce(MachineInstr *MI,
+                      const TargetRegisterClass *SrcRC,
+                      unsigned SubReg,
+                      const TargetRegisterClass *DstRC,
+                      unsigned DstSubReg,
+                      const TargetRegisterClass *NewRC,
                       LiveIntervals &LIS) const override;
 };
 

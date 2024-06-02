@@ -26,7 +26,6 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/SwapByteOrder.h"
-#include <deque>
 #include <map>
 #include <system_error>
 #include <unordered_map>
@@ -35,6 +34,8 @@ using namespace llvm;
 using namespace llvm::object;
 
 namespace llvm {
+
+class Twine;
 
 #define UNIMPLEMENTED_RELOC(RelType) \
   case RelType: \
@@ -73,7 +74,7 @@ class SectionEntry {
 public:
   SectionEntry(StringRef name, uint8_t *address, size_t size,
                size_t allocationSize, uintptr_t objAddress)
-      : Name(std::string(name)), Address(address), Size(size),
+      : Name(name), Address(address), Size(size),
         LoadAddress(reinterpret_cast<uintptr_t>(address)), StubOffset(size),
         AllocationSize(allocationSize), ObjAddress(objAddress) {
     // AllocationSize is used only in asserts, prevent an "unused private field"
@@ -189,11 +190,13 @@ public:
 
 class RelocationValueRef {
 public:
-  unsigned SectionID = 0;
-  uint64_t Offset = 0;
-  int64_t Addend = 0;
-  const char *SymbolName = nullptr;
+  unsigned SectionID;
+  uint64_t Offset;
+  int64_t Addend;
+  const char *SymbolName;
   bool IsStubThumb = false;
+  RelocationValueRef() : SectionID(0), Offset(0), Addend(0),
+                         SymbolName(nullptr) {}
 
   inline bool operator==(const RelocationValueRef &Other) const {
     return SectionID == Other.SectionID && Offset == Other.Offset &&
@@ -248,9 +251,7 @@ protected:
 
   // A list of all sections emitted by the dynamic linker.  These sections are
   // referenced in the code by means of their index in this list - SectionID.
-  // Because references may be kept while the list grows, use a container that
-  // guarantees reference stability.
-  typedef std::deque<SectionEntry> SectionList;
+  typedef SmallVector<SectionEntry, 64> SectionList;
   SectionList Sections;
 
   typedef unsigned SID; // Type for SectionIDs
@@ -312,24 +313,38 @@ protected:
   NotifyStubEmittedFunction NotifyStubEmitted;
 
   virtual unsigned getMaxStubSize() const = 0;
-  virtual Align getStubAlignment() = 0;
+  virtual unsigned getStubAlignment() = 0;
 
   bool HasError;
   std::string ErrorStr;
 
   void writeInt16BE(uint8_t *Addr, uint16_t Value) {
-    llvm::support::endian::write<uint16_t, llvm::support::unaligned>(
-        Addr, Value, IsTargetLittleEndian ? support::little : support::big);
+    if (IsTargetLittleEndian)
+      sys::swapByteOrder(Value);
+    *Addr       = (Value >> 8) & 0xFF;
+    *(Addr + 1) = Value & 0xFF;
   }
 
   void writeInt32BE(uint8_t *Addr, uint32_t Value) {
-    llvm::support::endian::write<uint32_t, llvm::support::unaligned>(
-        Addr, Value, IsTargetLittleEndian ? support::little : support::big);
+    if (IsTargetLittleEndian)
+      sys::swapByteOrder(Value);
+    *Addr       = (Value >> 24) & 0xFF;
+    *(Addr + 1) = (Value >> 16) & 0xFF;
+    *(Addr + 2) = (Value >> 8) & 0xFF;
+    *(Addr + 3) = Value & 0xFF;
   }
 
   void writeInt64BE(uint8_t *Addr, uint64_t Value) {
-    llvm::support::endian::write<uint64_t, llvm::support::unaligned>(
-        Addr, Value, IsTargetLittleEndian ? support::little : support::big);
+    if (IsTargetLittleEndian)
+      sys::swapByteOrder(Value);
+    *Addr       = (Value >> 56) & 0xFF;
+    *(Addr + 1) = (Value >> 48) & 0xFF;
+    *(Addr + 2) = (Value >> 40) & 0xFF;
+    *(Addr + 3) = (Value >> 32) & 0xFF;
+    *(Addr + 4) = (Value >> 24) & 0xFF;
+    *(Addr + 5) = (Value >> 16) & 0xFF;
+    *(Addr + 6) = (Value >> 8) & 0xFF;
+    *(Addr + 7) = Value & 0xFF;
   }
 
   virtual void setMipsABI(const ObjectFile &Obj) {
@@ -417,10 +432,10 @@ protected:
 
   // Compute an upper bound of the memory that is required to load all
   // sections
-  Error computeTotalAllocSize(const ObjectFile &Obj, uint64_t &CodeSize,
-                              Align &CodeAlign, uint64_t &RODataSize,
-                              Align &RODataAlign, uint64_t &RWDataSize,
-                              Align &RWDataAlign);
+  Error computeTotalAllocSize(const ObjectFile &Obj,
+                              uint64_t &CodeSize, uint32_t &CodeAlign,
+                              uint64_t &RODataSize, uint32_t &RODataAlign,
+                              uint64_t &RWDataSize, uint32_t &RWDataAlign);
 
   // Compute GOT size
   unsigned computeGOTSize(const ObjectFile &Obj);
@@ -434,10 +449,6 @@ protected:
 
   // Return size of Global Offset Table (GOT) entry
   virtual size_t getGOTEntrySize() { return 0; }
-
-  // Hook for the subclasses to do further processing when a symbol is added to
-  // the global symbol table. This function may modify the symbol table entry.
-  virtual void processNewSymbol(const SymbolRef &ObjSymbol, SymbolTableEntry& Entry) {}
 
   // Return true if the relocation R may require allocating a GOT entry.
   virtual bool relocationNeedsGot(const RelocationRef &R) const {
@@ -466,26 +477,16 @@ public:
   loadObject(const object::ObjectFile &Obj) = 0;
 
   uint64_t getSectionLoadAddress(unsigned SectionID) const {
-    if (SectionID == AbsoluteSymbolSection)
-      return 0;
-    else
-      return Sections[SectionID].getLoadAddress();
+    return Sections[SectionID].getLoadAddress();
   }
 
   uint8_t *getSectionAddress(unsigned SectionID) const {
-    if (SectionID == AbsoluteSymbolSection)
-      return nullptr;
-    else
-      return Sections[SectionID].getAddress();
+    return Sections[SectionID].getAddress();
   }
 
   StringRef getSectionContent(unsigned SectionID) const {
-    if (SectionID == AbsoluteSymbolSection)
-      return {};
-    else
-      return StringRef(
-          reinterpret_cast<char *>(Sections[SectionID].getAddress()),
-          Sections[SectionID].getStubOffset() + getMaxStubSize());
+    return StringRef(reinterpret_cast<char *>(Sections[SectionID].getAddress()),
+                     Sections[SectionID].getStubOffset() + getMaxStubSize());
   }
 
   uint8_t* getSymbolLocalAddress(StringRef Name) const {
@@ -531,9 +532,11 @@ public:
   std::map<StringRef, JITEvaluatedSymbol> getSymbolTable() const {
     std::map<StringRef, JITEvaluatedSymbol> Result;
 
-    for (const auto &KV : GlobalSymbolTable) {
+    for (auto &KV : GlobalSymbolTable) {
       auto SectionID = KV.second.getSectionID();
-      uint64_t SectionAddr = getSectionLoadAddress(SectionID);
+      uint64_t SectionAddr = 0;
+      if (SectionID != AbsoluteSymbolSection)
+        SectionAddr = getSectionLoadAddress(SectionID);
       Result[KV.first()] =
         JITEvaluatedSymbol(SectionAddr + KV.second.getOffset(), KV.second.getFlags());
     }
@@ -545,14 +548,9 @@ public:
 
   void resolveLocalRelocations();
 
-  static void finalizeAsync(
-      std::unique_ptr<RuntimeDyldImpl> This,
-      unique_function<void(object::OwningBinary<object::ObjectFile>,
-                           std::unique_ptr<RuntimeDyld::LoadedObjectInfo>,
-                           Error)>
-          OnEmitted,
-      object::OwningBinary<object::ObjectFile> O,
-      std::unique_ptr<RuntimeDyld::LoadedObjectInfo> Info);
+  static void finalizeAsync(std::unique_ptr<RuntimeDyldImpl> This,
+                            unique_function<void(Error)> OnEmitted,
+                            std::unique_ptr<MemoryBuffer> UnderlyingBuffer);
 
   void reassignSectionAddress(unsigned SectionID, uint64_t Addr);
 

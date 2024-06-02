@@ -5,49 +5,27 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines DenseMapInfo traits for DenseMap.
-///
+//
+// This file defines DenseMapInfo traits for DenseMap.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_DENSEMAPINFO_H
 #define LLVM_ADT_DENSEMAPINFO_H
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/PointerLikeTypeTraits.h"
+#include "llvm/Support/TypeSize.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <tuple>
-#include <type_traits>
 #include <utility>
-#include <variant>
 
 namespace llvm {
 
-namespace detail {
-
-/// Simplistic combination of 32-bit hash values into 32-bit hash values.
-static inline unsigned combineHashValue(unsigned a, unsigned b) {
-  uint64_t key = (uint64_t)a << 32 | (uint64_t)b;
-  key += ~(key << 32);
-  key ^= (key >> 22);
-  key += ~(key << 13);
-  key ^= (key >> 8);
-  key += (key << 3);
-  key ^= (key >> 15);
-  key += ~(key << 27);
-  key ^= (key >> 31);
-  return (unsigned)key;
-}
-
-} // end namespace detail
-
-/// An information struct used to provide DenseMap with the various necessary
-/// components for a given value type `T`. `Enable` is an optional additional
-/// parameter that is used to support SFINAE (generally using std::enable_if_t)
-/// in derived DenseMapInfo specializations; in non-SFINAE use cases this should
-/// just be `void`.
-template<typename T, typename Enable = void>
+template<typename T>
 struct DenseMapInfo {
   //static inline T getEmptyKey();
   //static inline T getTombstoneKey();
@@ -55,28 +33,18 @@ struct DenseMapInfo {
   //static bool isEqual(const T &LHS, const T &RHS);
 };
 
-// Provide DenseMapInfo for all pointers. Come up with sentinel pointer values
-// that are aligned to alignof(T) bytes, but try to avoid requiring T to be
-// complete. This allows clients to instantiate DenseMap<T*, ...> with forward
-// declared key types. Assume that no pointer key type requires more than 4096
-// bytes of alignment.
+// Provide DenseMapInfo for all pointers.
 template<typename T>
 struct DenseMapInfo<T*> {
-  // The following should hold, but it would require T to be complete:
-  // static_assert(alignof(T) <= (1 << Log2MaxAlign),
-  //               "DenseMap does not support pointer keys requiring more than "
-  //               "Log2MaxAlign bits of alignment");
-  static constexpr uintptr_t Log2MaxAlign = 12;
-
   static inline T* getEmptyKey() {
     uintptr_t Val = static_cast<uintptr_t>(-1);
-    Val <<= Log2MaxAlign;
+    Val <<= PointerLikeTypeTraits<T*>::NumLowBitsAvailable;
     return reinterpret_cast<T*>(Val);
   }
 
   static inline T* getTombstoneKey() {
     uintptr_t Val = static_cast<uintptr_t>(-2);
-    Val <<= Log2MaxAlign;
+    Val <<= PointerLikeTypeTraits<T*>::NumLowBitsAvailable;
     return reinterpret_cast<T*>(Val);
   }
 
@@ -230,8 +198,17 @@ struct DenseMapInfo<std::pair<T, U>> {
   }
 
   static unsigned getHashValue(const Pair& PairVal) {
-    return detail::combineHashValue(FirstInfo::getHashValue(PairVal.first),
-                                    SecondInfo::getHashValue(PairVal.second));
+    uint64_t key = (uint64_t)FirstInfo::getHashValue(PairVal.first) << 32
+          | (uint64_t)SecondInfo::getHashValue(PairVal.second);
+    key += ~(key << 32);
+    key ^= (key >> 22);
+    key += ~(key << 13);
+    key ^= (key >> 8);
+    key += (key << 3);
+    key ^= (key >> 15);
+    key += ~(key << 27);
+    key ^= (key >> 31);
+    return (unsigned)key;
   }
 
   static bool isEqual(const Pair &LHS, const Pair &RHS) {
@@ -240,87 +217,84 @@ struct DenseMapInfo<std::pair<T, U>> {
   }
 };
 
-// Provide DenseMapInfo for all tuples whose members have info.
-template <typename... Ts> struct DenseMapInfo<std::tuple<Ts...>> {
-  using Tuple = std::tuple<Ts...>;
-
-  static inline Tuple getEmptyKey() {
-    return Tuple(DenseMapInfo<Ts>::getEmptyKey()...);
+// Provide DenseMapInfo for StringRefs.
+template <> struct DenseMapInfo<StringRef> {
+  static inline StringRef getEmptyKey() {
+    return StringRef(reinterpret_cast<const char *>(~static_cast<uintptr_t>(0)),
+                     0);
   }
 
-  static inline Tuple getTombstoneKey() {
-    return Tuple(DenseMapInfo<Ts>::getTombstoneKey()...);
+  static inline StringRef getTombstoneKey() {
+    return StringRef(reinterpret_cast<const char *>(~static_cast<uintptr_t>(1)),
+                     0);
   }
 
-  template <unsigned I>
-  static unsigned getHashValueImpl(const Tuple &values, std::false_type) {
-    using EltType = std::tuple_element_t<I, Tuple>;
-    std::integral_constant<bool, I + 1 == sizeof...(Ts)> atEnd;
-    return detail::combineHashValue(
-        DenseMapInfo<EltType>::getHashValue(std::get<I>(values)),
-        getHashValueImpl<I + 1>(values, atEnd));
+  static unsigned getHashValue(StringRef Val) {
+    assert(Val.data() != getEmptyKey().data() && "Cannot hash the empty key!");
+    assert(Val.data() != getTombstoneKey().data() &&
+           "Cannot hash the tombstone key!");
+    return (unsigned)(hash_value(Val));
   }
 
-  template <unsigned I>
-  static unsigned getHashValueImpl(const Tuple &, std::true_type) {
-    return 0;
-  }
-
-  static unsigned getHashValue(const std::tuple<Ts...> &values) {
-    std::integral_constant<bool, 0 == sizeof...(Ts)> atEnd;
-    return getHashValueImpl<0>(values, atEnd);
-  }
-
-  template <unsigned I>
-  static bool isEqualImpl(const Tuple &lhs, const Tuple &rhs, std::false_type) {
-    using EltType = std::tuple_element_t<I, Tuple>;
-    std::integral_constant<bool, I + 1 == sizeof...(Ts)> atEnd;
-    return DenseMapInfo<EltType>::isEqual(std::get<I>(lhs), std::get<I>(rhs)) &&
-           isEqualImpl<I + 1>(lhs, rhs, atEnd);
-  }
-
-  template <unsigned I>
-  static bool isEqualImpl(const Tuple &, const Tuple &, std::true_type) {
-    return true;
-  }
-
-  static bool isEqual(const Tuple &lhs, const Tuple &rhs) {
-    std::integral_constant<bool, 0 == sizeof...(Ts)> atEnd;
-    return isEqualImpl<0>(lhs, rhs, atEnd);
-  }
-};
-
-// Provide DenseMapInfo for variants whose all alternatives have DenseMapInfo.
-template <typename... Ts> struct DenseMapInfo<std::variant<Ts...>> {
-  using Variant = std::variant<Ts...>;
-  using FirstT = std::variant_alternative_t<0, Variant>;
-
-  static inline Variant getEmptyKey() {
-    return Variant(std::in_place_index<0>, DenseMapInfo<FirstT>::getEmptyKey());
-  }
-
-  static inline Variant getTombstoneKey() {
-    return Variant(std::in_place_index<0>,
-                   DenseMapInfo<FirstT>::getTombstoneKey());
-  }
-
-  static unsigned getHashValue(const Variant &Val) {
-    return std::visit(
-        [&Val](auto &&Alternative) {
-          using T = std::decay_t<decltype(Alternative)>;
-          // Include index in hash to make sure same value as different
-          // alternatives don't collide.
-          return detail::combineHashValue(
-              DenseMapInfo<size_t>::getHashValue(Val.index()),
-              DenseMapInfo<T>::getHashValue(Alternative));
-        },
-        Val);
-  }
-
-  static bool isEqual(const Variant &LHS, const Variant &RHS) {
+  static bool isEqual(StringRef LHS, StringRef RHS) {
+    if (RHS.data() == getEmptyKey().data())
+      return LHS.data() == getEmptyKey().data();
+    if (RHS.data() == getTombstoneKey().data())
+      return LHS.data() == getTombstoneKey().data();
     return LHS == RHS;
   }
 };
+
+// Provide DenseMapInfo for ArrayRefs.
+template <typename T> struct DenseMapInfo<ArrayRef<T>> {
+  static inline ArrayRef<T> getEmptyKey() {
+    return ArrayRef<T>(reinterpret_cast<const T *>(~static_cast<uintptr_t>(0)),
+                       size_t(0));
+  }
+
+  static inline ArrayRef<T> getTombstoneKey() {
+    return ArrayRef<T>(reinterpret_cast<const T *>(~static_cast<uintptr_t>(1)),
+                       size_t(0));
+  }
+
+  static unsigned getHashValue(ArrayRef<T> Val) {
+    assert(Val.data() != getEmptyKey().data() && "Cannot hash the empty key!");
+    assert(Val.data() != getTombstoneKey().data() &&
+           "Cannot hash the tombstone key!");
+    return (unsigned)(hash_value(Val));
+  }
+
+  static bool isEqual(ArrayRef<T> LHS, ArrayRef<T> RHS) {
+    if (RHS.data() == getEmptyKey().data())
+      return LHS.data() == getEmptyKey().data();
+    if (RHS.data() == getTombstoneKey().data())
+      return LHS.data() == getTombstoneKey().data();
+    return LHS == RHS;
+  }
+};
+
+template <> struct DenseMapInfo<hash_code> {
+  static inline hash_code getEmptyKey() { return hash_code(-1); }
+  static inline hash_code getTombstoneKey() { return hash_code(-2); }
+  static unsigned getHashValue(hash_code val) { return val; }
+  static bool isEqual(hash_code LHS, hash_code RHS) { return LHS == RHS; }
+};
+
+template <> struct DenseMapInfo<ElementCount> {
+  static inline ElementCount getEmptyKey() { return {~0U, true}; }
+  static inline ElementCount getTombstoneKey() { return {~0U - 1, false}; }
+  static unsigned getHashValue(const ElementCount& EltCnt) {
+    if (EltCnt.Scalable)
+      return (EltCnt.Min * 37U) - 1U;
+
+    return EltCnt.Min * 37U;
+  }
+
+  static bool isEqual(const ElementCount& LHS, const ElementCount& RHS) {
+    return LHS == RHS;
+  }
+};
+
 } // end namespace llvm
 
 #endif // LLVM_ADT_DENSEMAPINFO_H

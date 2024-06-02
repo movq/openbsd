@@ -38,7 +38,7 @@ using namespace llvm;
 #define DEBUG_TYPE "mips-isel"
 
 bool MipsSEDAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
-  Subtarget = &MF.getSubtarget<MipsSubtarget>();
+  Subtarget = &static_cast<const MipsSubtarget &>(MF.getSubtarget());
   if (Subtarget->inMips16Mode())
     return false;
   return MipsDAGToDAGISel::runOnMachineFunction(MF);
@@ -153,7 +153,7 @@ void MipsSEDAGToDAGISel::emitMCountABI(MachineInstr &MI, MachineBasicBlock &MBB,
 }
 
 void MipsSEDAGToDAGISel::processFunctionAfterISel(MachineFunction &MF) {
-  MF.getInfo<MipsFunctionInfo>()->initGlobalBaseReg(MF);
+  MF.getInfo<MipsFunctionInfo>()->initGlobalBaseReg();
 
   MachineRegisterInfo *MRI = &MF.getRegInfo();
 
@@ -172,7 +172,7 @@ void MipsSEDAGToDAGISel::processFunctionAfterISel(MachineFunction &MF) {
           MI.addOperand(MachineOperand::CreateReg(Mips::SP, false, true));
           break;
         }
-        [[fallthrough]];
+        LLVM_FALLTHROUGH;
       case Mips::BuildPairF64:
       case Mips::ExtractElementF64:
         if (Subtarget->isABI_FPXX() && !Subtarget->hasMTHC1())
@@ -282,7 +282,7 @@ bool MipsSEDAGToDAGISel::selectAddrFrameIndexOffset(
     SDValue Addr, SDValue &Base, SDValue &Offset, unsigned OffsetBits,
     unsigned ShiftAmount = 0) const {
   if (CurDAG->isBaseWithConstantOffset(Addr)) {
-    auto *CN = cast<ConstantSDNode>(Addr.getOperand(1));
+    ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Addr.getOperand(1));
     if (isIntN(OffsetBits + ShiftAmount, CN->getSExtValue())) {
       EVT ValTy = Addr.getValueType();
 
@@ -833,9 +833,7 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   }
 
   case ISD::INTRINSIC_W_CHAIN: {
-    const unsigned IntrinsicOpcode =
-        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
-    switch (IntrinsicOpcode) {
+    switch (cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue()) {
     default:
       break;
 
@@ -845,41 +843,6 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
       SDValue Reg = CurDAG->getCopyFromReg(ChainIn, DL,
                                            getMSACtrlReg(RegIdx), MVT::i32);
       ReplaceNode(Node, Reg.getNode());
-      return true;
-    }
-    case Intrinsic::mips_ldr_d:
-    case Intrinsic::mips_ldr_w: {
-      unsigned Op = (IntrinsicOpcode == Intrinsic::mips_ldr_d) ? Mips::LDR_D
-                                                               : Mips::LDR_W;
-
-      SDLoc DL(Node);
-      assert(Node->getNumOperands() == 4 && "Unexpected number of operands.");
-      const SDValue &Chain = Node->getOperand(0);
-      const SDValue &Intrinsic = Node->getOperand(1);
-      const SDValue &Pointer = Node->getOperand(2);
-      const SDValue &Constant = Node->getOperand(3);
-
-      assert(Chain.getValueType() == MVT::Other);
-      (void)Intrinsic;
-      assert(Intrinsic.getOpcode() == ISD::TargetConstant &&
-             Constant.getOpcode() == ISD::Constant &&
-             "Invalid instruction operand.");
-
-      // Convert Constant to TargetConstant.
-      const ConstantInt *Val =
-          cast<ConstantSDNode>(Constant)->getConstantIntValue();
-      SDValue Imm =
-          CurDAG->getTargetConstant(*Val, DL, Constant.getValueType());
-
-      SmallVector<SDValue, 3> Ops{Pointer, Imm, Chain};
-
-      assert(Node->getNumValues() == 2);
-      assert(Node->getValueType(0).is128BitVector());
-      assert(Node->getValueType(1) == MVT::Other);
-      SmallVector<EVT, 2> ResTys{Node->getValueType(0), Node->getValueType(1)};
-
-      ReplaceNode(Node, CurDAG->getMachineNode(Op, DL, ResTys, Ops));
-
       return true;
     }
     }
@@ -903,9 +866,7 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   }
 
   case ISD::INTRINSIC_VOID: {
-    const unsigned IntrinsicOpcode =
-        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue();
-    switch (IntrinsicOpcode) {
+    switch (cast<ConstantSDNode>(Node->getOperand(1))->getZExtValue()) {
     default:
       break;
 
@@ -918,74 +879,8 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
       ReplaceNode(Node, ChainOut.getNode());
       return true;
     }
-    case Intrinsic::mips_str_d:
-    case Intrinsic::mips_str_w: {
-      unsigned Op = (IntrinsicOpcode == Intrinsic::mips_str_d) ? Mips::STR_D
-                                                               : Mips::STR_W;
-
-      SDLoc DL(Node);
-      assert(Node->getNumOperands() == 5 && "Unexpected number of operands.");
-      const SDValue &Chain = Node->getOperand(0);
-      const SDValue &Intrinsic = Node->getOperand(1);
-      const SDValue &Vec = Node->getOperand(2);
-      const SDValue &Pointer = Node->getOperand(3);
-      const SDValue &Constant = Node->getOperand(4);
-
-      assert(Chain.getValueType() == MVT::Other);
-      (void)Intrinsic;
-      assert(Intrinsic.getOpcode() == ISD::TargetConstant &&
-             Constant.getOpcode() == ISD::Constant &&
-             "Invalid instruction operand.");
-
-      // Convert Constant to TargetConstant.
-      const ConstantInt *Val =
-          cast<ConstantSDNode>(Constant)->getConstantIntValue();
-      SDValue Imm =
-          CurDAG->getTargetConstant(*Val, DL, Constant.getValueType());
-
-      SmallVector<SDValue, 4> Ops{Vec, Pointer, Imm, Chain};
-
-      assert(Node->getNumValues() == 1);
-      assert(Node->getValueType(0) == MVT::Other);
-      SmallVector<EVT, 1> ResTys{Node->getValueType(0)};
-
-      ReplaceNode(Node, CurDAG->getMachineNode(Op, DL, ResTys, Ops));
-      return true;
-    }
     }
     break;
-  }
-
-  case MipsISD::FAbs: {
-    MVT ResTy = Node->getSimpleValueType(0);
-    assert((ResTy == MVT::f64 || ResTy == MVT::f32) &&
-           "Unsupported float type!");
-    unsigned Opc = 0;
-    if (ResTy == MVT::f64)
-      Opc = (Subtarget->isFP64bit() ? Mips::FABS_D64 : Mips::FABS_D32);
-    else
-      Opc = Mips::FABS_S;
-
-    if (Subtarget->inMicroMipsMode()) {
-      switch (Opc) {
-      case Mips::FABS_D64:
-        Opc = Mips::FABS_D64_MM;
-        break;
-      case Mips::FABS_D32:
-        Opc = Mips::FABS_D32_MM;
-        break;
-      case Mips::FABS_S:
-        Opc = Mips::FABS_S_MM;
-        break;
-      default:
-        llvm_unreachable("Unknown opcode for MIPS floating point abs!");
-      }
-    }
-
-    ReplaceNode(Node,
-                CurDAG->getMachineNode(Opc, DL, ResTy, Node->getOperand(0)));
-
-    return true;
   }
 
   // Manually match MipsISD::Ins nodes to get the correct instruction. It has
@@ -996,7 +891,7 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   // match the instruction.
   case MipsISD::Ins: {
 
-    // Validating the node operands.
+    // Sanity checking for the node operands.
     if (Node->getValueType(0) != MVT::i32 && Node->getValueType(0) != MVT::i64)
       return false;
 
@@ -1059,13 +954,12 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
     }
 
     SDNode *Rdhwr =
-        CurDAG->getMachineNode(RdhwrOpc, DL, Node->getValueType(0), MVT::Glue,
+        CurDAG->getMachineNode(RdhwrOpc, DL, Node->getValueType(0),
                                CurDAG->getRegister(Mips::HWR29, MVT::i32),
                                CurDAG->getTargetConstant(0, DL, MVT::i32));
     SDValue Chain = CurDAG->getCopyToReg(CurDAG->getEntryNode(), DL, DestReg,
-                                         SDValue(Rdhwr, 0), SDValue(Rdhwr, 1));
-    SDValue ResNode = CurDAG->getCopyFromReg(Chain, DL, DestReg, PtrVT,
-                                             Chain.getValue(1));
+                                         SDValue(Rdhwr, 0));
+    SDValue ResNode = CurDAG->getCopyFromReg(Chain, DL, DestReg, PtrVT);
     ReplaceNode(Node, ResNode.getNode());
     return true;
   }

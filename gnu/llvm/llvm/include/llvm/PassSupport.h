@@ -17,17 +17,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if !defined(LLVM_PASS_H) || defined(LLVM_PASSSUPPORT_H)
-#error "Do not include <PassSupport.h>; include <Pass.h> instead"
-#endif
-
 #ifndef LLVM_PASSSUPPORT_H
 #define LLVM_PASSSUPPORT_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/PassInfo.h"
 #include "llvm/PassRegistry.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/Threading.h"
 #include <functional>
 
@@ -78,21 +73,7 @@ class Pass;
   INITIALIZE_PASS_BEGIN(PassName, Arg, Name, Cfg, Analysis)                    \
   PassName::registerOptions();
 
-template <
-    class PassName,
-    std::enable_if_t<std::is_default_constructible<PassName>{}, bool> = true>
-Pass *callDefaultCtor() {
-  return new PassName();
-}
-
-template <
-    class PassName,
-    std::enable_if_t<!std::is_default_constructible<PassName>{}, bool> = true>
-Pass *callDefaultCtor() {
-  // Some codegen passes should only be testable via
-  // `llc -{start|stop}-{before|after}=<passname>`, not via `opt -<passname>`.
-  report_fatal_error("target-specific codegen-only pass");
-}
+template <typename PassName> Pass *callDefaultCtor() { return new PassName(); }
 
 //===---------------------------------------------------------------------------
 /// RegisterPass<t> template - This template class is used to notify the system

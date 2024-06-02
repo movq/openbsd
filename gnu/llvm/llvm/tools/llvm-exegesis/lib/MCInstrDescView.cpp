@@ -47,9 +47,9 @@ bool Operand::isUse() const { return !IsDef; }
 
 bool Operand::isReg() const { return Tracker; }
 
-bool Operand::isTied() const { return TiedToIndex.has_value(); }
+bool Operand::isTied() const { return TiedToIndex.hasValue(); }
 
-bool Operand::isVariable() const { return VariableIndex.has_value(); }
+bool Operand::isVariable() const { return VariableIndex.hasValue(); }
 
 bool Operand::isMemory() const {
   return isExplicit() &&
@@ -67,7 +67,7 @@ unsigned Operand::getVariableIndex() const { return *VariableIndex; }
 
 unsigned Operand::getImplicitReg() const {
   assert(ImplicitReg);
-  return ImplicitReg;
+  return *ImplicitReg;
 }
 
 const RegisterAliasingTracker &Operand::getRegisterAliasing() const {
@@ -111,7 +111,7 @@ Instruction::create(const MCInstrInfo &InstrInfo,
   SmallVector<Operand, 8> Operands;
   SmallVector<Variable, 4> Variables;
   for (; OpIndex < Description->getNumOperands(); ++OpIndex) {
-    const auto &OpInfo = Description->operands()[OpIndex];
+    const auto &OpInfo = Description->opInfo_begin()[OpIndex];
     Operand Operand;
     Operand.Index = OpIndex;
     Operand.IsDef = (OpIndex < Description->getNumDefs());
@@ -119,28 +119,28 @@ Instruction::create(const MCInstrInfo &InstrInfo,
     if (OpInfo.RegClass >= 0)
       Operand.Tracker = &RATC.getRegisterClass(OpInfo.RegClass);
     int TiedToIndex = Description->getOperandConstraint(OpIndex, MCOI::TIED_TO);
-    assert((TiedToIndex == -1 ||
-            (0 <= TiedToIndex &&
-             TiedToIndex < std::numeric_limits<uint8_t>::max())) &&
-           "Unknown Operand Constraint");
+    assert(TiedToIndex == -1 ||
+           TiedToIndex < std::numeric_limits<uint8_t>::max());
     if (TiedToIndex >= 0)
       Operand.TiedToIndex = TiedToIndex;
     Operand.Info = &OpInfo;
     Operands.push_back(Operand);
   }
-  for (MCPhysReg MCPhysReg : Description->implicit_defs()) {
+  for (const MCPhysReg *MCPhysReg = Description->getImplicitDefs();
+       MCPhysReg && *MCPhysReg; ++MCPhysReg, ++OpIndex) {
     Operand Operand;
-    Operand.Index = OpIndex++;
+    Operand.Index = OpIndex;
     Operand.IsDef = true;
-    Operand.Tracker = &RATC.getRegister(MCPhysReg);
+    Operand.Tracker = &RATC.getRegister(*MCPhysReg);
     Operand.ImplicitReg = MCPhysReg;
     Operands.push_back(Operand);
   }
-  for (MCPhysReg MCPhysReg : Description->implicit_uses()) {
+  for (const MCPhysReg *MCPhysReg = Description->getImplicitUses();
+       MCPhysReg && *MCPhysReg; ++MCPhysReg, ++OpIndex) {
     Operand Operand;
-    Operand.Index = OpIndex++;
+    Operand.Index = OpIndex;
     Operand.IsDef = false;
-    Operand.Tracker = &RATC.getRegister(MCPhysReg);
+    Operand.Tracker = &RATC.getRegister(*MCPhysReg);
     Operand.ImplicitReg = MCPhysReg;
     Operands.push_back(Operand);
   }
@@ -349,12 +349,10 @@ bool AliasingConfigurations::hasImplicitAliasing() const {
 }
 
 AliasingConfigurations::AliasingConfigurations(
-    const Instruction &DefInstruction, const Instruction &UseInstruction,
-    const BitVector &ForbiddenRegisters) {
-  auto CommonRegisters = UseInstruction.AllUseRegs;
-  CommonRegisters &= DefInstruction.AllDefRegs;
-  CommonRegisters.reset(ForbiddenRegisters);
-  if (!CommonRegisters.empty()) {
+    const Instruction &DefInstruction, const Instruction &UseInstruction) {
+  if (UseInstruction.AllUseRegs.anyCommon(DefInstruction.AllDefRegs)) {
+    auto CommonRegisters = UseInstruction.AllUseRegs;
+    CommonRegisters &= DefInstruction.AllDefRegs;
     for (const MCPhysReg Reg : CommonRegisters.set_bits()) {
       AliasingRegisterOperands ARO;
       addOperandIfAlias(Reg, true, DefInstruction.Operands, ARO.Defs);
@@ -374,10 +372,8 @@ void DumpMCOperand(const MCRegisterInfo &MCRegisterInfo, const MCOperand &Op,
     OS << MCRegisterInfo.getName(Op.getReg());
   else if (Op.isImm())
     OS << Op.getImm();
-  else if (Op.isDFPImm())
-    OS << bit_cast<double>(Op.getDFPImm());
-  else if (Op.isSFPImm())
-    OS << bit_cast<float>(Op.getSFPImm());
+  else if (Op.isFPImm())
+    OS << Op.getFPImm();
   else if (Op.isExpr())
     OS << "Expr";
   else if (Op.isInst())

@@ -26,11 +26,10 @@ namespace llvm {
 MachOYAML::LoadCommand::~LoadCommand() = default;
 
 bool MachOYAML::LinkEditData::isEmpty() const {
-  return 0 == RebaseOpcodes.size() + BindOpcodes.size() +
-                  WeakBindOpcodes.size() + LazyBindOpcodes.size() +
-                  ExportTrie.Children.size() + NameList.size() +
-                  StringTable.size() + FunctionStarts.size() +
-                  ChainedFixups.size() + DataInCode.size();
+  return 0 ==
+         RebaseOpcodes.size() + BindOpcodes.size() + WeakBindOpcodes.size() +
+             LazyBindOpcodes.size() + ExportTrie.Children.size() +
+             NameList.size() + StringTable.size();
 }
 
 namespace yaml {
@@ -108,12 +107,7 @@ void MappingTraits<MachOYAML::Object>::mapping(IO &IO,
   Object.DWARF.IsLittleEndian = Object.IsLittleEndian;
 
   IO.mapRequired("FileHeader", Object.Header);
-  Object.DWARF.Is64BitAddrSize = Object.Header.magic == MachO::MH_MAGIC_64 ||
-                                 Object.Header.magic == MachO::MH_CIGAM_64;
   IO.mapOptional("LoadCommands", Object.LoadCommands);
-
-  if (Object.RawLinkEditSegment || !IO.outputting())
-    IO.mapOptional("__LINKEDIT", Object.RawLinkEditSegment);
   if(!Object.LinkEdit.isEmpty() || !IO.outputting())
     IO.mapOptional("LinkEditData", Object.LinkEdit);
 
@@ -165,10 +159,6 @@ void MappingTraits<MachOYAML::LinkEditData>::mapping(
     IO.mapOptional("ExportTrie", LinkEditData.ExportTrie);
   IO.mapOptional("NameList", LinkEditData.NameList);
   IO.mapOptional("StringTable", LinkEditData.StringTable);
-  IO.mapOptional("IndirectSymbols", LinkEditData.IndirectSymbols);
-  IO.mapOptional("FunctionStarts", LinkEditData.FunctionStarts);
-  IO.mapOptional("ChainedFixups", LinkEditData.ChainedFixups);
-  IO.mapOptional("DataInCode", LinkEditData.DataInCode);
 }
 
 void MappingTraits<MachOYAML::RebaseOpcode>::mapping(
@@ -208,13 +198,6 @@ void MappingTraits<MachOYAML::NListEntry>::mapping(
   IO.mapRequired("n_value", NListEntry.n_value);
 }
 
-void MappingTraits<MachOYAML::DataInCodeEntry>::mapping(
-    IO &IO, MachOYAML::DataInCodeEntry &DataInCodeEntry) {
-  IO.mapRequired("Offset", DataInCodeEntry.Offset);
-  IO.mapRequired("Length", DataInCodeEntry.Length);
-  IO.mapRequired("Kind", DataInCodeEntry.Kind);
-}
-
 template <typename StructType>
 void mapLoadCommandData(IO &IO, MachOYAML::LoadCommand &LoadCommand) {}
 
@@ -233,43 +216,19 @@ void mapLoadCommandData<MachO::segment_command_64>(
 template <>
 void mapLoadCommandData<MachO::dylib_command>(
     IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
+  IO.mapOptional("PayloadString", LoadCommand.PayloadString);
 }
 
 template <>
 void mapLoadCommandData<MachO::rpath_command>(
     IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
+  IO.mapOptional("PayloadString", LoadCommand.PayloadString);
 }
 
 template <>
 void mapLoadCommandData<MachO::dylinker_command>(
     IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
-}
-
-template <>
-void mapLoadCommandData<MachO::sub_framework_command>(
-    IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
-}
-
-template <>
-void mapLoadCommandData<MachO::sub_umbrella_command>(
-    IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
-}
-
-template <>
-void mapLoadCommandData<MachO::sub_client_command>(
-    IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
-}
-
-template <>
-void mapLoadCommandData<MachO::sub_library_command>(
-    IO &IO, MachOYAML::LoadCommand &LoadCommand) {
-  IO.mapOptional("Content", LoadCommand.Content);
+  IO.mapOptional("PayloadString", LoadCommand.PayloadString);
 }
 
 template <>
@@ -314,18 +273,6 @@ void MappingTraits<MachO::dyld_info_command>::mapping(
   IO.mapRequired("export_size", LoadCommand.export_size);
 }
 
-void MappingTraits<MachOYAML::Relocation>::mapping(
-    IO &IO, MachOYAML::Relocation &Relocation) {
-  IO.mapRequired("address", Relocation.address);
-  IO.mapRequired("symbolnum", Relocation.symbolnum);
-  IO.mapRequired("pcrel", Relocation.is_pcrel);
-  IO.mapRequired("length", Relocation.length);
-  IO.mapRequired("extern", Relocation.is_extern);
-  IO.mapRequired("type", Relocation.type);
-  IO.mapRequired("scattered", Relocation.is_scattered);
-  IO.mapRequired("value", Relocation.value);
-}
-
 void MappingTraits<MachOYAML::Section>::mapping(IO &IO,
                                                 MachOYAML::Section &Section) {
   IO.mapRequired("sectname", Section.sectname);
@@ -341,15 +288,14 @@ void MappingTraits<MachOYAML::Section>::mapping(IO &IO,
   IO.mapRequired("reserved2", Section.reserved2);
   IO.mapOptional("reserved3", Section.reserved3);
   IO.mapOptional("content", Section.content);
-  IO.mapOptional("relocations", Section.relocations);
 }
 
-std::string
+StringRef
 MappingTraits<MachOYAML::Section>::validate(IO &IO,
                                             MachOYAML::Section &Section) {
   if (Section.content && Section.size < Section.content->binary_size())
     return "Section size must be greater than or equal to the content size";
-  return "";
+  return {};
 }
 
 void MappingTraits<MachO::build_tool_version>::mapping(
@@ -621,13 +567,6 @@ void MappingTraits<MachO::build_version_command>::mapping(
   IO.mapRequired("minos", LoadCommand.minos);
   IO.mapRequired("sdk", LoadCommand.sdk);
   IO.mapRequired("ntools", LoadCommand.ntools);
-}
-
-void MappingTraits<MachO::fileset_entry_command>::mapping(
-    IO &IO, MachO::fileset_entry_command &LoadCommand) {
-  IO.mapRequired("vmaddr", LoadCommand.vmaddr);
-  IO.mapRequired("fileoff", LoadCommand.fileoff);
-  IO.mapRequired("id", LoadCommand.entry_id);
 }
 
 } // end namespace yaml

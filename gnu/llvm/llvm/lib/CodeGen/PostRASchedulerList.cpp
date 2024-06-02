@@ -17,24 +17,28 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AggressiveAntiDepBreaker.h"
+#include "AntiDepBreaker.h"
+#include "CriticalAntiDepBreaker.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/CodeGen/AntiDepBreaker.h"
 #include "llvm/CodeGen/LatencyPriorityQueue.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/RegisterClassInfo.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
-#include "llvm/CodeGen/ScheduleDAGMutation.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
+#include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/InitializePasses.h"
-#include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -70,7 +74,7 @@ DebugMod("postra-sched-debugmod",
                       cl::desc("Debug control MBBs that are scheduled"),
                       cl::init(0), cl::Hidden);
 
-AntiDepBreaker::~AntiDepBreaker() = default;
+AntiDepBreaker::~AntiDepBreaker() { }
 
 namespace {
   class PostRAScheduler : public MachineFunctionPass {
@@ -137,7 +141,7 @@ namespace {
     ///
     /// This is the instruction number from the top of the current block, not
     /// the SlotIndex. It is only used by the AntiDepBreaker.
-    unsigned EndIndex = 0;
+    unsigned EndIndex;
 
   public:
     SchedulePostRATDList(
@@ -204,7 +208,7 @@ SchedulePostRATDList::SchedulePostRATDList(
     const RegisterClassInfo &RCI,
     TargetSubtargetInfo::AntiDepBreakMode AntiDepMode,
     SmallVectorImpl<const TargetRegisterClass *> &CriticalPathRCs)
-    : ScheduleDAGInstrs(MF, &MLI), AA(AA) {
+    : ScheduleDAGInstrs(MF, &MLI), AA(AA), EndIndex(0) {
 
   const InstrItineraryData *InstrItins =
       MF.getSubtarget().getInstrItineraryData();
@@ -216,11 +220,11 @@ SchedulePostRATDList::SchedulePostRATDList(
   assert((AntiDepMode == TargetSubtargetInfo::ANTIDEP_NONE ||
           MRI.tracksLiveness()) &&
          "Live-ins must be accurate for anti-dependency breaking");
-  AntiDepBreak = ((AntiDepMode == TargetSubtargetInfo::ANTIDEP_ALL)
-                      ? createAggressiveAntiDepBreaker(MF, RCI, CriticalPathRCs)
-                      : ((AntiDepMode == TargetSubtargetInfo::ANTIDEP_CRITICAL)
-                             ? createCriticalAntiDepBreaker(MF, RCI)
-                             : nullptr));
+  AntiDepBreak =
+    ((AntiDepMode == TargetSubtargetInfo::ANTIDEP_ALL) ?
+     (AntiDepBreaker *)new AggressiveAntiDepBreaker(MF, RCI, CriticalPathRCs) :
+     ((AntiDepMode == TargetSubtargetInfo::ANTIDEP_CRITICAL) ?
+      (AntiDepBreaker *)new CriticalAntiDepBreaker(MF, RCI) : nullptr));
 }
 
 SchedulePostRATDList::~SchedulePostRATDList() {
@@ -250,8 +254,8 @@ void SchedulePostRATDList::exitRegion() {
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 /// dumpSchedule - dump the scheduled Sequence.
 LLVM_DUMP_METHOD void SchedulePostRATDList::dumpSchedule() const {
-  for (const SUnit *SU : Sequence) {
-    if (SU)
+  for (unsigned i = 0, e = Sequence.size(); i != e; i++) {
+    if (SUnit *SU = Sequence[i])
       dumpNode(*SU);
     else
       dbgs() << "**** NOOP ****\n";
@@ -529,11 +533,11 @@ void SchedulePostRATDList::ListScheduleTopDown() {
   ReleaseSuccessors(&EntrySU);
 
   // Add all leaves to Available queue.
-  for (SUnit &SUnit : SUnits) {
+  for (unsigned i = 0, e = SUnits.size(); i != e; ++i) {
     // It is available if it has no predecessors.
-    if (!SUnit.NumPredsLeft && !SUnit.isAvailable) {
-      AvailableQueue.push(&SUnit);
-      SUnit.isAvailable = true;
+    if (!SUnits[i].NumPredsLeft && !SUnits[i].isAvailable) {
+      AvailableQueue.push(&SUnits[i]);
+      SUnits[i].isAvailable = true;
     }
   }
 
@@ -655,7 +659,10 @@ void SchedulePostRATDList::ListScheduleTopDown() {
 
 #ifndef NDEBUG
   unsigned ScheduledNodes = VerifyScheduledDAG(/*isBottomUp=*/false);
-  unsigned Noops = llvm::count(Sequence, nullptr);
+  unsigned Noops = 0;
+  for (unsigned i = 0, e = Sequence.size(); i != e; ++i)
+    if (!Sequence[i])
+      ++Noops;
   assert(Sequence.size() - Noops == ScheduledNodes &&
          "The number of nodes scheduled doesn't match the expected number!");
 #endif // NDEBUG

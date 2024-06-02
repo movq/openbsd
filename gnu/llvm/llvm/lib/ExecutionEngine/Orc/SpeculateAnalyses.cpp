@@ -67,7 +67,7 @@ void SpeculateQuery::findCalles(const BasicBlock *BB,
 }
 
 bool SpeculateQuery::isStraightLine(const Function &F) {
-  return llvm::all_of(F, [](const BasicBlock &BB) {
+  return llvm::all_of(F.getBasicBlockList(), [](const BasicBlock &BB) {
     return BB.getSingleSuccessor() != nullptr;
   });
 }
@@ -97,7 +97,7 @@ BlockFreqQuery::ResultTy BlockFreqQuery::operator()(Function &F) {
   auto IBBs = findBBwithCalls(F);
 
   if (IBBs.empty())
-    return std::nullopt;
+    return None;
 
   auto &BFI = FAM.getResult<BlockFrequencyAnalysis>(F);
 
@@ -106,10 +106,11 @@ BlockFreqQuery::ResultTy BlockFreqQuery::operator()(Function &F) {
 
   assert(IBBs.size() == BBFreqs.size() && "BB Count Mismatch");
 
-  llvm::sort(BBFreqs, [](decltype(BBFreqs)::const_reference BBF,
-                         decltype(BBFreqs)::const_reference BBS) {
-    return BBF.second > BBS.second ? true : false;
-  });
+  llvm::sort(BBFreqs.begin(), BBFreqs.end(),
+             [](decltype(BBFreqs)::const_reference BBF,
+                decltype(BBFreqs)::const_reference BBS) {
+               return BBF.second > BBS.second ? true : false;
+             });
 
   // ignoring number of direct calls in a BB
   auto Topk = numBBToGet(BBFreqs.size());
@@ -136,7 +137,7 @@ SequenceBBQuery::BlockListTy
 SequenceBBQuery::rearrangeBB(const Function &F, const BlockListTy &BBList) {
   BlockListTy RearrangedBBSet;
 
-  for (auto &Block : F)
+  for (auto &Block : F.getBasicBlockList())
     if (llvm::is_contained(BBList, &Block))
       RearrangedBBSet.push_back(&Block);
 
@@ -208,7 +209,7 @@ void SequenceBBQuery::traverseToExitBlock(const BasicBlock *AtBB,
     VisitedBlocks.insert(std::make_pair(AtBB, BlockHint));
   }
 
-  const_succ_iterator PIt = succ_begin(AtBB), EIt = succ_end(AtBB);
+  succ_const_iterator PIt = succ_begin(AtBB), EIt = succ_end(AtBB);
   if (PIt == EIt) // No succs.
     return;
 
@@ -288,14 +289,14 @@ SpeculateQuery::ResultTy SequenceBBQuery::operator()(Function &F) {
 
   CallerBlocks = findBBwithCalls(F);
   if (CallerBlocks.empty())
-    return std::nullopt;
+    return None;
 
   if (isStraightLine(F))
     SequencedBlocks = rearrangeBB(F, CallerBlocks);
   else
     SequencedBlocks = queryCFG(F, CallerBlocks);
 
-  for (const auto *BB : SequencedBlocks)
+  for (auto BB : SequencedBlocks)
     findCalles(BB, Calles);
 
   CallerAndCalles.insert({F.getName(), std::move(Calles)});

@@ -69,10 +69,10 @@ def CreateLLVMProjects(single_tree_checkout):
   # Projects that reside inside 'projects/' in a single source tree checkout.
   ORDINARY_PROJECTS = [
       "compiler-rt", "dragonegg", "libcxx", "libcxxabi", "libunwind",
-      "test-suite"
+      "parallel-libs", "test-suite"
   ]
   # Projects that reside inside 'tools/' in a single source tree checkout.
-  TOOLS_PROJECTS = ["clang", "lld", "lldb"]
+  TOOLS_PROJECTS = ["clang", "lld", "lldb", "llgo"]
 
   if single_tree_checkout:
     projects = [LLVMProject("llvm", "")]

@@ -50,6 +50,15 @@ extern char &LowerSwitchID;
 
 //===----------------------------------------------------------------------===//
 //
+// EntryExitInstrumenter pass - Instrument function entry/exit with calls to
+// mcount(), @__cyg_profile_func_{enter,exit} and the like. There are two
+// variants, intended to run pre- and post-inlining, respectively.
+//
+FunctionPass *createEntryExitInstrumenterPass();
+FunctionPass *createPostInlineEntryExitInstrumenterPass();
+
+//===----------------------------------------------------------------------===//
+//
 // BreakCriticalEdges - Break all of the critical edges in the CFG by inserting
 // a dummy basic block. This pass may be "required" by passes that cannot deal
 // with critical edges. For this usage, a pass must call:
@@ -102,7 +111,14 @@ extern char &LoopSimplifyID;
 
 /// This function returns a new pass that downgrades the debug info in the
 /// module to line tables only.
-ModulePass *createStripNonLineTableDebugLegacyPass();
+ModulePass *createStripNonLineTableDebugInfoPass();
+
+//===----------------------------------------------------------------------===//
+//
+// ControlHeightReudction - Merges conditional blocks of code and reduces the
+// number of conditional branches in the hot paths based on profiles.
+//
+FunctionPass *createControlHeightReductionLegacyPass();
 
 //===----------------------------------------------------------------------===//
 //
@@ -110,41 +126,6 @@ ModulePass *createStripNonLineTableDebugLegacyPass();
 // scalar-to-vector mappings from the TargetLibraryInfo.
 //
 FunctionPass *createInjectTLIMappingsLegacyPass();
-
-//===----------------------------------------------------------------------===//
-//
-// UnifyLoopExits - For each loop, creates a new block N such that all exiting
-// blocks branch to N, and then N distributes control flow to all the original
-// exit blocks.
-//
-FunctionPass *createUnifyLoopExitsPass();
-
-//===----------------------------------------------------------------------===//
-//
-// FixIrreducible - Convert each SCC with irreducible control-flow
-// into a natural loop.
-//
-FunctionPass *createFixIrreduciblePass();
-
-//===----------------------------------------------------------------------===//
-//
-// AssumeSimplify - remove redundant assumes and merge assumes in the same
-// BasicBlock when possible.
-//
-FunctionPass *createAssumeSimplifyPass();
-
-//===----------------------------------------------------------------------===//
-//
-// CanonicalizeFreezeInLoops - Canonicalize freeze instructions in loops so they
-// don't block SCEV.
-//
-Pass *createCanonicalizeFreezeInLoopsPass();
-
-//===----------------------------------------------------------------------===//
-// LowerGlobalDtorsLegacy - Lower @llvm.global_dtors by creating wrapper
-// functions that are registered in @llvm.global_ctors and which contain a call
-// to `__cxa_atexit` to register their destructor functions.
-ModulePass *createLowerGlobalDtorsLegacyPass();
-} // namespace llvm
+}
 
 #endif

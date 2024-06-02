@@ -84,6 +84,7 @@ public:
 
   /// Code Generation virtual methods...
   const MCPhysReg *getCalleeSavedRegs(const MachineFunction *MF) const override;
+  const MCPhysReg *getCalleeSavedRegsViaCopy(const MachineFunction *MF) const;
   const uint32_t *getCallPreservedMask(const MachineFunction &MF,
                                        CallingConv::ID CC) const override;
   const uint32_t *getNoPreservedMask() const override;
@@ -91,20 +92,7 @@ public:
   void adjustStackMapLiveOutMask(uint32_t *Mask) const override;
 
   BitVector getReservedRegs(const MachineFunction &MF) const override;
-  bool isAsmClobberable(const MachineFunction &MF,
-                        MCRegister PhysReg) const override;
-  bool isCallerPreservedPhysReg(MCRegister PhysReg,
-                                const MachineFunction &MF) const override;
-
-  // Provide hints to the register allocator for allocating subregisters
-  // of primed and unprimed accumulators. For example, if accumulator
-  // ACC5 is assigned, we also want to assign UACC5 to the input.
-  // Similarly if UACC5 is assigned, we want to assign VSRp10, VSRp11
-  // to its inputs.
-  bool getRegAllocationHints(Register VirtReg, ArrayRef<MCPhysReg> Order,
-                             SmallVectorImpl<MCPhysReg> &Hints,
-                             const MachineFunction &MF, const VirtRegMap *VRM,
-                             const LiveRegMatrix *Matrix) const override;
+  bool isCallerPreservedPhysReg(unsigned PhysReg, const MachineFunction &MF) const override;
 
   /// We require the register scavenger.
   bool requiresRegisterScavenging(const MachineFunction &MF) const override {
@@ -113,14 +101,16 @@ public:
 
   bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
 
-  bool requiresVirtualBaseRegisters(const MachineFunction &MF) const override;
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override {
+    return true;
+  }
+
+  bool requiresVirtualBaseRegisters(const MachineFunction &MF) const override {
+    return true;
+  }
 
   void lowerDynamicAlloc(MachineBasicBlock::iterator II) const;
   void lowerDynamicAreaOffset(MachineBasicBlock::iterator II) const;
-  void prepareDynamicAlloca(MachineBasicBlock::iterator II,
-                            Register &NegSizeReg, bool &KillNegSizeReg,
-                            Register &FramePointer) const;
-  void lowerPrepareProbedAlloca(MachineBasicBlock::iterator II) const;
   void lowerCRSpilling(MachineBasicBlock::iterator II,
                        unsigned FrameIndex) const;
   void lowerCRRestore(MachineBasicBlock::iterator II,
@@ -129,40 +119,25 @@ public:
                           unsigned FrameIndex) const;
   void lowerCRBitRestore(MachineBasicBlock::iterator II,
                          unsigned FrameIndex) const;
+  void lowerVRSAVESpilling(MachineBasicBlock::iterator II,
+                           unsigned FrameIndex) const;
+  void lowerVRSAVERestore(MachineBasicBlock::iterator II,
+                          unsigned FrameIndex) const;
 
-  void lowerOctWordSpilling(MachineBasicBlock::iterator II,
-                            unsigned FrameIndex) const;
-  void lowerACCSpilling(MachineBasicBlock::iterator II,
-                        unsigned FrameIndex) const;
-  void lowerACCRestore(MachineBasicBlock::iterator II,
-                       unsigned FrameIndex) const;
-
-  void lowerWACCSpilling(MachineBasicBlock::iterator II,
-                         unsigned FrameIndex) const;
-  void lowerWACCRestore(MachineBasicBlock::iterator II,
-                        unsigned FrameIndex) const;
-
-  void lowerQuadwordSpilling(MachineBasicBlock::iterator II,
-                             unsigned FrameIndex) const;
-  void lowerQuadwordRestore(MachineBasicBlock::iterator II,
-                            unsigned FrameIndex) const;
-
-  static void emitAccCopyInfo(MachineBasicBlock &MBB, MCRegister DestReg,
-                              MCRegister SrcReg);
-
-  bool hasReservedSpillSlot(const MachineFunction &MF, Register Reg,
+  bool hasReservedSpillSlot(const MachineFunction &MF, unsigned Reg,
                             int &FrameIdx) const override;
-  bool eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
+  void eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                            unsigned FIOperandNum,
                            RegScavenger *RS = nullptr) const override;
 
   // Support for virtual base registers.
   bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const override;
-  Register materializeFrameBaseRegister(MachineBasicBlock *MBB, int FrameIdx,
-                                        int64_t Offset) const override;
-  void resolveFrameIndex(MachineInstr &MI, Register BaseReg,
+  void materializeFrameBaseRegister(MachineBasicBlock *MBB,
+                                    unsigned BaseReg, int FrameIdx,
+                                    int64_t Offset) const override;
+  void resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
                          int64_t Offset) const override;
-  bool isFrameOffsetLegal(const MachineInstr *MI, Register BaseReg,
+  bool isFrameOffsetLegal(const MachineInstr *MI, unsigned BaseReg,
                           int64_t Offset) const override;
 
   // Debug information queries.
@@ -176,53 +151,17 @@ public:
   /// register name so that only the number is left.  Used by for linux asm.
   static const char *stripRegisterPrefix(const char *RegName) {
     switch (RegName[0]) {
-      case 'a':
-        if (RegName[1] == 'c' && RegName[2] == 'c')
-          return RegName + 3;
-      break;
       case 'r':
       case 'f':
+      case 'q': // for QPX
       case 'v':
-        if (RegName[1] == 's') {
-          if (RegName[2] == 'p')
-            return RegName + 3;
+        if (RegName[1] == 's')
           return RegName + 2;
-        }
         return RegName + 1;
-      case 'c':
-        if (RegName[1] == 'r')
-          return RegName + 2;
-        break;
-      case 'w':
-        // For wacc and wacc_hi
-        if (RegName[1] == 'a' && RegName[2] == 'c' && RegName[3] == 'c') {
-          if (RegName[4] == '_')
-            return RegName + 7;
-          else
-            return RegName + 4;
-        }
-        break;
-      case 'd':
-        // For dmr, dmrp, dmrrow, dmrrowp
-        if (RegName[1] == 'm' && RegName[2] == 'r') {
-          if (RegName[3] == 'r' && RegName[4] == 'o' && RegName[5] == 'w' &&
-              RegName[6] == 'p')
-            return RegName + 7;
-          else if (RegName[3] == 'r' && RegName[4] == 'o' && RegName[5] == 'w')
-            return RegName + 6;
-          else if (RegName[3] == 'p')
-            return RegName + 4;
-          else
-            return RegName + 3;
-        }
-        break;
+      case 'c': if (RegName[1] == 'r') return RegName + 2;
     }
 
     return RegName;
-  }
-
-  bool isNonallocatableRegisterCalleeSave(MCRegister Reg) const override {
-    return Reg == PPC::LR || Reg == PPC::LR8;
   }
 };
 

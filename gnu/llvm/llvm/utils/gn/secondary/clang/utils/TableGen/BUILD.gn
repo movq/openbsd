@@ -1,7 +1,5 @@
 executable("clang-tblgen") {
-  configs += [ "//llvm/utils/gn/build:clang_code" ]
   deps = [
-    "//clang/lib/Support",
     "//llvm/lib/Support",
     "//llvm/lib/TableGen",
   ]
@@ -19,12 +17,9 @@ executable("clang-tblgen") {
     "ClangOpenCLBuiltinEmitter.cpp",
     "ClangOptionDocEmitter.cpp",
     "ClangSACheckersEmitter.cpp",
-    "ClangSyntaxEmitter.cpp",
     "ClangTypeNodesEmitter.cpp",
     "MveEmitter.cpp",
     "NeonEmitter.cpp",
-    "RISCVVEmitter.cpp",
-    "SveEmitter.cpp",
     "TableGen.cpp",
   ]
 }

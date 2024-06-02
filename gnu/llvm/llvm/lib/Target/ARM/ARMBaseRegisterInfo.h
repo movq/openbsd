@@ -32,18 +32,15 @@ class LiveIntervals;
 namespace ARMRI {
 
   enum {
-    // Used for LDRD register pairs
     RegPairOdd  = 1,
-    RegPairEven = 2,
-    // Used to hint for lr in t2DoLoopStart
-    RegLR = 3
+    RegPairEven = 2
   };
 
 } // end namespace ARMRI
 
 /// isARMArea1Register - Returns true if the register is a low register (r0-r7)
 /// or a stack/pc register that we should push/pop.
-static inline bool isARMArea1Register(unsigned Reg, bool SplitFramePushPop) {
+static inline bool isARMArea1Register(unsigned Reg, bool isIOS) {
   using namespace ARM;
 
   switch (Reg) {
@@ -53,52 +50,25 @@ static inline bool isARMArea1Register(unsigned Reg, bool SplitFramePushPop) {
       return true;
     case R8:  case R9:  case R10: case R11: case R12:
       // For iOS we want r7 and lr to be next to each other.
-      return !SplitFramePushPop;
+      return !isIOS;
     default:
       return false;
   }
 }
 
-static inline bool isARMArea2Register(unsigned Reg, bool SplitFramePushPop) {
+static inline bool isARMArea2Register(unsigned Reg, bool isIOS) {
   using namespace ARM;
 
   switch (Reg) {
     case R8: case R9: case R10: case R11: case R12:
       // iOS has this second area.
-      return SplitFramePushPop;
+      return isIOS;
     default:
       return false;
   }
 }
 
-static inline bool isSplitFPArea1Register(unsigned Reg,
-                                          bool SplitFramePushPop) {
-  using namespace ARM;
-
-  switch (Reg) {
-    case R0:  case R1:  case R2:  case R3:
-    case R4:  case R5:  case R6:  case R7:
-    case R8:  case R9:  case R10: case R12:
-    case SP:  case PC:
-      return true;
-    default:
-      return false;
-  }
-}
-
-static inline bool isSplitFPArea2Register(unsigned Reg,
-                                          bool SplitFramePushPop) {
-  using namespace ARM;
-
-  switch (Reg) {
-    case R11: case LR:
-      return true;
-    default:
-      return false;
-  }
-}
-
-static inline bool isARMArea3Register(unsigned Reg, bool SplitFramePushPop) {
+static inline bool isARMArea3Register(unsigned Reg, bool isIOS) {
   using namespace ARM;
 
   switch (Reg) {
@@ -164,9 +134,7 @@ public:
 
   BitVector getReservedRegs(const MachineFunction &MF) const override;
   bool isAsmClobberable(const MachineFunction &MF,
-                       MCRegister PhysReg) const override;
-  bool isInlineAsmReadOnlyReg(const MachineFunction &MF,
-                              unsigned PhysReg) const override;
+                       unsigned PhysReg) const override;
 
   const TargetRegisterClass *
   getPointerRegClass(const MachineFunction &MF,
@@ -181,12 +149,14 @@ public:
   unsigned getRegPressureLimit(const TargetRegisterClass *RC,
                                MachineFunction &MF) const override;
 
-  bool getRegAllocationHints(Register VirtReg, ArrayRef<MCPhysReg> Order,
+  bool getRegAllocationHints(unsigned VirtReg,
+                             ArrayRef<MCPhysReg> Order,
                              SmallVectorImpl<MCPhysReg> &Hints,
-                             const MachineFunction &MF, const VirtRegMap *VRM,
+                             const MachineFunction &MF,
+                             const VirtRegMap *VRM,
                              const LiveRegMatrix *Matrix) const override;
 
-  void updateRegAllocHint(Register Reg, Register NewReg,
+  void updateRegAllocHint(unsigned Reg, unsigned NewReg,
                           MachineFunction &MF) const override;
 
   bool hasBasePointer(const MachineFunction &MF) const;
@@ -195,36 +165,40 @@ public:
   int64_t getFrameIndexInstrOffset(const MachineInstr *MI,
                                    int Idx) const override;
   bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const override;
-  Register materializeFrameBaseRegister(MachineBasicBlock *MBB, int FrameIdx,
-                                        int64_t Offset) const override;
-  void resolveFrameIndex(MachineInstr &MI, Register BaseReg,
+  void materializeFrameBaseRegister(MachineBasicBlock *MBB,
+                                    unsigned BaseReg, int FrameIdx,
+                                    int64_t Offset) const override;
+  void resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
                          int64_t Offset) const override;
-  bool isFrameOffsetLegal(const MachineInstr *MI, Register BaseReg,
+  bool isFrameOffsetLegal(const MachineInstr *MI, unsigned BaseReg,
                           int64_t Offset) const override;
 
   bool cannotEliminateFrame(const MachineFunction &MF) const;
 
   // Debug information queries.
   Register getFrameRegister(const MachineFunction &MF) const override;
-  Register getBaseRegister() const { return BasePtr; }
+  unsigned getBaseRegister() const { return BasePtr; }
+
 
   /// emitLoadConstPool - Emits a load from constpool to materialize the
   /// specified immediate.
   virtual void
   emitLoadConstPool(MachineBasicBlock &MBB, MachineBasicBlock::iterator &MBBI,
-                    const DebugLoc &dl, Register DestReg, unsigned SubIdx,
+                    const DebugLoc &dl, unsigned DestReg, unsigned SubIdx,
                     int Val, ARMCC::CondCodes Pred = ARMCC::AL,
-                    Register PredReg = Register(),
+                    unsigned PredReg = 0,
                     unsigned MIFlags = MachineInstr::NoFlags) const;
 
   /// Code Generation virtual methods...
   bool requiresRegisterScavenging(const MachineFunction &MF) const override;
 
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override;
+
   bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
 
   bool requiresVirtualBaseRegisters(const MachineFunction &MF) const override;
 
-  bool eliminateFrameIndex(MachineBasicBlock::iterator II,
+  void eliminateFrameIndex(MachineBasicBlock::iterator II,
                            int SPAdj, unsigned FIOperandNum,
                            RegScavenger *RS = nullptr) const override;
 
@@ -236,13 +210,6 @@ public:
                       unsigned DstSubReg,
                       const TargetRegisterClass *NewRC,
                       LiveIntervals &LIS) const override;
-
-  bool shouldRewriteCopySrc(const TargetRegisterClass *DefRC,
-                            unsigned DefSubReg,
-                            const TargetRegisterClass *SrcRC,
-                            unsigned SrcSubReg) const override;
-
-  int getSEHRegNum(unsigned i) const { return getEncodingValue(i); }
 };
 
 } // end namespace llvm

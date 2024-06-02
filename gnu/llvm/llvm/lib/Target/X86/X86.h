@@ -19,7 +19,9 @@
 namespace llvm {
 
 class FunctionPass;
+class ImmutablePass;
 class InstructionSelector;
+class ModulePass;
 class PassRegistry;
 class X86RegisterBankInfo;
 class X86Subtarget;
@@ -51,9 +53,6 @@ FunctionPass *createX86IssueVZeroUpperPass();
 /// destinations as part of CET IBT mechanism.
 FunctionPass *createX86IndirectBranchTrackingPass();
 
-/// This pass inserts KCFI checks before indirect calls.
-FunctionPass *createX86KCFIPass();
-
 /// Return a pass that pads short functions with NOOPs.
 /// This will prevent a stall when returning on the Atom.
 FunctionPass *createX86PadShortFunctions();
@@ -70,29 +69,17 @@ FunctionPass *createX86OptimizeLEAs();
 /// Return a pass that transforms setcc + movzx pairs into xor + setcc.
 FunctionPass *createX86FixupSetCC();
 
+/// Return a pass that folds conditional branch jumps.
+FunctionPass *createX86CondBrFolding();
+
 /// Return a pass that avoids creating store forward block issues in the hardware.
 FunctionPass *createX86AvoidStoreForwardingBlocks();
 
 /// Return a pass that lowers EFLAGS copy pseudo instructions.
 FunctionPass *createX86FlagsCopyLoweringPass();
 
-/// Return a pass that expands DynAlloca pseudo-instructions.
-FunctionPass *createX86DynAllocaExpander();
-
-/// Return a pass that config the tile registers.
-FunctionPass *createX86TileConfigPass();
-
-/// Return a pass that preconfig the tile registers before fast reg allocation.
-FunctionPass *createX86FastPreTileConfigPass();
-
-/// Return a pass that config the tile registers after fast reg allocation.
-FunctionPass *createX86FastTileConfigPass();
-
-/// Return a pass that insert pseudo tile config instruction.
-FunctionPass *createX86PreTileConfigPass();
-
-/// Return a pass that lower the tile copy instruction.
-FunctionPass *createX86LowerTileCopyPass();
+/// Return a pass that expands WinAlloca pseudo-instructions.
+FunctionPass *createX86WinAllocaExpander();
 
 /// Return a pass that inserts int3 at the end of the function if it ends with a
 /// CALL instruction. The pass does the same for each funclet as well. This
@@ -132,19 +119,12 @@ FunctionPass *createX86DomainReassignmentPass();
 /// ROP friendly instructions with alternatives.
 FunctionPass *createX86FixupGadgetsPass();
 
-/// Return a Machine Function pass that attempts to replace
-/// RET instructions with a cleaning sequence
-FunctionPass *createX86RetCleanPass();
-
 /// This pass replaces EVEX encoded of AVX-512 instructiosn by VEX
 /// encoding when possible in order to reduce code size.
 FunctionPass *createX86EvexToVexInsts();
 
 /// This pass creates the thunks for the retpoline feature.
-FunctionPass *createX86IndirectThunksPass();
-
-/// This pass replaces ret instructions with jmp's to __x86_return thunk.
-FunctionPass *createX86ReturnThunksPass();
+FunctionPass *createX86RetpolineThunksPass();
 
 /// This pass ensures instructions featuring a memory operand
 /// have distinctive <LineNumber, Discriminator> (with respect to eachother)
@@ -153,55 +133,27 @@ FunctionPass *createX86DiscriminateMemOpsPass();
 /// This pass applies profiling information to insert cache prefetches.
 FunctionPass *createX86InsertPrefetchPass();
 
-/// This pass insert wait instruction after X87 instructions which could raise
-/// fp exceptions when strict-fp enabled.
-FunctionPass *createX86InsertX87waitPass();
-
-/// This pass optimizes arithmetic based on knowledge that is only used by
-/// a reduction sequence and is therefore safe to reassociate in interesting
-/// ways.
-FunctionPass *createX86PartialReductionPass();
-
 InstructionSelector *createX86InstructionSelector(const X86TargetMachine &TM,
                                                   X86Subtarget &,
                                                   X86RegisterBankInfo &);
 
-FunctionPass *createX86LoadValueInjectionLoadHardeningPass();
-FunctionPass *createX86LoadValueInjectionRetHardeningPass();
 FunctionPass *createX86SpeculativeLoadHardeningPass();
-FunctionPass *createX86SpeculativeExecutionSideEffectSuppression();
 
 void initializeEvexToVexInstPassPass(PassRegistry &);
-void initializeFPSPass(PassRegistry &);
 void initializeFixupBWInstPassPass(PassRegistry &);
 void initializeFixupLEAPassPass(PassRegistry &);
+void initializeFPSPass(PassRegistry &);
 void initializeWinEHStatePassPass(PassRegistry &);
 void initializeX86AvoidSFBPassPass(PassRegistry &);
-void initializeX86AvoidTrailingCallPassPass(PassRegistry &);
 void initializeX86CallFrameOptimizationPass(PassRegistry &);
 void initializeX86CmovConverterPassPass(PassRegistry &);
-void initializeX86DAGToDAGISelPass(PassRegistry &);
+void initializeX86CondBrFoldingPassPass(PassRegistry &);
 void initializeX86DomainReassignmentPass(PassRegistry &);
 void initializeX86ExecutionDomainFixPass(PassRegistry &);
 void initializeX86ExpandPseudoPass(PassRegistry &);
-void initializeX86FastPreTileConfigPass(PassRegistry &);
-void initializeX86FastTileConfigPass(PassRegistry &);
-void initializeX86FixupSetCCPassPass(PassRegistry &);
 void initializeX86FlagsCopyLoweringPassPass(PassRegistry &);
-void initializeX86KCFIPass(PassRegistry &);
-void initializeX86LoadValueInjectionLoadHardeningPassPass(PassRegistry &);
-void initializeX86LoadValueInjectionRetHardeningPassPass(PassRegistry &);
-void initializeX86LowerAMXIntrinsicsLegacyPassPass(PassRegistry &);
-void initializeX86LowerAMXTypeLegacyPassPass(PassRegistry &);
-void initializeX86LowerTileCopyPass(PassRegistry &);
 void initializeX86OptimizeLEAPassPass(PassRegistry &);
-void initializeX86PartialReductionPass(PassRegistry &);
-void initializeX86PreAMXConfigPassPass(PassRegistry &);
-void initializeX86PreTileConfigPass(PassRegistry &);
-void initializeX86ReturnThunksPass(PassRegistry &);
-void initializeX86SpeculativeExecutionSideEffectSuppressionPass(PassRegistry &);
 void initializeX86SpeculativeLoadHardeningPassPass(PassRegistry &);
-void initializeX86TileConfigPass(PassRegistry &);
 
 namespace X86AS {
 enum : unsigned {

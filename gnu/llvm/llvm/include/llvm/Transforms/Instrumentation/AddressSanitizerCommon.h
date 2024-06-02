@@ -1,8 +1,9 @@
 //===--------- Definition of the AddressSanitizer class ---------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -13,11 +14,7 @@
 #ifndef LLVM_TRANSFORMS_INSTRUMENTATION_ADDRESSSANITIZERCOMMON_H
 #define LLVM_TRANSFORMS_INSTRUMENTATION_ADDRESSSANITIZERCOMMON_H
 
-#include "llvm/Analysis/CFG.h"
-#include "llvm/Analysis/PostDominators.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instruction.h"
-#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 
 namespace llvm {
@@ -46,11 +43,6 @@ public:
 
   Value *getPtr() { return PtrUse->get(); }
 };
-
-// Get AddressSanitizer parameters.
-void getAddressSanitizerParams(const Triple &TargetTriple, int LongSize,
-                               bool IsKasan, uint64_t *ShadowBase,
-                               int *MappingScale, bool *OrShadowOffset);
 
 } // namespace llvm
 

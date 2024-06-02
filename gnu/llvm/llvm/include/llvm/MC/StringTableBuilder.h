@@ -12,7 +12,6 @@
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Alignment.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -23,30 +22,20 @@ class raw_ostream;
 /// Utility for building string tables with deduplicated suffixes.
 class StringTableBuilder {
 public:
-  enum Kind {
-    ELF,
-    WinCOFF,
-    MachO,
-    MachO64,
-    MachOLinked,
-    MachO64Linked,
-    RAW,
-    DWARF,
-    XCOFF
-  };
+  enum Kind { ELF, WinCOFF, MachO, RAW, DWARF, XCOFF };
 
 private:
   DenseMap<CachedHashStringRef, size_t> StringIndexMap;
   size_t Size = 0;
   Kind K;
-  Align Alignment;
+  unsigned Alignment;
   bool Finalized = false;
 
   void finalizeStringTable(bool Optimize);
   void initSize();
 
 public:
-  StringTableBuilder(Kind K, Align Alignment = Align(1));
+  StringTableBuilder(Kind K, unsigned Alignment = 1);
   ~StringTableBuilder();
 
   /// Add a string to the builder. Returns the position of S in the
@@ -70,22 +59,13 @@ public:
     return getOffset(CachedHashStringRef(S));
   }
 
-  /// Check if a string is contained in the string table. Since this class
-  /// doesn't store the string values, this function can be used to check if
-  /// storage needs to be done prior to adding the string.
-  bool contains(StringRef S) const {
-    return contains(CachedHashStringRef(S));
-  }
-  bool contains(CachedHashStringRef S) const {
-    return StringIndexMap.count(S);
-  }
-
   size_t getSize() const { return Size; }
   void clear();
 
   void write(raw_ostream &OS) const;
   void write(uint8_t *Buf) const;
 
+private:
   bool isFinalized() const { return Finalized; }
 };
 

@@ -105,7 +105,7 @@ BugDriver::deleteInstructionFromProgram(const Instruction *I,
     TheInst->replaceAllUsesWith(Constant::getNullValue(TheInst->getType()));
 
   // Remove the instruction from the program.
-  TheInst->eraseFromParent();
+  TheInst->getParent()->getInstList().erase(TheInst);
 
   // Spiff up the output a little bit.
   std::vector<std::string> Passes;
@@ -386,7 +386,7 @@ BugDriver::extractMappedBlocksFromModule(const std::vector<BasicBlock *> &BBs,
   for (Function &F : *M)
     for (BasicBlock &BB : F)
       // Check if this block is going to be extracted.
-      if (!llvm::is_contained(BBs, &BB))
+      if (std::find(BBs.begin(), BBs.end(), &BB) == BBs.end())
         BlocksToExtract.push_back(&BB);
 
   raw_fd_ostream OS(Temp->FD, /*shouldClose*/ false);

@@ -6,15 +6,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFO_PDB_NATIVE_DBIMODULEDESCRIPTORBUILDER_H
-#define LLVM_DEBUGINFO_PDB_NATIVE_DBIMODULEDESCRIPTORBUILDER_H
+#ifndef LLVM_DEBUGINFO_PDB_RAW_DBIMODULEDESCRIPTORBUILDER_H
+#define LLVM_DEBUGINFO_PDB_RAW_DBIMODULEDESCRIPTORBUILDER_H
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CVRecord.h"
+#include "llvm/DebugInfo/CodeView/DebugChecksumsSubsection.h"
+#include "llvm/DebugInfo/CodeView/DebugInlineeLinesSubsection.h"
+#include "llvm/DebugInfo/CodeView/DebugLinesSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsectionRecord.h"
+#include "llvm/DebugInfo/CodeView/SymbolRecord.h"
 #include "llvm/DebugInfo/PDB/Native/RawTypes.h"
-#include "llvm/Support/BinaryStreamRef.h"
 #include "llvm/Support/Error.h"
 #include <cstdint>
 #include <string>
@@ -22,8 +23,9 @@
 
 namespace llvm {
 class BinaryStreamWriter;
+
 namespace codeview {
-class DebugSubsection;
+class DebugSubsectionRecordBuilder;
 }
 
 namespace msf {
@@ -31,34 +33,6 @@ class MSFBuilder;
 struct MSFLayout;
 }
 namespace pdb {
-
-// Represents merged or unmerged symbols. Merged symbols can be written to the
-// output file as is, but unmerged symbols must be rewritten first. In either
-// case, the size must be known up front.
-struct SymbolListWrapper {
-  explicit SymbolListWrapper(ArrayRef<uint8_t> Syms)
-      : SymPtr(const_cast<uint8_t *>(Syms.data())), SymSize(Syms.size()),
-        NeedsToBeMerged(false) {}
-  explicit SymbolListWrapper(void *SymSrc, uint32_t Length)
-      : SymPtr(SymSrc), SymSize(Length), NeedsToBeMerged(true) {}
-
-  ArrayRef<uint8_t> asArray() const {
-    return ArrayRef<uint8_t>(static_cast<const uint8_t *>(SymPtr), SymSize);
-  }
-
-  uint32_t size() const { return SymSize; }
-
-  void *SymPtr = nullptr;
-  uint32_t SymSize = 0;
-  bool NeedsToBeMerged = false;
-};
-
-/// Represents a string table reference at some offset in the module symbol
-/// stream.
-struct StringTableFixup {
-  uint32_t StrTabOffset = 0;
-  uint32_t SymOffsetOfReference = 0;
-};
 
 class DbiModuleDescriptorBuilder {
   friend class DbiStreamBuilder;
@@ -74,27 +48,9 @@ public:
 
   void setPdbFilePathNI(uint32_t NI);
   void setObjFileName(StringRef Name);
-
-  // Callback to merge one source of unmerged symbols.
-  using MergeSymbolsCallback = Error (*)(void *Ctx, void *Symbols,
-                                         BinaryStreamWriter &Writer);
-
-  void setMergeSymbolsCallback(void *Ctx, MergeSymbolsCallback Callback) {
-    MergeSymsCtx = Ctx;
-    MergeSymsCallback = Callback;
-  }
-
-  void setStringTableFixups(std::vector<StringTableFixup> &&Fixups) {
-    StringTableFixups = std::move(Fixups);
-  }
-
   void setFirstSectionContrib(const SectionContrib &SC);
   void addSymbol(codeview::CVSymbol Symbol);
   void addSymbolsInBulk(ArrayRef<uint8_t> BulkSymbols);
-
-  // Add symbols of known size which will be merged (rewritten) when committing
-  // the PDB to disk.
-  void addUnmergedSymbols(void *SymSrc, uint32_t SymLength);
 
   void
   addDebugSubsection(std::shared_ptr<codeview::DebugSubsection> Subsection);
@@ -108,7 +64,9 @@ public:
 
   unsigned getModuleIndex() const { return Layout.Mod; }
 
-  ArrayRef<std::string> source_files() const { return SourceFiles; }
+  ArrayRef<std::string> source_files() const {
+    return makeArrayRef(SourceFiles);
+  }
 
   uint32_t calculateSerializedLength() const;
 
@@ -119,14 +77,8 @@ public:
   void finalize();
   Error finalizeMsfLayout();
 
-  /// Commit the DBI descriptor to the DBI stream.
-  Error commit(BinaryStreamWriter &ModiWriter);
-
-  /// Commit the accumulated symbols to the module symbol stream. Safe to call
-  /// in parallel on different DbiModuleDescriptorBuilder objects. Only modifies
-  /// the pre-allocated stream in question.
-  Error commitSymbolStream(const msf::MSFLayout &MsfLayout,
-                           WritableBinaryStreamRef MsfBuffer);
+  Error commit(BinaryStreamWriter &ModiWriter, const msf::MSFLayout &MsfLayout,
+               WritableBinaryStreamRef MsfBuffer);
 
 private:
   uint32_t calculateC13DebugInfoSize() const;
@@ -139,14 +91,10 @@ private:
   std::string ModuleName;
   std::string ObjFileName;
   std::vector<std::string> SourceFiles;
-  std::vector<SymbolListWrapper> Symbols;
+  std::vector<ArrayRef<uint8_t>> Symbols;
 
-  void *MergeSymsCtx = nullptr;
-  MergeSymbolsCallback MergeSymsCallback = nullptr;
-
-  std::vector<StringTableFixup> StringTableFixups;
-
-  std::vector<codeview::DebugSubsectionRecordBuilder> C13Builders;
+  std::vector<std::unique_ptr<codeview::DebugSubsectionRecordBuilder>>
+      C13Builders;
 
   ModuleInfoHeader Layout;
 };
@@ -155,4 +103,4 @@ private:
 
 } // end namespace llvm
 
-#endif // LLVM_DEBUGINFO_PDB_NATIVE_DBIMODULEDESCRIPTORBUILDER_H
+#endif // LLVM_DEBUGINFO_PDB_RAW_DBIMODULEDESCRIPTORBUILDER_H

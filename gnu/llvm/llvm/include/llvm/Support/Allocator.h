@@ -7,30 +7,111 @@
 //===----------------------------------------------------------------------===//
 /// \file
 ///
-/// This file defines the BumpPtrAllocator interface. BumpPtrAllocator conforms
-/// to the LLVM "Allocator" concept and is similar to MallocAllocator, but
-/// objects cannot be deallocated. Their lifetime is tied to the lifetime of the
-/// allocator.
+/// This file defines the MallocAllocator and BumpPtrAllocator interfaces. Both
+/// of these conform to an LLVM "Allocator" concept which consists of an
+/// Allocate method accepting a size and alignment, and a Deallocate accepting
+/// a pointer and size. Further, the LLVM "Allocator" concept has overloads of
+/// Allocate and Deallocate for setting size and alignment based on the final
+/// type. These overloads are typically provided by a base class template \c
+/// AllocatorBase.
 ///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_SUPPORT_ALLOCATOR_H
 #define LLVM_SUPPORT_ALLOCATOR_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Alignment.h"
-#include "llvm/Support/AllocatorBase.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/MemAlloc.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iterator>
-#include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace llvm {
+
+/// CRTP base class providing obvious overloads for the core \c
+/// Allocate() methods of LLVM-style allocators.
+///
+/// This base class both documents the full public interface exposed by all
+/// LLVM-style allocators, and redirects all of the overloads to a single core
+/// set of methods which the derived class must define.
+template <typename DerivedT> class AllocatorBase {
+public:
+  /// Allocate \a Size bytes of \a Alignment aligned memory. This method
+  /// must be implemented by \c DerivedT.
+  void *Allocate(size_t Size, size_t Alignment) {
+#ifdef __clang__
+    static_assert(static_cast<void *(AllocatorBase::*)(size_t, size_t)>(
+                      &AllocatorBase::Allocate) !=
+                      static_cast<void *(DerivedT::*)(size_t, size_t)>(
+                          &DerivedT::Allocate),
+                  "Class derives from AllocatorBase without implementing the "
+                  "core Allocate(size_t, size_t) overload!");
+#endif
+    return static_cast<DerivedT *>(this)->Allocate(Size, Alignment);
+  }
+
+  /// Deallocate \a Ptr to \a Size bytes of memory allocated by this
+  /// allocator.
+  void Deallocate(const void *Ptr, size_t Size) {
+#ifdef __clang__
+    static_assert(static_cast<void (AllocatorBase::*)(const void *, size_t)>(
+                      &AllocatorBase::Deallocate) !=
+                      static_cast<void (DerivedT::*)(const void *, size_t)>(
+                          &DerivedT::Deallocate),
+                  "Class derives from AllocatorBase without implementing the "
+                  "core Deallocate(void *) overload!");
+#endif
+    return static_cast<DerivedT *>(this)->Deallocate(Ptr, Size);
+  }
+
+  // The rest of these methods are helpers that redirect to one of the above
+  // core methods.
+
+  /// Allocate space for a sequence of objects without constructing them.
+  template <typename T> T *Allocate(size_t Num = 1) {
+    return static_cast<T *>(Allocate(Num * sizeof(T), alignof(T)));
+  }
+
+  /// Deallocate space for a sequence of objects without constructing them.
+  template <typename T>
+  typename std::enable_if<
+      !std::is_same<typename std::remove_cv<T>::type, void>::value, void>::type
+  Deallocate(T *Ptr, size_t Num = 1) {
+    Deallocate(static_cast<const void *>(Ptr), Num * sizeof(T));
+  }
+};
+
+class MallocAllocator : public AllocatorBase<MallocAllocator> {
+public:
+  void Reset() {}
+
+  LLVM_ATTRIBUTE_RETURNS_NONNULL void *Allocate(size_t Size,
+                                                size_t /*Alignment*/) {
+    return safe_malloc(Size);
+  }
+
+  // Pull in base class overloads.
+  using AllocatorBase<MallocAllocator>::Allocate;
+
+  void Deallocate(const void *Ptr, size_t /*Size*/) {
+    free(const_cast<void *>(Ptr));
+  }
+
+  // Pull in base class overloads.
+  using AllocatorBase<MallocAllocator>::Deallocate;
+
+  void PrintStats() const {}
+};
 
 namespace detail {
 
@@ -55,39 +136,30 @@ void printBumpPtrAllocatorStats(unsigned NumSlabs, size_t BytesAllocated,
 /// The BumpPtrAllocatorImpl template defaults to using a MallocAllocator
 /// object, which wraps malloc, to allocate memory, but it can be changed to
 /// use a custom allocator.
-///
-/// The GrowthDelay specifies after how many allocated slabs the allocator
-/// increases the size of the slabs.
 template <typename AllocatorT = MallocAllocator, size_t SlabSize = 4096,
-          size_t SizeThreshold = SlabSize, size_t GrowthDelay = 128>
+          size_t SizeThreshold = SlabSize>
 class BumpPtrAllocatorImpl
-    : public AllocatorBase<BumpPtrAllocatorImpl<AllocatorT, SlabSize,
-                                                SizeThreshold, GrowthDelay>>,
-      private detail::AllocatorHolder<AllocatorT> {
-  using AllocTy = detail::AllocatorHolder<AllocatorT>;
-
+    : public AllocatorBase<
+          BumpPtrAllocatorImpl<AllocatorT, SlabSize, SizeThreshold>> {
 public:
   static_assert(SizeThreshold <= SlabSize,
                 "The SizeThreshold must be at most the SlabSize to ensure "
                 "that objects larger than a slab go into their own memory "
                 "allocation.");
-  static_assert(GrowthDelay > 0,
-                "GrowthDelay must be at least 1 which already increases the"
-                "slab size after each allocated slab.");
 
   BumpPtrAllocatorImpl() = default;
 
   template <typename T>
   BumpPtrAllocatorImpl(T &&Allocator)
-      : AllocTy(std::forward<T &&>(Allocator)) {}
+      : Allocator(std::forward<T &&>(Allocator)) {}
 
   // Manually implement a move constructor as we must clear the old allocator's
   // slabs as a matter of correctness.
   BumpPtrAllocatorImpl(BumpPtrAllocatorImpl &&Old)
-      : AllocTy(std::move(Old.getAllocator())), CurPtr(Old.CurPtr),
-        End(Old.End), Slabs(std::move(Old.Slabs)),
+      : CurPtr(Old.CurPtr), End(Old.End), Slabs(std::move(Old.Slabs)),
         CustomSizedSlabs(std::move(Old.CustomSizedSlabs)),
-        BytesAllocated(Old.BytesAllocated), RedZoneSize(Old.RedZoneSize) {
+        BytesAllocated(Old.BytesAllocated), RedZoneSize(Old.RedZoneSize),
+        Allocator(std::move(Old.Allocator)) {
     Old.CurPtr = Old.End = nullptr;
     Old.BytesAllocated = 0;
     Old.Slabs.clear();
@@ -109,7 +181,7 @@ public:
     RedZoneSize = RHS.RedZoneSize;
     Slabs = std::move(RHS.Slabs);
     CustomSizedSlabs = std::move(RHS.CustomSizedSlabs);
-    AllocTy::operator=(std::move(RHS.getAllocator()));
+    Allocator = std::move(RHS.Allocator);
 
     RHS.CurPtr = RHS.End = nullptr;
     RHS.BytesAllocated = 0;
@@ -139,13 +211,8 @@ public:
   }
 
   /// Allocate space at the specified alignment.
-  // This method is *not* marked noalias, because
-  // SpecificBumpPtrAllocator::DestroyAll() loops over all allocations, and
-  // that loop is not based on the Allocate() return value.
-  //
-  // Allocate(0, N) is valid, it returns a non-null pointer (which should not
-  // be dereferenced).
-  LLVM_ATTRIBUTE_RETURNS_NONNULL void *Allocate(size_t Size, Align Alignment) {
+  LLVM_ATTRIBUTE_RETURNS_NONNULL LLVM_ATTRIBUTE_RETURNS_NOALIAS void *
+  Allocate(size_t Size, Align Alignment) {
     // Keep track of how many bytes we've allocated.
     BytesAllocated += Size;
 
@@ -159,9 +226,7 @@ public:
 #endif
 
     // Check if we have enough space.
-    if (Adjustment + SizeToAllocate <= size_t(End - CurPtr)
-        // We can't return nullptr even for a zero-sized allocation!
-        && CurPtr != nullptr) {
+    if (Adjustment + SizeToAllocate <= size_t(End - CurPtr)) {
       char *AlignedPtr = CurPtr + Adjustment;
       CurPtr = AlignedPtr + SizeToAllocate;
       // Update the allocation point of this memory block in MemorySanitizer.
@@ -176,8 +241,7 @@ public:
     // If Size is really big, allocate a separate slab for it.
     size_t PaddedSize = SizeToAllocate + Alignment.value() - 1;
     if (PaddedSize > SizeThreshold) {
-      void *NewSlab =
-          this->getAllocator().Allocate(PaddedSize, alignof(std::max_align_t));
+      void *NewSlab = Allocator.Allocate(PaddedSize, 0);
       // We own the new slab and don't want anyone reading anyting other than
       // pieces returned from this method.  So poison the whole slab.
       __asan_poison_memory_region(NewSlab, PaddedSize);
@@ -203,7 +267,7 @@ public:
     return AlignedPtr;
   }
 
-  inline LLVM_ATTRIBUTE_RETURNS_NONNULL void *
+  inline LLVM_ATTRIBUTE_RETURNS_NONNULL LLVM_ATTRIBUTE_RETURNS_NOALIAS void *
   Allocate(size_t Size, size_t Alignment) {
     assert(Alignment > 0 && "0-byte alignment is not allowed. Use 1 instead.");
     return Allocate(Size, Align(Alignment));
@@ -215,7 +279,7 @@ public:
   // Bump pointer allocators are expected to never free their storage; and
   // clients expect pointers to remain valid for non-dereferencing uses even
   // after deallocation.
-  void Deallocate(const void *Ptr, size_t Size, size_t /*Alignment*/) {
+  void Deallocate(const void *Ptr, size_t Size) {
     __asan_poison_memory_region(Ptr, Size);
   }
 
@@ -229,7 +293,7 @@ public:
   /// The returned value is negative iff the object is inside a custom-size
   /// slab.
   /// Returns an empty optional if the pointer is not found in the allocator.
-  std::optional<int64_t> identifyObject(const void *Ptr) {
+  llvm::Optional<int64_t> identifyObject(const void *Ptr) {
     const char *P = static_cast<const char *>(Ptr);
     int64_t InSlabIdx = 0;
     for (size_t Idx = 0, E = Slabs.size(); Idx < E; Idx++) {
@@ -248,7 +312,7 @@ public:
         return InCustomSizedSlabIdx - static_cast<int64_t>(P - S);
       InCustomSizedSlabIdx -= static_cast<int64_t>(Size);
     }
-    return std::nullopt;
+    return None;
   }
 
   /// A wrapper around identifyObject that additionally asserts that
@@ -256,7 +320,7 @@ public:
   /// \return An index uniquely and reproducibly identifying
   /// an input pointer \p Ptr in the given allocator.
   int64_t identifyKnownObject(const void *Ptr) {
-    std::optional<int64_t> Out = identifyObject(Ptr);
+    Optional<int64_t> Out = identifyObject(Ptr);
     assert(Out && "Wrong allocator used");
     return *Out;
   }
@@ -282,7 +346,7 @@ public:
     size_t TotalMemory = 0;
     for (auto I = Slabs.begin(), E = Slabs.end(); I != E; ++I)
       TotalMemory += computeSlabSize(std::distance(Slabs.begin(), I));
-    for (const auto &PtrAndSize : CustomSizedSlabs)
+    for (auto &PtrAndSize : CustomSizedSlabs)
       TotalMemory += PtrAndSize.second;
     return TotalMemory;
   }
@@ -322,13 +386,15 @@ private:
   /// a sanitizer.
   size_t RedZoneSize = 1;
 
+  /// The allocator instance we use to get slabs of memory.
+  AllocatorT Allocator;
+
   static size_t computeSlabSize(unsigned SlabIdx) {
     // Scale the actual allocated slab size based on the number of slabs
-    // allocated. Every GrowthDelay slabs allocated, we double
-    // the allocated size to reduce allocation frequency, but saturate at
-    // multiplying the slab size by 2^30.
-    return SlabSize *
-           ((size_t)1 << std::min<size_t>(30, SlabIdx / GrowthDelay));
+    // allocated. Every 128 slabs allocated, we double the allocated size to
+    // reduce allocation frequency, but saturate at multiplying the slab size by
+    // 2^30.
+    return SlabSize * ((size_t)1 << std::min<size_t>(30, SlabIdx / 128));
   }
 
   /// Allocate a new slab and move the bump pointers over into the new
@@ -336,8 +402,7 @@ private:
   void StartNewSlab() {
     size_t AllocatedSlabSize = computeSlabSize(Slabs.size());
 
-    void *NewSlab = this->getAllocator().Allocate(AllocatedSlabSize,
-                                                  alignof(std::max_align_t));
+    void *NewSlab = Allocator.Allocate(AllocatedSlabSize, 0);
     // We own the new slab and don't want anyone reading anything other than
     // pieces returned from this method.  So poison the whole slab.
     __asan_poison_memory_region(NewSlab, AllocatedSlabSize);
@@ -353,8 +418,7 @@ private:
     for (; I != E; ++I) {
       size_t AllocatedSlabSize =
           computeSlabSize(std::distance(Slabs.begin(), I));
-      this->getAllocator().Deallocate(*I, AllocatedSlabSize,
-                                      alignof(std::max_align_t));
+      Allocator.Deallocate(*I, AllocatedSlabSize);
     }
   }
 
@@ -363,7 +427,7 @@ private:
     for (auto &PtrAndSize : CustomSizedSlabs) {
       void *Ptr = PtrAndSize.first;
       size_t Size = PtrAndSize.second;
-      this->getAllocator().Deallocate(Ptr, Size, alignof(std::max_align_t));
+      Allocator.Deallocate(Ptr, Size);
     }
   }
 
@@ -434,21 +498,26 @@ public:
 
 } // end namespace llvm
 
-template <typename AllocatorT, size_t SlabSize, size_t SizeThreshold,
-          size_t GrowthDelay>
-void *
-operator new(size_t Size,
-             llvm::BumpPtrAllocatorImpl<AllocatorT, SlabSize, SizeThreshold,
-                                        GrowthDelay> &Allocator) {
-  return Allocator.Allocate(Size, std::min((size_t)llvm::NextPowerOf2(Size),
-                                           alignof(std::max_align_t)));
+template <typename AllocatorT, size_t SlabSize, size_t SizeThreshold>
+void *operator new(size_t Size,
+                   llvm::BumpPtrAllocatorImpl<AllocatorT, SlabSize,
+                                              SizeThreshold> &Allocator) {
+  struct S {
+    char c;
+    union {
+      double D;
+      long double LD;
+      long long L;
+      void *P;
+    } x;
+  };
+  return Allocator.Allocate(
+      Size, std::min((size_t)llvm::NextPowerOf2(Size), offsetof(S, x)));
 }
 
-template <typename AllocatorT, size_t SlabSize, size_t SizeThreshold,
-          size_t GrowthDelay>
-void operator delete(void *,
-                     llvm::BumpPtrAllocatorImpl<AllocatorT, SlabSize,
-                                                SizeThreshold, GrowthDelay> &) {
+template <typename AllocatorT, size_t SlabSize, size_t SizeThreshold>
+void operator delete(
+    void *, llvm::BumpPtrAllocatorImpl<AllocatorT, SlabSize, SizeThreshold> &) {
 }
 
 #endif // LLVM_SUPPORT_ALLOCATOR_H

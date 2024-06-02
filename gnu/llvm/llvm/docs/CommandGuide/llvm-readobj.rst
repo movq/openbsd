@@ -14,7 +14,7 @@ DESCRIPTION
 The :program:`llvm-readobj` tool displays low-level format-specific information
 about one or more object files.
 
-If ``input`` is "``-``", :program:`llvm-readobj` reads from standard
+If ``input`` is "``-``" or omitted, :program:`llvm-readobj` reads from standard
 input. Otherwise, it will read from the specified ``filenames``.
 
 DIFFERENCES TO LLVM-READELF
@@ -56,23 +56,31 @@ file formats.
 
  Display the address-significance table.
 
+.. option:: --color
+
+ Use colors in the output for warnings and errors.
+
 .. option:: --expand-relocs
 
- When used with :option:`--relocs`, display each relocation in an expanded
+ When used with :option:`--relocations`, display each relocation in an expanded
  multi-line format.
 
-.. option:: --file-header, -h
+.. option:: --file-headers, -h
 
  Display file headers.
 
 .. option:: --headers, -e
 
- Equivalent to setting: :option:`--file-header`, :option:`--program-headers`,
+ Equivalent to setting: :option:`--file-headers`, :option:`--program-headers`,
  and :option:`--sections`.
 
 .. option:: --help
 
  Display a summary of command line options.
+
+.. option:: --help-list
+
+ Display an uncategorized summary of command line options.
 
 .. option:: --hex-dump=<section[,section,...]>, -x
 
@@ -87,7 +95,7 @@ file formats.
 
  Display the relocation entries in the file.
 
-.. option:: --sections, --section-headers, -S
+.. option:: --sections, --section-headers, -s, -S
 
  Display all sections.
 
@@ -106,10 +114,6 @@ file formats.
  When used with :option:`--sections`, display symbols for each section shown.
  This option has no effect for GNU style output.
 
-.. option:: --sort-symbols=<sort_key[,sort_key]>
-
- Specify the keys to sort symbols before displaying symtab.
- Valid values for sort_key are ``name`` and ``type``.
 .. option:: --stackmap
 
  Display contents of the stackmap section.
@@ -119,11 +123,7 @@ file formats.
  Display the specified section(s) as a list of strings. ``section`` may be a
  section index or section name.
 
-.. option:: --string-table
-
- Display contents of the string table.
-
-.. option:: --symbols, --syms, -s
+.. option:: --symbols, --syms, -t
 
  Display the symbol table.
 
@@ -148,11 +148,6 @@ The following options are implemented only for the ELF file format.
 
  Display architecture-specific information, e.g. the ARM attributes section on ARM.
 
-.. option:: --bb-addr-map
-
- Display the contents of the basic block address map section(s), which contain the
- address of each function, along with the relative offset of each basic block.
-
 .. option:: --demangle, -C
 
  Display demangled symbol names in the output.
@@ -173,11 +168,11 @@ The following options are implemented only for the ELF file format.
 
  Display the dynamic table.
 
-.. option:: --cg-profile
+.. option:: --elf-cg-profile
 
  Display the callgraph profile section.
 
-.. option:: --histogram, -I
+.. option:: --elf-hash-histogram, --histogram, -I
 
  Display a bucket list histogram for dynamic symbol hash tables.
 
@@ -187,12 +182,11 @@ The following options are implemented only for the ELF file format.
 
 .. option:: --elf-output-style=<value>
 
- Format ELF information in the specified style. Valid options are ``LLVM``,
- ``GNU``, and ``JSON``. ``LLVM`` output (the default) is an expanded and
- structured format. ``GNU`` output mimics the equivalent GNU :program:`readelf`
- output. ``JSON`` is JSON formatted output intended for machine consumption.
+ Format ELF information in the specified style. Valid options are ``LLVM`` and
+ ``GNU``. ``LLVM`` output (the default) is an expanded and structured format,
+ whilst ``GNU`` output mimics the equivalent GNU :program:`readelf` output.
 
-.. option:: --section-groups, -g
+.. option:: --elf-section-groups, --section-groups, -g
 
  Display section groups.
 
@@ -211,11 +205,6 @@ The following options are implemented only for the ELF file format.
 .. option:: --notes, -n
 
  Display all notes.
-
-.. option:: --pretty-print
-
- When used with :option:`--elf-output-style`, JSON output will be formatted in
- a more readable format.
 
 .. option:: --program-headers, --segments, -l
 
@@ -297,10 +286,6 @@ The following options are implemented only for the PE/COFF file format.
 
  Display the debug directory.
 
-.. option:: --coff-tls-directory
-
- Display the TLS directory.
-
 .. option:: --coff-directives
 
  Display the .drectve section.
@@ -320,31 +305,6 @@ The following options are implemented only for the PE/COFF file format.
 .. option:: --coff-resources
 
  Display the .rsrc section.
-
-XCOFF SPECIFIC OPTIONS
-----------------------
-
-The following options are implemented only for the XCOFF file format.
-
-.. option:: --auxiliary-header
-
-  Display XCOFF Auxiliary header.
-
-.. option:: --exception-section
-
-  Display XCOFF exception section entries.
-
-.. option:: --loader-section-header
-
-  Display XCOFF loader section header.
-
-.. option:: --loader-section-symbols
-
-  Display symbol table of loader section.
-
-.. option:: --loader-section-relocations
-
-  Display relocation entries of loader section.
 
 EXIT STATUS
 -----------

@@ -31,25 +31,41 @@
 #ifndef LLVM_ANALYSIS_MEMORYSSAUPDATER_H
 #define LLVM_ANALYSIS_MEMORYSSAUPDATER_H
 
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/MemorySSA.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFGDiff.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/OperandTraits.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Use.h"
+#include "llvm/IR/User.h"
+#include "llvm/IR/Value.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/IR/ValueMap.h"
-#include "llvm/Support/CFGDiff.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
 
 namespace llvm {
 
-class BasicBlock;
-class DominatorTree;
+class Function;
 class Instruction;
-class LoopBlocksRPO;
-template <typename T, unsigned int N> class SmallSetVector;
+class MemoryAccess;
+class LLVMContext;
+class raw_ostream;
 
 using ValueToValueMapTy = ValueMap<const Value *, WeakTrackingVH>;
 using PhiToDefMap = SmallDenseMap<MemoryPhi *, MemoryAccess *>;
 using CFGUpdate = cfg::Update<BasicBlock *>;
+using GraphDiffInvBBPair =
+    std::pair<const GraphDiff<BasicBlock *> *, Inverse<BasicBlock *>>;
 
 class MemorySSAUpdater {
 private:
@@ -117,11 +133,8 @@ public:
       ArrayRef<BasicBlock *> ExitBlocks,
       ArrayRef<std::unique_ptr<ValueToValueMapTy>> VMaps, DominatorTree &DT);
 
-  /// Apply CFG updates, analogous with the DT edge updates. By default, the
-  /// DT is assumed to be already up to date. If UpdateDTFirst is true, first
-  /// update the DT with the same updates.
-  void applyUpdates(ArrayRef<CFGUpdate> Updates, DominatorTree &DT,
-                    bool UpdateDTFirst = false);
+  /// Apply CFG updates, analogous with the DT edge updates.
+  void applyUpdates(ArrayRef<CFGUpdate> Updates, DominatorTree &DT);
   /// Apply CFG insert updates, analogous with the DT edge updates.
   void applyInsertUpdates(ArrayRef<CFGUpdate> Updates, DominatorTree &DT);
 
@@ -237,6 +250,11 @@ public:
   /// I's block that follow I (inclusive), and update the Phis in the blocks'
   /// successors.
   void changeToUnreachable(const Instruction *I);
+
+  /// Conditional branch BI is changed or replaced with an unconditional branch
+  /// to `To`. Update Phis in BI's successors to remove BI's BB.
+  void changeCondBranchToUnconditionalTo(const BranchInst *BI,
+                                         const BasicBlock *To);
 
   /// Get handle on MemorySSA.
   MemorySSA* getMemorySSA() const { return MSSA; }

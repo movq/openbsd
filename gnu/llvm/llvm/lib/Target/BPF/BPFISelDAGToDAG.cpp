@@ -34,7 +34,6 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "bpf-isel"
-#define PASS_NAME "BPF DAG->DAG Pattern Instruction Selection"
 
 // Instruction Selector Implementation
 namespace {
@@ -46,12 +45,12 @@ class BPFDAGToDAGISel : public SelectionDAGISel {
   const BPFSubtarget *Subtarget;
 
 public:
-  static char ID;
-
-  BPFDAGToDAGISel() = delete;
-
   explicit BPFDAGToDAGISel(BPFTargetMachine &TM)
-      : SelectionDAGISel(ID, TM), Subtarget(nullptr) {}
+      : SelectionDAGISel(TM), Subtarget(nullptr) {}
+
+  StringRef getPassName() const override {
+    return "BPF DAG->DAG Pattern Instruction Selection";
+  }
 
   bool runOnMachineFunction(MachineFunction &MF) override {
     // Reset the subtarget each time through.
@@ -97,15 +96,11 @@ private:
 };
 } // namespace
 
-char BPFDAGToDAGISel::ID = 0;
-
-INITIALIZE_PASS(BPFDAGToDAGISel, DEBUG_TYPE, PASS_NAME, false, false)
-
 // ComplexPattern used on BPF Load/Store instructions
 bool BPFDAGToDAGISel::SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
   // if Address is FI, get the TargetFrameIndex.
   SDLoc DL(Addr);
-  if (auto *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
+  if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
     Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i64);
     Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
     return true;
@@ -117,10 +112,12 @@ bool BPFDAGToDAGISel::SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
 
   // Addresses of the form Addr+const or Addr|const
   if (CurDAG->isBaseWithConstantOffset(Addr)) {
-    auto *CN = cast<ConstantSDNode>(Addr.getOperand(1));
+    ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Addr.getOperand(1));
     if (isInt<16>(CN->getSExtValue())) {
+
       // If the first operand is a FI, get the TargetFI Node
-      if (auto *FIN = dyn_cast<FrameIndexSDNode>(Addr.getOperand(0)))
+      if (FrameIndexSDNode *FIN =
+              dyn_cast<FrameIndexSDNode>(Addr.getOperand(0)))
         Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i64);
       else
         Base = Addr.getOperand(0);
@@ -144,10 +141,11 @@ bool BPFDAGToDAGISel::SelectFIAddr(SDValue Addr, SDValue &Base,
     return false;
 
   // Addresses of the form Addr+const or Addr|const
-  auto *CN = cast<ConstantSDNode>(Addr.getOperand(1));
+  ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Addr.getOperand(1));
   if (isInt<16>(CN->getSExtValue())) {
+
     // If the first operand is a FI, get the TargetFI Node
-    if (auto *FIN = dyn_cast<FrameIndexSDNode>(Addr.getOperand(0)))
+    if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(Addr.getOperand(0)))
       Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i64);
     else
       return false;
@@ -256,7 +254,7 @@ void BPFDAGToDAGISel::PreprocessLoad(SDNode *Node,
   const LoadSDNode *LD = cast<LoadSDNode>(Node);
   uint64_t size = LD->getMemOperand()->getSize();
 
-  if (!size || size > 8 || (size & (size - 1)) || !LD->isSimple())
+  if (!size || size > 8 || (size & (size - 1)))
     return;
 
   SDNode *LDAddrNode = LD->getOperand(1).getNode();
@@ -306,7 +304,7 @@ void BPFDAGToDAGISel::PreprocessLoad(SDNode *Node,
 
   LLVM_DEBUG(dbgs() << "Replacing load of size " << size << " with constant "
                     << val << '\n');
-  SDValue NVal = CurDAG->getConstant(val, DL, LD->getValueType(0));
+  SDValue NVal = CurDAG->getConstant(val, DL, MVT::i64);
 
   // After replacement, the current node is dead, we need to
   // go backward one step to make iterator still work
@@ -344,7 +342,7 @@ bool BPFDAGToDAGISel::getConstantFieldValue(const GlobalAddressSDNode *Node,
                                             unsigned char *ByteSeq) {
   const GlobalVariable *V = dyn_cast<GlobalVariable>(Node->getGlobal());
 
-  if (!V || !V->hasInitializer() || !V->isConstant())
+  if (!V || !V->hasInitializer())
     return false;
 
   const Constant *Init = V->getInitializer();
@@ -496,6 +494,8 @@ void BPFDAGToDAGISel::PreprocessTrunc(SDNode *Node,
   CurDAG->ReplaceAllUsesWith(SDValue(Node, 0), BaseV);
   I++;
   CurDAG->DeleteNode(Node);
+
+  return;
 }
 
 FunctionPass *llvm::createBPFISelDag(BPFTargetMachine &TM) {

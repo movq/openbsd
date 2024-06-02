@@ -16,9 +16,9 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/TextAPI/Architecture.h"
+#include "llvm/TextAPI/ArchitectureSet.h"
 #include "llvm/TextAPI/InterfaceFile.h"
-#include "llvm/TextAPI/Platform.h"
-#include "llvm/TextAPI/Target.h"
+#include "llvm/TextAPI/PackedVersion.h"
 
 using UUID = std::pair<llvm::MachO::Target, std::string>;
 
@@ -28,11 +28,6 @@ LLVM_YAML_IS_FLOW_SEQUENCE_VECTOR(UUID)
 LLVM_YAML_IS_FLOW_SEQUENCE_VECTOR(FlowStringRef)
 
 namespace llvm {
-
-namespace MachO {
-    class ArchitectureSet;
-    class PackedVersion;
-}
 namespace yaml {
 
 template <> struct ScalarTraits<FlowStringRef> {

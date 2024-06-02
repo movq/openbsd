@@ -25,15 +25,21 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <deque>
+#include <vector>
+
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
+#include "llvm/PassRegistry.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include <deque>
 
 using namespace llvm;
 
@@ -90,7 +96,7 @@ private:
   LaneBitmask transferUsedLanes(const MachineInstr &MI, LaneBitmask UsedLanes,
                                 const MachineOperand &MO) const;
 
-  std::pair<bool, bool> runOnce(MachineFunction &MF);
+  bool runOnce(MachineFunction &MF);
 
   LaneBitmask determineInitialDefinedLanes(unsigned Reg);
   LaneBitmask determineInitialUsedLanes(unsigned Reg);
@@ -189,7 +195,7 @@ void DetectDeadLanes::addUsedLanesOnOperand(const MachineOperand &MO,
   if (!MO.readsReg())
     return;
   Register MOReg = MO.getReg();
-  if (!MOReg.isVirtual())
+  if (!Register::isVirtualRegister(MOReg))
     return;
 
   unsigned MOSubReg = MO.getSubReg();
@@ -213,7 +219,7 @@ void DetectDeadLanes::addUsedLanesOnOperand(const MachineOperand &MO,
 void DetectDeadLanes::transferUsedLanesStep(const MachineInstr &MI,
                                             LaneBitmask UsedLanes) {
   for (const MachineOperand &MO : MI.uses()) {
-    if (!MO.isReg() || !MO.getReg().isVirtual())
+    if (!MO.isReg() || !Register::isVirtualRegister(MO.getReg()))
       continue;
     LaneBitmask UsedOnMO = transferUsedLanes(MI, UsedLanes, MO);
     addUsedLanesOnOperand(MO, UsedOnMO);
@@ -280,7 +286,7 @@ void DetectDeadLanes::transferDefinedLanesStep(const MachineOperand &Use,
     return;
   const MachineOperand &Def = *MI.defs().begin();
   Register DefReg = Def.getReg();
-  if (!DefReg.isVirtual())
+  if (!Register::isVirtualRegister(DefReg))
     return;
   unsigned DefRegIdx = Register::virtReg2Index(DefReg);
   if (!DefinedByCopy.test(DefRegIdx))
@@ -376,12 +382,12 @@ LaneBitmask DetectDeadLanes::determineInitialDefinedLanes(unsigned Reg) {
         continue;
 
       LaneBitmask MODefinedLanes;
-      if (MOReg.isPhysical()) {
+      if (Register::isPhysicalRegister(MOReg)) {
         MODefinedLanes = LaneBitmask::getAll();
       } else if (isCrossCopy(*MRI, DefMI, DefRC, MO)) {
         MODefinedLanes = LaneBitmask::getAll();
       } else {
-        assert(MOReg.isVirtual());
+        assert(Register::isVirtualRegister(MOReg));
         if (MRI->hasOneDef(MOReg)) {
           const MachineOperand &MODef = *MRI->def_begin(MOReg);
           const MachineInstr &MODefMI = *MODef.getParent();
@@ -425,7 +431,7 @@ LaneBitmask DetectDeadLanes::determineInitialUsedLanes(unsigned Reg) {
       Register DefReg = Def.getReg();
       // The used lanes of COPY-like instruction operands are determined by the
       // following dataflow analysis.
-      if (DefReg.isVirtual()) {
+      if (Register::isVirtualRegister(DefReg)) {
         // But ignore copies across incompatible register classes.
         bool CrossCopy = false;
         if (lowersToCopies(UseMI)) {
@@ -465,7 +471,7 @@ bool DetectDeadLanes::isUndefInput(const MachineOperand &MO,
     return false;
   const MachineOperand &Def = MI.getOperand(0);
   Register DefReg = Def.getReg();
-  if (!DefReg.isVirtual())
+  if (!Register::isVirtualRegister(DefReg))
     return false;
   unsigned DefRegIdx = Register::virtReg2Index(DefReg);
   if (!DefinedByCopy.test(DefRegIdx))
@@ -477,18 +483,18 @@ bool DetectDeadLanes::isUndefInput(const MachineOperand &MO,
     return false;
 
   Register MOReg = MO.getReg();
-  if (MOReg.isVirtual()) {
+  if (Register::isVirtualRegister(MOReg)) {
     const TargetRegisterClass *DstRC = MRI->getRegClass(DefReg);
     *CrossCopy = isCrossCopy(*MRI, MI, DstRC, MO);
   }
   return true;
 }
 
-std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
+bool DetectDeadLanes::runOnce(MachineFunction &MF) {
   // First pass: Populate defs/uses of vregs with initial values
   unsigned NumVirtRegs = MRI->getNumVirtRegs();
   for (unsigned RegIdx = 0; RegIdx < NumVirtRegs; ++RegIdx) {
-    Register Reg = Register::index2VirtReg(RegIdx);
+    unsigned Reg = Register::index2VirtReg(RegIdx);
 
     // Determine used/defined lanes and add copy instructions to worklist.
     VRegInfo &Info = VRegInfos[RegIdx];
@@ -502,7 +508,7 @@ std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
     Worklist.pop_front();
     WorklistMembers.reset(RegIdx);
     VRegInfo &Info = VRegInfos[RegIdx];
-    Register Reg = Register::index2VirtReg(RegIdx);
+    unsigned Reg = Register::index2VirtReg(RegIdx);
 
     // Transfer UsedLanes to operands of DefMI (backwards dataflow).
     MachineOperand &Def = *MRI->def_begin(Reg);
@@ -513,19 +519,16 @@ std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
       transferDefinedLanesStep(MO, Info.DefinedLanes);
   }
 
-  LLVM_DEBUG({
-    dbgs() << "Defined/Used lanes:\n";
-    for (unsigned RegIdx = 0; RegIdx < NumVirtRegs; ++RegIdx) {
-      Register Reg = Register::index2VirtReg(RegIdx);
-      const VRegInfo &Info = VRegInfos[RegIdx];
-      dbgs() << printReg(Reg, nullptr)
-             << " Used: " << PrintLaneMask(Info.UsedLanes)
-             << " Def: " << PrintLaneMask(Info.DefinedLanes) << '\n';
-    }
-    dbgs() << "\n";
-  });
+  LLVM_DEBUG(dbgs() << "Defined/Used lanes:\n"; for (unsigned RegIdx = 0;
+                                                     RegIdx < NumVirtRegs;
+                                                     ++RegIdx) {
+    unsigned Reg = Register::index2VirtReg(RegIdx);
+    const VRegInfo &Info = VRegInfos[RegIdx];
+    dbgs() << printReg(Reg, nullptr)
+           << " Used: " << PrintLaneMask(Info.UsedLanes)
+           << " Def: " << PrintLaneMask(Info.DefinedLanes) << '\n';
+  } dbgs() << "\n";);
 
-  bool Changed = false;
   bool Again = false;
   // Mark operands as dead/unused.
   for (MachineBasicBlock &MBB : MF) {
@@ -534,7 +537,7 @@ std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
         if (!MO.isReg())
           continue;
         Register Reg = MO.getReg();
-        if (!Reg.isVirtual())
+        if (!Register::isVirtualRegister(Reg))
           continue;
         unsigned RegIdx = Register::virtReg2Index(Reg);
         const VRegInfo &RegInfo = VRegInfos[RegIdx];
@@ -542,7 +545,6 @@ std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
           LLVM_DEBUG(dbgs()
                      << "Marking operand '" << MO << "' as dead in " << MI);
           MO.setIsDead();
-          Changed = true;
         }
         if (MO.readsReg()) {
           bool CrossCopy = false;
@@ -550,12 +552,10 @@ std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
             LLVM_DEBUG(dbgs()
                        << "Marking operand '" << MO << "' as undef in " << MI);
             MO.setIsUndef();
-            Changed = true;
           } else if (isUndefInput(MO, &CrossCopy)) {
             LLVM_DEBUG(dbgs()
                        << "Marking operand '" << MO << "' as undef in " << MI);
             MO.setIsUndef();
-            Changed = true;
             if (CrossCopy)
               Again = true;
           }
@@ -564,7 +564,7 @@ std::pair<bool, bool> DetectDeadLanes::runOnce(MachineFunction &MF) {
     }
   }
 
-  return std::make_pair(Changed, Again);
+  return Again;
 }
 
 bool DetectDeadLanes::runOnMachineFunction(MachineFunction &MF) {
@@ -586,16 +586,13 @@ bool DetectDeadLanes::runOnMachineFunction(MachineFunction &MF) {
   WorklistMembers.resize(NumVirtRegs);
   DefinedByCopy.resize(NumVirtRegs);
 
-  bool Changed = false;
   bool Again;
   do {
-    bool LocalChanged;
-    std::tie(LocalChanged, Again) = runOnce(MF);
-    Changed |= LocalChanged;
+    Again = runOnce(MF);
   } while(Again);
 
   DefinedByCopy.clear();
   WorklistMembers.clear();
   delete[] VRegInfos;
-  return Changed;
+  return true;
 }

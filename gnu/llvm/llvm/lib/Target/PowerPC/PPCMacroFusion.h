@@ -11,9 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_POWERPC_PPCMACROFUSION_H
-#define LLVM_LIB_TARGET_POWERPC_PPCMACROFUSION_H
-
 #include "llvm/CodeGen/MachineScheduler.h"
 
 namespace llvm {
@@ -23,5 +20,3 @@ namespace llvm {
 /// to PPCPassConfig::createMachineScheduler() to have an effect.
 std::unique_ptr<ScheduleDAGMutation> createPowerPCMacroFusionDAGMutation();
 } // llvm
-
-#endif // LLVM_LIB_TARGET_POWERPC_PPCMACROFUSION_H

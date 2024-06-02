@@ -23,36 +23,26 @@ struct CoverageViewOptions {
     Lcov
   };
 
-  enum class BranchOutputType { Count, Percent, Off };
-
   bool Debug;
   bool Colors;
   bool ShowLineNumbers;
   bool ShowLineStats;
   bool ShowRegionMarkers;
-  bool ShowBranchCounts;
-  bool ShowBranchPercents;
   bool ShowExpandedRegions;
   bool ShowFunctionInstantiations;
   bool ShowFullFilenames;
-  bool ShowBranchSummary;
   bool ShowRegionSummary;
   bool ShowInstantiationSummary;
   bool ExportSummaryOnly;
   bool SkipExpansions;
   bool SkipFunctions;
-  bool SkipBranches;
   OutputFormat Format;
-  BranchOutputType ShowBranches;
   std::string ShowOutputDirectory;
   std::vector<std::string> DemanglerOpts;
   uint32_t TabSize;
   std::string ProjectTitle;
   std::string CreatedTimeStr;
   unsigned NumThreads;
-  std::string CompilationDirectory;
-  float HighCovWatermark;
-  float LowCovWatermark;
 
   /// Change the output's stream color if the colors are enabled.
   ColoredRawOstream colored_ostream(raw_ostream &OS,

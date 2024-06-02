@@ -18,7 +18,6 @@
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
-#include "llvm/ExecutionEngine/Orc/ExecutorProcessControl.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
 #include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
@@ -32,65 +31,53 @@ namespace orc {
 
 class KaleidoscopeJIT {
 private:
-  std::unique_ptr<ExecutionSession> ES;
+  ExecutionSession ES;
+  RTDyldObjectLinkingLayer ObjectLayer;
+  IRCompileLayer CompileLayer;
 
   DataLayout DL;
   MangleAndInterner Mangle;
-
-  RTDyldObjectLinkingLayer ObjectLayer;
-  IRCompileLayer CompileLayer;
+  ThreadSafeContext Ctx;
 
   JITDylib &MainJD;
 
 public:
-  KaleidoscopeJIT(std::unique_ptr<ExecutionSession> ES,
-                  JITTargetMachineBuilder JTMB, DataLayout DL)
-      : ES(std::move(ES)), DL(std::move(DL)), Mangle(*this->ES, this->DL),
-        ObjectLayer(*this->ES,
+  KaleidoscopeJIT(JITTargetMachineBuilder JTMB, DataLayout DL)
+      : ObjectLayer(ES,
                     []() { return std::make_unique<SectionMemoryManager>(); }),
-        CompileLayer(*this->ES, ObjectLayer,
+        CompileLayer(ES, ObjectLayer,
                      std::make_unique<ConcurrentIRCompiler>(std::move(JTMB))),
-        MainJD(this->ES->createBareJITDylib("<main>")) {
+        DL(std::move(DL)), Mangle(ES, this->DL),
+        Ctx(std::make_unique<LLVMContext>()),
+        MainJD(ES.createJITDylib("<main>")) {
     MainJD.addGenerator(
         cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(
             DL.getGlobalPrefix())));
   }
 
-  ~KaleidoscopeJIT() {
-    if (auto Err = ES->endSession())
-      ES->reportError(std::move(Err));
-  }
-
   static Expected<std::unique_ptr<KaleidoscopeJIT>> Create() {
-    auto EPC = SelfExecutorProcessControl::Create();
-    if (!EPC)
-      return EPC.takeError();
+    auto JTMB = JITTargetMachineBuilder::detectHost();
 
-    auto ES = std::make_unique<ExecutionSession>(std::move(*EPC));
+    if (!JTMB)
+      return JTMB.takeError();
 
-    JITTargetMachineBuilder JTMB(
-        ES->getExecutorProcessControl().getTargetTriple());
-
-    auto DL = JTMB.getDefaultDataLayoutForTarget();
+    auto DL = JTMB->getDefaultDataLayoutForTarget();
     if (!DL)
       return DL.takeError();
 
-    return std::make_unique<KaleidoscopeJIT>(std::move(ES), std::move(JTMB),
-                                             std::move(*DL));
+    return std::make_unique<KaleidoscopeJIT>(std::move(*JTMB), std::move(*DL));
   }
 
   const DataLayout &getDataLayout() const { return DL; }
 
-  JITDylib &getMainJITDylib() { return MainJD; }
+  LLVMContext &getContext() { return *Ctx.getContext(); }
 
-  Error addModule(ThreadSafeModule TSM, ResourceTrackerSP RT = nullptr) {
-    if (!RT)
-      RT = MainJD.getDefaultResourceTracker();
-    return CompileLayer.add(RT, std::move(TSM));
+  Error addModule(std::unique_ptr<Module> M) {
+    return CompileLayer.add(MainJD, ThreadSafeModule(std::move(M), Ctx));
   }
 
   Expected<JITEvaluatedSymbol> lookup(StringRef Name) {
-    return ES->lookup({&MainJD}, Mangle(Name.str()));
+    return ES.lookup({&MainJD}, Mangle(Name.str()));
   }
 };
 

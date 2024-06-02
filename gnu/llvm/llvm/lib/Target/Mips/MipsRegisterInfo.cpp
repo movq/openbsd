@@ -159,8 +159,8 @@ getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
   const MipsSubtarget &Subtarget = MF.getSubtarget<MipsSubtarget>();
 
-  for (MCPhysReg R : ReservedGPR32)
-    Reserved.set(R);
+  for (unsigned I = 0; I < array_lengthof(ReservedGPR32); ++I)
+    Reserved.set(ReservedGPR32[I]);
 
   // Reserve registers for the NaCl sandbox.
   if (Subtarget.isTargetNaCl()) {
@@ -169,8 +169,8 @@ getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(Mips::T8);   // Reserved for thread pointer.
   }
 
-  for (MCPhysReg R : ReservedGPR64)
-    Reserved.set(R);
+  for (unsigned I = 0; I < array_lengthof(ReservedGPR64); ++I)
+    Reserved.set(ReservedGPR64[I]);
 
   // For mno-abicalls, GP is a program invariant!
   if (!Subtarget.isABICalls()) {
@@ -198,7 +198,8 @@ getReservedRegs(const MachineFunction &MF) const {
       // Reserve the base register if we need to both realign the stack and
       // allocate variable-sized objects at runtime. This should test the
       // same conditions as MipsFrameLowering::hasBP().
-      if (hasStackRealignment(MF) && MF.getFrameInfo().hasVarSizedObjects()) {
+      if (needsStackRealignment(MF) &&
+          MF.getFrameInfo().hasVarSizedObjects()) {
         Reserved.set(Mips::S7);
         Reserved.set(Mips::S7_64);
       }
@@ -244,10 +245,15 @@ MipsRegisterInfo::requiresRegisterScavenging(const MachineFunction &MF) const {
   return true;
 }
 
+bool
+MipsRegisterInfo::trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
+  return true;
+}
+
 // FrameIndex represent objects inside a abstract stack.
 // We must replace FrameIndex with an stack/frame pointer
 // direct reference.
-bool MipsRegisterInfo::
+void MipsRegisterInfo::
 eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                     unsigned FIOperandNum, RegScavenger *RS) const {
   MachineInstr &MI = *II;
@@ -265,11 +271,10 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                     << "spOffset   : " << spOffset << "\n"
                     << "stackSize  : " << stackSize << "\n"
                     << "alignment  : "
-                    << DebugStr(MF.getFrameInfo().getObjectAlign(FrameIndex))
+                    << MF.getFrameInfo().getObjectAlignment(FrameIndex)
                     << "\n");
 
   eliminateFI(MI, FIOperandNum, FrameIndex, stackSize, spOffset);
-  return false;
 }
 
 Register MipsRegisterInfo::

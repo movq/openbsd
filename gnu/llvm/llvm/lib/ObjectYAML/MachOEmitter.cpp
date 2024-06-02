@@ -15,9 +15,6 @@
 #include "llvm/ObjectYAML/DWARFEmitter.h"
 #include "llvm/ObjectYAML/ObjectYAML.h"
 #include "llvm/ObjectYAML/yaml2obj.h"
-#include "llvm/Support/Errc.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
@@ -30,19 +27,18 @@ namespace {
 
 class MachOWriter {
 public:
-  MachOWriter(MachOYAML::Object &Obj) : Obj(Obj), fileStart(0) {
+  MachOWriter(MachOYAML::Object &Obj) : Obj(Obj), is64Bit(true), fileStart(0) {
     is64Bit = Obj.Header.magic == MachO::MH_MAGIC_64 ||
               Obj.Header.magic == MachO::MH_CIGAM_64;
     memset(reinterpret_cast<void *>(&Header), 0, sizeof(MachO::mach_header_64));
   }
 
-  Error writeMachO(raw_ostream &OS);
+  void writeMachO(raw_ostream &OS);
 
 private:
   void writeHeader(raw_ostream &OS);
   void writeLoadCommands(raw_ostream &OS);
-  Error writeSectionData(raw_ostream &OS);
-  void writeRelocations(raw_ostream &OS);
+  void writeSectionData(raw_ostream &OS);
   void writeLinkEditData(raw_ostream &OS);
 
   void writeBindOpcodes(raw_ostream &OS,
@@ -55,11 +51,6 @@ private:
   void writeNameList(raw_ostream &OS);
   void writeStringTable(raw_ostream &OS);
   void writeExportTrie(raw_ostream &OS);
-  void writeDynamicSymbolTable(raw_ostream &OS);
-  void writeFunctionStarts(raw_ostream &OS);
-  void writeChainedFixups(raw_ostream &OS);
-  void writeDyldExportsTrie(raw_ostream &OS);
-  void writeDataInCode(raw_ostream &OS);
 
   void dumpExportEntry(raw_ostream &OS, MachOYAML::ExportEntry &Entry);
   void ZeroToOffset(raw_ostream &OS, size_t offset);
@@ -67,23 +58,15 @@ private:
   MachOYAML::Object &Obj;
   bool is64Bit;
   uint64_t fileStart;
-  MachO::mach_header_64 Header;
 
-  // Old PPC Object Files didn't have __LINKEDIT segments, the data was just
-  // stuck at the end of the file.
-  bool FoundLinkEditSeg = false;
+  MachO::mach_header_64 Header;
 };
 
-Error MachOWriter::writeMachO(raw_ostream &OS) {
+void MachOWriter::writeMachO(raw_ostream &OS) {
   fileStart = OS.tell();
   writeHeader(OS);
   writeLoadCommands(OS);
-  if (Error Err = writeSectionData(OS))
-    return Err;
-  writeRelocations(OS);
-  if (!FoundLinkEditSeg)
-    writeLinkEditData(OS);
-  return Error::success();
+  writeSectionData(OS);
 }
 
 void MachOWriter::writeHeader(raw_ostream &OS) {
@@ -161,9 +144,9 @@ size_t writeLoadCommandData<MachO::segment_command_64>(
 
 size_t writePayloadString(MachOYAML::LoadCommand &LC, raw_ostream &OS) {
   size_t BytesWritten = 0;
-  if (!LC.Content.empty()) {
-    OS.write(LC.Content.c_str(), LC.Content.length());
-    BytesWritten = LC.Content.length();
+  if (!LC.PayloadString.empty()) {
+    OS.write(LC.PayloadString.c_str(), LC.PayloadString.length());
+    BytesWritten = LC.PayloadString.length();
   }
   return BytesWritten;
 }
@@ -190,30 +173,6 @@ size_t writeLoadCommandData<MachO::rpath_command>(MachOYAML::LoadCommand &LC,
 }
 
 template <>
-size_t writeLoadCommandData<MachO::sub_framework_command>(
-    MachOYAML::LoadCommand &LC, raw_ostream &OS, bool IsLittleEndian) {
-  return writePayloadString(LC, OS);
-}
-
-template <>
-size_t writeLoadCommandData<MachO::sub_umbrella_command>(
-    MachOYAML::LoadCommand &LC, raw_ostream &OS, bool IsLittleEndian) {
-  return writePayloadString(LC, OS);
-}
-
-template <>
-size_t writeLoadCommandData<MachO::sub_client_command>(
-    MachOYAML::LoadCommand &LC, raw_ostream &OS, bool IsLittleEndian) {
-  return writePayloadString(LC, OS);
-}
-
-template <>
-size_t writeLoadCommandData<MachO::sub_library_command>(
-    MachOYAML::LoadCommand &LC, raw_ostream &OS, bool IsLittleEndian) {
-  return writePayloadString(LC, OS);
-}
-
-template <>
 size_t writeLoadCommandData<MachO::build_version_command>(
     MachOYAML::LoadCommand &LC, raw_ostream &OS, bool IsLittleEndian) {
   size_t BytesWritten = 0;
@@ -229,12 +188,14 @@ size_t writeLoadCommandData<MachO::build_version_command>(
 }
 
 void ZeroFillBytes(raw_ostream &OS, size_t Size) {
-  std::vector<uint8_t> FillData(Size, 0);
+  std::vector<uint8_t> FillData;
+  FillData.insert(FillData.begin(), Size, 0);
   OS.write(reinterpret_cast<char *>(FillData.data()), Size);
 }
 
 void Fill(raw_ostream &OS, size_t Size, uint32_t Data) {
-  std::vector<uint32_t> FillData((Size / 4) + 1, Data);
+  std::vector<uint32_t> FillData;
+  FillData.insert(FillData.begin(), (Size / 4) + 1, Data);
   OS.write(reinterpret_cast<char *>(FillData.data()), Size);
 }
 
@@ -293,8 +254,8 @@ void MachOWriter::writeLoadCommands(raw_ostream &OS) {
   }
 }
 
-Error MachOWriter::writeSectionData(raw_ostream &OS) {
-  uint64_t LinkEditOff = 0;
+void MachOWriter::writeSectionData(raw_ostream &OS) {
+  bool FoundLinkEditSeg = false;
   for (auto &LC : Obj.LoadCommands) {
     switch (LC.Data.load_command_data.cmd) {
     case MachO::LC_SEGMENT:
@@ -304,38 +265,34 @@ Error MachOWriter::writeSectionData(raw_ostream &OS) {
       if (0 ==
           strncmp(&LC.Data.segment_command_data.segname[0], "__LINKEDIT", 16)) {
         FoundLinkEditSeg = true;
-        LinkEditOff = segOff;
-        if (Obj.RawLinkEditSegment)
-          continue;
         writeLinkEditData(OS);
       }
       for (auto &Sec : LC.Sections) {
         ZeroToOffset(OS, Sec.offset);
         // Zero Fill any data between the end of the last thing we wrote and the
         // start of this section.
-        if (OS.tell() - fileStart > Sec.offset && Sec.offset != (uint32_t)0)
-          return createStringError(
-              errc::invalid_argument,
-              llvm::formatv(
-                  "wrote too much data somewhere, section offsets in "
-                  "section {0} for segment {1} don't line up: "
-                  "[cursor={2:x}], [fileStart={3:x}], [sectionOffset={4:x}]",
-                  Sec.sectname, Sec.segname, OS.tell(), fileStart,
-                  Sec.offset.value));
+        assert((OS.tell() - fileStart <= Sec.offset ||
+                Sec.offset == (uint32_t)0) &&
+               "Wrote too much data somewhere, section offsets don't line up.");
+        if (0 == strncmp(&Sec.segname[0], "__DWARF", 16)) {
+          if (0 == strncmp(&Sec.sectname[0], "__debug_str", 16)) {
+            DWARFYAML::EmitDebugStr(OS, Obj.DWARF);
+          } else if (0 == strncmp(&Sec.sectname[0], "__debug_abbrev", 16)) {
+            DWARFYAML::EmitDebugAbbrev(OS, Obj.DWARF);
+          } else if (0 == strncmp(&Sec.sectname[0], "__debug_aranges", 16)) {
+            DWARFYAML::EmitDebugAranges(OS, Obj.DWARF);
+          } else if (0 == strncmp(&Sec.sectname[0], "__debug_pubnames", 16)) {
+            DWARFYAML::EmitPubSection(OS, Obj.DWARF.PubNames,
+                                      Obj.IsLittleEndian);
+          } else if (0 == strncmp(&Sec.sectname[0], "__debug_pubtypes", 16)) {
+            DWARFYAML::EmitPubSection(OS, Obj.DWARF.PubTypes,
+                                      Obj.IsLittleEndian);
+          } else if (0 == strncmp(&Sec.sectname[0], "__debug_info", 16)) {
+            DWARFYAML::EmitDebugInfo(OS, Obj.DWARF);
+          } else if (0 == strncmp(&Sec.sectname[0], "__debug_line", 16)) {
+            DWARFYAML::EmitDebugLine(OS, Obj.DWARF);
+          }
 
-        StringRef SectName(Sec.sectname,
-                           strnlen(Sec.sectname, sizeof(Sec.sectname)));
-        // If the section's content is specified in the 'DWARF' entry, we will
-        // emit it regardless of the section's segname.
-        if (Obj.DWARF.getNonEmptySectionNames().count(SectName.substr(2))) {
-          if (Sec.content)
-            return createStringError(errc::invalid_argument,
-                                     "cannot specify section '" + SectName +
-                                         "' contents in the 'DWARF' entry and "
-                                         "the 'content' at the same time");
-          auto EmitFunc = DWARFYAML::getDWARFEmitterByName(SectName.substr(2));
-          if (Error Err = EmitFunc(OS, Obj.DWARF))
-            return Err;
           continue;
         }
 
@@ -358,69 +315,10 @@ Error MachOWriter::writeSectionData(raw_ostream &OS) {
       break;
     }
   }
-
-  if (Obj.RawLinkEditSegment) {
-    ZeroToOffset(OS, LinkEditOff);
-    if (OS.tell() - fileStart > LinkEditOff || !LinkEditOff)
-      return createStringError(errc::invalid_argument,
-                               "section offsets don't line up");
-    Obj.RawLinkEditSegment->writeAsBinary(OS);
-  }
-  return Error::success();
-}
-
-// The implementation of makeRelocationInfo and makeScatteredRelocationInfo is
-// consistent with how libObject parses MachO binary files. For the reference
-// see getStruct, getRelocation, getPlainRelocationPCRel,
-// getPlainRelocationLength and related methods in MachOObjectFile.cpp
-static MachO::any_relocation_info
-makeRelocationInfo(const MachOYAML::Relocation &R, bool IsLE) {
-  assert(!R.is_scattered && "non-scattered relocation expected");
-  MachO::any_relocation_info MRE;
-  MRE.r_word0 = R.address;
-  if (IsLE)
-    MRE.r_word1 = ((unsigned)R.symbolnum << 0) | ((unsigned)R.is_pcrel << 24) |
-                  ((unsigned)R.length << 25) | ((unsigned)R.is_extern << 27) |
-                  ((unsigned)R.type << 28);
-  else
-    MRE.r_word1 = ((unsigned)R.symbolnum << 8) | ((unsigned)R.is_pcrel << 7) |
-                  ((unsigned)R.length << 5) | ((unsigned)R.is_extern << 4) |
-                  ((unsigned)R.type << 0);
-  return MRE;
-}
-
-static MachO::any_relocation_info
-makeScatteredRelocationInfo(const MachOYAML::Relocation &R) {
-  assert(R.is_scattered && "scattered relocation expected");
-  MachO::any_relocation_info MRE;
-  MRE.r_word0 = (((unsigned)R.address << 0) | ((unsigned)R.type << 24) |
-                 ((unsigned)R.length << 28) | ((unsigned)R.is_pcrel << 30) |
-                 MachO::R_SCATTERED);
-  MRE.r_word1 = R.value;
-  return MRE;
-}
-
-void MachOWriter::writeRelocations(raw_ostream &OS) {
-  for (const MachOYAML::LoadCommand &LC : Obj.LoadCommands) {
-    switch (LC.Data.load_command_data.cmd) {
-    case MachO::LC_SEGMENT:
-    case MachO::LC_SEGMENT_64:
-      for (const MachOYAML::Section &Sec : LC.Sections) {
-        if (Sec.relocations.empty())
-          continue;
-        ZeroToOffset(OS, Sec.reloff);
-        for (const MachOYAML::Relocation &R : Sec.relocations) {
-          MachO::any_relocation_info MRE =
-              R.is_scattered ? makeScatteredRelocationInfo(R)
-                             : makeRelocationInfo(R, Obj.IsLittleEndian);
-          if (Obj.IsLittleEndian != sys::IsLittleEndianHost)
-            MachO::swapStruct(MRE);
-          OS.write(reinterpret_cast<const char *>(&MRE),
-                   sizeof(MachO::any_relocation_info));
-        }
-      }
-    }
-  }
+  // Old PPC Object Files didn't have __LINKEDIT segments, the data was just
+  // stuck at the end of the file.
+  if (!FoundLinkEditSeg)
+    writeLinkEditData(OS);
 }
 
 void MachOWriter::writeBindOpcodes(
@@ -444,24 +342,24 @@ void MachOWriter::writeBindOpcodes(
 
 void MachOWriter::dumpExportEntry(raw_ostream &OS,
                                   MachOYAML::ExportEntry &Entry) {
-  encodeULEB128(Entry.TerminalSize, OS);
+  encodeSLEB128(Entry.TerminalSize, OS);
   if (Entry.TerminalSize > 0) {
-    encodeULEB128(Entry.Flags, OS);
+    encodeSLEB128(Entry.Flags, OS);
     if (Entry.Flags & MachO::EXPORT_SYMBOL_FLAGS_REEXPORT) {
-      encodeULEB128(Entry.Other, OS);
+      encodeSLEB128(Entry.Other, OS);
       OS << Entry.ImportName;
       OS.write('\0');
     } else {
-      encodeULEB128(Entry.Address, OS);
+      encodeSLEB128(Entry.Address, OS);
       if (Entry.Flags & MachO::EXPORT_SYMBOL_FLAGS_STUB_AND_RESOLVER)
-        encodeULEB128(Entry.Other, OS);
+        encodeSLEB128(Entry.Other, OS);
     }
   }
   OS.write(static_cast<uint8_t>(Entry.Children.size()));
   for (auto EE : Entry.Children) {
     OS << EE.Name;
     OS.write('\0');
-    encodeULEB128(EE.NodeOffset, OS);
+    encodeSLEB128(EE.NodeOffset, OS);
   }
   for (auto EE : Entry.Children)
     dumpExportEntry(OS, EE);
@@ -491,13 +389,8 @@ void MachOWriter::writeLinkEditData(raw_ostream &OS) {
   typedef std::pair<uint64_t, writeHandler> writeOperation;
   std::vector<writeOperation> WriteQueue;
 
-  MachO::dyld_info_command *DyldInfoOnlyCmd = nullptr;
-  MachO::symtab_command *SymtabCmd = nullptr;
-  MachO::dysymtab_command *DSymtabCmd = nullptr;
-  MachO::linkedit_data_command *FunctionStartsCmd = nullptr;
-  MachO::linkedit_data_command *ChainedFixupsCmd = nullptr;
-  MachO::linkedit_data_command *DyldExportsTrieCmd = nullptr;
-  MachO::linkedit_data_command *DataInCodeCmd = nullptr;
+  MachO::dyld_info_command *DyldInfoOnlyCmd = 0;
+  MachO::symtab_command *SymtabCmd = 0;
   for (auto &LC : Obj.LoadCommands) {
     switch (LC.Data.load_command_data.cmd) {
     case MachO::LC_SYMTAB:
@@ -520,35 +413,12 @@ void MachOWriter::writeLinkEditData(raw_ostream &OS) {
       WriteQueue.push_back(std::make_pair(DyldInfoOnlyCmd->export_off,
                                           &MachOWriter::writeExportTrie));
       break;
-    case MachO::LC_DYSYMTAB:
-      DSymtabCmd = &LC.Data.dysymtab_command_data;
-      WriteQueue.push_back(std::make_pair(
-          DSymtabCmd->indirectsymoff, &MachOWriter::writeDynamicSymbolTable));
-      break;
-    case MachO::LC_FUNCTION_STARTS:
-      FunctionStartsCmd = &LC.Data.linkedit_data_command_data;
-      WriteQueue.push_back(std::make_pair(FunctionStartsCmd->dataoff,
-                                          &MachOWriter::writeFunctionStarts));
-      break;
-    case MachO::LC_DYLD_CHAINED_FIXUPS:
-      ChainedFixupsCmd = &LC.Data.linkedit_data_command_data;
-      WriteQueue.push_back(std::make_pair(ChainedFixupsCmd->dataoff,
-                                          &MachOWriter::writeChainedFixups));
-      break;
-    case MachO::LC_DYLD_EXPORTS_TRIE:
-      DyldExportsTrieCmd = &LC.Data.linkedit_data_command_data;
-      WriteQueue.push_back(std::make_pair(DyldExportsTrieCmd->dataoff,
-                                          &MachOWriter::writeDyldExportsTrie));
-      break;
-    case MachO::LC_DATA_IN_CODE:
-      DataInCodeCmd = &LC.Data.linkedit_data_command_data;
-      WriteQueue.push_back(std::make_pair(DataInCodeCmd->dataoff,
-                                          &MachOWriter::writeDataInCode));
-      break;
     }
   }
 
-  llvm::sort(WriteQueue, llvm::less_first());
+  llvm::sort(WriteQueue, [](const writeOperation &a, const writeOperation &b) {
+    return a.first < b.first;
+  });
 
   for (auto writeOp : WriteQueue) {
     ZeroToOffset(OS, writeOp.first);
@@ -595,49 +465,12 @@ void MachOWriter::writeStringTable(raw_ostream &OS) {
   }
 }
 
-void MachOWriter::writeDynamicSymbolTable(raw_ostream &OS) {
-  for (auto Data : Obj.LinkEdit.IndirectSymbols)
-    OS.write(reinterpret_cast<const char *>(&Data),
-             sizeof(yaml::Hex32::BaseType));
-}
-
-void MachOWriter::writeFunctionStarts(raw_ostream &OS) {
-  uint64_t Addr = 0;
-  for (uint64_t NextAddr : Obj.LinkEdit.FunctionStarts) {
-    uint64_t Delta = NextAddr - Addr;
-    encodeULEB128(Delta, OS);
-    Addr = NextAddr;
-  }
-
-  OS.write('\0');
-}
-
-void MachOWriter::writeDataInCode(raw_ostream &OS) {
-  for (const auto &Entry : Obj.LinkEdit.DataInCode) {
-    MachO::data_in_code_entry DICE{Entry.Offset, Entry.Length, Entry.Kind};
-    if (Obj.IsLittleEndian != sys::IsLittleEndianHost)
-      MachO::swapStruct(DICE);
-    OS.write(reinterpret_cast<const char *>(&DICE),
-             sizeof(MachO::data_in_code_entry));
-  }
-}
-
-void MachOWriter::writeChainedFixups(raw_ostream &OS) {
-  if (Obj.LinkEdit.ChainedFixups.size() > 0)
-    OS.write(reinterpret_cast<const char *>(Obj.LinkEdit.ChainedFixups.data()),
-             Obj.LinkEdit.ChainedFixups.size());
-}
-
-void MachOWriter::writeDyldExportsTrie(raw_ostream &OS) {
-  dumpExportEntry(OS, Obj.LinkEdit.ExportTrie);
-}
-
 class UniversalWriter {
 public:
   UniversalWriter(yaml::YamlObjectFile &ObjectFile)
       : ObjectFile(ObjectFile), fileStart(0) {}
 
-  Error writeMachO(raw_ostream &OS);
+  void writeMachO(raw_ostream &OS);
 
 private:
   void writeFatHeader(raw_ostream &OS);
@@ -649,33 +482,28 @@ private:
   uint64_t fileStart;
 };
 
-Error UniversalWriter::writeMachO(raw_ostream &OS) {
+void UniversalWriter::writeMachO(raw_ostream &OS) {
   fileStart = OS.tell();
   if (ObjectFile.MachO) {
     MachOWriter Writer(*ObjectFile.MachO);
-    return Writer.writeMachO(OS);
+    Writer.writeMachO(OS);
+    return;
   }
 
   writeFatHeader(OS);
   writeFatArchs(OS);
 
   auto &FatFile = *ObjectFile.FatMachO;
-  if (FatFile.FatArchs.size() < FatFile.Slices.size())
-    return createStringError(
-        errc::invalid_argument,
-        "cannot write 'Slices' if not described in 'FatArches'");
-
+  assert(FatFile.FatArchs.size() >= FatFile.Slices.size() &&
+         "Cannot write Slices if not decribed in FatArches");
   for (size_t i = 0; i < FatFile.Slices.size(); i++) {
     ZeroToOffset(OS, FatFile.FatArchs[i].offset);
     MachOWriter Writer(FatFile.Slices[i]);
-    if (Error Err = Writer.writeMachO(OS))
-      return Err;
+    Writer.writeMachO(OS);
 
     auto SliceEnd = FatFile.FatArchs[i].offset + FatFile.FatArchs[i].size;
     ZeroToOffset(OS, SliceEnd);
   }
-
-  return Error::success();
 }
 
 void UniversalWriter::writeFatHeader(raw_ostream &OS) {
@@ -743,13 +571,9 @@ void UniversalWriter::ZeroToOffset(raw_ostream &OS, size_t Offset) {
 namespace llvm {
 namespace yaml {
 
-bool yaml2macho(YamlObjectFile &Doc, raw_ostream &Out, ErrorHandler EH) {
+bool yaml2macho(YamlObjectFile &Doc, raw_ostream &Out, ErrorHandler /*EH*/) {
   UniversalWriter Writer(Doc);
-  if (Error Err = Writer.writeMachO(Out)) {
-    handleAllErrors(std::move(Err),
-                    [&](const ErrorInfoBase &Err) { EH(Err.message()); });
-    return false;
-  }
+  Writer.writeMachO(Out);
   return true;
 }
 

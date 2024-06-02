@@ -9,6 +9,9 @@
 #include "llvm/Support/Parallel.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/ManagedStatic.h"
+
+#if LLVM_ENABLE_THREADS
+
 #include "llvm/Support/Threading.h"
 
 #include <atomic>
@@ -17,20 +20,8 @@
 #include <thread>
 #include <vector>
 
-llvm::ThreadPoolStrategy llvm::parallel::strategy;
-
 namespace llvm {
 namespace parallel {
-#if LLVM_ENABLE_THREADS
-
-#ifdef _WIN32
-static thread_local unsigned threadIndex;
-
-unsigned getThreadIndex() { return threadIndex; }
-#else
-thread_local unsigned threadIndex;
-#endif
-
 namespace detail {
 
 namespace {
@@ -48,21 +39,20 @@ public:
 ///   in filo order.
 class ThreadPoolExecutor : public Executor {
 public:
-  explicit ThreadPoolExecutor(ThreadPoolStrategy S = hardware_concurrency()) {
-    unsigned ThreadCount = S.compute_thread_count();
+  explicit ThreadPoolExecutor(unsigned ThreadCount = hardware_concurrency()) {
     // Spawn all but one of the threads in another thread as spawning threads
     // can take a while.
     Threads.reserve(ThreadCount);
     Threads.resize(1);
     std::lock_guard<std::mutex> Lock(Mutex);
-    Threads[0] = std::thread([this, ThreadCount, S] {
-      for (unsigned I = 1; I < ThreadCount; ++I) {
-        Threads.emplace_back([=] { work(S, I); });
+    Threads[0] = std::thread([&, ThreadCount] {
+      for (unsigned i = 1; i < ThreadCount; ++i) {
+        Threads.emplace_back([=] { work(); });
         if (Stop)
           break;
       }
       ThreadsCreated.set_value();
-      work(S, 0);
+      work();
     });
   }
 
@@ -87,9 +77,6 @@ public:
         T.join();
   }
 
-  struct Creator {
-    static void *call() { return new ThreadPoolExecutor(strategy); }
-  };
   struct Deleter {
     static void call(void *Ptr) { ((ThreadPoolExecutor *)Ptr)->stop(); }
   };
@@ -97,21 +84,19 @@ public:
   void add(std::function<void()> F) override {
     {
       std::lock_guard<std::mutex> Lock(Mutex);
-      WorkStack.push(std::move(F));
+      WorkStack.push(F);
     }
     Cond.notify_one();
   }
 
 private:
-  void work(ThreadPoolStrategy S, unsigned ThreadID) {
-    threadIndex = ThreadID;
-    S.apply_thread_strategy(ThreadID);
+  void work() {
     while (true) {
       std::unique_lock<std::mutex> Lock(Mutex);
       Cond.wait(Lock, [&] { return Stop || !WorkStack.empty(); });
       if (Stop)
         break;
-      auto Task = std::move(WorkStack.top());
+      auto Task = WorkStack.top();
       WorkStack.pop();
       Lock.unlock();
       Task();
@@ -144,16 +129,13 @@ Executor *Executor::getDefaultExecutor() {
   // are more frequent with the debug static runtime.
   //
   // This also prevents intermittent deadlocks on exit with the MinGW runtime.
-
-  static ManagedStatic<ThreadPoolExecutor, ThreadPoolExecutor::Creator,
+  static ManagedStatic<ThreadPoolExecutor, object_creator<ThreadPoolExecutor>,
                        ThreadPoolExecutor::Deleter>
       ManagedExec;
   static std::unique_ptr<ThreadPoolExecutor> Exec(&(*ManagedExec));
   return Exec.get();
 }
 } // namespace
-} // namespace detail
-#endif
 
 static std::atomic<int> TaskGroupInstances;
 
@@ -162,68 +144,21 @@ static std::atomic<int> TaskGroupInstances;
 // lock, only allow the first TaskGroup to run tasks parallelly. In the scenario
 // of nested parallel_for_each(), only the outermost one runs parallelly.
 TaskGroup::TaskGroup() : Parallel(TaskGroupInstances++ == 0) {}
-TaskGroup::~TaskGroup() {
-  // We must ensure that all the workloads have finished before decrementing the
-  // instances count.
-  L.sync();
-  --TaskGroupInstances;
-}
+TaskGroup::~TaskGroup() { --TaskGroupInstances; }
 
 void TaskGroup::spawn(std::function<void()> F) {
-#if LLVM_ENABLE_THREADS
   if (Parallel) {
     L.inc();
-    detail::Executor::getDefaultExecutor()->add([&, F = std::move(F)] {
+    Executor::getDefaultExecutor()->add([&, F] {
       F();
       L.dec();
     });
-    return;
+  } else {
+    F();
   }
-#endif
-  F();
 }
 
-void TaskGroup::execute(std::function<void()> F) {
-  if (parallel::strategy.ThreadsRequested == 1)
-    F();
-  else
-    spawn(F);
-}
+} // namespace detail
 } // namespace parallel
 } // namespace llvm
-
-void llvm::parallelFor(size_t Begin, size_t End,
-                       llvm::function_ref<void(size_t)> Fn) {
-  // If we have zero or one items, then do not incur the overhead of spinning up
-  // a task group.  They are surprisingly expensive, and because they do not
-  // support nested parallelism, a single entry task group can block parallel
-  // execution underneath them.
-#if LLVM_ENABLE_THREADS
-  auto NumItems = End - Begin;
-  if (NumItems > 1 && parallel::strategy.ThreadsRequested != 1) {
-    // Limit the number of tasks to MaxTasksPerGroup to limit job scheduling
-    // overhead on large inputs.
-    auto TaskSize = NumItems / parallel::detail::MaxTasksPerGroup;
-    if (TaskSize == 0)
-      TaskSize = 1;
-
-    parallel::TaskGroup TG;
-    for (; Begin + TaskSize < End; Begin += TaskSize) {
-      TG.spawn([=, &Fn] {
-        for (size_t I = Begin, E = Begin + TaskSize; I != E; ++I)
-          Fn(I);
-      });
-    }
-    if (Begin != End) {
-      TG.spawn([=, &Fn] {
-        for (size_t I = Begin; I != End; ++I)
-          Fn(I);
-      });
-    }
-    return;
-  }
-#endif
-
-  for (; Begin != End; ++Begin)
-    Fn(Begin);
-}
+#endif // LLVM_ENABLE_THREADS

@@ -83,9 +83,9 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -150,12 +150,6 @@ static InstrUID decode(OpcodeType type, InstructionContext insnContext,
     dec =
         &THREEDNOW_MAP_SYM.opcodeDecisions[insnContext].modRMDecisions[opcode];
     break;
-  case MAP5:
-    dec = &MAP5_SYM.opcodeDecisions[insnContext].modRMDecisions[opcode];
-    break;
-  case MAP6:
-    dec = &MAP6_SYM.opcodeDecisions[insnContext].modRMDecisions[opcode];
-    break;
   }
 
   switch (dec->modrm_type) {
@@ -194,7 +188,10 @@ template <typename T> static bool consume(InternalInstruction *insn, T &ptr) {
   uint64_t offset = insn->readerCursor - insn->startLocation;
   if (offset + sizeof(T) > r.size())
     return true;
-  ptr = support::endian::read<T>(&r[offset], support::little);
+  T ret = 0;
+  for (unsigned i = 0; i < sizeof(T); ++i)
+    ret |= (uint64_t)r[offset + i] << (i * 8);
+  ptr = ret;
   insn->readerCursor += sizeof(T);
   return false;
 }
@@ -335,7 +332,7 @@ static int readPrefixes(struct InternalInstruction *insn) {
     }
 
     if ((insn->mode == MODE_64BIT || (byte1 & 0xc0) == 0xc0) &&
-        ((~byte1 & 0x8) == 0x8) && ((byte2 & 0x4) == 0x4)) {
+        ((~byte1 & 0xc) == 0xc) && ((byte2 & 0x4) == 0x4)) {
       insn->vectorExtensionType = TYPE_EVEX;
     } else {
       --insn->readerCursor; // unconsume byte1
@@ -490,15 +487,15 @@ static int readPrefixes(struct InternalInstruction *insn) {
     insn->displacementSize = (insn->hasAdSize ? 2 : 4);
     insn->immediateSize = (insn->hasOpSize ? 2 : 4);
   } else if (insn->mode == MODE_64BIT) {
-    insn->displacementSize = 4;
     if (insn->rexPrefix && wFromREX(insn->rexPrefix)) {
       insn->registerSize = 8;
       insn->addressSize = (insn->hasAdSize ? 4 : 8);
+      insn->displacementSize = 4;
       insn->immediateSize = 4;
-      insn->hasOpSize = false;
     } else {
       insn->registerSize = (insn->hasOpSize ? 2 : 4);
       insn->addressSize = (insn->hasAdSize ? 4 : 8);
+      insn->displacementSize = (insn->hasOpSize ? 2 : 4);
       insn->immediateSize = (insn->hasOpSize ? 2 : 4);
     }
   }
@@ -710,7 +707,7 @@ static int readModRM(struct InternalInstruction *insn) {
       break;
     case 0x1:
       insn->displacementSize = 1;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case 0x2:
       insn->eaDisplacement = (mod == 0x1 ? EA_DISP_8 : EA_DISP_32);
       switch (rm & 7) {
@@ -779,10 +776,6 @@ static int readModRM(struct InternalInstruction *insn) {
       return prefix##_YMM0 + index;                                            \
     case TYPE_XMM:                                                             \
       return prefix##_XMM0 + index;                                            \
-    case TYPE_TMM:                                                             \
-      if (index > 7)                                                           \
-        *valid = 0;                                                            \
-      return prefix##_TMM0 + index;                                            \
     case TYPE_VK:                                                              \
       index &= 0xf;                                                            \
       if (index > 7)                                                           \
@@ -802,6 +795,10 @@ static int readModRM(struct InternalInstruction *insn) {
       return prefix##_DR0 + index;                                             \
     case TYPE_CONTROLREG:                                                      \
       return prefix##_CR0 + index;                                             \
+    case TYPE_BNDR:                                                            \
+      if (index > 3)                                                           \
+        *valid = 0;                                                            \
+      return prefix##_BND0 + index;                                            \
     case TYPE_MVSIBX:                                                          \
       return prefix##_XMM0 + index;                                            \
     case TYPE_MVSIBY:                                                          \
@@ -852,7 +849,6 @@ static int fixupReg(struct InternalInstruction *insn,
     if (!valid)
       return -1;
     break;
-  case ENCODING_SIB:
   CASE_ENCODING_RM:
     if (insn->eaBase >= insn->eaRegBase) {
       insn->eaBase = (EABase)fixupRMValue(
@@ -874,11 +870,11 @@ static bool readOpcode(struct InternalInstruction *insn) {
 
   insn->opcodeType = ONEBYTE;
   if (insn->vectorExtensionType == TYPE_EVEX) {
-    switch (mmmFromEVEX2of4(insn->vectorExtensionPrefix[1])) {
+    switch (mmFromEVEX2of4(insn->vectorExtensionPrefix[1])) {
     default:
       LLVM_DEBUG(
-          dbgs() << format("Unhandled mmm field for instruction (0x%hhx)",
-                           mmmFromEVEX2of4(insn->vectorExtensionPrefix[1])));
+          dbgs() << format("Unhandled mm field for instruction (0x%hhx)",
+                           mmFromEVEX2of4(insn->vectorExtensionPrefix[1])));
       return true;
     case VEX_LOB_0F:
       insn->opcodeType = TWOBYTE;
@@ -888,12 +884,6 @@ static bool readOpcode(struct InternalInstruction *insn) {
       return consume(insn, insn->opcode);
     case VEX_LOB_0F3A:
       insn->opcodeType = THREEBYTE_3A;
-      return consume(insn, insn->opcode);
-    case VEX_LOB_MAP5:
-      insn->opcodeType = MAP5;
-      return consume(insn, insn->opcode);
-    case VEX_LOB_MAP6:
-      insn->opcodeType = MAP6;
       return consume(insn, insn->opcode);
     }
   } else if (insn->vectorExtensionType == TYPE_VEX_3B) {
@@ -911,12 +901,6 @@ static bool readOpcode(struct InternalInstruction *insn) {
       return consume(insn, insn->opcode);
     case VEX_LOB_0F3A:
       insn->opcodeType = THREEBYTE_3A;
-      return consume(insn, insn->opcode);
-    case VEX_LOB_MAP5:
-      insn->opcodeType = MAP5;
-      return consume(insn, insn->opcode);
-    case VEX_LOB_MAP6:
-      insn->opcodeType = MAP6;
       return consume(insn, insn->opcode);
     }
   } else if (insn->vectorExtensionType == TYPE_VEX_2B) {
@@ -1053,12 +1037,6 @@ static int getInstructionIDWithAttrMask(uint16_t *instructionID,
   case THREEDNOW_MAP:
     decision = &THREEDNOW_MAP_SYM;
     break;
-  case MAP5:
-    decision = &MAP5_SYM;
-    break;
-  case MAP6:
-    decision = &MAP6_SYM;
-    break;
   }
 
   if (decision->opcodeDecisions[insnCtx]
@@ -1135,8 +1113,6 @@ static int getInstructionID(struct InternalInstruction *insn,
       switch (ppFromVEX2of2(insn->vectorExtensionPrefix[1])) {
       case VEX_PREFIX_66:
         attrMask |= ATTR_OPSIZE;
-        if (insn->hasAdSize)
-          attrMask |= ATTR_ADSIZE;
         break;
       case VEX_PREFIX_F3:
         attrMask |= ATTR_XS;
@@ -1193,8 +1169,6 @@ static int getInstructionID(struct InternalInstruction *insn,
     case 0x66:
       if (insn->mode != MODE_16BIT)
         attrMask |= ATTR_OPSIZE;
-      if (insn->hasAdSize)
-        attrMask |= ATTR_ADSIZE;
       break;
     case 0x67:
       attrMask |= ATTR_ADSIZE;
@@ -1559,15 +1533,6 @@ static int readOperands(struct InternalInstruction *insn) {
       if (Op.encoding != ENCODING_REG && insn->eaDisplacement == EA_DISP_8)
         insn->displacement *= 1 << (Op.encoding - ENCODING_VSIB);
       break;
-    case ENCODING_SIB:
-      // Reject if SIB wasn't used.
-      if (insn->eaBase != EA_BASE_sib && insn->eaBase != EA_BASE_sib64)
-        return -1;
-      if (readModRM(insn))
-        return -1;
-      if (fixupReg(insn, &Op))
-        return -1;
-      break;
     case ENCODING_REG:
     CASE_ENCODING_RM:
       if (readModRM(insn))
@@ -1683,9 +1648,9 @@ namespace X86 {
     sib   = 504,
     sib64 = 505
   };
-} // namespace X86
+}
 
-} // namespace llvm
+}
 
 static bool translateInstruction(MCInst &target,
                                 InternalInstruction &source,
@@ -1710,7 +1675,7 @@ private:
   DisassemblerMode              fMode;
 };
 
-} // namespace
+}
 
 X86GenericDisassembler::X86GenericDisassembler(
                                          const MCSubtargetInfo &STI,
@@ -1718,13 +1683,13 @@ X86GenericDisassembler::X86GenericDisassembler(
                                          std::unique_ptr<const MCInstrInfo> MII)
   : MCDisassembler(STI, Ctx), MII(std::move(MII)) {
   const FeatureBitset &FB = STI.getFeatureBits();
-  if (FB[X86::Is16Bit]) {
+  if (FB[X86::Mode16Bit]) {
     fMode = MODE_16BIT;
     return;
-  } else if (FB[X86::Is32Bit]) {
+  } else if (FB[X86::Mode32Bit]) {
     fMode = MODE_32BIT;
     return;
-  } else if (FB[X86::Is64Bit]) {
+  } else if (FB[X86::Mode64Bit]) {
     fMode = MODE_64BIT;
     return;
   }
@@ -1795,6 +1760,46 @@ static void translateRegister(MCInst &mcInst, Reg reg) {
 
   MCPhysReg llvmRegnum = llvmRegnums[reg];
   mcInst.addOperand(MCOperand::createReg(llvmRegnum));
+}
+
+/// tryAddingSymbolicOperand - trys to add a symbolic operand in place of the
+/// immediate Value in the MCInst.
+///
+/// @param Value      - The immediate Value, has had any PC adjustment made by
+///                     the caller.
+/// @param isBranch   - If the instruction is a branch instruction
+/// @param Address    - The starting address of the instruction
+/// @param Offset     - The byte offset to this immediate in the instruction
+/// @param Width      - The byte width of this immediate in the instruction
+///
+/// If the getOpInfo() function was set when setupForSymbolicDisassembly() was
+/// called then that function is called to get any symbolic information for the
+/// immediate in the instruction using the Address, Offset and Width.  If that
+/// returns non-zero then the symbolic information it returns is used to create
+/// an MCExpr and that is added as an operand to the MCInst.  If getOpInfo()
+/// returns zero and isBranch is true then a symbol look up for immediate Value
+/// is done and if a symbol is found an MCExpr is created with that, else
+/// an MCExpr with the immediate Value is created.  This function returns true
+/// if it adds an operand to the MCInst and false otherwise.
+static bool tryAddingSymbolicOperand(int64_t Value, bool isBranch,
+                                     uint64_t Address, uint64_t Offset,
+                                     uint64_t Width, MCInst &MI,
+                                     const MCDisassembler *Dis) {
+  return Dis->tryAddingSymbolicOperand(MI, Value, Address, isBranch,
+                                       Offset, Width);
+}
+
+/// tryAddingPcLoadReferenceComment - trys to add a comment as to what is being
+/// referenced by a load instruction with the base register that is the rip.
+/// These can often be addresses in a literal pool.  The Address of the
+/// instruction and its immediate Value are used to determine the address
+/// being referenced in the literal pool entry.  The SymbolLookUp call back will
+/// return a pointer to a literal 'C' string if the referenced address is an
+/// address into a section with 'C' string literals.
+static void tryAddingPcLoadReferenceComment(uint64_t Address, uint64_t Value,
+                                            const void *Decoder) {
+  const MCDisassembler *Dis = static_cast<const MCDisassembler*>(Decoder);
+  Dis->tryAddingPcLoadReferenceComment(Value, Address);
 }
 
 static const uint8_t segmentRegnums[SEG_OVERRIDE_max] = {
@@ -1870,7 +1875,8 @@ static void translateImmediate(MCInst &mcInst, uint64_t immediate,
   uint64_t pcrel = 0;
   if (type == TYPE_REL) {
     isBranch = true;
-    pcrel = insn.startLocation + insn.length;
+    pcrel = insn.startLocation +
+            insn.immediateOffset + insn.immediateSize;
     switch (operand.encoding) {
     default:
       break;
@@ -1945,9 +1951,9 @@ static void translateImmediate(MCInst &mcInst, uint64_t immediate,
     break;
   }
 
-  if (!Dis->tryAddingSymbolicOperand(
-          mcInst, immediate + pcrel, insn.startLocation, isBranch,
-          insn.immediateOffset, insn.immediateSize, insn.length))
+  if(!tryAddingSymbolicOperand(immediate + pcrel, isBranch, insn.startLocation,
+                               insn.immediateOffset, insn.immediateSize,
+                               mcInst, Dis))
     mcInst.addOperand(MCOperand::createImm(immediate));
 
   if (type == TYPE_MOFFS) {
@@ -2000,11 +2006,9 @@ static bool translateRMRegister(MCInst &mcInst,
 /// @param mcInst       - The MCInst to append to.
 /// @param insn         - The instruction to extract Mod, R/M, and SIB fields
 ///                       from.
-/// @param ForceSIB     - The instruction must use SIB.
 /// @return             - 0 on success; nonzero otherwise
 static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
-                              const MCDisassembler *Dis,
-                              bool ForceSIB = false) {
+                              const MCDisassembler *Dis) {
   // Addresses in an MCInst are represented as five operands:
   //   1. basereg       (register)  The R/M base, or (if there is a SIB) the
   //                                SIB base
@@ -2063,12 +2067,11 @@ static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
       // -Any base register used other than ESP/RSP/R12D/R12. Using these as a
       //  base always requires a SIB byte.
       // -A scale other than 1 is used.
-      if (!ForceSIB &&
-          (insn.sibScale != 1 ||
-           (insn.sibBase == SIB_BASE_NONE && insn.mode != MODE_64BIT) ||
-           (insn.sibBase != SIB_BASE_NONE &&
-            insn.sibBase != SIB_BASE_ESP && insn.sibBase != SIB_BASE_RSP &&
-            insn.sibBase != SIB_BASE_R12D && insn.sibBase != SIB_BASE_R12))) {
+      if (insn.sibScale != 1 ||
+          (insn.sibBase == SIB_BASE_NONE && insn.mode != MODE_64BIT) ||
+          (insn.sibBase != SIB_BASE_NONE &&
+           insn.sibBase != SIB_BASE_ESP && insn.sibBase != SIB_BASE_RSP &&
+           insn.sibBase != SIB_BASE_R12D && insn.sibBase != SIB_BASE_R12)) {
         indexReg = MCOperand::createReg(insn.addressSize == 4 ? X86::EIZ :
                                                                 X86::RIZ);
       } else
@@ -2084,10 +2087,11 @@ static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
         return true;
       }
       if (insn.mode == MODE_64BIT){
-        pcrel = insn.startLocation + insn.length;
-        Dis->tryAddingPcLoadReferenceComment(insn.displacement + pcrel,
-                                             insn.startLocation +
-                                                 insn.displacementOffset);
+        pcrel = insn.startLocation +
+                insn.displacementOffset + insn.displacementSize;
+        tryAddingPcLoadReferenceComment(insn.startLocation +
+                                        insn.displacementOffset,
+                                        insn.displacement + pcrel, Dis);
         // Section 2.2.1.6
         baseReg = MCOperand::createReg(insn.addressSize == 4 ? X86::EIP :
                                                                X86::RIP);
@@ -2147,13 +2151,9 @@ static bool translateRMMemory(MCInst &mcInst, InternalInstruction &insn,
   mcInst.addOperand(baseReg);
   mcInst.addOperand(scaleAmount);
   mcInst.addOperand(indexReg);
-
-  const uint8_t dispSize =
-      (insn.eaDisplacement == EA_DISP_NONE) ? 0 : insn.displacementSize;
-
-  if (!Dis->tryAddingSymbolicOperand(
-          mcInst, insn.displacement + pcrel, insn.startLocation, false,
-          insn.displacementOffset, dispSize, insn.length))
+  if(!tryAddingSymbolicOperand(insn.displacement + pcrel, false,
+                               insn.startLocation, insn.displacementOffset,
+                               insn.displacementSize, mcInst, Dis))
     mcInst.addOperand(displacement);
   mcInst.addOperand(segmentReg);
   return false;
@@ -2182,7 +2182,6 @@ static bool translateRM(MCInst &mcInst, const OperandSpecifier &operand,
   case TYPE_XMM:
   case TYPE_YMM:
   case TYPE_ZMM:
-  case TYPE_TMM:
   case TYPE_VK_PAIR:
   case TYPE_VK:
   case TYPE_DEBUGREG:
@@ -2194,8 +2193,6 @@ static bool translateRM(MCInst &mcInst, const OperandSpecifier &operand,
   case TYPE_MVSIBY:
   case TYPE_MVSIBZ:
     return translateRMMemory(mcInst, insn, Dis);
-  case TYPE_MSIB:
-    return translateRMMemory(mcInst, insn, Dis, true);
   }
 }
 
@@ -2245,7 +2242,6 @@ static bool translateOperand(MCInst &mcInst, const OperandSpecifier &operand,
     return false;
   case ENCODING_WRITEMASK:
     return translateMaskRegister(mcInst, insn.writemask);
-  case ENCODING_SIB:
   CASE_ENCODING_RM:
   CASE_ENCODING_VSIB:
     return translateRM(mcInst, operand, insn, Dis);

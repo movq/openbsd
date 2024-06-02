@@ -18,9 +18,7 @@
 
 #include "BenchmarkResult.h"
 #include "BenchmarkRunner.h"
-#include "Error.h"
 #include "LlvmState.h"
-#include "PerfHelper.h"
 #include "SnippetGenerator.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -28,15 +26,9 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Error.h"
 
 namespace llvm {
 namespace exegesis {
-
-extern cl::OptionCategory Options;
-extern cl::OptionCategory BenchmarkOptions;
-extern cl::OptionCategory AnalysisOptions;
 
 struct PfmCountersInfo {
   // An optional name of a performance counter that can be used to measure
@@ -71,10 +63,6 @@ class ExegesisTarget {
 public:
   explicit ExegesisTarget(ArrayRef<CpuAndPfmCounters> CpuPfmCounters)
       : CpuPfmCounters(CpuPfmCounters) {}
-
-  // Targets can use this to create target-specific perf counters.
-  virtual Expected<std::unique_ptr<pfm::Counter>>
-  createCounter(StringRef CounterName, const LLVMState &State) const;
 
   // Targets can use this to add target-specific passes in assembleToStream();
   virtual void addTargetSpecificPasses(PassManagerBase &PM) const {}
@@ -120,37 +108,12 @@ public:
   virtual unsigned getMaxMemoryAccessSize() const { return 0; }
 
   // Assigns a random operand of the right type to variable Var.
-  // The target is responsible for handling any operand starting from
-  // OPERAND_FIRST_TARGET.
-  virtual Error randomizeTargetMCOperand(const Instruction &Instr,
-                                         const Variable &Var,
-                                         MCOperand &AssignedValue,
-                                         const BitVector &ForbiddenRegs) const {
-    return make_error<Failure>(
-        "targets with target-specific operands should implement this");
-  }
-
-  // Returns true if this instruction is supported as a back-to-back
-  // instructions.
-  // FIXME: Eventually we should discover this dynamically.
-  virtual bool allowAsBackToBack(const Instruction &Instr) const {
-    return true;
-  }
-
-  // For some instructions, it is interesting to measure how it's performance
-  // characteristics differ depending on it's operands.
-  // This allows us to produce all the interesting variants.
-  virtual std::vector<InstructionTemplate>
-  generateInstructionVariants(const Instruction &Instr,
-                              unsigned MaxConfigsPerOpcode) const {
-    // By default, we're happy with whatever randomizer will give us.
-    return {&Instr};
-  }
-
-  // Checks hardware and software support for current benchmark mode.
-  // Returns an error if the target host does not have support to run the
-  // benchmark.
-  virtual Error checkFeatureSupport() const { return Error::success(); }
+  // The default implementation only handles generic operand types.
+  // The target is responsible for handling any operand
+  // starting from OPERAND_FIRST_TARGET.
+  virtual void randomizeMCOperand(const Instruction &Instr, const Variable &Var,
+                                  MCOperand &AssignedValue,
+                                  const BitVector &ForbiddenRegs) const;
 
   // Creates a snippet generator for the given mode.
   std::unique_ptr<SnippetGenerator>
@@ -158,11 +121,9 @@ public:
                          const LLVMState &State,
                          const SnippetGenerator::Options &Opts) const;
   // Creates a benchmark runner for the given mode.
-  Expected<std::unique_ptr<BenchmarkRunner>> createBenchmarkRunner(
-      InstructionBenchmark::ModeE Mode, const LLVMState &State,
-      BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-      InstructionBenchmark::ResultAggregationModeE ResultAggMode =
-          InstructionBenchmark::Min) const;
+  std::unique_ptr<BenchmarkRunner>
+  createBenchmarkRunner(InstructionBenchmark::ModeE Mode,
+                        const LLVMState &State) const;
 
   // Returns the ExegesisTarget for the given triple or nullptr if the target
   // does not exist.
@@ -178,32 +139,19 @@ public:
   // counters are defined for this CPU).
   const PfmCountersInfo &getPfmCounters(StringRef CpuName) const;
 
-  // Saves the CPU state that needs to be preserved when running a benchmark,
-  // and returns and RAII object that restores the state on destruction.
-  // By default no state is preserved.
-  struct SavedState {
-    virtual ~SavedState();
-  };
-  virtual std::unique_ptr<SavedState> withSavedState() const {
-    return std::make_unique<SavedState>();
-  }
-
 private:
   virtual bool matchesArch(Triple::ArchType Arch) const = 0;
 
   // Targets can implement their own snippet generators/benchmarks runners by
   // implementing these.
-  std::unique_ptr<SnippetGenerator> virtual createSerialSnippetGenerator(
+  std::unique_ptr<SnippetGenerator> virtual createLatencySnippetGenerator(
       const LLVMState &State, const SnippetGenerator::Options &Opts) const;
-  std::unique_ptr<SnippetGenerator> virtual createParallelSnippetGenerator(
+  std::unique_ptr<SnippetGenerator> virtual createUopsSnippetGenerator(
       const LLVMState &State, const SnippetGenerator::Options &Opts) const;
   std::unique_ptr<BenchmarkRunner> virtual createLatencyBenchmarkRunner(
-      const LLVMState &State, InstructionBenchmark::ModeE Mode,
-      BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-      InstructionBenchmark::ResultAggregationModeE ResultAggMode) const;
+      const LLVMState &State, InstructionBenchmark::ModeE Mode) const;
   std::unique_ptr<BenchmarkRunner> virtual createUopsBenchmarkRunner(
-      const LLVMState &State, BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-      InstructionBenchmark::ResultAggregationModeE ResultAggMode) const;
+      const LLVMState &State) const;
 
   const ExegesisTarget *Next = nullptr;
   const ArrayRef<CpuAndPfmCounters> CpuPfmCounters;

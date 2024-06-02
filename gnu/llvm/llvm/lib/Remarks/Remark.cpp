@@ -11,9 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Remarks/Remark.h"
-#include "llvm/ADT/ArrayRef.h"
+#include "llvm-c/Remarks.h"
+#include "llvm/Support/CBindingWrapping.h"
 #include "llvm/Support/raw_ostream.h"
-#include <optional>
 
 using namespace llvm;
 using namespace llvm::remarks;
@@ -61,7 +61,7 @@ extern "C" LLVMRemarkStringRef LLVMRemarkArgGetValue(LLVMRemarkArgRef Arg) {
 
 extern "C" LLVMRemarkDebugLocRef
 LLVMRemarkArgGetDebugLoc(LLVMRemarkArgRef Arg) {
-  if (const std::optional<RemarkLocation> &Loc = unwrap(Arg)->Loc)
+  if (const Optional<RemarkLocation> &Loc = unwrap(Arg)->Loc)
     return wrap(&*Loc);
   return nullptr;
 }
@@ -92,13 +92,13 @@ LLVMRemarkEntryGetFunctionName(LLVMRemarkEntryRef Remark) {
 
 extern "C" LLVMRemarkDebugLocRef
 LLVMRemarkEntryGetDebugLoc(LLVMRemarkEntryRef Remark) {
-  if (const std::optional<RemarkLocation> &Loc = unwrap(Remark)->Loc)
+  if (const Optional<RemarkLocation> &Loc = unwrap(Remark)->Loc)
     return wrap(&*Loc);
   return nullptr;
 }
 
 extern "C" uint64_t LLVMRemarkEntryGetHotness(LLVMRemarkEntryRef Remark) {
-  if (const std::optional<uint64_t> &Hotness = unwrap(Remark)->Hotness)
+  if (const Optional<uint64_t> &Hotness = unwrap(Remark)->Hotness)
     return *Hotness;
   return 0;
 }
@@ -112,7 +112,7 @@ LLVMRemarkEntryGetFirstArg(LLVMRemarkEntryRef Remark) {
   ArrayRef<Argument> Args = unwrap(Remark)->Args;
   // No arguments to iterate on.
   if (Args.empty())
-    return nullptr;
+    return NULL;
   return reinterpret_cast<LLVMRemarkArgRef>(
       const_cast<Argument *>(Args.begin()));
 }
@@ -120,13 +120,13 @@ LLVMRemarkEntryGetFirstArg(LLVMRemarkEntryRef Remark) {
 extern "C" LLVMRemarkArgRef
 LLVMRemarkEntryGetNextArg(LLVMRemarkArgRef ArgIt, LLVMRemarkEntryRef Remark) {
   // No more arguments to iterate on.
-  if (ArgIt == nullptr)
-    return nullptr;
+  if (ArgIt == NULL)
+    return NULL;
 
   auto It = (ArrayRef<Argument>::const_iterator)ArgIt;
   auto Next = std::next(It);
   if (Next == unwrap(Remark)->Args.end())
-    return nullptr;
+    return NULL;
 
   return reinterpret_cast<LLVMRemarkArgRef>(const_cast<Argument *>(Next));
 }

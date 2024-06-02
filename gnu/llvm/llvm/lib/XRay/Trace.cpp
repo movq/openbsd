@@ -30,6 +30,8 @@ using namespace llvm::xray;
 using llvm::yaml::Input;
 
 namespace {
+using XRayRecordStorage =
+    std::aligned_storage<sizeof(XRayRecord), alignof(XRayRecord)>::type;
 
 Error loadNaiveFormatLog(StringRef Data, bool IsLittleEndian,
                          XRayFileHeader &FileHeader,
@@ -408,7 +410,6 @@ Expected<Trace> llvm::xray::loadTraceFile(StringRef Filename, bool Sort) {
   auto TraceOrError = loadTrace(LittleEndianDE, Sort);
   if (!TraceOrError) {
     DataExtractor BigEndianDE(Data, false, 8);
-    consumeError(TraceOrError.takeError());
     TraceOrError = loadTrace(BigEndianDE, Sort);
   }
   return TraceOrError;

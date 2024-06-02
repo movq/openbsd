@@ -46,15 +46,16 @@ enum DependenceKind {
   AutoreleasePoolBoundary,
   CanChangeRetainCount,
   RetainAutoreleaseDep,       ///< Blocks objc_retainAutorelease.
-  RetainAutoreleaseRVDep      ///< Blocks objc_retainAutoreleaseReturnValue.
+  RetainAutoreleaseRVDep,     ///< Blocks objc_retainAutoreleaseReturnValue.
+  RetainRVDep                 ///< Blocks objc_retainAutoreleasedReturnValue.
 };
 
-/// Find dependent instructions. If there is exactly one dependent instruction,
-/// return it. Otherwise, return null.
-llvm::Instruction *findSingleDependency(DependenceKind Flavor, const Value *Arg,
-                                        BasicBlock *StartBB,
-                                        Instruction *StartInst,
-                                        ProvenanceAnalysis &PA);
+void FindDependencies(DependenceKind Flavor,
+                      const Value *Arg,
+                      BasicBlock *StartBB, Instruction *StartInst,
+                      SmallPtrSetImpl<Instruction *> &DependingInstructions,
+                      SmallPtrSetImpl<const BasicBlock *> &Visited,
+                      ProvenanceAnalysis &PA);
 
 bool
 Depends(DependenceKind Flavor, Instruction *Inst, const Value *Arg,

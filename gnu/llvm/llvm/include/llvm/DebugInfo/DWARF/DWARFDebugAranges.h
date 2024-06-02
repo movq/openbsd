@@ -6,17 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFO_DWARF_DWARFDEBUGARANGES_H
-#define LLVM_DEBUGINFO_DWARF_DWARFDEBUGARANGES_H
+#ifndef LLVM_DEBUGINFO_DWARFDEBUGARANGES_H
+#define LLVM_DEBUGINFO_DWARFDEBUGARANGES_H
 
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/Support/DataExtractor.h"
 #include <cstdint>
 #include <vector>
 
 namespace llvm {
-class DWARFDataExtractor;
-class Error;
 
 class DWARFContext;
 
@@ -27,16 +25,15 @@ public:
 
 private:
   void clear();
-  void extract(DWARFDataExtractor DebugArangesData,
-               function_ref<void(Error)> RecoverableErrorHandler,
-               function_ref<void(Error)> WarningHandler);
+  void extract(DataExtractor DebugArangesData);
 
   /// Call appendRange multiple times and then call construct.
   void appendRange(uint64_t CUOffset, uint64_t LowPC, uint64_t HighPC);
   void construct();
 
   struct Range {
-    explicit Range(uint64_t LowPC, uint64_t HighPC, uint64_t CUOffset)
+    explicit Range(uint64_t LowPC = -1ULL, uint64_t HighPC = -1ULL,
+                   uint64_t CUOffset = -1ULL)
       : LowPC(LowPC), Length(HighPC - LowPC), CUOffset(CUOffset) {}
 
     void setHighPC(uint64_t HighPC) {
@@ -84,4 +81,4 @@ private:
 
 } // end namespace llvm
 
-#endif // LLVM_DEBUGINFO_DWARF_DWARFDEBUGARANGES_H
+#endif // LLVM_DEBUGINFO_DWARFDEBUGARANGES_H

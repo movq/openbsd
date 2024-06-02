@@ -15,105 +15,46 @@ using namespace llvm;
 
 #define DEBUG_TYPE "aarch64-selectiondag-info"
 
-SDValue AArch64SelectionDAGInfo::EmitMOPS(AArch64ISD::NodeType SDOpcode,
-                                          SelectionDAG &DAG, const SDLoc &DL,
-                                          SDValue Chain, SDValue Dst,
-                                          SDValue SrcOrValue, SDValue Size,
-                                          Align Alignment, bool isVolatile,
-                                          MachinePointerInfo DstPtrInfo,
-                                          MachinePointerInfo SrcPtrInfo) const {
-
-  // Get the constant size of the copy/set.
-  uint64_t ConstSize = 0;
-  if (auto *C = dyn_cast<ConstantSDNode>(Size))
-    ConstSize = C->getZExtValue();
-
-  const bool IsSet = SDOpcode == AArch64ISD::MOPS_MEMSET ||
-                     SDOpcode == AArch64ISD::MOPS_MEMSET_TAGGING;
-
-  const auto MachineOpcode = [&]() {
-    switch (SDOpcode) {
-    case AArch64ISD::MOPS_MEMSET:
-      return AArch64::MOPSMemorySetPseudo;
-    case AArch64ISD::MOPS_MEMSET_TAGGING:
-      return AArch64::MOPSMemorySetTaggingPseudo;
-    case AArch64ISD::MOPS_MEMCOPY:
-      return AArch64::MOPSMemoryCopyPseudo;
-    case AArch64ISD::MOPS_MEMMOVE:
-      return AArch64::MOPSMemoryMovePseudo;
-    default:
-      llvm_unreachable("Unhandled MOPS ISD Opcode");
-    }
-  }();
-
-  MachineMemOperand::Flags Flags = MachineMemOperand::MOStore;
-  if (isVolatile)
-    Flags |= MachineMemOperand::MOVolatile;
-  if (!IsSet)
-    Flags |= MachineMemOperand::MOLoad;
-
-  MachineFunction &MF = DAG.getMachineFunction();
-
-  auto *DstOp =
-      MF.getMachineMemOperand(DstPtrInfo, Flags, ConstSize, Alignment);
-  auto *SrcOp =
-      MF.getMachineMemOperand(SrcPtrInfo, Flags, ConstSize, Alignment);
-
-  if (IsSet) {
-    // Extend value to i64 if required
-    if (SrcOrValue.getValueType() != MVT::i64)
-      SrcOrValue = DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, SrcOrValue);
-    SDValue Ops[] = {Dst, Size, SrcOrValue, Chain};
-    const EVT ResultTys[] = {MVT::i64, MVT::i64, MVT::Other};
-    MachineSDNode *Node = DAG.getMachineNode(MachineOpcode, DL, ResultTys, Ops);
-    DAG.setNodeMemRefs(Node, {DstOp});
-    return SDValue(Node, 2);
-  } else {
-    SDValue Ops[] = {Dst, SrcOrValue, Size, Chain};
-    const EVT ResultTys[] = {MVT::i64, MVT::i64, MVT::i64, MVT::Other};
-    MachineSDNode *Node = DAG.getMachineNode(MachineOpcode, DL, ResultTys, Ops);
-    DAG.setNodeMemRefs(Node, {DstOp, SrcOp});
-    return SDValue(Node, 3);
-  }
-}
-
-SDValue AArch64SelectionDAGInfo::EmitTargetCodeForMemcpy(
-    SelectionDAG &DAG, const SDLoc &DL, SDValue Chain, SDValue Dst, SDValue Src,
-    SDValue Size, Align Alignment, bool isVolatile, bool AlwaysInline,
-    MachinePointerInfo DstPtrInfo, MachinePointerInfo SrcPtrInfo) const {
-  const AArch64Subtarget &STI =
-      DAG.getMachineFunction().getSubtarget<AArch64Subtarget>();
-  if (STI.hasMOPS())
-    return EmitMOPS(AArch64ISD::MOPS_MEMCOPY, DAG, DL, Chain, Dst, Src, Size,
-                    Alignment, isVolatile, DstPtrInfo, SrcPtrInfo);
-  return SDValue();
-}
-
 SDValue AArch64SelectionDAGInfo::EmitTargetCodeForMemset(
     SelectionDAG &DAG, const SDLoc &dl, SDValue Chain, SDValue Dst, SDValue Src,
-    SDValue Size, Align Alignment, bool isVolatile, bool AlwaysInline,
+    SDValue Size, unsigned Align, bool isVolatile,
     MachinePointerInfo DstPtrInfo) const {
+  // Check to see if there is a specialized entry-point for memory zeroing.
+  ConstantSDNode *V = dyn_cast<ConstantSDNode>(Src);
+  ConstantSDNode *SizeValue = dyn_cast<ConstantSDNode>(Size);
   const AArch64Subtarget &STI =
       DAG.getMachineFunction().getSubtarget<AArch64Subtarget>();
+  const char *bzeroName = (V && V->isNullValue())
+      ? DAG.getTargetLoweringInfo().getLibcallName(RTLIB::BZERO) : nullptr;
+  // For small size (< 256), it is not beneficial to use bzero
+  // instead of memset.
+  if (bzeroName && (!SizeValue || SizeValue->getZExtValue() > 256)) {
+    const AArch64TargetLowering &TLI = *STI.getTargetLowering();
 
-  if (STI.hasMOPS()) {
-    return EmitMOPS(AArch64ISD::MOPS_MEMSET, DAG, dl, Chain, Dst, Src, Size,
-                    Alignment, isVolatile, DstPtrInfo, MachinePointerInfo{});
+    EVT IntPtr = TLI.getPointerTy(DAG.getDataLayout());
+    Type *IntPtrTy = Type::getInt8PtrTy(*DAG.getContext());
+    TargetLowering::ArgListTy Args;
+    TargetLowering::ArgListEntry Entry;
+    Entry.Node = Dst;
+    Entry.Ty = IntPtrTy;
+    Args.push_back(Entry);
+    Entry.Node = Size;
+    Args.push_back(Entry);
+    TargetLowering::CallLoweringInfo CLI(DAG);
+    CLI.setDebugLoc(dl)
+        .setChain(Chain)
+        .setLibCallee(CallingConv::C, Type::getVoidTy(*DAG.getContext()),
+                      DAG.getExternalSymbol(bzeroName, IntPtr),
+                      std::move(Args))
+        .setDiscardResult();
+    std::pair<SDValue, SDValue> CallResult = TLI.LowerCallTo(CLI);
+    return CallResult.second;
   }
   return SDValue();
 }
-
-SDValue AArch64SelectionDAGInfo::EmitTargetCodeForMemmove(
-    SelectionDAG &DAG, const SDLoc &dl, SDValue Chain, SDValue Dst, SDValue Src,
-    SDValue Size, Align Alignment, bool isVolatile,
-    MachinePointerInfo DstPtrInfo, MachinePointerInfo SrcPtrInfo) const {
-  const AArch64Subtarget &STI =
-      DAG.getMachineFunction().getSubtarget<AArch64Subtarget>();
-  if (STI.hasMOPS()) {
-    return EmitMOPS(AArch64ISD::MOPS_MEMMOVE, DAG, dl, Chain, Dst, Src, Size,
-                    Alignment, isVolatile, DstPtrInfo, SrcPtrInfo);
-  }
-  return SDValue();
+bool AArch64SelectionDAGInfo::generateFMAsInMachineCombiner(
+    CodeGenOpt::Level OptLevel) const {
+  return OptLevel >= CodeGenOpt::Aggressive;
 }
 
 static const int kSetTagLoopThreshold = 176;
@@ -141,8 +82,7 @@ static SDValue EmitUnrolledSetTag(SelectionDAG &DAG, const SDLoc &dl,
   unsigned OffsetScaled = 0;
   while (OffsetScaled < ObjSizeScaled) {
     if (ObjSizeScaled - OffsetScaled >= 2) {
-      SDValue AddrNode =
-          DAG.getMemBasePlusOffset(Ptr, TypeSize::Fixed(OffsetScaled * 16), dl);
+      SDValue AddrNode = DAG.getMemBasePlusOffset(Ptr, OffsetScaled * 16, dl);
       SDValue St = DAG.getMemIntrinsicNode(
           OpCode2, dl, DAG.getVTList(MVT::Other),
           {Chain, TagSrc, AddrNode},
@@ -154,8 +94,7 @@ static SDValue EmitUnrolledSetTag(SelectionDAG &DAG, const SDLoc &dl,
     }
 
     if (ObjSizeScaled - OffsetScaled > 0) {
-      SDValue AddrNode =
-          DAG.getMemBasePlusOffset(Ptr, TypeSize::Fixed(OffsetScaled * 16), dl);
+      SDValue AddrNode = DAG.getMemBasePlusOffset(Ptr, OffsetScaled * 16, dl);
       SDValue St = DAG.getMemIntrinsicNode(
           OpCode1, dl, DAG.getVTList(MVT::Other),
           {Chain, TagSrc, AddrNode},
@@ -178,7 +117,7 @@ SDValue AArch64SelectionDAGInfo::EmitTargetCodeForSetTag(
 
   MachineFunction &MF = DAG.getMachineFunction();
   MachineMemOperand *BaseMemOperand = MF.getMachineMemOperand(
-      DstPtrInfo, MachineMemOperand::MOStore, ObjSize, Align(16));
+      DstPtrInfo, MachineMemOperand::MOStore, ObjSize, 16);
 
   bool UseSetTagRangeLoop =
       kSetTagLoopThreshold >= 0 && (int)ObjSize >= kSetTagLoopThreshold;
@@ -186,18 +125,21 @@ SDValue AArch64SelectionDAGInfo::EmitTargetCodeForSetTag(
     return EmitUnrolledSetTag(DAG, dl, Chain, Addr, ObjSize, BaseMemOperand,
                               ZeroData);
 
-  const EVT ResTys[] = {MVT::i64, MVT::i64, MVT::Other};
-
-  unsigned Opcode;
-  if (Addr.getOpcode() == ISD::FrameIndex) {
-    int FI = cast<FrameIndexSDNode>(Addr)->getIndex();
-    Addr = DAG.getTargetFrameIndex(FI, MVT::i64);
-    Opcode = ZeroData ? AArch64::STZGloop : AArch64::STGloop;
-  } else {
-    Opcode = ZeroData ? AArch64::STZGloop_wback : AArch64::STGloop_wback;
+  if (ObjSize % 32 != 0) {
+    SDNode *St1 = DAG.getMachineNode(
+        ZeroData ? AArch64::STZGPostIndex : AArch64::STGPostIndex, dl,
+        {MVT::i64, MVT::Other},
+        {Addr, Addr, DAG.getTargetConstant(1, dl, MVT::i64), Chain});
+    DAG.setNodeMemRefs(cast<MachineSDNode>(St1), {BaseMemOperand});
+    ObjSize -= 16;
+    Addr = SDValue(St1, 0);
+    Chain = SDValue(St1, 1);
   }
-  SDValue Ops[] = {DAG.getTargetConstant(ObjSize, dl, MVT::i64), Addr, Chain};
-  SDNode *St = DAG.getMachineNode(Opcode, dl, ResTys, Ops);
+
+  const EVT ResTys[] = {MVT::i64, MVT::i64, MVT::Other};
+  SDValue Ops[] = {DAG.getConstant(ObjSize, dl, MVT::i64), Addr, Chain};
+  SDNode *St = DAG.getMachineNode(
+      ZeroData ? AArch64::STZGloop : AArch64::STGloop, dl, ResTys, Ops);
 
   DAG.setNodeMemRefs(cast<MachineSDNode>(St), {BaseMemOperand});
   return SDValue(St, 2);

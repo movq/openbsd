@@ -380,34 +380,34 @@ template <> struct ScalarTraits<Target> {
     default:
       OS << "unknown";
       break;
-    case PLATFORM_MACOS:
+    case PlatformKind::macOS:
       OS << "macos";
       break;
-    case PLATFORM_IOS:
+    case PlatformKind::iOS:
       OS << "ios";
       break;
-    case PLATFORM_TVOS:
+    case PlatformKind::tvOS:
       OS << "tvos";
       break;
-    case PLATFORM_WATCHOS:
+    case PlatformKind::watchOS:
       OS << "watchos";
       break;
-    case PLATFORM_BRIDGEOS:
+    case PlatformKind::bridgeOS:
       OS << "bridgeos";
       break;
-    case PLATFORM_MACCATALYST:
+    case PlatformKind::macCatalyst:
       OS << "maccatalyst";
       break;
-    case PLATFORM_IOSSIMULATOR:
+    case PlatformKind::iOSSimulator:
       OS << "ios-simulator";
       break;
-    case PLATFORM_TVOSSIMULATOR:
+    case PlatformKind::tvOSSimulator:
       OS << "tvos-simulator";
       break;
-    case PLATFORM_WATCHOSSIMULATOR:
+    case PlatformKind::watchOSSimulator:
       OS << "watchos-simulator";
       break;
-    case PLATFORM_DRIVERKIT:
+    case PlatformKind::driverKit:
       OS << "driverkit";
       break;
     }
@@ -423,7 +423,7 @@ template <> struct ScalarTraits<Target> {
     Value = *Result;
     if (Value.Arch == AK_unknown)
       return "unknown architecture";
-    if (Value.Platform == PLATFORM_UNKNOWN)
+    if (Value.Platform == PlatformKind::unknown)
       return "unknown platform";
 
     return {};
@@ -597,10 +597,11 @@ template <> struct MappingTraits<const InterfaceFile *> {
       TargetList Targets;
 
       for (auto Platform : Platforms) {
-        Platform = mapToPlatformType(Platform, Architectures.hasX86());
+        Platform = mapToPlatformKind(Platform, Architectures.hasX86());
 
         for (const auto &&Architecture : Architectures) {
-          if ((Architecture == AK_i386) && (Platform == PLATFORM_MACCATALYST))
+          if ((Architecture == AK_i386) &&
+              (Platform == PlatformKind::macCatalyst))
             continue;
 
           Targets.emplace_back(Architecture, Platform);
@@ -1120,9 +1121,9 @@ TextAPIReader::get(MemoryBufferRef InputBuffer) {
   auto File = std::unique_ptr<InterfaceFile>(
       const_cast<InterfaceFile *>(Files.front()));
 
-  for (const InterfaceFile *FI : llvm::drop_begin(Files))
+  for (auto Iter = std::next(Files.begin()); Iter != Files.end(); ++Iter)
     File->addDocument(
-        std::shared_ptr<InterfaceFile>(const_cast<InterfaceFile *>(FI)));
+        std::shared_ptr<InterfaceFile>(const_cast<InterfaceFile *>(*Iter)));
 
   if (YAMLIn.error())
     return make_error<StringError>(Ctx.ErrorMessage, YAMLIn.error());

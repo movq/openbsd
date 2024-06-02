@@ -17,34 +17,37 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/ModuleSummaryIndex.h"
+#include "llvm/IR/RemarkStreamer.h"
 #include "llvm/LTO/Config.h"
+#include "llvm/Linker/IRMover.h"
 #include "llvm/Object/IRSymtab.h"
-#include "llvm/Support/Caching.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/thread.h"
-#include "llvm/Transforms/IPO/FunctionAttrs.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO/FunctionImport.h"
 
 namespace llvm {
 
+class BitcodeModule;
 class Error;
-class IRMover;
 class LLVMContext;
 class MemoryBufferRef;
 class Module;
+class Target;
 class raw_pwrite_stream;
-class ToolOutputFile;
 
 /// Resolve linkage for prevailing symbols in the \p Index. Linkage changes
 /// recorded in the index and the ThinLTO backends must apply the changes to
-/// the module via thinLTOFinalizeInModule.
+/// the module via thinLTOResolvePrevailingInModule.
 ///
 /// This is done for correctness (if value exported, ensure we always
 /// emit a copy), and compile-time optimization (allow drop of duplicates).
 void thinLTOResolvePrevailingInIndex(
-    const lto::Config &C, ModuleSummaryIndex &Index,
+    ModuleSummaryIndex &Index,
     function_ref<bool(GlobalValue::GUID, const GlobalValueSummary *)>
         isPrevailing,
     function_ref<void(StringRef, GlobalValue::GUID, GlobalValue::LinkageTypes)>
@@ -83,18 +86,14 @@ std::string getThinLTOOutputFile(const std::string &Path,
                                  const std::string &NewPrefix);
 
 /// Setup optimization remarks.
-Expected<std::unique_ptr<ToolOutputFile>> setupLLVMOptimizationRemarks(
-    LLVMContext &Context, StringRef RemarksFilename, StringRef RemarksPasses,
-    StringRef RemarksFormat, bool RemarksWithHotness,
-    std::optional<uint64_t> RemarksHotnessThreshold = 0, int Count = -1);
+Expected<std::unique_ptr<ToolOutputFile>>
+setupOptimizationRemarks(LLVMContext &Context, StringRef RemarksFilename,
+                         StringRef RemarksPasses, StringRef RemarksFormat,
+                         bool RemarksWithHotness, int Count = -1);
 
 /// Setups the output file for saving statistics.
 Expected<std::unique_ptr<ToolOutputFile>>
 setupStatsFile(StringRef StatsFilename);
-
-/// Produces a container ordering for optimal multi-threaded processing. Returns
-/// ordered indices to elements in the input array.
-std::vector<int> generateModulesOrdering(ArrayRef<BitcodeModule *> R);
 
 class LTO;
 struct SymbolResolution;
@@ -120,7 +119,7 @@ private:
 
   StringRef TargetTriple, SourceFileName, COFFLinkerOpts;
   std::vector<StringRef> DependentLibraries;
-  std::vector<std::pair<StringRef, Comdat::SelectionKind>> ComdatTable;
+  std::vector<StringRef> ComdatTable;
 
 public:
   ~InputFile();
@@ -173,9 +172,7 @@ public:
   StringRef getSourceFileName() const { return SourceFileName; }
 
   // Returns a table with all the comdats used by this file.
-  ArrayRef<std::pair<StringRef, Comdat::SelectionKind>> getComdatTable() const {
-    return ComdatTable;
-  }
+  ArrayRef<StringRef> getComdatTable() const { return ComdatTable; }
 
   // Returns the only BitcodeModule from InputFile.
   BitcodeModule &getSingleBitcodeModule();
@@ -187,27 +184,50 @@ private:
   }
 };
 
+/// This class wraps an output stream for a native object. Most clients should
+/// just be able to return an instance of this base class from the stream
+/// callback, but if a client needs to perform some action after the stream is
+/// written to, that can be done by deriving from this class and overriding the
+/// destructor.
+class NativeObjectStream {
+public:
+  NativeObjectStream(std::unique_ptr<raw_pwrite_stream> OS) : OS(std::move(OS)) {}
+  std::unique_ptr<raw_pwrite_stream> OS;
+  virtual ~NativeObjectStream() = default;
+};
+
+/// This type defines the callback to add a native object that is generated on
+/// the fly.
+///
+/// Stream callbacks must be thread safe.
+using AddStreamFn =
+    std::function<std::unique_ptr<NativeObjectStream>(unsigned Task)>;
+
+/// This is the type of a native object cache. To request an item from the
+/// cache, pass a unique string as the Key. For hits, the cached file will be
+/// added to the link and this function will return AddStreamFn(). For misses,
+/// the cache will return a stream callback which must be called at most once to
+/// produce content for the stream. The native object stream produced by the
+/// stream callback will add the file to the link after the stream is written
+/// to.
+///
+/// Clients generally look like this:
+///
+/// if (AddStreamFn AddStream = Cache(Task, Key))
+///   ProduceContent(AddStream);
+using NativeObjectCache =
+    std::function<AddStreamFn(unsigned Task, StringRef Key)>;
+
 /// A ThinBackend defines what happens after the thin-link phase during ThinLTO.
 /// The details of this type definition aren't important; clients can only
 /// create a ThinBackend using one of the create*ThinBackend() functions below.
 using ThinBackend = std::function<std::unique_ptr<ThinBackendProc>(
     const Config &C, ModuleSummaryIndex &CombinedIndex,
     StringMap<GVSummaryMapTy> &ModuleToDefinedGVSummaries,
-    AddStreamFn AddStream, FileCache Cache)>;
+    AddStreamFn AddStream, NativeObjectCache Cache)>;
 
 /// This ThinBackend runs the individual backend jobs in-process.
-/// The default value means to use one job per hardware core (not hyper-thread).
-/// OnWrite is callback which receives module identifier and notifies LTO user
-/// that index file for the module (and optionally imports file) was created.
-/// ShouldEmitIndexFiles being true will write sharded ThinLTO index files
-/// to the same path as the input module, with suffix ".thinlto.bc"
-/// ShouldEmitImportsFiles is true it also writes a list of imported files to a
-/// similar path with ".imports" appended instead.
-using IndexWriteCallback = std::function<void(const std::string &)>;
-ThinBackend createInProcessThinBackend(ThreadPoolStrategy Parallelism,
-                                       IndexWriteCallback OnWrite = nullptr,
-                                       bool ShouldEmitIndexFiles = false,
-                                       bool ShouldEmitImportsFiles = false);
+ThinBackend createInProcessThinBackend(unsigned ParallelismLevel);
 
 /// This ThinBackend writes individual module indexes to files, instead of
 /// running the individual backend jobs. This backend is for distributed builds
@@ -222,6 +242,7 @@ ThinBackend createInProcessThinBackend(ThreadPoolStrategy Parallelism,
 /// the final ThinLTO linking. Can be nullptr.
 /// OnWrite is callback which receives module identifier and notifies LTO user
 /// that index file for the module (and optionally imports file) was created.
+using IndexWriteCallback = std::function<void(const std::string &)>;
 ThinBackend createWriteIndexesThinBackend(std::string OldPrefix,
                                           std::string NewPrefix,
                                           bool ShouldEmitImportsFiles,
@@ -275,7 +296,7 @@ public:
   ///
   /// The client will receive at most one callback (via either AddStream or
   /// Cache) for each task identifier.
-  Error run(AddStreamFn AddStream, FileCache Cache = nullptr);
+  Error run(AddStreamFn AddStream, NativeObjectCache Cache = nullptr);
 
   /// Static method that returns a list of libcall symbols that can be generated
   /// by LTO but might not be visible from bitcode symbol table.
@@ -309,20 +330,14 @@ private:
       std::vector<GlobalValue *> Keep;
     };
     std::vector<AddedModule> ModsWithSummaries;
-    bool EmptyCombinedModule = true;
   } RegularLTO;
-
-  using ModuleMapType = MapVector<StringRef, BitcodeModule>;
 
   struct ThinLTOState {
     ThinLTOState(ThinBackend Backend);
 
     ThinBackend Backend;
     ModuleSummaryIndex CombinedIndex;
-    // The full set of bitcode modules in input order.
-    ModuleMapType ModuleMap;
-    // The bitcode modules to compile, if specified by the LTO Config.
-    std::optional<ModuleMapType> ModulesToCompile;
+    MapVector<StringRef, BitcodeModule> ModuleMap;
     DenseMap<GlobalValue::GUID, StringRef> PrevailingModuleForGUID;
   } ThinLTO;
 
@@ -341,10 +356,6 @@ private:
     /// (i.e. in either a regular object or a regular LTO module without a
     /// summary).
     bool VisibleOutsideSummary = false;
-
-    /// The symbol was exported dynamically, and therefore could be referenced
-    /// by a shared library not visible to the linker.
-    bool ExportDynamic = false;
 
     bool UnnamedAddr = true;
 
@@ -407,7 +418,7 @@ private:
                    const SymbolResolution *&ResI, const SymbolResolution *ResE);
 
   Error runRegularLTO(AddStreamFn AddStream);
-  Error runThinLTO(AddStreamFn AddStream, FileCache Cache,
+  Error runThinLTO(AddStreamFn AddStream, NativeObjectCache Cache,
                    const DenseSet<GlobalValue::GUID> &GUIDPreservedSymbols);
 
   Error checkPartiallySplit();
@@ -415,14 +426,7 @@ private:
   mutable bool CalledGetMaxTasks = false;
 
   // Use Optional to distinguish false from not yet initialized.
-  std::optional<bool> EnableSplitLTOUnit;
-
-  // Identify symbols exported dynamically, and that therefore could be
-  // referenced by a shared library not visible to the linker.
-  DenseSet<GlobalValue::GUID> DynamicExportSymbols;
-
-  // Diagnostic optimization remarks file
-  std::unique_ptr<ToolOutputFile> DiagnosticOutputFile;
+  Optional<bool> EnableSplitLTOUnit;
 };
 
 /// The resolution for a symbol. The linker must provide a SymbolResolution for
@@ -430,7 +434,7 @@ private:
 struct SymbolResolution {
   SymbolResolution()
       : Prevailing(0), FinalDefinitionInLinkageUnit(0), VisibleToRegularObj(0),
-        ExportDynamic(0), LinkerRedefined(0) {}
+        LinkerRedefined(0) {}
 
   /// The linker has chosen this definition of the symbol.
   unsigned Prevailing : 1;
@@ -441,10 +445,6 @@ struct SymbolResolution {
 
   /// The definition of this symbol is visible outside of the LTO unit.
   unsigned VisibleToRegularObj : 1;
-
-  /// The symbol was exported dynamically, and therefore could be referenced
-  /// by a shared library not visible to the linker.
-  unsigned ExportDynamic : 1;
 
   /// Linker redefined version of the symbol which appeared in -wrap or -defsym
   /// linker option.

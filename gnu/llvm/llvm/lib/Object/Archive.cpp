@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Object/Archive.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -21,8 +22,6 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
-#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
@@ -30,6 +29,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -38,78 +38,47 @@ using namespace llvm;
 using namespace object;
 using namespace llvm::support::endian;
 
+static const char *const Magic = "!<arch>\n";
+static const char *const ThinMagic = "!<thin>\n";
+
 void Archive::anchor() {}
 
-static Error malformedError(Twine Msg) {
+static Error
+malformedError(Twine Msg) {
   std::string StringMsg = "truncated or malformed archive (" + Msg.str() + ")";
   return make_error<GenericBinaryError>(std::move(StringMsg),
                                         object_error::parse_failed);
 }
 
-static Error
-createMemberHeaderParseError(const AbstractArchiveMemberHeader *ArMemHeader,
-                             const char *RawHeaderPtr, uint64_t Size) {
-  StringRef Msg("remaining size of archive too small for next archive "
-                "member header ");
-
-  Expected<StringRef> NameOrErr = ArMemHeader->getName(Size);
-  if (NameOrErr)
-    return malformedError(Msg + "for " + *NameOrErr);
-
-  consumeError(NameOrErr.takeError());
-  uint64_t Offset = RawHeaderPtr - ArMemHeader->Parent->getData().data();
-  return malformedError(Msg + "at offset " + Twine(Offset));
-}
-
-template <class T, std::size_t N>
-StringRef getFieldRawString(const T (&Field)[N]) {
-  return StringRef(Field, N).rtrim(" ");
-}
-
-template <class T>
-StringRef CommonArchiveMemberHeader<T>::getRawAccessMode() const {
-  return getFieldRawString(ArMemHdr->AccessMode);
-}
-
-template <class T>
-StringRef CommonArchiveMemberHeader<T>::getRawLastModified() const {
-  return getFieldRawString(ArMemHdr->LastModified);
-}
-
-template <class T> StringRef CommonArchiveMemberHeader<T>::getRawUID() const {
-  return getFieldRawString(ArMemHdr->UID);
-}
-
-template <class T> StringRef CommonArchiveMemberHeader<T>::getRawGID() const {
-  return getFieldRawString(ArMemHdr->GID);
-}
-
-template <class T> uint64_t CommonArchiveMemberHeader<T>::getOffset() const {
-  return reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
-}
-
-template class object::CommonArchiveMemberHeader<UnixArMemHdrType>;
-template class object::CommonArchiveMemberHeader<BigArMemHdrType>;
-
 ArchiveMemberHeader::ArchiveMemberHeader(const Archive *Parent,
                                          const char *RawHeaderPtr,
                                          uint64_t Size, Error *Err)
-    : CommonArchiveMemberHeader<UnixArMemHdrType>(
-          Parent, reinterpret_cast<const UnixArMemHdrType *>(RawHeaderPtr)) {
+    : Parent(Parent),
+      ArMemHdr(reinterpret_cast<const ArMemHdrType *>(RawHeaderPtr)) {
   if (RawHeaderPtr == nullptr)
     return;
   ErrorAsOutParameter ErrAsOutParam(Err);
 
-  if (Size < getSizeOf()) {
-    *Err = createMemberHeaderParseError(this, RawHeaderPtr, Size);
+  if (Size < sizeof(ArMemHdrType)) {
+    if (Err) {
+      std::string Msg("remaining size of archive too small for next archive "
+                      "member header ");
+      Expected<StringRef> NameOrErr = getName(Size);
+      if (!NameOrErr) {
+        consumeError(NameOrErr.takeError());
+        uint64_t Offset = RawHeaderPtr - Parent->getData().data();
+        *Err = malformedError(Msg + "at offset " + Twine(Offset));
+      } else
+        *Err = malformedError(Msg + "for " + NameOrErr.get());
+    }
     return;
   }
   if (ArMemHdr->Terminator[0] != '`' || ArMemHdr->Terminator[1] != '\n') {
     if (Err) {
       std::string Buf;
       raw_string_ostream OS(Buf);
-      OS.write_escaped(
-          StringRef(ArMemHdr->Terminator, sizeof(ArMemHdr->Terminator)));
+      OS.write_escaped(StringRef(ArMemHdr->Terminator,
+                                 sizeof(ArMemHdr->Terminator)));
       OS.flush();
       std::string Msg("terminator characters in archive member \"" + Buf +
                       "\" not the correct \"`\\n\" values for the archive "
@@ -126,22 +95,6 @@ ArchiveMemberHeader::ArchiveMemberHeader(const Archive *Parent,
   }
 }
 
-BigArchiveMemberHeader::BigArchiveMemberHeader(const Archive *Parent,
-                                               const char *RawHeaderPtr,
-                                               uint64_t Size, Error *Err)
-    : CommonArchiveMemberHeader<BigArMemHdrType>(
-          Parent, reinterpret_cast<const BigArMemHdrType *>(RawHeaderPtr)) {
-  if (RawHeaderPtr == nullptr)
-    return;
-  ErrorAsOutParameter ErrAsOutParam(Err);
-
-  if (Size < getSizeOf()) {
-    Error SubErr = createMemberHeaderParseError(this, RawHeaderPtr, Size);
-    if (Err)
-      *Err = std::move(SubErr);
-  }
-}
-
 // This gets the raw name from the ArMemHdr->Name field and checks that it is
 // valid for the kind of archive.  If it is not valid it returns an Error.
 Expected<StringRef> ArchiveMemberHeader::getRawName() const {
@@ -149,14 +102,14 @@ Expected<StringRef> ArchiveMemberHeader::getRawName() const {
   auto Kind = Parent->kind();
   if (Kind == Archive::K_BSD || Kind == Archive::K_DARWIN64) {
     if (ArMemHdr->Name[0] == ' ') {
-      uint64_t Offset =
-          reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
+      uint64_t Offset = reinterpret_cast<const char *>(ArMemHdr) -
+                        Parent->getData().data();
       return malformedError("name contains a leading space for archive member "
-                            "header at offset " +
-                            Twine(Offset));
+                            "header at offset " + Twine(Offset));
     }
     EndCond = ' ';
-  } else if (ArMemHdr->Name[0] == '/' || ArMemHdr->Name[0] == '#')
+  }
+  else if (ArMemHdr->Name[0] == '/' || ArMemHdr->Name[0] == '#')
     EndCond = ' ';
   else
     EndCond = '/';
@@ -169,69 +122,7 @@ Expected<StringRef> ArchiveMemberHeader::getRawName() const {
   return StringRef(ArMemHdr->Name, end);
 }
 
-Expected<uint64_t>
-getArchiveMemberDecField(Twine FieldName, const StringRef RawField,
-                         const Archive *Parent,
-                         const AbstractArchiveMemberHeader *MemHeader) {
-  uint64_t Value;
-  if (RawField.getAsInteger(10, Value)) {
-    uint64_t Offset = MemHeader->getOffset();
-    return malformedError("characters in " + FieldName +
-                          " field in archive member header are not "
-                          "all decimal numbers: '" +
-                          RawField +
-                          "' for the archive "
-                          "member header at offset " +
-                          Twine(Offset));
-  }
-  return Value;
-}
-
-Expected<uint64_t>
-getArchiveMemberOctField(Twine FieldName, const StringRef RawField,
-                         const Archive *Parent,
-                         const AbstractArchiveMemberHeader *MemHeader) {
-  uint64_t Value;
-  if (RawField.getAsInteger(8, Value)) {
-    uint64_t Offset = MemHeader->getOffset();
-    return malformedError("characters in " + FieldName +
-                          " field in archive member header are not "
-                          "all octal numbers: '" +
-                          RawField +
-                          "' for the archive "
-                          "member header at offset " +
-                          Twine(Offset));
-  }
-  return Value;
-}
-
-Expected<StringRef> BigArchiveMemberHeader::getRawName() const {
-  Expected<uint64_t> NameLenOrErr = getArchiveMemberDecField(
-      "NameLen", getFieldRawString(ArMemHdr->NameLen), Parent, this);
-  if (!NameLenOrErr)
-    // TODO: Out-of-line.
-    return NameLenOrErr.takeError();
-  uint64_t NameLen = NameLenOrErr.get();
-
-  // If the name length is odd, pad with '\0' to get an even length. After
-  // padding, there is the name terminator "`\n".
-  uint64_t NameLenWithPadding = alignTo(NameLen, 2);
-  StringRef NameTerminator = "`\n";
-  StringRef NameStringWithNameTerminator =
-      StringRef(ArMemHdr->Name, NameLenWithPadding + NameTerminator.size());
-  if (!NameStringWithNameTerminator.endswith(NameTerminator)) {
-    uint64_t Offset =
-        reinterpret_cast<const char *>(ArMemHdr->Name + NameLenWithPadding) -
-        Parent->getData().data();
-    // TODO: Out-of-line.
-    return malformedError(
-        "name does not have name terminator \"`\\n\" for archive member"
-        "header at offset " +
-        Twine(Offset));
-  }
-  return StringRef(ArMemHdr->Name, NameLen);
-}
-
+// This gets the name looking up long names. Size is the size of the archive
 // member including the header, so the size of any name following the header
 // is checked to make sure it does not overflow.
 Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
@@ -239,9 +130,9 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
   // This can be called from the ArchiveMemberHeader constructor when the
   // archive header is truncated to produce an error message with the name.
   // Make sure the name field is not truncated.
-  if (Size < offsetof(UnixArMemHdrType, Name) + sizeof(ArMemHdr->Name)) {
-    uint64_t ArchiveOffset =
-        reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
+  if (Size < offsetof(ArMemHdrType, Name) + sizeof(ArMemHdr->Name)) {
+    uint64_t ArchiveOffset = reinterpret_cast<const char *>(ArMemHdr) -
+                      Parent->getData().data();
     return malformedError("archive header truncated before the name field "
                           "for archive member header at offset " +
                           Twine(ArchiveOffset));
@@ -259,14 +150,6 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
       return Name;
     if (Name.size() == 2 && Name[1] == '/') // String table.
       return Name;
-    // System libraries from the Windows SDK for Windows 11 contain this symbol.
-    // It looks like a CFG guard: we just skip it for now.
-    if (Name.equals("/<XFGHASHMAP>/"))
-      return Name;
-    // Some libraries (e.g., arm64rt.lib) from the Windows WDK
-    // (version 10.0.22000.0) contain this undocumented special member.
-    if (Name.equals("/<ECSYMBOLS>/"))
-      return Name;
     // It's a long name.
     // Get the string table offset.
     std::size_t StringOffset;
@@ -275,22 +158,21 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
       raw_string_ostream OS(Buf);
       OS.write_escaped(Name.substr(1).rtrim(' '));
       OS.flush();
-      uint64_t ArchiveOffset =
-          reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
+      uint64_t ArchiveOffset = reinterpret_cast<const char *>(ArMemHdr) -
+                               Parent->getData().data();
       return malformedError("long name offset characters after the '/' are "
-                            "not all decimal numbers: '" +
-                            Buf + "' for archive member header at offset " +
+                            "not all decimal numbers: '" + Buf + "' for "
+                            "archive member header at offset " +
                             Twine(ArchiveOffset));
     }
 
     // Verify it.
     if (StringOffset >= Parent->getStringTable().size()) {
-      uint64_t ArchiveOffset =
-          reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
-      return malformedError("long name offset " + Twine(StringOffset) +
-                            " past the end of the string table for archive "
-                            "member header at offset " +
-                            Twine(ArchiveOffset));
+      uint64_t ArchiveOffset = reinterpret_cast<const char *>(ArMemHdr) -
+                               Parent->getData().data();
+      return malformedError("long name offset " + Twine(StringOffset) + " past "
+                            "the end of the string table for archive member "
+                            "header at offset " + Twine(ArchiveOffset));
     }
 
     // GNU long file names end with a "/\n".
@@ -314,24 +196,23 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
       raw_string_ostream OS(Buf);
       OS.write_escaped(Name.substr(3).rtrim(' '));
       OS.flush();
-      uint64_t ArchiveOffset =
-          reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
+      uint64_t ArchiveOffset = reinterpret_cast<const char *>(ArMemHdr) -
+                        Parent->getData().data();
       return malformedError("long name length characters after the #1/ are "
-                            "not all decimal numbers: '" +
-                            Buf + "' for archive member header at offset " +
+                            "not all decimal numbers: '" + Buf + "' for "
+                            "archive member header at offset " +
                             Twine(ArchiveOffset));
     }
     if (getSizeOf() + NameLength > Size) {
-      uint64_t ArchiveOffset =
-          reinterpret_cast<const char *>(ArMemHdr) - Parent->getData().data();
+      uint64_t ArchiveOffset = reinterpret_cast<const char *>(ArMemHdr) -
+                        Parent->getData().data();
       return malformedError("long name length: " + Twine(NameLength) +
                             " extends past the end of the member or archive "
                             "for archive member header at offset " +
                             Twine(ArchiveOffset));
     }
     return StringRef(reinterpret_cast<const char *>(ArMemHdr) + getSizeOf(),
-                     NameLength)
-        .rtrim('\0');
+                     NameLength).rtrim('\0');
   }
 
   // It is not a long name so trim the blanks at the end of the name.
@@ -342,133 +223,115 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
   return Name.drop_back(1);
 }
 
-Expected<StringRef> BigArchiveMemberHeader::getName(uint64_t Size) const {
-  return getRawName();
-}
-
 Expected<uint64_t> ArchiveMemberHeader::getSize() const {
-  return getArchiveMemberDecField("size", getFieldRawString(ArMemHdr->Size),
-                                  Parent, this);
+  uint64_t Ret;
+  if (StringRef(ArMemHdr->Size,
+                sizeof(ArMemHdr->Size)).rtrim(" ").getAsInteger(10, Ret)) {
+    std::string Buf;
+    raw_string_ostream OS(Buf);
+    OS.write_escaped(StringRef(ArMemHdr->Size,
+                               sizeof(ArMemHdr->Size)).rtrim(" "));
+    OS.flush();
+    uint64_t Offset = reinterpret_cast<const char *>(ArMemHdr) -
+                      Parent->getData().data();
+    return malformedError("characters in size field in archive header are not "
+                          "all decimal numbers: '" + Buf + "' for archive "
+                          "member header at offset " + Twine(Offset));
+  }
+  return Ret;
 }
 
-Expected<uint64_t> BigArchiveMemberHeader::getSize() const {
-  Expected<uint64_t> SizeOrErr = getArchiveMemberDecField(
-      "size", getFieldRawString(ArMemHdr->Size), Parent, this);
-  if (!SizeOrErr)
-    return SizeOrErr.takeError();
-
-  Expected<uint64_t> NameLenOrErr = getRawNameSize();
-  if (!NameLenOrErr)
-    return NameLenOrErr.takeError();
-
-  return *SizeOrErr + alignTo(*NameLenOrErr, 2);
-}
-
-Expected<uint64_t> BigArchiveMemberHeader::getRawNameSize() const {
-  return getArchiveMemberDecField(
-      "NameLen", getFieldRawString(ArMemHdr->NameLen), Parent, this);
-}
-
-Expected<uint64_t> BigArchiveMemberHeader::getNextOffset() const {
-  return getArchiveMemberDecField(
-      "NextOffset", getFieldRawString(ArMemHdr->NextOffset), Parent, this);
-}
-
-Expected<sys::fs::perms> AbstractArchiveMemberHeader::getAccessMode() const {
-  Expected<uint64_t> AccessModeOrErr =
-      getArchiveMemberOctField("AccessMode", getRawAccessMode(), Parent, this);
-  if (!AccessModeOrErr)
-    return AccessModeOrErr.takeError();
-  return static_cast<sys::fs::perms>(*AccessModeOrErr);
+Expected<sys::fs::perms> ArchiveMemberHeader::getAccessMode() const {
+  unsigned Ret;
+  if (StringRef(ArMemHdr->AccessMode,
+                sizeof(ArMemHdr->AccessMode)).rtrim(' ').getAsInteger(8, Ret)) {
+    std::string Buf;
+    raw_string_ostream OS(Buf);
+    OS.write_escaped(StringRef(ArMemHdr->AccessMode,
+                               sizeof(ArMemHdr->AccessMode)).rtrim(" "));
+    OS.flush();
+    uint64_t Offset = reinterpret_cast<const char *>(ArMemHdr) -
+                      Parent->getData().data();
+    return malformedError("characters in AccessMode field in archive header "
+                          "are not all decimal numbers: '" + Buf + "' for the "
+                          "archive member header at offset " + Twine(Offset));
+  }
+  return static_cast<sys::fs::perms>(Ret);
 }
 
 Expected<sys::TimePoint<std::chrono::seconds>>
-AbstractArchiveMemberHeader::getLastModified() const {
-  Expected<uint64_t> SecondsOrErr = getArchiveMemberDecField(
-      "LastModified", getRawLastModified(), Parent, this);
-
-  if (!SecondsOrErr)
-    return SecondsOrErr.takeError();
-
-  return sys::toTimePoint(*SecondsOrErr);
-}
-
-Expected<unsigned> AbstractArchiveMemberHeader::getUID() const {
-  StringRef User = getRawUID();
-  if (User.empty())
-    return 0;
-  return getArchiveMemberDecField("UID", User, Parent, this);
-}
-
-Expected<unsigned> AbstractArchiveMemberHeader::getGID() const {
-  StringRef Group = getRawGID();
-  if (Group.empty())
-    return 0;
-  return getArchiveMemberDecField("GID", Group, Parent, this);
-}
-
-Expected<bool> ArchiveMemberHeader::isThin() const {
-  Expected<StringRef> NameOrErr = getRawName();
-  if (!NameOrErr)
-    return NameOrErr.takeError();
-  StringRef Name = NameOrErr.get();
-  return Parent->isThin() && Name != "/" && Name != "//" && Name != "/SYM64/";
-}
-
-Expected<const char *> ArchiveMemberHeader::getNextChildLoc() const {
-  uint64_t Size = getSizeOf();
-  Expected<bool> isThinOrErr = isThin();
-  if (!isThinOrErr)
-    return isThinOrErr.takeError();
-
-  bool isThin = isThinOrErr.get();
-  if (!isThin) {
-    Expected<uint64_t> MemberSize = getSize();
-    if (!MemberSize)
-      return MemberSize.takeError();
-
-    Size += MemberSize.get();
+ArchiveMemberHeader::getLastModified() const {
+  unsigned Seconds;
+  if (StringRef(ArMemHdr->LastModified,
+                sizeof(ArMemHdr->LastModified)).rtrim(' ')
+          .getAsInteger(10, Seconds)) {
+    std::string Buf;
+    raw_string_ostream OS(Buf);
+    OS.write_escaped(StringRef(ArMemHdr->LastModified,
+                               sizeof(ArMemHdr->LastModified)).rtrim(" "));
+    OS.flush();
+    uint64_t Offset = reinterpret_cast<const char *>(ArMemHdr) -
+                      Parent->getData().data();
+    return malformedError("characters in LastModified field in archive header "
+                          "are not all decimal numbers: '" + Buf + "' for the "
+                          "archive member header at offset " + Twine(Offset));
   }
 
-  // If Size is odd, add 1 to make it even.
-  const char *NextLoc =
-      reinterpret_cast<const char *>(ArMemHdr) + alignTo(Size, 2);
-
-  if (NextLoc == Parent->getMemoryBufferRef().getBufferEnd())
-    return nullptr;
-
-  return NextLoc;
+  return sys::toTimePoint(Seconds);
 }
 
-Expected<const char *> BigArchiveMemberHeader::getNextChildLoc() const {
-  if (getOffset() ==
-      static_cast<const BigArchive *>(Parent)->getLastChildOffset())
-    return nullptr;
+Expected<unsigned> ArchiveMemberHeader::getUID() const {
+  unsigned Ret;
+  StringRef User = StringRef(ArMemHdr->UID, sizeof(ArMemHdr->UID)).rtrim(' ');
+  if (User.empty())
+    return 0;
+  if (User.getAsInteger(10, Ret)) {
+    std::string Buf;
+    raw_string_ostream OS(Buf);
+    OS.write_escaped(User);
+    OS.flush();
+    uint64_t Offset = reinterpret_cast<const char *>(ArMemHdr) -
+                      Parent->getData().data();
+    return malformedError("characters in UID field in archive header "
+                          "are not all decimal numbers: '" + Buf + "' for the "
+                          "archive member header at offset " + Twine(Offset));
+  }
+  return Ret;
+}
 
-  Expected<uint64_t> NextOffsetOrErr = getNextOffset();
-  if (!NextOffsetOrErr)
-    return NextOffsetOrErr.takeError();
-  return Parent->getData().data() + NextOffsetOrErr.get();
+Expected<unsigned> ArchiveMemberHeader::getGID() const {
+  unsigned Ret;
+  StringRef Group = StringRef(ArMemHdr->GID, sizeof(ArMemHdr->GID)).rtrim(' ');
+  if (Group.empty())
+    return 0;
+  if (Group.getAsInteger(10, Ret)) {
+    std::string Buf;
+    raw_string_ostream OS(Buf);
+    OS.write_escaped(Group);
+    OS.flush();
+    uint64_t Offset = reinterpret_cast<const char *>(ArMemHdr) -
+                      Parent->getData().data();
+    return malformedError("characters in GID field in archive header "
+                          "are not all decimal numbers: '" + Buf + "' for the "
+                          "archive member header at offset " + Twine(Offset));
+  }
+  return Ret;
 }
 
 Archive::Child::Child(const Archive *Parent, StringRef Data,
                       uint16_t StartOfFile)
-    : Parent(Parent), Data(Data), StartOfFile(StartOfFile) {
-  Header = Parent->createArchiveMemberHeader(Data.data(), Data.size(), nullptr);
+    : Parent(Parent), Header(Parent, Data.data(), Data.size(), nullptr),
+      Data(Data), StartOfFile(StartOfFile) {
 }
 
 Archive::Child::Child(const Archive *Parent, const char *Start, Error *Err)
-    : Parent(Parent) {
-  if (!Start) {
-    Header = nullptr;
+    : Parent(Parent),
+      Header(Parent, Start,
+             Parent
+               ? Parent->getData().size() - (Start - Parent->getData().data())
+               : 0, Err) {
+  if (!Start)
     return;
-  }
-
-  Header = Parent->createArchiveMemberHeader(
-      Start,
-      Parent ? Parent->getData().size() - (Start - Parent->getData().data())
-             : 0,
-      Err);
 
   // If we are pointed to real data, Start is not a nullptr, then there must be
   // a non-null Err pointer available to report malformed data on.  Only in
@@ -483,7 +346,7 @@ Archive::Child::Child(const Archive *Parent, const char *Start, Error *Err)
   if (*Err)
     return;
 
-  uint64_t Size = Header->getSizeOf();
+  uint64_t Size = Header.getSizeOf();
   Data = StringRef(Start, Size);
   Expected<bool> isThinOrErr = isThinMember();
   if (!isThinOrErr) {
@@ -502,28 +365,25 @@ Archive::Child::Child(const Archive *Parent, const char *Start, Error *Err)
   }
 
   // Setup StartOfFile and PaddingBytes.
-  StartOfFile = Header->getSizeOf();
+  StartOfFile = Header.getSizeOf();
   // Don't include attached name.
   Expected<StringRef> NameOrErr = getRawName();
-  if (!NameOrErr) {
+  if (!NameOrErr){
     *Err = NameOrErr.takeError();
     return;
   }
   StringRef Name = NameOrErr.get();
-
-  if (Parent->kind() == Archive::K_AIXBIG) {
-    // The actual start of the file is after the name and any necessary
-    // even-alignment padding.
-    StartOfFile += ((Name.size() + 1) >> 1) << 1;
-  } else if (Name.startswith("#1/")) {
+  if (Name.startswith("#1/")) {
     uint64_t NameSize;
-    StringRef RawNameSize = Name.substr(3).rtrim(' ');
-    if (RawNameSize.getAsInteger(10, NameSize)) {
+    if (Name.substr(3).rtrim(' ').getAsInteger(10, NameSize)) {
+      std::string Buf;
+      raw_string_ostream OS(Buf);
+      OS.write_escaped(Name.substr(3).rtrim(' '));
+      OS.flush();
       uint64_t Offset = Start - Parent->getData().data();
       *Err = malformedError("long name length characters after the #1/ are "
-                            "not all decimal numbers: '" +
-                            RawNameSize +
-                            "' for archive member header at offset " +
+                            "not all decimal numbers: '" + Buf + "' for "
+                            "archive member header at offset " +
                             Twine(Offset));
       return;
     }
@@ -532,16 +392,26 @@ Archive::Child::Child(const Archive *Parent, const char *Start, Error *Err)
 }
 
 Expected<uint64_t> Archive::Child::getSize() const {
-  if (Parent->IsThin)
-    return Header->getSize();
+  if (Parent->IsThin) {
+    Expected<uint32_t> Size = Header.getSize();
+    if (!Size)
+      return Size.takeError();
+    return Size.get();
+  }
   return Data.size() - StartOfFile;
 }
 
 Expected<uint64_t> Archive::Child::getRawSize() const {
-  return Header->getSize();
+  return Header.getSize();
 }
 
-Expected<bool> Archive::Child::isThinMember() const { return Header->isThin(); }
+Expected<bool> Archive::Child::isThinMember() const {
+  Expected<StringRef> NameOrErr = Header.getRawName();
+  if (!NameOrErr)
+    return NameOrErr.takeError();
+  StringRef Name = NameOrErr.get();
+  return Parent->IsThin && Name != "/" && Name != "//";
+}
 
 Expected<std::string> Archive::Child::getFullName() const {
   Expected<bool> isThin = isThinMember();
@@ -553,12 +423,12 @@ Expected<std::string> Archive::Child::getFullName() const {
     return NameOrErr.takeError();
   StringRef Name = *NameOrErr;
   if (sys::path::is_absolute(Name))
-    return std::string(Name);
+    return Name;
 
   SmallString<128> FullName = sys::path::parent_path(
       Parent->getMemoryBufferRef().getBufferIdentifier());
   sys::path::append(FullName, Name);
-  return std::string(FullName.str());
+  return StringRef(FullName);
 }
 
 Expected<StringRef> Archive::Child::getBuffer() const {
@@ -567,7 +437,7 @@ Expected<StringRef> Archive::Child::getBuffer() const {
     return isThinOrErr.takeError();
   bool isThin = isThinOrErr.get();
   if (!isThin) {
-    Expected<uint64_t> Size = getSize();
+    Expected<uint32_t> Size = getSize();
     if (!Size)
       return Size.takeError();
     return StringRef(Data.data() + StartOfFile, Size.get());
@@ -584,14 +454,15 @@ Expected<StringRef> Archive::Child::getBuffer() const {
 }
 
 Expected<Archive::Child> Archive::Child::getNext() const {
-  Expected<const char *> NextLocOrErr = Header->getNextChildLoc();
-  if (!NextLocOrErr)
-    return NextLocOrErr.takeError();
+  size_t SpaceToSkip = Data.size();
+  // If it's odd, add 1 to make it even.
+  if (SpaceToSkip & 1)
+    ++SpaceToSkip;
 
-  const char *NextLoc = *NextLocOrErr;
+  const char *NextLoc = Data.data() + SpaceToSkip;
 
   // Check to see if this is at the end of the archive.
-  if (NextLoc == nullptr)
+  if (NextLoc == Parent->Data.getBufferEnd())
     return Child(nullptr, nullptr, nullptr);
 
   // Check to see if this is past the end of the archive.
@@ -626,8 +497,7 @@ Expected<StringRef> Archive::Child::getName() const {
   if (!RawSizeOrErr)
     return RawSizeOrErr.takeError();
   uint64_t RawSize = RawSizeOrErr.get();
-  Expected<StringRef> NameOrErr =
-      Header->getName(Header->getSizeOf() + RawSize);
+  Expected<StringRef> NameOrErr = Header.getName(Header.getSizeOf() + RawSize);
   if (!NameOrErr)
     return NameOrErr.takeError();
   StringRef Name = NameOrErr.get();
@@ -659,37 +529,10 @@ Archive::Child::getAsBinary(LLVMContext *Context) const {
 
 Expected<std::unique_ptr<Archive>> Archive::create(MemoryBufferRef Source) {
   Error Err = Error::success();
-  std::unique_ptr<Archive> Ret;
-  StringRef Buffer = Source.getBuffer();
-
-  if (Buffer.startswith(BigArchiveMagic))
-    Ret = std::make_unique<BigArchive>(Source, Err);
-  else
-    Ret = std::make_unique<Archive>(Source, Err);
-
+  std::unique_ptr<Archive> Ret(new Archive(Source, Err));
   if (Err)
     return std::move(Err);
   return std::move(Ret);
-}
-
-std::unique_ptr<AbstractArchiveMemberHeader>
-Archive::createArchiveMemberHeader(const char *RawHeaderPtr, uint64_t Size,
-                                   Error *Err) const {
-  ErrorAsOutParameter ErrAsOutParam(Err);
-  if (kind() != K_AIXBIG)
-    return std::make_unique<ArchiveMemberHeader>(this, RawHeaderPtr, Size, Err);
-  return std::make_unique<BigArchiveMemberHeader>(this, RawHeaderPtr, Size,
-                                                  Err);
-}
-
-uint64_t Archive::getArchiveMagicLen() const {
-  if (isThin())
-    return sizeof(ThinArchiveMagic) - 1;
-
-  if (Kind() == K_AIXBIG)
-    return sizeof(BigArchiveMagic) - 1;
-
-  return sizeof(ArchiveMagic) - 1;
 }
 
 void Archive::setFirstRegular(const Child &C) {
@@ -702,14 +545,10 @@ Archive::Archive(MemoryBufferRef Source, Error &Err)
   ErrorAsOutParameter ErrAsOutParam(&Err);
   StringRef Buffer = Data.getBuffer();
   // Check for sufficient magic.
-  if (Buffer.startswith(ThinArchiveMagic)) {
+  if (Buffer.startswith(ThinMagic)) {
     IsThin = true;
-  } else if (Buffer.startswith(ArchiveMagic)) {
+  } else if (Buffer.startswith(Magic)) {
     IsThin = false;
-  } else if (Buffer.startswith(BigArchiveMagic)) {
-    Format = K_AIXBIG;
-    IsThin = false;
-    return;
   } else {
     Err = make_error<GenericBinaryError>("file too small to be an archive",
                                          object_error::invalid_file_type);
@@ -811,7 +650,8 @@ Archive::Archive(MemoryBufferRef Source, Error &Err)
       SymbolTable = BufOrErr.get();
       if (Increment())
         return;
-    } else if (Name == "__.SYMDEF_64 SORTED" || Name == "__.SYMDEF_64") {
+    }
+    else if (Name == "__.SYMDEF_64 SORTED" || Name == "__.SYMDEF_64") {
       Format = K_DARWIN64;
       // We know that the symbol table is not an external file, but we still
       // must check any Expected<> return value.
@@ -932,14 +772,6 @@ Archive::Archive(MemoryBufferRef Source, Error &Err)
   Err = Error::success();
 }
 
-object::Archive::Kind Archive::getDefaultKindForHost() {
-  Triple HostTriple(sys::getProcessTriple());
-  return HostTriple.isOSDarwin()
-             ? object::Archive::K_DARWIN
-             : (HostTriple.isOSAIX() ? object::Archive::K_AIXBIG
-                                     : object::Archive::K_GNU);
-}
-
 Archive::child_iterator Archive::child_begin(Error &Err,
                                              bool SkipInternal) const {
   if (isEmpty())
@@ -949,7 +781,7 @@ Archive::child_iterator Archive::child_begin(Error &Err,
     return child_iterator::itr(
         Child(this, FirstRegularData, FirstRegularStartOfFile), Err);
 
-  const char *Loc = Data.getBufferStart() + getFirstChildOffset();
+  const char *Loc = Data.getBufferStart() + strlen(Magic);
   Child C(this, Loc, &Err);
   if (Err)
     return child_end();
@@ -967,15 +799,14 @@ StringRef Archive::Symbol::getName() const {
 Expected<Archive::Child> Archive::Symbol::getMember() const {
   const char *Buf = Parent->getSymbolTable().begin();
   const char *Offsets = Buf;
-  if (Parent->kind() == K_GNU64 || Parent->kind() == K_DARWIN64 ||
-      Parent->kind() == K_AIXBIG)
+  if (Parent->kind() == K_GNU64 || Parent->kind() == K_DARWIN64)
     Offsets += sizeof(uint64_t);
   else
     Offsets += sizeof(uint32_t);
   uint64_t Offset = 0;
   if (Parent->kind() == K_GNU) {
     Offset = read32be(Offsets + SymbolIndex * 4);
-  } else if (Parent->kind() == K_GNU64 || Parent->kind() == K_AIXBIG) {
+  } else if (Parent->kind() == K_GNU64) {
     Offset = read64be(Offsets + SymbolIndex * 8);
   } else if (Parent->kind() == K_BSD) {
     // The SymbolIndex is an index into the ranlib structs that start at
@@ -1108,8 +939,6 @@ Archive::symbol_iterator Archive::symbol_begin() const {
     // Skip the byte count of the string table.
     buf += sizeof(uint64_t);
     buf += ran_strx;
-  } else if (kind() == K_AIXBIG) {
-    buf = getStringTable().begin();
   } else {
     uint32_t member_count = 0;
     uint32_t symbol_count = 0;
@@ -1132,7 +961,7 @@ uint32_t Archive::getNumberOfSymbols() const {
   const char *buf = getSymbolTable().begin();
   if (kind() == K_GNU)
     return read32be(buf);
-  if (kind() == K_GNU64 || kind() == K_AIXBIG)
+  if (kind() == K_GNU64)
     return read64be(buf);
   if (kind() == K_BSD)
     return read32le(buf) / 8;
@@ -1144,7 +973,7 @@ uint32_t Archive::getNumberOfSymbols() const {
   return read32le(buf);
 }
 
-Expected<std::optional<Archive::Child>> Archive::findSym(StringRef name) const {
+Expected<Optional<Archive::Child>> Archive::findSym(StringRef name) const {
   Archive::symbol_iterator bs = symbol_begin();
   Archive::symbol_iterator es = symbol_end();
 
@@ -1157,94 +986,10 @@ Expected<std::optional<Archive::Child>> Archive::findSym(StringRef name) const {
         return MemberOrErr.takeError();
     }
   }
-  return std::nullopt;
+  return Optional<Child>();
 }
 
 // Returns true if archive file contains no member file.
-bool Archive::isEmpty() const {
-  return Data.getBufferSize() == getArchiveMagicLen();
-}
+bool Archive::isEmpty() const { return Data.getBufferSize() == 8; }
 
 bool Archive::hasSymbolTable() const { return !SymbolTable.empty(); }
-
-BigArchive::BigArchive(MemoryBufferRef Source, Error &Err)
-    : Archive(Source, Err) {
-  ErrorAsOutParameter ErrAsOutParam(&Err);
-  StringRef Buffer = Data.getBuffer();
-  ArFixLenHdr = reinterpret_cast<const FixLenHdr *>(Buffer.data());
-
-  StringRef RawOffset = getFieldRawString(ArFixLenHdr->FirstChildOffset);
-  if (RawOffset.getAsInteger(10, FirstChildOffset))
-    // TODO: Out-of-line.
-    Err = malformedError("malformed AIX big archive: first member offset \"" +
-                         RawOffset + "\" is not a number");
-
-  RawOffset = getFieldRawString(ArFixLenHdr->LastChildOffset);
-  if (RawOffset.getAsInteger(10, LastChildOffset))
-    // TODO: Out-of-line.
-    Err = malformedError("malformed AIX big archive: last member offset \"" +
-                         RawOffset + "\" is not a number");
-
-  // Calculate the global symbol table.
-  uint64_t GlobSymOffset = 0;
-  RawOffset = getFieldRawString(ArFixLenHdr->GlobSymOffset);
-  if (RawOffset.getAsInteger(10, GlobSymOffset))
-    // TODO: add test case.
-    Err = malformedError(
-        "malformed AIX big archive: global symbol table offset \"" + RawOffset +
-        "\" is not a number");
-
-  if (Err)
-    return;
-
-  if (GlobSymOffset > 0) {
-    uint64_t BufferSize = Data.getBufferSize();
-    uint64_t GlobalSymTblContentOffset =
-        GlobSymOffset + sizeof(BigArMemHdrType);
-    if (GlobalSymTblContentOffset > BufferSize) {
-      Err = malformedError("global symbol table header at offset 0x" +
-                           Twine::utohexstr(GlobSymOffset) + " and size 0x" +
-                           Twine::utohexstr(sizeof(BigArMemHdrType)) +
-                           " goes past the end of file");
-      return;
-    }
-
-    const char *GlobSymTblLoc = Data.getBufferStart() + GlobSymOffset;
-    const BigArMemHdrType *GlobalSymHdr =
-        reinterpret_cast<const BigArMemHdrType *>(GlobSymTblLoc);
-    RawOffset = getFieldRawString(GlobalSymHdr->Size);
-    uint64_t Size;
-    if (RawOffset.getAsInteger(10, Size)) {
-      // TODO: add test case.
-      Err = malformedError(
-          "malformed AIX big archive: global symbol table size \"" + RawOffset +
-          "\" is not a number");
-      return;
-    }
-    if (GlobalSymTblContentOffset + Size > BufferSize) {
-      Err = malformedError("global symbol table content at offset 0x" +
-                           Twine::utohexstr(GlobalSymTblContentOffset) +
-                           " and size 0x" + Twine::utohexstr(Size) +
-                           " goes past the end of file");
-      return;
-    }
-    SymbolTable = StringRef(GlobSymTblLoc + sizeof(BigArMemHdrType), Size);
-    unsigned SymNum = getNumberOfSymbols();
-    unsigned SymOffsetsSize = 8 * (SymNum + 1);
-    uint64_t SymbolTableStringSize = Size - SymOffsetsSize;
-    StringTable =
-        StringRef(GlobSymTblLoc + sizeof(BigArMemHdrType) + SymOffsetsSize,
-                  SymbolTableStringSize);
-  }
-
-  child_iterator I = child_begin(Err, false);
-  if (Err)
-    return;
-  child_iterator E = child_end();
-  if (I == E) {
-    Err = Error::success();
-    return;
-  }
-  setFirstRegular(*I);
-  Err = Error::success();
-}

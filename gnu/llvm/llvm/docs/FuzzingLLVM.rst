@@ -106,7 +106,7 @@ llvm-opt-fuzzer
 
 A |LLVM IR fuzzer| aimed at finding bugs in optimization passes.
 
-It receives optimization pipeline and runs it for each fuzzer input.
+It receives optimzation pipeline and runs it for each fuzzer input.
 
 Interface of this fuzzer almost directly mirrors ``llvm-isel-fuzzer``. Both
 ``mtriple`` and ``passes`` arguments are required. Passes are specified in a
@@ -158,11 +158,6 @@ compatible with all of libFuzzer's features. See the notes above about
 .. |LLVM IR fuzzer|
    replace:: :ref:`structured LLVM IR fuzzer <fuzzing-llvm-ir>`
 
-lldb-target-fuzzer
----------------------
-
-A |generic fuzzer| that interprets inputs as object files and uses them to
-create a target in lldb.
 
 Mutators and Input Generators
 =============================

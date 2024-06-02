@@ -11,6 +11,7 @@
 
 #include "AliasAnalysisSummary.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include <bitset>
@@ -38,8 +39,8 @@ struct StratifiedLink {
   /// This is a value used to signify "does not exist" where the
   /// StratifiedIndex type is used.
   ///
-  /// This is used instead of std::optional<StratifiedIndex> because
-  /// std::optional<StratifiedIndex> would eat up a considerable amount of extra
+  /// This is used instead of Optional<StratifiedIndex> because
+  /// Optional<StratifiedIndex> would eat up a considerable amount of extra
   /// memory, after struct padding/alignment is taken into account.
   static const StratifiedIndex SetSentinel;
 
@@ -90,10 +91,10 @@ public:
                  std::vector<StratifiedLink> Links)
       : Values(std::move(Map)), Links(std::move(Links)) {}
 
-  std::optional<StratifiedInfo> find(const T &Elem) const {
+  Optional<StratifiedInfo> find(const T &Elem) const {
     auto Iter = Values.find(Elem);
     if (Iter == Values.end())
-      return std::nullopt;
+      return None;
     return Iter->second;
   }
 
@@ -339,10 +340,10 @@ public:
     return StratifiedSets<T>(std::move(Values), std::move(StratLinks));
   }
 
-  bool has(const T &Elem) const { return get(Elem).has_value(); }
+  bool has(const T &Elem) const { return get(Elem).hasValue(); }
 
   bool add(const T &Main) {
-    if (get(Main))
+    if (get(Main).hasValue())
       return false;
 
     auto NewIndex = getNewUnlinkedIndex();
@@ -543,24 +544,24 @@ private:
     return true;
   }
 
-  std::optional<const StratifiedInfo *> get(const T &Val) const {
+  Optional<const StratifiedInfo *> get(const T &Val) const {
     auto Result = Values.find(Val);
     if (Result == Values.end())
-      return std::nullopt;
+      return None;
     return &Result->second;
   }
 
-  std::optional<StratifiedInfo *> get(const T &Val) {
+  Optional<StratifiedInfo *> get(const T &Val) {
     auto Result = Values.find(Val);
     if (Result == Values.end())
-      return std::nullopt;
+      return None;
     return &Result->second;
   }
 
-  std::optional<StratifiedIndex> indexOf(const T &Val) {
+  Optional<StratifiedIndex> indexOf(const T &Val) {
     auto MaybeVal = get(Val);
-    if (!MaybeVal)
-      return std::nullopt;
+    if (!MaybeVal.hasValue())
+      return None;
     auto *Info = *MaybeVal;
     auto &Link = linksAt(Info->Index);
     return Link.Number;

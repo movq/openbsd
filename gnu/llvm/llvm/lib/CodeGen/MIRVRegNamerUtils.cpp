@@ -7,18 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "MIRVRegNamerUtils.h"
-#include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/MachineStableHash.h"
-#include "llvm/IR/Constants.h"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
 
 #define DEBUG_TYPE "mir-vregnamer-utils"
-
-static cl::opt<bool>
-    UseStableNamerHash("mir-vreg-namer-use-stable-hash", cl::init(false),
-                       cl::Hidden,
-                       cl::desc("Use Stable Hashing for MIR VReg Renaming"));
 
 using VRegRenameMap = std::map<unsigned, unsigned>;
 
@@ -57,15 +50,6 @@ std::string VRegRenamer::getInstructionOpcodeHash(MachineInstr &MI) {
   std::string S;
   raw_string_ostream OS(S);
 
-  if (UseStableNamerHash) {
-    auto Hash = stableHashValue(MI, /* HashVRegs */ true,
-                                /* HashConstantPoolIndices */ true,
-                                /* HashMemOperands */ true);
-    assert(Hash && "Expected non-zero Hash");
-    OS << format_hex_no_prefix(Hash, 16, true);
-    return OS.str();
-  }
-
   // Gets a hashable artifact from a given MachineOperand (ie an unsigned).
   auto GetHashableMO = [this](const MachineOperand &MO) -> unsigned {
     switch (MO.getType()) {
@@ -77,7 +61,7 @@ std::string VRegRenamer::getInstructionOpcodeHash(MachineInstr &MI) {
           MO.getType(), MO.getTargetFlags(),
           MO.getFPImm()->getValueAPF().bitcastToAPInt().getZExtValue());
     case MachineOperand::MO_Register:
-      if (MO.getReg().isVirtual())
+      if (Register::isVirtualRegister(MO.getReg()))
         return MRI.getVRegDef(MO.getReg())->getOpcode();
       return MO.getReg();
     case MachineOperand::MO_Immediate:
@@ -85,8 +69,6 @@ std::string VRegRenamer::getInstructionOpcodeHash(MachineInstr &MI) {
     case MachineOperand::MO_TargetIndex:
       return MO.getOffset() | (MO.getTargetFlags() << 16);
     case MachineOperand::MO_FrameIndex:
-    case MachineOperand::MO_ConstantPoolIndex:
-    case MachineOperand::MO_JumpTableIndex:
       return llvm::hash_value(MO);
 
     // We could explicitly handle all the types of the MachineOperand,
@@ -97,6 +79,8 @@ std::string VRegRenamer::getInstructionOpcodeHash(MachineInstr &MI) {
 
     // TODO: Handle the following Index/ID/Predicate cases. They can
     // be hashed on in a stable manner.
+    case MachineOperand::MO_ConstantPoolIndex:
+    case MachineOperand::MO_JumpTableIndex:
     case MachineOperand::MO_CFIIndex:
     case MachineOperand::MO_IntrinsicID:
     case MachineOperand::MO_Predicate:
@@ -113,7 +97,6 @@ std::string VRegRenamer::getInstructionOpcodeHash(MachineInstr &MI) {
     case MachineOperand::MO_Metadata:
     case MachineOperand::MO_MCSymbol:
     case MachineOperand::MO_ShuffleMask:
-    case MachineOperand::MO_DbgInstrRef:
       return 0;
     }
     llvm_unreachable("Unexpected MachineOperandType.");
@@ -126,16 +109,15 @@ std::string VRegRenamer::getInstructionOpcodeHash(MachineInstr &MI) {
     MIOperands.push_back((unsigned)Op->getSize());
     MIOperands.push_back((unsigned)Op->getFlags());
     MIOperands.push_back((unsigned)Op->getOffset());
-    MIOperands.push_back((unsigned)Op->getSuccessOrdering());
+    MIOperands.push_back((unsigned)Op->getOrdering());
     MIOperands.push_back((unsigned)Op->getAddrSpace());
     MIOperands.push_back((unsigned)Op->getSyncScopeID());
-    MIOperands.push_back((unsigned)Op->getBaseAlign().value());
+    MIOperands.push_back((unsigned)Op->getBaseAlignment());
     MIOperands.push_back((unsigned)Op->getFailureOrdering());
   }
 
   auto HashMI = hash_combine_range(MIOperands.begin(), MIOperands.end());
-  OS << format_hex_no_prefix(HashMI, 16, true);
-  return OS.str();
+  return std::to_string(HashMI).substr(0, 5);
 }
 
 unsigned VRegRenamer::createVirtualRegister(unsigned VReg) {
@@ -156,7 +138,7 @@ bool VRegRenamer::renameInstsInMBB(MachineBasicBlock *MBB) {
     // Look for instructions that define VRegs in operand 0.
     MachineOperand &MO = Candidate.getOperand(0);
     // Avoid non regs, instructions defining physical regs.
-    if (!MO.isReg() || !MO.getReg().isVirtual())
+    if (!MO.isReg() || !Register::isVirtualRegister(MO.getReg()))
       continue;
     VRegs.push_back(
         NamedVReg(MO.getReg(), Prefix + getInstructionOpcodeHash(Candidate)));

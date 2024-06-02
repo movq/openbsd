@@ -12,7 +12,6 @@ static_library("Parse") {
     "//llvm/lib/MC",
     "//llvm/lib/MC/MCParser",
     "//llvm/lib/Support",
-    "//llvm/lib/TargetParser",
   ]
   sources = [
     "ParseAST.cpp",
@@ -21,7 +20,6 @@ static_library("Parse") {
     "ParseDeclCXX.cpp",
     "ParseExpr.cpp",
     "ParseExprCXX.cpp",
-    "ParseHLSL.cpp",
     "ParseInit.cpp",
     "ParseObjc.cpp",
     "ParseOpenMP.cpp",

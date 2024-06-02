@@ -16,12 +16,11 @@
 #define LLVM_TRANSFORMS_UTILS_CALLGRAPHUPDATER_H
 
 #include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Analysis/LazyCallGraph.h"
 
 namespace llvm {
-
-class CallGraph;
-class CallGraphSCC;
 
 /// Wrapper to unify "old style" CallGraph and "new style" LazyCallGraph. This
 /// simplifies the interface and the call sites, e.g., new and old pass manager
@@ -54,7 +53,7 @@ class CallGraphUpdater {
   ///}
 
 public:
-  CallGraphUpdater() = default;
+  CallGraphUpdater() {}
   ~CallGraphUpdater() { finalize(); }
 
   /// Initializers for usage outside of a CGSCC pass, inside a CGSCC pass in
@@ -88,7 +87,7 @@ public:
   /// If a new function was created by outlining, this method can be called
   /// to update the call graph for the new function. Note that the old one
   /// still needs to be re-analyzed or manually updated.
-  void registerOutlinedFunction(Function &OriginalFn, Function &NewFn);
+  void registerOutlinedFunction(Function &NewFn);
 
   /// Replace \p OldFn in the call graph (and SCC) with \p NewFn. The uses
   /// outside the call graph and the function \p OldFn are not modified.

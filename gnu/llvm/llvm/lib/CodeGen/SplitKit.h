@@ -22,18 +22,18 @@
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/LiveIntervalCalc.h"
+#include "llvm/CodeGen/LiveInterval.h"
 #include "llvm/CodeGen/LiveIntervals.h"
+#include "llvm/CodeGen/LiveRangeCalc.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/SlotIndexes.h"
+#include "llvm/MC/LaneBitmask.h"
 #include "llvm/Support/Compiler.h"
 #include <utility>
 
 namespace llvm {
 
-class LiveInterval;
-class LiveRange;
 class LiveIntervals;
 class LiveRangeEdit;
 class MachineBlockFrequencyInfo;
@@ -43,7 +43,6 @@ class MachineRegisterInfo;
 class TargetInstrInfo;
 class TargetRegisterInfo;
 class VirtRegMap;
-class VirtRegAuxInfo;
 
 /// Determines the latest safe point in a block in which we can insert a split,
 /// spill or other instruction related with CurLI.
@@ -54,7 +53,7 @@ private:
   /// Last legal insert point in each basic block in the current function.
   /// The first entry is the first terminator, the second entry is the
   /// last valid point to insert a split or spill for a variable that is
-  /// live into a landing pad or inlineasm_br successor.
+  /// live into a landing pad successor.
   SmallVector<std::pair<SlotIndex, SlotIndex>, 8> LastInsertPoint;
 
   SlotIndex computeLastInsertPoint(const LiveInterval &CurLI,
@@ -131,9 +130,6 @@ public:
     bool isOneInstr() const {
       return SlotIndex::isSameInstr(FirstInstr, LastInstr);
     }
-
-    void print(raw_ostream &OS) const;
-    void dump() const;
   };
 
 private:
@@ -159,11 +155,14 @@ private:
   /// NumThroughBlocks - Number of live-through blocks.
   unsigned NumThroughBlocks;
 
+  /// DidRepairRange - analyze was forced to shrinkToUses().
+  bool DidRepairRange;
+
   // Sumarize statistics by counting instructions using CurLI.
   void analyzeUses();
 
   /// calcLiveBlockInfo - Compute per-block information about CurLI.
-  void calcLiveBlockInfo();
+  bool calcLiveBlockInfo();
 
 public:
   SplitAnalysis(const VirtRegMap &vrm, const LiveIntervals &lis,
@@ -172,6 +171,11 @@ public:
   /// analyze - set CurLI to the specified interval, and analyze how it may be
   /// split.
   void analyze(const LiveInterval *li);
+
+  /// didRepairRange() - Returns true if CurLI was invalid and has been repaired
+  /// by analyze(). This really shouldn't happen, but sometimes the coalescer
+  /// can create live ranges that end in mid-air.
+  bool didRepairRange() const { return DidRepairRange; }
 
   /// clear - clear all data structures so SplitAnalysis is ready to analyze a
   /// new interval.
@@ -230,10 +234,6 @@ public:
     return IPA.getLastInsertPoint(*CurLI, *MF.getBlockNumbered(Num));
   }
 
-  SlotIndex getLastSplitPoint(MachineBasicBlock *BB) {
-    return IPA.getLastInsertPoint(*CurLI, *BB);
-  }
-
   MachineBasicBlock::iterator getLastSplitPointIter(MachineBasicBlock *BB) {
     return IPA.getLastInsertPointIter(*CurLI, *BB);
   }
@@ -256,6 +256,7 @@ public:
 ///
 class LLVM_LIBRARY_VISIBILITY SplitEditor {
   SplitAnalysis &SA;
+  AliasAnalysis &AA;
   LiveIntervals &LIS;
   VirtRegMap &VRM;
   MachineRegisterInfo &MRI;
@@ -263,7 +264,6 @@ class LLVM_LIBRARY_VISIBILITY SplitEditor {
   const TargetInstrInfo &TII;
   const TargetRegisterInfo &TRI;
   const MachineBlockFrequencyInfo &MBFI;
-  VirtRegAuxInfo &VRAI;
 
 public:
   /// ComplementSpillMode - Select how the complement live range should be
@@ -327,22 +327,28 @@ private:
   ///    its def.  The full live range can be inferred exactly from the range
   ///    of RegIdx in RegAssign.
   /// 3. (Null, true).  As above, but the ranges in RegAssign are too large, and
-  ///    the live range must be recomputed using ::extend().
+  ///    the live range must be recomputed using LiveRangeCalc::extend().
   /// 4. (VNI, false) The value is mapped to a single new value.
   ///    The new value has no live ranges anywhere.
   ValueMap Values;
 
-  /// LICalc - Cache for computing live ranges and SSA update.  Each instance
+  /// LRCalc - Cache for computing live ranges and SSA update.  Each instance
   /// can only handle non-overlapping live ranges, so use a separate
-  /// LiveIntervalCalc instance for the complement interval when in spill mode.
-  LiveIntervalCalc LICalc[2];
+  /// LiveRangeCalc instance for the complement interval when in spill mode.
+  LiveRangeCalc LRCalc[2];
 
-  /// getLICalc - Return the LICalc to use for RegIdx.  In spill mode, the
+  /// getLRCalc - Return the LRCalc to use for RegIdx.  In spill mode, the
   /// complement interval can overlap the other intervals, so it gets its own
-  /// LICalc instance.  When not in spill mode, all intervals can share one.
-  LiveIntervalCalc &getLICalc(unsigned RegIdx) {
-    return LICalc[SpillMode != SM_Partition && RegIdx != 0];
+  /// LRCalc instance.  When not in spill mode, all intervals can share one.
+  LiveRangeCalc &getLRCalc(unsigned RegIdx) {
+    return LRCalc[SpillMode != SM_Partition && RegIdx != 0];
   }
+
+  /// Find a subrange corresponding to the lane mask @p LM in the live
+  /// interval @p LI. The interval @p LI is assumed to contain such a subrange.
+  /// This function is used to find corresponding subranges between the
+  /// original interval and the new intervals.
+  LiveInterval::SubRange &getSubRangeForMask(LaneBitmask LM, LiveInterval &LI);
 
   /// Add a segment to the interval LI for the value number VNI. If LI has
   /// subranges, corresponding segments will be added to them as well, but
@@ -375,8 +381,10 @@ private:
 
   /// defFromParent - Define Reg from ParentVNI at UseIdx using either
   /// rematerialization or a COPY from parent. Return the new value.
-  VNInfo *defFromParent(unsigned RegIdx, const VNInfo *ParentVNI,
-                        SlotIndex UseIdx, MachineBasicBlock &MBB,
+  VNInfo *defFromParent(unsigned RegIdx,
+                        VNInfo *ParentVNI,
+                        SlotIndex UseIdx,
+                        MachineBasicBlock &MBB,
                         MachineBasicBlock::iterator I);
 
   /// removeBackCopies - Remove the copy instructions that defines the values
@@ -406,7 +414,7 @@ private:
   /// all predecessor values that reach this def. If @p LR is a subrange,
   /// the array @p Undefs is the set of all locations where it is undefined
   /// via <def,read-undef> in other subranges for the same register.
-  void extendPHIRange(MachineBasicBlock &B, LiveIntervalCalc &LIC,
+  void extendPHIRange(MachineBasicBlock &B, LiveRangeCalc &LRC,
                       LiveRange &LR, LaneBitmask LM,
                       ArrayRef<SlotIndex> Undefs);
 
@@ -423,20 +431,20 @@ private:
   /// Add a copy instruction copying \p FromReg to \p ToReg before
   /// \p InsertBefore. This can be invoked with a \p LaneMask which may make it
   /// necessary to construct a sequence of copies to cover it exactly.
-  SlotIndex buildCopy(Register FromReg, Register ToReg, LaneBitmask LaneMask,
+  SlotIndex buildCopy(unsigned FromReg, unsigned ToReg, LaneBitmask LaneMask,
       MachineBasicBlock &MBB, MachineBasicBlock::iterator InsertBefore,
       bool Late, unsigned RegIdx);
 
-  SlotIndex buildSingleSubRegCopy(Register FromReg, Register ToReg,
+  SlotIndex buildSingleSubRegCopy(unsigned FromReg, unsigned ToReg,
       MachineBasicBlock &MB, MachineBasicBlock::iterator InsertBefore,
       unsigned SubIdx, LiveInterval &DestLI, bool Late, SlotIndex Def);
 
 public:
   /// Create a new SplitEditor for editing the LiveInterval analyzed by SA.
   /// Newly created intervals will be appended to newIntervals.
-  SplitEditor(SplitAnalysis &SA, LiveIntervals &LIS, VirtRegMap &VRM,
-              MachineDominatorTree &MDT, MachineBlockFrequencyInfo &MBFI,
-              VirtRegAuxInfo &VRAI);
+  SplitEditor(SplitAnalysis &sa, AliasAnalysis &aa, LiveIntervals &lis,
+              VirtRegMap &vrm, MachineDominatorTree &mdt,
+              MachineBlockFrequencyInfo &mbfi);
 
   /// reset - Prepare for a new split.
   void reset(LiveRangeEdit&, ComplementSpillMode = SM_Partition);
@@ -486,8 +494,7 @@ public:
   SlotIndex leaveIntvAtTop(MachineBasicBlock &MBB);
 
   /// overlapIntv - Indicate that all instructions in range should use the open
-  /// interval if End does not have tied-def usage of the register and in this
-  /// case complement interval is used. Let the complement interval be live.
+  /// interval, but also let the complement interval be live.
   ///
   /// This doubles the register pressure, but is sometimes required to deal with
   /// register uses after the last valid split point.

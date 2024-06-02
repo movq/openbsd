@@ -13,14 +13,19 @@
 #ifndef LLVM_EXECUTIONENGINE_ORC_SPECULATION_H
 #define LLVM_EXECUTIONENGINE_ORC_SPECULATION_H
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
-#include "llvm/ExecutionEngine/Orc/DebugUtils.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/Debug.h"
+
 #include <mutex>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace llvm {
 namespace orc {
@@ -43,13 +48,13 @@ public:
 private:
   // FIX ME: find a right way to distinguish the pre-compile Symbols, and update
   // the callsite
-  std::optional<AliaseeDetails> getImplFor(const SymbolStringPtr &StubSymbol) {
+  Optional<AliaseeDetails> getImplFor(const SymbolStringPtr &StubSymbol) {
     std::lock_guard<std::mutex> Lockit(ConcurrentAccess);
     auto Position = Maps.find(StubSymbol);
     if (Position != Maps.end())
       return Position->getSecond();
     else
-      return std::nullopt;
+      return None;
   }
 
   std::mutex ConcurrentAccess;
@@ -87,10 +92,10 @@ private:
     for (auto &Callee : CandidateSet) {
       auto ImplSymbol = AliaseeImplTable.getImplFor(Callee);
       // try to distinguish already compiled & library symbols
-      if (!ImplSymbol)
+      if (!ImplSymbol.hasValue())
         continue;
-      const auto &ImplSymbolName = ImplSymbol->first;
-      JITDylib *ImplJD = ImplSymbol->second;
+      const auto &ImplSymbolName = ImplSymbol.getPointer()->first;
+      JITDylib *ImplJD = ImplSymbol.getPointer()->second;
       auto &SymbolsInJD = SpeculativeLookUpImpls[ImplJD];
       SymbolsInJD.insert(ImplSymbolName);
     }
@@ -170,34 +175,34 @@ private:
 
 class IRSpeculationLayer : public IRLayer {
 public:
-  using IRlikiesStrRef =
-      std::optional<DenseMap<StringRef, DenseSet<StringRef>>>;
+  using IRlikiesStrRef = Optional<DenseMap<StringRef, DenseSet<StringRef>>>;
   using ResultEval = std::function<IRlikiesStrRef(Function &)>;
   using TargetAndLikelies = DenseMap<SymbolStringPtr, SymbolNameSet>;
 
-  IRSpeculationLayer(ExecutionSession &ES, IRLayer &BaseLayer, Speculator &Spec,
-                     MangleAndInterner &Mangle, ResultEval Interpreter)
+  IRSpeculationLayer(ExecutionSession &ES, IRCompileLayer &BaseLayer,
+                     Speculator &Spec, MangleAndInterner &Mangle,
+                     ResultEval Interpreter)
       : IRLayer(ES, BaseLayer.getManglingOptions()), NextLayer(BaseLayer),
         S(Spec), Mangle(Mangle), QueryAnalysis(Interpreter) {}
 
-  void emit(std::unique_ptr<MaterializationResponsibility> R,
-            ThreadSafeModule TSM) override;
+  void emit(MaterializationResponsibility R, ThreadSafeModule TSM);
 
 private:
   TargetAndLikelies
   internToJITSymbols(DenseMap<StringRef, DenseSet<StringRef>> IRNames) {
     assert(!IRNames.empty() && "No IRNames received to Intern?");
     TargetAndLikelies InternedNames;
+    DenseSet<SymbolStringPtr> TargetJITNames;
     for (auto &NamePair : IRNames) {
-      DenseSet<SymbolStringPtr> TargetJITNames;
       for (auto &TargetNames : NamePair.second)
         TargetJITNames.insert(Mangle(TargetNames));
+
       InternedNames[Mangle(NamePair.first)] = std::move(TargetJITNames);
     }
     return InternedNames;
   }
 
-  IRLayer &NextLayer;
+  IRCompileLayer &NextLayer;
   Speculator &S;
   MangleAndInterner &Mangle;
   ResultEval QueryAnalysis;

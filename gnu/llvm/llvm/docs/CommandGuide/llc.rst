@@ -23,8 +23,8 @@ OPTIONS
 -------
 
 If ``filename`` is "``-``" or omitted, :program:`llc` reads from standard input.
-Otherwise, it will read from ``filename``.  Inputs can be in either the LLVM
-assembly language format (``.ll``) or the LLVM bitcode format (``.bc``).
+Otherwise, it will from ``filename``.  Inputs can be in either the LLVM assembly
+language format (``.ll``) or the LLVM bitcode format (``.bc``).
 
 If the :option:`-o` option is omitted, then :program:`llc` will send its output
 to standard output if the input is from standard input.  If the :option:`-o`
@@ -112,14 +112,6 @@ End-user Options
 
  Enable optimizations that assume no NAN values.
 
-.. option:: --enable-no-signed-zeros-fp-math
-
- Enable FP math optimizations that assume the sign of 0 is insignificant.
-
-.. option:: --enable-no-trapping-fp-math
-
- Enable setting the FP exceptions build attribute not to use exceptions.
-
 .. option:: --enable-unsafe-fp-math
 
  Enable optimizations that make unsafe assumptions about IEEE math (e.g. that
@@ -163,9 +155,9 @@ End-user Options
 Tuning/Configuration Options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. option:: --print-after-isel
+.. option:: --print-machineinstrs
 
- Print generated machine code after instruction selection (useful for debugging).
+ Print generated machine code between compilation phases (useful for debugging).
 
 .. option:: --regalloc=<allocator>
 

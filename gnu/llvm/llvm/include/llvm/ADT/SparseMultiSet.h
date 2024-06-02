@@ -5,23 +5,22 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines the SparseMultiSet class, which adds multiset behavior to
-/// the SparseSet.
-///
-/// A sparse multiset holds a small number of objects identified by integer keys
-/// from a moderately sized universe. The sparse multiset uses more memory than
-/// other containers in order to provide faster operations. Any key can map to
-/// multiple values. A SparseMultiSetNode class is provided, which serves as a
-/// convenient base class for the contents of a SparseMultiSet.
-///
+//
+// This file defines the SparseMultiSet class, which adds multiset behavior to
+// the SparseSet.
+//
+// A sparse multiset holds a small number of objects identified by integer keys
+// from a moderately sized universe. The sparse multiset uses more memory than
+// other containers in order to provide faster operations. Any key can map to
+// multiple values. A SparseMultiSetNode class is provided, which serves as a
+// convenient base class for the contents of a SparseMultiSet.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_SPARSEMULTISET_H
 #define LLVM_ADT_SPARSEMULTISET_H
 
-#include "llvm/ADT/identity.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SparseSet.h"
 #include <cassert>
@@ -84,7 +83,8 @@ template<typename ValueT,
          typename KeyFunctorT = identity<unsigned>,
          typename SparseT = uint8_t>
 class SparseMultiSet {
-  static_assert(std::is_unsigned_v<SparseT>,
+  static_assert(std::numeric_limits<SparseT>::is_integer &&
+                !std::numeric_limits<SparseT>::is_signed,
                 "SparseT must be an unsigned integer type");
 
   /// The actual data that's stored, as a doubly-linked list implemented via
@@ -94,7 +94,7 @@ class SparseMultiSet {
   /// tombstones, in which case they are actually nodes in a single-linked
   /// freelist of recyclable slots.
   struct SMSNode {
-    static constexpr unsigned INVALID = ~0U;
+    static const unsigned INVALID = ~0U;
 
     ValueT Data;
     unsigned Prev;
@@ -216,17 +216,11 @@ public:
 
   /// Our iterators are iterators over the collection of objects that share a
   /// key.
-  template <typename SMSPtrTy> class iterator_base {
+  template<typename SMSPtrTy>
+  class iterator_base : public std::iterator<std::bidirectional_iterator_tag,
+                                             ValueT> {
     friend class SparseMultiSet;
 
-  public:
-    using iterator_category = std::bidirectional_iterator_tag;
-    using value_type = ValueT;
-    using difference_type = std::ptrdiff_t;
-    using pointer = value_type *;
-    using reference = value_type &;
-
-  private:
     SMSPtrTy SMS;
     unsigned Idx;
     unsigned SparseIdx;
@@ -253,6 +247,12 @@ public:
     void setNext(unsigned N) { SMS->Dense[Idx].Next = N; }
 
   public:
+    using super = std::iterator<std::bidirectional_iterator_tag, ValueT>;
+    using value_type = typename super::value_type;
+    using difference_type = typename super::difference_type;
+    using pointer = typename super::pointer;
+    using reference = typename super::reference;
+
     reference operator*() const {
       assert(isKeyed() && SMS->sparseIndex(SMS->Dense[Idx].Data) == SparseIdx &&
              "Dereferencing iterator of invalid key or index");
@@ -411,7 +411,7 @@ public:
   RangePair equal_range(const KeyT &K) {
     iterator B = find(K);
     iterator E = iterator(this, SMSNode::INVALID, B.SparseIdx);
-    return std::make_pair(B, E);
+    return make_pair(B, E);
   }
 
   /// Insert a new element at the tail of the subset list. Returns an iterator

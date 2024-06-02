@@ -11,15 +11,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TEXTAPI_INTERFACEFILE_H
-#define LLVM_TEXTAPI_INTERFACEFILE_H
+#ifndef LLVM_TEXTAPI_MACHO_INTERFACEFILE_H
+#define LLVM_TEXTAPI_MACHO_INTERFACEFILE_H
 
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator.h"
+#include "llvm/BinaryFormat/MachO.h"
+#include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/Error.h"
+#include "llvm/TextAPI/Architecture.h"
 #include "llvm/TextAPI/ArchitectureSet.h"
 #include "llvm/TextAPI/PackedVersion.h"
 #include "llvm/TextAPI/Platform.h"
@@ -377,8 +381,6 @@ public:
     return {Symbols.begin(), Symbols.end()};
   }
 
-  size_t symbolsCount() const { return Symbols.size(); }
-
   const_filtered_symbol_range exports() const {
     std::function<bool(const Symbol *)> fn = [](const Symbol *Symbol) {
       return !Symbol->isUndefined();
@@ -443,7 +445,7 @@ bool operator==(const DenseMapBase<DerivedT, SymbolsMapKey, MachO::Symbol *,
                                    KeyInfoT, BucketT> &RHS) {
   if (LHS.size() != RHS.size())
     return false;
-  for (const auto &KV : LHS) {
+  for (auto KV : LHS) {
     auto I = RHS.find(KV.first);
     if (I == RHS.end() || *I->second != *KV.second)
       return false;
@@ -454,4 +456,4 @@ bool operator==(const DenseMapBase<DerivedT, SymbolsMapKey, MachO::Symbol *,
 } // end namespace MachO.
 } // end namespace llvm.
 
-#endif // LLVM_TEXTAPI_INTERFACEFILE_H
+#endif // LLVM_TEXTAPI_MACHO_INTERFACEFILE_H

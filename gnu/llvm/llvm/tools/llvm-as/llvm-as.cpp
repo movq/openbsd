@@ -23,11 +23,11 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <memory>
-#include <optional>
 using namespace llvm;
 
 cl::OptionCategory AsCat("llvm-as Options");
@@ -88,13 +88,11 @@ static void WriteOutputFile(const Module *M, const ModuleSummaryIndex *Index) {
     exit(1);
   }
 
-  if (Force || !CheckBitcodeOutputToConsole(Out->os())) {
+  if (Force || !CheckBitcodeOutputToConsole(Out->os(), true)) {
     const ModuleSummaryIndex *IndexToWrite = nullptr;
-    // Don't attempt to write a summary index unless it contains any entries or
-    // has non-zero flags. The latter is used to assemble dummy index files for
-    // skipping modules by distributed ThinLTO backends. Otherwise we get an empty
-    // summary section.
-    if (Index && (Index->begin() != Index->end() || Index->getFlags()))
+    // Don't attempt to write a summary index unless it contains any entries.
+    // Otherwise we get an empty summary section.
+    if (Index && Index->begin() != Index->end())
       IndexToWrite = Index;
     if (!IndexToWrite || (M && (!M->empty() || !M->global_empty())))
       // If we have a non-empty Module, then we write the Module plus
@@ -106,7 +104,7 @@ static void WriteOutputFile(const Module *M, const ModuleSummaryIndex *Index) {
     else
       // Otherwise, with an empty Module but non-empty Index, we write a
       // combined index.
-      writeIndexToFile(*IndexToWrite, Out->os());
+      WriteIndexToFile(*IndexToWrite, Out->os());
   }
 
   // Declare success.
@@ -115,25 +113,14 @@ static void WriteOutputFile(const Module *M, const ModuleSummaryIndex *Index) {
 
 int main(int argc, char **argv) {
   InitLLVM X(argc, argv);
+  LLVMContext Context;
   cl::HideUnrelatedOptions(AsCat);
   cl::ParseCommandLineOptions(argc, argv, "llvm .ll -> .bc assembler\n");
-  LLVMContext Context;
 
   // Parse the file now...
   SMDiagnostic Err;
-  auto SetDataLayout = [](StringRef, StringRef) -> std::optional<std::string> {
-    if (ClDataLayout.empty())
-      return std::nullopt;
-    return ClDataLayout;
-  };
-  ParsedModuleAndIndex ModuleAndIndex;
-  if (DisableVerify) {
-    ModuleAndIndex = parseAssemblyFileWithIndexNoUpgradeDebugInfo(
-        InputFilename, Err, Context, nullptr, SetDataLayout);
-  } else {
-    ModuleAndIndex = parseAssemblyFileWithIndex(InputFilename, Err, Context,
-                                                nullptr, SetDataLayout);
-  }
+  auto ModuleAndIndex = parseAssemblyFileWithIndex(
+      InputFilename, Err, Context, nullptr, !DisableVerify, ClDataLayout);
   std::unique_ptr<Module> M = std::move(ModuleAndIndex.Mod);
   if (!M.get()) {
     Err.print(argv[0], errs());

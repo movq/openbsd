@@ -9,7 +9,7 @@
 // Processor definitions.
 //
 // For compatibility with other compilers on the platform, each model can
-// be identified either by the system name (e.g. z10) or the level of the
+// be identifed either by the system name (e.g. z10) or the level of the
 // architecture the model supports, as identified by the edition level
 // of the z/Architecture Principles of Operation document (e.g. arch8).
 //
@@ -37,7 +37,4 @@ def : ProcessorModel<"z14", Z14Model, Arch12SupportedFeatures.List>;
 
 def : ProcessorModel<"arch13", Z15Model, Arch13SupportedFeatures.List>;
 def : ProcessorModel<"z15", Z15Model, Arch13SupportedFeatures.List>;
-
-def : ProcessorModel<"arch14", Z16Model, Arch14SupportedFeatures.List>;
-def : ProcessorModel<"z16", Z16Model, Arch14SupportedFeatures.List>;
 

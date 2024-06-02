@@ -10,20 +10,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_REMARKS_REMARKSERIALIZER_H
-#define LLVM_REMARKS_REMARKSERIALIZER_H
+#ifndef LLVM_REMARKS_REMARK_SERIALIZER_H
+#define LLVM_REMARKS_REMARK_SERIALIZER_H
 
+#include "llvm/Remarks/Remark.h"
 #include "llvm/Remarks/RemarkFormat.h"
 #include "llvm/Remarks/RemarkStringTable.h"
-#include <optional>
+#include "llvm/Support/raw_ostream.h"
 
 namespace llvm {
-
-class raw_ostream;
-
 namespace remarks {
-
-struct Remark;
 
 enum class SerializerMode {
   Separate,  // A mode where the metadata is serialized separately from the
@@ -48,11 +44,11 @@ struct RemarkSerializer {
   SerializerMode Mode;
   /// The string table containing all the unique strings used in the output.
   /// The table can be serialized to be consumed after the compilation.
-  std::optional<StringTable> StrTab;
+  Optional<StringTable> StrTab;
 
   RemarkSerializer(Format SerializerFormat, raw_ostream &OS,
                    SerializerMode Mode)
-      : SerializerFormat(SerializerFormat), OS(OS), Mode(Mode) {}
+      : SerializerFormat(SerializerFormat), OS(OS), Mode(Mode), StrTab() {}
 
   /// This is just an interface.
   virtual ~RemarkSerializer() = default;
@@ -61,7 +57,7 @@ struct RemarkSerializer {
   /// Return the corresponding metadata serializer.
   virtual std::unique_ptr<MetaSerializer>
   metaSerializer(raw_ostream &OS,
-                 std::optional<StringRef> ExternalFilename = std::nullopt) = 0;
+                 Optional<StringRef> ExternalFilename = None) = 0;
 };
 
 /// This is the base class for a remark metadata serializer.
@@ -89,4 +85,4 @@ createRemarkSerializer(Format RemarksFormat, SerializerMode Mode,
 } // end namespace remarks
 } // end namespace llvm
 
-#endif // LLVM_REMARKS_REMARKSERIALIZER_H
+#endif /* LLVM_REMARKS_REMARK_SERIALIZER_H */

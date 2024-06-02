@@ -12,27 +12,30 @@
 // better decisions.
 //
 //===----------------------------------------------------------------------===//
-#ifndef LLVM_ANALYSIS_LEGACYDIVERGENCEANALYSIS_H
-#define LLVM_ANALYSIS_LEGACYDIVERGENCEANALYSIS_H
+#ifndef LLVM_ANALYSIS_LEGACY_DIVERGENCE_ANALYSIS_H
+#define LLVM_ANALYSIS_LEGACY_DIVERGENCE_ANALYSIS_H
 
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/PostDominators.h"
-#include "llvm/IR/PassManager.h"
+#include "llvm/Analysis/DivergenceAnalysis.h"
 #include "llvm/Pass.h"
-#include <memory>
 
 namespace llvm {
-class DivergenceInfo;
-class Function;
-class Module;
-class raw_ostream;
-class TargetTransformInfo;
-class Use;
 class Value;
-
-class LegacyDivergenceAnalysisImpl {
+class Function;
+class GPUDivergenceAnalysis;
+class LegacyDivergenceAnalysis : public FunctionPass {
 public:
+  static char ID;
+
+  LegacyDivergenceAnalysis();
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override;
+
+  bool runOnFunction(Function &F) override;
+
+  // Print all divergent branches in the function.
+  void print(raw_ostream &OS, const Module *) const override;
+
   // Returns true if V is divergent at its definition.
   bool isDivergent(const Value *V) const;
 
@@ -49,47 +52,12 @@ public:
   // Keep the analysis results uptodate by removing an erased value.
   void removeValue(const Value *V) { DivergentValues.erase(V); }
 
-  // Print all divergent branches in the function.
-  void print(raw_ostream &OS, const Module *) const;
-
-  // Whether analysis should be performed by GPUDivergenceAnalysis.
-  bool shouldUseGPUDivergenceAnalysis(const Function &F,
-                                      const TargetTransformInfo &TTI,
-                                      const LoopInfo &LI);
-
-  void run(Function &F, TargetTransformInfo &TTI, DominatorTree &DT,
-           PostDominatorTree &PDT, const LoopInfo &LI);
-
-protected:
-  // (optional) handle to new DivergenceAnalysis
-  std::unique_ptr<DivergenceInfo> gpuDA;
-
-  // Stores all divergent values.
-  DenseSet<const Value *> DivergentValues;
-
-  // Stores divergent uses of possibly uniform values.
-  DenseSet<const Use *> DivergentUses;
-};
-
-class LegacyDivergenceAnalysis : public FunctionPass,
-                                 public LegacyDivergenceAnalysisImpl {
-public:
-  static char ID;
-
-  LegacyDivergenceAnalysis();
-  void getAnalysisUsage(AnalysisUsage &AU) const override;
-  bool runOnFunction(Function &F) override;
-};
-
-class LegacyDivergenceAnalysisPass
-    : public PassInfoMixin<LegacyDivergenceAnalysisPass>,
-      public LegacyDivergenceAnalysisImpl {
-public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
-
 private:
+  // Whether analysis should be performed by GPUDivergenceAnalysis.
+  bool shouldUseGPUDivergenceAnalysis(const Function &F) const;
+
   // (optional) handle to new DivergenceAnalysis
-  std::unique_ptr<DivergenceInfo> gpuDA;
+  std::unique_ptr<GPUDivergenceAnalysis> gpuDA;
 
   // Stores all divergent values.
   DenseSet<const Value *> DivergentValues;
@@ -97,7 +65,6 @@ private:
   // Stores divergent uses of possibly uniform values.
   DenseSet<const Use *> DivergentUses;
 };
+} // End llvm namespace
 
-} // end namespace llvm
-
-#endif // LLVM_ANALYSIS_LEGACYDIVERGENCEANALYSIS_H
+#endif //LLVM_ANALYSIS_LEGACY_DIVERGENCE_ANALYSIS_H

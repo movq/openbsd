@@ -12,6 +12,7 @@
 
 #include "CodeExpander.h"
 #include "CodeExpansions.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TableGen/Error.h"
 
@@ -57,15 +58,21 @@ void CodeExpander::emit(raw_ostream &OS) const {
       // Warn if we split because no terminator was found.
       StringRef EndVar = StartVar.drop_front(2 /* ${ */ + Var.size());
       if (EndVar.empty()) {
-        PrintWarning(Loc, "Unterminated expansion '${" + Var + "'");
-        PrintNote("Code: [{" + Code + "}]");
+        size_t LocOffset = StartVar.data() - Code.data();
+        PrintWarning(
+            Loc.size() > 0 && Loc[0].isValid()
+                ? SMLoc::getFromPointer(Loc[0].getPointer() + LocOffset)
+                : SMLoc(),
+            "Unterminated expansion");
       }
 
       auto ValueI = Expansions.find(Var);
       if (ValueI == Expansions.end()) {
-        PrintError(Loc,
-                   "Attempt to expand an undeclared variable '" + Var + "'");
-        PrintNote("Code: [{" + Code + "}]");
+        size_t LocOffset = StartVar.data() - Code.data();
+        PrintError(Loc.size() > 0 && Loc[0].isValid()
+                       ? SMLoc::getFromPointer(Loc[0].getPointer() + LocOffset)
+                       : SMLoc(),
+                   "Attempting to expand an undeclared variable " + Var);
       }
       if (ShowExpansions)
         OS << "/*$" << Var << "{*/";
@@ -75,8 +82,11 @@ void CodeExpander::emit(raw_ostream &OS) const {
       continue;
     }
 
-    PrintWarning(Loc, "Assuming missing escape character: \\$");
-    PrintNote("Code: [{" + Code + "}]");
+    size_t LocOffset = Current.data() - Code.data();
+    PrintWarning(Loc.size() > 0 && Loc[0].isValid()
+                     ? SMLoc::getFromPointer(Loc[0].getPointer() + LocOffset)
+                     : SMLoc(),
+                 "Assuming missing escape character");
     OS << "$";
     Current = Current.drop_front(1);
   }

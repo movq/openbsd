@@ -18,23 +18,23 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/InitializePasses.h"
-#include <optional>
 
 using namespace llvm;
 
 DiagnosticInfoMIROptimization::MachineArgument::MachineArgument(
-    StringRef MKey, const MachineInstr &MI) {
-  Key = std::string(MKey);
+    StringRef MKey, const MachineInstr &MI)
+    : Argument() {
+  Key = MKey;
 
   raw_string_ostream OS(Val);
   MI.print(OS, /*IsStandalone=*/true, /*SkipOpers=*/false,
            /*SkipDebugLoc=*/true);
 }
 
-std::optional<uint64_t>
+Optional<uint64_t>
 MachineOptimizationRemarkEmitter::computeHotness(const MachineBasicBlock &MBB) {
   if (!MBFI)
-    return std::nullopt;
+    return None;
 
   return MBFI->getBlockProfileCount(&MBB);
 }
@@ -54,8 +54,10 @@ void MachineOptimizationRemarkEmitter::emit(
   LLVMContext &Ctx = MF.getFunction().getContext();
 
   // Only emit it if its hotness meets the threshold.
-  if (OptDiag.getHotness().value_or(0) < Ctx.getDiagnosticsHotnessThreshold())
+  if (OptDiag.getHotness().getValueOr(0) <
+      Ctx.getDiagnosticsHotnessThreshold()) {
     return;
+  }
 
   Ctx.diagnose(OptDiag);
 }
@@ -91,7 +93,7 @@ static const char ore_name[] = "Machine Optimization Remark Emitter";
 #define ORE_NAME "machine-opt-remark-emitter"
 
 INITIALIZE_PASS_BEGIN(MachineOptimizationRemarkEmitterPass, ORE_NAME, ore_name,
-                      true, true)
+                      false, true)
 INITIALIZE_PASS_DEPENDENCY(LazyMachineBlockFrequencyInfoPass)
 INITIALIZE_PASS_END(MachineOptimizationRemarkEmitterPass, ORE_NAME, ore_name,
-                    true, true)
+                    false, true)

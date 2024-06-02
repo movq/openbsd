@@ -6,9 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Run a basic correctness check on the IR to ensure that Safepoints - if
-// they've been inserted - were inserted correctly.  In particular, look for use
-// of non-relocated values after a safepoint.  It's primary use is to check the
+// Run a sanity check on the IR to ensure that Safepoints - if they've been
+// inserted - were inserted correctly.  In particular, look for use of
+// non-relocated values after a safepoint.  It's primary use is to check the
 // correctness of safepoint insertion immediately after insertion, but it can
 // also be used to verify that later transforms have not found a way to break
 // safepoint semenatics.
@@ -38,12 +38,13 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Statepoint.h"
 #include "llvm/IR/Value.h"
 #include "llvm/InitializePasses.h"
-#include "llvm/Support/Allocator.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -206,7 +207,7 @@ PreservedAnalyses SafepointIRVerifierPass::run(Function &F,
   Verify(F, DT, CD);
   return PreservedAnalyses::all();
 }
-} // namespace llvm
+}
 
 namespace {
 
@@ -348,24 +349,14 @@ static enum BaseType getBaseType(const Value *Val) {
     // Push all the incoming values of phi node into the worklist for
     // processing.
     if (const auto *PN = dyn_cast<PHINode>(V)) {
-      append_range(Worklist, PN->incoming_values());
+      for (Value *InV: PN->incoming_values())
+        Worklist.push_back(InV);
       continue;
     }
     if (const auto *SI = dyn_cast<SelectInst>(V)) {
       // Push in the true and false values
       Worklist.push_back(SI->getTrueValue());
       Worklist.push_back(SI->getFalseValue());
-      continue;
-    }
-    if (const auto *GCRelocate = dyn_cast<GCRelocateInst>(V)) {
-      // GCRelocates do not change null-ness or constant-ness of the value.
-      // So we can continue with derived pointer this instruction relocates.
-      Worklist.push_back(GCRelocate->getDerivedPtr());
-      continue;
-    }
-    if (const auto *FI = dyn_cast<FreezeInst>(V)) {
-      // Freeze does not change null-ness or constant-ness of the value.
-      Worklist.push_back(FI->getOperand(0));
       continue;
     }
     if (isa<Constant>(V)) {
@@ -569,7 +560,8 @@ GCPtrTracker::GCPtrTracker(const Function &F, const DominatorTree &DT,
 }
 
 BasicBlockState *GCPtrTracker::getBasicBlockState(const BasicBlock *BB) {
-  return BlockMap.lookup(BB);
+  auto it = BlockMap.find(BB);
+  return it != BlockMap.end() ? it->second : nullptr;
 }
 
 const BasicBlockState *GCPtrTracker::getBasicBlockState(
@@ -790,7 +782,7 @@ void GCPtrTracker::transferBlock(const BasicBlock *BB, BasicBlockState &BBS,
 
 void GCPtrTracker::transferInstruction(const Instruction &I, bool &Cleared,
                                        AvailableValueSet &Available) {
-  if (isa<GCStatepointInst>(I)) {
+  if (isStatepoint(I)) {
     Cleared = true;
     Available.clear();
   } else if (containsGCPtrType(I.getType()))

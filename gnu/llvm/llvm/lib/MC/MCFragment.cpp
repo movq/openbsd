@@ -48,25 +48,6 @@ bool MCAsmLayout::isFragmentValid(const MCFragment *F) const {
   return F->getLayoutOrder() <= LastValid->getLayoutOrder();
 }
 
-bool MCAsmLayout::canGetFragmentOffset(const MCFragment *F) const {
-  MCSection *Sec = F->getParent();
-  MCSection::iterator I;
-  if (MCFragment *LastValid = LastValidFragment[Sec]) {
-    // Fragment already valid, offset is available.
-    if (F->getLayoutOrder() <= LastValid->getLayoutOrder())
-      return true;
-    I = ++MCSection::iterator(LastValid);
-  } else
-    I = Sec->begin();
-
-  // A fragment ordered before F is currently being laid out.
-  const MCFragment *FirstInvalidFragment = &*I;
-  if (FirstInvalidFragment->IsBeingLaidOut)
-    return false;
-
-  return true;
-}
-
 void MCAsmLayout::invalidateFragmentsFrom(MCFragment *F) {
   // If this fragment wasn't already valid, we don't need to do anything.
   if (!isFragmentValid(F))
@@ -128,11 +109,7 @@ static bool getSymbolOffsetImpl(const MCAsmLayout &Layout, const MCSymbol &S,
   const MCSymbolRefExpr *A = Target.getSymA();
   if (A) {
     uint64_t ValA;
-    // FIXME: On most platforms, `Target`'s component symbols are labels from
-    // having been simplified during evaluation, but on Mach-O they can be
-    // variables due to PR19203. This, and the line below for `B` can be
-    // restored to call `getLabelOffset` when PR19203 is fixed.
-    if (!getSymbolOffsetImpl(Layout, A->getSymbol(), ReportError, ValA))
+    if (!getLabelOffset(Layout, A->getSymbol(), ReportError, ValA))
       return false;
     Offset += ValA;
   }
@@ -140,7 +117,7 @@ static bool getSymbolOffsetImpl(const MCAsmLayout &Layout, const MCSymbol &S,
   const MCSymbolRefExpr *B = Target.getSymB();
   if (B) {
     uint64_t ValB;
-    if (!getSymbolOffsetImpl(Layout, B->getSymbol(), ReportError, ValB))
+    if (!getLabelOffset(Layout, B->getSymbol(), ReportError, ValB))
       return false;
     Offset -= ValB;
   }
@@ -258,7 +235,7 @@ void ilist_alloc_traits<MCFragment>::deleteNode(MCFragment *V) { V->destroy(); }
 MCFragment::MCFragment(FragmentType Kind, bool HasInstructions,
                        MCSection *Parent)
     : Parent(Parent), Atom(nullptr), Offset(~UINT64_C(0)), LayoutOrder(0),
-      Kind(Kind), IsBeingLaidOut(false), HasInstructions(HasInstructions) {
+      Kind(Kind), HasInstructions(HasInstructions) {
   if (Parent && !isa<MCDummyFragment>(*this))
     Parent->getFragmentList().push_back(this);
 }
@@ -282,9 +259,6 @@ void MCFragment::destroy() {
       return;
     case FT_Fill:
       delete cast<MCFillFragment>(this);
-      return;
-    case FT_Nops:
-      delete cast<MCNopsFragment>(this);
       return;
     case FT_Relaxable:
       delete cast<MCRelaxableFragment>(this);
@@ -312,9 +286,6 @@ void MCFragment::destroy() {
       return;
     case FT_CVDefRange:
       delete cast<MCCVDefRangeFragment>(this);
-      return;
-    case FT_PseudoProbe:
-      delete cast<MCPseudoProbeAddrFragment>(this);
       return;
     case FT_Dummy:
       delete cast<MCDummyFragment>(this);
@@ -346,9 +317,6 @@ LLVM_DUMP_METHOD void MCFragment::dump() const {
   case MCFragment::FT_CompactEncodedInst:
     OS << "MCCompactEncodedInstFragment"; break;
   case MCFragment::FT_Fill:  OS << "MCFillFragment"; break;
-  case MCFragment::FT_Nops:
-    OS << "MCFNopsFragment";
-    break;
   case MCFragment::FT_Relaxable:  OS << "MCRelaxableFragment"; break;
   case MCFragment::FT_Org:   OS << "MCOrgFragment"; break;
   case MCFragment::FT_Dwarf: OS << "MCDwarfFragment"; break;
@@ -358,9 +326,6 @@ LLVM_DUMP_METHOD void MCFragment::dump() const {
   case MCFragment::FT_SymbolId:    OS << "MCSymbolIdFragment"; break;
   case MCFragment::FT_CVInlineLines: OS << "MCCVInlineLineTableFragment"; break;
   case MCFragment::FT_CVDefRange: OS << "MCCVDefRangeTableFragment"; break;
-  case MCFragment::FT_PseudoProbe:
-    OS << "MCPseudoProbe";
-    break;
   case MCFragment::FT_Dummy: OS << "MCDummyFragment"; break;
   }
 
@@ -376,7 +341,7 @@ LLVM_DUMP_METHOD void MCFragment::dump() const {
     if (AF->hasEmitNops())
       OS << " (emit nops)";
     OS << "\n       ";
-    OS << " Alignment:" << AF->getAlignment().value()
+    OS << " Alignment:" << AF->getAlignment()
        << " Value:" << AF->getValue() << " ValueSize:" << AF->getValueSize()
        << " MaxBytesToEmit:" << AF->getMaxBytesToEmit() << ">";
     break;
@@ -424,18 +389,11 @@ LLVM_DUMP_METHOD void MCFragment::dump() const {
        << " NumValues:" << FF->getNumValues();
     break;
   }
-  case MCFragment::FT_Nops: {
-    const auto *NF = cast<MCNopsFragment>(this);
-    OS << " NumBytes:" << NF->getNumBytes()
-       << " ControlledNopLength:" << NF->getControlledNopLength();
-    break;
-  }
   case MCFragment::FT_Relaxable:  {
     const auto *F = cast<MCRelaxableFragment>(this);
     OS << "\n       ";
     OS << " Inst:";
     F->getInst().dump_pretty(OS);
-    OS << " (" << F->getContents().size() << " bytes)";
     break;
   }
   case MCFragment::FT_Org:  {
@@ -466,9 +424,14 @@ LLVM_DUMP_METHOD void MCFragment::dump() const {
   }
   case MCFragment::FT_BoundaryAlign: {
     const auto *BF = cast<MCBoundaryAlignFragment>(this);
+    if (BF->canEmitNops())
+      OS << " (can emit nops to align";
+    if (BF->isFused())
+      OS << " fused branch)";
+    else
+      OS << " unfused branch)";
     OS << "\n       ";
     OS << " BoundarySize:" << BF->getAlignment().value()
-       << " LastFragment:" << BF->getLastFragment()
        << " Size:" << BF->getSize();
     break;
   }
@@ -492,12 +455,6 @@ LLVM_DUMP_METHOD void MCFragment::dump() const {
       OS << " RangeStart:" << RangeStartEnd.first;
       OS << " RangeEnd:" << RangeStartEnd.second;
     }
-    break;
-  }
-  case MCFragment::FT_PseudoProbe: {
-    const auto *OF = cast<MCPseudoProbeAddrFragment>(this);
-    OS << "\n       ";
-    OS << " AddrDelta:" << OF->getAddrDelta();
     break;
   }
   case MCFragment::FT_Dummy:

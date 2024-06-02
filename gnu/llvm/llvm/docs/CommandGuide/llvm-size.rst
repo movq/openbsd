@@ -125,6 +125,10 @@ OPTIONS
 
  Display a summary of command line options.
 
+.. option:: --help-list
+
+ Display an uncategorized summary of command line options.
+
 .. option:: -m
 
  Equivalent to :option:`--format` with a value of ``darwin``.
@@ -191,4 +195,4 @@ Otherwise, it exits with code 0.
 BUGS
 ----
 
-To report bugs, please visit <https://github.com/llvm/llvm-project/labels/tools:llvm-size/>.
+To report bugs, please visit <http://llvm.org/bugs/>.

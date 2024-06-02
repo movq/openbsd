@@ -2,7 +2,6 @@ set(LLVM_LINK_COMPONENTS
   Core
   IRReader
   OrcJIT
-  OrcTargetProcess
   ExecutionEngine
   Support
   nativecodegen

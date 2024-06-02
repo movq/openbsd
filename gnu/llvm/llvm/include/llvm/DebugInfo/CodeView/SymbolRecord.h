@@ -11,6 +11,7 @@
 
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
@@ -195,7 +196,7 @@ struct BinaryAnnotationIterator
 
   const DecodedAnnotation &operator*() {
     ParseCurrentAnnotation();
-    return *Current;
+    return Current.getValue();
   }
 
 private:
@@ -248,7 +249,7 @@ private:
   }
 
   bool ParseCurrentAnnotation() {
-    if (Current)
+    if (Current.hasValue())
       return true;
 
     Next = Data;
@@ -323,7 +324,7 @@ private:
     return true;
   }
 
-  std::optional<DecodedAnnotation> Current;
+  Optional<DecodedAnnotation> Current;
   ArrayRef<uint8_t> Data;
   ArrayRef<uint8_t> Next;
 };
@@ -347,13 +348,6 @@ public:
   std::vector<uint8_t> AnnotationData;
 
   uint32_t RecordOffset = 0;
-};
-
-struct PublicSym32Header {
-  ulittle32_t Flags;
-  ulittle32_t Offset;
-  ulittle16_t Segment;
-  // char Name[];
 };
 
 // S_PUB32
@@ -1001,6 +995,9 @@ public:
 
   uint32_t RecordOffset = 0;
 };
+
+using CVSymbol = CVRecord<SymbolKind>;
+using CVSymbolArray = VarStreamArray<CVSymbol>;
 
 Expected<CVSymbol> readSymbolFromStream(BinaryStreamRef Stream,
                                         uint32_t Offset);

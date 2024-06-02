@@ -13,7 +13,7 @@
 //
 // In LLVM CodeGen the runtime-handle metadata will be translated to
 // RuntimeHandle metadata in code object. Runtime allocates a global buffer
-// for each kernel with RuntimeHandle metadata and saves the kernel address
+// for each kernel with RuntimeHandel metadata and saves the kernel address
 // required for the AQL packet into the buffer. __enqueue_kernel function
 // in device library knows that the invoke function pointer in the block
 // literal is actually runtime handle and loads the kernel address from it
@@ -33,13 +33,16 @@
 
 #include "AMDGPU.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/User.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 
 #define DEBUG_TYPE "amdgpu-lower-enqueued-block"
 
@@ -72,10 +75,10 @@ ModulePass* llvm::createAMDGPUOpenCLEnqueuedBlockLoweringPass() {
   return new AMDGPUOpenCLEnqueuedBlockLowering();
 }
 
-/// Collect direct or indirect callers of \p F and save them
+/// Collect direct or indrect callers of \p F and save them
 /// to \p Callers.
 static void collectCallers(Function *F, DenseSet<Function *> &Callers) {
-  for (auto *U : F->users()) {
+  for (auto U : F->users()) {
     if (auto *CI = dyn_cast<CallInst>(&*U)) {
       auto *Caller = CI->getParent()->getParent();
       if (Callers.insert(Caller).second)
@@ -93,18 +96,16 @@ static void collectFunctionUsers(User *U, DenseSet<Function *> &Funcs) {
       collectCallers(F, Funcs);
     return;
   }
-  for (User *U : U->users())
-    collectFunctionUsers(U, Funcs);
+  if (!isa<Constant>(U))
+    return;
+  for (auto UU : U->users())
+    collectFunctionUsers(&*UU, Funcs);
 }
 
 bool AMDGPUOpenCLEnqueuedBlockLowering::runOnModule(Module &M) {
   DenseSet<Function *> Callers;
   auto &C = M.getContext();
   bool Changed = false;
-
-  // ptr kernel_object, i32 private_segment_size, i32 group_segment_size
-  StructType *HandleTy = nullptr;
-
   for (auto &F : M.functions()) {
     if (F.hasFnAttribute("enqueued-block")) {
       if (!F.hasName()) {
@@ -115,37 +116,32 @@ bool AMDGPUOpenCLEnqueuedBlockLowering::runOnModule(Module &M) {
       }
       LLVM_DEBUG(dbgs() << "found enqueued kernel: " << F.getName() << '\n');
       auto RuntimeHandle = (F.getName() + ".runtime_handle").str();
-      if (!HandleTy) {
-        Type *Int32 = Type::getInt32Ty(C);
-        HandleTy = StructType::create(
-            C, {Type::getInt8Ty(C)->getPointerTo(0), Int32, Int32},
-            "block.runtime.handle.t");
-      }
-
+      auto T = ArrayType::get(Type::getInt64Ty(C), 2);
       auto *GV = new GlobalVariable(
-          M, HandleTy,
-          /*isConstant=*/true, GlobalValue::ExternalLinkage,
-          /*Initializer=*/Constant::getNullValue(HandleTy), RuntimeHandle,
+          M, T,
+          /*isConstant=*/false, GlobalValue::ExternalLinkage,
+          /*Initializer=*/Constant::getNullValue(T), RuntimeHandle,
           /*InsertBefore=*/nullptr, GlobalValue::NotThreadLocal,
           AMDGPUAS::GLOBAL_ADDRESS,
-          /*isExternallyInitialized=*/true);
+          /*isExternallyInitialized=*/false);
       LLVM_DEBUG(dbgs() << "runtime handle created: " << *GV << '\n');
 
-      for (User *U : F.users())
-        collectFunctionUsers(U, Callers);
-
-      F.replaceAllUsesWith(ConstantExpr::getAddrSpaceCast(GV, F.getType()));
-      F.addFnAttr("runtime-handle", RuntimeHandle);
-      F.setLinkage(GlobalValue::ExternalLinkage);
-      Changed = true;
+      for (auto U : F.users()) {
+        auto *UU = &*U;
+        if (!isa<ConstantExpr>(UU))
+          continue;
+        collectFunctionUsers(UU, Callers);
+        auto *BitCast = cast<ConstantExpr>(UU);
+        auto *NewPtr = ConstantExpr::getPointerCast(GV, BitCast->getType());
+        BitCast->replaceAllUsesWith(NewPtr);
+        F.addFnAttr("runtime-handle", RuntimeHandle);
+        F.setLinkage(GlobalValue::ExternalLinkage);
+        Changed = true;
+      }
     }
   }
 
-  // FIXME: This call graph analysis is broken and should be
-  // removed. AMDGPUAttributor infers the individual implicit argument fields
-  // are needed or not, but the runtime crashes in cases where we fail to
-  // optimize these out at -O0.
-  for (auto *F : Callers) {
+  for (auto F : Callers) {
     if (F->getCallingConv() != CallingConv::AMDGPU_KERNEL)
       continue;
     F->addFnAttr("calls-enqueue-kernel");

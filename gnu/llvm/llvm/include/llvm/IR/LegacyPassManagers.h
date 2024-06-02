@@ -88,8 +88,10 @@
 namespace llvm {
 template <typename T> class ArrayRef;
 class Module;
+class Pass;
 class StringRef;
 class Value;
+class Timer;
 class PMDataManager;
 
 // enums for debugging strings
@@ -229,11 +231,11 @@ private:
 
   // Map to keep track of last user of the analysis pass.
   // LastUser->second is the last user of Lastuser->first.
-  // This is kept in sync with InversedLastUser.
   DenseMap<Pass *, Pass *> LastUser;
 
   // Map to keep track of passes that are last used by a pass.
-  // This is kept in sync with LastUser.
+  // This inverse map is initialized at PM->run() based on
+  // LastUser map.
   DenseMap<Pass *, SmallPtrSet<Pass *, 8> > InversedLastUser;
 
   /// Immutable passes are managed by top level manager.
@@ -294,7 +296,9 @@ private:
 /// used by pass managers.
 class PMDataManager {
 public:
-  explicit PMDataManager() { initializeAnalysisInfo(); }
+  explicit PMDataManager() : TPM(nullptr), Depth(0) {
+    initializeAnalysisInfo();
+  }
 
   virtual ~PMDataManager();
 
@@ -326,14 +330,13 @@ public:
   /// through getAnalysis interface.
   virtual void addLowerLevelRequiredPass(Pass *P, Pass *RequiredPass);
 
-  virtual std::tuple<Pass *, bool> getOnTheFlyPass(Pass *P, AnalysisID PI,
-                                                   Function &F);
+  virtual Pass *getOnTheFlyPass(Pass *P, AnalysisID PI, Function &F);
 
   /// Initialize available analysis information.
   void initializeAnalysisInfo() {
     AvailableAnalysis.clear();
-    for (auto &IA : InheritedAnalysis)
-      IA = nullptr;
+    for (unsigned i = 0; i < PMT_Last; ++i)
+      InheritedAnalysis[i] = nullptr;
   }
 
   // Return true if P preserves high level analysis used by other
@@ -389,8 +392,9 @@ public:
   // Collect AvailableAnalysis from all the active Pass Managers.
   void populateInheritedAnalysis(PMStack &PMS) {
     unsigned Index = 0;
-    for (PMDataManager *PMDM : PMS)
-      InheritedAnalysis[Index++] = PMDM->getAvailableAnalysis();
+    for (PMStack::iterator I = PMS.begin(), E = PMS.end();
+         I != E; ++I)
+      InheritedAnalysis[Index++] = (*I)->getAvailableAnalysis();
   }
 
   /// Set the initial size of the module if the user has specified that they
@@ -416,7 +420,7 @@ public:
 
 protected:
   // Top level manager.
-  PMTopLevelManager *TPM = nullptr;
+  PMTopLevelManager *TPM;
 
   // Collection of pass that are managed by this manager
   SmallVector<Pass *, 16> PassVector;
@@ -444,7 +448,7 @@ private:
   // this manager.
   SmallVector<Pass *, 16> HigherLevelAnalysis;
 
-  unsigned Depth = 0;
+  unsigned Depth;
 };
 
 //===----------------------------------------------------------------------===//
@@ -457,7 +461,8 @@ private:
 class FPPassManager : public ModulePass, public PMDataManager {
 public:
   static char ID;
-  explicit FPPassManager() : ModulePass(ID) {}
+  explicit FPPassManager()
+  : ModulePass(ID), PMDataManager() { }
 
   /// run - Execute all of the passes scheduled for execution.  Keep track of
   /// whether any of the passes modifies the module, and if so, return true.

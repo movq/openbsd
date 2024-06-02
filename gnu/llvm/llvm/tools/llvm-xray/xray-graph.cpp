@@ -17,8 +17,6 @@
 #include "llvm/XRay/InstrumentationMap.h"
 #include "llvm/XRay/Trace.h"
 
-#include <cmath>
-
 using namespace llvm;
 using namespace llvm::xray;
 
@@ -165,30 +163,6 @@ static void updateStat(GraphRenderer::TimeStat &S, int64_t L) {
   S.Sum += L;
 }
 
-// Labels in a DOT graph must be legal XML strings so it's necessary to escape
-// certain characters.
-static std::string escapeString(StringRef Label) {
-  std::string Str;
-  Str.reserve(Label.size());
-  for (const auto C : Label) {
-    switch (C) {
-    case '&':
-      Str.append("&amp;");
-      break;
-    case '<':
-      Str.append("&lt;");
-      break;
-    case '>':
-      Str.append("&gt;");
-      break;
-    default:
-      Str.push_back(C);
-      break;
-    }
-  }
-  return Str;
-}
-
 // Evaluates an XRay record and performs accounting on it.
 //
 // If the record is an ENTER record it pushes the FuncID and TSC onto a
@@ -234,11 +208,10 @@ Error GraphRenderer::accountRecord(const XRayRecord &Record) {
       if (!DeduceSiblingCalls)
         return make_error<StringError>("No matching ENTRY record",
                                        make_error_code(errc::invalid_argument));
-      bool FoundParent =
-          llvm::any_of(llvm::reverse(ThreadStack), [&](const FunctionAttr &A) {
-            return A.FuncId == Record.FuncId;
-          });
-      if (!FoundParent)
+      auto Parent = std::find_if(
+          ThreadStack.rbegin(), ThreadStack.rend(),
+          [&](const FunctionAttr &A) { return A.FuncId == Record.FuncId; });
+      if (Parent == ThreadStack.rend())
         return make_error<StringError>(
             "No matching Entry record in stack",
             make_error_code(errc::invalid_argument)); // There is no matching
@@ -315,7 +288,8 @@ void GraphRenderer::calculateVertexStatistics() {
     if (V.first != 0) {
       for (auto &E : G.inEdges(V.first)) {
         auto &A = E.second;
-        llvm::append_range(TempTimings, A.Timings);
+        TempTimings.insert(TempTimings.end(), A.Timings.begin(),
+                           A.Timings.end());
       }
       getStats(TempTimings.begin(), TempTimings.end(), G[V.first].S);
       updateMaxStats(G[V.first].S, G.GraphVertexMax);
@@ -424,9 +398,8 @@ void GraphRenderer::exportGraphAsDOT(raw_ostream &OS, StatType ET, StatType EC,
     if (V.first == 0)
       continue;
     OS << "F" << V.first << " [label=\"" << (VT != StatType::NONE ? "{" : "")
-       << escapeString(VA.SymbolName.size() > 40
-                           ? VA.SymbolName.substr(0, 40) + "..."
-                           : VA.SymbolName);
+       << (VA.SymbolName.size() > 40 ? VA.SymbolName.substr(0, 40) + "..."
+                                     : VA.SymbolName);
     if (VT != StatType::NONE)
       OS << "|" << VA.S.getString(VT) << "}\"";
     else
@@ -526,7 +499,7 @@ static CommandRegistration Unused(&GraphC, []() -> Error {
   auto &GR = *GROrError;
 
   std::error_code EC;
-  raw_fd_ostream OS(GraphOutput, EC, sys::fs::OpenFlags::OF_TextWithCRLF);
+  raw_fd_ostream OS(GraphOutput, EC, sys::fs::OpenFlags::OF_Text);
   if (EC)
     return make_error<StringError>(
         Twine("Cannot open file '") + GraphOutput + "' for writing.", EC);

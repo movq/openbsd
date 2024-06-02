@@ -10,18 +10,21 @@
 #define LLVM_DEBUGINFO_CODEVIEW_MERGINGTYPETABLEBUILDER_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/DebugInfo/CodeView/CVRecord.h"
+#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/SimpleTypeSerializer.h"
 #include "llvm/DebugInfo/CodeView/TypeCollection.h"
+#include "llvm/DebugInfo/CodeView/TypeHashing.h"
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/Support/Allocator.h"
+#include <cassert>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace llvm {
 namespace codeview {
-struct LocallyHashedType;
 
 class ContinuationRecordBuilder;
 
@@ -44,15 +47,14 @@ public:
   explicit MergingTypeTableBuilder(BumpPtrAllocator &Storage);
   ~MergingTypeTableBuilder();
 
-  // TypeCollection overrides
-  std::optional<TypeIndex> getFirst() override;
-  std::optional<TypeIndex> getNext(TypeIndex Prev) override;
+  // TypeTableCollection overrides
+  Optional<TypeIndex> getFirst() override;
+  Optional<TypeIndex> getNext(TypeIndex Prev) override;
   CVType getType(TypeIndex Index) override;
   StringRef getTypeName(TypeIndex Index) override;
   bool contains(TypeIndex Index) override;
   uint32_t size() override;
   uint32_t capacity() override;
-  bool replaceType(TypeIndex &Index, CVType Data, bool Stabilize) override;
 
   // public interface
   void reset();

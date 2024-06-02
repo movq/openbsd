@@ -22,11 +22,17 @@ class MCAsmBackend;
 class MCCodeEmitter;
 class MCContext;
 class MCInstrInfo;
+class MCInstrAnalysis;
 class MCObjectTargetWriter;
+class MCRelocationInfo;
 class MCSubtargetInfo;
 class Target;
+class Triple;
+class StringRef;
+class raw_pwrite_stream;
 
 MCCodeEmitter *createLanaiMCCodeEmitter(const MCInstrInfo &MCII,
+                                        const MCRegisterInfo &MRI,
                                         MCContext &Ctx);
 
 MCAsmBackend *createLanaiAsmBackend(const Target &T, const MCSubtargetInfo &STI,
@@ -43,7 +49,6 @@ std::unique_ptr<MCObjectTargetWriter> createLanaiELFObjectWriter(uint8_t OSABI);
 
 // Defines symbolic names for the Lanai instructions.
 #define GET_INSTRINFO_ENUM
-#define GET_INSTRINFO_MC_HELPER_DECLS
 #include "LanaiGenInstrInfo.inc"
 
 #define GET_SUBTARGETINFO_ENUM

@@ -24,7 +24,7 @@ void MipsRegInfoRecord::EmitMipsOptionRecord() {
   MipsTargetStreamer *MTS =
       static_cast<MipsTargetStreamer *>(Streamer->getTargetStreamer());
 
-  Streamer->pushSection();
+  Streamer->PushSection();
 
   // We need to distinguish between N64 and the rest because at the moment
   // we don't emit .Mips.options for other ELFs other than N64.
@@ -35,39 +35,39 @@ void MipsRegInfoRecord::EmitMipsOptionRecord() {
     // 1-byte long nor fixed length but it matches the value GAS emits.
     MCSectionELF *Sec =
         Context.getELFSection(".MIPS.options", ELF::SHT_MIPS_OPTIONS,
-                              ELF::SHF_ALLOC | ELF::SHF_MIPS_NOSTRIP, 1);
+                              ELF::SHF_ALLOC | ELF::SHF_MIPS_NOSTRIP, 1, "");
     MCA.registerSection(*Sec);
     Sec->setAlignment(Align(8));
-    Streamer->switchSection(Sec);
+    Streamer->SwitchSection(Sec);
 
-    Streamer->emitInt8(ELF::ODK_REGINFO); // kind
-    Streamer->emitInt8(40);               // size
-    Streamer->emitInt16(0);               // section
-    Streamer->emitInt32(0);               // info
-    Streamer->emitInt32(ri_gprmask);
-    Streamer->emitInt32(0); // pad
-    Streamer->emitInt32(ri_cprmask[0]);
-    Streamer->emitInt32(ri_cprmask[1]);
-    Streamer->emitInt32(ri_cprmask[2]);
-    Streamer->emitInt32(ri_cprmask[3]);
-    Streamer->emitIntValue(ri_gp_value, 8);
+    Streamer->EmitIntValue(ELF::ODK_REGINFO, 1);  // kind
+    Streamer->EmitIntValue(40, 1); // size
+    Streamer->EmitIntValue(0, 2);  // section
+    Streamer->EmitIntValue(0, 4);  // info
+    Streamer->EmitIntValue(ri_gprmask, 4);
+    Streamer->EmitIntValue(0, 4); // pad
+    Streamer->EmitIntValue(ri_cprmask[0], 4);
+    Streamer->EmitIntValue(ri_cprmask[1], 4);
+    Streamer->EmitIntValue(ri_cprmask[2], 4);
+    Streamer->EmitIntValue(ri_cprmask[3], 4);
+    Streamer->EmitIntValue(ri_gp_value, 8);
   } else {
     MCSectionELF *Sec = Context.getELFSection(".reginfo", ELF::SHT_MIPS_REGINFO,
-                                              ELF::SHF_ALLOC, 24);
+                                              ELF::SHF_ALLOC, 24, "");
     MCA.registerSection(*Sec);
     Sec->setAlignment(MTS->getABI().IsN32() ? Align(8) : Align(4));
-    Streamer->switchSection(Sec);
+    Streamer->SwitchSection(Sec);
 
-    Streamer->emitInt32(ri_gprmask);
-    Streamer->emitInt32(ri_cprmask[0]);
-    Streamer->emitInt32(ri_cprmask[1]);
-    Streamer->emitInt32(ri_cprmask[2]);
-    Streamer->emitInt32(ri_cprmask[3]);
+    Streamer->EmitIntValue(ri_gprmask, 4);
+    Streamer->EmitIntValue(ri_cprmask[0], 4);
+    Streamer->EmitIntValue(ri_cprmask[1], 4);
+    Streamer->EmitIntValue(ri_cprmask[2], 4);
+    Streamer->EmitIntValue(ri_cprmask[3], 4);
     assert((ri_gp_value & 0xffffffff) == ri_gp_value);
-    Streamer->emitInt32(ri_gp_value);
+    Streamer->EmitIntValue(ri_gp_value, 4);
   }
 
-  Streamer->popSection();
+  Streamer->PopSection();
 }
 
 void MipsRegInfoRecord::SetPhysRegUsed(unsigned Reg,

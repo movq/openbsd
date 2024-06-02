@@ -11,17 +11,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ToolDrivers/llvm-dlltool/DlltoolDriver.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/COFFModuleDefinition.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/Option.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/Path.h"
 
-#include <optional>
 #include <vector>
 
 using namespace llvm;
@@ -37,14 +34,11 @@ enum {
 #undef OPTION
 };
 
-#define PREFIX(NAME, VALUE)                                                    \
-  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
-  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
-                                                std::size(NAME##_init) - 1);
+#define PREFIX(NAME, VALUE) const char *const NAME[] = VALUE;
 #include "Options.inc"
 #undef PREFIX
 
-static constexpr opt::OptTable::Info InfoTable[] = {
+static const llvm::opt::OptTable::Info InfoTable[] = {
 #define OPTION(X1, X2, ID, KIND, GROUP, ALIAS, X7, X8, X9, X10, X11, X12)      \
   {X1, X2, X10,         X11,         OPT_##ID, llvm::opt::Option::KIND##Class, \
    X9, X8, OPT_##GROUP, OPT_##ALIAS, X7,       X12},
@@ -52,13 +46,15 @@ static constexpr opt::OptTable::Info InfoTable[] = {
 #undef OPTION
 };
 
-class DllOptTable : public opt::GenericOptTable {
+class DllOptTable : public llvm::opt::OptTable {
 public:
-  DllOptTable() : opt::GenericOptTable(InfoTable, false) {}
+  DllOptTable() : OptTable(InfoTable, false) {}
 };
 
+} // namespace
+
 // Opens a file. Path has to be resolved already.
-std::unique_ptr<MemoryBuffer> openFile(const Twine &Path) {
+static std::unique_ptr<MemoryBuffer> openFile(const Twine &Path) {
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> MB = MemoryBuffer::getFile(Path);
 
   if (std::error_code EC = MB.getError()) {
@@ -69,7 +65,7 @@ std::unique_ptr<MemoryBuffer> openFile(const Twine &Path) {
   return std::move(*MB);
 }
 
-MachineTypes getEmulation(StringRef S) {
+static MachineTypes getEmulation(StringRef S) {
   return StringSwitch<MachineTypes>(S)
       .Case("i386", IMAGE_FILE_MACHINE_I386)
       .Case("i386:x86-64", IMAGE_FILE_MACHINE_AMD64)
@@ -77,40 +73,6 @@ MachineTypes getEmulation(StringRef S) {
       .Case("arm64", IMAGE_FILE_MACHINE_ARM64)
       .Default(IMAGE_FILE_MACHINE_UNKNOWN);
 }
-
-MachineTypes getMachine(Triple T) {
-  switch (T.getArch()) {
-  case Triple::x86:
-    return COFF::IMAGE_FILE_MACHINE_I386;
-  case Triple::x86_64:
-    return COFF::IMAGE_FILE_MACHINE_AMD64;
-  case Triple::arm:
-    return COFF::IMAGE_FILE_MACHINE_ARMNT;
-  case Triple::aarch64:
-    return COFF::IMAGE_FILE_MACHINE_ARM64;
-  default:
-    return COFF::IMAGE_FILE_MACHINE_UNKNOWN;
-  }
-}
-
-MachineTypes getDefaultMachine() {
-  return getMachine(Triple(sys::getDefaultTargetTriple()));
-}
-
-std::optional<std::string> getPrefix(StringRef Argv0) {
-  StringRef ProgName = llvm::sys::path::stem(Argv0);
-  // x86_64-w64-mingw32-dlltool -> x86_64-w64-mingw32
-  // llvm-dlltool -> None
-  // aarch64-w64-mingw32-llvm-dlltool-10.exe -> aarch64-w64-mingw32
-  ProgName = ProgName.rtrim("0123456789.-");
-  if (!ProgName.consume_back_insensitive("dlltool"))
-    return std::nullopt;
-  ProgName.consume_back_insensitive("llvm-");
-  ProgName.consume_back_insensitive("-");
-  return ProgName.str();
-}
-
-} // namespace
 
 int llvm::dlltoolDriverMain(llvm::ArrayRef<const char *> ArgsArr) {
   DllOptTable Table;
@@ -126,9 +88,15 @@ int llvm::dlltoolDriverMain(llvm::ArrayRef<const char *> ArgsArr) {
   // Handle when no input or output is specified
   if (Args.hasArgNoClaim(OPT_INPUT) ||
       (!Args.hasArgNoClaim(OPT_d) && !Args.hasArgNoClaim(OPT_l))) {
-    Table.printHelp(outs(), "llvm-dlltool [options] file...", "llvm-dlltool",
+    Table.PrintHelp(outs(), "llvm-dlltool [options] file...", "llvm-dlltool",
                     false);
     llvm::outs() << "\nTARGETS: i386, i386:x86-64, arm, arm64\n";
+    return 1;
+  }
+
+  if (!Args.hasArgNoClaim(OPT_m) && Args.hasArgNoClaim(OPT_d)) {
+    llvm::errs() << "error: no target machine specified\n"
+                 << "supported targets: i386, i386:x86-64, arm, arm64\n";
     return 1;
   }
 
@@ -151,12 +119,7 @@ int llvm::dlltoolDriverMain(llvm::ArrayRef<const char *> ArgsArr) {
     return 1;
   }
 
-  COFF::MachineTypes Machine = getDefaultMachine();
-  if (std::optional<std::string> Prefix = getPrefix(ArgsArr[0])) {
-    Triple T(*Prefix);
-    if (T.getArch() != Triple::UnknownArch)
-      Machine = getMachine(T);
-  }
+  COFF::MachineTypes Machine = IMAGE_FILE_MACHINE_UNKNOWN;
   if (auto *Arg = Args.getLastArg(OPT_m))
     Machine = getEmulation(Arg->getValue());
 
@@ -183,7 +146,7 @@ int llvm::dlltoolDriverMain(llvm::ArrayRef<const char *> ArgsArr) {
     return 1;
   }
 
-  std::string Path = std::string(Args.getLastArgValue(OPT_l));
+  std::string Path = Args.getLastArgValue(OPT_l);
 
   // If ExtName is set (if the "ExtName = Name" syntax was used), overwrite
   // Name with ExtName and clear ExtName. When only creating an import

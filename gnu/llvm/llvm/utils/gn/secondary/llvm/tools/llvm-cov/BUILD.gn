@@ -6,7 +6,6 @@ executable("llvm-cov") {
     "//llvm/lib/ProfileData",
     "//llvm/lib/ProfileData/Coverage",
     "//llvm/lib/Support",
-    "//llvm/lib/TargetParser",
   ]
   sources = [
     "CodeCoverage.cpp",

@@ -16,16 +16,12 @@
 #ifndef LLVM_ANALYSIS_PROFILE_GEN_ANALYSIS_H
 #define LLVM_ANALYSIS_PROFILE_GEN_ANALYSIS_H
 
+#include "llvm/IR/Function.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Pass.h"
 #include "llvm/ProfileData/InstrProf.h"
-#include <memory>
-#include <vector>
 
 namespace llvm {
-
-class Function;
-class Instruction;
-class TargetLibraryInfo;
-class Value;
 
 /// Utility analysis that determines what values are worth profiling.
 /// The actual logic is inside the ValueProfileCollectorImpl, whose job is to
@@ -62,7 +58,7 @@ public:
     Instruction *AnnotatedInst; // Where metadata is attached.
   };
 
-  ValueProfileCollector(Function &Fn, TargetLibraryInfo &TLI);
+  ValueProfileCollector(Function &Fn);
   ValueProfileCollector(ValueProfileCollector &&) = delete;
   ValueProfileCollector &operator=(ValueProfileCollector &&) = delete;
 

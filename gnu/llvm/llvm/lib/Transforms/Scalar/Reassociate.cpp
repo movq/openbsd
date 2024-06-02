@@ -24,12 +24,11 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/BasicAliasAnalysis.h"
-#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Argument.h"
@@ -42,6 +41,7 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
@@ -53,6 +53,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Local.h"
@@ -138,36 +139,27 @@ XorOpnd::XorOpnd(Value *V) {
 
   // view the operand as "V | 0"
   SymbolicPart = V;
-  ConstPart = APInt::getZero(V->getType()->getScalarSizeInBits());
+  ConstPart = APInt::getNullValue(V->getType()->getScalarSizeInBits());
   isOr = true;
-}
-
-/// Return true if I is an instruction with the FastMathFlags that are needed
-/// for general reassociation set.  This is not the same as testing
-/// Instruction::isAssociative() because it includes operations like fsub.
-/// (This routine is only intended to be called for floating-point operations.)
-static bool hasFPAssociativeFlags(Instruction *I) {
-  assert(I && isa<FPMathOperator>(I) && "Should only check FP ops");
-  return I->hasAllowReassoc() && I->hasNoSignedZeros();
 }
 
 /// Return true if V is an instruction of the specified opcode and if it
 /// only has one use.
 static BinaryOperator *isReassociableOp(Value *V, unsigned Opcode) {
-  auto *BO = dyn_cast<BinaryOperator>(V);
-  if (BO && BO->hasOneUse() && BO->getOpcode() == Opcode)
-    if (!isa<FPMathOperator>(BO) || hasFPAssociativeFlags(BO))
-      return BO;
+  auto *I = dyn_cast<Instruction>(V);
+  if (I && I->hasOneUse() && I->getOpcode() == Opcode)
+    if (!isa<FPMathOperator>(I) || I->isFast())
+      return cast<BinaryOperator>(I);
   return nullptr;
 }
 
 static BinaryOperator *isReassociableOp(Value *V, unsigned Opcode1,
                                         unsigned Opcode2) {
-  auto *BO = dyn_cast<BinaryOperator>(V);
-  if (BO && BO->hasOneUse() &&
-      (BO->getOpcode() == Opcode1 || BO->getOpcode() == Opcode2))
-    if (!isa<FPMathOperator>(BO) || hasFPAssociativeFlags(BO))
-      return BO;
+  auto *I = dyn_cast<Instruction>(V);
+  if (I && I->hasOneUse() &&
+      (I->getOpcode() == Opcode1 || I->getOpcode() == Opcode2))
+    if (!isa<FPMathOperator>(I) || I->isFast())
+      return cast<BinaryOperator>(I);
   return nullptr;
 }
 
@@ -190,7 +182,7 @@ void ReassociatePass::BuildRankMap(Function &F,
     // we cannot move.  This ensures that the ranks for these instructions are
     // all different in the block.
     for (Instruction &I : *BB)
-      if (mayHaveNonDefUseDependency(I))
+      if (mayBeMemoryDependent(I))
         ValueRankMap[&I] = ++BBRank;
   }
 }
@@ -262,15 +254,15 @@ static BinaryOperator *CreateMul(Value *S1, Value *S2, const Twine &Name,
   }
 }
 
-static Instruction *CreateNeg(Value *S1, const Twine &Name,
-                              Instruction *InsertBefore, Value *FlagsOp) {
+static BinaryOperator *CreateNeg(Value *S1, const Twine &Name,
+                                 Instruction *InsertBefore, Value *FlagsOp) {
   if (S1->getType()->isIntOrIntVectorTy())
     return BinaryOperator::CreateNeg(S1, Name, InsertBefore);
-
-  if (auto *FMFSource = dyn_cast<Instruction>(FlagsOp))
-    return UnaryOperator::CreateFNegFMF(S1, FMFSource, Name, InsertBefore);
-
-  return UnaryOperator::CreateFNeg(S1, Name, InsertBefore);
+  else {
+    BinaryOperator *Res = BinaryOperator::CreateFNeg(S1, Name, InsertBefore);
+    Res->setFastMathFlags(cast<FPMathOperator>(FlagsOp)->getFastMathFlags());
+    return Res;
+  }
 }
 
 /// Replace 0-X with X*-1.
@@ -458,8 +450,7 @@ using RepeatedValue = std::pair<Value*, APInt>;
 /// of the expression) if it can turn them into binary operators of the right
 /// type and thus make the expression bigger.
 static bool LinearizeExprTree(Instruction *I,
-                              SmallVectorImpl<RepeatedValue> &Ops,
-                              ReassociatePass::OrderedSet &ToRedo) {
+                              SmallVectorImpl<RepeatedValue> &Ops) {
   assert((isa<UnaryOperator>(I) || isa<BinaryOperator>(I)) &&
          "Expected a UnaryOperator or BinaryOperator!");
   LLVM_DEBUG(dbgs() << "LINEARIZE: " << *I << '\n');
@@ -502,7 +493,7 @@ static bool LinearizeExprTree(Instruction *I,
   SmallVector<Value *, 8> LeafOrder; // Ensure deterministic leaf output order.
 
 #ifndef NDEBUG
-  SmallPtrSet<Value *, 8> Visited; // For checking the iteration scheme.
+  SmallPtrSet<Value *, 8> Visited; // For sanity checking the iteration scheme.
 #endif
   while (!Worklist.empty()) {
     std::pair<Instruction*, APInt> P = Worklist.pop_back_val();
@@ -582,32 +573,23 @@ static bool LinearizeExprTree(Instruction *I,
       assert((!isa<Instruction>(Op) ||
               cast<Instruction>(Op)->getOpcode() != Opcode
               || (isa<FPMathOperator>(Op) &&
-                  !hasFPAssociativeFlags(cast<Instruction>(Op)))) &&
+                  !cast<Instruction>(Op)->isFast())) &&
              "Should have been handled above!");
       assert(Op->hasOneUse() && "Has uses outside the expression tree!");
 
       // If this is a multiply expression, turn any internal negations into
-      // multiplies by -1 so they can be reassociated.  Add any users of the
-      // newly created multiplication by -1 to the redo list, so any
-      // reassociation opportunities that are exposed will be reassociated
-      // further.
-      Instruction *Neg;
-      if (((Opcode == Instruction::Mul && match(Op, m_Neg(m_Value()))) ||
-           (Opcode == Instruction::FMul && match(Op, m_FNeg(m_Value())))) &&
-           match(Op, m_Instruction(Neg))) {
-        LLVM_DEBUG(dbgs()
-                   << "MORPH LEAF: " << *Op << " (" << Weight << ") TO ");
-        Instruction *Mul = LowerNegateToMultiply(Neg);
-        LLVM_DEBUG(dbgs() << *Mul << '\n');
-        Worklist.push_back(std::make_pair(Mul, Weight));
-        for (User *U : Mul->users()) {
-          if (BinaryOperator *UserBO = dyn_cast<BinaryOperator>(U))
-            ToRedo.insert(UserBO);
+      // multiplies by -1 so they can be reassociated.
+      if (Instruction *Tmp = dyn_cast<Instruction>(Op))
+        if ((Opcode == Instruction::Mul && match(Tmp, m_Neg(m_Value()))) ||
+            (Opcode == Instruction::FMul && match(Tmp, m_FNeg(m_Value())))) {
+          LLVM_DEBUG(dbgs()
+                     << "MORPH LEAF: " << *Op << " (" << Weight << ") TO ");
+          Tmp = LowerNegateToMultiply(Tmp);
+          LLVM_DEBUG(dbgs() << *Tmp << '\n');
+          Worklist.push_back(std::make_pair(Tmp, Weight));
+          Changed = true;
+          continue;
         }
-        ToRedo.insert(Neg);
-        Changed = true;
-        continue;
-      }
 
       // Failed to morph into an expression of the right type.  This really is
       // a leaf.
@@ -778,7 +760,7 @@ void ReassociatePass::RewriteExprTree(BinaryOperator *I,
       Constant *Undef = UndefValue::get(I->getType());
       NewOp = BinaryOperator::Create(Instruction::BinaryOps(Opcode),
                                      Undef, Undef, "", I);
-      if (isa<FPMathOperator>(NewOp))
+      if (NewOp->getType()->isFPOrFPVectorTy())
         NewOp->setFastMathFlags(I->getFastMathFlags());
     } else {
       NewOp = NodesToRewrite.pop_back_val();
@@ -833,14 +815,9 @@ void ReassociatePass::RewriteExprTree(BinaryOperator *I,
 /// additional opportunities have been exposed.
 static Value *NegateValue(Value *V, Instruction *BI,
                           ReassociatePass::OrderedSet &ToRedo) {
-  if (auto *C = dyn_cast<Constant>(V)) {
-    const DataLayout &DL = BI->getModule()->getDataLayout();
-    Constant *Res = C->getType()->isFPOrFPVectorTy()
-                        ? ConstantFoldUnaryOpOperand(Instruction::FNeg, C, DL)
-                        : ConstantExpr::getNeg(C);
-    if (Res)
-      return Res;
-  }
+  if (auto *C = dyn_cast<Constant>(V))
+    return C->getType()->isFPOrFPVectorTy() ? ConstantExpr::getFNeg(C) :
+                                              ConstantExpr::getNeg(C);
 
   // We are trying to expose opportunity for reassociation.  One of the things
   // that we want to do to achieve this is to push a negation as deep into an
@@ -885,29 +862,46 @@ static Value *NegateValue(Value *V, Instruction *BI,
     // this use.  We do this by moving it to the entry block (if it is a
     // non-instruction value) or right after the definition.  These negates will
     // be zapped by reassociate later, so we don't need much finesse here.
-    Instruction *TheNeg = dyn_cast<Instruction>(U);
-
-    // We can't safely propagate a vector zero constant with poison/undef lanes.
-    Constant *C;
-    if (match(TheNeg, m_BinOp(m_Constant(C), m_Value())) &&
-        C->containsUndefOrPoisonElement())
-      continue;
+    Instruction *TheNeg = cast<Instruction>(U);
 
     // Verify that the negate is in this function, V might be a constant expr.
-    if (!TheNeg ||
-        TheNeg->getParent()->getParent() != BI->getParent()->getParent())
+    if (TheNeg->getParent()->getParent() != BI->getParent()->getParent())
       continue;
 
-    Instruction *InsertPt;
+    bool FoundCatchSwitch = false;
+
+    BasicBlock::iterator InsertPt;
     if (Instruction *InstInput = dyn_cast<Instruction>(V)) {
-      InsertPt = InstInput->getInsertionPointAfterDef();
-      if (!InsertPt)
-        continue;
+      if (InvokeInst *II = dyn_cast<InvokeInst>(InstInput)) {
+        InsertPt = II->getNormalDest()->begin();
+      } else {
+        InsertPt = ++InstInput->getIterator();
+      }
+
+      const BasicBlock *BB = InsertPt->getParent();
+
+      // Make sure we don't move anything before PHIs or exception
+      // handling pads.
+      while (InsertPt != BB->end() && (isa<PHINode>(InsertPt) ||
+                                       InsertPt->isEHPad())) {
+        if (isa<CatchSwitchInst>(InsertPt))
+          // A catchswitch cannot have anything in the block except
+          // itself and PHIs.  We'll bail out below.
+          FoundCatchSwitch = true;
+        ++InsertPt;
+      }
     } else {
-      InsertPt = &*TheNeg->getFunction()->getEntryBlock().begin();
+      InsertPt = TheNeg->getParent()->getParent()->getEntryBlock().begin();
     }
 
-    TheNeg->moveBefore(InsertPt);
+    // We found a catchswitch in the block where we want to move the
+    // neg.  We cannot move anything into that block.  Bail and just
+    // create the neg before BI, as if we hadn't found an existing
+    // neg.
+    if (FoundCatchSwitch)
+      break;
+
+    TheNeg->moveBefore(&*InsertPt);
     if (TheNeg->getOpcode() == Instruction::Sub) {
       TheNeg->setHasNoUnsignedWrap(false);
       TheNeg->setHasNoSignedWrap(false);
@@ -920,104 +914,9 @@ static Value *NegateValue(Value *V, Instruction *BI,
 
   // Insert a 'neg' instruction that subtracts the value from zero to get the
   // negation.
-  Instruction *NewNeg = CreateNeg(V, V->getName() + ".neg", BI, BI);
+  BinaryOperator *NewNeg = CreateNeg(V, V->getName() + ".neg", BI, BI);
   ToRedo.insert(NewNeg);
   return NewNeg;
-}
-
-// See if this `or` looks like an load widening reduction, i.e. that it
-// consists of an `or`/`shl`/`zext`/`load` nodes only. Note that we don't
-// ensure that the pattern is *really* a load widening reduction,
-// we do not ensure that it can really be replaced with a widened load,
-// only that it mostly looks like one.
-static bool isLoadCombineCandidate(Instruction *Or) {
-  SmallVector<Instruction *, 8> Worklist;
-  SmallSet<Instruction *, 8> Visited;
-
-  auto Enqueue = [&](Value *V) {
-    auto *I = dyn_cast<Instruction>(V);
-    // Each node of an `or` reduction must be an instruction,
-    if (!I)
-      return false; // Node is certainly not part of an `or` load reduction.
-    // Only process instructions we have never processed before.
-    if (Visited.insert(I).second)
-      Worklist.emplace_back(I);
-    return true; // Will need to look at parent nodes.
-  };
-
-  if (!Enqueue(Or))
-    return false; // Not an `or` reduction pattern.
-
-  while (!Worklist.empty()) {
-    auto *I = Worklist.pop_back_val();
-
-    // Okay, which instruction is this node?
-    switch (I->getOpcode()) {
-    case Instruction::Or:
-      // Got an `or` node. That's fine, just recurse into it's operands.
-      for (Value *Op : I->operands())
-        if (!Enqueue(Op))
-          return false; // Not an `or` reduction pattern.
-      continue;
-
-    case Instruction::Shl:
-    case Instruction::ZExt:
-      // `shl`/`zext` nodes are fine, just recurse into their base operand.
-      if (!Enqueue(I->getOperand(0)))
-        return false; // Not an `or` reduction pattern.
-      continue;
-
-    case Instruction::Load:
-      // Perfect, `load` node means we've reached an edge of the graph.
-      continue;
-
-    default:        // Unknown node.
-      return false; // Not an `or` reduction pattern.
-    }
-  }
-
-  return true;
-}
-
-/// Return true if it may be profitable to convert this (X|Y) into (X+Y).
-static bool shouldConvertOrWithNoCommonBitsToAdd(Instruction *Or) {
-  // Don't bother to convert this up unless either the LHS is an associable add
-  // or subtract or mul or if this is only used by one of the above.
-  // This is only a compile-time improvement, it is not needed for correctness!
-  auto isInteresting = [](Value *V) {
-    for (auto Op : {Instruction::Add, Instruction::Sub, Instruction::Mul,
-                    Instruction::Shl})
-      if (isReassociableOp(V, Op))
-        return true;
-    return false;
-  };
-
-  if (any_of(Or->operands(), isInteresting))
-    return true;
-
-  Value *VB = Or->user_back();
-  if (Or->hasOneUse() && isInteresting(VB))
-    return true;
-
-  return false;
-}
-
-/// If we have (X|Y), and iff X and Y have no common bits set,
-/// transform this into (X+Y) to allow arithmetics reassociation.
-static BinaryOperator *convertOrWithNoCommonBitsToAdd(Instruction *Or) {
-  // Convert an or into an add.
-  BinaryOperator *New =
-      CreateAdd(Or->getOperand(0), Or->getOperand(1), "", Or, Or);
-  New->setHasNoSignedWrap();
-  New->setHasNoUnsignedWrap();
-  New->takeName(Or);
-
-  // Everyone now refers to the add instruction.
-  Or->replaceAllUsesWith(New);
-  New->setDebugLoc(Or->getDebugLoc());
-
-  LLVM_DEBUG(dbgs() << "Converted or into an add: " << *New << '\n');
-  return New;
 }
 
 /// Return true if we should break up this subtract of X-Y into (X + -Y).
@@ -1076,12 +975,11 @@ static BinaryOperator *BreakUpSubtract(Instruction *Sub,
 /// this into a multiply by a constant to assist with further reassociation.
 static BinaryOperator *ConvertShiftToMul(Instruction *Shl) {
   Constant *MulCst = ConstantInt::get(Shl->getType(), 1);
-  auto *SA = cast<ConstantInt>(Shl->getOperand(1));
-  MulCst = ConstantExpr::getShl(MulCst, SA);
+  MulCst = ConstantExpr::getShl(MulCst, cast<Constant>(Shl->getOperand(1)));
 
   BinaryOperator *Mul =
     BinaryOperator::CreateMul(Shl->getOperand(0), MulCst, "", Shl);
-  Shl->setOperand(0, PoisonValue::get(Shl->getType())); // Drop use of op.
+  Shl->setOperand(0, UndefValue::get(Shl->getType())); // Drop use of op.
   Mul->takeName(Shl);
 
   // Everyone now refers to the mul instruction.
@@ -1090,12 +988,10 @@ static BinaryOperator *ConvertShiftToMul(Instruction *Shl) {
 
   // We can safely preserve the nuw flag in all cases.  It's also safe to turn a
   // nuw nsw shl into a nuw nsw mul.  However, nsw in isolation requires special
-  // handling.  It can be preserved as long as we're not left shifting by
-  // bitwidth - 1.
+  // handling.
   bool NSW = cast<BinaryOperator>(Shl)->hasNoSignedWrap();
   bool NUW = cast<BinaryOperator>(Shl)->hasNoUnsignedWrap();
-  unsigned BitWidth = Shl->getType()->getIntegerBitWidth();
-  if (NSW && (NUW || SA->getValue().ult(BitWidth - 1)))
+  if (NSW && NUW)
     Mul->setHasNoSignedWrap(true);
   Mul->setHasNoUnsignedWrap(NUW);
   return Mul;
@@ -1134,7 +1030,8 @@ static Value *EmitAddTreeOfValues(Instruction *I,
                                   SmallVectorImpl<WeakTrackingVH> &Ops) {
   if (Ops.size() == 1) return Ops.back();
 
-  Value *V1 = Ops.pop_back_val();
+  Value *V1 = Ops.back();
+  Ops.pop_back();
   Value *V2 = EmitAddTreeOfValues(I, Ops);
   return CreateAdd(V2, V1, "reass.add", I, I);
 }
@@ -1148,7 +1045,7 @@ Value *ReassociatePass::RemoveFactorFromExpression(Value *V, Value *Factor) {
     return nullptr;
 
   SmallVector<RepeatedValue, 8> Tree;
-  MadeChange |= LinearizeExprTree(BO, Tree, RedoInsts);
+  MadeChange |= LinearizeExprTree(BO, Tree);
   SmallVector<ValueEntry, 8> Factors;
   Factors.reserve(Tree.size());
   for (unsigned i = 0, e = Tree.size(); i != e; ++i) {
@@ -1179,7 +1076,7 @@ Value *ReassociatePass::RemoveFactorFromExpression(Value *V, Value *Factor) {
         const APFloat &F1 = FC1->getValueAPF();
         APFloat F2(FC2->getValueAPF());
         F2.changeSign();
-        if (F1 == F2) {
+        if (F1.compare(F2) == APFloat::cmpEqual) {
           FoundFactor = NeedsNegate = true;
           Factors.erase(Factors.begin() + i);
           break;
@@ -1284,10 +1181,10 @@ static Value *OptimizeAndOrXor(unsigned Opcode,
 /// be returned.
 static Value *createAndInstr(Instruction *InsertBefore, Value *Opnd,
                              const APInt &ConstOpnd) {
-  if (ConstOpnd.isZero())
+  if (ConstOpnd.isNullValue())
     return nullptr;
 
-  if (ConstOpnd.isAllOnes())
+  if (ConstOpnd.isAllOnesValue())
     return Opnd;
 
   Instruction *I = BinaryOperator::CreateAnd(
@@ -1309,7 +1206,7 @@ bool ReassociatePass::CombineXorOpnd(Instruction *I, XorOpnd *Opnd1,
   //                       = ((x | c1) ^ c1) ^ (c1 ^ c2)
   //                       = (x & ~c1) ^ (c1 ^ c2)
   // It is useful only when c1 == c2.
-  if (!Opnd1->isOrExpr() || Opnd1->getConstPart().isZero())
+  if (!Opnd1->isOrExpr() || Opnd1->getConstPart().isNullValue())
     return false;
 
   if (!Opnd1->getValue()->hasOneUse())
@@ -1366,7 +1263,7 @@ bool ReassociatePass::CombineXorOpnd(Instruction *I, XorOpnd *Opnd1,
     APInt C3((~C1) ^ C2);
 
     // Do not increase code size!
-    if (!C3.isZero() && !C3.isAllOnes()) {
+    if (!C3.isNullValue() && !C3.isAllOnesValue()) {
       int NewInstNum = ConstOpnd.getBoolValue() ? 1 : 2;
       if (NewInstNum > DeadInstNum)
         return false;
@@ -1382,7 +1279,7 @@ bool ReassociatePass::CombineXorOpnd(Instruction *I, XorOpnd *Opnd1,
     APInt C3 = C1 ^ C2;
 
     // Do not increase code size
-    if (!C3.isZero() && !C3.isAllOnes()) {
+    if (!C3.isNullValue() && !C3.isAllOnesValue()) {
       int NewInstNum = ConstOpnd.getBoolValue() ? 1 : 2;
       if (NewInstNum > DeadInstNum)
         return false;
@@ -1473,7 +1370,8 @@ Value *ReassociatePass::OptimizeXor(Instruction *I,
     Value *CV;
 
     // Step 3.1: Try simplifying "CurrOpnd ^ ConstOpnd"
-    if (!ConstOpnd.isZero() && CombineXorOpnd(I, CurrOpnd, ConstOpnd, CV)) {
+    if (!ConstOpnd.isNullValue() &&
+        CombineXorOpnd(I, CurrOpnd, ConstOpnd, CV)) {
       Changed = true;
       if (CV)
         *CurrOpnd = XorOpnd(CV);
@@ -1514,7 +1412,7 @@ Value *ReassociatePass::OptimizeXor(Instruction *I,
       ValueEntry VE(getRank(O.getValue()), O.getValue());
       Ops.push_back(VE);
     }
-    if (!ConstOpnd.isZero()) {
+    if (!ConstOpnd.isNullValue()) {
       Value *C = ConstantInt::get(Ty, ConstOpnd);
       ValueEntry VE(getRank(C), C);
       Ops.push_back(VE);
@@ -1523,7 +1421,7 @@ Value *ReassociatePass::OptimizeXor(Instruction *I,
     if (Sz == 1)
       return Ops.back().Op;
     if (Sz == 0) {
-      assert(ConstOpnd.isZero());
+      assert(ConstOpnd.isNullValue());
       return ConstantInt::get(Ty, ConstOpnd);
     }
   }
@@ -1823,7 +1721,7 @@ static bool collectMultiplyFactors(SmallVectorImpl<ValueEntry> &Ops,
 }
 
 /// Build a tree of multiplies, computing the product of Ops.
-static Value *buildMultiplyTree(IRBuilderBase &Builder,
+static Value *buildMultiplyTree(IRBuilder<> &Builder,
                                 SmallVectorImpl<Value*> &Ops) {
   if (Ops.size() == 1)
     return Ops.back();
@@ -1846,7 +1744,7 @@ static Value *buildMultiplyTree(IRBuilderBase &Builder,
 /// DAG of multiplies to compute the final product, and return that product
 /// value.
 Value *
-ReassociatePass::buildMinimalMultiplyDAG(IRBuilderBase &Builder,
+ReassociatePass::buildMinimalMultiplyDAG(IRBuilder<> &Builder,
                                          SmallVectorImpl<Factor> &Factors) {
   assert(Factors[0].Power);
   SmallVector<Value *, 4> OuterProduct;
@@ -1886,10 +1784,10 @@ ReassociatePass::buildMinimalMultiplyDAG(IRBuilderBase &Builder,
   // Iteratively collect the base of each factor with an add power into the
   // outer product, and halve each power in preparation for squaring the
   // expression.
-  for (Factor &F : Factors) {
-    if (F.Power & 1)
-      OuterProduct.push_back(F.Base);
-    F.Power >>= 1;
+  for (unsigned Idx = 0, Size = Factors.size(); Idx != Size; ++Idx) {
+    if (Factors[Idx].Power & 1)
+      OuterProduct.push_back(Factors[Idx].Base);
+    Factors[Idx].Power >>= 1;
   }
   if (Factors[0].Power) {
     Value *SquareRoot = buildMinimalMultiplyDAG(Builder, Factors);
@@ -1937,23 +1835,11 @@ Value *ReassociatePass::OptimizeExpression(BinaryOperator *I,
                                            SmallVectorImpl<ValueEntry> &Ops) {
   // Now that we have the linearized expression tree, try to optimize it.
   // Start by folding any constants that we found.
-  const DataLayout &DL = I->getModule()->getDataLayout();
   Constant *Cst = nullptr;
   unsigned Opcode = I->getOpcode();
-  while (!Ops.empty()) {
-    if (auto *C = dyn_cast<Constant>(Ops.back().Op)) {
-      if (!Cst) {
-        Ops.pop_back();
-        Cst = C;
-        continue;
-      }
-      if (Constant *Res = ConstantFoldBinaryOpOperands(Opcode, C, Cst, DL)) {
-        Ops.pop_back();
-        Cst = Res;
-        continue;
-      }
-    }
-    break;
+  while (!Ops.empty() && isa<Constant>(Ops.back().Op)) {
+    Constant *C = cast<Constant>(Ops.pop_back_val().Op);
+    Cst = Cst ? ConstantExpr::get(Opcode, C, Cst) : C;
   }
   // If there was nothing but constants then we are done.
   if (Ops.empty())
@@ -2009,13 +1895,13 @@ Value *ReassociatePass::OptimizeExpression(BinaryOperator *I,
 void ReassociatePass::RecursivelyEraseDeadInsts(Instruction *I,
                                                 OrderedSet &Insts) {
   assert(isInstructionTriviallyDead(I) && "Trivially dead instructions only!");
-  SmallVector<Value *, 4> Ops(I->operands());
+  SmallVector<Value *, 4> Ops(I->op_begin(), I->op_end());
   ValueRankMap.erase(I);
   Insts.remove(I);
   RedoInsts.remove(I);
-  llvm::salvageDebugInfo(*I);
+  llvm::salvageDebugInfoOrMarkUndef(*I);
   I->eraseFromParent();
-  for (auto *Op : Ops)
+  for (auto Op : Ops)
     if (Instruction *OpInst = dyn_cast<Instruction>(Op))
       if (OpInst->use_empty())
         Insts.insert(OpInst);
@@ -2026,11 +1912,11 @@ void ReassociatePass::EraseInst(Instruction *I) {
   assert(isInstructionTriviallyDead(I) && "Trivially dead instructions only!");
   LLVM_DEBUG(dbgs() << "Erasing dead inst: "; I->dump());
 
-  SmallVector<Value *, 8> Ops(I->operands());
+  SmallVector<Value*, 8> Ops(I->op_begin(), I->op_end());
   // Erase the dead instruction.
   ValueRankMap.erase(I);
   RedoInsts.remove(I);
-  llvm::salvageDebugInfo(*I);
+  llvm::salvageDebugInfoOrMarkUndef(*I);
   I->eraseFromParent();
   // Optimize its operands.
   SmallPtrSet<Instruction *, 8> Visited; // Detect self-referential nodes.
@@ -2213,9 +2099,8 @@ void ReassociatePass::OptimizeInst(Instruction *I) {
   if (Instruction *Res = canonicalizeNegFPConstants(I))
     I = Res;
 
-  // Don't optimize floating-point instructions unless they have the
-  // appropriate FastMathFlags for reassociation enabled.
-  if (isa<FPMathOperator>(I) && !hasFPAssociativeFlags(I))
+  // Don't optimize floating-point instructions unless they are 'fast'.
+  if (I->getType()->isFPOrFPVectorTy() && !I->isFast())
     return;
 
   // Do not reassociate boolean (i1) expressions.  We want to preserve the
@@ -2226,19 +2111,6 @@ void ReassociatePass::OptimizeInst(Instruction *I) {
   // optimized for the most likely conditions.
   if (I->getType()->isIntegerTy(1))
     return;
-
-  // If this is a bitwise or instruction of operands
-  // with no common bits set, convert it to X+Y.
-  if (I->getOpcode() == Instruction::Or &&
-      shouldConvertOrWithNoCommonBitsToAdd(I) && !isLoadCombineCandidate(I) &&
-      haveNoCommonBitsSet(I->getOperand(0), I->getOperand(1),
-                          I->getModule()->getDataLayout(), /*AC=*/nullptr, I,
-                          /*DT=*/nullptr)) {
-    Instruction *NI = convertOrWithNoCommonBitsToAdd(I);
-    RedoInsts.insert(I);
-    MadeChange = true;
-    I = NI;
-  }
 
   // If this is a subtract instruction which is not already in negate form,
   // see if we can convert it to X+-Y.
@@ -2328,11 +2200,14 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
   // First, walk the expression tree, linearizing the tree, collecting the
   // operand information.
   SmallVector<RepeatedValue, 8> Tree;
-  MadeChange |= LinearizeExprTree(I, Tree, RedoInsts);
+  MadeChange |= LinearizeExprTree(I, Tree);
   SmallVector<ValueEntry, 8> Ops;
   Ops.reserve(Tree.size());
-  for (const RepeatedValue &E : Tree)
-    Ops.append(E.second.getZExtValue(), ValueEntry(getRank(E.first), E.first));
+  for (unsigned i = 0, e = Tree.size(); i != e; ++i) {
+    RepeatedValue E = Tree[i];
+    Ops.append(E.second.getZExtValue(),
+               ValueEntry(getRank(E.first), E.first));
+  }
 
   LLVM_DEBUG(dbgs() << "RAIn:\t"; PrintOps(I, Ops); dbgs() << '\n');
 
@@ -2582,6 +2457,7 @@ PreservedAnalyses ReassociatePass::run(Function &F, FunctionAnalysisManager &) {
   if (MadeChange) {
     PreservedAnalyses PA;
     PA.preserveSet<CFGAnalyses>();
+    PA.preserve<GlobalsAA>();
     return PA;
   }
 
@@ -2611,8 +2487,6 @@ namespace {
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.setPreservesCFG();
-      AU.addPreserved<AAResultsWrapperPass>();
-      AU.addPreserved<BasicAAWrapperPass>();
       AU.addPreserved<GlobalsAAWrapperPass>();
     }
   };

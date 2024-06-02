@@ -18,9 +18,6 @@ include "llvm/Target/Target.td"
 //===----------------------------------------------------------------------===//
 // VE Subtarget features.
 //
-def FeatureEnableVPU
-  : SubtargetFeature<"vpu", "EnableVPU", "true",
-                     "Enable the VPU">;
 
 //===----------------------------------------------------------------------===//
 // Register File, Calling Conv, Instruction Descriptions
@@ -30,16 +27,7 @@ include "VERegisterInfo.td"
 include "VECallingConv.td"
 include "VEInstrInfo.td"
 
-def VEInstrInfo : InstrInfo {
-  let useDeprecatedPositionallyEncodedOperands = 1;
-}
-
-def VEAsmParser : AsmParser {
-  // Use both VE register name matcher to accept "S0~S63" register names
-  // and default register matcher to accept other registeres.
-  let AllowDuplicateRegisterNames = 1;
-  let ShouldEmitMatchRegisterAltName = 1;
-}
+def VEInstrInfo : InstrInfo;
 
 //===----------------------------------------------------------------------===//
 // VE processors supported.
@@ -48,7 +36,7 @@ def VEAsmParser : AsmParser {
 class Proc<string Name, list<SubtargetFeature> Features>
  : Processor<Name, NoItineraries, Features>;
 
-def : Proc<"generic", []>;
+def : Proc<"ve",             []>;
 
 //===----------------------------------------------------------------------===//
 // Declare the target which we are implementing
@@ -63,7 +51,6 @@ def VEAsmWriter : AsmWriter {
 def VE : Target {
   // Pull in Instruction Info:
   let InstructionSet = VEInstrInfo;
-  let AssemblyParsers = [VEAsmParser];
   let AssemblyWriters = [VEAsmWriter];
   let AllowRegisterRenaming = 1;
 }

@@ -12,9 +12,11 @@ using namespace llvm;
 
 void LanaiMachineFunctionInfo::anchor() {}
 
-MachineFunctionInfo *LanaiMachineFunctionInfo::clone(
-    BumpPtrAllocator &Allocator, MachineFunction &DestMF,
-    const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
-    const {
-  return DestMF.cloneInfo<LanaiMachineFunctionInfo>(*this);
+unsigned LanaiMachineFunctionInfo::getGlobalBaseReg() {
+  // Return if it has already been initialized.
+  if (GlobalBaseReg)
+    return GlobalBaseReg;
+
+  return GlobalBaseReg =
+             MF.getRegInfo().createVirtualRegister(&Lanai::GPRRegClass);
 }

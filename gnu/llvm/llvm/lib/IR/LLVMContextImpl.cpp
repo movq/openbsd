@@ -11,46 +11,34 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMContextImpl.h"
-#include "AttributeImpl.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/StringMapEntry.h"
-#include "llvm/ADT/iterator.h"
-#include "llvm/ADT/iterator_range.h"
-#include "llvm/IR/DiagnosticHandler.h"
-#include "llvm/IR/LLVMRemarkStreamer.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/OptBisect.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/Use.h"
-#include "llvm/IR/User.h"
-#include "llvm/Remarks/RemarkStreamer.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/TypeSize.h"
+#include "llvm/Support/ManagedStatic.h"
 #include <cassert>
 #include <utility>
 
 using namespace llvm;
 
-static cl::opt<bool>
-    OpaquePointersCL("opaque-pointers", cl::desc("Use opaque pointers"),
-                     cl::init(true));
-
 LLVMContextImpl::LLVMContextImpl(LLVMContext &C)
-    : DiagHandler(std::make_unique<DiagnosticHandler>()),
-      VoidTy(C, Type::VoidTyID), LabelTy(C, Type::LabelTyID),
-      HalfTy(C, Type::HalfTyID), BFloatTy(C, Type::BFloatTyID),
-      FloatTy(C, Type::FloatTyID), DoubleTy(C, Type::DoubleTyID),
-      MetadataTy(C, Type::MetadataTyID), TokenTy(C, Type::TokenTyID),
-      X86_FP80Ty(C, Type::X86_FP80TyID), FP128Ty(C, Type::FP128TyID),
-      PPC_FP128Ty(C, Type::PPC_FP128TyID), X86_MMXTy(C, Type::X86_MMXTyID),
-      X86_AMXTy(C, Type::X86_AMXTyID), Int1Ty(C, 1), Int8Ty(C, 8),
-      Int16Ty(C, 16), Int32Ty(C, 32), Int64Ty(C, 64), Int128Ty(C, 128) {
-  if (OpaquePointersCL.getNumOccurrences()) {
-    OpaquePointers = OpaquePointersCL;
-  }
-}
+  : DiagHandler(std::make_unique<DiagnosticHandler>()),
+    VoidTy(C, Type::VoidTyID),
+    LabelTy(C, Type::LabelTyID),
+    HalfTy(C, Type::HalfTyID),
+    FloatTy(C, Type::FloatTyID),
+    DoubleTy(C, Type::DoubleTyID),
+    MetadataTy(C, Type::MetadataTyID),
+    TokenTy(C, Type::TokenTyID),
+    X86_FP80Ty(C, Type::X86_FP80TyID),
+    FP128Ty(C, Type::FP128TyID),
+    PPC_FP128Ty(C, Type::PPC_FP128TyID),
+    X86_MMXTy(C, Type::X86_MMXTyID),
+    Int1Ty(C, 1),
+    Int8Ty(C, 8),
+    Int16Ty(C, 16),
+    Int32Ty(C, 32),
+    Int64Ty(C, 64),
+    Int128Ty(C, 128) {}
 
 LLVMContextImpl::~LLVMContextImpl() {
   // NOTE: We need to delete the contents of OwnedModules, but Module's dtor
@@ -60,23 +48,17 @@ LLVMContextImpl::~LLVMContextImpl() {
     delete *OwnedModules.begin();
 
 #ifndef NDEBUG
-  // Check for metadata references from leaked Values.
-  for (auto &Pair : ValueMetadata)
+  // Check for metadata references from leaked Instructions.
+  for (auto &Pair : InstructionMetadata)
     Pair.first->dump();
-  assert(ValueMetadata.empty() && "Values with metadata have been leaked");
+  assert(InstructionMetadata.empty() &&
+         "Instructions with metadata have been leaked");
 #endif
 
   // Drop references for MDNodes.  Do this before Values get deleted to avoid
   // unnecessary RAUW when nodes are still unresolved.
-  for (auto *I : DistinctMDNodes) {
-    // We may have DIArgList that were uniqued, and as it has a custom
-    // implementation of dropAllReferences, it needs to be explicitly invoked.
-    if (auto *AL = dyn_cast<DIArgList>(I)) {
-      AL->dropAllReferences();
-      continue;
-    }
+  for (auto *I : DistinctMDNodes)
     I->dropAllReferences();
-  }
 #define HANDLE_MDNODE_LEAF_UNIQUABLE(CLASS)                                    \
   for (auto *I : CLASS##s)                                                     \
     I->dropAllReferences();
@@ -113,12 +95,28 @@ LLVMContextImpl::~LLVMContextImpl() {
 
   CAZConstants.clear();
   CPNConstants.clear();
-  CTNConstants.clear();
   UVConstants.clear();
-  PVConstants.clear();
   IntConstants.clear();
   FPConstants.clear();
+
+  for (auto &CDSConstant : CDSConstants)
+    delete CDSConstant.second;
   CDSConstants.clear();
+
+  // Destroy attributes.
+  for (FoldingSetIterator<AttributeImpl> I = AttrsSet.begin(),
+         E = AttrsSet.end(); I != E; ) {
+    FoldingSetIterator<AttributeImpl> Elem = I++;
+    delete &*Elem;
+  }
+
+  // Destroy attribute lists.
+  for (FoldingSetIterator<AttributeListImpl> I = AttrsLists.begin(),
+                                             E = AttrsLists.end();
+       I != E;) {
+    FoldingSetIterator<AttributeListImpl> Elem = I++;
+    delete &*Elem;
+  }
 
   // Destroy attribute node lists.
   for (FoldingSetIterator<AttributeSetNode> I = AttrsSetNodes.begin(),
@@ -144,26 +142,18 @@ LLVMContextImpl::~LLVMContextImpl() {
 }
 
 void LLVMContextImpl::dropTriviallyDeadConstantArrays() {
-  SmallSetVector<ConstantArray *, 4> WorkList;
+  bool Changed;
+  do {
+    Changed = false;
 
-  // When ArrayConstants are of substantial size and only a few in them are
-  // dead, starting WorkList with all elements of ArrayConstants can be
-  // wasteful. Instead, starting WorkList with only elements that have empty
-  // uses.
-  for (ConstantArray *C : ArrayConstants)
-    if (C->use_empty())
-      WorkList.insert(C);
-
-  while (!WorkList.empty()) {
-    ConstantArray *C = WorkList.pop_back_val();
-    if (C->use_empty()) {
-      for (const Use &Op : C->operands()) {
-        if (auto *COp = dyn_cast<ConstantArray>(Op))
-          WorkList.insert(COp);
+    for (auto I = ArrayConstants.begin(), E = ArrayConstants.end(); I != E;) {
+      auto *C = *I++;
+      if (C->use_empty()) {
+        Changed = true;
+        C->destroyConstant();
       }
-      C->destroyConstant();
     }
-  }
+  } while (Changed);
 }
 
 void Module::dropTriviallyDeadConstantArrays() {
@@ -193,7 +183,7 @@ unsigned MDNodeOpsKey::calculateHash(MDNode *N, unsigned Offset) {
   unsigned Hash = hash_combine_range(N->op_begin() + Offset, N->op_end());
 #ifndef NDEBUG
   {
-    SmallVector<Metadata *, 8> MDs(drop_begin(N->operands(), Offset));
+    SmallVector<Metadata *, 8> MDs(N->op_begin() + Offset, N->op_end());
     unsigned RawHash = calculateHash(MDs);
     assert(Hash == RawHash &&
            "Expected hash of MDOperand to equal hash of Metadata*");
@@ -237,26 +227,25 @@ void LLVMContextImpl::getSyncScopeNames(
     SSNs[SSE.second] = SSE.first();
 }
 
-/// Gets the OptPassGate for this LLVMContextImpl, which defaults to the
-/// singleton OptBisect if not explicitly set.
+/// Singleton instance of the OptBisect class.
+///
+/// This singleton is accessed via the LLVMContext::getOptPassGate() function.
+/// It provides a mechanism to disable passes and individual optimizations at
+/// compile time based on a command line option (-opt-bisect-limit) in order to
+/// perform a bisecting search for optimization-related problems.
+///
+/// Even if multiple LLVMContext objects are created, they will all return the
+/// same instance of OptBisect in order to provide a single bisect count.  Any
+/// code that uses the OptBisect object should be serialized when bisection is
+/// enabled in order to enable a consistent bisect count.
+static ManagedStatic<OptBisect> OptBisector;
+
 OptPassGate &LLVMContextImpl::getOptPassGate() const {
   if (!OPG)
-    OPG = &getGlobalPassGate();
+    OPG = &(*OptBisector);
   return *OPG;
 }
 
 void LLVMContextImpl::setOptPassGate(OptPassGate& OPG) {
   this->OPG = &OPG;
-}
-
-bool LLVMContextImpl::getOpaquePointers() {
-  if (LLVM_UNLIKELY(!OpaquePointers))
-    OpaquePointers = OpaquePointersCL;
-  return *OpaquePointers;
-}
-
-void LLVMContextImpl::setOpaquePointers(bool OP) {
-  assert((!OpaquePointers || *OpaquePointers == OP) &&
-         "Cannot change opaque pointers mode once set");
-  OpaquePointers = OP;
 }

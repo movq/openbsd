@@ -13,17 +13,14 @@
 #ifndef LLVM_UTILS_TABLEGEN_CODEGENINSTRUCTION_H
 #define LLVM_UTILS_TABLEGEN_CODEGENINSTRUCTION_H
 
-#include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MachineValueType.h"
-#include <cassert>
+#include "llvm/Support/SMLoc.h"
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace llvm {
-class SMLoc;
 template <typename T> class ArrayRef;
   class Record;
   class DagInit;
@@ -84,16 +81,13 @@ template <typename T> class ArrayRef;
       /// otherwise, it's empty.
       std::string Name;
 
-      /// The names of sub-operands, if given, otherwise empty.
-      std::vector<std::string> SubOpNames;
-
       /// PrinterMethodName - The method used to print operands of this type in
       /// the asmprinter.
       std::string PrinterMethodName;
 
-      /// The method used to get the machine operand value for binary
-      /// encoding, per sub-operand. If empty, uses "getMachineOpValue".
-      std::vector<std::string> EncoderMethodNames;
+      /// EncoderMethodName - The method used to get the machine operand value
+      /// for binary encoding. "getMachineOpValue" by default.
+      std::string EncoderMethodName;
 
       /// OperandType - A value from MCOI::OperandType representing the type of
       /// the operand.
@@ -111,7 +105,7 @@ template <typename T> class ArrayRef;
       /// DoNotEncode - Bools are set to true in this vector for each operand in
       /// the DisableEncoding list.  These should not be emitted by the code
       /// emitter.
-      BitVector DoNotEncode;
+      std::vector<bool> DoNotEncode;
 
       /// MIOperandInfo - Default MI operand type. Note an operand may be made
       /// up of multiple MI operands.
@@ -122,12 +116,12 @@ template <typename T> class ArrayRef;
       std::vector<ConstraintInfo> Constraints;
 
       OperandInfo(Record *R, const std::string &N, const std::string &PMN,
-                  const std::string &OT, unsigned MION, unsigned MINO,
-                  DagInit *MIOI)
-          : Rec(R), Name(N), SubOpNames(MINO), PrinterMethodName(PMN),
-            EncoderMethodNames(MINO), OperandType(OT), MIOperandNo(MION),
-            MINumOperands(MINO), DoNotEncode(MINO), MIOperandInfo(MIOI),
-            Constraints(MINO) {}
+                  const std::string &EMN, const std::string &OT, unsigned MION,
+                  unsigned MINO, DagInit *MIOI)
+      : Rec(R), Name(N), PrinterMethodName(PMN), EncoderMethodName(EMN),
+        OperandType(OT), MIOperandNo(MION), MINumOperands(MINO),
+        MIOperandInfo(MIOI) {}
+
 
       /// getTiedOperand - If this operand is tied to another one, return the
       /// other operand number.  Otherwise, return -1.
@@ -152,9 +146,6 @@ template <typename T> class ArrayRef;
     /// OperandList - The list of declared operands, along with their declared
     /// type (which is a record).
     std::vector<OperandInfo> OperandList;
-
-    /// SubOpAliases - List of alias names for suboperands.
-    StringMap<std::pair<unsigned, unsigned>> SubOpAliases;
 
     // Information gleaned from the operand list.
     bool isPredicable;
@@ -186,14 +177,11 @@ template <typename T> class ArrayRef;
     /// operand. Otherwise, return false.
     bool hasOperandNamed(StringRef Name, unsigned &OpIdx) const;
 
-    bool hasSubOperandAlias(StringRef Name,
-                            std::pair<unsigned, unsigned> &SubOp) const;
-
     /// ParseOperandName - Parse an operand name like "$foo" or "$foo.bar",
     /// where $foo is a whole operand and $foo.bar refers to a suboperand.
     /// This aborts if the name is invalid.  If AllowWholeOp is true, references
     /// to operands with suboperands are allowed, otherwise not.
-    std::pair<unsigned,unsigned> ParseOperandName(StringRef Op,
+    std::pair<unsigned,unsigned> ParseOperandName(const std::string &Op,
                                                   bool AllowWholeOp = true);
 
     /// getFlattenedOperandNumber - Flatten a operand/suboperand pair into a
@@ -222,7 +210,7 @@ template <typename T> class ArrayRef;
       return false;
     }
 
-    void ProcessDisableEncoding(StringRef Value);
+    void ProcessDisableEncoding(std::string Value);
   };
 
 
@@ -281,7 +269,6 @@ template <typename T> class ArrayRef;
     bool hasExtraDefRegAllocReq : 1;
     bool isCodeGenOnly : 1;
     bool isPseudo : 1;
-    bool isMeta : 1;
     bool isRegSequence : 1;
     bool isExtractSubreg : 1;
     bool isInsertSubreg : 1;
@@ -323,22 +310,17 @@ template <typename T> class ArrayRef;
     // This can be used on intructions that use typeN or ptypeN to identify
     // operands that should be considered as pointers even though SelectionDAG
     // didn't make a distinction between integer and pointers.
-    bool isInOperandAPointer(unsigned i) const {
-      return isOperandImpl("InOperandList", i, "IsPointer");
-    }
-
-    bool isOutOperandAPointer(unsigned i) const {
-      return isOperandImpl("OutOperandList", i, "IsPointer");
+    bool isOperandAPointer(unsigned i) const {
+      return isOperandImpl(i, "IsPointer");
     }
 
     /// Check if the operand is required to be an immediate.
-    bool isInOperandImmArg(unsigned i) const {
-      return isOperandImpl("InOperandList", i, "IsImmediate");
+    bool isOperandImmArg(unsigned i) const {
+      return isOperandImpl(i, "IsImmediate");
     }
 
   private:
-    bool isOperandImpl(StringRef OpListName, unsigned i,
-                       StringRef PropertyName) const;
+    bool isOperandImpl(unsigned i, StringRef PropertyName) const;
   };
 
 

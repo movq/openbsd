@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPUExportClustering.h"
+#include "AMDGPUSubtarget.h"
 #include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "SIInstrInfo.h"
-#include "llvm/CodeGen/ScheduleDAGInstrs.h"
 
 using namespace llvm;
 
@@ -22,18 +22,20 @@ namespace {
 
 class ExportClustering : public ScheduleDAGMutation {
 public:
-  ExportClustering() = default;
+  ExportClustering() {}
   void apply(ScheduleDAGInstrs *DAG) override;
 };
 
 static bool isExport(const SUnit &SU) {
-  return SIInstrInfo::isEXP(*SU.getInstr());
+  const MachineInstr *MI = SU.getInstr();
+  return MI->getOpcode() == AMDGPU::EXP ||
+         MI->getOpcode() == AMDGPU::EXP_DONE;
 }
 
 static bool isPositionExport(const SIInstrInfo *TII, SUnit *SU) {
   const MachineInstr *MI = SU->getInstr();
-  unsigned Imm = TII->getNamedOperand(*MI, AMDGPU::OpName::tgt)->getImm();
-  return Imm >= AMDGPU::Exp::ET_POS0 && Imm <= AMDGPU::Exp::ET_POS_LAST;
+  int Imm = TII->getNamedOperand(*MI, AMDGPU::OpName::tgt)->getImm();
+  return Imm >= 12 && Imm <= 15;
 }
 
 static void sortChain(const SIInstrInfo *TII, SmallVector<SUnit *, 8> &Chain,
