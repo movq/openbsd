@@ -19,19 +19,16 @@
 #ifndef LLVM_IR_DATALAYOUT_H
 #define LLVM_IR_DATALAYOUT_H
 
-#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Type.h"
-#include "llvm/Support/Alignment.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/TrailingObjects.h"
+#include "llvm/Support/Alignment.h"
 #include "llvm/Support/TypeSize.h"
 #include <cassert>
 #include <cstdint>
@@ -93,14 +90,14 @@ struct LayoutAlignElem {
 struct PointerAlignElem {
   Align ABIAlign;
   Align PrefAlign;
-  uint32_t TypeBitWidth;
+  uint32_t TypeByteWidth;
   uint32_t AddressSpace;
-  uint32_t IndexBitWidth;
+  uint32_t IndexWidth;
 
   /// Initializer
-  static PointerAlignElem getInBits(uint32_t AddressSpace, Align ABIAlign,
-                                    Align PrefAlign, uint32_t TypeBitWidth,
-                                    uint32_t IndexBitWidth);
+  static PointerAlignElem get(uint32_t AddressSpace, Align ABIAlign,
+                              Align PrefAlign, uint32_t TypeByteWidth,
+                              uint32_t IndexWidth);
 
   bool operator==(const PointerAlignElem &rhs) const;
 };
@@ -126,7 +123,6 @@ private:
   unsigned AllocaAddrSpace;
   MaybeAlign StackNaturalAlign;
   unsigned ProgramAddrSpace;
-  unsigned DefaultGlobalsAddrSpace;
 
   MaybeAlign FunctionPtrAlign;
   FunctionPtrAlignType TheFunctionPtrAlignType;
@@ -137,9 +133,7 @@ private:
     MM_MachO,
     MM_WinCOFF,
     MM_WinCOFFX86,
-    MM_GOFF,
-    MM_Mips,
-    MM_XCOFF
+    MM_Mips
   };
   ManglingModeT ManglingMode;
 
@@ -165,7 +159,12 @@ private:
   using PointersTy = SmallVector<PointerAlignElem, 8>;
   PointersTy Pointers;
 
-  const PointerAlignElem &getPointerAlignElem(uint32_t AddressSpace) const;
+  PointersTy::const_iterator
+  findPointerLowerBound(uint32_t AddressSpace) const {
+    return const_cast<DataLayout *>(this)->findPointerLowerBound(AddressSpace);
+  }
+
+  PointersTy::iterator findPointerLowerBound(uint32_t AddressSpace);
 
   // The StructType -> StructLayout map.
   mutable void *LayoutMap = nullptr;
@@ -174,26 +173,19 @@ private:
   /// well-defined bitwise representation.
   SmallVector<unsigned, 8> NonIntegralAddressSpaces;
 
-  /// Attempts to set the alignment of the given type. Returns an error
-  /// description on failure.
-  Error setAlignment(AlignTypeEnum align_type, Align abi_align,
-                     Align pref_align, uint32_t bit_width);
-
-  /// Attempts to set the alignment of a pointer in the given address space.
-  /// Returns an error description on failure.
-  Error setPointerAlignmentInBits(uint32_t AddrSpace, Align ABIAlign,
-                                  Align PrefAlign, uint32_t TypeBitWidth,
-                                  uint32_t IndexBitWidth);
-
-  /// Internal helper to get alignment for integer of given bitwidth.
-  Align getIntegerAlignment(uint32_t BitWidth, bool abi_or_pref) const;
+  void setAlignment(AlignTypeEnum align_type, Align abi_align, Align pref_align,
+                    uint32_t bit_width);
+  Align getAlignmentInfo(AlignTypeEnum align_type, uint32_t bit_width,
+                         bool ABIAlign, Type *Ty) const;
+  void setPointerAlignment(uint32_t AddrSpace, Align ABIAlign, Align PrefAlign,
+                           uint32_t TypeByteWidth, uint32_t IndexWidth);
 
   /// Internal helper method that returns requested alignment for type.
   Align getAlignment(Type *Ty, bool abi_or_pref) const;
 
-  /// Attempts to parse a target data specification string and reports an error
-  /// if the string is malformed.
-  Error parseSpecifier(StringRef Desc);
+  /// Parses a target data specification string. Assert if the string is
+  /// malformed.
+  void parseSpecifier(StringRef LayoutDescription);
 
   // Free all internal data structures.
   void clear();
@@ -220,7 +212,6 @@ public:
     FunctionPtrAlign = DL.FunctionPtrAlign;
     TheFunctionPtrAlignType = DL.TheFunctionPtrAlignType;
     ProgramAddrSpace = DL.ProgramAddrSpace;
-    DefaultGlobalsAddrSpace = DL.DefaultGlobalsAddrSpace;
     ManglingMode = DL.ManglingMode;
     LegalIntWidths = DL.LegalIntWidths;
     Alignments = DL.Alignments;
@@ -236,10 +227,6 @@ public:
 
   /// Parse a data layout string (with fallback to default values).
   void reset(StringRef LayoutDescription);
-
-  /// Parse a data layout string and return the layout. Return an error
-  /// description on failure.
-  static Expected<DataLayout> parse(StringRef LayoutDescription);
 
   /// Layout endianness...
   bool isLittleEndian() const { return !BigEndian; }
@@ -265,14 +252,17 @@ public:
   ///
   /// The width is specified in bits.
   bool isLegalInteger(uint64_t Width) const {
-    return llvm::is_contained(LegalIntWidths, Width);
+    for (unsigned LegalIntWidth : LegalIntWidths)
+      if (LegalIntWidth == Width)
+        return true;
+    return false;
   }
 
   bool isIllegalInteger(uint64_t Width) const { return !isLegalInteger(Width); }
 
   /// Returns true if the given alignment exceeds the natural stack alignment.
   bool exceedsNaturalStackAlignment(Align Alignment) const {
-    return StackNaturalAlign && (Alignment > *StackNaturalAlign);
+    return StackNaturalAlign && (Alignment > StackNaturalAlign);
   }
 
   Align getStackAlignment() const {
@@ -294,9 +284,6 @@ public:
   }
 
   unsigned getProgramAddressSpace() const { return ProgramAddrSpace; }
-  unsigned getDefaultGlobalsAddressSpace() const {
-    return DefaultGlobalsAddrSpace;
-  }
 
   bool hasMicrosoftFastStdCallMangling() const {
     return ManglingMode == MM_WinCOFFX86;
@@ -320,10 +307,8 @@ public:
     switch (ManglingMode) {
     case MM_None:
     case MM_ELF:
-    case MM_GOFF:
     case MM_Mips:
     case MM_WinCOFF:
-    case MM_XCOFF:
       return '\0';
     case MM_MachO:
     case MM_WinCOFFX86:
@@ -339,15 +324,11 @@ public:
     case MM_ELF:
     case MM_WinCOFF:
       return ".L";
-    case MM_GOFF:
-      return "@";
     case MM_Mips:
       return "$";
     case MM_MachO:
     case MM_WinCOFFX86:
       return "L";
-    case MM_XCOFF:
-      return "L..";
     }
     llvm_unreachable("invalid mangling mode");
   }
@@ -374,17 +355,15 @@ public:
   /// the backends/clients are updated.
   Align getPointerPrefAlignment(unsigned AS = 0) const;
 
-  /// Layout pointer size in bytes, rounded up to a whole
-  /// number of bytes.
+  /// Layout pointer size
   /// FIXME: The defaults need to be removed once all of
   /// the backends/clients are updated.
   unsigned getPointerSize(unsigned AS = 0) const;
 
-  /// Returns the maximum index size over all address spaces.
-  unsigned getMaxIndexSize() const;
+  /// Returns the maximum pointer size over all address spaces.
+  unsigned getMaxPointerSize() const;
 
-  // Index size in bytes used for address calculation,
-  /// rounded up to a whole number of bytes.
+  // Index size used for address calculation.
   unsigned getIndexSize(unsigned AS) const;
 
   /// Return the address spaces containing non-integral pointers.  Pointers in
@@ -395,7 +374,7 @@ public:
 
   bool isNonIntegralAddressSpace(unsigned AddrSpace) const {
     ArrayRef<unsigned> NonIntegralSpaces = getNonIntegralAddressSpaces();
-    return is_contained(NonIntegralSpaces, AddrSpace);
+    return find(NonIntegralSpaces, AddrSpace) != NonIntegralSpaces.end();
   }
 
   bool isNonIntegralPointerType(PointerType *PT) const {
@@ -411,17 +390,17 @@ public:
   /// FIXME: The defaults need to be removed once all of
   /// the backends/clients are updated.
   unsigned getPointerSizeInBits(unsigned AS = 0) const {
-    return getPointerAlignElem(AS).TypeBitWidth;
+    return getPointerSize(AS) * 8;
   }
 
-  /// Returns the maximum index size over all address spaces.
-  unsigned getMaxIndexSizeInBits() const {
-    return getMaxIndexSize() * 8;
+  /// Returns the maximum pointer size over all address spaces.
+  unsigned getMaxPointerSizeInBits() const {
+    return getMaxPointerSize() * 8;
   }
 
   /// Size in bits of index used for address calculation in getelementptr.
   unsigned getIndexSizeInBits(unsigned AS) const {
-    return getPointerAlignElem(AS).IndexBitWidth;
+    return getIndexSize(AS) * 8;
   }
 
   /// Layout pointer size, in bits, based on the type.  If this function is
@@ -474,7 +453,7 @@ public:
   /// For example, returns 5 for i36 and 10 for x86_fp80.
   TypeSize getTypeStoreSize(Type *Ty) const {
     TypeSize BaseSize = getTypeSizeInBits(Ty);
-    return {divideCeil(BaseSize.getKnownMinValue(), 8), BaseSize.isScalable()};
+    return { (BaseSize.getKnownMinSize() + 7) / 8, BaseSize.isScalable() };
   }
 
   /// Returns the maximum number of bits that may be overwritten by
@@ -506,7 +485,7 @@ public:
   /// returns 12 or 16 for x86_fp80, depending on alignment.
   TypeSize getTypeAllocSize(Type *Ty) const {
     // Round up to the next alignment boundary.
-    return alignTo(getTypeStoreSize(Ty), getABITypeAlign(Ty).value());
+    return alignTo(getTypeStoreSize(Ty), getABITypeAlignment(Ty));
   }
 
   /// Returns the offset in bits between successive objects of the
@@ -522,39 +501,24 @@ public:
   }
 
   /// Returns the minimum ABI-required alignment for the specified type.
-  /// FIXME: Deprecate this function once migration to Align is over.
-  LLVM_DEPRECATED("use getABITypeAlign instead", "getABITypeAlign")
-  uint64_t getABITypeAlignment(Type *Ty) const;
-
-  /// Returns the minimum ABI-required alignment for the specified type.
-  Align getABITypeAlign(Type *Ty) const;
+  unsigned getABITypeAlignment(Type *Ty) const;
 
   /// Helper function to return `Alignment` if it's set or the result of
   /// `getABITypeAlignment(Ty)`, in any case the result is a valid alignment.
   inline Align getValueOrABITypeAlignment(MaybeAlign Alignment,
                                           Type *Ty) const {
-    return Alignment ? *Alignment : getABITypeAlign(Ty);
+    return Alignment ? *Alignment : Align(getABITypeAlignment(Ty));
   }
 
   /// Returns the minimum ABI-required alignment for an integer type of
   /// the specified bitwidth.
-  Align getABIIntegerTypeAlignment(unsigned BitWidth) const {
-    return getIntegerAlignment(BitWidth, /* abi_or_pref */ true);
-  }
+  Align getABIIntegerTypeAlignment(unsigned BitWidth) const;
 
   /// Returns the preferred stack/global alignment for the specified
   /// type.
   ///
   /// This is always at least as good as the ABI alignment.
-  /// FIXME: Deprecate this function once migration to Align is over.
-  LLVM_DEPRECATED("use getPrefTypeAlign instead", "getPrefTypeAlign")
-  uint64_t getPrefTypeAlignment(Type *Ty) const;
-
-  /// Returns the preferred stack/global alignment for the specified
-  /// type.
-  ///
-  /// This is always at least as good as the ABI alignment.
-  Align getPrefTypeAlign(Type *Ty) const;
+  unsigned getPrefTypeAlignment(Type *Ty) const;
 
   /// Returns an integer type with size at least as big as that of a
   /// pointer in the given address space.
@@ -590,16 +554,6 @@ public:
   /// This is used to implement getelementptr.
   int64_t getIndexedOffsetInType(Type *ElemTy, ArrayRef<Value *> Indices) const;
 
-  /// Get GEP indices to access Offset inside ElemTy. ElemTy is updated to be
-  /// the result element type and Offset to be the residual offset.
-  SmallVector<APInt> getGEPIndicesForOffset(Type *&ElemTy, APInt &Offset) const;
-
-  /// Get single GEP index to access Offset inside ElemTy. Returns std::nullopt
-  /// if index cannot be computed, e.g. because the type is not an aggregate.
-  /// ElemTy is updated to be the result element type and Offset to be the
-  /// residual offset.
-  std::optional<APInt> getGEPIndexForOffset(Type *&ElemTy, APInt &Offset) const;
-
   /// Returns a StructLayout object, indicating the alignment of the
   /// struct, its size, and the offsets of its fields.
   ///
@@ -609,7 +563,13 @@ public:
   /// Returns the preferred alignment of the specified global.
   ///
   /// This includes an explicitly requested alignment (if the global has one).
-  Align getPreferredAlign(const GlobalVariable *GV) const;
+  unsigned getPreferredAlignment(const GlobalVariable *GV) const;
+
+  /// Returns the preferred alignment of the specified global, returned
+  /// in log form.
+  ///
+  /// This includes an explicitly requested alignment (if the global has one).
+  unsigned getPreferredAlignmentLog(const GlobalVariable *GV) const;
 };
 
 inline DataLayout *unwrap(LLVMTargetDataRef P) {
@@ -622,11 +582,12 @@ inline LLVMTargetDataRef wrap(const DataLayout *P) {
 
 /// Used to lazily calculate structure layout information for a target machine,
 /// based on the DataLayout structure.
-class StructLayout final : public TrailingObjects<StructLayout, uint64_t> {
+class StructLayout {
   uint64_t StructSize;
   Align StructAlignment;
   unsigned IsPadded : 1;
   unsigned NumElements : 31;
+  uint64_t MemberOffsets[1]; // variable sized array!
 
 public:
   uint64_t getSizeInBytes() const { return StructSize; }
@@ -643,18 +604,9 @@ public:
   /// index that contains it.
   unsigned getElementContainingOffset(uint64_t Offset) const;
 
-  MutableArrayRef<uint64_t> getMemberOffsets() {
-    return llvm::MutableArrayRef(getTrailingObjects<uint64_t>(),
-                                     NumElements);
-  }
-
-  ArrayRef<uint64_t> getMemberOffsets() const {
-    return llvm::ArrayRef(getTrailingObjects<uint64_t>(), NumElements);
-  }
-
   uint64_t getElementOffset(unsigned Idx) const {
     assert(Idx < NumElements && "Invalid element idx!");
-    return getMemberOffsets()[Idx];
+    return MemberOffsets[Idx];
   }
 
   uint64_t getElementOffsetInBits(unsigned Idx) const {
@@ -665,10 +617,6 @@ private:
   friend class DataLayout; // Only DataLayout can create this class
 
   StructLayout(StructType *ST, const DataLayout &DL);
-
-  size_t numTrailingObjects(OverloadToken<uint64_t>) const {
-    return NumElements;
-  }
 };
 
 // The implementation of this method is provided inline as it is particularly
@@ -692,7 +640,6 @@ inline TypeSize DataLayout::getTypeSizeInBits(Type *Ty) const {
   case Type::IntegerTyID:
     return TypeSize::Fixed(Ty->getIntegerBitWidth());
   case Type::HalfTyID:
-  case Type::BFloatTyID:
     return TypeSize::Fixed(16);
   case Type::FloatTyID:
     return TypeSize::Fixed(32);
@@ -702,23 +649,16 @@ inline TypeSize DataLayout::getTypeSizeInBits(Type *Ty) const {
   case Type::PPC_FP128TyID:
   case Type::FP128TyID:
     return TypeSize::Fixed(128);
-  case Type::X86_AMXTyID:
-    return TypeSize::Fixed(8192);
   // In memory objects this is always aligned to a higher boundary, but
   // only 80 bits contain information.
   case Type::X86_FP80TyID:
     return TypeSize::Fixed(80);
-  case Type::FixedVectorTyID:
-  case Type::ScalableVectorTyID: {
+  case Type::VectorTyID: {
     VectorType *VTy = cast<VectorType>(Ty);
     auto EltCnt = VTy->getElementCount();
-    uint64_t MinBits = EltCnt.getKnownMinValue() *
-                       getTypeSizeInBits(VTy->getElementType()).getFixedValue();
-    return TypeSize(MinBits, EltCnt.isScalable());
-  }
-  case Type::TargetExtTyID: {
-    Type *LayoutTy = cast<TargetExtType>(Ty)->getLayoutType();
-    return getTypeSizeInBits(LayoutTy);
+    uint64_t MinBits = EltCnt.Min *
+                        getTypeSizeInBits(VTy->getElementType()).getFixedSize();
+    return TypeSize(MinBits, EltCnt.Scalable);
   }
   default:
     llvm_unreachable("DataLayout::getTypeSizeInBits(): Unsupported type");

@@ -13,24 +13,24 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/OptBisect.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <limits>
+#include <string>
 
 using namespace llvm;
 
-static OptBisect &getOptBisector() {
-  static OptBisect OptBisector;
-  return OptBisector;
-}
-
 static cl::opt<int> OptBisectLimit("opt-bisect-limit", cl::Hidden,
-                                   cl::init(OptBisect::Disabled), cl::Optional,
-                                   cl::cb<void, int>([](int Limit) {
-                                     getOptBisector().setLimit(Limit);
-                                   }),
+                                   cl::init(std::numeric_limits<int>::max()),
+                                   cl::Optional,
                                    cl::desc("Maximum optimization to perform"));
+
+OptBisect::OptBisect() : OptPassGate() {
+  BisectEnabled = OptBisectLimit != std::numeric_limits<int>::max();
+}
 
 static void printPassMessage(const StringRef &Name, int PassNum,
                              StringRef TargetDesc, bool Running) {
@@ -39,16 +39,18 @@ static void printPassMessage(const StringRef &Name, int PassNum,
          << "(" << PassNum << ") " << Name << " on " << TargetDesc << "\n";
 }
 
-bool OptBisect::shouldRunPass(const StringRef PassName,
-                              StringRef IRDescription) {
-  assert(isEnabled());
+bool OptBisect::shouldRunPass(const Pass *P, StringRef IRDescription) {
+  assert(BisectEnabled);
 
-  int CurBisectNum = ++LastBisectNum;
-  bool ShouldRun = (BisectLimit == -1 || CurBisectNum <= BisectLimit);
-  printPassMessage(PassName, CurBisectNum, IRDescription, ShouldRun);
-  return ShouldRun;
+  return checkPass(P->getPassName(), IRDescription);
 }
 
-const int OptBisect::Disabled;
+bool OptBisect::checkPass(const StringRef PassName,
+                          const StringRef TargetDesc) {
+  assert(BisectEnabled);
 
-OptPassGate &llvm::getGlobalPassGate() { return getOptBisector(); }
+  int CurBisectNum = ++LastBisectNum;
+  bool ShouldRun = (OptBisectLimit == -1 || CurBisectNum <= OptBisectLimit);
+  printPassMessage(PassName, CurBisectNum, TargetDesc, ShouldRun);
+  return ShouldRun;
+}

@@ -13,15 +13,11 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 
 namespace llvm {
+class AArch64TargetMachine;
 
 /// This implementation is used for AArch64 ELF targets (Linux in particular).
 class AArch64_ELFTargetObjectFile : public TargetLoweringObjectFileELF {
   void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
-
-public:
-  AArch64_ELFTargetObjectFile() {
-    PLTRelativeVariantKind = MCSymbolRefExpr::VK_PLT;
-  }
 };
 
 /// AArch64_MachoTargetObjectFile - This TLOF implementation is used for Darwin.

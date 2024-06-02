@@ -28,6 +28,7 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBundle.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/Allocator.h"
 #include <algorithm>
 #include <cassert>
@@ -108,6 +109,9 @@ class raw_ostream;
 
     PointerIntPair<IndexListEntry*, 2, unsigned> lie;
 
+    SlotIndex(IndexListEntry *entry, unsigned slot)
+      : lie(entry, slot) {}
+
     IndexListEntry* listEntry() const {
       assert(isValid() && "Attempt to compare reserved index.");
 #ifdef EXPENSIVE_CHECKS
@@ -135,11 +139,6 @@ class raw_ostream;
 
     /// Construct an invalid index.
     SlotIndex() = default;
-
-    // Creates a SlotIndex from an IndexListEntry and a slot. Generally should
-    // not be used. This method is only public to facilitate writing certain
-    // unit tests.
-    SlotIndex(IndexListEntry *entry, unsigned slot) : lie(entry, slot) {}
 
     // Construct a new slot index from the given one, and set the slot.
     SlotIndex(const SlotIndex &li, Slot s) : lie(li.listEntry(), unsigned(s)) {
@@ -217,12 +216,8 @@ class raw_ostream;
     }
 
     /// Return the scaled distance from this index to the given one, where all
-    /// slots on the same instruction have zero distance, assuming that the slot
-    /// indices are packed as densely as possible. There are normally gaps
-    /// between instructions, so this assumption often doesn't hold. This
-    /// results in this function often returning a value greater than the actual
-    /// instruction distance.
-    int getApproxInstrDistance(SlotIndex other) const {
+    /// slots on the same instruction have zero distance.
+    int getInstrDistance(SlotIndex other) const {
       return (other.listEntry()->getIndex() - listEntry()->getIndex())
         / Slot_Count;
     }
@@ -324,7 +319,7 @@ class raw_ostream;
     using IndexList = ilist<IndexListEntry>;
     IndexList indexList;
 
-    MachineFunction *mf = nullptr;
+    MachineFunction *mf;
 
     using Mi2IndexMap = DenseMap<const MachineInstr *, SlotIndex>;
     Mi2IndexMap mi2iMap;
@@ -387,15 +382,13 @@ class raw_ostream;
     }
 
     /// Returns the base index for the given instruction.
-    SlotIndex getInstructionIndex(const MachineInstr &MI,
-                                  bool IgnoreBundle = false) const {
+    SlotIndex getInstructionIndex(const MachineInstr &MI) const {
       // Instructions inside a bundle have the same number as the bundle itself.
       auto BundleStart = getBundleStart(MI.getIterator());
       auto BundleEnd = getBundleEnd(MI.getIterator());
       // Use the first non-debug instruction in the bundle to get SlotIndex.
       const MachineInstr &BundleNonDebug =
-          IgnoreBundle ? MI
-                       : *skipDebugInstructionsForward(BundleStart, BundleEnd);
+          *skipDebugInstructionsForward(BundleStart, BundleEnd);
       assert(!BundleNonDebug.isDebugInstr() &&
              "Could not use a debug instruction to query mi2iMap.");
       Mi2IndexMap::const_iterator itr = mi2iMap.find(&BundleNonDebug);
@@ -580,11 +573,7 @@ class raw_ostream;
     /// Removes machine instruction (bundle) \p MI from the mapping.
     /// This should be called before MachineInstr::eraseFromParent() is used to
     /// remove a whole bundle or an unbundled instruction.
-    /// If \p AllowBundled is set then this can be used on a bundled
-    /// instruction; however, this exists to support handleMoveIntoBundle,
-    /// and in general removeSingleMachineInstrFromMaps should be used instead.
-    void removeMachineInstrFromMaps(MachineInstr &MI,
-                                    bool AllowBundled = false);
+    void removeMachineInstrFromMaps(MachineInstr &MI);
 
     /// Removes a single machine instruction \p MI from the mapping.
     /// This should be called before MachineInstr::eraseFromBundle() is used to
@@ -609,27 +598,30 @@ class raw_ostream;
     }
 
     /// Add the given MachineBasicBlock into the maps.
-    /// If it contains any instructions then they must already be in the maps.
-    /// This is used after a block has been split by moving some suffix of its
-    /// instructions into a newly created block.
     void insertMBBInMaps(MachineBasicBlock *mbb) {
-      assert(mbb != &mbb->getParent()->front() &&
-             "Can't insert a new block at the beginning of a function.");
-      auto prevMBB = std::prev(MachineFunction::iterator(mbb));
+      MachineFunction::iterator nextMBB =
+        std::next(MachineFunction::iterator(mbb));
 
-      // Create a new entry to be used for the start of mbb and the end of
-      // prevMBB.
-      IndexListEntry *startEntry = createEntry(nullptr, 0);
-      IndexListEntry *endEntry = getMBBEndIdx(&*prevMBB).listEntry();
-      IndexListEntry *insEntry =
-          mbb->empty() ? endEntry
-                       : getInstructionIndex(mbb->front()).listEntry();
-      IndexList::iterator newItr =
-          indexList.insert(insEntry->getIterator(), startEntry);
+      IndexListEntry *startEntry = nullptr;
+      IndexListEntry *endEntry = nullptr;
+      IndexList::iterator newItr;
+      if (nextMBB == mbb->getParent()->end()) {
+        startEntry = &indexList.back();
+        endEntry = createEntry(nullptr, 0);
+        newItr = indexList.insertAfter(startEntry->getIterator(), endEntry);
+      } else {
+        startEntry = createEntry(nullptr, 0);
+        endEntry = getMBBStartIdx(&*nextMBB).listEntry();
+        newItr = indexList.insert(endEntry->getIterator(), startEntry);
+      }
 
       SlotIndex startIdx(startEntry, SlotIndex::Slot_Block);
       SlotIndex endIdx(endEntry, SlotIndex::Slot_Block);
 
+      MachineFunction::iterator prevMBB(mbb);
+      assert(prevMBB != mbb->getParent()->end() &&
+             "Can't insert a new block at the beginning of a function.");
+      --prevMBB;
       MBBRanges[prevMBB->getNumber()].second = startIdx;
 
       assert(unsigned(mbb->getNumber()) == MBBRanges.size() &&

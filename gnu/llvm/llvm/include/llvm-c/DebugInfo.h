@@ -16,17 +16,10 @@
 #ifndef LLVM_C_DEBUGINFO_H
 #define LLVM_C_DEBUGINFO_H
 
+#include "llvm-c/Core.h"
 #include "llvm-c/ExternC.h"
-#include "llvm-c/Types.h"
 
 LLVM_C_EXTERN_C_BEGIN
-
-/**
- * @defgroup LLVMCCoreDebugInfo Debug Information
- * @ingroup LLVMCCore
- *
- * @{
- */
 
 /**
  * Debug info flags.
@@ -116,15 +109,6 @@ typedef enum {
   LLVMDWARFSourceLanguageFortran08,
   LLVMDWARFSourceLanguageRenderScript,
   LLVMDWARFSourceLanguageBLISS,
-  LLVMDWARFSourceLanguageKotlin,
-  LLVMDWARFSourceLanguageZig,
-  LLVMDWARFSourceLanguageCrystal,
-  LLVMDWARFSourceLanguageC_plus_plus_17,
-  LLVMDWARFSourceLanguageC_plus_plus_20,
-  LLVMDWARFSourceLanguageC17,
-  LLVMDWARFSourceLanguageFortran18,
-  LLVMDWARFSourceLanguageAda2005,
-  LLVMDWARFSourceLanguageAda2012,
   // Vendor extensions:
   LLVMDWARFSourceLanguageMips_Assembler,
   LLVMDWARFSourceLanguageGOOGLE_RenderScript,
@@ -175,11 +159,7 @@ enum {
   LLVMDIImportedEntityMetadataKind,
   LLVMDIMacroMetadataKind,
   LLVMDIMacroFileMetadataKind,
-  LLVMDICommonBlockMetadataKind,
-  LLVMDIStringTypeMetadataKind,
-  LLVMDIGenericSubrangeMetadataKind,
-  LLVMDIArgListMetadataKind,
-  LLVMDIAssignIDMetadataKind,
+  LLVMDICommonBlockMetadataKind
 };
 typedef unsigned LLVMMetadataKind;
 
@@ -244,13 +224,6 @@ void LLVMDisposeDIBuilder(LLVMDIBuilderRef Builder);
 void LLVMDIBuilderFinalize(LLVMDIBuilderRef Builder);
 
 /**
- * Finalize a specific subprogram.
- * No new variables may be added to this subprogram afterwards.
- */
-void LLVMDIBuilderFinalizeSubprogram(LLVMDIBuilderRef Builder,
-                                     LLVMMetadataRef Subprogram);
-
-/**
  * A CompileUnit provides an anchor for all debugging
  * information generated during this instance of compilation.
  * \param Lang          Source programming language, eg.
@@ -277,10 +250,6 @@ void LLVMDIBuilderFinalizeSubprogram(LLVMDIBuilderRef Builder,
  * \param SplitDebugInlining    Whether to emit inline debug info.
  * \param DebugInfoForProfiling Whether to emit extra debug info for
  *                              profile collection.
- * \param SysRoot         The Clang system root (value of -isysroot).
- * \param SysRootLen      The length of the C string passed to \c SysRoot.
- * \param SDK           The SDK. On Darwin, the last component of the sysroot.
- * \param SDKLen        The length of the C string passed to \c SDK.
  */
 LLVMMetadataRef LLVMDIBuilderCreateCompileUnit(
     LLVMDIBuilderRef Builder, LLVMDWARFSourceLanguage Lang,
@@ -288,8 +257,7 @@ LLVMMetadataRef LLVMDIBuilderCreateCompileUnit(
     LLVMBool isOptimized, const char *Flags, size_t FlagsLen,
     unsigned RuntimeVer, const char *SplitName, size_t SplitNameLen,
     LLVMDWARFEmissionKind Kind, unsigned DWOId, LLVMBool SplitDebugInlining,
-    LLVMBool DebugInfoForProfiling, const char *SysRoot, size_t SysRootLen,
-    const char *SDK, size_t SDKLen);
+    LLVMBool DebugInfoForProfiling);
 
 /**
  * Create a file descriptor to hold debugging information for a file.
@@ -315,15 +283,15 @@ LLVMDIBuilderCreateFile(LLVMDIBuilderRef Builder, const char *Filename,
  * \param ConfigMacrosLen The length of the C string passed to \c ConfigMacros.
  * \param IncludePath     The path to the module map file.
  * \param IncludePathLen  The length of the C string passed to \c IncludePath.
- * \param APINotesFile    The path to an API notes file for the module.
- * \param APINotesFileLen The length of the C string passed to \c APINotestFile.
+ * \param SysRoot         The Clang system root (value of -isysroot).
+ * \param SysRootLen      The length of the C string passed to \c SysRoot.
  */
 LLVMMetadataRef
 LLVMDIBuilderCreateModule(LLVMDIBuilderRef Builder, LLVMMetadataRef ParentScope,
                           const char *Name, size_t NameLen,
                           const char *ConfigMacros, size_t ConfigMacrosLen,
                           const char *IncludePath, size_t IncludePathLen,
-                          const char *APINotesFile, size_t APINotesFileLen);
+                          const char *SysRoot, size_t SysRootLen);
 
 /**
  * Creates a new descriptor for a namespace with the specified parent scope.
@@ -413,48 +381,48 @@ LLVMDIBuilderCreateImportedModuleFromNamespace(LLVMDIBuilderRef Builder,
  * \param ImportedEntity Previous imported entity to alias.
  * \param File           File where the declaration is located.
  * \param Line           Line number of the declaration.
- * \param Elements       Renamed elements.
- * \param NumElements    Number of renamed elements.
  */
-LLVMMetadataRef LLVMDIBuilderCreateImportedModuleFromAlias(
-    LLVMDIBuilderRef Builder, LLVMMetadataRef Scope,
-    LLVMMetadataRef ImportedEntity, LLVMMetadataRef File, unsigned Line,
-    LLVMMetadataRef *Elements, unsigned NumElements);
+LLVMMetadataRef
+LLVMDIBuilderCreateImportedModuleFromAlias(LLVMDIBuilderRef Builder,
+                                           LLVMMetadataRef Scope,
+                                           LLVMMetadataRef ImportedEntity,
+                                           LLVMMetadataRef File,
+                                           unsigned Line);
 
 /**
  * Create a descriptor for an imported module.
- * \param Builder        The \c DIBuilder.
- * \param Scope          The scope this module is imported into
- * \param M              The module being imported here
- * \param File           File where the declaration is located.
- * \param Line           Line number of the declaration.
- * \param Elements       Renamed elements.
- * \param NumElements    Number of renamed elements.
+ * \param Builder    The \c DIBuilder.
+ * \param Scope      The scope this module is imported into
+ * \param M          The module being imported here
+ * \param File       File where the declaration is located.
+ * \param Line       Line number of the declaration.
  */
-LLVMMetadataRef LLVMDIBuilderCreateImportedModuleFromModule(
-    LLVMDIBuilderRef Builder, LLVMMetadataRef Scope, LLVMMetadataRef M,
-    LLVMMetadataRef File, unsigned Line, LLVMMetadataRef *Elements,
-    unsigned NumElements);
+LLVMMetadataRef
+LLVMDIBuilderCreateImportedModuleFromModule(LLVMDIBuilderRef Builder,
+                                            LLVMMetadataRef Scope,
+                                            LLVMMetadataRef M,
+                                            LLVMMetadataRef File,
+                                            unsigned Line);
 
 /**
  * Create a descriptor for an imported function, type, or variable.  Suitable
  * for e.g. FORTRAN-style USE declarations.
- * \param Builder        The DIBuilder.
- * \param Scope          The scope this module is imported into.
- * \param Decl           The declaration (or definition) of a function, type,
-                         or variable.
- * \param File           File where the declaration is located.
- * \param Line           Line number of the declaration.
- * \param Name           A name that uniquely identifies this imported
- declaration.
- * \param NameLen        The length of the C string passed to \c Name.
- * \param Elements       Renamed elements.
- * \param NumElements    Number of renamed elements.
+ * \param Builder    The DIBuilder.
+ * \param Scope      The scope this module is imported into.
+ * \param Decl       The declaration (or definition) of a function, type,
+                     or variable.
+ * \param File       File where the declaration is located.
+ * \param Line       Line number of the declaration.
+ * \param Name       A name that uniquely identifies this imported declaration.
+ * \param NameLen    The length of the C string passed to \c Name.
  */
-LLVMMetadataRef LLVMDIBuilderCreateImportedDeclaration(
-    LLVMDIBuilderRef Builder, LLVMMetadataRef Scope, LLVMMetadataRef Decl,
-    LLVMMetadataRef File, unsigned Line, const char *Name, size_t NameLen,
-    LLVMMetadataRef *Elements, unsigned NumElements);
+LLVMMetadataRef
+LLVMDIBuilderCreateImportedDeclaration(LLVMDIBuilderRef Builder,
+                                       LLVMMetadataRef Scope,
+                                       LLVMMetadataRef Decl,
+                                       LLVMMetadataRef File,
+                                       unsigned Line,
+                                       const char *Name, size_t NameLen);
 
 /**
  * Creates a new DebugLocation that describes a source location.
@@ -1112,7 +1080,7 @@ LLVMMetadataRef LLVMDIBuilderGetOrCreateArray(LLVMDIBuilderRef Builder,
  * \param Length      Length of the address operation array.
  */
 LLVMMetadataRef LLVMDIBuilderCreateExpression(LLVMDIBuilderRef Builder,
-                                              uint64_t *Addr, size_t Length);
+                                              int64_t *Addr, size_t Length);
 
 /**
  * Create a new descriptor for the specified variable that does not have an
@@ -1122,7 +1090,7 @@ LLVMMetadataRef LLVMDIBuilderCreateExpression(LLVMDIBuilderRef Builder,
  */
 LLVMMetadataRef
 LLVMDIBuilderCreateConstantValueExpression(LLVMDIBuilderRef Builder,
-                                           uint64_t Value);
+                                           int64_t Value);
 
 /**
  * Create a new descriptor for the specified variable.
@@ -1383,10 +1351,6 @@ void LLVMInstructionSetDebugLoc(LLVMValueRef Inst, LLVMMetadataRef Loc);
  * @see llvm::Metadata::getMetadataID()
  */
 LLVMMetadataKind LLVMGetMetadataKind(LLVMMetadataRef Metadata);
-
-/**
- * @}
- */
 
 LLVM_C_EXTERN_C_END
 

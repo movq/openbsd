@@ -676,11 +676,11 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 }
 
 /// toplevelexpr ::= expression
-static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+static std::unique_ptr<FunctionAST> ParseTopLevelExpr(unsigned ExprCount) {
   if (auto E = ParseExpression()) {
     // Make an anonymous proto.
-    auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
-                                                std::vector<std::string>());
+    auto Proto = std::make_unique<PrototypeAST>(
+        ("__anon_expr" + Twine(ExprCount)).str(), std::vector<std::string>());
     return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
   }
   return nullptr;
@@ -697,7 +697,7 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 //===----------------------------------------------------------------------===//
 
 static std::unique_ptr<KaleidoscopeJIT> TheJIT;
-static std::unique_ptr<LLVMContext> TheContext;
+static LLVMContext *TheContext;
 static std::unique_ptr<IRBuilder<>> Builder;
 static std::unique_ptr<Module> TheModule;
 static std::map<std::string, AllocaInst *> NamedValues;
@@ -727,7 +727,7 @@ Function *getFunction(std::string Name) {
 /// CreateEntryBlockAlloca - Create an alloca instruction in the entry block of
 /// the function.  This is used for mutable variables etc.
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
-                                          StringRef VarName) {
+                                          const std::string &VarName) {
   IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
                    TheFunction->getEntryBlock().begin());
   return TmpB.CreateAlloca(Type::getDoubleTy(*TheContext), nullptr, VarName);
@@ -744,7 +744,7 @@ Value *VariableExprAST::codegen() {
     return LogErrorV("Unknown variable name");
 
   // Load the value.
-  return Builder->CreateLoad(Type::getDoubleTy(*TheContext), V, Name.c_str());
+  return Builder->CreateLoad(V, Name.c_str());
 }
 
 Value *UnaryExprAST::codegen() {
@@ -863,7 +863,7 @@ Value *IfExprAST::codegen() {
   ThenBB = Builder->GetInsertBlock();
 
   // Emit else block.
-  TheFunction->insert(TheFunction->end(), ElseBB);
+  TheFunction->getBasicBlockList().push_back(ElseBB);
   Builder->SetInsertPoint(ElseBB);
 
   Value *ElseV = Else->codegen();
@@ -875,7 +875,7 @@ Value *IfExprAST::codegen() {
   ElseBB = Builder->GetInsertBlock();
 
   // Emit merge block.
-  TheFunction->insert(TheFunction->end(), MergeBB);
+  TheFunction->getBasicBlockList().push_back(MergeBB);
   Builder->SetInsertPoint(MergeBB);
   PHINode *PN = Builder->CreatePHI(Type::getDoubleTy(*TheContext), 2, "iftmp");
 
@@ -956,8 +956,7 @@ Value *ForExprAST::codegen() {
 
   // Reload, increment, and restore the alloca.  This handles the case where
   // the body of the loop mutates the variable.
-  Value *CurVar = Builder->CreateLoad(Type::getDoubleTy(*TheContext), Alloca,
-                                      VarName.c_str());
+  Value *CurVar = Builder->CreateLoad(Alloca, VarName.c_str());
   Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
   Builder->CreateStore(NextVar, Alloca);
 
@@ -1077,7 +1076,7 @@ Function *FunctionAST::codegen() {
     Builder->CreateStore(&Arg, Alloca);
 
     // Add arguments to variable symbol table.
-    NamedValues[std::string(Arg.getName())] = Alloca;
+    NamedValues[Arg.getName()] = Alloca;
   }
 
   if (Value *RetVal = Body->codegen()) {
@@ -1103,8 +1102,7 @@ Function *FunctionAST::codegen() {
 //===----------------------------------------------------------------------===//
 
 static void InitializeModule() {
-  // Open a new context and module.
-  TheContext = std::make_unique<LLVMContext>();
+  // Open a new module.
   TheModule = std::make_unique<Module>("my cool jit", *TheContext);
   TheModule->setDataLayout(TheJIT->getDataLayout());
 
@@ -1118,8 +1116,7 @@ static void HandleDefinition() {
       fprintf(stderr, "Read function definition:");
       FnIR->print(errs());
       fprintf(stderr, "\n");
-      auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
-      ExitOnErr(TheJIT->addModule(std::move(TSM)));
+      ExitOnErr(TheJIT->addModule(std::move(TheModule)));
       InitializeModule();
     }
   } else {
@@ -1143,27 +1140,27 @@ static void HandleExtern() {
 }
 
 static void HandleTopLevelExpression() {
-  // Evaluate a top-level expression into an anonymous function.
-  if (auto FnAST = ParseTopLevelExpr()) {
-    if (FnAST->codegen()) {
-      // Create a ResourceTracker to track JIT'd memory allocated to our
-      // anonymous expression -- that way we can free it after executing.
-      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+  static unsigned ExprCount = 0;
 
-      auto TSM = ThreadSafeModule(std::move(TheModule), std::move(TheContext));
-      ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+  // Update ExprCount. This number will be added to anonymous expressions to
+  // prevent them from clashing.
+  ++ExprCount;
+
+  // Evaluate a top-level expression into an anonymous function.
+  if (auto FnAST = ParseTopLevelExpr(ExprCount)) {
+    if (FnAST->codegen()) {
+      // JIT the module containing the anonymous expression, keeping a handle so
+      // we can free it later.
+      ExitOnErr(TheJIT->addModule(std::move(TheModule)));
       InitializeModule();
 
       // Get the anonymous expression's JITSymbol.
-      auto Sym = ExitOnErr(TheJIT->lookup("__anon_expr"));
+      auto Sym =
+          ExitOnErr(TheJIT->lookup(("__anon_expr" + Twine(ExprCount)).str()));
 
-      // Get the symbol's address and cast it to the right type (takes no
-      // arguments, returns a double) so we can call it as a native function.
       auto *FP = (double (*)())(intptr_t)Sym.getAddress();
+      assert(FP && "Failed to codegen function");
       fprintf(stderr, "Evaluated to %f\n", FP());
-
-      // Delete the anonymous expression module from the JIT.
-      ExitOnErr(RT->remove());
     }
   } else {
     // Skip token for error recovery.
@@ -1232,6 +1229,8 @@ int main() {
   getNextToken();
 
   TheJIT = ExitOnErr(KaleidoscopeJIT::Create());
+  TheContext = &TheJIT->getContext();
+
   InitializeModule();
 
   // Run the main "interpreter loop" now.

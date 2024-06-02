@@ -10,26 +10,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_OBJECT_TAPIFILE_H
-#define LLVM_OBJECT_TAPIFILE_H
+#ifndef LLVM_OBJECT_TAPI_FILE_H
+#define LLVM_OBJECT_TAPI_FILE_H
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Object/Binary.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Object/SymbolicFile.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/MemoryBufferRef.h"
-#include "llvm/TextAPI/Architecture.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/TextAPI/MachO/InterfaceFile.h"
 
 namespace llvm {
-
-class raw_ostream;
-
-namespace MachO {
-
-class InterfaceFile;
-
-}
-
 namespace object {
 
 class TapiFile : public SymbolicFile {
@@ -42,15 +33,13 @@ public:
 
   Error printSymbolName(raw_ostream &OS, DataRefImpl DRI) const override;
 
-  Expected<uint32_t> getSymbolFlags(DataRefImpl DRI) const override;
+  uint32_t getSymbolFlags(DataRefImpl DRI) const override;
 
   basic_symbol_iterator symbol_begin() const override;
 
   basic_symbol_iterator symbol_end() const override;
 
   static bool classof(const Binary *v) { return v->isTapiFile(); }
-
-  bool is64Bit() { return MachO::is64Bit(Arch); }
 
 private:
   struct Symbol {
@@ -63,10 +52,9 @@ private:
   };
 
   std::vector<Symbol> Symbols;
-  MachO::Architecture Arch;
 };
 
 } // end namespace object.
 } // end namespace llvm.
 
-#endif // LLVM_OBJECT_TAPIFILE_H
+#endif // LLVM_OBJECT_TAPI_FILE_H

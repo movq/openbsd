@@ -19,7 +19,6 @@
 #include "llvm/Support/CBindingWrapping.h"
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 
 namespace llvm {
@@ -32,14 +31,11 @@ class LLVMContextImpl;
 class Module;
 class OptPassGate;
 template <typename T> class SmallVectorImpl;
-template <typename T> class StringMapEntry;
+class SMDiagnostic;
 class StringRef;
 class Twine;
-class LLVMRemarkStreamer;
-
-namespace remarks {
 class RemarkStreamer;
-}
+class raw_ostream;
 
 namespace SyncScope {
 
@@ -83,18 +79,12 @@ public:
   /// Known operand bundle tag IDs, which always have the same value.  All
   /// operand bundle tags that LLVM has special knowledge of are listed here.
   /// Additionally, this scheme allows LLVM to efficiently check for specific
-  /// operand bundle tags without comparing strings. Keep this in sync with
-  /// LLVMContext::LLVMContext().
+  /// operand bundle tags without comparing strings.
   enum : unsigned {
-    OB_deopt = 0,                  // "deopt"
-    OB_funclet = 1,                // "funclet"
-    OB_gc_transition = 2,          // "gc-transition"
-    OB_cfguardtarget = 3,          // "cfguardtarget"
-    OB_preallocated = 4,           // "preallocated"
-    OB_gc_live = 5,                // "gc-live"
-    OB_clang_arc_attachedcall = 6, // "clang.arc.attachedcall"
-    OB_ptrauth = 7,                // "ptrauth"
-    OB_kcfi = 8,                   // "kcfi"
+    OB_deopt = 0,         // "deopt"
+    OB_funclet = 1,       // "funclet"
+    OB_gc_transition = 2, // "gc-transition"
+    OB_cfguardtarget = 3, // "cfguardtarget"
   };
 
   /// getMDKindID - Return a unique non-zero ID for the specified metadata kind.
@@ -110,10 +100,6 @@ public:
   /// by increasing bundle IDs.
   /// \see LLVMContext::getOperandBundleTagID
   void getOperandBundleTags(SmallVectorImpl<StringRef> &Result) const;
-
-  /// getOrInsertBundleTag - Returns the Tag to use for an operand bundle of
-  /// name TagName.
-  StringMapEntry<uint32_t> *getOrInsertBundleTag(StringRef TagName) const;
 
   /// getOperandBundleTagID - Maps a bundle tag to an integer ID.  Every bundle
   /// tag registered with an LLVMContext has an unique ID.
@@ -154,9 +140,30 @@ public:
   void enableDebugTypeODRUniquing();
   void disableDebugTypeODRUniquing();
 
+  using InlineAsmDiagHandlerTy = void (*)(const SMDiagnostic&, void *Context,
+                                          unsigned LocCookie);
+
   /// Defines the type of a yield callback.
   /// \see LLVMContext::setYieldCallback.
   using YieldCallbackTy = void (*)(LLVMContext *Context, void *OpaqueHandle);
+
+  /// setInlineAsmDiagnosticHandler - This method sets a handler that is invoked
+  /// when problems with inline asm are detected by the backend.  The first
+  /// argument is a function pointer and the second is a context pointer that
+  /// gets passed into the DiagHandler.
+  ///
+  /// LLVMContext doesn't take ownership or interpret either of these
+  /// pointers.
+  void setInlineAsmDiagnosticHandler(InlineAsmDiagHandlerTy DiagHandler,
+                                     void *DiagContext = nullptr);
+
+  /// getInlineAsmDiagnosticHandler - Return the diagnostic handler set by
+  /// setInlineAsmDiagnosticHandler.
+  InlineAsmDiagHandlerTy getInlineAsmDiagnosticHandler() const;
+
+  /// getInlineAsmDiagnosticContext - Return the diagnostic context set by
+  /// setInlineAsmDiagnosticHandler.
+  void *getInlineAsmDiagnosticContext() const;
 
   /// setDiagnosticHandlerCallBack - This method sets a handler call back
   /// that is invoked when the backend needs to report anything to the user.
@@ -170,11 +177,10 @@ public:
       DiagnosticHandler::DiagnosticHandlerTy DiagHandler,
       void *DiagContext = nullptr, bool RespectFilters = false);
 
-  /// setDiagnosticHandler - This method sets unique_ptr to object of
-  /// DiagnosticHandler to provide custom diagnostic handling. The first
-  /// argument is unique_ptr of object of type DiagnosticHandler or a derived
-  /// of that. The second argument should be set to true if the handler only
-  /// expects enabled diagnostics.
+  /// setDiagnosticHandler - This method sets unique_ptr to object of DiagnosticHandler
+  /// to provide custom diagnostic handling. The first argument is unique_ptr of object
+  /// of type DiagnosticHandler or a derived of that.   The third argument should be
+  /// set to true if the handler only expects enabled diagnostics.
   ///
   /// Ownership of this pointer is moved to LLVMContextImpl.
   void setDiagnosticHandler(std::unique_ptr<DiagnosticHandler> &&DH,
@@ -192,7 +198,7 @@ public:
   /// setDiagnosticHandler.
   const DiagnosticHandler *getDiagHandlerPtr() const;
 
-  /// getDiagnosticHandler - transfers ownership of DiagnosticHandler unique_ptr
+  /// getDiagnosticHandler - transfers owenership of DiagnosticHandler unique_ptr
   /// to caller.
   std::unique_ptr<DiagnosticHandler> getDiagnosticHandler();
 
@@ -203,51 +209,32 @@ public:
   /// diagnostics.
   void setDiagnosticsHotnessRequested(bool Requested);
 
-  bool getMisExpectWarningRequested() const;
-  void setMisExpectWarningRequested(bool Requested);
-  void setDiagnosticsMisExpectTolerance(std::optional<uint32_t> Tolerance);
-  uint32_t getDiagnosticsMisExpectTolerance() const;
-
   /// Return the minimum hotness value a diagnostic would need in order
-  /// to be included in optimization diagnostics.
-  ///
-  /// Three possible return values:
-  /// 0            - threshold is disabled. Everything will be printed out.
-  /// positive int - threshold is set.
-  /// UINT64_MAX   - threshold is not yet set, and needs to be synced from
-  ///                profile summary. Note that in case of missing profile
-  ///                summary, threshold will be kept at "MAX", effectively
-  ///                suppresses all remarks output.
+  /// to be included in optimization diagnostics. If there is no minimum, this
+  /// returns None.
   uint64_t getDiagnosticsHotnessThreshold() const;
 
   /// Set the minimum hotness value a diagnostic needs in order to be
   /// included in optimization diagnostics.
-  void setDiagnosticsHotnessThreshold(std::optional<uint64_t> Threshold);
+  void setDiagnosticsHotnessThreshold(uint64_t Threshold);
 
-  /// Return if hotness threshold is requested from PSI.
-  bool isDiagnosticsHotnessThresholdSetFromPSI() const;
+  /// Return the streamer used by the backend to save remark diagnostics. If it
+  /// does not exist, diagnostics are not saved in a file but only emitted via
+  /// the diagnostic handler.
+  RemarkStreamer *getRemarkStreamer();
+  const RemarkStreamer *getRemarkStreamer() const;
 
-  /// The "main remark streamer" used by all the specialized remark streamers.
-  /// This streamer keeps generic remark metadata in memory throughout the life
-  /// of the LLVMContext. This metadata may be emitted in a section in object
-  /// files depending on the format requirements.
+  /// Set the diagnostics output used for optimization diagnostics.
+  /// This filename may be embedded in a section for tools to find the
+  /// diagnostics whenever they're needed.
   ///
-  /// All specialized remark streamers should convert remarks to
-  /// llvm::remarks::Remark and emit them through this streamer.
-  remarks::RemarkStreamer *getMainRemarkStreamer();
-  const remarks::RemarkStreamer *getMainRemarkStreamer() const;
-  void setMainRemarkStreamer(
-      std::unique_ptr<remarks::RemarkStreamer> MainRemarkStreamer);
-
-  /// The "LLVM remark streamer" used by LLVM to serialize remark diagnostics
-  /// comming from IR and MIR passes.
+  /// If a remark streamer is already set, it will be replaced with
+  /// \p RemarkStreamer.
   ///
-  /// If it does not exist, diagnostics are not saved in a file but only emitted
-  /// via the diagnostic handler.
-  LLVMRemarkStreamer *getLLVMRemarkStreamer();
-  const LLVMRemarkStreamer *getLLVMRemarkStreamer() const;
-  void
-  setLLVMRemarkStreamer(std::unique_ptr<LLVMRemarkStreamer> RemarkStreamer);
+  /// By default, diagnostics are not saved in a file but only emitted via the
+  /// diagnostic handler.  Even if an output file is set, the handler is invoked
+  /// for each diagnostic message.
+  void setRemarkStreamer(std::unique_ptr<RemarkStreamer> RemarkStreamer);
 
   /// Get the prefix that should be printed in front of a diagnostic of
   ///        the given \p Severity
@@ -296,7 +283,7 @@ public:
   /// be prepared to drop the erroneous construct on the floor and "not crash".
   /// The generated code need not be correct.  The error message will be
   /// implicitly prefixed with "error: " and should not end with a ".".
-  void emitError(uint64_t LocCookie, const Twine &ErrorStr);
+  void emitError(unsigned LocCookie, const Twine &ErrorStr);
   void emitError(const Instruction *I, const Twine &ErrorStr);
   void emitError(const Twine &ErrorStr);
 
@@ -310,15 +297,6 @@ public:
   /// The lifetime of the object must be guaranteed to extend as long as the
   /// LLVMContext is used by compilation.
   void setOptPassGate(OptPassGate&);
-
-  /// Set whether opaque pointers are enabled. The method may be called multiple
-  /// times, but only with the same value. Note that creating a pointer type or
-  /// otherwise querying the opaque pointer mode performs an implicit set to
-  /// the default value.
-  void setOpaquePointers(bool Enable) const;
-
-  /// Whether typed pointers are supported. If false, all pointers are opaque.
-  bool supportsTypedPointers() const;
 
 private:
   // Module needs access to the add/removeModule methods.

@@ -10,8 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/ScheduleDAG.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
@@ -23,14 +28,14 @@ namespace llvm {
   DOTGraphTraits (bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
 
     static std::string getGraphName(const ScheduleDAG *G) {
-      return std::string(G->MF.getName());
+      return G->MF.getName();
     }
 
     static bool renderGraphFromBottomUp() {
       return true;
     }
 
-    static bool isNodeHidden(const SUnit *Node, const ScheduleDAG *G) {
+    static bool isNodeHidden(const SUnit *Node) {
       return (Node->NumPreds > 10 || Node->NumSuccs > 10);
     }
 

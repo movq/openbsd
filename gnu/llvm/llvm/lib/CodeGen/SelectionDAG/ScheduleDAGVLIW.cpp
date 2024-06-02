@@ -19,15 +19,19 @@
 
 #include "ScheduleDAGSDNodes.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/CodeGen/LatencyPriorityQueue.h"
 #include "llvm/CodeGen/ResourcePriorityQueue.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <climits>
 using namespace llvm;
 
 #define DEBUG_TYPE "pre-RA-sched"
@@ -132,11 +136,12 @@ void ScheduleDAGVLIW::releaseSucc(SUnit *SU, const SDep &D) {
 
 void ScheduleDAGVLIW::releaseSuccessors(SUnit *SU) {
   // Top down: release successors.
-  for (SDep &Succ : SU->Succs) {
-    assert(!Succ.isAssignedRegDep() &&
+  for (SUnit::succ_iterator I = SU->Succs.begin(), E = SU->Succs.end();
+       I != E; ++I) {
+    assert(!I->isAssignedRegDep() &&
            "The list-td scheduler doesn't yet support physreg dependencies!");
 
-    releaseSucc(SU, Succ);
+    releaseSucc(SU, *I);
   }
 }
 
@@ -165,11 +170,11 @@ void ScheduleDAGVLIW::listScheduleTopDown() {
   releaseSuccessors(&EntrySU);
 
   // All leaves to AvailableQueue.
-  for (SUnit &SU : SUnits) {
+  for (unsigned i = 0, e = SUnits.size(); i != e; ++i) {
     // It is available if it has no predecessors.
-    if (SU.Preds.empty()) {
-      AvailableQueue->push(&SU);
-      SU.isAvailable = true;
+    if (SUnits[i].Preds.empty()) {
+      AvailableQueue->push(&SUnits[i]);
+      SUnits[i].isAvailable = true;
     }
   }
 

@@ -16,10 +16,11 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/Register.h"
-#include "llvm/CodeGen/RegisterBankInfo.h"
+#include "llvm/CodeGen/GlobalISel/RegisterBankInfo.h"
 
 #define GET_REGBANK_DECLARATIONS
 #include "AMDGPUGenRegisterBank.inc"
+#undef GET_REGBANK_DECLARATIONS
 
 namespace llvm {
 
@@ -38,8 +39,7 @@ protected:
 #define GET_TARGET_REGBANK_CLASS
 #include "AMDGPUGenRegisterBank.inc"
 };
-
-class AMDGPURegisterBankInfo final : public AMDGPUGenRegisterBankInfo {
+class AMDGPURegisterBankInfo : public AMDGPUGenRegisterBankInfo {
 public:
   const GCNSubtarget &Subtarget;
   const SIRegisterInfo *TRI;
@@ -59,9 +59,6 @@ public:
     SmallSet<Register, 4> &SGPROperandRegs,
     MachineRegisterInfo &MRI) const;
 
-  Register buildReadFirstLane(MachineIRBuilder &B, MachineRegisterInfo &MRI,
-                              Register Src) const;
-
   bool executeInWaterfallLoop(MachineIRBuilder &B,
                               MachineInstr &MI,
                               MachineRegisterInfo &MRI,
@@ -72,21 +69,15 @@ public:
 
   void constrainOpWithReadfirstlane(MachineInstr &MI, MachineRegisterInfo &MRI,
                                     unsigned OpIdx) const;
-  bool applyMappingDynStackAlloc(MachineInstr &MI,
-                                 const OperandsMapper &OpdMapper,
-                                 MachineRegisterInfo &MRI) const;
-  bool applyMappingLoad(MachineInstr &MI,
-                        const OperandsMapper &OpdMapper,
-                        MachineRegisterInfo &MRI) const;
+  bool applyMappingWideLoad(MachineInstr &MI,
+                            const AMDGPURegisterBankInfo::OperandsMapper &OpdMapper,
+                            MachineRegisterInfo &MRI) const;
   bool
   applyMappingImage(MachineInstr &MI,
-                    const OperandsMapper &OpdMapper,
+                    const AMDGPURegisterBankInfo::OperandsMapper &OpdMapper,
                     MachineRegisterInfo &MRI, int RSrcIdx) const;
-  bool applyMappingSBufferLoad(const OperandsMapper &OpdMapper) const;
 
-  bool applyMappingBFE(const OperandsMapper &OpdMapper, bool Signed) const;
-
-  bool applyMappingMAD_64_32(const OperandsMapper &OpdMapper) const;
+  void lowerScalarMinMax(MachineIRBuilder &B, MachineInstr &MI) const;
 
   Register handleD16VData(MachineIRBuilder &B, MachineRegisterInfo &MRI,
                           Register Reg) const;
@@ -94,16 +85,17 @@ public:
   std::pair<Register, unsigned>
   splitBufferOffsets(MachineIRBuilder &B, Register Offset) const;
 
+  MachineInstr *selectStoreIntrinsic(MachineIRBuilder &B,
+                                     MachineInstr &MI) const;
+
   /// See RegisterBankInfo::applyMapping.
   void applyMappingImpl(const OperandsMapper &OpdMapper) const override;
-
-  const ValueMapping *getValueMappingForPtr(const MachineRegisterInfo &MRI,
-                                            Register Ptr) const;
 
   const RegisterBankInfo::InstructionMapping &
   getInstrMappingForLoad(const MachineInstr &MI) const;
 
   unsigned getRegBankID(Register Reg, const MachineRegisterInfo &MRI,
+                        const TargetRegisterInfo &TRI,
                         unsigned Default = AMDGPU::VGPRRegBankID) const;
 
   // Return a value mapping for an operand that is required to be an SGPR.
@@ -148,9 +140,6 @@ public:
   getInstrAlternativeMappingsIntrinsicWSideEffects(
       const MachineInstr &MI, const MachineRegisterInfo &MRI) const;
 
-  unsigned getMappingType(const MachineRegisterInfo &MRI,
-                          const MachineInstr &MI) const;
-
   bool isSALUMapping(const MachineInstr &MI) const;
 
   const InstructionMapping &getDefaultMappingSOP(const MachineInstr &MI) const;
@@ -179,15 +168,6 @@ public:
 
   const InstructionMapping &
   getInstrMapping(const MachineInstr &MI) const override;
-
-private:
-
-  bool foldExtractEltToCmpSelect(MachineInstr &MI,
-                                 MachineRegisterInfo &MRI,
-                                 const OperandsMapper &OpdMapper) const;
-  bool foldInsertEltToCmpSelect(MachineInstr &MI,
-                                MachineRegisterInfo &MRI,
-                                const OperandsMapper &OpdMapper) const;
 };
 } // End llvm namespace.
 #endif

@@ -81,24 +81,22 @@ void LivePhysRegs::stepForward(const MachineInstr &MI,
     SmallVectorImpl<std::pair<MCPhysReg, const MachineOperand*>> &Clobbers) {
   // Remove killed registers from the set.
   for (ConstMIBundleOperands O(MI); O.isValid(); ++O) {
-    if (O->isReg()) {
-      if (O->isDebug())
-        continue;
+    if (O->isReg() && !O->isDebug()) {
       Register Reg = O->getReg();
-      if (!Reg.isPhysical())
+      if (!Register::isPhysicalRegister(Reg))
         continue;
       if (O->isDef()) {
         // Note, dead defs are still recorded.  The caller should decide how to
         // handle them.
         Clobbers.push_back(std::make_pair(Reg, &*O));
       } else {
+        if (!O->isKill())
+          continue;
         assert(O->isUse());
-        if (O->isKill())
-          removeReg(Reg);
+        removeReg(Reg);
       }
-    } else if (O->isRegMask()) {
+    } else if (O->isRegMask())
       removeRegsInMask(*O, &Clobbers);
-    }
   }
 
   // Add defs to the set.
@@ -127,8 +125,8 @@ void LivePhysRegs::print(raw_ostream &OS) const {
     return;
   }
 
-  for (MCPhysReg R : *this)
-    OS << " " << printReg(R, TRI);
+  for (const_iterator I = begin(), E = end(); I != E; ++I)
+    OS << " " << printReg(*I, TRI);
   OS << "\n";
 }
 
@@ -241,10 +239,6 @@ void LivePhysRegs::addLiveIns(const MachineBasicBlock &MBB) {
   addBlockLiveIns(MBB);
 }
 
-void LivePhysRegs::addLiveInsNoPristines(const MachineBasicBlock &MBB) {
-  addBlockLiveIns(MBB);
-}
-
 void llvm::computeLiveIns(LivePhysRegs &LiveRegs,
                           const MachineBasicBlock &MBB) {
   const MachineFunction &MF = *MBB.getParent();
@@ -252,7 +246,7 @@ void llvm::computeLiveIns(LivePhysRegs &LiveRegs,
   const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
   LiveRegs.init(TRI);
   LiveRegs.addLiveOutsNoPristines(MBB);
-  for (const MachineInstr &MI : llvm::reverse(MBB))
+  for (const MachineInstr &MI : make_range(MBB.rbegin(), MBB.rend()))
     LiveRegs.stepBackward(MI);
 }
 
@@ -282,14 +276,13 @@ void llvm::recomputeLivenessFlags(MachineBasicBlock &MBB) {
   const MachineFunction &MF = *MBB.getParent();
   const MachineRegisterInfo &MRI = MF.getRegInfo();
   const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
-  const MachineFrameInfo &MFI = MF.getFrameInfo();
 
   // We walk through the block backwards and start with the live outs.
   LivePhysRegs LiveRegs;
   LiveRegs.init(TRI);
   LiveRegs.addLiveOutsNoPristines(MBB);
 
-  for (MachineInstr &MI : llvm::reverse(MBB)) {
+  for (MachineInstr &MI : make_range(MBB.rbegin(), MBB.rend())) {
     // Recompute dead flags.
     for (MIBundleOperands MO(MI); MO.isValid(); ++MO) {
       if (!MO->isReg() || !MO->isDef() || MO->isDebug())
@@ -298,21 +291,9 @@ void llvm::recomputeLivenessFlags(MachineBasicBlock &MBB) {
       Register Reg = MO->getReg();
       if (Reg == 0)
         continue;
-      assert(Reg.isPhysical());
+      assert(Register::isPhysicalRegister(Reg));
 
       bool IsNotLive = LiveRegs.available(MRI, Reg);
-
-      // Special-case return instructions for cases when a return is not
-      // the last instruction in the block.
-      if (MI.isReturn() && MFI.isCalleeSavedInfoValid()) {
-        for (const CalleeSavedInfo &Info : MFI.getCalleeSavedInfo()) {
-          if (Info.getReg() == Reg) {
-            IsNotLive = !Info.isRestored();
-            break;
-          }
-        }
-      }
-
       MO->setIsDead(IsNotLive);
     }
 
@@ -327,7 +308,7 @@ void llvm::recomputeLivenessFlags(MachineBasicBlock &MBB) {
       Register Reg = MO->getReg();
       if (Reg == 0)
         continue;
-      assert(Reg.isPhysical());
+      assert(Register::isPhysicalRegister(Reg));
 
       bool IsNotLive = LiveRegs.available(MRI, Reg);
       MO->setIsKill(IsNotLive);

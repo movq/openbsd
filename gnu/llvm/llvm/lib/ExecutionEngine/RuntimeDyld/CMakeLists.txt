@@ -10,12 +10,4 @@ add_llvm_component_library(LLVMRuntimeDyld
 
   DEPENDS
   intrinsics_gen
-
-
-  LINK_COMPONENTS
-  Core
-  MC
-  Object
-  Support
-  TargetParser
   )

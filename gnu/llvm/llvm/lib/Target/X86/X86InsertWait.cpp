@@ -27,6 +27,7 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/Support/Debug.h"
 
@@ -47,6 +48,9 @@ public:
   StringRef getPassName() const override {
     return "X86 insert wait instruction";
   }
+
+private:
+  const TargetInstrInfo *TII; // Machine instruction info.
 };
 
 } // namespace
@@ -54,6 +58,23 @@ public:
 char WaitInsert::ID = 0;
 
 FunctionPass *llvm::createX86InsertX87waitPass() { return new WaitInsert(); }
+
+/// Return true if the Reg is X87 register.
+static bool isX87Reg(unsigned Reg) {
+  return (Reg == X86::FPCW || Reg == X86::FPSW ||
+          (Reg >= X86::ST0 && Reg <= X86::ST7));
+}
+
+/// check if the instruction is X87 instruction
+static bool isX87Instruction(MachineInstr &MI) {
+  for (const MachineOperand &MO : MI.operands()) {
+    if (!MO.isReg())
+      continue;
+    if (isX87Reg(MO.getReg()))
+      return true;
+  }
+  return false;
+}
 
 static bool isX87ControlInstruction(MachineInstr &MI) {
   switch (MI.getOpcode()) {
@@ -98,13 +119,13 @@ bool WaitInsert::runOnMachineFunction(MachineFunction &MF) {
     return false;
 
   const X86Subtarget &ST = MF.getSubtarget<X86Subtarget>();
-  const X86InstrInfo *TII = ST.getInstrInfo();
+  TII = ST.getInstrInfo();
   bool Changed = false;
 
   for (MachineBasicBlock &MBB : MF) {
     for (MachineBasicBlock::iterator MI = MBB.begin(); MI != MBB.end(); ++MI) {
       // Jump non X87 instruction.
-      if (!X86::isX87Instruction(*MI))
+      if (!isX87Instruction(*MI))
         continue;
       // If the instruction instruction neither has float exception nor is
       // a load/store instruction, or the instruction is x87 control
@@ -115,7 +136,7 @@ bool WaitInsert::runOnMachineFunction(MachineFunction &MF) {
       // If the following instruction is an X87 instruction and isn't an X87
       // non-waiting control instruction, we can omit insert wait instruction.
       MachineBasicBlock::iterator AfterMI = std::next(MI);
-      if (AfterMI != MBB.end() && X86::isX87Instruction(*AfterMI) &&
+      if (AfterMI != MBB.end() && isX87Instruction(*AfterMI) &&
           !isX87NonWaitingControlInstruction(*AfterMI))
         continue;
 

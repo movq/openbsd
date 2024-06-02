@@ -17,21 +17,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_GLOBALISEL_LEGALIZER_H
-#define LLVM_CODEGEN_GLOBALISEL_LEGALIZER_H
+#ifndef LLVM_CODEGEN_GLOBALISEL_LEGALIZEMACHINEIRPASS_H
+#define LLVM_CODEGEN_GLOBALISEL_LEGALIZEMACHINEIRPASS_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 
 namespace llvm {
 
-class LegalizerInfo;
-class MachineIRBuilder;
-class MachineInstr;
-class GISelChangeObserver;
-class LostDebugLocObserver;
+class MachineRegisterInfo;
 
 class Legalizer : public MachineFunctionPass {
 public:
@@ -69,12 +63,14 @@ public:
         MachineFunctionProperties::Property::NoPHIs);
   }
 
+  bool combineExtracts(MachineInstr &MI, MachineRegisterInfo &MRI,
+                       const TargetInstrInfo &TII);
+
   bool runOnMachineFunction(MachineFunction &MF) override;
 
   static MFResult
   legalizeMachineFunction(MachineFunction &MF, const LegalizerInfo &LI,
                           ArrayRef<GISelChangeObserver *> AuxObservers,
-                          LostDebugLocObserver &LocObserver,
                           MachineIRBuilder &MIRBuilder);
 };
 } // End namespace llvm.

@@ -14,10 +14,6 @@
 #ifndef LLVM_CODEGEN_PASSES_H
 #define LLVM_CODEGEN_PASSES_H
 
-#include "llvm/Support/CodeGen.h"
-#include "llvm/Support/Discriminator.h"
-#include "llvm/CodeGen/RegAllocCommon.h"
-
 #include <functional>
 #include <string>
 
@@ -29,16 +25,13 @@ class MachineFunctionPass;
 class ModulePass;
 class Pass;
 class TargetMachine;
+class TargetRegisterClass;
 class raw_ostream;
 
 } // End llvm namespace
 
-// List of target independent CodeGen pass IDs.
+/// List of target independent CodeGen pass IDs.
 namespace llvm {
-
-  /// AtomicExpandPass - At IR level this pass replace atomic instructions with
-  /// __atomic_* library calls, or target specific instruction which implement the
-  /// same semantics in a way which better fits the target backend.
   FunctionPass *createAtomicExpandPass();
 
   /// createUnreachableBlockEliminationPass - The LLVM code generator does not
@@ -49,23 +42,11 @@ namespace llvm {
   /// the entry block.
   FunctionPass *createUnreachableBlockEliminationPass();
 
-  /// createBasicBlockSections Pass - This pass assigns sections to machine
-  /// basic blocks and is enabled with -fbasic-block-sections.
-  MachineFunctionPass *createBasicBlockSectionsPass();
-
-  /// createMachineFunctionSplitterPass - This pass splits machine functions
-  /// using profile information.
-  MachineFunctionPass *createMachineFunctionSplitterPass();
-
   /// MachineFunctionPrinter pass - This pass prints out the machine function to
   /// the given stream as a debugging tool.
   MachineFunctionPass *
   createMachineFunctionPrinterPass(raw_ostream &OS,
                                    const std::string &Banner ="");
-
-  /// StackFramePrinter pass - This pass prints out the machine function's
-  /// stack frame to the given stream as a debugging tool.
-  MachineFunctionPass *createStackFrameLayoutAnalysisPass();
 
   /// MIRPrinting pass - this pass prints out the LLVM IR into the given stream
   /// using the MIR serialization format.
@@ -83,9 +64,9 @@ namespace llvm {
   /// matching during instruction selection.
   FunctionPass *createCodeGenPreparePass();
 
-  /// This pass implements generation of target-specific intrinsics to support
-  /// handling of complex number arithmetic
-  FunctionPass *createComplexDeinterleavingPass(const TargetMachine *TM);
+  /// createScalarizeMaskedMemIntrinPass - Replace masked load, store, gather
+  /// and scatter intrinsics with scalar code when target doesn't support them.
+  FunctionPass *createScalarizeMaskedMemIntrinPass();
 
   /// AtomicExpandID -- Lowers atomic operations in terms of either cmpxchg
   /// load-linked/store-conditional loops.
@@ -97,7 +78,7 @@ namespace llvm {
   /// MachineDominators - This pass is a machine dominators analysis pass.
   extern char &MachineDominatorsID;
 
-  /// MachineDominanaceFrontier - This pass is a machine dominators analysis.
+/// MachineDominanaceFrontier - This pass is a machine dominators analysis pass.
   extern char &MachineDominanceFrontierID;
 
   /// MachineRegionInfo - This pass computes SESE regions for machine functions.
@@ -161,7 +142,6 @@ namespace llvm {
   /// VirtRegRewriter pass. Rewrite virtual registers to physical registers as
   /// assigned in VirtRegMap.
   extern char &VirtRegRewriterID;
-  FunctionPass *createVirtRegRewriter(bool ClearVirtRegs = true);
 
   /// UnreachableMachineBlockElimination - This pass removes unreachable
   /// machine basic blocks.
@@ -176,30 +156,20 @@ namespace llvm {
   /// This pass perform post-ra machine sink for COPY instructions.
   extern char &PostRAMachineSinkingID;
 
-  /// This pass adds flow sensitive discriminators.
-  extern char &MIRAddFSDiscriminatorsID;
-
-  /// This pass reads flow sensitive profile.
-  extern char &MIRProfileLoaderPassID;
-
   /// FastRegisterAllocation Pass - This pass register allocates as fast as
   /// possible. It is best suited for debug code where live ranges are short.
   ///
   FunctionPass *createFastRegisterAllocator();
-  FunctionPass *createFastRegisterAllocator(RegClassFilterFunc F,
-                                            bool ClearVirtRegs);
 
   /// BasicRegisterAllocation Pass - This pass implements a degenerate global
   /// register allocator using the basic regalloc framework.
   ///
   FunctionPass *createBasicRegisterAllocator();
-  FunctionPass *createBasicRegisterAllocator(RegClassFilterFunc F);
 
   /// Greedy register allocation pass - This pass implements a global register
   /// allocator for optimized builds.
   ///
   FunctionPass *createGreedyRegisterAllocator();
-  FunctionPass *createGreedyRegisterAllocator(RegClassFilterFunc F);
 
   /// PBQPRegisterAllocation Pass - This pass implements the Partitioned Boolean
   /// Quadratic Prograaming (PBQP) based register allocator.
@@ -215,11 +185,11 @@ namespace llvm {
   /// register allocation.
   extern char &ExpandPostRAPseudosID;
 
-  /// PostRAHazardRecognizer - This pass runs the post-ra hazard
+  /// createPostRAHazardRecognizer - This pass runs the post-ra hazard
   /// recognizer.
   extern char &PostRAHazardRecognizerID;
 
-  /// PostRAScheduler - This pass performs post register allocation
+  /// createPostRAScheduler - This pass performs post register allocation
   /// scheduling.
   extern char &PostRASchedulerID;
 
@@ -268,10 +238,6 @@ namespace llvm {
   /// It merges disjoint allocas to reduce the stack size.
   extern char &StackColoringID;
 
-  /// StackFramePrinter - This pass prints the stack frame layout and variable
-  /// mappings.
-  extern char &StackFrameLayoutAnalysisPassID;
-
   /// IfConverter - This pass performs machine code if conversion.
   extern char &IfConverterID;
 
@@ -291,18 +257,10 @@ namespace llvm {
   /// operations.
   FunctionPass *createGCLoweringPass();
 
-  /// GCLowering Pass - Used by gc.root to perform its default lowering
-  /// operations.
-  extern char &GCLoweringID;
-
   /// ShadowStackGCLowering - Implements the custom lowering mechanism
   /// used by the shadow stack GC.  Only runs on functions which opt in to
   /// the shadow stack collector.
   FunctionPass *createShadowStackGCLoweringPass();
-
-  /// ShadowStackGCLowering - Implements the custom lowering mechanism
-  /// used by the shadow stack GC.
-  extern char &ShadowStackGCLoweringID;
 
   /// GCMachineCodeAnalysis - Target-independent pass to mark safe points
   /// in machine code. Must be added very late during code generation, just
@@ -339,12 +297,6 @@ namespace llvm {
   /// MachineCopyPropagation - This pass performs copy propagation on
   /// machine instructions.
   extern char &MachineCopyPropagationID;
-
-  MachineFunctionPass *createMachineCopyPropagationPass(bool UseCopyInstr);
-
-  /// MachineLateInstrsCleanup - This pass removes redundant identical
-  /// instructions after register allocation and rematerialization.
-  extern char &MachineLateInstrsCleanupID;
 
   /// PeepholeOptimizer - This pass performs peephole optimizations -
   /// like extension and comparison eliminations.
@@ -384,7 +336,7 @@ namespace llvm {
 
   /// createDwarfEHPass - This pass mulches exception handling code into a form
   /// adapted to code generation.  Required if using dwarf exception handling.
-  FunctionPass *createDwarfEHPass(CodeGenOpt::Level OptLevel);
+  FunctionPass *createDwarfEHPass();
 
   /// createWinEHPass - Prepares personality functions used by MSVC on Windows,
   /// in addition to the Itanium LSDA based personalities.
@@ -393,7 +345,7 @@ namespace llvm {
   /// createSjLjEHPreparePass - This pass adapts exception handling code to use
   /// the GCC-style builtin setjmp/longjmp (sjlj) to handling EH control flow.
   ///
-  FunctionPass *createSjLjEHPreparePass(const TargetMachine *TM);
+  FunctionPass *createSjLjEHPreparePass();
 
   /// createWasmEHPass - This pass adapts exception handling code to use
   /// WebAssembly's exception handling scheme.
@@ -424,21 +376,15 @@ namespace llvm {
   /// the intrinsic for later emission to the StackMap.
   extern char &StackMapLivenessID;
 
-  // MachineSanitizerBinaryMetadata - appends/finalizes sanitizer binary
-  // metadata after llvm SanitizerBinaryMetadata pass.
-  extern char &MachineSanitizerBinaryMetadataID;
-
-  /// RemoveRedundantDebugValues pass.
-  extern char &RemoveRedundantDebugValuesID;
-
-  /// MachineCFGPrinter pass.
-  extern char &MachineCFGPrinterID;
-
   /// LiveDebugValues pass
   extern char &LiveDebugValuesID;
 
   /// createJumpInstrTables - This pass creates jump-instruction tables.
   ModulePass *createJumpInstrTablesPass();
+
+  /// createForwardControlFlowIntegrityPass - This pass adds control-flow
+  /// integrity.
+  ModulePass *createForwardControlFlowIntegrityPass();
 
   /// InterleavedAccess Pass - This pass identifies and matches interleaved
   /// memory accesses to target specific intrinsics.
@@ -501,21 +447,6 @@ namespace llvm {
   /// shuffles.
   FunctionPass *createExpandReductionsPass();
 
-  // This pass replaces intrinsics operating on vector operands with calls to
-  // the corresponding function in a vector library (e.g., SVML, libmvec).
-  FunctionPass *createReplaceWithVeclibLegacyPass();
-
-  /// This pass expands the vector predication intrinsics into unpredicated
-  /// instructions with selects or just the explicit vector length into the
-  /// predicate mask.
-  FunctionPass *createExpandVectorPredicationPass();
-
-  // Expands large div/rem instructions.
-  FunctionPass *createExpandLargeDivRemPass();
-
-  // Expands large div/rem instructions.
-  FunctionPass *createExpandLargeFpConvertPass();
-
   // This pass expands memcmp() to load/stores.
   FunctionPass *createExpandMemCmpPass();
 
@@ -525,9 +456,6 @@ namespace llvm {
   // This pass expands indirectbr instructions.
   FunctionPass *createIndirectBrExpandPass();
 
-  /// Creates CFI Fixup pass. \see CFIFixup.cpp
-  FunctionPass *createCFIFixup();
-
   /// Creates CFI Instruction Inserter pass. \see CFIInstrInserter.cpp
   FunctionPass *createCFIInstrInserter();
 
@@ -535,65 +463,12 @@ namespace llvm {
   /// \see CFGuardLongjmp.cpp
   FunctionPass *createCFGuardLongjmpPass();
 
-  /// Creates EHContGuard catchret target identification pass.
-  /// \see EHContGuardCatchret.cpp
-  FunctionPass *createEHContGuardCatchretPass();
-
   /// Create Hardware Loop pass. \see HardwareLoops.cpp
   FunctionPass *createHardwareLoopsPass();
 
-  /// This pass inserts pseudo probe annotation for callsite profiling.
-  FunctionPass *createPseudoProbeInserter();
-
   /// Create IR Type Promotion pass. \see TypePromotion.cpp
-  FunctionPass *createTypePromotionLegacyPass();
+  FunctionPass *createTypePromotionPass();
 
-  /// Add Flow Sensitive Discriminators. PassNum specifies the
-  /// sequence number of this pass (starting from 1).
-  FunctionPass *
-  createMIRAddFSDiscriminatorsPass(sampleprof::FSDiscriminatorPass P);
-
-  /// Read Flow Sensitive Profile.
-  FunctionPass *createMIRProfileLoaderPass(std::string File,
-                                           std::string RemappingFile,
-                                           sampleprof::FSDiscriminatorPass P);
-
-  /// Creates MIR Debugify pass. \see MachineDebugify.cpp
-  ModulePass *createDebugifyMachineModulePass();
-
-  /// Creates MIR Strip Debug pass. \see MachineStripDebug.cpp
-  /// If OnlyDebugified is true then it will only strip debug info if it was
-  /// added by a Debugify pass. The module will be left unchanged if the debug
-  /// info was generated by another source such as clang.
-  ModulePass *createStripDebugMachineModulePass(bool OnlyDebugified);
-
-  /// Creates MIR Check Debug pass. \see MachineCheckDebugify.cpp
-  ModulePass *createCheckDebugMachineModulePass();
-
-  /// The pass fixups statepoint machine instruction to replace usage of
-  /// caller saved registers with stack slots.
-  extern char &FixupStatepointCallerSavedID;
-
-  /// The pass transforms load/store <256 x i32> to AMX load/store intrinsics
-  /// or split the data to two <128 x i32>.
-  FunctionPass *createX86LowerAMXTypePass();
-
-  /// The pass insert tile config intrinsics for AMX fast register allocation.
-  FunctionPass *createX86PreAMXConfigPass();
-
-  /// The pass transforms amx intrinsics to scalar operation if the function has
-  /// optnone attribute or it is O0.
-  FunctionPass *createX86LowerAMXIntrinsicsPass();
-
-  /// When learning an eviction policy, extract score(reward) information,
-  /// otherwise this does nothing
-  FunctionPass *createRegAllocScoringPass();
-
-  /// JMC instrument pass.
-  ModulePass *createJMCInstrumenterPass();
-
-  /// This pass converts conditional moves to conditional jumps when profitable.
-  FunctionPass *createSelectOptimizePass();
 } // End llvm namespace
 
 #endif

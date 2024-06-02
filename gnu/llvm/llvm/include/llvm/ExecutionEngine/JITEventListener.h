@@ -20,10 +20,12 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/Support/CBindingWrapping.h"
 #include <cstdint>
+#include <vector>
 
 namespace llvm {
 
 class IntelJITEventsWrapper;
+class MachineFunction;
 class OProfileWrapper;
 
 namespace object {

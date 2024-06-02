@@ -1,4 +1,4 @@
-//===--------------- LLJITWithGDBRegistrationListener.cpp -----------------===//
+//===--------------- LLJITWithCustomObjectLinkingLayer.cpp ----------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,7 +17,6 @@
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-#include "llvm/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/TargetSelect.h"
@@ -39,7 +38,7 @@ static cl::list<std::string> InputFiles(cl::Positional, cl::OneOrMore,
 
 static cl::list<std::string> InputArgv("args", cl::Positional,
                                        cl::desc("<program arguments>..."),
-                                       cl::PositionalEatsArgs);
+                                       cl::ZeroOrMore, cl::PositionalEatsArgs);
 
 int main(int argc, char *argv[]) {
   // Initialize LLVM.
@@ -48,7 +47,7 @@ int main(int argc, char *argv[]) {
   InitializeNativeTarget();
   InitializeNativeTargetAsmPrinter();
 
-  cl::ParseCommandLineOptions(argc, argv, "LLJITWithGDBRegistrationListener");
+  cl::ParseCommandLineOptions(argc, argv, "LLJITWithCustomObjectLinkingLayer");
   ExitOnErr.setBanner(std::string(argv[0]) + ": ");
 
   // Detect the host and set code model to small.
@@ -108,8 +107,9 @@ int main(int argc, char *argv[]) {
 
   // Look up the entry point, cast it to a C main function pointer, then use
   // runAsMain to call it.
-  auto EntryAddr = ExitOnErr(J->lookup(EntryPointName));
-  auto EntryFn = EntryAddr.toPtr<int(int, char *[])>();
+  auto EntrySym = ExitOnErr(J->lookup(EntryPointName));
+  auto EntryFn =
+      jitTargetAddressToFunction<int (*)(int, char *[])>(EntrySym.getAddress());
 
   return runAsMain(EntryFn, InputArgv, StringRef(InputFiles.front()));
 }

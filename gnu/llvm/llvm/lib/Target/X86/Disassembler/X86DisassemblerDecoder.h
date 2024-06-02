@@ -19,6 +19,9 @@
 #include "llvm/Support/X86DisassemblerDecoderCommon.h"
 
 namespace llvm {
+
+class MCInstrInfo;
+
 namespace X86Disassembler {
 
 // Accessor functions for various fields of an Intel instruction
@@ -37,7 +40,7 @@ namespace X86Disassembler {
 #define xFromEVEX2of4(evex)     (((~(evex)) & 0x40) >> 6)
 #define bFromEVEX2of4(evex)     (((~(evex)) & 0x20) >> 5)
 #define r2FromEVEX2of4(evex)    (((~(evex)) & 0x10) >> 4)
-#define mmmFromEVEX2of4(evex)   ((evex) & 0x7)
+#define mmFromEVEX2of4(evex)    ((evex) & 0x3)
 #define wFromEVEX3of4(evex)     (((evex) & 0x80) >> 7)
 #define vvvvFromEVEX3of4(evex)  (((~(evex)) & 0x78) >> 3)
 #define ppFromEVEX3of4(evex)    ((evex) & 0x3)
@@ -374,16 +377,11 @@ namespace X86Disassembler {
   ENTRY(CR14)         \
   ENTRY(CR15)
 
-#undef  REGS_TMM
-#define REGS_TMM  \
-  ENTRY(TMM0)     \
-  ENTRY(TMM1)     \
-  ENTRY(TMM2)     \
-  ENTRY(TMM3)     \
-  ENTRY(TMM4)     \
-  ENTRY(TMM5)     \
-  ENTRY(TMM6)     \
-  ENTRY(TMM7)
+#define REGS_BOUND    \
+  ENTRY(BND0)         \
+  ENTRY(BND1)         \
+  ENTRY(BND2)         \
+  ENTRY(BND3)
 
 #define ALL_EA_BASES  \
   EA_BASES_16BIT      \
@@ -408,7 +406,7 @@ namespace X86Disassembler {
   REGS_SEGMENT        \
   REGS_DEBUG          \
   REGS_CONTROL        \
-  REGS_TMM            \
+  REGS_BOUND          \
   ENTRY(RIP)
 
 /// All possible values of the base field for effective-address
@@ -482,9 +480,7 @@ enum SegmentOverride {
 enum VEXLeadingOpcodeByte {
   VEX_LOB_0F = 0x1,
   VEX_LOB_0F38 = 0x2,
-  VEX_LOB_0F3A = 0x3,
-  VEX_LOB_MAP5 = 0x5,
-  VEX_LOB_MAP6 = 0x6
+  VEX_LOB_0F3A = 0x3
 };
 
 enum XOPMapSelect {

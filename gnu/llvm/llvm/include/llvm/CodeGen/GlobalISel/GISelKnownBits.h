@@ -5,20 +5,20 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-/// \file
+//
 /// Provides analysis for querying information about KnownBits during GISel
 /// passes.
-///
+//
 //===----------------------------------------------------------------------===//
+#ifndef LLVM_CODEGEN_GLOBALISEL_KNOWNBITSINFO_H
+#define LLVM_CODEGEN_GLOBALISEL_KNOWNBITSINFO_H
 
-#ifndef LLVM_CODEGEN_GLOBALISEL_GISELKNOWNBITS_H
-#define LLVM_CODEGEN_GLOBALISEL_GISELKNOWNBITS_H
-
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/GlobalISel/GISelChangeObserver.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/Register.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/InitializePasses.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/KnownBits.h"
 
 namespace llvm {
@@ -31,29 +31,11 @@ class GISelKnownBits : public GISelChangeObserver {
   MachineRegisterInfo &MRI;
   const TargetLowering &TL;
   const DataLayout &DL;
-  unsigned MaxDepth;
-  /// Cache maintained during a computeKnownBits request.
-  SmallDenseMap<Register, KnownBits, 16> ComputeKnownBitsCache;
-
-  void computeKnownBitsMin(Register Src0, Register Src1, KnownBits &Known,
-                           const APInt &DemandedElts,
-                           unsigned Depth = 0);
-
-  unsigned computeNumSignBitsMin(Register Src0, Register Src1,
-                                 const APInt &DemandedElts, unsigned Depth = 0);
 
 public:
-  GISelKnownBits(MachineFunction &MF, unsigned MaxDepth = 6);
+  GISelKnownBits(MachineFunction &MF);
   virtual ~GISelKnownBits() = default;
-
-  const MachineFunction &getMachineFunction() const {
-    return MF;
-  }
-
-  const DataLayout &getDataLayout() const {
-    return DL;
-  }
-
+  void setMF(MachineFunction &MF);
   virtual void computeKnownBitsImpl(Register R, KnownBits &Known,
                                     const APInt &DemandedElts,
                                     unsigned Depth = 0);
@@ -64,9 +46,6 @@ public:
 
   // KnownBitsAPI
   KnownBits getKnownBits(Register R);
-  KnownBits getKnownBits(Register R, const APInt &DemandedElts,
-                         unsigned Depth = 0);
-
   // Calls getKnownBits for first operand def of MI.
   KnownBits getKnownBits(MachineInstr &MI);
   APInt getKnownZeroes(Register R);
@@ -83,14 +62,18 @@ public:
   /// predicate to simplify operations downstream.
   bool signBitIsZero(Register Op);
 
+  // FIXME: Is this the right place for G_FRAME_INDEX? Should it be in
+  // TargetLowering?
+  void computeKnownBitsForFrameIndex(Register R, KnownBits &Known,
+                                     const APInt &DemandedElts,
+                                     unsigned Depth = 0);
+  static Align inferAlignmentForFrameIdx(int FrameIdx, int Offset,
+                                         const MachineFunction &MF);
   static void computeKnownBitsForAlignment(KnownBits &Known,
-                                           Align Alignment) {
-    // The low bits are known zero if the pointer is aligned.
-    Known.Zero.setLowBits(Log2(Alignment));
-  }
+                                           MaybeAlign Alignment);
 
-  /// \return The known alignment for the pointer-like value \p R.
-  Align computeKnownAlignment(Register R, unsigned Depth = 0);
+  // Try to infer alignment for MI.
+  static MaybeAlign inferPtrAlignment(const MachineInstr &MI);
 
   // Observer API. No-op for non-caching implementation.
   void erasingInstr(MachineInstr &MI) override{};
@@ -99,7 +82,7 @@ public:
   void changedInstr(MachineInstr &MI) override{};
 
 protected:
-  unsigned getMaxDepth() const { return MaxDepth; }
+  unsigned getMaxDepth() const { return 6; }
 };
 
 /// To use KnownBitsInfo analysis in a pass,
@@ -129,4 +112,4 @@ public:
 };
 } // namespace llvm
 
-#endif // LLVM_CODEGEN_GLOBALISEL_GISELKNOWNBITS_H
+#endif // ifdef

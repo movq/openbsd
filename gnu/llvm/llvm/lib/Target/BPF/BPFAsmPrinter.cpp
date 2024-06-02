@@ -27,7 +27,7 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
-#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
@@ -48,7 +48,7 @@ public:
   bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNum,
                              const char *ExtraCode, raw_ostream &O) override;
 
-  void emitInstruction(const MachineInstr *MI) override;
+  void EmitInstruction(const MachineInstr *MI) override;
 
 private:
   BTFDebug *BTF;
@@ -137,10 +137,7 @@ bool BPFAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
   return false;
 }
 
-void BPFAsmPrinter::emitInstruction(const MachineInstr *MI) {
-  BPF_MC::verifyInstructionPredicates(MI->getOpcode(),
-                                      getSubtargetInfo().getFeatureBits());
-
+void BPFAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   MCInst TmpInst;
 
   if (!BTF || !BTF->InstLower(MI, TmpInst)) {

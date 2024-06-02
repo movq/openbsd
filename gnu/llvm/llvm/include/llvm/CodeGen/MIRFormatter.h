@@ -1,8 +1,9 @@
 //===-- llvm/CodeGen/MIRFormatter.h -----------------------------*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -13,16 +14,13 @@
 #ifndef LLVM_CODEGEN_MIRFORMATTER_H
 #define LLVM_CODEGEN_MIRFORMATTER_H
 
+#include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
-#include "llvm/Support/raw_ostream.h"
-#include <cstdint>
-#include <optional>
 
 namespace llvm {
 
-class MachineFunction;
-class MachineInstr;
 struct PerFunctionMIParsingState;
+struct SlotMapping;
 
 /// MIRFormater - Interface to format MIR operand based on target
 class MIRFormatter {
@@ -30,14 +28,14 @@ public:
   typedef function_ref<bool(StringRef::iterator Loc, const Twine &)>
       ErrorCallbackType;
 
-  MIRFormatter() = default;
+  MIRFormatter() {}
   virtual ~MIRFormatter() = default;
 
   /// Implement target specific printing for machine operand immediate value, so
   /// that we can have more meaningful mnemonic than a 64-bit integer. Passing
   /// None to OpIdx means the index is unknown.
   virtual void printImm(raw_ostream &OS, const MachineInstr &MI,
-                        std::optional<unsigned> OpIdx, int64_t Imm) const {
+                        Optional<unsigned> OpIdx, int64_t Imm) const {
     OS << Imm;
   }
 

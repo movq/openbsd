@@ -11,25 +11,27 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/InitializePasses.h"
+#include "llvm/Support/CommandLine.h"
+#define DEBUG_TYPE "float2int"
+
 #include "llvm/Transforms/Scalar/Float2Int.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
-#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
 #include <deque>
-
-#define DEBUG_TYPE "float2int"
-
+#include <functional> // For std::function
 using namespace llvm;
 
 // The algorithm is simple. Start at instructions that convert from the
@@ -118,7 +120,8 @@ static Instruction::BinaryOps mapBinOpcode(unsigned Opcode) {
 
 // Find the roots - instructions that convert from the FP domain to
 // integer domain.
-void Float2IntPass::findRoots(Function &F, const DominatorTree &DT) {
+void Float2IntPass::findRoots(Function &F, const DominatorTree &DT,
+                              SmallPtrSet<Instruction*,8> &Roots) {
   for (BasicBlock &BB : F) {
     // Unreachable code can take on strange forms that we are not prepared to
     // handle. For example, an instruction may have itself as an operand.
@@ -181,7 +184,7 @@ ConstantRange Float2IntPass::validateRange(ConstantRange R) {
 
 // Breadth-first walk of the use-def graph; determine the set of nodes
 // we care about and eagerly determine if some of them are poisonous.
-void Float2IntPass::walkBackwards() {
+void Float2IntPass::walkBackwards(const SmallPtrSetImpl<Instruction*> &Roots) {
   std::deque<Instruction*> Worklist(Roots.begin(), Roots.end());
   while (!Worklist.empty()) {
     Instruction *I = Worklist.back();
@@ -234,111 +237,116 @@ void Float2IntPass::walkBackwards() {
   }
 }
 
-// Calculate result range from operand ranges.
-// Return std::nullopt if the range cannot be calculated yet.
-std::optional<ConstantRange> Float2IntPass::calcRange(Instruction *I) {
-  SmallVector<ConstantRange, 4> OpRanges;
-  for (Value *O : I->operands()) {
-    if (Instruction *OI = dyn_cast<Instruction>(O)) {
-      auto OpIt = SeenInsts.find(OI);
-      assert(OpIt != SeenInsts.end() && "def not seen before use!");
-      if (OpIt->second == unknownRange())
-        return std::nullopt; // Wait until operand range has been calculated.
-      OpRanges.push_back(OpIt->second);
-    } else if (ConstantFP *CF = dyn_cast<ConstantFP>(O)) {
-      // Work out if the floating point number can be losslessly represented
-      // as an integer.
-      // APFloat::convertToInteger(&Exact) purports to do what we want, but
-      // the exactness can be too precise. For example, negative zero can
-      // never be exactly converted to an integer.
-      //
-      // Instead, we ask APFloat to round itself to an integral value - this
-      // preserves sign-of-zero - then compare the result with the original.
-      //
-      const APFloat &F = CF->getValueAPF();
-
-      // First, weed out obviously incorrect values. Non-finite numbers
-      // can't be represented and neither can negative zero, unless
-      // we're in fast math mode.
-      if (!F.isFinite() ||
-          (F.isZero() && F.isNegative() && isa<FPMathOperator>(I) &&
-           !I->hasNoSignedZeros()))
-        return badRange();
-
-      APFloat NewF = F;
-      auto Res = NewF.roundToIntegral(APFloat::rmNearestTiesToEven);
-      if (Res != APFloat::opOK || NewF != F)
-        return badRange();
-
-      // OK, it's representable. Now get it.
-      APSInt Int(MaxIntegerBW+1, false);
-      bool Exact;
-      CF->getValueAPF().convertToInteger(Int,
-                                         APFloat::rmNearestTiesToEven,
-                                         &Exact);
-      OpRanges.push_back(ConstantRange(Int));
-    } else {
-      llvm_unreachable("Should have already marked this as badRange!");
-    }
-  }
-
-  switch (I->getOpcode()) {
-  // FIXME: Handle select and phi nodes.
-  default:
-  case Instruction::UIToFP:
-  case Instruction::SIToFP:
-    llvm_unreachable("Should have been handled in walkForwards!");
-
-  case Instruction::FNeg: {
-    assert(OpRanges.size() == 1 && "FNeg is a unary operator!");
-    unsigned Size = OpRanges[0].getBitWidth();
-    auto Zero = ConstantRange(APInt::getZero(Size));
-    return Zero.sub(OpRanges[0]);
-  }
-
-  case Instruction::FAdd:
-  case Instruction::FSub:
-  case Instruction::FMul: {
-    assert(OpRanges.size() == 2 && "its a binary operator!");
-    auto BinOp = (Instruction::BinaryOps) I->getOpcode();
-    return OpRanges[0].binaryOp(BinOp, OpRanges[1]);
-  }
-
-  //
-  // Root-only instructions - we'll only see these if they're the
-  //                          first node in a walk.
-  //
-  case Instruction::FPToUI:
-  case Instruction::FPToSI: {
-    assert(OpRanges.size() == 1 && "FPTo[US]I is a unary operator!");
-    // Note: We're ignoring the casts output size here as that's what the
-    // caller expects.
-    auto CastOp = (Instruction::CastOps)I->getOpcode();
-    return OpRanges[0].castOp(CastOp, MaxIntegerBW+1);
-  }
-
-  case Instruction::FCmp:
-    assert(OpRanges.size() == 2 && "FCmp is a binary operator!");
-    return OpRanges[0].unionWith(OpRanges[1]);
-  }
-}
-
 // Walk forwards down the list of seen instructions, so we visit defs before
 // uses.
 void Float2IntPass::walkForwards() {
-  std::deque<Instruction *> Worklist;
-  for (const auto &Pair : SeenInsts)
-    if (Pair.second == unknownRange())
-      Worklist.push_back(Pair.first);
+  for (auto &It : reverse(SeenInsts)) {
+    if (It.second != unknownRange())
+      continue;
 
-  while (!Worklist.empty()) {
-    Instruction *I = Worklist.back();
-    Worklist.pop_back();
+    Instruction *I = It.first;
+    std::function<ConstantRange(ArrayRef<ConstantRange>)> Op;
+    switch (I->getOpcode()) {
+      // FIXME: Handle select and phi nodes.
+    default:
+    case Instruction::UIToFP:
+    case Instruction::SIToFP:
+      llvm_unreachable("Should have been handled in walkForwards!");
 
-    if (std::optional<ConstantRange> Range = calcRange(I))
-      seen(I, *Range);
-    else
-      Worklist.push_front(I); // Reprocess later.
+    case Instruction::FNeg:
+      Op = [](ArrayRef<ConstantRange> Ops) {
+        assert(Ops.size() == 1 && "FNeg is a unary operator!");
+        unsigned Size = Ops[0].getBitWidth();
+        auto Zero = ConstantRange(APInt::getNullValue(Size));
+        return Zero.sub(Ops[0]);
+      };
+      break;
+
+    case Instruction::FAdd:
+    case Instruction::FSub:
+    case Instruction::FMul:
+      Op = [I](ArrayRef<ConstantRange> Ops) {
+        assert(Ops.size() == 2 && "its a binary operator!");
+        auto BinOp = (Instruction::BinaryOps) I->getOpcode();
+        return Ops[0].binaryOp(BinOp, Ops[1]);
+      };
+      break;
+
+    //
+    // Root-only instructions - we'll only see these if they're the
+    //                          first node in a walk.
+    //
+    case Instruction::FPToUI:
+    case Instruction::FPToSI:
+      Op = [I](ArrayRef<ConstantRange> Ops) {
+        assert(Ops.size() == 1 && "FPTo[US]I is a unary operator!");
+        // Note: We're ignoring the casts output size here as that's what the
+        // caller expects.
+        auto CastOp = (Instruction::CastOps)I->getOpcode();
+        return Ops[0].castOp(CastOp, MaxIntegerBW+1);
+      };
+      break;
+
+    case Instruction::FCmp:
+      Op = [](ArrayRef<ConstantRange> Ops) {
+        assert(Ops.size() == 2 && "FCmp is a binary operator!");
+        return Ops[0].unionWith(Ops[1]);
+      };
+      break;
+    }
+
+    bool Abort = false;
+    SmallVector<ConstantRange,4> OpRanges;
+    for (Value *O : I->operands()) {
+      if (Instruction *OI = dyn_cast<Instruction>(O)) {
+        assert(SeenInsts.find(OI) != SeenInsts.end() &&
+               "def not seen before use!");
+        OpRanges.push_back(SeenInsts.find(OI)->second);
+      } else if (ConstantFP *CF = dyn_cast<ConstantFP>(O)) {
+        // Work out if the floating point number can be losslessly represented
+        // as an integer.
+        // APFloat::convertToInteger(&Exact) purports to do what we want, but
+        // the exactness can be too precise. For example, negative zero can
+        // never be exactly converted to an integer.
+        //
+        // Instead, we ask APFloat to round itself to an integral value - this
+        // preserves sign-of-zero - then compare the result with the original.
+        //
+        const APFloat &F = CF->getValueAPF();
+
+        // First, weed out obviously incorrect values. Non-finite numbers
+        // can't be represented and neither can negative zero, unless
+        // we're in fast math mode.
+        if (!F.isFinite() ||
+            (F.isZero() && F.isNegative() && isa<FPMathOperator>(I) &&
+             !I->hasNoSignedZeros())) {
+          seen(I, badRange());
+          Abort = true;
+          break;
+        }
+
+        APFloat NewF = F;
+        auto Res = NewF.roundToIntegral(APFloat::rmNearestTiesToEven);
+        if (Res != APFloat::opOK || NewF.compare(F) != APFloat::cmpEqual) {
+          seen(I, badRange());
+          Abort = true;
+          break;
+        }
+        // OK, it's representable. Now get it.
+        APSInt Int(MaxIntegerBW+1, false);
+        bool Exact;
+        CF->getValueAPF().convertToInteger(Int,
+                                           APFloat::rmNearestTiesToEven,
+                                           &Exact);
+        OpRanges.push_back(ConstantRange(Int));
+      } else {
+        llvm_unreachable("Should have already marked this as badRange!");
+      }
+    }
+
+    // Reduce the operands' ranges to a single range and return.
+    if (!Abort)
+      seen(I, Op(OpRanges));
   }
 }
 
@@ -365,7 +373,7 @@ bool Float2IntPass::validateAndTransform() {
       // If it does, transformation would be illegal.
       //
       // Don't count the roots, as they terminate the graphs.
-      if (!Roots.contains(I)) {
+      if (Roots.count(I) == 0) {
         // Set the type of the conversion while we're here.
         if (!ConvertedToTy)
           ConvertedToTy = I->getType();
@@ -517,9 +525,9 @@ bool Float2IntPass::runImpl(Function &F, const DominatorTree &DT) {
 
   Ctx = &F.getParent()->getContext();
 
-  findRoots(F, DT);
+  findRoots(F, DT, Roots);
 
-  walkBackwards();
+  walkBackwards(Roots);
   walkForwards();
 
   bool Modified = validateAndTransform();
@@ -538,6 +546,7 @@ PreservedAnalyses Float2IntPass::run(Function &F, FunctionAnalysisManager &AM) {
 
   PreservedAnalyses PA;
   PA.preserveSet<CFGAnalyses>();
+  PA.preserve<GlobalsAA>();
   return PA;
 }
 } // End namespace llvm

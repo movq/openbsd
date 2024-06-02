@@ -37,7 +37,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Config/llvm-config.h" // Get build system configuration settings
+#include "llvm/Config/config.h" // Get build system configuration settings
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Chrono.h"
 #include "llvm/Support/Compiler.h"
@@ -59,9 +59,6 @@ namespace llvm {
 /// yet have VersionHelpers.h, so we have our own helper.
 bool RunningWindows8OrGreater();
 
-/// Determines if the program is running on Windows 11 or Windows Server 2022.
-bool RunningWindows11OrGreater();
-
 /// Returns the Windows version as Major.Minor.0.BuildNumber. Uses
 /// RtlGetVersion or GetVersionEx under the hood depending on what is available.
 /// GetVersionEx is deprecated, but this API exposes the build number which can
@@ -71,10 +68,10 @@ llvm::VersionTuple GetWindowsOSVersion();
 bool MakeErrMsg(std::string *ErrMsg, const std::string &prefix);
 
 // Include GetLastError() in a fatal error message.
-[[noreturn]] inline void ReportLastErrorFatal(const char *Msg) {
+LLVM_ATTRIBUTE_NORETURN inline void ReportLastErrorFatal(const char *Msg) {
   std::string ErrMsg;
   MakeErrMsg(&ErrMsg, Msg);
-  llvm::report_fatal_error(Twine(ErrMsg));
+  llvm::report_fatal_error(ErrMsg);
 }
 
 template <typename HandleTraits>
@@ -239,12 +236,6 @@ namespace windows {
 // UTF-8 regardless of the current code page setting.
 std::error_code GetCommandLineArguments(SmallVectorImpl<const char *> &Args,
                                         BumpPtrAllocator &Alloc);
-
-/// Convert UTF-8 path to a suitable UTF-16 path for use with the Win32 Unicode
-/// File API.
-std::error_code widenPath(const Twine &Path8, SmallVectorImpl<wchar_t> &Path16,
-                          size_t MaxPathLen = MAX_PATH);
-
 } // end namespace windows
 } // end namespace sys
 } // end namespace llvm.

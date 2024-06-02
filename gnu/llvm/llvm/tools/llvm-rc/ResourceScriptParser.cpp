@@ -215,7 +215,7 @@ Expected<IntWithNotMask> RCParser::parseIntExpr2() {
   }
 
   case Kind::Identifier: {
-    if (!read().value().equals_insensitive("not"))
+    if (!read().value().equals_lower("not"))
       return getExpectedError(ErrorMsg, true);
     ASSIGN_OR_RETURN(Result, parseIntExpr2());
     return IntWithNotMask(0, (*Result).getValue());
@@ -330,7 +330,7 @@ Expected<uint32_t> RCParser::parseFlags(ArrayRef<StringRef> FlagDesc,
     bool FoundFlag = false;
 
     for (size_t FlagId = 0; FlagId < FlagDesc.size(); ++FlagId) {
-      if (!FlagResult->equals_insensitive(FlagDesc[FlagId]))
+      if (!FlagResult->equals_lower(FlagDesc[FlagId]))
         continue;
 
       Result |= FlagValues[FlagId];
@@ -351,23 +351,23 @@ uint16_t RCParser::parseMemoryFlags(uint16_t Flags) {
     if (Token.kind() != Kind::Identifier)
       return Flags;
     const StringRef Ident = Token.value();
-    if (Ident.equals_insensitive("PRELOAD"))
+    if (Ident.equals_lower("PRELOAD"))
       Flags |= MfPreload;
-    else if (Ident.equals_insensitive("LOADONCALL"))
+    else if (Ident.equals_lower("LOADONCALL"))
       Flags &= ~MfPreload;
-    else if (Ident.equals_insensitive("FIXED"))
+    else if (Ident.equals_lower("FIXED"))
       Flags &= ~(MfMoveable | MfDiscardable);
-    else if (Ident.equals_insensitive("MOVEABLE"))
+    else if (Ident.equals_lower("MOVEABLE"))
       Flags |= MfMoveable;
-    else if (Ident.equals_insensitive("DISCARDABLE"))
+    else if (Ident.equals_lower("DISCARDABLE"))
       Flags |= MfDiscardable | MfMoveable | MfPure;
-    else if (Ident.equals_insensitive("PURE"))
+    else if (Ident.equals_lower("PURE"))
       Flags |= MfPure;
-    else if (Ident.equals_insensitive("IMPURE"))
+    else if (Ident.equals_lower("IMPURE"))
       Flags &= ~(MfPure | MfDiscardable);
-    else if (Ident.equals_insensitive("SHARED"))
+    else if (Ident.equals_lower("SHARED"))
       Flags |= MfPure;
-    else if (Ident.equals_insensitive("NONSHARED"))
+    else if (Ident.equals_lower("NONSHARED"))
       Flags &= ~(MfPure | MfDiscardable);
     else
       return Flags;
@@ -392,23 +392,23 @@ RCParser::parseOptionalStatements(OptStmtType StmtsType) {
 Expected<std::unique_ptr<OptionalStmt>>
 RCParser::parseSingleOptionalStatement(OptStmtType StmtsType) {
   ASSIGN_OR_RETURN(TypeToken, readIdentifier());
-  if (TypeToken->equals_insensitive("CHARACTERISTICS"))
+  if (TypeToken->equals_lower("CHARACTERISTICS"))
     return parseCharacteristicsStmt();
-  if (TypeToken->equals_insensitive("LANGUAGE"))
+  if (TypeToken->equals_lower("LANGUAGE"))
     return parseLanguageStmt();
-  if (TypeToken->equals_insensitive("VERSION"))
+  if (TypeToken->equals_lower("VERSION"))
     return parseVersionStmt();
 
   if (StmtsType != OptStmtType::BasicStmt) {
-    if (TypeToken->equals_insensitive("CAPTION"))
+    if (TypeToken->equals_lower("CAPTION"))
       return parseCaptionStmt();
-    if (TypeToken->equals_insensitive("CLASS"))
+    if (TypeToken->equals_lower("CLASS"))
       return parseClassStmt();
-    if (TypeToken->equals_insensitive("EXSTYLE"))
+    if (TypeToken->equals_lower("EXSTYLE"))
       return parseExStyleStmt();
-    if (TypeToken->equals_insensitive("FONT"))
+    if (TypeToken->equals_lower("FONT"))
       return parseFontStmt(StmtsType);
-    if (TypeToken->equals_insensitive("STYLE"))
+    if (TypeToken->equals_lower("STYLE"))
       return parseStyleStmt();
   }
 
@@ -506,14 +506,15 @@ RCParser::ParseType RCParser::parseUserDefinedResource(IntOrString Type) {
   RETURN_IF_ERROR(consumeType(Kind::BlockBegin));
   std::vector<IntOrString> Data;
 
+  // Consume comma before each consecutive token except the first one.
+  bool ConsumeComma = false;
   while (!consumeOptionalType(Kind::BlockEnd)) {
+    if (ConsumeComma)
+      RETURN_IF_ERROR(consumeType(Kind::Comma));
+    ConsumeComma = true;
+
     ASSIGN_OR_RETURN(Item, readIntOrString());
     Data.push_back(*Item);
-
-    // There can be zero or more commas after each token (but not before
-    // the first one).
-    while (consumeOptionalType(Kind::Comma)) {
-    }
   }
 
   return std::make_unique<UserDefinedResource>(Type, std::move(Data),
@@ -554,7 +555,7 @@ Expected<Control> RCParser::parseControl() {
   RETURN_IF_ERROR(consumeType(Kind::Comma));
 
   IntOrString Class;
-  std::optional<IntWithNotMask> Style;
+  Optional<IntWithNotMask> Style;
   if (ClassUpper == "CONTROL") {
     // CONTROL text, id, class, style, x, y, width, height [, exstyle] [, helpID]
     ASSIGN_OR_RETURN(ClassStr, readString());
@@ -577,12 +578,12 @@ Expected<Control> RCParser::parseControl() {
     }
   }
 
-  std::optional<uint32_t> ExStyle;
+  Optional<uint32_t> ExStyle;
   if (consumeOptionalType(Kind::Comma)) {
     ASSIGN_OR_RETURN(Val, readInt());
     ExStyle = *Val;
   }
-  std::optional<uint32_t> HelpID;
+  Optional<uint32_t> HelpID;
   if (consumeOptionalType(Kind::Comma)) {
     ASSIGN_OR_RETURN(Val, readInt());
     HelpID = *Val;
@@ -634,15 +635,15 @@ Expected<MenuDefinitionList> RCParser::parseMenuItemsList() {
   while (!consumeOptionalType(Kind::BlockEnd)) {
     ASSIGN_OR_RETURN(ItemTypeResult, readIdentifier());
 
-    bool IsMenuItem = ItemTypeResult->equals_insensitive("MENUITEM");
-    bool IsPopup = ItemTypeResult->equals_insensitive("POPUP");
+    bool IsMenuItem = ItemTypeResult->equals_lower("MENUITEM");
+    bool IsPopup = ItemTypeResult->equals_lower("POPUP");
     if (!IsMenuItem && !IsPopup)
       return getExpectedError("MENUITEM, POPUP, END or '}'", true);
 
     if (IsMenuItem && isNextTokenKind(Kind::Identifier)) {
       // Now, expecting SEPARATOR.
       ASSIGN_OR_RETURN(SeparatorResult, readIdentifier());
-      if (SeparatorResult->equals_insensitive("SEPARATOR")) {
+      if (SeparatorResult->equals_lower("SEPARATOR")) {
         List.addDefinition(std::make_unique<MenuSeparator>());
         continue;
       }
@@ -697,14 +698,8 @@ RCParser::ParseType RCParser::parseStringTableResource() {
     // between, however we strictly adhere to the single statement definition.
     ASSIGN_OR_RETURN(IDResult, readInt());
     consumeOptionalType(Kind::Comma);
-
-    std::vector<StringRef> Strings;
     ASSIGN_OR_RETURN(StrResult, readString());
-    Strings.push_back(*StrResult);
-    while (isNextTokenKind(Kind::String))
-      Strings.push_back(read().value());
-
-    Table->addStrings(*IDResult, std::move(Strings));
+    Table->addString(*IDResult, *StrResult);
   }
 
   return std::move(Table);
@@ -730,18 +725,18 @@ Expected<std::unique_ptr<VersionInfoStmt>> RCParser::parseVersionInfoStmt() {
   // Expect either BLOCK or VALUE, then a name or a key (a string).
   ASSIGN_OR_RETURN(TypeResult, readIdentifier());
 
-  if (TypeResult->equals_insensitive("BLOCK")) {
+  if (TypeResult->equals_lower("BLOCK")) {
     ASSIGN_OR_RETURN(NameResult, readString());
     return parseVersionInfoBlockContents(*NameResult);
   }
 
-  if (TypeResult->equals_insensitive("VALUE")) {
+  if (TypeResult->equals_lower("VALUE")) {
     ASSIGN_OR_RETURN(KeyResult, readString());
     // Read a non-empty list of strings and/or ints, each
     // possibly preceded by a comma. Unfortunately, the tool behavior depends
     // on them existing or not, so we need to memorize where we found them.
     std::vector<IntOrString> Values;
-    BitVector PrecedingCommas;
+    std::vector<bool> PrecedingCommas;
     RETURN_IF_ERROR(consumeType(Kind::Comma));
     while (!isNextTokenKind(Kind::Identifier) &&
            !isNextTokenKind(Kind::BlockEnd)) {
@@ -776,10 +771,8 @@ RCParser::parseVersionInfoFixed() {
 
     // VERSION variations take multiple integers.
     size_t NumInts = RetType::isVersionType(FixedType) ? 4 : 1;
-    ASSIGN_OR_RETURN(ArgsResult, readIntsWithCommas(1, NumInts));
+    ASSIGN_OR_RETURN(ArgsResult, readIntsWithCommas(NumInts, NumInts));
     SmallVector<uint32_t, 4> ArgInts(ArgsResult->begin(), ArgsResult->end());
-    while (ArgInts.size() < NumInts)
-      ArgInts.push_back(0);
     Result.setValue(FixedType, ArgInts);
   }
 

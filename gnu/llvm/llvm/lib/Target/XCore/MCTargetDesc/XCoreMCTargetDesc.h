@@ -13,6 +13,12 @@
 #ifndef LLVM_LIB_TARGET_XCORE_MCTARGETDESC_XCOREMCTARGETDESC_H
 #define LLVM_LIB_TARGET_XCORE_MCTARGETDESC_XCOREMCTARGETDESC_H
 
+namespace llvm {
+
+class Target;
+
+} // end namespace llvm
+
 // Defines symbolic names for XCore registers.  This defines a mapping from
 // register name to register number.
 //
@@ -22,7 +28,6 @@
 // Defines symbolic names for the XCore instructions.
 //
 #define GET_INSTRINFO_ENUM
-#define GET_INSTRINFO_MC_HELPER_DECLS
 #include "XCoreGenInstrInfo.inc"
 
 #define GET_SUBTARGETINFO_ENUM

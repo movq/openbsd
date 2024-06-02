@@ -14,24 +14,36 @@
 #define LLVM_ANALYSIS_MEMORYDEPENDENCEANALYSIS_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/PointerEmbeddedInt.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/PointerSumType.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/MemoryLocation.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/PredIteratorCache.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Pass.h"
-#include <optional>
+#include "llvm/Support/ErrorHandling.h"
+#include <cassert>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace llvm {
 
-class AAResults;
 class AssumptionCache;
-class BatchAAResults;
 class DominatorTree;
+class Function;
+class Instruction;
+class LoadInst;
 class PHITransAddr;
+class TargetLibraryInfo;
+class PhiValues;
+class Value;
 
 /// A memory dependence query can return one of three different answers.
 class MemDepResult {
@@ -77,11 +89,6 @@ class MemDepResult {
     ///      calls or memory use intrinsics with identical callees and no
     ///      intervening clobbers.  No validation is done that the operands to
     ///      the calls are the same.
-    ///   4. For loads and stores, this could be a select instruction that
-    ///      defines pointer to this memory location. In this case, users can
-    ///      find non-clobbered Defs for both select values that are reaching
-    //       the desired memory location (there is still a guarantee that there
-    //       are no clobbers between analyzed memory location and select).
     Def,
 
     /// This marker indicates that the query has no known dependency in the
@@ -146,9 +153,6 @@ public:
   /// Tests if this MemDepResult represents a query that is an instruction
   /// definition dependency.
   bool isDef() const { return Value.is<Def>(); }
-
-  /// Tests if this MemDepResult represents a valid local query (Clobber/Def).
-  bool isLocal() const { return isClobber() || isDef(); }
 
   /// Tests if this MemDepResult represents a query that is transparent to the
   /// start of the block, but where a non-local hasn't been done.
@@ -298,7 +302,7 @@ private:
     /// The maximum size of the dereferences of the pointer.
     ///
     /// May be UnknownSize if the sizes are unknown.
-    LocationSize Size = LocationSize::afterPointer();
+    LocationSize Size = LocationSize::unknown();
     /// The AA tags associated with dereferences of the pointer.
     ///
     /// The members may be null if there are no tags or conflicting tags.
@@ -339,7 +343,7 @@ private:
   // A map from instructions to their non-local dependencies.
   using NonLocalDepMapType = DenseMap<Instruction *, PerInstNLInfo>;
 
-  NonLocalDepMapType NonLocalDepsMap;
+  NonLocalDepMapType NonLocalDeps;
 
   // A reverse mapping from dependencies to the dependees.  This is
   // used when removing instructions to keep the cache coherent.
@@ -351,23 +355,20 @@ private:
   ReverseDepMapType ReverseNonLocalDeps;
 
   /// Current AA implementation, just a cache.
-  AAResults &AA;
+  AliasAnalysis &AA;
   AssumptionCache &AC;
   const TargetLibraryInfo &TLI;
   DominatorTree &DT;
+  PhiValues &PV;
   PredIteratorCache PredCache;
 
   unsigned DefaultBlockScanLimit;
 
-  /// Offsets to dependant clobber loads.
-  using ClobberOffsetsMapType = DenseMap<LoadInst *, int32_t>;
-  ClobberOffsetsMapType ClobberOffsets;
-
 public:
-  MemoryDependenceResults(AAResults &AA, AssumptionCache &AC,
+  MemoryDependenceResults(AliasAnalysis &AA, AssumptionCache &AC,
                           const TargetLibraryInfo &TLI, DominatorTree &DT,
-                          unsigned DefaultBlockScanLimit)
-      : AA(AA), AC(AC), TLI(TLI), DT(DT),
+                          PhiValues &PV, unsigned DefaultBlockScanLimit)
+      : AA(AA), AC(AC), TLI(TLI), DT(DT), PV(PV),
         DefaultBlockScanLimit(DefaultBlockScanLimit) {}
 
   /// Handle invalidation in the new PM.
@@ -383,7 +384,8 @@ public:
   ///
   /// See the class comment for more details. It is illegal to call this on
   /// non-memory instructions.
-  MemDepResult getDependency(Instruction *QueryInst);
+  MemDepResult getDependency(Instruction *QueryInst,
+                             OrderedBasicBlock *OBB = nullptr);
 
   /// Perform a full dependency query for the specified call, returning the set
   /// of blocks that the value is potentially live across.
@@ -449,20 +451,14 @@ public:
                                         BasicBlock::iterator ScanIt,
                                         BasicBlock *BB,
                                         Instruction *QueryInst = nullptr,
-                                        unsigned *Limit = nullptr);
-
-  MemDepResult getPointerDependencyFrom(const MemoryLocation &Loc, bool isLoad,
-                                        BasicBlock::iterator ScanIt,
-                                        BasicBlock *BB,
-                                        Instruction *QueryInst,
-                                        unsigned *Limit,
-                                        BatchAAResults &BatchAA);
+                                        unsigned *Limit = nullptr,
+                                        OrderedBasicBlock *OBB = nullptr);
 
   MemDepResult
   getSimplePointerDependencyFrom(const MemoryLocation &MemLoc, bool isLoad,
                                  BasicBlock::iterator ScanIt, BasicBlock *BB,
                                  Instruction *QueryInst, unsigned *Limit,
-                                 BatchAAResults &BatchAA);
+                                 OrderedBasicBlock *OBB);
 
   /// This analysis looks for other loads and stores with invariant.group
   /// metadata and the same pointer operand. Returns Unknown if it does not
@@ -472,16 +468,20 @@ public:
   /// with the same queried instruction.
   MemDepResult getInvariantGroupPointerDependency(LoadInst *LI, BasicBlock *BB);
 
+  /// Looks at a memory location for a load (specified by MemLocBase, Offs, and
+  /// Size) and compares it against a load.
+  ///
+  /// If the specified load could be safely widened to a larger integer load
+  /// that is 1) still efficient, 2) safe for the target, and 3) would provide
+  /// the specified memory location value, then this function returns the size
+  /// in bytes of the load width to use.  If not, this returns zero.
+  static unsigned getLoadLoadClobberFullWidthSize(const Value *MemLocBase,
+                                                  int64_t MemLocOffs,
+                                                  unsigned MemLocSize,
+                                                  const LoadInst *LI);
+
   /// Release memory in caches.
   void releaseMemory();
-
-  /// Return the clobber offset to dependent instruction.
-  std::optional<int32_t> getClobberOffset(LoadInst *DepInst) const {
-    const auto Off = ClobberOffsets.find(DepInst);
-    if (Off != ClobberOffsets.end())
-      return Off->getSecond();
-    return std::nullopt;
-  }
 
 private:
   MemDepResult getCallDependencyFrom(CallBase *Call, bool isReadOnlyCall,
@@ -493,15 +493,13 @@ private:
                                    BasicBlock *BB,
                                    SmallVectorImpl<NonLocalDepResult> &Result,
                                    DenseMap<BasicBlock *, Value *> &Visited,
-                                   bool SkipFirstBlock = false,
-                                   bool IsIncomplete = false);
-  MemDepResult getNonLocalInfoForBlock(Instruction *QueryInst,
+                                   bool SkipFirstBlock = false);
+  MemDepResult GetNonLocalInfoForBlock(Instruction *QueryInst,
                                        const MemoryLocation &Loc, bool isLoad,
                                        BasicBlock *BB, NonLocalDepInfo *Cache,
-                                       unsigned NumSortedEntries,
-                                       BatchAAResults &BatchAA);
+                                       unsigned NumSortedEntries);
 
-  void removeCachedNonLocalPointerDependencies(ValueIsLoadPair P);
+  void RemoveCachedNonLocalPointerDependencies(ValueIsLoadPair P);
 
   void verifyRemoved(Instruction *Inst) const;
 };
@@ -530,7 +528,7 @@ public:
 /// A wrapper analysis pass for the legacy pass manager that exposes a \c
 /// MemoryDepnedenceResults instance.
 class MemoryDependenceWrapperPass : public FunctionPass {
-  std::optional<MemoryDependenceResults> MemDep;
+  Optional<MemoryDependenceResults> MemDep;
 
 public:
   static char ID;

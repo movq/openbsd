@@ -6,7 +6,6 @@ import getopt
 import os, signal, subprocess, sys
 import re
 import stat
-import pathlib
 import platform
 import shutil
 import tempfile
@@ -48,29 +47,18 @@ kDevNull = "/dev/null"
 # This regex captures ARG.  ARG must not contain a right parenthesis, which
 # terminates %dbg.  ARG must not contain quotes, in which ARG might be enclosed
 # during expansion.
-#
-# COMMAND that follows %dbg(ARG) is also captured. COMMAND can be
-# empty as a result of conditinal substitution.
-kPdbgRegex = '%dbg\\(([^)\'"]*)\\)(.*)'
+kPdbgRegex = '%dbg\\(([^)\'"]*)\\)'
 
 class ShellEnvironment(object):
 
     """Mutable shell environment containing things like CWD and env vars.
 
-    Environment variables are not implemented, but cwd tracking is. In addition,
-    we maintain a dir stack for pushd/popd.
+    Environment variables are not implemented, but cwd tracking is.
     """
 
     def __init__(self, cwd, env):
         self.cwd = cwd
         self.env = dict(env)
-        self.dirStack = []
-
-    def change_dir(self, newdir):
-        if os.path.isabs(newdir):
-            self.cwd = newdir
-        else:
-            self.cwd = os.path.realpath(os.path.join(self.cwd, newdir))
 
 class TimeoutHelper(object):
     """
@@ -159,7 +147,7 @@ class ShellCommandResult(object):
         self.exitCode = exitCode
         self.timeoutReached = timeoutReached
         self.outputFiles = list(outputFiles)
-
+               
 def executeShCmd(cmd, shenv, results, timeout=0):
     """
         Wrapper around _executeShCmd that handles
@@ -203,13 +191,7 @@ def quote_windows_command(seq):
 
     We use the same algorithm from MSDN as CPython
     (http://msdn.microsoft.com/en-us/library/17w5ykft.aspx), but we treat more
-    characters as needing quoting, such as double quotes themselves, and square
-    brackets.
-
-    For MSys based tools, this is very brittle though, because quoting an
-    argument makes the MSys based tool unescape backslashes where it shouldn't
-    (e.g. "a\b\\c\\\\d" becomes "a\b\c\\d" where it should stay as it was,
-    according to regular win32 command line parsing rules).
+    characters as needing quoting, such as double quotes themselves.
     """
     result = []
     needquote = False
@@ -221,7 +203,7 @@ def quote_windows_command(seq):
             result.append(' ')
 
         # This logic differs from upstream list2cmdline.
-        needquote = (" " in arg) or ("\t" in arg) or ("\"" in arg) or ("[" in arg) or (";" in arg) or not arg
+        needquote = (" " in arg) or ("\t" in arg) or ("\"" in arg) or not arg
         if needquote:
             result.append('"')
 
@@ -283,28 +265,15 @@ def updateEnv(env, args):
 def executeBuiltinCd(cmd, shenv):
     """executeBuiltinCd - Change the current directory."""
     if len(cmd.args) != 2:
-        raise InternalShellError(cmd, "'cd' supports only one argument")
+        raise InternalShellError("'cd' supports only one argument")
+    newdir = cmd.args[1]
     # Update the cwd in the parent environment.
-    shenv.change_dir(cmd.args[1])
+    if os.path.isabs(newdir):
+        shenv.cwd = newdir
+    else:
+        shenv.cwd = os.path.realpath(os.path.join(shenv.cwd, newdir))
     # The cd builtin always succeeds. If the directory does not exist, the
     # following Popen calls will fail instead.
-    return ShellCommandResult(cmd, "", "", 0, False)
-
-def executeBuiltinPushd(cmd, shenv):
-    """executeBuiltinPushd - Change the current dir and save the old."""
-    if len(cmd.args) != 2:
-        raise InternalShellError(cmd, "'pushd' supports only one argument")
-    shenv.dirStack.append(shenv.cwd)
-    shenv.change_dir(cmd.args[1])
-    return ShellCommandResult(cmd, "", "", 0, False)
-
-def executeBuiltinPopd(cmd, shenv):
-    """executeBuiltinPopd - Restore a previously saved working directory."""
-    if len(cmd.args) != 1:
-        raise InternalShellError(cmd, "'popd' does not support arguments")
-    if not shenv.dirStack:
-        raise InternalShellError(cmd, "popd: directory stack empty")
-    shenv.cwd = shenv.dirStack.pop()
     return ShellCommandResult(cmd, "", "", 0, False)
 
 def executeBuiltinExport(cmd, shenv):
@@ -639,7 +608,6 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
     assert isinstance(cmd, ShUtil.Pipeline)
 
     procs = []
-    proc_not_counts = []
     default_stdin = subprocess.PIPE
     stderrTempFiles = []
     opened_files = []
@@ -650,8 +618,6 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
                        'export': executeBuiltinExport,
                        'echo': executeBuiltinEcho,
                        'mkdir': executeBuiltinMkdir,
-                       'popd': executeBuiltinPopd,
-                       'pushd': executeBuiltinPushd,
                        'rm': executeBuiltinRm,
                        ':': executeBuiltinColon}
     # To avoid deadlock, we use a single stderr stream for piped
@@ -686,12 +652,6 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
                     not_crash = True
                 if not args:
                     raise InternalShellError(j, "Error: 'not' requires a"
-                                                " subcommand")
-            elif args[0] == '!':
-                not_args.append(args.pop(0))
-                not_count += 1
-                if not args:
-                    raise InternalShellError(j, "Error: '!' requires a"
                                                 " subcommand")
             else:
                 break
@@ -739,15 +699,7 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
         # the assumptions that (1) environment variables are not intended to be
         # relevant to 'not' commands and (2) the 'env' command should always
         # blindly pass along the status it receives from any command it calls.
-
-        # For plain negations, either 'not' without '--crash', or the shell
-        # operator '!', leave them out from the command to execute and
-        # invert the result code afterwards.
-        if not_crash:
-            args = not_args + args
-            not_count = 0
-        else:
-            not_args = []
+        args = not_args + args
 
         stdin, stdout, stderr = processRedirects(j, default_stdin, cmd_shenv,
                                                  opened_files)
@@ -810,10 +762,7 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
                                           stdout = stdout,
                                           stderr = stderr,
                                           env = cmd_shenv.env,
-                                          close_fds = kUseCloseFDs,
-                                          universal_newlines = True,
-                                          errors = 'replace'))
-            proc_not_counts.append(not_count)
+                                          close_fds = kUseCloseFDs))
             # Let the helper know about this process
             timeoutHelper.addProcess(procs[-1])
         except OSError as e:
@@ -866,10 +815,6 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
         # Detect Ctrl-C in subprocess.
         if res == -signal.SIGINT:
             raise KeyboardInterrupt
-        if proc_not_counts[i] % 2:
-            res = not res
-        elif proc_not_counts[i] > 1:
-            res = 1 if res != 0 else 0
 
         # Ensure the resulting output is always of string type.
         try:
@@ -899,7 +844,7 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
                         data = None
                     if data is not None:
                         output_files.append((name, path, data))
-
+            
         results.append(ShellCommandResult(
             cmd.commands[i], out, err, res, timeoutHelper.timeoutReached(),
             output_files))
@@ -925,11 +870,7 @@ def _executeShCmd(cmd, shenv, results, timeoutHelper):
 def executeScriptInternal(test, litConfig, tmpBase, commands, cwd):
     cmds = []
     for i, ln in enumerate(commands):
-        match = re.match(kPdbgRegex, ln)
-        if match:
-            command = match.group(2)
-            ln = commands[i] = \
-                match.expand(": '\\1'; \\2" if command else ": '\\1'")
+        ln = commands[i] = re.sub(kPdbgRegex, ": '\\1'; ", ln)
         try:
             cmds.append(ShUtil.ShParser(ln, litConfig.isWindows,
                                         test.config.pipefail).parse())
@@ -976,7 +917,7 @@ def executeScriptInternal(test, litConfig, tmpBase, commands, cwd):
                 else:
                     out += data
                 out += "\n"
-
+                    
         if result.stdout.strip():
             out += '# command output:\n%s\n' % (result.stdout,)
         if result.stderr.strip():
@@ -988,7 +929,7 @@ def executeScriptInternal(test, litConfig, tmpBase, commands, cwd):
         if result.exitCode != 0:
             # On Windows, a negative exit code indicates a signal, and those are
             # easier to recognize or look up if we print them in hex.
-            if litConfig.isWindows and (result.exitCode < 0 or result.exitCode > 255):
+            if litConfig.isWindows and result.exitCode < 0:
                 codeStr = hex(int(result.exitCode & 0xFFFFFFFF)).rstrip("L")
             else:
                 codeStr = str(result.exitCode)
@@ -1017,12 +958,7 @@ def executeScript(test, litConfig, tmpBase, commands, cwd):
     f = open(script, mode, **open_kwargs)
     if isWin32CMDEXE:
         for i, ln in enumerate(commands):
-            match = re.match(kPdbgRegex, ln)
-            if match:
-                command = match.group(2)
-                commands[i] = \
-                    match.expand("echo '\\1' > nul && " if command
-                                 else "echo '\\1' > nul")
+            commands[i] = re.sub(kPdbgRegex, "echo '\\1' > nul && ", ln)
         if litConfig.echo_all_commands:
             f.write('@echo on\n')
         else:
@@ -1030,11 +966,7 @@ def executeScript(test, litConfig, tmpBase, commands, cwd):
         f.write('\n@if %ERRORLEVEL% NEQ 0 EXIT\n'.join(commands))
     else:
         for i, ln in enumerate(commands):
-            match = re.match(kPdbgRegex, ln)
-            if match:
-                command = match.group(2)
-                commands[i] = match.expand(": '\\1'; \\2" if command
-                                           else ": '\\1'")
+            commands[i] = re.sub(kPdbgRegex, ": '\\1'; ", ln)
         if test.config.pipefail:
             f.write(b'set -o pipefail;' if mode == 'wb' else 'set -o pipefail;')
         if litConfig.echo_all_commands:
@@ -1149,7 +1081,9 @@ def getDefaultSubstitutions(test, tmpDir, tmpBase, normalize_slashes=False):
         tmpDir = tmpDir.replace('\\', '/')
         tmpBase = tmpBase.replace('\\', '/')
 
+    # We use #_MARKER_# to hide %% while we do the other substitutions.
     substitutions = []
+    substitutions.extend([('%%', '#_MARKER_#')])
     substitutions.extend(test.config.substitutions)
     tmpName = tmpBase + '.tmp'
     baseName = os.path.basename(tmpBase)
@@ -1159,13 +1093,8 @@ def getDefaultSubstitutions(test, tmpDir, tmpBase, normalize_slashes=False):
                           ('%{pathsep}', os.pathsep),
                           ('%t', tmpName),
                           ('%basename_t', baseName),
-                          ('%T', tmpDir)])
-
-    substitutions.extend([
-        ('%{fs-src-root}', pathlib.Path(sourcedir).anchor),
-        ('%{fs-tmp-root}', pathlib.Path(tmpBase).anchor),
-        ('%{fs-sep}', os.path.sep),
-    ])
+                          ('%T', tmpDir),
+                          ('#_MARKER_#', '%')])
 
     # "%/[STpst]" should be normalized.
     substitutions.extend([
@@ -1174,14 +1103,13 @@ def getDefaultSubstitutions(test, tmpDir, tmpBase, normalize_slashes=False):
             ('%/p', sourcedir.replace('\\', '/')),
             ('%/t', tmpBase.replace('\\', '/') + '.tmp'),
             ('%/T', tmpDir.replace('\\', '/')),
-            ('%/et',tmpName.replace('\\', '\\\\\\\\\\\\\\\\')),
             ])
 
     # "%{/[STpst]:regex_replacement}" should be normalized like "%/[STpst]" but we're
     # also in a regex replacement context of a s@@@ regex.
     def regex_escape(s):
-        s = s.replace('@', r'\@')
-        s = s.replace('&', r'\&')
+        s = s.replace('@', '\@')
+        s = s.replace('&', '\&')
         return s
     substitutions.extend([
             ('%{/s:regex_replacement}',
@@ -1219,315 +1147,12 @@ def _memoize(f):
 def _caching_re_compile(r):
     return re.compile(r)
 
-class ExpandableScriptDirective(object):
-    """
-    Common interface for lit directives for which any lit substitutions must be
-    expanded to produce the shell script.  It includes directives (e.g., 'RUN:')
-    specifying shell commands that might have lit substitutions to be expanded.
-    It also includes lit directives (e.g., 'DEFINE:') that adjust substitutions.
-
-    start_line_number: The directive's starting line number.
-    end_line_number: The directive's ending line number, which is
-        start_line_number if the directive has no line continuations.
-    keyword: The keyword that specifies the directive.  For example, 'RUN:'.
-    """
-
-    def __init__(self, start_line_number, end_line_number, keyword):
-        # Input line number where the directive starts.
-        self.start_line_number = start_line_number
-        # Input line number where the directive ends.
-        self.end_line_number = end_line_number
-        # The keyword used to indicate the directive.
-        self.keyword = keyword
-
-    def add_continuation(self, line_number, keyword, line):
-        """
-        Add a continuation line to this directive and return True, or do nothing
-        and return False if the specified line is not a continuation for this
-        directive (e.g., previous line does not end in '\', or keywords do not
-        match).
-
-        line_number: The line number for the continuation line.
-        keyword: The keyword that specifies the continuation line.  For example,
-            'RUN:'.
-        line: The content of the continuation line after the keyword.
-        """
-        assert False, "expected method to be called on derived class"
-
-    def needs_continuation(self):
-        """
-        Does this directive require a continuation line?
-
-        '\' is documented as indicating a line continuation even if whitespace
-        separates it from the newline.  It looks like a line continuation, and
-        it would be confusing if it didn't behave as one.
-        """
-        assert False, "expected method to be called on derived class"
-
-    def get_location(self):
-        """
-        Get a phrase describing the line or range of lines so far included by
-        this directive and any line continuations.
-        """
-        if self.start_line_number == self.end_line_number:
-            return f'at line {self.start_line_number}'
-        return f'from line {self.start_line_number} to {self.end_line_number}'
-
-class CommandDirective(ExpandableScriptDirective):
-    """
-    A lit directive taking a shell command line.  For example,
-    'RUN: echo hello world'.
-
-    command: The content accumulated so far from the directive and its
-        continuation lines.
-    """
-
-    def __init__(self, start_line_number, end_line_number, keyword, line):
-        super().__init__(start_line_number, end_line_number, keyword)
-        self.command = line.rstrip()
-
-    def add_continuation(self, line_number, keyword, line):
-        if keyword != self.keyword or not self.needs_continuation():
-            return False
-        self.command = self.command[:-1] + line.rstrip()
-        self.end_line_number = line_number
-        return True
-
-    def needs_continuation(self):
-        # Trailing whitespace is stripped immediately when each line is added,
-        # so '\' is never hidden here.
-        return self.command[-1] == '\\'
-
-class SubstDirective(ExpandableScriptDirective):
-    """
-    A lit directive taking a substitution definition or redefinition.  For
-    example, 'DEFINE: %{name} = value'.
-
-    new_subst: True if this directive defines a new substitution.  False if it
-        redefines an existing substitution.
-    body: The unparsed content accumulated so far from the directive and its
-        continuation lines.
-    name: The substitution's name, or None if more continuation lines are still
-        required.
-    value: The substitution's value, or None if more continuation lines are
-        still required.
-    """
-
-    def __init__(self, start_line_number, end_line_number, keyword, new_subst,
-                 line):
-        super().__init__(start_line_number, end_line_number, keyword)
-        self.new_subst = new_subst
-        self.body = line
-        self.name = None
-        self.value = None
-        self._parse_body()
-
-    def add_continuation(self, line_number, keyword, line):
-        if keyword != self.keyword or not self.needs_continuation():
-            return False
-        if not line.strip():
-            raise ValueError("Substitution's continuation is empty")
-        # Append line.  Replace the '\' and any adjacent whitespace with a
-        # single space.
-        self.body = self.body.rstrip()[:-1].rstrip() + ' ' + line.lstrip()
-        self.end_line_number = line_number
-        self._parse_body()
-        return True
-
-    def needs_continuation(self):
-        return self.body.rstrip()[-1:] == '\\'
-
-    def _parse_body(self):
-        """
-        If no more line continuations are required, parse all the directive's
-        accumulated lines in order to identify the substitution's name and full
-        value, and raise an exception if invalid.
-        """
-        if self.needs_continuation():
-            return
-
-        # Extract the left-hand side and value, and discard any whitespace
-        # enclosing each.
-        parts = self.body.split('=', 1)
-        if len(parts) == 1:
-            raise ValueError("Substitution's definition does not contain '='")
-        self.name = parts[0].strip()
-        self.value = parts[1].strip()
-
-        # Check the substitution's name.
-        #
-        # Do not extend this to permit '.' or any sequence that's special in a
-        # python pattern.  We could escape that automatically for
-        # DEFINE/REDEFINE directives in test files.  However, lit configuration
-        # file authors would still have to remember to escape them manually in
-        # substitution names but not in values.  Moreover, the manually chosen
-        # and automatically chosen escape sequences would have to be consistent
-        # (e.g., '\.' vs. '[.]') in order for REDEFINE to successfully redefine
-        # a substitution previously defined by a lit configuration file.  All
-        # this seems too error prone and confusing to be worthwhile.  If you
-        # want your name to express structure, use ':' instead of '.'.
-        #
-        # Actually, '{' and '}' are special if they contain only digits possibly
-        # separated by a comma.  Requiring a leading letter avoids that.
-        if not re.fullmatch(r'%{[_a-zA-Z][-_:0-9a-zA-Z]*}', self.name):
-            raise ValueError(
-                f"Substitution name '{self.name}' is malformed as it must "
-                f"start with '%{{', it must end with '}}', and the rest must "
-                f"start with a letter or underscore and contain only "
-                f"alphanumeric characters, hyphens, underscores, and colons")
-
-    def adjust_substitutions(self, substitutions):
-        """
-        Modify the specified substitution list as specified by this directive.
-        """
-        assert not self.needs_continuation(), \
-               "expected directive continuations to be parsed before applying"
-        value_repl = self.value.replace('\\', '\\\\')
-        existing = [i for i, subst in enumerate(substitutions)
-                    if self.name in subst[0]]
-        existing_res = ''.join("\nExisting pattern: " + substitutions[i][0]
-                               for i in existing)
-        if self.new_subst:
-            if existing:
-                raise ValueError(
-                    f"Substitution whose pattern contains '{self.name}' is "
-                    f"already defined before '{self.keyword}' directive "
-                    f"{self.get_location()}"
-                    f"{existing_res}")
-            substitutions.insert(0, (self.name, value_repl))
-            return
-        if len(existing) > 1:
-            raise ValueError(
-                f"Multiple substitutions whose patterns contain '{self.name}' "
-                f"are defined before '{self.keyword}' directive "
-                f"{self.get_location()}"
-                f"{existing_res}")
-        if not existing:
-            raise ValueError(
-                f"No substitution for '{self.name}' is defined before "
-                f"'{self.keyword}' directive {self.get_location()}")
-        if substitutions[existing[0]][0] != self.name:
-            raise ValueError(
-                f"Existing substitution whose pattern contains '{self.name}' "
-                f"does not have the pattern specified by '{self.keyword}' "
-                f"directive {self.get_location()}\n"
-                f"Expected pattern: {self.name}"
-                f"{existing_res}")
-        substitutions[existing[0]] = (self.name, value_repl)
-
-
-def applySubstitutions(script, substitutions, conditions={},
-                       recursion_limit=None):
-    """
-    Apply substitutions to the script.  Allow full regular expression syntax.
+def applySubstitutions(script, substitutions):
+    """Apply substitutions to the script.  Allow full regular expression syntax.
     Replace each matching occurrence of regular expression pattern a with
-    substitution b in line ln.
-
-    If a substitution expands into another substitution, it is expanded
-    recursively until the line has no more expandable substitutions. If
-    the line can still can be substituted after being substituted
-    `recursion_limit` times, it is an error. If the `recursion_limit` is
-    `None` (the default), no recursive substitution is performed at all.
-    """
-
-    # We use #_MARKER_# to hide %% while we do the other substitutions.
-    def escapePercents(ln):
-        return _caching_re_compile('%%').sub('#_MARKER_#', ln)
-
-    def unescapePercents(ln):
-        return _caching_re_compile('#_MARKER_#').sub('%', ln)
-
-    def substituteIfElse(ln):
-        # early exit to avoid wasting time on lines without
-        # conditional substitutions
-        if ln.find('%if ') == -1:
-            return ln
-
-        def tryParseIfCond(ln):
-            # space is important to not conflict with other (possible)
-            # substitutions
-            if not ln.startswith('%if '):
-                return None, ln
-            ln = ln[4:]
-
-            # stop at '%{'
-            match = _caching_re_compile('%{').search(ln)
-            if not match:
-                raise ValueError("'%{' is missing for %if substitution")
-            cond = ln[:match.start()]
-
-            # eat '%{' as well
-            ln = ln[match.end():]
-            return cond, ln
-
-        def tryParseElse(ln):
-            match = _caching_re_compile('^\s*%else\s*(%{)?').search(ln)
-            if not match:
-                return False, ln
-            if not match.group(1):
-                raise ValueError("'%{' is missing for %else substitution")
-            return True, ln[match.end():]
-
-        def tryParseEnd(ln):
-            if ln.startswith('%}'):
-                return True, ln[2:]
-            return False, ln
-
-        def parseText(ln, isNested):
-            # parse everything until %if, or %} if we're parsing a
-            # nested expression.
-            match = _caching_re_compile(
-                '(.*?)(?:%if|%})' if isNested else '(.*?)(?:%if)').search(ln)
-            if not match:
-                # there is no terminating pattern, so treat the whole
-                # line as text
-                return ln, ''
-            text_end = match.end(1)
-            return ln[:text_end], ln[text_end:]
-
-        def parseRecursive(ln, isNested):
-            result = ''
-            while len(ln):
-                if isNested:
-                    found_end, _ = tryParseEnd(ln)
-                    if found_end:
-                        break
-
-                # %if cond %{ branch_if %} %else %{ branch_else %}
-                cond, ln = tryParseIfCond(ln)
-                if cond:
-                    branch_if, ln = parseRecursive(ln, isNested=True)
-                    found_end, ln = tryParseEnd(ln)
-                    if not found_end:
-                        raise ValueError("'%}' is missing for %if substitution")
-
-                    branch_else = ''
-                    found_else, ln = tryParseElse(ln)
-                    if found_else:
-                        branch_else, ln = parseRecursive(ln, isNested=True)
-                        found_end, ln = tryParseEnd(ln)
-                        if not found_end:
-                            raise ValueError("'%}' is missing for %else substitution")
-
-                    if BooleanExpression.evaluate(cond, conditions):
-                        result += branch_if
-                    else:
-                        result += branch_else
-                    continue
-
-                # The rest is handled as plain text.
-                text, ln = parseText(ln, isNested)
-                result += text
-
-            return result, ln
-
-        result, ln = parseRecursive(ln, isNested=False)
-        assert len(ln) == 0
-        return result
-
+    substitution b in line ln."""
     def processLine(ln):
         # Apply substitutions
-        ln = substituteIfElse(escapePercents(ln))
         for a,b in substitutions:
             if kIsWindows:
                 b = b.replace("\\","\\\\")
@@ -1538,43 +1163,13 @@ def applySubstitutions(script, substitutions, conditions={},
             # short-lived, since the set of substitutions is fairly small, and
             # since thrashing has such bad consequences, not bounding the cache
             # seems reasonable.
-            ln = _caching_re_compile(a).sub(str(b), escapePercents(ln))
+            ln = _caching_re_compile(a).sub(b, ln)
 
         # Strip the trailing newline and any extra whitespace.
         return ln.strip()
-
-    def processLineToFixedPoint(ln):
-        assert isinstance(recursion_limit, int) and recursion_limit >= 0
-        origLine = ln
-        steps = 0
-        processed = processLine(ln)
-        while processed != ln and steps < recursion_limit:
-            ln = processed
-            processed = processLine(ln)
-            steps += 1
-
-        if processed != ln:
-            raise ValueError("Recursive substitution of '%s' did not complete "
-                             "in the provided recursion limit (%s)" % \
-                             (origLine, recursion_limit))
-
-        return processed
-
-    process = processLine if recursion_limit is None else processLineToFixedPoint
-    output = []
-    for directive in script:
-        if isinstance(directive, SubstDirective):
-            directive.adjust_substitutions(substitutions)
-        else:
-            if isinstance(directive, CommandDirective):
-                line = directive.command
-            else:
-                # Can come from preamble_commands.
-                assert isinstance(directive, str)
-                line = directive
-            output.append(unescapePercents(process(line)))
-
-    return output
+    # Note Python 3 map() gives an iterator rather than a list so explicitly
+    # convert to list before returning.
+    return list(map(processLine, script))
 
 
 class ParserKind(object):
@@ -1585,23 +1180,15 @@ class ParserKind(object):
     TAG: A keyword taking no value. Ex 'END.'
     COMMAND: A keyword taking a list of shell commands. Ex 'RUN:'
     LIST: A keyword taking a comma-separated list of values.
-    BOOLEAN_EXPR: A keyword taking a comma-separated list of
+    BOOLEAN_EXPR: A keyword taking a comma-separated list of 
         boolean expressions. Ex 'XFAIL:'
-    INTEGER: A keyword taking a single integer. Ex 'ALLOW_RETRIES:'
     CUSTOM: A keyword with custom parsing semantics.
-    DEFINE: A keyword taking a new lit substitution definition. Ex
-        'DEFINE: %{name}=value'
-    REDEFINE: A keyword taking a lit substitution redefinition. Ex
-        'REDEFINE: %{name}=value'
     """
     TAG = 0
     COMMAND = 1
     LIST = 2
     BOOLEAN_EXPR = 3
-    INTEGER = 4
-    CUSTOM = 5
-    DEFINE = 6
-    REDEFINE = 7
+    CUSTOM = 4
 
     @staticmethod
     def allowedKeywordSuffixes(value):
@@ -1609,10 +1196,7 @@ class ParserKind(object):
                  ParserKind.COMMAND:      [':'],
                  ParserKind.LIST:         [':'],
                  ParserKind.BOOLEAN_EXPR: [':'],
-                 ParserKind.INTEGER:      [':'],
-                 ParserKind.CUSTOM:       [':', '.'],
-                 ParserKind.DEFINE:       [':'],
-                 ParserKind.REDEFINE:     [':']
+                 ParserKind.CUSTOM:       [':', '.']
                } [value]
 
     @staticmethod
@@ -1621,10 +1205,7 @@ class ParserKind(object):
                  ParserKind.COMMAND:      'COMMAND',
                  ParserKind.LIST:         'LIST',
                  ParserKind.BOOLEAN_EXPR: 'BOOLEAN_EXPR',
-                 ParserKind.INTEGER:      'INTEGER',
-                 ParserKind.CUSTOM:       'CUSTOM',
-                 ParserKind.DEFINE:       'DEFINE',
-                 ParserKind.REDEFINE:     'REDEFINE'
+                 ParserKind.CUSTOM:       'CUSTOM'
                } [value]
 
 
@@ -1666,23 +1247,12 @@ class IntegratedTestKeywordParser(object):
             self.parser = self._handleList
         elif kind == ParserKind.BOOLEAN_EXPR:
             self.parser = self._handleBooleanExpr
-        elif kind == ParserKind.INTEGER:
-            self.parser = self._handleSingleInteger
         elif kind == ParserKind.TAG:
             self.parser = self._handleTag
         elif kind == ParserKind.CUSTOM:
             if parser is None:
                 raise ValueError("ParserKind.CUSTOM requires a custom parser")
             self.parser = parser
-        elif kind == ParserKind.DEFINE:
-            self.parser = lambda line_number, line, output: \
-                                 self._handleSubst(line_number, line, output,
-                                                   self.keyword, new_subst=True)
-        elif kind == ParserKind.REDEFINE:
-            self.parser = lambda line_number, line, output: \
-                                 self._handleSubst(line_number, line, output,
-                                                   self.keyword,
-                                                   new_subst=False)
         else:
             raise ValueError("Unknown kind '%s'" % kind)
 
@@ -1703,25 +1273,23 @@ class IntegratedTestKeywordParser(object):
         return (not line.strip() or output)
 
     @staticmethod
-    def _substituteLineNumbers(line_number, line):
+    def _handleCommand(line_number, line, output, keyword):
+        """A helper for parsing COMMAND type keywords"""
+        # Trim trailing whitespace.
+        line = line.rstrip()
+        # Substitute line number expressions
         line = re.sub(r'%\(line\)', str(line_number), line)
+
         def replace_line_number(match):
             if match.group(1) == '+':
                 return str(line_number + int(match.group(2)))
             if match.group(1) == '-':
                 return str(line_number - int(match.group(2)))
-        return re.sub(r'%\(line *([\+-]) *(\d+)\)', replace_line_number, line)
-
-    @classmethod
-    def _handleCommand(cls, line_number, line, output, keyword):
-        """A helper for parsing COMMAND type keywords"""
-        # Substitute line number expressions.
-        line = cls._substituteLineNumbers(line_number, line)
-
-        # Collapse lines with trailing '\\', or add line with line number to
-        # start a new pipeline.
-        if not output or not output[-1].add_continuation(line_number, keyword,
-                                                         line):
+        line = re.sub(r'%\(line *([\+-]) *(\d+)\)', replace_line_number, line)
+        # Collapse lines with trailing '\\'.
+        if output and output[-1][-1] == '\\':
+            output[-1] = output[-1][:-1] + line
+        else:
             if output is None:
                 output = []
             pdbg = "%dbg({keyword} at line {line_number})".format(
@@ -1732,8 +1300,7 @@ class IntegratedTestKeywordParser(object):
             line = "{pdbg} {real_command}".format(
                 pdbg=pdbg,
                 real_command=line)
-            output.append(CommandDirective(line_number, line_number, keyword,
-                                           line))
+            output.append(line)
         return output
 
     @staticmethod
@@ -1742,18 +1309,6 @@ class IntegratedTestKeywordParser(object):
         if output is None:
             output = []
         output.extend([s.strip() for s in line.split(',')])
-        return output
-
-    @staticmethod
-    def _handleSingleInteger(line_number, line, output):
-        """A parser for INTEGER type keywords"""
-        if output is None:
-            output = []
-        try:
-            n = int(line)
-        except ValueError:
-            raise ValueError("INTEGER parser requires the input to be an integer (got {})".format(line))
-        output.append(n)
         return output
 
     @staticmethod
@@ -1773,58 +1328,47 @@ class IntegratedTestKeywordParser(object):
                 BooleanExpression.evaluate(s, [])
         return output
 
-    @classmethod
-    def _handleSubst(cls, line_number, line, output, keyword, new_subst):
-        """A parser for DEFINE and REDEFINE type keywords"""
-        line = cls._substituteLineNumbers(line_number, line)
-        if output and output[-1].add_continuation(line_number, keyword, line):
-            return output
-        if output is None:
-            output = []
-        output.append(SubstDirective(line_number, line_number, keyword,
-                                     new_subst, line))
-        return output
+def parseIntegratedTestScript(test, additional_parsers=[],
+                              require_script=True):
+    """parseIntegratedTestScript - Scan an LLVM/Clang style integrated test
+    script and extract the lines to 'RUN' as well as 'XFAIL' and 'REQUIRES'
+    and 'UNSUPPORTED' information.
 
+    If additional parsers are specified then the test is also scanned for the
+    keywords they specify and all matches are passed to the custom parser.
 
-def _parseKeywords(sourcepath, additional_parsers=[],
-                   require_script=True):
-    """_parseKeywords
-
-    Scan an LLVM/Clang style integrated test script and extract all the lines
-    pertaining to a special parser. This includes 'RUN', 'XFAIL', 'REQUIRES',
-    'UNSUPPORTED', 'ALLOW_RETRIES', 'END', 'DEFINE', 'REDEFINE', as well as
-    other specified custom parsers.
-
-    Returns a dictionary mapping each custom parser to its value after
-    parsing the test.
+    If 'require_script' is False an empty script
+    may be returned. This can be used for test formats where the actual script
+    is optional or ignored.
     """
+
     # Install the built-in keyword parsers.
     script = []
     builtin_parsers = [
-        IntegratedTestKeywordParser('RUN:', ParserKind.COMMAND, initial_value=script),
-        IntegratedTestKeywordParser('XFAIL:', ParserKind.BOOLEAN_EXPR),
-        IntegratedTestKeywordParser('REQUIRES:', ParserKind.BOOLEAN_EXPR),
-        IntegratedTestKeywordParser('UNSUPPORTED:', ParserKind.BOOLEAN_EXPR),
-        IntegratedTestKeywordParser('ALLOW_RETRIES:', ParserKind.INTEGER),
-        IntegratedTestKeywordParser('END.', ParserKind.TAG),
-        IntegratedTestKeywordParser('DEFINE:', ParserKind.DEFINE,
+        IntegratedTestKeywordParser('RUN:', ParserKind.COMMAND,
                                     initial_value=script),
-        IntegratedTestKeywordParser('REDEFINE:', ParserKind.REDEFINE,
-                                    initial_value=script)
+        IntegratedTestKeywordParser('XFAIL:', ParserKind.BOOLEAN_EXPR,
+                                    initial_value=test.xfails),
+        IntegratedTestKeywordParser('REQUIRES:', ParserKind.BOOLEAN_EXPR,
+                                    initial_value=test.requires),
+        IntegratedTestKeywordParser('UNSUPPORTED:', ParserKind.BOOLEAN_EXPR,
+                                    initial_value=test.unsupported),
+        IntegratedTestKeywordParser('END.', ParserKind.TAG)
     ]
     keyword_parsers = {p.keyword: p for p in builtin_parsers}
-
+    
     # Install user-defined additional parsers.
     for parser in additional_parsers:
         if not isinstance(parser, IntegratedTestKeywordParser):
-            raise ValueError('Additional parser must be an instance of '
+            raise ValueError('additional parser must be an instance of '
                              'IntegratedTestKeywordParser')
         if parser.keyword in keyword_parsers:
             raise ValueError("Parser for keyword '%s' already exists"
                              % parser.keyword)
         keyword_parsers[parser.keyword] = parser
-
+        
     # Collect the test lines from the script.
+    sourcepath = test.getSourcePath()
     for line_number, command_type, ln in \
             parseIntegratedTestScriptCommands(sourcepath,
                                               keyword_parsers.keys()):
@@ -1834,21 +1378,13 @@ def _parseKeywords(sourcepath, additional_parsers=[],
             break
 
     # Verify the script contains a run line.
-    if require_script and not any(isinstance(directive, CommandDirective)
-                                  for directive in script):
-        raise ValueError("Test has no 'RUN:' line")
+    if require_script and not script:
+        return lit.Test.Result(Test.UNRESOLVED, "Test has no run line!")
 
-    # Check for unterminated run or subst lines.
-    #
-    # If, after a line continuation for one kind of directive (e.g., 'RUN:',
-    # 'DEFINE:', 'REDEFINE:') in script, the next directive in script is a
-    # different kind, then the '\\' remains on the former, and we report it
-    # here.
-    for directive in script:
-        if directive.needs_continuation():
-            raise ValueError(f"Test has unterminated '{directive.keyword}' "
-                             f"directive (with '\\') "
-                             f"{directive.get_location()}")
+    # Check for unterminated run lines.
+    if script and script[-1][-1] == '\\':
+        return lit.Test.Result(Test.UNRESOLVED,
+                               "Test has unterminated run lines (with '\\')")
 
     # Check boolean expressions for unterminated lines.
     for key in keyword_parsers:
@@ -1857,44 +1393,7 @@ def _parseKeywords(sourcepath, additional_parsers=[],
             continue
         value = kp.getValue()
         if value and value[-1][-1] == '\\':
-            raise ValueError("Test has unterminated '{key}' lines (with '\\')"
-                             .format(key=key))
-
-    # Make sure there's at most one ALLOW_RETRIES: line
-    allowed_retries = keyword_parsers['ALLOW_RETRIES:'].getValue()
-    if allowed_retries and len(allowed_retries) > 1:
-        raise ValueError("Test has more than one ALLOW_RETRIES lines")
-
-    return {p.keyword: p.getValue() for p in keyword_parsers.values()}
-
-
-def parseIntegratedTestScript(test, additional_parsers=[],
-                              require_script=True):
-    """parseIntegratedTestScript - Scan an LLVM/Clang style integrated test
-    script and extract the lines to 'RUN' as well as 'XFAIL', 'REQUIRES',
-    'UNSUPPORTED' and 'ALLOW_RETRIES' information into the given test.
-
-    If additional parsers are specified then the test is also scanned for the
-    keywords they specify and all matches are passed to the custom parser.
-
-    If 'require_script' is False an empty script
-    may be returned. This can be used for test formats where the actual script
-    is optional or ignored.
-    """
-    # Parse the test sources and extract test properties
-    try:
-        parsed = _parseKeywords(test.getSourcePath(), additional_parsers,
-                                require_script)
-    except ValueError as e:
-        return lit.Test.Result(Test.UNRESOLVED, str(e))
-    script = parsed['RUN:'] or []
-    assert parsed['DEFINE:'] == script
-    assert parsed['REDEFINE:'] == script
-    test.xfails += parsed['XFAIL:'] or []
-    test.requires += parsed['REQUIRES:'] or []
-    test.unsupported += parsed['UNSUPPORTED:'] or []
-    if parsed['ALLOW_RETRIES:']:
-        test.allowed_retries = parsed['ALLOW_RETRIES:'][0]
+            raise ValueError("Test has unterminated %s lines (with '\\')" % key)
 
     # Enforce REQUIRES:
     missing_required_features = test.getMissingRequiredFeatures()
@@ -1924,43 +1423,25 @@ def parseIntegratedTestScript(test, additional_parsers=[],
 
 
 def _runShTest(test, litConfig, useExternalSh, script, tmpBase):
-    def runOnce(execdir):
-        if useExternalSh:
-            res = executeScript(test, litConfig, tmpBase, script, execdir)
-        else:
-            res = executeScriptInternal(test, litConfig, tmpBase, script, execdir)
-        if isinstance(res, lit.Test.Result):
-            return res
-
-        out,err,exitCode,timeoutInfo = res
-        if exitCode == 0:
-            status = Test.PASS
-        else:
-            if timeoutInfo is None:
-                status = Test.FAIL
-            else:
-                status = Test.TIMEOUT
-        return out,err,exitCode,timeoutInfo,status
-
     # Create the output directory if it does not already exist.
     lit.util.mkdir_p(os.path.dirname(tmpBase))
 
-    # Re-run failed tests up to test.allowed_retries times.
     execdir = os.path.dirname(test.getExecPath())
-    attempts = test.allowed_retries + 1
-    for i in range(attempts):
-        res = runOnce(execdir)
-        if isinstance(res, lit.Test.Result):
-            return res
+    if useExternalSh:
+        res = executeScript(test, litConfig, tmpBase, script, execdir)
+    else:
+        res = executeScriptInternal(test, litConfig, tmpBase, script, execdir)
+    if isinstance(res, lit.Test.Result):
+        return res
 
-        out,err,exitCode,timeoutInfo,status = res
-        if status != Test.FAIL:
-            break
-
-    # If we had to run the test more than once, count it as a flaky pass. These
-    # will be printed separately in the test summary.
-    if i > 0 and status == Test.PASS:
-        status = Test.FLAKYPASS
+    out,err,exitCode,timeoutInfo = res
+    if exitCode == 0:
+        status = Test.PASS
+    else:
+        if timeoutInfo is None:
+            status = Test.FAIL
+        else:
+            status = Test.TIMEOUT
 
     # Form the output log.
     output = """Script:\n--\n%s\n--\nExit Code: %d\n""" % (
@@ -1980,17 +1461,13 @@ def _runShTest(test, litConfig, useExternalSh, script, tmpBase):
 
 
 def executeShTest(test, litConfig, useExternalSh,
-                  extra_substitutions=[],
-                  preamble_commands=[]):
+                  extra_substitutions=[]):
     if test.config.unsupported:
         return lit.Test.Result(Test.UNSUPPORTED, 'Test is unsupported')
 
-    script = list(preamble_commands)
-    parsed = parseIntegratedTestScript(test, require_script=not script)
-    if isinstance(parsed, lit.Test.Result):
-        return parsed
-    script += parsed
-
+    script = parseIntegratedTestScript(test)
+    if isinstance(script, lit.Test.Result):
+        return script
     if litConfig.noExecute:
         return lit.Test.Result(Test.PASS)
 
@@ -1998,8 +1475,18 @@ def executeShTest(test, litConfig, useExternalSh,
     substitutions = list(extra_substitutions)
     substitutions += getDefaultSubstitutions(test, tmpDir, tmpBase,
                                              normalize_slashes=useExternalSh)
-    conditions = { feature: True for feature in test.config.available_features }
-    script = applySubstitutions(script, substitutions, conditions,
-                                recursion_limit=test.config.recursiveExpansionLimit)
+    script = applySubstitutions(script, substitutions)
 
-    return _runShTest(test, litConfig, useExternalSh, script, tmpBase)
+    # Re-run failed tests up to test_retry_attempts times.
+    attempts = 1
+    if hasattr(test.config, 'test_retry_attempts'):
+        attempts += test.config.test_retry_attempts
+    for i in range(attempts):
+        res = _runShTest(test, litConfig, useExternalSh, script, tmpBase)
+        if res.code != Test.FAIL:
+            break
+    # If we had to run the test more than once, count it as a flaky pass. These
+    # will be printed separately in the test summary.
+    if i > 0 and res.code == Test.PASS:
+        res.code = Test.FLAKYPASS
+    return res

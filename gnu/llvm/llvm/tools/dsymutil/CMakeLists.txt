@@ -3,13 +3,13 @@ tablegen(LLVM Options.inc -gen-opt-parser-defs)
 add_public_tablegen_target(DsymutilTableGen)
 
 set(LLVM_LINK_COMPONENTS
+  AllTargetsAsmPrinters
   AllTargetsCodeGens
   AllTargetsDescs
   AllTargetsInfos
   AsmPrinter
   DebugInfoDWARF
   DWARFLinker
-  DWARFLinkerParallel
   MC
   Object
   CodeGen
@@ -17,7 +17,6 @@ set(LLVM_LINK_COMPONENTS
   Remarks
   Support
   Target
-  TargetParser
   )
 
 add_llvm_tool(dsymutil
@@ -26,19 +25,16 @@ add_llvm_tool(dsymutil
   CFBundle.cpp
   DebugMap.cpp
   DwarfLinkerForBinary.cpp
+  DwarfStreamer.cpp
   MachODebugMapParser.cpp
   MachOUtils.cpp
-  Reproducer.cpp
   SymbolMap.cpp
 
   DEPENDS
   intrinsics_gen
   ${tablegen_deps}
-  DsymutilTableGen
   )
 
 if(APPLE)
   target_link_libraries(dsymutil PRIVATE "-framework CoreFoundation")
 endif(APPLE)
-
-target_link_libraries(dsymutil PRIVATE ${LLVM_ATOMIC_LIB})

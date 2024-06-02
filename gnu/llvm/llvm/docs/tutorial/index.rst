@@ -14,12 +14,15 @@ Kaleidoscope: Implementing a Language with LLVM
   This is the "Kaleidoscope" Language tutorial, showing how to implement a simple
   language using LLVM components in C++.
 
+Kaleidoscope: Implementing a Language with LLVM in Objective Caml
+=================================================================
+
 .. toctree::
    :titlesonly:
    :glob:
    :numbered:
 
-   MyFirstLanguageFrontend/LangImpl*
+   OCamlLangImpl*
 
 Building a JIT in LLVM
 ===============================================
@@ -34,7 +37,7 @@ Building a JIT in LLVM
 External Tutorials
 ==================
 
-`Tutorial: Creating an LLVM Backend for the Cpu0 Architecture <http://jonathan2251.github.io/lbd/>`_
+`Tutorial: Creating an LLVM Backend for the Cpu0 Architecture <http://jonathan2251.github.com/lbd/>`_
    A step-by-step tutorial for developing an LLVM backend. Under
    active development at `<https://github.com/Jonathan2251/lbd>`_ (please
    contribute!).
@@ -48,5 +51,5 @@ External Tutorials
 Advanced Topics
 ===============
 
-#. `Writing an Optimization for LLVM <https://llvm.org/pubs/2004-09-22-LCPCLLVMTutorial.html>`_
+#. `Writing an Optimization for LLVM <http://llvm.org/pubs/2004-09-22-LCPCLLVMTutorial.html>`_
 

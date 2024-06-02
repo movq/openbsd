@@ -38,7 +38,7 @@ public:
 
   BitVector getReservedRegs(const MachineFunction &MF) const override;
 
-  bool eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
+  void eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
         unsigned FIOperandNum, RegScavenger *RS = nullptr) const override;
 
   /// Returns true since we may need scavenging for a temporary register
@@ -56,14 +56,19 @@ public:
   /// Returns true if the frame pointer is valid.
   bool useFPForScavengingIndex(const MachineFunction &MF) const override;
 
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override {
+    return true;
+  }
+
   bool shouldCoalesce(MachineInstr *MI, const TargetRegisterClass *SrcRC,
         unsigned SubReg, const TargetRegisterClass *DstRC, unsigned DstSubReg,
         const TargetRegisterClass *NewRC, LiveIntervals &LIS) const override;
 
   // Debug information queries.
+  unsigned getRARegister() const;
   Register getFrameRegister(const MachineFunction &MF) const override;
-  Register getFrameRegister() const;
-  Register getStackRegister() const;
+  unsigned getFrameRegister() const;
+  unsigned getStackRegister() const;
 
   unsigned getHexagonSubRegIndex(const TargetRegisterClass &RC,
         unsigned GenIdx) const;
@@ -71,13 +76,13 @@ public:
   const MCPhysReg *getCallerSavedRegs(const MachineFunction *MF,
         const TargetRegisterClass *RC) const;
 
-  Register getFirstCallerSavedNonParamReg() const;
+  unsigned getFirstCallerSavedNonParamReg() const;
 
   const TargetRegisterClass *
   getPointerRegClass(const MachineFunction &MF,
                      unsigned Kind = 0) const override;
 
-  bool isEHReturnCalleeSaveReg(Register Reg) const;
+  bool isEHReturnCalleeSaveReg(unsigned Reg) const;
 };
 
 } // end namespace llvm

@@ -98,7 +98,7 @@ LLVM Optimization Passes
 
    Due to the transition to the new PassManager infrastructure this tutorial
    is based on ``llvm::legacy::FunctionPassManager`` which can be found in
-   `LegacyPassManager.h <https://llvm.org/doxygen/classllvm_1_1legacy_1_1FunctionPassManager.html>`_.
+   `LegacyPassManager.h <http://llvm.org/doxygen/classllvm_1_1legacy_1_1FunctionPassManager.html>`_.
    For the purpose of the this tutorial the above should be used until
    the pass manager transition is complete.
 
@@ -142,7 +142,7 @@ for us:
       TheModule = std::make_unique<Module>("my cool jit", TheContext);
 
       // Create a new pass manager attached to it.
-      TheFPM = std::make_unique<legacy::FunctionPassManager>(TheModule.get());
+      TheFPM = std::make_unique<FunctionPassManager>(TheModule.get());
 
       // Do simple "peephole" optimizations and bit-twiddling optzns.
       TheFPM->add(createInstructionCombiningPass());
@@ -275,7 +275,7 @@ We also need to setup the data layout for the JIT:
       TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
 
       // Create a new pass manager attached to it.
-      TheFPM = std::make_unique<legacy::FunctionPassManager>(TheModule.get());
+      TheFPM = std::make_unique<FunctionPassManager>(TheModule.get());
       ...
 
 The KaleidoscopeJIT class is a simple JIT built specifically for these
@@ -522,11 +522,6 @@ In HandleDefinition, we add two lines to transfer the newly defined function to
 the JIT and open a new module. In HandleExtern, we just need to add one line to
 add the prototype to FunctionProtos.
 
-.. warning::
-    Duplication of symbols in separate modules is not allowed since LLVM-9. That means you can not redefine function in your Kaleidoscope as its shown below. Just skip this part.
-
-    The reason is that the newer OrcV2 JIT APIs are trying to stay very close to the static and dynamic linker rules, including rejecting duplicate symbols. Requiring symbol names to be unique allows us to support concurrent compilation for symbols using the (unique) symbol names as keys for tracking.
-
 With these changes made, let's try our REPL again (I removed the dump of the
 anonymous functions this time, you should get the idea by now :) :
 
@@ -647,7 +642,7 @@ the LLVM JIT and optimizer. To build this example, use:
 .. code-block:: bash
 
     # Compile
-    clang++ -g toy.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native` -O3 -o toy
+    clang++ -g toy.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core mcjit native` -O3 -o toy
     # Run
     ./toy
 

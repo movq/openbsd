@@ -36,7 +36,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/config.h"
 #include "llvm/Demangle/Demangle.h"
-#include "llvm/Support/ExitCodes.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Format.h"
@@ -47,8 +46,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <string>
+#include <sysexits.h>
 #ifdef HAVE_BACKTRACE
-#include BACKTRACE_HEADER // For backtrace().
+# include BACKTRACE_HEADER         // For backtrace().
 #endif
 #if HAVE_SIGNAL_H
 #include <signal.h>
@@ -79,8 +79,8 @@
 
 using namespace llvm;
 
-static void SignalHandler(int Sig);     // defined below.
-static void InfoSignalHandler(int Sig); // defined below.
+static RETSIGTYPE SignalHandler(int Sig);  // defined below.
+static RETSIGTYPE InfoSignalHandler(int Sig);  // defined below.
 
 using SignalHandlerFunctionType = void (*)();
 /// The function to call if ctrl-c is pressed.
@@ -208,45 +208,40 @@ static StringRef Argv0;
 /// Signals that represent requested termination. There's no bug or failure, or
 /// if there is, it's not our direct responsibility. For whatever reason, our
 /// continued execution is no longer desirable.
-static const int IntSigs[] = {SIGHUP, SIGINT, SIGTERM, SIGUSR2};
+static const int IntSigs[] = {
+  SIGHUP, SIGINT, SIGTERM, SIGUSR2
+};
 
 /// Signals that represent that we have a bug, and our prompt termination has
 /// been ordered.
-static const int KillSigs[] = {SIGILL,
-                               SIGTRAP,
-                               SIGABRT,
-                               SIGFPE,
-                               SIGBUS,
-                               SIGSEGV,
-                               SIGQUIT
+static const int KillSigs[] = {
+  SIGILL, SIGTRAP, SIGABRT, SIGFPE, SIGBUS, SIGSEGV, SIGQUIT
 #ifdef SIGSYS
-                               ,
-                               SIGSYS
+  , SIGSYS
 #endif
 #ifdef SIGXCPU
-                               ,
-                               SIGXCPU
+  , SIGXCPU
 #endif
 #ifdef SIGXFSZ
-                               ,
-                               SIGXFSZ
+  , SIGXFSZ
 #endif
 #ifdef SIGEMT
-                               ,
-                               SIGEMT
+  , SIGEMT
 #endif
 };
 
 /// Signals that represent requests for status.
-static const int InfoSigs[] = {SIGUSR1
+static const int InfoSigs[] = {
+  SIGUSR1
 #ifdef SIGINFO
-                               ,
-                               SIGINFO
+  , SIGINFO
 #endif
 };
 
-static const size_t NumSigs = std::size(IntSigs) + std::size(KillSigs) +
-                              std::size(InfoSigs) + 1 /* SIGPIPE */;
+static const size_t NumSigs =
+    array_lengthof(IntSigs) + array_lengthof(KillSigs) +
+    array_lengthof(InfoSigs) + 1 /* SIGPIPE */;
+
 
 static std::atomic<unsigned> NumRegisteredSignals = ATOMIC_VAR_INIT(0);
 static struct {
@@ -260,7 +255,7 @@ static struct {
 // stack if we remove our signal handlers; that can't be done reliably if
 // someone else is also trying to do the same thing.
 static stack_t OldAltStack;
-LLVM_ATTRIBUTE_USED static void *NewAltStackPointer;
+static void* NewAltStackPointer;
 
 static void CreateSigAltStack() {
   const size_t AltStackSize = MINSIGSTKSZ + 64 * 1024;
@@ -303,7 +298,7 @@ static void RegisterHandlers() { // Not signal-safe.
   enum class SignalKind { IsKill, IsInfo };
   auto registerHandler = [&](int Signal, SignalKind Kind) {
     unsigned Index = NumRegisteredSignals.load();
-    assert(Index < std::size(RegisteredSignalInfo) &&
+    assert(Index < array_lengthof(RegisteredSignalInfo) &&
            "Out of space for signal handlers!");
 
     struct sigaction NewHandler;
@@ -336,11 +331,11 @@ static void RegisterHandlers() { // Not signal-safe.
     registerHandler(S, SignalKind::IsInfo);
 }
 
-void sys::unregisterHandlers() {
+static void UnregisterHandlers() {
   // Restore all of the signal handlers to how they were before we showed up.
   for (unsigned i = 0, e = NumRegisteredSignals.load(); i != e; ++i) {
-    sigaction(RegisteredSignalInfo[i].SigNo, &RegisteredSignalInfo[i].SA,
-              nullptr);
+    sigaction(RegisteredSignalInfo[i].SigNo,
+              &RegisteredSignalInfo[i].SA, nullptr);
     --NumRegisteredSignals;
   }
 }
@@ -367,12 +362,12 @@ void sys::CleanupOnSignal(uintptr_t Context) {
 }
 
 // The signal handler that runs.
-static void SignalHandler(int Sig) {
+static RETSIGTYPE SignalHandler(int Sig) {
   // Restore the signal behavior to default, so that the program actually
   // crashes when we return and the signal reissues.  This also ensures that if
   // we crash in our signal handler that the program will terminate immediately
   // instead of recursing in the signal handler.
-  sys::unregisterHandlers();
+  UnregisterHandlers();
 
   // Unmask all potentially blocked kill signals.
   sigset_t SigMask;
@@ -387,15 +382,14 @@ static void SignalHandler(int Sig) {
               OneShotPipeSignalFunction.exchange(nullptr))
         return OldOneShotPipeFunction();
 
-    bool IsIntSig = llvm::is_contained(IntSigs, Sig);
-    if (IsIntSig)
+    if (std::find(std::begin(IntSigs), std::end(IntSigs), Sig)
+        != std::end(IntSigs)) {
       if (auto OldInterruptFunction = InterruptFunction.exchange(nullptr))
         return OldInterruptFunction();
 
-    if (Sig == SIGPIPE || IsIntSig) {
-      raise(Sig); // Execute the default handler.
+      raise(Sig);   // Execute the default handler.
       return;
-    }
+   }
   }
 
   // Otherwise if it is a fault (like SEGV) run any handler.
@@ -411,13 +405,15 @@ static void SignalHandler(int Sig) {
 #endif
 }
 
-static void InfoSignalHandler(int Sig) {
-  SaveAndRestore SaveErrnoDuringASignalHandler(errno);
+static RETSIGTYPE InfoSignalHandler(int Sig) {
+  SaveAndRestore<int> SaveErrnoDuringASignalHandler(errno);
   if (SignalHandlerFunctionType CurrentInfoFunction = InfoSignalFunction)
     CurrentInfoFunction();
 }
 
-void llvm::sys::RunInterruptHandlers() { RemoveFilesToRemove(); }
+void llvm::sys::RunInterruptHandlers() {
+  RemoveFilesToRemove();
+}
 
 void llvm::sys::SetInterruptFunction(void (*IF)()) {
   InterruptFunction.exchange(IF);
@@ -440,7 +436,8 @@ void llvm::sys::DefaultOneShotPipeSignalHandler() {
 }
 
 // The public API
-bool llvm::sys::RemoveFileOnSignal(StringRef Filename, std::string *ErrMsg) {
+bool llvm::sys::RemoveFileOnSignal(StringRef Filename,
+                                   std::string* ErrMsg) {
   // Ensure that cleanup will occur as soon as one file is added.
   static ManagedStatic<FilesToRemoveCleanup> FilesToRemoveCleanup;
   *FilesToRemoveCleanup;
@@ -463,7 +460,7 @@ void llvm::sys::AddSignalHandler(sys::SignalHandlerCallback FnPtr,
   RegisterHandlers();
 }
 
-#if defined(HAVE_BACKTRACE) && ENABLE_BACKTRACES && HAVE_LINK_H &&             \
+#if defined(HAVE_BACKTRACE) && ENABLE_BACKTRACES && HAVE_LINK_H &&    \
     (defined(__linux__) || defined(__FreeBSD__) ||                             \
      defined(__FreeBSD_kernel__) || defined(__NetBSD__))
 struct DlIteratePhdrData {
@@ -476,7 +473,7 @@ struct DlIteratePhdrData {
 };
 
 static int dl_iterate_phdr_cb(dl_phdr_info *info, size_t size, void *arg) {
-  DlIteratePhdrData *data = (DlIteratePhdrData *)arg;
+  DlIteratePhdrData *data = (DlIteratePhdrData*)arg;
   const char *name = data->first ? data->main_exec_name : info->dlpi_name;
   data->first = false;
   for (int i = 0; i < info->dlpi_phnum; i++) {
@@ -557,47 +554,38 @@ static int unwindBacktrace(void **StackTrace, int MaxEntries) {
 //
 // On glibc systems we have the 'backtrace' function, which works nicely, but
 // doesn't demangle symbols.
-void llvm::sys::PrintStackTrace(raw_ostream &OS, int Depth) {
+void llvm::sys::PrintStackTrace(raw_ostream &OS) {
 #if ENABLE_BACKTRACES
   static void *StackTrace[256];
   int depth = 0;
 #if defined(HAVE_BACKTRACE)
   // Use backtrace() to output a backtrace on Linux systems with glibc.
   if (!depth)
-    depth = backtrace(StackTrace, static_cast<int>(std::size(StackTrace)));
+    depth = backtrace(StackTrace, static_cast<int>(array_lengthof(StackTrace)));
 #endif
 #if defined(HAVE__UNWIND_BACKTRACE)
   // Try _Unwind_Backtrace() if backtrace() failed.
   if (!depth)
-    depth =
-        unwindBacktrace(StackTrace, static_cast<int>(std::size(StackTrace)));
+    depth = unwindBacktrace(StackTrace,
+                        static_cast<int>(array_lengthof(StackTrace)));
 #endif
   if (!depth)
     return;
-  // If "Depth" is not provided by the caller, use the return value of
-  // backtrace() for printing a symbolized stack trace.
-  if (!Depth)
-    Depth = depth;
-  if (printSymbolizedStackTrace(Argv0, StackTrace, Depth, OS))
+
+  if (printSymbolizedStackTrace(Argv0, StackTrace, depth, OS))
     return;
-  OS << "Stack dump without symbol names (ensure you have llvm-symbolizer in "
-        "your PATH or set the environment var `LLVM_SYMBOLIZER_PATH` to point "
-        "to it):\n";
 #if HAVE_DLFCN_H && HAVE_DLADDR
   int width = 0;
   for (int i = 0; i < depth; ++i) {
     Dl_info dlinfo;
     dladdr(StackTrace[i], &dlinfo);
-    const char *name = strrchr(dlinfo.dli_fname, '/');
+    const char* name = strrchr(dlinfo.dli_fname, '/');
 
     int nwidth;
-    if (!name)
-      nwidth = strlen(dlinfo.dli_fname);
-    else
-      nwidth = strlen(name) - 1;
+    if (!name) nwidth = strlen(dlinfo.dli_fname);
+    else       nwidth = strlen(name) - 1;
 
-    if (nwidth > width)
-      width = nwidth;
+    if (nwidth > width) width = nwidth;
   }
 
   for (int i = 0; i < depth; ++i) {
@@ -606,32 +594,28 @@ void llvm::sys::PrintStackTrace(raw_ostream &OS, int Depth) {
 
     OS << format("%-2d", i);
 
-    const char *name = strrchr(dlinfo.dli_fname, '/');
-    if (!name)
-      OS << format(" %-*s", width, dlinfo.dli_fname);
-    else
-      OS << format(" %-*s", width, name + 1);
+    const char* name = strrchr(dlinfo.dli_fname, '/');
+    if (!name) OS << format(" %-*s", width, dlinfo.dli_fname);
+    else       OS << format(" %-*s", width, name+1);
 
-    OS << format(" %#0*lx", (int)(sizeof(void *) * 2) + 2,
+    OS << format(" %#0*lx", (int)(sizeof(void*) * 2) + 2,
                  (unsigned long)StackTrace[i]);
 
     if (dlinfo.dli_sname != nullptr) {
       OS << ' ';
       int res;
-      char *d = itaniumDemangle(dlinfo.dli_sname, nullptr, nullptr, &res);
-      if (!d)
-        OS << dlinfo.dli_sname;
-      else
-        OS << d;
+      char* d = itaniumDemangle(dlinfo.dli_sname, nullptr, nullptr, &res);
+      if (!d) OS << dlinfo.dli_sname;
+      else    OS << d;
       free(d);
 
-      OS << format(" + %tu", (static_cast<const char *>(StackTrace[i]) -
-                              static_cast<const char *>(dlinfo.dli_saddr)));
+      OS << format(" + %tu", (static_cast<const char*>(StackTrace[i])-
+                              static_cast<const char*>(dlinfo.dli_saddr)));
     }
     OS << '\n';
   }
 #elif defined(HAVE_BACKTRACE)
-  backtrace_symbols_fd(StackTrace, Depth, STDERR_FILENO);
+  backtrace_symbols_fd(StackTrace, depth, STDERR_FILENO);
 #endif
 #endif
 }
@@ -657,9 +641,11 @@ void llvm::sys::PrintStackTraceOnErrorSignal(StringRef Argv0,
 
     exception_mask_t mask = EXC_MASK_CRASH;
 
-    kern_return_t ret = task_set_exception_ports(
-        self, mask, MACH_PORT_NULL,
-        EXCEPTION_STATE_IDENTITY | MACH_EXCEPTION_CODES, THREAD_STATE_NONE);
+    kern_return_t ret = task_set_exception_ports(self,
+                             mask,
+                             MACH_PORT_NULL,
+                             EXCEPTION_STATE_IDENTITY | MACH_EXCEPTION_CODES,
+                             THREAD_STATE_NONE);
     (void)ret;
   }
 #endif

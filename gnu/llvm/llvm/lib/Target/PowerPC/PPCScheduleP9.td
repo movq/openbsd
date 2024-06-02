@@ -9,6 +9,8 @@
 // This file defines the itinerary class data for the POWER9 processor.
 //
 //===----------------------------------------------------------------------===//
+include "PPCInstrInfo.td"
+
 def P9Model : SchedMachineModel {
   // The maximum number of instructions to be issued at the same time.
   // While a value of 8 is technically correct since 8 instructions can be
@@ -18,7 +20,7 @@ def P9Model : SchedMachineModel {
 
   // Load latency is 4 or 5 cycles depending on the load. This latency assumes
   // that we have a cache hit. For a cache miss the load latency will be more.
-  // There are two instructions (lxvl, lxvll) that have a latency of 6 cycles.
+  // There are two instructions (lxvl, lxvll) that have a latencty of 6 cycles.
   // However it is not worth bumping this value up to 6 when the vast majority
   // of instructions are 4 or 5 cycles.
   let LoadLatency = 5;
@@ -38,12 +40,10 @@ def P9Model : SchedMachineModel {
 
   let CompleteModel = 1;
 
-  // Do not support SPE (Signal Processing Engine) or prefixed instructions on
-  // Power 9, or MMA, or paired vector mem ops,  or PC relative mem ops, or
-  // instructions introduced after ISA 3.0.
-  let UnsupportedFeatures = [HasSPE, PrefixInstrs, MMA,
-                             PairedVectorMemops,
-                             PCRelativeMemops, IsISA3_1, IsISAFuture];
+  // Do not support QPX (Quad Processing eXtension) or SPE (Signal Procesing
+  // Engine) on Power 9.
+  let UnsupportedFeatures = [HasQPX, HasSPE];
+
 }
 
 let SchedModel = P9Model in {
@@ -405,6 +405,7 @@ let SchedModel = P9Model in {
   def P9_LoadAndALU2Op_7C : WriteSequence<[P9_LS_4C, P9_ALU_3C]>;
   def P9_LoadAndALU2Op_8C : WriteSequence<[P9_LS_5C, P9_ALU_3C]>;
   def P9_LoadAndPMOp_8C : WriteSequence<[P9_LS_5C, P9_PM_3C]>;
+  def P9_LoadAndLoadOp_8C : WriteSequence<[P9_LS_4C, P9_LS_4C]>;
   def P9_IntDivAndALUOp_18C_8 : WriteSequence<[P9_DIV_16C_8, P9_ALU_2C]>;
   def P9_IntDivAndALUOp_26C_8 : WriteSequence<[P9_DIV_24C_8, P9_ALU_2C]>;
   def P9_IntDivAndALUOp_42C_8 : WriteSequence<[P9_DIV_40C_8, P9_ALU_2C]>;

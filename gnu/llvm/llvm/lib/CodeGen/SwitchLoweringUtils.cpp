@@ -11,11 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/CodeGen/SwitchLoweringUtils.h"
-#include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
-#include "llvm/CodeGen/TargetLowering.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/CodeGen/SwitchLoweringUtils.h"
 
 using namespace llvm;
 using namespace SwitchCG;
@@ -405,7 +402,7 @@ bool SwitchCG::SwitchLowering::buildBitTests(CaseClusterVector &Clusters,
   if (Low.isStrictlyPositive() && High.slt(BitWidth)) {
     // Optimize the case where all the case values fit in a word without having
     // to subtract minValue. In this case, we can optimize away the subtraction.
-    LowBound = APInt::getZero(Low.getBitWidth());
+    LowBound = APInt::getNullValue(Low.getBitWidth());
     CmpRange = High;
     ContiguousRange = false;
   } else {

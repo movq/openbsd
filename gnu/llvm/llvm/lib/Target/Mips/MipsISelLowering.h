@@ -40,6 +40,8 @@
 namespace llvm {
 
 class Argument;
+class CCState;
+class CCValAssign;
 class FastISel;
 class FunctionLoweringInfo;
 class MachineBasicBlock;
@@ -99,9 +101,6 @@ class TargetRegisterClass;
       // Floating Point Compare
       FPCmp,
 
-      // Floating point Abs
-      FAbs,
-
       // Floating point select
       FSELECT,
 
@@ -160,7 +159,7 @@ class TargetRegisterClass;
       Ins,
       CIns,
 
-      // EXTR.W intrinsic nodes.
+      // EXTR.W instrinsic nodes.
       EXTP,
       EXTPDP,
       EXTR_S_H,
@@ -283,9 +282,8 @@ class TargetRegisterClass;
     EVT getTypeForExtReturn(LLVMContext &Context, EVT VT,
                             ISD::NodeType) const override;
 
-    bool isCheapToSpeculateCttz(Type *Ty) const override;
-    bool isCheapToSpeculateCtlz(Type *Ty) const override;
-    bool hasBitTest(SDValue X, SDValue Y) const override;
+    bool isCheapToSpeculateCttz() const override;
+    bool isCheapToSpeculateCtlz() const override;
     bool shouldFoldConstantShiftPairToMask(const SDNode *N,
                                            CombineLevel Level) const override;
 
@@ -307,8 +305,8 @@ class TargetRegisterClass;
 
     /// Return the correct alignment for the current calling convention.
     Align getABIAlignmentForCallingConv(Type *ArgTy,
-                                        const DataLayout &DL) const override {
-      const Align ABIAlign = DL.getABITypeAlign(ArgTy);
+                                        DataLayout DL) const override {
+      const Align ABIAlign(DL.getABITypeAlignment(ArgTy));
       if (ArgTy->isVectorTy())
         return std::min(ABIAlign, Align(8));
       return ABIAlign;
@@ -317,6 +315,10 @@ class TargetRegisterClass;
     ISD::NodeType getExtendForAtomicOps() const override {
       return ISD::SIGN_EXTEND;
     }
+
+    void LowerOperationWrapper(SDNode *N,
+                               SmallVectorImpl<SDValue> &Results,
+                               SelectionDAG &DAG) const override;
 
     /// LowerOperation - Provide custom lowering hooks for some operations.
     SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
@@ -344,23 +346,31 @@ class TargetRegisterClass;
     void AdjustInstrPostInstrSelection(MachineInstr &MI,
                                        SDNode *Node) const override;
 
-    void HandleByVal(CCState *, unsigned &, Align) const override;
+    void HandleByVal(CCState *, unsigned &, unsigned) const override;
 
     Register getRegisterByName(const char* RegName, LLT VT,
                                const MachineFunction &MF) const override;
 
     /// If a physical register, this returns the register that receives the
     /// exception address on entry to an EH pad.
-    Register
+    unsigned
     getExceptionPointerRegister(const Constant *PersonalityFn) const override {
       return ABI.IsN64() ? Mips::A0_64 : Mips::A0;
     }
 
     /// If a physical register, this returns the register that receives the
     /// exception typeid on entry to a landing pad.
-    Register
+    unsigned
     getExceptionSelectorRegister(const Constant *PersonalityFn) const override {
       return ABI.IsN64() ? Mips::A1_64 : Mips::A1;
+    }
+
+    /// Returns true if a cast between SrcAS and DestAS is a noop.
+    bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override {
+      // Mips doesn't have any special address spaces so we just reserve
+      // the first 256 for software use (e.g. OpenCL) and treat casts
+      // between them as noops.
+      return SrcAS < 256 && DestAS < 256;
     }
 
     bool isJumpTableRelative() const override {
@@ -544,10 +554,6 @@ class TargetRegisterClass;
     SDValue lowerVAARG(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerFABS(SDValue Op, SelectionDAG &DAG) const;
-    SDValue lowerFABS32(SDValue Op, SelectionDAG &DAG,
-                        bool HasExtractInsert) const;
-    SDValue lowerFABS64(SDValue Op, SelectionDAG &DAG,
-                        bool HasExtractInsert) const;
     SDValue lowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_RETURN(SDValue Op, SelectionDAG &DAG) const;
@@ -663,7 +669,10 @@ class TargetRegisterClass;
 
     bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
-    EVT getOptimalMemOpType(const MemOp &Op,
+    EVT getOptimalMemOpType(uint64_t Size, unsigned DstAlign,
+                            unsigned SrcAlign,
+                            bool IsMemset, bool ZeroMemset,
+                            bool MemcpyStrSrc,
                             const AttributeList &FuncAttributes) const override;
 
     /// isFPImmLegal - Returns true if the target can instruction select the
@@ -700,10 +709,6 @@ class TargetRegisterClass;
                                         bool isFPCmp, unsigned Opc) const;
     MachineBasicBlock *emitPseudoD_SELECT(MachineInstr &MI,
                                           MachineBasicBlock *BB) const;
-    MachineBasicBlock *emitLDR_W(MachineInstr &MI, MachineBasicBlock *BB) const;
-    MachineBasicBlock *emitLDR_D(MachineInstr &MI, MachineBasicBlock *BB) const;
-    MachineBasicBlock *emitSTR_W(MachineInstr &MI, MachineBasicBlock *BB) const;
-    MachineBasicBlock *emitSTR_D(MachineInstr &MI, MachineBasicBlock *BB) const;
   };
 
   /// Create MipsTargetLowering objects.

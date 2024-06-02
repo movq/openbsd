@@ -39,6 +39,7 @@
 #include "llvm/Support/Endian.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 using namespace llvm;
 using namespace support;

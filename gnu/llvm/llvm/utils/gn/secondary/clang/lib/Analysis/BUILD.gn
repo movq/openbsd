@@ -16,7 +16,6 @@ static_library("Analysis") {
     "CFGReachabilityAnalysis.cpp",
     "CFGStmtMap.cpp",
     "CallGraph.cpp",
-    "CalledOnceCheck.cpp",
     "CloneDetection.cpp",
     "CocoaConventions.cpp",
     "CodeInjector.cpp",
@@ -24,9 +23,7 @@ static_library("Analysis") {
     "Consumed.cpp",
     "Dominators.cpp",
     "ExprMutationAnalyzer.cpp",
-    "IssueHash.cpp",
     "LiveVariables.cpp",
-    "MacroExpansionContext.cpp",
     "ObjCNoReturn.cpp",
     "PathDiagnostic.cpp",
     "PostOrderCFGView.cpp",
@@ -38,6 +35,5 @@ static_library("Analysis") {
     "ThreadSafetyLogical.cpp",
     "ThreadSafetyTIL.cpp",
     "UninitializedValues.cpp",
-    "UnsafeBufferUsage.cpp",
   ]
 }

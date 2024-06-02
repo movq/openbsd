@@ -15,7 +15,7 @@
 #define LLVM_CODEGEN_LIVEREGUNITS_H
 
 #include "llvm/ADT/BitVector.h"
-#include "llvm/CodeGen/MachineInstrBundle.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/MC/LaneBitmask.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -67,6 +67,7 @@ public:
         UsedRegUnits.addReg(Reg);
       }
     }
+    return;
   }
 
   /// Initialize and clear the set.
@@ -166,8 +167,8 @@ inline iterator_range<filter_iterator<
 phys_regs_and_masks(const MachineInstr &MI) {
   std::function<bool(const MachineOperand &)> Pred =
       [](const MachineOperand &MOP) {
-        return MOP.isRegMask() ||
-               (MOP.isReg() && !MOP.isDebug() && MOP.getReg().isPhysical());
+        return MOP.isRegMask() || (MOP.isReg() && !MOP.isDebug() &&
+                                   Register::isPhysicalRegister(MOP.getReg()));
       };
   return make_filter_range(const_mi_bundle_ops(MI), Pred);
 }

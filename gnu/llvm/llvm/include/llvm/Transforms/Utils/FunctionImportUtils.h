@@ -39,22 +39,9 @@ class FunctionImportGlobalProcessing {
   /// as part of a different backend compilation process.
   bool HasExportedFunctions = false;
 
-  /// Set to true (only applicatable to ELF -fpic) if dso_local should be
-  /// dropped for a declaration.
-  ///
-  /// On ELF, the assembler is conservative and assumes a global default
-  /// visibility symbol can be interposable. No direct access relocation is
-  /// allowed, if the definition is not in the translation unit, even if the
-  /// definition is available in the linkage unit. Thus we need to clear
-  /// dso_local to disable direct access.
-  ///
-  /// This flag should not be set for -fno-pic or -fpie, which would
-  /// unnecessarily disable direct access.
-  bool ClearDSOLocalOnDeclarations;
-
   /// Set of llvm.*used values, in order to validate that we don't try
   /// to promote any non-renamable values.
-  SmallPtrSet<GlobalValue *, 4> Used;
+  SmallPtrSet<GlobalValue *, 8> Used;
 
   /// Keep track of any COMDATs that require renaming (because COMDAT
   /// leader was promoted and renamed). Maps from original COMDAT to one
@@ -98,11 +85,10 @@ class FunctionImportGlobalProcessing {
   GlobalValue::LinkageTypes getLinkage(const GlobalValue *SGV, bool DoPromote);
 
 public:
-  FunctionImportGlobalProcessing(Module &M, const ModuleSummaryIndex &Index,
-                                 SetVector<GlobalValue *> *GlobalsToImport,
-                                 bool ClearDSOLocalOnDeclarations)
-      : M(M), ImportIndex(Index), GlobalsToImport(GlobalsToImport),
-        ClearDSOLocalOnDeclarations(ClearDSOLocalOnDeclarations) {
+  FunctionImportGlobalProcessing(
+      Module &M, const ModuleSummaryIndex &Index,
+      SetVector<GlobalValue *> *GlobalsToImport = nullptr)
+      : M(M), ImportIndex(Index), GlobalsToImport(GlobalsToImport) {
     // If we have a ModuleSummaryIndex but no function to import,
     // then this is the primary module being compiled in a ThinLTO
     // backend compilation, and we need to see if it has functions that
@@ -111,12 +97,10 @@ public:
       HasExportedFunctions = ImportIndex.hasExportedFunctions(M);
 
 #ifndef NDEBUG
-    SmallVector<GlobalValue *, 4> Vec;
     // First collect those in the llvm.used set.
-    collectUsedGlobalVariables(M, Vec, /*CompilerUsed=*/false);
+    collectUsedGlobalVariables(M, Used, /*CompilerUsed*/ false);
     // Next collect those in the llvm.compiler.used set.
-    collectUsedGlobalVariables(M, Vec, /*CompilerUsed=*/true);
-    Used = {Vec.begin(), Vec.end()};
+    collectUsedGlobalVariables(M, Used, /*CompilerUsed*/ true);
 #endif
   }
 
@@ -127,8 +111,10 @@ public:
 /// exported local functions renamed and promoted for ThinLTO.
 bool renameModuleForThinLTO(
     Module &M, const ModuleSummaryIndex &Index,
-    bool ClearDSOLocalOnDeclarations,
     SetVector<GlobalValue *> *GlobalsToImport = nullptr);
+
+/// Compute synthetic function entry counts.
+void computeSyntheticCounts(ModuleSummaryIndex &Index);
 
 } // End llvm namespace
 

@@ -10,11 +10,8 @@
 // the form major[.minor[.subminor]].
 //
 //===----------------------------------------------------------------------===//
-
 #include "llvm/Support/VersionTuple.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cassert>
 
 using namespace llvm;
 
@@ -29,11 +26,11 @@ std::string VersionTuple::getAsString() const {
 
 raw_ostream &llvm::operator<<(raw_ostream &Out, const VersionTuple &V) {
   Out << V.getMajor();
-  if (std::optional<unsigned> Minor = V.getMinor())
+  if (Optional<unsigned> Minor = V.getMinor())
     Out << '.' << *Minor;
-  if (std::optional<unsigned> Subminor = V.getSubminor())
+  if (Optional<unsigned> Subminor = V.getSubminor())
     Out << '.' << *Subminor;
-  if (std::optional<unsigned> Build = V.getBuild())
+  if (Optional<unsigned> Build = V.getBuild())
     Out << '.' << *Build;
   return Out;
 }

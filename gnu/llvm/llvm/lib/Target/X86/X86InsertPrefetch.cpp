@@ -23,7 +23,6 @@
 #include "X86InstrInfo.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/ProfileData/SampleProf.h"
@@ -174,7 +173,7 @@ bool X86InsertPrefetch::doInitialization(Module &M) {
 
 void X86InsertPrefetch::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
-  MachineFunctionPass::getAnalysisUsage(AU);
+  AU.addRequired<MachineModuleInfoWrapperPass>();
 }
 
 bool X86InsertPrefetch::runOnMachineFunction(MachineFunction &MF) {
@@ -215,10 +214,10 @@ bool X86InsertPrefetch::runOnMachineFunction(MachineFunction &MF) {
             MF.CreateMachineInstr(Desc, Current->getDebugLoc(), true);
         MachineInstrBuilder MIB(MF, PFetch);
 
-        static_assert(X86::AddrBaseReg == 0 && X86::AddrScaleAmt == 1 &&
-                          X86::AddrIndexReg == 2 && X86::AddrDisp == 3 &&
-                          X86::AddrSegmentReg == 4,
-                      "Unexpected change in X86 operand offset order.");
+        assert(X86::AddrBaseReg == 0 && X86::AddrScaleAmt == 1 &&
+               X86::AddrIndexReg == 2 && X86::AddrDisp == 3 &&
+               X86::AddrSegmentReg == 4 &&
+               "Unexpected change in X86 operand offset order.");
 
         // This assumes X86::AddBaseReg = 0, {...}ScaleAmt = 1, etc.
         // FIXME(mtrofin): consider adding a:

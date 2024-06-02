@@ -23,10 +23,8 @@ class MachineBasicBlock;
 class MachineFunction;
 class MachineInstr;
 class MCSymbol;
-class Module;
 
-typedef MCSymbol *ExceptionSymbolProvider(AsmPrinter *Asm,
-                                          const MachineBasicBlock *MBB);
+typedef MCSymbol *ExceptionSymbolProvider(AsmPrinter *Asm);
 
 /// Collects and handles AsmPrinter objects required to build debug
 /// or EH information.
@@ -37,8 +35,6 @@ public:
   /// For symbols that have a size designated (e.g. common symbols),
   /// this tracks that size.
   virtual void setSymbolSize(const MCSymbol *Sym, uint64_t Size) = 0;
-
-  virtual void beginModule(Module *M) {}
 
   /// Emit all sections that should come after the content.
   virtual void endModule() = 0;
@@ -53,20 +49,13 @@ public:
   virtual void markFunctionEnd();
 
   /// Gather post-function debug information.
+  /// Please note that some AsmPrinter implementations may not call
+  /// beginFunction at all.
   virtual void endFunction(const MachineFunction *MF) = 0;
 
-  /// Process the beginning of a new basic-block-section within a
-  /// function. Always called immediately after beginFunction for the first
-  /// basic-block. When basic-block-sections are enabled, called before the
-  /// first block of each such section.
-  virtual void beginBasicBlockSection(const MachineBasicBlock &MBB) {}
-
-  /// Process the end of a basic-block-section within a function. When
-  /// basic-block-sections are enabled, called after the last block in each such
-  /// section (including the last section in the function). When
-  /// basic-block-sections are disabled, called at the end of a function,
-  /// immediately prior to markFunctionEnd.
-  virtual void endBasicBlockSection(const MachineBasicBlock &MBB) {}
+  virtual void beginFragment(const MachineBasicBlock *MBB,
+                             ExceptionSymbolProvider ESP) {}
+  virtual void endFragment() {}
 
   /// Emit target-specific EH funclet machinery.
   virtual void beginFunclet(const MachineBasicBlock &MBB,
@@ -79,7 +68,6 @@ public:
   /// Process end of an instruction.
   virtual void endInstruction() = 0;
 };
-
 } // End of namespace llvm
 
 #endif

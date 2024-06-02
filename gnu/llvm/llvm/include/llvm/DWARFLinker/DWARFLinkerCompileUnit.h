@@ -9,19 +9,21 @@
 #ifndef LLVM_DWARFLINKER_DWARFLINKERCOMPILEUNIT_H
 #define LLVM_DWARFLINKER_DWARFLINKERCOMPILEUNIT_H
 
-#include "llvm/ADT/AddressRanges.h"
-#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/IntervalMap.h"
 #include "llvm/CodeGen/DIE.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
-#include <optional>
+#include "llvm/Support/DataExtractor.h"
 
 namespace llvm {
 
 class DeclContext;
 
-/// Mapped value in the address map is the offset to apply to the
-/// linked address.
-using RangesTy = AddressRangesMap<int64_t>;
+template <typename KeyT, typename ValT>
+using HalfOpenIntervalMap =
+    IntervalMap<KeyT, ValT, IntervalMapImpl::NodeSizer<KeyT, ValT>::LeafSize,
+                IntervalMapHalfOpenInfo<KeyT>>;
+
+using FunctionIntervals = HalfOpenIntervalMap<uint64_t, int64_t>;
 
 // FIXME: Delete this structure.
 struct PatchLocation {
@@ -72,24 +74,12 @@ public:
 
     /// Does DIE transitively refer an incomplete decl?
     bool Incomplete : 1;
-
-    /// Is DIE in the clang module scope?
-    bool InModuleScope : 1;
-
-    /// Is ODR marking done?
-    bool ODRMarkingDone : 1;
-
-    /// Is this a reference to a DIE that hasn't been cloned yet?
-    bool UnclonedReference : 1;
-
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-    LLVM_DUMP_METHOD void dump();
-#endif // if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   };
 
   CompileUnit(DWARFUnit &OrigUnit, unsigned ID, bool CanUseODR,
               StringRef ClangModuleName)
-      : OrigUnit(OrigUnit), ID(ID), ClangModuleName(ClangModuleName) {
+      : OrigUnit(OrigUnit), ID(ID), Ranges(RangeAlloc),
+        ClangModuleName(ClangModuleName) {
     Info.resize(OrigUnit.getNumDIEs());
 
     auto CUDie = OrigUnit.getUnitDIE(false);
@@ -111,7 +101,10 @@ public:
 
   unsigned getUniqueID() const { return ID; }
 
-  void createOutputDIE() { NewUnit.emplace(OrigUnit.getUnitDIE().getTag()); }
+  void createOutputDIE() {
+    NewUnit.emplace(OrigUnit.getVersion(), OrigUnit.getAddressByteSize(),
+                    OrigUnit.getUnitDIE().getTag());
+  }
 
   DIE *getOutputUnitDIE() const {
     if (NewUnit)
@@ -122,32 +115,25 @@ public:
   bool hasODR() const { return HasODR; }
   bool isClangModule() const { return !ClangModuleName.empty(); }
   uint16_t getLanguage();
-  /// Return the DW_AT_LLVM_sysroot of the compile unit or an empty StringRef.
-  StringRef getSysRoot();
 
   const std::string &getClangModuleName() const { return ClangModuleName; }
 
   DIEInfo &getInfo(unsigned Idx) { return Info[Idx]; }
   const DIEInfo &getInfo(unsigned Idx) const { return Info[Idx]; }
 
-  DIEInfo &getInfo(const DWARFDie &Die) {
-    unsigned Idx = getOrigUnit().getDIEIndex(Die);
-    return Info[Idx];
-  }
-
   uint64_t getStartOffset() const { return StartOffset; }
   uint64_t getNextUnitOffset() const { return NextUnitOffset; }
   void setStartOffset(uint64_t DebugInfoSize) { StartOffset = DebugInfoSize; }
 
-  std::optional<uint64_t> getLowPc() const { return LowPc; }
+  uint64_t getLowPc() const { return LowPc; }
   uint64_t getHighPc() const { return HighPc; }
   bool hasLabelAt(uint64_t Addr) const { return Labels.count(Addr); }
 
-  std::optional<PatchLocation> getUnitRangesAttribute() const {
+  Optional<PatchLocation> getUnitRangesAttribute() const {
     return UnitRangeAttribute;
   }
 
-  const RangesTy &getFunctionRanges() const { return Ranges; }
+  const FunctionIntervals &getFunctionRanges() const { return Ranges; }
 
   const std::vector<PatchLocation> &getRangesAttributes() const {
     return RangeAttributes;
@@ -158,6 +144,9 @@ public:
     return LocationAttributes;
   }
 
+  void setHasInterestingContent() { HasInterestingContent = true; }
+  bool hasInterestingContent() { return HasInterestingContent; }
+
   /// Mark every DIE in this unit as kept. This function also
   /// marks variables as InDebugMap so that they appear in the
   /// reconstructed accelerator tables.
@@ -166,7 +155,7 @@ public:
   /// Compute the end offset for this unit. Must be called after the CU's DIEs
   /// have been cloned.  \returns the next unit offset (which is also the
   /// current debug_info section size).
-  uint64_t computeNextUnitOffset(uint16_t DwarfVersion);
+  uint64_t computeNextUnitOffset();
 
   /// Keep track of a forward reference to DIE \p Die in \p RefUnit by \p
   /// Attr. The attribute should be fixed up later to point to the absolute
@@ -244,6 +233,21 @@ public:
   const std::vector<AccelInfo> &getNamespaces() const { return Namespaces; }
   const std::vector<AccelInfo> &getObjC() const { return ObjC; }
 
+  /// Get the full path for file \a FileNum in the line table
+  StringRef getResolvedPath(unsigned FileNum) {
+    if (FileNum >= ResolvedPaths.size())
+      return StringRef();
+    return ResolvedPaths[FileNum];
+  }
+
+  /// Set the fully resolved path for the line-table's file \a FileNum
+  /// to \a Path.
+  void setResolvedPath(unsigned FileNum, StringRef Path) {
+    if (ResolvedPaths.size() <= FileNum)
+      ResolvedPaths.resize(FileNum + 1);
+    ResolvedPaths[FileNum] = Path;
+  }
+
   MCSymbol *getLabelBegin() { return LabelBegin; }
   void setLabelBegin(MCSymbol *S) { LabelBegin = S; }
 
@@ -251,13 +255,13 @@ private:
   DWARFUnit &OrigUnit;
   unsigned ID;
   std::vector<DIEInfo> Info; ///< DIE info indexed by DIE index.
-  std::optional<BasicDIEUnit> NewUnit;
+  Optional<BasicDIEUnit> NewUnit;
   MCSymbol *LabelBegin = nullptr;
 
   uint64_t StartOffset;
   uint64_t NextUnitOffset;
 
-  std::optional<uint64_t> LowPc;
+  uint64_t LowPc = std::numeric_limits<uint64_t>::max();
   uint64_t HighPc = 0;
 
   /// A list of attributes to fixup with the absolute offset of
@@ -270,10 +274,12 @@ private:
       std::tuple<DIE *, const CompileUnit *, DeclContext *, PatchLocation>>
       ForwardDIEReferences;
 
-  /// The ranges in that map are the PC ranges for functions in this unit,
-  /// associated with the PC offset to apply to the addresses to get
-  /// the linked address.
-  RangesTy Ranges;
+  FunctionIntervals::Allocator RangeAlloc;
+
+  /// The ranges in that interval map are the PC ranges for
+  /// functions in this unit, associated with the PC offset to apply
+  /// to the addresses to get the linked address.
+  FunctionIntervals Ranges;
 
   /// The DW_AT_low_pc of each DW_TAG_label.
   SmallDenseMap<uint64_t, uint64_t, 1> Labels;
@@ -282,7 +288,7 @@ private:
   /// all the unit's function addresses.
   /// @{
   std::vector<PatchLocation> RangeAttributes;
-  std::optional<PatchLocation> UnitRangeAttribute;
+  Optional<PatchLocation> UnitRangeAttribute;
   /// @}
 
   /// Location attributes that need to be transferred from the
@@ -300,14 +306,20 @@ private:
   std::vector<AccelInfo> ObjC;
   /// @}
 
+  /// Cached resolved paths from the line table.
+  /// Note, the StringRefs here point in to the intern (uniquing) string pool.
+  /// This means that a StringRef returned here doesn't need to then be uniqued
+  /// for the purposes of getting a unique address for each string.
+  std::vector<StringRef> ResolvedPaths;
+
   /// Is this unit subject to the ODR rule?
   bool HasODR;
 
+  /// Did a DIE actually contain a valid reloc?
+  bool HasInterestingContent;
+
   /// The DW_AT_language of this unit.
   uint16_t Language = 0;
-
-  /// The DW_AT_LLVM_sysroot of this unit.
-  std::string SysRoot;
 
   /// If this is a Clang module, this holds the module's name.
   std::string ClangModuleName;

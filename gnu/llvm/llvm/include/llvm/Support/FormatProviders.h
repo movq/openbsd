@@ -14,15 +14,15 @@
 #ifndef LLVM_SUPPORT_FORMATPROVIDERS_H
 #define LLVM_SUPPORT_FORMATPROVIDERS_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/FormatVariadicDetails.h"
 #include "llvm/Support/NativeFormatting.h"
 
-#include <array>
-#include <optional>
 #include <type_traits>
+#include <vector>
 
 namespace llvm {
 namespace detail {
@@ -59,14 +59,14 @@ struct use_double_formatter
 
 class HelperFunctions {
 protected:
-  static std::optional<size_t> parseNumericPrecision(StringRef Str) {
+  static Optional<size_t> parseNumericPrecision(StringRef Str) {
     size_t Prec;
-    std::optional<size_t> Result;
+    Optional<size_t> Result;
     if (Str.empty())
-      Result = std::nullopt;
+      Result = None;
     else if (Str.getAsInteger(10, Prec)) {
       assert(false && "Invalid precision specifier");
-      Result = std::nullopt;
+      Result = None;
     } else {
       assert(Prec < 100 && "Precision out of range");
       Result = std::min<size_t>(99u, Prec);
@@ -75,7 +75,7 @@ protected:
   }
 
   static bool consumeHexStyle(StringRef &Str, HexPrintStyle &Style) {
-    if (!Str.startswith_insensitive("x"))
+    if (!Str.startswith_lower("x"))
       return false;
 
     if (Str.consume_front("x-"))
@@ -124,7 +124,7 @@ protected:
 
 template <typename T>
 struct format_provider<
-    T, std::enable_if_t<detail::use_integral_formatter<T>::value>>
+    T, typename std::enable_if<detail::use_integral_formatter<T>::value>::type>
     : public detail::HelperFunctions {
 private:
 public:
@@ -173,7 +173,7 @@ public:
 /// cases indicates the minimum number of nibbles to print.
 template <typename T>
 struct format_provider<
-    T, std::enable_if_t<detail::use_pointer_formatter<T>::value>>
+    T, typename std::enable_if<detail::use_pointer_formatter<T>::value>::type>
     : public detail::HelperFunctions {
 private:
 public:
@@ -198,7 +198,7 @@ public:
 
 template <typename T>
 struct format_provider<
-    T, std::enable_if_t<detail::use_string_formatter<T>::value>> {
+    T, typename std::enable_if<detail::use_string_formatter<T>::value>::type> {
   static void format(const T &V, llvm::raw_ostream &Stream, StringRef Style) {
     size_t N = StringRef::npos;
     if (!Style.empty() && Style.getAsInteger(10, N)) {
@@ -230,8 +230,8 @@ template <> struct format_provider<Twine> {
 /// character.  Otherwise, it is treated as an integer options string.
 ///
 template <typename T>
-struct format_provider<T,
-                       std::enable_if_t<detail::use_char_formatter<T>::value>> {
+struct format_provider<
+    T, typename std::enable_if<detail::use_char_formatter<T>::value>::type> {
   static void format(const char &V, llvm::raw_ostream &Stream,
                      StringRef Style) {
     if (Style.empty())
@@ -296,8 +296,8 @@ template <> struct format_provider<bool> {
 /// else.
 
 template <typename T>
-struct format_provider<T,
-                       std::enable_if_t<detail::use_double_formatter<T>::value>>
+struct format_provider<
+    T, typename std::enable_if<detail::use_double_formatter<T>::value>::type>
     : public detail::HelperFunctions {
   static void format(const T &V, llvm::raw_ostream &Stream, StringRef Style) {
     FloatStyle S;
@@ -312,8 +312,8 @@ struct format_provider<T,
     else
       S = FloatStyle::Fixed;
 
-    std::optional<size_t> Precision = parseNumericPrecision(Style);
-    if (!Precision)
+    Optional<size_t> Precision = parseNumericPrecision(Style);
+    if (!Precision.hasValue())
       Precision = getDefaultPrecision(S);
 
     write_double(Stream, static_cast<double>(V), S, Precision);
@@ -355,6 +355,7 @@ struct range_item_has_provider
 
 template <typename IterT> class format_provider<llvm::iterator_range<IterT>> {
   using value = typename std::iterator_traits<IterT>::value_type;
+  using reference = typename std::iterator_traits<IterT>::reference;
 
   static StringRef consumeOneOption(StringRef &Style, char Indicator,
                                     StringRef Default) {
@@ -368,7 +369,7 @@ template <typename IterT> class format_provider<llvm::iterator_range<IterT>> {
       return Default;
     }
 
-    for (const char *D : std::array<const char *, 3>{"[]", "<>", "()"}) {
+    for (const char *D : {"[]", "<>", "()"}) {
       if (Style.front() != D[0])
         continue;
       size_t End = Style.find_first_of(D[1]);
@@ -402,13 +403,15 @@ public:
     auto Begin = V.begin();
     auto End = V.end();
     if (Begin != End) {
-      auto Adapter = detail::build_format_adapter(*Begin);
+      auto Adapter =
+          detail::build_format_adapter(std::forward<reference>(*Begin));
       Adapter.format(Stream, ArgStyle);
       ++Begin;
     }
     while (Begin != End) {
       Stream << Sep;
-      auto Adapter = detail::build_format_adapter(*Begin);
+      auto Adapter =
+          detail::build_format_adapter(std::forward<reference>(*Begin));
       Adapter.format(Stream, ArgStyle);
       ++Begin;
     }

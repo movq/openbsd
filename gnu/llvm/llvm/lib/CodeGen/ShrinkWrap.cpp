@@ -144,7 +144,7 @@ class ShrinkWrap : public MachineFunctionPass {
   unsigned FrameDestroyOpcode;
 
   /// Stack pointer register, used by llvm.{savestack,restorestack}
-  Register SP;
+  unsigned SP;
 
   /// Entry block.
   const MachineBasicBlock *Entry;
@@ -273,8 +273,6 @@ bool ShrinkWrap::useOrDefCSROrFI(const MachineInstr &MI,
     LLVM_DEBUG(dbgs() << "Frame instruction: " << MI << '\n');
     return true;
   }
-  const MachineFunction *MF = MI.getParent()->getParent();
-  const TargetRegisterInfo *TRI = MF->getSubtarget().getRegisterInfo();
   for (const MachineOperand &MO : MI.operands()) {
     bool UseOrDefCSR = false;
     if (MO.isReg()) {
@@ -284,20 +282,14 @@ bool ShrinkWrap::useOrDefCSROrFI(const MachineInstr &MI,
       Register PhysReg = MO.getReg();
       if (!PhysReg)
         continue;
-      assert(PhysReg.isPhysical() && "Unallocated register?!");
+      assert(Register::isPhysicalRegister(PhysReg) && "Unallocated register?!");
       // The stack pointer is not normally described as a callee-saved register
       // in calling convention definitions, so we need to watch for it
       // separately. An SP mentioned by a call instruction, we can ignore,
       // though, as it's harmless and we do not want to effectively disable tail
       // calls by forcing the restore point to post-dominate them.
-      // PPC's LR is also not normally described as a callee-saved register in
-      // calling convention definitions, so we need to watch for it, too. An LR
-      // mentioned implicitly by a return (or "branch to link register")
-      // instruction we can ignore, otherwise we may pessimize shrinkwrapping.
-      UseOrDefCSR =
-          (!MI.isCall() && PhysReg == SP) ||
-          RCI.getLastCalleeSavedAlias(PhysReg) ||
-          (!MI.isReturn() && TRI->isNonallocatableRegisterCalleeSave(PhysReg));
+      UseOrDefCSR = (!MI.isCall() && PhysReg == SP) ||
+                    RCI.getLastCalleeSavedAlias(PhysReg);
     } else if (MO.isRegMask()) {
       // Check if this regmask clobbers any of the CSRs.
       for (unsigned Reg : getCurrentCSRs(RS)) {
@@ -339,7 +331,11 @@ void ShrinkWrap::updateSaveRestorePoints(MachineBasicBlock &MBB,
     Save = &MBB;
   else
     Save = MDT->findNearestCommonDominator(Save, &MBB);
-  assert(Save);
+
+  if (!Save) {
+    LLVM_DEBUG(dbgs() << "Found a block that is not reachable from Entry\n");
+    return;
+  }
 
   if (!Restore)
     Restore = &MBB;
@@ -385,7 +381,7 @@ void ShrinkWrap::updateSaveRestorePoints(MachineBasicBlock &MBB,
   // C. Save and Restore are in the same loop.
   bool SaveDominatesRestore = false;
   bool RestorePostDominatesSave = false;
-  while (Restore &&
+  while (Save && Restore &&
          (!(SaveDominatesRestore = MDT->dominates(Save, Restore)) ||
           !(RestorePostDominatesSave = MPDT->dominates(Restore, Save)) ||
           // Post-dominance is not enough in loops to ensure that all uses/defs
@@ -416,7 +412,8 @@ void ShrinkWrap::updateSaveRestorePoints(MachineBasicBlock &MBB,
       Restore = MPDT->findNearestCommonDominator(Restore, Save);
 
     // Fix (C).
-    if (Restore && (MLI->getLoopFor(Save) || MLI->getLoopFor(Restore))) {
+    if (Save && Restore &&
+        (MLI->getLoopFor(Save) || MLI->getLoopFor(Restore))) {
       if (MLI->getLoopDepth(Save) > MLI->getLoopDepth(Restore)) {
         // Push Save outside of this loop if immediate dominator is different
         // from save block. If immediate dominator is not different, bail out.
@@ -497,15 +494,17 @@ bool ShrinkWrap::runOnMachineFunction(MachineFunction &MF) {
                                "EH Funclets are not supported yet.",
                                MBB.front().getDebugLoc(), &MBB);
 
-    if (MBB.isEHPad() || MBB.isInlineAsmBrIndirectTarget()) {
-      // Push the prologue and epilogue outside of the region that may throw (or
-      // jump out via inlineasm_br), by making sure that all the landing pads
-      // are at least at the boundary of the save and restore points.  The
-      // problem is that a basic block can jump out from the middle in these
-      // cases, which we do not handle.
+    if (MBB.isEHPad()) {
+      // Push the prologue and epilogue outside of
+      // the region that may throw by making sure
+      // that all the landing pads are at least at the
+      // boundary of the save and restore points.
+      // The problem with exceptions is that the throw
+      // is not properly modeled and in particular, a
+      // basic block can jump out from the middle.
       updateSaveRestorePoints(MBB, RS.get());
       if (!ArePointsInteresting()) {
-        LLVM_DEBUG(dbgs() << "EHPad/inlineasm_br prevents shrink-wrapping\n");
+        LLVM_DEBUG(dbgs() << "EHPad prevents shrink-wrapping\n");
         return false;
       }
       continue;

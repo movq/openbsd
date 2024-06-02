@@ -29,7 +29,6 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicsNVPTX.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -40,7 +39,6 @@
 #include <sstream>
 #include <string>
 #define NVVM_REFLECT_FUNCTION "__nvvm_reflect"
-#define NVVM_REFLECT_OCL_FUNCTION "__nvvm_reflect_ocl"
 
 using namespace llvm;
 
@@ -75,12 +73,11 @@ INITIALIZE_PASS(NVVMReflect, "nvvm-reflect",
                 "Replace occurrences of __nvvm_reflect() calls with 0/1", false,
                 false)
 
-static bool runNVVMReflect(Function &F, unsigned SmVersion) {
+bool NVVMReflect::runOnFunction(Function &F) {
   if (!NVVMReflectEnabled)
     return false;
 
-  if (F.getName() == NVVM_REFLECT_FUNCTION ||
-      F.getName() == NVVM_REFLECT_OCL_FUNCTION) {
+  if (F.getName() == NVVM_REFLECT_FUNCTION) {
     assert(F.isDeclaration() && "_reflect function should not have a body");
     assert(F.getReturnType()->isIntegerTy() &&
            "_reflect's return type should be integer");
@@ -121,7 +118,6 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
       continue;
     Function *Callee = Call->getCalledFunction();
     if (!Callee || (Callee->getName() != NVVM_REFLECT_FUNCTION &&
-                    Callee->getName() != NVVM_REFLECT_OCL_FUNCTION &&
                     Callee->getIntrinsicID() != Intrinsic::nvvm_reflect))
       continue;
 
@@ -136,13 +132,15 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
       // FIXME: Add assertions about ConvCall.
       Str = ConvCall->getArgOperand(0);
     }
-    // Pre opaque pointers we have a constant expression wrapping the constant
-    // string.
-    Str = Str->stripPointerCasts();
-    assert(isa<Constant>(Str) &&
+    assert(isa<ConstantExpr>(Str) &&
+           "Format of __nvvm__reflect function not recognized");
+    const ConstantExpr *GEP = cast<ConstantExpr>(Str);
+
+    const Value *Sym = GEP->getOperand(0);
+    assert(isa<Constant>(Sym) &&
            "Format of __nvvm_reflect function not recognized");
 
-    const Value *Operand = cast<Constant>(Str)->getOperand(0);
+    const Value *Operand = cast<Constant>(Sym)->getOperand(0);
     if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Operand)) {
       // For CUDA-7.0 style __nvvm_reflect calls, we need to find the operand's
       // initializer.
@@ -180,16 +178,4 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
     I->eraseFromParent();
 
   return ToRemove.size() > 0;
-}
-
-bool NVVMReflect::runOnFunction(Function &F) {
-  return runNVVMReflect(F, SmVersion);
-}
-
-NVVMReflectPass::NVVMReflectPass() : NVVMReflectPass(0) {}
-
-PreservedAnalyses NVVMReflectPass::run(Function &F,
-                                       FunctionAnalysisManager &AM) {
-  return runNVVMReflect(F, SmVersion) ? PreservedAnalyses::none()
-                                      : PreservedAnalyses::all();
 }

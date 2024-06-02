@@ -20,6 +20,10 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstring>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -29,9 +33,7 @@ using namespace llvm;
 void SubtargetFeatures::Split(std::vector<std::string> &V, StringRef S) {
   SmallVector<StringRef, 3> Tmp;
   S.split(Tmp, ',', -1, false /* KeepEmpty */);
-  V.reserve(Tmp.size());
-  for (StringRef T : Tmp)
-    V.push_back(std::string(T));
+  V.assign(Tmp.begin(), Tmp.end());
 }
 
 void SubtargetFeatures::AddFeature(StringRef String, bool Enable) {
@@ -40,11 +42,6 @@ void SubtargetFeatures::AddFeature(StringRef String, bool Enable) {
     // Convert to lowercase, prepend flag if we don't already have a flag.
     Features.push_back(hasFlag(String) ? String.lower()
                                        : (Enable ? "+" : "-") + String.lower());
-}
-
-void SubtargetFeatures::addFeaturesVector(
-    const ArrayRef<std::string> OtherFeatures) {
-  Features.insert(Features.cend(), OtherFeatures.begin(), OtherFeatures.end());
 }
 
 SubtargetFeatures::SubtargetFeatures(StringRef Initial) {
@@ -57,7 +54,7 @@ std::string SubtargetFeatures::getString() const {
 }
 
 void SubtargetFeatures::print(raw_ostream &OS) const {
-  for (const auto &F : Features)
+  for (auto &F : Features)
     OS << F << " ";
   OS << "\n";
 }

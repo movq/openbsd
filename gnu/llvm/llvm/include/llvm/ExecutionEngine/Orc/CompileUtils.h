@@ -20,6 +20,7 @@
 
 namespace llvm {
 
+class MCContext;
 class MemoryBuffer;
 class Module;
 class ObjectCache;
@@ -27,7 +28,9 @@ class TargetMachine;
 
 namespace orc {
 
-IRSymbolMapper::ManglingOptions
+class JITTargetMachineBuilder;
+
+IRMaterializationUnit::ManglingOptions
 irManglingOptionsFromTargetOptions(const TargetOptions &Opts);
 
 /// Simple compile functor: Takes a single IR module and returns an ObjectFile.
@@ -49,7 +52,7 @@ public:
   Expected<CompileResult> operator()(Module &M) override;
 
 private:
-  IRSymbolMapper::ManglingOptions
+  IRMaterializationUnit::ManglingOptions
   manglingOptionsForTargetMachine(const TargetMachine &TM);
 
   CompileResult tryToLoadFromObjectCache(const Module &M);

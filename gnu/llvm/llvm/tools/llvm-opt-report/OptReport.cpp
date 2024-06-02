@@ -15,7 +15,6 @@
 
 #include "llvm-c/Remarks.h"
 #include "llvm/Demangle/Demangle.h"
-#include "llvm/Remarks/Remark.h"
 #include "llvm/Remarks/RemarkFormat.h"
 #include "llvm/Remarks/RemarkParser.h"
 #include "llvm/Support/CommandLine.h"
@@ -32,7 +31,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <cstdlib>
 #include <map>
-#include <optional>
 #include <set>
 
 using namespace llvm;
@@ -209,7 +207,7 @@ static bool readLocationInfo(LocationInfoTy &LocationInfo) {
         Arg.Val.getAsInteger(10, UnrollCount);
     }
 
-    const std::optional<remarks::RemarkLocation> &Loc = Remark.Loc;
+    const Optional<remarks::RemarkLocation> &Loc = Remark.Loc;
     if (!Loc)
       continue;
 
@@ -227,17 +225,14 @@ static bool readLocationInfo(LocationInfoTy &LocationInfo) {
     };
 
     if (Remark.PassName == "inline") {
-      auto &LI = LocationInfo[std::string(File)][Line]
-                             [std::string(Remark.FunctionName)][Column];
+      auto &LI = LocationInfo[File][Line][Remark.FunctionName][Column];
       UpdateLLII(LI.Inlined);
     } else if (Remark.PassName == "loop-unroll") {
-      auto &LI = LocationInfo[std::string(File)][Line]
-                             [std::string(Remark.FunctionName)][Column];
+      auto &LI = LocationInfo[File][Line][Remark.FunctionName][Column];
       LI.UnrollCount = UnrollCount;
       UpdateLLII(LI.Unrolled);
     } else if (Remark.PassName == "loop-vectorize") {
-      auto &LI = LocationInfo[std::string(File)][Line]
-                             [std::string(Remark.FunctionName)][Column];
+      auto &LI = LocationInfo[File][Line][Remark.FunctionName][Column];
       LI.VectorizationFactor = VectorizationFactor;
       LI.InterleaveCount = InterleaveCount;
       UpdateLLII(LI.Vectorized);
@@ -249,7 +244,7 @@ static bool readLocationInfo(LocationInfoTy &LocationInfo) {
 
 static bool writeReport(LocationInfoTy &LocationInfo) {
   std::error_code EC;
-  llvm::raw_fd_ostream OS(OutputFileName, EC, llvm::sys::fs::OF_TextWithCRLF);
+  llvm::raw_fd_ostream OS(OutputFileName, EC, llvm::sys::fs::OF_Text);
   if (EC) {
     WithColor::error() << "Can't open file " << OutputFileName << ": "
                        << EC.message() << "\n";

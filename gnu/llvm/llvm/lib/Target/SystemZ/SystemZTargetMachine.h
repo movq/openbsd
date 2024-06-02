@@ -15,45 +15,39 @@
 #define LLVM_LIB_TARGET_SYSTEMZ_SYSTEMZTARGETMACHINE_H
 
 #include "SystemZSubtarget.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Target/TargetMachine.h"
 #include <memory>
-#include <optional>
 
 namespace llvm {
 
 class SystemZTargetMachine : public LLVMTargetMachine {
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
-
-  mutable StringMap<std::unique_ptr<SystemZSubtarget>> SubtargetMap;
+  SystemZSubtarget Subtarget;
 
 public:
   SystemZTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                        StringRef FS, const TargetOptions &Options,
-                       std::optional<Reloc::Model> RM,
-                       std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
-                       bool JIT);
+                       Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                       CodeGenOpt::Level OL, bool JIT);
   ~SystemZTargetMachine() override;
 
-  const SystemZSubtarget *getSubtargetImpl(const Function &) const override;
-  // DO NOT IMPLEMENT: There is no such thing as a valid default subtarget,
-  // subtargets are per-function entities based on the target-specific
-  // attributes of each function.
-  const SystemZSubtarget *getSubtargetImpl() const = delete;
+  const SystemZSubtarget *getSubtargetImpl() const { return &Subtarget; }
+
+  const SystemZSubtarget *getSubtargetImpl(const Function &) const override {
+    return &Subtarget;
+  }
 
   // Override LLVMTargetMachine
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
-  TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
+  TargetTransformInfo getTargetTransformInfo(const Function &F) override;
 
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();
   }
-
-  MachineFunctionInfo *
-  createMachineFunctionInfo(BumpPtrAllocator &Allocator, const Function &F,
-                            const TargetSubtargetInfo *STI) const override;
 
   bool targetSchedulesPostRAScheduling() const override { return true; };
 };

@@ -10,8 +10,9 @@
 #define LLVM_DEBUGINFO_CODEVIEW_TYPECOLLECTION_H
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CVRecord.h"
+
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
+#include "llvm/DebugInfo/CodeView/TypeRecord.h"
 
 namespace llvm {
 namespace codeview {
@@ -21,20 +22,19 @@ public:
 
   bool empty() { return size() == 0; }
 
-  virtual std::optional<TypeIndex> getFirst() = 0;
-  virtual std::optional<TypeIndex> getNext(TypeIndex Prev) = 0;
+  virtual Optional<TypeIndex> getFirst() = 0;
+  virtual Optional<TypeIndex> getNext(TypeIndex Prev) = 0;
 
   virtual CVType getType(TypeIndex Index) = 0;
   virtual StringRef getTypeName(TypeIndex Index) = 0;
   virtual bool contains(TypeIndex Index) = 0;
   virtual uint32_t size() = 0;
   virtual uint32_t capacity() = 0;
-  virtual bool replaceType(TypeIndex &Index, CVType Data, bool Stabilize) = 0;
 
   template <typename TFunc> void ForEachRecord(TFunc Func) {
-    std::optional<TypeIndex> Next = getFirst();
+    Optional<TypeIndex> Next = getFirst();
 
-    while (Next) {
+    while (Next.hasValue()) {
       TypeIndex N = *Next;
       Func(N, getType(N));
       Next = getNext(N);

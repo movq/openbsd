@@ -155,20 +155,6 @@ enum FusedCompareType {
 namespace SystemZ {
 int getTwoOperandOpcode(uint16_t Opcode);
 int getTargetMemOpcode(uint16_t Opcode);
-
-// Return a version of comparison CC mask CCMask in which the LT and GT
-// actions are swapped.
-unsigned reverseCCMask(unsigned CCMask);
-
-// Create a new basic block after MBB.
-MachineBasicBlock *emitBlockAfter(MachineBasicBlock *MBB);
-// Split MBB after MI and return the new block (the one that contains
-// instructions after MI).
-MachineBasicBlock *splitBlockAfter(MachineBasicBlock::iterator MI,
-                                   MachineBasicBlock *MBB);
-// Split MBB before MI and return the new block (the one that contains MI).
-MachineBasicBlock *splitBlockBefore(MachineBasicBlock::iterator MI,
-                                    MachineBasicBlock *MBB);
 }
 
 class SystemZInstrInfo : public SystemZGenInstrInfo {
@@ -233,17 +219,15 @@ public:
                         MachineBasicBlock *FBB, ArrayRef<MachineOperand> Cond,
                         const DebugLoc &DL,
                         int *BytesAdded = nullptr) const override;
-  bool analyzeCompare(const MachineInstr &MI, Register &SrcReg,
-                      Register &SrcReg2, int64_t &Mask,
-                      int64_t &Value) const override;
-  bool canInsertSelect(const MachineBasicBlock &, ArrayRef<MachineOperand> Cond,
-                       Register, Register, Register, int &, int &,
-                       int &) const override;
+  bool analyzeCompare(const MachineInstr &MI, unsigned &SrcReg,
+                      unsigned &SrcReg2, int &Mask, int &Value) const override;
+  bool canInsertSelect(const MachineBasicBlock&, ArrayRef<MachineOperand> Cond,
+                       unsigned, unsigned, int&, int&, int&) const override;
   void insertSelect(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
-                    const DebugLoc &DL, Register DstReg,
-                    ArrayRef<MachineOperand> Cond, Register TrueReg,
-                    Register FalseReg) const override;
-  bool FoldImmediate(MachineInstr &UseMI, MachineInstr &DefMI, Register Reg,
+                    const DebugLoc &DL, unsigned DstReg,
+                    ArrayRef<MachineOperand> Cond, unsigned TrueReg,
+                    unsigned FalseReg) const override;
+  bool FoldImmediate(MachineInstr &UseMI, MachineInstr &DefMI, unsigned Reg,
                      MachineRegisterInfo *MRI) const override;
   bool isPredicable(const MachineInstr &MI) const override;
   bool isProfitableToIfCvt(MachineBasicBlock &MBB, unsigned NumCycles,
@@ -262,18 +246,18 @@ public:
                    const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
                    bool KillSrc) const override;
   void storeRegToStackSlot(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator MBBI, Register SrcReg,
-                           bool isKill, int FrameIndex,
+                           MachineBasicBlock::iterator MBBI,
+                           unsigned SrcReg, bool isKill, int FrameIndex,
                            const TargetRegisterClass *RC,
-                           const TargetRegisterInfo *TRI,
-                           Register VReg) const override;
+                           const TargetRegisterInfo *TRI) const override;
   void loadRegFromStackSlot(MachineBasicBlock &MBB,
-                            MachineBasicBlock::iterator MBBI, Register DestReg,
-                            int FrameIdx, const TargetRegisterClass *RC,
-                            const TargetRegisterInfo *TRI,
-                            Register VReg) const override;
-  MachineInstr *convertToThreeAddress(MachineInstr &MI, LiveVariables *LV,
-                                      LiveIntervals *LIS) const override;
+                            MachineBasicBlock::iterator MBBI,
+                            unsigned DestReg, int FrameIdx,
+                            const TargetRegisterClass *RC,
+                            const TargetRegisterInfo *TRI) const override;
+  MachineInstr *convertToThreeAddress(MachineFunction::iterator &MFI,
+                                      MachineInstr &MI,
+                                      LiveVariables *LV) const override;
   MachineInstr *
   foldMemoryOperandImpl(MachineFunction &MF, MachineInstr &MI,
                         ArrayRef<unsigned> Ops,
@@ -309,13 +293,8 @@ public:
   // and the caller wants to perform that instruction's operation on an
   // address that has displacement Offset.  Return the opcode of a suitable
   // instruction (which might be Opcode itself) or 0 if no such instruction
-  // exists.  MI may be passed in order to allow examination of physical
-  // register operands (i.e. if a VR32/64 reg ended up as an FP or Vector reg).
-  unsigned getOpcodeForOffset(unsigned Opcode, int64_t Offset,
-                              const MachineInstr *MI = nullptr) const;
-
-  // Return true if Opcode has a mapping in 12 <-> 20 bit displacements.
-  bool hasDisplacementPairInsn(unsigned Opcode) const;
+  // exists.
+  unsigned getOpcodeForOffset(unsigned Opcode, int64_t Offset) const;
 
   // If Opcode is a load instruction that has a LOAD AND TEST form,
   // return the opcode for the testing form, otherwise return 0.
@@ -333,12 +312,6 @@ public:
   unsigned getFusedCompare(unsigned Opcode,
                            SystemZII::FusedCompareType Type,
                            const MachineInstr *MI = nullptr) const;
-
-  // Try to find all CC users of the compare instruction (MBBI) and update
-  // all of them to maintain equivalent behavior after swapping the compare
-  // operands. Return false if not all users can be conclusively found and
-  // handled. The compare instruction is *not* changed.
-  bool prepareCompareSwapOperands(MachineBasicBlock::iterator MBBI) const;
 
   // If Opcode is a LOAD opcode for with an associated LOAD AND TRAP
   // operation exists, returh the opcode for the latter, otherwise return 0.

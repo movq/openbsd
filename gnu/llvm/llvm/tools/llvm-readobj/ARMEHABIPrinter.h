@@ -9,6 +9,7 @@
 #ifndef LLVM_TOOLS_LLVM_READOBJ_ARMEHABIPRINTER_H
 #define LLVM_TOOLS_LLVM_READOBJ_ARMEHABIPRINTER_H
 
+#include "Error.h"
 #include "llvm-readobj.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Object/ELF.h"
@@ -91,7 +92,7 @@ inline ArrayRef<OpcodeDecoder::RingEntry> OpcodeDecoder::ring() {
       {0xf8, 0xd0, &OpcodeDecoder::Decode_11010nnn},
       {0xc0, 0xc0, &OpcodeDecoder::Decode_11xxxyyy},
   };
-  return ArrayRef(Ring);
+  return makeArrayRef(Ring);
 }
 
 inline void OpcodeDecoder::Decode_00xxxxxx(const uint8_t *Opcodes,
@@ -158,8 +159,9 @@ inline void OpcodeDecoder::Decode_10110001_0000iiii(const uint8_t *Opcodes,
   uint8_t Opcode0 = Opcodes[OI++ ^ 3];
   uint8_t Opcode1 = Opcodes[OI++ ^ 3];
 
-  SW.startLine() << format("0x%02X 0x%02X ; %s", Opcode0, Opcode1,
-                           (Opcode1 & 0xf0) ? "spare" : "pop ");
+  SW.startLine()
+    << format("0x%02X 0x%02X ; %s", Opcode0, Opcode1,
+              ((Opcode1 & 0xf0) || Opcode1 == 0x00) ? "spare" : "pop ");
   if (((Opcode1 & 0xf0) == 0x00) && Opcode1)
     PrintGPR((Opcode1 & 0x0f));
   OS << '\n';
@@ -194,8 +196,7 @@ inline void OpcodeDecoder::Decode_10110011_sssscccc(const uint8_t *Opcodes,
 inline void OpcodeDecoder::Decode_101101nn(const uint8_t *Opcodes,
                                            unsigned &OI) {
   uint8_t Opcode = Opcodes[OI++ ^ 3];
-  SW.startLine() << format("0x%02X      ; %s\n", Opcode,
-                           (Opcode == 0xb4) ? "pop ra_auth_code" : "spare");
+  SW.startLine() << format("0x%02X      ; spare\n", Opcode);
 }
 inline void OpcodeDecoder::Decode_10111nnn(const uint8_t *Opcodes,
                                            unsigned &OI) {
@@ -327,7 +328,7 @@ class PrinterContext {
   typedef typename ET::Word Elf_Word;
 
   ScopedPrinter &SW;
-  const object::ELFFile<ET> &ELF;
+  const object::ELFFile<ET> *ELF;
   StringRef FileName;
   const Elf_Shdr *Symtab;
   ArrayRef<Elf_Word> ShndxTable;
@@ -336,24 +337,22 @@ class PrinterContext {
 
   static uint64_t PREL31(uint32_t Address, uint32_t Place) {
     uint64_t Location = Address & 0x7fffffff;
-    if (Location & 0x40000000)
+    if (Location & 0x04000000)
       Location |= (uint64_t) ~0x7fffffff;
     return Location + Place;
   }
 
-  ErrorOr<StringRef>
-  FunctionAtAddress(uint64_t Address,
-                    std::optional<unsigned> SectionIndex) const;
+  ErrorOr<StringRef> FunctionAtAddress(unsigned Section, uint64_t Address) const;
   const Elf_Shdr *FindExceptionTable(unsigned IndexTableIndex,
                                      off_t IndexTableOffset) const;
 
   void PrintIndexTable(unsigned SectionIndex, const Elf_Shdr *IT) const;
-  void PrintExceptionTable(const Elf_Shdr &EHT,
+  void PrintExceptionTable(const Elf_Shdr *IT, const Elf_Shdr *EHT,
                            uint64_t TableEntryOffset) const;
   void PrintOpcodes(const uint8_t *Entry, size_t Length, off_t Offset) const;
 
 public:
-  PrinterContext(ScopedPrinter &SW, const object::ELFFile<ET> &ELF,
+  PrinterContext(ScopedPrinter &SW, const object::ELFFile<ET> *ELF,
                  StringRef FileName, const Elf_Shdr *Symtab)
       : SW(SW), ELF(ELF), FileName(FileName), Symtab(Symtab) {}
 
@@ -364,31 +363,28 @@ template <typename ET>
 const size_t PrinterContext<ET>::IndexTableEntrySize = 8;
 
 template <typename ET>
-ErrorOr<StringRef> PrinterContext<ET>::FunctionAtAddress(
-    uint64_t Address, std::optional<unsigned> SectionIndex) const {
+ErrorOr<StringRef>
+PrinterContext<ET>::FunctionAtAddress(unsigned Section,
+                                      uint64_t Address) const {
   if (!Symtab)
-    return inconvertibleErrorCode();
-  auto StrTableOrErr = ELF.getStringTableForSymtab(*Symtab);
+    return readobj_error::unknown_symbol;
+  auto StrTableOrErr = ELF->getStringTableForSymtab(*Symtab);
   if (!StrTableOrErr)
     reportError(StrTableOrErr.takeError(), FileName);
   StringRef StrTable = *StrTableOrErr;
 
-  for (const Elf_Sym &Sym : unwrapOrError(FileName, ELF.symbols(Symtab))) {
-    if (SectionIndex && *SectionIndex != Sym.st_shndx)
-      continue;
-
-    if (Sym.st_value == Address && Sym.getType() == ELF::STT_FUNC) {
+  for (const Elf_Sym &Sym : unwrapOrError(FileName, ELF->symbols(Symtab)))
+    if (Sym.st_shndx == Section && Sym.st_value == Address &&
+        Sym.getType() == ELF::STT_FUNC) {
       auto NameOrErr = Sym.getName(StrTable);
       if (!NameOrErr) {
         // TODO: Actually report errors helpfully.
         consumeError(NameOrErr.takeError());
-        return inconvertibleErrorCode();
+        return readobj_error::unknown_symbol;
       }
       return *NameOrErr;
     }
-  }
-
-  return inconvertibleErrorCode();
+  return readobj_error::unknown_symbol;
 }
 
 template <typename ET>
@@ -403,16 +399,16 @@ PrinterContext<ET>::FindExceptionTable(unsigned IndexSectionIndex,
   /// handling table.  Use this symbol to recover the actual exception handling
   /// table.
 
-  for (const Elf_Shdr &Sec : unwrapOrError(FileName, ELF.sections())) {
+  for (const Elf_Shdr &Sec : unwrapOrError(FileName, ELF->sections())) {
     if (Sec.sh_type != ELF::SHT_REL || Sec.sh_info != IndexSectionIndex)
       continue;
 
-    auto SymTabOrErr = ELF.getSection(Sec.sh_link);
+    auto SymTabOrErr = ELF->getSection(Sec.sh_link);
     if (!SymTabOrErr)
       reportError(SymTabOrErr.takeError(), FileName);
     const Elf_Shdr *SymTab = *SymTabOrErr;
 
-    for (const Elf_Rel &R : unwrapOrError(FileName, ELF.rels(Sec))) {
+    for (const Elf_Rel &R : unwrapOrError(FileName, ELF->rels(&Sec))) {
       if (R.r_offset != static_cast<unsigned>(IndexTableOffset))
         continue;
 
@@ -422,11 +418,11 @@ PrinterContext<ET>::FindExceptionTable(unsigned IndexSectionIndex,
       RelA.r_addend = 0;
 
       const Elf_Sym *Symbol =
-          unwrapOrError(FileName, ELF.getRelocationSymbol(RelA, SymTab));
+          unwrapOrError(FileName, ELF->getRelocationSymbol(&RelA, SymTab));
 
-      auto Ret = ELF.getSection(*Symbol, SymTab, ShndxTable);
+      auto Ret = ELF->getSection(Symbol, SymTab, ShndxTable);
       if (!Ret)
-        report_fatal_error(Twine(errorToErrorCode(Ret.takeError()).message()));
+        report_fatal_error(errorToErrorCode(Ret.takeError()).message());
       return *Ret;
     }
   }
@@ -434,20 +430,10 @@ PrinterContext<ET>::FindExceptionTable(unsigned IndexSectionIndex,
 }
 
 template <typename ET>
-static const typename ET::Shdr *
-findSectionContainingAddress(const object::ELFFile<ET> &Obj, StringRef FileName,
-                             uint64_t Address) {
-  for (const typename ET::Shdr &Sec : unwrapOrError(FileName, Obj.sections()))
-    if (Address >= Sec.sh_addr && Address < Sec.sh_addr + Sec.sh_size)
-      return &Sec;
-  return nullptr;
-}
-
-template <typename ET>
-void PrinterContext<ET>::PrintExceptionTable(const Elf_Shdr &EHT,
+void PrinterContext<ET>::PrintExceptionTable(const Elf_Shdr *IT,
+                                             const Elf_Shdr *EHT,
                                              uint64_t TableEntryOffset) const {
-  // TODO: handle failure.
-  Expected<ArrayRef<uint8_t>> Contents = ELF.getSectionContents(EHT);
+  Expected<ArrayRef<uint8_t>> Contents = ELF->getSectionContents(EHT);
   if (!Contents)
     return;
 
@@ -496,14 +482,10 @@ void PrinterContext<ET>::PrintExceptionTable(const Elf_Shdr &EHT,
     }
   } else {
     SW.printString("Model", StringRef("Generic"));
-    const bool IsRelocatable = ELF.getHeader().e_type == ELF::ET_REL;
-    uint64_t Address = IsRelocatable
-                           ? PREL31(Word, EHT.sh_addr)
-                           : PREL31(Word, EHT.sh_addr + TableEntryOffset);
+
+    uint64_t Address = PREL31(Word, EHT->sh_addr);
     SW.printHex("PersonalityRoutineAddress", Address);
-    std::optional<unsigned> SecIndex =
-        IsRelocatable ? std::optional<unsigned>(EHT.sh_link) : std::nullopt;
-    if (ErrorOr<StringRef> Name = FunctionAtAddress(Address, SecIndex))
+    if (ErrorOr<StringRef> Name = FunctionAtAddress(EHT->sh_link, Address))
       SW.printString("PersonalityRoutineName", *Name);
   }
 }
@@ -512,14 +494,13 @@ template <typename ET>
 void PrinterContext<ET>::PrintOpcodes(const uint8_t *Entry,
                                       size_t Length, off_t Offset) const {
   ListScope OCC(SW, "Opcodes");
-  OpcodeDecoder(SW).Decode(Entry, Offset, Length);
+  OpcodeDecoder(OCC.W).Decode(Entry, Offset, Length);
 }
 
 template <typename ET>
 void PrinterContext<ET>::PrintIndexTable(unsigned SectionIndex,
                                          const Elf_Shdr *IT) const {
-  // TODO: handle failure.
-  Expected<ArrayRef<uint8_t>> Contents = ELF.getSectionContents(*IT);
+  Expected<ArrayRef<uint8_t>> Contents = ELF->getSectionContents(IT);
   if (!Contents)
     return;
 
@@ -536,7 +517,6 @@ void PrinterContext<ET>::PrintIndexTable(unsigned SectionIndex,
   const support::ulittle32_t *Data =
     reinterpret_cast<const support::ulittle32_t *>(Contents->data());
   const unsigned Entries = IT->sh_size / IndexTableEntrySize;
-  const bool IsRelocatable = ELF.getHeader().e_type == ELF::ET_REL;
 
   ListScope E(SW, "Entries");
   for (unsigned Entry = 0; Entry < Entries; ++Entry) {
@@ -552,31 +532,9 @@ void PrinterContext<ET>::PrintIndexTable(unsigned SectionIndex,
       continue;
     }
 
-    // FIXME: For a relocatable object ideally we might want to:
-    // 1) Find a relocation for the offset of Word0.
-    // 2) Verify this relocation is of an expected type (R_ARM_PREL31) and
-    //    verify the symbol index.
-    // 3) Resolve the relocation using it's symbol value, addend etc.
-    // Currently the code assumes that Word0 contains an addend of a
-    // R_ARM_PREL31 REL relocation that references a section symbol. RELA
-    // relocations are not supported and it works because addresses of sections
-    // are nulls in relocatable objects.
-    //
-    // For a non-relocatable object, Word0 contains a place-relative signed
-    // offset to the referenced entity.
-    const uint64_t Address =
-        IsRelocatable
-            ? PREL31(Word0, IT->sh_addr)
-            : PREL31(Word0, IT->sh_addr + Entry * IndexTableEntrySize);
-    SW.printHex("FunctionAddress", Address);
-
-    // In a relocatable output we might have many .ARM.exidx sections linked to
-    // their code sections via the sh_link field. For a non-relocatable ELF file
-    // the sh_link field is not reliable, because we have one .ARM.exidx section
-    // normally, but might have many code sections.
-    std::optional<unsigned> SecIndex =
-        IsRelocatable ? std::optional<unsigned>(IT->sh_link) : std::nullopt;
-    if (ErrorOr<StringRef> Name = FunctionAtAddress(Address, SecIndex))
+    const uint64_t Offset = PREL31(Word0, IT->sh_addr);
+    SW.printHex("FunctionAddress", Offset);
+    if (ErrorOr<StringRef> Name = FunctionAtAddress(IT->sh_link, Offset))
       SW.printString("FunctionName", *Name);
 
     if (Word1 == EXIDX_CANTUNWIND) {
@@ -592,30 +550,18 @@ void PrinterContext<ET>::PrintIndexTable(unsigned SectionIndex,
 
       PrintOpcodes(Contents->data() + Entry * IndexTableEntrySize + 4, 3, 1);
     } else {
-      const Elf_Shdr *EHT;
-      uint64_t TableEntryAddress;
-      if (IsRelocatable) {
-        TableEntryAddress = PREL31(Word1, IT->sh_addr);
-        EHT = FindExceptionTable(SectionIndex, Entry * IndexTableEntrySize + 4);
-      } else {
-        TableEntryAddress =
-            PREL31(Word1, IT->sh_addr + Entry * IndexTableEntrySize + 4);
-        EHT = findSectionContainingAddress(ELF, FileName, TableEntryAddress);
-      }
+      const Elf_Shdr *EHT =
+        FindExceptionTable(SectionIndex, Entry * IndexTableEntrySize + 4);
 
       if (EHT)
-        // TODO: handle failure.
-        if (Expected<StringRef> Name = ELF.getSectionName(*EHT))
+        if (auto Name = ELF->getSectionName(EHT))
           SW.printString("ExceptionHandlingTable", *Name);
 
-      SW.printHex(IsRelocatable ? "TableEntryOffset" : "TableEntryAddress",
-                  TableEntryAddress);
-      if (EHT) {
-        if (IsRelocatable)
-          PrintExceptionTable(*EHT, TableEntryAddress);
-        else
-          PrintExceptionTable(*EHT, TableEntryAddress - EHT->sh_addr);
-      }
+      uint64_t TableEntryOffset = PREL31(Word1, IT->sh_addr);
+      SW.printHex("TableEntryOffset", TableEntryOffset);
+
+      if (EHT)
+        PrintExceptionTable(IT, EHT, TableEntryOffset);
     }
   }
 }
@@ -625,13 +571,12 @@ void PrinterContext<ET>::PrintUnwindInformation() const {
   DictScope UI(SW, "UnwindInformation");
 
   int SectionIndex = 0;
-  for (const Elf_Shdr &Sec : unwrapOrError(FileName, ELF.sections())) {
+  for (const Elf_Shdr &Sec : unwrapOrError(FileName, ELF->sections())) {
     if (Sec.sh_type == ELF::SHT_ARM_EXIDX) {
       DictScope UIT(SW, "UnwindIndexTable");
 
       SW.printNumber("SectionIndex", SectionIndex);
-      // TODO: handle failure.
-      if (Expected<StringRef> SectionName = ELF.getSectionName(Sec))
+      if (auto SectionName = ELF->getSectionName(&Sec))
         SW.printString("SectionName", *SectionName);
       SW.printHex("SectionOffset", Sec.sh_offset);
 

@@ -15,10 +15,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "R600AsmPrinter.h"
-#include "MCTargetDesc/R600MCTargetDesc.h"
+#include "AMDGPUSubtarget.h"
 #include "R600Defines.h"
 #include "R600MachineFunctionInfo.h"
-#include "R600Subtarget.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSectionELF.h"
@@ -71,7 +71,7 @@ void R600AsmPrinter::EmitProgramInfoR600(const MachineFunction &MF) {
   if (STM.getGeneration() >= AMDGPUSubtarget::EVERGREEN) {
     // Evergreen / Northern Islands
     switch (MF.getFunction().getCallingConv()) {
-    default: [[fallthrough]];
+    default: LLVM_FALLTHROUGH;
     case CallingConv::AMDGPU_CS: RsrcReg = R_0288D4_SQ_PGM_RESOURCES_LS; break;
     case CallingConv::AMDGPU_GS: RsrcReg = R_028878_SQ_PGM_RESOURCES_GS; break;
     case CallingConv::AMDGPU_PS: RsrcReg = R_028844_SQ_PGM_RESOURCES_PS; break;
@@ -80,23 +80,23 @@ void R600AsmPrinter::EmitProgramInfoR600(const MachineFunction &MF) {
   } else {
     // R600 / R700
     switch (MF.getFunction().getCallingConv()) {
-    default: [[fallthrough]];
-    case CallingConv::AMDGPU_GS: [[fallthrough]];
-    case CallingConv::AMDGPU_CS: [[fallthrough]];
+    default: LLVM_FALLTHROUGH;
+    case CallingConv::AMDGPU_GS: LLVM_FALLTHROUGH;
+    case CallingConv::AMDGPU_CS: LLVM_FALLTHROUGH;
     case CallingConv::AMDGPU_VS: RsrcReg = R_028868_SQ_PGM_RESOURCES_VS; break;
     case CallingConv::AMDGPU_PS: RsrcReg = R_028850_SQ_PGM_RESOURCES_PS; break;
     }
   }
 
-  OutStreamer->emitInt32(RsrcReg);
-  OutStreamer->emitIntValue(S_NUM_GPRS(MaxGPR + 1) |
+  OutStreamer->EmitIntValue(RsrcReg, 4);
+  OutStreamer->EmitIntValue(S_NUM_GPRS(MaxGPR + 1) |
                            S_STACK_SIZE(MFI->CFStackSize), 4);
-  OutStreamer->emitInt32(R_02880C_DB_SHADER_CONTROL);
-  OutStreamer->emitInt32(S_02880C_KILL_ENABLE(killPixel));
+  OutStreamer->EmitIntValue(R_02880C_DB_SHADER_CONTROL, 4);
+  OutStreamer->EmitIntValue(S_02880C_KILL_ENABLE(killPixel), 4);
 
   if (AMDGPU::isCompute(MF.getFunction().getCallingConv())) {
-    OutStreamer->emitInt32(R_0288E8_SQ_LDS_ALLOC);
-    OutStreamer->emitIntValue(alignTo(MFI->getLDSSize(), 4) >> 2, 4);
+    OutStreamer->EmitIntValue(R_0288E8_SQ_LDS_ALLOC, 4);
+    OutStreamer->EmitIntValue(alignTo(MFI->getLDSSize(), 4) >> 2, 4);
   }
 }
 
@@ -111,16 +111,16 @@ bool R600AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   MCContext &Context = getObjFileLowering().getContext();
   MCSectionELF *ConfigSection =
       Context.getELFSection(".AMDGPU.config", ELF::SHT_PROGBITS, 0);
-  OutStreamer->switchSection(ConfigSection);
+  OutStreamer->SwitchSection(ConfigSection);
 
   EmitProgramInfoR600(MF);
 
-  emitFunctionBody();
+  EmitFunctionBody();
 
   if (isVerbose()) {
     MCSectionELF *CommentSection =
         Context.getELFSection(".AMDGPU.csdata", ELF::SHT_PROGBITS, 0);
-    OutStreamer->switchSection(CommentSection);
+    OutStreamer->SwitchSection(CommentSection);
 
     R600MachineFunctionInfo *MFI = MF.getInfo<R600MachineFunctionInfo>();
     OutStreamer->emitRawComment(
@@ -129,3 +129,4 @@ bool R600AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
 
   return false;
 }
+

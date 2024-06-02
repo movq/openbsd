@@ -10,7 +10,6 @@ executable("dsymutil") {
     ":Options",
     "//llvm/lib/CodeGen/AsmPrinter",
     "//llvm/lib/DWARFLinker",
-    "//llvm/lib/DWARFLinkerParallel",
     "//llvm/lib/DebugInfo/DWARF",
     "//llvm/lib/MC",
     "//llvm/lib/Object",
@@ -18,20 +17,19 @@ executable("dsymutil") {
     "//llvm/lib/Support",
     "//llvm/lib/Target",
     "//llvm/lib/Target:TargetsToBuild",
-    "//llvm/lib/TargetParser",
   ]
   sources = [
     "BinaryHolder.cpp",
     "CFBundle.cpp",
     "DebugMap.cpp",
     "DwarfLinkerForBinary.cpp",
+    "DwarfStreamer.cpp",
     "MachODebugMapParser.cpp",
     "MachOUtils.cpp",
-    "Reproducer.cpp",
     "SymbolMap.cpp",
     "dsymutil.cpp",
   ]
   if (host_os == "mac") {
-    frameworks = [ "CoreFoundation.framework" ]
+    libs = [ "CoreFoundation.framework" ]
   }
 }

@@ -15,7 +15,6 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/MathExtras.h"
 
 //===----------------------------------------------------------------------===//
 //  Vector Mask Decoding
@@ -569,4 +568,4 @@ void DecodeVPERMV3Mask(ArrayRef<uint64_t> RawMask, const APInt &UndefElts,
   }
 }
 
-} // namespace llvm
+} // llvm namespace

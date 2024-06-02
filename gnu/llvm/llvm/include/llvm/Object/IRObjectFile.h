@@ -13,13 +13,17 @@
 #ifndef LLVM_OBJECT_IROBJECTFILE_H
 #define LLVM_OBJECT_IROBJECTFILE_H
 
-#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/Object/IRSymtab.h"
 #include "llvm/Object/ModuleSymbolTable.h"
 #include "llvm/Object/SymbolicFile.h"
 
 namespace llvm {
+class BitcodeModule;
+class Mangler;
 class Module;
+class GlobalValue;
+class Triple;
 
 namespace object {
 class ObjectFile;
@@ -34,7 +38,7 @@ public:
   ~IRObjectFile() override;
   void moveSymbolNext(DataRefImpl &Symb) const override;
   Error printSymbolName(raw_ostream &OS, DataRefImpl Symb) const override;
-  Expected<uint32_t> getSymbolFlags(DataRefImpl Symb) const override;
+  uint32_t getSymbolFlags(DataRefImpl Symb) const override;
   basic_symbol_iterator symbol_begin() const override;
   basic_symbol_iterator symbol_end() const override;
 
@@ -82,6 +86,6 @@ Expected<IRSymtabFile> readIRSymtab(MemoryBufferRef MBRef);
 
 }
 
-} // namespace llvm
+}
 
 #endif

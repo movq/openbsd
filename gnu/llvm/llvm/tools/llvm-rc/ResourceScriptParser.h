@@ -24,6 +24,9 @@
 #include <vector>
 
 namespace llvm {
+namespace opt {
+class InputArgList;
+}
 namespace rc {
 
 class RCParser {

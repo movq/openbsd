@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "WindowsResourceDumper.h"
+#include "Error.h"
 #include "llvm/Object/WindowsResource.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ScopedPrinter.h"

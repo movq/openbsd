@@ -40,10 +40,6 @@ def SDT_ZWrapOffset         : SDTypeProfile<1, 2,
                                              SDTCisSameAs<0, 2>,
                                              SDTCisPtrTy<0>]>;
 def SDT_ZAdjDynAlloc        : SDTypeProfile<1, 0, [SDTCisVT<0, i64>]>;
-def SDT_ZProbedAlloca       : SDTypeProfile<1, 2,
-                                            [SDTCisSameAs<0, 1>,
-                                             SDTCisSameAs<0, 2>,
-                                             SDTCisPtrTy<0>]>;
 def SDT_ZGR128Binary        : SDTypeProfile<1, 2,
                                             [SDTCisVT<0, untyped>,
                                              SDTCisInt<1>,
@@ -102,10 +98,17 @@ def SDT_ZMemMemLengthCC     : SDTypeProfile<1, 3,
                                              SDTCisPtrTy<1>,
                                              SDTCisPtrTy<2>,
                                              SDTCisVT<3, i64>]>;
-def SDT_ZMemsetMVC          : SDTypeProfile<0, 3,
+def SDT_ZMemMemLoop         : SDTypeProfile<0, 4,
                                             [SDTCisPtrTy<0>,
-                                             SDTCisVT<1, i64>,
-                                             SDTCisVT<2, i32>]>;
+                                             SDTCisPtrTy<1>,
+                                             SDTCisVT<2, i64>,
+                                             SDTCisVT<3, i64>]>;
+def SDT_ZMemMemLoopCC       : SDTypeProfile<1, 4,
+                                            [SDTCisVT<0, i32>,
+                                             SDTCisPtrTy<1>,
+                                             SDTCisPtrTy<2>,
+                                             SDTCisVT<3, i64>,
+                                             SDTCisVT<4, i64>]>;
 def SDT_ZString             : SDTypeProfile<1, 3,
                                             [SDTCisPtrTy<0>,
                                              SDTCisPtrTy<1>,
@@ -252,6 +255,7 @@ def z_tls_ldcall        : SDNode<"SystemZISD::TLS_LDCALL", SDT_ZCall,
 def z_pcrel_wrapper     : SDNode<"SystemZISD::PCREL_WRAPPER", SDT_ZWrapPtr, []>;
 def z_pcrel_offset      : SDNode<"SystemZISD::PCREL_OFFSET",
                                  SDT_ZWrapOffset, []>;
+def z_iabs              : SDNode<"SystemZISD::IABS", SDTIntUnaryOp, []>;
 def z_icmp              : SDNode<"SystemZISD::ICMP", SDT_ZICmp>;
 def z_fcmp              : SDNode<"SystemZISD::FCMP", SDT_ZCmp>;
 def z_strict_fcmp       : SDNode<"SystemZISD::STRICT_FCMP", SDT_ZCmp,
@@ -265,8 +269,6 @@ def z_select_ccmask_1   : SDNode<"SystemZISD::SELECT_CCMASK",
                                  SDT_ZSelectCCMask>;
 def z_ipm_1             : SDNode<"SystemZISD::IPM", SDT_ZIPM>;
 def z_adjdynalloc       : SDNode<"SystemZISD::ADJDYNALLOC", SDT_ZAdjDynAlloc>;
-def z_probed_alloca     : SDNode<"SystemZISD::PROBED_ALLOCA", SDT_ZProbedAlloca,
-                                 [SDNPHasChain]>;
 def z_popcnt            : SDNode<"SystemZISD::POPCNT", SDTIntUnaryOp>;
 def z_smul_lohi         : SDNode<"SystemZISD::SMUL_LOHI", SDT_ZGR128Binary>;
 def z_umul_lohi         : SDNode<"SystemZISD::UMUL_LOHI", SDT_ZGR128Binary>;
@@ -278,6 +280,9 @@ def z_uaddo             : SDNode<"SystemZISD::UADDO", SDT_ZBinaryWithFlags>;
 def z_usubo             : SDNode<"SystemZISD::USUBO", SDT_ZBinaryWithFlags>;
 def z_addcarry_1        : SDNode<"SystemZISD::ADDCARRY", SDT_ZBinaryWithCarry>;
 def z_subcarry_1        : SDNode<"SystemZISD::SUBCARRY", SDT_ZBinaryWithCarry>;
+
+def z_membarrier        : SDNode<"SystemZISD::MEMBARRIER", SDTNone,
+                                 [SDNPHasChain, SDNPSideEffect]>;
 
 def z_loadbswap        : SDNode<"SystemZISD::LRV", SDTLoad,
                                  [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
@@ -369,7 +374,7 @@ def z_vstrsz_cc         : SDNode<"SystemZISD::VSTRSZ_CC",
 def z_vftci             : SDNode<"SystemZISD::VFTCI", SDT_ZVecBinaryConvIntCC>;
 
 class AtomicWOp<string name, SDTypeProfile profile = SDT_ZAtomicLoadBinaryW>
-  : SDNode<"SystemZISD::"#name, profile,
+  : SDNode<"SystemZISD::"##name, profile,
            [SDNPHasChain, SDNPMayStore, SDNPMayLoad, SDNPMemOperand]>;
 
 def z_atomic_swapw      : AtomicWOp<"ATOMIC_SWAPW">;
@@ -406,16 +411,24 @@ def z_atomic_cmp_swap_128 : SDNode<"SystemZISD::ATOMIC_CMP_SWAP_128",
 
 def z_mvc               : SDNode<"SystemZISD::MVC", SDT_ZMemMemLength,
                                  [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+def z_mvc_loop          : SDNode<"SystemZISD::MVC_LOOP", SDT_ZMemMemLoop,
+                                 [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
 def z_nc                : SDNode<"SystemZISD::NC", SDT_ZMemMemLength,
+                                  [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+def z_nc_loop           : SDNode<"SystemZISD::NC_LOOP", SDT_ZMemMemLoop,
                                   [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
 def z_oc                : SDNode<"SystemZISD::OC", SDT_ZMemMemLength,
                                   [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+def z_oc_loop           : SDNode<"SystemZISD::OC_LOOP", SDT_ZMemMemLoop,
+                                  [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
 def z_xc                : SDNode<"SystemZISD::XC", SDT_ZMemMemLength,
+                                  [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+def z_xc_loop           : SDNode<"SystemZISD::XC_LOOP", SDT_ZMemMemLoop,
                                   [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
 def z_clc               : SDNode<"SystemZISD::CLC", SDT_ZMemMemLengthCC,
                                  [SDNPHasChain, SDNPMayLoad]>;
-def z_memset_mvc        : SDNode<"SystemZISD::MEMSET_MVC", SDT_ZMemsetMVC,
-                                 [SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+def z_clc_loop          : SDNode<"SystemZISD::CLC_LOOP", SDT_ZMemMemLoopCC,
+                                 [SDNPHasChain, SDNPMayLoad]>;
 def z_strcmp            : SDNode<"SystemZISD::STRCMP", SDT_ZStringCC,
                                  [SDNPHasChain, SDNPMayLoad]>;
 def z_stpcpy            : SDNode<"SystemZISD::STPCPY", SDT_ZString,
@@ -553,8 +566,10 @@ def anyextloadi32 : PatFrag<(ops node:$ptr), (anyextload node:$ptr), [{
 
 // Aligned loads.
 class AlignedLoad<SDPatternOperator load>
-  : PatFrag<(ops node:$addr), (load node:$addr),
-  [{ return storeLoadIsAligned(N); }]>;
+  : PatFrag<(ops node:$addr), (load node:$addr), [{
+  auto *Load = cast<LoadSDNode>(N);
+  return Load->getAlignment() >= Load->getMemoryVT().getStoreSize();
+}]>;
 def aligned_load         : AlignedLoad<load>;
 def aligned_asextloadi16 : AlignedLoad<asextloadi16>;
 def aligned_asextloadi32 : AlignedLoad<asextloadi32>;
@@ -563,8 +578,10 @@ def aligned_azextloadi32 : AlignedLoad<azextloadi32>;
 
 // Aligned stores.
 class AlignedStore<SDPatternOperator store>
-  : PatFrag<(ops node:$src, node:$addr), (store node:$src, node:$addr),
-  [{ return storeLoadIsAligned(N); }]>;
+  : PatFrag<(ops node:$src, node:$addr), (store node:$src, node:$addr), [{
+  auto *Store = cast<StoreSDNode>(N);
+  return Store->getAlignment() >= Store->getMemoryVT().getStoreSize();
+}]>;
 def aligned_store         : AlignedStore<store>;
 def aligned_truncstorei16 : AlignedStore<truncstorei16>;
 def aligned_truncstorei32 : AlignedStore<truncstorei32>;
@@ -648,7 +665,17 @@ def or_as_revinserti8 : PatFrag<(ops node:$src1, node:$src2),
 }]>;
 
 // Negative integer absolute.
-def z_inegabs : PatFrag<(ops node:$src), (ineg (abs node:$src))>;
+def z_inegabs : PatFrag<(ops node:$src), (ineg (z_iabs node:$src))>;
+
+// Integer absolute, matching the canonical form generated by DAGCombiner.
+def z_iabs32 : PatFrag<(ops node:$src),
+                       (xor (add node:$src, (sra node:$src, (i32 31))),
+                            (sra node:$src, (i32 31)))>;
+def z_iabs64 : PatFrag<(ops node:$src),
+                       (xor (add node:$src, (sra node:$src, (i32 63))),
+                            (sra node:$src, (i32 63)))>;
+def z_inegabs32 : PatFrag<(ops node:$src), (ineg (z_iabs32 node:$src))>;
+def z_inegabs64 : PatFrag<(ops node:$src), (ineg (z_iabs64 node:$src))>;
 
 // Integer multiply-and-add
 def z_muladd : PatFrag<(ops node:$src1, node:$src2, node:$src3),
@@ -864,6 +891,16 @@ def z_vicmph_zero : PatFrag<(ops node:$x), (z_vicmph node:$x, immAllZerosV)>;
 
 // Signed "integer less than zero" on vectors.
 def z_vicmpl_zero : PatFrag<(ops node:$x), (z_vicmph immAllZerosV, node:$x)>;
+
+// Integer absolute on vectors.
+class z_viabs<int shift>
+  : PatFrag<(ops node:$src),
+            (xor (add node:$src, (z_vsra_by_scalar node:$src, (i32 shift))),
+                 (z_vsra_by_scalar node:$src, (i32 shift)))>;
+def z_viabs8  : z_viabs<7>;
+def z_viabs16 : z_viabs<15>;
+def z_viabs32 : z_viabs<31>;
+def z_viabs64 : z_viabs<63>;
 
 // Sign-extend the i64 elements of a vector.
 class z_vse<int shift>

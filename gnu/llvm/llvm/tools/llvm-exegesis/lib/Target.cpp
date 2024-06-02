@@ -7,19 +7,11 @@
 //===----------------------------------------------------------------------===//
 #include "Target.h"
 
-#include "LatencyBenchmarkRunner.h"
-#include "ParallelSnippetGenerator.h"
-#include "SerialSnippetGenerator.h"
-#include "UopsBenchmarkRunner.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Support/Error.h"
+#include "Latency.h"
+#include "Uops.h"
 
 namespace llvm {
 namespace exegesis {
-
-cl::OptionCategory Options("llvm-exegesis options");
-cl::OptionCategory BenchmarkOptions("llvm-exegesis benchmark options");
-cl::OptionCategory AnalysisOptions("llvm-exegesis analysis options");
 
 ExegesisTarget::~ExegesisTarget() {} // anchor.
 
@@ -31,18 +23,6 @@ const ExegesisTarget *ExegesisTarget::lookup(Triple TT) {
       return T;
   }
   return nullptr;
-}
-
-Expected<std::unique_ptr<pfm::Counter>>
-ExegesisTarget::createCounter(StringRef CounterName, const LLVMState &) const {
-  pfm::PerfEvent Event(CounterName);
-  if (!Event.valid())
-    return llvm::make_error<Failure>(
-        llvm::Twine("Unable to create counter with name '")
-            .concat(CounterName)
-            .concat("'"));
-
-  return std::make_unique<pfm::Counter>(std::move(Event));
 }
 
 void ExegesisTarget::registerTarget(ExegesisTarget *Target) {
@@ -63,75 +43,82 @@ std::unique_ptr<SnippetGenerator> ExegesisTarget::createSnippetGenerator(
   case InstructionBenchmark::Unknown:
     return nullptr;
   case InstructionBenchmark::Latency:
-    return createSerialSnippetGenerator(State, Opts);
+    return createLatencySnippetGenerator(State, Opts);
   case InstructionBenchmark::Uops:
   case InstructionBenchmark::InverseThroughput:
-    return createParallelSnippetGenerator(State, Opts);
+    return createUopsSnippetGenerator(State, Opts);
   }
   return nullptr;
 }
 
-Expected<std::unique_ptr<BenchmarkRunner>>
-ExegesisTarget::createBenchmarkRunner(
-    InstructionBenchmark::ModeE Mode, const LLVMState &State,
-    BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-    InstructionBenchmark::ResultAggregationModeE ResultAggMode) const {
+std::unique_ptr<BenchmarkRunner>
+ExegesisTarget::createBenchmarkRunner(InstructionBenchmark::ModeE Mode,
+                                      const LLVMState &State) const {
   PfmCountersInfo PfmCounters = State.getPfmCounters();
   switch (Mode) {
   case InstructionBenchmark::Unknown:
     return nullptr;
   case InstructionBenchmark::Latency:
   case InstructionBenchmark::InverseThroughput:
-    if (BenchmarkPhaseSelector == BenchmarkPhaseSelectorE::Measure &&
-        !PfmCounters.CycleCounter) {
+    if (!PfmCounters.CycleCounter) {
       const char *ModeName = Mode == InstructionBenchmark::Latency
                                  ? "latency"
                                  : "inverse_throughput";
-      return make_error<Failure>(
-          Twine("can't run '")
-              .concat(ModeName)
-              .concat(
-                  "' mode, sched model does not define a cycle counter. You "
-                  "can pass --skip-measurements to skip the actual "
-                  "benchmarking."));
+      report_fatal_error(Twine("can't run '").concat(ModeName).concat("' mode, "
+                               "sched model does not define a cycle counter."));
     }
-    return createLatencyBenchmarkRunner(State, Mode, BenchmarkPhaseSelector,
-                                        ResultAggMode);
+    return createLatencyBenchmarkRunner(State, Mode);
   case InstructionBenchmark::Uops:
-    if (BenchmarkPhaseSelector == BenchmarkPhaseSelectorE::Measure &&
-        !PfmCounters.UopsCounter && !PfmCounters.IssueCounters)
-      return make_error<Failure>(
-          "can't run 'uops' mode, sched model does not define uops or issue "
-          "counters. You can pass --skip-measurements to skip the actual "
-          "benchmarking.");
-    return createUopsBenchmarkRunner(State, BenchmarkPhaseSelector,
-                                     ResultAggMode);
+    if (!PfmCounters.UopsCounter && !PfmCounters.IssueCounters)
+      report_fatal_error("can't run 'uops' mode, sched model does not define "
+                         "uops or issue counters.");
+    return createUopsBenchmarkRunner(State);
   }
   return nullptr;
 }
 
-std::unique_ptr<SnippetGenerator> ExegesisTarget::createSerialSnippetGenerator(
+std::unique_ptr<SnippetGenerator> ExegesisTarget::createLatencySnippetGenerator(
     const LLVMState &State, const SnippetGenerator::Options &Opts) const {
-  return std::make_unique<SerialSnippetGenerator>(State, Opts);
+  return std::make_unique<LatencySnippetGenerator>(State, Opts);
 }
 
-std::unique_ptr<SnippetGenerator> ExegesisTarget::createParallelSnippetGenerator(
+std::unique_ptr<SnippetGenerator> ExegesisTarget::createUopsSnippetGenerator(
     const LLVMState &State, const SnippetGenerator::Options &Opts) const {
-  return std::make_unique<ParallelSnippetGenerator>(State, Opts);
+  return std::make_unique<UopsSnippetGenerator>(State, Opts);
 }
 
 std::unique_ptr<BenchmarkRunner> ExegesisTarget::createLatencyBenchmarkRunner(
-    const LLVMState &State, InstructionBenchmark::ModeE Mode,
-    BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-    InstructionBenchmark::ResultAggregationModeE ResultAggMode) const {
-  return std::make_unique<LatencyBenchmarkRunner>(
-      State, Mode, BenchmarkPhaseSelector, ResultAggMode);
+    const LLVMState &State, InstructionBenchmark::ModeE Mode) const {
+  return std::make_unique<LatencyBenchmarkRunner>(State, Mode);
 }
 
-std::unique_ptr<BenchmarkRunner> ExegesisTarget::createUopsBenchmarkRunner(
-    const LLVMState &State, BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
-    InstructionBenchmark::ResultAggregationModeE /*unused*/) const {
-  return std::make_unique<UopsBenchmarkRunner>(State, BenchmarkPhaseSelector);
+std::unique_ptr<BenchmarkRunner>
+ExegesisTarget::createUopsBenchmarkRunner(const LLVMState &State) const {
+  return std::make_unique<UopsBenchmarkRunner>(State);
+}
+
+void ExegesisTarget::randomizeMCOperand(const Instruction &Instr,
+                                        const Variable &Var,
+                                        MCOperand &AssignedValue,
+                                        const BitVector &ForbiddenRegs) const {
+  const Operand &Op = Instr.getPrimaryOperand(Var);
+  switch (Op.getExplicitOperandInfo().OperandType) {
+  case MCOI::OperandType::OPERAND_IMMEDIATE:
+    // FIXME: explore immediate values too.
+    AssignedValue = MCOperand::createImm(1);
+    break;
+  case MCOI::OperandType::OPERAND_REGISTER: {
+    assert(Op.isReg());
+    auto AllowedRegs = Op.getRegisterAliasing().sourceBits();
+    assert(AllowedRegs.size() == ForbiddenRegs.size());
+    for (auto I : ForbiddenRegs.set_bits())
+      AllowedRegs.reset(I);
+    AssignedValue = MCOperand::createReg(randomBit(AllowedRegs));
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 static_assert(std::is_pod<PfmCountersInfo>::value,
@@ -140,18 +127,20 @@ const PfmCountersInfo PfmCountersInfo::Default = {nullptr, nullptr, nullptr,
                                                   0u};
 
 const PfmCountersInfo &ExegesisTarget::getPfmCounters(StringRef CpuName) const {
-  assert(llvm::is_sorted(
-             CpuPfmCounters,
+  assert(std::is_sorted(
+             CpuPfmCounters.begin(), CpuPfmCounters.end(),
              [](const CpuAndPfmCounters &LHS, const CpuAndPfmCounters &RHS) {
                return strcmp(LHS.CpuName, RHS.CpuName) < 0;
              }) &&
          "CpuPfmCounters table is not sorted");
 
   // Find entry
-  auto Found = llvm::lower_bound(CpuPfmCounters, CpuName);
+  auto Found =
+      std::lower_bound(CpuPfmCounters.begin(), CpuPfmCounters.end(), CpuName);
   if (Found == CpuPfmCounters.end() || StringRef(Found->CpuName) != CpuName) {
     // Use the default.
-    if (!CpuPfmCounters.empty() && CpuPfmCounters.begin()->CpuName[0] == '\0') {
+    if (CpuPfmCounters.begin() != CpuPfmCounters.end() &&
+        CpuPfmCounters.begin()->CpuName[0] == '\0') {
       Found = CpuPfmCounters.begin(); // The target specifies a default.
     } else {
       return PfmCountersInfo::Default; // No default for the target.
@@ -160,8 +149,6 @@ const PfmCountersInfo &ExegesisTarget::getPfmCounters(StringRef CpuName) const {
   assert(Found->PCI && "Missing counters");
   return *Found->PCI;
 }
-
-ExegesisTarget::SavedState::~SavedState() {} // anchor.
 
 namespace {
 

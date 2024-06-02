@@ -6,17 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/Twine.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/SMTAPI.h"
+#include <set>
 
 using namespace llvm;
 
 #if LLVM_WITH_Z3
-
-#include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/Twine.h"
-
-#include <set>
 
 #include <z3.h>
 
@@ -519,16 +516,16 @@ public:
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(
         Z3Expr(Context,
-               Z3_mk_fpa_mul(Context.Context, toZ3Expr(*RoundingMode).AST,
-                             toZ3Expr(*LHS).AST, toZ3Expr(*RHS).AST)));
+               Z3_mk_fpa_mul(Context.Context, toZ3Expr(*LHS).AST,
+                             toZ3Expr(*RHS).AST, toZ3Expr(*RoundingMode).AST)));
   }
 
   SMTExprRef mkFPDiv(const SMTExprRef &LHS, const SMTExprRef &RHS) override {
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(
         Z3Expr(Context,
-               Z3_mk_fpa_div(Context.Context, toZ3Expr(*RoundingMode).AST,
-                             toZ3Expr(*LHS).AST, toZ3Expr(*RHS).AST)));
+               Z3_mk_fpa_div(Context.Context, toZ3Expr(*LHS).AST,
+                             toZ3Expr(*RHS).AST, toZ3Expr(*RoundingMode).AST)));
   }
 
   SMTExprRef mkFPRem(const SMTExprRef &LHS, const SMTExprRef &RHS) override {
@@ -541,16 +538,16 @@ public:
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(
         Z3Expr(Context,
-               Z3_mk_fpa_add(Context.Context, toZ3Expr(*RoundingMode).AST,
-                             toZ3Expr(*LHS).AST, toZ3Expr(*RHS).AST)));
+               Z3_mk_fpa_add(Context.Context, toZ3Expr(*LHS).AST,
+                             toZ3Expr(*RHS).AST, toZ3Expr(*RoundingMode).AST)));
   }
 
   SMTExprRef mkFPSub(const SMTExprRef &LHS, const SMTExprRef &RHS) override {
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(
         Z3Expr(Context,
-               Z3_mk_fpa_sub(Context.Context, toZ3Expr(*RoundingMode).AST,
-                             toZ3Expr(*LHS).AST, toZ3Expr(*RHS).AST)));
+               Z3_mk_fpa_sub(Context.Context, toZ3Expr(*LHS).AST,
+                             toZ3Expr(*RHS).AST, toZ3Expr(*RoundingMode).AST)));
   }
 
   SMTExprRef mkFPLt(const SMTExprRef &LHS, const SMTExprRef &RHS) override {
@@ -726,25 +723,10 @@ public:
   }
 
   SMTExprRef mkBitvector(const llvm::APSInt Int, unsigned BitWidth) override {
-    const Z3_sort Z3Sort = toZ3Sort(*getBitvectorSort(BitWidth)).Sort;
-
-    // Slow path, when 64 bits are not enough.
-    if (LLVM_UNLIKELY(!Int.isRepresentableByInt64())) {
-      SmallString<40> Buffer;
-      Int.toString(Buffer, 10);
-      return newExprRef(Z3Expr(
-          Context, Z3_mk_numeral(Context.Context, Buffer.c_str(), Z3Sort)));
-    }
-
-    const int64_t BitReprAsSigned = Int.getExtValue();
-    const uint64_t BitReprAsUnsigned =
-        reinterpret_cast<const uint64_t &>(BitReprAsSigned);
-
-    Z3_ast Literal =
-        Int.isSigned()
-            ? Z3_mk_int64(Context.Context, BitReprAsSigned, Z3Sort)
-            : Z3_mk_unsigned_int64(Context.Context, BitReprAsUnsigned, Z3Sort);
-    return newExprRef(Z3Expr(Context, Literal));
+    const SMTSortRef Sort = getBitvectorSort(BitWidth);
+    return newExprRef(
+        Z3Expr(Context, Z3_mk_numeral(Context.Context, Int.toString(10).c_str(),
+                                      toZ3Sort(*Sort).Sort)));
   }
 
   SMTExprRef mkFloat(const llvm::APFloat Float) override {
@@ -870,7 +852,7 @@ public:
     return toAPFloat(Sort, Assign, Float, true);
   }
 
-  std::optional<bool> check() const override {
+  Optional<bool> check() const override {
     Z3_lbool res = Z3_solver_check(Context.Context, Solver);
     if (res == Z3_L_TRUE)
       return true;
@@ -878,7 +860,7 @@ public:
     if (res == Z3_L_FALSE)
       return false;
 
-    return std::nullopt;
+    return Optional<bool>();
   }
 
   void push() override { return Z3_solver_push(Context.Context, Solver); }

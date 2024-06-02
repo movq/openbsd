@@ -5,9 +5,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-/// \file
+//
 /// Target-Independent Code Generator Pass Configuration Options pass.
-///
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CODEGEN_TARGETPASSCONFIG_H
@@ -25,7 +25,6 @@ struct MachineSchedContext;
 class PassConfigImpl;
 class ScheduleDAGInstrs;
 class CSEConfigBase;
-class PassInstrumentationCallbacks;
 
 // The old pass manager infrastructure is hidden in a legacy namespace now.
 namespace legacy {
@@ -104,7 +103,6 @@ private:
   bool Started = true;
   bool Stopped = false;
   bool AddingMachinePasses = false;
-  bool DebugifyIsSafe = true;
 
   /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
   /// a portion of the normal code-gen pass sequence.
@@ -168,8 +166,8 @@ public:
   /// If hasLimitedCodeGenPipeline is true, this method
   /// returns a string with the name of the options, separated
   /// by \p Separator that caused this pipeline to be limited.
-  static std::string
-  getLimitedCodeGenPipelineReason(const char *Separator = "/");
+  std::string
+  getLimitedCodeGenPipelineReason(const char *Separator = "/") const;
 
   void setDisableVerify(bool Disable) { setOpt(DisableVerify, Disable); }
 
@@ -187,7 +185,8 @@ public:
   void substitutePass(AnalysisID StandardID, IdentifyingPassPtr TargetID);
 
   /// Insert InsertedPassID pass after TargetPassID pass.
-  void insertPass(AnalysisID TargetPassID, IdentifyingPassPtr InsertedPassID);
+  void insertPass(AnalysisID TargetPassID, IdentifyingPassPtr InsertedPassID,
+                  bool VerifyAfter = true, bool PrintAfter = true);
 
   /// Allow the target to enable a specific standard pass by default.
   void enablePass(AnalysisID PassID) { substitutePass(PassID, PassID); }
@@ -307,23 +306,6 @@ public:
   /// verification is enabled.
   void addVerifyPass(const std::string &Banner);
 
-  /// Add a pass to add synthesized debug info to the MIR.
-  void addDebugifyPass();
-
-  /// Add a pass to remove debug info from the MIR.
-  void addStripDebugPass();
-
-  /// Add a pass to check synthesized debug info for MIR.
-  void addCheckDebugPass();
-
-  /// Add standard passes before a pass that's about to be added. For example,
-  /// the DebugifyMachineModulePass if it is enabled.
-  void addMachinePrePasses(bool AllowDebugify = true);
-
-  /// Add standard passes after a pass that has just been added. For example,
-  /// the MachineVerifier if it is enabled.
-  void addMachinePostPasses(const std::string &Banner);
-
   /// Check whether or not GlobalISel should abort on error.
   /// When this is disabled, GlobalISel will fall back on SDISel instead of
   /// erroring out.
@@ -344,9 +326,6 @@ public:
 protected:
   // Helper to verify the analysis is really immutable.
   void setOpt(bool &Opt, bool Val);
-
-  /// Return true if register allocator is specified by -regalloc=override.
-  bool isCustomizedRegAlloc();
 
   /// Methods with trivial inline returns are convenient points in the common
   /// codegen pass pipeline where targets may insert passes. Methods with
@@ -407,10 +386,6 @@ protected:
     return false;
   }
 
-  /// addPostFastRegAllocRewrite - Add passes to the optimized register
-  /// allocation pipeline after fast register allocation is complete.
-  virtual bool addPostFastRegAllocRewrite() { return false; }
-
   /// Add passes to be run immediately after virtual registers are rewritten
   /// to physical registers.
   virtual void addPostRewrite() { }
@@ -450,25 +425,31 @@ protected:
 
   /// Add a CodeGen pass at this point in the pipeline after checking overrides.
   /// Return the pass that was added, or zero if no pass was added.
-  AnalysisID addPass(AnalysisID PassID);
+  /// @p printAfter    if true and adding a machine function pass add an extra
+  ///                  machine printer pass afterwards
+  /// @p verifyAfter   if true and adding a machine function pass add an extra
+  ///                  machine verification pass afterwards.
+  AnalysisID addPass(AnalysisID PassID, bool verifyAfter = true,
+                     bool printAfter = true);
 
   /// Add a pass to the PassManager if that pass is supposed to be run, as
   /// determined by the StartAfter and StopAfter options. Takes ownership of the
   /// pass.
-  void addPass(Pass *P);
+  /// @p printAfter    if true and adding a machine function pass add an extra
+  ///                  machine printer pass afterwards
+  /// @p verifyAfter   if true and adding a machine function pass add an extra
+  ///                  machine verification pass afterwards.
+  void addPass(Pass *P, bool verifyAfter = true, bool printAfter = true);
 
   /// addMachinePasses helper to create the target-selected or overriden
   /// regalloc pass.
   virtual FunctionPass *createRegAllocPass(bool Optimized);
 
-  /// Add core register allocator passes which do the actual register assignment
+  /// Add core register alloator passes which do the actual register assignment
   /// and rewriting. \returns true if any passes were added.
-  virtual bool addRegAssignAndRewriteFast();
-  virtual bool addRegAssignAndRewriteOptimized();
+  virtual bool addRegAssignmentFast();
+  virtual bool addRegAssignmentOptimized();
 };
-
-void registerCodeGenCallback(PassInstrumentationCallbacks &PIC,
-                             LLVMTargetMachine &);
 
 } // end namespace llvm
 

@@ -13,6 +13,8 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
@@ -66,16 +68,9 @@ void ExpandPostRA::TransferImplicitOperands(MachineInstr *MI) {
   MachineBasicBlock::iterator CopyMI = MI;
   --CopyMI;
 
-  Register DstReg = MI->getOperand(0).getReg();
-  for (const MachineOperand &MO : MI->implicit_operands()) {
-    CopyMI->addOperand(MO);
-
-    // Be conservative about preserving kills when subregister defs are
-    // involved. If there was implicit kill of a super-register overlapping the
-    // copy result, we would kill the subregisters previous copies defined.
-    if (MO.isKill() && TRI->regsOverlap(DstReg, MO.getReg()))
-      CopyMI->getOperand(CopyMI->getNumOperands() - 1).setIsKill(false);
-  }
+  for (const MachineOperand &MO : MI->implicit_operands())
+    if (MO.isReg())
+      CopyMI->addOperand(MO);
 }
 
 bool ExpandPostRA::LowerSubregToReg(MachineInstr *MI) {
@@ -93,17 +88,17 @@ bool ExpandPostRA::LowerSubregToReg(MachineInstr *MI) {
   assert(SubIdx != 0 && "Invalid index for insert_subreg");
   Register DstSubReg = TRI->getSubReg(DstReg, SubIdx);
 
-  assert(DstReg.isPhysical() &&
+  assert(Register::isPhysicalRegister(DstReg) &&
          "Insert destination must be in a physical register");
-  assert(InsReg.isPhysical() &&
+  assert(Register::isPhysicalRegister(InsReg) &&
          "Inserted value must be in a physical register");
 
   LLVM_DEBUG(dbgs() << "subreg: CONVERTING: " << *MI);
 
   if (MI->allDefsAreDead()) {
     MI->setDesc(TII->get(TargetOpcode::KILL));
-    MI->removeOperand(3); // SubIdx
-    MI->removeOperand(1); // Imm
+    MI->RemoveOperand(3); // SubIdx
+    MI->RemoveOperand(1); // Imm
     LLVM_DEBUG(dbgs() << "subreg: replaced by: " << *MI);
     return true;
   }
@@ -115,8 +110,8 @@ bool ExpandPostRA::LowerSubregToReg(MachineInstr *MI) {
     // We must leave %rax live.
     if (DstReg != InsReg) {
       MI->setDesc(TII->get(TargetOpcode::KILL));
-      MI->removeOperand(3);     // SubIdx
-      MI->removeOperand(1);     // Imm
+      MI->RemoveOperand(3);     // SubIdx
+      MI->RemoveOperand(1);     // Imm
       LLVM_DEBUG(dbgs() << "subreg: replace by: " << *MI);
       return true;
     }
@@ -193,8 +188,14 @@ bool ExpandPostRA::runOnMachineFunction(MachineFunction &MF) {
 
   bool MadeChange = false;
 
-  for (MachineBasicBlock &MBB : MF) {
-    for (MachineInstr &MI : llvm::make_early_inc_range(MBB)) {
+  for (MachineFunction::iterator mbbi = MF.begin(), mbbe = MF.end();
+       mbbi != mbbe; ++mbbi) {
+    for (MachineBasicBlock::iterator mi = mbbi->begin(), me = mbbi->end();
+         mi != me;) {
+      MachineInstr &MI = *mi;
+      // Advance iterator here because MI may be erased.
+      ++mi;
+
       // Only expand pseudos.
       if (!MI.isPseudo())
         continue;

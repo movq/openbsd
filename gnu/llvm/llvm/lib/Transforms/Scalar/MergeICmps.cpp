@@ -66,6 +66,15 @@ namespace {
 
 #define DEBUG_TYPE "mergeicmps"
 
+// Returns true if the instruction is a simple load or a simple store
+static bool isSimpleLoadOrStore(const Instruction *I) {
+  if (const LoadInst *LI = dyn_cast<LoadInst>(I))
+    return LI->isSimple();
+  if (const StoreInst *SI = dyn_cast<StoreInst>(I))
+    return SI->isSimple();
+  return false;
+}
+
 // A BCE atom "Binary Compare Expression Atom" represents an integer load
 // that is a constant offset from a base value, e.g. `a` or `o.c` in the example
 // at the top.
@@ -144,68 +153,63 @@ BCEAtom visitICmpLoadOperand(Value *const Val, BaseIdentifier &BaseId) {
     LLVM_DEBUG(dbgs() << "volatile or atomic\n");
     return {};
   }
-  Value *Addr = LoadI->getOperand(0);
-  if (Addr->getType()->getPointerAddressSpace() != 0) {
-    LLVM_DEBUG(dbgs() << "from non-zero AddressSpace\n");
+  Value *const Addr = LoadI->getOperand(0);
+  auto *const GEP = dyn_cast<GetElementPtrInst>(Addr);
+  if (!GEP)
+    return {};
+  LLVM_DEBUG(dbgs() << "GEP\n");
+  if (GEP->isUsedOutsideOfBlock(LoadI->getParent())) {
+    LLVM_DEBUG(dbgs() << "used outside of block\n");
     return {};
   }
-  const auto &DL = LoadI->getModule()->getDataLayout();
-  if (!isDereferenceablePointer(Addr, LoadI->getType(), DL)) {
+  const auto &DL = GEP->getModule()->getDataLayout();
+  if (!isDereferenceablePointer(GEP, LoadI->getType(), DL)) {
     LLVM_DEBUG(dbgs() << "not dereferenceable\n");
     // We need to make sure that we can do comparison in any order, so we
-    // require memory to be unconditionally dereferenceable.
+    // require memory to be unconditionnally dereferencable.
     return {};
   }
-
-  APInt Offset = APInt(DL.getPointerTypeSizeInBits(Addr->getType()), 0);
-  Value *Base = Addr;
-  auto *GEP = dyn_cast<GetElementPtrInst>(Addr);
-  if (GEP) {
-    LLVM_DEBUG(dbgs() << "GEP\n");
-    if (GEP->isUsedOutsideOfBlock(LoadI->getParent())) {
-      LLVM_DEBUG(dbgs() << "used outside of block\n");
-      return {};
-    }
-    if (!GEP->accumulateConstantOffset(DL, Offset))
-      return {};
-    Base = GEP->getPointerOperand();
-  }
-  return BCEAtom(GEP, LoadI, BaseId.getBaseId(Base), Offset);
+  APInt Offset = APInt(DL.getPointerTypeSizeInBits(GEP->getType()), 0);
+  if (!GEP->accumulateConstantOffset(DL, Offset))
+    return {};
+  return BCEAtom(GEP, LoadI, BaseId.getBaseId(GEP->getPointerOperand()),
+                 Offset);
 }
 
-// A comparison between two BCE atoms, e.g. `a == o.a` in the example at the
-// top.
-// Note: the terminology is misleading: the comparison is symmetric, so there
-// is no real {l/r}hs. What we want though is to have the same base on the
-// left (resp. right), so that we can detect consecutive loads. To ensure this
-// we put the smallest atom on the left.
-struct BCECmp {
-  BCEAtom Lhs;
-  BCEAtom Rhs;
-  int SizeBits;
-  const ICmpInst *CmpI;
-
-  BCECmp(BCEAtom L, BCEAtom R, int SizeBits, const ICmpInst *CmpI)
-      : Lhs(std::move(L)), Rhs(std::move(R)), SizeBits(SizeBits), CmpI(CmpI) {
-    if (Rhs < Lhs) std::swap(Rhs, Lhs);
-  }
-};
-
-// A basic block with a comparison between two BCE atoms.
+// A basic block with a comparison between two BCE atoms, e.g. `a == o.a` in the
+// example at the top.
 // The block might do extra work besides the atom comparison, in which case
 // doesOtherWork() returns true. Under some conditions, the block can be
 // split into the atom comparison part and the "other work" part
 // (see canSplit()).
+// Note: the terminology is misleading: the comparison is symmetric, so there
+// is no real {l/r}hs. What we want though is to have the same base on the
+// left (resp. right), so that we can detect consecutive loads. To ensure this
+// we put the smallest atom on the left.
 class BCECmpBlock {
  public:
-  typedef SmallDenseSet<const Instruction *, 8> InstructionSet;
+  BCECmpBlock() {}
 
-  BCECmpBlock(BCECmp Cmp, BasicBlock *BB, InstructionSet BlockInsts)
-      : BB(BB), BlockInsts(std::move(BlockInsts)), Cmp(std::move(Cmp)) {}
+  BCECmpBlock(BCEAtom L, BCEAtom R, int SizeBits)
+      : Lhs_(std::move(L)), Rhs_(std::move(R)), SizeBits_(SizeBits) {
+    if (Rhs_ < Lhs_) std::swap(Rhs_, Lhs_);
+  }
 
-  const BCEAtom &Lhs() const { return Cmp.Lhs; }
-  const BCEAtom &Rhs() const { return Cmp.Rhs; }
-  int SizeBits() const { return Cmp.SizeBits; }
+  bool IsValid() const { return Lhs_.BaseId != 0 && Rhs_.BaseId != 0; }
+
+  // Assert the block is consistent: If valid, it should also have
+  // non-null members besides Lhs_ and Rhs_.
+  void AssertConsistent() const {
+    if (IsValid()) {
+      assert(BB);
+      assert(CmpI);
+      assert(BranchI);
+    }
+  }
+
+  const BCEAtom &Lhs() const { return Lhs_; }
+  const BCEAtom &Rhs() const { return Rhs_; }
+  int SizeBits() const { return SizeBits_; }
 
   // Returns true if the block does other works besides comparison.
   bool doesOtherWork() const;
@@ -218,7 +222,8 @@ class BCECmpBlock {
   // be sunk below this instruction. By doing this, we know we can separate the
   // BCE-cmp-block instructions from the non-BCE-cmp-block instructions in the
   // block.
-  bool canSinkBCECmpInst(const Instruction *, AliasAnalysis &AA) const;
+  bool canSinkBCECmpInst(const Instruction *, DenseSet<Instruction *> &,
+                         AliasAnalysis &AA) const;
 
   // We can separate the BCE-cmp-block instructions and the non-BCE-cmp-block
   // instructions. Split the old block and move all non-BCE-cmp-insts into the
@@ -226,60 +231,71 @@ class BCECmpBlock {
   void split(BasicBlock *NewParent, AliasAnalysis &AA) const;
 
   // The basic block where this comparison happens.
-  BasicBlock *BB;
-  // Instructions relating to the BCECmp and branch.
-  InstructionSet BlockInsts;
+  BasicBlock *BB = nullptr;
+  // The ICMP for this comparison.
+  ICmpInst *CmpI = nullptr;
+  // The terminating branch.
+  BranchInst *BranchI = nullptr;
   // The block requires splitting.
   bool RequireSplit = false;
-  // Original order of this block in the chain.
-  unsigned OrigOrder = 0;
 
 private:
-  BCECmp Cmp;
+  BCEAtom Lhs_;
+  BCEAtom Rhs_;
+  int SizeBits_ = 0;
 };
 
 bool BCECmpBlock::canSinkBCECmpInst(const Instruction *Inst,
+                                    DenseSet<Instruction *> &BlockInsts,
                                     AliasAnalysis &AA) const {
-  // If this instruction may clobber the loads and is in middle of the BCE cmp
-  // block instructions, then bail for now.
-  if (Inst->mayWriteToMemory()) {
-    auto MayClobber = [&](LoadInst *LI) {
-      // If a potentially clobbering instruction comes before the load,
-      // we can still safely sink the load.
-      return (Inst->getParent() != LI->getParent() || !Inst->comesBefore(LI)) &&
-             isModSet(AA.getModRefInfo(Inst, MemoryLocation::get(LI)));
-    };
-    if (MayClobber(Cmp.Lhs.LoadI) || MayClobber(Cmp.Rhs.LoadI))
+  // If this instruction has side effects and its in middle of the BCE cmp block
+  // instructions, then bail for now.
+  if (Inst->mayHaveSideEffects()) {
+    // Bail if this is not a simple load or store
+    if (!isSimpleLoadOrStore(Inst))
+      return false;
+    // Disallow stores that might alias the BCE operands
+    MemoryLocation LLoc = MemoryLocation::get(Lhs_.LoadI);
+    MemoryLocation RLoc = MemoryLocation::get(Rhs_.LoadI);
+    if (isModSet(AA.getModRefInfo(Inst, LLoc)) ||
+        isModSet(AA.getModRefInfo(Inst, RLoc)))
       return false;
   }
   // Make sure this instruction does not use any of the BCE cmp block
   // instructions as operand.
-  return llvm::none_of(Inst->operands(), [&](const Value *Op) {
-    const Instruction *OpI = dyn_cast<Instruction>(Op);
-    return OpI && BlockInsts.contains(OpI);
-  });
+  for (auto BI : BlockInsts) {
+    if (is_contained(Inst->operands(), BI))
+      return false;
+  }
+  return true;
 }
 
 void BCECmpBlock::split(BasicBlock *NewParent, AliasAnalysis &AA) const {
+  DenseSet<Instruction *> BlockInsts(
+      {Lhs_.GEP, Rhs_.GEP, Lhs_.LoadI, Rhs_.LoadI, CmpI, BranchI});
   llvm::SmallVector<Instruction *, 4> OtherInsts;
   for (Instruction &Inst : *BB) {
     if (BlockInsts.count(&Inst))
       continue;
-    assert(canSinkBCECmpInst(&Inst, AA) && "Split unsplittable block");
+      assert(canSinkBCECmpInst(&Inst, BlockInsts, AA) &&
+             "Split unsplittable block");
     // This is a non-BCE-cmp-block instruction. And it can be separated
     // from the BCE-cmp-block instruction.
     OtherInsts.push_back(&Inst);
   }
 
   // Do the actual spliting.
-  for (Instruction *Inst : reverse(OtherInsts))
-    Inst->moveBefore(*NewParent, NewParent->begin());
+  for (Instruction *Inst : reverse(OtherInsts)) {
+    Inst->moveBefore(&*NewParent->begin());
+  }
 }
 
 bool BCECmpBlock::canSplit(AliasAnalysis &AA) const {
+  DenseSet<Instruction *> BlockInsts(
+      {Lhs_.GEP, Rhs_.GEP, Lhs_.LoadI, Rhs_.LoadI, CmpI, BranchI});
   for (Instruction &Inst : *BB) {
     if (!BlockInsts.count(&Inst)) {
-      if (!canSinkBCECmpInst(&Inst, AA))
+      if (!canSinkBCECmpInst(&Inst, BlockInsts, AA))
         return false;
     }
   }
@@ -287,6 +303,10 @@ bool BCECmpBlock::canSplit(AliasAnalysis &AA) const {
 }
 
 bool BCECmpBlock::doesOtherWork() const {
+  AssertConsistent();
+  // All the instructions we care about in the BCE cmp block.
+  DenseSet<Instruction *> BlockInsts(
+      {Lhs_.GEP, Rhs_.GEP, Lhs_.LoadI, Rhs_.LoadI, CmpI, BranchI});
   // TODO(courbet): Can we allow some other things ? This is very conservative.
   // We might be able to get away with anything does not have any side
   // effects outside of the basic block.
@@ -300,9 +320,9 @@ bool BCECmpBlock::doesOtherWork() const {
 
 // Visit the given comparison. If this is a comparison between two valid
 // BCE atoms, returns the comparison.
-std::optional<BCECmp> visitICmp(const ICmpInst *const CmpI,
-                                const ICmpInst::Predicate ExpectedPredicate,
-                                BaseIdentifier &BaseId) {
+BCECmpBlock visitICmp(const ICmpInst *const CmpI,
+                      const ICmpInst::Predicate ExpectedPredicate,
+                      BaseIdentifier &BaseId) {
   // The comparison can only be used once:
   //  - For intermediate blocks, as a branch condition.
   //  - For the final block, as an incoming value for the Phi.
@@ -310,76 +330,65 @@ std::optional<BCECmp> visitICmp(const ICmpInst *const CmpI,
   // other comparisons as we would create an orphan use of the value.
   if (!CmpI->hasOneUse()) {
     LLVM_DEBUG(dbgs() << "cmp has several uses\n");
-    return std::nullopt;
+    return {};
   }
   if (CmpI->getPredicate() != ExpectedPredicate)
-    return std::nullopt;
+    return {};
   LLVM_DEBUG(dbgs() << "cmp "
                     << (ExpectedPredicate == ICmpInst::ICMP_EQ ? "eq" : "ne")
                     << "\n");
   auto Lhs = visitICmpLoadOperand(CmpI->getOperand(0), BaseId);
   if (!Lhs.BaseId)
-    return std::nullopt;
+    return {};
   auto Rhs = visitICmpLoadOperand(CmpI->getOperand(1), BaseId);
   if (!Rhs.BaseId)
-    return std::nullopt;
+    return {};
   const auto &DL = CmpI->getModule()->getDataLayout();
-  return BCECmp(std::move(Lhs), std::move(Rhs),
-                DL.getTypeSizeInBits(CmpI->getOperand(0)->getType()), CmpI);
+  return BCECmpBlock(std::move(Lhs), std::move(Rhs),
+                     DL.getTypeSizeInBits(CmpI->getOperand(0)->getType()));
 }
 
 // Visit the given comparison block. If this is a comparison between two valid
 // BCE atoms, returns the comparison.
-std::optional<BCECmpBlock> visitCmpBlock(Value *const Val,
-                                         BasicBlock *const Block,
-                                         const BasicBlock *const PhiBlock,
-                                         BaseIdentifier &BaseId) {
-  if (Block->empty())
-    return std::nullopt;
+BCECmpBlock visitCmpBlock(Value *const Val, BasicBlock *const Block,
+                          const BasicBlock *const PhiBlock,
+                          BaseIdentifier &BaseId) {
+  if (Block->empty()) return {};
   auto *const BranchI = dyn_cast<BranchInst>(Block->getTerminator());
-  if (!BranchI)
-    return std::nullopt;
+  if (!BranchI) return {};
   LLVM_DEBUG(dbgs() << "branch\n");
-  Value *Cond;
-  ICmpInst::Predicate ExpectedPredicate;
   if (BranchI->isUnconditional()) {
     // In this case, we expect an incoming value which is the result of the
     // comparison. This is the last link in the chain of comparisons (note
     // that this does not mean that this is the last incoming value, blocks
     // can be reordered).
-    Cond = Val;
-    ExpectedPredicate = ICmpInst::ICMP_EQ;
+    auto *const CmpI = dyn_cast<ICmpInst>(Val);
+    if (!CmpI) return {};
+    LLVM_DEBUG(dbgs() << "icmp\n");
+    auto Result = visitICmp(CmpI, ICmpInst::ICMP_EQ, BaseId);
+    Result.CmpI = CmpI;
+    Result.BranchI = BranchI;
+    return Result;
   } else {
     // In this case, we expect a constant incoming value (the comparison is
     // chained).
-    const auto *const Const = cast<ConstantInt>(Val);
+    const auto *const Const = dyn_cast<ConstantInt>(Val);
     LLVM_DEBUG(dbgs() << "const\n");
-    if (!Const->isZero())
-      return std::nullopt;
+    if (!Const->isZero()) return {};
     LLVM_DEBUG(dbgs() << "false\n");
+    auto *const CmpI = dyn_cast<ICmpInst>(BranchI->getCondition());
+    if (!CmpI) return {};
+    LLVM_DEBUG(dbgs() << "icmp\n");
     assert(BranchI->getNumSuccessors() == 2 && "expecting a cond branch");
     BasicBlock *const FalseBlock = BranchI->getSuccessor(1);
-    Cond = BranchI->getCondition();
-    ExpectedPredicate =
-        FalseBlock == PhiBlock ? ICmpInst::ICMP_EQ : ICmpInst::ICMP_NE;
+    auto Result = visitICmp(
+        CmpI, FalseBlock == PhiBlock ? ICmpInst::ICMP_EQ : ICmpInst::ICMP_NE,
+        BaseId);
+    Result.CmpI = CmpI;
+    Result.BranchI = BranchI;
+    return Result;
   }
-
-  auto *CmpI = dyn_cast<ICmpInst>(Cond);
-  if (!CmpI)
-    return std::nullopt;
-  LLVM_DEBUG(dbgs() << "icmp\n");
-
-  std::optional<BCECmp> Result = visitICmp(CmpI, ExpectedPredicate, BaseId);
-  if (!Result)
-    return std::nullopt;
-
-  BCECmpBlock::InstructionSet BlockInsts(
-      {Result->Lhs.LoadI, Result->Rhs.LoadI, Result->CmpI, BranchI});
-  if (Result->Lhs.GEP)
-    BlockInsts.insert(Result->Lhs.GEP);
-  if (Result->Rhs.GEP)
-    BlockInsts.insert(Result->Rhs.GEP);
-  return BCECmpBlock(std::move(*Result), Block, BlockInsts);
+  return {};
 }
 
 static inline void enqueueBlock(std::vector<BCECmpBlock> &Comparisons,
@@ -391,82 +400,38 @@ static inline void enqueueBlock(std::vector<BCECmpBlock> &Comparisons,
                     << Comparison.Rhs().BaseId << " + "
                     << Comparison.Rhs().Offset << "\n");
   LLVM_DEBUG(dbgs() << "\n");
-  Comparison.OrigOrder = Comparisons.size();
   Comparisons.push_back(std::move(Comparison));
 }
 
 // A chain of comparisons.
 class BCECmpChain {
-public:
-  using ContiguousBlocks = std::vector<BCECmpBlock>;
+ public:
+   BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
+               AliasAnalysis &AA);
 
-  BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
-              AliasAnalysis &AA);
+   int size() const { return Comparisons_.size(); }
+
+#ifdef MERGEICMPS_DOT_ON
+  void dump() const;
+#endif  // MERGEICMPS_DOT_ON
 
   bool simplify(const TargetLibraryInfo &TLI, AliasAnalysis &AA,
                 DomTreeUpdater &DTU);
 
-  bool atLeastOneMerged() const {
-    return any_of(MergedBlocks_,
-                  [](const auto &Blocks) { return Blocks.size() > 1; });
+private:
+  static bool IsContiguous(const BCECmpBlock &First,
+                           const BCECmpBlock &Second) {
+    return First.Lhs().BaseId == Second.Lhs().BaseId &&
+           First.Rhs().BaseId == Second.Rhs().BaseId &&
+           First.Lhs().Offset + First.SizeBits() / 8 == Second.Lhs().Offset &&
+           First.Rhs().Offset + First.SizeBits() / 8 == Second.Rhs().Offset;
   }
 
-private:
   PHINode &Phi_;
-  // The list of all blocks in the chain, grouped by contiguity.
-  std::vector<ContiguousBlocks> MergedBlocks_;
+  std::vector<BCECmpBlock> Comparisons_;
   // The original entry block (before sorting);
   BasicBlock *EntryBlock_;
 };
-
-static bool areContiguous(const BCECmpBlock &First, const BCECmpBlock &Second) {
-  return First.Lhs().BaseId == Second.Lhs().BaseId &&
-         First.Rhs().BaseId == Second.Rhs().BaseId &&
-         First.Lhs().Offset + First.SizeBits() / 8 == Second.Lhs().Offset &&
-         First.Rhs().Offset + First.SizeBits() / 8 == Second.Rhs().Offset;
-}
-
-static unsigned getMinOrigOrder(const BCECmpChain::ContiguousBlocks &Blocks) {
-  unsigned MinOrigOrder = std::numeric_limits<unsigned>::max();
-  for (const BCECmpBlock &Block : Blocks)
-    MinOrigOrder = std::min(MinOrigOrder, Block.OrigOrder);
-  return MinOrigOrder;
-}
-
-/// Given a chain of comparison blocks, groups the blocks into contiguous
-/// ranges that can be merged together into a single comparison.
-static std::vector<BCECmpChain::ContiguousBlocks>
-mergeBlocks(std::vector<BCECmpBlock> &&Blocks) {
-  std::vector<BCECmpChain::ContiguousBlocks> MergedBlocks;
-
-  // Sort to detect continuous offsets.
-  llvm::sort(Blocks,
-             [](const BCECmpBlock &LhsBlock, const BCECmpBlock &RhsBlock) {
-               return std::tie(LhsBlock.Lhs(), LhsBlock.Rhs()) <
-                      std::tie(RhsBlock.Lhs(), RhsBlock.Rhs());
-             });
-
-  BCECmpChain::ContiguousBlocks *LastMergedBlock = nullptr;
-  for (BCECmpBlock &Block : Blocks) {
-    if (!LastMergedBlock || !areContiguous(LastMergedBlock->back(), Block)) {
-      MergedBlocks.emplace_back();
-      LastMergedBlock = &MergedBlocks.back();
-    } else {
-      LLVM_DEBUG(dbgs() << "Merging block " << Block.BB->getName() << " into "
-                        << LastMergedBlock->back().BB->getName() << "\n");
-    }
-    LastMergedBlock->push_back(std::move(Block));
-  }
-
-  // While we allow reordering for merging, do not reorder unmerged comparisons.
-  // Doing so may introduce branch on poison.
-  llvm::sort(MergedBlocks, [](const BCECmpChain::ContiguousBlocks &LhsBlocks,
-                              const BCECmpChain::ContiguousBlocks &RhsBlocks) {
-    return getMinOrigOrder(LhsBlocks) < getMinOrigOrder(RhsBlocks);
-  });
-
-  return MergedBlocks;
-}
 
 BCECmpChain::BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
                          AliasAnalysis &AA)
@@ -475,16 +440,18 @@ BCECmpChain::BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
   // Now look inside blocks to check for BCE comparisons.
   std::vector<BCECmpBlock> Comparisons;
   BaseIdentifier BaseId;
-  for (BasicBlock *const Block : Blocks) {
+  for (size_t BlockIdx = 0; BlockIdx < Blocks.size(); ++BlockIdx) {
+    BasicBlock *const Block = Blocks[BlockIdx];
     assert(Block && "invalid block");
-    std::optional<BCECmpBlock> Comparison = visitCmpBlock(
-        Phi.getIncomingValueForBlock(Block), Block, Phi.getParent(), BaseId);
-    if (!Comparison) {
+    BCECmpBlock Comparison = visitCmpBlock(Phi.getIncomingValueForBlock(Block),
+                                           Block, Phi.getParent(), BaseId);
+    Comparison.BB = Block;
+    if (!Comparison.IsValid()) {
       LLVM_DEBUG(dbgs() << "chain with invalid BCECmpBlock, no merge.\n");
       return;
     }
-    if (Comparison->doesOtherWork()) {
-      LLVM_DEBUG(dbgs() << "block '" << Comparison->BB->getName()
+    if (Comparison.doesOtherWork()) {
+      LLVM_DEBUG(dbgs() << "block '" << Comparison.BB->getName()
                         << "' does extra work besides compare\n");
       if (Comparisons.empty()) {
         // This is the initial block in the chain, in case this block does other
@@ -500,15 +467,15 @@ BCECmpChain::BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
         // and start anew.
         //
         // NOTE: we only handle blocks a with single predecessor for now.
-        if (Comparison->canSplit(AA)) {
+        if (Comparison.canSplit(AA)) {
           LLVM_DEBUG(dbgs()
-                     << "Split initial block '" << Comparison->BB->getName()
+                     << "Split initial block '" << Comparison.BB->getName()
                      << "' that does extra work besides compare\n");
-          Comparison->RequireSplit = true;
-          enqueueBlock(Comparisons, std::move(*Comparison));
+          Comparison.RequireSplit = true;
+          enqueueBlock(Comparisons, std::move(Comparison));
         } else {
           LLVM_DEBUG(dbgs()
-                     << "ignoring initial block '" << Comparison->BB->getName()
+                     << "ignoring initial block '" << Comparison.BB->getName()
                      << "' that does extra work besides compare\n");
         }
         continue;
@@ -538,7 +505,7 @@ BCECmpChain::BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
       // We could still merge bb1 and bb2 though.
       return;
     }
-    enqueueBlock(Comparisons, std::move(*Comparison));
+    enqueueBlock(Comparisons, std::move(Comparison));
   }
 
   // It is possible we have no suitable comparison to merge.
@@ -547,8 +514,46 @@ BCECmpChain::BCECmpChain(const std::vector<BasicBlock *> &Blocks, PHINode &Phi,
     return;
   }
   EntryBlock_ = Comparisons[0].BB;
-  MergedBlocks_ = mergeBlocks(std::move(Comparisons));
+  Comparisons_ = std::move(Comparisons);
+#ifdef MERGEICMPS_DOT_ON
+  errs() << "BEFORE REORDERING:\n\n";
+  dump();
+#endif  // MERGEICMPS_DOT_ON
+  // Reorder blocks by LHS. We can do that without changing the
+  // semantics because we are only accessing dereferencable memory.
+  llvm::sort(Comparisons_,
+             [](const BCECmpBlock &LhsBlock, const BCECmpBlock &RhsBlock) {
+               return std::tie(LhsBlock.Lhs(), LhsBlock.Rhs()) <
+                      std::tie(RhsBlock.Lhs(), RhsBlock.Rhs());
+             });
+#ifdef MERGEICMPS_DOT_ON
+  errs() << "AFTER REORDERING:\n\n";
+  dump();
+#endif  // MERGEICMPS_DOT_ON
 }
+
+#ifdef MERGEICMPS_DOT_ON
+void BCECmpChain::dump() const {
+  errs() << "digraph dag {\n";
+  errs() << " graph [bgcolor=transparent];\n";
+  errs() << " node [color=black,style=filled,fillcolor=lightyellow];\n";
+  errs() << " edge [color=black];\n";
+  for (size_t I = 0; I < Comparisons_.size(); ++I) {
+    const auto &Comparison = Comparisons_[I];
+    errs() << " \"" << I << "\" [label=\"%"
+           << Comparison.Lhs().Base()->getName() << " + "
+           << Comparison.Lhs().Offset << " == %"
+           << Comparison.Rhs().Base()->getName() << " + "
+           << Comparison.Rhs().Offset << " (" << (Comparison.SizeBits() / 8)
+           << " bytes)\"];\n";
+    const Value *const Val = Phi_.getIncomingValueForBlock(Comparison.BB);
+    if (I > 0) errs() << " \"" << (I - 1) << "\" -> \"" << I << "\";\n";
+    errs() << " \"" << I << "\" -> \"Phi\" [label=\"" << *Val << "\"];\n";
+  }
+  errs() << " \"Phi\" [label=\"Phi\"];\n";
+  errs() << "}\n\n";
+}
+#endif  // MERGEICMPS_DOT_ON
 
 namespace {
 
@@ -592,7 +597,7 @@ private:
         append(BB->getName());
       }
     }
-    return Scratch.str();
+    return StringRef(Scratch);
   }
 };
 } // namespace
@@ -613,30 +618,12 @@ static BasicBlock *mergeComparisons(ArrayRef<BCECmpBlock> Comparisons,
                          NextCmpBlock->getParent(), InsertBefore);
   IRBuilder<> Builder(BB);
   // Add the GEPs from the first BCECmpBlock.
-  Value *Lhs, *Rhs;
-  if (FirstCmp.Lhs().GEP)
-    Lhs = Builder.Insert(FirstCmp.Lhs().GEP->clone());
-  else
-    Lhs = FirstCmp.Lhs().LoadI->getPointerOperand();
-  if (FirstCmp.Rhs().GEP)
-    Rhs = Builder.Insert(FirstCmp.Rhs().GEP->clone());
-  else
-    Rhs = FirstCmp.Rhs().LoadI->getPointerOperand();
+  Value *const Lhs = Builder.Insert(FirstCmp.Lhs().GEP->clone());
+  Value *const Rhs = Builder.Insert(FirstCmp.Rhs().GEP->clone());
 
   Value *IsEqual = nullptr;
   LLVM_DEBUG(dbgs() << "Merging " << Comparisons.size() << " comparisons -> "
                     << BB->getName() << "\n");
-
-  // If there is one block that requires splitting, we do it now, i.e.
-  // just before we know we will collapse the chain. The instructions
-  // can be executed before any of the instructions in the chain.
-  const auto ToSplit = llvm::find_if(
-      Comparisons, [](const BCECmpBlock &B) { return B.RequireSplit; });
-  if (ToSplit != Comparisons.end()) {
-    LLVM_DEBUG(dbgs() << "Splitting non_BCE work to header\n");
-    ToSplit->split(BB, AA);
-  }
-
   if (Comparisons.size() == 1) {
     LLVM_DEBUG(dbgs() << "Only one comparison, updating branches\n");
     Value *const LhsLoad =
@@ -646,22 +633,29 @@ static BasicBlock *mergeComparisons(ArrayRef<BCECmpBlock> Comparisons,
     // There are no blocks to merge, just do the comparison.
     IsEqual = Builder.CreateICmpEQ(LhsLoad, RhsLoad);
   } else {
+    // If there is one block that requires splitting, we do it now, i.e.
+    // just before we know we will collapse the chain. The instructions
+    // can be executed before any of the instructions in the chain.
+    const auto ToSplit =
+        std::find_if(Comparisons.begin(), Comparisons.end(),
+                     [](const BCECmpBlock &B) { return B.RequireSplit; });
+    if (ToSplit != Comparisons.end()) {
+      LLVM_DEBUG(dbgs() << "Splitting non_BCE work to header\n");
+      ToSplit->split(BB, AA);
+    }
+
     const unsigned TotalSizeBits = std::accumulate(
         Comparisons.begin(), Comparisons.end(), 0u,
         [](int Size, const BCECmpBlock &C) { return Size + C.SizeBits(); });
-
-    // memcmp expects a 'size_t' argument and returns 'int'.
-    unsigned SizeTBits = TLI.getSizeTSize(*Phi.getModule());
-    unsigned IntBits = TLI.getIntSize();
 
     // Create memcmp() == 0.
     const auto &DL = Phi.getModule()->getDataLayout();
     Value *const MemCmpCall = emitMemCmp(
         Lhs, Rhs,
-        ConstantInt::get(Builder.getIntNTy(SizeTBits), TotalSizeBits / 8),
-        Builder, DL, &TLI);
+        ConstantInt::get(DL.getIntPtrType(Context), TotalSizeBits / 8), Builder,
+        DL, &TLI);
     IsEqual = Builder.CreateICmpEQ(
-        MemCmpCall, ConstantInt::get(Builder.getIntNTy(IntBits), 0));
+        MemCmpCall, ConstantInt::get(Type::getInt32Ty(Context), 0));
   }
 
   BasicBlock *const PhiBB = Phi.getParent();
@@ -683,18 +677,47 @@ static BasicBlock *mergeComparisons(ArrayRef<BCECmpBlock> Comparisons,
 
 bool BCECmpChain::simplify(const TargetLibraryInfo &TLI, AliasAnalysis &AA,
                            DomTreeUpdater &DTU) {
-  assert(atLeastOneMerged() && "simplifying trivial BCECmpChain");
+  assert(Comparisons_.size() >= 2 && "simplifying trivial BCECmpChain");
+  // First pass to check if there is at least one merge. If not, we don't do
+  // anything and we keep analysis passes intact.
+  const auto AtLeastOneMerged = [this]() {
+    for (size_t I = 1; I < Comparisons_.size(); ++I) {
+      if (IsContiguous(Comparisons_[I - 1], Comparisons_[I]))
+        return true;
+    }
+    return false;
+  };
+  if (!AtLeastOneMerged())
+    return false;
+
   LLVM_DEBUG(dbgs() << "Simplifying comparison chain starting at block "
                     << EntryBlock_->getName() << "\n");
 
   // Effectively merge blocks. We go in the reverse direction from the phi block
   // so that the next block is always available to branch to.
-  BasicBlock *InsertBefore = EntryBlock_;
+  const auto mergeRange = [this, &TLI, &AA, &DTU](int I, int Num,
+                                                  BasicBlock *InsertBefore,
+                                                  BasicBlock *Next) {
+    return mergeComparisons(makeArrayRef(Comparisons_).slice(I, Num),
+                            InsertBefore, Next, Phi_, TLI, AA, DTU);
+  };
+  int NumMerged = 1;
   BasicBlock *NextCmpBlock = Phi_.getParent();
-  for (const auto &Blocks : reverse(MergedBlocks_)) {
-    InsertBefore = NextCmpBlock = mergeComparisons(
-        Blocks, InsertBefore, NextCmpBlock, Phi_, TLI, AA, DTU);
+  for (int I = static_cast<int>(Comparisons_.size()) - 2; I >= 0; --I) {
+    if (IsContiguous(Comparisons_[I], Comparisons_[I + 1])) {
+      LLVM_DEBUG(dbgs() << "Merging block " << Comparisons_[I].BB->getName()
+                        << " into " << Comparisons_[I + 1].BB->getName()
+                        << "\n");
+      ++NumMerged;
+    } else {
+      NextCmpBlock = mergeRange(I + 1, NumMerged, NextCmpBlock, NextCmpBlock);
+      NumMerged = 1;
+    }
   }
+  // Insert the entry block for the new chain before the old entry block.
+  // If the old entry block was the function entry, this ensures that the new
+  // entry can become the function entry.
+  NextCmpBlock = mergeRange(0, NumMerged, EntryBlock_, NextCmpBlock);
 
   // Replace the original cmp chain with the new cmp chain by pointing all
   // predecessors of EntryBlock_ to NextCmpBlock instead. This makes all cmp
@@ -710,7 +733,8 @@ bool BCECmpChain::simplify(const TargetLibraryInfo &TLI, AliasAnalysis &AA,
 
   // If the old cmp chain was the function entry, we need to update the function
   // entry.
-  const bool ChainEntryIsFnEntry = EntryBlock_->isEntryBlock();
+  const bool ChainEntryIsFnEntry =
+      (EntryBlock_ == &EntryBlock_->getParent()->getEntryBlock());
   if (ChainEntryIsFnEntry && DTU.hasDomTree()) {
     LLVM_DEBUG(dbgs() << "Changing function entry from "
                       << EntryBlock_->getName() << " to "
@@ -722,16 +746,13 @@ bool BCECmpChain::simplify(const TargetLibraryInfo &TLI, AliasAnalysis &AA,
 
   // Delete merged blocks. This also removes incoming values in phi.
   SmallVector<BasicBlock *, 16> DeadBlocks;
-  for (const auto &Blocks : MergedBlocks_) {
-    for (const BCECmpBlock &Block : Blocks) {
-      LLVM_DEBUG(dbgs() << "Deleting merged block " << Block.BB->getName()
-                        << "\n");
-      DeadBlocks.push_back(Block.BB);
-    }
+  for (auto &Cmp : Comparisons_) {
+    LLVM_DEBUG(dbgs() << "Deleting merged block " << Cmp.BB->getName() << "\n");
+    DeadBlocks.push_back(Cmp.BB);
   }
   DeleteDeadBlocks(DeadBlocks, &DTU);
 
-  MergedBlocks_.clear();
+  Comparisons_.clear();
   return true;
 }
 
@@ -831,8 +852,8 @@ bool processPhi(PHINode &Phi, const TargetLibraryInfo &TLI, AliasAnalysis &AA,
   if (Blocks.empty()) return false;
   BCECmpChain CmpChain(Blocks, Phi, AA);
 
-  if (!CmpChain.atLeastOneMerged()) {
-    LLVM_DEBUG(dbgs() << "skip: nothing merged\n");
+  if (CmpChain.size() < 2) {
+    LLVM_DEBUG(dbgs() << "skip: only one compare block\n");
     return false;
   }
 
@@ -858,9 +879,9 @@ static bool runImpl(Function &F, const TargetLibraryInfo &TLI,
 
   bool MadeChange = false;
 
-  for (BasicBlock &BB : llvm::drop_begin(F)) {
+  for (auto BBIt = ++F.begin(); BBIt != F.end(); ++BBIt) {
     // A Phi operation is always first in a basic block.
-    if (auto *const Phi = dyn_cast<PHINode>(&*BB.begin()))
+    if (auto *const Phi = dyn_cast<PHINode>(&*BBIt->begin()))
       MadeChange |= processPhi(*Phi, TLI, AA, DTU);
   }
 
@@ -919,6 +940,7 @@ PreservedAnalyses MergeICmpsPass::run(Function &F,
   if (!MadeChanges)
     return PreservedAnalyses::all();
   PreservedAnalyses PA;
+  PA.preserve<GlobalsAA>();
   PA.preserve<DominatorTreeAnalysis>();
   return PA;
 }

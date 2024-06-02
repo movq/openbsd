@@ -50,7 +50,7 @@ WebAssemblyRegisterInfo::getReservedRegs(const MachineFunction & /*MF*/) const {
   return Reserved;
 }
 
-bool WebAssemblyRegisterInfo::eliminateFrameIndex(
+void WebAssemblyRegisterInfo::eliminateFrameIndex(
     MachineBasicBlock::iterator II, int SPAdj, unsigned FIOperandNum,
     RegScavenger * /*RS*/) const {
   assert(SPAdj == 0);
@@ -82,66 +82,56 @@ bool WebAssemblyRegisterInfo::eliminateFrameIndex(
       MI.getOperand(OffsetOperandNum).setImm(Offset);
       MI.getOperand(FIOperandNum)
           .ChangeToRegister(FrameRegister, /*isDef=*/false);
-      return false;
+      return;
     }
   }
 
   // If this is an address being added to a constant, fold the frame offset
   // into the constant.
-  if (MI.getOpcode() == WebAssemblyFrameLowering::getOpcAdd(MF)) {
+  if (MI.getOpcode() == WebAssembly::ADD_I32) {
     MachineOperand &OtherMO = MI.getOperand(3 - FIOperandNum);
     if (OtherMO.isReg()) {
       Register OtherMOReg = OtherMO.getReg();
-      if (OtherMOReg.isVirtual()) {
+      if (Register::isVirtualRegister(OtherMOReg)) {
         MachineInstr *Def = MF.getRegInfo().getUniqueVRegDef(OtherMOReg);
         // TODO: For now we just opportunistically do this in the case where
-        // the CONST_I32/64 happens to have exactly one def and one use. We
+        // the CONST_I32 happens to have exactly one def and one use. We
         // should generalize this to optimize in more cases.
-        if (Def && Def->getOpcode() ==
-              WebAssemblyFrameLowering::getOpcConst(MF) &&
+        if (Def && Def->getOpcode() == WebAssembly::CONST_I32 &&
             MRI.hasOneNonDBGUse(Def->getOperand(0).getReg())) {
           MachineOperand &ImmMO = Def->getOperand(1);
-          if (ImmMO.isImm()) {
-            ImmMO.setImm(ImmMO.getImm() + uint32_t(FrameOffset));
-            MI.getOperand(FIOperandNum)
-                .ChangeToRegister(FrameRegister, /*isDef=*/false);
-            return false;
-          }
+          ImmMO.setImm(ImmMO.getImm() + uint32_t(FrameOffset));
+          MI.getOperand(FIOperandNum)
+              .ChangeToRegister(FrameRegister, /*isDef=*/false);
+          return;
         }
       }
     }
   }
 
-  // Otherwise create an i32/64.add SP, offset and make it the operand.
+  // Otherwise create an i32.add SP, offset and make it the operand.
   const auto *TII = MF.getSubtarget<WebAssemblySubtarget>().getInstrInfo();
 
   unsigned FIRegOperand = FrameRegister;
   if (FrameOffset) {
-    // Create i32/64.add SP, offset and make it the operand.
+    // Create i32.add SP, offset and make it the operand.
     const TargetRegisterClass *PtrRC =
         MRI.getTargetRegisterInfo()->getPointerRegClass(MF);
     Register OffsetOp = MRI.createVirtualRegister(PtrRC);
-    BuildMI(MBB, *II, II->getDebugLoc(),
-            TII->get(WebAssemblyFrameLowering::getOpcConst(MF)),
+    BuildMI(MBB, *II, II->getDebugLoc(), TII->get(WebAssembly::CONST_I32),
             OffsetOp)
         .addImm(FrameOffset);
     FIRegOperand = MRI.createVirtualRegister(PtrRC);
-    BuildMI(MBB, *II, II->getDebugLoc(),
-            TII->get(WebAssemblyFrameLowering::getOpcAdd(MF)),
+    BuildMI(MBB, *II, II->getDebugLoc(), TII->get(WebAssembly::ADD_I32),
             FIRegOperand)
         .addReg(FrameRegister)
         .addReg(OffsetOp);
   }
   MI.getOperand(FIOperandNum).ChangeToRegister(FIRegOperand, /*isDef=*/false);
-  return false;
 }
 
 Register
 WebAssemblyRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  // If the PReg has been replaced by a VReg, return that.
-  const auto &MFI = MF.getInfo<WebAssemblyFunctionInfo>();
-  if (MFI->isFrameBaseVirtual())
-    return MFI->getFrameBaseVreg();
   static const unsigned Regs[2][2] = {
       /*            !isArch64Bit       isArch64Bit      */
       /* !hasFP */ {WebAssembly::SP32, WebAssembly::SP64},

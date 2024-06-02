@@ -12,53 +12,25 @@
 
 #include "llvm/Demangle/Demangle.h"
 #include <cstdlib>
-#include <cstring>
 
-static bool isItaniumEncoding(const char *S) {
-  // Itanium encoding requires 1 or 3 leading underscores, followed by 'Z'.
-  return std::strncmp(S, "_Z", 2) == 0 || std::strncmp(S, "___Z", 4) == 0;
-}
-
-static bool isRustEncoding(const char *S) { return S[0] == '_' && S[1] == 'R'; }
-
-static bool isDLangEncoding(const std::string &MangledName) {
-  return MangledName.size() >= 2 && MangledName[0] == '_' &&
-         MangledName[1] == 'D';
+static bool isItaniumEncoding(const std::string &MangledName) {
+  size_t Pos = MangledName.find_first_not_of('_');
+  // A valid Itanium encoding requires 1-4 leading underscores, followed by 'Z'.
+  return Pos > 0 && Pos <= 4 && MangledName[Pos] == 'Z';
 }
 
 std::string llvm::demangle(const std::string &MangledName) {
-  std::string Result;
-  const char *S = MangledName.c_str();
-
-  if (nonMicrosoftDemangle(S, Result))
-    return Result;
-
-  if (S[0] == '_' && nonMicrosoftDemangle(S + 1, Result))
-    return Result;
-
-  if (char *Demangled =
-          microsoftDemangle(S, nullptr, nullptr, nullptr, nullptr)) {
-    Result = Demangled;
-    std::free(Demangled);
-    return Result;
-  }
-
-  return MangledName;
-}
-
-bool llvm::nonMicrosoftDemangle(const char *MangledName, std::string &Result) {
-  char *Demangled = nullptr;
+  char *Demangled;
   if (isItaniumEncoding(MangledName))
-    Demangled = itaniumDemangle(MangledName, nullptr, nullptr, nullptr);
-  else if (isRustEncoding(MangledName))
-    Demangled = rustDemangle(MangledName);
-  else if (isDLangEncoding(MangledName))
-    Demangled = dlangDemangle(MangledName);
+    Demangled = itaniumDemangle(MangledName.c_str(), nullptr, nullptr, nullptr);
+  else
+    Demangled =
+        microsoftDemangle(MangledName.c_str(), nullptr, nullptr, nullptr);
 
   if (!Demangled)
-    return false;
+    return MangledName;
 
-  Result = Demangled;
-  std::free(Demangled);
-  return true;
+  std::string Ret = Demangled;
+  free(Demangled);
+  return Ret;
 }

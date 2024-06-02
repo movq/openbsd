@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PPC.h"
 #include "PPCInstrInfo.h"
 #include "PPCMachineFunctionInfo.h"
 #include "PPCReturnProtectorLowering.h"
@@ -63,12 +62,16 @@ void PPCReturnProtectorLowering::insertReturnProtectorPrologue(
       llvm_unreachable("ppc64 retguard requires ELFv2");
     // Get the return address into LRReg
     BuildMI(MBB, MI, MBBDL, TII->get(MFLR), LRReg);
-    // Load the random cookie value into REG
+    // Get the random cookie address into REG
     BuildMI(MBB, MI, MBBDL, TII->get(PPC::ADDIStocHA8), REG)
       .addReg(TOCReg)
       .addGlobalAddress(cookie);
-    BuildMI(MBB, MI, MBBDL, TII->get(PPC::LD), REG)
-      .addGlobalAddress(cookie, 0, PPCII::MO_TOC_LO)
+    BuildMI(MBB, MI, MBBDL, TII->get(PPC::ADDItocL), REG)
+      .addReg(REG)
+      .addGlobalAddress(cookie);
+    // Now load the random cookie value
+    BuildMI(MBB, MI, MBBDL, TII->get(PPC::LWZ), REG)
+      .addImm(0)
       .addReg(REG);
     // XOR cookie ^ random = retguard cookie
     BuildMI(MBB, MI, MBBDL, TII->get(XOR), REG)
@@ -155,12 +158,16 @@ void PPCReturnProtectorLowering::insertReturnProtectorEpilogue(
     BuildMI(MBB, MI, MBBDL, TII->get(XOR), REG)
       .addReg(REG)
       .addReg(LRReg);
-    // Load the random cookie value into RGReg
+    // Get the random cookie address into RGReg
     BuildMI(MBB, MI, MBBDL, TII->get(PPC::ADDIStocHA8), RGReg)
       .addReg(TOCReg)
       .addGlobalAddress(cookie);
-    BuildMI(MBB, MI, MBBDL, TII->get(PPC::LD), RGReg)
-      .addGlobalAddress(cookie, 0, PPCII::MO_TOC_LO)
+    BuildMI(MBB, MI, MBBDL, TII->get(PPC::ADDItocL), RGReg)
+      .addReg(RGReg)
+      .addGlobalAddress(cookie);
+    // Load the cookie random balue
+    BuildMI(MBB, MI, MBBDL, TII->get(PPC::LWZ), RGReg)
+      .addImm(0)
       .addReg(RGReg);
     // Trap if they don't compare
     BuildMI(MBB, MI, MBBDL, TII->get(TRAP))

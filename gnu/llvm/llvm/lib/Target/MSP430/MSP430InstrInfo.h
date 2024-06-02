@@ -40,22 +40,23 @@ public:
                    bool KillSrc) const override;
 
   void storeRegToStackSlot(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator MI, Register SrcReg,
-                           bool isKill, int FrameIndex,
+                           MachineBasicBlock::iterator MI,
+                           unsigned SrcReg, bool isKill,
+                           int FrameIndex,
                            const TargetRegisterClass *RC,
-                           const TargetRegisterInfo *TRI,
-                           Register VReg) const override;
+                           const TargetRegisterInfo *TRI) const override;
   void loadRegFromStackSlot(MachineBasicBlock &MBB,
-                            MachineBasicBlock::iterator MI, Register DestReg,
-                            int FrameIdx, const TargetRegisterClass *RC,
-                            const TargetRegisterInfo *TRI,
-                            Register VReg) const override;
+                            MachineBasicBlock::iterator MI,
+                            unsigned DestReg, int FrameIdx,
+                            const TargetRegisterClass *RC,
+                            const TargetRegisterInfo *TRI) const override;
 
   unsigned getInstSizeInBytes(const MachineInstr &MI) const override;
 
   // Branch folding goodness
   bool
   reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
+  bool isUnpredicatedTerminator(const MachineInstr &MI) const override;
   bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                      MachineBasicBlock *&FBB,
                      SmallVectorImpl<MachineOperand> &Cond,

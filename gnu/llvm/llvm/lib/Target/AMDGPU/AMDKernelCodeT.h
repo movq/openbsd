@@ -11,8 +11,12 @@
 #ifndef AMDKERNELCODET_H
 #define AMDKERNELCODET_H
 
+#include "llvm/MC/SubtargetFeature.h"
+
+#include <cstddef>
 #include <cstdint>
 
+#include "llvm/Support/Debug.h"
 //---------------------------------------------------------------------------//
 // AMD Kernel Code, and its dependencies                                     //
 //---------------------------------------------------------------------------//
@@ -142,7 +146,7 @@ enum amd_code_property_mask_t {
   /// is provided to the finalizer when it is invoked and is recorded
   /// here. The hardware will interleave the memory requests of each
   /// lane of a wavefront by this element size to ensure each
-  /// work-item gets a distinct memory location. Therefore, the
+  /// work-item gets a distinct memory memory location. Therefore, the
   /// finalizer ensures that all load and store operations done to
   /// private memory do not exceed this size. For example, if the
   /// element size is 4 (32-bits or dword) and a 64-bit value must be
@@ -523,7 +527,7 @@ typedef struct hsa_ext_control_directives_s {
 /// the kernarg segment is constant for the duration of the kernel execution.
 ///
 
-struct amd_kernel_code_t {
+typedef struct amd_kernel_code_s {
   uint32_t amd_kernel_code_version_major;
   uint32_t amd_kernel_code_version_minor;
   uint16_t amd_machine_kind;
@@ -646,6 +650,6 @@ struct amd_kernel_code_t {
   uint8_t reserved3[12];
   uint64_t runtime_loader_kernel_symbol;
   uint64_t control_directives[16];
-};
+} amd_kernel_code_t;
 
 #endif // AMDKERNELCODET_H

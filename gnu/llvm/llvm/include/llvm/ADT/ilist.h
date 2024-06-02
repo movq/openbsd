@@ -5,20 +5,19 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines classes to implement an intrusive doubly linked list class
-/// (i.e. each node of the list must contain a next and previous field for the
-/// list.
-///
-/// The ilist class itself should be a plug in replacement for list.  This list
-/// replacement does not provide a constant time size() method, so be careful to
-/// use empty() when you really want to know if it's empty.
-///
-/// The ilist class is implemented as a circular list.  The list itself contains
-/// a sentinel node, whose Next points at begin() and whose Prev points at
-/// rbegin().  The sentinel node itself serves as end() and rend().
-///
+//
+// This file defines classes to implement an intrusive doubly linked list class
+// (i.e. each node of the list must contain a next and previous field for the
+// list.
+//
+// The ilist class itself should be a plug in replacement for list.  This list
+// replacement does not provide a constant time size() method, so be careful to
+// use empty() when you really want to know if it's empty.
+//
+// The ilist class is implemented as a circular list.  The list itself contains
+// a sentinel node, whose Next points at begin() and whose Prev points at
+// rbegin().  The sentinel node itself serves as end() and rend().
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_ADT_ILIST_H
@@ -104,7 +103,7 @@ template <class TraitsT, class NodeT> struct HasGetNext {
   template <size_t N> struct SFINAE {};
 
   template <class U>
-  static Yes &test(U *I, decltype(I->getNext(&make<NodeT>())) * = nullptr);
+  static Yes &test(U *I, decltype(I->getNext(&make<NodeT>())) * = 0);
   template <class> static No &test(...);
 
 public:
@@ -118,7 +117,7 @@ template <class TraitsT> struct HasCreateSentinel {
   typedef char No[2];
 
   template <class U>
-  static Yes &test(U *I, decltype(I->createSentinel()) * = nullptr);
+  static Yes &test(U *I, decltype(I->createSentinel()) * = 0);
   template <class> static No &test(...);
 
 public:
@@ -199,12 +198,10 @@ public:
   iplist_impl &operator=(const iplist_impl &) = delete;
 
   iplist_impl(iplist_impl &&X)
-      : TraitsT(std::move(static_cast<TraitsT &>(X))),
-        IntrusiveListT(std::move(static_cast<IntrusiveListT &>(X))) {}
+      : TraitsT(std::move(X)), IntrusiveListT(std::move(X)) {}
   iplist_impl &operator=(iplist_impl &&X) {
-    *static_cast<TraitsT *>(this) = std::move(static_cast<TraitsT &>(X));
-    *static_cast<IntrusiveListT *>(this) =
-        std::move(static_cast<IntrusiveListT &>(X));
+    *static_cast<TraitsT *>(this) = std::move(X);
+    *static_cast<IntrusiveListT *>(this) = std::move(X);
     return *this;
   }
 

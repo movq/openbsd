@@ -5,15 +5,14 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines the make_scope_exit function, which executes user-defined
-/// cleanup logic at scope exit.
-///
+//
+// This file defines the make_scope_exit function, which executes user-defined
+// cleanup logic at scope exit.
+//
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ADT_SCOPEEXIT_H
-#define LLVM_ADT_SCOPEEXIT_H
+#ifndef LLVM_ADT_SCOPE_EXIT_H
+#define LLVM_ADT_SCOPE_EXIT_H
 
 #include "llvm/Support/Compiler.h"
 
@@ -55,9 +54,10 @@ public:
 //
 // Interface is specified by p0052r2.
 template <typename Callable>
-[[nodiscard]] detail::scope_exit<std::decay_t<Callable>>
+LLVM_NODISCARD detail::scope_exit<typename std::decay<Callable>::type>
 make_scope_exit(Callable &&F) {
-  return detail::scope_exit<std::decay_t<Callable>>(std::forward<Callable>(F));
+  return detail::scope_exit<typename std::decay<Callable>::type>(
+      std::forward<Callable>(F));
 }
 
 } // end namespace llvm

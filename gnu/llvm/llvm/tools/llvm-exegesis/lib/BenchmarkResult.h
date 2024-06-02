@@ -19,29 +19,16 @@
 #include "RegisterValue.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstBuilder.h"
 #include "llvm/Support/YAMLTraits.h"
 #include <limits>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace llvm {
-class Error;
-
 namespace exegesis {
-
-enum class BenchmarkPhaseSelectorE {
-  PrepareSnippet,
-  PrepareAndAssembleSnippet,
-  AssembleMeasuredCode,
-  Measure,
-};
-
-enum class InstructionBenchmarkFilter { All, RegOnly, WithMem };
 
 struct InstructionBenchmarkKey {
   // The LLVM opcode name.
@@ -78,52 +65,29 @@ struct InstructionBenchmark {
   const MCInst &keyInstruction() const { return Key.Instructions[0]; }
   // The number of instructions inside the repeated snippet. For example, if a
   // snippet of 3 instructions is repeated 4 times, this is 12.
-  unsigned NumRepetitions = 0;
-  enum RepetitionModeE { Duplicate, Loop, AggregateMin };
+  int NumRepetitions = 0;
+  enum RepetitionModeE { Duplicate, Loop };
+  RepetitionModeE RepetitionMode;
   // Note that measurements are per instruction.
   std::vector<BenchmarkMeasure> Measurements;
   std::string Error;
   std::string Info;
   std::vector<uint8_t> AssembledSnippet;
-  // How to aggregate measurements.
-  enum ResultAggregationModeE { Min, Max, Mean, MinVariance };
-
-  InstructionBenchmark() = default;
-  InstructionBenchmark(InstructionBenchmark &&) = default;
-
-  InstructionBenchmark(const InstructionBenchmark &) = delete;
-  InstructionBenchmark &operator=(const InstructionBenchmark &) = delete;
-  InstructionBenchmark &operator=(InstructionBenchmark &&) = delete;
 
   // Read functions.
   static Expected<InstructionBenchmark> readYaml(const LLVMState &State,
-                                                 MemoryBufferRef Buffer);
+                                                 StringRef Filename);
 
   static Expected<std::vector<InstructionBenchmark>>
-  readYamls(const LLVMState &State, MemoryBufferRef Buffer);
-
-  // Given a set of serialized instruction benchmarks, returns the set of
-  // triples and CPUs that appear in the list of benchmarks.
-  struct TripleAndCpu {
-    std::string LLVMTriple;
-    std::string CpuName;
-    bool operator<(const TripleAndCpu &O) const {
-      return std::tie(LLVMTriple, CpuName) < std::tie(O.LLVMTriple, O.CpuName);
-    }
-  };
-  static Expected<std::set<TripleAndCpu>>
-  readTriplesAndCpusFromYamls(MemoryBufferRef Buffer);
+  readYamls(const LLVMState &State, StringRef Filename);
 
   class Error readYamlFrom(const LLVMState &State, StringRef InputContent);
 
   // Write functions, non-const because of YAML traits.
-  // NOTE: we intentionally do *NOT* have a variant of this function taking
-  //       filename, because it's behaviour is bugprone with regards to
-  //       accidentally using it more than once and overriding previous YAML.
   class Error writeYamlTo(const LLVMState &State, raw_ostream &S);
-};
 
-bool operator==(const BenchmarkMeasure &A, const BenchmarkMeasure &B);
+  class Error writeYaml(const LLVMState &State, const StringRef Filename);
+};
 
 //------------------------------------------------------------------------------
 // Utilities to work with Benchmark measures.

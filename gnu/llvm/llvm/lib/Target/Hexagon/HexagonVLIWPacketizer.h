@@ -56,16 +56,6 @@ class HexagonPacketizerList : public VLIWPacketizerList {
   // Set to true if the packet contains an instruction that stalls with an
   // instruction from the previous packet.
   bool PacketStalls = false;
-  // Set to the number of cycles of stall a given instruction will incur
-  // because of dependence on instruction in previous packet.
-  unsigned int PacketStallCycles = 0;
-
-  // Set to true if the packet has a duplex pair of sub-instructions.
-  bool PacketHasDuplex = false;
-
-  // Set to true if the packet has a instruction that can only be executed
-  // in SLOT0.
-  bool PacketHasSLOT0OnlyInsn = false;
 
 protected:
   /// A handle to the branch probability pass.
@@ -159,7 +149,6 @@ protected:
   bool hasRegMaskDependence(const MachineInstr &I, const MachineInstr &J);
   bool hasDualStoreDependence(const MachineInstr &I, const MachineInstr &J);
   bool producesStall(const MachineInstr &MI);
-  unsigned int calcStall(const MachineInstr &MI);
 };
 
 } // end namespace llvm

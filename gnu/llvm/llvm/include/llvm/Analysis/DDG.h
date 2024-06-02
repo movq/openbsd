@@ -18,11 +18,9 @@
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/DependenceGraphBuilder.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/IR/Instructions.h"
 
 namespace llvm {
-class Function;
-class Loop;
-class LoopInfo;
 class DDGNode;
 class DDGEdge;
 using DDGNodeBase = DGNode<DDGNode, DDGEdge>;
@@ -54,8 +52,8 @@ public:
   };
 
   DDGNode() = delete;
-  DDGNode(const NodeKind K) : Kind(K) {}
-  DDGNode(const DDGNode &N) = default;
+  DDGNode(const NodeKind K) : DDGNodeBase(), Kind(K) {}
+  DDGNode(const DDGNode &N) : DDGNodeBase(N), Kind(N.Kind) {}
   DDGNode(DDGNode &&N) : DDGNodeBase(std::move(N)), Kind(N.Kind) {}
   virtual ~DDGNode() = 0;
 
@@ -95,7 +93,7 @@ public:
   RootDDGNode() : DDGNode(NodeKind::Root) {}
   RootDDGNode(const RootDDGNode &N) = delete;
   RootDDGNode(RootDDGNode &&N) : DDGNode(std::move(N)) {}
-  ~RootDDGNode() = default;
+  ~RootDDGNode() {}
 
   /// Define classof to be able to use isa<>, cast<>, dyn_cast<>, etc.
   static bool classof(const DDGNode *N) {
@@ -106,8 +104,6 @@ public:
 
 /// Subclass of DDGNode representing single or multi-instruction nodes.
 class SimpleDDGNode : public DDGNode {
-  friend class DDGBuilder;
-
 public:
   SimpleDDGNode() = delete;
   SimpleDDGNode(Instruction &I);
@@ -115,7 +111,11 @@ public:
   SimpleDDGNode(SimpleDDGNode &&N);
   ~SimpleDDGNode();
 
-  SimpleDDGNode &operator=(const SimpleDDGNode &N) = default;
+  SimpleDDGNode &operator=(const SimpleDDGNode &N) {
+    DDGNode::operator=(N);
+    InstList = N.InstList;
+    return *this;
+  }
 
   SimpleDDGNode &operator=(SimpleDDGNode &&N) {
     DDGNode::operator=(std::move(N));
@@ -150,7 +150,7 @@ private:
     setKind((InstList.size() == 0 && Input.size() == 1)
                 ? NodeKind::SingleInstruction
                 : NodeKind::MultiInstruction);
-    llvm::append_range(InstList, Input);
+    InstList.insert(InstList.end(), Input.begin(), Input.end());
   }
   void appendInstructions(const SimpleDDGNode &Input) {
     appendInstructions(Input.getInstructions());
@@ -177,7 +177,11 @@ public:
   PiBlockDDGNode(PiBlockDDGNode &&N);
   ~PiBlockDDGNode();
 
-  PiBlockDDGNode &operator=(const PiBlockDDGNode &N) = default;
+  PiBlockDDGNode &operator=(const PiBlockDDGNode &N) {
+    DDGNode::operator=(N);
+    NodeList = N.NodeList;
+    return *this;
+  }
 
   PiBlockDDGNode &operator=(PiBlockDDGNode &&N) {
     DDGNode::operator=(std::move(N));
@@ -225,7 +229,11 @@ public:
   DDGEdge(DDGNode &N, EdgeKind K) : DDGEdgeBase(N), Kind(K) {}
   DDGEdge(const DDGEdge &E) : DDGEdgeBase(E), Kind(E.getKind()) {}
   DDGEdge(DDGEdge &&E) : DDGEdgeBase(std::move(E)), Kind(E.Kind) {}
-  DDGEdge &operator=(const DDGEdge &E) = default;
+  DDGEdge &operator=(const DDGEdge &E) {
+    DDGEdgeBase::operator=(E);
+    Kind = E.Kind;
+    return *this;
+  }
 
   DDGEdge &operator=(DDGEdge &&E) {
     DDGEdgeBase::operator=(std::move(E));
@@ -262,10 +270,10 @@ public:
       : Name(N), DI(DepInfo), Root(nullptr) {}
   DependenceGraphInfo(DependenceGraphInfo &&G)
       : Name(std::move(G.Name)), DI(std::move(G.DI)), Root(G.Root) {}
-  virtual ~DependenceGraphInfo() = default;
+  virtual ~DependenceGraphInfo() {}
 
   /// Return the label that is used to name this graph.
-  StringRef getName() const { return Name; }
+  const StringRef getName() const { return Name; }
 
   /// Return the root node of the graph.
   NodeType &getRoot() const {
@@ -273,18 +281,6 @@ public:
                    "still be in progress\n");
     return *Root;
   }
-
-  /// Collect all the data dependency infos coming from any pair of memory
-  /// accesses from \p Src to \p Dst, and store them into \p Deps. Return true
-  /// if a dependence exists, and false otherwise.
-  bool getDependencies(const NodeType &Src, const NodeType &Dst,
-                       DependenceList &Deps) const;
-
-  /// Return a string representing the type of dependence that the dependence
-  /// analysis identified between the two given nodes. This function assumes
-  /// that there is a memory dependence between the given two nodes.
-  std::string getDependenceString(const NodeType &Src,
-                                  const NodeType &Dst) const;
 
 protected:
   // Name of the graph.
@@ -348,37 +344,37 @@ public:
   DDGBuilder(DataDependenceGraph &G, DependenceInfo &D,
              const BasicBlockListType &BBs)
       : AbstractDependenceGraphBuilder(G, D, BBs) {}
-  DDGNode &createRootNode() final {
+  DDGNode &createRootNode() final override {
     auto *RN = new RootDDGNode();
     assert(RN && "Failed to allocate memory for DDG root node.");
     Graph.addNode(*RN);
     return *RN;
   }
-  DDGNode &createFineGrainedNode(Instruction &I) final {
+  DDGNode &createFineGrainedNode(Instruction &I) final override {
     auto *SN = new SimpleDDGNode(I);
     assert(SN && "Failed to allocate memory for simple DDG node.");
     Graph.addNode(*SN);
     return *SN;
   }
-  DDGNode &createPiBlock(const NodeListType &L) final {
+  DDGNode &createPiBlock(const NodeListType &L) final override {
     auto *Pi = new PiBlockDDGNode(L);
     assert(Pi && "Failed to allocate memory for pi-block node.");
     Graph.addNode(*Pi);
     return *Pi;
   }
-  DDGEdge &createDefUseEdge(DDGNode &Src, DDGNode &Tgt) final {
+  DDGEdge &createDefUseEdge(DDGNode &Src, DDGNode &Tgt) final override {
     auto *E = new DDGEdge(Tgt, DDGEdge::EdgeKind::RegisterDefUse);
     assert(E && "Failed to allocate memory for edge");
     Graph.connect(Src, Tgt, *E);
     return *E;
   }
-  DDGEdge &createMemoryEdge(DDGNode &Src, DDGNode &Tgt) final {
+  DDGEdge &createMemoryEdge(DDGNode &Src, DDGNode &Tgt) final override {
     auto *E = new DDGEdge(Tgt, DDGEdge::EdgeKind::MemoryDependence);
     assert(E && "Failed to allocate memory for edge");
     Graph.connect(Src, Tgt, *E);
     return *E;
   }
-  DDGEdge &createRootedEdge(DDGNode &Src, DDGNode &Tgt) final {
+  DDGEdge &createRootedEdge(DDGNode &Src, DDGNode &Tgt) final override {
     auto *E = new DDGEdge(Tgt, DDGEdge::EdgeKind::Rooted);
     assert(E && "Failed to allocate memory for edge");
     assert(isa<RootDDGNode>(Src) && "Expected root node");
@@ -386,18 +382,13 @@ public:
     return *E;
   }
 
-  const NodeListType &getNodesInPiBlock(const DDGNode &N) final {
+  const NodeListType &getNodesInPiBlock(const DDGNode &N) final override {
     auto *PiNode = dyn_cast<const PiBlockDDGNode>(&N);
     assert(PiNode && "Expected a pi-block node.");
     return PiNode->getNodes();
   }
 
-  /// Return true if the two nodes \pSrc and \pTgt are both simple nodes and
-  /// the consecutive instructions after merging belong to the same basic block.
-  bool areNodesMergeable(const DDGNode &Src, const DDGNode &Tgt) const final;
-  void mergeNodes(DDGNode &Src, DDGNode &Tgt) final;
-  bool shouldSimplify() const final;
-  bool shouldCreatePiBlocks() const final;
+  bool shouldCreatePiBlocks() const final override;
 };
 
 raw_ostream &operator<<(raw_ostream &OS, const DDGNode &N);
@@ -431,52 +422,6 @@ public:
 private:
   raw_ostream &OS;
 };
-
-//===--------------------------------------------------------------------===//
-// DependenceGraphInfo Implementation
-//===--------------------------------------------------------------------===//
-
-template <typename NodeType>
-bool DependenceGraphInfo<NodeType>::getDependencies(
-    const NodeType &Src, const NodeType &Dst, DependenceList &Deps) const {
-  assert(Deps.empty() && "Expected empty output list at the start.");
-
-  // List of memory access instructions from src and dst nodes.
-  SmallVector<Instruction *, 8> SrcIList, DstIList;
-  auto isMemoryAccess = [](const Instruction *I) {
-    return I->mayReadOrWriteMemory();
-  };
-  Src.collectInstructions(isMemoryAccess, SrcIList);
-  Dst.collectInstructions(isMemoryAccess, DstIList);
-
-  for (auto *SrcI : SrcIList)
-    for (auto *DstI : DstIList)
-      if (auto Dep =
-              const_cast<DependenceInfo *>(&DI)->depends(SrcI, DstI, true))
-        Deps.push_back(std::move(Dep));
-
-  return !Deps.empty();
-}
-
-template <typename NodeType>
-std::string
-DependenceGraphInfo<NodeType>::getDependenceString(const NodeType &Src,
-                                                   const NodeType &Dst) const {
-  std::string Str;
-  raw_string_ostream OS(Str);
-  DependenceList Deps;
-  if (!getDependencies(Src, Dst, Deps))
-    return OS.str();
-  interleaveComma(Deps, OS, [&](const std::unique_ptr<Dependence> &D) {
-    D->dump(OS);
-    // Remove the extra new-line character printed by the dump
-    // method
-    if (OS.str().back() == '\n')
-      OS.str().pop_back();
-  });
-
-  return OS.str();
-}
 
 //===--------------------------------------------------------------------===//
 // GraphTraits specializations for the DDG

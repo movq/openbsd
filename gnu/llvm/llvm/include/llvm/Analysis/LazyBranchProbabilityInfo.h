@@ -57,13 +57,13 @@ class LazyBranchProbabilityInfoPass : public FunctionPass {
   public:
     LazyBranchProbabilityInfo(const Function *F, const LoopInfo *LI,
                               const TargetLibraryInfo *TLI)
-        : F(F), LI(LI), TLI(TLI) {}
+        : Calculated(false), F(F), LI(LI), TLI(TLI) {}
 
     /// Retrieve the BPI with the branch probabilities computed.
     BranchProbabilityInfo &getCalculated() {
       if (!Calculated) {
         assert(F && LI && "call setAnalysis");
-        BPI.calculate(*F, *LI, TLI, nullptr, nullptr);
+        BPI.calculate(*F, *LI, TLI);
         Calculated = true;
       }
       return BPI;
@@ -75,7 +75,7 @@ class LazyBranchProbabilityInfoPass : public FunctionPass {
 
   private:
     BranchProbabilityInfo BPI;
-    bool Calculated = false;
+    bool Calculated;
     const Function *F;
     const LoopInfo *LI;
     const TargetLibraryInfo *TLI;

@@ -23,6 +23,7 @@
 static constexpr const char kIntegerPrefix[] = "i_0x";
 static constexpr const char kDoublePrefix[] = "f_";
 static constexpr const char kInvalidOperand[] = "INVALID";
+static constexpr llvm::StringLiteral kNoRegister("%noreg");
 
 namespace llvm {
 
@@ -33,8 +34,29 @@ namespace {
 struct YamlContext {
   YamlContext(const exegesis::LLVMState &State)
       : State(&State), ErrorStream(LastError),
-        OpcodeNameToOpcodeIdx(State.getOpcodeNameToOpcodeIdxMapping()),
-        RegNameToRegNo(State.getRegNameToRegNoMapping()) {}
+        OpcodeNameToOpcodeIdx(
+            generateOpcodeNameToOpcodeIdxMapping(State.getInstrInfo())),
+        RegNameToRegNo(generateRegNameToRegNoMapping(State.getRegInfo())) {}
+
+  static StringMap<unsigned>
+  generateOpcodeNameToOpcodeIdxMapping(const MCInstrInfo &InstrInfo) {
+    StringMap<unsigned> Map(InstrInfo.getNumOpcodes());
+    for (unsigned I = 0, E = InstrInfo.getNumOpcodes(); I < E; ++I)
+      Map[InstrInfo.getName(I)] = I;
+    assert(Map.size() == InstrInfo.getNumOpcodes() && "Size prediction failed");
+    return Map;
+  };
+
+  StringMap<unsigned>
+  generateRegNameToRegNoMapping(const MCRegisterInfo &RegInfo) {
+    StringMap<unsigned> Map(RegInfo.getNumRegs());
+    // Special-case RegNo 0, which would otherwise be spelled as ''.
+    Map[kNoRegister] = 0;
+    for (unsigned I = 1, E = RegInfo.getNumRegs(); I < E; ++I)
+      Map[RegInfo.getName(I)] = I;
+    assert(Map.size() == RegInfo.getNumRegs() && "Size prediction failed");
+    return Map;
+  };
 
   void serializeMCInst(const MCInst &MCInst, raw_ostream &OS) {
     OS << getInstrName(MCInst.getOpcode());
@@ -75,12 +97,12 @@ struct YamlContext {
     return RegName;
   }
 
-  std::optional<unsigned> getRegNo(StringRef RegName) {
+  Optional<unsigned> getRegNo(StringRef RegName) {
     auto Iter = RegNameToRegNo.find(RegName);
     if (Iter != RegNameToRegNo.end())
       return Iter->second;
     ErrorStream << "No register with name '" << RegName << "'\n";
-    return std::nullopt;
+    return None;
   }
 
 private:
@@ -112,8 +134,8 @@ private:
       OS << getRegName(MCOperand.getReg());
     } else if (MCOperand.isImm()) {
       serializeIntegerOperand(OS, MCOperand.getImm());
-    } else if (MCOperand.isDFPImm()) {
-      serializeFPOperand(OS, bit_cast<double>(MCOperand.getDFPImm()));
+    } else if (MCOperand.isFPImm()) {
+      serializeFPOperand(OS, MCOperand.getFPImm());
     } else {
       OS << kInvalidOperand;
     }
@@ -126,7 +148,7 @@ private:
     if (tryDeserializeIntegerOperand(String, IntValue))
       return MCOperand::createImm(IntValue);
     if (tryDeserializeFPOperand(String, DoubleValue))
-      return MCOperand::createDFPImm(bit_cast<uint64_t>(DoubleValue));
+      return MCOperand::createFPImm(DoubleValue);
     if (auto RegNo = getRegNo(String))
       return MCOperand::createReg(*RegNo);
     if (String != kInvalidOperand)
@@ -152,8 +174,8 @@ private:
   const exegesis::LLVMState *State;
   std::string LastError;
   raw_string_ostream ErrorStream;
-  const DenseMap<StringRef, unsigned> &OpcodeNameToOpcodeIdx;
-  const DenseMap<StringRef, unsigned> &RegNameToRegNo;
+  const StringMap<unsigned> OpcodeNameToOpcodeIdx;
+  const StringMap<unsigned> RegNameToRegNo;
 };
 } // namespace
 
@@ -233,7 +255,7 @@ template <> struct ScalarTraits<exegesis::RegisterValue> {
                      raw_ostream &Out) {
     YamlContext &Context = getTypedContext(Ctx);
     Out << Context.getRegName(RV.Register) << "=0x"
-        << toString(RV.Value, kRadix, kSigned);
+        << RV.Value.toString(kRadix, kSigned);
   }
 
   static StringRef input(StringRef String, void *Ctx,
@@ -242,7 +264,7 @@ template <> struct ScalarTraits<exegesis::RegisterValue> {
     String.split(Pieces, "=0x", /* MaxSplit */ -1,
                  /* KeepEmpty */ false);
     YamlContext &Context = getTypedContext(Ctx);
-    std::optional<unsigned> RegNo;
+    Optional<unsigned> RegNo;
     if (Pieces.size() == 2 && (RegNo = Context.getRegNo(Pieces[0]))) {
       RV.Register = *RegNo;
       const unsigned BitsNeeded = APInt::getBitsNeeded(Pieces[1], kRadix);
@@ -305,69 +327,47 @@ struct MappingContextTraits<exegesis::InstructionBenchmark, YamlContext> {
   }
 };
 
-template <> struct MappingTraits<exegesis::InstructionBenchmark::TripleAndCpu> {
-  static void mapping(IO &Io,
-                      exegesis::InstructionBenchmark::TripleAndCpu &Obj) {
-    assert(!Io.outputting() && "can only read TripleAndCpu");
-    // Read triple.
-    Io.mapRequired("llvm_triple", Obj.LLVMTriple);
-    Io.mapRequired("cpu_name", Obj.CpuName);
-    // Drop everything else.
-  }
-};
-
 } // namespace yaml
 
 namespace exegesis {
 
-Expected<std::set<InstructionBenchmark::TripleAndCpu>>
-InstructionBenchmark::readTriplesAndCpusFromYamls(MemoryBufferRef Buffer) {
-  // We're only mapping a field, drop other fields and silence the corresponding
-  // warnings.
-  yaml::Input Yin(
-      Buffer, nullptr, +[](const SMDiagnostic &, void *Context) {});
-  Yin.setAllowUnknownKeys(true);
-  std::set<TripleAndCpu> Result;
-  yaml::EmptyContext Context;
-  while (Yin.setCurrentDocument()) {
-    TripleAndCpu TC;
-    yamlize(Yin, TC, /*unused*/ true, Context);
-    if (Yin.error())
-      return errorCodeToError(Yin.error());
-    Result.insert(TC);
-    Yin.nextDocument();
-  }
-  return Result;
-}
-
 Expected<InstructionBenchmark>
-InstructionBenchmark::readYaml(const LLVMState &State, MemoryBufferRef Buffer) {
-  yaml::Input Yin(Buffer);
-  YamlContext Context(State);
-  InstructionBenchmark Benchmark;
-  if (Yin.setCurrentDocument())
-    yaml::yamlize(Yin, Benchmark, /*unused*/ true, Context);
-  if (!Context.getLastError().empty())
-    return make_error<Failure>(Context.getLastError());
-  return std::move(Benchmark);
+InstructionBenchmark::readYaml(const LLVMState &State, StringRef Filename) {
+  if (auto ExpectedMemoryBuffer =
+          errorOrToExpected(MemoryBuffer::getFile(Filename))) {
+    yaml::Input Yin(*ExpectedMemoryBuffer.get());
+    YamlContext Context(State);
+    InstructionBenchmark Benchmark;
+    if (Yin.setCurrentDocument())
+      yaml::yamlize(Yin, Benchmark, /*unused*/ true, Context);
+    if (!Context.getLastError().empty())
+      return make_error<Failure>(Context.getLastError());
+    return Benchmark;
+  } else {
+    return ExpectedMemoryBuffer.takeError();
+  }
 }
 
 Expected<std::vector<InstructionBenchmark>>
-InstructionBenchmark::readYamls(const LLVMState &State,
-                                MemoryBufferRef Buffer) {
-  yaml::Input Yin(Buffer);
-  YamlContext Context(State);
-  std::vector<InstructionBenchmark> Benchmarks;
-  while (Yin.setCurrentDocument()) {
-    Benchmarks.emplace_back();
-    yamlize(Yin, Benchmarks.back(), /*unused*/ true, Context);
-    if (Yin.error())
-      return errorCodeToError(Yin.error());
-    if (!Context.getLastError().empty())
-      return make_error<Failure>(Context.getLastError());
-    Yin.nextDocument();
+InstructionBenchmark::readYamls(const LLVMState &State, StringRef Filename) {
+  if (auto ExpectedMemoryBuffer =
+          errorOrToExpected(MemoryBuffer::getFile(Filename))) {
+    yaml::Input Yin(*ExpectedMemoryBuffer.get());
+    YamlContext Context(State);
+    std::vector<InstructionBenchmark> Benchmarks;
+    while (Yin.setCurrentDocument()) {
+      Benchmarks.emplace_back();
+      yamlize(Yin, Benchmarks.back(), /*unused*/ true, Context);
+      if (Yin.error())
+        return errorCodeToError(Yin.error());
+      if (!Context.getLastError().empty())
+        return make_error<Failure>(Context.getLastError());
+      Yin.nextDocument();
+    }
+    return Benchmarks;
+  } else {
+    return ExpectedMemoryBuffer.takeError();
   }
-  return std::move(Benchmarks);
 }
 
 Error InstructionBenchmark::writeYamlTo(const LLVMState &State,
@@ -394,6 +394,24 @@ Error InstructionBenchmark::readYamlFrom(const LLVMState &State,
   return Error::success();
 }
 
+Error InstructionBenchmark::writeYaml(const LLVMState &State,
+                                      const StringRef Filename) {
+  if (Filename == "-") {
+    if (auto Err = writeYamlTo(State, outs()))
+      return Err;
+  } else {
+    int ResultFD = 0;
+    if (auto E = errorCodeToError(openFileForWrite(
+            Filename, ResultFD, sys::fs::CD_CreateAlways, sys::fs::OF_Text))) {
+      return E;
+    }
+    raw_fd_ostream Ostr(ResultFD, true /*shouldClose*/);
+    if (auto Err = writeYamlTo(State, Ostr))
+      return Err;
+  }
+  return Error::success();
+}
+
 void PerInstructionStats::push(const BenchmarkMeasure &BM) {
   if (Key.empty())
     Key = BM.Key;
@@ -403,12 +421,6 @@ void PerInstructionStats::push(const BenchmarkMeasure &BM) {
   MaxValue = std::max(MaxValue, BM.PerInstructionValue);
   MinValue = std::min(MinValue, BM.PerInstructionValue);
 }
-
-bool operator==(const BenchmarkMeasure &A, const BenchmarkMeasure &B) {
-  return std::tie(A.Key, A.PerInstructionValue, A.PerSnippetValue) ==
-         std::tie(B.Key, B.PerInstructionValue, B.PerSnippetValue);
-}
-
 
 } // namespace exegesis
 } // namespace llvm

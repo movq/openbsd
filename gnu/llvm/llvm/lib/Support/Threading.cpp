@@ -12,12 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Support/Threading.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/Config/config.h"
-#include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Host.h"
 
 #include <cassert>
 #include <errno.h>
-#include <optional>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,8 +28,27 @@ using namespace llvm;
 //===          independent code.
 //===----------------------------------------------------------------------===//
 
+bool llvm::llvm_is_multithreaded() {
+#if LLVM_ENABLE_THREADS != 0
+  return true;
+#else
+  return false;
+#endif
+}
+
 #if LLVM_ENABLE_THREADS == 0 ||                                                \
     (!defined(_WIN32) && !defined(HAVE_PTHREAD_H))
+// Support for non-Win32, non-pthread implementation.
+void llvm::llvm_execute_on_thread(void (*Fn)(void *), void *UserData,
+                                  llvm::Optional<unsigned> StackSizeInBytes) {
+  (void)StackSizeInBytes;
+  Fn(UserData);
+}
+
+unsigned llvm::heavyweight_hardware_concurrency() { return 1; }
+
+unsigned llvm::hardware_concurrency() { return 1; }
+
 uint64_t llvm::get_threadid() { return 0; }
 
 uint32_t llvm::get_max_thread_name_length() { return 0; }
@@ -38,31 +57,63 @@ void llvm::set_thread_name(const Twine &Name) {}
 
 void llvm::get_thread_name(SmallVectorImpl<char> &Name) { Name.clear(); }
 
-llvm::BitVector llvm::get_thread_affinity_mask() { return {}; }
-
-unsigned llvm::ThreadPoolStrategy::compute_thread_count() const {
-  // When threads are disabled, ensure clients will loop at least once.
-  return 1;
+#if LLVM_ENABLE_THREADS == 0
+void llvm::llvm_execute_on_thread_async(
+    llvm::unique_function<void()> Func,
+    llvm::Optional<unsigned> StackSizeInBytes) {
+  (void)Func;
+  (void)StackSizeInBytes;
+  report_fatal_error("Spawning a detached thread doesn't make sense with no "
+                     "threading support");
 }
-
-// Unknown if threading turned off
-int llvm::get_physical_cores() { return -1; }
+#else
+// Support for non-Win32, non-pthread implementation.
+void llvm::llvm_execute_on_thread_async(
+    llvm::unique_function<void()> Func,
+    llvm::Optional<unsigned> StackSizeInBytes) {
+  (void)StackSizeInBytes;
+  std::thread(std::move(Func)).detach();
+}
+#endif
 
 #else
 
-static int computeHostNumHardwareThreads();
-
-unsigned llvm::ThreadPoolStrategy::compute_thread_count() const {
-  int MaxThreadCount =
-      UseHyperThreads ? computeHostNumHardwareThreads() : get_physical_cores();
-  if (MaxThreadCount <= 0)
-    MaxThreadCount = 1;
-  if (ThreadsRequested == 0)
-    return MaxThreadCount;
-  if (!Limit)
-    return ThreadsRequested;
-  return std::min((unsigned)MaxThreadCount, ThreadsRequested);
+#include <thread>
+unsigned llvm::heavyweight_hardware_concurrency() {
+  // Since we can't get here unless LLVM_ENABLE_THREADS == 1, it is safe to use
+  // `std::thread` directly instead of `llvm::thread` (and indeed, doing so
+  // allows us to not define `thread` in the llvm namespace, which conflicts
+  // with some platforms such as FreeBSD whose headers also define a struct
+  // called `thread` in the global namespace which can cause ambiguity due to
+  // ADL.
+  int NumPhysical = sys::getHostNumPhysicalCores();
+  if (NumPhysical == -1)
+    return std::thread::hardware_concurrency();
+  return NumPhysical;
 }
+
+unsigned llvm::hardware_concurrency() {
+#if defined(HAVE_SCHED_GETAFFINITY) && defined(HAVE_CPU_COUNT)
+  cpu_set_t Set;
+  if (sched_getaffinity(0, sizeof(Set), &Set))
+    return CPU_COUNT(&Set);
+#endif
+  // Guard against std::thread::hardware_concurrency() returning 0.
+  if (unsigned Val = std::thread::hardware_concurrency())
+    return Val;
+  return 1;
+}
+
+namespace {
+struct SyncThreadInfo {
+  void (*UserFn)(void *);
+  void *UserData;
+};
+
+using AsyncThreadInfo = llvm::unique_function<void()>;
+
+enum class JoiningPolicy { Join, Detach };
+} // namespace
 
 // Include the platform-specific parts of this class.
 #ifdef LLVM_ON_UNIX
@@ -72,40 +123,20 @@ unsigned llvm::ThreadPoolStrategy::compute_thread_count() const {
 #include "Windows/Threading.inc"
 #endif
 
-// Must be included after Threading.inc to provide definition for llvm::thread
-// because FreeBSD's condvar.h (included by user.h) misuses the "thread"
-// keyword.
-#include "llvm/Support/thread.h"
+void llvm::llvm_execute_on_thread(void (*Fn)(void *), void *UserData,
+                                  llvm::Optional<unsigned> StackSizeInBytes) {
 
-#if defined(__APPLE__)
-  // Darwin's default stack size for threads except the main one is only 512KB,
-  // which is not enough for some/many normal LLVM compilations. This implements
-  // the same interface as std::thread but requests the same stack size as the
-  // main thread (8MB) before creation.
-const std::optional<unsigned> llvm::thread::DefaultStackSize = 8 * 1024 * 1024;
-#else
-const std::optional<unsigned> llvm::thread::DefaultStackSize;
-#endif
-
-
-#endif
-
-std::optional<ThreadPoolStrategy>
-llvm::get_threadpool_strategy(StringRef Num, ThreadPoolStrategy Default) {
-  if (Num == "all")
-    return llvm::hardware_concurrency();
-  if (Num.empty())
-    return Default;
-  unsigned V;
-  if (Num.getAsInteger(10, V))
-    return std::nullopt; // malformed 'Num' value
-  if (V == 0)
-    return Default;
-
-  // Do not take the Default into account. This effectively disables
-  // heavyweight_hardware_concurrency() if the user asks for any number of
-  // threads on the cmd-line.
-  ThreadPoolStrategy S = llvm::hardware_concurrency();
-  S.ThreadsRequested = V;
-  return S;
+  SyncThreadInfo Info = {Fn, UserData};
+  llvm_execute_on_thread_impl(threadFuncSync, &Info, StackSizeInBytes,
+                              JoiningPolicy::Join);
 }
+
+void llvm::llvm_execute_on_thread_async(
+    llvm::unique_function<void()> Func,
+    llvm::Optional<unsigned> StackSizeInBytes) {
+  llvm_execute_on_thread_impl(&threadFuncAsync,
+                              new AsyncThreadInfo(std::move(Func)),
+                              StackSizeInBytes, JoiningPolicy::Detach);
+}
+
+#endif

@@ -137,8 +137,6 @@ private:
   /// Machine instruction info used throughout the class.
   const X86InstrInfo *TII = nullptr;
 
-  const TargetRegisterInfo *TRI = nullptr;
-
   /// Local member for function's OptForSize attribute.
   bool OptForSize = false;
 
@@ -164,7 +162,6 @@ bool FixupBWInstPass::runOnMachineFunction(MachineFunction &MF) {
 
   this->MF = &MF;
   TII = MF.getSubtarget<X86Subtarget>().getInstrInfo();
-  TRI = MF.getRegInfo().getTargetRegisterInfo();
   MLI = &getAnalysis<MachineLoopInfo>();
   PSI = &getAnalysis<ProfileSummaryInfoWrapperPass>().getPSI();
   MBFI = (PSI && PSI->hasProfileSummary()) ?
@@ -190,7 +187,8 @@ bool FixupBWInstPass::runOnMachineFunction(MachineFunction &MF) {
 /// If so, return that super register in \p SuperDestReg.
 bool FixupBWInstPass::getSuperRegDestIfDead(MachineInstr *OrigMI,
                                             Register &SuperDestReg) const {
-  const X86RegisterInfo *TRI = &TII->getRegisterInfo();
+  auto *TRI = &TII->getRegisterInfo();
+
   Register OrigDestReg = OrigMI->getOperand(0).getReg();
   SuperDestReg = getX86SubSuperRegister(OrigDestReg, 32);
 
@@ -306,14 +304,6 @@ MachineInstr *FixupBWInstPass::tryReplaceLoad(unsigned New32BitOpcode,
 
   MIB.setMemRefs(MI->memoperands());
 
-  // If it was debug tracked, record a substitution.
-  if (unsigned OldInstrNum = MI->peekDebugInstrNum()) {
-    unsigned Subreg = TRI->getSubRegIndex(MIB->getOperand(0).getReg(),
-                                          MI->getOperand(0).getReg());
-    unsigned NewInstrNum = MIB->getDebugInstrNum(*MF);
-    MF->makeDebugValueSubstitution({OldInstrNum, 0}, {NewInstrNum, 0}, Subreg);
-  }
-
   return MIB;
 }
 
@@ -330,7 +320,7 @@ MachineInstr *FixupBWInstPass::tryReplaceCopy(MachineInstr *MI) const {
 
   // This is only correct if we access the same subregister index: otherwise,
   // we could try to replace "movb %ah, %al" with "movl %eax, %eax".
-  const X86RegisterInfo *TRI = &TII->getRegisterInfo();
+  auto *TRI = &TII->getRegisterInfo();
   if (TRI->getSubRegIndex(NewSrcReg, OldSrc.getReg()) !=
       TRI->getSubRegIndex(NewDestReg, OldDest.getReg()))
     return nullptr;
@@ -360,7 +350,7 @@ MachineInstr *FixupBWInstPass::tryReplaceExtend(unsigned New32BitOpcode,
     return nullptr;
 
   // Don't interfere with formation of CBW instructions which should be a
-  // shorter encoding than even the MOVSX32rr8. It's also immune to partial
+  // shorter encoding than even the MOVSX32rr8. It's also immunte to partial
   // merge issues on Intel CPUs.
   if (MI->getOpcode() == X86::MOVSX16rr8 &&
       MI->getOperand(0).getReg() == X86::AX &&
@@ -377,13 +367,6 @@ MachineInstr *FixupBWInstPass::tryReplaceExtend(unsigned New32BitOpcode,
 
   MIB.setMemRefs(MI->memoperands());
 
-  if (unsigned OldInstrNum = MI->peekDebugInstrNum()) {
-    unsigned Subreg = TRI->getSubRegIndex(MIB->getOperand(0).getReg(),
-                                          MI->getOperand(0).getReg());
-    unsigned NewInstrNum = MIB->getDebugInstrNum(*MF);
-    MF->makeDebugValueSubstitution({OldInstrNum, 0}, {NewInstrNum, 0}, Subreg);
-  }
-
   return MIB;
 }
 
@@ -393,12 +376,12 @@ MachineInstr *FixupBWInstPass::tryReplaceInstr(MachineInstr *MI,
   switch (MI->getOpcode()) {
 
   case X86::MOV8rm:
-    // Replace 8-bit loads with the zero-extending version if not optimizing
-    // for size. The extending op is cheaper across a wide range of uarch and
-    // it avoids a potentially expensive partial register stall. It takes an
-    // extra byte to encode, however, so don't do this when optimizing for size.
-    if (!OptForSize)
-      return tryReplaceLoad(X86::MOVZX32rm8, MI);
+    // Only replace 8 bit loads with the zero extending versions if
+    // in an inner most loop and not optimizing for size. This takes
+    // an extra byte to encode, and provides limited performance upside.
+    if (MachineLoop *ML = MLI->getLoopFor(&MBB))
+      if (ML->begin() == ML->end() && !OptForSize)
+        return tryReplaceLoad(X86::MOVZX32rm8, MI);
     break;
 
   case X86::MOV16rm:
@@ -457,12 +440,14 @@ void FixupBWInstPass::processBasicBlock(MachineFunction &MF,
   OptForSize = MF.getFunction().hasOptSize() ||
                llvm::shouldOptimizeForSize(&MBB, PSI, MBFI);
 
-  for (MachineInstr &MI : llvm::reverse(MBB)) {
-    if (MachineInstr *NewMI = tryReplaceInstr(&MI, MBB))
-      MIReplacements.push_back(std::make_pair(&MI, NewMI));
+  for (auto I = MBB.rbegin(); I != MBB.rend(); ++I) {
+    MachineInstr *MI = &*I;
+
+    if (MachineInstr *NewMI = tryReplaceInstr(MI, MBB))
+      MIReplacements.push_back(std::make_pair(MI, NewMI));
 
     // We're done with this instruction, update liveness for the next one.
-    LiveRegs.stepBackward(MI);
+    LiveRegs.stepBackward(*MI);
   }
 
   while (!MIReplacements.empty()) {

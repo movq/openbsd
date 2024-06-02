@@ -19,7 +19,6 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
-#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/ParallelCG.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Config/config.h"
@@ -30,28 +29,26 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/LLVMRemarkStreamer.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassTimingInfo.h"
+#include "llvm/IR/RemarkStreamer.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/LTO/LTO.h"
-#include "llvm/LTO/LTOBackend.h"
 #include "llvm/LTO/legacy/LTOModule.h"
 #include "llvm/LTO/legacy/UpdateCompilerUsed.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/MC/TargetRegistry.h"
-#include "llvm/Remarks/HotnessThresholdParser.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/YAMLTraits.h"
@@ -59,15 +56,18 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/Internalize.h"
-#include "llvm/Transforms/IPO/WholeProgramDevirt.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/ObjCARC.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
-#include <optional>
 #include <system_error>
 using namespace llvm;
 
 const char* LTOCodeGenerator::getVersionString() {
+#ifdef LLVM_VERSION_INFO
+  return PACKAGE_NAME " version " PACKAGE_VERSION ", " LLVM_VERSION_INFO;
+#else
   return PACKAGE_NAME " version " PACKAGE_VERSION;
+#endif
 }
 
 namespace llvm {
@@ -85,14 +85,6 @@ cl::opt<bool> RemarksWithHotness(
     "lto-pass-remarks-with-hotness",
     cl::desc("With PGO, include profile count in optimization remarks"),
     cl::Hidden);
-
-cl::opt<std::optional<uint64_t>, false, remarks::HotnessThresholdParser>
-    RemarksHotnessThreshold(
-        "lto-pass-remarks-hotness-threshold",
-        cl::desc("Minimum profile count required for an "
-                 "optimization remark to be output."
-                 " Use 'auto' to apply the threshold from profile summary."),
-        cl::value_desc("uint or 'auto'"), cl::init(0), cl::Hidden);
 
 cl::opt<std::string>
     RemarksFilename("lto-pass-remarks-output",
@@ -114,42 +106,52 @@ cl::opt<std::string> LTOStatsFile(
     "lto-stats-file",
     cl::desc("Save statistics to the specified file"),
     cl::Hidden);
-
-cl::opt<std::string> AIXSystemAssemblerPath(
-    "lto-aix-system-assembler",
-    cl::desc("Path to a system assembler, picked up on AIX only"),
-    cl::value_desc("path"));
-
-cl::opt<bool>
-    LTORunCSIRInstr("cs-profile-generate",
-                    cl::desc("Perform context sensitive PGO instrumentation"));
-
-cl::opt<std::string>
-    LTOCSIRProfile("cs-profile-path",
-                   cl::desc("Context sensitive profile file path"));
-} // namespace llvm
+}
 
 LTOCodeGenerator::LTOCodeGenerator(LLVMContext &Context)
     : Context(Context), MergedModule(new Module("ld-temp.o", Context)),
       TheLinker(new Linker(*MergedModule)) {
   Context.setDiscardValueNames(LTODiscardValueNames);
   Context.enableDebugTypeODRUniquing();
-
-  Config.CodeModel = std::nullopt;
-  Config.StatsFile = LTOStatsFile;
-  Config.PreCodeGenPassesHook = [](legacy::PassManager &PM) {
-    PM.add(createObjCARCContractPass());
-  };
-
-  Config.RunCSIRInstr = LTORunCSIRInstr;
-  Config.CSIRProfile = LTOCSIRProfile;
+  initializeLTOPasses();
 }
 
-LTOCodeGenerator::~LTOCodeGenerator() = default;
+LTOCodeGenerator::~LTOCodeGenerator() {}
+
+// Initialize LTO passes. Please keep this function in sync with
+// PassManagerBuilder::populateLTOPassManager(), and make sure all LTO
+// passes are initialized.
+void LTOCodeGenerator::initializeLTOPasses() {
+  PassRegistry &R = *PassRegistry::getPassRegistry();
+
+  initializeInternalizeLegacyPassPass(R);
+  initializeIPSCCPLegacyPassPass(R);
+  initializeGlobalOptLegacyPassPass(R);
+  initializeConstantMergeLegacyPassPass(R);
+  initializeDAHPass(R);
+  initializeInstructionCombiningPassPass(R);
+  initializeSimpleInlinerPass(R);
+  initializePruneEHPass(R);
+  initializeGlobalDCELegacyPassPass(R);
+  initializeArgPromotionPass(R);
+  initializeJumpThreadingPass(R);
+  initializeSROALegacyPassPass(R);
+  initializeAttributorLegacyPassPass(R);
+  initializePostOrderFunctionAttrsLegacyPassPass(R);
+  initializeReversePostOrderFunctionAttrsLegacyPassPass(R);
+  initializeGlobalsAAWrapperPassPass(R);
+  initializeLegacyLICMPassPass(R);
+  initializeMergedLoadStoreMotionLegacyPassPass(R);
+  initializeGVNLegacyPassPass(R);
+  initializeMemCpyOptLegacyPassPass(R);
+  initializeDCELegacyPassPass(R);
+  initializeCFGSimplifyPassPass(R);
+}
 
 void LTOCodeGenerator::setAsmUndefinedRefs(LTOModule *Mod) {
-  for (const StringRef &Undef : Mod->getAsmUndefinedRefs())
-    AsmUndefinedRefs.insert(Undef);
+  const std::vector<StringRef> &undefs = Mod->getAsmUndefinedRefs();
+  for (int i = 0, e = undefs.size(); i != e; ++i)
+    AsmUndefinedRefs.insert(undefs[i]);
 }
 
 bool LTOCodeGenerator::addModule(LTOModule *Mod) {
@@ -180,7 +182,7 @@ void LTOCodeGenerator::setModule(std::unique_ptr<LTOModule> Mod) {
 }
 
 void LTOCodeGenerator::setTargetOptions(const TargetOptions &Options) {
-  Config.Options = Options;
+  this->Options = Options;
 }
 
 void LTOCodeGenerator::setDebugInfo(lto_debug_model Debug) {
@@ -197,13 +199,22 @@ void LTOCodeGenerator::setDebugInfo(lto_debug_model Debug) {
 }
 
 void LTOCodeGenerator::setOptLevel(unsigned Level) {
-  Config.OptLevel = Level;
-  Config.PTO.LoopVectorization = Config.OptLevel > 1;
-  Config.PTO.SLPVectorization = Config.OptLevel > 1;
-  std::optional<CodeGenOpt::Level> CGOptLevelOrNone =
-      CodeGenOpt::getLevel(Config.OptLevel);
-  assert(CGOptLevelOrNone && "Unknown optimization level!");
-  Config.CGOptLevel = *CGOptLevelOrNone;
+  OptLevel = Level;
+  switch (OptLevel) {
+  case 0:
+    CGOptLevel = CodeGenOpt::None;
+    return;
+  case 1:
+    CGOptLevel = CodeGenOpt::Less;
+    return;
+  case 2:
+    CGOptLevel = CodeGenOpt::Default;
+    return;
+  case 3:
+    CGOptLevel = CodeGenOpt::Aggressive;
+    return;
+  }
+  llvm_unreachable("Unknown optimization level!");
 }
 
 bool LTOCodeGenerator::writeMergedModules(StringRef Path) {
@@ -242,107 +253,40 @@ bool LTOCodeGenerator::writeMergedModules(StringRef Path) {
   return true;
 }
 
-bool LTOCodeGenerator::useAIXSystemAssembler() {
-  const auto &Triple = TargetMach->getTargetTriple();
-  return Triple.isOSAIX();
-}
-
-bool LTOCodeGenerator::runAIXSystemAssembler(SmallString<128> &AssemblyFile) {
-  assert(useAIXSystemAssembler() &&
-         "Runing AIX system assembler when integrated assembler is available!");
-
-  // Set the system assembler path.
-  SmallString<256> AssemblerPath("/usr/bin/as");
-  if (!llvm::AIXSystemAssemblerPath.empty()) {
-    if (llvm::sys::fs::real_path(llvm::AIXSystemAssemblerPath, AssemblerPath,
-                                 /* expand_tilde */ true)) {
-      emitError(
-          "Cannot find the assembler specified by lto-aix-system-assembler");
-      return false;
-    }
-  }
-
-  // Setup the LDR_CNTRL variable
-  std::string LDR_CNTRL_var = "LDR_CNTRL=MAXDATA32=0xA0000000@DSA";
-  if (std::optional<std::string> V = sys::Process::GetEnv("LDR_CNTRL"))
-    LDR_CNTRL_var += ("@" + *V);
-
-  // Prepare inputs for the assember.
-  const auto &Triple = TargetMach->getTargetTriple();
-  const char *Arch = Triple.isArch64Bit() ? "-a64" : "-a32";
-  std::string ObjectFileName(AssemblyFile);
-  ObjectFileName[ObjectFileName.size() - 1] = 'o';
-  SmallVector<StringRef, 8> Args = {
-      "/bin/env",     LDR_CNTRL_var,
-      AssemblerPath,  Arch,
-      "-many",        "-o",
-      ObjectFileName, AssemblyFile};
-
-  // Invoke the assembler.
-  int RC = sys::ExecuteAndWait(Args[0], Args);
-
-  // Handle errors.
-  if (RC < -1) {
-    emitError("LTO assembler exited abnormally");
-    return false;
-  }
-  if (RC < 0) {
-    emitError("Unable to invoke LTO assembler");
-    return false;
-  }
-  if (RC > 0) {
-    emitError("LTO assembler invocation returned non-zero");
-    return false;
-  }
-
-  // Cleanup.
-  remove(AssemblyFile.c_str());
-
-  // Fix the output file name.
-  AssemblyFile = ObjectFileName;
-
-  return true;
-}
-
 bool LTOCodeGenerator::compileOptimizedToFile(const char **Name) {
-  if (useAIXSystemAssembler())
-    setFileType(CGFT_AssemblyFile);
-
   // make unique temp output file to put generated code
   SmallString<128> Filename;
+  int FD;
 
-  auto AddStream =
-      [&](size_t Task,
-          const Twine &ModuleName) -> std::unique_ptr<CachedFileStream> {
-    StringRef Extension(Config.CGFileType == CGFT_AssemblyFile ? "s" : "o");
+  StringRef Extension
+      (FileType == CGFT_AssemblyFile ? "s" : "o");
 
-    int FD;
-    std::error_code EC =
-        sys::fs::createTemporaryFile("lto-llvm", Extension, FD, Filename);
-    if (EC)
-      emitError(EC.message());
+  std::error_code EC =
+      sys::fs::createTemporaryFile("lto-llvm", Extension, FD, Filename);
+  if (EC) {
+    emitError(EC.message());
+    return false;
+  }
 
-    return std::make_unique<CachedFileStream>(
-        std::make_unique<llvm::raw_fd_ostream>(FD, true));
-  };
+  // generate object file
+  ToolOutputFile objFile(Filename, FD);
 
-  bool genResult = compileOptimized(AddStream, 1);
-
-  if (!genResult) {
+  bool genResult = compileOptimized(&objFile.os());
+  objFile.os().close();
+  if (objFile.os().has_error()) {
+    emitError((Twine("could not write object file: ") + Filename + ": " +
+               objFile.os().error().message())
+                  .str());
+    objFile.os().clear_error();
     sys::fs::remove(Twine(Filename));
     return false;
   }
 
-  // If statistics were requested, save them to the specified file or
-  // print them out after codegen.
-  if (StatsFile)
-    PrintStatisticsJSON(StatsFile->os());
-  else if (AreStatisticsEnabled())
-    PrintStatistics();
-
-  if (useAIXSystemAssembler())
-    if (!runAIXSystemAssembler(Filename))
-      return false;
+  objFile.keep();
+  if (!genResult) {
+    sys::fs::remove(Twine(Filename));
+    return false;
+  }
 
   NativeObjectPath = Filename.c_str();
   *Name = NativeObjectPath.c_str();
@@ -356,8 +300,8 @@ LTOCodeGenerator::compileOptimized() {
     return nullptr;
 
   // read .o file into memory buffer
-  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr = MemoryBuffer::getFile(
-      name, /*IsText=*/false, /*RequiresNullTerminator=*/false);
+  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
+      MemoryBuffer::getFile(name, -1, false);
   if (std::error_code EC = BufferOrErr.getError()) {
     emitError(EC.message());
     sys::fs::remove(NativeObjectPath);
@@ -370,15 +314,22 @@ LTOCodeGenerator::compileOptimized() {
   return std::move(*BufferOrErr);
 }
 
-bool LTOCodeGenerator::compile_to_file(const char **Name) {
-  if (!optimize())
+bool LTOCodeGenerator::compile_to_file(const char **Name, bool DisableVerify,
+                                       bool DisableInline,
+                                       bool DisableGVNLoadPRE,
+                                       bool DisableVectorization) {
+  if (!optimize(DisableVerify, DisableInline, DisableGVNLoadPRE,
+                DisableVectorization))
     return false;
 
   return compileOptimizedToFile(Name);
 }
 
-std::unique_ptr<MemoryBuffer> LTOCodeGenerator::compile() {
-  if (!optimize())
+std::unique_ptr<MemoryBuffer>
+LTOCodeGenerator::compile(bool DisableVerify, bool DisableInline,
+                          bool DisableGVNLoadPRE, bool DisableVectorization) {
+  if (!optimize(DisableVerify, DisableInline, DisableGVNLoadPRE,
+                DisableVectorization))
     return nullptr;
 
   return compileOptimized();
@@ -405,38 +356,27 @@ bool LTOCodeGenerator::determineTarget() {
 
   // Construct LTOModule, hand over ownership of module and target. Use MAttr as
   // the default set of features.
-  SubtargetFeatures Features(join(Config.MAttrs, ""));
+  SubtargetFeatures Features(MAttr);
   Features.getDefaultSubtargetFeatures(Triple);
   FeatureStr = Features.getString();
   // Set a default CPU for Darwin triples.
-  if (Config.CPU.empty() && Triple.isOSDarwin()) {
+  if (MCpu.empty() && Triple.isOSDarwin()) {
     if (Triple.getArch() == llvm::Triple::x86_64)
-      Config.CPU = "core2";
+      MCpu = "core2";
     else if (Triple.getArch() == llvm::Triple::x86)
-      Config.CPU = "yonah";
-    else if (Triple.isArm64e())
-      Config.CPU = "apple-a12";
+      MCpu = "yonah";
     else if (Triple.getArch() == llvm::Triple::aarch64 ||
              Triple.getArch() == llvm::Triple::aarch64_32)
-      Config.CPU = "cyclone";
+      MCpu = "cyclone";
   }
 
-  // If data-sections is not explicitly set or unset, set data-sections by
-  // default to match the behaviour of lld and gold plugin.
-  if (!codegen::getExplicitDataSections())
-    Config.Options.DataSections = true;
-
   TargetMach = createTargetMachine();
-  assert(TargetMach && "Unable to create target machine");
-
   return true;
 }
 
 std::unique_ptr<TargetMachine> LTOCodeGenerator::createTargetMachine() {
-  assert(MArch && "MArch is not set!");
   return std::unique_ptr<TargetMachine>(MArch->createTargetMachine(
-      TripleStr, Config.CPU, FeatureStr, Config.Options, Config.RelocModel,
-      std::nullopt, Config.CGOptLevel));
+      TripleStr, MCpu, FeatureStr, Options, RelocModel, None, CGOptLevel));
 }
 
 // If a linkonce global is present in the MustPreserveSymbols, we need to make
@@ -523,6 +463,8 @@ void LTOCodeGenerator::applyScopeRestrictions() {
 
   internalizeModule(*MergedModule, mustPreserveGV);
 
+  MergedModule->addModuleFlag(Module::Error, "LTOPostLink", 1);
+
   ScopeRestrictionsDone = true;
 }
 
@@ -577,13 +519,15 @@ void LTOCodeGenerator::finishOptimizationRemarks() {
 }
 
 /// Optimize merged modules using various IPO passes
-bool LTOCodeGenerator::optimize() {
+bool LTOCodeGenerator::optimize(bool DisableVerify, bool DisableInline,
+                                bool DisableGVNLoadPRE,
+                                bool DisableVectorization) {
   if (!this->determineTarget())
     return false;
 
-  auto DiagFileOrErr = lto::setupLLVMOptimizationRemarks(
-      Context, RemarksFilename, RemarksPasses, RemarksFormat,
-      RemarksWithHotness, RemarksHotnessThreshold);
+  auto DiagFileOrErr =
+      lto::setupOptimizationRemarks(Context, RemarksFilename, RemarksPasses,
+                                    RemarksFormat, RemarksWithHotness);
   if (!DiagFileOrErr) {
     errs() << "Error: " << toString(DiagFileOrErr.takeError()) << "\n";
     report_fatal_error("Can't get an output file for the remarks");
@@ -598,18 +542,6 @@ bool LTOCodeGenerator::optimize() {
   }
   StatsFile = std::move(StatsFileOrErr.get());
 
-  // Currently there is no support for enabling whole program visibility via a
-  // linker option in the old LTO API, but this call allows it to be specified
-  // via the internal option. Must be done before WPD invoked via the optimizer
-  // pipeline run below.
-  updatePublicTypeTestCalls(*MergedModule,
-                            /* WholeProgramVisibilityEnabledInLTO */ false);
-  updateVCallVisibilityInModule(*MergedModule,
-                                /* WholeProgramVisibilityEnabledInLTO */ false,
-                                // FIXME: This needs linker information via a
-                                // TBD new interface.
-                                /* DynamicExportSymbols */ {});
-
   // We always run the verifier once on the merged module, the `DisableVerify`
   // parameter only applies to subsequent verify.
   verifyMergedModuleOnce();
@@ -617,36 +549,38 @@ bool LTOCodeGenerator::optimize() {
   // Mark which symbols can not be internalized
   this->applyScopeRestrictions();
 
-  // Write LTOPostLink flag for passes that require all the modules.
-  MergedModule->addModuleFlag(Module::Error, "LTOPostLink", 1);
+  // Instantiate the pass manager to organize the passes.
+  legacy::PassManager passes;
 
   // Add an appropriate DataLayout instance for this module...
   MergedModule->setDataLayout(TargetMach->createDataLayout());
 
-  if (!SaveIRBeforeOptPath.empty()) {
-    std::error_code EC;
-    raw_fd_ostream OS(SaveIRBeforeOptPath, EC, sys::fs::OF_None);
-    if (EC)
-      report_fatal_error(Twine("Failed to open ") + SaveIRBeforeOptPath +
-                         " to save optimized bitcode\n");
-    WriteBitcodeToFile(*MergedModule, OS,
-                       /* ShouldPreserveUseListOrder */ true);
-  }
+  passes.add(
+      createTargetTransformInfoWrapperPass(TargetMach->getTargetIRAnalysis()));
 
-  ModuleSummaryIndex CombinedIndex(false);
-  TargetMach = createTargetMachine();
-  if (!opt(Config, TargetMach.get(), 0, *MergedModule, /*IsThinLTO=*/false,
-           /*ExportSummary=*/&CombinedIndex, /*ImportSummary=*/nullptr,
-           /*CmdArgs*/ std::vector<uint8_t>())) {
-    emitError("LTO middle-end optimizations failed");
-    return false;
-  }
+  Triple TargetTriple(TargetMach->getTargetTriple());
+  PassManagerBuilder PMB;
+  PMB.DisableGVNLoadPRE = DisableGVNLoadPRE;
+  PMB.LoopVectorize = !DisableVectorization;
+  PMB.SLPVectorize = !DisableVectorization;
+  if (!DisableInline)
+    PMB.Inliner = createFunctionInliningPass();
+  PMB.LibraryInfo = new TargetLibraryInfoImpl(TargetTriple);
+  if (Freestanding)
+    PMB.LibraryInfo->disableAllFunctions();
+  PMB.OptLevel = OptLevel;
+  PMB.VerifyInput = !DisableVerify;
+  PMB.VerifyOutput = !DisableVerify;
+
+  PMB.populateLTOPassManager(passes);
+
+  // Run our queue of passes all at once now, efficiently.
+  passes.run(*MergedModule);
 
   return true;
 }
 
-bool LTOCodeGenerator::compileOptimized(AddStreamFn AddStream,
-                                        unsigned ParallelismLevel) {
+bool LTOCodeGenerator::compileOptimized(ArrayRef<raw_pwrite_stream *> Out) {
   if (!this->determineTarget())
     return false;
 
@@ -654,17 +588,25 @@ bool LTOCodeGenerator::compileOptimized(AddStreamFn AddStream,
   // been called in optimize(), this call will return early.
   verifyMergedModuleOnce();
 
+  legacy::PassManager preCodeGenPasses;
+
+  // If the bitcode files contain ARC code and were compiled with optimization,
+  // the ObjCARCContractPass must be run, so do it unconditionally here.
+  preCodeGenPasses.add(createObjCARCContractPass());
+  preCodeGenPasses.run(*MergedModule);
+
   // Re-externalize globals that may have been internalized to increase scope
   // for splitting
   restoreLinkageForExternals();
 
-  ModuleSummaryIndex CombinedIndex(false);
-
-  Config.CodeGenOnly = true;
-  Error Err = backend(Config, AddStream, ParallelismLevel, *MergedModule,
-                      CombinedIndex);
-  assert(!Err && "unexpected code-generation failure");
-  (void)Err;
+  // Do code generation. We need to preserve the module in case the client calls
+  // writeMergedModules() after compilation, but we only need to allow this at
+  // parallelism level 1. This is achieved by having splitCodeGen return the
+  // original module at parallelism level 1 which we then assign back to
+  // MergedModule.
+  MergedModule = splitCodeGen(std::move(MergedModule), Out, {},
+                              [&]() { return createTargetMachine(); }, FileType,
+                              ShouldRestoreGlobalsLinkage);
 
   // If statistics were requested, save them to the specified file or
   // print them out after codegen.
@@ -680,25 +622,22 @@ bool LTOCodeGenerator::compileOptimized(AddStreamFn AddStream,
   return true;
 }
 
-void LTOCodeGenerator::setCodeGenDebugOptions(ArrayRef<StringRef> Options) {
+void LTOCodeGenerator::setCodeGenDebugOptions(ArrayRef<const char *> Options) {
   for (StringRef Option : Options)
-    CodegenOptions.push_back(Option.str());
+    CodegenOptions.push_back(Option);
 }
 
 void LTOCodeGenerator::parseCodeGenDebugOptions() {
-  if (!CodegenOptions.empty())
-    llvm::parseCommandLineOptions(CodegenOptions);
-}
-
-void llvm::parseCommandLineOptions(std::vector<std::string> &Options) {
-  if (!Options.empty()) {
+  // if options were requested, set them
+  if (!CodegenOptions.empty()) {
     // ParseCommandLineOptions() expects argv[0] to be program name.
     std::vector<const char *> CodegenArgv(1, "libLLVMLTO");
-    for (std::string &Arg : Options)
+    for (std::string &Arg : CodegenOptions)
       CodegenArgv.push_back(Arg.c_str());
     cl::ParseCommandLineOptions(CodegenArgv.size(), CodegenArgv.data());
   }
 }
+
 
 void LTOCodeGenerator::DiagnosticHandler(const DiagnosticInfo &DI) {
   // Map the LLVM internal diagnostic severity to the LTO diagnostic severity.

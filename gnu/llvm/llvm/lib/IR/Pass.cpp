@@ -14,6 +14,8 @@
 
 #include "llvm/Pass.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LLVMContext.h"
@@ -22,14 +24,11 @@
 #include "llvm/IR/OptBisect.h"
 #include "llvm/PassInfo.h"
 #include "llvm/PassRegistry.h"
+#include "llvm/PassSupport.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
-
-#ifdef EXPENSIVE_CHECKS
-#include "llvm/IR/StructuralHash.h"
-#endif
 
 using namespace llvm;
 
@@ -62,12 +61,11 @@ static std::string getDescription(const Module &M) {
 
 bool ModulePass::skipModule(Module &M) const {
   OptPassGate &Gate = M.getContext().getOptPassGate();
-  return Gate.isEnabled() &&
-         !Gate.shouldRunPass(this->getPassName(), getDescription(M));
+  return Gate.isEnabled() && !Gate.shouldRunPass(this, getDescription(M));
 }
 
 bool Pass::mustPreserveAnalysisID(char &AID) const {
-  return Resolver->getAnalysisIfAvailable(&AID) != nullptr;
+  return Resolver->getAnalysisIfAvailable(&AID, true) != nullptr;
 }
 
 // dumpPassStructure - Implement the -debug-pass=Structure option
@@ -138,12 +136,6 @@ LLVM_DUMP_METHOD void Pass::dump() const {
 }
 #endif
 
-#ifdef EXPENSIVE_CHECKS
-uint64_t Pass::structuralHash(Module &M) const { return StructuralHash(M); }
-
-uint64_t Pass::structuralHash(Function &F) const { return StructuralHash(F); }
-#endif
-
 //===----------------------------------------------------------------------===//
 // ImmutablePass Implementation
 //
@@ -173,8 +165,7 @@ static std::string getDescription(const Function &F) {
 
 bool FunctionPass::skipFunction(const Function &F) const {
   OptPassGate &Gate = F.getContext().getOptPassGate();
-  if (Gate.isEnabled() &&
-      !Gate.shouldRunPass(this->getPassName(), getDescription(F)))
+  if (Gate.isEnabled() && !Gate.shouldRunPass(this, getDescription(F)))
     return true;
 
   if (F.hasOptNone()) {
@@ -271,23 +262,22 @@ void AnalysisUsage::setPreservesCFG() {
 AnalysisUsage &AnalysisUsage::addPreserved(StringRef Arg) {
   const PassInfo *PI = Pass::lookupPassInfo(Arg);
   // If the pass exists, preserve it. Otherwise silently do nothing.
-  if (PI)
-    pushUnique(Preserved, PI->getTypeInfo());
+  if (PI) Preserved.push_back(PI->getTypeInfo());
   return *this;
 }
 
 AnalysisUsage &AnalysisUsage::addRequiredID(const void *ID) {
-  pushUnique(Required, ID);
+  Required.push_back(ID);
   return *this;
 }
 
 AnalysisUsage &AnalysisUsage::addRequiredID(char &ID) {
-  pushUnique(Required, &ID);
+  Required.push_back(&ID);
   return *this;
 }
 
 AnalysisUsage &AnalysisUsage::addRequiredTransitiveID(char &ID) {
-  pushUnique(Required, &ID);
-  pushUnique(RequiredTransitive, &ID);
+  Required.push_back(&ID);
+  RequiredTransitive.push_back(&ID);
   return *this;
 }

@@ -43,9 +43,7 @@ void ARMTargetStreamer::emitCurrentConstantPool() {
 }
 
 // finish() - write out any non-empty assembler constant pools.
-void ARMTargetStreamer::emitConstantPools() {
-  ConstantPools->emitAll(Streamer);
-}
+void ARMTargetStreamer::finish() { ConstantPools->emitAll(Streamer); }
 
 // reset() - Reset any state
 void ARMTargetStreamer::reset() {}
@@ -82,7 +80,7 @@ void ARMTargetStreamer::emitInst(uint32_t Inst, char Suffix) {
   default:
     llvm_unreachable("Invalid Suffix");
   }
-  getStreamer().emitBytes(StringRef(Buffer, Size));
+  getStreamer().EmitBytes(StringRef(Buffer, Size));
 }
 
 // The remaining callbacks should be handled separately by each
@@ -110,32 +108,19 @@ void ARMTargetStreamer::emitIntTextAttribute(unsigned Attribute,
                                              unsigned IntValue,
                                              StringRef StringValue) {}
 void ARMTargetStreamer::emitArch(ARM::ArchKind Arch) {}
-void ARMTargetStreamer::emitArchExtension(uint64_t ArchExt) {}
+void ARMTargetStreamer::emitArchExtension(unsigned ArchExt) {}
 void ARMTargetStreamer::emitObjectArch(ARM::ArchKind Arch) {}
 void ARMTargetStreamer::emitFPU(unsigned FPU) {}
 void ARMTargetStreamer::finishAttributeSection() {}
-void ARMTargetStreamer::annotateTLSDescriptorSequence(
-    const MCSymbolRefExpr *SRE) {}
+void
+ARMTargetStreamer::AnnotateTLSDescriptorSequence(const MCSymbolRefExpr *SRE) {}
 void ARMTargetStreamer::emitThumbSet(MCSymbol *Symbol, const MCExpr *Value) {}
-
-void ARMTargetStreamer::emitARMWinCFIAllocStack(unsigned Size, bool Wide) {}
-void ARMTargetStreamer::emitARMWinCFISaveRegMask(unsigned Mask, bool Wide) {}
-void ARMTargetStreamer::emitARMWinCFISaveSP(unsigned Reg) {}
-void ARMTargetStreamer::emitARMWinCFISaveFRegs(unsigned First, unsigned Last) {}
-void ARMTargetStreamer::emitARMWinCFISaveLR(unsigned Offset) {}
-void ARMTargetStreamer::emitARMWinCFINop(bool Wide) {}
-void ARMTargetStreamer::emitARMWinCFIPrologEnd(bool Fragment) {}
-void ARMTargetStreamer::emitARMWinCFIEpilogStart(unsigned Condition) {}
-void ARMTargetStreamer::emitARMWinCFIEpilogEnd() {}
-void ARMTargetStreamer::emitARMWinCFICustom(unsigned Opcode) {}
 
 static ARMBuildAttrs::CPUArch getArchForCPU(const MCSubtargetInfo &STI) {
   if (STI.getCPU() == "xscale")
     return ARMBuildAttrs::v5TEJ;
 
-  if (STI.hasFeature(ARM::HasV9_0aOps))
-    return ARMBuildAttrs::v9_A;
-  else if (STI.hasFeature(ARM::HasV8Ops)) {
+  if (STI.hasFeature(ARM::HasV8Ops)) {
     if (STI.hasFeature(ARM::FeatureRClass))
       return ARMBuildAttrs::v8_R;
     return ARMBuildAttrs::v8_A;
@@ -312,19 +297,4 @@ void ARMTargetStreamer::emitTargetAttributes(const MCSubtargetInfo &STI) {
   else if (STI.hasFeature(ARM::FeatureVirtualization))
     emitAttribute(ARMBuildAttrs::Virtualization_use,
                   ARMBuildAttrs::AllowVirtualization);
-
-  if (STI.hasFeature(ARM::FeaturePACBTI)) {
-    emitAttribute(ARMBuildAttrs::PAC_extension, ARMBuildAttrs::AllowPAC);
-    emitAttribute(ARMBuildAttrs::BTI_extension, ARMBuildAttrs::AllowBTI);
-  }
-}
-
-MCTargetStreamer *
-llvm::createARMObjectTargetStreamer(MCStreamer &S, const MCSubtargetInfo &STI) {
-  const Triple &TT = STI.getTargetTriple();
-  if (TT.isOSBinFormatELF())
-    return createARMObjectTargetELFStreamer(S);
-  if (TT.isOSBinFormatCOFF())
-    return createARMObjectTargetWinCOFFStreamer(S);
-  return new ARMTargetStreamer(S);
 }

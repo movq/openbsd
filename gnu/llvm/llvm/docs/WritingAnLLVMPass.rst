@@ -17,7 +17,7 @@ build the analysis results that are used by these transformations, and they
 are, above all, a structuring technique for compiler code.
 
 All LLVM passes are subclasses of the `Pass
-<https://llvm.org/doxygen/classllvm_1_1Pass.html>`_ class, which implement
+<http://llvm.org/doxygen/classllvm_1_1Pass.html>`_ class, which implement
 functionality by overriding virtual methods inherited from ``Pass``.  Depending
 on how your pass works, you should inherit from the :ref:`ModulePass
 <writing-an-llvm-pass-ModulePass>` , :ref:`CallGraphSCCPass
@@ -33,14 +33,6 @@ pass meets (which are indicated by which class they derive from).
 We start by showing you how to construct a pass, everything from setting up the
 code, to compiling, loading, and executing it.  After the basics are down, more
 advanced features are discussed.
-
-.. warning::
-  This document deals with the legacy pass manager. LLVM uses the new pass
-  manager by default for the optimization pipeline (the codegen pipeline is
-  still using the legacy pass manager), which has its own way of defining
-  passes. For more details, see :doc:`WritingAnLLVMNewPMPass` and
-  :doc:`NewPassManager`. To use the legacy pass manager with ``opt``, pass
-  the ``-enable-new-pm=0`` flag to all ``opt`` invocations.
 
 Quick Start --- Writing hello world
 ===================================
@@ -66,7 +58,7 @@ copy the following into ``CMakeLists.txt``:
 
   add_llvm_library( LLVMHello MODULE
     Hello.cpp
-
+  
     PLUGIN_TOOL
     opt
     )
@@ -106,8 +98,8 @@ Start out with:
   #include "llvm/Support/raw_ostream.h"
 
 Which are needed because we are writing a `Pass
-<https://llvm.org/doxygen/classllvm_1_1Pass.html>`_, we are operating on
-`Function <https://llvm.org/doxygen/classllvm_1_1Function.html>`_\ s, and we will
+<http://llvm.org/doxygen/classllvm_1_1Pass.html>`_, we are operating on
+`Function <http://llvm.org/doxygen/classllvm_1_1Function.html>`_\ s, and we will
 be doing some printing.
 
 Next we have:
@@ -185,6 +177,18 @@ without modifying it then the third argument is set to ``true``; if a pass is
 an analysis pass, for example dominator tree pass, then ``true`` is supplied as
 the fourth argument.
 
+If we want to register the pass as a step of an existing pipeline, some extension
+points are provided, e.g. ``PassManagerBuilder::EP_EarlyAsPossible`` to apply our
+pass before any optimization, or ``PassManagerBuilder::EP_FullLinkTimeOptimizationLast``
+to apply it after Link Time Optimizations.
+
+.. code-block:: c++
+
+    static llvm::RegisterStandardPasses Y(
+        llvm::PassManagerBuilder::EP_EarlyAsPossible,
+        [](const llvm::PassManagerBuilder &Builder,
+           llvm::legacy::PassManagerBase &PM) { PM.add(new Hello()); });
+
 As a whole, the ``.cpp`` file looks like:
 
 .. code-block:: c++
@@ -202,7 +206,7 @@ As a whole, the ``.cpp`` file looks like:
   struct Hello : public FunctionPass {
     static char ID;
     Hello() : FunctionPass(ID) {}
-
+  
     bool runOnFunction(Function &F) override {
       errs() << "Hello: ";
       errs().write_escaped(F.getName()) << '\n';
@@ -215,6 +219,11 @@ As a whole, the ``.cpp`` file looks like:
   static RegisterPass<Hello> X("hello", "Hello World Pass",
                                false /* Only looks at CFG */,
                                false /* Analysis Pass */);
+
+  static RegisterStandardPasses Y(
+      PassManagerBuilder::EP_EarlyAsPossible,
+      [](const PassManagerBuilder &Builder,
+         legacy::PassManagerBase &PM) { PM.add(new Hello()); });
 
 Now that it's all together, compile the file with a simple "``gmake``" command
 from the top level of your build directory and you should get a new file
@@ -290,7 +299,7 @@ you queue up.  For example:
                         ... Pass execution timing report ...
   ===-------------------------------------------------------------------------===
     Total Execution Time: 0.0007 seconds (0.0005 wall clock)
-
+  
      ---User Time---   --User+System--   ---Wall Time---  --- Name ---
      0.0004 ( 55.3%)   0.0004 ( 55.3%)   0.0004 ( 75.7%)  Bitcode Writer
      0.0003 ( 44.7%)   0.0003 ( 44.7%)   0.0001 ( 13.6%)  Hello World Pass
@@ -327,7 +336,7 @@ The ``ImmutablePass`` class
 ---------------------------
 
 The most plain and boring type of pass is the "`ImmutablePass
-<https://llvm.org/doxygen/classllvm_1_1ImmutablePass.html>`_" class.  This pass
+<http://llvm.org/doxygen/classllvm_1_1ImmutablePass.html>`_" class.  This pass
 type is used for passes that do not have to be run, do not change state, and
 never need to be updated.  This is not a normal type of transformation or
 analysis, but can provide information about the current compiler configuration.
@@ -344,7 +353,7 @@ invalidated, and are never "run".
 The ``ModulePass`` class
 ------------------------
 
-The `ModulePass <https://llvm.org/doxygen/classllvm_1_1ModulePass.html>`_ class
+The `ModulePass <http://llvm.org/doxygen/classllvm_1_1ModulePass.html>`_ class
 is the most general of all superclasses that you can use.  Deriving from
 ``ModulePass`` indicates that your pass uses the entire program as a unit,
 referring to function bodies in no predictable order, or adding and removing
@@ -360,7 +369,7 @@ should only ask for the ``DominatorTree`` for function definitions, not
 declarations.
 
 To write a correct ``ModulePass`` subclass, derive from ``ModulePass`` and
-override the ``runOnModule`` method with the following signature:
+overload the ``runOnModule`` method with the following signature:
 
 The ``runOnModule`` method
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -379,7 +388,7 @@ The ``CallGraphSCCPass`` class
 ------------------------------
 
 The `CallGraphSCCPass
-<https://llvm.org/doxygen/classllvm_1_1CallGraphSCCPass.html>`_ is used by
+<http://llvm.org/doxygen/classllvm_1_1CallGraphSCCPass.html>`_ is used by
 passes that need to traverse the program bottom-up on the call graph (callees
 before callers).  Deriving from ``CallGraphSCCPass`` provides some mechanics
 for building and traversing the ``CallGraph``, but also allows the system to
@@ -451,7 +460,7 @@ The ``FunctionPass`` class
 --------------------------
 
 In contrast to ``ModulePass`` subclasses, `FunctionPass
-<https://llvm.org/doxygen/classllvm_1_1Pass.html>`_ subclasses do have a
+<http://llvm.org/doxygen/classllvm_1_1Pass.html>`_ subclasses do have a
 predictable, local behavior that can be expected by the system.  All
 ``FunctionPass`` execute on each function in the program independent of all of
 the other functions in the program.  ``FunctionPass``\ es do not require that
@@ -468,7 +477,7 @@ To be explicit, ``FunctionPass`` subclasses are not allowed to:
 
 Implementing a ``FunctionPass`` is usually straightforward (See the :ref:`Hello
 World <writing-an-llvm-pass-basiccode>` pass for example).
-``FunctionPass``\ es may override three virtual methods to do their work.  All
+``FunctionPass``\ es may overload three virtual methods to do their work.  All
 of these methods should return ``true`` if they modified the program, or
 ``false`` if they didn't.
 
@@ -489,7 +498,7 @@ being processed.  The ``doInitialization`` method call is not scheduled to
 overlap with any other pass executions (thus it should be very fast).
 
 A good example of how this method should be used is the `LowerAllocations
-<https://llvm.org/doxygen/LowerAllocations_8cpp-source.html>`_ pass.  This pass
+<http://llvm.org/doxygen/LowerAllocations_8cpp-source.html>`_ pass.  This pass
 converts ``malloc`` and ``free`` instructions into platform dependent
 ``malloc()`` and ``free()`` function calls.  It uses the ``doInitialization``
 method to get a reference to the ``malloc`` and ``free`` functions that it
@@ -533,7 +542,7 @@ loops in loop nest order such that outer most loop is processed last.
 
 ``LoopPass`` subclasses are allowed to update loop nest using ``LPPassManager``
 interface.  Implementing a loop pass is usually straightforward.
-``LoopPass``\ es may override three virtual methods to do their work.  All
+``LoopPass``\ es may overload three virtual methods to do their work.  All
 these methods should return ``true`` if they modified the program, or ``false``
 if they didn't.
 
@@ -594,7 +603,7 @@ but executes on each single entry single exit region in the function.
 region is processed last.
 
 ``RegionPass`` subclasses are allowed to update the region tree by using the
-``RGPassManager`` interface.  You may override three virtual methods of
+``RGPassManager`` interface.  You may overload three virtual methods of
 ``RegionPass`` to implement your own region pass.  All these methods should
 return ``true`` if they modified the program, or ``false`` if they did not.
 
@@ -752,7 +761,7 @@ The ``getAnalysisUsage`` method
 By implementing the ``getAnalysisUsage`` method, the required and invalidated
 sets may be specified for your transformation.  The implementation should fill
 in the `AnalysisUsage
-<https://llvm.org/doxygen/classllvm_1_1AnalysisUsage.html>`_ object with
+<http://llvm.org/doxygen/classllvm_1_1AnalysisUsage.html>`_ object with
 information about which passes are required and not invalidated.  To do this, a
 pass may call any of the following methods on the ``AnalysisUsage`` object:
 
@@ -905,19 +914,19 @@ be registered with :ref:`RegisterAnalysisGroup
 <writing-an-llvm-pass-RegisterAnalysisGroup>`.
 
 As a concrete example of an Analysis Group in action, consider the
-`AliasAnalysis <https://llvm.org/doxygen/classllvm_1_1AliasAnalysis.html>`_
+`AliasAnalysis <http://llvm.org/doxygen/classllvm_1_1AliasAnalysis.html>`_
 analysis group.  The default implementation of the alias analysis interface
-(the `basic-aa <https://llvm.org/doxygen/structBasicAliasAnalysis.html>`_ pass)
+(the `basicaa <http://llvm.org/doxygen/structBasicAliasAnalysis.html>`_ pass)
 just does a few simple checks that don't require significant analysis to
 compute (such as: two different globals can never alias each other, etc).
 Passes that use the `AliasAnalysis
-<https://llvm.org/doxygen/classllvm_1_1AliasAnalysis.html>`_ interface (for
-example the `gvn <https://llvm.org/doxygen/classllvm_1_1GVN.html>`_ pass), do not
+<http://llvm.org/doxygen/classllvm_1_1AliasAnalysis.html>`_ interface (for
+example the `gvn <http://llvm.org/doxygen/classllvm_1_1GVN.html>`_ pass), do not
 care which implementation of alias analysis is actually provided, they just use
 the designated interface.
 
 From the user's perspective, commands work just like normal.  Issuing the
-command ``opt -gvn ...`` will cause the ``basic-aa`` class to be instantiated
+command ``opt -gvn ...`` will cause the ``basicaa`` class to be instantiated
 and added to the pass sequence.  Issuing the command ``opt -somefancyaa -gvn
 ...`` will cause the ``gvn`` pass to use the ``somefancyaa`` alias analysis
 (which doesn't actually exist, it's just a hypothetical example) instead.
@@ -954,14 +963,14 @@ implementations of the interface by using the following code:
 
 This just shows a class ``FancyAA`` that uses the ``INITIALIZE_AG_PASS`` macro
 both to register and to "join" the `AliasAnalysis
-<https://llvm.org/doxygen/classllvm_1_1AliasAnalysis.html>`_ analysis group.
+<http://llvm.org/doxygen/classllvm_1_1AliasAnalysis.html>`_ analysis group.
 Every implementation of an analysis group should join using this macro.
 
 .. code-block:: c++
 
   namespace {
     // Declare that we implement the AliasAnalysis interface
-    INITIALIZE_AG_PASS(BasicAA, AliasAnalysis, "basic-aa",
+    INITIALIZE_AG_PASS(BasicAA, AliasAnalysis, "basicaa",
         "Basic Alias Analysis (default AA impl)",
         false, // Is CFG Only?
         true,  // Is Analysis?
@@ -973,13 +982,13 @@ argument to the ``INITIALIZE_AG_PASS`` template).  There must be exactly one
 default implementation available at all times for an Analysis Group to be used.
 Only default implementation can derive from ``ImmutablePass``.  Here we declare
 that the `BasicAliasAnalysis
-<https://llvm.org/doxygen/structBasicAliasAnalysis.html>`_ pass is the default
+<http://llvm.org/doxygen/structBasicAliasAnalysis.html>`_ pass is the default
 implementation for the interface.
 
 Pass Statistics
 ===============
 
-The `Statistic <https://llvm.org/doxygen/Statistic_8h_source.html>`_ class is
+The `Statistic <http://llvm.org/doxygen/Statistic_8h_source.html>`_ class is
 designed to be an easy way to expose various success metrics from passes.
 These statistics are printed at the end of a run, when the :option:`-stats`
 command line option is enabled on the command line.  See the :ref:`Statistics
@@ -990,8 +999,8 @@ section <Statistic>` in the Programmer's Manual for details.
 What PassManager does
 ---------------------
 
-The `PassManager <https://llvm.org/doxygen/PassManager_8h_source.html>`_ `class
-<https://llvm.org/doxygen/classllvm_1_1PassManager.html>`_ takes a list of
+The `PassManager <http://llvm.org/doxygen/PassManager_8h_source.html>`_ `class
+<http://llvm.org/doxygen/classllvm_1_1PassManager.html>`_ takes a list of
 passes, ensures their :ref:`prerequisites <writing-an-llvm-pass-interaction>`
 are set up correctly, and then schedules passes to run efficiently.  All of the
 LLVM tools that run passes use the PassManager for execution of these passes.
@@ -1021,7 +1030,7 @@ series of passes:
    touching the LLVM program representation for a single function at a time,
    instead of traversing the entire program.  It reduces the memory consumption
    of compiler, because, for example, only one `DominatorSet
-   <https://llvm.org/doxygen/classllvm_1_1DominatorSet.html>`_ needs to be
+   <http://llvm.org/doxygen/classllvm_1_1DominatorSet.html>`_ needs to be
    calculated at a time.  This also makes it possible to implement some
    :ref:`interesting enhancements <writing-an-llvm-pass-SMP>` in the future.
 
@@ -1165,6 +1174,51 @@ the :ref:`getAnalysis <writing-an-llvm-pass-getAnalysis>` method) you should
 implement ``releaseMemory`` to, well, release the memory allocated to maintain
 this internal state.  This method is called after the ``run*`` method for the
 class, before the next call of ``run*`` in your pass.
+
+Building pass plugins
+=====================
+
+As an alternative to using ``PLUGIN_TOOL``, LLVM provides a mechanism to
+automatically register pass plugins within ``clang``, ``opt`` and ``bugpoint``.
+One first needs to create an independent project and add it to either ``tools/``
+or, using the MonoRepo layout, at the root of the repo alongside other projects.
+This project must contain the following minimal ``CMakeLists.txt``:
+
+.. code-block:: cmake
+
+    add_llvm_pass_plugin(Name source0.cpp)
+
+The pass must provide two entry points for the new pass manager, one for static
+registration and one for dynamically loaded plugins:
+
+- ``llvm::PassPluginLibraryInfo get##Name##PluginInfo();``
+- ``extern "C" ::llvm::PassPluginLibraryInfo llvmGetPassPluginInfo() LLVM_ATTRIBUTE_WEAK;``
+
+Pass plugins are compiled and link dynamically by default, but it's
+possible to set the following variables to change this behavior:
+
+- ``LLVM_${NAME}_LINK_INTO_TOOLS``, when set to ``ON``, turns the project into
+  a statically linked extension
+
+
+When building a tool that uses the new pass manager, one can use the following snippet to
+include statically linked pass plugins:
+
+.. code-block:: c++
+
+    // fetch the declaration
+    #define HANDLE_EXTENSION(Ext) llvm::PassPluginLibraryInfo get##Ext##PluginInfo();
+    #include "llvm/Support/Extension.def"
+
+    [...]
+
+    // use them, PB is an llvm::PassBuilder instance
+    #define HANDLE_EXTENSION(Ext) get##Ext##PluginInfo().RegisterPassBuilderCallbacks(PB);
+    #include "llvm/Support/Extension.def"
+
+
+
+
 
 Registering dynamically loaded passes
 =====================================
@@ -1378,3 +1432,4 @@ multithreaded constructs, requiring only the LLVM core to have locking in a few
 places (for global resources).  Although this is a simple extension, we simply
 haven't had time (or multiprocessor machines, thus a reason) to implement this.
 Despite that, we have kept the LLVM passes SMP ready, and you should too.
+

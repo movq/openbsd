@@ -1,4 +1,4 @@
-import("//third-party/unittest/unittest.gni")
+import("//llvm/utils/unittest/unittest.gni")
 
 unittest("ClangMoveTests") {
   configs += [ "//llvm/utils/gn/build:clang_code" ]
@@ -21,5 +21,7 @@ unittest("ClangMoveTests") {
     # We'd like clang/unittests/Tooling/RewriterTestContext.h in the test.
     "//clang",
   ]
-  sources = [ "ClangMoveTests.cpp" ]
+  sources = [
+    "ClangMoveTests.cpp",
+  ]
 }

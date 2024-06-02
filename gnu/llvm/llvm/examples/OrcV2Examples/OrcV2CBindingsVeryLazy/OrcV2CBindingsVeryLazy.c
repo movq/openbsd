@@ -159,6 +159,7 @@ cleanup:
     LLVMOrcIRTransformLayerRef IRLayer = LLVMOrcLLJITGetIRTransformLayer(J);
     LLVMOrcIRTransformLayerEmit(IRLayer, MR, TSM);
   }
+  return;
 }
 
 int main(int argc, char *argv[]) {

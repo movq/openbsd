@@ -16,7 +16,6 @@
 #include "ResourceScriptToken.h"
 #include "ResourceVisitor.h"
 
-#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/StringSet.h"
 
 namespace llvm {
@@ -139,14 +138,14 @@ private:
 
 public:
   IntOrString() : IntOrString(RCInt(0)) {}
-  IntOrString(uint32_t Value) : Data(Value), IsInt(true) {}
-  IntOrString(RCInt Value) : Data(Value), IsInt(true) {}
-  IntOrString(StringRef Value) : Data(Value), IsInt(false) {}
+  IntOrString(uint32_t Value) : Data(Value), IsInt(1) {}
+  IntOrString(RCInt Value) : Data(Value), IsInt(1) {}
+  IntOrString(StringRef Value) : Data(Value), IsInt(0) {}
   IntOrString(const RCToken &Token)
       : Data(Token), IsInt(Token.kind() == RCToken::Kind::Int) {}
 
   bool equalsLower(const char *Str) {
-    return !IsInt && Data.String.equals_insensitive(Str);
+    return !IsInt && Data.String.equals_lower(Str);
   }
 
   bool isInt() const { return IsInt; }
@@ -290,9 +289,7 @@ public:
       : RCResource(Flags),
         OptStatements(std::make_unique<OptionalStmtList>(std::move(Stmts))) {}
 
-  Error applyStmts(Visitor *V) const override {
-    return OptStatements->visit(V);
-  }
+  virtual Error applyStmts(Visitor *V) const { return OptStatements->visit(V); }
 };
 
 // LANGUAGE statement. It can occur both as a top-level statement (in such
@@ -584,12 +581,12 @@ public:
 // Ref: msdn.microsoft.com/en-us/library/windows/desktop/aa381050(v=vs.85).aspx
 class StringTableResource : public OptStatementsRCResource {
 public:
-  std::vector<std::pair<uint32_t, std::vector<StringRef>>> Table;
+  std::vector<std::pair<uint32_t, StringRef>> Table;
 
   StringTableResource(OptionalStmtList &&List, uint16_t Flags)
       : OptStatementsRCResource(std::move(List), Flags) {}
-  void addStrings(uint32_t ID, std::vector<StringRef> &&Strings) {
-    Table.emplace_back(ID, Strings);
+  void addString(uint32_t ID, StringRef String) {
+    Table.emplace_back(ID, String);
   }
   raw_ostream &log(raw_ostream &) const override;
   Twine getResourceTypeName() const override { return "STRINGTABLE"; }
@@ -611,8 +608,8 @@ public:
   StringRef Type;
   IntOrString Title;
   uint32_t ID, X, Y, Width, Height;
-  std::optional<IntWithNotMask> Style;
-  std::optional<uint32_t> ExtStyle, HelpID;
+  Optional<IntWithNotMask> Style;
+  Optional<uint32_t> ExtStyle, HelpID;
   IntOrString Class;
 
   // Control classes as described in DLGITEMTEMPLATEEX documentation.
@@ -636,9 +633,8 @@ public:
 
   Control(StringRef CtlType, IntOrString CtlTitle, uint32_t CtlID,
           uint32_t PosX, uint32_t PosY, uint32_t ItemWidth, uint32_t ItemHeight,
-          std::optional<IntWithNotMask> ItemStyle,
-          std::optional<uint32_t> ExtItemStyle,
-          std::optional<uint32_t> CtlHelpID, IntOrString CtlClass)
+          Optional<IntWithNotMask> ItemStyle, Optional<uint32_t> ExtItemStyle,
+          Optional<uint32_t> CtlHelpID, IntOrString CtlClass)
       : Type(CtlType), Title(CtlTitle), ID(CtlID), X(PosX), Y(PosY),
         Width(ItemWidth), Height(ItemHeight), Style(ItemStyle),
         ExtStyle(ExtItemStyle), HelpID(CtlHelpID), Class(CtlClass) {}
@@ -770,10 +766,10 @@ class VersionInfoValue : public VersionInfoStmt {
 public:
   StringRef Key;
   std::vector<IntOrString> Values;
-  BitVector HasPrecedingComma;
+  std::vector<bool> HasPrecedingComma;
 
   VersionInfoValue(StringRef InfoKey, std::vector<IntOrString> &&Vals,
-                   BitVector &&CommasBeforeVals)
+                   std::vector<bool> &&CommasBeforeVals)
       : Key(InfoKey), Values(std::move(Vals)),
         HasPrecedingComma(std::move(CommasBeforeVals)) {}
   raw_ostream &log(raw_ostream &) const override;

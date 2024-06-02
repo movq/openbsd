@@ -16,19 +16,21 @@
 #define LLVM_ANALYSIS_TYPEBASEDALIASANALYSIS_H
 
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
 #include <memory>
 
 namespace llvm {
 
-class CallBase;
 class Function;
 class MDNode;
 class MemoryLocation;
 
 /// A simple AA result that uses TBAA metadata to answer queries.
-class TypeBasedAAResult : public AAResultBase {
+class TypeBasedAAResult : public AAResultBase<TypeBasedAAResult> {
+  friend AAResultBase<TypeBasedAAResult>;
+
 public:
   /// Handle invalidation events from the new pass manager.
   ///
@@ -39,12 +41,11 @@ public:
   }
 
   AliasResult alias(const MemoryLocation &LocA, const MemoryLocation &LocB,
-                    AAQueryInfo &AAQI, const Instruction *CtxI);
-  ModRefInfo getModRefInfoMask(const MemoryLocation &Loc, AAQueryInfo &AAQI,
-                               bool IgnoreLocals);
-
-  MemoryEffects getMemoryEffects(const CallBase *Call, AAQueryInfo &AAQI);
-  MemoryEffects getMemoryEffects(const Function *F);
+                    AAQueryInfo &AAQI);
+  bool pointsToConstantMemory(const MemoryLocation &Loc, AAQueryInfo &AAQI,
+                              bool OrLocal);
+  FunctionModRefBehavior getModRefBehavior(const CallBase *Call);
+  FunctionModRefBehavior getModRefBehavior(const Function *F);
   ModRefInfo getModRefInfo(const CallBase *Call, const MemoryLocation &Loc,
                            AAQueryInfo &AAQI);
   ModRefInfo getModRefInfo(const CallBase *Call1, const CallBase *Call2,
@@ -52,6 +53,7 @@ public:
 
 private:
   bool Aliases(const MDNode *A, const MDNode *B) const;
+  bool PathAliases(const MDNode *A, const MDNode *B) const;
 };
 
 /// Analysis pass providing a never-invalidated alias analysis result.

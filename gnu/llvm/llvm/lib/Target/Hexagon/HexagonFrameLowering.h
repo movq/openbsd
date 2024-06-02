@@ -11,7 +11,6 @@
 
 #include "Hexagon.h"
 #include "HexagonBlockRanges.h"
-#include "MCTargetDesc/HexagonMCTargetDesc.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -30,10 +29,8 @@ class TargetRegisterClass;
 
 class HexagonFrameLowering : public TargetFrameLowering {
 public:
-  // First register which could possibly hold a variable argument.
-  int FirstVarArgSavedReg;
   explicit HexagonFrameLowering()
-      : TargetFrameLowering(StackGrowsDown, Align(8), 0, Align(1), true) {}
+      : TargetFrameLowering(StackGrowsDown, Align(8), 0, Align::None(), true) {}
 
   // All of the prolog/epilog functionality, including saving and restoring
   // callee-saved registers is handled in emitPrologue. This is to have the
@@ -46,17 +43,14 @@ public:
   bool enableCalleeSaveSkip(const MachineFunction &MF) const override;
 
   bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                 MachineBasicBlock::iterator MI,
-                                 ArrayRef<CalleeSavedInfo> CSI,
-                                 const TargetRegisterInfo *TRI) const override {
+      MachineBasicBlock::iterator MI, const std::vector<CalleeSavedInfo> &CSI,
+      const TargetRegisterInfo *TRI) const override {
     return true;
   }
 
-  bool
-  restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
-                              MachineBasicBlock::iterator MI,
-                              MutableArrayRef<CalleeSavedInfo> CSI,
-                              const TargetRegisterInfo *TRI) const override {
+  bool restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
+      MachineBasicBlock::iterator MI, std::vector<CalleeSavedInfo> &CSI,
+      const TargetRegisterInfo *TRI) const override {
     return true;
   }
 
@@ -83,8 +77,8 @@ public:
     return true;
   }
 
-  StackOffset getFrameIndexReference(const MachineFunction &MF, int FI,
-                                     Register &FrameReg) const override;
+  int getFrameIndexReference(const MachineFunction &MF, int FI,
+      unsigned &FrameReg) const override;
   bool hasFP(const MachineFunction &MF) const override;
 
   const SpillSlot *getCalleeSavedSpillSlots(unsigned &NumEntries)
@@ -97,7 +91,7 @@ public:
       { Hexagon::R25, -36 }, { Hexagon::R24, -40 }, { Hexagon::D12, -40 },
       { Hexagon::R27, -44 }, { Hexagon::R26, -48 }, { Hexagon::D13, -48 }
     };
-    NumEntries = std::size(Offsets);
+    NumEntries = array_lengthof(Offsets);
     return Offsets;
   }
 
@@ -114,7 +108,7 @@ private:
   using CSIVect = std::vector<CalleeSavedInfo>;
 
   void expandAlloca(MachineInstr *AI, const HexagonInstrInfo &TII,
-      Register SP, unsigned CF) const;
+      unsigned SP, unsigned CF) const;
   void insertPrologueInBlock(MachineBasicBlock &MBB, bool PrologueStubs) const;
   void insertEpilogueInBlock(MachineBasicBlock &MBB) const;
   void insertAllocframe(MachineBasicBlock &MBB,
@@ -129,42 +123,44 @@ private:
   void insertCFIInstructionsAt(MachineBasicBlock &MBB,
       MachineBasicBlock::iterator At) const;
 
+  void adjustForCalleeSavedRegsSpillCall(MachineFunction &MF) const;
+
   bool expandCopy(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandStoreInt(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandLoadInt(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandStoreVecPred(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandLoadVecPred(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandStoreVec2(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandLoadVec2(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandStoreVec(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandLoadVec(MachineBasicBlock &B, MachineBasicBlock::iterator It,
       MachineRegisterInfo &MRI, const HexagonInstrInfo &HII,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
   bool expandSpillMacros(MachineFunction &MF,
-      SmallVectorImpl<Register> &NewRegs) const;
+      SmallVectorImpl<unsigned> &NewRegs) const;
 
-  Register findPhysReg(MachineFunction &MF, HexagonBlockRanges::IndexRange &FIR,
+  unsigned findPhysReg(MachineFunction &MF, HexagonBlockRanges::IndexRange &FIR,
       HexagonBlockRanges::InstrIndexMap &IndexMap,
       HexagonBlockRanges::RegToRangeMap &DeadMap,
       const TargetRegisterClass *RC) const;
   void optimizeSpillSlots(MachineFunction &MF,
-      SmallVectorImpl<Register> &VRegs) const;
+      SmallVectorImpl<unsigned> &VRegs) const;
 
   void findShrunkPrologEpilog(MachineFunction &MF, MachineBasicBlock *&PrologB,
       MachineBasicBlock *&EpilogB) const;

@@ -80,7 +80,9 @@ group("tablegen") {
 
 static_library("MCTargetDesc") {
   output_name = "LLVMAMDGPUDesc"
-  public_deps = [ ":tablegen" ]
+  public_deps = [
+    ":tablegen",
+  ]
   deps = [
     ":AMDGPUGenAsmWriter",
     ":AMDGPUGenMCCodeEmitter",
@@ -92,7 +94,6 @@ static_library("MCTargetDesc") {
     "//llvm/lib/Support",
     "//llvm/lib/Target/AMDGPU/TargetInfo",
     "//llvm/lib/Target/AMDGPU/Utils",
-    "//llvm/lib/TargetParser",
   ]
   include_dirs = [ ".." ]
   sources = [
@@ -104,7 +105,6 @@ static_library("MCTargetDesc") {
     "AMDGPUMCCodeEmitter.cpp",
     "AMDGPUMCTargetDesc.cpp",
     "AMDGPUTargetStreamer.cpp",
-    "R600InstPrinter.cpp",
     "R600MCCodeEmitter.cpp",
     "R600MCTargetDesc.cpp",
     "SIMCCodeEmitter.cpp",

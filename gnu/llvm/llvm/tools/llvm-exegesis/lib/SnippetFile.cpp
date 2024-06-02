@@ -11,15 +11,14 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCObjectFileInfo.h"
-#include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCTargetAsmParser.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetRegistry.h"
 #include <string>
 
 namespace llvm {
@@ -29,14 +28,14 @@ namespace {
 // An MCStreamer that reads a BenchmarkCode definition from a file.
 class BenchmarkCodeStreamer : public MCStreamer, public AsmCommentConsumer {
 public:
-  explicit BenchmarkCodeStreamer(
-      MCContext *Context, const DenseMap<StringRef, unsigned> &RegNameToRegNo,
-      BenchmarkCode *Result)
-      : MCStreamer(*Context), RegNameToRegNo(RegNameToRegNo), Result(Result) {}
+  explicit BenchmarkCodeStreamer(MCContext *Context,
+                                 const MCRegisterInfo *TheRegInfo,
+                                 BenchmarkCode *Result)
+      : MCStreamer(*Context), RegInfo(TheRegInfo), Result(Result) {}
 
   // Implementation of the MCStreamer interface. We only care about
   // instructions.
-  void emitInstruction(const MCInst &Instruction,
+  void EmitInstruction(const MCInst &Instruction,
                        const MCSubtargetInfo &STI) override {
     Result->Key.Instructions.push_back(Instruction);
   }
@@ -88,26 +87,29 @@ public:
 
 private:
   // We only care about instructions, we don't implement this part of the API.
-  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                        Align ByteAlignment) override {}
-  bool emitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override {
+  void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                        unsigned ByteAlignment) override {}
+  bool EmitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override {
     return false;
   }
-  void emitValueToAlignment(Align Alignment, int64_t Value, unsigned ValueSize,
+  void EmitValueToAlignment(unsigned ByteAlignment, int64_t Value,
+                            unsigned ValueSize,
                             unsigned MaxBytesToEmit) override {}
-  void emitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
-                    Align ByteAlignment, SMLoc Loc) override {}
+  void EmitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
+                    unsigned ByteAlignment, SMLoc Loc) override {}
 
   unsigned findRegisterByName(const StringRef RegName) const {
-    auto Iter = RegNameToRegNo.find(RegName);
-    if (Iter != RegNameToRegNo.end())
-      return Iter->second;
+    // FIXME: Can we do better than this ?
+    for (unsigned I = 0, E = RegInfo->getNumRegs(); I < E; ++I) {
+      if (RegName == RegInfo->getName(I))
+        return I;
+    }
     errs() << "'" << RegName
            << "' is not a valid register name for the target\n";
     return 0;
   }
 
-  const DenseMap<StringRef, unsigned> &RegNameToRegNo;
+  const MCRegisterInfo *const RegInfo;
   BenchmarkCode *const Result;
   unsigned InvalidComments = 0;
 };
@@ -128,15 +130,12 @@ Expected<std::vector<BenchmarkCode>> readSnippets(const LLVMState &State,
 
   BenchmarkCode Result;
 
+  MCObjectFileInfo ObjectFileInfo;
   const TargetMachine &TM = State.getTargetMachine();
-  MCContext Context(TM.getTargetTriple(), TM.getMCAsmInfo(),
-                    TM.getMCRegisterInfo(), TM.getMCSubtargetInfo());
-  std::unique_ptr<MCObjectFileInfo> ObjectFileInfo(
-      TM.getTarget().createMCObjectFileInfo(Context, /*PIC=*/false));
-  Context.setObjectFileInfo(ObjectFileInfo.get());
-  Context.initInlineSourceManager();
-  BenchmarkCodeStreamer Streamer(&Context, State.getRegNameToRegNoMapping(),
-                                 &Result);
+  MCContext Context(TM.getMCAsmInfo(), TM.getMCRegisterInfo(), &ObjectFileInfo);
+  ObjectFileInfo.InitMCObjectFileInfo(TM.getTargetTriple(), /*PIC*/ false,
+                                      Context);
+  BenchmarkCodeStreamer Streamer(&Context, TM.getMCRegisterInfo(), &Result);
 
   std::string Error;
   raw_string_ostream ErrorStream(Error);

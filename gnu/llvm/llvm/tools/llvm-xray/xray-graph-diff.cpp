@@ -22,7 +22,6 @@
 #include "xray-color-helper.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/XRay/Trace.h"
 
 using namespace llvm;
@@ -264,7 +263,7 @@ static std::string getColor(const GraphDiffRenderer::GraphT::EdgeValueType &E,
   const auto &RightStat = EdgeAttr.CorrEdgePtr[1]->second.S;
 
   double RelDiff = statRelDiff(LeftStat, RightStat, T);
-  double CappedRelDiff = std::clamp(RelDiff, -1.0, 1.0);
+  double CappedRelDiff = std::min(1.0, std::max(-1.0, RelDiff));
 
   return H.getColorString(CappedRelDiff);
 }
@@ -285,7 +284,7 @@ static std::string getColor(const GraphDiffRenderer::GraphT::VertexValueType &V,
   const auto &RightStat = VertexAttr.CorrVertexPtr[1]->second.S;
 
   double RelDiff = statRelDiff(LeftStat, RightStat, T);
-  double CappedRelDiff = std::clamp(RelDiff, -1.0, 1.0);
+  double CappedRelDiff = std::min(1.0, std::max(-1.0, RelDiff));
 
   return H.getColorString(CappedRelDiff);
 }
@@ -295,7 +294,10 @@ static Twine truncateString(const StringRef &S, size_t n) {
 }
 
 template <typename T> static bool containsNullptr(const T &Collection) {
-  return llvm::is_contained(Collection, nullptr);
+  for (const auto &E : Collection)
+    if (E == nullptr)
+      return true;
+  return false;
 }
 
 static std::string getLabel(const GraphDiffRenderer::GraphT::EdgeValueType &E,
@@ -312,7 +314,7 @@ static std::string getLabel(const GraphDiffRenderer::GraphT::EdgeValueType &E,
     const auto &RightStat = EdgeAttr.CorrEdgePtr[1]->second.S;
 
     double RelDiff = statRelDiff(LeftStat, RightStat, EL);
-    return std::string(formatv(R"({0:P})", RelDiff));
+    return formatv(R"({0:P})", RelDiff);
   }
 }
 
@@ -322,19 +324,17 @@ static std::string getLabel(const GraphDiffRenderer::GraphT::VertexValueType &V,
   const auto &VertexAttr = V.second;
   switch (VL) {
   case GraphDiffRenderer::StatType::NONE:
-    return std::string(
-        formatv(R"({0})", truncateString(VertexId, TrunLen).str()));
+    return formatv(R"({0})", truncateString(VertexId, TrunLen).str());
   default:
     if (containsNullptr(VertexAttr.CorrVertexPtr))
-      return std::string(
-          formatv(R"({0})", truncateString(VertexId, TrunLen).str()));
+      return formatv(R"({0})", truncateString(VertexId, TrunLen).str());
 
     const auto &LeftStat = VertexAttr.CorrVertexPtr[0]->second.S;
     const auto &RightStat = VertexAttr.CorrVertexPtr[1]->second.S;
 
     double RelDiff = statRelDiff(LeftStat, RightStat, VL);
-    return std::string(formatv(
-        R"({{{0}|{1:P}})", truncateString(VertexId, TrunLen).str(), RelDiff));
+    return formatv(R"({{{0}|{1:P}})", truncateString(VertexId, TrunLen).str(),
+                   RelDiff);
   }
 }
 
@@ -457,7 +457,7 @@ static CommandRegistration Unused(&GraphDiff, []() -> Error {
   auto &GDR = *GDROrErr;
 
   std::error_code EC;
-  raw_fd_ostream OS(GraphDiffOutput, EC, sys::fs::OpenFlags::OF_TextWithCRLF);
+  raw_fd_ostream OS(GraphDiffOutput, EC, sys::fs::OpenFlags::OF_Text);
   if (EC)
     return make_error<StringError>(
         Twine("Cannot open file '") + GraphDiffOutput + "' for writing.", EC);

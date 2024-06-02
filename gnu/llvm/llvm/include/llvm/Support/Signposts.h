@@ -1,8 +1,9 @@
 //===-- llvm/Support/Signposts.h - Interval debug annotations ---*- C++ -*-===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,16 +17,14 @@
 #ifndef LLVM_SUPPORT_SIGNPOSTS_H
 #define LLVM_SUPPORT_SIGNPOSTS_H
 
-#include <memory>
-
 namespace llvm {
 class SignpostEmitterImpl;
-class StringRef;
+class Timer;
 
 /// Manages the emission of signposts into the recording method supported by
 /// the OS.
 class SignpostEmitter {
-  std::unique_ptr<SignpostEmitterImpl> Impl;
+  SignpostEmitterImpl *Impl;
 
 public:
   SignpostEmitter();
@@ -33,12 +32,12 @@ public:
 
   bool isEnabled() const;
 
-  /// Begin a signposted interval for a given object.
-  void startInterval(const void *O, StringRef Name);
-  /// End a signposted interval for a given object.
-  void endInterval(const void *O, StringRef Name);
+  /// Begin a signposted interval for the given timer.
+  void startTimerInterval(Timer *T);
+  /// End a signposted interval for the given timer.
+  void endTimerInterval(Timer *T);
 };
 
 } // end namespace llvm
 
-#endif // LLVM_SUPPORT_SIGNPOSTS_H
+#endif // ifndef LLVM_SUPPORT_SIGNPOSTS_H

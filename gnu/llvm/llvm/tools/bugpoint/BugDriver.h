@@ -25,6 +25,7 @@
 
 namespace llvm {
 
+class Value;
 class PassInfo;
 class Module;
 class GlobalVariable;
@@ -33,6 +34,8 @@ class BasicBlock;
 class AbstractInterpreter;
 class Instruction;
 class LLVMContext;
+
+class DebugCrashes;
 
 class CC;
 

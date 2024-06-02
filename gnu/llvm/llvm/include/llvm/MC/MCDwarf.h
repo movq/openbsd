@@ -15,16 +15,15 @@
 #define LLVM_MC_MCDWARF_H
 
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/MC/StringTableBuilder.h"
+#include "llvm/MC/MCSection.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MD5.h"
-#include "llvm/Support/StringSaver.h"
 #include <cassert>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,43 +33,13 @@ namespace llvm {
 template <typename T> class ArrayRef;
 class MCAsmBackend;
 class MCContext;
+class MCDwarfLineStr;
 class MCObjectStreamer;
-class MCSection;
 class MCStreamer;
 class MCSymbol;
 class raw_ostream;
 class SMLoc;
 class SourceMgr;
-
-namespace mcdwarf {
-// Emit the common part of the DWARF 5 range/locations list tables header.
-MCSymbol *emitListsTableHeaderStart(MCStreamer &S);
-} // namespace mcdwarf
-
-/// Manage the .debug_line_str section contents, if we use it.
-class MCDwarfLineStr {
-  BumpPtrAllocator Alloc;
-  StringSaver Saver{Alloc};
-  MCSymbol *LineStrLabel = nullptr;
-  StringTableBuilder LineStrings{StringTableBuilder::DWARF};
-  bool UseRelocs = false;
-
-public:
-  /// Construct an instance that can emit .debug_line_str (for use in a normal
-  /// v5 line table).
-  explicit MCDwarfLineStr(MCContext &Ctx);
-
-  StringSaver &getSaver() { return Saver; }
-
-  /// Emit a reference to the string.
-  void emitRef(MCStreamer *MCOS, StringRef Path);
-
-  /// Emit the .debug_line_str section if appropriate.
-  void emitSection(MCStreamer *MCOS);
-
-  /// Returns finalized section.
-  SmallString<0> getFinalizedData();
-};
 
 /// Instances of this class represent the name of the dwarf .file directive and
 /// its associated dwarf file number in the MC file. MCDwarfFile's are created
@@ -89,11 +58,11 @@ struct MCDwarfFile {
 
   /// The MD5 checksum, if there is one. Non-owning pointer to data allocated
   /// in MCContext.
-  std::optional<MD5::MD5Result> Checksum;
+  Optional<MD5::MD5Result> Checksum;
 
   /// The source code of the file. Non-owning reference to data allocated in
   /// MCContext.
-  std::optional<StringRef> Source;
+  Optional<StringRef> Source;
 };
 
 /// Instances of this class represent the information from a
@@ -195,19 +164,10 @@ public:
 
   MCSymbol *getLabel() const { return Label; }
 
-  // This indicates the line entry is synthesized for an end entry.
-  bool IsEndEntry = false;
-
-  // Override the label with the given EndLabel.
-  void setEndLabel(MCSymbol *EndLabel) {
-    Label = EndLabel;
-    IsEndEntry = true;
-  }
-
   // This is called when an instruction is assembled into the specified
   // section and if there is information from the last .loc directive that
   // has yet to have a line entry made for it is made.
-  static void make(MCStreamer *MCOS, MCSection *Section);
+  static void Make(MCObjectStreamer *MCOS, MCSection *Section);
 };
 
 /// Instances of this class represent the line information for a compile
@@ -220,10 +180,6 @@ public:
   void addLineEntry(const MCDwarfLineEntry &LineEntry, MCSection *Sec) {
     MCLineDivisions[Sec].push_back(LineEntry);
   }
-
-  // Add an end entry by cloning the last entry, if exists, for the section
-  // the given EndLabel belongs to. The label is replaced by the given EndLabel.
-  void addEndEntry(MCSymbol *EndLabel);
 
   using MCDwarfLineEntryCollection = std::vector<MCDwarfLineEntry>;
   using iterator = MCDwarfLineEntryCollection::iterator;
@@ -270,16 +226,17 @@ public:
   MCDwarfLineTableHeader() = default;
 
   Expected<unsigned> tryGetFile(StringRef &Directory, StringRef &FileName,
-                                std::optional<MD5::MD5Result> Checksum,
-                                std::optional<StringRef> Source,
-                                uint16_t DwarfVersion, unsigned FileNumber = 0);
+                                Optional<MD5::MD5Result> Checksum,
+                                Optional<StringRef> Source,
+                                uint16_t DwarfVersion,
+                                unsigned FileNumber = 0);
   std::pair<MCSymbol *, MCSymbol *>
   Emit(MCStreamer *MCOS, MCDwarfLineTableParams Params,
-       std::optional<MCDwarfLineStr> &LineStr) const;
+       Optional<MCDwarfLineStr> &LineStr) const;
   std::pair<MCSymbol *, MCSymbol *>
   Emit(MCStreamer *MCOS, MCDwarfLineTableParams Params,
        ArrayRef<char> SpecialOpcodeLengths,
-       std::optional<MCDwarfLineStr> &LineStr) const;
+       Optional<MCDwarfLineStr> &LineStr) const;
   void resetMD5Usage() {
     HasAllMD5 = true;
     HasAnyMD5 = false;
@@ -293,15 +250,15 @@ public:
   }
 
   void setRootFile(StringRef Directory, StringRef FileName,
-                   std::optional<MD5::MD5Result> Checksum,
-                   std::optional<StringRef> Source) {
-    CompilationDir = std::string(Directory);
-    RootFile.Name = std::string(FileName);
+                   Optional<MD5::MD5Result> Checksum,
+                   Optional<StringRef> Source) {
+    CompilationDir = Directory;
+    RootFile.Name = FileName;
     RootFile.DirIndex = 0;
     RootFile.Checksum = Checksum;
     RootFile.Source = Source;
-    trackMD5Usage(Checksum.has_value());
-    HasSource = Source.has_value();
+    trackMD5Usage(Checksum.hasValue());
+    HasSource = Source.hasValue();
   }
 
   void resetFileTable() {
@@ -314,8 +271,7 @@ public:
 
 private:
   void emitV2FileDirTables(MCStreamer *MCOS) const;
-  void emitV5FileDirTables(MCStreamer *MCOS,
-                           std::optional<MCDwarfLineStr> &LineStr) const;
+  void emitV5FileDirTables(MCStreamer *MCOS, Optional<MCDwarfLineStr> &LineStr) const;
 };
 
 class MCDwarfDwoLineTable {
@@ -324,16 +280,16 @@ class MCDwarfDwoLineTable {
 
 public:
   void maybeSetRootFile(StringRef Directory, StringRef FileName,
-                        std::optional<MD5::MD5Result> Checksum,
-                        std::optional<StringRef> Source) {
+                        Optional<MD5::MD5Result> Checksum,
+                        Optional<StringRef> Source) {
     if (!Header.RootFile.Name.empty())
       return;
     Header.setRootFile(Directory, FileName, Checksum, Source);
   }
 
   unsigned getFile(StringRef Directory, StringRef FileName,
-                   std::optional<MD5::MD5Result> Checksum,
-                   uint16_t DwarfVersion, std::optional<StringRef> Source) {
+                   Optional<MD5::MD5Result> Checksum, uint16_t DwarfVersion,
+                   Optional<StringRef> Source) {
     HasSplitLineTable = true;
     return cantFail(Header.tryGetFile(Directory, FileName, Checksum, Source,
                                       DwarfVersion));
@@ -349,46 +305,39 @@ class MCDwarfLineTable {
 
 public:
   // This emits the Dwarf file and the line tables for all Compile Units.
-  static void emit(MCStreamer *MCOS, MCDwarfLineTableParams Params);
+  static void Emit(MCObjectStreamer *MCOS, MCDwarfLineTableParams Params);
 
   // This emits the Dwarf file and the line tables for a given Compile Unit.
-  void emitCU(MCStreamer *MCOS, MCDwarfLineTableParams Params,
-              std::optional<MCDwarfLineStr> &LineStr) const;
-
-  // This emits a single line table associated with a given Section.
-  static void
-  emitOne(MCStreamer *MCOS, MCSection *Section,
-          const MCLineSection::MCDwarfLineEntryCollection &LineEntries);
+  void EmitCU(MCObjectStreamer *MCOS, MCDwarfLineTableParams Params,
+              Optional<MCDwarfLineStr> &LineStr) const;
 
   Expected<unsigned> tryGetFile(StringRef &Directory, StringRef &FileName,
-                                std::optional<MD5::MD5Result> Checksum,
-                                std::optional<StringRef> Source,
-                                uint16_t DwarfVersion, unsigned FileNumber = 0);
+                                Optional<MD5::MD5Result> Checksum,
+                                Optional<StringRef> Source,
+                                uint16_t DwarfVersion,
+                                unsigned FileNumber = 0);
   unsigned getFile(StringRef &Directory, StringRef &FileName,
-                   std::optional<MD5::MD5Result> Checksum,
-                   std::optional<StringRef> Source, uint16_t DwarfVersion,
-                   unsigned FileNumber = 0) {
+                   Optional<MD5::MD5Result> Checksum, Optional<StringRef> Source,
+                   uint16_t DwarfVersion, unsigned FileNumber = 0) {
     return cantFail(tryGetFile(Directory, FileName, Checksum, Source,
                                DwarfVersion, FileNumber));
   }
 
   void setRootFile(StringRef Directory, StringRef FileName,
-                   std::optional<MD5::MD5Result> Checksum,
-                   std::optional<StringRef> Source) {
-    Header.CompilationDir = std::string(Directory);
-    Header.RootFile.Name = std::string(FileName);
+                   Optional<MD5::MD5Result> Checksum, Optional<StringRef> Source) {
+    Header.CompilationDir = Directory;
+    Header.RootFile.Name = FileName;
     Header.RootFile.DirIndex = 0;
     Header.RootFile.Checksum = Checksum;
     Header.RootFile.Source = Source;
-    Header.trackMD5Usage(Checksum.has_value());
-    Header.HasSource = Source.has_value();
+    Header.trackMD5Usage(Checksum.hasValue());
+    Header.HasSource = Source.hasValue();
   }
 
   void resetFileTable() { Header.resetFileTable(); }
 
   bool hasRootFile() const { return !Header.RootFile.Name.empty(); }
 
-  MCDwarfFile &getRootFile() { return Header.RootFile; }
   const MCDwarfFile &getRootFile() const { return Header.RootFile; }
 
   // Report whether MD5 usage has been consistent (all-or-none).
@@ -431,6 +380,13 @@ public:
   /// Utility function to encode a Dwarf pair of LineDelta and AddrDeltas.
   static void Encode(MCContext &Context, MCDwarfLineTableParams Params,
                      int64_t LineDelta, uint64_t AddrDelta, raw_ostream &OS);
+
+  /// Utility function to encode a Dwarf pair of LineDelta and AddrDeltas using
+  /// fixed length operands.
+  static bool FixedEncode(MCContext &Context,
+                          MCDwarfLineTableParams Params,
+                          int64_t LineDelta, uint64_t AddrDelta,
+                          raw_ostream &OS, uint32_t *Offset, uint32_t *Size);
 
   /// Utility function to emit the encoding to a streamer.
   static void Emit(MCStreamer *MCOS, MCDwarfLineTableParams Params,
@@ -483,7 +439,6 @@ public:
     OpRememberState,
     OpRestoreState,
     OpOffset,
-    OpLLVMDefAspaceCfa,
     OpDefCfaRegister,
     OpDefCfaOffset,
     OpDefCfa,
@@ -506,15 +461,12 @@ private:
     int Offset;
     unsigned Register2;
   };
-  unsigned AddressSpace;
   std::vector<char> Values;
-  std::string Comment;
 
-  MCCFIInstruction(OpType Op, MCSymbol *L, unsigned R, int O, StringRef V,
-                   StringRef Comment = "")
+  MCCFIInstruction(OpType Op, MCSymbol *L, unsigned R, int O, StringRef V)
       : Operation(Op), Label(L), Register(R), Offset(O),
-        Values(V.begin(), V.end()), Comment(Comment) {
-    assert(Op != OpRegister && Op != OpLLVMDefAspaceCfa);
+        Values(V.begin(), V.end()) {
+    assert(Op != OpRegister);
   }
 
   MCCFIInstruction(OpType Op, MCSymbol *L, unsigned R1, unsigned R2)
@@ -522,17 +474,12 @@ private:
     assert(Op == OpRegister);
   }
 
-  MCCFIInstruction(OpType Op, MCSymbol *L, unsigned R, int O, unsigned AS)
-      : Operation(Op), Label(L), Register(R), Offset(O), AddressSpace(AS) {
-    assert(Op == OpLLVMDefAspaceCfa);
-  }
-
 public:
   /// .cfi_def_cfa defines a rule for computing CFA as: take address from
   /// Register and add Offset to it.
-  static MCCFIInstruction cfiDefCfa(MCSymbol *L, unsigned Register,
-                                    int Offset) {
-    return MCCFIInstruction(OpDefCfa, L, Register, Offset, "");
+  static MCCFIInstruction createDefCfa(MCSymbol *L, unsigned Register,
+                                       int Offset) {
+    return MCCFIInstruction(OpDefCfa, L, Register, -Offset, "");
   }
 
   /// .cfi_def_cfa_register modifies a rule for computing CFA. From now
@@ -544,8 +491,8 @@ public:
   /// .cfi_def_cfa_offset modifies a rule for computing CFA. Register
   /// remains the same, but offset is new. Note that it is the absolute offset
   /// that will be added to a defined register to the compute CFA address.
-  static MCCFIInstruction cfiDefCfaOffset(MCSymbol *L, int Offset) {
-    return MCCFIInstruction(OpDefCfaOffset, L, 0, Offset, "");
+  static MCCFIInstruction createDefCfaOffset(MCSymbol *L, int Offset) {
+    return MCCFIInstruction(OpDefCfaOffset, L, 0, -Offset, "");
   }
 
   /// .cfi_adjust_cfa_offset Same as .cfi_def_cfa_offset, but
@@ -553,17 +500,6 @@ public:
   /// offset.
   static MCCFIInstruction createAdjustCfaOffset(MCSymbol *L, int Adjustment) {
     return MCCFIInstruction(OpAdjustCfaOffset, L, 0, Adjustment, "");
-  }
-
-  // FIXME: Update the remaining docs to use the new proposal wording.
-  /// .cfi_llvm_def_aspace_cfa defines the rule for computing the CFA to
-  /// be the result of evaluating the DWARF operation expression
-  /// `DW_OP_constu AS; DW_OP_aspace_bregx R, B` as a location description.
-  static MCCFIInstruction createLLVMDefAspaceCfa(MCSymbol *L, unsigned Register,
-                                                 int Offset,
-                                                 unsigned AddressSpace) {
-    return MCCFIInstruction(OpLLVMDefAspaceCfa, L, Register, Offset,
-                            AddressSpace);
   }
 
   /// .cfi_offset Previous value of Register is saved at offset Offset
@@ -629,9 +565,8 @@ public:
 
   /// .cfi_escape Allows the user to add arbitrary bytes to the unwind
   /// info.
-  static MCCFIInstruction createEscape(MCSymbol *L, StringRef Vals,
-                                       StringRef Comment = "") {
-    return MCCFIInstruction(OpEscape, L, 0, 0, Vals, Comment);
+  static MCCFIInstruction createEscape(MCSymbol *L, StringRef Vals) {
+    return MCCFIInstruction(OpEscape, L, 0, 0, Vals);
   }
 
   /// A special wrapper for .cfi_escape that indicates GNU_ARGS_SIZE
@@ -646,8 +581,7 @@ public:
     assert(Operation == OpDefCfa || Operation == OpOffset ||
            Operation == OpRestore || Operation == OpUndefined ||
            Operation == OpSameValue || Operation == OpDefCfaRegister ||
-           Operation == OpRelOffset || Operation == OpRegister ||
-           Operation == OpLLVMDefAspaceCfa);
+           Operation == OpRelOffset || Operation == OpRegister);
     return Register;
   }
 
@@ -656,26 +590,16 @@ public:
     return Register2;
   }
 
-  unsigned getAddressSpace() const {
-    assert(Operation == OpLLVMDefAspaceCfa);
-    return AddressSpace;
-  }
-
   int getOffset() const {
     assert(Operation == OpDefCfa || Operation == OpOffset ||
            Operation == OpRelOffset || Operation == OpDefCfaOffset ||
-           Operation == OpAdjustCfaOffset || Operation == OpGnuArgsSize ||
-           Operation == OpLLVMDefAspaceCfa);
+           Operation == OpAdjustCfaOffset || Operation == OpGnuArgsSize);
     return Offset;
   }
 
   StringRef getValues() const {
     assert(Operation == OpEscape);
     return StringRef(&Values[0], Values.size());
-  }
-
-  StringRef getComment() const {
-    return Comment;
   }
 };
 
@@ -695,7 +619,6 @@ struct MCDwarfFrameInfo {
   bool IsSimple = false;
   unsigned RAReg = static_cast<unsigned>(INT_MAX);
   bool IsBKeyFrame = false;
-  bool IsMTETaggedFrame = false;
 };
 
 class MCDwarfFrameEmitter {
@@ -706,7 +629,8 @@ public:
   static void Emit(MCObjectStreamer &streamer, MCAsmBackend *MAB, bool isEH);
   static void EmitAdvanceLoc(MCObjectStreamer &Streamer, uint64_t AddrDelta);
   static void EncodeAdvanceLoc(MCContext &Context, uint64_t AddrDelta,
-                               raw_ostream &OS);
+                               raw_ostream &OS, uint32_t *Offset = nullptr,
+                               uint32_t *Size = nullptr);
 };
 
 } // end namespace llvm

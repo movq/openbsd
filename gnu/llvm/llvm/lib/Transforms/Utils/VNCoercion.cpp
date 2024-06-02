@@ -1,91 +1,68 @@
 #include "llvm/Transforms/Utils/VNCoercion.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "vncoerce"
-
 namespace llvm {
 namespace VNCoercion {
-
-static bool isFirstClassAggregateOrScalableType(Type *Ty) {
-  return Ty->isStructTy() || Ty->isArrayTy() || isa<ScalableVectorType>(Ty);
-}
 
 /// Return true if coerceAvailableValueToLoadType will succeed.
 bool canCoerceMustAliasedValueToLoad(Value *StoredVal, Type *LoadTy,
                                      const DataLayout &DL) {
   Type *StoredTy = StoredVal->getType();
-
   if (StoredTy == LoadTy)
     return true;
 
-  // If the loaded/stored value is a first class array/struct, or scalable type,
-  // don't try to transform them. We need to be able to bitcast to integer.
-  if (isFirstClassAggregateOrScalableType(LoadTy) ||
-      isFirstClassAggregateOrScalableType(StoredTy))
+  // If the loaded or stored value is an first class array or struct, don't try
+  // to transform them.  We need to be able to bitcast to integer.
+  if (LoadTy->isStructTy() || LoadTy->isArrayTy() || StoredTy->isStructTy() ||
+      StoredTy->isArrayTy())
     return false;
 
-  uint64_t StoreSize = DL.getTypeSizeInBits(StoredTy).getFixedValue();
+  uint64_t StoreSize = DL.getTypeSizeInBits(StoredTy);
 
   // The store size must be byte-aligned to support future type casts.
   if (llvm::alignTo(StoreSize, 8) != StoreSize)
     return false;
 
   // The store has to be at least as big as the load.
-  if (StoreSize < DL.getTypeSizeInBits(LoadTy).getFixedValue())
+  if (StoreSize < DL.getTypeSizeInBits(LoadTy))
     return false;
 
-  bool StoredNI = DL.isNonIntegralPointerType(StoredTy->getScalarType());
-  bool LoadNI = DL.isNonIntegralPointerType(LoadTy->getScalarType());
   // Don't coerce non-integral pointers to integers or vice versa.
-  if (StoredNI != LoadNI) {
+  if (DL.isNonIntegralPointerType(StoredVal->getType()->getScalarType()) !=
+      DL.isNonIntegralPointerType(LoadTy->getScalarType())) {
     // As a special case, allow coercion of memset used to initialize
     // an array w/null.  Despite non-integral pointers not generally having a
     // specific bit pattern, we do assume null is zero.
     if (auto *CI = dyn_cast<Constant>(StoredVal))
       return CI->isNullValue();
     return false;
-  } else if (StoredNI && LoadNI &&
-             StoredTy->getPointerAddressSpace() !=
-                 LoadTy->getPointerAddressSpace()) {
-    return false;
   }
-
-
-  // The implementation below uses inttoptr for vectors of unequal size; we
-  // can't allow this for non integral pointers. We could teach it to extract
-  // exact subvectors if desired.
-  if (StoredNI && StoreSize != DL.getTypeSizeInBits(LoadTy).getFixedValue())
-    return false;
-
-  if (StoredTy->isTargetExtTy() || LoadTy->isTargetExtTy())
-    return false;
-
+  
   return true;
 }
 
-/// If we saw a store of a value to memory, and
-/// then a load from a must-aliased pointer of a different type, try to coerce
-/// the stored value.  LoadedTy is the type of the load we want to replace.
-/// IRB is IRBuilder used to insert new instructions.
-///
-/// If we can't do it, return null.
-Value *coerceAvailableValueToLoadType(Value *StoredVal, Type *LoadedTy,
-                                      IRBuilderBase &Helper,
-                                      const DataLayout &DL) {
+template <class T, class HelperClass>
+static T *coerceAvailableValueToLoadTypeHelper(T *StoredVal, Type *LoadedTy,
+                                               HelperClass &Helper,
+                                               const DataLayout &DL) {
   assert(canCoerceMustAliasedValueToLoad(StoredVal, LoadedTy, DL) &&
          "precondition violation - materialization can't fail");
   if (auto *C = dyn_cast<Constant>(StoredVal))
-    StoredVal = ConstantFoldConstant(C, DL);
+    if (auto *FoldedStoredVal = ConstantFoldConstant(C, DL))
+      StoredVal = FoldedStoredVal;
 
   // If this is already the right type, just return it.
   Type *StoredValTy = StoredVal->getType();
 
-  uint64_t StoredValSize = DL.getTypeSizeInBits(StoredValTy).getFixedValue();
-  uint64_t LoadedValSize = DL.getTypeSizeInBits(LoadedTy).getFixedValue();
+  uint64_t StoredValSize = DL.getTypeSizeInBits(StoredValTy);
+  uint64_t LoadedValSize = DL.getTypeSizeInBits(LoadedTy);
 
   // If the store and reload are the same size, we can always reuse it.
   if (StoredValSize == LoadedValSize) {
@@ -112,7 +89,8 @@ Value *coerceAvailableValueToLoadType(Value *StoredVal, Type *LoadedTy,
     }
 
     if (auto *C = dyn_cast<ConstantExpr>(StoredVal))
-      StoredVal = ConstantFoldConstant(C, DL);
+      if (auto *FoldedStoredVal = ConstantFoldConstant(C, DL))
+        StoredVal = FoldedStoredVal;
 
     return StoredVal;
   }
@@ -137,8 +115,8 @@ Value *coerceAvailableValueToLoadType(Value *StoredVal, Type *LoadedTy,
   // If this is a big-endian system, we need to shift the value down to the low
   // bits so that a truncate will work.
   if (DL.isBigEndian()) {
-    uint64_t ShiftAmt = DL.getTypeStoreSizeInBits(StoredValTy).getFixedValue() -
-                        DL.getTypeStoreSizeInBits(LoadedTy).getFixedValue();
+    uint64_t ShiftAmt = DL.getTypeStoreSizeInBits(StoredValTy) -
+                        DL.getTypeStoreSizeInBits(LoadedTy);
     StoredVal = Helper.CreateLShr(
         StoredVal, ConstantInt::get(StoredVal->getType(), ShiftAmt));
   }
@@ -157,9 +135,21 @@ Value *coerceAvailableValueToLoadType(Value *StoredVal, Type *LoadedTy,
   }
 
   if (auto *C = dyn_cast<Constant>(StoredVal))
-    StoredVal = ConstantFoldConstant(C, DL);
+    if (auto *FoldedStoredVal = ConstantFoldConstant(C, DL))
+      StoredVal = FoldedStoredVal;
 
   return StoredVal;
+}
+
+/// If we saw a store of a value to memory, and
+/// then a load from a must-aliased pointer of a different type, try to coerce
+/// the stored value.  LoadedTy is the type of the load we want to replace.
+/// IRB is IRBuilder used to insert new instructions.
+///
+/// If we can't do it, return null.
+Value *coerceAvailableValueToLoadType(Value *StoredVal, Type *LoadedTy,
+                                      IRBuilder<> &IRB, const DataLayout &DL) {
+  return coerceAvailableValueToLoadTypeHelper(StoredVal, LoadedTy, IRB, DL);
 }
 
 /// This function is called when we have a memdep query of a load that ends up
@@ -174,9 +164,9 @@ static int analyzeLoadFromClobberingWrite(Type *LoadTy, Value *LoadPtr,
                                           Value *WritePtr,
                                           uint64_t WriteSizeInBits,
                                           const DataLayout &DL) {
-  // If the loaded/stored value is a first class array/struct, or scalable type,
-  // don't try to transform them. We need to be able to bitcast to integer.
-  if (isFirstClassAggregateOrScalableType(LoadTy))
+  // If the loaded or stored value is a first class array or struct, don't try
+  // to transform them.  We need to be able to bitcast to integer.
+  if (LoadTy->isStructTy() || LoadTy->isArrayTy())
     return -1;
 
   int64_t StoreOffset = 0, LoadOffset = 0;
@@ -186,19 +176,36 @@ static int analyzeLoadFromClobberingWrite(Type *LoadTy, Value *LoadPtr,
   if (StoreBase != LoadBase)
     return -1;
 
-  uint64_t LoadSize = DL.getTypeSizeInBits(LoadTy).getFixedValue();
+  // If the load and store are to the exact same address, they should have been
+  // a must alias.  AA must have gotten confused.
+  // FIXME: Study to see if/when this happens.  One case is forwarding a memset
+  // to a load from the base of the memset.
+
+  // If the load and store don't overlap at all, the store doesn't provide
+  // anything to the load.  In this case, they really don't alias at all, AA
+  // must have gotten confused.
+  uint64_t LoadSize = DL.getTypeSizeInBits(LoadTy);
 
   if ((WriteSizeInBits & 7) | (LoadSize & 7))
     return -1;
   uint64_t StoreSize = WriteSizeInBits / 8; // Convert to bytes.
   LoadSize /= 8;
 
+  bool isAAFailure = false;
+  if (StoreOffset < LoadOffset)
+    isAAFailure = StoreOffset + int64_t(StoreSize) <= LoadOffset;
+  else
+    isAAFailure = LoadOffset + int64_t(LoadSize) <= StoreOffset;
+
+  if (isAAFailure)
+    return -1;
+
   // If the Load isn't completely contained within the stored bits, we don't
   // have all the bits to feed it.  We could do something crazy in the future
   // (issue a smaller load then merge the bits in) but this seems unlikely to be
   // valuable.
   if (StoreOffset > LoadOffset ||
-      StoreOffset + int64_t(StoreSize) < LoadOffset + int64_t(LoadSize))
+      StoreOffset + StoreSize < LoadOffset + LoadSize)
     return -1;
 
   // Okay, we can do this transformation.  Return the number of bytes into the
@@ -211,104 +218,26 @@ static int analyzeLoadFromClobberingWrite(Type *LoadTy, Value *LoadPtr,
 int analyzeLoadFromClobberingStore(Type *LoadTy, Value *LoadPtr,
                                    StoreInst *DepSI, const DataLayout &DL) {
   auto *StoredVal = DepSI->getValueOperand();
-
-  // Cannot handle reading from store of first-class aggregate or scalable type.
-  if (isFirstClassAggregateOrScalableType(StoredVal->getType()))
+  
+  // Cannot handle reading from store of first-class aggregate yet.
+  if (StoredVal->getType()->isStructTy() ||
+      StoredVal->getType()->isArrayTy())
     return -1;
 
-  if (!canCoerceMustAliasedValueToLoad(StoredVal, LoadTy, DL))
-    return -1;
+  // Don't coerce non-integral pointers to integers or vice versa.
+  if (DL.isNonIntegralPointerType(StoredVal->getType()->getScalarType()) !=
+      DL.isNonIntegralPointerType(LoadTy->getScalarType())) {
+    // Allow casts of zero values to null as a special case
+    auto *CI = dyn_cast<Constant>(StoredVal);
+    if (!CI || !CI->isNullValue())
+      return -1;
+  }
 
   Value *StorePtr = DepSI->getPointerOperand();
   uint64_t StoreSize =
-      DL.getTypeSizeInBits(DepSI->getValueOperand()->getType()).getFixedValue();
+      DL.getTypeSizeInBits(DepSI->getValueOperand()->getType());
   return analyzeLoadFromClobberingWrite(LoadTy, LoadPtr, StorePtr, StoreSize,
                                         DL);
-}
-
-/// Looks at a memory location for a load (specified by MemLocBase, Offs, and
-/// Size) and compares it against a load.
-///
-/// If the specified load could be safely widened to a larger integer load
-/// that is 1) still efficient, 2) safe for the target, and 3) would provide
-/// the specified memory location value, then this function returns the size
-/// in bytes of the load width to use.  If not, this returns zero.
-static unsigned getLoadLoadClobberFullWidthSize(const Value *MemLocBase,
-                                                int64_t MemLocOffs,
-                                                unsigned MemLocSize,
-                                                const LoadInst *LI) {
-  // We can only extend simple integer loads.
-  if (!isa<IntegerType>(LI->getType()) || !LI->isSimple())
-    return 0;
-
-  // Load widening is hostile to ThreadSanitizer: it may cause false positives
-  // or make the reports more cryptic (access sizes are wrong).
-  if (LI->getParent()->getParent()->hasFnAttribute(Attribute::SanitizeThread))
-    return 0;
-
-  const DataLayout &DL = LI->getModule()->getDataLayout();
-
-  // Get the base of this load.
-  int64_t LIOffs = 0;
-  const Value *LIBase =
-      GetPointerBaseWithConstantOffset(LI->getPointerOperand(), LIOffs, DL);
-
-  // If the two pointers are not based on the same pointer, we can't tell that
-  // they are related.
-  if (LIBase != MemLocBase)
-    return 0;
-
-  // Okay, the two values are based on the same pointer, but returned as
-  // no-alias.  This happens when we have things like two byte loads at "P+1"
-  // and "P+3".  Check to see if increasing the size of the "LI" load up to its
-  // alignment (or the largest native integer type) will allow us to load all
-  // the bits required by MemLoc.
-
-  // If MemLoc is before LI, then no widening of LI will help us out.
-  if (MemLocOffs < LIOffs)
-    return 0;
-
-  // Get the alignment of the load in bytes.  We assume that it is safe to load
-  // any legal integer up to this size without a problem.  For example, if we're
-  // looking at an i8 load on x86-32 that is known 1024 byte aligned, we can
-  // widen it up to an i32 load.  If it is known 2-byte aligned, we can widen it
-  // to i16.
-  unsigned LoadAlign = LI->getAlign().value();
-
-  int64_t MemLocEnd = MemLocOffs + MemLocSize;
-
-  // If no amount of rounding up will let MemLoc fit into LI, then bail out.
-  if (LIOffs + LoadAlign < MemLocEnd)
-    return 0;
-
-  // This is the size of the load to try.  Start with the next larger power of
-  // two.
-  unsigned NewLoadByteSize = LI->getType()->getPrimitiveSizeInBits() / 8U;
-  NewLoadByteSize = NextPowerOf2(NewLoadByteSize);
-
-  while (true) {
-    // If this load size is bigger than our known alignment or would not fit
-    // into a native integer register, then we fail.
-    if (NewLoadByteSize > LoadAlign ||
-        !DL.fitsInLegalInteger(NewLoadByteSize * 8))
-      return 0;
-
-    if (LIOffs + NewLoadByteSize > MemLocEnd &&
-        (LI->getParent()->getParent()->hasFnAttribute(
-             Attribute::SanitizeAddress) ||
-         LI->getParent()->getParent()->hasFnAttribute(
-             Attribute::SanitizeHWAddress)))
-      // We will be reading past the location accessed by the original program.
-      // While this is safe in a regular build, Address Safety analysis tools
-      // may start reporting false warnings. So, don't do widening.
-      return 0;
-
-    // If a load of this width would include all of MemLoc, then we succeed.
-    if (LIOffs + NewLoadByteSize >= MemLocEnd)
-      return NewLoadByteSize;
-
-    NewLoadByteSize <<= 1;
-  }
 }
 
 /// This function is called when we have a
@@ -320,11 +249,13 @@ int analyzeLoadFromClobberingLoad(Type *LoadTy, Value *LoadPtr, LoadInst *DepLI,
   if (DepLI->getType()->isStructTy() || DepLI->getType()->isArrayTy())
     return -1;
 
-  if (!canCoerceMustAliasedValueToLoad(DepLI, LoadTy, DL))
+  // Don't coerce non-integral pointers to integers or vice versa.
+  if (DL.isNonIntegralPointerType(DepLI->getType()->getScalarType()) !=
+      DL.isNonIntegralPointerType(LoadTy->getScalarType()))
     return -1;
 
   Value *DepPtr = DepLI->getPointerOperand();
-  uint64_t DepSize = DL.getTypeSizeInBits(DepLI->getType()).getFixedValue();
+  uint64_t DepSize = DL.getTypeSizeInBits(DepLI->getType());
   int R = analyzeLoadFromClobberingWrite(LoadTy, LoadPtr, DepPtr, DepSize, DL);
   if (R != -1)
     return R;
@@ -334,10 +265,10 @@ int analyzeLoadFromClobberingLoad(Type *LoadTy, Value *LoadPtr, LoadInst *DepLI,
   int64_t LoadOffs = 0;
   const Value *LoadBase =
       GetPointerBaseWithConstantOffset(LoadPtr, LoadOffs, DL);
-  unsigned LoadSize = DL.getTypeStoreSize(LoadTy).getFixedValue();
+  unsigned LoadSize = DL.getTypeStoreSize(LoadTy);
 
-  unsigned Size =
-      getLoadLoadClobberFullWidthSize(LoadBase, LoadOffs, LoadSize, DepLI);
+  unsigned Size = MemoryDependenceResults::getLoadLoadClobberFullWidthSize(
+      LoadBase, LoadOffs, LoadSize, DepLI);
   if (Size == 0)
     return -1;
 
@@ -359,9 +290,9 @@ int analyzeLoadFromClobberingMemInst(Type *LoadTy, Value *LoadPtr,
 
   // If this is memset, we just need to see if the offset is valid in the size
   // of the memset..
-  if (const auto *memset_inst = dyn_cast<MemSetInst>(MI)) {
+  if (MI->getIntrinsicID() == Intrinsic::memset) {
     if (DL.isNonIntegralPointerType(LoadTy->getScalarType())) {
-      auto *CI = dyn_cast<ConstantInt>(memset_inst->getValue());
+      auto *CI = dyn_cast<ConstantInt>(cast<MemSetInst>(MI)->getValue());
       if (!CI || !CI->isZero())
         return -1;
     }
@@ -378,7 +309,7 @@ int analyzeLoadFromClobberingMemInst(Type *LoadTy, Value *LoadPtr,
   if (!Src)
     return -1;
 
-  GlobalVariable *GV = dyn_cast<GlobalVariable>(getUnderlyingObject(Src));
+  GlobalVariable *GV = dyn_cast<GlobalVariable>(GetUnderlyingObject(Src, DL));
   if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer())
     return -1;
 
@@ -388,17 +319,31 @@ int analyzeLoadFromClobberingMemInst(Type *LoadTy, Value *LoadPtr,
   if (Offset == -1)
     return Offset;
 
+  // Don't coerce non-integral pointers to integers or vice versa, and the
+  // memtransfer is implicitly a raw byte code
+  if (DL.isNonIntegralPointerType(LoadTy->getScalarType()))
+    // TODO: Can allow nullptrs from constant zeros
+    return -1;
+
+  unsigned AS = Src->getType()->getPointerAddressSpace();
   // Otherwise, see if we can constant fold a load from the constant with the
   // offset applied as appropriate.
-  unsigned IndexSize = DL.getIndexTypeSizeInBits(Src->getType());
-  if (ConstantFoldLoadFromConstPtr(Src, LoadTy, APInt(IndexSize, Offset), DL))
+  Src =
+      ConstantExpr::getBitCast(Src, Type::getInt8PtrTy(Src->getContext(), AS));
+  Constant *OffsetCst =
+      ConstantInt::get(Type::getInt64Ty(Src->getContext()), (unsigned)Offset);
+  Src = ConstantExpr::getGetElementPtr(Type::getInt8Ty(Src->getContext()), Src,
+                                       OffsetCst);
+  Src = ConstantExpr::getBitCast(Src, PointerType::get(LoadTy, AS));
+  if (ConstantFoldLoadFromConstPtr(Src, LoadTy, DL))
     return Offset;
   return -1;
 }
 
-static Value *getStoreValueForLoadHelper(Value *SrcVal, unsigned Offset,
-                                         Type *LoadTy, IRBuilderBase &Builder,
-                                         const DataLayout &DL) {
+template <class T, class HelperClass>
+static T *getStoreValueForLoadHelper(T *SrcVal, unsigned Offset, Type *LoadTy,
+                                     HelperClass &Helper,
+                                     const DataLayout &DL) {
   LLVMContext &Ctx = SrcVal->getType()->getContext();
 
   // If two pointers are in the same address space, they have the same size,
@@ -410,17 +355,14 @@ static Value *getStoreValueForLoadHelper(Value *SrcVal, unsigned Offset,
     return SrcVal;
   }
 
-  uint64_t StoreSize =
-      (DL.getTypeSizeInBits(SrcVal->getType()).getFixedValue() + 7) / 8;
-  uint64_t LoadSize = (DL.getTypeSizeInBits(LoadTy).getFixedValue() + 7) / 8;
+  uint64_t StoreSize = (DL.getTypeSizeInBits(SrcVal->getType()) + 7) / 8;
+  uint64_t LoadSize = (DL.getTypeSizeInBits(LoadTy) + 7) / 8;
   // Compute which bits of the stored value are being used by the load.  Convert
   // to an integer type to start with.
   if (SrcVal->getType()->isPtrOrPtrVectorTy())
-    SrcVal =
-        Builder.CreatePtrToInt(SrcVal, DL.getIntPtrType(SrcVal->getType()));
+    SrcVal = Helper.CreatePtrToInt(SrcVal, DL.getIntPtrType(SrcVal->getType()));
   if (!SrcVal->getType()->isIntegerTy())
-    SrcVal =
-        Builder.CreateBitCast(SrcVal, IntegerType::get(Ctx, StoreSize * 8));
+    SrcVal = Helper.CreateBitCast(SrcVal, IntegerType::get(Ctx, StoreSize * 8));
 
   // Shift the bits to the least significant depending on endianness.
   unsigned ShiftAmt;
@@ -429,12 +371,12 @@ static Value *getStoreValueForLoadHelper(Value *SrcVal, unsigned Offset,
   else
     ShiftAmt = (StoreSize - LoadSize - Offset) * 8;
   if (ShiftAmt)
-    SrcVal = Builder.CreateLShr(SrcVal,
-                                ConstantInt::get(SrcVal->getType(), ShiftAmt));
+    SrcVal = Helper.CreateLShr(SrcVal,
+                               ConstantInt::get(SrcVal->getType(), ShiftAmt));
 
   if (LoadSize != StoreSize)
-    SrcVal = Builder.CreateTruncOrBitCast(SrcVal,
-                                          IntegerType::get(Ctx, LoadSize * 8));
+    SrcVal = Helper.CreateTruncOrBitCast(SrcVal,
+                                         IntegerType::get(Ctx, LoadSize * 8));
   return SrcVal;
 }
 
@@ -447,12 +389,14 @@ Value *getStoreValueForLoad(Value *SrcVal, unsigned Offset, Type *LoadTy,
 
   IRBuilder<> Builder(InsertPt);
   SrcVal = getStoreValueForLoadHelper(SrcVal, Offset, LoadTy, Builder, DL);
-  return coerceAvailableValueToLoadType(SrcVal, LoadTy, Builder, DL);
+  return coerceAvailableValueToLoadTypeHelper(SrcVal, LoadTy, Builder, DL);
 }
 
 Constant *getConstantStoreValueForLoad(Constant *SrcVal, unsigned Offset,
                                        Type *LoadTy, const DataLayout &DL) {
-  return ConstantFoldLoadFromConst(SrcVal, LoadTy, APInt(32, Offset), DL);
+  ConstantFolder F;
+  SrcVal = getStoreValueForLoadHelper(SrcVal, Offset, LoadTy, F, DL);
+  return coerceAvailableValueToLoadTypeHelper(SrcVal, LoadTy, F, DL);
 }
 
 /// This function is called when we have a memdep query of a load that ends up
@@ -464,9 +408,8 @@ Value *getLoadValueForLoad(LoadInst *SrcVal, unsigned Offset, Type *LoadTy,
                            Instruction *InsertPt, const DataLayout &DL) {
   // If Offset+LoadTy exceeds the size of SrcVal, then we must be wanting to
   // widen SrcVal out to a larger load.
-  unsigned SrcValStoreSize =
-      DL.getTypeStoreSize(SrcVal->getType()).getFixedValue();
-  unsigned LoadSize = DL.getTypeStoreSize(LoadTy).getFixedValue();
+  unsigned SrcValStoreSize = DL.getTypeStoreSize(SrcVal->getType());
+  unsigned LoadSize = DL.getTypeStoreSize(LoadTy);
   if (Offset + LoadSize > SrcValStoreSize) {
     assert(SrcVal->isSimple() && "Cannot widen volatile/atomic load!");
     assert(SrcVal->getType()->isIntegerTy() && "Can't widen non-integer load");
@@ -488,7 +431,7 @@ Value *getLoadValueForLoad(LoadInst *SrcVal, unsigned Offset, Type *LoadTy,
     PtrVal = Builder.CreateBitCast(PtrVal, DestPTy);
     LoadInst *NewLoad = Builder.CreateLoad(DestTy, PtrVal);
     NewLoad->takeName(SrcVal);
-    NewLoad->setAlignment(SrcVal->getAlign());
+    NewLoad->setAlignment(MaybeAlign(SrcVal->getAlignment()));
 
     LLVM_DEBUG(dbgs() << "GVN WIDENED LOAD: " << *SrcVal << "\n");
     LLVM_DEBUG(dbgs() << "TO: " << *NewLoad << "\n");
@@ -509,12 +452,66 @@ Value *getLoadValueForLoad(LoadInst *SrcVal, unsigned Offset, Type *LoadTy,
 
 Constant *getConstantLoadValueForLoad(Constant *SrcVal, unsigned Offset,
                                       Type *LoadTy, const DataLayout &DL) {
-  unsigned SrcValStoreSize =
-      DL.getTypeStoreSize(SrcVal->getType()).getFixedValue();
-  unsigned LoadSize = DL.getTypeStoreSize(LoadTy).getFixedValue();
+  unsigned SrcValStoreSize = DL.getTypeStoreSize(SrcVal->getType());
+  unsigned LoadSize = DL.getTypeStoreSize(LoadTy);
   if (Offset + LoadSize > SrcValStoreSize)
     return nullptr;
   return getConstantStoreValueForLoad(SrcVal, Offset, LoadTy, DL);
+}
+
+template <class T, class HelperClass>
+T *getMemInstValueForLoadHelper(MemIntrinsic *SrcInst, unsigned Offset,
+                                Type *LoadTy, HelperClass &Helper,
+                                const DataLayout &DL) {
+  LLVMContext &Ctx = LoadTy->getContext();
+  uint64_t LoadSize = DL.getTypeSizeInBits(LoadTy) / 8;
+
+  // We know that this method is only called when the mem transfer fully
+  // provides the bits for the load.
+  if (MemSetInst *MSI = dyn_cast<MemSetInst>(SrcInst)) {
+    // memset(P, 'x', 1234) -> splat('x'), even if x is a variable, and
+    // independently of what the offset is.
+    T *Val = cast<T>(MSI->getValue());
+    if (LoadSize != 1)
+      Val =
+          Helper.CreateZExtOrBitCast(Val, IntegerType::get(Ctx, LoadSize * 8));
+    T *OneElt = Val;
+
+    // Splat the value out to the right number of bits.
+    for (unsigned NumBytesSet = 1; NumBytesSet != LoadSize;) {
+      // If we can double the number of bytes set, do it.
+      if (NumBytesSet * 2 <= LoadSize) {
+        T *ShVal = Helper.CreateShl(
+            Val, ConstantInt::get(Val->getType(), NumBytesSet * 8));
+        Val = Helper.CreateOr(Val, ShVal);
+        NumBytesSet <<= 1;
+        continue;
+      }
+
+      // Otherwise insert one byte at a time.
+      T *ShVal = Helper.CreateShl(Val, ConstantInt::get(Val->getType(), 1 * 8));
+      Val = Helper.CreateOr(OneElt, ShVal);
+      ++NumBytesSet;
+    }
+
+    return coerceAvailableValueToLoadTypeHelper(Val, LoadTy, Helper, DL);
+  }
+
+  // Otherwise, this is a memcpy/memmove from a constant global.
+  MemTransferInst *MTI = cast<MemTransferInst>(SrcInst);
+  Constant *Src = cast<Constant>(MTI->getSource());
+  unsigned AS = Src->getType()->getPointerAddressSpace();
+
+  // Otherwise, see if we can constant fold a load from the constant with the
+  // offset applied as appropriate.
+  Src =
+      ConstantExpr::getBitCast(Src, Type::getInt8PtrTy(Src->getContext(), AS));
+  Constant *OffsetCst =
+      ConstantInt::get(Type::getInt64Ty(Src->getContext()), (unsigned)Offset);
+  Src = ConstantExpr::getGetElementPtr(Type::getInt8Ty(Src->getContext()), Src,
+                                       OffsetCst);
+  Src = ConstantExpr::getBitCast(Src, PointerType::get(LoadTy, AS));
+  return ConstantFoldLoadFromConstPtr(Src, LoadTy, DL);
 }
 
 /// This function is called when we have a
@@ -522,72 +519,21 @@ Constant *getConstantLoadValueForLoad(Constant *SrcVal, unsigned Offset,
 Value *getMemInstValueForLoad(MemIntrinsic *SrcInst, unsigned Offset,
                               Type *LoadTy, Instruction *InsertPt,
                               const DataLayout &DL) {
-  LLVMContext &Ctx = LoadTy->getContext();
-  uint64_t LoadSize = DL.getTypeSizeInBits(LoadTy).getFixedValue() / 8;
   IRBuilder<> Builder(InsertPt);
-
-  // We know that this method is only called when the mem transfer fully
-  // provides the bits for the load.
-  if (MemSetInst *MSI = dyn_cast<MemSetInst>(SrcInst)) {
-    // memset(P, 'x', 1234) -> splat('x'), even if x is a variable, and
-    // independently of what the offset is.
-    Value *Val = MSI->getValue();
-    if (LoadSize != 1)
-      Val =
-          Builder.CreateZExtOrBitCast(Val, IntegerType::get(Ctx, LoadSize * 8));
-    Value *OneElt = Val;
-
-    // Splat the value out to the right number of bits.
-    for (unsigned NumBytesSet = 1; NumBytesSet != LoadSize;) {
-      // If we can double the number of bytes set, do it.
-      if (NumBytesSet * 2 <= LoadSize) {
-        Value *ShVal = Builder.CreateShl(
-            Val, ConstantInt::get(Val->getType(), NumBytesSet * 8));
-        Val = Builder.CreateOr(Val, ShVal);
-        NumBytesSet <<= 1;
-        continue;
-      }
-
-      // Otherwise insert one byte at a time.
-      Value *ShVal =
-          Builder.CreateShl(Val, ConstantInt::get(Val->getType(), 1 * 8));
-      Val = Builder.CreateOr(OneElt, ShVal);
-      ++NumBytesSet;
-    }
-
-    return coerceAvailableValueToLoadType(Val, LoadTy, Builder, DL);
-  }
-
-  // Otherwise, this is a memcpy/memmove from a constant global.
-  MemTransferInst *MTI = cast<MemTransferInst>(SrcInst);
-  Constant *Src = cast<Constant>(MTI->getSource());
-  unsigned IndexSize = DL.getIndexTypeSizeInBits(Src->getType());
-  return ConstantFoldLoadFromConstPtr(Src, LoadTy, APInt(IndexSize, Offset),
-                                      DL);
+  return getMemInstValueForLoadHelper<Value, IRBuilder<>>(SrcInst, Offset,
+                                                          LoadTy, Builder, DL);
 }
 
 Constant *getConstantMemInstValueForLoad(MemIntrinsic *SrcInst, unsigned Offset,
                                          Type *LoadTy, const DataLayout &DL) {
-  LLVMContext &Ctx = LoadTy->getContext();
-  uint64_t LoadSize = DL.getTypeSizeInBits(LoadTy).getFixedValue() / 8;
-
-  // We know that this method is only called when the mem transfer fully
-  // provides the bits for the load.
-  if (MemSetInst *MSI = dyn_cast<MemSetInst>(SrcInst)) {
-    auto *Val = dyn_cast<ConstantInt>(MSI->getValue());
-    if (!Val)
+  // The only case analyzeLoadFromClobberingMemInst cannot be converted to a
+  // constant is when it's a memset of a non-constant.
+  if (auto *MSI = dyn_cast<MemSetInst>(SrcInst))
+    if (!isa<Constant>(MSI->getValue()))
       return nullptr;
-
-    Val = ConstantInt::get(Ctx, APInt::getSplat(LoadSize * 8, Val->getValue()));
-    return ConstantFoldLoadFromConst(Val, LoadTy, DL);
-  }
-
-  // Otherwise, this is a memcpy/memmove from a constant global.
-  MemTransferInst *MTI = cast<MemTransferInst>(SrcInst);
-  Constant *Src = cast<Constant>(MTI->getSource());
-  unsigned IndexSize = DL.getIndexTypeSizeInBits(Src->getType());
-  return ConstantFoldLoadFromConstPtr(Src, LoadTy, APInt(IndexSize, Offset),
-                                      DL);
+  ConstantFolder F;
+  return getMemInstValueForLoadHelper<Constant, ConstantFolder>(SrcInst, Offset,
+                                                                LoadTy, F, DL);
 }
 } // namespace VNCoercion
 } // namespace llvm

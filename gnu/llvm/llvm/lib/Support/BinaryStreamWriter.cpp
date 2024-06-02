@@ -8,6 +8,7 @@
 
 #include "llvm/Support/BinaryStreamWriter.h"
 
+#include "llvm/Support/BinaryStreamError.h"
 #include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/BinaryStreamRef.h"
 #include "llvm/Support/LEB128.h"
@@ -61,7 +62,7 @@ Error BinaryStreamWriter::writeStreamRef(BinaryStreamRef Ref) {
   return writeStreamRef(Ref, Ref.getLength());
 }
 
-Error BinaryStreamWriter::writeStreamRef(BinaryStreamRef Ref, uint64_t Length) {
+Error BinaryStreamWriter::writeStreamRef(BinaryStreamRef Ref, uint32_t Length) {
   BinaryStreamReader SrcReader(Ref.slice(0, Length));
   // This is a bit tricky.  If we just call readBytes, we are requiring that it
   // return us the entire stream as a contiguous buffer.  There is no guarantee
@@ -79,7 +80,7 @@ Error BinaryStreamWriter::writeStreamRef(BinaryStreamRef Ref, uint64_t Length) {
 }
 
 std::pair<BinaryStreamWriter, BinaryStreamWriter>
-BinaryStreamWriter::split(uint64_t Off) const {
+BinaryStreamWriter::split(uint32_t Off) const {
   assert(getLength() >= Off);
 
   WritableBinaryStreamRef First = Stream.drop_front(Offset);
@@ -92,12 +93,11 @@ BinaryStreamWriter::split(uint64_t Off) const {
 }
 
 Error BinaryStreamWriter::padToAlignment(uint32_t Align) {
-  uint64_t NewOffset = alignTo(Offset, Align);
-  const uint64_t ZerosSize = 64;
-  static constexpr char Zeros[ZerosSize] = {};
+  uint32_t NewOffset = alignTo(Offset, Align);
+  if (NewOffset > getLength())
+    return make_error<BinaryStreamError>(stream_error_code::stream_too_short);
   while (Offset < NewOffset)
-    if (auto E = writeArray(
-            ArrayRef<char>(Zeros, std::min(ZerosSize, NewOffset - Offset))))
-      return E;
+    if (auto EC = writeInteger('\0'))
+      return EC;
   return Error::success();
 }

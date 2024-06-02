@@ -151,10 +151,6 @@ StringRef llvm::dwarf::OperationEncodingString(unsigned Encoding) {
     return "DW_OP_LLVM_tag_offset";
   case DW_OP_LLVM_entry_value:
     return "DW_OP_LLVM_entry_value";
-  case DW_OP_LLVM_implicit_pointer:
-    return "DW_OP_LLVM_implicit_pointer";
-  case DW_OP_LLVM_arg:
-    return "DW_OP_LLVM_arg";
   }
 }
 
@@ -167,8 +163,6 @@ unsigned llvm::dwarf::getOperationEncoding(StringRef OperationEncodingString) {
       .Case("DW_OP_LLVM_fragment", DW_OP_LLVM_fragment)
       .Case("DW_OP_LLVM_tag_offset", DW_OP_LLVM_tag_offset)
       .Case("DW_OP_LLVM_entry_value", DW_OP_LLVM_entry_value)
-      .Case("DW_OP_LLVM_implicit_pointer", DW_OP_LLVM_implicit_pointer)
-      .Case("DW_OP_LLVM_arg", DW_OP_LLVM_arg)
       .Default(0);
 }
 
@@ -365,11 +359,10 @@ unsigned llvm::dwarf::LanguageVendor(dwarf::SourceLanguage Lang) {
   }
 }
 
-std::optional<unsigned>
-llvm::dwarf::LanguageLowerBound(dwarf::SourceLanguage Lang) {
+Optional<unsigned> llvm::dwarf::LanguageLowerBound(dwarf::SourceLanguage Lang) {
   switch (Lang) {
   default:
-    return std::nullopt;
+    return None;
 #define HANDLE_DW_LANG(ID, NAME, LOWER_BOUND, VERSION, VENDOR)                 \
   case DW_LANG_##NAME:                                                         \
     return LOWER_BOUND;
@@ -484,34 +477,6 @@ unsigned llvm::dwarf::getMacinfo(StringRef MacinfoString) {
       .Default(DW_MACINFO_invalid);
 }
 
-StringRef llvm::dwarf::MacroString(unsigned Encoding) {
-  switch (Encoding) {
-  default:
-    return StringRef();
-#define HANDLE_DW_MACRO(ID, NAME)                                              \
-  case DW_MACRO_##NAME:                                                        \
-    return "DW_MACRO_" #NAME;
-#include "llvm/BinaryFormat/Dwarf.def"
-  }
-}
-
-StringRef llvm::dwarf::GnuMacroString(unsigned Encoding) {
-  switch (Encoding) {
-  default:
-    return StringRef();
-#define HANDLE_DW_MACRO_GNU(ID, NAME)                                          \
-  case DW_MACRO_GNU_##NAME:                                                    \
-    return "DW_MACRO_GNU_" #NAME;
-#include "llvm/BinaryFormat/Dwarf.def"
-  }
-}
-
-unsigned llvm::dwarf::getMacro(StringRef MacroString) {
-  return StringSwitch<unsigned>(MacroString)
-#define HANDLE_DW_MACRO(ID, NAME) .Case("DW_MACRO_" #NAME, ID)
-#include "llvm/BinaryFormat/Dwarf.def"
-      .Default(DW_MACINFO_invalid);
-}
 StringRef llvm::dwarf::RangeListEncodingString(unsigned Encoding) {
   switch (Encoding) {
   default:
@@ -692,13 +657,13 @@ StringRef llvm::dwarf::IndexString(unsigned Idx) {
   }
 }
 
-std::optional<uint8_t> llvm::dwarf::getFixedFormByteSize(dwarf::Form Form,
-                                                         FormParams Params) {
+Optional<uint8_t> llvm::dwarf::getFixedFormByteSize(dwarf::Form Form,
+                                                    FormParams Params) {
   switch (Form) {
   case DW_FORM_addr:
     if (Params)
       return Params.AddrSize;
-    return std::nullopt;
+    return None;
 
   case DW_FORM_block:          // ULEB128 length L followed by L bytes.
   case DW_FORM_block1:         // 1 byte length L followed by L bytes.
@@ -716,12 +681,12 @@ std::optional<uint8_t> llvm::dwarf::getFixedFormByteSize(dwarf::Form Form,
   case DW_FORM_rnglistx:       // ULEB128.
   case DW_FORM_GNU_addr_index: // ULEB128.
   case DW_FORM_GNU_str_index:  // ULEB128.
-    return std::nullopt;
+    return None;
 
   case DW_FORM_ref_addr:
     if (Params)
       return Params.getRefAddrByteSize();
-    return std::nullopt;
+    return None;
 
   case DW_FORM_flag:
   case DW_FORM_data1:
@@ -754,7 +719,7 @@ std::optional<uint8_t> llvm::dwarf::getFixedFormByteSize(dwarf::Form Form,
   case DW_FORM_strp_sup:
     if (Params)
       return Params.getDwarfOffsetByteSize();
-    return std::nullopt;
+    return None;
 
   case DW_FORM_data8:
   case DW_FORM_ref8:
@@ -776,7 +741,7 @@ std::optional<uint8_t> llvm::dwarf::getFixedFormByteSize(dwarf::Form Form,
   default:
     break;
   }
-  return std::nullopt;
+  return None;
 }
 
 bool llvm::dwarf::isValidFormForVersion(Form F, unsigned Version,
@@ -788,34 +753,7 @@ bool llvm::dwarf::isValidFormForVersion(Form F, unsigned Version,
   return ExtensionsOk;
 }
 
-StringRef llvm::dwarf::FormatString(DwarfFormat Format) {
-  switch (Format) {
-  case DWARF32:
-    return "DWARF32";
-  case DWARF64:
-    return "DWARF64";
-  }
-  return StringRef();
-}
-
-StringRef llvm::dwarf::FormatString(bool IsDWARF64) {
-  return FormatString(IsDWARF64 ? DWARF64 : DWARF32);
-}
-
-StringRef llvm::dwarf::RLEString(unsigned RLE) {
-  switch (RLE) {
-  default:
-    return StringRef();
-#define HANDLE_DW_RLE(ID, NAME)                                                \
-  case DW_RLE_##NAME:                                                          \
-    return "DW_RLE_" #NAME;
-#include "llvm/BinaryFormat/Dwarf.def"
-  }
-}
-
 constexpr char llvm::dwarf::EnumTraits<Attribute>::Type[];
 constexpr char llvm::dwarf::EnumTraits<Form>::Type[];
 constexpr char llvm::dwarf::EnumTraits<Index>::Type[];
 constexpr char llvm::dwarf::EnumTraits<Tag>::Type[];
-constexpr char llvm::dwarf::EnumTraits<LineNumberOps>::Type[];
-constexpr char llvm::dwarf::EnumTraits<LocationAtom>::Type[];

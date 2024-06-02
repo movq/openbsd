@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/DebugInfo/Symbolize/SymbolizableModule.h"
 #include "llvm/DebugInfo/Symbolize/Symbolize.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorOr.h"
@@ -23,14 +22,11 @@
 
 using namespace llvm;
 
-static cl::OptionCategory Cat("sanstats Options");
-
 static cl::opt<std::string> ClInputFile(cl::Positional, cl::Required,
                                         cl::desc("<filename>"));
 
 static cl::opt<bool> ClDemangle("demangle", cl::init(false),
-                                cl::desc("Print demangled function name"),
-                                cl::cat(Cat));
+                                cl::desc("Print demangled function name."));
 
 inline uint64_t KindFromData(uint64_t Data, char SizeofPtr) {
   return Data >> (SizeofPtr * 8 - kSanitizerStatKindBits);
@@ -40,7 +36,7 @@ inline uint64_t CountFromData(uint64_t Data, char SizeofPtr) {
   return Data & ((1ull << (SizeofPtr * 8 - kSanitizerStatKindBits)) - 1);
 }
 
-static uint64_t ReadLE(char Size, const char *Begin, const char *End) {
+uint64_t ReadLE(char Size, const char *Begin, const char *End) {
   uint64_t Result = 0;
   char Pos = 0;
   while (Begin < End && Pos != Size) {
@@ -51,8 +47,7 @@ static uint64_t ReadLE(char Size, const char *Begin, const char *End) {
   return Result;
 }
 
-static const char *ReadModule(char SizeofPtr, const char *Begin,
-                              const char *End) {
+const char *ReadModule(char SizeofPtr, const char *Begin, const char *End) {
   const char *FilenameBegin = Begin;
   while (Begin != End && *Begin)
     ++Begin;
@@ -73,7 +68,7 @@ static const char *ReadModule(char SizeofPtr, const char *Begin,
   SymbolizerOptions.UseSymbolTable = true;
   symbolize::LLVMSymbolizer Symbolizer(SymbolizerOptions);
 
-  while (true) {
+  while (1) {
     uint64_t Addr = ReadLE(SizeofPtr, Begin, End);
     Begin += SizeofPtr;
     uint64_t Data = ReadLE(SizeofPtr, Begin, End);
@@ -126,12 +121,11 @@ static const char *ReadModule(char SizeofPtr, const char *Begin,
 }
 
 int main(int argc, char **argv) {
-  cl::HideUnrelatedOptions(Cat);
   cl::ParseCommandLineOptions(argc, argv,
                               "Sanitizer Statistics Processing Tool");
 
-  ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getFile(
-      ClInputFile, /*IsText=*/false, /*RequiresNullTerminator=*/false);
+  ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr =
+      MemoryBuffer::getFile(ClInputFile, -1, false);
   if (!MBOrErr) {
     errs() << argv[0] << ": " << ClInputFile << ": "
            << MBOrErr.getError().message() << '\n';

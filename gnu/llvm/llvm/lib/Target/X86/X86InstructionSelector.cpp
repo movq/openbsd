@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/X86BaseInfo.h"
-#include "X86.h"
 #include "X86InstrBuilder.h"
 #include "X86InstrInfo.h"
 #include "X86RegisterBankInfo.h"
@@ -21,6 +20,7 @@
 #include "X86TargetMachine.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelectorImpl.h"
+#include "llvm/CodeGen/GlobalISel/RegisterBank.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -30,7 +30,6 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/RegisterBank.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/DataLayout.h"
@@ -72,7 +71,7 @@ private:
 
   // TODO: remove after supported by Tablegen-erated instruction selection.
   unsigned getLoadStoreOp(const LLT &Ty, const RegisterBank &RB, unsigned Opc,
-                          Align Alignment) const;
+                          uint64_t Alignment) const;
 
   bool selectLoadStoreOp(MachineInstr &I, MachineRegisterInfo &MRI,
                          MachineFunction &MF) const;
@@ -94,7 +93,6 @@ private:
                   MachineFunction &MF) const;
   bool selectUadde(MachineInstr &I, MachineRegisterInfo &MRI,
                    MachineFunction &MF) const;
-  bool selectDebugInstr(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectUnmergeValues(MachineInstr &I, MachineRegisterInfo &MRI,
                            MachineFunction &MF);
@@ -154,8 +152,8 @@ private:
 X86InstructionSelector::X86InstructionSelector(const X86TargetMachine &TM,
                                                const X86Subtarget &STI,
                                                const X86RegisterBankInfo &RBI)
-    : TM(TM), STI(STI), TII(*STI.getInstrInfo()), TRI(*STI.getRegisterInfo()),
-      RBI(RBI),
+    : InstructionSelector(), TM(TM), STI(STI), TII(*STI.getInstrInfo()),
+      TRI(*STI.getRegisterInfo()), RBI(RBI),
 #define GET_GLOBALISEL_PREDICATES_INIT
 #include "X86GenGlobalISel.inc"
 #undef GET_GLOBALISEL_PREDICATES_INIT
@@ -180,8 +178,6 @@ X86InstructionSelector::getRegClass(LLT Ty, const RegisterBank &RB) const {
       return &X86::GR64RegClass;
   }
   if (RB.getID() == X86::VECRRegBankID) {
-    if (Ty.getSizeInBits() == 16)
-      return STI.hasAVX512() ? &X86::FR16XRegClass : &X86::FR16RegClass;
     if (Ty.getSizeInBits() == 32)
       return STI.hasAVX512() ? &X86::FR32XRegClass : &X86::FR32RegClass;
     if (Ty.getSizeInBits() == 64)
@@ -217,8 +213,8 @@ static unsigned getSubRegIndex(const TargetRegisterClass *RC) {
   return SubIdx;
 }
 
-static const TargetRegisterClass *getRegClassFromGRPhysReg(Register Reg) {
-  assert(Reg.isPhysical());
+static const TargetRegisterClass *getRegClassFromGRPhysReg(unsigned Reg) {
+  assert(Register::isPhysicalRegister(Reg));
   if (X86::GR64RegClass.contains(Reg))
     return &X86::GR64RegClass;
   if (X86::GR32RegClass.contains(Reg))
@@ -229,38 +225,6 @@ static const TargetRegisterClass *getRegClassFromGRPhysReg(Register Reg) {
     return &X86::GR8RegClass;
 
   llvm_unreachable("Unknown RegClass for PhysReg!");
-}
-
-// FIXME: We need some sort of API in RBI/TRI to allow generic code to
-// constrain operands of simple instructions given a TargetRegisterClass
-// and LLT
-bool X86InstructionSelector::selectDebugInstr(MachineInstr &I,
-                                              MachineRegisterInfo &MRI) const {
-  for (MachineOperand &MO : I.operands()) {
-    if (!MO.isReg())
-      continue;
-    Register Reg = MO.getReg();
-    if (!Reg)
-      continue;
-    if (Reg.isPhysical())
-      continue;
-    LLT Ty = MRI.getType(Reg);
-    const RegClassOrRegBank &RegClassOrBank = MRI.getRegClassOrRegBank(Reg);
-    const TargetRegisterClass *RC =
-        RegClassOrBank.dyn_cast<const TargetRegisterClass *>();
-    if (!RC) {
-      const RegisterBank &RB = *RegClassOrBank.get<const RegisterBank *>();
-      RC = getRegClass(Ty, RB);
-      if (!RC) {
-        LLVM_DEBUG(
-            dbgs() << "Warning: DBG_VALUE operand has unexpected size/bank\n");
-        break;
-      }
-    }
-    RBI.constrainGenericRegister(Reg, *RC, MRI);
-  }
-
-  return true;
 }
 
 // Set X86 Opcode and constrain DestReg.
@@ -274,7 +238,7 @@ bool X86InstructionSelector::selectCopy(MachineInstr &I,
   const unsigned SrcSize = RBI.getSizeInBits(SrcReg, MRI, TRI);
   const RegisterBank &SrcRegBank = *RBI.getRegBank(SrcReg, MRI, TRI);
 
-  if (DstReg.isPhysical()) {
+  if (Register::isPhysicalRegister(DstReg)) {
     assert(I.isCopy() && "Generic operators do not allow physical registers");
 
     if (DstSize > SrcSize && SrcRegBank.getID() == X86::GPRRegBankID &&
@@ -301,12 +265,12 @@ bool X86InstructionSelector::selectCopy(MachineInstr &I,
     return true;
   }
 
-  assert((!SrcReg.isPhysical() || I.isCopy()) &&
+  assert((!Register::isPhysicalRegister(SrcReg) || I.isCopy()) &&
          "No phys reg on generic operators");
   assert((DstSize == SrcSize ||
           // Copies are a mean to setup initial types, the number of
           // bits may not exactly match.
-          (SrcReg.isPhysical() &&
+          (Register::isPhysicalRegister(SrcReg) &&
            DstSize <= RBI.getSizeInBits(SrcReg, MRI, TRI))) &&
          "Copy with different width?!");
 
@@ -315,7 +279,7 @@ bool X86InstructionSelector::selectCopy(MachineInstr &I,
 
   if (SrcRegBank.getID() == X86::GPRRegBankID &&
       DstRegBank.getID() == X86::GPRRegBankID && SrcSize > DstSize &&
-      SrcReg.isPhysical()) {
+      Register::isPhysicalRegister(SrcReg)) {
     // Change the physical register to performe truncate.
 
     const TargetRegisterClass *SrcRC = getRegClassFromGRPhysReg(SrcReg);
@@ -358,9 +322,6 @@ bool X86InstructionSelector::select(MachineInstr &I) {
 
     if (I.isCopy())
       return selectCopy(I, MRI);
-
-    if (I.isDebugInstr())
-      return selectDebugInstr(I, MRI);
 
     return true;
   }
@@ -433,7 +394,7 @@ bool X86InstructionSelector::select(MachineInstr &I) {
 unsigned X86InstructionSelector::getLoadStoreOp(const LLT &Ty,
                                                 const RegisterBank &RB,
                                                 unsigned Opc,
-                                                Align Alignment) const {
+                                                uint64_t Alignment) const {
   bool Isload = (Opc == TargetOpcode::G_LOAD);
   bool HasAVX = STI.hasAVX();
   bool HasAVX512 = STI.hasAVX512();
@@ -466,7 +427,7 @@ unsigned X86InstructionSelector::getLoadStoreOp(const LLT &Ty,
                        HasAVX    ? X86::VMOVSDmr :
                                    X86::MOVSDmr);
   } else if (Ty.isVector() && Ty.getSizeInBits() == 128) {
-    if (Alignment >= Align(16))
+    if (Alignment >= 16)
       return Isload ? (HasVLX ? X86::VMOVAPSZ128rm
                               : HasAVX512
                                     ? X86::VMOVAPSZ128rm_NOVLX
@@ -485,7 +446,7 @@ unsigned X86InstructionSelector::getLoadStoreOp(const LLT &Ty,
                                     ? X86::VMOVUPSZ128mr_NOVLX
                                     : HasAVX ? X86::VMOVUPSmr : X86::MOVUPSmr);
   } else if (Ty.isVector() && Ty.getSizeInBits() == 256) {
-    if (Alignment >= Align(32))
+    if (Alignment >= 32)
       return Isload ? (HasVLX ? X86::VMOVAPSZ256rm
                               : HasAVX512 ? X86::VMOVAPSZ256rm_NOVLX
                                           : X86::VMOVAPSYrm)
@@ -500,7 +461,7 @@ unsigned X86InstructionSelector::getLoadStoreOp(const LLT &Ty,
                               : HasAVX512 ? X86::VMOVUPSZ256mr_NOVLX
                                           : X86::VMOVUPSYmr);
   } else if (Ty.isVector() && Ty.getSizeInBits() == 512) {
-    if (Alignment >= Align(64))
+    if (Alignment >= 64)
       return Isload ? X86::VMOVAPSZrm : X86::VMOVAPSZmr;
     else
       return Isload ? X86::VMOVUPSZrm : X86::VMOVUPSZmr;
@@ -517,7 +478,7 @@ static void X86SelectAddress(const MachineInstr &I,
          "unsupported type.");
 
   if (I.getOpcode() == TargetOpcode::G_PTR_ADD) {
-    if (auto COff = getIConstantVRegSExtVal(I.getOperand(2).getReg(), MRI)) {
+    if (auto COff = getConstantVRegVal(I.getOperand(2).getReg(), MRI)) {
       int64_t Imm = *COff;
       if (isInt<32>(Imm)) { // Check for displacement overflow.
         AM.Disp = static_cast<int32_t>(Imm);
@@ -554,18 +515,18 @@ bool X86InstructionSelector::selectLoadStoreOp(MachineInstr &I,
     // is already on the instruction we're mutating, and thus we don't need to
     // make any changes.  So long as we select an opcode which is capable of
     // loading or storing the appropriate size atomically, the rest of the
-    // backend is required to respect the MMO state.
+    // backend is required to respect the MMO state. 
     if (!MemOp.isUnordered()) {
       LLVM_DEBUG(dbgs() << "Atomic ordering not supported yet\n");
       return false;
     }
-    if (MemOp.getAlign() < Ty.getSizeInBits() / 8) {
+    if (MemOp.getAlignment() < Ty.getSizeInBits()/8) {
       LLVM_DEBUG(dbgs() << "Unaligned atomics not supported yet\n");
       return false;
     }
   }
 
-  unsigned NewOpc = getLoadStoreOp(Ty, RB, Opc, MemOp.getAlign());
+  unsigned NewOpc = getLoadStoreOp(Ty, RB, Opc, MemOp.getAlignment());
   if (NewOpc == Opc)
     return false;
 
@@ -575,12 +536,12 @@ bool X86InstructionSelector::selectLoadStoreOp(MachineInstr &I,
   I.setDesc(TII.get(NewOpc));
   MachineInstrBuilder MIB(MF, I);
   if (Opc == TargetOpcode::G_LOAD) {
-    I.removeOperand(1);
+    I.RemoveOperand(1);
     addFullAddress(MIB, AM);
   } else {
     // G_STORE (VAL, Addr), X86Store instruction (Addr, VAL)
-    I.removeOperand(1);
-    I.removeOperand(0);
+    I.RemoveOperand(1);
+    I.RemoveOperand(0);
     addFullAddress(MIB, AM).addUse(DefReg);
   }
   return constrainSelectedInstRegOperands(I, TII, TRI, RBI);
@@ -663,7 +624,7 @@ bool X86InstructionSelector::selectGlobalValue(MachineInstr &I,
   I.setDesc(TII.get(NewOpc));
   MachineInstrBuilder MIB(MF, I);
 
-  I.removeOperand(1);
+  I.RemoveOperand(1);
   addFullAddress(MIB, AM);
 
   return constrainSelectedInstRegOperands(I, TII, TRI, RBI);
@@ -818,18 +779,69 @@ bool X86InstructionSelector::selectZext(MachineInstr &I,
   const LLT DstTy = MRI.getType(DstReg);
   const LLT SrcTy = MRI.getType(SrcReg);
 
-  assert(!(SrcTy == LLT::scalar(8) && DstTy == LLT::scalar(16)) &&
-         "8=>16 Zext is handled by tablegen");
   assert(!(SrcTy == LLT::scalar(8) && DstTy == LLT::scalar(32)) &&
          "8=>32 Zext is handled by tablegen");
   assert(!(SrcTy == LLT::scalar(16) && DstTy == LLT::scalar(32)) &&
          "16=>32 Zext is handled by tablegen");
-  assert(!(SrcTy == LLT::scalar(8) && DstTy == LLT::scalar(64)) &&
-         "8=>64 Zext is handled by tablegen");
-  assert(!(SrcTy == LLT::scalar(16) && DstTy == LLT::scalar(64)) &&
-         "16=>64 Zext is handled by tablegen");
-  assert(!(SrcTy == LLT::scalar(32) && DstTy == LLT::scalar(64)) &&
-         "32=>64 Zext is handled by tablegen");
+
+  const static struct ZextEntry {
+    LLT SrcTy;
+    LLT DstTy;
+    unsigned MovOp;
+    bool NeedSubregToReg;
+  } OpTable[] = {
+      {LLT::scalar(8), LLT::scalar(16), X86::MOVZX16rr8, false},  // i8  => i16
+      {LLT::scalar(8), LLT::scalar(64), X86::MOVZX32rr8, true},   // i8  => i64
+      {LLT::scalar(16), LLT::scalar(64), X86::MOVZX32rr16, true}, // i16 => i64
+      {LLT::scalar(32), LLT::scalar(64), 0, true}                 // i32 => i64
+  };
+
+  auto ZextEntryIt =
+      std::find_if(std::begin(OpTable), std::end(OpTable),
+                   [SrcTy, DstTy](const ZextEntry &El) {
+                     return El.DstTy == DstTy && El.SrcTy == SrcTy;
+                   });
+
+  // Here we try to select Zext into a MOVZ and/or SUBREG_TO_REG instruction.
+  if (ZextEntryIt != std::end(OpTable)) {
+    const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+    const RegisterBank &SrcRB = *RBI.getRegBank(SrcReg, MRI, TRI);
+    const TargetRegisterClass *DstRC = getRegClass(DstTy, DstRB);
+    const TargetRegisterClass *SrcRC = getRegClass(SrcTy, SrcRB);
+
+    if (!RBI.constrainGenericRegister(SrcReg, *SrcRC, MRI) ||
+        !RBI.constrainGenericRegister(DstReg, *DstRC, MRI)) {
+      LLVM_DEBUG(dbgs() << "Failed to constrain " << TII.getName(I.getOpcode())
+                        << " operand\n");
+      return false;
+    }
+
+    unsigned TransitRegTo = DstReg;
+    unsigned TransitRegFrom = SrcReg;
+    if (ZextEntryIt->MovOp) {
+      // If we select Zext into MOVZ + SUBREG_TO_REG, we need to have
+      // a transit register in between: create it here.
+      if (ZextEntryIt->NeedSubregToReg) {
+        TransitRegFrom = MRI.createVirtualRegister(
+            getRegClass(LLT::scalar(32), DstReg, MRI));
+        TransitRegTo = TransitRegFrom;
+      }
+
+      BuildMI(*I.getParent(), I, I.getDebugLoc(), TII.get(ZextEntryIt->MovOp))
+          .addDef(TransitRegTo)
+          .addReg(SrcReg);
+    }
+    if (ZextEntryIt->NeedSubregToReg) {
+      BuildMI(*I.getParent(), I, I.getDebugLoc(),
+              TII.get(TargetOpcode::SUBREG_TO_REG))
+          .addDef(DstReg)
+          .addImm(0)
+          .addReg(TransitRegFrom)
+          .addImm(X86::sub_32bit);
+    }
+    I.eraseFromParent();
+    return true;
+  }
 
   if (SrcTy != LLT::scalar(1))
     return false;
@@ -846,17 +858,12 @@ bool X86InstructionSelector::selectZext(MachineInstr &I,
   else
     return false;
 
-  Register DefReg = SrcReg;
+  unsigned DefReg = SrcReg;
   if (DstTy != LLT::scalar(8)) {
-    Register ImpDefReg =
-        MRI.createVirtualRegister(getRegClass(DstTy, DstReg, MRI));
-    BuildMI(*I.getParent(), I, I.getDebugLoc(),
-            TII.get(TargetOpcode::IMPLICIT_DEF), ImpDefReg);
-
     DefReg = MRI.createVirtualRegister(getRegClass(DstTy, DstReg, MRI));
     BuildMI(*I.getParent(), I, I.getDebugLoc(),
-            TII.get(TargetOpcode::INSERT_SUBREG), DefReg)
-        .addReg(ImpDefReg)
+            TII.get(TargetOpcode::SUBREG_TO_REG), DefReg)
+        .addImm(0)
         .addReg(SrcReg)
         .addImm(X86::sub_8bit);
   }
@@ -1103,7 +1110,7 @@ bool X86InstructionSelector::selectUadde(MachineInstr &I,
       return false;
 
     Opcode = X86::ADC32rr;
-  } else if (auto val = getIConstantVRegVal(CarryInReg, MRI)) {
+  } else if (auto val = getConstantVRegVal(CarryInReg, MRI)) {
     // carry is constant, support only 0.
     if (*val != 0)
       return false;
@@ -1428,15 +1435,14 @@ bool X86InstructionSelector::materializeFP(MachineInstr &I,
   const Register DstReg = I.getOperand(0).getReg();
   const LLT DstTy = MRI.getType(DstReg);
   const RegisterBank &RegBank = *RBI.getRegBank(DstReg, MRI, TRI);
-  Align Alignment = Align(DstTy.getSizeInBytes());
+  unsigned Align = DstTy.getSizeInBits();
   const DebugLoc &DbgLoc = I.getDebugLoc();
 
-  unsigned Opc =
-      getLoadStoreOp(DstTy, RegBank, TargetOpcode::G_LOAD, Alignment);
+  unsigned Opc = getLoadStoreOp(DstTy, RegBank, TargetOpcode::G_LOAD, Align);
 
   // Create the load from the constant pool.
   const ConstantFP *CFP = I.getOperand(1).getFPImm();
-  unsigned CPI = MF.getConstantPool()->getConstantPoolIndex(CFP, Alignment);
+  unsigned CPI = MF.getConstantPool()->getConstantPoolIndex(CFP, Align);
   MachineInstr *LoadInst = nullptr;
   unsigned char OpFlag = STI.classifyLocalReference(nullptr);
 
@@ -1450,7 +1456,7 @@ bool X86InstructionSelector::materializeFP(MachineInstr &I,
 
     MachineMemOperand *MMO = MF.getMachineMemOperand(
         MachinePointerInfo::getConstantPool(MF), MachineMemOperand::MOLoad,
-        LLT::pointer(0, MF.getDataLayout().getPointerSizeInBits()), Alignment);
+        MF.getDataLayout().getPointerSize(), Align);
 
     LoadInst =
         addDirectMem(BuildMI(*I.getParent(), I, DbgLoc, TII.get(Opc), DstReg),
@@ -1597,9 +1603,10 @@ bool X86InstructionSelector::selectDivRem(MachineInstr &I,
        }},                                                 // i64
   };
 
-  auto OpEntryIt = llvm::find_if(OpTable, [RegTy](const DivRemEntry &El) {
-    return El.SizeInBits == RegTy.getSizeInBits();
-  });
+  auto OpEntryIt = std::find_if(std::begin(OpTable), std::end(OpTable),
+                                [RegTy](const DivRemEntry &El) {
+                                  return El.SizeInBits == RegTy.getSizeInBits();
+                                });
   if (OpEntryIt == std::end(OpTable))
     return false;
 

@@ -36,9 +36,9 @@ using namespace llvm;
 
 #define DEBUG_TYPE "hexagon-vector-print"
 
-static cl::opt<bool>
-    TraceHexVectorStoresOnly("trace-hex-vector-stores-only", cl::Hidden,
-                             cl::desc("Enables tracing of vector stores"));
+static cl::opt<bool> TraceHexVectorStoresOnly("trace-hex-vector-stores-only",
+  cl::Hidden, cl::ZeroOrMore, cl::init(false),
+  cl::desc("Enables tracing of vector stores"));
 
 namespace llvm {
 
@@ -71,10 +71,9 @@ public:
 char HexagonVectorPrint::ID = 0;
 
 static bool isVecReg(unsigned Reg) {
-  return (Reg >= Hexagon::V0 && Reg <= Hexagon::V31) ||
-         (Reg >= Hexagon::W0 && Reg <= Hexagon::W15) ||
-         (Reg >= Hexagon::WR0 && Reg <= Hexagon::WR15) ||
-         (Reg >= Hexagon::Q0 && Reg <= Hexagon::Q3);
+  return (Reg >= Hexagon::V0 && Reg <= Hexagon::V31)
+      || (Reg >= Hexagon::W0 && Reg <= Hexagon::W15)
+      || (Reg >= Hexagon::Q0 && Reg <= Hexagon::Q3);
 }
 
 static std::string getStringReg(unsigned R) {

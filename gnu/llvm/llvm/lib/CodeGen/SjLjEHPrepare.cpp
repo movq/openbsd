@@ -27,7 +27,6 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/Local.h"
 using namespace llvm;
 
@@ -38,7 +37,6 @@ STATISTIC(NumSpilled, "Number of registers live across unwind edges");
 
 namespace {
 class SjLjEHPrepare : public FunctionPass {
-  IntegerType *DataTy;
   Type *doubleUnderDataTy;
   Type *doubleUnderJBufTy;
   Type *FunctionContextTy;
@@ -52,12 +50,10 @@ class SjLjEHPrepare : public FunctionPass {
   Function *CallSiteFn;
   Function *FuncCtxFn;
   AllocaInst *FuncCtx;
-  const TargetMachine *TM;
 
 public:
   static char ID; // Pass identification, replacement for typeid
-  explicit SjLjEHPrepare(const TargetMachine *TM = nullptr)
-      : FunctionPass(ID), TM(TM) {}
+  explicit SjLjEHPrepare() : FunctionPass(ID) {}
   bool doInitialization(Module &M) override;
   bool runOnFunction(Function &F) override;
 
@@ -81,28 +77,23 @@ INITIALIZE_PASS(SjLjEHPrepare, DEBUG_TYPE, "Prepare SjLj exceptions",
                 false, false)
 
 // Public Interface To the SjLjEHPrepare pass.
-FunctionPass *llvm::createSjLjEHPreparePass(const TargetMachine *TM) {
-  return new SjLjEHPrepare(TM);
-}
-
+FunctionPass *llvm::createSjLjEHPreparePass() { return new SjLjEHPrepare(); }
 // doInitialization - Set up decalarations and types needed to process
 // exceptions.
 bool SjLjEHPrepare::doInitialization(Module &M) {
   // Build the function context structure.
   // builtin_setjmp uses a five word jbuf
   Type *VoidPtrTy = Type::getInt8PtrTy(M.getContext());
-  unsigned DataBits =
-      TM ? TM->getSjLjDataSize() : TargetMachine::DefaultSjLjDataSize;
-  DataTy = Type::getIntNTy(M.getContext(), DataBits);
-  doubleUnderDataTy = ArrayType::get(DataTy, 4);
+  Type *Int32Ty = Type::getInt32Ty(M.getContext());
+  doubleUnderDataTy = ArrayType::get(Int32Ty, 4);
   doubleUnderJBufTy = ArrayType::get(VoidPtrTy, 5);
   FunctionContextTy = StructType::get(VoidPtrTy,         // __prev
-                                      DataTy,            // call_site
+                                      Int32Ty,           // call_site
                                       doubleUnderDataTy, // __data
                                       VoidPtrTy,         // __personality
                                       VoidPtrTy,         // __lsda
                                       doubleUnderJBufTy  // __jbuf
-  );
+                                      );
 
   return true;
 }
@@ -121,7 +112,8 @@ void SjLjEHPrepare::insertCallSiteStore(Instruction *I, int Number) {
       Builder.CreateGEP(FunctionContextTy, FuncCtx, Idxs, "call_site");
 
   // Insert a store of the call-site number
-  ConstantInt *CallSiteNoC = ConstantInt::get(DataTy, Number);
+  ConstantInt *CallSiteNoC =
+      ConstantInt::get(Type::getInt32Ty(I->getContext()), Number);
   Builder.CreateStore(CallSiteNoC, CallSite, true /*volatile*/);
 }
 
@@ -136,13 +128,14 @@ static void MarkBlocksLiveIn(BasicBlock *BB,
 
   for (BasicBlock *B : inverse_depth_first_ext(BB, Visited))
     LiveBBs.insert(B);
+
 }
 
 /// substituteLPadValues - Substitute the values returned by the landingpad
 /// instruction with those returned by the personality function.
 void SjLjEHPrepare::substituteLPadValues(LandingPadInst *LPI, Value *ExnVal,
                                          Value *SelVal) {
-  SmallVector<Value *, 8> UseWorkList(LPI->users());
+  SmallVector<Value *, 8> UseWorkList(LPI->user_begin(), LPI->user_end());
   while (!UseWorkList.empty()) {
     Value *Val = UseWorkList.pop_back_val();
     auto *EVI = dyn_cast<ExtractValueInst>(Val);
@@ -164,7 +157,7 @@ void SjLjEHPrepare::substituteLPadValues(LandingPadInst *LPI, Value *ExnVal,
   // There are still some uses of LPI. Construct an aggregate with the exception
   // values and replace the LPI with that aggregate.
   Type *LPadType = LPI->getType();
-  Value *LPadVal = PoisonValue::get(LPadType);
+  Value *LPadVal = UndefValue::get(LPadType);
   auto *SelI = cast<Instruction>(SelVal);
   IRBuilder<> Builder(SelI->getParent(), std::next(SelI->getIterator()));
   LPadVal = Builder.CreateInsertValue(LPadVal, ExnVal, 0, "lpad.val");
@@ -183,7 +176,7 @@ Value *SjLjEHPrepare::setupFunctionContext(Function &F,
   // that needs to be restored on all exits from the function. This is an alloca
   // because the value needs to be added to the global context list.
   auto &DL = F.getParent()->getDataLayout();
-  const Align Alignment = DL.getPrefTypeAlign(FunctionContextTy);
+  const Align Alignment(DL.getPrefTypeAlignment(FunctionContextTy));
   FuncCtx = new AllocaInst(FunctionContextTy, DL.getAllocaAddrSpace(), nullptr,
                            Alignment, "fn_context", &EntryBB->front());
 
@@ -197,18 +190,16 @@ Value *SjLjEHPrepare::setupFunctionContext(Function &F,
         Builder.CreateConstGEP2_32(FunctionContextTy, FuncCtx, 0, 2, "__data");
 
     // The exception values come back in context->__data[0].
+    Type *Int32Ty = Type::getInt32Ty(F.getContext());
     Value *ExceptionAddr = Builder.CreateConstGEP2_32(doubleUnderDataTy, FCData,
                                                       0, 0, "exception_gep");
-    Value *ExnVal = Builder.CreateLoad(DataTy, ExceptionAddr, true, "exn_val");
+    Value *ExnVal = Builder.CreateLoad(Int32Ty, ExceptionAddr, true, "exn_val");
     ExnVal = Builder.CreateIntToPtr(ExnVal, Builder.getInt8PtrTy());
 
     Value *SelectorAddr = Builder.CreateConstGEP2_32(doubleUnderDataTy, FCData,
                                                      0, 1, "exn_selector_gep");
     Value *SelVal =
-        Builder.CreateLoad(DataTy, SelectorAddr, true, "exn_selector_val");
-
-    // SelVal must be Int32Ty, so trunc it
-    SelVal = Builder.CreateTrunc(SelVal, Type::getInt32Ty(F.getContext()));
+        Builder.CreateLoad(Int32Ty, SelectorAddr, true, "exn_selector_val");
 
     substituteLPadValues(LPI, ExnVal, SelVal);
   }
@@ -391,7 +382,7 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
   lowerAcrossUnwindEdges(F, Invokes);
 
   Value *FuncCtx =
-      setupFunctionContext(F, ArrayRef(LPads.begin(), LPads.end()));
+      setupFunctionContext(F, makeArrayRef(LPads.begin(), LPads.end()));
   BasicBlock *EntryBB = &F.front();
   IRBuilder<> Builder(EntryBB->getTerminator());
 
@@ -413,7 +404,7 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
   Val = Builder.CreateCall(StackAddrFn, {}, "sp");
   Builder.CreateStore(Val, StackPtr, /*isVolatile=*/true);
 
-  // Call the setup_dispatch intrinsic. It fills in the rest of the jmpbuf.
+  // Call the setup_dispatch instrinsic. It fills in the rest of the jmpbuf.
   Builder.CreateCall(BuiltinSetupDispatchFn, {});
 
   // Store a pointer to the function context so that the back-end will know
@@ -466,18 +457,15 @@ bool SjLjEHPrepare::setupEntryBlockAndCallSites(Function &F) {
       }
       Instruction *StackAddr = CallInst::Create(StackAddrFn, "sp");
       StackAddr->insertAfter(&I);
-      new StoreInst(StackAddr, StackPtr, true, StackAddr->getNextNode());
+      Instruction *StoreStackAddr = new StoreInst(StackAddr, StackPtr, true);
+      StoreStackAddr->insertAfter(StackAddr);
     }
   }
 
   // Finally, for any returns from this function, if this function contains an
   // invoke, add a call to unregister the function context.
-  for (ReturnInst *Return : Returns) {
-    Instruction *InsertPoint = Return;
-    if (CallInst *CI = Return->getParent()->getTerminatingMustTailCall())
-      InsertPoint = CI;
-    CallInst::Create(UnregisterFn, FuncCtx, "", InsertPoint);
-  }
+  for (ReturnInst *Return : Returns)
+    CallInst::Create(UnregisterFn, FuncCtx, "", Return);
 
   return true;
 }

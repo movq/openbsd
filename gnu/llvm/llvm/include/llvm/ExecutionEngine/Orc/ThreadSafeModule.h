@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_EXECUTIONENGINE_ORC_THREADSAFEMODULE_H
-#define LLVM_EXECUTIONENGINE_ORC_THREADSAFEMODULE_H
+#ifndef LLVM_EXECUTIONENGINE_ORC_THREADSAFEMODULEWRAPPER_H
+#define LLVM_EXECUTIONENGINE_ORC_THREADSAFEMODULEWRAPPER_H
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -37,7 +37,7 @@ private:
 
 public:
   // RAII based lock for ThreadSafeContext.
-  class [[nodiscard]] Lock {
+  class LLVM_NODISCARD Lock {
   public:
     Lock(std::shared_ptr<State> S) : S(std::move(S)), L(this->S->Mutex) {}
 
@@ -130,7 +130,8 @@ public:
 
   /// Locks the associated ThreadSafeContext and calls the given function
   /// on the contained Module.
-  template <typename Func> decltype(auto) withModuleDo(Func &&F) {
+  template <typename Func>
+  auto withModuleDo(Func &&F) -> decltype(F(std::declval<Module &>())) {
     assert(M && "Can not call on null module");
     auto Lock = TSCtx.getLock();
     return F(*M);
@@ -138,18 +139,11 @@ public:
 
   /// Locks the associated ThreadSafeContext and calls the given function
   /// on the contained Module.
-  template <typename Func> decltype(auto) withModuleDo(Func &&F) const {
-    assert(M && "Can not call on null module");
+  template <typename Func>
+  auto withModuleDo(Func &&F) const
+      -> decltype(F(std::declval<const Module &>())) {
     auto Lock = TSCtx.getLock();
     return F(*M);
-  }
-
-  /// Locks the associated ThreadSafeContext and calls the given function,
-  /// passing the contained std::unique_ptr<Module>. The given function should
-  /// consume the Module.
-  template <typename Func> decltype(auto) consumingModuleDo(Func &&F) {
-    auto Lock = TSCtx.getLock();
-    return F(std::move(M));
   }
 
   /// Get a raw pointer to the contained module without locking the context.
@@ -171,11 +165,11 @@ using GVModifier = std::function<void(GlobalValue &)>;
 
 /// Clones the given module on to a new context.
 ThreadSafeModule
-cloneToNewContext(const ThreadSafeModule &TSMW,
+cloneToNewContext(ThreadSafeModule &TSMW,
                   GVPredicate ShouldCloneDef = GVPredicate(),
                   GVModifier UpdateClonedDefSource = GVModifier());
 
 } // End namespace orc
 } // End namespace llvm
 
-#endif // LLVM_EXECUTIONENGINE_ORC_THREADSAFEMODULE_H
+#endif // LLVM_EXECUTIONENGINE_ORC_THREADSAFEMODULEWRAPPER_H

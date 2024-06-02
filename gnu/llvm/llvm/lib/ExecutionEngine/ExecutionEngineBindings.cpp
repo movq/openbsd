@@ -21,7 +21,6 @@
 #include "llvm/Target/CodeGenCWrappers.h"
 #include "llvm/Target/TargetOptions.h"
 #include <cstring>
-#include <optional>
 
 using namespace llvm;
 
@@ -189,7 +188,8 @@ LLVMBool LLVMCreateMCJITCompilerForModule(
     for (auto &F : *Mod) {
       auto Attrs = F.getAttributes();
       StringRef Value = options.NoFramePointerElim ? "all" : "none";
-      Attrs = Attrs.addFnAttribute(F.getContext(), "frame-pointer", Value);
+      Attrs = Attrs.addAttribute(F.getContext(), AttributeList::FunctionIndex,
+                                 "frame-pointer", Value);
       F.setAttributes(Attrs);
     }
 
@@ -200,7 +200,7 @@ LLVMBool LLVMCreateMCJITCompilerForModule(
          .setOptLevel((CodeGenOpt::Level)options.OptLevel)
          .setTargetOptions(targetOptions);
   bool JIT;
-  if (std::optional<CodeModel::Model> CM = unwrap(options.CodeModel, JIT))
+  if (Optional<CodeModel::Model> CM = unwrap(options.CodeModel, JIT))
     builder.setCodeModel(*CM);
   if (options.MCJMM)
     builder.setMCJITMemoryManager(
@@ -306,18 +306,6 @@ uint64_t LLVMGetGlobalValueAddress(LLVMExecutionEngineRef EE, const char *Name) 
 
 uint64_t LLVMGetFunctionAddress(LLVMExecutionEngineRef EE, const char *Name) {
   return unwrap(EE)->getFunctionAddress(Name);
-}
-
-LLVMBool LLVMExecutionEngineGetErrMsg(LLVMExecutionEngineRef EE,
-                                      char **OutError) {
-  assert(OutError && "OutError must be non-null");
-  auto *ExecEngine = unwrap(EE);
-  if (ExecEngine->hasError()) {
-    *OutError = strdup(ExecEngine->getErrorMessage().c_str());
-    ExecEngine->clearErrorMessage();
-    return true;
-  }
-  return false;
 }
 
 /*===-- Operations on memory managers -------------------------------------===*/

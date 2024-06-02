@@ -62,10 +62,10 @@ static void rewriteP2Align(MachineInstr &MI, unsigned OperandNo) {
   assert((*MI.memoperands_begin())->getSize() ==
              (UINT64_C(1) << WebAssembly::GetDefaultP2Align(MI.getOpcode())) &&
          "Default p2align value should be natural");
-  assert(MI.getDesc().operands()[OperandNo].OperandType ==
+  assert(MI.getDesc().OpInfo[OperandNo].OperandType ==
              WebAssembly::OPERAND_P2ALIGN &&
          "Load and store instructions should have a p2align operand");
-  uint64_t P2Align = Log2((*MI.memoperands_begin())->getAlign());
+  uint64_t P2Align = Log2_64((*MI.memoperands_begin())->getAlignment());
 
   // WebAssembly does not currently support supernatural alignment.
   P2Align = std::min(P2Align,

@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCSection.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/MC/MCContext.h"
@@ -16,19 +15,18 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <utility>
 
 using namespace llvm;
 
-MCSection::MCSection(SectionVariant V, StringRef Name, SectionKind K,
-                     MCSymbol *Begin)
+MCSection::MCSection(SectionVariant V, SectionKind K, MCSymbol *Begin)
     : Begin(Begin), BundleGroupBeforeFirstInst(false), HasInstructions(false),
-      IsRegistered(false), DummyFragment(this), Name(Name), Variant(V),
-      Kind(K) {}
+      IsRegistered(false), DummyFragment(this), Variant(V), Kind(K) {}
 
 MCSymbol *MCSection::getEndSymbol(MCContext &Ctx) {
   if (!End)
-    End = Ctx.createTempSymbol("sec_end");
+    End = Ctx.createTempSymbol("sec_end", true);
   return End;
 }
 
@@ -60,8 +58,10 @@ MCSection::getSubsectionInsertionPoint(unsigned Subsection) {
   if (Subsection == 0 && SubsectionFragmentMap.empty())
     return end();
 
-  SmallVectorImpl<std::pair<unsigned, MCFragment *>>::iterator MI = lower_bound(
-      SubsectionFragmentMap, std::make_pair(Subsection, (MCFragment *)nullptr));
+  SmallVectorImpl<std::pair<unsigned, MCFragment *>>::iterator MI =
+      std::lower_bound(SubsectionFragmentMap.begin(),
+                       SubsectionFragmentMap.end(),
+                       std::make_pair(Subsection, (MCFragment *)nullptr));
   bool ExactMatch = false;
   if (MI != SubsectionFragmentMap.end()) {
     ExactMatch = MI->first == Subsection;
@@ -80,15 +80,12 @@ MCSection::getSubsectionInsertionPoint(unsigned Subsection) {
     SubsectionFragmentMap.insert(MI, std::make_pair(Subsection, F));
     getFragmentList().insert(IP, F);
     F->setParent(this);
-    F->setSubsectionNumber(Subsection);
   }
 
   return IP;
 }
 
-StringRef MCSection::getVirtualSectionKind() const { return "virtual"; }
-
-void MCSection::addPendingLabel(MCSymbol *label, unsigned Subsection) {
+void MCSection::addPendingLabel(MCSymbol* label, unsigned Subsection) {
   PendingLabels.push_back(PendingLabel(label, Subsection));
 }
 

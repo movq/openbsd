@@ -19,34 +19,13 @@
 #include "llvm/ADT/iterator.h"
 #include "llvm/Support/DataTypes.h"
 #include <iterator>
+#include <system_error>
 
 namespace llvm {
 namespace sys {
 namespace path {
 
-enum class Style {
-  native,
-  posix,
-  windows_slash,
-  windows_backslash,
-  windows = windows_backslash, // deprecated
-};
-
-/// Check if \p S uses POSIX path rules.
-constexpr bool is_style_posix(Style S) {
-  if (S == Style::posix)
-    return true;
-  if (S != Style::native)
-    return false;
-#if defined(_WIN32)
-  return false;
-#else
-  return true;
-#endif
-}
-
-/// Check if \p S uses Windows path rules.
-constexpr bool is_style_windows(Style S) { return !is_style_posix(S); }
+enum class Style { windows, posix, native };
 
 /// @name Lexical Component Iterator
 /// @{
@@ -68,7 +47,7 @@ constexpr bool is_style_windows(Style S) { return !is_style_posix(S); }
 ///   foo/       => foo,.
 ///   /foo/bar   => /,foo,bar
 ///   ../        => ..,.
-///   C:\foo\bar => C:,\,foo,bar
+///   C:\foo\bar => C:,/,foo,bar
 /// @endcode
 class const_iterator
     : public iterator_facade_base<const_iterator, std::input_iterator_tag,
@@ -174,41 +153,32 @@ void replace_extension(SmallVectorImpl<char> &path, const Twine &extension,
 /// @code
 ///   /foo, /old, /new => /foo
 ///   /old, /old, /new => /new
-///   /old, /old/, /new => /old
+///   /old, /old/, /new, false => /old
+///   /old, /old/, /new, true => /new
 ///   /old/foo, /old, /new => /new/foo
 ///   /old/foo, /old/, /new => /new/foo
 ///   /old/foo, /old/, /new/ => /new/foo
 ///   /oldfoo, /old, /new => /oldfoo
 ///   /foo, <empty>, /new => /new/foo
 ///   /foo, <empty>, new => new/foo
-///   /old/foo, /old, <empty> => /foo
+///   /old/foo, /old, <empty>, false => /foo
+///   /old/foo, /old, <empty>, true => foo
 /// @endcode
 ///
 /// @param Path If \a Path starts with \a OldPrefix modify to instead
 ///        start with \a NewPrefix.
-/// @param OldPrefix The path prefix to strip from \a Path.
+/// @param OldPrefix The path prefix to strip from \a Path. Any trailing
+///        path separator is ignored if strict is true.
 /// @param NewPrefix The path prefix to replace \a NewPrefix with.
-/// @param style The style used to match the prefix. Exact match using
-/// Posix style, case/separator insensitive match for Windows style.
+/// @param style The path separator style
+/// @param strict If strict is true, a directory separator following
+///        \a OldPrefix will also be stripped. Otherwise, directory
+///        separators will only be matched and stripped when present
+///        in \a OldPrefix.
 /// @result true if \a Path begins with OldPrefix
-bool replace_path_prefix(SmallVectorImpl<char> &Path, StringRef OldPrefix,
-                         StringRef NewPrefix,
-                         Style style = Style::native);
-
-/// Remove redundant leading "./" pieces and consecutive separators.
-///
-/// @param path Input path.
-/// @result The cleaned-up \a path.
-StringRef remove_leading_dotslash(StringRef path, Style style = Style::native);
-
-/// In-place remove any './' and optionally '../' components from a path.
-///
-/// @param path processed path
-/// @param remove_dot_dot specify if '../' (except for leading "../") should be
-/// removed
-/// @result True if path was changed
-bool remove_dots(SmallVectorImpl<char> &path, bool remove_dot_dot = false,
-                 Style style = Style::native);
+bool replace_path_prefix(SmallVectorImpl<char> &Path,
+                         const StringRef &OldPrefix, const StringRef &NewPrefix,
+                         Style style = Style::native, bool strict = false);
 
 /// Append to path.
 ///
@@ -248,7 +218,7 @@ void append(SmallVectorImpl<char> &path, const_iterator begin,
 
 /// Convert path to the native form. This is used to give paths to users and
 /// operating system calls in the platform's normal way. For example, on Windows
-/// all '/' are converted to '\'. On Unix, it converts all '\' to '/'.
+/// all '/' are converted to '\'.
 ///
 /// @param path A path that is transformed to native format.
 /// @param result Holds the result of the transformation.
@@ -261,17 +231,6 @@ void native(const Twine &path, SmallVectorImpl<char> &result,
 ///
 /// @param path A path that is transformed to native format.
 void native(SmallVectorImpl<char> &path, Style style = Style::native);
-
-/// For Windows path styles, convert path to use the preferred path separators.
-/// For other styles, do nothing.
-///
-/// @param path A path that is transformed to preferred format.
-inline void make_preferred(SmallVectorImpl<char> &path,
-                           Style style = Style::native) {
-  if (!is_style_windows(style))
-    return;
-  native(path, style);
-}
 
 /// Replaces backslashes with slashes if Windows.
 ///
@@ -418,20 +377,6 @@ void system_temp_directory(bool erasedOnReboot, SmallVectorImpl<char> &result);
 /// @result True if a home directory is set, false otherwise.
 bool home_directory(SmallVectorImpl<char> &result);
 
-/// Get the directory where packages should read user-specific configurations.
-/// e.g. $XDG_CONFIG_HOME.
-///
-/// @param result Holds the resulting path name.
-/// @result True if the appropriate path was determined, it need not exist.
-bool user_config_directory(SmallVectorImpl<char> &result);
-
-/// Get the directory where installed packages should put their
-/// machine-local cache, e.g. $XDG_CACHE_HOME.
-///
-/// @param result Holds the resulting path name.
-/// @result True if the appropriate path was determined, it need not exist.
-bool cache_directory(SmallVectorImpl<char> &result);
-
 /// Has root name?
 ///
 /// root_name != ""
@@ -498,53 +443,34 @@ bool has_extension(const Twine &path, Style style = Style::native);
 
 /// Is path absolute?
 ///
-/// According to cppreference.com, C++17 states: "An absolute path is a path
-/// that unambiguously identifies the location of a file without reference to
-/// an additional starting location."
-///
-/// In other words, the rules are:
-/// 1) POSIX style paths with nonempty root directory are absolute.
-/// 2) Windows style paths with nonempty root name and root directory are
-///    absolute.
-/// 3) No other paths are absolute.
-///
-/// \see has_root_name
-/// \see has_root_directory
-///
 /// @param path Input path.
 /// @result True if the path is absolute, false if it is not.
 bool is_absolute(const Twine &path, Style style = Style::native);
-
-/// Is path absolute using GNU rules?
-///
-/// GNU rules are:
-/// 1) Paths starting with a path separator are absolute.
-/// 2) Windows style paths are also absolute if they start with a character
-///    followed by ':'.
-/// 3) No other paths are absolute.
-///
-/// On Windows style the path "C:\Users\Default" has "C:" as root name and "\"
-/// as root directory.
-///
-/// Hence "C:" on Windows is absolute under GNU rules and not absolute under
-/// C++17 because it has no root directory. Likewise "/" and "\" on Windows are
-/// absolute under GNU and are not absolute under C++17 due to empty root name.
-///
-/// \see has_root_name
-/// \see has_root_directory
-///
-/// @param path Input path.
-/// @param style The style of \p path (e.g. Windows or POSIX). "native" style
-/// means to derive the style from the host.
-/// @result True if the path is absolute following GNU rules, false if it is
-/// not.
-bool is_absolute_gnu(const Twine &path, Style style = Style::native);
 
 /// Is path relative?
 ///
 /// @param path Input path.
 /// @result True if the path is relative, false if it is not.
 bool is_relative(const Twine &path, Style style = Style::native);
+
+/// Remove redundant leading "./" pieces and consecutive separators.
+///
+/// @param path Input path.
+/// @result The cleaned-up \a path.
+StringRef remove_leading_dotslash(StringRef path, Style style = Style::native);
+
+/// In-place remove any './' and optionally '../' components from a path.
+///
+/// @param path processed path
+/// @param remove_dot_dot specify if '../' (except for leading "../") should be
+/// removed
+/// @result True if path was changed
+bool remove_dots(SmallVectorImpl<char> &path, bool remove_dot_dot = false,
+                 Style style = Style::native);
+
+#if defined(_WIN32)
+std::error_code widenPath(const Twine &Path8, SmallVectorImpl<wchar_t> &Path16);
+#endif
 
 } // end namespace path
 } // end namespace sys

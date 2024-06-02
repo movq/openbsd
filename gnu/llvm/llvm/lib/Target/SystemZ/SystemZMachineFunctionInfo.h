@@ -29,28 +29,25 @@ class SystemZMachineFunctionInfo : public MachineFunctionInfo {
 
   SystemZ::GPRRegs SpillGPRRegs;
   SystemZ::GPRRegs RestoreGPRRegs;
-  Register VarArgsFirstGPR;
-  Register VarArgsFirstFPR;
+  unsigned VarArgsFirstGPR;
+  unsigned VarArgsFirstFPR;
   unsigned VarArgsFrameIndex;
   unsigned RegSaveFrameIndex;
   int FramePointerSaveIndex;
+  bool ManipulatesSP;
   unsigned NumLocalDynamics;
 
 public:
-  SystemZMachineFunctionInfo(const Function &F, const TargetSubtargetInfo *STI)
-      : VarArgsFirstGPR(0), VarArgsFirstFPR(0), VarArgsFrameIndex(0),
-        RegSaveFrameIndex(0), FramePointerSaveIndex(0), NumLocalDynamics(0) {}
-
-  MachineFunctionInfo *
-  clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
-        const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
-      const override;
+  explicit SystemZMachineFunctionInfo(MachineFunction &MF)
+    : VarArgsFirstGPR(0), VarArgsFirstFPR(0), VarArgsFrameIndex(0),
+      RegSaveFrameIndex(0), FramePointerSaveIndex(0), ManipulatesSP(false),
+      NumLocalDynamics(0) {}
 
   // Get and set the first and last call-saved GPR that should be saved by
   // this function and the SP offset for the STMG.  These are 0 if no GPRs
   // need to be saved or restored.
   SystemZ::GPRRegs getSpillGPRRegs() const { return SpillGPRRegs; }
-  void setSpillGPRRegs(Register Low, Register High, unsigned Offs) {
+  void setSpillGPRRegs(unsigned Low, unsigned High, unsigned Offs) {
     SpillGPRRegs.LowGPR = Low;
     SpillGPRRegs.HighGPR = High;
     SpillGPRRegs.GPROffset = Offs;
@@ -60,7 +57,7 @@ public:
   // this function and the SP offset for the LMG.  These are 0 if no GPRs
   // need to be saved or restored.
   SystemZ::GPRRegs getRestoreGPRRegs() const { return RestoreGPRRegs; }
-  void setRestoreGPRRegs(Register Low, Register High, unsigned Offs) {
+  void setRestoreGPRRegs(unsigned Low, unsigned High, unsigned Offs) {
     RestoreGPRRegs.LowGPR = Low;
     RestoreGPRRegs.HighGPR = High;
     RestoreGPRRegs.GPROffset = Offs;
@@ -68,12 +65,12 @@ public:
 
   // Get and set the number of fixed (as opposed to variable) arguments
   // that are passed in GPRs to this function.
-  Register getVarArgsFirstGPR() const { return VarArgsFirstGPR; }
-  void setVarArgsFirstGPR(Register GPR) { VarArgsFirstGPR = GPR; }
+  unsigned getVarArgsFirstGPR() const { return VarArgsFirstGPR; }
+  void setVarArgsFirstGPR(unsigned GPR) { VarArgsFirstGPR = GPR; }
 
   // Likewise FPRs.
-  Register getVarArgsFirstFPR() const { return VarArgsFirstFPR; }
-  void setVarArgsFirstFPR(Register FPR) { VarArgsFirstFPR = FPR; }
+  unsigned getVarArgsFirstFPR() const { return VarArgsFirstFPR; }
+  void setVarArgsFirstFPR(unsigned FPR) { VarArgsFirstFPR = FPR; }
 
   // Get and set the frame index of the first stack vararg.
   unsigned getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
@@ -87,6 +84,11 @@ public:
   // Get and set the frame index of where the old frame pointer is stored.
   int getFramePointerSaveIndex() const { return FramePointerSaveIndex; }
   void setFramePointerSaveIndex(int Idx) { FramePointerSaveIndex = Idx; }
+
+  // Get and set whether the function directly manipulates the stack pointer,
+  // e.g. through STACKSAVE or STACKRESTORE.
+  bool getManipulatesSP() const { return ManipulatesSP; }
+  void setManipulatesSP(bool MSP) { ManipulatesSP = MSP; }
 
   // Count number of local-dynamic TLS symbols used.
   unsigned getNumLocalDynamicTLSAccesses() const { return NumLocalDynamics; }

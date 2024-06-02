@@ -9,9 +9,9 @@
 #ifndef LLVM_LIB_CODEGEN_SAFESTACKLAYOUT_H
 #define LLVM_LIB_CODEGEN_SAFESTACKLAYOUT_H
 
+#include "SafeStackColoring.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Analysis/StackLifetime.h"
 
 namespace llvm {
 
@@ -22,15 +22,15 @@ namespace safestack {
 
 /// Compute the layout of an unsafe stack frame.
 class StackLayout {
-  Align MaxAlignment;
+  unsigned MaxAlignment;
 
   struct StackRegion {
     unsigned Start;
     unsigned End;
-    StackLifetime::LiveRange Range;
+    StackColoring::LiveRange Range;
 
     StackRegion(unsigned Start, unsigned End,
-                const StackLifetime::LiveRange &Range)
+                const StackColoring::LiveRange &Range)
         : Start(Start), End(End), Range(Range) {}
   };
 
@@ -39,25 +39,24 @@ class StackLayout {
 
   struct StackObject {
     const Value *Handle;
-    unsigned Size;
-    Align Alignment;
-    StackLifetime::LiveRange Range;
+    unsigned Size, Alignment;
+    StackColoring::LiveRange Range;
   };
 
   SmallVector<StackObject, 8> StackObjects;
 
   DenseMap<const Value *, unsigned> ObjectOffsets;
-  DenseMap<const Value *, Align> ObjectAlignments;
+  DenseMap<const Value *, unsigned> ObjectAlignments;
 
   void layoutObject(StackObject &Obj);
 
 public:
-  StackLayout(Align StackAlignment) : MaxAlignment(StackAlignment) {}
+  StackLayout(unsigned StackAlignment) : MaxAlignment(StackAlignment) {}
 
   /// Add an object to the stack frame. Value pointer is opaque and used as a
   /// handle to retrieve the object's offset in the frame later.
-  void addObject(const Value *V, unsigned Size, Align Alignment,
-                 const StackLifetime::LiveRange &Range);
+  void addObject(const Value *V, unsigned Size, unsigned Alignment,
+                 const StackColoring::LiveRange &Range);
 
   /// Run the layout computation for all previously added objects.
   void computeLayout();
@@ -66,13 +65,13 @@ public:
   unsigned getObjectOffset(const Value *V) { return ObjectOffsets[V]; }
 
   /// Returns the alignment of the object
-  Align getObjectAlignment(const Value *V) { return ObjectAlignments[V]; }
+  unsigned getObjectAlignment(const Value *V) { return ObjectAlignments[V]; }
 
   /// Returns the size of the entire frame.
   unsigned getFrameSize() { return Regions.empty() ? 0 : Regions.back().End; }
 
   /// Returns the alignment of the frame.
-  Align getFrameAlignment() { return MaxAlignment; }
+  unsigned getFrameAlignment() { return MaxAlignment; }
 
   void print(raw_ostream &OS);
 };

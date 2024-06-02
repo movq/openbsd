@@ -163,27 +163,20 @@ OpDescriptor llvm::fuzzerop::splitBlockDescriptor(unsigned Weight) {
   SourcePred isInt1Ty{[](ArrayRef<Value *>, const Value *V) {
                         return V->getType()->isIntegerTy(1);
                       },
-                      std::nullopt};
+                      None};
   return {Weight, {isInt1Ty}, buildSplitBlock};
 }
 
 OpDescriptor llvm::fuzzerop::gepDescriptor(unsigned Weight) {
   auto buildGEP = [](ArrayRef<Value *> Srcs, Instruction *Inst) {
-    // TODO: It would be better to generate a random type here, rather than
-    // generating a random value and picking its type.
-    Type *Ty = Srcs[0]->getType()->isOpaquePointerTy()
-                   ? Srcs[1]->getType()
-                   : Srcs[0]->getType()->getNonOpaquePointerElementType();
-    auto Indices = ArrayRef(Srcs).drop_front(2);
+    Type *Ty = cast<PointerType>(Srcs[0]->getType())->getElementType();
+    auto Indices = makeArrayRef(Srcs).drop_front(1);
     return GetElementPtrInst::Create(Ty, Srcs[0], Indices, "G", Inst);
   };
   // TODO: Handle aggregates and vectors
   // TODO: Support multiple indices.
   // TODO: Try to avoid meaningless accesses.
-  SourcePred sizedType(
-      [](ArrayRef<Value *>, const Value *V) { return V->getType()->isSized(); },
-      std::nullopt);
-  return {Weight, {sizedPtrType(), sizedType, anyIntType()}, buildGEP};
+  return {Weight, {sizedPtrType(), anyIntType()}, buildGEP};
 }
 
 static uint64_t getAggregateNumElements(Type *T) {
@@ -251,24 +244,20 @@ static SourcePred matchScalarInAggregate() {
 
 static SourcePred validInsertValueIndex() {
   auto Pred = [](ArrayRef<Value *> Cur, const Value *V) {
+    auto *CTy = cast<CompositeType>(Cur[0]->getType());
     if (auto *CI = dyn_cast<ConstantInt>(V))
-      if (CI->getBitWidth() == 32) {
-        Type *Indexed = ExtractValueInst::getIndexedType(Cur[0]->getType(),
-                                                         CI->getZExtValue());
-        return Indexed == Cur[1]->getType();
-      }
+      if (CI->getBitWidth() == 32 &&
+          CTy->getTypeAtIndex(CI->getZExtValue()) == Cur[1]->getType())
+        return true;
     return false;
   };
   auto Make = [](ArrayRef<Value *> Cur, ArrayRef<Type *> Ts) {
     std::vector<Constant *> Result;
     auto *Int32Ty = Type::getInt32Ty(Cur[0]->getContext());
-    auto *BaseTy = Cur[0]->getType();
-    int I = 0;
-    while (Type *Indexed = ExtractValueInst::getIndexedType(BaseTy, I)) {
-      if (Indexed == Cur[1]->getType())
+    auto *CTy = cast<CompositeType>(Cur[0]->getType());
+    for (int I = 0, E = getAggregateNumElements(CTy); I < E; ++I)
+      if (CTy->getTypeAtIndex(I) == Cur[1]->getType())
         Result.push_back(ConstantInt::get(Int32Ty, I));
-      ++I;
-    }
     return Result;
   };
   return {Pred, Make};
@@ -298,7 +287,7 @@ OpDescriptor llvm::fuzzerop::insertElementDescriptor(unsigned Weight) {
   auto buildInsert = [](ArrayRef<Value *> Srcs, Instruction *Inst) {
     return InsertElementInst::Create(Srcs[0], Srcs[1], Srcs[2], "I", Inst);
   };
-  // TODO: Try to avoid undefined accesses.
+    // TODO: Try to avoid undefined accesses.
   return {Weight,
           {anyVectorType(), matchScalarOfFirstType(), anyIntType()},
           buildInsert};
@@ -314,7 +303,7 @@ static SourcePred validShuffleVectorIndex() {
     // TODO: It's straighforward to make up reasonable values, but listing them
     // exhaustively would be insane. Come up with a couple of sensible ones.
     return std::vector<Constant *>{
-        UndefValue::get(VectorType::get(Int32Ty, FirstTy->getElementCount()))};
+        UndefValue::get(VectorType::get(Int32Ty, FirstTy->getNumElements()))};
   };
   return {Pred, Make};
 }

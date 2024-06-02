@@ -67,7 +67,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/CGPassBuilderOption.h"
 #include <algorithm>
 #include <cassert>
 #include <iterator>
@@ -98,11 +97,6 @@ static cl::opt<bool> ForceMemOperand(
     cl::desc("Convert cmovs to branches whenever they have memory operands."),
     cl::init(true), cl::Hidden);
 
-static cl::opt<bool> ForceAll(
-    "x86-cmov-converter-force-all",
-    cl::desc("Convert all cmovs to branches."),
-    cl::init(false), cl::Hidden);
-
 namespace {
 
 /// Converts X86 cmov instructions into branches when profitable.
@@ -121,7 +115,6 @@ private:
   MachineRegisterInfo *MRI = nullptr;
   const TargetInstrInfo *TII = nullptr;
   const TargetRegisterInfo *TRI = nullptr;
-  MachineLoopInfo *MLI = nullptr;
   TargetSchedModel TSchedModel;
 
   /// List of consecutive CMOV instructions.
@@ -168,15 +161,11 @@ bool X86CmovConverterPass::runOnMachineFunction(MachineFunction &MF) {
   if (!EnableCmovConverter)
     return false;
 
-  // If the SelectOptimize pass is enabled, cmovs have already been optimized.
-  if (!getCGPassBuilderOption().DisableSelectOptimize)
-    return false;
-
   LLVM_DEBUG(dbgs() << "********** " << getPassName() << " : " << MF.getName()
                     << "**********\n");
 
   bool Changed = false;
-  MLI = &getAnalysis<MachineLoopInfo>();
+  MachineLoopInfo &MLI = getAnalysis<MachineLoopInfo>();
   const TargetSubtargetInfo &STI = MF.getSubtarget();
   MRI = &MF.getRegInfo();
   TII = STI.getInstrInfo();
@@ -184,11 +173,11 @@ bool X86CmovConverterPass::runOnMachineFunction(MachineFunction &MF) {
   TSchedModel.init(&STI);
 
   // Before we handle the more subtle cases of register-register CMOVs inside
-  // of potentially hot loops, we want to quickly remove all CMOVs (ForceAll) or
-  // the ones with a memory operand (ForceMemOperand option). The latter CMOV
-  // will risk a stall waiting for the load to complete that speculative
-  // execution behind a branch is better suited to handle on modern x86 chips.
-  if (ForceMemOperand || ForceAll) {
+  // of potentially hot loops, we want to quickly remove all CMOVs with
+  // a memory operand. The CMOV will risk a stall waiting for the load to
+  // complete that speculative execution behind a branch is better suited to
+  // handle on modern x86 chips.
+  if (ForceMemOperand) {
     CmovGroups AllCmovGroups;
     SmallVector<MachineBasicBlock *, 4> Blocks;
     for (auto &MBB : MF)
@@ -196,8 +185,7 @@ bool X86CmovConverterPass::runOnMachineFunction(MachineFunction &MF) {
     if (collectCmovCandidates(Blocks, AllCmovGroups, /*IncludeLoads*/ true)) {
       for (auto &Group : AllCmovGroups) {
         // Skip any group that doesn't do at least one memory operand cmov.
-        if (ForceMemOperand && !ForceAll &&
-            llvm::none_of(Group, [&](MachineInstr *I) { return I->mayLoad(); }))
+        if (!llvm::any_of(Group, [&](MachineInstr *I) { return I->mayLoad(); }))
           continue;
 
         // For CMOV groups which we can rewrite and which contain a memory load,
@@ -207,15 +195,12 @@ bool X86CmovConverterPass::runOnMachineFunction(MachineFunction &MF) {
         convertCmovInstsToBranches(Group);
       }
     }
-    // Early return as ForceAll converts all CmovGroups.
-    if (ForceAll)
-      return Changed;
   }
 
   //===--------------------------------------------------------------------===//
   // Register-operand Conversion Algorithm
   // ---------
-  //   For each innermost loop
+  //   For each inner most loop
   //     collectCmovCandidates() {
   //       Find all CMOV-group-candidates.
   //     }
@@ -236,7 +221,7 @@ bool X86CmovConverterPass::runOnMachineFunction(MachineFunction &MF) {
   //===--------------------------------------------------------------------===//
 
   // Build up the loops in pre-order.
-  SmallVector<MachineLoop *, 4> Loops(MLI->begin(), MLI->end());
+  SmallVector<MachineLoop *, 4> Loops(MLI.begin(), MLI.end());
   // Note that we need to check size on each iteration as we accumulate child
   // loops.
   for (int i = 0; i < (int)Loops.size(); ++i)
@@ -244,7 +229,7 @@ bool X86CmovConverterPass::runOnMachineFunction(MachineFunction &MF) {
       Loops.push_back(Child);
 
   for (MachineLoop *CurrLoop : Loops) {
-    // Optimize only innermost loops.
+    // Optimize only inner most loops.
     if (!CurrLoop->getSubLoops().empty())
       continue;
 
@@ -437,7 +422,8 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
   // Depth-Diff[i]:
   //   Number of cycles saved in first 'i` iterations by optimizing the loop.
   //===--------------------------------------------------------------------===//
-  for (DepthInfo &MaxDepth : LoopDepth) {
+  for (unsigned I = 0; I < LoopIterations; ++I) {
+    DepthInfo &MaxDepth = LoopDepth[I];
     for (auto *MBB : Blocks) {
       // Clear physical registers Def map.
       RegDefMaps[PhyRegType].clear();
@@ -453,7 +439,7 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
           if (!MO.isReg() || !MO.isUse())
             continue;
           Register Reg = MO.getReg();
-          auto &RDM = RegDefMaps[Reg.isVirtual()];
+          auto &RDM = RegDefMaps[Register::isVirtualRegister(Reg)];
           if (MachineInstr *DefMI = RDM.lookup(Reg)) {
             OperandToDefMap[&MO] = DefMI;
             DepthInfo Info = DepthMap.lookup(DefMI);
@@ -473,7 +459,7 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
           if (!MO.isReg() || !MO.isDef())
             continue;
           Register Reg = MO.getReg();
-          RegDefMaps[Reg.isVirtual()][Reg] = &MI;
+          RegDefMaps[Register::isVirtualRegister(Reg)][Reg] = &MI;
         }
 
         unsigned Latency = TSchedModel.computeInstrLatency(&MI);
@@ -533,7 +519,7 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
   //===--------------------------------------------------------------------===//
   // Step 3: Check for each CMOV-group-candidate if it worth to be optimized.
   // Worth-Optimize-Group:
-  //   Iff it is worth to optimize all CMOV instructions in the group.
+  //   Iff it worths to optimize all CMOV instructions in the group.
   //
   // Worth-Optimize-CMOV:
   //   Predicted branch is faster than CMOV by the difference between depth of
@@ -551,7 +537,7 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
       // This is another conservative check to avoid converting CMOV instruction
       // used with tree-search like algorithm, where the branch is unpredicted.
       auto UIs = MRI->use_instructions(MI->defs().begin()->getReg());
-      if (!UIs.empty() && ++UIs.begin() == UIs.end()) {
+      if (UIs.begin() != UIs.end() && ++UIs.begin() == UIs.end()) {
         unsigned Op = UIs.begin()->getOpcode();
         if (Op == X86::MOV64rm || Op == X86::MOV32rm) {
           WorthOpGroup = false;
@@ -595,9 +581,10 @@ static bool checkEFLAGSLive(MachineInstr *MI) {
   }
 
   // We hit the end of the block, check whether EFLAGS is live into a successor.
-  for (MachineBasicBlock *Succ : BB->successors())
-    if (Succ->isLiveIn(X86::EFLAGS))
+  for (auto I = BB->succ_begin(), E = BB->succ_end(); I != E; ++I) {
+    if ((*I)->isLiveIn(X86::EFLAGS))
       return true;
+  }
 
   return false;
 }
@@ -809,7 +796,8 @@ void X86CmovConverterPass::convertCmovInstsToBranches(
         MOp.setIsKill(false);
       }
     }
-    MBB->erase(&MI);
+    MBB->erase(MachineBasicBlock::iterator(MI),
+               std::next(MachineBasicBlock::iterator(MI)));
 
     // Add this PHI to the rewrite table.
     FalseBBRegRewriteTable[NewCMOV->getOperand(0).getReg()] = TmpReg;
@@ -860,12 +848,6 @@ void X86CmovConverterPass::convertCmovInstsToBranches(
 
   // Now remove the CMOV(s).
   MBB->erase(MIItBegin, MIItEnd);
-
-  // Add new basic blocks to MachineLoopInfo.
-  if (MachineLoop *L = MLI->getLoopFor(MBB)) {
-    L->addBasicBlockToLoop(FalseMBB, MLI->getBase());
-    L->addBasicBlockToLoop(SinkMBB, MLI->getBase());
-  }
 }
 
 INITIALIZE_PASS_BEGIN(X86CmovConverterPass, DEBUG_TYPE, "X86 cmov Conversion",

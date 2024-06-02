@@ -39,11 +39,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "x86-vzeroupper"
 
-static cl::opt<bool>
-UseVZeroUpper("x86-use-vzeroupper", cl::Hidden,
-  cl::desc("Minimize AVX to SSE transition penalty"),
-  cl::init(true));
-
 STATISTIC(NumVZU, "Number of vzeroupper instructions inserted");
 
 namespace {
@@ -182,7 +177,8 @@ static bool callHasRegMask(MachineInstr &MI) {
 /// Insert a vzeroupper instruction before I.
 void VZeroUpperInserter::insertVZeroUpper(MachineBasicBlock::iterator I,
                                           MachineBasicBlock &MBB) {
-  BuildMI(MBB, I, I->getDebugLoc(), TII->get(X86::VZEROUPPER));
+  DebugLoc dl = I->getDebugLoc();
+  BuildMI(MBB, I, dl, TII->get(X86::VZEROUPPER));
   ++NumVZU;
   EverMadeChange = true;
 }
@@ -271,8 +267,10 @@ void VZeroUpperInserter::processBasicBlock(MachineBasicBlock &MBB) {
                     << getBlockExitStateName(CurState) << '\n');
 
   if (CurState == EXITS_DIRTY)
-    for (MachineBasicBlock *Succ : MBB.successors())
-      addDirtySuccessor(*Succ);
+    for (MachineBasicBlock::succ_iterator SI = MBB.succ_begin(),
+                                          SE = MBB.succ_end();
+         SI != SE; ++SI)
+      addDirtySuccessor(**SI);
 
   BlockStates[MBB.getNumber()].ExitState = CurState;
 }
@@ -280,9 +278,6 @@ void VZeroUpperInserter::processBasicBlock(MachineBasicBlock &MBB) {
 /// Loop over all of the basic blocks, inserting vzeroupper instructions before
 /// function calls.
 bool VZeroUpperInserter::runOnMachineFunction(MachineFunction &MF) {
-  if (!UseVZeroUpper)
-    return false;
-
   const X86Subtarget &ST = MF.getSubtarget<X86Subtarget>();
   if (!ST.hasAVX() || !ST.insertVZEROUPPER())
     return false;
@@ -297,10 +292,11 @@ bool VZeroUpperInserter::runOnMachineFunction(MachineFunction &MF) {
   // need to insert any VZEROUPPER instructions.  This is constant-time, so it
   // is cheap in the common case of no ymm/zmm use.
   bool YmmOrZmmUsed = FnHasLiveInYmmOrZmm;
-  for (const auto *RC : {&X86::VR256RegClass, &X86::VR512_0_15RegClass}) {
+  for (auto *RC : {&X86::VR256RegClass, &X86::VR512_0_15RegClass}) {
     if (!YmmOrZmmUsed) {
-      for (MCPhysReg R : *RC) {
-        if (!MRI.reg_nodbg_empty(R)) {
+      for (TargetRegisterClass::iterator i = RC->begin(), e = RC->end(); i != e;
+           i++) {
+        if (!MRI.reg_nodbg_empty(*i)) {
           YmmOrZmmUsed = true;
           break;
         }

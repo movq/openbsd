@@ -22,9 +22,11 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/CodeGen/DbgEntityHistoryCalculator.h"
+#include "llvm/CodeGen/DIE.h"
 #include "llvm/CodeGen/LexicalScopes.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/Casting.h"
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <memory>
@@ -32,9 +34,6 @@
 namespace llvm {
 
 class AsmPrinter;
-class DIE;
-class DIELoc;
-class DIEValueList;
 class DwarfFile;
 class GlobalVariable;
 class MCExpr;
@@ -48,15 +47,15 @@ class DwarfCompileUnit final : public DwarfUnit {
   unsigned UniqueID;
   bool HasRangeLists = false;
 
-  /// The start of the unit line section, this is also
-  /// reused in appyStmtList.
-  MCSymbol *LineTableStartSym;
+  /// The attribute index of DW_AT_stmt_list in the compile unit DIE, avoiding
+  /// the need to search for it in applyStmtList.
+  DIE::value_iterator StmtListValue;
 
   /// Skeleton unit associated with this unit.
   DwarfCompileUnit *Skeleton = nullptr;
 
   /// The start of the unit within its section.
-  MCSymbol *LabelBegin = nullptr;
+  MCSymbol *LabelBegin;
 
   /// The start of the unit macro info within macro section.
   MCSymbol *MacroLabelBegin;
@@ -84,9 +83,6 @@ class DwarfCompileUnit final : public DwarfUnit {
 
   /// DWO ID for correlating skeleton and split units.
   uint64_t DWOId = 0;
-
-  const DIFile *LastFile = nullptr;
-  unsigned LastFileID;
 
   /// Construct a DIE for the given DbgVariable without initializing the
   /// DbgVariable's DIE reference.
@@ -126,9 +122,6 @@ public:
 
   /// Apply the DW_AT_stmt_list from this compile unit to the specified DIE.
   void applyStmtList(DIE &D);
-
-  /// Get line table start symbol for this unit.
-  MCSymbol *getLineTableStartSym() const { return LineTableStartSym; }
 
   /// A pair of GlobalVariable and DIExpression.
   struct GlobalExpr {
@@ -192,9 +185,9 @@ public:
   /// variables in this scope then create and insert DIEs for these
   /// variables.
   DIE &updateSubprogramScopeDIE(const DISubprogram *SP);
-  DIE &updateSubprogramScopeDIEImpl(const DISubprogram *SP, DIE *SPDie);
 
-  void constructScopeDIE(LexicalScope *Scope, DIE &ParentScopeDIE);
+  void constructScopeDIE(LexicalScope *Scope,
+                         SmallVectorImpl<DIE *> &FinalChildren);
 
   /// A helper function to construct a RangeSpanList for a given
   /// lexical scope.
@@ -205,9 +198,9 @@ public:
   void attachRangesOrLowHighPC(DIE &D,
                                const SmallVectorImpl<InsnRange> &Ranges);
 
-  /// This scope represents an inlined body of a function. Construct a
+  /// This scope represents inlined body of a function. Construct
   /// DIE to represent this concrete inlined copy of the function.
-  DIE *constructInlinedScopeDIE(LexicalScope *Scope, DIE &ParentScopeDIE);
+  DIE *constructInlinedScopeDIE(LexicalScope *Scope);
 
   /// Construct new DW_TAG_lexical_block for this scope and
   /// attach DW_AT_low_pc/DW_AT_high_pc labels.
@@ -222,6 +215,11 @@ public:
   /// Construct a DIE for the given DbgLabel.
   DIE *constructLabelDIE(DbgLabel &DL, const LexicalScope &Scope);
 
+  /// A helper function to create children of a Scope DIE.
+  DIE *createScopeChildrenDIE(LexicalScope *Scope,
+                              SmallVectorImpl<DIE *> &Children,
+                              bool *HasNonScopeChildren = nullptr);
+
   void createBaseTypeDIEs();
 
   /// Construct a DIE for this subprogram scope.
@@ -231,10 +229,6 @@ public:
   DIE *createAndAddScopeChildren(LexicalScope *Scope, DIE &ScopeDIE);
 
   void constructAbstractSubprogramScopeDIE(LexicalScope *Scope);
-
-  /// Whether to use the GNU analog for a DWARF5 tag, attribute, or location
-  /// atom. Only applicable when emitting otherwise DWARF4-compliant debug info.
-  bool useGNUAnalogForDwarf5Feature() const;
 
   /// This takes a DWARF 5 tag and returns it or a GNU analog.
   dwarf::Tag getDwarf5OrGNUTag(dwarf::Tag Tag) const;
@@ -248,13 +242,17 @@ public:
   /// Construct a call site entry DIE describing a call within \p Scope to a
   /// callee described by \p CalleeSP.
   /// \p IsTail specifies whether the call is a tail call.
-  /// \p PCAddr points to the PC value after the call instruction.
-  /// \p CallAddr points to the PC value at the call instruction (or is null).
+  /// \p PCAddr (used for GDB + DWARF 4 tuning) points to the PC value after
+  /// the call instruction.
+  /// \p PCOffset (used for cases other than GDB + DWARF 4 tuning) must be
+  /// non-zero for non-tail calls (in the case of non-gdb tuning, since for
+  /// GDB + DWARF 5 tuning we still generate PC info for tail calls) or be the
+  /// function-local offset to PC value after the call instruction.
   /// \p CallReg is a register location for an indirect call. For direct calls
   /// the \p CallReg is set to 0.
   DIE &constructCallSiteEntryDIE(DIE &ScopeDIE, const DISubprogram *CalleeSP,
                                  bool IsTail, const MCSymbol *PCAddr,
-                                 const MCSymbol *CallAddr, unsigned CallReg);
+                                 const MCExpr *PCOffset, unsigned CallReg);
   /// Construct call site parameter DIEs for the \p CallSiteDIE. The \p Params
   /// were collected by the \ref collectCallSiteParameters.
   /// Note: The order of parameters does not matter, since debuggers recognize
@@ -284,8 +282,8 @@ public:
     return DwarfUnit::getHeaderSize() + DWOIdSize;
   }
   unsigned getLength() {
-    return Asm->getUnitLengthFieldByteSize() + // Length field
-           getHeaderSize() + getUnitDie().getSize();
+    return sizeof(uint32_t) + // Length field
+        getHeaderSize() + getUnitDie().getSize();
   }
 
   void emitHeader(bool UseOffsets) override;
@@ -294,7 +292,7 @@ public:
   void addAddrTableBase();
 
   MCSymbol *getLabelBegin() const {
-    assert(LabelBegin && "LabelBegin is not initialized");
+    assert(getSection());
     return LabelBegin;
   }
 
@@ -341,6 +339,9 @@ public:
 
   /// Add a Dwarf expression attribute data and value.
   void addExpr(DIELoc &Die, dwarf::Form Form, const MCExpr *Expr);
+
+  /// Add an attribute containing an address expression to \p Die.
+  void addAddressExpr(DIE &Die, dwarf::Attribute Attribute, const MCExpr *Expr);
 
   void applySubprogramAttributesToDefinition(const DISubprogram *SP,
                                              DIE &SPDie);

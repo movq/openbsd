@@ -89,11 +89,7 @@ public:
   }
 
   Value *operator->() const { return getValPtr(); }
-  Value &operator*() const {
-    Value *V = getValPtr();
-    assert(V && "Dereferencing deleted ValueHandle");
-    return *V;
-  }
+  Value &operator*() const { return *getValPtr(); }
 
 protected:
   Value *getValPtr() const { return Val; }
@@ -258,13 +254,13 @@ template <> struct simplify_type<const WeakTrackingVH> {
 /// class turns into a trivial wrapper around a pointer.
 template <typename ValueTy>
 class AssertingVH
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
-    : public ValueHandleBase
+#ifndef NDEBUG
+  : public ValueHandleBase
 #endif
-{
+  {
   friend struct DenseMapInfo<AssertingVH<ValueTy>>;
 
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+#ifndef NDEBUG
   Value *getRawValPtr() const { return ValueHandleBase::getValPtr(); }
   void setRawValPtr(Value *P) { ValueHandleBase::operator=(P); }
 #else
@@ -280,14 +276,14 @@ class AssertingVH
   void setValPtr(ValueTy *P) { setRawValPtr(GetAsValue(P)); }
 
 public:
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+#ifndef NDEBUG
   AssertingVH() : ValueHandleBase(Assert) {}
   AssertingVH(ValueTy *P) : ValueHandleBase(Assert, GetAsValue(P)) {}
   AssertingVH(const AssertingVH &RHS) : ValueHandleBase(Assert, RHS) {}
 #else
   AssertingVH() : ThePtr(nullptr) {}
   AssertingVH(ValueTy *P) : ThePtr(GetAsValue(P)) {}
-  AssertingVH(const AssertingVH &) = default;
+  AssertingVH(const AssertingVH<ValueTy> &) = default;
 #endif
 
   operator ValueTy*() const {
@@ -307,10 +303,30 @@ public:
   ValueTy &operator*() const { return *getValPtr(); }
 };
 
-// Treat AssertingVH<T> like T* inside maps. This also allows using find_as()
-// to look up a value without constructing a value handle.
+// Specialize DenseMapInfo to allow AssertingVH to participate in DenseMap.
 template<typename T>
-struct DenseMapInfo<AssertingVH<T>> : DenseMapInfo<T *> {};
+struct DenseMapInfo<AssertingVH<T>> {
+  static inline AssertingVH<T> getEmptyKey() {
+    AssertingVH<T> Res;
+    Res.setRawValPtr(DenseMapInfo<Value *>::getEmptyKey());
+    return Res;
+  }
+
+  static inline AssertingVH<T> getTombstoneKey() {
+    AssertingVH<T> Res;
+    Res.setRawValPtr(DenseMapInfo<Value *>::getTombstoneKey());
+    return Res;
+  }
+
+  static unsigned getHashValue(const AssertingVH<T> &Val) {
+    return DenseMapInfo<Value *>::getHashValue(Val.getRawValPtr());
+  }
+
+  static bool isEqual(const AssertingVH<T> &LHS, const AssertingVH<T> &RHS) {
+    return DenseMapInfo<Value *>::isEqual(LHS.getRawValPtr(),
+                                          RHS.getRawValPtr());
+  }
+};
 
 /// Value handle that tracks a Value across RAUW.
 ///
@@ -394,7 +410,6 @@ protected:
 public:
   CallbackVH() : ValueHandleBase(Callback) {}
   CallbackVH(Value *P) : ValueHandleBase(Callback, P) {}
-  CallbackVH(const Value *P) : CallbackVH(const_cast<Value *>(P)) {}
 
   operator Value*() const {
     return getValPtr();
@@ -442,9 +457,9 @@ public:
 /// PoisoningVH's as it moves. This is required because in non-assert mode this
 /// class turns into a trivial wrapper around a pointer.
 template <typename ValueTy>
-class PoisoningVH final
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
-    : public CallbackVH
+class PoisoningVH
+#ifndef NDEBUG
+    final : public CallbackVH
 #endif
 {
   friend struct DenseMapInfo<PoisoningVH<ValueTy>>;
@@ -453,7 +468,7 @@ class PoisoningVH final
   static Value *GetAsValue(Value *V) { return V; }
   static Value *GetAsValue(const Value *V) { return const_cast<Value *>(V); }
 
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+#ifndef NDEBUG
   /// A flag tracking whether this value has been poisoned.
   ///
   /// On delete and RAUW, we leave the value pointer alone so that as a raw
@@ -478,7 +493,7 @@ class PoisoningVH final
     Poisoned = true;
     RemoveFromUseList();
   }
-#else // LLVM_ENABLE_ABI_BREAKING_CHECKS
+#else // NDEBUG
   Value *ThePtr = nullptr;
 
   Value *getRawValPtr() const { return ThePtr; }
@@ -486,16 +501,14 @@ class PoisoningVH final
 #endif
 
   ValueTy *getValPtr() const {
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
     assert(!Poisoned && "Accessed a poisoned value handle!");
-#endif
     return static_cast<ValueTy *>(getRawValPtr());
   }
   void setValPtr(ValueTy *P) { setRawValPtr(GetAsValue(P)); }
 
 public:
   PoisoningVH() = default;
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
+#ifndef NDEBUG
   PoisoningVH(ValueTy *P) : CallbackVH(GetAsValue(P)) {}
   PoisoningVH(const PoisoningVH &RHS)
       : CallbackVH(RHS), Poisoned(RHS.Poisoned) {}
@@ -543,17 +556,6 @@ template <typename T> struct DenseMapInfo<PoisoningVH<T>> {
   static bool isEqual(const PoisoningVH<T> &LHS, const PoisoningVH<T> &RHS) {
     return DenseMapInfo<Value *>::isEqual(LHS.getRawValPtr(),
                                           RHS.getRawValPtr());
-  }
-
-  // Allow lookup by T* via find_as(), without constructing a temporary
-  // value handle.
-
-  static unsigned getHashValue(const T *Val) {
-    return DenseMapInfo<Value *>::getHashValue(Val);
-  }
-
-  static bool isEqual(const T *LHS, const PoisoningVH<T> &RHS) {
-    return DenseMapInfo<Value *>::isEqual(LHS, RHS.getRawValPtr());
   }
 };
 

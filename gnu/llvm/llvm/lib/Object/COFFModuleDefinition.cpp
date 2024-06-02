@@ -17,10 +17,12 @@
 #include "llvm/Object/COFFModuleDefinition.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Object/COFF.h"
 #include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/Error.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm::COFF;
 using namespace llvm;
@@ -76,6 +78,11 @@ static bool isDecorated(StringRef Sym, bool MingwDef) {
   // to be added.
   return Sym.startswith("@") || Sym.contains("@@") || Sym.startswith("?") ||
          (!MingwDef && Sym.contains('@'));
+}
+
+static Error createError(const Twine &Err) {
+  return make_error<StringError>(StringRef(Err.str()),
+                                 object_error::parse_failed);
 }
 
 class Lexer {
@@ -222,14 +229,14 @@ private:
 
   Error parseExport() {
     COFFShortExport E;
-    E.Name = std::string(Tok.Value);
+    E.Name = Tok.Value;
     read();
     if (Tok.K == Equal) {
       read();
       if (Tok.K != Identifier)
         return createError("identifier expected, but got " + Tok.Value);
       E.ExtName = E.Name;
-      E.Name = std::string(Tok.Value);
+      E.Name = Tok.Value;
     } else {
       unget();
     }
@@ -278,7 +285,7 @@ private:
       }
       if (Tok.K == EqualEqual) {
         read();
-        E.AliasTarget = std::string(Tok.Value);
+        E.AliasTarget = Tok.Value;
         if (Machine == IMAGE_FILE_MACHINE_I386 && !isDecorated(E.AliasTarget, MingwDef))
           E.AliasTarget = std::string("_").append(E.AliasTarget);
         continue;
@@ -308,7 +315,7 @@ private:
   Error parseName(std::string *Out, uint64_t *Baseaddr) {
     read();
     if (Tok.K == Identifier) {
-      *Out = std::string(Tok.Value);
+      *Out = Tok.Value;
     } else {
       *Out = "";
       unget();

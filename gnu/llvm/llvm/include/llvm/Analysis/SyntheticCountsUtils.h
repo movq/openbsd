@@ -10,14 +10,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ANALYSIS_SYNTHETICCOUNTSUTILS_H
-#define LLVM_ANALYSIS_SYNTHETICCOUNTSUTILS_H
+#ifndef LLVM_ANALYSIS_SYNTHETIC_COUNTS_UTILS_H
+#define LLVM_ANALYSIS_SYNTHETIC_COUNTS_UTILS_H
 
-#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Support/ScaledNumber.h"
 
 namespace llvm {
+
+class CallGraph;
+class Function;
 
 /// Class with methods to propagate synthetic entry counts.
 ///
@@ -34,8 +37,7 @@ public:
 
   // Not all EdgeRef have information about the source of the edge. Hence
   // NodeRef corresponding to the source of the EdgeRef is explicitly passed.
-  using GetProfCountTy =
-      function_ref<std::optional<Scaled64>(NodeRef, EdgeRef)>;
+  using GetProfCountTy = function_ref<Optional<Scaled64>(NodeRef, EdgeRef)>;
   using AddCountTy = function_ref<void(NodeRef, Scaled64)>;
 
   static void propagate(const CallGraphType &CG, GetProfCountTy GetProfCount,

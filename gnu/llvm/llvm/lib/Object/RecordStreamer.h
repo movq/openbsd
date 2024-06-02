@@ -13,12 +13,13 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/SMLoc.h"
 #include <vector>
 
 namespace llvm {
 
-class MCSymbol;
+class GlobalValue;
 class Module;
 
 class RecordStreamer : public MCStreamer {
@@ -45,26 +46,26 @@ private:
 public:
   RecordStreamer(MCContext &Context, const Module &M);
 
-  void emitInstruction(const MCInst &Inst, const MCSubtargetInfo &STI) override;
-  void emitLabel(MCSymbol *Symbol, SMLoc Loc = SMLoc()) override;
-  void emitAssignment(MCSymbol *Symbol, const MCExpr *Value) override;
-  bool emitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override;
-  void emitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
-                    Align ByteAlignment, SMLoc Loc = SMLoc()) override;
-  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                        Align ByteAlignment) override;
+  void EmitInstruction(const MCInst &Inst, const MCSubtargetInfo &STI) override;
+  void EmitLabel(MCSymbol *Symbol, SMLoc Loc = SMLoc()) override;
+  void EmitAssignment(MCSymbol *Symbol, const MCExpr *Value) override;
+  bool EmitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override;
+  void EmitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
+                    unsigned ByteAlignment, SMLoc Loc = SMLoc()) override;
+  void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                        unsigned ByteAlignment) override;
 
   // Ignore COFF-specific directives; we do not need any information from them,
   // but the default implementation of these methods crashes, so we override
   // them with versions that do nothing.
-  void beginCOFFSymbolDef(const MCSymbol *Symbol) override {}
-  void emitCOFFSymbolStorageClass(int StorageClass) override {}
-  void emitCOFFSymbolType(int Type) override {}
-  void endCOFFSymbolDef() override {}
+  void BeginCOFFSymbolDef(const MCSymbol *Symbol) override {}
+  void EmitCOFFSymbolStorageClass(int StorageClass) override {}
+  void EmitCOFFSymbolType(int Type) override {}
+  void EndCOFFSymbolDef() override {}
 
   /// Record .symver aliases for later processing.
-  void emitELFSymverDirective(const MCSymbol *OriginalSym, StringRef Name,
-                              bool KeepOriginalSym) override;
+  void emitELFSymverDirective(StringRef AliasName,
+                              const MCSymbol *Aliasee) override;
 
   // Emit ELF .symver aliases and ensure they have the same binding as the
   // defined symbol they alias with.

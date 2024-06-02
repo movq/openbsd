@@ -31,9 +31,6 @@ enum class ReturnType {
 
 /// RuntimeFunction - An entry in the table of procedure data (.pdata)
 ///
-/// This is ARM specific, but the Function Start RVA, Flag and
-/// ExceptionInformationRVA fields work identically for ARM64.
-///
 ///  3 3 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0
 ///  1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
 /// +---------------------------------------------------------------+
@@ -199,93 +196,13 @@ inline bool EpilogueFolding(const RuntimeFunction &RF) {
 inline uint16_t StackAdjustment(const RuntimeFunction &RF) {
   uint16_t Adjustment = RF.StackAdjust();
   if (Adjustment >= 0x3f4)
-    return (Adjustment & 0x3) + 1;
+    return (Adjustment & 0x3) ? ((Adjustment & 0x3) << 2) - 1 : 0;
   return Adjustment;
 }
 
 /// SavedRegisterMask - Utility function to calculate the set of saved general
 /// purpose (r0-r15) and VFP (d0-d31) registers.
-std::pair<uint16_t, uint32_t> SavedRegisterMask(const RuntimeFunction &RF,
-                                                bool Prologue = true);
-
-/// RuntimeFunctionARM64 - An entry in the table of procedure data (.pdata)
-///
-///  3 3 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0
-///  1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
-/// +---------------------------------------------------------------+
-/// |                     Function Start RVA                        |
-/// +-----------------+---+-+-------+-----+---------------------+---+
-/// |    Frame Size   |CR |H| RegI  |RegF |   Function Length   |Flg|
-/// +-----------------+---+-+-------+-----+---------------------+---+
-///
-/// See https://docs.microsoft.com/en-us/cpp/build/arm64-exception-handling
-/// for the full reference for this struct.
-
-class RuntimeFunctionARM64 {
-public:
-  const support::ulittle32_t BeginAddress;
-  const support::ulittle32_t UnwindData;
-
-  RuntimeFunctionARM64(const support::ulittle32_t *Data)
-      : BeginAddress(Data[0]), UnwindData(Data[1]) {}
-
-  RuntimeFunctionARM64(const support::ulittle32_t BeginAddress,
-                       const support::ulittle32_t UnwindData)
-      : BeginAddress(BeginAddress), UnwindData(UnwindData) {}
-
-  RuntimeFunctionFlag Flag() const {
-    return RuntimeFunctionFlag(UnwindData & 0x3);
-  }
-
-  uint32_t ExceptionInformationRVA() const {
-    assert(Flag() == RuntimeFunctionFlag::RFF_Unpacked &&
-           "unpacked form required for this operation");
-    return (UnwindData & ~0x3);
-  }
-
-  uint32_t PackedUnwindData() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return (UnwindData & ~0x3);
-  }
-  uint32_t FunctionLength() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return (((UnwindData & 0x00001ffc) >> 2) << 2);
-  }
-  uint8_t RegF() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return ((UnwindData & 0x0000e000) >> 13);
-  }
-  uint8_t RegI() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return ((UnwindData & 0x000f0000) >> 16);
-  }
-  bool H() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return ((UnwindData & 0x00100000) >> 20);
-  }
-  uint8_t CR() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return ((UnwindData & 0x600000) >> 21);
-  }
-  uint16_t FrameSize() const {
-    assert((Flag() == RuntimeFunctionFlag::RFF_Packed ||
-            Flag() == RuntimeFunctionFlag::RFF_PackedFragment) &&
-           "packed form required for this operation");
-    return ((UnwindData & 0xff800000) >> 23);
-  }
-};
+std::pair<uint16_t, uint32_t> SavedRegisterMask(const RuntimeFunction &RF);
 
 /// ExceptionDataRecord - An entry in the table of exception data (.xdata)
 ///
@@ -486,7 +403,7 @@ struct ExceptionDataRecord {
   ArrayRef<support::ulittle32_t> EpilogueScopes() const {
     assert(E() == 0 && "epilogue scopes are only present when the E bit is 0");
     size_t Offset = HeaderWords(*this);
-    return ArrayRef(&Data[Offset], EpilogueCount());
+    return makeArrayRef(&Data[Offset], EpilogueCount());
   }
 
   ArrayRef<uint8_t> UnwindByteCode() const {
@@ -494,18 +411,17 @@ struct ExceptionDataRecord {
                         + (E() ? 0 :  EpilogueCount());
     const uint8_t *ByteCode =
       reinterpret_cast<const uint8_t *>(&Data[Offset]);
-    return ArrayRef(ByteCode, CodeWords() * sizeof(uint32_t));
+    return makeArrayRef(ByteCode, CodeWords() * sizeof(uint32_t));
   }
 
   uint32_t ExceptionHandlerRVA() const {
     assert(X() && "Exception Handler RVA is only valid if the X bit is set");
-    return Data[HeaderWords(*this) + (E() ? 0 : EpilogueCount()) + CodeWords()];
+    return Data[HeaderWords(*this) + EpilogueCount() + CodeWords()];
   }
 
   uint32_t ExceptionHandlerParameter() const {
     assert(X() && "Exception Handler RVA is only valid if the X bit is set");
-    return Data[HeaderWords(*this) + (E() ? 0 : EpilogueCount()) + CodeWords() +
-                1];
+    return Data[HeaderWords(*this) + EpilogueCount() + CodeWords() + 1];
   }
 };
 

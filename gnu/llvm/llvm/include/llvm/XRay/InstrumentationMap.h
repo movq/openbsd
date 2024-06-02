@@ -11,14 +11,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_XRAY_INSTRUMENTATIONMAP_H
-#define LLVM_XRAY_INSTRUMENTATIONMAP_H
+#ifndef LLVM_XRAY_INSTRUMENTATION_MAP_H
+#define LLVM_XRAY_INSTRUMENTATION_MAP_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/YAMLTraits.h"
 #include <cstdint>
-#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -50,8 +50,6 @@ struct SledEntry {
 
   /// Whether the sled was annotated to always be instrumented.
   bool AlwaysInstrument;
-
-  unsigned char Version;
 };
 
 struct YAMLXRaySledEntry {
@@ -61,7 +59,6 @@ struct YAMLXRaySledEntry {
   SledEntry::FunctionKinds Kind;
   bool AlwaysInstrument;
   std::string FunctionName;
-  unsigned char Version;
 };
 
 /// The InstrumentationMap represents the computed function id's and indicated
@@ -90,10 +87,10 @@ public:
   const FunctionAddressMap &getFunctionAddresses() { return FunctionAddresses; }
 
   /// Returns an XRay computed function id, provided a function address.
-  std::optional<int32_t> getFunctionId(uint64_t Addr) const;
+  Optional<int32_t> getFunctionId(uint64_t Addr) const;
 
   /// Returns the function address for a function id.
-  std::optional<uint64_t> getFunctionAddr(int32_t FuncId) const;
+  Optional<uint64_t> getFunctionAddr(int32_t FuncId) const;
 
   /// Provide read-only access to the entries of the instrumentation map.
   const SledContainer &sleds() const { return Sleds; };
@@ -123,7 +120,6 @@ template <> struct MappingTraits<xray::YAMLXRaySledEntry> {
     IO.mapRequired("kind", Entry.Kind);
     IO.mapRequired("always-instrument", Entry.AlwaysInstrument);
     IO.mapOptional("function-name", Entry.FunctionName);
-    IO.mapOptional("version", Entry.Version, 0);
   }
 
   static constexpr bool flow = true;
@@ -135,4 +131,4 @@ template <> struct MappingTraits<xray::YAMLXRaySledEntry> {
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(xray::YAMLXRaySledEntry)
 
-#endif // LLVM_XRAY_INSTRUMENTATIONMAP_H
+#endif // LLVM_XRAY_INSTRUMENTATION_MAP_H

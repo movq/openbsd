@@ -27,8 +27,7 @@ void WriteState::writeStartEvent(unsigned IID, MCPhysReg RegID,
   DependentWrite = nullptr;
 }
 
-void ReadState::writeStartEvent(unsigned IID, MCPhysReg RegID,
-                                unsigned Cycles) {
+void ReadState::writeStartEvent(unsigned IID, MCPhysReg RegID, unsigned Cycles) {
   assert(DependentWrites);
   assert(CyclesLeft == UNKNOWN_CYCLES);
 
@@ -126,6 +125,14 @@ void WriteState::dump() const {
   dbgs() << "{ OpIdx=" << WD->OpIndex << ", Lat=" << getLatency() << ", RegID "
          << getRegisterID() << ", Cycles Left=" << getCyclesLeft() << " }";
 }
+
+void WriteRef::dump() const {
+  dbgs() << "IID=" << getSourceIndex() << ' ';
+  if (isValid())
+    getWriteState()->dump();
+  else
+    dbgs() << "(null)";
+}
 #endif
 
 const CriticalDependency &Instruction::computeCriticalRegDep() {
@@ -146,18 +153,6 @@ const CriticalDependency &Instruction::computeCriticalRegDep() {
   }
 
   return CriticalRegDep;
-}
-
-void Instruction::reset() {
-  // Note that this won't clear read/write descriptors
-  // or other non-trivial fields
-  Stage = IS_INVALID;
-  CyclesLeft = UNKNOWN_CYCLES;
-  clearOptimizableMove();
-  RCUTokenID = 0;
-  LSUTokenID = 0;
-  CriticalResourceMask = 0;
-  IsEliminated = false;
 }
 
 void Instruction::dispatch(unsigned RCUToken) {
@@ -252,6 +247,8 @@ void Instruction::cycleEvent() {
   if (!CyclesLeft)
     Stage = IS_EXECUTED;
 }
+
+const unsigned WriteRef::INVALID_IID = std::numeric_limits<unsigned>::max();
 
 } // namespace mca
 } // namespace llvm

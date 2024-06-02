@@ -43,14 +43,20 @@ public:
 
   unsigned getNumFixupKinds() const override { return 1; }
 
-  bool writeNopData(raw_ostream &OS, uint64_t Count,
-                    const MCSubtargetInfo *STI) const override;
+  bool mayNeedRelaxation(const MCInst &Inst,
+                         const MCSubtargetInfo &STI) const override {
+    return false;
+  }
+
+  void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
+                        MCInst &Res) const override {}
+
+  bool writeNopData(raw_ostream &OS, uint64_t Count) const override;
 };
 
 } // end anonymous namespace
 
-bool BPFAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count,
-                                 const MCSubtargetInfo *STI) const {
+bool BPFAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count) const {
   if ((Count % 8) != 0)
     return false;
 
@@ -65,7 +71,7 @@ void BPFAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                MutableArrayRef<char> Data, uint64_t Value,
                                bool IsResolved,
                                const MCSubtargetInfo *STI) const {
-  if (Fixup.getKind() == FK_SecRel_8) {
+  if (Fixup.getKind() == FK_SecRel_4 || Fixup.getKind() == FK_SecRel_8) {
     // The Value is 0 for global variables, and the in-section offset
     // for static variables. Write to the immediate field of the inst.
     assert(Value <= UINT32_MAX);
@@ -87,11 +93,6 @@ void BPFAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
     }
   } else {
     assert(Fixup.getKind() == FK_PCRel_2);
-
-    int64_t ByteOff = (int64_t)Value - 8;
-    if (ByteOff > INT16_MAX * 8 || ByteOff < INT16_MIN * 8)
-      report_fatal_error("Branch target out of insn range");
-
     Value = (uint16_t)((Value - 8) / 8);
     support::endian::write<uint16_t>(&Data[Fixup.getOffset() + 2], Value,
                                      Endian);

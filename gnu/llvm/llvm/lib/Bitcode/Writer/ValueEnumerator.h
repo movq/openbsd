@@ -17,6 +17,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/UniqueVector.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Type.h"
 #include "llvm/IR/UseListOrder.h"
 #include <cassert>
 #include <cstdint>
@@ -27,7 +29,6 @@ namespace llvm {
 
 class BasicBlock;
 class Comdat;
-class DIArgList;
 class Function;
 class Instruction;
 class LocalAsMetadata;
@@ -201,12 +202,12 @@ public:
 
   /// Get the MDString metadata for this block.
   ArrayRef<const Metadata *> getMDStrings() const {
-    return ArrayRef(MDs).slice(NumModuleMDs, NumMDStrings);
+    return makeArrayRef(MDs).slice(NumModuleMDs, NumMDStrings);
   }
 
   /// Get the non-MDString metadata for this block.
   ArrayRef<const Metadata *> getNonMDStrings() const {
-    return ArrayRef(MDs).slice(NumModuleMDs).slice(NumMDStrings);
+    return makeArrayRef(MDs).slice(NumModuleMDs).slice(NumMDStrings);
   }
 
   const TypeList &getTypes() const { return Types; }
@@ -287,9 +288,6 @@ private:
   void EnumerateFunctionLocalMetadata(const Function &F,
                                       const LocalAsMetadata *Local);
   void EnumerateFunctionLocalMetadata(unsigned F, const LocalAsMetadata *Local);
-  void EnumerateFunctionLocalListMetadata(const Function &F,
-                                          const DIArgList *ArgList);
-  void EnumerateFunctionLocalListMetadata(unsigned F, const DIArgList *Arglist);
   void EnumerateNamedMDNode(const NamedMDNode *NMD);
   void EnumerateValue(const Value *V);
   void EnumerateType(Type *T);

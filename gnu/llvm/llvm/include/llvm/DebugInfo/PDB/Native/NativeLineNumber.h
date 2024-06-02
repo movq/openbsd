@@ -9,21 +9,20 @@
 #ifndef LLVM_DEBUGINFO_PDB_NATIVE_NATIVELINENUMBER_H
 #define LLVM_DEBUGINFO_PDB_NATIVE_NATIVELINENUMBER_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/DebugInfo/CodeView/Line.h"
 #include "llvm/DebugInfo/PDB/IPDBLineNumber.h"
+#include "llvm/DebugInfo/PDB/Native/NativeSession.h"
 
 namespace llvm {
 namespace pdb {
-
-class NativeSession;
-
 class NativeLineNumber : public IPDBLineNumber {
 public:
   explicit NativeLineNumber(const NativeSession &Session,
                             const codeview::LineInfo Line,
                             uint32_t ColumnNumber, uint32_t Length,
                             uint32_t Section, uint32_t Offset,
-                            uint32_t SrcFileId, uint32_t CompilandId);
+                            uint32_t SrcFileId);
 
   uint32_t getLineNumber() const override;
   uint32_t getLineNumberEnd() const override;
@@ -46,7 +45,6 @@ private:
   uint32_t Offset;
   uint32_t Length;
   uint32_t SrcFileId;
-  uint32_t CompilandId;
 };
 } // namespace pdb
 } // namespace llvm

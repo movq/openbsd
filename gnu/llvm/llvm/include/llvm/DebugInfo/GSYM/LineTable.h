@@ -166,24 +166,6 @@ public:
   llvm::Error encode(FileWriter &O, uint64_t BaseAddr) const;
   bool empty() const { return Lines.empty(); }
   void clear() { Lines.clear(); }
-  /// Return the first line entry if the line table isn't empty.
-  ///
-  /// \returns An optional line entry with the first line entry if the line
-  /// table isn't empty, or std::nullopt if the line table is emtpy.
-  std::optional<LineEntry> first() const {
-    if (Lines.empty())
-      return std::nullopt;
-    return Lines.front();
-  }
-  /// Return the last line entry if the line table isn't empty.
-  ///
-  /// \returns An optional line entry with the last line entry if the line
-  /// table isn't empty, or std::nullopt if the line table is emtpy.
-  std::optional<LineEntry> last() const {
-    if (Lines.empty())
-      return std::nullopt;
-    return Lines.back();
-  }
   void push(const LineEntry &LE) {
     Lines.push_back(LE);
   }
@@ -230,4 +212,4 @@ raw_ostream &operator<<(raw_ostream &OS, const gsym::LineTable &LT);
 } // namespace gsym
 } // namespace llvm
 
-#endif // LLVM_DEBUGINFO_GSYM_LINETABLE_H
+#endif // #ifndef LLVM_DEBUGINFO_GSYM_LINETABLE_H

@@ -5,16 +5,15 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// This file defines the DebugEpochBase and DebugEpochBase::HandleBase classes.
-/// These can be used to write iterators that are fail-fast when LLVM is built
-/// with asserts enabled.
-///
+//
+// This file defines the DebugEpochBase and DebugEpochBase::HandleBase classes.
+// These can be used to write iterators that are fail-fast when LLVM is built
+// with asserts enabled.
+//
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ADT_EPOCHTRACKER_H
-#define LLVM_ADT_EPOCHTRACKER_H
+#ifndef LLVM_ADT_EPOCH_TRACKER_H
+#define LLVM_ADT_EPOCH_TRACKER_H
 
 #include "llvm/Config/abi-breaking.h"
 
@@ -34,10 +33,10 @@ namespace llvm {
 /// is still valid.
 ///
 class DebugEpochBase {
-  uint64_t Epoch = 0;
+  uint64_t Epoch;
 
 public:
-  DebugEpochBase() = default;
+  DebugEpochBase() : Epoch(0) {}
 
   /// Calling incrementEpoch invalidates all handles pointing into the
   /// calling instance.
@@ -56,11 +55,11 @@ public:
   /// make an iterator-invalidating modification.
   ///
   class HandleBase {
-    const uint64_t *EpochAddress = nullptr;
-    uint64_t EpochAtCreation = UINT64_MAX;
+    const uint64_t *EpochAddress;
+    uint64_t EpochAtCreation;
 
   public:
-    HandleBase() = default;
+    HandleBase() : EpochAddress(nullptr), EpochAtCreation(UINT64_MAX) {}
 
     explicit HandleBase(const DebugEpochBase *Parent)
         : EpochAddress(&Parent->Epoch), EpochAtCreation(Parent->Epoch) {}

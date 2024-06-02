@@ -94,7 +94,8 @@ std::string SymScalar::stringifySymbolFlag(MachO::SymbolFlags Flag) {
 
 void SymScalar::print(raw_ostream &OS, std::string Indent, MachO::Target Targ) {
   if (Val->getKind() == MachO::SymbolKind::ObjectiveCClass) {
-    if (Targ.Arch == MachO::AK_i386 && Targ.Platform == MachO::PLATFORM_MACOS) {
+    if (Targ.Arch == MachO::AK_i386 &&
+        Targ.Platform == MachO::PlatformKind::macOS) {
       OS << Indent << "\t\t" << ((Order == lhs) ? "< " : "> ")
          << ObjC1ClassNamePrefix << Val->getName()
          << getFlagString(Val->getFlags()) << "\n";
@@ -235,11 +236,12 @@ void findAndAddDiff(const std::vector<InterfaceFileRef> &CollectedIRefVec,
   Result.Kind = AD_Str_Vec;
   for (const auto &IRef : CollectedIRefVec)
     for (auto Targ : IRef.targets()) {
-      auto FoundIRef = llvm::any_of(LookupIRefVec, [&](const auto LIRef) {
-        return llvm::is_contained(LIRef.targets(), Targ) &&
-               IRef.getInstallName() == LIRef.getInstallName();
+      auto FoundIRef = llvm::find_if(LookupIRefVec, [&](const auto LIRef) {
+        auto FoundTarg = llvm::find(LIRef.targets(), Targ);
+        return (FoundTarg != LIRef.targets().end() &&
+                IRef.getInstallName() == LIRef.getInstallName());
       });
-      if (!FoundIRef)
+      if (FoundIRef == LookupIRefVec.end())
         addDiffForTargSlice<DiffStrVec,
                             DiffScalarVal<StringRef, AD_Diff_Scalar_Str>>(
             IRef.getInstallName(), Targ, Result, Order);
@@ -266,13 +268,14 @@ void findAndAddDiff(InterfaceFile::const_symbol_range CollectedSyms,
   Result.Kind = AD_Sym_Vec;
   for (const auto *Sym : CollectedSyms)
     for (const auto Targ : Sym->targets()) {
-      auto FoundSym = llvm::any_of(LookupSyms, [&](const auto LSym) {
+      auto FoundSym = llvm::find_if(LookupSyms, [&](const auto LSym) {
+        auto FoundTarg = llvm::find(LSym->targets(), Targ);
         return (Sym->getName() == LSym->getName() &&
                 Sym->getKind() == LSym->getKind() &&
                 Sym->getFlags() == LSym->getFlags() &&
-                llvm::is_contained(LSym->targets(), Targ));
+                FoundTarg != LSym->targets().end());
       });
-      if (!FoundSym)
+      if (FoundSym == LookupSyms.end())
         addDiffForTargSlice<DiffSymVec, SymScalar>(Sym, Targ, Result, Order);
     }
 }
@@ -408,10 +411,10 @@ DiffEngine::findDifferences(const InterfaceFile *IFLHS,
     }
     for (auto DocRHS : IFRHS->documents()) {
       auto WasGathered =
-          llvm::any_of(DocsInserted, [&](const auto &GatheredDoc) {
+          llvm::find_if(DocsInserted, [&](const auto &GatheredDoc) {
             return (GatheredDoc == DocRHS->getInstallName());
           });
-      if (!WasGathered)
+      if (WasGathered == DocsInserted.end())
         Docs.Values.push_back(std::make_unique<InlineDoc>(InlineDoc(
             DocRHS->getInstallName(), getSingleIF(DocRHS.get(), rhs))));
     }

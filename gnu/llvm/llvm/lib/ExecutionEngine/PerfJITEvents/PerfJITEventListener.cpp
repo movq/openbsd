@@ -24,6 +24,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/Path.h"
@@ -33,8 +34,9 @@
 #include <mutex>
 
 #include <sys/mman.h>  // mmap()
+#include <sys/types.h> // getpid()
 #include <time.h>      // clock_gettime(), time(), localtime_r() */
-#include <unistd.h>    // for read(), close()
+#include <unistd.h>    // for getpid(), read(), close()
 
 using namespace llvm;
 using namespace llvm::object;
@@ -79,7 +81,7 @@ private:
   void NotifyDebug(uint64_t CodeAddr, DILineInfoTable Lines);
 
   // cache lookups
-  sys::Process::Pid Pid;
+  pid_t Pid;
 
   // base directory for output data
   std::string JitPath;
@@ -175,8 +177,7 @@ static inline uint64_t perf_get_timestamp(void) {
   return timespec_to_ns(&ts);
 }
 
-PerfJITEventListener::PerfJITEventListener()
-    : Pid(sys::Process::getProcessId()) {
+PerfJITEventListener::PerfJITEventListener() : Pid(::getpid()) {
   // check if clock-source is supported
   if (!perf_get_timestamp()) {
     errs() << "kernel does not support CLOCK_MONOTONIC\n";
@@ -205,7 +206,7 @@ PerfJITEventListener::PerfJITEventListener()
 
   Dumpstream = std::make_unique<raw_fd_ostream>(DumpFd, true);
 
-  LLVMPerfJitHeader Header = {0, 0, 0, 0, 0, 0, 0, 0};
+  LLVMPerfJitHeader Header = {0};
   if (!FillMachine(Header))
     return;
 
@@ -283,9 +284,6 @@ void PerfJITEventListener::notifyObjectLoaded(
     NotifyCode(Name, *AddrOrErr, Size);
   }
 
-  // avoid races with writes
-  std::lock_guard<sys::Mutex> Guard(Mutex);
-
   Dumpstream->flush();
 }
 
@@ -330,7 +328,7 @@ bool PerfJITEventListener::InitDebuggingDir() {
     return false;
   }
 
-  JitPath = std::string(UniqueDebugDir.str());
+  JitPath = UniqueDebugDir.str();
 
   return true;
 }
@@ -487,14 +485,15 @@ void PerfJITEventListener::NotifyDebug(uint64_t CodeAddr,
   }
 }
 
+// There should be only a single event listener per process, otherwise perf gets
+// confused.
+llvm::ManagedStatic<PerfJITEventListener> PerfListener;
+
 } // end anonymous namespace
 
 namespace llvm {
 JITEventListener *JITEventListener::createPerfJITEventListener() {
-  // There should be only a single event listener per process, otherwise perf
-  // gets confused.
-  static PerfJITEventListener PerfListener;
-  return &PerfListener;
+  return &*PerfListener;
 }
 
 } // namespace llvm

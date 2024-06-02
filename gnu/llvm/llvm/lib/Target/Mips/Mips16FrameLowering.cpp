@@ -62,8 +62,8 @@ void Mips16FrameLowering::emitPrologue(MachineFunction &MF,
   TII.makeFrame(Mips::SP, StackSize, MBB, MBBI);
 
   // emit ".cfi_def_cfa_offset StackSize"
-  unsigned CFIIndex =
-      MF.addFrameInst(MCCFIInstruction::cfiDefCfaOffset(nullptr, StackSize));
+  unsigned CFIIndex = MF.addFrameInst(
+      MCCFIInstruction::createDefCfaOffset(nullptr, -StackSize));
   BuildMI(MBB, MBBI, dl, TII.get(TargetOpcode::CFI_INSTRUCTION))
       .addCFIIndex(CFIIndex);
 
@@ -72,9 +72,10 @@ void Mips16FrameLowering::emitPrologue(MachineFunction &MF,
   if (!CSI.empty()) {
     const std::vector<CalleeSavedInfo> &CSI = MFI.getCalleeSavedInfo();
 
-    for (const CalleeSavedInfo &I : CSI) {
-      int64_t Offset = MFI.getObjectOffset(I.getFrameIdx());
-      Register Reg = I.getReg();
+    for (std::vector<CalleeSavedInfo>::const_iterator I = CSI.begin(),
+         E = CSI.end(); I != E; ++I) {
+      int64_t Offset = MFI.getObjectOffset(I->getFrameIdx());
+      unsigned Reg = I->getReg();
       unsigned DReg = MRI->getDwarfRegNum(Reg, true);
       unsigned CFIIndex = MF.addFrameInst(
           MCCFIInstruction::createOffset(nullptr, DReg, Offset));
@@ -108,9 +109,11 @@ void Mips16FrameLowering::emitEpilogue(MachineFunction &MF,
   TII.restoreFrame(Mips::SP, StackSize, MBB, MBBI);
 }
 
-bool Mips16FrameLowering::spillCalleeSavedRegisters(
-    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
-    ArrayRef<CalleeSavedInfo> CSI, const TargetRegisterInfo *TRI) const {
+bool Mips16FrameLowering::
+spillCalleeSavedRegisters(MachineBasicBlock &MBB,
+                          MachineBasicBlock::iterator MI,
+                          const std::vector<CalleeSavedInfo> &CSI,
+                          const TargetRegisterInfo *TRI) const {
   MachineFunction *MF = MBB.getParent();
 
   //
@@ -118,13 +121,13 @@ bool Mips16FrameLowering::spillCalleeSavedRegisters(
   // will be saved with the "save" instruction
   // during emitPrologue
   //
-  for (const CalleeSavedInfo &I : CSI) {
+  for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
     // Add the callee-saved register as live-in. Do not add if the register is
     // RA and return address is taken, because it has already been added in
     // method MipsTargetLowering::lowerRETURNADDR.
     // It's killed at the spill, unless the register is RA and return address
     // is taken.
-    Register Reg = I.getReg();
+    unsigned Reg = CSI[i].getReg();
     bool IsRAAndRetAddrIsTaken = (Reg == Mips::RA)
       && MF->getFrameInfo().isReturnAddressTaken();
     if (!IsRAAndRetAddrIsTaken)
@@ -134,9 +137,10 @@ bool Mips16FrameLowering::spillCalleeSavedRegisters(
   return true;
 }
 
-bool Mips16FrameLowering::restoreCalleeSavedRegisters(
-    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
-    MutableArrayRef<CalleeSavedInfo> CSI, const TargetRegisterInfo *TRI) const {
+bool Mips16FrameLowering::restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
+                                          MachineBasicBlock::iterator MI,
+                                       std::vector<CalleeSavedInfo> &CSI,
+                                       const TargetRegisterInfo *TRI) const {
   //
   // Registers RA,S0,S1 are the callee saved registers and they will be restored
   // with the restore instruction during emitEpilogue.

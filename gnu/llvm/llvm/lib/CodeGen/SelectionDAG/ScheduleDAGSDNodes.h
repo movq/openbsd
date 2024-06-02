@@ -45,8 +45,8 @@ class InstrItineraryData;
   ///
   class ScheduleDAGSDNodes : public ScheduleDAG {
   public:
-    MachineBasicBlock *BB = nullptr;
-    SelectionDAG *DAG = nullptr; // DAG of the current basic block
+    MachineBasicBlock *BB;
+    SelectionDAG *DAG;                    // DAG of the current basic block
     const InstrItineraryData *InstrItins;
 
     /// The schedule. Null SUnit*'s represent noop instructions.
@@ -138,8 +138,8 @@ class InstrItineraryData;
     class RegDefIter {
       const ScheduleDAGSDNodes *SchedDAG;
       const SDNode *Node;
-      unsigned DefIdx = 0;
-      unsigned NodeNumDefs = 0;
+      unsigned DefIdx;
+      unsigned NodeNumDefs;
       MVT ValueType;
 
     public:
@@ -184,7 +184,7 @@ class InstrItineraryData;
     void BuildSchedUnits();
     void AddSchedEdges();
 
-    void EmitPhysRegCopy(SUnit *SU, DenseMap<SUnit*, Register> &VRBaseMap,
+    void EmitPhysRegCopy(SUnit *SU, DenseMap<SUnit*, unsigned> &VRBaseMap,
                          MachineBasicBlock::iterator InsertPos);
   };
 

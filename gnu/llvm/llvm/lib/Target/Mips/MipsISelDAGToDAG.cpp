@@ -36,7 +36,6 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "mips-isel"
-#define PASS_NAME "MIPS DAG->DAG Pattern Instruction Selection"
 
 //===----------------------------------------------------------------------===//
 // Instruction Selector Implementation
@@ -55,7 +54,7 @@ void MipsDAGToDAGISel::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool MipsDAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
-  Subtarget = &MF.getSubtarget<MipsSubtarget>();
+  Subtarget = &static_cast<const MipsSubtarget &>(MF.getSubtarget());
   bool Ret = SelectionDAGISel::runOnMachineFunction(MF);
 
   processFunctionAfterISel(MF);
@@ -66,7 +65,7 @@ bool MipsDAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
 /// getGlobalBaseReg - Output the instructions required to put the
 /// GOT address into a register.
 SDNode *MipsDAGToDAGISel::getGlobalBaseReg() {
-  Register GlobalBaseReg = MF->getInfo<MipsFunctionInfo>()->getGlobalBaseReg(*MF);
+  Register GlobalBaseReg = MF->getInfo<MipsFunctionInfo>()->getGlobalBaseReg();
   return CurDAG->getRegister(GlobalBaseReg, getTargetLowering()->getPointerTy(
                                                 CurDAG->getDataLayout()))
       .getNode();
@@ -254,7 +253,7 @@ bool MipsDAGToDAGISel::selectVecAddAsVecSubIfProfitable(SDNode *Node) {
   SDLoc DL(Node);
 
   SDValue NegC = CurDAG->FoldConstantArithmetic(
-      ISD::SUB, DL, VT, {CurDAG->getConstant(0, DL, VT), C});
+      ISD::SUB, DL, VT, CurDAG->getConstant(0, DL, VT).getNode(), C.getNode());
   assert(NegC && "Constant-folding failed!");
   SDValue NewNode = CurDAG->getNode(ISD::SUB, DL, VT, X, NegC);
 
@@ -297,8 +296,8 @@ void MipsDAGToDAGISel::Select(SDNode *Node) {
   case ISD::LOAD:
   case ISD::STORE:
     assert((Subtarget->systemSupportsUnalignedAccess() ||
-            cast<MemSDNode>(Node)->getAlign() >=
-                cast<MemSDNode>(Node)->getMemoryVT().getStoreSize()) &&
+            cast<MemSDNode>(Node)->getMemoryVT().getSizeInBits() / 8 <=
+            cast<MemSDNode>(Node)->getAlignment()) &&
            "Unexpected unaligned loads/stores.");
     break;
 #endif
@@ -323,7 +322,3 @@ SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintID,
   }
   return true;
 }
-
-char MipsDAGToDAGISel::ID = 0;
-
-INITIALIZE_PASS(MipsDAGToDAGISel, DEBUG_TYPE, PASS_NAME, false, false)

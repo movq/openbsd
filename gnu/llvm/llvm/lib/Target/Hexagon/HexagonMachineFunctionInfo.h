@@ -27,11 +27,9 @@ class HexagonMachineFunctionInfo : public MachineFunctionInfo {
   // returning the value of the returned struct in a register. This field
   // holds the virtual register into which the sret argument is passed.
   unsigned SRetReturnReg = 0;
-  Register StackAlignBaseReg = 0;    // Aligned-stack base register
+  unsigned StackAlignBaseVReg = 0;    // Aligned-stack base register (virtual)
+  unsigned StackAlignBasePhysReg = 0; //                             (physical)
   int VarArgsFrameIndex;
-  int RegSavedAreaStartFrameIndex;
-  int FirstNamedArgFrameIndex;
-  int LastNamedArgFrameIndex;
   bool HasClobberLR = false;
   bool HasEHReturn = false;
   std::map<const MachineInstr*, unsigned> PacketInfo;
@@ -40,28 +38,13 @@ class HexagonMachineFunctionInfo : public MachineFunctionInfo {
 public:
   HexagonMachineFunctionInfo() = default;
 
-  HexagonMachineFunctionInfo(const Function &F,
-                             const TargetSubtargetInfo *STI) {}
-
-  MachineFunctionInfo *
-  clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
-        const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
-      const override;
+  HexagonMachineFunctionInfo(MachineFunction &MF) {}
 
   unsigned getSRetReturnReg() const { return SRetReturnReg; }
   void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
 
   void setVarArgsFrameIndex(int v) { VarArgsFrameIndex = v; }
   int getVarArgsFrameIndex() { return VarArgsFrameIndex; }
-
-  void setRegSavedAreaStartFrameIndex(int v) { RegSavedAreaStartFrameIndex = v;}
-  int getRegSavedAreaStartFrameIndex() { return RegSavedAreaStartFrameIndex; }
-
-  void setFirstNamedArgFrameIndex(int v) { FirstNamedArgFrameIndex = v; }
-  int getFirstNamedArgFrameIndex() { return FirstNamedArgFrameIndex; }
-
-  void setLastNamedArgFrameIndex(int v) { LastNamedArgFrameIndex = v; }
-  int getLastNamedArgFrameIndex() { return LastNamedArgFrameIndex; }
 
   void setStartPacket(MachineInstr* MI) {
     PacketInfo[MI] |= Hexagon::StartPacket;
@@ -83,8 +66,11 @@ public:
   bool hasEHReturn() const { return HasEHReturn; };
   void setHasEHReturn(bool H = true) { HasEHReturn = H; };
 
-  void setStackAlignBaseReg(Register R) { StackAlignBaseReg = R; }
-  Register getStackAlignBaseReg() const { return StackAlignBaseReg; }
+  void setStackAlignBaseVReg(unsigned R) { StackAlignBaseVReg = R; }
+  unsigned getStackAlignBaseVReg() const { return StackAlignBaseVReg; }
+
+  void setStackAlignBasePhysReg(unsigned R) { StackAlignBasePhysReg = R; }
+  unsigned getStackAlignBasePhysReg() const { return StackAlignBasePhysReg; }
 };
 
 } // end namespace llvm

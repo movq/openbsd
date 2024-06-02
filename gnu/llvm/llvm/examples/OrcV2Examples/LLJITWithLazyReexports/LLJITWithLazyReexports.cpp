@@ -152,8 +152,8 @@ int main(int argc, char *argv[]) {
   // arguments passed.
 
   // Look up the JIT'd function, cast it to a function pointer, then call it.
-  auto EntryAddr = ExitOnErr(J->lookup("entry"));
-  auto *Entry = EntryAddr.toPtr<int(int)>();
+  auto EntrySym = ExitOnErr(J->lookup("entry"));
+  auto *Entry = (int (*)(int))EntrySym.getAddress();
 
   int Result = Entry(argc);
   outs() << "---Result---\n"

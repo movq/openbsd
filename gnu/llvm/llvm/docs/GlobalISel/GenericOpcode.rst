@@ -152,11 +152,9 @@ Convert a pointer to an integer.
 G_BITCAST
 ^^^^^^^^^
 
-Reinterpret a value as a new type. This is usually done without
-changing any bits but this is not always the case due a subtlety in the
-definition of the :ref:`LLVM-IR Bitcast Instruction <i_bitcast>`. It
-is allowed to bitcast between pointers with the same size, but
-different address spaces.
+Reinterpret a value as a new type. This is usually done without changing any
+bits but this is not always the case due a sublety in the definition of the
+:ref:`LLVM-IR Bitcast Instruction <i_bitcast>`.
 
 .. code-block:: none
 
@@ -186,18 +184,10 @@ Extract a register of the specified size, starting from the block given by
 index. This will almost certainly be mapped to sub-register COPYs after
 register banks have been selected.
 
-.. code-block:: none
-
-  %3:_(s32) = G_EXTRACT %2:_(s64), 32
-
 G_INSERT
 ^^^^^^^^
 
 Insert a smaller register into a larger one at the specified bit-index.
-
-.. code-block:: none
-
-  %2:_(s64) = G_INSERT %0:(_s64), %1:_(s32), 0
 
 G_MERGE_VALUES
 ^^^^^^^^^^^^^^
@@ -241,45 +231,6 @@ Reverse the order of the bits in a scalar.
 
   %1:_(s32) = G_BITREVERSE %0:_(s32)
 
-G_SBFX, G_UBFX
-^^^^^^^^^^^^^^
-
-Extract a range of bits from a register.
-
-The source operands are registers as follows:
-
-- Source
-- The least-significant bit for the extraction
-- The width of the extraction
-
-The least-significant bit (lsb) and width operands are in the range:
-
-::
-
-      0 <= lsb < lsb + width <= source bitwidth, where all values are unsigned
-
-G_SBFX sign-extends the result, while G_UBFX zero-extends the result.
-
-.. code-block:: none
-
-  ; Extract 5 bits starting at bit 1 from %x and store them in %a.
-  ; Sign-extend the result.
-  ;
-  ; Example:
-  ; %x = 0...0000[10110]1 ---> %a = 1...111111[10110]
-  %lsb_one = G_CONSTANT i32 1
-  %width_five = G_CONSTANT i32 5
-  %a:_(s32) = G_SBFX %x, %lsb_one, %width_five
-
-  ; Extract 3 bits starting at bit 2 from %x and store them in %b. Zero-extend
-  ; the result.
-  ;
-  ; Example:
-  ; %x = 1...11111[100]11 ---> %b = 0...00000[100]
-  %lsb_two = G_CONSTANT i32 2
-  %width_three = G_CONSTANT i32 3
-  %b:_(s32) = G_UBFX %x, %lsb_two, %width_three
-
 Integer Operations
 -------------------
 
@@ -290,37 +241,12 @@ These each perform their respective integer arithmetic on a scalar.
 
 .. code-block:: none
 
-  %dst:_(s32) = G_ADD %src0:_(s32), %src1:_(s32)
-
-The above example adds %src1 to %src0 and stores the result in %dst.
-
-G_SDIVREM, G_UDIVREM
-^^^^^^^^^^^^^^^^^^^^
-
-Perform integer division and remainder thereby producing two results.
-
-.. code-block:: none
-
-  %div:_(s32), %rem:_(s32) = G_SDIVREM %0:_(s32), %1:_(s32)
-
-G_SADDSAT, G_UADDSAT, G_SSUBSAT, G_USUBSAT, G_SSHLSAT, G_USHLSAT
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Signed and unsigned addition, subtraction and left shift with saturation.
-
-.. code-block:: none
-
-  %2:_(s32) = G_SADDSAT %0:_(s32), %1:_(s32)
+  %2:_(s32) = G_ADD %0:_(s32), %1:_(s32)
 
 G_SHL, G_LSHR, G_ASHR
 ^^^^^^^^^^^^^^^^^^^^^
 
 Shift the bits of a scalar left or right inserting zeros (sign-bit for G_ASHR).
-
-G_ROTR, G_ROTL
-^^^^^^^^^^^^^^
-
-Rotate the bits right (G_ROTR) or left (G_ROTL).
 
 G_ICMP
 ^^^^^^
@@ -352,16 +278,14 @@ typically bytes but this may vary between targets.
   There are currently no in-tree targets that use this with addressable units
   not equal to 8 bit.
 
-G_PTRMASK
+G_PTR_MASK
 ^^^^^^^^^^
 
-Zero out an arbitrary mask of bits of a pointer. The mask type must be
-an integer, and the number of vector elements must match for all
-operands. This corresponds to `i_intr_llvm_ptrmask`.
+Zero the least significant N bits of a pointer.
 
 .. code-block:: none
 
-  %2:_(p0) = G_PTRMASK %0, %1
+  %1:_(p0) = G_PTR_MASK %0, 3
 
 G_SMIN, G_SMAX, G_UMIN, G_UMAX
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -371,16 +295,6 @@ Take the minimum/maximum of two values.
 .. code-block:: none
 
   %5:_(s32) = G_SMIN %6, %2
-
-G_ABS
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Take the absolute value of a signed integer. The absolute value of the minimum
-negative value (e.g. the 8-bit value `0x80`) is defined to be itself.
-
-.. code-block:: none
-
-  %1:_(s32) = G_ABS %0
 
 G_UADDO, G_SADDO, G_USUBO, G_SSUBO, G_SMULO, G_UMULO
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -405,8 +319,8 @@ normal input. Also produce a carry output in addition to the normal result.
 G_UMULH, G_SMULH
 ^^^^^^^^^^^^^^^^
 
-Multiply two numbers at twice the incoming bit width (unsigned or signed) and
-return the high half of the result.
+Multiply two numbers at twice the incoming bit width (signed) and return
+the high half of the result.
 
 .. code-block:: none
 
@@ -479,15 +393,6 @@ G_FCANONICALIZE
 ^^^^^^^^^^^^^^^
 
 See :ref:`i_intr_llvm_canonicalize`.
-
-G_IS_FPCLASS
-^^^^^^^^^^^^
-
-Tests if the first operand, which must be floating-point scalar or vector, has
-floating-point class specified by the second operand. Returns non-zero (true)
-or zero (false). It's target specific whether a true value is 1, ~0U, or some
-other non-zero value. If the first operand is a vector, the returned value is a
-vector of the same length.
 
 G_FMINNUM
 ^^^^^^^^^
@@ -582,19 +487,6 @@ G_INTRINSIC_ROUND
 
 Returns the operand rounded to the nearest integer.
 
-G_LROUND, G_LLROUND
-^^^^^^^^^^^^^^^^^^^
-
-Returns the source operand rounded to the nearest integer with ties away from
-zero.
-
-See the LLVM LangRef entry on '``llvm.lround.*'`` for details on behaviour.
-
-.. code-block:: none
-
-  %rounded_32:_(s32) = G_LROUND %round_me:_(s64)
-  %rounded_64:_(s64) = G_LLROUND %round_me:_(s64)
-
 Vector Specific Operations
 --------------------------
 
@@ -630,45 +522,6 @@ Concatenate two vectors and shuffle the elements according to the mask operand.
 The mask operand should be an IR Constant which exactly matches the
 corresponding mask for the IR shufflevector instruction.
 
-Vector Reduction Operations
----------------------------
-
-These operations represent horizontal vector reduction, producing a scalar result.
-
-G_VECREDUCE_SEQ_FADD, G_VECREDUCE_SEQ_FMUL
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The SEQ variants perform reductions in sequential order. The first operand is
-an initial scalar accumulator value, and the second operand is the vector to reduce.
-
-G_VECREDUCE_FADD, G_VECREDUCE_FMUL
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-These reductions are relaxed variants which may reduce the elements in any order.
-
-G_VECREDUCE_FMAX, G_VECREDUCE_FMIN
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-FMIN/FMAX nodes can have flags, for NaN/NoNaN variants.
-
-
-Integer/bitwise reductions
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-* G_VECREDUCE_ADD
-* G_VECREDUCE_MUL
-* G_VECREDUCE_AND
-* G_VECREDUCE_OR
-* G_VECREDUCE_XOR
-* G_VECREDUCE_SMAX
-* G_VECREDUCE_SMIN
-* G_VECREDUCE_UMAX
-* G_VECREDUCE_UMIN
-
-Integer reductions may have a result type larger than the vector element type.
-However, the reduction is performed using the vector element type and the value
-in the top bits is unspecified.
-
 Memory Operations
 -----------------
 
@@ -682,10 +535,6 @@ high bits are undefined, sign-extended, or zero-extended respectively.
 Only G_LOAD is valid if the result is a vector type. If the result is larger
 than the memory size, the high elements are undefined (i.e. this is not a
 per-element, vector anyextload)
-
-Unlike in SelectionDAG, atomic loads are expressed with the same
-opcodes as regular loads. G_LOAD, G_SEXTLOAD and G_ZEXTLOAD may all
-have atomic memory operands.
 
 G_INDEXED_LOAD
 ^^^^^^^^^^^^^^
@@ -707,11 +556,7 @@ Same as G_INDEXED_LOAD except that the load performed is zero-extending, as with
 G_STORE
 ^^^^^^^
 
-Generic store. Expects a MachineMemOperand in addition to explicit
-operands. If the stored value size is greater than the memory size,
-the high bits are implicitly truncated. If this is a vector store, the
-high elements are discarded (i.e. this does not function as a per-lane
-vector, truncating store)
+Generic store. Expects a MachineMemOperand in addition to explicit operands.
 
 G_INDEXED_STORE
 ^^^^^^^^^^^^^^^
@@ -730,10 +575,7 @@ G_ATOMIC_CMPXCHG
 Generic atomic cmpxchg. Expects a MachineMemOperand in addition to explicit
 operands.
 
-G_ATOMICRMW_XCHG, G_ATOMICRMW_ADD, G_ATOMICRMW_SUB, G_ATOMICRMW_AND,
-G_ATOMICRMW_NAND, G_ATOMICRMW_OR, G_ATOMICRMW_XOR, G_ATOMICRMW_MAX,
-G_ATOMICRMW_MIN, G_ATOMICRMW_UMAX, G_ATOMICRMW_UMIN, G_ATOMICRMW_FADD,
-G_ATOMICRMW_FSUB, G_ATOMICRMW_FMAX, G_ATOMICRMW_FMIN
+G_ATOMICRMW_XCHG, G_ATOMICRMW_ADD, G_ATOMICRMW_SUB, G_ATOMICRMW_AND, G_ATOMICRMW_NAND, G_ATOMICRMW_OR, G_ATOMICRMW_XOR, G_ATOMICRMW_MAX, G_ATOMICRMW_MIN, G_ATOMICRMW_UMAX, G_ATOMICRMW_UMIN, G_ATOMICRMW_FADD, G_ATOMICRMW_FSUB
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Generic atomicrmw. Expects a MachineMemOperand in addition to explicit
@@ -746,36 +588,6 @@ G_FENCE
 
   I couldn't find any documentation on this at the time of writing.
 
-G_MEMCPY
-^^^^^^^^
-
-Generic memcpy. Expects two MachineMemOperands covering the store and load
-respectively, in addition to explicit operands.
-
-G_MEMCPY_INLINE
-^^^^^^^^^^^^^^^
-
-Generic inlined memcpy. Like G_MEMCPY, but it is guaranteed that this version
-will not be lowered as a call to an external function. Currently the size
-operand is required to evaluate as a constant (not an immediate), though that is
-expected to change when llvm.memcpy.inline is taught to support dynamic sizes.
-
-G_MEMMOVE
-^^^^^^^^^
-
-Generic memmove. Similar to G_MEMCPY, but the source and destination memory
-ranges are allowed to overlap.
-
-G_MEMSET
-^^^^^^^^
-
-Generic memset. Expects a MachineMemOperand in addition to explicit operands.
-
-G_BZERO
-^^^^^^^
-
-Generic bzero. Expects a MachineMemOperand in addition to explicit operands.
-
 Control Flow
 ------------
 
@@ -786,66 +598,34 @@ Implement the φ node in the SSA graph representing the function.
 
 .. code-block:: none
 
-  %dst(s8) = G_PHI %src1(s8), %bb.<id1>, %src2(s8), %bb.<id2>
+  %1(s8) = G_PHI %7(s8), %bb.0, %3(s8), %bb.1
 
 G_BR
 ^^^^
 
 Unconditional branch
 
-.. code-block:: none
-
-  G_BR %bb.<id>
-
 G_BRCOND
 ^^^^^^^^
 
 Conditional branch
-
-.. code-block:: none
-
-  G_BRCOND %condition, %basicblock.<id>
 
 G_BRINDIRECT
 ^^^^^^^^^^^^
 
 Indirect branch
 
-.. code-block:: none
-
-  G_BRINDIRECT %src(p0)
-
 G_BRJT
 ^^^^^^
 
 Indirect branch to jump table entry
 
-.. code-block:: none
-
-  G_BRJT %ptr(p0), %jti, %idx(s64)
-
 G_JUMP_TABLE
 ^^^^^^^^^^^^
 
-Generates a pointer to the address of the jump table specified by the source
-operand. The source operand is a jump table index.
-G_JUMP_TABLE can be used in conjunction with G_BRJT to support jump table
-codegen with GlobalISel.
+.. caution::
 
-.. code-block:: none
-
-  %dst:_(p0) = G_JUMP_TABLE %jump-table.0
-
-The above example generates a pointer to the source jump table index.
-
-G_INVOKE_REGION_START
-^^^^^^^^^^^^^^^^^^^^^
-
-A marker instruction that acts as a pseudo-terminator for regions of code that may
-throw exceptions. Being a terminator, it prevents code from being inserted after
-it during passes like legalization. This is needed because calls to exception
-throw routines do not return, so no code that must be on an executable path must
-be placed after throwing.
+  I found no documentation for this instruction at the time of writing.
 
 G_INTRINSIC, G_INTRINSIC_W_SIDE_EFFECTS
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -853,7 +633,7 @@ G_INTRINSIC, G_INTRINSIC_W_SIDE_EFFECTS
 Call an intrinsic
 
 The _W_SIDE_EFFECTS version is considered to have unknown side-effects and
-as such cannot be reordered across other side-effecting instructions.
+as such cannot be reordered acrosss other side-effecting instructions.
 
 .. note::
 
@@ -883,45 +663,12 @@ Other Operations
 G_DYN_STACKALLOC
 ^^^^^^^^^^^^^^^^
 
-Dynamically realigns the stack pointer to the specified size and alignment.
-An alignment value of `0` or `1` means no specific alignment.
+Dynamically realign the stack pointer to the specified alignment
 
 .. code-block:: none
 
   %8:_(p0) = G_DYN_STACKALLOC %7(s64), 32
 
-Optimization Hints
-------------------
+.. caution::
 
-These instructions do not correspond to any target instructions. They act as
-hints for various combines.
-
-G_ASSERT_SEXT, G_ASSERT_ZEXT
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-This signifies that the contents of a register were previously extended from a
-smaller type.
-
-The smaller type is denoted using an immediate operand. For scalars, this is the
-width of the entire smaller type. For vectors, this is the width of the smaller
-element type.
-
-.. code-block:: none
-
-  %x_was_zexted:_(s32) = G_ASSERT_ZEXT %x(s32), 16
-  %y_was_zexted:_(<2 x s32>) = G_ASSERT_ZEXT %y(<2 x s32>), 16
-
-  %z_was_sexted:_(s32) = G_ASSERT_SEXT %z(s32), 8
-
-G_ASSERT_SEXT and G_ASSERT_ZEXT act like copies, albeit with some restrictions.
-
-The source and destination registers must
-
-- Be virtual
-- Belong to the same register class
-- Belong to the same register bank
-
-It should always be safe to
-
-- Look through the source register
-- Replace the destination register with the source register
+  What does it mean for the immediate to be 0? It happens in the tests

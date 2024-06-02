@@ -10,23 +10,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_REMARKS_REMARKLINKER_H
-#define LLVM_REMARKS_REMARKLINKER_H
+#ifndef LLVM_REMARKS_REMARK_LINKER_H
+#define LLVM_REMARKS_REMARK_LINKER_H
 
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Remarks/Remark.h"
 #include "llvm/Remarks/RemarkFormat.h"
 #include "llvm/Remarks/RemarkStringTable.h"
 #include "llvm/Support/Error.h"
 #include <memory>
-#include <optional>
 #include <set>
 
 namespace llvm {
-
-namespace object {
-class ObjectFile;
-}
-
 namespace remarks {
 
 struct RemarkLinker {
@@ -52,7 +47,7 @@ private:
   std::set<std::unique_ptr<Remark>, RemarkPtrCompare> Remarks;
 
   /// A path to append before the external file path found in remark metadata.
-  std::optional<std::string> PrependPath;
+  Optional<std::string> PrependPath;
 
   /// Keep this remark. If it's already in the set, discard it.
   Remark &keep(std::unique_ptr<Remark> Remark);
@@ -66,13 +61,12 @@ public:
   /// \p Buffer.
   /// \p Buffer can be either a standalone remark container or just
   /// metadata. This takes care of uniquing and merging the remarks.
-  Error link(StringRef Buffer,
-             std::optional<Format> RemarkFormat = std::nullopt);
+  Error link(StringRef Buffer, Optional<Format> RemarkFormat = None);
 
   /// Link the remarks found in \p Obj by looking for the right section and
   /// calling the method above.
   Error link(const object::ObjectFile &Obj,
-             std::optional<Format> RemarkFormat = std::nullopt);
+             Optional<Format> RemarkFormat = None);
 
   /// Serialize the linked remarks to the stream \p OS, using the format \p
   /// RemarkFormat.
@@ -86,7 +80,8 @@ public:
   /// Return a collection of the linked unique remarks to iterate on.
   /// Ex:
   /// for (const Remark &R : RL.remarks() { [...] }
-  using iterator = pointee_iterator<decltype(Remarks)::const_iterator>;
+  using iterator =
+      pointee_iterator<std::set<std::unique_ptr<Remark>>::iterator>;
 
   iterator_range<iterator> remarks() const {
     return {Remarks.begin(), Remarks.end()};
@@ -96,10 +91,10 @@ public:
 /// Returns a buffer with the contents of the remarks section depending on the
 /// format of the file. If the section doesn't exist, this returns an empty
 /// optional.
-Expected<std::optional<StringRef>>
+Expected<Optional<StringRef>>
 getRemarksSectionContents(const object::ObjectFile &Obj);
 
 } // end namespace remarks
 } // end namespace llvm
 
-#endif // LLVM_REMARKS_REMARKLINKER_H
+#endif /* LLVM_REMARKS_REMARK_LINKER_H */

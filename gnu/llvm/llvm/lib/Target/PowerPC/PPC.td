@@ -51,28 +51,15 @@ def DirectivePwr6x
 def DirectivePwr7: SubtargetFeature<"", "CPUDirective", "PPC::DIR_PWR7", "">;
 def DirectivePwr8: SubtargetFeature<"", "CPUDirective", "PPC::DIR_PWR8", "">;
 def DirectivePwr9: SubtargetFeature<"", "CPUDirective", "PPC::DIR_PWR9", "">;
-def DirectivePwr10: SubtargetFeature<"", "CPUDirective", "PPC::DIR_PWR10", "">;
 def DirectivePwrFuture
     : SubtargetFeature<"", "CPUDirective", "PPC::DIR_PWR_FUTURE", "">;
 
-// Specifies that the selected CPU supports 64-bit instructions, regardless of
-// whether we are in 32-bit or 64-bit mode.
 def Feature64Bit     : SubtargetFeature<"64bit","Has64BitSupport", "true",
                                         "Enable 64-bit instructions">;
-def AIXOS: SubtargetFeature<"aix", "IsAIX", "true", "AIX OS">;
-def FeatureModernAIXAs
-    : SubtargetFeature<"modern-aix-as", "HasModernAIXAs", "true",
-                       "AIX system assembler is modern enough to support new mnes">;
 def FeatureHardFloat : SubtargetFeature<"hard-float", "HasHardFloat", "true",
                               "Enable floating-point instructions">;
-
-// Specifies that we are in 64-bit mode or that we should use 64-bit registers
-// in 32-bit mode when possible. Requires Feature64Bit to be enabled.
 def Feature64BitRegs : SubtargetFeature<"64bitregs","Use64BitRegs", "true",
                               "Enable 64-bit registers usage for ppc32 [beta]">;
-
-// Specify if we should store and manipulate i1 values in the individual
-// condition register bits.
 def FeatureCRBits    : SubtargetFeature<"crbits", "UseCRBits", "true",
                               "Use condition-register bits individually">;
 def FeatureFPU       : SubtargetFeature<"fpu","HasFPU","true",
@@ -84,9 +71,6 @@ def FeatureAltivec   : SubtargetFeature<"altivec","HasAltivec", "true",
 def FeatureSPE       : SubtargetFeature<"spe","HasSPE", "true",
                                         "Enable SPE instructions",
                                         [FeatureHardFloat]>;
-def FeatureEFPU2 : SubtargetFeature<"efpu2", "HasEFPU2", "true", 
-                                        "Enable Embedded Floating-Point APU 2 instructions",
-                                        [FeatureSPE]>;
 def FeatureMFOCRF    : SubtargetFeature<"mfocrf","HasMFOCRF", "true",
                                         "Enable the MFOCRF instruction">;
 def FeatureFSqrt     : SubtargetFeature<"fsqrt","HasFSQRT", "true",
@@ -141,12 +125,15 @@ def FeatureMSYNC     : SubtargetFeature<"msync", "HasOnlyMSYNC", "true",
                               [FeatureBookE]>;
 def FeatureE500      : SubtargetFeature<"e500", "IsE500", "true",
                                         "Enable E500/E500mc instructions">;
-def FeatureSecurePlt : SubtargetFeature<"secure-plt","IsSecurePlt", "true",
+def FeatureSecurePlt : SubtargetFeature<"secure-plt","SecurePlt", "true",
                                         "Enable secure plt mode">;
 def FeaturePPC4xx    : SubtargetFeature<"ppc4xx", "IsPPC4xx", "true",
                                         "Enable PPC 4xx instructions">;
 def FeaturePPC6xx    : SubtargetFeature<"ppc6xx", "IsPPC6xx", "true",
                                         "Enable PPC 6xx instructions">;
+def FeatureQPX       : SubtargetFeature<"qpx","HasQPX", "true",
+                                        "Enable QPX instructions",
+                                        [FeatureFPU]>;
 def FeatureVSX       : SubtargetFeature<"vsx","HasVSX", "true",
                                         "Enable VSX instructions",
                                         [FeatureAltivec]>;
@@ -169,9 +156,6 @@ def FeatureDirectMove :
 def FeaturePartwordAtomic : SubtargetFeature<"partword-atomics",
                                              "HasPartwordAtomics", "true",
                                              "Enable l[bh]arx and st[bh]cx.">;
-def FeatureQuadwordAtomic : SubtargetFeature<"quadword-atomics",
-                                             "HasQuadwordAtomics", "true",
-                                             "Enable lqarx and stqcx.">;
 def FeatureInvariantFunctionDescriptors :
   SubtargetFeature<"invariant-function-descriptors",
                    "HasInvariantFunctionDescriptors", "true",
@@ -180,57 +164,8 @@ def FeatureLongCall : SubtargetFeature<"longcall", "UseLongCalls", "true",
                                        "Always use indirect calls">;
 def FeatureHTM : SubtargetFeature<"htm", "HasHTM", "true",
                                   "Enable Hardware Transactional Memory instructions">;
-def FeatureMFTB   : SubtargetFeature<"", "IsFeatureMFTB", "true",
+def FeatureMFTB   : SubtargetFeature<"", "FeatureMFTB", "true",
                                         "Implement mftb using the mfspr instruction">;
-def FeatureFusion : SubtargetFeature<"fusion", "HasFusion", "true",
-                                     "Target supports instruction fusion">;
-def FeatureAddiLoadFusion : SubtargetFeature<"fuse-addi-load",
-                                             "HasAddiLoadFusion", "true",
-                                             "Power8 Addi-Load fusion",
-                                             [FeatureFusion]>;
-def FeatureAddisLoadFusion : SubtargetFeature<"fuse-addis-load",
-                                              "HasAddisLoadFusion", "true",
-                                              "Power8 Addis-Load fusion",
-                                              [FeatureFusion]>;
-def FeatureStoreFusion : SubtargetFeature<"fuse-store", "HasStoreFusion", "true",
-                                          "Target supports store clustering",
-                                          [FeatureFusion]>;
-def FeatureArithAddFusion :
-  SubtargetFeature<"fuse-arith-add", "HasArithAddFusion", "true",
-                   "Target supports Arithmetic Operations with Add fusion",
-                   [FeatureFusion]>;
-def FeatureAddLogicalFusion :
-  SubtargetFeature<"fuse-add-logical", "HasAddLogicalFusion", "true",
-                   "Target supports Add with Logical Operations fusion",
-                   [FeatureFusion]>;
-def FeatureLogicalAddFusion :
-  SubtargetFeature<"fuse-logical-add", "HasLogicalAddFusion", "true",
-                   "Target supports Logical with Add Operations fusion",
-                   [FeatureFusion]>;
-def FeatureLogicalFusion :
-  SubtargetFeature<"fuse-logical", "HasLogicalFusion", "true",
-                   "Target supports Logical Operations fusion",
-                   [FeatureFusion]>;
-def FeatureSha3Fusion :
-  SubtargetFeature<"fuse-sha3", "HasSha3Fusion", "true",
-                   "Target supports SHA3 assist fusion",
-                   [FeatureFusion]>;
-def FeatureCompareFusion:
-  SubtargetFeature<"fuse-cmp", "HasCompareFusion", "true",
-                   "Target supports Comparison Operations fusion",
-                   [FeatureFusion]>;
-def FeatureWideImmFusion:
-  SubtargetFeature<"fuse-wideimm", "HasWideImmFusion", "true",
-                   "Target supports Wide-Immediate fusion",
-                   [FeatureFusion]>;
-def FeatureZeroMoveFusion:
-  SubtargetFeature<"fuse-zeromove", "HasZeroMoveFusion", "true",
-                   "Target supports move to SPR with branch fusion",
-                   [FeatureFusion]>;
-def FeatureBack2BackFusion:
-  SubtargetFeature<"fuse-back2back", "HasBack2BackFusion", "true",
-                   "Target supports general back to back fusion",
-                   [FeatureFusion]>;
 def FeatureUnalignedFloats :
   SubtargetFeature<"allow-unaligned-fp-access", "AllowsUnalignedFPAccess",
                    "true", "CPU does not trap on unaligned FP access">;
@@ -247,34 +182,19 @@ def FeatureFloat128 :
 def FeaturePOPCNTD   : SubtargetFeature<"popcntd","HasPOPCNTD",
                                         "POPCNTD_Fast",
                                         "Enable the popcnt[dw] instructions">;
-// Note that for the a2 processor models we should not use popcnt[dw] by
+// Note that for the a2/a2q processor models we should not use popcnt[dw] by
 // default. These processors do support the instructions, but they're
 // microcoded, and the software emulation is about twice as fast.
 def FeatureSlowPOPCNTD : SubtargetFeature<"slow-popcntd","HasPOPCNTD",
                                           "POPCNTD_Slow",
                                           "Has slow popcnt[dw] instructions">;
 
-def DeprecatedDST    : SubtargetFeature<"", "IsDeprecatedDST", "true",
+def DeprecatedDST    : SubtargetFeature<"", "DeprecatedDST", "true",
   "Treat vector data stream cache control instructions as deprecated">;
 
-def FeatureISA2_06 : SubtargetFeature<"isa-v206-instructions", "IsISA2_06",
-                                      "true",
-                                      "Enable instructions in ISA 2.06.">;
-def FeatureISA2_07 : SubtargetFeature<"isa-v207-instructions", "IsISA2_07",
-                                      "true",
-                                      "Enable instructions in ISA 2.07.">;
 def FeatureISA3_0 : SubtargetFeature<"isa-v30-instructions", "IsISA3_0",
                                      "true",
-                                     "Enable instructions in ISA 3.0.",
-                                     [FeatureISA2_07]>;
-def FeatureISA3_1 : SubtargetFeature<"isa-v31-instructions", "IsISA3_1",
-                                     "true",
-                                     "Enable instructions in ISA 3.1.",
-                                     [FeatureISA3_0]>;
-def FeatureISAFuture : SubtargetFeature<"isa-future-instructions",
-                                        "IsISAFuture", "true",
-                                        "Enable instructions for Future ISA.",
-                                        [FeatureISA3_1]>;
+                                     "Enable instructions added in ISA 3.0.">;
 def FeatureP9Altivec : SubtargetFeature<"power9-altivec", "HasP9Altivec", "true",
                                         "Enable POWER9 Altivec instructions",
                                         [FeatureISA3_0, FeatureP8Altivec]>;
@@ -282,10 +202,6 @@ def FeatureP9Vector  : SubtargetFeature<"power9-vector", "HasP9Vector", "true",
                                         "Enable POWER9 vector instructions",
                                         [FeatureISA3_0, FeatureP8Vector,
                                          FeatureP9Altivec]>;
-def FeatureP10Vector  : SubtargetFeature<"power10-vector", "HasP10Vector",
-                                         "true",
-                                         "Enable POWER10 vector instructions",
-                                         [FeatureISA3_1, FeatureP9Vector]>;
 // A separate feature for this even though it is equivalent to P9Vector
 // because this is a feature of the implementation rather than the architecture
 // and may go away with future CPU's.
@@ -293,39 +209,6 @@ def FeatureVectorsUseTwoUnits : SubtargetFeature<"vectors-use-two-units",
                                                  "VectorsUseTwoUnits",
                                                  "true",
                                                  "Vectors use two units">;
-def FeaturePrefixInstrs : SubtargetFeature<"prefix-instrs", "HasPrefixInstrs",
-                                           "true",
-                                           "Enable prefixed instructions",
-                                           [FeatureISA3_0, FeatureP8Vector,
-                                            FeatureP9Altivec]>;
-def FeaturePCRelativeMemops :
-  SubtargetFeature<"pcrelative-memops", "HasPCRelativeMemops", "true",
-                   "Enable PC relative Memory Ops",
-                   [FeatureISA3_0, FeaturePrefixInstrs]>;
-def FeaturePairedVectorMemops:
-  SubtargetFeature<"paired-vector-memops", "PairedVectorMemops", "true",
-                   "32Byte load and store instructions",
-                   [FeatureISA3_0]>;
-def FeatureMMA : SubtargetFeature<"mma", "HasMMA", "true",
-                                  "Enable MMA instructions",
-                                  [FeatureP8Vector, FeatureP9Altivec,
-                                   FeaturePairedVectorMemops]>;
-def FeatureROPProtect :
-  SubtargetFeature<"rop-protect", "HasROPProtect", "true",
-                   "Add ROP protect">;
-
-def FeaturePrivileged :
-  SubtargetFeature<"privileged", "HasPrivileged", "true",
-                   "Add privileged instructions">;
-
-def FeaturePredictableSelectIsExpensive :
-  SubtargetFeature<"predictable-select-expensive",
-                   "PredictableSelectIsExpensive",
-                   "true",
-                   "Prefer likely predicted branches over selects">;
-
-def FeatureFastMFLR : SubtargetFeature<"fast-MFLR", "HasFastMFLR", "true",
-                                       "MFLR is a fast instruction">;
 
 // Since new processors generally contain a superset of features of those that
 // came before them, the idea is to make implementations of new processors
@@ -342,7 +225,7 @@ def FeatureFastMFLR : SubtargetFeature<"fast-MFLR", "HasFastMFLR", "true",
 //         !listconcat(FutureProcessorInheritableFeatures,
 //                     FutureProcessorSpecificFeatures)
 
-// Makes it explicit and obvious what is new in FutureProcessor vs. Power8 as
+// Makes it explicit and obvious what is new in FutureProcesor vs. Power8 as
 // well as providing a single point of definition if the feature set will be
 // used elsewhere.
 def ProcessorFeatures {
@@ -373,82 +256,51 @@ def ProcessorFeatures {
                                                   FeatureMFTB,
                                                   DeprecatedDST,
                                                   FeatureTwoConstNR,
-                                                  FeatureUnalignedFloats,
-                                                  FeatureISA2_06];
+                                                  FeatureUnalignedFloats];
   list<SubtargetFeature> P7SpecificFeatures = [];
   list<SubtargetFeature> P7Features =
     !listconcat(P7InheritableFeatures, P7SpecificFeatures);
 
   // Power8
-  list<SubtargetFeature> P8AdditionalFeatures =
-    [DirectivePwr8,
-     FeatureP8Altivec,
-     FeatureP8Vector,
-     FeatureP8Crypto,
-     FeatureHTM,
-     FeatureDirectMove,
-     FeatureICBT,
-     FeaturePartwordAtomic,
-     FeatureQuadwordAtomic,
-     FeaturePredictableSelectIsExpensive,
-     FeatureISA2_07,
-     FeatureCRBits
-    ];
-
-  list<SubtargetFeature> P8SpecificFeatures = [FeatureAddiLoadFusion,
-                                               FeatureAddisLoadFusion];
+  list<SubtargetFeature> P8AdditionalFeatures = [DirectivePwr8,
+                                                 FeatureP8Altivec,
+                                                 FeatureP8Vector,
+                                                 FeatureP8Crypto,
+                                                 FeatureHTM,
+                                                 FeatureDirectMove,
+                                                 FeatureICBT,
+                                                 FeaturePartwordAtomic];
+  list<SubtargetFeature> P8SpecificFeatures = [];
   list<SubtargetFeature> P8InheritableFeatures =
     !listconcat(P7InheritableFeatures, P8AdditionalFeatures);
   list<SubtargetFeature> P8Features =
     !listconcat(P8InheritableFeatures, P8SpecificFeatures);
 
   // Power9
-  list<SubtargetFeature> P9AdditionalFeatures =
-    [DirectivePwr9,
-     FeatureP9Altivec,
-     FeatureP9Vector,
-     FeaturePPCPreRASched,
-     FeaturePPCPostRASched,
-     FeatureISA3_0,
-     FeaturePredictableSelectIsExpensive
-    ];
-
+  list<SubtargetFeature> P9AdditionalFeatures = [DirectivePwr9,
+                                                 FeatureP9Altivec,
+                                                 FeatureP9Vector,
+                                                 FeatureISA3_0];
   // Some features are unique to Power9 and there is no reason to assume
   // they will be part of any future CPUs. One example is the narrower
   // dispatch for vector operations than scalar ones. For the time being,
   // this list also includes scheduling-related features since we do not have
   // enough info to create custom scheduling strategies for future CPUs.
-  list<SubtargetFeature> P9SpecificFeatures = [FeatureVectorsUseTwoUnits];
+  list<SubtargetFeature> P9SpecificFeatures = [FeatureVectorsUseTwoUnits,
+                                               FeaturePPCPreRASched,
+                                               FeaturePPCPostRASched];
   list<SubtargetFeature> P9InheritableFeatures =
     !listconcat(P8InheritableFeatures, P9AdditionalFeatures);
   list<SubtargetFeature> P9Features =
     !listconcat(P9InheritableFeatures, P9SpecificFeatures);
 
-  // Power10
-  // For P10 CPU we assume that all of the existing features from Power9
-  // still exist with the exception of those we know are Power9 specific.
-  list<SubtargetFeature> FusionFeatures = [
-    FeatureStoreFusion, FeatureAddLogicalFusion, FeatureLogicalAddFusion,
-    FeatureLogicalFusion, FeatureArithAddFusion, FeatureSha3Fusion,
-  ];
-  list<SubtargetFeature> P10AdditionalFeatures =
-    !listconcat(FusionFeatures, [
-       DirectivePwr10, FeatureISA3_1, FeaturePrefixInstrs,
-       FeaturePCRelativeMemops, FeatureP10Vector, FeatureMMA,
-       FeaturePairedVectorMemops, FeatureFastMFLR]);
-  list<SubtargetFeature> P10SpecificFeatures = [];
-  list<SubtargetFeature> P10InheritableFeatures =
-    !listconcat(P9InheritableFeatures, P10AdditionalFeatures);
-  list<SubtargetFeature> P10Features =
-    !listconcat(P10InheritableFeatures, P10SpecificFeatures);
-
   // Future
-  // For future CPU we assume that all of the existing features from Power10
-  // still exist with the exception of those we know are Power10 specific.
-  list<SubtargetFeature> FutureAdditionalFeatures = [FeatureISAFuture];
+  // For future CPU we assume that all of the existing features from Power 9
+  // still exist with the exception of those we know are Power 9 specific.
+  list<SubtargetFeature> FutureAdditionalFeatures = [];
   list<SubtargetFeature> FutureSpecificFeatures = [];
   list<SubtargetFeature> FutureInheritableFeatures =
-    !listconcat(P10InheritableFeatures, FutureAdditionalFeatures);
+    !listconcat(P9InheritableFeatures, FutureAdditionalFeatures);
   list<SubtargetFeature> FutureFeatures =
     !listconcat(FutureInheritableFeatures, FutureSpecificFeatures);
 }
@@ -520,7 +372,6 @@ def getAltVSXFMAOpcode : InstrMapping {
 
 include "PPCRegisterInfo.td"
 include "PPCSchedule.td"
-include "GISel/PPCRegisterBanks.td"
 
 //===----------------------------------------------------------------------===//
 // PowerPC processors supported.
@@ -591,7 +442,7 @@ def : ProcessorModel<"g5", G5Model,
 def : ProcessorModel<"e500", PPCE500Model,
                   [DirectiveE500,
                    FeatureICBT, FeatureBookE,
-                   FeatureISEL, FeatureMFTB, FeatureMSYNC, FeatureSPE]>;
+                   FeatureISEL, FeatureMFTB, FeatureSPE]>;
 def : ProcessorModel<"e500mc", PPCE500mcModel,
                   [DirectiveE500mc,
                    FeatureSTFIWX, FeatureICBT, FeatureBookE,
@@ -607,8 +458,16 @@ def : ProcessorModel<"a2", PPCA2Model,
                    FeatureSTFIWX, FeatureLFIWAX,
                    FeatureFPRND, FeatureFPCVT, FeatureISEL,
                    FeatureSlowPOPCNTD, FeatureCMPB, FeatureLDBRX,
-                   Feature64Bit /*, Feature64BitRegs */, FeatureMFTB,
-                   FeatureISA2_06]>;
+                   Feature64Bit /*, Feature64BitRegs */, FeatureMFTB]>;
+def : ProcessorModel<"a2q", PPCA2Model,
+                  [DirectiveA2, FeatureICBT, FeatureBookE, FeatureMFOCRF,
+                   FeatureFCPSGN, FeatureFSqrt, FeatureFRE, FeatureFRES,
+                   FeatureFRSQRTE, FeatureFRSQRTES, FeatureRecipPrec,
+                   FeatureSTFIWX, FeatureLFIWAX,
+                   FeatureFPRND, FeatureFPCVT, FeatureISEL,
+                   FeatureSlowPOPCNTD, FeatureCMPB, FeatureLDBRX,
+                   Feature64Bit /*, Feature64BitRegs */, FeatureQPX,
+                   FeatureMFTB]>;
 def : ProcessorModel<"pwr3", G5Model,
                   [DirectivePwr3, FeatureAltivec,
                    FeatureFRES, FeatureFRSQRTE, FeatureMFOCRF,
@@ -646,7 +505,6 @@ def : ProcessorModel<"pwr6x", G5Model,
 def : ProcessorModel<"pwr7", P7Model, ProcessorFeatures.P7Features>;
 def : ProcessorModel<"pwr8", P8Model, ProcessorFeatures.P8Features>;
 def : ProcessorModel<"pwr9", P9Model, ProcessorFeatures.P9Features>;
-def : ProcessorModel<"pwr10", P10Model, ProcessorFeatures.P10Features>;
 // No scheduler model for future CPU.
 def : ProcessorModel<"future", NoSchedModel,
                   ProcessorFeatures.FutureFeatures>;
@@ -675,14 +533,6 @@ def PPCInstrInfo : InstrInfo {
   let decodePositionallyEncodedOperands = 1;
 
   let noNamedPositionallyEncodedOperands = 1;
-  let useDeprecatedPositionallyEncodedOperands = 1;
-}
-
-def PPCAsmWriter : AsmWriter {
-  string AsmWriterClassName  = "InstPrinter";
-  int PassSubtarget = 1;
-  int Variant = 0;
-  bit isMCAsmWriter = 1;
 }
 
 def PPCAsmParser : AsmParser {
@@ -703,7 +553,6 @@ def PPC : Target {
   // Information about the instructions.
   let InstructionSet = PPCInstrInfo;
 
-  let AssemblyWriters = [PPCAsmWriter];
   let AssemblyParsers = [PPCAsmParser];
   let AssemblyParserVariants = [PPCAsmParserVariant];
   let AllowRegisterRenaming = 1;

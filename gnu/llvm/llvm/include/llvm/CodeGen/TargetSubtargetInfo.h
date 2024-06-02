@@ -13,25 +13,22 @@
 #ifndef LLVM_CODEGEN_TARGETSUBTARGETINFO_H
 #define LLVM_CODEGEN_TARGETSUBTARGETINFO_H
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/PBQPRAConstraint.h"
+#include "llvm/CodeGen/ScheduleDAGMutation.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
-#include "llvm/IR/GlobalValue.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/CodeGen.h"
 #include <memory>
 #include <vector>
 
+
 namespace llvm {
 
-class APInt;
-class MachineFunction;
-class ScheduleDAGMutation;
 class CallLowering;
-class GlobalValue;
-class InlineAsmLowering;
 class InstrItineraryData;
 struct InstrStage;
 class InstructionSelector;
@@ -44,6 +41,9 @@ struct MCWriteProcResEntry;
 class RegisterBankInfo;
 class SDep;
 class SelectionDAGTargetInfo;
+struct SubtargetFeatureKV;
+struct SubtargetSubTypeKV;
+struct SubtargetInfoKV;
 class SUnit;
 class TargetFrameLowering;
 class TargetInstrInfo;
@@ -61,8 +61,8 @@ class Triple;
 ///
 class TargetSubtargetInfo : public MCSubtargetInfo {
 protected: // Can only create subclasses...
-  TargetSubtargetInfo(const Triple &TT, StringRef CPU, StringRef TuneCPU,
-                      StringRef FS, ArrayRef<SubtargetFeatureKV> PF,
+  TargetSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS,
+                      ArrayRef<SubtargetFeatureKV> PF,
                       ArrayRef<SubtargetSubTypeKV> PD,
                       const MCWriteProcResEntry *WPR,
                       const MCWriteLatencyEntry *WL,
@@ -101,10 +101,6 @@ public:
     return nullptr;
   }
   virtual const CallLowering *getCallLowering() const { return nullptr; }
-
-  virtual const InlineAsmLowering *getInlineAsmLowering() const {
-    return nullptr;
-  }
 
   // FIXME: This lets targets specialize the selector by subtarget (which lets
   // us do things like a dedicated avx512 selector).  However, we might want
@@ -228,13 +224,9 @@ public:
   virtual void overrideSchedPolicy(MachineSchedPolicy &Policy,
                                    unsigned NumRegionInstrs) const {}
 
-  // Perform target-specific adjustments to the latency of a schedule
+  // Perform target specific adjustments to the latency of a schedule
   // dependency.
-  // If a pair of operands is associated with the schedule dependency, DefOpIdx
-  // and UseOpIdx are the indices of the operands in Def and Use, respectively.
-  // Otherwise, either may be -1.
-  virtual void adjustSchedDependency(SUnit *Def, int DefOpIdx, SUnit *Use,
-                                     int UseOpIdx, SDep &Dep) const {}
+  virtual void adjustSchedDependency(SUnit *def, SUnit *use, SDep &dep) const {}
 
   // For use with PostRAScheduling: get the anti-dependence breaking that should
   // be performed before post-RA scheduling.
@@ -275,6 +267,11 @@ public:
   /// a finer grain to tune the register allocator.
   virtual bool enableRALocalReassignment(CodeGenOpt::Level OptLevel) const;
 
+  /// True if the subtarget should consider the cost of local intervals
+  /// created by a split candidate when choosing the best split candidate. This
+  /// heuristic may be compile time intensive.
+  virtual bool enableAdvancedRASplitCost() const;
+
   /// Enable use of alias analysis during code generation (during MI
   /// scheduling, DAGCombine, etc.).
   virtual bool useAA() const;
@@ -309,14 +306,6 @@ public:
   virtual bool ignoreCSRForAllocationOrder(const MachineFunction &MF,
                                            unsigned PhysReg) const {
     return false;
-  }
-
-  /// Classify a global function reference. This mainly used to fetch target
-  /// special flags for lowering a function address. For example mark a function
-  /// call should be plt or pc-related addressing.
-  virtual unsigned char
-  classifyGlobalFunctionReference(const GlobalValue *GV) const {
-    return 0;
   }
 };
 

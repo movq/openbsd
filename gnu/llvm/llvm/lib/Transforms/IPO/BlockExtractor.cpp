@@ -11,12 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Transforms/IPO/BlockExtractor.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -36,34 +34,75 @@ static cl::opt<std::string> BlockExtractorFile(
     "extract-blocks-file", cl::value_desc("filename"),
     cl::desc("A file containing list of basic blocks to extract"), cl::Hidden);
 
-static cl::opt<bool>
-    BlockExtractorEraseFuncs("extract-blocks-erase-funcs",
-                             cl::desc("Erase the existing functions"),
-                             cl::Hidden);
+cl::opt<bool> BlockExtractorEraseFuncs("extract-blocks-erase-funcs",
+                                       cl::desc("Erase the existing functions"),
+                                       cl::Hidden);
 namespace {
-class BlockExtractor {
-public:
-  BlockExtractor(bool EraseFunctions) : EraseFunctions(EraseFunctions) {}
-  bool runOnModule(Module &M);
-  void
-  init(const std::vector<std::vector<BasicBlock *>> &GroupsOfBlocksToExtract) {
-    GroupsOfBlocks = GroupsOfBlocksToExtract;
-    if (!BlockExtractorFile.empty())
-      loadFile();
-  }
-
-private:
-  std::vector<std::vector<BasicBlock *>> GroupsOfBlocks;
+class BlockExtractor : public ModulePass {
+  SmallVector<SmallVector<BasicBlock *, 16>, 4> GroupsOfBlocks;
   bool EraseFunctions;
   /// Map a function name to groups of blocks.
   SmallVector<std::pair<std::string, SmallVector<std::string, 4>>, 4>
       BlocksByName;
 
+  void init(const SmallVectorImpl<SmallVector<BasicBlock *, 16>>
+                &GroupsOfBlocksToExtract) {
+    for (const SmallVectorImpl<BasicBlock *> &GroupOfBlocks :
+         GroupsOfBlocksToExtract) {
+      SmallVector<BasicBlock *, 16> NewGroup;
+      NewGroup.append(GroupOfBlocks.begin(), GroupOfBlocks.end());
+      GroupsOfBlocks.emplace_back(NewGroup);
+    }
+    if (!BlockExtractorFile.empty())
+      loadFile();
+  }
+
+public:
+  static char ID;
+  BlockExtractor(const SmallVectorImpl<BasicBlock *> &BlocksToExtract,
+                 bool EraseFunctions)
+      : ModulePass(ID), EraseFunctions(EraseFunctions) {
+    // We want one group per element of the input list.
+    SmallVector<SmallVector<BasicBlock *, 16>, 4> MassagedGroupsOfBlocks;
+    for (BasicBlock *BB : BlocksToExtract) {
+      SmallVector<BasicBlock *, 16> NewGroup;
+      NewGroup.push_back(BB);
+      MassagedGroupsOfBlocks.push_back(NewGroup);
+    }
+    init(MassagedGroupsOfBlocks);
+  }
+
+  BlockExtractor(const SmallVectorImpl<SmallVector<BasicBlock *, 16>>
+                     &GroupsOfBlocksToExtract,
+                 bool EraseFunctions)
+      : ModulePass(ID), EraseFunctions(EraseFunctions) {
+    init(GroupsOfBlocksToExtract);
+  }
+
+  BlockExtractor() : BlockExtractor(SmallVector<BasicBlock *, 0>(), false) {}
+  bool runOnModule(Module &M) override;
+
+private:
   void loadFile();
   void splitLandingPadPreds(Function &F);
 };
-
 } // end anonymous namespace
+
+char BlockExtractor::ID = 0;
+INITIALIZE_PASS(BlockExtractor, "extract-blocks",
+                "Extract basic blocks from module", false, false)
+
+ModulePass *llvm::createBlockExtractorPass() { return new BlockExtractor(); }
+ModulePass *llvm::createBlockExtractorPass(
+    const SmallVectorImpl<BasicBlock *> &BlocksToExtract, bool EraseFunctions) {
+  return new BlockExtractor(BlocksToExtract, EraseFunctions);
+}
+ModulePass *llvm::createBlockExtractorPass(
+    const SmallVectorImpl<SmallVector<BasicBlock *, 16>>
+        &GroupsOfBlocksToExtract,
+    bool EraseFunctions) {
+  return new BlockExtractor(GroupsOfBlocksToExtract, EraseFunctions);
+}
 
 /// Gets all of the blocks specified in the input file.
 void BlockExtractor::loadFile() {
@@ -82,15 +121,13 @@ void BlockExtractor::loadFile() {
     if (LineSplit.empty())
       continue;
     if (LineSplit.size()!=2)
-      report_fatal_error("Invalid line format, expecting lines like: 'funcname bb1[;bb2..]'",
-                         /*GenCrashDiag=*/false);
+      report_fatal_error("Invalid line format, expecting lines like: 'funcname bb1[;bb2..]'");
     SmallVector<StringRef, 4> BBNames;
     LineSplit[1].split(BBNames, ';', /*MaxSplit=*/-1,
                        /*KeepEmpty=*/false);
     if (BBNames.empty())
       report_fatal_error("Missing bbs name");
-    BlocksByName.push_back(
-        {std::string(LineSplit[0]), {BBNames.begin(), BBNames.end()}});
+    BlocksByName.push_back({LineSplit[0], {BBNames.begin(), BBNames.end()}});
   }
 }
 
@@ -108,7 +145,7 @@ void BlockExtractor::splitLandingPadPreds(Function &F) {
       // Look through the landing pad's predecessors. If one of them ends in an
       // 'invoke', then we want to split the landing pad.
       bool Split = false;
-      for (auto *PredBB : predecessors(LPad)) {
+      for (auto PredBB : predecessors(LPad)) {
         if (PredBB->isLandingPad() && PredBB != Parent &&
             isa<InvokeInst>(Parent->getTerminator())) {
           Split = true;
@@ -126,6 +163,7 @@ void BlockExtractor::splitLandingPadPreds(Function &F) {
 }
 
 bool BlockExtractor::runOnModule(Module &M) {
+
   bool Changed = false;
 
   // Get all the functions.
@@ -141,15 +179,13 @@ bool BlockExtractor::runOnModule(Module &M) {
   for (const auto &BInfo : BlocksByName) {
     Function *F = M.getFunction(BInfo.first);
     if (!F)
-      report_fatal_error("Invalid function name specified in the input file",
-                         /*GenCrashDiag=*/false);
+      report_fatal_error("Invalid function name specified in the input file");
     for (const auto &BBInfo : BInfo.second) {
       auto Res = llvm::find_if(*F, [&](const BasicBlock &BB) {
         return BB.getName().equals(BBInfo);
       });
       if (Res == F->end())
-        report_fatal_error("Invalid block name specified in the input file",
-                           /*GenCrashDiag=*/false);
+        report_fatal_error("Invalid block name specified in the input file");
       GroupsOfBlocks[NextGroupIdx].push_back(&*Res);
     }
     ++NextGroupIdx;
@@ -161,7 +197,7 @@ bool BlockExtractor::runOnModule(Module &M) {
     for (BasicBlock *BB : BBs) {
       // Check if the module contains BB.
       if (BB->getParent()->getParent() != &M)
-        report_fatal_error("Invalid basic block", /*GenCrashDiag=*/false);
+        report_fatal_error("Invalid basic block");
       LLVM_DEBUG(dbgs() << "BlockExtractor: Extracting "
                         << BB->getParent()->getName() << ":" << BB->getName()
                         << "\n");
@@ -195,17 +231,4 @@ bool BlockExtractor::runOnModule(Module &M) {
   }
 
   return Changed;
-}
-
-BlockExtractorPass::BlockExtractorPass(
-    std::vector<std::vector<BasicBlock *>> &&GroupsOfBlocks,
-    bool EraseFunctions)
-    : GroupsOfBlocks(GroupsOfBlocks), EraseFunctions(EraseFunctions) {}
-
-PreservedAnalyses BlockExtractorPass::run(Module &M,
-                                          ModuleAnalysisManager &AM) {
-  BlockExtractor BE(EraseFunctions);
-  BE.init(GroupsOfBlocks);
-  return BE.runOnModule(M) ? PreservedAnalyses::none()
-                           : PreservedAnalyses::all();
 }

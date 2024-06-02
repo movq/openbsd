@@ -24,19 +24,19 @@ class GIMatchTreeVariableBinding {
   StringRef Name;
   // The matched instruction it is bound to. 
   unsigned InstrID;
-  // The matched operand (if appropriate) it is bound to.
-  std::optional<unsigned> OpIdx;
+  // The matched operand (if appropriate) it is bound to. 
+  Optional<unsigned> OpIdx;
 
 public:
   GIMatchTreeVariableBinding(StringRef Name, unsigned InstrID,
-                             std::optional<unsigned> OpIdx = std::nullopt)
+                             Optional<unsigned> OpIdx = None)
       : Name(Name), InstrID(InstrID), OpIdx(OpIdx) {}
 
-  bool isInstr() const { return !OpIdx; }
+  bool isInstr() const { return !OpIdx.hasValue(); }
   StringRef getName() const { return Name; }
   unsigned getInstrID() const { return InstrID; }
   unsigned getOpIdx() const {
-    assert(OpIdx && "Is not an operand binding");
+    assert(OpIdx.hasValue() && "Is not an operand binding");
     return *OpIdx;
   }
 };
@@ -353,7 +353,10 @@ public:
   void declareOperand(unsigned InstrID, unsigned OpIdx);
 
   GIMatchTreeInstrInfo *getInstrInfo(unsigned ID) const {
-    return InstrIDToInfo.lookup(ID);
+    auto I = InstrIDToInfo.find(ID);
+    if (I != InstrIDToInfo.end())
+      return I->second;
+    return nullptr;
   }
 
   void dump(raw_ostream &OS) const {
@@ -588,7 +591,7 @@ class GIMatchTreeVRegDefPartitioner : public GIMatchTreePartitioner {
   unsigned OpIdx;
   std::vector<BitVector> TraversedEdges;
   DenseMap<unsigned, unsigned> ResultToPartition;
-  BitVector PartitionToResult;
+  std::vector<bool> PartitionToResult;
 
   void addToPartition(bool Result, unsigned LeafIdx);
 

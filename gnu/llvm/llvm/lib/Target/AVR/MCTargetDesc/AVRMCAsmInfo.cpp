@@ -20,10 +20,9 @@ AVRMCAsmInfo::AVRMCAsmInfo(const Triple &TT, const MCTargetOptions &Options) {
   CodePointerSize = 2;
   CalleeSaveStackSlotSize = 2;
   CommentString = ";";
-  SeparatorString = "$";
   PrivateGlobalPrefix = ".L";
-  PrivateLabelPrefix = ".L";
   UsesELFSectionDirectiveForBSS = true;
+  UseIntegratedAssembler = true;
   SupportsDebugInformation = true;
 }
 

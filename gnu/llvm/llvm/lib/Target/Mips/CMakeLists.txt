@@ -1,5 +1,3 @@
-add_llvm_component_group(Mips HAS_JIT)
-
 set(LLVM_TARGET_DEFINITIONS Mips.td)
 
 tablegen(LLVM MipsGenAsmMatcher.inc -gen-asm-matcher)
@@ -9,8 +7,6 @@ tablegen(LLVM MipsGenDAGISel.inc -gen-dag-isel)
 tablegen(LLVM MipsGenDisassemblerTables.inc -gen-disassembler)
 tablegen(LLVM MipsGenFastISel.inc -gen-fast-isel)
 tablegen(LLVM MipsGenGlobalISel.inc -gen-global-isel)
-tablegen(LLVM MipsGenPostLegalizeGICombiner.inc -gen-global-isel-combiner
-              -combiners="MipsPostLegalizerCombinerHelper")
 tablegen(LLVM MipsGenInstrInfo.inc -gen-instr-info)
 tablegen(LLVM MipsGenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM MipsGenMCPseudoLowering.inc -gen-pseudo-lowering)
@@ -43,7 +39,6 @@ add_llvm_target(MipsCodeGen
   MipsISelLowering.cpp
   MipsFrameLowering.cpp
   MipsLegalizerInfo.cpp
-  MipsLoongson2FBTBFix.cpp
   MipsBranchExpansion.cpp
   MipsMCInstLower.cpp
   MipsMachineFunction.cpp
@@ -51,7 +46,6 @@ add_llvm_target(MipsCodeGen
   MipsOptimizePICCall.cpp
   MipsOs16.cpp
   MipsPreLegalizerCombiner.cpp
-  MipsPostLegalizerCombiner.cpp
   MipsRegisterBankInfo.cpp
   MipsRegisterInfo.cpp
   MipsReturnProtectorLowering.cpp
@@ -63,26 +57,7 @@ add_llvm_target(MipsCodeGen
   MipsSubtarget.cpp
   MipsTargetMachine.cpp
   MipsTargetObjectFile.cpp
-  MipsTargetTransformInfo.cpp
   MicroMipsSizeReduction.cpp
-  MipsMulMulBugPass.cpp
-
-  LINK_COMPONENTS
-  Analysis
-  AsmPrinter
-  CodeGen
-  Core
-  MC
-  MipsDesc
-  MipsInfo
-  SelectionDAG
-  Support
-  Target
-  TargetParser
-  GlobalISel
-
-  ADD_TO_COMPONENT
-  Mips
   )
 
 add_subdirectory(AsmParser)

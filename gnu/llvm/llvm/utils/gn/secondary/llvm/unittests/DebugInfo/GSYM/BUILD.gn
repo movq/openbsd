@@ -1,4 +1,4 @@
-import("//third-party/unittest/unittest.gni")
+import("//llvm/utils/unittest/unittest.gni")
 
 unittest("DebugInfoGSYMTests") {
   deps = [
@@ -11,5 +11,7 @@ unittest("DebugInfoGSYMTests") {
     "//llvm/lib/Target:TargetsToBuild",
     "//llvm/lib/Testing/Support",
   ]
-  sources = [ "GSYMTest.cpp" ]
+  sources = [
+    "GSYMTest.cpp",
+  ]
 }

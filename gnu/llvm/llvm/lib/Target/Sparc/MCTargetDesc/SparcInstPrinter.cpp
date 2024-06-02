@@ -38,15 +38,15 @@ bool SparcInstPrinter::isV9(const MCSubtargetInfo &STI) const {
   return (STI.getFeatureBits()[Sparc::FeatureV9]) != 0;
 }
 
-void SparcInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
-  OS << '%' << StringRef(getRegisterName(Reg)).lower();
+void SparcInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const
+{
+  OS << '%' << StringRef(getRegisterName(RegNo)).lower();
 }
 
 void SparcInstPrinter::printInst(const MCInst *MI, uint64_t Address,
                                  StringRef Annot, const MCSubtargetInfo &STI,
                                  raw_ostream &O) {
-  if (!printAliasInstr(MI, Address, STI, O) &&
-      !printSparcAliasInstr(MI, STI, O))
+  if (!printAliasInstr(MI, STI, O) && !printSparcAliasInstr(MI, STI, O))
     printInstruction(MI, Address, STI, O);
   printAnnotation(O, Annot);
 }
@@ -140,34 +140,24 @@ void SparcInstPrinter::printOperand(const MCInst *MI, int opNum,
 void SparcInstPrinter::printMemOperand(const MCInst *MI, int opNum,
                                        const MCSubtargetInfo &STI,
                                        raw_ostream &O, const char *Modifier) {
+  printOperand(MI, opNum, STI, O);
+
   // If this is an ADD operand, emit it like normal operands.
   if (Modifier && !strcmp(Modifier, "arith")) {
-    printOperand(MI, opNum, STI, O);
     O << ", ";
-    printOperand(MI, opNum + 1, STI, O);
+    printOperand(MI, opNum+1, STI, O);
     return;
   }
+  const MCOperand &MO = MI->getOperand(opNum+1);
 
-  const MCOperand &Op1 = MI->getOperand(opNum);
-  const MCOperand &Op2 = MI->getOperand(opNum + 1);
+  if (MO.isReg() && MO.getReg() == SP::G0)
+    return;   // don't print "+%g0"
+  if (MO.isImm() && MO.getImm() == 0)
+    return;   // don't print "+0"
 
-  bool PrintedFirstOperand = false;
-  if (Op1.isReg() && Op1.getReg() != SP::G0) {
-    printOperand(MI, opNum, STI, O);
-    PrintedFirstOperand = true;
-  }
+  O << "+";
 
-  // Skip the second operand iff it adds nothing (literal 0 or %g0) and we've
-  // already printed the first one
-  const bool SkipSecondOperand =
-      PrintedFirstOperand && ((Op2.isReg() && Op2.getReg() == SP::G0) ||
-                              (Op2.isImm() && Op2.getImm() == 0));
-
-  if (!SkipSecondOperand) {
-    if (PrintedFirstOperand)
-      O << '+';
-    printOperand(MI, opNum + 1, STI, O);
-  }
+  printOperand(MI, opNum+1, STI, O);
 }
 
 void SparcInstPrinter::printCCOperand(const MCInst *MI, int opNum,
@@ -178,8 +168,6 @@ void SparcInstPrinter::printCCOperand(const MCInst *MI, int opNum,
   default: break;
   case SP::FBCOND:
   case SP::FBCONDA:
-  case SP::FBCOND_V9:
-  case SP::FBCONDA_V9:
   case SP::BPFCC:
   case SP::BPFCCA:
   case SP::BPFCCNT:
@@ -190,20 +178,12 @@ void SparcInstPrinter::printCCOperand(const MCInst *MI, int opNum,
   case SP::FMOVD_FCC: case SP::V9FMOVD_FCC:
   case SP::FMOVQ_FCC: case SP::V9FMOVQ_FCC:
     // Make sure CC is a fp conditional flag.
-    CC = (CC < SPCC::FCC_BEGIN) ? (CC + SPCC::FCC_BEGIN) : CC;
+    CC = (CC < 16) ? (CC + 16) : CC;
     break;
   case SP::CBCOND:
   case SP::CBCONDA:
     // Make sure CC is a cp conditional flag.
-    CC = (CC < SPCC::CPCC_BEGIN) ? (CC + SPCC::CPCC_BEGIN) : CC;
-    break;
-  case SP::MOVRri:
-  case SP::MOVRrr:
-  case SP::FMOVRS:
-  case SP::FMOVRD:
-  case SP::FMOVRQ:
-    // Make sure CC is a register conditional flag.
-    CC = (CC < SPCC::REG_BEGIN) ? (CC + SPCC::REG_BEGIN) : CC;
+    CC = (CC < 32) ? (CC + 32) : CC;
     break;
   }
   O << SPARCCondCodeToString((SPCC::CondCodes)CC);
@@ -231,7 +211,7 @@ void SparcInstPrinter::printMembarTag(const MCInst *MI, int opNum,
   }
 
   bool First = true;
-  for (unsigned i = 0; i < std::size(TagNames); i++) {
+  for (unsigned i = 0; i < sizeof(TagNames) / sizeof(char *); i++) {
     if (Imm & (1 << i)) {
       O << (First ? "" : " | ") << TagNames[i];
       First = false;

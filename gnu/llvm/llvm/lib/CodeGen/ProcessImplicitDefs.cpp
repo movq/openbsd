@@ -11,11 +11,10 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/InitializePasses.h"
-#include "llvm/Pass.h"
-#include "llvm/PassRegistry.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -46,11 +45,6 @@ public:
   void getAnalysisUsage(AnalysisUsage &au) const override;
 
   bool runOnMachineFunction(MachineFunction &MF) override;
-
-  MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().set(
-        MachineFunctionProperties::Property::IsSSA);
-  }
 };
 } // end anonymous namespace
 
@@ -82,7 +76,7 @@ void ProcessImplicitDefs::processImplicitDef(MachineInstr *MI) {
   LLVM_DEBUG(dbgs() << "Processing " << *MI);
   Register Reg = MI->getOperand(0).getReg();
 
-  if (Reg.isVirtual()) {
+  if (Register::isVirtualRegister(Reg)) {
     // For virtual registers, mark all uses as <undef>, and convert users to
     // implicit-def when possible.
     for (MachineOperand &MO : MRI->use_nodbg_operands(Reg)) {
@@ -108,7 +102,8 @@ void ProcessImplicitDefs::processImplicitDef(MachineInstr *MI) {
       if (!MO.isReg())
         continue;
       Register UserReg = MO.getReg();
-      if (!UserReg.isPhysical() || !TRI->regsOverlap(Reg, UserReg))
+      if (!Register::isPhysicalRegister(UserReg) ||
+          !TRI->regsOverlap(Reg, UserReg))
         continue;
       // UserMI uses or redefines Reg. Set <undef> flags on all uses.
       Found = true;
@@ -129,7 +124,7 @@ void ProcessImplicitDefs::processImplicitDef(MachineInstr *MI) {
   // Using instr wasn't found, it could be in another block.
   // Leave the physreg IMPLICIT_DEF, but trim any extra operands.
   for (unsigned i = MI->getNumOperands() - 1; i; --i)
-    MI->removeOperand(i);
+    MI->RemoveOperand(i);
   LLVM_DEBUG(dbgs() << "Keeping physreg: " << *MI);
 }
 
@@ -145,18 +140,21 @@ bool ProcessImplicitDefs::runOnMachineFunction(MachineFunction &MF) {
   TII = MF.getSubtarget().getInstrInfo();
   TRI = MF.getSubtarget().getRegisterInfo();
   MRI = &MF.getRegInfo();
+  assert(MRI->isSSA() && "ProcessImplicitDefs only works on SSA form.");
   assert(WorkList.empty() && "Inconsistent worklist state");
 
-  for (MachineBasicBlock &MBB : MF) {
+  for (MachineFunction::iterator MFI = MF.begin(), MFE = MF.end();
+       MFI != MFE; ++MFI) {
     // Scan the basic block for implicit defs.
-    for (MachineInstr &MI : MBB)
-      if (MI.isImplicitDef())
-        WorkList.insert(&MI);
+    for (MachineBasicBlock::instr_iterator MBBI = MFI->instr_begin(),
+         MBBE = MFI->instr_end(); MBBI != MBBE; ++MBBI)
+      if (MBBI->isImplicitDef())
+        WorkList.insert(&*MBBI);
 
     if (WorkList.empty())
       continue;
 
-    LLVM_DEBUG(dbgs() << printMBBReference(MBB) << " has " << WorkList.size()
+    LLVM_DEBUG(dbgs() << printMBBReference(*MFI) << " has " << WorkList.size()
                       << " implicit defs.\n");
     Changed = true;
 

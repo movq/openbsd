@@ -6,36 +6,39 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFO_PDB_NATIVE_DBISTREAMBUILDER_H
-#define LLVM_DEBUGINFO_PDB_NATIVE_DBISTREAMBUILDER_H
+#ifndef LLVM_DEBUGINFO_PDB_RAW_PDBDBISTREAMBUILDER_H
+#define LLVM_DEBUGINFO_PDB_RAW_PDBDBISTREAMBUILDER_H
 
-#include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/COFF.h"
-#include "llvm/Object/COFF.h"
-#include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
 
 #include "llvm/DebugInfo/CodeView/DebugFrameDataSubsection.h"
+#include "llvm/DebugInfo/PDB/Native/PDBFile.h"
 #include "llvm/DebugInfo/PDB/Native/PDBStringTableBuilder.h"
 #include "llvm/DebugInfo/PDB/Native/RawConstants.h"
-#include "llvm/DebugInfo/PDB/Native/RawTypes.h"
 #include "llvm/DebugInfo/PDB/PDBTypes.h"
 #include "llvm/Support/BinaryByteStream.h"
-#include "llvm/Support/BinaryStreamRef.h"
+#include "llvm/Support/BinaryStreamReader.h"
+#include "llvm/Support/Endian.h"
 
 namespace llvm {
-
-class BinaryStreamWriter;
 namespace codeview {
 struct FrameData;
 }
 namespace msf {
 class MSFBuilder;
-struct MSFLayout;
+}
+namespace object {
+struct coff_section;
+struct FpoData;
 }
 namespace pdb {
+class DbiStream;
+struct DbiStreamHeader;
 class DbiModuleDescriptorBuilder;
+class PDBFile;
 
 class DbiStreamBuilder {
 public:
@@ -54,6 +57,7 @@ public:
   void setFlags(uint16_t F);
   void setMachineType(PDB_Machine M);
   void setMachineType(COFF::MachineTypes M);
+  void setSectionMap(ArrayRef<SecMapEntry> SecMap);
 
   // Add given bytes as a new stream.
   Error addDbgStream(pdb::DbgHeaderType Type, ArrayRef<uint8_t> Data);
@@ -80,8 +84,9 @@ public:
     SectionContribs.emplace_back(SC);
   }
 
-  // Populate the Section Map from COFF section headers.
-  void createSectionMap(ArrayRef<llvm::object::coff_section> SecHdrs);
+  // A helper function to create a Section Map from a COFF section header.
+  static std::vector<SecMapEntry>
+  createSectionMap(ArrayRef<llvm::object::coff_section> SecHdrs);
 
 private:
   struct DebugStream {
@@ -104,7 +109,7 @@ private:
   msf::MSFBuilder &Msf;
   BumpPtrAllocator &Allocator;
 
-  std::optional<PdbRaw_DbiVer> VerHeader;
+  Optional<PdbRaw_DbiVer> VerHeader;
   uint32_t Age;
   uint16_t BuildNumber;
   uint16_t PdbDllVersion;
@@ -119,7 +124,7 @@ private:
 
   std::vector<std::unique_ptr<DbiModuleDescriptorBuilder>> ModiList;
 
-  std::optional<codeview::DebugFrameDataSubsection> NewFpoData;
+  Optional<codeview::DebugFrameDataSubsection> NewFpoData;
   std::vector<object::FpoData> OldFpoData;
 
   StringMap<uint32_t> SourceFileNames;
@@ -128,10 +133,10 @@ private:
   WritableBinaryStreamRef NamesBuffer;
   MutableBinaryByteStream FileInfoBuffer;
   std::vector<SectionContrib> SectionContribs;
-  std::vector<SecMapEntry> SectionMap;
-  std::array<std::optional<DebugStream>, (int)DbgHeaderType::Max> DbgStreams;
+  ArrayRef<SecMapEntry> SectionMap;
+  std::array<Optional<DebugStream>, (int)DbgHeaderType::Max> DbgStreams;
 };
-} // namespace pdb
+}
 }
 
 #endif

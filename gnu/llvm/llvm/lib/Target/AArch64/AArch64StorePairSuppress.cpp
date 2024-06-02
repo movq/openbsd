@@ -88,7 +88,7 @@ bool AArch64StorePairSuppress::shouldAddSTPToBlock(const MachineBasicBlock *BB) 
 
   // If a subtarget does not define resources for STPQi, bail here.
   if (SCDesc->isValid() && !SCDesc->isVariant()) {
-    unsigned ResLenWithSTP = BBTrace.getResourceLength(std::nullopt, SCDesc);
+    unsigned ResLenWithSTP = BBTrace.getResourceLength(None, SCDesc);
     if (ResLenWithSTP > ResLength) {
       LLVM_DEBUG(dbgs() << "  Suppress STP in BB: " << BB->getNumber()
                         << " resources " << ResLength << " -> " << ResLenWithSTP
@@ -119,7 +119,7 @@ bool AArch64StorePairSuppress::isNarrowFPStore(const MachineInstr &MI) {
 }
 
 bool AArch64StorePairSuppress::runOnMachineFunction(MachineFunction &MF) {
-  if (skipFunction(MF.getFunction()) || MF.getFunction().hasOptSize())
+  if (skipFunction(MF.getFunction()))
     return false;
 
   const TargetSubtargetInfo &ST = MF.getSubtarget();
@@ -149,9 +149,7 @@ bool AArch64StorePairSuppress::runOnMachineFunction(MachineFunction &MF) {
         continue;
       const MachineOperand *BaseOp;
       int64_t Offset;
-      bool OffsetIsScalable;
-      if (TII->getMemOperandWithOffset(MI, BaseOp, Offset, OffsetIsScalable,
-                                       TRI) &&
+      if (TII->getMemOperandWithOffset(MI, BaseOp, Offset, TRI) &&
           BaseOp->isReg()) {
         Register BaseReg = BaseOp->getReg();
         if (PrevBaseReg == BaseReg) {

@@ -24,6 +24,8 @@
 namespace llvm {
 namespace msf {
 
+struct MSFLayout;
+
 /// MappedBlockStream represents data stored in an MSF file into chunks of a
 /// particular size (called the Block Size), and whose chunks may not be
 /// necessarily contiguous.  The arrangement of these chunks MSF the file
@@ -58,12 +60,12 @@ public:
     return support::little;
   }
 
-  Error readBytes(uint64_t Offset, uint64_t Size,
+  Error readBytes(uint32_t Offset, uint32_t Size,
                   ArrayRef<uint8_t> &Buffer) override;
-  Error readLongestContiguousChunk(uint64_t Offset,
+  Error readLongestContiguousChunk(uint32_t Offset,
                                    ArrayRef<uint8_t> &Buffer) override;
 
-  uint64_t getLength() override;
+  uint32_t getLength() override;
 
   BumpPtrAllocator &getAllocator() { return Allocator; }
 
@@ -79,10 +81,10 @@ protected:
 
 private:
   const MSFStreamLayout &getStreamLayout() const { return StreamLayout; }
-  void fixCacheAfterWrite(uint64_t Offset, ArrayRef<uint8_t> Data) const;
+  void fixCacheAfterWrite(uint32_t Offset, ArrayRef<uint8_t> Data) const;
 
-  Error readBytes(uint64_t Offset, MutableArrayRef<uint8_t> Buffer);
-  bool tryReadContiguously(uint64_t Offset, uint64_t Size,
+  Error readBytes(uint32_t Offset, MutableArrayRef<uint8_t> Buffer);
+  bool tryReadContiguously(uint32_t Offset, uint32_t Size,
                            ArrayRef<uint8_t> &Buffer);
 
   const uint32_t BlockSize;
@@ -125,13 +127,13 @@ public:
     return support::little;
   }
 
-  Error readBytes(uint64_t Offset, uint64_t Size,
+  Error readBytes(uint32_t Offset, uint32_t Size,
                   ArrayRef<uint8_t> &Buffer) override;
-  Error readLongestContiguousChunk(uint64_t Offset,
+  Error readLongestContiguousChunk(uint32_t Offset,
                                    ArrayRef<uint8_t> &Buffer) override;
-  uint64_t getLength() override;
+  uint32_t getLength() override;
 
-  Error writeBytes(uint64_t Offset, ArrayRef<uint8_t> Buffer) override;
+  Error writeBytes(uint32_t Offset, ArrayRef<uint8_t> Buffer) override;
 
   Error commit() override;
 
@@ -154,7 +156,7 @@ private:
   WritableBinaryStreamRef WriteInterface;
 };
 
-} // namespace msf
+} // end namespace pdb
 } // end namespace llvm
 
 #endif // LLVM_DEBUGINFO_MSF_MAPPEDBLOCKSTREAM_H

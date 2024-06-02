@@ -37,6 +37,8 @@ ARMMCAsmInfoDarwin::ARMMCAsmInfoDarwin(const Triple &TheTriple) {
   ExceptionsType = (TheTriple.isOSDarwin() && !TheTriple.isWatchABI())
                        ? ExceptionHandling::SjLj
                        : ExceptionHandling::DwarfCFI;
+
+  UseIntegratedAssembler = true;
 }
 
 void ARMELFMCAsmInfo::anchor() { }
@@ -71,6 +73,8 @@ ARMELFMCAsmInfo::ARMELFMCAsmInfo(const Triple &TheTriple) {
 
   // foo(plt) instead of foo@plt
   UseParensForSymbolVariant = true;
+
+  UseIntegratedAssembler = true;
 }
 
 void ARMELFMCAsmInfo::setUseIntegratedAssembler(bool Value) {
@@ -87,12 +91,10 @@ void ARMCOFFMCAsmInfoMicrosoft::anchor() { }
 
 ARMCOFFMCAsmInfoMicrosoft::ARMCOFFMCAsmInfoMicrosoft() {
   AlignmentIsInBytes = false;
-  SupportsDebugInformation = true;
   ExceptionsType = ExceptionHandling::WinEH;
-  WinEHEncodingType = WinEH::EncodingType::Itanium;
   PrivateGlobalPrefix = "$M";
   PrivateLabelPrefix = "$M";
-  CommentString = "@";
+  CommentString = ";";
 
   // Conditional Thumb 4-byte instructions can have an implicit IT.
   MaxInstLength = 6;
@@ -111,10 +113,10 @@ ARMCOFFMCAsmInfoGNU::ARMCOFFMCAsmInfoGNU() {
   PrivateLabelPrefix = ".L";
 
   SupportsDebugInformation = true;
-  ExceptionsType = ExceptionHandling::WinEH;
-  WinEHEncodingType = WinEH::EncodingType::Itanium;
+  ExceptionsType = ExceptionHandling::DwarfCFI;
   UseParensForSymbolVariant = true;
 
+  UseIntegratedAssembler = true;
   DwarfRegNumForCFI = false;
 
   // Conditional Thumb 4-byte instructions can have an implicit IT.

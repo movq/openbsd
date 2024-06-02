@@ -1,6 +1,5 @@
 #include "AliasAnalysisSummary.h"
 #include "llvm/IR/Argument.h"
-#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Compiler.h"
 
@@ -73,31 +72,31 @@ AliasAttrs getExternallyVisibleAttrs(AliasAttrs Attr) {
   return Attr & AliasAttrs(ExternalAttrMask);
 }
 
-std::optional<InstantiatedValue>
-instantiateInterfaceValue(InterfaceValue IValue, CallBase &Call) {
+Optional<InstantiatedValue> instantiateInterfaceValue(InterfaceValue IValue,
+                                                      CallBase &Call) {
   auto Index = IValue.Index;
   auto *V = (Index == 0) ? &Call : Call.getArgOperand(Index - 1);
   if (V->getType()->isPointerTy())
     return InstantiatedValue{V, IValue.DerefLevel};
-  return std::nullopt;
+  return None;
 }
 
-std::optional<InstantiatedRelation>
+Optional<InstantiatedRelation>
 instantiateExternalRelation(ExternalRelation ERelation, CallBase &Call) {
   auto From = instantiateInterfaceValue(ERelation.From, Call);
   if (!From)
-    return std::nullopt;
+    return None;
   auto To = instantiateInterfaceValue(ERelation.To, Call);
   if (!To)
-    return std::nullopt;
+    return None;
   return InstantiatedRelation{*From, *To, ERelation.Offset};
 }
 
-std::optional<InstantiatedAttr>
-instantiateExternalAttribute(ExternalAttribute EAttr, CallBase &Call) {
+Optional<InstantiatedAttr> instantiateExternalAttribute(ExternalAttribute EAttr,
+                                                        CallBase &Call) {
   auto Value = instantiateInterfaceValue(EAttr.IValue, Call);
   if (!Value)
-    return std::nullopt;
+    return None;
   return InstantiatedAttr{*Value, EAttr.Attr};
 }
 }

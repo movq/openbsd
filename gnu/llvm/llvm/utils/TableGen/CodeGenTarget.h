@@ -17,15 +17,16 @@
 #define LLVM_UTILS_TABLEGEN_CODEGENTARGET_H
 
 #include "CodeGenHwModes.h"
+#include "CodeGenInstruction.h"
 #include "CodeGenRegisters.h"
 #include "InfoByHwMode.h"
 #include "SDNodeProperties.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/TableGen/Record.h"
+#include <algorithm>
 
 namespace llvm {
 
-class RecordKeeper;
-class Record;
-class CodeGenInstruction;
 struct CodeGenRegister;
 class CodeGenSchedModels;
 class CodeGenTarget;
@@ -59,7 +60,6 @@ class CodeGenTarget {
 
   mutable std::unique_ptr<CodeGenSchedModels> SchedModels;
 
-  mutable StringRef InstNamespace;
   mutable std::vector<const CodeGenInstruction*> InstrsByEnum;
   mutable unsigned NumPseudoInstructions = 0;
 public:
@@ -67,14 +67,11 @@ public:
   ~CodeGenTarget();
 
   Record *getTargetRecord() const { return TargetRec; }
-  StringRef getName() const;
+  const StringRef getName() const;
 
   /// getInstNamespace - Return the target-specific instruction namespace.
   ///
   StringRef getInstNamespace() const;
-
-  /// getRegNamespace - Return the target-specific register namespace.
-  StringRef getRegNamespace() const;
 
   /// getInstructionSet - Return the InstructionSet object.
   ///
@@ -108,10 +105,9 @@ public:
 
   /// Return the largest register class on \p RegBank which supports \p Ty and
   /// covers \p SubIdx if it exists.
-  std::optional<CodeGenRegisterClass *>
+  Optional<CodeGenRegisterClass *>
   getSuperRegForSubReg(const ValueTypeByHwMode &Ty, CodeGenRegBank &RegBank,
-                       const CodeGenSubRegIndex *SubIdx,
-                       bool MustBeAllocatable = false) const;
+                       const CodeGenSubRegIndex *SubIdx) const;
 
   /// getRegisterByName - If there is a register with the specific AsmName,
   /// return it.
@@ -201,7 +197,7 @@ private:
 /// ComplexPattern - ComplexPattern info, corresponding to the ComplexPattern
 /// tablegen class in TargetSelectionDAG.td
 class ComplexPattern {
-  Record *Ty;
+  MVT::SimpleValueType Ty;
   unsigned NumOperands;
   std::string SelectFunc;
   std::vector<Record*> RootNodes;
@@ -210,7 +206,7 @@ class ComplexPattern {
 public:
   ComplexPattern(Record *R);
 
-  Record *getValueType() const { return Ty; }
+  MVT::SimpleValueType getValueType() const { return Ty; }
   unsigned getNumOperands() const { return NumOperands; }
   const std::string &getSelectFunc() const { return SelectFunc; }
   const std::vector<Record*> &getRootNodes() const {

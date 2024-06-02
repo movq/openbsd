@@ -37,7 +37,7 @@ static_library("LLVMAVRCodeGen") {
     "AVRInstrInfo.cpp",
     "AVRMCInstLower.cpp",
     "AVRRegisterInfo.cpp",
-    "AVRShiftExpand.cpp",
+    "AVRRelaxMemOperations.cpp",
     "AVRSubtarget.cpp",
     "AVRTargetMachine.cpp",
     "AVRTargetObjectFile.cpp",

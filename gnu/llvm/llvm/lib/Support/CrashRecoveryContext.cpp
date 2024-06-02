@@ -9,19 +9,23 @@
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/ExitCodes.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/thread.h"
-#include <cassert>
+#include "llvm/Support/ThreadLocal.h"
 #include <mutex>
 #include <setjmp.h>
+#if LLVM_ON_UNIX
+#include <sysexits.h> // EX_IOERR
+#endif
 
 using namespace llvm;
 
 namespace {
 
 struct CrashRecoveryContextImpl;
-static LLVM_THREAD_LOCAL const CrashRecoveryContextImpl *CurrentContext;
+
+static ManagedStatic<
+    sys::ThreadLocal<const CrashRecoveryContextImpl> > CurrentContext;
 
 struct CrashRecoveryContextImpl {
   // When threads are disabled, this links up all active
@@ -39,12 +43,12 @@ struct CrashRecoveryContextImpl {
 public:
   CrashRecoveryContextImpl(CrashRecoveryContext *CRC) noexcept
       : CRC(CRC), Failed(false), SwitchedThread(false), ValidJumpBuffer(false) {
-    Next = CurrentContext;
-    CurrentContext = this;
+    Next = CurrentContext->get();
+    CurrentContext->set(this);
   }
   ~CrashRecoveryContextImpl() {
     if (!SwitchedThread)
-      CurrentContext = Next;
+      CurrentContext->set(Next);
   }
 
   /// Called when the separate crash-recovery thread was finished, to
@@ -62,7 +66,7 @@ public:
   void HandleCrash(int RetCode, uintptr_t Context) {
     // Eliminate the current context entry, to avoid re-entering in case the
     // cleanup code crashes.
-    CurrentContext = Next;
+    CurrentContext->set(Next);
 
     assert(!Failed && "Crash recovery context already failed!");
     Failed = true;
@@ -80,35 +84,24 @@ public:
     // this occurs when using SEH on Windows with MSVC or clang-cl.
   }
 };
-
-std::mutex &getCrashRecoveryContextMutex() {
-  static std::mutex CrashRecoveryContextMutex;
-  return CrashRecoveryContextMutex;
 }
 
+static ManagedStatic<std::mutex> gCrashRecoveryContextMutex;
 static bool gCrashRecoveryEnabled = false;
 
-static LLVM_THREAD_LOCAL const CrashRecoveryContext *IsRecoveringFromCrash;
-
-} // namespace
+static ManagedStatic<sys::ThreadLocal<const CrashRecoveryContext>>
+       tlIsRecoveringFromCrash;
 
 static void installExceptionOrSignalHandlers();
 static void uninstallExceptionOrSignalHandlers();
 
-CrashRecoveryContextCleanup::~CrashRecoveryContextCleanup() = default;
-
-CrashRecoveryContext::CrashRecoveryContext() {
-  // On Windows, if abort() was previously triggered (and caught by a previous
-  // CrashRecoveryContext) the Windows CRT removes our installed signal handler,
-  // so we need to install it again.
-  sys::DisableSystemDialogsOnCrash();
-}
+CrashRecoveryContextCleanup::~CrashRecoveryContextCleanup() {}
 
 CrashRecoveryContext::~CrashRecoveryContext() {
   // Reclaim registered resources.
   CrashRecoveryContextCleanup *i = head;
-  const CrashRecoveryContext *PC = IsRecoveringFromCrash;
-  IsRecoveringFromCrash = this;
+  const CrashRecoveryContext *PC = tlIsRecoveringFromCrash->get();
+  tlIsRecoveringFromCrash->set(this);
   while (i) {
     CrashRecoveryContextCleanup *tmp = i;
     i = tmp->next;
@@ -116,21 +109,21 @@ CrashRecoveryContext::~CrashRecoveryContext() {
     tmp->recoverResources();
     delete tmp;
   }
-  IsRecoveringFromCrash = PC;
+  tlIsRecoveringFromCrash->set(PC);
 
   CrashRecoveryContextImpl *CRCI = (CrashRecoveryContextImpl *) Impl;
   delete CRCI;
 }
 
 bool CrashRecoveryContext::isRecoveringFromCrash() {
-  return IsRecoveringFromCrash != nullptr;
+  return tlIsRecoveringFromCrash->get() != nullptr;
 }
 
 CrashRecoveryContext *CrashRecoveryContext::GetCurrent() {
   if (!gCrashRecoveryEnabled)
     return nullptr;
 
-  const CrashRecoveryContextImpl *CRCI = CurrentContext;
+  const CrashRecoveryContextImpl *CRCI = CurrentContext->get();
   if (!CRCI)
     return nullptr;
 
@@ -138,7 +131,7 @@ CrashRecoveryContext *CrashRecoveryContext::GetCurrent() {
 }
 
 void CrashRecoveryContext::Enable() {
-  std::lock_guard<std::mutex> L(getCrashRecoveryContextMutex());
+  std::lock_guard<std::mutex> L(*gCrashRecoveryContextMutex);
   // FIXME: Shouldn't this be a refcount or something?
   if (gCrashRecoveryEnabled)
     return;
@@ -147,7 +140,7 @@ void CrashRecoveryContext::Enable() {
 }
 
 void CrashRecoveryContext::Disable() {
-  std::lock_guard<std::mutex> L(getCrashRecoveryContextMutex());
+  std::lock_guard<std::mutex> L(*gCrashRecoveryContextMutex);
   if (!gCrashRecoveryEnabled)
     return;
   gCrashRecoveryEnabled = false;
@@ -200,7 +193,7 @@ static void uninstallExceptionOrSignalHandlers() {}
 // occur inside the __except evaluation block
 static int ExceptionFilter(_EXCEPTION_POINTERS *Except) {
   // Lookup the current thread local recovery object.
-  const CrashRecoveryContextImpl *CRCI = CurrentContext;
+  const CrashRecoveryContextImpl *CRCI = CurrentContext->get();
 
   if (!CRCI) {
     // Something has gone horribly wrong, so let's just tell everyone
@@ -277,7 +270,7 @@ static LONG CALLBACK ExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
   }
 
   // Lookup the current thread local recovery object.
-  const CrashRecoveryContextImpl *CRCI = CurrentContext;
+  const CrashRecoveryContextImpl *CRCI = CurrentContext->get();
 
   if (!CRCI) {
     // Something has gone horribly wrong, so let's just tell everyone
@@ -307,7 +300,7 @@ static LONG CALLBACK ExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
 // CrashRecoveryContext at all.  So we make use of a thread-local
 // exception table.  The handles contained in here will either be
 // non-NULL, valid VEH handles, or NULL.
-static LLVM_THREAD_LOCAL const void* sCurrentExceptionHandle;
+static sys::ThreadLocal<const void> sCurrentExceptionHandle;
 
 static void installExceptionOrSignalHandlers() {
   // We can set up vectored exception handling now.  We will install our
@@ -315,17 +308,17 @@ static void installExceptionOrSignalHandlers() {
   // it will remain at the front (another call could install itself before
   // our handler).  This 1) isn't likely, and 2) shouldn't cause problems.
   PVOID handle = ::AddVectoredExceptionHandler(1, ExceptionHandler);
-  sCurrentExceptionHandle = handle;
+  sCurrentExceptionHandle.set(handle);
 }
 
 static void uninstallExceptionOrSignalHandlers() {
-  PVOID currentHandle = const_cast<PVOID>(sCurrentExceptionHandle);
+  PVOID currentHandle = const_cast<PVOID>(sCurrentExceptionHandle.get());
   if (currentHandle) {
     // Now we can remove the vectored exception handler from the chain
     ::RemoveVectoredExceptionHandler(currentHandle);
 
     // Reset the handle in our thread-local set.
-    sCurrentExceptionHandle = NULL;
+    sCurrentExceptionHandle.set(NULL);
   }
 }
 
@@ -346,12 +339,12 @@ static void uninstallExceptionOrSignalHandlers() {
 
 static const int Signals[] =
     { SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP };
-static const unsigned NumSignals = std::size(Signals);
+static const unsigned NumSignals = array_lengthof(Signals);
 static struct sigaction PrevActions[NumSignals];
 
 static void CrashRecoverySignalHandler(int Signal) {
   // Lookup the current thread local recovery object.
-  const CrashRecoveryContextImpl *CRCI = CurrentContext;
+  const CrashRecoveryContextImpl *CRCI = CurrentContext->get();
 
   if (!CRCI) {
     // We didn't find a crash recovery context -- this means either we got a
@@ -377,10 +370,9 @@ static void CrashRecoverySignalHandler(int Signal) {
   sigaddset(&SigMask, Signal);
   sigprocmask(SIG_UNBLOCK, &SigMask, nullptr);
 
-  // Return the same error code as if the program crashed, as mentioned in the
-  // section "Exit Status for Commands":
-  // https://pubs.opengroup.org/onlinepubs/9699919799/xrat/V4_xcu_chap02.html
-  int RetCode = 128 + Signal;
+  // As per convention, -2 indicates a crash or timeout as opposed to failure to
+  // execute (see llvm/include/llvm/Support/Program.h)
+  int RetCode = -2;
 
   // Don't consider a broken pipe as a crash (see clang/lib/Driver/Driver.cpp)
   if (Signal == SIGPIPE)
@@ -429,7 +421,8 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
 
 #endif // !_MSC_VER
 
-[[noreturn]] void CrashRecoveryContext::HandleExit(int RetCode) {
+LLVM_ATTRIBUTE_NORETURN
+void CrashRecoveryContext::HandleExit(int RetCode) {
 #if defined(_WIN32)
   // SEH and VEH
   ::RaiseException(0xE0000000 | RetCode, 0, 0, NULL);
@@ -441,36 +434,6 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
   CRCI->HandleCrash(RetCode, 0 /*no sig num*/);
 #endif
   llvm_unreachable("Most likely setjmp wasn't called!");
-}
-
-bool CrashRecoveryContext::isCrash(int RetCode) {
-#if defined(_WIN32)
-  // On Windows, the high bits are reserved for kernel return codes. Values
-  // starting with 0x80000000 are reserved for "warnings"; values of 0xC0000000
-  // and up are for "errors". In practice, both are interpreted as a
-  // non-continuable signal.
-  unsigned Code = ((unsigned)RetCode & 0xF0000000) >> 28;
-  if (Code != 0xC && Code != 8)
-    return false;
-#else
-  // On Unix, signals are represented by return codes of 128 or higher.
-  // Exit code 128 is a reserved value and should not be raised as a signal.
-  if (RetCode <= 128)
-    return false;
-#endif
-  return true;
-}
-
-bool CrashRecoveryContext::throwIfCrash(int RetCode) {
-  if (!isCrash(RetCode))
-    return false;
-#if defined(_WIN32)
-  ::RaiseException(RetCode, 0, 0, NULL);
-#else
-  llvm::sys::unregisterHandlers();
-  raise(RetCode - 128);
-#endif
-  return true;
 }
 
 // FIXME: Portability.
@@ -495,7 +458,7 @@ struct RunSafelyOnThreadInfo {
   bool UseBackgroundPriority;
   bool Result;
 };
-} // namespace
+}
 
 static void RunSafelyOnThread_Dispatch(void *UserData) {
   RunSafelyOnThreadInfo *Info =
@@ -510,12 +473,10 @@ bool CrashRecoveryContext::RunSafelyOnThread(function_ref<void()> Fn,
                                              unsigned RequestedStackSize) {
   bool UseBackgroundPriority = hasThreadBackgroundPriority();
   RunSafelyOnThreadInfo Info = { Fn, this, UseBackgroundPriority, false };
-  llvm::thread Thread(RequestedStackSize == 0
-                          ? std::nullopt
-                          : std::optional<unsigned>(RequestedStackSize),
-                      RunSafelyOnThread_Dispatch, &Info);
-  Thread.join();
-
+  llvm_execute_on_thread(RunSafelyOnThread_Dispatch, &Info,
+                         RequestedStackSize == 0
+                             ? llvm::None
+                             : llvm::Optional<unsigned>(RequestedStackSize));
   if (CrashRecoveryContextImpl *CRC = (CrashRecoveryContextImpl *)Impl)
     CRC->setSwitchedThread();
   return Info.Result;

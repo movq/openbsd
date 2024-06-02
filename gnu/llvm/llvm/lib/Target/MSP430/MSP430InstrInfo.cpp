@@ -18,8 +18,8 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Function.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 
@@ -33,10 +33,11 @@ MSP430InstrInfo::MSP430InstrInfo(MSP430Subtarget &STI)
   : MSP430GenInstrInfo(MSP430::ADJCALLSTACKDOWN, MSP430::ADJCALLSTACKUP),
     RI() {}
 
-void MSP430InstrInfo::storeRegToStackSlot(
-    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, Register SrcReg,
-    bool isKill, int FrameIdx, const TargetRegisterClass *RC,
-    const TargetRegisterInfo *TRI, Register VReg) const {
+void MSP430InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
+                                          MachineBasicBlock::iterator MI,
+                                    unsigned SrcReg, bool isKill, int FrameIdx,
+                                          const TargetRegisterClass *RC,
+                                          const TargetRegisterInfo *TRI) const {
   DebugLoc DL;
   if (MI != MBB.end()) DL = MI->getDebugLoc();
   MachineFunction &MF = *MBB.getParent();
@@ -45,7 +46,7 @@ void MSP430InstrInfo::storeRegToStackSlot(
   MachineMemOperand *MMO = MF.getMachineMemOperand(
       MachinePointerInfo::getFixedStack(MF, FrameIdx),
       MachineMemOperand::MOStore, MFI.getObjectSize(FrameIdx),
-      MFI.getObjectAlign(FrameIdx));
+      MFI.getObjectAlignment(FrameIdx));
 
   if (RC == &MSP430::GR16RegClass)
     BuildMI(MBB, MI, DL, get(MSP430::MOV16mr))
@@ -61,10 +62,9 @@ void MSP430InstrInfo::storeRegToStackSlot(
 
 void MSP430InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator MI,
-                                           Register DestReg, int FrameIdx,
+                                           unsigned DestReg, int FrameIdx,
                                            const TargetRegisterClass *RC,
-                                           const TargetRegisterInfo *TRI,
-                                           Register VReg) const {
+                                           const TargetRegisterInfo *TRI) const{
   DebugLoc DL;
   if (MI != MBB.end()) DL = MI->getDebugLoc();
   MachineFunction &MF = *MBB.getParent();
@@ -73,7 +73,7 @@ void MSP430InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
   MachineMemOperand *MMO = MF.getMachineMemOperand(
       MachinePointerInfo::getFixedStack(MF, FrameIdx),
       MachineMemOperand::MOLoad, MFI.getObjectSize(FrameIdx),
-      MFI.getObjectAlign(FrameIdx));
+      MFI.getObjectAlignment(FrameIdx));
 
   if (RC == &MSP430::GR16RegClass)
     BuildMI(MBB, MI, DL, get(MSP430::MOV16rm))
@@ -116,7 +116,6 @@ unsigned MSP430InstrInfo::removeBranch(MachineBasicBlock &MBB,
       continue;
     if (I->getOpcode() != MSP430::JMP &&
         I->getOpcode() != MSP430::JCC &&
-        I->getOpcode() != MSP430::Bi &&
         I->getOpcode() != MSP430::Br &&
         I->getOpcode() != MSP430::Bm)
       break;
@@ -161,6 +160,18 @@ reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const {
   return false;
 }
 
+bool MSP430InstrInfo::isUnpredicatedTerminator(const MachineInstr &MI) const {
+  if (!MI.isTerminator())
+    return false;
+
+  // Conditional branch is a special case.
+  if (MI.isBranch() && !MI.isBarrier())
+    return true;
+  if (!MI.isPredicable())
+    return true;
+  return !isPredicated(MI);
+}
+
 bool MSP430InstrInfo::analyzeBranch(MachineBasicBlock &MBB,
                                     MachineBasicBlock *&TBB,
                                     MachineBasicBlock *&FBB,
@@ -190,14 +201,15 @@ bool MSP430InstrInfo::analyzeBranch(MachineBasicBlock &MBB,
       return true;
 
     // Handle unconditional branches.
-    if (I->getOpcode() == MSP430::JMP || I->getOpcode() == MSP430::Bi) {
+    if (I->getOpcode() == MSP430::JMP) {
       if (!AllowModify) {
         TBB = I->getOperand(0).getMBB();
         continue;
       }
 
       // If the block has any instructions after a JMP, delete them.
-      MBB.erase(std::next(I), MBB.end());
+      while (std::next(I) != MBB.end())
+        std::next(I)->eraseFromParent();
       Cond.clear();
       FBB = nullptr;
 

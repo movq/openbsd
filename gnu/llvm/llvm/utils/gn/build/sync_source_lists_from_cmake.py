@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 """Helps to keep BUILD.gn files in sync with the corresponding CMakeLists.txt.
 
@@ -11,8 +11,10 @@ binaries have corresponding BUILD.gn files.
 
 If --write is passed, tries to write modified .gn files and adds one git
 commit for each cmake commit this merges. If an error is reported, the state
-of HEAD is unspecified; run `git reset --hard origin/main` if this happens.
+of HEAD is unspecified; run `git reset --hard origin/master` if this happens.
 """
+
+from __future__ import print_function
 
 from collections import defaultdict
 import os
@@ -24,20 +26,20 @@ import sys
 def patch_gn_file(gn_file, add, remove):
     with open(gn_file) as f:
         gn_contents = f.read()
-    if add:
-        srcs_tok = 'sources = ['
-        tokloc = gn_contents.find(srcs_tok)
-        while gn_contents.startswith('sources = []', tokloc):
-            tokloc = gn_contents.find(srcs_tok, tokloc + 1)
-        if tokloc == -1: raise ValueError(gn_file + ': No source list')
-        if gn_contents.find(srcs_tok, tokloc + 1) != -1:
-            raise ValueError(gn_file + ': Multiple source lists')
-        if gn_contents.find('# NOSORT', 0, tokloc) != -1:
-            raise ValueError(gn_file + ': Found # NOSORT, needs manual merge')
-        tokloc += len(srcs_tok)
-        for a in add:
-            gn_contents = (gn_contents[:tokloc] + ('"%s",' % a) +
-                           gn_contents[tokloc:])
+
+    srcs_tok = 'sources = ['
+    tokloc = gn_contents.find(srcs_tok)
+
+    if tokloc == -1: raise ValueError(gn_file + ': Failed to find source list')
+    if gn_contents.find(srcs_tok, tokloc + 1) != -1:
+        raise ValueError(gn_file + ': Multiple source lists')
+    if gn_file.find('# NOSORT', 0, tokloc) != -1:
+        raise ValueError(gn_file + ': Found # NOSORT, needs manual merge')
+
+    tokloc += len(srcs_tok)
+    for a in add:
+        gn_contents = (gn_contents[:tokloc] + ('"%s",' % a) +
+                       gn_contents[tokloc:])
     for r in remove:
         gn_contents = gn_contents.replace('"%s",' % r, '')
     with open(gn_file, 'w') as f:
@@ -52,16 +54,11 @@ def sync_source_lists(write):
     # Use shell=True on Windows in case git is a bat file.
     def git(args): subprocess.check_call(['git'] + args, shell=os.name == 'nt')
     def git_out(args):
-        return subprocess.check_output(['git'] + args, shell=os.name == 'nt',
-                                       universal_newlines=True)
+        return subprocess.check_output(['git'] + args, shell=os.name == 'nt')
     gn_files = git_out(['ls-files', '*BUILD.gn']).splitlines()
 
     # Matches e.g. |   "foo.cpp",|, captures |foo| in group 1.
-    gn_cpp_re = re.compile(r'^\s*"([^$"]+\.(?:cpp|c|h|S))",$', re.MULTILINE)
-    # Matches e.g. |   bar_sources = [ "foo.cpp" ]|, captures |foo| in group 1.
-    gn_cpp_re2 = re.compile(
-        r'^\s*(?:.*_)?sources \+?= \[ "([^$"]+\.(?:cpp|c|h|S))" ]$',
-        re.MULTILINE)
+    gn_cpp_re = re.compile(r'^\s*"([^"]+\.(?:cpp|c|h|S))",$', re.MULTILINE)
     # Matches e.g. |   foo.cpp|, captures |foo| in group 1.
     cmake_cpp_re = re.compile(r'^\s*([A-Za-z_0-9./-]+\.(?:cpp|c|h|S))$',
                               re.MULTILINE)
@@ -69,12 +66,8 @@ def sync_source_lists(write):
     changes_by_rev = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
     def find_gitrev(touched_line, in_file):
-        # re.escape() escapes e.g. '-', which works in practice but has
-        # undefined behavior according to the POSIX extended regex spec.
-        posix_re_escape = lambda s: re.sub(r'([.[{()\\*+?|^$])', r'\\\1', s)
-        cmd = ['log', '--format=%h', '-1', '--pickaxe-regex',
-               r'-S\b%s\b' % posix_re_escape(touched_line), in_file]
-        return git_out(cmd).rstrip()
+        return git_out(
+            ['log', '--format=%h', '-1', '-S' + touched_line, in_file]).rstrip()
 
     # Collect changes to gn files, grouped by revision.
     for gn_file in gn_files:
@@ -91,7 +84,6 @@ def sync_source_lists(write):
         def get_sources(source_re, text):
             return set([m.group(1) for m in source_re.finditer(text)])
         gn_cpp = get_sources(gn_cpp_re, open(gn_file).read())
-        gn_cpp |= get_sources(gn_cpp_re2, open(gn_file).read())
         cmake_cpp = get_sources(cmake_cpp_re, open(cmake_file).read())
 
         if gn_cpp == cmake_cpp:
@@ -133,7 +125,7 @@ def sync_unittests():
     # Matches e.g. |add_llvm_unittest_with_input_files|.
     unittest_re = re.compile(r'^add_\S+_unittest', re.MULTILINE)
 
-    checked = [ 'bolt', 'clang', 'clang-tools-extra', 'lld', 'llvm' ]
+    checked = [ 'clang', 'clang-tools-extra', 'lld', 'llvm' ]
     changed = False
     for c in checked:
         for root, _, _ in os.walk(os.path.join(c, 'unittests')):

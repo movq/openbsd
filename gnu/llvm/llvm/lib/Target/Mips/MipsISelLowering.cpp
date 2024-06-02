@@ -94,6 +94,18 @@ static const MCPhysReg Mips64DPRegs[8] = {
   Mips::D16_64, Mips::D17_64, Mips::D18_64, Mips::D19_64
 };
 
+// If I is a shifted mask, set the size (Size) and the first bit of the
+// mask (Pos), and return true.
+// For example, if I is 0x003ff800, (Pos, Size) = (11, 11).
+static bool isShiftedMask(uint64_t I, uint64_t &Pos, uint64_t &Size) {
+  if (!isShiftedMask_64(I))
+    return false;
+
+  Size = countPopulation(I);
+  Pos = countTrailingZeros(I);
+  return true;
+}
+
 // The MIPS MSA ABI passes vector arguments in the integer register set.
 // The number of integer registers used is dependant on the ABI used.
 MVT MipsTargetLowering::getRegisterTypeForCallingConv(LLVMContext &Context,
@@ -110,7 +122,9 @@ unsigned MipsTargetLowering::getNumRegistersForCallingConv(LLVMContext &Context,
                                                            CallingConv::ID CC,
                                                            EVT VT) const {
   if (VT.isVector())
-    return divideCeil(VT.getSizeInBits(), Subtarget.isABI_O32() ? 32 : 64);
+    return std::max(((unsigned)VT.getSizeInBits() /
+                     (Subtarget.isABI_O32() ? 32 : 64)),
+                    1U);
   return MipsTargetLowering::getNumRegisters(Context, VT);
 }
 
@@ -120,17 +134,16 @@ unsigned MipsTargetLowering::getVectorTypeBreakdownForCallingConv(
   // Break down vector types to either 2 i64s or 4 i32s.
   RegisterVT = getRegisterTypeForCallingConv(Context, CC, VT);
   IntermediateVT = RegisterVT;
-  NumIntermediates =
-      VT.getFixedSizeInBits() < RegisterVT.getFixedSizeInBits()
-          ? VT.getVectorNumElements()
-          : divideCeil(VT.getSizeInBits(), RegisterVT.getSizeInBits());
+  NumIntermediates = VT.getSizeInBits() < RegisterVT.getSizeInBits()
+                         ? VT.getVectorNumElements()
+                         : VT.getSizeInBits() / RegisterVT.getSizeInBits();
+
   return NumIntermediates;
 }
 
 SDValue MipsTargetLowering::getGlobalReg(SelectionDAG &DAG, EVT Ty) const {
-  MachineFunction &MF = DAG.getMachineFunction();
-  MipsFunctionInfo *FI = MF.getInfo<MipsFunctionInfo>();
-  return DAG.getRegister(FI->getGlobalBaseReg(MF), Ty);
+  MipsFunctionInfo *FI = DAG.getMachineFunction().getInfo<MipsFunctionInfo>();
+  return DAG.getRegister(FI->getGlobalBaseReg(), Ty);
 }
 
 SDValue MipsTargetLowering::getTargetNode(GlobalAddressSDNode *N, EVT Ty,
@@ -160,7 +173,7 @@ SDValue MipsTargetLowering::getTargetNode(JumpTableSDNode *N, EVT Ty,
 SDValue MipsTargetLowering::getTargetNode(ConstantPoolSDNode *N, EVT Ty,
                                           SelectionDAG &DAG,
                                           unsigned Flag) const {
-  return DAG.getTargetConstantPool(N->getConstVal(), Ty, N->getAlign(),
+  return DAG.getTargetConstantPool(N->getConstVal(), Ty, N->getAlignment(),
                                    N->getOffset(), Flag);
 }
 
@@ -180,7 +193,6 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::Ret:               return "MipsISD::Ret";
   case MipsISD::ERet:              return "MipsISD::ERet";
   case MipsISD::EH_RETURN:         return "MipsISD::EH_RETURN";
-  case MipsISD::FAbs:              return "MipsISD::FAbs";
   case MipsISD::FMS:               return "MipsISD::FMS";
   case MipsISD::FPBrcond:          return "MipsISD::FPBrcond";
   case MipsISD::FPCmp:             return "MipsISD::FPCmp";
@@ -342,11 +354,14 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
   setOperationAction(ISD::SETCC,              MVT::f32,   Custom);
   setOperationAction(ISD::SETCC,              MVT::f64,   Custom);
   setOperationAction(ISD::BRCOND,             MVT::Other, Custom);
-  setOperationAction(ISD::FABS,               MVT::f32,   Custom);
-  setOperationAction(ISD::FABS,               MVT::f64,   Custom);
   setOperationAction(ISD::FCOPYSIGN,          MVT::f32,   Custom);
   setOperationAction(ISD::FCOPYSIGN,          MVT::f64,   Custom);
   setOperationAction(ISD::FP_TO_SINT,         MVT::i32,   Custom);
+
+  if (!(TM.Options.NoNaNsFPMath || Subtarget.inAbs2008Mode())) {
+    setOperationAction(ISD::FABS, MVT::f32, Custom);
+    setOperationAction(ISD::FABS, MVT::f64, Custom);
+  }
 
   if (Subtarget.isGP64bit()) {
     setOperationAction(ISD::GlobalAddress,      MVT::i64,   Custom);
@@ -480,17 +495,21 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
 
   setOperationAction(ISD::TRAP, MVT::Other, Legal);
 
-  setTargetDAGCombine({ISD::SDIVREM, ISD::UDIVREM, ISD::SELECT, ISD::AND,
-                       ISD::OR, ISD::ADD, ISD::SUB, ISD::AssertZext, ISD::SHL});
+  setTargetDAGCombine(ISD::SDIVREM);
+  setTargetDAGCombine(ISD::UDIVREM);
+  setTargetDAGCombine(ISD::SELECT);
+  setTargetDAGCombine(ISD::AND);
+  setTargetDAGCombine(ISD::OR);
+  setTargetDAGCombine(ISD::ADD);
+  setTargetDAGCombine(ISD::SUB);
+  setTargetDAGCombine(ISD::AssertZext);
+  setTargetDAGCombine(ISD::SHL);
 
   if (ABI.IsO32()) {
     // These libcalls are not available in 32-bit.
     setLibcallName(RTLIB::SHL_I128, nullptr);
     setLibcallName(RTLIB::SRL_I128, nullptr);
     setLibcallName(RTLIB::SRA_I128, nullptr);
-    setLibcallName(RTLIB::MUL_I128, nullptr);
-    setLibcallName(RTLIB::MULO_I64, nullptr);
-    setLibcallName(RTLIB::MULO_I128, nullptr);
   }
 
   setMinFunctionAlignment(Subtarget.isGP64bit() ? Align(8) : Align(4));
@@ -773,15 +792,14 @@ static SDValue performANDCombine(SDNode *N, SelectionDAG &DAG,
   EVT ValTy = N->getValueType(0);
   SDLoc DL(N);
 
-  uint64_t Pos = 0;
-  unsigned SMPos, SMSize;
+  uint64_t Pos = 0, SMPos, SMSize;
   ConstantSDNode *CN;
   SDValue NewOperand;
   unsigned Opc;
 
   // Op's second operand must be a shifted mask.
   if (!(CN = dyn_cast<ConstantSDNode>(Mask)) ||
-      !isShiftedMask_64(CN->getZExtValue(), SMPos, SMSize))
+      !isShiftedMask(CN->getZExtValue(), SMPos, SMSize))
     return SDValue();
 
   if (FirstOperandOpc == ISD::SRA || FirstOperandOpc == ISD::SRL) {
@@ -855,7 +873,7 @@ static SDValue performORCombine(SDNode *N, SelectionDAG &DAG,
     return SDValue();
 
   SDValue And0 = N->getOperand(0), And1 = N->getOperand(1);
-  unsigned SMPos0, SMSize0, SMPos1, SMSize1;
+  uint64_t SMPos0, SMSize0, SMPos1, SMSize1;
   ConstantSDNode *CN, *CN1;
 
   // See if Op's first operand matches (and $src1 , mask0).
@@ -863,7 +881,7 @@ static SDValue performORCombine(SDNode *N, SelectionDAG &DAG,
     return SDValue();
 
   if (!(CN = dyn_cast<ConstantSDNode>(And0.getOperand(1))) ||
-      !isShiftedMask_64(~CN->getSExtValue(), SMPos0, SMSize0))
+      !isShiftedMask(~CN->getSExtValue(), SMPos0, SMSize0))
     return SDValue();
 
   // See if Op's second operand matches (and (shl $src, pos), mask1).
@@ -871,7 +889,7 @@ static SDValue performORCombine(SDNode *N, SelectionDAG &DAG,
       And1.getOperand(0).getOpcode() == ISD::SHL) {
 
     if (!(CN = dyn_cast<ConstantSDNode>(And1.getOperand(1))) ||
-        !isShiftedMask_64(CN->getZExtValue(), SMPos1, SMSize1))
+        !isShiftedMask(CN->getZExtValue(), SMPos1, SMSize1))
       return SDValue();
 
     // The shift masks must have the same position and size.
@@ -948,14 +966,6 @@ static SDValue performMADD_MSUBCombine(SDNode *ROOTNode, SelectionDAG &CurDAG,
   // successful.
   if (ROOTNode->getOperand(0).getOpcode() != ISD::MUL &&
       ROOTNode->getOperand(1).getOpcode() != ISD::MUL)
-    return SDValue();
-
-  // In the case where we have a multiplication as the left operand of
-  // of a subtraction, we can't combine into a MipsISD::MSub node as the
-  // the instruction definition of msub(u) places the multiplication on
-  // on the right.
-  if (ROOTNode->getOpcode() == ISD::SUB &&
-      ROOTNode->getOperand(0).getOpcode() == ISD::MUL)
     return SDValue();
 
   // We don't handle vector types here.
@@ -1106,8 +1116,7 @@ static SDValue performSHLCombine(SDNode *N, SelectionDAG &DAG,
   EVT ValTy = N->getValueType(0);
   SDLoc DL(N);
 
-  uint64_t Pos = 0;
-  unsigned SMPos, SMSize;
+  uint64_t Pos = 0, SMPos, SMSize;
   ConstantSDNode *CN;
   SDValue NewOperand;
 
@@ -1125,7 +1134,7 @@ static SDValue performSHLCombine(SDNode *N, SelectionDAG &DAG,
 
   // AND's second operand must be a shifted mask.
   if (!(CN = dyn_cast<ConstantSDNode>(FirstOperand.getOperand(1))) ||
-      !isShiftedMask_64(CN->getZExtValue(), SMPos, SMSize))
+      !isShiftedMask(CN->getZExtValue(), SMPos, SMSize))
     return SDValue();
 
   // Return if the shifted mask does not start at bit 0 or the sum of its size
@@ -1172,35 +1181,30 @@ SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
   return SDValue();
 }
 
-bool MipsTargetLowering::isCheapToSpeculateCttz(Type *Ty) const {
+bool MipsTargetLowering::isCheapToSpeculateCttz() const {
   return Subtarget.hasMips32();
 }
 
-bool MipsTargetLowering::isCheapToSpeculateCtlz(Type *Ty) const {
+bool MipsTargetLowering::isCheapToSpeculateCtlz() const {
   return Subtarget.hasMips32();
-}
-
-bool MipsTargetLowering::hasBitTest(SDValue X, SDValue Y) const {
-  // We can use ANDI+SLTIU as a bit test. Y contains the bit position.
-  // For MIPSR2 or later, we may be able to use the `ext` instruction or its'
-  // double-word variants.
-  if (auto *C = dyn_cast<ConstantSDNode>(Y))
-    return C->getAPIntValue().ule(15);
-
-  return false;
 }
 
 bool MipsTargetLowering::shouldFoldConstantShiftPairToMask(
     const SDNode *N, CombineLevel Level) const {
-  assert(((N->getOpcode() == ISD::SHL &&
-           N->getOperand(0).getOpcode() == ISD::SRL) ||
-          (N->getOpcode() == ISD::SRL &&
-           N->getOperand(0).getOpcode() == ISD::SHL)) &&
-         "Expected shift-shift mask");
-
   if (N->getOperand(0).getValueType().isVector())
     return false;
   return true;
+}
+
+void
+MipsTargetLowering::LowerOperationWrapper(SDNode *N,
+                                          SmallVectorImpl<SDValue> &Results,
+                                          SelectionDAG &DAG) const {
+  SDValue Res = LowerOperation(SDValue(N, 0), DAG);
+
+  if (Res)
+    for (unsigned I = 0, E = Res->getNumValues(); I != E; ++I)
+      Results.push_back(Res.getValue(I));
 }
 
 void
@@ -1447,14 +1451,6 @@ MipsTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   case Mips::PseudoD_SELECT_I:
   case Mips::PseudoD_SELECT_I64:
     return emitPseudoD_SELECT(MI, BB);
-  case Mips::LDR_W:
-    return emitLDR_W(MI, BB);
-  case Mips::LDR_D:
-    return emitLDR_D(MI, BB);
-  case Mips::STR_W:
-    return emitSTR_W(MI, BB);
-  case Mips::STR_D:
-    return emitSTR_D(MI, BB);
   }
 }
 
@@ -2081,7 +2077,7 @@ SDValue MipsTargetLowering::lowerGlobalAddress(SDValue Op,
     const MipsTargetObjectFile *TLOF =
         static_cast<const MipsTargetObjectFile *>(
             getTargetMachine().getObjFileLowering());
-    const GlobalObject *GO = GV->getAliaseeObject();
+    const GlobalObject *GO = GV->getBaseObject();
     if (GO && TLOF->IsGlobalInSmallSection(GO, getTargetMachine()))
       // %gp_rel relocation
       return getAddrGPRel(N, SDLoc(N), Ty, DAG, ABI.IsN64());
@@ -2426,13 +2422,10 @@ MipsTargetLowering::lowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const {
   return lowerFCOPYSIGN32(Op, DAG, Subtarget.hasExtractInsert());
 }
 
-SDValue MipsTargetLowering::lowerFABS32(SDValue Op, SelectionDAG &DAG,
-                                        bool HasExtractInsert) const {
+static SDValue lowerFABS32(SDValue Op, SelectionDAG &DAG,
+                           bool HasExtractInsert) {
   SDLoc DL(Op);
   SDValue Res, Const1 = DAG.getConstant(1, DL, MVT::i32);
-
-  if (DAG.getTarget().Options.NoNaNsFPMath || Subtarget.inAbs2008Mode())
-    return DAG.getNode(MipsISD::FAbs, DL, Op.getValueType(), Op.getOperand(0));
 
   // If operand is of type f64, extract the upper 32-bit. Otherwise, bitcast it
   // to i32.
@@ -2466,13 +2459,10 @@ SDValue MipsTargetLowering::lowerFABS32(SDValue Op, SelectionDAG &DAG,
   return DAG.getNode(MipsISD::BuildPairF64, DL, MVT::f64, LowX, Res);
 }
 
-SDValue MipsTargetLowering::lowerFABS64(SDValue Op, SelectionDAG &DAG,
-                                        bool HasExtractInsert) const {
+static SDValue lowerFABS64(SDValue Op, SelectionDAG &DAG,
+                           bool HasExtractInsert) {
   SDLoc DL(Op);
   SDValue Res, Const1 = DAG.getConstant(1, DL, MVT::i32);
-
-  if (DAG.getTarget().Options.NoNaNsFPMath || Subtarget.inAbs2008Mode())
-    return DAG.getNode(MipsISD::FAbs, DL, Op.getValueType(), Op.getOperand(0));
 
   // Bitcast to integer node.
   SDValue X = DAG.getNode(ISD::BITCAST, DL, MVT::i64, Op.getOperand(0));
@@ -2534,7 +2524,7 @@ SDValue MipsTargetLowering::lowerRETURNADDR(SDValue Op,
   MFI.setReturnAddressIsTaken(true);
 
   // Return RA, which contains the return address. Mark it an implicit live-in.
-  Register Reg = MF.addLiveIn(RA, getRegClassFor(VT));
+  unsigned Reg = MF.addLiveIn(RA, getRegClassFor(VT));
   return DAG.getCopyFromReg(DAG.getEntryNode(), SDLoc(Op), Reg, VT);
 }
 
@@ -2684,7 +2674,7 @@ SDValue MipsTargetLowering::lowerLOAD(SDValue Op, SelectionDAG &DAG) const {
     return Op;
 
   // Return if load is aligned or if MemVT is neither i32 nor i64.
-  if ((LD->getAlign().value() >= (MemVT.getSizeInBits() / 8)) ||
+  if ((LD->getAlignment() >= MemVT.getSizeInBits() / 8) ||
       ((MemVT != MVT::i32) && (MemVT != MVT::i64)))
     return SDValue();
 
@@ -2798,7 +2788,7 @@ static SDValue lowerFP_TO_SINT_STORE(StoreSDNode *SD, SelectionDAG &DAG,
   SDValue Tr = DAG.getNode(MipsISD::TruncIntFP, SDLoc(Val), FPTy,
                            Val.getOperand(0));
   return DAG.getStore(SD->getChain(), SDLoc(SD), Tr, SD->getBasePtr(),
-                      SD->getPointerInfo(), SD->getAlign(),
+                      SD->getPointerInfo(), SD->getAlignment(),
                       SD->getMemOperand()->getFlags());
 }
 
@@ -2808,7 +2798,7 @@ SDValue MipsTargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
 
   // Lower unaligned integer stores.
   if (!Subtarget.systemSupportsUnalignedAccess() &&
-      (SD->getAlign().value() < (MemVT.getSizeInBits() / 8)) &&
+      (SD->getAlignment() < MemVT.getSizeInBits() / 8) &&
       ((MemVT == MVT::i32) || (MemVT == MVT::i64)))
     return lowerUnalignedIntStore(SD, DAG, Subtarget.isLittle());
 
@@ -2910,8 +2900,8 @@ static bool CC_MipsO32(unsigned ValNo, MVT ValVT, MVT LocVT,
   // argument which is not f32 or f64.
   bool AllocateFloatsInIntReg = State.isVarArg() || ValNo > 1 ||
                                 State.getFirstUnallocated(F32Regs) != ValNo;
-  Align OrigAlign = ArgFlags.getNonZeroOrigAlign();
-  bool isI64 = (ValVT == MVT::i32 && OrigAlign == Align(8));
+  unsigned OrigAlign = ArgFlags.getOrigAlign();
+  bool isI64 = (ValVT == MVT::i32 && OrigAlign == 8);
   bool isVectorFloat = MipsState->WasOriginalArgVectorFloat(ValNo);
 
   // The MIPS vector ABI for floats passes them in a pair of registers
@@ -2940,23 +2930,13 @@ static bool CC_MipsO32(unsigned ValNo, MVT ValVT, MVT LocVT,
       Reg = State.AllocateReg(IntRegs);
     LocVT = MVT::i32;
   } else if (ValVT == MVT::f64 && AllocateFloatsInIntReg) {
-    LocVT = MVT::i32;
-
     // Allocate int register and shadow next int register. If first
     // available register is Mips::A1 or Mips::A3, shadow it too.
     Reg = State.AllocateReg(IntRegs);
     if (Reg == Mips::A1 || Reg == Mips::A3)
       Reg = State.AllocateReg(IntRegs);
-
-    if (Reg) {
-      State.addLoc(
-          CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
-      MCRegister HiReg = State.AllocateReg(IntRegs);
-      assert(HiReg);
-      State.addLoc(
-          CCValAssign::getCustomReg(ValNo, ValVT, HiReg, LocVT, LocInfo));
-      return false;
-    }
+    State.AllocateReg(IntRegs);
+    LocVT = MVT::i32;
   } else if (ValVT.isFloatingPoint() && !AllocateFloatsInIntReg) {
     // we are guaranteed to find an available float register
     if (ValVT == MVT::f32) {
@@ -3016,6 +2996,12 @@ static bool CC_MipsO32(unsigned ValNo, MVT ValVT, MVT LocVT,
 //                  Call Calling Convention Implementation
 //===----------------------------------------------------------------------===//
 
+// Return next O32 integer argument register.
+static unsigned getNextIntArgReg(unsigned Reg) {
+  assert((Reg == Mips::A0) || (Reg == Mips::A2));
+  return (Reg == Mips::A0) ? Mips::A1 : Mips::A3;
+}
+
 SDValue MipsTargetLowering::passArgOnStack(SDValue StackPtr, unsigned Offset,
                                            SDValue Chain, SDValue Arg,
                                            const SDLoc &DL, bool IsTailCall,
@@ -3030,8 +3016,8 @@ SDValue MipsTargetLowering::passArgOnStack(SDValue StackPtr, unsigned Offset,
   MachineFrameInfo &MFI = DAG.getMachineFunction().getFrameInfo();
   int FI = MFI.CreateFixedObject(Arg.getValueSizeInBits() / 8, Offset, false);
   SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
-  return DAG.getStore(Chain, DL, Arg, FIN, MachinePointerInfo(), MaybeAlign(),
-                      MachineMemOperand::MOVolatile);
+  return DAG.getStore(Chain, DL, Arg, FIN, MachinePointerInfo(),
+                      /* Alignment = */ 0, MachineMemOperand::MOVolatile);
 }
 
 void MipsTargetLowering::
@@ -3062,15 +3048,17 @@ getOpndList(SmallVectorImpl<SDValue> &Ops,
   // stuck together.
   SDValue InFlag;
 
-  for (auto &R : RegsToPass) {
-    Chain = CLI.DAG.getCopyToReg(Chain, CLI.DL, R.first, R.second, InFlag);
+  for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
+    Chain = CLI.DAG.getCopyToReg(Chain, CLI.DL, RegsToPass[i].first,
+                                 RegsToPass[i].second, InFlag);
     InFlag = Chain.getValue(1);
   }
 
   // Add argument registers to the end of the list so that they are
   // known live into the call.
-  for (auto &R : RegsToPass)
-    Ops.push_back(CLI.DAG.getRegister(R.first, R.second.getValueType()));
+  for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i)
+    Ops.push_back(CLI.DAG.getRegister(RegsToPass[i].first,
+                                      RegsToPass[i].second.getValueType()));
 
   // Add a register mask operand representing the call-preserved registers.
   const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
@@ -3213,16 +3201,13 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // caller side but removing it breaks the frame size calculation.
   unsigned ReservedArgArea =
       MemcpyInByVal ? 0 : ABI.GetCalleeAllocdArgSizeInBytes(CallConv);
-  CCInfo.AllocateStack(ReservedArgArea, Align(1));
+  CCInfo.AllocateStack(ReservedArgArea, 1);
 
   CCInfo.AnalyzeCallOperands(Outs, CC_Mips, CLI.getArgs(),
                              ES ? ES->getSymbol() : nullptr);
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NextStackOffset = CCInfo.getNextStackOffset();
-
-  // Call site info for function parameters tracking.
-  MachineFunction::CallSiteInfo CSInfo;
 
   // Check if it's really possible to do a tail call. Restrict it to functions
   // that are part of this compilation unit.
@@ -3238,7 +3223,7 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
                      G->getGlobal()->hasProtectedVisibility());
      }
   }
-  if (!IsTailCall && CLI.CB && CLI.CB->isMustTailCall())
+  if (!IsTailCall && CLI.CS && CLI.CS.isMustTailCall())
     report_fatal_error("failed to perform tail call elimination on a call "
                        "site marked musttail");
 
@@ -3250,6 +3235,7 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // byval arguments to the stack.
   unsigned StackAlignment = TFL->getStackAlignment();
   NextStackOffset = alignTo(NextStackOffset, StackAlignment);
+  SDValue NextStackOffsetVal = DAG.getIntPtrConstant(NextStackOffset, DL, true);
 
   if (!(IsTailCall || MemcpyInByVal))
     Chain = DAG.getCALLSEQ_START(Chain, NextStackOffset, 0, DL);
@@ -3264,11 +3250,11 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   CCInfo.rewindByValRegsInfo();
 
   // Walk the register/memloc assignments, inserting copies/loads.
-  for (unsigned i = 0, e = ArgLocs.size(), OutIdx = 0; i != e; ++i, ++OutIdx) {
-    SDValue Arg = OutVals[OutIdx];
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
+    SDValue Arg = OutVals[i];
     CCValAssign &VA = ArgLocs[i];
     MVT ValVT = VA.getValVT(), LocVT = VA.getLocVT();
-    ISD::ArgFlagsTy Flags = Outs[OutIdx].Flags;
+    ISD::ArgFlagsTy Flags = Outs[i].Flags;
     bool UseUpperBits = false;
 
     // ByVal Arg.
@@ -3306,11 +3292,8 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
                                    Arg, DAG.getConstant(1, DL, MVT::i32));
           if (!Subtarget.isLittle())
             std::swap(Lo, Hi);
-
-          assert(VA.needsCustom());
-
           Register LocRegLo = VA.getLocReg();
-          Register LocRegHigh = ArgLocs[++i].getLocReg();
+          unsigned LocRegHigh = getNextIntArgReg(LocRegLo);
           RegsToPass.push_back(std::make_pair(LocRegLo, Lo));
           RegsToPass.push_back(std::make_pair(LocRegHigh, Hi));
           continue;
@@ -3322,26 +3305,26 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       break;
     case CCValAssign::SExtUpper:
       UseUpperBits = true;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case CCValAssign::SExt:
       Arg = DAG.getNode(ISD::SIGN_EXTEND, DL, LocVT, Arg);
       break;
     case CCValAssign::ZExtUpper:
       UseUpperBits = true;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case CCValAssign::ZExt:
       Arg = DAG.getNode(ISD::ZERO_EXTEND, DL, LocVT, Arg);
       break;
     case CCValAssign::AExtUpper:
       UseUpperBits = true;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case CCValAssign::AExt:
       Arg = DAG.getNode(ISD::ANY_EXTEND, DL, LocVT, Arg);
       break;
     }
 
     if (UseUpperBits) {
-      unsigned ValSizeInBits = Outs[OutIdx].ArgVT.getSizeInBits();
+      unsigned ValSizeInBits = Outs[i].ArgVT.getSizeInBits();
       unsigned LocSizeInBits = VA.getLocVT().getSizeInBits();
       Arg = DAG.getNode(
           ISD::SHL, DL, VA.getLocVT(), Arg,
@@ -3352,17 +3335,6 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     // RegsToPass vector
     if (VA.isRegLoc()) {
       RegsToPass.push_back(std::make_pair(VA.getLocReg(), Arg));
-
-      // If the parameter is passed through reg $D, which splits into
-      // two physical registers, avoid creating call site info.
-      if (Mips::AFGR64RegClass.contains(VA.getLocReg()))
-        continue;
-
-      // Collect CSInfo about which register passes which parameter.
-      const TargetOptions &Options = DAG.getTarget().Options;
-      if (Options.SupportsDebugEntryValues)
-        CSInfo.emplace_back(VA.getLocReg(), i);
-
       continue;
     }
 
@@ -3426,11 +3398,11 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       else if (Subtarget.useXGOT()) {
         Callee = getAddrGlobalLargeGOT(G, DL, Ty, DAG, MipsII::MO_CALL_HI16,
                                        MipsII::MO_CALL_LO16, Chain,
-                                       FuncInfo->callPtrInfo(MF, Val));
+                                       FuncInfo->callPtrInfo(Val));
         IsCallReloc = true;
       } else {
         Callee = getAddrGlobal(G, DL, Ty, DAG, MipsII::MO_GOT_CALL, Chain,
-                               FuncInfo->callPtrInfo(MF, Val));
+                               FuncInfo->callPtrInfo(Val));
         IsCallReloc = true;
       }
     } else
@@ -3448,11 +3420,11 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     else if (Subtarget.useXGOT()) {
       Callee = getAddrGlobalLargeGOT(S, DL, Ty, DAG, MipsII::MO_CALL_HI16,
                                      MipsII::MO_CALL_LO16, Chain,
-                                     FuncInfo->callPtrInfo(MF, Sym));
+                                     FuncInfo->callPtrInfo(Sym));
       IsCallReloc = true;
     } else { // PIC
       Callee = getAddrGlobal(S, DL, Ty, DAG, MipsII::MO_GOT_CALL, Chain,
-                             FuncInfo->callPtrInfo(MF, Sym));
+                             FuncInfo->callPtrInfo(Sym));
       IsCallReloc = true;
     }
 
@@ -3467,20 +3439,17 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   if (IsTailCall) {
     MF.getFrameInfo().setHasTailCall();
-    SDValue Ret = DAG.getNode(MipsISD::TailCall, DL, MVT::Other, Ops);
-    DAG.addCallSiteInfo(Ret.getNode(), std::move(CSInfo));
-    return Ret;
+    return DAG.getNode(MipsISD::TailCall, DL, MVT::Other, Ops);
   }
 
   Chain = DAG.getNode(MipsISD::JmpLink, DL, NodeTys, Ops);
   SDValue InFlag = Chain.getValue(1);
 
-  DAG.addCallSiteInfo(Chain.getNode(), std::move(CSInfo));
-
   // Create the CALLSEQ_END node in the case of where it is not a call to
   // memcpy.
   if (!(MemcpyInByVal)) {
-    Chain = DAG.getCALLSEQ_END(Chain, NextStackOffset, 0, InFlag, DL);
+    Chain = DAG.getCALLSEQ_END(Chain, NextStackOffsetVal,
+                               DAG.getIntPtrConstant(0, DL, true), InFlag, DL);
     InFlag = Chain.getValue(1);
   }
 
@@ -3636,7 +3605,7 @@ SDValue MipsTargetLowering::LowerFormalArguments(
   SmallVector<CCValAssign, 16> ArgLocs;
   MipsCCState CCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), ArgLocs,
                      *DAG.getContext());
-  CCInfo.AllocateStack(ABI.GetCalleeAllocdArgSizeInBytes(CallConv), Align(1));
+  CCInfo.AllocateStack(ABI.GetCalleeAllocdArgSizeInBytes(CallConv), 1);
   const Function &Func = DAG.getMachineFunction().getFunction();
   Function::const_arg_iterator FuncArg = Func.arg_begin();
 
@@ -3651,18 +3620,18 @@ SDValue MipsTargetLowering::LowerFormalArguments(
   unsigned CurArgIdx = 0;
   CCInfo.rewindByValRegsInfo();
 
-  for (unsigned i = 0, e = ArgLocs.size(), InsIdx = 0; i != e; ++i, ++InsIdx) {
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
-    if (Ins[InsIdx].isOrigArg()) {
-      std::advance(FuncArg, Ins[InsIdx].getOrigArgIndex() - CurArgIdx);
-      CurArgIdx = Ins[InsIdx].getOrigArgIndex();
+    if (Ins[i].isOrigArg()) {
+      std::advance(FuncArg, Ins[i].getOrigArgIndex() - CurArgIdx);
+      CurArgIdx = Ins[i].getOrigArgIndex();
     }
     EVT ValVT = VA.getValVT();
-    ISD::ArgFlagsTy Flags = Ins[InsIdx].Flags;
+    ISD::ArgFlagsTy Flags = Ins[i].Flags;
     bool IsRegLoc = VA.isRegLoc();
 
     if (Flags.isByVal()) {
-      assert(Ins[InsIdx].isOrigArg() && "Byval arguments cannot be implicit");
+      assert(Ins[i].isOrigArg() && "Byval arguments cannot be implicit");
       unsigned FirstByValReg, LastByValReg;
       unsigned ByValIdx = CCInfo.getInRegsParamsProcessed();
       CCInfo.getInRegsParamInfo(ByValIdx, FirstByValReg, LastByValReg);
@@ -3687,8 +3656,7 @@ SDValue MipsTargetLowering::LowerFormalArguments(
       unsigned Reg = addLiveIn(DAG.getMachineFunction(), ArgReg, RC);
       SDValue ArgValue = DAG.getCopyFromReg(Chain, DL, Reg, RegVT);
 
-      ArgValue =
-          UnpackFromArgumentSlot(ArgValue, VA, Ins[InsIdx].ArgVT, DL, DAG);
+      ArgValue = UnpackFromArgumentSlot(ArgValue, VA, Ins[i].ArgVT, DL, DAG);
 
       // Handle floating point arguments passed in integer registers and
       // long double arguments passed in floating point registers.
@@ -3698,10 +3666,8 @@ SDValue MipsTargetLowering::LowerFormalArguments(
         ArgValue = DAG.getNode(ISD::BITCAST, DL, ValVT, ArgValue);
       else if (ABI.IsO32() && RegVT == MVT::i32 &&
                ValVT == MVT::f64) {
-        assert(VA.needsCustom() && "Expected custom argument for f64 split");
-        CCValAssign &NextVA = ArgLocs[++i];
-        unsigned Reg2 =
-            addLiveIn(DAG.getMachineFunction(), NextVA.getLocReg(), RC);
+        unsigned Reg2 = addLiveIn(DAG.getMachineFunction(),
+                                  getNextIntArgReg(ArgReg), RC);
         SDValue ArgValue2 = DAG.getCopyFromReg(Chain, DL, Reg2, RegVT);
         if (!Subtarget.isLittle())
           std::swap(ArgValue, ArgValue2);
@@ -3713,8 +3679,6 @@ SDValue MipsTargetLowering::LowerFormalArguments(
     } else { // VA.isRegLoc()
       MVT LocVT = VA.getLocVT();
 
-      assert(!VA.needsCustom() && "unexpected custom memory argument");
-
       if (ABI.IsO32()) {
         // We ought to be able to use LocVT directly but O32 sets it to i32
         // when allocating floating point values to integer registers.
@@ -3724,7 +3688,7 @@ SDValue MipsTargetLowering::LowerFormalArguments(
           LocVT = VA.getValVT();
       }
 
-      // Only arguments pased on the stack should make it here. 
+      // sanity check
       assert(VA.isMemLoc());
 
       // The stack pointer offset is relative to the caller stack frame.
@@ -3738,24 +3702,17 @@ SDValue MipsTargetLowering::LowerFormalArguments(
           MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI));
       OutChains.push_back(ArgValue.getValue(1));
 
-      ArgValue =
-          UnpackFromArgumentSlot(ArgValue, VA, Ins[InsIdx].ArgVT, DL, DAG);
+      ArgValue = UnpackFromArgumentSlot(ArgValue, VA, Ins[i].ArgVT, DL, DAG);
 
       InVals.push_back(ArgValue);
     }
   }
 
-  for (unsigned i = 0, e = ArgLocs.size(), InsIdx = 0; i != e; ++i, ++InsIdx) {
-
-    if (ArgLocs[i].needsCustom()) {
-      ++i;
-      continue;
-    }
-
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     // The mips ABIs for returning structs by value requires that we copy
     // the sret argument into $v0 for the return. Save the argument into
     // a virtual register so that we can access it from the return points.
-    if (Ins[InsIdx].Flags.isSRet()) {
+    if (Ins[i].Flags.isSRet()) {
       unsigned Reg = MipsFI->getSRetReturnReg();
       if (!Reg) {
         Reg = MF.getRegInfo().createVirtualRegister(
@@ -3852,19 +3809,19 @@ MipsTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
       break;
     case CCValAssign::AExtUpper:
       UseUpperBits = true;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case CCValAssign::AExt:
       Val = DAG.getNode(ISD::ANY_EXTEND, DL, VA.getLocVT(), Val);
       break;
     case CCValAssign::ZExtUpper:
       UseUpperBits = true;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case CCValAssign::ZExt:
       Val = DAG.getNode(ISD::ZERO_EXTEND, DL, VA.getLocVT(), Val);
       break;
     case CCValAssign::SExtUpper:
       UseUpperBits = true;
-      [[fallthrough]];
+      LLVM_FALLTHROUGH;
     case CCValAssign::SExt:
       Val = DAG.getNode(ISD::SIGN_EXTEND, DL, VA.getLocVT(), Val);
       break;
@@ -3985,7 +3942,7 @@ MipsTargetLowering::getSingleConstraintMatchWeight(
     break;
   case 'f': // FPU or MSA register
     if (Subtarget.hasMSA() && type->isVectorTy() &&
-        type->getPrimitiveSizeInBits().getFixedValue() == 128)
+        cast<VectorType>(type)->getBitWidth() == 128)
       weight = CW_Register;
     else if (type->isFloatTy())
       weight = CW_Register;
@@ -4131,7 +4088,7 @@ MipsTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
     case 'd': // Address register. Same as 'r' unless generating MIPS16 code.
     case 'y': // Same as 'r'. Exists for compatibility.
     case 'r':
-      if (VT == MVT::i32 || VT == MVT::i16 || VT == MVT::i8 || VT == MVT::i1) {
+      if (VT == MVT::i32 || VT == MVT::i16 || VT == MVT::i8) {
         if (Subtarget.inMips16Mode())
           return std::make_pair(0U, &Mips::CPU16RegsRegClass);
         return std::make_pair(0U, &Mips::GPR32RegClass);
@@ -4320,7 +4277,9 @@ MipsTargetLowering::isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const {
 }
 
 EVT MipsTargetLowering::getOptimalMemOpType(
-    const MemOp &Op, const AttributeList &FuncAttributes) const {
+    uint64_t Size, unsigned DstAlign, unsigned SrcAlign, bool IsMemset,
+    bool ZeroMemset, bool MemcpyStrSrc,
+    const AttributeList &FuncAttributes) const {
   if (Subtarget.hasMips64())
     return MVT::i64;
 
@@ -4412,8 +4371,7 @@ void MipsTargetLowering::passByValArg(
   unsigned ByValSizeInBytes = Flags.getByValSize();
   unsigned OffsetInBytes = 0; // From beginning of struct
   unsigned RegSizeInBytes = Subtarget.getGPRSizeInBytes();
-  Align Alignment =
-      std::min(Flags.getNonZeroByValAlign(), Align(RegSizeInBytes));
+  unsigned Alignment = std::min(Flags.getByValAlign(), RegSizeInBytes);
   EVT PtrTy = getPointerTy(DAG.getDataLayout()),
       RegTy = MVT::getIntegerVT(RegSizeInBytes * 8);
   unsigned NumRegs = LastReg - FirstReg;
@@ -4476,7 +4434,7 @@ void MipsTargetLowering::passByValArg(
 
         OffsetInBytes += LoadSizeInBytes;
         TotalBytesLoaded += LoadSizeInBytes;
-        Alignment = std::min(Alignment, Align(LoadSizeInBytes));
+        Alignment = std::min(Alignment, LoadSizeInBytes);
       }
 
       unsigned ArgReg = ArgRegs[FirstReg + I];
@@ -4491,10 +4449,11 @@ void MipsTargetLowering::passByValArg(
                             DAG.getConstant(OffsetInBytes, DL, PtrTy));
   SDValue Dst = DAG.getNode(ISD::ADD, DL, PtrTy, StackPtr,
                             DAG.getIntPtrConstant(VA.getLocMemOffset(), DL));
-  Chain = DAG.getMemcpy(
-      Chain, DL, Dst, Src, DAG.getConstant(MemCpySize, DL, PtrTy),
-      Align(Alignment), /*isVolatile=*/false, /*AlwaysInline=*/false,
-      /*isTailCall=*/false, MachinePointerInfo(), MachinePointerInfo());
+  Chain = DAG.getMemcpy(Chain, DL, Dst, Src,
+                        DAG.getConstant(MemCpySize, DL, PtrTy),
+                        Alignment, /*isVolatile=*/false, /*AlwaysInline=*/false,
+                        /*isTailCall=*/false,
+                        MachinePointerInfo(), MachinePointerInfo());
   MemOpChains.push_back(Chain);
 }
 
@@ -4546,12 +4505,12 @@ void MipsTargetLowering::writeVarArgRegs(std::vector<SDValue> &OutChains,
 }
 
 void MipsTargetLowering::HandleByVal(CCState *State, unsigned &Size,
-                                     Align Alignment) const {
+                                     unsigned Align) const {
   const TargetFrameLowering *TFL = Subtarget.getFrameLowering();
 
   assert(Size && "Byval argument's size shouldn't be 0.");
 
-  Alignment = std::min(Alignment, TFL->getStackAlign());
+  Align = std::min(Align, TFL->getStackAlignment());
 
   unsigned FirstReg = 0;
   unsigned NumRegs = 0;
@@ -4565,17 +4524,17 @@ void MipsTargetLowering::HandleByVal(CCState *State, unsigned &Size,
 
     // We used to check the size as well but we can't do that anymore since
     // CCState::HandleByVal() rounds up the size after calling this function.
-    assert(
-        Alignment >= Align(RegSizeInBytes) &&
-        "Byval argument's alignment should be a multiple of RegSizeInBytes.");
+    assert(!(Align % RegSizeInBytes) &&
+           "Byval argument's alignment should be a multiple of"
+           "RegSizeInBytes.");
 
     FirstReg = State->getFirstUnallocated(IntArgRegs);
 
-    // If Alignment > RegSizeInBytes, the first arg register must be even.
+    // If Align > RegSizeInBytes, the first arg register must be even.
     // FIXME: This condition happens to do the right thing but it's not the
     //        right way to test it. We want to check that the stack frame offset
     //        of the register is aligned.
-    if ((Alignment > RegSizeInBytes) && (FirstReg % 2)) {
+    if ((Align > RegSizeInBytes) && (FirstReg % 2)) {
       State->AllocateReg(IntArgRegs[FirstReg], ShadowRegs[FirstReg]);
       ++FirstReg;
     }
@@ -4749,292 +4708,20 @@ MipsTargetLowering::emitPseudoD_SELECT(MachineInstr &MI,
 Register
 MipsTargetLowering::getRegisterByName(const char *RegName, LLT VT,
                                       const MachineFunction &MF) const {
-  // The Linux kernel uses $28 and sp.
+  // Named registers is expected to be fairly rare. For now, just support $28
+  // since the linux kernel uses it.
   if (Subtarget.isGP64bit()) {
     Register Reg = StringSwitch<Register>(RegName)
-                       .Case("$28", Mips::GP_64)
-                       .Case("sp", Mips::SP_64)
-                       .Default(Register());
+                         .Case("$28", Mips::GP_64)
+                         .Default(Register());
     if (Reg)
       return Reg;
   } else {
     Register Reg = StringSwitch<Register>(RegName)
-                       .Case("$28", Mips::GP)
-                       .Case("sp", Mips::SP)
-                       .Default(Register());
+                         .Case("$28", Mips::GP)
+                         .Default(Register());
     if (Reg)
       return Reg;
   }
   report_fatal_error("Invalid register name global variable");
-}
-
-MachineBasicBlock *MipsTargetLowering::emitLDR_W(MachineInstr &MI,
-                                                 MachineBasicBlock *BB) const {
-  MachineFunction *MF = BB->getParent();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  const bool IsLittle = Subtarget.isLittle();
-  DebugLoc DL = MI.getDebugLoc();
-
-  Register Dest = MI.getOperand(0).getReg();
-  Register Address = MI.getOperand(1).getReg();
-  unsigned Imm = MI.getOperand(2).getImm();
-
-  MachineBasicBlock::iterator I(MI);
-
-  if (Subtarget.hasMips32r6() || Subtarget.hasMips64r6()) {
-    // Mips release 6 can load from adress that is not naturally-aligned.
-    Register Temp = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    BuildMI(*BB, I, DL, TII->get(Mips::LW))
-        .addDef(Temp)
-        .addUse(Address)
-        .addImm(Imm);
-    BuildMI(*BB, I, DL, TII->get(Mips::FILL_W)).addDef(Dest).addUse(Temp);
-  } else {
-    // Mips release 5 needs to use instructions that can load from an unaligned
-    // memory address.
-    Register LoadHalf = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register LoadFull = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register Undef = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    BuildMI(*BB, I, DL, TII->get(Mips::IMPLICIT_DEF)).addDef(Undef);
-    BuildMI(*BB, I, DL, TII->get(Mips::LWR))
-        .addDef(LoadHalf)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 0 : 3))
-        .addUse(Undef);
-    BuildMI(*BB, I, DL, TII->get(Mips::LWL))
-        .addDef(LoadFull)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 3 : 0))
-        .addUse(LoadHalf);
-    BuildMI(*BB, I, DL, TII->get(Mips::FILL_W)).addDef(Dest).addUse(LoadFull);
-  }
-
-  MI.eraseFromParent();
-  return BB;
-}
-
-MachineBasicBlock *MipsTargetLowering::emitLDR_D(MachineInstr &MI,
-                                                 MachineBasicBlock *BB) const {
-  MachineFunction *MF = BB->getParent();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  const bool IsLittle = Subtarget.isLittle();
-  DebugLoc DL = MI.getDebugLoc();
-
-  Register Dest = MI.getOperand(0).getReg();
-  Register Address = MI.getOperand(1).getReg();
-  unsigned Imm = MI.getOperand(2).getImm();
-
-  MachineBasicBlock::iterator I(MI);
-
-  if (Subtarget.hasMips32r6() || Subtarget.hasMips64r6()) {
-    // Mips release 6 can load from adress that is not naturally-aligned.
-    if (Subtarget.isGP64bit()) {
-      Register Temp = MRI.createVirtualRegister(&Mips::GPR64RegClass);
-      BuildMI(*BB, I, DL, TII->get(Mips::LD))
-          .addDef(Temp)
-          .addUse(Address)
-          .addImm(Imm);
-      BuildMI(*BB, I, DL, TII->get(Mips::FILL_D)).addDef(Dest).addUse(Temp);
-    } else {
-      Register Wtemp = MRI.createVirtualRegister(&Mips::MSA128WRegClass);
-      Register Lo = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-      Register Hi = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-      BuildMI(*BB, I, DL, TII->get(Mips::LW))
-          .addDef(Lo)
-          .addUse(Address)
-          .addImm(Imm + (IsLittle ? 0 : 4));
-      BuildMI(*BB, I, DL, TII->get(Mips::LW))
-          .addDef(Hi)
-          .addUse(Address)
-          .addImm(Imm + (IsLittle ? 4 : 0));
-      BuildMI(*BB, I, DL, TII->get(Mips::FILL_W)).addDef(Wtemp).addUse(Lo);
-      BuildMI(*BB, I, DL, TII->get(Mips::INSERT_W), Dest)
-          .addUse(Wtemp)
-          .addUse(Hi)
-          .addImm(1);
-    }
-  } else {
-    // Mips release 5 needs to use instructions that can load from an unaligned
-    // memory address.
-    Register LoHalf = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register LoFull = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register LoUndef = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register HiHalf = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register HiFull = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register HiUndef = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register Wtemp = MRI.createVirtualRegister(&Mips::MSA128WRegClass);
-    BuildMI(*BB, I, DL, TII->get(Mips::IMPLICIT_DEF)).addDef(LoUndef);
-    BuildMI(*BB, I, DL, TII->get(Mips::LWR))
-        .addDef(LoHalf)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 0 : 7))
-        .addUse(LoUndef);
-    BuildMI(*BB, I, DL, TII->get(Mips::LWL))
-        .addDef(LoFull)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 3 : 4))
-        .addUse(LoHalf);
-    BuildMI(*BB, I, DL, TII->get(Mips::IMPLICIT_DEF)).addDef(HiUndef);
-    BuildMI(*BB, I, DL, TII->get(Mips::LWR))
-        .addDef(HiHalf)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 4 : 3))
-        .addUse(HiUndef);
-    BuildMI(*BB, I, DL, TII->get(Mips::LWL))
-        .addDef(HiFull)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 7 : 0))
-        .addUse(HiHalf);
-    BuildMI(*BB, I, DL, TII->get(Mips::FILL_W)).addDef(Wtemp).addUse(LoFull);
-    BuildMI(*BB, I, DL, TII->get(Mips::INSERT_W), Dest)
-        .addUse(Wtemp)
-        .addUse(HiFull)
-        .addImm(1);
-  }
-
-  MI.eraseFromParent();
-  return BB;
-}
-
-MachineBasicBlock *MipsTargetLowering::emitSTR_W(MachineInstr &MI,
-                                                 MachineBasicBlock *BB) const {
-  MachineFunction *MF = BB->getParent();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  const bool IsLittle = Subtarget.isLittle();
-  DebugLoc DL = MI.getDebugLoc();
-
-  Register StoreVal = MI.getOperand(0).getReg();
-  Register Address = MI.getOperand(1).getReg();
-  unsigned Imm = MI.getOperand(2).getImm();
-
-  MachineBasicBlock::iterator I(MI);
-
-  if (Subtarget.hasMips32r6() || Subtarget.hasMips64r6()) {
-    // Mips release 6 can store to adress that is not naturally-aligned.
-    Register BitcastW = MRI.createVirtualRegister(&Mips::MSA128WRegClass);
-    Register Tmp = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    BuildMI(*BB, I, DL, TII->get(Mips::COPY)).addDef(BitcastW).addUse(StoreVal);
-    BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_W))
-        .addDef(Tmp)
-        .addUse(BitcastW)
-        .addImm(0);
-    BuildMI(*BB, I, DL, TII->get(Mips::SW))
-        .addUse(Tmp)
-        .addUse(Address)
-        .addImm(Imm);
-  } else {
-    // Mips release 5 needs to use instructions that can store to an unaligned
-    // memory address.
-    Register Tmp = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_W))
-        .addDef(Tmp)
-        .addUse(StoreVal)
-        .addImm(0);
-    BuildMI(*BB, I, DL, TII->get(Mips::SWR))
-        .addUse(Tmp)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 0 : 3));
-    BuildMI(*BB, I, DL, TII->get(Mips::SWL))
-        .addUse(Tmp)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 3 : 0));
-  }
-
-  MI.eraseFromParent();
-
-  return BB;
-}
-
-MachineBasicBlock *MipsTargetLowering::emitSTR_D(MachineInstr &MI,
-                                                 MachineBasicBlock *BB) const {
-  MachineFunction *MF = BB->getParent();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  const bool IsLittle = Subtarget.isLittle();
-  DebugLoc DL = MI.getDebugLoc();
-
-  Register StoreVal = MI.getOperand(0).getReg();
-  Register Address = MI.getOperand(1).getReg();
-  unsigned Imm = MI.getOperand(2).getImm();
-
-  MachineBasicBlock::iterator I(MI);
-
-  if (Subtarget.hasMips32r6() || Subtarget.hasMips64r6()) {
-    // Mips release 6 can store to adress that is not naturally-aligned.
-    if (Subtarget.isGP64bit()) {
-      Register BitcastD = MRI.createVirtualRegister(&Mips::MSA128DRegClass);
-      Register Lo = MRI.createVirtualRegister(&Mips::GPR64RegClass);
-      BuildMI(*BB, I, DL, TII->get(Mips::COPY))
-          .addDef(BitcastD)
-          .addUse(StoreVal);
-      BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_D))
-          .addDef(Lo)
-          .addUse(BitcastD)
-          .addImm(0);
-      BuildMI(*BB, I, DL, TII->get(Mips::SD))
-          .addUse(Lo)
-          .addUse(Address)
-          .addImm(Imm);
-    } else {
-      Register BitcastW = MRI.createVirtualRegister(&Mips::MSA128WRegClass);
-      Register Lo = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-      Register Hi = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-      BuildMI(*BB, I, DL, TII->get(Mips::COPY))
-          .addDef(BitcastW)
-          .addUse(StoreVal);
-      BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_W))
-          .addDef(Lo)
-          .addUse(BitcastW)
-          .addImm(0);
-      BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_W))
-          .addDef(Hi)
-          .addUse(BitcastW)
-          .addImm(1);
-      BuildMI(*BB, I, DL, TII->get(Mips::SW))
-          .addUse(Lo)
-          .addUse(Address)
-          .addImm(Imm + (IsLittle ? 0 : 4));
-      BuildMI(*BB, I, DL, TII->get(Mips::SW))
-          .addUse(Hi)
-          .addUse(Address)
-          .addImm(Imm + (IsLittle ? 4 : 0));
-    }
-  } else {
-    // Mips release 5 needs to use instructions that can store to an unaligned
-    // memory address.
-    Register Bitcast = MRI.createVirtualRegister(&Mips::MSA128WRegClass);
-    Register Lo = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    Register Hi = MRI.createVirtualRegister(&Mips::GPR32RegClass);
-    BuildMI(*BB, I, DL, TII->get(Mips::COPY)).addDef(Bitcast).addUse(StoreVal);
-    BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_W))
-        .addDef(Lo)
-        .addUse(Bitcast)
-        .addImm(0);
-    BuildMI(*BB, I, DL, TII->get(Mips::COPY_S_W))
-        .addDef(Hi)
-        .addUse(Bitcast)
-        .addImm(1);
-    BuildMI(*BB, I, DL, TII->get(Mips::SWR))
-        .addUse(Lo)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 0 : 3));
-    BuildMI(*BB, I, DL, TII->get(Mips::SWL))
-        .addUse(Lo)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 3 : 0));
-    BuildMI(*BB, I, DL, TII->get(Mips::SWR))
-        .addUse(Hi)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 4 : 7));
-    BuildMI(*BB, I, DL, TII->get(Mips::SWL))
-        .addUse(Hi)
-        .addUse(Address)
-        .addImm(Imm + (IsLittle ? 7 : 4));
-  }
-
-  MI.eraseFromParent();
-  return BB;
 }

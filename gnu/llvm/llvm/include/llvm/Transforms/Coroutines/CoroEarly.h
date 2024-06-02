@@ -21,11 +21,10 @@
 
 namespace llvm {
 
-class Module;
+class Function;
 
 struct CoroEarlyPass : PassInfoMixin<CoroEarlyPass> {
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
-  static bool isRequired() { return true; }
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
 } // end namespace llvm
 

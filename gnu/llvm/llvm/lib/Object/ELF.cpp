@@ -8,7 +8,7 @@
 
 #include "llvm/Object/ELF.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/Support/DataExtractor.h"
+#include "llvm/Support/LEB128.h"
 
 using namespace llvm;
 using namespace object;
@@ -22,13 +22,6 @@ using namespace object;
 StringRef llvm::object::getELFRelocationTypeName(uint32_t Machine,
                                                  uint32_t Type) {
   switch (Machine) {
-  case ELF::EM_68K:
-    switch (Type) {
-#include "llvm/BinaryFormat/ELFRelocs/M68k.def"
-    default:
-      break;
-    }
-    break;
   case ELF::EM_X86_64:
     switch (Type) {
 #include "llvm/BinaryFormat/ELFRelocs/x86_64.def"
@@ -152,34 +145,6 @@ StringRef llvm::object::getELFRelocationTypeName(uint32_t Machine,
       break;
     }
     break;
-  case ELF::EM_VE:
-    switch (Type) {
-#include "llvm/BinaryFormat/ELFRelocs/VE.def"
-    default:
-      break;
-    }
-    break;
-  case ELF::EM_CSKY:
-    switch (Type) {
-#include "llvm/BinaryFormat/ELFRelocs/CSKY.def"
-    default:
-      break;
-    }
-    break;
-  case ELF::EM_LOONGARCH:
-    switch (Type) {
-#include "llvm/BinaryFormat/ELFRelocs/LoongArch.def"
-    default:
-      break;
-    }
-    break;
-  case ELF::EM_XTENSA:
-    switch (Type) {
-#include "llvm/BinaryFormat/ELFRelocs/Xtensa.def"
-    default:
-      break;
-    }
-    break;
   default:
     break;
   }
@@ -222,16 +187,10 @@ uint32_t llvm::object::getELFRelativeRelocationType(uint32_t Machine) {
   case ELF::EM_SPARC32PLUS:
   case ELF::EM_SPARCV9:
     return ELF::R_SPARC_RELATIVE;
-  case ELF::EM_CSKY:
-    return ELF::R_CKCORE_RELATIVE;
-  case ELF::EM_VE:
-    return ELF::R_VE_RELATIVE;
   case ELF::EM_AMDGPU:
     break;
   case ELF::EM_BPF:
     break;
-  case ELF::EM_LOONGARCH:
-    return ELF::R_LARCH_RELATIVE;
   default:
     break;
   }
@@ -263,12 +222,6 @@ StringRef llvm::object::getELFSectionTypeName(uint32_t Machine, unsigned Type) {
       STRINGIFY_ENUM_CASE(ELF, SHT_MIPS_DWARF);
       STRINGIFY_ENUM_CASE(ELF, SHT_MIPS_ABIFLAGS);
     }
-    break;
-  case ELF::EM_MSP430:
-    switch (Type) { STRINGIFY_ENUM_CASE(ELF, SHT_MSP430_ATTRIBUTES); }
-    break;
-  case ELF::EM_RISCV:
-    switch (Type) { STRINGIFY_ENUM_CASE(ELF, SHT_RISCV_ATTRIBUTES); }
     break;
   default:
     break;
@@ -304,9 +257,6 @@ StringRef llvm::object::getELFSectionTypeName(uint32_t Machine, unsigned Type) {
     STRINGIFY_ENUM_CASE(ELF, SHT_LLVM_SYMPART);
     STRINGIFY_ENUM_CASE(ELF, SHT_LLVM_PART_EHDR);
     STRINGIFY_ENUM_CASE(ELF, SHT_LLVM_PART_PHDR);
-    STRINGIFY_ENUM_CASE(ELF, SHT_LLVM_BB_ADDR_MAP_V0);
-    STRINGIFY_ENUM_CASE(ELF, SHT_LLVM_BB_ADDR_MAP);
-    STRINGIFY_ENUM_CASE(ELF, SHT_LLVM_OFFLOADING);
     STRINGIFY_ENUM_CASE(ELF, SHT_GNU_ATTRIBUTES);
     STRINGIFY_ENUM_CASE(ELF, SHT_GNU_HASH);
     STRINGIFY_ENUM_CASE(ELF, SHT_GNU_verdef);
@@ -318,7 +268,7 @@ StringRef llvm::object::getELFSectionTypeName(uint32_t Machine, unsigned Type) {
 }
 
 template <class ELFT>
-std::vector<typename ELFT::Rel>
+Expected<std::vector<typename ELFT::Rela>>
 ELFFile<ELFT>::decode_relrs(Elf_Relr_Range relrs) const {
   // This function decodes the contents of an SHT_RELR packed relocation
   // section.
@@ -350,32 +300,47 @@ ELFFile<ELFT>::decode_relrs(Elf_Relr_Range relrs) const {
   //    even means address, odd means bitmap.
   // 2. Just a simple list of addresses is a valid encoding.
 
-  Elf_Rel Rel;
-  Rel.r_info = 0;
-  Rel.setType(getRelativeRelocationType(), false);
-  std::vector<Elf_Rel> Relocs;
+  Elf_Rela Rela;
+  Rela.r_info = 0;
+  Rela.r_addend = 0;
+  Rela.setType(getRelativeRelocationType(), false);
+  std::vector<Elf_Rela> Relocs;
 
   // Word type: uint32_t for Elf32, and uint64_t for Elf64.
-  using Addr = typename ELFT::uint;
+  typedef typename ELFT::uint Word;
 
-  Addr Base = 0;
-  for (Elf_Relr R : relrs) {
-    typename ELFT::uint Entry = R;
-    if ((Entry & 1) == 0) {
+  // Word size in number of bytes.
+  const size_t WordSize = sizeof(Word);
+
+  // Number of bits used for the relocation offsets bitmap.
+  // These many relative relocations can be encoded in a single entry.
+  const size_t NBits = 8*WordSize - 1;
+
+  Word Base = 0;
+  for (const Elf_Relr &R : relrs) {
+    Word Entry = R;
+    if ((Entry&1) == 0) {
       // Even entry: encodes the offset for next relocation.
-      Rel.r_offset = Entry;
-      Relocs.push_back(Rel);
+      Rela.r_offset = Entry;
+      Relocs.push_back(Rela);
       // Set base offset for subsequent bitmap entries.
-      Base = Entry + sizeof(Addr);
-    } else {
-      // Odd entry: encodes bitmap for relocations starting at base.
-      for (Addr Offset = Base; (Entry >>= 1) != 0; Offset += sizeof(Addr))
-        if ((Entry & 1) != 0) {
-          Rel.r_offset = Offset;
-          Relocs.push_back(Rel);
-        }
-      Base += (CHAR_BIT * sizeof(Entry) - 1) * sizeof(Addr);
+      Base = Entry + WordSize;
+      continue;
     }
+
+    // Odd entry: encodes bitmap for relocations starting at base.
+    Word Offset = Base;
+    while (Entry != 0) {
+      Entry >>= 1;
+      if ((Entry&1) != 0) {
+        Rela.r_offset = Offset;
+        Relocs.push_back(Rela);
+      }
+      Offset += WordSize;
+    }
+
+    // Advance base offset by NBits words.
+    Base += NBits * WordSize;
   }
 
   return Relocs;
@@ -383,37 +348,45 @@ ELFFile<ELFT>::decode_relrs(Elf_Relr_Range relrs) const {
 
 template <class ELFT>
 Expected<std::vector<typename ELFT::Rela>>
-ELFFile<ELFT>::android_relas(const Elf_Shdr &Sec) const {
+ELFFile<ELFT>::android_relas(const Elf_Shdr *Sec) const {
   // This function reads relocations in Android's packed relocation format,
   // which is based on SLEB128 and delta encoding.
   Expected<ArrayRef<uint8_t>> ContentsOrErr = getSectionContents(Sec);
   if (!ContentsOrErr)
     return ContentsOrErr.takeError();
-  ArrayRef<uint8_t> Content = *ContentsOrErr;
-  if (Content.size() < 4 || Content[0] != 'A' || Content[1] != 'P' ||
-      Content[2] != 'S' || Content[3] != '2')
+  const uint8_t *Cur = ContentsOrErr->begin();
+  const uint8_t *End = ContentsOrErr->end();
+  if (ContentsOrErr->size() < 4 || Cur[0] != 'A' || Cur[1] != 'P' ||
+      Cur[2] != 'S' || Cur[3] != '2')
     return createError("invalid packed relocation header");
-  DataExtractor Data(Content, isLE(), ELFT::Is64Bits ? 8 : 4);
-  DataExtractor::Cursor Cur(/*Offset=*/4);
+  Cur += 4;
 
-  uint64_t NumRelocs = Data.getSLEB128(Cur);
-  uint64_t Offset = Data.getSLEB128(Cur);
+  const char *ErrStr = nullptr;
+  auto ReadSLEB = [&]() -> int64_t {
+    if (ErrStr)
+      return 0;
+    unsigned Len;
+    int64_t Result = decodeSLEB128(Cur, &Len, End, &ErrStr);
+    Cur += Len;
+    return Result;
+  };
+
+  uint64_t NumRelocs = ReadSLEB();
+  uint64_t Offset = ReadSLEB();
   uint64_t Addend = 0;
 
-  if (!Cur)
-    return std::move(Cur.takeError());
+  if (ErrStr)
+    return createError(ErrStr);
 
   std::vector<Elf_Rela> Relocs;
   Relocs.reserve(NumRelocs);
   while (NumRelocs) {
-    uint64_t NumRelocsInGroup = Data.getSLEB128(Cur);
-    if (!Cur)
-      return std::move(Cur.takeError());
+    uint64_t NumRelocsInGroup = ReadSLEB();
     if (NumRelocsInGroup > NumRelocs)
       return createError("relocation group unexpectedly large");
     NumRelocs -= NumRelocsInGroup;
 
-    uint64_t GroupFlags = Data.getSLEB128(Cur);
+    uint64_t GroupFlags = ReadSLEB();
     bool GroupedByInfo = GroupFlags & ELF::RELOCATION_GROUPED_BY_INFO_FLAG;
     bool GroupedByOffsetDelta = GroupFlags & ELF::RELOCATION_GROUPED_BY_OFFSET_DELTA_FLAG;
     bool GroupedByAddend = GroupFlags & ELF::RELOCATION_GROUPED_BY_ADDEND_FLAG;
@@ -421,30 +394,34 @@ ELFFile<ELFT>::android_relas(const Elf_Shdr &Sec) const {
 
     uint64_t GroupOffsetDelta;
     if (GroupedByOffsetDelta)
-      GroupOffsetDelta = Data.getSLEB128(Cur);
+      GroupOffsetDelta = ReadSLEB();
 
     uint64_t GroupRInfo;
     if (GroupedByInfo)
-      GroupRInfo = Data.getSLEB128(Cur);
+      GroupRInfo = ReadSLEB();
 
     if (GroupedByAddend && GroupHasAddend)
-      Addend += Data.getSLEB128(Cur);
+      Addend += ReadSLEB();
 
     if (!GroupHasAddend)
       Addend = 0;
 
-    for (uint64_t I = 0; Cur && I != NumRelocsInGroup; ++I) {
+    for (uint64_t I = 0; I != NumRelocsInGroup; ++I) {
       Elf_Rela R;
-      Offset += GroupedByOffsetDelta ? GroupOffsetDelta : Data.getSLEB128(Cur);
+      Offset += GroupedByOffsetDelta ? GroupOffsetDelta : ReadSLEB();
       R.r_offset = Offset;
-      R.r_info = GroupedByInfo ? GroupRInfo : Data.getSLEB128(Cur);
+      R.r_info = GroupedByInfo ? GroupRInfo : ReadSLEB();
       if (GroupHasAddend && !GroupedByAddend)
-        Addend += Data.getSLEB128(Cur);
+        Addend += ReadSLEB();
       R.r_addend = Addend;
       Relocs.push_back(R);
+
+      if (ErrStr)
+        return createError(ErrStr);
     }
-    if (!Cur)
-      return std::move(Cur.takeError());
+
+    if (ErrStr)
+      return createError(ErrStr);
   }
 
   return Relocs;
@@ -483,27 +460,11 @@ std::string ELFFile<ELFT>::getDynamicTagAsString(unsigned Arch,
     }
     break;
 
-  case ELF::EM_PPC:
-    switch (Type) {
-#define PPC_DYNAMIC_TAG(name, value) DYNAMIC_STRINGIFY_ENUM(name, value)
-#include "llvm/BinaryFormat/DynamicTags.def"
-#undef PPC_DYNAMIC_TAG
-    }
-    break;
-
   case ELF::EM_PPC64:
     switch (Type) {
 #define PPC64_DYNAMIC_TAG(name, value) DYNAMIC_STRINGIFY_ENUM(name, value)
 #include "llvm/BinaryFormat/DynamicTags.def"
 #undef PPC64_DYNAMIC_TAG
-    }
-    break;
-
-  case ELF::EM_RISCV:
-    switch (Type) {
-#define RISCV_DYNAMIC_TAG(name, value) DYNAMIC_STRINGIFY_ENUM(name, value)
-#include "llvm/BinaryFormat/DynamicTags.def"
-#undef RISCV_DYNAMIC_TAG
     }
     break;
   }
@@ -513,9 +474,7 @@ std::string ELFFile<ELFT>::getDynamicTagAsString(unsigned Arch,
 #define AARCH64_DYNAMIC_TAG(name, value)
 #define MIPS_DYNAMIC_TAG(name, value)
 #define HEXAGON_DYNAMIC_TAG(name, value)
-#define PPC_DYNAMIC_TAG(name, value)
 #define PPC64_DYNAMIC_TAG(name, value)
-#define RISCV_DYNAMIC_TAG(name, value)
 // Also ignore marker tags such as DT_HIOS (maps to DT_VERNEEDNUM), etc.
 #define DYNAMIC_TAG_MARKER(name, value)
 #define DYNAMIC_TAG(name, value) case value: return #name;
@@ -524,9 +483,7 @@ std::string ELFFile<ELFT>::getDynamicTagAsString(unsigned Arch,
 #undef AARCH64_DYNAMIC_TAG
 #undef MIPS_DYNAMIC_TAG
 #undef HEXAGON_DYNAMIC_TAG
-#undef PPC_DYNAMIC_TAG
 #undef PPC64_DYNAMIC_TAG
-#undef RISCV_DYNAMIC_TAG
 #undef DYNAMIC_TAG_MARKER
 #undef DYNAMIC_STRINGIFY_ENUM
   default:
@@ -536,12 +493,13 @@ std::string ELFFile<ELFT>::getDynamicTagAsString(unsigned Arch,
 
 template <class ELFT>
 std::string ELFFile<ELFT>::getDynamicTagAsString(uint64_t Type) const {
-  return getDynamicTagAsString(getHeader().e_machine, Type);
+  return getDynamicTagAsString(getHeader()->e_machine, Type);
 }
 
 template <class ELFT>
 Expected<typename ELFT::DynRange> ELFFile<ELFT>::dynamicEntries() const {
   ArrayRef<Elf_Dyn> Dyn;
+  size_t DynSecSize = 0;
 
   auto ProgramHeadersOrError = program_headers();
   if (!ProgramHeadersOrError)
@@ -549,8 +507,10 @@ Expected<typename ELFT::DynRange> ELFFile<ELFT>::dynamicEntries() const {
 
   for (const Elf_Phdr &Phdr : *ProgramHeadersOrError) {
     if (Phdr.p_type == ELF::PT_DYNAMIC) {
-      Dyn = ArrayRef(reinterpret_cast<const Elf_Dyn *>(base() + Phdr.p_offset),
-                     Phdr.p_filesz / sizeof(Elf_Dyn));
+      Dyn = makeArrayRef(
+          reinterpret_cast<const Elf_Dyn *>(base() + Phdr.p_offset),
+          Phdr.p_filesz / sizeof(Elf_Dyn));
+      DynSecSize = Phdr.p_filesz;
       break;
     }
   }
@@ -565,10 +525,11 @@ Expected<typename ELFT::DynRange> ELFFile<ELFT>::dynamicEntries() const {
     for (const Elf_Shdr &Sec : *SectionsOrError) {
       if (Sec.sh_type == ELF::SHT_DYNAMIC) {
         Expected<ArrayRef<Elf_Dyn>> DynOrError =
-            getSectionContentsAsArray<Elf_Dyn>(Sec);
+            getSectionContentsAsArray<Elf_Dyn>(&Sec);
         if (!DynOrError)
           return DynOrError.takeError();
         Dyn = *DynOrError;
+        DynSecSize = Sec.sh_size;
         break;
       }
     }
@@ -578,17 +539,22 @@ Expected<typename ELFT::DynRange> ELFFile<ELFT>::dynamicEntries() const {
   }
 
   if (Dyn.empty())
+    // TODO: this error is untested.
     return createError("invalid empty dynamic section");
 
+  if (DynSecSize % sizeof(Elf_Dyn) != 0)
+    // TODO: this error is untested.
+    return createError("malformed dynamic section");
+
   if (Dyn.back().d_tag != ELF::DT_NULL)
+    // TODO: this error is untested.
     return createError("dynamic sections must be DT_NULL terminated");
 
   return Dyn;
 }
 
 template <class ELFT>
-Expected<const uint8_t *>
-ELFFile<ELFT>::toMappedAddr(uint64_t VAddr, WarningHandler WarnHandler) const {
+Expected<const uint8_t *> ELFFile<ELFT>::toMappedAddr(uint64_t VAddr) const {
   auto ProgramHeadersOrError = program_headers();
   if (!ProgramHeadersOrError)
     return ProgramHeadersOrError.takeError();
@@ -599,21 +565,11 @@ ELFFile<ELFT>::toMappedAddr(uint64_t VAddr, WarningHandler WarnHandler) const {
     if (Phdr.p_type == ELF::PT_LOAD)
       LoadSegments.push_back(const_cast<Elf_Phdr *>(&Phdr));
 
-  auto SortPred = [](const Elf_Phdr_Impl<ELFT> *A,
-                     const Elf_Phdr_Impl<ELFT> *B) {
-    return A->p_vaddr < B->p_vaddr;
-  };
-  if (!llvm::is_sorted(LoadSegments, SortPred)) {
-    if (Error E =
-            WarnHandler("loadable segments are unsorted by virtual address"))
-      return std::move(E);
-    llvm::stable_sort(LoadSegments, SortPred);
-  }
-
-  const Elf_Phdr *const *I = llvm::upper_bound(
-      LoadSegments, VAddr, [](uint64_t VAddr, const Elf_Phdr_Impl<ELFT> *Phdr) {
-        return VAddr < Phdr->p_vaddr;
-      });
+  const Elf_Phdr *const *I =
+      std::upper_bound(LoadSegments.begin(), LoadSegments.end(), VAddr,
+                       [](uint64_t VAddr, const Elf_Phdr_Impl<ELFT> *Phdr) {
+                         return VAddr < Phdr->p_vaddr;
+                       });
 
   if (I == LoadSegments.begin())
     return createError("virtual address is not in any segment: 0x" +
@@ -624,86 +580,7 @@ ELFFile<ELFT>::toMappedAddr(uint64_t VAddr, WarningHandler WarnHandler) const {
   if (Delta >= Phdr.p_filesz)
     return createError("virtual address is not in any segment: 0x" +
                        Twine::utohexstr(VAddr));
-
-  uint64_t Offset = Phdr.p_offset + Delta;
-  if (Offset >= getBufSize())
-    return createError("can't map virtual address 0x" +
-                       Twine::utohexstr(VAddr) + " to the segment with index " +
-                       Twine(&Phdr - (*ProgramHeadersOrError).data() + 1) +
-                       ": the segment ends at 0x" +
-                       Twine::utohexstr(Phdr.p_offset + Phdr.p_filesz) +
-                       ", which is greater than the file size (0x" +
-                       Twine::utohexstr(getBufSize()) + ")");
-
-  return base() + Offset;
-}
-
-template <class ELFT>
-Expected<std::vector<BBAddrMap>>
-ELFFile<ELFT>::decodeBBAddrMap(const Elf_Shdr &Sec) const {
-  Expected<ArrayRef<uint8_t>> ContentsOrErr = getSectionContents(Sec);
-  if (!ContentsOrErr)
-    return ContentsOrErr.takeError();
-  ArrayRef<uint8_t> Content = *ContentsOrErr;
-  DataExtractor Data(Content, isLE(), ELFT::Is64Bits ? 8 : 4);
-  std::vector<BBAddrMap> FunctionEntries;
-
-  DataExtractor::Cursor Cur(0);
-  Error ULEBSizeErr = Error::success();
-  // Helper to extract and decode the next ULEB128 value as uint32_t.
-  // Returns zero and sets ULEBSizeErr if the ULEB128 value exceeds the uint32_t
-  // limit.
-  // Also returns zero if ULEBSizeErr is already in an error state.
-  auto ReadULEB128AsUInt32 = [&Data, &Cur, &ULEBSizeErr]() -> uint32_t {
-    // Bail out and do not extract data if ULEBSizeErr is already set.
-    if (ULEBSizeErr)
-      return 0;
-    uint64_t Offset = Cur.tell();
-    uint64_t Value = Data.getULEB128(Cur);
-    if (Value > UINT32_MAX) {
-      ULEBSizeErr = createError(
-          "ULEB128 value at offset 0x" + Twine::utohexstr(Offset) +
-          " exceeds UINT32_MAX (0x" + Twine::utohexstr(Value) + ")");
-      return 0;
-    }
-    return static_cast<uint32_t>(Value);
-  };
-
-  uint8_t Version = 0;
-  while (!ULEBSizeErr && Cur && Cur.tell() < Content.size()) {
-    if (Sec.sh_type == ELF::SHT_LLVM_BB_ADDR_MAP) {
-      Version = Data.getU8(Cur);
-      if (!Cur)
-        break;
-      if (Version > 2)
-        return createError("unsupported SHT_LLVM_BB_ADDR_MAP version: " +
-                           Twine(static_cast<int>(Version)));
-      Data.getU8(Cur); // Feature byte
-    }
-    uintX_t Address = static_cast<uintX_t>(Data.getAddress(Cur));
-    uint32_t NumBlocks = ReadULEB128AsUInt32();
-    std::vector<BBAddrMap::BBEntry> BBEntries;
-    uint32_t PrevBBEndOffset = 0;
-    for (uint32_t BlockIndex = 0;
-         !ULEBSizeErr && Cur && (BlockIndex < NumBlocks); ++BlockIndex) {
-      uint32_t ID = Version >= 2 ? ReadULEB128AsUInt32() : BlockIndex;
-      uint32_t Offset = ReadULEB128AsUInt32();
-      uint32_t Size = ReadULEB128AsUInt32();
-      uint32_t Metadata = ReadULEB128AsUInt32();
-      if (Version >= 1) {
-        // Offset is calculated relative to the end of the previous BB.
-        Offset += PrevBBEndOffset;
-        PrevBBEndOffset = Offset + Size;
-      }
-      BBEntries.push_back({ID, Offset, Size, Metadata});
-    }
-    FunctionEntries.push_back({Address, std::move(BBEntries)});
-  }
-  // Either Cur is in the error state, or ULEBSizeError is set (not both), but
-  // we join the two errors here to be safe.
-  if (!Cur || ULEBSizeErr)
-    return joinErrors(Cur.takeError(), std::move(ULEBSizeErr));
-  return FunctionEntries;
+  return base() + Phdr.p_offset + Delta;
 }
 
 template class llvm::object::ELFFile<ELF32LE>;

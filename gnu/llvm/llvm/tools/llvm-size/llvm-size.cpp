@@ -18,9 +18,6 @@
 #include "llvm/Object/MachO.h"
 #include "llvm/Object/MachOUniversal.h"
 #include "llvm/Object/ObjectFile.h"
-#include "llvm/Option/Arg.h"
-#include "llvm/Option/ArgList.h"
-#include "llvm/Option/Option.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
@@ -36,59 +33,23 @@
 using namespace llvm;
 using namespace object;
 
-namespace {
-using namespace llvm::opt; // for HelpHidden in Opts.inc
-enum ID {
-  OPT_INVALID = 0, // This is not an option ID.
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  OPT_##ID,
-#include "Opts.inc"
-#undef OPTION
-};
-
-#define PREFIX(NAME, VALUE)                                                    \
-  static constexpr StringLiteral NAME##_init[] = VALUE;                        \
-  static constexpr ArrayRef<StringLiteral> NAME(NAME##_init,                   \
-                                                std::size(NAME##_init) - 1);
-#include "Opts.inc"
-#undef PREFIX
-
-static constexpr opt::OptTable::Info InfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
-               HELPTEXT, METAVAR, VALUES)                                      \
-  {                                                                            \
-      PREFIX,      NAME,      HELPTEXT,                                        \
-      METAVAR,     OPT_##ID,  opt::Option::KIND##Class,                        \
-      PARAM,       FLAGS,     OPT_##GROUP,                                     \
-      OPT_##ALIAS, ALIASARGS, VALUES},
-#include "Opts.inc"
-#undef OPTION
-};
-
-class SizeOptTable : public opt::GenericOptTable {
-public:
-  SizeOptTable() : GenericOptTable(InfoTable) { setGroupedShortOptions(true); }
-};
+cl::OptionCategory SizeCat("llvm-size Options");
 
 enum OutputFormatTy { berkeley, sysv, darwin };
-enum RadixTy { octal = 8, decimal = 10, hexadecimal = 16 };
-} // namespace
+static cl::opt<OutputFormatTy>
+    OutputFormat("format", cl::desc("Specify output format"),
+                 cl::values(clEnumVal(sysv, "System V format"),
+                            clEnumVal(berkeley, "Berkeley format"),
+                            clEnumVal(darwin, "Darwin -m format")),
+                 cl::init(berkeley), cl::cat(SizeCat));
 
-static bool ArchAll = false;
-static std::vector<StringRef> ArchFlags;
-static bool ELFCommons;
-static OutputFormatTy OutputFormat;
-static bool DarwinLongFormat;
-static RadixTy Radix;
-static bool TotalSizes;
+static cl::opt<OutputFormatTy>
+    OutputFormatShort(cl::desc("Specify output format"),
+                      cl::values(clEnumValN(sysv, "A", "System V format"),
+                                 clEnumValN(berkeley, "B", "Berkeley format"),
+                                 clEnumValN(darwin, "m", "Darwin -m format")),
+                      cl::init(berkeley), cl::cat(SizeCat));
 
-static std::vector<std::string> InputFilenames;
-
-static std::string ToolName;
-
-// States
-static bool HadError = false;
 static bool BerkeleyHeaderPrinted = false;
 static bool MoreThanOneFile = false;
 static uint64_t TotalObjectText = 0;
@@ -96,13 +57,59 @@ static uint64_t TotalObjectData = 0;
 static uint64_t TotalObjectBss = 0;
 static uint64_t TotalObjectTotal = 0;
 
-static void error(const Twine &Message, StringRef File = "") {
+cl::opt<bool>
+    DarwinLongFormat("l",
+                     cl::desc("When format is darwin, use long format "
+                              "to include addresses and offsets."),
+                     cl::cat(SizeCat));
+
+cl::opt<bool>
+    ELFCommons("common",
+               cl::desc("Print common symbols in the ELF file.  When using "
+                        "Berkeley format, this is added to bss."),
+               cl::init(false), cl::cat(SizeCat));
+
+static cl::list<std::string>
+    ArchFlags("arch", cl::desc("architecture(s) from a Mach-O file to dump"),
+              cl::ZeroOrMore, cl::cat(SizeCat));
+static bool ArchAll = false;
+
+enum RadixTy { octal = 8, decimal = 10, hexadecimal = 16 };
+static cl::opt<RadixTy> Radix(
+    "radix", cl::desc("Print size in radix"), cl::init(decimal),
+    cl::values(clEnumValN(octal, "8", "Print size in octal"),
+               clEnumValN(decimal, "10", "Print size in decimal"),
+               clEnumValN(hexadecimal, "16", "Print size in hexadecimal")),
+    cl::cat(SizeCat));
+
+static cl::opt<RadixTy> RadixShort(
+    cl::desc("Print size in radix:"),
+    cl::values(clEnumValN(octal, "o", "Print size in octal"),
+               clEnumValN(decimal, "d", "Print size in decimal"),
+               clEnumValN(hexadecimal, "x", "Print size in hexadecimal")),
+    cl::init(decimal), cl::cat(SizeCat));
+
+static cl::opt<bool>
+    TotalSizes("totals",
+               cl::desc("Print totals of all objects - Berkeley format only"),
+               cl::init(false), cl::cat(SizeCat));
+
+static cl::alias TotalSizesShort("t", cl::desc("Short for --totals"),
+                                 cl::aliasopt(TotalSizes));
+
+static cl::list<std::string>
+    InputFilenames(cl::Positional, cl::desc("<input files>"), cl::ZeroOrMore);
+
+static cl::extrahelp
+    HelpResponse("\nPass @FILE as argument to read options from FILE.\n");
+
+static bool HadError = false;
+
+static std::string ToolName;
+
+static void error(const Twine &Message, StringRef File) {
   HadError = true;
-  if (File.empty())
-    WithColor::error(errs(), ToolName) << Message << '\n';
-  else
-    WithColor::error(errs(), ToolName)
-        << "'" << File << "': " << Message << '\n';
+  WithColor::error(errs(), ToolName) << "'" << File << "': " << Message << "\n";
 }
 
 // This version of error() prints the archive name and member name, for example:
@@ -180,26 +187,20 @@ static bool considerForSize(ObjectFile *Obj, SectionRef Section) {
   switch (static_cast<ELFSectionRef>(Section).getType()) {
   case ELF::SHT_NULL:
   case ELF::SHT_SYMTAB:
-    return false;
   case ELF::SHT_STRTAB:
   case ELF::SHT_REL:
   case ELF::SHT_RELA:
-    return static_cast<ELFSectionRef>(Section).getFlags() & ELF::SHF_ALLOC;
+    return false;
   }
   return true;
 }
 
 /// Total size of all ELF common symbols
-static Expected<uint64_t> getCommonSize(ObjectFile *Obj) {
+static uint64_t getCommonSize(ObjectFile *Obj) {
   uint64_t TotalCommons = 0;
-  for (auto &Sym : Obj->symbols()) {
-    Expected<uint32_t> SymFlagsOrErr =
-        Obj->getSymbolFlags(Sym.getRawDataRefImpl());
-    if (!SymFlagsOrErr)
-      return SymFlagsOrErr.takeError();
-    if (*SymFlagsOrErr & SymbolRef::SF_Common)
+  for (auto &Sym : Obj->symbols())
+    if (Obj->getSymbolFlags(Sym.getRawDataRefImpl()) & SymbolRef::SF_Common)
       TotalCommons += Obj->getCommonSymbolSize(Sym.getRawDataRefImpl());
-  }
   return TotalCommons;
 }
 
@@ -434,14 +435,10 @@ static void printObjectSectionSizes(ObjectFile *Obj) {
     }
 
     if (ELFCommons) {
-      if (Expected<uint64_t> CommonSizeOrErr = getCommonSize(Obj)) {
-        total += *CommonSizeOrErr;
-        outs() << format(fmt.str().c_str(), std::string("*COM*").c_str(),
-                         *CommonSizeOrErr, static_cast<uint64_t>(0));
-      } else {
-        error(CommonSizeOrErr.takeError(), Obj->getFileName());
-        return;
-      }
+      uint64_t CommonSize = getCommonSize(Obj);
+      total += CommonSize;
+      outs() << format(fmt.str().c_str(), std::string("*COM*").c_str(),
+                       CommonSize, static_cast<uint64_t>(0));
     }
 
     // Print total.
@@ -472,14 +469,8 @@ static void printObjectSectionSizes(ObjectFile *Obj) {
         total_bss += size;
     }
 
-    if (ELFCommons) {
-      if (Expected<uint64_t> CommonSizeOrErr = getCommonSize(Obj))
-        total_bss += *CommonSizeOrErr;
-      else {
-        error(CommonSizeOrErr.takeError(), Obj->getFileName());
-        return;
-      }
-    }
+    if (ELFCommons)
+      total_bss += getCommonSize(Obj);
 
     total = total_text + total_data + total_bss;
 
@@ -535,7 +526,9 @@ static bool checkMachOAndArchFlags(ObjectFile *O, StringRef Filename) {
     H = MachO->MachOObjectFile::getHeader();
     T = MachOObjectFile::getArchTriple(H.cputype, H.cpusubtype);
   }
-  if (!is_contained(ArchFlags, T.getArchName())) {
+  if (none_of(ArchFlags, [&](const std::string &Name) {
+        return Name == T.getArchName();
+      })) {
     error("no architecture specified", Filename);
     return false;
   }
@@ -573,8 +566,6 @@ static void printFileSectionSizes(StringRef file) {
         else if (MachO && OutputFormat == darwin)
           outs() << a->getFileName() << "(" << o->getFileName() << "):\n";
         printObjectSectionSizes(o);
-        if (!MachO && OutputFormat == darwin)
-          outs() << o->getFileName() << " (ex " << a->getFileName() << ")\n";
         if (OutputFormat == berkeley) {
           if (MachO)
             outs() << a->getFileName() << "(" << o->getFileName() << ")\n";
@@ -841,8 +832,6 @@ static void printFileSectionSizes(StringRef file) {
     else if (MachO && OutputFormat == darwin && MoreThanOneFile)
       outs() << o->getFileName() << ":\n";
     printObjectSectionSizes(o);
-    if (!MachO && OutputFormat == darwin)
-      outs() << o->getFileName() << "\n";
     if (OutputFormat == berkeley) {
       if (!MachO || MoreThanOneFile)
         outs() << o->getFileName();
@@ -869,71 +858,29 @@ static void printBerkeleyTotals() {
          << "(TOTALS)\n";
 }
 
-int llvm_size_main(int argc, char **argv) {
+int main(int argc, char **argv) {
   InitLLVM X(argc, argv);
-  BumpPtrAllocator A;
-  StringSaver Saver(A);
-  SizeOptTable Tbl;
+  cl::HideUnrelatedOptions(SizeCat);
+  cl::ParseCommandLineOptions(argc, argv, "llvm object size dumper\n");
+
   ToolName = argv[0];
-  opt::InputArgList Args =
-      Tbl.parseArgs(argc, argv, OPT_UNKNOWN, Saver, [&](StringRef Msg) {
-        error(Msg);
-        exit(1);
-      });
-  if (Args.hasArg(OPT_help)) {
-    Tbl.printHelp(
-        outs(),
-        (Twine(ToolName) + " [options] <input object files>").str().c_str(),
-        "LLVM object size dumper");
-    // TODO Replace this with OptTable API once it adds extrahelp support.
-    outs() << "\nPass @FILE as argument to read options from FILE.\n";
-    return 0;
-  }
-  if (Args.hasArg(OPT_version)) {
-    outs() << ToolName << '\n';
-    cl::PrintVersionMessage();
-    return 0;
-  }
+  if (OutputFormatShort.getNumOccurrences())
+    OutputFormat = static_cast<OutputFormatTy>(OutputFormatShort);
+  if (RadixShort.getNumOccurrences())
+    Radix = RadixShort.getValue();
 
-  ELFCommons = Args.hasArg(OPT_common);
-  DarwinLongFormat = Args.hasArg(OPT_l);
-  TotalSizes = Args.hasArg(OPT_totals);
-  StringRef V = Args.getLastArgValue(OPT_format_EQ, "berkeley");
-  if (V == "berkeley")
-    OutputFormat = berkeley;
-  else if (V == "darwin")
-    OutputFormat = darwin;
-  else if (V == "sysv")
-    OutputFormat = sysv;
-  else
-    error("--format value should be one of: 'berkeley', 'darwin', 'sysv'");
-  V = Args.getLastArgValue(OPT_radix_EQ, "10");
-  if (V == "8")
-    Radix = RadixTy::octal;
-  else if (V == "10")
-    Radix = RadixTy::decimal;
-  else if (V == "16")
-    Radix = RadixTy::hexadecimal;
-  else
-    error("--radix value should be one of: 8, 10, 16 ");
-
-  for (const auto *A : Args.filtered(OPT_arch_EQ)) {
-    SmallVector<StringRef, 2> Values;
-    llvm::SplitString(A->getValue(), Values, ",");
-    for (StringRef V : Values) {
-      if (V == "all")
-        ArchAll = true;
-      else if (MachOObjectFile::isValidArch(V))
-        ArchFlags.push_back(V);
-      else {
+  for (StringRef Arch : ArchFlags) {
+    if (Arch == "all") {
+      ArchAll = true;
+    } else {
+      if (!MachOObjectFile::isValidArch(Arch)) {
         outs() << ToolName << ": for the -arch option: Unknown architecture "
-               << "named '" << V << "'";
+               << "named '" << Arch << "'";
         return 1;
       }
     }
   }
 
-  InputFilenames = Args.getAllArgValues(OPT_INPUT);
   if (InputFilenames.empty())
     InputFilenames.push_back("a.out");
 
@@ -944,5 +891,4 @@ int llvm_size_main(int argc, char **argv) {
 
   if (HadError)
     return 1;
-  return 0;
 }

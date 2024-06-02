@@ -22,20 +22,15 @@
 //    r1 = <calculated field_info>
 //    add r3, struct_base_reg, r1
 //
-// This pass also removes the intermediate load generated in IR pass for
-// __builtin_btf_type_id() intrinsic.
-//
 //===----------------------------------------------------------------------===//
 
 #include "BPF.h"
 #include "BPFCORE.h"
 #include "BPFInstrInfo.h"
 #include "BPFTargetMachine.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Support/Debug.h"
-#include <set>
 
 using namespace llvm;
 
@@ -54,19 +49,16 @@ struct BPFMISimplifyPatchable : public MachineFunctionPass {
   }
 
 private:
-  std::set<MachineInstr *> SkipInsts;
-
   // Initialize class variables.
   void initialize(MachineFunction &MFParm);
 
-  bool isLoadInst(unsigned Opcode);
-  bool removeLD();
+  bool removeLD(void);
   void processCandidate(MachineRegisterInfo *MRI, MachineBasicBlock &MBB,
                         MachineInstr &MI, Register &SrcReg, Register &DstReg,
-                        const GlobalValue *GVal, bool IsAma);
+                        const GlobalValue *GVal);
   void processDstReg(MachineRegisterInfo *MRI, Register &DstReg,
                      Register &SrcReg, const GlobalValue *GVal,
-                     bool doSrcRegProp, bool IsAma);
+                     bool doSrcRegProp);
   void processInst(MachineRegisterInfo *MRI, MachineInstr *Inst,
                    MachineOperand *RelocOp, const GlobalValue *GVal);
   void checkADDrr(MachineRegisterInfo *MRI, MachineOperand *RelocOp,
@@ -93,12 +85,6 @@ void BPFMISimplifyPatchable::initialize(MachineFunction &MFParm) {
   LLVM_DEBUG(dbgs() << "*** BPF simplify patchable insts pass ***\n\n");
 }
 
-bool BPFMISimplifyPatchable::isLoadInst(unsigned Opcode) {
-  return Opcode == BPF::LDD || Opcode == BPF::LDW || Opcode == BPF::LDH ||
-         Opcode == BPF::LDB || Opcode == BPF::LDW32 || Opcode == BPF::LDH32 ||
-         Opcode == BPF::LDB32;
-}
-
 void BPFMISimplifyPatchable::checkADDrr(MachineRegisterInfo *MRI,
     MachineOperand *RelocOp, const GlobalValue *GVal) {
   const MachineInstr *Inst = RelocOp->getParent();
@@ -108,13 +94,15 @@ void BPFMISimplifyPatchable::checkADDrr(MachineRegisterInfo *MRI,
 
   // Go through all uses of %1 as in %1 = ADD_rr %2, %3
   const MachineOperand Op0 = Inst->getOperand(0);
-  for (MachineOperand &MO :
-       llvm::make_early_inc_range(MRI->use_operands(Op0.getReg()))) {
+  auto Begin = MRI->use_begin(Op0.getReg()), End = MRI->use_end();
+  decltype(End) NextI;
+  for (auto I = Begin; I != End; I = NextI) {
+    NextI = std::next(I);
     // The candidate needs to have a unique definition.
-    if (!MRI->getUniqueVRegDef(MO.getReg()))
+    if (!MRI->getUniqueVRegDef(I->getReg()))
       continue;
 
-    MachineInstr *DefInst = MO.getParent();
+    MachineInstr *DefInst = I->getParent();
     unsigned Opcode = DefInst->getOpcode();
     unsigned COREOp;
     if (Opcode == BPF::LDB || Opcode == BPF::LDH || Opcode == BPF::LDW ||
@@ -128,21 +116,10 @@ void BPFMISimplifyPatchable::checkADDrr(MachineRegisterInfo *MRI,
     else
       continue;
 
-    // It must be a form of %2 = *(type *)(%1 + 0) or *(type *)(%1 + 0) = %2.
+    // It must be a form of %1 = *(type *)(%2 + 0) or *(type *)(%2 + 0) = %1.
     const MachineOperand &ImmOp = DefInst->getOperand(2);
     if (!ImmOp.isImm() || ImmOp.getImm() != 0)
       continue;
-
-    // Reject the form:
-    //   %1 = ADD_rr %2, %3
-    //   *(type *)(%2 + 0) = %1
-    if (Opcode == BPF::STB || Opcode == BPF::STH || Opcode == BPF::STW ||
-        Opcode == BPF::STD || Opcode == BPF::STB32 || Opcode == BPF::STH32 ||
-        Opcode == BPF::STW32) {
-      const MachineOperand &Opnd = DefInst->getOperand(0);
-      if (Opnd.isReg() && Opnd.getReg() == MO.getReg())
-        continue;
-    }
 
     BuildMI(*DefInst->getParent(), *DefInst, DefInst->getDebugLoc(), TII->get(COREOp))
         .add(DefInst->getOperand(0)).addImm(Opcode).add(*BaseOp)
@@ -167,27 +144,25 @@ void BPFMISimplifyPatchable::checkShift(MachineRegisterInfo *MRI,
 
 void BPFMISimplifyPatchable::processCandidate(MachineRegisterInfo *MRI,
     MachineBasicBlock &MBB, MachineInstr &MI, Register &SrcReg,
-    Register &DstReg, const GlobalValue *GVal, bool IsAma) {
+    Register &DstReg, const GlobalValue *GVal) {
   if (MRI->getRegClass(DstReg) == &BPF::GPR32RegClass) {
-    if (IsAma) {
-      // We can optimize such a pattern:
-      //  %1:gpr = LD_imm64 @"llvm.s:0:4$0:2"
-      //  %2:gpr32 = LDW32 %1:gpr, 0
-      //  %3:gpr = SUBREG_TO_REG 0, %2:gpr32, %subreg.sub_32
-      //  %4:gpr = ADD_rr %0:gpr, %3:gpr
-      //  or similar patterns below for non-alu32 case.
-      auto Begin = MRI->use_begin(DstReg), End = MRI->use_end();
-      decltype(End) NextI;
-      for (auto I = Begin; I != End; I = NextI) {
-        NextI = std::next(I);
-        if (!MRI->getUniqueVRegDef(I->getReg()))
-          continue;
+    // We can optimize such a pattern:
+    //  %1:gpr = LD_imm64 @"llvm.s:0:4$0:2"
+    //  %2:gpr32 = LDW32 %1:gpr, 0
+    //  %3:gpr = SUBREG_TO_REG 0, %2:gpr32, %subreg.sub_32
+    //  %4:gpr = ADD_rr %0:gpr, %3:gpr
+    //  or similar patterns below for non-alu32 case.
+    auto Begin = MRI->use_begin(DstReg), End = MRI->use_end();
+    decltype(End) NextI;
+    for (auto I = Begin; I != End; I = NextI) {
+      NextI = std::next(I);
+      if (!MRI->getUniqueVRegDef(I->getReg()))
+        continue;
 
-        unsigned Opcode = I->getParent()->getOpcode();
-        if (Opcode == BPF::SUBREG_TO_REG) {
-          Register TmpReg = I->getParent()->getOperand(0).getReg();
-          processDstReg(MRI, TmpReg, DstReg, GVal, false, IsAma);
-        }
+      unsigned Opcode = I->getParent()->getOpcode();
+      if (Opcode == BPF::SUBREG_TO_REG) {
+        Register TmpReg = I->getParent()->getOperand(0).getReg();
+        processDstReg(MRI, TmpReg, DstReg, GVal, false);
       }
     }
 
@@ -197,12 +172,12 @@ void BPFMISimplifyPatchable::processCandidate(MachineRegisterInfo *MRI,
   }
 
   // All uses of DstReg replaced by SrcReg
-  processDstReg(MRI, DstReg, SrcReg, GVal, true, IsAma);
+  processDstReg(MRI, DstReg, SrcReg, GVal, true);
 }
 
 void BPFMISimplifyPatchable::processDstReg(MachineRegisterInfo *MRI,
     Register &DstReg, Register &SrcReg, const GlobalValue *GVal,
-    bool doSrcRegProp, bool IsAma) {
+    bool doSrcRegProp) {
   auto Begin = MRI->use_begin(DstReg), End = MRI->use_end();
   decltype(End) NextI;
   for (auto I = Begin; I != End; I = NextI) {
@@ -211,7 +186,7 @@ void BPFMISimplifyPatchable::processDstReg(MachineRegisterInfo *MRI,
       I->setReg(SrcReg);
 
     // The candidate needs to have a unique definition.
-    if (IsAma && MRI->getUniqueVRegDef(I->getReg()))
+    if (MRI->getUniqueVRegDef(I->getReg()))
       processInst(MRI, I->getParent(), &*I, GVal);
   }
 }
@@ -240,11 +215,6 @@ void BPFMISimplifyPatchable::processDstReg(MachineRegisterInfo *MRI,
 void BPFMISimplifyPatchable::processInst(MachineRegisterInfo *MRI,
     MachineInstr *Inst, MachineOperand *RelocOp, const GlobalValue *GVal) {
   unsigned Opcode = Inst->getOpcode();
-  if (isLoadInst(Opcode)) {
-    SkipInsts.insert(Inst);
-    return;
-  }
-
   if (Opcode == BPF::ADD_rr)
     checkADDrr(MRI, RelocOp, GVal);
   else if (Opcode == BPF::SLL_rr)
@@ -269,10 +239,10 @@ bool BPFMISimplifyPatchable::removeLD() {
       }
 
       // Ensure the register format is LOAD <reg>, <reg>, 0
-      if (!isLoadInst(MI.getOpcode()))
-        continue;
-
-      if (SkipInsts.find(&MI) != SkipInsts.end())
+      if (MI.getOpcode() != BPF::LDD && MI.getOpcode() != BPF::LDW &&
+          MI.getOpcode() != BPF::LDH && MI.getOpcode() != BPF::LDB &&
+          MI.getOpcode() != BPF::LDW32 && MI.getOpcode() != BPF::LDH32 &&
+          MI.getOpcode() != BPF::LDB32)
         continue;
 
       if (!MI.getOperand(0).isReg() || !MI.getOperand(1).isReg())
@@ -288,26 +258,28 @@ bool BPFMISimplifyPatchable::removeLD() {
       if (!DefInst)
         continue;
 
-      if (DefInst->getOpcode() != BPF::LD_imm64)
+      bool IsCandidate = false;
+      const GlobalValue *GVal = nullptr;
+      if (DefInst->getOpcode() == BPF::LD_imm64) {
+        const MachineOperand &MO = DefInst->getOperand(1);
+        if (MO.isGlobal()) {
+          GVal = MO.getGlobal();
+          auto *GVar = dyn_cast<GlobalVariable>(GVal);
+          if (GVar) {
+            // Global variables representing structure offset or
+            // patchable extern globals.
+            if (GVar->hasAttribute(BPFCoreSharedInfo::AmaAttr)) {
+              assert(MI.getOperand(2).getImm() == 0);
+              IsCandidate = true;
+            }
+          }
+        }
+      }
+
+      if (!IsCandidate)
         continue;
 
-      const MachineOperand &MO = DefInst->getOperand(1);
-      if (!MO.isGlobal())
-        continue;
-
-      const GlobalValue *GVal = MO.getGlobal();
-      auto *GVar = dyn_cast<GlobalVariable>(GVal);
-      if (!GVar)
-        continue;
-
-      // Global variables representing structure offset or type id.
-      bool IsAma = false;
-      if (GVar->hasAttribute(BPFCoreSharedInfo::AmaAttr))
-        IsAma = true;
-      else if (!GVar->hasAttribute(BPFCoreSharedInfo::TypeIdAttr))
-        continue;
-
-      processCandidate(MRI, MBB, MI, SrcReg, DstReg, GVal, IsAma);
+      processCandidate(MRI, MBB, MI, SrcReg, DstReg, GVal);
 
       ToErase = &MI;
       Changed = true;

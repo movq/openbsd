@@ -13,9 +13,6 @@
 #ifndef LLVM_ANALYSIS_CAPTURETRACKING_H
 #define LLVM_ANALYSIS_CAPTURETRACKING_H
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
-
 namespace llvm {
 
   class Value;
@@ -23,14 +20,15 @@ namespace llvm {
   class DataLayout;
   class Instruction;
   class DominatorTree;
-  class LoopInfo;
-  class Function;
-  template <typename T> class SmallPtrSetImpl;
+  class OrderedBasicBlock;
 
-  /// getDefaultMaxUsesToExploreForCaptureTracking - Return default value of
-  /// the maximal number of uses to explore before giving up. It is used by
-  /// PointerMayBeCaptured family analysis.
-  unsigned getDefaultMaxUsesToExploreForCaptureTracking();
+  /// The default value for MaxUsesToExplore argument. It's relatively small to
+  /// keep the cost of analysis reasonable for clients like BasicAliasAnalysis,
+  /// where the results can't be cached.
+  /// TODO: we should probably introduce a caching CaptureTracking analysis and
+  /// use it where possible. The caching version can use much higher limit or
+  /// don't have this cap at all.
+  unsigned constexpr DefaultMaxUsesToExplore = 20;
 
   /// PointerMayBeCaptured - Return true if this pointer value may be captured
   /// by the enclosing function (which is required to exist).  This routine can
@@ -39,18 +37,12 @@ namespace llvm {
   /// counts as capturing it or not.  The boolean StoreCaptures specified
   /// whether storing the value (or part of it) into memory anywhere
   /// automatically counts as capturing it or not.
-  /// MaxUsesToExplore specifies how many uses the analysis should explore for
-  /// one value before giving up due too "too many uses". If MaxUsesToExplore
-  /// is zero, a default value is assumed.
-  bool PointerMayBeCaptured(const Value *V, bool ReturnCaptures,
-                            bool StoreCaptures, unsigned MaxUsesToExplore = 0);
-
-  /// Variant of the above function which accepts a set of Values that are
-  /// ephemeral and cannot cause pointers to escape.
-  bool PointerMayBeCaptured(const Value *V, bool ReturnCaptures,
+  /// MaxUsesToExplore specifies how many uses should the analysis explore for
+  /// one value before giving up due too "too many uses".
+  bool PointerMayBeCaptured(const Value *V,
+                            bool ReturnCaptures,
                             bool StoreCaptures,
-                            const SmallPtrSetImpl<const Value *> &EphValues,
-                            unsigned MaxUsesToExplore = 0);
+                            unsigned MaxUsesToExplore = DefaultMaxUsesToExplore);
 
   /// PointerMayBeCapturedBefore - Return true if this pointer value may be
   /// captured by the enclosing function (which is required to exist). If a
@@ -61,30 +53,15 @@ namespace llvm {
   /// it or not.  The boolean StoreCaptures specified whether storing the value
   /// (or part of it) into memory anywhere automatically counts as capturing it
   /// or not. Captures by the provided instruction are considered if the
-  /// final parameter is true.
-  /// MaxUsesToExplore specifies how many uses the analysis should explore for
-  /// one value before giving up due too "too many uses". If MaxUsesToExplore
-  /// is zero, a default value is assumed.
+  /// final parameter is true. An ordered basic block in \p OBB could be used
+  /// to speed up capture-tracker queries.
+  /// MaxUsesToExplore specifies how many uses should the analysis explore for
+  /// one value before giving up due too "too many uses".
   bool PointerMayBeCapturedBefore(const Value *V, bool ReturnCaptures,
                                   bool StoreCaptures, const Instruction *I,
-                                  const DominatorTree *DT,
-                                  bool IncludeI = false,
-                                  unsigned MaxUsesToExplore = 0,
-                                  const LoopInfo *LI = nullptr);
-
-  // Returns the 'earliest' instruction that captures \p V in \F. An instruction
-  // A is considered earlier than instruction B, if A dominates B. If 2 escapes
-  // do not dominate each other, the terminator of the common dominator is
-  // chosen. If not all uses can be analyzed, the earliest escape is set to
-  // the first instruction in the function entry block. If \p V does not escape,
-  // nullptr is returned. Note that the caller of the function has to ensure
-  // that the instruction the result value is compared against is not in a
-  // cycle.
-  Instruction *
-  FindEarliestCapture(const Value *V, Function &F, bool ReturnCaptures,
-                      bool StoreCaptures, const DominatorTree &DT,
-                      const SmallPtrSetImpl<const Value *> &EphValues,
-                      unsigned MaxUsesToExplore = 0);
+                                  const DominatorTree *DT, bool IncludeI = false,
+                                  OrderedBasicBlock *OBB = nullptr,
+                                  unsigned MaxUsesToExplore = DefaultMaxUsesToExplore);
 
   /// This callback is used in conjunction with PointerMayBeCaptured. In
   /// addition to the interface here, you'll need to provide your own getters
@@ -114,38 +91,13 @@ namespace llvm {
     virtual bool isDereferenceableOrNull(Value *O, const DataLayout &DL);
   };
 
-  /// Types of use capture kinds, see \p DetermineUseCaptureKind.
-  enum class UseCaptureKind {
-    NO_CAPTURE,
-    MAY_CAPTURE,
-    PASSTHROUGH,
-  };
-
-  /// Determine what kind of capture behaviour \p U may exhibit.
-  ///
-  /// A use can be no-capture, a use can potentially capture, or a use can be
-  /// passthrough such that the uses of the user or \p U should be inspected.
-  /// The \p IsDereferenceableOrNull callback is used to rule out capturing for
-  /// certain comparisons.
-  UseCaptureKind
-  DetermineUseCaptureKind(const Use &U,
-                          llvm::function_ref<bool(Value *, const DataLayout &)>
-                              IsDereferenceableOrNull);
-
   /// PointerMayBeCaptured - Visit the value and the values derived from it and
   /// find values which appear to be capturing the pointer value. This feeds
   /// results into and is controlled by the CaptureTracker object.
-  /// MaxUsesToExplore specifies how many uses the analysis should explore for
-  /// one value before giving up due too "too many uses". If MaxUsesToExplore
-  /// is zero, a default value is assumed.
+  /// MaxUsesToExplore specifies how many uses should the analysis explore for
+  /// one value before giving up due too "too many uses".
   void PointerMayBeCaptured(const Value *V, CaptureTracker *Tracker,
-                            unsigned MaxUsesToExplore = 0);
-
-  /// Returns true if the pointer is to a function-local object that never
-  /// escapes from the function.
-  bool isNonEscapingLocalObject(
-      const Value *V,
-      SmallDenseMap<const Value *, bool, 8> *IsCapturedCache = nullptr);
+                            unsigned MaxUsesToExplore = DefaultMaxUsesToExplore);
 } // end namespace llvm
 
 #endif

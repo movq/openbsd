@@ -13,9 +13,8 @@
 #include "llvm/Object/TapiUniversal.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/Error.h"
-#include "llvm/Object/TapiFile.h"
-#include "llvm/TextAPI/ArchitectureSet.h"
-#include "llvm/TextAPI/TextAPIReader.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/TextAPI/MachO/TextAPIReader.h"
 
 using namespace llvm;
 using namespace MachO;
@@ -23,7 +22,7 @@ using namespace object;
 
 TapiUniversal::TapiUniversal(MemoryBufferRef Source, Error &Err)
     : Binary(ID_TapiUniversal, Source) {
-  Expected<std::unique_ptr<InterfaceFile>> Result = TextAPIReader::get(Source);
+  auto Result = TextAPIReader::get(Source);
   ErrorAsOutParameter ErrAsOuParam(&Err);
   if (!Result) {
     Err = Result.takeError();
@@ -31,16 +30,9 @@ TapiUniversal::TapiUniversal(MemoryBufferRef Source, Error &Err)
   }
   ParsedFile = std::move(Result.get());
 
-  auto FlattenObjectInfo = [this](const auto &File) {
-    StringRef Name = File->getInstallName();
-    for (const Architecture Arch : File->getArchitectures())
-      Libraries.emplace_back(Library({Name, Arch}));
-  };
-
-  FlattenObjectInfo(ParsedFile);
-  // Get inlined documents from tapi file.
-  for (const std::shared_ptr<InterfaceFile> &File : ParsedFile->documents())
-    FlattenObjectInfo(File);
+  auto Archs = ParsedFile->getArchitectures();
+  for (auto Arch : Archs)
+    Architectures.emplace_back(Arch);
 }
 
 TapiUniversal::~TapiUniversal() = default;
@@ -48,8 +40,8 @@ TapiUniversal::~TapiUniversal() = default;
 Expected<std::unique_ptr<TapiFile>>
 TapiUniversal::ObjectForArch::getAsObjectFile() const {
   return std::unique_ptr<TapiFile>(new TapiFile(Parent->getMemoryBufferRef(),
-                                                *Parent->ParsedFile,
-                                                Parent->Libraries[Index].Arch));
+                                                *Parent->ParsedFile.get(),
+                                                Parent->Architectures[Index]));
 }
 
 Expected<std::unique_ptr<TapiUniversal>>

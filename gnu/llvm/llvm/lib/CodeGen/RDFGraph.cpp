@@ -8,7 +8,6 @@
 //
 // Target-independent, SSA-based data flow graph for register data flow (RDF).
 //
-#include "llvm/CodeGen/RDFGraph.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
@@ -19,6 +18,7 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/RDFGraph.h"
 #include "llvm/CodeGen/RDFRegisters.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
@@ -27,6 +27,8 @@
 #include "llvm/IR/Function.h"
 #include "llvm/MC/LaneBitmask.h"
 #include "llvm/MC/MCInstrDesc.h"
+#include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -105,8 +107,8 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<NodeId> &P) {
 
 static void printRefHeader(raw_ostream &OS, const NodeAddr<RefNode*> RA,
                 const DataFlowGraph &G) {
-  OS << Print(RA.Id, G) << '<'
-     << Print(RA.Addr->getRegRef(G), G) << '>';
+  OS << Print<NodeId>(RA.Id, G) << '<'
+     << Print<RegisterRef>(RA.Addr->getRegRef(G), G) << '>';
   if (RA.Addr->getFlags() & NodeAttrs::Fixed)
     OS << '!';
 }
@@ -115,16 +117,16 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<NodeAddr<DefNode*>> &P) {
   printRefHeader(OS, P.Obj, P.G);
   OS << '(';
   if (NodeId N = P.Obj.Addr->getReachingDef())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   OS << ',';
   if (NodeId N = P.Obj.Addr->getReachedDef())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   OS << ',';
   if (NodeId N = P.Obj.Addr->getReachedUse())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   OS << "):";
   if (NodeId N = P.Obj.Addr->getSibling())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   return OS;
 }
 
@@ -132,10 +134,10 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<NodeAddr<UseNode*>> &P) {
   printRefHeader(OS, P.Obj, P.G);
   OS << '(';
   if (NodeId N = P.Obj.Addr->getReachingDef())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   OS << "):";
   if (NodeId N = P.Obj.Addr->getSibling())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   return OS;
 }
 
@@ -144,13 +146,13 @@ raw_ostream &operator<< (raw_ostream &OS,
   printRefHeader(OS, P.Obj, P.G);
   OS << '(';
   if (NodeId N = P.Obj.Addr->getReachingDef())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   OS << ',';
   if (NodeId N = P.Obj.Addr->getPredecessor())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   OS << "):";
   if (NodeId N = P.Obj.Addr->getSibling())
-    OS << Print(N, P.G);
+    OS << Print<NodeId>(N, P.G);
   return OS;
 }
 
@@ -172,7 +174,7 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<NodeAddr<RefNode*>> &P) {
 raw_ostream &operator<< (raw_ostream &OS, const Print<NodeList> &P) {
   unsigned N = P.Obj.size();
   for (auto I : P.Obj) {
-    OS << Print(I.Id, P.G);
+    OS << Print<NodeId>(I.Id, P.G);
     if (--N)
       OS << ' ';
   }
@@ -182,7 +184,7 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<NodeList> &P) {
 raw_ostream &operator<< (raw_ostream &OS, const Print<NodeSet> &P) {
   unsigned N = P.Obj.size();
   for (auto I : P.Obj) {
-    OS << Print(I, P.G);
+    OS << Print<NodeId>(I, P.G);
     if (--N)
       OS << ' ';
   }
@@ -214,7 +216,7 @@ namespace {
 } // end anonymous namespace
 
 raw_ostream &operator<< (raw_ostream &OS, const Print<NodeAddr<PhiNode*>> &P) {
-  OS << Print(P.Obj.Id, P.G) << ": phi ["
+  OS << Print<NodeId>(P.Obj.Id, P.G) << ": phi ["
      << PrintListV<RefNode*>(P.Obj.Addr->members(P.G), P.G) << ']';
   return OS;
 }
@@ -222,7 +224,7 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<NodeAddr<PhiNode*>> &P) {
 raw_ostream &operator<<(raw_ostream &OS, const Print<NodeAddr<StmtNode *>> &P) {
   const MachineInstr &MI = *P.Obj.Addr->getCode();
   unsigned Opc = MI.getOpcode();
-  OS << Print(P.Obj.Id, P.G) << ": " << P.G.getTII().getName(Opc);
+  OS << Print<NodeId>(P.Obj.Id, P.G) << ": " << P.G.getTII().getName(Opc);
   // Print the target for calls and branches (for readability).
   if (MI.isCall() || MI.isBranch()) {
     MachineInstr::const_mop_iterator T =
@@ -254,7 +256,7 @@ raw_ostream &operator<< (raw_ostream &OS,
       OS << PrintNode<StmtNode*>(P.Obj, P.G);
       break;
     default:
-      OS << "instr? " << Print(P.Obj.Id, P.G);
+      OS << "instr? " << Print<NodeId>(P.Obj.Id, P.G);
       break;
   }
   return OS;
@@ -274,7 +276,7 @@ raw_ostream &operator<< (raw_ostream &OS,
     }
   };
 
-  OS << Print(P.Obj.Id, P.G) << ": --- " << printMBBReference(*BB)
+  OS << Print<NodeId>(P.Obj.Id, P.G) << ": --- " << printMBBReference(*BB)
      << " --- preds(" << NP << "): ";
   for (MachineBasicBlock *B : BB->predecessors())
     Ns.push_back(B->getNumber());
@@ -294,7 +296,7 @@ raw_ostream &operator<< (raw_ostream &OS,
 }
 
 raw_ostream &operator<<(raw_ostream &OS, const Print<NodeAddr<FuncNode *>> &P) {
-  OS << "DFG dump:[\n" << Print(P.Obj.Id, P.G) << ": Function: "
+  OS << "DFG dump:[\n" << Print<NodeId>(P.Obj.Id, P.G) << ": Function: "
      << P.Obj.Addr->getCode()->getName() << '\n';
   for (auto I : P.Obj.Addr->members(P.G))
     OS << PrintNode<BlockNode*>(I, P.G) << '\n';
@@ -305,7 +307,7 @@ raw_ostream &operator<<(raw_ostream &OS, const Print<NodeAddr<FuncNode *>> &P) {
 raw_ostream &operator<< (raw_ostream &OS, const Print<RegisterSet> &P) {
   OS << '{';
   for (auto I : P.Obj)
-    OS << ' ' << Print(I, P.G);
+    OS << ' ' << Print<RegisterRef>(I, P.G);
   OS << " }";
   return OS;
 }
@@ -318,8 +320,8 @@ raw_ostream &operator<< (raw_ostream &OS, const Print<RegisterAggr> &P) {
 raw_ostream &operator<< (raw_ostream &OS,
       const Print<DataFlowGraph::DefStack> &P) {
   for (auto I = P.Obj.top(), E = P.Obj.bottom(); I != E; ) {
-    OS << Print(I->Id, P.G)
-       << '<' << Print(I->Addr->getRegRef(P.G), P.G) << '>';
+    OS << Print<NodeId>(I->Id, P.G)
+       << '<' << Print<RegisterRef>(I->Addr->getRegRef(P.G), P.G) << '>';
     I.down();
     if (I != E)
       OS << ' ';
@@ -623,7 +625,7 @@ bool TargetOperandInfo::isFixedReg(const MachineInstr &In, unsigned OpNum)
         return true;
 
   const MCInstrDesc &D = In.getDesc();
-  if (D.implicit_defs().empty() && D.implicit_uses().empty())
+  if (!D.getImplicitDefs() && !D.getImplicitUses())
     return false;
   const MachineOperand &Op = In.getOperand(OpNum);
   // If there is a sub-register, treat the operand as non-fixed. Currently,
@@ -632,22 +634,19 @@ bool TargetOperandInfo::isFixedReg(const MachineInstr &In, unsigned OpNum)
   if (Op.getSubReg() != 0)
     return false;
   Register Reg = Op.getReg();
-  ArrayRef<MCPhysReg> ImpOps =
-      Op.isDef() ? D.implicit_defs() : D.implicit_uses();
-  return is_contained(ImpOps, Reg);
+  const MCPhysReg *ImpR = Op.isDef() ? D.getImplicitDefs()
+                                     : D.getImplicitUses();
+  if (!ImpR)
+    return false;
+  while (*ImpR)
+    if (*ImpR++ == Reg)
+      return true;
+  return false;
 }
 
 //
 // The data flow graph construction.
 //
-
-DataFlowGraph::DataFlowGraph(MachineFunction &mf, const TargetInstrInfo &tii,
-      const TargetRegisterInfo &tri, const MachineDominatorTree &mdt,
-      const MachineDominanceFrontier &mdf)
-    : DefaultTOI(std::make_unique<TargetOperandInfo>(tii)), MF(mf), TII(tii),
-      TRI(tri), PRI(tri, mf), MDT(mdt), MDF(mdf), TOI(*DefaultTOI),
-      LiveIns(PRI) {
-}
 
 DataFlowGraph::DataFlowGraph(MachineFunction &mf, const TargetInstrInfo &tii,
       const TargetRegisterInfo &tri, const MachineDominatorTree &mdt,
@@ -980,11 +979,28 @@ RegisterRef DataFlowGraph::makeRegRef(const MachineOperand &Op) const {
   return RegisterRef(PRI.getRegMaskId(Op.getRegMask()), LaneBitmask::getAll());
 }
 
+RegisterRef DataFlowGraph::restrictRef(RegisterRef AR, RegisterRef BR) const {
+  if (AR.Reg == BR.Reg) {
+    LaneBitmask M = AR.Mask & BR.Mask;
+    return M.any() ? RegisterRef(AR.Reg, M) : RegisterRef();
+  }
+#ifndef NDEBUG
+//  RegisterRef NAR = PRI.normalize(AR);
+//  RegisterRef NBR = PRI.normalize(BR);
+//  assert(NAR.Reg != NBR.Reg);
+#endif
+  // This isn't strictly correct, because the overlap may happen in the
+  // part masked out.
+  if (PRI.alias(AR, BR))
+    return AR;
+  return RegisterRef();
+}
+
 // For each stack in the map DefM, push the delimiter for block B on it.
 void DataFlowGraph::markBlock(NodeId B, DefStackMap &DefM) {
   // Push block delimiters.
-  for (auto &P : DefM)
-    P.second.start_block(B);
+  for (auto I = DefM.begin(), E = DefM.end(); I != E; ++I)
+    I->second.start_block(B);
 }
 
 // Remove all definitions coming from block B from each stack in DefM.
@@ -992,8 +1008,8 @@ void DataFlowGraph::releaseBlock(NodeId B, DefStackMap &DefM) {
   // Pop all defs from this block from the definition stack. Defs that were
   // added to the map during the traversal of instructions will not have a
   // delimiter, but for those, the whole stack will be emptied.
-  for (auto &P : DefM)
-    P.second.clear_block(B);
+  for (auto I = DefM.begin(), E = DefM.end(); I != E; ++I)
+    I->second.clear_block(B);
 
   // Finally, remove empty stacks from the map.
   for (auto I = DefM.begin(), E = DefM.end(), NextI = I; I != E; I = NextI) {
@@ -1090,7 +1106,7 @@ void DataFlowGraph::pushDefs(NodeAddr<InstrNode*> IA, DefStackMap &DefM) {
     if (!Defined.insert(RR.Reg).second) {
       MachineInstr *MI = NodeAddr<StmtNode*>(IA).Addr->getCode();
       dbgs() << "Multiple definitions of register: "
-             << Print(RR, *this) << " in\n  " << *MI << "in "
+             << Print<RegisterRef>(RR, *this) << " in\n  " << *MI << "in "
              << printMBBReference(*MI->getParent()) << '\n';
       llvm_unreachable(nullptr);
     }
@@ -1278,7 +1294,7 @@ void DataFlowGraph::buildStmt(NodeAddr<BlockNode*> BA, MachineInstr &In) {
     if (!Op.isReg() || !Op.isDef() || Op.isImplicit())
       continue;
     Register R = Op.getReg();
-    if (!R || !R.isPhysical())
+    if (!R || !Register::isPhysicalRegister(R))
       continue;
     uint16_t Flags = NodeAttrs::None;
     if (TOI.isPreserving(In, OpN)) {
@@ -1323,7 +1339,7 @@ void DataFlowGraph::buildStmt(NodeAddr<BlockNode*> BA, MachineInstr &In) {
     if (!Op.isReg() || !Op.isDef() || !Op.isImplicit())
       continue;
     Register R = Op.getReg();
-    if (!R || !R.isPhysical() || DoneDefs.test(R))
+    if (!R || !Register::isPhysicalRegister(R) || DoneDefs.test(R))
       continue;
     RegisterRef RR = makeRegRef(Op);
     uint16_t Flags = NodeAttrs::None;
@@ -1352,7 +1368,7 @@ void DataFlowGraph::buildStmt(NodeAddr<BlockNode*> BA, MachineInstr &In) {
     if (!Op.isReg() || !Op.isUse())
       continue;
     Register R = Op.getReg();
-    if (!R || !R.isPhysical())
+    if (!R || !Register::isPhysicalRegister(R))
       continue;
     uint16_t Flags = NodeAttrs::None;
     if (Op.isUndef())
@@ -1398,7 +1414,7 @@ void DataFlowGraph::recordDefsForDF(BlockRefsMap &PhiM,
 
   // Finally, add the set of defs to each block in the iterated dominance
   // frontier.
-  for (auto *DB : IDF) {
+  for (auto DB : IDF) {
     NodeAddr<BlockNode*> DBA = findBlock(DB);
     PhiM[DBA.Id].insert(Defs.begin(), Defs.end());
   }
@@ -1489,8 +1505,8 @@ void DataFlowGraph::buildPhis(BlockRefsMap &PhiM, RegisterSet &AllRefs,
 
     // Erase from MaxRefs all elements in the closure.
     auto Begin = MaxRefs.begin();
-    for (unsigned Idx : llvm::reverse(ClosureIdx))
-      MaxRefs.erase(Begin + Idx);
+    for (unsigned i = ClosureIdx.size(); i != 0; --i)
+      MaxRefs.erase(Begin + ClosureIdx[i-1]);
   }
 }
 
@@ -1660,7 +1676,7 @@ void DataFlowGraph::linkBlockRefs(DefStackMap &DefM, NodeAddr<BlockNode*> BA) {
 
   // Recursively process all children in the dominator tree.
   MachineDomTreeNode *N = MDT.getNode(BA.Addr->getCode());
-  for (auto *I : *N) {
+  for (auto I : *N) {
     MachineBasicBlock *SB = I->getBlock();
     NodeAddr<BlockNode*> SBA = findBlock(SB);
     linkBlockRefs(DefM, SBA);

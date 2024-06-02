@@ -16,7 +16,6 @@
 #define LLVM_LIB_IR_ATTRIBUTEIMPL_H
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Attributes.h"
@@ -24,7 +23,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <utility>
 
@@ -55,6 +53,8 @@ public:
   AttributeImpl(const AttributeImpl &) = delete;
   AttributeImpl &operator=(const AttributeImpl &) = delete;
 
+  virtual ~AttributeImpl();
+
   bool isEnumAttribute() const { return KindID == EnumAttrEntry; }
   bool isIntAttribute() const { return KindID == IntAttrEntry; }
   bool isStringAttribute() const { return KindID == StringAttrEntry; }
@@ -65,7 +65,6 @@ public:
 
   Attribute::AttrKind getKindAsEnum() const;
   uint64_t getValueAsInt() const;
-  bool getValueAsBool() const;
 
   StringRef getKindAsString() const;
   StringRef getValueAsString() const;
@@ -77,7 +76,7 @@ public:
 
   void Profile(FoldingSetNodeID &ID) const {
     if (isEnumAttribute())
-      Profile(ID, getKindAsEnum());
+      Profile(ID, getKindAsEnum(), static_cast<uint64_t>(0));
     else if (isIntAttribute())
       Profile(ID, getKindAsEnum(), getValueAsInt());
     else if (isStringAttribute())
@@ -86,16 +85,10 @@ public:
       Profile(ID, getKindAsEnum(), getValueAsType());
   }
 
-  static void Profile(FoldingSetNodeID &ID, Attribute::AttrKind Kind) {
-    assert(Attribute::isEnumAttrKind(Kind) && "Expected enum attribute");
-    ID.AddInteger(Kind);
-  }
-
   static void Profile(FoldingSetNodeID &ID, Attribute::AttrKind Kind,
                       uint64_t Val) {
-    assert(Attribute::isIntAttrKind(Kind) && "Expected int attribute");
     ID.AddInteger(Kind);
-    ID.AddInteger(Val);
+    if (Val) ID.AddInteger(Val);
   }
 
   static void Profile(FoldingSetNodeID &ID, StringRef Kind, StringRef Values) {
@@ -110,9 +103,6 @@ public:
   }
 };
 
-static_assert(std::is_trivially_destructible<AttributeImpl>::value,
-              "AttributeImpl should be trivially destructible");
-
 //===----------------------------------------------------------------------===//
 /// \class
 /// A set of classes that contain the value of the
@@ -121,6 +111,8 @@ static_assert(std::is_trivially_destructible<AttributeImpl>::value,
 /// attribute enties, which are for target-dependent attributes.
 
 class EnumAttributeImpl : public AttributeImpl {
+  virtual void anchor();
+
   Attribute::AttrKind Kind;
 
 protected:
@@ -129,10 +121,7 @@ protected:
 
 public:
   EnumAttributeImpl(Attribute::AttrKind Kind)
-      : AttributeImpl(EnumAttrEntry), Kind(Kind) {
-    assert(Kind != Attribute::AttrKind::None &&
-           "Can't create a None attribute!");
-  }
+      : AttributeImpl(EnumAttrEntry), Kind(Kind) {}
 
   Attribute::AttrKind getEnumKind() const { return Kind; }
 };
@@ -140,53 +129,38 @@ public:
 class IntAttributeImpl : public EnumAttributeImpl {
   uint64_t Val;
 
+  void anchor() override;
+
 public:
   IntAttributeImpl(Attribute::AttrKind Kind, uint64_t Val)
       : EnumAttributeImpl(IntAttrEntry, Kind), Val(Val) {
-    assert(Attribute::isIntAttrKind(Kind) &&
+    assert((Kind == Attribute::Alignment || Kind == Attribute::StackAlignment ||
+            Kind == Attribute::Dereferenceable ||
+            Kind == Attribute::DereferenceableOrNull ||
+            Kind == Attribute::AllocSize) &&
            "Wrong kind for int attribute!");
   }
 
   uint64_t getValue() const { return Val; }
 };
 
-class StringAttributeImpl final
-    : public AttributeImpl,
-      private TrailingObjects<StringAttributeImpl, char> {
-  friend TrailingObjects;
+class StringAttributeImpl : public AttributeImpl {
+  virtual void anchor();
 
-  unsigned KindSize;
-  unsigned ValSize;
-  size_t numTrailingObjects(OverloadToken<char>) const {
-    return KindSize + 1 + ValSize + 1;
-  }
+  std::string Kind;
+  std::string Val;
 
 public:
   StringAttributeImpl(StringRef Kind, StringRef Val = StringRef())
-      : AttributeImpl(StringAttrEntry), KindSize(Kind.size()),
-        ValSize(Val.size()) {
-    char *TrailingString = getTrailingObjects<char>();
-    // Some users rely on zero-termination.
-    llvm::copy(Kind, TrailingString);
-    TrailingString[KindSize] = '\0';
-    llvm::copy(Val, &TrailingString[KindSize + 1]);
-    TrailingString[KindSize + 1 + ValSize] = '\0';
-  }
+      : AttributeImpl(StringAttrEntry), Kind(Kind), Val(Val) {}
 
-  StringRef getStringKind() const {
-    return StringRef(getTrailingObjects<char>(), KindSize);
-  }
-  StringRef getStringValue() const {
-    return StringRef(getTrailingObjects<char>() + KindSize + 1, ValSize);
-  }
-
-  static size_t totalSizeToAlloc(StringRef Kind, StringRef Val) {
-    return TrailingObjects::totalSizeToAlloc<char>(Kind.size() + 1 +
-                                                   Val.size() + 1);
-  }
+  StringRef getStringKind() const { return Kind; }
+  StringRef getStringValue() const { return Val; }
 };
 
 class TypeAttributeImpl : public EnumAttributeImpl {
+  void anchor() override;
+
   Type *Ty;
 
 public:
@@ -194,22 +168,6 @@ public:
       : EnumAttributeImpl(TypeAttrEntry, Kind), Ty(Ty) {}
 
   Type *getTypeValue() const { return Ty; }
-};
-
-class AttributeBitSet {
-  /// Bitset with a bit for each available attribute Attribute::AttrKind.
-  uint8_t AvailableAttrs[12] = {};
-  static_assert(Attribute::EndAttrKinds <= sizeof(AvailableAttrs) * CHAR_BIT,
-                "Too many attributes");
-
-public:
-  bool hasAttribute(Attribute::AttrKind Kind) const {
-    return AvailableAttrs[Kind / 8] & (1 << (Kind % 8));
-  }
-
-  void addAttribute(Attribute::AttrKind Kind) {
-    AvailableAttrs[Kind / 8] |= 1 << (Kind % 8);
-  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -222,15 +180,10 @@ class AttributeSetNode final
   friend TrailingObjects;
 
   unsigned NumAttrs; ///< Number of attributes in this node.
-  AttributeBitSet AvailableAttrs; ///< Available enum attributes.
-
-  DenseMap<StringRef, Attribute> StringAttrs;
+  /// Bitset with a bit for each available attribute Attribute::AttrKind.
+  uint8_t AvailableAttrs[12] = {};
 
   AttributeSetNode(ArrayRef<Attribute> Attrs);
-
-  static AttributeSetNode *getSorted(LLVMContext &C,
-                                     ArrayRef<Attribute> SortedAttrs);
-  std::optional<Attribute> findEnumAttribute(Attribute::AttrKind Kind) const;
 
 public:
   // AttributesSetNode is uniqued, these should not be available.
@@ -247,7 +200,7 @@ public:
   unsigned getNumAttributes() const { return NumAttrs; }
 
   bool hasAttribute(Attribute::AttrKind Kind) const {
-    return AvailableAttrs.hasAttribute(Kind);
+    return AvailableAttrs[Kind / 8] & ((uint64_t)1) << (Kind % 8);
   }
   bool hasAttribute(StringRef Kind) const;
   bool hasAttributes() const { return NumAttrs != 0; }
@@ -259,15 +212,9 @@ public:
   MaybeAlign getStackAlignment() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
-  std::optional<std::pair<unsigned, std::optional<unsigned>>> getAllocSizeArgs()
-      const;
-  unsigned getVScaleRangeMin() const;
-  std::optional<unsigned> getVScaleRangeMax() const;
-  UWTableKind getUWTableKind() const;
-  AllocFnKind getAllocKind() const;
-  MemoryEffects getMemoryEffects() const;
+  std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
   std::string getAsString(bool InAttrGrp) const;
-  Type *getAttributeType(Attribute::AttrKind Kind) const;
+  Type *getByValType() const;
 
   using iterator = const Attribute *;
 
@@ -275,7 +222,7 @@ public:
   iterator end() const { return begin() + NumAttrs; }
 
   void Profile(FoldingSetNodeID &ID) const {
-    Profile(ID, ArrayRef(begin(), end()));
+    Profile(ID, makeArrayRef(begin(), end()));
   }
 
   static void Profile(FoldingSetNodeID &ID, ArrayRef<Attribute> AttrList) {
@@ -283,6 +230,8 @@ public:
       Attr.Profile(ID);
   }
 };
+
+using IndexAttrPair = std::pair<unsigned, AttributeSet>;
 
 //===----------------------------------------------------------------------===//
 /// \class
@@ -295,33 +244,31 @@ class AttributeListImpl final
   friend TrailingObjects;
 
 private:
+  LLVMContext &Context;
   unsigned NumAttrSets; ///< Number of entries in this set.
-  /// Available enum function attributes.
-  AttributeBitSet AvailableFunctionAttrs;
-  /// Union of enum attributes available at any index.
-  AttributeBitSet AvailableSomewhereAttrs;
+  /// Bitset with a bit for each available attribute Attribute::AttrKind.
+  uint8_t AvailableFunctionAttrs[12] = {};
 
   // Helper fn for TrailingObjects class.
   size_t numTrailingObjects(OverloadToken<AttributeSet>) { return NumAttrSets; }
 
 public:
-  AttributeListImpl(ArrayRef<AttributeSet> Sets);
+  AttributeListImpl(LLVMContext &C, ArrayRef<AttributeSet> Sets);
 
   // AttributesSetImpt is uniqued, these should not be available.
   AttributeListImpl(const AttributeListImpl &) = delete;
   AttributeListImpl &operator=(const AttributeListImpl &) = delete;
 
+  void operator delete(void *p) { ::operator delete(p); }
+
+  /// Get the context that created this AttributeListImpl.
+  LLVMContext &getContext() { return Context; }
+
   /// Return true if the AttributeSet or the FunctionIndex has an
   /// enum attribute of the given kind.
   bool hasFnAttribute(Attribute::AttrKind Kind) const {
-    return AvailableFunctionAttrs.hasAttribute(Kind);
+    return AvailableFunctionAttrs[Kind / 8] & ((uint64_t)1) << (Kind % 8);
   }
-
-  /// Return true if the specified attribute is set for at least one
-  /// parameter or for the return value. If Index is not nullptr, the index
-  /// of a parameter with the specified attribute is provided.
-  bool hasAttrSomewhere(Attribute::AttrKind Kind,
-                        unsigned *Index = nullptr) const;
 
   using iterator = const AttributeSet *;
 
@@ -333,9 +280,6 @@ public:
 
   void dump() const;
 };
-
-static_assert(std::is_trivially_destructible<AttributeListImpl>::value,
-              "AttributeListImpl should be trivially destructible");
 
 } // end namespace llvm
 

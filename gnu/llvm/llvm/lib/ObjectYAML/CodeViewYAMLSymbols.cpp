@@ -25,12 +25,10 @@
 #include "llvm/ObjectYAML/YAML.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/YAMLTraits.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -149,31 +147,7 @@ void ScalarEnumerationTraits<CPUType>::enumeration(IO &io, CPUType &Cpu) {
 }
 
 void ScalarEnumerationTraits<RegisterId>::enumeration(IO &io, RegisterId &Reg) {
-  const auto *Header = static_cast<COFF::header *>(io.getContext());
-  assert(Header && "The IO context is not initialized");
-
-  std::optional<CPUType> CpuType;
-  ArrayRef<EnumEntry<uint16_t>> RegNames;
-
-  switch (Header->Machine) {
-  case COFF::IMAGE_FILE_MACHINE_I386:
-    CpuType = CPUType::Pentium3;
-    break;
-  case COFF::IMAGE_FILE_MACHINE_AMD64:
-    CpuType = CPUType::X64;
-    break;
-  case COFF::IMAGE_FILE_MACHINE_ARMNT:
-    CpuType = CPUType::ARMNT;
-    break;
-  case COFF::IMAGE_FILE_MACHINE_ARM64:
-  case COFF::IMAGE_FILE_MACHINE_ARM64EC:
-    CpuType = CPUType::ARM64;
-    break;
-  }
-
-  if (CpuType)
-    RegNames = getRegisterNames(*CpuType);
-
+  auto RegNames = getRegisterNames(CPUType::X64);
   for (const auto &E : RegNames) {
     io.enumCase(Reg, E.Name.str().c_str(), static_cast<RegisterId>(E.Value));
   }

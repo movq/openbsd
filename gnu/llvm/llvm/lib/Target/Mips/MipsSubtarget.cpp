@@ -12,17 +12,17 @@
 
 #include "MipsSubtarget.h"
 #include "Mips.h"
-#include "MipsCallLowering.h"
-#include "MipsLegalizerInfo.h"
 #include "MipsMachineFunction.h"
-#include "MipsRegisterBankInfo.h"
 #include "MipsRegisterInfo.h"
 #include "MipsTargetMachine.h"
+#include "MipsCallLowering.h"
+#include "MipsLegalizerInfo.h"
+#include "MipsRegisterBankInfo.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -64,42 +64,37 @@ bool MipsSubtarget::MSAWarningPrinted = false;
 bool MipsSubtarget::VirtWarningPrinted = false;
 bool MipsSubtarget::CRCWarningPrinted = false;
 bool MipsSubtarget::GINVWarningPrinted = false;
-bool MipsSubtarget::MIPS1WarningPrinted = false;
 
 void MipsSubtarget::anchor() {}
 
 MipsSubtarget::MipsSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
                              bool little, const MipsTargetMachine &TM,
                              MaybeAlign StackAlignOverride)
-    : MipsGenSubtargetInfo(TT, CPU, /*TuneCPU*/ CPU, FS),
-      MipsArchVersion(MipsDefault), IsLittle(little), IsSoftFloat(false),
-      IsSingleFloat(false), IsFPXX(false), NoABICalls(false), Abs2008(false),
-      IsFP64bit(false), UseOddSPReg(true), IsNaN2008bit(false),
-      IsGP64bit(false), HasVFPU(false), HasCnMips(false), HasCnMipsP(false),
-      HasMips3_32(false), HasMips3_32r2(false), HasMips4_32(false),
-      HasMips4_32r2(false), HasMips5_32r2(false), InMips16Mode(false),
-      InMips16HardFloat(Mips16HardFloat), InMicroMipsMode(false), HasDSP(false),
-      HasDSPR2(false), HasDSPR3(false), AllowMixed16_32(Mixed16_32 || Mips_Os16),
-      Os16(Mips_Os16), HasMSA(false), UseTCCInDIV(false), HasSym32(false),
-      HasEVA(false), DisableMadd4(false), HasMT(false), HasCRC(false),
-      HasVirt(false), HasGINV(false), UseIndirectJumpsHazard(false),
-      StackAlignOverride(StackAlignOverride), TM(TM), TargetTriple(TT),
-      TSInfo(), InstrInfo(MipsInstrInfo::create(
-                    initializeSubtargetDependencies(CPU, FS, TM))),
+    : MipsGenSubtargetInfo(TT, CPU, FS), MipsArchVersion(MipsDefault),
+      IsLittle(little), IsSoftFloat(false), IsSingleFloat(false), IsFPXX(false),
+      NoABICalls(false), Abs2008(false), IsFP64bit(false), UseOddSPReg(true),
+      IsNaN2008bit(false), IsGP64bit(false), HasVFPU(false), HasCnMips(false),
+      HasCnMipsP(false), HasMips3_32(false), HasMips3_32r2(false),
+      HasMips4_32(false), HasMips4_32r2(false), HasMips5_32r2(false),
+      InMips16Mode(false), InMips16HardFloat(Mips16HardFloat),
+      InMicroMipsMode(false), HasDSP(false), HasDSPR2(false), HasDSPR3(false),
+      AllowMixed16_32(Mixed16_32 | Mips_Os16), Os16(Mips_Os16), HasMSA(false),
+      UseTCCInDIV(false), HasSym32(false), HasEVA(false), DisableMadd4(false),
+      HasMT(false), HasCRC(false), HasVirt(false), HasGINV(false),
+      UseIndirectJumpsHazard(false), StackAlignOverride(StackAlignOverride),
+      TM(TM), TargetTriple(TT), TSInfo(),
+      InstrInfo(
+          MipsInstrInfo::create(initializeSubtargetDependencies(CPU, FS, TM))),
       FrameLowering(MipsFrameLowering::create(*this)),
       TLInfo(MipsTargetLowering::create(TM, *this)) {
 
   if (MipsArchVersion == MipsDefault)
     MipsArchVersion = Mips32;
 
-  // MIPS-I has not been tested.
-  if (MipsArchVersion == Mips1 && !MIPS1WarningPrinted) {
-    errs() << "warning: MIPS-I support is experimental\n";
-    MIPS1WarningPrinted = true;
-  }
-
-  // Don't even attempt to generate code for MIPS-V. It has not
-  // been tested and currently exists for the integrated assembler only.
+  // Don't even attempt to generate code for MIPS-I and MIPS-V. They have not
+  // been tested and currently exist for the integrated assembler only.
+  if (MipsArchVersion == Mips1)
+    report_fatal_error("Code generation for MIPS-I is not implemented", false);
   if (MipsArchVersion == Mips5)
     report_fatal_error("Code generation for MIPS-V is not implemented", false);
 
@@ -116,7 +111,7 @@ MipsSubtarget::MipsSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
   if (isFP64bit() && !hasMips64() && hasMips32() && !hasMips32r2())
     report_fatal_error(
         "FPU with 64-bit registers is not available on MIPS32 pre revision 2. "
-        "Use -mcpu=mips32r2 or greater.", false);
+        "Use -mcpu=mips32r2 or greater.");
 
   if (!isABI_O32() && !useOddSPReg())
     report_fatal_error("-mattr=+nooddspreg requires the O32 ABI.", false);
@@ -242,10 +237,10 @@ CodeGenOpt::Level MipsSubtarget::getOptLevelToEnablePostRAScheduler() const {
 MipsSubtarget &
 MipsSubtarget::initializeSubtargetDependencies(StringRef CPU, StringRef FS,
                                                const TargetMachine &TM) {
-  StringRef CPUName = MIPS_MC::selectMipsCPU(TM.getTargetTriple(), CPU);
+  std::string CPUName = MIPS_MC::selectMipsCPU(TM.getTargetTriple(), CPU);
 
   // Parse features string.
-  ParseSubtargetFeatures(CPUName, /*TuneCPU*/ CPUName, FS);
+  ParseSubtargetFeatures(CPUName, FS);
   // Initialize scheduling itinerary for the specified CPU.
   InstrItins = getInstrItineraryForCPU(CPUName);
 

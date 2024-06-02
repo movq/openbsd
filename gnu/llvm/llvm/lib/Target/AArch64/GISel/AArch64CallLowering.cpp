@@ -18,10 +18,8 @@
 #include "AArch64Subtarget.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Analysis/ObjCARCUtil.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CallingConvLower.h"
-#include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/LowLevelType.h"
@@ -53,160 +51,69 @@ using namespace llvm;
 AArch64CallLowering::AArch64CallLowering(const AArch64TargetLowering &TLI)
   : CallLowering(&TLI) {}
 
-static void applyStackPassedSmallTypeDAGHack(EVT OrigVT, MVT &ValVT,
-                                             MVT &LocVT) {
-  // If ValVT is i1/i8/i16, we should set LocVT to i8/i8/i16. This is a legacy
-  // hack because the DAG calls the assignment function with pre-legalized
-  // register typed values, not the raw type.
-  //
-  // This hack is not applied to return values which are not passed on the
-  // stack.
-  if (OrigVT == MVT::i1 || OrigVT == MVT::i8)
-    ValVT = LocVT = MVT::i8;
-  else if (OrigVT == MVT::i16)
-    ValVT = LocVT = MVT::i16;
-}
-
-// Account for i1/i8/i16 stack passed value hack
-static LLT getStackValueStoreTypeHack(const CCValAssign &VA) {
-  const MVT ValVT = VA.getValVT();
-  return (ValVT == MVT::i8 || ValVT == MVT::i16) ? LLT(ValVT)
-                                                 : LLT(VA.getLocVT());
-}
-
 namespace {
-
-struct AArch64IncomingValueAssigner
-    : public CallLowering::IncomingValueAssigner {
-  AArch64IncomingValueAssigner(CCAssignFn *AssignFn_,
-                               CCAssignFn *AssignFnVarArg_)
-      : IncomingValueAssigner(AssignFn_, AssignFnVarArg_) {}
-
-  bool assignArg(unsigned ValNo, EVT OrigVT, MVT ValVT, MVT LocVT,
-                 CCValAssign::LocInfo LocInfo,
-                 const CallLowering::ArgInfo &Info, ISD::ArgFlagsTy Flags,
-                 CCState &State) override {
-    applyStackPassedSmallTypeDAGHack(OrigVT, ValVT, LocVT);
-    return IncomingValueAssigner::assignArg(ValNo, OrigVT, ValVT, LocVT,
-                                            LocInfo, Info, Flags, State);
-  }
-};
-
-struct AArch64OutgoingValueAssigner
-    : public CallLowering::OutgoingValueAssigner {
-  const AArch64Subtarget &Subtarget;
-
-  /// Track if this is used for a return instead of function argument
-  /// passing. We apply a hack to i1/i8/i16 stack passed values, but do not use
-  /// stack passed returns for them and cannot apply the type adjustment.
-  bool IsReturn;
-
-  AArch64OutgoingValueAssigner(CCAssignFn *AssignFn_,
-                               CCAssignFn *AssignFnVarArg_,
-                               const AArch64Subtarget &Subtarget_,
-                               bool IsReturn)
-      : OutgoingValueAssigner(AssignFn_, AssignFnVarArg_),
-        Subtarget(Subtarget_), IsReturn(IsReturn) {}
-
-  bool assignArg(unsigned ValNo, EVT OrigVT, MVT ValVT, MVT LocVT,
-                 CCValAssign::LocInfo LocInfo,
-                 const CallLowering::ArgInfo &Info, ISD::ArgFlagsTy Flags,
-                 CCState &State) override {
-    bool IsCalleeWin = Subtarget.isCallingConvWin64(State.getCallingConv());
-    bool UseVarArgsCCForFixed = IsCalleeWin && State.isVarArg();
-
-    bool Res;
-    if (Info.IsFixed && !UseVarArgsCCForFixed) {
-      if (!IsReturn)
-        applyStackPassedSmallTypeDAGHack(OrigVT, ValVT, LocVT);
-      Res = AssignFn(ValNo, ValVT, LocVT, LocInfo, Flags, State);
-    } else
-      Res = AssignFnVarArg(ValNo, ValVT, LocVT, LocInfo, Flags, State);
-
-    StackOffset = State.getNextStackOffset();
-    return Res;
-  }
-};
-
-struct IncomingArgHandler : public CallLowering::IncomingValueHandler {
-  IncomingArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI)
-      : IncomingValueHandler(MIRBuilder, MRI) {}
+struct IncomingArgHandler : public CallLowering::ValueHandler {
+  IncomingArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
+                     CCAssignFn *AssignFn)
+      : ValueHandler(MIRBuilder, MRI, AssignFn), StackUsed(0) {}
 
   Register getStackAddress(uint64_t Size, int64_t Offset,
-                           MachinePointerInfo &MPO,
-                           ISD::ArgFlagsTy Flags) override {
+                           MachinePointerInfo &MPO) override {
     auto &MFI = MIRBuilder.getMF().getFrameInfo();
-
-    // Byval is assumed to be writable memory, but other stack passed arguments
-    // are not.
-    const bool IsImmutable = !Flags.isByVal();
-
-    int FI = MFI.CreateFixedObject(Size, Offset, IsImmutable);
+    int FI = MFI.CreateFixedObject(Size, Offset, true);
     MPO = MachinePointerInfo::getFixedStack(MIRBuilder.getMF(), FI);
     auto AddrReg = MIRBuilder.buildFrameIndex(LLT::pointer(0, 64), FI);
+    StackUsed = std::max(StackUsed, Size + Offset);
     return AddrReg.getReg(0);
   }
 
-  LLT getStackValueStoreType(const DataLayout &DL, const CCValAssign &VA,
-                             ISD::ArgFlagsTy Flags) const override {
-    // For pointers, we just need to fixup the integer types reported in the
-    // CCValAssign.
-    if (Flags.isPointer())
-      return CallLowering::ValueHandler::getStackValueStoreType(DL, VA, Flags);
-    return getStackValueStoreTypeHack(VA);
-  }
-
   void assignValueToReg(Register ValVReg, Register PhysReg,
-                        CCValAssign VA) override {
+                        CCValAssign &VA) override {
     markPhysRegUsed(PhysReg);
-    IncomingValueHandler::assignValueToReg(ValVReg, PhysReg, VA);
+    switch (VA.getLocInfo()) {
+    default:
+      MIRBuilder.buildCopy(ValVReg, PhysReg);
+      break;
+    case CCValAssign::LocInfo::SExt:
+    case CCValAssign::LocInfo::ZExt:
+    case CCValAssign::LocInfo::AExt: {
+      auto Copy = MIRBuilder.buildCopy(LLT{VA.getLocVT()}, PhysReg);
+      MIRBuilder.buildTrunc(ValVReg, Copy);
+      break;
+    }
+    }
   }
 
-  void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
+  void assignValueToAddress(Register ValVReg, Register Addr, uint64_t MemSize,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
 
-    LLT ValTy(VA.getValVT());
-    LLT LocTy(VA.getLocVT());
-
-    // Fixup the types for the DAG compatibility hack.
-    if (VA.getValVT() == MVT::i8 || VA.getValVT() == MVT::i16)
-      std::swap(ValTy, LocTy);
-    else {
-      // The calling code knows if this is a pointer or not, we're only touching
-      // the LocTy for the i8/i16 hack.
-      assert(LocTy.getSizeInBits() == MemTy.getSizeInBits());
-      LocTy = MemTy;
-    }
+    // The reported memory location may be wider than the value.
+    const LLT RegTy = MRI.getType(ValVReg);
+    MemSize = std::min(static_cast<uint64_t>(RegTy.getSizeInBytes()), MemSize);
 
     auto MMO = MF.getMachineMemOperand(
-        MPO, MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant, LocTy,
+        MPO, MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant, MemSize,
         inferAlignFromPtrInfo(MF, MPO));
-
-    switch (VA.getLocInfo()) {
-    case CCValAssign::LocInfo::ZExt:
-      MIRBuilder.buildLoadInstr(TargetOpcode::G_ZEXTLOAD, ValVReg, Addr, *MMO);
-      return;
-    case CCValAssign::LocInfo::SExt:
-      MIRBuilder.buildLoadInstr(TargetOpcode::G_SEXTLOAD, ValVReg, Addr, *MMO);
-      return;
-    default:
-      MIRBuilder.buildLoad(ValVReg, Addr, *MMO);
-      return;
-    }
+    MIRBuilder.buildLoad(ValVReg, Addr, *MMO);
   }
 
   /// How the physical register gets marked varies between formal
   /// parameters (it's a basic-block live-in), and a call instruction
   /// (it's an implicit-def of the BL).
-  virtual void markPhysRegUsed(MCRegister PhysReg) = 0;
+  virtual void markPhysRegUsed(unsigned PhysReg) = 0;
+
+  bool isIncomingArgumentHandler() const override { return true; }
+
+  uint64_t StackUsed;
 };
 
 struct FormalArgHandler : public IncomingArgHandler {
-  FormalArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI)
-      : IncomingArgHandler(MIRBuilder, MRI) {}
+  FormalArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
+                   CCAssignFn *AssignFn)
+    : IncomingArgHandler(MIRBuilder, MRI, AssignFn) {}
 
-  void markPhysRegUsed(MCRegister PhysReg) override {
+  void markPhysRegUsed(unsigned PhysReg) override {
     MIRBuilder.getMRI()->addLiveIn(PhysReg);
     MIRBuilder.getMBB().addLiveIn(PhysReg);
   }
@@ -214,44 +121,34 @@ struct FormalArgHandler : public IncomingArgHandler {
 
 struct CallReturnHandler : public IncomingArgHandler {
   CallReturnHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
-                    MachineInstrBuilder MIB)
-      : IncomingArgHandler(MIRBuilder, MRI), MIB(MIB) {}
+                    MachineInstrBuilder MIB, CCAssignFn *AssignFn)
+    : IncomingArgHandler(MIRBuilder, MRI, AssignFn), MIB(MIB) {}
 
-  void markPhysRegUsed(MCRegister PhysReg) override {
+  void markPhysRegUsed(unsigned PhysReg) override {
     MIB.addDef(PhysReg, RegState::Implicit);
   }
 
   MachineInstrBuilder MIB;
 };
 
-/// A special return arg handler for "returned" attribute arg calls.
-struct ReturnedArgCallReturnHandler : public CallReturnHandler {
-  ReturnedArgCallReturnHandler(MachineIRBuilder &MIRBuilder,
-                               MachineRegisterInfo &MRI,
-                               MachineInstrBuilder MIB)
-      : CallReturnHandler(MIRBuilder, MRI, MIB) {}
-
-  void markPhysRegUsed(MCRegister PhysReg) override {}
-};
-
-struct OutgoingArgHandler : public CallLowering::OutgoingValueHandler {
+struct OutgoingArgHandler : public CallLowering::ValueHandler {
   OutgoingArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
-                     MachineInstrBuilder MIB, bool IsTailCall = false,
+                     MachineInstrBuilder MIB, CCAssignFn *AssignFn,
+                     CCAssignFn *AssignFnVarArg, bool IsTailCall = false,
                      int FPDiff = 0)
-      : OutgoingValueHandler(MIRBuilder, MRI), MIB(MIB), IsTailCall(IsTailCall),
-        FPDiff(FPDiff),
-        Subtarget(MIRBuilder.getMF().getSubtarget<AArch64Subtarget>()) {}
+      : ValueHandler(MIRBuilder, MRI, AssignFn), MIB(MIB),
+        AssignFnVarArg(AssignFnVarArg), IsTailCall(IsTailCall), FPDiff(FPDiff),
+        StackSize(0), SPReg(0) {}
+
+  bool isIncomingArgumentHandler() const override { return false; }
 
   Register getStackAddress(uint64_t Size, int64_t Offset,
-                           MachinePointerInfo &MPO,
-                           ISD::ArgFlagsTy Flags) override {
+                           MachinePointerInfo &MPO) override {
     MachineFunction &MF = MIRBuilder.getMF();
     LLT p0 = LLT::pointer(0, 64);
     LLT s64 = LLT::scalar(64);
 
     if (IsTailCall) {
-      assert(!Flags.isByVal() && "byval unhandled with tail calls");
-
       Offset += FPDiff;
       int FI = MF.getFrameInfo().CreateFixedObject(Size, Offset, true);
       auto FIReg = MIRBuilder.buildFrameIndex(p0, FI);
@@ -270,96 +167,124 @@ struct OutgoingArgHandler : public CallLowering::OutgoingValueHandler {
     return AddrReg.getReg(0);
   }
 
-  /// We need to fixup the reported store size for certain value types because
-  /// we invert the interpretation of ValVT and LocVT in certain cases. This is
-  /// for compatability with the DAG call lowering implementation, which we're
-  /// currently building on top of.
-  LLT getStackValueStoreType(const DataLayout &DL, const CCValAssign &VA,
-                             ISD::ArgFlagsTy Flags) const override {
-    if (Flags.isPointer())
-      return CallLowering::ValueHandler::getStackValueStoreType(DL, VA, Flags);
-    return getStackValueStoreTypeHack(VA);
-  }
-
   void assignValueToReg(Register ValVReg, Register PhysReg,
-                        CCValAssign VA) override {
+                        CCValAssign &VA) override {
     MIB.addUse(PhysReg, RegState::Implicit);
     Register ExtReg = extendRegister(ValVReg, VA);
     MIRBuilder.buildCopy(PhysReg, ExtReg);
   }
 
-  void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
+  void assignValueToAddress(Register ValVReg, Register Addr, uint64_t Size,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
-    auto MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
+    auto MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, Size,
                                        inferAlignFromPtrInfo(MF, MPO));
     MIRBuilder.buildStore(ValVReg, Addr, *MMO);
   }
 
-  void assignValueToAddress(const CallLowering::ArgInfo &Arg, unsigned RegIndex,
-                            Register Addr, LLT MemTy, MachinePointerInfo &MPO,
+  void assignValueToAddress(const CallLowering::ArgInfo &Arg, Register Addr,
+                            uint64_t Size, MachinePointerInfo &MPO,
                             CCValAssign &VA) override {
-    unsigned MaxSize = MemTy.getSizeInBytes() * 8;
+    unsigned MaxSize = Size * 8;
     // For varargs, we always want to extend them to 8 bytes, in which case
     // we disable setting a max.
     if (!Arg.IsFixed)
       MaxSize = 0;
 
-    Register ValVReg = Arg.Regs[RegIndex];
-    if (VA.getLocInfo() != CCValAssign::LocInfo::FPExt) {
-      MVT LocVT = VA.getLocVT();
-      MVT ValVT = VA.getValVT();
+    Register ValVReg = VA.getLocInfo() != CCValAssign::LocInfo::FPExt
+                           ? extendRegister(Arg.Regs[0], VA, MaxSize)
+                           : Arg.Regs[0];
 
-      if (VA.getValVT() == MVT::i8 || VA.getValVT() == MVT::i16) {
-        std::swap(ValVT, LocVT);
-        MemTy = LLT(VA.getValVT());
-      }
+    // If we extended we might need to adjust the MMO's Size.
+    const LLT RegTy = MRI.getType(ValVReg);
+    if (RegTy.getSizeInBytes() > Size)
+      Size = RegTy.getSizeInBytes();
 
-      ValVReg = extendRegister(ValVReg, VA, MaxSize);
-    } else {
-      // The store does not cover the full allocated stack slot.
-      MemTy = LLT(VA.getValVT());
-    }
+    assignValueToAddress(ValVReg, Addr, Size, MPO, VA);
+  }
 
-    assignValueToAddress(ValVReg, Addr, MemTy, MPO, VA);
+  bool assignArg(unsigned ValNo, MVT ValVT, MVT LocVT,
+                 CCValAssign::LocInfo LocInfo,
+                 const CallLowering::ArgInfo &Info,
+                 ISD::ArgFlagsTy Flags,
+                 CCState &State) override {
+    bool Res;
+    if (Info.IsFixed)
+      Res = AssignFn(ValNo, ValVT, LocVT, LocInfo, Flags, State);
+    else
+      Res = AssignFnVarArg(ValNo, ValVT, LocVT, LocInfo, Flags, State);
+
+    StackSize = State.getNextStackOffset();
+    return Res;
   }
 
   MachineInstrBuilder MIB;
-
+  CCAssignFn *AssignFnVarArg;
   bool IsTailCall;
 
   /// For tail calls, the byte offset of the call's argument area from the
   /// callee's. Unused elsewhere.
   int FPDiff;
+  uint64_t StackSize;
 
   // Cache the SP register vreg if we need it more than once in this call site.
   Register SPReg;
-
-  const AArch64Subtarget &Subtarget;
 };
 } // namespace
 
 static bool doesCalleeRestoreStack(CallingConv::ID CallConv, bool TailCallOpt) {
-  return (CallConv == CallingConv::Fast && TailCallOpt) ||
-         CallConv == CallingConv::Tail || CallConv == CallingConv::SwiftTail;
+  return CallConv == CallingConv::Fast && TailCallOpt;
+}
+
+void AArch64CallLowering::splitToValueTypes(
+    const ArgInfo &OrigArg, SmallVectorImpl<ArgInfo> &SplitArgs,
+    const DataLayout &DL, MachineRegisterInfo &MRI, CallingConv::ID CallConv) const {
+  const AArch64TargetLowering &TLI = *getTLI<AArch64TargetLowering>();
+  LLVMContext &Ctx = OrigArg.Ty->getContext();
+
+  SmallVector<EVT, 4> SplitVTs;
+  SmallVector<uint64_t, 4> Offsets;
+  ComputeValueVTs(TLI, DL, OrigArg.Ty, SplitVTs, &Offsets, 0);
+
+  if (SplitVTs.size() == 0)
+    return;
+
+  if (SplitVTs.size() == 1) {
+    // No splitting to do, but we want to replace the original type (e.g. [1 x
+    // double] -> double).
+    SplitArgs.emplace_back(OrigArg.Regs[0], SplitVTs[0].getTypeForEVT(Ctx),
+                           OrigArg.Flags[0], OrigArg.IsFixed);
+    return;
+  }
+
+  // Create one ArgInfo for each virtual register in the original ArgInfo.
+  assert(OrigArg.Regs.size() == SplitVTs.size() && "Regs / types mismatch");
+
+  bool NeedsRegBlock = TLI.functionArgumentNeedsConsecutiveRegisters(
+      OrigArg.Ty, CallConv, false);
+  for (unsigned i = 0, e = SplitVTs.size(); i < e; ++i) {
+    Type *SplitTy = SplitVTs[i].getTypeForEVT(Ctx);
+    SplitArgs.emplace_back(OrigArg.Regs[i], SplitTy, OrigArg.Flags[0],
+                           OrigArg.IsFixed);
+    if (NeedsRegBlock)
+      SplitArgs.back().Flags[0].setInConsecutiveRegs();
+  }
+
+  SplitArgs.back().Flags[0].setInConsecutiveRegsLast();
 }
 
 bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
                                       const Value *Val,
                                       ArrayRef<Register> VRegs,
-                                      FunctionLoweringInfo &FLI,
                                       Register SwiftErrorVReg) const {
   auto MIB = MIRBuilder.buildInstrNoInsert(AArch64::RET_ReallyLR);
   assert(((Val && !VRegs.empty()) || (!Val && VRegs.empty())) &&
          "Return value without a vreg");
 
   bool Success = true;
-  if (!FLI.CanLowerReturn) {
-    insertSRetStores(MIRBuilder, Val->getType(), VRegs, FLI.DemoteRegister);
-  } else if (!VRegs.empty()) {
+  if (!VRegs.empty()) {
     MachineFunction &MF = MIRBuilder.getMF();
     const Function &F = MF.getFunction();
-    const AArch64Subtarget &Subtarget = MF.getSubtarget<AArch64Subtarget>();
 
     MachineRegisterInfo &MRI = MF.getRegInfo();
     const AArch64TargetLowering &TLI = *getTLI<AArch64TargetLowering>();
@@ -376,25 +301,29 @@ bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
     CallingConv::ID CC = F.getCallingConv();
 
     for (unsigned i = 0; i < SplitEVTs.size(); ++i) {
+      if (TLI.getNumRegistersForCallingConv(Ctx, CC, SplitEVTs[i]) > 1) {
+        LLVM_DEBUG(dbgs() << "Can't handle extended arg types which need split");
+        return false;
+      }
+
       Register CurVReg = VRegs[i];
-      ArgInfo CurArgInfo = ArgInfo{CurVReg, SplitEVTs[i].getTypeForEVT(Ctx), 0};
+      ArgInfo CurArgInfo = ArgInfo{CurVReg, SplitEVTs[i].getTypeForEVT(Ctx)};
       setArgFlags(CurArgInfo, AttributeList::ReturnIndex, DL, F);
 
       // i1 is a special case because SDAG i1 true is naturally zero extended
       // when widened using ANYEXT. We need to do it explicitly here.
-      auto &Flags = CurArgInfo.Flags[0];
-      if (MRI.getType(CurVReg).getSizeInBits() == 1 && !Flags.isSExt() &&
-          !Flags.isZExt()) {
+      if (MRI.getType(CurVReg).getSizeInBits() == 1) {
         CurVReg = MIRBuilder.buildZExt(LLT::scalar(8), CurVReg).getReg(0);
-      } else if (TLI.getNumRegistersForCallingConv(Ctx, CC, SplitEVTs[i]) ==
-                 1) {
+      } else {
         // Some types will need extending as specified by the CC.
         MVT NewVT = TLI.getRegisterTypeForCallingConv(Ctx, CC, SplitEVTs[i]);
         if (EVT(NewVT) != SplitEVTs[i]) {
           unsigned ExtendOp = TargetOpcode::G_ANYEXT;
-          if (F.getAttributes().hasRetAttr(Attribute::SExt))
+          if (F.getAttributes().hasAttribute(AttributeList::ReturnIndex,
+                                             Attribute::SExt))
             ExtendOp = TargetOpcode::G_SEXT;
-          else if (F.getAttributes().hasRetAttr(Attribute::ZExt))
+          else if (F.getAttributes().hasAttribute(AttributeList::ReturnIndex,
+                                                  Attribute::ZExt))
             ExtendOp = TargetOpcode::G_ZEXT;
 
           LLT NewLLT(NewVT);
@@ -413,8 +342,7 @@ bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
                 }
                 auto Undef = MIRBuilder.buildUndef({OldLLT});
                 CurVReg =
-                    MIRBuilder.buildMergeLikeInstr({NewLLT}, {CurVReg, Undef})
-                        .getReg(0);
+                    MIRBuilder.buildMerge({NewLLT}, {CurVReg, Undef}).getReg(0);
               } else {
                 // Just do a vector extend.
                 CurVReg = MIRBuilder.buildInstr(ExtendOp, {NewLLT}, {CurVReg})
@@ -430,18 +358,13 @@ bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
                       .buildBuildVector({NewLLT}, {CurVReg, Undef.getReg(0)})
                       .getReg(0);
             } else {
-              LLVM_DEBUG(dbgs() << "Could not handle ret ty\n");
+              LLVM_DEBUG(dbgs() << "Could not handle ret ty");
               return false;
             }
           } else {
-            // If the split EVT was a <1 x T> vector, and NewVT is T, then we
-            // don't have to do anything since we don't distinguish between the
-            // two.
-            if (NewLLT != MRI.getType(CurVReg)) {
-              // A scalar extend.
-              CurVReg = MIRBuilder.buildInstr(ExtendOp, {NewLLT}, {CurVReg})
-                            .getReg(0);
-            }
+            // A scalar extend.
+            CurVReg =
+                MIRBuilder.buildInstr(ExtendOp, {NewLLT}, {CurVReg}).getReg(0);
           }
         }
       }
@@ -450,14 +373,11 @@ bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
         // Reset the arg flags after modifying CurVReg.
         setArgFlags(CurArgInfo, AttributeList::ReturnIndex, DL, F);
       }
-      splitToValueTypes(CurArgInfo, SplitArgs, DL, CC);
+     splitToValueTypes(CurArgInfo, SplitArgs, DL, MRI, CC);
     }
 
-    AArch64OutgoingValueAssigner Assigner(AssignFn, AssignFn, Subtarget,
-                                          /*IsReturn*/ true);
-    OutgoingArgHandler Handler(MIRBuilder, MRI, MIB);
-    Success = determineAndHandleAssignments(Handler, Assigner, SplitArgs,
-                                            MIRBuilder, CC, F.isVarArg());
+    OutgoingArgHandler Handler(MIRBuilder, MRI, MIB, AssignFn, AssignFn);
+    Success = handleAssignments(MIRBuilder, SplitArgs, Handler);
   }
 
   if (SwiftErrorVReg) {
@@ -467,18 +387,6 @@ bool AArch64CallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
 
   MIRBuilder.insertInstr(MIB);
   return Success;
-}
-
-bool AArch64CallLowering::canLowerReturn(MachineFunction &MF,
-                                         CallingConv::ID CallConv,
-                                         SmallVectorImpl<BaseArgInfo> &Outs,
-                                         bool IsVarArg) const {
-  SmallVector<CCValAssign, 16> ArgLocs;
-  const auto &TLI = *getTLI<AArch64TargetLowering>();
-  CCState CCInfo(CallConv, IsVarArg, MF, ArgLocs,
-                 MF.getFunction().getContext());
-
-  return checkReturn(CCInfo, Outs, TLI.CCAssignFnForReturn(CallConv));
 }
 
 /// Helper function to compute forwarded registers for musttail calls. Computes
@@ -513,7 +421,7 @@ static void handleMustTailForwardedRegisters(MachineIRBuilder &MIRBuilder,
   // Conservatively forward X8, since it might be used for an aggregate
   // return.
   if (!CCInfo.isAllocated(AArch64::X8)) {
-    Register X8VReg = MF.addLiveIn(AArch64::X8, &AArch64::GPR64RegClass);
+    unsigned X8VReg = MF.addLiveIn(AArch64::X8, &AArch64::GPR64RegClass);
     Forwards.push_back(ForwardedRegister(X8VReg, AArch64::X8, MVT::i64));
   }
 
@@ -524,73 +432,32 @@ static void handleMustTailForwardedRegisters(MachineIRBuilder &MIRBuilder,
   }
 }
 
-bool AArch64CallLowering::fallBackToDAGISel(const MachineFunction &MF) const {
-  auto &F = MF.getFunction();
+bool AArch64CallLowering::fallBackToDAGISel(const Function &F) const {
   if (isa<ScalableVectorType>(F.getReturnType()))
     return true;
-  if (llvm::any_of(F.args(), [](const Argument &A) {
-        return isa<ScalableVectorType>(A.getType());
-      }))
-    return true;
-  const auto &ST = MF.getSubtarget<AArch64Subtarget>();
-  if (!ST.hasNEON() || !ST.hasFPARMv8()) {
-    LLVM_DEBUG(dbgs() << "Falling back to SDAG because we don't support no-NEON\n");
-    return true;
-  }
-
-  SMEAttrs Attrs(F);
-  if (Attrs.hasNewZAInterface() ||
-      (!Attrs.hasStreamingInterface() && Attrs.hasStreamingBody()))
-    return true;
-
-  return false;
+  return llvm::any_of(F.args(), [](const Argument &A) {
+    return isa<ScalableVectorType>(A.getType());
+  });
 }
 
 bool AArch64CallLowering::lowerFormalArguments(
     MachineIRBuilder &MIRBuilder, const Function &F,
-    ArrayRef<ArrayRef<Register>> VRegs, FunctionLoweringInfo &FLI) const {
+    ArrayRef<ArrayRef<Register>> VRegs) const {
   MachineFunction &MF = MIRBuilder.getMF();
   MachineBasicBlock &MBB = MIRBuilder.getMBB();
   MachineRegisterInfo &MRI = MF.getRegInfo();
   auto &DL = F.getParent()->getDataLayout();
 
   SmallVector<ArgInfo, 8> SplitArgs;
-  SmallVector<std::pair<Register, Register>> BoolArgs;
-
-  // Insert the hidden sret parameter if the return value won't fit in the
-  // return registers.
-  if (!FLI.CanLowerReturn)
-    insertSRetIncomingArgument(F, SplitArgs, FLI.DemoteRegister, MRI, DL);
-
   unsigned i = 0;
   for (auto &Arg : F.args()) {
     if (DL.getTypeStoreSize(Arg.getType()).isZero())
       continue;
 
-    ArgInfo OrigArg{VRegs[i], Arg, i};
+    ArgInfo OrigArg{VRegs[i], Arg.getType()};
     setArgFlags(OrigArg, i + AttributeList::FirstArgIndex, DL, F);
 
-    // i1 arguments are zero-extended to i8 by the caller. Emit a
-    // hint to reflect this.
-    if (OrigArg.Ty->isIntegerTy(1)) {
-      assert(OrigArg.Regs.size() == 1 &&
-             MRI.getType(OrigArg.Regs[0]).getSizeInBits() == 1 &&
-             "Unexpected registers used for i1 arg");
-
-      auto &Flags = OrigArg.Flags[0];
-      if (!Flags.isZExt() && !Flags.isSExt()) {
-        // Lower i1 argument as i8, and insert AssertZExt + Trunc later.
-        Register OrigReg = OrigArg.Regs[0];
-        Register WideReg = MRI.createGenericVirtualRegister(LLT::scalar(8));
-        OrigArg.Regs[0] = WideReg;
-        BoolArgs.push_back({OrigReg, WideReg});
-      }
-    }
-
-    if (Arg.hasAttribute(Attribute::SwiftAsync))
-      MF.getInfo<AArch64FunctionInfo>()->setHasSwiftAsyncContext(true);
-
-    splitToValueTypes(OrigArg, SplitArgs, DL, F.getCallingConv());
+    splitToValueTypes(OrigArg, SplitArgs, DL, MRI, F.getCallingConv());
     ++i;
   }
 
@@ -601,26 +468,12 @@ bool AArch64CallLowering::lowerFormalArguments(
   CCAssignFn *AssignFn =
       TLI.CCAssignFnForCall(F.getCallingConv(), /*IsVarArg=*/false);
 
-  AArch64IncomingValueAssigner Assigner(AssignFn, AssignFn);
-  FormalArgHandler Handler(MIRBuilder, MRI);
-  if (!determineAndHandleAssignments(Handler, Assigner, SplitArgs, MIRBuilder,
-                                     F.getCallingConv(), F.isVarArg()))
+  FormalArgHandler Handler(MIRBuilder, MRI, AssignFn);
+  if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
     return false;
 
-  if (!BoolArgs.empty()) {
-    for (auto &KV : BoolArgs) {
-      Register OrigReg = KV.first;
-      Register WideReg = KV.second;
-      LLT WideTy = MRI.getType(WideReg);
-      assert(MRI.getType(OrigReg).getScalarSizeInBits() == 1 &&
-             "Unexpected bit size of a bool arg");
-      MIRBuilder.buildTrunc(
-          OrigReg, MIRBuilder.buildAssertZExt(WideTy, WideReg, 1).getReg(0));
-    }
-  }
-
   AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
-  uint64_t StackOffset = Assigner.StackOffset;
+  uint64_t StackOffset = Handler.StackUsed;
   if (F.isVarArg()) {
     auto &Subtarget = MF.getSubtarget<AArch64Subtarget>();
     if (!Subtarget.isTargetDarwin()) {
@@ -630,8 +483,7 @@ bool AArch64CallLowering::lowerFormalArguments(
     }
 
     // We currently pass all varargs at 8-byte alignment, or 4 in ILP32.
-    StackOffset =
-        alignTo(Assigner.StackOffset, Subtarget.isTargetILP32() ? 4 : 8);
+    StackOffset = alignTo(Handler.StackUsed, Subtarget.isTargetILP32() ? 4 : 8);
 
     auto &MFI = MIRBuilder.getMF().getFrameInfo();
     FuncInfo->setVarArgsStackIndex(MFI.CreateFixedObject(4, StackOffset, true));
@@ -670,9 +522,8 @@ bool AArch64CallLowering::lowerFormalArguments(
 }
 
 /// Return true if the calling convention is one that we can guarantee TCO for.
-static bool canGuaranteeTCO(CallingConv::ID CC, bool GuaranteeTailCalls) {
-  return (CC == CallingConv::Fast && GuaranteeTailCalls) ||
-         CC == CallingConv::Tail || CC == CallingConv::SwiftTail;
+static bool canGuaranteeTCO(CallingConv::ID CC) {
+  return CC == CallingConv::Fast;
 }
 
 /// Return true if we might ever do TCO for calls with this calling convention.
@@ -681,12 +532,9 @@ static bool mayTailCallThisCC(CallingConv::ID CC) {
   case CallingConv::C:
   case CallingConv::PreserveMost:
   case CallingConv::Swift:
-  case CallingConv::SwiftTail:
-  case CallingConv::Tail:
-  case CallingConv::Fast:
     return true;
   default:
-    return false;
+    return canGuaranteeTCO(CC);
   }
 }
 
@@ -720,12 +568,9 @@ bool AArch64CallLowering::doCallerAndCalleePassArgsTheSameWay(
   std::tie(CallerAssignFnFixed, CallerAssignFnVarArg) =
       getAssignFnsForCC(CallerCC, TLI);
 
-  AArch64IncomingValueAssigner CalleeAssigner(CalleeAssignFnFixed,
-                                              CalleeAssignFnVarArg);
-  AArch64IncomingValueAssigner CallerAssigner(CallerAssignFnFixed,
-                                              CallerAssignFnVarArg);
-
-  if (!resultsCompatible(Info, MF, InArgs, CalleeAssigner, CallerAssigner))
+  if (!resultsCompatible(Info, MF, InArgs, *CalleeAssignFnFixed,
+                         *CalleeAssignFnVarArg, *CallerAssignFnFixed,
+                         *CallerAssignFnVarArg))
     return false;
 
   // Make sure that the caller and callee preserve all of the same registers.
@@ -748,11 +593,9 @@ bool AArch64CallLowering::areCalleeOutgoingArgsTailCallable(
     return true;
 
   const Function &CallerF = MF.getFunction();
-  LLVMContext &Ctx = CallerF.getContext();
   CallingConv::ID CalleeCC = Info.CallConv;
   CallingConv::ID CallerCC = CallerF.getCallingConv();
   const AArch64TargetLowering &TLI = *getTLI<AArch64TargetLowering>();
-  const AArch64Subtarget &Subtarget = MF.getSubtarget<AArch64Subtarget>();
 
   CCAssignFn *AssignFnFixed;
   CCAssignFn *AssignFnVarArg;
@@ -760,11 +603,9 @@ bool AArch64CallLowering::areCalleeOutgoingArgsTailCallable(
 
   // We have outgoing arguments. Make sure that we can tail call with them.
   SmallVector<CCValAssign, 16> OutLocs;
-  CCState OutInfo(CalleeCC, false, MF, OutLocs, Ctx);
+  CCState OutInfo(CalleeCC, false, MF, OutLocs, CallerF.getContext());
 
-  AArch64OutgoingValueAssigner CalleeAssigner(AssignFnFixed, AssignFnVarArg,
-                                              Subtarget, /*IsReturn*/ false);
-  if (!determineAssignments(CalleeAssigner, OutArgs, OutInfo)) {
+  if (!analyzeArgInfo(OutInfo, OutArgs, *AssignFnFixed, *AssignFnVarArg)) {
     LLVM_DEBUG(dbgs() << "... Could not analyze call operands.\n");
     return false;
   }
@@ -783,25 +624,64 @@ bool AArch64CallLowering::areCalleeOutgoingArgsTailCallable(
   const uint32_t *CallerPreservedMask = TRI->getCallPreservedMask(MF, CallerCC);
   MachineRegisterInfo &MRI = MF.getRegInfo();
 
-  if (Info.IsVarArg) {
-    // Be conservative and disallow variadic memory operands to match SDAG's
-    // behaviour.
-    // FIXME: If the caller's calling convention is C, then we can
-    // potentially use its argument area. However, for cases like fastcc,
-    // we can't do anything.
-    for (unsigned i = 0; i < OutLocs.size(); ++i) {
-      auto &ArgLoc = OutLocs[i];
-      if (ArgLoc.isRegLoc())
-        continue;
+  for (unsigned i = 0; i < OutLocs.size(); ++i) {
+    auto &ArgLoc = OutLocs[i];
+    // If it's not a register, it's fine.
+    if (!ArgLoc.isRegLoc()) {
+      if (Info.IsVarArg) {
+        // Be conservative and disallow variadic memory operands to match SDAG's
+        // behaviour.
+        // FIXME: If the caller's calling convention is C, then we can
+        // potentially use its argument area. However, for cases like fastcc,
+        // we can't do anything.
+        LLVM_DEBUG(
+            dbgs()
+            << "... Cannot tail call vararg function with stack arguments\n");
+        return false;
+      }
+      continue;
+    }
 
+    Register Reg = ArgLoc.getLocReg();
+
+    // Only look at callee-saved registers.
+    if (MachineOperand::clobbersPhysReg(CallerPreservedMask, Reg))
+      continue;
+
+    LLVM_DEBUG(
+        dbgs()
+        << "... Call has an argument passed in a callee-saved register.\n");
+
+    // Check if it was copied from.
+    ArgInfo &OutInfo = OutArgs[i];
+
+    if (OutInfo.Regs.size() > 1) {
+      LLVM_DEBUG(
+          dbgs() << "... Cannot handle arguments in multiple registers.\n");
+      return false;
+    }
+
+    // Check if we copy the register, walking through copies from virtual
+    // registers. Note that getDefIgnoringCopies does not ignore copies from
+    // physical registers.
+    MachineInstr *RegDef = getDefIgnoringCopies(OutInfo.Regs[0], MRI);
+    if (!RegDef || RegDef->getOpcode() != TargetOpcode::COPY) {
       LLVM_DEBUG(
           dbgs()
-          << "... Cannot tail call vararg function with stack arguments\n");
+          << "... Parameter was not copied into a VReg, cannot tail call.\n");
+      return false;
+    }
+
+    // Got a copy. Verify that it's the same as the register we want.
+    Register CopyRHS = RegDef->getOperand(1).getReg();
+    if (CopyRHS != Reg) {
+      LLVM_DEBUG(dbgs() << "... Callee-saved register was not copied into "
+                           "VReg, cannot tail call.\n");
       return false;
     }
   }
 
-  return parametersInCSRMatch(MRI, CallerPreservedMask, OutLocs, OutArgs);
+  return true;
 }
 
 bool AArch64CallLowering::isEligibleForTailCallOptimization(
@@ -878,8 +758,8 @@ bool AArch64CallLowering::isEligibleForTailCallOptimization(
   }
 
   // If we have -tailcallopt, then we're done.
-  if (canGuaranteeTCO(CalleeCC, MF.getTarget().Options.GuaranteedTailCallOpt))
-    return CalleeCC == CallerF.getCallingConv();
+  if (MF.getTarget().Options.GuaranteedTailCallOpt)
+    return canGuaranteeTCO(CalleeCC) && CalleeCC == CallerF.getCallingConv();
 
   // We don't have -tailcallopt, so we're allowed to change the ABI (sibcall).
   // Try to find cases where we can do that.
@@ -916,28 +796,10 @@ static unsigned getCallOpcode(const MachineFunction &CallerF, bool IsIndirect,
 
   // When BTI is enabled, we need to use TCRETURNriBTI to make sure that we use
   // x16 or x17.
-  if (CallerF.getInfo<AArch64FunctionInfo>()->branchTargetEnforcement())
+  if (CallerF.getFunction().hasFnAttribute("branch-target-enforcement"))
     return AArch64::TCRETURNriBTI;
 
   return AArch64::TCRETURNri;
-}
-
-static const uint32_t *
-getMaskForArgs(SmallVectorImpl<AArch64CallLowering::ArgInfo> &OutArgs,
-               AArch64CallLowering::CallLoweringInfo &Info,
-               const AArch64RegisterInfo &TRI, MachineFunction &MF) {
-  const uint32_t *Mask;
-  if (!OutArgs.empty() && OutArgs[0].Flags[0].isReturned()) {
-    // For 'this' returns, use the X0-preserving mask if applicable
-    Mask = TRI.getThisReturnPreservedMask(MF, Info.CallConv);
-    if (!Mask) {
-      OutArgs[0].Flags[0].setReturned(false);
-      Mask = TRI.getCallPreservedMask(MF, Info.CallConv);
-    }
-  } else {
-    Mask = TRI.getCallPreservedMask(MF, Info.CallConv);
-  }
-  return Mask;
 }
 
 bool AArch64CallLowering::lowerTailCall(
@@ -950,13 +812,11 @@ bool AArch64CallLowering::lowerTailCall(
   AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
 
   // True when we're tail calling, but without -tailcallopt.
-  bool IsSibCall = !MF.getTarget().Options.GuaranteedTailCallOpt &&
-                   Info.CallConv != CallingConv::Tail &&
-                   Info.CallConv != CallingConv::SwiftTail;
+  bool IsSibCall = !MF.getTarget().Options.GuaranteedTailCallOpt;
 
   // TODO: Right now, regbankselect doesn't know how to handle the rtcGPR64
   // register class. Until we can do that, we should fall back here.
-  if (MF.getInfo<AArch64FunctionInfo>()->branchTargetEnforcement()) {
+  if (F.hasFnAttribute("branch-target-enforcement")) {
     LLVM_DEBUG(
         dbgs() << "Cannot lower indirect tail calls with BTI enabled yet.\n");
     return false;
@@ -981,15 +841,11 @@ bool AArch64CallLowering::lowerTailCall(
   MIB.addImm(0);
 
   // Tell the call which registers are clobbered.
-  const AArch64Subtarget &Subtarget = MF.getSubtarget<AArch64Subtarget>();
-  auto TRI = Subtarget.getRegisterInfo();
+  auto TRI = MF.getSubtarget<AArch64Subtarget>().getRegisterInfo();
   const uint32_t *Mask = TRI->getCallPreservedMask(MF, CalleeCC);
-  if (Subtarget.hasCustomCallingConv())
+  if (MF.getSubtarget<AArch64Subtarget>().hasCustomCallingConv())
     TRI->UpdateCustomCallPreservedMask(MF, &Mask);
   MIB.addRegMask(Mask);
-
-  if (Info.CFIType)
-    MIB->setCFIType(MF, Info.CFIType->getZExtValue());
 
   if (TRI->isAnyArgRegReserved(MF))
     TRI->emitReservedArgRegCallError(MF);
@@ -1012,11 +868,7 @@ bool AArch64CallLowering::lowerTailCall(
     unsigned NumReusableBytes = FuncInfo->getBytesInStackArgArea();
     SmallVector<CCValAssign, 16> OutLocs;
     CCState OutInfo(CalleeCC, false, MF, OutLocs, F.getContext());
-
-    AArch64OutgoingValueAssigner CalleeAssigner(AssignFnFixed, AssignFnVarArg,
-                                                Subtarget, /*IsReturn*/ false);
-    if (!determineAssignments(CalleeAssigner, OutArgs, OutInfo))
-      return false;
+    analyzeArgInfo(OutInfo, OutArgs, *AssignFnFixed, *AssignFnVarArg);
 
     // The callee will pop the argument stack as a tail call. Thus, we must
     // keep it 16-byte aligned.
@@ -1026,11 +878,6 @@ bool AArch64CallLowering::lowerTailCall(
     // would automatically have in our incoming argument space. Positive if we
     // actually shrink the stack.
     FPDiff = NumReusableBytes - NumBytes;
-
-    // Update the required reserved area if this is the tail call requiring the
-    // most argument stack space.
-    if (FPDiff < 0 && FuncInfo->getTailCallReservedStack() < (unsigned)-FPDiff)
-      FuncInfo->setTailCallReservedStack(-FPDiff);
 
     // The stack pointer must be 16-byte aligned at all times it's used for a
     // memory operation, which in practice means at *all* times and in
@@ -1042,17 +889,11 @@ bool AArch64CallLowering::lowerTailCall(
 
   const auto &Forwards = FuncInfo->getForwardedMustTailRegParms();
 
-  AArch64OutgoingValueAssigner Assigner(AssignFnFixed, AssignFnVarArg,
-                                        Subtarget, /*IsReturn*/ false);
-
   // Do the actual argument marshalling.
-  OutgoingArgHandler Handler(MIRBuilder, MRI, MIB,
-                             /*IsTailCall*/ true, FPDiff);
-  if (!determineAndHandleAssignments(Handler, Assigner, OutArgs, MIRBuilder,
-                                     CalleeCC, Info.IsVarArg))
+  OutgoingArgHandler Handler(MIRBuilder, MRI, MIB, AssignFnFixed,
+                             AssignFnVarArg, true, FPDiff);
+  if (!handleAssignments(MIRBuilder, OutArgs, Handler))
     return false;
-
-  Mask = getMaskForArgs(OutArgs, Info, *TRI, MF);
 
   if (Info.IsVarArg && Info.IsMustTailCall) {
     // Now we know what's being passed to the function. Add uses to the call for
@@ -1079,12 +920,12 @@ bool AArch64CallLowering::lowerTailCall(
   // sequence start and end here.
   if (!IsSibCall) {
     MIB->getOperand(1).setImm(FPDiff);
-    CallSeqStart.addImm(0).addImm(0);
+    CallSeqStart.addImm(NumBytes).addImm(0);
     // End the call sequence *before* emitting the call. Normally, we would
     // tidy the frame up after the call. However, here, we've laid out the
     // parameters so that when SP is reset, they will be in the correct
     // location.
-    MIRBuilder.buildInstr(AArch64::ADJCALLSTACKUP).addImm(0).addImm(0);
+    MIRBuilder.buildInstr(AArch64::ADJCALLSTACKUP).addImm(NumBytes).addImm(0);
   }
 
   // Now we can add the actual call instruction to the correct basic block.
@@ -1092,10 +933,11 @@ bool AArch64CallLowering::lowerTailCall(
 
   // If Callee is a reg, since it is used by a target specific instruction,
   // it must have a register class matching the constraint of that instruction.
-  if (MIB->getOperand(0).isReg())
-    constrainOperandRegClass(MF, *TRI, MRI, *MF.getSubtarget().getInstrInfo(),
-                             *MF.getSubtarget().getRegBankInfo(), *MIB,
-                             MIB->getDesc(), MIB->getOperand(0), 0);
+  if (Info.Callee.isReg())
+    MIB->getOperand(0).setReg(constrainOperandRegClass(
+        MF, *TRI, MRI, *MF.getSubtarget().getInstrInfo(),
+        *MF.getSubtarget().getRegBankInfo(), *MIB, MIB->getDesc(), Info.Callee,
+        0));
 
   MF.getFrameInfo().setHasTailCall();
   Info.LoweredTailCall = true;
@@ -1109,35 +951,18 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   MachineRegisterInfo &MRI = MF.getRegInfo();
   auto &DL = F.getParent()->getDataLayout();
   const AArch64TargetLowering &TLI = *getTLI<AArch64TargetLowering>();
-  const AArch64Subtarget &Subtarget = MF.getSubtarget<AArch64Subtarget>();
-
-  // Arm64EC has extra requirements for varargs calls; bail out for now.
-  if (Info.IsVarArg && Subtarget.isWindowsArm64EC())
-    return false;
 
   SmallVector<ArgInfo, 8> OutArgs;
   for (auto &OrigArg : Info.OrigArgs) {
-    splitToValueTypes(OrigArg, OutArgs, DL, Info.CallConv);
+    splitToValueTypes(OrigArg, OutArgs, DL, MRI, Info.CallConv);
     // AAPCS requires that we zero-extend i1 to 8 bits by the caller.
-    auto &Flags = OrigArg.Flags[0];
-    if (OrigArg.Ty->isIntegerTy(1) && !Flags.isSExt() && !Flags.isZExt()) {
-      ArgInfo &OutArg = OutArgs.back();
-      assert(OutArg.Regs.size() == 1 &&
-             MRI.getType(OutArg.Regs[0]).getSizeInBits() == 1 &&
-             "Unexpected registers used for i1 arg");
-
-      // We cannot use a ZExt ArgInfo flag here, because it will
-      // zero-extend the argument to i32 instead of just i8.
-      OutArg.Regs[0] =
-          MIRBuilder.buildZExt(LLT::scalar(8), OutArg.Regs[0]).getReg(0);
-      LLVMContext &Ctx = MF.getFunction().getContext();
-      OutArg.Ty = Type::getInt8Ty(Ctx);
-    }
+    if (OrigArg.Ty->isIntegerTy(1))
+      OutArgs.back().Flags[0].setZExt();
   }
 
   SmallVector<ArgInfo, 8> InArgs;
   if (!Info.OrigRet.Ty->isVoidTy())
-    splitToValueTypes(Info.OrigRet, InArgs, DL, Info.CallConv);
+    splitToValueTypes(Info.OrigRet, InArgs, DL, MRI, F.getCallingConv());
 
   // If we can lower as a tail call, do that instead.
   bool CanTailCallOpt =
@@ -1152,7 +977,6 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
     return false;
   }
 
-  Info.IsTailCall = CanTailCallOpt;
   if (CanTailCallOpt)
     return lowerTailCall(MIRBuilder, Info, OutArgs);
 
@@ -1167,52 +991,14 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
 
   // Create a temporarily-floating call instruction so we can add the implicit
   // uses of arg registers.
-
-  unsigned Opc = 0;
-  // Calls with operand bundle "clang.arc.attachedcall" are special. They should
-  // be expanded to the call, directly followed by a special marker sequence and
-  // a call to an ObjC library function.
-  if (Info.CB && objcarc::hasAttachedCallOpBundle(Info.CB))
-    Opc = AArch64::BLR_RVMARKER;
-  // A call to a returns twice function like setjmp must be followed by a bti
-  // instruction.
-  else if (Info.CB &&
-           Info.CB->getAttributes().hasFnAttr(Attribute::ReturnsTwice) &&
-           !Subtarget.noBTIAtReturnTwice() &&
-           MF.getInfo<AArch64FunctionInfo>()->branchTargetEnforcement())
-    Opc = AArch64::BLR_BTI;
-  else
-    Opc = getCallOpcode(MF, Info.Callee.isReg(), false);
+  unsigned Opc = getCallOpcode(MF, Info.Callee.isReg(), false);
 
   auto MIB = MIRBuilder.buildInstrNoInsert(Opc);
-  unsigned CalleeOpNo = 0;
-
-  if (Opc == AArch64::BLR_RVMARKER) {
-    // Add a target global address for the retainRV/claimRV runtime function
-    // just before the call target.
-    Function *ARCFn = *objcarc::getAttachedARCFunction(Info.CB);
-    MIB.addGlobalAddress(ARCFn);
-    ++CalleeOpNo;
-  } else if (Info.CFIType) {
-    MIB->setCFIType(MF, Info.CFIType->getZExtValue());
-  }
-
   MIB.add(Info.Callee);
 
   // Tell the call which registers are clobbered.
-  const uint32_t *Mask;
-  const auto *TRI = Subtarget.getRegisterInfo();
-
-  AArch64OutgoingValueAssigner Assigner(AssignFnFixed, AssignFnVarArg,
-                                        Subtarget, /*IsReturn*/ false);
-  // Do the actual argument marshalling.
-  OutgoingArgHandler Handler(MIRBuilder, MRI, MIB, /*IsReturn*/ false);
-  if (!determineAndHandleAssignments(Handler, Assigner, OutArgs, MIRBuilder,
-                                     Info.CallConv, Info.IsVarArg))
-    return false;
-
-  Mask = getMaskForArgs(OutArgs, Info, *TRI, MF);
-
+  auto TRI = MF.getSubtarget<AArch64Subtarget>().getRegisterInfo();
+  const uint32_t *Mask = TRI->getCallPreservedMask(MF, Info.CallConv);
   if (MF.getSubtarget<AArch64Subtarget>().hasCustomCallingConv())
     TRI->UpdateCustomCallPreservedMask(MF, &Mask);
   MIB.addRegMask(Mask);
@@ -1220,33 +1006,31 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   if (TRI->isAnyArgRegReserved(MF))
     TRI->emitReservedArgRegCallError(MF);
 
+  // Do the actual argument marshalling.
+  OutgoingArgHandler Handler(MIRBuilder, MRI, MIB, AssignFnFixed,
+                             AssignFnVarArg, false);
+  if (!handleAssignments(MIRBuilder, OutArgs, Handler))
+    return false;
+
   // Now we can add the actual call instruction to the correct basic block.
   MIRBuilder.insertInstr(MIB);
 
   // If Callee is a reg, since it is used by a target specific
   // instruction, it must have a register class matching the
   // constraint of that instruction.
-  if (MIB->getOperand(CalleeOpNo).isReg())
-    constrainOperandRegClass(MF, *TRI, MRI, *Subtarget.getInstrInfo(),
-                             *Subtarget.getRegBankInfo(), *MIB, MIB->getDesc(),
-                             MIB->getOperand(CalleeOpNo), CalleeOpNo);
+  if (Info.Callee.isReg())
+    MIB->getOperand(0).setReg(constrainOperandRegClass(
+        MF, *TRI, MRI, *MF.getSubtarget().getInstrInfo(),
+        *MF.getSubtarget().getRegBankInfo(), *MIB, MIB->getDesc(), Info.Callee,
+        0));
 
   // Finally we can copy the returned value back into its virtual-register. In
   // symmetry with the arguments, the physical register must be an
   // implicit-define of the call instruction.
-  if (Info.CanLowerReturn  && !Info.OrigRet.Ty->isVoidTy()) {
+  if (!Info.OrigRet.Ty->isVoidTy()) {
     CCAssignFn *RetAssignFn = TLI.CCAssignFnForReturn(Info.CallConv);
-    CallReturnHandler Handler(MIRBuilder, MRI, MIB);
-    bool UsingReturnedArg =
-        !OutArgs.empty() && OutArgs[0].Flags[0].isReturned();
-
-    AArch64OutgoingValueAssigner Assigner(RetAssignFn, RetAssignFn, Subtarget,
-                                          /*IsReturn*/ false);
-    ReturnedArgCallReturnHandler ReturnedArgHandler(MIRBuilder, MRI, MIB);
-    if (!determineAndHandleAssignments(
-            UsingReturnedArg ? ReturnedArgHandler : Handler, Assigner, InArgs,
-            MIRBuilder, Info.CallConv, Info.IsVarArg,
-            UsingReturnedArg ? ArrayRef(OutArgs[0].Regs) : std::nullopt))
+    CallReturnHandler Handler(MIRBuilder, MRI, MIB, RetAssignFn);
+    if (!handleAssignments(MIRBuilder, InArgs, Handler))
       return false;
   }
 
@@ -1258,21 +1042,13 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   uint64_t CalleePopBytes =
       doesCalleeRestoreStack(Info.CallConv,
                              MF.getTarget().Options.GuaranteedTailCallOpt)
-          ? alignTo(Assigner.StackOffset, 16)
+          ? alignTo(Handler.StackSize, 16)
           : 0;
 
-  CallSeqStart.addImm(Assigner.StackOffset).addImm(0);
+  CallSeqStart.addImm(Handler.StackSize).addImm(0);
   MIRBuilder.buildInstr(AArch64::ADJCALLSTACKUP)
-      .addImm(Assigner.StackOffset)
+      .addImm(Handler.StackSize)
       .addImm(CalleePopBytes);
 
-  if (!Info.CanLowerReturn) {
-    insertSRetLoads(MIRBuilder, Info.OrigRet.Ty, Info.OrigRet.Regs,
-                    Info.DemoteRegister, Info.DemoteStackIndex);
-  }
   return true;
-}
-
-bool AArch64CallLowering::isTypeIsValidForThisReturn(EVT Ty) const {
-  return Ty.getSizeInBits() == 64;
 }

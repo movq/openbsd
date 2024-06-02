@@ -23,7 +23,6 @@ class LatencyBenchmarkRunner : public BenchmarkRunner {
 public:
   LatencyBenchmarkRunner(
       const LLVMState &State, InstructionBenchmark::ModeE Mode,
-      BenchmarkPhaseSelectorE BenchmarkPhaseSelector,
       InstructionBenchmark::ResultAggregationModeE ResultAggMode);
   ~LatencyBenchmarkRunner() override;
 

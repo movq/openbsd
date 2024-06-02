@@ -54,6 +54,22 @@ class AdditionalRequires<list<Predicate> preds> {
 }
 
 //===----------------------------------------------------------------------===//
+// Register File, Calling Conv, Instruction Descriptions
+//===----------------------------------------------------------------------===//
+
+include "MipsRegisterInfo.td"
+include "MipsSchedule.td"
+include "MipsInstrInfo.td"
+include "MipsCallingConv.td"
+include "MipsRegisterBanks.td"
+
+// Avoid forward declaration issues.
+include "MipsScheduleP5600.td"
+include "MipsScheduleGeneric.td"
+
+def MipsInstrInfo : InstrInfo;
+
+//===----------------------------------------------------------------------===//
 // Mips Subtarget features                                                    //
 //===----------------------------------------------------------------------===//
 
@@ -161,8 +177,6 @@ def FeatureDSPR3
     : SubtargetFeature<"dspr3", "HasDSPR3", "true", "Mips DSP-R3 ASE",
                        [ FeatureDSP, FeatureDSPR2 ]>;
 
-def FeatureMips3D : SubtargetFeature<"mips3d", "Has3D", "true", "Mips 3D ASE">;
-
 def FeatureMSA : SubtargetFeature<"msa", "HasMSA", "true", "Mips MSA ASE">;
 
 def FeatureEVA : SubtargetFeature<"eva", "HasEVA", "true", "Mips EVA ASE">;
@@ -191,7 +205,7 @@ def FeatureUseTCCInDIV : SubtargetFeature<
                                "UseTCCInDIV", "false",
                                "Force the assembler to use trapping">;
 
-def FeatureNoMadd4
+def FeatureMadd4
     : SubtargetFeature<"nomadd4", "DisableMadd4", "true",
                        "Disable 4-operand madd.fmt and related instructions">;
 
@@ -207,25 +221,6 @@ def FeatureUseIndirectJumpsHazard : SubtargetFeature<"use-indirect-jump-hazard",
                                                     "UseIndirectJumpsHazard",
                                                     "true", "Use indirect jump"
                         " guards to prevent certain speculation based attacks">;
-
-//===----------------------------------------------------------------------===//
-// Register File, Calling Conv, Instruction Descriptions
-//===----------------------------------------------------------------------===//
-
-include "MipsRegisterInfo.td"
-include "MipsSchedule.td"
-include "MipsInstrInfo.td"
-include "MipsCallingConv.td"
-include "MipsRegisterBanks.td"
-include "MipsCombine.td"
-
-// Avoid forward declaration issues.
-include "MipsScheduleP5600.td"
-include "MipsScheduleGeneric.td"
-
-def MipsInstrInfo : InstrInfo {
-}
-
 //===----------------------------------------------------------------------===//
 // Mips processors supported.
 //===----------------------------------------------------------------------===//
@@ -269,13 +264,8 @@ def MipsAsmParserVariant : AsmParserVariant {
   string RegisterPrefix = "$";
 }
 
-def MipsAsmWriter : AsmWriter {
-  int PassSubtarget = 1;
-}
-
 def Mips : Target {
   let InstructionSet = MipsInstrInfo;
-  let AssemblyWriters = [MipsAsmWriter];
   let AssemblyParsers = [MipsAsmParser];
   let AssemblyParserVariants = [MipsAsmParserVariant];
   let AllowRegisterRenaming = 1;

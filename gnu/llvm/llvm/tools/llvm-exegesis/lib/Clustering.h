@@ -15,6 +15,7 @@
 #define LLVM_TOOLS_LLVM_EXEGESIS_CLUSTERING_H
 
 #include "BenchmarkResult.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/Support/Error.h"
 #include <limits>
 #include <vector>
@@ -31,8 +32,7 @@ public:
   static Expected<InstructionBenchmarkClustering>
   create(const std::vector<InstructionBenchmark> &Points, ModeE Mode,
          size_t DbscanMinPts, double AnalysisClusteringEpsilon,
-         const MCSubtargetInfo *SubtargetInfo = nullptr,
-         const MCInstrInfo *InstrInfo = nullptr);
+         Optional<unsigned> NumOpcodes = None);
 
   class ClusterId {
   public:
@@ -126,8 +126,7 @@ private:
   Error validateAndSetup();
 
   void clusterizeDbScan(size_t MinPts);
-  void clusterizeNaive(const MCSubtargetInfo &SubtargetInfo,
-                       const MCInstrInfo &InstrInfo);
+  void clusterizeNaive(unsigned NumOpcodes);
 
   // Stabilization is only needed if dbscan was used to clusterize.
   void stabilize(unsigned NumOpcodes);

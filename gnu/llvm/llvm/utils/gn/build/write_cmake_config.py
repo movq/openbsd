@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 r"""Emulates the bits of CMake's configure_file() function needed in LLVM.
 
 The CMake build uses configure_file() for several things.  This emulates that
@@ -22,7 +22,7 @@ empty string, which is falsy, but FOO=0 sets it to '0' which is truthy):
         #define FOO 0
 
 2.) #cmakedefine FOO [...]
-    Checks if key FOO is set to a truthy value, and depending on that prints
+    Checks if key FOO is set to a truthy in value, and depending on that prints
     one of the following two lines:
 
         #define FOO [...]
@@ -31,6 +31,8 @@ empty string, which is falsy, but FOO=0 sets it to '0' which is truthy):
 Fails if any of the KEY=VALUE arguments aren't needed for processing the
 input file, or if the input file references keys that weren't passed in.
 """
+
+from __future__ import print_function
 
 import argparse
 import os
@@ -71,11 +73,6 @@ def main():
         in_line = var_re.sub(repl, in_line)
         if in_line.startswith('#cmakedefine01 '):
             _, var = in_line.split()
-            if values[var] == '0':
-                print('error: "%s=0" used with #cmakedefine01 %s' % (var, var))
-                print("       '0' evaluates as truthy with #cmakedefine01")
-                print('       use "%s=" instead' % var)
-                return 1
             in_line = '#define %s %d\n' % (var, 1 if values[var] else 0)
             unused_values.discard(var)
         elif in_line.startswith('#cmakedefine '):

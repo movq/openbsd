@@ -55,18 +55,13 @@ namespace X86 {
   /// The constants to describe instr prefixes if there are
   enum IPREFIXES {
     IP_NO_PREFIX = 0,
-    IP_HAS_OP_SIZE =   1U << 0,
-    IP_HAS_AD_SIZE =   1U << 1,
-    IP_HAS_REPEAT_NE = 1U << 2,
-    IP_HAS_REPEAT =    1U << 3,
-    IP_HAS_LOCK =      1U << 4,
-    IP_HAS_NOTRACK =   1U << 5,
-    IP_USE_VEX =       1U << 6,
-    IP_USE_VEX2 =      1U << 7,
-    IP_USE_VEX3 =      1U << 8,
-    IP_USE_EVEX =      1U << 9,
-    IP_USE_DISP8 =     1U << 10,
-    IP_USE_DISP32 =    1U << 11,
+    IP_HAS_OP_SIZE = 1,
+    IP_HAS_AD_SIZE = 2,
+    IP_HAS_REPEAT_NE = 4,
+    IP_HAS_REPEAT = 8,
+    IP_HAS_LOCK = 16,
+    IP_HAS_NOTRACK = 32,
+    IP_USE_VEX3 = 64,
   };
 
   enum OperandType : unsigned {
@@ -96,7 +91,7 @@ namespace X86 {
     COND_G = 15,
     LAST_VALID_COND = COND_G,
 
-    // Artificial condition codes. These are used by analyzeBranch
+    // Artificial condition codes. These are used by AnalyzeBranch
     // to indicate a block terminated with two conditional branches that together
     // form a compound condition. They occur in code using FCMP_OEQ or FCMP_UNE,
     // which can't be represented on x86 with a single condition. These
@@ -115,7 +110,6 @@ namespace X86 {
     Cmp,
     // AND
     And,
-    // FIXME: Zen 3 support branch fusion for OR/XOR.
     // ADD, SUB
     AddSub,
     // INC, DEC
@@ -184,7 +178,6 @@ namespace X86 {
     case X86::AND8rr:
     case X86::AND8rr_REV:
       return FirstMacroFusionInstKind::And;
-    // FIXME: Zen 3 support branch fusion for OR/XOR.
     // CMP
     case X86::CMP16i16:
     case X86::CMP16mr:
@@ -363,39 +356,6 @@ namespace X86 {
     AlignBranchRet = 1U << 4,
     AlignBranchIndirect = 1U << 5
   };
-
-  /// Defines the encoding values for segment override prefix.
-  enum EncodingOfSegmentOverridePrefix : uint8_t {
-    CS_Encoding = 0x2E,
-    DS_Encoding = 0x3E,
-    ES_Encoding = 0x26,
-    FS_Encoding = 0x64,
-    GS_Encoding = 0x65,
-    SS_Encoding = 0x36
-  };
-
-  /// Given a segment register, return the encoding of the segment override
-  /// prefix for it.
-  inline EncodingOfSegmentOverridePrefix
-  getSegmentOverridePrefixForReg(unsigned Reg) {
-    switch (Reg) {
-    default:
-      llvm_unreachable("Unknown segment register!");
-    case X86::CS:
-      return CS_Encoding;
-    case X86::DS:
-      return DS_Encoding;
-    case X86::ES:
-      return ES_Encoding;
-    case X86::FS:
-      return FS_Encoding;
-    case X86::GS:
-      return GS_Encoding;
-    case X86::SS:
-      return SS_Encoding;
-    }
-  }
-
 } // end namespace X86;
 
 /// X86II - This namespace holds all of the target specific flags that
@@ -440,11 +400,6 @@ namespace X86II {
     /// See the X86-64 ELF ABI supplement for more details.
     ///    SYMBOL_LABEL @GOTPCREL
     MO_GOTPCREL,
-
-    /// MO_GOTPCREL_NORELAX - Same as MO_GOTPCREL except that R_X86_64_GOTPCREL
-    /// relocations are guaranteed to be emitted by the integrated assembler
-    /// instead of the relaxable R_X86_64[_REX]_GOTPCRELX relocations.
-    MO_GOTPCREL_NORELAX,
 
     /// MO_PLT - On a symbol operand this indicates that the immediate is
     /// offset to the PLT entry of symbol name from the current code location.
@@ -626,112 +581,90 @@ namespace X86II {
     /// in the lower 4 bits of the opcode.
     AddCCFrm = 9,
 
-    /// PrefixByte - This form is used for instructions that represent a prefix
-    /// byte like data16 or rep.
-    PrefixByte = 10,
-
-    /// MRMDestMem4VOp3CC - This form is used for instructions that use the Mod/RM
-    /// byte to specify a destination which in this case is memory and operand 3
-    /// with VEX.VVVV, and also encodes a condition code.
-    MRMDestMem4VOp3CC = 20,
-
     /// MRM[0-7][rm] - These forms are used to represent instructions that use
     /// a Mod/RM byte, and use the middle field to hold extended opcode
     /// information.  In the intel manual these are represented as /0, /1, ...
     ///
 
-    // Instructions operate on a register Reg/Opcode operand not the r/m field.
-    MRMr0 = 21,
-
-    /// MRMSrcMem - But force to use the SIB field.
-    MRMSrcMemFSIB  = 22,
-
-    /// MRMDestMem - But force to use the SIB field.
-    MRMDestMemFSIB = 23,
-
     /// MRMDestMem - This form is used for instructions that use the Mod/RM byte
     /// to specify a destination, which in this case is memory.
     ///
-    MRMDestMem     = 24,
+    MRMDestMem     = 32,
 
     /// MRMSrcMem - This form is used for instructions that use the Mod/RM byte
     /// to specify a source, which in this case is memory.
     ///
-    MRMSrcMem      = 25,
+    MRMSrcMem      = 33,
 
     /// MRMSrcMem4VOp3 - This form is used for instructions that encode
     /// operand 3 with VEX.VVVV and load from memory.
     ///
-    MRMSrcMem4VOp3 = 26,
+    MRMSrcMem4VOp3 = 34,
 
     /// MRMSrcMemOp4 - This form is used for instructions that use the Mod/RM
     /// byte to specify the fourth source, which in this case is memory.
     ///
-    MRMSrcMemOp4   = 27,
+    MRMSrcMemOp4   = 35,
 
     /// MRMSrcMemCC - This form is used for instructions that use the Mod/RM
     /// byte to specify the operands and also encodes a condition code.
     ///
-    MRMSrcMemCC    = 28,
+    MRMSrcMemCC    = 36,
 
     /// MRMXm - This form is used for instructions that use the Mod/RM byte
     /// to specify a memory source, but doesn't use the middle field. And has
     /// a condition code.
     ///
-    MRMXmCC = 30,
+    MRMXmCC = 38,
 
     /// MRMXm - This form is used for instructions that use the Mod/RM byte
     /// to specify a memory source, but doesn't use the middle field.
     ///
-    MRMXm = 31,
+    MRMXm = 39,
 
     // Next, instructions that operate on a memory r/m operand...
-    MRM0m = 32,  MRM1m = 33,  MRM2m = 34,  MRM3m = 35, // Format /0 /1 /2 /3
-    MRM4m = 36,  MRM5m = 37,  MRM6m = 38,  MRM7m = 39, // Format /4 /5 /6 /7
+    MRM0m = 40,  MRM1m = 41,  MRM2m = 42,  MRM3m = 43, // Format /0 /1 /2 /3
+    MRM4m = 44,  MRM5m = 45,  MRM6m = 46,  MRM7m = 47, // Format /4 /5 /6 /7
 
     /// MRMDestReg - This form is used for instructions that use the Mod/RM byte
     /// to specify a destination, which in this case is a register.
     ///
-    MRMDestReg     = 40,
+    MRMDestReg     = 48,
 
     /// MRMSrcReg - This form is used for instructions that use the Mod/RM byte
     /// to specify a source, which in this case is a register.
     ///
-    MRMSrcReg      = 41,
+    MRMSrcReg      = 49,
 
     /// MRMSrcReg4VOp3 - This form is used for instructions that encode
     /// operand 3 with VEX.VVVV and do not load from memory.
     ///
-    MRMSrcReg4VOp3 = 42,
+    MRMSrcReg4VOp3 = 50,
 
     /// MRMSrcRegOp4 - This form is used for instructions that use the Mod/RM
     /// byte to specify the fourth source, which in this case is a register.
     ///
-    MRMSrcRegOp4   = 43,
+    MRMSrcRegOp4   = 51,
 
     /// MRMSrcRegCC - This form is used for instructions that use the Mod/RM
     /// byte to specify the operands and also encodes a condition code
     ///
-    MRMSrcRegCC    = 44,
+    MRMSrcRegCC    = 52,
 
     /// MRMXCCr - This form is used for instructions that use the Mod/RM byte
     /// to specify a register source, but doesn't use the middle field. And has
     /// a condition code.
     ///
-    MRMXrCC = 46,
+    MRMXrCC = 54,
 
     /// MRMXr - This form is used for instructions that use the Mod/RM byte
     /// to specify a register source, but doesn't use the middle field.
     ///
-    MRMXr = 47,
+    MRMXr = 55,
 
     // Instructions that operate on a register r/m operand...
-    MRM0r = 48,  MRM1r = 49,  MRM2r = 50,  MRM3r = 51, // Format /0 /1 /2 /3
-    MRM4r = 52,  MRM5r = 53,  MRM6r = 54,  MRM7r = 55, // Format /4 /5 /6 /7
-
-    // Instructions that operate that have mod=11 and an opcode but ignore r/m.
-    MRM0X = 56,  MRM1X = 57,  MRM2X = 58,  MRM3X = 59, // Format /0 /1 /2 /3
-    MRM4X = 60,  MRM5X = 61,  MRM6X = 62,  MRM7X = 63, // Format /4 /5 /6 /7
+    MRM0r = 56,  MRM1r = 57,  MRM2r = 58,  MRM3r = 59, // Format /0 /1 /2 /3
+    MRM4r = 60,  MRM5r = 61,  MRM6r = 62,  MRM7r = 63, // Format /4 /5 /6 /7
 
     /// MRM_XX - A mod/rm byte of exactly 0xXX.
     MRM_C0 = 64,  MRM_C1 = 65,  MRM_C2 = 66,  MRM_C3 = 67,
@@ -800,7 +733,7 @@ namespace X86II {
     // belongs to. i.e. one-byte, two-byte, 0x0f 0x38, 0x0f 0x3a, etc.
     //
     OpMapShift = OpPrefixShift + 2,
-    OpMapMask  = 0xF << OpMapShift,
+    OpMapMask  = 0x7 << OpMapShift,
 
     // OB - OneByte - Set if this instruction has a one byte opcode.
     OB = 0 << OpMapShift,
@@ -829,17 +762,13 @@ namespace X86II {
     /// this flag to indicate that the encoder should do the wacky 3DNow! thing.
     ThreeDNow = 7 << OpMapShift,
 
-    // MAP5, MAP6 - Prefix after the 0x0F prefix.
-    T_MAP5 = 8 << OpMapShift,
-    T_MAP6 = 9 << OpMapShift,
-
     //===------------------------------------------------------------------===//
     // REX_W - REX prefixes are instruction prefixes used in 64-bit mode.
     // They are used to specify GPRs and SSE registers, 64-bit operand size,
     // etc. We only cares about REX.W and REX.R bits and only the former is
     // statically determined.
     //
-    REXShift    = OpMapShift + 4,
+    REXShift    = OpMapShift + 3,
     REX_W       = 1 << REXShift,
 
     //===------------------------------------------------------------------===//
@@ -968,22 +897,8 @@ namespace X86II {
 
     // NOTRACK prefix
     NoTrackShift = EVEX_RCShift + 1,
-    NOTRACK = 1ULL << NoTrackShift,
-
-    // Force VEX encoding
-    ExplicitVEXShift = NoTrackShift + 1,
-    ExplicitVEXPrefix = 1ULL << ExplicitVEXShift
+    NOTRACK = 1ULL << NoTrackShift
   };
-
-  /// \returns true if the instruction with given opcode is a prefix.
-  inline bool isPrefix(uint64_t TSFlags) {
-    return (TSFlags & X86II::FormMask) == PrefixByte;
-  }
-
-  /// \returns true if the instruction with given opcode is a pseudo.
-  inline bool isPseudo(uint64_t TSFlags) {
-    return (TSFlags & X86II::FormMask) == Pseudo;
-  }
 
   /// \returns the "base" X86 opcode for the specified machine
   /// instruction.
@@ -1113,13 +1028,10 @@ namespace X86II {
     case X86II::RawFrmDst:
     case X86II::RawFrmDstSrc:
     case X86II::AddCCFrm:
-    case X86II::PrefixByte:
       return -1;
     case X86II::MRMDestMem:
-    case X86II::MRMDestMemFSIB:
       return 0;
     case X86II::MRMSrcMem:
-    case X86II::MRMSrcMemFSIB:
       // Start from 1, skip any registers encoded in VEX_VVVV or I8IMM, or a
       // mask register.
       return 1 + HasVEX_4V + HasEVEX_K;
@@ -1130,7 +1042,6 @@ namespace X86II {
       // Skip registers encoded in reg, VEX_VVVV, and I8IMM.
       return 3;
     case X86II::MRMSrcMemCC:
-    case X86II::MRMDestMem4VOp3CC:
       // Start from 1, skip any registers encoded in VEX_VVVV or I8IMM, or a
       // mask register.
       return 1;
@@ -1140,17 +1051,11 @@ namespace X86II {
     case X86II::MRMSrcRegOp4:
     case X86II::MRMSrcRegCC:
     case X86II::MRMXrCC:
-    case X86II::MRMr0:
     case X86II::MRMXr:
     case X86II::MRM0r: case X86II::MRM1r:
     case X86II::MRM2r: case X86II::MRM3r:
     case X86II::MRM4r: case X86II::MRM5r:
     case X86II::MRM6r: case X86II::MRM7r:
-      return -1;
-    case X86II::MRM0X: case X86II::MRM1X:
-    case X86II::MRM2X: case X86II::MRM3X:
-    case X86II::MRM4X: case X86II::MRM5X:
-    case X86II::MRM6X: case X86II::MRM7X:
       return -1;
     case X86II::MRMXmCC:
     case X86II::MRMXm:

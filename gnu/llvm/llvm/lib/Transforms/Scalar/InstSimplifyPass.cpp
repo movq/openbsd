@@ -7,19 +7,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/InstSimplifyPass.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Type.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
-#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/Utils/Local.h"
-
 using namespace llvm;
 
 #define DEBUG_TYPE "instsimplify"
@@ -38,7 +40,7 @@ static bool runImpl(Function &F, const SimplifyQuery &SQ,
       if (!SQ.DT->isReachableFromEntry(&BB))
         continue;
 
-      SmallVector<WeakTrackingVH, 8> DeadInstsInBB;
+      SmallVector<Instruction *, 8> DeadInstsInBB;
       for (Instruction &I : BB) {
         // The first time through the loop, ToSimplify is empty and we try to
         // simplify all instructions. On later iterations, ToSimplify is not
@@ -51,7 +53,7 @@ static bool runImpl(Function &F, const SimplifyQuery &SQ,
           DeadInstsInBB.push_back(&I);
           Changed = true;
         } else if (!I.use_empty()) {
-          if (Value *V = simplifyInstruction(&I, SQ, ORE)) {
+          if (Value *V = SimplifyInstruction(&I, SQ, ORE)) {
             // Mark all uses for resimplification next time round the loop.
             for (User *U : I.users())
               Next->insert(cast<Instruction>(U));

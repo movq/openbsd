@@ -15,7 +15,6 @@
 #ifndef LLVM_UTILS_TABLEGEN_SEQUENCETOOFFSETTABLE_H
 #define LLVM_UTILS_TABLEGEN_SEQUENCETOOFFSETTABLE_H
 
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -24,19 +23,6 @@
 #include <map>
 
 namespace llvm {
-extern llvm::cl::opt<bool> EmitLongStrLiterals;
-
-static inline void printChar(raw_ostream &OS, char C) {
-  unsigned char UC(C);
-  if (isalnum(UC) || ispunct(UC)) {
-    OS << '\'';
-    if (C == '\\' || C == '\'')
-      OS << '\\';
-    OS << C << '\'';
-  } else {
-    OS << unsigned(UC);
-  }
-}
 
 /// SequenceToOffsetTable - Collect a number of terminated sequences of T.
 /// Compute the layout of a table that contains all the sequences, possibly by
@@ -122,35 +108,6 @@ public:
     return I->second + (I->first.size() - Seq.size());
   }
 
-  /// `emitStringLiteralDef` - Print out the table as the body of an array
-  /// initializer, where each element is a C string literal terminated by
-  /// `\0`. Falls back to emitting a comma-separated integer list if
-  /// `EmitLongStrLiterals` is false
-  void emitStringLiteralDef(raw_ostream &OS, const llvm::Twine &Decl) const {
-    assert(Entries && "Call layout() before emitStringLiteralDef()");
-    if (!EmitLongStrLiterals) {
-      OS << Decl << " = {\n";
-      emit(OS, printChar, "0");
-      OS << "  0\n};\n\n";
-      return;
-    }
-
-    OS << "\n#ifdef __GNUC__\n"
-       << "#pragma GCC diagnostic push\n"
-       << "#pragma GCC diagnostic ignored \"-Woverlength-strings\"\n"
-       << "#endif\n"
-       << Decl << " = {\n";
-    for (auto I : Seqs) {
-      OS << "  /* " << I.second << " */ \"";
-      OS.write_escaped(I.first);
-      OS << "\\0\"\n";
-    }
-    OS << "};\n"
-       << "#ifdef __GNUC__\n"
-       << "#pragma GCC diagnostic pop\n"
-       << "#endif\n\n";
-  }
-
   /// emit - Print out the table as the body of an array initializer.
   /// Use the Print function to print elements.
   void emit(raw_ostream &OS,
@@ -169,6 +126,19 @@ public:
     }
   }
 };
+
+// Helper function for SequenceToOffsetTable<string>.
+static inline void printChar(raw_ostream &OS, char C) {
+  unsigned char UC(C);
+  if (isalnum(UC) || ispunct(UC)) {
+    OS << '\'';
+    if (C == '\\' || C == '\'')
+      OS << '\\';
+    OS << C << '\'';
+  } else {
+    OS << unsigned(UC);
+  }
+}
 
 } // end namespace llvm
 

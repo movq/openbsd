@@ -49,11 +49,9 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cmath>
 #include <map>
 
 namespace llvm {
@@ -85,7 +83,7 @@ std::string fixUTF8(llvm::StringRef S);
 class Array;
 class ObjectKey;
 class Value;
-template <typename T> Value toJSON(const std::optional<T> &Opt);
+template <typename T> Value toJSON(const llvm::Optional<T> &Opt);
 
 /// An Object is a JSON object, which maps strings to heterogenous JSON values.
 /// It simulates DenseMap<ObjectKey, Value>. ObjectKey is a maybe-owned string.
@@ -135,14 +133,14 @@ public:
   // Look up a property, returning nullptr if it doesn't exist.
   Value *get(StringRef K);
   const Value *get(StringRef K) const;
-  // Typed accessors return std::nullopt/nullptr if
+  // Typed accessors return None/nullptr if
   //   - the property doesn't exist
   //   - or it has the wrong type
-  std::optional<std::nullptr_t> getNull(StringRef K) const;
-  std::optional<bool> getBoolean(StringRef K) const;
-  std::optional<double> getNumber(StringRef K) const;
-  std::optional<int64_t> getInteger(StringRef K) const;
-  std::optional<llvm::StringRef> getString(StringRef K) const;
+  llvm::Optional<std::nullptr_t> getNull(StringRef K) const;
+  llvm::Optional<bool> getBoolean(StringRef K) const;
+  llvm::Optional<double> getNumber(StringRef K) const;
+  llvm::Optional<int64_t> getInteger(StringRef K) const;
+  llvm::Optional<llvm::StringRef> getString(StringRef K) const;
   const json::Object *getObject(StringRef K) const;
   json::Object *getObject(StringRef K);
   const json::Array *getArray(StringRef K) const;
@@ -170,35 +168,44 @@ public:
       emplace_back(V);
   }
 
-  Value &operator[](size_t I);
-  const Value &operator[](size_t I) const;
-  Value &front();
-  const Value &front() const;
-  Value &back();
-  const Value &back() const;
-  Value *data();
-  const Value *data() const;
+  Value &operator[](size_t I) { return V[I]; }
+  const Value &operator[](size_t I) const { return V[I]; }
+  Value &front() { return V.front(); }
+  const Value &front() const { return V.front(); }
+  Value &back() { return V.back(); }
+  const Value &back() const { return V.back(); }
+  Value *data() { return V.data(); }
+  const Value *data() const { return V.data(); }
 
-  iterator begin();
-  const_iterator begin() const;
-  iterator end();
-  const_iterator end() const;
+  iterator begin() { return V.begin(); }
+  const_iterator begin() const { return V.begin(); }
+  iterator end() { return V.end(); }
+  const_iterator end() const { return V.end(); }
 
-  bool empty() const;
-  size_t size() const;
-  void reserve(size_t S);
+  bool empty() const { return V.empty(); }
+  size_t size() const { return V.size(); }
+  void reserve(size_t S) { V.reserve(S); }
 
-  void clear();
-  void push_back(const Value &E);
-  void push_back(Value &&E);
-  template <typename... Args> void emplace_back(Args &&...A);
-  void pop_back();
-  iterator insert(const_iterator P, const Value &E);
-  iterator insert(const_iterator P, Value &&E);
-  template <typename It> iterator insert(const_iterator P, It A, It Z);
-  template <typename... Args> iterator emplace(const_iterator P, Args &&...A);
+  void clear() { V.clear(); }
+  void push_back(const Value &E) { V.push_back(E); }
+  void push_back(Value &&E) { V.push_back(std::move(E)); }
+  template <typename... Args> void emplace_back(Args &&... A) {
+    V.emplace_back(std::forward<Args>(A)...);
+  }
+  void pop_back() { V.pop_back(); }
+  // FIXME: insert() takes const_iterator since C++11, old libstdc++ disagrees.
+  iterator insert(iterator P, const Value &E) { return V.insert(P, E); }
+  iterator insert(iterator P, Value &&E) {
+    return V.insert(P, std::move(E));
+  }
+  template <typename It> iterator insert(iterator P, It A, It Z) {
+    return V.insert(P, A, Z);
+  }
+  template <typename... Args> iterator emplace(const_iterator P, Args &&... A) {
+    return V.emplace(P, std::forward<Args>(A)...);
+  }
 
-  friend bool operator==(const Array &L, const Array &R);
+  friend bool operator==(const Array &L, const Array &R) { return L.V == R.V; }
 };
 inline bool operator!=(const Array &L, const Array &R) { return !(L == R); }
 
@@ -227,33 +234,26 @@ inline bool operator!=(const Array &L, const Array &R) { return !(L == R); }
 /// Each Value is one of the JSON kinds:
 ///   null    (nullptr_t)
 ///   boolean (bool)
-///   number  (double, int64 or uint64)
+///   number  (double or int64)
 ///   string  (StringRef)
 ///   array   (json::Array)
 ///   object  (json::Object)
 ///
 /// The kind can be queried directly, or implicitly via the typed accessors:
-///   if (std::optional<StringRef> S = E.getAsString()
+///   if (Optional<StringRef> S = E.getAsString()
 ///     assert(E.kind() == Value::String);
 ///
 /// Array and Object also have typed indexing accessors for easy traversal:
 ///   Expected<Value> E = parse(R"( {"options": {"font": "sans-serif"}} )");
 ///   if (Object* O = E->getAsObject())
 ///     if (Object* Opts = O->getObject("options"))
-///       if (std::optional<StringRef> Font = Opts->getString("font"))
+///       if (Optional<StringRef> Font = Opts->getString("font"))
 ///         assert(Opts->at("font").kind() == Value::String);
 ///
 /// === Converting JSON values to C++ types ===
 ///
 /// The convention is to have a deserializer function findable via ADL:
-///     fromJSON(const json::Value&, T&, Path) -> bool
-///
-/// The return value indicates overall success, and Path is used for precise
-/// error reporting. (The Path::Root passed in at the top level fromJSON call
-/// captures any nested error and can render it in context).
-/// If conversion fails, fromJSON calls Path::report() and immediately returns.
-/// This ensures that the first fatal error survives.
-///
+///     fromJSON(const json::Value&, T&)->bool
 /// Deserializers are provided for:
 ///   - bool
 ///   - int and int64_t
@@ -261,13 +261,13 @@ inline bool operator!=(const Array &L, const Array &R) { return !(L == R); }
 ///   - std::string
 ///   - vector<T>, where T is deserializable
 ///   - map<string, T>, where T is deserializable
-///   - std::optional<T>, where T is deserializable
+///   - Optional<T>, where T is deserializable
 /// ObjectMapper can help writing fromJSON() functions for object types.
 ///
 /// For conversion in the other direction, the serializer function is:
 ///    toJSON(const T&) -> json::Value
 /// If this exists, then it also allows constructing Value from T, and can
-/// be used to serialize vector<T>, map<string, T>, and std::optional<T>.
+/// be used to serialize vector<T>, map<string, T>, and Optional<T>.
 ///
 /// === Serialization ===
 ///
@@ -329,39 +329,32 @@ public:
   Value(std::nullptr_t) : Type(T_Null) {}
   // Boolean (disallow implicit conversions).
   // (The last template parameter is a dummy to keep templates distinct.)
-  template <typename T,
-            typename = std::enable_if_t<std::is_same<T, bool>::value>,
-            bool = false>
+  template <
+      typename T,
+      typename = typename std::enable_if<std::is_same<T, bool>::value>::type,
+      bool = false>
   Value(T B) : Type(T_Boolean) {
     create<bool>(B);
   }
-
-  // Unsigned 64-bit long integers.
-  template <typename T,
-            typename = std::enable_if_t<std::is_same<T, uint64_t>::value>,
-            bool = false, bool = false>
-  Value(T V) : Type(T_UINT64) {
-    create<uint64_t>(uint64_t{V});
-  }
-
-  // Integers (except boolean and uint64_t).
-  // Must be non-narrowing convertible to int64_t.
-  template <typename T, typename = std::enable_if_t<std::is_integral<T>::value>,
-            typename = std::enable_if_t<!std::is_same<T, bool>::value>,
-            typename = std::enable_if_t<!std::is_same<T, uint64_t>::value>>
+  // Integers (except boolean). Must be non-narrowing convertible to int64_t.
+  template <
+      typename T,
+      typename = typename std::enable_if<std::is_integral<T>::value>::type,
+      typename = typename std::enable_if<!std::is_same<T, bool>::value>::type>
   Value(T I) : Type(T_Integer) {
     create<int64_t>(int64_t{I});
   }
   // Floating point. Must be non-narrowing convertible to double.
   template <typename T,
-            typename = std::enable_if_t<std::is_floating_point<T>::value>,
+            typename =
+                typename std::enable_if<std::is_floating_point<T>::value>::type,
             double * = nullptr>
   Value(T D) : Type(T_Double) {
     create<double>(double{D});
   }
   // Serializable types: with a toJSON(const T&)->Value function, found by ADL.
   template <typename T,
-            typename = std::enable_if_t<std::is_same<
+            typename = typename std::enable_if<std::is_same<
                 Value, decltype(toJSON(*(const T *)nullptr))>::value>,
             Value * = nullptr>
   Value(const T &V) : Value(toJSON(V)) {}
@@ -386,7 +379,6 @@ public:
       return Boolean;
     case T_Double:
     case T_Integer:
-    case T_UINT64:
       return Number;
     case T_String:
     case T_StringRef:
@@ -399,29 +391,26 @@ public:
     llvm_unreachable("Unknown kind");
   }
 
-  // Typed accessors return std::nullopt/nullptr if the Value is not of this
-  // type.
-  std::optional<std::nullptr_t> getAsNull() const {
+  // Typed accessors return None/nullptr if the Value is not of this type.
+  llvm::Optional<std::nullptr_t> getAsNull() const {
     if (LLVM_LIKELY(Type == T_Null))
       return nullptr;
-    return std::nullopt;
+    return llvm::None;
   }
-  std::optional<bool> getAsBoolean() const {
+  llvm::Optional<bool> getAsBoolean() const {
     if (LLVM_LIKELY(Type == T_Boolean))
       return as<bool>();
-    return std::nullopt;
+    return llvm::None;
   }
-  std::optional<double> getAsNumber() const {
+  llvm::Optional<double> getAsNumber() const {
     if (LLVM_LIKELY(Type == T_Double))
       return as<double>();
     if (LLVM_LIKELY(Type == T_Integer))
       return as<int64_t>();
-    if (LLVM_LIKELY(Type == T_UINT64))
-      return as<uint64_t>();
-    return std::nullopt;
+    return llvm::None;
   }
   // Succeeds if the Value is a Number, and exactly representable as int64_t.
-  std::optional<int64_t> getAsInteger() const {
+  llvm::Optional<int64_t> getAsInteger() const {
     if (LLVM_LIKELY(Type == T_Integer))
       return as<int64_t>();
     if (LLVM_LIKELY(Type == T_Double)) {
@@ -431,24 +420,14 @@ public:
                       D <= double(std::numeric_limits<int64_t>::max())))
         return D;
     }
-    return std::nullopt;
+    return llvm::None;
   }
-  std::optional<uint64_t> getAsUINT64() const {
-    if (Type == T_UINT64)
-      return as<uint64_t>();
-    else if (Type == T_Integer) {
-      int64_t N = as<int64_t>();
-      if (N >= 0)
-        return as<uint64_t>();
-    }
-    return std::nullopt;
-  }
-  std::optional<llvm::StringRef> getAsString() const {
+  llvm::Optional<llvm::StringRef> getAsString() const {
     if (Type == T_String)
       return llvm::StringRef(as<std::string>());
     if (LLVM_LIKELY(Type == T_StringRef))
       return as<llvm::StringRef>();
-    return std::nullopt;
+    return llvm::None;
   }
   const json::Object *getAsObject() const {
     return LLVM_LIKELY(Type == T_Object) ? &as<json::Object>() : nullptr;
@@ -474,23 +453,22 @@ private:
   friend class Object;
 
   template <typename T, typename... U> void create(U &&... V) {
-    new (reinterpret_cast<T *>(&Union)) T(std::forward<U>(V)...);
+    new (reinterpret_cast<T *>(Union.buffer)) T(std::forward<U>(V)...);
   }
   template <typename T> T &as() const {
     // Using this two-step static_cast via void * instead of reinterpret_cast
     // silences a -Wstrict-aliasing false positive from GCC6 and earlier.
-    void *Storage = static_cast<void *>(&Union);
+    void *Storage = static_cast<void *>(Union.buffer);
     return *static_cast<T *>(Storage);
   }
 
   friend class OStream;
 
-  enum ValueType : char16_t {
+  enum ValueType : char {
     T_Null,
     T_Boolean,
     T_Double,
     T_Integer,
-    T_UINT64,
     T_StringRef,
     T_String,
     T_Object,
@@ -498,57 +476,14 @@ private:
   };
   // All members mutable, see moveFrom().
   mutable ValueType Type;
-  mutable llvm::AlignedCharArrayUnion<bool, double, int64_t, uint64_t,
-                                      llvm::StringRef, std::string, json::Array,
-                                      json::Object>
+  mutable llvm::AlignedCharArrayUnion<bool, double, int64_t, llvm::StringRef,
+                                      std::string, json::Array, json::Object>
       Union;
   friend bool operator==(const Value &, const Value &);
 };
 
 bool operator==(const Value &, const Value &);
 inline bool operator!=(const Value &L, const Value &R) { return !(L == R); }
-
-// Array Methods
-inline Value &Array::operator[](size_t I) { return V[I]; }
-inline const Value &Array::operator[](size_t I) const { return V[I]; }
-inline Value &Array::front() { return V.front(); }
-inline const Value &Array::front() const { return V.front(); }
-inline Value &Array::back() { return V.back(); }
-inline const Value &Array::back() const { return V.back(); }
-inline Value *Array::data() { return V.data(); }
-inline const Value *Array::data() const { return V.data(); }
-
-inline typename Array::iterator Array::begin() { return V.begin(); }
-inline typename Array::const_iterator Array::begin() const { return V.begin(); }
-inline typename Array::iterator Array::end() { return V.end(); }
-inline typename Array::const_iterator Array::end() const { return V.end(); }
-
-inline bool Array::empty() const { return V.empty(); }
-inline size_t Array::size() const { return V.size(); }
-inline void Array::reserve(size_t S) { V.reserve(S); }
-
-inline void Array::clear() { V.clear(); }
-inline void Array::push_back(const Value &E) { V.push_back(E); }
-inline void Array::push_back(Value &&E) { V.push_back(std::move(E)); }
-template <typename... Args> inline void Array::emplace_back(Args &&...A) {
-  V.emplace_back(std::forward<Args>(A)...);
-}
-inline void Array::pop_back() { V.pop_back(); }
-inline typename Array::iterator Array::insert(const_iterator P, const Value &E) {
-  return V.insert(P, E);
-}
-inline typename Array::iterator Array::insert(const_iterator P, Value &&E) {
-  return V.insert(P, std::move(E));
-}
-template <typename It>
-inline typename Array::iterator Array::insert(const_iterator P, It A, It Z) {
-  return V.insert(P, A, Z);
-}
-template <typename... Args>
-inline typename Array::iterator Array::emplace(const_iterator P, Args &&...A) {
-  return V.emplace(P, std::forward<Args>(A)...);
-}
-inline bool operator==(const Array &L, const Array &R) { return L.V == R.V; }
 
 /// ObjectKey is a used to capture keys in Object. Like Value but:
 ///   - only strings are allowed
@@ -626,182 +561,79 @@ inline bool Object::erase(StringRef K) {
   return M.erase(ObjectKey(K));
 }
 
-/// A "cursor" marking a position within a Value.
-/// The Value is a tree, and this is the path from the root to the current node.
-/// This is used to associate errors with particular subobjects.
-class Path {
-public:
-  class Root;
-
-  /// Records that the value at the current path is invalid.
-  /// Message is e.g. "expected number" and becomes part of the final error.
-  /// This overwrites any previously written error message in the root.
-  void report(llvm::StringLiteral Message);
-
-  /// The root may be treated as a Path.
-  Path(Root &R) : Parent(nullptr), Seg(&R) {}
-  /// Derives a path for an array element: this[Index]
-  Path index(unsigned Index) const { return Path(this, Segment(Index)); }
-  /// Derives a path for an object field: this.Field
-  Path field(StringRef Field) const { return Path(this, Segment(Field)); }
-
-private:
-  /// One element in a JSON path: an object field (.foo) or array index [27].
-  /// Exception: the root Path encodes a pointer to the Path::Root.
-  class Segment {
-    uintptr_t Pointer;
-    unsigned Offset;
-
-  public:
-    Segment() = default;
-    Segment(Root *R) : Pointer(reinterpret_cast<uintptr_t>(R)) {}
-    Segment(llvm::StringRef Field)
-        : Pointer(reinterpret_cast<uintptr_t>(Field.data())),
-          Offset(static_cast<unsigned>(Field.size())) {}
-    Segment(unsigned Index) : Pointer(0), Offset(Index) {}
-
-    bool isField() const { return Pointer != 0; }
-    StringRef field() const {
-      return StringRef(reinterpret_cast<const char *>(Pointer), Offset);
-    }
-    unsigned index() const { return Offset; }
-    Root *root() const { return reinterpret_cast<Root *>(Pointer); }
-  };
-
-  const Path *Parent;
-  Segment Seg;
-
-  Path(const Path *Parent, Segment S) : Parent(Parent), Seg(S) {}
-};
-
-/// The root is the trivial Path to the root value.
-/// It also stores the latest reported error and the path where it occurred.
-class Path::Root {
-  llvm::StringRef Name;
-  llvm::StringLiteral ErrorMessage;
-  std::vector<Path::Segment> ErrorPath; // Only valid in error state. Reversed.
-
-  friend void Path::report(llvm::StringLiteral Message);
-
-public:
-  Root(llvm::StringRef Name = "") : Name(Name), ErrorMessage("") {}
-  // No copy/move allowed as there are incoming pointers.
-  Root(Root &&) = delete;
-  Root &operator=(Root &&) = delete;
-  Root(const Root &) = delete;
-  Root &operator=(const Root &) = delete;
-
-  /// Returns the last error reported, or else a generic error.
-  Error getError() const;
-  /// Print the root value with the error shown inline as a comment.
-  /// Unrelated parts of the value are elided for brevity, e.g.
-  ///   {
-  ///      "id": 42,
-  ///      "name": /* expected string */ null,
-  ///      "properties": { ... }
-  ///   }
-  void printErrorContext(const Value &, llvm::raw_ostream &) const;
-};
-
 // Standard deserializers are provided for primitive types.
 // See comments on Value.
-inline bool fromJSON(const Value &E, std::string &Out, Path P) {
+inline bool fromJSON(const Value &E, std::string &Out) {
   if (auto S = E.getAsString()) {
-    Out = std::string(*S);
+    Out = *S;
     return true;
   }
-  P.report("expected string");
   return false;
 }
-inline bool fromJSON(const Value &E, int &Out, Path P) {
+inline bool fromJSON(const Value &E, int &Out) {
   if (auto S = E.getAsInteger()) {
     Out = *S;
     return true;
   }
-  P.report("expected integer");
   return false;
 }
-inline bool fromJSON(const Value &E, int64_t &Out, Path P) {
+inline bool fromJSON(const Value &E, int64_t &Out) {
   if (auto S = E.getAsInteger()) {
     Out = *S;
     return true;
   }
-  P.report("expected integer");
   return false;
 }
-inline bool fromJSON(const Value &E, double &Out, Path P) {
+inline bool fromJSON(const Value &E, double &Out) {
   if (auto S = E.getAsNumber()) {
     Out = *S;
     return true;
   }
-  P.report("expected number");
   return false;
 }
-inline bool fromJSON(const Value &E, bool &Out, Path P) {
+inline bool fromJSON(const Value &E, bool &Out) {
   if (auto S = E.getAsBoolean()) {
     Out = *S;
     return true;
   }
-  P.report("expected boolean");
   return false;
 }
-inline bool fromJSON(const Value &E, uint64_t &Out, Path P) {
-  if (auto S = E.getAsUINT64()) {
-    Out = *S;
-    return true;
-  }
-  P.report("expected uint64_t");
-  return false;
-}
-inline bool fromJSON(const Value &E, std::nullptr_t &Out, Path P) {
-  if (auto S = E.getAsNull()) {
-    Out = *S;
-    return true;
-  }
-  P.report("expected null");
-  return false;
-}
-template <typename T>
-bool fromJSON(const Value &E, std::optional<T> &Out, Path P) {
+template <typename T> bool fromJSON(const Value &E, llvm::Optional<T> &Out) {
   if (E.getAsNull()) {
-    Out = std::nullopt;
+    Out = llvm::None;
     return true;
   }
   T Result;
-  if (!fromJSON(E, Result, P))
+  if (!fromJSON(E, Result))
     return false;
   Out = std::move(Result);
   return true;
 }
-template <typename T>
-bool fromJSON(const Value &E, std::vector<T> &Out, Path P) {
+template <typename T> bool fromJSON(const Value &E, std::vector<T> &Out) {
   if (auto *A = E.getAsArray()) {
     Out.clear();
     Out.resize(A->size());
     for (size_t I = 0; I < A->size(); ++I)
-      if (!fromJSON((*A)[I], Out[I], P.index(I)))
+      if (!fromJSON((*A)[I], Out[I]))
         return false;
     return true;
   }
-  P.report("expected array");
   return false;
 }
 template <typename T>
-bool fromJSON(const Value &E, std::map<std::string, T> &Out, Path P) {
+bool fromJSON(const Value &E, std::map<std::string, T> &Out) {
   if (auto *O = E.getAsObject()) {
     Out.clear();
     for (const auto &KV : *O)
-      if (!fromJSON(KV.second, Out[std::string(llvm::StringRef(KV.first))],
-                    P.field(KV.first)))
+      if (!fromJSON(KV.second, Out[llvm::StringRef(KV.first)]))
         return false;
     return true;
   }
-  P.report("expected object");
   return false;
 }
 
-// Allow serialization of std::optional<T> for supported T.
-template <typename T> Value toJSON(const std::optional<T> &Opt) {
+// Allow serialization of Optional<T> for supported T.
+template <typename T> Value toJSON(const llvm::Optional<T> &Opt) {
   return Opt ? Value(*Opt) : Value(nullptr);
 }
 
@@ -809,59 +641,42 @@ template <typename T> Value toJSON(const std::optional<T> &Opt) {
 ///
 /// Example:
 /// \code
-///   bool fromJSON(const Value &E, MyStruct &R, Path P) {
-///     ObjectMapper O(E, P);
-///     // When returning false, error details were already reported.
-///     return O && O.map("mandatory_field", R.MandatoryField) &&
-///         O.mapOptional("optional_field", R.OptionalField);
+///   bool fromJSON(const Value &E, MyStruct &R) {
+///     ObjectMapper O(E);
+///     if (!O || !O.map("mandatory_field", R.MandatoryField))
+///       return false;
+///     O.map("optional_field", R.OptionalField);
+///     return true;
 ///   }
 /// \endcode
 class ObjectMapper {
 public:
-  /// If O is not an object, this mapper is invalid and an error is reported.
-  ObjectMapper(const Value &E, Path P) : O(E.getAsObject()), P(P) {
-    if (!O)
-      P.report("expected object");
-  }
+  ObjectMapper(const Value &E) : O(E.getAsObject()) {}
 
   /// True if the expression is an object.
   /// Must be checked before calling map().
-  operator bool() const { return O; }
+  operator bool() { return O; }
 
-  /// Maps a property to a field.
-  /// If the property is missing or invalid, reports an error.
-  template <typename T> bool map(StringLiteral Prop, T &Out) {
+  /// Maps a property to a field, if it exists.
+  template <typename T> bool map(StringRef Prop, T &Out) {
     assert(*this && "Must check this is an object before calling map()");
     if (const Value *E = O->get(Prop))
-      return fromJSON(*E, Out, P.field(Prop));
-    P.field(Prop).report("missing value");
+      return fromJSON(*E, Out);
     return false;
   }
 
   /// Maps a property to a field, if it exists.
-  /// If the property exists and is invalid, reports an error.
   /// (Optional requires special handling, because missing keys are OK).
-  template <typename T> bool map(StringLiteral Prop, std::optional<T> &Out) {
+  template <typename T> bool map(StringRef Prop, llvm::Optional<T> &Out) {
     assert(*this && "Must check this is an object before calling map()");
     if (const Value *E = O->get(Prop))
-      return fromJSON(*E, Out, P.field(Prop));
-    Out = std::nullopt;
-    return true;
-  }
-
-  /// Maps a property to a field, if it exists.
-  /// If the property exists and is invalid, reports an error.
-  /// If the property does not exist, Out is unchanged.
-  template <typename T> bool mapOptional(StringLiteral Prop, T &Out) {
-    assert(*this && "Must check this is an object before calling map()");
-    if (const Value *E = O->get(Prop))
-      return fromJSON(*E, Out, P.field(Prop));
+      return fromJSON(*E, Out);
+    Out = llvm::None;
     return true;
   }
 
 private:
   const Object *O;
-  Path P;
 };
 
 /// Parses the provided JSON source, or returns a ParseError.
@@ -885,24 +700,9 @@ public:
   }
 };
 
-/// Version of parse() that converts the parsed value to the type T.
-/// RootName describes the root object and is used in error messages.
-template <typename T>
-Expected<T> parse(const llvm::StringRef &JSON, const char *RootName = "") {
-  auto V = parse(JSON);
-  if (!V)
-    return V.takeError();
-  Path::Root R(RootName);
-  T Result;
-  if (fromJSON(*V, Result, R))
-    return std::move(Result);
-  return R.getError();
-}
-
 /// json::OStream allows writing well-formed JSON without materializing
 /// all structures as json::Value ahead of time.
 /// It's faster, lower-level, and less safe than OS << json::Value.
-/// It also allows emitting more constructs, such as comments.
 ///
 /// Only one "top-level" object can be written to a stream.
 /// Simplest usage involves passing lambdas (Blocks) to fill in containers:
@@ -988,21 +788,6 @@ class OStream {
     Contents();
     objectEnd();
   }
-  /// Emit an externally-serialized value.
-  /// The caller must write exactly one valid JSON value to the provided stream.
-  /// No validation or formatting of this value occurs.
-  void rawValue(llvm::function_ref<void(raw_ostream &)> Contents) {
-    rawValueBegin();
-    Contents(OS);
-    rawValueEnd();
-  }
-  void rawValue(llvm::StringRef Contents) {
-    rawValue([&](raw_ostream &OS) { OS << Contents; });
-  }
-  /// Emit a JavaScript comment associated with the next printed value.
-  /// The string must be valid until the next attribute or value is emitted.
-  /// Comments are not part of standard JSON, and many parsers reject them!
-  void comment(llvm::StringRef);
 
   // High level functions to output object attributes.
   // Valid only within an object (any number of times).
@@ -1029,10 +814,8 @@ class OStream {
   void objectEnd();
   void attributeBegin(llvm::StringRef Key);
   void attributeEnd();
-  raw_ostream &rawValueBegin();
-  void rawValueEnd();
 
-private:
+ private:
   void attributeImpl(llvm::StringRef Key, Block Contents) {
     attributeBegin(Key);
     Contents();
@@ -1040,21 +823,18 @@ private:
   }
 
   void valueBegin();
-  void flushComment();
   void newline();
 
   enum Context {
     Singleton, // Top level, or object attribute.
     Array,
     Object,
-    RawValue, // External code writing a value to OS directly.
   };
   struct State {
     Context Ctx = Singleton;
     bool HasValue = false;
   };
   llvm::SmallVector<State, 16> Stack; // Never empty.
-  llvm::StringRef PendingComment;
   llvm::raw_ostream &OS;
   unsigned IndentSize;
   unsigned Indent = 0;

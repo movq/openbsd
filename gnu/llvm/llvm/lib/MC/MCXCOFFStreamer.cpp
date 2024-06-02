@@ -10,17 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/MC/MCXCOFFStreamer.h"
 #include "llvm/BinaryFormat/XCOFF.h"
 #include "llvm/MC/MCAsmBackend.h"
-#include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCCodeEmitter.h"
-#include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCObjectWriter.h"
-#include "llvm/MC/MCSectionXCOFF.h"
 #include "llvm/MC/MCSymbolXCOFF.h"
-#include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/Casting.h"
+#include "llvm/MC/MCXCOFFStreamer.h"
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 
@@ -31,37 +27,15 @@ MCXCOFFStreamer::MCXCOFFStreamer(MCContext &Context,
     : MCObjectStreamer(Context, std::move(MAB), std::move(OW),
                        std::move(Emitter)) {}
 
-bool MCXCOFFStreamer::emitSymbolAttribute(MCSymbol *Sym,
+bool MCXCOFFStreamer::EmitSymbolAttribute(MCSymbol *Sym,
                                           MCSymbolAttr Attribute) {
   auto *Symbol = cast<MCSymbolXCOFF>(Sym);
   getAssembler().registerSymbol(*Symbol);
 
   switch (Attribute) {
-  // XCOFF doesn't support the cold feature.
-  case MCSA_Cold:
-    return false;
-
   case MCSA_Global:
-  case MCSA_Extern:
     Symbol->setStorageClass(XCOFF::C_EXT);
     Symbol->setExternal(true);
-    break;
-  case MCSA_LGlobal:
-    Symbol->setStorageClass(XCOFF::C_HIDEXT);
-    Symbol->setExternal(true);
-    break;
-  case llvm::MCSA_Weak:
-    Symbol->setStorageClass(XCOFF::C_WEAKEXT);
-    Symbol->setExternal(true);
-    break;
-  case llvm::MCSA_Hidden:
-    Symbol->setVisibilityType(XCOFF::SYM_V_HIDDEN);
-    break;
-  case llvm::MCSA_Protected:
-    Symbol->setVisibilityType(XCOFF::SYM_V_PROTECTED);
-    break;
-  case llvm::MCSA_Exported:
-    Symbol->setVisibilityType(XCOFF::SYM_V_EXPORTED);
     break;
   default:
     report_fatal_error("Not implemented yet.");
@@ -69,51 +43,25 @@ bool MCXCOFFStreamer::emitSymbolAttribute(MCSymbol *Sym,
   return true;
 }
 
-void MCXCOFFStreamer::emitXCOFFSymbolLinkageWithVisibility(
-    MCSymbol *Symbol, MCSymbolAttr Linkage, MCSymbolAttr Visibility) {
-
-  emitSymbolAttribute(Symbol, Linkage);
-
-  // When the caller passes `MCSA_Invalid` for the visibility, do not emit one.
-  if (Visibility == MCSA_Invalid)
-    return;
-
-  emitSymbolAttribute(Symbol, Visibility);
-}
-
-void MCXCOFFStreamer::emitXCOFFExceptDirective(const MCSymbol *Symbol,
-                                               const MCSymbol *Trap,
-                                               unsigned Lang, unsigned Reason,
-                                               unsigned FunctionSize,
-                                               bool hasDebug) {
-  getAssembler().getWriter().addExceptionEntry(Symbol, Trap, Lang, Reason,
-                                               FunctionSize, hasDebug);
-}
-
-void MCXCOFFStreamer::emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                       Align ByteAlignment) {
+void MCXCOFFStreamer::EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                                       unsigned ByteAlignment) {
   getAssembler().registerSymbol(*Symbol);
   Symbol->setExternal(cast<MCSymbolXCOFF>(Symbol)->getStorageClass() !=
                       XCOFF::C_HIDEXT);
   Symbol->setCommon(Size, ByteAlignment);
 
-  // Default csect align is 4, but common symbols have explicit alignment values
-  // and we should honor it.
-  cast<MCSymbolXCOFF>(Symbol)->getRepresentedCsect()->setAlignment(
-      ByteAlignment);
-
   // Emit the alignment and storage for the variable to the section.
-  emitValueToAlignment(ByteAlignment);
-  emitZeros(Size);
+  EmitValueToAlignment(ByteAlignment);
+  EmitZeros(Size);
 }
 
-void MCXCOFFStreamer::emitZerofill(MCSection *Section, MCSymbol *Symbol,
-                                   uint64_t Size, Align ByteAlignment,
+void MCXCOFFStreamer::EmitZerofill(MCSection *Section, MCSymbol *Symbol,
+                                   uint64_t Size, unsigned ByteAlignment,
                                    SMLoc Loc) {
   report_fatal_error("Zero fill not implemented for XCOFF.");
 }
 
-void MCXCOFFStreamer::emitInstToData(const MCInst &Inst,
+void MCXCOFFStreamer::EmitInstToData(const MCInst &Inst,
                                      const MCSubtargetInfo &STI) {
   MCAssembler &Assembler = getAssembler();
   SmallVector<MCFixup, 4> Fixups;
@@ -121,15 +69,9 @@ void MCXCOFFStreamer::emitInstToData(const MCInst &Inst,
   raw_svector_ostream VecOS(Code);
   Assembler.getEmitter().encodeInstruction(Inst, VecOS, Fixups, STI);
 
-  // Add the fixups and data.
-  MCDataFragment *DF = getOrCreateDataFragment(&STI);
-  const size_t ContentsSize = DF->getContents().size();
-  auto &DataFragmentFixups = DF->getFixups();
-  for (auto &Fixup : Fixups) {
-    Fixup.setOffset(Fixup.getOffset() + ContentsSize);
-    DataFragmentFixups.push_back(Fixup);
-  }
+  // TODO: Handle Fixups later
 
+  MCDataFragment *DF = getOrCreateDataFragment(&STI);
   DF->setHasInstructions(STI);
   DF->getContents().append(Code.begin(), Code.end());
 }
@@ -146,9 +88,9 @@ MCStreamer *llvm::createXCOFFStreamer(MCContext &Context,
   return S;
 }
 
-void MCXCOFFStreamer::emitXCOFFLocalCommonSymbol(MCSymbol *LabelSym,
+void MCXCOFFStreamer::EmitXCOFFLocalCommonSymbol(MCSymbol *LabelSym,
                                                  uint64_t Size,
                                                  MCSymbol *CsectSym,
-                                                 Align Alignment) {
-  emitCommonSymbol(CsectSym, Size, Alignment);
+                                                 unsigned ByteAlignment) {
+  EmitCommonSymbol(CsectSym, Size, ByteAlignment);
 }

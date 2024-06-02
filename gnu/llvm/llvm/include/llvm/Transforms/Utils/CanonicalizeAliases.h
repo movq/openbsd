@@ -10,14 +10,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TRANSFORMS_UTILS_CANONICALIZEALIASES_H
-#define LLVM_TRANSFORMS_UTILS_CANONICALIZEALIASES_H
+#ifndef LLVM_TRANSFORMS_UTILS_CANONICALIZE_ALIASES_H
+#define LLVM_TRANSFORMS_UTILS_CANONICALIZE_ALIASES_H
 
+#include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 
 namespace llvm {
-
-class Module;
 
 /// Simple pass that canonicalizes aliases.
 class CanonicalizeAliasesPass : public PassInfoMixin<CanonicalizeAliasesPass> {
@@ -29,4 +28,4 @@ public:
 
 } // end namespace llvm
 
-#endif // LLVM_TRANSFORMS_UTILS_CANONICALIZEALIASES_H
+#endif // LLVM_TRANSFORMS_UTILS_CANONICALIZE_ALIASESH

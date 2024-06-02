@@ -72,22 +72,16 @@ static void generateEndPgm(MachineBasicBlock &MBB,
   bool IsPS = F.getCallingConv() == CallingConv::AMDGPU_PS;
 
   // Check if hardware has been configured to expect color or depth exports.
-  bool HasColorExports = AMDGPU::getHasColorExport(F);
-  bool HasDepthExports = AMDGPU::getHasDepthExport(F);
-  bool HasExports = HasColorExports || HasDepthExports;
+  bool HasExports =
+      AMDGPU::getHasColorExport(F) || AMDGPU::getHasDepthExport(F);
 
   // Prior to GFX10, hardware always expects at least one export for PS.
   bool MustExport = !AMDGPU::isGFX10Plus(TII->getSubtarget());
 
   if (IsPS && (HasExports || MustExport)) {
     // Generate "null export" if hardware is expecting PS to export.
-    const GCNSubtarget &ST = MBB.getParent()->getSubtarget<GCNSubtarget>();
-    int Target =
-        ST.hasNullExportTarget()
-            ? AMDGPU::Exp::ET_NULL
-            : (HasColorExports ? AMDGPU::Exp::ET_MRT0 : AMDGPU::Exp::ET_MRTZ);
     BuildMI(MBB, I, DL, TII->get(AMDGPU::EXP_DONE))
-        .addImm(Target)
+        .addImm(AMDGPU::Exp::ET_NULL)
         .addReg(AMDGPU::VGPR0, RegState::Undef)
         .addReg(AMDGPU::VGPR0, RegState::Undef)
         .addReg(AMDGPU::VGPR0, RegState::Undef)
@@ -146,7 +140,11 @@ bool SILateBranchLowering::runOnMachineFunction(MachineFunction &MF) {
   bool MadeChange = false;
 
   for (MachineBasicBlock &MBB : MF) {
-    for (MachineInstr &MI : llvm::make_early_inc_range(MBB)) {
+    MachineBasicBlock::iterator I, Next;
+    for (I = MBB.begin(); I != MBB.end(); I = Next) {
+      Next = std::next(I);
+      MachineInstr &MI = *I;
+
       switch (MI.getOpcode()) {
       case AMDGPU::S_BRANCH:
         // Optimize out branches to the next block.
@@ -206,7 +204,7 @@ bool SILateBranchLowering::runOnMachineFunction(MachineFunction &MF) {
       MF.insert(MF.end(), EmptyMBBAtEnd);
     }
 
-    for (auto *MI : EpilogInstrs) {
+    for (auto MI : EpilogInstrs) {
       auto MBB = MI->getParent();
       if (MBB == &MF.back() && MI == &MBB->back())
         continue;

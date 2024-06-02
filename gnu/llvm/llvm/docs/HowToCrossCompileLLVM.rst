@@ -9,7 +9,7 @@ This document contains information about building LLVM and
 Clang on host machine, targeting another platform.
 
 For more information on how to use Clang as a cross-compiler,
-please check https://clang.llvm.org/docs/CrossCompilation.html.
+please check http://clang.llvm.org/docs/CrossCompilation.html.
 
 TODO: Add MIPS and other platforms to this document.
 
@@ -40,14 +40,13 @@ see :doc:`CMake`.
 
 The CMake options you need to add are:
 
- * ``-DCMAKE_SYSTEM_NAME=<target-system>``
+ * ``-DCMAKE_CROSSCOMPILING=True``
  * ``-DCMAKE_INSTALL_PREFIX=<install-dir>``
- * ``-DLLVM_NATIVE_TOOL_DIR=<path-to-host-bin>``
+ * ``-DLLVM_TABLEGEN=<path-to-host-bin>/llvm-tblgen``
+ * ``-DCLANG_TABLEGEN=<path-to-host-bin>/clang-tblgen``
  * ``-DLLVM_DEFAULT_TARGET_TRIPLE=arm-linux-gnueabihf``
  * ``-DLLVM_TARGET_ARCH=ARM``
  * ``-DLLVM_TARGETS_TO_BUILD=ARM``
-
-Note: ``CMAKE_CROSSCOMPILING`` is always set automatically when ``CMAKE_SYSTEM_NAME`` is set. Don't put ``-DCMAKE_CROSSCOMPILING=TRUE`` in your options.
 
 If you're compiling with GCC, you can use architecture options for your target,
 and the compiler driver will detect everything that it needs:
@@ -59,18 +58,15 @@ specific Linux distribution, version or GCC layout, so you'll need to fudge.
 
 In addition to the ones above, you'll also need:
 
- * ``--target=arm-linux-gnueabihf`` or whatever is the triple of your cross GCC.
+ * ``'-target arm-linux-gnueabihf'`` or whatever is the triple of your cross GCC.
  * ``'--sysroot=/usr/arm-linux-gnueabihf'``, ``'--sysroot=/opt/gcc/arm-linux-gnueabihf'``
    or whatever is the location of your GCC's sysroot (where /lib, /bin etc are).
  * Appropriate use of ``-I`` and ``-L``, depending on how the cross GCC is installed,
    and where are the libraries and headers.
 
-The ``LLVM_NATIVE_TOOL_DIR`` option allows you to reuse prebuilt binaries
-(``llvm-tblgen``, ``clang-tblgen`` etc) for the build host, if such are
-available. If that's not available, the LLVM cross build will automatically
-launch a nested build to build the tools that are required.
-
-The CXX flags define the target, cpu (which in this case
+The TableGen options are required to compile it with the host compiler,
+so you'll need to compile LLVM (or at least ``llvm-tblgen``) to your host
+platform before you start. The CXX flags define the target, cpu (which in this case
 defaults to ``fpu=VFP3`` with NEON), and forcing the hard-float ABI. If you're
 using Clang as a cross-compiler, you will *also* have to set ``--sysroot``
 to make sure it picks the correct linker.
@@ -147,13 +143,13 @@ Finally, if you're using your platform compiler, run:
 
    .. code-block:: bash
 
-     $ cmake -G Ninja <source-dir> -DCMAKE_BUILD_TYPE=<type> <options above>
+     $ cmake -G Ninja <source-dir> <options above>
 
 If you're using Clang as the cross-compiler, run:
 
    .. code-block:: bash
 
-     $ CC='clang' CXX='clang++' cmake -G Ninja <source-dir> -DCMAKE_BUILD_TYPE=<type> <options above>
+     $ CC='clang' CXX='clang++' cmake -G Ninja <source-dir> <options above>
 
 If you have ``clang``/``clang++`` on the path, it should just work, and special
 Ninja files will be created in the build directory. I strongly suggest
@@ -193,7 +189,7 @@ identification), like:
 
 If you copy that tarball to your target board, you'll be able to use
 it for running the test-suite, for example. Follow the guidelines at
-https://llvm.org/docs/lnt/quickstart.html, unpack the tarball in the
+http://llvm.org/docs/lnt/quickstart.html, unpack the tarball in the
 test directory, and use options:
 
    .. code-block:: bash

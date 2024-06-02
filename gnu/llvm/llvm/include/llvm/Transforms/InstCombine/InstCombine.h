@@ -18,20 +18,20 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/Pass.h"
-
-#define DEBUG_TYPE "instcombine"
-#include "llvm/Transforms/Utils/InstructionWorklist.h"
+#include "llvm/Transforms/InstCombine/InstCombineWorklist.h"
 
 namespace llvm {
 
 class InstCombinePass : public PassInfoMixin<InstCombinePass> {
-  InstructionWorklist Worklist;
+  InstCombineWorklist Worklist;
+  const bool ExpensiveCombines;
   const unsigned MaxIterations;
 
 public:
-  explicit InstCombinePass();
-  explicit InstCombinePass(unsigned MaxIterations);
+  static StringRef name() { return "InstCombinePass"; }
+
+  explicit InstCombinePass(bool ExpensiveCombines = true);
+  explicit InstCombinePass(bool ExpensiveCombines, unsigned MaxIterations);
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
@@ -41,14 +41,16 @@ public:
 /// This is a basic whole-function wrapper around the instcombine utility. It
 /// will try to combine all instructions in the function.
 class InstructionCombiningPass : public FunctionPass {
-  InstructionWorklist Worklist;
+  InstCombineWorklist Worklist;
+  const bool ExpensiveCombines;
   const unsigned MaxIterations;
 
 public:
   static char ID; // Pass identification, replacement for typeid
 
-  explicit InstructionCombiningPass();
-  explicit InstructionCombiningPass(unsigned MaxIterations);
+  explicit InstructionCombiningPass(bool ExpensiveCombines = true);
+  explicit InstructionCombiningPass(bool ExpensiveCombines,
+                                    unsigned MaxIterations);
 
   void getAnalysisUsage(AnalysisUsage &AU) const override;
   bool runOnFunction(Function &F) override;
@@ -66,10 +68,9 @@ public:
 // into:
 //    %Z = add int 2, %X
 //
-FunctionPass *createInstructionCombiningPass();
-FunctionPass *createInstructionCombiningPass(unsigned MaxIterations);
+FunctionPass *createInstructionCombiningPass(bool ExpensiveCombines = true);
+FunctionPass *createInstructionCombiningPass(bool ExpensiveCombines,
+                                             unsigned MaxIterations);
 }
-
-#undef DEBUG_TYPE
 
 #endif

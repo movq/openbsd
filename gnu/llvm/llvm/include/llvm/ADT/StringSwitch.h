@@ -4,11 +4,10 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //===----------------------------------------------------------------------===/
-///
-/// \file
-///  This file implements the StringSwitch template, which mimics a switch()
-///  statement whose cases are string literals.
-///
+//
+//  This file implements the StringSwitch template, which mimics a switch()
+//  statement whose cases are string literals.
+//
 //===----------------------------------------------------------------------===/
 #ifndef LLVM_ADT_STRINGSWITCH_H
 #define LLVM_ADT_STRINGSWITCH_H
@@ -17,7 +16,6 @@
 #include "llvm/Support/Compiler.h"
 #include <cassert>
 #include <cstring>
-#include <optional>
 
 namespace llvm {
 
@@ -47,7 +45,7 @@ class StringSwitch {
 
   /// The pointer to the result of this switch statement, once known,
   /// null before that.
-  std::optional<T> Result;
+  Optional<T> Result;
 
 public:
   explicit StringSwitch(StringRef S)
@@ -140,21 +138,21 @@ public:
 
   // Case-insensitive case matchers.
   StringSwitch &CaseLower(StringLiteral S, T Value) {
-    if (!Result && Str.equals_insensitive(S))
+    if (!Result && Str.equals_lower(S))
       Result = std::move(Value);
 
     return *this;
   }
 
   StringSwitch &EndsWithLower(StringLiteral S, T Value) {
-    if (!Result && Str.endswith_insensitive(S))
+    if (!Result && Str.endswith_lower(S))
       Result = Value;
 
     return *this;
   }
 
   StringSwitch &StartsWithLower(StringLiteral S, T Value) {
-    if (!Result && Str.startswith_insensitive(S))
+    if (!Result && Str.startswith_lower(S))
       Result = std::move(Value);
 
     return *this;
@@ -179,13 +177,15 @@ public:
     return CaseLower(S0, Value).CasesLower(S1, S2, S3, S4, Value);
   }
 
-  [[nodiscard]] R Default(T Value) {
+  LLVM_NODISCARD
+  R Default(T Value) {
     if (Result)
       return std::move(*Result);
     return Value;
   }
 
-  [[nodiscard]] operator R() {
+  LLVM_NODISCARD
+  operator R() {
     assert(Result && "Fell off the end of a string-switch");
     return std::move(*Result);
   }

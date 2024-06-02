@@ -9,12 +9,8 @@
 #ifndef LLVM_UTILS_TABLEGEN_GIMATCHDAGPREDICATE_H
 #define LLVM_UTILS_TABLEGEN_GIMATCHDAGPREDICATE_H
 
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-#include "llvm/Support/raw_ostream.h"
-#endif
+#include "GIMatchDag.h"
 
 namespace llvm {
 class CodeExpansions;
@@ -96,7 +92,7 @@ public:
   void printDescription(raw_ostream &OS) const override;
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-  LLVM_DUMP_METHOD void dump() const override { print(errs()); }
+  virtual LLVM_DUMP_METHOD void dump() const override { print(errs()); }
 #endif // if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 };
 
@@ -119,7 +115,7 @@ public:
   void printDescription(raw_ostream &OS) const override;
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-  LLVM_DUMP_METHOD void dump() const override { print(errs()); }
+  virtual LLVM_DUMP_METHOD void dump() const override { print(errs()); }
 #endif // if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 };
 
@@ -134,7 +130,7 @@ public:
   void printDescription(raw_ostream &OS) const override;
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-  LLVM_DUMP_METHOD void dump() const override { print(errs()); }
+  virtual LLVM_DUMP_METHOD void dump() const override { print(errs()); }
 #endif // if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 };
 

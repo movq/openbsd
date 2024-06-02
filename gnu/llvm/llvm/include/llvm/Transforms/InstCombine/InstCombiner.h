@@ -25,10 +25,10 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/KnownBits.h"
+#include "llvm/Transforms/InstCombine/InstCombineWorklist.h"
 #include <cassert>
 
 #define DEBUG_TYPE "instcombine"
-#include "llvm/Transforms/Utils/InstructionWorklist.h"
 
 namespace llvm {
 
@@ -43,9 +43,7 @@ class TargetTransformInfo;
 /// This class provides both the logic to recursively visit instructions and
 /// combine them.
 class LLVM_LIBRARY_VISIBILITY InstCombiner {
-  /// Only used to call target specific intrinsic combining.
-  /// It must **NOT** be used for any other purpose, as InstCombine is a
-  /// target-independent canonicalization transform.
+  /// Only used to call target specific inst combining.
   TargetTransformInfo &TTI;
 
 public:
@@ -59,7 +57,7 @@ public:
 
 protected:
   /// A worklist of the instructions that need to be simplified.
-  InstructionWorklist &Worklist;
+  InstCombineWorklist &Worklist;
 
   // Mode in which we are running the combiner.
   const bool MinimizeSize;
@@ -83,7 +81,7 @@ protected:
   bool MadeIRChange = false;
 
 public:
-  InstCombiner(InstructionWorklist &Worklist, BuilderTy &Builder,
+  InstCombiner(InstCombineWorklist &Worklist, BuilderTy &Builder,
                bool MinimizeSize, AAResults *AA, AssumptionCache &AC,
                TargetLibraryInfo &TLI, TargetTransformInfo &TTI,
                DominatorTree &DT, OptimizationRemarkEmitter &ORE,
@@ -93,7 +91,7 @@ public:
         MinimizeSize(MinimizeSize), AA(AA), AC(AC), TLI(TLI), DT(DT), DL(DL),
         SQ(DL, &TLI, &DT, &AC), ORE(ORE), BFI(BFI), PSI(PSI), LI(LI) {}
 
-  virtual ~InstCombiner() = default;
+  virtual ~InstCombiner() {}
 
   /// Return the source operand of a potentially bitcasted value while
   /// optionally checking if it has one use. If there is no bitcast or the one
@@ -167,16 +165,16 @@ public:
     switch (Pred) {
     case ICmpInst::ICMP_SLT: // True if LHS s< 0
       TrueIfSigned = true;
-      return RHS.isZero();
+      return RHS.isNullValue();
     case ICmpInst::ICMP_SLE: // True if LHS s<= -1
       TrueIfSigned = true;
-      return RHS.isAllOnes();
+      return RHS.isAllOnesValue();
     case ICmpInst::ICMP_SGT: // True if LHS s> -1
       TrueIfSigned = false;
-      return RHS.isAllOnes();
+      return RHS.isAllOnesValue();
     case ICmpInst::ICMP_SGE: // True if LHS s>= 0
       TrueIfSigned = false;
-      return RHS.isZero();
+      return RHS.isNullValue();
     case ICmpInst::ICMP_UGT:
       // True if LHS u> RHS and RHS == sign-bit-mask - 1
       TrueIfSigned = true;
@@ -208,7 +206,7 @@ public:
     return ConstantExpr::getSub(C, ConstantInt::get(C->getType(), 1));
   }
 
-  std::optional<std::pair<
+  llvm::Optional<std::pair<
       CmpInst::Predicate,
       Constant *>> static getFlippedStrictnessPredicateAndConstant(CmpInst::
                                                                        Predicate
@@ -248,13 +246,12 @@ public:
 
     // If `V` is of the form `A + Constant` then `-1 - V` can be folded into
     // `(-1 - Constant) - A` if we are willing to invert all of the uses.
-    if (match(V, m_Add(PatternMatch::m_Value(), PatternMatch::m_ImmConstant())))
-      return WillInvertAllUses;
-
-    // If `V` is of the form `Constant - A` then `-1 - V` can be folded into
-    // `A + (-1 - Constant)` if we are willing to invert all of the uses.
-    if (match(V, m_Sub(PatternMatch::m_ImmConstant(), PatternMatch::m_Value())))
-      return WillInvertAllUses;
+    if (BinaryOperator *BO = dyn_cast<BinaryOperator>(V))
+      if (BO->getOpcode() == Instruction::Add ||
+          BO->getOpcode() == Instruction::Sub)
+        if (match(BO, PatternMatch::m_c_BinOp(PatternMatch::m_Value(),
+                                              PatternMatch::m_ImmConstant())))
+          return WillInvertAllUses;
 
     // Selects with invertible operands are freely invertible
     if (match(V,
@@ -262,21 +259,14 @@ public:
                        m_Not(PatternMatch::m_Value()))))
       return WillInvertAllUses;
 
-    // Min/max may be in the form of intrinsics, so handle those identically
-    // to select patterns.
-    if (match(V, m_MaxOrMin(m_Not(PatternMatch::m_Value()),
-                            m_Not(PatternMatch::m_Value()))))
-      return WillInvertAllUses;
-
     return false;
   }
 
   /// Given i1 V, can every user of V be freely adapted if V is changed to !V ?
   /// InstCombine's freelyInvertAllUsersOf() must be kept in sync with this fn.
-  /// NOTE: for Instructions only!
   ///
   /// See also: isFreeToInvert()
-  static bool canFreelyInvertAllUsersOf(Instruction *V, Value *IgnoredUser) {
+  static bool canFreelyInvertAllUsersOf(Value *V, Value *IgnoredUser) {
     // Look at every user of V.
     for (Use &U : V->uses()) {
       if (U.getUser() == IgnoredUser)
@@ -364,6 +354,14 @@ public:
     return ConstantVector::get(Out);
   }
 
+  /// Create and insert the idiom we use to indicate a block is unreachable
+  /// without having to rewrite the CFG from within InstCombine.
+  static void CreateNonTerminatorUnreachable(Instruction *InsertAt) {
+    auto &Ctx = InsertAt->getContext();
+    new StoreInst(ConstantInt::getTrue(Ctx),
+                  UndefValue::get(Type::getInt1PtrTy(Ctx)), InsertAt);
+  }
+
   void addToWorklist(Instruction *I) { Worklist.push(I); }
 
   AssumptionCache &getAssumptionCache() const { return AC; }
@@ -379,12 +377,12 @@ public:
   LoopInfo *getLoopInfo() const { return LI; }
 
   // Call target specific combiners
-  std::optional<Instruction *> targetInstCombineIntrinsic(IntrinsicInst &II);
-  std::optional<Value *>
+  Optional<Instruction *> targetInstCombineIntrinsic(IntrinsicInst &II);
+  Optional<Value *>
   targetSimplifyDemandedUseBitsIntrinsic(IntrinsicInst &II, APInt DemandedMask,
                                          KnownBits &Known,
                                          bool &KnownBitsComputed);
-  std::optional<Value *> targetSimplifyDemandedVectorEltsIntrinsic(
+  Optional<Value *> targetSimplifyDemandedVectorEltsIntrinsic(
       IntrinsicInst &II, APInt DemandedElts, APInt &UndefElts,
       APInt &UndefElts2, APInt &UndefElts3,
       std::function<void(Instruction *, unsigned, APInt, APInt &)>
@@ -398,8 +396,8 @@ public:
     assert(New && !New->getParent() &&
            "New instruction already inserted into a basic block!");
     BasicBlock *BB = Old.getParent();
-    New->insertInto(BB, Old.getIterator()); // Insert inst
-    Worklist.add(New);
+    BB->getInstList().insert(Old.getIterator(), New); // Insert inst
+    Worklist.push(New);
     return New;
   }
 
@@ -418,21 +416,18 @@ public:
   Instruction *replaceInstUsesWith(Instruction &I, Value *V) {
     // If there are no uses to replace, then we return nullptr to indicate that
     // no changes were made to the program.
-    if (I.use_empty()) return nullptr;
+    if (I.use_empty())
+      return nullptr;
 
     Worklist.pushUsersToWorkList(I); // Add all modified instrs to worklist.
 
     // If we are replacing the instruction with itself, this must be in a
     // segment of unreachable code, so just clobber the instruction.
     if (&I == V)
-      V = PoisonValue::get(I.getType());
+      V = UndefValue::get(I.getType());
 
     LLVM_DEBUG(dbgs() << "IC: Replacing " << I << "\n"
                       << "    with " << *V << '\n');
-
-    // If V is a new unnamed instruction, take the name from the old one.
-    if (V->use_empty() && isa<Instruction>(V) && !V->hasName() && I.hasName())
-      V->takeName(&I);
 
     I.replaceAllUsesWith(V);
     return &I;
@@ -482,11 +477,6 @@ public:
   unsigned ComputeNumSignBits(const Value *Op, unsigned Depth = 0,
                               const Instruction *CxtI = nullptr) const {
     return llvm::ComputeNumSignBits(Op, DL, Depth, &AC, CxtI, &DT);
-  }
-
-  unsigned ComputeMaxSignificantBits(const Value *Op, unsigned Depth = 0,
-                                     const Instruction *CxtI = nullptr) const {
-    return llvm::ComputeMaxSignificantBits(Op, DL, Depth, &AC, CxtI, &DT);
   }
 
   OverflowResult computeOverflowForUnsignedMul(const Value *LHS,

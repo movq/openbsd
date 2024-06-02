@@ -24,11 +24,9 @@
 #include "BPFInstrInfo.h"
 #include "BPFTargetMachine.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Support/Debug.h"
-#include <set>
 
 using namespace llvm;
 
@@ -57,8 +55,7 @@ private:
   bool isInsnFrom32Def(MachineInstr *DefInsn);
   bool isPhiFrom32Def(MachineInstr *MovMI);
   bool isMovFrom32Def(MachineInstr *MovMI);
-  bool eliminateZExtSeq();
-  bool eliminateZExt();
+  bool eliminateZExtSeq(void);
 
   std::set<MachineInstr *> PhiInsns;
 
@@ -71,12 +68,7 @@ public:
 
     initialize(MF);
 
-    // First try to eliminate (zext, lshift, rshift) and then
-    // try to eliminate zext.
-    bool ZExtSeqExist, ZExtExist;
-    ZExtSeqExist = eliminateZExtSeq();
-    ZExtExist = eliminateZExt();
-    return ZExtSeqExist || ZExtExist;
+    return eliminateZExtSeq();
   }
 };
 
@@ -99,7 +91,7 @@ bool BPFMIPeephole::isCopyFrom32Def(MachineInstr *CopyMI)
   // Most likely, this physical register is aliased to
   // function call return value or current function parameters.
   Register Reg = opnd.getReg();
-  if (!Reg.isVirtual())
+  if (!Register::isVirtualRegister(Reg))
     return false;
 
   if (MRI->getRegClass(Reg) == &BPF::GPRRegClass)
@@ -124,8 +116,9 @@ bool BPFMIPeephole::isPhiFrom32Def(MachineInstr *PhiMI)
     if (!PhiDef)
       return false;
     if (PhiDef->isPHI()) {
-      if (!PhiInsns.insert(PhiDef).second)
+      if (PhiInsns.find(PhiDef) != PhiInsns.end())
         return false;
+      PhiInsns.insert(PhiDef);
       if (!isPhiFrom32Def(PhiDef))
         return false;
     }
@@ -143,8 +136,9 @@ bool BPFMIPeephole::isInsnFrom32Def(MachineInstr *DefInsn)
     return false;
 
   if (DefInsn->isPHI()) {
-    if (!PhiInsns.insert(DefInsn).second)
+    if (PhiInsns.find(DefInsn) != PhiInsns.end())
       return false;
+    PhiInsns.insert(DefInsn);
     if (!isPhiFrom32Def(DefInsn))
       return false;
   } else if (DefInsn->getOpcode() == BPF::COPY) {
@@ -171,7 +165,7 @@ bool BPFMIPeephole::isMovFrom32Def(MachineInstr *MovMI)
   return true;
 }
 
-bool BPFMIPeephole::eliminateZExtSeq() {
+bool BPFMIPeephole::eliminateZExtSeq(void) {
   MachineInstr* ToErase = nullptr;
   bool Eliminated = false;
 
@@ -239,51 +233,6 @@ bool BPFMIPeephole::eliminateZExtSeq() {
   return Eliminated;
 }
 
-bool BPFMIPeephole::eliminateZExt() {
-  MachineInstr* ToErase = nullptr;
-  bool Eliminated = false;
-
-  for (MachineBasicBlock &MBB : *MF) {
-    for (MachineInstr &MI : MBB) {
-      // If the previous instruction was marked for elimination, remove it now.
-      if (ToErase) {
-        ToErase->eraseFromParent();
-        ToErase = nullptr;
-      }
-
-      if (MI.getOpcode() != BPF::MOV_32_64)
-        continue;
-
-      // Eliminate MOV_32_64 if possible.
-      //   MOV_32_64 rA, wB
-      //
-      // If wB has been zero extended, replace it with a SUBREG_TO_REG.
-      // This is to workaround BPF programs where pkt->{data, data_end}
-      // is encoded as u32, but actually the verifier populates them
-      // as 64bit pointer. The MOV_32_64 will zero out the top 32 bits.
-      LLVM_DEBUG(dbgs() << "Candidate MOV_32_64 instruction:");
-      LLVM_DEBUG(MI.dump());
-
-      if (!isMovFrom32Def(&MI))
-        continue;
-
-      LLVM_DEBUG(dbgs() << "Removing the MOV_32_64 instruction\n");
-
-      Register dst = MI.getOperand(0).getReg();
-      Register src = MI.getOperand(1).getReg();
-
-      // Build a SUBREG_TO_REG instruction.
-      BuildMI(MBB, MI, MI.getDebugLoc(), TII->get(BPF::SUBREG_TO_REG), dst)
-        .addImm(0).addReg(src).addImm(BPF::sub_32);
-
-      ToErase = &MI;
-      Eliminated = true;
-    }
-  }
-
-  return Eliminated;
-}
-
 } // end default namespace
 
 INITIALIZE_PASS(BPFMIPeephole, DEBUG_TYPE,
@@ -311,7 +260,7 @@ private:
   // Initialize class variables.
   void initialize(MachineFunction &MFParm);
 
-  bool eliminateRedundantMov();
+  bool eliminateRedundantMov(void);
 
 public:
 
@@ -333,7 +282,7 @@ void BPFMIPreEmitPeephole::initialize(MachineFunction &MFParm) {
   LLVM_DEBUG(dbgs() << "*** BPF PreEmit peephole pass ***\n\n");
 }
 
-bool BPFMIPreEmitPeephole::eliminateRedundantMov() {
+bool BPFMIPreEmitPeephole::eliminateRedundantMov(void) {
   MachineInstr* ToErase = nullptr;
   bool Eliminated = false;
 
@@ -351,15 +300,18 @@ bool BPFMIPreEmitPeephole::eliminateRedundantMov() {
       //
       //   MOV rA, rA
       //
-      // Note that we cannot remove
-      //   MOV_32_64  rA, wA
-      //   MOV_rr_32  wA, wA
-      // as these two instructions having side effects, zeroing out
-      // top 32 bits of rA.
+      // This is particularly possible to happen when sub-register support
+      // enabled. The special type cast insn MOV_32_64 involves different
+      // register class on src (i32) and dst (i64), RA could generate useless
+      // instruction due to this.
       unsigned Opcode = MI.getOpcode();
-      if (Opcode == BPF::MOV_rr) {
+      if (Opcode == BPF::MOV_32_64 ||
+          Opcode == BPF::MOV_rr || Opcode == BPF::MOV_rr_32) {
         Register dst = MI.getOperand(0).getReg();
         Register src = MI.getOperand(1).getReg();
+
+        if (Opcode == BPF::MOV_32_64)
+          dst = TRI->getSubReg(dst, BPF::sub_32);
 
         if (dst != src)
           continue;
@@ -404,7 +356,7 @@ private:
   // Initialize class variables.
   void initialize(MachineFunction &MFParm);
 
-  bool eliminateTruncSeq();
+  bool eliminateTruncSeq(void);
 
 public:
 
@@ -451,7 +403,7 @@ void BPFMIPeepholeTruncElim::initialize(MachineFunction &MFParm) {
 // are 32-bit registers, but later on, kernel verifier will rewrite
 // it with 64-bit value. Therefore, truncating the value after the
 // load will result in incorrect code.
-bool BPFMIPeepholeTruncElim::eliminateTruncSeq() {
+bool BPFMIPeepholeTruncElim::eliminateTruncSeq(void) {
   MachineInstr* ToErase = nullptr;
   bool Eliminated = false;
 
@@ -474,9 +426,6 @@ bool BPFMIPeepholeTruncElim::eliminateTruncSeq() {
       if (MI.getOpcode() == BPF::SRL_ri &&
           MI.getOperand(2).getImm() == 32) {
         SrcReg = MI.getOperand(1).getReg();
-        if (!MRI->hasOneNonDBGUse(SrcReg))
-          continue;
-
         MI2 = MRI->getVRegDef(SrcReg);
         DstReg = MI.getOperand(0).getReg();
 

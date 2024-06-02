@@ -12,16 +12,42 @@
 //===----------------------------------------------------------------------===//
 
 #include "R600ISelLowering.h"
-#include "AMDGPU.h"
-#include "MCTargetDesc/R600MCTargetDesc.h"
+#include "AMDGPUFrameLowering.h"
+#include "AMDGPUSubtarget.h"
 #include "R600Defines.h"
+#include "R600FrameLowering.h"
 #include "R600InstrInfo.h"
 #include "R600MachineFunctionInfo.h"
-#include "R600Subtarget.h"
-#include "R600TargetMachine.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
+#include "Utils/AMDGPUBaseInfo.h"
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/CodeGen/DAGCombine.h"
+#include "llvm/CodeGen/ISDOpcodes.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/IR/IntrinsicsAMDGPU.h"
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IntrinsicsR600.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MachineValueType.h"
+#include "llvm/Support/MathExtras.h"
+#include <cassert>
+#include <cstdint>
+#include <iterator>
+#include <utility>
+#include <vector>
 
 using namespace llvm;
 
@@ -43,26 +69,39 @@ R600TargetLowering::R600TargetLowering(const TargetMachine &TM,
   computeRegisterProperties(Subtarget->getRegisterInfo());
 
   // Legalize loads and stores to the private address space.
-  setOperationAction(ISD::LOAD, {MVT::i32, MVT::v2i32, MVT::v4i32}, Custom);
+  setOperationAction(ISD::LOAD, MVT::i32, Custom);
+  setOperationAction(ISD::LOAD, MVT::v2i32, Custom);
+  setOperationAction(ISD::LOAD, MVT::v4i32, Custom);
 
   // EXTLOAD should be the same as ZEXTLOAD. It is legal for some address
   // spaces, so it is custom lowered to handle those where it isn't.
-  for (auto Op : {ISD::SEXTLOAD, ISD::ZEXTLOAD, ISD::EXTLOAD})
-    for (MVT VT : MVT::integer_valuetypes()) {
-      setLoadExtAction(Op, VT, MVT::i1, Promote);
-      setLoadExtAction(Op, VT, MVT::i8, Custom);
-      setLoadExtAction(Op, VT, MVT::i16, Custom);
-    }
+  for (MVT VT : MVT::integer_valuetypes()) {
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i1, Promote);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i8, Custom);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i16, Custom);
+
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::i1, Promote);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::i8, Custom);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::i16, Custom);
+
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::i1, Promote);
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::i8, Custom);
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::i16, Custom);
+  }
 
   // Workaround for LegalizeDAG asserting on expansion of i1 vector loads.
-  setLoadExtAction({ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}, MVT::v2i32,
-                   MVT::v2i1, Expand);
+  setLoadExtAction(ISD::EXTLOAD, MVT::v2i32, MVT::v2i1, Expand);
+  setLoadExtAction(ISD::SEXTLOAD, MVT::v2i32, MVT::v2i1, Expand);
+  setLoadExtAction(ISD::ZEXTLOAD, MVT::v2i32, MVT::v2i1, Expand);
 
-  setLoadExtAction({ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD}, MVT::v4i32,
-                   MVT::v4i1, Expand);
+  setLoadExtAction(ISD::EXTLOAD, MVT::v4i32, MVT::v4i1, Expand);
+  setLoadExtAction(ISD::SEXTLOAD, MVT::v4i32, MVT::v4i1, Expand);
+  setLoadExtAction(ISD::ZEXTLOAD, MVT::v4i32, MVT::v4i1, Expand);
 
-  setOperationAction(ISD::STORE, {MVT::i8, MVT::i32, MVT::v2i32, MVT::v4i32},
-                     Custom);
+  setOperationAction(ISD::STORE, MVT::i8, Custom);
+  setOperationAction(ISD::STORE, MVT::i32, Custom);
+  setOperationAction(ISD::STORE, MVT::v2i32, Custom);
+  setOperationAction(ISD::STORE, MVT::v4i32, Custom);
 
   setTruncStoreAction(MVT::i32, MVT::i8, Custom);
   setTruncStoreAction(MVT::i32, MVT::i16, Custom);
@@ -84,34 +123,55 @@ R600TargetLowering::R600TargetLowering(const TargetMachine &TM,
   setTruncStoreAction(MVT::v4i32, MVT::v4i1, Expand);
 
   // Set condition code actions
-  setCondCodeAction({ISD::SETO, ISD::SETUO, ISD::SETLT, ISD::SETLE, ISD::SETOLT,
-                     ISD::SETOLE, ISD::SETONE, ISD::SETUEQ, ISD::SETUGE,
-                     ISD::SETUGT, ISD::SETULT, ISD::SETULE},
-                    MVT::f32, Expand);
+  setCondCodeAction(ISD::SETO,   MVT::f32, Expand);
+  setCondCodeAction(ISD::SETUO,  MVT::f32, Expand);
+  setCondCodeAction(ISD::SETLT,  MVT::f32, Expand);
+  setCondCodeAction(ISD::SETLE,  MVT::f32, Expand);
+  setCondCodeAction(ISD::SETOLT, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETOLE, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETONE, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETUEQ, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETUGE, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETUGT, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETULT, MVT::f32, Expand);
+  setCondCodeAction(ISD::SETULE, MVT::f32, Expand);
 
-  setCondCodeAction({ISD::SETLE, ISD::SETLT, ISD::SETULE, ISD::SETULT},
-                    MVT::i32, Expand);
+  setCondCodeAction(ISD::SETLE, MVT::i32, Expand);
+  setCondCodeAction(ISD::SETLT, MVT::i32, Expand);
+  setCondCodeAction(ISD::SETULE, MVT::i32, Expand);
+  setCondCodeAction(ISD::SETULT, MVT::i32, Expand);
 
-  setOperationAction({ISD::FCOS, ISD::FSIN}, MVT::f32, Custom);
+  setOperationAction(ISD::FCOS, MVT::f32, Custom);
+  setOperationAction(ISD::FSIN, MVT::f32, Custom);
 
-  setOperationAction(ISD::SETCC, {MVT::v4i32, MVT::v2i32}, Expand);
+  setOperationAction(ISD::SETCC, MVT::v4i32, Expand);
+  setOperationAction(ISD::SETCC, MVT::v2i32, Expand);
 
-  setOperationAction(ISD::BR_CC, {MVT::i32, MVT::f32}, Expand);
+  setOperationAction(ISD::BR_CC, MVT::i32, Expand);
+  setOperationAction(ISD::BR_CC, MVT::f32, Expand);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
 
   setOperationAction(ISD::FSUB, MVT::f32, Expand);
 
-  setOperationAction({ISD::FCEIL, ISD::FTRUNC, ISD::FRINT, ISD::FFLOOR},
-                     MVT::f64, Custom);
+  setOperationAction(ISD::FCEIL, MVT::f64, Custom);
+  setOperationAction(ISD::FTRUNC, MVT::f64, Custom);
+  setOperationAction(ISD::FRINT, MVT::f64, Custom);
+  setOperationAction(ISD::FFLOOR, MVT::f64, Custom);
 
-  setOperationAction(ISD::SELECT_CC, {MVT::f32, MVT::i32}, Custom);
+  setOperationAction(ISD::SELECT_CC, MVT::f32, Custom);
+  setOperationAction(ISD::SELECT_CC, MVT::i32, Custom);
 
-  setOperationAction(ISD::SETCC, {MVT::i32, MVT::f32}, Expand);
-  setOperationAction({ISD::FP_TO_UINT, ISD::FP_TO_SINT}, {MVT::i1, MVT::i64},
-                     Custom);
+  setOperationAction(ISD::SETCC, MVT::i32, Expand);
+  setOperationAction(ISD::SETCC, MVT::f32, Expand);
+  setOperationAction(ISD::FP_TO_UINT, MVT::i1, Custom);
+  setOperationAction(ISD::FP_TO_SINT, MVT::i1, Custom);
+  setOperationAction(ISD::FP_TO_SINT, MVT::i64, Custom);
+  setOperationAction(ISD::FP_TO_UINT, MVT::i64, Custom);
 
-  setOperationAction(ISD::SELECT, {MVT::i32, MVT::f32, MVT::v2i32, MVT::v4i32},
-                     Expand);
+  setOperationAction(ISD::SELECT, MVT::i32, Expand);
+  setOperationAction(ISD::SELECT, MVT::f32, Expand);
+  setOperationAction(ISD::SELECT, MVT::v2i32, Expand);
+  setOperationAction(ISD::SELECT, MVT::v4i32, Expand);
 
   // ADD, SUB overflow.
   // TODO: turn these into Legal?
@@ -125,43 +185,56 @@ R600TargetLowering::R600TargetLowering(const TargetMachine &TM,
   if (!Subtarget->hasBFE())
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Expand);
 
-  setOperationAction(ISD::SIGN_EXTEND_INREG, {MVT::v2i1, MVT::v4i1}, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i1, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v4i1, Expand);
 
   if (!Subtarget->hasBFE())
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8, Expand);
-  setOperationAction(ISD::SIGN_EXTEND_INREG, {MVT::v2i8, MVT::v4i8}, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i8, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v4i8, Expand);
 
   if (!Subtarget->hasBFE())
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Expand);
-  setOperationAction(ISD::SIGN_EXTEND_INREG, {MVT::v2i16, MVT::v4i16}, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i16, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v4i16, Expand);
 
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i32, Legal);
-  setOperationAction(ISD::SIGN_EXTEND_INREG, {MVT::v2i32, MVT::v4i32}, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i32, Expand);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v4i32, Expand);
 
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::Other, Expand);
 
   setOperationAction(ISD::FrameIndex, MVT::i32, Custom);
 
-  setOperationAction(ISD::EXTRACT_VECTOR_ELT,
-                     {MVT::v2i32, MVT::v2f32, MVT::v4i32, MVT::v4f32}, Custom);
+  setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v2i32, Custom);
+  setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v2f32, Custom);
+  setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v4i32, Custom);
+  setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v4f32, Custom);
 
-  setOperationAction(ISD::INSERT_VECTOR_ELT,
-                     {MVT::v2i32, MVT::v2f32, MVT::v4i32, MVT::v4f32}, Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v2i32, Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v2f32, Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v4i32, Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v4f32, Custom);
 
   // We don't have 64-bit shifts. Thus we need either SHX i64 or SHX_PARTS i32
   //  to be Legal/Custom in order to avoid library calls.
-  setOperationAction({ISD::SHL_PARTS, ISD::SRL_PARTS, ISD::SRA_PARTS}, MVT::i32,
-                     Custom);
+  setOperationAction(ISD::SHL_PARTS, MVT::i32, Custom);
+  setOperationAction(ISD::SRL_PARTS, MVT::i32, Custom);
+  setOperationAction(ISD::SRA_PARTS, MVT::i32, Custom);
 
-  if (!Subtarget->hasFMA())
-    setOperationAction(ISD::FMA, {MVT::f32, MVT::f64}, Expand);
+  if (!Subtarget->hasFMA()) {
+    setOperationAction(ISD::FMA, MVT::f32, Expand);
+    setOperationAction(ISD::FMA, MVT::f64, Expand);
+  }
 
   // FIXME: May need no denormals check
   setOperationAction(ISD::FMAD, MVT::f32, Legal);
 
-  if (!Subtarget->hasBFI())
+  if (!Subtarget->hasBFI()) {
     // fcopysign can be done in a single instruction with BFI.
-    setOperationAction(ISD::FCOPYSIGN, {MVT::f32, MVT::f64}, Expand);
+    setOperationAction(ISD::FCOPYSIGN, MVT::f32, Expand);
+    setOperationAction(ISD::FCOPYSIGN, MVT::f64, Expand);
+  }
 
   if (!Subtarget->hasBCNT(32))
     setOperationAction(ISD::CTPOP, MVT::i32, Expand);
@@ -181,25 +254,32 @@ R600TargetLowering::R600TargetLowering(const TargetMachine &TM,
     setHasExtractBitsInsn(true);
 
   setOperationAction(ISD::GlobalAddress, MVT::i32, Custom);
-  setOperationAction(ISD::ADDRSPACECAST, MVT::i32, Custom);
 
   const MVT ScalarIntVTs[] = { MVT::i32, MVT::i64 };
-  for (MVT VT : ScalarIntVTs)
-    setOperationAction({ISD::ADDC, ISD::SUBC, ISD::ADDE, ISD::SUBE}, VT,
-                       Expand);
+  for (MVT VT : ScalarIntVTs) {
+    setOperationAction(ISD::ADDC, VT, Expand);
+    setOperationAction(ISD::SUBC, VT, Expand);
+    setOperationAction(ISD::ADDE, VT, Expand);
+    setOperationAction(ISD::SUBE, VT, Expand);
+  }
 
   // LLVM will expand these to atomic_cmp_swap(0)
   // and atomic_swap, respectively.
-  setOperationAction({ISD::ATOMIC_LOAD, ISD::ATOMIC_STORE}, MVT::i32, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD, MVT::i32, Expand);
+  setOperationAction(ISD::ATOMIC_STORE, MVT::i32, Expand);
 
   // We need to custom lower some of the intrinsics
-  setOperationAction({ISD::INTRINSIC_VOID, ISD::INTRINSIC_WO_CHAIN}, MVT::Other,
-                     Custom);
+  setOperationAction(ISD::INTRINSIC_VOID, MVT::Other, Custom);
+  setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);
 
   setSchedulingPreference(Sched::Source);
 
-  setTargetDAGCombine({ISD::FP_ROUND, ISD::FP_TO_SINT, ISD::EXTRACT_VECTOR_ELT,
-                       ISD::SELECT_CC, ISD::INSERT_VECTOR_ELT, ISD::LOAD});
+  setTargetDAGCombine(ISD::FP_ROUND);
+  setTargetDAGCombine(ISD::FP_TO_SINT);
+  setTargetDAGCombine(ISD::EXTRACT_VECTOR_ELT);
+  setTargetDAGCombine(ISD::SELECT_CC);
+  setTargetDAGCombine(ISD::INSERT_VECTOR_ELT);
+  setTargetDAGCombine(ISD::LOAD);
 }
 
 static inline bool isEOP(MachineBasicBlock::iterator I) {
@@ -232,8 +312,9 @@ R600TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
 
       NewMI = BuildMI(*BB, I, BB->findDebugLoc(I),
                       TII->get(R600::getLDSNoRetOp(MI.getOpcode())));
-      for (const MachineOperand &MO : llvm::drop_begin(MI.operands()))
-        NewMI.add(MO);
+      for (unsigned i = 1, e = MI.getNumOperands(); i < e; ++i) {
+        NewMI.add(MI.getOperand(i));
+      }
     } else {
       return AMDGPUTargetLowering::EmitInstrWithCustomInserter(MI, BB);
     }
@@ -257,7 +338,7 @@ R600TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
 
   case R600::MASK_WRITE: {
     Register maskedRegister = MI.getOperand(0).getReg();
-    assert(maskedRegister.isVirtual());
+    assert(Register::isVirtualRegister(maskedRegister));
     MachineInstr * defInstr = MRI.getVRegDef(maskedRegister);
     TII->addFlag(*defInstr, 0, MO_FLAG_MASK);
     break;
@@ -282,9 +363,7 @@ R600TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
         *BB, MI, R600::MOV, MI.getOperand(0).getReg(), R600::ALU_LITERAL_X);
     int Idx = TII->getOperandIdx(*MIB, R600::OpName::literal);
     //TODO: Ugh this is rather ugly
-    const MachineOperand &MO = MI.getOperand(1);
-    MIB->getOperand(Idx).ChangeToGA(MO.getGlobal(), MO.getOffset(),
-                                    MO.getTargetFlags());
+    MIB->getOperand(Idx) = MI.getOperand(1);
     break;
   }
 
@@ -400,9 +479,9 @@ SDValue R600TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const 
   default: return AMDGPUTargetLowering::LowerOperation(Op, DAG);
   case ISD::EXTRACT_VECTOR_ELT: return LowerEXTRACT_VECTOR_ELT(Op, DAG);
   case ISD::INSERT_VECTOR_ELT: return LowerINSERT_VECTOR_ELT(Op, DAG);
-  case ISD::SHL_PARTS:
+  case ISD::SHL_PARTS: return LowerSHLParts(Op, DAG);
   case ISD::SRA_PARTS:
-  case ISD::SRL_PARTS: return LowerShiftParts(Op, DAG);
+  case ISD::SRL_PARTS: return LowerSRXParts(Op, DAG);
   case ISD::UADDO: return LowerUADDSUBO(Op, DAG, ISD::ADD, AMDGPUISD::CARRY);
   case ISD::USUBO: return LowerUADDSUBO(Op, DAG, ISD::SUB, AMDGPUISD::BORROW);
   case ISD::FCOS:
@@ -420,8 +499,6 @@ SDValue R600TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const 
   case ISD::BRCOND: return LowerBRCOND(Op, DAG);
   case ISD::GlobalAddress: return LowerGlobalAddress(MFI, Op, DAG);
   case ISD::FrameIndex: return lowerFrameIndex(Op, DAG);
-  case ISD::ADDRSPACECAST:
-    return lowerADDRSPACECAST(Op, DAG);
   case ISD::INTRINSIC_VOID: {
     SDValue Chain = Op.getOperand(0);
     unsigned IntrinsicID =
@@ -538,27 +615,21 @@ SDValue R600TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const 
       return LowerImplicitParameter(DAG, VT, DL, 8);
 
     case Intrinsic::r600_read_tgid_x:
-    case Intrinsic::amdgcn_workgroup_id_x:
       return CreateLiveInRegisterRaw(DAG, &R600::R600_TReg32RegClass,
                                      R600::T1_X, VT);
     case Intrinsic::r600_read_tgid_y:
-    case Intrinsic::amdgcn_workgroup_id_y:
       return CreateLiveInRegisterRaw(DAG, &R600::R600_TReg32RegClass,
                                      R600::T1_Y, VT);
     case Intrinsic::r600_read_tgid_z:
-    case Intrinsic::amdgcn_workgroup_id_z:
       return CreateLiveInRegisterRaw(DAG, &R600::R600_TReg32RegClass,
                                      R600::T1_Z, VT);
     case Intrinsic::r600_read_tidig_x:
-    case Intrinsic::amdgcn_workitem_id_x:
       return CreateLiveInRegisterRaw(DAG, &R600::R600_TReg32RegClass,
                                      R600::T0_X, VT);
     case Intrinsic::r600_read_tidig_y:
-    case Intrinsic::amdgcn_workitem_id_y:
       return CreateLiveInRegisterRaw(DAG, &R600::R600_TReg32RegClass,
                                      R600::T0_Y, VT);
     case Intrinsic::r600_read_tidig_z:
-    case Intrinsic::amdgcn_workitem_id_z:
       return CreateLiveInRegisterRaw(DAG, &R600::R600_TReg32RegClass,
                                      R600::T0_Z, VT);
 
@@ -593,7 +664,7 @@ void R600TargetLowering::ReplaceNodeResults(SDNode *N,
     // Since we don't care about out of bounds values we can use FP_TO_SINT for
     // uints too. The DAGLegalizer code for uint considers some extra cases
     // which are not necessary here.
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case ISD::FP_TO_SINT: {
     if (N->getValueType(0) == MVT::i1) {
       Results.push_back(lowerFP_TO_SINT(N->getOperand(0), DAG));
@@ -628,8 +699,9 @@ SDValue R600TargetLowering::vectorToVerticalVector(SelectionDAG &DAG,
   SmallVector<SDValue, 8> Args;
 
   for (unsigned i = 0, e = VecVT.getVectorNumElements(); i != e; ++i) {
-    Args.push_back(DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, EltVT, Vector,
-                               DAG.getVectorIdxConstant(i, DL)));
+    Args.push_back(DAG.getNode(
+        ISD::EXTRACT_VECTOR_ELT, DL, EltVT, Vector,
+        DAG.getConstant(i, DL, getVectorIdxTy(DAG.getDataLayout()))));
   }
 
   return DAG.getNode(AMDGPUISD::BUILD_VERTICAL_VECTOR, DL, VecVT, Args);
@@ -716,11 +788,78 @@ SDValue R600TargetLowering::LowerTrig(SDValue Op, SelectionDAG &DAG) const {
       DAG.getConstantFP(numbers::pif, DL, MVT::f32));
 }
 
-SDValue R600TargetLowering::LowerShiftParts(SDValue Op,
-                                            SelectionDAG &DAG) const {
-  SDValue Lo, Hi;
-  expandShiftParts(Op.getNode(), Lo, Hi, DAG);
-  return DAG.getMergeValues({Lo, Hi}, SDLoc(Op));
+SDValue R600TargetLowering::LowerSHLParts(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  SDValue Lo = Op.getOperand(0);
+  SDValue Hi = Op.getOperand(1);
+  SDValue Shift = Op.getOperand(2);
+  SDValue Zero = DAG.getConstant(0, DL, VT);
+  SDValue One  = DAG.getConstant(1, DL, VT);
+
+  SDValue Width  = DAG.getConstant(VT.getSizeInBits(), DL, VT);
+  SDValue Width1 = DAG.getConstant(VT.getSizeInBits() - 1, DL, VT);
+  SDValue BigShift  = DAG.getNode(ISD::SUB, DL, VT, Shift, Width);
+  SDValue CompShift = DAG.getNode(ISD::SUB, DL, VT, Width1, Shift);
+
+  // The dance around Width1 is necessary for 0 special case.
+  // Without it the CompShift might be 32, producing incorrect results in
+  // Overflow. So we do the shift in two steps, the alternative is to
+  // add a conditional to filter the special case.
+
+  SDValue Overflow = DAG.getNode(ISD::SRL, DL, VT, Lo, CompShift);
+  Overflow = DAG.getNode(ISD::SRL, DL, VT, Overflow, One);
+
+  SDValue HiSmall = DAG.getNode(ISD::SHL, DL, VT, Hi, Shift);
+  HiSmall = DAG.getNode(ISD::OR, DL, VT, HiSmall, Overflow);
+  SDValue LoSmall = DAG.getNode(ISD::SHL, DL, VT, Lo, Shift);
+
+  SDValue HiBig = DAG.getNode(ISD::SHL, DL, VT, Lo, BigShift);
+  SDValue LoBig = Zero;
+
+  Hi = DAG.getSelectCC(DL, Shift, Width, HiSmall, HiBig, ISD::SETULT);
+  Lo = DAG.getSelectCC(DL, Shift, Width, LoSmall, LoBig, ISD::SETULT);
+
+  return DAG.getNode(ISD::MERGE_VALUES, DL, DAG.getVTList(VT,VT), Lo, Hi);
+}
+
+SDValue R600TargetLowering::LowerSRXParts(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  SDValue Lo = Op.getOperand(0);
+  SDValue Hi = Op.getOperand(1);
+  SDValue Shift = Op.getOperand(2);
+  SDValue Zero = DAG.getConstant(0, DL, VT);
+  SDValue One  = DAG.getConstant(1, DL, VT);
+
+  const bool SRA = Op.getOpcode() == ISD::SRA_PARTS;
+
+  SDValue Width  = DAG.getConstant(VT.getSizeInBits(), DL, VT);
+  SDValue Width1 = DAG.getConstant(VT.getSizeInBits() - 1, DL, VT);
+  SDValue BigShift  = DAG.getNode(ISD::SUB, DL, VT, Shift, Width);
+  SDValue CompShift = DAG.getNode(ISD::SUB, DL, VT, Width1, Shift);
+
+  // The dance around Width1 is necessary for 0 special case.
+  // Without it the CompShift might be 32, producing incorrect results in
+  // Overflow. So we do the shift in two steps, the alternative is to
+  // add a conditional to filter the special case.
+
+  SDValue Overflow = DAG.getNode(ISD::SHL, DL, VT, Hi, CompShift);
+  Overflow = DAG.getNode(ISD::SHL, DL, VT, Overflow, One);
+
+  SDValue HiSmall = DAG.getNode(SRA ? ISD::SRA : ISD::SRL, DL, VT, Hi, Shift);
+  SDValue LoSmall = DAG.getNode(ISD::SRL, DL, VT, Lo, Shift);
+  LoSmall = DAG.getNode(ISD::OR, DL, VT, LoSmall, Overflow);
+
+  SDValue LoBig = DAG.getNode(SRA ? ISD::SRA : ISD::SRL, DL, VT, Hi, BigShift);
+  SDValue HiBig = SRA ? DAG.getNode(ISD::SRA, DL, VT, Hi, Width1) : Zero;
+
+  Hi = DAG.getSelectCC(DL, Shift, Width, HiSmall, HiBig, ISD::SETULT);
+  Lo = DAG.getSelectCC(DL, Shift, Width, LoSmall, LoBig, ISD::SETULT);
+
+  return DAG.getNode(ISD::MERGE_VALUES, DL, DAG.getVTList(VT,VT), Lo, Hi);
 }
 
 SDValue R600TargetLowering::LowerUADDSUBO(SDValue Op, SelectionDAG &DAG,
@@ -778,7 +917,7 @@ SDValue R600TargetLowering::LowerImplicitParameter(SelectionDAG &DAG, EVT VT,
 
 bool R600TargetLowering::isZero(SDValue Op) const {
   if(ConstantSDNode *Cst = dyn_cast<ConstantSDNode>(Op)) {
-    return Cst->isZero();
+    return Cst->isNullValue();
   } else if(ConstantFPSDNode *CstFP = dyn_cast<ConstantFPSDNode>(Op)){
     return CstFP->isZero();
   } else {
@@ -874,7 +1013,7 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const 
       std::swap(LHS, RHS);
       CC = DAG.getCondCode(CCSwapped);
     } else {
-      // Try inverting the condition and then swapping the operands
+      // Try inverting the conditon and then swapping the operands
       ISD::CondCode CCInv = ISD::getSetCCInverse(CCOpcode, CompareVT);
       CCSwapped = ISD::getSetCCSwappedOperands(CCInv);
       if (isCondCodeLegal(CCSwapped, CompareVT.getSimpleVT())) {
@@ -941,30 +1080,10 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const 
       DAG.getCondCode(ISD::SETNE));
 }
 
-SDValue R600TargetLowering::lowerADDRSPACECAST(SDValue Op,
-                                               SelectionDAG &DAG) const {
-  SDLoc SL(Op);
-  EVT VT = Op.getValueType();
-
-  const R600TargetMachine &TM =
-      static_cast<const R600TargetMachine &>(getTargetMachine());
-
-  const AddrSpaceCastSDNode *ASC = cast<AddrSpaceCastSDNode>(Op);
-  unsigned SrcAS = ASC->getSrcAddressSpace();
-  unsigned DestAS = ASC->getDestAddressSpace();
-
-  if (auto *ConstSrc = dyn_cast<ConstantSDNode>(Op.getOperand(0))) {
-    if (SrcAS == AMDGPUAS::FLAT_ADDRESS && ConstSrc->isNullValue())
-      return DAG.getConstant(TM.getNullPointerValue(DestAS), SL, VT);
-  }
-
-  return Op;
-}
-
 /// LLVM generates byte-addressed pointers.  For indirect addressing, we need to
 /// convert these pointers to a register index.  Each register holds
 /// 16 bytes, (4 x 32bit sub-register), but we need to take into account the
-/// \p StackWidth, which tells us how many of the 4 sub-registers will be used
+/// \p StackWidth, which tells us how many of the 4 sub-registrers will be used
 /// for indirect addressing.
 SDValue R600TargetLowering::stackPtrToRegIndex(SDValue Ptr,
                                                unsigned StackWidth,
@@ -1027,10 +1146,10 @@ SDValue R600TargetLowering::lowerPrivateTruncStore(StoreSDNode *Store,
 
   SDValue Mask;
   if (Store->getMemoryVT() == MVT::i8) {
-    assert(Store->getAlign() >= 1);
+    assert(Store->getAlignment() >= 1);
     Mask = DAG.getConstant(0xff, DL, MVT::i32);
   } else if (Store->getMemoryVT() == MVT::i16) {
-    assert(Store->getAlign() >= 2);
+    assert(Store->getAlignment() >= 2);
     Mask = DAG.getConstant(0xffff, DL, MVT::i32);
   } else {
     llvm_unreachable("Unsupported private trunc store");
@@ -1069,7 +1188,7 @@ SDValue R600TargetLowering::lowerPrivateTruncStore(StoreSDNode *Store,
   SDValue ShiftAmt = DAG.getNode(ISD::SHL, DL, MVT::i32, ByteIdx,
                                  DAG.getConstant(3, DL, MVT::i32));
 
-  // TODO: Contrary to the name of the function,
+  // TODO: Contrary to the name of the functiom,
   // it also handles sub i32 non-truncating stores (like i1)
   SDValue SExtValue = DAG.getNode(ISD::SIGN_EXTEND, DL, MVT::i32,
                                   Store->getValue());
@@ -1132,20 +1251,19 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
       SDValue NewChain = DAG.getNode(AMDGPUISD::DUMMY_CHAIN, DL, MVT::Other, Chain);
       // TODO: can the chain be replaced without creating a new store?
       SDValue NewStore = DAG.getTruncStore(
-          NewChain, DL, Value, Ptr, StoreNode->getPointerInfo(), MemVT,
-          StoreNode->getAlign(), StoreNode->getMemOperand()->getFlags(),
-          StoreNode->getAAInfo());
+          NewChain, DL, Value, Ptr, StoreNode->getPointerInfo(),
+          MemVT, StoreNode->getAlignment(),
+          StoreNode->getMemOperand()->getFlags(), StoreNode->getAAInfo());
       StoreNode = cast<StoreSDNode>(NewStore);
     }
 
     return scalarizeVectorStore(StoreNode, DAG);
   }
 
-  Align Alignment = StoreNode->getAlign();
-  if (Alignment < MemVT.getStoreSize() &&
-      !allowsMisalignedMemoryAccesses(MemVT, AS, Alignment,
-                                      StoreNode->getMemOperand()->getFlags(),
-                                      nullptr)) {
+  unsigned Align = StoreNode->getAlignment();
+  if (Align < MemVT.getStoreSize() &&
+      !allowsMisalignedMemoryAccesses(
+          MemVT, AS, Align, StoreNode->getMemOperand()->getFlags(), nullptr)) {
     return expandUnalignedStore(StoreNode, DAG);
   }
 
@@ -1162,7 +1280,7 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
         MaskConstant = DAG.getConstant(0xFF, DL, MVT::i32);
       } else {
         assert(MemVT == MVT::i16);
-        assert(StoreNode->getAlign() >= 2);
+        assert(StoreNode->getAlignment() >= 2);
         MaskConstant = DAG.getConstant(0xFFFF, DL, MVT::i32);
       }
 
@@ -1269,7 +1387,7 @@ SDValue R600TargetLowering::lowerPrivateExtLoad(SDValue Op,
   LoadSDNode *Load = cast<LoadSDNode>(Op);
   ISD::LoadExtType ExtType = Load->getExtensionType();
   EVT MemVT = Load->getMemoryVT();
-  assert(Load->getAlign() >= MemVT.getStoreSize());
+  assert(Load->getAlignment() >= MemVT.getStoreSize());
 
   SDValue BasePtr = Load->getBasePtr();
   SDValue Chain = Load->getChain();
@@ -1386,7 +1504,7 @@ SDValue R600TargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
     assert(!MemVT.isVector() && (MemVT == MVT::i16 || MemVT == MVT::i8));
     SDValue NewLoad = DAG.getExtLoad(
         ISD::EXTLOAD, DL, VT, Chain, Ptr, LoadNode->getPointerInfo(), MemVT,
-        LoadNode->getAlign(), LoadNode->getMemOperand()->getFlags());
+        LoadNode->getAlignment(), LoadNode->getMemOperand()->getFlags());
     SDValue Res = DAG.getNode(ISD::SIGN_EXTEND_INREG, DL, VT, NewLoad,
                               DAG.getValueType(MemVT));
 
@@ -1425,11 +1543,11 @@ SDValue R600TargetLowering::lowerFrameIndex(SDValue Op,
   FrameIndexSDNode *FIN = cast<FrameIndexSDNode>(Op);
 
   unsigned FrameIndex = FIN->getIndex();
-  Register IgnoredFrameReg;
-  StackOffset Offset =
-      TFL->getFrameIndexReference(MF, FrameIndex, IgnoredFrameReg);
-  return DAG.getConstant(Offset.getFixed() * 4 * TFL->getStackWidth(MF),
-                         SDLoc(Op), Op.getValueType());
+  unsigned IgnoredFrameReg;
+  unsigned Offset =
+    TFL->getFrameIndexReference(MF, FrameIndex, IgnoredFrameReg);
+  return DAG.getConstant(Offset * 4 * TFL->getStackWidth(MF), SDLoc(Op),
+                         Op.getValueType());
 }
 
 CCAssignFn *R600TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
@@ -1484,7 +1602,7 @@ SDValue R600TargetLowering::LowerFormalArguments(
     }
 
     if (AMDGPU::isShader(CallConv)) {
-      Register Reg = MF.addLiveIn(VA.getLocReg(), &R600::R600_Reg128RegClass);
+      unsigned Reg = MF.addLiveIn(VA.getLocReg(), &R600::R600_Reg128RegClass);
       SDValue Register = DAG.getCopyFromReg(Chain, DL, Reg, VT);
       InVals.push_back(Register);
       continue;
@@ -1511,7 +1629,7 @@ SDValue R600TargetLowering::LowerFormalArguments(
     // size of the register which isn't useful.
 
     unsigned PartOffset = VA.getLocMemOffset();
-    Align Alignment = commonAlignment(Align(VT.getStoreSize()), PartOffset);
+    unsigned Alignment = MinAlign(VT.getStoreSize(), PartOffset);
 
     MachinePointerInfo PtrInfo(AMDGPUAS::PARAM_I_ADDRESS);
     SDValue Arg = DAG.getLoad(
@@ -1535,7 +1653,7 @@ EVT R600TargetLowering::getSetCCResultType(const DataLayout &DL, LLVMContext &,
 }
 
 bool R600TargetLowering::canMergeStoresTo(unsigned AS, EVT MemVT,
-                                          const MachineFunction &MF) const {
+                                          const SelectionDAG &DAG) const {
   // Local and Private addresses do not handle vectors. Limit to i32
   if ((AS == AMDGPUAS::LOCAL_ADDRESS || AS == AMDGPUAS::PRIVATE_ADDRESS)) {
     return (MemVT.getSizeInBits() <= 32);
@@ -1544,10 +1662,10 @@ bool R600TargetLowering::canMergeStoresTo(unsigned AS, EVT MemVT,
 }
 
 bool R600TargetLowering::allowsMisalignedMemoryAccesses(
-    EVT VT, unsigned AddrSpace, Align Alignment, MachineMemOperand::Flags Flags,
-    unsigned *IsFast) const {
+    EVT VT, unsigned AddrSpace, unsigned Align, MachineMemOperand::Flags Flags,
+    bool *IsFast) const {
   if (IsFast)
-    *IsFast = 0;
+    *IsFast = false;
 
   if (!VT.isSimple() || VT == MVT::Other)
     return false;
@@ -1557,9 +1675,9 @@ bool R600TargetLowering::allowsMisalignedMemoryAccesses(
 
   // TODO: This is a rough estimate.
   if (IsFast)
-    *IsFast = 1;
+    *IsFast = true;
 
-  return VT.bitsGT(MVT::i32) && Alignment >= Align(4);
+  return VT.bitsGT(MVT::i32) && Align % 4 == 0;
 }
 
 static SDValue CompactSwizzlableVector(
@@ -1579,7 +1697,7 @@ static SDValue CompactSwizzlableVector(
     if (NewBldVec[i].isUndef())
       // We mask write here to teach later passes that the ith element of this
       // vector is undef. Thus we can use it to reduce 128 bits reg usage,
-      // break false dependencies and additionally make assembly easier to read.
+      // break false dependencies and additionnaly make assembly easier to read.
       RemapSwizzle[i] = 7; // SEL_MASK_WRITE
     if (ConstantFPSDNode *C = dyn_cast<ConstantFPSDNode>(NewBldVec[i])) {
       if (C->isZero()) {
@@ -1623,7 +1741,7 @@ static SDValue ReorganizeVector(SelectionDAG &DAG, SDValue VectorEntry,
   for (unsigned i = 0; i < 4; i++) {
     RemapSwizzle[i] = i;
     if (NewBldVec[i].getOpcode() == ISD::EXTRACT_VECTOR_ELT) {
-      unsigned Idx = cast<ConstantSDNode>(NewBldVec[i].getOperand(1))
+      unsigned Idx = dyn_cast<ConstantSDNode>(NewBldVec[i].getOperand(1))
           ->getZExtValue();
       if (i == Idx)
         isUnmovable[Idx] = true;
@@ -1632,7 +1750,7 @@ static SDValue ReorganizeVector(SelectionDAG &DAG, SDValue VectorEntry,
 
   for (unsigned i = 0; i < 4; i++) {
     if (NewBldVec[i].getOpcode() == ISD::EXTRACT_VECTOR_ELT) {
-      unsigned Idx = cast<ConstantSDNode>(NewBldVec[i].getOperand(1))
+      unsigned Idx = dyn_cast<ConstantSDNode>(NewBldVec[i].getOperand(1))
           ->getZExtValue();
       if (isUnmovable[Idx])
         continue;
@@ -1647,7 +1765,7 @@ static SDValue ReorganizeVector(SelectionDAG &DAG, SDValue VectorEntry,
                             NewBldVec);
 }
 
-SDValue R600TargetLowering::OptimizeSwizzle(SDValue BuildVector, SDValue Swz[],
+SDValue R600TargetLowering::OptimizeSwizzle(SDValue BuildVector, SDValue Swz[4],
                                             SelectionDAG &DAG,
                                             const SDLoc &DL) const {
   // Old -> New swizzle values
@@ -1683,7 +1801,7 @@ SDValue R600TargetLowering::constBufferLoad(LoadSDNode *LoadNode, int Block,
   if (LoadNode->getMemoryVT().getScalarType() != MVT::i32 || !ISD::isNON_EXTLoad(LoadNode))
     return SDValue();
 
-  if (LoadNode->getAlign() < Align(4))
+  if (LoadNode->getAlignment() < 4)
     return SDValue();
 
   int ConstantBlock = ConstantAddressBlock(Block);
@@ -1705,7 +1823,7 @@ SDValue R600TargetLowering::constBufferLoad(LoadSDNode *LoadNode, int Block,
     NewVT = VT;
     NumElements = VT.getVectorNumElements();
   }
-  SDValue Result = DAG.getBuildVector(NewVT, DL, ArrayRef(Slots, NumElements));
+  SDValue Result = DAG.getBuildVector(NewVT, DL, makeArrayRef(Slots, NumElements));
   if (!VT.isVector()) {
     Result = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::i32, Result,
                          DAG.getConstant(0, DL, MVT::i32));
@@ -2036,7 +2154,7 @@ bool R600TargetLowering::FoldOperand(SDNode *ParentNode, unsigned SrcIdx,
     uint64_t ImmValue = 0;
 
     if (Src.getMachineOpcode() == R600::MOV_IMM_F32) {
-      ConstantFPSDNode *FPC = cast<ConstantFPSDNode>(Src.getOperand(0));
+      ConstantFPSDNode *FPC = dyn_cast<ConstantFPSDNode>(Src.getOperand(0));
       float FloatValue = FPC->getValueAPF().convertToFloat();
       if (FloatValue == 0.0) {
         ImmReg = R600::ZERO;
@@ -2048,7 +2166,7 @@ bool R600TargetLowering::FoldOperand(SDNode *ParentNode, unsigned SrcIdx,
         ImmValue = FPC->getValueAPF().bitcastToAPInt().getZExtValue();
       }
     } else {
-      ConstantSDNode *C = cast<ConstantSDNode>(Src.getOperand(0));
+      ConstantSDNode *C = dyn_cast<ConstantSDNode>(Src.getOperand(0));
       uint64_t Value = C->getZExtValue();
       if (Value == 0) {
         ImmReg = R600::ZERO;
@@ -2065,7 +2183,8 @@ bool R600TargetLowering::FoldOperand(SDNode *ParentNode, unsigned SrcIdx,
     if (ImmReg == R600::ALU_LITERAL_X) {
       if (!Imm.getNode())
         return false;
-      ConstantSDNode *C = cast<ConstantSDNode>(Imm);
+      ConstantSDNode *C = dyn_cast<ConstantSDNode>(Imm);
+      assert(C);
       if (C->getZExtValue())
         return false;
       Imm = DAG.getTargetConstant(ImmValue, SDLoc(ParentNode), MVT::i32);

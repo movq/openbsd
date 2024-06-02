@@ -34,8 +34,6 @@ public:
 
   ~AArch64ELFObjectWriter() override = default;
 
-  MCSectionELF *getMemtagRelocsSection(MCContext &Ctx) const override;
-
 protected:
   unsigned getRelocType(MCContext &Ctx, const MCValue &Target,
                         const MCFixup &Fixup, bool IsPCRel) const override;
@@ -45,7 +43,7 @@ protected:
 } // end anonymous namespace
 
 AArch64ELFObjectWriter::AArch64ELFObjectWriter(uint8_t OSABI, bool IsILP32)
-    : MCELFObjectTargetWriter(/*Is64Bit*/ !IsILP32, OSABI, ELF::EM_AARCH64,
+    : MCELFObjectTargetWriter(/*Is64Bit*/ true, OSABI, ELF::EM_AARCH64,
                               /*HasRelocationAddend*/ true),
       IsILP32(IsILP32) {}
 
@@ -108,17 +106,13 @@ unsigned AArch64ELFObjectWriter::getRelocType(MCContext &Ctx,
                                               const MCValue &Target,
                                               const MCFixup &Fixup,
                                               bool IsPCRel) const {
-  unsigned Kind = Fixup.getTargetKind();
-  if (Kind >= FirstLiteralRelocationKind)
-    return Kind - FirstLiteralRelocationKind;
   AArch64MCExpr::VariantKind RefKind =
       static_cast<AArch64MCExpr::VariantKind>(Target.getRefKind());
   AArch64MCExpr::VariantKind SymLoc = AArch64MCExpr::getSymbolLoc(RefKind);
   bool IsNC = AArch64MCExpr::isNotChecked(RefKind);
 
   assert((!Target.getSymA() ||
-          Target.getSymA()->getKind() == MCSymbolRefExpr::VK_None ||
-          Target.getSymA()->getKind() == MCSymbolRefExpr::VK_PLT) &&
+          Target.getSymA()->getKind() == MCSymbolRefExpr::VK_None) &&
          "Should only be expression-level modifiers here");
 
   assert((!Target.getSymB() ||
@@ -126,17 +120,14 @@ unsigned AArch64ELFObjectWriter::getRelocType(MCContext &Ctx,
          "Should only be expression-level modifiers here");
 
   if (IsPCRel) {
-    switch (Kind) {
+    switch (Fixup.getTargetKind()) {
     case FK_Data_1:
       Ctx.reportError(Fixup.getLoc(), "1-byte data relocations not supported");
       return ELF::R_AARCH64_NONE;
     case FK_Data_2:
       return R_CLS(PREL16);
-    case FK_Data_4: {
-      return Target.getAccessVariant() == MCSymbolRefExpr::VK_PLT
-                 ? R_CLS(PLT32)
-                 : R_CLS(PREL32);
-    }
+    case FK_Data_4:
+      return R_CLS(PREL32);
     case FK_Data_8:
       if (IsILP32) {
         Ctx.reportError(Fixup.getLoc(),
@@ -194,6 +185,8 @@ unsigned AArch64ELFObjectWriter::getRelocType(MCContext &Ctx,
     if (IsILP32 && isNonILP32reloc(Fixup, RefKind, Ctx))
       return ELF::R_AARCH64_NONE;
     switch (Fixup.getTargetKind()) {
+    case FK_NONE:
+      return ELF::R_AARCH64_NONE;
     case FK_Data_1:
       Ctx.reportError(Fixup.getLoc(), "1-byte data relocations not supported");
       return ELF::R_AARCH64_NONE;
@@ -324,11 +317,7 @@ unsigned AArch64ELFObjectWriter::getRelocType(MCContext &Ctx,
       if (SymLoc == AArch64MCExpr::VK_ABS && IsNC)
         return R_CLS(LDST64_ABS_LO12_NC);
       if (SymLoc == AArch64MCExpr::VK_GOT && IsNC) {
-        AArch64MCExpr::VariantKind AddressLoc =
-            AArch64MCExpr::getAddressFrag(RefKind);
         if (!IsILP32) {
-          if (AddressLoc == AArch64MCExpr::VK_LO15)
-            return ELF::R_AARCH64_LD64_GOTPAGE_LO15;
           return ELF::R_AARCH64_LD64_GOT_LO12_NC;
         } else {
           Ctx.reportError(Fixup.getLoc(), "ILP32 64-bit load/store "
@@ -446,6 +435,8 @@ unsigned AArch64ELFObjectWriter::getRelocType(MCContext &Ctx,
       Ctx.reportError(Fixup.getLoc(),
                       "invalid fixup for movz/movk instruction");
       return ELF::R_AARCH64_NONE;
+    case AArch64::fixup_aarch64_tlsdesc_call:
+      return R_CLS(TLSDESC_CALL);
     default:
       Ctx.reportError(Fixup.getLoc(), "Unknown ELF relocation type");
       return ELF::R_AARCH64_NONE;
@@ -453,12 +444,6 @@ unsigned AArch64ELFObjectWriter::getRelocType(MCContext &Ctx,
   }
 
   llvm_unreachable("Unimplemented fixup -> relocation");
-}
-
-MCSectionELF *
-AArch64ELFObjectWriter::getMemtagRelocsSection(MCContext &Ctx) const {
-  return Ctx.getELFSection(".memtag.globals.static",
-                           ELF::SHT_AARCH64_MEMTAG_GLOBALS_STATIC, 0);
 }
 
 std::unique_ptr<MCObjectTargetWriter>

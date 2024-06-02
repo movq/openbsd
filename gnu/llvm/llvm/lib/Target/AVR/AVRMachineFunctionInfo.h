@@ -31,12 +31,6 @@ class AVRMachineFunctionInfo : public MachineFunctionInfo {
   /// used inside the function.
   bool HasStackArgs;
 
-  /// Whether or not the function is an interrupt handler.
-  bool IsInterruptHandler;
-
-  /// Whether or not the function is an non-blocking interrupt handler.
-  bool IsSignalHandler;
-
   /// Size of the callee-saved register portion of the
   /// stack frame in bytes.
   unsigned CalleeSavedFrameSize;
@@ -45,23 +39,13 @@ class AVRMachineFunctionInfo : public MachineFunctionInfo {
   int VarArgsFrameIndex;
 
 public:
-  AVRMachineFunctionInfo(const Function &F, const TargetSubtargetInfo *STI)
+  AVRMachineFunctionInfo()
       : HasSpills(false), HasAllocas(false), HasStackArgs(false),
-        CalleeSavedFrameSize(0), VarArgsFrameIndex(0) {
-    CallingConv::ID CallConv = F.getCallingConv();
+        CalleeSavedFrameSize(0), VarArgsFrameIndex(0) {}
 
-    this->IsInterruptHandler =
-        CallConv == CallingConv::AVR_INTR || F.hasFnAttribute("interrupt");
-    this->IsSignalHandler =
-        CallConv == CallingConv::AVR_SIGNAL || F.hasFnAttribute("signal");
-  }
-
-  MachineFunctionInfo *
-  clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
-        const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
-      const override {
-    return DestMF.cloneInfo<AVRMachineFunctionInfo>(*this);
-  }
+  explicit AVRMachineFunctionInfo(MachineFunction &MF)
+      : HasSpills(false), HasAllocas(false), HasStackArgs(false),
+        CalleeSavedFrameSize(0), VarArgsFrameIndex(0) {}
 
   bool getHasSpills() const { return HasSpills; }
   void setHasSpills(bool B) { HasSpills = B; }
@@ -72,14 +56,6 @@ public:
   bool getHasStackArgs() const { return HasStackArgs; }
   void setHasStackArgs(bool B) { HasStackArgs = B; }
 
-  /// Checks if the function is some form of interrupt service routine.
-  bool isInterruptOrSignalHandler() const {
-    return isInterruptHandler() || isSignalHandler();
-  }
-
-  bool isInterruptHandler() const { return IsInterruptHandler; }
-  bool isSignalHandler() const { return IsSignalHandler; }
-
   unsigned getCalleeSavedFrameSize() const { return CalleeSavedFrameSize; }
   void setCalleeSavedFrameSize(unsigned Bytes) { CalleeSavedFrameSize = Bytes; }
 
@@ -87,6 +63,6 @@ public:
   void setVarArgsFrameIndex(int Idx) { VarArgsFrameIndex = Idx; }
 };
 
-} // namespace llvm
+} // end llvm namespace
 
 #endif // LLVM_AVR_MACHINE_FUNCTION_INFO_H

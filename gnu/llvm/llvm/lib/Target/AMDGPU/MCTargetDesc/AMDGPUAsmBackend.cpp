@@ -9,17 +9,16 @@
 
 #include "MCTargetDesc/AMDGPUFixupKinds.h"
 #include "MCTargetDesc/AMDGPUMCTargetDesc.h"
-#include "Utils/AMDGPUBaseInfo.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
-#include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/EndianStream.h"
-#include "llvm/Support/TargetParser.h"
+#include "llvm/MC/MCValue.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "Utils/AMDGPUBaseInfo.h"
 
 using namespace llvm;
 using namespace llvm::AMDGPU;
@@ -40,31 +39,27 @@ public:
                             const MCRelaxableFragment *DF,
                             const MCAsmLayout &Layout) const override;
 
-  void relaxInstruction(MCInst &Inst,
-                        const MCSubtargetInfo &STI) const override;
+  void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
+                        MCInst &Res) const override;
 
   bool mayNeedRelaxation(const MCInst &Inst,
                          const MCSubtargetInfo &STI) const override;
 
   unsigned getMinimumNopSize() const override;
-  bool writeNopData(raw_ostream &OS, uint64_t Count,
-                    const MCSubtargetInfo *STI) const override;
+  bool writeNopData(raw_ostream &OS, uint64_t Count) const override;
 
-  std::optional<MCFixupKind> getFixupKind(StringRef Name) const override;
   const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const override;
-  bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
-                             const MCValue &Target) override;
 };
 
 } //End anonymous namespace
 
-void AMDGPUAsmBackend::relaxInstruction(MCInst &Inst,
-                                        const MCSubtargetInfo &STI) const {
-  MCInst Res;
+void AMDGPUAsmBackend::relaxInstruction(const MCInst &Inst,
+                                        const MCSubtargetInfo &STI,
+                                        MCInst &Res) const {
   unsigned RelaxedOpcode = AMDGPU::getSOPPWithRelaxation(Inst.getOpcode());
   Res.setOpcode(RelaxedOpcode);
   Res.addOperand(Inst.getOperand(0));
-  Inst = std::move(Res);
+  return;
 }
 
 bool AMDGPUAsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
@@ -140,9 +135,6 @@ void AMDGPUAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                   MutableArrayRef<char> Data, uint64_t Value,
                                   bool IsResolved,
                                   const MCSubtargetInfo *STI) const {
-  if (Fixup.getKind() >= FirstLiteralRelocationKind)
-    return;
-
   Value = adjustFixupValue(Fixup, Value, &Asm.getContext());
   if (!Value)
     return; // Doesn't change encoding.
@@ -162,16 +154,6 @@ void AMDGPUAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
     Data[Offset + i] |= static_cast<uint8_t>((Value >> (i * 8)) & 0xff);
 }
 
-std::optional<MCFixupKind>
-AMDGPUAsmBackend::getFixupKind(StringRef Name) const {
-  return StringSwitch<std::optional<MCFixupKind>>(Name)
-#define ELF_RELOC(Name, Value)                                                 \
-  .Case(#Name, MCFixupKind(FirstLiteralRelocationKind + Value))
-#include "llvm/BinaryFormat/ELFRelocs/AMDGPU.def"
-#undef ELF_RELOC
-      .Default(std::nullopt);
-}
-
 const MCFixupKindInfo &AMDGPUAsmBackend::getFixupKindInfo(
                                                        MCFixupKind Kind) const {
   const static MCFixupKindInfo Infos[AMDGPU::NumTargetFixupKinds] = {
@@ -179,27 +161,17 @@ const MCFixupKindInfo &AMDGPUAsmBackend::getFixupKindInfo(
     { "fixup_si_sopp_br",     0,     16,   MCFixupKindInfo::FKF_IsPCRel },
   };
 
-  if (Kind >= FirstLiteralRelocationKind)
-    return MCAsmBackend::getFixupKindInfo(FK_NONE);
-
   if (Kind < FirstTargetFixupKind)
     return MCAsmBackend::getFixupKindInfo(Kind);
 
   return Infos[Kind - FirstTargetFixupKind];
 }
 
-bool AMDGPUAsmBackend::shouldForceRelocation(const MCAssembler &,
-                                             const MCFixup &Fixup,
-                                             const MCValue &) {
-  return Fixup.getKind() >= FirstLiteralRelocationKind;
-}
-
 unsigned AMDGPUAsmBackend::getMinimumNopSize() const {
   return 4;
 }
 
-bool AMDGPUAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count,
-                                    const MCSubtargetInfo *STI) const {
+bool AMDGPUAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count) const {
   // If the count is not 4-byte aligned, we must be writing data into the text
   // section (otherwise we have unaligned instructions, and thus have far
   // bigger problems), so just write zeros instead.
@@ -263,6 +235,7 @@ MCAsmBackend *llvm::createAMDGPUAsmBackend(const Target &T,
                                            const MCSubtargetInfo &STI,
                                            const MCRegisterInfo &MRI,
                                            const MCTargetOptions &Options) {
+  // Use 64-bit ELF for amdgcn
   return new ELFAMDGPUAsmBackend(T, STI.getTargetTriple(),
-                                 getHsaAbiVersion(&STI).value_or(0));
+                                 IsaInfo::hasCodeObjectV3(&STI) ? 1 : 0);
 }

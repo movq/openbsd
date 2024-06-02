@@ -15,7 +15,6 @@
 namespace llvm {
 
 class MCFixup;
-class MCSectionWasm;
 class MCValue;
 class raw_pwrite_stream;
 
@@ -29,14 +28,13 @@ protected:
 public:
   virtual ~MCWasmObjectTargetWriter();
 
-  Triple::ObjectFormatType getFormat() const override { return Triple::Wasm; }
+  virtual Triple::ObjectFormatType getFormat() const { return Triple::Wasm; }
   static bool classof(const MCObjectTargetWriter *W) {
     return W->getFormat() == Triple::Wasm;
   }
 
-  virtual unsigned getRelocType(const MCValue &Target, const MCFixup &Fixup,
-                                const MCSectionWasm &FixupSection,
-                                bool IsLocRel) const = 0;
+  virtual unsigned getRelocType(const MCValue &Target,
+                                const MCFixup &Fixup) const = 0;
 
   /// \name Accessors
   /// @{
@@ -53,10 +51,6 @@ public:
 std::unique_ptr<MCObjectWriter>
 createWasmObjectWriter(std::unique_ptr<MCWasmObjectTargetWriter> MOTW,
                        raw_pwrite_stream &OS);
-
-std::unique_ptr<MCObjectWriter>
-createWasmDwoObjectWriter(std::unique_ptr<MCWasmObjectTargetWriter> MOTW,
-                          raw_pwrite_stream &OS, raw_pwrite_stream &DwoOS);
 
 } // namespace llvm
 

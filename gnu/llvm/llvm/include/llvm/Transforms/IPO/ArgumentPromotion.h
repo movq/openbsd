@@ -24,7 +24,7 @@ class ArgumentPromotionPass : public PassInfoMixin<ArgumentPromotionPass> {
   unsigned MaxElements;
 
 public:
-  ArgumentPromotionPass(unsigned MaxElements = 2u) : MaxElements(MaxElements) {}
+  ArgumentPromotionPass(unsigned MaxElements = 3u) : MaxElements(MaxElements) {}
 
   PreservedAnalyses run(LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM,
                         LazyCallGraph &CG, CGSCCUpdateResult &UR);

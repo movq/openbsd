@@ -13,6 +13,7 @@
 #ifndef LLVM_TOOLS_LLVM_TAPI_DIFF_DIFFENGINE_H
 #define LLVM_TOOLS_LLVM_TAPI_DIFF_DIFFENGINE_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/Object/TapiUniversal.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TextAPI/Symbol.h"

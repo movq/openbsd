@@ -165,7 +165,7 @@ CODE GENERATION OPTIONS
       =simple-noitin: Simple two pass scheduling: Same as simple except using generic latency
       =list-burr: Bottom-up register reduction list scheduling
       =list-tdrr: Top-down register reduction list scheduling
-      =list-td: Top-down list scheduler
+      =list-td: Top-down list scheduler -print-machineinstrs - Print generated machine code
 
 .. option:: -regalloc=allocator
 
@@ -174,8 +174,7 @@ CODE GENERATION OPTIONS
  .. code-block:: text
 
       =bigblock: Big-block register allocator
-      =linearscan: linear scan register allocator
-      =local: local register allocator
+      =linearscan: linear scan register allocator =local -   local register allocator
       =simple: simple register allocator
 
 .. option:: -relocation-model=model
@@ -185,8 +184,7 @@ CODE GENERATION OPTIONS
  .. code-block:: text
 
       =default: Target default relocation model
-      =static: Non-relocatable code
-      =pic: Fully relocatable, position independent code
+      =static: Non-relocatable code =pic -   Fully relocatable, position independent code
       =dynamic-no-pic: Relocatable external references, non-relocatable code
 
 .. option:: -spiller

@@ -11,18 +11,12 @@
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
 
-#ifndef LLVM_C_ERRORHANDLING_H
-#define LLVM_C_ERRORHANDLING_H
+#ifndef LLVM_C_ERROR_HANDLING_H
+#define LLVM_C_ERROR_HANDLING_H
 
 #include "llvm-c/ExternC.h"
 
 LLVM_C_EXTERN_C_BEGIN
-
-/**
- * @addtogroup LLVMCError
- *
- * @{
- */
 
 typedef void (*LLVMFatalErrorHandler)(const char *Reason);
 
@@ -47,10 +41,6 @@ void LLVMResetFatalErrorHandler(void);
  * crash.
  */
 void LLVMEnablePrettyStackTrace(void);
-
-/**
- * @}
- */
 
 LLVM_C_EXTERN_C_END
 

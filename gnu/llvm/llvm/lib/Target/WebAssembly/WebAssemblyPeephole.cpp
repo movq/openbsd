@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
-#include "Utils/WebAssemblyUtilities.h"
 #include "WebAssembly.h"
 #include "WebAssemblyMachineFunctionInfo.h"
 #include "WebAssemblySubtarget.h"
@@ -67,7 +66,7 @@ static bool maybeRewriteToDrop(unsigned OldReg, unsigned NewReg,
     Register NewReg = MRI.createVirtualRegister(MRI.getRegClass(OldReg));
     MO.setReg(NewReg);
     MO.setIsDead();
-    MFI.stackifyVReg(MRI, NewReg);
+    MFI.stackifyVReg(NewReg);
   }
   return Changed;
 }
@@ -96,12 +95,33 @@ static bool maybeRewriteToFallthrough(MachineInstr &MI, MachineBasicBlock &MBB,
     if (!MFI.isVRegStackified(Reg)) {
       unsigned CopyLocalOpc;
       const TargetRegisterClass *RegClass = MRI.getRegClass(Reg);
-      CopyLocalOpc = WebAssembly::getCopyOpcodeForRegClass(RegClass);
+      switch (RegClass->getID()) {
+      case WebAssembly::I32RegClassID:
+        CopyLocalOpc = WebAssembly::COPY_I32;
+        break;
+      case WebAssembly::I64RegClassID:
+        CopyLocalOpc = WebAssembly::COPY_I64;
+        break;
+      case WebAssembly::F32RegClassID:
+        CopyLocalOpc = WebAssembly::COPY_F32;
+        break;
+      case WebAssembly::F64RegClassID:
+        CopyLocalOpc = WebAssembly::COPY_F64;
+        break;
+      case WebAssembly::V128RegClassID:
+        CopyLocalOpc = WebAssembly::COPY_V128;
+        break;
+      case WebAssembly::EXNREFRegClassID:
+        CopyLocalOpc = WebAssembly::COPY_EXNREF;
+        break;
+      default:
+        llvm_unreachable("Unexpected register class for return operand");
+      }
       Register NewReg = MRI.createVirtualRegister(RegClass);
       BuildMI(MBB, MI, MI.getDebugLoc(), TII.get(CopyLocalOpc), NewReg)
           .addReg(Reg);
       MO.setReg(NewReg);
-      MFI.stackifyVReg(MRI, NewReg);
+      MFI.stackifyVReg(NewReg);
     }
   }
 
@@ -129,7 +149,8 @@ bool WebAssemblyPeephole::runOnMachineFunction(MachineFunction &MF) {
       switch (MI.getOpcode()) {
       default:
         break;
-      case WebAssembly::CALL: {
+      case WebAssembly::CALL_i32:
+      case WebAssembly::CALL_i64: {
         MachineOperand &Op1 = MI.getOperand(1);
         if (Op1.isSymbol()) {
           StringRef Name(Op1.getSymbolName());

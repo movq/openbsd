@@ -23,15 +23,19 @@ class MCObjectTargetWriter;
 class MCRegisterInfo;
 class MCSubtargetInfo;
 class MCTargetOptions;
+class StringRef;
 class Target;
+class Triple;
+class raw_pwrite_stream;
+class raw_ostream;
 
 namespace SystemZMC {
 // How many bytes are in the ABI-defined, caller-allocated part of
 // a stack frame.
-const int64_t ELFCallFrameSize = 160;
+const int64_t CallFrameSize = 160;
 
 // The offset of the DWARF CFA from the incoming stack pointer.
-const int64_t ELFCFAOffsetFromInitialSP = ELFCallFrameSize;
+const int64_t CFAOffsetFromInitialSP = CallFrameSize;
 
 // Maps of asm register numbers to LLVM register numbers, with 0 indicating
 // an invalid register.  In principle we could use 32-bit and 64-bit register
@@ -78,6 +82,7 @@ inline unsigned getRegAsVR128(unsigned Reg) {
 } // end namespace SystemZMC
 
 MCCodeEmitter *createSystemZMCCodeEmitter(const MCInstrInfo &MCII,
+                                          const MCRegisterInfo &MRI,
                                           MCContext &Ctx);
 
 MCAsmBackend *createSystemZMCAsmBackend(const Target &T,
@@ -95,7 +100,6 @@ std::unique_ptr<MCObjectTargetWriter> createSystemZObjectWriter(uint8_t OSABI);
 
 // Defines symbolic names for the SystemZ instructions.
 #define GET_INSTRINFO_ENUM
-#define GET_INSTRINFO_MC_HELPER_DECLS
 #include "SystemZGenInstrInfo.inc"
 
 #define GET_SUBTARGETINFO_ENUM

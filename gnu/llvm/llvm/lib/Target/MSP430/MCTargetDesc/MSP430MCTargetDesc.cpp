@@ -17,12 +17,11 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 
 #define GET_INSTRINFO_MC_DESC
-#define ENABLE_INSTR_PREDICATE_VERIFIER
 #include "MSP430GenInstrInfo.inc"
 
 #define GET_SUBTARGETINFO_MC_DESC
@@ -45,7 +44,7 @@ static MCRegisterInfo *createMSP430MCRegisterInfo(const Triple &TT) {
 
 static MCSubtargetInfo *
 createMSP430MCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
-  return createMSP430MCSubtargetInfoImpl(TT, CPU, /*TuneCPU*/ CPU, FS);
+  return createMSP430MCSubtargetInfoImpl(TT, CPU, FS);
 }
 
 static MCInstPrinter *createMSP430MCInstPrinter(const Triple &T,

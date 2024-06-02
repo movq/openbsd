@@ -50,8 +50,18 @@ class MachineFunction;
 
 /// Collects and handles line tables information in a CodeView format.
 class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
-public:
-  struct LocalVarDef {
+  MCStreamer &OS;
+  BumpPtrAllocator Allocator;
+  codeview::GlobalTypeTableBuilder TypeTable;
+
+  /// Whether to emit type record hashes into .debug$H.
+  bool EmitDebugGlobalHashes = false;
+
+  /// The codeview CPU type used by the translation unit.
+  codeview::CPUType TheCPU;
+
+  /// Represents the most general definition range.
+  struct LocalVarDefRange {
     /// Indicates that variable data is stored in memory relative to the
     /// specified register.
     int InMemory : 1;
@@ -69,42 +79,24 @@ public:
     /// location containing the data.
     uint16_t CVRegister;
 
-    uint64_t static toOpaqueValue(const LocalVarDef DR) {
-      uint64_t Val = 0;
-      std::memcpy(&Val, &DR, sizeof(Val));
-      return Val;
+    /// Compares all location fields. This includes all fields except the label
+    /// ranges.
+    bool isDifferentLocation(LocalVarDefRange &O) {
+      return InMemory != O.InMemory || DataOffset != O.DataOffset ||
+             IsSubfield != O.IsSubfield || StructOffset != O.StructOffset ||
+             CVRegister != O.CVRegister;
     }
 
-    LocalVarDef static createFromOpaqueValue(uint64_t Val) {
-      LocalVarDef DR;
-      std::memcpy(&DR, &Val, sizeof(Val));
-      return DR;
-    }
+    SmallVector<std::pair<const MCSymbol *, const MCSymbol *>, 1> Ranges;
   };
 
-  static_assert(sizeof(uint64_t) == sizeof(LocalVarDef));
-
-private:
-  MCStreamer &OS;
-  BumpPtrAllocator Allocator;
-  codeview::GlobalTypeTableBuilder TypeTable;
-
-  /// Whether to emit type record hashes into .debug$H.
-  bool EmitDebugGlobalHashes = false;
-
-  /// The codeview CPU type used by the translation unit.
-  codeview::CPUType TheCPU;
-
-  static LocalVarDef createDefRangeMem(uint16_t CVRegister, int Offset);
+  static LocalVarDefRange createDefRangeMem(uint16_t CVRegister, int Offset);
 
   /// Similar to DbgVariable in DwarfDebug, but not dwarf-specific.
   struct LocalVariable {
     const DILocalVariable *DIVar = nullptr;
-    MapVector<LocalVarDef,
-              SmallVector<std::pair<const MCSymbol *, const MCSymbol *>, 1>>
-        DefRanges;
+    SmallVector<LocalVarDefRange, 1> DefRanges;
     bool UseReferenceType = false;
-    std::optional<APSInt> ConstantValue;
   };
 
   struct CVGlobalVariable {
@@ -194,13 +186,6 @@ private:
   };
   FunctionInfo *CurFn = nullptr;
 
-  codeview::SourceLanguage CurrentSourceLanguage =
-      codeview::SourceLanguage::Masm;
-
-  // This map records the constant offset in DIExpression of the
-  // DIGlobalVariableExpression referencing the DIGlobalVariable.
-  DenseMap<const DIGlobalVariable *, uint64_t> CVGlobalVariableOffsets;
-
   // Map used to seperate variables according to the lexical scope they belong
   // in.  This is populated by recordLocalVariable() before
   // collectLexicalBlocks() separates the variables between the FunctionInfo
@@ -217,9 +202,6 @@ private:
 
   // Array of non-COMDAT global variables.
   SmallVector<CVGlobalVariable, 1> GlobalVariables;
-
-  /// List of static const data members to be emitted as S_CONSTANTs.
-  SmallVector<const DIDerivedType *, 4> StaticConstMembers;
 
   /// The set of comdat .debug$S sections that we've seen so far. Each section
   /// must start with a magic version number that must only be emitted once.
@@ -244,6 +226,10 @@ private:
 
   void calculateRanges(LocalVariable &Var,
                        const DbgValueHistoryMap::Entries &Entries);
+
+  static void collectInlineSiteChildren(SmallVectorImpl<unsigned> &Children,
+                                        const FunctionInfo &FI,
+                                        const InlineSite &Site);
 
   /// Remember some debug info about each function. Keep it in a stable order to
   /// emit at the end of the TU.
@@ -310,8 +296,6 @@ private:
 
   void emitTypeGlobalHashes();
 
-  void emitObjName();
-
   void emitCompilerInformation();
 
   void emitBuildInfo();
@@ -326,16 +310,12 @@ private:
 
   void emitDebugInfoForRetainedTypes();
 
-  void emitDebugInfoForUDTs(
-      const std::vector<std::pair<std::string, const DIType *>> &UDTs);
+  void
+  emitDebugInfoForUDTs(ArrayRef<std::pair<std::string, const DIType *>> UDTs);
 
-  void collectDebugInfoForGlobals();
   void emitDebugInfoForGlobals();
   void emitGlobalVariableList(ArrayRef<CVGlobalVariable> Globals);
-  void emitConstantSymbolRecord(const DIType *DTy, APSInt &Value,
-                                const std::string &QualifiedName);
   void emitDebugInfoForGlobal(const CVGlobalVariable &CVGV);
-  void emitStaticConstMemberList();
 
   /// Opens a subsection of the given kind in a .debug$S codeview section.
   /// Returns an end label for use with endCVSubsection when the subsection is
@@ -417,7 +397,6 @@ private:
   codeview::TypeIndex lowerType(const DIType *Ty, const DIType *ClassTy);
   codeview::TypeIndex lowerTypeAlias(const DIDerivedType *Ty);
   codeview::TypeIndex lowerTypeArray(const DICompositeType *Ty);
-  codeview::TypeIndex lowerTypeString(const DIStringType *Ty);
   codeview::TypeIndex lowerTypeBasic(const DIBasicType *Ty);
   codeview::TypeIndex lowerTypePointer(
       const DIDerivedType *Ty,
@@ -464,15 +443,6 @@ private:
                                                codeview::TypeIndex TI,
                                                const DIType *ClassTy = nullptr);
 
-  /// Collect the names of parent scopes, innermost to outermost. Return the
-  /// innermost subprogram scope if present. Ensure that parent type scopes are
-  /// inserted into the type table.
-  const DISubprogram *
-  collectParentScopeNames(const DIScope *Scope,
-                          SmallVectorImpl<StringRef> &ParentScopeNames);
-  std::string getFullyQualifiedName(const DIScope *Scope, StringRef Name);
-  std::string getFullyQualifiedName(const DIScope *Scope);
-
   unsigned getPointerSizeInBytes();
 
 protected:
@@ -482,15 +452,8 @@ protected:
   /// Gather post-function debug information.
   void endFunctionImpl(const MachineFunction *) override;
 
-  /// Check if the current module is in Fortran.
-  bool moduleIsInFortran() {
-    return CurrentSourceLanguage == codeview::SourceLanguage::Fortran;
-  }
-
 public:
   CodeViewDebug(AsmPrinter *AP);
-
-  void beginModule(Module *M) override;
 
   void setSymbolSize(const MCSymbol *, uint64_t) override {}
 
@@ -499,27 +462,6 @@ public:
 
   /// Process beginning of an instruction.
   void beginInstruction(const MachineInstr *MI) override;
-};
-
-template <> struct DenseMapInfo<CodeViewDebug::LocalVarDef> {
-
-  static inline CodeViewDebug::LocalVarDef getEmptyKey() {
-    return CodeViewDebug::LocalVarDef::createFromOpaqueValue(~0ULL);
-  }
-
-  static inline CodeViewDebug::LocalVarDef getTombstoneKey() {
-    return CodeViewDebug::LocalVarDef::createFromOpaqueValue(~0ULL - 1ULL);
-  }
-
-  static unsigned getHashValue(const CodeViewDebug::LocalVarDef &DR) {
-    return CodeViewDebug::LocalVarDef::toOpaqueValue(DR) * 37ULL;
-  }
-
-  static bool isEqual(const CodeViewDebug::LocalVarDef &LHS,
-                      const CodeViewDebug::LocalVarDef &RHS) {
-    return CodeViewDebug::LocalVarDef::toOpaqueValue(LHS) ==
-           CodeViewDebug::LocalVarDef::toOpaqueValue(RHS);
-  }
 };
 
 } // end namespace llvm

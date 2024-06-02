@@ -24,6 +24,7 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Process.h"
@@ -64,7 +65,11 @@ static cl::opt<bool>
 // PassNameParser.
 //
 static cl::list<const PassInfo *, bool, PassNameParser>
-    PassList(cl::desc("Passes available:"));
+    PassList(cl::desc("Passes available:"), cl::ZeroOrMore);
+
+static cl::opt<bool>
+    StandardLinkOpts("std-link-opts",
+                     cl::desc("Include the standard link time optimizations"));
 
 static cl::opt<bool>
     OptLevelO1("O1", cl::desc("Optimization level 1. Identical to 'opt -O1'"));
@@ -105,7 +110,7 @@ public:
   void add(Pass *P) override {
     const void *ID = P->getPassID();
     const PassInfo *PI = PassRegistry::getPassRegistry()->getPassInfo(ID);
-    D.addPass(std::string(PI->getPassArgument()));
+    D.addPass(PI->getPassArgument());
   }
 };
 }
@@ -143,11 +148,14 @@ int main(int argc, char **argv) {
   PassRegistry &Registry = *PassRegistry::getPassRegistry();
   initializeCore(Registry);
   initializeScalarOpts(Registry);
+  initializeObjCARCOpts(Registry);
   initializeVectorization(Registry);
   initializeIPO(Registry);
   initializeAnalysis(Registry);
   initializeTransformUtils(Registry);
   initializeInstCombine(Registry);
+  initializeAggressiveInstCombine(Registry);
+  initializeInstrumentation(Registry);
   initializeTarget(Registry);
 
   if (std::getenv("bar") == (char*) -1) {
@@ -195,6 +203,12 @@ int main(int argc, char **argv) {
 
   AddToDriver PM(D);
 
+  if (StandardLinkOpts) {
+    PassManagerBuilder Builder;
+    Builder.Inliner = createFunctionInliningPass();
+    Builder.populateLTOPassManager(PM);
+  }
+
   if (OptLevelO1)
     AddOptimizationPasses(PM, 1, 0);
   else if (OptLevelO2)
@@ -207,7 +221,7 @@ int main(int argc, char **argv) {
     AddOptimizationPasses(PM, 2, 2);
 
   for (const PassInfo *PI : PassList)
-    D.addPass(std::string(PI->getPassArgument()));
+    D.addPass(PI->getPassArgument());
 
 // Bugpoint has the ability of generating a plethora of core files, so to
 // avoid filling up the disk, we prevent it

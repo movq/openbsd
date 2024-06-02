@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Error.h"
 #include "ObjDumper.h"
 #include "llvm-readobj.h"
 #include "llvm/Object/Wasm.h"
@@ -20,26 +21,26 @@ using namespace object;
 
 namespace {
 
-const EnumEntry<unsigned> WasmSymbolTypes[] = {
+static const EnumEntry<unsigned> WasmSymbolTypes[] = {
 #define ENUM_ENTRY(X)                                                          \
   { #X, wasm::WASM_SYMBOL_TYPE_##X }
-    ENUM_ENTRY(FUNCTION), ENUM_ENTRY(DATA), ENUM_ENTRY(GLOBAL),
-    ENUM_ENTRY(SECTION),  ENUM_ENTRY(TAG),  ENUM_ENTRY(TABLE),
+    ENUM_ENTRY(FUNCTION), ENUM_ENTRY(DATA),  ENUM_ENTRY(GLOBAL),
+    ENUM_ENTRY(SECTION),  ENUM_ENTRY(EVENT),
 #undef ENUM_ENTRY
 };
 
-const EnumEntry<uint32_t> WasmSectionTypes[] = {
+static const EnumEntry<uint32_t> WasmSectionTypes[] = {
 #define ENUM_ENTRY(X)                                                          \
   { #X, wasm::WASM_SEC_##X }
     ENUM_ENTRY(CUSTOM),   ENUM_ENTRY(TYPE),      ENUM_ENTRY(IMPORT),
     ENUM_ENTRY(FUNCTION), ENUM_ENTRY(TABLE),     ENUM_ENTRY(MEMORY),
-    ENUM_ENTRY(GLOBAL),   ENUM_ENTRY(TAG),       ENUM_ENTRY(EXPORT),
+    ENUM_ENTRY(GLOBAL),   ENUM_ENTRY(EVENT),     ENUM_ENTRY(EXPORT),
     ENUM_ENTRY(START),    ENUM_ENTRY(ELEM),      ENUM_ENTRY(CODE),
     ENUM_ENTRY(DATA),     ENUM_ENTRY(DATACOUNT),
 #undef ENUM_ENTRY
 };
 
-const EnumEntry<unsigned> WasmSymbolFlags[] = {
+static const EnumEntry<unsigned> WasmSymbolFlags[] = {
 #define ENUM_ENTRY(X)                                                          \
   { #X, wasm::WASM_SYMBOL_##X }
   ENUM_ENTRY(BINDING_GLOBAL),
@@ -57,7 +58,7 @@ const EnumEntry<unsigned> WasmSymbolFlags[] = {
 class WasmDumper : public ObjDumper {
 public:
   WasmDumper(const WasmObjectFile *Obj, ScopedPrinter &Writer)
-      : ObjDumper(Writer, Obj->getFileName()), Obj(Obj) {}
+      : ObjDumper(Writer), Obj(Obj) {}
 
   void printFileHeaders() override;
   void printSectionHeaders() override;
@@ -92,8 +93,18 @@ void WasmDumper::printRelocation(const SectionRef &Section,
   if (SI != Obj->symbol_end())
     SymName = unwrapOrError(Obj->getFileName(), SI->getName());
 
-  bool HasAddend = wasm::relocTypeHasAddend(static_cast<uint32_t>(RelocType));
-
+  bool HasAddend = false;
+  switch (RelocType) {
+  case wasm::R_WASM_MEMORY_ADDR_LEB:
+  case wasm::R_WASM_MEMORY_ADDR_SLEB:
+  case wasm::R_WASM_MEMORY_ADDR_I32:
+  case wasm::R_WASM_FUNCTION_OFFSET_I32:
+  case wasm::R_WASM_SECTION_OFFSET_I32:
+    HasAddend = true;
+    break;
+  default:
+    break;
+  }
   if (opts::ExpandRelocs) {
     DictScope Group(W, "Relocation");
     W.printNumber("Type", RelocTypeName, RelocType);
@@ -156,7 +167,7 @@ void WasmDumper::printSectionHeaders() {
   for (const SectionRef &Section : Obj->sections()) {
     const WasmSection &WasmSec = Obj->getWasmSection(Section);
     DictScope SectionD(W, "Section");
-    W.printEnum("Type", WasmSec.Type, ArrayRef(WasmSectionTypes));
+    W.printEnum("Type", WasmSec.Type, makeArrayRef(WasmSectionTypes));
     W.printNumber("Size", static_cast<uint64_t>(WasmSec.Content.size()));
     W.printNumber("Offset", WasmSec.Offset);
     switch (WasmSec.Type) {
@@ -179,17 +190,8 @@ void WasmDumper::printSectionHeaders() {
         if (!Seg.Name.empty())
           W.printString("Name", Seg.Name);
         W.printNumber("Size", static_cast<uint64_t>(Seg.Content.size()));
-        if (Seg.Offset.Extended)
-          llvm_unreachable("extended const exprs not supported");
-        else if (Seg.Offset.Inst.Opcode == wasm::WASM_OPCODE_I32_CONST)
-          W.printNumber("Offset", Seg.Offset.Inst.Value.Int32);
-        else if (Seg.Offset.Inst.Opcode == wasm::WASM_OPCODE_I64_CONST)
-          W.printNumber("Offset", Seg.Offset.Inst.Value.Int64);
-        else if (Seg.Offset.Inst.Opcode == wasm::WASM_OPCODE_GLOBAL_GET) {
-          ListScope Group(W, "Offset");
-          W.printNumber("Global", Seg.Offset.Inst.Value.Global);
-        } else
-          llvm_unreachable("unknown init expr opcode");
+        if (Seg.Offset.Opcode == wasm::WASM_OPCODE_I32_CONST)
+          W.printNumber("Offset", Seg.Offset.Value.Int32);
       }
       break;
     }
@@ -197,7 +199,7 @@ void WasmDumper::printSectionHeaders() {
       ListScope Group(W, "Memories");
       for (const wasm::WasmLimits &Memory : Obj->memories()) {
         DictScope Group(W, "Memory");
-        W.printNumber("MinPages", Memory.Minimum);
+        W.printNumber("InitialPages", Memory.Initial);
         if (Memory.Flags & wasm::WASM_LIMITS_FLAG_HAS_MAX) {
           W.printNumber("MaxPages", WasmSec.Offset);
         }
@@ -221,16 +223,12 @@ void WasmDumper::printSymbol(const SymbolRef &Sym) {
   DictScope D(W, "Symbol");
   WasmSymbol Symbol = Obj->getWasmSymbol(Sym.getRawDataRefImpl());
   W.printString("Name", Symbol.Info.Name);
-  W.printEnum("Type", Symbol.Info.Kind, ArrayRef(WasmSymbolTypes));
-  W.printFlags("Flags", Symbol.Info.Flags, ArrayRef(WasmSymbolFlags));
+  W.printEnum("Type", Symbol.Info.Kind, makeArrayRef(WasmSymbolTypes));
+  W.printFlags("Flags", Symbol.Info.Flags, makeArrayRef(WasmSymbolFlags));
 
   if (Symbol.Info.Flags & wasm::WASM_SYMBOL_UNDEFINED) {
-    if (Symbol.Info.ImportName) {
-      W.printString("ImportName", *Symbol.Info.ImportName);
-    }
-    if (Symbol.Info.ImportModule) {
-      W.printString("ImportModule", *Symbol.Info.ImportModule);
-    }
+    W.printString("ImportName", Symbol.Info.ImportName);
+    W.printString("ImportModule", Symbol.Info.ImportModule);
   }
   if (Symbol.Info.Kind != wasm::WASM_SYMBOL_TYPE_DATA) {
     W.printHex("ElementIndex", Symbol.Info.ElementIndex);
@@ -245,9 +243,14 @@ void WasmDumper::printSymbol(const SymbolRef &Sym) {
 
 namespace llvm {
 
-std::unique_ptr<ObjDumper> createWasmDumper(const object::WasmObjectFile &Obj,
-                                            ScopedPrinter &Writer) {
-  return std::make_unique<WasmDumper>(&Obj, Writer);
+std::error_code createWasmDumper(const object::ObjectFile *Obj,
+                                 ScopedPrinter &Writer,
+                                 std::unique_ptr<ObjDumper> &Result) {
+  const auto *WasmObj = dyn_cast<WasmObjectFile>(Obj);
+  assert(WasmObj && "createWasmDumper called with non-wasm object");
+
+  Result.reset(new WasmDumper(WasmObj, Writer));
+  return readobj_error::success;
 }
 
 } // namespace llvm

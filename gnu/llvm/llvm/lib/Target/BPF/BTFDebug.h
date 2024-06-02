@@ -16,8 +16,6 @@
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/CodeGen/DebugHandlerBase.h"
-#include <cstdint>
-#include <map>
 #include <set>
 #include <unordered_map>
 #include "BTF.h"
@@ -27,13 +25,9 @@ namespace llvm {
 class AsmPrinter;
 class BTFDebug;
 class DIType;
-class GlobalVariable;
-class MachineFunction;
-class MachineInstr;
-class MachineOperand;
-class MCInst;
 class MCStreamer;
 class MCSymbol;
+class MachineFunction;
 
 /// The base class for BTF type generation.
 class BTFTypeBase {
@@ -64,13 +58,11 @@ public:
 class BTFTypeDerived : public BTFTypeBase {
   const DIDerivedType *DTy;
   bool NeedsFixup;
-  StringRef Name;
 
 public:
   BTFTypeDerived(const DIDerivedType *Ty, unsigned Tag, bool NeedsFixup);
-  BTFTypeDerived(unsigned NextTypeId, unsigned Tag, StringRef Name);
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
   void setPointeeType(uint32_t PointeeType);
 };
 
@@ -80,8 +72,8 @@ class BTFTypeFwd : public BTFTypeBase {
 
 public:
   BTFTypeFwd(StringRef Name, bool IsUnion);
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle int type.
@@ -92,9 +84,9 @@ class BTFTypeInt : public BTFTypeBase {
 public:
   BTFTypeInt(uint32_t Encoding, uint32_t SizeInBits, uint32_t OffsetInBits,
              StringRef TypeName);
-  uint32_t getSize() override { return BTFTypeBase::getSize() + sizeof(uint32_t); }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  uint32_t getSize() { return BTFTypeBase::getSize() + sizeof(uint32_t); }
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle enumerate type.
@@ -103,12 +95,12 @@ class BTFTypeEnum : public BTFTypeBase {
   std::vector<struct BTF::BTFEnum> EnumValues;
 
 public:
-  BTFTypeEnum(const DICompositeType *ETy, uint32_t NumValues, bool IsSigned);
-  uint32_t getSize() override {
+  BTFTypeEnum(const DICompositeType *ETy, uint32_t NumValues);
+  uint32_t getSize() {
     return BTFTypeBase::getSize() + EnumValues.size() * BTF::BTFEnumSize;
   }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle array type.
@@ -117,9 +109,9 @@ class BTFTypeArray : public BTFTypeBase {
 
 public:
   BTFTypeArray(uint32_t ElemTypeId, uint32_t NumElems);
-  uint32_t getSize() override { return BTFTypeBase::getSize() + BTF::BTFArraySize; }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  uint32_t getSize() { return BTFTypeBase::getSize() + BTF::BTFArraySize; }
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle struct/union type.
@@ -131,11 +123,11 @@ class BTFTypeStruct : public BTFTypeBase {
 public:
   BTFTypeStruct(const DICompositeType *STy, bool IsStruct, bool HasBitField,
                 uint32_t NumMembers);
-  uint32_t getSize() override {
+  uint32_t getSize() {
     return BTFTypeBase::getSize() + Members.size() * BTF::BTFMemberSize;
   }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
   std::string getName();
 };
 
@@ -148,11 +140,11 @@ class BTFTypeFuncProto : public BTFTypeBase {
 public:
   BTFTypeFuncProto(const DISubroutineType *STy, uint32_t NumParams,
                    const std::unordered_map<uint32_t, StringRef> &FuncArgNames);
-  uint32_t getSize() override {
+  uint32_t getSize() {
     return BTFTypeBase::getSize() + Parameters.size() * BTF::BTFParamSize;
   }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle subprogram
@@ -161,9 +153,9 @@ class BTFTypeFunc : public BTFTypeBase {
 
 public:
   BTFTypeFunc(StringRef FuncName, uint32_t ProtoTypeId, uint32_t Scope);
-  uint32_t getSize() override { return BTFTypeBase::getSize(); }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  uint32_t getSize() { return BTFTypeBase::getSize(); }
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle variable instances
@@ -173,9 +165,9 @@ class BTFKindVar : public BTFTypeBase {
 
 public:
   BTFKindVar(StringRef VarName, uint32_t TypeId, uint32_t VarInfo);
-  uint32_t getSize() override { return BTFTypeBase::getSize() + 4; }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
+  uint32_t getSize() { return BTFTypeBase::getSize() + 4; }
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// Handle data sections
@@ -186,60 +178,15 @@ class BTFKindDataSec : public BTFTypeBase {
 
 public:
   BTFKindDataSec(AsmPrinter *AsmPrt, std::string SecName);
-  uint32_t getSize() override {
+  uint32_t getSize() {
     return BTFTypeBase::getSize() + BTF::BTFDataSecVarSize * Vars.size();
   }
-  void addDataSecEntry(uint32_t Id, const MCSymbol *Sym, uint32_t Size) {
+  void addVar(uint32_t Id, const MCSymbol *Sym, uint32_t Size) {
     Vars.push_back(std::make_tuple(Id, Sym, Size));
   }
   std::string getName() { return Name; }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
-};
-
-/// Handle binary floating point type.
-class BTFTypeFloat : public BTFTypeBase {
-  StringRef Name;
-
-public:
-  BTFTypeFloat(uint32_t SizeInBits, StringRef TypeName);
-  void completeType(BTFDebug &BDebug) override;
-};
-
-/// Handle decl tags.
-class BTFTypeDeclTag : public BTFTypeBase {
-  uint32_t Info;
-  StringRef Tag;
-
-public:
-  BTFTypeDeclTag(uint32_t BaseTypeId, int ComponentId, StringRef Tag);
-  uint32_t getSize() override { return BTFTypeBase::getSize() + 4; }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
-};
-
-/// Handle 64-bit enumerate type.
-class BTFTypeEnum64 : public BTFTypeBase {
-  const DICompositeType *ETy;
-  std::vector<struct BTF::BTFEnum64> EnumValues;
-
-public:
-  BTFTypeEnum64(const DICompositeType *ETy, uint32_t NumValues, bool IsSigned);
-  uint32_t getSize() override {
-    return BTFTypeBase::getSize() + EnumValues.size() * BTF::BTFEnum64Size;
-  }
-  void completeType(BTFDebug &BDebug) override;
-  void emitType(MCStreamer &OS) override;
-};
-
-class BTFTypeTypeTag : public BTFTypeBase {
-  const DIDerivedType *DTy;
-  StringRef Tag;
-
-public:
-  BTFTypeTypeTag(uint32_t NextTypeId, StringRef Tag);
-  BTFTypeTypeTag(const DIDerivedType *DTy, StringRef Tag);
-  void completeType(BTFDebug &BDebug) override;
+  void completeType(BTFDebug &BDebug);
+  void emitType(MCStreamer &OS);
 };
 
 /// String table.
@@ -302,9 +249,8 @@ class BTFDebug : public DebugHandlerBase {
   StringMap<std::vector<std::string>> FileContent;
   std::map<std::string, std::unique_ptr<BTFKindDataSec>> DataSecEntries;
   std::vector<BTFTypeStruct *> StructTypes;
-  std::map<const GlobalVariable *, std::pair<int64_t, uint32_t>> PatchImms;
-  std::map<const DICompositeType *,
-           std::vector<std::pair<const DIDerivedType *, BTFTypeDerived *>>>
+  std::map<std::string, uint32_t> PatchImms;
+  std::map<StringRef, std::pair<bool, std::vector<BTFTypeDerived *>>>
       FixupDerivedTypes;
   std::set<const Function *>ProtoFunctions;
 
@@ -338,9 +284,6 @@ class BTFDebug : public DebugHandlerBase {
   void visitMapDefType(const DIType *Ty, uint32_t &TypeId);
   /// @}
 
-  /// Check whether the type is a forward declaration candidate or not.
-  bool IsForwardDeclCandidate(const DIType *Base);
-
   /// Get the file content for the subprogram. Certain lines of the file
   /// later may be put into string table and referenced by line info.
   std::string populateFileContent(const DISubprogram *SP);
@@ -355,31 +298,15 @@ class BTFDebug : public DebugHandlerBase {
   /// Generate types for function prototypes.
   void processFuncPrototypes(const Function *);
 
-  /// Generate types for decl annotations.
-  void processDeclAnnotations(DINodeArray Annotations, uint32_t BaseTypeId,
-                              int ComponentId);
-
-  /// Generate types for DISubprogram and it's arguments.
-  uint32_t processDISubprogram(const DISubprogram *SP, uint32_t ProtoTypeId,
-                               uint8_t Scope);
-
-  /// Generate BTF type_tag's. If BaseTypeId is nonnegative, the last
-  /// BTF type_tag in the chain points to BaseTypeId. Otherwise, it points to
-  /// the base type of DTy. Return the type id of the first BTF type_tag
-  /// in the chain. If no type_tag's are generated, a negative value
-  /// is returned.
-  int genBTFTypeTags(const DIDerivedType *DTy, int BaseTypeId);
-
   /// Generate one field relocation record.
-  void generatePatchImmReloc(const MCSymbol *ORSym, uint32_t RootId,
-                             const GlobalVariable *, bool IsAma);
+  void generateFieldReloc(const MCSymbol *ORSym, DIType *RootTy,
+                          StringRef AccessPattern);
 
-  /// Populating unprocessed type on demand.
-  unsigned populateType(const DIType *Ty);
+  /// Populating unprocessed struct type.
+  unsigned populateStructType(const DIType *Ty);
 
-  /// Process global variables referenced by relocation instructions
-  /// and extern function references.
-  void processGlobalValue(const MachineOperand &MO);
+  /// Process relocation instructions.
+  void processReloc(const MachineOperand &MO);
 
   /// Emit common header of .BTF and .BTF.ext sections.
   void emitCommonHeader();

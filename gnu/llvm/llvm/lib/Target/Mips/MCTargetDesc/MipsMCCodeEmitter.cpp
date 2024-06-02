@@ -42,11 +42,13 @@ using namespace llvm;
 namespace llvm {
 
 MCCodeEmitter *createMipsMCCodeEmitterEB(const MCInstrInfo &MCII,
+                                         const MCRegisterInfo &MRI,
                                          MCContext &Ctx) {
   return new MipsMCCodeEmitter(MCII, Ctx, false);
 }
 
 MCCodeEmitter *createMipsMCCodeEmitterEL(const MCInstrInfo &MCII,
+                                         const MCRegisterInfo &MRI,
                                          MCContext &Ctx) {
   return new MipsMCCodeEmitter(MCII, Ctx, true);
 }
@@ -127,7 +129,7 @@ void MipsMCCodeEmitter::EmitByte(unsigned char C, raw_ostream &OS) const {
   OS << (char)C;
 }
 
-void MipsMCCodeEmitter::emitInstruction(uint64_t Val, unsigned Size,
+void MipsMCCodeEmitter::EmitInstruction(uint64_t Val, unsigned Size,
                                         const MCSubtargetInfo &STI,
                                         raw_ostream &OS) const {
   // Output the instruction encoding in little endian byte order.
@@ -135,8 +137,8 @@ void MipsMCCodeEmitter::emitInstruction(uint64_t Val, unsigned Size,
   //   mips32r2:   4 | 3 | 2 | 1
   //   microMIPS:  2 | 1 | 4 | 3
   if (IsLittleEndian && Size == 4 && isMicroMips(STI)) {
-    emitInstruction(Val >> 16, 2, STI, OS);
-    emitInstruction(Val, 2, STI, OS);
+    EmitInstruction(Val >> 16, 2, STI, OS);
+    EmitInstruction(Val, 2, STI, OS);
   } else {
     for (unsigned i = 0; i < Size; ++i) {
       unsigned Shift = IsLittleEndian ? i * 8 : (Size - 1 - i) * 8;
@@ -177,7 +179,7 @@ encodeInstruction(const MCInst &MI, raw_ostream &OS,
     LowerCompactBranch(TmpInst);
   }
 
-  size_t N = Fixups.size();
+  unsigned long N = Fixups.size();
   uint32_t Binary = getBinaryCodeForInstr(TmpInst, Fixups, STI);
 
   // Check for unimplemented opcodes.
@@ -224,7 +226,7 @@ encodeInstruction(const MCInst &MI, raw_ostream &OS,
   if (!Size)
     llvm_unreachable("Desc.getSize() returns 0");
 
-  emitInstruction(Binary, Size, STI, OS);
+  EmitInstruction(Binary, Size, STI, OS);
 }
 
 /// getBranchTargetOpValue - Return binary encoding of the branch
@@ -721,8 +723,21 @@ getExprOpValue(const MCExpr *Expr, SmallVectorImpl<MCFixup> &Fixups,
     return 0;
   }
 
-  if (Kind == MCExpr::SymbolRef)
-    Ctx.reportError(Expr->getLoc(), "expected an immediate");
+  if (Kind == MCExpr::SymbolRef) {
+    Mips::Fixups FixupKind = Mips::Fixups(0);
+
+    switch(cast<MCSymbolRefExpr>(Expr)->getKind()) {
+    default: llvm_unreachable("Unknown fixup kind!");
+      break;
+    case MCSymbolRefExpr::VK_None:
+      // FIXME: This is ok for O32/N32 but not N64.
+      FixupKind = Mips::fixup_Mips_32;
+      break;
+    } // switch
+
+    Fixups.push_back(MCFixup::create(0, Expr, MCFixupKind(FixupKind)));
+    return 0;
+  }
   return 0;
 }
 
@@ -738,8 +753,9 @@ getMachineOpValue(const MCInst &MI, const MCOperand &MO,
     return RegNo;
   } else if (MO.isImm()) {
     return static_cast<unsigned>(MO.getImm());
-  } else if (MO.isDFPImm()) {
-    return static_cast<unsigned>(bit_cast<double>(MO.getDFPImm()));
+  } else if (MO.isFPImm()) {
+    return static_cast<unsigned>(APFloat(MO.getFPImm())
+        .bitcastToAPInt().getHiBits(32).getLimitedValue());
   }
   // MO must be an Expr.
   assert(MO.isExpr());

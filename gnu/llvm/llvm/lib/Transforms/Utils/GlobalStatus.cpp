@@ -9,6 +9,7 @@
 #include "llvm/Transforms/Utils/GlobalStatus.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalValue.h"
@@ -38,26 +39,22 @@ static AtomicOrdering strongerOrdering(AtomicOrdering X, AtomicOrdering Y) {
 }
 
 /// It is safe to destroy a constant iff it is only used by constants itself.
-/// Note that while constants cannot be cyclic, they can be tree-like, so we
-/// should keep a visited set to avoid exponential runtime.
+/// Note that constants cannot be cyclic, so this test is pretty easy to
+/// implement recursively.
+///
 bool llvm::isSafeToDestroyConstant(const Constant *C) {
-  SmallVector<const Constant *, 8> Worklist;
-  SmallPtrSet<const Constant *, 8> Visited;
-  Worklist.push_back(C);
-  while (!Worklist.empty()) {
-    const Constant *C = Worklist.pop_back_val();
-    if (!Visited.insert(C).second)
-      continue;
-    if (isa<GlobalValue>(C) || isa<ConstantData>(C))
-      return false;
+  if (isa<GlobalValue>(C))
+    return false;
 
-    for (const User *U : C->users()) {
-      if (const Constant *CU = dyn_cast<Constant>(U))
-        Worklist.push_back(CU);
-      else
+  if (isa<ConstantData>(C))
+    return false;
+
+  for (const User *U : C->users())
+    if (const Constant *CU = dyn_cast<Constant>(U)) {
+      if (!isSafeToDestroyConstant(CU))
         return false;
-    }
-  }
+    } else
+      return false;
   return true;
 }
 
@@ -69,18 +66,17 @@ static bool analyzeGlobalAux(const Value *V, GlobalStatus &GS,
 
   for (const Use &U : V->uses()) {
     const User *UR = U.getUser();
-    if (const Constant *C = dyn_cast<Constant>(UR)) {
-      const ConstantExpr *CE = dyn_cast<ConstantExpr>(C);
-      if (CE && isa<PointerType>(CE->getType())) {
-        // Recursively analyze pointer-typed constant expressions.
-        // FIXME: Do we need to add constexpr selects to VisitedUsers?
-        if (analyzeGlobalAux(CE, GS, VisitedUsers))
-          return true;
-      } else {
-        // Ignore dead constant users.
-        if (!isSafeToDestroyConstant(C))
-          return true;
-      }
+    if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(UR)) {
+      GS.HasNonInstructionUser = true;
+
+      // If the result of the constantexpr isn't pointer type, then we won't
+      // know to expect it in various places.  Just reject early.
+      if (!isa<PointerType>(CE->getType()))
+        return true;
+
+      // FIXME: Do we need to add constexpr selects to VisitedUsers?
+      if (analyzeGlobalAux(CE, GS, VisitedUsers))
+        return true;
     } else if (const Instruction *I = dyn_cast<Instruction>(UR)) {
       if (!GS.HasMultipleAccessingFunctions) {
         const Function *F = I->getParent()->getParent();
@@ -104,16 +100,14 @@ static bool analyzeGlobalAux(const Value *V, GlobalStatus &GS,
         if (SI->isVolatile())
           return true;
 
-        ++GS.NumStores;
-
         GS.Ordering = strongerOrdering(GS.Ordering, SI->getOrdering());
 
         // If this is a direct store to the global (i.e., the global is a scalar
         // value, not an aggregate), keep more specific information about
         // stores.
         if (GS.StoredType != GlobalStatus::Stored) {
-          const Value *Ptr = SI->getPointerOperand()->stripPointerCasts();
-          if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Ptr)) {
+          if (const GlobalVariable *GV =
+                  dyn_cast<GlobalVariable>(SI->getOperand(1))) {
             Value *StoredVal = SI->getOperand(0);
 
             if (Constant *C = dyn_cast<Constant>(StoredVal)) {
@@ -132,9 +126,9 @@ static bool analyzeGlobalAux(const Value *V, GlobalStatus &GS,
                 GS.StoredType = GlobalStatus::InitializerStored;
             } else if (GS.StoredType < GlobalStatus::StoredOnce) {
               GS.StoredType = GlobalStatus::StoredOnce;
-              GS.StoredOnceStore = SI;
+              GS.StoredOnceValue = StoredVal;
             } else if (GS.StoredType == GlobalStatus::StoredOnce &&
-                       GS.getStoredOnceValue() == StoredVal) {
+                       GS.StoredOnceValue == StoredVal) {
               // noop.
             } else {
               GS.StoredType = GlobalStatus::Stored;
@@ -143,8 +137,7 @@ static bool analyzeGlobalAux(const Value *V, GlobalStatus &GS,
             GS.StoredType = GlobalStatus::Stored;
           }
         }
-      } else if (isa<BitCastInst>(I) || isa<GetElementPtrInst>(I) ||
-                 isa<AddrSpaceCastInst>(I)) {
+      } else if (isa<BitCastInst>(I) || isa<GetElementPtrInst>(I)) {
         // Skip over bitcasts and GEPs; we don't care about the type or offset
         // of the pointer.
         if (analyzeGlobalAux(I, GS, VisitedUsers))
@@ -171,14 +164,20 @@ static bool analyzeGlobalAux(const Value *V, GlobalStatus &GS,
         if (MSI->isVolatile())
           return true;
         GS.StoredType = GlobalStatus::Stored;
-      } else if (const auto *CB = dyn_cast<CallBase>(I)) {
-        if (!CB->isCallee(&U))
+      } else if (auto C = ImmutableCallSite(I)) {
+        if (!C.isCallee(&U))
           return true;
         GS.IsLoaded = true;
       } else {
         return true; // Any other non-load instruction might take address!
       }
+    } else if (const Constant *C = dyn_cast<Constant>(UR)) {
+      GS.HasNonInstructionUser = true;
+      // We might have a dead and dangling constant hanging off of here.
+      if (!isSafeToDestroyConstant(C))
+        return true;
     } else {
+      GS.HasNonInstructionUser = true;
       // Otherwise must be some other user.
       return true;
     }

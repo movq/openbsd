@@ -14,25 +14,25 @@
 namespace llvm {
 
 class MCSymbolWasm : public MCSymbol {
-  std::optional<wasm::WasmSymbolType> Type;
+  wasm::WasmSymbolType Type = wasm::WASM_SYMBOL_TYPE_DATA;
   bool IsWeak = false;
   bool IsHidden = false;
   bool IsComdat = false;
-  bool OmitFromLinkingSection = false;
-  mutable bool IsUsedInInitArray = false;
   mutable bool IsUsedInGOT = false;
-  std::optional<StringRef> ImportModule;
-  std::optional<StringRef> ImportName;
-  std::optional<StringRef> ExportName;
+  Optional<std::string> ImportModule;
+  Optional<std::string> ImportName;
+  Optional<std::string> ExportName;
   wasm::WasmSignature *Signature = nullptr;
-  std::optional<wasm::WasmGlobalType> GlobalType;
-  std::optional<wasm::WasmTableType> TableType;
+  Optional<wasm::WasmGlobalType> GlobalType;
+  Optional<wasm::WasmEventType> EventType;
 
   /// An expression describing how to calculate the size of a symbol. If a
   /// symbol has no size this field will be NULL.
   const MCExpr *SymbolSize = nullptr;
 
 public:
+  // Use a module name of "env" for now, for compatibility with existing tools.
+  // This is temporary, and may change, as the ABI is not yet stable.
   MCSymbolWasm(const StringMapEntry<bool> *Name, bool isTemporary)
       : MCSymbol(SymbolKindWasm, Name, isTemporary) {}
   static bool classof(const MCSymbol *S) { return S->isWasm(); }
@@ -41,15 +41,11 @@ public:
   void setSize(const MCExpr *SS) { SymbolSize = SS; }
 
   bool isFunction() const { return Type == wasm::WASM_SYMBOL_TYPE_FUNCTION; }
-  // Data is the default value if not set.
-  bool isData() const { return !Type || Type == wasm::WASM_SYMBOL_TYPE_DATA; }
+  bool isData() const { return Type == wasm::WASM_SYMBOL_TYPE_DATA; }
   bool isGlobal() const { return Type == wasm::WASM_SYMBOL_TYPE_GLOBAL; }
-  bool isTable() const { return Type == wasm::WASM_SYMBOL_TYPE_TABLE; }
   bool isSection() const { return Type == wasm::WASM_SYMBOL_TYPE_SECTION; }
-  bool isTag() const { return Type == wasm::WASM_SYMBOL_TYPE_TAG; }
-
-  std::optional<wasm::WasmSymbolType> getType() const { return Type; }
-
+  bool isEvent() const { return Type == wasm::WASM_SYMBOL_TYPE_EVENT; }
+  wasm::WasmSymbolType getType() const { return Type; }
   void setType(wasm::WasmSymbolType type) { Type = type; }
 
   bool isExported() const {
@@ -66,11 +62,6 @@ public:
     modifyFlags(wasm::WASM_SYMBOL_NO_STRIP, wasm::WASM_SYMBOL_NO_STRIP);
   }
 
-  bool isTLS() const { return getFlags() & wasm::WASM_SYMBOL_TLS; }
-  void setTLS() const {
-    modifyFlags(wasm::WASM_SYMBOL_TLS, wasm::WASM_SYMBOL_TLS);
-  }
-
   bool isWeak() const { return IsWeak; }
   void setWeak(bool isWeak) { IsWeak = isWeak; }
 
@@ -80,72 +71,44 @@ public:
   bool isComdat() const { return IsComdat; }
   void setComdat(bool isComdat) { IsComdat = isComdat; }
 
-  // wasm-ld understands a finite set of symbol types.  This flag allows the
-  // compiler to avoid emitting symbol table entries that would confuse the
-  // linker, unless the user specifically requests the feature.
-  bool omitFromLinkingSection() const { return OmitFromLinkingSection; }
-  void setOmitFromLinkingSection() { OmitFromLinkingSection = true; }
-
-  bool hasImportModule() const { return ImportModule.has_value(); }
-  StringRef getImportModule() const {
-    if (ImportModule)
-      return *ImportModule;
-    // Use a default module name of "env" for now, for compatibility with
-    // existing tools.
-    // TODO(sbc): Find a way to specify a default value in the object format
-    // without picking a hardcoded value like this.
-    return "env";
+  const StringRef getImportModule() const {
+      if (ImportModule.hasValue()) {
+          return ImportModule.getValue();
+      }
+      return "env";
   }
   void setImportModule(StringRef Name) { ImportModule = Name; }
 
-  bool hasImportName() const { return ImportName.has_value(); }
-  StringRef getImportName() const {
-    if (ImportName)
-      return *ImportName;
-    return getName();
+  bool hasImportName() const { return ImportName.hasValue(); }
+  const StringRef getImportName() const {
+      if (ImportName.hasValue()) {
+          return ImportName.getValue();
+      }
+      return getName();
   }
   void setImportName(StringRef Name) { ImportName = Name; }
 
-  bool hasExportName() const { return ExportName.has_value(); }
-  StringRef getExportName() const { return *ExportName; }
+  bool hasExportName() const { return ExportName.hasValue(); }
+  const StringRef getExportName() const { return ExportName.getValue(); }
   void setExportName(StringRef Name) { ExportName = Name; }
-
-  bool isFunctionTable() const {
-    return isTable() && hasTableType() &&
-           getTableType().ElemType == wasm::WASM_TYPE_FUNCREF;
-  }
-  void setFunctionTable() {
-    setType(wasm::WASM_SYMBOL_TYPE_TABLE);
-    setTableType(wasm::ValType::FUNCREF);
-  }
 
   void setUsedInGOT() const { IsUsedInGOT = true; }
   bool isUsedInGOT() const { return IsUsedInGOT; }
-
-  void setUsedInInitArray() const { IsUsedInInitArray = true; }
-  bool isUsedInInitArray() const { return IsUsedInInitArray; }
 
   const wasm::WasmSignature *getSignature() const { return Signature; }
   void setSignature(wasm::WasmSignature *Sig) { Signature = Sig; }
 
   const wasm::WasmGlobalType &getGlobalType() const {
-    assert(GlobalType);
-    return *GlobalType;
+    assert(GlobalType.hasValue());
+    return GlobalType.getValue();
   }
   void setGlobalType(wasm::WasmGlobalType GT) { GlobalType = GT; }
 
-  bool hasTableType() const { return TableType.has_value(); }
-  const wasm::WasmTableType &getTableType() const {
-    assert(hasTableType());
-    return *TableType;
+  const wasm::WasmEventType &getEventType() const {
+    assert(EventType.hasValue());
+    return EventType.getValue();
   }
-  void setTableType(wasm::WasmTableType TT) { TableType = TT; }
-  void setTableType(wasm::ValType VT) {
-    // Declare a table with element type VT and no limits (min size 0, no max
-    // size).
-    wasm::WasmLimits Limits = {wasm::WASM_LIMITS_FLAG_NONE, 0, 0};
-    setTableType({uint8_t(VT), Limits});
-  }
+  void setEventType(wasm::WasmEventType ET) { EventType = ET; }
 };
 
 } // end namespace llvm

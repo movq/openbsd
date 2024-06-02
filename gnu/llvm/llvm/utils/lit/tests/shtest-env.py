@@ -1,6 +1,6 @@
 # Check the env command
-
-# RUN: not %{lit} -a -v %{inputs}/shtest-env \
+#
+# RUN: not %{lit} -j 1 -a -v %{inputs}/shtest-env \
 # RUN: | FileCheck -match-full-lines %s
 #
 # END.
@@ -93,6 +93,6 @@
 # CHECK: $ "env" "A_FOO=1" "-u" "FOO" "B_BAR=2" "-u" "BAR" "C_OOF=3" "{{[^"]*}}" "print_environment.py"
 # CHECK-NOT: ${{.*}}print_environment.py
 
-# CHECK: Passed:  4
-# CHECK: Failed: 12
+# CHECK: Expected Passes : 4
+# CHECK: Unexpected Failures: 12
 # CHECK-NOT: {{.}}

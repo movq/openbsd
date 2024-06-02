@@ -12,18 +12,36 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPU.h"
-#include "GCNSubtarget.h"
+#include "AMDGPUSubtarget.h"
+#include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LegacyDivergenceAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
-#include "llvm/IR/IntrinsicsAMDGPU.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/ValueHandle.h"
 #include "llvm/InitializePasses.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include <cassert>
+#include <utility>
 
 using namespace llvm;
 
@@ -71,21 +89,19 @@ class SIAnnotateControlFlow : public FunctionPass {
 
   bool isElse(PHINode *Phi);
 
-  bool hasKill(const BasicBlock *BB);
+  void eraseIfUnused(PHINode *Phi);
 
-  bool eraseIfUnused(PHINode *Phi);
+  void openIf(BranchInst *Term);
 
-  bool openIf(BranchInst *Term);
-
-  bool insertElse(BranchInst *Term);
+  void insertElse(BranchInst *Term);
 
   Value *
   handleLoopCondition(Value *Cond, PHINode *Broken, llvm::Loop *L,
                       BranchInst *Term);
 
-  bool handleLoop(BranchInst *Term);
+  void handleLoop(BranchInst *Term);
 
-  bool closeControlFlow(BasicBlock *BB);
+  void closeControlFlow(BasicBlock *BB);
 
 public:
   static char ID;
@@ -100,7 +116,6 @@ public:
     AU.addRequired<LoopInfoWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<LegacyDivergenceAnalysis>();
-    AU.addPreserved<LoopInfoWrapperPass>();
     AU.addPreserved<DominatorTreeWrapperPass>();
     AU.addRequired<TargetPassConfig>();
     FunctionPass::getAnalysisUsage(AU);
@@ -131,14 +146,14 @@ void SIAnnotateControlFlow::initialize(Module &M, const GCNSubtarget &ST) {
 
   BoolTrue = ConstantInt::getTrue(Context);
   BoolFalse = ConstantInt::getFalse(Context);
-  BoolUndef = PoisonValue::get(Boolean);
+  BoolUndef = UndefValue::get(Boolean);
   IntMaskZero = ConstantInt::get(IntMask, 0);
 
   If = Intrinsic::getDeclaration(&M, Intrinsic::amdgcn_if, { IntMask });
   Else = Intrinsic::getDeclaration(&M, Intrinsic::amdgcn_else,
                                    { IntMask, IntMask });
   IfBreak = Intrinsic::getDeclaration(&M, Intrinsic::amdgcn_if_break,
-                                      { IntMask });
+                                      { IntMask, IntMask });
   Loop = Intrinsic::getDeclaration(&M, Intrinsic::amdgcn_loop, { IntMask });
   EndCf = Intrinsic::getDeclaration(&M, Intrinsic::amdgcn_end_cf, { IntMask });
 }
@@ -162,7 +177,7 @@ Value *SIAnnotateControlFlow::popSaved() {
 
 /// Push a BB and saved value to the control flow stack
 void SIAnnotateControlFlow::push(BasicBlock *BB, Value *Saved) {
-  Stack.push_back(std::pair(BB, Saved));
+  Stack.push_back(std::make_pair(BB, Saved));
 }
 
 /// Can the condition represented by this PHI node treated like
@@ -184,43 +199,31 @@ bool SIAnnotateControlFlow::isElse(PHINode *Phi) {
   return true;
 }
 
-bool SIAnnotateControlFlow::hasKill(const BasicBlock *BB) {
-  for (const Instruction &I : *BB) {
-    if (const CallInst *CI = dyn_cast<CallInst>(&I))
-      if (CI->getIntrinsicID() == Intrinsic::amdgcn_kill)
-        return true;
-  }
-  return false;
-}
-
-// Erase "Phi" if it is not used any more. Return true if any change was made.
-bool SIAnnotateControlFlow::eraseIfUnused(PHINode *Phi) {
-  bool Changed = RecursivelyDeleteDeadPHINode(Phi);
-  if (Changed)
+// Erase "Phi" if it is not used any more
+void SIAnnotateControlFlow::eraseIfUnused(PHINode *Phi) {
+  if (RecursivelyDeleteDeadPHINode(Phi)) {
     LLVM_DEBUG(dbgs() << "Erased unused condition phi\n");
-  return Changed;
+  }
 }
 
 /// Open a new "If" block
-bool SIAnnotateControlFlow::openIf(BranchInst *Term) {
+void SIAnnotateControlFlow::openIf(BranchInst *Term) {
   if (isUniform(Term))
-    return false;
+    return;
 
   Value *Ret = CallInst::Create(If, Term->getCondition(), "", Term);
   Term->setCondition(ExtractValueInst::Create(Ret, 0, "", Term));
   push(Term->getSuccessor(1), ExtractValueInst::Create(Ret, 1, "", Term));
-  return true;
 }
 
 /// Close the last "If" block and open a new "Else" block
-bool SIAnnotateControlFlow::insertElse(BranchInst *Term) {
+void SIAnnotateControlFlow::insertElse(BranchInst *Term) {
   if (isUniform(Term)) {
-    return false;
+    return;
   }
   Value *Ret = CallInst::Create(Else, popSaved(), "", Term);
   Term->setCondition(ExtractValueInst::Create(Ret, 0, "", Term));
   push(Term->getSuccessor(1), ExtractValueInst::Create(Ret, 1, "", Term));
-  return true;
 }
 
 /// Recursively handle the condition leading to a loop
@@ -248,24 +251,18 @@ Value *SIAnnotateControlFlow::handleLoopCondition(
     return CallInst::Create(IfBreak, Args, "", Insert);
   }
 
-  if (isa<Argument>(Cond)) {
-    Instruction *Insert = L->getHeader()->getFirstNonPHIOrDbgOrLifetime();
-    Value *Args[] = { Cond, Broken };
-    return CallInst::Create(IfBreak, Args, "", Insert);
-  }
-
   llvm_unreachable("Unhandled loop condition!");
 }
 
 /// Handle a back edge (loop)
-bool SIAnnotateControlFlow::handleLoop(BranchInst *Term) {
+void SIAnnotateControlFlow::handleLoop(BranchInst *Term) {
   if (isUniform(Term))
-    return false;
+    return;
 
   BasicBlock *BB = Term->getParent();
   llvm::Loop *L = LI->getLoopFor(BB);
   if (!L)
-    return false;
+    return;
 
   BasicBlock *Target = Term->getSuccessor(1);
   PHINode *Broken = PHINode::Create(IntMask, 0, "phi.broken", &Target->front());
@@ -289,12 +286,10 @@ bool SIAnnotateControlFlow::handleLoop(BranchInst *Term) {
   Term->setCondition(CallInst::Create(Loop, Arg, "", Term));
 
   push(Term->getSuccessor(0), Arg);
-
-  return true;
 }
 
 /// Close the last opened control flow
-bool SIAnnotateControlFlow::closeControlFlow(BasicBlock *BB) {
+void SIAnnotateControlFlow::closeControlFlow(BasicBlock *BB) {
   llvm::Loop *L = LI->getLoopFor(BB);
 
   assert(Stack.back().first == BB);
@@ -318,17 +313,8 @@ bool SIAnnotateControlFlow::closeControlFlow(BasicBlock *BB) {
 
   Value *Exec = popSaved();
   Instruction *FirstInsertionPt = &*BB->getFirstInsertionPt();
-  if (!isa<UndefValue>(Exec) && !isa<UnreachableInst>(FirstInsertionPt)) {
-    Instruction *ExecDef = cast<Instruction>(Exec);
-    BasicBlock *DefBB = ExecDef->getParent();
-    if (!DT->dominates(DefBB, BB)) {
-      // Split edge to make Def dominate Use
-      FirstInsertionPt = &*SplitEdge(DefBB, BB, DT, LI)->getFirstInsertionPt();
-    }
+  if (!isa<UndefValue>(Exec) && !isa<UnreachableInst>(FirstInsertionPt))
     CallInst::Create(EndCf, Exec, "", FirstInsertionPt);
-  }
-
-  return true;
 }
 
 /// Annotate the control flow with intrinsics so the backend can
@@ -340,8 +326,8 @@ bool SIAnnotateControlFlow::runOnFunction(Function &F) {
   TargetPassConfig &TPC = getAnalysis<TargetPassConfig>();
   const TargetMachine &TM = TPC.getTM<TargetMachine>();
 
-  bool Changed = false;
   initialize(*F.getParent(), TM.getSubtarget<GCNSubtarget>(F));
+
   for (df_iterator<BasicBlock *> I = df_begin(&F.getEntryBlock()),
        E = df_end(&F.getEntryBlock()); I != E; ++I) {
     BasicBlock *BB = *I;
@@ -349,32 +335,31 @@ bool SIAnnotateControlFlow::runOnFunction(Function &F) {
 
     if (!Term || Term->isUnconditional()) {
       if (isTopOfStack(BB))
-        Changed |= closeControlFlow(BB);
+        closeControlFlow(BB);
 
       continue;
     }
 
     if (I.nodeVisited(Term->getSuccessor(1))) {
       if (isTopOfStack(BB))
-        Changed |= closeControlFlow(BB);
+        closeControlFlow(BB);
 
-      if (DT->dominates(Term->getSuccessor(1), BB))
-        Changed |= handleLoop(Term);
+      handleLoop(Term);
       continue;
     }
 
     if (isTopOfStack(BB)) {
       PHINode *Phi = dyn_cast<PHINode>(Term->getCondition());
-      if (Phi && Phi->getParent() == BB && isElse(Phi) && !hasKill(BB)) {
-        Changed |= insertElse(Term);
-        Changed |= eraseIfUnused(Phi);
+      if (Phi && Phi->getParent() == BB && isElse(Phi)) {
+        insertElse(Term);
+        eraseIfUnused(Phi);
         continue;
       }
 
-      Changed |= closeControlFlow(BB);
+      closeControlFlow(BB);
     }
 
-    Changed |= openIf(Term);
+    openIf(Term);
   }
 
   if (!Stack.empty()) {
@@ -382,7 +367,7 @@ bool SIAnnotateControlFlow::runOnFunction(Function &F) {
     report_fatal_error("failed to annotate CFG");
   }
 
-  return Changed;
+  return true;
 }
 
 /// Create the annotation pass

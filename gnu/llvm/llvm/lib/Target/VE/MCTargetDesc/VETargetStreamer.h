@@ -11,7 +11,6 @@
 
 #include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/Support/FormattedStream.h"
 
 namespace llvm {
 class VETargetStreamer : public MCTargetStreamer {

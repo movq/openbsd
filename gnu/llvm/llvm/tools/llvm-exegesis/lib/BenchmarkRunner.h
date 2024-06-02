@@ -21,7 +21,6 @@
 #include "LlvmState.h"
 #include "MCInstrDescView.h"
 #include "SnippetRepetitor.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/Error.h"
 #include <cstdlib>
@@ -35,36 +34,14 @@ namespace exegesis {
 class BenchmarkRunner {
 public:
   explicit BenchmarkRunner(const LLVMState &State,
-                           InstructionBenchmark::ModeE Mode,
-                           BenchmarkPhaseSelectorE BenchmarkPhaseSelector);
+                           InstructionBenchmark::ModeE Mode);
 
   virtual ~BenchmarkRunner();
 
-  class RunnableConfiguration {
-    friend class BenchmarkRunner;
-
-  public:
-    ~RunnableConfiguration() = default;
-    RunnableConfiguration(RunnableConfiguration &&) = default;
-
-    RunnableConfiguration(const RunnableConfiguration &) = delete;
-    RunnableConfiguration &operator=(RunnableConfiguration &&) = delete;
-    RunnableConfiguration &operator=(const RunnableConfiguration &) = delete;
-
-  private:
-    RunnableConfiguration() = default;
-
-    InstructionBenchmark InstrBenchmark;
-    object::OwningBinary<object::ObjectFile> ObjectFile;
-  };
-
-  Expected<RunnableConfiguration>
-  getRunnableConfiguration(const BenchmarkCode &Configuration,
-                           unsigned NumRepetitions, unsigned LoopUnrollFactor,
-                           const SnippetRepetitor &Repetitor) const;
-
-  Expected<InstructionBenchmark> runConfiguration(RunnableConfiguration &&RC,
-                                                  bool DumpObjectToDisk) const;
+  InstructionBenchmark runConfiguration(const BenchmarkCode &Configuration,
+                                        unsigned NumRepetitions,
+                                        const SnippetRepetitor &Repetitor,
+                                        bool DumpObjectToDisk) const;
 
   // Scratch space to run instructions that touch memory.
   struct ScratchSpace {
@@ -88,28 +65,19 @@ public:
   class FunctionExecutor {
   public:
     virtual ~FunctionExecutor();
-    // FIXME deprecate this.
     virtual Expected<int64_t> runAndMeasure(const char *Counters) const = 0;
-
-    virtual Expected<llvm::SmallVector<int64_t, 4>>
-    runAndSample(const char *Counters) const = 0;
   };
 
 protected:
   const LLVMState &State;
   const InstructionBenchmark::ModeE Mode;
-  const BenchmarkPhaseSelectorE BenchmarkPhaseSelector;
 
 private:
   virtual Expected<std::vector<BenchmarkMeasure>>
   runMeasurements(const FunctionExecutor &Executor) const = 0;
 
-  Expected<SmallString<0>> assembleSnippet(const BenchmarkCode &BC,
-                                           const SnippetRepetitor &Repetitor,
-                                           unsigned MinInstructions,
-                                           unsigned LoopBodySize) const;
-
-  Expected<std::string> writeObjectFile(StringRef Buffer) const;
+  Expected<std::string> writeObjectFile(const BenchmarkCode &Configuration,
+                                        const FillFunction &Fill) const;
 
   const std::unique_ptr<ScratchSpace> Scratch;
 };

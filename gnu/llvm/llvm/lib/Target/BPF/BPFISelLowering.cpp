@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -78,24 +79,6 @@ BPFTargetLowering::BPFTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
 
-  // Set unsupported atomic operations as Custom so
-  // we can emit better error messages than fatal error
-  // from selectiondag.
-  for (auto VT : {MVT::i8, MVT::i16, MVT::i32}) {
-    if (VT == MVT::i32) {
-      if (STI.getHasAlu32())
-        continue;
-    } else {
-      setOperationAction(ISD::ATOMIC_LOAD_ADD, VT, Custom);
-    }
-
-    setOperationAction(ISD::ATOMIC_LOAD_AND, VT, Custom);
-    setOperationAction(ISD::ATOMIC_LOAD_OR, VT, Custom);
-    setOperationAction(ISD::ATOMIC_LOAD_XOR, VT, Custom);
-    setOperationAction(ISD::ATOMIC_SWAP, VT, Custom);
-    setOperationAction(ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS, VT, Custom);
-  }
-
   for (auto VT : { MVT::i32, MVT::i64 }) {
     if (VT == MVT::i32 && !STI.getHasAlu32())
       continue;
@@ -103,6 +86,7 @@ BPFTargetLowering::BPFTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::SDIVREM, VT, Expand);
     setOperationAction(ISD::UDIVREM, VT, Expand);
     setOperationAction(ISD::SREM, VT, Expand);
+    setOperationAction(ISD::UREM, VT, Expand);
     setOperationAction(ISD::MULHU, VT, Expand);
     setOperationAction(ISD::MULHS, VT, Expand);
     setOperationAction(ISD::UMUL_LOHI, VT, Expand);
@@ -167,7 +151,6 @@ BPFTargetLowering::BPFTargetLowering(const TargetMachine &TM,
     MaxStoresPerMemset = MaxStoresPerMemsetOptSize = 0;
     MaxStoresPerMemcpy = MaxStoresPerMemcpyOptSize = 0;
     MaxStoresPerMemmove = MaxStoresPerMemmoveOptSize = 0;
-    MaxLoadsPerMemcmp = 0;
   } else {
     // inline memcpy() for kernel to see explicit copy
     unsigned CommonMaxStores =
@@ -176,7 +159,6 @@ BPFTargetLowering::BPFTargetLowering(const TargetMachine &TM,
     MaxStoresPerMemset = MaxStoresPerMemsetOptSize = CommonMaxStores;
     MaxStoresPerMemcpy = MaxStoresPerMemcpyOptSize = CommonMaxStores;
     MaxStoresPerMemmove = MaxStoresPerMemmoveOptSize = CommonMaxStores;
-    MaxLoadsPerMemcmp = MaxLoadsPerMemcmpOptSize = CommonMaxStores;
   }
 
   // CPU/Feature control
@@ -189,52 +171,6 @@ bool BPFTargetLowering::isOffsetFoldingLegal(const GlobalAddressSDNode *GA) cons
   return false;
 }
 
-bool BPFTargetLowering::isTruncateFree(Type *Ty1, Type *Ty2) const {
-  if (!Ty1->isIntegerTy() || !Ty2->isIntegerTy())
-    return false;
-  unsigned NumBits1 = Ty1->getPrimitiveSizeInBits();
-  unsigned NumBits2 = Ty2->getPrimitiveSizeInBits();
-  return NumBits1 > NumBits2;
-}
-
-bool BPFTargetLowering::isTruncateFree(EVT VT1, EVT VT2) const {
-  if (!VT1.isInteger() || !VT2.isInteger())
-    return false;
-  unsigned NumBits1 = VT1.getSizeInBits();
-  unsigned NumBits2 = VT2.getSizeInBits();
-  return NumBits1 > NumBits2;
-}
-
-bool BPFTargetLowering::isZExtFree(Type *Ty1, Type *Ty2) const {
-  if (!getHasAlu32() || !Ty1->isIntegerTy() || !Ty2->isIntegerTy())
-    return false;
-  unsigned NumBits1 = Ty1->getPrimitiveSizeInBits();
-  unsigned NumBits2 = Ty2->getPrimitiveSizeInBits();
-  return NumBits1 == 32 && NumBits2 == 64;
-}
-
-bool BPFTargetLowering::isZExtFree(EVT VT1, EVT VT2) const {
-  if (!getHasAlu32() || !VT1.isInteger() || !VT2.isInteger())
-    return false;
-  unsigned NumBits1 = VT1.getSizeInBits();
-  unsigned NumBits2 = VT2.getSizeInBits();
-  return NumBits1 == 32 && NumBits2 == 64;
-}
-
-BPFTargetLowering::ConstraintType
-BPFTargetLowering::getConstraintType(StringRef Constraint) const {
-  if (Constraint.size() == 1) {
-    switch (Constraint[0]) {
-    default:
-      break;
-    case 'w':
-      return C_RegisterClass;
-    }
-  }
-
-  return TargetLowering::getConstraintType(Constraint);
-}
-
 std::pair<unsigned, const TargetRegisterClass *>
 BPFTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
                                                 StringRef Constraint,
@@ -244,39 +180,11 @@ BPFTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
     switch (Constraint[0]) {
     case 'r': // GENERAL_REGS
       return std::make_pair(0U, &BPF::GPRRegClass);
-    case 'w':
-      if (HasAlu32)
-        return std::make_pair(0U, &BPF::GPR32RegClass);
-      break;
     default:
       break;
     }
 
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
-}
-
-void BPFTargetLowering::ReplaceNodeResults(
-  SDNode *N, SmallVectorImpl<SDValue> &Results, SelectionDAG &DAG) const {
-  const char *err_msg;
-  uint32_t Opcode = N->getOpcode();
-  switch (Opcode) {
-  default:
-    report_fatal_error("Unhandled custom legalization");
-  case ISD::ATOMIC_LOAD_ADD:
-  case ISD::ATOMIC_LOAD_AND:
-  case ISD::ATOMIC_LOAD_OR:
-  case ISD::ATOMIC_LOAD_XOR:
-  case ISD::ATOMIC_SWAP:
-  case ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS:
-    if (HasAlu32 || Opcode == ISD::ATOMIC_LOAD_ADD)
-      err_msg = "Unsupported atomic operations, please use 32/64 bit version";
-    else
-      err_msg = "Unsupported atomic operations, please use 64 bit version";
-    break;
-  }
-
-  SDLoc DL(N);
-  fail(DL, DAG, err_msg);
 }
 
 SDValue BPFTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
@@ -287,8 +195,6 @@ SDValue BPFTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
     return LowerGlobalAddress(Op, DAG);
   case ISD::SELECT_CC:
     return LowerSELECT_CC(Op, DAG);
-  case ISD::DYNAMIC_STACKALLOC:
-    report_fatal_error("Unsupported dynamic stack allocation");
   default:
     llvm_unreachable("unimplemented operand");
   }
@@ -326,7 +232,7 @@ SDValue BPFTargetLowering::LowerFormalArguments(
       default: {
         errs() << "LowerFormalArguments Unhandled argument type: "
                << RegVT.getEVTString() << '\n';
-        llvm_unreachable(nullptr);
+        llvm_unreachable(0);
       }
       case MVT::i32:
       case MVT::i64:
@@ -486,7 +392,9 @@ SDValue BPFTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain, NumBytes, 0, InFlag, CLI.DL);
+  Chain = DAG.getCALLSEQ_END(
+      Chain, DAG.getConstant(NumBytes, CLI.DL, PtrVT, true),
+      DAG.getConstant(0, CLI.DL, PtrVT, true), InFlag, CLI.DL);
   InFlag = Chain.getValue(1);
 
   // Handle result values, copying them out of physregs into vregs that we
@@ -662,12 +570,6 @@ BPFTargetLowering::EmitSubregExt(MachineInstr &MI, MachineBasicBlock *BB,
   DebugLoc DL = MI.getDebugLoc();
 
   MachineRegisterInfo &RegInfo = F->getRegInfo();
-
-  if (!isSigned) {
-    Register PromotedReg0 = RegInfo.createVirtualRegister(RC);
-    BuildMI(BB, DL, TII.get(BPF::MOV_32_64), PromotedReg0).addReg(Reg);
-    return PromotedReg0;
-  }
   Register PromotedReg0 = RegInfo.createVirtualRegister(RC);
   Register PromotedReg1 = RegInfo.createVirtualRegister(RC);
   Register PromotedReg2 = RegInfo.createVirtualRegister(RC);
@@ -821,7 +723,7 @@ BPFTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     BuildMI(BB, DL, TII.get(NewCC)).addReg(LHS).addReg(RHS).addMBB(Copy1MBB);
   } else {
     int64_t imm32 = MI.getOperand(2).getImm();
-    // Check before we build J*_ri instruction.
+    // sanity check before we build J*_ri instruction.
     assert (isInt<32>(imm32));
     BuildMI(BB, DL, TII.get(NewCC))
         .addReg(LHS).addImm(imm32).addMBB(Copy1MBB);
@@ -857,26 +759,4 @@ EVT BPFTargetLowering::getSetCCResultType(const DataLayout &, LLVMContext &,
 MVT BPFTargetLowering::getScalarShiftAmountTy(const DataLayout &DL,
                                               EVT VT) const {
   return (getHasAlu32() && VT == MVT::i32) ? MVT::i32 : MVT::i64;
-}
-
-bool BPFTargetLowering::isLegalAddressingMode(const DataLayout &DL,
-                                              const AddrMode &AM, Type *Ty,
-                                              unsigned AS,
-                                              Instruction *I) const {
-  // No global is ever allowed as a base.
-  if (AM.BaseGV)
-    return false;
-
-  switch (AM.Scale) {
-  case 0: // "r+i" or just "i", depending on HasBaseReg.
-    break;
-  case 1:
-    if (!AM.HasBaseReg) // allow "r+i".
-      break;
-    return false; // disallow "r+r" or "r+r+i".
-  default:
-    return false;
-  }
-
-  return true;
 }

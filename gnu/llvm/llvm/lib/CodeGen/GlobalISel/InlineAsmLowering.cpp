@@ -12,10 +12,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/GlobalISel/InlineAsmLowering.h"
+#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
+#include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 
 #define DEBUG_TYPE "inline-asm-lowering"
@@ -145,7 +150,6 @@ static unsigned getConstraintGenerality(TargetLowering::ConstraintType CT) {
   case TargetLowering::C_RegisterClass:
     return 2;
   case TargetLowering::C_Memory:
-  case TargetLowering::C_Address:
     return 3;
   }
   llvm_unreachable("Invalid constraint type");
@@ -293,8 +297,10 @@ bool InlineAsmLowering::lowerInlineAsm(
     GISelAsmOperandInfo &OpInfo = ConstraintOperands.back();
 
     // Compute the value type for each operand.
-    if (OpInfo.hasArg()) {
-      OpInfo.CallOperandVal = const_cast<Value *>(Call.getArgOperand(ArgNo));
+    if (OpInfo.Type == InlineAsm::isInput ||
+        (OpInfo.Type == InlineAsm::isOutput && OpInfo.isIndirect)) {
+
+      OpInfo.CallOperandVal = const_cast<Value *>(Call.getArgOperand(ArgNo++));
 
       if (isa<BasicBlock>(OpInfo.CallOperandVal)) {
         LLVM_DEBUG(dbgs() << "Basic block input operands not supported yet\n");
@@ -306,8 +312,10 @@ bool InlineAsmLowering::lowerInlineAsm(
       // If this is an indirect operand, the operand is a pointer to the
       // accessed type.
       if (OpInfo.isIndirect) {
-        OpTy = Call.getParamElementType(ArgNo);
-        assert(OpTy && "Indirect operand must have elementtype attribute");
+        PointerType *PtrTy = dyn_cast<PointerType>(OpTy);
+        if (!PtrTy)
+          report_fatal_error("Indirect operand for inline asm not a pointer!");
+        OpTy = PtrTy->getElementType();
       }
 
       // FIXME: Support aggregate input operands
@@ -317,9 +325,8 @@ bool InlineAsmLowering::lowerInlineAsm(
         return false;
       }
 
-      OpInfo.ConstraintVT =
-          TLI->getAsmOperandValueType(DL, OpTy, true).getSimpleVT();
-      ++ArgNo;
+      OpInfo.ConstraintVT = TLI->getValueType(DL, OpTy, true).getSimpleVT();
+
     } else if (OpInfo.Type == InlineAsm::isOutput && !OpInfo.isIndirect) {
       assert(!Call.getType()->isVoidTy() && "Bad inline asm!");
       if (StructType *STy = dyn_cast<StructType>(Call.getType())) {
@@ -327,18 +334,12 @@ bool InlineAsmLowering::lowerInlineAsm(
             TLI->getSimpleValueType(DL, STy->getElementType(ResNo));
       } else {
         assert(ResNo == 0 && "Asm only has one result!");
-        OpInfo.ConstraintVT =
-            TLI->getAsmOperandValueType(DL, Call.getType()).getSimpleVT();
+        OpInfo.ConstraintVT = TLI->getSimpleValueType(DL, Call.getType());
       }
       ++ResNo;
     } else {
-      assert(OpInfo.Type != InlineAsm::isLabel &&
-             "GlobalISel currently doesn't support callbr");
       OpInfo.ConstraintVT = MVT::Other;
     }
-
-    if (OpInfo.ConstraintVT == MVT::i64x8)
-      return false;
 
     // Compute the constraint code and ConstraintType to use.
     computeConstraintToUse(TLI, OpInfo);
@@ -429,8 +430,7 @@ bool InlineAsmLowering::lowerInlineAsm(
       }
 
       break;
-    case InlineAsm::isInput:
-    case InlineAsm::isLabel: {
+    case InlineAsm::isInput: {
       if (OpInfo.isMatchingInputConstraint()) {
         unsigned DefIdx = OpInfo.getMatchedOperand();
         // Find operand with register def that corresponds to DefIdx.
@@ -562,11 +562,6 @@ bool InlineAsmLowering::lowerInlineAsm(
       }
 
       unsigned Flag = InlineAsm::getFlagWord(InlineAsm::Kind_RegUse, NumRegs);
-      if (OpInfo.Regs.front().isVirtual()) {
-        // Put the register class of the virtual registers in the flag word.
-        const TargetRegisterClass *RC = MRI->getRegClass(OpInfo.Regs.front());
-        Flag = InlineAsm::getFlagWordForRegClass(Flag, RC->getID());
-      }
       Inst.addImm(Flag);
       if (!buildAnyextOrCopy(OpInfo.Regs[0], SourceRegs[0], MIRBuilder))
         return false;
@@ -622,8 +617,7 @@ bool InlineAsmLowering::lowerInlineAsm(
 
       Register SrcReg = OpInfo.Regs[0];
       unsigned SrcSize = TRI->getRegSizeInBits(SrcReg, *MRI);
-      LLT ResTy = MRI->getType(ResRegs[i]);
-      if (ResTy.isScalar() && ResTy.getSizeInBits() < SrcSize) {
+      if (MRI->getType(ResRegs[i]).getSizeInBits() < SrcSize) {
         // First copy the non-typed virtual register into a generic virtual
         // register
         Register Tmp1Reg =
@@ -631,14 +625,9 @@ bool InlineAsmLowering::lowerInlineAsm(
         MIRBuilder.buildCopy(Tmp1Reg, SrcReg);
         // Need to truncate the result of the register
         MIRBuilder.buildTrunc(ResRegs[i], Tmp1Reg);
-      } else if (ResTy.getSizeInBits() == SrcSize) {
-        MIRBuilder.buildCopy(ResRegs[i], SrcReg);
       } else {
-        LLVM_DEBUG(dbgs() << "Unhandled output operand with "
-                             "mismatched register size\n");
-        return false;
+        MIRBuilder.buildCopy(ResRegs[i], SrcReg);
       }
-
       break;
     }
     case TargetLowering::C_Immediate:
@@ -648,8 +637,6 @@ bool InlineAsmLowering::lowerInlineAsm(
       return false;
     case TargetLowering::C_Memory:
       break; // Already handled.
-    case TargetLowering::C_Address:
-      break; // Silence warning.
     case TargetLowering::C_Unknown:
       LLVM_DEBUG(dbgs() << "Unexpected unknown constraint\n");
       return false;
@@ -670,7 +657,6 @@ bool InlineAsmLowering::lowerAsmOperandForConstraint(
   default:
     return false;
   case 'i': // Simple Integer or Relocatable Constant
-  case 'n': // immediate integer with a known value.
     if (ConstantInt *CI = dyn_cast<ConstantInt>(Val)) {
       assert(CI->getBitWidth() <= 64 &&
              "expected immediate to fit into 64-bits");

@@ -241,7 +241,7 @@ void Scheduler::updateIssuedSet(SmallVectorImpl<InstRef> &Executed) {
 }
 
 uint64_t Scheduler::analyzeResourcePressure(SmallVectorImpl<InstRef> &Insts) {
-  llvm::append_range(Insts, ReadySet);
+  Insts.insert(Insts.end(), ReadySet.begin(), ReadySet.end());
   return BusyResourceUnits;
 }
 

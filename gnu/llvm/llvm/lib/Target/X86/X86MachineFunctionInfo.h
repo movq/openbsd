@@ -13,10 +13,9 @@
 #ifndef LLVM_LIB_TARGET_X86_X86MACHINEFUNCTIONINFO_H
 #define LLVM_LIB_TARGET_X86_X86MACHINEFUNCTIONINFO_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/Support/MachineValueType.h"
 
 namespace llvm {
 
@@ -66,12 +65,12 @@ class X86MachineFunctionInfo : public MachineFunctionInfo {
   /// SRetReturnReg - Some subtargets require that sret lowering includes
   /// returning the value of the returned struct in a register. This field
   /// holds the virtual register into which the sret argument is passed.
-  Register SRetReturnReg;
+  unsigned SRetReturnReg = 0;
 
   /// GlobalBaseReg - keeps track of the virtual register initialized for
   /// use as the global base register. This is used for PIC in some PIC
   /// relocation models.
-  Register GlobalBaseReg;
+  unsigned GlobalBaseReg = 0;
 
   /// VarArgsFrameIndex - FrameIndex for start of varargs area.
   int VarArgsFrameIndex = 0;
@@ -105,28 +104,8 @@ class X86MachineFunctionInfo : public MachineFunctionInfo {
   /// True if this function uses the red zone.
   bool UsesRedZone = false;
 
-  /// True if this function has DYN_ALLOCA instructions.
-  bool HasDynAlloca = false;
-
-  /// True if this function has any preallocated calls.
-  bool HasPreallocatedCall = false;
-
-  /// Whether this function has an extended frame record [Ctx, RBP, Return
-  /// addr]. If so, bit 60 of the in-memory frame pointer will be 1 to enable
-  /// other tools to detect the extended record.
-  bool HasSwiftAsyncContext = false;
-
-  /// True if this function has tile virtual register. This is used to
-  /// determine if we should insert tilerelease in frame lowering.
-  bool HasVirtualTileReg = false;
-
-  std::optional<int> SwiftAsyncContextFrameIdx;
-
-  // Preallocated fields are only used during isel.
-  // FIXME: Can we find somewhere else to store these?
-  DenseMap<const Value *, size_t> PreallocatedIds;
-  SmallVector<size_t, 0> PreallocatedStackSizes;
-  SmallVector<SmallVector<size_t, 4>, 0> PreallocatedArgOffsets;
+  /// True if this function has WIN_ALLOCA instructions.
+  bool HasWinAlloca = false;
 
 private:
   /// ForwardedMustTailRegParms - A list of virtual and physical registers
@@ -135,14 +114,8 @@ private:
 
 public:
   X86MachineFunctionInfo() = default;
-  X86MachineFunctionInfo(const Function &F, const TargetSubtargetInfo *STI) {}
 
-  X86MachineFunctionInfo(const X86MachineFunctionInfo &) = default;
-
-  MachineFunctionInfo *
-  clone(BumpPtrAllocator &Allocator, MachineFunction &DestMF,
-        const DenseMap<MachineBasicBlock *, MachineBasicBlock *> &Src2DstMBB)
-      const override;
+  explicit X86MachineFunctionInfo(MachineFunction &MF) {}
 
   bool getForceFramePointer() const { return ForceFramePointer;}
   void setForceFramePointer(bool forceFP) { ForceFramePointer = forceFP; }
@@ -176,11 +149,11 @@ public:
   int getTCReturnAddrDelta() const { return TailCallReturnAddrDelta; }
   void setTCReturnAddrDelta(int delta) {TailCallReturnAddrDelta = delta;}
 
-  Register getSRetReturnReg() const { return SRetReturnReg; }
-  void setSRetReturnReg(Register Reg) { SRetReturnReg = Reg; }
+  unsigned getSRetReturnReg() const { return SRetReturnReg; }
+  void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
 
-  Register getGlobalBaseReg() const { return GlobalBaseReg; }
-  void setGlobalBaseReg(Register Reg) { GlobalBaseReg = Reg; }
+  unsigned getGlobalBaseReg() const { return GlobalBaseReg; }
+  void setGlobalBaseReg(unsigned Reg) { GlobalBaseReg = Reg; }
 
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
   void setVarArgsFrameIndex(int Idx) { VarArgsFrameIndex = Idx; }
@@ -216,49 +189,8 @@ public:
   bool getUsesRedZone() const { return UsesRedZone; }
   void setUsesRedZone(bool V) { UsesRedZone = V; }
 
-  bool hasDynAlloca() const { return HasDynAlloca; }
-  void setHasDynAlloca(bool v) { HasDynAlloca = v; }
-
-  bool hasPreallocatedCall() const { return HasPreallocatedCall; }
-  void setHasPreallocatedCall(bool v) { HasPreallocatedCall = v; }
-
-  bool hasSwiftAsyncContext() const { return HasSwiftAsyncContext; }
-  void setHasSwiftAsyncContext(bool v) { HasSwiftAsyncContext = v; }
-
-  bool hasVirtualTileReg() const { return HasVirtualTileReg; }
-  void setHasVirtualTileReg(bool v) { HasVirtualTileReg = v; }
-
-  std::optional<int> getSwiftAsyncContextFrameIdx() const {
-    return SwiftAsyncContextFrameIdx;
-  }
-  void setSwiftAsyncContextFrameIdx(int v) { SwiftAsyncContextFrameIdx = v; }
-
-  size_t getPreallocatedIdForCallSite(const Value *CS) {
-    auto Insert = PreallocatedIds.insert({CS, PreallocatedIds.size()});
-    if (Insert.second) {
-      PreallocatedStackSizes.push_back(0);
-      PreallocatedArgOffsets.emplace_back();
-    }
-    return Insert.first->second;
-  }
-
-  void setPreallocatedStackSize(size_t Id, size_t StackSize) {
-    PreallocatedStackSizes[Id] = StackSize;
-  }
-
-  size_t getPreallocatedStackSize(const size_t Id) {
-    assert(PreallocatedStackSizes[Id] != 0 && "stack size not set");
-    return PreallocatedStackSizes[Id];
-  }
-
-  void setPreallocatedArgOffsets(size_t Id, ArrayRef<size_t> AO) {
-    PreallocatedArgOffsets[Id].assign(AO.begin(), AO.end());
-  }
-
-  ArrayRef<size_t> getPreallocatedArgOffsets(const size_t Id) {
-    assert(!PreallocatedArgOffsets[Id].empty() && "arg offsets not set");
-    return PreallocatedArgOffsets[Id];
-  }
+  bool hasWinAlloca() const { return HasWinAlloca; }
+  void setHasWinAlloca(bool v) { HasWinAlloca = v; }
 };
 
 } // End llvm namespace

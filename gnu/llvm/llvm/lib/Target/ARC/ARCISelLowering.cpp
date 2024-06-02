@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Intrinsics.h"
@@ -68,31 +69,6 @@ static ARCCC::CondCode ISDCCtoARCCC(ISD::CondCode isdCC) {
   }
 }
 
-void ARCTargetLowering::ReplaceNodeResults(SDNode *N,
-                                           SmallVectorImpl<SDValue> &Results,
-                                           SelectionDAG &DAG) const {
-  LLVM_DEBUG(dbgs() << "[ARC-ISEL] ReplaceNodeResults ");
-  LLVM_DEBUG(N->dump(&DAG));
-  LLVM_DEBUG(dbgs() << "; use_count=" << N->use_size() << "\n");
-
-  switch (N->getOpcode()) {
-  case ISD::READCYCLECOUNTER:
-    if (N->getValueType(0) == MVT::i64) {
-      // We read the TIMER0 and zero-extend it to 64-bits as the intrinsic
-      // requires.
-      SDValue V =
-          DAG.getNode(ISD::READCYCLECOUNTER, SDLoc(N),
-                      DAG.getVTList(MVT::i32, MVT::Other), N->getOperand(0));
-      SDValue Op = DAG.getNode(ISD::ZERO_EXTEND, SDLoc(N), MVT::i64, V);
-      Results.push_back(Op);
-      Results.push_back(V.getValue(1));
-    }
-    break;
-  default:
-    break;
-  }
-}
-
 ARCTargetLowering::ARCTargetLowering(const TargetMachine &TM,
                                      const ARCSubtarget &Subtarget)
     : TargetLowering(TM), Subtarget(Subtarget) {
@@ -120,11 +96,6 @@ ARCTargetLowering::ARCTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::AND, MVT::i32, Legal);
   setOperationAction(ISD::SMAX, MVT::i32, Legal);
   setOperationAction(ISD::SMIN, MVT::i32, Legal);
-
-  setOperationAction(ISD::ADDC, MVT::i32, Legal);
-  setOperationAction(ISD::ADDE, MVT::i32, Legal);
-  setOperationAction(ISD::SUBC, MVT::i32, Legal);
-  setOperationAction(ISD::SUBE, MVT::i32, Legal);
 
   // Need barrel shifter.
   setOperationAction(ISD::SHL, MVT::i32, Legal);
@@ -165,15 +136,6 @@ ARCTargetLowering::ARCTargetLowering(const TargetMachine &TM,
 
   // Sign extend inreg
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Custom);
-
-  // TODO: Predicate these with `options.hasBitScan() ? Legal : Expand`
-  //       when the HasBitScan predicate is available.
-  setOperationAction(ISD::CTLZ, MVT::i32, Legal);
-  setOperationAction(ISD::CTTZ, MVT::i32, Legal);
-
-  setOperationAction(ISD::READCYCLECOUNTER, MVT::i32, Legal);
-  setOperationAction(ISD::READCYCLECOUNTER, MVT::i64,
-                     isTypeLegal(MVT::i64) ? Legal : Custom);
 }
 
 const char *ARCTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -283,11 +245,12 @@ SDValue ARCTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Analyze return values to determine the number of bytes of stack required.
   CCState RetCCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), RVLocs,
                     *DAG.getContext());
-  RetCCInfo.AllocateStack(CCInfo.getNextStackOffset(), Align(4));
+  RetCCInfo.AllocateStack(CCInfo.getNextStackOffset(), 4);
   RetCCInfo.AnalyzeCallResult(Ins, RetCC_ARC);
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = RetCCInfo.getNextStackOffset();
+  auto PtrVT = getPointerTy(DAG.getDataLayout());
 
   Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, dl);
 
@@ -391,7 +354,8 @@ SDValue ARCTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   Glue = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain, NumBytes, 0, Glue, dl);
+  Chain = DAG.getCALLSEQ_END(Chain, DAG.getConstant(NumBytes, dl, PtrVT, true),
+                             DAG.getConstant(0, dl, PtrVT, true), Glue, dl);
   Glue = Chain.getValue(1);
 
   // Handle result values, copying them out of physregs into vregs that we
@@ -532,7 +496,7 @@ SDValue ARCTargetLowering::LowerCallArguments(
         CFRegNode.push_back(ArgIn.getValue(ArgIn->getNumValues() - 1));
       }
     } else {
-      // Only arguments passed on the stack should make it here.
+      // sanity check
       assert(VA.isMemLoc());
       // Load the argument to a virtual register
       unsigned ObjSize = VA.getLocVT().getStoreSize();
@@ -558,17 +522,18 @@ SDValue ARCTargetLowering::LowerCallArguments(
                                         ARC::R4, ARC::R5, ARC::R6, ARC::R7};
     auto *AFI = MF.getInfo<ARCFunctionInfo>();
     unsigned FirstVAReg = CCInfo.getFirstUnallocated(ArgRegs);
-    if (FirstVAReg < std::size(ArgRegs)) {
+    if (FirstVAReg < array_lengthof(ArgRegs)) {
       int Offset = 0;
       // Save remaining registers, storing higher register numbers at a higher
       // address
-      // There are (std::size(ArgRegs) - FirstVAReg) registers which
+      // There are (array_lengthof(ArgRegs) - FirstVAReg) registers which
       // need to be saved.
-      int VarFI = MFI.CreateFixedObject((std::size(ArgRegs) - FirstVAReg) * 4,
-                                        CCInfo.getNextStackOffset(), true);
+      int VarFI =
+          MFI.CreateFixedObject((array_lengthof(ArgRegs) - FirstVAReg) * 4,
+                                CCInfo.getNextStackOffset(), true);
       AFI->setVarArgsFrameIndex(VarFI);
       SDValue FIN = DAG.getFrameIndex(VarFI, MVT::i32);
-      for (unsigned i = FirstVAReg; i < std::size(ArgRegs); i++) {
+      for (unsigned i = FirstVAReg; i < array_lengthof(ArgRegs); i++) {
         // Move argument from phys reg -> virt reg
         unsigned VReg = RegInfo.createVirtualRegister(&ARC::GPR32RegClass);
         RegInfo.addLiveIn(ArgRegs[i], VReg);
@@ -598,16 +563,14 @@ SDValue ARCTargetLowering::LowerCallArguments(
   for (const auto &ArgDI : ArgData) {
     if (ArgDI.Flags.isByVal() && ArgDI.Flags.getByValSize()) {
       unsigned Size = ArgDI.Flags.getByValSize();
-      Align Alignment =
-          std::max(Align(StackSlotSize), ArgDI.Flags.getNonZeroByValAlign());
+      unsigned Align = std::max(StackSlotSize, ArgDI.Flags.getByValAlign());
       // Create a new object on the stack and copy the pointee into it.
-      int FI = MFI.CreateStackObject(Size, Alignment, false);
+      int FI = MFI.CreateStackObject(Size, Align, false);
       SDValue FIN = DAG.getFrameIndex(FI, MVT::i32);
       InVals.push_back(FIN);
       MemOps.push_back(DAG.getMemcpy(
-          Chain, dl, FIN, ArgDI.SDV, DAG.getConstant(Size, dl, MVT::i32),
-          Alignment, false, false, false, MachinePointerInfo(),
-          MachinePointerInfo()));
+          Chain, dl, FIN, ArgDI.SDV, DAG.getConstant(Size, dl, MVT::i32), Align,
+          false, false, false, MachinePointerInfo(), MachinePointerInfo()));
     } else {
       InVals.push_back(ArgDI.SDV);
     }
@@ -657,7 +620,7 @@ ARCTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 
   // Analyze return values.
   if (!IsVarArg)
-    CCInfo.AllocateStack(AFI->getReturnStackOffset(), Align(4));
+    CCInfo.AllocateStack(AFI->getReturnStackOffset(), 4);
 
   CCInfo.AnalyzeReturn(Outs, RetCC_ARC);
 
@@ -797,13 +760,6 @@ SDValue ARCTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
     return LowerJumpTable(Op, DAG);
   case ISD::VASTART:
     return LowerVASTART(Op, DAG);
-  case ISD::READCYCLECOUNTER:
-    // As of LLVM 3.8, the lowering code insists that we customize it even
-    // though we've declared the i32 version as legal. This is because it only
-    // thinks i64 is the truly supported version. We've already converted the
-    // i64 version to a widened i32.
-    assert(Op.getSimpleValueType() == MVT::i32);
-    return Op;
   default:
     llvm_unreachable("unimplemented operand");
   }

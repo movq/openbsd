@@ -62,7 +62,6 @@
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -84,7 +83,6 @@
 #include "llvm/IR/Use.h"
 #include "llvm/IR/User.h"
 #include "llvm/InitializePasses.h"
-#include "llvm/MC/SectionKind.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -182,7 +180,7 @@ namespace {
     void collectUsedGlobalVariables(Module &M, StringRef Name);
 
     /// Keep track of the GlobalVariable that must not be merged away
-    SmallSetVector<const GlobalVariable *, 16> MustKeepGlobalVariables;
+    SmallPtrSet<const GlobalVariable *, 16> MustKeepGlobalVariables;
 
   public:
     static char ID;             // Pass identification, replacement for typeid.
@@ -224,9 +222,8 @@ bool GlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
   // FIXME: Find better heuristics
   llvm::stable_sort(
       Globals, [&DL](const GlobalVariable *GV1, const GlobalVariable *GV2) {
-        // We don't support scalable global variables.
-        return DL.getTypeAllocSize(GV1->getValueType()).getFixedValue() <
-               DL.getTypeAllocSize(GV2->getValueType()).getFixedValue();
+        return DL.getTypeAllocSize(GV1->getValueType()) <
+               DL.getTypeAllocSize(GV2->getValueType());
       });
 
   // If we want to just blindly group all globals together, do so.
@@ -400,7 +397,8 @@ bool GlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
   // having a single global, but is aggressive enough for any other case.
   if (GlobalMergeIgnoreSingleUse) {
     BitVector AllGlobals(Globals.size());
-    for (const UsedGlobalSet &UGS : llvm::reverse(UsedGlobalSets)) {
+    for (size_t i = 0, e = UsedGlobalSets.size(); i != e; ++i) {
+      const UsedGlobalSet &UGS = UsedGlobalSets[e - i - 1];
       if (UGS.UsageCount == 0)
         continue;
       if (UGS.Globals.count() > 1)
@@ -418,7 +416,8 @@ bool GlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
   BitVector PickedGlobals(Globals.size());
   bool Changed = false;
 
-  for (const UsedGlobalSet &UGS : llvm::reverse(UsedGlobalSets)) {
+  for (size_t i = 0, e = UsedGlobalSets.size(); i != e; ++i) {
+    const UsedGlobalSet &UGS = UsedGlobalSets[e - i - 1];
     if (UGS.UsageCount == 0)
       continue;
     if (PickedGlobals.anyCommon(UGS.Globals))
@@ -464,7 +463,7 @@ bool GlobalMerge::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
       Type *Ty = Globals[j]->getValueType();
 
       // Make sure we use the same alignment AsmPrinter would use.
-      Align Alignment = DL.getPreferredAlign(Globals[j]);
+      Align Alignment(DL.getPreferredAlignment(Globals[j]));
       unsigned Padding = alignTo(MergedSize, Alignment) - MergedSize;
       MergedSize += Padding;
       MergedSize += DL.getTypeAllocSize(Ty);
@@ -524,7 +523,7 @@ bool GlobalMerge::doMerge(const SmallVectorImpl<GlobalVariable *> &Globals,
     const StructLayout *MergedLayout = DL.getStructLayout(MergedTy);
     for (ssize_t k = i, idx = 0; k != j; k = GlobalSet.find_next(k), ++idx) {
       GlobalValue::LinkageTypes Linkage = Globals[k]->getLinkage();
-      std::string Name(Globals[k]->getName());
+      std::string Name = Globals[k]->getName();
       GlobalValue::VisibilityTypes Visibility = Globals[k]->getVisibility();
       GlobalValue::DLLStorageClassTypes DLLStorage =
           Globals[k]->getDLLStorageClass();
@@ -593,13 +592,6 @@ void GlobalMerge::setMustKeepGlobalVariables(Module &M) {
         if (const GlobalVariable *GV =
                 dyn_cast<GlobalVariable>(U->stripPointerCasts()))
           MustKeepGlobalVariables.insert(GV);
-        else if (const ConstantArray *CA = dyn_cast<ConstantArray>(U->stripPointerCasts())) {
-          for (const Use &Elt : CA->operands()) {
-            if (const GlobalVariable *GV =
-                    dyn_cast<GlobalVariable>(Elt->stripPointerCasts()))
-              MustKeepGlobalVariables.insert(GV);
-          }
-        }
       }
     }
   }
@@ -617,12 +609,6 @@ bool GlobalMerge::doInitialization(Module &M) {
   bool Changed = false;
   setMustKeepGlobalVariables(M);
 
-  LLVM_DEBUG({
-      dbgs() << "Number of GV that must be kept:  " <<
-                MustKeepGlobalVariables.size() << "\n";
-      for (const GlobalVariable *KeptGV : MustKeepGlobalVariables)
-        dbgs() << "Kept: " << *KeptGV << "\n";
-  });
   // Grab all non-const globals.
   for (auto &GV : M.globals()) {
     // Merge is safe for "normal" internal or external globals only

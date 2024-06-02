@@ -11,7 +11,6 @@
 
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
-#include "llvm/DebugInfo/Symbolize/SymbolizableModule.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
@@ -24,7 +23,6 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCTargetOptions.h"
-#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/ELFObjectFile.h"
@@ -33,8 +31,10 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+
 
 using Instr = llvm::cfi_verify::FileAnalysis::Instr;
 using LLVMSymbolizer = llvm::symbolize::LLVMSymbolizer;
@@ -96,11 +96,7 @@ Expected<FileAnalysis> FileAnalysis::Create(StringRef Filename) {
   }
 
   Analysis.ObjectTriple = Analysis.Object->makeTriple();
-  Expected<SubtargetFeatures> Features = Analysis.Object->getFeatures();
-  if (!Features)
-    return Features.takeError();
-
-  Analysis.Features = *Features;
+  Analysis.Features = Analysis.Object->getFeatures();
 
   // Init the rest of the object.
   if (auto InitResponse = Analysis.initialiseDisassemblyMembers())
@@ -183,7 +179,7 @@ bool FileAnalysis::willTrapOnCFIViolation(const Instr &InstrMeta) const {
   if (!MIA->evaluateBranch(InstrMeta.Instruction, InstrMeta.VMAddress,
                            InstrMeta.InstructionSize, Target))
     return false;
-  return TrapOnFailFunctionAddresses.contains(Target);
+  return TrapOnFailFunctionAddresses.count(Target) > 0;
 }
 
 bool FileAnalysis::canFallThrough(const Instr &InstrMeta) const {
@@ -278,8 +274,7 @@ Expected<DIInliningInfo>
 FileAnalysis::symbolizeInlinedCode(object::SectionedAddress Address) {
   assert(Symbolizer != nullptr && "Symbolizer is invalid.");
 
-  return Symbolizer->symbolizeInlinedCode(std::string(Object->getFileName()),
-                                          Address);
+  return Symbolizer->symbolizeInlinedCode(Object->getFileName(), Address);
 }
 
 CFIProtectionStatus
@@ -354,7 +349,7 @@ uint64_t FileAnalysis::indirectCFOperandClobber(const GraphResult &Graph) const 
           // Add the registers this load reads to those we check for clobbers.
           for (unsigned i = InstrDesc.getNumDefs(),
                         e = InstrDesc.getNumOperands(); i != e; i++) {
-            const auto &Operand = NodeInstr.Instruction.getOperand(i);
+            const auto Operand = NodeInstr.Instruction.getOperand(i);
             if (Operand.isReg())
               CurRegisterNumbers.insert(Operand.getReg());
           }
@@ -369,7 +364,7 @@ uint64_t FileAnalysis::indirectCFOperandClobber(const GraphResult &Graph) const 
 
 void FileAnalysis::printInstruction(const Instr &InstrMeta,
                                     raw_ostream &OS) const {
-  Printer->printInst(&InstrMeta.Instruction, 0, "", *SubtargetInfo, OS);
+  Printer->printInst(&InstrMeta.Instruction, 0, "", *SubtargetInfo.get(), OS);
 }
 
 Error FileAnalysis::initialiseDisassemblyMembers() {
@@ -378,9 +373,7 @@ Error FileAnalysis::initialiseDisassemblyMembers() {
   MCPU = "";
   std::string ErrorString;
 
-  LLVMSymbolizer::Options Opt;
-  Opt.UseSymbolTable = false;
-  Symbolizer.reset(new LLVMSymbolizer(Opt));
+  Symbolizer.reset(new LLVMSymbolizer());
 
   ObjectTarget =
       TargetRegistry::lookupTarget(ArchName, ObjectTriple, ErrorString);
@@ -411,8 +404,7 @@ Error FileAnalysis::initialiseDisassemblyMembers() {
   if (!MII)
     return make_error<UnsupportedDisassembly>("Failed to initialise MII.");
 
-  Context.reset(new MCContext(Triple(TripleName), AsmInfo.get(),
-                              RegisterInfo.get(), SubtargetInfo.get()));
+  Context.reset(new MCContext(AsmInfo.get(), RegisterInfo.get(), &MOFI));
 
   Disassembler.reset(
       ObjectTarget->createMCDisassembler(*SubtargetInfo, *Context));
@@ -523,9 +515,8 @@ void FileAnalysis::parseSectionContents(ArrayRef<uint8_t> SectionBytes,
 
     // Check if this instruction exists in the range of the DWARF metadata.
     if (!IgnoreDWARFFlag) {
-      auto LineInfo =
-          Symbolizer->symbolizeCode(std::string(Object->getFileName()),
-                                    {VMAddress, Address.SectionIndex});
+      auto LineInfo = Symbolizer->symbolizeCode(
+          Object->getFileName(), {VMAddress, Address.SectionIndex});
       if (!LineInfo) {
         handleAllErrors(LineInfo.takeError(), [](const ErrorInfoBase &E) {
           errs() << "Symbolizer failed to get line: " << E.message() << "\n";
@@ -565,7 +556,7 @@ Error FileAnalysis::parseSymbolTable() {
     auto SymNameOrErr = Sym.getName();
     if (!SymNameOrErr)
       consumeError(SymNameOrErr.takeError());
-    else if (TrapOnFailFunctions.contains(*SymNameOrErr)) {
+    else if (TrapOnFailFunctions.count(*SymNameOrErr) > 0) {
       auto AddrOrErr = Sym.getAddress();
       if (!AddrOrErr)
         consumeError(AddrOrErr.takeError());
@@ -575,21 +566,18 @@ Error FileAnalysis::parseSymbolTable() {
   }
   if (auto *ElfObject = dyn_cast<object::ELFObjectFileBase>(Object)) {
     for (const auto &Addr : ElfObject->getPltAddresses()) {
-      if (!Addr.first)
-        continue;
-      object::SymbolRef Sym(*Addr.first, Object);
+      object::SymbolRef Sym(Addr.first, Object);
       auto SymNameOrErr = Sym.getName();
       if (!SymNameOrErr)
         consumeError(SymNameOrErr.takeError());
-      else if (TrapOnFailFunctions.contains(*SymNameOrErr))
+      else if (TrapOnFailFunctions.count(*SymNameOrErr) > 0)
         TrapOnFailFunctionAddresses.insert(Addr.second);
     }
   }
   return Error::success();
 }
 
-UnsupportedDisassembly::UnsupportedDisassembly(StringRef Text)
-    : Text(std::string(Text)) {}
+UnsupportedDisassembly::UnsupportedDisassembly(StringRef Text) : Text(Text) {}
 
 char UnsupportedDisassembly::ID;
 void UnsupportedDisassembly::log(raw_ostream &OS) const {

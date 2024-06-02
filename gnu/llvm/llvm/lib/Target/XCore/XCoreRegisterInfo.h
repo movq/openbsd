@@ -20,6 +20,8 @@
 
 namespace llvm {
 
+class TargetInstrInfo;
+
 struct XCoreRegisterInfo : public XCoreGenRegisterInfo {
 public:
   XCoreRegisterInfo();
@@ -32,9 +34,11 @@ public:
 
   bool requiresRegisterScavenging(const MachineFunction &MF) const override;
 
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override;
+
   bool useFPForScavengingIndex(const MachineFunction &MF) const override;
 
-  bool eliminateFrameIndex(MachineBasicBlock::iterator II,
+  void eliminateFrameIndex(MachineBasicBlock::iterator II,
                            int SPAdj, unsigned FIOperandNum,
                            RegScavenger *RS = nullptr) const override;
 

@@ -12,6 +12,7 @@
 
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/Analysis/BlockFrequencyInfoImpl.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
@@ -24,8 +25,8 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
-#include <optional>
 #include <string>
 
 using namespace llvm;
@@ -46,7 +47,6 @@ static cl::opt<GVDAGType> ViewBlockFreqPropagationDAG(
                clEnumValN(GVDT_Count, "count", "display a graph using the real "
                                                "profile count if available.")));
 
-namespace llvm {
 cl::opt<std::string>
     ViewBlockFreqFuncName("view-bfi-func-name", cl::Hidden,
                           cl::desc("The option to specify "
@@ -86,7 +86,6 @@ cl::opt<std::string> PrintBlockFreqFuncName(
     "print-bfi-func-name", cl::Hidden,
     cl::desc("The option to specify the name of the function "
              "whose block frequency info is printed."));
-} // namespace llvm
 
 namespace llvm {
 
@@ -99,7 +98,7 @@ static GVDAGType getGVDT() {
 template <>
 struct GraphTraits<BlockFrequencyInfo *> {
   using NodeRef = const BasicBlock *;
-  using ChildIteratorType = const_succ_iterator;
+  using ChildIteratorType = succ_const_iterator;
   using nodes_iterator = pointer_iterator<Function::const_iterator>;
 
   static NodeRef getEntryNode(const BlockFrequencyInfo *G) {
@@ -204,19 +203,19 @@ BlockFrequency BlockFrequencyInfo::getBlockFreq(const BasicBlock *BB) const {
   return BFI ? BFI->getBlockFreq(BB) : 0;
 }
 
-std::optional<uint64_t>
+Optional<uint64_t>
 BlockFrequencyInfo::getBlockProfileCount(const BasicBlock *BB,
                                          bool AllowSynthetic) const {
   if (!BFI)
-    return std::nullopt;
+    return None;
 
   return BFI->getBlockProfileCount(*getFunction(), BB, AllowSynthetic);
 }
 
-std::optional<uint64_t>
+Optional<uint64_t>
 BlockFrequencyInfo::getProfileCountFromFreq(uint64_t Freq) const {
   if (!BFI)
-    return std::nullopt;
+    return None;
   return BFI->getProfileCountFromFreq(*getFunction(), Freq);
 }
 
@@ -286,11 +285,6 @@ void BlockFrequencyInfo::releaseMemory() { BFI.reset(); }
 void BlockFrequencyInfo::print(raw_ostream &OS) const {
   if (BFI)
     BFI->print(OS);
-}
-
-void BlockFrequencyInfo::verifyMatch(BlockFrequencyInfo &Other) const {
-  if (BFI)
-    BFI->verifyMatch(*Other.BFI);
 }
 
 INITIALIZE_PASS_BEGIN(BlockFrequencyInfoWrapperPass, "block-freq",

@@ -31,11 +31,12 @@ int llvm_set_metadata(void) {
   LLVMValueRef values[] = { LLVMConstInt(LLVMInt32Type(), 0, 0) };
 
   // This used to trigger an assertion
-  LLVMValueRef ret = LLVMBuildRetVoid(b);
-  LLVMSetMetadata(ret, LLVMGetMDKindID("kind", 4), LLVMMDNode(values, 1));
+  LLVMSetMetadata(
+      LLVMBuildRetVoid(b),
+      LLVMGetMDKindID("kind", 4),
+      LLVMMDNode(values, 1));
 
   LLVMDisposeBuilder(b);
-  LLVMDeleteInstruction(ret);
 
   return 0;
 }

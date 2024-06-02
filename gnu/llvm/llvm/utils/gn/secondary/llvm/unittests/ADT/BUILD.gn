@@ -1,4 +1,4 @@
-import("//third-party/unittest/unittest.gni")
+import("//llvm/utils/unittest/unittest.gni")
 
 unittest("ADTTests") {
   # ADT is a headers-only library so there's no //llvm/lib/ADT to depend on.
@@ -7,31 +7,24 @@ unittest("ADTTests") {
     # Some tests include files from IR, but there's no library dependency.
     "//llvm/include/llvm/IR:public_tablegen",
     "//llvm/lib/Support",
-    "//llvm/lib/TargetParser",
     "//llvm/lib/Testing/Support",
   ]
   sources = [
-    "APFixedPointTest.cpp",
     "APFloatTest.cpp",
     "APIntTest.cpp",
     "APSIntTest.cpp",
     "AnyTest.cpp",
     "ArrayRefTest.cpp",
-    "BitFieldsTest.cpp",
-    "BitTest.cpp",
     "BitVectorTest.cpp",
     "BitmaskEnumTest.cpp",
     "BreadthFirstIteratorTest.cpp",
     "BumpPtrListTest.cpp",
-    "CoalescingBitVectorTest.cpp",
-    "CombinationGeneratorTest.cpp",
     "DAGDeltaAlgorithmTest.cpp",
     "DeltaAlgorithmTest.cpp",
     "DenseMapTest.cpp",
     "DenseSetTest.cpp",
     "DepthFirstIteratorTest.cpp",
     "DirectedGraphTest.cpp",
-    "EditDistanceTest.cpp",
     "EnumeratedArrayTest.cpp",
     "EquivalenceClassesTest.cpp",
     "FallibleIteratorTest.cpp",
@@ -51,12 +44,12 @@ unittest("ADTTests") {
     "ImmutableSetTest.cpp",
     "IntEqClassesTest.cpp",
     "IntervalMapTest.cpp",
-    "IntervalTreeTest.cpp",
     "IntrusiveRefCntPtrTest.cpp",
     "IteratorTest.cpp",
+    "MakeUniqueTest.cpp",
     "MapVectorTest.cpp",
     "MappedIteratorTest.cpp",
-    "MoveOnly.cpp",
+    "OptionalTest.cpp",
     "PackedVectorTest.cpp",
     "PointerEmbeddedIntTest.cpp",
     "PointerIntPairTest.cpp",
@@ -67,7 +60,6 @@ unittest("ADTTests") {
     "RangeAdapterTest.cpp",
     "SCCIteratorTest.cpp",
     "STLExtrasTest.cpp",
-    "STLForwardCompatTest.cpp",
     "ScopeExitTest.cpp",
     "SequenceTest.cpp",
     "SetVectorTest.cpp",
@@ -86,8 +78,7 @@ unittest("ADTTests") {
     "StringSetTest.cpp",
     "StringSwitchTest.cpp",
     "TinyPtrVectorTest.cpp",
+    "TripleTest.cpp",
     "TwineTest.cpp",
-    "TypeSwitchTest.cpp",
-    "TypeTraitsTest.cpp",
   ]
 }

@@ -9,12 +9,14 @@
 #ifndef LLVM_DEBUGINFO_GSYM_INLINEINFO_H
 #define LLVM_DEBUGINFO_GSYM_INLINEINFO_H
 
-#include "llvm/DebugInfo/GSYM/ExtractRanges.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/DebugInfo/GSYM/LineEntry.h"
 #include "llvm/DebugInfo/GSYM/LookupResult.h"
+#include "llvm/DebugInfo/GSYM/Range.h"
 #include "llvm/Support/Error.h"
 #include <stdint.h>
 #include <vector>
+
 
 namespace llvm {
 class raw_ostream;
@@ -44,7 +46,7 @@ class GsymReader;
 /// also makes any encoded addresses easy to relocate as we just need to
 /// relocate the FunctionInfo's start address.
 ///
-/// - The AddressRanges member "Ranges" is encoded using an appropriate base
+/// - The AddressRanges member "Ranges" is encoded using an approriate base
 ///   address as described above.
 /// - UINT8 boolean value that specifies if the InlineInfo object has children.
 /// - UINT32 string table offset that points to the name of the inline
@@ -132,7 +134,7 @@ struct InlineInfo {
   ///
   /// \returns optional vector of InlineInfo objects that describe the
   /// inline call stack for a given address, false otherwise.
-  std::optional<InlineArray> getInlineStack(uint64_t Addr) const;
+  llvm::Optional<InlineArray> getInlineStack(uint64_t Addr) const;
 
   /// Decode an InlineInfo object from a binary data stream.
   ///
@@ -177,4 +179,4 @@ raw_ostream &operator<<(raw_ostream &OS, const InlineInfo &FI);
 } // namespace gsym
 } // namespace llvm
 
-#endif // LLVM_DEBUGINFO_GSYM_INLINEINFO_H
+#endif // #ifndef LLVM_DEBUGINFO_GSYM_INLINEINFO_H

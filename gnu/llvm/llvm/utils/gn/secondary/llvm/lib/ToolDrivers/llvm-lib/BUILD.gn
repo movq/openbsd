@@ -14,7 +14,8 @@ static_library("LibDriver") {
     "//llvm/lib/Object",
     "//llvm/lib/Option",
     "//llvm/lib/Support",
-    "//llvm/lib/TargetParser",
   ]
-  sources = [ "LibDriver.cpp" ]
+  sources = [
+    "LibDriver.cpp",
+  ]
 }

@@ -16,7 +16,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/PassTimingInfo.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/PassInstrumentation.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -24,8 +26,9 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Mutex.h"
-#include "llvm/Support/TypeName.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 #include <string>
 
 using namespace llvm;
@@ -35,16 +38,10 @@ using namespace llvm;
 namespace llvm {
 
 bool TimePassesIsEnabled = false;
-bool TimePassesPerRun = false;
 
 static cl::opt<bool, true> EnableTiming(
     "time-passes", cl::location(TimePassesIsEnabled), cl::Hidden,
     cl::desc("Time each pass, printing elapsed time for each on exit"));
-
-static cl::opt<bool, true> EnableTimingPerRun(
-    "time-passes-per-run", cl::location(TimePassesPerRun), cl::Hidden,
-    cl::desc("Time each pass run, printing elapsed time for each run on exit"),
-    cl::callback([](const bool &) { TimePassesIsEnabled = true; }));
 
 namespace {
 namespace legacy {
@@ -94,7 +91,8 @@ private:
 
 static ManagedStatic<sys::SmartMutex<true>> TimingInfoMutex;
 
-PassTimingInfo::PassTimingInfo() : TG("pass", "Pass execution timing report") {}
+PassTimingInfo::PassTimingInfo()
+    : TG("pass", "... Pass execution timing report ...") {}
 
 PassTimingInfo::~PassTimingInfo() {
   // Deleting the timers accumulates their info into the TG member.
@@ -169,36 +167,22 @@ void reportAndResetTimings(raw_ostream *OutStream) {
 
 /// Returns the timer for the specified pass invocation of \p PassID.
 /// Each time it creates a new timer.
-Timer &TimePassesHandler::getPassTimer(StringRef PassID, bool IsPass) {
-  TimerGroup &TG = IsPass ? PassTG : AnalysisTG;
-  if (!PerRun) {
-    TimerVector &Timers = TimingData[PassID];
-    if (Timers.size() == 0)
-      Timers.emplace_back(new Timer(PassID, PassID, TG));
-    return *Timers.front();
-  }
+Timer &TimePassesHandler::getPassTimer(StringRef PassID) {
+  // Bump counts for each request of the timer.
+  unsigned Count = nextPassID(PassID);
 
-  // Take a vector of Timers created for this \p PassID and append
-  // one more timer to it.
-  TimerVector &Timers = TimingData[PassID];
-  unsigned Count = Timers.size() + 1;
-
+  // Unconditionally appending description with a pass-invocation number.
   std::string FullDesc = formatv("{0} #{1}", PassID, Count).str();
 
+  PassInvocationID UID{PassID, Count};
   Timer *T = new Timer(PassID, FullDesc, TG);
-  Timers.emplace_back(T);
-  assert(Count == Timers.size() && "Timers vector not adjusted correctly.");
-
-  return *T;
+  auto Pair = TimingData.try_emplace(UID, T);
+  assert(Pair.second && "should always create a new timer");
+  return *(Pair.first->second.get());
 }
 
-TimePassesHandler::TimePassesHandler(bool Enabled, bool PerRun)
-    : PassTG("pass", "Pass execution timing report"),
-      AnalysisTG("analysis", "Analysis execution timing report"),
-      Enabled(Enabled), PerRun(PerRun) {}
-
-TimePassesHandler::TimePassesHandler()
-    : TimePassesHandler(TimePassesIsEnabled, TimePassesPerRun) {}
+TimePassesHandler::TimePassesHandler(bool Enabled)
+    : TG("pass", "... Pass execution timing report ..."), Enabled(Enabled) {}
 
 void TimePassesHandler::setOutStream(raw_ostream &Out) {
   OutStream = &Out;
@@ -207,113 +191,88 @@ void TimePassesHandler::setOutStream(raw_ostream &Out) {
 void TimePassesHandler::print() {
   if (!Enabled)
     return;
-  std::unique_ptr<raw_ostream> MaybeCreated;
-  raw_ostream *OS = OutStream;
-  if (OutStream) {
-    OS = OutStream;
-  } else {
-    MaybeCreated = CreateInfoOutputFile();
-    OS = &*MaybeCreated;
-  }
-  PassTG.print(*OS, true);
-  AnalysisTG.print(*OS, true);
+  TG.print(OutStream ? *OutStream : *CreateInfoOutputFile(), true);
 }
 
 LLVM_DUMP_METHOD void TimePassesHandler::dump() const {
   dbgs() << "Dumping timers for " << getTypeName<TimePassesHandler>()
          << ":\n\tRunning:\n";
   for (auto &I : TimingData) {
-    StringRef PassID = I.getKey();
-    const TimerVector& MyTimers = I.getValue();
-    for (unsigned idx = 0; idx < MyTimers.size(); idx++) {
-      const Timer* MyTimer = MyTimers[idx].get();
-      if (MyTimer && MyTimer->isRunning())
-        dbgs() << "\tTimer " << MyTimer << " for pass " << PassID << "(" << idx << ")\n";
-    }
+    const Timer *MyTimer = I.second.get();
+    if (!MyTimer || MyTimer->isRunning())
+      dbgs() << "\tTimer " << MyTimer << " for pass " << I.first.first << "("
+             << I.first.second << ")\n";
   }
   dbgs() << "\tTriggered:\n";
   for (auto &I : TimingData) {
-    StringRef PassID = I.getKey();
-    const TimerVector& MyTimers = I.getValue();
-    for (unsigned idx = 0; idx < MyTimers.size(); idx++) {
-      const Timer* MyTimer = MyTimers[idx].get();
-      if (MyTimer && MyTimer->hasTriggered() && !MyTimer->isRunning())
-        dbgs() << "\tTimer " << MyTimer << " for pass " << PassID << "(" << idx << ")\n";
-    }
+    const Timer *MyTimer = I.second.get();
+    if (!MyTimer || (MyTimer->hasTriggered() && !MyTimer->isRunning()))
+      dbgs() << "\tTimer " << MyTimer << " for pass " << I.first.first << "("
+             << I.first.second << ")\n";
   }
 }
 
-static bool shouldIgnorePass(StringRef PassID) {
-  return isSpecialPass(PassID,
-                       {"PassManager", "PassAdaptor", "AnalysisManagerProxy",
-                        "ModuleInlinerWrapperPass", "DevirtSCCRepeatedPass"});
-}
-
-void TimePassesHandler::startPassTimer(StringRef PassID) {
-  if (shouldIgnorePass(PassID))
-    return;
-  assert(!ActivePassTimer && "should only have one pass timer at a time");
-  Timer &MyTimer = getPassTimer(PassID, /*IsPass*/ true);
-  ActivePassTimer = &MyTimer;
-  assert(!MyTimer.isRunning());
-  MyTimer.startTimer();
-}
-
-void TimePassesHandler::stopPassTimer(StringRef PassID) {
-  if (shouldIgnorePass(PassID))
-    return;
-  assert(ActivePassTimer);
-  assert(ActivePassTimer->isRunning());
-  ActivePassTimer->stopTimer();
-  ActivePassTimer = nullptr;
-}
-
-void TimePassesHandler::startAnalysisTimer(StringRef PassID) {
-  // Stop the previous analysis timer to prevent double counting when an
-  // analysis requests another analysis.
-  if (!AnalysisActiveTimerStack.empty()) {
-    assert(AnalysisActiveTimerStack.back()->isRunning());
-    AnalysisActiveTimerStack.back()->stopTimer();
-  }
-
-  Timer &MyTimer = getPassTimer(PassID, /*IsPass*/ false);
-  AnalysisActiveTimerStack.push_back(&MyTimer);
+void TimePassesHandler::startTimer(StringRef PassID) {
+  Timer &MyTimer = getPassTimer(PassID);
+  TimerStack.push_back(&MyTimer);
   if (!MyTimer.isRunning())
     MyTimer.startTimer();
 }
 
-void TimePassesHandler::stopAnalysisTimer(StringRef PassID) {
-  assert(!AnalysisActiveTimerStack.empty() && "empty stack in popTimer");
-  Timer *MyTimer = AnalysisActiveTimerStack.pop_back_val();
+void TimePassesHandler::stopTimer(StringRef PassID) {
+  assert(TimerStack.size() > 0 && "empty stack in popTimer");
+  Timer *MyTimer = TimerStack.pop_back_val();
   assert(MyTimer && "timer should be present");
   if (MyTimer->isRunning())
     MyTimer->stopTimer();
+}
 
-  // Restart the previously stopped timer.
-  if (!AnalysisActiveTimerStack.empty()) {
-    assert(!AnalysisActiveTimerStack.back()->isRunning());
-    AnalysisActiveTimerStack.back()->startTimer();
-  }
+static bool matchPassManager(StringRef PassID) {
+  size_t prefix_pos = PassID.find('<');
+  if (prefix_pos == StringRef::npos)
+    return false;
+  StringRef Prefix = PassID.substr(0, prefix_pos);
+  return Prefix.endswith("PassManager") || Prefix.endswith("PassAdaptor") ||
+         Prefix.endswith("AnalysisManagerProxy");
+}
+
+bool TimePassesHandler::runBeforePass(StringRef PassID) {
+  if (matchPassManager(PassID))
+    return true;
+
+  startTimer(PassID);
+
+  LLVM_DEBUG(dbgs() << "after runBeforePass(" << PassID << ")\n");
+  LLVM_DEBUG(dump());
+
+  // we are not going to skip this pass, thus return true.
+  return true;
+}
+
+void TimePassesHandler::runAfterPass(StringRef PassID) {
+  if (matchPassManager(PassID))
+    return;
+
+  stopTimer(PassID);
+
+  LLVM_DEBUG(dbgs() << "after runAfterPass(" << PassID << ")\n");
+  LLVM_DEBUG(dump());
 }
 
 void TimePassesHandler::registerCallbacks(PassInstrumentationCallbacks &PIC) {
   if (!Enabled)
     return;
 
-  PIC.registerBeforeNonSkippedPassCallback(
-      [this](StringRef P, Any) { this->startPassTimer(P); });
+  PIC.registerBeforePassCallback(
+      [this](StringRef P, Any) { return this->runBeforePass(P); });
   PIC.registerAfterPassCallback(
-      [this](StringRef P, Any, const PreservedAnalyses &) {
-        this->stopPassTimer(P);
-      });
+      [this](StringRef P, Any) { this->runAfterPass(P); });
   PIC.registerAfterPassInvalidatedCallback(
-      [this](StringRef P, const PreservedAnalyses &) {
-        this->stopPassTimer(P);
-      });
+      [this](StringRef P) { this->runAfterPass(P); });
   PIC.registerBeforeAnalysisCallback(
-      [this](StringRef P, Any) { this->startAnalysisTimer(P); });
+      [this](StringRef P, Any) { this->runBeforePass(P); });
   PIC.registerAfterAnalysisCallback(
-      [this](StringRef P, Any) { this->stopAnalysisTimer(P); });
+      [this](StringRef P, Any) { this->runAfterPass(P); });
 }
 
 } // namespace llvm

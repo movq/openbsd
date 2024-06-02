@@ -14,6 +14,7 @@
 #include "llvm/ADT/BitVector.h"
 
 namespace llvm {
+class LLVMContext;
 class MemoryBuffer;
 
 class CodeGenCoverage {
@@ -35,4 +36,4 @@ public:
 };
 } // namespace llvm
 
-#endif // LLVM_SUPPORT_CODEGENCOVERAGE_H
+#endif // ifndef LLVM_SUPPORT_CODEGENCOVERAGE_H

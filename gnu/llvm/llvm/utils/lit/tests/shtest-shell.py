@@ -1,18 +1,10 @@
 # Check the internal shell handling component of the ShTest format.
-
-# RUN: not %{lit} -v %{inputs}/shtest-shell > %t.out
+#
+# RUN: not %{lit} -j 1 -v %{inputs}/shtest-shell > %t.out
 # FIXME: Temporarily dump test output so we can debug failing tests on
 # buildbots.
 # RUN: cat %t.out
 # RUN: FileCheck --input-file %t.out %s
-#
-# Test again in non-UTF shell to catch potential errors with python 2 seen
-# on stdout-encoding.txt
-# RUN: env PYTHONIOENCODING=ascii not %{lit} -a %{inputs}/shtest-shell > %t.ascii.out
-# FIXME: Temporarily dump test output so we can debug failing tests on
-# buildbots.
-# RUN: cat %t.ascii.out
-# RUN: FileCheck --input-file %t.ascii.out %s
 #
 # END.
 
@@ -41,8 +33,6 @@
 # CHECK: Unsupported: ':' cannot be part of a pipeline
 # CHECK: error: command failed with exit status: 127
 # CHECK: ***
-
-# CHECK: PASS: shtest-shell :: continuations.txt
 
 # CHECK: PASS: shtest-shell :: dev-null.txt
 
@@ -74,7 +64,7 @@
 # CHECK-NEXT: @@
 # CHECK-NEXT: {{^ .f.o.o.$}}
 # CHECK-NEXT: {{^-.b.a.r.$}}
-# CHECK-NEXT: {{^\+.b.a.r.}}
+# CHECK-NEXT: {{^\+.b.a.r..}}
 # CHECK-NEXT: {{^ .b.a.z.$}}
 # CHECK: error: command failed with exit status: 1
 # CHECK: $ "true"
@@ -88,7 +78,7 @@
 # CHECK-NEXT: -bar
 # CHECK-NEXT: -baz
 # CHECK-NEXT: {{^\+.f.o.o.$}}
-# CHECK-NEXT: {{^\+.b.a.r.}}
+# CHECK-NEXT: {{^\+.b.a.r..}}
 # CHECK-NEXT: {{^\+.b.a.z.$}}
 # CHECK: error: command failed with exit status: 1
 # CHECK: $ "true"
@@ -99,7 +89,7 @@
 # CHECK-NEXT: +++
 # CHECK-NEXT: @@
 # CHECK-NEXT: {{^\-.f.o.o.$}}
-# CHECK-NEXT: {{^\-.b.a.r.}}
+# CHECK-NEXT: {{^\-.b.a.r..}}
 # CHECK-NEXT: {{^\-.b.a.z.$}}
 # CHECK-NEXT: +foo
 # CHECK-NEXT: +bar
@@ -126,7 +116,7 @@
 # CHECK-NEXT: @@
 # CHECK-NEXT: {{^ .f.o.o.$}}
 # CHECK-NEXT: {{^-.b.a.r.$}}
-# CHECK-NEXT: {{^\+.b.a.r.}}
+# CHECK-NEXT: {{^\+.b.a.r..}}
 # CHECK-NEXT: {{^ .b.a.z.$}}
 # CHECK: error: command failed with exit status: 1
 # CHECK: $ "true"
@@ -142,7 +132,7 @@
 # CHECK-NEXT: -bar
 # CHECK-NEXT: -baz
 # CHECK-NEXT: {{^\+.f.o.o.$}}
-# CHECK-NEXT: {{^\+.b.a.r.}}
+# CHECK-NEXT: {{^\+.b.a.r..}}
 # CHECK-NEXT: {{^\+.b.a.z.$}}
 # CHECK: error: command failed with exit status: 1
 # CHECK: $ "true"
@@ -153,7 +143,7 @@
 # CHECK-NEXT: +++
 # CHECK-NEXT: @@
 # CHECK-NEXT: {{^\-.f.o.o.$}}
-# CHECK-NEXT: {{^\-.b.a.r.}}
+# CHECK-NEXT: {{^\-.b.a.r..}}
 # CHECK-NEXT: {{^\-.b.a.z.$}}
 # CHECK-NEXT: +foo
 # CHECK-NEXT: +bar
@@ -290,7 +280,7 @@
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-0.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-0.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: Only in {{.*}}dir1: dir1unique
 # CHECK: Only in {{.*}}dir2: dir2unique
@@ -298,7 +288,7 @@
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-1.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-1.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: *** {{.*}}dir1{{.*}}subdir{{.*}}f01
 # CHECK: --- {{.*}}dir2{{.*}}subdir{{.*}}f01
@@ -308,35 +298,35 @@
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-2.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-2.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: Only in {{.*}}dir2: extrafile
 # CHECK: error: command failed with exit status: 1
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-3.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-3.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: Only in {{.*}}dir1: extra_subdir
 # CHECK: error: command failed with exit status: 1
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-4.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-4.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: File {{.*}}dir1{{.*}}extra_subdir is a directory while file {{.*}}dir2{{.*}}extra_subdir is a regular file
 # CHECK: error: command failed with exit status: 1
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-5.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-5.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: Only in {{.*}}dir1: extra_subdir
 # CHECK: error: command failed with exit status: 1
 
 # CHECK: FAIL: shtest-shell :: diff-r-error-6.txt
 # CHECK: *** TEST 'shtest-shell :: diff-r-error-6.txt' FAILED ***
-# CHECK: $ "diff" "-r"
+# CHECK: $ "diff" "-r" 
 # CHECK: # command output:
 # CHECK: File {{.*}}dir1{{.*}}extra_file is a regular empty file while file {{.*}}dir2{{.*}}extra_file is a directory
 # CHECK: error: command failed with exit status: 1
@@ -586,11 +576,11 @@
 # CHECK: $ "cat" "diff-in.bin"
 # CHECK: # command output:
 # CHECK-NEXT: {{^.f.o.o.$}}
-# CHECK-NEXT: {{^.b.a.r.}}
+# CHECK-NEXT: {{^.b.a.r..}}
 # CHECK-NEXT: {{^.b.a.z.$}}
 # CHECK-NOT: error
 # CHECK: $ "false"
 # CHECK: ***
 
 # CHECK: PASS: shtest-shell :: valid-shell.txt
-# CHECK: Failed Tests (35)
+# CHECK: Failing Tests (35)

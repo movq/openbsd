@@ -13,12 +13,33 @@
 
 #include "R600InstrInfo.h"
 #include "AMDGPU.h"
-#include "MCTargetDesc/R600MCTargetDesc.h"
-#include "R600.h"
+#include "AMDGPUInstrInfo.h"
+#include "AMDGPUSubtarget.h"
 #include "R600Defines.h"
-#include "R600Subtarget.h"
+#include "R600FrameLowering.h"
+#include "R600RegisterInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
+#include "Utils/AMDGPUBaseInfo.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <utility>
+#include <vector>
 
 using namespace llvm;
 
@@ -56,7 +77,7 @@ void R600InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
   if (VectorComponents > 0) {
     for (unsigned I = 0; I < VectorComponents; I++) {
-      unsigned SubRegIndex = R600RegisterInfo::getSubRegFromChannel(I);
+      unsigned SubRegIndex = AMDGPURegisterInfo::getSubRegFromChannel(I);
       buildDefaultInstruction(MBB, MI, R600::MOV,
                               RI.getSubReg(DestReg, SubRegIndex),
                               RI.getSubReg(SrcReg, SubRegIndex))
@@ -76,7 +97,7 @@ bool R600InstrInfo::isLegalToSplitMBBAt(MachineBasicBlock &MBB,
                                        MachineBasicBlock::iterator MBBI) const {
   for (MachineInstr::const_mop_iterator I = MBBI->operands_begin(),
                                         E = MBBI->operands_end(); I != E; ++I) {
-    if (I->isReg() && !I->getReg().isVirtual() && I->isUse() &&
+    if (I->isReg() && !Register::isVirtualRegister(I->getReg()) && I->isUse() &&
         RI.isPhysRegLiveAcrossClauses(I->getReg()))
       return false;
   }
@@ -221,7 +242,7 @@ bool R600InstrInfo::readsLDSSrcReg(const MachineInstr &MI) const {
   for (MachineInstr::const_mop_iterator I = MI.operands_begin(),
                                         E = MI.operands_end();
        I != E; ++I) {
-    if (!I->isReg() || !I->isUse() || I->getReg().isVirtual())
+    if (!I->isReg() || !I->isUse() || Register::isVirtualRegister(I->getReg()))
       continue;
 
     if (R600::R600_LDS_SRC_REGRegClass.contains(I->getReg()))
@@ -269,15 +290,17 @@ R600InstrInfo::getSrcs(MachineInstr &MI) const {
       {R600::OpName::src1_W, R600::OpName::src1_sel_W},
     };
 
-    for (const auto &Op : OpTable) {
-      MachineOperand &MO = MI.getOperand(getOperandIdx(MI.getOpcode(), Op[0]));
+    for (unsigned j = 0; j < 8; j++) {
+      MachineOperand &MO =
+          MI.getOperand(getOperandIdx(MI.getOpcode(), OpTable[j][0]));
       Register Reg = MO.getReg();
       if (Reg == R600::ALU_CONST) {
         MachineOperand &Sel =
-            MI.getOperand(getOperandIdx(MI.getOpcode(), Op[1]));
-        Result.push_back(std::pair(&MO, Sel.getImm()));
+            MI.getOperand(getOperandIdx(MI.getOpcode(), OpTable[j][1]));
+        Result.push_back(std::make_pair(&MO, Sel.getImm()));
         continue;
       }
+
     }
     return Result;
   }
@@ -288,27 +311,28 @@ R600InstrInfo::getSrcs(MachineInstr &MI) const {
     {R600::OpName::src2, R600::OpName::src2_sel},
   };
 
-  for (const auto &Op : OpTable) {
-    int SrcIdx = getOperandIdx(MI.getOpcode(), Op[0]);
+  for (unsigned j = 0; j < 3; j++) {
+    int SrcIdx = getOperandIdx(MI.getOpcode(), OpTable[j][0]);
     if (SrcIdx < 0)
       break;
     MachineOperand &MO = MI.getOperand(SrcIdx);
     Register Reg = MO.getReg();
     if (Reg == R600::ALU_CONST) {
-      MachineOperand &Sel = MI.getOperand(getOperandIdx(MI.getOpcode(), Op[1]));
-      Result.push_back(std::pair(&MO, Sel.getImm()));
+      MachineOperand &Sel =
+          MI.getOperand(getOperandIdx(MI.getOpcode(), OpTable[j][1]));
+      Result.push_back(std::make_pair(&MO, Sel.getImm()));
       continue;
     }
     if (Reg == R600::ALU_LITERAL_X) {
       MachineOperand &Operand =
           MI.getOperand(getOperandIdx(MI.getOpcode(), R600::OpName::literal));
       if (Operand.isImm()) {
-        Result.push_back(std::pair(&MO, Operand.getImm()));
+        Result.push_back(std::make_pair(&MO, Operand.getImm()));
         continue;
       }
       assert(Operand.isGlobal());
     }
-    Result.push_back(std::pair(&MO, 0));
+    Result.push_back(std::make_pair(&MO, 0));
   }
   return Result;
 }
@@ -326,11 +350,11 @@ R600InstrInfo::ExtractSrcs(MachineInstr &MI,
     Register Reg = Src.first->getReg();
     int Index = RI.getEncodingValue(Reg) & 0xff;
     if (Reg == R600::OQAP) {
-      Result.push_back(std::pair(Index, 0U));
+      Result.push_back(std::make_pair(Index, 0U));
     }
     if (PV.find(Reg) != PV.end()) {
       // 255 is used to tells its a PS/PV reg
-      Result.push_back(std::pair(255, 0U));
+      Result.push_back(std::make_pair(255, 0U));
       continue;
     }
     if (Index > 127) {
@@ -339,7 +363,7 @@ R600InstrInfo::ExtractSrcs(MachineInstr &MI,
       continue;
     }
     unsigned Chan = RI.getHWRegChan(Reg);
-    Result.push_back(std::pair(Index, Chan));
+    Result.push_back(std::make_pair(Index, Chan));
   }
   for (; i < 3; ++i)
     Result.push_back(DummyPair);
@@ -517,13 +541,14 @@ R600InstrInfo::fitsReadPortLimitations(const std::vector<MachineInstr *> &IG,
 
   std::vector<std::vector<std::pair<int, unsigned>>> IGSrcs;
   ValidSwizzle.clear();
-  unsigned ConstCount;
+  unsigned ConstCount = 0;
   BankSwizzle TransBS = ALU_VEC_012_SCL_210;
-  for (MachineInstr *MI : IG) {
-    IGSrcs.push_back(ExtractSrcs(*MI, PV, ConstCount));
-    unsigned Op = getOperandIdx(MI->getOpcode(), R600::OpName::bank_swizzle);
-    ValidSwizzle.push_back(
-        (R600InstrInfo::BankSwizzle)MI->getOperand(Op).getImm());
+  for (unsigned i = 0, e = IG.size(); i < e; ++i) {
+    IGSrcs.push_back(ExtractSrcs(*IG[i], PV, ConstCount));
+    unsigned Op = getOperandIdx(IG[i]->getOpcode(),
+        R600::OpName::bank_swizzle);
+    ValidSwizzle.push_back( (R600InstrInfo::BankSwizzle)
+        IG[i]->getOperand(Op).getImm());
   }
   std::vector<std::pair<int, unsigned>> TransOps;
   if (!isLastAluTrans)
@@ -539,7 +564,8 @@ R600InstrInfo::fitsReadPortLimitations(const std::vector<MachineInstr *> &IG,
     ALU_VEC_120_SCL_212,
     ALU_VEC_102_SCL_221
   };
-  for (R600InstrInfo::BankSwizzle TransBS : TransSwz) {
+  for (unsigned i = 0; i < 4; i++) {
+    TransBS = TransSwz[i];
     if (!isConstCompatible(TransBS, TransOps, ConstCount))
       continue;
     bool Result = FindSwizzleForVectorSlot(IGSrcs, ValidSwizzle, TransOps,
@@ -558,9 +584,9 @@ R600InstrInfo::fitsConstReadLimitations(const std::vector<unsigned> &Consts)
     const {
   assert (Consts.size() <= 12 && "Too many operands in instructions group");
   unsigned Pair1 = 0, Pair2 = 0;
-  for (unsigned Const : Consts) {
-    unsigned ReadConstHalf = Const & 2;
-    unsigned ReadConstIndex = Const & (~3);
+  for (unsigned i = 0, n = Consts.size(); i < n; ++i) {
+    unsigned ReadConstHalf = Consts[i] & 2;
+    unsigned ReadConstIndex = Consts[i] & (~3);
     unsigned ReadHalfConst = ReadConstIndex | ReadConstHalf;
     if (!Pair1) {
       Pair1 = ReadHalfConst;
@@ -583,11 +609,12 @@ R600InstrInfo::fitsConstReadLimitations(const std::vector<MachineInstr *> &MIs)
     const {
   std::vector<unsigned> Consts;
   SmallSet<int64_t, 4> Literals;
-  for (MachineInstr *MI : MIs) {
-    if (!isALUInstr(MI->getOpcode()))
+  for (unsigned i = 0, n = MIs.size(); i < n; i++) {
+    MachineInstr &MI = *MIs[i];
+    if (!isALUInstr(MI.getOpcode()))
       continue;
 
-    for (const auto &Src : getSrcs(*MI)) {
+    for (const auto &Src : getSrcs(MI)) {
       if (Src.first->getReg() == R600::ALU_LITERAL_X)
         Literals.insert(Src.second);
       if (Literals.size() > 4)
@@ -649,7 +676,7 @@ bool R600InstrInfo::analyzeBranch(MachineBasicBlock &MBB,
                                   MachineBasicBlock *&FBB,
                                   SmallVectorImpl<MachineOperand> &Cond,
                                   bool AllowModify) const {
-  // Most of the following comes from the ARM implementation of analyzeBranch
+  // Most of the following comes from the ARM implementation of AnalyzeBranch
 
   // If the block has no terminators, it just falls into the block after it.
   MachineBasicBlock::iterator I = MBB.getLastNonDebugInstr();
@@ -936,9 +963,8 @@ R600InstrInfo::reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) con
   return false;
 }
 
-bool R600InstrInfo::ClobbersPredicate(MachineInstr &MI,
-                                      std::vector<MachineOperand> &Pred,
-                                      bool SkipDead) const {
+bool R600InstrInfo::DefinesPredicate(MachineInstr &MI,
+                                     std::vector<MachineOperand> &Pred) const {
   return isPredicateSetter(MI.getOpcode());
 }
 
@@ -1165,15 +1191,15 @@ int R600InstrInfo::getIndirectIndexBegin(const MachineFunction &MF) const {
 
   const TargetRegisterClass *IndirectRC = getIndirectAddrRegClass();
   for (std::pair<unsigned, unsigned> LI : MRI.liveins()) {
-    Register Reg = LI.first;
-    if (Reg.isVirtual() || !IndirectRC->contains(Reg))
+    unsigned Reg = LI.first;
+    if (Register::isVirtualRegister(Reg) || !IndirectRC->contains(Reg))
       continue;
 
     unsigned RegIndex;
     unsigned RegEnd;
     for (RegIndex = 0, RegEnd = IndirectRC->getNumRegs(); RegIndex != RegEnd;
                                                           ++RegIndex) {
-      if (IndirectRC->getRegister(RegIndex) == (unsigned)Reg)
+      if (IndirectRC->getRegister(RegIndex) == Reg)
         break;
     }
     Offset = std::max(Offset, (int)RegIndex);
@@ -1198,8 +1224,8 @@ int R600InstrInfo::getIndirectIndexEnd(const MachineFunction &MF) const {
   const R600Subtarget &ST = MF.getSubtarget<R600Subtarget>();
   const R600FrameLowering *TFL = ST.getFrameLowering();
 
-  Register IgnoredFrameReg;
-  Offset = TFL->getFrameIndexReference(MF, -1, IgnoredFrameReg).getFixed();
+  unsigned IgnoredFrameReg;
+  Offset = TFL->getFrameIndexReference(MF, -1, IgnoredFrameReg);
 
   return getIndirectIndexBegin(MF) + Offset;
 }
@@ -1325,11 +1351,11 @@ MachineInstr *R600InstrInfo::buildSlotOfVectorInstruction(
   MIB->getOperand(getOperandIdx(Opcode, R600::OpName::pred_sel))
       .setReg(MO.getReg());
 
-  for (unsigned Operand : Operands) {
+  for (unsigned i = 0; i < 14; i++) {
     MachineOperand &MO = MI->getOperand(
-        getOperandIdx(MI->getOpcode(), getSlotedOps(Operand, Slot)));
+        getOperandIdx(MI->getOpcode(), getSlotedOps(Operands[i], Slot)));
     assert (MO.isImm());
-    setImmOperand(*MIB, Operand, MO.getImm());
+    setImmOperand(*MIB, Operands[i], MO.getImm());
   }
   MIB->getOperand(20).setImm(0);
   return MIB;
@@ -1469,4 +1495,22 @@ void R600InstrInfo::clearFlag(MachineInstr &MI, unsigned Operand,
     InstFlags &= ~(Flag << (NUM_MO_FLAGS * Operand));
     FlagOp.setImm(InstFlags);
   }
+}
+
+unsigned R600InstrInfo::getAddressSpaceForPseudoSourceKind(
+    unsigned Kind) const {
+  switch (Kind) {
+  case PseudoSourceValue::Stack:
+  case PseudoSourceValue::FixedStack:
+    return AMDGPUAS::PRIVATE_ADDRESS;
+  case PseudoSourceValue::ConstantPool:
+  case PseudoSourceValue::GOT:
+  case PseudoSourceValue::JumpTable:
+  case PseudoSourceValue::GlobalValueCallEntry:
+  case PseudoSourceValue::ExternalSymbolCallEntry:
+  case PseudoSourceValue::TargetCustom:
+    return AMDGPUAS::CONSTANT_ADDRESS;
+  }
+
+  llvm_unreachable("Invalid pseudo source kind");
 }

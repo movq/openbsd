@@ -27,6 +27,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/MC/LaneBitmask.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MachineValueType.h"
 #include "llvm/TableGen/Record.h"
 #include "llvm/TableGen/SetTheory.h"
 #include <cassert>
@@ -85,7 +86,6 @@ namespace llvm {
 
     CodeGenSubRegIndex(Record *R, unsigned Enum);
     CodeGenSubRegIndex(StringRef N, StringRef Nspace, unsigned Enum);
-    CodeGenSubRegIndex(CodeGenSubRegIndex&) = delete;
 
     const std::string &getName() const { return Name; }
     const std::string &getNamespace() const { return Namespace; }
@@ -150,11 +150,10 @@ namespace llvm {
   struct CodeGenRegister {
     Record *TheDef;
     unsigned EnumValue;
-    std::vector<int64_t> CostPerUse;
+    unsigned CostPerUse;
     bool CoveredBySubRegs;
     bool HasDisjunctSubRegs;
     bool Artificial;
-    bool Constant;
 
     // Map SubRegIndex -> Register.
     typedef std::map<CodeGenSubRegIndex *, CodeGenRegister *,
@@ -163,7 +162,7 @@ namespace llvm {
 
     CodeGenRegister(Record *R, unsigned Enum);
 
-    StringRef getName() const;
+    const StringRef getName() const;
 
     // Extract more information from TheDef. This is used to build an object
     // graph after all CodeGenRegister objects have been created.
@@ -234,7 +233,7 @@ namespace llvm {
     const RegUnitList &getRegUnits() const { return RegUnits; }
 
     ArrayRef<LaneBitmask> getRegUnitLaneMasks() const {
-      return ArrayRef(RegUnitLaneMasks).slice(0, NativeRegUnits.count());
+      return makeArrayRef(RegUnitLaneMasks).slice(0, NativeRegUnits.count());
     }
 
     // Get the native register units. This is a prefix of getRegUnits().
@@ -332,8 +331,6 @@ namespace llvm {
     bool Allocatable;
     StringRef AltOrderSelect;
     uint8_t AllocationPriority;
-    bool GlobalPriority;
-    uint8_t TSFlags;
     /// Contains the combination of the lane masks of all subregisters.
     LaneBitmask LaneMask;
     /// True if there are at least 2 subregisters which do not interfere.
@@ -341,9 +338,6 @@ namespace llvm {
     bool CoveredBySubRegs;
     /// A register class is artificial if all its members are artificial.
     bool Artificial;
-    /// Generate register pressure set for this register class and any class
-    /// synthesized from it.
-    bool GeneratePressureSet;
 
     // Return the Record that defined this class, or NULL if the class was
     // created by TableGen.
@@ -353,7 +347,10 @@ namespace llvm {
     std::string getQualifiedName() const;
     ArrayRef<ValueTypeByHwMode> getValueTypes() const { return VTs; }
     unsigned getNumValueTypes() const { return VTs.size(); }
-    bool hasType(const ValueTypeByHwMode &VT) const;
+
+    bool hasType(const ValueTypeByHwMode &VT) const {
+      return std::find(VTs.begin(), VTs.end(), VT) != VTs.end();
+    }
 
     const ValueTypeByHwMode &getValueTypeNum(unsigned VTNum) const {
       if (VTNum < VTs.size())
@@ -392,7 +389,7 @@ namespace llvm {
     /// \return std::pair<SubClass, SubRegClass> where SubClass is a SubClass is
     /// a class where every register has SubIdx and SubRegClass is a class where
     /// every register is covered by the SubIdx subregister of SubClass.
-    std::optional<std::pair<CodeGenRegisterClass *, CodeGenRegisterClass *>>
+    Optional<std::pair<CodeGenRegisterClass *, CodeGenRegisterClass *>>
     getMatchingSubClassWithSubRegs(CodeGenRegBank &RegBank,
                                    const CodeGenSubRegIndex *SubIdx) const;
 
@@ -440,15 +437,11 @@ namespace llvm {
     // Get a bit vector of TopoSigs present in this register class.
     const BitVector &getTopoSigs() const { return TopoSigs; }
 
-    // Get a weight of this register class.
-    unsigned getWeight(const CodeGenRegBank&) const;
-
     // Populate a unique sorted list of units from a register set.
     void buildRegUnitSet(const CodeGenRegBank &RegBank,
                          std::vector<unsigned> &RegUnits) const;
 
     CodeGenRegisterClass(CodeGenRegBank&, Record *R);
-    CodeGenRegisterClass(CodeGenRegisterClass&) = delete;
 
     // A key representing the parts of a register class used for forming
     // sub-classes.  Note the ordering provided by this key is not the same as
@@ -472,33 +465,6 @@ namespace llvm {
 
     // Called by CodeGenRegBank::CodeGenRegBank().
     static void computeSubClasses(CodeGenRegBank&);
-
-    // Get ordering value among register base classes.
-    std::optional<int> getBaseClassOrder() const {
-      if (TheDef && !TheDef->isValueUnset("BaseClassOrder"))
-        return TheDef->getValueAsInt("BaseClassOrder");
-      return {};
-    }
-  };
-
-  // Register categories are used when we need to deterine the category a
-  // register falls into (GPR, vector, fixed, etc.) without having to know
-  // specific information about the target architecture.
-  class CodeGenRegisterCategory {
-    Record *TheDef;
-    std::string Name;
-    std::list<CodeGenRegisterClass *> Classes;
-
-  public:
-    CodeGenRegisterCategory(CodeGenRegBank &, Record *R);
-    CodeGenRegisterCategory(CodeGenRegisterCategory &) = delete;
-
-    // Return the Record that defined this class, or NULL if the class was
-    // created by TableGen.
-    Record *getDef() const { return TheDef; }
-
-    std::string getName() const { return Name; }
-    std::list<CodeGenRegisterClass *> getClasses() const { return Classes; }
   };
 
   // Register units are used to model interference and register pressure.
@@ -531,7 +497,7 @@ namespace llvm {
 
     ArrayRef<const CodeGenRegister*> getRoots() const {
       assert(!(Roots[1] && !Roots[0]) && "Invalid roots array");
-      return ArrayRef(Roots, !!Roots[0] + !!Roots[1]);
+      return makeArrayRef(Roots, !!Roots[0] + !!Roots[1]);
     }
   };
 
@@ -583,13 +549,6 @@ namespace llvm {
     DenseMap<Record*, CodeGenRegisterClass*> Def2RC;
     typedef std::map<CodeGenRegisterClass::Key, CodeGenRegisterClass*> RCKeyMap;
     RCKeyMap Key2RC;
-
-    // Register categories.
-    std::list<CodeGenRegisterCategory> RegCategories;
-    DenseMap<Record *, CodeGenRegisterCategory *> Def2RCat;
-    using RCatKeyMap =
-        std::map<CodeGenRegisterClass::Key, CodeGenRegisterCategory *>;
-    RCatKeyMap Key2RCat;
 
     // Remember each unique set of register units. Initially, this contains a
     // unique set for each register class. Simliar sets are coalesced with
@@ -652,7 +611,6 @@ namespace llvm {
 
   public:
     CodeGenRegBank(RecordKeeper&, const CodeGenHwModes&);
-    CodeGenRegBank(CodeGenRegBank&) = delete;
 
     SetTheory &getSets() { return Sets; }
 
@@ -665,12 +623,8 @@ namespace llvm {
       return SubRegIndices;
     }
 
-    // Find a SubRegIndex from its Record def or add to the list if it does
-    // not exist there yet.
+    // Find a SubRegIndex form its Record def.
     CodeGenSubRegIndex *getSubRegIdx(Record*);
-
-    // Find a SubRegIndex from its Record def.
-    const CodeGenSubRegIndex *findSubRegIdx(const Record* Def) const;
 
     // Find or create a sub-register index representing the A+B composition.
     CodeGenSubRegIndex *getCompositeSubRegIndex(CodeGenSubRegIndex *A,
@@ -751,16 +705,8 @@ namespace llvm {
       return RegClasses;
     }
 
-    std::list<CodeGenRegisterCategory> &getRegCategories() {
-      return RegCategories;
-    }
-
-    const std::list<CodeGenRegisterCategory> &getRegCategories() const {
-      return RegCategories;
-    }
-
     // Find a register class from its def.
-    CodeGenRegisterClass *getRegClass(const Record *) const;
+    CodeGenRegisterClass *getRegClass(Record*);
 
     /// getRegisterClassForRegister - Find the register class that contains the
     /// specified physical register.  If the register is not in a register
@@ -779,8 +725,9 @@ namespace llvm {
     // Get the sum of unit weights.
     unsigned getRegUnitSetWeight(const std::vector<unsigned> &Units) const {
       unsigned Weight = 0;
-      for (unsigned Unit : Units)
-        Weight += getRegUnit(Unit).Weight;
+      for (std::vector<unsigned>::const_iterator
+             I = Units.begin(), E = Units.end(); I != E; ++I)
+        Weight += getRegUnit(*I).Weight;
       return Weight;
     }
 

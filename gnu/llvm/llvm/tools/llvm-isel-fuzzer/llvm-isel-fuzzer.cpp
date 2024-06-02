@@ -14,7 +14,7 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
-#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/CodeGen/CommandFlags.inc"
 #include "llvm/FuzzMutate/FuzzerCLI.h"
 #include "llvm/FuzzMutate/IRMutator.h"
 #include "llvm/FuzzMutate/Operations.h"
@@ -24,11 +24,10 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
-#include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -36,13 +35,13 @@
 
 using namespace llvm;
 
-static codegen::RegisterCodeGenFlags CGF;
-
 static cl::opt<char>
-    OptLevel("O",
-             cl::desc("Optimization level. [-O0, -O1, -O2, or -O3] "
-                      "(default = '-O2')"),
-             cl::Prefix, cl::init('2'));
+OptLevel("O",
+         cl::desc("Optimization level. [-O0, -O1, -O2, or -O3] "
+                  "(default = '-O2')"),
+         cl::Prefix,
+         cl::ZeroOrMore,
+         cl::init(' '));
 
 static cl::opt<std::string>
 TargetTriple("mtriple", cl::desc("Override target triple for module"));
@@ -105,7 +104,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   return 0;
 }
 
-static void handleLLVMFatalError(void *, const char *Message, bool) {
+static void handleLLVMFatalError(void *, const std::string &Message, bool) {
   // TODO: Would it be better to call into the fuzzer internals directly?
   dbgs() << "LLVM ERROR: " << Message << "\n"
          << "Aborting to trigger fuzzer exit handling.\n";
@@ -134,28 +133,31 @@ extern "C" LLVM_ATTRIBUTE_USED int LLVMFuzzerInitialize(int *argc,
   // Get the target specific parser.
   std::string Error;
   const Target *TheTarget =
-      TargetRegistry::lookupTarget(codegen::getMArch(), TheTriple, Error);
+      TargetRegistry::lookupTarget(MArch, TheTriple, Error);
   if (!TheTarget) {
     errs() << argv[0] << ": " << Error;
     return 1;
   }
 
   // Set up the pipeline like llc does.
-  std::string CPUStr = codegen::getCPUStr(),
-              FeaturesStr = codegen::getFeaturesStr();
+  std::string CPUStr = getCPUStr(), FeaturesStr = getFeaturesStr();
 
-  CodeGenOpt::Level OLvl;
-  if (auto Level = CodeGenOpt::parseLevel(OptLevel)) {
-    OLvl = *Level;
-  } else {
+  CodeGenOpt::Level OLvl = CodeGenOpt::Default;
+  switch (OptLevel) {
+  default:
     errs() << argv[0] << ": invalid optimization level.\n";
     return 1;
+  case ' ': break;
+  case '0': OLvl = CodeGenOpt::None; break;
+  case '1': OLvl = CodeGenOpt::Less; break;
+  case '2': OLvl = CodeGenOpt::Default; break;
+  case '3': OLvl = CodeGenOpt::Aggressive; break;
   }
 
-  TargetOptions Options = codegen::InitTargetOptionsFromCodeGenFlags(TheTriple);
-  TM.reset(TheTarget->createTargetMachine(
-      TheTriple.getTriple(), CPUStr, FeaturesStr, Options,
-      codegen::getExplicitRelocModel(), codegen::getExplicitCodeModel(), OLvl));
+  TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
+  TM.reset(TheTarget->createTargetMachine(TheTriple.getTriple(), CPUStr,
+                                          FeaturesStr, Options, getRelocModel(),
+                                          getCodeModel(), OLvl));
   assert(TM && "Could not allocate target machine!");
 
   // Make sure we print the summary and the current unit when LLVM errors out.

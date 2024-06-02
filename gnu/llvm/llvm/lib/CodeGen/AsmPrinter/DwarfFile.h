@@ -14,6 +14,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/DIE.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/Support/Allocator.h"
 #include <map>
 #include <memory>
@@ -25,12 +26,10 @@ class AsmPrinter;
 class DbgEntity;
 class DbgVariable;
 class DbgLabel;
-class DINode;
 class DwarfCompileUnit;
 class DwarfUnit;
 class LexicalScope;
 class MCSection;
-class MDNode;
 
 // Data structure to hold a range for range lists.
 struct RangeSpan {

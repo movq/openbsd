@@ -16,11 +16,7 @@ static_library("cppcoreguidelines") {
     "//llvm/lib/Support",
   ]
   sources = [
-    "AvoidConstOrRefDataMembersCheck.cpp",
-    "AvoidDoWhileCheck.cpp",
     "AvoidGotoCheck.cpp",
-    "AvoidNonConstGlobalVariablesCheck.cpp",
-    "AvoidReferenceCoroutineParametersCheck.cpp",
     "CppCoreGuidelinesTidyModule.cpp",
     "InitVariablesCheck.cpp",
     "InterfacesGlobalInitCheck.cpp",
@@ -28,7 +24,6 @@ static_library("cppcoreguidelines") {
     "NarrowingConversionsCheck.cpp",
     "NoMallocCheck.cpp",
     "OwningMemoryCheck.cpp",
-    "PreferMemberInitializerCheck.cpp",
     "ProBoundsArrayToPointerDecayCheck.cpp",
     "ProBoundsConstantArrayIndexCheck.cpp",
     "ProBoundsPointerArithmeticCheck.cpp",
@@ -41,6 +36,5 @@ static_library("cppcoreguidelines") {
     "ProTypeVarargCheck.cpp",
     "SlicingCheck.cpp",
     "SpecialMemberFunctionsCheck.cpp",
-    "VirtualClassDestructorCheck.cpp",
   ]
 }

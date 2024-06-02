@@ -74,6 +74,8 @@ def FRAMEri : Operand<iPTR> {
   let MIOperandInfo = (ops R600_Reg32:$ptr, i32imm:$index);
 }
 
+def ADDRParam : ComplexPattern<i32, 2, "SelectADDRParam", [], []>;
+def ADDRDWord : ComplexPattern<i32, 1, "SelectADDRDWord", [], []>;
 def ADDRVTX_READ : ComplexPattern<i32, 2, "SelectADDRVTX_READ", [], []>;
 def ADDRGA_CONST_OFFSET : ComplexPattern<i32, 1, "SelectGlobalValueConstantOffset", [], []>;
 def ADDRGA_VAR_OFFSET : ComplexPattern<i32, 2, "SelectGlobalValueVariableOffset", [], []>;
@@ -210,6 +212,16 @@ class R600_3OP <bits<5> inst, string opName, list<dag> pattern,
   let Inst{63-32} = Word1;
 }
 
+class R600_REDUCTION <bits<11> inst, dag ins, string asm, list<dag> pattern,
+                      InstrItinClass itin = VecALU> :
+  InstR600 <(outs R600_Reg32:$dst),
+          ins,
+          asm,
+          pattern,
+          itin>;
+
+
+
 } // End mayLoad = 1, mayStore = 0, hasSideEffects = 0
 
 class EG_CF_RAT <bits <8> cfinst, bits <6> ratinst, bits<4> ratid, bits<4> mask,
@@ -341,8 +353,8 @@ class LoadVtxId1 <PatFrag load> : PatFrag <
   const MemSDNode *LD = cast<MemSDNode>(N);
   return LD->getAddressSpace() == AMDGPUAS::GLOBAL_ADDRESS ||
          (LD->getAddressSpace() == AMDGPUAS::CONSTANT_ADDRESS &&
-           !isa<GlobalValue>(getUnderlyingObject(
-           LD->getMemOperand()->getValue())));
+           !isa<GlobalValue>(GetUnderlyingObject(
+           LD->getMemOperand()->getValue(), CurDAG->getDataLayout())));
 }]>;
 
 def vtx_id1_az_extloadi8 : LoadVtxId1 <az_extloadi8>;
@@ -353,8 +365,8 @@ class LoadVtxId2 <PatFrag load> : PatFrag <
   (ops node:$ptr), (load node:$ptr), [{
   const MemSDNode *LD = cast<MemSDNode>(N);
   return LD->getAddressSpace() == AMDGPUAS::CONSTANT_ADDRESS &&
-         isa<GlobalValue>(getUnderlyingObject(
-         LD->getMemOperand()->getValue()));
+         isa<GlobalValue>(GetUnderlyingObject(
+         LD->getMemOperand()->getValue(), CurDAG->getDataLayout()));
 }]>;
 
 def vtx_id2_az_extloadi8 : LoadVtxId2 <az_extloadi8>;
@@ -641,16 +653,16 @@ def CF_ALU_ELSE_AFTER : ALU_CLAUSE<15, "ALU_ELSE_AFTER">;
 def FETCH_CLAUSE : R600WrapperInst <(outs),
 (ins i32imm:$addr), "Fetch clause starting at $addr:", [] > {
   field bits<8> Inst;
-  bits<8> addr;
-  let Inst = addr;
+  bits<8> num;
+  let Inst = num;
   let isCodeGenOnly = 1;
 }
 
 def ALU_CLAUSE : R600WrapperInst <(outs),
 (ins i32imm:$addr), "ALU clause starting at $addr:", [] > {
   field bits<8> Inst;
-  bits<8> addr;
-  let Inst = addr;
+  bits<8> num;
+  let Inst = num;
   let isCodeGenOnly = 1;
 }
 
@@ -803,7 +815,7 @@ def DUMMY_CHAIN : R600WrapperInst <
 
 let isPseudo = 1, isCodeGenOnly = 1, usesCustomInserter = 1 in {
 
-class MOV_IMM <Operand immType> : R600WrapperInst <
+class MOV_IMM <ValueType vt, Operand immType> : R600WrapperInst <
   (outs R600_Reg32:$dst),
   (ins immType:$imm),
   "",
@@ -814,20 +826,20 @@ class MOV_IMM <Operand immType> : R600WrapperInst <
 
 } // end let isPseudo = 1, isCodeGenOnly = 1, usesCustomInserter = 1
 
-def MOV_IMM_I32 : MOV_IMM<i32imm>;
+def MOV_IMM_I32 : MOV_IMM<i32, i32imm>;
 def : R600Pat <
   (imm:$val),
   (MOV_IMM_I32 imm:$val)
 >;
 
-def MOV_IMM_GLOBAL_ADDR : MOV_IMM<i32imm>;
+def MOV_IMM_GLOBAL_ADDR : MOV_IMM<iPTR, i32imm>;
 def : R600Pat <
   (AMDGPUconstdata_ptr tglobaladdr:$addr),
   (MOV_IMM_GLOBAL_ADDR tglobaladdr:$addr)
 >;
 
 
-def MOV_IMM_F32 : MOV_IMM<f32imm>;
+def MOV_IMM_F32 : MOV_IMM<f32, f32imm>;
 def : R600Pat <
   (fpimm:$val),
   (MOV_IMM_F32  fpimm:$val)
@@ -994,7 +1006,7 @@ class MULADD_Common <bits<5> inst> : R600_3OP <
 
 class MULADD_IEEE_Common <bits<5> inst> : R600_3OP <
   inst, "MULADD_IEEE",
-  [(set f32:$dst, (any_fmad f32:$src0, f32:$src1, f32:$src2))]
+  [(set f32:$dst, (fmad f32:$src0, f32:$src1, f32:$src2))]
 >;
 
 class FMA_Common <bits<5> inst> : R600_3OP <
@@ -1265,6 +1277,7 @@ let Predicates = [isR600] in {
   defm DIV_r600 : DIV_Common<RECIP_IEEE_r600>;
   def : POW_Common <LOG_IEEE_r600, EXP_IEEE_r600, MUL>;
 
+  def : RsqPat<RECIPSQRT_IEEE_r600, f32>;
   def : SqrtPat<RECIPSQRT_IEEE_r600, RECIP_IEEE_r600>;
 
   def R600_ExportSwz : ExportSwzInst {
@@ -1345,7 +1358,7 @@ let Predicates = [isR600] in {
 
 
 //===----------------------------------------------------------------------===//
-// Register loads and stores - for indirect addressing
+// Regist loads and stores - for indirect addressing
 //===----------------------------------------------------------------------===//
 
 let Namespace = "R600" in {
@@ -1452,8 +1465,8 @@ def CONST_COPY : Instruction {
 } // end usesCustomInserter = 1, isCodeGenOnly = 1, isPseudo = 1, Namespace = "AMDGPU"
 
 def TEX_VTX_CONSTBUF :
-  InstR600ISA <(outs R600_Reg128:$dst_gpr), (ins (MEMxi $src_gpr, $src_index):$src, i32imm:$buffer_id), "VTX_READ_eg $dst_gpr, $src",
-      [(set v4i32:$dst_gpr, (CONST_ADDRESS ADDRGA_VAR_OFFSET:$src, (i32 imm:$buffer_id)))]>,
+  InstR600ISA <(outs R600_Reg128:$dst), (ins MEMxi:$ptr, i32imm:$buffer_id), "VTX_READ_eg $dst, $ptr",
+      [(set v4i32:$dst, (CONST_ADDRESS ADDRGA_VAR_OFFSET:$ptr, (i32 imm:$buffer_id)))]>,
   VTX_WORD1_GPR, VTX_WORD0_eg {
 
   let VC_INST = 0;
@@ -1506,7 +1519,7 @@ def TEX_VTX_CONSTBUF :
 }
 
 def TEX_VTX_TEXBUF:
-  InstR600ISA <(outs R600_Reg128:$dst_gpr), (ins (MEMxi $src_gpr, $src_index):$src, i32imm:$buffer_id), "TEX_VTX_EXPLICIT_READ $dst_gpr, $src">,
+  InstR600ISA <(outs R600_Reg128:$dst), (ins MEMxi:$ptr, i32imm:$buffer_id), "TEX_VTX_EXPLICIT_READ $dst, $ptr">,
 VTX_WORD1_GPR, VTX_WORD0_eg {
 
 let VC_INST = 0;

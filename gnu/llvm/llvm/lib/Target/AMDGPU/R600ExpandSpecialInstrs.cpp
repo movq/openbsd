@@ -13,12 +13,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MCTargetDesc/R600MCTargetDesc.h"
-#include "R600.h"
+#include "AMDGPU.h"
+#include "AMDGPUSubtarget.h"
 #include "R600Defines.h"
-#include "R600Subtarget.h"
+#include "R600InstrInfo.h"
+#include "R600RegisterInfo.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/Pass.h"
+#include <cassert>
+#include <cstdint>
+#include <iterator>
 
 using namespace llvm;
 
@@ -75,7 +85,9 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
 
   const R600RegisterInfo &TRI = TII->getRegisterInfo();
 
-  for (MachineBasicBlock &MBB : MF) {
+  for (MachineFunction::iterator BB = MF.begin(), BB_E = MF.end();
+                                                  BB != BB_E; ++BB) {
+    MachineBasicBlock &MBB = *BB;
     MachineBasicBlock::iterator I = MBB.begin();
     while (I != MBB.end()) {
       MachineInstr &MI = *I;
@@ -207,13 +219,13 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
           }
         }
         if (IsReduction) {
-          unsigned SubRegIndex = R600RegisterInfo::getSubRegFromChannel(Chan);
+          unsigned SubRegIndex = AMDGPURegisterInfo::getSubRegFromChannel(Chan);
           Src0 = TRI.getSubReg(Src0, SubRegIndex);
           Src1 = TRI.getSubReg(Src1, SubRegIndex);
         } else if (IsCube) {
           static const int CubeSrcSwz[] = {2, 2, 0, 1};
-          unsigned SubRegIndex0 = R600RegisterInfo::getSubRegFromChannel(CubeSrcSwz[Chan]);
-          unsigned SubRegIndex1 = R600RegisterInfo::getSubRegFromChannel(CubeSrcSwz[3 - Chan]);
+          unsigned SubRegIndex0 = AMDGPURegisterInfo::getSubRegFromChannel(CubeSrcSwz[Chan]);
+          unsigned SubRegIndex1 = AMDGPURegisterInfo::getSubRegFromChannel(CubeSrcSwz[3 - Chan]);
           Src1 = TRI.getSubReg(Src0, SubRegIndex1);
           Src0 = TRI.getSubReg(Src0, SubRegIndex0);
         }
@@ -222,7 +234,7 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
         bool Mask = false;
         bool NotLast = true;
         if (IsCube) {
-          unsigned SubRegIndex = R600RegisterInfo::getSubRegFromChannel(Chan);
+          unsigned SubRegIndex = AMDGPURegisterInfo::getSubRegFromChannel(Chan);
           DstReg = TRI.getSubReg(DstReg, SubRegIndex);
         } else {
           // Mask the write if the original instruction does not write to
