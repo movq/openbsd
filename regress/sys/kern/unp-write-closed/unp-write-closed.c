@@ -1,4 +1,4 @@
-/*	$OpenBSD: unp-write-closed.c,v 1.1 2024/06/28 21:07:27 bluhm Exp $	*/
+/*	$OpenBSD: unp-write-closed.c,v 1.1.1.1 2024/06/28 21:07:27 bluhm Exp $	*/
 /*
  * Copyright (c) 2024 Vitaliy Makkoveev <mvs@openbsd.org>
  * Copyright (c) 2024 Alenander Bluhm <bluhm@openbsd.org>
