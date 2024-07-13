@@ -1,4 +1,4 @@
-//===-- Function.cpp ------------------------------------------------------===//
+//===-- Function.cpp --------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Symbol/Function.h"
-#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
@@ -19,7 +18,6 @@
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Target/Language.h"
 #include "lldb/Target/Target.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "llvm/Support/Casting.h"
 
@@ -34,7 +32,7 @@ FunctionInfo::FunctionInfo(const char *name, const Declaration *decl_ptr)
 FunctionInfo::FunctionInfo(ConstString name, const Declaration *decl_ptr)
     : m_name(name), m_declaration(decl_ptr) {}
 
-FunctionInfo::~FunctionInfo() = default;
+FunctionInfo::~FunctionInfo() {}
 
 void FunctionInfo::Dump(Stream *s, bool show_fullpaths) const {
   if (m_name)
@@ -76,7 +74,7 @@ InlineFunctionInfo::InlineFunctionInfo(ConstString name,
     : FunctionInfo(name, decl_ptr), m_mangled(mangled),
       m_call_decl(call_decl_ptr) {}
 
-InlineFunctionInfo::~InlineFunctionInfo() = default;
+InlineFunctionInfo::~InlineFunctionInfo() {}
 
 void InlineFunctionInfo::Dump(Stream *s, bool show_fullpaths) const {
   FunctionInfo::Dump(s, show_fullpaths);
@@ -84,24 +82,25 @@ void InlineFunctionInfo::Dump(Stream *s, bool show_fullpaths) const {
     m_mangled.Dump(s);
 }
 
-void InlineFunctionInfo::DumpStopContext(Stream *s) const {
+void InlineFunctionInfo::DumpStopContext(Stream *s,
+                                         LanguageType language) const {
   //    s->Indent("[inlined] ");
   s->Indent();
   if (m_mangled)
-    s->PutCString(m_mangled.GetName().AsCString());
+    s->PutCString(m_mangled.GetName(language).AsCString());
   else
     s->PutCString(m_name.AsCString());
 }
 
-ConstString InlineFunctionInfo::GetName() const {
+ConstString InlineFunctionInfo::GetName(LanguageType language) const {
   if (m_mangled)
-    return m_mangled.GetName();
+    return m_mangled.GetName(language);
   return m_name;
 }
 
-ConstString InlineFunctionInfo::GetDisplayName() const {
+ConstString InlineFunctionInfo::GetDisplayName(LanguageType language) const {
   if (m_mangled)
-    return m_mangled.GetDisplayDemangledName();
+    return m_mangled.GetDisplayDemangledName(language);
   return m_name;
 }
 
@@ -122,39 +121,17 @@ size_t InlineFunctionInfo::MemorySize() const {
 /// @name Call site related structures
 /// @{
 
-lldb::addr_t CallEdge::GetLoadAddress(lldb::addr_t unresolved_pc,
-                                      Function &caller, Target &target) {
-  Log *log = GetLog(LLDBLog::Step);
-
-  const Address &caller_start_addr = caller.GetAddressRange().GetBaseAddress();
-
-  ModuleSP caller_module_sp = caller_start_addr.GetModule();
-  if (!caller_module_sp) {
-    LLDB_LOG(log, "GetLoadAddress: cannot get Module for caller");
-    return LLDB_INVALID_ADDRESS;
-  }
-
-  SectionList *section_list = caller_module_sp->GetSectionList();
-  if (!section_list) {
-    LLDB_LOG(log, "GetLoadAddress: cannot get SectionList for Module");
-    return LLDB_INVALID_ADDRESS;
-  }
-
-  Address the_addr = Address(unresolved_pc, section_list);
-  lldb::addr_t load_addr = the_addr.GetLoadAddress(&target);
-  return load_addr;
-}
-
 lldb::addr_t CallEdge::GetReturnPCAddress(Function &caller,
                                           Target &target) const {
-  return GetLoadAddress(GetUnresolvedReturnPCAddress(), caller, target);
+  const Address &base = caller.GetAddressRange().GetBaseAddress();
+  return base.GetLoadAddress(&target) + return_pc;
 }
 
 void DirectCallEdge::ParseSymbolFileAndResolve(ModuleList &images) {
   if (resolved)
     return;
 
-  Log *log = GetLog(LLDBLog::Step);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
   LLDB_LOG(log, "DirectCallEdge: Lazily parsing the call graph for {0}",
            lazy_callee.symbol_name);
 
@@ -193,13 +170,14 @@ Function *DirectCallEdge::GetCallee(ModuleList &images, ExecutionContext &) {
 
 Function *IndirectCallEdge::GetCallee(ModuleList &images,
                                       ExecutionContext &exe_ctx) {
-  Log *log = GetLog(LLDBLog::Step);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
   Status error;
   Value callee_addr_val;
-  if (!call_target.Evaluate(
-          &exe_ctx, exe_ctx.GetRegisterContext(), LLDB_INVALID_ADDRESS,
-          /*initial_value_ptr=*/nullptr,
-          /*object_address_ptr=*/nullptr, callee_addr_val, &error)) {
+  if (!call_target.Evaluate(&exe_ctx, exe_ctx.GetRegisterContext(),
+                            /*loclist_base_addr=*/LLDB_INVALID_ADDRESS,
+                            /*initial_value_ptr=*/nullptr,
+                            /*object_address_ptr=*/nullptr, callee_addr_val,
+                            &error)) {
     LLDB_LOGF(log, "IndirectCallEdge: Could not evaluate expression: %s",
               error.AsCString());
     return nullptr;
@@ -239,7 +217,7 @@ Function::Function(CompileUnit *comp_unit, lldb::user_id_t func_uid,
   assert(comp_unit != nullptr);
 }
 
-Function::~Function() = default;
+Function::~Function() {}
 
 void Function::GetStartLineSourceInfo(FileSpec &source_file,
                                       uint32_t &line_no) {
@@ -291,12 +269,10 @@ void Function::GetEndLineSourceInfo(FileSpec &source_file, uint32_t &line_no) {
 }
 
 llvm::ArrayRef<std::unique_ptr<CallEdge>> Function::GetCallEdges() {
-  std::lock_guard<std::mutex> guard(m_call_edges_lock);
-
   if (m_call_edges_resolved)
     return m_call_edges;
 
-  Log *log = GetLog(LLDBLog::Step);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
   LLDB_LOG(log, "GetCallEdges: Attempting to parse call site info for {0}",
            GetDisplayName());
 
@@ -306,40 +282,42 @@ llvm::ArrayRef<std::unique_ptr<CallEdge>> Function::GetCallEdges() {
   Block &block = GetBlock(/*can_create*/true);
   SymbolFile *sym_file = block.GetSymbolFile();
   if (!sym_file)
-    return std::nullopt;
+    return llvm::None;
 
   // Lazily read call site information from the SymbolFile.
   m_call_edges = sym_file->ParseCallEdgesInFunction(GetID());
 
   // Sort the call edges to speed up return_pc lookups.
-  llvm::sort(m_call_edges, [](const std::unique_ptr<CallEdge> &LHS,
-                              const std::unique_ptr<CallEdge> &RHS) {
-    return LHS->GetSortKey() < RHS->GetSortKey();
-  });
+  llvm::sort(m_call_edges.begin(), m_call_edges.end(),
+             [](const std::unique_ptr<CallEdge> &LHS,
+                const std::unique_ptr<CallEdge> &RHS) {
+               return LHS->GetUnresolvedReturnPCAddress() <
+                      RHS->GetUnresolvedReturnPCAddress();
+             });
 
   return m_call_edges;
 }
 
 llvm::ArrayRef<std::unique_ptr<CallEdge>> Function::GetTailCallingEdges() {
-  // Tail calling edges are sorted at the end of the list. Find them by dropping
-  // all non-tail-calls.
-  return GetCallEdges().drop_until(
-      [](const std::unique_ptr<CallEdge> &edge) { return edge->IsTailCall(); });
+  // Call edges are sorted by return PC, and tail calling edges have invalid
+  // return PCs. Find them at the end of the list.
+  return GetCallEdges().drop_until([](const std::unique_ptr<CallEdge> &edge) {
+    return edge->GetUnresolvedReturnPCAddress() == LLDB_INVALID_ADDRESS;
+  });
 }
 
 CallEdge *Function::GetCallEdgeForReturnAddress(addr_t return_pc,
                                                 Target &target) {
   auto edges = GetCallEdges();
   auto edge_it =
-      llvm::partition_point(edges, [&](const std::unique_ptr<CallEdge> &edge) {
-        return std::make_pair(edge->IsTailCall(),
-                              edge->GetReturnPCAddress(*this, target)) <
-               std::make_pair(false, return_pc);
-      });
+      std::lower_bound(edges.begin(), edges.end(), return_pc,
+                       [&](const std::unique_ptr<CallEdge> &edge, addr_t pc) {
+                         return edge->GetReturnPCAddress(*this, target) < pc;
+                       });
   if (edge_it == edges.end() ||
       edge_it->get()->GetReturnPCAddress(*this, target) != return_pc)
     return nullptr;
-  return edge_it->get();
+  return &const_cast<CallEdge &>(*edge_it->get());
 }
 
 Block &Function::GetBlock(bool can_create) {
@@ -348,9 +326,12 @@ Block &Function::GetBlock(bool can_create) {
     if (module_sp) {
       module_sp->GetSymbolFile()->ParseBlocksRecursive(*this);
     } else {
-      Debugger::ReportError(llvm::formatv(
-          "unable to find module shared pointer for function '{0}' in {1}",
-          GetName().GetCString(), m_comp_unit->GetPrimaryFile().GetPath()));
+      Host::SystemLog(Host::eSystemLogError,
+                      "error: unable to find module "
+                      "shared pointer for function '%s' "
+                      "in %s\n",
+                      GetName().GetCString(),
+                      m_comp_unit->GetPrimaryFile().GetPath().c_str());
     }
     m_block.SetBlockInfoHasBeenParsed(true, true);
   }
@@ -368,9 +349,9 @@ void Function::GetDescription(Stream *s, lldb::DescriptionLevel level,
 
   *s << "id = " << (const UserID &)*this;
   if (name)
-    s->AsRawOstream() << ", name = \"" << name << '"';
+    *s << ", name = \"" << name.GetCString() << '"';
   if (mangled)
-    s->AsRawOstream() << ", mangled = \"" << mangled << '"';
+    *s << ", mangled = \"" << mangled.GetCString() << '"';
   *s << ", range = ";
   Address::DumpStyle fallback_style;
   if (level == eDescriptionLevelVerbose)
@@ -423,25 +404,25 @@ lldb::DisassemblerSP Function::GetInstructions(const ExecutionContext &exe_ctx,
                                                const char *flavor,
                                                bool prefer_file_cache) {
   ModuleSP module_sp(GetAddressRange().GetBaseAddress().GetModule());
-  if (module_sp && exe_ctx.HasTargetScope()) {
+  if (module_sp) {
+    const bool prefer_file_cache = false;
     return Disassembler::DisassembleRange(module_sp->GetArchitecture(), nullptr,
-                                          flavor, exe_ctx.GetTargetRef(),
-                                          GetAddressRange(), !prefer_file_cache);
+                                          flavor, exe_ctx, GetAddressRange(),
+                                          prefer_file_cache);
   }
   return lldb::DisassemblerSP();
 }
 
 bool Function::GetDisassembly(const ExecutionContext &exe_ctx,
-                              const char *flavor, Stream &strm,
-                              bool prefer_file_cache) {
+                              const char *flavor, bool prefer_file_cache,
+                              Stream &strm) {
   lldb::DisassemblerSP disassembler_sp =
       GetInstructions(exe_ctx, flavor, prefer_file_cache);
   if (disassembler_sp) {
     const bool show_address = true;
     const bool show_bytes = false;
-    const bool show_control_flow_kind = false;
-    disassembler_sp->GetInstructionList().Dump(
-        &strm, show_address, show_bytes, show_control_flow_kind, &exe_ctx);
+    disassembler_sp->GetInstructionList().Dump(&strm, show_address, show_bytes,
+                                               &exe_ctx);
     return true;
   }
   return false;
@@ -484,7 +465,7 @@ bool Function::IsTopLevelFunction() {
 }
 
 ConstString Function::GetDisplayName() const {
-  return m_mangled.GetDisplayDemangledName();
+  return m_mangled.GetDisplayDemangledName(GetLanguage());
 }
 
 CompilerDeclContext Function::GetDeclContext() {
@@ -652,9 +633,15 @@ lldb::LanguageType Function::GetLanguage() const {
 }
 
 ConstString Function::GetName() const {
-  return m_mangled.GetName();
+  LanguageType language = lldb::eLanguageTypeUnknown;
+  if (m_comp_unit)
+    language = m_comp_unit->GetLanguage();
+  return m_mangled.GetName(language);
 }
 
 ConstString Function::GetNameNoArguments() const {
-  return m_mangled.GetName(Mangled::ePreferDemangledWithoutArguments);
+  LanguageType language = lldb::eLanguageTypeUnknown;
+  if (m_comp_unit)
+    language = m_comp_unit->GetLanguage();
+  return m_mangled.GetName(language, Mangled::ePreferDemangledWithoutArguments);
 }

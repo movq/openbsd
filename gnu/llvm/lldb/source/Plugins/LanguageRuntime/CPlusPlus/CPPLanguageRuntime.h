@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_CPLUSPLUS_CPPLANGUAGERUNTIME_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_CPLUSPLUS_CPPLANGUAGERUNTIME_H
+#ifndef liblldb_CPPLanguageRuntime_h_
+#define liblldb_CPPLanguageRuntime_h_
 
 #include <vector>
 
@@ -32,13 +32,15 @@ public:
     Symbol callable_symbol;
     Address callable_address;
     LineEntry callable_line_entry;
-    lldb::addr_t member_f_pointer_value = 0u;
+    lldb::addr_t member__f_pointer_value = 0u;
     LibCppStdFunctionCallableCase callable_case =
         LibCppStdFunctionCallableCase::Invalid;
   };
 
   LibCppStdFunctionCallableInfo
   FindLibCppStdFunctionCallableInfo(lldb::ValueObjectSP &valobj_sp);
+
+  ~CPPLanguageRuntime() override;
 
   static char ID;
 
@@ -67,7 +69,7 @@ public:
   /// Obtain a ThreadPlan to get us into C++ constructs such as std::function.
   ///
   /// \param[in] thread
-  ///     Current thrad of execution.
+  ///     Curent thrad of execution.
   ///
   /// \param[in] stop_others
   ///     True if other threads should pause during execution.
@@ -77,7 +79,7 @@ public:
   lldb::ThreadPlanSP GetStepThroughTrampolinePlan(Thread &thread,
                                                   bool stop_others) override;
 
-  bool IsAllowedRuntimeValue(ConstString name) override;
+  bool IsWhitelistedRuntimeValue(ConstString name) override;
 protected:
   // Classes that inherit from CPPLanguageRuntime can see and modify these
   CPPLanguageRuntime(Process *process);
@@ -87,8 +89,10 @@ private:
     llvm::StringMap<CPPLanguageRuntime::LibCppStdFunctionCallableInfo>;
 
   OperatorStringToCallableInfoMap CallableLookupCache;
+
+  DISALLOW_COPY_AND_ASSIGN(CPPLanguageRuntime);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_CPLUSPLUS_CPPLANGUAGERUNTIME_H
+#endif // liblldb_CPPLanguageRuntime_h_

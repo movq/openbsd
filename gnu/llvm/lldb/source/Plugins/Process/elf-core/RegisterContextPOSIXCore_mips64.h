@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PROCESS_ELF_CORE_REGISTERCONTEXTPOSIXCORE_MIPS64_H
-#define LLDB_SOURCE_PLUGINS_PROCESS_ELF_CORE_REGISTERCONTEXTPOSIXCORE_MIPS64_H
+#ifndef liblldb_RegisterContextCorePOSIX_mips64_h_
+#define liblldb_RegisterContextCorePOSIX_mips64_h_
 
 #include "Plugins/Process/Utility/RegisterContextPOSIX_mips64.h"
 #include "Plugins/Process/elf-core/RegisterUtilities.h"
@@ -30,7 +30,7 @@ public:
   bool WriteRegister(const lldb_private::RegisterInfo *reg_info,
                      const lldb_private::RegisterValue &value) override;
 
-  bool ReadAllRegisterValues(lldb::WritableDataBufferSP &data_sp) override;
+  bool ReadAllRegisterValues(lldb::DataBufferSP &data_sp) override;
 
   bool WriteAllRegisterValues(const lldb::DataBufferSP &data_sp) override;
 
@@ -52,4 +52,4 @@ private:
   lldb_private::DataExtractor m_fpr;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_PROCESS_ELF_CORE_REGISTERCONTEXTPOSIXCORE_MIPS64_H
+#endif // liblldb_RegisterContextCorePOSIX_mips64_h_

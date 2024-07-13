@@ -23,7 +23,7 @@
 #include "MacOSX/MachProcess.h"
 #include "MacOSX/MachThread.h"
 
-#include <cinttypes>
+#include <inttypes.h>
 #include <sys/sysctl.h>
 
 #if __has_feature(ptrauth_calls)
@@ -94,35 +94,11 @@ DNBArchMachARM64::SoftwareBreakpointOpcode(nub_size_t byte_size) {
 
 uint32_t DNBArchMachARM64::GetCPUType() { return CPU_TYPE_ARM64; }
 
-static uint64_t clear_pac_bits(uint64_t value) {
-  uint32_t addressing_bits = 0;
-  if (!DNBGetAddressingBits(addressing_bits))
-    return value;
-
-    // On arm64_32, no ptrauth bits to clear
-#if !defined(__LP64__)
-  return value;
-#endif
-
-  uint64_t mask = ((1ULL << addressing_bits) - 1);
-
-  // Normally PAC bit clearing needs to check b55 and either set the
-  // non-addressing bits, or clear them.  But the register values we
-  // get from thread_get_state on an arm64e process don't follow this
-  // convention?, at least when there's been a PAC auth failure in
-  // the inferior.
-  // Userland processes are always in low memory, so this
-  // hardcoding b55 == 0 PAC stripping behavior here.
-
-  return value & mask; // high bits cleared to 0
-}
-
 uint64_t DNBArchMachARM64::GetPC(uint64_t failValue) {
   // Get program counter
   if (GetGPRState(false) == KERN_SUCCESS)
-#if __has_feature(ptrauth_calls) && defined(__LP64__)
-    return clear_pac_bits(
-        reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_pc));
+#if defined(__LP64__)
+    return arm_thread_state64_get_pc(m_state.context.gpr);
 #else
     return m_state.context.gpr.__pc;
 #endif
@@ -152,9 +128,8 @@ kern_return_t DNBArchMachARM64::SetPC(uint64_t value) {
 uint64_t DNBArchMachARM64::GetSP(uint64_t failValue) {
   // Get stack pointer
   if (GetGPRState(false) == KERN_SUCCESS)
-#if __has_feature(ptrauth_calls) && defined(__LP64__)
-    return clear_pac_bits(
-        reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_sp));
+#if defined(__LP64__)
+    return arm_thread_state64_get_sp(m_state.context.gpr);
 #else
     return m_state.context.gpr.__sp;
 #endif
@@ -174,22 +149,6 @@ kern_return_t DNBArchMachARM64::GetGPRState(bool force) {
                          (thread_state_t)&m_state.context.gpr, &count);
   if (DNBLogEnabledForAny(LOG_THREAD)) {
     uint64_t *x = &m_state.context.gpr.__x[0];
-
-#if __has_feature(ptrauth_calls) && defined(__LP64__)
-    uint64_t log_fp = clear_pac_bits(
-        reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_fp));
-    uint64_t log_lr = clear_pac_bits(
-        reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_lr));
-    uint64_t log_sp = clear_pac_bits(
-        reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_sp));
-    uint64_t log_pc = clear_pac_bits(
-        reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_pc));
-#else
-    uint64_t log_fp = m_state.context.gpr.__fp;
-    uint64_t log_lr = m_state.context.gpr.__lr;
-    uint64_t log_sp = m_state.context.gpr.__sp;
-    uint64_t log_pc = m_state.context.gpr.__pc;
-#endif
     DNBLogThreaded(
         "thread_get_state(0x%4.4x, %u, &gpr, %u) => 0x%8.8x (count = %u) regs"
         "\n   x0=%16.16llx"
@@ -230,7 +189,16 @@ kern_return_t DNBArchMachARM64::GetGPRState(bool force) {
         x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8], x[9], x[0], x[11],
         x[12], x[13], x[14], x[15], x[16], x[17], x[18], x[19], x[20], x[21],
         x[22], x[23], x[24], x[25], x[26], x[27], x[28],
-        log_fp, log_lr, log_sp, log_pc, m_state.context.gpr.__cpsr);
+#if defined(__LP64__)
+        (uint64_t) arm_thread_state64_get_fp (m_state.context.gpr),
+        (uint64_t) arm_thread_state64_get_lr (m_state.context.gpr),
+        (uint64_t) arm_thread_state64_get_sp (m_state.context.gpr),
+        (uint64_t) arm_thread_state64_get_pc (m_state.context.gpr),
+#else
+        m_state.context.gpr.__fp, m_state.context.gpr.__lr,
+        m_state.context.gpr.__sp, m_state.context.gpr.__pc,
+#endif
+        m_state.context.gpr.__cpsr);
   }
   m_state.SetError(set, Read, kret);
   return kret;
@@ -372,7 +340,6 @@ kern_return_t DNBArchMachARM64::GetEXCState(bool force) {
   return kret;
 }
 
-#if 0
 static void DumpDBGState(const arm_debug_state_t &dbg) {
   uint32_t i = 0;
   for (i = 0; i < 16; i++)
@@ -381,7 +348,6 @@ static void DumpDBGState(const arm_debug_state_t &dbg) {
                      i, i, dbg.__bvr[i], dbg.__bcr[i], i, i, dbg.__wvr[i],
                      dbg.__wcr[i]);
 }
-#endif
 
 kern_return_t DNBArchMachARM64::GetDBGState(bool force) {
   int set = e_regSetDBG;
@@ -536,8 +502,8 @@ bool DNBArchMachARM64::NotifyException(MachException::Data &exc) {
                                         "watchpoint %d was hit on address "
                                         "0x%llx",
                        hw_index, (uint64_t)addr);
-      const uint32_t num_watchpoints = NumSupportedHardwareWatchpoints();
-      for (uint32_t i = 0; i < num_watchpoints; i++) {
+      const int num_watchpoints = NumSupportedHardwareWatchpoints();
+      for (int i = 0; i < num_watchpoints; i++) {
         if (LoHi[i] != 0 && LoHi[i] == hw_index && LoHi[i] != i &&
             GetWatchpointAddressByIndex(i) != INVALID_NUB_ADDRESS) {
           addr = GetWatchpointAddressByIndex(i);
@@ -557,28 +523,6 @@ bool DNBArchMachARM64::NotifyException(MachException::Data &exc) {
       }
 
       return true;
-    }
-    // detect a __builtin_debugtrap instruction pattern ("brk #0xf000")
-    // and advance the $pc past it, so that the user can continue execution.
-    // Generally speaking, this knowledge should be centralized in lldb,
-    // recognizing the builtin_trap instruction and knowing how to advance
-    // the pc past it, so that continue etc work.
-    if (exc.exc_data.size() == 2 && exc.exc_data[0] == EXC_ARM_BREAKPOINT) {
-      nub_addr_t pc = GetPC(INVALID_NUB_ADDRESS);
-      if (pc != INVALID_NUB_ADDRESS && pc > 0) {
-        DNBBreakpoint *bp =
-            m_thread->Process()->Breakpoints().FindByAddress(pc);
-        if (bp == nullptr) {
-          uint8_t insnbuf[4];
-          if (m_thread->Process()->ReadMemory(pc, 4, insnbuf) == 4) {
-            uint8_t builtin_debugtrap_insn[4] = {0x00, 0x00, 0x3e,
-                                                 0xd4}; // brk #0xf000
-            if (memcmp(insnbuf, builtin_debugtrap_insn, 4) == 0) {
-              SetPC(pc + 4);
-            }
-          }
-        }
-      }
     }
     break;
   }
@@ -646,22 +590,23 @@ kern_return_t DNBArchMachARM64::EnableHardwareSingleStep(bool enable) {
     return err.Status();
   }
 
-#if __has_feature(ptrauth_calls) && defined(__LP64__)
-  uint64_t pc = clear_pac_bits(
-      reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_pc));
-#else
-  uint64_t pc = m_state.context.gpr.__pc;
-#endif
-
   if (enable) {
     DNBLogThreadedIf(LOG_STEP,
                      "%s: Setting MDSCR_EL1 Single Step bit at pc 0x%llx",
-                     __FUNCTION__, pc);
+#if defined(__LP64__)
+                     __FUNCTION__, (uint64_t)arm_thread_state64_get_pc (m_state.context.gpr));
+#else
+                     __FUNCTION__, (uint64_t)m_state.context.gpr.__pc);
+#endif
     m_state.dbg.__mdscr_el1 |= SS_ENABLE;
   } else {
     DNBLogThreadedIf(LOG_STEP,
                      "%s: Clearing MDSCR_EL1 Single Step bit at pc 0x%llx",
-                     __FUNCTION__, pc);
+#if defined(__LP64__)
+                     __FUNCTION__, (uint64_t)arm_thread_state64_get_pc (m_state.context.gpr));
+#else
+                     __FUNCTION__, (uint64_t)m_state.context.gpr.__pc);
+#endif
     m_state.dbg.__mdscr_el1 &= ~(SS_ENABLE);
   }
 
@@ -721,112 +666,6 @@ uint32_t DNBArchMachARM64::NumSupportedHardwareWatchpoints() {
   return g_num_supported_hw_watchpoints;
 }
 
-uint32_t DNBArchMachARM64::NumSupportedHardwareBreakpoints() {
-  // Set the init value to something that will let us know that we need to
-  // autodetect how many breakpoints are supported dynamically...
-  static uint32_t g_num_supported_hw_breakpoints = UINT_MAX;
-  if (g_num_supported_hw_breakpoints == UINT_MAX) {
-    // Set this to zero in case we can't tell if there are any HW breakpoints
-    g_num_supported_hw_breakpoints = 0;
-
-    size_t len;
-    uint32_t n = 0;
-    len = sizeof(n);
-    if (::sysctlbyname("hw.optional.breakpoint", &n, &len, NULL, 0) == 0) {
-      g_num_supported_hw_breakpoints = n;
-      DNBLogThreadedIf(LOG_THREAD, "hw.optional.breakpoint=%u", n);
-    } else {
-// For AArch64 we would need to look at ID_AA64DFR0_EL1 but debugserver runs in
-// EL0 so it can't access that reg.  The kernel should have filled in the
-// sysctls based on it though.
-#if defined(__arm__)
-      uint32_t register_DBGDIDR;
-
-      asm("mrc p14, 0, %0, c0, c0, 0" : "=r"(register_DBGDIDR));
-      uint32_t numWRPs = bits(register_DBGDIDR, 31, 28);
-      // Zero is reserved for the WRP count, so don't increment it if it is zero
-      if (numWRPs > 0)
-        numWRPs++;
-      g_num_supported_hw_breakpoints = numWRPs;
-      DNBLogThreadedIf(LOG_THREAD,
-                       "Number of supported hw breakpoint via asm():  %d",
-                       g_num_supported_hw_breakpoints);
-#endif
-    }
-  }
-  return g_num_supported_hw_breakpoints;
-}
-
-uint32_t DNBArchMachARM64::EnableHardwareBreakpoint(nub_addr_t addr,
-                                                    nub_size_t size,
-                                                    bool also_set_on_task) {
-  DNBLogThreadedIf(LOG_WATCHPOINTS,
-                   "DNBArchMachARM64::EnableHardwareBreakpoint(addr = "
-                   "0x%8.8llx, size = %zu)",
-                   (uint64_t)addr, size);
-
-  const uint32_t num_hw_breakpoints = NumSupportedHardwareBreakpoints();
-
-  nub_addr_t aligned_bp_address = addr;
-  uint32_t control_value = 0;
-
-  switch (size) {
-  case 2:
-    control_value = (0x3 << 5) | 7;
-    aligned_bp_address &= ~1;
-    break;
-  case 4:
-    control_value = (0xfu << 5) | 7;
-    aligned_bp_address &= ~3;
-    break;
-  };
-
-  // Read the debug state
-  kern_return_t kret = GetDBGState(false);
-  if (kret == KERN_SUCCESS) {
-    // Check to make sure we have the needed hardware support
-    uint32_t i = 0;
-
-    for (i = 0; i < num_hw_breakpoints; ++i) {
-      if ((m_state.dbg.__bcr[i] & BCR_ENABLE) == 0)
-        break; // We found an available hw breakpoint slot (in i)
-    }
-
-    // See if we found an available hw breakpoint slot above
-    if (i < num_hw_breakpoints) {
-      m_state.dbg.__bvr[i] = aligned_bp_address;
-      m_state.dbg.__bcr[i] = control_value;
-
-      DNBLogThreadedIf(LOG_WATCHPOINTS,
-                       "DNBArchMachARM64::EnableHardwareBreakpoint() "
-                       "adding breakpoint on address 0x%llx with control "
-                       "register value 0x%x",
-                       (uint64_t)m_state.dbg.__bvr[i],
-                       (uint32_t)m_state.dbg.__bcr[i]);
-
-      // The kernel will set the MDE_ENABLE bit in the MDSCR_EL1 for us
-      // automatically, don't need to do it here.
-      kret = SetDBGState(also_set_on_task);
-
-      DNBLogThreadedIf(LOG_WATCHPOINTS,
-                       "DNBArchMachARM64::"
-                       "EnableHardwareBreakpoint() "
-                       "SetDBGState() => 0x%8.8x.",
-                       kret);
-
-      if (kret == KERN_SUCCESS)
-        return i;
-    } else {
-      DNBLogThreadedIf(LOG_WATCHPOINTS,
-                       "DNBArchMachARM64::"
-                       "EnableHardwareBreakpoint(): All "
-                       "hardware resources (%u) are in use.",
-                       num_hw_breakpoints);
-    }
-  }
-  return INVALID_NUB_HW_INDEX;
-}
-
 uint32_t DNBArchMachARM64::EnableHardwareWatchpoint(nub_addr_t addr,
                                                     nub_size_t size, bool read,
                                                     bool write,
@@ -854,15 +693,15 @@ uint32_t DNBArchMachARM64::EnableHardwareWatchpoint(nub_addr_t addr,
   // an 8 byte address, or (2) a power-of-two size region of memory; minimum
   // 8 bytes, maximum 2GB; the starting address must be aligned to that power
   // of two.
-  //
+  // 
   // For (1), 1-8 byte watchpoints, using the Byte Address Selector field in
   // DBGWCR<n>.BAS.  Any of the bytes may be watched, but if multiple bytes
   // are watched, the bytes selected must be contiguous.  The start address
   // watched must be doubleword (8-byte) aligned; if the start address is
   // word (4-byte) aligned, only 4 bytes can be watched.
-  //
+  // 
   // For (2), the MASK field in DBGWCR<n>.MASK is used.
-  //
+  // 
   // See the ARM ARM, section "Watchpoint exceptions", and more specifically,
   // "Watchpoint data address comparisons".
   //
@@ -874,9 +713,9 @@ uint32_t DNBArchMachARM64::EnableHardwareWatchpoint(nub_addr_t addr,
   // "Determining the memory location that caused a Watchpoint exception"),
   // and silently resume the inferior (disable watchpoint, stepi, re-enable
   // watchpoint) if the address lies outside the region that lldb asked us
-  // to watch.
+  // to watch.  
   //
-  // Alternatively, lldb would need to be prepared for a larger region
+  // Alternatively, lldb would need to be prepared for a larger region 
   // being watched than it requested, and silently resume the inferior if
   // the accessed address is outside the region lldb wants to watch.
 
@@ -1066,32 +905,6 @@ bool DNBArchMachARM64::DisableHardwareWatchpoint_helper(uint32_t hw_index,
   return (kret == KERN_SUCCESS);
 }
 
-bool DNBArchMachARM64::DisableHardwareBreakpoint(uint32_t hw_index,
-                                                 bool also_set_on_task) {
-  kern_return_t kret = GetDBGState(false);
-  if (kret != KERN_SUCCESS)
-    return false;
-
-  const uint32_t num_hw_points = NumSupportedHardwareBreakpoints();
-  if (hw_index >= num_hw_points)
-    return false;
-
-  m_disabled_breakpoints[hw_index].addr = m_state.dbg.__bvr[hw_index];
-  m_disabled_breakpoints[hw_index].control = m_state.dbg.__bcr[hw_index];
-
-  m_state.dbg.__bcr[hw_index] = 0;
-  DNBLogThreadedIf(LOG_WATCHPOINTS,
-                   "DNBArchMachARM64::"
-                   "DisableHardwareBreakpoint( %u ) - WVR%u = "
-                   "0x%8.8llx  BCR%u = 0x%8.8llx",
-                   hw_index, hw_index, (uint64_t)m_state.dbg.__bvr[hw_index],
-                   hw_index, (uint64_t)m_state.dbg.__bcr[hw_index]);
-
-  kret = SetDBGState(also_set_on_task);
-
-  return (kret == KERN_SUCCESS);
-}
-
 // This is for checking the Byte Address Select bits in the DBRWCRn_EL1 control
 // register.
 // Returns -1 if the trailing bit patterns are not one of:
@@ -1122,34 +935,31 @@ uint32_t DNBArchMachARM64::GetHardwareWatchpointHit(nub_addr_t &addr) {
                    "DNBArchMachARM64::GetHardwareWatchpointHit() addr = 0x%llx",
                    (uint64_t)addr);
 
+  // This is the watchpoint value to match against, i.e., word address.
+  nub_addr_t wp_val = addr & ~((nub_addr_t)3);
   if (kret == KERN_SUCCESS) {
     DBG &debug_state = m_state.dbg;
     uint32_t i, num = NumSupportedHardwareWatchpoints();
     for (i = 0; i < num; ++i) {
       nub_addr_t wp_addr = GetWatchAddress(debug_state, i);
-      uint32_t byte_mask = bits(debug_state.__wcr[i], 12, 5);
+      DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM64::"
+                                        "GetHardwareWatchpointHit() slot: %u "
+                                        "(addr = 0x%llx).",
+                       i, (uint64_t)wp_addr);
+      if (wp_val == wp_addr) {
+        uint32_t byte_mask = bits(debug_state.__wcr[i], 12, 5);
 
-      DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplX86_64::"
-                       "GetHardwareWatchpointHit() slot: %u "
-                       "(addr = 0x%llx; byte_mask = 0x%x)",
-                       i, static_cast<uint64_t>(wp_addr),
-                       byte_mask);
+        // Sanity check the byte_mask, first.
+        if (LowestBitSet(byte_mask) < 0)
+          continue;
 
-      if (!IsWatchpointEnabled(debug_state, i))
-        continue;
+        // Check that the watchpoint is enabled.
+        if (!IsWatchpointEnabled(debug_state, i))
+          continue;
 
-      if (bits(wp_addr, 48, 3) != bits(addr, 48, 3))
-        continue;
-
-      // Sanity check the byte_mask
-      uint32_t lsb = LowestBitSet(byte_mask);
-      if (lsb < 0)
-        continue;
-
-      uint64_t byte_to_match = bits(addr, 2, 0);
-
-      if (byte_mask & (1 << byte_to_match)) {
-        addr = wp_addr + lsb;
+        // Compute the starting address (from the point of view of the
+        // debugger).
+        addr = wp_addr + LowestBitSet(byte_mask);
         return i;
       }
     }
@@ -1673,7 +1483,7 @@ const DNBRegisterInfo DNBArchMachARM64::g_gpr_registers[] = {
     // used for
     // userland debugging.
     {e_regSetGPR, gpr_cpsr, "cpsr", "flags", Uint, Hex, 4,
-     GPR_OFFSET_NAME(cpsr), dwarf_elr_mode, dwarf_elr_mode, GENERIC_REGNUM_FLAGS,
+     GPR_OFFSET_NAME(cpsr), dwarf_elr_mode, dwarf_elr_mode, INVALID_NUB_REGNUM,
      debugserver_gpr_cpsr, NULL, NULL},
 
     DEFINE_PSEUDO_GPR_IDX(0, w0),
@@ -2022,41 +1832,20 @@ bool DNBArchMachARM64::GetRegisterValue(uint32_t set, uint32_t reg,
     switch (set) {
     case e_regSetGPR:
       if (reg <= gpr_pc) {
-        switch (reg) {
-#if __has_feature(ptrauth_calls) && defined(__LP64__)
-        case gpr_pc:
-          value->value.uint64 = clear_pac_bits(
-              reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_pc));
-          break;
-        case gpr_lr:
-          value->value.uint64 = clear_pac_bits(
-              reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_lr));
-          break;
-        case gpr_sp:
-          value->value.uint64 = clear_pac_bits(
-              reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_sp));
-          break;
-        case gpr_fp:
-          value->value.uint64 = clear_pac_bits(
-              reinterpret_cast<uint64_t>(m_state.context.gpr.__opaque_fp));
-          break;
+#if defined(__LP64__)
+        if (reg == gpr_pc)
+          value->value.uint64 = arm_thread_state64_get_pc (m_state.context.gpr);
+        else if (reg == gpr_lr)
+          value->value.uint64 = arm_thread_state64_get_lr (m_state.context.gpr);
+        else if (reg == gpr_sp)
+          value->value.uint64 = arm_thread_state64_get_sp (m_state.context.gpr);
+        else if (reg == gpr_fp)
+          value->value.uint64 = arm_thread_state64_get_fp (m_state.context.gpr);
+        else
+        value->value.uint64 = m_state.context.gpr.__x[reg];
 #else
-        case gpr_pc:
-          value->value.uint64 = clear_pac_bits(m_state.context.gpr.__pc);
-          break;
-        case gpr_lr:
-          value->value.uint64 = clear_pac_bits(m_state.context.gpr.__lr);
-          break;
-        case gpr_sp:
-          value->value.uint64 = clear_pac_bits(m_state.context.gpr.__sp);
-          break;
-        case gpr_fp:
-          value->value.uint64 = clear_pac_bits(m_state.context.gpr.__fp);
-          break;
+        value->value.uint64 = m_state.context.gpr.__x[reg];
 #endif
-        default:
-          value->value.uint64 = m_state.context.gpr.__x[reg];
-        }
         return true;
       } else if (reg == gpr_cpsr) {
         value->value.uint32 = m_state.context.gpr.__cpsr;
@@ -2154,7 +1943,7 @@ bool DNBArchMachARM64::SetRegisterValue(uint32_t set, uint32_t reg,
           signed_value = (uint64_t) ptrauth_strip((void*) signed_value, ptrauth_key_function_pointer);
           signed_value = (uint64_t) ptrauth_sign_unauthenticated((void*) signed_value, ptrauth_key_function_pointer, 0);
 #endif
-        if (reg == gpr_pc)
+        if (reg == gpr_pc) 
          arm_thread_state64_set_pc_fptr (m_state.context.gpr, (void*) signed_value);
         else if (reg == gpr_lr)
           arm_thread_state64_set_lr_fptr (m_state.context.gpr, (void*) signed_value);
@@ -2334,7 +2123,7 @@ nub_size_t DNBArchMachARM64::SetRegisterContext(const void *buf,
 
     // Copy each struct individually to avoid any padding that might be between
     // the structs in m_state.context
-    uint8_t *p = const_cast<uint8_t*>(reinterpret_cast<const uint8_t *>(buf));
+    uint8_t *p = (uint8_t *)buf;
     ::memcpy(&m_state.context.gpr, p, sizeof(m_state.context.gpr));
     p += sizeof(m_state.context.gpr);
     ::memcpy(&m_state.context.vfp, p, sizeof(m_state.context.vfp));
@@ -2342,7 +2131,7 @@ nub_size_t DNBArchMachARM64::SetRegisterContext(const void *buf,
     ::memcpy(&m_state.context.exc, p, sizeof(m_state.context.exc));
     p += sizeof(m_state.context.exc);
 
-    size_t bytes_written = p - reinterpret_cast<const uint8_t *>(buf);
+    size_t bytes_written = p - (uint8_t *)buf;
     UNUSED_IF_ASSERT_DISABLED(bytes_written);
     assert(bytes_written == size);
     SetGPRState();

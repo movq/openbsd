@@ -1,4 +1,4 @@
-//===-- OptionGroupWatchpoint.cpp -----------------------------------------===//
+//===-- OptionGroupWatchpoint.cpp -------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -74,6 +74,10 @@ bool OptionGroupWatchpoint::IsWatchSizeSupported(uint32_t watch_size) {
   return false;
 }
 
+OptionGroupWatchpoint::OptionGroupWatchpoint() : OptionGroup() {}
+
+OptionGroupWatchpoint::~OptionGroupWatchpoint() {}
+
 Status
 OptionGroupWatchpoint::SetOptionValue(uint32_t option_idx,
                                       llvm::StringRef option_arg,
@@ -111,5 +115,5 @@ void OptionGroupWatchpoint::OptionParsingStarting(
 }
 
 llvm::ArrayRef<OptionDefinition> OptionGroupWatchpoint::GetDefinitions() {
-  return llvm::ArrayRef(g_option_table);
+  return llvm::makeArrayRef(g_option_table);
 }

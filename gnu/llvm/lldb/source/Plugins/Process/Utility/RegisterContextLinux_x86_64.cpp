@@ -1,4 +1,4 @@
-//===-- RegisterContextLinux_x86_64.cpp -----------------------------------===//
+//===-- RegisterContextLinux_x86_64.cpp ------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -156,22 +156,23 @@ RegisterContextLinux_x86_64::RegisterContextLinux_x86_64(
       m_register_info_p(GetRegisterInfoPtr(target_arch)),
       m_register_info_count(GetRegisterInfoCount(target_arch)),
       m_user_register_count(GetUserRegisterInfoCount(target_arch)) {
-  RegisterInfo orig_ax = {
-      "orig_rax",
-      nullptr,
-      sizeof(((GPR *)nullptr)->orig_rax),
-      (LLVM_EXTENSION offsetof(GPR, orig_rax)),
-      eEncodingUint,
-      eFormatHex,
-      {LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,
-       LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM},
-      nullptr,
-      nullptr,
-  };
+  RegisterInfo orig_ax = {"orig_rax",
+                          nullptr,
+                          sizeof(((GPR *)nullptr)->orig_rax),
+                          (LLVM_EXTENSION offsetof(GPR, orig_rax)),
+                          eEncodingUint,
+                          eFormatHex,
+                          {LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,
+                           LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,
+                           LLDB_INVALID_REGNUM},
+                          nullptr,
+                          nullptr,
+                          nullptr,
+                          0};
   d_register_infos.push_back(orig_ax);
 }
 
-size_t RegisterContextLinux_x86_64::GetGPRSizeStatic() { return sizeof(GPR); }
+size_t RegisterContextLinux_x86_64::GetGPRSize() const { return sizeof(GPR); }
 
 const std::vector<lldb_private::RegisterInfo> *
 RegisterContextLinux_x86_64::GetDynamicRegisterInfoP() const {

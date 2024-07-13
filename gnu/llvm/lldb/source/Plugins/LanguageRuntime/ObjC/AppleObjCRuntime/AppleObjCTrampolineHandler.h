@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_APPLEOBJCRUNTIME_APPLEOBJCTRAMPOLINEHANDLER_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_APPLEOBJCRUNTIME_APPLEOBJCTRAMPOLINEHANDLER_H
+#ifndef lldb_AppleObjCTrampolineHandler_h_
+#define lldb_AppleObjCTrampolineHandler_h_
 
 #include <map>
 #include <mutex>
@@ -38,33 +38,20 @@ public:
   public:
     enum FixUpState { eFixUpNone, eFixUpFixed, eFixUpToFix };
 
-    const char *name = nullptr;
-    bool stret_return = false;
-    bool is_super = false;
-    bool is_super2 = false;
-    FixUpState fixedup = eFixUpNone;
+    const char *name;
+    bool stret_return;
+    bool is_super;
+    bool is_super2;
+    FixUpState fixedup;
   };
 
   lldb::addr_t SetupDispatchFunction(Thread &thread,
                                      ValueList &dispatch_values);
-  const DispatchFunction *FindDispatchFunction(lldb::addr_t addr);
-  void ForEachDispatchFunction(std::function<void(lldb::addr_t, 
-                                                  const DispatchFunction &)>);
 
 private:
-  /// These hold the code for the function that finds the implementation of
-  /// an ObjC message send given the class & selector and the kind of dispatch.
-  /// There are two variants depending on whether the platform uses a separate
-  /// _stret passing convention (e.g. Intel) or not (e.g. ARM).  The difference
-  /// is only at the very end of the function, so the code is broken into the
-  /// common prefix and the suffix, which get composed appropriately before
-  /// the function gets compiled.
-  /// \{
   static const char *g_lookup_implementation_function_name;
-  static const char *g_lookup_implementation_function_common_code;
   static const char *g_lookup_implementation_with_stret_function_code;
   static const char *g_lookup_implementation_no_stret_function_code;
-  /// \}
 
   class AppleObjCVTables {
   public:
@@ -86,7 +73,10 @@ private:
 
     class VTableRegion {
     public:
-      VTableRegion() = default;
+      VTableRegion()
+          : m_valid(false), m_owner(nullptr),
+            m_header_addr(LLDB_INVALID_ADDRESS), m_code_start_addr(0),
+            m_code_end_addr(0), m_next_region(0) {}
 
       VTableRegion(AppleObjCVTables *owner, lldb::addr_t header_addr);
 
@@ -106,13 +96,14 @@ private:
 
       void Dump(Stream &s);
 
-      bool m_valid = false;
-      AppleObjCVTables *m_owner = nullptr;
-      lldb::addr_t m_header_addr = LLDB_INVALID_ADDRESS;
-      lldb::addr_t m_code_start_addr = 0;
-      lldb::addr_t m_code_end_addr = 0;
+    public:
+      bool m_valid;
+      AppleObjCVTables *m_owner;
+      lldb::addr_t m_header_addr;
+      lldb::addr_t m_code_start_addr;
+      lldb::addr_t m_code_end_addr;
       std::vector<VTableDescriptor> m_descriptors;
-      lldb::addr_t m_next_region = 0;
+      lldb::addr_t m_next_region;
     };
 
   public:
@@ -145,16 +136,14 @@ private:
   };
 
   static const DispatchFunction g_dispatch_functions[];
-  static const char *g_opt_dispatch_names[];
 
-  using MsgsendMap = std::map<lldb::addr_t, int>; // This table maps an dispatch
+  typedef std::map<lldb::addr_t, int> MsgsendMap; // This table maps an dispatch
                                                   // fn address to the index in
                                                   // g_dispatch_functions
   MsgsendMap m_msgSend_map;
-  MsgsendMap m_opt_dispatch_map;
   lldb::ProcessWP m_process_wp;
   lldb::ModuleSP m_objc_module_sp;
-  std::string m_lookup_implementation_function_code;
+  const char *m_lookup_implementation_function_code;
   std::unique_ptr<UtilityFunction> m_impl_code;
   std::mutex m_impl_function_mutex;
   lldb::addr_t m_impl_fn_addr;
@@ -166,4 +155,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_APPLEOBJCRUNTIME_APPLEOBJCTRAMPOLINEHANDLER_H
+#endif // lldb_AppleObjCTrampolineHandler_h_

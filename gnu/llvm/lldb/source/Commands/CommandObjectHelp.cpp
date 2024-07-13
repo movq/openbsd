@@ -1,4 +1,4 @@
-//===-- CommandObjectHelp.cpp ---------------------------------------------===//
+//===-- CommandObjectHelp.cpp -----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,7 +8,6 @@
 
 #include "CommandObjectHelp.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
-#include "lldb/Interpreter/CommandOptionArgumentTable.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 
 using namespace lldb;
@@ -47,13 +46,13 @@ CommandObjectHelp::CommandObjectHelp(CommandInterpreter &interpreter)
                           "Show a list of all debugger "
                           "commands, or give details "
                           "about a specific command.",
-                          "help [<cmd-name>]") {
+                          "help [<cmd-name>]"),
+      m_options() {
   CommandArgumentEntry arg;
   CommandArgumentData command_arg;
 
-  // A list of command names forming a path to the command we want help on.
-  // No names is allowed - in which case we dump the top-level help.
-  command_arg.arg_type = eArgTypeCommand;
+  // Define the first (and only) variant of this arg.
+  command_arg.arg_type = eArgTypeCommandName;
   command_arg.arg_repetition = eArgRepeatStar;
 
   // There is only one variant this argument could be; put it into the argument
@@ -71,7 +70,7 @@ CommandObjectHelp::~CommandObjectHelp() = default;
 
 llvm::ArrayRef<OptionDefinition>
 CommandObjectHelp::CommandOptions::GetDefinitions() {
-  return llvm::ArrayRef(g_help_options);
+  return llvm::makeArrayRef(g_help_options);
 }
 
 bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
@@ -86,10 +85,8 @@ bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
     uint32_t cmd_types = CommandInterpreter::eCommandTypesBuiltin;
     if (m_options.m_show_aliases)
       cmd_types |= CommandInterpreter::eCommandTypesAliases;
-    if (m_options.m_show_user_defined) {
+    if (m_options.m_show_user_defined)
       cmd_types |= CommandInterpreter::eCommandTypesUserDef;
-      cmd_types |= CommandInterpreter::eCommandTypesUserMW;
-    }
     if (m_options.m_show_hidden)
       cmd_types |= CommandInterpreter::eCommandTypesHidden;
 
@@ -110,7 +107,7 @@ bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
       // object that corresponds to the help command entered.
       std::string sub_command;
       for (auto &entry : command.entries().drop_front()) {
-        sub_command = std::string(entry.ref());
+        sub_command = entry.ref();
         matches.Clear();
         if (sub_cmd_obj->IsAlias())
           sub_cmd_obj =
@@ -142,6 +139,7 @@ bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
           }
           s.Printf("\n");
           result.AppendError(s.GetString());
+          result.SetStatus(eReturnStatusFailed);
           return false;
         } else if (!sub_cmd_obj) {
           StreamString error_msg_stream;
@@ -149,6 +147,7 @@ bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
               &error_msg_stream, cmd_string.c_str(),
               m_interpreter.GetCommandPrefix(), sub_command.c_str());
           result.AppendError(error_msg_stream.GetString());
+          result.SetStatus(eReturnStatusFailed);
           return false;
         } else {
           GenerateAdditionalHelpAvenuesMessage(
@@ -194,6 +193,7 @@ bool CommandObjectHelp::DoExecute(Args &command, CommandReturnObject &result) {
                                              m_interpreter.GetCommandPrefix(),
                                              "");
         result.AppendError(error_msg_stream.GetString());
+        result.SetStatus(eReturnStatusFailed);
       }
     }
   }

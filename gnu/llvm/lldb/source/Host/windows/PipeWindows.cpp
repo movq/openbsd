@@ -1,4 +1,4 @@
-//===-- PipeWindows.cpp ---------------------------------------------------===//
+//===-- PipeWindows.cpp -----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -22,8 +22,10 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static std::atomic<uint32_t> g_pipe_serial(0);
-static constexpr llvm::StringLiteral g_pipe_name_prefix = "\\\\.\\Pipe\\";
+namespace {
+std::atomic<uint32_t> g_pipe_serial(0);
+constexpr llvm::StringLiteral g_pipe_name_prefix = "\\\\.\\Pipe\\";
+} // namespace
 
 PipeWindows::PipeWindows()
     : m_read(INVALID_HANDLE_VALUE), m_write(INVALID_HANDLE_VALUE),
@@ -102,8 +104,8 @@ Status PipeWindows::CreateNew(llvm::StringRef name,
   if (CanRead() || CanWrite())
     return Status(ERROR_ALREADY_EXISTS, eErrorTypeWin32);
 
-  std::string pipe_path = g_pipe_name_prefix.str();
-  pipe_path.append(name.str());
+  std::string pipe_path = g_pipe_name_prefix;
+  pipe_path.append(name);
 
   // Always open for overlapped i/o.  We implement blocking manually in Read
   // and Write.
@@ -180,8 +182,8 @@ Status PipeWindows::OpenNamedPipe(llvm::StringRef name,
   SECURITY_ATTRIBUTES attributes = {};
   attributes.bInheritHandle = child_process_inherit;
 
-  std::string pipe_path = g_pipe_name_prefix.str();
-  pipe_path.append(name.str());
+  std::string pipe_path = g_pipe_name_prefix;
+  pipe_path.append(name);
 
   if (is_read) {
     m_read = ::CreateFileA(pipe_path.c_str(), GENERIC_READ, 0, &attributes,

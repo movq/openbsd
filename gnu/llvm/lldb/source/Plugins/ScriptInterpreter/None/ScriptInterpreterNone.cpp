@@ -1,4 +1,4 @@
-//===-- ScriptInterpreterNone.cpp -----------------------------------------===//
+//===-- ScriptInterpreterNone.cpp -------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -20,12 +20,10 @@
 using namespace lldb;
 using namespace lldb_private;
 
-LLDB_PLUGIN_DEFINE(ScriptInterpreterNone)
-
 ScriptInterpreterNone::ScriptInterpreterNone(Debugger &debugger)
     : ScriptInterpreter(debugger, eScriptLanguageNone) {}
 
-ScriptInterpreterNone::~ScriptInterpreterNone() = default;
+ScriptInterpreterNone::~ScriptInterpreterNone() {}
 
 bool ScriptInterpreterNone::ExecuteOneLine(llvm::StringRef command,
                                            CommandReturnObject *,
@@ -57,6 +55,17 @@ ScriptInterpreterNone::CreateInstance(Debugger &debugger) {
   return std::make_shared<ScriptInterpreterNone>(debugger);
 }
 
-llvm::StringRef ScriptInterpreterNone::GetPluginDescriptionStatic() {
+lldb_private::ConstString ScriptInterpreterNone::GetPluginNameStatic() {
+  static ConstString g_name("script-none");
+  return g_name;
+}
+
+const char *ScriptInterpreterNone::GetPluginDescriptionStatic() {
   return "Null script interpreter";
 }
+
+lldb_private::ConstString ScriptInterpreterNone::GetPluginName() {
+  return GetPluginNameStatic();
+}
+
+uint32_t ScriptInterpreterNone::GetPluginVersion() { return 1; }

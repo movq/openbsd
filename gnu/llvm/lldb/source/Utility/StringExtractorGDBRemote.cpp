@@ -1,4 +1,4 @@
-//===-- StringExtractorGDBRemote.cpp --------------------------------------===//
+//===-- StringExtractorGDBRemote.cpp ----------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,12 +8,8 @@
 
 #include "lldb/Utility/StringExtractorGDBRemote.h"
 
-#include <cctype>
-#include <cstring>
-#include <optional>
-
-constexpr lldb::pid_t StringExtractorGDBRemote::AllProcesses;
-constexpr lldb::tid_t StringExtractorGDBRemote::AllThreads;
+#include <ctype.h>
+#include <string.h>
 
 StringExtractorGDBRemote::ResponseType
 StringExtractorGDBRemote::GetResponseType() const {
@@ -127,8 +123,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
         return eServerPacketType_QSetWorkingDir;
       if (PACKET_STARTS_WITH("QSetLogging:"))
         return eServerPacketType_QSetLogging;
-      if (PACKET_STARTS_WITH("QSetIgnoredExceptions"))
-        return eServerPacketType_QSetIgnoredExceptions;
       if (PACKET_STARTS_WITH("QSetMaxPacketSize:"))
         return eServerPacketType_QSetMaxPacketSize;
       if (PACKET_STARTS_WITH("QSetMaxPayloadSize:"))
@@ -144,16 +138,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
         return eServerPacketType_QLaunchArch;
       if (PACKET_MATCHES("QListThreadsInStopReply"))
         return eServerPacketType_QListThreadsInStopReply;
-      break;
-
-    case 'M':
-      if (PACKET_STARTS_WITH("QMemTags"))
-        return eServerPacketType_QMemTags;
-      break;
-
-    case 'N':
-      if (PACKET_STARTS_WITH("QNonStop:"))
-        return eServerPacketType_QNonStop;
       break;
 
     case 'R':
@@ -236,8 +220,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
         return eServerPacketType_qMemoryRegionInfoSupported;
       if (PACKET_STARTS_WITH("qModuleInfo:"))
         return eServerPacketType_qModuleInfo;
-      if (PACKET_STARTS_WITH("qMemTags:"))
-        return eServerPacketType_qMemTags;
       break;
 
     case 'P':
@@ -251,8 +233,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
         return eServerPacketType_qPlatform_chmod;
       if (PACKET_MATCHES("qProcessInfo"))
         return eServerPacketType_qProcessInfo;
-      if (PACKET_STARTS_WITH("qPathComplete:"))
-        return eServerPacketType_qPathComplete;
       break;
 
     case 'Q':
@@ -268,8 +248,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
       break;
 
     case 'S':
-      if (PACKET_STARTS_WITH("qSaveCore"))
-        return eServerPacketType_qLLDBSaveCore;
       if (PACKET_STARTS_WITH("qSpeedTest:"))
         return eServerPacketType_qSpeedTest;
       if (PACKET_MATCHES("qShlibInfoAddr"))
@@ -320,17 +298,16 @@ StringExtractorGDBRemote::GetServerPacketType() const {
       return eServerPacketType_jSignalsInfo;
     if (PACKET_MATCHES("jThreadsInfo"))
       return eServerPacketType_jThreadsInfo;
-
-    if (PACKET_MATCHES("jLLDBTraceSupported"))
-      return eServerPacketType_jLLDBTraceSupported;
-    if (PACKET_STARTS_WITH("jLLDBTraceStop:"))
-      return eServerPacketType_jLLDBTraceStop;
-    if (PACKET_STARTS_WITH("jLLDBTraceStart:"))
-      return eServerPacketType_jLLDBTraceStart;
-    if (PACKET_STARTS_WITH("jLLDBTraceGetState:"))
-      return eServerPacketType_jLLDBTraceGetState;
-    if (PACKET_STARTS_WITH("jLLDBTraceGetBinaryData:"))
-      return eServerPacketType_jLLDBTraceGetBinaryData;
+    if (PACKET_STARTS_WITH("jTraceBufferRead:"))
+      return eServerPacketType_jTraceBufferRead;
+    if (PACKET_STARTS_WITH("jTraceConfigRead:"))
+      return eServerPacketType_jTraceConfigRead;
+    if (PACKET_STARTS_WITH("jTraceMetaRead:"))
+      return eServerPacketType_jTraceMetaRead;
+    if (PACKET_STARTS_WITH("jTraceStart:"))
+      return eServerPacketType_jTraceStart;
+    if (PACKET_STARTS_WITH("jTraceStop:"))
+      return eServerPacketType_jTraceStop;
     break;
 
   case 'v':
@@ -347,8 +324,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
         return eServerPacketType_vFile_size;
       else if (PACKET_STARTS_WITH("vFile:exists"))
         return eServerPacketType_vFile_exists;
-      else if (PACKET_STARTS_WITH("vFile:fstat"))
-        return eServerPacketType_vFile_fstat;
       else if (PACKET_STARTS_WITH("vFile:stat"))
         return eServerPacketType_vFile_stat;
       else if (PACKET_STARTS_WITH("vFile:mode"))
@@ -373,18 +348,6 @@ StringExtractorGDBRemote::GetServerPacketType() const {
         return eServerPacketType_vCont;
       if (PACKET_MATCHES("vCont?"))
         return eServerPacketType_vCont_actions;
-      if (PACKET_STARTS_WITH("vKill;"))
-        return eServerPacketType_vKill;
-      if (PACKET_STARTS_WITH("vRun;"))
-        return eServerPacketType_vRun;
-      if (PACKET_MATCHES("vStopped"))
-        return eServerPacketType_vStopped;
-      if (PACKET_MATCHES("vCtrlC"))
-        return eServerPacketType_vCtrlC;
-      if (PACKET_MATCHES("vStdio"))
-        return eServerPacketType_vStdio;
-      break;
-
     }
     break;
   case '_':
@@ -409,7 +372,9 @@ StringExtractorGDBRemote::GetServerPacketType() const {
     return eServerPacketType_C;
 
   case 'D':
-    return eServerPacketType_D;
+    if (packet_size == 1)
+      return eServerPacketType_D;
+    break;
 
   case 'g':
     return eServerPacketType_g;
@@ -636,47 +601,4 @@ bool StringExtractorGDBRemote::ValidateResponse() const {
     return m_validator(m_validator_baton, *this);
   else
     return true; // No validator, so response is valid
-}
-
-std::optional<std::pair<lldb::pid_t, lldb::tid_t>>
-StringExtractorGDBRemote::GetPidTid(lldb::pid_t default_pid) {
-  llvm::StringRef view = llvm::StringRef(m_packet).substr(m_index);
-  size_t initial_length = view.size();
-  lldb::pid_t pid = LLDB_INVALID_PROCESS_ID;
-  lldb::tid_t tid;
-
-  if (view.consume_front("p")) {
-    // process identifier
-    if (view.consume_front("-1")) {
-      // -1 is a special case
-      pid = AllProcesses;
-    } else if (view.consumeInteger(16, pid) || pid == 0) {
-      // not a valid hex integer OR unsupported pid 0
-      m_index = UINT64_MAX;
-      return std::nullopt;
-    }
-
-    // "." must follow if we expect TID too; otherwise, we assume -1
-    if (!view.consume_front(".")) {
-      // update m_index
-      m_index += initial_length - view.size();
-
-      return {{pid, AllThreads}};
-    }
-  }
-
-  // thread identifier
-  if (view.consume_front("-1")) {
-    // -1 is a special case
-    tid = AllThreads;
-  } else if (view.consumeInteger(16, tid) || tid == 0 || pid == AllProcesses) {
-    // not a valid hex integer OR tid 0 OR pid -1 + a specific tid
-    m_index = UINT64_MAX;
-    return std::nullopt;
-  }
-
-  // update m_index
-  m_index += initial_length - view.size();
-
-  return {{pid != LLDB_INVALID_PROCESS_ID ? pid : default_pid, tid}};
 }

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CPPMODULECONFIGURATION_H
-#define LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CPPMODULECONFIGURATION_H
+#ifndef liblldb_CppModuleConfiguration_h_
+#define liblldb_CppModuleConfiguration_h_
 
 #include <lldb/Core/FileSpecList.h>
 #include <llvm/Support/Regex.h>
@@ -16,9 +16,9 @@ namespace lldb_private {
 
 /// A Clang configuration when importing C++ modules.
 ///
-/// This class computes a list of include paths and module names that can be
-/// imported given a list of source files. Currently only used when importing
-/// the 'std' module and its dependencies.
+/// Includes a list of include paths that should be used when importing
+/// and a list of modules that can be imported. Currently only used when
+/// importing the 'std' module and its dependencies.
 class CppModuleConfiguration {
   /// Utility class for a path that can only be set once.
   class SetOncePath {
@@ -30,9 +30,9 @@ class CppModuleConfiguration {
   public:
     /// Try setting the path. Returns true if the path was set and false if
     /// the path was already set.
-    [[nodiscard]] bool TrySet(llvm::StringRef path);
+    LLVM_NODISCARD bool TrySet(llvm::StringRef path);
     /// Return the path if there is one.
-    llvm::StringRef Get() const {
+    std::string Get() const {
       assert(m_valid && "Called Get() on an invalid SetOncePath?");
       return m_path;
     }
@@ -42,15 +42,8 @@ class CppModuleConfiguration {
 
   /// If valid, the include path used for the std module.
   SetOncePath m_std_inc;
-  /// If valid, the per-target include path used for the std module.
-  /// This is an optional path only required on some systems.
-  SetOncePath m_std_target_inc;
   /// If valid, the include path to the C library (e.g. /usr/include).
   SetOncePath m_c_inc;
-  /// If valid, the include path to target-specific C library files
-  /// (e.g. /usr/include/x86_64-linux-gnu).
-  /// This is an optional path only required on some systems.
-  SetOncePath m_c_target_inc;
   /// The Clang resource include path for this configuration.
   std::string m_resource_inc;
 
@@ -60,15 +53,16 @@ class CppModuleConfiguration {
   /// Analyze a given source file to build the current configuration.
   /// Returns false iff there was a fatal error that makes analyzing any
   /// further files pointless as the configuration is now invalid.
-  bool analyzeFile(const FileSpec &f, const llvm::Triple &triple);
+  bool analyzeFile(const FileSpec &f);
 
 public:
-  /// Creates a configuration by analyzing the given list of used source files.
-  /// The triple (if valid) is used to search for target-specific include paths.
-  explicit CppModuleConfiguration(const FileSpecList &support_files,
-                                  const llvm::Triple &triple);
+  /// Creates a configuraiton by analyzing the given list of used source files.
+  ///
+  /// Currently only looks at the used paths and doesn't actually access the
+  /// files on the disk.
+  explicit CppModuleConfiguration(const FileSpecList &support_files);
   /// Creates an empty and invalid configuration.
-  CppModuleConfiguration() = default;
+  CppModuleConfiguration() {}
 
   /// Returns true iff this is a valid configuration that can be used to
   /// load and compile modules.

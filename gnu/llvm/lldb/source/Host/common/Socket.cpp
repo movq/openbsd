@@ -1,4 +1,4 @@
-//===-- Socket.cpp --------------------------------------------------------===//
+//===-- Socket.cpp ----------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,15 +11,15 @@
 #include "lldb/Host/Config.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/SocketAddress.h"
+#include "lldb/Host/StringConvert.h"
 #include "lldb/Host/common/TCPSocket.h"
 #include "lldb/Host/common/UDPSocket.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/RegularExpression.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/Regex.h"
 #include "llvm/Support/WindowsError.h"
 
 #if LLDB_ENABLE_POSIX
@@ -41,9 +41,9 @@
 #ifdef __ANDROID__
 #include <arpa/inet.h>
 #include <asm-generic/errno-base.h>
-#include <cerrno>
-#include <fcntl.h>
+#include <errno.h>
 #include <linux/tcp.h>
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif // __ANDROID__
@@ -61,12 +61,15 @@ typedef void *get_socket_option_arg_type;
 const NativeSocket Socket::kInvalidSocketValue = -1;
 #endif // #if defined(_WIN32)
 
-static bool IsInterrupted() {
+namespace {
+
+bool IsInterrupted() {
 #if defined(_WIN32)
   return ::WSAGetLastError() == WSAEINTR;
 #else
   return errno == EINTR;
 #endif
+}
 }
 
 Socket::Socket(SocketProtocol protocol, bool should_close,
@@ -144,68 +147,178 @@ std::unique_ptr<Socket> Socket::Create(const SocketProtocol protocol,
   return socket_up;
 }
 
-llvm::Expected<std::unique_ptr<Socket>>
-Socket::TcpConnect(llvm::StringRef host_and_port,
-                   bool child_processes_inherit) {
-  Log *log = GetLog(LLDBLog::Connection);
-  LLDB_LOG(log, "host_and_port = {0}", host_and_port);
+Status Socket::TcpConnect(llvm::StringRef host_and_port,
+                          bool child_processes_inherit, Socket *&socket) {
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_COMMUNICATION));
+  LLDB_LOGF(log, "Socket::%s (host/port = %s)", __FUNCTION__,
+            host_and_port.str().c_str());
 
   Status error;
   std::unique_ptr<Socket> connect_socket(
       Create(ProtocolTcp, child_processes_inherit, error));
   if (error.Fail())
-    return error.ToError();
+    return error;
 
   error = connect_socket->Connect(host_and_port);
   if (error.Success())
-    return std::move(connect_socket);
+    socket = connect_socket.release();
 
-  return error.ToError();
+  return error;
 }
 
-llvm::Expected<std::unique_ptr<TCPSocket>>
-Socket::TcpListen(llvm::StringRef host_and_port, bool child_processes_inherit,
-                  int backlog) {
-  Log *log = GetLog(LLDBLog::Connection);
-  LLDB_LOG(log, "host_and_port = {0}", host_and_port);
+Status Socket::TcpListen(llvm::StringRef host_and_port,
+                         bool child_processes_inherit, Socket *&socket,
+                         Predicate<uint16_t> *predicate, int backlog) {
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_CONNECTION));
+  LLDB_LOGF(log, "Socket::%s (%s)", __FUNCTION__, host_and_port.str().c_str());
+
+  Status error;
+  std::string host_str;
+  std::string port_str;
+  int32_t port = INT32_MIN;
+  if (!DecodeHostAndPort(host_and_port, host_str, port_str, port, &error))
+    return error;
 
   std::unique_ptr<TCPSocket> listen_socket(
       new TCPSocket(true, child_processes_inherit));
-
-  Status error = listen_socket->Listen(host_and_port, backlog);
   if (error.Fail())
-    return error.ToError();
+    return error;
 
-  return std::move(listen_socket);
-}
+  error = listen_socket->Listen(host_and_port, backlog);
+  if (error.Success()) {
+    // We were asked to listen on port zero which means we must now read the
+    // actual port that was given to us as port zero is a special code for
+    // "find an open port for me".
+    if (port == 0)
+      port = listen_socket->GetLocalPortNumber();
 
-llvm::Expected<std::unique_ptr<UDPSocket>>
-Socket::UdpConnect(llvm::StringRef host_and_port,
-                   bool child_processes_inherit) {
-  return UDPSocket::Connect(host_and_port, child_processes_inherit);
-}
-
-llvm::Expected<Socket::HostAndPort> Socket::DecodeHostAndPort(llvm::StringRef host_and_port) {
-  static llvm::Regex g_regex("([^:]+|\\[[0-9a-fA-F:]+.*\\]):([0-9]+)");
-  HostAndPort ret;
-  llvm::SmallVector<llvm::StringRef, 3> matches;
-  if (g_regex.match(host_and_port, &matches)) {
-    ret.hostname = matches[1].str();
-    // IPv6 addresses are wrapped in [] when specified with ports
-    if (ret.hostname.front() == '[' && ret.hostname.back() == ']')
-      ret.hostname = ret.hostname.substr(1, ret.hostname.size() - 2);
-    if (to_integer(matches[2], ret.port, 10))
-      return ret;
-  } else {
-    // If this was unsuccessful, then check if it's simply an unsigned 16-bit
-    // integer, representing a port with an empty host.
-    if (to_integer(host_and_port, ret.port, 10))
-      return ret;
+    // Set the port predicate since when doing a listen://<host>:<port> it
+    // often needs to accept the incoming connection which is a blocking system
+    // call. Allowing access to the bound port using a predicate allows us to
+    // wait for the port predicate to be set to a non-zero value from another
+    // thread in an efficient manor.
+    if (predicate)
+      predicate->SetValue(port, eBroadcastAlways);
+    socket = listen_socket.release();
   }
 
-  return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                 "invalid host:port specification: '%s'",
-                                 host_and_port.str().c_str());
+  return error;
+}
+
+Status Socket::UdpConnect(llvm::StringRef host_and_port,
+                          bool child_processes_inherit, Socket *&socket) {
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_CONNECTION));
+  LLDB_LOGF(log, "Socket::%s (host/port = %s)", __FUNCTION__,
+            host_and_port.str().c_str());
+
+  return UDPSocket::Connect(host_and_port, child_processes_inherit, socket);
+}
+
+Status Socket::UnixDomainConnect(llvm::StringRef name,
+                                 bool child_processes_inherit,
+                                 Socket *&socket) {
+  Status error;
+  std::unique_ptr<Socket> connect_socket(
+      Create(ProtocolUnixDomain, child_processes_inherit, error));
+  if (error.Fail())
+    return error;
+
+  error = connect_socket->Connect(name);
+  if (error.Success())
+    socket = connect_socket.release();
+
+  return error;
+}
+
+Status Socket::UnixDomainAccept(llvm::StringRef name,
+                                bool child_processes_inherit, Socket *&socket) {
+  Status error;
+  std::unique_ptr<Socket> listen_socket(
+      Create(ProtocolUnixDomain, child_processes_inherit, error));
+  if (error.Fail())
+    return error;
+
+  error = listen_socket->Listen(name, 5);
+  if (error.Fail())
+    return error;
+
+  error = listen_socket->Accept(socket);
+  return error;
+}
+
+Status Socket::UnixAbstractConnect(llvm::StringRef name,
+                                   bool child_processes_inherit,
+                                   Socket *&socket) {
+  Status error;
+  std::unique_ptr<Socket> connect_socket(
+      Create(ProtocolUnixAbstract, child_processes_inherit, error));
+  if (error.Fail())
+    return error;
+
+  error = connect_socket->Connect(name);
+  if (error.Success())
+    socket = connect_socket.release();
+  return error;
+}
+
+Status Socket::UnixAbstractAccept(llvm::StringRef name,
+                                  bool child_processes_inherit,
+                                  Socket *&socket) {
+  Status error;
+  std::unique_ptr<Socket> listen_socket(
+      Create(ProtocolUnixAbstract, child_processes_inherit, error));
+  if (error.Fail())
+    return error;
+
+  error = listen_socket->Listen(name, 5);
+  if (error.Fail())
+    return error;
+
+  error = listen_socket->Accept(socket);
+  return error;
+}
+
+bool Socket::DecodeHostAndPort(llvm::StringRef host_and_port,
+                               std::string &host_str, std::string &port_str,
+                               int32_t &port, Status *error_ptr) {
+  static RegularExpression g_regex(
+      llvm::StringRef("([^:]+|\\[[0-9a-fA-F:]+.*\\]):([0-9]+)"));
+  llvm::SmallVector<llvm::StringRef, 3> matches;
+  if (g_regex.Execute(host_and_port, &matches)) {
+    host_str = matches[1].str();
+    port_str = matches[2].str();
+    // IPv6 addresses are wrapped in [] when specified with ports
+    if (host_str.front() == '[' && host_str.back() == ']')
+      host_str = host_str.substr(1, host_str.size() - 2);
+    bool ok = false;
+    port = StringConvert::ToUInt32(port_str.c_str(), UINT32_MAX, 10, &ok);
+    if (ok && port <= UINT16_MAX) {
+      if (error_ptr)
+        error_ptr->Clear();
+      return true;
+    }
+    // port is too large
+    if (error_ptr)
+      error_ptr->SetErrorStringWithFormat(
+          "invalid host:port specification: '%s'", host_and_port.str().c_str());
+    return false;
+  }
+
+  // If this was unsuccessful, then check if it's simply a signed 32-bit
+  // integer, representing a port with an empty host.
+  host_str.clear();
+  port_str.clear();
+  if (to_integer(host_and_port, port, 10) && port < UINT16_MAX) {
+    port_str = host_and_port;
+    if (error_ptr)
+      error_ptr->Clear();
+    return true;
+  }
+
+  if (error_ptr)
+    error_ptr->SetErrorStringWithFormat("invalid host:port specification: '%s'",
+                                        host_and_port.str().c_str());
+  return false;
 }
 
 IOObject::WaitableHandle Socket::GetWaitableHandle() {
@@ -226,7 +339,7 @@ Status Socket::Read(void *buf, size_t &num_bytes) {
   } else
     num_bytes = bytes_received;
 
-  Log *log = GetLog(LLDBLog::Communication);
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_COMMUNICATION));
   if (log) {
     LLDB_LOGF(log,
               "%p Socket::Read() (socket = %" PRIu64
@@ -254,7 +367,7 @@ Status Socket::Write(const void *buf, size_t &num_bytes) {
   } else
     num_bytes = bytes_sent;
 
-  Log *log = GetLog(LLDBLog::Communication);
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_COMMUNICATION));
   if (log) {
     LLDB_LOGF(log,
               "%p Socket::Write() (socket = %" PRIu64
@@ -278,14 +391,14 @@ Status Socket::Close() {
   if (!IsValid() || !m_should_close_fd)
     return error;
 
-  Log *log = GetLog(LLDBLog::Connection);
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_CONNECTION));
   LLDB_LOGF(log, "%p Socket::Close (fd = %" PRIu64 ")",
             static_cast<void *>(this), static_cast<uint64_t>(m_socket));
 
 #if defined(_WIN32)
-  bool success = closesocket(m_socket) == 0;
+  bool success = !!closesocket(m_socket);
 #else
-  bool success = ::close(m_socket) == 0;
+  bool success = !!::close(m_socket);
 #endif
   // A reference to a FD was passed in, set it to an invalid value
   m_socket = kInvalidSocketValue;
@@ -373,9 +486,4 @@ NativeSocket Socket::AcceptSocket(NativeSocket sockfd, struct sockaddr *addr,
   if (fd == kInvalidSocketValue)
     SetLastError(error);
   return fd;
-}
-
-llvm::raw_ostream &lldb_private::operator<<(llvm::raw_ostream &OS,
-                                            const Socket::HostAndPort &HP) {
-  return OS << '[' << HP.hostname << ']' << ':' << HP.port;
 }

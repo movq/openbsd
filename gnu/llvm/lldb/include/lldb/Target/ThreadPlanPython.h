@@ -7,12 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TARGET_THREADPLANPYTHON_H
-#define LLDB_TARGET_THREADPLANPYTHON_H
+#ifndef liblldb_ThreadPlan_Python_h_
+#define liblldb_ThreadPlan_Python_h_
 
 #include <string>
 
-#include "lldb/Core/StructuredDataImpl.h"
+#include "lldb/lldb-forward.h"
+
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
@@ -21,7 +22,6 @@
 #include "lldb/Target/ThreadPlanTracer.h"
 #include "lldb/Utility/StructuredData.h"
 #include "lldb/Utility/UserID.h"
-#include "lldb/lldb-forward.h"
 #include "lldb/lldb-private.h"
 
 namespace lldb_private {
@@ -31,8 +31,9 @@ namespace lldb_private {
 
 class ThreadPlanPython : public ThreadPlan {
 public:
-  ThreadPlanPython(Thread &thread, const char *class_name,
-                   const StructuredDataImpl &args_data);
+  ThreadPlanPython(Thread &thread, const char *class_name, 
+                   StructuredDataImpl *args_data);
+  ~ThreadPlanPython() override;
 
   void GetDescription(Stream *s, lldb::DescriptionLevel level) override;
 
@@ -44,9 +45,7 @@ public:
 
   bool WillStop() override;
 
-  bool StopOthers() override { return m_stop_others; }
-
-  void SetStopOthers(bool new_value) override { m_stop_others = new_value; }
+  bool StopOthers() override;
 
   void DidPush() override;
 
@@ -56,21 +55,20 @@ protected:
   bool DoPlanExplainsStop(Event *event_ptr) override;
 
   lldb::StateType GetPlanRunState() override;
-  
-  ScriptInterpreter *GetScriptInterpreter();
 
 private:
   std::string m_class_name;
-  StructuredDataImpl m_args_data;
+  StructuredDataImpl *m_args_data; // We own this, but the implementation
+                                   // has to manage the UP (since that is
+                                   // how it gets stored in the
+                                   // SBStructuredData).
   std::string m_error_str;
   StructuredData::ObjectSP m_implementation_sp;
   bool m_did_push;
-  bool m_stop_others;
 
-  ThreadPlanPython(const ThreadPlanPython &) = delete;
-  const ThreadPlanPython &operator=(const ThreadPlanPython &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(ThreadPlanPython);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_TARGET_THREADPLANPYTHON_H
+#endif // liblldb_ThreadPlan_Python_h_

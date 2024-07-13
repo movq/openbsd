@@ -6,7 +6,4 @@ add_lldb_library(lldbPluginPlatformFreeBSD PLUGIN
     lldbCore
     lldbHost
     lldbTarget
-
-  LINK_COMPONENTS
-    TargetParser
   )

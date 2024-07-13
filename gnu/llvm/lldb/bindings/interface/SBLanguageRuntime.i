@@ -8,9 +8,6 @@
 
 namespace lldb {
 
-%feature("docstring",
-"Utility functions for :ref:`LanguageType`"
-) SBLanguageRuntime;
 class SBLanguageRuntime
 {
 public:

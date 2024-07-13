@@ -27,7 +27,6 @@
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegisterValue.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -182,7 +181,7 @@ bool ABISysV_i386::GetArgumentValues(Thread &thread, ValueList &values) const {
 
     // Currently: Support for extracting values with Clang QualTypes only.
     CompilerType compiler_type(value->GetCompilerType());
-    std::optional<uint64_t> bit_size = compiler_type.GetBitSize(&thread);
+    llvm::Optional<uint64_t> bit_size = compiler_type.GetBitSize(&thread);
     if (bit_size) {
       bool is_signed;
       if (compiler_type.IsIntegerOrEnumerationType(is_signed)) {
@@ -379,16 +378,16 @@ ValueObjectSP ABISysV_i386::GetReturnValueObjectSimple(
     uint32_t ptr =
         thread.GetRegisterContext()->ReadRegisterAsUnsigned(eax_id, 0) &
         0xffffffff;
-    value.SetValueType(Value::ValueType::Scalar);
+    value.SetValueType(Value::eValueTypeScalar);
     value.GetScalar() = ptr;
     return_valobj_sp = ValueObjectConstResult::Create(
         thread.GetStackFrameAtIndex(0).get(), value, ConstString(""));
   } else if ((type_flags & eTypeIsScalar) ||
              (type_flags & eTypeIsEnumeration)) //'Integral' + 'Floating Point'
   {
-    value.SetValueType(Value::ValueType::Scalar);
-    std::optional<uint64_t> byte_size =
-        return_compiler_type.GetByteSize(&thread);
+    value.SetValueType(Value::eValueTypeScalar);
+    llvm::Optional<uint64_t> byte_size =
+        return_compiler_type.GetByteSize(nullptr);
     if (!byte_size)
       return return_valobj_sp;
     bool success = false;
@@ -454,7 +453,7 @@ ValueObjectSP ABISysV_i386::GetReturnValueObjectSimple(
       uint32_t enm =
           thread.GetRegisterContext()->ReadRegisterAsUnsigned(eax_id, 0) &
           0xffffffff;
-      value.SetValueType(Value::ValueType::Scalar);
+      value.SetValueType(Value::eValueTypeScalar);
       value.GetScalar() = enm;
       return_valobj_sp = ValueObjectConstResult::Create(
           thread.GetStackFrameAtIndex(0).get(), value, ConstString(""));
@@ -512,8 +511,8 @@ ValueObjectSP ABISysV_i386::GetReturnValueObjectSimple(
     // ToDo: Yet to be implemented
   } else if (type_flags & eTypeIsVector) // 'Packed'
   {
-    std::optional<uint64_t> byte_size =
-        return_compiler_type.GetByteSize(&thread);
+    llvm::Optional<uint64_t> byte_size =
+        return_compiler_type.GetByteSize(nullptr);
     if (byte_size && *byte_size > 0) {
       const RegisterInfo *vec_reg = reg_ctx->GetRegisterInfoByName("xmm0", 0);
       if (vec_reg == nullptr)
@@ -529,7 +528,7 @@ ValueObjectSP ABISysV_i386::GetReturnValueObjectSimple(
             RegisterValue reg_value;
             if (reg_ctx->ReadRegister(vec_reg, reg_value)) {
               Status error;
-              if (reg_value.GetAsMemoryData(*vec_reg, heap_data_up->GetBytes(),
+              if (reg_value.GetAsMemoryData(vec_reg, heap_data_up->GetBytes(),
                                             heap_data_up->GetByteSize(),
                                             byte_order, error)) {
                 DataExtractor data(DataBufferSP(heap_data_up.release()),
@@ -557,12 +556,11 @@ ValueObjectSP ABISysV_i386::GetReturnValueObjectSimple(
                   reg_ctx->ReadRegister(vec_reg2, reg_value2)) {
 
                 Status error;
-                if (reg_value.GetAsMemoryData(
-                        *vec_reg, heap_data_up->GetBytes(), vec_reg->byte_size,
-                        byte_order, error) &&
+                if (reg_value.GetAsMemoryData(vec_reg, heap_data_up->GetBytes(),
+                                              vec_reg->byte_size, byte_order,
+                                              error) &&
                     reg_value2.GetAsMemoryData(
-                        *vec_reg2,
-                        heap_data_up->GetBytes() + vec_reg->byte_size,
+                        vec_reg2, heap_data_up->GetBytes() + vec_reg->byte_size,
                         heap_data_up->GetByteSize() - vec_reg->byte_size,
                         byte_order, error)) {
                   DataExtractor data(DataBufferSP(heap_data_up.release()),
@@ -654,7 +652,6 @@ bool ABISysV_i386::CreateDefaultUnwindPlan(UnwindPlan &unwind_plan) {
 
   row->GetCFAValue().SetIsRegisterPlusOffset(fp_reg_num, 2 * ptr_size);
   row->SetOffset(0);
-  row->SetUnspecifiedRegistersAreUndefined(true);
 
   row->SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
   row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
@@ -715,4 +712,15 @@ void ABISysV_i386::Initialize() {
 
 void ABISysV_i386::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
+}
+
+// PluginInterface protocol
+
+lldb_private::ConstString ABISysV_i386::GetPluginNameStatic() {
+  static ConstString g_name("sysv-i386");
+  return g_name;
+}
+
+lldb_private::ConstString ABISysV_i386::GetPluginName() {
+  return GetPluginNameStatic();
 }

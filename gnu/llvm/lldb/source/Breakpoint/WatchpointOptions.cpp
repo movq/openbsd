@@ -1,4 +1,4 @@
-//===-- WatchpointOptions.cpp ---------------------------------------------===//
+//===-- WatchpointOptions.cpp -----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -27,14 +27,16 @@ bool WatchpointOptions::NullCallback(void *baton,
 
 // WatchpointOptions constructor
 WatchpointOptions::WatchpointOptions()
-    : m_callback(WatchpointOptions::NullCallback) {}
+    : m_callback(WatchpointOptions::NullCallback), m_callback_baton_sp(),
+      m_callback_is_synchronous(false), m_thread_spec_up() {}
 
 // WatchpointOptions copy constructor
 WatchpointOptions::WatchpointOptions(const WatchpointOptions &rhs)
     : m_callback(rhs.m_callback), m_callback_baton_sp(rhs.m_callback_baton_sp),
-      m_callback_is_synchronous(rhs.m_callback_is_synchronous) {
+      m_callback_is_synchronous(rhs.m_callback_is_synchronous),
+      m_thread_spec_up() {
   if (rhs.m_thread_spec_up != nullptr)
-    m_thread_spec_up = std::make_unique<ThreadSpec>(*rhs.m_thread_spec_up);
+    m_thread_spec_up.reset(new ThreadSpec(*rhs.m_thread_spec_up));
 }
 
 // WatchpointOptions assignment operator
@@ -44,7 +46,7 @@ operator=(const WatchpointOptions &rhs) {
   m_callback_baton_sp = rhs.m_callback_baton_sp;
   m_callback_is_synchronous = rhs.m_callback_is_synchronous;
   if (rhs.m_thread_spec_up != nullptr)
-    m_thread_spec_up = std::make_unique<ThreadSpec>(*rhs.m_thread_spec_up);
+    m_thread_spec_up.reset(new ThreadSpec(*rhs.m_thread_spec_up));
   return *this;
 }
 
@@ -106,7 +108,7 @@ const ThreadSpec *WatchpointOptions::GetThreadSpecNoCreate() const {
 
 ThreadSpec *WatchpointOptions::GetThreadSpec() {
   if (m_thread_spec_up == nullptr)
-    m_thread_spec_up = std::make_unique<ThreadSpec>();
+    m_thread_spec_up.reset(new ThreadSpec());
 
   return m_thread_spec_up.get();
 }

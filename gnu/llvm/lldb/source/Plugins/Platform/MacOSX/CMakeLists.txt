@@ -8,22 +8,24 @@ lldb_tablegen(PlatformMacOSXPropertiesEnum.inc -gen-lldb-property-enum-defs
 
 list(APPEND PLUGIN_PLATFORM_MACOSX_SOURCES
   PlatformDarwin.cpp
-  PlatformDarwinDevice.cpp
   PlatformDarwinKernel.cpp
   PlatformMacOSX.cpp
-  PlatformRemoteAppleBridge.cpp
+  PlatformRemoteiOS.cpp
   PlatformRemoteAppleTV.cpp
   PlatformRemoteAppleWatch.cpp
   PlatformRemoteDarwinDevice.cpp
-  PlatformRemoteMacOSX.cpp
-  PlatformRemoteiOS.cpp
+  PlatformRemoteAppleBridge.cpp
   )
 
 list(APPEND PLUGIN_PLATFORM_MACOSX_DARWIN_ONLY_SOURCES
   PlatformAppleSimulator.cpp
+  PlatformiOSSimulator.cpp
+  PlatformAppleTVSimulator.cpp
+  PlatformAppleWatchSimulator.cpp
   )
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  include_directories(${LIBXML2_INCLUDE_DIR})
   add_subdirectory(objcxx)
   set(OBJC_LIBS "lldbPluginPlatformMacOSXObjCXX")
   list(APPEND PLUGIN_PLATFORM_MACOSX_SOURCES
@@ -44,15 +46,12 @@ add_lldb_library(lldbPluginPlatformMacOSX PLUGIN
     lldbSymbol
     lldbTarget
     lldbUtility
-    lldbPluginDynamicLoaderDarwinKernel
-    lldbPluginObjectContainerMachOFileset
     lldbPluginPlatformPOSIX
     ${OBJC_LIBS}
   CLANG_LIBS
     clangBasic
   LINK_COMPONENTS
     Support
-    TargetParser
     )
 
 add_dependencies(lldbPluginPlatformMacOSX

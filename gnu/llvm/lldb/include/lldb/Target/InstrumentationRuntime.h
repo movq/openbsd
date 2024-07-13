@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TARGET_INSTRUMENTATIONRUNTIME_H
-#define LLDB_TARGET_INSTRUMENTATIONRUNTIME_H
+#ifndef liblldb_InstrumentationRuntime_h_
+#define liblldb_InstrumentationRuntime_h_
 
 #include <map>
 #include <vector>
@@ -42,7 +42,8 @@ class InstrumentationRuntime
 
 protected:
   InstrumentationRuntime(const lldb::ProcessSP &process_sp)
-      : m_breakpoint_id(0), m_is_active(false) {
+      : m_process_wp(), m_runtime_module(), m_breakpoint_id(0),
+        m_is_active(false) {
     if (process_sp)
       m_process_wp = process_sp;
   }
@@ -52,7 +53,7 @@ protected:
   lldb::ModuleSP GetRuntimeModuleSP() { return m_runtime_module; }
 
   void SetRuntimeModuleSP(lldb::ModuleSP module_sp) {
-    m_runtime_module = std::move(module_sp);
+    m_runtime_module = module_sp;
   }
 
   lldb::user_id_t GetBreakpointID() const { return m_breakpoint_id; }
@@ -91,4 +92,4 @@ public:
 
 } // namespace lldb_private
 
-#endif // LLDB_TARGET_INSTRUMENTATIONRUNTIME_H
+#endif // liblldb_InstrumentationRuntime_h_

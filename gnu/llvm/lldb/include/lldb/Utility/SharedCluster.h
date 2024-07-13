@@ -6,61 +6,90 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_UTILITY_SHAREDCLUSTER_H
-#define LLDB_UTILITY_SHAREDCLUSTER_H
+#ifndef utility_SharedCluster_h_
+#define utility_SharedCluster_h_
 
 #include "lldb/Utility/LLDBAssert.h"
-#include "llvm/ADT/STLExtras.h"
+#include "lldb/Utility/SharingPtr.h"
+
 #include "llvm/ADT/SmallPtrSet.h"
 
-#include <memory>
 #include <mutex>
 
 namespace lldb_private {
 
-template <class T>
-class ClusterManager : public std::enable_shared_from_this<ClusterManager<T>> {
+namespace imp {
+template <typename T>
+class shared_ptr_refcount : public lldb_private::imp::shared_count {
 public:
-  static std::shared_ptr<ClusterManager> Create() {
-    return std::shared_ptr<ClusterManager>(new ClusterManager());
-  }
+  template <class Y>
+  shared_ptr_refcount(Y *in) : shared_count(0), manager(in) {}
+
+  shared_ptr_refcount() : shared_count(0) {}
+
+  ~shared_ptr_refcount() override {}
+
+  void on_zero_shared() override { manager->DecrementRefCount(); }
+
+private:
+  T *manager;
+};
+
+} // namespace imp
+
+template <class T> class ClusterManager {
+public:
+  ClusterManager() : m_objects(), m_external_ref(0), m_mutex() {}
 
   ~ClusterManager() {
-    for (T *obj : m_objects)
-      delete obj;
+    for (typename llvm::SmallPtrSet<T *, 16>::iterator pos = m_objects.begin(),
+                                                       end = m_objects.end();
+         pos != end; ++pos) {
+      T *object = *pos;
+      delete object;
+    }
+
+    // Decrement refcount should have been called on this ClusterManager, and
+    // it should have locked the mutex, now we will unlock it before we destroy
+    // it...
+    m_mutex.unlock();
   }
 
   void ManageObject(T *new_object) {
     std::lock_guard<std::mutex> guard(m_mutex);
-    auto ret = m_objects.insert(new_object);
-    assert(ret.second && "ManageObject called twice for the same object?");
-    (void)ret;
+    m_objects.insert(new_object);
   }
 
-  std::shared_ptr<T> GetSharedPointer(T *desired_object) {
-    std::lock_guard<std::mutex> guard(m_mutex);
-    auto this_sp = this->shared_from_this();
-    size_t count =  m_objects.count(desired_object);
-    if (count == 0) {
-      lldbassert(false && "object not found in shared cluster when expected");
-      desired_object = nullptr;
+  typename lldb_private::SharingPtr<T> GetSharedPointer(T *desired_object) {
+    {
+      std::lock_guard<std::mutex> guard(m_mutex);
+      m_external_ref++;
+      if (0 == m_objects.count(desired_object)) {
+        lldbassert(false && "object not found in shared cluster when expected");
+        desired_object = nullptr;
+      }
     }
-    return {std::move(this_sp), desired_object};
+    return typename lldb_private::SharingPtr<T>(
+        desired_object, new imp::shared_ptr_refcount<ClusterManager>(this));
   }
 
 private:
-  ClusterManager() : m_objects() {}
-  // The cluster manager is used primarily to manage the
-  // children of root ValueObjects. So it will always have
-  // one element - the root.  Pointers will often have dynamic
-  // values, so having 2 entries is pretty common.  It's also
-  // pretty common to have small (2,3) structs, so setting the
-  // static size to 4 will cover those cases with no allocations
-  // w/o wasting too much space.
-  llvm::SmallPtrSet<T *, 4> m_objects;
+  void DecrementRefCount() {
+    m_mutex.lock();
+    m_external_ref--;
+    if (m_external_ref == 0)
+      delete this;
+    else
+      m_mutex.unlock();
+  }
+
+  friend class imp::shared_ptr_refcount<ClusterManager>;
+
+  llvm::SmallPtrSet<T *, 16> m_objects;
+  int m_external_ref;
   std::mutex m_mutex;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_UTILITY_SHAREDCLUSTER_H
+#endif // utility_SharedCluster_h_

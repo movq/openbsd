@@ -1,7 +1,10 @@
+if(NOT LLDB_BUILT_STANDALONE)
+  set(tablegen_deps intrinsics_gen)
+endif()
+
 add_lldb_library(lldbExpression
   DiagnosticManager.cpp
   DWARFExpression.cpp
-  DWARFExpressionList.cpp
   Expression.cpp
   ExpressionVariable.cpp
   FunctionCaller.cpp
@@ -15,7 +18,7 @@ add_lldb_library(lldbExpression
   UtilityFunction.cpp
 
   DEPENDS
-  intrinsics_gen
+  ${tablegen_deps}
 
   LINK_LIBS
     lldbCore
@@ -24,6 +27,7 @@ add_lldb_library(lldbExpression
     lldbSymbol
     lldbTarget
     lldbUtility
+    lldbPluginCPlusPlusLanguage
     lldbPluginObjectFileJIT
 
   LINK_COMPONENTS

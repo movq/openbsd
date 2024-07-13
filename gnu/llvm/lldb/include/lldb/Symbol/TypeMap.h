@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_TYPEMAP_H
-#define LLDB_SYMBOL_TYPEMAP_H
+#ifndef liblldb_TypeMap_h_
+#define liblldb_TypeMap_h_
 
 #include "lldb/Symbol/Type.h"
 #include "lldb/Utility/Iterable.h"
@@ -26,8 +26,7 @@ public:
 
   void Clear();
 
-  void Dump(Stream *s, bool show_context,
-            lldb::DescriptionLevel level = lldb::eDescriptionLevelFull);
+  void Dump(Stream *s, bool show_context);
 
   TypeMap FindTypes(ConstString name);
 
@@ -53,9 +52,13 @@ public:
 
   bool Remove(const lldb::TypeSP &type_sp);
 
-  void RemoveMismatchedTypes(llvm::StringRef type_scope,
-                             llvm::StringRef type_basename,
+  void RemoveMismatchedTypes(const char *qualified_typename, bool exact_match);
+
+  void RemoveMismatchedTypes(const std::string &type_scope,
+                             const std::string &type_basename,
                              lldb::TypeClass type_class, bool exact_match);
+
+  void RemoveMismatchedTypes(lldb::TypeClass type_class);
 
 private:
   typedef collection::iterator iterator;
@@ -63,10 +66,9 @@ private:
 
   collection m_types;
 
-  TypeMap(const TypeMap &) = delete;
-  const TypeMap &operator=(const TypeMap &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(TypeMap);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_TYPEMAP_H
+#endif // liblldb_TypeMap_h_

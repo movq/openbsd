@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_ARCHITECTURE_ARM_ARCHITECTUREARM_H
-#define LLDB_SOURCE_PLUGINS_ARCHITECTURE_ARM_ARCHITECTUREARM_H
+#ifndef LLDB_PLUGIN_ARCHITECTURE_ARM_H
+#define LLDB_PLUGIN_ARCHITECTURE_ARM_H
 
 #include "lldb/Core/Architecture.h"
 
@@ -15,11 +15,12 @@ namespace lldb_private {
 
 class ArchitectureArm : public Architecture {
 public:
-  static llvm::StringRef GetPluginNameStatic() { return "arm"; }
+  static ConstString GetPluginNameStatic();
   static void Initialize();
   static void Terminate();
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  ConstString GetPluginName() override;
+  uint32_t GetPluginVersion() override;
 
   void OverrideStopInfo(Thread &thread) const override;
 
@@ -36,4 +37,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_ARCHITECTURE_ARM_ARCHITECTUREARM_H
+#endif // LLDB_PLUGIN_ARCHITECTURE_ARM_H

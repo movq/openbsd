@@ -1,4 +1,5 @@
-//===-- CommandObjectApropos.cpp ------------------------------------------===//
+//===-- CommandObjectApropos.cpp ---------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -49,8 +50,8 @@ bool CommandObjectApropos::DoExecute(Args &args, CommandReturnObject &result) {
       StringList commands_found;
       StringList commands_help;
 
-      m_interpreter.FindCommandsForApropos(
-          search_word, commands_found, commands_help, true, true, true, true);
+      m_interpreter.FindCommandsForApropos(search_word, commands_found,
+                                           commands_help, true, true, true);
 
       if (commands_found.GetSize() == 0) {
         result.AppendMessageWithFormat("No commands found pertaining to '%s'. "
@@ -86,9 +87,11 @@ bool CommandObjectApropos::DoExecute(Args &args, CommandReturnObject &result) {
       result.SetStatus(eReturnStatusSuccessFinishNoResult);
     } else {
       result.AppendError("'' is not a valid search word.\n");
+      result.SetStatus(eReturnStatusFailed);
     }
   } else {
     result.AppendError("'apropos' must be called with exactly one argument.\n");
+    result.SetStatus(eReturnStatusFailed);
   }
 
   return result.Succeeded();

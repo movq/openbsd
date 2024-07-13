@@ -13,6 +13,11 @@ import lldb.runtime.objc.objc_runtime
 import lldb.formatters.metrics
 import lldb.formatters.Logger
 
+try:
+    basestring
+except NameError:
+    basestring =str
+
 statistics = lldb.formatters.metrics.Metrics()
 statistics.add_metric('invalid_isa')
 statistics.add_metric('invalid_pointer')
@@ -130,7 +135,7 @@ def NSMachPort_SummaryProvider(valobj, dict):
         logger >> "got summary " + str(summary)
         if summary is None:
             summary = '<variable is not NSMachPort>'
-        if isinstance(summary, str):
+        if isinstance(summary, basestring):
             return summay
         return 'mach port: ' + str(summary)
     return 'Summary Unavailable'

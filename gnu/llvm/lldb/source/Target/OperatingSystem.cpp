@@ -1,4 +1,4 @@
-//===-- OperatingSystem.cpp -----------------------------------------------===//
+//===-- OperatingSystem.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,9 +17,10 @@ OperatingSystem *OperatingSystem::FindPlugin(Process *process,
                                              const char *plugin_name) {
   OperatingSystemCreateInstance create_callback = nullptr;
   if (plugin_name) {
+    ConstString const_plugin_name(plugin_name);
     create_callback =
         PluginManager::GetOperatingSystemCreateCallbackForPluginName(
-            plugin_name);
+            const_plugin_name);
     if (create_callback) {
       std::unique_ptr<OperatingSystem> instance_up(
           create_callback(process, true));
@@ -42,6 +43,8 @@ OperatingSystem *OperatingSystem::FindPlugin(Process *process,
 }
 
 OperatingSystem::OperatingSystem(Process *process) : m_process(process) {}
+
+OperatingSystem::~OperatingSystem() = default;
 
 bool OperatingSystem::IsOperatingSystemPluginThread(
     const lldb::ThreadSP &thread_sp) {

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_PDB_SYMBOLFILEPDB_H
-#define LLDB_SOURCE_PLUGINS_SYMBOLFILE_PDB_SYMBOLFILEPDB_H
+#ifndef lldb_Plugins_SymbolFile_PDB_SymbolFilePDB_h_
+#define lldb_Plugins_SymbolFile_PDB_SymbolFilePDB_h_
 
 #include "lldb/Core/UniqueCStringMap.h"
 #include "lldb/Symbol/SymbolFile.h"
@@ -18,11 +18,10 @@
 #include "llvm/DebugInfo/PDB/IPDBSession.h"
 #include "llvm/DebugInfo/PDB/PDB.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolExe.h"
-#include <optional>
 
 class PDBASTParser;
 
-class SymbolFilePDB : public lldb_private::SymbolFileCommon {
+class SymbolFilePDB : public lldb_private::SymbolFile {
   /// LLVM RTTI support.
   static char ID;
 
@@ -30,7 +29,7 @@ public:
   /// LLVM RTTI support.
   /// \{
   bool isA(const void *ClassID) const override {
-    return ClassID == &ID || SymbolFileCommon::isA(ClassID);
+    return ClassID == &ID || SymbolFile::isA(ClassID);
   }
   static bool classof(const SymbolFile *obj) { return obj->isA(&ID); }
   /// \}
@@ -42,9 +41,9 @@ public:
 
   static void DebuggerInitialize(lldb_private::Debugger &debugger);
 
-  static llvm::StringRef GetPluginNameStatic() { return "pdb"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::SymbolFile *
   CreateInstance(lldb::ObjectFileSP objfile_sp);
@@ -84,7 +83,7 @@ public:
   ParseVariablesForContext(const lldb_private::SymbolContext &sc) override;
 
   lldb_private::Type *ResolveTypeUID(lldb::user_id_t type_uid) override;
-  std::optional<ArrayInfo> GetDynamicArrayInfoForUID(
+  llvm::Optional<ArrayInfo> GetDynamicArrayInfoForUID(
       lldb::user_id_t type_uid,
       const lldb_private::ExecutionContext *exe_ctx) override;
 
@@ -105,14 +104,15 @@ public:
                                 lldb::SymbolContextItem resolve_scope,
                                 lldb_private::SymbolContext &sc) override;
 
-  uint32_t ResolveSymbolContext(
-      const lldb_private::SourceLocationSpec &src_location_spec,
-      lldb::SymbolContextItem resolve_scope,
-      lldb_private::SymbolContextList &sc_list) override;
+  uint32_t
+  ResolveSymbolContext(const lldb_private::FileSpec &file_spec, uint32_t line,
+                       bool check_inlines,
+                       lldb::SymbolContextItem resolve_scope,
+                       lldb_private::SymbolContextList &sc_list) override;
 
   void
   FindGlobalVariables(lldb_private::ConstString name,
-                      const lldb_private::CompilerDeclContext &parent_decl_ctx,
+                      const lldb_private::CompilerDeclContext *parent_decl_ctx,
                       uint32_t max_matches,
                       lldb_private::VariableList &variables) override;
 
@@ -120,8 +120,9 @@ public:
                            uint32_t max_matches,
                            lldb_private::VariableList &variables) override;
 
-  void FindFunctions(const lldb_private::Module::LookupInfo &lookup_info,
-                     const lldb_private::CompilerDeclContext &parent_decl_ctx,
+  void FindFunctions(lldb_private::ConstString name,
+                     const lldb_private::CompilerDeclContext *parent_decl_ctx,
+                     lldb::FunctionNameType name_type_mask,
                      bool include_inlines,
                      lldb_private::SymbolContextList &sc_list) override;
 
@@ -137,7 +138,7 @@ public:
 
   void
   FindTypes(lldb_private::ConstString name,
-            const lldb_private::CompilerDeclContext &parent_decl_ctx,
+            const lldb_private::CompilerDeclContext *parent_decl_ctx,
             uint32_t max_matches,
             llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
             lldb_private::TypeMap &types) override;
@@ -154,14 +155,16 @@ public:
                 lldb::TypeClass type_mask,
                 lldb_private::TypeList &type_list) override;
 
-  llvm::Expected<lldb::TypeSystemSP>
+  llvm::Expected<lldb_private::TypeSystem &>
   GetTypeSystemForLanguage(lldb::LanguageType language) override;
 
   lldb_private::CompilerDeclContext FindNamespace(
       lldb_private::ConstString name,
-      const lldb_private::CompilerDeclContext &parent_decl_ctx) override;
+      const lldb_private::CompilerDeclContext *parent_decl_ctx) override;
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
   llvm::pdb::IPDBSession &GetPDBSession();
 
@@ -192,7 +195,7 @@ private:
       llvm::DenseMap<uint32_t, uint32_t> &index_map) const;
 
   void FindTypesByName(llvm::StringRef name,
-                       const lldb_private::CompilerDeclContext &parent_decl_ctx,
+                       const lldb_private::CompilerDeclContext *parent_decl_ctx,
                        uint32_t max_matches, lldb_private::TypeMap &types);
 
   std::string GetMangledForPDBData(const llvm::pdb::PDBSymbolData &pdb_data);
@@ -239,7 +242,7 @@ private:
   void CacheFunctionNames();
 
   bool DeclContextMatchesThisSymbolFile(
-      const lldb_private::CompilerDeclContext &decl_ctx);
+      const lldb_private::CompilerDeclContext *decl_ctx);
 
   uint32_t GetCompilandId(const llvm::pdb::PDBSymbolData &data);
 
@@ -259,4 +262,4 @@ private:
   lldb_private::UniqueCStringMap<uint32_t> m_func_method_names;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_PDB_SYMBOLFILEPDB_H
+#endif // lldb_Plugins_SymbolFile_PDB_SymbolFilePDB_h_

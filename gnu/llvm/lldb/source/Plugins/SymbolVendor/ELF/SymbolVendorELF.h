@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_SYMBOLVENDOR_ELF_SYMBOLVENDORELF_H
-#define LLDB_SOURCE_PLUGINS_SYMBOLVENDOR_ELF_SYMBOLVENDORELF_H
+#ifndef liblldb_SymbolVendorELF_h_
+#define liblldb_SymbolVendorELF_h_
 
 #include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/lldb-private.h"
@@ -17,21 +17,28 @@ public:
   // Constructors and Destructors
   SymbolVendorELF(const lldb::ModuleSP &module_sp);
 
+  ~SymbolVendorELF() override;
+
   // Static Functions
   static void Initialize();
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "ELF"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::SymbolVendor *
   CreateInstance(const lldb::ModuleSP &module_sp,
                  lldb_private::Stream *feedback_strm);
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SymbolVendorELF);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_SYMBOLVENDOR_ELF_SYMBOLVENDORELF_H
+#endif // liblldb_SymbolVendorELF_h_

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 #----------------------------------------------------------------------
 # Be sure to add the python path that points to the LLDB shared library.
@@ -8,6 +8,8 @@
 # command
 #   (lldb) command script import /path/to/cmdtemplate.py
 #----------------------------------------------------------------------
+
+from __future__ import print_function
 
 import platform
 import os
@@ -268,9 +270,8 @@ def memfind(target, options, args, result):
 
 if __name__ == '__main__':
     print('error: this script is designed to be used within the embedded script interpreter in LLDB')
-
-def __lldb_init_module(debugger, internal_dict):
+elif getattr(lldb, 'debugger', None):
     memfind_command.__doc__ = create_memfind_options().format_help()
-    debugger.HandleCommand(
-        'command script add -o -f memory.memfind_command memfind')
+    lldb.debugger.HandleCommand(
+        'command script add -f memory.memfind_command memfind')
     print('"memfind" command installed, use the "--help" option for detailed help')

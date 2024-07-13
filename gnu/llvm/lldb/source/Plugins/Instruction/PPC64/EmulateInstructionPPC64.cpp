@@ -1,4 +1,4 @@
-//===-- EmulateInstructionPPC64.cpp ---------------------------------------===//
+//===-- EmulateInstructionPPC64.cpp ------------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,15 +8,14 @@
 
 #include "EmulateInstructionPPC64.h"
 
-#include <cstdlib>
-#include <optional>
+#include <stdlib.h>
 
-#include "Plugins/Process/Utility/lldb-ppc64le-register-enums.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Symbol/UnwindPlan.h"
 #include "lldb/Utility/ArchSpec.h"
 #include "lldb/Utility/ConstString.h"
-#include "lldb/Utility/LLDBLog.h"
+
+#include "Plugins/Process/Utility/lldb-ppc64le-register-enums.h"
 
 #define DECLARE_REGISTER_INFOS_PPC64LE_STRUCT
 #include "Plugins/Process/Utility/RegisterInfos_ppc64le.h"
@@ -25,8 +24,6 @@
 
 using namespace lldb;
 using namespace lldb_private;
-
-LLDB_PLUGIN_DEFINE_ADV(EmulateInstructionPPC64, InstructionPPC64)
 
 EmulateInstructionPPC64::EmulateInstructionPPC64(const ArchSpec &arch)
     : EmulateInstruction(arch) {}
@@ -40,7 +37,17 @@ void EmulateInstructionPPC64::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
 
-llvm::StringRef EmulateInstructionPPC64::GetPluginDescriptionStatic() {
+ConstString EmulateInstructionPPC64::GetPluginNameStatic() {
+  ConstString g_plugin_name("lldb.emulate-instruction.ppc64");
+  return g_plugin_name;
+}
+
+ConstString EmulateInstructionPPC64::GetPluginName() {
+  static ConstString g_plugin_name("EmulateInstructionPPC64");
+  return g_plugin_name;
+}
+
+const char *EmulateInstructionPPC64::GetPluginDescriptionStatic() {
   return "Emulate instructions for the PPC64 architecture.";
 }
 
@@ -59,15 +66,16 @@ bool EmulateInstructionPPC64::SetTargetTriple(const ArchSpec &arch) {
   return arch.GetTriple().isPPC64();
 }
 
-static std::optional<RegisterInfo> LLDBTableGetRegisterInfo(uint32_t reg_num) {
-  if (reg_num >= std::size(g_register_infos_ppc64le))
-    return {};
-  return g_register_infos_ppc64le[reg_num];
+static bool LLDBTableGetRegisterInfo(uint32_t reg_num, RegisterInfo &reg_info) {
+  if (reg_num >= llvm::array_lengthof(g_register_infos_ppc64le))
+    return false;
+  reg_info = g_register_infos_ppc64le[reg_num];
+  return true;
 }
 
-std::optional<RegisterInfo>
-EmulateInstructionPPC64::GetRegisterInfo(RegisterKind reg_kind,
-                                         uint32_t reg_num) {
+bool EmulateInstructionPPC64::GetRegisterInfo(RegisterKind reg_kind,
+                                              uint32_t reg_num,
+                                              RegisterInfo &reg_info) {
   if (reg_kind == eRegisterKindGeneric) {
     switch (reg_num) {
     case LLDB_REGNUM_GENERIC_PC:
@@ -88,13 +96,13 @@ EmulateInstructionPPC64::GetRegisterInfo(RegisterKind reg_kind,
       break;
 
     default:
-      return {};
+      return false;
     }
   }
 
   if (reg_kind == eRegisterKindLLDB)
-    return LLDBTableGetRegisterInfo(reg_num);
-  return {};
+    return LLDBTableGetRegisterInfo(reg_num, reg_info);
+  return false;
 }
 
 bool EmulateInstructionPPC64::ReadInstruction() {
@@ -147,7 +155,7 @@ EmulateInstructionPPC64::GetOpcodeForInstruction(uint32_t opcode) {
        "addi RT, RA, SI"},
       {0xfc000003, 0xe8000000, &EmulateInstructionPPC64::EmulateLD,
        "ld RT, DS(RA)"}};
-  static const size_t k_num_ppc_opcodes = std::size(g_opcodes);
+  static const size_t k_num_ppc_opcodes = llvm::array_lengthof(g_opcodes);
 
   for (size_t i = 0; i < k_num_ppc_opcodes; ++i) {
     if ((g_opcodes[i].mask & opcode) == g_opcodes[i].value)
@@ -188,7 +196,7 @@ bool EmulateInstructionPPC64::EvaluateInstruction(uint32_t evaluate_options) {
     if (!success)
       return false;
 
-    if (new_pc_value == orig_pc_value) {
+    if (auto_advance_pc && (new_pc_value == orig_pc_value)) {
       EmulateInstruction::Context context;
       context.type = eContextAdvancePC;
       context.SetNoArgs();
@@ -210,7 +218,7 @@ bool EmulateInstructionPPC64::EmulateMFSPR(uint32_t opcode) {
   if (rt != gpr_r0_ppc64le || spr != SPR_LR)
     return false;
 
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
   LLDB_LOG(log, "EmulateMFSPR: {0:X+8}: mfspr r0, lr", m_addr);
 
   bool success;
@@ -237,18 +245,17 @@ bool EmulateInstructionPPC64::EmulateLD(uint32_t opcode) {
   if (ra != gpr_r1_ppc64le || rt != gpr_r1_ppc64le || ids != 0)
     return false;
 
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
   LLDB_LOG(log, "EmulateLD: {0:X+8}: ld r{1}, {2}(r{3})", m_addr, rt, ids, ra);
 
-  std::optional<RegisterInfo> r1_info =
-      GetRegisterInfo(eRegisterKindLLDB, gpr_r1_ppc64le);
-  if (!r1_info)
+  RegisterInfo r1_info;
+  if (!GetRegisterInfo(eRegisterKindLLDB, gpr_r1_ppc64le, r1_info))
     return false;
 
   // restore SP
   Context ctx;
   ctx.type = eContextRestoreStackPointer;
-  ctx.SetRegisterToRegisterPlusOffset(*r1_info, *r1_info, 0);
+  ctx.SetRegisterToRegisterPlusOffset(r1_info, r1_info, 0);
 
   WriteRegisterUnsigned(ctx, eRegisterKindLLDB, gpr_r1_ppc64le, 0);
   LLDB_LOG(log, "EmulateLD: success!");
@@ -275,7 +282,7 @@ bool EmulateInstructionPPC64::EmulateSTD(uint32_t opcode) {
     return false;
 
   int32_t ids = llvm::SignExtend32<16>(ds << 2);
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
   LLDB_LOG(log, "EmulateSTD: {0:X+8}: std{1} r{2}, {3}(r{4})", m_addr,
            u ? "u" : "", rs, ids, ra);
 
@@ -291,17 +298,16 @@ bool EmulateInstructionPPC64::EmulateSTD(uint32_t opcode) {
   }
 
   // set context
-  std::optional<RegisterInfo> rs_info =
-      GetRegisterInfo(eRegisterKindLLDB, rs_num);
-  if (!rs_info)
+  RegisterInfo rs_info;
+  if (!GetRegisterInfo(eRegisterKindLLDB, rs_num, rs_info))
     return false;
-  std::optional<RegisterInfo> ra_info = GetRegisterInfo(eRegisterKindLLDB, ra);
-  if (!ra_info)
+  RegisterInfo ra_info;
+  if (!GetRegisterInfo(eRegisterKindLLDB, ra, ra_info))
     return false;
 
   Context ctx;
   ctx.type = eContextPushRegisterOnStack;
-  ctx.SetRegisterToRegisterPlusOffset(*rs_info, *ra_info, ids);
+  ctx.SetRegisterToRegisterPlusOffset(rs_info, ra_info, ids);
 
   // store
   uint64_t ra_val = ReadRegisterUnsigned(eRegisterKindLLDB, ra, 0, &success);
@@ -333,17 +339,17 @@ bool EmulateInstructionPPC64::EmulateOR(uint32_t opcode) {
       (ra != gpr_r30_ppc64le && ra != gpr_r31_ppc64le) || rb != gpr_r1_ppc64le)
     return false;
 
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
   LLDB_LOG(log, "EmulateOR: {0:X+8}: mr r{1}, r{2}", m_addr, ra, rb);
 
   // set context
-  std::optional<RegisterInfo> ra_info = GetRegisterInfo(eRegisterKindLLDB, ra);
-  if (!ra_info)
+  RegisterInfo ra_info;
+  if (!GetRegisterInfo(eRegisterKindLLDB, ra, ra_info))
     return false;
 
   Context ctx;
   ctx.type = eContextSetFramePointer;
-  ctx.SetRegister(*ra_info);
+  ctx.SetRegister(ra_info);
 
   // move
   bool success;
@@ -368,18 +374,17 @@ bool EmulateInstructionPPC64::EmulateADDI(uint32_t opcode) {
     return false;
 
   int32_t si_val = llvm::SignExtend32<16>(si);
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
   LLDB_LOG(log, "EmulateADDI: {0:X+8}: addi r1, r1, {1}", m_addr, si_val);
 
   // set context
-  std::optional<RegisterInfo> r1_info =
-      GetRegisterInfo(eRegisterKindLLDB, gpr_r1_ppc64le);
-  if (!r1_info)
+  RegisterInfo r1_info;
+  if (!GetRegisterInfo(eRegisterKindLLDB, gpr_r1_ppc64le, r1_info))
     return false;
 
   Context ctx;
   ctx.type = eContextRestoreStackPointer;
-  ctx.SetRegisterToRegisterPlusOffset(*r1_info, *r1_info, 0);
+  ctx.SetRegisterToRegisterPlusOffset(r1_info, r1_info, 0);
 
   // adjust SP
   bool success;

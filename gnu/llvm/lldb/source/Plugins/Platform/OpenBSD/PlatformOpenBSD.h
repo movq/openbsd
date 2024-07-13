@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PLATFORM_OPENBSD_PLATFORMOPENBSD_H
-#define LLDB_SOURCE_PLUGINS_PLATFORM_OPENBSD_PLATFORMOPENBSD_H
+#ifndef liblldb_PlatformOpenBSD_h_
+#define liblldb_PlatformOpenBSD_h_
 
 #include "Plugins/Platform/POSIX/PlatformPOSIX.h"
 
@@ -18,6 +18,8 @@ class PlatformOpenBSD : public PlatformPOSIX {
 public:
   PlatformOpenBSD(bool is_host);
 
+  ~PlatformOpenBSD() override;
+
   static void Initialize();
 
   static void Terminate();
@@ -25,27 +27,27 @@ public:
   // lldb_private::PluginInterface functions
   static lldb::PlatformSP CreateInstance(bool force, const ArchSpec *arch);
 
-  static llvm::StringRef GetPluginNameStatic(bool is_host) {
-    return is_host ? Platform::GetHostPlatformName() : "remote-openbsd";
-  }
+  static ConstString GetPluginNameStatic(bool is_host);
 
-  static llvm::StringRef GetPluginDescriptionStatic(bool is_host);
+  static const char *GetPluginDescriptionStatic(bool is_host);
 
-  llvm::StringRef GetPluginName() override {
-    return GetPluginNameStatic(IsHost());
-  }
+  ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override { return 1; }
 
   // lldb_private::Platform functions
-  llvm::StringRef GetDescription() override {
+  const char *GetDescription() override {
     return GetPluginDescriptionStatic(IsHost());
   }
 
   void GetStatus(Stream &strm) override;
 
-  std::vector<ArchSpec>
-  GetSupportedArchitectures(const ArchSpec &process_host_arch) override;
+  bool GetSupportedArchitectureAtIndex(uint32_t idx, ArchSpec &arch) override;
 
   bool CanDebugProcess() override;
+
+  lldb::ProcessSP DebugProcess(ProcessLaunchInfo &launch_info, Debugger &debugger,
+                               Target *target, Status &error) override;
 
   void CalculateTrapHandlerSymbolNames() override;
 
@@ -56,10 +58,11 @@ public:
 
   lldb_private::FileSpec LocateExecutable(const char *basename) override;
 
-  std::vector<ArchSpec> m_supported_architectures;
+private:
+  DISALLOW_COPY_AND_ASSIGN(PlatformOpenBSD);
 };
 
 } // namespace platform_openbsd
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_PLATFORM_OPENBSD_PLATFORMOPENBSD_H
+#endif // liblldb_PlatformOpenBSD_h_

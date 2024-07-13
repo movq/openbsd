@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_INSTRUCTION_MIPS_EMULATEINSTRUCTIONMIPS_H
-#define LLDB_SOURCE_PLUGINS_INSTRUCTION_MIPS_EMULATEINSTRUCTIONMIPS_H
+#ifndef EmulateInstructionMIPS_h_
+#define EmulateInstructionMIPS_h_
 
 namespace llvm {
 class MCDisassembler;
@@ -26,7 +26,6 @@ namespace lldb_private {
 
 #include "lldb/Core/EmulateInstruction.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 class EmulateInstructionMIPS : public lldb_private::EmulateInstruction {
 public:
@@ -34,9 +33,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "mips32"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::EmulateInstruction *
   CreateInstance(const lldb_private::ArchSpec &arch,
@@ -56,7 +55,9 @@ public:
     return false;
   }
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override { return 1; }
 
   bool SetTargetTriple(const lldb_private::ArchSpec &arch) override;
 
@@ -81,8 +82,8 @@ public:
     return false;
   }
 
-  std::optional<lldb_private::RegisterInfo>
-  GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num) override;
+  bool GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num,
+                       lldb_private::RegisterInfo &reg_info) override;
 
   bool
   CreateFunctionEntryUnwind(lldb_private::UnwindPlan &unwind_plan) override;
@@ -94,7 +95,7 @@ protected:
     const char *insn_name;
   } MipsOpcode;
 
-  static MipsOpcode *GetOpcodeForInstruction(llvm::StringRef name);
+  static MipsOpcode *GetOpcodeForInstruction(const char *op_name);
 
   uint32_t GetSizeOfInstruction(lldb_private::DataExtractor &data,
                                 uint64_t inst_addr);
@@ -202,7 +203,7 @@ protected:
 
   bool nonvolatile_reg_p(uint32_t regnum);
 
-  const char *GetRegisterName(unsigned reg_num, bool alternate_name);
+  const char *GetRegisterName(unsigned reg_num, bool altnernate_name);
 
 private:
   std::unique_ptr<llvm::MCDisassembler> m_disasm;
@@ -217,4 +218,4 @@ private:
   bool m_use_alt_disaasm;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_INSTRUCTION_MIPS_EMULATEINSTRUCTIONMIPS_H
+#endif // EmulateInstructionMIPS_h_

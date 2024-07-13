@@ -1,4 +1,4 @@
-//===-- RegisterContextWindows_i386.cpp -----------------------------------===//
+//===-- RegisterContextWindows_i386.cpp -------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -41,6 +41,7 @@ typedef struct _GPR {
 #reg, alt, sizeof(((GPR *)nullptr)->reg), GPR_OFFSET(reg), eEncodingUint,  \
         eFormatHex,                                                            \
         {kind1, kind2, kind3, kind4, lldb_##reg##_i386 }, nullptr, nullptr,    \
+         nullptr, 0                                                            \
   }
 
 // clang-format off
@@ -78,11 +79,11 @@ const RegisterInfo *RegisterContextWindows_i386::GetRegisterInfo() const {
 }
 
 uint32_t RegisterContextWindows_i386::GetRegisterCount() const {
-  return std::size(g_register_infos_i386);
+  return llvm::array_lengthof(g_register_infos_i386);
 }
 
 uint32_t RegisterContextWindows_i386::GetUserRegisterCount() const {
-  return std::size(g_register_infos_i386);
+  return llvm::array_lengthof(g_register_infos_i386);
 }
 
 size_t RegisterContextWindows_i386::GetGPRSize() const { return sizeof(GPR); }

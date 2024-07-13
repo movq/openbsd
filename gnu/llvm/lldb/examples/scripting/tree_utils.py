@@ -18,6 +18,8 @@ for more information about dictionary.c go to
 http://lldb.llvm.org/scripting.html
 """
 
+from __future__ import print_function
+
 
 def DFS(root, word, cur_path):
     """

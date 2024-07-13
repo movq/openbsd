@@ -95,9 +95,6 @@ public:
 };
 
 
-%feature("docstring",
-"Represents a list of :py:class:`SBModuleSpec`."
-) SBModuleSpecList;
 class SBModuleSpecList
 {
 public:

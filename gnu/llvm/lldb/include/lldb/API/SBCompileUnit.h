@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBCOMPILEUNIT_H
-#define LLDB_API_SBCOMPILEUNIT_H
+#ifndef LLDB_SBCompileUnit_h_
+#define LLDB_SBCompileUnit_h_
 
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBFileSpec.h"
@@ -33,9 +33,6 @@ public:
   uint32_t GetNumLineEntries() const;
 
   lldb::SBLineEntry GetLineEntryAtIndex(uint32_t idx) const;
-
-  uint32_t FindLineEntryIndex(lldb::SBLineEntry &line_entry,
-                              bool exact = false) const;
 
   uint32_t FindLineEntryIndex(uint32_t start_idx, uint32_t line,
                               lldb::SBFileSpec *inline_file_spec) const;
@@ -90,9 +87,9 @@ private:
 
   void reset(lldb_private::CompileUnit *lldb_object_ptr);
 
-  lldb_private::CompileUnit *m_opaque_ptr = nullptr;
+  lldb_private::CompileUnit *m_opaque_ptr;
 };
 
 } // namespace lldb
 
-#endif // LLDB_API_SBCOMPILEUNIT_H
+#endif // LLDB_SBCompileUnit_h_

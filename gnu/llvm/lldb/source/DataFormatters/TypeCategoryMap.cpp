@@ -1,4 +1,5 @@
-//===-- TypeCategoryMap.cpp -----------------------------------------------===//
+//===-- TypeCategoryMap.cpp ----------------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -9,8 +10,8 @@
 #include "lldb/DataFormatters/TypeCategoryMap.h"
 
 #include "lldb/DataFormatters/FormatClasses.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+
 
 using namespace lldb;
 using namespace lldb_private;
@@ -154,15 +155,14 @@ bool TypeCategoryMap::Get(uint32_t pos, ValueSP &entry) {
 }
 
 bool TypeCategoryMap::AnyMatches(
-    const FormattersMatchCandidate &candidate_type,
-    TypeCategoryImpl::FormatCategoryItems items, bool only_enabled,
-    const char **matching_category,
+    ConstString type_name, TypeCategoryImpl::FormatCategoryItems items,
+    bool only_enabled, const char **matching_category,
     TypeCategoryImpl::FormatCategoryItems *matching_type) {
   std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
 
   MapIterator pos, end = m_map.end();
   for (pos = m_map.begin(); pos != end; pos++) {
-    if (pos->second->AnyMatches(candidate_type, items, only_enabled,
+    if (pos->second->AnyMatches(type_name, items, only_enabled,
                                 matching_category, matching_type))
       return true;
   }
@@ -173,20 +173,22 @@ template <typename ImplSP>
 void TypeCategoryMap::Get(FormattersMatchData &match_data, ImplSP &retval) {
   std::lock_guard<std::recursive_mutex> guard(m_map_mutex);
 
+  uint32_t reason_why;
   ActiveCategoriesIterator begin, end = m_active_categories.end();
 
-  Log *log = GetLog(LLDBLog::DataFormatters);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_DATAFORMATTERS));
 
   if (log) {
     for (auto match : match_data.GetMatchesVector()) {
       LLDB_LOGF(
           log,
-          "[%s] candidate match = %s %s %s %s",
+          "[%s] candidate match = %s %s %s %s reason = %" PRIu32,
           __FUNCTION__,
           match.GetTypeName().GetCString(),
           match.DidStripPointer() ? "strip-pointers" : "no-strip-pointers",
           match.DidStripReference() ? "strip-reference" : "no-strip-reference",
-          match.DidStripTypedef() ? "strip-typedef" : "no-strip-typedef");
+          match.DidStripTypedef() ? "strip-typedef" : "no-strip-typedef",
+          match.GetReason());
     }
   }
 
@@ -197,7 +199,7 @@ void TypeCategoryMap::Get(FormattersMatchData &match_data, ImplSP &retval) {
               category_sp->GetName());
     if (!category_sp->Get(
             match_data.GetValueObject().GetObjectRuntimeLanguage(),
-            match_data.GetMatchesVector(), current_format))
+            match_data.GetMatchesVector(), current_format, &reason_why))
       continue;
 
     retval = std::move(current_format);

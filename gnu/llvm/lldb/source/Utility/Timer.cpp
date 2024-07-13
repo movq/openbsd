@@ -1,4 +1,4 @@
-//===-- Timer.cpp ---------------------------------------------------------===//
+//===-- Timer.cpp -----------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,8 +7,6 @@
 //===----------------------------------------------------------------------===//
 #include "lldb/Utility/Timer.h"
 #include "lldb/Utility/Stream.h"
-#include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/Signposts.h"
 
 #include <algorithm>
 #include <map>
@@ -16,10 +14,9 @@
 #include <utility>
 #include <vector>
 
-#include <cassert>
-#include <cinttypes>
-#include <cstdarg>
-#include <cstdio>
+#include <assert.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 using namespace lldb_private;
 
@@ -29,9 +26,6 @@ namespace {
 typedef std::vector<Timer *> TimerStack;
 static std::atomic<Timer::Category *> g_categories;
 } // end of anonymous namespace
-
-/// Allows llvm::Timer to emit signposts when supported.
-static llvm::ManagedStatic<llvm::SignpostEmitter> Signposts;
 
 std::atomic<bool> Timer::g_quiet(true);
 std::atomic<unsigned> Timer::g_display_depth(0);
@@ -59,11 +53,10 @@ void Timer::SetQuiet(bool value) { g_quiet = value; }
 
 Timer::Timer(Timer::Category &category, const char *format, ...)
     : m_category(category), m_total_start(std::chrono::steady_clock::now()) {
-  Signposts->startInterval(this, m_category.GetName());
   TimerStack &stack = GetTimerStackForCurrentThread();
 
   stack.push_back(this);
-  if (!g_quiet && stack.size() <= g_display_depth) {
+  if (g_quiet && stack.size() <= g_display_depth) {
     std::lock_guard<std::mutex> lock(GetFileMutex());
 
     // Indent
@@ -86,10 +79,8 @@ Timer::~Timer() {
   auto total_dur = stop_time - m_total_start;
   auto timer_dur = total_dur - m_child_duration;
 
-  Signposts->endInterval(this, m_category.GetName());
-
   TimerStack &stack = GetTimerStackForCurrentThread();
-  if (!g_quiet && stack.size() <= g_display_depth) {
+  if (g_quiet && stack.size() <= g_display_depth) {
     std::lock_guard<std::mutex> lock(GetFileMutex());
     ::fprintf(stdout, "%*s%.9f sec (%.9f sec)\n",
               int(stack.size() - 1) * TIMER_INDENT_AMOUNT, "",
@@ -150,7 +141,7 @@ void Timer::DumpCategoryTimes(Stream *s) {
     return; // Later code will break without any elements.
 
   // Sort by time
-  llvm::sort(sorted, CategoryMapIteratorSortCriterion);
+  llvm::sort(sorted.begin(), sorted.end(), CategoryMapIteratorSortCriterion);
 
   for (const auto &stats : sorted)
     s->Printf("%.9f sec (total: %.3fs; child: %.3fs; count: %" PRIu64

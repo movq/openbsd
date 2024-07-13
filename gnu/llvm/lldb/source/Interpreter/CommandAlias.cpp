@@ -1,4 +1,4 @@
-//===-- CommandAlias.cpp --------------------------------------------------===//
+//===-- CommandAlias.cpp -----------------------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -32,7 +32,7 @@ static bool ProcessAliasOptionsArgs(lldb::CommandObjectSP &cmd_obj_sp,
   std::string options_string(options_args);
   // TODO: Find a way to propagate errors in this CommandReturnObject up the
   // stack.
-  CommandReturnObject result(false);
+  CommandReturnObject result;
   // Check to see if the command being aliased can take any command options.
   Options *options = cmd_obj_sp->GetOptions();
   if (options) {
@@ -47,6 +47,7 @@ static bool ProcessAliasOptionsArgs(lldb::CommandObjectSP &cmd_obj_sp,
     if (!args_or) {
       result.AppendError(toString(args_or.takeError()));
       result.AppendError("Unable to create requested alias.\n");
+      result.SetStatus(eReturnStatusFailed);
       return false;
     }
     args = std::move(*args_or);
@@ -60,12 +61,11 @@ static bool ProcessAliasOptionsArgs(lldb::CommandObjectSP &cmd_obj_sp,
 
   if (!options_string.empty()) {
     if (cmd_obj_sp->WantsRawCommandString())
-      option_arg_vector->emplace_back(CommandInterpreter::g_argument, 
-                                      -1, options_string);
+      option_arg_vector->emplace_back("<argument>", -1, options_string);
     else {
       for (auto &entry : args.entries()) {
         if (!entry.ref().empty())
-          option_arg_vector->emplace_back(std::string(CommandInterpreter::g_argument), -1,
+          option_arg_vector->emplace_back(std::string("<argument>"), -1,
                                           std::string(entry.ref()));
       }
     }
@@ -80,7 +80,7 @@ CommandAlias::CommandAlias(CommandInterpreter &interpreter,
                            llvm::StringRef help, llvm::StringRef syntax,
                            uint32_t flags)
     : CommandObject(interpreter, name, help, syntax, flags),
-      m_option_string(std::string(options_args)),
+      m_underlying_command_sp(), m_option_string(options_args),
       m_option_args_sp(new OptionArgVector),
       m_is_dashdash_alias(eLazyBoolCalculate), m_did_set_help(false),
       m_did_set_help_long(false) {
@@ -154,12 +154,11 @@ void CommandAlias::GetAliasExpansion(StreamString &help_string) const {
 
   for (const auto &opt_entry : *options) {
     std::tie(opt, std::ignore, value) = opt_entry;
-    if (opt == CommandInterpreter::g_argument) {
+    if (opt == "<argument>") {
       help_string.Printf(" %s", value.c_str());
     } else {
       help_string.Printf(" %s", opt.c_str());
-      if ((value != CommandInterpreter::g_no_argument) 
-           && (value != CommandInterpreter::g_need_argument)) {
+      if ((value != "<no-argument>") && (value != "<need-argument")) {
         help_string.Printf(" %s", value.c_str());
       }
     }
@@ -180,7 +179,7 @@ bool CommandAlias::IsDashDashCommand() {
 
   for (const auto &opt_entry : *GetOptionArguments()) {
     std::tie(opt, std::ignore, value) = opt_entry;
-    if (opt == CommandInterpreter::g_argument && !value.empty() &&
+    if (opt == "<argument>" && !value.empty() &&
         llvm::StringRef(value).endswith("--")) {
       m_is_dashdash_alias = eLazyBoolYes;
       break;
@@ -208,8 +207,6 @@ std::pair<lldb::CommandObjectSP, OptionArgVectorSP> CommandAlias::Desugar() {
     return {nullptr, nullptr};
 
   if (underlying->IsAlias()) {
-    // FIXME: This doesn't work if the original alias fills a slot in the
-    // underlying alias, since this just appends the two lists.
     auto desugared = ((CommandAlias *)underlying.get())->Desugar();
     auto options = GetOptionArguments();
     options->insert(options->begin(), desugared.second->begin(),

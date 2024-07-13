@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_BREAKPOINT_BREAKPOINT_H
-#define LLDB_BREAKPOINT_BREAKPOINT_H
+#ifndef liblldb_Breakpoint_h_
+#define liblldb_Breakpoint_h_
 
 #include <memory>
 #include <string>
@@ -20,9 +20,7 @@
 #include "lldb/Breakpoint/BreakpointName.h"
 #include "lldb/Breakpoint/BreakpointOptions.h"
 #include "lldb/Breakpoint/Stoppoint.h"
-#include "lldb/Breakpoint/StoppointHitCounter.h"
 #include "lldb/Core/SearchFilter.h"
-#include "lldb/Target/Statistics.h"
 #include "lldb/Utility/Event.h"
 #include "lldb/Utility/StringList.h"
 #include "lldb/Utility/StructuredData.h"
@@ -81,8 +79,6 @@ class Breakpoint : public std::enable_shared_from_this<Breakpoint>,
                    public Stoppoint {
 public:
   static ConstString GetEventIdentifier();
-  static const char *
-      BreakpointEventTypeAsCString(lldb::BreakpointEventType type);
 
   /// An enum specifying the match style for breakpoint settings.  At present
   /// only used for function name style breakpoints.
@@ -107,14 +103,12 @@ public:
     ~BreakpointEventData() override;
 
     static ConstString GetFlavorString();
-    
-    Log *GetLogChannel() override;
 
     ConstString GetFlavor() const override;
 
     lldb::BreakpointEventType GetBreakpointEventType() const;
 
-    lldb::BreakpointSP GetBreakpoint() const;
+    lldb::BreakpointSP &GetBreakpoint();
 
     BreakpointLocationCollection &GetBreakpointLocationCollection() {
       return m_locations;
@@ -143,14 +137,12 @@ public:
     lldb::BreakpointSP m_new_breakpoint_sp;
     BreakpointLocationCollection m_locations;
 
-    BreakpointEventData(const BreakpointEventData &) = delete;
-    const BreakpointEventData &operator=(const BreakpointEventData &) = delete;
+    DISALLOW_COPY_AND_ASSIGN(BreakpointEventData);
   };
 
   // Saving & restoring breakpoints:
   static lldb::BreakpointSP CreateFromStructuredData(
-      lldb::TargetSP target_sp, StructuredData::ObjectSP &data_object_sp,
-      Status &error);
+      Target &target, StructuredData::ObjectSP &data_object_sp, Status &error);
 
   static bool
   SerializedBreakpointMatchesNames(StructuredData::ObjectSP &bkpt_object_sp,
@@ -330,9 +322,6 @@ public:
   ///     The current hit count for all locations.
   uint32_t GetHitCount() const;
 
-  /// Resets the current hit count for all locations.
-  void ResetHitCount();
-
   /// If \a one_shot is \b true, breakpoint will be deleted on first hit.
   void SetOneShot(bool one_shot);
 
@@ -382,10 +371,7 @@ public:
   /// \param[in] is_synchronous
   ///    If \b true the callback will be run on the private event thread
   ///    before the stop event gets reported.  If false, the callback will get
-  ///    handled on the public event thread while the stop event is being
-  ///    pulled off the event queue.
-  ///    Note: synchronous callbacks cannot cause the target to run, in
-  ///    particular, they should not try to run the expression evaluator.
+  ///    handled on the public event thread after the stop has been posted.
   void SetCallback(BreakpointHitCallback callback, void *baton,
                    bool is_synchronous = false);
 
@@ -492,16 +478,16 @@ public:
   /// Meant to be used by the BreakpointLocation class.
   ///
   /// \return
-  ///     A reference to this breakpoint's BreakpointOptions.
-  BreakpointOptions &GetOptions();
+  ///     A pointer to this breakpoint's BreakpointOptions.
+  BreakpointOptions *GetOptions();
 
   /// Returns the BreakpointOptions structure set at the breakpoint level.
   ///
   /// Meant to be used by the BreakpointLocation class.
   ///
   /// \return
-  ///     A reference to this breakpoint's BreakpointOptions.
-  const BreakpointOptions &GetOptions() const;
+  ///     A pointer to this breakpoint's BreakpointOptions.
+  const BreakpointOptions *GetOptions() const;
 
   /// Invoke the callback action when the breakpoint is hit.
   ///
@@ -556,7 +542,7 @@ public:
   /// if the condition says to stop and false otherwise.
   ///
   void SetPrecondition(lldb::BreakpointPreconditionSP precondition_sp) {
-    m_precondition_sp = std::move(precondition_sp);
+    m_precondition_sp = precondition_sp;
   }
 
   bool EvaluatePrecondition(StoppointCallbackContext &context);
@@ -581,17 +567,6 @@ public:
   bool AllowDelete() const {
     return GetPermissions().GetAllowDelete();
   }
-
-  // This one should only be used by Target to copy breakpoints from target to
-  // target - primarily from the dummy target to prime new targets.
-  static lldb::BreakpointSP CopyFromBreakpoint(lldb::TargetSP new_target,
-      const Breakpoint &bp_to_copy_from);
-
-  /// Get statistics associated with this breakpoint in JSON format.
-  llvm::json::Value GetStatistics();
-
-  /// Get the time it took to resolve all locations in this breakpoint.
-  StatsDuration::Duration GetResolveTime() const { return m_resolve_time; }
 
 protected:
   friend class Target;
@@ -634,9 +609,25 @@ protected:
 
   void DecrementIgnoreCount();
 
+  // BreakpointLocation::IgnoreCountShouldStop &
+  // Breakpoint::IgnoreCountShouldStop can only be called once per stop, and
+  // BreakpointLocation::IgnoreCountShouldStop should be tested first, and if
+  // it returns false we should continue, otherwise we should test
+  // Breakpoint::IgnoreCountShouldStop.
+
+  bool IgnoreCountShouldStop();
+
+  void IncrementHitCount() { m_hit_count++; }
+
+  void DecrementHitCount() {
+    assert(m_hit_count > 0);
+    m_hit_count--;
+  }
+
 private:
-  // To call from CopyFromBreakpoint.
-  Breakpoint(Target &new_target, const Breakpoint &bp_to_copy_from);
+  // This one should only be used by Target to copy breakpoints from target to
+  // target - primarily from the dummy target to prime new targets.
+  Breakpoint(Target &new_target, Breakpoint &bp_to_copy_from);
 
   // For Breakpoint only
   bool m_being_created;
@@ -657,29 +648,25 @@ private:
   // to skip certain breakpoint hits.  For instance, exception breakpoints use
   // this to limit the stop to certain exception classes, while leaving the
   // condition & callback free for user specification.
-  BreakpointOptions m_options; // Settable breakpoint options
+  std::unique_ptr<BreakpointOptions>
+      m_options_up; // Settable breakpoint options
   BreakpointLocationList
       m_locations; // The list of locations currently found for this breakpoint.
   std::string m_kind_description;
   bool m_resolve_indirect_symbols;
-
-  /// Number of times this breakpoint has been hit. This is kept separately
-  /// from the locations hit counts, since locations can go away when their
-  /// backing library gets unloaded, and we would lose hit counts.
-  StoppointHitCounter m_hit_counter;
-
+  uint32_t m_hit_count; // Number of times this breakpoint/watchpoint has been
+                        // hit.  This is kept
+  // separately from the locations hit counts, since locations can go away when
+  // their backing library gets unloaded, and we would lose hit counts.
   BreakpointName::Permissions m_permissions;
-
-  StatsDuration m_resolve_time;
 
   void SendBreakpointChangedEvent(lldb::BreakpointEventType eventKind);
 
   void SendBreakpointChangedEvent(BreakpointEventData *data);
 
-  Breakpoint(const Breakpoint &) = delete;
-  const Breakpoint &operator=(const Breakpoint &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(Breakpoint);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_BREAKPOINT_BREAKPOINT_H
+#endif // liblldb_Breakpoint_h_

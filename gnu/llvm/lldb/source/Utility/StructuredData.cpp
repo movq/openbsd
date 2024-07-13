@@ -1,4 +1,4 @@
-//===-- StructuredData.cpp ------------------------------------------------===//
+//===---------------------StructuredData.cpp ---------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,8 +11,8 @@
 #include "lldb/Utility/Status.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <cerrno>
-#include <cinttypes>
 #include <cstdlib>
+#include <inttypes.h>
 
 using namespace lldb_private;
 using namespace llvm;
@@ -21,8 +21,7 @@ static StructuredData::ObjectSP ParseJSONValue(json::Value &value);
 static StructuredData::ObjectSP ParseJSONObject(json::Object *object);
 static StructuredData::ObjectSP ParseJSONArray(json::Array *array);
 
-StructuredData::ObjectSP
-StructuredData::ParseJSON(const std::string &json_text) {
+StructuredData::ObjectSP StructuredData::ParseJSON(std::string json_text) {
   llvm::Expected<json::Value> value = json::parse(json_text);
   if (!value) {
     llvm::consumeError(value.takeError());
@@ -42,17 +41,7 @@ StructuredData::ParseJSONFromFile(const FileSpec &input_spec, Status &error) {
                                     buffer_or_error.getError().message());
     return return_sp;
   }
-  llvm::Expected<json::Value> value =
-      json::parse(buffer_or_error.get()->getBuffer().str());
-  if (value)
-    return ParseJSONValue(*value);
-  error.SetErrorString(toString(value.takeError()));
-  return StructuredData::ObjectSP();
-}
-
-bool StructuredData::IsRecordType(const ObjectSP object_sp) {
-  return object_sp->GetType() == lldb::eStructuredDataTypeArray ||
-         object_sp->GetType() == lldb::eStructuredDataTypeDictionary;
+  return ParseJSON(buffer_or_error.get()->getBuffer().str());
 }
 
 static StructuredData::ObjectSP ParseJSONValue(json::Value &value) {
@@ -62,20 +51,21 @@ static StructuredData::ObjectSP ParseJSONValue(json::Value &value) {
   if (json::Array *A = value.getAsArray())
     return ParseJSONArray(A);
 
-  if (auto s = value.getAsString())
-    return std::make_shared<StructuredData::String>(*s);
+  std::string s;
+  if (json::fromJSON(value, s))
+    return std::make_shared<StructuredData::String>(s);
 
-  if (auto b = value.getAsBoolean())
-    return std::make_shared<StructuredData::Boolean>(*b);
+  bool b;
+  if (json::fromJSON(value, b))
+    return std::make_shared<StructuredData::Boolean>(b);
 
-  if (auto i = value.getAsInteger())
-    return std::make_shared<StructuredData::Integer>(*i);
+  int64_t i;
+  if (json::fromJSON(value, i))
+    return std::make_shared<StructuredData::Integer>(i);
 
-  if (auto d = value.getAsNumber())
-    return std::make_shared<StructuredData::Float>(*d);
-
-  if (auto n = value.getAsNull())
-    return std::make_shared<StructuredData::Null>();
+  double d;
+  if (json::fromJSON(value, d))
+    return std::make_shared<StructuredData::Float>(d);
 
   return StructuredData::ObjectSP();
 }
@@ -166,7 +156,7 @@ void StructuredData::String::Serialize(json::OStream &s) const {
 void StructuredData::Dictionary::Serialize(json::OStream &s) const {
   s.objectBegin();
   for (const auto &pair : m_dict) {
-    s.attributeBegin(pair.first.GetStringRef());
+    s.attributeBegin(pair.first.AsCString());
     pair.second->Serialize(s);
     s.attributeEnd();
   }
@@ -179,99 +169,4 @@ void StructuredData::Null::Serialize(json::OStream &s) const {
 
 void StructuredData::Generic::Serialize(json::OStream &s) const {
   s.value(llvm::formatv("{0:X}", m_object));
-}
-
-void StructuredData::Integer::GetDescription(lldb_private::Stream &s) const {
-  s.Printf("%" PRId64, static_cast<int64_t>(m_value));
-}
-
-void StructuredData::Float::GetDescription(lldb_private::Stream &s) const {
-  s.Printf("%f", m_value);
-}
-
-void StructuredData::Boolean::GetDescription(lldb_private::Stream &s) const {
-  s.Printf(m_value ? "True" : "False");
-}
-
-void StructuredData::String::GetDescription(lldb_private::Stream &s) const {
-  s.Printf("%s", m_value.empty() ? "\"\"" : m_value.c_str());
-}
-
-void StructuredData::Array::GetDescription(lldb_private::Stream &s) const {
-  size_t index = 0;
-  size_t indentation_level = s.GetIndentLevel();
-  for (const auto &item_sp : m_items) {
-    // Sanitize.
-    if (!item_sp)
-      continue;
-
-    // Reset original indentation level.
-    s.SetIndentLevel(indentation_level);
-    s.Indent();
-
-    // Print key
-    s.Printf("[%zu]:", index++);
-
-    // Return to new line and increase indentation if value is record type.
-    // Otherwise add spacing.
-    bool should_indent = IsRecordType(item_sp);
-    if (should_indent) {
-      s.EOL();
-      s.IndentMore();
-    } else {
-      s.PutChar(' ');
-    }
-
-    // Print value and new line if now last pair.
-    item_sp->GetDescription(s);
-    if (item_sp != *(--m_items.end()))
-      s.EOL();
-
-    // Reset indentation level if it was incremented previously.
-    if (should_indent)
-      s.IndentLess();
-  }
-}
-
-void StructuredData::Dictionary::GetDescription(lldb_private::Stream &s) const {
-  size_t indentation_level = s.GetIndentLevel();
-  for (const auto &pair : m_dict) {
-    // Sanitize.
-    if (pair.first.IsNull() || pair.first.IsEmpty() || !pair.second)
-      continue;
-
-    // Reset original indentation level.
-    s.SetIndentLevel(indentation_level);
-    s.Indent();
-
-    // Print key.
-    s.Printf("%s:", pair.first.AsCString());
-
-    // Return to new line and increase indentation if value is record type.
-    // Otherwise add spacing.
-    bool should_indent = IsRecordType(pair.second);
-    if (should_indent) {
-      s.EOL();
-      s.IndentMore();
-    } else {
-      s.PutChar(' ');
-    }
-
-    // Print value and new line if now last pair.
-    pair.second->GetDescription(s);
-    if (pair != *(--m_dict.end()))
-      s.EOL();
-
-    // Reset indentation level if it was incremented previously.
-    if (should_indent)
-      s.IndentLess();
-  }
-}
-
-void StructuredData::Null::GetDescription(lldb_private::Stream &s) const {
-  s.Printf("NULL");
-}
-
-void StructuredData::Generic::GetDescription(lldb_private::Stream &s) const {
-  s.Printf("%p", m_object);
 }

@@ -6,13 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_LLDB_TYPES_H
-#define LLDB_LLDB_TYPES_H
+#ifndef LLDB_lldb_types_h_
+#define LLDB_lldb_types_h_
 
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
 
-#include <cstdint>
+#include <stdint.h>
 
 // All host systems must define:
 //  lldb::thread_t          The native thread type for spawned threads on the
@@ -89,7 +89,6 @@ typedef int32_t break_id_t;
 typedef int32_t watch_id_t;
 typedef void *opaque_compiler_type_t;
 typedef uint64_t queue_id_t;
-typedef uint32_t cpu_id_t; // CPU core id
 } // namespace lldb
 
-#endif // LLDB_LLDB_TYPES_H
+#endif // LLDB_lldb_types_h_

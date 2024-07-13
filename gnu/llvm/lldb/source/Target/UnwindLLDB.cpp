@@ -17,7 +17,6 @@
 #include "lldb/Target/RegisterContextUnwind.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 
 using namespace lldb;
@@ -102,7 +101,7 @@ bool UnwindLLDB::AddFirstFrame() {
   return true;
 
 unwind_done:
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
   if (log) {
     LLDB_LOGF(log, "th%d Unwind of this thread is complete.",
               m_thread.GetIndexID());
@@ -120,7 +119,7 @@ UnwindLLDB::CursorSP UnwindLLDB::GetOneMoreFrame(ABI *abi) {
   if (m_unwind_complete)
     return nullptr;
 
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
 
   CursorSP prev_frame = m_frames.back();
   uint32_t cur_idx = m_frames.size();
@@ -313,10 +312,11 @@ void UnwindLLDB::UpdateUnwindPlanForFirstFrameIfInvalid(ABI *abi) {
   // Restore status after calling AddOneMoreFrame
   m_unwind_complete = old_m_unwind_complete;
   m_candidate_frame = old_m_candidate_frame;
+  return;
 }
 
 bool UnwindLLDB::AddOneMoreFrame(ABI *abi) {
-  Log *log = GetLog(LLDBLog::Unwind);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_UNWIND));
 
   // Frame zero is a little different
   if (m_frames.empty())
@@ -419,8 +419,6 @@ bool UnwindLLDB::DoGetFrameInfoAtIndex(uint32_t idx, addr_t &cfa, addr_t &pc,
       // in the return address slot of the frame below, so this
       // too behaves like the zeroth frame (i.e. the pc might not
       // be pointing just past a call in it)
-      behaves_like_zeroth_frame = true;
-    } else if (m_frames[idx]->reg_ctx_lldb_sp->BehavesLikeZerothFrame()) {
       behaves_like_zeroth_frame = true;
     } else {
       behaves_like_zeroth_frame = false;

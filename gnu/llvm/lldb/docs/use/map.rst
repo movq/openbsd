@@ -1,7 +1,7 @@
 GDB to LLDB command map
 =======================
 
-Below is a table of GDB commands with their LLDB counterparts. The built in
+Below is a table of GDB commands with the LLDB counterparts. The built in
 GDB-compatibility aliases in LLDB are also listed. The full lldb command names
 are often long, but any unique short form can be used. Instead of "**breakpoint
 set**", "**br se**" is also acceptable.
@@ -58,7 +58,7 @@ Execution Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Launch process <b><code>a.out</code></b> with arguments <b><code>1 2 3</code></b> without having to supply the args every time.</td>
+               <td class="header" colspan="2">Launch a process for with arguments <b><code>a.out 1 2 3</code></b> without having to supply the args every time.</td>
          </tr>
          <tr>
                <td class="content">
@@ -124,7 +124,9 @@ Execution Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Launch a process with arguments <code>&lt;args&gt;</code> in existing terminal <code>/dev/ttys006</code> (macOS only).</td>
+               <td class="header" colspan="2">Launch a process with arguments in existing terminal
+                  <cope>/dev/ttys006 (macOS only).</cope>
+               </td>
          </tr>
          <tr>
                <td class="content">
@@ -197,13 +199,13 @@ Execution Commands
                <td class="content">
                </td>
                <td class="content">
-                  <b>(lldb)</b> process launch -E DEBUG=1
+                  <b>(lldb)</b> process launch -v DEBUG=1
                   <br>
                </td>
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Attach to the process with process ID 123.</td>
+               <td class="header" colspan="2">Attach to a process with process ID 123.</td>
          </tr>
          <tr>
                <td class="content">
@@ -217,7 +219,7 @@ Execution Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Attach to the process named "a.out".</td>
+               <td class="header" colspan="2">Attach to a process named "a.out".</td>
          </tr>
          <tr>
                <td class="content">
@@ -408,22 +410,6 @@ Execution Commands
                </td>
          </tr>
 
-         <tr>
-               <td class="header" colspan="2">Show the current frame and source line.</td>
-         </tr>
-         <tr>
-               <td class="content">
-                  <b>(gdb)</b> frame
-               </td>
-               <td class="content">
-                  <b>(lldb)</b> frame select
-                  <br>
-                  <b>(lldb)</b> f
-                  <br>
-                  <b>(lldb)</b> process status
-               </td>
-         </tr>
-
       </tbody>
    </table>
 
@@ -441,7 +427,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Set a breakpoint at all functions named <b><code>main</code></b>.</td>
+               <td class="header" colspan="2">Set a breakpoint at all functions named <b>main</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -457,7 +443,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Set a breakpoint in file <b><code>test.c</code></b> at line <b>12</b>.</td>
+               <td class="header" colspan="2">Set a breakpoint in file <b>test.c</b> at line <b>12</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -473,7 +459,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Set a breakpoint at all C++ methods whose basename is <b><code>main</code></b>.</td>
+               <td class="header" colspan="2">Set a breakpoint at all C++ methods whose basename is <b>main</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -490,7 +476,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Set a breakpoint at an Objective-C function <b><code>-[NSString stringWithFormat:]</code></b>.</td>
+               <td class="header" colspan="2">Set a breakpoint at and object C function: <b>-[NSString stringWithFormat:]</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -506,7 +492,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Set a breakpoint at all Objective-C methods whose selector is <b><code>count</code></b>.</td>
+               <td class="header" colspan="2">Set a breakpoint at all Objective-C methods whose selector is <b>count</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -539,7 +525,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Ensure that breakpoints by file and line work for <code>#include</code> .c/.cpp/.m files.</td>
+               <td class="header" colspan="2">Ensure that breakpoints by file and line work for #included .c/.cpp/.m files.</td>
          </tr>
 
          <tr>
@@ -575,7 +561,7 @@ Breakpoint Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Set a conditional breakpoint.</td>
+               <td class="header" colspan="2">Set a conditional breakpoint</td>
          </tr>
 
          <tr>
@@ -619,38 +605,6 @@ Breakpoint Commands
                   <b>(lldb)</b> breakpoint delete 1
                   <br>
                   <b>(lldb)</b> br del 1
-                  <br>
-               </td>
-         </tr>
-
-         <tr>
-               <td class="header" colspan="2">Disable a breakpoint.</td>
-         </tr>
-         <tr>
-               <td class="content">
-                  <b>(gdb)</b> disable 1
-                  <br>
-               </td>
-               <td class="content">
-                  <b>(lldb)</b> breakpoint disable 1
-                  <br>
-                  <b>(lldb)</b> br dis 1
-                  <br>
-               </td>
-         </tr>
-
-         <tr>
-               <td class="header" colspan="2">Enable a breakpoint.</td>
-         </tr>
-         <tr>
-               <td class="content">
-                  <b>(gdb)</b> enable 1
-                  <br>
-               </td>
-               <td class="content">
-                  <b>(lldb)</b> breakpoint enable 1
-                  <br>
-                  <b>(lldb)</b> br en 1
                   <br>
                </td>
          </tr>
@@ -899,7 +853,7 @@ Examining Variables
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Display the variables "argc" and "argv" only when you stop in the function named <b><code>main</code></b>.</td>
+               <td class="header" colspan="2">Display the variables "argc" and "argv" only when you stop in the function named <b>main</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -913,7 +867,7 @@ Examining Variables
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Display the variable "*this" only when you stop in c class named <b><code>MyClass</code></b>.</td>
+               <td class="header" colspan="2">Display the variable "*this" only when you stop in c class named <b>MyClass</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1041,7 +995,7 @@ Evaluating Expressions
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Call a function so you can stop at a breakpoint in it.</td>
+               <td class="header" colspan="2">Calling a function so you can stop at a breakpoint in the function.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1057,7 +1011,7 @@ Evaluating Expressions
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Call a function that crashes, then stop when it does.</td>
+               <td class="header" colspan="2">Calling a function that crashes, and stopping when the function crashes.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1290,7 +1244,7 @@ Examining Thread State
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Show the general purpose registers for the current thread formatted as <b>signed decimal</b>. LLDB tries to use the same format characters as <b><code>printf(3)</code></b> when possible. Type "help format" to see the full list of format specifiers.</td>
+               <td class="header" colspan="2">Show the general purpose registers for the current thread formatted as <b>signed decimal</b>. LLDB tries to use the same format characters as <b>printf(3)</b> when possible. Type "help format" to see the full list of format specifiers.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1362,7 +1316,7 @@ Examining Thread State
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Read memory from address 0xbffff3c0 and show 4 hex <code>uint32_t</code> values.</td>
+               <td class="header" colspan="2">Read memory from address 0xbffff3c0 and show 4 hex uint32_t values.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1407,7 +1361,7 @@ Examining Thread State
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Read 512 bytes of memory from address 0xbffff3c0 and save the results to a local file as <b>text</b>.</td>
+               <td class="header" colspan="2">Read 512 bytes of memory from address 0xbffff3c0 and save results to a local file as <b>text</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1514,7 +1468,7 @@ Examining Thread State
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Disassemble any functions named <b><code>main</code></b>.</td>
+               <td class="header" colspan="2">Disassemble any functions named <b>main</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1685,7 +1639,7 @@ Executable and Shared Library Query Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Look up information for an address in <b><code>a.out</code></b> only.</td>
+               <td class="header" colspan="2">Look up information for an address in <b>a.out</b> only.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1729,7 +1683,7 @@ Executable and Shared Library Query Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Dump all sections in the <b><code>a.out</code></b> module.</td>
+               <td class="header" colspan="2">Dump all sections in the <b>a.out</b> module.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1753,7 +1707,7 @@ Executable and Shared Library Query Commands
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Dump all symbols in <b><code>a.out</code></b> and <b><code>liba.so</code></b>.</td>
+               <td class="header" colspan="2">Dump all symbols in <b>a.out</b> and <b>liba.so</b>.</td>
          </tr>
          <tr>
                <td class="content">
@@ -1808,7 +1762,7 @@ Miscellaneous
          </tr>
 
          <tr>
-               <td class="header" colspan="2">Remap source file pathnames for the debug session.  If your source files are no longer located in the same location as when the program was built (for example, if the program was built on a different computer) you need to tell the debugger how to find the sources at their local file path instead of the build system's file path.</td>
+               <td class="header" colspan="2">Remap source file pathnames for the debug session. If your source files are no longer located in the same location as when the program was built --- maybe the program was built on a different computer --- you need to tell the debugger how to find the sources at their local file path instead of the build system's file path.</td>
          </tr>
          <tr>
                <td class="content">

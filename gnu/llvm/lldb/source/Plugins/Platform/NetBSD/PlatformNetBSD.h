@@ -6,11 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PLATFORM_NETBSD_PLATFORMNETBSD_H
-#define LLDB_SOURCE_PLUGINS_PLATFORM_NETBSD_PLATFORMNETBSD_H
+#ifndef liblldb_PlatformNetBSD_h_
+#define liblldb_PlatformNetBSD_h_
 
 #include "Plugins/Platform/POSIX/PlatformPOSIX.h"
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 
 namespace lldb_private {
 namespace platform_netbsd {
@@ -19,6 +18,8 @@ class PlatformNetBSD : public PlatformPOSIX {
 public:
   PlatformNetBSD(bool is_host);
 
+  ~PlatformNetBSD() override;
+
   static void Initialize();
 
   static void Terminate();
@@ -26,29 +27,30 @@ public:
   // lldb_private::PluginInterface functions
   static lldb::PlatformSP CreateInstance(bool force, const ArchSpec *arch);
 
-  static llvm::StringRef GetPluginNameStatic(bool is_host) {
-    return is_host ? Platform::GetHostPlatformName() : "remote-netbsd";
-  }
+  static ConstString GetPluginNameStatic(bool is_host);
 
-  static llvm::StringRef GetPluginDescriptionStatic(bool is_host);
+  static const char *GetPluginDescriptionStatic(bool is_host);
 
-  llvm::StringRef GetPluginName() override {
-    return GetPluginNameStatic(IsHost());
-  }
+  ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override { return 1; }
 
   // lldb_private::Platform functions
-  llvm::StringRef GetDescription() override {
+  const char *GetDescription() override {
     return GetPluginDescriptionStatic(IsHost());
   }
 
   void GetStatus(Stream &strm) override;
 
-  std::vector<ArchSpec>
-  GetSupportedArchitectures(const ArchSpec &process_host_arch) override;
+  bool GetSupportedArchitectureAtIndex(uint32_t idx, ArchSpec &arch) override;
 
-  uint32_t GetResumeCountForLaunchInfo(ProcessLaunchInfo &launch_info) override;
+  int32_t GetResumeCountForLaunchInfo(ProcessLaunchInfo &launch_info) override;
 
   bool CanDebugProcess() override;
+
+  lldb::ProcessSP DebugProcess(ProcessLaunchInfo &launch_info,
+                               Debugger &debugger, Target *target,
+                               Status &error) override;
 
   void CalculateTrapHandlerSymbolNames() override;
 
@@ -57,16 +59,11 @@ public:
                                   unsigned flags, lldb::addr_t fd,
                                   lldb::addr_t offset) override;
 
-  CompilerType GetSiginfoType(const llvm::Triple &triple) override;
-
-  std::vector<ArchSpec> m_supported_architectures;
-
 private:
-  std::mutex m_mutex;
-  std::shared_ptr<TypeSystemClang> m_type_system;
+  DISALLOW_COPY_AND_ASSIGN(PlatformNetBSD);
 };
 
 } // namespace platform_netbsd
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_PLATFORM_NETBSD_PLATFORMNETBSD_H
+#endif // liblldb_PlatformNetBSD_h_

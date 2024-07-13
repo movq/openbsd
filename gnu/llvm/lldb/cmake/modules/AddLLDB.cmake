@@ -1,5 +1,3 @@
-include(GNUInstallDirs)
-
 function(lldb_tablegen)
   # Syntax:
   # lldb_tablegen output-file [tablegen-arg ...] SOURCE source-file
@@ -105,7 +103,7 @@ function(add_lldb_library name)
   # this may result in the wrong install DESTINATION. The FRAMEWORK property
   # must be set earlier.
   if(PARAM_FRAMEWORK)
-    set_target_properties(${name} PROPERTIES FRAMEWORK ON)
+    set_target_properties(liblldb PROPERTIES FRAMEWORK ON)
   endif()
 
   if(PARAM_SHARED)
@@ -115,7 +113,7 @@ function(add_lldb_library name)
     endif()
     # RUNTIME is relevant for DLL platforms, FRAMEWORK for macOS
     install(TARGETS ${name} COMPONENT ${name}
-      RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+      RUNTIME DESTINATION bin
       LIBRARY DESTINATION ${install_dest}
       ARCHIVE DESTINATION ${install_dest}
       FRAMEWORK DESTINATION ${install_dest})
@@ -243,16 +241,6 @@ function(lldb_add_to_buildtree_lldb_framework name subdir)
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${name}> ${copy_dest}
     COMMENT "Copy ${name} to ${copy_dest}"
   )
-
-  # Create a custom target to remove the copy again from LLDB.framework in the
-  # build tree.
-  # Intentionally use remove_directory because the target can be a either a
-  # file or directory and using remove_directory is harmless for files.
-  add_custom_target(${name}-cleanup
-    COMMAND ${CMAKE_COMMAND} -E remove_directory ${copy_dest}
-    COMMENT "Removing ${name} from LLDB.framework")
-  add_dependencies(lldb-framework-cleanup
-    ${name}-cleanup)
 endfunction()
 
 # Add extra install steps for dSYM creation and stripping for the given target.
@@ -288,21 +276,19 @@ function(lldb_add_post_install_steps_darwin name install_prefix)
   endif()
 
   # Generate dSYM
-  if(NOT LLDB_SKIP_DSYM)
-    set(dsym_name ${output_name}.dSYM)
-    if(is_framework)
-      set(dsym_name ${output_name}.framework.dSYM)
-    endif()
-    if(LLDB_DEBUGINFO_INSTALL_PREFIX)
-      # This makes the path absolute, so we must respect DESTDIR.
-      set(dsym_name "\$ENV\{DESTDIR\}${LLDB_DEBUGINFO_INSTALL_PREFIX}/${dsym_name}")
-    endif()
-
-    set(buildtree_name ${buildtree_dir}/${bundle_subdir}${output_name})
-    install(CODE "message(STATUS \"Externalize debuginfo: ${dsym_name}\")" COMPONENT ${name})
-    install(CODE "execute_process(COMMAND xcrun dsymutil -o=${dsym_name} ${buildtree_name})"
-            COMPONENT ${name})
+  set(dsym_name ${output_name}.dSYM)
+  if(is_framework)
+    set(dsym_name ${output_name}.framework.dSYM)
   endif()
+  if(LLDB_DEBUGINFO_INSTALL_PREFIX)
+    # This makes the path absolute, so we must respect DESTDIR.
+    set(dsym_name "\$ENV\{DESTDIR\}${LLDB_DEBUGINFO_INSTALL_PREFIX}/${dsym_name}")
+  endif()
+
+  set(buildtree_name ${buildtree_dir}/${bundle_subdir}${output_name})
+  install(CODE "message(STATUS \"Externalize debuginfo: ${dsym_name}\")" COMPONENT ${name})
+  install(CODE "execute_process(COMMAND xcrun dsymutil -o=${dsym_name} ${buildtree_name})"
+          COMPONENT ${name})
 
   if(NOT LLDB_SKIP_STRIP)
     # Strip distribution binary with -ST (removing debug symbol table entries and
@@ -350,17 +336,3 @@ function(lldb_find_system_debugserver path)
     endif()
   endif()
 endfunction()
-
-# Removes all module flags from the current CMAKE_CXX_FLAGS. Used for
-# the Objective-C++ code in lldb which we don't want to build with modules.
-# Reasons for this are that modules with Objective-C++ would require that
-# all LLVM/Clang modules are Objective-C++ compatible (which they are likely
-# not) and we would have rebuild a second set of modules just for the few
-# Objective-C++ files in lldb (which slows down the build process).
-macro(remove_module_flags)
-  string(REGEX REPLACE "-fmodules-cache-path=[^ ]+" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  string(REGEX REPLACE "-fmodules-local-submodule-visibility" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  string(REGEX REPLACE "-fmodules" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  string(REGEX REPLACE "-gmodules" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  string(REGEX REPLACE "-fcxx-modules" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-endmacro()

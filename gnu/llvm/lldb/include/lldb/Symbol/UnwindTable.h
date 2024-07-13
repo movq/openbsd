@@ -6,12 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_UNWINDTABLE_H
-#define LLDB_SYMBOL_UNWINDTABLE_H
+#ifndef liblldb_UnwindTable_h
+#define liblldb_UnwindTable_h
 
 #include <map>
 #include <mutex>
-#include <optional>
 
 #include "lldb/lldb-private.h"
 
@@ -61,8 +60,8 @@ private:
   void Dump(Stream &s);
 
   void Initialize();
-  std::optional<AddressRange> GetAddressRange(const Address &addr,
-                                              SymbolContext &sc);
+  llvm::Optional<AddressRange> GetAddressRange(const Address &addr,
+                                               SymbolContext &sc);
 
   typedef std::map<lldb::addr_t, lldb::FuncUnwindersSP> collection;
   typedef collection::iterator iterator;
@@ -80,10 +79,9 @@ private:
   std::unique_ptr<CompactUnwindInfo> m_compact_unwind_up;
   std::unique_ptr<ArmUnwindInfo> m_arm_unwind_up;
 
-  UnwindTable(const UnwindTable &) = delete;
-  const UnwindTable &operator=(const UnwindTable &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(UnwindTable);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_UNWINDTABLE_H
+#endif // liblldb_UnwindTable_h

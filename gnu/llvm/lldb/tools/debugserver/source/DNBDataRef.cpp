@@ -12,8 +12,8 @@
 
 #include "DNBDataRef.h"
 #include "DNBLog.h"
-#include <cassert>
-#include <cctype>
+#include <assert.h>
+#include <ctype.h>
 #include <libkern/OSByteOrder.h>
 
 // Constructor
@@ -32,7 +32,7 @@ DNBDataRef::DNBDataRef(const uint8_t *start, size_t size, bool swap)
 
 // Destructor
 
-DNBDataRef::~DNBDataRef() = default;
+DNBDataRef::~DNBDataRef() {}
 
 // Get8
 uint8_t DNBDataRef::Get8(offset_t *offset_ptr) const {

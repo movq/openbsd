@@ -1,4 +1,4 @@
-//===-- TypeList.cpp ------------------------------------------------------===//
+//===-- TypeList.cpp --------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -22,7 +22,7 @@ using namespace lldb_private;
 TypeList::TypeList() : m_types() {}
 
 // Destructor
-TypeList::~TypeList() = default;
+TypeList::~TypeList() {}
 
 void TypeList::Insert(const TypeSP &type_sp) {
   // Just push each type on the back for now. We will worry about uniquing
@@ -92,12 +92,12 @@ void TypeList::ForEach(
 }
 
 void TypeList::Dump(Stream *s, bool show_context) {
-  for (iterator pos = m_types.begin(), end = m_types.end(); pos != end; ++pos)
-    if (Type *t = pos->get())
-      t->Dump(s, show_context);
+  for (iterator pos = m_types.begin(), end = m_types.end(); pos != end; ++pos) {
+    pos->get()->Dump(s, show_context);
+  }
 }
 
-void TypeList::RemoveMismatchedTypes(llvm::StringRef qualified_typename,
+void TypeList::RemoveMismatchedTypes(const char *qualified_typename,
                                      bool exact_match) {
   llvm::StringRef type_scope;
   llvm::StringRef type_basename;
@@ -111,8 +111,8 @@ void TypeList::RemoveMismatchedTypes(llvm::StringRef qualified_typename,
                                exact_match);
 }
 
-void TypeList::RemoveMismatchedTypes(llvm::StringRef type_scope,
-                                     llvm::StringRef type_basename,
+void TypeList::RemoveMismatchedTypes(const std::string &type_scope,
+                                     const std::string &type_basename,
                                      TypeClass type_class, bool exact_match) {
   // Our "collection" type currently is a std::map which doesn't have any good
   // way to iterate and remove items from the map so we currently just make a

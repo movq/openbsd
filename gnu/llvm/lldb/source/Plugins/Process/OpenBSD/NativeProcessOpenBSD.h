@@ -37,8 +37,6 @@ public:
     llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
     Attach(lldb::pid_t pid, NativeDelegate &native_delegate,
            MainLoop &mainloop) const override;
-
-    Extension GetSupportedExtensions() const override;
   };
 
   // ---------------------------------------------------------------------
@@ -63,9 +61,10 @@ public:
   Status WriteMemory(lldb::addr_t addr, const void *buf, size_t size,
                      size_t &bytes_written) override;
 
-  llvm::Expected<lldb::addr_t> AllocateMemory(size_t size, uint32_t permissions) override;
+  Status AllocateMemory(size_t size, uint32_t permissions,
+                        lldb::addr_t &addr) override;
 
-  llvm::Error DeallocateMemory(lldb::addr_t addr) override;
+  Status DeallocateMemory(lldb::addr_t addr) override;
 
   lldb::addr_t GetSharedLibraryInfoAddress() override;
 

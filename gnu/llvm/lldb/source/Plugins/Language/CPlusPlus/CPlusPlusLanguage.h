@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGE_CPLUSPLUS_CPLUSPLUSLANGUAGE_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGE_CPLUSPLUS_CPLUSPLUSLANGUAGE_H
+#ifndef liblldb_CPlusPlusLanguage_h_
+#define liblldb_CPlusPlusLanguage_h_
 
 #include <set>
 #include <vector>
@@ -28,7 +28,8 @@ public:
   class MethodName {
   public:
     MethodName()
-        : m_full(), m_basename(), m_context(), m_arguments(), m_qualifiers() {}
+        : m_full(), m_basename(), m_context(), m_arguments(), m_qualifiers(),
+          m_parsed(false), m_parse_error(false) {}
 
     MethodName(ConstString s)
         : m_full(s), m_basename(), m_context(), m_arguments(), m_qualifiers(),
@@ -56,43 +57,19 @@ public:
 
     llvm::StringRef GetQualifiers();
 
-    /// Returns the methods return-type.
-    ///
-    /// Currently returns an empty llvm::StringRef
-    /// if the return-type is a function pointer.
-    llvm::StringRef GetReturnType();
-
-    bool ContainsPath(llvm::StringRef path);
-
-  private:
-    /// Returns the Basename of this method without a template parameter
-    /// list, if any.
-    ///
-    // Examples:
-    //
-    //   +--------------------------------+---------+
-    //   | MethodName                     | Returns |
-    //   +--------------------------------+---------+
-    //   | void func()                    | func    |
-    //   | void func<int>()               | func    |
-    //   | void func<std::vector<int>>()  | func    |
-    //   +--------------------------------+---------+
-    llvm::StringRef GetBasenameNoTemplateParameters();
-
   protected:
     void Parse();
     bool TrySimplifiedParse();
 
     ConstString m_full; // Full name:
-                        // "size_t lldb::SBTarget::GetBreakpointAtIndex(unsigned
-                        // int) const"
-    llvm::StringRef m_basename;    // Basename:     "GetBreakpointAtIndex"
-    llvm::StringRef m_context;     // Decl context: "lldb::SBTarget"
-    llvm::StringRef m_arguments;   // Arguments:    "(unsigned int)"
-    llvm::StringRef m_qualifiers;  // Qualifiers:   "const"
-    llvm::StringRef m_return_type; // Return type:  "size_t"
-    bool m_parsed = false;
-    bool m_parse_error = false;
+                        // "lldb::SBTarget::GetBreakpointAtIndex(unsigned int)
+                        // const"
+    llvm::StringRef m_basename;   // Basename:     "GetBreakpointAtIndex"
+    llvm::StringRef m_context;    // Decl context: "lldb::SBTarget"
+    llvm::StringRef m_arguments;  // Arguments:    "(unsigned int)"
+    llvm::StringRef m_qualifiers; // Qualifiers:   "const"
+    bool m_parsed;
+    bool m_parse_error;
   };
 
   CPlusPlusLanguage() = default;
@@ -111,10 +88,6 @@ public:
   HardcodedFormatters::HardcodedSyntheticFinder
   GetHardcodedSynthetics() override;
 
-  bool IsNilReference(ValueObject &valobj) override;
-
-  llvm::StringRef GetNilReferenceSummaryString() override { return "nullptr"; }
-
   bool IsSourceFile(llvm::StringRef file_path) const override;
 
   const Highlighter *GetHighlighter() const override { return &m_highlighter; }
@@ -126,20 +99,7 @@ public:
 
   static lldb_private::Language *CreateInstance(lldb::LanguageType language);
 
-  static llvm::StringRef GetPluginNameStatic() { return "cplusplus"; }
-
-  bool SymbolNameFitsToLanguage(Mangled mangled) const override;
-  
-  bool DemangledNameContainsPath(llvm::StringRef path, 
-                                 ConstString demangled) const override;
-
-  ConstString
-  GetDemangledFunctionNameWithoutArguments(Mangled mangled) const override;
-
-  bool GetFunctionDisplayName(const SymbolContext *sc,
-                              const ExecutionContext *exe_ctx,
-                              FunctionNameRepresentation representation,
-                              Stream &s) override;
+  static lldb_private::ConstString GetPluginNameStatic();
 
   static bool IsCPPMangledName(llvm::StringRef name);
 
@@ -159,16 +119,18 @@ public:
                                           llvm::StringRef &context,
                                           llvm::StringRef &identifier);
 
-  std::vector<ConstString>
-  GenerateAlternateFunctionManglings(const ConstString mangled) const override;
-
-  ConstString FindBestAlternateFunctionMangledName(
-      const Mangled mangled, const SymbolContext &sym_ctx) const override;
+  // Given a mangled function name, calculates some alternative manglings since
+  // the compiler mangling may not line up with the symbol we are expecting
+  static uint32_t
+  FindAlternateFunctionManglings(const ConstString mangled,
+                                 std::set<ConstString> &candidates);
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGE_CPLUSPLUS_CPLUSPLUSLANGUAGE_H
+#endif // liblldb_CPlusPlusLanguage_h_

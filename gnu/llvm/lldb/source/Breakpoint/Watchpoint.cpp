@@ -1,4 +1,4 @@
-//===-- Watchpoint.cpp ----------------------------------------------------===//
+//===-- Watchpoint.cpp ------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,7 +17,6 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/ThreadSpec.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Stream.h"
 
@@ -26,11 +25,12 @@ using namespace lldb_private;
 
 Watchpoint::Watchpoint(Target &target, lldb::addr_t addr, uint32_t size,
                        const CompilerType *type, bool hardware)
-    : StoppointSite(0, addr, size, hardware), m_target(target),
+    : StoppointLocation(0, addr, size, hardware), m_target(target),
       m_enabled(false), m_is_hardware(hardware), m_is_watch_variable(false),
       m_is_ephemeral(false), m_disabled_count(0), m_watch_read(0),
       m_watch_write(0), m_watch_was_read(0), m_watch_was_written(0),
-      m_ignore_count(0), m_false_alarms(0), m_being_created(true) {
+      m_ignore_count(0), m_false_alarms(0), m_decl_str(), m_watch_spec_str(),
+      m_type(), m_error(), m_options(), m_being_created(true) {
 
   if (type && type->IsValid())
     m_type = *type;
@@ -40,15 +40,12 @@ Watchpoint::Watchpoint(Target &target, lldb::addr_t addr, uint32_t size,
     auto type_system_or_err =
         target.GetScratchTypeSystemForLanguage(eLanguageTypeC);
     if (auto err = type_system_or_err.takeError()) {
-      LLDB_LOG_ERROR(GetLog(LLDBLog::Watchpoints), std::move(err),
-                     "Failed to set type.");
+      LLDB_LOG_ERROR(
+          lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_WATCHPOINTS),
+          std::move(err), "Failed to set type.");
     } else {
-      if (auto ts = *type_system_or_err)
-        m_type =
-            ts->GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, 8 * size);
-      else
-        LLDB_LOG_ERROR(GetLog(LLDBLog::Watchpoints), std::move(err),
-                       "Failed to set type. Typesystem is no longer live.");
+      m_type = type_system_or_err->GetBuiltinTypeForEncodingAndBitSize(
+          eEncodingUint, 8 * size);
     }
   }
 
@@ -96,10 +93,9 @@ void Watchpoint::SetWatchSpec(const std::string &str) {
   m_watch_spec_str = str;
 }
 
-bool Watchpoint::IsHardware() const {
-  lldbassert(m_is_hardware || !HardwareRequired());
-  return m_is_hardware;
-}
+// Override default impl of StoppointLocation::IsHardware() since m_is_hardware
+// member field is more accurate.
+bool Watchpoint::IsHardware() const { return m_is_hardware; }
 
 bool Watchpoint::IsWatchVariable() const { return m_is_watch_variable; }
 
@@ -127,12 +123,12 @@ bool Watchpoint::CaptureWatchedValue(const ExecutionContext &exe_ctx) {
 void Watchpoint::IncrementFalseAlarmsAndReviseHitCount() {
   ++m_false_alarms;
   if (m_false_alarms) {
-    if (m_hit_counter.GetValue() >= m_false_alarms) {
-      m_hit_counter.Decrement(m_false_alarms);
+    if (m_hit_count >= m_false_alarms) {
+      m_hit_count -= m_false_alarms;
       m_false_alarms = 0;
     } else {
-      m_false_alarms -= m_hit_counter.GetValue();
-      m_hit_counter.Reset();
+      m_false_alarms -= m_hit_count;
+      m_hit_count = 0;
     }
   }
 }
@@ -141,7 +137,7 @@ void Watchpoint::IncrementFalseAlarmsAndReviseHitCount() {
 // should continue.
 
 bool Watchpoint::ShouldStop(StoppointCallbackContext *context) {
-  m_hit_counter.Increment();
+  IncrementHitCount();
 
   return IsEnabled();
 }
@@ -333,7 +329,8 @@ void Watchpoint::SendWatchpointChangedEvent(WatchpointEventData *data) {
 
 Watchpoint::WatchpointEventData::WatchpointEventData(
     WatchpointEventType sub_type, const WatchpointSP &new_watchpoint_sp)
-    : m_watchpoint_event(sub_type), m_new_watchpoint_sp(new_watchpoint_sp) {}
+    : EventData(), m_watchpoint_event(sub_type),
+      m_new_watchpoint_sp(new_watchpoint_sp) {}
 
 Watchpoint::WatchpointEventData::~WatchpointEventData() = default;
 

@@ -6,13 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_BREAKPOINT_WATCHPOINT_H
-#define LLDB_BREAKPOINT_WATCHPOINT_H
+#ifndef liblldb_Watchpoint_h_
+#define liblldb_Watchpoint_h_
 
 #include <memory>
 #include <string>
 
-#include "lldb/Breakpoint/StoppointSite.h"
+#include "lldb/Breakpoint/StoppointLocation.h"
 #include "lldb/Breakpoint/WatchpointOptions.h"
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Target/Target.h"
@@ -22,7 +22,7 @@
 namespace lldb_private {
 
 class Watchpoint : public std::enable_shared_from_this<Watchpoint>,
-                   public StoppointSite {
+                   public StoppointLocation {
 public:
   class WatchpointEventData : public EventData {
   public:
@@ -54,8 +54,7 @@ public:
     lldb::WatchpointEventType m_watchpoint_event;
     lldb::WatchpointSP m_new_watchpoint_sp;
 
-    WatchpointEventData(const WatchpointEventData &) = delete;
-    const WatchpointEventData &operator=(const WatchpointEventData &) = delete;
+    DISALLOW_COPY_AND_ASSIGN(WatchpointEventData);
   };
 
   Watchpoint(Target &target, lldb::addr_t addr, uint32_t size,
@@ -75,7 +74,7 @@ public:
   bool IsHardware() const override;
 
   bool ShouldStop(StoppointCallbackContext *context) override;
-  
+
   bool WatchpointRead() const;
   bool WatchpointWrite() const;
   uint32_t GetIgnoreCount() const;
@@ -157,14 +156,13 @@ public:
 private:
   friend class Target;
   friend class WatchpointList;
-  friend class StopInfoWatchpoint; // This needs to call UndoHitCount()
+
+  void ResetHitCount() { m_hit_count = 0; }
 
   void ResetHistoricValues() {
-    m_old_value_sp.reset();
-    m_new_value_sp.reset();
+    m_old_value_sp.reset(nullptr);
+    m_new_value_sp.reset(nullptr);
   }
-
-  void UndoHitCount() { m_hit_counter.Decrement(); }
 
   Target &m_target;
   bool m_enabled;           // Is this watchpoint enabled
@@ -200,16 +198,15 @@ private:
 
   std::unique_ptr<UserExpression> m_condition_up; // The condition to test.
 
-  void SetID(lldb::watch_id_t id) { m_id = id; }
+  void SetID(lldb::watch_id_t id) { m_loc_id = id; }
 
   void SendWatchpointChangedEvent(lldb::WatchpointEventType eventKind);
 
   void SendWatchpointChangedEvent(WatchpointEventData *data);
 
-  Watchpoint(const Watchpoint &) = delete;
-  const Watchpoint &operator=(const Watchpoint &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(Watchpoint);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_BREAKPOINT_WATCHPOINT_H
+#endif // liblldb_Watchpoint_h_

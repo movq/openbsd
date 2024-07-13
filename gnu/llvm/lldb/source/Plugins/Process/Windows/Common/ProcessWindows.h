@@ -25,16 +25,18 @@ public:
   // Static functions.
   static lldb::ProcessSP CreateInstance(lldb::TargetSP target_sp,
                                         lldb::ListenerSP listener_sp,
-                                        const FileSpec *,
-                                        bool can_connect);
+                                        const FileSpec *);
 
   static void Initialize();
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "windows"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
+
+  // Constructors and destructors
+  ProcessWindows(lldb::TargetSP target_sp, lldb::ListenerSP listener_sp);
 
   ~ProcessWindows();
 
@@ -42,7 +44,9 @@ public:
   size_t GetSTDERR(char *buf, size_t buf_size, Status &error) override;
   size_t PutSTDIN(const char *buf, size_t buf_size, Status &error) override;
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  // lldb_private::Process overrides
+  ConstString GetPluginName() override;
+  uint32_t GetPluginVersion() override;
 
   Status EnableBreakpointSite(BreakpointSite *bp_site) override;
   Status DisableBreakpointSite(BreakpointSite *bp_site) override;
@@ -64,11 +68,9 @@ public:
   bool CanDebug(lldb::TargetSP target_sp,
                 bool plugin_specified_by_name) override;
   bool DestroyRequiresHalt() override { return false; }
-  bool DoUpdateThreadList(ThreadList &old_thread_list,
-                          ThreadList &new_thread_list) override;
+  bool UpdateThreadList(ThreadList &old_thread_list,
+                        ThreadList &new_thread_list) override;
   bool IsAlive() override;
-
-  ArchSpec GetSystemArchitecture() override;
 
   size_t DoReadMemory(lldb::addr_t vm_addr, void *buf, size_t size,
                       Status &error) override;
@@ -77,6 +79,8 @@ public:
   lldb::addr_t DoAllocateMemory(size_t size, uint32_t permissions,
                                 Status &error) override;
   Status DoDeallocateMemory(lldb::addr_t ptr) override;
+  Status GetMemoryRegionInfo(lldb::addr_t vm_addr,
+                             MemoryRegionInfo &info) override;
 
   lldb::addr_t GetImageInfoAddress() override;
 
@@ -99,12 +103,6 @@ public:
   Status GetWatchpointSupportInfo(uint32_t &num, bool &after) override;
   Status EnableWatchpoint(Watchpoint *wp, bool notify = true) override;
   Status DisableWatchpoint(Watchpoint *wp, bool notify = true) override;
-
-protected:
-  ProcessWindows(lldb::TargetSP target_sp, lldb::ListenerSP listener_sp);
-
-  Status DoGetMemoryRegionInfo(lldb::addr_t vm_addr,
-                               MemoryRegionInfo &info) override;
 
 private:
   struct WatchpointInfo {

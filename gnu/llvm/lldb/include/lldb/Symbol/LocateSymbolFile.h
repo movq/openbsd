@@ -6,15 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_LOCATESYMBOLFILE_H
-#define LLDB_SYMBOL_LOCATESYMBOLFILE_H
+#ifndef liblldb_Symbols_h_
+#define liblldb_Symbols_h_
 
-#include <cstdint>
+#include <stdint.h>
 
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Utility/FileSpec.h"
-#include "lldb/Utility/Status.h"
-#include "lldb/lldb-forward.h"
 
 namespace lldb_private {
 
@@ -52,18 +50,9 @@ public:
   // enabled the external program before calling.
   //
   static bool DownloadObjectAndSymbolFile(ModuleSpec &module_spec,
-                                          Status &error,
-                                          bool force_lookup = true,
-                                          bool copy_executable = true);
-
-  /// Locate the symbol file for the given UUID on a background thread. This
-  /// function returns immediately. Under the hood it uses the debugger's
-  /// thread pool to call DownloadObjectAndSymbolFile. If a symbol file is
-  /// found, this will notify all target which contain the module with the
-  /// given UUID.
-  static void DownloadSymbolFileAsync(const UUID &uuid);
+                                          bool force_lookup = true);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_LOCATESYMBOLFILE_H
+#endif // liblldb_Symbols_h_

@@ -1,4 +1,4 @@
-//===-- OptionValueUUID.cpp -----------------------------------------------===//
+//===-- OptionValueUUID.cpp ------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -38,7 +38,7 @@ Status OptionValueUUID::SetValueFromString(llvm::StringRef value,
 
   case eVarSetOperationReplace:
   case eVarSetOperationAssign: {
-    if (!m_uuid.SetFromStringRef(value))
+    if (m_uuid.SetFromStringRef(value) == 0)
       error.SetErrorStringWithFormat("invalid uuid string value '%s'",
                                      value.str().c_str());
     else {
@@ -56,6 +56,10 @@ Status OptionValueUUID::SetValueFromString(llvm::StringRef value,
     break;
   }
   return error;
+}
+
+lldb::OptionValueSP OptionValueUUID::DeepCopy() const {
+  return OptionValueSP(new OptionValueUUID(*this));
 }
 
 void OptionValueUUID::AutoComplete(CommandInterpreter &interpreter,

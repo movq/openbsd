@@ -50,14 +50,13 @@ public:
   using Base::erase;
   using Base::find;
   using Base::insert;
-  using Base::insert_or_assign;
   using Base::lookup;
   using Base::size;
   using Base::try_emplace;
   using Base::operator[];
 
-  Environment() {}
-  Environment(const Environment &RHS) : Base(static_cast<const Base&>(RHS)) {}
+  Environment() : Base() {}
+  Environment(const Environment &RHS) : Base(RHS) {}
   Environment(Environment &&RHS) : Base(std::move(RHS)) {}
   Environment(char *const *Env)
       : Environment(const_cast<const char *const *>(Env)) {}
@@ -69,11 +68,10 @@ public:
   }
 
   std::pair<iterator, bool> insert(llvm::StringRef KeyEqValue) {
-    auto Split = KeyEqValue.split('=');
-    return insert(std::make_pair(Split.first, std::string(Split.second)));
+    return insert(KeyEqValue.split('='));
   }
 
-  void insert(iterator first, iterator last);
+  void insert(const_iterator first, const_iterator last);
 
   Envp getEnvp() const { return Envp(*this); }
 
@@ -94,4 +92,4 @@ template <> struct format_provider<lldb_private::Environment> {
 };
 } // namespace llvm
 
-#endif // LLDB_UTILITY_ENVIRONMENT_H
+#endif // #ifndef LLDB_UTILITY_ENVIRONMENT_H

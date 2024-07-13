@@ -8,9 +8,6 @@
 
 namespace lldb {
 
-%feature("docstring",
-"Represents a list of :py:class:`SBMemoryRegionInfo`."
-) SBMemoryRegionInfoList;
 class SBMemoryRegionInfoList
 {
 public:
@@ -23,9 +20,6 @@ public:
 
     uint32_t
     GetSize () const;
-
-    bool
-    GetMemoryRegionContainingAddress (lldb::addr_t addr, SBMemoryRegionInfo &region_info);
 
     bool
     GetMemoryRegionAtIndex (uint32_t idx, SBMemoryRegionInfo &region_info);

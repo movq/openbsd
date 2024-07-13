@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCSTRING_H
-#define LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCSTRING_H
+#ifndef CoreFoundationCPP_CFString_h_
+#define CoreFoundationCPP_CFString_h_
 
 #include <iosfwd>
 
@@ -20,7 +20,7 @@ public:
   CFCString(const char *s, CFStringEncoding encoding = kCFStringEncodingUTF8);
   CFCString(const CFCString &rhs);
   CFCString &operator=(const CFCString &rhs);
-  ~CFCString() override;
+  virtual ~CFCString();
 
   const char *GetFileSystemRepresentation(std::string &str);
   CFStringRef SetFileSystemRepresentation(const char *path);
@@ -35,4 +35,4 @@ public:
                                        std::string &expanded_path);
 };
 
-#endif // LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCSTRING_H
+#endif // #ifndef CoreFoundationCPP_CFString_h_

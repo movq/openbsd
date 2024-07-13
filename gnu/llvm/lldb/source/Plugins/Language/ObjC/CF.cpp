@@ -1,4 +1,5 @@
-//===-- CF.cpp ------------------------------------------------------------===//
+//===-- CF.cpp ----------------------------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,10 +9,10 @@
 
 #include "CF.h"
 
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
+#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/Language.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
@@ -29,7 +30,7 @@ using namespace lldb_private::formatters;
 bool lldb_private::formatters::CFAbsoluteTimeSummaryProvider(
     ValueObject &valobj, Stream &stream, const TypeSummaryOptions &options) {
   time_t epoch = GetOSXEpoch();
-  epoch = epoch + (time_t)valobj.GetValueAsSigned(0);
+  epoch = epoch + (time_t)valobj.GetValueAsUnsigned(0);
   tm *tm_date = localtime(&epoch);
   if (!tm_date)
     return false;
@@ -74,10 +75,10 @@ bool lldb_private::formatters::CFBagSummaryProvider(
   if (descriptor->IsCFType()) {
     ConstString type_name(valobj.GetTypeName());
 
-    static ConstString g_CFBag("__CFBag");
+    static ConstString g___CFBag("__CFBag");
     static ConstString g_conststruct__CFBag("const struct __CFBag");
 
-    if (type_name == g_CFBag || type_name == g_conststruct__CFBag) {
+    if (type_name == g___CFBag || type_name == g_conststruct__CFBag) {
       if (valobj.IsPointerType())
         is_type_ok = true;
     }
@@ -158,7 +159,7 @@ bool lldb_private::formatters::CFBitVectorSummaryProvider(
   // make sure we do not try to read huge amounts of data
   if (num_bytes > 1024)
     num_bytes = 1024;
-  WritableDataBufferSP buffer_sp(new DataBufferHeap(num_bytes, 0));
+  DataBufferSP buffer_sp(new DataBufferHeap(num_bytes, 0));
   num_bytes =
       process_sp->ReadMemory(data_ptr, buffer_sp->GetBytes(), num_bytes, error);
   if (error.Fail() || num_bytes == 0)
@@ -257,12 +258,12 @@ bool lldb_private::formatters::CFBinaryHeapSummaryProvider(
   if (descriptor->IsCFType()) {
     ConstString type_name(valobj.GetTypeName());
 
-    static ConstString g_CFBinaryHeap("__CFBinaryHeap");
+    static ConstString g___CFBinaryHeap("__CFBinaryHeap");
     static ConstString g_conststruct__CFBinaryHeap(
         "const struct __CFBinaryHeap");
     static ConstString g_CFBinaryHeapRef("CFBinaryHeapRef");
 
-    if (type_name == g_CFBinaryHeap ||
+    if (type_name == g___CFBinaryHeap ||
         type_name == g_conststruct__CFBinaryHeap ||
         type_name == g_CFBinaryHeapRef) {
       if (valobj.IsPointerType())

@@ -1,4 +1,4 @@
-//===-- ArchitectureArm.cpp -----------------------------------------------===//
+//===-- ArchitectureArm.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,7 +17,9 @@
 using namespace lldb_private;
 using namespace lldb;
 
-LLDB_PLUGIN_DEFINE(ArchitectureArm)
+ConstString ArchitectureArm::GetPluginNameStatic() {
+  return ConstString("arm");
+}
 
 void ArchitectureArm::Initialize() {
   PluginManager::RegisterPlugin(GetPluginNameStatic(),
@@ -34,6 +36,9 @@ std::unique_ptr<Architecture> ArchitectureArm::Create(const ArchSpec &arch) {
     return nullptr;
   return std::unique_ptr<Architecture>(new ArchitectureArm());
 }
+
+ConstString ArchitectureArm::GetPluginName() { return GetPluginNameStatic(); }
+uint32_t ArchitectureArm::GetPluginVersion() { return 1; }
 
 void ArchitectureArm::OverrideStopInfo(Thread &thread) const {
   // We need to check if we are stopped in Thumb mode in a IT instruction and

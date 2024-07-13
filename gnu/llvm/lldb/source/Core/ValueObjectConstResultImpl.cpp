@@ -1,4 +1,4 @@
-//===-- ValueObjectConstResultImpl.cpp ------------------------------------===//
+//===-- ValueObjectConstResultImpl.cpp ---------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -18,6 +18,7 @@
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/Endian.h"
 #include "lldb/Utility/Scalar.h"
+#include "lldb/Utility/SharingPtr.h"
 
 #include <string>
 
@@ -34,7 +35,7 @@ using namespace lldb_private;
 ValueObjectConstResultImpl::ValueObjectConstResultImpl(
     ValueObject *valobj, lldb::addr_t live_address)
     : m_impl_backend(valobj), m_live_address(live_address),
-      m_live_address_type(eAddressTypeLoad),
+      m_live_address_type(eAddressTypeLoad), m_load_addr_backend(),
       m_address_of_backend() {}
 
 lldb::ValueObjectSP ValueObjectConstResultImpl::Dereference(Status &error) {
@@ -89,20 +90,13 @@ ValueObject *ValueObjectConstResultImpl::CreateChildAtIndex(
     if (!child_name_str.empty())
       child_name.SetCString(child_name_str.c_str());
 
-    lldb::addr_t child_live_addr = LLDB_INVALID_ADDRESS;
-    // Transfer the live address (with offset) to the child.  But if
-    // the parent is a pointer, the live address is where that pointer
-    // value lives in memory, so the children live addresses aren't
-    // offsets from that value, they are just other load addresses that
-    // are recorded in the Value of the child ValueObjects.
-    if (m_live_address != LLDB_INVALID_ADDRESS) {
-      if (!compiler_type.IsPointerType())
-        child_live_addr = m_live_address + child_byte_offset;
-    }
     valobj = new ValueObjectConstResultChild(
         *m_impl_backend, child_compiler_type, child_name, child_byte_size,
         child_byte_offset, child_bitfield_bit_size, child_bitfield_bit_offset,
-        child_is_base_class, child_is_deref_of_parent, child_live_addr,
+        child_is_base_class, child_is_deref_of_parent,
+        m_live_address == LLDB_INVALID_ADDRESS
+            ? m_live_address
+            : m_live_address + child_byte_offset,
         language_flags);
   }
 
@@ -139,7 +133,7 @@ lldb::ValueObjectSP ValueObjectConstResultImpl::AddressOf(Status &error) {
         ConstString(new_name.c_str()), buffer, endian::InlHostByteOrder(),
         exe_ctx.GetAddressByteSize());
 
-    m_address_of_backend->GetValue().SetValueType(Value::ValueType::Scalar);
+    m_address_of_backend->GetValue().SetValueType(Value::eValueTypeScalar);
     m_address_of_backend->GetValue().GetScalar() = m_live_address;
 
     return m_address_of_backend;

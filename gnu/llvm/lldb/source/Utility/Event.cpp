@@ -1,4 +1,4 @@
-//===-- Event.cpp ---------------------------------------------------------===//
+//===-- Event.cpp -----------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,7 +17,7 @@
 
 #include <algorithm>
 
-#include <cctype>
+#include <ctype.h>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -124,7 +124,9 @@ ConstString EventDataBytes::GetFlavor() const {
 }
 
 void EventDataBytes::Dump(Stream *s) const {
-  if (llvm::all_of(m_bytes, llvm::isPrint))
+  size_t num_printable_chars =
+      std::count_if(m_bytes.begin(), m_bytes.end(), isprint);
+  if (num_printable_chars == m_bytes.size())
     s->Format("\"{0}\"", m_bytes);
   else
     s->Format("{0:$[ ]@[x-2]}", llvm::make_range(
@@ -196,7 +198,7 @@ EventDataStructuredData::EventDataStructuredData(
     : EventData(), m_process_sp(process_sp), m_object_sp(object_sp),
       m_plugin_sp(plugin_sp) {}
 
-EventDataStructuredData::~EventDataStructuredData() = default;
+EventDataStructuredData::~EventDataStructuredData() {}
 
 // EventDataStructuredData member functions
 

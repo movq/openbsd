@@ -19,14 +19,17 @@
 //    good amount of the text will
 //    disappear.  It's still in the buffer, just invisible.
 // b) The prompt printing logic for dealing with ANSI formatting characters is
-// broken, which is why we're working around it here.
-// c) The incremental search uses escape to cancel input, so it's confused by
+// broken, which is why we're
+//    working around it here.
+// c) When resizing the terminal window, if the cursor moves between rows
+// libedit will get confused. d) The incremental search uses escape to cancel
+// input, so it's confused by
 // ANSI sequences starting with escape.
-// d) Emoji support is fairly terrible, presumably it doesn't understand
+// e) Emoji support is fairly terrible, presumably it doesn't understand
 // composed characters?
 
-#ifndef LLDB_HOST_EDITLINE_H
-#define LLDB_HOST_EDITLINE_H
+#ifndef liblldb_Editline_h_
+#define liblldb_Editline_h_
 #if defined(__cplusplus)
 
 #include "lldb/Host/Config.h"
@@ -38,15 +41,16 @@
 #include <sstream>
 #include <vector>
 
+#include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/lldb-private.h"
 
-#if !defined(_WIN32) && !defined(__ANDROID__)
+#if defined(_WIN32)
+#include "lldb/Host/windows/editlinewin.h"
+#elif !defined(__ANDROID__)
 #include <histedit.h>
 #endif
 
-#include <csignal>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -54,9 +58,6 @@
 #include "lldb/Utility/CompletionRequest.h"
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/Predicate.h"
-#include "lldb/Utility/StringList.h"
-
-#include "llvm/ADT/FunctionExtras.h"
 
 namespace lldb_private {
 namespace line_editor {
@@ -82,26 +83,24 @@ using EditLineGetCharType = wchar_t;
 using EditLineGetCharType = char;
 #endif
 
-using EditlineGetCharCallbackType = int (*)(::EditLine *editline,
-                                            EditLineGetCharType *c);
-using EditlineCommandCallbackType = unsigned char (*)(::EditLine *editline,
-                                                      int ch);
-using EditlinePromptCallbackType = const char *(*)(::EditLine *editline);
+typedef int (*EditlineGetCharCallbackType)(::EditLine *editline,
+                                           EditLineGetCharType *c);
+typedef unsigned char (*EditlineCommandCallbackType)(::EditLine *editline,
+                                                     int ch);
+typedef const char *(*EditlinePromptCallbackType)(::EditLine *editline);
 
 class EditlineHistory;
 
-using EditlineHistorySP = std::shared_ptr<EditlineHistory>;
+typedef std::shared_ptr<EditlineHistory> EditlineHistorySP;
 
-using IsInputCompleteCallbackType =
-    llvm::unique_function<bool(Editline *, StringList &)>;
+typedef bool (*IsInputCompleteCallbackType)(Editline *editline,
+                                            StringList &lines, void *baton);
 
-using FixIndentationCallbackType =
-    llvm::unique_function<int(Editline *, StringList &, int)>;
+typedef int (*FixIndentationCallbackType)(Editline *editline,
+                                          const StringList &lines,
+                                          int cursor_position, void *baton);
 
-using SuggestionCallbackType =
-    llvm::unique_function<std::optional<std::string>(llvm::StringRef)>;
-
-using CompleteCallbackType = llvm::unique_function<void(CompletionRequest &)>;
+typedef void (*CompleteCallbackType)(CompletionRequest &request, void *baton);
 
 /// Status used to decide when and how to start editing another line in
 /// multi-line sessions
@@ -155,8 +154,7 @@ using namespace line_editor;
 class Editline {
 public:
   Editline(const char *editor_name, FILE *input_file, FILE *output_file,
-           FILE *error_file, std::recursive_mutex &output_mutex,
-           bool color_prompts);
+           FILE *error_file, bool color_prompts);
 
   ~Editline();
 
@@ -173,7 +171,9 @@ public:
   /// editing scenarios.
   void SetContinuationPrompt(const char *continuation_prompt);
 
-  /// Call when the terminal size changes
+  /// Required to update the width of the terminal registered for I/O.  It is
+  /// critical that this
+  /// be correct at all times.
   void TerminalSizeChanged();
 
   /// Returns the prompt established by SetPrompt()
@@ -188,37 +188,19 @@ public:
   /// Cancel this edit and oblitarate all trace of it
   bool Cancel();
 
-  /// Register a callback for autosuggestion.
-  void SetSuggestionCallback(SuggestionCallbackType callback) {
-    m_suggestion_callback = std::move(callback);
-  }
-
   /// Register a callback for the tab key
-  void SetAutoCompleteCallback(CompleteCallbackType callback) {
-    m_completion_callback = std::move(callback);
-  }
+  void SetAutoCompleteCallback(CompleteCallbackType callback, void *baton);
 
   /// Register a callback for testing whether multi-line input is complete
-  void SetIsInputCompleteCallback(IsInputCompleteCallbackType callback) {
-    m_is_input_complete_callback = std::move(callback);
-  }
+  void SetIsInputCompleteCallback(IsInputCompleteCallbackType callback,
+                                  void *baton);
 
   /// Register a callback for determining the appropriate indentation for a line
   /// when creating a newline.  An optional set of insertable characters can
-  /// also trigger the callback.
-  void SetFixIndentationCallback(FixIndentationCallbackType callback,
-                                 const char *indent_chars) {
-    m_fix_indentation_callback = std::move(callback);
-    m_fix_indentation_callback_chars = indent_chars;
-  }
-
-  void SetSuggestionAnsiPrefix(std::string prefix) {
-    m_suggestion_ansi_prefix = std::move(prefix);
-  }
-
-  void SetSuggestionAnsiSuffix(std::string suffix) {
-    m_suggestion_ansi_suffix = std::move(suffix);
-  }
+  /// also
+  /// trigger the callback.
+  bool SetFixIndentationCallback(FixIndentationCallbackType callback,
+                                 void *baton, const char *indent_chars);
 
   /// Prompts for and reads a single line of user input.
   bool GetLine(std::string &line, bool &interrupted);
@@ -334,12 +316,6 @@ private:
   /// tab key is typed.
   unsigned char TabCommand(int ch);
 
-  /// Apply autosuggestion part in gray as editline.
-  unsigned char ApplyAutosuggestCommand(int ch);
-
-  /// Command used when a character is typed.
-  unsigned char TypedCharacter(int ch);
-
   /// Respond to normal character insertion by fixing line indentation
   unsigned char FixIndentationCommand(int ch);
 
@@ -352,18 +328,7 @@ private:
 
   bool CompleteCharacter(char ch, EditLineGetCharType &out);
 
-  void ApplyTerminalSizeChange();
-
-  // The following set various editline parameters.  It's not any less
-  // verbose to put the editline calls into a function, but it
-  // provides type safety, since the editline functions take varargs
-  // parameters.
-  void AddFunctionToEditLine(const EditLineCharType *command,
-                             const EditLineCharType *helptext,
-                             EditlineCommandCallbackType callbackFn);
-  void SetEditLinePromptCallback(EditlinePromptCallbackType callbackFn);
-  void SetGetCharacterFunction(EditlineGetCharCallbackType callbackFn);
-
+private:
 #if LLDB_EDITLINE_USE_WCHAR
   std::wstring_convert<std::codecvt_utf8<wchar_t>> m_utf8conv;
 #endif
@@ -385,28 +350,22 @@ private:
   std::string m_set_continuation_prompt;
   std::string m_current_prompt;
   bool m_needs_prompt_repaint = false;
-  volatile std::sig_atomic_t m_terminal_size_has_changed = 0;
   std::string m_editor_name;
   FILE *m_input_file;
   FILE *m_output_file;
   FILE *m_error_file;
   ConnectionFileDescriptor m_input_connection;
-
-  IsInputCompleteCallbackType m_is_input_complete_callback;
-
-  FixIndentationCallbackType m_fix_indentation_callback;
+  IsInputCompleteCallbackType m_is_input_complete_callback = nullptr;
+  void *m_is_input_complete_callback_baton = nullptr;
+  FixIndentationCallbackType m_fix_indentation_callback = nullptr;
+  void *m_fix_indentation_callback_baton = nullptr;
   const char *m_fix_indentation_callback_chars = nullptr;
+  CompleteCallbackType m_completion_callback = nullptr;
+  void *m_completion_callback_baton = nullptr;
 
-  CompleteCallbackType m_completion_callback;
-  SuggestionCallbackType m_suggestion_callback;
-
-  std::string m_suggestion_ansi_prefix;
-  std::string m_suggestion_ansi_suffix;
-
-  std::size_t m_previous_autosuggestion_size = 0;
-  std::recursive_mutex &m_output_mutex;
+  std::mutex m_output_mutex;
 };
 }
 
 #endif // #if defined(__cplusplus)
-#endif // LLDB_HOST_EDITLINE_H
+#endif // liblldb_Editline_h_

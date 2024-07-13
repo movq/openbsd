@@ -1,4 +1,4 @@
-//===-- CFCString.cpp -----------------------------------------------------===//
+//===-- CFCString.cpp -------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -14,7 +14,7 @@
 CFCString::CFCString(CFStringRef s) : CFCReleaser<CFStringRef>(s) {}
 
 // CFCString copy constructor
-CFCString::CFCString(const CFCString &rhs) = default;
+CFCString::CFCString(const CFCString &rhs) : CFCReleaser<CFStringRef>(rhs) {}
 
 // CFCString copy constructor
 CFCString &CFCString::operator=(const CFCString &rhs) {
@@ -32,7 +32,7 @@ CFCString::CFCString(const char *cstr, CFStringEncoding cstr_encoding)
 }
 
 // Destructor
-CFCString::~CFCString() = default;
+CFCString::~CFCString() {}
 
 const char *CFCString::GetFileSystemRepresentation(std::string &s) {
   return CFCString::FileSystemRepresentation(get(), s);

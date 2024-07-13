@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBVALUE_H
-#define LLDB_API_SBVALUE_H
+#ifndef LLDB_SBValue_h_
+#define LLDB_SBValue_h_
 
 #include "lldb/API/SBData.h"
 #include "lldb/API/SBDefines.h"
@@ -246,12 +246,6 @@ public:
 
   bool SetData(lldb::SBData &data, lldb::SBError &error);
 
-  /// Creates a copy of the SBValue with a new name and setting the current
-  /// SBValue as its parent. It should be used when we want to change the
-  /// name of a SBValue without modifying the actual SBValue itself
-  /// (e.g. sythetic child provider).
-  lldb::SBValue Clone(const char *new_name);
-
   lldb::SBDeclaration GetDeclaration();
 
   /// Find out if a SBValue might have children.
@@ -436,4 +430,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_API_SBVALUE_H
+#endif // LLDB_SBValue_h_

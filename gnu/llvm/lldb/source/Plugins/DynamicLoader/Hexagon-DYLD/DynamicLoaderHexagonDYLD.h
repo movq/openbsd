@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_DYNAMICLOADER_HEXAGON_DYLD_DYNAMICLOADERHEXAGONDYLD_H
-#define LLDB_SOURCE_PLUGINS_DYNAMICLOADER_HEXAGON_DYLD_DYNAMICLOADERHEXAGONDYLD_H
+#ifndef liblldb_DynamicLoaderHexagonDYLD_h_
+#define liblldb_DynamicLoaderHexagonDYLD_h_
 
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Target/DynamicLoader.h"
@@ -24,9 +24,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "hexagon-dyld"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::DynamicLoader *
   CreateInstance(lldb_private::Process *process, bool force);
@@ -47,7 +47,9 @@ public:
                                   lldb::addr_t tls_file_addr) override;
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
 protected:
   /// Runtime linker rendezvous structure.
@@ -129,6 +131,8 @@ protected:
 private:
   const lldb_private::SectionList *
   GetSectionListFromModule(const lldb::ModuleSP module) const;
+
+  DISALLOW_COPY_AND_ASSIGN(DynamicLoaderHexagonDYLD);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_DYNAMICLOADER_HEXAGON_DYLD_DYNAMICLOADERHEXAGONDYLD_H
+#endif // liblldb_DynamicLoaderHexagonDYLD_h_

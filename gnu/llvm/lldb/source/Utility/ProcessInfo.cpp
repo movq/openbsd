@@ -1,4 +1,4 @@
-//===-- ProcessInfo.cpp ---------------------------------------------------===//
+//===-- ProcessInfo.cpp -----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,18 +15,18 @@
 #include "llvm/ADT/SmallString.h"
 
 #include <climits>
-#include <optional>
 
 using namespace lldb;
 using namespace lldb_private;
 
 ProcessInfo::ProcessInfo()
-    : m_executable(), m_arguments(), m_environment(), m_arch() {}
+    : m_executable(), m_arguments(), m_environment(), m_uid(UINT32_MAX),
+      m_gid(UINT32_MAX), m_arch(), m_pid(LLDB_INVALID_PROCESS_ID) {}
 
 ProcessInfo::ProcessInfo(const char *name, const ArchSpec &arch,
                          lldb::pid_t pid)
-    : m_executable(name), m_arguments(), m_environment(), m_arch(arch),
-      m_pid(pid) {}
+    : m_executable(name), m_arguments(), m_environment(), m_uid(UINT32_MAX),
+      m_gid(UINT32_MAX), m_arch(arch), m_pid(pid) {}
 
 void ProcessInfo::Clear() {
   m_executable.Clear();
@@ -75,7 +75,7 @@ void ProcessInfo::SetExecutableFile(const FileSpec &exe_file,
 
 llvm::StringRef ProcessInfo::GetArg0() const { return m_arg0; }
 
-void ProcessInfo::SetArg0(llvm::StringRef arg) { m_arg0 = std::string(arg); }
+void ProcessInfo::SetArg0(llvm::StringRef arg) { m_arg0 = arg; }
 
 void ProcessInfo::SetArguments(char const **argv,
                                bool first_arg_is_executable) {
@@ -143,19 +143,19 @@ void ProcessInstanceInfo::Dump(Stream &s, UserIDResolver &resolver) const {
 
   if (UserIDIsValid()) {
     s.Format("    uid = {0,-5} ({1})\n", GetUserID(),
-             resolver.GetUserName(GetUserID()).value_or(""));
+             resolver.GetUserName(GetUserID()).getValueOr(""));
   }
   if (GroupIDIsValid()) {
     s.Format("    gid = {0,-5} ({1})\n", GetGroupID(),
-             resolver.GetGroupName(GetGroupID()).value_or(""));
+             resolver.GetGroupName(GetGroupID()).getValueOr(""));
   }
   if (EffectiveUserIDIsValid()) {
     s.Format("   euid = {0,-5} ({1})\n", GetEffectiveUserID(),
-             resolver.GetUserName(GetEffectiveUserID()).value_or(""));
+             resolver.GetUserName(GetEffectiveUserID()).getValueOr(""));
   }
   if (EffectiveGroupIDIsValid()) {
     s.Format("   egid = {0,-5} ({1})\n", GetEffectiveGroupID(),
-             resolver.GetGroupName(GetEffectiveGroupID()).value_or(""));
+             resolver.GetGroupName(GetEffectiveGroupID()).getValueOr(""));
   }
 }
 
@@ -193,7 +193,7 @@ void ProcessInstanceInfo::DumpAsTableRow(Stream &s, UserIDResolver &resolver,
 
     auto print = [&](bool (ProcessInstanceInfo::*isValid)() const,
                      uint32_t (ProcessInstanceInfo::*getID)() const,
-                     std::optional<llvm::StringRef> (UserIDResolver::*getName)(
+                     llvm::Optional<llvm::StringRef> (UserIDResolver::*getName)(
                          UserIDResolver::id_t id)) {
       const char *format = "{0,-10} ";
       if (!(this->*isValid)()) {

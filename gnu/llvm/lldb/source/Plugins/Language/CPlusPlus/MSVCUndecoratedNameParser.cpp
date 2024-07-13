@@ -1,4 +1,4 @@
-//===-- MSVCUndecoratedNameParser.cpp -------------------------------------===//
+//===-- MSVCUndecoratedNameParser.cpp ---------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,13 +11,6 @@
 #include <stack>
 
 MSVCUndecoratedNameParser::MSVCUndecoratedNameParser(llvm::StringRef name) {
-  // Global ctor and dtor are global functions.
-  if (name.contains("dynamic initializer for") ||
-      name.contains("dynamic atexit destructor for")) {
-    m_specifiers.emplace_back(name, name);
-    return;
-  }
-
   std::size_t last_base_start = 0;
 
   std::stack<std::size_t> stack;
@@ -79,7 +72,7 @@ MSVCUndecoratedNameParser::MSVCUndecoratedNameParser(llvm::StringRef name) {
 }
 
 bool MSVCUndecoratedNameParser::IsMSVCUndecoratedName(llvm::StringRef name) {
-  return name.contains('`');
+  return name.find('`') != llvm::StringRef::npos;
 }
 
 bool MSVCUndecoratedNameParser::ExtractContextAndIdentifier(

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_BREAKPOINT_BREAKPOINTRESOLVER_H
-#define LLDB_BREAKPOINT_BREAKPOINTRESOLVER_H
+#ifndef liblldb_BreakpointResolver_h_
+#define liblldb_BreakpointResolver_h_
 
 #include "lldb/Breakpoint/Breakpoint.h"
 #include "lldb/Core/Address.h"
@@ -16,7 +16,6 @@
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/lldb-private.h"
-#include <optional>
 
 namespace lldb_private {
 
@@ -45,8 +44,7 @@ public:
   ///   The breakpoint that owns this resolver.
   /// \param[in] resolverType
   ///   The concrete breakpoint resolver type for this breakpoint.
-  BreakpointResolver(const lldb::BreakpointSP &bkpt,
-                     unsigned char resolverType,
+  BreakpointResolver(Breakpoint *bkpt, unsigned char resolverType,
                      lldb::addr_t offset = 0);
 
   /// The Destructor is virtual, all significant breakpoint resolvers derive
@@ -57,15 +55,7 @@ public:
   ///
   /// \param[in] bkpt
   ///   The breakpoint that owns this resolver.
-  void SetBreakpoint(const lldb::BreakpointSP &bkpt);
-
-  /// This gets the breakpoint for this resolver.
-  lldb::BreakpointSP GetBreakpoint() const {
-    auto breakpoint_sp = m_breakpoint.expired() ? lldb::BreakpointSP() :
-                                                  m_breakpoint.lock();
-    assert(breakpoint_sp);
-    return breakpoint_sp;
-  }
+  void SetBreakpoint(Breakpoint *bkpt);
 
   /// This updates the offset for this breakpoint.  All the locations
   /// currently set for this breakpoint will have their offset adjusted when
@@ -75,6 +65,12 @@ public:
   ///   The offset to add to all locations.
   void SetOffset(lldb::addr_t offset);
 
+  /// This updates the offset for this breakpoint.  All the locations
+  /// currently set for this breakpoint will have their offset adjusted when
+  /// this is called.
+  ///
+  /// \param[in] offset
+  ///   The offset to add to all locations.
   lldb::addr_t GetOffset() const { return m_offset; }
 
   /// In response to this method the resolver scans all the modules in the
@@ -159,7 +155,7 @@ public:
   static ResolverTy NameToResolverTy(llvm::StringRef name);
 
   virtual lldb::BreakpointResolverSP
-  CopyForBreakpoint(lldb::BreakpointSP &breakpoint) = 0;
+  CopyForBreakpoint(Breakpoint &breakpoint) = 0;
 
 protected:
   // Used for serializing resolver options:
@@ -205,29 +201,27 @@ protected:
   /// filter the results to find the first breakpoint >= (line, column).
   void SetSCMatchesByLine(SearchFilter &filter, SymbolContextList &sc_list,
                           bool skip_prologue, llvm::StringRef log_ident,
-                          uint32_t line = 0,
-                          std::optional<uint16_t> column = std::nullopt);
+                          uint32_t line = 0, uint32_t column = 0);
   void SetSCMatchesByLine(SearchFilter &, SymbolContextList &, bool,
                           const char *) = delete;
 
   lldb::BreakpointLocationSP AddLocation(Address loc_addr,
                                          bool *new_location = nullptr);
 
+  Breakpoint *m_breakpoint; // This is the breakpoint we add locations to.
+  lldb::addr_t m_offset;    // A random offset the user asked us to add to any
+                            // breakpoints we set.
+
 private:
   /// Helper for \p SetSCMatchesByLine.
   void AddLocation(SearchFilter &filter, const SymbolContext &sc,
                    bool skip_prologue, llvm::StringRef log_ident);
 
-  lldb::BreakpointWP m_breakpoint; // This is the breakpoint we add locations to.
-  lldb::addr_t m_offset;    // A random offset the user asked us to add to any
-                            // breakpoints we set.
-
   // Subclass identifier (for llvm isa/dyn_cast)
   const unsigned char SubclassID;
-  BreakpointResolver(const BreakpointResolver &) = delete;
-  const BreakpointResolver &operator=(const BreakpointResolver &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(BreakpointResolver);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_BREAKPOINT_BREAKPOINTRESOLVER_H
+#endif // liblldb_BreakpointResolver_h_

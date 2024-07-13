@@ -1,4 +1,4 @@
-//===-- BreakpointLocationCollection.cpp ----------------------------------===//
+//===-- BreakpointLocationCollection.cpp ------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,10 +17,11 @@ using namespace lldb;
 using namespace lldb_private;
 
 // BreakpointLocationCollection constructor
-BreakpointLocationCollection::BreakpointLocationCollection() = default;
+BreakpointLocationCollection::BreakpointLocationCollection()
+    : m_break_loc_collection(), m_collection_mutex() {}
 
 // Destructor
-BreakpointLocationCollection::~BreakpointLocationCollection() = default;
+BreakpointLocationCollection::~BreakpointLocationCollection() {}
 
 void BreakpointLocationCollection::Add(const BreakpointLocationSP &bp_loc) {
   std::lock_guard<std::mutex> guard(m_collection_mutex);
@@ -122,11 +123,8 @@ bool BreakpointLocationCollection::ShouldStop(
   size_t i = 0;
   size_t prev_size = GetSize();
   while (i < prev_size) {
-    // ShouldStop can remove the breakpoint from the list, or even delete
-    // it, so we should 
-    BreakpointLocationSP cur_loc_sp = GetByIndex(i);
-    BreakpointSP keep_bkpt_alive_sp = cur_loc_sp->GetBreakpoint().shared_from_this();
-    if (cur_loc_sp->ShouldStop(context))
+    // ShouldStop can remove the breakpoint from the list
+    if (GetByIndex(i)->ShouldStop(context))
       shouldStop = true;
 
     if (prev_size == GetSize())
@@ -136,7 +134,7 @@ bool BreakpointLocationCollection::ShouldStop(
   return shouldStop;
 }
 
-bool BreakpointLocationCollection::ValidForThisThread(Thread &thread) {
+bool BreakpointLocationCollection::ValidForThisThread(Thread *thread) {
   std::lock_guard<std::mutex> guard(m_collection_mutex);
   collection::iterator pos, begin = m_break_loc_collection.begin(),
                             end = m_break_loc_collection.end();

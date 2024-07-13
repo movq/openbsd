@@ -6,14 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_INSTRUCTION_ARM64_EMULATEINSTRUCTIONARM64_H
-#define LLDB_SOURCE_PLUGINS_INSTRUCTION_ARM64_EMULATEINSTRUCTIONARM64_H
+#ifndef EmulateInstructionARM64_h_
+#define EmulateInstructionARM64_h_
 
 #include "Plugins/Process/Utility/ARMDefines.h"
 #include "lldb/Core/EmulateInstruction.h"
 #include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 class EmulateInstructionARM64 : public lldb_private::EmulateInstruction {
 public:
@@ -25,9 +24,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "arm64"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::EmulateInstruction *
   CreateInstance(const lldb_private::ArchSpec &arch,
@@ -47,7 +46,9 @@ public:
     return false;
   }
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override { return 1; }
 
   bool SetTargetTriple(const lldb_private::ArchSpec &arch) override;
 
@@ -66,8 +67,8 @@ public:
     return false;
   }
 
-  std::optional<lldb_private::RegisterInfo>
-  GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num) override;
+  bool GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num,
+                       lldb_private::RegisterInfo &reg_info) override;
 
   bool
   CreateFunctionEntryUnwind(lldb_private::UnwindPlan &unwind_plan) override;
@@ -151,9 +152,6 @@ public:
   } ProcState;
 
 protected:
-  static uint64_t AddWithCarry(uint32_t N, uint64_t x, uint64_t y, bool carry_in,
-                               EmulateInstructionARM64::ProcState &proc_state);
-
   typedef struct {
     uint32_t mask;
     uint32_t value;
@@ -191,4 +189,4 @@ protected:
   bool m_ignore_conditions;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_INSTRUCTION_ARM64_EMULATEINSTRUCTIONARM64_H
+#endif // EmulateInstructionARM64_h_

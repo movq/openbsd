@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 #----------------------------------------------------------------------
 # This module will enable GDB remote packet logging when the
@@ -15,6 +15,8 @@
 # Or it can be added to your ~/.lldbinit file so this module is always
 # available.
 #----------------------------------------------------------------------
+
+from __future__ import print_function
 
 import optparse
 import os
@@ -123,10 +125,11 @@ if __name__ == '__main__':
     import sys
     parse_time_log_args(sys.argv[1:])
 
-
-def __lldb_init_module(debugger, internal_dict):
+else:
+    import lldb
+    if lldb.debugger:
         # This initializer is being run from LLDB in the embedded command interpreter
         # Add any commands contained in this module to LLDB
-        debugger.HandleCommand(
-            'command script add -o -f delta.parse_time_log parse_time_log')
+        lldb.debugger.HandleCommand(
+            'command script add -f delta.parse_time_log parse_time_log')
         print('The "parse_time_log" command is now installed and ready for use, type "parse_time_log --help" for more information')

@@ -1,4 +1,4 @@
-//===-- NSError.cpp -------------------------------------------------------===//
+//===-- NSError.cpp ---------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -10,10 +10,10 @@
 
 #include "Cocoa.h"
 
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
+#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/ProcessStructReader.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
@@ -83,15 +83,13 @@ bool lldb_private::formatters::NSError_SummaryProvider(
   }
 
   InferiorSizedWord isw(domain_str_value, *process_sp);
-  TypeSystemClangSP scratch_ts_sp =
-      ScratchTypeSystemClang::GetForTarget(process_sp->GetTarget());
 
-  if (!scratch_ts_sp)
-    return false;
   ValueObjectSP domain_str_sp = ValueObject::CreateValueObjectFromData(
       "domain_str", isw.GetAsData(process_sp->GetByteOrder()),
       valobj.GetExecutionContextRef(),
-      scratch_ts_sp->GetBasicType(lldb::eBasicTypeVoid).GetPointerType());
+      ClangASTContext::GetScratch(process_sp->GetTarget())
+          ->GetBasicType(lldb::eBasicTypeVoid)
+          .GetPointerType());
 
   if (!domain_str_sp)
     return false;
@@ -155,22 +153,19 @@ public:
     if (userinfo == LLDB_INVALID_ADDRESS || error.Fail())
       return false;
     InferiorSizedWord isw(userinfo, *process_sp);
-    TypeSystemClangSP scratch_ts_sp =
-        ScratchTypeSystemClang::GetForTarget(process_sp->GetTarget());
-    if (!scratch_ts_sp)
-      return false;
     m_child_sp = CreateValueObjectFromData(
         "_userInfo", isw.GetAsData(process_sp->GetByteOrder()),
         m_backend.GetExecutionContextRef(),
-        scratch_ts_sp->GetBasicType(lldb::eBasicTypeObjCID));
+        ClangASTContext::GetScratch(process_sp->GetTarget())
+            ->GetBasicType(lldb::eBasicTypeObjCID));
     return false;
   }
 
   bool MightHaveChildren() override { return true; }
 
   size_t GetIndexOfChildWithName(ConstString name) override {
-    static ConstString g_userInfo("_userInfo");
-    if (name == g_userInfo)
+    static ConstString g___userInfo("_userInfo");
+    if (name == g___userInfo)
       return 0;
     return UINT32_MAX;
   }
@@ -182,7 +177,7 @@ private:
   // values to leak if the latter, then I need to store a SharedPointer to it -
   // so that it only goes away when everyone else in the cluster goes away oh
   // joy!
-  ValueObject *m_child_ptr = nullptr;
+  ValueObject *m_child_ptr;
   ValueObjectSP m_child_sp;
 };
 

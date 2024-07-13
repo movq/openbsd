@@ -6,14 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_UTILITY_STRINGEXTRACTOR_H
-#define LLDB_UTILITY_STRINGEXTRACTOR_H
+#ifndef utility_StringExtractor_h_
+#define utility_StringExtractor_h_
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 #include <string>
 
 class StringExtractor {
@@ -26,7 +26,7 @@ public:
   virtual ~StringExtractor();
 
   void Reset(llvm::StringRef str) {
-    m_packet = std::string(str);
+    m_packet = str;
     m_index = 0;
   }
 
@@ -115,7 +115,7 @@ protected:
   /// When extracting data from a packet, this index will march along as things
   /// get extracted. If set to UINT64_MAX the end of the packet data was
   /// reached when decoding information.
-  uint64_t m_index = 0;
+  uint64_t m_index;
 };
 
-#endif // LLDB_UTILITY_STRINGEXTRACTOR_H
+#endif // utility_StringExtractor_h_

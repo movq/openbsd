@@ -1,4 +1,5 @@
-//===-- RegisterContextDarwin_arm64.cpp -----------------------------------===//
+//===-- RegisterContextDarwin_arm64.cpp ---------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -59,7 +60,7 @@ using namespace lldb_private;
                               {LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,       \
                                LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,       \
                                LLDB_INVALID_REGNUM },                          \
-                               NULL, NULL
+                               NULL, NULL, NULL, 0
 #define REG_CONTEXT_SIZE                                                       \
   (sizeof(RegisterContextDarwin_arm64::GPR) +                                  \
    sizeof(RegisterContextDarwin_arm64::FPU) +                                  \
@@ -90,11 +91,12 @@ static uint32_t g_fpu_regnums[] = {
 
 static uint32_t g_exc_regnums[] = {exc_far, exc_esr, exc_exception};
 
-static size_t k_num_register_infos = std::size(g_register_infos_arm64_le);
+static size_t k_num_register_infos =
+    llvm::array_lengthof(g_register_infos_arm64_le);
 
 RegisterContextDarwin_arm64::RegisterContextDarwin_arm64(
     Thread &thread, uint32_t concrete_frame_idx)
-    : RegisterContext(thread, concrete_frame_idx), gpr(), fpu(), exc(), dbg() {
+    : RegisterContext(thread, concrete_frame_idx), gpr(), fpu(), exc() {
   uint32_t i;
   for (i = 0; i < kNumErrors; i++) {
     gpr_errs[i] = -1;
@@ -103,7 +105,7 @@ RegisterContextDarwin_arm64::RegisterContextDarwin_arm64(
   }
 }
 
-RegisterContextDarwin_arm64::~RegisterContextDarwin_arm64() = default;
+RegisterContextDarwin_arm64::~RegisterContextDarwin_arm64() {}
 
 void RegisterContextDarwin_arm64::InvalidateAllRegisters() {
   InvalidateAllRegisterStates();
@@ -131,9 +133,9 @@ const RegisterInfo *RegisterContextDarwin_arm64::GetRegisterInfos() {
 }
 
 // Number of registers in each register set
-const size_t k_num_gpr_registers = std::size(g_gpr_regnums);
-const size_t k_num_fpu_registers = std::size(g_fpu_regnums);
-const size_t k_num_exc_registers = std::size(g_exc_regnums);
+const size_t k_num_gpr_registers = llvm::array_lengthof(g_gpr_regnums);
+const size_t k_num_fpu_registers = llvm::array_lengthof(g_fpu_regnums);
+const size_t k_num_exc_registers = llvm::array_lengthof(g_exc_regnums);
 
 // Register set definitions. The first definitions at register set index of
 // zero is for all registers, followed by other registers sets. The register
@@ -145,7 +147,7 @@ static const RegisterSet g_reg_sets[] = {
     {"Floating Point Registers", "fpu", k_num_fpu_registers, g_fpu_regnums},
     {"Exception State Registers", "exc", k_num_exc_registers, g_exc_regnums}};
 
-const size_t k_num_regsets = std::size(g_reg_sets);
+const size_t k_num_regsets = llvm::array_lengthof(g_reg_sets);
 
 size_t RegisterContextDarwin_arm64::GetRegisterSetCount() {
   return k_num_regsets;
@@ -642,7 +644,7 @@ bool RegisterContextDarwin_arm64::WriteRegister(const RegisterInfo *reg_info,
 }
 
 bool RegisterContextDarwin_arm64::ReadAllRegisterValues(
-    lldb::WritableDataBufferSP &data_sp) {
+    lldb::DataBufferSP &data_sp) {
   data_sp = std::make_shared<DataBufferHeap>(REG_CONTEXT_SIZE, 0);
   if (ReadGPR(false) == KERN_SUCCESS && ReadFPU(false) == KERN_SUCCESS &&
       ReadEXC(false) == KERN_SUCCESS) {

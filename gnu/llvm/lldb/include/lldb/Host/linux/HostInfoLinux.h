@@ -14,7 +14,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/VersionTuple.h"
 
-#include <optional>
 #include <string>
 
 namespace lldb_private {
@@ -22,12 +21,17 @@ namespace lldb_private {
 class HostInfoLinux : public HostInfoPosix {
   friend class HostInfoBase;
 
+private:
+  // Static class, unconstructable.
+  HostInfoLinux();
+  ~HostInfoLinux();
+
 public:
-  static void Initialize(SharedLibraryDirectoryHelper *helper = nullptr);
-  static void Terminate();
+  static void Initialize();
 
   static llvm::VersionTuple GetOSVersion();
-  static std::optional<std::string> GetOSBuildString();
+  static bool GetOSBuildString(std::string &s);
+  static bool GetOSKernelDescription(std::string &s);
   static llvm::StringRef GetDistributionId();
   static FileSpec GetProgramFileSpec();
 

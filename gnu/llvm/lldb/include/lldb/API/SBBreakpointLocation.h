@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBBREAKPOINTLOCATION_H
-#define LLDB_API_SBBREAKPOINTLOCATION_H
+#ifndef LLDB_SBBreakpointLocation_h_
+#define LLDB_SBBreakpointLocation_h_
 
 #include "lldb/API/SBBreakpoint.h"
 #include "lldb/API/SBDefines.h"
@@ -48,12 +48,10 @@ public:
   void SetCondition(const char *condition);
 
   const char *GetCondition();
-
+   
   void SetAutoContinue(bool auto_continue);
 
   bool GetAutoContinue();
-
-  void SetCallback(SBBreakpointHitCallback callback, void *baton);
 
   void SetScriptCallbackFunction(const char *callback_function_name);
 
@@ -102,4 +100,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_API_SBBREAKPOINTLOCATION_H
+#endif // LLDB_SBBreakpointLocation_h_

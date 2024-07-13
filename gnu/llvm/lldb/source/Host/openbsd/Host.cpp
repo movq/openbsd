@@ -1,4 +1,4 @@
-//===-- source/Host/openbsd/Host.cpp --------------------------------------===//
+//===-- source/Host/openbsd/Host.cpp ----------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,7 +15,7 @@
 #include <sys/sysctl.h>
 #include <sys/user.h>
 
-#include <cstdio>
+#include <stdio.h>
 
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
@@ -41,7 +41,18 @@ namespace lldb_private {
 class ProcessLaunchInfo;
 }
 
-Environment Host::GetEnvironment() { return Environment(environ); }
+Environment Host::GetEnvironment() {
+  Environment env;
+  char *v;
+  char **var = environ;
+  for (; var != NULL && *var != NULL; ++var) {
+    v = strchr(*var, (int)'-');
+    if (v == NULL)
+      continue;
+    env.insert(v);
+  }
+  return env;
+}
 
 static bool
 GetOpenBSDProcessArgs(const ProcessInstanceInfoMatch *match_info_ptr,
@@ -142,8 +153,8 @@ static bool GetOpenBSDProcessUserAndGroup(ProcessInstanceInfo &process_info) {
   return false;
 }
 
-uint32_t Host::FindProcessesImpl(const ProcessInstanceInfoMatch &match_info,
-                                 ProcessInstanceInfoList &process_infos) {
+uint32_t Host::FindProcesses(const ProcessInstanceInfoMatch &match_info,
+                             ProcessInstanceInfoList &process_infos) {
   std::vector<struct kinfo_proc> kinfos;
 
   int mib[6] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0, sizeof(struct kinfo_proc), 0};
@@ -196,11 +207,11 @@ uint32_t Host::FindProcessesImpl(const ProcessInstanceInfoMatch &match_info,
         GetOpenBSDProcessArgs(&match_info, process_info)) {
       GetOpenBSDProcessCPUType(process_info);
       if (match_info.Matches(process_info))
-        process_infos.push_back(process_info);
+        process_infos.Append(process_info);
     }
   }
 
-  return process_infos.size();
+  return process_infos.GetSize();
 }
 
 bool Host::GetProcessInfo(lldb::pid_t pid, ProcessInstanceInfo &process_info) {

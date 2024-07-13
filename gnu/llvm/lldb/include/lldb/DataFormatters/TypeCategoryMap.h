@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_DATAFORMATTERS_TYPECATEGORYMAP_H
-#define LLDB_DATAFORMATTERS_TYPECATEGORYMAP_H
+#ifndef lldb_TypeCategoryMap_h_
+#define lldb_TypeCategoryMap_h_
 
 #include <functional>
 #include <list>
@@ -17,20 +17,19 @@
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-public.h"
 
-#include "lldb/DataFormatters/FormatClasses.h"
 #include "lldb/DataFormatters/FormattersContainer.h"
 #include "lldb/DataFormatters/TypeCategory.h"
 
 namespace lldb_private {
 class TypeCategoryMap {
 private:
+  typedef ConstString KeyType;
+  typedef TypeCategoryImpl ValueType;
+  typedef ValueType::SharedPointer ValueSP;
   typedef std::list<lldb::TypeCategoryImplSP> ActiveCategoriesList;
   typedef ActiveCategoriesList::iterator ActiveCategoriesIterator;
 
 public:
-  typedef ConstString KeyType;
-  typedef TypeCategoryImpl ValueType;
-  typedef ValueType::SharedPointer ValueSP;
   typedef std::map<KeyType, ValueSP> MapType;
   typedef MapType::iterator MapIterator;
   typedef std::function<bool(const ValueSP &)> ForEachCallback;
@@ -70,7 +69,7 @@ public:
   lldb::TypeCategoryImplSP GetAtIndex(uint32_t);
 
   bool
-  AnyMatches(const FormattersMatchCandidate &candidate_type,
+  AnyMatches(ConstString type_name,
              TypeCategoryImpl::FormatCategoryItems items =
                  TypeCategoryImpl::ALL_ITEM_TYPES,
              bool only_enabled = true, const char **matching_category = nullptr,
@@ -85,8 +84,7 @@ private:
     lldb::TypeCategoryImplSP ptr;
 
   public:
-    delete_matching_categories(lldb::TypeCategoryImplSP p)
-        : ptr(std::move(p)) {}
+    delete_matching_categories(lldb::TypeCategoryImplSP p) : ptr(p) {}
 
     bool operator()(const lldb::TypeCategoryImplSP &other) {
       return ptr.get() == other.get();
@@ -104,7 +102,10 @@ private:
   ActiveCategoriesList &active_list() { return m_active_categories; }
 
   std::recursive_mutex &mutex() { return m_map_mutex; }
+
+  friend class FormattersContainer<KeyType, ValueType>;
+  friend class FormatManager;
 };
 } // namespace lldb_private
 
-#endif // LLDB_DATAFORMATTERS_TYPECATEGORYMAP_H
+#endif // lldb_TypeCategoryMap_h_

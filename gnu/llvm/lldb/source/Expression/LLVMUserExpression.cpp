@@ -1,4 +1,4 @@
-//===-- LLVMUserExpression.cpp --------------------------------------------===//
+//===-- LLVMUserExpression.cpp ----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -30,7 +30,6 @@
 #include "lldb/Target/ThreadPlan.h"
 #include "lldb/Target/ThreadPlanCallUserExpression.h"
 #include "lldb/Utility/ConstString.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/StreamString.h"
 
@@ -48,8 +47,8 @@ LLVMUserExpression::LLVMUserExpression(ExecutionContextScope &exe_scope,
       m_stack_frame_bottom(LLDB_INVALID_ADDRESS),
       m_stack_frame_top(LLDB_INVALID_ADDRESS), m_allow_cxx(false),
       m_allow_objc(false), m_transformed_text(), m_execution_unit_sp(),
-      m_materializer_up(), m_jit_module_wp(), m_target(nullptr),
-      m_can_interpret(false), m_materialized_address(LLDB_INVALID_ADDRESS) {}
+      m_materializer_up(), m_jit_module_wp(), m_can_interpret(false),
+      m_materialized_address(LLDB_INVALID_ADDRESS) {}
 
 LLVMUserExpression::~LLVMUserExpression() {
   if (m_target) {
@@ -68,7 +67,8 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
   // The expression log is quite verbose, and if you're just tracking the
   // execution of the expression, it's quite convenient to have these logs come
   // out with the STEP log as well.
-  Log *log(GetLog(LLDBLog::Expressions | LLDBLog::Step));
+  Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_EXPRESSIONS |
+                                                  LIBLLDB_LOG_STEP));
 
   if (m_jit_start_addr == LLDB_INVALID_ADDRESS && !m_can_interpret) {
     diagnostic_manager.PutString(
@@ -134,10 +134,6 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
       return lldb::eExpressionSetupError;
     }
 
-    // Store away the thread ID for error reporting, in case it exits
-    // during execution:
-    lldb::tid_t expr_thread_id = exe_ctx.GetThreadRef().GetID();
-
     Address wrapper_address(m_jit_start_addr);
 
     std::vector<lldb::addr_t> args;
@@ -188,8 +184,9 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
         execution_result == lldb::eExpressionHitBreakpoint) {
       const char *error_desc = nullptr;
 
-      if (user_expression_plan) {
-        if (auto real_stop_info_sp = user_expression_plan->GetRealStopInfo())
+      if (call_plan_sp) {
+        lldb::StopInfoSP real_stop_info_sp = call_plan_sp->GetRealStopInfo();
+        if (real_stop_info_sp)
           error_desc = real_stop_info_sp->GetDescription();
       }
       if (error_desc)
@@ -226,14 +223,6 @@ LLVMUserExpression::DoExecute(DiagnosticManager &diagnostic_manager,
           "Use \"thread return -x\" to return to the state before expression "
           "evaluation.");
       return execution_result;
-    } else if (execution_result == lldb::eExpressionThreadVanished) {
-      diagnostic_manager.Printf(
-          eDiagnosticSeverityError,
-          "Couldn't complete execution; the thread "
-          "on which the expression was being run: 0x%" PRIx64
-          " exited during its execution.", 
-          expr_thread_id);
-      return execution_result;
     } else if (execution_result != lldb::eExpressionCompleted) {
       diagnostic_manager.Printf(
           eDiagnosticSeverityError, "Couldn't execute function; result was %s",
@@ -254,7 +243,7 @@ bool LLVMUserExpression::FinalizeJITExecution(
     DiagnosticManager &diagnostic_manager, ExecutionContext &exe_ctx,
     lldb::ExpressionVariableSP &result, lldb::addr_t function_stack_bottom,
     lldb::addr_t function_stack_top) {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   LLDB_LOGF(log, "-- [UserExpression::FinalizeJITExecution] Dematerializing "
                  "after execution --");
@@ -368,3 +357,8 @@ bool LLVMUserExpression::PrepareToExecuteJITExpression(
   return true;
 }
 
+lldb::ModuleSP LLVMUserExpression::GetJITModule() {
+  if (m_execution_unit_sp)
+    return m_execution_unit_sp->GetJITModule();
+  return lldb::ModuleSP();
+}

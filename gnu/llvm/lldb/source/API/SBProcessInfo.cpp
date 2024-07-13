@@ -1,4 +1,4 @@
-//===-- SBProcessInfo.cpp -------------------------------------------------===//
+//===-- SBProcessInfo.cpp ---------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,35 +7,39 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/API/SBProcessInfo.h"
+#include "SBReproducerPrivate.h"
 #include "Utils.h"
 #include "lldb/API/SBFileSpec.h"
-#include "lldb/Utility/Instrumentation.h"
 #include "lldb/Utility/ProcessInfo.h"
 
 using namespace lldb;
 using namespace lldb_private;
 
-SBProcessInfo::SBProcessInfo() { LLDB_INSTRUMENT_VA(this); }
+SBProcessInfo::SBProcessInfo() : m_opaque_up() {
+  LLDB_RECORD_CONSTRUCTOR_NO_ARGS(SBProcessInfo);
+}
 
-SBProcessInfo::SBProcessInfo(const SBProcessInfo &rhs) {
-  LLDB_INSTRUMENT_VA(this, rhs);
+SBProcessInfo::SBProcessInfo(const SBProcessInfo &rhs) : m_opaque_up() {
+  LLDB_RECORD_CONSTRUCTOR(SBProcessInfo, (const lldb::SBProcessInfo &), rhs);
 
   m_opaque_up = clone(rhs.m_opaque_up);
 }
 
-SBProcessInfo::~SBProcessInfo() = default;
+SBProcessInfo::~SBProcessInfo() {}
 
 SBProcessInfo &SBProcessInfo::operator=(const SBProcessInfo &rhs) {
-  LLDB_INSTRUMENT_VA(this, rhs);
+  LLDB_RECORD_METHOD(lldb::SBProcessInfo &,
+                     SBProcessInfo, operator=,(const lldb::SBProcessInfo &),
+                     rhs);
 
   if (this != &rhs)
     m_opaque_up = clone(rhs.m_opaque_up);
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
 ProcessInstanceInfo &SBProcessInfo::ref() {
   if (m_opaque_up == nullptr) {
-    m_opaque_up = std::make_unique<ProcessInstanceInfo>();
+    m_opaque_up.reset(new ProcessInstanceInfo());
   }
   return *m_opaque_up;
 }
@@ -45,17 +49,17 @@ void SBProcessInfo::SetProcessInfo(const ProcessInstanceInfo &proc_info_ref) {
 }
 
 bool SBProcessInfo::IsValid() const {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_CONST_NO_ARGS(bool, SBProcessInfo, IsValid);
   return this->operator bool();
 }
 SBProcessInfo::operator bool() const {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_CONST_NO_ARGS(bool, SBProcessInfo, operator bool);
 
   return m_opaque_up != nullptr;
 }
 
 const char *SBProcessInfo::GetName() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(const char *, SBProcessInfo, GetName);
 
   const char *name = nullptr;
   if (m_opaque_up) {
@@ -65,17 +69,18 @@ const char *SBProcessInfo::GetName() {
 }
 
 SBFileSpec SBProcessInfo::GetExecutableFile() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(lldb::SBFileSpec, SBProcessInfo,
+                             GetExecutableFile);
 
   SBFileSpec file_spec;
   if (m_opaque_up) {
     file_spec.SetFileSpec(m_opaque_up->GetExecutableFile());
   }
-  return file_spec;
+  return LLDB_RECORD_RESULT(file_spec);
 }
 
 lldb::pid_t SBProcessInfo::GetProcessID() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(lldb::pid_t, SBProcessInfo, GetProcessID);
 
   lldb::pid_t proc_id = LLDB_INVALID_PROCESS_ID;
   if (m_opaque_up) {
@@ -85,7 +90,7 @@ lldb::pid_t SBProcessInfo::GetProcessID() {
 }
 
 uint32_t SBProcessInfo::GetUserID() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(uint32_t, SBProcessInfo, GetUserID);
 
   uint32_t user_id = UINT32_MAX;
   if (m_opaque_up) {
@@ -95,7 +100,7 @@ uint32_t SBProcessInfo::GetUserID() {
 }
 
 uint32_t SBProcessInfo::GetGroupID() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(uint32_t, SBProcessInfo, GetGroupID);
 
   uint32_t group_id = UINT32_MAX;
   if (m_opaque_up) {
@@ -105,7 +110,7 @@ uint32_t SBProcessInfo::GetGroupID() {
 }
 
 bool SBProcessInfo::UserIDIsValid() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(bool, SBProcessInfo, UserIDIsValid);
 
   bool is_valid = false;
   if (m_opaque_up) {
@@ -115,7 +120,7 @@ bool SBProcessInfo::UserIDIsValid() {
 }
 
 bool SBProcessInfo::GroupIDIsValid() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(bool, SBProcessInfo, GroupIDIsValid);
 
   bool is_valid = false;
   if (m_opaque_up) {
@@ -125,7 +130,7 @@ bool SBProcessInfo::GroupIDIsValid() {
 }
 
 uint32_t SBProcessInfo::GetEffectiveUserID() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(uint32_t, SBProcessInfo, GetEffectiveUserID);
 
   uint32_t user_id = UINT32_MAX;
   if (m_opaque_up) {
@@ -135,7 +140,7 @@ uint32_t SBProcessInfo::GetEffectiveUserID() {
 }
 
 uint32_t SBProcessInfo::GetEffectiveGroupID() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(uint32_t, SBProcessInfo, GetEffectiveGroupID);
 
   uint32_t group_id = UINT32_MAX;
   if (m_opaque_up) {
@@ -145,7 +150,7 @@ uint32_t SBProcessInfo::GetEffectiveGroupID() {
 }
 
 bool SBProcessInfo::EffectiveUserIDIsValid() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(bool, SBProcessInfo, EffectiveUserIDIsValid);
 
   bool is_valid = false;
   if (m_opaque_up) {
@@ -155,7 +160,7 @@ bool SBProcessInfo::EffectiveUserIDIsValid() {
 }
 
 bool SBProcessInfo::EffectiveGroupIDIsValid() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(bool, SBProcessInfo, EffectiveGroupIDIsValid);
 
   bool is_valid = false;
   if (m_opaque_up) {
@@ -165,7 +170,7 @@ bool SBProcessInfo::EffectiveGroupIDIsValid() {
 }
 
 lldb::pid_t SBProcessInfo::GetParentProcessID() {
-  LLDB_INSTRUMENT_VA(this);
+  LLDB_RECORD_METHOD_NO_ARGS(lldb::pid_t, SBProcessInfo, GetParentProcessID);
 
   lldb::pid_t proc_id = LLDB_INVALID_PROCESS_ID;
   if (m_opaque_up) {
@@ -174,17 +179,32 @@ lldb::pid_t SBProcessInfo::GetParentProcessID() {
   return proc_id;
 }
 
-const char *SBProcessInfo::GetTriple() {
-  LLDB_INSTRUMENT_VA(this);
+namespace lldb_private {
+namespace repro {
 
-  const char *triple = nullptr;
-  if (m_opaque_up) {
-    const auto &arch = m_opaque_up->GetArchitecture();
-    if (arch.IsValid()) {
-      // Const-ify the string so we don't need to worry about the lifetime of
-      // the string
-      triple = ConstString(arch.GetTriple().getTriple().c_str()).GetCString();
-    }
-  }
-  return triple;
+template <>
+void RegisterMethods<SBProcessInfo>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBProcessInfo, ());
+  LLDB_REGISTER_CONSTRUCTOR(SBProcessInfo, (const lldb::SBProcessInfo &));
+  LLDB_REGISTER_METHOD(
+      lldb::SBProcessInfo &,
+      SBProcessInfo, operator=,(const lldb::SBProcessInfo &));
+  LLDB_REGISTER_METHOD_CONST(bool, SBProcessInfo, IsValid, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBProcessInfo, operator bool, ());
+  LLDB_REGISTER_METHOD(const char *, SBProcessInfo, GetName, ());
+  LLDB_REGISTER_METHOD(lldb::SBFileSpec, SBProcessInfo, GetExecutableFile,
+                       ());
+  LLDB_REGISTER_METHOD(lldb::pid_t, SBProcessInfo, GetProcessID, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBProcessInfo, GetUserID, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBProcessInfo, GetGroupID, ());
+  LLDB_REGISTER_METHOD(bool, SBProcessInfo, UserIDIsValid, ());
+  LLDB_REGISTER_METHOD(bool, SBProcessInfo, GroupIDIsValid, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBProcessInfo, GetEffectiveUserID, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBProcessInfo, GetEffectiveGroupID, ());
+  LLDB_REGISTER_METHOD(bool, SBProcessInfo, EffectiveUserIDIsValid, ());
+  LLDB_REGISTER_METHOD(bool, SBProcessInfo, EffectiveGroupIDIsValid, ());
+  LLDB_REGISTER_METHOD(lldb::pid_t, SBProcessInfo, GetParentProcessID, ());
+}
+
+}
 }

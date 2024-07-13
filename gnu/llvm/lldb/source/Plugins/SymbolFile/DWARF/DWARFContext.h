@@ -6,15 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFCONTEXT_H
-#define LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFCONTEXT_H
+#ifndef LLDB_PLUGINS_SYMBOLFILE_DWARF_DWARFCONTEXT_H
+#define LLDB_PLUGINS_SYMBOLFILE_DWARF_DWARFCONTEXT_H
 
 #include "DWARFDataExtractor.h"
 #include "lldb/Core/Section.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/Support/Threading.h"
 #include <memory>
-#include <optional>
 
 namespace lldb_private {
 class DWARFContext {
@@ -31,7 +31,6 @@ private:
   SectionData m_data_debug_abbrev;
   SectionData m_data_debug_addr;
   SectionData m_data_debug_aranges;
-  SectionData m_data_debug_cu_index;
   SectionData m_data_debug_info;
   SectionData m_data_debug_line;
   SectionData m_data_debug_line_str;
@@ -42,16 +41,12 @@ private:
   SectionData m_data_debug_rnglists;
   SectionData m_data_debug_str;
   SectionData m_data_debug_str_offsets;
-  SectionData m_data_debug_tu_index;
   SectionData m_data_debug_types;
 
   const DWARFDataExtractor &
-  LoadOrGetSection(std::optional<lldb::SectionType> main_section_type,
-                   std::optional<lldb::SectionType> dwo_section_type,
+  LoadOrGetSection(lldb::SectionType main_section_type,
+                   llvm::Optional<lldb::SectionType> dwo_section_type,
                    SectionData &data);
-
-  const DWARFDataExtractor &getOrLoadCuIndexData();
-  const DWARFDataExtractor &getOrLoadTuIndexData();
 
 public:
   explicit DWARFContext(SectionList *main_section_list,

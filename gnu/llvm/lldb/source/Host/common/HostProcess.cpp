@@ -1,4 +1,4 @@
-//===-- HostProcess.cpp ---------------------------------------------------===//
+//===-- HostProcess.cpp -----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -18,9 +18,13 @@ HostProcess::HostProcess() : m_native_process(new HostNativeProcess) {}
 HostProcess::HostProcess(lldb::process_t process)
     : m_native_process(new HostNativeProcess(process)) {}
 
-HostProcess::~HostProcess() = default;
+HostProcess::~HostProcess() {}
 
 Status HostProcess::Terminate() { return m_native_process->Terminate(); }
+
+Status HostProcess::GetMainModule(FileSpec &file_spec) const {
+  return m_native_process->GetMainModule(file_spec);
+}
 
 lldb::pid_t HostProcess::GetProcessId() const {
   return m_native_process->GetProcessId();
@@ -28,9 +32,10 @@ lldb::pid_t HostProcess::GetProcessId() const {
 
 bool HostProcess::IsRunning() const { return m_native_process->IsRunning(); }
 
-llvm::Expected<HostThread> HostProcess::StartMonitoring(
-    const Host::MonitorChildProcessCallback &callback) {
-  return m_native_process->StartMonitoring(callback);
+llvm::Expected<HostThread>
+HostProcess::StartMonitoring(const Host::MonitorChildProcessCallback &callback,
+                             bool monitor_signals) {
+  return m_native_process->StartMonitoring(callback, monitor_signals);
 }
 
 HostNativeProcessBase &HostProcess::GetNativeProcess() {

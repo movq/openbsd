@@ -22,8 +22,8 @@
 #include <memory>
 #include <string>
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace lldb_private {
 class Event;
@@ -42,16 +42,13 @@ public:
   virtual ~EventData();
 
   virtual ConstString GetFlavor() const = 0;
-  
-  virtual Log *GetLogChannel() { return nullptr; }
-  
+
   virtual void Dump(Stream *s) const;
 
 private:
   virtual void DoOnRemoval(Event *event_ptr) {}
 
-  EventData(const EventData &) = delete;
-  const EventData &operator=(const EventData &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(EventData);
 };
 
 // lldb::EventDataBytes
@@ -95,15 +92,14 @@ public:
 private:
   std::string m_bytes;
 
-  EventDataBytes(const EventDataBytes &) = delete;
-  const EventDataBytes &operator=(const EventDataBytes &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(EventDataBytes);
 };
 
 class EventDataReceipt : public EventData {
 public:
-  EventDataReceipt() : m_predicate(false) {}
+  EventDataReceipt() : EventData(), m_predicate(false) {}
 
-  ~EventDataReceipt() override = default;
+  ~EventDataReceipt() override {}
 
   static ConstString GetFlavorString() {
     static ConstString g_flavor("Process::ProcessEventData");
@@ -112,7 +108,7 @@ public:
 
   ConstString GetFlavor() const override { return GetFlavorString(); }
 
-  bool WaitForEventReceived(const Timeout<std::micro> &timeout = std::nullopt) {
+  bool WaitForEventReceived(const Timeout<std::micro> &timeout = llvm::None) {
     return m_predicate.WaitForValueEqualTo(true, timeout);
   }
 
@@ -173,9 +169,7 @@ private:
   StructuredData::ObjectSP m_object_sp;
   lldb::StructuredDataPluginSP m_plugin_sp;
 
-  EventDataStructuredData(const EventDataStructuredData &) = delete;
-  const EventDataStructuredData &
-  operator=(const EventDataStructuredData &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(EventDataStructuredData);
 };
 
 // lldb::Event
@@ -248,8 +242,7 @@ private:
   uint32_t m_type;             // The bit describing this event
   lldb::EventDataSP m_data_sp; // User specific data for this event
 
-  Event(const Event &) = delete;
-  const Event &operator=(const Event &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(Event);
   Event() = delete;
 };
 

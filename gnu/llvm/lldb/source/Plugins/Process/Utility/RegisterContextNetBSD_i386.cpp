@@ -80,7 +80,7 @@ RegisterContextNetBSD_i386::RegisterContextNetBSD_i386(
 size_t RegisterContextNetBSD_i386::GetGPRSize() const { return sizeof(GPR); }
 
 const RegisterInfo *RegisterContextNetBSD_i386::GetRegisterInfo() const {
-  switch (GetTargetArchitecture().GetMachine()) {
+  switch (m_target_arch.GetMachine()) {
   case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     return g_register_infos_i386;

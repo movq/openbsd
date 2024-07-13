@@ -1,4 +1,4 @@
-//===-- ThreadKDP.cpp -----------------------------------------------------===//
+//===-- ThreadKDP.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -39,12 +39,12 @@ using namespace lldb_private;
 ThreadKDP::ThreadKDP(Process &process, lldb::tid_t tid)
     : Thread(process, tid), m_thread_name(), m_dispatch_queue_name(),
       m_thread_dispatch_qaddr(LLDB_INVALID_ADDRESS) {
-  Log *log = GetLog(KDPLog::Thread);
+  Log *log = ProcessKDPLog::GetLogIfAllCategoriesSet(KDP_LOG_THREAD);
   LLDB_LOG(log, "this = {0}, tid = {1:x}", this, GetID());
 }
 
 ThreadKDP::~ThreadKDP() {
-  Log *log = GetLog(KDPLog::Thread);
+  Log *log = ProcessKDPLog::GetLogIfAllCategoriesSet(KDP_LOG_THREAD);
   LLDB_LOG(log, "this = {0}, tid = {1:x}", this, GetID());
   DestroyThread();
 }
@@ -118,7 +118,9 @@ ThreadKDP::CreateRegisterContextForFrame(StackFrame *frame) {
       }
     }
   } else {
-    reg_ctx_sp = GetUnwinder().CreateRegisterContextForFrame(frame);
+    Unwind *unwinder = GetUnwinder();
+    if (unwinder != nullptr)
+      reg_ctx_sp = unwinder->CreateRegisterContextForFrame(frame);
   }
   return reg_ctx_sp;
 }

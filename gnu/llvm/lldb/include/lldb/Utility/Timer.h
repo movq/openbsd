@@ -6,13 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_UTILITY_TIMER_H
-#define LLDB_UTILITY_TIMER_H
+#ifndef liblldb_Timer_h_
+#define liblldb_Timer_h_
 
 #include "lldb/lldb-defines.h"
 #include "llvm/Support/Chrono.h"
 #include <atomic>
-#include <cstdint>
+#include <stdint.h>
 
 namespace lldb_private {
 class Stream;
@@ -25,7 +25,6 @@ public:
   class Category {
   public:
     explicit Category(const char *category_name);
-    llvm::StringRef GetName() { return m_name; }
 
   private:
     friend class Timer;
@@ -35,17 +34,12 @@ public:
     std::atomic<uint64_t> m_count;
     std::atomic<Category *> m_next;
 
-    Category(const Category &) = delete;
-    const Category &operator=(const Category &) = delete;
+    DISALLOW_COPY_AND_ASSIGN(Category);
   };
 
   /// Default constructor.
   Timer(Category &category, const char *format, ...)
-#if !defined(_MSC_VER)
-  // MSVC appears to have trouble recognizing the this argument in the constructor.
-      __attribute__((format(printf, 3, 4)))
-#endif
-    ;
+      __attribute__((format(printf, 3, 4)));
 
   /// Destructor
   ~Timer();
@@ -72,19 +66,9 @@ protected:
   static std::atomic<unsigned> g_display_depth;
 
 private:
-  Timer(const Timer &) = delete;
-  const Timer &operator=(const Timer &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(Timer);
 };
 
 } // namespace lldb_private
 
-// Use a format string because LLVM_PRETTY_FUNCTION might not be a string
-// literal.
-#define LLDB_SCOPED_TIMER()                                                    \
-  static ::lldb_private::Timer::Category _cat(LLVM_PRETTY_FUNCTION);           \
-  ::lldb_private::Timer _scoped_timer(_cat, "%s", LLVM_PRETTY_FUNCTION)
-#define LLDB_SCOPED_TIMERF(...)                                                \
-  static ::lldb_private::Timer::Category _cat(LLVM_PRETTY_FUNCTION);           \
-  ::lldb_private::Timer _scoped_timer(_cat, __VA_ARGS__)
-
-#endif // LLDB_UTILITY_TIMER_H
+#endif // liblldb_Timer_h_

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_APPLEOBJCRUNTIME_APPLEOBJCRUNTIMEV1_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_APPLEOBJCRUNTIME_APPLEOBJCRUNTIMEV1_H
+#ifndef liblldb_AppleObjCRuntimeV1_h_
+#define liblldb_AppleObjCRuntimeV1_h_
 
 #include "AppleObjCRuntime.h"
 #include "lldb/lldb-private.h"
@@ -28,7 +28,7 @@ public:
   static lldb_private::LanguageRuntime *
   CreateInstance(Process *process, lldb::LanguageType language);
 
-  static llvm::StringRef GetPluginNameStatic() { return "apple-objc-v1"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
   static char ID;
 
@@ -61,12 +61,6 @@ public:
     bool GetTaggedPointerInfo(uint64_t *info_bits = nullptr,
                               uint64_t *value_bits = nullptr,
                               uint64_t *payload = nullptr) override {
-      return false;
-    }
-
-    bool GetTaggedPointerInfoSigned(uint64_t *info_bits = nullptr,
-                                    int64_t *value_bits = nullptr,
-                                    uint64_t *payload = nullptr) override {
       return false;
     }
 
@@ -103,11 +97,12 @@ public:
                                 Address &address,
                                 Value::ValueType &value_type) override;
 
-  llvm::Expected<std::unique_ptr<UtilityFunction>>
-  CreateObjectChecker(std::string, ExecutionContext &exe_ctx) override;
+  UtilityFunction *CreateObjectChecker(const char *) override;
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
   ObjCRuntimeVersions GetRuntimeVersion() const override {
     return ObjCRuntimeVersions::eAppleObjC_V1;
@@ -118,13 +113,14 @@ public:
   DeclVendor *GetDeclVendor() override;
 
 protected:
-  lldb::BreakpointResolverSP
-  CreateExceptionResolver(const lldb::BreakpointSP &bkpt,
-                          bool catch_bp, bool throw_bp) override;
+  lldb::BreakpointResolverSP CreateExceptionResolver(Breakpoint *bkpt,
+                                                     bool catch_bp,
+                                                     bool throw_bp) override;
 
   class HashTableSignature {
   public:
-    HashTableSignature() = default;
+    HashTableSignature()
+        : m_count(0), m_num_buckets(0), m_buckets_ptr(LLDB_INVALID_ADDRESS) {}
 
     bool NeedsUpdate(uint32_t count, uint32_t num_buckets,
                      lldb::addr_t buckets_ptr) {
@@ -140,9 +136,9 @@ protected:
     }
 
   protected:
-    uint32_t m_count = 0;
-    uint32_t m_num_buckets = 0;
-    lldb::addr_t m_buckets_ptr = LLDB_INVALID_ADDRESS;
+    uint32_t m_count;
+    uint32_t m_num_buckets;
+    lldb::addr_t m_buckets_ptr;
   };
 
   lldb::addr_t GetISAHashTablePointer();
@@ -157,4 +153,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_APPLEOBJCRUNTIME_APPLEOBJCRUNTIMEV1_H
+#endif // liblldb_AppleObjCRuntimeV1_h_

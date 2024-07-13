@@ -1,4 +1,4 @@
-//===-- DWARFBaseDIE.cpp --------------------------------------------------===//
+//===-- DWARFBaseDIE.cpp ---------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,13 +15,12 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Utility/Log.h"
-#include <optional>
 
 using namespace lldb_private;
 
-std::optional<DIERef> DWARFBaseDIE::GetDIERef() const {
+llvm::Optional<DIERef> DWARFBaseDIE::GetDIERef() const {
   if (!IsValid())
-    return std::nullopt;
+    return llvm::None;
 
   return DIERef(m_cu->GetSymbolFileDWARF().GetDwoNum(), m_cu->GetDebugSection(),
                 m_die->GetOffset());
@@ -54,13 +53,6 @@ uint64_t DWARFBaseDIE::GetAttributeValueAsUnsigned(const dw_attr_t attr,
     return fail_value;
 }
 
-std::optional<uint64_t>
-DWARFBaseDIE::GetAttributeValueAsOptionalUnsigned(const dw_attr_t attr) const {
-  if (IsValid())
-    return m_die->GetAttributeValueAsOptionalUnsigned(GetCU(), attr);
-  return std::nullopt;
-}
-
 uint64_t DWARFBaseDIE::GetAttributeValueAsAddress(const dw_attr_t attr,
                                               uint64_t fail_value) const {
   if (IsValid())
@@ -80,6 +72,13 @@ const char *DWARFBaseDIE::GetName() const {
     return m_die->GetName(m_cu);
   else
     return nullptr;
+}
+
+lldb::LanguageType DWARFBaseDIE::GetLanguage() const {
+  if (IsValid())
+    return m_cu->GetLanguageType();
+  else
+    return lldb::eLanguageTypeUnknown;
 }
 
 lldb::ModuleSP DWARFBaseDIE::GetModule() const {
@@ -104,6 +103,24 @@ SymbolFileDWARF *DWARFBaseDIE::GetDWARF() const {
     return nullptr;
 }
 
+llvm::Expected<lldb_private::TypeSystem &> DWARFBaseDIE::GetTypeSystem() const {
+  if (!m_cu)
+    return llvm::make_error<llvm::StringError>(
+        "Unable to get TypeSystem, no compilation unit available",
+        llvm::inconvertibleErrorCode());
+  return m_cu->GetTypeSystem();
+}
+
+DWARFASTParser *DWARFBaseDIE::GetDWARFParser() const {
+  auto type_system_or_err = GetTypeSystem();
+  if (auto err = type_system_or_err.takeError()) {
+    LLDB_LOG_ERROR(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_SYMBOLS),
+                   std::move(err), "Unable to get DWARFASTParser");
+    return nullptr;
+  }
+  return type_system_or_err->GetDWARFParser();
+}
+
 bool DWARFBaseDIE::HasChildren() const {
   return m_die && m_die->HasChildren();
 }
@@ -113,10 +130,11 @@ bool DWARFBaseDIE::Supports_DW_AT_APPLE_objc_complete_type() const {
 }
 
 size_t DWARFBaseDIE::GetAttributes(DWARFAttributes &attributes,
-                                   Recurse recurse) const {
+                               uint32_t depth) const {
   if (IsValid())
-    return m_die->GetAttributes(m_cu, attributes, recurse);
-  attributes.Clear();
+    return m_die->GetAttributes(m_cu, attributes, depth);
+  if (depth == 0)
+    attributes.Clear();
   return 0;
 }
 

@@ -9,11 +9,13 @@
 #ifndef LLDB_UTILITY_PROCESSINFO_H
 #define LLDB_UTILITY_PROCESSINFO_H
 
+// LLDB headers
 #include "lldb/Utility/ArchSpec.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/Environment.h"
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/NameMatches.h"
+
 #include <vector>
 
 namespace lldb_private {
@@ -93,10 +95,10 @@ protected:
   // the resolved platform executable (which is in m_executable)
   Args m_arguments; // All program arguments except argv[0]
   Environment m_environment;
-  uint32_t m_uid = UINT32_MAX;
-  uint32_t m_gid = UINT32_MAX;
+  uint32_t m_uid;
+  uint32_t m_gid;
   ArchSpec m_arch;
-  lldb::pid_t m_pid = LLDB_INVALID_PROCESS_ID;
+  lldb::pid_t m_pid;
 };
 
 // ProcessInstanceInfo
@@ -105,7 +107,9 @@ protected:
 // to that process.
 class ProcessInstanceInfo : public ProcessInfo {
 public:
-  ProcessInstanceInfo() = default;
+  ProcessInstanceInfo()
+      : ProcessInfo(), m_euid(UINT32_MAX), m_egid(UINT32_MAX),
+        m_parent_pid(LLDB_INVALID_PROCESS_ID) {}
 
   ProcessInstanceInfo(const char *name, const ArchSpec &arch, lldb::pid_t pid)
       : ProcessInfo(name, arch, pid), m_euid(UINT32_MAX), m_egid(UINT32_MAX),
@@ -146,12 +150,46 @@ public:
                       bool verbose) const;
 
 protected:
-  uint32_t m_euid = UINT32_MAX;
-  uint32_t m_egid = UINT32_MAX;
-  lldb::pid_t m_parent_pid = LLDB_INVALID_PROCESS_ID;
+  uint32_t m_euid;
+  uint32_t m_egid;
+  lldb::pid_t m_parent_pid;
 };
 
-typedef std::vector<ProcessInstanceInfo> ProcessInstanceInfoList;
+class ProcessInstanceInfoList {
+public:
+  ProcessInstanceInfoList() = default;
+
+  void Clear() { m_infos.clear(); }
+
+  size_t GetSize() { return m_infos.size(); }
+
+  void Append(const ProcessInstanceInfo &info) { m_infos.push_back(info); }
+
+  llvm::StringRef GetProcessNameAtIndex(size_t idx) {
+    return ((idx < m_infos.size()) ? m_infos[idx].GetNameAsStringRef() : "");
+  }
+
+  lldb::pid_t GetProcessIDAtIndex(size_t idx) {
+    return ((idx < m_infos.size()) ? m_infos[idx].GetProcessID() : 0);
+  }
+
+  bool GetInfoAtIndex(size_t idx, ProcessInstanceInfo &info) {
+    if (idx < m_infos.size()) {
+      info = m_infos[idx];
+      return true;
+    }
+    return false;
+  }
+
+  // You must ensure "idx" is valid before calling this function
+  const ProcessInstanceInfo &GetProcessInfoAtIndex(size_t idx) const {
+    assert(idx < m_infos.size());
+    return m_infos[idx];
+  }
+
+protected:
+  std::vector<ProcessInstanceInfo> m_infos;
+};
 
 // ProcessInstanceInfoMatch
 //
@@ -159,11 +197,14 @@ typedef std::vector<ProcessInstanceInfo> ProcessInstanceInfoList;
 
 class ProcessInstanceInfoMatch {
 public:
-  ProcessInstanceInfoMatch() = default;
+  ProcessInstanceInfoMatch()
+      : m_match_info(), m_name_match_type(NameMatch::Ignore),
+        m_match_all_users(false) {}
 
   ProcessInstanceInfoMatch(const char *process_name,
                            NameMatch process_name_match_type)
-      : m_name_match_type(process_name_match_type), m_match_all_users(false) {
+      : m_match_info(), m_name_match_type(process_name_match_type),
+        m_match_all_users(false) {
     m_match_info.GetExecutableFile().SetFile(process_name,
                                              FileSpec::Style::native);
   }
@@ -203,10 +244,10 @@ public:
 
 protected:
   ProcessInstanceInfo m_match_info;
-  NameMatch m_name_match_type = NameMatch::Ignore;
-  bool m_match_all_users = false;
+  NameMatch m_name_match_type;
+  bool m_match_all_users;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_UTILITY_PROCESSINFO_H
+#endif // #ifndef LLDB_UTILITY_PROCESSINFO_H

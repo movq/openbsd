@@ -7,10 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 namespace lldb {
-
-%feature("docstring",
-"Controls LLDB's reproducer functionality."
-) SBReproducer;
 class SBReproducer
 {
     public:

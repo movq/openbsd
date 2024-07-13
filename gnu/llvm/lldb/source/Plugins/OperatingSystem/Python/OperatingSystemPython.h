@@ -13,9 +13,10 @@
 
 #if LLDB_ENABLE_PYTHON
 
-#include "lldb/Target/DynamicRegisterInfo.h"
 #include "lldb/Target/OperatingSystem.h"
 #include "lldb/Utility/StructuredData.h"
+
+class DynamicRegisterInfo;
 
 namespace lldb_private {
 class ScriptInterpreter;
@@ -36,12 +37,14 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "python"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   // lldb_private::PluginInterface Methods
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
   // lldb_private::OperatingSystem Methods
   bool UpdateThreadList(lldb_private::ThreadList &old_thread_list,
@@ -71,14 +74,14 @@ protected:
       lldb_private::ThreadList &old_thread_list,
       std::vector<bool> &core_used_map, bool *did_create_ptr);
 
-  lldb_private::DynamicRegisterInfo *GetDynamicRegisterInfo();
+  DynamicRegisterInfo *GetDynamicRegisterInfo();
 
   lldb::ValueObjectSP m_thread_list_valobj_sp;
-  std::unique_ptr<lldb_private::DynamicRegisterInfo> m_register_info_up;
+  std::unique_ptr<DynamicRegisterInfo> m_register_info_up;
   lldb_private::ScriptInterpreter *m_interpreter;
   lldb_private::StructuredData::ObjectSP m_python_object_sp;
 };
 
-#endif // LLDB_ENABLE_PYTHON
+#endif
 
 #endif // liblldb_OperatingSystemPython_h_

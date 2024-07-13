@@ -1,4 +1,4 @@
-//===-- IRForTarget.cpp ---------------------------------------------------===//
+//===-- IRForTarget.cpp -----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -9,12 +9,9 @@
 #include "IRForTarget.h"
 
 #include "ClangExpressionDeclMap.h"
-#include "ClangUtil.h"
 
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Operator.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
@@ -30,27 +27,28 @@
 #include "lldb/Core/dwarf.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Expression/IRInterpreter.h"
+#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/ClangUtil.h"
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/Endian.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/StreamString.h"
 
 #include <map>
-#include <optional>
 
 using namespace llvm;
-using lldb_private::LLDBLog;
+
+static char ID;
 
 typedef SmallVector<Instruction *, 2> InstrList;
 
 IRForTarget::FunctionValueCache::FunctionValueCache(Maker const &maker)
     : m_maker(maker), m_values() {}
 
-IRForTarget::FunctionValueCache::~FunctionValueCache() = default;
+IRForTarget::FunctionValueCache::~FunctionValueCache() {}
 
 llvm::Value *
 IRForTarget::FunctionValueCache::GetValue(llvm::Function *function) {
@@ -74,9 +72,13 @@ IRForTarget::IRForTarget(lldb_private::ClangExpressionDeclMap *decl_map,
                          lldb_private::IRExecutionUnit &execution_unit,
                          lldb_private::Stream &error_stream,
                          const char *func_name)
-    : m_resolve_vars(resolve_vars), m_func_name(func_name),
-      m_decl_map(decl_map), m_error_stream(error_stream),
-      m_execution_unit(execution_unit),
+    : ModulePass(ID), m_resolve_vars(resolve_vars), m_func_name(func_name),
+      m_module(nullptr), m_decl_map(decl_map),
+      m_CFStringCreateWithBytes(nullptr), m_sel_registerName(nullptr),
+      m_objc_getClass(nullptr), m_intptr_ty(nullptr),
+      m_error_stream(error_stream), m_execution_unit(execution_unit),
+      m_result_store(nullptr), m_result_is_pointer(false),
+      m_reloc_placeholder(nullptr),
       m_entry_instruction_finder(FindEntryInstruction) {}
 
 /* Handy utility functions used at several places in the code */
@@ -102,6 +104,8 @@ static std::string PrintType(const llvm::Type *type, bool truncate = false) {
     s.resize(s.length() - 1);
   return s;
 }
+
+IRForTarget::~IRForTarget() {}
 
 bool IRForTarget::FixFunctionLinkage(llvm::Function &llvm_function) {
   llvm_function.setLinkage(GlobalValue::ExternalLinkage);
@@ -161,7 +165,8 @@ static bool isGuardVariableSymbol(llvm::StringRef mangled_symbol,
 }
 
 bool IRForTarget::CreateResultVariable(llvm::Function &llvm_function) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   if (!m_resolve_vars)
     return true;
@@ -278,13 +283,17 @@ bool IRForTarget::CreateResultVariable(llvm::Function &llvm_function) {
       clang::QualType element_qual_type = pointer_pointertype->getPointeeType();
 
       m_result_type = lldb_private::TypeFromParser(
-          m_decl_map->GetTypeSystem()->GetType(element_qual_type));
+          element_qual_type.getAsOpaquePtr(),
+          lldb_private::ClangASTContext::GetASTContext(
+              &result_decl->getASTContext()));
     } else if (pointer_objcobjpointertype) {
       clang::QualType element_qual_type =
           clang::QualType(pointer_objcobjpointertype->getObjectType(), 0);
 
       m_result_type = lldb_private::TypeFromParser(
-          m_decl_map->GetTypeSystem()->GetType(element_qual_type));
+          element_qual_type.getAsOpaquePtr(),
+          lldb_private::ClangASTContext::GetASTContext(
+              &result_decl->getASTContext()));
     } else {
       LLDB_LOG(log, "Expected result to have pointer type, but it did not");
 
@@ -296,11 +305,15 @@ bool IRForTarget::CreateResultVariable(llvm::Function &llvm_function) {
     }
   } else {
     m_result_type = lldb_private::TypeFromParser(
-        m_decl_map->GetTypeSystem()->GetType(result_var->getType()));
+        result_var->getType().getAsOpaquePtr(),
+        lldb_private::ClangASTContext::GetASTContext(
+            &result_decl->getASTContext()));
   }
 
   lldb::TargetSP target_sp(m_execution_unit.GetTarget());
-  std::optional<uint64_t> bit_size = m_result_type.GetBitSize(target_sp.get());
+  lldb_private::ExecutionContext exe_ctx(target_sp, true);
+  llvm::Optional<uint64_t> bit_size =
+      m_result_type.GetBitSize(exe_ctx.GetBestExecutionContextScope());
   if (!bit_size) {
     lldb_private::StreamString type_desc_stream;
     m_result_type.DumpTypeDescription(&type_desc_stream);
@@ -323,14 +336,14 @@ bool IRForTarget::CreateResultVariable(llvm::Function &llvm_function) {
   m_result_name = lldb_private::ConstString("$RESULT_NAME");
 
   LLDB_LOG(log, "Creating a new result global: \"{0}\" with size {1}",
-           m_result_name,
-           m_result_type.GetByteSize(target_sp.get()).value_or(0));
+           m_result_name, m_result_type.GetByteSize(nullptr).getValueOr(0));
 
   // Construct a new result global and set up its metadata
 
   GlobalVariable *new_result_global = new GlobalVariable(
-      (*m_module), result_global->getValueType(), false, /* not constant */
-      GlobalValue::ExternalLinkage, nullptr,             /* no initializer */
+      (*m_module), result_global->getType()->getElementType(),
+      false,                                 /* not constant */
+      GlobalValue::ExternalLinkage, nullptr, /* no initializer */
       m_result_name.GetCString());
 
   // It's too late in compilation to create a new VarDecl for this, but we
@@ -400,7 +413,8 @@ bool IRForTarget::CreateResultVariable(llvm::Function &llvm_function) {
 
 bool IRForTarget::RewriteObjCConstString(llvm::GlobalVariable *ns_str,
                                          llvm::GlobalVariable *cstr) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   Type *ns_str_ty = ns_str->getType();
 
@@ -419,7 +433,7 @@ bool IRForTarget::RewriteObjCConstString(llvm::GlobalVariable *ns_str,
         m_execution_unit.FindSymbol(g_CFStringCreateWithBytes_str, 
                                     missing_weak);
     if (CFStringCreateWithBytes_addr == LLDB_INVALID_ADDRESS || missing_weak) {
-      LLDB_LOG(log, "Couldn't find CFStringCreateWithBytes in the target");
+        log->PutCString("Couldn't find CFStringCreateWithBytes in the target");
 
       m_error_stream.Printf("Error [IRForTarget]: Rewriting an Objective-C "
                             "constant string requires "
@@ -537,7 +551,8 @@ bool IRForTarget::RewriteObjCConstString(llvm::GlobalVariable *ns_str,
 }
 
 bool IRForTarget::RewriteObjCConstStrings() {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   ValueSymbolTable &value_symbol_table = m_module->getValueSymbolTable();
 
@@ -616,7 +631,29 @@ bool IRForTarget::RewriteObjCConstStrings() {
         return false;
       }
 
-      auto *cstr_global = dyn_cast<GlobalVariable>(nsstring_member);
+      ConstantExpr *nsstring_expr = dyn_cast<ConstantExpr>(nsstring_member);
+
+      if (!nsstring_expr) {
+        LLDB_LOG(log,
+                 "NSString initializer's str element is not a ConstantExpr");
+
+        m_error_stream.Printf("Internal error [IRForTarget]: An Objective-C "
+                              "constant string's string initializer is not "
+                              "constant\n");
+
+        return false;
+      }
+
+      GlobalVariable *cstr_global = nullptr;
+
+      if (nsstring_expr->getOpcode() == Instruction::GetElementPtr) {
+        Constant *nsstring_cstr = nsstring_expr->getOperand(0);
+        cstr_global = dyn_cast<GlobalVariable>(nsstring_cstr);
+      } else if (nsstring_expr->getOpcode() == Instruction::BitCast) {
+        Constant *nsstring_cstr = nsstring_expr->getOperand(0);
+        cstr_global = dyn_cast<GlobalVariable>(nsstring_cstr);
+      }
+
       if (!cstr_global) {
         LLDB_LOG(log,
                  "NSString initializer's str element is not a GlobalVariable");
@@ -727,7 +764,8 @@ static bool IsObjCSelectorRef(Value *value) {
 
 // This function does not report errors; its callers are responsible.
 bool IRForTarget::RewriteObjCSelector(Instruction *selector_load) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   LoadInst *load = dyn_cast<LoadInst>(selector_load);
 
@@ -737,16 +775,17 @@ bool IRForTarget::RewriteObjCSelector(Instruction *selector_load) {
   // Unpack the message name from the selector.  In LLVM IR, an objc_msgSend
   // gets represented as
   //
-  //   %sel = load ptr, ptr @OBJC_SELECTOR_REFERENCES_, align 8
-  //   call i8 @objc_msgSend(ptr %obj, ptr %sel, ...)
+  // %tmp     = load i8** @"OBJC_SELECTOR_REFERENCES_" ; <i8*> %call    = call
+  // i8* (i8*, i8*, ...)* @objc_msgSend(i8* %obj, i8* %tmp, ...) ; <i8*>
   //
-  // where %obj is the object pointer and %sel is the selector.
+  // where %obj is the object pointer and %tmp is the selector.
   //
   // @"OBJC_SELECTOR_REFERENCES_" is a pointer to a character array called
   // @"\01L_OBJC_llvm_moduleETH_VAR_NAllvm_moduleE_".
   // @"\01L_OBJC_llvm_moduleETH_VAR_NAllvm_moduleE_" contains the string.
 
-  // Find the pointer's initializer and get the string from its target.
+  // Find the pointer's initializer (a ConstantExpr with opcode GetElementPtr)
+  // and get the string from its target
 
   GlobalVariable *_objc_selector_references_ =
       dyn_cast<GlobalVariable>(load->getPointerOperand());
@@ -756,13 +795,22 @@ bool IRForTarget::RewriteObjCSelector(Instruction *selector_load) {
     return false;
 
   Constant *osr_initializer = _objc_selector_references_->getInitializer();
-  if (!osr_initializer)
+
+  ConstantExpr *osr_initializer_expr = dyn_cast<ConstantExpr>(osr_initializer);
+
+  if (!osr_initializer_expr ||
+      osr_initializer_expr->getOpcode() != Instruction::GetElementPtr)
+    return false;
+
+  Value *osr_initializer_base = osr_initializer_expr->getOperand(0);
+
+  if (!osr_initializer_base)
     return false;
 
   // Find the string's initializer (a ConstantArray) and get the string from it
 
   GlobalVariable *_objc_meth_var_name_ =
-      dyn_cast<GlobalVariable>(osr_initializer);
+      dyn_cast<GlobalVariable>(osr_initializer_base);
 
   if (!_objc_meth_var_name_ || !_objc_meth_var_name_->hasInitializer())
     return false;
@@ -775,8 +823,7 @@ bool IRForTarget::RewriteObjCSelector(Instruction *selector_load) {
   if (!omvn_initializer_array->isString())
     return false;
 
-  std::string omvn_initializer_string =
-      std::string(omvn_initializer_array->getAsString());
+  std::string omvn_initializer_string = omvn_initializer_array->getAsString();
 
   LLDB_LOG(log, "Found Objective-C selector reference \"{0}\"",
            omvn_initializer_string);
@@ -843,7 +890,8 @@ bool IRForTarget::RewriteObjCSelector(Instruction *selector_load) {
 }
 
 bool IRForTarget::RewriteObjCSelectors(BasicBlock &basic_block) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   InstrList selector_loads;
 
@@ -877,7 +925,8 @@ static bool IsObjCClassReference(Value *value) {
 
 // This function does not report errors; its callers are responsible.
 bool IRForTarget::RewriteObjCClassReference(Instruction *class_load) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   LoadInst *load = dyn_cast<LoadInst>(class_load);
 
@@ -932,8 +981,7 @@ bool IRForTarget::RewriteObjCClassReference(Instruction *class_load) {
   if (!ocn_initializer_array->isString())
     return false;
 
-  std::string ocn_initializer_string =
-      std::string(ocn_initializer_array->getAsString());
+  std::string ocn_initializer_string = ocn_initializer_array->getAsString();
 
   LLDB_LOG(log, "Found Objective-C class reference \"{0}\"",
            ocn_initializer_string);
@@ -993,7 +1041,8 @@ bool IRForTarget::RewriteObjCClassReference(Instruction *class_load) {
 }
 
 bool IRForTarget::RewriteObjCClassReferences(BasicBlock &basic_block) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   InstrList class_loads;
 
@@ -1020,7 +1069,8 @@ bool IRForTarget::RewriteObjCClassReferences(BasicBlock &basic_block) {
 
 // This function does not report errors; its callers are responsible.
 bool IRForTarget::RewritePersistentAlloc(llvm::Instruction *persistent_alloc) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   AllocaInst *alloc = dyn_cast<AllocaInst>(persistent_alloc);
 
@@ -1042,7 +1092,8 @@ bool IRForTarget::RewritePersistentAlloc(llvm::Instruction *persistent_alloc) {
   clang::VarDecl *decl = reinterpret_cast<clang::VarDecl *>(ptr);
 
   lldb_private::TypeFromParser result_decl_type(
-      m_decl_map->GetTypeSystem()->GetType(decl->getType()));
+      decl->getType().getAsOpaquePtr(),
+      lldb_private::ClangASTContext::GetASTContext(&decl->getASTContext()));
 
   StringRef decl_name(decl->getName());
   lldb_private::ConstString persistent_variable_name(decl_name.data(),
@@ -1074,8 +1125,7 @@ bool IRForTarget::RewritePersistentAlloc(llvm::Instruction *persistent_alloc) {
   // Now, since the variable is a pointer variable, we will drop in a load of
   // that pointer variable.
 
-  LoadInst *persistent_load = new LoadInst(persistent_global->getValueType(),
-                                           persistent_global, "", alloc);
+  LoadInst *persistent_load = new LoadInst(persistent_global, "", alloc);
 
   LLDB_LOG(log, "Replacing \"{0}\" with \"{1}\"", PrintValue(alloc),
            PrintValue(persistent_load));
@@ -1090,7 +1140,8 @@ bool IRForTarget::RewritePersistentAllocs(llvm::BasicBlock &basic_block) {
   if (!m_resolve_vars)
     return true;
 
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   InstrList pvar_allocs;
 
@@ -1131,7 +1182,8 @@ bool IRForTarget::RewritePersistentAllocs(llvm::BasicBlock &basic_block) {
 
 // This function does not report errors; its callers are responsible.
 bool IRForTarget::MaybeHandleVariable(Value *llvm_value_ptr) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   LLDB_LOG(log, "MaybeHandleVariable ({0})", PrintValue(llvm_value_ptr));
 
@@ -1171,8 +1223,10 @@ bool IRForTarget::MaybeHandleVariable(Value *llvm_value_ptr) {
     if (value_decl == nullptr)
       return false;
 
-    lldb_private::CompilerType compiler_type =
-        m_decl_map->GetTypeSystem()->GetType(value_decl->getType());
+    lldb_private::CompilerType compiler_type(
+        lldb_private::ClangASTContext::GetASTContext(
+            &value_decl->getASTContext()),
+        value_decl->getType().getAsOpaquePtr());
 
     const Type *value_type = nullptr;
 
@@ -1193,11 +1247,10 @@ bool IRForTarget::MaybeHandleVariable(Value *llvm_value_ptr) {
       value_type = global_variable->getType();
     }
 
-    auto *target = m_execution_unit.GetTarget().get();
-    std::optional<uint64_t> value_size = compiler_type.GetByteSize(target);
+    llvm::Optional<uint64_t> value_size = compiler_type.GetByteSize(nullptr);
     if (!value_size)
       return false;
-    std::optional<size_t> opt_alignment = compiler_type.GetTypeBitAlign(target);
+    llvm::Optional<size_t> opt_alignment = compiler_type.GetTypeBitAlign(nullptr);
     if (!opt_alignment)
       return false;
     lldb::offset_t value_alignment = (*opt_alignment + 7ull) / 8ull;
@@ -1213,7 +1266,7 @@ bool IRForTarget::MaybeHandleVariable(Value *llvm_value_ptr) {
       m_decl_map->AddValueToStruct(named_decl, lldb_private::ConstString(name),
                                    llvm_value_ptr, *value_size,
                                    value_alignment);
-  } else if (isa<llvm::Function>(llvm_value_ptr)) {
+  } else if (dyn_cast<llvm::Function>(llvm_value_ptr)) {
     LLDB_LOG(log, "Function pointers aren't handled right now");
 
     return false;
@@ -1224,7 +1277,8 @@ bool IRForTarget::MaybeHandleVariable(Value *llvm_value_ptr) {
 
 // This function does not report errors; its callers are responsible.
 bool IRForTarget::HandleSymbol(Value *symbol) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   lldb_private::ConstString name(symbol->getName().str().c_str());
 
@@ -1255,11 +1309,12 @@ bool IRForTarget::HandleSymbol(Value *symbol) {
 }
 
 bool IRForTarget::MaybeHandleCallArguments(CallInst *Old) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   LLDB_LOG(log, "MaybeHandleCallArguments({0})", PrintValue(Old));
 
-  for (unsigned op_index = 0, num_ops = Old->arg_size();
+  for (unsigned op_index = 0, num_ops = Old->getNumArgOperands();
        op_index < num_ops; ++op_index)
     // conservatively believe that this is a store
     if (!MaybeHandleVariable(Old->getArgOperand(op_index))) {
@@ -1273,7 +1328,8 @@ bool IRForTarget::MaybeHandleCallArguments(CallInst *Old) {
 }
 
 bool IRForTarget::HandleObjCClass(Value *classlist_reference) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   GlobalVariable *global_variable =
       dyn_cast<GlobalVariable>(classlist_reference);
@@ -1344,7 +1400,7 @@ bool IRForTarget::RemoveCXAAtExit(BasicBlock &basic_block) {
     if (func && func->getName() == "__cxa_atexit")
       remove = true;
 
-    llvm::Value *val = call->getCalledOperand();
+    llvm::Value *val = call->getCalledValue();
 
     if (val && val->getName() == "__cxa_atexit")
       remove = true;
@@ -1374,7 +1430,8 @@ bool IRForTarget::ResolveCalls(BasicBlock &basic_block) {
 }
 
 bool IRForTarget::ResolveExternals(Function &llvm_function) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   for (GlobalVariable &global_var : m_module->globals()) {
     llvm::StringRef global_name = global_var.getName();
@@ -1529,14 +1586,20 @@ bool IRForTarget::UnfoldConstant(Constant *old_constant,
           FunctionValueCache get_element_pointer_maker(
               [&value_maker, &entry_instruction_finder, old_constant,
                constant_expr](llvm::Function *function) -> llvm::Value * {
-                auto *gep = cast<llvm::GEPOperator>(constant_expr);
-                Value *ptr = gep->getPointerOperand();
+                Value *ptr = constant_expr->getOperand(0);
 
                 if (ptr == old_constant)
                   ptr = value_maker.GetValue(function);
 
                 std::vector<Value *> index_vector;
-                for (Value *operand : gep->indices()) {
+
+                unsigned operand_index;
+                unsigned num_operands = constant_expr->getNumOperands();
+
+                for (operand_index = 1; operand_index < num_operands;
+                     ++operand_index) {
+                  Value *operand = constant_expr->getOperand(operand_index);
+
                   if (operand == old_constant)
                     operand = value_maker.GetValue(function);
 
@@ -1546,7 +1609,7 @@ bool IRForTarget::UnfoldConstant(Constant *old_constant,
                 ArrayRef<Value *> indices(index_vector);
 
                 return GetElementPtrInst::Create(
-                    gep->getSourceElementType(), ptr, indices, "",
+                    nullptr, ptr, indices, "",
                     llvm::cast<Instruction>(
                         entry_instruction_finder.GetValue(function)));
               });
@@ -1592,7 +1655,8 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
   if (!m_resolve_vars)
     return true;
 
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   m_decl_map->DoStructLayout();
 
@@ -1725,19 +1789,17 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
             llvm::Instruction *entry_instruction = llvm::cast<Instruction>(
                 m_entry_instruction_finder.GetValue(function));
 
-            Type *int8Ty = Type::getInt8Ty(function->getContext());
             ConstantInt *offset_int(
                 ConstantInt::get(offset_type, offset, true));
             GetElementPtrInst *get_element_ptr = GetElementPtrInst::Create(
-                int8Ty, argument, offset_int, "", entry_instruction);
+                nullptr, argument, offset_int, "", entry_instruction);
 
             if (name == m_result_name && !m_result_is_pointer) {
               BitCastInst *bit_cast = new BitCastInst(
                   get_element_ptr, value->getType()->getPointerTo(), "",
                   entry_instruction);
 
-              LoadInst *load = new LoadInst(value->getType(), bit_cast, "",
-                                            entry_instruction);
+              LoadInst *load = new LoadInst(bit_cast, "", entry_instruction);
 
               return load;
             } else {
@@ -1779,10 +1841,11 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
 }
 
 bool IRForTarget::runOnModule(Module &llvm_module) {
-  lldb_private::Log *log(GetLog(LLDBLog::Expressions));
+  lldb_private::Log *log(
+      lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   m_module = &llvm_module;
-  m_target_data = std::make_unique<DataLayout>(m_module);
+  m_target_data.reset(new DataLayout(m_module));
   m_intptr_ty = llvm::Type::getIntNTy(m_module->getContext(),
                                       m_target_data->getPointerSizeInBits());
 
@@ -1960,4 +2023,11 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
   }
 
   return true;
+}
+
+void IRForTarget::assignPassManager(PMStack &pass_mgr_stack,
+                                    PassManagerType pass_mgr_type) {}
+
+PassManagerType IRForTarget::getPotentialPassManagerType() const {
+  return PMT_ModulePassManager;
 }

@@ -6,21 +6,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_INTERPRETER_OPTIONVALUEBOOLEAN_H
-#define LLDB_INTERPRETER_OPTIONVALUEBOOLEAN_H
+#ifndef liblldb_OptionValueBoolean_h_
+#define liblldb_OptionValueBoolean_h_
 
 #include "lldb/Interpreter/OptionValue.h"
 
 namespace lldb_private {
 
-class OptionValueBoolean : public Cloneable<OptionValueBoolean, OptionValue> {
+class OptionValueBoolean : public OptionValue {
 public:
   OptionValueBoolean(bool value)
-      : m_current_value(value), m_default_value(value) {}
+      : OptionValue(), m_current_value(value), m_default_value(value) {}
   OptionValueBoolean(bool current_value, bool default_value)
-      : m_current_value(current_value), m_default_value(default_value) {}
+      : OptionValue(), m_current_value(current_value),
+        m_default_value(default_value) {}
 
-  ~OptionValueBoolean() override = default;
+  ~OptionValueBoolean() override {}
 
   // Virtual subclass pure virtual overrides
 
@@ -29,17 +30,17 @@ public:
   void DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
                  uint32_t dump_mask) override;
 
-  llvm::json::Value ToJSON(const ExecutionContext *exe_ctx) override {
-    return m_current_value;
-  }
-
   Status
   SetValueFromString(llvm::StringRef value,
                      VarSetOperationType op = eVarSetOperationAssign) override;
+  Status
+  SetValueFromString(const char *,
+                     VarSetOperationType = eVarSetOperationAssign) = delete;
 
-  void Clear() override {
+  bool Clear() override {
     m_current_value = m_default_value;
     m_value_was_set = false;
+    return true;
   }
 
   void AutoComplete(CommandInterpreter &interpreter,
@@ -75,6 +76,8 @@ public:
 
   void SetDefaultValue(bool value) { m_default_value = value; }
 
+  lldb::OptionValueSP DeepCopy() const override;
+
 protected:
   bool m_current_value;
   bool m_default_value;
@@ -82,4 +85,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_INTERPRETER_OPTIONVALUEBOOLEAN_H
+#endif // liblldb_OptionValueBoolean_h_

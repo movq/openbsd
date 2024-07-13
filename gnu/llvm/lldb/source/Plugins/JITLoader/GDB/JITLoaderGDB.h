@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_JITLOADER_GDB_JITLOADERGDB_H
-#define LLDB_SOURCE_PLUGINS_JITLOADER_GDB_JITLOADERGDB_H
+#ifndef liblldb_JITLoaderGDB_h_
+#define liblldb_JITLoaderGDB_h_
 
 #include <map>
 
@@ -25,9 +25,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "gdb"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb::JITLoaderSP CreateInstance(lldb_private::Process *process,
                                           bool force);
@@ -35,7 +35,9 @@ public:
   static void DebuggerInitialize(lldb_private::Debugger &debugger);
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
   // JITLoader interface
   void DidAttach() override;
@@ -75,4 +77,4 @@ private:
   lldb::addr_t m_jit_descriptor_addr;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_JITLOADER_GDB_JITLOADERGDB_H
+#endif // liblldb_JITLoaderGDB_h_

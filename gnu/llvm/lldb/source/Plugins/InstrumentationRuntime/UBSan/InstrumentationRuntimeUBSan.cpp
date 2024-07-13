@@ -29,7 +29,7 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Stream.h"
-#include <cctype>
+#include <ctype.h>
 
 #include <memory>
 
@@ -54,6 +54,10 @@ void InstrumentationRuntimeUBSan::Initialize() {
 
 void InstrumentationRuntimeUBSan::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
+}
+
+lldb_private::ConstString InstrumentationRuntimeUBSan::GetPluginNameStatic() {
+  return ConstString("UndefinedBehaviorSanitizer");
 }
 
 lldb::InstrumentationRuntimeType InstrumentationRuntimeUBSan::GetTypeStatic() {
@@ -136,11 +140,9 @@ StructuredData::ObjectSP InstrumentationRuntimeUBSan::RetrieveReportData(
       exe_ctx, options, ub_sanitizer_retrieve_report_data_command, "",
       main_value, eval_error);
   if (result != eExpressionCompleted) {
-    StreamString ss;
-    ss << "cannot evaluate UndefinedBehaviorSanitizer expression:\n";
-    ss << eval_error.AsCString();
-    Debugger::ReportWarning(ss.GetString().str(),
-                            process_sp->GetTarget().GetDebugger().GetID());
+    target.GetDebugger().GetAsyncOutputStream()->Printf(
+        "Warning: Cannot evaluate UndefinedBehaviorSanitizer expression:\n%s\n",
+        eval_error.AsCString());
     return StructuredData::ObjectSP();
   }
 
@@ -148,8 +150,8 @@ StructuredData::ObjectSP InstrumentationRuntimeUBSan::RetrieveReportData(
   StructuredData::Array *trace = new StructuredData::Array();
   auto trace_sp = StructuredData::ObjectSP(trace);
   for (unsigned I = 0; I < thread_sp->GetStackFrameCount(); ++I) {
-    const Address FCA = thread_sp->GetStackFrameAtIndex(I)
-                            ->GetFrameCodeAddressForSymbolication();
+    const Address FCA =
+        thread_sp->GetStackFrameAtIndex(I)->GetFrameCodeAddress();
     if (FCA.GetModule() == runtime_module_sp) // Skip PCs from the runtime.
       continue;
 
@@ -275,9 +277,8 @@ void InstrumentationRuntimeUBSan::Activate() {
           .CreateBreakpoint(symbol_address, /*internal=*/true,
                             /*hardware=*/false)
           .get();
-  const bool sync = false;
   breakpoint->SetCallback(InstrumentationRuntimeUBSan::NotifyBreakpointHit,
-                          this, sync);
+                          this, true);
   breakpoint->SetBreakpointKind("undefined-behavior-sanitizer-report");
   SetBreakpointID(breakpoint->GetID());
 
@@ -323,11 +324,8 @@ InstrumentationRuntimeUBSan::GetBacktracesFromExtendedStopInfo(
       info->GetObjectForDotSeparatedPath("tid");
   tid_t tid = thread_id_obj ? thread_id_obj->GetIntegerValue() : 0;
 
-  // We gather symbolication addresses above, so no need for HistoryThread to
-  // try to infer the call addresses.
-  bool pcs_are_call_addresses = true;
-  ThreadSP new_thread_sp = std::make_shared<HistoryThread>(
-      *process_sp, tid, PCs, pcs_are_call_addresses);
+  HistoryThread *history_thread = new HistoryThread(*process_sp, tid, PCs);
+  ThreadSP new_thread_sp(history_thread);
   std::string stop_reason_description = GetStopReasonDescription(info);
   new_thread_sp->SetName(stop_reason_description.c_str());
 

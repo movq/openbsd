@@ -6,45 +6,31 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_HOST_HOSTINFOBASE_H
-#define LLDB_HOST_HOSTINFOBASE_H
+#ifndef lldb_Host_HostInfoBase_h_
+#define lldb_Host_HostInfoBase_h_
 
 #include "lldb/Utility/ArchSpec.h"
 #include "lldb/Utility/FileSpec.h"
-#include "lldb/Utility/UUID.h"
 #include "lldb/Utility/UserIDResolver.h"
-#include "lldb/Utility/XcodeSDK.h"
 #include "lldb/lldb-enumerations.h"
 #include "llvm/ADT/StringRef.h"
 
-#include <cstdint>
+#include <stdint.h>
 
-#include <optional>
 #include <string>
 
 namespace lldb_private {
 
 class FileSpec;
 
-struct SharedCacheImageInfo {
-  UUID uuid;
-  lldb::DataBufferSP data_sp;
-};
-
 class HostInfoBase {
 private:
   // Static class, unconstructable.
-  HostInfoBase() = default;
-  ~HostInfoBase() = default;
+  HostInfoBase() {}
+  ~HostInfoBase() {}
 
 public:
-  /// A helper function for determining the liblldb location. It receives a
-  /// FileSpec with the location of file containing _this_ code. It can
-  /// (optionally) replace it with a file spec pointing to a more canonical
-  /// copy.
-  using SharedLibraryDirectoryHelper = void(FileSpec &this_file);
-
-  static void Initialize(SharedLibraryDirectoryHelper *helper = nullptr);
+  static void Initialize();
   static void Terminate();
 
   /// Gets the host target triple.
@@ -65,8 +51,7 @@ public:
   static const ArchSpec &
   GetArchitecture(ArchitectureKind arch_kind = eArchKindDefault);
 
-  static std::optional<ArchitectureKind>
-  ParseArchitectureKind(llvm::StringRef kind);
+  static llvm::Optional<ArchitectureKind> ParseArchitectureKind(llvm::StringRef kind);
 
   /// Returns the directory containing the lldb shared library. Only the
   /// directory member of the FileSpec is filled in.
@@ -105,21 +90,6 @@ public:
 
   static bool ComputePathRelativeToLibrary(FileSpec &file_spec,
                                            llvm::StringRef dir);
-
-  static FileSpec GetXcodeContentsDirectory() { return {}; }
-  static FileSpec GetXcodeDeveloperDirectory() { return {}; }
-  
-  /// Return the directory containing a specific Xcode SDK.
-  static llvm::Expected<llvm::StringRef> GetXcodeSDKPath(XcodeSDK sdk) {
-    return "";
-  }
-
-  /// Return information about module \p image_name if it is loaded in
-  /// the current process's address space.
-  static SharedCacheImageInfo
-  GetSharedCacheImageInfo(llvm::StringRef image_name) {
-    return {};
-  }
 
 protected:
   static bool ComputeSharedLibraryDirectory(FileSpec &file_spec);

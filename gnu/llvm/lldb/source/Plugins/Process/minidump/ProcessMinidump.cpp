@@ -1,4 +1,4 @@
-//===-- ProcessMinidump.cpp -----------------------------------------------===//
+//===-- ProcessMinidump.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -27,7 +27,6 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/UnixSignals.h"
 #include "lldb/Utility/LLDBAssert.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
 #include "llvm/BinaryFormat/Magic.h"
@@ -37,13 +36,10 @@
 #include "Plugins/Process/Utility/StopInfoMachException.h"
 
 #include <memory>
-#include <optional>
 
 using namespace lldb;
 using namespace lldb_private;
 using namespace minidump;
-
-LLDB_PLUGIN_DEFINE(ProcessMinidump)
 
 namespace {
 
@@ -65,9 +61,8 @@ public:
   static ConstString GetStaticPluginName() {
     return ConstString("placeholder");
   }
-  llvm::StringRef GetPluginName() override {
-    return GetStaticPluginName().GetStringRef();
-  }
+  ConstString GetPluginName() override { return GetStaticPluginName(); }
+  uint32_t GetPluginVersion() override { return 1; }
   bool ParseHeader() override { return true; }
   Type CalculateType() override { return eTypeUnknown; }
   Strata CalculateStrata() override { return eStrataUnknown; }
@@ -75,7 +70,7 @@ public:
   bool IsExecutable() const override { return false; }
   ArchSpec GetArchitecture() override { return m_arch; }
   UUID GetUUID() override { return m_uuid; }
-  void ParseSymtab(lldb_private::Symtab &symtab) override {}
+  Symtab *GetSymtab() override { return m_symtab_up.get(); }
   bool IsStripped() override { return true; }
   ByteOrder GetByteOrder() const override { return m_arch.GetByteOrder(); }
 
@@ -124,83 +119,21 @@ private:
   lldb::addr_t m_base;
   lldb::addr_t m_size;
 };
-
-/// Duplicate the HashElfTextSection() from the breakpad sources.
-///
-/// Breakpad, a Google crash log reporting tool suite, creates minidump files
-/// for many different architectures. When using Breakpad to create ELF
-/// minidumps, it will check for a GNU build ID when creating a minidump file
-/// and if one doesn't exist in the file, it will say the UUID of the file is a
-/// checksum of up to the first 4096 bytes of the .text section. Facebook also
-/// uses breakpad and modified this hash to avoid collisions so we can
-/// calculate and check for this as well.
-///
-/// The breakpad code might end up hashing up to 15 bytes that immediately
-/// follow the .text section in the file, so this code must do exactly what it
-/// does so we can get an exact match for the UUID.
-///
-/// \param[in] module_sp The module to grab the .text section from.
-///
-/// \param[in,out] breakpad_uuid A vector that will receive the calculated
-///                breakpad .text hash.
-///
-/// \param[in,out] facebook_uuid A vector that will receive the calculated
-///                facebook .text hash.
-///
-void HashElfTextSection(ModuleSP module_sp, std::vector<uint8_t> &breakpad_uuid,
-                        std::vector<uint8_t> &facebook_uuid) {
-  SectionList *sect_list = module_sp->GetSectionList();
-  if (sect_list == nullptr)
-    return;
-  SectionSP sect_sp = sect_list->FindSectionByName(ConstString(".text"));
-  if (!sect_sp)
-    return;
-  constexpr size_t kMDGUIDSize = 16;
-  constexpr size_t kBreakpadPageSize = 4096;
-  // The breakpad code has a bug where it might access beyond the end of a
-  // .text section by up to 15 bytes, so we must ensure we round up to the
-  // next kMDGUIDSize byte boundary.
-  DataExtractor data;
-  const size_t text_size = sect_sp->GetFileSize();
-  const size_t read_size = std::min<size_t>(
-      llvm::alignTo(text_size, kMDGUIDSize), kBreakpadPageSize);
-  sect_sp->GetObjectFile()->GetData(sect_sp->GetFileOffset(), read_size, data);
-
-  breakpad_uuid.assign(kMDGUIDSize, 0);
-  facebook_uuid.assign(kMDGUIDSize, 0);
-
-  // The only difference between the breakpad hash and the facebook hash is the
-  // hashing of the text section size into the hash prior to hashing the .text
-  // contents.
-  for (size_t i = 0; i < kMDGUIDSize; i++)
-    facebook_uuid[i] ^= text_size % 255;
-
-  // This code carefully duplicates how the hash was created in Breakpad
-  // sources, including the error where it might has an extra 15 bytes past the
-  // end of the .text section if the .text section is less than a page size in
-  // length.
-  const uint8_t *ptr = data.GetDataStart();
-  const uint8_t *ptr_end = data.GetDataEnd();
-  while (ptr < ptr_end) {
-    for (unsigned i = 0; i < kMDGUIDSize; i++) {
-      breakpad_uuid[i] ^= ptr[i];
-      facebook_uuid[i] ^= ptr[i];
-    }
-    ptr += kMDGUIDSize;
-  }
-}
-
 } // namespace
 
-llvm::StringRef ProcessMinidump::GetPluginDescriptionStatic() {
+ConstString ProcessMinidump::GetPluginNameStatic() {
+  static ConstString g_name("minidump");
+  return g_name;
+}
+
+const char *ProcessMinidump::GetPluginDescriptionStatic() {
   return "Minidump plug-in.";
 }
 
 lldb::ProcessSP ProcessMinidump::CreateInstance(lldb::TargetSP target_sp,
                                                 lldb::ListenerSP listener_sp,
-                                                const FileSpec *crash_file,
-                                                bool can_connect) {
-  if (!crash_file || can_connect)
+                                                const FileSpec *crash_file) {
+  if (!crash_file)
     return nullptr;
 
   lldb::ProcessSP process_sp;
@@ -233,9 +166,8 @@ ProcessMinidump::ProcessMinidump(lldb::TargetSP target_sp,
                                  lldb::ListenerSP listener_sp,
                                  const FileSpec &core_file,
                                  DataBufferSP core_data)
-    : PostMortemProcess(target_sp, listener_sp), m_core_file(core_file),
-      m_core_data(std::move(core_data)), m_active_exception(nullptr),
-      m_is_wow64(false) {}
+    : Process(target_sp, listener_sp), m_core_file(core_file),
+      m_core_data(std::move(core_data)), m_is_wow64(false) {}
 
 ProcessMinidump::~ProcessMinidump() {
   Clear();
@@ -291,19 +223,20 @@ Status ProcessMinidump::DoLoadCore() {
   SetUnixSignals(UnixSignals::Create(GetArchitecture()));
 
   ReadModuleList();
-  if (ModuleSP module = GetTarget().GetExecutableModule())
-    GetTarget().MergeArchitecture(module->GetArchitecture());
-  std::optional<lldb::pid_t> pid = m_minidump_parser->GetPid();
+
+  llvm::Optional<lldb::pid_t> pid = m_minidump_parser->GetPid();
   if (!pid) {
-    Debugger::ReportWarning("unable to retrieve process ID from minidump file, "
-                            "setting process ID to 1",
-                            GetTarget().GetDebugger().GetID());
-    pid = 1;
+    error.SetErrorString("failed to parse PID");
+    return error;
   }
-  SetID(*pid);
+  SetID(pid.getValue());
 
   return error;
 }
+
+ConstString ProcessMinidump::GetPluginName() { return GetPluginNameStatic(); }
+
+uint32_t ProcessMinidump::GetPluginVersion() { return 1; }
 
 Status ProcessMinidump::DoDestroy() { return Status(); }
 
@@ -320,7 +253,7 @@ void ProcessMinidump::RefreshStateAfterStop() {
 
     // TODO: The definition and use of this "dump requested" constant
     // in Breakpad are actually Linux-specific, and for similar use
-    // cases on Mac/Windows it defines different constants, referring
+    // cases on Mac/Windows it defines differnt constants, referring
     // to them as "simulated" exceptions; consider moving this check
     // down to the OS-specific paths and checking each OS for its own
     // constant.
@@ -401,6 +334,32 @@ ArchSpec ProcessMinidump::GetArchitecture() {
   return ArchSpec(triple);
 }
 
+static MemoryRegionInfo GetMemoryRegionInfo(const MemoryRegionInfos &regions,
+                                            lldb::addr_t load_addr) {
+  MemoryRegionInfo region;
+  auto pos = llvm::upper_bound(regions, load_addr);
+  if (pos != regions.begin() &&
+      std::prev(pos)->GetRange().Contains(load_addr)) {
+    return *std::prev(pos);
+  }
+
+  if (pos == regions.begin())
+    region.GetRange().SetRangeBase(0);
+  else
+    region.GetRange().SetRangeBase(std::prev(pos)->GetRange().GetRangeEnd());
+
+  if (pos == regions.end())
+    region.GetRange().SetRangeEnd(UINT64_MAX);
+  else
+    region.GetRange().SetRangeEnd(pos->GetRange().GetRangeBase());
+
+  region.SetReadable(MemoryRegionInfo::eNo);
+  region.SetWritable(MemoryRegionInfo::eNo);
+  region.SetExecutable(MemoryRegionInfo::eNo);
+  region.SetMapped(MemoryRegionInfo::eNo);
+  return region;
+}
+
 void ProcessMinidump::BuildMemoryRegions() {
   if (m_memory_regions)
     return;
@@ -425,7 +384,7 @@ void ProcessMinidump::BuildMemoryRegions() {
       MemoryRegionInfo::RangeType section_range(load_addr,
                                                 section_sp->GetByteSize());
       MemoryRegionInfo region =
-          MinidumpParser::GetMemoryRegionInfo(*m_memory_regions, load_addr);
+          ::GetMemoryRegionInfo(*m_memory_regions, load_addr);
       if (region.GetMapped() != MemoryRegionInfo::eYes &&
           region.GetRange().GetRangeBase() <= section_range.GetRangeBase() &&
           section_range.GetRangeEnd() <= region.GetRange().GetRangeEnd()) {
@@ -443,10 +402,10 @@ void ProcessMinidump::BuildMemoryRegions() {
   llvm::sort(*m_memory_regions);
 }
 
-Status ProcessMinidump::DoGetMemoryRegionInfo(lldb::addr_t load_addr,
-                                              MemoryRegionInfo &region) {
+Status ProcessMinidump::GetMemoryRegionInfo(lldb::addr_t load_addr,
+                                            MemoryRegionInfo &region) {
   BuildMemoryRegions();
-  region = MinidumpParser::GetMemoryRegionInfo(*m_memory_regions, load_addr);
+  region = ::GetMemoryRegionInfo(*m_memory_regions, load_addr);
   return Status();
 }
 
@@ -458,8 +417,8 @@ Status ProcessMinidump::GetMemoryRegions(MemoryRegionInfos &region_list) {
 
 void ProcessMinidump::Clear() { Process::m_thread_list.Clear(); }
 
-bool ProcessMinidump::DoUpdateThreadList(ThreadList &old_thread_list,
-                                         ThreadList &new_thread_list) {
+bool ProcessMinidump::UpdateThreadList(ThreadList &old_thread_list,
+                                       ThreadList &new_thread_list) {
   for (const minidump::Thread &thread : m_thread_list) {
     LocationDescriptor context_location = thread.Context;
 
@@ -481,58 +440,11 @@ bool ProcessMinidump::DoUpdateThreadList(ThreadList &old_thread_list,
   return new_thread_list.GetSize(false) > 0;
 }
 
-ModuleSP ProcessMinidump::GetOrCreateModule(UUID minidump_uuid,
-                                            llvm::StringRef name,
-                                            ModuleSpec module_spec) {
-  Log *log = GetLog(LLDBLog::DynamicLoader);
-  Status error;
-
-  ModuleSP module_sp =
-      GetTarget().GetOrCreateModule(module_spec, true /* notify */, &error);
-  if (!module_sp)
-    return module_sp;
-  // We consider the module to be a match if the minidump UUID is a
-  // prefix of the actual UUID, or if either of the UUIDs are empty.
-  const auto dmp_bytes = minidump_uuid.GetBytes();
-  const auto mod_bytes = module_sp->GetUUID().GetBytes();
-  const bool match = dmp_bytes.empty() || mod_bytes.empty() ||
-                     mod_bytes.take_front(dmp_bytes.size()) == dmp_bytes;
-  if (match) {
-    LLDB_LOG(log, "Partial uuid match for {0}.", name);
-    return module_sp;
-  }
-
-  // Breakpad generates minindump files, and if there is no GNU build
-  // ID in the binary, it will calculate a UUID by hashing first 4096
-  // bytes of the .text section and using that as the UUID for a module
-  // in the minidump. Facebook uses a modified breakpad client that
-  // uses a slightly modified this hash to avoid collisions. Check for
-  // UUIDs from the minindump that match these cases and accept the
-  // module we find if they do match.
-  std::vector<uint8_t> breakpad_uuid;
-  std::vector<uint8_t> facebook_uuid;
-  HashElfTextSection(module_sp, breakpad_uuid, facebook_uuid);
-  if (dmp_bytes == llvm::ArrayRef<uint8_t>(breakpad_uuid)) {
-    LLDB_LOG(log, "Breakpad .text hash match for {0}.", name);
-    return module_sp;
-  }
-  if (dmp_bytes == llvm::ArrayRef<uint8_t>(facebook_uuid)) {
-    LLDB_LOG(log, "Facebook .text hash match for {0}.", name);
-    return module_sp;
-  }
-  // The UUID wasn't a partial match and didn't match the .text hash
-  // so remove the module from the target, we will need to create a
-  // placeholder object file.
-  GetTarget().GetImages().Remove(module_sp);
-  module_sp.reset();
-  return module_sp;
-}
-
 void ProcessMinidump::ReadModuleList() {
   std::vector<const minidump::Module *> filtered_modules =
       m_minidump_parser->GetFilteredModuleList();
 
-  Log *log = GetLog(LLDBLog::DynamicLoader);
+  Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_DYNAMIC_LOADER));
 
   for (auto module : filtered_modules) {
     std::string name = cantFail(m_minidump_parser->GetMinidumpFile().getString(
@@ -544,7 +456,7 @@ void ProcessMinidump::ReadModuleList() {
 
     // check if the process is wow64 - a 32 bit windows process running on a
     // 64 bit windows
-    if (llvm::StringRef(name).endswith_insensitive("wow64.dll")) {
+    if (llvm::StringRef(name).endswith_lower("wow64.dll")) {
       m_is_wow64 = true;
     }
 
@@ -557,21 +469,30 @@ void ProcessMinidump::ReadModuleList() {
     // add the module to the target if it finds one.
     lldb::ModuleSP module_sp = GetTarget().GetOrCreateModule(module_spec,
                                                      true /* notify */, &error);
-    if (module_sp) {
-      LLDB_LOG(log, "Full uuid match for {0}.", name);
-    } else {
-      // We couldn't find a module with an exactly-matching UUID.  Sometimes
-      // a minidump UUID is only a partial match or is a hash.  So try again
-      // without specifying the UUID, then again without specifying the
-      // directory if that fails.  This will allow us to find modules with
-      // partial matches or hash UUIDs in user-provided sysroots or search
-      // directories (target.exec-search-paths).
-      ModuleSpec partial_module_spec = module_spec;
-      partial_module_spec.GetUUID().Clear();
-      module_sp = GetOrCreateModule(uuid, name, partial_module_spec);
-      if (!module_sp) {
-        partial_module_spec.GetFileSpec().ClearDirectory();
-        module_sp = GetOrCreateModule(uuid, name, partial_module_spec);
+    if (!module_sp) {
+      // Try and find a module without specifying the UUID and only looking for
+      // the file given a basename. We then will look for a partial UUID match
+      // if we find any matches. This function will add the module to the
+      // target if it finds one, so we need to remove the module from the target
+      // if the UUID doesn't match during our manual UUID verification. This
+      // allows the "target.exec-search-paths" setting to specify one or more
+      // directories that contain executables that can be searched for matches.
+      ModuleSpec basename_module_spec(module_spec);
+      basename_module_spec.GetUUID().Clear();
+      basename_module_spec.GetFileSpec().GetDirectory().Clear();
+      module_sp = GetTarget().GetOrCreateModule(basename_module_spec,
+                                                true /* notify */, &error);
+      if (module_sp) {
+        // We consider the module to be a match if the minidump UUID is a
+        // prefix of the actual UUID, or if either of the UUIDs are empty.
+        const auto dmp_bytes = uuid.GetBytes();
+        const auto mod_bytes = module_sp->GetUUID().GetBytes();
+        const bool match = dmp_bytes.empty() || mod_bytes.empty() ||
+            mod_bytes.take_front(dmp_bytes.size()) == dmp_bytes;
+        if (!match) {
+            GetTarget().GetImages().Remove(module_sp);
+            module_sp.reset();
+        }
       }
     }
     if (module_sp) {
@@ -580,9 +501,8 @@ void ProcessMinidump::ReadModuleList() {
       // we don't then we will end up setting the load address of a different
       // PlaceholderObjectFile and an assertion will fire.
       auto *objfile = module_sp->GetObjectFile();
-      if (objfile &&
-          objfile->GetPluginName() ==
-              PlaceholderObjectFile::GetStaticPluginName().GetStringRef()) {
+      if (objfile && objfile->GetPluginName() ==
+          PlaceholderObjectFile::GetStaticPluginName()) {
         if (((PlaceholderObjectFile *)objfile)->GetBaseImageAddress() !=
             load_addr)
           module_sp.reset();
@@ -868,7 +788,7 @@ public:
     m_option_group.Finalize();
   }
 
-  ~CommandObjectProcessMinidumpDump() override = default;
+  ~CommandObjectProcessMinidumpDump() override {}
 
   Options *GetOptions() override { return &m_option_group; }
 
@@ -877,6 +797,7 @@ public:
     if (argc > 0) {
       result.AppendErrorWithFormat("'%s' take no arguments, only options",
                                    m_cmd_name.c_str());
+      result.SetStatus(eReturnStatusFailed);
       return false;
     }
     SetDefaultOptionsIfNoneAreSet();
@@ -997,7 +918,7 @@ public:
         CommandObjectSP(new CommandObjectProcessMinidumpDump(interpreter)));
   }
 
-  ~CommandObjectMultiwordProcessMinidump() override = default;
+  ~CommandObjectMultiwordProcessMinidump() override {}
 };
 
 CommandObject *ProcessMinidump::GetPluginCommandObject() {

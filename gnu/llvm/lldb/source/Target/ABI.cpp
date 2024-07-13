@@ -1,4 +1,4 @@
-//===-- ABI.cpp -----------------------------------------------------------===//
+//===-- ABI.cpp -------------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,10 +15,8 @@
 #include "lldb/Symbol/TypeSystem.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "llvm/MC/TargetRegistry.h"
-#include <cctype>
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -43,22 +41,20 @@ ABI::FindPlugin(lldb::ProcessSP process_sp, const ArchSpec &arch) {
 
 ABI::~ABI() = default;
 
-bool RegInfoBasedABI::GetRegisterInfoByName(llvm::StringRef name,
-                                            RegisterInfo &info) {
+bool ABI::GetRegisterInfoByName(ConstString name, RegisterInfo &info) {
   uint32_t count = 0;
   const RegisterInfo *register_info_array = GetRegisterInfoArray(count);
   if (register_info_array) {
+    const char *unique_name_cstr = name.GetCString();
     uint32_t i;
     for (i = 0; i < count; ++i) {
-      const char *reg_name = register_info_array[i].name;
-      if (reg_name == name) {
+      if (register_info_array[i].name == unique_name_cstr) {
         info = register_info_array[i];
         return true;
       }
     }
     for (i = 0; i < count; ++i) {
-      const char *reg_alt_name = register_info_array[i].alt_name;
-      if (reg_alt_name == name) {
+      if (register_info_array[i].alt_name == unique_name_cstr) {
         info = register_info_array[i];
         return true;
       }
@@ -93,8 +89,10 @@ ValueObjectSP ABI::GetReturnValueObject(Thread &thread, CompilerType &ast_type,
     if (!persistent_expression_state)
       return {};
 
+    auto prefix = persistent_expression_state->GetPersistentVariablePrefix();
     ConstString persistent_variable_name =
-        persistent_expression_state->GetNextPersistentVariableName();
+        persistent_expression_state->GetNextPersistentVariableName(target,
+                                                                   prefix);
 
     lldb::ValueObjectSP const_valobj_sp;
 
@@ -121,13 +119,12 @@ ValueObjectSP ABI::GetReturnValueObject(Thread &thread, CompilerType &ast_type,
     const Value &result_value = live_valobj_sp->GetValue();
 
     switch (result_value.GetValueType()) {
-    case Value::ValueType::Invalid:
-      return {};
-    case Value::ValueType::HostAddress:
-    case Value::ValueType::FileAddress:
-      // we odon't do anything with these for now
+    case Value::eValueTypeHostAddress:
+    case Value::eValueTypeFileAddress:
+      // we don't do anything with these for now
       break;
-    case Value::ValueType::Scalar:
+    case Value::eValueTypeScalar:
+    case Value::eValueTypeVector:
       expr_variable_sp->m_flags |=
           ExpressionVariable::EVIsFreezeDried;
       expr_variable_sp->m_flags |=
@@ -135,7 +132,7 @@ ValueObjectSP ABI::GetReturnValueObject(Thread &thread, CompilerType &ast_type,
       expr_variable_sp->m_flags |=
           ExpressionVariable::EVNeedsAllocation;
       break;
-    case Value::ValueType::LoadAddress:
+    case Value::eValueTypeLoadAddress:
       expr_variable_sp->m_live_sp = live_valobj_sp;
       expr_variable_sp->m_flags |=
           ExpressionVariable::EVIsProgramReference;
@@ -204,7 +201,7 @@ std::unique_ptr<llvm::MCRegisterInfo> ABI::MakeMCRegisterInfo(const ArchSpec &ar
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(triple, lookup_error);
   if (!target) {
-    LLDB_LOG(GetLog(LLDBLog::Process),
+    LLDB_LOG(GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS),
              "Failed to create an llvm target for {0}: {1}", triple,
              lookup_error);
     return nullptr;
@@ -215,66 +212,19 @@ std::unique_ptr<llvm::MCRegisterInfo> ABI::MakeMCRegisterInfo(const ArchSpec &ar
   return info_up;
 }
 
-void RegInfoBasedABI::AugmentRegisterInfo(
-    std::vector<DynamicRegisterInfo::Register> &regs) {
-  for (DynamicRegisterInfo::Register &info : regs) {
-    if (info.regnum_ehframe != LLDB_INVALID_REGNUM &&
-        info.regnum_dwarf != LLDB_INVALID_REGNUM)
-      continue;
-
-    RegisterInfo abi_info;
-    if (!GetRegisterInfoByName(info.name.GetStringRef(), abi_info))
-      continue;
-
-    if (info.regnum_ehframe == LLDB_INVALID_REGNUM)
-      info.regnum_ehframe = abi_info.kinds[eRegisterKindEHFrame];
-    if (info.regnum_dwarf == LLDB_INVALID_REGNUM)
-      info.regnum_dwarf = abi_info.kinds[eRegisterKindDWARF];
-    if (info.regnum_generic == LLDB_INVALID_REGNUM)
-      info.regnum_generic = abi_info.kinds[eRegisterKindGeneric];
-  }
-}
-
-void MCBasedABI::AugmentRegisterInfo(
-    std::vector<DynamicRegisterInfo::Register> &regs) {
-  for (DynamicRegisterInfo::Register &info : regs) {
-    uint32_t eh, dwarf;
-    std::tie(eh, dwarf) = GetEHAndDWARFNums(info.name.GetStringRef());
-
-    if (info.regnum_ehframe == LLDB_INVALID_REGNUM)
-      info.regnum_ehframe = eh;
-    if (info.regnum_dwarf == LLDB_INVALID_REGNUM)
-      info.regnum_dwarf = dwarf;
-    if (info.regnum_generic == LLDB_INVALID_REGNUM)
-      info.regnum_generic = GetGenericNum(info.name.GetStringRef());
-  }
-}
-
-std::pair<uint32_t, uint32_t>
-MCBasedABI::GetEHAndDWARFNums(llvm::StringRef name) {
-  std::string mc_name = GetMCName(name.str());
-  for (char &c : mc_name)
-    c = std::toupper(c);
-  int eh = -1;
-  int dwarf = -1;
-  for (unsigned reg = 0; reg < m_mc_register_info_up->getNumRegs(); ++reg) {
-    if (m_mc_register_info_up->getName(reg) == mc_name) {
-      eh = m_mc_register_info_up->getDwarfRegNum(reg, /*isEH=*/true);
-      dwarf = m_mc_register_info_up->getDwarfRegNum(reg, /*isEH=*/false);
-      break;
-    }
-  }
-  return std::pair<uint32_t, uint32_t>(eh == -1 ? LLDB_INVALID_REGNUM : eh,
-                                       dwarf == -1 ? LLDB_INVALID_REGNUM
-                                                   : dwarf);
-}
-
-void MCBasedABI::MapRegisterName(std::string &name, llvm::StringRef from_prefix,
-                                 llvm::StringRef to_prefix) {
-  llvm::StringRef name_ref = name;
-  if (!name_ref.consume_front(from_prefix))
+void ABI::AugmentRegisterInfo(RegisterInfo &info) {
+  if (info.kinds[eRegisterKindEHFrame] != LLDB_INVALID_REGNUM &&
+      info.kinds[eRegisterKindDWARF] != LLDB_INVALID_REGNUM)
     return;
-  uint64_t _;
-  if (name_ref.empty() || to_integer(name_ref, _, 10))
-    name = (to_prefix + name_ref).str();
+
+  RegisterInfo abi_info;
+  if (!GetRegisterInfoByName(ConstString(info.name), abi_info))
+    return;
+
+  if (info.kinds[eRegisterKindEHFrame] == LLDB_INVALID_REGNUM)
+    info.kinds[eRegisterKindEHFrame] = abi_info.kinds[eRegisterKindEHFrame];
+  if (info.kinds[eRegisterKindDWARF] == LLDB_INVALID_REGNUM)
+    info.kinds[eRegisterKindDWARF] = abi_info.kinds[eRegisterKindDWARF];
+  if (info.kinds[eRegisterKindGeneric] == LLDB_INVALID_REGNUM)
+    info.kinds[eRegisterKindGeneric] = abi_info.kinds[eRegisterKindGeneric];
 }

@@ -1,5 +1,4 @@
-//===-- PlatformRemoteAppleBridge.h ---------------------------------*- C++
-//-*-===//
+//===-- PlatformRemoteAppleBridge.h ---------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,45 +6,59 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PLATFORM_MACOSX_PLATFORMREMOTEAPPLEBRIDGE_H
-#define LLDB_SOURCE_PLUGINS_PLATFORM_MACOSX_PLATFORMREMOTEAPPLEBRIDGE_H
+#ifndef liblldb_PlatformRemoteAppleBridge_h_
+#define liblldb_PlatformRemoteAppleBridge_h_
+
+#include <string>
+
+#include "lldb/Utility/FileSpec.h"
+
+#include "llvm/Support/FileSystem.h"
 
 #include "PlatformRemoteDarwinDevice.h"
-#include "lldb/Utility/FileSpec.h"
-#include "lldb/lldb-forward.h"
-#include "llvm/ADT/StringRef.h"
-
-#include <vector>
-
-namespace lldb_private {
-class ArchSpec;
 
 class PlatformRemoteAppleBridge : public PlatformRemoteDarwinDevice {
 public:
   PlatformRemoteAppleBridge();
 
-  static lldb::PlatformSP CreateInstance(bool force, const ArchSpec *arch);
+  ~PlatformRemoteAppleBridge() override = default;
+
+  // Class Functions
+  static lldb::PlatformSP CreateInstance(bool force,
+                                         const lldb_private::ArchSpec *arch);
 
   static void Initialize();
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "remote-bridgeos"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetDescriptionStatic();
+  static const char *GetDescriptionStatic();
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  // lldb_private::PluginInterface functions
+  lldb_private::ConstString GetPluginName() override {
+    return GetPluginNameStatic();
+  }
 
-  llvm::StringRef GetDescription() override { return GetDescriptionStatic(); }
+  uint32_t GetPluginVersion() override { return 1; }
 
-  std::vector<ArchSpec>
-  GetSupportedArchitectures(const ArchSpec &process_host_arch) override;
+  // lldb_private::Platform functions
+
+  const char *GetDescription() override { return GetDescriptionStatic(); }
+
+  bool GetSupportedArchitectureAtIndex(uint32_t idx,
+                                       lldb_private::ArchSpec &arch) override;
 
 protected:
-  llvm::StringRef GetDeviceSupportDirectoryName() override;
-  llvm::StringRef GetPlatformName() override;
+
+  // lldb_private::PlatformRemoteDarwinDevice functions
+
+  void GetDeviceSupportDirectoryNames (std::vector<std::string> &dirnames) override;
+
+  std::string GetPlatformName () override;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(PlatformRemoteAppleBridge);
 };
 
-} // namespace lldb_private
-
-#endif // LLDB_SOURCE_PLUGINS_PLATFORM_MACOSX_PLATFORMREMOTEAPPLEBRIDGE_H
+#endif // liblldb_PlatformRemoteAppleBridge_h_

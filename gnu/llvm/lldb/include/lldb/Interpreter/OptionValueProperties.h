@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_INTERPRETER_OPTIONVALUEPROPERTIES_H
-#define LLDB_INTERPRETER_OPTIONVALUEPROPERTIES_H
+#ifndef liblldb_OptionValueProperties_h_
+#define liblldb_OptionValueProperties_h_
 
 #include <vector>
 
@@ -18,27 +18,25 @@
 #include "lldb/Utility/ConstString.h"
 
 namespace lldb_private {
-class Properties;
 
 class OptionValueProperties
-    : public Cloneable<OptionValueProperties, OptionValue>,
+    : public OptionValue,
       public std::enable_shared_from_this<OptionValueProperties> {
 public:
-  OptionValueProperties() = default;
+  OptionValueProperties()
+      : OptionValue(), m_name(), m_properties(), m_name_to_index() {}
 
   OptionValueProperties(ConstString name);
+
+  OptionValueProperties(const OptionValueProperties &global_properties);
 
   ~OptionValueProperties() override = default;
 
   Type GetType() const override { return eTypeProperties; }
 
-  void Clear() override;
+  bool Clear() override;
 
-  static lldb::OptionValuePropertiesSP
-  CreateLocalCopy(const Properties &global_properties);
-
-  lldb::OptionValueSP
-  DeepCopy(const lldb::OptionValueSP &new_parent) const override;
+  lldb::OptionValueSP DeepCopy() const override;
 
   Status
   SetValueFromString(llvm::StringRef value,
@@ -47,13 +45,11 @@ public:
   void DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
                  uint32_t dump_mask) override;
 
-  llvm::json::Value ToJSON(const ExecutionContext *exe_ctx) override;
-
   ConstString GetName() const override { return m_name; }
 
   virtual Status DumpPropertyValue(const ExecutionContext *exe_ctx,
                                    Stream &strm, llvm::StringRef property_path,
-                                   uint32_t dump_mask, bool is_json = false);
+                                   uint32_t dump_mask);
 
   virtual void DumpAllDescriptions(CommandInterpreter &interpreter,
                                    Stream &strm) const;
@@ -108,6 +104,11 @@ public:
   Status SetSubValue(const ExecutionContext *exe_ctx, VarSetOperationType op,
                      llvm::StringRef path, llvm::StringRef value) override;
 
+  virtual bool PredicateMatches(const ExecutionContext *exe_ctx,
+    llvm::StringRef predicate) const {
+    return false;
+  }
+
   OptionValueArch *
   GetPropertyAtIndexAsOptionValueArch(const ExecutionContext *exe_ctx,
                                       uint32_t idx) const;
@@ -115,9 +116,6 @@ public:
   OptionValueLanguage *
   GetPropertyAtIndexAsOptionValueLanguage(const ExecutionContext *exe_ctx,
                                           uint32_t idx) const;
-
-  bool SetPropertyAtIndexAsLanguage(const ExecutionContext *exe_ctx,
-                                    uint32_t idx, lldb::LanguageType lang);
 
   bool GetPropertyAtIndexAsArgs(const ExecutionContext *exe_ctx, uint32_t idx,
                                 Args &args) const;
@@ -152,10 +150,6 @@ public:
 
   OptionValueSInt64 *
   GetPropertyAtIndexAsOptionValueSInt64(const ExecutionContext *exe_ctx,
-                                        uint32_t idx) const;
-
-  OptionValueUInt64 *
-  GetPropertyAtIndexAsOptionValueUInt64(const ExecutionContext *exe_ctx,
                                         uint32_t idx) const;
 
   int64_t GetPropertyAtIndexAsSInt64(const ExecutionContext *exe_ctx,
@@ -224,4 +218,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_INTERPRETER_OPTIONVALUEPROPERTIES_H
+#endif // liblldb_OptionValueProperties_h_

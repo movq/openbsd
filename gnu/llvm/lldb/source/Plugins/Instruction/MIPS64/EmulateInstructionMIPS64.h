@@ -6,13 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_INSTRUCTION_MIPS64_EMULATEINSTRUCTIONMIPS64_H
-#define LLDB_SOURCE_PLUGINS_INSTRUCTION_MIPS64_EMULATEINSTRUCTIONMIPS64_H
+#ifndef EmulateInstructionMIPS64_h_
+#define EmulateInstructionMIPS64_h_
 
 #include "lldb/Core/EmulateInstruction.h"
 #include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 namespace llvm {
 class MCDisassembler;
@@ -32,9 +31,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "mips64"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::EmulateInstruction *
   CreateInstance(const lldb_private::ArchSpec &arch,
@@ -54,7 +53,9 @@ public:
     return false;
   }
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override { return 1; }
 
   bool SetTargetTriple(const lldb_private::ArchSpec &arch) override;
 
@@ -73,8 +74,8 @@ public:
     return false;
   }
 
-  std::optional<lldb_private::RegisterInfo>
-  GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num) override;
+  bool GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num,
+                       lldb_private::RegisterInfo &reg_info) override;
 
   bool
   CreateFunctionEntryUnwind(lldb_private::UnwindPlan &unwind_plan) override;
@@ -86,7 +87,7 @@ protected:
     const char *insn_name;
   } MipsOpcode;
 
-  static MipsOpcode *GetOpcodeForInstruction(llvm::StringRef op_name);
+  static MipsOpcode *GetOpcodeForInstruction(const char *op_name);
 
   bool Emulate_DADDiu(llvm::MCInst &insn);
 
@@ -167,7 +168,7 @@ protected:
 
   bool nonvolatile_reg_p(uint64_t regnum);
 
-  const char *GetRegisterName(unsigned reg_num, bool alternate_name);
+  const char *GetRegisterName(unsigned reg_num, bool altnernate_name);
 
 private:
   std::unique_ptr<llvm::MCDisassembler> m_disasm;
@@ -178,4 +179,4 @@ private:
   std::unique_ptr<llvm::MCInstrInfo> m_insn_info;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_INSTRUCTION_MIPS64_EMULATEINSTRUCTIONMIPS64_H
+#endif // EmulateInstructionMIPS64_h_

@@ -1,4 +1,4 @@
-//===-- OptionArgParser.cpp -----------------------------------------------===//
+//===-- OptionArgParser.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,7 +8,6 @@
 
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/DataFormatters/FormatManager.h"
-#include "lldb/Target/ABI.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StreamString.h"
@@ -21,11 +20,11 @@ bool OptionArgParser::ToBoolean(llvm::StringRef ref, bool fail_value,
   if (success_ptr)
     *success_ptr = true;
   ref = ref.trim();
-  if (ref.equals_insensitive("false") || ref.equals_insensitive("off") ||
-      ref.equals_insensitive("no") || ref.equals_insensitive("0")) {
+  if (ref.equals_lower("false") || ref.equals_lower("off") ||
+      ref.equals_lower("no") || ref.equals_lower("0")) {
     return false;
-  } else if (ref.equals_insensitive("true") || ref.equals_insensitive("on") ||
-             ref.equals_insensitive("yes") || ref.equals_insensitive("1")) {
+  } else if (ref.equals_lower("true") || ref.equals_lower("on") ||
+             ref.equals_lower("yes") || ref.equals_lower("1")) {
     return true;
   }
   if (success_ptr)
@@ -126,13 +125,13 @@ lldb::ScriptLanguage OptionArgParser::ToScriptLanguage(
   if (success_ptr)
     *success_ptr = true;
 
-  if (s.equals_insensitive("python"))
+  if (s.equals_lower("python"))
     return eScriptLanguagePython;
-  if (s.equals_insensitive("lua"))
+  if (s.equals_lower("lua"))
     return eScriptLanguageLua;
-  if (s.equals_insensitive("default"))
+  if (s.equals_lower("default"))
     return eScriptLanguageDefault;
-  if (s.equals_insensitive("none"))
+  if (s.equals_lower("none"))
     return eScriptLanguageNone;
 
   if (success_ptr)
@@ -158,10 +157,6 @@ lldb::addr_t OptionArgParser::ToAddress(const ExecutionContext *exe_ctx,
   if (!s.getAsInteger(0, addr)) {
     if (error_ptr)
       error_ptr->Clear();
-    Process *process = exe_ctx->GetProcessPtr();
-    if (process)
-      if (ABISP abi_sp = process->GetABI())
-        addr = abi_sp->FixCodeAddress(addr);
     return addr;
   }
 

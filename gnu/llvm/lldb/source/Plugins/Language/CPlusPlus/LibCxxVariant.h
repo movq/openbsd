@@ -1,4 +1,5 @@
-//===-- LibCxxVariant.h ----------------------------------------*- C++ -*--===//
+//===-- LibCxxVariant.h -------------------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGE_CPLUSPLUS_LIBCXXVARIANT_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGE_CPLUSPLUS_LIBCXXVARIANT_H
+#ifndef liblldb_LibCxxVariant_h_
+#define liblldb_LibCxxVariant_h_
 
 #include "lldb/Core/ValueObject.h"
 #include "lldb/DataFormatters/TypeSummary.h"
@@ -26,4 +27,4 @@ SyntheticChildrenFrontEnd *LibcxxVariantFrontEndCreator(CXXSyntheticChildren *,
 } // namespace formatters
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGE_CPLUSPLUS_LIBCXXVARIANT_H
+#endif // liblldb_LibCxxVariant_h_

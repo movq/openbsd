@@ -6,19 +6,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PROCESS_MINIDUMP_MINIDUMPTYPES_H
-#define LLDB_SOURCE_PLUGINS_PROCESS_MINIDUMP_MINIDUMPTYPES_H
+#ifndef liblldb_MinidumpTypes_h_
+#define liblldb_MinidumpTypes_h_
+
 
 #include "lldb/Utility/Status.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitmaskEnum.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/Minidump.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Endian.h"
-#include <optional>
 
 // C includes
 // C++ includes
@@ -39,6 +40,21 @@ enum class CvSignature : uint32_t {
   Pdb70 = 0x53445352, // RSDS
   ElfBuildId = 0x4270454c, // BpEL (Breakpad/Crashpad minidumps)
 };
+
+// Reference:
+// https://crashpad.chromium.org/doxygen/structcrashpad_1_1CodeViewRecordPDB70.html
+struct CvRecordPdb70 {
+  struct {
+    llvm::support::ulittle32_t Data1;
+    llvm::support::ulittle16_t Data2;
+    llvm::support::ulittle16_t Data3;
+    uint8_t Data4[8];
+  } Uuid;
+  llvm::support::ulittle32_t Age;
+  // char PDBFileName[];
+};
+static_assert(sizeof(CvRecordPdb70) == 20,
+              "sizeof CvRecordPdb70 is not correct!");
 
 enum class MinidumpMiscInfoFlags : uint32_t {
   ProcessID = (1 << 0),
@@ -83,7 +99,7 @@ struct MinidumpMiscInfo {
 
   static const MinidumpMiscInfo *Parse(llvm::ArrayRef<uint8_t> &data);
 
-  std::optional<lldb::pid_t> GetPid() const;
+  llvm::Optional<lldb::pid_t> GetPid() const;
 };
 static_assert(sizeof(MinidumpMiscInfo) == 24,
               "sizeof MinidumpMiscInfo is not correct!");
@@ -94,7 +110,7 @@ public:
   llvm::StringRef proc_status;
   lldb::pid_t pid;
 
-  static std::optional<LinuxProcStatus> Parse(llvm::ArrayRef<uint8_t> &data);
+  static llvm::Optional<LinuxProcStatus> Parse(llvm::ArrayRef<uint8_t> &data);
 
   lldb::pid_t GetPid() const;
 
@@ -104,4 +120,4 @@ private:
 
 } // namespace minidump
 } // namespace lldb_private
-#endif // LLDB_SOURCE_PLUGINS_PROCESS_MINIDUMP_MINIDUMPTYPES_H
+#endif // liblldb_MinidumpTypes_h_

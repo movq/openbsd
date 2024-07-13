@@ -6,31 +6,29 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_OBJCLANGUAGERUNTIME_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_OBJCLANGUAGERUNTIME_H
+#ifndef liblldb_ObjCLanguageRuntime_h_
+#define liblldb_ObjCLanguageRuntime_h_
 
 #include <functional>
 #include <map>
 #include <memory>
-#include <optional>
 #include <unordered_set>
 
 #include "llvm/Support/Casting.h"
 
 #include "lldb/Breakpoint/BreakpointPrecondition.h"
+#include "lldb/Core/ClangForward.h"
 #include "lldb/Core/PluginInterface.h"
 #include "lldb/Core/ThreadSafeDenseMap.h"
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Target/LanguageRuntime.h"
-#include "lldb/Utility/ConstString.h"
 #include "lldb/lldb-private.h"
 
 class CommandObjectObjC_ClassTable_Dump;
 
 namespace lldb_private {
 
-class TypeSystemClang;
 class UtilityFunction;
 
 class ObjCLanguageRuntime : public LanguageRuntime {
@@ -51,7 +49,9 @@ public:
   // implementations of the runtime, and more might come
   class ClassDescriptor {
   public:
-    ClassDescriptor() : m_type_wp() {}
+    ClassDescriptor()
+        : m_is_kvo(eLazyBoolCalculate), m_is_cf(eLazyBoolCalculate),
+          m_type_wp() {}
 
     virtual ~ClassDescriptor() = default;
 
@@ -87,20 +87,10 @@ public:
 
     virtual bool IsValid() = 0;
 
-    /// There are two routines in the ObjC runtime that tagged pointer clients
-    /// can call to get the value from their tagged pointer, one that retrieves
-    /// it as an unsigned value and one a signed value.  These two
-    /// GetTaggedPointerInfo methods mirror those two ObjC runtime calls.
-    /// @{
     virtual bool GetTaggedPointerInfo(uint64_t *info_bits = nullptr,
                                       uint64_t *value_bits = nullptr,
                                       uint64_t *payload = nullptr) = 0;
 
-    virtual bool GetTaggedPointerInfoSigned(uint64_t *info_bits = nullptr,
-                                            int64_t *value_bits = nullptr,
-                                            uint64_t *payload = nullptr) = 0;
-    /// @}
- 
     virtual uint64_t GetInstanceSize() = 0;
 
     // use to implement version-specific additional constraints on pointers
@@ -145,8 +135,8 @@ public:
                         bool check_version_specific = false) const;
 
   private:
-    LazyBool m_is_kvo = eLazyBoolCalculate;
-    LazyBool m_is_cf = eLazyBoolCalculate;
+    LazyBool m_is_kvo;
+    LazyBool m_is_cf;
     lldb::TypeWP m_type_wp;
   };
 
@@ -154,12 +144,12 @@ public:
   public:
     virtual ~EncodingToType();
 
-    virtual CompilerType RealizeType(TypeSystemClang &ast_ctx, const char *name,
+    virtual CompilerType RealizeType(ClangASTContext &ast_ctx, const char *name,
                                      bool for_expression) = 0;
     virtual CompilerType RealizeType(const char *name, bool for_expression);
 
   protected:
-    std::shared_ptr<TypeSystemClang> m_scratch_ast_ctx_sp;
+    std::unique_ptr<ClangASTContext> m_scratch_ast_ctx_up;
   };
 
   class ObjCExceptionPrecondition : public BreakpointPrecondition {
@@ -196,8 +186,7 @@ public:
     TaggedPointerVendor() = default;
 
   private:
-    TaggedPointerVendor(const TaggedPointerVendor &) = delete;
-    const TaggedPointerVendor &operator=(const TaggedPointerVendor &) = delete;
+    DISALLOW_COPY_AND_ASSIGN(TaggedPointerVendor);
   };
 
   ~ObjCLanguageRuntime() override;
@@ -244,17 +233,9 @@ public:
 
   virtual bool HasReadObjCLibrary() = 0;
 
-  // These two methods actually use different caches.  The only time we'll
-  // cache a sel_str is if we found a "selector specific stub" for the selector
-  // and conversely we only add to the SEL cache if we saw a regular dispatch.
   lldb::addr_t LookupInMethodCache(lldb::addr_t class_addr, lldb::addr_t sel);
-  lldb::addr_t LookupInMethodCache(lldb::addr_t class_addr,
-                                   llvm::StringRef sel_str);
 
   void AddToMethodCache(lldb::addr_t class_addr, lldb::addr_t sel,
-                        lldb::addr_t impl_addr);
-
-  void AddToMethodCache(lldb::addr_t class_addr, llvm::StringRef sel_str,
                         lldb::addr_t impl_addr);
 
   TypeAndOrName LookupInClassNameCache(lldb::addr_t class_addr);
@@ -267,10 +248,9 @@ public:
 
   lldb::TypeSP LookupInCompleteClassCache(ConstString &name);
 
-  std::optional<CompilerType> GetRuntimeType(CompilerType base_type) override;
+  llvm::Optional<CompilerType> GetRuntimeType(CompilerType base_type) override;
 
-  virtual llvm::Expected<std::unique_ptr<UtilityFunction>>
-  CreateObjectChecker(std::string name, ExecutionContext &exe_ctx) = 0;
+  virtual UtilityFunction *CreateObjectChecker(const char *) = 0;
 
   virtual ObjCRuntimeVersions GetRuntimeVersion() const {
     return ObjCRuntimeVersions::eObjC_VersionUnknown;
@@ -319,7 +299,7 @@ public:
 
   /// Check whether the name is "self" or "_cmd" and should show up in
   /// "frame variable".
-  bool IsAllowedRuntimeValue(ConstString name) override;
+  bool IsWhitelistedRuntimeValue(ConstString name) override;
 
 protected:
   // Classes that inherit from ObjCLanguageRuntime can see and modify these
@@ -353,22 +333,20 @@ protected:
   }
 
 private:
-  // We keep two maps of <Class,Selector>->Implementation so we don't have
-  // to call the resolver function over and over.
-  // The first comes from regular obj_msgSend type dispatch, and maps the
-  // class + uniqued SEL value to an implementation.
-  // The second comes from the "selector-specific stubs", which are always
-  // of the form _objc_msgSend$SelectorName, so we don't know the uniqued
-  // selector, only the string name.
+  // We keep a map of <Class,Selector>->Implementation so we don't have to call
+  // the resolver function over and over.
 
   // FIXME: We need to watch for the loading of Protocols, and flush the cache
   // for any
   // class that we see so changed.
 
   struct ClassAndSel {
-    ClassAndSel() = default;
+    ClassAndSel() {
+      sel_addr = LLDB_INVALID_ADDRESS;
+      class_addr = LLDB_INVALID_ADDRESS;
+    }
 
-    ClassAndSel(lldb::addr_t in_class_addr, lldb::addr_t in_sel_addr)
+    ClassAndSel(lldb::addr_t in_sel_addr, lldb::addr_t in_class_addr)
         : class_addr(in_class_addr), sel_addr(in_sel_addr) {}
 
     bool operator==(const ClassAndSel &rhs) {
@@ -391,35 +369,11 @@ private:
       }
     }
 
-    lldb::addr_t class_addr = LLDB_INVALID_ADDRESS;
-    lldb::addr_t sel_addr = LLDB_INVALID_ADDRESS;
-  };
-
-  struct ClassAndSelStr {
-    ClassAndSelStr() = default;
-
-    ClassAndSelStr(lldb::addr_t in_class_addr, llvm::StringRef in_sel_name)
-        : class_addr(in_class_addr), sel_name(in_sel_name) {}
-
-    bool operator==(const ClassAndSelStr &rhs) {
-      return class_addr == rhs.class_addr && sel_name == rhs.sel_name;
-    }
-
-    bool operator<(const ClassAndSelStr &rhs) const {
-      if (class_addr < rhs.class_addr)
-        return true;
-      else if (class_addr > rhs.class_addr)
-        return false;
-      else
-        return ConstString::Compare(sel_name, rhs.sel_name);
-    }
-
-    lldb::addr_t class_addr = LLDB_INVALID_ADDRESS;
-    ConstString sel_name;
+    lldb::addr_t class_addr;
+    lldb::addr_t sel_addr;
   };
 
   typedef std::map<ClassAndSel, lldb::addr_t> MsgImplMap;
-  typedef std::map<ClassAndSelStr, lldb::addr_t> MsgImplStrMap;
   typedef std::map<ObjCISA, ClassDescriptorSP> ISAToDescriptorMap;
   typedef std::multimap<uint32_t, ObjCISA> HashToISAMap;
   typedef ISAToDescriptorMap::iterator ISAToDescriptorIterator;
@@ -427,7 +381,6 @@ private:
   typedef ThreadSafeDenseMap<void *, uint64_t> TypeSizeCache;
 
   MsgImplMap m_impl_cache;
-  MsgImplStrMap m_impl_str_cache;
   LazyBool m_has_new_literals_and_indexing;
   ISAToDescriptorMap m_isa_to_descriptor;
   HashToISAMap m_hash_to_isa_map;
@@ -464,10 +417,9 @@ protected:
 
   void ReadObjCLibraryIfNeeded(const ModuleList &module_list);
 
-  ObjCLanguageRuntime(const ObjCLanguageRuntime &) = delete;
-  const ObjCLanguageRuntime &operator=(const ObjCLanguageRuntime &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(ObjCLanguageRuntime);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGERUNTIME_OBJC_OBJCLANGUAGERUNTIME_H
+#endif // liblldb_ObjCLanguageRuntime_h_

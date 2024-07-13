@@ -1,4 +1,4 @@
-//===-- SymbolFileSymtab.cpp ----------------------------------------------===//
+//===-- SymbolFileSymtab.cpp ------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -21,12 +21,9 @@
 #include "lldb/Utility/Timer.h"
 
 #include <memory>
-#include <optional>
 
 using namespace lldb;
 using namespace lldb_private;
-
-LLDB_PLUGIN_DEFINE(SymbolFileSymtab)
 
 char SymbolFileSymtab::ID;
 
@@ -39,7 +36,12 @@ void SymbolFileSymtab::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
 
-llvm::StringRef SymbolFileSymtab::GetPluginDescriptionStatic() {
+lldb_private::ConstString SymbolFileSymtab::GetPluginNameStatic() {
+  static ConstString g_name("symtab");
+  return g_name;
+}
+
+const char *SymbolFileSymtab::GetPluginDescriptionStatic() {
   return "Reads debug symbols from an object file's symbol table.";
 }
 
@@ -52,8 +54,10 @@ void SymbolFileSymtab::GetTypes(SymbolContextScope *sc_scope,
                                 lldb_private::TypeList &type_list) {}
 
 SymbolFileSymtab::SymbolFileSymtab(ObjectFileSP objfile_sp)
-    : SymbolFileCommon(std::move(objfile_sp)), m_source_indexes(),
-      m_func_indexes(), m_code_indexes(), m_objc_class_name_to_index() {}
+    : SymbolFile(std::move(objfile_sp)), m_source_indexes(), m_func_indexes(),
+      m_code_indexes(), m_objc_class_name_to_index() {}
+
+SymbolFileSymtab::~SymbolFileSymtab() {}
 
 uint32_t SymbolFileSymtab::CalculateAbilities() {
   uint32_t abilities = 0;
@@ -230,10 +234,10 @@ Type *SymbolFileSymtab::ResolveTypeUID(lldb::user_id_t type_uid) {
   return nullptr;
 }
 
-std::optional<SymbolFile::ArrayInfo>
+llvm::Optional<SymbolFile::ArrayInfo>
 SymbolFileSymtab::GetDynamicArrayInfoForUID(
     lldb::user_id_t type_uid, const lldb_private::ExecutionContext *exe_ctx) {
-  return std::nullopt;
+  return llvm::None;
 }
 
 bool SymbolFileSymtab::CompleteType(lldb_private::CompilerType &compiler_type) {
@@ -256,3 +260,10 @@ uint32_t SymbolFileSymtab::ResolveSymbolContext(const Address &so_addr,
   }
   return resolved_flags;
 }
+
+// PluginInterface protocol
+lldb_private::ConstString SymbolFileSymtab::GetPluginName() {
+  return GetPluginNameStatic();
+}
+
+uint32_t SymbolFileSymtab::GetPluginVersion() { return 1; }
