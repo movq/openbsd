@@ -1,4 +1,4 @@
-//===-- ValueObjectSyntheticFilter.cpp ------------------------------------===//
+//===-- ValueObjectSyntheticFilter.cpp --------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,12 +12,12 @@
 #include "lldb/Core/ValueObject.h"
 #include "lldb/DataFormatters/TypeSynthetic.h"
 #include "lldb/Target/ExecutionContext.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/Logging.h"
+#include "lldb/Utility/SharingPtr.h"
 #include "lldb/Utility/Status.h"
 
 #include "llvm/ADT/STLExtras.h"
-#include <optional>
 
 namespace lldb_private {
 class Declaration;
@@ -47,16 +47,14 @@ public:
 
 ValueObjectSynthetic::ValueObjectSynthetic(ValueObject &parent,
                                            lldb::SyntheticChildrenSP filter)
-    : ValueObject(parent), m_synth_sp(std::move(filter)), m_children_byindex(),
+    : ValueObject(parent), m_synth_sp(filter), m_children_byindex(),
       m_name_toindex(), m_synthetic_children_cache(),
       m_synthetic_children_count(UINT32_MAX),
       m_parent_type_name(parent.GetTypeName()),
       m_might_have_children(eLazyBoolCalculate),
       m_provides_value(eLazyBoolCalculate) {
   SetName(parent.GetName());
-  // Copying the data of an incomplete type won't work as it has no byte size.
-  if (m_parent->GetCompilerType().IsCompleteType())
-    CopyValueData(m_parent);
+  CopyValueData(m_parent);
   CreateSynthFilter();
 }
 
@@ -82,7 +80,7 @@ ConstString ValueObjectSynthetic::GetDisplayTypeName() {
 }
 
 size_t ValueObjectSynthetic::CalculateNumChildren(uint32_t max) {
-  Log *log = GetLog(LLDBLog::DataFormatters);
+  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_DATAFORMATTERS);
 
   UpdateValueIfNeeded();
   if (m_synthetic_children_count < UINT32_MAX)
@@ -122,9 +120,7 @@ bool ValueObjectSynthetic::MightHaveChildren() {
   return (m_might_have_children != eLazyBoolNo);
 }
 
-std::optional<uint64_t> ValueObjectSynthetic::GetByteSize() {
-  return m_parent->GetByteSize();
-}
+uint64_t ValueObjectSynthetic::GetByteSize() { return m_parent->GetByteSize(); }
 
 lldb::ValueType ValueObjectSynthetic::GetValueType() const {
   return m_parent->GetValueType();
@@ -149,7 +145,7 @@ void ValueObjectSynthetic::CreateSynthFilter() {
 }
 
 bool ValueObjectSynthetic::UpdateValue() {
-  Log *log = GetLog(LLDBLog::DataFormatters);
+  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_DATAFORMATTERS);
 
   SetValueIsValid(false);
   m_error.Clear();
@@ -191,7 +187,7 @@ bool ValueObjectSynthetic::UpdateValue() {
     // children count for a synthetic VO that might indeed happen, so we need
     // to tell the upper echelons that they need to come back to us asking for
     // children
-    m_flags.m_children_count_valid = false;
+    m_children_count_valid = false;
     {
       std::lock_guard<std::mutex> guard(m_child_mutex);
       m_synthetic_children_cache.clear();
@@ -224,9 +220,7 @@ bool ValueObjectSynthetic::UpdateValue() {
               GetName().AsCString());
 
     m_provides_value = eLazyBoolNo;
-    // Copying the data of an incomplete type won't work as it has no byte size.
-    if (m_parent->GetCompilerType().IsCompleteType())
-      CopyValueData(m_parent);
+    CopyValueData(m_parent);
   }
 
   SetValueIsValid(true);
@@ -235,7 +229,7 @@ bool ValueObjectSynthetic::UpdateValue() {
 
 lldb::ValueObjectSP ValueObjectSynthetic::GetChildAtIndex(size_t idx,
                                                           bool can_create) {
-  Log *log = GetLog(LLDBLog::DataFormatters);
+  Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_DATAFORMATTERS);
 
   LLDB_LOGF(log,
             "[ValueObjectSynthetic::GetChildAtIndex] name=%s, retrieving "

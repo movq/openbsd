@@ -14,8 +14,8 @@
 // array of load addresses for solibs loaded and unloaded.  The SPI will tell us
 // about both dyld and the executable, in addition to all of the usual solibs.
 
-#ifndef LLDB_SOURCE_PLUGINS_DYNAMICLOADER_MACOSX_DYLD_DYNAMICLOADERMACOS_H
-#define LLDB_SOURCE_PLUGINS_DYNAMICLOADER_MACOSX_DYLD_DYNAMICLOADERMACOS_H
+#ifndef liblldb_DynamicLoaderMacOS_h_
+#define liblldb_DynamicLoaderMacOS_h_
 
 #include <mutex>
 #include <vector>
@@ -39,9 +39,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "macos-dyld"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::DynamicLoader *
   CreateInstance(lldb_private::Process *process, bool force);
@@ -60,7 +60,9 @@ public:
       lldb_private::LazyBool &private_shared_cache) override;
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
 protected:
   void PutToLog(lldb_private::Log *log) const;
@@ -71,15 +73,9 @@ protected:
 
   bool DidSetNotificationBreakpoint() override;
 
-  bool SetDYLDHandoverBreakpoint(lldb::addr_t notification_address);
-
-  void ClearDYLDHandoverBreakpoint();
-
   void AddBinaries(const std::vector<lldb::addr_t> &load_addresses);
 
   void DoClear() override;
-
-  bool IsFullyInitialized() override;
 
   static bool
   NotifyBreakpointHit(void *baton,
@@ -100,7 +96,6 @@ protected:
   uint32_t m_image_infos_stop_id; // The Stop ID the last time we
                                   // loaded/unloaded images
   lldb::user_id_t m_break_id;
-  lldb::user_id_t m_dyld_handover_break_id;
   mutable std::recursive_mutex m_mutex;
   lldb::addr_t m_maybe_image_infos_address; // If dyld is still maintaining the
                                             // all_image_infos address, store it
@@ -108,7 +103,9 @@ protected:
                                             // exec's when talking to
                                             // debugservers that don't support
                                             // the "reason:exec" annotation.
-  bool m_libsystem_fully_initalized;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(DynamicLoaderMacOS);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_DYNAMICLOADER_MACOSX_DYLD_DYNAMICLOADERMACOS_H
+#endif // liblldb_DynamicLoaderMacOS_h_

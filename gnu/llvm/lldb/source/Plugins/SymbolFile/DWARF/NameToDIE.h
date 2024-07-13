@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_NAMETODIE_H
-#define LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_NAMETODIE_H
+#ifndef SymbolFileDWARF_NameToDIE_h_
+#define SymbolFileDWARF_NameToDIE_h_
 
 #include <functional>
 
@@ -22,7 +22,7 @@ class NameToDIE {
 public:
   NameToDIE() : m_map() {}
 
-  ~NameToDIE() = default;
+  ~NameToDIE() {}
 
   void Dump(lldb_private::Stream *s);
 
@@ -32,62 +32,22 @@ public:
 
   void Finalize();
 
-  bool Find(lldb_private::ConstString name,
-            llvm::function_ref<bool(DIERef ref)> callback) const;
+  size_t Find(lldb_private::ConstString name,
+              DIEArray &info_array) const;
 
-  bool Find(const lldb_private::RegularExpression &regex,
-            llvm::function_ref<bool(DIERef ref)> callback) const;
+  size_t Find(const lldb_private::RegularExpression &regex,
+              DIEArray &info_array) const;
 
-  /// \a unit must be the skeleton unit if possible, not GetNonSkeletonUnit().
-  void
-  FindAllEntriesForUnit(DWARFUnit &unit,
-                        llvm::function_ref<bool(DIERef ref)> callback) const;
+  size_t FindAllEntriesForUnit(const DWARFUnit &unit,
+                               DIEArray &info_array) const;
 
   void
   ForEach(std::function<bool(lldb_private::ConstString name,
                              const DIERef &die_ref)> const
               &callback) const;
 
-  /// Decode a serialized version of this object from data.
-  ///
-  /// \param data
-  ///   The decoder object that references the serialized data.
-  ///
-  /// \param offset_ptr
-  ///   A pointer that contains the offset from which the data will be decoded
-  ///   from that gets updated as data gets decoded.
-  ///
-  /// \param strtab
-  ///   All strings in cache files are put into string tables for efficiency
-  ///   and cache file size reduction. Strings are stored as uint32_t string
-  ///   table offsets in the cache data.
-  bool Decode(const lldb_private::DataExtractor &data,
-              lldb::offset_t *offset_ptr,
-              const lldb_private::StringTableReader &strtab);
-
-  /// Encode this object into a data encoder object.
-  ///
-  /// This allows this object to be serialized to disk.
-  ///
-  /// \param encoder
-  ///   A data encoder object that serialized bytes will be encoded into.
-  ///
-  /// \param strtab
-  ///   All strings in cache files are put into string tables for efficiency
-  ///   and cache file size reduction. Strings are stored as uint32_t string
-  ///   table offsets in the cache data.
-  void Encode(lldb_private::DataEncoder &encoder,
-              lldb_private::ConstStringTable &strtab) const;
-
-  /// Used for unit testing the encoding and decoding.
-  bool operator==(const NameToDIE &rhs) const;
-
-  bool IsEmpty() const { return m_map.IsEmpty(); }
-
-  void Clear() { m_map.Clear(); }
-
 protected:
   lldb_private::UniqueCStringMap<DIERef> m_map;
 };
 
-#endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_NAMETODIE_H
+#endif // SymbolFileDWARF_NameToDIE_h_

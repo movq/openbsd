@@ -14,8 +14,8 @@
 #include "DNBLog.h"
 #include "MachProcess.h"
 #include <algorithm>
-#include <cassert>
-#include <cinttypes>
+#include <assert.h>
+#include <inttypes.h>
 
 #pragma mark-- DNBBreakpoint
 DNBBreakpoint::DNBBreakpoint(nub_addr_t addr, nub_size_t byte_size,
@@ -25,7 +25,7 @@ DNBBreakpoint::DNBBreakpoint(nub_addr_t addr, nub_size_t byte_size,
       m_is_watchpoint(0), m_watch_read(0), m_watch_write(0),
       m_hw_index(INVALID_NUB_HW_INDEX) {}
 
-DNBBreakpoint::~DNBBreakpoint() = default;
+DNBBreakpoint::~DNBBreakpoint() {}
 
 void DNBBreakpoint::Dump() const {
   if (IsBreakpoint()) {
@@ -45,9 +45,9 @@ void DNBBreakpoint::Dump() const {
 
 #pragma mark-- DNBBreakpointList
 
-DNBBreakpointList::DNBBreakpointList() = default;
+DNBBreakpointList::DNBBreakpointList() {}
 
-DNBBreakpointList::~DNBBreakpointList() = default;
+DNBBreakpointList::~DNBBreakpointList() {}
 
 DNBBreakpoint *DNBBreakpointList::Add(nub_addr_t addr, nub_size_t length,
                                       bool hardware) {

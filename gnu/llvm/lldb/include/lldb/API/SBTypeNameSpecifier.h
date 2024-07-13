@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBTYPENAMESPECIFIER_H
-#define LLDB_API_SBTYPENAMESPECIFIER_H
+#ifndef LLDB_SBTypeNameSpecifier_h_
+#define LLDB_SBTypeNameSpecifier_h_
 
 #include "lldb/API/SBDefines.h"
 
@@ -19,9 +19,6 @@ public:
   SBTypeNameSpecifier();
 
   SBTypeNameSpecifier(const char *name, bool is_regex = false);
-
-  SBTypeNameSpecifier(const char *name,
-                      lldb::FormatterMatchType match_type);
 
   SBTypeNameSpecifier(SBType type);
 
@@ -36,8 +33,6 @@ public:
   const char *GetName();
 
   SBType GetType();
-
-  lldb::FormatterMatchType GetMatchType();
 
   bool IsRegex();
 
@@ -67,4 +62,4 @@ protected:
 
 } // namespace lldb
 
-#endif // LLDB_API_SBTYPENAMESPECIFIER_H
+#endif // LLDB_SBTypeNameSpecifier_h_

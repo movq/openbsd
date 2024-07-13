@@ -1,4 +1,4 @@
-//===-- EmulateInstructionARM.cpp -----------------------------------------===//
+//===-- EmulateInstructionARM.cpp -------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <cstdlib>
-#include <optional>
+#include <stdlib.h>
 
 #include "EmulateInstructionARM.h"
 #include "EmulationStateARM.h"
@@ -31,8 +30,6 @@
 using namespace lldb;
 using namespace lldb_private;
 
-LLDB_PLUGIN_DEFINE_ADV(EmulateInstructionARM, InstructionARM)
-
 // Convenient macro definitions.
 #define APSR_C Bit32(m_opcode_cpsr, CPSR_C_POS)
 #define APSR_V Bit32(m_opcode_cpsr, CPSR_V_POS)
@@ -43,8 +40,7 @@ LLDB_PLUGIN_DEFINE_ADV(EmulateInstructionARM, InstructionARM)
 // ITSession implementation
 //
 
-static std::optional<RegisterInfo> GetARMDWARFRegisterInfo(unsigned reg_num) {
-  RegisterInfo reg_info;
+static bool GetARMDWARFRegisterInfo(unsigned reg_num, RegisterInfo &reg_info) {
   ::memset(&reg_info, 0, sizeof(RegisterInfo));
   ::memset(reg_info.kinds, LLDB_INVALID_REGNUM, sizeof(reg_info.kinds));
 
@@ -596,9 +592,9 @@ static std::optional<RegisterInfo> GetARMDWARFRegisterInfo(unsigned reg_num) {
     break;
 
   default:
-    return {};
+    return false;
   }
-  return reg_info;
+  return true;
 }
 
 // A8.6.50
@@ -607,6 +603,9 @@ static uint32_t CountITSize(uint32_t ITMask) {
   // First count the trailing zeros of the IT mask.
   uint32_t TZ = llvm::countTrailingZeros(ITMask);
   if (TZ > 3) {
+#ifdef LLDB_CONFIGURATION_DEBUG
+    printf("Encoding error: IT Mask '0000'\n");
+#endif
     return 0;
   }
   return (4 - TZ);
@@ -621,9 +620,15 @@ bool ITSession::InitIT(uint32_t bits7_0) {
   // A8.6.50 IT
   unsigned short FirstCond = Bits32(bits7_0, 7, 4);
   if (FirstCond == 0xF) {
+#ifdef LLDB_CONFIGURATION_DEBUG
+    printf("Encoding error: IT FirstCond '1111'\n");
+#endif
     return false;
   }
   if (FirstCond == 0xE && ITCounter != 1) {
+#ifdef LLDB_CONFIGURATION_DEBUG
+    printf("Encoding error: IT FirstCond '1110' && Mask != '1000'\n");
+#endif
     return false;
   }
 
@@ -715,7 +720,12 @@ void EmulateInstructionARM::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
 
-llvm::StringRef EmulateInstructionARM::GetPluginDescriptionStatic() {
+ConstString EmulateInstructionARM::GetPluginNameStatic() {
+  static ConstString g_name("arm");
+  return g_name;
+}
+
+const char *EmulateInstructionARM::GetPluginDescriptionStatic() {
   return "Emulate instructions for the ARM architecture.";
 }
 
@@ -784,9 +794,9 @@ bool EmulateInstructionARM::WriteBits32Unknown(int n) {
   return true;
 }
 
-std::optional<RegisterInfo>
-EmulateInstructionARM::GetRegisterInfo(lldb::RegisterKind reg_kind,
-                                       uint32_t reg_num) {
+bool EmulateInstructionARM::GetRegisterInfo(lldb::RegisterKind reg_kind,
+                                            uint32_t reg_num,
+                                            RegisterInfo &reg_info) {
   if (reg_kind == eRegisterKindGeneric) {
     switch (reg_num) {
     case LLDB_REGNUM_GENERIC_PC:
@@ -810,13 +820,13 @@ EmulateInstructionARM::GetRegisterInfo(lldb::RegisterKind reg_kind,
       reg_num = dwarf_cpsr;
       break;
     default:
-      return {};
+      return false;
     }
   }
 
   if (reg_kind == eRegisterKindDWARF)
-    return GetARMDWARFRegisterInfo(reg_num);
-  return {};
+    return GetARMDWARFRegisterInfo(reg_num, reg_info);
+  return false;
 }
 
 uint32_t EmulateInstructionARM::GetFramePointerRegisterNumber() const {
@@ -971,13 +981,13 @@ bool EmulateInstructionARM::EmulatePUSH(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextPushRegisterOnStack;
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
+    RegisterInfo reg_info;
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
     for (i = 0; i < 15; ++i) {
       if (BitIsSet(registers, i)) {
-        std::optional<RegisterInfo> reg_info =
-            GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i);
-        context.SetRegisterToRegisterPlusOffset(*reg_info, *sp_reg, addr - sp);
+        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i, reg_info);
+        context.SetRegisterToRegisterPlusOffset(reg_info, sp_reg, addr - sp);
         uint32_t reg_value = ReadCoreReg(i, &success);
         if (!success)
           return false;
@@ -988,9 +998,8 @@ bool EmulateInstructionARM::EmulatePUSH(const uint32_t opcode,
     }
 
     if (BitIsSet(registers, 15)) {
-      std::optional<RegisterInfo> reg_info =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_pc);
-      context.SetRegisterToRegisterPlusOffset(*reg_info, *sp_reg, addr - sp);
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_pc, reg_info);
+      context.SetRegisterToRegisterPlusOffset(reg_info, sp_reg, addr - sp);
       const uint32_t pc = ReadCoreReg(PC_REG, &success);
       if (!success)
         return false;
@@ -1100,8 +1109,8 @@ bool EmulateInstructionARM::EmulatePOP(const uint32_t opcode,
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextPopRegisterOffStack;
 
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
 
     for (i = 0; i < 15; ++i) {
       if (BitIsSet(registers, i)) {
@@ -1117,7 +1126,7 @@ bool EmulateInstructionARM::EmulatePOP(const uint32_t opcode,
     }
 
     if (BitIsSet(registers, 15)) {
-      context.SetRegisterPlusOffset(*sp_reg, addr - sp);
+      context.SetRegisterPlusOffset(sp_reg, addr - sp);
       data = MemARead(context, addr, 4, 0, &success);
       if (!success)
         return false;
@@ -1187,9 +1196,9 @@ bool EmulateInstructionARM::EmulateADDRdSPImm(const uint32_t opcode,
       context.type = eContextSetFramePointer;
     else
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
-    context.SetRegisterPlusOffset(*sp_reg, sp_offset);
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
+    context.SetRegisterPlusOffset(sp_reg, sp_offset);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + Rd,
                                addr))
@@ -1243,9 +1252,9 @@ bool EmulateInstructionARM::EmulateMOVRdSP(const uint32_t opcode,
       context.type = EmulateInstruction::eContextSetFramePointer;
     else
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
-    context.SetRegisterPlusOffset(*sp_reg, 0);
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
+    context.SetRegisterPlusOffset(sp_reg, 0);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + Rd, sp))
       return false;
@@ -1340,9 +1349,9 @@ bool EmulateInstructionARM::EmulateMOVRdRm(const uint32_t opcode,
       context.type = EmulateInstruction::eContextSetFramePointer;
     else
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm);
-    context.SetRegisterPlusOffset(*dwarf_reg, 0);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, 0);
 
     if (!WriteCoreRegOptionalFlags(context, result, Rd, setflags))
       return false;
@@ -1559,14 +1568,14 @@ bool EmulateInstructionARM::EmulateMUL(const uint32_t opcode,
     uint64_t result = operand1 * operand2;
 
     // R[d] = result<31:0>;
-    std::optional<RegisterInfo> op1_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> op2_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo op1_reg;
+    RegisterInfo op2_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, op1_reg);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, op2_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    context.SetRegisterRegisterOperands(*op1_reg, *op2_reg);
+    context.SetRegisterRegisterOperands(op1_reg, op2_reg);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + d,
                                (0x0000ffff & result)))
@@ -1767,9 +1776,9 @@ bool EmulateInstructionARM::EmulateLDRRtPCRelative(const uint32_t opcode,
     // PC relative immediate load context
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> pc_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_pc);
-    context.SetRegisterPlusOffset(*pc_reg, 0);
+    RegisterInfo pc_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_pc, pc_reg);
+    context.SetRegisterPlusOffset(pc_reg, 0);
 
     uint32_t Rt;    // the destination register
     uint32_t imm32; // immediate offset from the PC
@@ -1800,7 +1809,7 @@ bool EmulateInstructionARM::EmulateLDRRtPCRelative(const uint32_t opcode,
     else
       address = base - imm32;
 
-    context.SetRegisterPlusOffset(*pc_reg, address - base);
+    context.SetRegisterPlusOffset(pc_reg, address - base);
     data = MemURead(context, address, 4, 0, &success);
     if (!success)
       return false;
@@ -1911,9 +1920,9 @@ bool EmulateInstructionARM::EmulateADDSPImm(const uint32_t opcode,
     else
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
 
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
-    context.SetRegisterPlusOffset(*sp_reg, res.result - sp);
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
+    context.SetRegisterPlusOffset(sp_reg, res.result - sp);
 
     if (d == 15) {
       if (!ALUWritePC(context, res.result))
@@ -1978,11 +1987,12 @@ bool EmulateInstructionARM::EmulateADDSPRm(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
-    std::optional<RegisterInfo> other_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm);
-    context.SetRegisterRegisterOperands(*sp_reg, *other_reg);
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
+
+    RegisterInfo other_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm, other_reg);
+    context.SetRegisterRegisterOperands(sp_reg, other_reg);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindGeneric,
                                LLDB_REGNUM_GENERIC_SP, addr))
@@ -2150,9 +2160,9 @@ bool EmulateInstructionARM::EmulateBLXRm(const uint32_t opcode,
     addr_t target = ReadCoreReg(Rm, &success);
     if (!success)
       return false;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm);
-    context.SetRegister(*dwarf_reg);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm, dwarf_reg);
+    context.SetRegister(dwarf_reg);
     if (!WriteRegisterUnsigned(context, eRegisterKindGeneric,
                                LLDB_REGNUM_GENERIC_RA, lr))
       return false;
@@ -2196,9 +2206,9 @@ bool EmulateInstructionARM::EmulateBXRm(const uint32_t opcode,
     if (!success)
       return false;
 
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm);
-    context.SetRegister(*dwarf_reg);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm, dwarf_reg);
+    context.SetRegister(dwarf_reg);
     if (!BXWritePC(context, target))
       return false;
   }
@@ -2254,9 +2264,9 @@ bool EmulateInstructionARM::EmulateBXJRm(const uint32_t opcode,
     if (!success)
       return false;
 
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm);
-    context.SetRegister(*dwarf_reg);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm, dwarf_reg);
+    context.SetRegister(dwarf_reg);
     if (!BXWritePC(context, target))
       return false;
   }
@@ -2303,9 +2313,9 @@ bool EmulateInstructionARM::EmulateSUBR7IPImm(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r12);
-    context.SetRegisterPlusOffset(*dwarf_reg, -ip_offset);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r12, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, -ip_offset);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r7, addr))
       return false;
@@ -2353,9 +2363,9 @@ bool EmulateInstructionARM::EmulateSUBIPSPImm(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP);
-    context.SetRegisterPlusOffset(*dwarf_reg, -sp_offset);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, -sp_offset);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r12, addr))
       return false;
@@ -2515,12 +2525,12 @@ bool EmulateInstructionARM::EmulateSTRRtSP(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextPushRegisterOnStack;
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rt);
+    RegisterInfo sp_reg;
+    RegisterInfo dwarf_reg;
 
-    context.SetRegisterToRegisterPlusOffset(*dwarf_reg, *sp_reg, addr - sp);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rt, dwarf_reg);
+    context.SetRegisterToRegisterPlusOffset(dwarf_reg, sp_reg, addr - sp);
     if (Rt != 15) {
       uint32_t reg_value = ReadCoreReg(Rt, &success);
       if (!success)
@@ -2614,14 +2624,14 @@ bool EmulateInstructionARM::EmulateVPUSH(const uint32_t opcode,
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextPushRegisterOnStack;
 
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
+    RegisterInfo dwarf_reg;
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
     for (i = 0; i < regs; ++i) {
-      std::optional<RegisterInfo> dwarf_reg =
-          GetRegisterInfo(eRegisterKindDWARF, start_reg + d + i);
-      context.SetRegisterToRegisterPlusOffset(*dwarf_reg, *sp_reg, addr - sp);
+      GetRegisterInfo(eRegisterKindDWARF, start_reg + d + i, dwarf_reg);
+      context.SetRegisterToRegisterPlusOffset(dwarf_reg, sp_reg, addr - sp);
       // uint64_t to accommodate 64-bit registers.
-      uint64_t reg_value = ReadRegisterUnsigned(*dwarf_reg, 0, &success);
+      uint64_t reg_value = ReadRegisterUnsigned(&dwarf_reg, 0, &success);
       if (!success)
         return false;
       if (!MemAWrite(context, addr, reg_value, reg_byte_size))
@@ -2707,14 +2717,16 @@ bool EmulateInstructionARM::EmulateVPOP(const uint32_t opcode,
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextPopRegisterOffStack;
 
+    RegisterInfo dwarf_reg;
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
     for (i = 0; i < regs; ++i) {
-      std::optional<RegisterInfo> dwarf_reg =
-          GetRegisterInfo(eRegisterKindDWARF, start_reg + d + i);
+      GetRegisterInfo(eRegisterKindDWARF, start_reg + d + i, dwarf_reg);
       context.SetAddress(addr);
       data = MemARead(context, addr, reg_byte_size, 0, &success);
       if (!success)
         return false;
-      if (!WriteRegisterUnsigned(context, *dwarf_reg, data))
+      if (!WriteRegisterUnsigned(context, &dwarf_reg, data))
         return false;
       addr += reg_byte_size;
     }
@@ -3106,11 +3118,12 @@ bool EmulateInstructionARM::EmulateADDImmThumb(const uint32_t opcode,
     //(result, carry, overflow) = AddWithCarry(R[n], imm32, '0');
     AddWithCarryResult res = AddWithCarry(Rn, imm32, 0);
 
-    std::optional<RegisterInfo> reg_n =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo reg_n;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, reg_n);
+
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    context.SetRegisterPlusOffset(*reg_n, imm32);
+    context.SetRegisterPlusOffset(reg_n, imm32);
 
     // R[d] = result;
     // if setflags then
@@ -3179,9 +3192,9 @@ bool EmulateInstructionARM::EmulateADDImmARM(const uint32_t opcode,
     else
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
 
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, Rn);
-    context.SetRegisterPlusOffset(*dwarf_reg, imm32);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, Rn, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, imm32);
 
     if (!WriteCoreRegOptionalFlags(context, res.result, Rd, setflags,
                                    res.carry_out, res.overflow))
@@ -3267,11 +3280,11 @@ bool EmulateInstructionARM::EmulateADDReg(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    std::optional<RegisterInfo> op1_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rn);
-    std::optional<RegisterInfo> op2_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm);
-    context.SetRegisterRegisterOperands(*op1_reg, *op2_reg);
+    RegisterInfo op1_reg;
+    RegisterInfo op2_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rn, op1_reg);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rm, op2_reg);
+    context.SetRegisterRegisterOperands(op1_reg, op2_reg);
 
     if (!WriteCoreRegOptionalFlags(context, res.result, Rd, setflags,
                                    res.carry_out, res.overflow))
@@ -3768,6 +3781,10 @@ bool EmulateInstructionARM::EmulateShiftImm(const uint32_t opcode,
 
     switch (use_encoding) {
     case eEncodingT1:
+      // Due to the above special case handling!
+      if (shift_type == SRType_ROR)
+        return false;
+
       Rd = Bits32(opcode, 2, 0);
       Rm = Bits32(opcode, 5, 3);
       setflags = !InITBlock();
@@ -3978,14 +3995,14 @@ bool EmulateInstructionARM::EmulateLDM(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    context.SetRegisterPlusOffset(*dwarf_reg, offset);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, offset);
 
     for (int i = 0; i < 14; ++i) {
       if (BitIsSet(registers, i)) {
         context.type = EmulateInstruction::eContextRegisterPlusOffset;
-        context.SetRegisterPlusOffset(*dwarf_reg, offset);
+        context.SetRegisterPlusOffset(dwarf_reg, offset);
         if (wback && (n == 13)) // Pop Instruction
         {
           context.type = EmulateInstruction::eContextPopRegisterOffStack;
@@ -4009,7 +4026,7 @@ bool EmulateInstructionARM::EmulateLDM(const uint32_t opcode,
     if (BitIsSet(registers, 15)) {
       // LoadWritePC (MemA [address, 4]);
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
-      context.SetRegisterPlusOffset(*dwarf_reg, offset);
+      context.SetRegisterPlusOffset(dwarf_reg, offset);
       uint32_t data =
           MemARead(context, base_address + offset, addr_byte_size, 0, &success);
       if (!success)
@@ -4023,7 +4040,7 @@ bool EmulateInstructionARM::EmulateLDM(const uint32_t opcode,
       // R[n] = R[n] + 4 * BitCount (registers)
       int32_t offset = addr_byte_size * BitCount(registers);
       context.type = EmulateInstruction::eContextAdjustBaseRegister;
-      context.SetRegisterPlusOffset(*dwarf_reg, offset);
+      context.SetRegisterPlusOffset(dwarf_reg, offset);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  base_address + offset))
@@ -4098,16 +4115,16 @@ bool EmulateInstructionARM::EmulateLDMDA(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    context.SetRegisterPlusOffset(*dwarf_reg, offset);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, offset);
 
     // for i = 0 to 14
     for (int i = 0; i < 14; ++i) {
       // if registers<i> == '1' then
       if (BitIsSet(registers, i)) {
         // R[i] = MemA[address,4]; address = address + 4;
-        context.SetRegisterPlusOffset(*dwarf_reg, Rn - (address + offset));
+        context.SetRegisterPlusOffset(dwarf_reg, Rn - (address + offset));
         uint32_t data =
             MemARead(context, address + offset, addr_byte_size, 0, &success);
         if (!success)
@@ -4122,7 +4139,7 @@ bool EmulateInstructionARM::EmulateLDMDA(const uint32_t opcode,
     // if registers<15> == '1' then
     //     LoadWritePC(MemA[address,4]);
     if (BitIsSet(registers, 15)) {
-      context.SetRegisterPlusOffset(*dwarf_reg, offset);
+      context.SetRegisterPlusOffset(dwarf_reg, offset);
       uint32_t data =
           MemARead(context, address + offset, addr_byte_size, 0, &success);
       if (!success)
@@ -4134,6 +4151,8 @@ bool EmulateInstructionARM::EmulateLDMDA(const uint32_t opcode,
 
     // if wback && registers<n> == '0' then R[n] = R[n] - 4*BitCount(registers);
     if (wback && BitIsClear(registers, n)) {
+      if (!success)
+        return false;
 
       offset = (addr_byte_size * BitCount(registers)) * -1;
       context.type = EmulateInstruction::eContextAdjustBaseRegister;
@@ -4234,14 +4253,14 @@ bool EmulateInstructionARM::EmulateLDMDB(const uint32_t opcode,
     addr_t address = Rn - (addr_byte_size * BitCount(registers));
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    context.SetRegisterPlusOffset(*dwarf_reg, Rn - address);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, Rn - address);
 
     for (int i = 0; i < 14; ++i) {
       if (BitIsSet(registers, i)) {
         // R[i] = MemA[address,4]; address = address + 4;
-        context.SetRegisterPlusOffset(*dwarf_reg, Rn - (address + offset));
+        context.SetRegisterPlusOffset(dwarf_reg, Rn - (address + offset));
         uint32_t data =
             MemARead(context, address + offset, addr_byte_size, 0, &success);
         if (!success)
@@ -4258,7 +4277,7 @@ bool EmulateInstructionARM::EmulateLDMDB(const uint32_t opcode,
     // if registers<15> == '1' then
     //     LoadWritePC(MemA[address,4]);
     if (BitIsSet(registers, 15)) {
-      context.SetRegisterPlusOffset(*dwarf_reg, offset);
+      context.SetRegisterPlusOffset(dwarf_reg, offset);
       uint32_t data =
           MemARead(context, address + offset, addr_byte_size, 0, &success);
       if (!success)
@@ -4270,6 +4289,8 @@ bool EmulateInstructionARM::EmulateLDMDB(const uint32_t opcode,
 
     // if wback && registers<n> == '0' then R[n] = R[n] - 4*BitCount(registers);
     if (wback && BitIsClear(registers, n)) {
+      if (!success)
+        return false;
 
       offset = (addr_byte_size * BitCount(registers)) * -1;
       context.type = EmulateInstruction::eContextAdjustBaseRegister;
@@ -4345,15 +4366,15 @@ bool EmulateInstructionARM::EmulateLDMIB(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterPlusOffset;
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    context.SetRegisterPlusOffset(*dwarf_reg, offset);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, dwarf_reg);
+    context.SetRegisterPlusOffset(dwarf_reg, offset);
 
     for (int i = 0; i < 14; ++i) {
       if (BitIsSet(registers, i)) {
         // R[i] = MemA[address,4]; address = address + 4;
 
-        context.SetRegisterPlusOffset(*dwarf_reg, offset + addr_byte_size);
+        context.SetRegisterPlusOffset(dwarf_reg, offset + addr_byte_size);
         uint32_t data =
             MemARead(context, address + offset, addr_byte_size, 0, &success);
         if (!success)
@@ -4370,7 +4391,7 @@ bool EmulateInstructionARM::EmulateLDMIB(const uint32_t opcode,
     // if registers<15> == '1' then
     //     LoadWritePC(MemA[address,4]);
     if (BitIsSet(registers, 15)) {
-      context.SetRegisterPlusOffset(*dwarf_reg, offset);
+      context.SetRegisterPlusOffset(dwarf_reg, offset);
       uint32_t data =
           MemARead(context, address + offset, addr_byte_size, 0, &success);
       if (!success)
@@ -4382,6 +4403,8 @@ bool EmulateInstructionARM::EmulateLDMIB(const uint32_t opcode,
 
     // if wback && registers<n> == '0' then R[n] = R[n] + 4*BitCount(registers);
     if (wback && BitIsClear(registers, n)) {
+      if (!success)
+        return false;
 
       offset = addr_byte_size * BitCount(registers);
       context.type = EmulateInstruction::eContextAdjustBaseRegister;
@@ -4515,8 +4538,8 @@ bool EmulateInstructionARM::EmulateLDRRtRnImm(const uint32_t opcode,
 
     address = (index ? offset_addr : base);
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rn);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + Rn, base_reg);
     if (wback) {
       EmulateInstruction::Context ctx;
       if (Rn == 13) {
@@ -4524,10 +4547,10 @@ bool EmulateInstructionARM::EmulateLDRRtRnImm(const uint32_t opcode,
         ctx.SetImmediateSigned((int32_t)(offset_addr - base));
       } else if (Rn == GetFramePointerRegisterNumber()) {
         ctx.type = eContextSetFramePointer;
-        ctx.SetRegisterPlusOffset(*base_reg, (int32_t)(offset_addr - base));
+        ctx.SetRegisterPlusOffset(base_reg, (int32_t)(offset_addr - base));
       } else {
         ctx.type = EmulateInstruction::eContextAdjustBaseRegister;
-        ctx.SetRegisterPlusOffset(*base_reg, (int32_t)(offset_addr - base));
+        ctx.SetRegisterPlusOffset(base_reg, (int32_t)(offset_addr - base));
       }
 
       if (!WriteRegisterUnsigned(ctx, eRegisterKindDWARF, dwarf_r0 + Rn,
@@ -4538,7 +4561,7 @@ bool EmulateInstructionARM::EmulateLDRRtRnImm(const uint32_t opcode,
     // Prepare to write to the Rt register.
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, (int32_t)(offset_addr - base));
+    context.SetRegisterPlusOffset(base_reg, (int32_t)(offset_addr - base));
 
     // Read memory from the address.
     data = MemURead(context, address, 4, 0, &success);
@@ -4651,8 +4674,8 @@ bool EmulateInstructionARM::EmulateSTM(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterStore;
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     // for i = 0 to 14
     uint32_t lowest_set_bit = 14;
@@ -4673,9 +4696,9 @@ bool EmulateInstructionARM::EmulateSTM(const uint32_t opcode,
           if (!success)
             return false;
 
-          std::optional<RegisterInfo> data_reg =
-              GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i);
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, offset);
+          RegisterInfo data_reg;
+          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i, data_reg);
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, offset);
           if (!MemAWrite(context, address + offset, data, addr_byte_size))
             return false;
         }
@@ -4688,9 +4711,9 @@ bool EmulateInstructionARM::EmulateSTM(const uint32_t opcode,
     // if registers<15> == '1' then // Only possible for encoding A1
     //     MemA[address,4] = PCStoreValue();
     if (BitIsSet(registers, 15)) {
-      std::optional<RegisterInfo> pc_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_pc);
-      context.SetRegisterPlusOffset(*pc_reg, 8);
+      RegisterInfo pc_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_pc, pc_reg);
+      context.SetRegisterPlusOffset(pc_reg, 8);
       const uint32_t pc = ReadCoreReg(PC_REG, &success);
       if (!success)
         return false;
@@ -4773,8 +4796,8 @@ bool EmulateInstructionARM::EmulateSTMDA(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterStore;
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     // for i = 0 to 14
     uint32_t lowest_bit_set = 14;
@@ -4794,9 +4817,9 @@ bool EmulateInstructionARM::EmulateSTMDA(const uint32_t opcode,
           if (!success)
             return false;
 
-          std::optional<RegisterInfo> data_reg =
-              GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i);
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          RegisterInfo data_reg;
+          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i, data_reg);
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   Rn - (address + offset));
           if (!MemAWrite(context, address + offset, data, addr_byte_size))
             return false;
@@ -4810,9 +4833,9 @@ bool EmulateInstructionARM::EmulateSTMDA(const uint32_t opcode,
     // if registers<15> == '1' then
     //    MemA[address,4] = PCStoreValue();
     if (BitIsSet(registers, 15)) {
-      std::optional<RegisterInfo> pc_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_pc);
-      context.SetRegisterPlusOffset(*pc_reg, 8);
+      RegisterInfo pc_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_pc, pc_reg);
+      context.SetRegisterPlusOffset(pc_reg, 8);
       const uint32_t pc = ReadCoreReg(PC_REG, &success);
       if (!success)
         return false;
@@ -4921,8 +4944,8 @@ bool EmulateInstructionARM::EmulateSTMDB(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterStore;
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     // for i = 0 to 14
     uint32_t lowest_set_bit = 14;
@@ -4943,9 +4966,9 @@ bool EmulateInstructionARM::EmulateSTMDB(const uint32_t opcode,
           if (!success)
             return false;
 
-          std::optional<RegisterInfo> data_reg =
-              GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i);
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          RegisterInfo data_reg;
+          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i, data_reg);
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   Rn - (address + offset));
           if (!MemAWrite(context, address + offset, data, addr_byte_size))
             return false;
@@ -4959,9 +4982,9 @@ bool EmulateInstructionARM::EmulateSTMDB(const uint32_t opcode,
     // if registers<15> == '1' then // Only possible for encoding A1
     //     MemA[address,4] = PCStoreValue();
     if (BitIsSet(registers, 15)) {
-      std::optional<RegisterInfo> pc_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_pc);
-      context.SetRegisterPlusOffset(*pc_reg, 8);
+      RegisterInfo pc_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_pc, pc_reg);
+      context.SetRegisterPlusOffset(pc_reg, 8);
       const uint32_t pc = ReadCoreReg(PC_REG, &success);
       if (!success)
         return false;
@@ -5044,8 +5067,8 @@ bool EmulateInstructionARM::EmulateSTMIB(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = EmulateInstruction::eContextRegisterStore;
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t lowest_set_bit = 14;
     // for i = 0 to 14
@@ -5066,9 +5089,9 @@ bool EmulateInstructionARM::EmulateSTMIB(const uint32_t opcode,
           if (!success)
             return false;
 
-          std::optional<RegisterInfo> data_reg =
-              GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i);
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          RegisterInfo data_reg;
+          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + i, data_reg);
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   offset + addr_byte_size);
           if (!MemAWrite(context, address + offset, data, addr_byte_size))
             return false;
@@ -5082,9 +5105,9 @@ bool EmulateInstructionARM::EmulateSTMIB(const uint32_t opcode,
     // if registers<15> == '1' then
     // MemA[address,4] = PCStoreValue();
     if (BitIsSet(registers, 15)) {
-      std::optional<RegisterInfo> pc_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_pc);
-      context.SetRegisterPlusOffset(*pc_reg, 8);
+      RegisterInfo pc_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_pc, pc_reg);
+      context.SetRegisterPlusOffset(pc_reg, 8);
       const uint32_t pc = ReadCoreReg(PC_REG, &success);
       if (!success)
         return false;
@@ -5235,8 +5258,8 @@ bool EmulateInstructionARM::EmulateSTRThumb(const uint32_t opcode,
     else
       context.type = eContextRegisterStore;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     // if UnalignedSupport() || address<1:0> == '00' then
     if (UnalignedSupport() ||
@@ -5247,10 +5270,10 @@ bool EmulateInstructionARM::EmulateSTRThumb(const uint32_t opcode,
       if (!success)
         return false;
 
-      std::optional<RegisterInfo> data_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+      RegisterInfo data_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
       int32_t offset = address - base_address;
-      context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, offset);
+      context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, offset);
       if (!MemUWrite(context, address, data, addr_byte_size))
         return false;
     } else {
@@ -5441,12 +5464,13 @@ bool EmulateInstructionARM::EmulateSTRRegister(const uint32_t opcode,
         CurrentInstrSet() == eModeARM) {
       // MemU[address,4] = data;
 
-      std::optional<RegisterInfo> base_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-      std::optional<RegisterInfo> data_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+      RegisterInfo base_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
-      context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+      RegisterInfo data_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
+
+      context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                               address - base_address);
       if (!MemUWrite(context, address, data, addr_byte_size))
         return false;
@@ -5566,14 +5590,15 @@ bool EmulateInstructionARM::EmulateSTRBThumb(const uint32_t opcode,
       address = base_address;
 
     // MemU[address,1] = R[t]<7:0>
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                             address - base_address);
 
     uint32_t data =
@@ -5735,6 +5760,10 @@ bool EmulateInstructionARM::EmulateSTRHRegister(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterStore;
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    RegisterInfo offset_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
 
     // if UnalignedSupport() || address<0> == '0' then
     if (UnalignedSupport() || BitIsClear(address, 0)) {
@@ -5745,14 +5774,14 @@ bool EmulateInstructionARM::EmulateSTRHRegister(const uint32_t opcode,
 
       EmulateInstruction::Context context;
       context.type = eContextRegisterStore;
-      std::optional<RegisterInfo> base_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-      std::optional<RegisterInfo> offset_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
-      std::optional<RegisterInfo> data_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
-      context.SetRegisterToRegisterPlusIndirectOffset(*base_reg, *offset_reg,
-                                                      *data_reg);
+      RegisterInfo base_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+      RegisterInfo offset_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
+      RegisterInfo data_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
+      context.SetRegisterToRegisterPlusIndirectOffset(base_reg, offset_reg,
+                                                      data_reg);
 
       if (!MemUWrite(context, address, Bits32(Rt, 15, 0), 2))
         return false;
@@ -6399,11 +6428,12 @@ bool EmulateInstructionARM::EmulateLDRImmediateARM(const uint32_t opcode,
 
     // data = MemU[address,4];
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - base_address);
+    context.SetRegisterPlusOffset(base_reg, address - base_address);
 
     uint64_t data = MemURead(context, address, addr_byte_size, 0, &success);
     if (!success)
@@ -6424,7 +6454,7 @@ bool EmulateInstructionARM::EmulateLDRImmediateARM(const uint32_t opcode,
       if (BitIsClear(address, 1) && BitIsClear(address, 0)) {
         // LoadWritePC (data);
         context.type = eContextRegisterLoad;
-        context.SetRegisterPlusOffset(*base_reg, address - base_address);
+        context.SetRegisterPlusOffset(base_reg, address - base_address);
         LoadWritePC(context, data);
       } else
         return false;
@@ -6434,7 +6464,7 @@ bool EmulateInstructionARM::EmulateLDRImmediateARM(const uint32_t opcode,
              (BitIsClear(address, 1) && BitIsClear(address, 0))) {
       // R[t] = data;
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusOffset(*base_reg, address - base_address);
+      context.SetRegisterPlusOffset(base_reg, address - base_address);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
                                  data))
         return false;
@@ -6604,11 +6634,12 @@ bool EmulateInstructionARM::EmulateLDRRegister(const uint32_t opcode,
       address = Rn;
 
     // data = MemU[address,4];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - Rn);
+    context.SetRegisterPlusOffset(base_reg, address - Rn);
 
     uint64_t data = MemURead(context, address, addr_byte_size, 0, &success);
     if (!success)
@@ -6628,7 +6659,7 @@ bool EmulateInstructionARM::EmulateLDRRegister(const uint32_t opcode,
       // if address<1:0> == '00' then LoadWritePC(data); else UNPREDICTABLE;
       if (BitIsClear(address, 1) && BitIsClear(address, 0)) {
         context.type = eContextRegisterLoad;
-        context.SetRegisterPlusOffset(*base_reg, address - Rn);
+        context.SetRegisterPlusOffset(base_reg, address - Rn);
         LoadWritePC(context, data);
       } else
         return false;
@@ -6638,7 +6669,7 @@ bool EmulateInstructionARM::EmulateLDRRegister(const uint32_t opcode,
              (BitIsClear(address, 1) && BitIsClear(address, 0))) {
       // R[t] = data;
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusOffset(*base_reg, address - Rn);
+      context.SetRegisterPlusOffset(base_reg, address - Rn);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
                                  data))
         return false;
@@ -6781,14 +6812,14 @@ bool EmulateInstructionARM::EmulateLDRBImmediate(const uint32_t opcode,
       address = Rn;
 
     // R[t] = ZeroExtend(MemU[address,1], 32);
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+    RegisterInfo base_reg;
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, address - Rn);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, address - Rn);
 
     uint64_t data = MemURead(context, address, 1, 0, &success);
     if (!success)
@@ -7025,12 +7056,12 @@ bool EmulateInstructionARM::EmulateLDRBRegister(const uint32_t opcode,
       address = Rn;
 
     // R[t] = ZeroExtend(MemU[address,1],32);
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - Rn);
+    context.SetRegisterPlusOffset(base_reg, address - Rn);
 
     uint64_t data = MemURead(context, address, 1, 0, &success);
     if (!success)
@@ -7162,12 +7193,12 @@ bool EmulateInstructionARM::EmulateLDRHImmediate(const uint32_t opcode,
       address = Rn;
 
     // data = MemU[address,2];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - Rn);
+    context.SetRegisterPlusOffset(base_reg, address - Rn);
 
     uint64_t data = MemURead(context, address, 2, 0, &success);
     if (!success)
@@ -7186,7 +7217,7 @@ bool EmulateInstructionARM::EmulateLDRHImmediate(const uint32_t opcode,
     if (UnalignedSupport() || BitIsClear(address, 0)) {
       // R[t] = ZeroExtend(data, 32);
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusOffset(*base_reg, address - Rn);
+      context.SetRegisterPlusOffset(base_reg, address - Rn);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
                                  data))
         return false;
@@ -7199,7 +7230,7 @@ bool EmulateInstructionARM::EmulateLDRHImmediate(const uint32_t opcode,
   return true;
 }
 
-// LDRH (literal) calculates an address from the PC value and an immediate
+// LDRH (literal) caculates an address from the PC value and an immediate
 // offset, loads a halfword from memory,
 // zero-extends it to form a 32-bit word, and writes it to a register.
 bool EmulateInstructionARM::EmulateLDRHLiteral(const uint32_t opcode,
@@ -7272,12 +7303,12 @@ bool EmulateInstructionARM::EmulateLDRHLiteral(const uint32_t opcode,
       address = base - imm32;
 
     // data = MemU[address,2];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - base);
+    context.SetRegisterPlusOffset(base_reg, address - base);
 
     uint64_t data = MemURead(context, address, 2, 0, &success);
     if (!success)
@@ -7287,7 +7318,7 @@ bool EmulateInstructionARM::EmulateLDRHLiteral(const uint32_t opcode,
     if (UnalignedSupport() || BitIsClear(address, 0)) {
       // R[t] = ZeroExtend(data, 32);
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusOffset(*base_reg, address - base);
+      context.SetRegisterPlusOffset(base_reg, address - base);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
                                  data))
         return false;
@@ -7440,14 +7471,14 @@ bool EmulateInstructionARM::EmulateLDRHRegister(const uint32_t opcode,
       address = Rn;
 
     // data = MemU[address,2];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> offset_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo base_reg;
+    RegisterInfo offset_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusIndirectOffset(*base_reg, *offset_reg);
+    context.SetRegisterPlusIndirectOffset(base_reg, offset_reg);
     uint64_t data = MemURead(context, address, 2, 0, &success);
     if (!success)
       return false;
@@ -7465,7 +7496,7 @@ bool EmulateInstructionARM::EmulateLDRHRegister(const uint32_t opcode,
     if (UnalignedSupport() || BitIsClear(address, 0)) {
       // R[t] = ZeroExtend(data, 32);
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusIndirectOffset(*base_reg, *offset_reg);
+      context.SetRegisterPlusIndirectOffset(base_reg, offset_reg);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
                                  data))
         return false;
@@ -7599,12 +7630,12 @@ bool EmulateInstructionARM::EmulateLDRSBImmediate(const uint32_t opcode,
       address = Rn;
 
     // R[t] = SignExtend(MemU[address,1], 32);
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - Rn);
+    context.SetRegisterPlusOffset(base_reg, address - Rn);
 
     uint64_t unsigned_data = MemURead(context, address, 1, 0, &success);
     if (!success)
@@ -7696,12 +7727,12 @@ bool EmulateInstructionARM::EmulateLDRSBLiteral(const uint32_t opcode,
       address = base - imm32;
 
     // R[t] = SignExtend(MemU[address,1], 32);
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - base);
+    context.SetRegisterPlusOffset(base_reg, address - base);
 
     uint64_t unsigned_data = MemURead(context, address, 1, 0, &success);
     if (!success)
@@ -7845,14 +7876,14 @@ bool EmulateInstructionARM::EmulateLDRSBRegister(const uint32_t opcode,
       address = Rn;
 
     // R[t] = SignExtend(MemU[address,1], 32);
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> offset_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    RegisterInfo offset_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusIndirectOffset(*base_reg, *offset_reg);
+    context.SetRegisterPlusIndirectOffset(base_reg, offset_reg);
 
     uint64_t unsigned_data = MemURead(context, address, 1, 0, &success);
     if (!success)
@@ -7997,12 +8028,12 @@ bool EmulateInstructionARM::EmulateLDRSHImmediate(const uint32_t opcode,
       address = Rn;
 
     // data = MemU[address,2];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - Rn);
+    context.SetRegisterPlusOffset(base_reg, address - Rn);
 
     uint64_t data = MemURead(context, address, 2, 0, &success);
     if (!success)
@@ -8022,7 +8053,7 @@ bool EmulateInstructionARM::EmulateLDRSHImmediate(const uint32_t opcode,
       // R[t] = SignExtend(data, 32);
       int64_t signed_data = llvm::SignExtend64<16>(data);
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusOffset(*base_reg, address - Rn);
+      context.SetRegisterPlusOffset(base_reg, address - Rn);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
                                  (uint64_t)signed_data))
         return false;
@@ -8107,12 +8138,12 @@ bool EmulateInstructionARM::EmulateLDRSHLiteral(const uint32_t opcode,
       address = base - imm32;
 
     // data = MemU[address,2];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC, base_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, imm32);
+    context.SetRegisterPlusOffset(base_reg, imm32);
 
     uint64_t data = MemURead(context, address, 2, 0, &success);
     if (!success)
@@ -8273,14 +8304,15 @@ bool EmulateInstructionARM::EmulateLDRSHRegister(const uint32_t opcode,
       address = Rn;
 
     // data = MemU[address,2];
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> offset_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
+    RegisterInfo offset_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusIndirectOffset(*base_reg, *offset_reg);
+    context.SetRegisterPlusIndirectOffset(base_reg, offset_reg);
 
     uint64_t data = MemURead(context, address, 2, 0, &success);
     if (!success)
@@ -8299,7 +8331,7 @@ bool EmulateInstructionARM::EmulateLDRSHRegister(const uint32_t opcode,
     if (UnalignedSupport() || BitIsClear(address, 0)) {
       // R[t] = SignExtend(data, 32);
       context.type = eContextRegisterLoad;
-      context.SetRegisterPlusIndirectOffset(*base_reg, *offset_reg);
+      context.SetRegisterPlusIndirectOffset(base_reg, offset_reg);
 
       int64_t signed_data = llvm::SignExtend64<16>(data);
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + t,
@@ -8385,12 +8417,12 @@ bool EmulateInstructionARM::EmulateSXTB(const uint32_t opcode,
     // R[d] = SignExtend(rotated<7:0>, 32);
     int64_t data = llvm::SignExtend64<8>(rotated);
 
-    std::optional<RegisterInfo> source_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo source_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, source_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegister(*source_reg);
+    context.SetRegister(source_reg);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + d,
                                (uint64_t)data))
@@ -8468,12 +8500,12 @@ bool EmulateInstructionARM::EmulateSXTH(const uint32_t opcode,
       return false;
 
     // R[d] = SignExtend(rotated<15:0>, 32);
-    std::optional<RegisterInfo> source_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo source_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, source_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegister(*source_reg);
+    context.SetRegister(source_reg);
 
     int64_t data = llvm::SignExtend64<16>(rotated);
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + d,
@@ -8484,7 +8516,7 @@ bool EmulateInstructionARM::EmulateSXTH(const uint32_t opcode,
   return true;
 }
 
-// UXTB extracts an 8-bit value from a register, zero-extends it to 32 bits, and
+// UXTB extracts an 8-bit value from a register, zero-extneds it to 32 bits, and
 // writes the result to the destination
 // register.  You can specify a rotation by 0, 8, 16, or 24 bits before
 // extracting the 8-bit value.
@@ -8553,12 +8585,12 @@ bool EmulateInstructionARM::EmulateUXTB(const uint32_t opcode,
       return false;
 
     // R[d] = ZeroExtend(rotated<7:0>, 32);
-    std::optional<RegisterInfo> source_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo source_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, source_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegister(*source_reg);
+    context.SetRegister(source_reg);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + d,
                                Bits32(rotated, 7, 0)))
@@ -8635,12 +8667,12 @@ bool EmulateInstructionARM::EmulateUXTH(const uint32_t opcode,
       return false;
 
     // R[d] = ZeroExtend(rotated<15:0>, 32);
-    std::optional<RegisterInfo> source_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo source_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, source_reg);
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegister(*source_reg);
+    context.SetRegister(source_reg);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + d,
                                Bits32(rotated, 15, 0)))
@@ -8754,12 +8786,12 @@ bool EmulateInstructionARM::EmulateRFE(const uint32_t opcode,
         address = address + 4;
 
       // CPSRWriteByInstr(MemA[address+4,4], '1111', TRUE);
-      std::optional<RegisterInfo> base_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+      RegisterInfo base_reg;
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
       EmulateInstruction::Context context;
       context.type = eContextReturnFromException;
-      context.SetRegisterPlusOffset(*base_reg, address - Rn);
+      context.SetRegisterPlusOffset(base_reg, address - Rn);
 
       uint64_t data = MemARead(context, address + 4, 4, 0, &success);
       if (!success)
@@ -9716,10 +9748,10 @@ bool EmulateInstructionARM::EmulateSUBImmARM(const uint32_t opcode,
     else
       context.type = EmulateInstruction::eContextRegisterPlusOffset;
 
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, Rn);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, Rn, dwarf_reg);
     int64_t imm32_signed = imm32;
-    context.SetRegisterPlusOffset(*dwarf_reg, -imm32_signed);
+    context.SetRegisterPlusOffset(dwarf_reg, -imm32_signed);
 
     if (!WriteCoreRegOptionalFlags(context, res.result, Rd, setflags,
                                    res.carry_out, res.overflow))
@@ -10069,11 +10101,11 @@ bool EmulateInstructionARM::EmulateSUBSPReg(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    std::optional<RegisterInfo> sp_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_sp);
-    std::optional<RegisterInfo> dwarf_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
-    context.SetRegisterRegisterOperands(*sp_reg, *dwarf_reg);
+    RegisterInfo sp_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_sp, sp_reg);
+    RegisterInfo dwarf_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, dwarf_reg);
+    context.SetRegisterRegisterOperands(sp_reg, dwarf_reg);
 
     if (!WriteCoreRegOptionalFlags(context, res.result, dwarf_r0 + d, setflags,
                                    res.carry_out, res.overflow))
@@ -10156,12 +10188,12 @@ bool EmulateInstructionARM::EmulateADDRegShift(const uint32_t opcode,
     // R[d] = result;
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    std::optional<RegisterInfo> reg_n =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> reg_m =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
+    RegisterInfo reg_n;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, reg_n);
+    RegisterInfo reg_m;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, reg_m);
 
-    context.SetRegisterRegisterOperands(*reg_n, *reg_m);
+    context.SetRegisterRegisterOperands(reg_n, reg_m);
 
     if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + d,
                                res.result))
@@ -10296,11 +10328,11 @@ bool EmulateInstructionARM::EmulateSUBReg(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = eContextArithmetic;
-    std::optional<RegisterInfo> reg_n =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> reg_m =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
-    context.SetRegisterRegisterOperands(*reg_n, *reg_m);
+    RegisterInfo reg_n;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, reg_n);
+    RegisterInfo reg_m;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, reg_m);
+    context.SetRegisterRegisterOperands(reg_n, reg_m);
 
     if (!WriteCoreRegOptionalFlags(context, res.result, dwarf_r0 + d, setflags,
                                    res.carry_out, res.overflow))
@@ -10384,13 +10416,13 @@ bool EmulateInstructionARM::EmulateSTREX(const uint32_t opcode,
 
     addr_t address = Rn + imm32;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
     EmulateInstruction::Context context;
     context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, imm32);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, imm32);
 
     // if ExclusiveMonitorsPass(address,4) then if (ExclusiveMonitorsPass
     // (address, addr_byte_size)) -- For now, for the sake of emulation, we
@@ -10495,13 +10527,13 @@ bool EmulateInstructionARM::EmulateSTRBImmARM(const uint32_t opcode,
     if (!success)
       return false;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
     EmulateInstruction::Context context;
     context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, address - Rn);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, address - Rn);
 
     if (!MemUWrite(context, address, Bits32(Rt, 7, 0), 1))
       return false;
@@ -10583,13 +10615,13 @@ bool EmulateInstructionARM::EmulateSTRImmARM(const uint32_t opcode,
     else
       address = Rn;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
     EmulateInstruction::Context context;
     context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, address - Rn);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, address - Rn);
 
     // MemU[address,4] = if t == 15 then PCStoreValue() else R[t];
     uint32_t Rt = ReadCoreReg(t, &success);
@@ -10729,6 +10761,8 @@ bool EmulateInstructionARM::EmulateLDRDImmediate(const uint32_t opcode,
       address = Rn;
 
     // R[t] = MemA[address,4];
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     EmulateInstruction::Context context;
     if (n == 13)
@@ -10835,10 +10869,14 @@ bool EmulateInstructionARM::EmulateLDRDRegister(const uint32_t opcode,
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
       return false;
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rm = ReadCoreReg(m, &success);
     if (!success)
       return false;
+    RegisterInfo offset_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
 
     // offset_addr = if add then (R[n] + R[m]) else (R[n] - R[m]);
     addr_t offset_addr;
@@ -10980,8 +11018,8 @@ bool EmulateInstructionARM::EmulateSTRDImm(const uint32_t opcode,
       return false;
     }
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
@@ -11002,8 +11040,8 @@ bool EmulateInstructionARM::EmulateSTRDImm(const uint32_t opcode,
       address = Rn;
 
     // MemA[address,4] = R[t];
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
 
     uint32_t data = ReadCoreReg(t, &success);
     if (!success)
@@ -11014,7 +11052,7 @@ bool EmulateInstructionARM::EmulateSTRDImm(const uint32_t opcode,
       context.type = eContextPushRegisterOnStack;
     else
       context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, address - Rn);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, address - Rn);
 
     const uint32_t addr_byte_size = GetAddressByteSize();
 
@@ -11022,8 +11060,8 @@ bool EmulateInstructionARM::EmulateSTRDImm(const uint32_t opcode,
       return false;
 
     // MemA[address+4,4] = R[t2];
-    data_reg = GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t2);
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t2, data_reg);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                             (address + 4) - Rn);
 
     data = ReadCoreReg(t2, &success);
@@ -11112,6 +11150,12 @@ bool EmulateInstructionARM::EmulateSTRDReg(const uint32_t opcode,
       return false;
     }
 
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+    RegisterInfo offset_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m, offset_reg);
+    RegisterInfo data_reg;
+
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
       return false;
@@ -11144,14 +11188,9 @@ bool EmulateInstructionARM::EmulateSTRDReg(const uint32_t opcode,
     else
       context.type = eContextRegisterStore;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> offset_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + m);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t);
-    context.SetRegisterToRegisterPlusIndirectOffset(*base_reg, *offset_reg,
-                                                    *data_reg);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t, data_reg);
+    context.SetRegisterToRegisterPlusIndirectOffset(base_reg, offset_reg,
+                                                    data_reg);
 
     const uint32_t addr_byte_size = GetAddressByteSize();
 
@@ -11163,10 +11202,10 @@ bool EmulateInstructionARM::EmulateSTRDReg(const uint32_t opcode,
     if (!success)
       return false;
 
-    data_reg = GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t2);
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + t2, data_reg);
 
-    context.SetRegisterToRegisterPlusIndirectOffset(*base_reg, *offset_reg,
-                                                    *data_reg);
+    context.SetRegisterToRegisterPlusIndirectOffset(base_reg, offset_reg,
+                                                    data_reg);
 
     if (!MemAWrite(context, address + 4, Rt2, addr_byte_size))
       return false;
@@ -11288,6 +11327,9 @@ bool EmulateInstructionARM::EmulateVLDM(const uint32_t opcode,
       return false;
     }
 
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
       return false;
@@ -11321,14 +11363,11 @@ bool EmulateInstructionARM::EmulateVLDM(const uint32_t opcode,
 
     context.type = eContextRegisterLoad;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-
     // for r = 0 to regs-1
     for (uint32_t r = 0; r < regs; ++r) {
       if (single_regs) {
         // S[d+r] = MemA[address,4]; address = address+4;
-        context.SetRegisterPlusOffset(*base_reg, address - Rn);
+        context.SetRegisterPlusOffset(base_reg, address - Rn);
 
         uint32_t data = MemARead(context, address, addr_byte_size, 0, &success);
         if (!success)
@@ -11342,13 +11381,13 @@ bool EmulateInstructionARM::EmulateVLDM(const uint32_t opcode,
       } else {
         // word1 = MemA[address,4]; word2 = MemA[address+4,4]; address =
         // address+8;
-        context.SetRegisterPlusOffset(*base_reg, address - Rn);
+        context.SetRegisterPlusOffset(base_reg, address - Rn);
         uint32_t word1 =
             MemARead(context, address, addr_byte_size, 0, &success);
         if (!success)
           return false;
 
-        context.SetRegisterPlusOffset(*base_reg, (address + 4) - Rn);
+        context.SetRegisterPlusOffset(base_reg, (address + 4) - Rn);
         uint32_t word2 =
             MemARead(context, address + 4, addr_byte_size, 0, &success);
         if (!success)
@@ -11483,8 +11522,8 @@ bool EmulateInstructionARM::EmulateVSTM(const uint32_t opcode,
       return false;
     }
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
@@ -11507,7 +11546,7 @@ bool EmulateInstructionARM::EmulateVSTM(const uint32_t opcode,
         value = Rn - imm32;
 
       context.type = eContextAdjustBaseRegister;
-      context.SetRegisterPlusOffset(*base_reg, value - Rn);
+      context.SetRegisterPlusOffset(base_reg, value - Rn);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  value))
@@ -11528,9 +11567,9 @@ bool EmulateInstructionARM::EmulateVSTM(const uint32_t opcode,
         if (!success)
           return false;
 
-        std::optional<RegisterInfo> data_reg =
-            GetRegisterInfo(eRegisterKindDWARF, start_reg + d + r);
-        context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+        RegisterInfo data_reg;
+        GetRegisterInfo(eRegisterKindDWARF, start_reg + d + r, data_reg);
+        context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                 address - Rn);
         if (!MemAWrite(context, address, data, addr_byte_size))
           return false;
@@ -11547,28 +11586,28 @@ bool EmulateInstructionARM::EmulateVSTM(const uint32_t opcode,
         if (!success)
           return false;
 
-        std::optional<RegisterInfo> data_reg =
-            GetRegisterInfo(eRegisterKindDWARF, start_reg + d + r);
+        RegisterInfo data_reg;
+        GetRegisterInfo(eRegisterKindDWARF, start_reg + d + r, data_reg);
 
         if (GetByteOrder() == eByteOrderBig) {
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   address - Rn);
           if (!MemAWrite(context, address, Bits64(data, 63, 32),
                          addr_byte_size))
             return false;
 
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   (address + 4) - Rn);
           if (!MemAWrite(context, address + 4, Bits64(data, 31, 0),
                          addr_byte_size))
             return false;
         } else {
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   address - Rn);
           if (!MemAWrite(context, address, Bits64(data, 31, 0), addr_byte_size))
             return false;
 
-          context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+          context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                   (address + 4) - Rn);
           if (!MemAWrite(context, address + 4, Bits64(data, 63, 32),
                          addr_byte_size))
@@ -11641,8 +11680,8 @@ bool EmulateInstructionARM::EmulateVLDR(const uint32_t opcode,
     default:
       return false;
     }
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
@@ -11667,7 +11706,7 @@ bool EmulateInstructionARM::EmulateVLDR(const uint32_t opcode,
 
     EmulateInstruction::Context context;
     context.type = eContextRegisterLoad;
-    context.SetRegisterPlusOffset(*base_reg, address - base);
+    context.SetRegisterPlusOffset(base_reg, address - base);
 
     if (single_reg) {
       // S[d] = MemA[address,4];
@@ -11684,7 +11723,7 @@ bool EmulateInstructionARM::EmulateVLDR(const uint32_t opcode,
       if (!success)
         return false;
 
-      context.SetRegisterPlusOffset(*base_reg, (address + 4) - base);
+      context.SetRegisterPlusOffset(base_reg, (address + 4) - base);
       uint32_t word2 =
           MemARead(context, address + 4, addr_byte_size, 0, &success);
       if (!success)
@@ -11776,6 +11815,9 @@ bool EmulateInstructionARM::EmulateVSTR(const uint32_t opcode,
       return false;
     }
 
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
       return false;
@@ -11790,13 +11832,11 @@ bool EmulateInstructionARM::EmulateVSTR(const uint32_t opcode,
     const uint32_t addr_byte_size = GetAddressByteSize();
     uint32_t start_reg = single_reg ? dwarf_s0 : dwarf_d0;
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, start_reg + d);
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, start_reg + d, data_reg);
     EmulateInstruction::Context context;
     context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, address - Rn);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, address - Rn);
 
     if (single_reg) {
       // MemA[address,4] = S[d];
@@ -11821,7 +11861,7 @@ bool EmulateInstructionARM::EmulateVSTR(const uint32_t opcode,
         if (!MemAWrite(context, address, Bits64(data, 63, 32), addr_byte_size))
           return false;
 
-        context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+        context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                 (address + 4) - Rn);
         if (!MemAWrite(context, address + 4, Bits64(data, 31, 0),
                        addr_byte_size))
@@ -11830,7 +11870,7 @@ bool EmulateInstructionARM::EmulateVSTR(const uint32_t opcode,
         if (!MemAWrite(context, address, Bits64(data, 31, 0), addr_byte_size))
           return false;
 
-        context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+        context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                 (address + 4) - Rn);
         if (!MemAWrite(context, address + 4, Bits64(data, 63, 32),
                        addr_byte_size))
@@ -11938,8 +11978,8 @@ bool EmulateInstructionARM::EmulateVLD1Multiple(const uint32_t opcode,
       return false;
     }
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
@@ -11966,7 +12006,7 @@ bool EmulateInstructionARM::EmulateVLD1Multiple(const uint32_t opcode,
 
       uint32_t value = Rn + offset;
       context.type = eContextAdjustBaseRegister;
-      context.SetRegisterPlusOffset(*base_reg, offset);
+      context.SetRegisterPlusOffset(base_reg, offset);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  value))
@@ -11980,7 +12020,7 @@ bool EmulateInstructionARM::EmulateVLD1Multiple(const uint32_t opcode,
       for (uint32_t e = 0; e < elements; ++e) {
         // Elem[D[d+r],e,esize] = MemU[address,ebytes];
         context.type = eContextRegisterLoad;
-        context.SetRegisterPlusOffset(*base_reg, address - Rn);
+        context.SetRegisterPlusOffset(base_reg, address - Rn);
         uint64_t data = MemURead(context, address, ebytes, 0, &success);
         if (!success)
           return false;
@@ -12105,6 +12145,9 @@ bool EmulateInstructionARM::EmulateVLD1Single(const uint32_t opcode,
       return false;
     }
 
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
       return false;
@@ -12131,9 +12174,7 @@ bool EmulateInstructionARM::EmulateVLD1Single(const uint32_t opcode,
       uint32_t value = Rn + offset;
 
       context.type = eContextAdjustBaseRegister;
-      std::optional<RegisterInfo> base_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-      context.SetRegisterPlusOffset(*base_reg, offset);
+      context.SetRegisterPlusOffset(base_reg, offset);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  value))
@@ -12270,8 +12311,8 @@ bool EmulateInstructionARM::EmulateVST1Multiple(const uint32_t opcode,
       return false;
     }
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
@@ -12297,18 +12338,18 @@ bool EmulateInstructionARM::EmulateVST1Multiple(const uint32_t opcode,
         offset = 8 * regs;
 
       context.type = eContextAdjustBaseRegister;
-      context.SetRegisterPlusOffset(*base_reg, offset);
+      context.SetRegisterPlusOffset(base_reg, offset);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  Rn + offset))
         return false;
     }
 
+    RegisterInfo data_reg;
     context.type = eContextRegisterStore;
     // for r = 0 to regs-1
     for (uint32_t r = 0; r < regs; ++r) {
-      std::optional<RegisterInfo> data_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_d0 + d + r);
+      GetRegisterInfo(eRegisterKindDWARF, dwarf_d0 + d + r, data_reg);
       uint64_t register_data = ReadRegisterUnsigned(
           eRegisterKindDWARF, dwarf_d0 + d + r, 0, &success);
       if (!success)
@@ -12319,7 +12360,7 @@ bool EmulateInstructionARM::EmulateVST1Multiple(const uint32_t opcode,
         // MemU[address,ebytes] = Elem[D[d+r],e,esize];
         uint64_t word = Bits64(register_data, ((e + 1) * esize) - 1, e * esize);
 
-        context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg,
+        context.SetRegisterToRegisterPlusOffset(data_reg, base_reg,
                                                 address - Rn);
         if (!MemUWrite(context, address, word, ebytes))
           return false;
@@ -12437,8 +12478,8 @@ bool EmulateInstructionARM::EmulateVST1Single(const uint32_t opcode,
       return false;
     }
 
-    std::optional<RegisterInfo> base_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
 
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
@@ -12464,7 +12505,7 @@ bool EmulateInstructionARM::EmulateVST1Single(const uint32_t opcode,
         offset = ebytes;
 
       context.type = eContextAdjustBaseRegister;
-      context.SetRegisterPlusOffset(*base_reg, offset);
+      context.SetRegisterPlusOffset(base_reg, offset);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  Rn + offset))
@@ -12480,10 +12521,10 @@ bool EmulateInstructionARM::EmulateVST1Single(const uint32_t opcode,
     uint64_t word =
         Bits64(register_data, ((index + 1) * esize) - 1, index * esize);
 
-    std::optional<RegisterInfo> data_reg =
-        GetRegisterInfo(eRegisterKindDWARF, dwarf_d0 + d);
+    RegisterInfo data_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_d0 + d, data_reg);
     context.type = eContextRegisterStore;
-    context.SetRegisterToRegisterPlusOffset(*data_reg, *base_reg, address - Rn);
+    context.SetRegisterToRegisterPlusOffset(data_reg, base_reg, address - Rn);
 
     if (!MemUWrite(context, address, word, ebytes))
       return false;
@@ -12562,6 +12603,9 @@ bool EmulateInstructionARM::EmulateVLD1SingleAll(const uint32_t opcode,
       return false;
     }
 
+    RegisterInfo base_reg;
+    GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n, base_reg);
+
     uint32_t Rn = ReadCoreReg(n, &success);
     if (!success)
       return false;
@@ -12586,9 +12630,7 @@ bool EmulateInstructionARM::EmulateVLD1SingleAll(const uint32_t opcode,
         offset = ebytes;
 
       context.type = eContextAdjustBaseRegister;
-      std::optional<RegisterInfo> base_reg =
-          GetRegisterInfo(eRegisterKindDWARF, dwarf_r0 + n);
-      context.SetRegisterPlusOffset(*base_reg, offset);
+      context.SetRegisterPlusOffset(base_reg, offset);
 
       if (!WriteRegisterUnsigned(context, eRegisterKindDWARF, dwarf_r0 + n,
                                  Rn + offset))
@@ -13168,7 +13210,7 @@ EmulateInstructionARM::GetARMOpcodeForInstruction(const uint32_t opcode,
        &EmulateInstructionARM::EmulateRFE, "rfe{<amode>} <Rn>{!}"}
 
   };
-  static const size_t k_num_arm_opcodes = std::size(g_arm_opcodes);
+  static const size_t k_num_arm_opcodes = llvm::array_lengthof(g_arm_opcodes);
 
   for (size_t i = 0; i < k_num_arm_opcodes; ++i) {
     if ((g_arm_opcodes[i].mask & opcode) == g_arm_opcodes[i].value &&
@@ -13719,7 +13761,7 @@ EmulateInstructionARM::GetThumbOpcodeForInstruction(const uint32_t opcode,
        &EmulateInstructionARM::EmulateUXTH, "uxth<c>.w <Rd>,<Rm>{,<rotation>}"},
   };
 
-  const size_t k_num_thumb_opcodes = std::size(g_thumb_opcodes);
+  const size_t k_num_thumb_opcodes = llvm::array_lengthof(g_thumb_opcodes);
   for (size_t i = 0; i < k_num_thumb_opcodes; ++i) {
     if ((g_thumb_opcodes[i].mask & opcode) == g_thumb_opcodes[i].value &&
         (g_thumb_opcodes[i].variants & arm_isa) != 0)
@@ -13731,33 +13773,35 @@ EmulateInstructionARM::GetThumbOpcodeForInstruction(const uint32_t opcode,
 bool EmulateInstructionARM::SetArchitecture(const ArchSpec &arch) {
   m_arch = arch;
   m_arm_isa = 0;
-  llvm::StringRef arch_cstr = arch.GetArchitectureName();
-  if (arch_cstr.equals_insensitive("armv4t"))
-    m_arm_isa = ARMv4T;
-  else if (arch_cstr.equals_insensitive("armv5tej"))
-    m_arm_isa = ARMv5TEJ;
-  else if (arch_cstr.equals_insensitive("armv5te"))
-    m_arm_isa = ARMv5TE;
-  else if (arch_cstr.equals_insensitive("armv5t"))
-    m_arm_isa = ARMv5T;
-  else if (arch_cstr.equals_insensitive("armv6k"))
-    m_arm_isa = ARMv6K;
-  else if (arch_cstr.equals_insensitive("armv6t2"))
-    m_arm_isa = ARMv6T2;
-  else if (arch_cstr.equals_insensitive("armv7s"))
-    m_arm_isa = ARMv7S;
-  else if (arch_cstr.equals_insensitive("arm"))
-    m_arm_isa = ARMvAll;
-  else if (arch_cstr.equals_insensitive("thumb"))
-    m_arm_isa = ARMvAll;
-  else if (arch_cstr.startswith_insensitive("armv4"))
-    m_arm_isa = ARMv4;
-  else if (arch_cstr.startswith_insensitive("armv6"))
-    m_arm_isa = ARMv6;
-  else if (arch_cstr.startswith_insensitive("armv7"))
-    m_arm_isa = ARMv7;
-  else if (arch_cstr.startswith_insensitive("armv8"))
-    m_arm_isa = ARMv8;
+  const char *arch_cstr = arch.GetArchitectureName();
+  if (arch_cstr) {
+    if (0 == ::strcasecmp(arch_cstr, "armv4t"))
+      m_arm_isa = ARMv4T;
+    else if (0 == ::strcasecmp(arch_cstr, "armv5tej"))
+      m_arm_isa = ARMv5TEJ;
+    else if (0 == ::strcasecmp(arch_cstr, "armv5te"))
+      m_arm_isa = ARMv5TE;
+    else if (0 == ::strcasecmp(arch_cstr, "armv5t"))
+      m_arm_isa = ARMv5T;
+    else if (0 == ::strcasecmp(arch_cstr, "armv6k"))
+      m_arm_isa = ARMv6K;
+    else if (0 == ::strcasecmp(arch_cstr, "armv6t2"))
+      m_arm_isa = ARMv6T2;
+    else if (0 == ::strcasecmp(arch_cstr, "armv7s"))
+      m_arm_isa = ARMv7S;
+    else if (0 == ::strcasecmp(arch_cstr, "arm"))
+      m_arm_isa = ARMvAll;
+    else if (0 == ::strcasecmp(arch_cstr, "thumb"))
+      m_arm_isa = ARMvAll;
+    else if (0 == ::strncasecmp(arch_cstr, "armv4", 5))
+      m_arm_isa = ARMv4;
+    else if (0 == ::strncasecmp(arch_cstr, "armv6", 5))
+      m_arm_isa = ARMv6;
+    else if (0 == ::strncasecmp(arch_cstr, "armv7", 5))
+      m_arm_isa = ARMv7;
+    else if (0 == ::strncasecmp(arch_cstr, "armv8", 5))
+      m_arm_isa = ARMv8;
+  }
   return m_arm_isa != 0;
 }
 
@@ -14324,7 +14368,7 @@ bool EmulateInstructionARM::EvaluateInstruction(uint32_t evaluate_options) {
     if (!success)
       return false;
 
-    if (after_pc_value == orig_pc_value) {
+    if (auto_advance_pc && (after_pc_value == orig_pc_value)) {
       after_pc_value += m_opcode.GetByteSize();
 
       EmulateInstruction::Context context;
@@ -14423,10 +14467,10 @@ bool EmulateInstructionARM::TestEmulation(Stream *out_stream, ArchSpec &arch,
     return false;
   }
 
-  success = before_state.CompareState(after_state, out_stream);
+  success = before_state.CompareState(after_state);
   if (!success)
     out_stream->Printf(
-        "TestEmulation:  State after emulation does not match 'after' state.\n");
+        "TestEmulation:  'before' and 'after' states do not match.\n");
 
   return success;
 }

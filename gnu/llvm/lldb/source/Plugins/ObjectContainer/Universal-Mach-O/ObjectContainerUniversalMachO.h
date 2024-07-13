@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_OBJECTCONTAINER_UNIVERSAL_MACH_O_OBJECTCONTAINERUNIVERSALMACHO_H
-#define LLDB_SOURCE_PLUGINS_OBJECTCONTAINER_UNIVERSAL_MACH_O_OBJECTCONTAINERUNIVERSALMACHO_H
+#ifndef liblldb_ObjectContainerUniversalMachO_h_
+#define liblldb_ObjectContainerUniversalMachO_h_
 
 #include "lldb/Host/SafeMachO.h"
 #include "lldb/Symbol/ObjectContainer.h"
@@ -28,11 +28,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "mach-o"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic() {
-    return "Universal mach-o object container reader.";
-  }
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::ObjectContainer *
   CreateInstance(const lldb::ModuleSP &module_sp, lldb::DataBufferSP &data_sp,
@@ -51,6 +49,8 @@ public:
   // Member Functions
   bool ParseHeader() override;
 
+  void Dump(lldb_private::Stream *s) const override;
+
   size_t GetNumArchitectures() const override;
 
   bool GetArchitectureAtIndex(uint32_t cpu_idx,
@@ -59,7 +59,9 @@ public:
   lldb::ObjectFileSP GetObjectFile(const lldb_private::FileSpec *file) override;
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
 protected:
   llvm::MachO::fat_header m_header;
@@ -70,4 +72,4 @@ protected:
                           std::vector<llvm::MachO::fat_arch> &fat_archs);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_OBJECTCONTAINER_UNIVERSAL_MACH_O_OBJECTCONTAINERUNIVERSALMACHO_H
+#endif // liblldb_ObjectContainerUniversalMachO_h_

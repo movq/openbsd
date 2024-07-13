@@ -6,11 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_UTILITY_FILESPEC_H
-#define LLDB_UTILITY_FILESPEC_H
+#ifndef liblldb_FileSpec_h_
+#define liblldb_FileSpec_h_
 
 #include <functional>
-#include <optional>
 #include <string>
 
 #include "lldb/Utility/ConstString.h"
@@ -20,8 +19,8 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace lldb_private {
 class Stream;
@@ -38,7 +37,7 @@ template <typename T> class SmallVectorImpl;
 
 namespace lldb_private {
 
-/// \class FileSpec FileSpec.h "lldb/Utility/FileSpec.h"
+/// \class FileSpec FileSpec.h "lldb/Host/FileSpec.h"
 /// A file utility class.
 ///
 /// A file specification class that divides paths up into a directory
@@ -191,18 +190,18 @@ public:
   static bool Match(const FileSpec &pattern, const FileSpec &file);
 
   /// Attempt to guess path style for a given path string. It returns a style,
-  /// if it was able to make a reasonable guess, or std::nullopt if it wasn't.
-  /// The guess will be correct if the input path was a valid absolute path on
-  /// the system which produced it. On other paths the result of this function
-  /// is unreliable (e.g. "c:\foo.txt" is a valid relative posix path).
-  static std::optional<Style> GuessPathStyle(llvm::StringRef absolute_path);
+  /// if it was able to make a reasonable guess, or None if it wasn't. The guess
+  /// will be correct if the input path was a valid absolute path on the system
+  /// which produced it. On other paths the result of this function is
+  /// unreliable (e.g. "c:\foo.txt" is a valid relative posix path).
+  static llvm::Optional<Style> GuessPathStyle(llvm::StringRef absolute_path);
 
   /// Case sensitivity of path.
   ///
   /// \return
   ///     \b true if the file path is case sensitive (POSIX), false
   ///		if case insensitive (Windows).
-  bool IsCaseSensitive() const { return is_style_posix(m_style); }
+  bool IsCaseSensitive() const { return m_style != Style::windows; }
 
   /// Dump this object to a Stream.
   ///
@@ -216,38 +215,29 @@ public:
 
   Style GetPathStyle() const;
 
+  /// Directory string get accessor.
+  ///
+  /// \return
+  ///     A reference to the directory string object.
+  ConstString &GetDirectory();
+
   /// Directory string const get accessor.
   ///
   /// \return
   ///     A const reference to the directory string object.
-  const ConstString &GetDirectory() const { return m_directory; }
+  ConstString GetDirectory() const;
 
-  /// Directory string set accessor.
+  /// Filename string get accessor.
   ///
-  /// \param[in] directory
-  ///     The value to replace the directory with.
-  void SetDirectory(ConstString directory);
-  void SetDirectory(llvm::StringRef directory);
-
-  /// Clear the directory in this object.
-  void ClearDirectory();
-
+  /// \return
+  ///     A reference to the filename string object.
+  ConstString &GetFilename();
 
   /// Filename string const get accessor.
   ///
   /// \return
   ///     A const reference to the filename string object.
-  const ConstString &GetFilename() const { return m_filename; }
-
-  /// Filename string set accessor.
-  ///
-  /// \param[in] filename
-  ///     The const string to replace the directory with.
-  void SetFilename(ConstString filename);
-  void SetFilename(llvm::StringRef filename);
-
-  /// Clear the filename in this object.
-  void ClearFilename();
+  ConstString GetFilename() const;
 
   /// Returns true if the filespec represents an implementation source file
   /// (files with a ".c", ".cpp", ".m", ".mm" (many more) extension).
@@ -308,13 +298,7 @@ public:
   ///     concatenated.
   std::string GetPath(bool denormalize = true) const;
 
-  /// Get the full path as a ConstString.
-  ///
-  /// This method should only be used when you need a ConstString or the
-  /// const char * from a ConstString to ensure permanent lifetime of C string.
-  /// Anyone needing the path temporarily should use the GetPath() method that
-  /// returns a std:string.
-  ConstString GetPathAsConstString(bool denormalize = true) const;
+  const char *GetCString(bool denormalize = true) const;
 
   /// Extract the full path to the file.
   ///
@@ -349,6 +333,8 @@ public:
   ///
   /// \return
   ///     The number of bytes that this object occupies in memory.
+  ///
+  /// \see ConstString::StaticMemorySize ()
   size_t MemorySize() const;
 
   /// Change the file specified with a new path.
@@ -414,29 +400,16 @@ protected:
   // Convenience method for setting the file without changing the style.
   void SetFile(llvm::StringRef path);
 
-  /// Called anytime m_directory or m_filename is changed to clear any cached
-  /// state in this object.
-  void PathWasModified() {
-    m_is_resolved = false;
-    m_absolute = Absolute::Calculate;
-  }
-
-  enum class Absolute : uint8_t {
-    Calculate,
-    Yes,
-    No
-  };
-
   // Member variables
   ConstString m_directory;            ///< The uniqued directory path
   ConstString m_filename;             ///< The uniqued filename path
   mutable bool m_is_resolved = false; ///< True if this path has been resolved.
-  mutable Absolute m_absolute = Absolute::Calculate; ///< Cache absoluteness.
   Style m_style; ///< The syntax that this path uses (e.g. Windows / Posix)
 };
 
 /// Dump a FileSpec object to a stream
 Stream &operator<<(Stream &s, const FileSpec &f);
+
 } // namespace lldb_private
 
 namespace llvm {
@@ -463,7 +436,6 @@ template <> struct format_provider<lldb_private::FileSpec> {
   static void format(const lldb_private::FileSpec &F, llvm::raw_ostream &Stream,
                      StringRef Style);
 };
-
 } // namespace llvm
 
-#endif // LLDB_UTILITY_FILESPEC_H
+#endif // liblldb_FileSpec_h_

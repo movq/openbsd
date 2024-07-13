@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if defined(__arm64__) || defined(__aarch64__)
+
 #ifndef lldb_NativeRegisterContextOpenBSD_arm64_h
 #define lldb_NativeRegisterContextOpenBSD_arm64_h
 
@@ -16,7 +18,6 @@
 // clang-format on
 
 #include "Plugins/Process/OpenBSD/NativeRegisterContextOpenBSD.h"
-#include "Plugins/Process/Utility/RegisterInfoPOSIX_arm64.h"
 #include "Plugins/Process/Utility/lldb-arm64-register-enums.h"
 
 namespace lldb_private {
@@ -56,7 +57,7 @@ public:
   Status WriteRegister(const RegisterInfo *reg_info,
                        const RegisterValue &reg_value) override;
 
-  Status ReadAllRegisterValues(lldb::WritableDataBufferSP &data_sp) override;
+  Status ReadAllRegisterValues(lldb::DataBufferSP &data_sp) override;
 
   Status WriteAllRegisterValues(const lldb::DataBufferSP &data_sp) override;
 
@@ -66,24 +67,21 @@ protected:
 
 private:
   // Private member types.
-  enum { GPRegSet, FPRegSet, PACMaskRegSet };
+  enum { GPRegSet, FPRegSet };
 
   // Private member variables.
   struct reg m_gpr;
   struct fpreg m_fpr;
-  register_t m_pacmask[2];
 
   int GetSetForNativeRegNum(int reg_num) const;
 
   int ReadRegisterSet(uint32_t set);
   int WriteRegisterSet(uint32_t set);
-
-  RegisterInfoPOSIX_arm64 &GetRegisterInfo() const;
-
-  Status ReadPACMask();
 };
 
 } // namespace process_openbsd
 } // namespace lldb_private
 
 #endif // #ifndef lldb_NativeRegisterContextOpenBSD_arm64_h
+
+#endif // defined(__arm64__) || defined(__aarch64__)

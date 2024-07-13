@@ -1,4 +1,4 @@
-//===-- ClangHighlighter.cpp ----------------------------------------------===//
+//===-- ClangHighlighter.cpp ------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -13,12 +13,10 @@
 #include "lldb/Utility/AnsiTerminal.h"
 #include "lldb/Utility/StreamString.h"
 
-#include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include <optional>
 
 using namespace lldb_private;
 
@@ -132,7 +130,7 @@ determineClangStyle(const ClangHighlighter &highlighter,
 
 void ClangHighlighter::Highlight(const HighlightStyle &options,
                                  llvm::StringRef line,
-                                 std::optional<size_t> cursor_pos,
+                                 llvm::Optional<size_t> cursor_pos,
                                  llvm::StringRef previous_lines,
                                  Stream &result) const {
   using namespace clang;
@@ -169,7 +167,7 @@ void ClangHighlighter::Highlight(const HighlightStyle &options,
   clang::SourceManager SM(diags, file_mgr);
   auto buf = llvm::MemoryBuffer::getMemBuffer(full_source);
 
-  FileID FID = SM.createFileID(buf->getMemBufferRef());
+  FileID FID = SM.createFileID(clang::SourceManager::Unowned, buf.get());
 
   // Let's just enable the latest ObjC and C++ which should get most tokens
   // right.
@@ -179,7 +177,7 @@ void ClangHighlighter::Highlight(const HighlightStyle &options,
   Opts.CPlusPlus17 = true;
   Opts.LineComment = true;
 
-  Lexer lex(FID, buf->getMemBufferRef(), SM, Opts);
+  Lexer lex(FID, buf.get(), SM, Opts);
   // The lexer should keep whitespace around.
   lex.SetKeepWhitespaceMode(true);
 

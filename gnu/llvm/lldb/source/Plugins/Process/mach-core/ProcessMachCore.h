@@ -6,19 +6,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PROCESS_MACH_CORE_PROCESSMACHCORE_H
-#define LLDB_SOURCE_PLUGINS_PROCESS_MACH_CORE_PROCESSMACHCORE_H
+#ifndef liblldb_ProcessMachCore_h_
+#define liblldb_ProcessMachCore_h_
 
 #include <list>
 #include <vector>
 
-#include "lldb/Target/PostMortemProcess.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Status.h"
 
 class ThreadKDP;
 
-class ProcessMachCore : public lldb_private::PostMortemProcess {
+class ProcessMachCore : public lldb_private::Process {
 public:
   // Constructors and Destructors
   ProcessMachCore(lldb::TargetSP target_sp, lldb::ListenerSP listener,
@@ -28,16 +28,15 @@ public:
 
   static lldb::ProcessSP
   CreateInstance(lldb::TargetSP target_sp, lldb::ListenerSP listener,
-                 const lldb_private::FileSpec *crash_file_path,
-                 bool can_connect);
+                 const lldb_private::FileSpec *crash_file_path);
 
   static void Initialize();
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "mach-o-core"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   // Check if a given Process
   bool CanDebug(lldb::TargetSP target_sp,
@@ -49,7 +48,9 @@ public:
   lldb_private::DynamicLoader *GetDynamicLoader() override;
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
   // Process Control
   lldb_private::Status DoDestroy() override;
@@ -68,6 +69,10 @@ public:
   size_t DoReadMemory(lldb::addr_t addr, void *buf, size_t size,
                       lldb_private::Status &error) override;
 
+  lldb_private::Status
+  GetMemoryRegionInfo(lldb::addr_t load_addr,
+                      lldb_private::MemoryRegionInfo &region_info) override;
+
   lldb::addr_t GetImageInfoAddress() override;
 
 protected:
@@ -75,24 +80,13 @@ protected:
 
   void Clear();
 
-  bool DoUpdateThreadList(lldb_private::ThreadList &old_thread_list,
-                          lldb_private::ThreadList &new_thread_list) override;
+  bool UpdateThreadList(lldb_private::ThreadList &old_thread_list,
+                        lldb_private::ThreadList &new_thread_list) override;
 
   lldb_private::ObjectFile *GetCoreObjectFile();
 
-  lldb_private::Status
-  DoGetMemoryRegionInfo(lldb::addr_t load_addr,
-                        lldb_private::MemoryRegionInfo &region_info) override;
-
 private:
-  void CreateMemoryRegions();
-  void LoadBinariesViaMetadata();
-  void LoadBinariesViaExhaustiveSearch();
-  void LoadBinariesAndSetDYLD();
-  void CleanupMemoryRegionPermissions();
-
-  bool CheckAddressForDyldOrKernel(lldb::addr_t addr, lldb::addr_t &dyld,
-                                   lldb::addr_t &kernel);
+  bool GetDynamicLoaderAddress(lldb::addr_t addr);
 
   enum CorefilePreference { eUserProcessCorefile, eKernelCorefile };
 
@@ -125,7 +119,9 @@ private:
   lldb_private::FileSpec m_core_file;
   lldb::addr_t m_dyld_addr;
   lldb::addr_t m_mach_kernel_addr;
-  llvm::StringRef m_dyld_plugin_name;
+  lldb_private::ConstString m_dyld_plugin_name;
+
+  DISALLOW_COPY_AND_ASSIGN(ProcessMachCore);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_PROCESS_MACH_CORE_PROCESSMACHCORE_H
+#endif // liblldb_ProcessMachCore_h_

@@ -25,11 +25,9 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/DataExtractor.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegisterValue.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -117,22 +115,22 @@ enum dwarf_regnums {
     #name, alt, size, 0, eEncodingUint, eFormatHex,                            \
         {dwarf_##name##_s390x, dwarf_##name##_s390x, generic,                  \
          LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM },                           \
-         nullptr, nullptr,                                                     \
+         nullptr, nullptr, nullptr, 0                                          \
   }
 
-static const RegisterInfo g_register_infos[] = {
+static RegisterInfo g_register_infos[] = {
     DEFINE_REG(r0, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(r1, 8, nullptr, LLDB_INVALID_REGNUM),
-    DEFINE_REG(r2, 8, nullptr, LLDB_REGNUM_GENERIC_ARG1),
-    DEFINE_REG(r3, 8, nullptr, LLDB_REGNUM_GENERIC_ARG2),
-    DEFINE_REG(r4, 8, nullptr, LLDB_REGNUM_GENERIC_ARG3),
-    DEFINE_REG(r5, 8, nullptr, LLDB_REGNUM_GENERIC_ARG4),
-    DEFINE_REG(r6, 8, nullptr, LLDB_REGNUM_GENERIC_ARG5),
+    DEFINE_REG(r2, 8, "arg1", LLDB_REGNUM_GENERIC_ARG1),
+    DEFINE_REG(r3, 8, "arg2", LLDB_REGNUM_GENERIC_ARG2),
+    DEFINE_REG(r4, 8, "arg3", LLDB_REGNUM_GENERIC_ARG3),
+    DEFINE_REG(r5, 8, "arg4", LLDB_REGNUM_GENERIC_ARG4),
+    DEFINE_REG(r6, 8, "arg5", LLDB_REGNUM_GENERIC_ARG5),
     DEFINE_REG(r7, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(r8, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(r9, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(r10, 8, nullptr, LLDB_INVALID_REGNUM),
-    DEFINE_REG(r11, 8, nullptr, LLDB_REGNUM_GENERIC_FP),
+    DEFINE_REG(r11, 8, "fp", LLDB_REGNUM_GENERIC_FP),
     DEFINE_REG(r12, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(r13, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(r14, 8, nullptr, LLDB_INVALID_REGNUM),
@@ -153,8 +151,8 @@ static const RegisterInfo g_register_infos[] = {
     DEFINE_REG(acr13, 4, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(acr14, 4, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(acr15, 4, nullptr, LLDB_INVALID_REGNUM),
-    DEFINE_REG(pswm, 8, nullptr, LLDB_REGNUM_GENERIC_FLAGS),
-    DEFINE_REG(pswa, 8, nullptr, LLDB_REGNUM_GENERIC_PC),
+    DEFINE_REG(pswm, 8, "flags", LLDB_REGNUM_GENERIC_FLAGS),
+    DEFINE_REG(pswa, 8, "pc", LLDB_REGNUM_GENERIC_PC),
     DEFINE_REG(f0, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(f1, 8, nullptr, LLDB_INVALID_REGNUM),
     DEFINE_REG(f2, 8, nullptr, LLDB_INVALID_REGNUM),
@@ -173,10 +171,26 @@ static const RegisterInfo g_register_infos[] = {
     DEFINE_REG(f15, 8, nullptr, LLDB_INVALID_REGNUM),
 };
 
-static const uint32_t k_num_register_infos = std::size(g_register_infos);
+static const uint32_t k_num_register_infos =
+    llvm::array_lengthof(g_register_infos);
+static bool g_register_info_names_constified = false;
 
 const lldb_private::RegisterInfo *
 ABISysV_s390x::GetRegisterInfoArray(uint32_t &count) {
+  // Make the C-string names and alt_names for the register infos into const
+  // C-string values by having the ConstString unique the names in the global
+  // constant C-string pool.
+  if (!g_register_info_names_constified) {
+    g_register_info_names_constified = true;
+    for (uint32_t i = 0; i < k_num_register_infos; ++i) {
+      if (g_register_infos[i].name)
+        g_register_infos[i].name =
+            ConstString(g_register_infos[i].name).GetCString();
+      if (g_register_infos[i].alt_name)
+        g_register_infos[i].alt_name =
+            ConstString(g_register_infos[i].alt_name).GetCString();
+    }
+  }
   count = k_num_register_infos;
   return g_register_infos;
 }
@@ -196,7 +210,7 @@ ABISysV_s390x::CreateInstance(lldb::ProcessSP process_sp, const ArchSpec &arch) 
 bool ABISysV_s390x::PrepareTrivialCall(Thread &thread, addr_t sp,
                                        addr_t func_addr, addr_t return_addr,
                                        llvm::ArrayRef<addr_t> args) const {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   if (log) {
     StreamString s;
@@ -356,7 +370,7 @@ bool ABISysV_s390x::GetArgumentValues(Thread &thread, ValueList &values) const {
     // We currently only support extracting values with Clang QualTypes. Do we
     // care about others?
     CompilerType compiler_type = value->GetCompilerType();
-    std::optional<uint64_t> bit_size = compiler_type.GetBitSize(&thread);
+    llvm::Optional<uint64_t> bit_size = compiler_type.GetBitSize(&thread);
     if (!bit_size)
       return false;
     bool is_signed;
@@ -426,7 +440,7 @@ Status ABISysV_s390x::SetReturnValueObject(lldb::StackFrameSP &frame_sp,
       error.SetErrorString(
           "We don't support returning complex values at present");
     else {
-      std::optional<uint64_t> bit_width =
+      llvm::Optional<uint64_t> bit_width =
           compiler_type.GetBitSize(frame_sp.get());
       if (!bit_width) {
         error.SetErrorString("can't get type size");
@@ -488,13 +502,13 @@ ValueObjectSP ABISysV_s390x::GetReturnValueObjectSimple(
 
   const uint32_t type_flags = return_compiler_type.GetTypeInfo();
   if (type_flags & eTypeIsScalar) {
-    value.SetValueType(Value::ValueType::Scalar);
+    value.SetValueType(Value::eValueTypeScalar);
 
     bool success = false;
     if (type_flags & eTypeIsInteger) {
       // Extract the register context so we can read arguments from registers.
-      std::optional<uint64_t> byte_size =
-          return_compiler_type.GetByteSize(&thread);
+      llvm::Optional<uint64_t> byte_size =
+          return_compiler_type.GetByteSize(nullptr);
       if (!byte_size)
         return return_valobj_sp;
       uint64_t raw_value = thread.GetRegisterContext()->ReadRegisterAsUnsigned(
@@ -540,8 +554,8 @@ ValueObjectSP ABISysV_s390x::GetReturnValueObjectSimple(
       if (type_flags & eTypeIsComplex) {
         // Don't handle complex yet.
       } else {
-        std::optional<uint64_t> byte_size =
-            return_compiler_type.GetByteSize(&thread);
+        llvm::Optional<uint64_t> byte_size =
+            return_compiler_type.GetByteSize(nullptr);
         if (byte_size && *byte_size <= sizeof(long double)) {
           const RegisterInfo *f0_info = reg_ctx->GetRegisterInfoByName("f0", 0);
           RegisterValue f0_value;
@@ -572,7 +586,7 @@ ValueObjectSP ABISysV_s390x::GetReturnValueObjectSimple(
         reg_ctx->GetRegisterInfoByName("r2", 0)->kinds[eRegisterKindLLDB];
     value.GetScalar() =
         (uint64_t)thread.GetRegisterContext()->ReadRegisterAsUnsigned(r2_id, 0);
-    value.SetValueType(Value::ValueType::Scalar);
+    value.SetValueType(Value::eValueTypeScalar);
     return_valobj_sp = ValueObjectConstResult::Create(
         thread.GetStackFrameAtIndex(0).get(), value, ConstString(""));
   }
@@ -717,3 +731,16 @@ void ABISysV_s390x::Initialize() {
 void ABISysV_s390x::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
+
+lldb_private::ConstString ABISysV_s390x::GetPluginNameStatic() {
+  static ConstString g_name("sysv-s390x");
+  return g_name;
+}
+
+// PluginInterface protocol
+
+lldb_private::ConstString ABISysV_s390x::GetPluginName() {
+  return GetPluginNameStatic();
+}
+
+uint32_t ABISysV_s390x::GetPluginVersion() { return 1; }

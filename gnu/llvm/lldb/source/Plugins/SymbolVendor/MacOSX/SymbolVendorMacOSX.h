@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_SYMBOLVENDOR_MACOSX_SYMBOLVENDORMACOSX_H
-#define LLDB_SOURCE_PLUGINS_SYMBOLVENDOR_MACOSX_SYMBOLVENDORMACOSX_H
+#ifndef liblldb_SymbolVendorMacOSX_h_
+#define liblldb_SymbolVendorMacOSX_h_
 
 #include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/lldb-private.h"
@@ -19,9 +19,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "macosx"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::SymbolVendor *
   CreateInstance(const lldb::ModuleSP &module_sp,
@@ -30,8 +30,15 @@ public:
   // Constructors and Destructors
   SymbolVendorMacOSX(const lldb::ModuleSP &module_sp);
 
+  virtual ~SymbolVendorMacOSX();
+
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  virtual lldb_private::ConstString GetPluginName();
+
+  virtual uint32_t GetPluginVersion();
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SymbolVendorMacOSX);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_SYMBOLVENDOR_MACOSX_SYMBOLVENDORMACOSX_H
+#endif // liblldb_SymbolVendorMacOSX_h_

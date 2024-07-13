@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTLINUX_X86_64_H
-#define LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTLINUX_X86_64_H
+#ifndef liblldb_RegisterContextLinux_x86_64_H_
+#define liblldb_RegisterContextLinux_x86_64_H_
 
 #include "RegisterInfoInterface.h"
 
@@ -15,8 +15,7 @@ class RegisterContextLinux_x86_64 : public lldb_private::RegisterInfoInterface {
 public:
   RegisterContextLinux_x86_64(const lldb_private::ArchSpec &target_arch);
 
-  static size_t GetGPRSizeStatic();
-  size_t GetGPRSize() const override { return GetGPRSizeStatic(); }
+  size_t GetGPRSize() const override;
 
   const lldb_private::RegisterInfo *GetRegisterInfo() const override;
 

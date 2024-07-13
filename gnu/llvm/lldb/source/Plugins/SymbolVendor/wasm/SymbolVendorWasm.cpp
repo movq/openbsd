@@ -8,8 +8,7 @@
 
 #include "SymbolVendorWasm.h"
 
-#include <cstring>
-#include <optional>
+#include <string.h>
 
 #include "Plugins/ObjectFile/wasm/ObjectFileWasm.h"
 #include "lldb/Core/Module.h"
@@ -42,7 +41,12 @@ void SymbolVendorWasm::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
 
-llvm::StringRef SymbolVendorWasm::GetPluginDescriptionStatic() {
+lldb_private::ConstString SymbolVendorWasm::GetPluginNameStatic() {
+  static ConstString g_name("WASM");
+  return g_name;
+}
+
+const char *SymbolVendorWasm::GetPluginDescriptionStatic() {
   return "Symbol vendor for WASM that looks for dwo files that match "
          "executables.";
 }
@@ -68,7 +72,8 @@ SymbolVendorWasm::CreateInstance(const lldb::ModuleSP &module_sp,
           lldb::eSectionTypeDWARFDebugInfo, true))
     return nullptr;
 
-  LLDB_SCOPED_TIMERF("SymbolVendorWasm::CreateInstance (module = %s)",
+  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
+  Timer scoped_timer(func_cat, "SymbolVendorWasm::CreateInstance (module = %s)",
                      module_sp->GetFileSpec().GetPath().c_str());
 
   ModuleSpec module_spec;
@@ -79,7 +84,7 @@ SymbolVendorWasm::CreateInstance(const lldb::ModuleSP &module_sp,
   // A Wasm module may have a custom section named "external_debug_info" whose
   // content is the absolute or relative path of the Wasm module that contains
   // debug symbols for this module.
-  std::optional<FileSpec> symbol_file_spec =
+  llvm::Optional<FileSpec> symbol_file_spec =
       obj_file->GetExternalDebugInfoFileSpec();
   if (!symbol_file_spec)
     return nullptr;
@@ -135,3 +140,8 @@ SymbolVendorWasm::CreateInstance(const lldb::ModuleSP &module_sp,
   symbol_vendor->AddSymbolFileRepresentation(sym_objfile_sp);
   return symbol_vendor;
 }
+
+// PluginInterface protocol
+ConstString SymbolVendorWasm::GetPluginName() { return GetPluginNameStatic(); }
+
+uint32_t SymbolVendorWasm::GetPluginVersion() { return 1; }

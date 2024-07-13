@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBFILESPEC_H
-#define LLDB_API_SBFILESPEC_H
+#ifndef LLDB_SBFileSpec_h_
+#define LLDB_SBFileSpec_h_
 
 #include "lldb/API/SBDefines.h"
 
@@ -74,7 +74,6 @@ private:
   friend class SBSourceManager;
   friend class SBTarget;
   friend class SBThread;
-  friend class SBTrace;
 
   SBFileSpec(const lldb_private::FileSpec &fspec);
 
@@ -93,4 +92,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_API_SBFILESPEC_H
+#endif // LLDB_SBFileSpec_h_

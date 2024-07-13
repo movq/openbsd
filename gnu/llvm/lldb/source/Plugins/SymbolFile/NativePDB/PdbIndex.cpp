@@ -1,4 +1,4 @@
-//===-- PdbIndex.cpp ------------------------------------------------------===//
+//===-- PdbIndex.cpp --------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -22,7 +22,6 @@
 
 #include "lldb/Utility/LLDBAssert.h"
 #include "lldb/lldb-defines.h"
-#include <optional>
 
 using namespace lldb_private;
 using namespace lldb_private::npdb;
@@ -40,7 +39,7 @@ PdbIndex::PdbIndex() : m_cus(*this), m_va_to_modi(m_allocator) {}
   }
 
 llvm::Expected<std::unique_ptr<PdbIndex>>
-PdbIndex::create(llvm::pdb::PDBFile *file) {
+PdbIndex::create(std::unique_ptr<llvm::pdb::PDBFile> file) {
   lldbassert(file);
 
   std::unique_ptr<PdbIndex> result(new PdbIndex());
@@ -54,18 +53,22 @@ PdbIndex::create(llvm::pdb::PDBFile *file) {
 
   result->m_tpi->buildHashMap();
 
-  result->m_file = file;
+  result->m_file = std::move(file);
 
   return std::move(result);
 }
 
 lldb::addr_t PdbIndex::MakeVirtualAddress(uint16_t segment,
                                           uint32_t offset) const {
-  uint32_t max_section = dbi().getSectionHeaders().size();
   // Segment indices are 1-based.
+  lldbassert(segment > 0);
+
+  uint32_t max_section = dbi().getSectionHeaders().size();
+  lldbassert(segment <= max_section + 1);
+
   // If this is an absolute symbol, it's indicated by the magic section index
   // |max_section+1|.  In this case, the offset is meaningless, so just return.
-  if (segment == 0 || segment > max_section)
+  if (segment == max_section + 1)
     return LLDB_INVALID_ADDRESS;
 
   const llvm::object::coff_section &cs = dbi().getSectionHeaders()[segment - 1];
@@ -73,15 +76,19 @@ lldb::addr_t PdbIndex::MakeVirtualAddress(uint16_t segment,
          static_cast<lldb::addr_t>(offset);
 }
 
-std::optional<uint16_t> PdbIndex::GetModuleIndexForAddr(uint16_t segment,
-                                                        uint32_t offset) const {
+lldb::addr_t PdbIndex::MakeVirtualAddress(const SegmentOffset &so) const {
+  return MakeVirtualAddress(so.segment, so.offset);
+}
+
+llvm::Optional<uint16_t>
+PdbIndex::GetModuleIndexForAddr(uint16_t segment, uint32_t offset) const {
   return GetModuleIndexForVa(MakeVirtualAddress(segment, offset));
 }
 
-std::optional<uint16_t> PdbIndex::GetModuleIndexForVa(lldb::addr_t va) const {
+llvm::Optional<uint16_t> PdbIndex::GetModuleIndexForVa(lldb::addr_t va) const {
   auto iter = m_va_to_modi.find(va);
   if (iter == m_va_to_modi.end())
-    return std::nullopt;
+    return llvm::None;
 
   return iter.value();
 }
@@ -100,8 +107,6 @@ void PdbIndex::ParseSectionContribs() {
         return;
 
       uint64_t va = m_ctx.MakeVirtualAddress(C.ISect, C.Off);
-      if (va == LLDB_INVALID_ADDRESS)
-        return;
       uint64_t end = va + C.Size;
       // IntervalMap's start and end represent a closed range, not a half-open
       // range, so we have to subtract 1.
@@ -123,9 +128,7 @@ void PdbIndex::BuildAddrToSymbolMap(CompilandIndexItem &cci) {
       continue;
 
     SegmentOffset so = GetSegmentAndOffset(*iter);
-    lldb::addr_t va = MakeVirtualAddress(so.segment, so.offset);
-    if (va == LLDB_INVALID_ADDRESS)
-      continue;
+    lldb::addr_t va = MakeVirtualAddress(so);
 
     PdbCompilandSymId cu_sym_id(modi, iter.offset());
 
@@ -138,7 +141,7 @@ void PdbIndex::BuildAddrToSymbolMap(CompilandIndexItem &cci) {
 std::vector<SymbolAndUid> PdbIndex::FindSymbolsByVa(lldb::addr_t va) {
   std::vector<SymbolAndUid> result;
 
-  std::optional<uint16_t> modi = GetModuleIndexForVa(va);
+  llvm::Optional<uint16_t> modi = GetModuleIndexForVa(va);
   if (!modi)
     return result;
 
@@ -172,10 +175,7 @@ std::vector<SymbolAndUid> PdbIndex::FindSymbolsByVa(lldb::addr_t va) {
     else
       sol.so = GetSegmentAndOffset(sym);
 
-    lldb::addr_t start = MakeVirtualAddress(sol.so.segment, sol.so.offset);
-    if (start == LLDB_INVALID_ADDRESS)
-      continue;
-
+    lldb::addr_t start = MakeVirtualAddress(sol.so);
     lldb::addr_t end = start + sol.length;
     if (va >= start && va < end)
       result.push_back({std::move(sym), iter->second});

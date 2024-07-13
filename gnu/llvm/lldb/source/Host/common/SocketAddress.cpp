@@ -1,4 +1,4 @@
-//===-- SocketAddress.cpp -------------------------------------------------===//
+//===-- SocketAddress.cpp ---------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,15 +17,15 @@
 #endif
 
 #include "lldb/Host/SocketAddress.h"
-#include <cstddef>
-#include <cstdio>
+#include <stddef.h>
+#include <stdio.h>
 
 #if !defined(_WIN32)
 #include <arpa/inet.h>
 #endif
 
-#include <cassert>
-#include <cstring>
+#include <assert.h>
+#include <string.h>
 
 #include "lldb/Host/PosixApi.h"
 
@@ -93,7 +93,7 @@ SocketAddress::SocketAddress(const struct addrinfo *addr_info) {
 }
 
 // Destructor
-SocketAddress::~SocketAddress() = default;
+SocketAddress::~SocketAddress() {}
 
 void SocketAddress::Clear() {
   memset(&m_socket_addr, 0, sizeof(m_socket_addr));

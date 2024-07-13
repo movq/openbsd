@@ -1,4 +1,5 @@
-//===-- AppleGetItemInfoHandler.cpp ---------------------------------------===//
+//===-- AppleGetItemInfoHandler.cpp -------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,19 +9,19 @@
 
 #include "AppleGetItemInfoHandler.h"
 
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
+
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/FunctionCaller.h"
 #include "lldb/Expression/UtilityFunction.h"
+#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/ConstString.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/StreamString.h"
 
@@ -99,7 +100,7 @@ AppleGetItemInfoHandler::AppleGetItemInfoHandler(Process *process)
       m_get_item_info_return_buffer_addr(LLDB_INVALID_ADDRESS),
       m_get_item_info_retbuffer_mutex() {}
 
-AppleGetItemInfoHandler::~AppleGetItemInfoHandler() = default;
+AppleGetItemInfoHandler::~AppleGetItemInfoHandler() {}
 
 void AppleGetItemInfoHandler::Detach() {
 
@@ -107,7 +108,7 @@ void AppleGetItemInfoHandler::Detach() {
       m_get_item_info_return_buffer_addr != LLDB_INVALID_ADDRESS) {
     std::unique_lock<std::mutex> lock(m_get_item_info_retbuffer_mutex,
                                       std::defer_lock);
-    (void)lock.try_lock(); // Even if we don't get the lock, deallocate the buffer
+    lock.try_lock(); // Even if we don't get the lock, deallocate the buffer
     m_process->DeallocateMemory(m_get_item_info_return_buffer_addr);
   }
 }
@@ -130,7 +131,7 @@ lldb::addr_t AppleGetItemInfoHandler::SetupGetItemInfoFunction(
     Thread &thread, ValueList &get_item_info_arglist) {
   ExecutionContext exe_ctx(thread.shared_from_this());
   DiagnosticManager diagnostics;
-  Log *log = GetLog(LLDBLog::SystemRuntime);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYSTEM_RUNTIME));
   lldb::addr_t args_addr = LLDB_INVALID_ADDRESS;
   FunctionCaller *get_item_info_caller = nullptr;
 
@@ -143,14 +144,25 @@ lldb::addr_t AppleGetItemInfoHandler::SetupGetItemInfoFunction(
 
     if (!m_get_item_info_impl_code) {
       if (g_get_item_info_function_code != nullptr) {
-        auto utility_fn_or_error = exe_ctx.GetTargetRef().CreateUtilityFunction(
-            g_get_item_info_function_code, g_get_item_info_function_name,
-            eLanguageTypeObjC, exe_ctx);
-        if (!utility_fn_or_error) {
-          LLDB_LOG_ERROR(log, utility_fn_or_error.takeError(),
-                         "Failed to create utility function: {0}.");
+        Status error;
+        m_get_item_info_impl_code.reset(
+            exe_ctx.GetTargetRef().GetUtilityFunctionForLanguage(
+                g_get_item_info_function_code, eLanguageTypeObjC,
+                g_get_item_info_function_name, error));
+        if (error.Fail()) {
+          LLDB_LOGF(log, "Failed to get utility function: %s.",
+                    error.AsCString());
+          return args_addr;
         }
-        m_get_item_info_impl_code = std::move(*utility_fn_or_error);
+
+        if (!m_get_item_info_impl_code->Install(diagnostics, exe_ctx)) {
+          if (log) {
+            LLDB_LOGF(log, "Failed to install get-item-info introspection.");
+            diagnostics.Dump(log);
+          }
+          m_get_item_info_impl_code.reset();
+          return args_addr;
+        }
       } else {
         LLDB_LOGF(log, "No get-item-info introspection code found.");
         return LLDB_INVALID_ADDRESS;
@@ -162,15 +174,11 @@ lldb::addr_t AppleGetItemInfoHandler::SetupGetItemInfoFunction(
               eLanguageTypeC);
       if (auto err = type_system_or_err.takeError()) {
         LLDB_LOG_ERROR(log, std::move(err),
-                       "Error inserting get-item-info function");
+                       "Error inseting get-item-info function");
         return args_addr;
       }
-      auto ts = *type_system_or_err;
-      if (!ts)
-        return args_addr;
-      
       CompilerType get_item_info_return_type =
-          ts->GetBasicTypeFromAST(eBasicTypeVoid)
+          type_system_or_err->GetBasicTypeFromAST(eBasicTypeVoid)
               .GetPointerType();
 
       Status error;
@@ -178,7 +186,7 @@ lldb::addr_t AppleGetItemInfoHandler::SetupGetItemInfoFunction(
           get_item_info_return_type, get_item_info_arglist,
           thread.shared_from_this(), error);
       if (error.Fail() || get_item_info_caller == nullptr) {
-        LLDB_LOGF(log, "Error inserting get-item-info function: \"%s\".",
+        LLDB_LOGF(log, "Error Inserting get-item-info function: \"%s\".",
                   error.AsCString());
         return args_addr;
       }
@@ -221,9 +229,8 @@ AppleGetItemInfoHandler::GetItemInfo(Thread &thread, uint64_t item,
   lldb::StackFrameSP thread_cur_frame = thread.GetStackFrameAtIndex(0);
   ProcessSP process_sp(thread.CalculateProcess());
   TargetSP target_sp(thread.CalculateTarget());
-  TypeSystemClangSP scratch_ts_sp =
-      ScratchTypeSystemClang::GetForTarget(*target_sp);
-  Log *log = GetLog(LLDBLog::SystemRuntime);
+  ClangASTContext *clang_ast_context = ClangASTContext::GetScratch(*target_sp);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYSTEM_RUNTIME));
 
   GetItemInfoReturnInfo return_value;
   return_value.item_buffer_ptr = LLDB_INVALID_ADDRESS;
@@ -261,28 +268,28 @@ AppleGetItemInfoHandler::GetItemInfo(Thread &thread, uint64_t item,
   // already allocated by lldb in the inferior process.
 
   CompilerType clang_void_ptr_type =
-      scratch_ts_sp->GetBasicType(eBasicTypeVoid).GetPointerType();
+      clang_ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
   Value return_buffer_ptr_value;
-  return_buffer_ptr_value.SetValueType(Value::ValueType::Scalar);
+  return_buffer_ptr_value.SetValueType(Value::eValueTypeScalar);
   return_buffer_ptr_value.SetCompilerType(clang_void_ptr_type);
 
-  CompilerType clang_int_type = scratch_ts_sp->GetBasicType(eBasicTypeInt);
+  CompilerType clang_int_type = clang_ast_context->GetBasicType(eBasicTypeInt);
   Value debug_value;
-  debug_value.SetValueType(Value::ValueType::Scalar);
+  debug_value.SetValueType(Value::eValueTypeScalar);
   debug_value.SetCompilerType(clang_int_type);
 
   CompilerType clang_uint64_type =
-      scratch_ts_sp->GetBasicType(eBasicTypeUnsignedLongLong);
+      clang_ast_context->GetBasicType(eBasicTypeUnsignedLongLong);
   Value item_value;
-  item_value.SetValueType(Value::ValueType::Scalar);
+  item_value.SetValueType(Value::eValueTypeScalar);
   item_value.SetCompilerType(clang_uint64_type);
 
   Value page_to_free_value;
-  page_to_free_value.SetValueType(Value::ValueType::Scalar);
+  page_to_free_value.SetValueType(Value::eValueTypeScalar);
   page_to_free_value.SetCompilerType(clang_void_ptr_type);
 
   Value page_to_free_size_value;
-  page_to_free_size_value.SetValueType(Value::ValueType::Scalar);
+  page_to_free_size_value.SetValueType(Value::eValueTypeScalar);
   page_to_free_size_value.SetCompilerType(clang_uint64_type);
 
   std::lock_guard<std::mutex> guard(m_get_item_info_retbuffer_mutex);

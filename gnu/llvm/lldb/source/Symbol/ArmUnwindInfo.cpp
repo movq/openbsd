@@ -1,4 +1,4 @@
-//===-- ArmUnwindInfo.cpp -------------------------------------------------===//
+//===-- ArmUnwindInfo.cpp ---------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,7 +29,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-// Converts a prel31 value to lldb::addr_t with sign extension
+// Converts a prel31 avlue to lldb::addr_t with sign extension
 static addr_t Prel31ToAddr(uint32_t prel31) {
   addr_t res = prel31;
   if (prel31 & (1 << 30))
@@ -65,10 +65,10 @@ ArmUnwindInfo::ArmUnwindInfo(ObjectFile &objfile, SectionSP &arm_exidx,
 
   // Sort the entries in the exidx section. The entries should be sorted inside
   // the section but some old compiler isn't sorted them.
-  llvm::sort(m_exidx_entries);
+  llvm::sort(m_exidx_entries.begin(), m_exidx_entries.end());
 }
 
-ArmUnwindInfo::~ArmUnwindInfo() = default;
+ArmUnwindInfo::~ArmUnwindInfo() {}
 
 // Read a byte from the unwind instruction stream with the given offset. Custom
 // function is required because have to red in order of significance within
@@ -352,8 +352,8 @@ bool ArmUnwindInfo::GetUnwindPlan(Target &target, const Address &addr,
 
 const uint8_t *
 ArmUnwindInfo::GetExceptionHandlingTableEntry(const Address &addr) {
-  auto it = llvm::upper_bound(m_exidx_entries,
-                              ArmExidxEntry{0, addr.GetFileAddress(), 0});
+  auto it = std::upper_bound(m_exidx_entries.begin(), m_exidx_entries.end(),
+                             ArmExidxEntry{0, addr.GetFileAddress(), 0});
   if (it == m_exidx_entries.begin())
     return nullptr;
   --it;

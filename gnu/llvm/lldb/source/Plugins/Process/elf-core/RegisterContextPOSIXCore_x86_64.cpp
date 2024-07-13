@@ -1,4 +1,4 @@
-//===-- RegisterContextPOSIXCore_x86_64.cpp -------------------------------===//
+//===-- RegisterContextPOSIXCore_x86_64.cpp ---------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -73,14 +73,14 @@ bool RegisterContextCorePOSIX_x86_64::ReadRegister(const RegisterInfo *reg_info,
   }
 
   Status error;
-  value.SetFromMemoryData(*reg_info, src + offset, reg_info->byte_size,
+  value.SetFromMemoryData(reg_info, src + offset, reg_info->byte_size,
                           lldb::eByteOrderLittle, error);
 
   return error.Success();
 }
 
 bool RegisterContextCorePOSIX_x86_64::ReadAllRegisterValues(
-    lldb::WritableDataBufferSP &data_sp) {
+    lldb::DataBufferSP &data_sp) {
   return false;
 }
 

@@ -1,4 +1,4 @@
-//===-- Stream.cpp --------------------------------------------------------===//
+//===-- Stream.cpp ----------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -16,23 +16,22 @@
 
 #include <string>
 
-#include <cinttypes>
-#include <cstddef>
+#include <inttypes.h>
+#include <stddef.h>
 
 using namespace lldb;
 using namespace lldb_private;
 
-Stream::Stream(uint32_t flags, uint32_t addr_size, ByteOrder byte_order,
-               bool colors)
+Stream::Stream(uint32_t flags, uint32_t addr_size, ByteOrder byte_order)
     : m_flags(flags), m_addr_size(addr_size), m_byte_order(byte_order),
-      m_forwarder(*this, colors) {}
+      m_indent_level(0), m_forwarder(*this) {}
 
-Stream::Stream(bool colors)
-    : m_flags(0), m_byte_order(endian::InlHostByteOrder()),
-      m_forwarder(*this, colors) {}
+Stream::Stream()
+    : m_flags(0), m_addr_size(4), m_byte_order(endian::InlHostByteOrder()),
+      m_indent_level(0), m_forwarder(*this) {}
 
 // Destructor
-Stream::~Stream() = default;
+Stream::~Stream() {}
 
 ByteOrder Stream::SetByteOrder(ByteOrder byte_order) {
   ByteOrder old_byte_order = m_byte_order;
@@ -127,10 +126,15 @@ size_t Stream::PrintfVarArg(const char *format, va_list args) {
 // Print and End of Line character to the stream
 size_t Stream::EOL() { return PutChar('\n'); }
 
+// Indent the current line using the current indentation level and print an
+// optional string following the indentation spaces.
+size_t Stream::Indent(const char *s) {
+  return Printf("%*.*s%s", m_indent_level, m_indent_level, "", s ? s : "");
+}
+
 size_t Stream::Indent(llvm::StringRef str) {
-  const size_t ind_length = PutCString(std::string(m_indent_level, ' '));
-  const size_t str_length = PutCString(str);
-  return ind_length + str_length;
+  return Printf("%*.*s%s", m_indent_level, m_indent_level, "",
+                str.str().c_str());
 }
 
 // Stream a character "ch" out to this stream.
@@ -344,8 +348,8 @@ size_t Stream::PutRawBytes(const void *s, size_t src_len,
     for (size_t i = 0; i < src_len; ++i)
       _PutHex8(src[i], false);
   } else {
-    for (size_t i = src_len; i > 0; --i)
-      _PutHex8(src[i - 1], false);
+    for (size_t i = src_len - 1; i < src_len; --i)
+      _PutHex8(src[i], false);
   }
   if (!binary_was_set)
     m_flags.Clear(eBinary);
@@ -357,7 +361,6 @@ size_t Stream::PutBytesAsRawHex8(const void *s, size_t src_len,
                                  ByteOrder src_byte_order,
                                  ByteOrder dst_byte_order) {
   ByteDelta delta(*this);
-
   if (src_byte_order == eByteOrderInvalid)
     src_byte_order = m_byte_order;
 
@@ -371,8 +374,8 @@ size_t Stream::PutBytesAsRawHex8(const void *s, size_t src_len,
     for (size_t i = 0; i < src_len; ++i)
       _PutHex8(src[i], false);
   } else {
-    for (size_t i = src_len; i > 0; --i)
-      _PutHex8(src[i - 1], false);
+    for (size_t i = src_len - 1; i < src_len; --i)
+      _PutHex8(src[i], false);
   }
   if (binary_is_set)
     m_flags.Set(eBinary);

@@ -1,4 +1,5 @@
 if ( CMAKE_SYSTEM_NAME MATCHES "Windows" OR CMAKE_SYSTEM_NAME MATCHES "NetBSD" )
+  add_definitions( -DIMPORT_LIBLLDB )
   list(APPEND extra_libs lldbHost)
 endif ()
 
@@ -19,30 +20,23 @@ endif()
 # We need to include the llvm components we depend on manually, as liblldb does
 # not re-export those.
 set(LLVM_LINK_COMPONENTS Support)
-set(LLVM_TARGET_DEFINITIONS Options.td)
-tablegen(LLVM Options.inc -gen-opt-parser-defs)
-add_public_tablegen_target(LLDBVSCodeOptionsTableGen)
 add_lldb_tool(lldb-vscode
   lldb-vscode.cpp
   BreakpointBase.cpp
   ExceptionBreakpoint.cpp
-  FifoFiles.cpp
   FunctionBreakpoint.cpp
   IOStream.cpp
   JSONUtils.cpp
   LLDBUtils.cpp
-  OutputRedirector.cpp
-  ProgressEvent.cpp
-  RunInTerminal.cpp
   SourceBreakpoint.cpp
   VSCode.cpp
 
   LINK_LIBS
     liblldb
+    ${host_lib}
     ${extra_libs}
 
   LINK_COMPONENTS
-    Option
     Support
   )
 

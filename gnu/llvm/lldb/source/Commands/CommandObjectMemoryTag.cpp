@@ -8,12 +8,10 @@
 
 #include "CommandObjectMemoryTag.h"
 #include "lldb/Host/OptionParser.h"
-#include "lldb/Interpreter/CommandOptionArgumentTable.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionGroupFormat.h"
 #include "lldb/Interpreter/OptionValueString.h"
-#include "lldb/Target/ABI.h"
 #include "lldb/Target/Process.h"
 
 using namespace lldb;
@@ -87,17 +85,6 @@ protected:
     // If this fails the list of regions is cleared, so we don't need to read
     // the return status here.
     process->GetMemoryRegions(memory_regions);
-
-    lldb::addr_t logical_tag = tag_manager->GetLogicalTag(start_addr);
-
-    // The tag manager only removes tag bits. These addresses may include other
-    // non-address bits that must also be ignored.
-    ABISP abi = process->GetABI();
-    if (abi) {
-      start_addr = abi->FixDataAddress(start_addr);
-      end_addr = abi->FixDataAddress(end_addr);
-    }
-
     llvm::Expected<MemoryTagManager::TagRange> tagged_range =
         tag_manager->MakeTaggedRange(start_addr, end_addr, memory_regions);
 
@@ -114,6 +101,7 @@ protected:
       return false;
     }
 
+    lldb::addr_t logical_tag = tag_manager->GetLogicalTag(start_addr);
     result.AppendMessageWithFormatv("Logical tag: {0:x}", logical_tag);
     result.AppendMessage("Allocation tags:");
 
@@ -139,12 +127,12 @@ class CommandObjectMemoryTagWrite : public CommandObjectParsed {
 public:
   class OptionGroupTagWrite : public OptionGroup {
   public:
-    OptionGroupTagWrite() = default;
+    OptionGroupTagWrite() : OptionGroup(), m_end_addr(LLDB_INVALID_ADDRESS) {}
 
     ~OptionGroupTagWrite() override = default;
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
-      return llvm::ArrayRef(g_memory_tag_write_options);
+      return llvm::makeArrayRef(g_memory_tag_write_options);
     }
 
     Status SetOptionValue(uint32_t option_idx, llvm::StringRef option_value,
@@ -169,7 +157,7 @@ public:
       m_end_addr = LLDB_INVALID_ADDRESS;
     }
 
-    lldb::addr_t m_end_addr = LLDB_INVALID_ADDRESS;
+    lldb::addr_t m_end_addr;
   };
 
   CommandObjectMemoryTagWrite(CommandInterpreter &interpreter)
@@ -178,7 +166,8 @@ public:
                             "contains the given address.",
                             nullptr,
                             eCommandRequiresTarget | eCommandRequiresProcess |
-                                eCommandProcessMustBePaused) {
+                                eCommandProcessMustBePaused),
+        m_option_group(), m_tag_write_options() {
     // Address
     m_arguments.push_back(
         CommandArgumentEntry{CommandArgumentData(eArgTypeAddressOrExpression)});
@@ -242,12 +231,6 @@ protected:
     // the return status here.
     process->GetMemoryRegions(memory_regions);
 
-    // The tag manager only removes tag bits. These addresses may include other
-    // non-address bits that must also be ignored.
-    ABISP abi = process->GetABI();
-    if (abi)
-      start_addr = abi->FixDataAddress(start_addr);
-
     // We have to assume start_addr is not granule aligned.
     // So if we simply made a range:
     // (start_addr, start_addr + (N * granule_size))
@@ -270,10 +253,6 @@ protected:
       // to write to
       end_addr =
           aligned_start_addr + (tags.size() * tag_manager->GetGranuleSize());
-
-    // Remove non-address bits that aren't memory tags
-    if (abi)
-      end_addr = abi->FixDataAddress(end_addr);
 
     // Now we've aligned the start address so if we ask for another range
     // using the number of tags N, we'll get back a range that is also N

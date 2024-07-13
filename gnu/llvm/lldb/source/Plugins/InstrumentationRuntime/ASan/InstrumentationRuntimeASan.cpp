@@ -47,6 +47,10 @@ void InstrumentationRuntimeASan::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
 
+lldb_private::ConstString InstrumentationRuntimeASan::GetPluginNameStatic() {
+  return ConstString("AddressSanitizer");
+}
+
 lldb::InstrumentationRuntimeType InstrumentationRuntimeASan::GetTypeStatic() {
   return eInstrumentationRuntimeTypeAddressSanitizer;
 }
@@ -136,11 +140,9 @@ StructuredData::ObjectSP InstrumentationRuntimeASan::RetrieveReportData() {
       exe_ctx, options, address_sanitizer_retrieve_report_data_command, "",
       return_value_sp, eval_error);
   if (result != eExpressionCompleted) {
-    StreamString ss;
-    ss << "cannot evaluate AddressSanitizer expression:\n";
-    ss << eval_error.AsCString();
-    Debugger::ReportWarning(ss.GetString().str(),
-                            process_sp->GetTarget().GetDebugger().GetID());
+    process_sp->GetTarget().GetDebugger().GetAsyncOutputStream()->Printf(
+        "Warning: Cannot evaluate AddressSanitizer expression:\n%s\n",
+        eval_error.AsCString());
     return StructuredData::ObjectSP();
   }
 
@@ -283,7 +285,7 @@ void InstrumentationRuntimeASan::Activate() {
   if (!process_sp)
     return;
 
-  ConstString symbol_name("_ZN6__asanL7AsanDieEv");
+  ConstString symbol_name("__asan::AsanDie()");
   const Symbol *symbol = GetRuntimeModuleSP()->FindFirstSymbolWithNameAndType(
       symbol_name, eSymbolTypeCode);
 
@@ -299,15 +301,14 @@ void InstrumentationRuntimeASan::Activate() {
   if (symbol_address == LLDB_INVALID_ADDRESS)
     return;
 
-  const bool internal = true;
-  const bool hardware = false;
-  const bool sync = false;
+  bool internal = true;
+  bool hardware = false;
   Breakpoint *breakpoint =
       process_sp->GetTarget()
           .CreateBreakpoint(symbol_address, internal, hardware)
           .get();
   breakpoint->SetCallback(InstrumentationRuntimeASan::NotifyBreakpointHit, this,
-                          sync);
+                          true);
   breakpoint->SetBreakpointKind("address-sanitizer-report");
   SetBreakpointID(breakpoint->GetID());
 

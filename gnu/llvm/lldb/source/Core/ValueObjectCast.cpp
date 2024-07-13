@@ -1,4 +1,4 @@
-//===-- ValueObjectCast.cpp -----------------------------------------------===//
+//===-- ValueObjectCast.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -14,7 +14,6 @@
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 namespace lldb_private {
 class ConstString;
@@ -34,10 +33,12 @@ ValueObjectCast::ValueObjectCast(ValueObject &parent, ConstString name,
                                  const CompilerType &cast_type)
     : ValueObject(parent), m_cast_type(cast_type) {
   SetName(name);
+  // m_value.SetContext (Value::eContextTypeClangType,
+  // cast_type.GetOpaqueQualType());
   m_value.SetCompilerType(cast_type);
 }
 
-ValueObjectCast::~ValueObjectCast() = default;
+ValueObjectCast::~ValueObjectCast() {}
 
 CompilerType ValueObjectCast::GetCompilerTypeImpl() { return m_cast_type; }
 
@@ -48,7 +49,7 @@ size_t ValueObjectCast::CalculateNumChildren(uint32_t max) {
   return children_count <= max ? children_count : max;
 }
 
-std::optional<uint64_t> ValueObjectCast::GetByteSize() {
+uint64_t ValueObjectCast::GetByteSize() {
   ExecutionContext exe_ctx(GetExecutionContextRef());
   return m_value.GetValueByteSize(nullptr, &exe_ctx);
 }
@@ -67,6 +68,7 @@ bool ValueObjectCast::UpdateValue() {
     m_update_point.SetUpdated();
     m_value = m_parent->GetValue();
     CompilerType compiler_type(GetCompilerType());
+    // m_value.SetContext (Value::eContextTypeClangType, compiler_type);
     m_value.SetCompilerType(compiler_type);
     SetAddressTypeOfChildren(m_parent->GetAddressTypeOfChildren());
     if (!CanProvideValue()) {

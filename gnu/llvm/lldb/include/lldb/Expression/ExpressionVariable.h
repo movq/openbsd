@@ -6,11 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_EXPRESSION_EXPRESSIONVARIABLE_H
-#define LLDB_EXPRESSION_EXPRESSIONVARIABLE_H
+#ifndef liblldb_ExpressionVariable_h_
+#define liblldb_ExpressionVariable_h_
 
 #include <memory>
-#include <optional>
 #include <vector>
 
 #include "llvm/ADT/DenseMap.h"
@@ -33,7 +32,7 @@ public:
 
   virtual ~ExpressionVariable();
 
-  std::optional<uint64_t> GetByteSize() { return m_frozen_sp->GetByteSize(); }
+  size_t GetByteSize() { return m_frozen_sp->GetByteSize(); }
 
   ConstString GetName() { return m_frozen_sp->GetName(); }
 
@@ -49,7 +48,7 @@ public:
 
   void SetRegisterInfo(const RegisterInfo *reg_info) {
     return m_frozen_sp->GetValue().SetContext(
-        Value::ContextType::RegisterInfo, const_cast<RegisterInfo *>(reg_info));
+        Value::eContextTypeRegisterInfo, const_cast<RegisterInfo *>(reg_info));
   }
 
   CompilerType GetCompilerType() { return m_frozen_sp->GetCompilerType(); }
@@ -222,21 +221,21 @@ public:
                            uint32_t addr_byte_size) = 0;
 
   /// Return a new persistent variable name with the specified prefix.
-  virtual ConstString GetNextPersistentVariableName(bool is_error = false) = 0;
+  ConstString GetNextPersistentVariableName(Target &target,
+                                            llvm::StringRef prefix);
+
+  virtual llvm::StringRef
+  GetPersistentVariablePrefix(bool is_error = false) const = 0;
 
   virtual void
   RemovePersistentVariable(lldb::ExpressionVariableSP variable) = 0;
 
-  virtual std::optional<CompilerType>
+  virtual llvm::Optional<CompilerType>
   GetCompilerTypeFromPersistentDecl(ConstString type_name) = 0;
 
   virtual lldb::addr_t LookupSymbol(ConstString name);
 
   void RegisterExecutionUnit(lldb::IRExecutionUnitSP &execution_unit_sp);
-
-protected:
-  virtual llvm::StringRef
-  GetPersistentVariablePrefix(bool is_error = false) const = 0;
 
 private:
   LLVMCastKind m_kind;
@@ -252,4 +251,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_EXPRESSION_EXPRESSIONVARIABLE_H
+#endif // liblldb_ExpressionVariable_h_

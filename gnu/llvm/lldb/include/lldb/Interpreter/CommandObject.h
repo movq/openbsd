@@ -6,12 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_INTERPRETER_COMMANDOBJECT_H
-#define LLDB_INTERPRETER_COMMANDOBJECT_H
+#ifndef liblldb_CommandObject_h_
+#define liblldb_CommandObject_h_
 
 #include <map>
-#include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -42,7 +40,7 @@ int AddNamesMatchingPartialString(
   const bool add_all = cmd_str.empty();
 
   for (auto iter = in_map.begin(), end = in_map.end(); iter != end; iter++) {
-    if (add_all || (iter->first.find(std::string(cmd_str), 0) == 0)) {
+    if (add_all || (iter->first.find(cmd_str, 0) == 0)) {
       ++number_added;
       matches.AppendString(iter->first.c_str());
       if (descriptions)
@@ -66,7 +64,7 @@ size_t FindLongestCommandWord(std::map<std::string, ValueType> &dict) {
   return max_len;
 }
 
-class CommandObject : public std::enable_shared_from_this<CommandObject> {
+class CommandObject {
 public:
   typedef llvm::StringRef(ArgumentHelpCallbackFunction)();
 
@@ -79,33 +77,34 @@ public:
     explicit operator bool() const { return (help_callback != nullptr); }
   };
 
-  /// Entries in the main argument information table.
-  struct ArgumentTableEntry {
+  struct ArgumentTableEntry // Entries in the main argument information table
+  {
     lldb::CommandArgumentType arg_type;
     const char *arg_name;
     CommandCompletions::CommonCompletionTypes completion_type;
-    OptionEnumValues enum_values;
     ArgumentHelpCallback help_function;
     const char *help_text;
   };
 
-  /// Used to build individual command argument lists.
-  struct CommandArgumentData {
+  struct CommandArgumentData // Used to build individual command argument lists
+  {
     lldb::CommandArgumentType arg_type;
     ArgumentRepetitionType arg_repetition;
-    /// This arg might be associated only with some particular option set(s). By
-    /// default the arg associates to all option sets.
-    uint32_t arg_opt_set_association;
-
-    CommandArgumentData(lldb::CommandArgumentType type = lldb::eArgTypeNone,
-                        ArgumentRepetitionType repetition = eArgRepeatPlain,
-                        uint32_t opt_set = LLDB_OPT_SET_ALL)
-        : arg_type(type), arg_repetition(repetition),
-          arg_opt_set_association(opt_set) {}
+    uint32_t arg_opt_set_association; // This arg might be associated only with
+                                      // some particular option set(s).
+    CommandArgumentData()
+        : arg_type(lldb::eArgTypeNone), arg_repetition(eArgRepeatPlain),
+          arg_opt_set_association(LLDB_OPT_SET_ALL) // By default, the arg
+                                                    // associates to all option
+                                                    // sets.
+    {}
   };
 
   typedef std::vector<CommandArgumentData>
       CommandArgumentEntry; // Used to build individual command argument lists
+
+  static ArgumentTableEntry g_arguments_data
+      [lldb::eArgTypeLastArg]; // Main argument information table
 
   typedef std::map<std::string, lldb::CommandObjectSP> CommandMap;
 
@@ -113,7 +112,7 @@ public:
     llvm::StringRef help = "", llvm::StringRef syntax = "",
                 uint32_t flags = 0);
 
-  virtual ~CommandObject() = default;
+  virtual ~CommandObject();
 
   static const char *
   GetArgumentTypeAsCString(const lldb::CommandArgumentType arg_type);
@@ -145,10 +144,6 @@ public:
 
   virtual bool IsMultiwordObject() { return false; }
 
-  bool IsUserCommand() { return m_is_user_command; }
-
-  void SetIsUserCommand(bool is_user) { m_is_user_command = is_user; }
-
   virtual CommandObjectMultiword *GetAsMultiwordCommand() { return nullptr; }
 
   virtual bool IsAlias() { return false; }
@@ -163,14 +158,15 @@ public:
     return lldb::CommandObjectSP();
   }
 
-  virtual lldb::CommandObjectSP GetSubcommandSPExact(llvm::StringRef sub_cmd) {
-    return lldb::CommandObjectSP();
-  }
-
   virtual CommandObject *GetSubcommandObject(llvm::StringRef sub_cmd,
                                              StringList *matches = nullptr) {
     return nullptr;
   }
+
+  virtual void AproposAllSubCommands(llvm::StringRef prefix,
+                                     llvm::StringRef search_word,
+                                     StringList &commands_found,
+                                     StringList &commands_help) {}
 
   void FormatLongHelpText(Stream &output_strm, llvm::StringRef long_help);
 
@@ -186,13 +182,6 @@ public:
     return false;
   }
 
-  virtual llvm::Error LoadUserSubcommand(llvm::StringRef cmd_name,
-                                         const lldb::CommandObjectSP &command_obj,
-                                         bool can_replace) {
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                              "can only add commands to container commands");
-  }
-
   virtual bool WantsRawCommandString() = 0;
 
   // By default, WantsCompletion = !WantsRawCommandString. Subclasses who want
@@ -201,6 +190,8 @@ public:
   virtual bool WantsCompletion() { return !WantsRawCommandString(); }
 
   virtual Options *GetOptions();
+
+  static const ArgumentTableEntry *GetArgumentTable();
 
   static lldb::CommandArgumentType LookupArgumentName(llvm::StringRef arg_name);
 
@@ -274,13 +265,14 @@ public:
   ///    The command arguments.
   ///
   /// \return
-  ///     std::nullopt if there is no special repeat command - it will use the
+  ///     nullptr if there is no special repeat command - it will use the
   ///     current command line.
-  ///     Otherwise a std::string containing the command to be repeated.
-  ///     If the string is empty, the command won't be allow repeating.
-  virtual std::optional<std::string>
-  GetRepeatCommand(Args &current_command_args, uint32_t index) {
-    return std::nullopt;
+  ///     Otherwise a pointer to the command to be repeated.
+  ///     If the returned string is the empty string, the command won't be
+  ///     repeated.
+  virtual const char *GetRepeatCommand(Args &current_command_args,
+                                       uint32_t index) {
+    return nullptr;
   }
 
   bool HasOverrideCallback() const {
@@ -324,20 +316,15 @@ protected:
   }
 
   virtual const char *GetInvalidProcessDescription() {
-    return "Command requires a current process.";
+    return "invalid process";
   }
 
-  virtual const char *GetInvalidThreadDescription() {
-    return "Command requires a process which is currently stopped.";
-  }
+  virtual const char *GetInvalidThreadDescription() { return "invalid thread"; }
 
-  virtual const char *GetInvalidFrameDescription() {
-    return "Command requires a process, which is currently stopped.";
-  }
+  virtual const char *GetInvalidFrameDescription() { return "invalid frame"; }
 
   virtual const char *GetInvalidRegContextDescription() {
-    return "invalid frame, no registers, command requires a process which is "
-           "currently stopped.";
+    return "invalid frame, no registers";
   }
 
   // This is for use in the command interpreter, when you either want the
@@ -379,7 +366,6 @@ protected:
   lldb::CommandOverrideCallback m_deprecated_command_override_callback;
   lldb::CommandOverrideCallbackWithResult m_command_override_callback;
   void *m_command_override_baton;
-  bool m_is_user_command = false;
 
   // Helper function to populate IDs or ID ranges as the command argument data
   // to the specified command argument entry.
@@ -425,4 +411,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_INTERPRETER_COMMANDOBJECT_H
+#endif // liblldb_CommandObject_h_

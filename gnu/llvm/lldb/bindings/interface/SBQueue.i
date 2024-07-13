@@ -8,9 +8,6 @@
 
 namespace lldb {
 
-%feature("docstring",
-"Represents a libdispatch queue in the process."
-) SBQueue;
 class SBQueue
 {
 public:

@@ -1,4 +1,4 @@
-//===-- OptionValueLanguage.cpp -------------------------------------------===//
+//===-- OptionValueLanguage.cpp ---------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -27,10 +27,6 @@ void OptionValueLanguage::DumpValue(const ExecutionContext *exe_ctx,
     if (m_current_value != eLanguageTypeUnknown)
       strm.PutCString(Language::GetNameForLanguageType(m_current_value));
   }
-}
-
-llvm::json::Value OptionValueLanguage::ToJSON(const ExecutionContext *exe_ctx) {
-  return Language::GetNameForLanguageType(m_current_value);
 }
 
 Status OptionValueLanguage::SetValueFromString(llvm::StringRef value,
@@ -72,4 +68,8 @@ Status OptionValueLanguage::SetValueFromString(llvm::StringRef value,
     break;
   }
   return error;
+}
+
+lldb::OptionValueSP OptionValueLanguage::DeepCopy() const {
+  return OptionValueSP(new OptionValueLanguage(*this));
 }

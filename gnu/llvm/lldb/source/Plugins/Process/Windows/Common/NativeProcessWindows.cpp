@@ -1,4 +1,4 @@
-//===-- NativeProcessWindows.cpp ------------------------------------------===//
+//===-- NativeProcessWindows.cpp --------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -48,7 +48,7 @@ NativeProcessWindows::NativeProcessWindows(ProcessLaunchInfo &launch_info,
                                            NativeDelegate &delegate,
                                            llvm::Error &E)
     : NativeProcessProtocol(LLDB_INVALID_PROCESS_ID,
-                            launch_info.GetPTY().ReleasePrimaryFileDescriptor(),
+                            launch_info.GetPTY().ReleaseMasterFileDescriptor(),
                             delegate),
       ProcessDebugger(), m_arch(launch_info.GetArchitecture()) {
   ErrorAsOutParameter EOut(&E);
@@ -84,7 +84,7 @@ NativeProcessWindows::NativeProcessWindows(lldb::pid_t pid, int terminal_fd,
 }
 
 Status NativeProcessWindows::Resume(const ResumeActionList &resume_actions) {
-  Log *log = GetLog(WindowsLog::Process);
+  Log *log = ProcessWindowsLog::GetLogIfAny(WINDOWS_LOG_PROCESS);
   Status error;
   llvm::sys::ScopedLock lock(m_mutex);
 
@@ -117,7 +117,7 @@ Status NativeProcessWindows::Resume(const ResumeActionList &resume_actions) {
       }
       case eStateSuspended:
       case eStateStopped:
-        break;
+        llvm_unreachable("Unexpected state");
 
       default:
         return Status(
@@ -168,7 +168,7 @@ Status NativeProcessWindows::Halt() {
 
 Status NativeProcessWindows::Detach() {
   Status error;
-  Log *log = GetLog(WindowsLog::Process);
+  Log *log = ProcessWindowsLog::GetLogIfAny(WINDOWS_LOG_PROCESS);
   StateType state = GetState();
   if (state != eStateExited && state != eStateDetached) {
     error = DetachProcess();
@@ -217,17 +217,13 @@ Status NativeProcessWindows::WriteMemory(lldb::addr_t addr, const void *buf,
   return ProcessDebugger::WriteMemory(addr, buf, size, bytes_written);
 }
 
-llvm::Expected<lldb::addr_t>
-NativeProcessWindows::AllocateMemory(size_t size, uint32_t permissions) {
-  lldb::addr_t addr;
-  Status ST = ProcessDebugger::AllocateMemory(size, permissions, addr);
-  if (ST.Success())
-    return addr;
-  return ST.ToError();
+Status NativeProcessWindows::AllocateMemory(size_t size, uint32_t permissions,
+                                            lldb::addr_t &addr) {
+  return ProcessDebugger::AllocateMemory(size, permissions, addr);
 }
 
-llvm::Error NativeProcessWindows::DeallocateMemory(lldb::addr_t addr) {
-  return ProcessDebugger::DeallocateMemory(addr).ToError();
+Status NativeProcessWindows::DeallocateMemory(lldb::addr_t addr) {
+  return ProcessDebugger::DeallocateMemory(addr);
 }
 
 lldb::addr_t NativeProcessWindows::GetSharedLibraryInfoAddress() { return 0; }
@@ -253,12 +249,13 @@ void NativeProcessWindows::SetStopReasonForThread(NativeThreadWindows &thread,
 
   ThreadStopInfo stop_info;
   stop_info.reason = reason;
-  // No signal support on Windows but required to provide a 'valid' signum.
-  stop_info.signo = SIGTRAP;
 
+  // No signal support on Windows but required to provide a 'valid' signum.
   if (reason == StopReason::eStopReasonException) {
     stop_info.details.exception.type = 0;
     stop_info.details.exception.data_count = 0;
+  } else {
+    stop_info.details.signal.signo = SIGTRAP;
   }
 
   thread.SetStopReason(stop_info, description);
@@ -286,30 +283,6 @@ llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
 NativeProcessWindows::GetAuxvData() const {
   // Not available on this target.
   return llvm::errc::not_supported;
-}
-
-llvm::Expected<llvm::ArrayRef<uint8_t>>
-NativeProcessWindows::GetSoftwareBreakpointTrapOpcode(size_t size_hint) {
-  static const uint8_t g_aarch64_opcode[] = {0x00, 0x00, 0x3e, 0xd4}; // brk #0xf000
-  static const uint8_t g_thumb_opcode[] = {0xfe, 0xde}; // udf #0xfe
-
-  switch (GetArchitecture().GetMachine()) {
-  case llvm::Triple::aarch64:
-    return llvm::ArrayRef(g_aarch64_opcode);
-
-  case llvm::Triple::arm:
-  case llvm::Triple::thumb:
-    return llvm::ArrayRef(g_thumb_opcode);
-
-  default:
-    return NativeProcessProtocol::GetSoftwareBreakpointTrapOpcode(size_hint);
-  }
-}
-
-size_t NativeProcessWindows::GetSoftwareBreakpointPCOffset() {
-    // Windows always reports an incremented PC after a breakpoint is hit,
-    // even on ARM.
-    return cantFail(GetSoftwareBreakpointTrapOpcode(0)).size();
 }
 
 bool NativeProcessWindows::FindSoftwareBreakpoint(lldb::addr_t addr) {
@@ -378,7 +351,7 @@ Status NativeProcessWindows::GetLoadedModuleFileSpec(const char *module_path,
     }
   }
   return Status("Module (%s) not found in process %" PRIu64 "!",
-                module_file_spec.GetPath().c_str(), GetID());
+                module_file_spec.GetCString(), GetID());
 }
 
 Status
@@ -398,11 +371,11 @@ NativeProcessWindows::GetFileLoadAddress(const llvm::StringRef &file_name,
     }
   }
   return Status("Can't get loaded address of file (%s) in process %" PRIu64 "!",
-                file_spec.GetPath().c_str(), GetID());
+                file_spec.GetCString(), GetID());
 }
 
 void NativeProcessWindows::OnExitProcess(uint32_t exit_code) {
-  Log *log = GetLog(WindowsLog::Process);
+  Log *log = ProcessWindowsLog::GetLogIfAny(WINDOWS_LOG_PROCESS);
   LLDB_LOG(log, "Process {0} exited with code {1}", GetID(), exit_code);
 
   ProcessDebugger::OnExitProcess(exit_code);
@@ -416,12 +389,12 @@ void NativeProcessWindows::OnExitProcess(uint32_t exit_code) {
 }
 
 void NativeProcessWindows::OnDebuggerConnected(lldb::addr_t image_base) {
-  Log *log = GetLog(WindowsLog::Process);
+  Log *log = ProcessWindowsLog::GetLogIfAny(WINDOWS_LOG_PROCESS);
   LLDB_LOG(log, "Debugger connected to process {0}. Image base = {1:x}",
            GetDebuggedProcessId(), image_base);
 
   // This is the earliest chance we can resolve the process ID and
-  // architecture if we don't know them yet.
+  // architecutre if we don't know them yet.
   if (GetID() == LLDB_INVALID_PROCESS_ID)
     SetID(GetDebuggedProcessId());
 
@@ -444,7 +417,7 @@ void NativeProcessWindows::OnDebuggerConnected(lldb::addr_t image_base) {
 ExceptionResult
 NativeProcessWindows::OnDebugException(bool first_chance,
                                        const ExceptionRecord &record) {
-  Log *log = GetLog(WindowsLog::Exception);
+  Log *log = ProcessWindowsLog::GetLogIfAny(WINDOWS_LOG_EXCEPTION);
   llvm::sys::ScopedLock lock(m_mutex);
 
   // Let the debugger establish the internal status.
@@ -497,9 +470,8 @@ NativeProcessWindows::OnDebugException(bool first_chance,
       if (NativeThreadWindows *stop_thread =
               GetThreadByID(record.GetThreadID())) {
         auto &register_context = stop_thread->GetRegisterContext();
-        uint32_t breakpoint_size = GetSoftwareBreakpointPCOffset();
-        // The current PC is AFTER the BP opcode, on all architectures.
-        uint64_t pc = register_context.GetPC() - breakpoint_size;
+        // The current EIP is AFTER the BP opcode, which is one byte '0xCC'
+        uint64_t pc = register_context.GetPC() - 1;
         register_context.SetPC(pc);
       }
 
@@ -528,7 +500,7 @@ NativeProcessWindows::OnDebugException(bool first_chance,
       return ExceptionResult::BreakInDebugger;
     }
 
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   default:
     LLDB_LOG(log,
              "Debugger thread reported exception {0:x} at address {1:x} "
@@ -620,7 +592,7 @@ NativeProcessWindows::Factory::Attach(
     lldb::pid_t pid, NativeProcessProtocol::NativeDelegate &native_delegate,
     MainLoop &mainloop) const {
   Error E = Error::success();
-  // Set pty primary fd invalid since it is not available.
+  // Set pty master fd invalid since it is not available.
   auto process_up = std::unique_ptr<NativeProcessWindows>(
       new NativeProcessWindows(pid, -1, native_delegate, E));
   if (E)

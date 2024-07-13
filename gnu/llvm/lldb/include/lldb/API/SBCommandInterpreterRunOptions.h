@@ -26,11 +26,7 @@ class LLDB_API SBCommandInterpreterRunOptions {
 
 public:
   SBCommandInterpreterRunOptions();
-  SBCommandInterpreterRunOptions(const SBCommandInterpreterRunOptions &rhs);
   ~SBCommandInterpreterRunOptions();
-
-  SBCommandInterpreterRunOptions &
-  operator=(const SBCommandInterpreterRunOptions &rhs);
 
   bool GetStopOnContinue() const;
 
@@ -55,10 +51,6 @@ public:
   bool GetPrintResults() const;
 
   void SetPrintResults(bool);
-
-  bool GetPrintErrors() const;
-
-  void SetPrintErrors(bool);
 
   bool GetAddToHistory() const;
 

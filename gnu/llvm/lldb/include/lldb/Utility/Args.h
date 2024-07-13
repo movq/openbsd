@@ -14,7 +14,6 @@
 #include "lldb/lldb-types.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/YAMLTraits.h"
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,9 +34,8 @@ public:
   struct ArgEntry {
   private:
     friend class Args;
-
     std::unique_ptr<char[]> ptr;
-    char quote = '\0';
+    char quote;
 
     char *data() { return ptr.get(); }
 
@@ -64,7 +62,6 @@ public:
 
   Args(const Args &rhs);
   explicit Args(const StringList &list);
-  explicit Args(llvm::ArrayRef<llvm::StringRef> args);
 
   Args &operator=(const Args &rhs);
 
@@ -113,8 +110,7 @@ public:
   ///
   /// \return
   ///     The number or arguments in this object.
-  size_t GetArgumentCount() const { return m_entries.size(); }
-
+  size_t GetArgumentCount() const;
   bool empty() const { return GetArgumentCount() == 0; }
 
   /// Gets the NULL terminated C string argument pointer for the argument at
@@ -167,7 +163,7 @@ public:
   /// have a nullptr const char * at the end, as the size of the list is
   /// embedded in the ArrayRef object.
   llvm::ArrayRef<const char *> GetArgumentArrayRef() const {
-    return llvm::ArrayRef(m_argv).drop_back();
+    return llvm::makeArrayRef(m_argv).drop_back();
   }
 
   /// Appends a new argument to the end of the list argument list.
@@ -251,9 +247,9 @@ public:
   ///     If the argument was originally quoted, put in the quote char here.
   void Unshift(llvm::StringRef arg_str, char quote_char = '\0');
 
-  /// Clear the arguments.
-  ///
-  /// For re-setting or blanking out the list of arguments.
+  // Clear the arguments.
+  //
+  // For re-setting or blanking out the list of arguments.
   void Clear();
 
   static lldb::Encoding
@@ -262,23 +258,25 @@ public:
 
   static uint32_t StringToGenericRegister(llvm::StringRef s);
 
-  static std::string GetShellSafeArgument(const FileSpec &shell,
-                                          llvm::StringRef unsafe_arg);
+  static const char *GetShellSafeArgument(const FileSpec &shell,
+                                          const char *unsafe_arg,
+                                          std::string &safe_arg);
 
-  /// EncodeEscapeSequences will change the textual representation of common
-  /// escape sequences like "\n" (two characters) into a single '\n'. It does
-  /// this for all of the supported escaped sequences and for the \0ooo (octal)
-  /// and \xXX (hex). The resulting "dst" string will contain the character
-  /// versions of all supported escape sequences. The common supported escape
-  /// sequences are: "\a", "\b", "\f", "\n", "\r", "\t", "\v", "\'", "\"", "\\".
+  // EncodeEscapeSequences will change the textual representation of common
+  // escape sequences like "\n" (two characters) into a single '\n'. It does
+  // this for all of the supported escaped sequences and for the \0ooo (octal)
+  // and \xXX (hex). The resulting "dst" string will contain the character
+  // versions of all supported escape sequences. The common supported escape
+  // sequences are: "\a", "\b", "\f", "\n", "\r", "\t", "\v", "\'", "\"", "\\".
+
   static void EncodeEscapeSequences(const char *src, std::string &dst);
 
-  /// ExpandEscapeSequences will change a string of possibly non-printable
-  /// characters and expand them into text. So '\n' will turn into two
-  /// characters like "\n" which is suitable for human reading. When a character
-  /// is not printable and isn't one of the common in escape sequences listed in
-  /// the help for EncodeEscapeSequences, then it will be encoded as octal.
-  /// Printable characters are left alone.
+  // ExpandEscapeSequences will change a string of possibly non-printable
+  // characters and expand them into text. So '\n' will turn into two
+  // characters like "\n" which is suitable for human reading. When a character
+  // is not printable and isn't one of the common in escape sequences listed in
+  // the help for EncodeEscapeSequences, then it will be encoded as octal.
+  // Printable characters are left alone.
   static void ExpandEscapedCharacters(const char *src, std::string &dst);
 
   static std::string EscapeLLDBCommandArgument(const std::string &arg,
@@ -286,10 +284,6 @@ public:
 
 private:
   std::vector<ArgEntry> m_entries;
-  /// The arguments as C strings with a trailing nullptr element.
-  ///
-  /// These strings are owned by the ArgEntry object in m_entries with the
-  /// same index.
   std::vector<char *> m_argv;
 };
 

@@ -62,8 +62,6 @@ public:
     return true;
   }
 
-  lldb::addr_t FixAddress(lldb::addr_t pc, lldb::addr_t mask) override;
-
   // Static Functions
 
   static void Initialize();
@@ -74,9 +72,13 @@ public:
 
   // PluginInterface protocol
 
-  static llvm::StringRef GetPluginNameStatic() { return "ABIMacOSX_arm64"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override {
+    return GetPluginNameStatic();
+  }
+
+  uint32_t GetPluginVersion() override;
 
   lldb_private::Status
   SetReturnValueObject(lldb::StackFrameSP &frame_sp,

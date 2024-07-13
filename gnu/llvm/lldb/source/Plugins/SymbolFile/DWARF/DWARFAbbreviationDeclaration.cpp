@@ -1,4 +1,4 @@
-//===-- DWARFAbbreviationDeclaration.cpp ----------------------------------===//
+//===-- DWARFAbbreviationDeclaration.cpp ------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -16,13 +16,15 @@
 #include "DWARFFormValue.h"
 
 using namespace lldb_private;
-using namespace lldb_private::dwarf;
 
-DWARFAbbreviationDeclaration::DWARFAbbreviationDeclaration() : m_attributes() {}
+DWARFAbbreviationDeclaration::DWARFAbbreviationDeclaration()
+    : m_code(InvalidCode), m_tag(llvm::dwarf::DW_TAG_null), m_has_children(0),
+      m_attributes() {}
 
 DWARFAbbreviationDeclaration::DWARFAbbreviationDeclaration(dw_tag_t tag,
                                                            uint8_t has_children)
-    : m_tag(tag), m_has_children(has_children), m_attributes() {}
+    : m_code(InvalidCode), m_tag(tag), m_has_children(has_children),
+      m_attributes() {}
 
 llvm::Expected<DWARFEnumState>
 DWARFAbbreviationDeclaration::extract(const DWARFDataExtractor &data,
@@ -56,7 +58,7 @@ DWARFAbbreviationDeclaration::extract(const DWARFDataExtractor &data,
     DWARFFormValue::ValueType val;
 
     if (form == DW_FORM_implicit_const)
-      val.value.sval = data.GetSLEB128(offset_ptr);
+      val.value.sval = data.GetULEB128(offset_ptr);
 
     m_attributes.push_back(DWARFAttribute(attr, form, val));
   }
@@ -79,4 +81,10 @@ DWARFAbbreviationDeclaration::FindAttributeIndex(dw_attr_t attr) const {
       return i;
   }
   return DW_INVALID_INDEX;
+}
+
+bool DWARFAbbreviationDeclaration::
+operator==(const DWARFAbbreviationDeclaration &rhs) const {
+  return Tag() == rhs.Tag() && HasChildren() == rhs.HasChildren() &&
+         m_attributes == rhs.m_attributes;
 }

@@ -1,4 +1,5 @@
-//===-- PlatformiOSSimulatorCoreSimulatorSupport.cpp ----------------------===//
+//===-- PlatformiOSSimulatorCoreSimulatorSupport.cpp ---------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -50,12 +51,10 @@ using namespace lldb_private;
 - (NSUInteger)state;
 - (BOOL)shutdownWithError:(NSError **)error;
 - (NSUUID *)UDID;
-- (BOOL)spawnWithPath:(NSString *)path
-               options:(nullable NSDictionary<NSString *, id> *)options
-      terminationQueue:(nullable dispatch_queue_t)terminationQueue
-    terminationHandler:(nullable void (^)(int status))terminationHandler
-                   pid:(pid_t *_Nullable)pid
-                 error:(NSError *__autoreleasing _Nullable *_Nullable)error;
+- (pid_t)spawnWithPath:(NSString *)path
+               options:(NSDictionary *)options
+    terminationHandler:(void (^)(int status))terminationHandler
+                 error:(NSError **)error;
 @end
 
 CoreSimulatorSupport::Process::Process(lldb::pid_t p) : m_pid(p), m_error() {}
@@ -66,7 +65,8 @@ CoreSimulatorSupport::Process::Process(Status error)
 CoreSimulatorSupport::Process::Process(lldb::pid_t p, Status error)
     : m_pid(p), m_error(error) {}
 
-CoreSimulatorSupport::DeviceType::DeviceType() : m_model_identifier() {}
+CoreSimulatorSupport::DeviceType::DeviceType()
+    : m_dev(nil), m_model_identifier() {}
 
 CoreSimulatorSupport::DeviceType::DeviceType(id d)
     : m_dev(d), m_model_identifier() {}
@@ -86,7 +86,8 @@ CoreSimulatorSupport::DeviceType::GetProductFamilyID() {
   return ProductFamilyID([m_dev productFamilyID]);
 }
 
-CoreSimulatorSupport::DeviceRuntime::DeviceRuntime() : m_os_version() {}
+CoreSimulatorSupport::DeviceRuntime::DeviceRuntime()
+    : m_dev(nil), m_os_version() {}
 
 CoreSimulatorSupport::DeviceRuntime::DeviceRuntime(id d)
     : m_dev(d), m_os_version() {}
@@ -97,7 +98,8 @@ bool CoreSimulatorSupport::DeviceRuntime::IsAvailable() {
   return [m_dev available];
 }
 
-CoreSimulatorSupport::Device::Device() : m_dev_type(), m_dev_runtime() {}
+CoreSimulatorSupport::Device::Device()
+    : m_dev(nil), m_dev_type(), m_dev_runtime() {}
 
 CoreSimulatorSupport::Device::Device(id d)
     : m_dev(d), m_dev_type(), m_dev_runtime() {}
@@ -110,10 +112,12 @@ CoreSimulatorSupport::Device::State CoreSimulatorSupport::Device::GetState() {
 
 CoreSimulatorSupport::ModelIdentifier::ModelIdentifier(const std::string &mi)
     : m_family(), m_versions() {
+  bool any = false;
   bool first_digit = false;
   unsigned int val = 0;
 
   for (char c : mi) {
+    any = true;
     if (::isdigit(c)) {
       if (!first_digit)
         first_digit = true;
@@ -167,21 +171,21 @@ CoreSimulatorSupport::OSVersion::OSVersion() : OSVersion("", "") {}
 
 CoreSimulatorSupport::ModelIdentifier
 CoreSimulatorSupport::DeviceType::GetModelIdentifier() {
-  if (!m_model_identifier.has_value()) {
+  if (!m_model_identifier.hasValue()) {
     auto utf8_model_id = [[m_dev modelIdentifier] UTF8String];
     if (utf8_model_id && *utf8_model_id)
       m_model_identifier = ModelIdentifier(utf8_model_id);
   }
 
-  if (m_model_identifier.has_value())
-    return m_model_identifier.value();
+  if (m_model_identifier.hasValue())
+    return m_model_identifier.getValue();
   else
     return ModelIdentifier();
 }
 
 CoreSimulatorSupport::OSVersion
 CoreSimulatorSupport::DeviceRuntime::GetVersion() {
-  if (!m_os_version.has_value()) {
+  if (!m_os_version.hasValue()) {
     auto utf8_ver_string = [[m_dev versionString] UTF8String];
     auto utf8_build_ver = [[m_dev buildVersionString] UTF8String];
     if (utf8_ver_string && *utf8_ver_string && utf8_build_ver &&
@@ -190,8 +194,8 @@ CoreSimulatorSupport::DeviceRuntime::GetVersion() {
     }
   }
 
-  if (m_os_version.has_value())
-    return m_os_version.value();
+  if (m_os_version.hasValue())
+    return m_os_version.getValue();
   return OSVersion();
 }
 
@@ -218,18 +222,18 @@ std::string CoreSimulatorSupport::Device::GetUDID() const {
 }
 
 CoreSimulatorSupport::DeviceType CoreSimulatorSupport::Device::GetDeviceType() {
-  if (!m_dev_type.has_value())
+  if (!m_dev_type.hasValue())
     m_dev_type = DeviceType([m_dev deviceType]);
 
-  return m_dev_type.value();
+  return m_dev_type.getValue();
 }
 
 CoreSimulatorSupport::DeviceRuntime
 CoreSimulatorSupport::Device::GetDeviceRuntime() {
-  if (!m_dev_runtime.has_value())
+  if (!m_dev_runtime.hasValue())
     m_dev_runtime = DeviceRuntime([m_dev runtime]);
 
-  return m_dev_runtime.value();
+  return m_dev_runtime.getValue();
 }
 
 bool CoreSimulatorSupport::
@@ -399,22 +403,25 @@ static Status HandleFileAction(ProcessLaunchInfo &launch_info,
     case FileAction::eFileActionOpen: {
       FileSpec file_spec = file_action->GetFileSpec();
       if (file_spec) {
-        const int primary_fd = launch_info.GetPTY().GetPrimaryFileDescriptor();
-        if (primary_fd != PseudoTerminal::invalid_fd) {
-          // Check in case our file action open wants to open the secondary
-          FileSpec secondary_spec(launch_info.GetPTY().GetSecondaryName());
-          if (file_spec == secondary_spec) {
-            int secondary_fd =
-                launch_info.GetPTY().GetSecondaryFileDescriptor();
-            if (secondary_fd == PseudoTerminal::invalid_fd) {
-              if (llvm::Error Err = launch_info.GetPTY().OpenSecondary(O_RDWR))
-                return Status(std::move(Err));
+        const int master_fd = launch_info.GetPTY().GetMasterFileDescriptor();
+        if (master_fd != PseudoTerminal::invalid_fd) {
+          // Check in case our file action open wants to open the slave
+          const char *slave_path = launch_info.GetPTY().GetSlaveName(NULL, 0);
+          if (slave_path) {
+            FileSpec slave_spec(slave_path);
+            if (file_spec == slave_spec) {
+              int slave_fd = launch_info.GetPTY().GetSlaveFileDescriptor();
+              if (slave_fd == PseudoTerminal::invalid_fd)
+                slave_fd = launch_info.GetPTY().OpenSlave(O_RDWR, nullptr, 0);
+              if (slave_fd == PseudoTerminal::invalid_fd) {
+                error.SetErrorStringWithFormat("unable to open slave pty '%s'",
+                                               slave_path);
+                return error; // Failure
+              }
+              [options setValue:[NSNumber numberWithInteger:slave_fd]
+                         forKey:key];
+              return error; // Success
             }
-            secondary_fd = launch_info.GetPTY().GetSecondaryFileDescriptor();
-            assert(secondary_fd != PseudoTerminal::invalid_fd);
-            [options setValue:[NSNumber numberWithInteger:secondary_fd]
-                       forKey:key];
-            return error; // Success
           }
         }
         Status posix_error;
@@ -423,12 +430,10 @@ static Status HandleFileAction(ProcessLaunchInfo &launch_info,
             open(file_spec.GetPath().c_str(), oflag, S_IRUSR | S_IWUSR);
         if (created_fd >= 0) {
           auto file_options = File::OpenOptions(0);
-          if (oflag & O_RDWR)
-            file_options |= File::eOpenOptionReadWrite;
-          else if (oflag & O_WRONLY)
-            file_options |= File::eOpenOptionWriteOnly;
-          else if (oflag & O_RDONLY)
-            file_options |= File::eOpenOptionReadOnly;
+          if ((oflag & O_RDWR) || (oflag & O_RDONLY))
+            file_options |= File::eOpenOptionRead;
+          if ((oflag & O_RDWR) || (oflag & O_RDONLY))
+            file_options |= File::eOpenOptionWrite;
           file = std::make_shared<NativeFile>(created_fd, file_options, true);
           [options setValue:[NSNumber numberWithInteger:created_fd] forKey:key];
           return error; // Success
@@ -460,11 +465,8 @@ CoreSimulatorSupport::Device::Spawn(ProcessLaunchInfo &launch_info) {
                   provided, path will be argv[0] */
 #define kSimDeviceSpawnWaitForDebugger                                         \
   @"wait_for_debugger" /* An NSNumber (bool) */
-#define kSimDeviceSpawnStandalone @"standalone"
 
   NSMutableDictionary *options = [[NSMutableDictionary alloc] init];
-
-  options[kSimDeviceSpawnStandalone] = @(YES);
 
   if (launch_info.GetFlags().Test(lldb::eLaunchFlagDebug))
     [options setObject:@YES forKey:kSimDeviceSpawnWaitForDebugger];
@@ -522,19 +524,16 @@ CoreSimulatorSupport::Device::Spawn(ProcessLaunchInfo &launch_info) {
 
   NSError *nserror;
 
-  pid_t pid;
-  BOOL success = [m_dev
+  pid_t pid = [m_dev
            spawnWithPath:[NSString stringWithUTF8String:launch_info
                                                             .GetExecutableFile()
                                                             .GetPath()
                                                             .c_str()]
                  options:options
-        terminationQueue:nil
       terminationHandler:nil
-                     pid:&pid
                    error:&nserror];
 
-  if (!success) {
+  if (pid < 0) {
     const char *nserror_string = [[nserror description] UTF8String];
     error.SetErrorString(nserror_string ? nserror_string : "unable to launch");
   }

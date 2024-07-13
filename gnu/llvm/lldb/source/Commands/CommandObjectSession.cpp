@@ -1,7 +1,6 @@
 #include "CommandObjectSession.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
-#include "lldb/Interpreter/CommandOptionArgumentTable.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionValue.h"
@@ -63,7 +62,8 @@ public:
                             "using \"!<INDEX>\".   \"!-<OFFSET>\" will re-run "
                             "the command that is <OFFSET> commands from the end"
                             " of the list (counting the current command).",
-                            nullptr) {}
+                            nullptr),
+        m_options() {}
 
   ~CommandObjectSessionHistory() override = default;
 
@@ -73,7 +73,8 @@ protected:
   class CommandOptions : public Options {
   public:
     CommandOptions()
-        : m_start_idx(0), m_stop_idx(0), m_count(0), m_clear(false) {}
+        : Options(), m_start_idx(0), m_stop_idx(0), m_count(0), m_clear(false) {
+    }
 
     ~CommandOptions() override = default;
 
@@ -117,7 +118,7 @@ protected:
     }
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
-      return llvm::ArrayRef(g_history_options);
+      return llvm::makeArrayRef(g_history_options);
     }
 
     // Instance variables to hold the values for command options.

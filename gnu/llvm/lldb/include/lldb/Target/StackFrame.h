@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TARGET_STACKFRAME_H
-#define LLDB_TARGET_STACKFRAME_H
+#ifndef liblldb_StackFrame_h_
+#define liblldb_StackFrame_h_
 
 #include <memory>
 #include <mutex>
@@ -134,24 +134,6 @@ public:
   ///   The Address object set to the current PC value.
   const Address &GetFrameCodeAddress();
 
-  /// Get the current code Address suitable for symbolication,
-  /// may not be the same as GetFrameCodeAddress().
-  ///
-  /// For a frame in the middle of the stack, the return-pc is the
-  /// current code address, but for symbolication purposes the
-  /// return address after a noreturn call may point to the next
-  /// function, a DWARF location list entry that is a completely
-  /// different code path, or the wrong source line.
-  ///
-  /// The address returned should be used for symbolication (source line,
-  /// block, function, DWARF location entry selection) but should NOT
-  /// be shown to the user.  It may not point to an actual instruction
-  /// boundary.
-  ///
-  /// \return
-  ///   The Address object set to the current PC value.
-  Address GetFrameCodeAddressForSymbolication();
-
   /// Change the pc value for a given thread.
   ///
   /// Change the current pc value for the frame on this thread.
@@ -171,7 +153,7 @@ public:
   /// functions looking up symbolic information for a given pc value multiple
   /// times.
   ///
-  /// \param [in] resolve_scope
+  /// \params [in] resolve_scope
   ///   Flags from the SymbolContextItem enumerated type which specify what
   ///   type of symbol context is needed by this caller.
   ///
@@ -202,7 +184,7 @@ public:
   ///   frames may be unable to provide this value; they will return false.
   bool GetFrameBaseValue(Scalar &value, Status *error_ptr);
 
-  /// Get the DWARFExpressionList corresponding to the Canonical Frame Address.
+  /// Get the DWARFExpression corresponding to the Canonical Frame Address.
   ///
   /// Often a register (bp), but sometimes a register + offset.
   ///
@@ -212,7 +194,7 @@ public:
   ///
   /// \return
   ///   Returns the corresponding DWARF expression, or NULL.
-  DWARFExpressionList *GetFrameBaseExpression(Status *error_ptr);
+  DWARFExpression *GetFrameBaseExpression(Status *error_ptr);
 
   /// Get the current lexical scope block for this StackFrame, if possible.
   ///
@@ -254,14 +236,9 @@ public:
   ///     that are visible to the entire compilation unit (e.g. file
   ///     static in C, globals that are homed in this CU).
   ///
-  /// \param [out] error_ptr
-  ///   If there is an error in the debug information that prevents variables
-  ///   from being fetched. \see SymbolFile::GetFrameVariableError() for full
-  ///   details.
-  ///
   /// \return
   ///     A pointer to a list of variables.
-  VariableList *GetVariableList(bool get_file_globals, Status *error_ptr);
+  VariableList *GetVariableList(bool get_file_globals);
 
   /// Retrieve the list of variables that are in scope at this StackFrame's
   /// pc.
@@ -390,6 +367,12 @@ public:
   /// may have limited support for inspecting variables.
   bool IsArtificial() const;
 
+  /// Query whether this frame behaves like the zeroth frame, in the sense
+  /// that its pc value might not immediately follow a call (and thus might
+  /// be the first address of its function).  True for actual frame zero as
+  /// well as any other frame with the same trait.
+  bool BehavesLikeZerothFrame() const;
+
   /// Query this frame to find what frame it is in this Thread's
   /// StackFrameList.
   ///
@@ -413,10 +396,10 @@ public:
 
   /// Create a ValueObject for a given Variable in this StackFrame.
   ///
-  /// \param [in] variable_sp
+  /// \params [in] variable_sp
   ///   The Variable to base this ValueObject on
   ///
-  /// \param [in] use_dynamic
+  /// \params [in] use_dynamic
   ///     Whether the correct dynamic type of the variable should be
   ///     determined before creating the ValueObject, or if the static type
   ///     is sufficient.  One of the DynamicValueType enumerated values.
@@ -426,6 +409,22 @@ public:
   lldb::ValueObjectSP
   GetValueObjectForFrameVariable(const lldb::VariableSP &variable_sp,
                                  lldb::DynamicValueType use_dynamic);
+
+  /// Add an arbitrary Variable object (e.g. one that specifics a global or
+  /// static) to a StackFrame's list of ValueObjects.
+  ///
+  /// \params [in] variable_sp
+  ///   The Variable to base this ValueObject on
+  ///
+  /// \params [in] use_dynamic
+  ///     Whether the correct dynamic type of the variable should be
+  ///     determined before creating the ValueObject, or if the static type
+  ///     is sufficient.  One of the DynamicValueType enumerated values.
+  ///
+  /// \return
+  ///     A ValueObject for this variable.
+  lldb::ValueObjectSP TrackGlobalVariable(const lldb::VariableSP &variable_sp,
+                                          lldb::DynamicValueType use_dynamic);
 
   /// Query this frame to determine what the default language should be when
   /// parsing expressions given the execution context.
@@ -442,7 +441,7 @@ public:
   /// the current instruction.  The ExpressionPath should indicate how to get
   /// to this value using "frame variable."
   ///
-  /// \param [in] addr
+  /// \params [in] addr
   ///   The raw address.
   ///
   /// \return
@@ -453,10 +452,10 @@ public:
   /// given register plus an offset.  The ExpressionPath should indicate how
   /// to get to this value using "frame variable."
   ///
-  /// \param [in] reg
+  /// \params [in] reg
   ///   The name of the register.
   ///
-  /// \param [in] offset
+  /// \params [in] offset
   ///   The offset from the register.  Particularly important for sp...
   ///
   /// \return
@@ -470,7 +469,7 @@ public:
   /// PC in the stack frame and traverse through all parent blocks stopping at
   /// inlined function boundaries.
   ///
-  /// \param [in] name
+  /// \params [in] name
   ///   The name of the variable.
   ///
   /// \return
@@ -518,11 +517,6 @@ private:
   bool m_cfa_is_valid; // Does this frame have a CFA?  Different from CFA ==
                        // LLDB_INVALID_ADDRESS
   Kind m_stack_frame_kind;
-
-  // Whether this frame behaves like the zeroth frame, in the sense
-  // that its pc value might not immediately follow a call (and thus might
-  // be the first address of its function). True for actual frame zero as
-  // well as any other frame with the same trait.
   bool m_behaves_like_zeroth_frame;
   lldb::VariableListSP m_variable_list_sp;
   ValueObjectList m_variable_list_value_objects; // Value objects for each
@@ -532,10 +526,9 @@ private:
   StreamString m_disassembly;
   std::recursive_mutex m_mutex;
 
-  StackFrame(const StackFrame &) = delete;
-  const StackFrame &operator=(const StackFrame &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(StackFrame);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_TARGET_STACKFRAME_H
+#endif // liblldb_StackFrame_h_

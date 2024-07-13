@@ -1,4 +1,4 @@
-//===-- PostfixExpression.cpp ---------------------------------------------===//
+//===-- PostfixExpression.cpp -----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,16 +15,14 @@
 #include "lldb/Core/dwarf.h"
 #include "lldb/Utility/Stream.h"
 #include "llvm/ADT/StringExtras.h"
-#include <optional>
 
 using namespace lldb_private;
 using namespace lldb_private::postfix;
-using namespace lldb_private::dwarf;
 
-static std::optional<BinaryOpNode::OpType>
+static llvm::Optional<BinaryOpNode::OpType>
 GetBinaryOpType(llvm::StringRef token) {
   if (token.size() != 1)
-    return std::nullopt;
+    return llvm::None;
   switch (token[0]) {
   case '@':
     return BinaryOpNode::Align;
@@ -33,14 +31,14 @@ GetBinaryOpType(llvm::StringRef token) {
   case '+':
     return BinaryOpNode::Plus;
   }
-  return std::nullopt;
+  return llvm::None;
 }
 
-static std::optional<UnaryOpNode::OpType>
+static llvm::Optional<UnaryOpNode::OpType>
 GetUnaryOpType(llvm::StringRef token) {
   if (token == "^")
     return UnaryOpNode::Deref;
-  return std::nullopt;
+  return llvm::None;
 }
 
 Node *postfix::ParseOneExpression(llvm::StringRef expr,

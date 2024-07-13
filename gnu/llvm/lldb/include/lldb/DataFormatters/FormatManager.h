@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_DATAFORMATTERS_FORMATMANAGER_H
-#define LLDB_DATAFORMATTERS_FORMATMANAGER_H
+#ifndef lldb_FormatManager_h_
+#define lldb_FormatManager_h_
 
 #include <atomic>
 #include <initializer_list>
@@ -34,7 +34,7 @@ namespace lldb_private {
 // this file's objects directly
 
 class FormatManager : public IFormatChangeListener {
-  typedef FormattersContainer<TypeSummaryImpl> NamedSummariesMap;
+  typedef FormatMap<ConstString, TypeSummaryImpl> NamedSummariesMap;
   typedef TypeCategoryMap::MapType::iterator CategoryMapIterator;
 
 public:
@@ -128,12 +128,12 @@ public:
   GetSyntheticChildren(ValueObject &valobj, lldb::DynamicValueType use_dynamic);
 
   bool
-  AnyMatches(const FormattersMatchCandidate &candidate_type,
+  AnyMatches(ConstString type_name,
              TypeCategoryImpl::FormatCategoryItems items =
                  TypeCategoryImpl::ALL_ITEM_TYPES,
              bool only_enabled = true, const char **matching_category = nullptr,
              TypeCategoryImpl::FormatCategoryItems *matching_type = nullptr) {
-    return m_categories_map.AnyMatches(candidate_type, items, only_enabled,
+    return m_categories_map.AnyMatches(type_name, items, only_enabled,
                                        matching_category, matching_type);
   }
 
@@ -143,6 +143,13 @@ public:
   static char GetFormatAsFormatChar(lldb::Format format);
 
   static const char *GetFormatAsCString(lldb::Format format);
+
+  // if the user tries to add formatters for, say, "struct Foo" those will not
+  // match any type because of the way we strip qualifiers from typenames this
+  // method looks for the case where the user is adding a
+  // "class","struct","enum" or "union" Foo and strips the unnecessary
+  // qualifier
+  static ConstString GetValidTypeName(ConstString type);
 
   // when DataExtractor dumps a vectorOfT, it uses a predefined format for each
   // item this method returns it, or eFormatInvalid if vector_format is not a
@@ -162,8 +169,9 @@ public:
   static FormattersMatchVector
   GetPossibleMatches(ValueObject &valobj, lldb::DynamicValueType use_dynamic) {
     FormattersMatchVector matches;
-    GetPossibleMatches(valobj, valobj.GetCompilerType(), use_dynamic, matches,
-                       FormattersMatchCandidate::Flags(), true);
+    GetPossibleMatches(valobj, valobj.GetCompilerType(),
+                       lldb_private::eFormatterChoiceCriterionDirectChoice,
+                       use_dynamic, matches, false, false, false, true);
     return matches;
   }
 
@@ -176,10 +184,11 @@ public:
 
 private:
   static void GetPossibleMatches(ValueObject &valobj,
-                                 CompilerType compiler_type,
+                                 CompilerType compiler_type, uint32_t reason,
                                  lldb::DynamicValueType use_dynamic,
                                  FormattersMatchVector &entries,
-                                 FormattersMatchCandidate::Flags current_flags,
+                                 bool did_strip_ptr, bool did_strip_ref,
+                                 bool did_strip_typedef,
                                  bool root_level = false);
 
   std::atomic<uint32_t> m_last_revision;
@@ -215,4 +224,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_DATAFORMATTERS_FORMATMANAGER_H
+#endif // lldb_FormatManager_h_

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TARGET_UNWIND_H
-#define LLDB_TARGET_UNWIND_H
+#ifndef liblldb_Unwind_h_
+#define liblldb_Unwind_h_
 
 #include <mutex>
 
@@ -18,10 +18,10 @@ namespace lldb_private {
 class Unwind {
 protected:
   // Classes that inherit from Unwind can see and modify these
-  Unwind(Thread &thread) : m_thread(thread) {}
+  Unwind(Thread &thread) : m_thread(thread), m_unwind_mutex() {}
 
 public:
-  virtual ~Unwind() = default;
+  virtual ~Unwind() {}
 
   void Clear() {
     std::lock_guard<std::recursive_mutex> guard(m_unwind_mutex);
@@ -77,10 +77,9 @@ protected:
   std::recursive_mutex m_unwind_mutex;
 
 private:
-  Unwind(const Unwind &) = delete;
-  const Unwind &operator=(const Unwind &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(Unwind);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_TARGET_UNWIND_H
+#endif // liblldb_Unwind_h_

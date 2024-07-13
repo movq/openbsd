@@ -1,4 +1,5 @@
-//===-- AppleObjCRuntime.cpp ----------------------------------------------===//
+//===-- AppleObjCRuntime.cpp -------------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,12 +8,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "AppleObjCRuntime.h"
-#include "AppleObjCRuntimeV1.h"
-#include "AppleObjCRuntimeV2.h"
 #include "AppleObjCTrampolineHandler.h"
-#include "Plugins/Language/ObjC/NSString.h"
-#include "Plugins/LanguageRuntime/CPlusPlus/CPPLanguageRuntime.h"
-#include "Plugins/Process/Utility/HistoryThread.h"
+
+#include "clang/AST/Type.h"
+
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
@@ -23,6 +22,7 @@
 #include "lldb/DataFormatters/FormattersHelpers.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/FunctionCaller.h"
+#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -31,40 +31,28 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/ConstString.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/Utility/StreamString.h"
-#include "clang/AST/Type.h"
 
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
+#include "Plugins/Process/Utility/HistoryThread.h"
+#include "Plugins/Language/ObjC/NSString.h"
+#include "Plugins/LanguageRuntime/CPlusPlus/CPPLanguageRuntime.h"
 
 #include <vector>
 
 using namespace lldb;
 using namespace lldb_private;
 
-LLDB_PLUGIN_DEFINE(AppleObjCRuntime)
-
 char AppleObjCRuntime::ID = 0;
 
-AppleObjCRuntime::~AppleObjCRuntime() = default;
+AppleObjCRuntime::~AppleObjCRuntime() {}
 
 AppleObjCRuntime::AppleObjCRuntime(Process *process)
     : ObjCLanguageRuntime(process), m_read_objc_library(false),
       m_objc_trampoline_handler_up(), m_Foundation_major() {
   ReadObjCLibraryIfNeeded(process->GetTarget().GetImages());
-}
-
-void AppleObjCRuntime::Initialize() {
-  AppleObjCRuntimeV2::Initialize();
-  AppleObjCRuntimeV1::Initialize();
-}
-
-void AppleObjCRuntime::Terminate() {
-  AppleObjCRuntimeV2::Terminate();
-  AppleObjCRuntimeV1::Terminate();
 }
 
 bool AppleObjCRuntime::GetObjectDescription(Stream &str, ValueObject &valobj) {
@@ -117,20 +105,19 @@ bool AppleObjCRuntime::GetObjectDescription(Stream &strm, Value &value,
   Target *target = exe_ctx.GetTargetPtr();
   CompilerType compiler_type = value.GetCompilerType();
   if (compiler_type) {
-    if (!TypeSystemClang::IsObjCObjectPointerType(compiler_type)) {
+    if (!ClangASTContext::IsObjCObjectPointerType(compiler_type)) {
       strm.Printf("Value doesn't point to an ObjC object.\n");
       return false;
     }
   } else {
     // If it is not a pointer, see if we can make it into a pointer.
-    TypeSystemClangSP scratch_ts_sp =
-        ScratchTypeSystemClang::GetForTarget(*target);
-    if (!scratch_ts_sp)
+    ClangASTContext *ast_context = ClangASTContext::GetScratch(*target);
+    if (!ast_context)
       return false;
 
-    CompilerType opaque_type = scratch_ts_sp->GetBasicType(eBasicTypeObjCID);
+    CompilerType opaque_type = ast_context->GetBasicType(eBasicTypeObjCID);
     if (!opaque_type)
-      opaque_type = scratch_ts_sp->GetBasicType(eBasicTypeVoid).GetPointerType();
+      opaque_type = ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
     // value.SetContext(Value::eContextTypeClangType, opaque_type_ptr);
     value.SetCompilerType(opaque_type);
   }
@@ -139,12 +126,11 @@ bool AppleObjCRuntime::GetObjectDescription(Stream &strm, Value &value,
   arg_value_list.PushValue(value);
 
   // This is the return value:
-  TypeSystemClangSP scratch_ts_sp =
-      ScratchTypeSystemClang::GetForTarget(*target);
-  if (!scratch_ts_sp)
+  ClangASTContext *ast_context = ClangASTContext::GetScratch(*target);
+  if (!ast_context)
     return false;
 
-  CompilerType return_compiler_type = scratch_ts_sp->GetCStringType(true);
+  CompilerType return_compiler_type = ast_context->GetCStringType(true);
   Value ret;
   //    ret.SetContext(Value::eContextTypeClangType, return_compiler_type);
   ret.SetCompilerType(return_compiler_type);
@@ -253,8 +239,7 @@ Address *AppleObjCRuntime::GetPrintForDebuggerAddr() {
 
     contexts.GetContextAtIndex(0, context);
 
-    m_PrintForDebugger_addr =
-        std::make_unique<Address>(context.symbol->GetAddress());
+    m_PrintForDebugger_addr.reset(new Address(context.symbol->GetAddress()));
   }
 
   return m_PrintForDebugger_addr.get();
@@ -320,7 +305,7 @@ bool AppleObjCRuntime::AppleIsModuleObjCLibrary(const ModuleSP &module_sp) {
 // we use the version of Foundation to make assumptions about the ObjC runtime
 // on a target
 uint32_t AppleObjCRuntime::GetFoundationVersion() {
-  if (!m_Foundation_major) {
+  if (!m_Foundation_major.hasValue()) {
     const ModuleList &modules = m_process->GetTarget().GetImages();
     for (uint32_t idx = 0; idx < modules.GetSize(); idx++) {
       lldb::ModuleSP module_sp = modules.GetModuleAtIndex(idx);
@@ -334,7 +319,7 @@ uint32_t AppleObjCRuntime::GetFoundationVersion() {
     }
     return LLDB_INVALID_MODULE_VERSION;
   } else
-    return *m_Foundation_major;
+    return m_Foundation_major.getValue();
 }
 
 void AppleObjCRuntime::GetValuesForGlobalCFBooleans(lldb::addr_t &cf_true,
@@ -350,8 +335,8 @@ bool AppleObjCRuntime::ReadObjCLibrary(const ModuleSP &module_sp) {
   // Maybe check here and if we have a handler already, and the UUID of this
   // module is the same as the one in the current module, then we don't have to
   // reread it?
-  m_objc_trampoline_handler_up = std::make_unique<AppleObjCTrampolineHandler>(
-      m_process->shared_from_this(), module_sp);
+  m_objc_trampoline_handler_up.reset(
+      new AppleObjCTrampolineHandler(m_process->shared_from_this(), module_sp));
   if (m_objc_trampoline_handler_up != nullptr) {
     m_read_objc_library = true;
     return true;
@@ -379,7 +364,12 @@ AppleObjCRuntime::GetObjCVersion(Process *process, ModuleSP &objc_module_sp) {
       llvm::Triple::VendorType::Apple)
     return ObjCRuntimeVersions::eObjC_VersionUnknown;
 
-  for (ModuleSP module_sp : target.GetImages().Modules()) {
+  const ModuleList &target_modules = target.GetImages();
+  std::lock_guard<std::recursive_mutex> gaurd(target_modules.GetMutex());
+
+  size_t num_images = target_modules.GetSize();
+  for (size_t i = 0; i < num_images; i++) {
+    ModuleSP module_sp = target_modules.GetModuleAtIndexUnlocked(i);
     // One tricky bit here is that we might get called as part of the initial
     // module loading, but before all the pre-run libraries get winnowed from
     // the module list.  So there might actually be an old and incorrect ObjC
@@ -489,7 +479,7 @@ ValueObjectSP AppleObjCRuntime::GetExceptionObjectForThread(
 
   auto descriptor = GetClassDescriptor(*cpp_exception);
   if (!descriptor || !descriptor->IsValid()) return ValueObjectSP();
-
+  
   while (descriptor) {
     ConstString class_name(descriptor->GetClassName());
     if (class_name == "NSException")
@@ -500,33 +490,21 @@ ValueObjectSP AppleObjCRuntime::GetExceptionObjectForThread(
   return ValueObjectSP();
 }
 
-/// Utility method for error handling in GetBacktraceThreadFromException.
-/// \param msg The message to add to the log.
-/// \return An invalid ThreadSP to be returned from
-///         GetBacktraceThreadFromException.
-[[nodiscard]]
-static ThreadSP FailExceptionParsing(llvm::StringRef msg) {
-  Log *log = GetLog(LLDBLog::Language);
-  LLDB_LOG(log, "Failed getting backtrace from exception: {0}", msg);
-  return ThreadSP();
-}
-
 ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
     lldb::ValueObjectSP exception_sp) {
   ValueObjectSP reserved_dict =
       exception_sp->GetChildMemberWithName(ConstString("reserved"), true);
-  if (!reserved_dict)
-    return FailExceptionParsing("Failed to get 'reserved' member.");
+  if (!reserved_dict) return ThreadSP();
 
   reserved_dict = reserved_dict->GetSyntheticValue();
-  if (!reserved_dict)
-    return FailExceptionParsing("Failed to get synthetic value.");
+  if (!reserved_dict) return ThreadSP();
 
-  TypeSystemClangSP scratch_ts_sp =
-      ScratchTypeSystemClang::GetForTarget(*exception_sp->GetTargetSP());
-  if (!scratch_ts_sp)
-    return FailExceptionParsing("Failed to get scratch AST.");
-  CompilerType objc_id = scratch_ts_sp->GetBasicType(lldb::eBasicTypeObjCID);
+  ClangASTContext *clang_ast_context =
+      ClangASTContext::GetScratch(*exception_sp->GetTargetSP());
+  if (!clang_ast_context)
+    return ThreadSP();
+  CompilerType objc_id =
+      clang_ast_context->GetBasicType(lldb::eBasicTypeObjCID);
   ValueObjectSP return_addresses;
 
   auto objc_object_from_address = [&exception_sp, &objc_id](uint64_t addr,
@@ -549,8 +527,8 @@ ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
     if (error.Fail()) return ThreadSP();
 
     lldb::offset_t data_offset = 0;
-    auto dict_entry_key = data.GetAddress(&data_offset);
-    auto dict_entry_value = data.GetAddress(&data_offset);
+    auto dict_entry_key = data.GetPointer(&data_offset);
+    auto dict_entry_value = data.GetPointer(&data_offset);
 
     auto key_nsstring = objc_object_from_address(dict_entry_key, "key");
     StreamString key_summary;
@@ -565,22 +543,15 @@ ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
     }
   }
 
-  if (!return_addresses)
-    return FailExceptionParsing("Failed to get return addresses.");
+  if (!return_addresses) return ThreadSP();
   auto frames_value =
       return_addresses->GetChildMemberWithName(ConstString("_frames"), true);
-  if (!frames_value)
-    return FailExceptionParsing("Failed to get frames_value.");
   addr_t frames_addr = frames_value->GetValueAsUnsigned(0);
   auto count_value =
       return_addresses->GetChildMemberWithName(ConstString("_cnt"), true);
-  if (!count_value)
-    return FailExceptionParsing("Failed to get count_value.");
   size_t count = count_value->GetValueAsUnsigned(0);
   auto ignore_value =
       return_addresses->GetChildMemberWithName(ConstString("_ignore"), true);
-  if (!ignore_value)
-    return FailExceptionParsing("Failed to get ignore_value.");
   size_t ignore = ignore_value->GetValueAsUnsigned(0);
 
   size_t ptr_size = m_process->GetAddressByteSize();
@@ -592,8 +563,7 @@ ThreadSP AppleObjCRuntime::GetBacktraceThreadFromException(
     pcs.push_back(pc);
   }
 
-  if (pcs.empty())
-    return FailExceptionParsing("Failed to get PC list.");
+  if (pcs.empty()) return ThreadSP();
 
   ThreadSP new_thread_sp(new HistoryThread(*m_process, 0, pcs));
   m_process->GetExtendedThreadList().AddThread(new_thread_sp);

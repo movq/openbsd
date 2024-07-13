@@ -1,4 +1,4 @@
-//===-- ASTResultSynthesizer.cpp ------------------------------------------===//
+//===-- ASTResultSynthesizer.cpp --------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,14 +8,14 @@
 
 #include "ASTResultSynthesizer.h"
 
-#include "ClangASTImporter.h"
 #include "ClangPersistentVariables.h"
 
-#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
+#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/ClangASTImporter.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/LLDBAssert.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "stdlib.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
@@ -27,7 +27,6 @@
 #include "clang/Sema/SemaDiagnostic.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cstdlib>
 
 using namespace llvm;
 using namespace clang;
@@ -44,7 +43,7 @@ ASTResultSynthesizer::ASTResultSynthesizer(ASTConsumer *passthrough,
   m_passthrough_sema = dyn_cast<SemaConsumer>(passthrough);
 }
 
-ASTResultSynthesizer::~ASTResultSynthesizer() = default;
+ASTResultSynthesizer::~ASTResultSynthesizer() {}
 
 void ASTResultSynthesizer::Initialize(ASTContext &Context) {
   m_ast_context = &Context;
@@ -54,7 +53,7 @@ void ASTResultSynthesizer::Initialize(ASTContext &Context) {
 }
 
 void ASTResultSynthesizer::TransformTopLevelDecl(Decl *D) {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   if (NamedDecl *named_decl = dyn_cast<NamedDecl>(D)) {
     if (log && log->GetVerbose()) {
@@ -113,7 +112,7 @@ bool ASTResultSynthesizer::HandleTopLevelDecl(DeclGroupRef D) {
 }
 
 bool ASTResultSynthesizer::SynthesizeFunctionResult(FunctionDecl *FunDecl) {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   if (!m_sema)
     return false;
@@ -155,7 +154,7 @@ bool ASTResultSynthesizer::SynthesizeFunctionResult(FunctionDecl *FunDecl) {
 
 bool ASTResultSynthesizer::SynthesizeObjCMethodResult(
     ObjCMethodDecl *MethodDecl) {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   if (!m_sema)
     return false;
@@ -197,30 +196,9 @@ bool ASTResultSynthesizer::SynthesizeObjCMethodResult(
   return ret;
 }
 
-/// Returns true if LLDB can take the address of the given lvalue for the sake
-/// of capturing the expression result. Returns false if LLDB should instead
-/// store the expression result in a result variable.
-static bool CanTakeAddressOfLValue(const Expr *lvalue_expr) {
-  assert(lvalue_expr->getValueKind() == VK_LValue &&
-         "lvalue_expr not a lvalue");
-
-  QualType qt = lvalue_expr->getType();
-  // If the lvalue has const-qualified non-volatile integral or enum type, then
-  // the underlying value might come from a const static data member as
-  // described in C++11 [class.static.data]p3. If that's the case, then the
-  // value might not have an address if the user didn't also define the member
-  // in a namespace scope. Taking the address would cause that LLDB later fails
-  // to link the expression, so those lvalues should be stored in a result
-  // variable.
-  if (qt->isIntegralOrEnumerationType() && qt.isConstQualified() &&
-      !qt.isVolatileQualified())
-    return false;
-  return true;
-}
-
 bool ASTResultSynthesizer::SynthesizeBodyResult(CompoundStmt *Body,
                                                 DeclContext *DC) {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   ASTContext &Ctx(*m_ast_context);
 
@@ -233,7 +211,7 @@ bool ASTResultSynthesizer::SynthesizeBodyResult(CompoundStmt *Body,
   Stmt **last_stmt_ptr = Body->body_end() - 1;
   Stmt *last_stmt = *last_stmt_ptr;
 
-  while (isa<NullStmt>(last_stmt)) {
+  while (dyn_cast<NullStmt>(last_stmt)) {
     if (last_stmt_ptr != Body->body_begin()) {
       last_stmt_ptr--;
       last_stmt = *last_stmt_ptr;
@@ -270,41 +248,48 @@ bool ASTResultSynthesizer::SynthesizeBodyResult(CompoundStmt *Body,
   // For Lvalues
   //
   //   - In AST result synthesis (here!) the expression E is transformed into an
-  //     initialization T *$__lldb_expr_result_ptr = &E.
+  //   initialization
+  //     T *$__lldb_expr_result_ptr = &E.
   //
   //   - In structure allocation, a pointer-sized slot is allocated in the
-  //     struct that is to be passed into the expression.
+  //   struct that is to be
+  //     passed into the expression.
   //
   //   - In IR transformations, reads and writes to $__lldb_expr_result_ptr are
-  //     redirected at an entry in the struct ($__lldb_arg) passed into the
-  //     expression. (Other persistent variables are treated similarly, having
-  //     been materialized as references, but in those cases the value of the
-  //     reference itself is never modified.)
+  //   redirected at
+  //     an entry in the struct ($__lldb_arg) passed into the expression.
+  //     (Other persistent
+  //     variables are treated similarly, having been materialized as
+  //     references, but in those
+  //     cases the value of the reference itself is never modified.)
   //
   //   - During materialization, $0 (the result persistent variable) is ignored.
   //
   //   - During dematerialization, $0 is marked up as a load address with value
-  //     equal to the contents of the structure entry.
-  //
-  //   - Note: if we cannot take an address of the resulting Lvalue (e.g. it's
-  //     a static const member without an out-of-class definition), then we
-  //     follow the Rvalue route.
+  //   equal to the
+  //     contents of the structure entry.
   //
   // For Rvalues
   //
   //   - In AST result synthesis the expression E is transformed into an
-  //     initialization static T $__lldb_expr_result = E.
+  //   initialization
+  //     static T $__lldb_expr_result = E.
   //
   //   - In structure allocation, a pointer-sized slot is allocated in the
-  //     struct that is to be passed into the expression.
+  //   struct that is to be
+  //     passed into the expression.
   //
   //   - In IR transformations, an instruction is inserted at the beginning of
-  //     the function to dereference the pointer resident in the slot. Reads and
-  //     writes to $__lldb_expr_result are redirected at that dereferenced
-  //     version. Guard variables for the static variable are excised.
+  //   the function to
+  //     dereference the pointer resident in the slot.  Reads and writes to
+  //     $__lldb_expr_result
+  //     are redirected at that dereferenced version.  Guard variables for the
+  //     static variable
+  //     are excised.
   //
   //   - During materialization, $0 (the result persistent variable) is
-  //     populated with the location of a newly-allocated area of memory.
+  //   populated with the location
+  //     of a newly-allocated area of memory.
   //
   //   - During dematerialization, $0 is ignored.
 
@@ -329,7 +314,7 @@ bool ASTResultSynthesizer::SynthesizeBodyResult(CompoundStmt *Body,
 
   clang::VarDecl *result_decl = nullptr;
 
-  if (is_lvalue && CanTakeAddressOfLValue(last_expr)) {
+  if (is_lvalue) {
     IdentifierInfo *result_ptr_id;
 
     if (expr_type->isFunctionType())
@@ -340,8 +325,7 @@ bool ASTResultSynthesizer::SynthesizeBodyResult(CompoundStmt *Body,
     else
       result_ptr_id = &Ctx.Idents.get("$__lldb_expr_result_ptr");
 
-    m_sema->RequireCompleteType(last_expr->getSourceRange().getBegin(),
-                                expr_qual_type,
+    m_sema->RequireCompleteType(SourceLocation(), expr_qual_type,
                                 clang::diag::err_incomplete_type);
 
     QualType ptr_qual_type;
@@ -433,7 +417,7 @@ void ASTResultSynthesizer::MaybeRecordPersistentType(TypeDecl *D) {
   if (name.size() == 0 || name[0] != '$')
     return;
 
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   ConstString name_cs(name.str().c_str());
 
@@ -453,7 +437,7 @@ void ASTResultSynthesizer::RecordPersistentDecl(NamedDecl *D) {
   if (name.size() == 0)
     return;
 
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   ConstString name_cs(name.str().c_str());
 
@@ -469,19 +453,17 @@ void ASTResultSynthesizer::CommitPersistentDecls() {
     return;
 
   auto *persistent_vars = llvm::cast<ClangPersistentVariables>(state);
-
-  lldb::TypeSystemClangSP scratch_ts_sp = ScratchTypeSystemClang::GetForTarget(
-      m_target, m_ast_context->getLangOpts());
+  ClangASTContext *scratch_ctx = ClangASTContext::GetScratch(m_target);
 
   for (clang::NamedDecl *decl : m_decls) {
     StringRef name = decl->getName();
     ConstString name_cs(name.str().c_str());
 
-    Decl *D_scratch = persistent_vars->GetClangASTImporter()->DeportDecl(
-        &scratch_ts_sp->getASTContext(), decl);
+    Decl *D_scratch = m_target.GetClangASTImporter()->DeportDecl(
+        &scratch_ctx->getASTContext(), decl);
 
     if (!D_scratch) {
-      Log *log = GetLog(LLDBLog::Expressions);
+      Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
       if (log) {
         std::string s;
@@ -497,7 +479,7 @@ void ASTResultSynthesizer::CommitPersistentDecls() {
 
     if (NamedDecl *NamedDecl_scratch = dyn_cast<NamedDecl>(D_scratch))
       persistent_vars->RegisterPersistentDecl(name_cs, NamedDecl_scratch,
-                                              scratch_ts_sp);
+                                              scratch_ctx);
   }
 }
 

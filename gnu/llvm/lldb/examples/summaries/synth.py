@@ -33,7 +33,8 @@ class PythonObjectSyntheticChildProvider(object):
     def gen_child(self, name, value):
         data = None
         type = None
-        if isinstance(value, int):
+        import six
+        if isinstance(value, six.integer_types):
             data = lldb.SBData.CreateDataFromUInt64Array(
                 self.bo, self.ps, [value])
             type = self.value.target.GetBasicType(lldb.eBasicTypeLong)

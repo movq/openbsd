@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_HOST_DEBUG_H
-#define LLDB_HOST_DEBUG_H
+#ifndef liblldb_Debug_h_
+#define liblldb_Debug_h_
 
 #include <vector>
 
@@ -32,13 +32,15 @@ struct ResumeAction {
 // send a signal to the thread when the action is run or step.
 class ResumeActionList {
 public:
-  ResumeActionList() = default;
+  ResumeActionList() : m_actions(), m_signal_handled() {}
 
-  ResumeActionList(lldb::StateType default_action, int signal) {
+  ResumeActionList(lldb::StateType default_action, int signal)
+      : m_actions(), m_signal_handled() {
     SetDefaultThreadActionIfNeeded(default_action, signal);
   }
 
-  ResumeActionList(const ResumeAction *actions, size_t num_actions) {
+  ResumeActionList(const ResumeAction *actions, size_t num_actions)
+      : m_actions(), m_signal_handled() {
     if (actions && num_actions) {
       m_actions.assign(actions, actions + num_actions);
       m_signal_handled.assign(num_actions, false);
@@ -130,22 +132,20 @@ protected:
 
 struct ThreadStopInfo {
   lldb::StopReason reason;
-  uint32_t signo;
   union {
+    // eStopReasonSignal
+    struct {
+      uint32_t signo;
+    } signal;
+
     // eStopReasonException
     struct {
       uint64_t type;
       uint32_t data_count;
       lldb::addr_t data[8];
     } exception;
-
-    // eStopReasonFork / eStopReasonVFork
-    struct {
-      lldb::pid_t child_pid;
-      lldb::tid_t child_tid;
-    } fork;
   } details;
 };
 }
 
-#endif // LLDB_HOST_DEBUG_H
+#endif // liblldb_Debug_h_

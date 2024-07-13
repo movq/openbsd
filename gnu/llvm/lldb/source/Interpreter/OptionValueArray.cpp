@@ -1,4 +1,4 @@
-//===-- OptionValueArray.cpp ----------------------------------------------===//
+//===-- OptionValueArray.cpp ------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,6 +8,7 @@
 
 #include "lldb/Interpreter/OptionValueArray.h"
 
+#include "lldb/Host/StringConvert.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/Stream.h"
 
@@ -51,7 +52,6 @@ void OptionValueArray::DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
       case eTypeChar:
       case eTypeEnum:
       case eTypeFileSpec:
-      case eTypeFileLineColumn:
       case eTypeFormat:
       case eTypeSInt64:
       case eTypeString:
@@ -73,14 +73,6 @@ void OptionValueArray::DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
     if (!one_line)
       strm.IndentLess();
   }
-}
-
-llvm::json::Value OptionValueArray::ToJSON(const ExecutionContext *exe_ctx) {
-  llvm::json::Array json_array;
-  const uint32_t size = m_values.size();
-  for (uint32_t i = 0; i < size; ++i)
-    json_array.emplace_back(m_values[i]->ToJSON(exe_ctx));
-  return json_array;
 }
 
 Status OptionValueArray::SetValueFromString(llvm::StringRef value,
@@ -174,12 +166,13 @@ Status OptionValueArray::SetArgs(const Args &args, VarSetOperationType op) {
   case eVarSetOperationInsertBefore:
   case eVarSetOperationInsertAfter:
     if (argc > 1) {
-      uint32_t idx;
+      uint32_t idx =
+          StringConvert::ToUInt32(args.GetArgumentAtIndex(0), UINT32_MAX);
       const uint32_t count = GetSize();
-      if (!llvm::to_integer(args.GetArgumentAtIndex(0), idx) || idx > count) {
+      if (idx > count) {
         error.SetErrorStringWithFormat(
-            "invalid insert array index %s, index must be 0 through %u",
-            args.GetArgumentAtIndex(0), count);
+            "invalid insert array index %u, index must be 0 through %u", idx,
+            count);
       } else {
         if (op == eVarSetOperationInsertAfter)
           ++idx;
@@ -213,8 +206,9 @@ Status OptionValueArray::SetArgs(const Args &args, VarSetOperationType op) {
       bool all_indexes_valid = true;
       size_t i;
       for (i = 0; i < argc; ++i) {
-        size_t idx;
-        if (!llvm::to_integer(args.GetArgumentAtIndex(i), idx) || idx >= size) {
+        const size_t idx =
+            StringConvert::ToSInt32(args.GetArgumentAtIndex(i), INT32_MAX);
+        if (idx >= size) {
           all_indexes_valid = false;
           break;
         } else
@@ -226,7 +220,7 @@ Status OptionValueArray::SetArgs(const Args &args, VarSetOperationType op) {
         if (num_remove_indexes) {
           // Sort and then erase in reverse so indexes are always valid
           if (num_remove_indexes > 1) {
-            llvm::sort(remove_indexes);
+            llvm::sort(remove_indexes.begin(), remove_indexes.end());
             for (std::vector<int>::const_reverse_iterator
                      pos = remove_indexes.rbegin(),
                      end = remove_indexes.rend();
@@ -254,12 +248,13 @@ Status OptionValueArray::SetArgs(const Args &args, VarSetOperationType op) {
 
   case eVarSetOperationReplace:
     if (argc > 1) {
-      uint32_t idx;
+      uint32_t idx =
+          StringConvert::ToUInt32(args.GetArgumentAtIndex(0), UINT32_MAX);
       const uint32_t count = GetSize();
-      if (!llvm::to_integer(args.GetArgumentAtIndex(0), idx) || idx > count) {
+      if (idx > count) {
         error.SetErrorStringWithFormat(
-            "invalid replace array index %s, index must be 0 through %u",
-            args.GetArgumentAtIndex(0), count);
+            "invalid replace array index %u, index must be 0 through %u", idx,
+            count);
       } else {
         for (size_t i = 1; i < argc; ++i, ++idx) {
           lldb::OptionValueSP value_sp(CreateValueFromCStringForTypeMask(
@@ -287,7 +282,7 @@ Status OptionValueArray::SetArgs(const Args &args, VarSetOperationType op) {
   case eVarSetOperationAssign:
     m_values.clear();
     // Fall through to append case
-    [[fallthrough]];
+    LLVM_FALLTHROUGH;
   case eVarSetOperationAppend:
     for (size_t i = 0; i < argc; ++i) {
       lldb::OptionValueSP value_sp(CreateValueFromCStringForTypeMask(
@@ -307,16 +302,15 @@ Status OptionValueArray::SetArgs(const Args &args, VarSetOperationType op) {
   return error;
 }
 
-OptionValueSP
-OptionValueArray::DeepCopy(const OptionValueSP &new_parent) const {
-  auto copy_sp = OptionValue::DeepCopy(new_parent);
-  // copy_sp->GetAsArray cannot be used here as it doesn't work for derived
-  // types that override GetType returning a different value.
-  auto *array_value_ptr = static_cast<OptionValueArray *>(copy_sp.get());
-  lldbassert(array_value_ptr);
-
-  for (auto &value : array_value_ptr->m_values)
-    value = value->DeepCopy(copy_sp);
-
-  return copy_sp;
+lldb::OptionValueSP OptionValueArray::DeepCopy() const {
+  OptionValueArray *copied_array =
+      new OptionValueArray(m_type_mask, m_raw_value_dump);
+  lldb::OptionValueSP copied_value_sp(copied_array);
+  *static_cast<OptionValue *>(copied_array) = *this;
+  copied_array->m_callback = m_callback;
+  const uint32_t size = m_values.size();
+  for (uint32_t i = 0; i < size; ++i) {
+    copied_array->AppendValue(m_values[i]->DeepCopy());
+  }
+  return copied_value_sp;
 }

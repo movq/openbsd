@@ -1,5 +1,6 @@
-add_lldb_library(lldbPluginProcessUtility
+add_lldb_library(lldbPluginProcessUtility PLUGIN
   AuxVector.cpp
+  DynamicRegisterInfo.cpp
   FreeBSDSignals.cpp
   GDBRemoteSignals.cpp
   HistoryThread.cpp
@@ -7,15 +8,10 @@ add_lldb_library(lldbPluginProcessUtility
   InferiorCallPOSIX.cpp
   LinuxProcMaps.cpp
   LinuxSignals.cpp
-  MemoryTagManagerAArch64MTE.cpp
   MipsLinuxSignals.cpp
-  NativeProcessSoftwareSingleStep.cpp
-  NativeRegisterContextDBReg_arm64.cpp
-  NativeRegisterContextDBReg_x86.cpp
   NativeRegisterContextRegisterInfo.cpp
   NetBSDSignals.cpp
   OpenBSDSignals.cpp
-  RegisterContext_x86.cpp
   RegisterContextDarwin_arm.cpp
   RegisterContextDarwin_arm64.cpp
   RegisterContextDarwin_i386.cpp
@@ -28,22 +24,23 @@ add_lldb_library(lldbPluginProcessUtility
   RegisterContextHistory.cpp
   RegisterContextLinux_i386.cpp
   RegisterContextLinux_x86_64.cpp
+  RegisterContextLinux_mips64.cpp
+  RegisterContextLinux_mips.cpp
   RegisterContextLinux_s390x.cpp
+  RegisterContextLLDB.cpp
+  RegisterContextMacOSXFrameBackchain.cpp
   RegisterContextMach_arm.cpp
   RegisterContextMach_i386.cpp
   RegisterContextMach_x86_64.cpp
   RegisterContextMemory.cpp
-  RegisterContextNetBSD_i386.cpp
   RegisterContextNetBSD_x86_64.cpp
   RegisterContextOpenBSD_i386.cpp
   RegisterContextOpenBSD_x86_64.cpp
   RegisterContextPOSIX_arm.cpp
   RegisterContextPOSIX_arm64.cpp
-  RegisterContextPOSIX_loongarch64.cpp
   RegisterContextPOSIX_mips64.cpp
   RegisterContextPOSIX_powerpc.cpp
   RegisterContextPOSIX_ppc64le.cpp
-  RegisterContextPOSIX_riscv64.cpp
   RegisterContextPOSIX_s390x.cpp
   RegisterContextPOSIX_x86.cpp
   RegisterContextThreadMemory.cpp
@@ -51,11 +48,11 @@ add_lldb_library(lldbPluginProcessUtility
   RegisterContextWindows_x86_64.cpp
   RegisterInfoPOSIX_arm.cpp
   RegisterInfoPOSIX_arm64.cpp
-  RegisterInfoPOSIX_loongarch64.cpp
   RegisterInfoPOSIX_ppc64le.cpp
-  RegisterInfoPOSIX_riscv64.cpp
   StopInfoMachException.cpp
   ThreadMemory.cpp
+  UnwindLLDB.cpp
+  UnwindMacOSXFrameBackchain.cpp
 
   LINK_LIBS
     lldbBreakpoint
@@ -68,5 +65,4 @@ add_lldb_library(lldbPluginProcessUtility
     lldbUtility
   LINK_COMPONENTS
     Support
-    TargetParser
   )

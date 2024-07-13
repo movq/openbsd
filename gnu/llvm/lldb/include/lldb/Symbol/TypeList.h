@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_TYPELIST_H
-#define LLDB_SYMBOL_TYPELIST_H
+#ifndef liblldb_TypeList_h_
+#define liblldb_TypeList_h_
 
 #include "lldb/Symbol/Type.h"
 #include "lldb/Utility/Iterable.h"
@@ -49,11 +49,10 @@ public:
 
   void ForEach(std::function<bool(lldb::TypeSP &type_sp)> const &callback);
 
-  void RemoveMismatchedTypes(llvm::StringRef qualified_typename,
-                             bool exact_match);
+  void RemoveMismatchedTypes(const char *qualified_typename, bool exact_match);
 
-  void RemoveMismatchedTypes(llvm::StringRef type_scope,
-                             llvm::StringRef type_basename,
+  void RemoveMismatchedTypes(const std::string &type_scope,
+                             const std::string &type_basename,
                              lldb::TypeClass type_class, bool exact_match);
 
   void RemoveMismatchedTypes(lldb::TypeClass type_class);
@@ -64,10 +63,9 @@ private:
 
   collection m_types;
 
-  TypeList(const TypeList &) = delete;
-  const TypeList &operator=(const TypeList &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(TypeList);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_TYPELIST_H
+#endif // liblldb_TypeList_h_

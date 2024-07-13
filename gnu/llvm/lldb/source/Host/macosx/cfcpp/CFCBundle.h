@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCBUNDLE_H
-#define LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCBUNDLE_H
+#ifndef CoreFoundationCPP_CFBundle_h_
+#define CoreFoundationCPP_CFBundle_h_
 
 #include "CFCReleaser.h"
 
@@ -17,7 +17,7 @@ public:
   CFCBundle(const char *path = NULL);
   CFCBundle(CFURLRef url);
 
-  ~CFCBundle() override;
+  virtual ~CFCBundle();
 
   CFURLRef CopyExecutableURL() const;
 
@@ -36,4 +36,4 @@ private:
   const CFCBundle &operator=(const CFCBundle &) = delete;
 };
 
-#endif // LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCBUNDLE_H
+#endif // #ifndef CoreFoundationCPP_CFBundle_h_

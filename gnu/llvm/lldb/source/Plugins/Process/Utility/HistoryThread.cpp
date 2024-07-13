@@ -1,4 +1,4 @@
-//===-- HistoryThread.cpp -------------------------------------------------===//
+//===-- HistoryThread.cpp ---------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,7 +15,6 @@
 
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrameList.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 
 #include <memory>
@@ -26,22 +25,20 @@ using namespace lldb_private;
 //  Constructor
 
 HistoryThread::HistoryThread(lldb_private::Process &process, lldb::tid_t tid,
-                             std::vector<lldb::addr_t> pcs,
-                             bool pcs_are_call_addresses)
+                             std::vector<lldb::addr_t> pcs)
     : Thread(process, tid, true), m_framelist_mutex(), m_framelist(),
       m_pcs(pcs), m_extended_unwind_token(LLDB_INVALID_ADDRESS), m_queue_name(),
       m_thread_name(), m_originating_unique_thread_id(tid),
       m_queue_id(LLDB_INVALID_QUEUE_ID) {
-  m_unwinder_up =
-      std::make_unique<HistoryUnwind>(*this, pcs, pcs_are_call_addresses);
-  Log *log = GetLog(LLDBLog::Object);
+  m_unwinder_up.reset(new HistoryUnwind(*this, pcs));
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_OBJECT));
   LLDB_LOGF(log, "%p HistoryThread::HistoryThread", static_cast<void *>(this));
 }
 
 //  Destructor
 
 HistoryThread::~HistoryThread() {
-  Log *log = GetLog(LLDBLog::Object);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_OBJECT));
   LLDB_LOGF(log, "%p HistoryThread::~HistoryThread (tid=0x%" PRIx64 ")",
             static_cast<void *>(this), GetID());
   DestroyThread();

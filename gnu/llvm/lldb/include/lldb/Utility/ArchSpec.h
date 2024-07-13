@@ -91,29 +91,6 @@ public:
     eARM_abi_hard_float = 0x00000400
   };
 
-  enum RISCVeflags {
-    eRISCV_rvc              = 0x00000001, /// RVC, +c
-    eRISCV_float_abi_soft   = 0x00000000, /// soft float
-    eRISCV_float_abi_single = 0x00000002, /// single precision floating point, +f
-    eRISCV_float_abi_double = 0x00000004, /// double precision floating point, +d
-    eRISCV_float_abi_quad   = 0x00000006, /// quad precision floating point, +q
-    eRISCV_float_abi_mask   = 0x00000006,
-    eRISCV_rve              = 0x00000008, /// RVE, +e
-    eRISCV_tso              = 0x00000010, /// RVTSO (total store ordering)
-  };
-
-  enum RISCVSubType {
-    eRISCVSubType_unknown,
-    eRISCVSubType_riscv32,
-    eRISCVSubType_riscv64,
-  };
-
-  enum LoongArchSubType {
-    eLoongArchSubType_unknown,
-    eLoongArchSubType_loongarch32,
-    eLoongArchSubType_loongarch64,
-  };
-
   enum Core {
     eCore_arm_generic,
     eCore_arm_armv4,
@@ -147,7 +124,6 @@ public:
     eCore_arm_arm64,
     eCore_arm_armv8,
     eCore_arm_armv8l,
-    eCore_arm_arm64e,
     eCore_arm_arm64_32,
     eCore_arm_aarch64,
 
@@ -208,20 +184,10 @@ public:
     eCore_hexagon_hexagonv4,
     eCore_hexagon_hexagonv5,
 
-    eCore_riscv32,
-    eCore_riscv64,
-
-    eCore_loongarch32,
-    eCore_loongarch64,
-
     eCore_uknownMach32,
     eCore_uknownMach64,
 
     eCore_arc, // little endian ARC
-
-    eCore_avr,
-
-    eCore_wasm32,
 
     kNumCores,
 
@@ -497,25 +463,19 @@ public:
   ///         architecture and false otherwise.
   bool CharIsSignedByDefault() const;
 
-  enum MatchType : bool { CompatibleMatch, ExactMatch };
-
-  /// Compare this ArchSpec to another ArchSpec. \a match specifies the kind of
-  /// matching that is to be done. CompatibleMatch requires only a compatible
-  /// cpu type (e.g., armv7s is compatible with armv7). ExactMatch requires an
-  /// exact match (armv7s is not an exact match with armv7).
+  /// Compare an ArchSpec to another ArchSpec, requiring an exact cpu type
+  /// match between them. e.g. armv7s is not an exact match with armv7 - this
+  /// would return false
   ///
   /// \return true if the two ArchSpecs match.
-  bool IsMatch(const ArchSpec &rhs, MatchType match) const;
+  bool IsExactMatch(const ArchSpec &rhs) const;
 
-  /// Shorthand for IsMatch(rhs, ExactMatch).
-  bool IsExactMatch(const ArchSpec &rhs) const {
-    return IsMatch(rhs, ExactMatch);
-  }
-
-  /// Shorthand for IsMatch(rhs, CompatibleMatch).
-  bool IsCompatibleMatch(const ArchSpec &rhs) const {
-    return IsMatch(rhs, CompatibleMatch);
-  }
+  /// Compare an ArchSpec to another ArchSpec, requiring a compatible cpu type
+  /// match between them. e.g. armv7s is compatible with armv7 - this method
+  /// would return true
+  ///
+  /// \return true if the two ArchSpecs are compatible
+  bool IsCompatibleMatch(const ArchSpec &rhs) const;
 
   bool IsFullySpecifiedTriple() const;
 
@@ -541,9 +501,10 @@ public:
 
   void SetFlags(uint32_t flags) { m_flags = flags; }
 
-  void SetFlags(const std::string &elf_abi);
+  void SetFlags(std::string elf_abi);
 
 protected:
+  bool IsEqualTo(const ArchSpec &rhs, bool exact_match) const;
   void UpdateCore();
 
   llvm::Triple m_triple;
@@ -577,4 +538,4 @@ bool ParseMachCPUDashSubtypeTriple(llvm::StringRef triple_str, ArchSpec &arch);
 
 } // namespace lldb_private
 
-#endif // LLDB_UTILITY_ARCHSPEC_H
+#endif // #ifndef LLDB_UTILITY_ARCHSPEC_H

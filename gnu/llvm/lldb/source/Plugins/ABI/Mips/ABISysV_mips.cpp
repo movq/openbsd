@@ -25,11 +25,9 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/DataExtractor.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/RegisterValue.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -94,7 +92,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r1",
      "AT",
      4,
@@ -105,7 +104,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r2",
      "v0",
      4,
@@ -116,7 +116,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r3",
      "v1",
      4,
@@ -127,9 +128,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r4",
      nullptr,
+     0},
+    {"r4",
+     "arg1",
      4,
      0,
      eEncodingUint,
@@ -138,9 +140,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r5",
      nullptr,
+     0},
+    {"r5",
+     "arg2",
      4,
      0,
      eEncodingUint,
@@ -149,9 +152,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r6",
      nullptr,
+     0},
+    {"r6",
+     "arg3",
      4,
      0,
      eEncodingUint,
@@ -160,9 +164,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r7",
      nullptr,
+     0},
+    {"r7",
+     "arg4",
      4,
      0,
      eEncodingUint,
@@ -171,7 +176,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r8",
      "arg5",
      4,
@@ -182,7 +188,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r9",
      "arg6",
      4,
@@ -193,7 +200,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r10",
      "arg7",
      4,
@@ -204,7 +212,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r11",
      "arg8",
      4,
@@ -215,7 +224,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r12",
      nullptr,
      4,
@@ -226,7 +236,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r13",
      nullptr,
      4,
@@ -237,7 +248,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r14",
      nullptr,
      4,
@@ -248,7 +260,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r15",
      nullptr,
      4,
@@ -259,7 +272,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r16",
      nullptr,
      4,
@@ -270,7 +284,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r17",
      nullptr,
      4,
@@ -281,7 +296,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r18",
      nullptr,
      4,
@@ -292,7 +308,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r19",
      nullptr,
      4,
@@ -303,7 +320,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r20",
      nullptr,
      4,
@@ -314,7 +332,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r21",
      nullptr,
      4,
@@ -325,7 +344,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r22",
      nullptr,
      4,
@@ -336,7 +356,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r23",
      nullptr,
      4,
@@ -347,7 +368,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r24",
      nullptr,
      4,
@@ -358,7 +380,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r25",
      nullptr,
      4,
@@ -369,7 +392,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r26",
      nullptr,
      4,
@@ -380,7 +404,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r27",
      nullptr,
      4,
@@ -391,7 +416,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"r28",
      "gp",
      4,
@@ -402,9 +428,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r29",
      nullptr,
+     0},
+    {"r29",
+     "sp",
      4,
      0,
      eEncodingUint,
@@ -413,9 +440,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r30",
      nullptr,
+     0},
+    {"r30",
+     "fp",
      4,
      0,
      eEncodingUint,
@@ -424,9 +452,10 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
-    {"r31",
      nullptr,
+     0},
+    {"r31",
+     "ra",
      4,
      0,
      eEncodingUint,
@@ -435,7 +464,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"sr",
      nullptr,
      4,
@@ -446,7 +476,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"lo",
      nullptr,
      4,
@@ -457,7 +488,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"hi",
      nullptr,
      4,
@@ -468,7 +500,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"bad",
      nullptr,
      4,
@@ -479,7 +512,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"cause",
      nullptr,
      4,
@@ -490,7 +524,8 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
     {"pc",
      nullptr,
      4,
@@ -501,10 +536,12 @@ static const RegisterInfo g_register_infos[] = {
       LLDB_INVALID_REGNUM},
      nullptr,
      nullptr,
-    },
+     nullptr,
+     0},
 };
 
-static const uint32_t k_num_register_infos = std::size(g_register_infos);
+static const uint32_t k_num_register_infos =
+    llvm::array_lengthof(g_register_infos);
 
 const lldb_private::RegisterInfo *
 ABISysV_mips::GetRegisterInfoArray(uint32_t &count) {
@@ -530,7 +567,7 @@ ABISysV_mips::CreateInstance(lldb::ProcessSP process_sp, const ArchSpec &arch) {
 bool ABISysV_mips::PrepareTrivialCall(Thread &thread, addr_t sp,
                                       addr_t func_addr, addr_t return_addr,
                                       llvm::ArrayRef<addr_t> args) const {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   if (log) {
     StreamString s;
@@ -560,7 +597,7 @@ bool ABISysV_mips::PrepareTrivialCall(Thread &thread, addr_t sp,
   llvm::ArrayRef<addr_t>::iterator ai = args.begin(), ae = args.end();
 
   // Write arguments to registers
-  for (size_t i = 0; i < std::size(reg_names); ++i) {
+  for (size_t i = 0; i < llvm::array_lengthof(reg_names); ++i) {
     if (ai == ae)
       break;
 
@@ -768,7 +805,7 @@ ValueObjectSP ABISysV_mips::GetReturnValueObjectImpl(
 
   // In MIPS register "r2" (v0) holds the integer function return values
   const RegisterInfo *r2_reg_info = reg_ctx->GetRegisterInfoByName("r2", 0);
-  std::optional<uint64_t> bit_width = return_compiler_type.GetBitSize(&thread);
+  llvm::Optional<uint64_t> bit_width = return_compiler_type.GetBitSize(&thread);
   if (!bit_width)
     return return_valobj_sp;
   if (return_compiler_type.IsIntegerOrEnumerationType(is_signed)) {
@@ -835,11 +872,11 @@ ValueObjectSP ABISysV_mips::GetReturnValueObjectImpl(
       default:
         return return_valobj_sp;
       case 32:
-        static_assert(sizeof(float) == sizeof(uint32_t));
+        static_assert(sizeof(float) == sizeof(uint32_t), "");
         value.GetScalar() = *((float *)(&raw_value));
         break;
       case 64:
-        static_assert(sizeof(double) == sizeof(uint64_t));
+        static_assert(sizeof(double) == sizeof(uint64_t), "");
         const RegisterInfo *r3_reg_info =
             reg_ctx->GetRegisterInfoByName("r3", 0);
         if (target_byte_order == eByteOrderLittle)
@@ -867,13 +904,13 @@ ValueObjectSP ABISysV_mips::GetReturnValueObjectImpl(
         default:
           return return_valobj_sp;
         case 64: {
-          static_assert(sizeof(double) == sizeof(uint64_t));
+          static_assert(sizeof(double) == sizeof(uint64_t), "");
           const RegisterInfo *f1_info = reg_ctx->GetRegisterInfoByName("f1", 0);
           RegisterValue f1_value;
           DataExtractor f1_data;
           reg_ctx->ReadRegister(f1_info, f1_value);
           DataExtractor *copy_from_extractor = nullptr;
-          WritableDataBufferSP data_sp(new DataBufferHeap(8, 0));
+          DataBufferSP data_sp(new DataBufferHeap(8, 0));
           DataExtractor return_ext(
               data_sp, target_byte_order,
               target->GetArchitecture().GetAddressByteSize());
@@ -899,7 +936,7 @@ ValueObjectSP ABISysV_mips::GetReturnValueObjectImpl(
           break;
         }
         case 32: {
-          static_assert(sizeof(float) == sizeof(uint32_t));
+          static_assert(sizeof(float) == sizeof(uint32_t), "");
           value.GetScalar() = (float)f0_data.GetFloat(&offset);
           break;
         }
@@ -948,7 +985,6 @@ bool ABISysV_mips::CreateDefaultUnwindPlan(UnwindPlan &unwind_plan) {
 
   UnwindPlan::RowSP row(new UnwindPlan::Row);
 
-  row->SetUnspecifiedRegistersAreUndefined(true);
   row->GetCFAValue().SetIsRegisterPlusOffset(dwarf_r29, 0);
 
   row->SetRegisterLocationToRegister(dwarf_pc, dwarf_r31, true);
@@ -1015,3 +1051,16 @@ void ABISysV_mips::Initialize() {
 void ABISysV_mips::Terminate() {
   PluginManager::UnregisterPlugin(CreateInstance);
 }
+
+lldb_private::ConstString ABISysV_mips::GetPluginNameStatic() {
+  static ConstString g_name("sysv-mips");
+  return g_name;
+}
+
+// PluginInterface protocol
+
+lldb_private::ConstString ABISysV_mips::GetPluginName() {
+  return GetPluginNameStatic();
+}
+
+uint32_t ABISysV_mips::GetPluginVersion() { return 1; }

@@ -6,12 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_HOST_POSIX_HOSTINFOPOSIX_H
-#define LLDB_HOST_POSIX_HOSTINFOPOSIX_H
+#ifndef lldb_Host_posix_HostInfoPosix_h_
+#define lldb_Host_posix_HostInfoPosix_h_
 
 #include "lldb/Host/HostInfoBase.h"
 #include "lldb/Utility/FileSpec.h"
-#include <optional>
 
 namespace lldb_private {
 
@@ -23,7 +22,6 @@ class HostInfoPosix : public HostInfoBase {
 public:
   static size_t GetPageSize();
   static bool GetHostname(std::string &s);
-  static std::optional<std::string> GetOSKernelDescription();
 
   static uint32_t GetUserID();
   static uint32_t GetGroupID();

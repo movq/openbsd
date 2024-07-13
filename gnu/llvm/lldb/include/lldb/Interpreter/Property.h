@@ -6,10 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_INTERPRETER_PROPERTY_H
-#define LLDB_INTERPRETER_PROPERTY_H
+#ifndef liblldb_Property_h_
+#define liblldb_Property_h_
 
 #include "lldb/Interpreter/OptionValue.h"
+#include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Flags.h"
 #include "lldb/lldb-defines.h"
 #include "lldb/lldb-private-types.h"
@@ -36,11 +37,13 @@ class Property {
 public:
   Property(const PropertyDefinition &definition);
 
-  Property(llvm::StringRef name, llvm::StringRef desc, bool is_global,
+  Property(ConstString name, ConstString desc, bool is_global,
            const lldb::OptionValueSP &value_sp);
 
-  llvm::StringRef GetName() const { return m_name; }
-  llvm::StringRef GetDescription() const { return m_description; }
+  llvm::StringRef GetName() const { return m_name.GetStringRef(); }
+  llvm::StringRef GetDescription() const {
+    return m_description.GetStringRef();
+  }
 
   const lldb::OptionValueSP &GetValue() const { return m_value_sp; }
 
@@ -64,12 +67,12 @@ public:
   void SetValueChangedCallback(std::function<void()> callback);
 
 protected:
-  std::string m_name;
-  std::string m_description;
+  ConstString m_name;
+  ConstString m_description;
   lldb::OptionValueSP m_value_sp;
   bool m_is_global;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_INTERPRETER_PROPERTY_H
+#endif // liblldb_Property_h_

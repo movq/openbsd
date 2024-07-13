@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TOOLS_DEBUGSERVER_SOURCE_MACOSX_MACHEXCEPTION_H
-#define LLDB_TOOLS_DEBUGSERVER_SOURCE_MACOSX_MACHEXCEPTION_H
+#ifndef __MachException_h__
+#define __MachException_h__
 
 #include <mach/mach.h>
 #include <vector>
@@ -127,7 +127,6 @@ public:
     uint8_t flags; // Action flags describing what to do with the exception
   };
   static const char *Name(exception_type_t exc_type);
-  static exception_mask_t ExceptionMask(const char *name);
 };
 
 #endif

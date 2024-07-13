@@ -1,4 +1,4 @@
-//===-- IRDynamicChecks.cpp -----------------------------------------------===//
+//===-- IRDynamicChecks.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -22,7 +22,6 @@
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/ConstString.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 
 #include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
@@ -49,27 +48,29 @@ ClangDynamicCheckerFunctions::~ClangDynamicCheckerFunctions() = default;
 
 bool ClangDynamicCheckerFunctions::Install(
     DiagnosticManager &diagnostic_manager, ExecutionContext &exe_ctx) {
-  auto utility_fn_or_error = exe_ctx.GetTargetRef().CreateUtilityFunction(
-      g_valid_pointer_check_text, VALID_POINTER_CHECK_NAME,
-      lldb::eLanguageTypeC, exe_ctx);
-  if (!utility_fn_or_error) {
-    llvm::consumeError(utility_fn_or_error.takeError());
+  Status error;
+  m_valid_pointer_check.reset(
+      exe_ctx.GetTargetRef().GetUtilityFunctionForLanguage(
+          g_valid_pointer_check_text, lldb::eLanguageTypeC,
+          VALID_POINTER_CHECK_NAME, error));
+  if (error.Fail())
     return false;
-  }
-  m_valid_pointer_check = std::move(*utility_fn_or_error);
 
-  if (Process *process = exe_ctx.GetProcessPtr()) {
+  if (!m_valid_pointer_check->Install(diagnostic_manager, exe_ctx))
+    return false;
+
+  Process *process = exe_ctx.GetProcessPtr();
+
+  if (process) {
     ObjCLanguageRuntime *objc_language_runtime =
         ObjCLanguageRuntime::Get(*process);
 
     if (objc_language_runtime) {
-      auto utility_fn_or_error = objc_language_runtime->CreateObjectChecker(
-          VALID_OBJC_OBJECT_CHECK_NAME, exe_ctx);
-      if (!utility_fn_or_error) {
-        llvm::consumeError(utility_fn_or_error.takeError());
+      m_objc_object_check.reset(objc_language_runtime->CreateObjectChecker(
+          VALID_OBJC_OBJECT_CHECK_NAME));
+
+      if (!m_objc_object_check->Install(diagnostic_manager, exe_ctx))
         return false;
-      }
-      m_objc_object_check = std::move(*utility_fn_or_error);
     }
   }
 
@@ -137,7 +138,8 @@ public:
   ///     The module being instrumented.
   Instrumenter(llvm::Module &module,
                std::shared_ptr<UtilityFunction> checker_function)
-      : m_module(module), m_checker_function(checker_function) {}
+      : m_module(module), m_checker_function(checker_function),
+        m_i8ptr_ty(nullptr), m_intptr_ty(nullptr) {}
 
   virtual ~Instrumenter() = default;
 
@@ -179,8 +181,8 @@ protected:
   ///
   /// \param[in] inst
   ///     The instruction to be instrumented.
-  void RegisterInstruction(llvm::Instruction &inst) {
-    m_to_instrument.push_back(&inst);
+  void RegisterInstruction(llvm::Instruction &i) {
+    m_to_instrument.push_back(&i);
   }
 
   /// Determine whether a single instruction is interesting to instrument,
@@ -301,8 +303,8 @@ protected:
       m_checker_function; ///< The dynamic checker function for the process
 
 private:
-  PointerType *m_i8ptr_ty = nullptr;
-  IntegerType *m_intptr_ty = nullptr;
+  PointerType *m_i8ptr_ty;
+  IntegerType *m_intptr_ty;
 };
 
 class ValidPointerChecker : public Instrumenter {
@@ -316,7 +318,7 @@ public:
 
 protected:
   bool InstrumentInstruction(llvm::Instruction *inst) override {
-    Log *log = GetLog(LLDBLog::Expressions);
+    Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
     LLDB_LOGF(log, "Instrumenting load/store instruction: %s\n",
               PrintValue(inst).c_str());
@@ -353,7 +355,7 @@ protected:
   }
 
   bool InspectInstruction(llvm::Instruction &i) override {
-    if (isa<llvm::LoadInst>(&i) || isa<llvm::StoreInst>(&i))
+    if (dyn_cast<llvm::LoadInst>(&i) || dyn_cast<llvm::StoreInst>(&i))
       RegisterInstruction(i);
 
     return true;
@@ -463,11 +465,11 @@ protected:
   }
 
   static llvm::Function *GetCalledFunction(llvm::CallInst *inst) {
-    return GetFunction(inst->getCalledOperand());
+    return GetFunction(inst->getCalledValue());
   }
 
   bool InspectInstruction(llvm::Instruction &i) override {
-    Log *log = GetLog(LLDBLog::Expressions);
+    Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
     CallInst *call_inst = dyn_cast<CallInst>(&i);
 
@@ -538,7 +540,7 @@ IRDynamicChecks::IRDynamicChecks(
 IRDynamicChecks::~IRDynamicChecks() = default;
 
 bool IRDynamicChecks::runOnModule(llvm::Module &M) {
-  Log *log = GetLog(LLDBLog::Expressions);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   llvm::Function *function = M.getFunction(StringRef(m_func_name));
 

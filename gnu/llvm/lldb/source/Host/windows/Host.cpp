@@ -1,4 +1,4 @@
-//===-- source/Host/windows/Host.cpp --------------------------------------===//
+//===-- source/Host/windows/Host.cpp ----------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,7 +8,7 @@
 
 #include "lldb/Host/windows/AutoHandle.h"
 #include "lldb/Host/windows/windows.h"
-#include <cstdio>
+#include <stdio.h>
 
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
@@ -30,12 +30,12 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static bool GetTripleForProcess(const FileSpec &executable,
-                                llvm::Triple &triple) {
+namespace {
+bool GetTripleForProcess(const FileSpec &executable, llvm::Triple &triple) {
   // Open the PE File as a binary file, and parse just enough information to
   // determine the machine type.
   auto imageBinaryP = FileSystem::Instance().Open(
-      executable, File::eOpenOptionReadOnly, lldb::eFilePermissionsUserRead);
+      executable, File::eOpenOptionRead, lldb::eFilePermissionsUserRead);
   if (!imageBinaryP)
     return llvm::errorToBool(imageBinaryP.takeError());
   File &imageBinary = *imageBinaryP.get();
@@ -66,8 +66,7 @@ static bool GetTripleForProcess(const FileSpec &executable,
   return true;
 }
 
-static bool GetExecutableForProcess(const AutoHandle &handle,
-                                    std::string &path) {
+bool GetExecutableForProcess(const AutoHandle &handle, std::string &path) {
   // Get the process image path.  MAX_PATH isn't long enough, paths can
   // actually be up to 32KB.
   std::vector<wchar_t> buffer(PATH_MAX);
@@ -77,8 +76,8 @@ static bool GetExecutableForProcess(const AutoHandle &handle,
   return llvm::convertWideToUTF8(buffer.data(), path);
 }
 
-static void GetProcessExecutableAndTriple(const AutoHandle &handle,
-                                          ProcessInstanceInfo &process) {
+void GetProcessExecutableAndTriple(const AutoHandle &handle,
+                                   ProcessInstanceInfo &process) {
   // We may not have permissions to read the path from the process.  So start
   // off by setting the executable file to whatever Toolhelp32 gives us, and
   // then try to enhance this with more detailed information, but fail
@@ -96,6 +95,7 @@ static void GetProcessExecutableAndTriple(const AutoHandle &handle,
   process.SetArchitecture(ArchSpec(triple));
 
   // TODO(zturner): Add the ability to get the process user name.
+}
 }
 
 lldb::thread_t Host::GetCurrentThread() {
@@ -131,9 +131,9 @@ FileSpec Host::GetModuleFileSpecForHostAddress(const void *host_addr) {
   return module_filespec;
 }
 
-uint32_t Host::FindProcessesImpl(const ProcessInstanceInfoMatch &match_info,
-                                 ProcessInstanceInfoList &process_infos) {
-  process_infos.clear();
+uint32_t Host::FindProcesses(const ProcessInstanceInfoMatch &match_info,
+                             ProcessInstanceInfoList &process_infos) {
+  process_infos.Clear();
 
   AutoHandle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
   if (!snapshot.IsValid())
@@ -156,10 +156,10 @@ uint32_t Host::FindProcessesImpl(const ProcessInstanceInfoMatch &match_info,
       GetProcessExecutableAndTriple(handle, process);
 
       if (match_info.MatchAllProcesses() || match_info.Matches(process))
-        process_infos.push_back(process);
+        process_infos.Append(process);
     } while (Process32NextW(snapshot.get(), &pe));
   }
-  return process_infos.size();
+  return process_infos.GetSize();
 }
 
 bool Host::GetProcessInfo(lldb::pid_t pid, ProcessInstanceInfo &process_info) {
@@ -195,7 +195,8 @@ bool Host::GetProcessInfo(lldb::pid_t pid, ProcessInstanceInfo &process_info) {
 }
 
 llvm::Expected<HostThread> Host::StartMonitoringChildProcess(
-    const Host::MonitorChildProcessCallback &callback, lldb::pid_t pid) {
+    const Host::MonitorChildProcessCallback &callback, lldb::pid_t pid,
+    bool monitor_signals) {
   return HostThread();
 }
 
@@ -224,7 +225,7 @@ Status Host::ShellExpandArguments(ProcessLaunchInfo &launch_info) {
 
     int status;
     std::string output;
-    std::string command = expand_command.GetString().str();
+    std::string command = expand_command.GetString();
     Status e =
         RunShellCommand(command.c_str(), launch_info.GetWorkingDirectory(),
                         &status, nullptr, &output, std::chrono::seconds(10));
@@ -245,7 +246,7 @@ Status Host::ShellExpandArguments(ProcessLaunchInfo &launch_info) {
     }
 
     auto dict_sp = data_sp->GetAsDictionary();
-    if (!dict_sp) {
+    if (!data_sp) {
       error.SetErrorString("invalid JSON");
       return error;
     }

@@ -1,4 +1,4 @@
-//===-- ValueObjectDynamicValue.cpp ---------------------------------------===//
+//===-- ValueObjectDynamicValue.cpp ------------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -16,14 +16,13 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataExtractor.h"
-#include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/Logging.h"
 #include "lldb/Utility/Scalar.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-types.h"
 
-#include <cstring>
-#include <optional>
+#include <string.h>
 namespace lldb_private {
 class Declaration;
 }
@@ -35,6 +34,10 @@ ValueObjectDynamicValue::ValueObjectDynamicValue(
     : ValueObject(parent), m_address(), m_dynamic_type_info(),
       m_use_dynamic(use_dynamic) {
   SetName(parent.GetName());
+}
+
+ValueObjectDynamicValue::~ValueObjectDynamicValue() {
+  m_owning_valobj_sp.reset();
 }
 
 CompilerType ValueObjectDynamicValue::GetCompilerTypeImpl() {
@@ -95,7 +98,7 @@ size_t ValueObjectDynamicValue::CalculateNumChildren(uint32_t max) {
     return m_parent->GetNumChildren(max);
 }
 
-std::optional<uint64_t> ValueObjectDynamicValue::GetByteSize() {
+uint64_t ValueObjectDynamicValue::GetByteSize() {
   const bool success = UpdateValueIfNeeded(false);
   if (success && m_dynamic_type_info.HasType()) {
     ExecutionContext exe_ctx(GetExecutionContextRef());
@@ -202,7 +205,7 @@ bool ValueObjectDynamicValue::UpdateValue() {
 
   Value old_value(m_value);
 
-  Log *log = GetLog(LLDBLog::Types);
+  Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_TYPES));
 
   bool has_changed_type = false;
 
@@ -234,6 +237,7 @@ bool ValueObjectDynamicValue::UpdateValue() {
     m_dynamic_type_info =
         runtime->FixUpDynamicType(m_dynamic_type_info, *m_parent);
 
+  // m_value.SetContext (Value::eContextTypeClangType, corrected_type);
   m_value.SetCompilerType(m_dynamic_type_info.GetCompilerType());
 
   m_value.SetValueType(value_type);
@@ -324,7 +328,7 @@ bool ValueObjectDynamicValue::SetData(DataExtractor &data, Status &error) {
     // but NULL'ing out a value should always be allowed
     lldb::offset_t offset = 0;
 
-    if (data.GetAddress(&offset) != 0) {
+    if (data.GetPointer(&offset) != 0) {
       error.SetErrorString(
           "unable to modify dynamic value, use 'expression' command");
       return false;

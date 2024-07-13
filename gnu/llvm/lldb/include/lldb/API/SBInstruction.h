@@ -6,13 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBINSTRUCTION_H
-#define LLDB_API_SBINSTRUCTION_H
+#ifndef LLDB_SBInstruction_h_
+#define LLDB_SBInstruction_h_
 
 #include "lldb/API/SBData.h"
 #include "lldb/API/SBDefines.h"
 
-#include <cstdio>
+#include <stdio.h>
 
 // There's a lot to be fixed here, but need to wait for underlying insn
 // implementation to be revised & settle down first.
@@ -42,8 +42,6 @@ public:
   const char *GetOperands(lldb::SBTarget target);
 
   const char *GetComment(lldb::SBTarget target);
-
-  lldb::InstructionControlFlowKind GetControlFlowKind(lldb::SBTarget target);
 
   lldb::SBData GetData(lldb::SBTarget target);
 
@@ -88,4 +86,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_API_SBINSTRUCTION_H
+#endif // LLDB_SBInstruction_h_

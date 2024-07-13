@@ -6,15 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_INTERPRETER_OPTIONS_H
-#define LLDB_INTERPRETER_OPTIONS_H
+#ifndef liblldb_Options_h_
+#define liblldb_Options_h_
 
 #include <set>
 #include <vector>
 
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/CompletionRequest.h"
-#include "lldb/Utility/OptionDefinition.h"
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-defines.h"
 #include "lldb/lldb-private.h"
@@ -40,6 +39,12 @@ struct OptionArgElement {
 };
 
 typedef std::vector<OptionArgElement> OptionElementVector;
+
+static inline bool isprint8(int ch) {
+  if (ch & 0xffffff00u)
+    return false;
+  return isprint(ch);
+}
 
 /// \class Options Options.h "lldb/Interpreter/Options.h"
 /// A command line option parsing protocol class.
@@ -86,7 +91,7 @@ public:
                                 const OptionDefinition &option_def,
                                 uint32_t output_max_columns);
 
-  void GenerateOptionUsage(Stream &strm, CommandObject &cmd,
+  void GenerateOptionUsage(Stream &strm, CommandObject *cmd,
                            uint32_t screen_width);
 
   bool SupportsLongOption(const char *long_option);
@@ -169,7 +174,7 @@ public:
   /// user wants returned.
   ///
   /// \return
-  ///     \b true if we were in an option, \b false otherwise.
+  ///     \btrue if we were in an option, \bfalse otherwise.
   bool HandleOptionCompletion(lldb_private::CompletionRequest &request,
                               OptionElementVector &option_map,
                               CommandInterpreter &interpreter);
@@ -254,7 +259,8 @@ public:
 
 class OptionGroupOptions : public Options {
 public:
-  OptionGroupOptions() = default;
+  OptionGroupOptions()
+      : Options(), m_option_defs(), m_option_infos(), m_did_finalize(false) {}
 
   ~OptionGroupOptions() override = default;
 
@@ -317,9 +323,9 @@ public:
 
   std::vector<OptionDefinition> m_option_defs;
   OptionInfos m_option_infos;
-  bool m_did_finalize = false;
+  bool m_did_finalize;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_INTERPRETER_OPTIONS_H
+#endif // liblldb_Options_h_

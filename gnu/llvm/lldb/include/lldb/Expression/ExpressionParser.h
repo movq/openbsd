@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_EXPRESSION_EXPRESSIONPARSER_H
-#define LLDB_EXPRESSION_EXPRESSIONPARSER_H
+#ifndef liblldb_ExpressionParser_h_
+#define liblldb_ExpressionParser_h_
 
 #include "lldb/Utility/CompletionRequest.h"
 #include "lldb/Utility/Status.h"
@@ -41,7 +41,7 @@ public:
       : m_expr(expr), m_generate_debug_info(generate_debug_info) {}
 
   /// Destructor
-  virtual ~ExpressionParser() = default;
+  virtual ~ExpressionParser(){};
 
   /// Attempts to find possible command line completions for the given
   /// expression.
@@ -133,4 +133,4 @@ protected:
 };
 }
 
-#endif // LLDB_EXPRESSION_EXPRESSIONPARSER_H
+#endif // liblldb_ExpressionParser_h_

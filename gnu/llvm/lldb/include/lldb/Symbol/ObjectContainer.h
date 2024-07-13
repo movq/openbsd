@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_OBJECTCONTAINER_H
-#define LLDB_SYMBOL_OBJECTCONTAINER_H
+#ifndef liblldb_ObjectContainer_h_
+#define liblldb_ObjectContainer_h_
 
 #include "lldb/Core/ModuleChild.h"
 #include "lldb/Core/PluginInterface.h"
@@ -36,13 +36,31 @@ public:
   /// more than one architecture or object.
   ObjectContainer(const lldb::ModuleSP &module_sp, const FileSpec *file,
                   lldb::offset_t file_offset, lldb::offset_t length,
-                  lldb::DataBufferSP data_sp, lldb::offset_t data_offset);
+                  lldb::DataBufferSP &data_sp, lldb::offset_t data_offset)
+      : ModuleChild(module_sp),
+        m_file(), // This file can be different than the module's file spec
+        m_offset(file_offset), m_length(length), m_data() {
+    if (file)
+      m_file = *file;
+    if (data_sp)
+      m_data.SetData(data_sp, data_offset, length);
+  }
 
   /// Destructor.
   ///
   /// The destructor is virtual since this class is designed to be inherited
   /// from by the plug-in instance.
   ~ObjectContainer() override = default;
+
+  /// Dump a description of this object to a Stream.
+  ///
+  /// Dump a description of the current contents of this object to the
+  /// supplied stream \a s. The dumping should include the section list if it
+  /// has been parsed, and the symbol table if it has been parsed.
+  ///
+  /// \param[in] s
+  ///     The stream to which to dump the object description.
+  virtual void Dump(Stream *s) const = 0;
 
   /// Gets the architecture given an index.
   ///
@@ -124,29 +142,34 @@ public:
   ///     file exists in the container.
   virtual lldb::ObjectFileSP GetObjectFile(const FileSpec *file) = 0;
 
-  static lldb::ObjectContainerSP
-  FindPlugin(const lldb::ModuleSP &module_sp, const lldb::ProcessSP &process_sp,
-             lldb::addr_t header_addr, lldb::WritableDataBufferSP file_data_sp);
+  virtual bool ObjectAtIndexIsContainer(uint32_t object_idx) { return false; }
+
+  virtual ObjectFile *GetObjectFileAtIndex(uint32_t object_idx) {
+    return nullptr;
+  }
+
+  virtual ObjectContainer *GetObjectContainerAtIndex(uint32_t object_idx) {
+    return nullptr;
+  }
+
+  virtual const char *GetObjectNameAtIndex(uint32_t object_idx) const {
+    return nullptr;
+  }
 
 protected:
-  /// The file that represents this container objects (which can be different
-  /// from the module's file).
-  FileSpec m_file;
-
-  /// The offset in bytes into the file, or the address in memory
-  lldb::addr_t m_offset;
-
-  /// The size in bytes if known (can be zero).
-  lldb::addr_t m_length;
-
-  /// The data for this object file so things can be parsed lazily.
-  DataExtractor m_data;
+  // Member variables.
+  FileSpec m_file; ///< The file that represents this container objects (which
+                   ///can be different from the module's file).
+  lldb::addr_t
+      m_offset; ///< The offset in bytes into the file, or the address in memory
+  lldb::addr_t m_length; ///< The size in bytes if known (can be zero).
+  DataExtractor
+      m_data; ///< The data for this object file so things can be parsed lazily.
 
 private:
-  ObjectContainer(const ObjectContainer &) = delete;
-  const ObjectContainer &operator=(const ObjectContainer &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(ObjectContainer);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_OBJECTCONTAINER_H
+#endif // liblldb_ObjectContainer_h_

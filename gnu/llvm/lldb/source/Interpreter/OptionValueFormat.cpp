@@ -1,4 +1,4 @@
-//===-- OptionValueFormat.cpp ---------------------------------------------===//
+//===-- OptionValueFormat.cpp -----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -24,10 +24,6 @@ void OptionValueFormat::DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
       strm.PutCString(" = ");
     strm.PutCString(FormatManager::GetFormatAsCString(m_current_value));
   }
-}
-
-llvm::json::Value OptionValueFormat::ToJSON(const ExecutionContext *exe_ctx) {
-  return FormatManager::GetFormatAsCString(m_current_value);
 }
 
 Status OptionValueFormat::SetValueFromString(llvm::StringRef value,
@@ -59,4 +55,8 @@ Status OptionValueFormat::SetValueFromString(llvm::StringRef value,
     break;
   }
   return error;
+}
+
+lldb::OptionValueSP OptionValueFormat::DeepCopy() const {
+  return OptionValueSP(new OptionValueFormat(*this));
 }

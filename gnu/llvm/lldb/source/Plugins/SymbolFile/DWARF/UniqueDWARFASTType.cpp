@@ -1,4 +1,4 @@
-//===-- UniqueDWARFASTType.cpp --------------------------------------------===//
+//===-- UniqueDWARFASTType.cpp ----------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,9 +8,7 @@
 
 #include "UniqueDWARFASTType.h"
 
-#include "lldb/Core/Declaration.h"
-
-using namespace lldb_private::dwarf;
+#include "lldb/Symbol/Declaration.h"
 
 bool UniqueDWARFASTTypeList::Find(const DWARFDIE &die,
                                   const lldb_private::Declaration &decl,

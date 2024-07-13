@@ -6,18 +6,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_INTERPRETER_OPTIONVALUEREGEX_H
-#define LLDB_INTERPRETER_OPTIONVALUEREGEX_H
+#ifndef liblldb_OptionValueRegex_h_
+#define liblldb_OptionValueRegex_h_
 
 #include "lldb/Interpreter/OptionValue.h"
 #include "lldb/Utility/RegularExpression.h"
 
 namespace lldb_private {
 
-class OptionValueRegex : public Cloneable<OptionValueRegex, OptionValue> {
+class OptionValueRegex : public OptionValue {
 public:
   OptionValueRegex(const char *value = nullptr)
-      : m_regex(value), m_default_regex_str(value) {}
+      : OptionValue(), m_regex(llvm::StringRef::withNullAsEmpty(value)) {}
 
   ~OptionValueRegex() override = default;
 
@@ -28,18 +28,20 @@ public:
   void DumpValue(const ExecutionContext *exe_ctx, Stream &strm,
                  uint32_t dump_mask) override;
 
-  llvm::json::Value ToJSON(const ExecutionContext *exe_ctx) override {
-    return m_regex.GetText();
-  }
-
   Status
   SetValueFromString(llvm::StringRef value,
                      VarSetOperationType op = eVarSetOperationAssign) override;
+  Status
+  SetValueFromString(const char *,
+                     VarSetOperationType = eVarSetOperationAssign) = delete;
 
-  void Clear() override {
-    m_regex = RegularExpression(m_default_regex_str);
+  bool Clear() override {
+    m_regex = RegularExpression();
     m_value_was_set = false;
+    return true;
   }
+
+  lldb::OptionValueSP DeepCopy() const override;
 
   // Subclass specific functions
   const RegularExpression *GetCurrentValue() const {
@@ -57,9 +59,8 @@ public:
 
 protected:
   RegularExpression m_regex;
-  std::string m_default_regex_str;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_INTERPRETER_OPTIONVALUEREGEX_H
+#endif // liblldb_OptionValueRegex_h_

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 #===-- armv7_cortex_m_target_definition.py.py ------------------*- C++ -*-===//
 #
 #                     The LLVM Compiler Infrastructure
@@ -31,7 +31,7 @@
 # 
 # USAGE
 #
-# (lldb) settings set plugin.process.gdb-remote.target-definition-file /path/to/armv7_cortex_m_target_definition.py
+# (lldb) settings set plugin.process.gdb-remote.target-definition-file /path/to/armv7_cortex_m_target_defintion.py
 # (lldb) gdb-remote other.baz.com:1234
 #
 # The target definition file will get used if and only if the 

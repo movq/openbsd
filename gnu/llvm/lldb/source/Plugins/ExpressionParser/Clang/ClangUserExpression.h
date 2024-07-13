@@ -6,10 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGUSEREXPRESSION_H
-#define LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGUSEREXPRESSION_H
+#ifndef liblldb_ClangUserExpression_h_
+#define liblldb_ClangUserExpression_h_
 
-#include <optional>
 #include <vector>
 
 #include "ASTResultSynthesizer.h"
@@ -21,6 +20,7 @@
 #include "IRForTarget.h"
 
 #include "lldb/Core/Address.h"
+#include "lldb/Core/ClangForward.h"
 #include "lldb/Expression/LLVMUserExpression.h"
 #include "lldb/Expression/Materializer.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -28,8 +28,6 @@
 #include "lldb/lldb-private.h"
 
 namespace lldb_private {
-
-class ClangExpressionParser;
 
 /// \class ClangUserExpression ClangUserExpression.h
 /// "lldb/Expression/ClangUserExpression.h" Encapsulates a single expression
@@ -171,22 +169,11 @@ public:
   lldb::ExpressionVariableSP
   GetResultAfterDematerialization(ExecutionContextScope *exe_scope) override;
 
-  /// Returns true iff this expression is using any imported C++ modules.
-  bool DidImportCxxModules() const { return !m_imported_cpp_modules.empty(); }
+  bool DidImportCxxModules() const { return m_imported_cpp_modules; }
 
 private:
   /// Populate m_in_cplusplus_method and m_in_objectivec_method based on the
   /// environment.
-
-  /// Contains the actual parsing implementation.
-  /// The parameter have the same meaning as in ClangUserExpression::Parse.
-  /// \see ClangUserExpression::Parse
-  bool TryParse(DiagnosticManager &diagnostic_manager,
-                ExecutionContextScope *exe_scope, ExecutionContext &exe_ctx,
-                lldb_private::ExecutionPolicy execution_policy, bool keep_result_in_memory,
-                bool generate_debug_info);
-
-  void SetupCppModuleImports(ExecutionContext &exe_ctx);
 
   void ScanContext(ExecutionContext &exe_ctx,
                    lldb_private::Status &err) override;
@@ -199,12 +186,7 @@ private:
                         ExecutionContext &exe_ctx,
                         std::vector<std::string> modules_to_import,
                         bool for_completion);
-
-  lldb::addr_t GetCppObjectPointer(lldb::StackFrameSP frame,
-                                   ConstString &object_name, Status &err);
-
-  /// Defines how the current expression should be wrapped.
-  ClangExpressionSourceCode::WrapKind GetWrapKind() const;
+  void UpdateLanguageForExpr();
   bool SetupPersistentState(DiagnosticManager &diagnostic_manager,
                                    ExecutionContext &exe_ctx);
   bool PrepareForParsing(DiagnosticManager &diagnostic_manager,
@@ -227,18 +209,18 @@ private:
     lldb::TargetSP m_target_sp;
   };
 
+  /// The language type of the current expression.
+  lldb::LanguageType m_expr_lang = lldb::eLanguageTypeUnknown;
   /// The include directories that should be used when parsing the expression.
   std::vector<std::string> m_include_directories;
 
   /// The absolute character position in the transformed source code where the
   /// user code (as typed by the user) starts. If the variable is empty, then we
   /// were not able to calculate this position.
-  std::optional<size_t> m_user_expression_start_pos;
+  llvm::Optional<size_t> m_user_expression_start_pos;
   ResultDelegate m_result_delegate;
   ClangPersistentVariables *m_clang_state;
   std::unique_ptr<ClangExpressionSourceCode> m_source_code;
-  /// The parser instance we used to parse the expression.
-  std::unique_ptr<ClangExpressionParser> m_parser;
   /// File name used for the expression.
   std::string m_filename;
 
@@ -246,9 +228,8 @@ private:
   /// See the comment to `UserExpression::Evaluate` for details.
   ValueObject *m_ctx_obj;
 
-  /// A list of module names that should be imported when parsing.
-  /// \see CppModuleConfiguration::GetImportedModules
-  std::vector<std::string> m_imported_cpp_modules;
+  /// True iff this expression explicitly imported C++ modules.
+  bool m_imported_cpp_modules = false;
 
   /// True if the expression parser should enforce the presence of a valid class
   /// pointer in order to generate the expression as a method.
@@ -270,4 +251,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGUSEREXPRESSION_H
+#endif // liblldb_ClangUserExpression_h_

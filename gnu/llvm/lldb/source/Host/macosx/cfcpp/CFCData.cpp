@@ -1,4 +1,4 @@
-//===-- CFCData.cpp -------------------------------------------------------===//
+//===-- CFCData.cpp ---------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,7 +12,7 @@
 CFCData::CFCData(CFDataRef data) : CFCReleaser<CFDataRef>(data) {}
 
 // CFCData copy constructor
-CFCData::CFCData(const CFCData &rhs) = default;
+CFCData::CFCData(const CFCData &rhs) : CFCReleaser<CFDataRef>(rhs) {}
 
 // CFCData copy constructor
 CFCData &CFCData::operator=(const CFCData &rhs)
@@ -24,7 +24,7 @@ CFCData &CFCData::operator=(const CFCData &rhs)
 }
 
 // Destructor
-CFCData::~CFCData() = default;
+CFCData::~CFCData() {}
 
 CFIndex CFCData::GetLength() const {
   CFDataRef data = get();

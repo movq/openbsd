@@ -9,9 +9,6 @@
 
 namespace lldb {
 
-%feature("docstring",
-"Represents a data buffer."
-) SBData;
 class SBData
 {
 public:
@@ -96,10 +93,6 @@ public:
     void
     SetData (lldb::SBError& error, const void *buf, size_t size, lldb::ByteOrder endian, uint8_t addr_size);
 
-    void
-    SetDataWithOwnership (lldb::SBError& error, const void *buf, size_t size,
-                          lldb::ByteOrder endian, uint8_t addr_size);
-
     bool
     Append (const SBData& rhs);
 
@@ -157,7 +150,7 @@ public:
                     for x in range(*key.indices(self.__len__())):
                         list.append(self.__getitem__(x))
                     return list
-                if not (isinstance(key, int)):
+                if not (isinstance(key,six.integer_types)):
                     raise TypeError('must be int')
                 key = key * self.item_size # SBData uses byte-based indexes, but we want to use itemsize-based indexes here
                 error = SBError()

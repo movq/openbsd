@@ -13,39 +13,30 @@ import sys
 # LLDB modules
 from lldbsuite.support import gmodules
 
-# Key: Category name
-# Value: should be used in lldbtest's debug-info replication
-debug_info_categories = {
-    'dwarf'    : True,
-    'dwo'      : True,
-    'dsym'     : True,
-    'gmodules' : False
-}
+
+debug_info_categories = [
+    'dwarf', 'dwo', 'dsym', 'gmodules'
+]
 
 all_categories = {
-    'basic_process': 'Basic process execution sniff tests.',
-    'cmdline': 'Tests related to the LLDB command-line interface',
     'dataformatters': 'Tests related to the type command and the data formatters subsystem',
-    'debugserver': 'Debugserver tests',
-    'dsym': 'Tests that can be run with DSYM debug information',
     'dwarf': 'Tests that can be run with DWARF debug information',
     'dwo': 'Tests that can be run with DWO debug information',
-    'dyntype': 'Tests related to dynamic type support',
-    'expression': 'Tests related to the expression parser',
-    'flakey': 'Flakey test cases, i.e. tests that do not reliably pass at each execution',
-    'fork': 'Tests requiring the process plugin fork/vfork event support',
+    'dsym': 'Tests that can be run with DSYM debug information',
     'gmodules': 'Tests that can be run with -gmodules debug information',
-    'instrumentation-runtime': 'Tests for the instrumentation runtime plugins',
+    'expression': 'Tests related to the expression parser',
     'libc++': 'Test for libc++ data formatters',
     'libstdcxx': 'Test for libstdcxx data formatters',
-    'lldb-server': 'Tests related to lldb-server',
-    'lldb-vscode': 'Visual Studio Code debug adaptor tests',
-    'llgs': 'Tests for the gdb-server functionality of lldb-server',
     'objc': 'Tests related to the Objective-C programming language support',
     'pyapi': 'Tests related to the Python API',
-    'std-module': 'Tests related to importing the std module',
+    'basic_process': 'Basic process execution sniff tests.',
+    'cmdline': 'Tests related to the LLDB command-line interface',
+    'dyntype': 'Tests related to dynamic type support',
     'stresstest': 'Tests related to stressing lldb limits',
+    'flakey': 'Flakey test cases, i.e. tests that do not reliably pass at each execution',
+    'darwin-log': 'Darwin log tests',
     'watchpoint': 'Watchpoint-related tests',
+    'lldb-vscode': 'Visual Studio Code debug adaptor tests',
 }
 
 
@@ -68,7 +59,7 @@ def is_supported_on_platform(category, platform, compiler_path):
         return platform in ["darwin", "macosx", "ios", "watchos", "tvos", "bridgeos"]
     elif category == "gmodules":
         # First, check to see if the platform can even support gmodules.
-        if platform not in ["darwin", "macosx", "ios", "watchos", "tvos", "bridgeos"]:
+        if platform not in ["freebsd", "darwin", "macosx", "ios", "watchos", "tvos", "bridgeos"]:
             return False
         return gmodules.is_compiler_clang_with_gmodules(compiler_path)
     return True

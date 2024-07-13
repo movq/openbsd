@@ -1,4 +1,4 @@
-//===-- FileSystemPosix.cpp -----------------------------------------------===//
+//===-- FileSystem.cpp ------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -35,7 +35,7 @@ const char *FileSystem::DEV_NULL = "/dev/null";
 
 Status FileSystem::Symlink(const FileSpec &src, const FileSpec &dst) {
   Status error;
-  if (::symlink(dst.GetPath().c_str(), src.GetPath().c_str()) == -1)
+  if (::symlink(dst.GetCString(), src.GetCString()) == -1)
     error.SetErrorToErrno();
   return error;
 }
@@ -43,7 +43,7 @@ Status FileSystem::Symlink(const FileSpec &src, const FileSpec &dst) {
 Status FileSystem::Readlink(const FileSpec &src, FileSpec &dst) {
   Status error;
   char buf[PATH_MAX];
-  ssize_t count = ::readlink(src.GetPath().c_str(), buf, sizeof(buf) - 1);
+  ssize_t count = ::readlink(src.GetCString(), buf, sizeof(buf) - 1);
   if (count < 0)
     error.SetErrorToErrno();
   else {
@@ -56,8 +56,7 @@ Status FileSystem::Readlink(const FileSpec &src, FileSpec &dst) {
 Status FileSystem::ResolveSymbolicLink(const FileSpec &src, FileSpec &dst) {
   char resolved_path[PATH_MAX];
   if (!src.GetPath(resolved_path, sizeof(resolved_path))) {
-    return Status("Couldn't get the canonical path for %s",
-                  src.GetPath().c_str());
+    return Status("Couldn't get the canonical path for %s", src.GetCString());
   }
 
   char real_path[PATH_MAX + 1];

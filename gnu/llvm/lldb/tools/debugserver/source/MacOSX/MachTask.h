@@ -13,15 +13,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TOOLS_DEBUGSERVER_SOURCE_MACOSX_MACHTASK_H
-#define LLDB_TOOLS_DEBUGSERVER_SOURCE_MACOSX_MACHTASK_H
+#ifndef __MachTask_h__
+#define __MachTask_h__
 
 #include <mach/mach.h>
 #include <sys/socket.h>
 #include <map>
 #include <string>
 #include "DNBDefs.h"
-#include "RNBContext.h"
 #include "MachException.h"
 #include "MachVMMemory.h"
 #include "PThreadMutex.h"
@@ -61,7 +60,6 @@ public:
 
   nub_addr_t AllocateMemory(nub_size_t size, uint32_t permissions);
   nub_bool_t DeallocateMemory(nub_addr_t addr);
-  void ClearAllocations();
 
   mach_port_t ExceptionPort() const;
   bool ExceptionPortIsValid() const;
@@ -69,8 +67,7 @@ public:
   kern_return_t RestoreExceptionPortInfo();
   kern_return_t ShutDownExcecptionThread();
 
-  bool StartExceptionThread(
-      const RNBContext::IgnoredExceptions &ignored_exceptions, DNBError &err);
+  bool StartExceptionThread(DNBError &err);
   nub_addr_t GetDYLDAllImageInfosAddress(DNBError &err);
   kern_return_t BasicInfo(struct task_basic_info *info);
   static kern_return_t BasicInfo(task_t task, struct task_basic_info *info);
@@ -88,7 +85,6 @@ public:
   const MachProcess *Process() const { return m_process; }
 
   nub_size_t PageSize();
-  void TaskWillExecProcessesSuspended() { m_exec_will_be_suspended = true; }
 
 protected:
   MachProcess *m_process; // The mach process that owns this MachTask
@@ -101,12 +97,6 @@ protected:
                                 // need it
   mach_port_t m_exception_port; // Exception port on which we will receive child
                                 // exceptions
-  bool m_exec_will_be_suspended; // If this task exec's another process, that
-                                // process will be launched suspended and we will
-                                // need to execute one extra Resume to get it
-                                // to progress from dyld_start.
-  bool m_do_double_resume;      // next time we task_resume(), do it twice to
-                                // fix a too-high suspend count.
 
   typedef std::map<mach_vm_address_t, size_t> allocation_collection;
   allocation_collection m_allocations;
@@ -116,4 +106,4 @@ private:
   MachTask &operator=(const MachTask &rhs) = delete;
 };
 
-#endif // LLDB_TOOLS_DEBUGSERVER_SOURCE_MACOSX_MACHTASK_H
+#endif // __MachTask_h__

@@ -6,11 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_UTILITY_IOOBJECT_H
-#define LLDB_UTILITY_IOOBJECT_H
+#ifndef liblldb_Host_Common_IOObject_h_
+#define liblldb_Host_Common_IOObject_h_
 
-#include <cstdarg>
-#include <cstdio>
+#include <stdarg.h>
+#include <stdio.h>
 #include <sys/types.h>
 
 #include "lldb/lldb-private.h"
@@ -45,8 +45,7 @@ protected:
   FDType m_fd_type;
 
 private:
-  IOObject(const IOObject &) = delete;
-  const IOObject &operator=(const IOObject &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(IOObject);
 };
 } // namespace lldb_private
 

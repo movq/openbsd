@@ -1,4 +1,4 @@
-//===-- CompileUnitIndex.cpp ----------------------------------------------===//
+//===-- CompileUnitIndex.cpp ------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -43,7 +43,7 @@ static bool IsMainFile(llvm::StringRef main, llvm::StringRef other) {
 
   llvm::SmallString<64> normalized(other);
   llvm::sys::path::native(normalized);
-  return main.equals_insensitive(normalized);
+  return main.equals_lower(normalized);
 }
 
 static void ParseCompile3(const CVSymbol &sym, CompilandIndexItem &cci) {
@@ -66,7 +66,7 @@ static void ParseBuildInfo(PdbIndex &index, const CVSymbol &sym,
   // S_BUILDINFO just points to an LF_BUILDINFO in the IPI stream.  Let's do
   // a little extra work to pull out the LF_BUILDINFO.
   LazyRandomTypeCollection &types = index.ipi().typeCollection();
-  std::optional<CVType> cvt = types.tryGetType(bis.BuildId);
+  llvm::Optional<CVType> cvt = types.tryGetType(bis.BuildId);
 
   if (!cvt || cvt->kind() != LF_BUILDINFO)
     return;
@@ -106,24 +106,6 @@ static void ParseExtendedInfo(PdbIndex &index, CompilandIndexItem &item) {
   }
 }
 
-static void ParseInlineeLineTableForCompileUnit(CompilandIndexItem &item) {
-  for (const auto &ss : item.m_debug_stream.getSubsectionsArray()) {
-    if (ss.kind() != DebugSubsectionKind::InlineeLines)
-      continue;
-
-    DebugInlineeLinesSubsectionRef inlinee_lines;
-    llvm::BinaryStreamReader reader(ss.getRecordData());
-    if (llvm::Error error = inlinee_lines.initialize(reader)) {
-      consumeError(std::move(error));
-      continue;
-    }
-
-    for (const InlineeSourceLine &Line : inlinee_lines) {
-      item.m_inline_map[Line.Header->Inlinee] = Line;
-    }
-  }
-}
-
 CompilandIndexItem::CompilandIndexItem(
     PdbCompilandId id, llvm::pdb::ModuleDebugStreamRef debug_stream,
     llvm::pdb::DbiModuleDescriptor descriptor)
@@ -160,9 +142,8 @@ CompilandIndexItem &CompileUnitIndex::GetOrCreateCompiland(uint16_t modi) {
   cci = std::make_unique<CompilandIndexItem>(
       PdbCompilandId{modi}, std::move(debug_stream), std::move(descriptor));
   ParseExtendedInfo(m_index, *cci);
-  ParseInlineeLineTableForCompileUnit(*cci);
 
-  cci->m_strings.initialize(cci->m_debug_stream.getSubsectionsArray());
+  cci->m_strings.initialize(debug_stream.getSubsectionsArray());
   PDBStringTable &strings = cantFail(m_index.pdb().getStringTable());
   cci->m_strings.setStrings(strings.getStringTable());
 
@@ -173,7 +154,7 @@ CompilandIndexItem &CompileUnitIndex::GetOrCreateCompiland(uint16_t modi) {
   // name until we find it, and we can cache that one since the memory is backed
   // by a contiguous chunk inside the mapped PDB.
   llvm::SmallString<64> main_file = GetMainSourceFile(*cci);
-  std::string s = std::string(main_file.str());
+  std::string s = main_file.str();
   llvm::sys::path::native(main_file);
 
   uint32_t file_count = modules.getSourceFileCount(modi);

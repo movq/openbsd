@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_UNIQUECSTRINGMAP_H
-#define LLDB_CORE_UNIQUECSTRINGMAP_H
+#ifndef liblldb_UniqueCStringMap_h_
+#define liblldb_UniqueCStringMap_h_
 
 #include <algorithm>
 #include <vector>
@@ -31,10 +31,6 @@ public:
     ConstString cstring;
     T value;
   };
-
-  typedef std::vector<Entry> collection;
-  typedef typename collection::iterator iterator;
-  typedef typename collection::const_iterator const_iterator;
 
   // Call this function multiple times to add a bunch of entries to this map,
   // then later call UniqueCStringMap<T>::Sort() before doing any searches by
@@ -165,21 +161,7 @@ public:
   //      my_map.Append (UniqueCStringMap::Entry(GetName(...), GetValue(...)));
   // }
   // my_map.Sort();
-  void Sort() {
-    Sort([](const T &, const T &) { return false; });
-  }
-
-  /// Sort contents of this map using the provided comparator to break ties for
-  /// entries with the same string value.
-  template <typename TCompare> void Sort(TCompare tc) {
-    Compare c;
-    llvm::sort(m_map, [&](const Entry &lhs, const Entry &rhs) -> bool {
-      int result = c.ThreeWay(lhs.cstring, rhs.cstring);
-      if (result == 0)
-        return tc(lhs.value, rhs.value);
-      return result < 0;
-    });
-  }
+  void Sort() { llvm::sort(m_map.begin(), m_map.end(), Compare()); }
 
   // Since we are using a vector to contain our items it will always double its
   // memory consumption as things are added to the vector, so if you intend to
@@ -192,18 +174,6 @@ public:
       m_map.swap(temp);
     }
   }
-
-  iterator begin() { return m_map.begin(); }
-  iterator end() { return m_map.end(); }
-  const_iterator begin() const { return m_map.begin(); }
-  const_iterator end() const { return m_map.end(); }
-
-  // Range-based for loop for all entries of the specified ConstString name.
-  llvm::iterator_range<const_iterator>
-  equal_range(ConstString unique_cstr) const {
-    return llvm::make_range(
-        std::equal_range(m_map.begin(), m_map.end(), unique_cstr, Compare()));
-  };
 
 protected:
   struct Compare {
@@ -219,27 +189,19 @@ protected:
       return operator()(lhs, rhs.cstring);
     }
 
-    bool operator()(ConstString lhs, ConstString rhs) {
-      return ThreeWay(lhs, rhs) < 0;
-    }
-
     // This is only for uniqueness, not lexicographical ordering, so we can
     // just compare pointers. *However*, comparing pointers from different
     // allocations is UB, so we need compare their integral values instead.
-    int ThreeWay(ConstString lhs, ConstString rhs) {
-      auto lhsint = uintptr_t(lhs.GetCString());
-      auto rhsint = uintptr_t(rhs.GetCString());
-      if (lhsint < rhsint)
-        return -1;
-      if (lhsint > rhsint)
-        return 1;
-      return 0;
+    bool operator()(ConstString lhs, ConstString rhs) {
+      return uintptr_t(lhs.GetCString()) < uintptr_t(rhs.GetCString());
     }
   };
-
+  typedef std::vector<Entry> collection;
+  typedef typename collection::iterator iterator;
+  typedef typename collection::const_iterator const_iterator;
   collection m_map;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_CORE_UNIQUECSTRINGMAP_H
+#endif // liblldb_UniqueCStringMap_h_

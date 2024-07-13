@@ -22,7 +22,7 @@
 
 using namespace lldb_vscode;
 
-StreamDescriptor::StreamDescriptor() = default;
+StreamDescriptor::StreamDescriptor() {}
 
 StreamDescriptor::StreamDescriptor(StreamDescriptor &&other) {
   *this = std::move(other);

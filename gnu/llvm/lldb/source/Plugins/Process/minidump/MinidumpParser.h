@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PROCESS_MINIDUMP_MINIDUMPPARSER_H
-#define LLDB_SOURCE_PLUGINS_PROCESS_MINIDUMP_MINIDUMPPARSER_H
+#ifndef liblldb_MinidumpParser_h_
+#define liblldb_MinidumpParser_h_
 
 #include "MinidumpTypes.h"
 
@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/Minidump.h"
 
@@ -26,7 +27,6 @@
 
 // C++ includes
 #include <cstring>
-#include <optional>
 #include <unordered_map>
 
 namespace lldb_private {
@@ -70,9 +70,9 @@ public:
 
   const MinidumpMiscInfo *GetMiscInfo();
 
-  std::optional<LinuxProcStatus> GetLinuxProcStatus();
+  llvm::Optional<LinuxProcStatus> GetLinuxProcStatus();
 
-  std::optional<lldb::pid_t> GetPid();
+  llvm::Optional<lldb::pid_t> GetPid();
 
   llvm::ArrayRef<minidump::Module> GetModuleList();
 
@@ -84,7 +84,7 @@ public:
 
   const llvm::minidump::ExceptionStream *GetExceptionStream();
 
-  std::optional<Range> FindMemoryRange(lldb::addr_t addr);
+  llvm::Optional<Range> FindMemoryRange(lldb::addr_t addr);
 
   llvm::ArrayRef<uint8_t> GetMemory(lldb::addr_t addr, size_t size);
 
@@ -96,13 +96,11 @@ public:
 
   llvm::object::MinidumpFile &GetMinidumpFile() { return *m_file; }
 
-  static MemoryRegionInfo GetMemoryRegionInfo(const MemoryRegionInfos &regions,
-                                              lldb::addr_t load_addr);
-
 private:
   MinidumpParser(lldb::DataBufferSP data_sp,
                  std::unique_ptr<llvm::object::MinidumpFile> file);
 
+private:
   lldb::DataBufferSP m_data_sp;
   std::unique_ptr<llvm::object::MinidumpFile> m_file;
   ArchSpec m_arch;
@@ -110,4 +108,4 @@ private:
 
 } // end namespace minidump
 } // end namespace lldb_private
-#endif // LLDB_SOURCE_PLUGINS_PROCESS_MINIDUMP_MINIDUMPPARSER_H
+#endif // liblldb_MinidumpParser_h_

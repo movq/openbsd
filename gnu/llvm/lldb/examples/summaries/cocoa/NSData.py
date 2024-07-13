@@ -13,6 +13,11 @@ import lldb.runtime.objc.objc_runtime
 import lldb.formatters.metrics
 import lldb.formatters.Logger
 
+try:
+    basestring
+except NameError:
+    basestring = str
+
 statistics = lldb.formatters.metrics.Metrics()
 statistics.add_metric('invalid_isa')
 statistics.add_metric('invalid_pointer')
@@ -136,7 +141,7 @@ def NSData_SummaryProvider(valobj, dict):
         logger >> "got a summary: it is " + str(summary)
         if summary is None:
             summary = '<variable is not NSData>'
-        elif isinstance(summary, str):
+        elif isinstance(summary, basestring):
             pass
         else:
             if summary == 1:
@@ -164,7 +169,7 @@ def NSData_SummaryProvider2(valobj, dict):
         logger >> "got a summary: it is " + str(summary)
         if summary is None:
             summary = '<variable is not CFData>'
-        elif isinstance(summary, str):
+        elif isinstance(summary, basestring):
             pass
         else:
             if summary == 1:

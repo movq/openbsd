@@ -33,7 +33,9 @@ class ThreadPlanStack {
 
 public:
   ThreadPlanStack(const Thread &thread, bool make_empty = false);
-  ~ThreadPlanStack() = default;
+  ~ThreadPlanStack() {}
+
+  enum StackKind { ePlans, eCompletedPlans, eDiscardedPlans };
 
   using PlanStack = std::vector<lldb::ThreadPlanSP>;
 
@@ -48,6 +50,10 @@ public:
 
   void ThreadDestroyed(Thread *thread);
 
+  void EnableTracer(bool value, bool single_stepping);
+
+  void SetTracer(lldb::ThreadPlanTracerSP &tracer_sp);
+
   void PushPlan(lldb::ThreadPlanSP new_plan_sp);
 
   lldb::ThreadPlanSP PopPlan();
@@ -60,7 +66,7 @@ public:
 
   void DiscardAllPlans();
 
-  void DiscardConsultingControllingPlans();
+  void DiscardConsultingMasterPlans();
 
   lldb::ThreadPlanSP GetCurrentPlan() const;
 
@@ -89,13 +95,9 @@ public:
 
   void WillResume();
 
-  /// Clear the Thread* cache that each ThreadPlan contains.
-  ///
-  /// This is useful in situations like when a new Thread list is being
-  /// generated.
-  void ClearThreadCache();
-
 private:
+  const PlanStack &GetStackOfKind(ThreadPlanStack::StackKind kind) const;
+
   void PrintOneStack(Stream &s, llvm::StringRef stack_name,
                      const PlanStack &stack, lldb::DescriptionLevel desc_level,
                      bool include_internal) const;
@@ -110,26 +112,23 @@ private:
   size_t m_completed_plan_checkpoint = 0; // Monotonically increasing token for
                                           // completed plan checkpoints.
   std::unordered_map<size_t, PlanStack> m_completed_plan_store;
-  mutable std::recursive_mutex m_stack_mutex;
 };
 
 class ThreadPlanStackMap {
 public:
   ThreadPlanStackMap(Process &process) : m_process(process) {}
-  ~ThreadPlanStackMap() = default;
+  ~ThreadPlanStackMap() {}
 
   // Prune the map using the current_threads list.
   void Update(ThreadList &current_threads, bool delete_missing,
               bool check_for_new = true);
 
   void AddThread(Thread &thread) {
-    std::lock_guard<std::recursive_mutex> guard(m_stack_map_mutex);
     lldb::tid_t tid = thread.GetID();
     m_plans_list.emplace(tid, thread);
   }
 
   bool RemoveTID(lldb::tid_t tid) {
-    std::lock_guard<std::recursive_mutex> guard(m_stack_map_mutex);
     auto result = m_plans_list.find(tid);
     if (result == m_plans_list.end())
       return false;
@@ -139,7 +138,6 @@ public:
   }
 
   ThreadPlanStack *Find(lldb::tid_t tid) {
-    std::lock_guard<std::recursive_mutex> guard(m_stack_map_mutex);
     auto result = m_plans_list.find(tid);
     if (result == m_plans_list.end())
       return nullptr;
@@ -147,18 +145,8 @@ public:
       return &result->second;
   }
 
-  /// Clear the Thread* cache that each ThreadPlan contains.
-  ///
-  /// This is useful in situations like when a new Thread list is being
-  /// generated.
-  void ClearThreadCache() {
-    for (auto &plan_list : m_plans_list)
-      plan_list.second.ClearThreadCache();
-  }
-
   void Clear() {
-    std::lock_guard<std::recursive_mutex> guard(m_stack_map_mutex);
-    for (auto &plan : m_plans_list)
+    for (auto plan : m_plans_list)
       plan.second.ThreadDestroyed(nullptr);
     m_plans_list.clear();
   }
@@ -176,10 +164,8 @@ public:
 
 private:
   Process &m_process;
-  mutable std::recursive_mutex m_stack_map_mutex;
   using PlansList = std::unordered_map<lldb::tid_t, ThreadPlanStack>;
   PlansList m_plans_list;
-  
 };
 
 } // namespace lldb_private

@@ -6,10 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_HIGHLIGHTER_H
-#define LLDB_CORE_HIGHLIGHTER_H
+#ifndef liblldb_Highlighter_h_
+#define liblldb_Highlighter_h_
 
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -92,8 +91,7 @@ class Highlighter {
 public:
   Highlighter() = default;
   virtual ~Highlighter() = default;
-  Highlighter(const Highlighter &) = delete;
-  const Highlighter &operator=(const Highlighter &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(Highlighter);
 
   /// Returns a human readable name for the selected highlighter.
   virtual llvm::StringRef GetName() const = 0;
@@ -113,12 +111,12 @@ public:
   ///     The stream to which the highlighted version of the user string should
   ///     be written.
   virtual void Highlight(const HighlightStyle &options, llvm::StringRef line,
-                         std::optional<size_t> cursor_pos,
+                         llvm::Optional<size_t> cursor_pos,
                          llvm::StringRef previous_lines, Stream &s) const = 0;
 
   /// Utility method for calling Highlight without a stream.
   std::string Highlight(const HighlightStyle &options, llvm::StringRef line,
-                        std::optional<size_t> cursor_pos,
+                        llvm::Optional<size_t> cursor_pos,
                         llvm::StringRef previous_lines = "") const;
 };
 
@@ -129,7 +127,7 @@ public:
   llvm::StringRef GetName() const override { return "none"; }
 
   void Highlight(const HighlightStyle &options, llvm::StringRef line,
-                 std::optional<size_t> cursor_pos,
+                 llvm::Optional<size_t> cursor_pos,
                  llvm::StringRef previous_lines, Stream &s) const override;
 };
 
@@ -154,4 +152,4 @@ public:
 
 } // namespace lldb_private
 
-#endif // LLDB_CORE_HIGHLIGHTER_H
+#endif // liblldb_Highlighter_h_

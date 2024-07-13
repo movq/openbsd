@@ -1,4 +1,4 @@
-//===-- RegisterContextLinux_i386.cpp -------------------------------------===//
+//===-- RegisterContextLinux_i386.cpp --------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -89,25 +89,26 @@ struct UserArea {
 RegisterContextLinux_i386::RegisterContextLinux_i386(
     const ArchSpec &target_arch)
     : RegisterInfoInterface(target_arch) {
-  RegisterInfo orig_ax = {
-      "orig_eax",
-      nullptr,
-      sizeof(((GPR *)nullptr)->orig_eax),
-      (LLVM_EXTENSION offsetof(GPR, orig_eax)),
-      eEncodingUint,
-      eFormatHex,
-      {LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,
-       LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM},
-      nullptr,
-      nullptr,
-  };
+  RegisterInfo orig_ax = {"orig_eax",
+                          nullptr,
+                          sizeof(((GPR *)nullptr)->orig_eax),
+                          (LLVM_EXTENSION offsetof(GPR, orig_eax)),
+                          eEncodingUint,
+                          eFormatHex,
+                          {LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,
+                           LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,
+                           LLDB_INVALID_REGNUM},
+                          nullptr,
+                          nullptr,
+                          nullptr,
+                          0};
   d_register_infos.push_back(orig_ax);
 }
 
-size_t RegisterContextLinux_i386::GetGPRSizeStatic() { return sizeof(GPR); }
+size_t RegisterContextLinux_i386::GetGPRSize() const { return sizeof(GPR); }
 
 const RegisterInfo *RegisterContextLinux_i386::GetRegisterInfo() const {
-  switch (GetTargetArchitecture().GetMachine()) {
+  switch (m_target_arch.GetMachine()) {
   case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     return g_register_infos_i386;

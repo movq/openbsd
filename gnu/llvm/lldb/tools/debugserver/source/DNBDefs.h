@@ -10,25 +10,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TOOLS_DEBUGSERVER_SOURCE_DNBDEFS_H
-#define LLDB_TOOLS_DEBUGSERVER_SOURCE_DNBDEFS_H
+#ifndef __DNBDefs_h__
+#define __DNBDefs_h__
 
-#include <csignal>
-#include <cstdint>
-#include <cstdio>
-#include <string>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <sys/syslimits.h>
 #include <unistd.h>
-#include <vector>
 
 // Define nub_addr_t and the invalid address value from the architecture
-#if defined(__x86_64__) || defined(__arm64__) || defined(__aarch64__)
+#if defined(__x86_64__) || defined(__ppc64__) || defined(__arm64__) ||         \
+    defined(__aarch64__)
 
 // 64 bit address architectures
 typedef uint64_t nub_addr_t;
 #define INVALID_NUB_ADDRESS ((nub_addr_t)~0ull)
 
-#elif defined(__i386__) || defined(__powerpc__) || defined(__arm__)
+#elif defined(__i386__) || defined(__powerpc__) || defined(__ppc__) ||         \
+    defined(__arm__)
 
 // 32 bit address architectures
 
@@ -54,7 +54,6 @@ typedef uint32_t nub_event_t;
 typedef uint32_t nub_bool_t;
 
 #define INVALID_NUB_PROCESS ((nub_process_t)0)
-#define INVALID_NUB_PROCESS_ARCH ((nub_process_t)-1)
 #define INVALID_NUB_THREAD ((nub_thread_t)0)
 #define INVALID_NUB_WATCH_ID ((nub_watch_t)0)
 #define INVALID_NUB_HW_INDEX UINT32_MAX
@@ -319,14 +318,9 @@ struct DNBExecutableImageInfo {
 };
 
 struct DNBRegionInfo {
-public:
-  DNBRegionInfo()
-      : addr(0), size(0), permissions(0), dirty_pages(), vm_types() {}
   nub_addr_t addr;
   nub_addr_t size;
   uint32_t permissions;
-  std::vector<nub_addr_t> dirty_pages;
-  std::vector<std::string> vm_types;
 };
 
 enum DNBProfileDataScanType {
@@ -366,4 +360,4 @@ typedef void (*DNBCallbackLog)(void *baton, uint32_t flags, const char *format,
 
 #define UNUSED_IF_ASSERT_DISABLED(x) ((void)(x))
 
-#endif // LLDB_TOOLS_DEBUGSERVER_SOURCE_DNBDEFS_H
+#endif // #ifndef __DNBDefs_h__

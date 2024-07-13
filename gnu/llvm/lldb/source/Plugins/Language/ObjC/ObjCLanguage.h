@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_LANGUAGE_OBJC_OBJCLANGUAGE_H
-#define LLDB_SOURCE_PLUGINS_LANGUAGE_OBJC_OBJCLANGUAGE_H
+#ifndef liblldb_ObjCLanguage_h_
+#define liblldb_ObjCLanguage_h_
 
 #include <cstring>
 #include <vector>
@@ -27,7 +27,9 @@ public:
   public:
     enum Type { eTypeUnspecified, eTypeClassMethod, eTypeInstanceMethod };
 
-    MethodName() : m_full(), m_class(), m_category(), m_selector() {}
+    MethodName()
+        : m_full(), m_class(), m_category(), m_selector(),
+          m_type(eTypeUnspecified), m_category_is_valid(false) {}
 
     MethodName(const char *name, bool strict)
         : m_full(), m_class(), m_category(), m_selector(),
@@ -79,8 +81,8 @@ public:
         m_class_category;   // Class with category: "NSString(my_additions)"
     ConstString m_category; // Category:    "my_additions"
     ConstString m_selector; // Selector:    "myStringWithCString:"
-    Type m_type = eTypeUnspecified;
-    bool m_category_is_valid = false;
+    Type m_type;
+    bool m_category_is_valid;
   };
 
   ObjCLanguage() = default;
@@ -100,15 +102,12 @@ public:
   //  variant_names[1] => "-[NSString(my_additions) myStringWithCString:]"
   //  variant_names[2] => "+[NSString myStringWithCString:]"
   //  variant_names[3] => "-[NSString myStringWithCString:]"
-  // Also returns the FunctionNameType of each possible name.
-  std::vector<Language::MethodNameVariant>
+  std::vector<ConstString>
   GetMethodNameVariants(ConstString method_name) const override;
-
-  bool SymbolNameFitsToLanguage(Mangled mangled) const override;
 
   lldb::TypeCategoryImplSP GetFormatters() override;
 
-  std::vector<FormattersMatchCandidate>
+  std::vector<ConstString>
   GetPossibleFormattersMatches(ValueObject &valobj,
                                lldb::DynamicValueType use_dynamic) override;
 
@@ -119,8 +118,6 @@ public:
                                 std::string &suffix) override;
 
   bool IsNilReference(ValueObject &valobj) override;
-
-  llvm::StringRef GetNilReferenceSummaryString() override { return "nil"; }
 
   bool IsSourceFile(llvm::StringRef file_path) const override;
 
@@ -133,7 +130,7 @@ public:
 
   static lldb_private::Language *CreateInstance(lldb::LanguageType language);
 
-  static llvm::StringRef GetPluginNameStatic() { return "objc"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
   static bool IsPossibleObjCMethodName(const char *name) {
     if (!name)
@@ -156,9 +153,11 @@ public:
   }
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_LANGUAGE_OBJC_OBJCLANGUAGE_H
+#endif // liblldb_ObjCLanguage_h_

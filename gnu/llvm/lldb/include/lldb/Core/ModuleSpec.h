@@ -6,14 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_MODULESPEC_H
-#define LLDB_CORE_MODULESPEC_H
+#ifndef liblldb_ModuleSpec_h_
+#define liblldb_ModuleSpec_h_
 
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Target/PathMappingList.h"
 #include "lldb/Utility/ArchSpec.h"
 #include "lldb/Utility/FileSpec.h"
-#include "lldb/Utility/Iterable.h"
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/UUID.h"
 
@@ -26,23 +25,46 @@ namespace lldb_private {
 
 class ModuleSpec {
 public:
-  ModuleSpec() = default;
+  ModuleSpec()
+      : m_file(), m_platform_file(), m_symbol_file(), m_arch(), m_uuid(),
+        m_object_name(), m_object_offset(0), m_object_size(0),
+        m_source_mappings() {}
 
-  /// If the \c data argument is passed, its contents will be used
-  /// as the module contents instead of trying to read them from
-  /// \c file_spec .
-  ModuleSpec(const FileSpec &file_spec, const UUID &uuid = UUID(),
-             lldb::DataBufferSP data = lldb::DataBufferSP())
-      : m_file(file_spec), m_uuid(uuid), m_object_offset(0), m_data(data) {
-    if (data)
-      m_object_size = data->GetByteSize();
-    else if (m_file)
-      m_object_size = FileSystem::Instance().GetByteSize(file_spec);
-  }
+  ModuleSpec(const FileSpec &file_spec, const UUID &uuid = UUID())
+      : m_file(file_spec), m_platform_file(), m_symbol_file(), m_arch(),
+        m_uuid(uuid), m_object_name(), m_object_offset(0),
+        m_object_size(FileSystem::Instance().GetByteSize(file_spec)),
+        m_source_mappings() {}
 
   ModuleSpec(const FileSpec &file_spec, const ArchSpec &arch)
-      : m_file(file_spec), m_arch(arch), m_object_offset(0),
-        m_object_size(FileSystem::Instance().GetByteSize(file_spec)) {}
+      : m_file(file_spec), m_platform_file(), m_symbol_file(), m_arch(arch),
+        m_uuid(), m_object_name(), m_object_offset(0),
+        m_object_size(FileSystem::Instance().GetByteSize(file_spec)),
+        m_source_mappings() {}
+
+  ModuleSpec(const ModuleSpec &rhs)
+      : m_file(rhs.m_file), m_platform_file(rhs.m_platform_file),
+        m_symbol_file(rhs.m_symbol_file), m_arch(rhs.m_arch),
+        m_uuid(rhs.m_uuid), m_object_name(rhs.m_object_name),
+        m_object_offset(rhs.m_object_offset), m_object_size(rhs.m_object_size),
+        m_object_mod_time(rhs.m_object_mod_time),
+        m_source_mappings(rhs.m_source_mappings) {}
+
+  ModuleSpec &operator=(const ModuleSpec &rhs) {
+    if (this != &rhs) {
+      m_file = rhs.m_file;
+      m_platform_file = rhs.m_platform_file;
+      m_symbol_file = rhs.m_symbol_file;
+      m_arch = rhs.m_arch;
+      m_uuid = rhs.m_uuid;
+      m_object_name = rhs.m_object_name;
+      m_object_offset = rhs.m_object_offset;
+      m_object_size = rhs.m_object_size;
+      m_object_mod_time = rhs.m_object_mod_time;
+      m_source_mappings = rhs.m_source_mappings;
+    }
+    return *this;
+  }
 
   FileSpec *GetFileSpecPtr() { return (m_file ? &m_file : nullptr); }
 
@@ -123,8 +145,6 @@ public:
   }
 
   PathMappingList &GetSourceMappingList() const { return m_source_mappings; }
-
-  lldb::DataBufferSP GetData() const { return m_data; }
 
   void Clear() {
     m_file.Clear();
@@ -265,18 +285,17 @@ protected:
   ArchSpec m_arch;
   UUID m_uuid;
   ConstString m_object_name;
-  uint64_t m_object_offset = 0;
-  uint64_t m_object_size = 0;
+  uint64_t m_object_offset;
+  uint64_t m_object_size;
   llvm::sys::TimePoint<> m_object_mod_time;
   mutable PathMappingList m_source_mappings;
-  lldb::DataBufferSP m_data = {};
 };
 
 class ModuleSpecList {
 public:
-  ModuleSpecList() = default;
+  ModuleSpecList() : m_specs(), m_mutex() {}
 
-  ModuleSpecList(const ModuleSpecList &rhs) {
+  ModuleSpecList(const ModuleSpecList &rhs) : m_specs(), m_mutex() {
     std::lock_guard<std::recursive_mutex> lhs_guard(m_mutex);
     std::lock_guard<std::recursive_mutex> rhs_guard(rhs.m_mutex);
     m_specs = rhs.m_specs;
@@ -288,7 +307,7 @@ public:
     if (this != &rhs) {
       std::lock(m_mutex, rhs.m_mutex);
       std::lock_guard<std::recursive_mutex> lhs_guard(m_mutex, std::adopt_lock);
-      std::lock_guard<std::recursive_mutex> rhs_guard(rhs.m_mutex,
+      std::lock_guard<std::recursive_mutex> rhs_guard(rhs.m_mutex, 
                                                       std::adopt_lock);
       m_specs = rhs.m_specs;
     }
@@ -388,20 +407,12 @@ public:
     }
   }
 
-  typedef std::vector<ModuleSpec> collection;
-  typedef LockingAdaptedIterable<collection, ModuleSpec, vector_adapter,
-                                 std::recursive_mutex>
-      ModuleSpecIterable;
-
-  ModuleSpecIterable ModuleSpecs() {
-    return ModuleSpecIterable(m_specs, m_mutex);
-  }
-
 protected:
+  typedef std::vector<ModuleSpec> collection; ///< The module collection type.
   collection m_specs;                         ///< The collection of modules.
   mutable std::recursive_mutex m_mutex;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_CORE_MODULESPEC_H
+#endif // liblldb_ModuleSpec_h_

@@ -6,13 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_UTILITY_STRINGLIST_H
-#define LLDB_UTILITY_STRINGLIST_H
+#ifndef liblldb_StringList_h_
+#define liblldb_StringList_h_
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Twine.h"
 
-#include <cstddef>
+#include <stddef.h>
 #include <string>
 #include <vector>
 
@@ -44,8 +43,6 @@ public:
   void AppendString(const char *str, size_t str_len);
 
   void AppendString(llvm::StringRef str);
-
-  void AppendString(const llvm::Twine &str);
 
   void AppendList(const char **strv, int strc);
 
@@ -105,7 +102,7 @@ public:
 
   StringList &operator<<(const std::string &s);
 
-  StringList &operator<<(const StringList &strings);
+  StringList &operator<<(StringList strings);
 
   // Copy assignment for a vector of strings
   StringList &operator=(const std::vector<std::string> &rhs);
@@ -135,4 +132,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_UTILITY_STRINGLIST_H
+#endif // liblldb_StringList_h_

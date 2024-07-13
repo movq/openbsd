@@ -1,4 +1,4 @@
-//===-- ProcessRunLock.cpp ------------------------------------------------===//
+//===-- ProcessRunLock.cpp --------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -11,7 +11,7 @@
 
 namespace lldb_private {
 
-ProcessRunLock::ProcessRunLock() {
+ProcessRunLock::ProcessRunLock() : m_running(false) {
   int err = ::pthread_rwlock_init(&m_rwlock, nullptr);
   (void)err;
 }
@@ -24,7 +24,6 @@ ProcessRunLock::~ProcessRunLock() {
 bool ProcessRunLock::ReadTryLock() {
   ::pthread_rwlock_rdlock(&m_rwlock);
   if (!m_running) {
-    // coverity[missing_unlock]
     return true;
   }
   ::pthread_rwlock_unlock(&m_rwlock);

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TARGET_STOPINFO_H
-#define LLDB_TARGET_STOPINFO_H
+#ifndef liblldb_StopInfo_h_
+#define liblldb_StopInfo_h_
 
 #include <string>
 
@@ -17,7 +17,7 @@
 
 namespace lldb_private {
 
-class StopInfo : public std::enable_shared_from_this<StopInfo> {
+class StopInfo {
   friend class Process::ProcessEventData;
   friend class ThreadPlanBase;
 
@@ -25,7 +25,7 @@ public:
   // Constructors and Destructors
   StopInfo(Thread &thread, uint64_t value);
 
-  virtual ~StopInfo() = default;
+  virtual ~StopInfo() {}
 
   bool IsValid() const;
 
@@ -129,19 +129,6 @@ public:
 
   static lldb::StopInfoSP CreateStopReasonWithExec(Thread &thread);
 
-  static lldb::StopInfoSP
-  CreateStopReasonProcessorTrace(Thread &thread, const char *description);
-
-  static lldb::StopInfoSP CreateStopReasonFork(Thread &thread,
-                                               lldb::pid_t child_pid,
-                                               lldb::tid_t child_tid);
-
-  static lldb::StopInfoSP CreateStopReasonVFork(Thread &thread,
-                                                lldb::pid_t child_pid,
-                                                lldb::tid_t child_tid);
-
-  static lldb::StopInfoSP CreateStopReasonVForkDone(Thread &thread);
-
   static lldb::ValueObjectSP
   GetReturnValueObject(lldb::StopInfoSP &stop_info_sp);
 
@@ -196,10 +183,9 @@ protected:
 private:
   friend class Thread;
 
-  StopInfo(const StopInfo &) = delete;
-  const StopInfo &operator=(const StopInfo &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(StopInfo);
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_TARGET_STOPINFO_H
+#endif // liblldb_StopInfo_h_

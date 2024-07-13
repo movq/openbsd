@@ -8,41 +8,33 @@ add_lldb_library(lldbCommands
   CommandObjectBreakpoint.cpp
   CommandObjectBreakpointCommand.cpp
   CommandObjectCommands.cpp
-  CommandObjectDiagnostics.cpp
   CommandObjectDisassemble.cpp
-  CommandObjectDWIMPrint.cpp
   CommandObjectExpression.cpp
   CommandObjectFrame.cpp
   CommandObjectGUI.cpp
   CommandObjectHelp.cpp
-  CommandObjectLanguage.cpp
   CommandObjectLog.cpp
   CommandObjectMemory.cpp
-  CommandObjectMemoryTag.cpp
   CommandObjectMultiword.cpp
   CommandObjectPlatform.cpp
   CommandObjectPlugin.cpp
   CommandObjectProcess.cpp
   CommandObjectQuit.cpp
-  CommandObjectRegexCommand.cpp
   CommandObjectRegister.cpp
-  CommandObjectScript.cpp
-  CommandObjectSession.cpp
+  CommandObjectReproducer.cpp
   CommandObjectSettings.cpp
   CommandObjectSource.cpp
   CommandObjectStats.cpp
   CommandObjectTarget.cpp
   CommandObjectThread.cpp
-  CommandObjectThreadUtil.cpp
-  CommandObjectTrace.cpp
   CommandObjectType.cpp
   CommandObjectVersion.cpp
   CommandObjectWatchpoint.cpp
   CommandObjectWatchpointCommand.cpp
-  CommandOptionArgumentTable.cpp
-  CommandOptionsProcessLaunch.cpp
+  CommandObjectLanguage.cpp
 
   LINK_LIBS
+    lldbBase
     lldbBreakpoint
     lldbCore
     lldbDataFormatters
@@ -52,7 +44,6 @@ add_lldb_library(lldbCommands
     lldbSymbol
     lldbTarget
     lldbUtility
-    lldbVersion
 
   LINK_COMPONENTS
     Support

@@ -1,5 +1,8 @@
 /* Various liblldb typedefs that SWIG needs to know about.  */
 #define __extension__ /* Undefine GCC keyword to make Swig happy when processing glibc's stdint.h. */
+/* The ISO C99 standard specifies that in C++ implementations limit macros such
+   as INT32_MAX should only be defined if __STDC_LIMIT_MACROS is. */
+#define __STDC_LIMIT_MACROS
 %include "stdint.i"
 
 %include "lldb/lldb-defines.h"
@@ -19,7 +22,6 @@
 %include "./interface/SBBreakpointName.i"
 %include "./interface/SBBroadcaster.i"
 %include "./interface/SBCommandInterpreter.i"
-%include "./interface/SBCommandInterpreterRunOptions.i"
 %include "./interface/SBCommandReturnObject.i"
 %include "./interface/SBCommunication.i"
 %include "./interface/SBCompileUnit.i"
@@ -27,7 +29,6 @@
 %include "./interface/SBDebugger.i"
 %include "./interface/SBDeclaration.i"
 %include "./interface/SBError.i"
-%include "./interface/SBEnvironment.i"
 %include "./interface/SBEvent.i"
 %include "./interface/SBExecutionContext.i"
 %include "./interface/SBExpressionOptions.i"
@@ -52,7 +53,6 @@
 %include "./interface/SBProcessInfo.i"
 %include "./interface/SBQueue.i"
 %include "./interface/SBQueueItem.i"
-%include "./interface/SBReproducer.i"
 %include "./interface/SBSection.i"
 %include "./interface/SBSourceManager.i"
 %include "./interface/SBStream.i"
@@ -66,7 +66,7 @@
 %include "./interface/SBThreadCollection.i"
 %include "./interface/SBThreadPlan.i"
 %include "./interface/SBTrace.i"
-%include "./interface/SBTraceCursor.i"
+%include "./interface/SBTraceOptions.i"
 %include "./interface/SBType.i"
 %include "./interface/SBTypeCategory.i"
 %include "./interface/SBTypeEnumMember.i"

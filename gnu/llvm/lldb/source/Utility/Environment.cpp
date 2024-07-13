@@ -1,4 +1,4 @@
-//===-- Environment.cpp ---------------------------------------------------===//
+//===-- Environment.cpp -----------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -41,7 +41,7 @@ Environment::Environment(const char *const *Env) {
     insert(*Env++);
 }
 
-void Environment::insert(iterator first, iterator last) {
+void Environment::insert(const_iterator first, const_iterator last) {
   while (first != last) {
     try_emplace(first->first(), first->second);
     ++first;

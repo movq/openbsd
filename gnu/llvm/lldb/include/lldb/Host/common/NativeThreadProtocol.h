@@ -6,18 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_HOST_COMMON_NATIVETHREADPROTOCOL_H
-#define LLDB_HOST_COMMON_NATIVETHREADPROTOCOL_H
+#ifndef liblldb_NativeThreadProtocol_h_
+#define liblldb_NativeThreadProtocol_h_
 
 #include <memory>
 
 #include "lldb/Host/Debug.h"
-#include "lldb/Utility/UnimplementedError.h"
 #include "lldb/lldb-private-forward.h"
 #include "lldb/lldb-types.h"
-
-#include "llvm/Support/Error.h"
-#include "llvm/Support/MemoryBuffer.h"
 
 namespace lldb_private {
 // NativeThreadProtocol
@@ -25,7 +21,7 @@ class NativeThreadProtocol {
 public:
   NativeThreadProtocol(NativeProcessProtocol &process, lldb::tid_t tid);
 
-  virtual ~NativeThreadProtocol() = default;
+  virtual ~NativeThreadProtocol() {}
 
   virtual std::string GetName() = 0;
 
@@ -51,15 +47,10 @@ public:
 
   virtual Status RemoveHardwareBreakpoint(lldb::addr_t addr) = 0;
 
-  virtual llvm::Expected<std::unique_ptr<llvm::MemoryBuffer>>
-  GetSiginfo() const {
-    return llvm::make_error<UnimplementedError>();
-  }
-
 protected:
   NativeProcessProtocol &m_process;
   lldb::tid_t m_tid;
 };
 }
 
-#endif // LLDB_HOST_COMMON_NATIVETHREADPROTOCOL_H
+#endif // #ifndef liblldb_NativeThreadProtocol_h_

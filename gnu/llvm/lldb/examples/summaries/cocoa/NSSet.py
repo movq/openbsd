@@ -13,6 +13,11 @@ import lldb.formatters.metrics
 import CFBag
 import lldb.formatters.Logger
 
+try:
+    basestring
+except NameError:
+    basestring = str
+
 statistics = lldb.formatters.metrics.Metrics()
 statistics.add_metric('invalid_isa')
 statistics.add_metric('invalid_pointer')
@@ -242,7 +247,7 @@ def NSSet_SummaryProvider(valobj, dict):
             summary = None
         if summary is None:
             summary = '<variable is not NSSet>'
-        if isinstance(summary, str):
+        if isinstance(summary, basestring):
             return summary
         else:
             summary = str(summary) + \
@@ -271,7 +276,7 @@ def NSSet_SummaryProvider2(valobj, dict):
         #                  the mask needs to be changed)
         if summary is None:
             summary = '<variable is not CFSet>'
-        if isinstance(summary, str):
+        if isinstance(summary, basestring):
             return summary
         else:
             if provider.sys_params.is_64_bit:

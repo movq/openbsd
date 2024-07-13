@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_EXPRESSION_USEREXPRESSION_H
-#define LLDB_EXPRESSION_USEREXPRESSION_H
+#ifndef liblldb_UserExpression_h_
+#define liblldb_UserExpression_h_
 
 #include <memory>
 #include <string>
@@ -194,7 +194,7 @@ public:
 
   /// Return the language that should be used when parsing.  To use the
   /// default, return eLanguageTypeUnknown.
-  lldb::LanguageType Language() const override { return m_language; }
+  lldb::LanguageType Language() override { return m_language; }
 
   /// Return the desired result type of the function, or eResultTypeAny if
   /// indifferent.
@@ -212,6 +212,8 @@ public:
   GetResultAfterDematerialization(ExecutionContextScope *exe_scope) {
     return lldb::ExpressionVariableSP();
   }
+
+  virtual lldb::ModuleSP GetJITModule() { return lldb::ModuleSP(); }
 
   /// Evaluate one expression in the scratch context of the target passed in
   /// the exe_ctx and return its result.
@@ -242,6 +244,9 @@ public:
   ///     If non-nullptr, the fixed expression is copied into the provided
   ///     string.
   ///
+  /// \param[out] jit_module_sp_ptr
+  ///     If non-nullptr, used to persist the generated IR module.
+  ///
   /// \param[in] ctx_obj
   ///     If specified, then the expression will be evaluated in the context of
   ///     this object. It means that the context object's address will be
@@ -260,14 +265,17 @@ public:
            llvm::StringRef expr_cstr, llvm::StringRef expr_prefix,
            lldb::ValueObjectSP &result_valobj_sp, Status &error,
            std::string *fixed_expression = nullptr,
+           lldb::ModuleSP *jit_module_sp_ptr = nullptr,
            ValueObject *ctx_obj = nullptr);
 
   static const Status::ValueType kNoResult =
       0x1001; ///< ValueObject::GetError() returns this if there is no result
               /// from the expression.
 
-  llvm::StringRef GetFixedText() {
-    return m_fixed_text;
+  const char *GetFixedText() {
+    if (m_fixed_text.empty())
+      return nullptr;
+    return m_fixed_text.c_str();
   }
 
 protected:
@@ -279,23 +287,6 @@ protected:
 
   static lldb::addr_t GetObjectPointer(lldb::StackFrameSP frame_sp,
                                        ConstString &object_name, Status &err);
-
-  /// Return ValueObject for a given variable name in the current stack frame
-  ///
-  /// \param[in] frame Current stack frame. When passed a 'nullptr', this
-  ///                  function returns an empty ValueObjectSP.
-  ///
-  /// \param[in] object_name Name of the variable in the current stack frame
-  ///                        for which we want the ValueObjectSP.
-  ///
-  /// \param[out] err Status object which will get set on error.
-  ///
-  /// \returns On success returns a ValueObjectSP corresponding to the variable
-  ///          with 'object_name' in the current 'frame'. Otherwise, returns
-  ///          'nullptr' (and sets the error status parameter 'err').
-  static lldb::ValueObjectSP
-  GetObjectPointerValueObject(lldb::StackFrameSP frame,
-                              ConstString const &object_name, Status &err);
 
   /// Populate m_in_cplusplus_method and m_in_objectivec_method based on the
   /// environment.
@@ -323,4 +314,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_EXPRESSION_USEREXPRESSION_H
+#endif // liblldb_UserExpression_h_

@@ -7,12 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_API_SBEXECUTIONCONTEXT_H
-#define LLDB_API_SBEXECUTIONCONTEXT_H
+#ifndef LLDB_SBExecutionContext_h_
+#define LLDB_SBExecutionContext_h_
 
 #include "lldb/API/SBDefines.h"
 
-#include <cstdio>
+#include <stdio.h>
 #include <vector>
 
 namespace lldb {
@@ -50,6 +50,8 @@ public:
   SBFrame GetFrame() const;
 
 protected:
+  void reset(lldb::ExecutionContextRefSP &event_sp);
+
   lldb_private::ExecutionContextRef *get() const;
 
 private:
@@ -58,4 +60,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_API_SBEXECUTIONCONTEXT_H
+#endif // LLDB_SBExecutionContext_h_

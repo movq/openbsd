@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_BREAKPOINT_WATCHPOINTOPTIONS_H
-#define LLDB_BREAKPOINT_WATCHPOINTOPTIONS_H
+#ifndef liblldb_WatchpointOptions_h_
+#define liblldb_WatchpointOptions_h_
 
 #include <memory>
 #include <string>
@@ -166,13 +166,13 @@ public:
                            lldb::user_id_t watch_id);
 
   struct CommandData {
-    CommandData() = default;
+    CommandData() : user_source(), script_source(), stop_on_error(true) {}
 
     ~CommandData() = default;
 
     StringList user_source;
     std::string script_source;
-    bool stop_on_error = true;
+    bool stop_on_error;
   };
 
   class CommandBaton : public TypedBaton<CommandData> {
@@ -191,11 +191,11 @@ private:
   // For WatchpointOptions only
   WatchpointHitCallback m_callback;  // This is the callback function pointer
   lldb::BatonSP m_callback_baton_sp; // This is the client data for the callback
-  bool m_callback_is_synchronous = false;
+  bool m_callback_is_synchronous;
   std::unique_ptr<ThreadSpec>
       m_thread_spec_up; // Thread for which this watchpoint will take
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_BREAKPOINT_WATCHPOINTOPTIONS_H
+#endif // liblldb_WatchpointOptions_h_

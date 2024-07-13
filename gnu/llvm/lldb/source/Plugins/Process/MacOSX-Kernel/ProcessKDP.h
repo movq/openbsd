@@ -6,8 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PROCESS_MACOSX_KERNEL_PROCESSKDP_H
-#define LLDB_SOURCE_PLUGINS_PROCESS_MACOSX_KERNEL_PROCESSKDP_H
+#ifndef liblldb_ProcessKDP_h_
+#define liblldb_ProcessKDP_h_
+
 
 #include <list>
 #include <vector>
@@ -32,8 +33,7 @@ public:
   // Constructors and Destructors
   static lldb::ProcessSP
   CreateInstance(lldb::TargetSP target_sp, lldb::ListenerSP listener_sp,
-                 const lldb_private::FileSpec *crash_file_path,
-                 bool can_connect);
+                 const lldb_private::FileSpec *crash_file_path);
 
   static void Initialize();
 
@@ -41,9 +41,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "kdp-remote"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   // Constructors and Destructors
   ProcessKDP(lldb::TargetSP target_sp, lldb::ListenerSP listener);
@@ -56,19 +56,20 @@ public:
   lldb_private::CommandObject *GetPluginCommandObject() override;
 
   // Creating a new process, or attaching to an existing one
-  lldb_private::Status DoWillLaunch(lldb_private::Module *module) override;
+  lldb_private::Status WillLaunch(lldb_private::Module *module) override;
 
   lldb_private::Status
   DoLaunch(lldb_private::Module *exe_module,
            lldb_private::ProcessLaunchInfo &launch_info) override;
 
-  lldb_private::Status DoWillAttachToProcessWithID(lldb::pid_t pid) override;
+  lldb_private::Status WillAttachToProcessWithID(lldb::pid_t pid) override;
 
   lldb_private::Status
-  DoWillAttachToProcessWithName(const char *process_name,
-                                bool wait_for_launch) override;
+  WillAttachToProcessWithName(const char *process_name,
+                              bool wait_for_launch) override;
 
-  lldb_private::Status DoConnectRemote(llvm::StringRef remote_url) override;
+  lldb_private::Status DoConnectRemote(lldb_private::Stream *strm,
+                                       llvm::StringRef remote_url) override;
 
   lldb_private::Status DoAttachToProcessWithID(
       lldb::pid_t pid,
@@ -85,7 +86,9 @@ public:
   lldb_private::DynamicLoader *GetDynamicLoader() override;
 
   // PluginInterface protocol
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override;
+
+  uint32_t GetPluginVersion() override;
 
   // Process Control
   lldb_private::Status WillResume() override;
@@ -156,8 +159,8 @@ protected:
 
   void Clear();
 
-  bool DoUpdateThreadList(lldb_private::ThreadList &old_thread_list,
-                          lldb_private::ThreadList &new_thread_list) override;
+  bool UpdateThreadList(lldb_private::ThreadList &old_thread_list,
+                        lldb_private::ThreadList &new_thread_list) override;
 
   enum {
     eBroadcastBitAsyncContinue = (1 << 0),
@@ -170,7 +173,7 @@ protected:
   CommunicationKDP m_comm;
   lldb_private::Broadcaster m_async_broadcaster;
   lldb_private::HostThread m_async_thread;
-  llvm::StringRef m_dyld_plugin_name;
+  lldb_private::ConstString m_dyld_plugin_name;
   lldb::addr_t m_kernel_load_addr;
   lldb::CommandObjectSP m_command_sp;
   lldb::ThreadWP m_kernel_thread_wp;
@@ -179,13 +182,12 @@ protected:
 
   void StopAsyncThread();
 
-  void *AsyncThread();
+  static void *AsyncThread(void *arg);
 
 private:
   // For ProcessKDP only
 
-  ProcessKDP(const ProcessKDP &) = delete;
-  const ProcessKDP &operator=(const ProcessKDP &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(ProcessKDP);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_PROCESS_MACOSX_KERNEL_PROCESSKDP_H
+#endif // liblldb_ProcessKDP_h_

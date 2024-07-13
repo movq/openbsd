@@ -20,10 +20,9 @@
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/lldb-types.h"
 
-#include "IntelPTCollector.h"
 #include "NativeThreadLinux.h"
 #include "Plugins/Process/POSIX/NativeProcessELF.h"
-#include "Plugins/Process/Utility/NativeProcessSoftwareSingleStep.h"
+#include "ProcessorTrace.h"
 
 namespace lldb_private {
 class Status;
@@ -37,8 +36,7 @@ namespace process_linux {
 /// for debugging.
 ///
 /// Changes in the inferior process state are broadcasted.
-class NativeProcessLinux : public NativeProcessELF,
-                           private NativeProcessSoftwareSingleStep {
+class NativeProcessLinux : public NativeProcessELF {
 public:
   class Factory : public NativeProcessProtocol::Factory {
   public:
@@ -49,8 +47,6 @@ public:
     llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
     Attach(lldb::pid_t pid, NativeDelegate &native_delegate,
            MainLoop &mainloop) const override;
-
-    Extension GetSupportedExtensions() const override;
   };
 
   // NativeProcessProtocol Interface
@@ -75,16 +71,10 @@ public:
   Status WriteMemory(lldb::addr_t addr, const void *buf, size_t size,
                      size_t &bytes_written) override;
 
-  llvm::Expected<lldb::addr_t> AllocateMemory(size_t size,
-                                              uint32_t permissions) override;
+  Status AllocateMemory(size_t size, uint32_t permissions,
+                        lldb::addr_t &addr) override;
 
-  llvm::Error DeallocateMemory(lldb::addr_t addr) override;
-
-  Status ReadMemoryTags(int32_t type, lldb::addr_t addr, size_t len,
-                        std::vector<uint8_t> &tags) override;
-
-  Status WriteMemoryTags(int32_t type, lldb::addr_t addr, size_t len,
-                         const std::vector<uint8_t> &tags) override;
+  Status DeallocateMemory(lldb::addr_t addr) override;
 
   size_t UpdateThreads() override;
 
@@ -104,29 +94,27 @@ public:
                             lldb::addr_t &load_addr) override;
 
   NativeThreadLinux *GetThreadByID(lldb::tid_t id);
-  NativeThreadLinux *GetCurrentThread();
 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
   GetAuxvData() const override {
     return getProcFile(GetID(), "auxv");
   }
 
-  /// Tracing
-  /// These methods implement the jLLDBTrace packets
-  /// \{
-  llvm::Error TraceStart(llvm::StringRef json_request,
-                         llvm::StringRef type) override;
+  lldb::user_id_t StartTrace(const TraceOptions &config,
+                             Status &error) override;
 
-  llvm::Error TraceStop(const TraceStopRequest &request) override;
+  Status StopTrace(lldb::user_id_t traceid,
+                   lldb::tid_t thread) override;
 
-  llvm::Expected<llvm::json::Value>
-  TraceGetState(llvm::StringRef type) override;
+  Status GetData(lldb::user_id_t traceid, lldb::tid_t thread,
+                 llvm::MutableArrayRef<uint8_t> &buffer,
+                 size_t offset = 0) override;
 
-  llvm::Expected<std::vector<uint8_t>>
-  TraceGetBinaryData(const TraceGetBinaryDataRequest &request) override;
+  Status GetMetaData(lldb::user_id_t traceid, lldb::tid_t thread,
+                     llvm::MutableArrayRef<uint8_t> &buffer,
+                     size_t offset = 0) override;
 
-  llvm::Expected<TraceSupportedResponse> TraceSupported() override;
-  /// }
+  Status GetTraceConfig(lldb::user_id_t traceid, TraceOptions &config) override;
 
   // Interface used by NativeRegisterContext-derived classes.
   static Status PtraceWrapper(int req, lldb::pid_t pid, void *addr = nullptr,
@@ -135,28 +123,22 @@ public:
 
   bool SupportHardwareSingleStepping() const;
 
-  /// Writes a siginfo_t structure corresponding to the given thread ID to the
-  /// memory region pointed to by \p siginfo.
-  Status GetSignalInfo(lldb::tid_t tid, void *siginfo) const;
-
 protected:
   llvm::Expected<llvm::ArrayRef<uint8_t>>
   GetSoftwareBreakpointTrapOpcode(size_t size_hint) override;
 
-  llvm::Expected<uint64_t> Syscall(llvm::ArrayRef<uint64_t> args);
-
 private:
   MainLoop::SignalHandleUP m_sigchld_handle;
   ArchSpec m_arch;
-  MainLoop& m_main_loop;
 
   LazyBool m_supports_mem_region = eLazyBoolCalculate;
   std::vector<std::pair<MemoryRegionInfo, FileSpec>> m_mem_region_cache;
 
   lldb::tid_t m_pending_notification_tid = LLDB_INVALID_THREAD_ID;
 
-  /// Inferior memory (allocated by us) and its size.
-  llvm::DenseMap<lldb::addr_t, lldb::addr_t> m_allocated_memory;
+  // List of thread ids stepping with a breakpoint with the address of
+  // the relevan breakpoint
+  std::map<lldb::tid_t, lldb::addr_t> m_threads_stepping_with_breakpoint;
 
   // Private Instance Methods
   NativeProcessLinux(::pid_t pid, int terminal_fd, NativeDelegate &delegate,
@@ -168,9 +150,9 @@ private:
 
   static Status SetDefaultPtraceOpts(const lldb::pid_t);
 
-  void MonitorCallback(NativeThreadLinux &thread, WaitStatus status);
+  void MonitorCallback(lldb::pid_t pid, bool exited, WaitStatus status);
 
-  void WaitForCloneNotification(::pid_t pid);
+  void WaitForNewThread(::pid_t tid);
 
   void MonitorSIGTRAP(const siginfo_t &info, NativeThreadLinux &thread);
 
@@ -180,38 +162,20 @@ private:
 
   void MonitorWatchpoint(NativeThreadLinux &thread, uint32_t wp_index);
 
-  void MonitorSignal(const siginfo_t &info, NativeThreadLinux &thread);
+  void MonitorSignal(const siginfo_t &info, NativeThreadLinux &thread,
+                     bool exited);
+
+  Status SetupSoftwareSingleStepping(NativeThreadLinux &thread);
 
   bool HasThreadNoLock(lldb::tid_t thread_id);
 
-  void StopTrackingThread(NativeThreadLinux &thread);
+  bool StopTrackingThread(lldb::tid_t thread_id);
 
-  /// Create a new thread.
-  ///
-  /// If process tracing is enabled and the thread can't be traced, then the
-  /// thread is left stopped with a \a eStopReasonProcessorTrace status, and
-  /// then the process is stopped.
-  ///
-  /// \param[in] resume
-  ///     If a tracing error didn't happen, then resume the thread after
-  ///     creation if \b true, or leave it stopped with SIGSTOP if \b false.
-  NativeThreadLinux &AddThread(lldb::tid_t thread_id, bool resume);
+  NativeThreadLinux &AddThread(lldb::tid_t thread_id);
 
-  /// Start tracing a new thread if process tracing is enabled.
-  ///
-  /// Trace mechanisms should modify this method to provide automatic tracing
-  /// for new threads.
-  Status NotifyTracersOfNewThread(lldb::tid_t tid);
-
-  /// Stop tracing threads upon a destroy event.
-  ///
-  /// Trace mechanisms should modify this method to provide automatic trace
-  /// stopping for threads being destroyed.
-  Status NotifyTracersOfThreadDestroyed(lldb::tid_t tid);
-
-  void NotifyTracersProcessWillResume() override;
-
-  void NotifyTracersProcessDidStop() override;
+  /// Writes a siginfo_t structure corresponding to the given thread ID to the
+  /// memory region pointed to by \p siginfo.
+  Status GetSignalInfo(lldb::tid_t tid, void *siginfo);
 
   /// Writes the raw event message code (vis-a-vis PTRACE_GETEVENTMSG)
   /// corresponding to the given thread ID to the memory pointed to by @p
@@ -244,12 +208,42 @@ private:
 
   Status PopulateMemoryRegionCache();
 
-  /// Manages Intel PT process and thread traces.
-  IntelPTCollector m_intel_pt_collector;
+  lldb::user_id_t StartTraceGroup(const TraceOptions &config,
+                                         Status &error);
 
-  // Handle a clone()-like event.
-  bool MonitorClone(NativeThreadLinux &parent, lldb::pid_t child_pid,
-                    int event);
+  // This function is intended to be used to stop tracing
+  // on a thread that exited.
+  Status StopTracingForThread(lldb::tid_t thread);
+
+  // The below function as the name suggests, looks up a ProcessorTrace
+  // instance from the m_processor_trace_monitor map. In the case of
+  // process tracing where the traceid passed would map to the complete
+  // process, it is mandatory to provide a threadid to obtain a trace
+  // instance (since ProcessorTrace is tied to a thread). In the other
+  // scenario that an individual thread is being traced, just the traceid
+  // is sufficient to obtain the actual ProcessorTrace instance.
+  llvm::Expected<ProcessorTraceMonitor &>
+  LookupProcessorTraceInstance(lldb::user_id_t traceid, lldb::tid_t thread);
+
+  // Stops tracing on individual threads being traced. Not intended
+  // to be used to stop tracing on complete process.
+  Status StopProcessorTracingOnThread(lldb::user_id_t traceid,
+                                      lldb::tid_t thread);
+
+  // Intended to stop tracing on complete process.
+  // Should not be used for stopping trace on
+  // individual threads.
+  void StopProcessorTracingOnProcess();
+
+  llvm::DenseMap<lldb::tid_t, ProcessorTraceMonitorUP>
+      m_processor_trace_monitor;
+
+  // Set for tracking threads being traced under
+  // same process user id.
+  llvm::DenseSet<lldb::tid_t> m_pt_traced_thread_group;
+
+  lldb::user_id_t m_pt_proces_trace_id = LLDB_INVALID_UID;
+  TraceOptions m_pt_process_trace_config;
 };
 
 } // namespace process_linux

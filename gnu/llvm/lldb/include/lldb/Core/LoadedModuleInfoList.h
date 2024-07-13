@@ -6,8 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_LOADEDMODULEINFOLIST_H
-#define LLDB_CORE_LOADEDMODULEINFOLIST_H
+#ifndef liblldb_LoadedModuleInfoList_h_
+#define liblldb_LoadedModuleInfoList_h_
+
 
 #include <cassert>
 #include <string>
@@ -95,21 +96,21 @@ public:
   protected:
     bool m_has[e_num];
     std::string m_name;
-    lldb::addr_t m_link_map = LLDB_INVALID_ADDRESS;
-    lldb::addr_t m_base = LLDB_INVALID_ADDRESS;
-    bool m_base_is_offset = false;
-    lldb::addr_t m_dynamic = LLDB_INVALID_ADDRESS;
+    lldb::addr_t m_link_map;
+    lldb::addr_t m_base;
+    bool m_base_is_offset;
+    lldb::addr_t m_dynamic;
   };
 
-  LoadedModuleInfoList() = default;
+  LoadedModuleInfoList() : m_list(), m_link_map(LLDB_INVALID_ADDRESS) {}
 
   void add(const LoadedModuleInfo &mod) { m_list.push_back(mod); }
 
   void clear() { m_list.clear(); }
 
   std::vector<LoadedModuleInfo> m_list;
-  lldb::addr_t m_link_map = LLDB_INVALID_ADDRESS;
+  lldb::addr_t m_link_map;
 };
 } // namespace lldb_private
 
-#endif // LLDB_CORE_LOADEDMODULEINFOLIST_H
+#endif // liblldb_LoadedModuleInfoList_h_

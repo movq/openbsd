@@ -6,12 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SYMBOL_VARIABLE_H
-#define LLDB_SYMBOL_VARIABLE_H
+#ifndef liblldb_Variable_h_
+#define liblldb_Variable_h_
 
-#include "lldb/Core/Declaration.h"
 #include "lldb/Core/Mangled.h"
-#include "lldb/Expression/DWARFExpressionList.h"
+#include "lldb/Expression/DWARFExpression.h"
+#include "lldb/Symbol/Declaration.h"
 #include "lldb/Utility/CompletionRequest.h"
 #include "lldb/Utility/RangeMap.h"
 #include "lldb/Utility/UserID.h"
@@ -32,9 +32,8 @@ public:
   Variable(lldb::user_id_t uid, const char *name, const char *mangled,
            const lldb::SymbolFileTypeSP &symfile_type_sp, lldb::ValueType scope,
            SymbolContextScope *owner_scope, const RangeList &scope_range,
-           Declaration *decl, const DWARFExpressionList &location,
-           bool external, bool artificial, bool location_is_constant_data,
-           bool static_member = false);
+           Declaration *decl, const DWARFExpression &location, bool external,
+           bool artificial, bool static_member = false);
 
   virtual ~Variable();
 
@@ -65,23 +64,17 @@ public:
 
   lldb::ValueType GetScope() const { return m_scope; }
 
-  const RangeList &GetScopeRange() const { return m_scope_range; }
-
   bool IsExternal() const { return m_external; }
 
   bool IsArtificial() const { return m_artificial; }
 
   bool IsStaticMember() const { return m_static_member; }
 
-  DWARFExpressionList &LocationExpressionList() { return m_location_list; }
+  DWARFExpression &LocationExpression() { return m_location; }
 
-  const DWARFExpressionList &LocationExpressionList() const {
-    return m_location_list;
-  }
+  const DWARFExpression &LocationExpression() const { return m_location; }
 
-  // When given invalid address, it dumps all locations. Otherwise it only dumps
-  // the location that contains this address.
-  bool DumpLocations(Stream *s, const Address &address);
+  bool DumpLocationForAddress(Stream *s, const Address &address);
 
   size_t MemorySize() const;
 
@@ -130,7 +123,7 @@ protected:
   Declaration m_declaration;
   /// The location of this variable that can be fed to
   /// DWARFExpression::Evaluate().
-  DWARFExpressionList m_location_list;
+  DWARFExpression m_location;
   /// Visible outside the containing compile unit?
   unsigned m_external : 1;
   /// Non-zero if the variable is not explicitly declared in source.
@@ -148,4 +141,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // LLDB_SYMBOL_VARIABLE_H
+#endif // liblldb_Variable_h_

@@ -6,19 +6,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_TOOLS_DRIVER_PLATFORM_H
-#define LLDB_TOOLS_DRIVER_PLATFORM_H
+#ifndef lldb_Platform_h_
+#define lldb_Platform_h_
+
+#include "lldb/Host/Config.h"
 
 #if defined(_WIN32)
 
 #include <io.h>
 #if defined(_MSC_VER)
-#include <csignal>
+#include <signal.h>
 #endif
-
-#include "lldb/Host/windows/windows.h"
-#include <cinttypes>
+#if HAVE_SYS_TYPES_H
 #include <sys/types.h>
+#endif
+#include "lldb/Host/windows/windows.h"
+#include <inttypes.h>
 
 struct winsize {
   long ws_col;
@@ -73,7 +76,7 @@ extern int tcsetattr(int fd, int optional_actions,
 extern int tcgetattr(int fildes, struct termios *termios_p);
 
 #else
-#include <cinttypes>
+#include <inttypes.h>
 
 #include <libgen.h>
 #include <sys/ioctl.h>
@@ -84,4 +87,4 @@ extern int tcgetattr(int fildes, struct termios *termios_p);
 #include <sys/time.h>
 #endif
 
-#endif // LLDB_TOOLS_DRIVER_PLATFORM_H
+#endif // lldb_Platform_h_

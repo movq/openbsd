@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_USERSETTINGSCONTROLLER_H
-#define LLDB_CORE_USERSETTINGSCONTROLLER_H
+#ifndef liblldb_UserSettingsController_h_
+#define liblldb_UserSettingsController_h_
 
 #include "lldb/Utility/Status.h"
 #include "lldb/lldb-forward.h"
@@ -17,8 +17,8 @@
 
 #include <vector>
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace lldb_private {
 class CommandInterpreter;
@@ -32,12 +32,12 @@ namespace lldb_private {
 
 class Properties {
 public:
-  Properties() = default;
+  Properties() : m_collection_sp() {}
 
   Properties(const lldb::OptionValuePropertiesSP &collection_sp)
       : m_collection_sp(collection_sp) {}
 
-  virtual ~Properties() = default;
+  virtual ~Properties() {}
 
   virtual lldb::OptionValuePropertiesSP GetValueProperties() const {
     // This function is virtual in case subclasses want to lazily implement
@@ -57,11 +57,10 @@ public:
 
   virtual Status DumpPropertyValue(const ExecutionContext *exe_ctx,
                                    Stream &strm, llvm::StringRef property_path,
-                                   uint32_t dump_mask, bool is_json = false);
+                                   uint32_t dump_mask);
 
   virtual void DumpAllPropertyValues(const ExecutionContext *exe_ctx,
-                                     Stream &strm, uint32_t dump_mask,
-                                     bool is_json = false);
+                                     Stream &strm, uint32_t dump_mask);
 
   virtual void DumpAllDescriptions(CommandInterpreter &interpreter,
                                    Stream &strm) const;
@@ -89,4 +88,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_CORE_USERSETTINGSCONTROLLER_H
+#endif // liblldb_UserSettingsController_h_

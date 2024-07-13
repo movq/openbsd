@@ -9,11 +9,73 @@
 namespace lldb {
 
 %feature("docstring",
-"SBCommandInterpreter handles/interprets commands for lldb.
+"SBCommandInterpreterRunOptions controls how the RunCommandInterpreter runs the code it is fed.
+A default SBCommandInterpreterRunOptions object has:
+    StopOnContinue: false
+    StopOnError:    false
+    StopOnCrash:    false
+    EchoCommands:   true
+    PrintResults:   true
+    AddToHistory:   true
 
-You get the command interpreter from the :py:class:`SBDebugger` instance.
+") SBCommandInterpreterRunOptions;
+class SBCommandInterpreterRunOptions
+{
+friend class SBDebugger;
+public:
+    SBCommandInterpreterRunOptions();
+    ~SBCommandInterpreterRunOptions();
 
-For example (from test/ python_api/interpreter/TestCommandInterpreterAPI.py),::
+    bool
+    GetStopOnContinue () const;
+
+    void
+    SetStopOnContinue (bool);
+
+    bool
+    GetStopOnError () const;
+
+    void
+    SetStopOnError (bool);
+
+    bool
+    GetStopOnCrash () const;
+
+    void
+    SetStopOnCrash (bool);
+
+    bool
+    GetEchoCommands () const;
+
+    void
+    SetEchoCommands (bool);
+
+    bool
+    GetPrintResults () const;
+
+    void
+    SetPrintResults (bool);
+
+    bool
+    GetAddToHistory () const;
+
+    void
+    SetAddToHistory (bool);
+private:
+    lldb_private::CommandInterpreterRunOptions *
+    get () const;
+
+    lldb_private::CommandInterpreterRunOptions &
+    ref () const;
+
+    // This is set in the constructor and will always be valid.
+    mutable std::unique_ptr<lldb_private::CommandInterpreterRunOptions> m_opaque_up;
+};
+
+%feature("docstring",
+"SBCommandInterpreter handles/interprets commands for lldb.  You get the
+command interpreter from the SBDebugger instance. For example (from test/
+python_api/interpreter/TestCommandInterpreterAPI.py),
 
     def command_interpreter_api(self):
         '''Test the SBCommandInterpreter APIs.'''
@@ -124,9 +186,6 @@ public:
 
     bool
     HasAliasOptions ();
-
-    bool
-    IsInteractive ();
 
     lldb::SBProcess
     GetProcess ();

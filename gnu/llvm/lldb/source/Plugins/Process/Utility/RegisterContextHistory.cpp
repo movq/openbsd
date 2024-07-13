@@ -1,4 +1,5 @@
-//===-- RegisterContextHistory.cpp ----------------------------------------===//
+//===-- RegisterContextHistory.cpp ---------------------------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -104,7 +105,7 @@ bool RegisterContextHistory::WriteRegister(
 }
 
 bool RegisterContextHistory::ReadAllRegisterValues(
-    lldb::WritableDataBufferSP &data_sp) {
+    lldb::DataBufferSP &data_sp) {
   return false;
 }
 

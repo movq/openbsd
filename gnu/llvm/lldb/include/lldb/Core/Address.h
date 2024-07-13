@@ -6,16 +6,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_ADDRESS_H
-#define LLDB_CORE_ADDRESS_H
+#ifndef liblldb_Address_h_
+#define liblldb_Address_h_
 
 #include "lldb/lldb-defines.h"
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-private-enumerations.h"
 #include "lldb/lldb-types.h"
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace lldb_private {
 class Block;
@@ -116,7 +116,7 @@ public:
   ///
   /// Initialize with a invalid section (NULL) and an invalid offset
   /// (LLDB_INVALID_ADDRESS).
-  Address() = default;
+  Address() : m_section_wp(), m_offset(LLDB_INVALID_ADDRESS) {}
 
   /// Copy constructor
   ///
@@ -210,10 +210,6 @@ public:
     }
   };
 
-  /// Write a description of this object to a Stream.
-  bool GetDescription(Stream &s, Target &target,
-                      lldb::DescriptionLevel level) const;
-
   /// Dump a description of this object to a Stream.
   ///
   /// Dump a description of the contents of this object to the supplied stream
@@ -229,14 +225,6 @@ public:
   /// \param[in] fallback_style
   ///     The display style for the address.
   ///
-  /// \param[in] addr_byte_size
-  ///     The address byte size for the address.
-  ///
-  /// \param[in] all_ranges
-  ///     If true, dump all valid ranges and value ranges for the variable that
-  ///     contains the address, otherwise dumping the range that contains the
-  ///     address.
-  ///
   /// \return
   ///     Returns \b true if the address was able to be displayed.
   ///     File and load addresses may be unresolved and it may not be
@@ -246,8 +234,7 @@ public:
   /// \see Address::DumpStyle
   bool Dump(Stream *s, ExecutionContextScope *exe_scope, DumpStyle style,
             DumpStyle fallback_style = DumpStyleInvalid,
-            uint32_t addr_byte_size = UINT32_MAX,
-            bool all_ranges = false) const;
+            uint32_t addr_byte_size = UINT32_MAX) const;
 
   AddressClass GetAddressClass() const;
 
@@ -500,8 +487,7 @@ public:
 protected:
   // Member variables.
   lldb::SectionWP m_section_wp; ///< The section for the address, can be NULL.
-  lldb::addr_t m_offset = LLDB_INVALID_ADDRESS; ///< Offset into section if \a
-                                                ///< m_section_wp is valid...
+  lldb::addr_t m_offset; ///< Offset into section if \a m_section_wp is valid...
 
   // Returns true if the m_section_wp once had a reference to a valid section
   // shared pointer, but no longer does. This can happen if we have an address
@@ -529,4 +515,4 @@ bool operator!=(const Address &lhs, const Address &rhs);
 
 } // namespace lldb_private
 
-#endif // LLDB_CORE_ADDRESS_H
+#endif // liblldb_Address_h_

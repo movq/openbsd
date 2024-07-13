@@ -6,22 +6,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_INSTRUCTION_ARM_EMULATEINSTRUCTIONARM_H
-#define LLDB_SOURCE_PLUGINS_INSTRUCTION_ARM_EMULATEINSTRUCTIONARM_H
+#ifndef lldb_EmulateInstructionARM_h_
+#define lldb_EmulateInstructionARM_h_
 
 #include "Plugins/Process/Utility/ARMDefines.h"
 #include "lldb/Core/EmulateInstruction.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Status.h"
-#include <optional>
 
 namespace lldb_private {
 
 // ITSession - Keep track of the IT Block progression.
 class ITSession {
 public:
-  ITSession() = default;
-  ~ITSession() = default;
+  ITSession() : ITCounter(0), ITState(0) {}
+  ~ITSession() {}
 
   // InitIT - Initializes ITCounter/ITState.
   bool InitIT(uint32_t bits7_0);
@@ -40,8 +39,8 @@ public:
   uint32_t GetCond();
 
 private:
-  uint32_t ITCounter = 0; // Possible values: 0, 1, 2, 3, 4.
-  uint32_t ITState = 0;   // A2.5.2 Consists of IT[7:5] and IT[4:0] initially.
+  uint32_t ITCounter; // Possible values: 0, 1, 2, 3, 4.
+  uint32_t ITState;   // A2.5.2 Consists of IT[7:5] and IT[4:0] initially.
 };
 
 class EmulateInstructionARM : public EmulateInstruction {
@@ -63,9 +62,9 @@ public:
 
   static void Terminate();
 
-  static llvm::StringRef GetPluginNameStatic() { return "arm"; }
+  static lldb_private::ConstString GetPluginNameStatic();
 
-  static llvm::StringRef GetPluginDescriptionStatic();
+  static const char *GetPluginDescriptionStatic();
 
   static lldb_private::EmulateInstruction *
   CreateInstance(const lldb_private::ArchSpec &arch, InstructionType inst_type);
@@ -84,7 +83,11 @@ public:
     return false;
   }
 
-  llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
+  lldb_private::ConstString GetPluginName() override {
+    return GetPluginNameStatic();
+  }
+
+  uint32_t GetPluginVersion() override { return 1; }
 
   bool SetTargetTriple(const ArchSpec &arch) override;
 
@@ -92,8 +95,7 @@ public:
 
   EmulateInstructionARM(const ArchSpec &arch)
       : EmulateInstruction(arch), m_arm_isa(0), m_opcode_mode(eModeInvalid),
-        m_opcode_cpsr(0), m_new_inst_cpsr(0), m_it_session(),
-        m_ignore_conditions(false) {
+        m_opcode_cpsr(0), m_it_session(), m_ignore_conditions(false) {
     SetArchitecture(arch);
   }
 
@@ -136,8 +138,8 @@ public:
   bool TestEmulation(Stream *out_stream, ArchSpec &arch,
                      OptionValueDictionary *test_data) override;
 
-  std::optional<RegisterInfo> GetRegisterInfo(lldb::RegisterKind reg_kind,
-                                              uint32_t reg_num) override;
+  bool GetRegisterInfo(lldb::RegisterKind reg_kind, uint32_t reg_num,
+                       RegisterInfo &reg_info) override;
 
   bool CreateFunctionEntryUnwind(UnwindPlan &unwind_plan) override;
 
@@ -781,4 +783,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_SOURCE_PLUGINS_INSTRUCTION_ARM_EMULATEINSTRUCTIONARM_H
+#endif // lldb_EmulateInstructionARM_h_

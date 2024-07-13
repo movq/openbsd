@@ -1,4 +1,4 @@
-//===-- Args.cpp ----------------------------------------------------------===//
+//===-- Args.cpp ------------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -44,7 +44,7 @@ static llvm::StringRef ParseDoubleQuotes(llvm::StringRef quoted,
       break;
     }
 
-    // If the character after the backslash is not an allowed escapable
+    // If the character after the backslash is not a whitelisted escapable
     // character, we leave the character sequence untouched.
     if (strchr(k_escapable_characters, quoted.front()) == nullptr)
       result += '\\';
@@ -111,7 +111,7 @@ ParseSingleArgument(llvm::StringRef command) {
         break;
       }
 
-      // If the character after the backslash is not an allowed escapable
+      // If the character after the backslash is not a whitelisted escapable
       // character, we leave the character sequence untouched.
       if (strchr(" \t\\'\"`", command.front()) == nullptr)
         arg += '\\';
@@ -175,11 +175,6 @@ Args::Args(const StringList &list) : Args() {
     AppendArgument(arg);
 }
 
-Args::Args(llvm::ArrayRef<llvm::StringRef> args) : Args() {
-  for (llvm::StringRef arg : args)
-    AppendArgument(arg);
-}
-
 Args &Args::operator=(const Args &rhs) {
   Clear();
 
@@ -194,7 +189,7 @@ Args &Args::operator=(const Args &rhs) {
 }
 
 // Destructor
-Args::~Args() = default;
+Args::~Args() {}
 
 void Args::Dump(Stream &s, const char *label_name) const {
   if (!label_name)
@@ -215,12 +210,7 @@ bool Args::GetCommandString(std::string &command) const {
   for (size_t i = 0; i < m_entries.size(); ++i) {
     if (i > 0)
       command += ' ';
-    char quote = m_entries[i].quote;
-    if (quote != '\0')
-     command += quote;
     command += m_entries[i].ref();
-    if (quote != '\0')
-      command += quote;
   }
 
   return !m_entries.empty();
@@ -260,6 +250,8 @@ void Args::SetCommandString(llvm::StringRef command) {
   }
   m_argv.push_back(nullptr);
 }
+
+size_t Args::GetArgumentCount() const { return m_entries.size(); }
 
 const char *Args::GetArgumentAtIndex(size_t idx) const {
   if (idx < m_argv.size())
@@ -312,7 +304,7 @@ void Args::AppendArguments(const char **argv) {
   assert(m_argv.size() == m_entries.size() + 1);
   assert(m_argv.back() == nullptr);
   m_argv.pop_back();
-  for (auto arg : llvm::ArrayRef(argv, argc)) {
+  for (auto arg : llvm::makeArrayRef(argv, argc)) {
     m_entries.emplace_back(arg, '\0');
     m_argv.push_back(m_entries.back().data());
   }
@@ -358,7 +350,7 @@ void Args::DeleteArgumentAtIndex(size_t idx) {
 void Args::SetArguments(size_t argc, const char **argv) {
   Clear();
 
-  auto args = llvm::ArrayRef(argv, argc);
+  auto args = llvm::makeArrayRef(argv, argc);
   m_entries.resize(argc);
   m_argv.resize(argc + 1);
   for (size_t i = 0; i < args.size(); ++i) {
@@ -382,21 +374,20 @@ void Args::Clear() {
   m_argv.push_back(nullptr);
 }
 
-std::string Args::GetShellSafeArgument(const FileSpec &shell,
-                                       llvm::StringRef unsafe_arg) {
+const char *Args::GetShellSafeArgument(const FileSpec &shell,
+                                       const char *unsafe_arg,
+                                       std::string &safe_arg) {
   struct ShellDescriptor {
     ConstString m_basename;
-    llvm::StringRef m_escapables;
+    const char *m_escapables;
   };
 
-  static ShellDescriptor g_Shells[] = {{ConstString("bash"), " '\"<>()&;"},
-                                       {ConstString("fish"), " '\"<>()&\\|;"},
-                                       {ConstString("tcsh"), " '\"<>()&;"},
-                                       {ConstString("zsh"), " '\"<>()&;\\|"},
-                                       {ConstString("sh"), " '\"<>()&;"}};
+  static ShellDescriptor g_Shells[] = {{ConstString("bash"), " '\"<>()&"},
+                                       {ConstString("tcsh"), " '\"<>()&$"},
+                                       {ConstString("sh"), " '\"<>()&"}};
 
   // safe minimal set
-  llvm::StringRef escapables = " '\"";
+  const char *escapables = " '\"";
 
   if (auto basename = shell.GetFilename()) {
     for (const auto &Shell : g_Shells) {
@@ -407,15 +398,18 @@ std::string Args::GetShellSafeArgument(const FileSpec &shell,
     }
   }
 
-  std::string safe_arg;
-  safe_arg.reserve(unsafe_arg.size());
-  // Add a \ before every character that needs to be escaped.
-  for (char c : unsafe_arg) {
-    if (escapables.contains(c))
-      safe_arg.push_back('\\');
-    safe_arg.push_back(c);
+  safe_arg.assign(unsafe_arg);
+  size_t prev_pos = 0;
+  while (prev_pos < safe_arg.size()) {
+    // Escape spaces and quotes
+    size_t pos = safe_arg.find_first_of(escapables, prev_pos);
+    if (pos != std::string::npos) {
+      safe_arg.insert(pos, 1, '\\');
+      prev_pos = pos + 2;
+    } else
+      break;
   }
-  return safe_arg;
+  return safe_arg.c_str();
 }
 
 lldb::Encoding Args::StringToEncoding(llvm::StringRef s,
@@ -552,7 +546,7 @@ void Args::ExpandEscapedCharacters(const char *src, std::string &dst) {
   dst.clear();
   if (src) {
     for (const char *p = src; *p != '\0'; ++p) {
-      if (llvm::isPrint(*p))
+      if (isprint(*p))
         dst.append(1, *p);
       else {
         switch (*p) {
@@ -641,11 +635,12 @@ void OptionsWithRaw::SetFromString(llvm::StringRef arg_string) {
   // If the string doesn't start with a dash, we just have no options and just
   // a raw part.
   if (!arg_string.startswith("-")) {
-    m_suffix = std::string(original_args);
+    m_suffix = original_args;
     return;
   }
 
   bool found_suffix = false;
+
   while (!arg_string.empty()) {
     // The length of the prefix before parsing.
     std::size_t prev_prefix_length = original_args.size() - arg_string.size();
@@ -660,7 +655,7 @@ void OptionsWithRaw::SetFromString(llvm::StringRef arg_string) {
       // The remaining line is the raw suffix, and the line we parsed so far
       // needs to be interpreted as arguments.
       m_has_args = true;
-      m_suffix = std::string(arg_string);
+      m_suffix = arg_string;
       found_suffix = true;
 
       // The length of the prefix after parsing.
@@ -684,6 +679,8 @@ void OptionsWithRaw::SetFromString(llvm::StringRef arg_string) {
   }
 
   // If we didn't find a suffix delimiter, the whole string is the raw suffix.
-  if (!found_suffix)
-    m_suffix = std::string(original_args);
+  if (!found_suffix) {
+    found_suffix = true;
+    m_suffix = original_args;
+  }
 }

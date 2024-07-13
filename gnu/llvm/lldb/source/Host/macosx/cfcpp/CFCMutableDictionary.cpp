@@ -1,4 +1,4 @@
-//===-- CFCMutableDictionary.cpp ------------------------------------------===//
+//===-- CFCMutableDictionary.cpp --------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -13,8 +13,8 @@ CFCMutableDictionary::CFCMutableDictionary(CFMutableDictionaryRef s)
     : CFCReleaser<CFMutableDictionaryRef>(s) {}
 
 // CFCMutableDictionary copy constructor
-CFCMutableDictionary::CFCMutableDictionary(const CFCMutableDictionary &rhs) =
-    default;
+CFCMutableDictionary::CFCMutableDictionary(const CFCMutableDictionary &rhs)
+    : CFCReleaser<CFMutableDictionaryRef>(rhs) {}
 
 // CFCMutableDictionary copy constructor
 const CFCMutableDictionary &CFCMutableDictionary::
@@ -25,7 +25,7 @@ operator=(const CFCMutableDictionary &rhs) {
 }
 
 // Destructor
-CFCMutableDictionary::~CFCMutableDictionary() = default;
+CFCMutableDictionary::~CFCMutableDictionary() {}
 
 CFIndex CFCMutableDictionary::GetCount() const {
   CFMutableDictionaryRef dict = get();

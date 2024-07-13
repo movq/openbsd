@@ -1,4 +1,4 @@
-//===-- OptionGroupVariable.cpp -------------------------------------------===//
+//===-- OptionGroupVariable.cpp -----------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -67,10 +67,10 @@ static Status ValidateSummaryString(const char *str, void *) {
 }
 
 OptionGroupVariable::OptionGroupVariable(bool show_frame_options)
-    : include_frame_options(show_frame_options), show_args(false),
-      show_recognized_args(false), show_locals(false), show_globals(false),
-      use_regex(false), show_scope(false), show_decl(false),
+    : OptionGroup(), include_frame_options(show_frame_options),
       summary(ValidateNamedSummary), summary_string(ValidateSummaryString) {}
+
+OptionGroupVariable::~OptionGroupVariable() {}
 
 Status
 OptionGroupVariable::SetOptionValue(uint32_t option_idx,
@@ -131,7 +131,7 @@ void OptionGroupVariable::OptionParsingStarting(
 #define NUM_FRAME_OPTS 3
 
 llvm::ArrayRef<OptionDefinition> OptionGroupVariable::GetDefinitions() {
-  auto result = llvm::ArrayRef(g_variable_options);
+  auto result = llvm::makeArrayRef(g_variable_options);
   // Show the "--no-args", "--no-locals" and "--show-globals" options if we are
   // showing frame specific options
   if (include_frame_options)

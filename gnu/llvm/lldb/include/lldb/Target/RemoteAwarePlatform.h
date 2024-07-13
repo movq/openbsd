@@ -10,7 +10,6 @@
 #define LLDB_TARGET_REMOTEAWAREPLATFORM_H
 
 #include "lldb/Target/Platform.h"
-#include <optional>
 
 namespace lldb_private {
 
@@ -22,10 +21,6 @@ public:
 
   bool GetModuleSpec(const FileSpec &module_file_spec, const ArchSpec &arch,
                      ModuleSpec &module_spec) override;
-
-  Status
-  ResolveExecutable(const ModuleSpec &module_spec, lldb::ModuleSP &module_sp,
-                    const FileSpecList *module_search_paths_ptr) override;
 
   lldb::user_id_t OpenFile(const FileSpec &file_spec, File::OpenOptions flags,
                            uint32_t mode, Status &error) override;
@@ -65,18 +60,13 @@ public:
                          FileSpec &local_file) override;
 
   bool GetRemoteOSVersion() override;
-  std::optional<std::string> GetRemoteOSBuildString() override;
-  std::optional<std::string> GetRemoteOSKernelDescription() override;
+  bool GetRemoteOSBuildString(std::string &s) override;
+  bool GetRemoteOSKernelDescription(std::string &s) override;
   ArchSpec GetRemoteSystemArchitecture() override;
 
-  Status RunShellCommand(llvm::StringRef command, const FileSpec &working_dir,
+  Status RunShellCommand(const char *command, const FileSpec &working_dir,
                          int *status_ptr, int *signo_ptr,
                          std::string *command_output,
-                         const Timeout<std::micro> &timeout) override;
-
-  Status RunShellCommand(llvm::StringRef interpreter, llvm::StringRef command,
-                         const FileSpec &working_dir, int *status_ptr,
-                         int *signo_ptr, std::string *command_output,
                          const Timeout<std::micro> &timeout) override;
 
   const char *GetHostname() override;
@@ -97,9 +87,6 @@ public:
   Status LaunchProcess(ProcessLaunchInfo &launch_info) override;
 
   Status KillProcess(const lldb::pid_t pid) override;
-
-  size_t ConnectToWaitingProcesses(Debugger &debugger,
-                                   Status &error) override;
 
 protected:
   lldb::PlatformSP m_remote_platform_sp;

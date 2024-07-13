@@ -6,24 +6,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_CORE_PLUGININTERFACE_H
-#define LLDB_CORE_PLUGININTERFACE_H
+#ifndef liblldb_PluginInterface_h_
+#define liblldb_PluginInterface_h_
 
-#include "llvm/ADT/StringRef.h"
+#include "lldb/lldb-private.h"
 
 namespace lldb_private {
 
 class PluginInterface {
 public:
-  PluginInterface() = default;
-  virtual ~PluginInterface() = default;
+  virtual ~PluginInterface() {}
 
-  virtual llvm::StringRef GetPluginName() = 0;
+  virtual ConstString GetPluginName() = 0;
 
-  PluginInterface(const PluginInterface &) = delete;
-  PluginInterface &operator=(const PluginInterface &) = delete;
+  virtual uint32_t GetPluginVersion() = 0;
 };
 
 } // namespace lldb_private
 
-#endif // LLDB_CORE_PLUGININTERFACE_H
+#endif // liblldb_PluginInterface_h_

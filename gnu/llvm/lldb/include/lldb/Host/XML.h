@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_HOST_XML_H
-#define LLDB_HOST_XML_H
+#ifndef liblldb_XML_h_
+#define liblldb_XML_h_
 
 #include "lldb/Host/Config.h"
 
@@ -76,8 +76,8 @@ public:
 
   XMLNode GetChild() const;
 
-  std::string GetAttributeValue(const char *name,
-                                const char *fail_value = nullptr) const;
+  llvm::StringRef GetAttributeValue(const char *name,
+                                    const char *fail_value = nullptr) const;
 
   bool GetAttributeValueAsUnsigned(const char *name, uint64_t &value,
                                    uint64_t fail_value = 0, int base = 0) const;
@@ -107,7 +107,7 @@ public:
   void ForEachAttribute(AttributeCallback const &callback) const;
 
 protected:
-  XMLNodeImpl m_node = nullptr;
+  XMLNodeImpl m_node;
 };
 
 class XMLDocument {
@@ -138,7 +138,7 @@ public:
   static bool XMLEnabled();
 
 protected:
-  XMLDocumentImpl m_document = nullptr;
+  XMLDocumentImpl m_document;
   StreamString m_errors;
 };
 
@@ -179,4 +179,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // LLDB_HOST_XML_H
+#endif // liblldb_XML_h_

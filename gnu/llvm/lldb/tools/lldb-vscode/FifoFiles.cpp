@@ -17,7 +17,6 @@
 #include <chrono>
 #include <fstream>
 #include <future>
-#include <optional>
 #include <thread>
 
 #include "llvm/Support/FileSystem.h"
@@ -53,7 +52,7 @@ FifoFileIO::FifoFileIO(StringRef fifo_file, StringRef other_endpoint_name)
 Expected<json::Value> FifoFileIO::ReadJSON(std::chrono::milliseconds timeout) {
   // We use a pointer for this future, because otherwise its normal destructor
   // would wait for the getline to end, rendering the timeout useless.
-  std::optional<std::string> line;
+  Optional<std::string> line;
   std::future<void> *future =
       new std::future<void>(std::async(std::launch::async, [&]() {
         std::ifstream reader(m_fifo_file, std::ifstream::in);
@@ -62,14 +61,8 @@ Expected<json::Value> FifoFileIO::ReadJSON(std::chrono::milliseconds timeout) {
         if (!buffer.empty())
           line = buffer;
       }));
-  if (future->wait_for(timeout) == std::future_status::timeout || !line)
-    // Indeed this is a leak, but it's intentional. "future" obj destructor
-    //  will block on waiting for the worker thread to join. And the worker
-    //  thread might be stuck in blocking I/O. Intentionally leaking the  obj
-    //  as a hack to avoid blocking main thread, and adding annotation to
-    //  supress static code inspection warnings
-
-    // coverity[leaked_storage]
+  if (future->wait_for(timeout) == std::future_status::timeout ||
+      !line.hasValue())
     return createStringError(inconvertibleErrorCode(),
                              "Timed out trying to get messages from the " +
                                  m_other_endpoint_name);
@@ -87,13 +80,6 @@ Error FifoFileIO::SendJSON(const json::Value &json,
         done = true;
       }));
   if (future->wait_for(timeout) == std::future_status::timeout || !done) {
-    // Indeed this is a leak, but it's intentional. "future" obj destructor will
-    // block on waiting for the worker thread to join. And the worker thread
-    // might be stuck in blocking I/O. Intentionally leaking the  obj as a hack
-    // to avoid blocking main thread, and adding annotation to supress static
-    // code inspection warnings"
-
-    // coverity[leaked_storage]
     return createStringError(inconvertibleErrorCode(),
                              "Timed out trying to send messages to the " +
                                  m_other_endpoint_name);

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCMUTABLESET_H
-#define LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCMUTABLESET_H
+#ifndef CoreFoundationCPP_CFMutableSet_h_
+#define CoreFoundationCPP_CFMutableSet_h_
 
 #include "CFCReleaser.h"
 
@@ -16,7 +16,7 @@ public:
   // Constructors and Destructors
   CFCMutableSet(CFMutableSetRef s = NULL);
   CFCMutableSet(const CFCMutableSet &rhs);
-  ~CFCMutableSet() override;
+  virtual ~CFCMutableSet();
 
   // Operators
   const CFCMutableSet &operator=(const CFCMutableSet &rhs);
@@ -35,4 +35,4 @@ private:
   // For CFCMutableSet only
 };
 
-#endif // LLDB_SOURCE_HOST_MACOSX_CFCPP_CFCMUTABLESET_H
+#endif // CoreFoundationCPP_CFMutableSet_h_

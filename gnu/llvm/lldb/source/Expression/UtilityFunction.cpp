@@ -1,4 +1,4 @@
-//===-- UtilityFunction.cpp -----------------------------------------------===//
+//===-- UtilityFunction.cpp -------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <cstdio>
+#include "lldb/Host/Config.h"
+
+#include <stdio.h>
+#if HAVE_SYS_TYPES_H
 #include <sys/types.h>
+#endif
+
 
 #include "lldb/Core/Module.h"
 #include "lldb/Core/StreamFile.h"
@@ -36,10 +41,9 @@ char UtilityFunction::ID;
 /// \param[in] name
 ///     The name of the function, as used in the text.
 UtilityFunction::UtilityFunction(ExecutionContextScope &exe_scope,
-                                 std::string text, std::string name,
-                                 bool enable_debugging)
+                                 const char *text, const char *name)
     : Expression(exe_scope), m_execution_unit_sp(), m_jit_module_wp(),
-      m_function_text(std::move(text)), m_function_name(std::move(name)) {}
+      m_function_text(), m_function_name(name) {}
 
 UtilityFunction::~UtilityFunction() {
   lldb::ProcessSP process_sp(m_jit_process_wp.lock());
@@ -62,13 +66,6 @@ FunctionCaller *UtilityFunction::MakeFunctionCaller(
   ProcessSP process_sp = m_jit_process_wp.lock();
   if (!process_sp) {
     error.SetErrorString("Can't make a function caller without a process.");
-    return nullptr;
-  }
-  // Since we might need to call allocate memory and maybe call code to make
-  // the caller, we need to be stopped.
-  if (process_sp->GetState() != lldb::eStateStopped) {
-    error.SetErrorString("Can't make a function caller while the process is " 
-                         "running");
     return nullptr;
   }
 

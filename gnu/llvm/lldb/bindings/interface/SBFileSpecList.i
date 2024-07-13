@@ -8,9 +8,6 @@
 
 namespace lldb {
 
-%feature("docstring",
-"Represents a list of :py:class:`SBFileSpec`."
-) SBFileSpecList;
 class SBFileSpecList
 {
 public:

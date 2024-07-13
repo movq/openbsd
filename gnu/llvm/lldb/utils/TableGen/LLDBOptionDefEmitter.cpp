@@ -31,6 +31,7 @@ struct CommandOption {
   std::string ArgType;
   bool OptionalArg = false;
   std::string Validator;
+  std::string ArgEnum;
   std::vector<StringRef> Completions;
   std::string Description;
 
@@ -54,15 +55,18 @@ struct CommandOption {
     Required = Option->getValue("Required");
 
     // Add the full and short name for this option.
-    FullName = std::string(Option->getValueAsString("FullName"));
-    ShortName = std::string(Option->getValueAsString("ShortName"));
+    FullName = Option->getValueAsString("FullName");
+    ShortName = Option->getValueAsString("ShortName");
 
     if (auto A = Option->getValue("ArgType"))
       ArgType = A->getValue()->getAsUnquotedString();
     OptionalArg = Option->getValue("OptionalArg") != nullptr;
 
     if (Option->getValue("Validator"))
-      Validator = std::string(Option->getValueAsString("Validator"));
+      Validator = Option->getValueAsString("Validator");
+
+    if (Option->getValue("ArgEnum"))
+      ArgEnum = Option->getValueAsString("ArgEnum");
 
     if (Option->getValue("Completions"))
       Completions = Option->getValueAsListOfStrings("Completions");
@@ -110,8 +114,8 @@ static void emitOption(const CommandOption &O, raw_ostream &OS) {
     OS << "nullptr";
   OS << ", ";
 
-  if (!O.ArgType.empty())
-    OS << "g_argument_table[eArgType" << O.ArgType << "].enum_values";
+  if (!O.ArgEnum.empty())
+    OS << O.ArgEnum;
   else
     OS << "{}";
   OS << ", ";

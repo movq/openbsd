@@ -1,4 +1,4 @@
-//===-- CommandHistory.cpp ------------------------------------------------===//
+//===-- CommandHistory.cpp --------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,13 +6,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <cinttypes>
-#include <optional>
+#include <inttypes.h>
 
 #include "lldb/Interpreter/CommandHistory.h"
 
 using namespace lldb;
 using namespace lldb_private;
+
+CommandHistory::CommandHistory() : m_mutex(), m_history() {}
+
+CommandHistory::~CommandHistory() {}
 
 size_t CommandHistory::GetSize() const {
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -24,18 +27,18 @@ bool CommandHistory::IsEmpty() const {
   return m_history.empty();
 }
 
-std::optional<llvm::StringRef>
+llvm::Optional<llvm::StringRef>
 CommandHistory::FindString(llvm::StringRef input_str) const {
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
   if (input_str.size() < 2)
-    return std::nullopt;
+    return llvm::None;
 
   if (input_str[0] != g_repeat_char)
-    return std::nullopt;
+    return llvm::None;
 
   if (input_str[1] == g_repeat_char) {
     if (m_history.empty())
-      return std::nullopt;
+      return llvm::None;
     return llvm::StringRef(m_history.back());
   }
 
@@ -44,15 +47,15 @@ CommandHistory::FindString(llvm::StringRef input_str) const {
   size_t idx = 0;
   if (input_str.front() == '-') {
     if (input_str.drop_front(1).getAsInteger(0, idx))
-      return std::nullopt;
+      return llvm::None;
     if (idx >= m_history.size())
-      return std::nullopt;
+      return llvm::None;
     idx = m_history.size() - idx;
   } else {
     if (input_str.getAsInteger(0, idx))
-      return std::nullopt;
+      return llvm::None;
     if (idx >= m_history.size())
-      return std::nullopt;
+      return llvm::None;
   }
 
   return llvm::StringRef(m_history[idx]);
@@ -84,7 +87,7 @@ void CommandHistory::AppendString(llvm::StringRef str, bool reject_if_dupe) {
         return;
     }
   }
-  m_history.push_back(std::string(str));
+  m_history.push_back(str);
 }
 
 void CommandHistory::Clear() {

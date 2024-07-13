@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SOURCE_PLUGINS_PLATFORM_POSIX_PLATFORMPOSIX_H
-#define LLDB_SOURCE_PLUGINS_PLATFORM_POSIX_PLATFORMPOSIX_H
+#ifndef liblldb_PlatformPOSIX_h_
+#define liblldb_PlatformPOSIX_h_
 
 #include <map>
 #include <memory>
@@ -37,6 +37,10 @@ public:
 
   const lldb::UnixSignalsSP &GetRemoteUnixSignals() override;
 
+  lldb_private::Status ResolveExecutable(
+      const lldb_private::ModuleSpec &module_spec, lldb::ModuleSP &module_sp,
+      const lldb_private::FileSpecList *module_search_paths_ptr) override;
+
   lldb::ProcessSP Attach(lldb_private::ProcessAttachInfo &attach_info,
                          lldb_private::Debugger &debugger,
                          lldb_private::Target *target, // Can be nullptr, if
@@ -47,7 +51,11 @@ public:
 
   lldb::ProcessSP DebugProcess(lldb_private::ProcessLaunchInfo &launch_info,
                                lldb_private::Debugger &debugger,
-                               lldb_private::Target &target,
+                               lldb_private::Target *target, // Can be nullptr,
+                                                             // if nullptr
+                                                             // create a new
+                                                             // target, else use
+                                                             // existing one
                                lldb_private::Status &error) override;
 
   std::string GetPlatformSpecificConnectionInformation() override;
@@ -66,6 +74,9 @@ public:
 
   lldb_private::Status UnloadImage(lldb_private::Process *process,
                                    uint32_t image_token) override;
+
+  size_t ConnectToWaitingProcesses(lldb_private::Debugger &debugger,
+                                   lldb_private::Status &error) override;
 
   lldb_private::ConstString GetFullNameForDylib(lldb_private::ConstString basename) override;
 
@@ -94,8 +105,7 @@ protected:
   llvm::StringRef GetLibdlFunctionDeclarations(lldb_private::Process *process);
 
 private:
-  PlatformPOSIX(const PlatformPOSIX &) = delete;
-  const PlatformPOSIX &operator=(const PlatformPOSIX &) = delete;
+  DISALLOW_COPY_AND_ASSIGN(PlatformPOSIX);
 };
 
-#endif // LLDB_SOURCE_PLUGINS_PLATFORM_POSIX_PLATFORMPOSIX_H
+#endif // liblldb_PlatformPOSIX_h_
