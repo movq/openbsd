@@ -1,4 +1,4 @@
-/*	$OpenBSD: sock.c,v 1.47 2022/12/26 19:16:03 jmc Exp $	*/
+/*	$OpenBSD: sock.c,v 1.47.6.1 2024/08/01 14:39:52 bluhm Exp $	*/
 /*
  * Copyright (c) 2008-2012 Alexandre Ratchov <alex@caoua.org>
  *
@@ -988,7 +988,7 @@ sock_execmsg(struct sock *f)
 	struct slot *s = f->slot;
 	struct amsg *m = &f->rmsg;
 	unsigned char *data;
-	int size, ctl;
+	unsigned int size, ctl;
 
 	switch (ntohl(m->cmd)) {
 	case AMSG_DATA:
@@ -1020,7 +1020,7 @@ sock_execmsg(struct sock *f)
 			return 0;
 		}
 		size = ntohl(m->u.data.size);
-		if (size <= 0) {
+		if (size == 0) {
 #ifdef DEBUG
 			if (log_level >= 1) {
 				sock_log(f);
