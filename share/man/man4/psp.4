@@ -1,0 +1,51 @@
+.\"	$OpenBSD: psp.4,v 1.1 2024/09/04 11:12:53 jsg Exp $
+.\"
+.\" Copyright (c) 2024 Jonathan Gray <jsg@openbsd.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: September 4 2024 $
+.Dt PSP 4
+.Os
+.Sh NAME
+.Nm psp
+.Nd AMD Platform Security Processor
+.Sh SYNOPSIS
+.Cd "psp* at ccp?"
+.Sh DESCRIPTION
+The
+.Nm
+driver provides an interface to the AMD Platform Security Processor.
+.Sh FILES
+.Bl -tag -width /dev/psp
+.It Pa /dev/psp
+.El
+.Sh SEE ALSO
+.Xr ccp 4 ,
+.Xr vmd 8
+.Rs
+.%Q AMD
+.%T Secure Encrypted Virtualization API Version 0.24
+.%D April 2020
+.Re
+.Sh HISTORY
+The
+.Nm
+device driver first appeared in
+.Ox 7.6 .
+.Sh AUTHORS
+.An -nosplit
+The
+.Nm
+driver was written by
+.An Hans-Joerg Hoexer Aq Mt hshoexer@genua.de .
