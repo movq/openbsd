@@ -1,4 +1,4 @@
-/*	$OpenBSD: ufs_vnops.c,v 1.158 2023/09/08 20:00:28 mvs Exp $	*/
+/*	$OpenBSD: ufs_vnops.c,v 1.158.2.1 2024/09/15 22:46:45 bluhm Exp $	*/
 /*	$NetBSD: ufs_vnops.c,v 1.18 1996/05/11 18:28:04 mycroft Exp $	*/
 
 /*
@@ -1481,6 +1481,11 @@ ufs_readdir(void *v)
 		memcpy(u.dn.d_name, dp->d_name, u.dn.d_namlen);
 		memset(u.dn.d_name + u.dn.d_namlen, 0, u.dn.d_reclen
 		    - u.dn.d_namlen - offsetof(struct dirent, d_name));
+
+		if (memchr(u.dn.d_name, '/', u.dn.d_namlen) != NULL) {
+			error = EINVAL;
+			break;
+		}
 
 		error = uiomove(&u.dn, u.dn.d_reclen, uio);
 		dp = (struct direct *)((char *)dp + dp->d_reclen);
