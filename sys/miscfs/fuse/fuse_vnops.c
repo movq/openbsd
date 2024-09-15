@@ -1,4 +1,4 @@
-/* $OpenBSD: fuse_vnops.c,v 1.67 2023/09/08 20:00:28 mvs Exp $ */
+/* $OpenBSD: fuse_vnops.c,v 1.67.4.1 2024/09/15 22:44:29 bluhm Exp $ */
 /*
  * Copyright (c) 2012-2013 Sylvestre Gallon <ccna.syl@gmail.com>
  *
@@ -762,6 +762,8 @@ fusefs_readdir(void *v)
 	struct fusefs_node *ip;
 	struct fusefs_mnt *fmp;
 	struct fusebuf *fbuf;
+	struct dirent *dp;
+	char *edp;
 	struct vnode *vp;
 	struct proc *p;
 	struct uio *uio;
@@ -812,6 +814,35 @@ fusefs_readdir(void *v)
 		/* ack end of readdir */
 		if (fbuf->fb_len == 0) {
 			eofflag = 1;
+			fb_delete(fbuf);
+			break;
+		}
+
+		/* validate the returned dirents */
+		dp = (struct dirent *)fbuf->fb_dat;
+		edp = fbuf->fb_dat + fbuf->fb_len;
+		while ((char *)dp < edp) {
+			if ((char *)dp + offsetof(struct dirent, d_name) >= edp
+			    || dp->d_reclen <= offsetof(struct dirent, d_name)
+			    || (char *)dp + dp->d_reclen > edp) {
+				error = EINVAL;
+				break;
+			}
+			if (dp->d_namlen + offsetof(struct dirent, d_name) >=
+			    dp->d_reclen) {
+				error = EINVAL;
+				break;
+			}
+			memset(dp->d_name + dp->d_namlen, 0, dp->d_reclen -
+			    dp->d_namlen - offsetof(struct dirent, d_name));
+
+			if (memchr(dp->d_name, '/', dp->d_namlen) != NULL) {
+				error = EINVAL;
+				break;
+			}
+			dp = (struct dirent *)((char *)dp + dp->d_reclen);
+		}
+		if (error) {
 			fb_delete(fbuf);
 			break;
 		}
