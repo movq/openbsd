@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfsm_subs.h,v 1.47 2019/01/18 13:59:18 bluhm Exp $	*/
+/*	$OpenBSD: nfsm_subs.h,v 1.47.22.1 2024/09/15 22:32:37 bluhm Exp $	*/
 /*	$NetBSD: nfsm_subs.h,v 1.10 1996/03/20 21:59:56 fvdl Exp $	*/
 
 /*
@@ -65,6 +65,7 @@ struct nfsm_info {
 		      &cp2)) != 0) {					\
 		error = t1;						\
 		m_freem(info.nmi_mrep);					\
+		info.nmi_mrep = NULL;					\
 		goto nfsmout;						\
 	} else {							\
 		(a) = (c)cp2;						\
@@ -91,6 +92,7 @@ struct nfsm_info {
 		    &ttnp)) != 0) {					\
 			error = t1;					\
 			m_freem(info.nmi_mrep);				\
+			info.nmi_mrep = NULL;				\
 			goto nfsmout;					\
 		}							\
 		(v) = NFSTOV(ttnp);					\
@@ -112,6 +114,7 @@ struct nfsm_info {
 		if (((s) = fxdr_unsigned(int, *tl)) <= 0 ||		\
 			(s) > NFSX_V3FHMAX) {				\
 			m_freem(info.nmi_mrep);				\
+			info.nmi_mrep = NULL;				\
 			error = EBADRPC;				\
 			goto nfsmout;					\
 		}							\
@@ -126,6 +129,7 @@ struct nfsm_info {
 	    &info.nmi_dpos, (a))) != 0) {				\
 		error = t1;						\
 		m_freem(info.nmi_mrep);					\
+		info.nmi_mrep = NULL;					\
 		goto nfsmout;						\
 	}								\
 	(v) = ttvp;							\
@@ -140,6 +144,7 @@ struct nfsm_info {
 			error = t1;					\
 			(f) = 0;					\
 			m_freem(info.nmi_mrep);				\
+			info.nmi_mrep = NULL;				\
 			goto nfsmout;					\
 		}							\
 		(v) = ttvp;						\
@@ -175,19 +180,30 @@ struct nfsm_info {
 	nfsm_dissect(tl, u_int32_t *,NFSX_UNSIGNED);			\
 	if (((s) = fxdr_unsigned(int32_t, *tl)) < 0 || (s) > (m)) {	\
 		m_freem(info.nmi_mrep);					\
+		info.nmi_mrep = NULL;					\
 		error = EBADRPC;					\
 		goto nfsmout;						\
 	}								\
 }
 
+/*
+ * Note nfsm_reply at the end of this macro would return if v3 and an error
+ * different from EBADRPC. But it does not make sense to continue anyway if
+ * the error is NFSERR_NAMETOL.
+ */
 #define nfsm_srvnamesiz(s) {						\
 	nfsm_dissect(tl, u_int32_t *,NFSX_UNSIGNED);			\
-	if (((s) = fxdr_unsigned(int32_t, *tl)) > NFS_MAXNAMLEN) 	\
+	if (((s) = fxdr_unsigned(int32_t, *tl)) > NFS_MAXNAMLEN) { 	\
 		error = NFSERR_NAMETOL;					\
-	if ((s) <= 0)							\
+		(s) = 0;						\
+	} else if ((s) <= 0) {						\
 		error = EBADRPC;					\
-	if (error)							\
+		(s) = 0;						\
+	}								\
+	if (error) {							\
 		nfsm_reply(0);						\
+		return(0);						\
+	}								\
 }
 
 #define nfsm_mtouio(p, s)						\
@@ -196,6 +212,7 @@ struct nfsm_info {
 	        &info.nmi_dpos)) != 0) {				\
 		error = t1;						\
 		m_freem(info.nmi_mrep);					\
+		info.nmi_mrep = NULL;					\
 		goto nfsmout;						\
 	}
 
@@ -204,6 +221,7 @@ struct nfsm_info {
 #define nfsm_strtom(a, s, m)						\
 	if ((s) > (m)) {						\
 		m_freem(info.nmi_mreq);					\
+		info.nmi_mreq = NULL;					\
 		error = ENAMETOOLONG;					\
 		goto nfsmout;						\
 	}								\
@@ -217,10 +235,8 @@ struct nfsm_info {
 	else								\
 	   (void) nfs_rephead((s), nfsd, slp, error,			\
 		&info.nmi_mreq, &info.nmi_mb);				\
-	if (info.nmi_mrep != NULL) {					\
-		m_freem(info.nmi_mrep);					\
-		info.nmi_mrep = NULL;					\
-	}								\
+	m_freem(info.nmi_mrep);						\
+	info.nmi_mrep = NULL;						\
 	*mrq = info.nmi_mreq;						\
 	if (error && (!(nfsd->nd_flag & ND_NFSV3) || error == EBADRPC))	\
 		return(0);						\
@@ -235,6 +251,7 @@ struct nfsm_info {
 	      (s), t1)) != 0) {						\
 		error = t1;						\
 		m_freem(info.nmi_mrep);					\
+		info.nmi_mrep = NULL;					\
 		goto nfsmout;						\
 	}								\
 }
