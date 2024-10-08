@@ -1,4 +1,4 @@
-.\"	$OpenBSD: netintro.4,v 1.55 2024/09/23 20:38:49 kn Exp $
+.\"	$OpenBSD: netintro.4,v 1.53 2018/07/09 09:18:52 schwarze Exp $
 .\"	$NetBSD: netintro.4,v 1.4 1995/10/19 08:03:40 jtc Exp $
 .\"
 .\" Copyright (c) 1983, 1990, 1991, 1993
@@ -30,7 +30,7 @@
 .\"
 .\"     @(#)netintro.4	8.2 (Berkeley) 11/30/93
 .\"
-.Dd $Mdocdate: September 23 2024 $
+.Dd $Mdocdate: July 9 2018 $
 .Dt NETINTRO 4
 .Os
 .Sh NAME
@@ -201,7 +201,8 @@ structure pointer as their parameter.
 This structure is as follows:
 .Bd -literal
 struct	ifreq {
-	char	ifr_name[IFNAMSIZ];		/* if name, e.g. "en0" */
+#define IFNAMSIZ 16
+	char	ifr_name[IFNAMSIZ];	/* if name, e.g. "en0" */
 	union {
 		struct	sockaddr	ifru_addr;
 		struct	sockaddr	ifru_dstaddr;
@@ -222,14 +223,11 @@ struct	ifreq {
 #define	ifr_hardmtu	ifr_ifru.ifru_metric	/* hardmtu (overload) */
 #define	ifr_media	ifr_ifru.ifru_media	/* media options */
 #define	ifr_rdomainid	ifr_ifru.ifru_metric	/* VRF instance (overload) */
-#define ifr_vnetid	ifr_ifru.ifru_vnetid	/* Virtual Net Id */
-#define ifr_ttl		ifr_ifru.ifru_metric	/* tunnel TTL (overload) */
-#define ifr_df		ifr_ifru.ifru_metric	/* tunnel DF (overload) */
+#define	ifr_vnetid	ifr_ifru.ifru_vnetid	/* Virtual Net Id */
+#define	ifr_ttl		ifr_ifru.ifru_metric	/* tunnel TTL (overload) */
 #define	ifr_data	ifr_ifru.ifru_data	/* for use by interface */
-#define ifr_index	ifr_ifru.ifru_index	/* interface index */
-#define ifr_llprio	ifr_ifru.ifru_metric	/* link layer priority */
-#define ifr_hdrprio	ifr_ifru.ifru_metric	/* header prio field config */
-#define ifr_pwe3	ifr_ifru.ifru_metric	/* PWE3 type */
+#define	ifr_index	ifr_ifru.ifru_index	/* interface index */
+#define	ifr_llprio	ifr_ifru.ifru_metric	/* link layer priority */
 };
 .Ed
 .Pp
@@ -284,8 +282,6 @@ When marked up again, the interface is reinitialized.
 Get the interface flags.
 .It Dv SIOCGIFXFLAGS Fa "struct ifreq *"
 Get the extended interface flags.
-.It Dv SIOCSIFMTU Fa "struct ifreq *"
-Set the MTU of the interface.
 .It Dv SIOCGIFMTU Fa "struct ifreq *"
 Get the current MTU of the interface.
 .It Dv SIOCGIFHARDMTU Fa "struct ifreq *"
@@ -303,12 +299,12 @@ structure is as follows:
 .Bd -literal
 struct ifmediareq {
 	char		ifm_name[IFNAMSIZ];	/* if name, e.g. "en0" */
-	uint64_t	ifm_current;		/* get/set current media options */
-	uint64_t	ifm_mask;		/* don't care mask */
-	uint64_t	ifm_status;		/* media status */
-	uint64_t	ifm_active;		/* active options */
-	int		ifm_count;		/* # entries in ifm_ulist array */
-	uint64_t	*ifm_ulist;		/* media words */
+	uint64_t	ifm_current;	/* current media options */
+	uint64_t	ifm_mask;	/* don't care mask */
+	uint64_t	ifm_status;	/* media status */
+	uint64_t	ifm_active;	/* active options */
+	int		ifm_count;	/* #entries in ifm_ulist array */
+	uint64_t	*ifm_ulist;	/* media words */
 };
 .Ed
 .Pp
@@ -357,16 +353,10 @@ The
 structure is as follows:
 .Bd -literal
 struct ifaliasreq {
-	char	ifra_name[IFNAMSIZ];		/* if name, e.g. "en0" */
-	union {
-		struct	sockaddr ifrau_addr;
-		int	ifrau_align;
-	 } ifra_ifrau;
-#ifndef ifra_addr
-#define ifra_addr	ifra_ifrau.ifrau_addr
-#endif
+	char	ifra_name[IFNAMSIZ];	/* if name, e.g. "en0" */
+	struct	sockaddr ifra_addr;
 	struct	sockaddr ifra_dstaddr;
-#define	ifra_broadaddr	ifra_dstaddr
+#define ifra_broadaddr ifra_dstaddr
 	struct	sockaddr ifra_mask;
 };
 .Ed
@@ -409,14 +399,14 @@ needs to be in advance.
 Note, however, that this is an extension
 that not all operating systems support.
 .Bd -literal
-struct	ifconf {
-	int	ifc_len;		/* size of associated buffer */
+struct ifconf {
+	int	ifc_len;	  /* size of associated buffer */
 	union {
 		caddr_t	ifcu_buf;
 		struct	ifreq *ifcu_req;
 	} ifc_ifcu;
-#define	ifc_buf	ifc_ifcu.ifcu_buf	/* buffer address */
-#define	ifc_req	ifc_ifcu.ifcu_req	/* array of structures returned */
+#define ifc_buf ifc_ifcu.ifcu_buf /* buffer address */
+#define ifc_req ifc_ifcu.ifcu_req /* array of structures ret'd */
 };
 .Ed
 .It Dv SIOCIFCREATE Fa "struct ifreq *"
@@ -449,7 +439,7 @@ structure is as follows:
 .Bd -literal
 struct if_clonereq {
 	int   ifcr_total;  /* total cloners (out) */
-	int   ifcr_count;  /* room for this many in user buffer */
+	int   ifcr_count;  /* room for this many in user buf */
 	char *ifcr_buffer; /* buffer for cloner names */
 };
 .Ed
@@ -463,25 +453,18 @@ The
 structure is as follows:
 .Bd -literal
 struct ifg_req {
-	union {
-		char			 ifgrqu_group[IFNAMSIZ];
-		char			 ifgrqu_member[IFNAMSIZ];
-	} ifgrq_ifgrqu;
-#define	ifgrq_group	ifgrq_ifgrqu.ifgrqu_group
-#define	ifgrq_member	ifgrq_ifgrqu.ifgrqu_member
+	char			 ifgrq_group[IFNAMSIZ];
 };
 
 struct ifgroupreq {
 	char	ifgr_name[IFNAMSIZ];
 	u_int	ifgr_len;
 	union {
-		char			 ifgru_group[IFNAMSIZ];
-		struct	ifg_req		*ifgru_groups;
-		struct	ifg_attrib	 ifgru_attrib;
+		char	ifgru_group[IFNAMSIZ];
+		struct	ifg_req *ifgru_groups;
 	} ifgr_ifgru;
 #define ifgr_group	ifgr_ifgru.ifgru_group
 #define ifgr_groups	ifgr_ifgru.ifgru_groups
-#define ifgr_attrib	ifgr_ifgru.ifgru_attrib
 };
 .Ed
 .It Dv SIOCGIFGROUP Fa "struct ifgroupreq *"

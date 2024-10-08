@@ -1,4 +1,4 @@
-/*	$OpenBSD: subr_witness.c,v 1.54 2024/09/25 18:24:13 bluhm Exp $	*/
+/*	$OpenBSD: subr_witness.c,v 1.53 2024/06/03 14:34:19 claudio Exp $	*/
 
 /*-
  * Copyright (c) 2008 Isilon Systems, Inc.
@@ -766,6 +766,7 @@ witness_checkorder(struct lock_object *lock, int flags,
 	struct lock_list_entry *lock_list, *lle;
 	struct lock_instance *lock1, *lock2, *plock;
 	struct lock_class *class, *iclass;
+	struct proc *p;
 	struct witness *w, *w1;
 	int i, j, s;
 
@@ -791,9 +792,9 @@ witness_checkorder(struct lock_object *lock, int flags,
 		w = lock->lo_witness =
 		    enroll(lock->lo_type, lock->lo_name, class);
 
-	if (class->lc_flags & LC_SLEEPLOCK) {
-		struct proc *p;
+	p = curproc;
 
+	if (class->lc_flags & LC_SLEEPLOCK) {
 		/*
 		 * Since spin locks include a critical section, this check
 		 * implicitly enforces a lock order of all sleep locks before
@@ -810,9 +811,6 @@ witness_checkorder(struct lock_object *lock, int flags,
 		 * If this is the first lock acquired then just return as
 		 * no order checking is needed.
 		 */
-		p = curproc;
-		if (p == NULL)
-			return;
 		lock_list = p->p_sleeplocks;
 		if (lock_list == NULL || lock_list->ll_count == 0)
 			return;
@@ -1099,6 +1097,7 @@ witness_lock(struct lock_object *lock, int flags)
 {
 	struct lock_list_entry **lock_list, *lle;
 	struct lock_instance *instance;
+	struct proc *p;
 	struct witness *w;
 	int s;
 
@@ -1111,15 +1110,12 @@ witness_lock(struct lock_object *lock, int flags)
 		w = lock->lo_witness =
 		    enroll(lock->lo_type, lock->lo_name, LOCK_CLASS(lock));
 
-	/* Determine lock list for this lock. */
-	if (LOCK_CLASS(lock)->lc_flags & LC_SLEEPLOCK) {
-		struct proc *p;
+	p = curproc;
 
-		p = curproc;
-		if (p == NULL)
-			return;
+	/* Determine lock list for this lock. */
+	if (LOCK_CLASS(lock)->lc_flags & LC_SLEEPLOCK)
 		lock_list = &p->p_sleeplocks;
-	} else
+	else
 		lock_list = &witness_cpu[cpu_number()].wc_spinlocks;
 
 	s = splhigh();
@@ -1247,23 +1243,20 @@ witness_unlock(struct lock_object *lock, int flags)
 	struct lock_list_entry **lock_list, *lle;
 	struct lock_instance *instance;
 	struct lock_class *class;
+	struct proc *p;
 	int i, j;
 	int s;
 
 	if (witness_cold || lock->lo_witness == NULL ||
 	    panicstr != NULL || db_active)
 		return;
+	p = curproc;
 	class = LOCK_CLASS(lock);
 
 	/* Find lock instance associated with this lock. */
-	if (class->lc_flags & LC_SLEEPLOCK) {
-		struct proc *p;
-
-		p = curproc;
-		if (p == NULL)
-			return;
+	if (class->lc_flags & LC_SLEEPLOCK)
 		lock_list = &p->p_sleeplocks;
-	} else
+	else
 		lock_list = &witness_cpu[cpu_number()].wc_spinlocks;
 
 	s = splhigh();

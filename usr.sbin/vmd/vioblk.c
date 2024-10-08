@@ -1,4 +1,4 @@
-/*	$OpenBSD: vioblk.c,v 1.15 2024/09/26 01:45:13 jsg Exp $	*/
+/*	$OpenBSD: vioblk.c,v 1.14 2024/07/10 09:27:33 dv Exp $	*/
 
 /*
  * Copyright (c) 2023 Dave Voutila <dv@openbsd.org>
@@ -16,7 +16,8 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#include <stdint.h>
+#include <sys/mman.h>
+#include <sys/param.h> /* PAGE_SIZE */
 
 #include <dev/pci/virtio_pcireg.h>
 #include <dev/pv/vioblkreg.h>
@@ -24,6 +25,7 @@
 
 #include <errno.h>
 #include <event.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>

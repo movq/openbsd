@@ -1,4 +1,4 @@
-/*	$OpenBSD: drm_linux.c,v 1.119 2024/09/30 12:21:17 jsg Exp $	*/
+/*	$OpenBSD: drm_linux.c,v 1.115 2024/07/13 15:38:21 kettenis Exp $	*/
 /*
  * Copyright (c) 2013 Jonathan Gray <jsg@openbsd.org>
  * Copyright (c) 2015, 2016 Mark Kettenis <kettenis@openbsd.org>
@@ -982,12 +982,18 @@ SPLAY_GENERATE(xarray_tree, xarray_entry, entry, xarray_cmp);
 void
 xa_init_flags(struct xarray *xa, gfp_t flags)
 {
+	static int initialized;
+
+	if (!initialized) {
+		pool_init(&xa_pool, sizeof(struct xarray_entry), 0, IPL_NONE, 0,
+		    "xapl", NULL);
+		initialized = 1;
+	}
 	SPLAY_INIT(&xa->xa_tree);
 	if (flags & XA_FLAGS_LOCK_IRQ)
 		mtx_init(&xa->xa_lock, IPL_TTY);
 	else
 		mtx_init(&xa->xa_lock, IPL_NONE);
-	xa->xa_flags = flags;
 }
 
 void
@@ -1003,15 +1009,11 @@ xa_destroy(struct xarray *xa)
 
 /* Don't wrap ids. */
 int
-__xa_alloc(struct xarray *xa, u32 *id, void *entry, struct xarray_range xr,
-    gfp_t gfp)
+__xa_alloc(struct xarray *xa, u32 *id, void *entry, int limit, gfp_t gfp)
 {
 	struct xarray_entry *xid;
-	uint32_t start = xr.start;
-	uint32_t end = xr.end;
-
-	if (start == 0 && (xa->xa_flags & XA_FLAGS_ALLOC1))
-		start = 1;
+	int start = (xa->xa_flags & XA_FLAGS_ALLOC1) ? 1 : 0;
+	int begin;
 
 	if (gfp & GFP_NOWAIT) {
 		xid = pool_get(&xa_pool, PR_NOWAIT);
@@ -1024,14 +1026,17 @@ __xa_alloc(struct xarray *xa, u32 *id, void *entry, struct xarray_range xr,
 	if (xid == NULL)
 		return -ENOMEM;
 
-	xid->id = start;
+	if (limit <= 0)
+		limit = INT_MAX;
+
+	xid->id = begin = start;
 
 	while (SPLAY_INSERT(xarray_tree, &xa->xa_tree, xid)) {
-		if (xid->id == end)
+		if (xid->id == limit)
 			xid->id = start;
 		else
 			xid->id++;
-		if (xid->id == start) {
+		if (xid->id == begin) {
 			pool_put(&xa_pool, xid);
 			return -EBUSY;
 		}
@@ -1047,10 +1052,10 @@ __xa_alloc(struct xarray *xa, u32 *id, void *entry, struct xarray_range xr,
  * The only caller of this (i915_drm_client.c) doesn't use next id.
  */
 int
-__xa_alloc_cyclic(struct xarray *xa, u32 *id, void *entry,
-    struct xarray_range xr, u32 *next, gfp_t gfp)
+__xa_alloc_cyclic(struct xarray *xa, u32 *id, void *entry, int limit, u32 *next,
+    gfp_t gfp)
 {
-	int r = __xa_alloc(xa, id, entry, xr, gfp);
+	int r = __xa_alloc(xa, id, entry, limit, gfp);
 	*next = *id + 1;
 	return r;
 }
@@ -2848,8 +2853,6 @@ drm_linux_init(void)
 
 	pool_init(&idr_pool, sizeof(struct idr_entry), 0, IPL_TTY, 0,
 	    "idrpl", NULL);
-	pool_init(&xa_pool, sizeof(struct xarray_entry), 0, IPL_NONE, 0,
-	    "xapl", NULL);
 
 	kmap_atomic_va =
 	    (vaddr_t)km_alloc(PAGE_SIZE, &kv_any, &kp_none, &kd_waitok);
@@ -2865,7 +2868,6 @@ drm_linux_init(void)
 void
 drm_linux_exit(void)
 {
-	pool_destroy(&xa_pool);
 	pool_destroy(&idr_pool);
 
 	taskq_destroy(taskletq);
@@ -2944,25 +2946,20 @@ unregister_shrinker(struct shrinker *shrinker)
 	TAILQ_REMOVE(&shrinkers, shrinker, next);
 }
 
-unsigned long
+void
 drmbackoff(long npages)
 {
 	struct shrink_control sc;
 	struct shrinker *shrinker;
-	u_long ret, freed = 0;
+	u_long ret;
 
 	shrinker = TAILQ_FIRST(&shrinkers);
 	while (shrinker && npages > 0) {
 		sc.nr_to_scan = npages;
 		ret = shrinker->scan_objects(shrinker, &sc);
-		if (ret == SHRINK_STOP)
-			break;
 		npages -= ret;
-		freed += ret;
 		shrinker = TAILQ_NEXT(shrinker, next);
 	}
-
-	return freed;
 }
 
 void *

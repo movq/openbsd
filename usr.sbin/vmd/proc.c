@@ -1,4 +1,4 @@
-/*	$OpenBSD: proc.c,v 1.26 2024/09/26 01:45:13 jsg Exp $	*/
+/*	$OpenBSD: proc.c,v 1.25 2024/04/09 15:48:01 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2010 - 2016 Reyk Floeter <reyk@openbsd.org>
@@ -29,6 +29,7 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <paths.h>
 #include <pwd.h>
 #include <event.h>
 #include <imsg.h>
