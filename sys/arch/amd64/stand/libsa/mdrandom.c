@@ -1,4 +1,4 @@
-/*	$OpenBSD: mdrandom.c,v 1.4 2024/09/26 10:12:02 jsg Exp $	*/
+/*	$OpenBSD: mdrandom.c,v 1.3 2020/06/19 15:00:45 naddy Exp $	*/
 
 /*
  * Copyright (c) 2020 Theo de Raadt 
@@ -17,6 +17,7 @@
  */
 
 #include <sys/param.h>
+#include <machine/psl.h>
 #include <machine/specialreg.h>
 
 #include "libsa.h"
