@@ -3,6 +3,15 @@ NOTE: We are looking for help with a few things:
       If you can help, please get in touch.  Thanks!
 
         Security fixes:
+            #915  CVE-2024-50602 -- Fix crash within function XML_ResumeParser
+                    from a NULL pointer dereference by disallowing function
+                    XML_StopParser to (stop or) suspend an unstarted parser.
+                    // CWE-476 CWE-754
+
+        Other changes:
+            #914  Fix signedness of format strings
+
+        Security fixes:
        #887 #890  CVE-2024-45490 -- Calling function XML_ParseBuffer with
                     len < 0 without noticing and then calling XML_GetBuffer
                     will have XML_ParseBuffer fail to recognize the problem
