@@ -30,6 +30,15 @@
 !! THANK YOU!                        Sebastian Pipping -- Berlin, 2024-03-09 !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+        Security fixes:
+            #915  CVE-2024-50602 -- Fix crash within function XML_ResumeParser
+                    from a NULL pointer dereference by disallowing function
+                    XML_StopParser to (stop or) suspend an unstarted parser.
+                    // CWE-476 CWE-754
+
+        Other changes:
+            #914  Fix signedness of format strings
+
 Release 2.6.3 Wed September 4 2024
         Security fixes:
        #887 #890  CVE-2024-45490 -- Calling function XML_ParseBuffer with
