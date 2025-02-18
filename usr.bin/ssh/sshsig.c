@@ -1,4 +1,4 @@
-/* $OpenBSD: sshsig.c,v 1.35 2024/03/08 22:16:32 djm Exp $ */
+/* $OpenBSD: sshsig.c,v 1.35.4.1 2025/02/18 08:17:27 bluhm Exp $ */
 /*
  * Copyright (c) 2019 Google LLC
  *
@@ -872,6 +872,7 @@ cert_filter_principals(const char *path, u_long linenum,
 	}
 	if ((principals = sshbuf_dup_string(nprincipals)) == NULL) {
 		error_f("buffer error");
+		r = SSH_ERR_ALLOC_FAIL;
 		goto out;
 	}
 	/* success */
