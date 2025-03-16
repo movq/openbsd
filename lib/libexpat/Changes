@@ -3,6 +3,19 @@ NOTE: We are looking for help with a few things:
       If you can help, please get in touch.  Thanks!
 
         Security fixes:
+       #893 #973  CVE-2024-8176 -- Fix crash from chaining a large number
+                    of entities caused by stack overflow by resolving use of
+                    recursion, for all three uses of entities:
+                    - general entities in character data ("<e>&g1;</e>")
+                    - general entities in attribute values ("<e k1='&g1;'/>")
+                    - parameter entities ("%p1;")
+                    Known impact is (reliable and easy) denial of service:
+                    CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H/E:H/RL:O/RC:C
+                    (Base Score: 7.5, Temporal Score: 7.2)
+                    Please note that a layer of compression around XML can
+                    significantly reduce the minimum attack payload size.
+
+        Security fixes:
             #915  CVE-2024-50602 -- Fix crash within function XML_ResumeParser
                     from a NULL pointer dereference by disallowing function
                     XML_StopParser to (stop or) suspend an unstarted parser.
@@ -32,11 +45,18 @@ NOTE: We are looking for help with a few things:
                     Impact is denial of service to potentially artitrary code
                     execution.
 
+        Other changes:
+            #885  Fix typo in a code comment
+
         Security fixes:
        #839 #842  CVE-2024-28757 -- Prevent billion laughs attacks with
                     isolated use of external parsers.  Please see the commit
                     message of commit 1d50b80cf31de87750103656f6eb693746854aa8
                     for details.
+
+        Bug fixes:
+       #839 #841  Reject direct parameter entity recursion
+                    and avoid the related undefined behavior
 
 Release 2.6.0 Tue February 6 2024
         Security fixes:
