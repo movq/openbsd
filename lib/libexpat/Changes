@@ -2,6 +2,19 @@ NOTE: We are looking for help with a few things:
       https://github.com/libexpat/libexpat/labels/help%20wanted
       If you can help, please get in touch.  Thanks!
 
+        Bug fixes:
+       #980 #989  Restore event pointer behavior from Expat 2.6.4
+                    (that the fix to CVE-2024-8176 changed in 2.7.0);
+                    affected API functions are:
+                    - XML_GetCurrentByteCount
+                    - XML_GetCurrentByteIndex
+                    - XML_GetCurrentColumnNumber
+                    - XML_GetCurrentLineNumber
+                    - XML_GetInputContext
+
+        Other changes:
+            #986  Address compiler warnings
+
         Security fixes:
        #893 #973  CVE-2024-8176 -- Fix crash from chaining a large number
                     of entities caused by stack overflow by resolving use of
