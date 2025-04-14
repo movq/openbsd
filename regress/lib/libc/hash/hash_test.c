@@ -1,4 +1,4 @@
-/*	$OpenBSD: hash_test.c,v 1.1 2025/04/14 17:32:05 tb Exp $ */
+/*	$OpenBSD: hash_test.c,v 1.1.1.1 2025/04/14 17:32:05 tb Exp $ */
 
 /*
  * Copyright (c) 2025 Theo Buehler <tb@openbsd.org>
