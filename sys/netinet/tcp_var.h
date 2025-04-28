@@ -1,4 +1,4 @@
-/*	$OpenBSD: tcp_var.h,v 1.188 2025/04/21 09:54:53 bluhm Exp $	*/
+/*	$OpenBSD: tcp_var.h,v 1.186 2025/03/02 21:28:32 bluhm Exp $	*/
 /*	$NetBSD: tcp_var.h,v 1.17 1996/02/13 23:44:24 christos Exp $	*/
 
 /*
@@ -720,7 +720,6 @@ void	 tcp_init(void);
 int	 tcp_input(struct mbuf **, int *, int, int, struct netstack *);
 int	 tcp_mss(struct tcpcb *, int);
 void	 tcp_mss_update(struct tcpcb *);
-void	 tcp_softlro_glue(struct mbuf_list *, struct mbuf *, struct ifnet *);
 u_int	 tcp_hdrsz(struct tcpcb *);
 void	 tcp_mtudisc(struct inpcb *, int);
 void	 tcp_mtudisc_increase(struct inpcb *, int);
@@ -731,8 +730,7 @@ struct tcpcb *
 	 tcp_newtcpcb(struct inpcb *, int);
 void	 tcp_notify(struct inpcb *, int);
 int	 tcp_output(struct tcpcb *);
-int	 tcp_softtso_chop(struct mbuf_list *, struct mbuf *, struct ifnet *,
-	    u_int);
+int	 tcp_chopper(struct mbuf *, struct mbuf_list *, struct ifnet *, u_int);
 int	 tcp_if_output_tso(struct ifnet *, struct mbuf **, struct sockaddr *,
 	    struct rtentry *, uint32_t, u_int);
 void	 tcp_pulloutofband(struct socket *, u_int, struct mbuf *, int);

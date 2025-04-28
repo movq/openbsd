@@ -111,7 +111,7 @@ main(int argc, char *argv[])
 	}
 
 	if (flagprefork)
-		(void)arc4random();
+		arc4random();
 
 	bufparent = mmap(NULL, sizeof(Buf), PROT_READ|PROT_WRITE,
 	    MAP_ANON|MAP_PRIVATE, -1, 0);

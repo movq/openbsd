@@ -1,4 +1,4 @@
-/* $OpenBSD: ctr128.c,v 1.14 2025/04/21 16:01:18 jsing Exp $ */
+/* $OpenBSD: ctr128.c,v 1.11 2023/07/08 14:56:54 beck Exp $ */
 /* ====================================================================
  * Copyright (c) 2008 The OpenSSL Project.  All rights reserved.
  *
@@ -49,12 +49,16 @@
  *
  */
 
-#include <assert.h>
+#include <openssl/crypto.h>
+#include "modes_local.h"
 #include <string.h>
 
-#include <openssl/crypto.h>
-
-#include "modes_local.h"
+#ifndef MODES_DEBUG
+# ifndef NDEBUG
+#  define NDEBUG
+# endif
+#endif
+#include <assert.h>
 
 /* NOTE: the IV/counter CTR mode is big-endian.  The code itself
  * is endian-neutral. */

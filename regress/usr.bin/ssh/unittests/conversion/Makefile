@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.5 2025/04/15 04:00:42 djm Exp $
+#	$OpenBSD: Makefile,v 1.4 2021/01/09 12:24:30 dtucker Exp $
 
 PROG=test_conversion
 SRCS=tests.c
@@ -11,6 +11,6 @@ SRCS+=match.c addr.c addrmatch.c
 REGRESS_TARGETS=run-regress-${PROG}
 
 run-regress-${PROG}: ${PROG}
-	env ${TEST_ENV} ./${PROG} ${UNITTEST_ARGS}
+	env ${TEST_ENV} ./${PROG}
 
 .include <bsd.regress.mk>
