@@ -1,5 +1,5 @@
-/*	$OpenBSD: bsdstubs.c,v 1.1 2025/05/03 15:09:38 tb Exp $	*/
-/*	$OpenBSD: bsdstubs.c,v 1.1 2025/05/03 15:09:38 tb Exp $	*/
+/*	$OpenBSD: bsdstubs.c,v 1.1.1.1 2025/05/03 15:09:38 tb Exp $	*/
+/*	$OpenBSD: bsdstubs.c,v 1.1.1.1 2025/05/03 15:09:38 tb Exp $	*/
 
 /*
  * Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
