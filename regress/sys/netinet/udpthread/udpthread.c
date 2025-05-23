@@ -1,4 +1,4 @@
-/*	$OpenBSD: udpthread.c,v 1.1 2025/05/23 16:19:52 bluhm Exp $	*/
+/*	$OpenBSD: udpthread.c,v 1.1.1.1 2025/05/23 16:19:52 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2025 Alexander Bluhm <bluhm@openbsd.org>

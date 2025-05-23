@@ -1,4 +1,4 @@
-# $OpenBSD: Makefile,v 1.1 2025/05/23 16:19:52 bluhm Exp $
+# $OpenBSD: Makefile,v 1.1.1.1 2025/05/23 16:19:52 bluhm Exp $
 
 PROG=		udpthread
 LDADD=		-lpthread
