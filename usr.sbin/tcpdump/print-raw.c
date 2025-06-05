@@ -1,4 +1,4 @@
-/*	$OpenBSD: print-raw.c,v 1.9.4.1 2025/06/05 23:51:48 dlg Exp $	*/
+/*	$OpenBSD: print-raw.c,v 1.9.4.2 2025/06/05 23:58:52 dlg Exp $	*/
 
 /*
  * Copyright (c) 1996
@@ -56,7 +56,6 @@ raw_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 {
 	u_int length = h->len;
 	u_int caplen = h->caplen;
-	uint8_t v;
 
 	ts_print(&h->ts);
 
@@ -68,27 +67,10 @@ raw_if_print(u_char *user, const struct pcap_pkthdr *h, const u_char *p)
 	packetp = p;
 	snapend = p + caplen;
 
-	if (caplen >= sizeof(v)) {
-		v = *p >> 4;
-		switch (v) {
-		case 4:
-			if (eflag)
-				printf("ip: ");
+	if (eflag)
+		printf("ip: ");
 
-			ip_print(p, length);
-			break;
-		case 6:
-			if (eflag)
-				printf("ip6: ");
-
-			ip6_print(p, length);
-			break;
-		default:
-			if (eflag)
-				printf("v%u: ", v);
-			break;
-		}
-	}
+	ip_print(p, length);
 
 	if (xflag)
 		default_print(p, caplen);
