@@ -7,12 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "MipsABIInfo.h"
-#include "MipsRegisterInfo.h"
+#include "Mips.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGenTypes/LowLevelType.h"
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/LowLevelTypeImpl.h"
 
 using namespace llvm;
 
@@ -22,6 +21,11 @@ cl::opt<bool>
 EmitJalrReloc("mips-jalr-reloc", cl::Hidden,
               cl::desc("MIPS: Emit R_{MICRO}MIPS_JALR relocation with jalr"),
               cl::init(true));
+
+cl::opt<bool>
+FixLoongson2FBTB("fix-loongson2f-btb", cl::Hidden,
+                 cl::desc("MIPS: Enable Loongson 2F BTB workaround"),
+                 cl::init(false));
 
 namespace {
 static const MCPhysReg O32IntRegs[4] = {Mips::A0, Mips::A1, Mips::A2, Mips::A3};
@@ -57,11 +61,11 @@ unsigned MipsABIInfo::GetCalleeAllocdArgSizeInBytes(CallingConv::ID CC) const {
 
 MipsABIInfo MipsABIInfo::computeTargetABI(const Triple &TT, StringRef CPU,
                                           const MCTargetOptions &Options) {
-  if (Options.getABIName().startswith("o32"))
+  if (Options.getABIName().starts_with("o32"))
     return MipsABIInfo::O32();
-  if (Options.getABIName().startswith("n32"))
+  if (Options.getABIName().starts_with("n32"))
     return MipsABIInfo::N32();
-  if (Options.getABIName().startswith("n64"))
+  if (Options.getABIName().starts_with("n64"))
     return MipsABIInfo::N64();
   if (TT.getEnvironment() == llvm::Triple::GNUABIN32)
     return MipsABIInfo::N32();
