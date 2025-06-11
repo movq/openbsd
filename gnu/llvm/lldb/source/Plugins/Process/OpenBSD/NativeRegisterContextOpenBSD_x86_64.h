@@ -7,8 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if defined(__x86_64__)
-
 #ifndef lldb_NativeRegisterContextOpenBSD_x86_64_h
 #define lldb_NativeRegisterContextOpenBSD_x86_64_h
 
@@ -16,6 +14,9 @@
 #include <sys/types.h>
 #include <machine/reg.h>
 // clang-format on
+
+#include <array>
+#include <vector>
 
 #include "Plugins/Process/OpenBSD/NativeRegisterContextOpenBSD.h"
 #include "Plugins/Process/Utility/RegisterContext_x86.h"
@@ -30,6 +31,10 @@ class NativeRegisterContextOpenBSD_x86_64 : public NativeRegisterContextOpenBSD 
 public:
   NativeRegisterContextOpenBSD_x86_64(const ArchSpec &target_arch,
                                      NativeThreadProtocol &native_thread);
+  size_t GetGPRSize() override { return sizeof(m_gpr); }
+  size_t GetFPRSize() override { return sizeof(m_fpr); }
+
+  uint32_t GetUserRegisterCount() const override;
   uint32_t GetRegisterSetCount() const override;
 
   const RegisterSet *GetRegisterSet(uint32_t set_index) const override;
@@ -40,53 +45,42 @@ public:
   Status WriteRegister(const RegisterInfo *reg_info,
                        const RegisterValue &reg_value) override;
 
-  Status ReadAllRegisterValues(lldb::DataBufferSP &data_sp) override;
+  Status ReadAllRegisterValues(lldb::WritableDataBufferSP &data_sp) override;
 
   Status WriteAllRegisterValues(const lldb::DataBufferSP &data_sp) override;
 
-  Status IsWatchpointHit(uint32_t wp_index, bool &is_hit) override;
-
-  Status GetWatchpointHitIndex(uint32_t &wp_index,
-                               lldb::addr_t trap_addr) override;
-
-  Status IsWatchpointVacant(uint32_t wp_index, bool &is_vacant) override;
-
-  bool ClearHardwareWatchpoint(uint32_t wp_index) override;
-
-  Status ClearAllHardwareWatchpoints() override;
-
-  Status SetHardwareWatchpointWithIndex(lldb::addr_t addr, size_t size,
-                                        uint32_t watch_flags,
-                                        uint32_t wp_index);
-
-  uint32_t SetHardwareWatchpoint(lldb::addr_t addr, size_t size,
-                                 uint32_t watch_flags) override;
-
-  lldb::addr_t GetWatchpointAddress(uint32_t wp_index) override;
-
-  uint32_t NumSupportedHardwareWatchpoints() override;
-
 protected:
-  void *GetGPRBuffer() override { return &m_gpr_x86_64; }
-  void *GetFPRBuffer() override { return &m_fpr_x86_64; }
+  void *GetGPRBuffer() override { return &m_gpr; }
+  void *GetFPRBuffer() override { return &m_fpr; }
 
 private:
   // Private member types.
-  enum { GPRegSet, FPRegSet };
+  enum {
+    GPRegSet,
+    FPRegSet,
+    YMMRegSet,
+    MaxRegSet = YMMRegSet,
+  };
 
   // Private member variables.
-  struct reg m_gpr_x86_64;
-  struct fpreg m_fpr_x86_64;
+  struct reg m_gpr;
+  struct fpreg m_fpr;
+  std::vector<uint8_t> m_xsave;
+  std::array<uint32_t, MaxRegSet + 1> m_xsave_offsets;
 
   int GetSetForNativeRegNum(int reg_num) const;
 
   int ReadRegisterSet(uint32_t set);
   int WriteRegisterSet(uint32_t set);
+
+  struct YMMSplitPtr {
+    void *xmm;
+    void *ymm_hi;
+  };
+  std::optional<YMMSplitPtr> GetYMMSplitReg(uint32_t reg);
 };
 
 } // namespace process_openbsd
 } // namespace lldb_private
 
 #endif // #ifndef lldb_NativeRegisterContextOpenBSD_x86_64_h
-
-#endif // defined(__x86_64__)

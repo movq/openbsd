@@ -28,15 +28,18 @@ namespace process_openbsd {
 /// Changes in the inferior process state are broadcasted.
 class NativeProcessOpenBSD : public NativeProcessProtocol {
 public:
-  class Factory : public NativeProcessProtocol::Factory {
+  class Manager : public NativeProcessProtocol::Manager {
   public:
-    llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
-    Launch(ProcessLaunchInfo &launch_info, NativeDelegate &native_delegate,
-           MainLoop &mainloop) const override;
+    using NativeProcessProtocol::Manager::Manager;
 
     llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
-    Attach(lldb::pid_t pid, NativeDelegate &native_delegate,
-           MainLoop &mainloop) const override;
+    Launch(ProcessLaunchInfo &launch_info,
+           NativeDelegate &native_delegate) override;
+
+    llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
+    Attach(lldb::pid_t pid, NativeDelegate &native_delegate) override;
+
+    Extension GetSupportedExtensions() const override;
   };
 
   // ---------------------------------------------------------------------
@@ -61,10 +64,9 @@ public:
   Status WriteMemory(lldb::addr_t addr, const void *buf, size_t size,
                      size_t &bytes_written) override;
 
-  Status AllocateMemory(size_t size, uint32_t permissions,
-                        lldb::addr_t &addr) override;
+  llvm::Expected<lldb::addr_t> AllocateMemory(size_t size, uint32_t permissions) override;
 
-  Status DeallocateMemory(lldb::addr_t addr) override;
+  llvm::Error DeallocateMemory(lldb::addr_t addr) override;
 
   lldb::addr_t GetSharedLibraryInfoAddress() override;
 
@@ -93,6 +95,7 @@ public:
 private:
   MainLoop::SignalHandleUP m_sigchld_handle;
   ArchSpec m_arch;
+  MainLoop& m_main_loop;
   std::vector<std::pair<MemoryRegionInfo, FileSpec>> m_mem_region_cache;
 
   // ---------------------------------------------------------------------
