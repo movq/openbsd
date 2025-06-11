@@ -1,7 +1,6 @@
 set(LLVM_TARGET_DEFINITIONS LLGSOptions.td)
 tablegen(LLVM LLGSOptions.inc -gen-opt-parser-defs)
 add_public_tablegen_target(LLGSOptionsTableGen)
-set_target_properties(LLGSOptionsTableGen PROPERTIES FOLDER "lldb misc")
 
 set(LLDB_PLUGINS)
 
@@ -15,6 +14,10 @@ endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
   list(APPEND LLDB_PLUGINS lldbPluginProcessNetBSD)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
+  list(APPEND LLDB_PLUGINS lldbPluginProcessOpenBSD)
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")

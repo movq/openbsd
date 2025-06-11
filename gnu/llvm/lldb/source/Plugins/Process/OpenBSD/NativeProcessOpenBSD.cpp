@@ -63,10 +63,9 @@ static Status EnsureFDFlags(int fd, int flags) {
 // -----------------------------------------------------------------------------
 
 llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
-NativeProcessOpenBSD::Factory::Launch(ProcessLaunchInfo &launch_info,
-                                     NativeDelegate &native_delegate,
-                                     MainLoop &mainloop) const {
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PROCESS));
+NativeProcessOpenBSD::Manager::Launch(ProcessLaunchInfo &launch_info,
+                                      NativeDelegate &native_delegate) {
+  Log *log = GetLog(POSIXLog::Process);
 
   Status status;
   ::pid_t pid = ProcessLauncherPosixFork()
@@ -102,8 +101,8 @@ NativeProcessOpenBSD::Factory::Launch(ProcessLaunchInfo &launch_info,
            Info.GetArchitecture().GetArchitectureName());
 
   std::unique_ptr<NativeProcessOpenBSD> process_up(new NativeProcessOpenBSD(
-      pid, launch_info.GetPTY().ReleaseMasterFileDescriptor(), native_delegate,
-      Info.GetArchitecture(), mainloop));
+      pid, launch_info.GetPTY().ReleasePrimaryFileDescriptor(), native_delegate,
+      Info.GetArchitecture(), m_mainloop));
 
   status = process_up->ReinitializeThreads();
   if (status.Fail())
@@ -117,11 +116,10 @@ NativeProcessOpenBSD::Factory::Launch(ProcessLaunchInfo &launch_info,
 }
 
 llvm::Expected<std::unique_ptr<NativeProcessProtocol>>
-NativeProcessOpenBSD::Factory::Attach(
-    lldb::pid_t pid, NativeProcessProtocol::NativeDelegate &native_delegate,
-    MainLoop &mainloop) const {
+NativeProcessOpenBSD::Manager::Attach(
+    lldb::pid_t pid, NativeProcessProtocol::NativeDelegate &native_delegate) {
 
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PROCESS));
+  Log *log = GetLog(POSIXLog::Process);
   LLDB_LOG(log, "pid = {0:x}", pid);
 
   // Retrieve the architecture for the running process.
@@ -132,7 +130,7 @@ NativeProcessOpenBSD::Factory::Attach(
   }
 
   std::unique_ptr<NativeProcessOpenBSD> process_up(new NativeProcessOpenBSD(
-      pid, -1, native_delegate, Info.GetArchitecture(), mainloop));
+      pid, -1, native_delegate, Info.GetArchitecture(), m_mainloop));
 
   Status status = process_up->Attach();
   if (!status.Success())
@@ -141,6 +139,13 @@ NativeProcessOpenBSD::Factory::Attach(
   return std::move(process_up);
 }
 
+NativeProcessOpenBSD::Extension
+NativeProcessOpenBSD::Manager::GetSupportedExtensions() const {
+    return Extension::multiprocess | Extension::fork | Extension::vfork |
+           Extension::pass_signals | Extension::auxv | Extension::libraries_svr4;
+}
+
+
 // -----------------------------------------------------------------------------
 // Public Instance Methods
 // -----------------------------------------------------------------------------
@@ -148,8 +153,9 @@ NativeProcessOpenBSD::Factory::Attach(
 NativeProcessOpenBSD::NativeProcessOpenBSD(::pid_t pid, int terminal_fd,
                                          NativeDelegate &delegate,
                                          const ArchSpec &arch,
-                                         MainLoop &mainloop)
-    : NativeProcessProtocol(pid, terminal_fd, delegate), m_arch(arch) {
+					 MainLoop &mainloop)
+    : NativeProcessProtocol(pid, terminal_fd, delegate), m_arch(arch),
+      m_main_loop(mainloop) {
   if (m_terminal_fd != -1) {
     Status status = EnsureFDFlags(m_terminal_fd, O_NONBLOCK);
     assert(status.Success());
@@ -172,7 +178,7 @@ void NativeProcessOpenBSD::MonitorCallback(lldb::pid_t pid, int signal) {
 }
 
 void NativeProcessOpenBSD::MonitorExited(lldb::pid_t pid, WaitStatus status) {
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PROCESS));
+  Log *log = GetLog(POSIXLog::Process);
 
   LLDB_LOG(log, "got exit signal({0}) , pid = {1}", status, pid);
 
@@ -203,7 +209,7 @@ void NativeProcessOpenBSD::MonitorSignal(lldb::pid_t pid, int signal) {
 
 Status NativeProcessOpenBSD::PtraceWrapper(int req, lldb::pid_t pid, void *addr,
                                           int data, int *result) {
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PTRACE));
+  Log *log = GetLog(POSIXLog::Process);
   Status error;
   int ret;
 
@@ -225,7 +231,7 @@ Status NativeProcessOpenBSD::PtraceWrapper(int req, lldb::pid_t pid, void *addr,
 }
 
 Status NativeProcessOpenBSD::Resume(const ResumeActionList &resume_actions) {
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PROCESS));
+  Log *log = GetLog(POSIXLog::Process);
   LLDB_LOG(log, "pid {0}", GetID());
 
   const auto &thread = m_threads[0];
@@ -239,12 +245,13 @@ Status NativeProcessOpenBSD::Resume(const ResumeActionList &resume_actions) {
   }
 
   Status error;
+  int signal = action->signal != LLDB_INVALID_SIGNAL_NUMBER ? action->signal : 0;
 
   switch (action->state) {
   case eStateRunning: {
     // Run the thread, possibly feeding it the signal.
     error = NativeProcessOpenBSD::PtraceWrapper(PT_CONTINUE, GetID(), (void *)1,
-                                               action->signal);
+                                               signal);
     if (!error.Success())
       return error;
     for (const auto &thread : m_threads)
@@ -256,7 +263,7 @@ Status NativeProcessOpenBSD::Resume(const ResumeActionList &resume_actions) {
 #ifdef PT_STEP
     // Run the thread, possibly feeding it the signal.
     error = NativeProcessOpenBSD::PtraceWrapper(PT_STEP, GetID(), (void *)1,
-                                               action->signal);
+                                               signal);
     if (!error.Success())
       return error;
     for (const auto &thread : m_threads)
@@ -313,7 +320,7 @@ Status NativeProcessOpenBSD::Signal(int signo) {
 }
 
 Status NativeProcessOpenBSD::Kill() {
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PROCESS));
+  Log *log = GetLog(POSIXLog::Process);
   LLDB_LOG(log, "pid {0}", GetID());
 
   Status error;
@@ -357,13 +364,13 @@ Status NativeProcessOpenBSD::PopulateMemoryRegionCache() {
   return Status("Unimplemented");
 }
 
-Status NativeProcessOpenBSD::AllocateMemory(size_t size, uint32_t permissions,
-                                           lldb::addr_t &addr) {
-  return Status("Unimplemented");
+llvm::Expected<lldb::addr_t> NativeProcessOpenBSD::AllocateMemory(size_t size,
+                                                                 uint32_t permissions) {
+  return llvm::make_error<UnimplementedError>();
 }
 
-Status NativeProcessOpenBSD::DeallocateMemory(lldb::addr_t addr) {
-  return Status("Unimplemented");
+llvm::Error NativeProcessOpenBSD::DeallocateMemory(lldb::addr_t addr) {
+  return llvm::make_error<UnimplementedError>();
 }
 
 lldb::addr_t NativeProcessOpenBSD::GetSharedLibraryInfoAddress() {
@@ -393,7 +400,7 @@ Status NativeProcessOpenBSD::GetFileLoadAddress(const llvm::StringRef &file_name
 }
 
 void NativeProcessOpenBSD::SigchldHandler() {
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PROCESS));
+  Log *log = GetLog(POSIXLog::Process);
   // Process all pending waitpid notifications.
   int status;
   ::pid_t wait_pid =
@@ -439,7 +446,7 @@ bool NativeProcessOpenBSD::HasThreadNoLock(lldb::tid_t thread_id) {
 
 NativeThreadOpenBSD &NativeProcessOpenBSD::AddThread(lldb::tid_t thread_id) {
 
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_THREAD));
+  Log *log = GetLog(POSIXLog::Thread);
   LLDB_LOG(log, "pid {0} adding thread with tid {1}", GetID(), thread_id);
 
   assert(!HasThreadNoLock(thread_id) &&
@@ -483,7 +490,7 @@ Status NativeProcessOpenBSD::ReadMemory(lldb::addr_t addr, void *buf,
   unsigned char *dst = static_cast<unsigned char *>(buf);
   struct ptrace_io_desc io;
 
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_MEMORY));
+  Log *log = GetLog(POSIXLog::Memory);
   LLDB_LOG(log, "addr = {0}, buf = {1}, size = {2}", addr, buf, size);
 
   bytes_read = 0;
@@ -511,7 +518,7 @@ Status NativeProcessOpenBSD::WriteMemory(lldb::addr_t addr, const void *buf,
   Status error;
   struct ptrace_io_desc io;
 
-  Log *log(ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_MEMORY));
+  Log *log = GetLog(POSIXLog::Memory);
   LLDB_LOG(log, "addr = {0}, buf = {1}, size = {2}", addr, buf, size);
 
   bytes_written = 0;
