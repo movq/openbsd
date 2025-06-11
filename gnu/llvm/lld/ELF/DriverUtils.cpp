@@ -16,13 +16,13 @@
 #include "Driver.h"
 #include "lld/Common/CommonLinkerContext.h"
 #include "lld/Common/Reproduce.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
 #include <optional>
 
 using namespace llvm;
@@ -43,9 +43,7 @@ using namespace lld::elf;
 
 // Create table mapping all options defined in Options.td
 static constexpr opt::OptTable::Info optInfo[] = {
-#define OPTION(X1, X2, ID, KIND, GROUP, ALIAS, X7, X8, X9, X10, X11, X12)      \
-  {X1, X2, X10,         X11,         OPT_##ID, opt::Option::KIND##Class,       \
-   X9, X8, OPT_##GROUP, OPT_##ALIAS, X7,       X12},
+#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
 #include "Options.inc"
 #undef OPTION
 };
@@ -188,10 +186,12 @@ std::string elf::createResponseFile(const opt::InputArgList &args) {
       os << arg->getSpelling() << quote(rewritePath(arg->getValue())) << "\n";
       break;
     case OPT_call_graph_ordering_file:
+    case OPT_default_script:
     case OPT_dynamic_list:
     case OPT_export_dynamic_symbol_list:
     case OPT_just_symbols:
     case OPT_library_path:
+    case OPT_remap_inputs_file:
     case OPT_retain_symbols_file:
     case OPT_rpath:
     case OPT_script:
@@ -205,7 +205,7 @@ std::string elf::createResponseFile(const opt::InputArgList &args) {
       os << toString(*arg) << "\n";
     }
   }
-  return std::string(data.str());
+  return std::string(data);
 }
 
 // Find a file by concatenating given paths. If a resulting path
@@ -213,7 +213,7 @@ std::string elf::createResponseFile(const opt::InputArgList &args) {
 static std::optional<std::string> findFile(StringRef path1,
                                            const Twine &path2) {
   SmallString<128> s;
-  if (path1.startswith("="))
+  if (path1.starts_with("="))
     path::append(s, config->sysroot, path1.substr(1), path2);
   else
     path::append(s, path1, path2);
@@ -230,13 +230,48 @@ std::optional<std::string> elf::findFromSearchPaths(StringRef path) {
   return std::nullopt;
 }
 
+namespace {
+// Must be in sync with findMajMinShlib in clang/lib/Driver/Driver.cpp.
+  std::optional<std::string> findMajMinShlib(StringRef dir, const Twine& libNameSo) {
+  // Handle OpenBSD-style maj/min shlib scheme
+  llvm::SmallString<128> Scratch;
+  const StringRef LibName = (libNameSo + ".").toStringRef(Scratch);
+  int MaxMaj = -1, MaxMin = -1;
+  std::error_code EC;
+  for (llvm::sys::fs::directory_iterator LI(dir, EC), LE;
+       LI != LE; LI = LI.increment(EC)) {
+    StringRef FilePath = LI->path();
+    StringRef FileName = llvm::sys::path::filename(FilePath);
+    if (!(FileName.starts_with(LibName)))
+      continue;
+    std::pair<StringRef, StringRef> MajMin =
+      FileName.substr(LibName.size()).split('.');
+    int Maj, Min;
+    if (MajMin.first.getAsInteger(10, Maj) || Maj < 0)
+      continue;
+    if (MajMin.second.getAsInteger(10, Min) || Min < 0)
+      continue;
+    if (Maj > MaxMaj)
+      MaxMaj = Maj, MaxMin = Min;
+    if (MaxMaj == Maj && Min > MaxMin)
+      MaxMin = Min;
+  }
+  if (MaxMaj >= 0)
+    return findFile(dir, LibName + Twine(MaxMaj) + "." + Twine(MaxMin));
+  return std::nullopt;
+}
+}  // namespace
+
 // This is for -l<basename>. We'll look for lib<basename>.so or lib<basename>.a from
 // search paths.
 std::optional<std::string> elf::searchLibraryBaseName(StringRef name) {
   for (StringRef dir : config->searchPaths) {
-    if (!config->isStatic)
+    if (!config->isStatic) {
       if (std::optional<std::string> s = findFile(dir, "lib" + name + ".so"))
         return s;
+      if (std::optional<std::string> s = findMajMinShlib(dir, "lib" + name + ".so"))
+        return s;
+    }
     if (std::optional<std::string> s = findFile(dir, "lib" + name + ".a"))
       return s;
   }
@@ -246,7 +281,7 @@ std::optional<std::string> elf::searchLibraryBaseName(StringRef name) {
 // This is for -l<namespec>.
 std::optional<std::string> elf::searchLibrary(StringRef name) {
   llvm::TimeTraceScope timeScope("Locate library", name);
-  if (name.startswith(":"))
+  if (name.starts_with(":"))
     return findFromSearchPaths(name.substr(1));
   return searchLibraryBaseName(name);
 }
