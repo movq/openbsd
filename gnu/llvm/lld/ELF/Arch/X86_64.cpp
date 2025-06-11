@@ -7,12 +7,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "OutputSections.h"
+#include "Relocations.h"
 #include "Symbols.h"
 #include "SyntheticSections.h"
 #include "Target.h"
 #include "lld/Common/ErrorHandler.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -47,6 +49,7 @@ public:
                                         uint8_t stOther) const override;
   bool deleteFallThruJmpInsn(InputSection &is, InputFile *file,
                              InputSection *nextIS) const override;
+  bool relaxOnce(int pass) const override;
 };
 } // namespace
 
@@ -305,6 +308,47 @@ bool X86_64::deleteFallThruJmpInsn(InputSection &is, InputFile *file,
   return true;
 }
 
+bool X86_64::relaxOnce(int pass) const {
+  uint64_t minVA = UINT64_MAX, maxVA = 0;
+  for (OutputSection *osec : outputSections) {
+    minVA = std::min(minVA, osec->addr);
+    maxVA = std::max(maxVA, osec->addr + osec->size);
+  }
+  // If the max VA is under 2^31, GOTPCRELX relocations cannot overfow. In
+  // -pie/-shared, the condition can be relaxed to test the max VA difference as
+  // there is no R_RELAX_GOT_PC_NOPIC.
+  if (isUInt<31>(maxVA) || (isUInt<31>(maxVA - minVA) && config->isPic))
+    return false;
+
+  SmallVector<InputSection *, 0> storage;
+  bool changed = false;
+  for (OutputSection *osec : outputSections) {
+    if (!(osec->flags & SHF_EXECINSTR))
+      continue;
+    for (InputSection *sec : getInputSections(*osec, storage)) {
+      for (Relocation &rel : sec->relocs()) {
+        if (rel.expr != R_RELAX_GOT_PC && rel.expr != R_RELAX_GOT_PC_NOPIC)
+          continue;
+        assert(rel.addend == -4);
+
+        uint64_t v = sec->getRelocTargetVA(
+            sec->file, rel.type, rel.expr == R_RELAX_GOT_PC_NOPIC ? 0 : -4,
+            sec->getOutputSection()->addr + sec->outSecOff + rel.offset,
+            *rel.sym, rel.expr);
+        if (isInt<32>(v))
+          continue;
+        if (rel.sym->auxIdx == 0) {
+          rel.sym->allocateAux();
+          addGotEntry(*rel.sym);
+          changed = true;
+        }
+        rel.expr = R_GOT_PC;
+      }
+    }
+  }
+  return changed;
+}
+
 RelExpr X86_64::getRelExpr(RelType type, const Symbol &s,
                            const uint8_t *loc) const {
   switch (type) {
@@ -318,6 +362,7 @@ RelExpr X86_64::getRelExpr(RelType type, const Symbol &s,
   case R_X86_64_DTPOFF64:
     return R_DTPREL;
   case R_X86_64_TPOFF32:
+  case R_X86_64_TPOFF64:
     return R_TPREL;
   case R_X86_64_TLSDESC_CALL:
     return R_TLSDESC_CALL;
@@ -362,10 +407,10 @@ RelExpr X86_64::getRelExpr(RelType type, const Symbol &s,
 }
 
 void X86_64::writeGotPltHeader(uint8_t *buf) const {
-  // The first entry holds the value of _DYNAMIC. It is not clear why that is
-  // required, but it is documented in the psabi and the glibc dynamic linker
-  // seems to use it (note that this is relevant for linking ld.so, not any
-  // other program).
+  // The first entry holds the link-time address of _DYNAMIC. It is documented
+  // in the psABI and glibc before Aug 2021 used the entry to compute run-time
+  // load address of the shared object (note that this is relevant for linking
+  // ld.so, not any other program).
   write64le(buf, mainPart->dynamic->getVA());
 }
 
@@ -751,6 +796,7 @@ void X86_64::relocate(uint8_t *loc, const Relocation &rel, uint64_t val) const {
     write32le(loc, val);
     break;
   case R_X86_64_64:
+  case R_X86_64_TPOFF64:
   case R_X86_64_DTPOFF64:
   case R_X86_64_PC64:
   case R_X86_64_SIZE64:
@@ -912,7 +958,8 @@ static void relaxGotNoPic(uint8_t *loc, uint64_t val, uint8_t op,
 }
 
 static void relaxGot(uint8_t *loc, const Relocation &rel, uint64_t val) {
-  checkInt(loc, val, 32, rel);
+  assert(isInt<32>(val) &&
+         "GOTPCRELX should not have been relaxed if it overflows");
   const uint8_t op = loc[-2];
   const uint8_t modRm = loc[-1];
 
@@ -989,6 +1036,8 @@ void X86_64::relocateAlloc(InputSectionBase &sec, uint8_t *buf) const {
   uint64_t secAddr = sec.getOutputSection()->addr;
   if (auto *s = dyn_cast<InputSection>(&sec))
     secAddr += s->outSecOff;
+  else if (auto *ehIn = dyn_cast<EhInputSection>(&sec))
+    secAddr += ehIn->getParent()->outSecOff;
   for (const Relocation &rel : sec.relocs()) {
     if (rel.expr == R_NONE) // See deleteFallThruJmpInsn
       continue;
@@ -1094,7 +1143,7 @@ Retpoline::Retpoline() {
 }
 
 void Retpoline::writeGotPlt(uint8_t *buf, const Symbol &s) const {
-  write64le(buf, s.getPltVA() + 17);
+  write64le(buf, s.getPltVA() + 21);
 }
 
 void Retpoline::writePltHeader(uint8_t *buf) const {
@@ -1122,22 +1171,23 @@ void Retpoline::writePltHeader(uint8_t *buf) const {
 void Retpoline::writePlt(uint8_t *buf, const Symbol &sym,
                          uint64_t pltEntryAddr) const {
   const uint8_t insn[] = {
-      0x4c, 0x8b, 0x1d, 0, 0, 0, 0, // 0:  mov foo@GOTPLT(%rip), %r11
-      0xe8, 0,    0,    0,    0,    // 7:  callq plt+0x20
-      0xe9, 0,    0,    0,    0,    // c:  jmp plt+0x12
-      0x68, 0,    0,    0,    0,    // 11: pushq <relocation index>
-      0xe9, 0,    0,    0,    0,    // 16: jmp plt+0
-      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // 1b: int3; padding
+      0xf3, 0x0f, 0x1e, 0xfa,       // 0:  endbr64
+      0x4c, 0x8b, 0x1d, 0, 0, 0, 0, // 4:  mov foo@GOTPLT(%rip), %r11
+      0xe8, 0,    0,    0,    0,    // b:  callq plt+0x20
+      0xe9, 0,    0,    0,    0,    // 10:  jmp plt+0x12
+      0x68, 0,    0,    0,    0,    // 15: pushq <relocation index>
+      0xe9, 0,    0,    0,    0,    // 1a: jmp plt+0
+      0xcc,                         // 1f: int3; padding
   };
   memcpy(buf, insn, sizeof(insn));
 
   uint64_t off = pltEntryAddr - in.plt->getVA();
 
-  write32le(buf + 3, sym.getGotPltVA() - pltEntryAddr - 7);
-  write32le(buf + 8, -off - 12 + 32);
-  write32le(buf + 13, -off - 17 + 18);
-  write32le(buf + 18, sym.getPltIdx());
-  write32le(buf + 23, -off - 27);
+  write32le(buf + 7, sym.getGotPltVA() - pltEntryAddr - 11);
+  write32le(buf + 12, -off - 16 + 32);
+  write32le(buf + 17, -off - 21 + 18);
+  write32le(buf + 22, sym.getPltIdx());
+  write32le(buf + 27, -off - 31);
 }
 
 RetpolineZNow::RetpolineZNow() {
@@ -1165,14 +1215,14 @@ void RetpolineZNow::writePltHeader(uint8_t *buf) const {
 void RetpolineZNow::writePlt(uint8_t *buf, const Symbol &sym,
                              uint64_t pltEntryAddr) const {
   const uint8_t insn[] = {
-      0x4c, 0x8b, 0x1d, 0,    0, 0, 0, // mov foo@GOTPLT(%rip), %r11
-      0xe9, 0,    0,    0,    0,       // jmp plt+0
-      0xcc, 0xcc, 0xcc, 0xcc,          // int3; padding
+      0xf3, 0x0f, 0x1e, 0xfa,          // 0: endbr64
+      0x4c, 0x8b, 0x1d, 0,    0, 0, 0, // 4: mov foo@GOTPLT(%rip), %r11
+      0xe9, 0,    0,    0,    0,       // b: jmp plt+0
   };
   memcpy(buf, insn, sizeof(insn));
 
-  write32le(buf + 3, sym.getGotPltVA() - pltEntryAddr - 7);
-  write32le(buf + 8, in.plt->getVA() - pltEntryAddr - 12);
+  write32le(buf + 7, sym.getGotPltVA() - pltEntryAddr - 11);
+  write32le(buf + 12, in.plt->getVA() - pltEntryAddr - 16);
 }
 
 static TargetInfo *getTargetInfo() {
@@ -1185,6 +1235,10 @@ static TargetInfo *getTargetInfo() {
     return &t;
   }
 
+#ifdef __OpenBSD__
+  static IntelIBT t;
+  return &t;
+#else
   if (config->andFeatures & GNU_PROPERTY_X86_FEATURE_1_IBT) {
     static IntelIBT t;
     return &t;
@@ -1192,6 +1246,7 @@ static TargetInfo *getTargetInfo() {
 
   static X86_64 t;
   return &t;
+#endif
 }
 
 TargetInfo *elf::getX86_64TargetInfo() { return getTargetInfo(); }
