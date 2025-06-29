@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_pledge.c,v 1.320 2024/09/24 02:22:42 deraadt Exp $	*/
+/*	$OpenBSD: kern_pledge.c,v 1.320.4.1 2025/06/29 13:58:25 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2015 Nicholas Marriott <nicm@openbsd.org>
@@ -1269,9 +1269,11 @@ pledge_ioctl(struct proc *p, long com, struct file *fp)
 				break;
 			if ((pledge & PLEDGE_WPATH) == 0)
 				break;
-			if (cdevsw[major(vp->v_rdev)].d_open != ptcopen)
-				break;
-			return (0);
+			if (fp->f_type == DTYPE_VNODE &&
+			    vp->v_type == VCHR &&
+			    cdevsw[major(vp->v_rdev)].d_open == ptcopen)
+				return (0);
+			break;
 #endif /* NPTY > 0 */
 		case TIOCSPGRP:
 			if ((pledge & PLEDGE_PROC) == 0)
