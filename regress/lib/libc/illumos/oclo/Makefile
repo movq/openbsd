@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.1 2025/08/02 06:16:34 tb Exp $
+#	$OpenBSD: Makefile,v 1.1.1.1 2025/08/02 06:16:34 tb Exp $
 
 .if exists(/usr/local/share/illumos-os-tests)
 
