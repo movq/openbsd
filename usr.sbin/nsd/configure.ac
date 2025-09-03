@@ -5,7 +5,9 @@ dnl
 sinclude(acx_nlnetlabs.m4)
 sinclude(dnstap/dnstap.m4)
 
-AC_INIT([NSD],[4.6.1],[nsd-bugs@nlnetlabs.nl])
+# autoconf-2.70 is needed for @runstatedir@
+AC_PREREQ([2.70])
+AC_INIT([NSD],[4.11.0],[https://github.com/NLnetLabs/nsd/issues or nsd-bugs@nlnetlabs.nl])
 AC_CONFIG_HEADERS([config.h])
 
 #
@@ -96,20 +98,8 @@ AC_ARG_WITH([pidfile],
 AC_SUBST(pidfile)
 AC_DEFINE_UNQUOTED(PIDFILE, ["`eval echo $pidfile`"], [Pathname to the NSD pidfile])
 
-#
-# Determine location of nsd.db
-#
-dbfile=${dbdir}/nsd.db
 AC_ARG_WITH([dbfile],
-	AS_HELP_STRING([--with-dbfile=path],[Pathname to the NSD database]),
-	[dbfile=$withval])
-AC_SUBST(dbfile)
-AC_DEFINE_UNQUOTED(DBFILE, ["`eval echo $dbfile`"], [Pathname to the NSD database])
-
-if test -n "$dbfile"; then
-	dbdir=`dirname $dbfile`
-fi
-AC_SUBST(dbdir)
+	AS_HELP_STRING([--with-dbfile=path],[Pathname to the NSD database (obsolete)]),[])
 
 piddir=`dirname $pidfile`
 AC_SUBST(piddir)
@@ -135,6 +125,12 @@ zonelistfile=${dbdir}/zone.list
 AC_ARG_WITH([zonelistfile], AS_HELP_STRING([--with-zonelistfile=path],[Pathname to the NSD zone list file]), [zonelistfile=$withval])
 AC_DEFINE_UNQUOTED(ZONELISTFILE, ["`eval echo $zonelistfile`"], [Pathname to the NSD zone list file.])
 AC_SUBST(zonelistfile)
+
+# default cookiesecrets file location.
+cookiesecretsfile=${dbdir}/cookiesecrets.txt
+AC_ARG_WITH([cookiesecretsfile], AS_HELP_STRING([--with-cookiesecretsfile=path],[Pathname to the NSD cookie secrets file]), [cookiesecretsfile=$withval])
+AC_DEFINE_UNQUOTED(COOKIESECRETSFILE, ["`eval echo $cookiesecretsfile`"], [Pathname to the NSD cookies secrets file.])
+AC_SUBST(cookiesecretsfile)
 
 # default xfr dir location.
 xfrdir="/tmp"
@@ -296,7 +292,7 @@ AC_MSG_CHECKING(whether $CC supports -$1)
 cache=`echo $1 | $SED 'y%.=/+-%___p_%'`
 AC_CACHE_VAL(cv_prog_cc_flag_$cache,
 [
-echo 'void f(){}' >conftest.c
+echo 'void f(void){}' >conftest.c
 if test -z "`$CC -$1 -c conftest.c 2>&1`"; then
 eval "cv_prog_cc_flag_$cache=yes"
 else
@@ -369,11 +365,11 @@ AC_DEFUN([CHECK_SSL], [
         ])
     if test x_$withval != x_no; then
         AC_MSG_CHECKING(for SSL)
-	if test -n "$withval"; then
-        	dnl look for openssl install with different version, eg.
-                dnl in /usr/include/openssl11/openssl/ssl.h
-                dnl and /usr/lib64/openssl11/libssl.so
-                dnl with the --with-ssl=/usr/include/openssl11
+        if test -n "$withval"; then
+            dnl look for openssl install with different version, eg.
+            dnl in /usr/include/openssl11/openssl/ssl.h
+            dnl and /usr/lib64/openssl11/libssl.so
+            dnl with the --with-ssl=/usr/include/openssl11
                 if test ! -f "$withval/include/openssl/ssl.h" -a -f "$withval/openssl/ssl.h"; then
                         ssldir="$withval"
                         found_ssl="yes"
@@ -393,7 +389,7 @@ AC_DEFUN([CHECK_SSL], [
                                 fi
                         fi
                 fi
-	fi
+            fi
         if test x_$withval = x_ -o x_$withval = x_yes; then
             withval="/usr/local/ssl /usr/lib/ssl /usr/ssl /usr/pkg /usr/sfw /usr/local /usr /usr/local/opt/openssl"
         fi
@@ -404,12 +400,12 @@ AC_DEFUN([CHECK_SSL], [
                 if test x_$ssldir != x_/usr; then
                     CPPFLAGS="$CPPFLAGS -I$ssldir/include";
                 fi
-		ssldir_include="$ssldir/include"
-		if test ! -d "$ssldir/lib" -a -d "$ssldir/lib64"; then
-			ssldir_lib="$ssldir/lib64"
-		else
-			ssldir_lib="$ssldir/lib"
-		fi
+                ssldir_include="$ssldir/include"
+                if test ! -d "$ssldir/lib" -a -d "$ssldir/lib64"; then
+                    ssldir_lib="$ssldir/lib64"
+                else
+                    ssldir_lib="$ssldir/lib"
+                fi
                 break;
             fi
         done
@@ -422,9 +418,9 @@ AC_DEFUN([CHECK_SSL], [
             if test x_$ssldir != x_/usr; then
                 LDFLAGS="$LDFLAGS -L$ssldir_lib";
             fi
-	    if test x_$ssldir = x_/usr/sfw; then
-		LDFLAGS="$LDFLAGS -R$ssldir_lib";
-	    fi
+            if test x_$ssldir = x_/usr/sfw; then
+                LDFLAGS="$LDFLAGS -R$ssldir_lib";
+            fi
         fi
         AC_SUBST(HAVE_SSL)
     fi
@@ -569,7 +565,8 @@ AC_RUN_IFELSE([AC_LANG_SOURCE([[
 int main(void) { struct tm tm; char *res;
 res = strptime("20070207111842", "%Y%m%d%H%M%S", &tm);
 if (!res) return 1; return 0; }
-]])] , [eval "ac_cv_c_strptime_works=yes"], [eval "ac_cv_c_strptime_works=no"])
+]])] , [eval "ac_cv_c_strptime_works=yes"], [eval "ac_cv_c_strptime_works=no"],
+[eval "ac_cv_c_strptime_works=maybe"])
 else
 eval "ac_cv_c_strptime_works=maybe"
 fi
@@ -698,6 +695,9 @@ case "$enable_recvmmsg" in
         yes)
 		AC_CHECK_FUNC([recvmmsg], [
 AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 #include <sys/socket.h>
 #include <errno.h>
 int main(void)
@@ -714,6 +714,9 @@ AC_DEFINE([HAVE_RECVMMSG], [1], [Define if recvmmsg exists])]
 )])
 		AC_CHECK_FUNC([sendmmsg], [
 AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 #include <sys/socket.h>
 #include <errno.h>
 int main(void)
@@ -932,14 +935,7 @@ AC_DEFINE_UNQUOTED([TCP_TIMEOUT], $tcp_timeout, [Define to the default tcp timeo
 dnl
 dnl Features
 dnl
-AC_ARG_ENABLE(root-server, AS_HELP_STRING([--enable-root-server],[Configure NSD as a root server]))
-case "$enable_root_server" in
-        yes)
-		AC_DEFINE_UNQUOTED([ROOT_SERVER], [], [Define this to configure as a root server.])
-		;;
-        no|*)
-                ;;
-esac
+AC_ARG_ENABLE(root-server, AS_HELP_STRING([--enable-root-server],[Configure NSD as a root server (obsolete)]))
 
 AC_ARG_ENABLE(ipv6, AS_HELP_STRING([--disable-ipv6],[Disables IPv6 support]))
 case "$enable_ipv6" in
@@ -982,6 +978,16 @@ case "$enable_checking" in
                 AC_DEFINE([NDEBUG], [], [Undefine this to enable internal runtime checks.])
                 ;;
 esac
+
+AC_ARG_ENABLE(log-role, AS_HELP_STRING([--enable-log-role],[Shows the role of processes in the logfile (enable this only for debugging purposes)]))
+case "$enable_log_role" in
+        yes)
+		AC_DEFINE_UNQUOTED([USE_LOG_PROCESS_ROLE], [], [Define this to show the role of processes in the logfile for debugging purposes.])
+		;;
+        no|*)
+                ;;
+esac
+
 
 AC_ARG_ENABLE(memclean, AS_HELP_STRING([--enable-memclean],[Cleanup memory (at exit) for eg. valgrind, memcheck]))
 if test "$enable_memclean" = "yes"; then AC_DEFINE_UNQUOTED([MEMCLEAN], [1], [Define this to cleanup memory at exit (eg. for valgrind, etc.)])
@@ -1047,8 +1053,8 @@ if test x$HAVE_SSL = x"yes"; then
 	fi
 	SSL_LIBS="-lssl"
 	AC_SUBST(SSL_LIBS)
-	AC_CHECK_HEADERS([openssl/ssl.h openssl/err.h openssl/rand.h openssl/ocsp.h openssl/core_names.h],,, [AC_INCLUDES_DEFAULT])
-	AC_CHECK_FUNCS([HMAC_CTX_reset HMAC_CTX_new EVP_cleanup ERR_load_crypto_strings OPENSSL_init_crypto CRYPTO_memcmp EC_KEY_new_by_curve_name EVP_MAC_CTX_new EVP_MAC_CTX_set_params EVP_MAC_CTX_get_mac_size SHA1_Init])
+	AC_CHECK_HEADERS([openssl/ssl.h openssl/err.h openssl/rand.h openssl/ocsp.h openssl/core_names.h openssl/x509v3.h],,, [AC_INCLUDES_DEFAULT])
+	AC_CHECK_FUNCS([HMAC_CTX_reset HMAC_CTX_new EVP_cleanup ERR_load_crypto_strings OPENSSL_init_crypto CRYPTO_memcmp EC_KEY_new_by_curve_name EVP_MAC_CTX_new EVP_MAC_CTX_set_params EVP_MAC_CTX_get_mac_size SHA1_Init ASN1_STRING_get0_data])
 	if test "$ac_cv_func_SHA1_Init" = "yes"; then
 		ACX_FUNC_DEPRECATED([SHA1_Init], [(void)SHA1_Init(NULL);], [
 #include <openssl/sha.h>
@@ -1073,6 +1079,9 @@ AC_INCLUDES_DEFAULT
 #endif
 #include <openssl/ssl.h>
 #include <openssl/evp.h>
+#ifdef HAVE_OPENSSL_X509V3_h
+#include <openssl/x509v3.h>
+#endif
 ])
 	AC_CHECK_DECL([TLS1_3_VERSION], 
 		[AC_DEFINE([HAVE_TLS_1_3], [1], [Define if TLS 1.3 is supported by OpenSSL])],
@@ -1089,7 +1098,6 @@ AC_INCLUDES_DEFAULT
 	LIBS="$BAKLIBS"
 
 else
-	AC_MSG_WARN([No SSL, therefore remote-control is disabled])
 	AC_MSG_WARN([No SSL, therefore TLS is disabled])
 fi
 
@@ -1230,6 +1238,7 @@ AH_BOTTOM([
 #include <sys/types.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <string.h>
 
 #ifdef HAVE_TIME_H
 #include <time.h>
@@ -1401,4 +1410,9 @@ if test "$enable_checking" = "yes"; then
 fi
 
 AC_CONFIG_FILES([Makefile $dnstap_config])
+
+# Arguments introduced specifically for simdzone.
+AC_ARG_ENABLE(westmere, AS_HELP_STRING([--disable-westmere], [Disable Westmere (SSE4.2) parser kernel]))
+AC_ARG_ENABLE(haswell, AS_HELP_STRING([--disable-haswell], [Disable Haswell (AVX2) parser kernel]))
+AC_CONFIG_SUBDIRS([simdzone])
 AC_OUTPUT

@@ -86,6 +86,7 @@
 #include "dnstap/dnstap_collector.h"
 #endif
 #include "verify.h"
+#include "util/proxy_protocol.h"
 
 #define RELOAD_SYNC_TIMEOUT 25 /* seconds */
 
@@ -131,6 +132,16 @@ log_addr(const char* descr,
   #define TCP_FASTOPEN_SERVER_BIT_MASK 0x2
 #endif
 
+/* header state for the PROXYv2 header (for TCP) */
+enum pp2_header_state {
+	/* no header encounter yet */
+	pp2_header_none = 0,
+	/* read the static part of the header */
+	pp2_header_init,
+	/* read the full header */
+	pp2_header_done
+};
+
 /*
  * Data for the UDP handlers.
  */
@@ -139,6 +150,8 @@ struct udp_handler_data
 	struct nsd        *nsd;
 	struct nsd_socket *socket;
 	struct event       event;
+	/* if set, PROXYv2 is expected on this connection */
+	int pp2_enabled;
 };
 
 struct tcp_accept_handler_data {
@@ -149,7 +162,10 @@ struct tcp_accept_handler_data {
 #ifdef HAVE_SSL
 	/* handler accepts TLS connections on the dedicated port */
 	int                tls_accept;
+	int                tls_auth_accept;
 #endif
+	/* if set, PROXYv2 is expected on this connection */
+	int pp2_enabled;
 };
 
 /*
@@ -239,6 +255,9 @@ struct tcp_handler_data
 	 */
 	size_t				bytes_transmitted;
 
+	/* If the query is restarted and needs a reset */
+	int query_needs_reset;
+
 	/*
 	 * The number of queries handled by this specific TCP connection.
 	 */
@@ -259,11 +278,18 @@ struct tcp_handler_data
 	struct nsd_socket *socket;
 #endif /* USE_DNSTAP */
 
+	/* if set, PROXYv2 is expected on this connection */
+	int pp2_enabled;
+
+	/* header state for the PROXYv2 header (for TCP) */
+	enum pp2_header_state pp2_header_state;
+
 #ifdef HAVE_SSL
 	/*
-	 * TLS object.
+	 * TLS objects.
 	 */
 	SSL* tls;
+	SSL* tls_auth;
 
 	/*
 	 * TLS handshake state.
@@ -411,7 +437,6 @@ static int
 restart_child_servers(struct nsd *nsd, region_type* region, netio_type* netio,
 	int* xfrd_sock_p)
 {
-	struct main_ipc_handler_data *ipc_data;
 	size_t i;
 	int sv[2];
 
@@ -437,17 +462,11 @@ restart_child_servers(struct nsd *nsd, region_type* region, netio_type* netio,
 				}
 				if(!nsd->children[i].handler)
 				{
+					struct main_ipc_handler_data *ipc_data;
 					ipc_data = (struct main_ipc_handler_data*) region_alloc(
 						region, sizeof(struct main_ipc_handler_data));
 					ipc_data->nsd = nsd;
 					ipc_data->child = &nsd->children[i];
-					ipc_data->child_num = i;
-					ipc_data->xfrd_sock = xfrd_sock_p;
-					ipc_data->packet = buffer_create(region, QIOBUFSZ);
-					ipc_data->forward_mode = 0;
-					ipc_data->got_bytes = 0;
-					ipc_data->total_bytes = 0;
-					ipc_data->acl_num = 0;
 					nsd->children[i].handler = (struct netio_handler*) region_alloc(
 						region, sizeof(struct netio_handler));
 					nsd->children[i].handler->fd = nsd->children[i].child_fd;
@@ -457,17 +476,10 @@ restart_child_servers(struct nsd *nsd, region_type* region, netio_type* netio,
 					nsd->children[i].handler->event_handler = parent_handle_child_command;
 					netio_add_handler(netio, nsd->children[i].handler);
 				}
-				/* clear any ongoing ipc */
-				ipc_data = (struct main_ipc_handler_data*)
-					nsd->children[i].handler->user_data;
-				ipc_data->forward_mode = 0;
 				/* restart - update fd */
 				nsd->children[i].handler->fd = nsd->children[i].child_fd;
 				break;
 			case 0: /* CHILD */
-				/* the child need not be able to access the
-				 * nsd.db file */
-				namedb_close_udb(nsd->db);
 #ifdef MEMCLEAN /* OS collects memory pages */
 				region_destroy(region);
 #endif
@@ -508,8 +520,8 @@ restart_child_servers(struct nsd *nsd, region_type* region, netio_type* netio,
 static void set_bind8_alarm(struct nsd* nsd)
 {
 	/* resync so that the next alarm is on the next whole minute */
-	if(nsd->st.period > 0) /* % by 0 gives divbyzero error */
-		alarm(nsd->st.period - (time(NULL) % nsd->st.period));
+	if(nsd->st_period > 0) /* % by 0 gives divbyzero error */
+		alarm(nsd->st_period - (time(NULL) % nsd->st_period));
 }
 #endif
 
@@ -686,6 +698,69 @@ server_zonestat_switch(struct nsd* nsd)
 	}
 }
 #endif /* USE_ZONE_STATS */
+
+#ifdef BIND8_STATS
+void
+server_stat_alloc(struct nsd* nsd)
+{
+	char tmpfile[256];
+	size_t sz = sizeof(struct nsdst) * nsd->child_count * 2;
+	uint8_t z = 0;
+
+	/* file name */
+	nsd->statfname = 0;
+	snprintf(tmpfile, sizeof(tmpfile), "%snsd-xfr-%d/nsd.%u.stat",
+		nsd->options->xfrdir, (int)getpid(), (unsigned)getpid());
+	nsd->statfname = region_strdup(nsd->region, tmpfile);
+
+	/* file descriptor */
+	nsd->statfd = open(nsd->statfname, O_CREAT|O_RDWR, 0600);
+	if(nsd->statfd == -1) {
+		log_msg(LOG_ERR, "cannot create %s: %s", nsd->statfname,
+			strerror(errno));
+		unlink(nsd->zonestatfname[0]);
+		unlink(nsd->zonestatfname[1]);
+		exit(1);
+	}
+
+#ifdef HAVE_MMAP
+	if(lseek(nsd->statfd, (off_t)sz-1, SEEK_SET) == -1) {
+		log_msg(LOG_ERR, "lseek %s: %s", nsd->statfname,
+			strerror(errno));
+		goto fail_exit;
+	}
+	if(write(nsd->statfd, &z, 1) == -1) {
+		log_msg(LOG_ERR, "cannot extend stat file %s (%s)",
+			nsd->statfname, strerror(errno));
+		goto fail_exit;
+	}
+	nsd->stat_map = (struct nsdst*)mmap(NULL, sz, PROT_READ|PROT_WRITE,
+		MAP_SHARED, nsd->statfd, 0);
+	if(nsd->stat_map == MAP_FAILED) {
+		log_msg(LOG_ERR, "mmap failed: %s", strerror(errno));
+fail_exit:
+		close(nsd->statfd);
+		unlink(nsd->statfname);
+		unlink(nsd->zonestatfname[0]);
+		unlink(nsd->zonestatfname[1]);
+		exit(1);
+	}
+	memset(nsd->stat_map, 0, sz);
+	nsd->stats_per_child[0] = nsd->stat_map;
+	nsd->stats_per_child[1] = &nsd->stat_map[nsd->child_count];
+	nsd->stat_current = 0;
+	nsd->st = &nsd->stats_per_child[nsd->stat_current][0];
+#endif /* HAVE_MMAP */
+}
+#endif /* BIND8_STATS */
+
+#ifdef BIND8_STATS
+void
+server_stat_free(struct nsd* nsd)
+{
+	unlink(nsd->statfname);
+}
+#endif /* BIND8_STATS */
 
 static void
 cleanup_dname_compression_tables(void *ptr)
@@ -1365,13 +1440,11 @@ server_init(struct nsd *nsd)
 			if(open_udp_socket(nsd, &nsd->udp[i], &reuseport) == -1) {
 				return -1;
 			}
-			/* Turn off REUSEPORT for TCP by copying the socket
-			 * file descriptor.
-			 * This means we should not close TCP used by
-			 * other servers in reuseport enabled mode, in
-			 * server_child().
-			 */
 			nsd->tcp[i] = nsd->tcp[i%nsd->ifs];
+			nsd->tcp[i].s = -1;
+			if(open_tcp_socket(nsd, &nsd->tcp[i], &reuseport) == -1) {
+				return -1;
+			}
 		}
 
 		nsd->ifs = ifs;
@@ -1399,7 +1472,7 @@ int
 server_prepare(struct nsd *nsd)
 {
 #ifdef RATELIMIT
-	/* set secret modifier for hashing (udb ptr buckets and rate limits) */
+	/* set secret modifier for hashing (rate limits) */
 #ifdef HAVE_GETRANDOM
 	uint32_t v;
 	if(getrandom(&v, sizeof(v), 0) == -1) {
@@ -1428,24 +1501,24 @@ server_prepare(struct nsd *nsd)
 #endif /* RATELIMIT */
 
 	/* Open the database... */
-	if ((nsd->db = namedb_open(nsd->dbfile, nsd->options)) == NULL) {
-		log_msg(LOG_ERR, "unable to open the database %s: %s",
-			nsd->dbfile, strerror(errno));
+	if ((nsd->db = namedb_open(nsd->options)) == NULL) {
+		log_msg(LOG_ERR, "unable to open the database: %s", strerror(errno));
 		unlink(nsd->task[0]->fname);
 		unlink(nsd->task[1]->fname);
 #ifdef USE_ZONE_STATS
 		unlink(nsd->zonestatfname[0]);
 		unlink(nsd->zonestatfname[1]);
 #endif
+#ifdef BIND8_STATS
+		server_stat_free(nsd);
+#endif
 		xfrd_del_tempdir(nsd);
 		return -1;
 	}
-	/* check if zone files have been modified */
+	/* check if zone files can be read */
 	/* NULL for taskudb because we send soainfo in a moment, batched up,
 	 * for all zones */
-	if(nsd->options->zonefiles_check || (nsd->options->database == NULL ||
-		nsd->options->database[0] == 0))
-		namedb_check_zonefiles(nsd, nsd->options, NULL, NULL);
+	namedb_check_zonefiles(nsd, nsd->options, NULL, NULL);
 	zonestatid_tree_set(nsd);
 
 	compression_table_capacity = 0;
@@ -1453,7 +1526,7 @@ server_prepare(struct nsd *nsd)
 
 #ifdef	BIND8_STATS
 	/* Initialize times... */
-	time(&nsd->st.boot);
+	time(&nsd->st->boot);
 	set_bind8_alarm(nsd);
 #endif /* BIND8_STATS */
 
@@ -1526,10 +1599,12 @@ server_shutdown(struct nsd *nsd)
 	}
 
 	tsig_finalize();
-#ifdef HAVE_SSL
 	daemon_remote_delete(nsd->rc); /* ssl-delete secret keys */
+#ifdef HAVE_SSL
 	if (nsd->tls_ctx)
 		SSL_CTX_free(nsd->tls_ctx);
+	if (nsd->tls_auth_ctx)
+		SSL_CTX_free(nsd->tls_auth_ctx);
 #endif
 
 #ifdef MEMCLEAN /* OS collects memory pages */
@@ -1542,7 +1617,6 @@ server_shutdown(struct nsd *nsd)
 	udb_base_free_keep_mmap(nsd->task[0]);
 	udb_base_free_keep_mmap(nsd->task[1]);
 	namedb_free_ixfr(nsd->db);
-	namedb_close_udb(nsd->db); /* keeps mmap */
 	namedb_close(nsd->db);
 	nsd_options_destroy(nsd->options);
 	region_destroy(nsd->region);
@@ -1555,6 +1629,7 @@ void
 server_prepare_xfrd(struct nsd* nsd)
 {
 	char tmpfile[256];
+	size_t i;
 	/* create task mmaps */
 	nsd->mytask = 0;
 	snprintf(tmpfile, sizeof(tmpfile), "%snsd-xfr-%d/nsd.%u.task.0",
@@ -1564,6 +1639,9 @@ server_prepare_xfrd(struct nsd* nsd)
 #ifdef USE_ZONE_STATS
 		unlink(nsd->zonestatfname[0]);
 		unlink(nsd->zonestatfname[1]);
+#endif
+#ifdef BIND8_STATS
+		server_stat_free(nsd);
 #endif
 		xfrd_del_tempdir(nsd);
 		exit(1);
@@ -1576,6 +1654,9 @@ server_prepare_xfrd(struct nsd* nsd)
 #ifdef USE_ZONE_STATS
 		unlink(nsd->zonestatfname[0]);
 		unlink(nsd->zonestatfname[1]);
+#endif
+#ifdef BIND8_STATS
+		server_stat_free(nsd);
 #endif
 		xfrd_del_tempdir(nsd);
 		exit(1);
@@ -1592,6 +1673,24 @@ server_prepare_xfrd(struct nsd* nsd)
 		nsd;
 	((struct ipc_handler_conn_data*)nsd->xfrd_listener->user_data)->conn =
 		xfrd_tcp_create(nsd->region, QIOBUFSZ);
+	/* setup sockets to pass NOTIFY messages from the serve processes */
+	nsd->serve2xfrd_fd_send = region_alloc_array(
+			nsd->region, 2 * nsd->child_count, sizeof(int));
+	nsd->serve2xfrd_fd_recv= region_alloc_array(
+			nsd->region, 2 * nsd->child_count, sizeof(int));
+	for(i=0; i < 2 * nsd->child_count; i++) {
+		int pipefd[2];
+		pipefd[0] = -1; /* For receiving by parent (xfrd) */
+		pipefd[1] = -1; /* For sending   by child  (server childs) */
+		if(pipe(pipefd) < 0) {
+                        log_msg(LOG_ERR, "fatal error: cannot create NOTIFY "
+				"communication channel: %s", strerror(errno));
+			exit(1);
+                }
+                nsd->serve2xfrd_fd_recv[i] = pipefd[0];
+                nsd->serve2xfrd_fd_send[i] = pipefd[1];
+	}
+	nsd->serve2xfrd_fd_swap = nsd->serve2xfrd_fd_send + nsd->child_count;
 }
 
 
@@ -1601,6 +1700,7 @@ server_start_xfrd(struct nsd *nsd, int del_db, int reload_active)
 	pid_t pid;
 	int sockets[2] = {0,0};
 	struct ipc_handler_conn_data *data;
+	size_t i;
 
 	if(nsd->xfrd_listener->fd != -1)
 		close(nsd->xfrd_listener->fd);
@@ -1637,8 +1737,19 @@ server_start_xfrd(struct nsd *nsd, int del_db, int reload_active)
 		 * restarted, the reload is using nsd->mytask */
 		nsd->mytask = 1 - nsd->mytask;
 
+		/* close the send site of the serve2xfrd fds */
+		assert(nsd->serve2xfrd_fd_send < nsd->serve2xfrd_fd_swap);
+		for(i = 0; i < 2 * nsd->child_count; i++) {
+			if(nsd->serve2xfrd_fd_send[i] != -1) {
+				close(nsd->serve2xfrd_fd_send[i]);
+				nsd->serve2xfrd_fd_send[i] = -1;
+			}
+		}
 #ifdef HAVE_SETPROCTITLE
 		setproctitle("xfrd");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+		log_set_process_role("xfrd");
 #endif
 #ifdef HAVE_CPUSET_T
 		if(nsd->use_cpu_affinity) {
@@ -1656,6 +1767,19 @@ server_start_xfrd(struct nsd *nsd, int del_db, int reload_active)
 			log_msg(LOG_ERR, "cannot fcntl pipe: %s", strerror(errno));
 		}
 		nsd->xfrd_listener->fd = sockets[0];
+		/* close the receive site of the serve2xfrd fds */
+		for(i = 0; i < 2 * nsd->child_count; i++) {
+			if(nsd->serve2xfrd_fd_recv[i] != -1) {
+				close(nsd->serve2xfrd_fd_recv[i]);
+				nsd->serve2xfrd_fd_recv[i] = -1;
+			}
+		}
+#ifdef HAVE_SETPROCTITLE
+		setproctitle("main");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+		log_set_process_role("main");
+#endif
 		break;
 	}
 	/* server-parent only */
@@ -1703,20 +1827,18 @@ server_send_soa_xfrd(struct nsd* nsd, int shortsoa)
 			log_msg(LOG_WARNING, "signal received, shutting down...");
 			server_close_all_sockets(nsd->udp, nsd->ifs);
 			server_close_all_sockets(nsd->tcp, nsd->ifs);
-#ifdef HAVE_SSL
 			daemon_remote_close(nsd->rc);
-#endif
 			/* Unlink it if possible... */
-			unlinkpid(nsd->pidfile);
+			unlinkpid(nsd->pidfile, nsd->username);
 			unlink(nsd->task[0]->fname);
 			unlink(nsd->task[1]->fname);
 #ifdef USE_ZONE_STATS
 			unlink(nsd->zonestatfname[0]);
 			unlink(nsd->zonestatfname[1]);
 #endif
-			/* write the nsd.db to disk, wait for it to complete */
-			udb_base_sync(nsd->db->udb, 1);
-			udb_base_close(nsd->db->udb);
+#ifdef BIND8_STATS
+			server_stat_free(nsd);
+#endif
 			server_shutdown(nsd);
 			/* ENOTREACH */
 			exit(0);
@@ -2050,7 +2172,7 @@ server_tls_ctx_setup(char* key, char* pem, char* verifypem)
 			return NULL;
 		}
 		SSL_CTX_set_client_CA_list(ctx, SSL_load_client_CA_file(verifypem));
-		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 	}
 	return ctx;
 }
@@ -2170,93 +2292,157 @@ block_read(struct nsd* nsd, int s, void* p, ssize_t sz, int timeout)
 }
 
 static void
-reload_process_tasks(struct nsd* nsd, udb_ptr* last_task, int cmdsocket)
+reload_process_non_xfr_tasks(struct nsd* nsd, udb_ptr* xfrs2process,
+		udb_ptr* last_task)
 {
-	sig_atomic_t cmd = NSD_QUIT_SYNC;
-	udb_ptr t, next;
+	udb_ptr t, next, xfr_tail;
 	udb_base* u = nsd->task[nsd->mytask];
 	udb_ptr_init(&next, u);
+	udb_ptr_init(&xfr_tail, u);
 	udb_ptr_new(&t, u, udb_base_get_userdata(u));
 	udb_base_set_userdata(u, 0);
+	/* Execute all tasks except of type "task_apply_xfr". */
 	while(!udb_ptr_is_null(&t)) {
 		/* store next in list so this one can be deleted or reused */
 		udb_ptr_set_rptr(&next, u, &TASKLIST(&t)->next);
 		udb_rptr_zero(&TASKLIST(&t)->next, u);
 
-		/* process task t */
-		/* append results for task t and update last_task */
-		task_process_in_reload(nsd, u, last_task, &t);
+		if(TASKLIST(&t)->task_type != task_apply_xfr) {
+			/* process task t */
+			/* append results for task t and update last_task */
+			task_process_in_reload(nsd, u, last_task, &t);
 
+		} else if(udb_ptr_is_null(xfrs2process)) {
+			udb_ptr_set_ptr( xfrs2process, u, &t);
+			udb_ptr_set_ptr(&xfr_tail, u, &t);
+		} else {
+			udb_rptr_set_ptr(&TASKLIST(&xfr_tail)->next, u, &t);
+			udb_ptr_set_ptr(&xfr_tail, u, &t);
+		}
 		/* go to next */
 		udb_ptr_set_ptr(&t, u, &next);
+	}
+	/* t and next are already unlinked (because they are null) */
+	udb_ptr_unlink(&xfr_tail, u);
+}
 
-		/* if the parent has quit, we must quit too, poll the fd for cmds */
-		if(block_read(nsd, cmdsocket, &cmd, sizeof(cmd), 0) == sizeof(cmd)) {
-			DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc command from main %d", (int)cmd));
-			if(cmd == NSD_QUIT) {
-				DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: quit to follow nsd"));
-				/* sync to disk (if needed) */
-				udb_base_sync(nsd->db->udb, 0);
-				/* unlink files of remainder of tasks */
-				while(!udb_ptr_is_null(&t)) {
-					if(TASKLIST(&t)->task_type == task_apply_xfr) {
-						xfrd_unlink_xfrfile(nsd, TASKLIST(&t)->yesno);
-					}
-					udb_ptr_set_rptr(&t, u, &TASKLIST(&t)->next);
-				}
-				udb_ptr_unlink(&t, u);
-				udb_ptr_unlink(&next, u);
-				exit(0);
+static size_t
+reload_process_xfr_tasks(struct nsd* nsd, int cmdsocket, udb_ptr* xfrs2process)
+{
+	sig_atomic_t cmd = NSD_QUIT_SYNC;
+	udb_ptr next;
+	udb_base* u = nsd->task[nsd->mytask];
+	size_t xfrs_processed = 0;
+
+	udb_ptr_init(&next, u);
+	while(!udb_ptr_is_null(xfrs2process)) {
+		/* store next in list so this one can be deleted or reused */
+		udb_ptr_set_rptr(&next, u, &TASKLIST(xfrs2process)->next);
+		udb_rptr_zero(&TASKLIST(xfrs2process)->next, u);
+		
+		/* process xfr task at xfrs2process */
+		assert(TASKLIST(xfrs2process)->task_type == task_apply_xfr);
+		task_process_apply_xfr(nsd, u, xfrs2process);
+		xfrs_processed += 1;
+
+		/* go to next */
+		udb_ptr_set_ptr(xfrs2process, u, &next);
+
+		/* if the "old-main" has quit, we must quit too, poll the fd for cmds */
+		if(block_read(nsd, cmdsocket, &cmd, sizeof(cmd), 0) != sizeof(cmd))
+			; /* pass */
+		else if (cmd != NSD_QUIT)
+			DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc command from old-main %d", (int)cmd));
+		else {
+			udb_ptr_unlink(&next, u);
+			DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: quit to follow nsd"));
+			/* unlink files of remainder of tasks */
+			while(!udb_ptr_is_null(xfrs2process)) {
+				assert(TASKLIST(xfrs2process)->task_type == task_apply_xfr);
+				xfrd_unlink_xfrfile(nsd, TASKLIST(xfrs2process)->yesno);
+				udb_ptr_set_rptr(xfrs2process, u, &TASKLIST(xfrs2process)->next);
 			}
+			exit(0);
 		}
-
 	}
-	udb_ptr_unlink(&t, u);
-	udb_ptr_unlink(&next, u);
+	/* xfrs2process and next are already unlinked (because they are null) */
+	return xfrs_processed;
 }
 
-#ifdef BIND8_STATS
-static void
-parent_send_stats(struct nsd* nsd, int cmdfd)
+static void server_verify(struct nsd *nsd, int cmdsocket,
+	struct sigaction* old_sigchld);
+
+struct quit_sync_event_data {
+	struct event_base* base;
+	size_t read;
+	union {
+		uint8_t buf[sizeof(sig_atomic_t)];
+		sig_atomic_t cmd;
+	} to_read;
+};
+
+static void server_reload_handle_sigchld(int sig, short event,
+		void* ATTR_UNUSED(arg))
 {
-	size_t i;
-	if(!write_socket(cmdfd, &nsd->st, sizeof(nsd->st))) {
-		log_msg(LOG_ERR, "could not write stats to reload");
+	assert(sig == SIGCHLD);
+	assert(event & EV_SIGNAL);
+
+	/* reap the exited old-serve child(s) */
+	while(waitpid(-1, NULL, WNOHANG) > 0) {
+		/* pass */
+	}
+}
+
+static void server_reload_handle_quit_sync_ack(int cmdsocket, short event,
+		void* arg)
+{
+	struct quit_sync_event_data* cb_data =
+		(struct quit_sync_event_data*)arg;
+	ssize_t r;
+
+	if(event & EV_TIMEOUT) {
+		sig_atomic_t cmd = NSD_QUIT_SYNC;
+
+		DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc send quit to main"));
+		if (!write_socket(cmdsocket, &cmd, sizeof(cmd))) {
+			log_msg(LOG_ERR, "problems sending command from "
+				"reload to old-main: %s", strerror(errno));
+		}
+		/* Wait for cmdsocket to become readable or for next timeout,
+		 * (this works because event is added EV_TIMEOUT|EV_PERSIST).
+		 */
 		return;
 	}
-	for(i=0; i<nsd->child_count; i++)
-		if(!write_socket(cmdfd, &nsd->children[i].query_count,
-			sizeof(stc_type))) {
-			log_msg(LOG_ERR, "could not write stats to reload");
-			return;
-		}
-}
+	assert(event & EV_READ);
+	assert(cb_data->read < sizeof(cb_data->to_read.cmd));
 
-static void
-reload_do_stats(int cmdfd, struct nsd* nsd, udb_ptr* last)
-{
-	struct nsdst s;
-	stc_type* p;
-	size_t i;
-	if(block_read(nsd, cmdfd, &s, sizeof(s),
-		RELOAD_SYNC_TIMEOUT) != sizeof(s)) {
-		log_msg(LOG_ERR, "could not read stats from oldpar");
+	r = read(cmdsocket, cb_data->to_read.buf + cb_data->read,
+			sizeof(cb_data->to_read.cmd) - cb_data->read);
+	if(r == 0) {
+		log_msg(LOG_ERR, "reload: old-main quit during quit sync");
+		cb_data->to_read.cmd = NSD_RELOAD;
+
+	} else if(r == -1) {
+		if(errno == EAGAIN || errno == EINTR)
+			return;
+
+		log_msg(LOG_ERR, "reload: could not wait for parent to quit: "
+			"%s", strerror(errno));
+		cb_data->to_read.cmd = NSD_RELOAD;
+
+	} else if (cb_data->read + r  < sizeof(cb_data->to_read.cmd)) {
+		/* More to read */
+		cb_data->read += r;
 		return;
-	}
-	s.db_disk = (nsd->db->udb?nsd->db->udb->base_size:0);
-	s.db_mem = region_get_mem(nsd->db->region);
-	p = (stc_type*)task_new_stat_info(nsd->task[nsd->mytask], last, &s,
-		nsd->child_count);
-	if(!p) return;
-	for(i=0; i<nsd->child_count; i++) {
-		if(block_read(nsd, cmdfd, p++, sizeof(stc_type), 1)!=
-			sizeof(stc_type))
-			return;
-	}
-}
-#endif /* BIND8_STATS */
 
-void server_verify(struct nsd *nsd, int cmdsocket);
+	} else {
+		assert(cb_data->read + r == sizeof(cb_data->to_read.cmd));
+		DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc reply main %d",
+					(int)cb_data->to_read.cmd));
+	}
+	/* Done */
+	event_base_loopexit(cb_data->base, NULL);
+}
 
 /*
  * Reload the database, stop parent, re-fork children and continue.
@@ -2264,24 +2450,27 @@ void server_verify(struct nsd *nsd, int cmdsocket);
  */
 static void
 server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
-	int cmdsocket)
+	int cmdsocket, udb_ptr* xfrs2process, udb_ptr* last_task)
 {
 	pid_t mypid;
-	sig_atomic_t cmd = NSD_QUIT_SYNC;
-	int ret;
-	udb_ptr last_task;
+	sig_atomic_t cmd;
 	struct sigaction old_sigchld, ign_sigchld;
 	struct radnode* node;
 	zone_type* zone;
 	enum soainfo_hint hint;
+	struct quit_sync_event_data cb_data;
+	struct event signal_event, cmd_event;
+	struct timeval reload_sync_timeout;
+	size_t xfrs_processed = 0;
+	/* For swapping filedescriptors from the serve childs to the xfrd
+	 * and/or the dnstap collector */
+	int *swap_fd_send;
+
 	/* ignore SIGCHLD from the previous server_main that used this pid */
 	memset(&ign_sigchld, 0, sizeof(ign_sigchld));
 	ign_sigchld.sa_handler = SIG_IGN;
 	sigaction(SIGCHLD, &ign_sigchld, &old_sigchld);
 
-#ifdef HAVE_SETPROCTITLE
-	setproctitle("main");
-#endif
 #ifdef HAVE_CPUSET_T
 	if(nsd->use_cpu_affinity) {
 		set_cpu_affinity(nsd->cpuset);
@@ -2289,26 +2478,22 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 #endif
 
 	/* see what tasks we got from xfrd */
-	task_remap(nsd->task[nsd->mytask]);
-	udb_ptr_init(&last_task, nsd->task[nsd->mytask]);
-	udb_compact_inhibited(nsd->db->udb, 1);
-	reload_process_tasks(nsd, &last_task, cmdsocket);
-	udb_compact_inhibited(nsd->db->udb, 0);
-	udb_compact(nsd->db->udb);
+	xfrs_processed = reload_process_xfr_tasks(nsd, cmdsocket, xfrs2process);
 
 #ifndef NDEBUG
 	if(nsd_debug_level >= 1)
 		region_log_stats(nsd->db->region);
 #endif /* NDEBUG */
-	/* sync to disk (if needed) */
-	udb_base_sync(nsd->db->udb, 0);
-
 	initialize_dname_compression_tables(nsd);
 
 #ifdef BIND8_STATS
 	/* Restart dumping stats if required.  */
-	time(&nsd->st.boot);
+	time(&nsd->st->boot);
 	set_bind8_alarm(nsd);
+	/* Switch to a different set of stat array for new server processes,
+	 * because they can briefly coexist with the old processes. They
+	 * have their own stat structure. */
+	nsd->stat_current = (nsd->stat_current==0?1:0);
 #endif
 #ifdef USE_ZONE_STATS
 	server_zonestat_realloc(nsd); /* realloc for new children */
@@ -2323,17 +2508,16 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 #endif
 
 		/* spin-up server and execute verifiers for each zone */
-		server_verify(nsd, cmdsocket);
+		server_verify(nsd, cmdsocket, &old_sigchld);
 #ifdef RATELIMIT
 		/* deallocate rate limiting resources */
 		rrl_deinit(nsd->child_count + 1);
 #endif
 	}
 
-	for(node = radix_first(nsd->db->zonetree);
-	    node != NULL;
-	    node = radix_next(node))
-	{
+	if(xfrs_processed) for( node = radix_first(nsd->db->zonetree)
+	                      ; node != NULL; node = radix_next(node)) {
+
 		zone = (zone_type *)node->elem;
 		if(zone->is_updated) {
 			if(zone->is_bad) {
@@ -2345,12 +2529,12 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 			/* update(s), verified or not, possibly with subsequent
 			   skipped update(s). skipped update(s) are picked up
 			   by failed update check in xfrd */
-			task_new_soainfo(nsd->task[nsd->mytask], &last_task,
+			task_new_soainfo(nsd->task[nsd->mytask], last_task,
 			                 zone, hint);
 		} else if(zone->is_skipped) {
 			/* corrupt or inconsistent update without preceding
 			   update(s), communicate soainfo_gone */
-			task_new_soainfo(nsd->task[nsd->mytask], &last_task,
+			task_new_soainfo(nsd->task[nsd->mytask], last_task,
 			                 zone, soainfo_gone);
 		}
 		zone->is_updated = 0;
@@ -2365,7 +2549,6 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 	sigaction(SIGCHLD, &old_sigchld, NULL);
 #ifdef USE_DNSTAP
 	if (nsd->dt_collector) {
-		int *swap_fd_send;
 		DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: swap dnstap collector pipes"));
 		/* Swap fd_send with fd_swap so old serve child and new serve
 		 * childs will not write to the same pipe ends simultaneously */
@@ -2375,6 +2558,9 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 
 	}
 #endif
+	swap_fd_send = nsd->serve2xfrd_fd_send;
+	nsd->serve2xfrd_fd_send = nsd->serve2xfrd_fd_swap;
+	nsd->serve2xfrd_fd_swap = swap_fd_send;
 	/* Start new child processes */
 	if (server_start_children(nsd, server_region, netio, &nsd->
 		xfrd_listener->fd) != 0) {
@@ -2382,7 +2568,7 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 		exit(1);
 	}
 
-	/* if the parent has quit, we must quit too, poll the fd for cmds */
+	/* if the old-main has quit, we must quit too, poll the fd for cmds */
 	if(block_read(nsd, cmdsocket, &cmd, sizeof(cmd), 0) == sizeof(cmd)) {
 		DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc command from main %d", (int)cmd));
 		if(cmd == NSD_QUIT) {
@@ -2392,37 +2578,58 @@ server_reload(struct nsd *nsd, region_type* server_region, netio_type* netio,
 		}
 	}
 
-	/* Send quit command to parent: blocking, wait for receipt. */
-	do {
-		DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc send quit to main"));
-		if (!write_socket(cmdsocket, &cmd, sizeof(cmd)))
-		{
-			log_msg(LOG_ERR, "problems sending command from reload to oldnsd: %s",
-				strerror(errno));
-		}
-		/* blocking: wait for parent to really quit. (it sends RELOAD as ack) */
-		DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc wait for ack main"));
-		ret = block_read(nsd, cmdsocket, &cmd, sizeof(cmd),
-			RELOAD_SYNC_TIMEOUT);
-		if(ret == -2) {
-			DEBUG(DEBUG_IPC, 1, (LOG_ERR, "reload timeout QUITSYNC. retry"));
-		}
-	} while (ret == -2);
-	if(ret == -1) {
-		log_msg(LOG_ERR, "reload: could not wait for parent to quit: %s",
+	/* Send quit command to old-main: blocking, wait for receipt.
+	 * The old-main process asks the old-serve processes to quit, however
+	 * if a reload succeeded before, this process is the parent of the
+	 * old-serve processes, so we need to reap the children for it.
+	 */
+	DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc send quit to main"));
+	cmd = NSD_QUIT_SYNC;
+	if (!write_socket(cmdsocket, &cmd, sizeof(cmd)))
+	{
+		log_msg(LOG_ERR, "problems sending command from reload to oldnsd: %s",
 			strerror(errno));
 	}
-	DEBUG(DEBUG_IPC,1, (LOG_INFO, "reload: ipc reply main %d %d", ret, (int)cmd));
+
+	reload_sync_timeout.tv_sec = RELOAD_SYNC_TIMEOUT;
+	reload_sync_timeout.tv_usec = 0;
+
+	cb_data.base = nsd_child_event_base();
+	cb_data.to_read.cmd = cmd;
+	cb_data.read = 0;
+
+	event_set(&signal_event, SIGCHLD, EV_SIGNAL|EV_PERSIST,
+	    server_reload_handle_sigchld, NULL);
+	if(event_base_set(cb_data.base, &signal_event) != 0
+	|| signal_add(&signal_event, NULL) != 0) {
+		log_msg(LOG_ERR, "NSD quit sync: could not add signal event");
+	}
+
+	event_set(&cmd_event, cmdsocket, EV_READ|EV_TIMEOUT|EV_PERSIST,
+	    server_reload_handle_quit_sync_ack, &cb_data);
+	if(event_base_set(cb_data.base, &cmd_event) != 0
+	|| event_add(&cmd_event, &reload_sync_timeout) != 0) {
+		log_msg(LOG_ERR, "NSD quit sync: could not add command event");
+	}
+
+	/* short-lived main loop */
+	event_base_dispatch(cb_data.base);
+
+	/* remove command and signal event handlers */
+	event_del(&cmd_event);
+	signal_del(&signal_event);
+	/* restore the ordinary signal handler for SIGCHLD */
+	sigaction(SIGCHLD, &old_sigchld, NULL);
+	event_base_free(cb_data.base);
+	cmd = cb_data.to_read.cmd;
+
 	if(cmd == NSD_QUIT) {
 		/* small race condition possible here, parent got quit cmd. */
 		send_children_quit(nsd);
 		exit(1);
 	}
-	assert(ret==-1 || ret == 0 || cmd == NSD_RELOAD);
-#ifdef BIND8_STATS
-	reload_do_stats(cmdsocket, nsd, &last_task);
-#endif
-	udb_ptr_unlink(&last_task, nsd->task[nsd->mytask]);
+	assert(cmd == NSD_RELOAD);
+	udb_ptr_unlink(last_task, nsd->task[nsd->mytask]);
 	task_process_sync(nsd->task[nsd->mytask]);
 #ifdef USE_ZONE_STATS
 	server_zonestat_realloc(nsd); /* realloc for next children */
@@ -2499,6 +2706,10 @@ server_main(struct nsd *nsd)
 	netio_type *netio = netio_create(server_region);
 	netio_handler_type reload_listener;
 	int reload_sockets[2] = {-1, -1};
+	/* pointer to the xfr tasks that will be processed in a second pass */
+	udb_ptr xfrs2process;
+	/* pointer to results of task processing */
+	udb_ptr last_task;
 	struct timespec timeout_spec;
 	int status;
 	pid_t child_pid;
@@ -2510,6 +2721,14 @@ server_main(struct nsd *nsd)
 
 	/* Add listener for the XFRD process */
 	netio_add_handler(netio, nsd->xfrd_listener);
+
+#ifdef BIND8_STATS
+	nsd->st = &nsd->stat_map[0];
+	nsd->st->db_disk = 0;
+	nsd->st->db_mem = region_get_mem(nsd->db->region);
+#endif
+	memset(&xfrs2process, 0, sizeof(xfrs2process));
+	memset(&last_task, 0, sizeof(last_task));
 
 	/* Start the child processes that handle incoming queries */
 	if (server_start_children(nsd, server_region, netio,
@@ -2550,6 +2769,12 @@ server_main(struct nsd *nsd)
 					log_msg(LOG_WARNING,
 					       "Reload process %d failed with status %d, continuing with old database",
 					       (int) child_pid, status);
+#ifdef HAVE_SETPROCTITLE
+					setproctitle("main");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+					log_set_process_role("main");
+#endif
 					reload_pid = -1;
 					if(reload_listener.fd != -1) close(reload_listener.fd);
 					netio_remove_handler(netio, &reload_listener);
@@ -2627,7 +2852,7 @@ server_main(struct nsd *nsd)
 				break;
 
 			/* timeout to collect processes. In case no sigchild happens. */
-			timeout_spec.tv_sec = 60;
+			timeout_spec.tv_sec = 1;
 			timeout_spec.tv_nsec = 0;
 
 			/* listen on ports, timeout for collecting terminated children */
@@ -2648,6 +2873,12 @@ server_main(struct nsd *nsd)
 				log_msg(LOG_WARNING,
 				       "Reload process %d failed, continuing with old database",
 				       (int) reload_pid);
+#ifdef HAVE_SETPROCTITLE
+				setproctitle("main");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+				log_set_process_role("main");
+#endif
 				reload_pid = -1;
 				if(reload_listener.fd != -1) close(reload_listener.fd);
 				netio_remove_handler(netio, &reload_listener);
@@ -2698,7 +2929,22 @@ server_main(struct nsd *nsd)
 				reload_pid = -1;
 				break;
 			}
-
+			/* Execute the tasks that cannot fail */
+#ifdef HAVE_SETPROCTITLE
+			setproctitle("load");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+			log_set_process_role("load");
+#endif
+			/* Already process the non xfr tasks, so that a failed
+			 * transfer (which can exit) will not nullify the
+			 * effects of the other tasks that will not exit.
+			 */
+			task_remap(nsd->task[nsd->mytask]);
+			udb_ptr_init(&xfrs2process, nsd->task[nsd->mytask]);
+			udb_ptr_init(&last_task   , nsd->task[nsd->mytask]);
+			reload_process_non_xfr_tasks(nsd, &xfrs2process
+			                                , &last_task);
 			/* Do actual reload */
 			reload_pid = fork();
 			switch (reload_pid) {
@@ -2708,8 +2954,10 @@ server_main(struct nsd *nsd)
 			default:
 				/* PARENT */
 				close(reload_sockets[0]);
-				server_reload(nsd, server_region, netio,
-					reload_sockets[1]);
+				server_reload(nsd, server_region, netio
+				                 , reload_sockets[1]
+				                 , &xfrs2process
+						 , &last_task);
 				DEBUG(DEBUG_IPC,2, (LOG_INFO, "Reload exited to become new main"));
 				close(reload_sockets[1]);
 				DEBUG(DEBUG_IPC,2, (LOG_INFO, "Reload closed"));
@@ -2727,6 +2975,12 @@ server_main(struct nsd *nsd)
 				/* server_main keep running until NSD_QUIT_SYNC
 				 * received from reload. */
 				close(reload_sockets[1]);
+#ifdef HAVE_SETPROCTITLE
+				setproctitle("old-main");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+				log_set_process_role("old-main");
+#endif
 				reload_listener.fd = reload_sockets[0];
 				reload_listener.timeout = NULL;
 				reload_listener.user_data = nsd;
@@ -2736,6 +2990,24 @@ server_main(struct nsd *nsd)
 				reload_pid = getppid();
 				break;
 			}
+			if(reload_pid == -1) {
+				/* Reset proctitle after "load" process exited
+				 * or when fork() failed
+				 */
+#ifdef HAVE_SETPROCTITLE
+				setproctitle("main");
+#endif
+#ifdef USE_LOG_PROCESS_ROLE
+				log_set_process_role("main");
+#endif
+			}
+			/* xfrs2process and last_task need to be reset in case
+			 * "old-main" becomes "main" (due to an failed (exited)
+			 * xfr update). If needed xfrs2process gets unlinked by
+			 * "load", and last_task by the xfrd.
+			 */
+			memset(&xfrs2process, 0, sizeof(xfrs2process));
+			memset(&last_task, 0, sizeof(last_task));
 			break;
 		case NSD_QUIT_SYNC:
 			/* synchronisation of xfrd, parent and reload */
@@ -2765,9 +3037,6 @@ server_main(struct nsd *nsd)
 					log_msg(LOG_ERR, "server_main: "
 						"could not ack quit: %s", strerror(errno));
 				}
-#ifdef BIND8_STATS
-				parent_send_stats(nsd, reload_listener.fd);
-#endif /* BIND8_STATS */
 				close(reload_listener.fd);
 			}
 			DEBUG(DEBUG_IPC,1, (LOG_INFO, "server_main: shutdown sequence"));
@@ -2804,18 +3073,19 @@ server_main(struct nsd *nsd)
 	/* close opened ports to avoid race with restart of nsd */
 	server_close_all_sockets(nsd->udp, nsd->ifs);
 	server_close_all_sockets(nsd->tcp, nsd->ifs);
-#ifdef HAVE_SSL
 	daemon_remote_close(nsd->rc);
-#endif
 	send_children_quit_and_wait(nsd);
 
 	/* Unlink it if possible... */
-	unlinkpid(nsd->pidfile);
+	unlinkpid(nsd->pidfile, nsd->username);
 	unlink(nsd->task[0]->fname);
 	unlink(nsd->task[1]->fname);
 #ifdef USE_ZONE_STATS
 	unlink(nsd->zonestatfname[0]);
 	unlink(nsd->zonestatfname[1]);
+#endif
+#ifdef BIND8_STATS
+	server_stat_free(nsd);
 #endif
 #ifdef USE_DNSTAP
 	dt_collector_close(nsd->dt_collector, nsd);
@@ -2859,9 +3129,6 @@ server_main(struct nsd *nsd)
 #ifdef MEMCLEAN /* OS collects memory pages */
 	region_destroy(server_region);
 #endif
-	/* write the nsd.db to disk, wait for it to complete */
-	udb_base_sync(nsd->db->udb, 1);
-	udb_base_close(nsd->db->udb);
 	server_shutdown(nsd);
 }
 
@@ -2920,11 +3187,13 @@ nsd_event_method(void)
 	return "select";
 #else
 	struct event_base* b = nsd_child_event_base();
-	const char* m = "?";
+	const char* m;
 #  ifdef EV_FEATURE_BACKENDS
 	m = ub_ev_backend2str(ev_backend((struct ev_loop*)b));
 #  elif defined(HAVE_EVENT_BASE_GET_METHOD)
 	m = event_base_get_method(b);
+#  else
+	m = "?";
 #  endif
 #  ifdef MEMCLEAN
 	event_base_free(b);
@@ -2968,6 +3237,12 @@ add_udp_handler(
 	data->nsd = nsd;
 	data->socket = sock;
 
+	if(nsd->options->proxy_protocol_port &&
+		sockaddr_uses_proxy_protocol_port(nsd->options,
+		(struct sockaddr *)&sock->addr.ai_addr)) {
+		data->pp2_enabled = 1;
+	}
+
 	memset(handler, 0, sizeof(*handler));
 	event_set(handler, sock->s, EV_PERSIST|EV_READ, handle_udp, data);
 	if(event_base_set(nsd->event_base, handler) != 0)
@@ -2987,6 +3262,12 @@ add_tcp_handler(
 	data->nsd = nsd;
 	data->socket = sock;
 
+	if(nsd->options->proxy_protocol_port &&
+		sockaddr_uses_proxy_protocol_port(nsd->options,
+		(struct sockaddr *)&sock->addr.ai_addr)) {
+		data->pp2_enabled = 1;
+	}
+
 #ifdef HAVE_SSL
 	if (nsd->tls_ctx &&
 	    nsd->options->tls_port &&
@@ -2996,10 +3277,24 @@ add_tcp_handler(
 		if(verbosity >= 2) {
 			char buf[48];
 			addrport2str((void*)(struct sockaddr_storage*)&sock->addr.ai_addr, buf, sizeof(buf));
-			VERBOSITY(4, (LOG_NOTICE, "setup TCP for TLS service on interface %s", buf));
+			VERBOSITY(5, (LOG_NOTICE, "setup TCP for TLS service on interface %s", buf));
 		}
 	} else {
 		data->tls_accept = 0;
+	}
+	if (nsd->tls_auth_ctx &&
+	    nsd->options->tls_auth_port &&
+	    using_tls_port((struct sockaddr *)&sock->addr.ai_addr, nsd->options->tls_auth_port))
+	{
+		data->tls_auth_accept = 1;
+		if(verbosity >= 2) {
+			char buf[48];
+			addrport2str((void*)(struct sockaddr_storage*)&sock->addr.ai_addr, buf, sizeof(buf));
+			VERBOSITY(4, (LOG_NOTICE, "setup TCP for TLS-AUTH service on interface %s", buf));
+		}
+
+	} else {
+		data->tls_auth_accept = 0;
 	}
 #endif
 
@@ -3015,7 +3310,8 @@ add_tcp_handler(
 /*
  * Serve DNS request to verifiers (short-lived)
  */
-void server_verify(struct nsd *nsd, int cmdsocket)
+static void server_verify(struct nsd *nsd, int cmdsocket,
+	struct sigaction* old_sigchld)
 {
 	size_t size = 0;
 	struct event cmd_event, signal_event, exit_event;
@@ -3034,7 +3330,11 @@ void server_verify(struct nsd *nsd, int cmdsocket)
 	nsd->verifier_count = 0;
 	nsd->verifier_limit = nsd->options->verifier_count;
 	size = sizeof(struct verifier) * nsd->verifier_limit;
-	pipe(nsd->verifier_pipe);
+	if(pipe(nsd->verifier_pipe) == -1) {
+		log_msg(LOG_ERR, "verify: could not create pipe: %s",
+				strerror(errno));
+		goto fail_pipe;
+	}
 	fcntl(nsd->verifier_pipe[0], F_SETFD, FD_CLOEXEC);
 	fcntl(nsd->verifier_pipe[1], F_SETFD, FD_CLOEXEC);
 	nsd->verifiers = region_alloc_zero(nsd->server_region, size);
@@ -3083,8 +3383,8 @@ void server_verify(struct nsd *nsd, int cmdsocket)
 		iovecs[i].iov_len = buffer_remaining(queries[i]->packet);
 		msgs[i].msg_hdr.msg_iov = &iovecs[i];
 		msgs[i].msg_hdr.msg_iovlen = 1;
-		msgs[i].msg_hdr.msg_name = &queries[i]->addr;
-		msgs[i].msg_hdr.msg_namelen = queries[i]->addrlen;
+		msgs[i].msg_hdr.msg_name = &queries[i]->remote_addr;
+		msgs[i].msg_hdr.msg_namelen = queries[i]->remote_addrlen;
 	}
 
 	for (size_t i = 0; i < nsd->verify_ifs; i++) {
@@ -3118,15 +3418,17 @@ void server_verify(struct nsd *nsd, int cmdsocket)
 
 	/* remove command and exit event handlers */
 	event_del(&exit_event);
-	event_del(&signal_event);
 	event_del(&cmd_event);
 
 	assert(nsd->next_zone_to_verify == NULL || nsd->mode == NSD_QUIT);
 	assert(nsd->verifier_count == 0 || nsd->mode == NSD_QUIT);
+	signal_del(&signal_event);
 fail:
-	event_base_free(nsd->event_base);
+	sigaction(SIGCHLD, old_sigchld, NULL);
 	close(nsd->verifier_pipe[0]);
 	close(nsd->verifier_pipe[1]);
+fail_pipe:
+	event_base_free(nsd->event_base);
 	region_destroy(nsd->server_region);
 
 	nsd->event_base = NULL;
@@ -3147,6 +3449,9 @@ server_child(struct nsd *nsd)
 	region_type *server_region = region_create(xalloc, free);
 	struct event_base* event_base = nsd_child_event_base();
 	sig_atomic_t mode;
+#ifdef USE_LOG_PROCESS_ROLE
+	static char child_name[20];
+#endif
 
 	if(!event_base) {
 		log_msg(LOG_ERR, "nsd server could not create event base");
@@ -3160,15 +3465,27 @@ server_child(struct nsd *nsd)
 #endif
 
 	assert(nsd->server_kind != NSD_SERVER_MAIN);
-	DEBUG(DEBUG_IPC, 2, (LOG_INFO, "child process started"));
 
 #ifdef HAVE_SETPROCTITLE
 	setproctitle("server %d", nsd->this_child->child_num + 1);
 #endif
+#ifdef USE_LOG_PROCESS_ROLE
+	snprintf(child_name, sizeof(child_name), "srv%d",
+		nsd->this_child->child_num + 1);
+	log_set_process_role(child_name);
+#endif
+	DEBUG(DEBUG_IPC, 2, (LOG_INFO, "child process started"));
+
 #ifdef HAVE_CPUSET_T
 	if(nsd->use_cpu_affinity) {
 		set_cpu_affinity(nsd->this_child->cpuset);
 	}
+#endif
+#ifdef BIND8_STATS
+	nsd->st = &nsd->stats_per_child[nsd->stat_current]
+		[nsd->this_child->child_num];
+	nsd->st->boot = nsd->stat_map[0].boot;
+	memcpy(&nsd->stat_proc, nsd->st, sizeof(nsd->stat_proc));
 #endif
 
 	if (!(nsd->server_kind & NSD_SERVER_TCP)) {
@@ -3221,8 +3538,8 @@ server_child(struct nsd *nsd)
 			iovecs[i].iov_len           = buffer_remaining(queries[i]->packet);
 			msgs[i].msg_hdr.msg_iov     = &iovecs[i];
 			msgs[i].msg_hdr.msg_iovlen  = 1;
-			msgs[i].msg_hdr.msg_name    = &queries[i]->addr;
-			msgs[i].msg_hdr.msg_namelen = queries[i]->addrlen;
+			msgs[i].msg_hdr.msg_name    = &queries[i]->remote_addr;
+			msgs[i].msg_hdr.msg_namelen = queries[i]->remote_addrlen;
 		}
 
 		for (i = 0; i < nsd->ifs; i++) {
@@ -3265,15 +3582,7 @@ server_child(struct nsd *nsd)
 				add_tcp_handler(nsd, &nsd->tcp[i], data);
 			} else {
 				/* close sockets intended for other servers */
-				/*
-				 * uncomment this once tcp servers are no
-				 * longer copied in the tcp fd copy line
-				 * in server_init().
 				server_close_socket(&nsd->tcp[i]);
-				*/
-				/* close sockets not meant for this server*/
-				if(!listen)
-					server_close_socket(&nsd->tcp[i]);
 			}
 		}
 	} else {
@@ -3287,11 +3596,11 @@ server_child(struct nsd *nsd)
 		/* Do we need to do the statistics... */
 		if (mode == NSD_STATS) {
 #ifdef BIND8_STATS
-			int p = nsd->st.period;
-			nsd->st.period = 1; /* force stats printout */
+			int p = nsd->st_period;
+			nsd->st_period = 1; /* force stats printout */
 			/* Dump the statistics */
 			bind8_stats(nsd);
-			nsd->st.period = p;
+			nsd->st_period = p;
 #else /* !BIND8_STATS */
 			log_msg(LOG_NOTICE, "Statistics support not enabled at compile time.");
 #endif /* BIND8_STATS */
@@ -3362,7 +3671,7 @@ service_remaining_tcp(struct nsd* nsd)
 	/* check if it is needed */
 	if(nsd->current_tcp_count == 0 || tcp_active_list == NULL)
 		return;
-	VERBOSITY(4, (LOG_INFO, "service remaining TCP connections"));
+	VERBOSITY(5, (LOG_INFO, "service remaining TCP connections"));
 #ifdef USE_DNSTAP
 	/* remove dnstap collector, we cannot write there because the new
 	 * child process is using the file descriptor, or the child
@@ -3391,6 +3700,10 @@ service_remaining_tcp(struct nsd* nsd)
 			if((event&EV_READ))
 				fn = handle_tls_reading;
 			else	fn = handle_tls_writing;
+		} else if(p->tls_auth) {
+			if((event&EV_READ))
+				fn = handle_tls_reading;
+			else	fn = handle_tls_writing;
 		} else {
 #endif
 			if((event&EV_READ))
@@ -3401,9 +3714,9 @@ service_remaining_tcp(struct nsd* nsd)
 #endif
 
 		p->tcp_no_more_queries = 1;
-		/* set timeout to 1/10 second */
-		if(p->tcp_timeout > 100)
-			p->tcp_timeout = 100;
+		/* set timeout to 3 seconds (previously 1/10 second) */
+		if(p->tcp_timeout > 3000)
+			p->tcp_timeout = 3000;
 		timeout.tv_sec = p->tcp_timeout / 1000;
 		timeout.tv_usec = (p->tcp_timeout % 1000)*1000;
 		event_del(&p->event);
@@ -3428,8 +3741,8 @@ service_remaining_tcp(struct nsd* nsd)
 			break;
 		}
 		/* timer */
-		/* have to do something every second */
-		tv.tv_sec = 1;
+		/* have to do something every 3 seconds */
+		tv.tv_sec = 3;
 		tv.tv_usec = 0;
 		memset(&timeout, 0, sizeof(timeout));
 		event_set(&timeout, -1, EV_TIMEOUT, remaining_tcp_timeout,
@@ -3450,7 +3763,7 @@ service_remaining_tcp(struct nsd* nsd)
 			event_del(&timeout);
 		} else {
 			/* timed out, quit */
-			VERBOSITY(4, (LOG_INFO, "service remaining TCP connections: timed out, quit"));
+			VERBOSITY(5, (LOG_INFO, "service remaining TCP connections: timed out, quit"));
 			break;
 		}
 	}
@@ -3567,6 +3880,88 @@ port_is_zero(
 #endif
 }
 
+/* Parses the PROXYv2 header from buf and updates the struct.
+ * Returns 1 on success, 0 on failure. */
+static int
+consume_pp2_header(struct buffer* buf, struct query* q, int stream)
+{
+	size_t size;
+	struct pp2_header* header;
+	int err = pp2_read_header(buffer_begin(buf), buffer_remaining(buf));
+	if(err) {
+		VERBOSITY(4, (LOG_ERR, "proxy-protocol: could not parse "
+			"PROXYv2 header: %s", pp_lookup_error(err)));
+		return 0;
+	}
+	header = (struct pp2_header*)buffer_begin(buf);
+	size = PP2_HEADER_SIZE + read_uint16(&header->len);
+	if(size > buffer_limit(buf)) {
+		VERBOSITY(4, (LOG_ERR, "proxy-protocol: not enough buffer "
+			"size to read PROXYv2 header"));
+		return 0;
+	}
+	if((header->ver_cmd & 0xF) == PP2_CMD_LOCAL) {
+		/* A connection from the proxy itself.
+		 * No need to do anything with addresses. */
+		goto done;
+	}
+	if(header->fam_prot == PP2_UNSPEC_UNSPEC) {
+		/* Unspecified family and protocol. This could be used for
+		 * health checks by proxies.
+		 * No need to do anything with addresses. */
+		goto done;
+	}
+	/* Read the proxied address */
+	switch(header->fam_prot) {
+		case PP2_INET_STREAM:
+		case PP2_INET_DGRAM:
+			{
+			struct sockaddr_in* addr =
+				(struct sockaddr_in*)&q->client_addr;
+			addr->sin_family = AF_INET;
+			memmove(&addr->sin_addr.s_addr,
+				&header->addr.addr4.src_addr, 4);
+			memmove(&addr->sin_port, &header->addr.addr4.src_port,
+				2);
+			q->client_addrlen = (socklen_t)sizeof(struct sockaddr_in);
+			}
+			/* Ignore the destination address; it should be us. */
+			break;
+#ifdef INET6
+		case PP2_INET6_STREAM:
+		case PP2_INET6_DGRAM:
+			{
+			struct sockaddr_in6* addr =
+				(struct sockaddr_in6*)&q->client_addr;
+			memset(addr, 0, sizeof(*addr));
+			addr->sin6_family = AF_INET6;
+			memmove(&addr->sin6_addr,
+				header->addr.addr6.src_addr, 16);
+			memmove(&addr->sin6_port, &header->addr.addr6.src_port,
+				2);
+			q->client_addrlen = (socklen_t)sizeof(struct sockaddr_in6);
+			}
+			/* Ignore the destination address; it should be us. */
+			break;
+#endif /* INET6 */
+		default:
+			VERBOSITY(2, (LOG_ERR, "proxy-protocol: unsupported "
+				"family and protocol 0x%x",
+				(int)header->fam_prot));
+			return 0;
+	}
+	q->is_proxied = 1;
+done:
+	if(!stream) {
+		/* We are reading a whole packet;
+		 * Move the rest of the data to overwrite the PROXYv2 header */
+		/* XXX can we do better to avoid memmove? */
+		memmove(header, ((char*)header)+size, buffer_limit(buf)-size);
+		buffer_set_limit(buf, buffer_limit(buf)-size);
+	}
+	return 1;
+}
+
 static void
 handle_udp(int fd, short event, void* arg)
 {
@@ -3593,7 +3988,9 @@ handle_udp(int fd, short event, void* arg)
 	for (i = 0; i < recvcount; i++) {
 	loopstart:
 		received = msgs[i].msg_len;
-		queries[i]->addrlen = msgs[i].msg_hdr.msg_namelen;
+		queries[i]->remote_addrlen = msgs[i].msg_hdr.msg_namelen;
+		queries[i]->client_addrlen = (socklen_t)sizeof(queries[i]->client_addr);
+		queries[i]->is_proxied = 0;
 		q = queries[i];
 		if (received == -1) {
 			log_msg(LOG_ERR, "recvmmsg %d failed %s", i, strerror(
@@ -3607,7 +4004,7 @@ handle_udp(int fd, short event, void* arg)
 			/* No zone statup */
 			query_reset(queries[i], UDP_MAX_MESSAGE_LEN, 0);
 			iovecs[i].iov_len = buffer_remaining(q->packet);
-			msgs[i].msg_hdr.msg_namelen = queries[i]->addrlen;
+			msgs[i].msg_hdr.msg_namelen = queries[i]->remote_addrlen;
 			goto swap_drop;
 		}
 
@@ -3622,13 +4019,25 @@ handle_udp(int fd, short event, void* arg)
 
 		buffer_skip(q->packet, received);
 		buffer_flip(q->packet);
+		if(data->pp2_enabled && !consume_pp2_header(q->packet, q, 0)) {
+			VERBOSITY(2, (LOG_ERR, "proxy-protocol: could not "
+				"consume PROXYv2 header"));
+			goto swap_drop;
+		}
+		if(!q->is_proxied) {
+			q->client_addrlen = q->remote_addrlen;
+			memmove(&q->client_addr, &q->remote_addr,
+				q->remote_addrlen);
+		}
 #ifdef USE_DNSTAP
 		/*
 		 * sending UDP-query with server address (local) and client address to dnstap process
 		 */
-		log_addr("query from client", &q->addr);
+		log_addr("query from client", &q->client_addr);
 		log_addr("to server (local)", (void*)&data->socket->addr.ai_addr);
-		dt_collector_submit_auth_query(data->nsd, (void*)&data->socket->addr.ai_addr, &q->addr, q->addrlen,
+		if(verbosity >= 6 && q->is_proxied)
+			log_addr("query via proxy", &q->remote_addr);
+		dt_collector_submit_auth_query(data->nsd, (void*)&data->socket->addr.ai_addr, &q->client_addr, q->client_addrlen,
 			q->tcp, q->packet);
 #endif /* USE_DNSTAP */
 
@@ -3666,15 +4075,17 @@ handle_udp(int fd, short event, void* arg)
 			 * sending UDP-response with server address (local) and client address to dnstap process
 			 */
 			log_addr("from server (local)", (void*)&data->socket->addr.ai_addr);
-			log_addr("response to client", &q->addr);
+			log_addr("response to client", &q->client_addr);
+			if(verbosity >= 6 && q->is_proxied)
+				log_addr("response via proxy", &q->remote_addr);
 			dt_collector_submit_auth_response(data->nsd, (void*)&data->socket->addr.ai_addr,
-				&q->addr, q->addrlen, q->tcp, q->packet,
+				&q->client_addr, q->client_addrlen, q->tcp, q->packet,
 				q->zone);
 #endif /* USE_DNSTAP */
 		} else {
 			query_reset(queries[i], UDP_MAX_MESSAGE_LEN, 0);
 			iovecs[i].iov_len = buffer_remaining(q->packet);
-			msgs[i].msg_hdr.msg_namelen = queries[i]->addrlen;
+			msgs[i].msg_hdr.msg_namelen = queries[i]->remote_addrlen;
 		swap_drop:
 			STATUP(data->nsd, dropped);
 			ZTATUP(data->nsd, q->zone, dropped);
@@ -3729,11 +4140,11 @@ handle_udp(int fd, short event, void* arg)
 			if(errno == EINVAL) {
 				/* skip the invalid argument entry,
 				 * send the remaining packets in the list */
-				if(!(port_is_zero((void*)&queries[i]->addr) &&
+				if(!(port_is_zero((void*)&queries[i]->remote_addr) &&
 					verbosity < 3)) {
 					const char* es = strerror(errno);
 					char a[64];
-					addrport2str((void*)&queries[i]->addr, a, sizeof(a));
+					addrport2str((void*)&queries[i]->remote_addr, a, sizeof(a));
 					log_msg(LOG_ERR, "sendmmsg skip invalid argument [0]=%s count=%d failed: %s", a, (int)(recvcount-i), es);
 				}
 				i += 1;
@@ -3748,11 +4159,11 @@ handle_udp(int fd, short event, void* arg)
 			   errno != EAGAIN) {
 				const char* es = strerror(errno);
 				char a[64];
-				addrport2str((void*)&queries[i]->addr, a, sizeof(a));
+				addrport2str((void*)&queries[i]->remote_addr, a, sizeof(a));
 				log_msg(LOG_ERR, "sendmmsg [0]=%s count=%d failed: %s", a, (int)(recvcount-i), es);
 			}
 #ifdef BIND8_STATS
-			data->nsd->st.txerr += recvcount-i;
+			data->nsd->st->txerr += recvcount-i;
 #endif /* BIND8_STATS */
 			break;
 		}
@@ -3761,7 +4172,7 @@ handle_udp(int fd, short event, void* arg)
 	for(i=0; i<recvcount; i++) {
 		query_reset(queries[i], UDP_MAX_MESSAGE_LEN, 0);
 		iovecs[i].iov_len = buffer_remaining(queries[i]->packet);
-		msgs[i].msg_hdr.msg_namelen = queries[i]->addrlen;
+		msgs[i].msg_hdr.msg_namelen = queries[i]->remote_addrlen;
 	}
 }
 
@@ -3800,7 +4211,13 @@ cleanup_tcp_handler(struct tcp_handler_data* data)
 		SSL_free(data->tls);
 		data->tls = NULL;
 	}
+	if(data->tls_auth) {
+		SSL_shutdown(data->tls_auth);
+		SSL_free(data->tls_auth);
+		data->tls_auth = NULL;
+	}
 #endif
+	data->pp2_header_state = pp2_header_none;
 	close(data->event.ev_fd);
 	if(data->prev)
 		data->prev->next = data->next;
@@ -3826,6 +4243,39 @@ cleanup_tcp_handler(struct tcp_handler_data* data)
 	region_destroy(data->region);
 }
 
+/* Read more data into the buffer for tcp read. Pass the amount of additional
+ * data required. Returns false if nothing needs to be done this event, or
+ * true if the additional data is in the buffer. */
+static int
+more_read_buf_tcp(int fd, struct tcp_handler_data* data, void* bufpos,
+	size_t add_amount, ssize_t* received)
+{
+	*received = read(fd, bufpos, add_amount);
+	if (*received == -1) {
+		if (errno == EAGAIN || errno == EINTR) {
+			/*
+			 * Read would block, wait until more
+			 * data is available.
+			 */
+			return 0;
+		} else {
+			char buf[48];
+			addr2str(&data->query->remote_addr, buf, sizeof(buf));
+#ifdef ECONNRESET
+			if (verbosity >= 2 || errno != ECONNRESET)
+#endif /* ECONNRESET */
+			log_msg(LOG_ERR, "failed reading from %s tcp: %s", buf, strerror(errno));
+			cleanup_tcp_handler(data);
+			return 0;
+		}
+	} else if (*received == 0) {
+		/* EOF */
+		cleanup_tcp_handler(data);
+		return 0;
+	}
+	return 1;
+}
+
 static void
 handle_tcp_reading(int fd, short event, void* arg)
 {
@@ -3842,8 +4292,9 @@ handle_tcp_reading(int fd, short event, void* arg)
 	}
 
 	if ((data->nsd->tcp_query_count > 0 &&
-		data->query_count >= data->nsd->tcp_query_count) ||
-		data->tcp_no_more_queries) {
+	     data->query_count >= data->nsd->tcp_query_count) ||
+	    (data->query_count > 0 && data->tcp_no_more_queries))
+  {
 		/* No more queries allowed on this tcp connection. */
 		cleanup_tcp_handler(data);
 		return;
@@ -3851,41 +4302,102 @@ handle_tcp_reading(int fd, short event, void* arg)
 
 	assert((event & EV_READ));
 
-	if (data->bytes_transmitted == 0) {
+	if (data->bytes_transmitted == 0 && data->query_needs_reset) {
 		query_reset(data->query, TCP_MAX_MESSAGE_LEN, 1);
+		data->query_needs_reset = 0;
+	}
+
+	if(data->pp2_enabled && data->pp2_header_state != pp2_header_done) {
+		struct pp2_header* header = NULL;
+		size_t want_read_size = 0;
+		size_t current_read_size = 0;
+		if(data->pp2_header_state == pp2_header_none) {
+			want_read_size = PP2_HEADER_SIZE;
+			if(buffer_remaining(data->query->packet) <
+				want_read_size) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: not enough buffer size to read PROXYv2 header"));
+				cleanup_tcp_handler(data);
+				return;
+			}
+			VERBOSITY(6, (LOG_INFO, "proxy-protocol: reading fixed part of PROXYv2 header (len %lu)", (unsigned long)want_read_size));
+			current_read_size = want_read_size;
+			if(data->bytes_transmitted < current_read_size) {
+				if(!more_read_buf_tcp(fd, data,
+					(void*)buffer_at(data->query->packet,
+						data->bytes_transmitted),
+					current_read_size - data->bytes_transmitted,
+					&received))
+					return;
+				data->bytes_transmitted += received;
+				buffer_skip(data->query->packet, received);
+				if(data->bytes_transmitted != current_read_size)
+					return;
+				data->pp2_header_state = pp2_header_init;
+			}
+		}
+		if(data->pp2_header_state == pp2_header_init) {
+			int err;
+			err = pp2_read_header(buffer_begin(data->query->packet),
+				buffer_limit(data->query->packet));
+			if(err) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not parse PROXYv2 header: %s", pp_lookup_error(err)));
+				cleanup_tcp_handler(data);
+				return;
+			}
+			header = (struct pp2_header*)buffer_begin(data->query->packet);
+			want_read_size = ntohs(header->len);
+			if(buffer_limit(data->query->packet) <
+				PP2_HEADER_SIZE + want_read_size) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: not enough buffer size to read PROXYv2 header"));
+				cleanup_tcp_handler(data);
+				return;
+			}
+			VERBOSITY(6, (LOG_INFO, "proxy-protocol: reading variable part of PROXYv2 header (len %lu)", (unsigned long)want_read_size));
+			current_read_size = PP2_HEADER_SIZE + want_read_size;
+			if(want_read_size == 0) {
+				/* nothing more to read; header is complete */
+				data->pp2_header_state = pp2_header_done;
+			} else if(data->bytes_transmitted < current_read_size) {
+				if(!more_read_buf_tcp(fd, data,
+					(void*)buffer_at(data->query->packet,
+						data->bytes_transmitted),
+					current_read_size - data->bytes_transmitted,
+					&received))
+					return;
+				data->bytes_transmitted += received;
+				buffer_skip(data->query->packet, received);
+				if(data->bytes_transmitted != current_read_size)
+					return;
+				data->pp2_header_state = pp2_header_done;
+			}
+		}
+		if(data->pp2_header_state != pp2_header_done || !header) {
+			VERBOSITY(6, (LOG_ERR, "proxy-protocol: wrong state for the PROXYv2 header"));
+
+			cleanup_tcp_handler(data);
+			return;
+		}
+		buffer_flip(data->query->packet);
+		if(!consume_pp2_header(data->query->packet, data->query, 1)) {
+			VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not consume PROXYv2 header"));
+
+			cleanup_tcp_handler(data);
+			return;
+		}
+		/* Clear and reset the buffer to read the following
+		 * DNS packet(s). */
+		buffer_clear(data->query->packet);
+		data->bytes_transmitted = 0;
 	}
 
 	/*
 	 * Check if we received the leading packet length bytes yet.
 	 */
 	if (data->bytes_transmitted < sizeof(uint16_t)) {
-		received = read(fd,
-				(char *) &data->query->tcplen
-				+ data->bytes_transmitted,
-				sizeof(uint16_t) - data->bytes_transmitted);
-		if (received == -1) {
-			if (errno == EAGAIN || errno == EINTR) {
-				/*
-				 * Read would block, wait until more
-				 * data is available.
-				 */
-				return;
-			} else {
-				char buf[48];
-				addr2str(&data->query->addr, buf, sizeof(buf));
-#ifdef ECONNRESET
-				if (verbosity >= 2 || errno != ECONNRESET)
-#endif /* ECONNRESET */
-				log_msg(LOG_ERR, "failed reading from %s tcp: %s", buf, strerror(errno));
-				cleanup_tcp_handler(data);
-				return;
-			}
-		} else if (received == 0) {
-			/* EOF */
-			cleanup_tcp_handler(data);
+		if(!more_read_buf_tcp(fd, data,
+			(char*) &data->query->tcplen + data->bytes_transmitted,
+			sizeof(uint16_t) - data->bytes_transmitted, &received))
 			return;
-		}
-
 		data->bytes_transmitted += received;
 		if (data->bytes_transmitted < sizeof(uint16_t)) {
 			/*
@@ -3894,7 +4406,6 @@ handle_tcp_reading(int fd, short event, void* arg)
 			 */
 			return;
 		}
-
 		assert(data->bytes_transmitted == sizeof(uint16_t));
 
 		data->query->tcplen = ntohs(data->query->tcplen);
@@ -3925,32 +4436,9 @@ handle_tcp_reading(int fd, short event, void* arg)
 	assert(buffer_remaining(data->query->packet) > 0);
 
 	/* Read the (remaining) query data.  */
-	received = read(fd,
-			buffer_current(data->query->packet),
-			buffer_remaining(data->query->packet));
-	if (received == -1) {
-		if (errno == EAGAIN || errno == EINTR) {
-			/*
-			 * Read would block, wait until more data is
-			 * available.
-			 */
-			return;
-		} else {
-			char buf[48];
-			addr2str(&data->query->addr, buf, sizeof(buf));
-#ifdef ECONNRESET
-			if (verbosity >= 2 || errno != ECONNRESET)
-#endif /* ECONNRESET */
-			log_msg(LOG_ERR, "failed reading from %s tcp: %s", buf, strerror(errno));
-			cleanup_tcp_handler(data);
-			return;
-		}
-	} else if (received == 0) {
-		/* EOF */
-		cleanup_tcp_handler(data);
+	if(!more_read_buf_tcp(fd, data, buffer_current(data->query->packet),
+		buffer_remaining(data->query->packet), &received))
 		return;
-	}
-
 	data->bytes_transmitted += received;
 	buffer_skip(data->query->packet, received);
 	if (buffer_remaining(data->query->packet) > 0) {
@@ -3968,9 +4456,9 @@ handle_tcp_reading(int fd, short event, void* arg)
 #ifndef INET6
 	STATUP(data->nsd, ctcp);
 #else
-	if (data->query->addr.ss_family == AF_INET) {
+	if (data->query->remote_addr.ss_family == AF_INET) {
 		STATUP(data->nsd, ctcp);
-	} else if (data->query->addr.ss_family == AF_INET6) {
+	} else if (data->query->remote_addr.ss_family == AF_INET6) {
 		STATUP(data->nsd, ctcp6);
 	}
 #endif
@@ -3986,10 +4474,12 @@ handle_tcp_reading(int fd, short event, void* arg)
 	/*
 	 * and send TCP-query with found address (local) and client address to dnstap process
 	 */
-	log_addr("query from client", &data->query->addr);
+	log_addr("query from client", &data->query->client_addr);
 	log_addr("to server (local)", (void*)&data->socket->addr.ai_addr);
-	dt_collector_submit_auth_query(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->addr,
-		data->query->addrlen, data->query->tcp, data->query->packet);
+	if(verbosity >= 6 && data->query->is_proxied)
+		log_addr("query via proxy", &data->query->remote_addr);
+	dt_collector_submit_auth_query(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->client_addr,
+		data->query->client_addrlen, data->query->tcp, data->query->packet);
 #endif /* USE_DNSTAP */
 	data->query_state = server_process_query(data->nsd, data->query, &now);
 	if (data->query_state == QUERY_DISCARDED) {
@@ -4013,9 +4503,9 @@ handle_tcp_reading(int fd, short event, void* arg)
 #ifndef INET6
 	ZTATUP(data->nsd, data->query->zone, ctcp);
 #else
-	if (data->query->addr.ss_family == AF_INET) {
+	if (data->query->remote_addr.ss_family == AF_INET) {
 		ZTATUP(data->nsd, data->query->zone, ctcp);
-	} else if (data->query->addr.ss_family == AF_INET6) {
+	} else if (data->query->remote_addr.ss_family == AF_INET6) {
 		ZTATUP(data->nsd, data->query->zone, ctcp6);
 	}
 #endif
@@ -4040,9 +4530,11 @@ handle_tcp_reading(int fd, short event, void* arg)
 	 * sending TCP-response with found (earlier) address (local) and client address to dnstap process
 	 */
 	log_addr("from server (local)", (void*)&data->socket->addr.ai_addr);
-	log_addr("response to client", &data->query->addr);
-	dt_collector_submit_auth_response(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->addr,
-		data->query->addrlen, data->query->tcp, data->query->packet,
+	log_addr("response to client", &data->query->client_addr);
+	if(verbosity >= 6 && data->query->is_proxied)
+		log_addr("response via proxy", &data->query->remote_addr);
+	dt_collector_submit_auth_response(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->client_addr,
+		data->query->client_addrlen, data->query->tcp, data->query->packet,
 		data->query->zone);
 #endif /* USE_DNSTAP */
 	data->bytes_transmitted = 0;
@@ -4053,8 +4545,8 @@ handle_tcp_reading(int fd, short event, void* arg)
 	ev_base = data->event.ev_base;
 	event_del(&data->event);
 	memset(&data->event, 0, sizeof(data->event));
-	event_set(&data->event, fd, EV_PERSIST | EV_READ | EV_TIMEOUT,
-		handle_tcp_reading, data);
+	event_set(&data->event, fd, EV_PERSIST | EV_WRITE | EV_TIMEOUT,
+		handle_tcp_writing, data);
 	if(event_base_set(ev_base, &data->event) != 0)
 		log_msg(LOG_ERR, "event base set tcpr failed");
 	if(event_add(&data->event, &timeout) != 0)
@@ -4217,6 +4709,7 @@ handle_tcp_writing(int fd, short event, void* arg)
 	}
 
 	data->bytes_transmitted = 0;
+	data->query_needs_reset = 1;
 
 	timeout.tv_sec = data->tcp_timeout / 1000;
 	timeout.tv_usec = (data->tcp_timeout % 1000)*1000;
@@ -4271,10 +4764,17 @@ tls_handshake(struct tcp_handler_data* data, int fd, int writing)
 
 	/* (continue to) setup the TLS connection */
 	ERR_clear_error();
-	r = SSL_do_handshake(data->tls);
+	if(data->tls_auth)
+		r = SSL_do_handshake(data->tls_auth);
+	else
+		r = SSL_do_handshake(data->tls);
 
 	if(r != 1) {
-		int want = SSL_get_error(data->tls, r);
+		int want;
+		if(data->tls_auth)
+			want = SSL_get_error(data->tls_auth, r);
+		else
+			want = SSL_get_error(data->tls, r);
 		if(want == SSL_ERROR_WANT_READ) {
 			if(data->shake_state == tls_hs_read) {
 				/* try again later */
@@ -4295,12 +4795,12 @@ tls_handshake(struct tcp_handler_data* data, int fd, int writing)
 			return 1;
 		} else {
 			if(r == 0)
-				VERBOSITY(3, (LOG_ERR, "TLS handshake: connection closed prematurely"));
+				VERBOSITY(5, (LOG_ERR, "TLS handshake: connection closed prematurely"));
 			else {
 				unsigned long err = ERR_get_error();
 				if(!squelch_err_ssl_handshake(err)) {
 					char a[64], s[256];
-					addr2str(&data->query->addr, a, sizeof(a));
+					addr2str(&data->query->remote_addr, a, sizeof(a));
 					snprintf(s, sizeof(s), "TLS handshake failed from %s", a);
 					log_crypto_from_err(s, err);
 				}
@@ -4311,7 +4811,10 @@ tls_handshake(struct tcp_handler_data* data, int fd, int writing)
 	}
 
 	/* Use to log successful upgrade for testing - could be removed*/
-	VERBOSITY(3, (LOG_INFO, "TLS handshake succeeded."));
+	if(data->tls_auth)
+		VERBOSITY(5, (LOG_INFO, "TLS-AUTH handshake succeeded."));
+	else
+		VERBOSITY(5, (LOG_INFO, "TLS handshake succeeded."));
 	/* set back to the event we need to have when reading (or writing) */
 	if(data->shake_state == tls_hs_read && writing) {
 		tcp_handler_setup_event(data, handle_tls_writing, fd, EV_PERSIST|EV_TIMEOUT|EV_WRITE);
@@ -4319,6 +4822,45 @@ tls_handshake(struct tcp_handler_data* data, int fd, int writing)
 		tcp_handler_setup_event(data, handle_tls_reading, fd, EV_PERSIST|EV_TIMEOUT|EV_READ);
 	}
 	data->shake_state = tls_hs_none;
+	return 1;
+}
+
+/* Read more data into the buffer for tls read. Pass the amount of additional
+ * data required. Returns false if nothing needs to be done this event, or
+ * true if the additional data is in the buffer. */
+static int
+more_read_buf_tls(int fd, struct tcp_handler_data* data, void* bufpos,
+	size_t add_amount, ssize_t* received)
+{
+	int r;
+	ERR_clear_error();
+	if(data->tls_auth)
+		r = (*received=SSL_read(data->tls_auth, bufpos, add_amount));
+	else
+		r = (*received=SSL_read(data->tls, bufpos, add_amount));
+	if(r <= 0) {
+		int want;
+		if(data->tls_auth)
+			want = SSL_get_error(data->tls_auth, *received);
+		else
+			want = SSL_get_error(data->tls, *received);
+		if(want == SSL_ERROR_ZERO_RETURN) {
+			cleanup_tcp_handler(data);
+			return 0; /* shutdown, closed */
+		} else if(want == SSL_ERROR_WANT_READ) {
+			/* wants to be called again */
+			return 0;
+		}
+		else if(want == SSL_ERROR_WANT_WRITE) {
+			/* switch to writing */
+			data->shake_state = tls_hs_write_event;
+			tcp_handler_setup_event(data, handle_tls_writing, fd, EV_PERSIST | EV_WRITE | EV_TIMEOUT);
+			return 0;
+		}
+		cleanup_tcp_handler(data);
+		log_crypto_err("could not SSL_read");
+		return 0;
+	}
 	return 1;
 }
 
@@ -4337,8 +4879,9 @@ handle_tls_reading(int fd, short event, void* arg)
 	}
 
 	if ((data->nsd->tcp_query_count > 0 &&
-	    data->query_count >= data->nsd->tcp_query_count) ||
-	    data->tcp_no_more_queries) {
+	     data->query_count >= data->nsd->tcp_query_count) ||
+	    (data->query_count > 0 && data->tcp_no_more_queries))
+	{
 		/* No more queries allowed on this tcp connection. */
 		cleanup_tcp_handler(data);
 		return;
@@ -4346,8 +4889,9 @@ handle_tls_reading(int fd, short event, void* arg)
 
 	assert((event & EV_READ));
 
-	if (data->bytes_transmitted == 0) {
+	if (data->bytes_transmitted == 0 && data->query_needs_reset) {
 		query_reset(data->query, TCP_MAX_MESSAGE_LEN, 1);
+		data->query_needs_reset = 0;
 	}
 
 	if(data->shake_state != tls_hs_none) {
@@ -4357,33 +4901,94 @@ handle_tls_reading(int fd, short event, void* arg)
 			return;
 	}
 
+	if(data->pp2_enabled && data->pp2_header_state != pp2_header_done) {
+		struct pp2_header* header = NULL;
+		size_t want_read_size = 0;
+		size_t current_read_size = 0;
+		if(data->pp2_header_state == pp2_header_none) {
+			want_read_size = PP2_HEADER_SIZE;
+			if(buffer_remaining(data->query->packet) <
+				want_read_size) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: not enough buffer size to read PROXYv2 header"));
+				cleanup_tcp_handler(data);
+				return;
+			}
+			VERBOSITY(6, (LOG_INFO, "proxy-protocol: reading fixed part of PROXYv2 header (len %lu)", (unsigned long)want_read_size));
+			current_read_size = want_read_size;
+			if(data->bytes_transmitted < current_read_size) {
+				if(!more_read_buf_tls(fd, data,
+					buffer_at(data->query->packet,
+						data->bytes_transmitted),
+					current_read_size - data->bytes_transmitted,
+					&received))
+					return;
+				data->bytes_transmitted += received;
+				buffer_skip(data->query->packet, received);
+				if(data->bytes_transmitted != current_read_size)
+					return;
+				data->pp2_header_state = pp2_header_init;
+			}
+		}
+		if(data->pp2_header_state == pp2_header_init) {
+			int err;
+			err = pp2_read_header(buffer_begin(data->query->packet),
+				buffer_limit(data->query->packet));
+			if(err) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not parse PROXYv2 header: %s", pp_lookup_error(err)));
+				cleanup_tcp_handler(data);
+				return;
+			}
+			header = (struct pp2_header*)buffer_begin(data->query->packet);
+			want_read_size = ntohs(header->len);
+			if(buffer_limit(data->query->packet) <
+				PP2_HEADER_SIZE + want_read_size) {
+				VERBOSITY(6, (LOG_ERR, "proxy-protocol: not enough buffer size to read PROXYv2 header"));
+				cleanup_tcp_handler(data);
+				return;
+			}
+			VERBOSITY(6, (LOG_INFO, "proxy-protocol: reading variable part of PROXYv2 header (len %lu)", (unsigned long)want_read_size));
+			current_read_size = PP2_HEADER_SIZE + want_read_size;
+			if(want_read_size == 0) {
+				/* nothing more to read; header is complete */
+				data->pp2_header_state = pp2_header_done;
+			} else if(data->bytes_transmitted < current_read_size) {
+				if(!more_read_buf_tls(fd, data,
+					buffer_at(data->query->packet,
+						data->bytes_transmitted),
+					current_read_size - data->bytes_transmitted,
+					&received))
+					return;
+				data->bytes_transmitted += received;
+				buffer_skip(data->query->packet, received);
+				if(data->bytes_transmitted != current_read_size)
+					return;
+				data->pp2_header_state = pp2_header_done;
+			}
+		}
+		if(data->pp2_header_state != pp2_header_done || !header) {
+			VERBOSITY(6, (LOG_ERR, "proxy-protocol: wrong state for the PROXYv2 header"));
+			cleanup_tcp_handler(data);
+			return;
+		}
+		buffer_flip(data->query->packet);
+		if(!consume_pp2_header(data->query->packet, data->query, 1)) {
+			VERBOSITY(6, (LOG_ERR, "proxy-protocol: could not consume PROXYv2 header"));
+			cleanup_tcp_handler(data);
+			return;
+		}
+		/* Clear and reset the buffer to read the following
+		 * DNS packet(s). */
+		buffer_clear(data->query->packet);
+		data->bytes_transmitted = 0;
+	}
 	/*
 	 * Check if we received the leading packet length bytes yet.
 	 */
 	if(data->bytes_transmitted < sizeof(uint16_t)) {
-		ERR_clear_error();
-		if((received=SSL_read(data->tls, (char *) &data->query->tcplen
-		    + data->bytes_transmitted,
-		    sizeof(uint16_t) - data->bytes_transmitted)) <= 0) {
-			int want = SSL_get_error(data->tls, received);
-			if(want == SSL_ERROR_ZERO_RETURN) {
-				cleanup_tcp_handler(data);
-				return; /* shutdown, closed */
-			} else if(want == SSL_ERROR_WANT_READ) {
-				/* wants to be called again */
-				return;
-			}
-			else if(want == SSL_ERROR_WANT_WRITE) {
-				/* switch to writing */
-				data->shake_state = tls_hs_write_event;
-				tcp_handler_setup_event(data, handle_tls_writing, fd, EV_PERSIST | EV_WRITE | EV_TIMEOUT);
-				return;
-			}
-			cleanup_tcp_handler(data);
-			log_crypto_err("could not SSL_read");
+		if(!more_read_buf_tls(fd, data,
+		    (char *) &data->query->tcplen + data->bytes_transmitted,
+		    sizeof(uint16_t) - data->bytes_transmitted, &received))
 			return;
-		}
-
 		data->bytes_transmitted += received;
 		if (data->bytes_transmitted < sizeof(uint16_t)) {
 			/*
@@ -4423,29 +5028,9 @@ handle_tls_reading(int fd, short event, void* arg)
 	assert(buffer_remaining(data->query->packet) > 0);
 
 	/* Read the (remaining) query data.  */
-	ERR_clear_error();
-	received = SSL_read(data->tls, (void*)buffer_current(data->query->packet),
-			    (int)buffer_remaining(data->query->packet));
-	if(received <= 0) {
-		int want = SSL_get_error(data->tls, received);
-		if(want == SSL_ERROR_ZERO_RETURN) {
-			cleanup_tcp_handler(data);
-			return; /* shutdown, closed */
-		} else if(want == SSL_ERROR_WANT_READ) {
-			/* wants to be called again */
-			return;
-		}
-		else if(want == SSL_ERROR_WANT_WRITE) {
-			/* switch back writing */
-			data->shake_state = tls_hs_write_event;
-			tcp_handler_setup_event(data, handle_tls_writing, fd, EV_PERSIST | EV_WRITE | EV_TIMEOUT);
-			return;
-		}
-		cleanup_tcp_handler(data);
-		log_crypto_err("could not SSL_read");
+	if(!more_read_buf_tls(fd, data, buffer_current(data->query->packet),
+		buffer_remaining(data->query->packet), &received))
 		return;
-	}
-
 	data->bytes_transmitted += received;
 	buffer_skip(data->query->packet, received);
 	if (buffer_remaining(data->query->packet) > 0) {
@@ -4462,9 +5047,9 @@ handle_tls_reading(int fd, short event, void* arg)
 #ifndef INET6
 	STATUP(data->nsd, ctls);
 #else
-	if (data->query->addr.ss_family == AF_INET) {
+	if (data->query->remote_addr.ss_family == AF_INET) {
 		STATUP(data->nsd, ctls);
-	} else if (data->query->addr.ss_family == AF_INET6) {
+	} else if (data->query->remote_addr.ss_family == AF_INET6) {
 		STATUP(data->nsd, ctls6);
 	}
 #endif
@@ -4479,10 +5064,12 @@ handle_tls_reading(int fd, short event, void* arg)
 	/*
 	 * and send TCP-query with found address (local) and client address to dnstap process
 	 */
-	log_addr("query from client", &data->query->addr);
+	log_addr("query from client", &data->query->client_addr);
 	log_addr("to server (local)", (void*)&data->socket->addr.ai_addr);
-	dt_collector_submit_auth_query(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->addr,
-		data->query->addrlen, data->query->tcp, data->query->packet);
+	if(verbosity >= 6 && data->query->is_proxied)
+		log_addr("query via proxy", &data->query->remote_addr);
+	dt_collector_submit_auth_query(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->client_addr,
+		data->query->client_addrlen, data->query->tcp, data->query->packet);
 #endif /* USE_DNSTAP */
 	data->query_state = server_process_query(data->nsd, data->query, &now);
 	if (data->query_state == QUERY_DISCARDED) {
@@ -4506,9 +5093,9 @@ handle_tls_reading(int fd, short event, void* arg)
 #ifndef INET6
 	ZTATUP(data->nsd, data->query->zone, ctls);
 #else
-	if (data->query->addr.ss_family == AF_INET) {
+	if (data->query->remote_addr.ss_family == AF_INET) {
 		ZTATUP(data->nsd, data->query->zone, ctls);
-	} else if (data->query->addr.ss_family == AF_INET6) {
+	} else if (data->query->remote_addr.ss_family == AF_INET6) {
 		ZTATUP(data->nsd, data->query->zone, ctls6);
 	}
 #endif
@@ -4533,9 +5120,11 @@ handle_tls_reading(int fd, short event, void* arg)
 	 * sending TCP-response with found (earlier) address (local) and client address to dnstap process
 	 */
 	log_addr("from server (local)", (void*)&data->socket->addr.ai_addr);
-	log_addr("response to client", &data->query->addr);
-	dt_collector_submit_auth_response(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->addr,
-		data->query->addrlen, data->query->tcp, data->query->packet,
+	log_addr("response to client", &data->query->client_addr);
+	if(verbosity >= 6 && data->query->is_proxied)
+		log_addr("response via proxy", &data->query->remote_addr);
+	dt_collector_submit_auth_response(data->nsd, (void*)&data->socket->addr.ai_addr, &data->query->client_addr,
+		data->query->client_addrlen, data->query->tcp, data->query->packet,
 		data->query->zone);
 #endif /* USE_DNSTAP */
 	data->bytes_transmitted = 0;
@@ -4574,7 +5163,10 @@ handle_tls_writing(int fd, short event, void* arg)
 			return;
 	}
 
-	(void)SSL_set_mode(data->tls, SSL_MODE_ENABLE_PARTIAL_WRITE);
+	if(data->tls_auth)
+		(void)SSL_set_mode(data->tls_auth, SSL_MODE_ENABLE_PARTIAL_WRITE);
+	else
+		(void)SSL_set_mode(data->tls, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
 	/* If we are writing the start of a message, we must include the length
 	 * this is done with a copy into write_buffer. */
@@ -4601,9 +5193,16 @@ handle_tls_writing(int fd, short event, void* arg)
 
 	/* Write the response */
 	ERR_clear_error();
-	sent = SSL_write(data->tls, buffer_current(write_buffer), buffer_remaining(write_buffer));
+	if(data->tls_auth)
+		sent = SSL_write(data->tls_auth, buffer_current(write_buffer), buffer_remaining(write_buffer));
+	else
+		sent = SSL_write(data->tls, buffer_current(write_buffer), buffer_remaining(write_buffer));
 	if(sent <= 0) {
-		int want = SSL_get_error(data->tls, sent);
+		int want;
+		if(data->tls_auth)
+			want = SSL_get_error(data->tls_auth, sent);
+		else
+			want = SSL_get_error(data->tls, sent);
 		if(want == SSL_ERROR_ZERO_RETURN) {
 			cleanup_tcp_handler(data);
 			/* closed */
@@ -4674,6 +5273,7 @@ handle_tls_writing(int fd, short event, void* arg)
 	}
 
 	data->bytes_transmitted = 0;
+	data->query_needs_reset = 1;
 
 	tcp_handler_setup_event(data, handle_tls_reading, fd, EV_PERSIST | EV_READ | EV_TIMEOUT);
 }
@@ -4803,15 +5403,25 @@ handle_tcp_accept(int fd, short event, void* arg)
 	tcp_data->query_count = 0;
 #ifdef HAVE_SSL
 	tcp_data->shake_state = tls_hs_none;
+	/* initialize both incase of dangling pointers */
 	tcp_data->tls = NULL;
+	tcp_data->tls_auth = NULL;
 #endif
+	tcp_data->query_needs_reset = 1;
+	tcp_data->pp2_enabled = data->pp2_enabled;
+	tcp_data->pp2_header_state = pp2_header_none;
 	tcp_data->prev = NULL;
 	tcp_data->next = NULL;
 
 	tcp_data->query_state = QUERY_PROCESSED;
 	tcp_data->bytes_transmitted = 0;
-	memcpy(&tcp_data->query->addr, &addr, addrlen);
-	tcp_data->query->addrlen = addrlen;
+	memcpy(&tcp_data->query->remote_addr, &addr, addrlen);
+	tcp_data->query->remote_addrlen = addrlen;
+	/* Copy remote_address to client_address.
+	 * Simplest way/time for streams to do that. */
+	memcpy(&tcp_data->query->client_addr, &addr, addrlen);
+	tcp_data->query->client_addrlen = addrlen;
+	tcp_data->query->is_proxied = 0;
 
 	tcp_data->tcp_no_more_queries = 0;
 	tcp_data->tcp_timeout = data->nsd->tcp_timeout * 1000;
@@ -4835,6 +5445,18 @@ handle_tcp_accept(int fd, short event, void* arg)
 			close(s);
 			return;
 		}
+		tcp_data->query->tls = tcp_data->tls;
+		tcp_data->shake_state = tls_hs_read;
+		memset(&tcp_data->event, 0, sizeof(tcp_data->event));
+		event_set(&tcp_data->event, s, EV_PERSIST | EV_READ | EV_TIMEOUT,
+			  handle_tls_reading, tcp_data);
+	} else if (data->tls_auth_accept) {
+		tcp_data->tls_auth = incoming_ssl_fd(tcp_data->nsd->tls_auth_ctx, s);
+		if(!tcp_data->tls_auth) {
+			close(s);
+			return;
+		}
+		tcp_data->query->tls_auth = tcp_data->tls_auth;
 		tcp_data->shake_state = tls_hs_read;
 		memset(&tcp_data->event, 0, sizeof(tcp_data->event));
 		event_set(&tcp_data->event, s, EV_PERSIST | EV_READ | EV_TIMEOUT,

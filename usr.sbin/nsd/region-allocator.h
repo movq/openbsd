@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef _REGION_ALLOCATOR_H_
-#define _REGION_ALLOCATOR_H_
+#ifndef REGION_ALLOCATOR_H
+#define REGION_ALLOCATOR_H
 
 #include <stdio.h>
 
@@ -130,6 +130,11 @@ void region_free_all(region_type *region);
 char *region_strdup(region_type *region, const char *string);
 
 /*
+ * Replace a string on the to_replace location, if string is different
+ */
+void region_str_replace(region_type* region, char **to_replace,
+		const char *string);
+/*
  * Recycle an allocated memory block. Pass size used to alloc it.
  * Does nothing if recycling is not enabled for the region.
  */
@@ -150,4 +155,4 @@ size_t region_get_mem_unused(region_type* region);
 /* Debug print REGION statistics to LOG. */
 void region_log_stats(region_type *region);
 
-#endif /* _REGION_ALLOCATOR_H_ */
+#endif /* REGION_ALLOCATOR_H */

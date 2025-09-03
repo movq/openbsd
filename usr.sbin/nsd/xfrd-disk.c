@@ -264,7 +264,7 @@ xfrd_read_state(struct xfrd_state* xfrd)
 		zone->master = acl_find_num(zone->zone_options->pattern->
 			request_xfr, zone->master_num);
 		if(!zone->master) {
-			DEBUG(DEBUG_XFRD,1, (LOG_INFO, "xfrd: masters changed for zone %s",
+			DEBUG(DEBUG_XFRD,1, (LOG_INFO, "xfrd: primaries changed for zone %s",
 				zone->apex_str));
 			zone->master = zone->zone_options->pattern->request_xfr;
 			zone->master_num = 0;
@@ -329,13 +329,13 @@ xfrd_read_state(struct xfrd_state* xfrd)
 		incoming_soa = zone->soa_nsd;
 		incoming_acquired = zone->soa_nsd_acquired;
 		zone->soa_nsd = soa_nsd_read;
-		zone->soa_disk = soa_disk_read;
-		zone->soa_notified = soa_notified_read;
 		zone->soa_nsd_acquired = soa_nsd_acquired_read;
-		/* we had better use what we got from starting NSD, not
-		 * what we store in this file, because the actual zone
-		 * contents trumps the contents of this cache */
-		/* zone->soa_disk_acquired = soa_disk_acquired_read; */
+		/* use soa and soa_acquired from starting NSD, not what is stored in
+		 * the state file, because the actual zone contents trumps the contents
+		 * of this cache */
+		zone->soa_disk = incoming_soa;
+		zone->soa_disk_acquired = incoming_acquired;
+		zone->soa_notified = soa_notified_read;
 		zone->soa_notified_acquired = soa_notified_acquired_read;
 		if (zone->state == xfrd_zone_expired)
 		{
@@ -464,10 +464,10 @@ xfrd_write_state(struct xfrd_state* xfrd)
 
 	fprintf(out, "%s\n", XFRD_FILE_MAGIC);
 	fprintf(out, "# This file is written on exit by nsd xfr daemon.\n");
-	fprintf(out, "# This file contains slave zone information:\n");
+	fprintf(out, "# This file contains secondary zone information:\n");
 	fprintf(out, "# 	* timeouts (when was zone data acquired)\n");
 	fprintf(out, "# 	* state (OK, refreshing, expired)\n");
-	fprintf(out, "# 	* which master transfer to attempt next\n");
+	fprintf(out, "# 	* which primary transfer to attempt next\n");
 	fprintf(out, "# The file is read on start (but not on reload) by nsd xfr daemon.\n");
 	fprintf(out, "# You can edit; but do not change statement order\n");
 	fprintf(out, "# and no fancy stuff (like quoted \"strings\").\n");
@@ -475,7 +475,7 @@ xfrd_write_state(struct xfrd_state* xfrd)
 	fprintf(out, "# If you remove a zone entry, it will be refreshed.\n");
 	fprintf(out, "# This can be useful for an expired zone; it revives\n");
 	fprintf(out, "# the zone temporarily, from refresh-expiry time.\n");
-	fprintf(out, "# If you delete the file all slave zones are updated.\n");
+	fprintf(out, "# If you delete the file all secondary zones are updated.\n");
 	fprintf(out, "#\n");
 	fprintf(out, "# Note: if you edit this file while nsd is running,\n");
 	fprintf(out, "#       it will be overwritten on exit by nsd.\n");

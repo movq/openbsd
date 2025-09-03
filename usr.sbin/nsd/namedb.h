@@ -7,8 +7,8 @@
  *
  */
 
-#ifndef _NAMEDB_H_
-#define	_NAMEDB_H_
+#ifndef NAMEDB_H
+#define	NAMEDB_H
 
 #include <stdio.h>
 
@@ -139,7 +139,12 @@ struct zone
 #endif
 	struct zone_options* opts;
 	struct zone_ixfr* ixfr;
-	char*        filename; /* set if read from file, which file */
+	char *filename; /* set if read from file, which files */
+	/* list of include files to monitor for changes */
+	struct {
+		size_t count;
+		char **paths;
+	} includes;
 	char*        logstr; /* set for zone xfer, the log string */
 	struct timespec mtime; /* time of last modification */
 	unsigned     zonestatid; /* array index for zone stats */
@@ -318,6 +323,10 @@ static inline int domain_is_subdomain(domain_type* d1, domain_type* d2)
 /* easy printout, to static buffer of dname_to_string, fqdn. */
 static inline const char* domain_to_string(domain_type* domain)
 { return dname_to_string(domain_dname(domain), NULL); }
+/* easy printout, to given buffer of dname_to_string, fqdn. */
+static inline const char* domain_to_string_buf(domain_type* domain, char *buf)
+{ return dname_to_string_buf(domain_dname(domain), NULL, buf); }
+
 
 /*
  * The type covered by the signature in the specified RRSIG RR.
@@ -329,7 +338,6 @@ struct namedb
 	region_type*       region;
 	domain_table_type* domains;
 	struct radtree*    zonetree;
-	struct udb_base*   udb;
 	/* the timestamp on the ixfr.db file */
 	struct timeval	  diff_timestamp;
 	/* if diff_skip=1, diff_pos contains the nsd.diff place to continue */
@@ -369,12 +377,7 @@ zone_type *namedb_find_zone(namedb_type *db, const dname_type *dname);
  */
 void domain_table_deldomain(namedb_type* db, domain_type* domain);
 
-
 /** dbcreate.c */
-int udb_write_rr(struct udb_base* udb, struct udb_ptr* z, rr_type* rr);
-void udb_del_rr(struct udb_base* udb, struct udb_ptr* z, rr_type* rr);
-int write_zone_to_udb(struct udb_base* udb, zone_type* zone,
-	struct timespec* mtime, const char* file_str);
 int print_rrs(FILE* out, struct zone* zone);
 /** marshal rdata into buffer, must be MAX_RDLENGTH in size */
 size_t rr_marshal_rdata(rr_type* rr, uint8_t* rdata, size_t sz);
@@ -384,8 +387,7 @@ int namedb_lookup (struct namedb* db,
 		   domain_type     **closest_match,
 		   domain_type     **closest_encloser);
 /* pass number of children (to alloc in dirty array */
-struct namedb *namedb_open(const char *filename, struct nsd_options* opt);
-void namedb_close_udb(struct namedb* db);
+struct namedb *namedb_open(struct nsd_options* opt);
 void namedb_close(struct namedb* db);
 /* free ixfr data stored for zones */
 void namedb_free_ixfr(struct namedb* db);
@@ -398,6 +400,12 @@ void namedb_read_zonefile(struct nsd* nsd, struct zone* zone,
 	struct udb_base* taskudb, struct udb_ptr* last_task);
 zone_type* namedb_zone_create(namedb_type* db, const dname_type* dname,
         struct zone_options* zopt);
+static inline zone_type*
+namedb_find_or_create_zone(namedb_type *db, const dname_type *dname,
+	       	struct zone_options* zopt)
+{ zone_type* zone = namedb_find_zone(db, dname);
+  return zone ? zone : namedb_zone_create(db, dname, zopt); }
+void namedb_zone_free_filenames(namedb_type* db, zone_type* zone);
 void namedb_zone_delete(namedb_type* db, zone_type* zone);
 void namedb_write_zonefile(struct nsd* nsd, struct zone_options* zopt);
 void namedb_write_zonefiles(struct nsd* nsd, struct nsd_options* options);
@@ -466,4 +474,4 @@ void zone_rr_iter_init(zone_rr_iter_type *iter, zone_type *zone);
 
 rr_type *zone_rr_iter_next(zone_rr_iter_type *iter);
 
-#endif /* _NAMEDB_H_ */
+#endif /* NAMEDB_H */

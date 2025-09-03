@@ -354,7 +354,7 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 #ifdef RATELIMIT
 		ZONE_GET_RRL(rrl_whitelist, o, zone->pattern);
 #endif
-		ZONE_GET_BIN(multi_master_check, o, zone->pattern);
+		ZONE_GET_BIN(multi_primary_check, o, zone->pattern);
 		ZONE_GET_BIN(store_ixfr, o, zone->pattern);
 		ZONE_GET_INT(ixfr_size, o, zone->pattern);
 		ZONE_GET_INT(ixfr_number, o, zone->pattern);
@@ -391,7 +391,7 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 #ifdef RATELIMIT
 		ZONE_GET_RRL(rrl_whitelist, o, p);
 #endif
-		ZONE_GET_BIN(multi_master_check, o, p);
+		ZONE_GET_BIN(multi_primary_check, o, p);
 		ZONE_GET_BIN(store_ixfr, o, p);
 		ZONE_GET_INT(ixfr_size, o, p);
 		ZONE_GET_INT(ixfr_number, o, p);
@@ -411,8 +411,10 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 		SERV_GET_BIN(hide_version, o);
 		SERV_GET_BIN(hide_identity, o);
 		SERV_GET_BIN(drop_updates, o);
+		SERV_GET_BIN(reload_config, o);
 		SERV_GET_BIN(zonefiles_check, o);
 		SERV_GET_BIN(log_time_ascii, o);
+		SERV_GET_BIN(log_time_iso, o);
 		SERV_GET_BIN(round_robin, o);
 		SERV_GET_BIN(minimal_responses, o);
 		SERV_GET_BIN(confine_to_zone, o);
@@ -420,7 +422,6 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 		SERV_GET_BIN(tcp_reject_overflow, o);
 		SERV_GET_BIN(log_only_syslog, o);
 		/* str */
-		SERV_GET_PATH(final, database, o);
 		SERV_GET_STR(identity, o);
 		SERV_GET_STR(version, o);
 		SERV_GET_STR(nsid, o);
@@ -439,6 +440,7 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 		SERV_GET_STR(tls_port, o);
 		SERV_GET_STR(tls_cert_bundle, o);
 		SERV_GET_STR(cookie_secret, o);
+		SERV_GET_STR(cookie_staging_secret, o);
 		SERV_GET_STR(cookie_secret_file, o);
 		SERV_GET_BIN(answer_cookie, o);
 		/* int */
@@ -468,6 +470,12 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 #ifdef USE_DNSTAP
 		SERV_GET_BIN(dnstap_enable, o);
 		SERV_GET_STR(dnstap_socket_path, o);
+		SERV_GET_STR(dnstap_ip, o);
+		SERV_GET_BIN(dnstap_tls, o);
+		SERV_GET_STR(dnstap_tls_server_name, o);
+		SERV_GET_STR(dnstap_tls_cert_bundle, o);
+		SERV_GET_STR(dnstap_tls_client_key_file, o);
+		SERV_GET_STR(dnstap_tls_client_cert_file, o);
 		SERV_GET_BIN(dnstap_send_identity, o);
 		SERV_GET_BIN(dnstap_send_version, o);
 		SERV_GET_STR(dnstap_identity, o);
@@ -497,6 +505,12 @@ config_print_zone(nsd_options_type* opt, const char* k, int s, const char *o,
 				quote(p->pname);
 			return;
 		}
+		if(strcasecmp(o, "proxy_protocol_port") == 0) {
+			struct proxy_protocol_port_list* p;
+			for(p = opt->proxy_protocol_port; p; p = p->next)
+				printf("%d\n", p->port);
+			return;
+		}
 		printf("Server option not handled: %s\n", o);
 		exit(1);
 	}
@@ -513,8 +527,8 @@ static void print_zone_content_elems(pattern_options_type* pat)
 	print_acl("allow_query:", pat->allow_query);
 	print_acl("allow-notify:", pat->allow_notify);
 	print_acl("request-xfr:", pat->request_xfr);
-	if(pat->multi_master_check)
-		printf("\tmulti-master-check: %s\n", pat->multi_master_check?"yes":"no");
+	if(pat->multi_primary_check)
+		printf("\tmulti-primary-check: %s\n", pat->multi_primary_check?"yes":"no");
 	if(!pat->notify_retry_is_default)
 		printf("\tnotify-retry: %d\n", pat->notify_retry);
 	print_acl("notify:", pat->notify);
@@ -574,6 +588,20 @@ static void print_zone_content_elems(pattern_options_type* pat)
 	if(pat->verifier_timeout != VERIFIER_TIMEOUT_INHERIT) {
 		printf("\tverifier-timeout: %d\n", pat->verifier_timeout);
 	}
+
+	if(!pat->catalog_role_is_default)
+	    switch(pat->catalog_role) {
+	case CATALOG_ROLE_CONSUMER: printf("\tcatalog: consumer\n");
+	                            break;
+	case CATALOG_ROLE_PRODUCER: printf("\tcatalog: producer\n");
+	                            break;
+	default                   : break;
+	}
+
+	if(pat->catalog_member_pattern)
+		print_string_var("catalog-member-pattern:", pat->catalog_member_pattern);
+	if(pat->catalog_producer_zone)
+		print_string_var("catalog-producer-zone:", pat->catalog_producer_zone);
 }
 
 void
@@ -600,7 +628,6 @@ config_test_print_server(nsd_options_type* opt)
 	printf("\tdrop-updates: %s\n", opt->drop_updates?"yes":"no");
 	printf("\ttcp-reject-overflow: %s\n",
 		opt->tcp_reject_overflow ? "yes" : "no");
-	print_string_var("database:", opt->database);
 	print_string_var("identity:", opt->identity);
 	print_string_var("version:", opt->version);
 	print_string_var("nsid:", opt->nsid);
@@ -647,6 +674,7 @@ config_test_print_server(nsd_options_type* opt)
 	print_string_var("xfrdir:", opt->xfrdir);
 	printf("\txfrd-reload-timeout: %d\n", opt->xfrd_reload_timeout);
 	printf("\tlog-time-ascii: %s\n", opt->log_time_ascii?"yes":"no");
+	printf("\tlog-time-iso: %s\n", opt->log_time_iso?"yes":"no");
 	printf("\tround-robin: %s\n", opt->round_robin?"yes":"no");
 	printf("\tminimal-responses: %s\n", opt->minimal_responses?"yes":"no");
 	printf("\tconfine-to-zone: %s\n",
@@ -682,6 +710,7 @@ config_test_print_server(nsd_options_type* opt)
 	printf("\trrl-ipv6-prefix-length: %d\n", (int)opt->rrl_ipv6_prefix_length);
 	printf("\trrl-whitelist-ratelimit: %d\n", (int)opt->rrl_whitelist_ratelimit);
 #endif
+	printf("\treload-config: %s\n", opt->reload_config?"yes":"no");
 	printf("\tzonefiles-check: %s\n", opt->zonefiles_check?"yes":"no");
 	printf("\tzonefiles-write: %d\n", opt->zonefiles_write);
 	print_string_var("tls-service-key:", opt->tls_service_key);
@@ -690,15 +719,31 @@ config_test_print_server(nsd_options_type* opt)
 	print_string_var("tls-port:", opt->tls_port);
 	print_string_var("tls-cert-bundle:", opt->tls_cert_bundle);
 	printf("\tanswer-cookie: %s\n", opt->answer_cookie?"yes":"no");
-	if (opt->cookie_secret)
-		print_string_var("cookie-secret:", opt->cookie_secret);
-	if (opt->cookie_secret_file)
+	print_string_var("cookie-secret:", opt->cookie_secret);
+	print_string_var("cookie-staging-secret:", opt->cookie_staging_secret);
+	if(opt->cookie_secret_file_is_default) {
+		print_string_var("#cookie-secret-file:", opt->cookie_secret_file);
+	} else if(opt->cookie_secret_file) {
 		print_string_var("cookie-secret-file:", opt->cookie_secret_file);
+	} else {
+		print_string_var("cookie-secret-file:", "");
+	}
+	if(opt->proxy_protocol_port) {
+		struct proxy_protocol_port_list* p;
+		for(p = opt->proxy_protocol_port; p; p = p->next)
+			printf("\tproxy-protocol-port: %d\n", p->port);
+	}
 
 #ifdef USE_DNSTAP
 	printf("\ndnstap:\n");
 	printf("\tdnstap-enable: %s\n", opt->dnstap_enable?"yes":"no");
 	print_string_var("dnstap-socket-path:", opt->dnstap_socket_path);
+	print_string_var("dnstap-ip:", opt->dnstap_ip);
+	printf("\tdnstap-tls: %s\n", opt->dnstap_tls?"yes":"no");
+	print_string_var("dnstap-tls-server-name:", opt->dnstap_tls_server_name);
+	print_string_var("dnstap-tls-cert-bundle:", opt->dnstap_tls_cert_bundle);
+	print_string_var("dnstap-tls-client-key-file:", opt->dnstap_tls_client_key_file);
+	print_string_var("dnstap-tls-client-cert-file:", opt->dnstap_tls_client_cert_file);
 	printf("\tdnstap-send-identity: %s\n", opt->dnstap_send_identity?"yes":"no");
 	printf("\tdnstap-send-version: %s\n", opt->dnstap_send_version?"yes":"no");
 	print_string_var("dnstap-identity:", opt->dnstap_identity);
@@ -779,22 +824,15 @@ additional_checks(nsd_options_type* opt, const char* filename)
 			errors ++;
 			continue;
 		}
-#ifndef ROOT_SERVER
-		/* Is it a root zone? Are we a root server then? Idiot proof. */
-		if(dname->label_count == 1) {
-			fprintf(stderr, "%s: not configured as a root server.\n", filename);
-			errors ++;
-		}
-#endif
 		if(zone->pattern->allow_notify && !zone->pattern->request_xfr) {
 			fprintf(stderr, "%s: zone %s has allow-notify but no request-xfr"
 				" items. Where can it get a zone transfer when a notify "
 				"is received?\n", filename, zone->name);
 			errors ++;
 		}
-		if(!zone_is_slave(zone) && (!zone->pattern->zonefile ||
-			zone->pattern->zonefile[0] == 0)) {
-			fprintf(stderr, "%s: zone %s is a master zone but has "
+		if(!zone_is_slave(zone) && !zone_is_catalog_producer(zone)
+		&& (!zone->pattern->zonefile || zone->pattern->zonefile[0] == 0)) {
+			fprintf(stderr, "%s: zone %s is a primary zone but has "
 				"no zonefile. Where can the data come from?\n",
 				filename, zone->name);
 			errors ++;
@@ -846,11 +884,6 @@ additional_checks(nsd_options_type* opt, const char* filename)
 		if (!file_inside_chroot(opt->pidfile, opt->chroot)) {
 			fprintf(stderr, "%s: pidfile %s is not relative to chroot %s.\n",
 				filename, opt->pidfile, opt->chroot);
-			errors ++;
-                }
-		if (!file_inside_chroot(opt->database, opt->chroot)) {
-			fprintf(stderr, "%s: database %s is not relative to chroot %s.\n",
-				filename, opt->database, opt->chroot);
 			errors ++;
                 }
 		if (!file_inside_chroot(opt->xfrdfile, opt->chroot)) {
@@ -954,7 +987,7 @@ main(int argc, char* argv[])
 	/* read config file */
 	options = nsd_options_create(region_create(xalloc, free));
 	tsig_init(options->region);
-	if (!parse_options_file(options, configfile, NULL, NULL) ||
+	if (!parse_options_file(options, configfile, NULL, NULL, NULL) ||
 	   !additional_checks(options, configfile)) {
 		exit(2);
 	}

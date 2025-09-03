@@ -100,7 +100,7 @@ server:
 	# username: @user@
 
 	# Run NSD in a chroot-jail.
-	# make sure to have pidfile and database reachable from there.
+	# make sure to have pidfile reachable from there.
 	# by default, no chroot-jail is used.
 	# chroot: "@configdir@"
 
@@ -109,10 +109,6 @@ server:
 
 	# the list of dynamically added zones.
 	# zonelistfile: "@zonelistfile@"
-
-	# the database to use
-	# if set to "" then no disk-database is used, less memory usage.
-	# database: "@dbfile@"
 
 	# log messages to file. Default to stderr and syslog (with
 	# facility LOG_DAEMON).  stderr disappears when daemon goes to bg.
@@ -199,6 +195,10 @@ server:
 	# log timestamp in ascii (y-m-d h:m:s.msec), yes is default.
 	# log-time-ascii: yes
 
+	# log timestamp in ISO8601 format if also log-time-ascii is enabled.
+	# (y-m-dTh:m:s.msec[+-]tzhours:tzminutes)
+	# log-time-iso: no
+
 	# round robin rotation of records in the answer.
 	# round-robin: no
 
@@ -217,8 +217,11 @@ server:
 	# zonefiles-check: yes
 
 	# write changed zonefiles to disk, every N seconds.
-	# default is 0(disabled) or 3600(if database is "").
+	# default is 3600.
 	# zonefiles-write: 3600
+
+	# Reload nsd.conf and update TSIG keys and zones on SIGHUP.
+	# reload-config: no
 
 	# RRLconfig
 	# Response Rate Limiting, size of the hashtable. Default 1000000.
@@ -260,9 +263,25 @@ server:
 	# tls-service-ocsp: "path/to/ocsp.pem"
 	# tls-port: 853
 	
+	# Provides a dedidated TLS port where only authenticated clients can
+	# connect. Used for zone transfers to secondary servers. It uses
+	# tls-service-key and tls-service-pem and verifies client certificates
+	# using tls-cert-bundle.
+	# Default is "" (disabled). Requires restart to take effect.
+	# tls-auth-port: ""
+
+	# Allow zone transfers only on the tls-auth-port port and only to
+	# authenticated clients. Requests for zone transfers on other ports
+	# are refused. Default is no. Requires restart to change it.
+	# tls-auth-xfr-only: no
+
 	# Certificates used to authenticate connections made upstream for
 	# Transfers over TLS (XoT). Default is "" (default verify locations).
 	# tls-cert-bundle: "path/to/ca-bundle.pem"
+
+	# The interfaces that use these listed port numbers will support and
+	# expect PROXYv2. For UDP and TCP/TLS interfaces.
+	# proxy-protocol-port: portno for each of the port numbers.
 
 verify:
 	# Enable zone verification. Default is no.
@@ -301,6 +320,13 @@ verify:
 	# set this to yes and set one or more of dnstap-log-..-messages to yes.
 	# dnstap-enable: no
 	# dnstap-socket-path: "@dnstap_socket_path@"
+	# for dnstap-ip, "" is disabled, use TCP or TLS with like 127.0.0.1@3333
+	# dnstap-ip: ""
+	# dnstap-tls: yes
+	# dnstap-tls-server-name: ""
+	# dnstap-tls-cert-bundle: "path/to/bundle.pem"
+	# dnstap-tls-client-key-file: ""
+	# dnstap-tls-client-cert-file: ""
 	# dnstap-send-identity: no
 	# dnstap-send-version: no
 	# dnstap-identity: ""
@@ -318,11 +344,13 @@ remote-control:
 	# interfaces can be specified by IP address or interface name.
 	# with an interface name, all IP addresses associated with that
 	# interface are used.
-	# with an absolute path, a unix local named pipe is used for control
-	# (and key and cert files are not needed, use directory permissions).
 	# control-interface: 127.0.0.1
 	# control-interface: ::1
 	# control-interface: lo
+
+	# with an absolute path, a unix local named pipe is used for control
+	# (and key and cert files are not needed, use directory permissions).
+	# control-interface: @runstatedir@/nsd/nsd.sock
 
 	# port number for remote control operations (uses TLS over TCP).
 	# control-port: 8952
@@ -392,12 +420,12 @@ remote-control:
 	# which is only offered for transfer to secondaries over TLS.
 	#allow-query: 192.0.2.0/24 NOKEY
 
-	# If no master and slave access control elements are provided,
+	# If no primary and secondary access control elements are provided,
 	# this zone will not be served to/from other servers.
 
-	# A master zone needs notify: and provide-xfr: lists.  A slave
+	# A primary zone needs notify: and provide-xfr: lists.  A secondary
 	# may also allow zone transfer (for debug or other secondaries).
-	# notify these slaves when the master zone changes, address TSIG|NOKEY
+	# notify these secondaries when the primary zone changes, address TSIG|NOKEY
 	# IP can be ipv4 and ipv6, with @port for a nondefault port number.
 	#notify: 192.0.2.1 NOKEY
 	# allow these IPs and TSIG to transfer zones, addr TSIG|NOKEY|BLOCKED
@@ -418,17 +446,17 @@ remote-control:
 	# provide-xfr: 0.0.0.0/0 NOKEY
 	# provide-xfr: ::0/0 NOKEY
 
-	# A slave zone needs allow-notify: and request-xfr: lists.
+	# A secondary zone needs allow-notify: and request-xfr: lists.
 	#allow-notify: 2001:db8::0/64 my_tsig_key_name
-	# By default, a slave will request a zone transfer with IXFR/TCP.
+	# By default, a secondary will request a zone transfer with IXFR/TCP.
 	# If you want to make use of IXFR/UDP use: UDP addr tsigkey
-	# for a master that only speaks AXFR (like NSD) use AXFR addr tsigkey
+	# for a primary that only speaks AXFR use AXFR addr tsigkey
 	# If you want to require use of XFR-over-TLS use: addr tsigkey tlsauthname
 	#request-xfr: 192.0.2.2 the_tsig_key_name
 	#request-xfr: 192.0.2.2 the_tsig_key_name the_tls_auth_name
 	# Attention: You cannot use UDP and AXFR together. AXFR is always over
 	# TCP. If you use UDP, we highly recommend you to deploy TSIG.
-	# Allow AXFR fallback if the master does not support IXFR. Default
+	# Allow AXFR fallback if the primary does not support IXFR. Default
 	# is yes.
 	#allow-axfr-fallback: yes
 	# set local interface for sending zone transfer requests.
@@ -444,9 +472,9 @@ remote-control:
 	# retry values (limited to the bounds given with the above parameters), plus 1.
 	#min-expire-time: 0
 
-	# Slave server tries zone transfer to all masters and picks highest
-	# zone version available, for when masters have different versions.
-	#multi-master-check: no
+	# Secondary server tries zone transfer to all primaries and picks highest
+	# zone version available, for when primaries have different versions.
+	#multi-primary-check: no
 
 	# limit the zone transfer size (in bytes), stops very large transfers
 	# 0 is no limits enforced.
@@ -460,8 +488,8 @@ remote-control:
 	# from that pattern are inserted into this one (as if it were a
 	# macro).  The statement can be given in between other statements,
 	# because the order of access control elements can make a difference
-	# (which master to request from first, which slave to notify first).
-	#include-pattern: "common-masters"
+	# (which primary to request from first, which secondary to notify first).
+	#include-pattern: "common-primaries"
 
 	# Verify zone before publishing.
 	# Default is value of verify-zones in verify.
@@ -481,6 +509,24 @@ remote-control:
 	# Default is verifier-timeout in verify.
 	# verifier-timeout: 0
 
+	# Turn this zone into a catalog consumer zone.
+	# The catalog-member-pattern option is the default pattern that
+	# will be used for members without or with invalid group property.
+	# catalog: consumer
+	# catalog-member-pattern: "example-pattern"
+
+	# Turn this zone into a catalog producer zone.
+	# Member zones can be added using nsd-control addzone <zone> <pattern>
+	# where <pattern> is a pattern containing a catalog-producer-zone
+	# option pointing to this zone.
+	# catalog: producer
+
+	# Use this pattern to add catalog producer members. "catalog1.invalid"
+	# needs to be a valid catalog producer zone; i.e. a primary zone
+	# without a request-xfr option and with and catalog option set to
+	# producer.
+	# catalog-producer-member: "catalog1.invalid"
+
 # Fixed zone entries.  Here you can config zones that cannot be deleted.
 # Zones that are dynamically added and deleted are put in the zonelist file.
 #
@@ -488,7 +534,7 @@ remote-control:
 	# name: "example.com"
 	# you can give a pattern here, all the settings from that pattern
 	# are then inserted at this point
-	# include-pattern: "master"
+	# include-pattern: "primary"
 	# You can also specify (additional) options directly for this zone.
 	# zonefile: "example.com.zone"
 	# request-xfr: 192.0.2.1 example.com.key
